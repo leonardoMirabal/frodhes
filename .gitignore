@@ -50,3 +50,6 @@ docs/model/data/reference-audio/
 # Reviewer scratch binaries (the .c sources are kept)
 docs/model/reviews/scratch-*/*
 !docs/model/reviews/scratch-*/*.c
+
+# Local backups (full pre-rewrite history bundle, sources tarball): kept on disk, never pushed
+.local-backup/
