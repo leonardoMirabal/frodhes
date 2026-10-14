@@ -1,5 +1,5 @@
 build/
 __pycache__/
 .DS_Store
-# research downloads: third-party papers, clones, ROMs, recordings. Kept locally, not redistributed
-docs/model/research/sources/
+# Roland ROM images that came with the rdpiano clone: copyrighted, never used, kept locally only
+docs/model/research/sources/04-code-rdpiano-stk/rdpiano/roms/
