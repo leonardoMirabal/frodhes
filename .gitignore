@@ -53,6 +53,7 @@ docs/model/data/reference-audio/
 docs/model/reviews/scratch-*/*
 !docs/model/reviews/scratch-*/*.c
 !docs/model/reviews/scratch-*/*.py
+!docs/model/reviews/scratch-*/*.md
 
 # Local backups (full pre-rewrite history bundle, sources tarball): kept on disk, never pushed
 .local-backup/

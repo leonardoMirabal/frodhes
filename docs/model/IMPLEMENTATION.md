@@ -1,5 +1,7 @@
 # Frodhes: implementation plan (v2)
 
+> **Superseded by [IMPLEMENTATION-v3.md](IMPLEMENTATION-v3.md)**, the self-contained plan written by the final review.
+
 This is the working plan for building Frodhes, a physically modelled Rhodes for the M-VAVE FM-1. It merges
 [PLAN.md](PLAN.md) (v1) with the four reviews in [`reviews/`](reviews/):
 

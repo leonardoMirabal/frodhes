@@ -221,14 +221,14 @@ expose it.
 
 | Item | Bytes | Note |
 |---|---|---|
-| `RH_KEYS[88]` (`rh_key_t`, 176 B) | 15 488 | §4.2 |
+| `RH_KEYS[88]` (`rh_key_t`, 168 B) | 14 784 | §4.2 |
 | `RH_PULSE[5][8][66]` int16 | 5 280 | |
 | `RH_VAMP[5][128]`, `RH_VRATE[5][128]` uint16 | 2 560 | |
 | `RH_VLAYER[128]` uint8 | 128 | |
 | `RH_PHI[2][2049]`, `RH_SLOPE[2][2049]` int32 (source of the pool copies) | 32 784 | |
 | `RH_RES[5][3][512]` int16 (Phase 3) | 15 360 | |
 | `RH_RLC[4][5]` int32, `RH_TYPE[4]`, velocity law tables `RH_VLAW[5][128]` uint16 | ≈ 1 500 | |
-| Coefficient-path tables: `TUNE_T[101]` (2^(c/1200)−1, c = −50..50, Q30), `DECAY_K[128]`, `REL_K[128]` (Q16), `PEDAL_W[128]` (Q15) | 1 160 | |
+| Coefficient-path tables: `TUNE_T[101]` (2^(c/1200)−1, c = −50..50, Q30), `DECAY_K[128]`, `REL_K[128]` (Q16), `PEDAL_W[128]` (Q15), `GSCALE_INV[4][128]` (Q16), `HAMMER_R[9]` | 3 240 | |
 | FX tables: tanh 257 × int16, sine 1024 × int16, `WAH_SVF[64][3]` int16, `PH_A[33]` int16, `LFO_INC[128]` uint32, `CHO_D[128]` | ≈ 3 700 | |
 | Factory presets 12 × 48 B; PARAMS descriptors; strings | ≈ 2 500 | |
 | **Total new constants** | **≈ 80 KiB** | fits with ≈ 150 KiB of code (ESTIMATE) |
@@ -343,13 +343,13 @@ typedef struct {                 /* per mode, const, flash */
     int32_t b;                   /* Q30 force (Q15) -> y (Q25): y += (F * b) >> 20 */
 } rh_mode_t;                     /* 28 B */
 
-typedef struct {                 /* per key, const, flash; 176 B */
+typedef struct {                 /* per key, const, flash; 168 B */
     rh_mode_t m[RH_NM];          /* 140 B */
     int32_t off;                 /* Q25 default voicing offset (L_ver / L_hor), signed */
     int32_t gain;                /* Q16 output gain: loudness normalisation at v = 100 */
     int32_t kill;                /* Q25 sum of live-mode sub-block peaks below which the voice ends */
     int32_t hc;                  /* Q30 V1 -> H1 coupling per sample (Phase 3; 0 before) */
-    int32_t pk;                  /* Q30 amplitude -> pitch: dE/E = (pk * a2) >> 50, a2 in Q50 gap^2 (Phase 3) */
+    int32_t pk;                  /* Q30 amplitude -> pitch: dE/E = (pk * a2) >> 25, a2 = (x^2 + y^2) >> 25 in Q25 gap^2 (Phase 3) */
     uint16_t prate;              /* Q12 pulse-position step per sample at the reference velocity (100) */
     uint16_t life;               /* lifetime cap in blocks (2 x T60(V1) + 1 s, at most 40 s = 6891 blocks) */
     uint8_t band, fam, res, pad; /* tip band 0..4; pickup family 0 = 1/16", 1 = 1/32"; residual index or 0xFF */
@@ -455,10 +455,9 @@ init(v, note, vel):
       if m == O1 or O2: b_eff = mul16(k->m[m].b, mul16(ty->bell, bell_g)) else b_eff = k->m[m].b
       m: x = y = ex = ey = 0; e = e0; eps = eps0; live = 1; peak = 0
   off   = k->off + ty->off_delta + tone_off
-  gain  = (k->gain * 65536 / mul16(ty->gscale, bark_g)) is a division: instead the generator emits
-          k->gain_inv (Q16 of 1/gain) ... NO: do gain = mul16(k->gain, GSCALE_INV[type_bark_index]) with a
-          per-(TYPE, BARK) 4×128 Q16 table GSCALE_INV generated on the host. pamp scale = mul16(ty->gscale, bark_g).
-  xprev = hprev = 0; Hprev = Hermite(s = (off^2) >> ...)  /* the rest position's Phi~, so the first difference is 0 */
+  pamp_scale = mul16(ty->gscale, bark_g)                                /* Q16: scales the force = scales the tip */
+  gain  = mul16(k->gain, GSCALE_INV[type][bark_v])                        /* Q16; GSCALE_INV[4][128] = 65536^2 / (gscale * bark_g), host table: no division */
+  xprev = hprev = 0; Hprev = H(s) with u = off, h = 0      /* the rest position's Phi~ (one Hermite), so the first difference is 0 */
   ramp = 0; damped = 0; held = 1; alive = 1; age = ++ages; life = k->life; rpos = res ? 0 : 512; wped = pedal weight
   load_pulse(v, vel)
 load_pulse(v, vel):
@@ -483,7 +482,7 @@ amplitude -> pitch (Phase 3, keys with pk != 0, modes V1 V2):
           a2  = ((int64)x*x + (int64)y*y) >> 25                                  /* Q25 gap^2 */
           rel = (int32)(((int64)pk * a2) >> 25)                                  /* Q30 relative dE/E */
           e   = e_base + mul30(e_base, rel)        (e_base = the ramp/lerp result above)
-mode sleep: for m != V1: if live && peak < (k->kill >> 3) && m-th contact share done: live = 0; x = y = ex = ey = 0
+mode sleep: for m != V1: if live && !ptab && peak < (k->kill >> 3): live = 0; x = y = ex = ey = 0   (a re-strike re-arms every mode)
 voice end:  if !ptab && rpos == 512 && Σ_live peak < k->kill → alive = 0; zero everything; rh_active_bits &= ~bit
 lifetime:   if --life == 0 → same as voice end
 peak = 0 for every mode (re-armed for the next sub-block)
@@ -510,7 +509,7 @@ mode V1 (then V2, O1, O2), state x,y,ex,ey,e,eps in registers:
     per sub-block end: if |x| > 2^28 or |y| > 2^28: clamp to ±2^28 (sat28) — a guard, never expected
 mode H1 (Phase 3): y += mul30(hc, x_V1[j]) + ((F[j] * b_H1) >> 20) ; same recursion ; rh_h[j] = x
 /* 3. attack residual (Phase 3) */
-    if rpos < 512: rh_x[j] += mul15s(RH_RES[band][layer3][rpos++], pamp) << 10    /* Q15 of 1/8 gap -> Q25 */
+    if rpos < 512: rh_x[j] += mul15s(RH_RES[band][layer3][rpos++], pamp) << 7     /* Q15 of 1/8 gap -> Q25: x 2^25 / (2^15 x 8); layer3 = RH_VLAYER[vel] * 3 / 8 */
 /* 4. pickup, radial, Hermite, exact difference */
 for j:
     u   = rh_x[j] + off                                   /* Q25 */
@@ -602,3 +601,832 @@ health H) must stay < −50 dBFS at every steal and note-off in the goldens. Voi
 rh_quiet_blocks ≥ 2`. `rh_lit(base, n)` = OR of `1 << (rh_notes[v] − base)` for alive voices whose key is held.
 
 ---
+
+## 6. Host generator (`tools/gen_rhodes.py`): exact steps
+
+Inputs: `docs/model/data/params.json` (fitted per root plus global priors, §7.5), the 73 service-manual tine
+lengths E1–E7 (R02 `TineLengths.h`, as numbers: 0.1564 m at E1 to 0.0226 m at E7; `research/tools/perkey.csv`
+already lists them), the tip bands by key, the gap families by key. Output: `firmware/gen/rhodes_tables.h`,
+byte-identical across runs and OSes (sorted dicts, fixed float formatting, numpy with fixed seeds, `np.round`
+to integers only at the end). Every step has a unit test in `tests/unit/` (host, Python).
+
+### 6.1 Key range
+Keys 21–108. Keys 28–100 use the manual lengths; 21–27 and 101–108 extrapolate L by a log-log fit of L against
+f0 over the nearest 12 keys (ESTIMATE). f0 = 440·2^((midi−69)/12). Everything else per key follows from L and f0.
+
+### 6.2 FE tine with the tuning spring
+40 Hermite Euler–Bernoulli beam elements, d = 0.075" (1.905 mm), E = 200 GPa, ρ = 7850 kg/m³, clamped base, free
+tip, consistent mass matrix (the stencils of `scratch-01/fe.py`). A point mass m_s at position p·L (p from params,
+global; default 0.65 ESTIMATE; the alternative near 0.95 is a fit candidate, §17). Bisect m_s so that f1 = f_t, the
+tine's own target (§6.3 passes f_t). Outputs per key: ratios r2 = f2/f1, r3 = f3/f1, r4..r12/f1; mode shapes ψ_m at
+the strike point x_c(key) and at the tip; modal masses m_m = ψᵀMψ. Strike line: 2¼" (bass, key 21) to ⅛" (treble,
+key 108) from the clamp (R05 W1), interpolated linearly in key. Test: m_s = 0 gives 6.267 and 17.548 ± 0.1 %.
+
+### 6.3 2-DOF tine–bar
+Per key, from params (δ_b bar detune in cents, k_rel coupling relative to ω_t², μ mass ratio, σ_t, σ_b): M = diag(1,
+μ), K = [[ω_t² + k, −k], [−k, μω_b² + k]], C = diag(2σ_t, 2μσ_b), force on coordinate 1, output coordinate 1. Build the
+4×4 state matrix A = [[0, I], [−M⁻¹K, −M⁻¹C]], eigen-decompose, residues R_i = (CᵀV)_i (V⁻¹B)_i for the two
+eigenvalues with positive imaginary part. V1 = the mode with the larger late weight |R|·e^(−σ·2 s); V2 the other.
+Scale both frequencies by f0/f(V1) (so V1 lands exactly on f0; `scratch-05/tinebar_residue.py`: −0.4..−18 c
+depending on k_rel). Weights b_m = 2|R_m|ω_m (the pure-2-pole equivalent; the residue phase of V1 is within 11° of
+the ideal and is dropped, with the generator asserting |phase| < 15°; V2's larger phase error only shifts the
+beat phase). Release: repeat with C = diag(2(σ_t + σ_d), 2μσ_b) and match each release mode to a sustain mode by
+nearest eigenvalue (NOT by weight: with the felt on, the bar mode is the long one). Tests: k = 0 reproduces the bare
+tine and bar; residues sum to the static compliance; retune exact.
+
+### 6.4 Overtones
+f(O1) = f0·r2, f(O2) = f0·r3 from §6.2; σ from params, defaulting to R03's code law σ_m = σ_1·(κ_m/κ_1)⁴
+(T60 ≈ 0.19 s and 24 ms at A4). Any mode above 18 kHz: `th = 0` (absent). O1/O2 weights from ψ(x_c)ψ(tip)/m_m.
+
+### 6.5 Coefficients per mode
+r = exp(−6.9078/(T60·fs)), θ = 2πf/fs. Emit `sh = round(sin(θ/2)·2^30)`, `ch = round(cos(θ/2)·2^30)`, `th =
+round(θ·2^29)`, `d = ceil((1 − r²)·2^30)` (never less damped), `drel` likewise from the release σ, `cr =
+round(2^16/(8 sin²(θ/2)))`. Assert `cr < 2^31` (true for f ≥ 27.5 Hz) and `th ≥ 1`.
+
+### 6.6 Hammer pulses (coupled contact simulation)
+Per band, with the band's representative key (30 duro: E1; 50: C2; 70: A3; 90: C5; wood: C7 — ESTIMATE
+mapping of R05 W1's 88-position bands onto the 73 keys, §17), at 16×fs: hammer mass m_h (prior 11 g, R02 Tab.
+3.2), felt F = K·e^p + R·d(e^p)/dt with p = 2.5, K and R per band (fitted so T_c at v = 100 matches a 1–3 ms prior
+and the reference attack spectra), the key's first 6 FE modes plus the 2-DOF bar, all at rest; the tine's modal
+masses from §6.2. Hammer speed from MIDI velocity: v_h = v_max·2^(−R_dB/6.0206·(1 − (v−1)/126)), R_dB = 30, v_max = 4
+m/s (ESTIMATE). Record F(t) until the final loss of contact (re-contacts included). Per (band, layer of 8 velocity
+layers centred at v = 8, 24, 40, 56, 72, 88, 104, 120): normalise the time axis to [0, T_c] and the peak to 32767,
+resample to 64 samples + 2 zeros → `RH_PULSE`. Assert adjacent layers differ by < 3 % RMS (else 16 layers). From
+the 128 velocities: `RH_VRATE[band][v] = round(4096·T_c(100)/T_c(v))`, `RH_VAMP[band][v] = round(32767·F_pk(v)/F_pk(127))`.
+`prate(key) = round(4096·64/(T_c(band, 100)·fs))`; assert T_c ∈ [0.2, 25] ms. `RH_VLAYER[v]` = nearest layer centre.
+Tests: energy conserved with R = 0; contact against a rigid wall follows the Hertz law T_c ∝ v^(−(p−1)/(p+1)).
+
+### 6.7 Input gains b (calibrated on the quantised recursion)
+Run the MC3+EF1 recursion in float with the quantised `E, eps` of §6.5, inject a unit Q15 force for one sample,
+measure the x response amplitude; scale b_m so that the response equals the continuous modal response (residue ×
+ψ_m(x_c)·ψ_m(tip)/m_m, in gap units of the key's family) for a unit impulse. Assert |b| < 2^31 and ≥ 12
+significant bits.
+
+### 6.8 Pickup tables
+Per family (L_hor = 1 gap by definition; R_p/L_hor from params, prior 1.0 as R03's code): g0(u) = (f1 − 2)/f1² −
+(f2 − 2)/f2², f1 = (u − R_p)² + 1, f2 = (u + R_p)² + 1 (R03 eq. 25 with L_ver = 0). Φ(u) = ∫₀ᵘ g0, by 2^20-point
+trapezoid quadrature over |u| ≤ 8. Φ̃(s) = Φ(√s), D(s) = g0(√s)/(2√s) with D(0) = g0'(0)/2. Grid s_i = i/64 gap², i =
+0..2048. `RH_PHI[i] = round(Φ̃(s_i)·2^28/A)`, `RH_SLOPE[i] = round(D(s_i)·(1/64)·2^28/A)`, A = max(|Φ̃|, |D/64|) so both
+fit Q28. Asserts: |D(32)| < 3·10⁻³·max|D| (measured 2.65·10⁻³); the golden model's maximum s at v = 127 over all
+keys < 0.8·S_MAX; no word in the ROM window (nudge by 1 LSB, re-check). Two families: 1/16" (keys ≤ 32 and ≥ 96
+ESTIMATE from R05 W3 "first 15 notes" and "wood-tip notes"), 1/32" otherwise.
+
+### 6.9 off, gain, kill, life, GSCALE_INV
+`off` = L_ver/L_hor per key from params (per root, interpolated; prior −0.2 gap, sign by the fit). `gain`: render
+each key at v = 100 with the golden model, 1 s RMS → target −20 dBFS (ESTIMATE), smoothed over ±3 keys, as Q16;
+assert 8 voices at v = 127 sum below 2^23 in rh_mono. `kill`: the Σ-peak at which the voice's output falls below 1
+LSB Q15, solved with the golden model, ×2 margin. `life` = blocks(2·T60(V1) + 1 s) ≤ 6891. `GSCALE_INV[type][v] =
+round(2^32/(gscale_type·bark(v)))` with bark(v) = 2^((v−64)/64) in Q16; `HAMMER_R[i] = round(65536·2^(0.5·(i−4)/4))`.
+
+### 6.10 RLC, TYPE, jitter, residuals, emit
+RLC: prewarped bilinear low-pass, f = 5 kHz, Q from the TYPE (1.0 STAGE, 1.2 SUITCASE, 0.8 FELT, 1.5 DYNO —
+ESTIMATE), Q28. TYPE deltas (`rh_type_t`): STAGE '77 (0, 1.0, 0, 1.0); SUITCASE (0, 1.0, 0, 1.0, eq_lo +2 dB at 150
+Hz, eq_hi +3 dB at 4 kHz, from the Peterson tone stack — ESTIMATE); EARLY FELT (−1, 0.9, 0, 0.8); BELL/DYNO (+1, 1.2,
+−0.1 gap, 1.2). Jitter (Phase 3): xorshift32 with seed 0x46524F44, per key: V2 detune ±1.5 c, gain ±0.7 dB, d ±8 %,
+off ±0.05 gap, within the fit residuals. Residuals (Phase 3): per band and 3 layers, the tip displacement of modes
+4..12 for the first 512 samples from the contact simulation, Q15 of 1/8 gap. Emit the header with `GEN_VERSION`
+and sha256 of `params.json` and of every array; `make tables-check` fails on any diff.
+
+---
+
+## 7. Reference data and the fit
+
+### 7.1 Sources (`docs/model/data/sources.json`, committed; audio in `.local/reference/<id>/`, git-ignored)
+
+| id | Source | Instrument | Chain / processing | Layers etc. | Terms | Status |
+|---|---|---|---|---|---|---|
+| `pianobook` | Pianobook "Matt's Fender Rhodes" <https://www.pianobook.co.uk/packs/matts-fender-rhodes/> | Mark I 73 | DI: Countryman Type 10 → Chandler TG2; **no processing** (per the user) | layers, round robins, releases UNVERIFIED until downloaded | free login; terms unknown → analysis-only | not fetched |
+| `jrhodes` | jRhodes3d (Jeff Learman) | 1977 Mark I Stage 73 | harp direct; **EQ'd** (treble boost, low-mid scoop) and **denoised** | 15 roots, 3–5 layers, no releases, 44.1 kHz mono | samples CC BY-NC 4.0; sfz CC0 | not fetched (sha256 manifest prepared) |
+| `mpc_ek2` | MPC-Samples "Electric Keys 2" <https://www.mpc-samples.com/product.php/324/electric-keys-2-mpc-expansion/> (paid, $29.99) | Mark I 88 Stage **and** Mark II 73 **Suitcase** | chain and EULA unknown; possibly processed | **8 velocity layers**, 24-bit WAV | analysis-only until the EULA is read | not purchased (§17) |
+| `user_<name>` | the user's own captures (a Nord playing EP8 Nefertiti MKI / EP7 Amped Tines, or a real Rhodes) by §7.4 | as captured | as documented in the manifest | per §7.4 | the user's | none yet |
+| — | Nord Piano Library `.npno` | — | proprietary container: **never decoded** | — | — | excluded |
+
+Manifest record: `{id, name, url, instrument: {model, year, keys, amp}, chain: {pickup: "DI"|"mic", preamp,
+converter}, processing: {eq: bool|null, denoised: bool|null, compressed: bool|null, normalised: bool|null},
+content: {roots: [...], layers: n, round_robins: n, releases: bool, rate, bits, channels}, licence, fetched: bool,
+sha256_manifest: ".local/reference/<id>/SHA256SUMS", notes}`. `null` = unknown (treated as the worst case).
+
+### 7.2 Trust rules (which source may feed which measure)
+
+| Measure | Allowed sources | Rule |
+|---|---|---|
+| f0, partial ratios (C1, C3 frequency) | all | EQ-invariant. |
+| Late decay slope (C2 late), ripple rate/depth | all, **denoised sources only down to noise floor + 20 dB** (not +10) | denoise steepens tails. |
+| Early decay (C2 EDT), breakpoint | all | |
+| Noise floor, tail end, release (C4 target) | **unprocessed only** (`processing.denoised == false`): pianobook, user captures | |
+| Absolute spectral balance (A9 trend; RLC/EQ by ear) | **DI + unprocessed only**: pianobook, user captures | jRhodes is EQ'd; MPC unknown → excluded until its chain is known. |
+| Velocity → timbre ΔB (C6), bark onset | sources with ≥ 3 real layers; **mpc_ek2 primary** (8 layers) when available, else jrhodes | relative to the softest layer of the same root. |
+| Level spacing per layer | mpc_ek2, jrhodes (3 dB/layer stated) | relative only. |
+| Attack pitch (Phase 3) | any with ≥ 2 layers | |
+| SUITCASE TYPE deltas | mpc_ek2 Mark II Suitcase vs its Mark I Stage (same chain) | difference measures only. |
+| Re-strike, pedal, mechanical noises | user captures (per §7.4) | |
+
+`fit_model.py` minimises Σ_sources w_s · Σ_measures (model − ref)²/σ² with w_s = 1 for the source listed as primary
+for that measure, 0.3 for others allowed, 0 for excluded; it reports per-source residuals, and Gate A passes on the
+primary source of each measure. Where sources disagree beyond their stated tolerances the report flags it and the
+primary wins.
+
+### 7.3 Fetch and manifest tooling
+`tools/fetch_reference.py <id>`: jRhodes by sparse git clone at a pinned commit (65 mono FLACs, 22.9 MB); pianobook
+and mpc_ek2 require a manual download into `.local/reference/<id>/` (login / purchase), after which the script
+verifies or writes `SHA256SUMS`, probes the files (rate, bits, lengths, layer naming) and fills the manifest's
+`content` block. `fit_reference.py` runs per source → `docs/model/data/reference_<id>.json` (derived numbers only,
+with `derived_from` attribution). CI never needs the audio.
+
+### 7.4 Capture spec for user recordings (`docs/model/data/CAPTURE.md`)
+- **Chain:** DI or line out, no effects, no EQ, no compression, no normalisation; note the gear in the manifest.
+  48 kHz or 44.1 kHz, 24-bit, mono. Sustain pedal up unless the case says so. Room silent; record 10 s of silence
+  first (noise floor), and a 1 kHz tone at −18 dBFS from the same chain if possible (level reference).
+- **Level:** v = 127 on the loudest root must peak below −6 dBFS; do not change gain between files.
+- **Notes:** the 15 jRhodes roots (MIDI 29 35 40 45 50 55 59 62 65 71 76 81 86 91 96) at least; the full
+  chromatic E1–E7 if time allows.
+- **Velocities:** 8, 24, 60, 84, 104, 120, 127 (layer centres plus extremes); on a Nord, send MIDI from the FM-1
+  or a DAW so velocities are exact.
+- **Cases per root:** (a) hold 8 s then release, record 2 s more; (b) hold 1.5 s then release (damper); (c)
+  re-strike: v = 100 then v = 60 at 0.5 s; (d) pedal: strike, pedal down at 0.5 s, key up at 1 s, pedal up at 6 s.
+- **Naming:** `<src>_<midi>_<vel>_<case>_<rr>.wav`, e.g. `nordep8_045_120_a_1.wav`.
+- **Manifest:** one `user_<name>` record per instrument/chain.
+
+### 7.5 `params.json` (fitted) and the golden model
+`tools/rhodes_model.py` is float64 with exactly the C structure (§5): MC3 modes, pulse player, Hermite pickup in
+s (float tables of the same grid), RLC, same event semantics; it reads `rhodes_tables.h`'s generator inputs.
+`params.json` holds, per root: δ_b, k_rel, μ, σ_t, σ_b, σ_d (release), off, x-scale (tip amplitude per unit force),
+κ, O1/O2 σ overrides; and global: spring position p, R_p/L_hor, felt K/R per band, m_h, v_max, the gain target.
+**Gate A** = the golden model passes C1, C2, C3, C5, C6, C12 against the primary sources.
+
+---
+
+## 8. Checks (`tools/analyze.py`, thresholds in `tests/analysis_thresholds.toml`)
+
+Shared primitives (`tools/dsp_analysis.py`, unit-tested on synthetic decaying sines: f within 0.1 c, T60 within 1 %
+at 40 dB SNR): `band(sig, f, bw)` FFT-domain band-pass f·(1 ± bw) then the analytic signal; `env_db` = |analytic|
+smoothed by a 10 ms moving RMS, in dB; `inst_f` = slope of the unwrapped phase by linear regression over a window;
+`harm(sig, f0, k, win)` = power at k·f0 (±3 %) from a Hann FFT; noise floor = median of `env_db` over the last 0.3 s.
+
+| # | Check | Computation | Pass |
+|---|---|---|---|
+| C1 tuning | every key, v = 40, 3 s held | f = `inst_f(band(f0, 1/6 oct))` over [0.5, 2.5] s ([0.2 s, t(−40 dB)] above C6) | \|1200 log2(f/f_target)\| ≤ 2 c; first-half vs second-half drift ≤ 2 c |
+| C2 decay | 15 roots × real layers, model vs reference per §7.2 | `env_db(band(f0))`; two-segment least-squares fit over [peak − 3 dB, max(peak − 45 dB, floor + 10 dB (+20 dB if denoised))], breakpoint searched | late T60 ±20 % at ≥ 13/15 roots, never outside ±50 %; EDT T60 ±30 %; breakpoint level ±4 dB |
+| C3 overtones | bands at f(O1) ± 1.5 %, f(O2), where the reference has a peak ≥ 10 dB above its neighbourhood | T60 by the same fit; frequency by `inst_f` | T60(O1) ≤ 0.25·T60(V1), T60(O2) ≤ 0.1·T60(V1); T60 ±30 % of the reference; frequency within ±1 % of the reference ratio |
+| C4 release | each register's root: hold 1.5 s, key up | 5 ms RMS in dB, regress from key-up + 10 ms to −40 dB or 1 s; HP (8 kHz) residual at key-up | T60 within ±25 % of the (user-RELEASE-scaled) target (0.5/0.4/0.3/0.2 s unless an unprocessed source gives a measurement); click < −50 dBFS; `alive = 0` within 2·T60_rel + 50 ms |
+| C5 pickup unit | `rh_pickup_probe()` feeds x = 1.5 gap·sin(2π·441·t) through the C pickup | peaks per period, peak ratio, antisymmetry; off = 0 variant | 2 positive peaks/period above 20 % of max; smaller/larger ∈ [0.3, 0.95]; \|max/min\| = 1 ± 0.01; at off = 0: equal peaks (0.99–1.01) and P(H1)/P(H2) < −40 dB; C vs float ≤ −70 dB |
+| C6 velocity and bark | roots F1 E2 D3 D4 B4 at v = 8, 16, …, 127 | L(v) = peak 50 ms RMS; B(v) = 10 log10(Σ_{k=2..5} harm_k / harm_1) over [30, 150] ms; ΔB = B(v) − B(v_soft); layer centres per source | RMS monotonic; L(127) − L(8) ∈ [20, 40] dB (default R = 30 dB → 24–32); bass layer spacing 2–5 dB; \|ΔB_model − ΔB_ref\| ≤ 3 dB at each layer centre; ≥ 50 % of the ΔB rise above v = 84 |
+| C7 golden (Gate B) | every scripted case (notes, chords, re-strikes, pedal, TONE moves): C render vs golden render, aligned | residual energy / signal energy | ≤ −60 dB per case |
+| C8 alias | keys ≥ C5, v = 127, [0.05, 0.5] s | least-squares fit of all harmonics of f0 and f(O1) ± k·f0 below Nyquist; residual energy / fitted energy | ≤ −60 dB; report the worst key. If it fails: first reduce the treble x-scale within the fit's tolerance, then 2× oversample the pickup input with a half-band decimator (task P3-5) |
+| C9 noise | soft E1 (v = 20): C vs golden; silence | residual; output after every voice ends | ≤ −60 dB; exactly 0 |
+| C10 re-strike | E2 v = 100 then v = 60 at 0.5 s | C vs golden; 1 ms RMS | as C7; the 1 ms RMS never falls below −30 dB of its local level |
+| C11 device timing | the P2 worst-case block on the device (profile build) | `prof.max` | voices ≤ 1 900 µs, app total ≤ 2 400 µs, no `late` |
+| **C12 waveform** | full voice, F1 and A2, v = 120, [100, 200] ms | positive peaks per period above 20 % of the local max; ratio of the two | 2 ± 0 peaks; ratio ∈ [0.3, 0.95] (the reference's ratio ± 0.2 where an unprocessed source exists) |
+| **C13 chord linearity** | C3-E3-G3 at v = 100, DRIVE off, vs the sum of the three single renders | residual energy / signal | ≤ −60 dB (the voice chain is linear after the per-voice pickup; catches any accidental shared nonlinearity) |
+| Attack pitch (Phase 3) | `inst_f` at [50, 200] ms minus [2, 3] s, loudest vs softest layer, F1/B1/E2 | | within ±1.5 c of the reference |
+| A8 whirl (Phase 3) | envelope modulation depth of the fundamental band, 0.5–3 s | | 0.5–3 dB present |
+| A11 effects | delay time; TIME change; HALL RT60; phaser notches; tremolo rate | | ±1 sample at every division and BPM; zipper residual < −50 dBFS; RT60 1.25–5 s across the knob; notches sweep 150 Hz–4.8 kHz; rate = division ± 0.5 % |
+
+**Health (every golden render, `tests/check_render.py`):** no \|x\| ≥ 32700 outside "overload" scenarios; DC < 400
+LSB; peak > −42 dBFS; voices free ≤ 12 s after the last note-off with the pedal up; tail AC peak < 6 LSB in the
+last 0.25 s; click detector (8 kHz HP, spike < −50 dBFS at note-off, steal and preset load).
+
+**T-LISTEN (Phase 3 sign-off):** 15 roots × 2 velocities (layer centres ≈ 60 and ≈ 120), 3 s excerpts, model and
+reference RMS-matched ±0.5 dB over the first 1 s; triples in random order (reference, model, STK Rhodey low
+anchor); the listener rates realism 1–5 and picks "the real one"; headphones and the FM-1 speaker (reference through
+the same master path). Pass: model mean ≥ 3.5, anchor ≤ 2, correct identification ≤ 75 %. Scores and the git SHA go
+to `docs/model/reports/listening-<date>.md`; never the audio.
+
+---
+
+## 9. Effects (`fx.c`)
+
+Conventions: mono `int32` Q15 (with headroom) until TREM, stereo after. Coefficients are computed per 32-frame
+sub-block from the latched params; gains that change are ramped per sample (`step = (to − from) >> 5` over the
+sub-block). Every effect has `bypass` behaviour that keeps its state so switching on never clicks, and a
+switch-off that cuts the *input* and lets the tail ring (U8). Ported Felucca code keeps its GPL-3.0 header; the
+missing MIT helpers are rewritten in `dsp.c`: `softclip(x)` = Q15 tanh table (257 entries, lerp, |x| ≤ 4·32767
+in), `osc_sine(ph)` = 1024-entry Q15 table with lerp on a Q32 phase (returns ±32767), `clamp16`.
+
+### 9.1 DRIVE (port of Felucca `track_dist`, fx.c:96-114, per sample; v = DRIVE 0..127)
+```
+sub-block: g = 4096 + ((v*v*2*S[row]) >> 4)  (Q12; S[row] Q4 per TYPE drive row: 16 STAGE, 20 SUITCASE, 14 FELT, 24 DYNO ESTIMATE)
+           k = 32000 - 95 v ; mk = ((30000 - 120 v) * MU[row]) >> 12   (MU: make-up per row, level-matched by the host test)
+           bias = BIAS[row] (2400 STAGE; 3200 DYNO; 1800 FELT; 2400 SUITCASE)
+if v == 0: output = input (state kept)
+per sample: hp += (x - hp + 64) >> 7 ; x = clamp(x - hp, ±230000)
+            y = softclip((((x >> 2) * g) >> 10) + bias) - softclip(bias)
+            lp1 += mul15(y - lp1, k) ; lp2 += mul15(lp1 - lp2, k) ; out = mul15(lp2, mk)
+```
+
+### 9.2 TREM / WAH (switch OFF / TRM / WAH; 10 ms crossfade on switch change)
+```
+LFO: ph += inc per sample (uint32); inc from RATE: LFO_INC[v] = 2^32 * 0.5 * 24^(v/127) / fs (0.5..12 Hz), or the sync inc (§11.2)
+     lfo = osc_sine(ph) ; shape: lfo = sat15((lfo * (32768 + 7 * 32768 * v_shape / 127)) >> 15)   (sine -> rounded square)
+PAN (TW_MODE 0): theta = pi/4 * (1 + depth * lfo / 32767), gL = cos(theta), gR = sin(theta)  → per sub-block from a quarter-wave table; per-sample linear ramp
+                 L = mul15(x, gL) ; R = mul15(x, gR)
+AM  (TW_MODE 1): g = 32768 - ((depth * (32767 - lfo)) >> 16)  ; L = R = mul15(x, g)
+WAH: env += (|x| - env) >> 3 if |x| > env else env -= (env >> 11) + 1          (follower, Q15 of the input)
+     sweep = (env * (depth + 16)) >> 7 → row = clamp(sweep >> 9, 0, 63) with a 64-row cutoff table 300 Hz..2.5 kHz (log)
+     k_res = 0.60 - 0.45 * reso/127 (Q15) → resonance; SVF (ZDF, Felucca pf_svf form) with WAH_SVF[row] = {a1, a2, a3} Q14 for the row's g = tan(pi f/fs) and the current k, interpolated between rows per sub-block
+     out = 0.7 bp + 0.3 lp  ; L = R = out
+```
+SYNC applies to TRM only; in WAH the K2 knob is RESO.
+
+### 9.3 CHORUS / PHASER
+```
+PHASER (port of Felucca perform.c ph_side, stereo, R 90° behind): PH_A[33] Q14 as in R06 (150 Hz..4.8 kHz)
+  sub-block: q = tri(ph) ; qd = 32768 + ((q - 32768) * depth) >> 7 ; aL = lerp(PH_A, qd), aR = lerp(PH_A, qd - 16384)
+  per sample per side: xs = clamp((x + 2) >> 2, ±16383); u = xs + mul15(fb, FB) (FB = CP_FDBK * 180 Q15)
+      4 stages: y = clamp(px + ((a * (u - py) + 8192) >> 14), ±65535); px = u; py = y; u = y
+      fb = clamp(y, ±32767); out = (x + ((xs + y) * 7 >> 1)) >> 1   ((x + ap)/2 * 0.9, *4 undone)
+CHORUS (2 taps from one line of 1024 int16 in the pool, written at half level):
+  cho_buf[w & 1023] = clamp16(x >> 1)
+  sub-block: dL = (7 ms ± 3.5 ms * depth/127 * sine(ph)) in Q8 samples; dR the same with ph + WIDTH (CP_FDBK as L/R phase offset 0..180°)
+  per sample: tapL = lerp(buf[w - dL>>8], buf[w - dL>>8 - 1], dL & 255) << 1 ; tapR likewise
+              m = 16384 * min(127, 2 depth) / 127 ; L = x + mul15(tapL - x, m) ; R = x + mul15(tapR - x, m)
+```
+
+### 9.4 DELAY (D.DLY / A.DLY; `dly_buf[65536]` int16 at half level)
+```
+time: target_q8 = (SYNC != FREE ? delay_sync(SYNC) : ms_to_samples(TIME)) << 8, folded >> 1 while >= 65536 (cell shows "!")
+      D: dl glides toward target by <= 256 (1 sample) per sample
+      A: dl += (target - dl) >> 12 per sample (one-pole ≈ 100 ms) + wow (0.7 Hz sine, ±0.3 % of dl) + flutter (7 Hz, ±0.05 %) + LFSR noise LP'd (±0.02 %)
+per sample: i = (w - (dl >> 8)) & 0xFFFF ; r = lerp(buf[i], buf[i - 1], dl & 255) << 1   (D uses the integer tap when dl is settled)
+            fbp = D ? lp += mul15(r - lp, col) : softclip(lp += mul15(r - lp, mul15(col, 19661)))   (A: darker LP, saturation)
+            hp (55 Hz) on the feedback as track_dist's hp
+            buf[w & 0xFFFF] = clamp16((in_gated >> 1) + mul15(fbp, fb)) ; w++
+            wet = mul15(r, wetlvl) ; L += wet ; R += wet   (stereo-summed input: in = (L + R) >> 1)
+knobs: wetlvl = DEPTH * 258 (Q15) ; fb = min(27853, (DEPTH * 180 * FDBK) >> 7)  (0..0.85, FDBK scales) ; col = 2000 + TONE * 240
+switch OFF: in_gated = 0 (the line keeps ringing) ; D <-> A: keep the buffer, crossfade the read over 32 samples
+```
+A BPM change glides the synced time (D at ≤ 1 sample/sample, A through its slew: audible tape bend).
+
+### 9.5 REVERB (HALL, port of Felucca fx.c:46-90, 318-489, 606-613 verbatim, called per 32-frame sub-block)
+Structure: input decimated to 22.05 kHz (1-2-1), ×2580, low cut; 2 Schroeder diffusers {131, 307} with gains
+{11469, 10240} Q14; 8 lines {467, 509, 547, 593, 631, 673, 709, 743} at 22.05 kHz, lines 1 2 4 7 read through ±8-sample
+sines at 0.37/0.74 Hz, lines 0 3 5 6 one-pole LP `32767 − damp·180` with remainder feedback; gains g = 2^(−D·59.2/65536·
+2^(−SIZE/30))/√7 capped 0.99; Paley conference matrix; L = y0+y3+y4−y7, R = y1+y2+y5+y6; mono wet (L+R)·4 and side
+(L−R)·4 upsampled linearly; quiet lines round toward zero so the tail ends in exact silence. Frodhes mapping: v =
+RV_DEPTH 0..127 → `SIZE = 40 + v·70/127`, `send = v·258`, DAMP fixed 60; gains recomputed only when SIZE changes,
+rate-limited to once per 50 ms while the knob turns; v = 0 → send 0, tail rings; the REV lamp lit while v > 0.
+
+### 9.6 Master (port of Felucca `master_out`, fx.c:139-214)
+DC blocker (2 Hz leaky integrator, Q6, error feedback) → peak limiter (T = 18000; attack `env += (a − env) >> 2`;
+release `−((env − T) >> 12) − 1`; gain `(T << 15)/env`, a 32-bit divide only while limiting) → softclip → `out[2j] +=
+L`, `out[2j+1] += R`. Also: `fx_peak` = block max |out| (ISR-written) and `fx_quiet_blocks` (blocks with `fx_peak <
+16`, i.e. −66 dBFS); `fx_quiet()` = `fx_quiet_blocks ≥ 86` (500 ms). SPREAD (pan by key, ±45° max) is applied
+per voice in `rh_render` only when SPREAD > 0 (then the voice sum is stereo from the start: two gains per voice, +1
+multiply per sample; the mono stages up to TREM run on L and R separately in that case — budget +15 %, flagged on the
+CPU page).
+
+### 9.7 Budget and placement
+| Stage | Target µs | Pool |
+|---|---|---|
+| DRIVE | 20 | — |
+| TREM / WAH (worst WAH) | 29 | — |
+| CHORUS / PHASER (worst PHASER) | 87 | 2 KiB |
+| D.DLY / A.DLY (worst A) | 41 | 128 KiB |
+| HALL | 105 | ≈ 12.8 KiB |
+| master + splits | 30 | — |
+| **total** | **≈ 310** | |
+
+---
+
+## 10. UI
+
+### 10.1 PARAMS table (sound params: in the panel record and in presets; ids append-only; `P_COUNT` = 28 of 32 slots)
+
+Stored values are bytes (`int8_t` for bipolar). "R10" = reface 0.0–10.0 display: `tenths = (v·100 + 63)/127`.
+
+| id | key | cell | control | min | max | def | fmt | CC | law → engine |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 | TYPE | TYPE | ALGORITHM; TYPE column | 0 | 3 | 0 | ENUM `ST77 SUIT FELT DYNO` (long `STAGE 77`, `SUITCASE`, `EARLY FELT`, `BELL DYNO`) | 80 (bands of 32; TX 16 + 32t) | `RH_TYPE[v]` at note-on; drive row; RLC row |
+| 1 | DRIVE | DRV | K3 on PANEL | 0 | 127 | 13 | R10 | 81 | §9.1 |
+| 2 | TW_SW | TREM | LFO tap (focused) / layer K1 | 0 | 2 | 0 | ENUM `OFF TRM WAH` | 17 (0–42/43–85/86–127; TX 0/64/127) | 10 ms crossfade |
+| 3 | TW_DEPTH | DPTH | K1 (TREM focused) | 0 | 127 | 64 | R10 | 18 | §9.2 |
+| 4 | TW_RATE | RATE / RESO | K2 | 0 | 127 | 90 | HZ (TRM) / R10 (WAH) | 19 | 0.5·24^(v/127) Hz; WAH resonance |
+| 5 | TW_SYNC | SYNC | layer K2 | 0 | 13 | 0 | DIV | 20 | one LFO cycle per division; K2 steps divisions (backwards: clockwise = faster) |
+| 6 | TW_MODE | MODE | layer K3 | 0 | 1 | 0 | ENUM `PAN AM` | 21 | |
+| 7 | TW_SHAPE | SHPE | layer K4 | 0 | 127 | 0 | R10 | 22 | sine → rounded square |
+| 8 | CP_SW | CHO | FX tap / layer K1 | 0 | 2 | 0 | ENUM `OFF CHO PHA` | 85 | |
+| 9 | CP_DEPTH | DPTH | K1 | 0 | 127 | 50 | R10 | 86 | §9.3 |
+| 10 | CP_SPEED | SPD | K2 | 0 | 127 | 50 | HZ | 87 | 0.05·160^(v/127) Hz |
+| 11 | CP_SYNC | SYNC | layer K2 | 0 | 14 | 0 | DIV (+4BAR) | 23 | |
+| 12 | CP_FDBK | FDBK / WIDE | layer K3 | 0 | 127 | 40 | R10 | 24 | PHA: fb = v·180; CHO: L/R phase 0–180° |
+| 13 | DL_SW | DLY | ARP tap / layer K1 | 0 | 2 | 0 | ENUM `OFF DIG ANA` | 88 | |
+| 14 | DL_DEPTH | DPTH | K1 | 0 | 127 | 40 | R10 | 89 | wet and feedback (§9.4) |
+| 15 | DL_TIME | TIME | K2 (FREE) | 0 | 127 | 85 | MS | 90 | 20·50^(v/127) ms (36 ms at v = 19, 274 ms at 85) |
+| 16 | DL_SYNC | SYNC | layer K2; PANEL K2 steps divisions when ≠ FREE | 0 | 13 | 0 | DIV | 25 | folded, `!` shown |
+| 17 | DL_FDBK | FDBK | layer K3 | 0 | 127 | 90 | R10 | 26 | scales the feedback |
+| 18 | DL_TONE | TONE | layer K4 | 0 | 127 | 70 | R10 | 27 | col = 2000 + v·240 |
+| 19 | RV_DEPTH | REV | K4 on PANEL | 0 | 127 | 25 | R10 | 91 | §9.5 |
+| 20 | TONE | TONE | VOICING K1 | −64 | 63 | 0 | BIP | 28 | `tone_off = v · 2^25 / 128` (±0.5 gap) |
+| 21 | BARK | BARK | VOICING K2 | 0 | 127 | 64 | R10 | 29 | tip scale 2^((v−64)/64) via `pamp_scale`, gain compensated by `GSCALE_INV` |
+| 22 | BELL | BELL | VOICING K3 | 0 | 127 | 64 | R10 | 30 | O1/O2 b scale 2^((v−64)/32) |
+| 23 | HAMMER | HAMR | VOICING K4 | 0 | 127 | 64 | R10 | 31 | `hammer_h = (v − 64)·64` Q12: band shift ±1 at the ends, contact time ×2^(∓0.5) |
+| 24 | DECAY | DCAY | VOICING 2 K1 | 0 | 127 | 64 | R10 (hot `×1.00`) | 102 | `k_decay = DECAY_K[v]` (S = 2^((v−64)/32)) |
+| 25 | RELEASE | REL | VOICING 2 K2 | 0 | 127 | 64 | R10 | 103 | `k_rel = REL_K[v]` |
+| 26 | NOISE | NOIS | VOICING 2 K3 | 0 | 127 | 48 | R10 | 104 | 0 = off; thumps/felt at −60 + 36·v/127 dB |
+| 27 | SPREAD | SPRD | VOICING 2 K4 | 0 | 127 | 0 | R10 | 105 | pan by key ±(v/127)·45° |
+
+Global params (settings only): G0 BPM (`bpm10` 400–2400, def 1200; SELECT role BPM, GLO K1, PLAY tap), G1 CLOCK
+(`INT AUTO USB`, def AUTO), G2 KEYVEL (1–127, def 96; GLO K3, SELECT role DYN), G3 TUNE (±50 c, GLO K4), G4 MIDICH
+(0 = ALL, 1–16; MIDI K1), G5 CCTX (off), G6 VELCRV (`SOFT MED HARD FIX`, MIDI-in only), G7 CLKOUT (off), G8 SC_MODE
+(`OFF SNAP DEG`), G9 SC_SCALE (11 scales), G10 SC_ROOT (C..B), G11 SC_TRANS (±24), G12 SELROLE (`DYN BPM LAST`, def
+DYN), G13 ACCEL (on), G14 HELP (on), G15 LEDS (`FULL DIM OFF`), G16 SCLLED (on), G17 COLOR (palette index), G18 MIDIQNT
+(off), G19 HALFPED (on), G20 HUMAN (0–16). Velocity curves: SOFT `v' = 127·(v/127)^0.7`, MED linear, HARD `^1.4`, FIX
+100 (tables of 128).
+
+Other MIDI: CC 64 sustain (continuous when HALFPED), CC 120/123 all sound/notes off, CC 1 optional → TW_DEPTH
+(MENU), pitch bend ±2 semitones (`bend_t` via `exp2_q30`; applied to new notes and to sounding notes at the next
+sub-block through §5.6, cost 10 evaluations per voice per bend event, rate-limited to once per block), PC 0–11 →
+F01–F12, PC 16–31 → U01–U16. CC TX sends the stored v with the bands above, rate-limited to ≥ 10 ms per CC.
+
+Descriptor: `typedef struct { const char *lab4, *name; int8_t lo; uint8_t hi; int8_t def; uint8_t fmt, cc, where;
+const char *const *names; } pdesc_t;` A host lint checks `lab4` ≤ 4 chars, `name` ≤ 13, CCs unique, defaults in range.
+
+### 10.2 Screen layouts (240×240; FONT_S 8×16, FONT_L 16×32 capitals; palette `pal[]` from gfx.c: C_LINE, C_DIM,
+C_GRAY, C_AMB, C_HI; C_ACC = the palette accent for focus/hot fills with black text)
+
+**PANEL**
+```
+y 0   header FONT_S y2: cols 0-14 "F03 SUITCASE*", cols 16-20 BPM "120.0" (inverted 1 s after a change), beat square 6x6 at (172,7),
+      cols 23-25 "SNP"/"DEG", cols 27-29 "PED"
+y 20  rule
+y 22  7 column titles, 32x16 each at x = 2 + 34 i, centred; focused (cols 2-4) inverted
+y 40  row A: TYPE row 0 / switch A labels (TRM CHO DIG) ; y 56 TYPE row 1 ; y 64 OFF lamp 6x6 at column centre (cols 2-5) ;
+y 72  TYPE row 2 ; y 88 row B: TYPE row 3 / switch B (WAH PHA ANA)
+y 105 rule
+y 108 slot 1 label (C_GRAY) ; y 126 gauge 28x6 at x+3 (frame C_LINE, fill v*26/127 C_AMB) ; y 136 value (C_HI; hot = inverted 1.5 s)
+y 154 slot 2 label ; y 172 gauge ; y 182 value
+y 201 rule
+y 204 footer row 1: knob map "K1 DPTH K2 TIME K3 DRV K4 REV" ; y 222 row 2: hints/messages "LFO:TRM FX:CHO ARP:DLY PLY:TAP"
+      hot readout replaces both rows: FONT_L y 205 centred, e.g. "TIME 274MS", "RATE 4.75HZ", "1/1>1/2 BUF", for 1.5 s
+```
+Column i: TYPE(0) rows = the 4 types; DRIVE(1) slot 1 = AMT; TREM(2) DPTH / RATE|RESO; CHO(3) DPTH / SPD; DLY(4)
+DPTH / TIME|DIV; REV(5) slot 1 = REV + lamp; VOL(6) slot 1 = LVL from the MASTER ADC (0..1023 → R10, redrawn when it
+moves ≥ 8 counts). Value strings ≤ 4 chars: R10 `0.0`–`10.0`; MS `36`–`999` then `1.0S`; DIV names; BIP `-5.0`–`+5.0`.
+
+**Hold layer** (LFO/FX/ARP held ≥ 400 ms or combo): replaces y 106–199 with 4 cards 59×94 at x = 60k: label y 110,
+value FONT_L y 132 (≤ 3 chars, else FONT_S y 140), gauge (x+4, 170) 51×6, `K1`..`K4` y 180. Cards: TREM `SW SYNC MODE
+SHPE`; CHO `SW SYNC FDBK —`; DLY `SW SYNC FDBK TONE`. Footer `[LFO] TREM LAYER` / `LET GO: PANEL`. Drawn as 2 strips.
+
+**Pages with 4 cards** (VOICING, VOICING 2, SCALE, GLO, MIDI): header as PANEL (page name; TYPE short name at cols
+23–25 on VOICING pages); cards 59×80 at (60k, 24): label y 28 (≤ 7 chars), value y 52, gauge (x+4, 78), `Kn` y 86;
+graph 240×94 at y 106 in 2 strips: VOICING = the Φ̃ curve for the current TONE (240 points) + KEY VEL marker; VOICING
+2 = decay sketch (T60·DECAY of the last note, release); SCALE = degree numbers y 112 + `draw_keys` at y 140 (root
+C_ACC, scale C_KEY, out C_OFF, silent black keys C_LINE); GLO = BPM FONT_L y 112, 4 beat squares 16×16 at x = 72 + 28k
+y 152, source text y 176; MIDI = last message text y 120 + clock state.
+
+**SAVE page:** header `SAVE TO USER`; rows y = 28 + 20r, 8 per view, `U01 ST77 TRM PHA DD`, selected inverted,
+empty `U05 ----`; footer `[PRESETS]SLOT [OCT+]SAVE` / `[OCT-]CANCEL` or `SAVING WHEN QUIET`.
+
+**MENU** (HOME held 700 ms): rows FONT_S y = 24 + 18r: SELECT ROLE, KNOB ACCEL, HELP, LEDS, SCALE LEDS, COLOR, MIDI IN
+QNT, HALF PEDAL, HUMANIZE, INFO, CPU, FACTORY RESET (scrolls; PRESETS moves, K1–K4/OCT± change, OCT+ opens INFO/CPU/RESET
+(`SURE? OCT+`), HOME exits and saves). INFO: `v<ver>`, `BAT <raw>`, `ISR <max us>`, `POOL <KB>`, `EV DROP <n>`.
+**CPU page:** one row per stage (name, cur µs, max µs, bar to 2 900), total, averaged load %, voices/modes, late and
+shed counts, the 16-bin histogram as a sparkline; OCT− resets maxima; redrawn at 4 Hz on changed rows only.
+
+**Hint strings** (≤ 30 chars, linted): PANEL `K1 DPTH K2 TIME K3 DRV K4 REV` / `LFO:TRM FX:CHO ARP:DLY PLY:TAP`; first
+boot `HOLD LFO/FX/ARP: MORE`; VOICING `K1TONE K2BARK K3BELL K4HAMR` / `[ENV]DECAY  [HOME]PANEL`; VOICING 2 `K1 DCAY K2
+REL K3 NOIS K4 SPRD` / `[EDIT]VOICING [HOME]PANEL`; SCALE `K1 MODE K2 SCAL K3 ROOT K4 TRN` / `HOLD SEL + KEY: ROOT`; GLO
+`K1 BPM K2 CLK K3 VEL K4 TUNE` / `[PLAY]TAP [GLO]MIDI PAGE`; MIDI `K1 CH K2 CCTX K3 VCRV K4 CLKO` / `[GLO]PANEL`.
+Messages (row 2, 1.5 s): `TYPE SUITCASE`, `EXT CLOCK`, `UNDO`, `REDO`, `SAVED U05`, `SAVING WHEN QUIET`, `CLOCK LOST`,
+`PRESET F04 80S BALLAD`, `ROOT D  DOR`, `SEQ: LATER`.
+
+**Draw scheduler:** each element has a dirty bit and an estimated cost (bytes/1500 ms); one element per pass, only
+once the previous blit has had its estimated time (or `lcd_busy()` if exposed); priority hot cell → header → footer
+→ columns → graph strips. Redraw costs at 12 MHz SPI (ESTIMATE): knob turn 2.8 + 18.2 KB (14 ms over 2 passes); switch
+tap 12 KB (8 ms); page change 115 KB (≈ 12 passes). A host test (`HOST_BLITMAX`) asserts ≤ 240×64×2 B per pass.
+
+### 10.3 Button state machine (TAP_MS 250 for REC; HOLD_MS 400 for layers and SEL; LONG_MS 700 for HOME, SAVE;
+QUIET_MS 250 knob-ignore after a layer closes; any other input while held = combo: the layer opens at once and the
+release is not a tap)
+
+| Button | Context | Tap | Hold ≥ threshold | Release after hold/combo |
+|---|---|---|---|---|
+| LFO / FX / ARP | PANEL, column unfocused | focus TREM / CHO / DLY (sound unchanged) | open the column layer: K1–K4 edit SW SYNC x y; keys keep playing | close; ignore knobs QUIET_MS |
+| LFO / FX / ARP | PANEL, column focused | toggle OFF ↔ `last_on[col]` (saved) | layer | close |
+| LFO / FX / ARP | any page / MENU / SAVE | cancel if needed, go to PANEL, focus (no toggle) | layer over PANEL | PANEL |
+| EDIT | any | VOICING; on VOICING → PANEL | — | — |
+| ENV | any | VOICING 2; on it → PANEL | — | — |
+| SEL | any | SCALE; on SCALE → PANEL | peek: key LEDs show the scale, header `C DOR SNAP`; **key k: ROOT = (k+5) % 12**, silent, no MIDI; K1–K4 edit | previous screen |
+| GLO | any | GLO; on GLO → MIDI page; on MIDI → PANEL | SELECT = BPM ±0.1 | — |
+| HOME | any but MENU | PANEL (cancels SAVE/dialogs) | ≥ LONG_MS: MENU | — |
+| HOME | MENU | exit (save settings) | — | — |
+| SAVE | PANEL / pages | SAVE page | ≥ LONG_MS: UNDO / REDO the last preset load | — |
+| SAVE | SAVE page | cancel | — | — |
+| PLAY | any | tap tempo (§11.1); `EXT CLOCK` message when locked externally | — | — |
+| REC | any | sustain on at press; released < TAP_MS flips the latch; ≥ TAP_MS releases and clears the latch | | |
+| OCT− / OCT+ | PANEL / pages | octave ±1, clamp ±2; both within 100 ms → 0 | — | — |
+| OCT− / OCT+ | SAVE / dialog / MENU | cancel / confirm (MENU: OCT− back, OCT+ open) | — | — |
+| SEQ | any | `SEQ: LATER` (Phase 8 looper) | — | — |
+
+Encoders (any non-zero count is input and makes a held button a combo): ALGORITHM = TYPE (clamped, message);
+PRESETS = browse F01..F12, U01..U16 (clamped; loads after 400 ms still, §12.1) / SAVE slot / MENU row; SELECT = role
+(DYN: KEY VEL ±1 with acceleration; BPM: ±1.0; LAST: the last-turned param); K1, K2 = focused column slots (DIV steps
+when synced) / layer cards 1–2 / page cards 1–2 / SAVE: K1 = slot / MENU value; K3, K4 = DRIVE, REVERB / cards 3–4.
+Acceleration (ACCEL on): detents within 50 ms of the previous add ×4 for ranges > 32 steps. Edge cases: page changes
+never change the focus (saved, default TREM); a layer release during QUIET_MS ignores K1–K4 detents.
+
+### 10.4 LEDs (evaluated once per pass into a picture, then written; "dim" = `fm1_led_dim`)
+LFO/FX/ARP: full = the column's switch ≠ OFF; dim = OFF and focused; off otherwise. EDIT/ENV/SEL/GLO: full on
+their page (GLO on GLO or MIDI; SEL full while held). HOME: full on PANEL, dim in MENU. SAVE: full while edited (`*`);
+blinks 4 Hz while a save waits for quiet. PLAY: beat flash (1/6 beat; 1/2 beat on beat 1) only while a synced effect
+is on, the clock is external and locked, or clock out is on; tap feedback 80 ms. REC: full while sustain is on from
+any source; CC64 half-pedal > 0 and < 64: dim. OCT±: full when octave < 0 / > 0. SEQ: off. Keys: scale OFF → key k
+full while it holds a note or its note rings under sustain (per key); scale ON + SCALE LEDS → scale tones dim, root
+full, held keys full, DEG black keys off, SNAP out-of-scale off; SEL held → as scale ON; LEDS = DIM/OFF → every full
+becomes dim / all off except REC and the beat.
+
+### 10.5 Settings record (always 256 B; saved 2 s after the last change if it differs (memcmp), when `rh_quiet() &&
+fx_quiet()`, through §12.3)
+
+| off | size | field |
+|---|---|---|
+| 0 | 1 | `ver` = 1 |
+| 1 | 1 | `flags`: b0 edited, b1 CC TX, b2 CLK OUT, b3 HELP, b4 ACCEL, b5 SCALE LEDS, b6 MIDI QNT, b7 HALF PEDAL |
+| 2 | 1 | `oct` int8 −2..2 |
+| 3 | 1 | `preset` 0–11 F, 16–31 U, 255 none |
+| 4 | 2 | `bpm10` LE |
+| 6..19 | 14 | `clock`, `midi_ch`, `key_vel`, `vel_curve`, `tune` int8, `sel_role`, `focus`, `color`, `leds`, `humanize`, `sc_mode`, `sc_scale`, `sc_root`, `sc_trans` int8 |
+| 20 | 3 | `last_on[3]` (1/2) for TREM, CHO, DLY |
+| 23 | 1 | `hints_seen` |
+| 24 | 32 | `panel[32]` sound params (28 used) |
+| 56 | 32 | `undo[32]` |
+| 88 | 1 | `undo_valid` |
+| 89 | 167 | reserved 0 |
+
+Load: every byte range-checked against PARAMS (out of range → default); `ver > 1` → defaults; new fields are
+appended with defaults. Fixtures `tests/fixtures/settings_v*.bin` must load.
+
+### 10.6 Preset record (48 B) and factory presets
+`ver` (1), `np` (params stored, 28; ids ≥ np take defaults), `used`, reserved, `name[12]` (ASCII 32..95, space
+padded, FONT_L-safe), `p[32]`. Auto-name on save: `TYPE4 + " " + TRM|WAH + CHO|PHA + DD|AD` (≤ 12 chars). Factory
+(R10 bytes = round(x·12.7); switch 0/1/2; `—` = default): F01 STAGE 77 (0, 13, off, off, off, 25); F02 70S PHASER
+(0, 25, off, 2/83/38/0/50, off, 32); F03 SUITCASE (1, 13, 1/64/64/0/0/40, off, off, 25); F04 80S BALLAD (2, 0, off,
+1/64/50/0/40, 1/38/85/0/90/70, 64, BELL 80); F05 SLAPBACK (2, 13, off, off, 2/64/19/0/60/50, 13); F06 BRIGHT CHORUS (3,
+32, off, 1/32/38/0/40, 1/19/19/0/60/90, 25, TONE +16); F07 FUNK WAH (0, 51, 2/89/64/0/0/0, off, off, 13, BARK 80); F08
+BARK (0, 76, off, off, off, 13, BARK 100, HAMR 90); F09 TAPE ECHO (1, 19, off, off, 2/57/—/8/100/50, 38); F10 DREAM (2,
+0, 1/38/—/6/0/0, 2/51/25/0/60, 1/51/—/9/100/70, 89, DCAY 80); F11 RADIO (3, 115, off, off, off, 0, TONE +30); F12 AM
+TREMOLO (0, 13, 1/70/100/0/1/90, off, off, 25). (TYPE indices after S17: 0 STAGE 77, 1 SUITCASE, 2 EARLY FELT, 3 BELL
+DYNO; values ESTIMATE, tuned by ear in P7-4.)
+
+### 10.7 Host UI tests (`tests/scripts/ui_*.txt`, harness verbs of §14.1)
+1 boot/shot (7 columns; FOCUS=2 TW_SW=0; layout lint); 2 focus/switch (no WAH between TRM and OFF; FX tap only
+focuses); 3 layer (ARP held, K1 SW → DIG, K2 SYNC → 1/4; detents in QUIET_MS ignored); 4 TYPE keeps FX; 5 knob clamp
+(±300 detents, no wrap); 6 tap tempo (4 taps at 500 ms → 120.0; restart after 2 s); 7 BPM on SELECT and GLO+SELECT;
+8 delay sync fold (`1/2!`, echo at 1.000 s ± 1 ms); 9 clock follow (100 BPM ± 0.5 within 2 beats; `CLOCK LOST` at
+500 ms; tap → `EXT CLOCK`); 10 SNAP (C#4 → 60; refcount); 11 DEGREES (Felucca `scale_test.c` table); 12 SEL+key root
+(no MIDI); 13 scale LEDs per key; 14 SELECT DYN → velocity 56; 15 settings round trip (256 B, ver 1); 16 save waits
+for quiet; 17 sustain regression; 18 lint; 19 redraw budget; 20 FX switch-off tail and D↔A swap (no step > 2000); 21
+preset browse settle + undo; 22 save flow and auto-name; 23 MIDI CC/PC; 24 CC TX rate limit; 25 preset load
+crossfade (click detector); 26 pitch bend (±2 st, C1 on a bent note ≤ 2 c); 27 half-pedal (CC64 = 54 → release T60
+× ≈ 1/0.7, ESTIMATE check ±30 %).
+
+### 10.8 Developer CC map (Phase 2, before the panel exists) and the profiler dump
+CCs 20–31, 102–105 as above drive TONE/BARK/BELL/HAMMER/DECAY/RELEASE/NOISE/SPREAD from a DAW; CC 102 = result id, CC
+108 = field, CC 103–107 = 32-bit value in 7-bit chunks stream the profiler (`tools/bench_read.py` decodes to CSV);
+PLAY on the CPU page streams it on demand. No platform change needed (SysEx hook deferred).
+
+---
+
+## 11. Tempo, sync and scales (`tempo.c`, `scale.c`; main loop; ISR reads volatiles)
+
+### 11.1 Tempo engine (ticks; `scratch-05/tempo_ticks.py`)
+```c
+typedef struct {
+    uint16_t bpm10;                  /* 400..2400 */
+    uint8_t  src;                    /* 0 INT, 1 USB locked (AUTO follows while pulses arrive) */
+    uint32_t pulse_ticks, pulse_rem; /* 600000000 / bpm10, 600000000 % bpm10 (32-bit divides) */
+    uint32_t next_pulse, acc_rem;    /* Bresenham over 24 PPQN, in ticks */
+    uint8_t  pulse;                  /* 0..23 */
+    uint32_t tap[4]; uint8_t ntap;   /* ticks */
+    uint32_t in_last, in_acc; uint8_t in_n;   /* clock follow: ticks */
+} tempo_t;
+static volatile uint32_t beat_samples_v = 22050;      /* 26460000 / bpm10 */
+tempo_set10(b): bpm10 = clamp(b, 400, 2400); pulse_ticks = 600000000u / bpm10; pulse_rem = 600000000u % bpm10;
+                beat_samples_v = 26460000u / bpm10; recompute sync incs (§11.2)
+tempo_tap(): now = fm1_ticks(); if (ntap && now - tap[ntap-1] > 48000000u) ntap = 0;        /* 2 s */
+             if (ntap == 4) shift; tap[ntap++] = now;
+             if (ntap >= 3) { span_t = (tap[ntap-1] - tap[0]) / 2400u;  /* 0.1 ms units, 32-bit */
+                              tempo_set10(6000000u * (ntap - 1) / span_t); re-phase: pulse = 0, next_pulse = now; }
+tempo_poll(): now = fm1_ticks(); while ((int32_t)(now - next_pulse) >= 0) {
+                 next_pulse += pulse_ticks; acc_rem += pulse_rem; if (acc_rem >= bpm10) { acc_rem -= bpm10; next_pulse++; }
+                 if (clk_out && src == 0) midi_send(0xF8, 0, 0); pulse = (pulse + 1) % 24; beat_led(pulse); }
+tempo_f8(stamp): dt = stamp - in_last; in_last = stamp; if (dt < 192000u || dt > 1920000u) { in_n = in_acc = 0; return; }  /* 8..80 ms */
+                 in_acc += dt; if (++in_n == 24) { beat_01ms = in_acc / 2400u;            /* ticks per beat -> 0.1 ms units */
+                     bpm10_new = 6000000u / beat_01ms;                                      /* two 32-bit divides, no 64-bit */
+                     bpm10 += (bpm10_new - bpm10) / 4, or snap when |diff| > 10 %; tempo_set10(bpm10); in_n = in_acc = 0; }
+                 pulse = (pulse + 1) % 24; src = 1; last_pulse = stamp
+AUTO: src falls back to 0 when fm1_ticks() - last_pulse > 12000000u (500 ms): message CLOCK LOST, keep the last BPM.
+FA: pulse = 0, synced LFO phases = 0 ; FB: continue ; FC: stop following until the next F8
+```
+Stamps: the main loop stamps each F8 with `fm1_ticks()` as it drains `midi_get` (jitter = one pass, averaged
+over 24 pulses). `beat_samples_v` ≤ 66 150; every sync product below stays < 2^31.
+
+### 11.2 Sync table (1/96-quarter units) and increments
+`SYNC_NAME[] = {FREE, 1/32, 16T, 1/16, 8T, 16D, 1/8, 4T, 8D, 1/4, 4D, 1/2, 1/1, 2BAR, 4BAR}`, `SYNC_UNITS[] = {0, 12,
+16, 24, 32, 36, 48, 64, 72, 96, 144, 192, 384, 768, 1536}` (4BAR for chorus only). `sync_samples(i) = beat_samples_v ·
+SYNC_UNITS[i] / 96`. Delay: `while (s >= 65536) s >>= 1` (fold, `!` shown). LFO: `inc = 0xFFFFFFFFu / s` (one 32-bit
+divide, error ≤ 1.2·10⁻⁴ cycle). Recomputed only on BPM or knob change and published as volatiles; LFO phases are
+reset to 0 on the 3rd tap and on FA. Rate knob with SYNC ≠ FREE walks the table backwards (clockwise = faster).
+
+### 11.3 Scales (port of Felucca `seq.c` SCALE_MASK, scale_snap, kb_pitch WHITE branch; test table ported)
+Masks (bit i = i semitones above ROOT): MAJ 0 2 4 5 7 9 11; MIN 0 2 3 5 7 8 10; DOR 0 2 3 5 7 9 10; MIX 0 2 4 5 7 9
+10; LYD 0 2 4 6 7 9 11; PHRY 0 1 3 5 7 8 10; HARM 0 2 3 5 7 8 11; MEL 0 2 3 5 7 9 11; PEN 0 2 4 7 9; MPEN 0 3 5 7 10;
+BLUES 0 3 5 6 7 10. Key k (0 = F3) → n = 53 + k. OFF: n + 12·oct + TRN. SNAP: `scale_snap(n + 12·oct + TRN)` rounds
+*down* to the nearest scale tone. DEG: white keys walk degrees with `DEGREE[12] = {0,−1,1,−1,2,3,−1,4,−1,5,−1,6}`,
+C4 = degree 0 = 60 + ROOT, black keys silent (255); TRN and octave added after. `held[k]` stores the resulting note;
+`cnt[128]` reference counts (second key on the same note: no retrigger; first key-up: no cut). A change while keys
+are held ends exactly the note each key started. MIDI in is not quantised unless MIDI QNT. Header shows `SNP`/`DEG`.
+
+---
+
+## 12. Presets and the flash protocol (`presets.c`, `storage.c`)
+
+### 12.1 Flows
+- **Browse/load:** PRESETS detents move the candidate; the header shows its name inverted; **400 ms after the last
+  detent** the candidate loads: if `edited && !undo_valid` copy the panel to `undo` (set `undo_valid`); copy p[] to the
+  panel; set `preset`; clear `edited`; message. Effects follow U8 (tails ring; switches crossfade; nothing clicks).
+- **Edit:** any sound-param change sets `edited` when the panel differs from the loaded preset (memcmp).
+- **Undo/redo:** SAVE held swaps panel ↔ `undo`; `UNDO` then `REDO`.
+- **Save:** SAVE → SAVE page; PRESETS/K1 pick U01..U16; OCT+ on a used slot → `OVERWRITE? OCT+`; a second OCT+ queues
+  the write with the auto-name; the write runs when quiet (SAVE LED blinks, `SAVING WHEN QUIET`), then `SAVED U05`,
+  `preset` = that slot, `edited` cleared. `undo_valid` is cleared only on a save. Never refuse a save: queue it.
+
+### 12.2 Bank storage (port of Felucca `storage.c`)
+16 records = 768 B in one object with a 32 B header (magic `FRPB`, seq, length, CRC32), A/B sectors 0x97000/0x98000:
+write the inactive sector (erase, data, header last), read back, then it is the newest valid copy; load picks the
+valid copy with the higher seq. Mirrored in RAM (768 B in the pool) so browsing never reads flash. Factory presets
+are `const`. Torn-write test: a simulated NOR with a cut after every programmed byte and during every erase.
+
+### 12.3 Flash write protocol (`app_flash_begin/end`, main loop)
+```
+app_flash_begin(): require rh_quiet() && fx_quiet() (else return BUSY: the caller retries next pass)
+                   post EV_MUTE(1); wait until rh_mute_ack ≥ 2 blocks (the DMA now replays two silent halves)
+                   -- the erase/program (interrupts off ≤ 400 ms worst, ≈ 50 ms typical, measured K14) loops silence
+app_flash_end():   clear the delay line (memset 128 KiB ≈ 0.3 ms), chorus line, HALL lines (they were < −66 dBFS: the
+                   clear only removes the time discontinuity); post EV_MUTE(0)
+```
+Used by settings (platform `settings_save`) and the preset bank. Flash wear: never save in a loop; settings only
+when changed (memcmp).
+
+---
+
+## 13. Platform deltas (upstream Dinghy files Frodhes touches)
+
+| File | Change | Form | Upstream? |
+|---|---|---|---|
+| `firmware/src/gfx.c` | host-mode `.pool` guard | done | yes |
+| `firmware/src/platform.c` | `#ifndef CV_MAX` (keep 240×64; the hook costs nothing); `APP_FL_RANGE(off, n)` OR'ed into `FL_RANGE_OK` for 0x97000–0x98FFF; `settings_save` unchanged but called only inside §12.3 | override macros defined before `#include "platform.c"` | yes (generic hooks) |
+| `firmware/src/platform.c` (optional, Phase 0) | accumulate ticks spent in `fm1_timer5_irq` while `in_audio`, exposed as `volatile uint32_t nest_ticks` | 3 lines | yes |
+| `tests/host.c` | harness verbs (§14.1), `fm1_in.buttons`, releases, encoders, velocity, LED log, `HOST_STORE`, `HOST_BLITMAX`, `expect`, exit code, `RENDER_ONLY`, profile | additive under `DINGHY_HOST` | yes |
+| `tools/build.py` | identity rules (D3); forward `FRODHES_BENCH`/`FRODHES_CRASHTEST`; call `tools/frodhes_checks.py`; pool headroom gate | small | partly |
+| `firmware/src/lcd.c` | `LCD_BAUD` is already `#ifndef` | none | — |
+
+Each delta is one commit; README keeps the table; PRs offered to zvenson/dinghy; the nightly `upstream` job merges
+`upstream/main` into a scratch worktree and runs `make test`.
+
+---
+
+## 14. Test, CI and release
+
+### 14.1 Host harness verbs (`tests/host.c`; one line per event: `T verb args`)
+`keys MASK` (as now) · `key K VEL` / `keyup K` · `down ID` / `up ID` / `btn ID` (press + release 50 ms) / `hold ID MS` ·
+`enc ID N` · `adc N` · `midi ST D1 D2` · `clock BPM10 MS` (F8 at the exact period, Bresenham) · `shot NAME` · `dump`
+(prints `P TYPE=0 … G BPM=1200 … FOCUS=2 PAGE=PANEL LED …`) · `expect KEY=VAL` / `expect led ID 0|1|dim` / `expect
+midi ST D1 D2` (PASS/FAIL, exit code = failures) · `profile` (host instructions per block) · `end`. Environment:
+`HOST_STORE=path` persists settings and the bank; `HOST_BLITMAX=1` prints the largest per-pass blit; `RENDER_ONLY=1`
+skips screens. `fm1_led_key` logs changes.
+
+### 14.2 Levels
+| Level | What | Gate |
+|---|---|---|
+| U unit | `tests/unit/*.c` + Python generator tests; ASan/UBSan `-fsanitize=address,undefined,integer-divide-by-zero -fno-sanitize-recover=all` | exact or stated tolerance |
+| G golden | every `tests/scripts/*.txt` → WAV/PPM → FNV-1a 64 in `tests/golden/{audio,screens}.txt`; `GOLDEN_UPDATE=1` rewrites with a PR justification | hash equality (integer code is bit-exact across compilers when UB-free; UBSan guards that) |
+| H health | `tests/check_render.py` on every render | §8 health limits |
+| A analysis | `tools/analyze.py` C1–C13, A8, A11 vs `reference_<id>.json` | §8 thresholds, per-source trust |
+| C cost | host instructions per sample (macOS `proc_pid_rusage`, Linux `perf stat -e instructions:u`) vs `tests/cpu_baseline.txt` (+25 %); static loop metric of `rh_render`, `rh_mode_run`, `rh_pickup_run`, `rh_events`, `rh_load`, `fx_*`, `fm1_alnk0_irq` from `build/frodhes.dis` vs `tests/target_budget.txt` (+10 %); device µs = instructions × `tests/device_ratio.txt` (1.0 until Phase 0) ≤ 2 400 per block and ≤ each stage alarm | |
+| F fuzz | MIDI byte streams, settings/preset records, key/knob storms; fixed seed; 20k iterations in CI, 1M nightly | no sanitizer error, no hang (1 host second renders ≤ 2 s wall), no stuck voice after all-notes-off + pedal up |
+| D device | checklist below, `tools/fm1_profile.py`, `tools/fm1_capture.py` | recorded in `docs/model/reports/device-<phase>.md` |
+| L listening | T-LISTEN (§8) | recorded |
+
+**Unit test contents:** `fxp.h` helpers (edges, rounding); `exp2_q30` ≤ 2e-7; MC3 kernel per key and mode from a full hit
+and from −60 dB: round-off ≤ −90 dB re peak, T60 ±2 %, voice off before 2·T60 + 1 s, no state > 2^28; coefficient path
+(§5.6 thresholds); pickup (C5, zero input → exactly 0, ROM-window scan); hammer tables (monotone VAMP, T_c range,
+layer continuity, R dB ±0.1 for R = 12..36); allocator (same-note superposition, steal order, fade, pedal, refcount);
+tempo (`beat_samples` vs exact ±1 sample for every bpm10; sync overflow at 40 BPM × 4BAR; tap 4 × 500 ms → 120.0;
+follower with ±3 ms jitter → ±0.5 BPM after 2 beats, 500 ms → INT); scales (Felucca table); params/settings
+(formatting ≤ 5 chars, fixtures, CRC single-bit flip); storage (torn writes); fx (`softclip` continuity, `osc_sine`
+range, HALL RT60 and no ringing via the ported `reverb_test`, delay time exact, phaser notch sweep, tremolo equal power).
+
+### 14.3 Device checklist (every phase; `docs/model/reports/device-<phase>.md`)
+1 `./build.sh` passes; record image/RAM/pool. 2 `fm1_install.py --info` identity and version before/after. 3 cold boot,
+warm reboot, 10-minute soak: no crash screen, no dropout. 4 all 27 keys, OCT ±2, REC hold and latch, CC64, MIDI v =
+1/64/127, USB audio capture running. 5 profile build: the P2 worst case gives `prof.max` within the phase budget, mean
+≤ 80 %, USB audio on. 6 capture conformance: `fm1_capture.py` plays `tests/scripts/conformance.mid`, records UAC
+with MASTER at maximum, aligns per note, residual vs the host render ≤ −60 dB. 7 phase items (UI vs goldens; LEDs;
+save-when-silent with no click; power cut during a save in Phase 7). 8 recovery drill at Phase 0 and every release:
+the `CRASHTEST` build → auto-rescue after two boots; OCT− rescue; reinstall.
+
+### 14.4 Repo layout, make targets, CI
+```
+Makefile  .local/{jieli,fw-AC79_AIoT_SDK,venv,reference,sources}  .github/workflows/{ci,nightly,release}.yml
+firmware/src/{frodhes.c,rhodes.c,fxp.h,dsp.c,fx.c,params.c,ui.c,tempo.c,scale.c,presets.c,storage.c,bench.c}
+firmware/gen/rhodes_tables.h   tools/{gen_rhodes.py,tine_fe.py,tinebar.py,pickup.py,hammer.py,rhodes_model.py,
+fit_model.py,fit_reference.py,fetch_reference.py,fetch_sources.py,analyze.py,dsp_analysis.py,frodhes_checks.py,
+target_budget.py,bench_read.py,fm1_profile.py,fm1_capture.py,ab.py,release.py,lint.py}
+tests/{host.c,run_host.sh,unit/,fuzz/,scripts/,fixtures/,golden/,cpu_baseline.txt,target_budget.txt,device_ratio.txt,
+analysis_thresholds.toml,check_render.py}   docs/model/data/{sources.json,params.json,reference_<id>.json,CAPTURE.md}
+docs/model/{BUDGET.md,reports/}
+```
+Make: `setup` (venv pinned; toolchain sha256 + SDK's 3 files into `.local/`), `host`, `unit`, `golden[-update]`,
+`health`, `tables[-check]`, `reference` (fetch), `fit`, `analyze`, `cost`, `budget`, `fuzz [FUZZ_ITERS=]`, `lint` (no
+float/double tokens in `firmware/src`; SPDX headers; no tracked audio/PDF/asm under docs; 1 MB size cap outside
+`firmware/gen`), `test` (lint unit tables-check golden health cost fuzz analyze), `fw`, `install`, `info`, `release
+V=0.N`, `sources`, `upstream-check`. CI (`ubuntu-24.04`): `host` (make test; artifacts), `firmware` (cached toolchain
+keyed on `toolchain.lock`, native build, `make budget`, upload `.fwsc` and `.dis`), `licence` (lint + tracked-file
+scan + SPDX); nightly `fuzz-long` and `upstream`; `release.yml` on `v0.*` tags builds the bundle (`.fwsc`, `-app.bin`,
+`SHA256SUMS`, `LICENSE`, `LICENSING.md`, `LICENSES/`, source tarball, CHANGELOG excerpt, analysis/device/listening
+reports) as a **draft**. `main` protected; one PR per task; commits end with the session's attribution lines.
+
+### 14.5 Release gate and milestones
+Identity `FM-1_950` dev; `951`–`959` = 0.1–0.9 (`build.py` refuses others until a second block is agreed). Milestones:
+0.1 Phase 2 voice; 0.2 Phase 3 realism; 0.3 panel; 0.4 effects; 0.5 tempo/scales; 0.6 presets/MIDI; 0.9 RC for the
+hub. Gate: CI green on the tag; device checklist incl. recovery drill; `--info` identity/version; hub ID free; CHANGELOG
+and README status. Then `git tag -s`, push, publish the draft, then the hub. `.Z` = hotfix on the same identity.
+
+---
+
+## 15. Tasks
+
+Sizes: S ≤ ½ day, M 1–3 days, L 3–6 days. One PR per task; AC = acceptance criteria (all of them).
+
+### H hygiene
+| ID | Title | Deps | AC | Size |
+|---|---|---|---|---|
+| H1 | Sources manifest `SOURCES.lock` + `tools/fetch_sources.py` (history already purged) | — | cache rebuilt with matching sha256 | S |
+| H2 | `tools/lint.py` (float tokens, SPDX, forbidden tracked types, size cap); rename toolchain paths to `.local/` | — | `make lint` fails on a planted `.wav` under docs and on `double` in `firmware/src` | S |
+| H3 | Makefile, `.local/` setup, `requirements.txt`, `toolchain.lock` | — | a fresh clone builds host and firmware with `make setup` only; nothing written outside the project but Docker images | M |
+| H4 | `ci.yml` host + licence jobs; branch protection | H2 H3 | PRs show required checks | S |
+| H5 | CI firmware job with caches | H3 H4 | `.fwsc` artifact per PR; cached run < 5 min (ESTIMATE) | M |
+| H6 | Identity rules in `build.py`, help text, README | — | `--release 1.0`, `0.0` refused; `0.1` → `FM-1_951` | S |
+| H7 | `tools/release.py` + `release.yml` draft | H5 H6 | dry-run tag produces the bundle | M |
+| H8 | CLAUDE.md: append-only rule for param ids/enums; `.local/` and reference rules | — | text merged | S |
+
+### P0 device baseline
+| ID | Title | Deps | AC | Size |
+|---|---|---|---|---|
+| P0-1 | Bring-up + recovery drill (`-DFRODHES_CRASHTEST`) | H3 | report: install, `--info`, two-crash rescue, OCT− rescue | S |
+| P0-2 | Profile build: `app_audio` timing, overlay, CC dump, `tools/fm1_profile.py`; optional `nest_ticks` hook | P0-1 | numbers readable on the host, USB audio on/off | M |
+| P0-3 | Bench firmware `bench.c` K00–K19: MC3±EF (K07), DF2 (K06, control), Hermite-22 pickup XIP warm/cold vs pool (K10), `RAMFN` variant (K11), delay/HALL/phaser ports (with `dsp.c` stubs), 8-voice prototype (K13), in-ISR run (K16), stolen-time meter (K17), `-O2` (K18), 64-bit divide link probe (K15), ROM-data probe (K19), `settings_save` stall (K14) | P0-2 | `docs/model/BUDGET.md`: device ns/sample, host instr/sample, ratio, −Os/−O2 delta per kernel; `tests/device_ratio.txt` written; §3.1 targets and alarms re-cut | M |
+| P0-4 | Memory and flash allocation: pool/RAM/flash baseline; canvas confirmed 240×64; preset sectors 0x97000/0x98000 confirmed free of the image; `FL_RANGE_OK` hook | P0-1 | written allocation; delta list started | S |
+| P0-5 | Hardware facts: SEL/SCL label; **does the keybed sense velocity** (scan timing between two contacts, if any); LED dim; speaker quick check; `tools/fm1_capture.py` capture equals the host render of the placeholder | P0-1 | facts recorded in README | M |
+| P0-6 | Hub ID check (95x free) | — | date/screenshot recorded | S |
+
+### P1 reference, tools, verification infrastructure
+| ID | Title | Deps | AC | Size |
+|---|---|---|---|---|
+| P1-1 | `docs/model/data/sources.json` + `tools/fetch_reference.py` (jRhodes pinned clone; manual-download probe for pianobook/mpc_ek2; user captures) + `CAPTURE.md` | H3 | manifest validates; jRhodes 65 files verified; probe fills `content` for any present source | M |
+| P1-2 | `tools/dsp_analysis.py` + synthetic tests | H3 | T60 within 1 %, f within 0.1 c at 40 dB SNR | M |
+| P1-3 | `tools/fit_reference.py` per source → `reference_<id>.json` with attribution and trust flags; plots in `build/`; key-54 step check; 7×/20× partials separated from pickup harmonics | P1-1 P1-2 | deterministic; per root and layer: f0, ratios, EDT/late T60, levels, floor; runs on whichever sources are present | M |
+| P1-3a | `tools/tine_fe.py` | P1-2 | bare cantilever 6.267/17.548 ± 0.1 %; F1 table of `scratch-01/fe.py` reproduced | M |
+| P1-3b | `tools/tinebar.py` | P1-3a | k = 0 limits; residues; retune; release matching by continuity | S |
+| P1-3c | `tools/pickup.py` | P1-2 | Φ̃, slope tables, asserts of §6.8, C5 in float | S |
+| P1-3d | `tools/hammer.py` | P1-3a | energy with R = 0; Hertz law vs a rigid wall; T_c range assert | M |
+| P1-4 | `tools/rhodes_model.py` golden float model (exact C structure incl. §5.6) | P1-3b P1-3c P1-3d | renders a note; unit oracle | M |
+| P1-4a | `tools/fit_model.py` → `params.json`; **Gate A** on the sources present (report lists which measures had a primary source) | P1-3 P1-4 | C1 C2 C3 C5 C6 C12 pass on the primary source of each measure | L |
+| P1-5 | `tools/gen_rhodes.py` (§6 in full) + `make tables-check` | P1-4a | byte-identical across runs/OSes; all asserts incl. ROM nudge | M |
+| P1-6 | `tools/analyze.py` + thresholds (C1–C13 wired, provisional) | P1-2 P1-3 | runs on the placeholder, fails as expected, report written | M |
+| P1-7 | Harness verbs (§14.1) | H3 | REC hold/latch scripts pass with `expect`; non-zero exit on failure | M |
+| P1-8 | Golden + health infrastructure; placeholder goldens | P1-7 | `make golden` green; a 1-LSB change fails | M |
+| P1-9 | Unit framework + sanitizers + MIDI fuzz harness | P1-7 | `make unit fuzz` green under ASan/UBSan with divide-by-zero | S |
+| P1-10 | Cost checks (host counter, `target_budget.py` port) | H5 P1-8 | baselines committed; +25 % / +10 % gates work | M |
+
+### P2 voice core
+| ID | Title | Deps | AC | Size |
+|---|---|---|---|---|
+| P2-1 | `fxp.h` + `dsp.c` (helpers, tanh/sine tables, `exp2_q30`) + no-libcall check in `frodhes_checks.py` | P1-9 | unit tests; check fails on a planted `__divdi3` | S |
+| P2-2 | MC3+EF1 kernel with the generated tables; resonator unit test (keys 21–108, both levels) | P2-1 P1-5 | round-off ≤ −90 dB re peak; T60 ±2 %; off before 2·T60 + 1 s; ADR note recording the bake-off numbers | S |
+| P2-3 | Run-time coefficient path (§5.6) + TUNE/DECAY/RELEASE/bend/half-pedal tables | P2-2 | thresholds of §5.6; UBSan clean | M |
+| P2-4 | Pulse player + velocity tables (8 layers) + R selectable | P1-5 | unit tests of §14.2 | S |
+| P2-5 | Radial Hermite pickup, pool copies, offset TONE, `rh_pickup_probe()` | P1-5 P2-1 | C5; ROM scan; SNR ≥ 70 dB at −30 dB for every key (host, vs float) | M |
+| P2-6 | Post-mix RLC + per-key gain + exact-silence rule | P2-5 | level across keys within ±3 dB at v = 96; C9 silence | S |
+| P2-6a | Event ring with sub-block timing, ISR-owned voices, summary words, `rh_quiet/rh_lit` | P2-1 | latency test on host: note starts at its sub-block ± 0; fuzz clean | M |
+| P2-7 | Integrate in order: V1 only (C1 + C7 on x) → + V2/O1 (C2 two-stage vs golden) → + hammer (C7 on x) → + pickup (C5, C7) → + velocity, damper, pedal, re-strike, steal (C4 C6 C10) → + RLC/gain (C9). **Gate B at every step.** | P2-2..P2-6a | goldens reviewed; health green | L |
+| P2-7a | Profiler + CPU page + shedder (moved here so every later phase is measured) | P2-6a P0-2 | forced-overload host scenario sheds with a fade; device stress: no watchdog | M |
+| P2-8 | Calibrate; freeze thresholds; report | P2-7 P1-6 | C1–C7, C9, C10, C12, C13 pass; C8 measured | M |
+| P2-9 | Developer CC map | P2-7 | host `expect` tests | S |
+| P2-10 | Device validation, capture conformance, **release 0.1** | P2-8 H7 | Phase 2 DoD: voices worst ≤ allocated budget, capture residual ≤ −60 dB | M |
+
+### P3 realism
+| ID | Title | Deps | AC | Size |
+|---|---|---|---|---|
+| P3-1 | O2 + H1 through the radial pickup (C5 bit-identical with x_h = 0) | P2-10 | C3 (O2), A8; cost recorded | M |
+| P3-2 | Register voicing: TYPE deltas, gap families, residual table (S12) | P2-10 | C2 C6 do not regress; attack spectra closer to the reference (report) | M |
+| P3-3 | Noises: damper thump on the tine force, key-down thump, LFSR felt; pedal-up behaviour | P2-10 | click detector green; levels as params | S |
+| P3-4 | Amplitude→pitch (S11) from the MC3 quadrature | P2-3 | attack-pitch check ±1.5 c | S |
+| P3-5 | Only if C8 fails: treble x-scale, then 2× pickup oversampling | P2-8 | C8 ≤ −60 dB; budget holds | M |
+| P3-6 | TYPE set (S17) | P3-1 P3-2 | 4 goldens; distinct centroid/H2 metrics | M |
+| P3-6a | Seeded jitter (S14) | P3-6 | goldens; per-key variation within residuals | S |
+| P3-7 | `tools/ab.py`, T-LISTEN session, report; **release 0.2** | P3-1..P3-6a | protocol pass recorded | M |
+
+### P4 params and panel
+| ID | Title | Deps | AC | Size |
+|---|---|---|---|---|
+| P4-1 | `params.c`: PARAMS (16-bit capable), formatting, versioned 256 B settings, fixtures | P2-9 H8 | fixtures load; every param formats ≤ 5 chars; lint | M |
+| P4-2 | Platform hooks (`CV_MAX`, `APP_FL_RANGE`); upstream PRs | P0-4 | hooks used; README delta table; PR links | S |
+| P4-3 | PANEL drawing, scheduler, golden screens | P4-1 P4-2 | hashes for every column/switch/focus state; `HOST_BLITMAX` ≤ 30 720 | L |
+| P4-4 | Control mapping (§10.3), layers, QUIET_MS, messages, hot readout | P4-3 P1-7 | scripts 1–7, 19 | L |
+| P4-5 | VOICING pages, KEY VEL/DYN on SELECT, HUMANIZE, velocity curves | P4-4 | goldens; script 14 | M |
+| P4-6 | MENU, INFO, CPU page, MIDI channel filter | P4-4 P2-7a | goldens; channel tests | M |
+| P4-7 | Device UI checklist; main-loop gap probe; **release 0.3** | P4-5 P4-6 | Phase 4 DoD; gap < 50 ms | S |
+
+### P5 effects
+| ID | Title | Deps | AC | Size |
+|---|---|---|---|---|
+| P5-1 | `fx_render` skeleton, sub-block framework, stereo split, `fx_quiet()`, mute | P4-1 | FX-bypassed golden equals the Phase 4 golden | S |
+| P5-2 | DRIVE port + TYPE rows level-matched | P5-1 | unit (bypass keeps state, no click); rows within ±0.5 dB RMS | S |
+| P5-3 | TREM PAN/AM, shape, sync | P5-1 P6-1 | rate/depth exact; equal power ±0.1 dB | S |
+| P5-4 | WAH (follower + SVF table) | P5-1 | sweep 300 Hz–2.5 kHz; stable over the whole table | M |
+| P5-5 | PHASER port, free LFO | P5-1 | notch sweep A11 | M |
+| P5-6 | CHORUS 2 taps | P5-1 | delay range measured; no zipper | M |
+| P5-7 | D.DLY with glide, fold, `!` | P5-1 P6-1 | A11 ±1 sample; no click on TIME change; script 8 | M |
+| P5-8 | A.DLY wow/flutter/LP/saturation/slew | P5-7 | pitch glide on TIME change; bounded feedback | M |
+| P5-9 | HALL port (CTL 32) + ported `reverb_test` | P5-1 | RT60 range; no ringing; cost | M |
+| P5-10 | Master port; speaker check (LOWCUT option) | P5-1 | limiter never above −0.3 dBFS; DC test | S |
+| P5-11 | Spillover and crossfade rules (U8), preset-load crossfade; effects-aware shedding | P5-2..P5-10 | scripts 20, 25 | S |
+| P5-12 | Device budget with all FX; **release 0.4** | P5-11 | all FX + 8 voices ≤ 2.9 ms max, mean ≤ 2.3 ms, USB on | S |
+
+### P6 tempo and scales
+| ID | Title | Deps | AC | Size |
+|---|---|---|---|---|
+| P6-1 | `tempo.c` core (ticks), sync table incl. 4BAR, unit tests | P4-1 | §14.2 tempo tests | S |
+| P6-2 | PLAY tap, beat LED, re-phase | P6-1 | script 6; `expect led` | S |
+| P6-3 | Clock follow with tick stamps, AUTO fallback, FA/FB/FC | P6-1 | script 9; jitter simulation; device DAW test | M |
+| P6-4 | Sync wiring to TREM, PHA, CHO, DLY | P6-1 P5-* | A11 | M |
+| P6-5 | Scales: masks, SNAP/DEG, refcount, per-key LEDs, `scale_test` port, MIDI QNT | P4-4 | scripts 10–13 | M |
+| P6-6 | Clock out behind a flag; **release 0.5** | P6-3 | 24 PPQN on the host ±0.1 % | S |
+
+### P7 presets and MIDI
+| ID | Title | Deps | AC | Size |
+|---|---|---|---|---|
+| P7-1 | `APP_FL_RANGE` sectors; refusal test with the NOR simulation | P0-4 P4-2 | erases outside the range refused | S |
+| P7-2 | `storage.c` port + torn-write tests | P7-1 | ported `storage_test` green | M |
+| P7-3 | Bank, browse-settle load, SAVE UX, auto names, queued save, undo/redo | P7-2 P4-4 | scripts 21, 22; fixtures | L |
+| P7-4 | Factory presets tuned by ear | P4-1 P5-12 | goldens per preset | S |
+| P7-5 | PC, CC map RX/TX, pitch bend, half-pedal, extended MIDI fuzz | P4-1 P2-3 | scripts 23, 24, 26, 27; fuzz green | M |
+| P7-6 | Device power-cut test during a save; **release 0.6** | P7-3 | old or new bank, never broken; Phase 7 DoD | S |
+
+### X continuous
+X1 nightly upstream merge check (H4); X2 nightly long fuzz (P1-9); X3 hub release 0.9 (P7-6, identity decision).
+
+**Critical path (ESTIMATE 5–7 weeks to 0.1):** H3 → P0-1/2/3 → P1-2 → P1-3a–d → P1-4 → P1-4a (Gate A, needs at least
+one fetched source) → P1-5 → P2-1/2/3 → P2-6a → P2-7 (Gate B) → P2-8 → P2-10. P1-7..P1-10 run in parallel with
+P1-3x; P0-5/P0-6 and H1/H2/H4–H8 are off the path.
+
+**Definition of done per phase:** `make test` green on `main`, `make fw` green, the device checklist signed, README
+status updated, the tagged pre-release where §14.5 maps one; plus: Phase 0 — BUDGET.md measured, allocation written,
+sectors and canvas chosen, velocity capability and hub ID recorded; Phase 1 — sources manifest, reference files for
+every fetched source, deterministic tables, harness/golden/unit/fuzz merged; Phase 2 — §15 P2-8/P2-10 AC; Phase 3 —
+C3(O2), C8, A8, T-LISTEN recorded, budget holds with H1/O2 or the drop order applied; Phase 4 — fixtures, every
+screen hashed, gap < 50 ms, deltas as hooks; Phase 5 — each effect has U/A11 + goldens, all-FX budget; Phase 6 —
+tempo/scale tests, DAW follow at 60/120/200 BPM ± 0.5; Phase 7 — torn-write, fixtures of every settings version,
+power-cut test.
+
+---
+
+## 16. Risks
+
+| ID | Risk | L/I | Early warning | Mitigation | Contingency |
+|---|---|---|---|---|---|
+| K1 | No unprocessed reference is obtained (pianobook login/terms, MPC purchase) | M/H | P1-1 shows only jRhodes fetched | trust rules make jRhodes sufficient for tuning, ratios, decay (late slope above floor + 20 dB), ΔB; balance set by ear | ask the user for captures by §7.4 |
+| K2 | CPU budget (voices + FX) exceeded; device ratio worse than Felucca's | M/H | K13/K16 > targets; static +10 %; host +25 % | mode sleep; sub-block grid; `-O2` split; RAMFN leaf kernels | drop order O2 → H1 → residual → 6 voices → mono FX |
+| K3 | XIP cache misses after redraws inflate the ISR peak | M/M | K10 cold ≫ warm | hot tables in the pool; per-key rows read once at note-on | RAMFN kernels; smaller redraw strips |
+| K4 | Fixed-point resonator error (pitch, T60, limit cycle) | L/H | U resonator tests | MC3+EF1 (measured 108 dB at −60 dB E1); kill + lifetime cap | second-order EF on V1/V2 |
+| K5 | Soft-bass pickup SNR limited by the Q25 tip (80 dB) found audible | L/M | C9 at v = 10 | — | Q26 tip with a 4-gap per-mode clamp |
+| K6 | Aliasing above C6 at hard hits | M/M | C8 > −60 dB | generator assert on the treble tip amplitude | P3-5 (x-scale, then 2× pickup oversampling) |
+| K7 | Realism target unreachable (2-DOF/pickup family cannot fit) | M/H | Gate A residuals; T-LISTEN < 3.5 | fit on EQ-invariant measures; shape parameter on the pole family; second reference | user captures of the target instrument |
+| K8 | The keybed has no velocity | H/M | P0-5 | KEY VEL on SELECT (DYN), HUMANIZE, MIDI in | — |
+| K9 | Pool/RAM overflow | L/M | build gate ≥ 8 KiB spare | map closed at 62 % | delay at 22.05 kHz or 1 s |
+| K10 | Flash corruption / brick during saves | L/H | torn-write tests; power-cut test | A/B sectors, header last, read-back, narrow `FL_RANGE_OK`, §12.3 | recovery drill; FM-1-transporter |
+| K11 | Upstream merge conflicts | M/M | nightly `upstream` red | override hooks, PRs, delta table | rebase by hand; pin upstream |
+| K12 | Toolchain/SDK URL changes | M/M | sha mismatch | `toolchain.lock`, cache, mirror of the 3 Apache-2.0 files | build from `.local/` |
+| K13 | reface semantics or CC numbers wrong (sources 403 / midi.guide) | M/L | user review of the panel | remap in PARAMS only | — |
+| K14 | Host/device divergence (compiler, UB) | L/M | capture residual > −60 dB | UBSan; capture per phase | bisect with the profile build |
+| K15 | Watchdog from long main-loop work | L/H | gap probe > 50 ms | one element per pass; strips; poll in long loops | split work |
+| K16 | Hammer sim constants unphysical (contact 20 ms) | M/M | T_c assert in `hammer.py`; attack spectra off | fit K/R per band to the reference attack; 1–3 ms prior | hand-set T_c per band |
+| K17 | Saved presets break across updates | M/M | fixture test | append-only rule, versions | migration; factory reset message |
+| K18 | Scope creep (editor, arp, looper) | M/M | Phase 8 work before 0.6 | discard list; milestones | cut to 0.6 |
+| K19 | Pickup pole not axisymmetric (chisel tip): H1 through a radial field is an approximation | L/L | A8 vs reference whirl | H1 is a small (0.2–0.25) component | per-axis scale on x_h (one multiply) |
+
+---
+
+## 17. Open questions for the user
+
+| # | Question | Default if unanswered |
+|---|---|---|
+| Q1 | **Reference access.** Will you (a) log in and download Pianobook "Matt's Fender Rhodes" into `.local/reference/pianobook/`, and (b) buy MPC-Samples "Electric Keys 2" ($29.99) for the 8-layer and Suitcase data? Both are analysis-only; only derived numbers are committed. | fit on jRhodes alone; balance by ear; SUITCASE deltas ESTIMATE |
+| Q2 | **Your own captures.** Can you record a Nord (EP8 Nefertiti MKI / EP7 Amped Tines) or a real Rhodes by `CAPTURE.md` (§7.4)? If yes, which instrument is *the* target sound for T-LISTEN? | jRhodes is the T-LISTEN reference |
+| Q3 | **Commercial intent.** Any intent to sell builds? It does not change the derived-number policy but it rules out ever shipping reference-derived audio and matters for the jRhodes author's licence offer. | hobby/GPL only |
+| Q4 | **Repo name** `fhodes` vs project name Frodhes: intended? | keep `fhodes` |
+| Q5 | **Listening panel:** who listens (you only?), on what (headphones + FM-1 speaker), and is the T-LISTEN pass rule (mean ≥ 3.5, identification ≤ 75 %) acceptable? | you, headphones + speaker, rule as written |
+| Q6 | **Tuning-spring position** (0.65 L vs near the tip) and **hammer-tip band mapping** onto the 73 keys: do you know the real instrument well enough to override the fit's choice? | the fit decides (both are fit candidates) |
+| Q7 | **Identity beyond 0.9:** stay in 0.x, or reserve a second block (e.g. 96x) after a hub check? | stay in 0.x until the hub check |
