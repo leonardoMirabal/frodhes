@@ -3,3 +3,4 @@ mido
 python-rtmidi
 numpy
 scipy
+pytest

@@ -5,6 +5,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install Pillow numpy
+      - run: pip install Pillow numpy scipy pytest
       - run: make test
       - run: make host
+      - run: make pytest PY=python3

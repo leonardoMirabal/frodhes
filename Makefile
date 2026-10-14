@@ -5,9 +5,9 @@ CC      ?= cc
 HOSTBIN := build/host/frodhes
 CFLAGS_HOST := -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER='"dev"' -Ifirmware/src -Ifirmware/gen
 
-.PHONY: all setup host test firmware clean
+.PHONY: all setup host test pytest firmware clean
 
-all: test
+all: test pytest
 
 setup:                     ## project-local venv, toolchain and the 3 SDK files
 	python3 -m venv .local/venv
@@ -26,6 +26,9 @@ test: $(HOSTBIN)           ## every script in tests/scripts must pass its expect
 	@fail=0; for s in tests/scripts/*.txt; do n=$$(basename $$s .txt); \
 	  if $(HOSTBIN) build/host/$$n $$s > build/host/$$n.log 2>&1; then echo "ok    $$n"; \
 	  else echo "FAIL  $$n (build/host/$$n.log)"; fail=1; fi; done; exit $$fail
+
+pytest:                    ## Python tools' unit tests (analysis, generators)
+	$(PY) -m pytest -q tests/py
 
 firmware:                  ## build/frodhes.fwsc (Docker on macOS)
 	PYTHON=$(PY) ./build.sh
