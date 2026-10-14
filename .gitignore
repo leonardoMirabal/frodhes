@@ -44,12 +44,14 @@ docs/model/research/sources/02-sonderbo-thesis/
 docs/model/research/sources/03-falaize-phs/
 docs/model/research/sources/04-code-rdpiano-stk/rdpiano/
 docs/model/research/sources/05-empirical-jrhodes-epmk1/
+docs/model/research/sources/07-reface-manual/
 # Any future download area for reference material
 docs/model/data/reference-audio/
 
 # Reviewer scratch binaries (the .c sources are kept)
 docs/model/reviews/scratch-*/*
 !docs/model/reviews/scratch-*/*.c
+!docs/model/reviews/scratch-*/*.py
 
 # Local backups (full pre-rewrite history bundle, sources tarball): kept on disk, never pushed
 .local-backup/
