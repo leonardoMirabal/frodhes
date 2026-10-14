@@ -3,12 +3,12 @@
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 # Build Frodhes (see README.md).
 #   ./build.sh [--release X.Y]
-#   JIELI_TOOLCHAIN  JieLi Linux toolchain (default: ~/.jieli/toolchain)
-#   AC79_SDK         JieLi AC79 SDK checkout (default: ~/fw-AC79_AIoT_SDK)
+#   JIELI_TOOLCHAIN  JieLi Linux toolchain (default: .local/jieli/toolchain)
+#   AC79_SDK         JieLi AC79 SDK checkout (default: .local/fw-AC79_AIoT_SDK)
 set -e
 cd "$(dirname "$0")"
-export JIELI_TOOLCHAIN="${JIELI_TOOLCHAIN:-$HOME/.jieli/toolchain}"
-export AC79_SDK="${AC79_SDK:-$HOME/fw-AC79_AIoT_SDK}"
+export JIELI_TOOLCHAIN="${JIELI_TOOLCHAIN:-$PWD/.local/jieli/toolchain}"   # project-local (tools/get_toolchain.sh .local/jieli)
+export AC79_SDK="${AC79_SDK:-$PWD/.local/fw-AC79_AIoT_SDK}"            # project-local: only 3 files are needed
 PY="${PYTHON:-python3}"
 
 "$PY" -c 'import PIL' 2>/dev/null || { echo "build.sh: $PY has no Pillow (pip3 install Pillow)"; exit 1; }

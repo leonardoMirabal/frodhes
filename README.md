@@ -34,14 +34,18 @@ docs/model/               <- notes and references for the physical model
 You need Python 3 with Pillow, JieLi's toolchain, and the JieLi AC79 SDK. On macOS you also need Docker, because
 the toolchain is Linux x86-64 only and the build runs it in a container.
 
+Everything installs inside the project, in `.local/` (git-ignored):
+
 ```sh
 pip3 install Pillow mido python-rtmidi
-tools/get_toolchain.sh                      # JieLi's clang for the chip, to ~/.jieli/toolchain
-git clone --depth 1 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
-    https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git ~/fw-AC79_AIoT_SDK
+tools/get_toolchain.sh .local/jieli         # JieLi's clang for the chip -> .local/jieli/toolchain
+B=https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK/raw/AC79NN_SDK_V1.2.1_2023-12-13/cpu/wl82/tools
+D=.local/fw-AC79_AIoT_SDK/cpu/wl82/tools; mkdir -p $D/cfg
+for f in uboot.boot cfg_tool.bin cfg/eq_cfg_hw.bin; do curl -fsSL -o $D/$f $B/$f; done   # the 3 SDK files the build needs
 ```
 
-`JIELI_TOOLCHAIN` and `AC79_SDK` override those locations.
+The build checks those 3 files against pinned sha256 values. `JIELI_TOOLCHAIN` and `AC79_SDK` override the
+locations.
 
 ### On your computer (no FM-1 needed)
 
