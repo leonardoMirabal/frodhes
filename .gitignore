@@ -1,5 +1,10 @@
 build/
 __pycache__/
 .DS_Store
-# Roland ROM images that came with the rdpiano clone: copyrighted, never used, kept locally only
-docs/model/research/sources/04-code-rdpiano-stk/rdpiano/roms/
+# Research sources whose licence does not clearly allow redistribution: kept on disk only, never committed.
+# docs/model/research/SOURCES.md lists where to fetch each one. Committed: Felucca (GPL-3.0), STK + STKAudioKit (MIT).
+docs/model/research/sources/01-dafx17/
+docs/model/research/sources/02-sonderbo-thesis/
+docs/model/research/sources/03-falaize-phs/
+docs/model/research/sources/04-code-rdpiano-stk/rdpiano/
+docs/model/research/sources/05-empirical-jrhodes-epmk1/
