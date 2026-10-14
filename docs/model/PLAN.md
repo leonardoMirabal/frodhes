@@ -1,4 +1,7 @@
-# Frodhes implementation plan
+# Frodhes implementation plan (v1)
+
+> **Superseded where they differ by [IMPLEMENTATION.md](IMPLEMENTATION.md) (v2)**, which merges this plan with the four
+> reviews in [reviews/](reviews/).
 
 This plan pulls together the eight research files in [`research/`](research/). It covers a realistic
 physically-modelled Rhodes, a reface CP-style effects chain and panel, tempo, scales and presets, all on the

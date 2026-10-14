@@ -19,7 +19,8 @@ __MACOSX/
 *.swp
 *~
 
-# Local toolchain and SDK, if kept inside the project (tools/get_toolchain.sh, AC79 SDK)
+# Project-local tooling: toolchain, SDK, venv, reference audio (make setup installs here)
+.local/
 .jieli/
 .toolchain/
 fw-AC79_AIoT_SDK/
