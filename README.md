@@ -90,7 +90,8 @@ fix in `gfx.c` so the build works on macOS.
 
 - [docs/API.md](docs/API.md): what `platform.c` provides (panel IDs, screen, audio, MIDI, settings, flash map)
 - [docs/RULES.md](docs/RULES.md): the chip's rules and the checks the build runs
-- [docs/model/](docs/model/): the physical model
+- [docs/model/PLAN.md](docs/model/PLAN.md): the implementation plan (model, effects, UI, tempo, scales, presets)
+- [docs/model/research/](docs/model/research/): the research behind it
 
 ## License
 
