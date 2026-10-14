@@ -57,3 +57,6 @@ docs/model/reviews/scratch-*/*
 
 # Local backups (full pre-rewrite history bundle, sources tarball): kept on disk, never pushed
 .local-backup/
+
+# Claude Code session state
+.claude/scheduled_tasks.lock
