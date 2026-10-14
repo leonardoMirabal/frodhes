@@ -1,6 +1,19 @@
-# sustain: C4 held then released with the pedal latched (REC tap at 100 ms), the note rings on; tap again at 2500 ms: damped
-100 btn 13
+# Sustain on REC (button 13): hold = momentary, a tap (< 250 ms) latches, a second tap lets go.
+# Run: build/host/frodhes build/host/sustain tests/scripts/sustain.txt
+100 press 13
+150 expect led 13 1
 200 keys 0x80
-600 keys 0
-2500 btn 13
-4000 end
+400 keys 0
+900 expect rms > -40
+1000 release 13
+1050 expect led 13 0
+1500 expect rms < -60
+2000 btn 13
+2050 expect led 13 1
+2100 keys 0x80
+2300 keys 0
+2900 expect rms > -40
+3000 btn 13
+3050 expect led 13 0
+3600 expect rms < -60
+3700 end

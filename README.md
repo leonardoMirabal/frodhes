@@ -37,15 +37,13 @@ the toolchain is Linux x86-64 only and the build runs it in a container.
 Everything installs inside the project, in `.local/` (git-ignored):
 
 ```sh
-pip3 install Pillow mido python-rtmidi
-tools/get_toolchain.sh .local/jieli         # JieLi's clang for the chip -> .local/jieli/toolchain
-B=https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK/raw/AC79NN_SDK_V1.2.1_2023-12-13/cpu/wl82/tools
-D=.local/fw-AC79_AIoT_SDK/cpu/wl82/tools; mkdir -p $D/cfg
-for f in uboot.boot cfg_tool.bin cfg/eq_cfg_hw.bin; do curl -fsSL -o $D/$f $B/$f; done   # the 3 SDK files the build needs
+make setup        # .local/venv (requirements.txt), JieLi toolchain, the 3 AC79 SDK files (sha256-checked by the build)
+make test         # every tests/scripts/*.txt on the host; their "expect" lines must pass
+make host         # render build/host/frodhes.wav and screen PNGs
+make firmware     # build/frodhes.fwsc (Docker on macOS)
 ```
 
-The build checks those 3 files against pinned sha256 values. `JIELI_TOOLCHAIN` and `AC79_SDK` override the
-locations.
+`JIELI_TOOLCHAIN` and `AC79_SDK` override the tool locations.
 
 ### On your computer (no FM-1 needed)
 

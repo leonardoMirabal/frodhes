@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #ifndef APP_NAME
 #define APP_NAME "DINGHY"
@@ -26,11 +27,13 @@
 
 static volatile uint32_t fm1_ms;
 static struct { uint32_t notes, buttons; } fm1_in;
-static uint32_t host_edges;
-static uint32_t fm1_input_edges(uint32_t *released) { uint32_t b = host_edges; host_edges = 0; *released = 0; return b; }
+static uint32_t host_edges, host_released;
+static int32_t host_enc[8];
+static uint8_t host_led[64];                    /* the last state each LED id was set to */
+static uint32_t fm1_input_edges(uint32_t *released) { uint32_t b = host_edges; host_edges = 0; *released = host_released; host_released = 0; return b; }
 static uint32_t fm1_input_note_edges(void) { return 0; }   /* (the script sets fm1_in.notes) */
-static int32_t fm1_enc_take(uint32_t e) { (void)e; return 0; }
-static void fm1_led_key(uint32_t id, int on) { (void)id; (void)on; }
+static int32_t fm1_enc_take(uint32_t e) { int32_t d = e < 8u ? host_enc[e] : 0; if (e < 8u) host_enc[e] = 0; return d; }
+static void fm1_led_key(uint32_t id, int on) { if (id < 64u) host_led[id] = (uint8_t)(on != 0); }
 
 /* the screen: 240 x 240 RGB565, as the ST7789 gets it (gfx.c sends the bytes swapped) */
 static uint16_t fb[240 * 240];
@@ -85,17 +88,28 @@ static void app_audio(int32_t *out, uint32_t n);
 static void app_main(void);
 
 /* the script: at t ms, keys down (bit k = key k, 0 = F3), a button edge, a MIDI message. A script file (the second
- * argument) replaces it, a line each: "T keys MASK" (hex or decimal), "T btn ID", "T midi ST D1 D2", "T end" */
-typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; } host_ev_t;
+ * argument) replaces it, a line each:
+ *   T keys MASK          the keys held from now on (hex or decimal)
+ *   T btn ID             a tap: pressed and released at once (an edge only)
+ *   T press ID           button ID goes down (held until "release")
+ *   T release ID         button ID goes up
+ *   T turn ENC DELTA     encoder ENC moves DELTA detents
+ *   T midi ST D1 D2      a USB-MIDI message in
+ *   T shot               a screenshot (OUT-T.ppm)
+ *   T expect led ID V    fails the run unless LED ID is V (0/1)
+ *   T expect rms OP DB   fails unless the RMS of the last 50 ms is OP (< or >) DB dBFS
+ *   T end                stop; the exit code is the number of failed expects */
+enum { EV_KEYS, EV_BTN, EV_PRESS, EV_RELEASE, EV_TURN, EV_MIDI, EV_SHOT, EV_EXP_LED, EV_EXP_RMS };
+typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; uint8_t kind; int32_t a, b; char op; } host_ev_t;
 static const host_ev_t SCRIPT0[] = {
-    {200, 1u << 7, -1, 0, 0, 0},                                /* C4 */
-    {700, 1u << 7 | 1u << 11 | 1u << 14, -1, 0, 0, 0},          /* + E4 G4: a chord */
-    {1500, 0, -1, 0, 0, 0},
-    {1700, 0, -1, 0x90, 81, 120},                               /* MIDI in: A5 */
-    {2300, 0, -1, 0x80, 81, 0},
-    {2500, 0, BTN_OCT_UP, 0, 0, 0},
-    {2700, 1u << 2 | 1u << 9, -1, 0, 0, 0},                     /* G4 + D5, an octave up */
-    {3400, 0, -1, 0, 0, 0},
+    {200, 1u << 7, -1, 0, 0, 0, EV_KEYS, 0, 0, 0},                                /* C4 */
+    {700, 1u << 7 | 1u << 11 | 1u << 14, -1, 0, 0, 0, EV_KEYS, 0, 0, 0},          /* + E4 G4: a chord */
+    {1500, 0, -1, 0, 0, 0, EV_KEYS, 0, 0, 0},
+    {1700, 0, -1, 0x90, 81, 120, EV_MIDI, 0, 0, 0},                               /* MIDI in: A5 */
+    {2300, 0, -1, 0x80, 81, 0, EV_MIDI, 0, 0, 0},
+    {2500, 0, BTN_OCT_UP, 0, 0, 0, EV_BTN, 0, 0, 0},
+    {2700, 1u << 2 | 1u << 9, -1, 0, 0, 0, EV_KEYS, 0, 0, 0},                     /* G4 + D5, an octave up */
+    {3400, 0, -1, 0, 0, 0, EV_KEYS, 0, 0, 0},
 };
 static const host_ev_t *script = SCRIPT0;
 static uint32_t script_n = sizeof SCRIPT0 / sizeof SCRIPT0[0], end_ms = 6500, frame_fps;
@@ -109,13 +123,24 @@ static void read_script(const char *path)
     uint32_t n = 0;
     if (!f) { perror(path); exit(1); }
     while (fgets(line, sizeof line, f) && n < 4096u) {
-        host_ev_t e = {0, 0, -1, 0, 0, 0};
+        host_ev_t e = {0, 0, -1, 0, 0, 0, EV_KEYS, 0, 0, 0};
         unsigned a = 0, b = 0, c = 0;
+        char sub[16] = "", op[4] = "";
+        double db = 0;
         if (line[0] == '#' || sscanf(line, "%u %15s", &e.t, what) != 2) continue;
         if (!strcmp(what, "end")) { end_ms = e.t; continue; }
-        if (!strcmp(what, "keys")) { sscanf(line, "%*u %*s %i", (int *)&e.keys); }
-        else if (!strcmp(what, "btn")) { sscanf(line, "%*u %*s %d", &e.btn); }
-        else if (!strcmp(what, "midi")) { sscanf(line, "%*u %*s %i %u %u", (int *)&a, &b, &c); e.st = (uint8_t)a; e.d1 = (uint8_t)b; e.d2 = (uint8_t)c; }
+        if (!strcmp(what, "keys")) { e.kind = EV_KEYS; sscanf(line, "%*u %*s %i", (int *)&e.keys); }
+        else if (!strcmp(what, "btn")) { e.kind = EV_BTN; sscanf(line, "%*u %*s %d", &e.btn); }
+        else if (!strcmp(what, "press")) { e.kind = EV_PRESS; sscanf(line, "%*u %*s %d", &e.btn); }
+        else if (!strcmp(what, "release")) { e.kind = EV_RELEASE; sscanf(line, "%*u %*s %d", &e.btn); }
+        else if (!strcmp(what, "turn")) { e.kind = EV_TURN; sscanf(line, "%*u %*s %d %d", &e.a, &e.b); }
+        else if (!strcmp(what, "midi")) { e.kind = EV_MIDI; sscanf(line, "%*u %*s %i %u %u", (int *)&a, &b, &c); e.st = (uint8_t)a; e.d1 = (uint8_t)b; e.d2 = (uint8_t)c; }
+        else if (!strcmp(what, "shot")) e.kind = EV_SHOT;
+        else if (!strcmp(what, "expect") && sscanf(line, "%*u %*s %15s", sub) == 1) {
+            if (!strcmp(sub, "led")) { e.kind = EV_EXP_LED; sscanf(line, "%*u %*s %*s %d %d", &e.a, &e.b); }
+            else if (!strcmp(sub, "rms") && sscanf(line, "%*u %*s %*s %3s %lf", op, &db) == 2) { e.kind = EV_EXP_RMS; e.op = op[0]; e.a = (int32_t)(db * 100.0); }
+            else continue;
+        }
         else continue;
         ev[n++] = e;
     }
@@ -125,6 +150,7 @@ static void read_script(const char *path)
 }
 
 static const char *host_out = "build/host/dinghy";
+static uint32_t host_fails;
 static int16_t *wav;
 static uint32_t wav_n;
 
@@ -171,13 +197,38 @@ static void platform_poll(void)                 /* one call = one millisecond */
     static int32_t blk[2u * HALF_FRAMES];
     fm1_ms++;
     while (step < script_n && script[step].t <= fm1_ms) {
-        if (script[step].st) {
-            mq[mq_w % 64u][0] = script[step].st; mq[mq_w % 64u][1] = script[step].d1; mq[mq_w % 64u][2] = script[step].d2;
+        const host_ev_t *e = &script[step];
+        switch (e->kind) {
+        case EV_MIDI:
+            mq[mq_w % 64u][0] = e->st; mq[mq_w % 64u][1] = e->d1; mq[mq_w % 64u][2] = e->d2;
             mq_w++;
-        } else if (script[step].btn >= 0)
-            host_edges |= 1u << script[step].btn;
-        else
-            fm1_in.notes = script[step].keys;
+            break;
+        case EV_BTN: host_edges |= 1u << e->btn; host_released |= 1u << e->btn; break;
+        case EV_PRESS: host_edges |= 1u << e->btn; fm1_in.buttons |= 1u << e->btn; break;
+        case EV_RELEASE: host_released |= 1u << e->btn; fm1_in.buttons &= ~(1u << e->btn); break;
+        case EV_TURN: if ((uint32_t)e->a < 8u) host_enc[e->a] += e->b; break;
+        case EV_SHOT: write_ppm(fm1_ms); break;
+        case EV_EXP_LED:
+            if ((uint32_t)e->a >= 64u || host_led[e->a] != (uint8_t)e->b) {
+                printf("%6u ms  FAIL expect led %d = %d (is %d)\n", fm1_ms, e->a, e->b, (uint32_t)e->a < 64u ? host_led[e->a] : -1);
+                host_fails++;
+            } else
+                printf("%6u ms  ok   expect led %d = %d\n", fm1_ms, e->a, e->b);
+            break;
+        case EV_EXP_RMS: {
+            uint32_t n = FS / 20u, i0 = wav_n > n ? wav_n - n : 0, i;
+            double acc = 0, db;
+            for (i = i0; i < wav_n; i++) acc += (double)wav[2u * i] * wav[2u * i];
+            db = 10.0 * log10(acc / (double)(wav_n - i0 ? wav_n - i0 : 1) / (32767.0 * 32767.0) + 1e-20);
+            if ((e->op == '<' && !(db < e->a / 100.0)) || (e->op == '>' && !(db > e->a / 100.0))) {
+                printf("%6u ms  FAIL expect rms %c %.1f dB (is %.1f)\n", fm1_ms, e->op, e->a / 100.0, db);
+                host_fails++;
+            } else
+                printf("%6u ms  ok   expect rms %c %.1f dB (%.1f)\n", fm1_ms, e->op, e->a / 100.0, db);
+            break;
+        }
+        default: fm1_in.notes = e->keys; break;
+        }
         step++;
     }
     owed += FS;                                 /* the frames this millisecond is worth, in blocks as the ISR renders */
@@ -203,7 +254,8 @@ static void platform_poll(void)                 /* one call = one millisecond */
         write_ppm(SHOT[shot++]);
     if (fm1_ms >= end_ms) {
         write_wav();
-        exit(0);
+        if (host_fails) printf("%u expect(s) FAILED\n", host_fails);
+        exit(host_fails ? 1 : 0);
     }
 }
 

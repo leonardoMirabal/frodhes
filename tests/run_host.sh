@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")/.."
 mkdir -p build/host
-cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER="\"${APP_VER:-dev}\"" -Ifirmware/src -Ifirmware/gen -o build/host/frodhes firmware/src/frodhes.c
+cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER="\"${APP_VER:-dev}\"" -Ifirmware/src -Ifirmware/gen -o build/host/frodhes firmware/src/frodhes.c -lm
 build/host/frodhes build/host/frodhes "$@"
 python3 - <<'PY'
 from pathlib import Path
