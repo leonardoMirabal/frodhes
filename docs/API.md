@@ -1,6 +1,6 @@
-# Dinghy API
+# Platform API
 
-Everything [platform.c](../firmware/src/platform.c) gives your app. One compilation unit: `dinghy.c` includes
+Everything [platform.c](../firmware/src/platform.c) gives your app. One compilation unit: `frodhes.c` includes
 `platform.c` first, so all of this is just there. Nothing here is a library you link against; read the source
 when in doubt, it is short.
 
@@ -41,8 +41,8 @@ static void app_main(void)
 ```
 
 Names the platform defines that you can change from the build: `APP_NAME` (the rescue and crash screens,
-default `"DINGHY"`), `APP_VER` (set by `./build.sh --release`), `FELUCCA_ID` (the package identity; see
-[MAKE-IT-YOURS.md](MAKE-IT-YOURS.md)).
+default `"DINGHY"`; Frodhes sets `"FRODHES"`), `APP_VER` (set by `./build.sh --release`), `FELUCCA_ID` (the package identity; see
+`tools/build.py`).
 
 ## Time
 
@@ -139,7 +139,7 @@ static void app_audio(int32_t *out, uint32_t n)
   (one writer each). If a render runs late the sound breaks up; see [RULES.md](RULES.md).
 
 Pitch: a 32-bit phase that wraps is an oscillator with no division at run time: `inc = f * 2^32 / 44100`,
-`ph += inc` each frame. `dinghy.c` keeps a table for one octave and shifts it for the others.
+`ph += inc` each frame. `rhodes.c` keeps a table for one octave and shifts it for the others.
 
 ## MIDI
 
@@ -164,7 +164,7 @@ Up to 256 bytes, kept with their length and a CRC32 in one 4 KiB flash sector (`
 change of size or a broken save reads as "nothing saved": start from your defaults then.
 
 **Save when nothing sounds.** Erasing the sector holds the interrupts off for tens of milliseconds: the sound
-drops out. `dinghy.c` saves 2 s after the last change, once all voices are silent. Flash wears out after about
+drops out. `frodhes.c` saves 2 s after the last change, once all voices are silent. Flash wears out after about
 100,000 erases of a sector: never save in a loop.
 
 ## Memory and flash
@@ -178,7 +178,7 @@ drops out. `dinghy.c` saves 2 s after the last change, once all voices are silen
 
 The build prints what you use and fails above the limits.
 
-Flash (1 MiB) as Dinghy uses it: the app, the update staging area (0xE0000, the platform's) and the settings
+Flash (1 MiB) as Dinghy (and Frodhes) uses it: the app, the update staging area (0xE0000, the platform's) and the settings
 sector (0xFC000). The other firmwares of the family keep their data in 0x97000..0xFBFFF; a new firmware simply
 finds its own magic missing and starts fresh. To store more (samples, patterns), widen `FL_RANGE_OK` in
 platform.c to the range you pick: it is the guard that keeps a bug from erasing anything else.

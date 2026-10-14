@@ -1,0 +1,6 @@
+# sustain: C4 held then released with the pedal latched (REC tap at 100 ms), the note rings on; tap again at 2500 ms: damped
+100 btn 13
+200 keys 0x80
+600 keys 0
+2500 btn 13
+4000 end

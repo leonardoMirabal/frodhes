@@ -1,3 +1,5 @@
 build/
 __pycache__/
 .DS_Store
+# research downloads: third-party papers, clones, ROMs, recordings. Kept locally, not redistributed
+docs/model/research/sources/
