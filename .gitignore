@@ -1,6 +1,42 @@
+# Build outputs (host renders, firmware images, packages)
 build/
+*.o
+*.elf
+*.dis
+*.fwsc
+a.out
 __pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS and editor files
 .DS_Store
+._*
+__MACOSX/
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local toolchain and SDK, if kept inside the project (tools/get_toolchain.sh, AC79 SDK)
+.jieli/
+.toolchain/
+fw-AC79_AIoT_SDK/
+
+# Secrets, never committed
+.env
+*.pem
+*.key
+
+# Audio and reference recordings: used for analysis only, never redistributed. Commit derived numbers instead.
+*.wav
+*.flac
+*.mp3
+*.ogg
+*.aif
+*.aiff
+
 # Research sources whose licence does not clearly allow redistribution: kept on disk only, never committed.
 # docs/model/research/SOURCES.md lists where to fetch each one. Committed: Felucca (GPL-3.0), STK + STKAudioKit (MIT).
 docs/model/research/sources/01-dafx17/
@@ -8,3 +44,9 @@ docs/model/research/sources/02-sonderbo-thesis/
 docs/model/research/sources/03-falaize-phs/
 docs/model/research/sources/04-code-rdpiano-stk/rdpiano/
 docs/model/research/sources/05-empirical-jrhodes-epmk1/
+# Any future download area for reference material
+docs/model/data/reference-audio/
+
+# Reviewer scratch binaries (the .c sources are kept)
+docs/model/reviews/scratch-*/*
+!docs/model/reviews/scratch-*/*.c
