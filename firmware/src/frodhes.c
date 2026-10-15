@@ -71,6 +71,17 @@ static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 64u) { sus_midi = (uint8_t)v; sustain_update(); return; }
     if (cc == 119u) { fx_set(FXP_RAW, v >= 64u); return; }
     if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
+    if (cc == 116u) {                                  /* profiler query: CC 116 -> CC 116/117 = max audio us (MSB, LSB
+                                                        * of us / 4), CC 118 = this block's (us / 32), CC 115 = voices shed
+                                                        * (mod 128); then the max resets */
+        uint32_t mx = prof_max_us >> 2;
+        if (mx > 16383u) mx = 16383u;
+        midi_send(0xB0, 116, mx >> 7); midi_send(0xB0, 117, mx & 127u);
+        midi_send(0xB0, 118, prof_us >> 5 > 127u ? 127u : prof_us >> 5);
+        midi_send(0xB0, 115, rh_shed_count & 127u);
+        prof_max_us = 0;
+        return;
+    }
     if (cc == 120u || cc == 123u) { rh_all_off(); return; }
     if (cc == 85u) {                                   /* reface CHO/PHA switch: off / chorus / phaser (one of them) */
         param_set(P_CP_SW, v >= 43u && v < 86u); param_set(P_PH_SW, v >= 86u);
