@@ -431,7 +431,7 @@ TOGGLES = [("drive 64", "DRIVE", 64, 0), ("comp", "CMP_SW", 127, 0), ("trem pan"
 def fx_toggle(r, rep):
     """each effect switched on and off while a chord sounds (as the panel does, at its starting depth): the loudness
     step at each switch (0.4 s before vs 0.4 s after, the chord's own decay taken out) and clicks around it"""
-    starts = dict(TW_DEPTH=64, PH_DEPTH=80, CP_DEPTH=64, DL_DEPTH=50, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=23)
+    starts = dict(TW_DEPTH=64, PH_DEPTH=80, CP_DEPTH=64, DL_DEPTH=50, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=15)
     rows, bad = [], []
     ch = [(0.1, "on", n, 108) for n in (48, 55, 60, 64)] + [(3.4, "off", n, 0) for n in (48, 55, 60, 64)]
     def st(x, a, b):
