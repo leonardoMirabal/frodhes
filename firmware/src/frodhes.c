@@ -68,6 +68,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
     uint32_t id;
     if (cc == 64u) { sus_midi = (uint8_t)v; sustain_update(); return; }
     if (cc == 119u) { fx_set(FXP_RAW, v >= 64u); return; }
+    if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
     if (cc == 120u || cc == 123u) { rh_all_off(); return; }
     if (cc == 85u) {                                   /* reface CHO/PHA switch: off / chorus / phaser (one of them) */
         param_set(P_CP_SW, v >= 43u && v < 86u); param_set(P_PH_SW, v >= 86u);

@@ -310,6 +310,26 @@ def effects(r, rep):
 
 
 @test
+def bypass(r, rep):
+    """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs no effects at all"""
+    r.dry()
+    a = r.take(1.5, CHORD)
+    r.dry(PH_SW=127, PH_DEPTH=80, CP_SW=64, CP_DEPTH=64, REV=50, DRIVE=30, CMP_SW=127, CMP_AMT=50)
+    b = r.take(2.2, CHORD)
+    r.out.send(r.mido.Message("control_change", control=111, value=127))
+    r.wait_silence()
+    c = r.take(1.5, CHORD)
+    r.out.send(r.mido.Message("control_change", control=111, value=0))
+    lv = []
+    for x in (a, b, c):
+        i = max(onset(x), 0)
+        lv.append(db(x[i:i + int(1.1 * FS)]))
+    rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2])
+    ok = abs(lv[2] - lv[0]) < 0.5 and abs(lv[1] - lv[2]) < 3
+    return ok, f"no effects {lv[0]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} dBFS"
+
+
+@test
 def delay_time(r, rep):
     r.dry(DL_SW=64, DL_DEPTH=100, DL_TIME=64, DL_FDBK=60)
     x = r.take(1.6, [(0.05, "on", 72, 110), (0.1, "off", 72, 0)])
