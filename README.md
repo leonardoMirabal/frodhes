@@ -16,14 +16,14 @@ code compiled to WebAssembly, with the FM-1's screen, knobs, buttons and keys (c
 
 ## Download
 
-**Latest release: [Frodhes 0.8](https://github.com/leonardoMirabal/frodhes/releases/latest)**: the firmware file is
-`frodhes-0.8.fwsc` under *Assets* on the release page (package identity `FM-1_958`).
+**Latest release: [Frodhes 0.8.1](https://github.com/leonardoMirabal/frodhes/releases/latest)**: the firmware file is
+`frodhes-0.8.1.fwsc` under *Assets* on the release page (package identity `FM-1_958`).
 
 Install it over USB:
 
 ```sh
 pip install mido python-rtmidi
-python3 tools/fm1_install.py frodhes-0.8.fwsc
+python3 tools/fm1_install.py frodhes-0.8.1.fwsc
 ```
 
 If anything goes wrong, switch the FM-1 off, hold **OCT−** and switch it on: that is the USB rescue, from which you
@@ -76,7 +76,7 @@ make setup        # .local/venv, the JieLi toolchain, the AC79 SDK files (sha256
 make test         # the host scripts in tests/scripts
 make pytest       # the Python tests (generators, the C engine against its reference, effects)
 make host         # render build/host/frodhes.wav and screen PNGs on the computer, no FM-1 needed
-./build.sh        # build/frodhes.fwsc;  ./build.sh --release 0.8 -> build/frodhes-0.8.fwsc (FM-1_958)
+./build.sh        # build/frodhes.fwsc;  ./build.sh --release 0.8.1 -> build/frodhes-0.8.1.fwsc (FM-1_958)
 ```
 
 Testing on the real FM-1 over USB: `tools/hil_scan.py` plays it over MIDI and analyses its USB audio (keys,
