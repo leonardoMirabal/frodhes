@@ -493,6 +493,7 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
     fx_reverb(fx_L, fx_R, n);
     for (j = 0; j < n; j++) {
         int32_t l = dc_block(fx_L[j], &dc_l, &dce_l), r = dc_block(fx_R[j], &dc_r, &dce_r);
+        l = (l * 3) >> 1; r = (r * 3) >> 1;           /* +3.5 dB: sit higher above the codec's analog hiss (0.4) */
         int32_t al = l < 0 ? -l : l, ar = r < 0 ? -r : r, a = al > ar ? al : ar;
         if (a > lim_env) lim_env += (a - lim_env) >> 2;
         else if (lim_env > LIM_T) lim_env -= ((lim_env - LIM_T) >> 12) + 1;
