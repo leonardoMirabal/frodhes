@@ -69,6 +69,12 @@ static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 64u) { sus_midi = (uint8_t)v; sustain_update(); return; }
     if (cc == 119u) { fx_set(FXP_RAW, v >= 64u); return; }
     if (cc == 120u || cc == 123u) { rh_all_off(); return; }
+    if (cc == 85u) {                                   /* reface CHO/PHA switch: off / chorus / phaser (one of them) */
+        param_set(P_CP_SW, v >= 43u && v < 86u); param_set(P_PH_SW, v >= 86u);
+        ui_mark_param(P_CP_SW);
+        return;
+    }
+    if ((cc == 86u || cc == 87u) && PV(P_PH_SW) && !PV(P_CP_SW)) cc += 13u - 86u;   /* reface: the phaser's */
     for (id = 0; id < P_COUNT; id++)
         if (PARAMS[id].cc == cc) {
             int32_t x = (int32_t)v;
@@ -76,7 +82,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
             else if (id == P_TYPE) x = (int32_t)(v >> 5);
             else if (PARAMS[id].hi < 127u) x = (int32_t)(v * (PARAMS[id].hi + 1u) >> 7);
             param_set(id, x);
-            if (id == P_DL_SYNC || id == P_TW_SYNC || id == P_CP_SYNC) tempo_sync_publish();
+            if (id == P_DL_SYNC || id == P_TW_SYNC || id == P_CP_SYNC || id == P_PH_SYNC) tempo_sync_publish();
             ui_mark_param(id);
             return;
         }

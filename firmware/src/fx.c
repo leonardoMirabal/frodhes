@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Frodhes effects: the Yamaha reface CP chain (IMPLEMENTATION-v3 §9):
- *   DRIVE -> TREMOLO/WAH (mono -> stereo) -> CHORUS/PHASER -> D.DELAY/A.DELAY -> REVERB (HALL) -> master
+ *   COMP -> DRIVE -> TREMOLO/WAH (mono -> stereo) -> PHASER -> CHORUS -> D.DELAY/A.DELAY -> REVERB (HALL) -> master
+ * (0.4: the reface's CHO/PHA switch became two effects that can run together, and a compressor came first)
  * Mono int32 Q15 (with headroom) until the tremolo, stereo after. Every effect keeps its state while bypassed
  * (switching on never clicks); switching an effect off cuts its input and lets the tail ring.
  *
@@ -20,9 +21,12 @@
 enum { FXP_DRIVE, FXP_TW_SW, FXP_TW_DEPTH, FXP_TW_RATE, FXP_TW_MODE, FXP_TW_SHAPE,
        FXP_CP_SW, FXP_CP_DEPTH, FXP_CP_SPEED, FXP_CP_FDBK,
        FXP_DL_SW, FXP_DL_DEPTH, FXP_DL_TIME, FXP_DL_FDBK, FXP_DL_SYNC,
-       FXP_RV_DEPTH, FXP_DRIVE_ROW, FXP_RAW, FXP_DL_TONE, FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
+       FXP_RV_DEPTH, FXP_DRIVE_ROW, FXP_RAW, FXP_DL_TONE,
+       FXP_PH_SW, FXP_PH_DEPTH, FXP_PH_SPEED, FXP_PH_FDBK, FXP_CMP_SW, FXP_CMP_AMT, FXP_CMP_ATK, FXP_CMP_REL, FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
 static volatile int32_t fx_p[FXP_N] = {[FXP_DL_FDBK] = 80, [FXP_DL_TONE] = 70};
-static volatile uint32_t fx_cp_sync_inc;         /* main loop: a synced chorus/phaser rate, 0 = free */
+static volatile uint32_t fx_cp_sync_inc;         /* main loop: a synced chorus rate, 0 = free */
+static volatile uint32_t fx_ph_sync_inc;         /* main loop: a synced phaser rate, 0 = free */
+static volatile int32_t fx_cmp_gr;               /* ISR: the compressor's gain reduction now, log2 Q12 (>= 0) */
 static volatile uint32_t fx_dly_sync_samples;    /* main loop (tempo.c): a synced delay time, 0 = free */
 static volatile uint32_t fx_tw_sync_inc;         /* main loop: a synced tremolo rate (Q32 step), 0 = free */
 static volatile int32_t fx_peak;                 /* ISR: last block's max |out| */
@@ -119,11 +123,9 @@ static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
     }
 }
 
-/* ---- PHASER (4 first-order allpasses per side, right 90 degrees behind) and CHORUS (2 taps) */
-static uint32_t cp_ph;
+/* ---- PHASER: 4 first-order allpasses per side, the right one 90 degrees behind */
+static uint32_t ph_ph;
 static int32_t ph_x[2][4], ph_y[2][4], ph_fb[2];
-static int16_t cho_buf[1024] POOL;
-static uint32_t cho_w;
 static int32_t ph_coef(uint32_t ph, int32_t depth)
 {
     int32_t q = (int32_t)(ph < 0x80000000u ? ph >> 16 : (0xFFFFFFFFu - ph) >> 16);   /* triangle 0..32767 */
@@ -132,43 +134,110 @@ static int32_t ph_coef(uint32_t ph, int32_t depth)
     i = qd >> 10; f = qd & 1023;
     return FX_PH_A[i] + (((FX_PH_A[i + 1] - FX_PH_A[i]) * f) >> 10);
 }
-static void fx_mod(int32_t *L, int32_t *R, uint32_t n)
+static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
 {
-    int32_t sw = fx_p[FXP_CP_SW], depth = fx_p[FXP_CP_DEPTH];
-    uint32_t inc = fx_cp_sync_inc ? fx_cp_sync_inc : FX_LFO_INC[fx_p[FXP_CP_SPEED]] >> 1, sb, j, s, k;
-    if (!sw) return;
+    int32_t depth = fx_p[FXP_PH_DEPTH], fbk = fx_p[FXP_PH_FDBK] * 180;
+    uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, j, s, k;
+    if (!fx_p[FXP_PH_SW]) return;
     for (sb = 0; sb < n; sb += 32u) {
-        if (sw == 2) {                                   /* phaser */
-            int32_t a[2], fbk = fx_p[FXP_CP_FDBK] * 180;
-            a[0] = ph_coef(cp_ph, depth);
-            a[1] = ph_coef(cp_ph + 0x40000000u, depth);
-            for (j = sb; j < sb + 32u && j < n; j++)
-                for (s = 0; s < 2u; s++) {
-                    int32_t *io = s ? R : L, x = io[j], xs = clampi((x + 2) >> 2, -16383, 16383);
-                    int32_t u = xs + mulq15(ph_fb[s], fbk), y = 0;
-                    for (k = 0; k < 4u; k++) {
-                        y = clampi(ph_x[s][k] + ((a[s] * (u - ph_y[s][k]) + 8192) >> 14), -65535, 65535);
-                        ph_x[s][k] = u; ph_y[s][k] = y; u = y;
-                    }
-                    ph_fb[s] = clampi(y, -32767, 32767);
-                    io[j] = (x + (y << 2)) >> 1;
+        int32_t a[2];
+        a[0] = ph_coef(ph_ph, depth);
+        a[1] = ph_coef(ph_ph + 0x40000000u, depth);
+        for (j = sb; j < sb + 32u && j < n; j++)
+            for (s = 0; s < 2u; s++) {
+                int32_t *io = s ? R : L, x = io[j], xs = clampi((x + 2) >> 2, -16383, 16383);
+                int32_t u = xs + mulq15(ph_fb[s], fbk), y = 0;
+                for (k = 0; k < 4u; k++) {
+                    y = clampi(ph_x[s][k] + ((a[s] * (u - ph_y[s][k]) + 8192) >> 14), -65535, 65535);
+                    ph_x[s][k] = u; ph_y[s][k] = y; u = y;
                 }
-        } else {                                         /* chorus: 7 ms +- 3.5 ms, two taps 90 degrees apart */
-            int32_t dlq = 308 * 256 + ((osc_sine(cp_ph) * (154 * depth / 127)) >> 7);
-            int32_t drq = 308 * 256 + ((osc_sine(cp_ph + 0x40000000u) * (154 * depth / 127)) >> 7);
-            int32_t mix = (16384 * (2 * depth > 127 ? 127 : 2 * depth)) / 127;
-            for (j = sb; j < sb + 32u && j < n; j++) {
-                int32_t x = (L[j] + R[j]) >> 1, tl, tr;
-                uint32_t i0 = (cho_w - (uint32_t)(dlq >> 8)) & 1023u, i1 = (cho_w - (uint32_t)(drq >> 8)) & 1023u;
-                cho_buf[cho_w & 1023u] = (int16_t)clampi(x >> 1, -32768, 32767);
-                tl = (cho_buf[i0] + (((cho_buf[(i0 - 1u) & 1023u] - cho_buf[i0]) * (dlq & 255)) >> 8)) << 1;
-                tr = (cho_buf[i1] + (((cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * (drq & 255)) >> 8)) << 1;
-                L[j] += mulq15(tl - L[j], mix);
-                R[j] += mulq15(tr - R[j], mix);
-                cho_w++;
+                ph_fb[s] = clampi(y, -32767, 32767);
+                io[j] = (x + (y << 2)) >> 1;
             }
+        ph_ph += inc * 32u;
+    }
+}
+
+/* ---- CHORUS: 7 ms +- 3.5 ms, two taps 90 degrees apart */
+static uint32_t cp_ph;
+static int16_t cho_buf[1024] POOL;
+static uint32_t cho_w;
+static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
+{
+    int32_t depth = fx_p[FXP_CP_DEPTH];
+    uint32_t inc = fx_cp_sync_inc ? fx_cp_sync_inc : FX_LFO_INC[fx_p[FXP_CP_SPEED]] >> 1, sb, j;
+    if (!fx_p[FXP_CP_SW]) return;
+    for (sb = 0; sb < n; sb += 32u) {
+        int32_t dlq = 308 * 256 + ((osc_sine(cp_ph) * (154 * depth / 127)) >> 7);
+        int32_t drq = 308 * 256 + ((osc_sine(cp_ph + 0x40000000u) * (154 * depth / 127)) >> 7);
+        int32_t mix = (16384 * (2 * depth > 127 ? 127 : 2 * depth)) / 127;
+        for (j = sb; j < sb + 32u && j < n; j++) {
+            int32_t x = (L[j] + R[j]) >> 1, tl, tr;
+            uint32_t i0 = (cho_w - (uint32_t)(dlq >> 8)) & 1023u, i1 = (cho_w - (uint32_t)(drq >> 8)) & 1023u;
+            cho_buf[cho_w & 1023u] = (int16_t)clampi(x >> 1, -32768, 32767);
+            tl = (cho_buf[i0] + (((cho_buf[(i0 - 1u) & 1023u] - cho_buf[i0]) * (dlq & 255)) >> 8)) << 1;
+            tr = (cho_buf[i1] + (((cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * (drq & 255)) >> 8)) << 1;
+            L[j] += mulq15(tl - L[j], mix);
+            R[j] += mulq15(tr - R[j], mix);
+            cho_w++;
         }
         cp_ph += inc * 32u;
+    }
+}
+
+/* ---- COMPRESSOR (mono, before the drive): peak detector (ATTACK / RELEASE), soft knee of 6 dB, gain computed
+ * in log2 (Q12) every 16 samples and ramped. AMOUNT moves the threshold -9 .. -39 dBFS and the ratio 1.5 .. 6
+ * together; the make-up gives back 3/4 of the reduction at the piano's peak level (-9 dBFS). */
+static int32_t cmp_env, cmp_g = 65536;
+static int32_t ilog2_q12(uint32_t x)                     /* log2(x), Q12; x > 0 (no clz: a binary search) */
+{
+    int32_t e = 0;
+    if (x >= 1u << 16) { x >>= 16; e += 16; }
+    if (x >= 1u << 8) { x >>= 8; e += 8; }
+    if (x >= 1u << 4) { x >>= 4; e += 4; }
+    if (x >= 1u << 2) { x >>= 2; e += 2; }
+    if (x >= 1u << 1) { e += 1; }
+    return e << 12;
+}
+static int32_t log2_q12(uint32_t x)
+{
+    int32_t e = ilog2_q12(x) >> 12;
+    uint32_t m = e >= 8 ? x >> (e - 8) : x << (8 - e);      /* 256 .. 511 */
+    return (e << 12) + FX_LOG2F[m & 255u];
+}
+static int32_t exp2_q16(int32_t g)                       /* 2^(g / 4096) in Q16; g in [-16, 4] octaves */
+{
+    int32_t ip = g >> 12, v = (int32_t)FX_EXP2F[(g & 4095) >> 4];
+    return ip >= 0 ? v << ip : ip > -16 ? v >> -ip : 0;
+}
+static void fx_comp(int32_t *m, uint32_t n)
+{
+    int32_t amt = fx_p[FXP_CMP_AMT], ka = (int32_t)FX_CMP_ATK[fx_p[FXP_CMP_ATK]], kr = (int32_t)FX_CMP_REL[fx_p[FXP_CMP_REL]];
+    int32_t thr = -6144 - amt * 20480 / 127;                       /* log2 re full scale: -1.5 .. -6.5 (-9 .. -39 dB) */
+    int32_t slope = 4096 - 4096 * 2 * 127 / (3 * 127 + 9 * amt);    /* 1 - 1/R, R = 1.5 + 4.5 amt/127; Q12 */
+    int32_t mk = (int32_t)(((int64_t)slope * (-6144 - thr) * 3) >> 14);   /* make-up: 3/4 of the reduction at the
+                                                                     * piano's peak (-9 dBFS); the limiter guards */
+    uint32_t sb, j;
+    if (!fx_p[FXP_CMP_SW]) { fx_cmp_gr = 0; return; }
+    for (sb = 0; sb < n; sb += 16u) {
+        int32_t g0 = cmp_g, g1, over, gr, lvl, step;
+        for (j = sb; j < sb + 16u && j < n; j++) {                  /* detector: |x| in Q8 */
+            int32_t a = iabs(m[j]) << 8, d = a - cmp_env;
+            cmp_env += (int32_t)(((int64_t)d * (d > 0 ? ka : kr)) >> 16);
+        }
+        lvl = cmp_env > 256 ? log2_q12((uint32_t)cmp_env) - 23 * 4096 : -16 * 4096;   /* re 32768 << 8 */
+        over = lvl - thr;
+        if (over <= -2048) gr = 0;                                  /* the knee: +-3 dB around the threshold */
+        else if (over < 2048) gr = (int32_t)(((int64_t)slope * (over + 2048) * (over + 2048)) >> 25);
+        else gr = (slope * over) >> 12;
+        fx_cmp_gr = gr;
+        g1 = exp2_q16(mk - gr);
+        step = (g1 - g0) / 16;
+        for (j = sb; j < sb + 16u && j < n; j++) {
+            g0 += step;
+            m[j] = (int32_t)(((int64_t)m[j] * g0) >> 16);
+        }
+        cmp_g = g1;
     }
 }
 
@@ -415,9 +484,11 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
         return;
     }
     for (j = 0; j < n; j++) { m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }
+    fx_comp(m, n);
     fx_drive(m, n);
     fx_trem(m, fx_L, fx_R, n);
-    fx_mod(fx_L, fx_R, n);
+    fx_phaser(fx_L, fx_R, n);
+    fx_chorus(fx_L, fx_R, n);
     fx_delay(fx_L, fx_R, n);
     fx_reverb(fx_L, fx_R, n);
     for (j = 0; j < n; j++) {

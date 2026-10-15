@@ -1,8 +1,8 @@
-# Presets (presets.c): PRESETS encoder = 6, SAVE = 9, HOME = 8, OCT+ = 1, FX LED = 2 (CHO/PHA switch on).
+# Presets (presets.c): PRESETS encoder = 6, SAVE = 9, HOME = 8, OCT+ = 1, SEQ LED = 11 (the phaser on).
 # browse to F02 70S PHASER: it loads 400 ms after the last detent -> the phaser is on
 100 turn 6 1
-300 expect led 2 0
-700 expect led 2 1
+300 expect led 11 0
+700 expect led 11 1
 # SAVE opens the save mode (the footer asks), PRESETS picks the slot, SAVE again stores it in U01
 800 btn 9
 900 shot
@@ -12,16 +12,16 @@
 1650 expect led 1 0
 # Program Change 0 -> F01 (no phaser), then 16 -> U01 (the saved copy: phaser again)
 1700 midi 0xC0 0 0
-1800 expect led 2 0
+1800 expect led 11 0
 1900 midi 0xC0 16 0
-2000 expect led 2 1
+2000 expect led 11 1
 2100 shot
 # SAVE held 700 ms: undo the last load (back to F01)
 2200 press 9
 3000 release 9
-3100 expect led 2 0
+3100 expect led 11 0
 # SAVE then HOME: cancelled, nothing changes
 3200 btn 9
 3300 btn 8
-3400 expect led 2 0
+3400 expect led 11 0
 3500 end

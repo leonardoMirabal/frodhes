@@ -3,11 +3,13 @@
  * so nothing else competes for them). A draw scheduler sends at most one screen element per main-loop pass
  * (a full screen is ~77 ms of SPI: drawn at once it would delay the keys).
  *
- *   SELECT     turns through the pages: PIANO VOICE DECAY TREM/WAH CHO/PHASER DELAY TEMPO SCALE SETUP
+ *   SELECT     turns through the pages (the order of the chain):
+ *              PIANO VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE SETUP
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on any page)          PRESETS  sounds (presets.c)
- *   shortcuts  HOME = PIANO, EDIT = VOICE, ENV = DECAY, LFO / FX / ARP = TREM / CHO / DELAY (on that page: the
- *              effect on / off), GLO = TEMPO (again: SETUP), SEL = SCALE. PLAY: tap tempo. REC: sustain. */
+ *   shortcuts  HOME = PIANO, EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEQ / FX / ARP = TREM / PHASER /
+ *              CHORUS / DELAY (on that page: the effect on / off), GLO = TEMPO (again: SETUP), SEL = SCALE.
+ *              PLAY: tap tempo. REC: sustain. */
 
 #define PR_NF_UI 12u                                  /* presets.c: PR_NF factory presets, then the user ones */
 #define PR_NALL_UI 28u
@@ -17,21 +19,23 @@ static void preset_name(uint32_t idx, char *s);
 static void tempo_tap(void);                          /* tempo.c */
 static void tempo_set10(uint32_t b);
 
-enum { PG_PIANO, PG_VOICE, PG_DECAY, PG_TREM, PG_CHO, PG_DELAY, PG_TEMPO, PG_SCALE, PG_SETUP, PG_N };
+enum { PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_TEMPO, PG_SCALE, PG_SETUP, PG_N };
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_N = 7, E_CARDS = 10 };   /* E_CARDS: all four */
 /* card slots: a parameter id (< P_COUNT) or one of these */
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_NONE = 0xFF };
 
-static const char *const PAGE_TITLE[PG_N] = {"PIANO", "VOICE", "DECAY", "TREM/WAH", "CHO/PHASER", "DELAY", "TEMPO",
-                                             "SCALE", "SETUP"};
+static const char *const PAGE_TITLE[PG_N] = {"PIANO", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
+                                             "CHORUS", "DELAY", "TEMPO", "SCALE", "SETUP"};
 static const uint8_t PAGE_S[PG_N][4] = {
     {P_TYPE, P_DRIVE, P_RV_DEPTH, S_KVEL},
     {P_TONE, P_BARK, P_BELL, P_HAMMER},
     {P_DECAY, P_RELEASE, P_NOISE, S_TUNE},
+    {P_CMP_SW, P_CMP_AMT, P_CMP_ATK, P_CMP_REL},
     {S_TWKIND, P_TW_DEPTH, P_TW_RATE, P_TW_SHAPE},
-    {P_CP_SW, P_CP_DEPTH, P_CP_SPEED, P_CP_FDBK},
+    {P_PH_SW, P_PH_DEPTH, P_PH_SPEED, P_PH_FDBK},
+    {P_CP_SW, P_CP_DEPTH, P_CP_SPEED, P_CP_SYNC},
     {P_DL_SW, P_DL_DEPTH, P_DL_TIME, P_DL_FDBK},
-    {S_BPM, P_TW_SYNC, P_CP_SYNC, P_DL_SYNC},
+    {S_BPM, P_TW_SYNC, P_PH_SYNC, P_DL_SYNC},
     {S_SCMODE, S_SCALE, S_ROOT, S_TRANS},
     {S_CLOCK, P_DL_TONE, S_NONE, S_NONE},
 };
@@ -39,16 +43,18 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"TYPE", "DRIVE", "REVERB", "KEY VEL"},
     {"TONE", "BARK", "BELL", "HAMMER"},
     {"DECAY", "RELEASE", "NOISE", "TUNE"},
+    {"EFFECT", "AMOUNT", "ATTACK", "RELEASE"},
     {"EFFECT", "DEPTH", "RATE", "SHAPE"},
     {"EFFECT", "DEPTH", "SPEED", "FEEDBK"},
+    {"EFFECT", "DEPTH", "SPEED", "SYNC"},
     {"EFFECT", "MIX", "TIME", "FEEDBK"},
-    {"BPM", "TREM SYNC", "CHO SYNC", "DLY SYNC"},
+    {"BPM", "TREM SYNC", "PHA SYNC", "DLY SYNC"},
     {"MODE", "SCALE", "ROOT", "TRANSP"},
     {"CLOCK", "DLY TONE", "", ""},
 };
 static const char *const PAGE_HINT[PG_N] = {"REC: SUSTAIN  SAVE: STORE", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
-                                            "LFO BUTTON: ON / OFF", "FX BUTTON: ON / OFF", "ARP BUTTON: ON / OFF",
-                                            "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT", ""};
+                                            "", "LFO BUTTON: ON / OFF", "SEQ BUTTON: ON / OFF", "FX BUTTON: ON / OFF",
+                                            "ARP BUTTON: ON / OFF", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT", ""};
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
                                            "PENTA", "MPENTA", "BLUES"};
 static const char *const NOTE_NAME[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -87,12 +93,12 @@ static int32_t sgn(int32_t d) { return d > 0 ? 1 : -1; }
 /* ---- card slots */
 static uint32_t tw_kind(void)
 {
-    uint32_t sw = set.panel[P_TW_SW];
-    return sw == 2u ? 3u : sw == 1u ? 1u + set.panel[P_TW_MODE] : 0u;
+    uint32_t sw = PV(P_TW_SW);
+    return sw == 2u ? 3u : sw == 1u ? 1u + PV(P_TW_MODE) : 0u;
 }
 static int32_t slot_val(uint32_t s, int32_t *hi)
 {
-    if (s < P_COUNT) { *hi = PARAMS[s].hi; return set.panel[s]; }
+    if (s < P_COUNT) { *hi = PARAMS[s].hi; return PV(s); }
     switch (s) {
     case S_KVEL: *hi = 127; return set.key_vel;
     case S_TUNE: *hi = 100; return set.tune + 50;
@@ -116,12 +122,13 @@ static void slot_text(uint32_t s, char *v)
 {
     v[0] = 0;
     switch (s) {
-    case P_TYPE: p_strcpy(v, N_TYPE_LONG[set.panel[P_TYPE]], 12); return;
-    case P_DL_TIME: if (set.panel[P_DL_SYNC]) { p_strcpy(v, N_SYNC[set.panel[P_DL_SYNC]], 5); return; } break;
-    case P_CP_SPEED: if (set.panel[P_CP_SYNC]) { p_strcpy(v, N_SYNC[set.panel[P_CP_SYNC]], 5); return; } break;
+    case P_TYPE: p_strcpy(v, N_TYPE_LONG[PV(P_TYPE)], 12); return;
+    case P_DL_TIME: if (PV(P_DL_SYNC)) { p_strcpy(v, N_SYNC[PV(P_DL_SYNC)], 5); return; } break;
+    case P_CP_SPEED: if (PV(P_CP_SYNC)) { p_strcpy(v, N_SYNC[PV(P_CP_SYNC)], 5); return; } break;
+    case P_PH_SPEED: if (PV(P_PH_SYNC)) { p_strcpy(v, N_SYNC[PV(P_PH_SYNC)], 5); return; } break;
     case P_TW_RATE:
-        if (set.panel[P_TW_SW] == 2) { fmt_r10(v, set.panel[s]); return; }          /* WAH: resonance */
-        if (set.panel[P_TW_SYNC]) { p_strcpy(v, N_SYNC[set.panel[P_TW_SYNC]], 5); return; }
+        if (PV(P_TW_SW) == 2) { fmt_r10(v, PV(s)); return; }          /* WAH: resonance */
+        if (PV(P_TW_SYNC)) { p_strcpy(v, N_SYNC[PV(P_TW_SYNC)], 5); return; }
         break;
     case S_KVEL: p_fmt_int(v, set.key_vel); return;
     case S_TUNE: fmt_signed(v, set.tune); return;
@@ -151,13 +158,14 @@ static void slot_turn(uint32_t s, int32_t d)
         uint32_t id = s;
         int32_t step = PARAMS[id].fmt == F_ENUM || PARAMS[id].fmt == F_DIV ? sgn(d) : d, v;
         /* a synced rate / time knob steps the note value (clockwise: longer time, faster rate); never unsyncs */
-        if (id == P_DL_TIME && set.panel[P_DL_SYNC]) { id = P_DL_SYNC; step = sgn(d); }
-        else if (id == P_CP_SPEED && set.panel[P_CP_SYNC]) { id = P_CP_SYNC; step = -sgn(d); }
-        else if (id == P_TW_RATE && set.panel[P_TW_SYNC] && set.panel[P_TW_SW] != 2) { id = P_TW_SYNC; step = -sgn(d); }
-        v = set.panel[id] + step;
+        if (id == P_DL_TIME && PV(P_DL_SYNC)) { id = P_DL_SYNC; step = sgn(d); }
+        else if (id == P_CP_SPEED && PV(P_CP_SYNC)) { id = P_CP_SYNC; step = -sgn(d); }
+        else if (id == P_PH_SPEED && PV(P_PH_SYNC)) { id = P_PH_SYNC; step = -sgn(d); }
+        else if (id == P_TW_RATE && PV(P_TW_SYNC) && PV(P_TW_SW) != 2) { id = P_TW_SYNC; step = -sgn(d); }
+        v = PV(id) + step;
         if (id != s && v < 1) v = 1;
         param_set(id, clampi(v, 0, PARAMS[id].hi));
-        if (id == P_TW_SYNC || id == P_CP_SYNC || id == P_DL_SYNC) tempo_sync_publish();
+        if (id == P_TW_SYNC || id == P_CP_SYNC || id == P_DL_SYNC || id == P_PH_SYNC) tempo_sync_publish();
         return;
     }
     switch (s) {
@@ -257,7 +265,13 @@ static void draw_footer(void)
         else text_c(0, 10, 240, &FONT_S, ui_msg, C_HI);
     } else {
         text_c(0, 2, 240, &FONT_S, "SELECT: PAGE  PRESETS: SOUND", C_GRAY);
-        if (ui_page == PG_SETUP) {
+        if (ui_page == PG_COMP) {
+            static char gr[24];
+            int32_t db10 = PV(P_CMP_SW) ? fx_cmp_gr * 602 / 4096 : 0;      /* log2 Q12 -> dB x 10 */
+            p_strcpy(gr, "REDUCING ", 9); p_fmt_int(gr + 9, db10 / 10);
+            { uint32_t n = 0; while (gr[n]) n++; gr[n++] = '.'; gr[n++] = (char)('0' + db10 % 10); p_strcpy(gr + n, " DB", 3); }
+            text_c(0, 18, 240, &FONT_S, PV(P_CMP_SW) ? gr : "ENV BUTTON: DECAY / COMP", C_DIM);
+        } else if (ui_page == PG_SETUP) {
             static char cpu[32];
             uint32_t n = 0;
             p_strcpy(cpu, "AUDIO ", 6); p_fmt_int(cpu + 6, (int32_t)prof_us);
@@ -282,7 +296,7 @@ static void ui_draw(void)
     if (ui_msg_t && fm1_ms - ui_msg_t >= MSG_MS && fm1_ms - ui_msg_t < MSG_MS + 100u) ui_mark(E_FOOTER);
     if (ui_hot_t && ui_hot_card < 4u && fm1_ms - ui_hot_t >= HOT_MS && fm1_ms - ui_hot_t < HOT_MS + 100u)
         ui_mark(E_CARD0 + ui_hot_card);
-    if (ui_page == PG_SETUP && (fm1_ms & 511u) == 0u) ui_mark(E_FOOTER);         /* the audio time, twice a second */
+    if ((ui_page == PG_SETUP || ui_page == PG_COMP) && (fm1_ms & 255u) == 0u) ui_mark(E_FOOTER);   /* live readouts */
     d = ui_dirty & ((1u << E_N) - 1u);
     if (!d || fm1_ms - ui_last_draw < 4u) return;
     e = d >> E_FOOTER & 1u ? E_FOOTER : d & 1u ? E_HEADER : d >> E_TITLE & 1u ? E_TITLE : 0xFF;
@@ -307,16 +321,16 @@ static void ui_goto(uint32_t pg)
 /* LFO / FX / ARP: go to the effect's page; on it, the effect on <-> off (back to the last one used) */
 static void ui_fx_button(uint32_t pg, uint32_t k)
 {
-    static const uint8_t SW[3] = {P_TW_SW, P_CP_SW, P_DL_SW};
-    static const char *const NAME[3] = {"TREM/WAH", "CHO/PHASER", "DELAY"};
-    uint32_t id = SW[k], sw = set.panel[id], n = 0;
+    static const uint8_t SW[4] = {P_TW_SW, P_CP_SW, P_DL_SW, P_PH_SW};
+    static const char *const NAME[4] = {"TREM/WAH", "CHORUS", "DELAY", "PHASER"};
+    uint32_t id = SW[k], sw = PV(id), n = 0;
     char s[24];
     if (ui_page != pg) { ui_goto(pg); return; }
-    if (sw) { set.last_on[k] = (uint8_t)sw; param_set(id, 0); }
-    else param_set(id, set.last_on[k]);
+    if (sw) { if (k < 3u) set.last_on[k] = (uint8_t)sw; param_set(id, 0); }
+    else param_set(id, k < 3u && set.last_on[k] <= PARAMS[id].hi ? set.last_on[k] : 1);
     p_strcpy(s, NAME[k], 12);
     while (s[n]) n++;
-    p_strcpy(s + n, set.panel[id] ? " ON" : " OFF", 4);
+    p_strcpy(s + n, PV(id) ? " ON" : " OFF", 4);
     ui_say(s);
     ui_mark(E_CARDS);
 }
@@ -333,11 +347,12 @@ static void ui_input(uint32_t b, uint32_t rel)
     }
     if (b >> BTN_HOME & 1u) ui_goto(PG_PIANO);
     if (b >> BTN_EDIT & 1u) ui_goto(PG_VOICE);
-    if (b >> BTN_ENV & 1u) ui_goto(PG_DECAY);
+    if (b >> BTN_ENV & 1u) ui_goto(ui_page == PG_DECAY ? PG_COMP : PG_DECAY);
     if (b >> BTN_SEL & 1u) ui_goto(PG_SCALE);
     if (b >> BTN_GLO & 1u) ui_goto(ui_page == PG_TEMPO ? PG_SETUP : PG_TEMPO);
     if (b >> BTN_LFO & 1u) ui_fx_button(PG_TREM, 0);
     if (b >> BTN_FX & 1u) ui_fx_button(PG_CHO, 1);
+    if (b >> BTN_SEQ & 1u) ui_fx_button(PG_PHA, 3);
     if (b >> BTN_ARP & 1u) ui_fx_button(PG_DELAY, 2);
     if (b >> BTN_PLAY & 1u) tempo_tap();
     if (b >> BTN_OCT_DOWN & 1u && set.oct > -2) { set.oct--; ui_changed(); ui_mark(E_HEADER); }
@@ -349,7 +364,7 @@ static void ui_input(uint32_t b, uint32_t rel)
     }
     if (d[ENC_ALGORITHM]) {
         slot_turn(P_TYPE, sgn(d[ENC_ALGORITHM]));
-        ui_say(N_TYPE_LONG[set.panel[P_TYPE]]);
+        ui_say(N_TYPE_LONG[PV(P_TYPE)]);
         ui_mark(E_CARDS);
     }
     for (k = 0; k < 4u; k++) {
@@ -360,7 +375,8 @@ static void ui_input(uint32_t b, uint32_t rel)
         if (ui_hot_card != k && ui_hot_card < 4u) ui_mark(E_CARD0 + ui_hot_card);
         ui_hot_card = (uint8_t)k; ui_hot_t = fm1_ms;
         ui_mark(E_CARD0 + k);
-        if (s == P_DL_SW || s == P_CP_SW || s == S_TWKIND || s == P_TW_SYNC || s == P_CP_SYNC || s == P_DL_SYNC)
+        if (s == P_DL_SW || s == P_CP_SW || s == S_TWKIND || s == P_TW_SYNC || s == P_CP_SYNC || s == P_DL_SYNC ||
+            s == P_PH_SYNC || s == P_CMP_SW)
             ui_mark(E_CARDS);                           /* a switch or sync changes what the other cards show */
     }
 }
@@ -369,12 +385,13 @@ static void ui_input(uint32_t b, uint32_t rel)
 static void ui_leds(uint32_t lit, uint32_t beat_on)
 {
     uint32_t k;
-    fm1_led_key(BTN_LFO, set.panel[P_TW_SW] != 0);
-    fm1_led_key(BTN_FX, set.panel[P_CP_SW] != 0);
-    fm1_led_key(BTN_ARP, set.panel[P_DL_SW] != 0);
+    fm1_led_key(BTN_LFO, PV(P_TW_SW) != 0);
+    fm1_led_key(BTN_FX, PV(P_CP_SW) != 0);
+    fm1_led_key(BTN_ARP, PV(P_DL_SW) != 0);
+    fm1_led_key(BTN_SEQ, PV(P_PH_SW) != 0);
     fm1_led_key(BTN_HOME, ui_page == PG_PIANO);
     fm1_led_key(BTN_EDIT, ui_page == PG_VOICE);
-    fm1_led_key(BTN_ENV, ui_page == PG_DECAY);
+    fm1_led_key(BTN_ENV, ui_page == PG_DECAY || ui_page == PG_COMP);
     fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP);
     fm1_led_key(BTN_SEL, ui_page == PG_SCALE);
     fm1_led_key(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));

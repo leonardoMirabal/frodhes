@@ -91,3 +91,22 @@ def test_noise_knock_at_key_up():
     assert np.array_equal(Lq[pre], Ln[pre])                     # identical before the key-up
     post = slice(int(0.6 * FS), int(0.7 * FS))
     assert np.sum((Ln[post] - Lq[post]) ** 2) > 0               # something added after it
+
+
+def test_compressor_narrows_dynamics():
+    # soft (v 40) and hard (v 120) A3, dry vs COMP on at AMOUNT 127: the level gap must shrink by >= 4 dB
+    notes = [(100, 57, 40, 700), (1000, 57, 120, 700)]
+    base = [(81, 0), (91, 0)]
+    def gap(ccs):
+        L, _ = run("cmp" + str(len(ccs)), base + ccs, notes, 1900)
+        return rms_db(seg(L, 1.02, 1.4)) - rms_db(seg(L, 0.12, 0.5))
+    g_off, g_on = gap([]), gap([(106, 127), (107, 127), (108, 0), (109, 40)])
+    assert g_off > 10 and g_on < g_off - 4, (g_off, g_on)
+
+
+def test_phaser_and_chorus_together():
+    # the split (0.4): both on at once, finite, stereo, and different from either alone
+    both, _ = run("phcho", [(12, 127), (13, 100), (85, 64), (86, 100)], [(100, 60, 100, 1500)], 1800)
+    pha, _ = run("phonly", [(12, 127), (13, 100)], [(100, 60, 100, 1500)], 1800)
+    assert np.max(np.abs(both)) < 32767 and np.isfinite(both).all()
+    assert rms_db(seg(both - pha, 0.2, 1.5)) > rms_db(seg(both, 0.2, 1.5)) - 20

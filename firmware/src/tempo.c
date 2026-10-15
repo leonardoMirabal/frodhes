@@ -15,7 +15,7 @@ static uint32_t beat_samples(void) { return 26460000u / set.bpm10; }       /* fs
 
 static void tempo_sync_publish(void)
 {
-    uint32_t d = set.panel[P_DL_SYNC], t = set.panel[P_TW_SYNC];
+    uint32_t d = PV(P_DL_SYNC), t = PV(P_TW_SYNC);
     fx_dly_sync_samples = d ? beat_samples() * SYNC_UNITS[d] / 96u : 0u;
     if (t) {
         uint32_t s = beat_samples() * SYNC_UNITS[t] / 96u;
@@ -23,8 +23,10 @@ static void tempo_sync_publish(void)
     } else
         fx_tw_sync_inc = 0;
     {
-        uint32_t c = set.panel[P_CP_SYNC], s = c ? beat_samples() * SYNC_UNITS[c] / 96u : 0u;
+        uint32_t c = PV(P_CP_SYNC), s = c ? beat_samples() * SYNC_UNITS[c] / 96u : 0u;
         fx_cp_sync_inc = c ? 0xFFFFFFFFu / (s ? s : 1u) : 0u;
+        c = PV(P_PH_SYNC); s = c ? beat_samples() * SYNC_UNITS[c] / 96u : 0u;
+        fx_ph_sync_inc = c ? 0xFFFFFFFFu / (s ? s : 1u) : 0u;
     }
 }
 
@@ -82,7 +84,7 @@ static uint32_t tempo_beat_led(void)
 {
     uint32_t ph = (fm1_ms - beat_t0) % (beat_ms ? beat_ms : 1u);
     if (fm1_ms - tap_t[tap_n ? tap_n - 1u : 0] < 80u) return 1;
-    if (!set.panel[P_DL_SYNC] && !set.panel[P_TW_SYNC] && !set.panel[P_CP_SYNC]) return 0;
+    if (!PV(P_DL_SYNC) && !PV(P_TW_SYNC) && !PV(P_CP_SYNC) && !PV(P_PH_SYNC)) return 0;
     return ph < beat_ms / 6u;
 }
 

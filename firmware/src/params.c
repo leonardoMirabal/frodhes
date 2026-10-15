@@ -6,7 +6,11 @@
 enum { P_TYPE, P_DRIVE, P_TW_SW, P_TW_DEPTH, P_TW_RATE, P_TW_SYNC, P_TW_MODE, P_TW_SHAPE,
        P_CP_SW, P_CP_DEPTH, P_CP_SPEED, P_CP_SYNC, P_CP_FDBK,
        P_DL_SW, P_DL_DEPTH, P_DL_TIME, P_DL_SYNC, P_DL_FDBK, P_DL_TONE,
-       P_RV_DEPTH, P_TONE, P_BARK, P_BELL, P_HAMMER, P_DECAY, P_RELEASE, P_NOISE, P_SPREAD, P_COUNT };
+       P_RV_DEPTH, P_TONE, P_BARK, P_BELL, P_HAMMER, P_DECAY, P_RELEASE, P_NOISE, P_SPREAD,
+       P_PH_SW, P_PH_DEPTH, P_PH_SPEED, P_PH_SYNC, P_PH_FDBK,                 /* 0.4: the phaser on its own */
+       P_CMP_SW, P_CMP_AMT, P_CMP_ATK, P_CMP_REL,                             /* 0.4: the compressor */
+       P_COUNT };
+#define P_SLOTS 48u                /* room in the settings / preset records (P_COUNT <= P_SLOTS) */
 
 enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP };
 typedef struct {
@@ -18,7 +22,8 @@ typedef struct {
 static const char *const N_TYPE[] = {"ST77", "SUIT", "FELT", "DYNO"};
 static const char *const N_TYPE_LONG[] = {"STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO"};
 static const char *const N_TW[] = {"OFF", "TRM", "WAH"};
-static const char *const N_CP[] = {"OFF", "CHO", "PHA"};
+static const char *const N_CP[] = {"OFF", "CHO", "PHA"};   /* "PHA": records before 0.4 */
+static const char *const N_ONOFF[] = {"OFF", "ON"};
 static const char *const N_DL[] = {"OFF", "DIG", "ANA"};
 static const char *const N_TWM[] = {"PAN", "AM"};
 static const char *const N_SYNC[] = {"FREE", "1/32", "16T", "1/16", "8T", "16D", "1/8", "4T", "8D", "1/4", "4D", "1/2",
@@ -33,7 +38,7 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_TW_SYNC] = {"SYNC", 13, 0, F_DIV, 20, N_SYNC},
     [P_TW_MODE] = {"MODE", 1, 0, F_ENUM, 21, N_TWM},
     [P_TW_SHAPE] = {"SHPE", 127, 0, F_R10, 22, 0},
-    [P_CP_SW] = {"CHO", 2, 0, F_ENUM, 85, N_CP},
+    [P_CP_SW] = {"CHO", 1, 0, F_ENUM, 85, N_ONOFF},
     [P_CP_DEPTH] = {"DPTH", 127, 50, F_R10, 86, 0},
     [P_CP_SPEED] = {"SPD", 127, 50, F_HZ, 87, 0},
     [P_CP_SYNC] = {"SYNC", 14, 0, F_DIV, 23, N_SYNC},
@@ -53,10 +58,20 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_RELEASE] = {"REL", 127, 64, F_R10, 103, 0},
     [P_NOISE] = {"NOIS", 127, 48, F_R10, 104, 0},
     [P_SPREAD] = {"SPRD", 127, 0, F_R10, 105, 0},
+    [P_PH_SW] = {"PHA", 1, 0, F_ENUM, 12, N_ONOFF},
+    [P_PH_DEPTH] = {"DPTH", 127, 80, F_R10, 13, 0},
+    [P_PH_SPEED] = {"SPD", 127, 40, F_HZ, 14, 0},
+    [P_PH_SYNC] = {"SYNC", 14, 0, F_DIV, 15, N_SYNC},
+    [P_PH_FDBK] = {"FDBK", 127, 50, F_R10, 16, 0},
+    [P_CMP_SW] = {"COMP", 1, 0, F_ENUM, 106, N_ONOFF},
+    [P_CMP_AMT] = {"AMT", 127, 64, F_R10, 107, 0},
+    [P_CMP_ATK] = {"ATK", 127, 40, F_R10, 108, 0},
+    [P_CMP_REL] = {"REL", 127, 50, F_R10, 109, 0},
 };
+_Static_assert(P_COUNT <= P_SLOTS, "records hold P_SLOTS parameters");
 
 /* ---- the settings record: always 256 B, versioned, append-only (§10.5) */
-#define SET_VER 1u
+#define SET_VER 2u                 /* 2 (0.4): panel / undo hold P_SLOTS; version 1 records are converted */
 typedef struct {
     uint8_t ver, flags;
     int8_t oct;
@@ -67,12 +82,27 @@ typedef struct {
     uint8_t sel_role, focus, color, leds, humanize, sc_mode, sc_scale, sc_root;
     int8_t sc_trans;
     uint8_t last_on[3], hints_seen;
-    uint8_t panel[32], undo[32], undo_valid;
-    uint8_t reserved[167];
+    uint8_t panel[32], undo[32], undo_valid;   /* version 1: ids 0..31 */
+    uint8_t panel2[16], undo2[16];             /* version 2: ids 32..47 (byte 89 on: the old reserved area) */
+    uint8_t reserved[135];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 
 static settings_t set;
+#define PV(id) (*((id) < 32u ? &set.panel[(id)] : &set.panel2[(id) - 32u]))   /* a parameter's value */
+#define UV(id) (*((id) < 32u ? &set.undo[(id)] : &set.undo2[(id) - 32u]))
+
+/* records before 0.4 had the phaser as CHO/PHA = 2, sharing the chorus' depth, speed, sync and feedback */
+static void params_split_phaser(uint8_t *p, uint32_t np)
+{
+    if (np > P_CP_FDBK && p[P_CP_SW] == 2u) {
+        p[P_CP_SW] = 0;
+        if (np > P_PH_FDBK) {
+            p[P_PH_SW] = 1; p[P_PH_DEPTH] = p[P_CP_DEPTH]; p[P_PH_SPEED] = p[P_CP_SPEED];
+            p[P_PH_SYNC] = p[P_CP_SYNC]; p[P_PH_FDBK] = p[P_CP_FDBK];
+        }
+    }
+}
 static uint8_t set_dirty;
 static uint32_t set_t_change;
 
@@ -89,14 +119,24 @@ static void params_defaults(void)
     set.color = 1;                 /* AMBER */
     set.last_on[0] = set.last_on[1] = set.last_on[2] = 1;
     set.sc_scale = 0;
-    for (i = 0; i < P_COUNT; i++) set.panel[i] = PARAMS[i].def;
+    for (i = 0; i < P_COUNT; i++) PV(i) = PARAMS[i].def;
 }
 
 static void params_sanitize(void)
 {
     uint32_t i;
+    if (set.ver == 1u) {                                 /* 0.1 .. 0.3: new ids get their defaults */
+        uint8_t p[P_SLOTS];
+        for (i = 0; i < P_SLOTS; i++) p[i] = i < 32u ? set.panel[i] : i < P_COUNT ? PARAMS[i].def : 0;
+        for (i = 0; i < 16u; i++) set.panel2[i] = set.undo2[i] = 0;
+        for (i = 0; i < sizeof set.reserved; i++) set.reserved[i] = 0;
+        params_split_phaser(p, P_SLOTS);
+        for (i = 0; i < P_SLOTS; i++) PV(i) = p[i];
+        set.undo_valid = 0;
+        set.ver = SET_VER;
+    }
     if (set.ver != SET_VER) { params_defaults(); return; }
-    for (i = 0; i < P_COUNT; i++) if (set.panel[i] > PARAMS[i].hi) set.panel[i] = PARAMS[i].def;
+    for (i = 0; i < P_COUNT; i++) if (PV(i) > PARAMS[i].hi) PV(i) = PARAMS[i].def;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.bpm10 < 400 || set.bpm10 > 2400) set.bpm10 = 1200;
     if (!set.key_vel || set.key_vel > 127) set.key_vel = 96;
@@ -112,7 +152,7 @@ static void params_sanitize(void)
 /* ---- apply a parameter to the engine (main loop; volatile one-writer handover) */
 static void param_apply(uint32_t id)
 {
-    int32_t v = set.panel[id];
+    int32_t v = PV(id);
     switch (id) {
     case P_TYPE: rh_type = (uint8_t)v; fx_set(FXP_DRIVE_ROW, v); break;
     case P_DRIVE: fx_set(FXP_DRIVE, v); break;
@@ -138,6 +178,14 @@ static void param_apply(uint32_t id)
     case P_RELEASE: rh_k_rel = (int32_t)DECAY_K[v]; break;
     case P_NOISE: rh_thump = KN_THUMP[v]; rh_felt = KN_FELT[v]; break;
     case P_DL_TONE: fx_set(FXP_DL_TONE, v); break;
+    case P_PH_SW: fx_set(FXP_PH_SW, v); break;
+    case P_PH_DEPTH: fx_set(FXP_PH_DEPTH, v); break;
+    case P_PH_SPEED: fx_set(FXP_PH_SPEED, v); break;
+    case P_PH_FDBK: fx_set(FXP_PH_FDBK, v); break;
+    case P_CMP_SW: fx_set(FXP_CMP_SW, v); break;
+    case P_CMP_AMT: fx_set(FXP_CMP_AMT, v); break;
+    case P_CMP_ATK: fx_set(FXP_CMP_ATK, v); break;
+    case P_CMP_REL: fx_set(FXP_CMP_REL, v); break;
     default: break;                                                   /* SYNC: tempo.c; SPREAD: not yet in the engine */
     }
 }
@@ -153,8 +201,8 @@ static void param_set(uint32_t id, int32_t v)
     if (id >= P_COUNT) return;
     if (v < 0) v = 0;
     if (v > PARAMS[id].hi) v = PARAMS[id].hi;
-    if (set.panel[id] == (uint8_t)v) return;
-    set.panel[id] = (uint8_t)v;
+    if (PV(id) == (uint8_t)v) return;
+    PV(id) = (uint8_t)v;
     param_apply(id);
     set_dirty = 1;
     set_t_change = fm1_ms;
@@ -179,7 +227,7 @@ static void p_fmt_int(char *s, int32_t v)
 static void param_text(uint32_t id, char *s)
 {
     const pdesc_t *d = &PARAMS[id];
-    int32_t v = set.panel[id];
+    int32_t v = PV(id);
     switch (d->fmt) {
     case F_ENUM:
     case F_DIV: {
