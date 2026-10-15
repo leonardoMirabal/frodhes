@@ -4,7 +4,7 @@
  * Tempo: bpm10 (40.0 .. 240.0 BPM) in the settings; PLAY taps it (the last 4 taps; from the 3rd; 2 s resets);
  * one sync table in 1/96-quarter units drives the delay time and the tremolo rate (published as volatiles the
  * ISR reads). Time base: fm1_ms (32-bit, wraps after 49 days; compared by difference).
- * Scales: OFF / SNAP (round down onto the scale) / DEG (white keys walk the scale degrees from C4 = degree 0,
+ * Scales: OFF / SNAP (the nearest note of the scale) / DEG (white keys walk the scale degrees from C4 = degree 0,
  * black keys silent), Felucca's masks (seq.c SCALE_MASK, GPL-3.0). */
 
 static const uint16_t SYNC_UNITS[15] = {0, 12, 16, 24, 32, 36, 48, 64, 72, 96, 144, 192, 384, 768, 1536};
@@ -97,12 +97,14 @@ static const uint16_t SCALE_MASK[11] = {
 };
 static const int8_t DEGREE[12] = {0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6};   /* white keys C..B -> degree */
 
+/* the nearest note of the scale (a tie, as F between E and G in a pentatonic, goes down) */
 static int32_t scale_snap(int32_t n)
 {
     uint32_t m = SCALE_MASK[set.sc_scale], i;
     for (i = 0; i < 12u; i++) {
-        int32_t r = ((n - (int32_t)set.sc_root - (int32_t)i) % 12 + 12) % 12;
-        if (m >> r & 1u) return n - (int32_t)i;
+        int32_t dn = ((n - (int32_t)set.sc_root - (int32_t)i) % 12 + 12) % 12, up = (dn + 2 * (int32_t)i) % 12;
+        if (m >> dn & 1u) return n - (int32_t)i;
+        if (m >> up & 1u) return n + (int32_t)i;
     }
     return n;
 }

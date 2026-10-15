@@ -188,7 +188,7 @@ wider in stereo, which on headphones sounds bigger; their level is set so that i
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **MODE** | **OFF**; **SNAP** (every key plays, out-of-scale notes move down onto the scale); **DEGREE** (the white keys walk the scale, the black keys are silent) |
+| K1 | **MODE** | **OFF**; **SNAP** (every key plays: an out-of-scale note plays the nearest note of the scale); **DEGREE** (the white keys walk the scale, the black keys are silent) |
 | K2 | **SCALE** | Major, minor, dorian, mixolydian, lydian, phrygian, harmonic and melodic minor, pentatonic, minor pentatonic, blues |
 | K3 | **ROOT** | The scale's key |
 | K4 | **TRANSP** | Transpose ±24 semitones |
