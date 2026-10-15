@@ -4,13 +4,14 @@
  * the pattern at once, and nothing is lost. Edits never stop the loop:
  *
  *   PLAY            start / stop (on the SEQUENCER page)
- *   SEQ             recording on / off: every pass over the loop adds what you play (overdub); held 1 s: CLEAR
+ *   SEQ             recording on / off: playing, every pass adds what you play (overdub); stopped, the notes go on
+ *                   the cursor's step and it moves on (step recording); held 1 s: CLEAR
  *   BARS 1..16      the loop's length (notes past it stay, and come back when it grows)
  *   QUANT           OFF, 1/4, 1/8, 1/16, 1/8T, 1/16T        SWING 50..75 % (the off-beats of 1/8 and 1/16)
  *   EDIT            left: UNDO the last pass recorded; right: ERASE on / off (hold keys: their notes go as the loop
  *                   passes them)
  *
- * Recording armed while stopped starts the loop with the first note played. The page (ui.c) shows NOW / NEXT and the
+ * Recording armed while stopped is step recording: the notes go on the cursor's step (live_note_on). The page (ui.c) shows NOW / NEXT and the
  * bar's 16 cells. The notes play through notes.c (the
  * arpeggiator takes them when it runs) and are kept in two flash sectors written in turn (0x99000 / 0x9A000). */
 
@@ -31,6 +32,10 @@ static uint32_t sq_nact;
 static uint16_t rec_start[128];
 static uint8_t rec_vel[128], live_held[128];
 static uint8_t sq_dirty, sq_roll_dirty, sq_btn_down;
+static int32_t sq_cur = -1;                              /* the page's cursor, in 16ths (ui.c moves it) */
+static uint32_t sq_cur_t;
+static uint32_t st_keys, st_start, st_len, st_n;          /* step recording: the notes held, where, how long (16ths) */
+static uint16_t st_idx[CH_MAX * 2u];
 static uint32_t sq_change_t, sq_btn_t;
 static const uint8_t SQ_GRID[6] = {0, 96, 48, 24, 32, 16};
 static const char *const SQ_QUANT_NAME[6] = {"OFF", "1/4", "1/8", "1/16", "1/8T", "1/16T"};
@@ -136,19 +141,50 @@ static uint32_t seq_undo(void)                          /* the last pass recorde
     return got;
 }
 
+/* step recording (armed and stopped): the notes go on the cursor's step, as long as the QUANT grid (stretched by
+ * ALGORITHM while they are held); let go, the cursor moves on by that much */
+static uint32_t sq_grid16(void) { static const uint8_t G[6] = {1, 4, 2, 1, 1, 1}; return G[SQ_QUANT]; }
+static uint32_t sq_steps(void) { return (uint32_t)SQ_BARS * 16u; }
+static void st_note_on(uint32_t n, uint32_t vel)
+{
+    if (!st_keys) {                                     /* a new step: its own take (UNDO takes it back alone) */
+        st_start = sq_cur >= 0 && (uint32_t)sq_cur < sq_steps() ? (uint32_t)sq_cur : 0u;
+        st_len = sq_grid16(); st_n = 0; sq_take++;
+    }
+    st_keys++;
+    if (sq_n < SQ_MAXEV && st_n < CH_MAX * 2u) { st_idx[st_n++] = (uint16_t)sq_n; sq_add(st_start * 24u, st_len * 24u - 2u, n, vel); }
+    sq_cur = (int32_t)st_start; sq_cur_t = fm1_ms;
+}
+static void st_note_off(void)
+{
+    if (!st_keys || --st_keys) return;
+    sq_cur = (int32_t)((st_start + st_len) % sq_steps()); sq_cur_t = fm1_ms;
+    sq_changed();
+}
+static int seq_step_held(void) { return seq_rec && !seq_play && st_keys != 0u; }
+static void seq_step_stretch(int32_t d)                 /* ALGORITHM while the step's keys are held */
+{
+    uint32_t i;
+    int32_t l = (int32_t)st_len + d;
+    st_len = (uint32_t)(l < 1 ? 1 : l > (int32_t)sq_steps() ? (int32_t)sq_steps() : l);
+    for (i = 0; i < st_n; i++) if (st_idx[i] < sq_n) sq_ev[st_idx[i]].len = (uint16_t)(st_len * 24u - 2u);
+    sq_changed();
+}
+
 /* live notes (keys, USB-MIDI, chord mode's notes; not the sequencer's own): notes.c calls these */
 static void live_note_on(uint32_t n, uint32_t vel)
 {
     if (n > 127u) return;
     live_held[n]++;
     if (!seq_rec || sq_erase) return;
-    if (!seq_play) seq_start();                         /* armed and stopped: the first note starts the loop */
+    if (!seq_play) { st_note_on(n, vel); return; }      /* stopped: step recording */
     if (rec_start[n] == 0xFFFFu) { rec_start[n] = (uint16_t)sq_tick(); rec_vel[n] = (uint8_t)vel; }
 }
 static void live_note_off(uint32_t n)
 {
     if (n > 127u) return;
     if (live_held[n]) live_held[n]--;
+    if (seq_rec && !seq_play && !sq_erase) { st_note_off(); return; }
     if (!live_held[n]) sq_rec_close(n);
 }
 

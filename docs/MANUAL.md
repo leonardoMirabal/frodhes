@@ -253,7 +253,7 @@ A **pattern recorder**: play notes or chords (chord mode too) and they loop, qua
 editing. The screen is made to be read at a glance: the top line shows where the loop is (**BAR 2/4 . 3** = bar 2
 of 4, beat 3); the chord or note playing **now** is in big letters (D MIN7, C4...), with what comes **next** and
 where under it; and the bar playing is shown as **16 big cells** (16ths, in two rows of 8): a filled cell is where
-notes start, the white one is where the loop is.
+notes start, a cell with a band is where they are still held, the white one is where the loop is.
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -268,8 +268,13 @@ notes start, the white one is where the loop is.
   **delete** that step's notes. While the loop plays, the view goes back to following it 4 s after you stop turning.
   (On every other page ALGORITHM is the TYPE and PRESETS the presets, as always.)
 - **PLAY** starts and stops the loop.
-- **SEQ** switches recording on / off (the SEQ light blinks). Armed while stopped, the loop **starts with your first
-  note**. While recording, every pass adds what you play on top (overdub), and the loop never stops.
+- **SEQ** switches recording on / off (the SEQ light blinks).
+  - **Playing (live):** every pass adds what you play on top (overdub), quantized; the loop never stops. Arm REC, then
+    press PLAY to start.
+  - **Stopped (step by step):** what you play goes on the **cursor's step**, as long as the QUANT grid (1/16: one
+    step, 1/8: two, 1/4: four); let go and the cursor moves on by that much. Keep the keys held and turn
+    **ALGORITHM** to make that note or chord longer (LENGTH n STEPS); turn ALGORITHM without playing to leave a rest.
+    UNDO takes back the last step you entered.
 - **Hold SEQ** for a second: **clear** the whole pattern.
 
 Press **SEQ** on CHORD to come here (or SEQ from anywhere while chord mode is on). The pattern goes through the

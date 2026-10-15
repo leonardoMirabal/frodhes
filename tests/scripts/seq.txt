@@ -1,11 +1,12 @@
-# SEQUENCER (0.9.1): a loop recorder. Keys: C4 = 7, E4 = 11, G4 = 14. Buttons: SEQ 11, PLAY 12.
+# SEQUENCER (0.9.1). Keys: C4 = 7, E4 = 11, G4 = 14. Buttons: SEQ 11, PLAY 12. Encoders: ALGORITHM 1, PRESETS 6, K4 5.
 # SEQ: CHORD (chord mode off), SEQ again: SEQUENCER. 1 bar at 120 BPM = a 2 s loop, QUANT 1/8 (CC 61, 62)
 100 btn 11
 200 btn 11
 300 midi 0xB0 61 1
 350 midi 0xB0 62 2
-# SEQ on SEQUENCER: recording armed; the first note starts the loop (t = 1000: beat 1)
+# live: SEQ = REC armed, PLAY starts the loop (t = 950); C, E, a late G
 400 btn 11
+950 btn 12
 1000 keys 0x80
 1200 keys 0
 1500 keys 0x800
@@ -13,22 +14,40 @@
 2030 keys 0x4000
 2230 keys 0
 2900 shot
-# REC off after the first pass; the loop plays C E G on its own, G quantized to beat 3
+# REC off; the loop plays C E G on its own (G on the 1/8 grid)
 3100 btn 11
 3400 expect rms > -60
 4100 shot
 # PLAY: stop
 5200 btn 12
 6500 expect rms < -70
-# stopped: ALGORITHM (encoder 1) moves a cursor step by step: 4 steps on = beat 2, where E4 starts
+# the cursor (ALGORITHM): 4 steps on = beat 2, where E4 starts; PRESETS: bar by bar
 6600 turn 1 4
 6700 shot
-# PRESETS (encoder 6) on SEQUENCER: bar by bar (the loop is 1 bar: back to the same bar)
 6800 midi 0xB0 61 2
 6900 turn 6 1
 7000 shot
-# back to bar 1, step 5 (beat 2): EDIT (K4, encoder 5) left deletes that step's notes
 7100 turn 6 -1
+# EDIT left there: that step's notes go
 7200 turn 5 -1
 7300 shot
-7400 end
+# step recording (stopped): CLEAR, REC; the cursor back to step 1 (it was on 5); C (1/8: 2 steps, the cursor moves on 2),
+# E held and stretched 2 steps longer with ALGORITHM (4 steps), G
+7400 midi 0xB0 43 127
+7500 midi 0xB0 61 1
+7600 btn 11
+7700 turn 1 -4
+7800 keys 0x80
+7900 keys 0
+8000 keys 0x800
+8100 turn 1 2
+8200 keys 0
+8300 keys 0x4000
+8400 keys 0
+8500 shot
+# REC off, PLAY: C at 0, E at step 2 (250 ms), G at step 6 (750 ms)
+8600 btn 11
+8700 btn 12
+9100 expect rms > -60
+10700 btn 12
+10800 end

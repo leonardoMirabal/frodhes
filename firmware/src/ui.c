@@ -31,7 +31,6 @@ enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, 
        S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_NONE = 0xFF };
 
 static int sq_browsing(void);                           /* the SEQUENCER page's cursor (below) */
-static uint32_t sq_cur_t;                               /* when it last moved */
 static uint32_t sq_delete_step(void);
 static void sq_browse(int32_t d);
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
@@ -428,11 +427,10 @@ static void draw_card(uint32_t k)
 #define SQ_STRIP_Y 104
 #define SQ_CARD_Y 171
 #define SQ_CARD_H 33
-static int32_t sq_cur = -1;                              /* the cursor: ALGORITHM steps it (16ths), PRESETS by bars */
-static int sq_browsing(void) { return sq_cur >= 0 && (!seq_play || fm1_ms - sq_cur_t < 4000u); }
+static int sq_browsing(void) { return (sq_cur >= 0 || (seq_rec && !seq_play)) && (!seq_play || fm1_ms - sq_cur_t < 4000u); }
 static uint32_t sq_view_tick(void)                      /* the place looked at: the cursor's step, else the loop's */
 {
-    if (sq_browsing()) return (uint32_t)(sq_cur < (int32_t)(SQ_BARS * 16u) ? sq_cur : 0) * 24u;
+    if (sq_browsing()) return (uint32_t)(sq_cur >= 0 && sq_cur < (int32_t)(SQ_BARS * 16u) ? sq_cur : 0) * 24u;
     return seq_play ? sq_tick() : 0u;
 }
 static void sq_browse(int32_t d)                        /* d in 16ths (a bar = 16), around the loop */
@@ -539,17 +537,25 @@ static void draw_strip(void)                            /* the bar playing: 16 c
         if (sq_ev[i].tick >= L) continue;
         t = sq_at(&sq_ev[i]);
         if (t >= b0 && t < b0 + 4u * SQ_PPQ) hit[(t - b0) / 24u] = 1;
+        {                                               /* the steps it is held through: dim (2) */
+            uint32_t e = t + (sq_ev[i].len < L ? sq_ev[i].len : L - 1u), k;
+            for (k = 0; k < 16u; k++) {
+                uint32_t c = b0 + k * 24u, c2 = c + L;      /* (and around the loop's end) */
+                if (!hit[k] && ((c > t && c < e) || (c2 > t && c2 < e))) hit[k] = 2;
+            }
+        }
     }
     cv_begin(240, 62, C_BLACK);
     for (i = 0; i < 16u; i++) {
         int32_t x = 4 + (int32_t)(i % 8u) * 29, y = i < 8u ? 2 : 33;
-        uint16_t c = i == cur ? C_WHITE : hit[i] ? C_AMB : C_LINE;
-        if (hit[i] || i == cur) cv_rect(x, y, 26, 26, c);
+        uint16_t c = i == cur ? C_WHITE : hit[i] == 1u ? C_AMB : hit[i] ? C_LINE : C_LINE;
+        if (hit[i] == 2u && i != cur) { cv_rect(x, y, 26, 26, C_LINE); cv_rect(x, y + 9, 26, 8, C_DIM); }   /* held */
+        else if (hit[i] || i == cur) cv_rect(x, y, 26, 26, c);
         else { cv_rect(x, y, 26, 26, i % 4u == 0u ? C_DIM : C_LINE); cv_rect(x + 2, y + 2, 22, 22, C_BLACK); }
         if (sq_browsing() && i == (p - b0) / 24u) {    /* the cursor: a white frame around its cell (inside: */
             cv_rect(x - 2, y - 2, 30, 3, C_WHITE); cv_rect(x - 2, y + 25, 30, 3, C_WHITE);   /* black on a filled */
             cv_rect(x - 2, y - 2, 3, 30, C_WHITE); cv_rect(x + 25, y - 2, 3, 30, C_WHITE);   /* one, so it shows) */
-            if (hit[i] && i != cur) { cv_rect(x + 1, y + 1, 24, 2, C_BLACK); cv_rect(x + 1, y + 23, 24, 2, C_BLACK);
+            if (hit[i] == 1u && i != cur) { cv_rect(x + 1, y + 1, 24, 2, C_BLACK); cv_rect(x + 1, y + 23, 24, 2, C_BLACK);
                                       cv_rect(x + 1, y + 1, 2, 24, C_BLACK); cv_rect(x + 23, y + 1, 2, 24, C_BLACK); }
         }
     }
@@ -598,7 +604,7 @@ static void draw_footer(void)
         if (ui_page == PG_SEQ) {                       /* the state, and what the buttons do */
             char t[32];
             uint32_t n = 0;
-            if (seq_rec) p_strcpy(t, seq_play ? "REC: OVERDUB" : "REC: PLAY TO START", 20);
+            if (seq_rec) p_strcpy(t, seq_play ? "REC: OVERDUB" : "STEP REC: PLAY NOTES", 20);
             else if (sq_erase) p_strcpy(t, "ERASE: HOLD KEYS", 20);
             else { p_strcpy(t, seq_play ? "PLAYING  " : "STOPPED  ", 10); n = 9; p_fmt_int(t + n, (int32_t)sq_n); while (t[n]) n++; p_strcpy(t + n, " NOTES", 6); }
             text_c(0, 2, 240, &FONT_S, t, seq_rec || sq_erase ? UI_ACC : C_GRAY);
@@ -829,7 +835,14 @@ static void ui_input(uint32_t b, uint32_t rel)
         if (p != ui_page) ui_goto((uint32_t)p);
     }
     if (d[ENC_ALGORITHM] && ui_page == PG_SEQ) {        /* on SEQUENCER: the cursor, step by step */
-        sq_browse(d[ENC_ALGORITHM]);
+        if (seq_step_held()) {                          /* step recording, keys held: the step gets longer */
+            char m[24];
+            uint32_t k = 0;
+            seq_step_stretch(d[ENC_ALGORITHM]);
+            p_strcpy(m, "LENGTH ", 7); k = 7; p_fmt_int(m + k, (int32_t)st_len); while (m[k]) k++;
+            p_strcpy(m + k, st_len == 1u ? " STEP" : " STEPS", 6);
+            ui_say(m);
+        } else sq_browse(d[ENC_ALGORITHM]);
         ui_mark(E_TITLE); ui_mark(E_ROLL); ui_mark(E_METER); ui_mark(E_CARD0 + 3);
     } else if (d[ENC_ALGORITHM]) {
         slot_turn(P_TYPE, sgn(d[ENC_ALGORITHM]));
