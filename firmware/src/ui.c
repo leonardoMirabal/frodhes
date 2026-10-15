@@ -485,4 +485,5 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     fm1_led_key(BTN_OCT_UP, set.oct > 0);
     fm1_led_key(BTN_REC, rh_hold);
     for (k = 0; k < 27u; k++) fm1_led_key(KEY_LED(k), lit >> k & 1u);
+    for (k = 0; k < 27u; k++) fm1_led_key_glow(KEY_LED(k), scale_is_root(k));   /* the scale's root, dimly */
 }

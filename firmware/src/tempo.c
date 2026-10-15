@@ -109,6 +109,14 @@ static int32_t scale_snap(int32_t n)
     return n;
 }
 
+/* key k plays the scale's root (the keys that glow): SNAP, the key's own note is the root; DEGREE, the C keys */
+static int scale_is_root(uint32_t k)
+{
+    int32_t n = 53 + (int32_t)k;
+    if (set.sc_mode == 1) return ((n + set.sc_trans - (int32_t)set.sc_root) % 12 + 12) % 12 == 0;
+    return set.sc_mode == 2 && n % 12 == 0;
+}
+
 /* the note on-board key k plays (255 = silent), octave and transpose applied */
 static uint32_t scale_key_note(uint32_t k)
 {

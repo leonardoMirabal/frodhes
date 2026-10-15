@@ -36,6 +36,8 @@ static uint32_t fm1_input_edges(uint32_t *released) { uint32_t b = host_edges; h
 static uint32_t fm1_input_note_edges(void) { return 0; }
 static int32_t fm1_enc_take(uint32_t e) { int32_t d = e < 8u ? host_enc[e] : 0; if (e < 8u) host_enc[e] = 0; return d; }
 static void fm1_led_key(uint32_t id, int on) { if (id < 64u) host_led[id] = (uint8_t)(on != 0); }
+static uint8_t host_glow[64];                   /* the dim layer (fm1_led_key_glow) */
+static void fm1_led_key_glow(uint32_t id, int on) { if (id < 64u) host_glow[id] = (uint8_t)(on != 0); }
 
 /* the screen: 240 x 240 RGB565 (gfx.c sends the bytes swapped, as the ST7789 wants them) */
 static uint16_t fb[240 * 240];
@@ -137,7 +139,13 @@ EMSCRIPTEN_KEEPALIVE void web_midi(uint32_t st, uint32_t d1, uint32_t d2)
 }
 EMSCRIPTEN_KEEPALIVE void web_master(int32_t q12) { web_master_q12 = q12 < 0 ? 0 : q12 > 4096 ? 4096 : q12; }
 EMSCRIPTEN_KEEPALIVE uint16_t *web_fb(void) { return fb; }
-EMSCRIPTEN_KEEPALIVE uint8_t *web_leds(void) { return host_led; }
+EMSCRIPTEN_KEEPALIVE uint8_t *web_leds(void)              /* per id: 1 lit, 2 the glow, 0 off */
+{
+    static uint8_t l[64];
+    uint32_t i;
+    for (i = 0; i < 64u; i++) l[i] = host_led[i] ? 1u : host_glow[i] ? 2u : 0u;
+    return l;
+}
 EMSCRIPTEN_KEEPALIVE uint8_t *web_store(void) { return web_store_buf; }
 EMSCRIPTEN_KEEPALIVE int web_store_take_dirty(void) { int d = web_store_dirty; web_store_dirty = 0; return d; }
 

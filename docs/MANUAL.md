@@ -249,6 +249,8 @@ value (1/16, 8T, 1/4 ...) and turning it steps through note values. PLAY blinks 
 
 On the SCALE page, **SNAP** lets every key play but moves out-of-scale notes onto the scale, and **DEGREE** turns the
 white keys into the scale's steps (C plays the root) so you can play any scale with white keys only.
+While a scale is on, the keys that play its root glow dimly (in DEGREE: the C keys), so you can always find the
+keynote.
 
 ## 9. Sustain
 
