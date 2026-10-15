@@ -14,8 +14,11 @@
 #define APP_NAME "FRODHES"
 #include "platform.c"
 #include "rhodes.c"
+#include "fx.c"
 
-static void app_audio(int32_t *out, uint32_t n) { rh_render(out, n); }
+static int32_t voice_mono[256];
+static void app_audio(int32_t *out, uint32_t n) { rh_render(voice_mono, n); fx_process(voice_mono, out, n); }
+
 
 /* ---- the screen: the name, the last note big, the keyboard with what is held, the octave */
 #define C_ACC RGB(255, 170, 60)                 /* warm amber */
@@ -72,7 +75,7 @@ static void draw_status(int32_t oct, int pedal)
 static uint8_t sus_held, sus_latched, sus_midi, sus_was_latched;
 static uint32_t sus_t;
 
-static void sustain_update(void) { rh_pedal(sus_held || sus_latched || sus_midi); }
+static void sustain_update(void) { rh_pedal_level(sus_held || sus_latched ? 127u : sus_midi); }   /* sus_midi: CC64 level */
 
 static void sustain_button(uint32_t pressed, uint32_t released)
 {
@@ -84,6 +87,33 @@ static void sustain_button(uint32_t pressed, uint32_t released)
     } else
         return;
     sustain_update();
+}
+
+/* MIDI CC: the reface CP map (switch CCs: 0-42 off, 43-85 A, 86-127 B), plus Frodhes-only and developer CCs */
+static void midi_cc(uint32_t cc, uint32_t v)
+{
+    uint32_t sw = v < 43u ? 0u : v < 86u ? 1u : 2u;
+    switch (cc) {
+    case 64: sus_midi = (uint8_t)v; sustain_update(); break;            /* continuous: half-pedal */
+    case 80: rh_type = (uint8_t)(v * 4u / 128u); fx_set(FXP_DRIVE_ROW, (int32_t)rh_type); break;   /* TYPE */
+    case 81: fx_set(FXP_DRIVE, (int32_t)v); break;
+    case 17: fx_set(FXP_TW_SW, (int32_t)sw); break;
+    case 18: fx_set(FXP_TW_DEPTH, (int32_t)v); break;
+    case 19: fx_set(FXP_TW_RATE, (int32_t)v); break;
+    case 85: fx_set(FXP_CP_SW, (int32_t)sw); break;
+    case 86: fx_set(FXP_CP_DEPTH, (int32_t)v); break;
+    case 87: fx_set(FXP_CP_SPEED, (int32_t)v); break;
+    case 88: fx_set(FXP_DL_SW, (int32_t)sw); break;
+    case 89: fx_set(FXP_DL_DEPTH, (int32_t)v); break;
+    case 90: fx_set(FXP_DL_TIME, (int32_t)v); break;
+    case 91: fx_set(FXP_RV_DEPTH, (int32_t)v); break;
+    case 102: fx_set(FXP_RAW, v >= 64u); break;                         /* developer: bypass the effects */
+    case 103: fx_set(FXP_TW_MODE, v >= 64u); break;                     /* tremolo: 0 autopan, 1 amplitude */
+    case 104: fx_set(FXP_DL_FDBK, (int32_t)v); break;
+    case 105: fx_set(FXP_CP_FDBK, (int32_t)v); break;
+    case 20: fx_set(FXP_TW_SHAPE, (int32_t)v); break;
+    default: break;
+    }
 }
 
 static void app_main(void)
@@ -126,7 +156,7 @@ static void app_main(void)
             uint8_t ty = st & 0xF0u;
             if (ty == 0x90u && d2) { rh_note_on(d1, d2); last_note = d1; }
             else if (ty == 0x80u || ty == 0x90u) rh_note_off(d1);
-            else if (ty == 0xB0u && d1 == 64u) { sus_midi = d2 >= 64u; sustain_update(); }
+            else if (ty == 0xB0u) midi_cc(d1, d2);
         }
 
         base = (uint32_t)(KEY0 + 12 * set.oct);

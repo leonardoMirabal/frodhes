@@ -12,7 +12,7 @@
  * Main loop interface (unchanged for frodhes.c):
  *   rh_note_on(note, vel), rh_note_off(note), rh_pedal(on) / rh_pedal_level(cc)   post events
  *   rh_quiet(), rh_lit(base, n), rh_hold                                            read summaries
- * ISR: rh_render(out, n) adds n stereo frames (L R L R, Q15) to out.
+ * ISR: rh_render(mono, n) writes n mono samples (Q15) for the effects chain.
  * The ISR owns every voice; the main loop only posts 32-bit events into a single-producer ring (P1). */
 #include "fxp.h"
 #ifndef RING_PUBLISH
@@ -333,7 +333,7 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
         }
 }
 
-static void rh_render(int32_t *out, uint32_t n)
+static void rh_render(int32_t *mono_out, uint32_t n)
 {
     uint32_t i, sb, j, act = 0, held = 0;
     int32_t mx = 0;
@@ -354,8 +354,7 @@ static void rh_render(int32_t *out, uint32_t n)
         rlc_m2 = rlc_m1; rlc_m1 = m; rlc_o2 = rlc_o1; rlc_o1 = o;
         o = (o + 16) >> 5;                                   /* round, no DC bias */
         if (iabs(o) > mx) mx = iabs(o);
-        out[2u * j] += o;
-        out[2u * j + 1u] += o;
+        mono_out[j] = o;
     }
     for (i = 0; i < RH_NV; i++)
         if (rv[i].alive) { act |= 1u << i; rh_notes[i] = rv[i].note; if (rv[i].held) held |= 1u << i; }

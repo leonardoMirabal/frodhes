@@ -26,6 +26,7 @@ def c_render(note, vel, dur_ms, off_ms=None, tag="gb"):
     out = os.path.join(ROOT, "build", "host", f"{tag}-{note}-{vel}")
     scr = out + ".txt"
     with open(scr, "w") as f:
+        f.write("50 midi 0xB0 102 127\n")                 # developer: bypass the effects, test the voice
         f.write(f"100 midi 0x90 {note} {vel}\n")
         if off_ms:
             f.write(f"{off_ms} midi 0x80 {note} 0\n")
