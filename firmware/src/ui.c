@@ -90,6 +90,18 @@ static void p_strcpy(char *d, const char *s, uint32_t max) { uint32_t i = 0; whi
 static void ui_changed(void) { set_dirty = 1; set_t_change = fm1_ms; }
 static int32_t sgn(int32_t d) { return d > 0 ? 1 : -1; }
 
+/* switching an effect on from the panel while its depth is 0 would be silent (the depths default to 0): give it a
+ * starting depth then; a depth the player set is never touched */
+static void fx_wake(uint32_t sw_id)
+{
+    static const uint8_t SW[5] = {P_TW_SW, P_PH_SW, P_CP_SW, P_DL_SW, P_CMP_SW};
+    static const uint8_t DEPTH[5] = {P_TW_DEPTH, P_PH_DEPTH, P_CP_DEPTH, P_DL_DEPTH, P_CMP_AMT};
+    static const uint8_t START[5] = {64, 80, 64, 50, 64};
+    uint32_t i;
+    for (i = 0; i < 5u; i++)
+        if (SW[i] == sw_id && PV(sw_id) && !PV(DEPTH[i])) { param_set(DEPTH[i], START[i]); ui_mark(E_CARDS); }
+}
+
 /* ---- card slots */
 static uint32_t tw_kind(void)
 {
@@ -165,6 +177,7 @@ static void slot_turn(uint32_t s, int32_t d)
         v = PV(id) + step;
         if (id != s && v < 1) v = 1;
         param_set(id, clampi(v, 0, PARAMS[id].hi));
+        fx_wake(id);
         if (id == P_TW_SYNC || id == P_CP_SYNC || id == P_DL_SYNC || id == P_PH_SYNC) tempo_sync_publish();
         return;
     }
@@ -181,6 +194,7 @@ static void slot_turn(uint32_t s, int32_t d)
         int32_t k = clampi((int32_t)tw_kind() + sgn(d), 0, 3);
         param_set(P_TW_SW, k == 0 ? 0 : k == 3 ? 2 : 1);
         if (k == 1 || k == 2) param_set(P_TW_MODE, k - 1);
+        fx_wake(P_TW_SW);
         break;
     }
     default: break;
@@ -329,6 +343,7 @@ static void ui_fx_button(uint32_t pg, uint32_t k)
     if (ui_page != pg) { ui_goto(pg); return; }
     if (sw) { if (k < 3u) set.last_on[k] = (uint8_t)sw; param_set(id, 0); }
     else param_set(id, k < 3u && set.last_on[k] <= PARAMS[id].hi ? set.last_on[k] : 1);
+    fx_wake(id);
     p_strcpy(s, NAME[k], 12);
     while (s[n]) n++;
     p_strcpy(s + n, PV(id) ? " ON" : " OFF", 4);

@@ -66,6 +66,7 @@ static void fx_drive(int32_t *m, uint32_t n)
     g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
     k = 32000 - d * 95;
     mk = ((30000 - d * 120) * DR_MU[row]) >> 12;
+    mk = (mk * (int32_t)FX_DRV_LVL[d]) >> 15;          /* level-neutral: the drive adds tone, not volume (0.6) */
     bias = DR_BIAS[row];
     b0 = softclip(bias);
     for (i = 0; i < n; i++) {
@@ -97,7 +98,7 @@ static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
                 tr = (osc_sine(th) * 46341) >> 15;
             } else {                                     /* amplitude: down from full by depth */
                 int32_t g = 32768 - (((depth * 258) * ((32767 - lfo) >> 1)) >> 15);
-                tl = tr = g;
+                tl = tr = (g * (254 + depth)) / 254;     /* the average dip, given back (0.6) */
             }
         }
         tw_ph += inc * 32u;
@@ -153,7 +154,7 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
                     ph_x[s][k] = u; ph_y[s][k] = y; u = y;
                 }
                 ph_fb[s] = clampi(y, -32767, 32767);
-                io[j] = (x + (y << 2)) >> 1;
+                io[j] = ((x + (y << 2)) * 23170) >> 15;   /* x 0.707: the notches cost ~3 dB (0.6) */
             }
         ph_ph += inc * 32u;
     }
@@ -180,6 +181,8 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
             tr = (cho_buf[i1] + (((cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * (drq & 255)) >> 8)) << 1;
             L[j] += mulq15(tl - L[j], mix);
             R[j] += mulq15(tr - R[j], mix);
+            L[j] = (L[j] * (32768 + (mix * 13540 >> 14))) >> 15;   /* the comb costs ~3 dB at full mix (0.6) */
+            R[j] = (R[j] * (32768 + (mix * 13540 >> 14))) >> 15;
             cho_w++;
         }
         cp_ph += inc * 32u;
@@ -188,7 +191,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
 
 /* ---- COMPRESSOR (mono, before the drive): peak detector (ATTACK / RELEASE), soft knee of 6 dB, gain computed
  * in log2 (Q12) every 16 samples and ramped. AMOUNT moves the threshold -9 .. -39 dBFS and the ratio 1.5 .. 6
- * together; the make-up gives back 3/4 of the reduction at the piano's peak level (-9 dBFS). */
+ * together; the make-up (~0.3 of the reduction at -9 dBFS) keeps it about level-neutral. */
 static int32_t cmp_env, cmp_g = 65536;
 static int32_t ilog2_q12(uint32_t x)                     /* log2(x), Q12; x > 0 (no clz: a binary search) */
 {
@@ -216,8 +219,8 @@ static void fx_comp(int32_t *m, uint32_t n)
     int32_t amt = fx_p[FXP_CMP_AMT], ka = (int32_t)FX_CMP_ATK[fx_p[FXP_CMP_ATK]], kr = (int32_t)FX_CMP_REL[fx_p[FXP_CMP_REL]];
     int32_t thr = -6144 - amt * 20480 / 127;                       /* log2 re full scale: -1.5 .. -6.5 (-9 .. -39 dB) */
     int32_t slope = 4096 - 4096 * 2 * 127 / (3 * 127 + 9 * amt);    /* 1 - 1/R, R = 1.5 + 4.5 amt/127; Q12 */
-    int32_t mk = (int32_t)(((int64_t)slope * (-6144 - thr) * 3) >> 14);   /* make-up: 3/4 of the reduction at the
-                                                                     * piano's peak (-9 dBFS); the limiter guards */
+    int32_t mk = (int32_t)(((int64_t)slope * (-6144 - thr) * 5) >> 16);   /* make-up: ~0.3 of the reduction at the
+                                                                     * piano's peak: about level-neutral (0.6) */
     uint32_t sb, j;
     if (!fx_p[FXP_CMP_SW]) { fx_cmp_gr = 0; return; }
     for (sb = 0; sb < n; sb += 16u) {
@@ -459,9 +462,10 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
         int32_t act = 0;
         for (j = 0; j < CTL; j++) rv_in[j] = mulq15((L[sb + j] + R[sb + j]) >> 1, send);
         rev_hall(rv_in, rv_mid, rv_side, size, 60);
-        for (j = 0; j < CTL; j++) {
-            L[sb + j] += rv_mid[j] + rv_side[j];
-            R[sb + j] += rv_mid[j] - rv_side[j];
+        for (j = 0; j < CTL; j++) {                    /* the return eases off as the send rises: x1 .. x0.5 (0.6) */
+            int32_t wm = (rv_mid[j] * (254 - v)) / 254, ws = (rv_side[j] * (254 - v)) / 254;
+            L[sb + j] += wm + ws;
+            R[sb + j] += wm - ws;
             act |= rv_mid[j] | rv_side[j];
         }
         if (!v && !act) rv_running = 0;               /* the tail has ended in exact silence */
@@ -509,7 +513,6 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
             fx_R[j] = (int32_t)(((int64_t)fx_R[j] * fx_wet + (int64_t)dry[j] * (32768 - fx_wet)) >> 15);
         }
         l = dc_block(fx_L[j], &dc_l, &dce_l); r = dc_block(fx_R[j], &dc_r, &dce_r);
-        l = (l * 3) >> 1; r = (r * 3) >> 1;           /* +3.5 dB: sit higher above the codec's analog hiss (0.4) */
         al = l < 0 ? -l : l; ar = r < 0 ? -r : r; a = al > ar ? al : ar;
         if (a > lim_env) lim_env += (a - lim_env) >> 2;
         else if (lim_env > LIM_T) lim_env -= ((lim_env - LIM_T) >> 12) + 1;

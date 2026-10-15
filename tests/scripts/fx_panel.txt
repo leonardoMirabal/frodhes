@@ -1,0 +1,23 @@
+# Effects switched on from the panel, as on the device, with the depths at their default 0 (0.6):
+# switching an effect on gives it a starting depth, so it is audible at once.
+# DELAY: ARP (10) opens the page, ARP again turns it on (MIX 0 -> 50); a short note; echoes after the damper
+100 btn 10
+200 btn 10
+300 expect led 10 1
+400 keys 0x40
+460 keys 0
+1150 expect rms > -60
+# FX (2): bypass everything: the echoes stop at once (the gate then reaches silence)
+1200 btn 2
+1700 expect rms < -90
+1800 btn 2
+1900 expect led 2 1
+# PHASER: SEQ (11) twice -> on; CHORUS: SEL (3) twice -> on
+2000 btn 11
+2100 btn 11
+2200 expect led 11 1
+2300 btn 3
+2400 btn 3
+2500 expect led 3 1
+2600 shot
+2700 end

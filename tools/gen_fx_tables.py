@@ -59,6 +59,8 @@ def main():
     out.append(arr("FX_CMP_REL", "uint32_t", [max(1, int(round(65536 * (1 - math.exp(-1 / (0.020 * 75 ** (v / 127) * FS)))))) for v in range(128)], 8))
     out.append(arr("FX_LOG2F", "uint16_t", [int(round(4096 * math.log2(1 + i / 256))) for i in range(256)], 16))
     out.append(arr("FX_EXP2F", "uint32_t", [int(round(65536 * 2 ** (i / 256))) for i in range(256)], 8))
+    # drive make-up trim (Q15): the measured +0.09 dB per DRIVE step taken back, so DRIVE is level-neutral
+    out.append(arr("FX_DRV_LVL", "uint16_t", [int(round(32767 * 10 ** (-0.0896 * v / 20))) for v in range(128)], 12))
     os.makedirs(os.path.join(ROOT, "firmware/gen"), exist_ok=True)
     open(os.path.join(ROOT, "firmware/gen/fx_tables.h"), "w").write("\n".join(out))
 
