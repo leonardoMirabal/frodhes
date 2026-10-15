@@ -76,6 +76,15 @@ static uint32_t rh_ages;
 static int32_t rh_pedal_w = 32768;             /* ISR copy: damper weight for keys that are up */
 static int32_t rlc_m1, rlc_m2, rlc_o1, rlc_o2, rlc_e;
 static uint8_t rh_type;
+/* voicing, written by the main loop (params.c), applied at each note-on (IMPLEMENTATION-v3 §4.4, §10.1) */
+static volatile int32_t rh_tone_off;           /* Q25: added to the pickup offset (TONE) */
+static volatile int32_t rh_bark_s = 65536;     /* Q16: tip scale (BARK) */
+static volatile int32_t rh_bark_g = 65536;     /* Q16: its gain compensation (1/scale) */
+static volatile int32_t rh_bell = 65536;       /* Q16: O1/O2 scale (BELL) */
+static volatile int32_t rh_ham = 65536;        /* Q16: contact-rate multiplier (HAMMER) */
+static volatile int32_t rh_k_decay = 65536;    /* Q16: 1/S of the sustain T60 (DECAY) */
+static volatile int32_t rh_k_rel = 65536;      /* Q16: 1/S of the release T60 (RELEASE) */
+static volatile int32_t rh_tune_t;             /* Q30: 2^(c/1200) - 1 (TUNE) */
 
 /* ISR-written summaries (one writer each) */
 static volatile uint32_t rh_active_bits, rh_held_bits, rh_quiet_blocks;
@@ -148,6 +157,7 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
     v->ptab = RH_PULSE[key][RH_VLAYER[vel]];
     v->pamp = (int32_t)pa[i] + ((((int32_t)pa[i + 1] - (int32_t)pa[i]) * (int32_t)f) >> 8);
     v->prate = (uint32_t)((int32_t)pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;  /* Q12 -> Q16 */
+    v->prate = (uint32_t)(((uint64_t)v->prate * (uint32_t)rh_ham) >> 16);                                     /* HAMMER */
     v->ppos = 0;
 }
 
@@ -181,14 +191,18 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
         s->peak = 0;
         s->live = km->th != 0;
         if (!s->live) { s->e = s->eps = 0; continue; }
-        rh_coef(km, km->d, 0, 65536, &s->e0, &s->eps0);
-        rh_coef(km, km->drel, 0, 65536, &s->e1, &s->eps1);
+        rh_coef(km, km->d, rh_tune_t, rh_k_decay, &s->e0, &s->eps0);
+        rh_coef(km, km->drel, rh_tune_t, rh_k_rel, &s->e1, &s->eps1);
         s->e = s->es = s->e0; s->eps = s->epss = s->eps0;
-        s->b = (m == RH_O1 || m == RH_O2) ? mul16(km->b, ty->bell) : km->b;
+        {   /* force gain: BARK scales the tip (the pickup then barks), BELL the overtones; saturating */
+            int64_t b = ((int64_t)km->b * rh_bark_s) >> 16;
+            if (m == RH_O1 || m == RH_O2) b = (((b * ty->bell) >> 16) * rh_bell) >> 16;
+            s->b = b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;
+        }
     }
     v->note = (uint8_t)note; v->vel = (uint8_t)vel;
-    v->off = k->off + ty->off_delta;
-    v->gain = k->gain;
+    v->off = k->off + ty->off_delta + rh_tone_off;
+    v->gain = mul16(k->gain, rh_bark_g);
     u = v->off;
     v->Hprev = rh_hermite(RH_PHI[k->fam], RH_SLOPE[k->fam], (int64_t)u * u);
     v->alive = 1; v->held = 1; v->ramp = 0; v->w_tgt = 0;

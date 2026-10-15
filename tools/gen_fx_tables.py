@@ -43,6 +43,12 @@ def main():
         f = 300 * (2500 / 300) ** (i / 63)
         wah.append(int(round(2 * math.sin(math.pi * f / FS) * 16384)))   # Chamberlin SVF f coefficient, Q14
     out.append(arr("FX_WAH_F", "int16_t", wah))
+    # knob laws (Q16): 2^((v-64)/64) and its inverse (BARK tip scale and gain compensation), 2^((v-64)/32) (BELL),
+    # 2^(-(v-64)/128) (HAMMER: contact-rate multiplier, x2^(-0.5) .. x2^(+0.5))
+    out.append(arr("KN_P64", "uint32_t", [int(round(65536 * 2 ** ((v - 64) / 64))) for v in range(128)], 8))
+    out.append(arr("KN_P64I", "uint32_t", [int(round(65536 / 2 ** ((v - 64) / 64))) for v in range(128)], 8))
+    out.append(arr("KN_P32", "uint32_t", [int(round(65536 * 2 ** ((v - 64) / 32))) for v in range(128)], 8))
+    out.append(arr("KN_HAM", "uint32_t", [int(round(65536 * 2 ** ((v - 64) / 128))) for v in range(128)], 8))
     os.makedirs(os.path.join(ROOT, "firmware/gen"), exist_ok=True)
     open(os.path.join(ROOT, "firmware/gen/fx_tables.h"), "w").write("\n".join(out))
 
