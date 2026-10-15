@@ -16,6 +16,9 @@
 #define UI_MASTER_Q12 master_q12
 #endif
 
+static uint8_t pr_save_mode;                           /* presets.c */
+static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t rel);
+static void preset_name(uint32_t idx, char *s);
 enum { PG_PANEL, PG_VOICE, PG_VOICE2, PG_GLO, PG_SCALE };
 enum { E_HEADER, E_TITLES, E_COL0, E_COL6 = E_COL0 + 6, E_FOOTER, E_CARDS, E_KEYS, E_N };
 
@@ -106,7 +109,13 @@ static void draw_header(void)
 {
     char s[8];
     cv_begin(240, 20, C_BLACK);
-    cv_text(2, 2, &FONT_S, ui_page == PG_PANEL ? "FRODHES" : PAGE_NAME[ui_page], C_HI);
+    {
+        char nm[20];
+        if (ui_page == PG_PANEL && set.preset < 28u) preset_name(set.preset, nm);
+        else p_strcpy(nm, ui_page == PG_PANEL ? "FRODHES" : PAGE_NAME[ui_page], 14);
+        nm[13] = 0;
+        cv_text(2, 2, &FONT_S, nm, C_HI);
+    }
     p_fmt_int(s, set.bpm10 / 10);
     {
         uint32_t n = 0; while (s[n]) n++;
@@ -326,6 +335,11 @@ static void ui_input(uint32_t b, uint32_t rel)
     int32_t d[7];
     uint32_t k, i;
     for (i = 0; i < 7u; i++) d[i] = fm1_enc_take(i);
+    {
+        uint8_t was = pr_save_mode;
+        presets_poll(d[ENC_PRESETS], was ? d[ENC_KNOB1] : 0, b, rel);
+        if (was || pr_save_mode) return;               /* the save mode owns this pass: PRESETS, K1, OCT+/OCT- */
+    }
     for (k = 0; k < 3u; k++) {
         uint32_t bt = COLBTN[k];
         if (fm1_in.buttons >> bt & 1u && (d[ENC_KNOB1] | d[ENC_KNOB2] | d[ENC_KNOB3] | d[ENC_KNOB4]) && ui_layer != k) {

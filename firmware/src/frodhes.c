@@ -12,12 +12,14 @@
  * Rules of the road (no FPU, no libgcc): integers only, no float, no 64-bit division. docs/RULES.md.
  * tests/host.c runs this file on a computer: the screen as a PNG, the sound as a WAV. */
 #define APP_NAME "FRODHES"
+#define APP_FL_RANGE(off, n) FL_IN(off, n, 0x97000u, 0x98FFFu)    /* the user preset bank (presets.c) */
 #include "platform.c"
 #include "rhodes.c"
 #include "fx.c"
 #include "params.c"
 #include "tempo.c"
 #include "ui.c"
+#include "presets.c"
 
 static int32_t voice_mono[256];
 static void app_audio(int32_t *out, uint32_t n) { rh_render(voice_mono, n); fx_process(voice_mono, out, n); }
@@ -85,6 +87,7 @@ static void app_main(void)
     params_apply_all();
     tempo_set10(set.bpm10);
     set_dirty = 0;
+    presets_load_bank();
     lcd_fill(0, 0, 240, 240, C_BLACK);
     ui_goto(PG_PANEL);
 
@@ -119,6 +122,7 @@ static void app_main(void)
             if (ty == 0x90u && d2) rh_note_on(d1, d2);
             else if (ty == 0x80u || ty == 0x90u) rh_note_off(d1);
             else if (ty == 0xB0u) midi_cc(d1, d2);
+            else if (ty == 0xC0u) preset_load(d1 < 12u ? d1 : d1 >= 16u && d1 < 32u ? PR_NF + d1 - 16u : 255u);
         }
 
         for (k = 0; k < NKEYS; k++)             /* LEDs per key: held, or its note still rings */
@@ -126,6 +130,7 @@ static void app_main(void)
             else if (rh_hold && note_sounding((uint32_t)scale_key_note(k))) lit |= 1u << k;
         ui_leds(lit, tempo_beat_led());
         ui_draw();
+        presets_save_poll();
 
         if (set_dirty && fm1_ms - set_t_change > 2000u && rh_quiet() && fx_quiet()) {
             settings_save(&set, sizeof set);    /* only when silent: the erase stalls the audio */

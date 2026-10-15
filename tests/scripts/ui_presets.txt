@@ -1,0 +1,22 @@
+# Presets (IMPLEMENTATION-v3 §12): PRESETS encoder = 6, SAVE = 9, OCT+ = 1, FX LED = 2 (CHO/PHA switch on).
+# browse to F02 70S PHASER: it loads 400 ms after the last detent -> the phaser is on
+100 turn 6 1
+300 expect led 2 0
+700 expect led 2 1
+# save it to U01: SAVE opens the save mode, OCT+ queues the write; it runs once everything is quiet
+800 btn 9
+900 btn 1
+1600 shot
+# the confirming OCT+ must not change the octave (OCT+ LED stays off)
+1650 expect led 1 0
+# Program Change 0 -> F01 (no phaser), then 16 -> U01 (the saved copy: phaser again)
+1700 midi 0xC0 0 0
+1800 expect led 2 0
+1900 midi 0xC0 16 0
+2000 expect led 2 1
+2100 shot
+# SAVE held 700 ms: undo the last load (back to F01)
+2200 press 9
+3000 release 9
+3100 expect led 2 0
+3200 end
