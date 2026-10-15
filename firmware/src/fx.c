@@ -142,8 +142,9 @@ static int32_t ph_coef(uint32_t ph, int32_t depth)
 static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t depth = fx_p[FXP_PH_DEPTH], fbk = fx_p[FXP_PH_FDBK] * 180;
-    /* 0.707 x (1 - 0.25 depth/127): wide stereo sounds ~2.5 dB louder on headphones than the mono clean (0.8) */
-    int32_t pg = (int32_t)(((int64_t)23170 * (32768 - depth * 64)) >> 0);
+    /* 0.707 x a depth law fitted on the FM-1 (LUFS): little depth loses level in the notch, much depth is wide stereo
+     * (heard ~2.5 dB louder on headphones than the mono clean) and feedback adds resonance (0.8) */
+    int32_t pg = (int32_t)(((int64_t)23170 * (46000 - depth * 200 - fx_p[FXP_PH_FDBK] * 30)) >> 0);
     uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, j, s, k;
     if (!fx_p[FXP_PH_SW]) return;
     for (sb = 0; sb < n; sb += 32u) {
@@ -179,6 +180,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
         int32_t dlq = 308 * 256 + ((osc_sine(cp_ph) * (154 * depth / 127)) >> 7);
         int32_t drq = 308 * 256 + ((osc_sine(cp_ph + 0x40000000u) * (154 * depth / 127)) >> 7);
         int32_t mix = (16384 * (2 * depth > 127 ? 127 : 2 * depth)) / 127;
+        int32_t cg = 32768 + (mix * 1950 >> 14) + (((mix * (16384 - mix)) >> 14) * 11 >> 3);   /* + half-mix comb */
         for (j = sb; j < sb + 32u && j < n; j++) {
             int32_t x = (L[j] + R[j]) >> 1, tl, tr;
             uint32_t i0 = (cho_w - (uint32_t)(dlq >> 8)) & 1023u, i1 = (cho_w - (uint32_t)(drq >> 8)) & 1023u;
@@ -187,8 +189,8 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
             tr = (cho_buf[i1] + (((cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * (drq & 255)) >> 8)) << 1;
             L[j] += mulq15(tl - L[j], mix);
             R[j] += mulq15(tr - R[j], mix);
-            L[j] = (L[j] * (32768 + (mix * 1950 >> 14))) >> 15;   /* the comb (+3 dB) minus the stereo width's
-            R[j] = (R[j] * (32768 + (mix * 1950 >> 14))) >> 15;    * loudness on headphones (-2.5 dB) (0.8) */
+            L[j] = (L[j] * cg) >> 15;                   /* the comb's loss, minus the stereo width's loudness (0.8) */
+            R[j] = (R[j] * cg) >> 15;
             cho_w++;
         }
         cp_ph += inc * 32u;
@@ -256,7 +258,7 @@ static void fx_comp(int32_t *m, uint32_t n)
 #define DLY_LEN 65536u
 static int16_t dly_buf[DLY_LEN] POOL;
 static uint32_t dly_w, dly_wow, dly_flt;
-static int32_t dly_d = 4410 << 8, dly_lp, dly_hp;
+static int32_t dly_d = 4410 << 8, dly_lp, dly_hp, dly_dg = 32768;
 static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t sw = fx_p[FXP_DL_SW], depth = fx_p[FXP_DL_DEPTH];
@@ -289,7 +291,9 @@ static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
         dly_buf[dly_w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + mulq15(f, fb), -32768, 32767);
         dly_w++;
         r = mulq15(r, wet);
-        L[j] += r; R[j] += r;
+        dly_dg += ((sw ? 32768 - depth * 90 : 32768) - dly_dg) >> 9;   /* the dry eases down as the mix rises: a
+                                                                     * full-mix delay no longer jumps +5 LU (0.8) */
+        L[j] = (int32_t)(((int64_t)L[j] * dly_dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dly_dg) >> 15) + r;
     }
     if (!sw && iabs(dly_lp) < 2) dly_lp = dly_hp = 0;
 }

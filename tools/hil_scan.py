@@ -28,7 +28,8 @@ A4 = 440.0
 # the CC map (firmware/src/params.c)
 CC = dict(TYPE=80, DRIVE=81, TW_SW=17, TW_DEPTH=18, TW_RATE=19, TW_MODE=21, CP_SW=85, CP_DEPTH=86, CP_SPEED=87,
           DL_SW=88, DL_DEPTH=89, DL_TIME=90, DL_FDBK=26, REV=91, PH_SW=12, PH_DEPTH=13, PH_SPEED=14, PH_FDBK=16,
-          CMP_SW=106, CMP_AMT=107, CMP_ATK=108, CMP_REL=109, NOISE=104, SUS=64, RAW=119)
+          CMP_SW=106, CMP_AMT=107, CMP_ATK=108, CMP_REL=109, NOISE=104, SUS=64, RAW=119, CMP_RAT=112, CMP_GAIN=113,
+          PH_SPEED2=14, CP_SPEED2=87, TW_SHAPE=22, DL_TONE=27, LEVEL=110, BYPASS=111)
 DRY = dict(DRIVE=0, REV=0, TW_SW=0, CP_SW=0, PH_SW=0, DL_SW=0, CMP_SW=0, RAW=0, SUS=0)
 
 
@@ -327,6 +328,130 @@ def bypass(r, rep):
     rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2])
     ok = abs(lv[2] - lv[0]) < 0.5 and abs(lv[1] - lv[2]) < 3
     return ok, f"no effects {lv[0]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} dBFS"
+
+
+FXALL = [  # (name, settings, expected: LU re clean within +-tol)
+    ("drive 20", dict(DRIVE=20)), ("drive 64", dict(DRIVE=64)), ("drive 127", dict(DRIVE=127)),
+    ("comp on (-20 dB 4:1 +4.3)", dict(CMP_SW=127, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=23)),
+    ("comp -40 dB 20:1 +4.3", dict(CMP_SW=127, CMP_AMT=127, CMP_RAT=127, CMP_GAIN=23)),
+    ("trem pan 32", dict(TW_SW=64, TW_DEPTH=32)), ("trem pan 127", dict(TW_SW=64, TW_DEPTH=127)),
+    ("trem am 64", dict(TW_SW=64, TW_DEPTH=64, TW_MODE=127)), ("trem am 127 square", dict(TW_SW=64, TW_DEPTH=127, TW_MODE=127, TW_SHAPE=127)),
+    ("wah 32", dict(TW_SW=127, TW_DEPTH=32)), ("wah 127", dict(TW_SW=127, TW_DEPTH=127)),
+    ("phaser 32", dict(PH_SW=127, PH_DEPTH=32)), ("phaser 80", dict(PH_SW=127, PH_DEPTH=80)),
+    ("phaser 127 fb127", dict(PH_SW=127, PH_DEPTH=127, PH_FDBK=127)),
+    ("chorus 32", dict(CP_SW=64, CP_DEPTH=32)), ("chorus 64", dict(CP_SW=64, CP_DEPTH=64)), ("chorus 127", dict(CP_SW=64, CP_DEPTH=127)),
+    ("delay dig 50", dict(DL_SW=64, DL_DEPTH=50)), ("delay ana 127", dict(DL_SW=127, DL_DEPTH=127)),
+    ("reverb 32", dict(REV=32)), ("reverb 127", dict(REV=127)),
+    ("all on", dict(DRIVE=30, CMP_SW=127, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=23, TW_SW=64, TW_DEPTH=50, PH_SW=127, PH_DEPTH=60,
+                    CP_SW=64, CP_DEPTH=50, DL_SW=64, DL_DEPTH=40, REV=40)),
+]
+
+
+def lufs(x):
+    """ITU-R BS.1770 K-weighted loudness of a (n, 2) or (n,) float array at 48 kHz"""
+    from scipy.signal import lfilter
+    b1, a1 = [1.53512485958697, -2.69169618940638, 1.19839281085285], [1, -1.69065929318241, 0.73248077421585]
+    b2, a2 = [1.0, -2.0, 1.0], [1, -1.99004745483398, 0.99007225036621]
+    x = np.atleast_2d(np.asarray(x, float).T).T
+    return -0.691 + 10 * np.log10(sum(np.mean(lfilter(b2, a2, lfilter(b1, a1, x[:, c])) ** 2) for c in range(x.shape[1])) + 1e-15)
+
+
+@test
+def fx_all(r, rep):
+    """every effect at several settings: loudness (LUFS) re clean on USB (and the jack when an interface is there),
+    stereo width, peak, clipping, clicks; a 4-note chord at v108 (the FM-1's own keys' velocity)"""
+    jack = None
+    try:
+        import hil_jack as hj
+        jack = hj.Jack("M6", 5)
+        jack.r = r
+    except Exception:
+        pass
+    ch = [(0.1, "on", n, 108) for n in (48, 55, 60, 64)] + [(2.1, "off", n, 0) for n in (48, 55, 60, 64)]
+    def take():
+        if jack:
+            u, j = jack.both(2.6, ch)
+            x = r.take(2.6, ch) if False else None
+            return u, j
+        x = r.take(2.6, ch) / 32768.0
+        return x, None
+    def seg(x):
+        a = np.abs(x) if x.ndim == 1 else np.abs(x).max(axis=1)
+        i = int(np.argmax(a > 0.3 * a.max()))
+        return x[i:i + int(1.8 * FS)]
+    r.dry()
+    if jack:
+        u0 = r.take(2.6, ch) / 32768.0
+        _, j0 = jack.both(2.6, ch)
+    else:
+        u0, j0 = take()
+    base_u, base_j = lufs(seg(u0)), (lufs(seg(j0)) if j0 is not None else None)
+    rows, bad = [], []
+    for name, kv in FXALL:
+        r.dry(**kv)
+        u = r.take(2.6, ch) / 32768.0
+        j = jack.both(2.6, ch)[1] if jack else None
+        su = seg(u)
+        row = dict(name=name, usb_lu=lufs(su) - base_u, peak_db=float(20 * np.log10(np.abs(u).max() + 1e-12)),
+                   clipped=int((np.abs(u) >= 0.9995).sum()), clicks=clicks(u * 32768),
+                   corr=float(np.corrcoef(su[:, 0], su[:, 1])[0, 1]))
+        if j is not None:
+            row["jack_lu"] = lufs(seg(j)) - base_j
+            row["usbL_lu"] = lufs(su[:, 0]) - lufs(seg(u0)[:, 0])        # the jack cable carries the left channel
+        wide = row["corr"] < 0.8
+        tol = 99.0 if name.startswith(("comp -40", "all on")) else 2.0     # extreme comp: MAKEUP is the player's
+        target = -2.5 if wide and name.startswith(("phaser", "chorus")) else 0.0   # width compensation (0.8)
+        if abs(row["usb_lu"] - target) > tol or row["clipped"] or row["clicks"] or \
+                ("jack_lu" in row and abs(row["jack_lu"] - row["usbL_lu"]) > 1.0):
+            bad.append(name)
+        rows.append(row)
+        print(f"    {name:28s} USB {row['usb_lu']:+5.1f} LU" + (f"  jack {row['jack_lu']:+5.1f}" if "jack_lu" in row else "") +
+              f"  L/R {row['corr']:.2f}  peak {row['peak_db']:6.1f}  clip {row['clipped']}  clicks {row['clicks']}", flush=True)
+    # the FX bypass (CC 111) with everything on: back to the clean level (clean measured again right before)
+    r.dry()
+    base_u = lufs(seg(r.take(2.6, ch) / 32768.0))
+    r.dry(**dict(FXALL[-1][1]))
+    r.out.send(r.mido.Message("control_change", control=111, value=127))
+    r.wait_silence()
+    ub = r.take(2.6, ch) / 32768.0
+    r.out.send(r.mido.Message("control_change", control=111, value=0))
+    byp = lufs(seg(ub)) - base_u
+    print(f"    {'FX bypass (all on)':28s} USB {byp:+5.1f} LU", flush=True)
+    if abs(byp) > 0.5:
+        bad.append("bypass")
+    rep["fx_all"] = dict(rows=rows, bypass_lu=byp, base_usb_lufs=base_u)
+    return not bad, f"{len(FXALL)} settings + bypass; out of tolerance: {bad or 'none'}"
+
+
+TOGGLES = [("drive 64", "DRIVE", 64, 0), ("comp", "CMP_SW", 127, 0), ("trem pan", "TW_SW", 64, 0), ("wah", "TW_SW", 127, 0),
+           ("phaser", "PH_SW", 127, 0), ("chorus", "CP_SW", 64, 0), ("delay", "DL_SW", 64, 0), ("reverb 50", "REV", 50, 0)]
+
+
+@test
+def fx_toggle(r, rep):
+    """each effect switched on and off while a chord sounds (as the panel does, at its starting depth): the loudness
+    step at each switch (0.4 s before vs 0.4 s after, the chord's own decay taken out) and clicks around it"""
+    starts = dict(TW_DEPTH=64, PH_DEPTH=80, CP_DEPTH=64, DL_DEPTH=50, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=23)
+    rows, bad = [], []
+    ch = [(0.1, "on", n, 108) for n in (48, 55, 60, 64)] + [(3.4, "off", n, 0) for n in (48, 55, 60, 64)]
+    def st(x, a, b):
+        return lufs(x[int(a * FS):int(b * FS)] / 32768.0)
+    r.dry(**starts)
+    ref = r.take(3.6, ch)
+    for name, key, on, off in TOGGLES:
+        r.dry(**starts)
+        x = r.take(3.6, ch + [(1.2, "cc", CC[key], on), (2.4, "cc", CC[key], off)])
+        # the step at a switch, the chord's natural decay (ref) taken out
+        up = (st(x, 1.25, 1.65) - st(x, 0.75, 1.15)) - (st(ref, 1.25, 1.65) - st(ref, 0.75, 1.15))
+        dn = (st(x, 2.45, 2.85) - st(x, 1.95, 2.35)) - (st(ref, 2.45, 2.85) - st(ref, 1.95, 2.35))
+        ck = clicks(x[int(1.1 * FS):int(1.4 * FS)]) + clicks(x[int(2.3 * FS):int(2.6 * FS)])
+        rows.append(dict(name=name, on_step=up, off_step=dn, clicks=ck))
+        lim = 3.5 if name in ("phaser", "chorus") else 2.0
+        if abs(up) > lim or abs(dn) > lim or ck:
+            bad.append(name)
+        print(f"    {name:10s} on {up:+5.1f} LU   off {dn:+5.1f} LU   clicks {ck}", flush=True)
+    rep["fx_toggle"] = rows
+    return not bad, f"{len(TOGGLES)} effects switched on/off under a chord; out of tolerance: {bad or 'none'}"
 
 
 @test
