@@ -70,7 +70,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **ARP** | ARPEGGIO page; press again there to switch the arpeggiator on / off |
 | **GLO** | TEMPO page; press again for SETUP |
 | **FX** | All effects off / on at once (see [6](#6-effects-on-and-off)) |
-| **PLAY** | Tap tempo |
+| **PLAY** | Tap tempo; on ARPEGGIO, the arpeggiator's HOLD on / off |
 | **REC** | Sustain pedal |
 | **SAVE** | Save the sound to a user preset; hold to undo the last preset load |
 | **OCT− / OCT+** | Octave down / up (±2) |
@@ -242,9 +242,11 @@ too). Press **ARP** to come here, and **ARP** again to switch it on / off (the A
 | K3 | **OCTAVES** | 1 to 4: the pattern repeated octaves up |
 | K4 | **GATE** | How long each note sounds: 10 % short and plucked, 100 % legato |
 
-It **latches**: play a chord and let go, and the arpeggio keeps going with those notes. The next chord you play (after
-letting go of every key) replaces them; keys you add while others are still held join the pattern. Press **ARP** to
-stop. The sustain (REC) stays the piano's sustain pedal. It works with the scales (the notes are already on the scale) and with notes from USB-MIDI. The
+It plays while you hold the keys. **PLAY** on this page switches **HOLD** (the latch) on / off: the PLAY light and the
+bottom line show it. With HOLD on, play a chord and let go, and the arpeggio keeps going with those notes; the next
+chord you play (after letting go of every key) replaces them, and keys you add while others are still held join the
+pattern. Switching HOLD off stops the notes you are no longer holding. The sustain (REC) stays the piano's sustain
+pedal. It works with the scales (the notes are already on the scale) and with notes from USB-MIDI. The
 settings belong to the FM-1, not to a preset; ARP RATE and ARP GATE can also be put on a PERFORM knob.
 
 ### SETUP

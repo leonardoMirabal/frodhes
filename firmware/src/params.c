@@ -91,8 +91,8 @@ typedef struct {
     uint8_t panel[32], undo[32], undo_valid;   /* version 1: ids 0..31 */
     uint8_t panel2[16], undo2[16];             /* version 2: ids 32..47 (byte 89 on: the old reserved area) */
     uint8_t perf[4];                           /* 0.9: the PERFORM knobs, ui.c PERF_T index + 1 (0 = the default) */
-    uint8_t arp[5];                            /* 0.9: the arpeggiator: mode, rate, octaves, gate, last mode (arp.c) */
-    uint8_t reserved[126];
+    uint8_t arp[6];                            /* 0.9: the arpeggiator: mode, rate, octaves, gate, last mode, hold */
+    uint8_t reserved[125];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 

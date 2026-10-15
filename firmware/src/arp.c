@@ -7,9 +7,9 @@
  *   OCTAVES  1..4: the pattern repeated octaves up
  *   GATE     how long each note sounds, 10 .. 100 % of a step
  *
- * It latches: the notes keep playing after the keys are let go, until new notes come (a chord started after every
- * key was let go replaces the pattern; keys added while others are held join it) or the arpeggiator is switched off.
- * The sustain (REC / CC 64) stays the piano's damper pedal only.
+ * HOLD (PLAY on the ARPEGGIO page): off, it plays while keys are held; on, it latches: the notes keep playing after
+ * the keys are let go until new notes come (a chord started after every key was let go replaces the pattern; keys
+ * added while others are held join it). The sustain (REC / CC 64) stays the piano's damper pedal only.
  * Settings (set.arp[]) belong to the FM-1, not to a preset. Nothing here runs in the audio ISR. */
 
 #define ARP_MAX 16u
@@ -22,16 +22,17 @@ static const char *const ARP_RATE_NAME[6] = {"1/4", "1/8", "1/8T", "1/16", "1/16
 #define ARP_OCT (set.arp[2])                    /* 0..3 = 1..4 octaves */
 #define ARP_GATE (set.arp[3])                   /* 10..100 % */
 #define ARP_LAST (set.arp[4])                   /* the mode the ARP button turns back on */
+#define ARP_HOLD (set.arp[5])                   /* the latch: 0 / 1 */
 
 static uint8_t arp_note[ARP_MAX], arp_vel[ARP_MAX], arp_down[ARP_MAX], arp_n;   /* in the order played */
 static uint32_t arp_step_no = 0xFFFFFFFFu, arp_off_t, arp_seed = 0x1234567u;
 static uint8_t arp_playing = 255, arp_pos, arp_dir;
 
-static void arp_defaults(void) { ARP_MODE = ARP_OFF; ARP_RATE = 3; ARP_OCT = 0; ARP_GATE = 60; ARP_LAST = ARP_UP; }
+static void arp_defaults(void) { ARP_MODE = ARP_OFF; ARP_RATE = 3; ARP_OCT = 0; ARP_GATE = 60; ARP_LAST = ARP_UP; ARP_HOLD = 0; }
 static void arp_sanitize(void)
 {
     if (ARP_MODE >= ARP_NMODE || ARP_RATE > 5u || ARP_OCT > 3u || ARP_GATE < 10u || ARP_GATE > 100u ||
-        ARP_LAST == ARP_OFF || ARP_LAST >= ARP_NMODE)
+        ARP_LAST == ARP_OFF || ARP_LAST >= ARP_NMODE || ARP_HOLD > 1u)
         arp_defaults();
 }
 static int arp_on(void) { return ARP_MODE != ARP_OFF; }
@@ -54,10 +55,18 @@ static void arp_in_on(uint32_t n, uint32_t vel)
     if (arp_n == ARP_MAX) return;
     arp_note[arp_n] = (uint8_t)n; arp_vel[arp_n] = (uint8_t)vel; arp_down[arp_n] = 1; arp_n++;
 }
-static void arp_in_off(uint32_t n)                 /* the note stays in the pattern (the latch) */
+static void arp_remove(uint32_t i)
+{
+    for (; i + 1u < arp_n; i++) { arp_note[i] = arp_note[i + 1u]; arp_vel[i] = arp_vel[i + 1u]; arp_down[i] = arp_down[i + 1u]; }
+    arp_n--;
+}
+static void arp_stop_note(void);
+static void arp_in_off(uint32_t n)                 /* HOLD: the note stays in the pattern; else it leaves */
 {
     uint32_t i;
-    for (i = 0; i < arp_n; i++) if (arp_note[i] == n) arp_down[i] = 0;
+    for (i = 0; i < arp_n; i++)
+        if (arp_note[i] == n) { if (ARP_HOLD) arp_down[i] = 0; else arp_remove(i); break; }
+    if (!arp_n) arp_stop_note();
 }
 static void arp_clear(void) { arp_n = 0; arp_stop_note(); }
 
@@ -113,6 +122,17 @@ static void arp_poll(void)
         rh_note_on(n, v); midi_send(0x90, n, v);
         arp_playing = (uint8_t)n;
         arp_off_t = now + unit_ms10 * ARP_GATE / 1000u - (ARP_GATE >= 100u ? 2u : 0u);
+    }
+}
+
+/* PLAY on the ARPEGGIO page: HOLD on / off (off: the notes no longer held leave the pattern) */
+static void arp_hold_toggle(void)
+{
+    uint32_t i = 0;
+    ARP_HOLD = (uint8_t)!ARP_HOLD;
+    if (!ARP_HOLD) {
+        while (i < arp_n) { if (!arp_down[i]) arp_remove(i); else i++; }
+        if (!arp_n) arp_stop_note();
     }
 }
 

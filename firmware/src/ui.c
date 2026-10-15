@@ -66,7 +66,7 @@ static const char *const PAGE_HINT[PG_N] = {"NEXT PAGE: ASSIGN THE KNOBS", "WHAT
                                             "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
                                             "", "LFO BUTTON: ON / OFF", "SEQ BUTTON: ON / OFF", "SEL BUTTON: ON / OFF",
                                             "K1: OFF / DIGITAL / ANALOG", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
-                                            "ARP BUTTON: ON / OFF", ""};
+                                            "ARP: ON / OFF   PLAY: HOLD", ""};
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
                                            "PENTA", "MPENTA", "BLUES"};
 static const char *const NOTE_NAME[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -384,7 +384,9 @@ static void draw_footer(void)
             cv_blit(0, 205);
             return;
         }
-        text_c(0, 2, 240, &FONT_S, "SELECT: PAGE  PRESETS: SOUND", C_GRAY);
+        if (ui_page == PG_ARP) text_c(0, 2, 240, &FONT_S, ARP_HOLD ? "HOLD ON: NOTES KEEP PLAYING" : "HOLD OFF",
+                                      ARP_HOLD ? UI_ACC : C_GRAY);
+        else text_c(0, 2, 240, &FONT_S, "SELECT: PAGE  PRESETS: SOUND", C_GRAY);
         if (ui_page == PG_SETUP) {
             static char cpu[32];
             uint32_t n = 0;
@@ -553,7 +555,10 @@ static void ui_input(uint32_t b, uint32_t rel)
         if (ui_page != PG_ARP) ui_goto(PG_ARP);
         else { arp_toggle(); ui_say(arp_on() ? "ARP ON" : "ARP OFF"); ui_changed(); ui_mark(E_CARDS); }
     }
-    if (b >> BTN_PLAY & 1u) tempo_tap();
+    if (b >> BTN_PLAY & 1u) {                           /* tap tempo; on ARPEGGIO: HOLD on / off */
+        if (ui_page == PG_ARP) { arp_hold_toggle(); ui_say(ARP_HOLD ? "HOLD ON" : "HOLD OFF"); ui_changed(); }
+        else tempo_tap();
+    }
     if (b >> BTN_OCT_DOWN & 1u && set.oct > -2) { set.oct--; ui_changed(); ui_mark(E_HEADER); }
     if (b >> BTN_OCT_UP & 1u && set.oct < 2) { set.oct++; ui_changed(); ui_mark(E_HEADER); }
 
@@ -596,7 +601,7 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     fm1_led_key(BTN_ENV, PV(P_CMP_SW) != 0);
     fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP);
     fm1_led_key(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));
-    fm1_led_key(BTN_PLAY, beat_on);
+    fm1_led_key(BTN_PLAY, ui_page == PG_ARP ? ARP_HOLD : beat_on);   /* on ARPEGGIO: HOLD */
     fm1_led_key(BTN_OCT_DOWN, set.oct < 0);
     fm1_led_key(BTN_OCT_UP, set.oct > 0);
     fm1_led_key(BTN_REC, rh_hold);

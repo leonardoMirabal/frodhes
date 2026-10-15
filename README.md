@@ -50,7 +50,7 @@ the MIDI map.
 | **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | (SELECT) |
 | **TEMPO** | BPM | TREM SYNC | PHA SYNC | DLY SYNC | GLO |
 | **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | (SELECT) |
-| **ARPEGGIO** | OFF / UP / DOWN / UP-DN / ORDER / RANDOM | RATE | OCTAVES | GATE | ARP (there: on / off) |
+| **ARPEGGIO** | OFF / UP / DOWN / UP-DN / ORDER / RANDOM | RATE | OCTAVES | GATE | ARP (there: on / off; PLAY: HOLD) |
 | **SETUP** | MIDI CLOCK | DELAY TONE | LEVEL | (name, version) | GLO twice |
 
 **SELECT** turns the pages, **K1–K4** turn the cards (on **PERFORM**: the effects' dry / wet, or what you assign), **ALGORITHM** picks the TYPE, **PRESETS** browses sounds,
