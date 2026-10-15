@@ -475,9 +475,15 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 }
 
 /* ---- master: DC blocker, peak limiter, soft clip (Felucca master_out) */
-#define LIM_T 22000                                     /* -3.4 dBFS (0.8; was 18000) */
+#define LIM_T 24000                                     /* -2.7 dBFS: the look-ahead limiter's ceiling (0.8) */
 #define CLIP_K 24576                                    /* the soft clip is linear up to -2.5 dBFS (0.8) */
-static int32_t lim_env = LIM_T, dc_l, dc_r, dce_l, dce_r;
+static int32_t dc_l, dc_r, dce_l, dce_r;
+/* look-ahead limiter (0.8): the output runs one 32-sample sub-block (0.73 ms) late; the gain ramps linearly over
+ * each sub-block towards the lowest gain this one and the next need, so no sample ever passes LIM_T, nothing is
+ * clipped, and the gain moves smoothly (big chords of 7-8 notes stay clean); release ~46 ms */
+#define LK 32u
+static int32_t lk_l[LK], lk_r[LK], lk_pk, lk_g = 32768;
+static int32_t lk_need(int32_t pk) { return pk > LIM_T ? (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)pk) : 32768; }
 static inline int32_t dc_block(int32_t x, int32_t *dc, int32_t *err)
 {
     int32_t e = (x << 6) - *dc + *err, d = e >> 12;
@@ -503,7 +509,7 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
 {
     static int32_t m[256], dry[256];
     int32_t lvl = (int32_t)FX_LVL[fx_p[FXP_LEVEL] & 127];   /* the preset's volume trim, Q12 */
-    uint32_t j;
+    uint32_t j, sb;
     int32_t pk = 0;
     if (fx_p[FXP_RAW]) {                               /* developer: the voice engine's output untouched */
         for (j = 0; j < n; j++) { out[2u * j] += mono[j]; out[2u * j + 1u] += mono[j]; }
@@ -518,7 +524,7 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
     fx_delay(fx_L, fx_R, n);
     fx_reverb(fx_L, fx_R, n);
     for (j = 0; j < n; j++) {
-        int32_t l, r, al, ar, a;
+        int32_t l, r;
         /* the bypass: the effects keep running (their tails stay current), the output crossfades in 5.8 ms */
         if (fx_bypass ? fx_wet > 0 : fx_wet < 32768) fx_wet += fx_bypass ? -128 : 128;
         if (fx_wet != 32768) {
@@ -527,17 +533,29 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
         }
         l = dc_block(fx_L[j], &dc_l, &dce_l); r = dc_block(fx_R[j], &dc_r, &dce_r);
         if (lvl != 4096) { l = (int32_t)(((int64_t)l * lvl) >> 12); r = (int32_t)(((int64_t)r * lvl) >> 12); }   /* LEVEL */
-        al = l < 0 ? -l : l; ar = r < 0 ? -r : r; a = al > ar ? al : ar;
-        if (a > lim_env) lim_env += (a - lim_env) >> 5;   /* ~0.7 ms: not inside a bass cycle (0.8; was >> 2) */
-        else if (lim_env > LIM_T) lim_env -= ((lim_env - LIM_T) >> 12) + 1;
-        if (lim_env > LIM_T) {
-            int32_t g = (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)lim_env);
-            l = ((l >> 4) * g) >> 11;
-            r = ((r >> 4) * g) >> 11;
+        fx_L[j] = l; fx_R[j] = r;
+    }
+    for (sb = 0; sb < n; sb += LK) {                   /* the look-ahead limiter, one sub-block late */
+        int32_t pn = 0, tgt, g0 = lk_g, i;
+        for (j = sb; j < sb + LK; j++) {
+            int32_t al = iabs(fx_L[j]), ar = iabs(fx_R[j]);
+            if (al > pn) pn = al;
+            if (ar > pn) pn = ar;
         }
-        fx_L[j] = l = clip_knee(l); fx_R[j] = r = clip_knee(r);
-        if (iabs(l) > pk) pk = iabs(l);
-        if (iabs(r) > pk) pk = iabs(r);
+        tgt = lk_g + ((32768 - lk_g) >> 6) + 1;        /* release */
+        if (tgt > 32768) tgt = 32768;
+        if (lk_need(lk_pk) < tgt) tgt = lk_need(lk_pk);
+        if (lk_need(pn) < tgt) tgt = lk_need(pn);
+        for (i = 0; i < (int32_t)LK; i++) {
+            int32_t g = g0 + (int32_t)(((int64_t)(tgt - g0) * (i + 1)) >> 5), xl = lk_l[i], xr = lk_r[i];
+            lk_l[i] = fx_L[sb + (uint32_t)i]; lk_r[i] = fx_R[sb + (uint32_t)i];
+            if (g != 32768) { xl = (int32_t)(((int64_t)xl * g) >> 15); xr = (int32_t)(((int64_t)xr * g) >> 15); }
+            fx_L[sb + (uint32_t)i] = xl = clip_knee(xl); fx_R[sb + (uint32_t)i] = xr = clip_knee(xr);   /* (a no-op) */
+            if (iabs(xl) > pk) pk = iabs(xl);
+            if (iabs(xr) > pk) pk = iabs(xr);
+        }
+        lk_pk = pn;
+        lk_g = tgt;
     }
     /* silence gate: the codec mutes itself on digital zero, but while anything at all comes out its analog hiss
      * is there; a held note's last -66 dBFS lie under that hiss anyway. So after 200 ms under GATE_LO the output
