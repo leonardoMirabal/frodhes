@@ -1,6 +1,6 @@
 # Frodhes: user manual
 
-**A physically modelled Fender Rhodes for the M-VAVE FM-1.** Version 0.8.
+**A physically modelled Fender Rhodes for the M-VAVE FM-1.** Version 0.8.1.
 
 Frodhes turns the FM-1 into an electric piano. Every note is computed from the physics of a real Rhodes: the hammer
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound. No recordings
