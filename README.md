@@ -11,6 +11,9 @@ reface CP-style effects chain (compressor, drive, tremolo / wah, phaser, chorus,
 clock sync, scales, a sustain pedal and 12 factory plus 16 user presets. The screen shows one page at a time with
 four cards, one for each of the FM-1's four knobs.
 
+**Try it in your browser: [the Frodhes emulator](https://leonardomirabal.github.io/frodhes/)**: the same firmware
+code compiled to WebAssembly, with the FM-1's screen, knobs, buttons and keys (computer keyboard and Web MIDI too).
+
 ## Download
 
 **Latest release: [Frodhes 0.8](https://github.com/leonardoMirabal/frodhes/releases/latest)**: the firmware file is
@@ -78,10 +81,12 @@ make host         # render build/host/frodhes.wav and screen PNGs on the compute
 
 Testing on the real FM-1 over USB: `tools/hil_scan.py` plays it over MIDI and analyses its USB audio (keys,
 velocity, every effect, presets); `tools/hil_jack.py` compares the headphone jack, recorded with an audio interface,
-against the USB audio. `tools/manual_shots.py` renders the manual's screenshots.
+against the USB audio. `tools/manual_shots.py` renders the manual's screenshots. `web/build.sh` builds the browser
+emulator (Emscripten; `web/web_hal.c` stands in for the hardware) into `web/dist/`.
 
-Frodhes changes Dinghy's platform files in three small places: the app may allow its preset flash sectors
-(`APP_FL_RANGE`), drive the codec to full scale (`APP_OUT_SHIFT`), and a host-mode fix in `gfx.c`. Dinghy stays
+Frodhes changes Dinghy's platform files in four small places: the app may allow its preset flash sectors
+(`APP_FL_RANGE`), drive the codec to full scale (`APP_OUT_SHIFT`), build for the browser (`DINGHY_WEB`), and a
+host-mode fix in `gfx.c`. Dinghy stays
 the `upstream` remote: `git fetch upstream && git merge upstream/main`.
 
 [docs/API.md](docs/API.md) describes what the platform provides; [docs/RULES.md](docs/RULES.md) lists the chip's
