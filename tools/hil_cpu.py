@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The FM-1's audio CPU load, measured on the device over USB-MIDI: each scenario plays, then CC 116 asks the
 firmware for the longest audio block since the last query (frodhes.c midi_cc; replies on CC 116/117 = us / 4).
-The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder starts at 2400 us.
+The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder starts at 5000 us.
 
     python3 tools/hil_cpu.py
 """
@@ -97,10 +97,21 @@ def main():
     run("8 bass notes v127 at once, no effects", {}, bass8, 127)
     run("8-note chord v100, every effect on", heavy, chord8)
     run("8 bass notes v127 + pedal, every effect on", heavy, bass8, 127, pedal=True)
+    att = shed0 = 0
+    shed0 = query()[2]
+    reset(**heavy)
+    query()
+    for i in range(12):                               # 8-note chords struck again every 100 ms (voice steals)
+        play(chord8 if i % 2 else bass8, 127, 0.4)
+        att = max(att, query()[0])
+    shed = (query()[2] - shed0) % 128
+    rows.append(("repeated", att))
+    print(f"{'8-note chords struck every 0.4 s, every effect':44s} attack {att:5d} us ({100 * att / BLOCK_US:4.1f} %)"
+          f"   voices shed {shed}")
     reset()
     worst = max(w for _, w in rows)
-    print(f"\nworst {worst} us of {BLOCK_US} us per block ({100 * worst / BLOCK_US:.0f} %); shedder at 2400 us; "
-          f"headroom to the shedder {2400 - worst} us, to real time {BLOCK_US - worst} us")
+    print(f"\nworst {worst} us of {BLOCK_US} us per block ({100 * worst / BLOCK_US:.0f} %); shedder at 5000 us; "
+          f"headroom to the shedder {5000 - worst} us, to real time {BLOCK_US - worst} us")
 
 
 if __name__ == "__main__":

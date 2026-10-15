@@ -203,7 +203,7 @@ wider in stereo, which on headphones sounds bigger; their level is set so that i
 | K2 | **DLY TONE** | The delay's echo colour |
 | K3 | **LEVEL** | This preset's volume, ±12 dB, saved with the preset |
 
-The bottom line shows the audio engine's time per block (it must stay under about 2900 µs).
+The bottom line shows the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 4800).
 
 ## 5. Presets
 
