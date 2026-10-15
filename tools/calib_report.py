@@ -222,6 +222,7 @@ def release_target(p, n):
 def host_types(keys, vel=100):
     """Every key at vel, per TYPE, through the C engine with the effects bypassed: level (RMS 50..300 ms) and timbre."""
     subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
+    os.makedirs(os.path.join(ROOT, "build", "calib"), exist_ok=True)     # (a fresh checkout has no build/calib)
     res = {}
     gap = 1.2
     for ti, name in enumerate(TYPES):
