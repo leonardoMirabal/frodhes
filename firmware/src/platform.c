@@ -232,6 +232,7 @@ extern void isr_timer5(void);
 /* ---- the sound: ALNK0 I2S, two halves; the app renders, the MASTER knob scales, Q15 -> 24 bit (-6 dBFS ceiling) */
 static int32_t abuf[2u * HALF_WORDS] __attribute__((aligned(4)));
 static volatile int32_t master_q12 = 2048;
+static volatile uint8_t usb_pre_master;        /* the app: 1 = the USB audio does not follow the MASTER knob */
 static void app_audio(int32_t *out, uint32_t n);
 static void app_main(void);
 
@@ -248,12 +249,21 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
             o[i] = 0;
         uac_render_start();
         app_audio(o, HALF_FRAMES);
-        for (i = 0; i < HALF_WORDS; i++) {
-            int32_t v = (o[i] * master_q12) >> 12;
-            o[i] = v > 32767 ? 32767 : v < -32767 ? -32767 : v;
+        if (usb_pre_master) {                   /* the computer records the app at full level, the jack follows MASTER */
+            for (i = 0; i < HALF_WORDS; i++)
+                o[i] = o[i] > 32767 ? 32767 : o[i] < -32767 ? -32767 : o[i];
+            for (b = 0; b < HALF_FRAMES; b += 32u)
+                uac_tap(o + 2u * b, 32u);
+            for (i = 0; i < HALF_WORDS; i++)
+                o[i] = (o[i] * master_q12) >> 12;
+        } else {
+            for (i = 0; i < HALF_WORDS; i++) {
+                int32_t v = (o[i] * master_q12) >> 12;
+                o[i] = v > 32767 ? 32767 : v < -32767 ? -32767 : v;
+            }
+            for (b = 0; b < HALF_FRAMES; b += 32u)
+                uac_tap(o + 2u * b, 32u);       /* the computer records what the speaker plays */
         }
-        for (b = 0; b < HALF_FRAMES; b += 32u)
-            uac_tap(o + 2u * b, 32u);           /* the computer records what the speaker plays */
         for (i = 0; i < HALF_WORDS; i++)
             o[i] <<= APP_OUT_SHIFT;             /* Q15 -> 24 bit: 7 = a -6 dBFS ceiling (Dinghy), 8 = full scale */
         fm1_audio_ack_half();
@@ -287,10 +297,16 @@ static void platform_poll(void)
     if (fm1_ms >= 30000u && bootguard.pending)
         bootguard_clear(&bootguard);            /* 30 s up: this firmware boots */
     if ((a = fm1_adc_read(FM1_ADC_MASTER)) >= 0) {
+        /* heavily smoothed (a headphone plug makes the pot's reading jump about) and with a dead band of 6 / 1023,
+         * so the volume moves only when the knob does */
+        static uint32_t k_used = 512;
         uint32_t k10;
-        knob_avg += (a * 16 - knob_avg) / 8;
+        knob_avg += (a * 16 - knob_avg) / 64;
         k10 = (uint32_t)(knob_avg / 16);
-        master_q12 = (int32_t)((k10 * k10) >> 8);
+        if (k10 + 6u < k_used || k10 > k_used + 6u || (k10 == 0u) != (k_used == 0u) || (k10 >= 1020u) != (k_used >= 1020u)) {
+            k_used = k10;
+            master_q12 = (int32_t)((k10 * k10) >> 8);
+        }
     }
 }
 

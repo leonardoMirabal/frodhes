@@ -90,6 +90,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 64u) { sus_midi = (uint8_t)v; sustain_update(); return; }
     if (cc == 119u) { fx_set(FXP_RAW, v >= 64u); return; }
     if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
+    if (cc == 114u) { set.usb_fixed = v >= 64u; usb_pre_master = set.usb_fixed; ui_mark(E_CARDS); return; }   /* USB VOL */
     if (cc == 116u) {                                  /* profiler query: CC 116 -> CC 116/117 = max audio us (MSB, LSB
                                                         * of us / 4), CC 118 = this block's (us / 32), CC 115 = voices shed
                                                         * (mod 128); then the max resets */
@@ -146,6 +147,8 @@ static void app_main(void)
     if (settings_load(&set, sizeof set) != 0) params_defaults();
     params_sanitize();
     arp_sanitize();
+    if (set.usb_fixed > 1u) set.usb_fixed = 0;
+    usb_pre_master = set.usb_fixed;
     palette_set(set.color);
     params_apply_all();
     tempo_set10(set.bpm10);

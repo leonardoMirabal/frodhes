@@ -9,4 +9,4 @@ Rhodes physical-model firmware for the M-VAVE FM-1 (JieLi AC791N, pi32v2, no FPU
 - Hardware register access belongs in `hal/` only. `tools/build.py` enforces this, plus bans ROM addresses 0xFFC00000–0xFFCFFFFF, including as constants.
 - To test on the host, run `tests/run_host.sh`. It writes `build/host/frodhes.wav` and screen PNGs and works on macOS without Docker.
 - To build firmware, run `./build.sh` to get `build/frodhes.fwsc`. It needs the JieLi toolchain, the AC79 SDK, and Docker on macOS.
-- Package identity is `FM-1_95N`.
+- Package identity is `FM-1_958` for every version and dev build; the version is text only (`./build.sh --release X.Y.Z`).

@@ -3,7 +3,7 @@
 # Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments
 """Build Frodhes (on Dinghy / Felucca / SLOOP's platform): the app, the update loader and an installable .fwsc package.
 
-  tools/build.py [--release X.Y[-suffix]]
+  tools/build.py [--release X.Y.Z]
 
 Outputs in build/: frodhes.bin (app), loader/ota.bin (update loader),
 frodhes.fwsc (package). See README.md for the toolchain and the SDK.
@@ -47,7 +47,9 @@ SDK_SHA256 = {
     "cfg/eq_cfg_hw.bin": "41167491bffed4651750719c973d2758adeb9021a5670d02d6a53c85ed80ea7d",
 }
 
-PRODUCT = "FM-1_950"                # Frodhes: 95N (OUR_LOADER in the installer wants FM-1_9NN). Dinghy is 99N
+PRODUCT = "FM-1_958"                # Frodhes, every version and dev builds: one identity (the hub's installer wants
+                                    # FM-1_9NN; 958 is not used by another firmware on thefirmwarehub.com, 2026-10).
+                                    # The version is only text (APP_VER), so releases never run out of numbers
 VERSION = None                      # APP_VER for release builds
 
 
@@ -270,20 +272,14 @@ def mmio_check():
 def main():
     global PRODUCT, VERSION
     ap = argparse.ArgumentParser()
-    ap.add_argument("--release", metavar="X.Y", help="release build 0.1 .. 0.9: identity FM-1_951 .. 959, version string 0.Y")
+    ap.add_argument("--release", metavar="X.Y.Z", help="release build: version string X.Y.Z, file frodhes-X.Y.Z.fwsc")
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
     a = ap.parse_args()
     name = "frodhes.fwsc"
-    if a.release:                   # one digit each: the identity has room for two (X.Y; a .Z only in the text)
-        m = re.fullmatch(r"(\d)\.(\d)(\.\d)?(-[A-Za-z0-9]+)?", a.release)
-        if not m:
-            raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z or X.Y-suffix, one digit each")
-        if m[1] != "0" or m[2] == "0":
-            # identities: FM-1_950 = dev builds; 0.1 .. 0.9 = FM-1_951 .. 959 (the minor digit alone would make
-            # 0.1 and 1.1 the same identity). A major release needs a new identity block first (check the hub).
-            raise SystemExit(f"--release {a.release}: only 0.1 .. 0.9 (FM-1_951 .. 959); FM-1_950 is the dev build")
-        PRODUCT = "FM-1_95" + m[2]
-        VERSION = m[1] + "." + m[2] + (m[3] or "")
+    if a.release:
+        if not re.fullmatch(r"\d{1,2}\.\d{1,2}(\.\d{1,3})?(-[A-Za-z0-9]+)?", a.release):
+            raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z or X.Y.Z-suffix")
+        VERSION = a.release
         name = f"frodhes-{a.release}.fwsc"
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK

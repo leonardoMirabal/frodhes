@@ -26,7 +26,7 @@ enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_TREM, PG_PH
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_N = 8, E_CARDS = 10 };   /* E_CARDS: all four */
 /* card slots: a parameter id (< P_COUNT) or one of these */
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
-       S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_NONE = 0xFF };
+       S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_NONE = 0xFF };
 
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
                                              "CHORUS", "DELAY", "TEMPO", "SCALE", "ARPEGGIO", "SETUP"};
@@ -44,7 +44,7 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {S_BPM, P_TW_SYNC, P_PH_SYNC, P_DL_SYNC},
     {S_SCMODE, S_SCALE, S_ROOT, S_TRANS},
     {S_ARPMODE, S_ARPRATE, S_ARPOCT, S_ARPGATE},
-    {S_CLOCK, P_DL_TONE, P_LEVEL, S_NONE},
+    {S_CLOCK, P_DL_TONE, P_LEVEL, S_USBVOL},
 };
 static const char *const PAGE_LAB[PG_N][4] = {
     {"", "", "", ""},                                   /* PERFORM: the assigned parameter's name (slot_label) */
@@ -60,7 +60,7 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"BPM", "TREM SYNC", "PHA SYNC", "DLY SYNC"},
     {"MODE", "SCALE", "ROOT", "TRANSP"},
     {"MODE", "RATE", "OCTAVES", "GATE"},
-    {"CLOCK", "DLY TONE", "LEVEL", ""},
+    {"CLOCK", "DLY TONE", "LEVEL", "USB VOL"},
 };
 static const char *const PAGE_HINT[PG_N] = {"NEXT PAGE: ASSIGN THE KNOBS", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
@@ -100,7 +100,11 @@ static void ui_say(const char *s)
 }
 static void p_strcpy(char *d, const char *s, uint32_t max) { uint32_t i = 0; while (s[i] && i < max) { d[i] = s[i]; i++; } d[i] = 0; }
 /* the version on screen: a release build's ("0.8.1"), else DEV (dev builds are "0.0", host / web "dev" / "web") */
-static const char *ui_version(void) { return (APP_VER[0] >= '1' && APP_VER[0] <= '9') || (APP_VER[0] == '0' && APP_VER[2] != '0') ? APP_VER : "DEV"; }
+static const char *ui_version(void)
+{
+    static const char v[] = APP_VER;
+    return v[0] < '0' || v[0] > '9' || (v[0] == '0' && v[1] == '.' && v[2] == '0' && !v[3]) ? "DEV" : v;
+}
 static void ui_changed(void) { set_dirty = 1; set_t_change = fm1_ms; }
 static int32_t sgn(int32_t d) { return d > 0 ? 1 : -1; }
 
@@ -184,6 +188,7 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_ARPRATE: *hi = 5; return ARP_RATE;
     case S_ARPOCT: *hi = 3; return ARP_OCT;
     case S_ARPGATE: *hi = 90; return ARP_GATE - 10;
+    case S_USBVOL: *hi = 1; return set.usb_fixed;
     default: *hi = 0; return 0;
     }
 }
@@ -223,6 +228,7 @@ static void slot_text(uint32_t s, char *v)
     case S_ASG0: case S_ASG0 + 1: case S_ASG0 + 2: case S_ASG0 + 3: p_strcpy(v, PERF_T[perf_idx(s - S_ASG0)].name, 12); return;
     case S_ARPMODE: p_strcpy(v, ARP_MODE_NAME[ARP_MODE], 7); return;
     case S_ARPRATE: p_strcpy(v, ARP_RATE_NAME[ARP_RATE], 6); return;
+    case S_USBVOL: p_strcpy(v, set.usb_fixed ? "FIXED" : "KNOB", 5); return;
     case S_ARPOCT: p_fmt_int(v, ARP_OCT + 1); return;
     case S_ARPGATE: { uint32_t n = 0; p_fmt_int(v, ARP_GATE); while (v[n]) n++; v[n++] = '%'; v[n] = 0; return; }
     case S_NONE: return;
@@ -275,6 +281,7 @@ static void slot_turn(uint32_t s, int32_t d)
     case S_ARPRATE: ARP_RATE = (uint8_t)clampi(ARP_RATE + sgn(d), 0, 5); break;
     case S_ARPOCT: ARP_OCT = (uint8_t)clampi(ARP_OCT + sgn(d), 0, 3); break;
     case S_ARPGATE: ARP_GATE = (uint8_t)clampi(ARP_GATE + 5 * sgn(d), 10, 100); break;
+    case S_USBVOL: set.usb_fixed = d > 0; usb_pre_master = set.usb_fixed; break;
     default: break;
     }
     ui_changed();
@@ -349,11 +356,6 @@ static void draw_card(uint32_t k)
         if (text_w(&FONT_L, v) <= 112) text_c(0, 21, 118, &FONT_L, v, C_HI);
         else text_c(0, 29, 118, &FONT_S, v, C_HI);
         if (hi && slot_is_level(s)) gauge(5, 56, 108, val, hi);
-    } else if (ui_page == PG_SETUP) {                   /* the free card: what this is */
-        cv_rect(0, 0, 118, 68, C_LINE);
-        cv_rect(1, 1, 116, 66, C_BLACK);
-        text_c(0, 10, 118, &FONT_L, "FRODHES", UI_ACC);
-        text_c(0, 46, 118, &FONT_S, ui_version(), C_DIM);
     }
     cv_blit(k & 1u ? 121u : 1u, k & 2u ? 135u : 63u);
 }
@@ -386,7 +388,11 @@ static void draw_footer(void)
         }
         if (ui_page == PG_ARP) text_c(0, 2, 240, &FONT_S, ARP_HOLD ? "HOLD ON: NOTES KEEP PLAYING" : "HOLD OFF",
                                       ARP_HOLD ? UI_ACC : C_GRAY);
-        else text_c(0, 2, 240, &FONT_S, "SELECT: PAGE  PRESETS: SOUND", C_GRAY);
+        else if (ui_page == PG_SETUP) {                 /* what this is: the name and the version */
+            char t[24];
+            p_strcpy(t, "FRODHES ", 8); p_strcpy(t + 8, ui_version(), 12);
+            text_c(0, 2, 240, &FONT_S, t, UI_ACC);
+        } else text_c(0, 2, 240, &FONT_S, "SELECT: PAGE  PRESETS: SOUND", C_GRAY);
         if (ui_page == PG_SETUP) {
             static char cpu[32];
             uint32_t n = 0;

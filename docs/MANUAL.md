@@ -258,9 +258,9 @@ settings belong to the FM-1, not to a preset; ARP RATE and ARP GATE can also be 
 | K1 | **CLOCK** | Tempo source: **INT** (internal), **AUTO** (follows USB MIDI clock when it arrives), **USB** |
 | K2 | **DLY TONE** | The delay's echo colour |
 | K3 | **LEVEL** | This preset's volume, ±12 dB, saved with the preset |
-| | **FRODHES** | The fourth card shows the name and the version installed |
+| K4 | **USB VOL** | **KNOB**: the USB audio follows the MASTER knob, as the headphones do. **FIXED**: the USB audio always comes at full level, whatever the knob (and headphones plugged in) do; the headphone jack still follows MASTER |
 
-The bottom line shows the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 4800).
+The bottom line shows the name and the version installed, and the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 4800).
 
 ## 5. Presets
 
@@ -341,6 +341,7 @@ also send their notes to the computer. **Program Change** 0–11 loads F01–F12
 | 106 / 107 | COMP on / THRESHOLD | 112 / 113 | COMP RATIO / MAKEUP |
 | 108 / 109 | COMP ATTACK / RELEASE | 110 | LEVEL (64 = 0 dB) |
 | 111 | All effects off (≥ 64) / on | 28–31 | TONE / BARK / BELL / HAMMER |
+| 114 | USB VOL: knob (< 64) / fixed | | |
 | 102 / 103 / 104 | DECAY / RELEASE / NOISE | 120 / 123 | All sound off / all notes off |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 

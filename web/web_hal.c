@@ -36,6 +36,7 @@ static uint32_t fm1_input_edges(uint32_t *released) { uint32_t b = host_edges; h
 static uint32_t fm1_input_note_edges(void) { return 0; }
 static int32_t fm1_enc_take(uint32_t e) { int32_t d = e < 8u ? host_enc[e] : 0; if (e < 8u) host_enc[e] = 0; return d; }
 static void fm1_led_key(uint32_t id, int on) { if (id < 64u) host_led[id] = (uint8_t)(on != 0); }
+static volatile uint8_t usb_pre_master;          /* platform.c: USB audio before MASTER (no USB here) */
 static uint8_t host_glow[64];                   /* the dim layer (fm1_led_key_glow) */
 static void fm1_led_key_glow(uint32_t id, int on) { if (id < 64u) host_glow[id] = (uint8_t)(on != 0); }
 

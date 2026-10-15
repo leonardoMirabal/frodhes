@@ -18,7 +18,7 @@ code compiled to WebAssembly, with the FM-1's screen, knobs, buttons and keys (c
 ## Download
 
 **Latest release: [Frodhes 0.8.1](https://github.com/leonardoMirabal/frodhes/releases/latest)**: the firmware file is
-`frodhes-0.8.1.fwsc` under *Assets* on the release page (package identity `FM-1_958`).
+`frodhes-0.8.1.fwsc` under *Assets* on the release page (package identity `FM-1_958`, the same for every version).
 
 Install it over USB:
 
@@ -51,7 +51,7 @@ the MIDI map.
 | **TEMPO** | BPM | TREM SYNC | PHA SYNC | DLY SYNC | GLO |
 | **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | (SELECT) |
 | **ARPEGGIO** | OFF / UP / DOWN / UP-DN / ORDER / RANDOM | RATE | OCTAVES | GATE | ARP (there: on / off; PLAY: HOLD) |
-| **SETUP** | MIDI CLOCK | DELAY TONE | LEVEL | (name, version) | GLO twice |
+| **SETUP** | MIDI CLOCK | DELAY TONE | LEVEL | USB VOL (KNOB / FIXED) | GLO twice |
 
 **SELECT** turns the pages, **K1–K4** turn the cards (on **PERFORM**: the effects' dry / wet, or what you assign), **ALGORITHM** picks the TYPE, **PRESETS** browses sounds,
 **FX** switches all effects off / on, **ARP** runs the arpeggiator, **PLAY** taps the tempo, **REC** is the sustain pedal, **SAVE** stores a preset.
@@ -80,7 +80,7 @@ make setup        # .local/venv, the JieLi toolchain, the AC79 SDK files (sha256
 make test         # the host scripts in tests/scripts
 make pytest       # the Python tests (generators, the C engine against its reference, effects)
 make host         # render build/host/frodhes.wav and screen PNGs on the computer, no FM-1 needed
-./build.sh        # build/frodhes.fwsc;  ./build.sh --release 0.8.1 -> build/frodhes-0.8.1.fwsc (FM-1_958)
+./build.sh        # build/frodhes.fwsc;  ./build.sh --release 0.9.0 -> build/frodhes-0.9.0.fwsc (always FM-1_958)
 ```
 
 Testing on the real FM-1 over USB: `tools/hil_scan.py` plays it over MIDI and analyses its USB audio (keys,
