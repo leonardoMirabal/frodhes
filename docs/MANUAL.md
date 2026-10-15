@@ -242,8 +242,9 @@ too). Press **ARP** to come here, and **ARP** again to switch it on / off (the A
 | K3 | **OCTAVES** | 1 to 4: the pattern repeated octaves up |
 | K4 | **GATE** | How long each note sounds: 10 % short and plucked, 100 % legato |
 
-The **sustain** (REC) latches the pattern: hold it, play a chord, let go, and the arpeggio keeps going until you
-release the sustain. It works with the scales (the notes are already on the scale) and with notes from USB-MIDI. The
+It **latches**: play a chord and let go, and the arpeggio keeps going with those notes. The next chord you play (after
+letting go of every key) replaces them; keys you add while others are still held join the pattern. Press **ARP** to
+stop. The sustain (REC) stays the piano's sustain pedal. It works with the scales (the notes are already on the scale) and with notes from USB-MIDI. The
 settings belong to the FM-1, not to a preset; ARP RATE and ARP GATE can also be put on a PERFORM knob.
 
 ### SETUP

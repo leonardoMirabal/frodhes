@@ -6,13 +6,19 @@
 400 keys 0x4880
 1400 expect rms > -60
 1500 shot
-# let go: the pattern stops (the last note's release dies away)
-2400 keys 0
-3600 expect rms < -70
-# ARP again: off; the chord now sounds as a chord
-3700 btn 10
-3800 expect led 10 0
-3900 keys 0x4880
-4400 expect rms > -60
-4500 keys 0
-4600 end
+# let go: it latches, the pattern goes on with those notes
+1600 keys 0
+2400 expect rms > -60
+# a new note after every key was let go replaces the pattern (A4 = key 16 alone)
+2500 keys 0x10000
+2600 keys 0
+3400 expect rms > -60
+# ARP again: off, the pattern stops (the last note's release dies away)
+3500 btn 10
+3600 expect led 10 0
+4800 expect rms < -70
+# off: the chord now sounds as a chord
+4900 keys 0x4880
+5400 expect rms > -60
+5500 keys 0
+5600 end

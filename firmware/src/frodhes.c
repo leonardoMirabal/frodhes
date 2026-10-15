@@ -50,13 +50,7 @@ static void app_audio(int32_t *out, uint32_t n)
 static uint8_t sus_held, sus_latched, sus_midi, sus_was_latched;
 static uint32_t sus_t;
 
-static uint8_t sus_down(void) { return sus_held || sus_latched || sus_midi >= 64u; }
-static void sustain_update(void)
-{
-    rh_pedal_level(sus_held || sus_latched ? 127u : sus_midi);
-    if (!sus_down()) arp_sustain_up();                     /* the arpeggiator's latched notes go */
-    ui_mark(E_HEADER);
-}
+static void sustain_update(void) { rh_pedal_level(sus_held || sus_latched ? 127u : sus_midi); ui_mark(E_HEADER); }
 
 /* a note from the keys or USB-MIDI: to the piano, or to the arpeggiator while it runs (each note remembers which,
  * so switching the arpeggiator under held keys never leaves one hanging); the keys' notes are echoed to USB-MIDI */

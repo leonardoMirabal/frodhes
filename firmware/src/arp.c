@@ -7,7 +7,9 @@
  *   OCTAVES  1..4: the pattern repeated octaves up
  *   GATE     how long each note sounds, 10 .. 100 % of a step
  *
- * The sustain (REC / CC 64) latches: notes let go while it is down stay in the pattern until it comes up.
+ * It latches: the notes keep playing after the keys are let go, until new notes come (a chord started after every
+ * key was let go replaces the pattern; keys added while others are held join it) or the arpeggiator is switched off.
+ * The sustain (REC / CC 64) stays the piano's damper pedal only.
  * Settings (set.arp[]) belong to the FM-1, not to a preset. Nothing here runs in the audio ISR. */
 
 #define ARP_MAX 16u
@@ -24,7 +26,6 @@ static const char *const ARP_RATE_NAME[6] = {"1/4", "1/8", "1/8T", "1/16", "1/16
 static uint8_t arp_note[ARP_MAX], arp_vel[ARP_MAX], arp_down[ARP_MAX], arp_n;   /* in the order played */
 static uint32_t arp_step_no = 0xFFFFFFFFu, arp_off_t, arp_seed = 0x1234567u;
 static uint8_t arp_playing = 255, arp_pos, arp_dir;
-static uint8_t sus_down(void);                  /* frodhes.c: the sustain is down */
 
 static void arp_defaults(void) { ARP_MODE = ARP_OFF; ARP_RATE = 3; ARP_OCT = 0; ARP_GATE = 60; ARP_LAST = ARP_UP; }
 static void arp_sanitize(void)
@@ -45,34 +46,18 @@ static void arp_stop_note(void)
 static void arp_in_on(uint32_t n, uint32_t vel)
 {
     uint32_t i;
+    int any = 0;
+    for (i = 0; i < arp_n; i++) any |= arp_down[i];
+    if (!any) { arp_n = 0; arp_step_no = 0xFFFFFFFFu; arp_pos = 0; arp_dir = 0; }   /* a new chord: replaces, from its start */
     for (i = 0; i < arp_n; i++)
         if (arp_note[i] == n) { arp_down[i] = 1; arp_vel[i] = (uint8_t)vel; return; }
-    if (arp_n == 0u) { arp_step_no = 0xFFFFFFFFu; arp_pos = 0; arp_dir = 0; }   /* a new chord: from its start */
     if (arp_n == ARP_MAX) return;
     arp_note[arp_n] = (uint8_t)n; arp_vel[arp_n] = (uint8_t)vel; arp_down[arp_n] = 1; arp_n++;
 }
-static void arp_remove(uint32_t i)
-{
-    for (; i + 1u < arp_n; i++) { arp_note[i] = arp_note[i + 1u]; arp_vel[i] = arp_vel[i + 1u]; arp_down[i] = arp_down[i + 1u]; }
-    arp_n--;
-}
-static void arp_in_off(uint32_t n)
+static void arp_in_off(uint32_t n)                 /* the note stays in the pattern (the latch) */
 {
     uint32_t i;
-    for (i = 0; i < arp_n; i++)
-        if (arp_note[i] == n) {
-            if (sus_down()) arp_down[i] = 0;                          /* latched until the sustain comes up */
-            else arp_remove(i);
-            break;
-        }
-    if (!arp_n) arp_stop_note();
-}
-/* the sustain came up: drop the latched notes */
-static void arp_sustain_up(void)
-{
-    uint32_t i = 0;
-    while (i < arp_n) { if (!arp_down[i]) arp_remove(i); else i++; }
-    if (!arp_n) arp_stop_note();
+    for (i = 0; i < arp_n; i++) if (arp_note[i] == n) arp_down[i] = 0;
 }
 static void arp_clear(void) { arp_n = 0; arp_stop_note(); }
 
