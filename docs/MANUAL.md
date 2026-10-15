@@ -267,7 +267,8 @@ notes start, a cell with a band is where they are still held, the white one is w
   second 16th) and the big letters show what starts on that step ("-": nothing). Turn **EDIT left** there to
   **delete** that step's notes. While the loop plays, the view goes back to following it 4 s after you stop turning.
   (On every other page ALGORITHM is the TYPE and PRESETS the presets, as always.)
-- **PLAY** starts and stops the loop.
+- **PLAY** starts and stops the loop. Stopping takes everything back to the start: the loop and the cursor go to
+  **bar 1, step 1** (nothing is erased).
 - **SEQ** switches recording on / off (the SEQ light blinks).
   - **Playing (live):** every pass adds what you play on top (overdub), quantized; the loop never stops. Arm REC, then
     press PLAY to start.

@@ -103,11 +103,12 @@ static void seq_start(void)
     beat_t0 = fm1_ms;                                   /* the tempo's beat (arpeggiator, LED) from bar 1 */
     ui_mark(6);
 }
-static void seq_stop(void)
+static void seq_stop(void)                              /* stop: back to the start (the cursor too: bar 1, step 1) */
 {
     sq_rec_close_all();
     seq_play = 0;
     sq_all_off();
+    sq_cur = 0; sq_cur_t = fm1_ms;
     ui_mark(6); ui_mark(7);
 }
 static void seq_toggle_play(void) { if (seq_play) seq_stop(); else seq_start(); }
