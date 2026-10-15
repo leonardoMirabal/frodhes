@@ -40,7 +40,7 @@ One page at a time, and each page has exactly four cards: **K1–K4 always turn 
 | **PIANO** | TYPE | DRIVE | REVERB | KEY VEL | HOME |
 | **VOICE** | TONE | BARK | BELL | HAMMER | EDIT |
 | **DECAY** | DECAY | RELEASE | NOISE | TUNE | ENV |
-| **COMPRESSOR** | OFF / ON | AMOUNT | ATTACK | RELEASE | ENV twice |
+| **COMPRESSOR** | THRESHOLD (0..-40 dB) | RATIO (1.5:1..20:1) | ATTACK | MAKEUP (0..+24 dB) | ENV twice; ENV there = on / off |
 | **TREM/WAH** | OFF / PAN / TREM / WAH | DEPTH | RATE | SHAPE | LFO |
 | **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | SEQ |
 | **CHORUS** | OFF / ON | DEPTH | SPEED | SYNC | SEL |
@@ -59,7 +59,7 @@ One page at a time, and each page has exactly four cards: **K1–K4 always turn 
 | **PLAY** | Tap tempo. A synced TIME / RATE / SPEED card shows the note value and steps through note values. |
 | **REC** | Sustain pedal: hold it, or tap to latch (tap again to release). |
 | **OCT− / OCT+** | Octave ±2. **MASTER**: volume. |
-| **USB-MIDI** | Notes with velocity; the reface CP CC map (80 TYPE, 81 DRIVE, 17–19 TREM/WAH, 85–87 CHO/PHA, 88–90 DELAY, 91 REVERB); CC 64 sustain with half-pedal; phaser 12–16; compressor 106–109; Program Change for presets; clock. |
+| **USB-MIDI** | Notes with velocity; the reface CP CC map (80 TYPE, 81 DRIVE, 17–19 TREM/WAH, 85–87 CHO/PHA, 88–90 DELAY, 91 REVERB); CC 64 sustain with half-pedal; phaser 12–16; compressor 106–109, 112 ratio, 113 make-up; 110 LEVEL; 111 FX bypass; Program Change for presets; clock. |
 
 KEY VEL sets how hard the FM-1's own keys play (they are not velocity-sensitive): this is where the bark lives.
 SETUP also shows the audio time per block (it must stay under ~2900 µs); COMPRESSOR shows its gain reduction.
