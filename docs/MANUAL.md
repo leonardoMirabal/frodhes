@@ -67,7 +67,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **LFO** | TREM/WAH page; press again there to switch it on / off |
 | **SEQ** | PHASER page; press again there to switch it on / off |
 | **SEL** | CHORUS page; press again there to switch it on / off |
-| **ARP** | DELAY page; press again there to switch it on / off |
+| **ARP** | ARPEGGIO page; press again there to switch the arpeggiator on / off |
 | **GLO** | TEMPO page; press again for SETUP |
 | **FX** | All effects off / on at once (see [6](#6-effects-on-and-off)) |
 | **PLAY** | Tap tempo |
@@ -75,7 +75,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **SAVE** | Save the sound to a user preset; hold to undo the last preset load |
 | **OCT− / OCT+** | Octave down / up (±2) |
 
-The lights tell you what is on: LFO, SEQ, SEL, ARP and ENV light up when their effect is on, FX when the effects are
+The lights tell you what is on: LFO, SEQ, SEL and ENV light up when their effect is on, ARP while the arpeggiator runs, FX when the effects are
 active, REC while the sustain holds, PLAY on the beat when something is synced, HOME on PERFORM and the main page, EDIT on VOICE.
 
 ## 4. The pages
@@ -103,7 +103,8 @@ Turning it back to 0 makes it dry again. **FX** still bypasses all of them at on
 
 Choose what each PERFORM knob plays: K1 here sets what K1 on PERFORM does, and so on. Each knob can play any of:
 TREM/WAH, PHASER, CHORUS, DELAY, REVERB, DRIVE, COMP THR, COMP MKUP, TREM RATE, TREM SHAPE, PHA SPEED, PHA FEEDBK,
-CHO SPEED, DLY TIME, DLY FEEDBK, DLY TONE, TONE, BARK, BELL, HAMMER, DECAY, RELEASE, NOISE, KEY VEL and LEVEL. The
+CHO SPEED, DLY TIME, DLY FEEDBK, DLY TONE, TONE, BARK, BELL, HAMMER, DECAY, RELEASE, NOISE, KEY VEL, LEVEL, ARP RATE
+and ARP GATE. The
 choice is kept when you switch off (it belongs to the FM-1, not to a preset).
 
 ### FRODHES (the main page)
@@ -227,6 +228,24 @@ wider in stereo, which on headphones sounds bigger; their level is set so that i
 | K3 | **ROOT** | The scale's key |
 | K4 | **TRANSP** | Transpose ±24 semitones |
 
+### ARPEGGIO
+
+![ARPEGGIO](manual/img/arp.png)
+
+Hold a chord and the arpeggiator plays its notes one at a time, in time with the tempo (tap tempo and MIDI clock
+too). Press **ARP** to come here, and **ARP** again to switch it on / off (the ARP light shows it).
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **MODE** | **OFF**, **UP**, **DOWN**, **UP-DN** (up and back down), **ORDER** (the order you played the notes), **RANDOM** |
+| K2 | **RATE** | Note length: 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32 of the beat |
+| K3 | **OCTAVES** | 1 to 4: the pattern repeated octaves up |
+| K4 | **GATE** | How long each note sounds: 10 % short and plucked, 100 % legato |
+
+The **sustain** (REC) latches the pattern: hold it, play a chord, let go, and the arpeggio keeps going until you
+release the sustain. It works with the scales (the notes are already on the scale) and with notes from USB-MIDI. The
+settings belong to the FM-1, not to a preset; ARP RATE and ARP GATE can also be put on a PERFORM knob.
+
 ### SETUP
 
 ![SETUP](manual/img/setup.png)
@@ -261,8 +280,8 @@ again to store it, or **HOME** to cancel. The name is made from the type and the
 
 ## 6. Effects on and off
 
-Each effect has its own on / off: its page button pressed twice (LFO, SEQ, SEL, ARP, and ENV for the compressor), or
-its EFFECT card. Switching an effect on whose depth is 0 gives it a useful starting depth, so you always hear it.
+Each effect has its own on / off: its page button pressed twice (LFO, SEQ, SEL, and ENV for the compressor), or
+its EFFECT card (the delay: K1 on DELAY, or turning DELAY up on PERFORM). Switching an effect on whose depth is 0 gives it a useful starting depth, so you always hear it.
 
 **FX** switches **all** effects off at once and back on, without changing any setting: compare the dry piano with
 your sound. The header shows **BYP** while they are off. It is not saved, so the FM-1 always starts with the effects
@@ -304,8 +323,8 @@ release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with ha
 
 ## 11. MIDI
 
-Frodhes is a class-compliant USB-MIDI device. Notes play with their velocity; the FM-1's keys also send their notes
-to the computer. **Program Change** 0–11 loads F01–F12, 16–31 loads U01–U16.
+Frodhes is a class-compliant USB-MIDI device. Notes play with their velocity (and go through the arpeggiator when it runs); the FM-1's keys
+also send their notes to the computer. **Program Change** 0–11 loads F01–F12, 16–31 loads U01–U16.
 
 | CC | Parameter | CC | Parameter |
 | --- | --- | --- | --- |
@@ -320,6 +339,7 @@ to the computer. **Program Change** 0–11 loads F01–F12, 16–31 loads U01–
 | 108 / 109 | COMP ATTACK / RELEASE | 110 | LEVEL (64 = 0 dB) |
 | 111 | All effects off (≥ 64) / on | 28–31 | TONE / BARK / BELL / HAMMER |
 | 102 / 103 / 104 | DECAY / RELEASE / NOISE | 120 / 123 | All sound off / all notes off |
+| 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
 The FM-1 also appears as a USB audio input: you can record exactly what it plays, digitally, without the headphone
 jack's hiss.

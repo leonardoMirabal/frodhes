@@ -18,7 +18,7 @@
 1100 turn 2 1
 1200 expect led 5 1
 1300 shot
-# ARP opens DELAY; K1 there turns the delay on
+# ARP opens ARPEGGIO; K1 there (MODE: OFF -> UP) turns the arpeggiator on (ARP lit)
 1400 btn 10
 1500 turn 2 1
 1600 expect led 10 1

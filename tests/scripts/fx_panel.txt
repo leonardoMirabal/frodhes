@@ -1,9 +1,16 @@
 # Effects switched on from the panel, as on the device, with the depths at their default 0 (0.6):
 # switching an effect on gives it a starting depth, so it is audible at once.
-# DELAY: ARP (10) opens the page, ARP again turns it on (MIX 0 -> 50); a short note; echoes after the damper
-100 btn 10
-200 btn 10
-300 expect led 10 1
+# DELAY: SELECT to its page (the 10th), K1 turns it on (DIG: MIX 0 -> 50); a short note; echoes after the damper
+10 turn 0 1
+18 turn 0 1
+26 turn 0 1
+34 turn 0 1
+42 turn 0 1
+50 turn 0 1
+58 turn 0 1
+66 turn 0 1
+74 turn 0 1
+200 turn 2 1
 400 keys 0x40
 460 keys 0
 1150 expect rms > -60

@@ -4,11 +4,13 @@
  * (a full screen is ~77 ms of SPI: drawn at once it would delay the keys).
  *
  *   SELECT     turns through the pages (the order of the chain):
- *              PERFORM ASSIGN FRODHES (the main page) VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE SETUP
+ *              PERFORM ASSIGN FRODHES (the main page) VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE
+ *              ARPEGGIO SETUP
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on any page)          PRESETS  sounds (presets.c)
- *   shortcuts  HOME = PERFORM (again: the main page), EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEQ / SEL / ARP = TREM / PHASER /
- *              CHORUS / DELAY (on that page: the effect on / off), GLO = TEMPO (again: SETUP).
+ *   shortcuts  HOME = PERFORM (again: the main page), EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEQ / SEL = TREM /
+ *              PHASER / CHORUS (on that page: the effect on / off), ARP = ARPEGGIO (on it: on / off), GLO = TEMPO
+ *              (again: SETUP).
  *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo. REC: sustain. */
 
 #define PR_NF_UI 12u                                  /* presets.c: PR_NF factory presets, then the user ones */
@@ -20,14 +22,14 @@ static void tempo_tap(void);                          /* tempo.c */
 static void tempo_set10(uint32_t b);
 
 enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_TEMPO, PG_SCALE,
-       PG_SETUP, PG_N };
+       PG_ARP, PG_SETUP, PG_N };
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_N = 8, E_CARDS = 10 };   /* E_CARDS: all four */
 /* card slots: a parameter id (< P_COUNT) or one of these */
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
-       S_NONE = 0xFF };
+       S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_NONE = 0xFF };
 
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
-                                             "CHORUS", "DELAY", "TEMPO", "SCALE", "SETUP"};
+                                             "CHORUS", "DELAY", "TEMPO", "SCALE", "ARPEGGIO", "SETUP"};
 static const uint8_t PAGE_S[PG_N][4] = {
     {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
     {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
@@ -41,6 +43,7 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {P_DL_SW, P_DL_DEPTH, P_DL_TIME, P_DL_FDBK},
     {S_BPM, P_TW_SYNC, P_PH_SYNC, P_DL_SYNC},
     {S_SCMODE, S_SCALE, S_ROOT, S_TRANS},
+    {S_ARPMODE, S_ARPRATE, S_ARPOCT, S_ARPGATE},
     {S_CLOCK, P_DL_TONE, P_LEVEL, S_NONE},
 };
 static const char *const PAGE_LAB[PG_N][4] = {
@@ -56,12 +59,14 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"EFFECT", "MIX", "TIME", "FEEDBK"},
     {"BPM", "TREM SYNC", "PHA SYNC", "DLY SYNC"},
     {"MODE", "SCALE", "ROOT", "TRANSP"},
+    {"MODE", "RATE", "OCTAVES", "GATE"},
     {"CLOCK", "DLY TONE", "LEVEL", ""},
 };
 static const char *const PAGE_HINT[PG_N] = {"NEXT PAGE: ASSIGN THE KNOBS", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
                                             "", "LFO BUTTON: ON / OFF", "SEQ BUTTON: ON / OFF", "SEL BUTTON: ON / OFF",
-                                            "ARP BUTTON: ON / OFF", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT", ""};
+                                            "K1: OFF / DIGITAL / ANALOG", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
+                                            "ARP BUTTON: ON / OFF", ""};
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
                                            "PENTA", "MPENTA", "BLUES"};
 static const char *const NOTE_NAME[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -126,6 +131,7 @@ static const perf_t PERF_T[] = {
     {P_CP_SPEED, "CHO SPEED"}, {P_DL_TIME, "DLY TIME"}, {P_DL_FDBK, "DLY FEEDBK"}, {P_DL_TONE, "DLY TONE"},
     {P_TONE, "TONE"}, {P_BARK, "BARK"}, {P_BELL, "BELL"}, {P_HAMMER, "HAMMER"}, {P_DECAY, "DECAY"},
     {P_RELEASE, "RELEASE"}, {P_NOISE, "NOISE"}, {S_KVEL, "KEY VEL"}, {P_LEVEL, "LEVEL"},
+    {S_ARPRATE, "ARP RATE"}, {S_ARPGATE, "ARP GATE"},
 };
 #define PERF_N (sizeof PERF_T / sizeof PERF_T[0])
 static uint32_t perf_idx(uint32_t k)                     /* knob k's entry in PERF_T */
@@ -174,13 +180,17 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_TRANS: *hi = 48; return set.sc_trans + 24;
     case S_TWKIND: *hi = 3; return (int32_t)tw_kind();
     case S_ASG0: case S_ASG0 + 1: case S_ASG0 + 2: case S_ASG0 + 3: *hi = PERF_N - 1; return (int32_t)perf_idx(s - S_ASG0);
+    case S_ARPMODE: *hi = ARP_NMODE - 1; return ARP_MODE;
+    case S_ARPRATE: *hi = 5; return ARP_RATE;
+    case S_ARPOCT: *hi = 3; return ARP_OCT;
+    case S_ARPGATE: *hi = 90; return ARP_GATE - 10;
     default: *hi = 0; return 0;
     }
 }
 static int slot_is_level(uint32_t s)                    /* a gauge only for amounts, not for choices */
 {
     if (s < P_COUNT) return PARAMS[s].fmt != F_ENUM && PARAMS[s].fmt != F_DIV;
-    return s == S_KVEL || s == S_TUNE || s == S_BPM || s == S_TRANS;
+    return s == S_KVEL || s == S_TUNE || s == S_BPM || s == S_TRANS || s == S_ARPGATE;
 }
 static void fmt_signed(char *s, int32_t v) { if (v > 0) { s[0] = '+'; p_fmt_int(s + 1, v); } else p_fmt_int(s, v); }
 static void slot_text(uint32_t s, char *v)
@@ -211,6 +221,10 @@ static void slot_text(uint32_t s, char *v)
     case S_TRANS: fmt_signed(v, set.sc_trans); return;
     case S_TWKIND: p_strcpy(v, TWKIND_NAME[tw_kind()], 5); return;
     case S_ASG0: case S_ASG0 + 1: case S_ASG0 + 2: case S_ASG0 + 3: p_strcpy(v, PERF_T[perf_idx(s - S_ASG0)].name, 12); return;
+    case S_ARPMODE: p_strcpy(v, ARP_MODE_NAME[ARP_MODE], 7); return;
+    case S_ARPRATE: p_strcpy(v, ARP_RATE_NAME[ARP_RATE], 6); return;
+    case S_ARPOCT: p_fmt_int(v, ARP_OCT + 1); return;
+    case S_ARPGATE: { uint32_t n = 0; p_fmt_int(v, ARP_GATE); while (v[n]) n++; v[n++] = '%'; v[n] = 0; return; }
     case S_NONE: return;
     default: break;
     }
@@ -254,6 +268,13 @@ static void slot_turn(uint32_t s, int32_t d)
     case S_ASG0: case S_ASG0 + 1: case S_ASG0 + 2: case S_ASG0 + 3:
         set.perf[s - S_ASG0] = (uint8_t)(clampi((int32_t)perf_idx(s - S_ASG0) + sgn(d), 0, PERF_N - 1) + 1);
         break;
+    case S_ARPMODE:
+        ARP_MODE = (uint8_t)clampi(ARP_MODE + sgn(d), 0, ARP_NMODE - 1);
+        if (ARP_MODE) ARP_LAST = ARP_MODE; else arp_clear();
+        break;
+    case S_ARPRATE: ARP_RATE = (uint8_t)clampi(ARP_RATE + sgn(d), 0, 5); break;
+    case S_ARPOCT: ARP_OCT = (uint8_t)clampi(ARP_OCT + sgn(d), 0, 3); break;
+    case S_ARPGATE: ARP_GATE = (uint8_t)clampi(ARP_GATE + 5 * sgn(d), 10, 100); break;
     default: break;
     }
     ui_changed();
@@ -484,7 +505,7 @@ static void ui_goto(uint32_t pg)
     ui_draw_page_change();
 }
 
-/* LFO / FX / ARP: go to the effect's page; on it, the effect on <-> off (back to the last one used) */
+/* LFO / SEQ / SEL / ENV: go to the effect's page; on it, the effect on <-> off (back to the last one used) */
 static void ui_fx_button(uint32_t pg, uint32_t k)
 {
     static const uint8_t SW[5] = {P_TW_SW, P_CP_SW, P_DL_SW, P_PH_SW, P_CMP_SW};
@@ -528,7 +549,10 @@ static void ui_input(uint32_t b, uint32_t rel)
         ui_mark(E_HEADER);
     }
     if (b >> BTN_SEQ & 1u) ui_fx_button(PG_PHA, 3);
-    if (b >> BTN_ARP & 1u) ui_fx_button(PG_DELAY, 2);
+    if (b >> BTN_ARP & 1u) {                            /* ARPEGGIO; on it: the arpeggiator on / off */
+        if (ui_page != PG_ARP) ui_goto(PG_ARP);
+        else { arp_toggle(); ui_say(arp_on() ? "ARP ON" : "ARP OFF"); ui_changed(); ui_mark(E_CARDS); }
+    }
     if (b >> BTN_PLAY & 1u) tempo_tap();
     if (b >> BTN_OCT_DOWN & 1u && set.oct > -2) { set.oct--; ui_changed(); ui_mark(E_HEADER); }
     if (b >> BTN_OCT_UP & 1u && set.oct < 2) { set.oct++; ui_changed(); ui_mark(E_HEADER); }
@@ -557,14 +581,15 @@ static void ui_input(uint32_t b, uint32_t rel)
     }
 }
 
-/* ---- LEDs, once per pass: the page's shortcut button is lit; LFO / FX / ARP: that effect is on */
+/* ---- LEDs, once per pass: the page's shortcut button is lit; LFO / SEQ / SEL / ENV: that effect is on, ARP: the
+ * arpeggiator */
 static void ui_leds(uint32_t lit, uint32_t beat_on)
 {
     uint32_t k;
     fm1_led_key(BTN_LFO, PV(P_TW_SW) != 0);
     fm1_led_key(BTN_FX, !fx_bypass);
     fm1_led_key(BTN_SEL, PV(P_CP_SW) != 0);
-    fm1_led_key(BTN_ARP, PV(P_DL_SW) != 0);
+    fm1_led_key(BTN_ARP, arp_on());
     fm1_led_key(BTN_SEQ, PV(P_PH_SW) != 0);
     fm1_led_key(BTN_HOME, ui_page == PG_PIANO || ui_page == PG_PERF);
     fm1_led_key(BTN_EDIT, ui_page == PG_VOICE);

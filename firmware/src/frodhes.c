@@ -20,6 +20,7 @@
 #include "fx.c"
 #include "params.c"
 #include "tempo.c"
+#include "arp.c"
 #include "ui.c"
 #include "presets.c"
 
@@ -49,7 +50,30 @@ static void app_audio(int32_t *out, uint32_t n)
 static uint8_t sus_held, sus_latched, sus_midi, sus_was_latched;
 static uint32_t sus_t;
 
-static void sustain_update(void) { rh_pedal_level(sus_held || sus_latched ? 127u : sus_midi); ui_mark(E_HEADER); }
+static uint8_t sus_down(void) { return sus_held || sus_latched || sus_midi >= 64u; }
+static void sustain_update(void)
+{
+    rh_pedal_level(sus_held || sus_latched ? 127u : sus_midi);
+    if (!sus_down()) arp_sustain_up();                     /* the arpeggiator's latched notes go */
+    ui_mark(E_HEADER);
+}
+
+/* a note from the keys or USB-MIDI: to the piano, or to the arpeggiator while it runs (each note remembers which,
+ * so switching the arpeggiator under held keys never leaves one hanging); the keys' notes are echoed to USB-MIDI */
+static uint8_t note_to_arp[128];
+static void note_in_on(uint32_t n, uint32_t vel, int echo)
+{
+    if (arp_on()) { note_to_arp[n] = 1; arp_in_on(n, vel); return; }
+    note_to_arp[n] = 0;
+    rh_note_on(n, vel);
+    if (echo) midi_send(0x90, n, vel);
+}
+static void note_in_off(uint32_t n, int echo)
+{
+    if (note_to_arp[n]) { note_to_arp[n] = 0; arp_in_off(n); return; }
+    rh_note_off(n);
+    if (echo) midi_send(0x80, n, 0);
+}
 
 static void sustain_button(uint32_t pressed, uint32_t released)
 {
@@ -81,6 +105,15 @@ static void midi_cc(uint32_t cc, uint32_t v)
         midi_send(0xB0, 118, prof_us >> 5 > 127u ? 127u : prof_us >> 5);
         midi_send(0xB0, 115, rh_shed_count & 127u);
         prof_max_us = 0;
+        return;
+    }
+    if (cc >= 52u && cc <= 55u) {                      /* the arpeggiator (0.9): 52 MODE 0..5 (0 off), 53 RATE 0..5,
+                                                        * 54 OCTAVES 0..3 (= 1..4), 55 GATE 10..100 % */
+        if (cc == 52u) { ARP_MODE = (uint8_t)(v > 5u ? 5u : v); if (ARP_MODE) ARP_LAST = ARP_MODE; else arp_clear(); }
+        else if (cc == 53u) ARP_RATE = (uint8_t)(v > 5u ? 5u : v);
+        else if (cc == 54u) ARP_OCT = (uint8_t)(v > 3u ? 3u : v);
+        else ARP_GATE = (uint8_t)(v < 10u ? 10u : v > 100u ? 100u : v);
+        ui_mark(E_CARDS);
         return;
     }
     if (cc == 120u || cc == 123u) { rh_all_off(); return; }
@@ -118,6 +151,7 @@ static void app_main(void)
     for (k = 0; k < NKEYS; k++) held[k] = 255;
     if (settings_load(&set, sizeof set) != 0) params_defaults();
     params_sanitize();
+    arp_sanitize();
     palette_set(set.color);
     params_apply_all();
     tempo_set10(set.bpm10);
@@ -139,11 +173,11 @@ static void app_main(void)
             if (down >> k & 1u) {
                 uint32_t n = scale_key_note(k);
                 held[k] = (uint8_t)n;
-                if (n < 128u && cnt[n]++ == 0u) { rh_note_on(n, set.key_vel); midi_send(0x90, n, set.key_vel); }
+                if (n < 128u && cnt[n]++ == 0u) note_in_on(n, set.key_vel, 1);
             }
             if (up >> k & 1u && held[k] < 128u) {
                 uint32_t n = held[k];
-                if (cnt[n] && --cnt[n] == 0u) { rh_note_off(n); midi_send(0x80, n, 0); }
+                if (cnt[n] && --cnt[n] == 0u) note_in_off(n, 1);
                 held[k] = 255;
             }
         }
@@ -154,8 +188,8 @@ static void app_main(void)
 
         while (midi_get(&st, &d1, &d2)) {       /* USB-MIDI in, any channel */
             uint8_t ty = st & 0xF0u;
-            if (ty == 0x90u && d2) rh_note_on(d1, d2);
-            else if (ty == 0x80u || ty == 0x90u) rh_note_off(d1);
+            if (ty == 0x90u && d2) note_in_on(d1 & 127u, d2, 0);
+            else if (ty == 0x80u || ty == 0x90u) note_in_off(d1 & 127u, 0);
             else if (ty == 0xB0u) midi_cc(d1, d2);
             else if (st >= 0xF8u) tempo_clock(st);
             else if (ty == 0xC0u) preset_load(d1 < 12u ? d1 : d1 >= 16u && d1 < 32u ? PR_NF + d1 - 16u : 255u);
@@ -164,7 +198,8 @@ static void app_main(void)
         for (k = 0; k < NKEYS; k++)             /* LEDs per key: held, or its note still rings */
             if (held[k] < 128u ? 1 : 0) lit |= 1u << k;
             else if (rh_hold && note_sounding((uint32_t)scale_key_note(k))) lit |= 1u << k;
-        ui_leds(lit, tempo_beat_led());
+        arp_poll();
+        ui_leds(lit, tempo_beat_led() || (arp_on() && arp_n && arp_playing < 128u));
         ui_draw();
         presets_save_poll();
 

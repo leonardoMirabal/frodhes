@@ -1,0 +1,18 @@
+# ARPEGGIO: ARP (10) opens the page, ARP again turns the arpeggiator on (UP, 1/16 at 120 BPM: a note every 125 ms)
+100 btn 10
+200 btn 10
+300 expect led 10 1
+# a C major triad held (F3 = key 0: C4 = 7, E4 = 11, G4 = 14): the notes come one at a time
+400 keys 0x4880
+1400 expect rms > -60
+1500 shot
+# let go: the pattern stops (the last note's release dies away)
+2400 keys 0
+3600 expect rms < -70
+# ARP again: off; the chord now sounds as a chord
+3700 btn 10
+3800 expect led 10 0
+3900 keys 0x4880
+4400 expect rms > -60
+4500 keys 0
+4600 end

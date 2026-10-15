@@ -11,7 +11,7 @@ from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "docs", "manual", "img")
-PAGES = ["perform", "assign", "piano", "voice", "decay", "comp", "trem", "phaser", "chorus", "delay", "tempo", "scale", "setup"]
+PAGES = ["perform", "assign", "piano", "voice", "decay", "comp", "trem", "phaser", "chorus", "delay", "tempo", "scale", "arp", "setup"]
 
 
 def main():
@@ -29,6 +29,11 @@ def main():
     for i, name in enumerate(PAGES):
         if i:
             L.append(f"{t} turn 0 1"); t += 700
+        if name == "arp":                                   # the arpeggiator on (UP) over a held chord, then off
+            L.append(f"{t} turn 2 1"); L.append(f"{t + 100} keys 0x4880"); t += 900
+            L.append(f"{t} shot"); shots[t] = name
+            L.append(f"{t + 50} keys 0x0"); L.append(f"{t + 100} turn 2 -1"); t += 900
+            continue
         if name == "comp":                                  # a held chord: the gain-reduction meter moves
             L.append(f"{t} keys 0x2491"); t += 600
             L.append(f"{t} shot"); shots[t] = name

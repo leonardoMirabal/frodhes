@@ -1,0 +1,139 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+/* Frodhes arpeggiator (0.9), main loop only. The notes held (the FM-1's keys after the scale, and USB-MIDI notes)
+ * are played one at a time on the tempo's grid (tempo.c: beat_ms, beat_t0, so tap tempo and MIDI clock lead it).
+ *
+ *   MODE     OFF / UP / DOWN / UP-DN / ORDER (as played) / RANDOM
+ *   RATE     1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32 of the beat grid
+ *   OCTAVES  1..4: the pattern repeated octaves up
+ *   GATE     how long each note sounds, 10 .. 100 % of a step
+ *
+ * The sustain (REC / CC 64) latches: notes let go while it is down stay in the pattern until it comes up.
+ * Settings (set.arp[]) belong to the FM-1, not to a preset. Nothing here runs in the audio ISR. */
+
+#define ARP_MAX 16u
+enum { ARP_OFF, ARP_UP, ARP_DOWN, ARP_UPDN, ARP_ORDER, ARP_RANDOM, ARP_NMODE };
+static const char *const ARP_MODE_NAME[ARP_NMODE] = {"OFF", "UP", "DOWN", "UP-DN", "ORDER", "RANDOM"};
+static const uint8_t ARP_UNITS[6] = {96, 48, 32, 24, 16, 12};               /* 1/96 beat */
+static const char *const ARP_RATE_NAME[6] = {"1/4", "1/8", "1/8T", "1/16", "1/16T", "1/32"};
+#define ARP_MODE (set.arp[0])
+#define ARP_RATE (set.arp[1])
+#define ARP_OCT (set.arp[2])                    /* 0..3 = 1..4 octaves */
+#define ARP_GATE (set.arp[3])                   /* 10..100 % */
+#define ARP_LAST (set.arp[4])                   /* the mode the ARP button turns back on */
+
+static uint8_t arp_note[ARP_MAX], arp_vel[ARP_MAX], arp_down[ARP_MAX], arp_n;   /* in the order played */
+static uint32_t arp_step_no = 0xFFFFFFFFu, arp_off_t, arp_seed = 0x1234567u;
+static uint8_t arp_playing = 255, arp_pos, arp_dir;
+static uint8_t sus_down(void);                  /* frodhes.c: the sustain is down */
+
+static void arp_defaults(void) { ARP_MODE = ARP_OFF; ARP_RATE = 3; ARP_OCT = 0; ARP_GATE = 60; ARP_LAST = ARP_UP; }
+static void arp_sanitize(void)
+{
+    if (ARP_MODE >= ARP_NMODE || ARP_RATE > 5u || ARP_OCT > 3u || ARP_GATE < 10u || ARP_GATE > 100u ||
+        ARP_LAST == ARP_OFF || ARP_LAST >= ARP_NMODE)
+        arp_defaults();
+}
+static int arp_on(void) { return ARP_MODE != ARP_OFF; }
+
+static void arp_stop_note(void)
+{
+    if (arp_playing < 128u) { rh_note_off(arp_playing); midi_send(0x80, arp_playing, 0); }
+    arp_playing = 255;
+}
+
+/* a note in / out: the keys (frodhes.c, after the scale) and USB-MIDI */
+static void arp_in_on(uint32_t n, uint32_t vel)
+{
+    uint32_t i;
+    for (i = 0; i < arp_n; i++)
+        if (arp_note[i] == n) { arp_down[i] = 1; arp_vel[i] = (uint8_t)vel; return; }
+    if (arp_n == 0u) { arp_step_no = 0xFFFFFFFFu; arp_pos = 0; arp_dir = 0; }   /* a new chord: from its start */
+    if (arp_n == ARP_MAX) return;
+    arp_note[arp_n] = (uint8_t)n; arp_vel[arp_n] = (uint8_t)vel; arp_down[arp_n] = 1; arp_n++;
+}
+static void arp_remove(uint32_t i)
+{
+    for (; i + 1u < arp_n; i++) { arp_note[i] = arp_note[i + 1u]; arp_vel[i] = arp_vel[i + 1u]; arp_down[i] = arp_down[i + 1u]; }
+    arp_n--;
+}
+static void arp_in_off(uint32_t n)
+{
+    uint32_t i;
+    for (i = 0; i < arp_n; i++)
+        if (arp_note[i] == n) {
+            if (sus_down()) arp_down[i] = 0;                          /* latched until the sustain comes up */
+            else arp_remove(i);
+            break;
+        }
+    if (!arp_n) arp_stop_note();
+}
+/* the sustain came up: drop the latched notes */
+static void arp_sustain_up(void)
+{
+    uint32_t i = 0;
+    while (i < arp_n) { if (!arp_down[i]) arp_remove(i); else i++; }
+    if (!arp_n) arp_stop_note();
+}
+static void arp_clear(void) { arp_n = 0; arp_stop_note(); }
+
+/* the k-th note of the pattern (before octaves), the notes sorted low to high or as played */
+static uint32_t arp_pick(uint32_t k, int sorted)
+{
+    uint8_t s[ARP_MAX];
+    uint32_t i, j;
+    for (i = 0; i < arp_n; i++) s[i] = arp_note[i];
+    if (sorted)
+        for (i = 1; i < arp_n; i++)
+            for (j = i; j > 0u && s[j - 1u] > s[j]; j--) { uint8_t t = s[j]; s[j] = s[j - 1u]; s[j - 1u] = t; }
+    return s[k];
+}
+/* the next note: a walk over len = notes x octaves positions */
+static uint32_t arp_next(void)
+{
+    uint32_t len = arp_n * (ARP_OCT + 1u), k, base;
+    if (arp_pos >= len) arp_pos = 0;
+    switch (ARP_MODE) {
+    case ARP_DOWN: k = len - 1u - arp_pos; arp_pos = (uint8_t)((arp_pos + 1u) % len); break;
+    case ARP_UPDN:                                                    /* up then down, the ends once */
+        k = arp_pos;
+        if (len < 2u) { arp_pos = 0; break; }
+        if (!arp_dir) { if (arp_pos + 1u >= len) { arp_dir = 1; arp_pos--; } else arp_pos++; }
+        else { if (arp_pos == 0u) { arp_dir = 0; arp_pos++; } else arp_pos--; }
+        break;
+    case ARP_RANDOM:
+        arp_seed = arp_seed * 1664525u + 1013904223u;
+        k = (arp_seed >> 16) % len;
+        break;
+    default: k = arp_pos; arp_pos = (uint8_t)((arp_pos + 1u) % len); break;   /* UP, ORDER */
+    }
+    if (k >= len) k = 0;
+    base = arp_pick(k % arp_n, ARP_MODE != ARP_ORDER);
+    base += 12u * (k / arp_n);
+    return base > 127u ? 127u : base;
+}
+
+/* every main-loop pass: a step starts on the grid; the gate ends the note */
+static void arp_poll(void)
+{
+    uint32_t unit_ms10, step, now = fm1_ms;
+    if (!arp_on() || !arp_n) { if (arp_playing < 128u && !arp_on()) arp_stop_note(); return; }
+    unit_ms10 = beat_ms * 10u * ARP_UNITS[ARP_RATE] / 96u;             /* a step in 0.1 ms */
+    if (!unit_ms10) unit_ms10 = 10u;
+    step = (now - beat_t0) * 10u / unit_ms10;
+    if (arp_playing < 128u && (int32_t)(now - arp_off_t) >= 0) arp_stop_note();
+    if (step != arp_step_no) {
+        uint32_t n = arp_next(), v = arp_vel[0];                       /* one velocity: the first note's */
+        arp_step_no = step;
+        arp_stop_note();
+        rh_note_on(n, v); midi_send(0x90, n, v);
+        arp_playing = (uint8_t)n;
+        arp_off_t = now + unit_ms10 * ARP_GATE / 1000u - (ARP_GATE >= 100u ? 2u : 0u);
+    }
+}
+
+/* the ARP button on its page: on with the last mode / off */
+static void arp_toggle(void)
+{
+    if (arp_on()) { ARP_LAST = ARP_MODE; ARP_MODE = ARP_OFF; arp_clear(); }
+    else ARP_MODE = ARP_LAST;
+}
