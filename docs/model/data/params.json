@@ -103,34 +103,31 @@
    "90 duro",
    "wood"
   ],
-  "rep_key": [
-   28,
-   55,
-   66,
-   77,
-   96
+  "shore": [
+   30,
+   50,
+   70,
+   90,
+   null
   ],
-  "K": [
-   150000000.0,
-   300000000.0,
-   600000000.0,
-   2000000000.0,
-   30000000000.0
+  "tip_in": [
+   0.25,
+   0.3125,
+   0.375,
+   0.4375,
+   0.4375
   ],
-  "_doc_K": "felt stiffness K (N/m^p) per band, ESTIMATE; set so mid-keyboard contact is near the measured 6.42 ms average (Muenster & Pfeifle 2014); the contact simulation decides per key and velocity"
+  "_doc_tip": "hammer tips per band (Rhodes service manual ch. 4, R05 W1/W2): Shore A durometer of the neoprene (null = maple wrapped in shrink tube) and tip size (inch). The Hertz contact stiffness follows from them (gen_rhodes.band_K)."
  },
  "hammer": {
   "mass_kg": 0.011,
-  "p": 2.5,
-  "damping_rel": 0.05,
+  "p": 1.5,
   "v_max": 4.0,
   "range_db": 30.0,
-  "tc_v100": {
-   "_doc": "per-key felt stiffness K is solved so the coupled contact at v = 100 lasts min(max_ms, period_frac / f0): longer contacts give energy back to the tine and a non-monotonic velocity response (2026-10-15). max_ms = the measured 6.42 ms average (Muenster & Pfeifle 2014) ; min_ms floors the treble (wood tips)",
-   "max_ms": 6.42,
-   "period_frac": 0.4,
-   "min_ms": 0.08
-  }
+  "alpha": 0.2,
+  "E_wrap": 3000000000.0,
+  "_doc": "Hammer = a rigid mass at the tip on a Hertz rubber tip, F = K e^1.5 (1 + alpha de/dt) (Hunt-Crossley), against the tine's first 6 FE modes. Effective mass = min(mass_kg, m_tine1 / m_eff_ratio) (gen_rhodes.hammer_mass): 11 g (R02 Tab. 3.2) in the bass, where the contact then lasts ~5.7 ms at v = 100 (Muenster & Pfeifle 2014 measured 6.42 ms on average), down to ~0.5 g in the treble, where a heavier hammer followed the tine and re-struck it 2..12 times (the FM-1 scan's 23 dB holes). alpha: neoprene loss (s/m, ESTIMATE). E_wrap: the wood band's wrapped-maple face (Pa, ESTIMATE). v_max, range_db: hammer speed at v = 127 and its range (dB) down to v = 1.",
+  "m_eff_ratio": 3.0
  },
  "tip_peak_gap_v127": {
   "_doc": "V1 tip peak (gap units) at v = 127: bass .. treble",
@@ -155,7 +152,7 @@
   ],
   "off_gap": -0.3
  },
- "gain_target_dbfs": -20.0,
+ "gain_target_dbfs": -26.0,
  "rlc": {
   "_doc": "moved into types[*].rlc"
  },
@@ -186,8 +183,8 @@
    "body": [
     [
      "hp2",
-     85.0,
-     0.8,
+     50.0,
+     0.7,
      0.0
     ],
     [
@@ -198,12 +195,12 @@
     ]
    ],
    "drive_row": 1,
-   "level_db": -4.3
+   "level_db": -3.5
   },
   "FELT": {
    "off": -0.2,
    "bark": 0.75,
-   "ham": 0.55,
+   "ham": 0.7,
    "bell": 0.45,
    "rlc": [
     3200.0,
@@ -218,12 +215,12 @@
     ]
    ],
    "drive_row": 2,
-   "level_db": -7.3
+   "level_db": -5.0
   },
   "DYNO": {
    "off": 0.1,
    "bark": 1.1,
-   "ham": 1.35,
+   "ham": 1.2,
    "bell": 1.8,
    "rlc": [
     7000.0,
@@ -234,19 +231,54 @@
      "lshelf",
      150.0,
      0.7,
-     -3.0
+     -2.0
     ],
     [
      "hshelf",
-     3000.0,
+     3500.0,
      0.7,
-     7.0
+     6.0
     ]
    ],
    "drive_row": 3,
-   "level_db": -3.0
+   "level_db": 3.5
   }
  },
- "peak_dbfs": -9.0,
- "_doc_levels": "gain_target_dbfs: 1 s RMS of one voice at v = 100; peak_dbfs: the cap on one voice's v = 127 peak (headroom for chords before the master limiter)"
+ "peak_dbfs": -6.0,
+ "_doc_levels": "gain_target_dbfs: RMS (50..300 ms) of one voice at v = 100, every key exactly; set so a 4-note chord at v = 127 peaks near -3 dBFS (host, effects bypassed). peak_dbfs: a global cap on 90 % of the keys single-voice v = 127 peaks (+3 dB); it does not bind at this target.",
+ "velocity_trim": {
+  "iterations": 3,
+  "gain": 0.85,
+  "max_db": 6.0,
+  "_doc": "small per-key RH_PAMP trim at the velocity anchors so each key's level curve (re v = 104) follows the median curve of all keys (monotonic). The physics (hammer_contact) is already even to ~3 dB; the trim is bounded to +-max_db and reported in rhodes_spec.json (pulse.pamp vs pulse.pamp_phys). iterations 0 = physics only."
+ },
+ "voicing": {
+  "h2_v100_points": [
+   [
+    21,
+    -20.0
+   ],
+   [
+    40,
+    -18.0
+   ],
+   [
+    52,
+    -13.0
+   ],
+   [
+    72,
+    -11.0
+   ],
+   [
+    103,
+    -16.0
+   ],
+   [
+    108,
+    -16.0
+   ]
+  ],
+  "_doc": "pickup voicing: H2/H1 (dB, 30..300 ms) of a v = 100 strike per key; each key's tip scale (b) is set to it (gen_rhodes.voice_pickups). A Rhodes at mf is mostly fundamental (R05 W3: the bass voiced for 'mostly fundamental'; W6 E3: fundamental loudest); the bark grows with the tip swing toward v = 127. Replaces tip_peak_gap_v127 as the b scale (that one only sets the starting point)."
+ }
 }

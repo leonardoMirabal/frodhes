@@ -36,3 +36,13 @@ def test_tine_mode_takes_momentum():
     modes = [(110.0, 1.0, 1 / np.sqrt(0.03))]      # effective mass 30 g
     sim = h.contact(1.0, M_H, K, P, modes=modes, t_max=0.01)
     assert sim["impulse"] > 0 and -sim["v_out"] < 0.99
+
+
+def test_batch_matches_single():
+    # tools/hammer.contact_batch (all keys x velocities at once, used by the generator) = contact() per case
+    modes = [(110.0, 1.0, 1 / np.sqrt(0.03)), (700.0, 5.0, 1 / np.sqrt(0.01))]
+    one = h.contact(1.0, M_H, K, P, modes=modes, t_max=0.01, os_=32)
+    b = h.contact_batch([dict(v=1.0, m_h=M_H, K=K, p=P, modes=modes)], t_max=0.01, os_=32)[0]
+    n = min(len(one["F"]), len(b["F"]))
+    assert abs(b["Tc"] / one["Tc"] - 1) < 0.01
+    assert abs(b["impulse"] / one["impulse"] - 1) < 0.01

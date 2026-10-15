@@ -171,46 +171,162 @@ def hammer_speed(p, v):
     return h["v_max"] * 2 ** (-h["range_db"] / 6.0206 * (1 - (v - 1) / 126))
 
 
-def contact_run(p, K, v, modes):
+def shore_E(S):
+    """Young's modulus (Pa) of a rubber of Shore A hardness S (Gent 1958: E = 0.0981 (56 + 7.62336 S) /
+    (0.137505 (254 - 2.54 S)) MPa)."""
+    return 0.0981 * (56 + 7.62336 * S) / (0.137505 * (254 - 2.54 * S)) * 1e6
+
+
+def band_K(p, b):
+    """Hertz contact stiffness K (N/m^1.5) of the band's hammer tip on the tine: F = K e^1.5, K = 4/3 E* sqrt(Re),
+    E* = E / (1 - nu^2) (rubber nu = 0.5; the steel's compliance is negligible), Re = sqrt(R_tip R_tine) for the
+    crossed tip / tine cylinders. Tip hardness and size per band from the service manual (R05 W1/W2): 30/50/70/90
+    Shore A neoprene, 1/4" .. 7/16"; the top band is maple wrapped in shrink tube (E_wrap, ESTIMATE)."""
     h = p["hammer"]
-    Rd = h["damping_rel"] * K * 1e-4
-    return hm.contact(hammer_speed(p, v), h["mass_kg"], K, h["p"], Rd, modes=modes, t_max=0.03)
+    bd = p["bands"]
+    S = bd["shore"][b]
+    E = shore_E(S) if S else h["E_wrap"]
+    R_tip = 0.5 * bd["tip_in"][b] * 0.0254
+    Re = math.sqrt(R_tip * 0.5 * fe.D_TINE)
+    return 4.0 / 3.0 * E / (1 - 0.25) * math.sqrt(Re)
+
+
+def hammer_mass(p, k):
+    """Effective hammer mass at the tip (kg): the whole hammer (R02, 11 g) where the tine is heavy at the strike line,
+    but never more than the tine's own effective mass there (mode 1, 1 / phi^2) / m_eff_ratio. A flexible hammer
+    shank lends the tip only the mass within reach of the contact time (the short treble contacts see little
+    more than the tip), and a regulated instrument gives one clean strike: with a heavier tip the hammer follows
+    the tine and strikes it 2..12 times (the FM-1 scan's holes). m_eff_ratio = 3 is the single-contact bound of a
+    two-mass collision (the tine returns faster than the hammer recoils when m_tine < 3 m_hammer)."""
+    h = p["hammer"]
+    m1 = 1.0 / k["fe_modes"][0][2] ** 2
+    return min(h["mass_kg"], m1 / h["m_eff_ratio"])
+
+
+def contact_cases(p, k, vels):
+    h = p["hammer"]
+    K = band_K(p, k["band"])
+    return [dict(v=hammer_speed(p, v), m_h=hammer_mass(p, k), K=K, p=h["p"], alpha=h["alpha"], modes=k["fe_modes"])
+            for v in vels]
 
 
 V_ANCH = [1, 8, 24, 40, 56, 72, 88, 104, 120, 127]   # velocity anchors of the per-key amplitude / rate laws
 
 
-def key_pulses(p, k):
-    """The key's own coupled hammer-tine contact (§6.6), per velocity anchor: the force shape at the 8 layer
-    velocities (64 points over the contact, peak 32767), and at every anchor the pulse rate (Q12 samples of the
-    shape per output sample) and the peak force (Q15 re v = 127). Ints, exactly what the C tables hold."""
-    tc = p["hammer"]["tc_v100"]
-    tgt = max(min(tc["max_ms"] * 1e-3, tc["period_frac"] / k["f0"]), tc.get("min_ms", 0.0) * 1e-3)
-    lo, hi = 1e6, 1e14                                # felt stiffness for this key, by log bisection on T_c(v = 100)
-    for _ in range(26):
-        K = math.sqrt(lo * hi)
-        if contact_run(p, K, 100, k["fe_modes"])["Tc"] > tgt:
-            lo = K
+def area_resample(F, n=PLEN):
+    """n samples spanning the contact, each the mean of F over its cell (the impulse is kept, spikes are not
+    point-sampled away), peak-normalised to 32767."""
+    m = len(F)
+    if m < 2:
+        F = np.array([F[0] if m else 0.0, 0.0]); m = 2
+    C = np.concatenate([[0.0], np.cumsum(F)])            # integral at cell edges 0..m
+    x = np.linspace(0, m - 1, n)                          # sample centres in F's index space
+    lo = np.clip(x - 0.5 * (m - 1) / (n - 1), -0.5, m - 0.5) + 0.5
+    hi = np.clip(x + 0.5 * (m - 1) / (n - 1), -0.5, m - 0.5) + 0.5
+    I = lambda t: np.interp(t, np.arange(m + 1), C)
+    sh = (I(hi) - I(lo)) / np.maximum(hi - lo, 1e-12)
+    return [int(round(q * 32767 / max(sh.max(), 1e-30))) for q in sh]
+
+
+def key_pulses_all(p, phys):
+    """Every key's own coupled hammer-tine contact (§6.6; one batch over keys x velocity anchors): the force shape
+    at the 8 layer velocities (64 points over the contact, peak 32767), and at every anchor the pulse rate (Q12
+    samples of the shape per output sample) and the peak force (Q15 re the key's strongest anchor). Ints, exactly
+    what the C tables hold. The hammer is its effective mass at the tip on a Hertz rubber tip of the key's band."""
+    keys = sorted(phys)
+    cases = []
+    for n in keys:
+        cases += contact_cases(p, phys[n], V_ANCH)
+    res = hm.contact_batch(cases, fs=FS, t_max=0.03)
+    out = {}
+    for i, n in enumerate(keys):
+        sims = dict(zip(V_ANCH, res[i * len(V_ANCH):(i + 1) * len(V_ANCH)]))
+        # the pulse window: a light hammer can be caught again by the returning tine half a period later (a second,
+        # weaker contact that comes and goes with velocity). The window is a fixed multiple of the first contact,
+        # the same multiple at every velocity of the key, so the shape's time base stays continuous in velocity
+        seg = {v: contact_segments(sims[v]["F"]) for v in V_ANCH}
+        ratio = min(8.0, max(sg[-1][1] / sg[0][1] for sg in seg.values()))
+        win = {v: ratio * seg[v][0][1] for v in V_ANCH}            # samples of the 16x grid
+        shapes = []
+        for v in LAYER_V:
+            F = sims[v]["F"]
+            nn = max(2, int(round(win[v])))
+            F = np.concatenate([F, np.zeros(max(0, nn - len(F)))])[:nn]
+            shapes.append(area_resample(F))
+        dt = sims[V_ANCH[0]]["dt"]
+        fmax = max(sims[v]["F"].max() for v in V_ANCH)
+        prate = [int(round(64.0 / (win[v] * dt * FS) * Q12)) for v in V_ANCH]
+        pamp = [max(1, int(round(sims[v]["F"].max() / fmax * 32767))) for v in V_ANCH]
+        assert all(0 < q < 2 ** 31 for q in prate), prate
+        out[n] = dict(shapes=shapes, prate=prate, pamp=pamp, pamp_phys=list(pamp), K=band_K(p, phys[n]["band"]),
+                      tc_ms=[seg[v][0][1] * dt * 1e3 for v in V_ANCH], win_ms=[win[v] * dt * 1e3 for v in V_ANCH],
+                      ncont=[len(seg[v]) for v in V_ANCH])
+    return out
+
+
+def contact_segments(F, min_frac=0.005):
+    """[(start, end)] sample ranges (16x grid) of the separate strikes carrying >= min_frac of the impulse."""
+    on = F > 0
+    e = np.flatnonzero(np.diff(np.concatenate([[0], on.astype(int), [0]])))
+    segs = [(int(e[j]), int(e[j + 1])) for j in range(0, len(e), 2)]
+    merged = []                                   # a gap shorter than half the contact so far is one strike whose
+    for sg in segs:                               # face chatters on the tine's high modes, not a second strike
+        if merged and sg[0] - merged[-1][1] < 0.5 * (merged[-1][1] - merged[-1][0]):
+            merged[-1] = (merged[-1][0], sg[1])
         else:
-            hi = K
-    K = math.sqrt(lo * hi)
-    sims = {v: contact_run(p, K, v, k["fe_modes"]) for v in V_ANCH}
-    for v in LAYER_V:
-        if v not in sims:
-            sims[v] = contact_run(p, K, v, k["fe_modes"])
-    shapes = []
-    for v in LAYER_V:
-        r = sims[v]
-        n = int(round(r["Tc"] / r["dt"]))
-        Fv = r["F"][:max(n, 2)]
-        x = np.linspace(0, len(Fv) - 1, PLEN)
-        sh = np.interp(x, np.arange(len(Fv)), Fv)
-        shapes.append([int(round(q * 32767 / max(sh.max(), 1e-30))) for q in sh])
-    fmax = max(sims[v]["F"].max() for v in V_ANCH)        # Q15 re the strongest anchor (normally v = 127)
-    prate = [int(round(64.0 / (sims[v]["Tc"] * FS) * Q12)) for v in V_ANCH]
-    pamp = [max(1, int(round(sims[v]["F"].max() / fmax * 32767))) for v in V_ANCH]
-    assert all(0 < q < 2 ** 31 for q in prate), prate
-    return dict(shapes=shapes, prate=prate, pamp=pamp, K=K, tc_ms=[sims[v]["Tc"] * 1e3 for v in V_ANCH])
+            merged.append(sg)
+    tot = float(F.sum())
+    keep = [sg for sg in merged if F[sg[0]:sg[1]].sum() >= min_frac * tot]
+    return keep or merged[:1]
+
+
+def h2_over_h1(y, f0, t0=0.03, t1=0.30):
+    """H2/H1 (dB) of a rendered note over [t0, t1] (zero-padded Hann FFT, +-3 % bands)."""
+    seg = y[int(t0 * FS):int(t1 * FS)]
+    S = np.abs(np.fft.rfft(seg * np.hanning(len(seg)), 1 << 18)) ** 2
+    fr = np.fft.rfftfreq(1 << 18, 1 / FS)
+    pw = lambda f: float(np.sum(S[(fr >= 0.97 * f) & (fr <= 1.03 * f)]))
+    return 10 * math.log10(max(pw(2 * f0), 1e-30) / max(pw(f0), 1e-30))
+
+
+def voicing_h2_target(p, n):
+    pts = p["voicing"]["h2_v100_points"]
+    return float(np.interp(n, [q[0] for q in pts], [q[1] for q in pts]))
+
+
+def voice_pickups(p, spec_keys, fams):
+    """Voicing (what a technician does with the pickup distance, R05 W3 / W6): the tip's swing against the gap sets
+    the bark, so each key's tip scale (all its b) is set so that a v = 100 strike has the H2/H1 of
+    params voicing.h2_v100_points (mostly fundamental at mf; the bark then grows with the swing toward v = 127).
+    H2/H1 grows ~1 dB per dB of tip swing at these levels, so a few multiplicative steps converge."""
+    import rhodes_model as gm
+    for it in range(5):
+        y = gm.render_batch(spec_keys, fams, [100] * len(spec_keys), 0.35)
+        err = []
+        for spec, r in zip(spec_keys, y):
+            e = voicing_h2_target(p, spec["midi"]) - h2_over_h1(r, spec["f0"])
+            err.append(e)
+            s = 10 ** (float(np.clip(e, -12, 12)) / 20)
+            bmax = max(abs(m["b"]) for m in spec["modes"]) * s
+            if bmax * Q30 >= 2 ** 31 - 1:
+                s *= (2 ** 31 - 2) / (bmax * Q30)
+            for m in spec["modes"]:
+                m["b"] *= s
+        print("voicing %d: H2/H1 at v100, worst error %.2f dB" % (it, float(np.max(np.abs(err)))), file=sys.stderr)
+
+
+def vlayers():
+    """Per MIDI velocity: the pulse layer below it and the Q15 weight of the next layer (the engine crossfades the
+    two shapes: a nearest-layer switch made steps of up to 1.4 dB in the level against velocity)."""
+    li, lw = [0] * 128, [0] * 128
+    for v in range(128):
+        if v >= LAYER_V[-1]:
+            li[v], lw[v] = len(LAYER_V) - 1, 0
+        elif v > LAYER_V[0]:
+            j = max(a for a in range(len(LAYER_V)) if LAYER_V[a] <= v)
+            li[v] = j
+            lw[v] = int(round(32768 * (v - LAYER_V[j]) / (LAYER_V[j + 1] - LAYER_V[j])))
+    return li, lw
 
 
 def vpos():
@@ -279,7 +395,7 @@ def build():
     p = load_params()
     Ls = tine_lengths()
     phys = {n: key_physics(p, n, Ls[n]) for n in range(KEY_LO, KEY_HI + 1)}
-    pulses = {n: key_pulses(p, phys[n]) for n in range(KEY_LO, KEY_HI + 1)}
+    pulses = key_pulses_all(p, phys)
     fam_tabs = [pickup_tables(R) for R in p["pickup"]["R"]]
     fams = [dict(A=t[2], R=R) for t, R in zip(fam_tabs, p["pickup"]["R"])]
     import rhodes_model as gm                          # the golden model calibrates b, gain, kill
@@ -308,6 +424,7 @@ def build():
         for m in spec["modes"]:
             m["b"] *= scale
         spec_keys.append(spec)
+    voice_pickups(p, spec_keys, fams)
     # velocity calibration (FM-1 scan, 0.6): on some keys the hammer's contact at middle velocities partly cancels
     # the tine's fundamental, so their level against velocity had holes of up to 20 dB next to normal keys. Each
     # key's force amplitude per velocity anchor is fitted so its level curve (re the v = 104 anchor) follows the
@@ -316,41 +433,39 @@ def build():
         out = np.zeros((len(spec_keys), len(V_ANCH)))
         for a, v in enumerate(V_ANCH):
             yv = gm.render_batch(spec_keys, fams, [v] * len(spec_keys), 0.5)
-            out[:, a] = [20 * np.log10(np.sqrt(np.mean(r[2205:22050] ** 2)) + 1e-9) for r in yv]
+            out[:, a] = [20 * np.log10(np.sqrt(np.mean(r[2205:13230] ** 2)) + 1e-9) for r in yv]
         return out
     ref = V_ANCH.index(104)
-    for it in range(4):
+    vt = p.get("velocity_trim", {})
+    for it in range(int(vt.get("iterations", 4))):
         Lv = anchor_levels()
         rel = Lv - Lv[:, ref:ref + 1]
         tgt = np.median(rel, axis=0)
         tgt = np.maximum.accumulate(tgt)                    # louder with velocity, never less
-        corr = np.clip(tgt[None, :] - rel, -24, 24)
+        corr = np.clip(tgt[None, :] - rel, -vt.get("max_db", 24.0), vt.get("max_db", 24.0))
         corr[:, ref] = 0
         print("velocity fit %d: worst %.1f dB, median |err| %.2f dB" % (it, np.abs(corr).max(), np.median(np.abs(corr))),
               file=sys.stderr)
         for k, spec in zip(range(len(spec_keys)), spec_keys):
             pa = spec["pulse"]["pamp"]
             for a in range(len(V_ANCH)):
-                pa[a] = int(min(32767, max(8, round(pa[a] * 10 ** (0.85 * corr[k, a] / 20)))))
-    # gain: v = 100, RMS of 50..500 ms (what is heard as the note's level) -> target dBFS, per key exactly: the
+                pa[a] = int(min(32767, max(8, round(pa[a] * 10 ** (vt.get("gain", 0.85) * corr[k, a] / 20)))))
+    # gain: v = 100, RMS of 50..300 ms (what is heard as the note's level) -> target dBFS, per key exactly: the
     # contact time against the tine's period makes the raw output of neighbouring keys differ by up to 18 dB, and
     # a +-3-key smoothing kept those holes (FM-1 scan, 0.6); kill: output below 1 LSB, x2 margin
     y = gm.render_batch(spec_keys, fams, [100] * len(spec_keys), 1.0)
-    rms = [float(np.sqrt(np.mean(r[2205:22050] ** 2))) + 1e-12 for r in y]
+    rms = [float(np.sqrt(np.mean(r[2205:13230] ** 2))) + 1e-12 for r in y]
     target = 10 ** (p["gain_target_dbfs"] / 20) * 32767
     g_raw = np.array([target / r for r in rms])
     # headroom: one voice struck at v = 127 must peak at or below peak_dbfs (the bark spike of the attack)
     yp = gm.render_batch(spec_keys, fams, [127] * len(spec_keys), 0.25)
     pk = np.array([float(np.max(np.abs(r))) + 1e-12 for r in yp])
     g_cap = 10 ** (p.get("peak_dbfs", -9.0) / 20) * 32767 / pk
-    g_s = g_raw.copy()
-    # the cap is smoothed too (geometric mean over +-3 keys): the v = 127 bark spike jumps from key to key with the
-    # pickup's nonlinearity, and a raw per-key cap made neighbouring keys differ by up to 23 dB (FM-1 scan, 0.6);
-    # the few keys whose spike now passes peak_dbfs by a little are the master limiter's job
-    g_cs = np.array([np.exp(np.mean(np.log(g_cap[max(0, i - 3):i + 4]))) for i in range(len(g_cap))])
-    # (0.6) no per-key cap any more: it overrode the level calibration on keys with a large attack spike; a
-    # global cap keeps 90 % of the keys' v = 127 spike under peak_dbfs + 3 dB, the master limiter does the rest
-    g_s = g_s * min(1.0, float(np.percentile(g_cap * 10 ** (3 / 20) / g_s, 10)))   # 90 % of keys under it
+    # a global cap (never per key: that undid the level calibration, FM-1 scan 0.6): 90 % of the keys' v = 127
+    # peaks stay under peak_dbfs + 3 dB; it only binds if gain_target_dbfs is set too hot for the headroom
+    cap = min(1.0, float(np.percentile(g_cap * 10 ** (3 / 20) / g_raw, 10)))
+    print("gain: target %.1f dBFS, global peak cap %.2f dB" % (p["gain_target_dbfs"], 20 * math.log10(cap)), file=sys.stderr)
+    g_s = g_raw * cap
     g_s = np.minimum(g_s, (2 ** 31 - 1) / Q16)         # Q16 in int32
     for spec, g in zip(spec_keys, g_s):
         spec["gain"] = float(g)
@@ -403,8 +518,9 @@ def emit(spec, fam_tabs):
     w("};")
     w("static const uint8_t RH_VPOS_I[128] = {" + ",".join(map(str, spec["vpos_idx"])) + "};")
     w("static const uint8_t RH_VPOS_F[128] = {" + ",".join(str(min(255, f)) for f in spec["vpos_frac"]) + "};")
-    vl = [int(np.argmin([abs(v - c) for c in LAYER_V])) for v in range(128)]
-    w("static const uint8_t RH_VLAYER[128] = {" + ",".join(map(str, vl)) + "};")
+    li, lw = vlayers()
+    w("static const uint8_t RH_VLAY_I[128] = {" + ",".join(map(str, li)) + "};")
+    w("static const uint16_t RH_VLAY_W[128] = {" + ",".join(map(str, lw)) + "};")
     w("static const int32_t RH_PHI[2][RH_PU_N + 1] = {")
     for P, M, A in fam_tabs:
         w("  {" + ",".join(map(str, P)) + "},")
@@ -440,7 +556,7 @@ def emit(spec, fam_tabs):
     w("static const uint32_t DECAY_K[128] = {" + ",".join(
         str(int(round(Q16 / 2 ** ((v - 64) / 32)))) for v in range(128)) + "};")
     w("static const uint16_t PEDAL_W[128] = {" + ",".join(str(x) for x in pedal_w()) + "};")
-    w("/* hammer bands (felt K): " + ", ".join("%s %.3g" % (nm, K) for nm, K in zip(p["bands"]["names"], p["bands"]["K"])) + " */")
+    w("/* hammer bands (Hertz tip K, N/m^1.5): " + ", ".join("%s %.3g" % (nm, band_K(p, b)) for b, nm in enumerate(p["bands"]["names"])) + " */")
     body = "\n".join(L) + "\n"
     digest = hashlib.sha256(body.encode()).hexdigest()
     return body + f"/* sha256(body) = {digest} */\n"

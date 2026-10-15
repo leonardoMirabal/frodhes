@@ -67,7 +67,8 @@ typedef struct {
     int32_t Hprev, off, gain;
     uint32_t ppos, prate;
     int32_t pamp;
-    const int16_t *ptab;
+    const int16_t *ptab, *ptab2;               /* pulse shapes of the two velocity layers around vel */
+    int32_t pmix;                              /* Q15 weight of ptab2 (layer crossfade: no step at a layer change) */
     uint16_t felt_n;                           /* felt-noise samples left (key-up) */
     int32_t felt_lp;
 } rh_voice_t;
@@ -161,7 +162,9 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
     uint32_t key = (uint32_t)(v->k - RH_KEYS), i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
     const uint16_t *pa = RH_PAMP[key];
     const uint32_t *pr = RH_PRATE[key];
-    v->ptab = RH_PULSE[key][RH_VLAYER[vel]];
+    v->ptab = RH_PULSE[key][RH_VLAY_I[vel]];
+    v->ptab2 = RH_PULSE[key][RH_VLAY_I[vel] + 1u < RH_NLAYER ? RH_VLAY_I[vel] + 1u : RH_NLAYER - 1u];
+    v->pmix = RH_VLAY_W[vel];
     v->pamp = (int32_t)pa[i] + ((((int32_t)pa[i + 1] - (int32_t)pa[i]) * (int32_t)f) >> 8);
     v->prate = (uint32_t)((int32_t)pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;  /* Q12 -> Q16 */
     {   /* HAMMER knob x TYPE tips scale the contact rate; the force scales with it so the impulse (the hammer's
@@ -276,6 +279,7 @@ static void rh_events(void)
                     if (rh_pedal_w && rh_thump && !v->ptab) {  /* the felt lands on the tine: a soft knock */
                         uint32_t key = (uint32_t)(v->k - RH_KEYS);
                         v->ptab = RH_PULSE[key][0];
+                        v->pmix = 0;
                         v->pamp = rh_thump > 32767 ? 32767 : rh_thump;
                         v->prate = (uint32_t)RH_PRATE[key][1] << 4;
                         v->ppos = 0;
@@ -321,6 +325,10 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
             uint32_t i = v->ppos >> 16;
             int32_t f = (int32_t)((v->ppos >> 1) & 0x7FFFu);
             int32_t a = v->ptab[i], b = v->ptab[i + 1];
+            if (v->pmix) {
+                a += (int32_t)(((int64_t)(v->ptab2[i] - a) * v->pmix) >> 15);
+                b += (int32_t)(((int64_t)(v->ptab2[i + 1] - b) * v->pmix) >> 15);
+            }
             rh_F[j] = mul15s(a + (int32_t)(((int64_t)(b - a) * f) >> 15), v->pamp);
             v->ppos += v->prate;
             if ((v->ppos >> 16) >= RH_PLEN) v->ptab = 0;

@@ -29,7 +29,23 @@ LAYER_V = [8, 24, 40, 56, 72, 88, 104, 120]
 
 
 def layer_of(v):
-    return int(np.argmin([abs(v - c) for c in LAYER_V]))
+    """(layer below v, Q15 weight of the next layer) exactly as gen_rhodes.vlayers() / RH_VLAY_I, RH_VLAY_W."""
+    if v >= LAYER_V[-1]:
+        return len(LAYER_V) - 1, 0
+    if v <= LAYER_V[0]:
+        return 0, 0
+    j = max(a for a in range(len(LAYER_V)) if LAYER_V[a] <= v)
+    return j, int(round(32768 * (v - LAYER_V[j]) / (LAYER_V[j + 1] - LAYER_V[j])))
+
+
+def blend_shape(shapes, v):
+    """The pulse shape the engine plays at velocity v: the two layers crossfaded with C integer arithmetic."""
+    j, w = layer_of(v)
+    a = shapes[j]
+    if not w:
+        return list(a)
+    b = shapes[min(j + 1, len(shapes) - 1)]
+    return [x + (((y - x) * w) >> 15) for x, y in zip(a, b)]
 
 
 def ED(f, t60, t60_rel=None, release=False):
@@ -57,7 +73,7 @@ def pulse_params(spec, v):
     f = min(f, 255)
     pa = pz["pamp"][i] + (((pz["pamp"][i + 1] - pz["pamp"][i]) * f) >> 8)
     pr = (pz["prate"][i] + (((pz["prate"][i + 1] - pz["prate"][i]) * f) >> 8)) << 4
-    return pz["shapes"][layer_of(v)], pa, pr
+    return blend_shape(pz["shapes"], v), pa, pr
 
 
 def _prep(specs, vels):

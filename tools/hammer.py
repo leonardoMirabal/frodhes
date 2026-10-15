@@ -95,3 +95,78 @@ def hertz_tc(v, m_h, K, p=2.5):
     I = quad(lambda z: 1 / np.sqrt(1 - z ** (p + 1)), 0, 1, limit=200)[0]
     emax = (m_h * v * v * (p + 1) / (2 * K)) ** (1 / (p + 1))
     return 2 * emax / v * I
+
+
+def contact_batch(cases, fs=44100, t_max=0.03, os_=32):
+    """Many contacts at once (numpy over cases), RK4 at os_ x fs. cases: list of dicts with v, m_h, K, p, Rd and
+    modes [(f_hz, sigma, phi_at_strike), ...] (the same number of modes for every case). Returns per case the
+    force on the 16x fs grid (area-preserving average of the os_ grid), Tc, the contact count, v_out, and the
+    final modal state (q, qd) for diagnostics."""
+    N = len(cases)
+    nm = len(cases[0]["modes"])
+    v0 = np.array([c["v"] for c in cases], float)
+    M = np.array([c["m_h"] for c in cases], float)
+    K = np.array([c["K"] for c in cases], float)
+    P = np.array([c["p"] for c in cases], float)
+    Rd = np.array([c.get("Rd", 0.0) for c in cases], float)
+    AL = np.array([c.get("alpha", 0.0) for c in cases], float)     # Hunt-Crossley: F = K e^p (1 + alpha de/dt)
+    w = np.array([[2 * np.pi * m[0] for m in c["modes"]] for c in cases])
+    s = np.array([[m[1] for m in c["modes"]] for c in cases])
+    ph = np.array([[m[2] for m in c["modes"]] for c in cases])
+    w2 = w * w
+    dt = 1.0 / (fs * os_)
+    n = int(t_max / dt)
+
+    def deriv(xh, vh, q, qd):
+        e = xh - np.sum(ph * q, axis=1)
+        de = vh - np.sum(ph * qd, axis=1)
+        ep = np.where(e > 0, np.abs(e), 0.0)
+        F = K * ep ** P * (1 + AL * de) + Rd * P * ep ** (P - 1) * de
+        F = np.where(e > 0, np.maximum(F, 0.0), 0.0)
+        return vh, -F / M, qd, ph * F[:, None] - 2 * s * qd - w2 * q, F
+
+    xh = np.zeros(N); vh = v0.copy(); q = np.zeros((N, nm)); qd = np.zeros((N, nm))
+    step = os_ // OS
+    Fout = np.zeros((N, n // step + 1))
+    acc = np.zeros(N)
+    touched = np.zeros(N, bool)
+    done = np.zeros(N, bool)
+    last = np.zeros(N, int)
+    ncont = np.zeros(N, int)
+    prev_on = np.zeros(N, bool)
+    vout = np.zeros(N)
+    for i in range(n):
+        a1 = deriv(xh, vh, q, qd)
+        a2 = deriv(xh + 0.5 * dt * a1[0], vh + 0.5 * dt * a1[1], q + 0.5 * dt * a1[2], qd + 0.5 * dt * a1[3])
+        a3 = deriv(xh + 0.5 * dt * a2[0], vh + 0.5 * dt * a2[1], q + 0.5 * dt * a2[2], qd + 0.5 * dt * a2[3])
+        a4 = deriv(xh + dt * a3[0], vh + dt * a3[1], q + dt * a3[2], qd + dt * a3[3])
+        F = a1[4]
+        live = ~done
+        xh = np.where(live, xh + dt / 6 * (a1[0] + 2 * a2[0] + 2 * a3[0] + a4[0]), xh)
+        vh = np.where(live, vh + dt / 6 * (a1[1] + 2 * a2[1] + 2 * a3[1] + a4[1]), vh)
+        q = np.where(live[:, None], q + dt / 6 * (a1[2] + 2 * a2[2] + 2 * a3[2] + a4[2]), q)
+        qd = np.where(live[:, None], qd + dt / 6 * (a1[3] + 2 * a2[3] + 2 * a3[3] + a4[3]), qd)
+        F = np.where(live, F, 0.0)
+        on = F > 0
+        ncont += on & ~prev_on
+        prev_on = on
+        touched |= on
+        last = np.where(on, i, last)
+        acc += F
+        if (i + 1) % step == 0:
+            Fout[:, (i + 1) // step - 1] = acc / step
+            acc[:] = 0
+        clear = touched & ~on & (vh < 0) & (np.sum(ph * q, axis=1) - xh > 2e-4)
+        newly = clear & ~done
+        vout = np.where(newly, vh, vout)
+        done |= clear
+        if done.all():
+            break
+    vout = np.where(done, vout, vh)
+    out = []
+    for c in range(N):
+        nlast = last[c] // step + 1
+        out.append(dict(F=Fout[c, :nlast + 1], dt=dt * step, Tc=(last[c] + 1) * dt, ncont=int(ncont[c]),
+                        v_out=float(vout[c]), impulse=float(np.sum(Fout[c, :nlast + 1]) * dt * step),
+                        q=q[c].copy(), qd=qd[c].copy()))
+    return out
