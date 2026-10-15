@@ -211,7 +211,13 @@ static void draw_footer(void)
         if (ui_layer != 0xFF) { a = ui_layer == 0 ? "K1 SW K2 SYNC K3 MODE K4 SHPE" : ui_layer == 1 ? "K1 SW K2 SYNC K3 FDBK" : "K1 SW K2 SYNC K3 FDBK K4 TONE"; b = "LET GO: PANEL"; }
         if (ui_page == PG_VOICE) { a = "K1TONE K2BARK K3BELL K4HAMR"; b = "[ENV]DECAY  [HOME]PANEL"; }
         if (ui_page == PG_VOICE2) { a = "K1 DCAY K2 REL K3 NOIS K4 TUNE"; b = "[EDIT]VOICING [HOME]PANEL"; }
-        if (ui_page == PG_GLO) { a = "K1 BPM K2 KVEL K3 TUNE"; b = "[PLAY]TAP  [HOME]PANEL"; }
+        if (ui_page == PG_GLO) {
+            static char cpu[32];
+            p_strcpy(cpu, "AUDIO ", 6); p_fmt_int(cpu + 6, (int32_t)prof_us);
+            { uint32_t n = 0; while (cpu[n]) n++; p_strcpy(cpu + n, " MAX ", 5); n += 5; p_fmt_int(cpu + n, (int32_t)prof_max_us);
+              while (cpu[n]) n++; p_strcpy(cpu + n, " US", 3); }
+            a = "K1 BPM K2 KVEL K3 TUNE"; b = cpu;
+        }
         if (ui_page == PG_SCALE) { a = "K1 MODE K2 SCAL K3 ROOT K4 TRN"; b = "[HOME]PANEL"; }
         if (ui_msg_t && fm1_ms - ui_msg_t < 1500u) b = ui_msg;
         text_c(0, 2, 240, &FONT_S, a, C_GRAY);
@@ -278,6 +284,7 @@ static void ui_draw(void)
         if (dv > 40 || dv < -40) ui_mark(E_COL0 + 6);
     }
     if (ui_hot_t && fm1_ms - ui_hot_t >= 1500u && fm1_ms - ui_hot_t < 1600u) ui_mark(E_FOOTER);
+    if (ui_page == PG_GLO && (fm1_ms & 511u) == 0u) ui_mark(E_FOOTER);          /* the audio time, twice a second */
     if (ui_msg_t && fm1_ms - ui_msg_t >= 1500u && fm1_ms - ui_msg_t < 1600u) ui_mark(E_FOOTER);
     if (!ui_dirty || fm1_ms - ui_last_draw < 4u) return;
     if (ui_page == PG_PANEL) ui_dirty &= ~((1u << E_CARDS) | (1u << E_KEYS));

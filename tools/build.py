@@ -270,7 +270,7 @@ def mmio_check():
 def main():
     global PRODUCT, VERSION
     ap = argparse.ArgumentParser()
-    ap.add_argument("--release", metavar="X.Y", help="release build: identity FM-1_9XY, version string X.Y")
+    ap.add_argument("--release", metavar="X.Y", help="release build 0.1 .. 0.9: identity FM-1_951 .. 959, version string 0.Y")
     ap.add_argument("--sdk", type=Path, help="JieLi AC79 SDK checkout (default: $AC79_SDK)")
     a = ap.parse_args()
     name = "frodhes.fwsc"
@@ -278,6 +278,10 @@ def main():
         m = re.fullmatch(r"(\d)\.(\d)(\.\d)?(-[A-Za-z0-9]+)?", a.release)
         if not m:
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z or X.Y-suffix, one digit each")
+        if m[1] != "0" or m[2] == "0":
+            # identities: FM-1_950 = dev builds; 0.1 .. 0.9 = FM-1_951 .. 959 (the minor digit alone would make
+            # 0.1 and 1.1 the same identity). A major release needs a new identity block first (check the hub).
+            raise SystemExit(f"--release {a.release}: only 0.1 .. 0.9 (FM-1_951 .. 959); FM-1_950 is the dev build")
         PRODUCT = "FM-1_95" + m[2]
         VERSION = m[1] + "." + m[2] + (m[3] or "")
         name = f"frodhes-{a.release}.fwsc"

@@ -26,6 +26,8 @@ static volatile uint32_t fx_cp_sync_inc;         /* main loop: a synced chorus/p
 static volatile uint32_t fx_dly_sync_samples;    /* main loop (tempo.c): a synced delay time, 0 = free */
 static volatile uint32_t fx_tw_sync_inc;         /* main loop: a synced tremolo rate (Q32 step), 0 = free */
 static volatile int32_t fx_peak;                 /* ISR: last block's max |out| */
+static volatile uint32_t prof_us, prof_max_us;   /* ISR (frodhes.c app_audio): its own time, this block / maximum */
+static uint32_t prof_over;
 static volatile uint32_t fx_quiet_blocks;
 static void fx_set(uint32_t id, int32_t v) { if (id < FXP_N) fx_p[id] = v < 0 ? 0 : v > 127 ? 127 : v; }
 static int fx_quiet(void) { return fx_quiet_blocks >= 86u; }   /* 500 ms under -66 dBFS */

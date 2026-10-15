@@ -102,6 +102,8 @@ static volatile uint8_t rh_notes[RH_NV];
 static volatile uint32_t ev_q[32];
 static volatile uint32_t ev_w, ev_r, ev_drop;
 static volatile uint8_t rh_hold;               /* main loop: the sustain pedal is down (for the screen/LED) */
+static uint8_t rh_shed_req;                    /* ISR: the audio ran late: fade out the quietest released voice */
+static volatile uint32_t rh_shed_count;
 
 static void rh_post(uint32_t type, uint32_t note, uint32_t val)
 {
@@ -371,12 +373,26 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
         }
 }
 
+static void rh_shed(void)                                 /* overload: fade the quietest voice, released first */
+{
+    uint32_t i, m, pick = RH_NV, best = 0xFFFFFFFFu;
+    for (i = 0; i < RH_NV; i++) {
+        uint32_t sum = 0, score;
+        if (!rv[i].alive || rv[i].fade != 32768) continue;
+        for (m = 0; m < RH_NM; m++) sum += (uint32_t)rv[i].m[m].peak >> 4;
+        score = (rv[i].held ? 0x40000000u : 0u) + (sum > 0x3FFFFFFFu ? 0x3FFFFFFFu : sum);
+        if (score < best) { best = score; pick = i; }
+    }
+    if (pick < RH_NV) { rv[pick].fade = 32767; rv[pick].pend = 0; rh_shed_count++; }
+}
+
 static void rh_render(int32_t *mono_out, uint32_t n)
 {
     uint32_t i, sb, j, act = 0, held = 0;
     int32_t mx = 0;
     const int32_t *c = RH_RLC[RH_TYPE[rh_type].rlc];
     rh_events();
+    if (rh_shed_req) { rh_shed_req = 0; rh_shed(); }
     for (i = 0; i < n; i++) rh_mono[i] = 0;
     for (i = 0; i < RH_NV; i++) {
         rh_voice_t *v = &rv[i];

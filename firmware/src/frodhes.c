@@ -22,7 +22,21 @@
 #include "presets.c"
 
 static int32_t voice_mono[256];
-static void app_audio(int32_t *out, uint32_t n) { rh_render(voice_mono, n); fx_process(voice_mono, out, n); }
+static void app_audio(int32_t *out, uint32_t n)
+{
+#ifndef DINGHY_HOST
+    uint32_t t0 = fm1_ticks(), us;
+#endif
+    rh_render(voice_mono, n);
+    fx_process(voice_mono, out, n);
+#ifndef DINGHY_HOST
+    us = (fm1_ticks() - t0) / 24u;                 /* 24 MHz ticks -> us (a constant divide) */
+    prof_us = us;
+    if (us > prof_max_us) prof_max_us = us;
+    prof_over = us > 2400u ? prof_over + 1u : 0u;  /* two blocks over 2.4 ms of the 5.8 ms: shed a voice */
+    if (prof_over >= 2u) { rh_shed_req = 1; prof_over = 0; }
+#endif
+}
 
 
 /* ---- the sustain pedal: REC held, or latched by a tap; MIDI CC 64 too. Either holds the dampers off. */
