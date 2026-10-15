@@ -10,7 +10,8 @@
  *   EDIT            left: UNDO the last pass recorded; right: ERASE on / off (hold keys: their notes go as the loop
  *                   passes them)
  *
- * Recording armed while stopped starts the loop with the first note played. The notes play through notes.c (the
+ * Recording armed while stopped starts the loop with the first note played. The page (ui.c) shows NOW / NEXT and the
+ * bar's 16 cells. The notes play through notes.c (the
  * arpeggiator takes them when it runs) and are kept in two flash sectors written in turn (0x99000 / 0x9A000). */
 
 #define SQ_PPQ 96u                                  /* ticks per beat */

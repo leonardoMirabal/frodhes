@@ -250,8 +250,10 @@ arpeggiator (which then arpeggiates the chord) and with the sequencer (which rec
 ![SEQUENCER](manual/img/seq.png)
 
 A **pattern recorder**: play notes or chords (chord mode too) and they loop, quantized, while you keep adding and
-editing. The screen shows what is recorded as a **piano roll**: the loop left to right (bars as lines, beats as dots),
-pitches bottom to top, the last pass brighter, and the playhead running along the top.
+editing. The screen is made to be read at a glance: the top line shows where the loop is (**BAR 2/4 . 3** = bar 2
+of 4, beat 3); the chord or note playing **now** is in big letters (D MIN7, C4...), with what comes **next** and
+where under it; and the bar playing is shown as **16 big cells** (16ths, in two rows of 8): a filled cell is where
+notes start, the white one is where the loop is.
 
 | Knob | Card | What it does |
 | --- | --- | --- |

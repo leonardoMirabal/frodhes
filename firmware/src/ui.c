@@ -24,7 +24,7 @@ static void tempo_set10(uint32_t b);
 enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_TEMPO, PG_SCALE,
        PG_CHORD, PG_SEQ, PG_ARP, PG_SETUP, PG_N };
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL = 8, E_N = 9, E_CARDS = 10 };   /* E_CARDS: all four;
-                                    * E_METER: COMP's meter / SEQUENCER's playhead, E_ROLL: SEQUENCER's notes */
+                                    * E_METER: COMP's meter / SEQUENCER's cells, E_ROLL: SEQUENCER's NOW / NEXT */
 /* card slots: a parameter id (< P_COUNT) or one of these */
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
        S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
@@ -367,10 +367,24 @@ static void draw_header(void)
     cv_blit(0, 0);
 }
 
+static void seq_pos_text(char *t);
+static uint32_t sq_view_tick(void);
+static void sq_shown_beat_set(void);
 static void draw_title(void)
 {
     uint32_t i;
     int32_t x0 = 120 - (int32_t)PG_N * 5;
+    if (ui_page == PG_SEQ) {                            /* a small title and where the loop is: BAR 2/4 . 3 */
+        char t[24];
+        cv_begin(240, 18, C_BLACK);
+        cv_text(2, 1, &FONT_S, "< SEQUENCER >", UI_ACC);
+        seq_pos_text(t);
+        sq_shown_beat_set();
+        cv_text(238 - text_w(&FONT_S, t), 1, &FONT_S, t, C_HI);
+        cv_rect(0, 17, 240, 1, C_LINE);
+        cv_blit(0, 21);
+        return;
+    }
     cv_begin(240, 40, C_BLACK);
     if (ui_page > 0) cv_text(4, 0, &FONT_L, "<", C_DIM);
     if (ui_page + 1u < PG_N) cv_text(220, 0, &FONT_L, ">", C_DIM);
@@ -400,63 +414,112 @@ static void draw_card(uint32_t k)
     cv_blit(k & 1u ? 121u : 1u, k & 2u ? 135u : 63u);
 }
 
-/* ---- the SEQUENCER page: a piano roll (the loop left to right, the notes' pitches bottom to top), a playhead,
- * and its four cards as a compact row */
-#define ROLL_Y 68
-#define ROLL_H 92
-#define SQ_CARD_Y 163
-static void roll_part(int32_t y0, int32_t h)            /* the roll's rows y0 .. y0+h-1 (screen y ROLL_Y + y0) */
+/* ---- the SEQUENCER page, made to be read on a small screen: what plays NOW in big letters, what comes NEXT, and the
+ * bar as 16 big cells (a filled cell: notes start there; white: playing). Its four cards are a compact row. */
+#define SQ_NOW_Y 40
+#define SQ_STRIP_Y 104
+#define SQ_CARD_Y 171
+#define SQ_CARD_H 33
+static uint32_t sq_view_tick(void) { return seq_play ? sq_tick() : 0u; }
+static void seq_pos_text(char *t)                       /* BAR 2/4 . 3 (bar / bars . beat) */
 {
-    uint32_t L = sq_len(), i, beat;
-    int32_t lo = 127, hi = 0, rows;
-    cv_begin(240, (uint32_t)h, C_BLACK);
-    cv_oy = -y0;
-    for (i = 0; i < sq_n; i++) if (sq_ev[i].tick < L) { if (sq_ev[i].note < lo) lo = sq_ev[i].note; if (sq_ev[i].note > hi) hi = sq_ev[i].note; }
-    if (lo > hi) { lo = 48; hi = 72; }
-    if (hi - lo < 12) { int32_t m = (hi + lo) / 2; lo = m - 6; hi = m + 6; }
-    rows = hi - lo + 1;
-    for (beat = 0; beat <= SQ_BARS * 4u; beat++) {      /* bars: lines; beats: dots */
-        int32_t x = (int32_t)(beat * 239u / (SQ_BARS * 4u)), y;
-        if (beat % 4u == 0u) cv_rect(x, 0, 1, ROLL_H, C_LINE);
-        else for (y = 0; y < ROLL_H; y += 6) cv_rect(x, y, 1, 1, C_LINE);
-    }
-    for (i = 0; i < sq_n; i++) {
-        const sq_ev_t *e = &sq_ev[i];
-        uint32_t t, len;
-        int32_t x0, x1, y, rh = ROLL_H / rows > 2 ? ROLL_H / rows - 1 : 2;
-        if (e->tick >= L) continue;
-        t = sq_at(e); len = e->len < L ? e->len : L - 1u;
-        x0 = (int32_t)(t * 240u / L); x1 = (int32_t)((t + len) * 240u / L);
-        y = (hi - e->note) * ROLL_H / rows;
-        if (x1 <= x0 + 1) x1 = x0 + 2;
-        if (x1 <= 240) cv_rect(x0, y, x1 - x0 - 1, rh, e->take == sq_take ? C_HI : C_AMB);
-        else { cv_rect(x0, y, 240 - x0, rh, C_AMB); cv_rect(0, y, x1 - 240 - 1, rh, C_AMB); }   /* around the end */
-    }
-    if (!sq_n && y0 == 0) text_c(0, 30, 240, &FONT_S, "SEQ: REC, THEN PLAY", C_DIM);
-    cv_oy = 0;
-    cv_blit(0, (uint32_t)(ROLL_Y + y0));
+    uint32_t p = sq_view_tick(), n = 0;
+    p_strcpy(t, "BAR ", 4); n = 4;
+    p_fmt_int(t + n, (int32_t)(p / (4u * SQ_PPQ) + 1u)); while (t[n]) n++;
+    t[n++] = '/'; p_fmt_int(t + n, SQ_BARS); while (t[n]) n++;
+    t[n++] = ' '; t[n++] = '.'; t[n++] = ' ';
+    p_fmt_int(t + n, (int32_t)(p / SQ_PPQ % 4u + 1u));
 }
-static void draw_roll(void) { roll_part(0, ROLL_H / 2); roll_part(ROLL_H / 2, ROLL_H - ROLL_H / 2); }
-static void draw_playhead(void)
+/* the notes struck together at tick g (their quantized start) and a name for them: a chord name, or C4 for one note */
+static uint32_t sq_group(uint32_t g, uint8_t *notes)
 {
-    uint32_t L = sq_len();
-    int32_t x = seq_play ? (int32_t)(sq_tick() * 240u / L) : 0;
-    cv_begin(240, 4, C_BLACK);
-    cv_rect(0, 1, 240, 2, C_LINE);
-    if (seq_play) cv_rect(x > 236 ? 236 : x, 0, 4, 4, seq_rec ? C_WHITE : UI_ACC);
-    cv_blit(0, 63);
+    uint32_t i, j, c = 0, L = sq_len();
+    for (i = 0; i < sq_n && c < CH_MAX; i++) {
+        if (sq_ev[i].tick >= L || sq_at(&sq_ev[i]) != g) continue;
+        for (j = 0; j < c && notes[j] != sq_ev[i].note; j++) {}
+        if (j == c) notes[c++] = sq_ev[i].note;
+    }
+    return c;
+}
+static void sq_group_name(uint32_t g, char *v)
+{
+    uint8_t notes[CH_MAX];
+    uint32_t c = sq_group(g, notes);
+    if (c == 1u) { uint32_t n = 0; p_strcpy(v, NOTE_NAME_S[notes[0] % 12u], 2); while (v[n]) n++; p_fmt_int(v + n, (int32_t)notes[0] / 12 - 1); }
+    else chord_name(notes, c, v);
+}
+/* the last start at or before tick p (around the loop), and the first after it; 0xFFFF: none */
+static void sq_now_next(uint32_t p, uint32_t *now, uint32_t *next)
+{
+    uint32_t i, L = sq_len(), a = 0xFFFFu, b = 0xFFFFu, hi = 0xFFFFu, lo = 0xFFFFu;
+    for (i = 0; i < sq_n; i++) {
+        uint32_t t;
+        if (sq_ev[i].tick >= L) continue;
+        t = sq_at(&sq_ev[i]);
+        if (t <= p && (a == 0xFFFFu || t > a)) a = t;
+        if (t > p && (b == 0xFFFFu || t < b)) b = t;
+        if (hi == 0xFFFFu || t > hi) hi = t;
+        if (lo == 0xFFFFu || t < lo) lo = t;
+    }
+    *now = a != 0xFFFFu ? a : hi;                       /* nothing before: the last one of the loop goes on */
+    *next = b != 0xFFFFu ? b : lo;                      /* nothing after: the loop's first */
+}
+static uint32_t sq_shown_now = 0xFFFFFFFFu, sq_shown_cell = 0xFFFFFFFFu, sq_shown_beat = 0xFFFFFFFFu;
+static void sq_shown_beat_set(void) { sq_shown_beat = sq_view_tick() / SQ_PPQ; }
+static void draw_now(void)                              /* NOW (big) and NEXT */
+{
+    char v[20], t[40];
+    uint32_t now, next, n = 0;
+    sq_now_next(sq_view_tick(), &now, &next);
+    sq_shown_now = now;
+    cv_begin(240, 60, C_BLACK);
+    if (!sq_n) {
+        text_c(0, 8, 240, &FONT_L, "EMPTY", C_DIM);
+        text_c(0, 42, 240, &FONT_S, "SEQ: REC, THEN PLAY", C_GRAY);
+    } else {
+        sq_group_name(now, v);
+        if (text_w(&FONT_L, v) <= 236) text_c(0, 4, 240, &FONT_L, v, seq_play ? C_WHITE : C_HI);
+        else text_c(0, 12, 240, &FONT_S, v, C_HI);
+        sq_group_name(next, v);
+        p_strcpy(t, "NEXT ", 5); n = 5; p_strcpy(t + n, v, 12); while (t[n]) n++;
+        p_strcpy(t + n, "  BAR ", 6); n += 6;
+        p_fmt_int(t + n, (int32_t)(next / (4u * SQ_PPQ) + 1u)); while (t[n]) n++;
+        t[n++] = '.'; p_fmt_int(t + n, (int32_t)(next / SQ_PPQ % 4u + 1u));
+        text_c(0, 42, 240, &FONT_S, t, C_GRAY);
+    }
+    cv_blit(0, SQ_NOW_Y);
+}
+static void draw_strip(void)                            /* the bar playing: 16 cells (16ths) in two rows of 8 */
+{
+    uint32_t p = sq_view_tick(), b0 = p / (4u * SQ_PPQ) * 4u * SQ_PPQ, cur = (p - b0) / 24u, i, L = sq_len();
+    uint8_t hit[16] = {0};
+    sq_shown_cell = p / 24u;
+    for (i = 0; i < sq_n; i++) {
+        uint32_t t;
+        if (sq_ev[i].tick >= L) continue;
+        t = sq_at(&sq_ev[i]);
+        if (t >= b0 && t < b0 + 4u * SQ_PPQ) hit[(t - b0) / 24u] = 1;
+    }
+    cv_begin(240, 62, C_BLACK);
+    for (i = 0; i < 16u; i++) {
+        int32_t x = 4 + (int32_t)(i % 8u) * 29, y = i < 8u ? 2 : 33;
+        uint16_t c = seq_play && i == cur ? C_WHITE : hit[i] ? C_AMB : C_LINE;
+        if (hit[i] || (seq_play && i == cur)) cv_rect(x, y, 26, 26, c);
+        else { cv_rect(x, y, 26, 26, i % 4u == 0u ? C_DIM : C_LINE); cv_rect(x + 2, y + 2, 22, 22, C_BLACK); }
+    }
+    cv_blit(0, SQ_STRIP_Y);
 }
 static void draw_card_small(uint32_t k)
 {
     uint32_t s = PAGE_S[PG_SEQ][k];
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
     char v[16];
-    cv_begin(58, 40, C_BLACK);
-    cv_rect(0, 0, 58, 40, hot ? UI_ACC : C_LINE);
-    cv_rect(1, 1, 56, 38, C_BLACK);
-    text_c(0, 3, 58, &FONT_S, PAGE_LAB[PG_SEQ][k], C_GRAY);
+    cv_begin(58, SQ_CARD_H, C_BLACK);
+    cv_rect(0, 0, 58, SQ_CARD_H, hot ? UI_ACC : C_LINE);
+    cv_rect(1, 1, 56, SQ_CARD_H - 2, C_BLACK);
+    text_c(0, 1, 58, &FONT_S, PAGE_LAB[PG_SEQ][k], C_GRAY);
     slot_text(s, v);
-    text_c(0, 21, 58, &FONT_S, v, s == S_SQEDIT && sq_erase ? UI_ACC : C_HI);
+    text_c(0, 16, 58, &FONT_S, v, s == S_SQEDIT && sq_erase ? UI_ACC : C_HI);
     cv_blit(1u + k * 60u, SQ_CARD_Y);
 }
 
@@ -604,8 +667,13 @@ static void ui_draw(void)
     meter_poll();
     if (ui_page == PG_SEQ) {                            /* the playhead ~25 Hz; the notes when they change (4 Hz) */
         static uint32_t ph_t, roll_t;
-        if (seq_play && fm1_ms - ph_t >= 40u) { ph_t = fm1_ms; ui_mark(E_METER); }
-        if (sq_roll_dirty && fm1_ms - roll_t >= 250u) { roll_t = fm1_ms; sq_roll_dirty = 0; ui_mark(E_ROLL); ui_mark(E_FOOTER); }
+        uint32_t now, next, p = sq_view_tick();
+        (void)ph_t;
+        if (p / 24u != sq_shown_cell) ui_mark(E_METER);
+        if (p / SQ_PPQ != sq_shown_beat) ui_mark(E_TITLE);
+        sq_now_next(p, &now, &next);
+        if (now != sq_shown_now) ui_mark(E_ROLL);
+        if (sq_roll_dirty && fm1_ms - roll_t >= 250u) { roll_t = fm1_ms; sq_roll_dirty = 0; ui_mark(E_ROLL); ui_mark(E_METER); ui_mark(E_FOOTER); }
     }
     d = ui_dirty & ((1u << E_N) - 1u);
     if (!d || fm1_ms - ui_last_draw < 4u) return;
@@ -618,8 +686,8 @@ static void ui_draw(void)
     else if (e == E_FOOTER) draw_footer();
     else if (e == E_METER) {
         if (ui_page == PG_COMP && !pr_save_mode && !(ui_msg_t && fm1_ms - ui_msg_t < MSG_MS)) draw_meter();
-        else if (ui_page == PG_SEQ) draw_playhead();
-    } else if (e == E_ROLL) { if (ui_page == PG_SEQ) draw_roll(); }
+        else if (ui_page == PG_SEQ) draw_strip();
+    } else if (e == E_ROLL) { if (ui_page == PG_SEQ) draw_now(); }
     else if (ui_page == PG_SEQ) { draw_card_small(e - E_CARD0); if (e == E_CARD0) ui_mark(E_ROLL); }
     else draw_card(e - E_CARD0);
 }
@@ -628,7 +696,7 @@ static void ui_draw(void)
 static void ui_goto(uint32_t pg)
 {
     if (pg >= PG_N) pg = PG_PERF;
-    if ((pg == PG_SEQ) != (ui_page == PG_SEQ)) lcd_fill(0, 62, 240, 142, C_BLACK);   /* its own layout: no leftovers */
+    if ((pg == PG_SEQ) != (ui_page == PG_SEQ)) lcd_fill(0, 21, 240, 183, C_BLACK);   /* its own layout: no leftovers */
     ui_page = (uint8_t)pg;
     ui_hot_card = 0xFF;
     ui_draw_page_change();

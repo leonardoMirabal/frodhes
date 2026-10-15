@@ -8,7 +8,7 @@ Frodhes turns the FM-1 into an electric piano. Every note is computed live from 
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound, with the bark of
 hard notes and the bell of the attack. Four instrument types (Stage 77, Suitcase, Early Felt, Bell Dyno), a
 reface CP-style effects chain (compressor, drive, tremolo / wah, phaser, chorus, delay, reverb), tap tempo with MIDI
-clock sync, chord mode, a pattern recorder (1–16 bar loops, quantize, overdub, piano-roll view), an arpeggiator, scales, a sustain pedal and 12 factory plus 16 user presets. The screen shows one page at a time with
+clock sync, chord mode, a pattern recorder (1–16 bar loops, quantize, overdub, undo / erase), an arpeggiator, scales, a sustain pedal and 12 factory plus 16 user presets. The screen shows one page at a time with
 four cards, one for each of the FM-1's four knobs; the first page, PERFORM, puts the effects' dry / wet (or
 anything you assign) on those four knobs for playing live.
 
