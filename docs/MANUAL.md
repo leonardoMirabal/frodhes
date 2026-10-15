@@ -119,7 +119,9 @@ active, REC while the sustain holds, PLAY on the beat when something is synced, 
 | K4 | **MAKEUP** | Gives back the volume the compression takes: 0 to +24 dB |
 
 Press **ENV** on this page to switch it on or off. When you switch it on it starts at −20 dB, 4:1 and +2.8 dB, which
-keeps the volume about the same. The bottom line shows the gain reduction live ("REDUCING 4.5 DB"). The compressor
+keeps the volume about the same. The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
+to 30 dB of reduction (scale 3, 6, 10, 20, 30), a bright segment holds the peak for a second, and the number on the
+right is the reduction now in dB. The compressor
 comes first in the chain, right after the piano.
 
 ### TREM/WAH

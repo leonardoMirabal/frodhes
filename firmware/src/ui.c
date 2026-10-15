@@ -20,7 +20,7 @@ static void tempo_tap(void);                          /* tempo.c */
 static void tempo_set10(uint32_t b);
 
 enum { PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_TEMPO, PG_SCALE, PG_SETUP, PG_N };
-enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_N = 7, E_CARDS = 10 };   /* E_CARDS: all four */
+enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_N = 8, E_CARDS = 10 };   /* E_CARDS: all four */
 /* card slots: a parameter id (< P_COUNT) or one of these */
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_NONE = 0xFF };
 
@@ -208,6 +208,16 @@ static void slot_turn(uint32_t s, int32_t d)
 }
 
 /* ---- drawing */
+#define GR_SEGS 15u
+#define GR_X0 4
+#define GR_W 12
+#define GR_X1 (GR_X0 + (int32_t)GR_SEGS * GR_W + 2)
+static const int16_t GR_DB10[GR_SEGS] = {10, 20, 30, 40, 50, 60, 80, 100, 120, 150, 180, 200, 240, 270, 300};
+static const uint8_t GR_LAB[GR_SEGS] = {0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1};    /* 3 6 10 20 30 */
+static int32_t gr_db10;
+static uint8_t gr_peak;
+static uint32_t gr_shown = 0xFFFF;
+
 static void text_c(int32_t x, int32_t y, int32_t w, const felucca_font_t *f, const char *s, uint16_t c)
 {
     cv_text(x + (w - text_w(f, s)) / 2, y, f, s, c);
@@ -284,14 +294,20 @@ static void draw_footer(void)
         if (text_w(&FONT_L, ui_msg) <= 236) text_c(0, 2, 240, &FONT_L, ui_msg, C_HI);
         else text_c(0, 10, 240, &FONT_S, ui_msg, C_HI);
     } else {
+        if (ui_page == PG_COMP) {                        /* the gain-reduction meter (draw_meter) and its scale */
+            uint32_t i;
+            if (PV(P_CMP_SW)) {
+                for (i = 0; i < GR_SEGS; i++)
+                    if (GR_LAB[i]) { char t[4]; p_fmt_int(t, GR_DB10[i] / 10); text_c(GR_X0 + (int32_t)i * GR_W - 4, 18, GR_W + 6, &FONT_S, t, C_DIM); }
+                text_c(GR_X1, 18, 240 - GR_X1, &FONT_S, "GR DB", C_DIM);
+            } else text_c(0, 18, 240, &FONT_S, "ENV BUTTON: ON / OFF", C_DIM);
+            gr_shown = 0xFFFF;                          /* the meter rows: draw them again */
+            ui_mark(E_METER);
+            cv_blit(0, 205);
+            return;
+        }
         text_c(0, 2, 240, &FONT_S, "SELECT: PAGE  PRESETS: SOUND", C_GRAY);
-        if (ui_page == PG_COMP) {
-            static char gr[24];
-            int32_t db10 = PV(P_CMP_SW) ? fx_cmp_gr * 602 / 4096 : 0;      /* log2 Q12 -> dB x 10 */
-            p_strcpy(gr, "REDUCING ", 9); p_fmt_int(gr + 9, db10 / 10);
-            { uint32_t n = 0; while (gr[n]) n++; gr[n++] = '.'; gr[n++] = (char)('0' + db10 % 10); p_strcpy(gr + n, " DB", 3); }
-            text_c(0, 18, 240, &FONT_S, PV(P_CMP_SW) ? gr : "ENV BUTTON: ON / OFF", C_DIM);
-        } else if (ui_page == PG_SETUP) {
+        if (ui_page == PG_SETUP) {
             static char cpu[32];
             uint32_t n = 0;
             p_strcpy(cpu, "AUDIO ", 6); p_fmt_int(cpu + 6, (int32_t)prof_us);
@@ -305,6 +321,45 @@ static void draw_footer(void)
     cv_blit(0, 205);
 }
 
+/* the compressor's gain-reduction meter, as on a hardware compressor: LED segments that light from 1 dB to 30 dB,
+ * a peak that holds for a second, and the reading in dB; footer rows 1..16, redrawn only when they change (~30 Hz) */
+static void draw_meter(void)
+{
+    char t[12];
+    uint32_t i, n = 0;
+    int32_t db10 = gr_db10;
+    cv_begin(240, 16, C_BLACK);
+    for (i = 0; i < GR_SEGS; i++) {
+        uint16_t c = C_LINE;
+        if (PV(P_CMP_SW) && db10 >= GR_DB10[i]) c = GR_DB10[i] > 100 ? C_HI : C_AMB;
+        else if (PV(P_CMP_SW) && i + 1u == gr_peak) c = C_WHITE;
+        cv_rect(GR_X0 + (int32_t)i * GR_W, 3, GR_W - 2, 10, c);
+    }
+    if (PV(P_CMP_SW)) {
+        t[n++] = '-'; p_fmt_int(t + n, db10 / 10);
+        while (t[n]) n++;
+        t[n++] = '.'; t[n++] = (char)('0' + db10 % 10); t[n] = 0;
+        text_c(GR_X1, 0, 240 - GR_X1, &FONT_S, db10 ? t : "0.0", db10 ? C_HI : C_DIM);
+    } else text_c(GR_X1, 0, 240 - GR_X1, &FONT_S, "OFF", C_DIM);
+    cv_blit(0, 206);
+}
+/* ~30 Hz on the COMP page: follow the ISR's reduction (it rises at once, falls at 15 dB/s, like a meter's needle) */
+static void meter_poll(void)
+{
+    static uint32_t t, peak_t;
+    int32_t g;
+    uint32_t segs = 0, key;
+    if (ui_page != PG_COMP || pr_save_mode || (ui_msg_t && fm1_ms - ui_msg_t < MSG_MS) || fm1_ms - t < 33u) return;
+    t = fm1_ms;
+    g = PV(P_CMP_SW) && !fx_bypass ? fx_cmp_gr * 301 / 20480 : 0;      /* log2 Q12 -> dB x 10 */
+    if (g > 300) g = 300;
+    gr_db10 = g > gr_db10 ? g : gr_db10 > g + 5 ? gr_db10 - 5 : g;
+    while (segs < GR_SEGS && gr_db10 >= GR_DB10[segs]) segs++;
+    if (segs >= gr_peak || fm1_ms - peak_t > 1000u) { gr_peak = (uint8_t)segs; peak_t = fm1_ms; }
+    key = (uint32_t)gr_db10 | (uint32_t)gr_peak << 9;
+    if (key != gr_shown) { gr_shown = key; ui_mark(E_METER); }
+}
+
 static void ui_draw_page_change(void) { ui_dirty |= (1u << E_N) - 1u; }
 
 /* one element per pass, in priority order: footer, header, title, cards */
@@ -316,16 +371,18 @@ static void ui_draw(void)
     if (ui_msg_t && fm1_ms - ui_msg_t >= MSG_MS && fm1_ms - ui_msg_t < MSG_MS + 100u) ui_mark(E_FOOTER);
     if (ui_hot_t && ui_hot_card < 4u && fm1_ms - ui_hot_t >= HOT_MS && fm1_ms - ui_hot_t < HOT_MS + 100u)
         ui_mark(E_CARD0 + ui_hot_card);
-    if ((ui_page == PG_SETUP || ui_page == PG_COMP) && (fm1_ms & 255u) == 0u) ui_mark(E_FOOTER);   /* live readouts */
+    if (ui_page == PG_SETUP && (fm1_ms & 255u) == 0u) ui_mark(E_FOOTER);   /* live readouts */
+    meter_poll();
     d = ui_dirty & ((1u << E_N) - 1u);
     if (!d || fm1_ms - ui_last_draw < 4u) return;
     e = d >> E_FOOTER & 1u ? E_FOOTER : d & 1u ? E_HEADER : d >> E_TITLE & 1u ? E_TITLE : 0xFF;
-    if (e == 0xFF) for (e = E_CARD0; e < E_FOOTER && !(d >> e & 1u); e++) {}
+    if (e == 0xFF) for (e = E_CARD0; e < E_N && !(d >> e & 1u); e++) {}
     ui_dirty &= ~(1u << e);
     ui_last_draw = fm1_ms;
     if (e == E_HEADER) draw_header();
     else if (e == E_TITLE) draw_title();
     else if (e == E_FOOTER) draw_footer();
+    else if (e == E_METER) { if (ui_page == PG_COMP && !pr_save_mode && !(ui_msg_t && fm1_ms - ui_msg_t < MSG_MS)) draw_meter(); }
     else draw_card(e - E_CARD0);
 }
 

@@ -28,6 +28,11 @@ def main():
     for i, name in enumerate(PAGES):
         if i:
             L.append(f"{t} turn 0 1"); t += 700
+        if name == "comp":                                  # a held chord: the gain-reduction meter moves
+            L.append(f"{t} keys 0x2491"); t += 600
+            L.append(f"{t} shot"); shots[t] = name
+            L.append(f"{t + 50} keys 0x0"); t += 900
+            continue
         L.append(f"{t} keys 0x1"); L.append(f"{t + 300} keys 0x0")   # a note: the SUS / level readouts are live
         t += 900
         L.append(f"{t} shot"); shots[t] = name; t += 100
