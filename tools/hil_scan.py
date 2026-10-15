@@ -32,6 +32,26 @@ CC = dict(TYPE=80, DRIVE=81, TW_SW=17, TW_DEPTH=18, TW_RATE=19, TW_MODE=21, CP_S
 DRY = dict(DRIVE=0, REV=0, TW_SW=0, CP_SW=0, PH_SW=0, DL_SW=0, CMP_SW=0, RAW=0, SUS=0)
 
 
+def param_defaults():
+    """every parameter's CC and the CC value that sets its default (parsed from firmware/src/params.c), so each test
+    starts from the same state whatever the FM-1 had saved"""
+    import re
+    src = open(os.path.join(ROOT, "firmware", "src", "params.c")).read()
+    out = []
+    for name, hi, de, cc in re.findall(r'\[P_(\w+)\] = \{"[^"]*", (\d+), (\d+), F_\w+, (\d+)', src):
+        hi, de, cc = int(hi), int(de), int(cc)
+        if name == "TYPE":
+            v = de * 32 + 8
+        elif hi == 2:
+            v = (0, 64, 127)[de]
+        elif hi < 127:
+            v = min(127, (de * 128 + 64) // (hi + 1))
+        else:
+            v = de
+        out.append((cc, v))
+    return out
+
+
 def db(x):
     x = np.asarray(x, float)
     return 20 * np.log10(np.sqrt(np.mean(x * x)) / 32767 + 1e-12) if x.size else -240.0
@@ -63,6 +83,10 @@ class Rig:
 
     def dry(self, **kv):
         self.out.send(self.mido.Message("control_change", control=120, value=0))
+        if not hasattr(self, "defaults"):
+            self.defaults = param_defaults()
+        for cc, v in self.defaults:                    # a known state: every parameter at its default
+            self.out.send(self.mido.Message("control_change", control=cc, value=v))
         d = dict(DRY)
         d.update(kv)
         self.setup(**d)
@@ -274,11 +298,12 @@ def effects(r, rep):
 def delay_time(r, rep):
     r.dry(DL_SW=64, DL_DEPTH=100, DL_TIME=64, DL_FDBK=60)
     x = r.take(1.6, [(0.05, "on", 72, 110), (0.1, "off", 72, 0)])
-    env = np.sqrt(np.convolve(x[:, 0] ** 2, np.ones(240) / 240, "same"))
+    from scipy.signal import find_peaks
+    env = np.sqrt(np.convolve(x[:, 0] ** 2, np.ones(480) / 480, "same"))
     i = onset(x)
-    # echoes: envelope peaks after the dry note has died
-    pk = [k for k in range(i + int(0.1 * FS), len(env) - 1, 48) if env[k] == env[max(0, k - 2400):k + 2400].max()
-          and env[k] > 30]
+    # echoes: envelope peaks at least 100 ms apart, standing out of the decay between them
+    pk, _ = find_peaks(env[i:], distance=int(0.1 * FS), prominence=max(10.0, 0.05 * env[i:].max()))
+    pk = [i + k for k in pk if k > int(0.05 * FS)]
     exp_ms = 20 * 74 ** (64 / 127)
     gaps = np.diff([i] + pk) / FS * 1000 if pk else []
     rep["delay"] = dict(expected_ms=exp_ms, echoes_ms=list(map(float, gaps)))

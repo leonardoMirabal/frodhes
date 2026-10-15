@@ -191,7 +191,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
 
 /* ---- COMPRESSOR (mono, before the drive): peak detector (ATTACK / RELEASE), soft knee of 6 dB, gain computed
  * in log2 (Q12) every 16 samples and ramped. AMOUNT moves the threshold -9 .. -39 dBFS and the ratio 1.5 .. 6
- * together; the make-up (~0.3 of the reduction at -9 dBFS) keeps it about level-neutral. */
+ * together; the make-up equals the reduction at a typical piano level (-26 dBFS): level-neutral. */
 static int32_t cmp_env, cmp_g = 65536;
 static int32_t ilog2_q12(uint32_t x)                     /* log2(x), Q12; x > 0 (no clz: a binary search) */
 {
@@ -219,8 +219,8 @@ static void fx_comp(int32_t *m, uint32_t n)
     int32_t amt = fx_p[FXP_CMP_AMT], ka = (int32_t)FX_CMP_ATK[fx_p[FXP_CMP_ATK]], kr = (int32_t)FX_CMP_REL[fx_p[FXP_CMP_REL]];
     int32_t thr = -6144 - amt * 20480 / 127;                       /* log2 re full scale: -1.5 .. -6.5 (-9 .. -39 dB) */
     int32_t slope = 4096 - 4096 * 2 * 127 / (3 * 127 + 9 * amt);    /* 1 - 1/R, R = 1.5 + 4.5 amt/127; Q12 */
-    int32_t mk = (int32_t)(((int64_t)slope * (-6144 - thr) * 5) >> 16);   /* make-up: ~0.3 of the reduction at the
-                                                                     * piano's peak: about level-neutral (0.6) */
+    int32_t mk = -17736 > thr ? (slope * (-17736 - thr)) >> 12 : 0;   /* make-up: the reduction a typical piano
+                                                                     * level (-26 dBFS) gets: level-neutral (0.7) */
     uint32_t sb, j;
     if (!fx_p[FXP_CMP_SW]) { fx_cmp_gr = 0; return; }
     for (sb = 0; sb < n; sb += 16u) {
