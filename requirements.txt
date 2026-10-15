@@ -4,3 +4,4 @@ python-rtmidi
 numpy
 scipy
 pytest
+sounddevice
