@@ -2,14 +2,15 @@
 
 **A physically modelled Fender Rhodes electric piano for the M-VAVE FM-1.**
 
-![Frodhes on the FM-1: the main page, VOICE, PHASER and COMPRESSOR](docs/manual/img/overview.png)
+![Frodhes on the FM-1: the PERFORM, main, PHASER and COMPRESSOR pages](docs/manual/img/overview.png)
 
 Frodhes turns the FM-1 into an electric piano. Every note is computed live from the mechanics of a Rhodes: a hammer
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound, with the bark of
 hard notes and the bell of the attack. Four instrument types (Stage 77, Suitcase, Early Felt, Bell Dyno), a
 reface CP-style effects chain (compressor, drive, tremolo / wah, phaser, chorus, delay, reverb), tap tempo with MIDI
 clock sync, scales, a sustain pedal and 12 factory plus 16 user presets. The screen shows one page at a time with
-four cards, one for each of the FM-1's four knobs.
+four cards, one for each of the FM-1's four knobs; the first page, PERFORM, puts the effects' dry / wet (or
+anything you assign) on those four knobs for playing live.
 
 **Try it in your browser: [the Frodhes emulator](https://leonardomirabal.github.io/frodhes/)**: the same firmware
 code compiled to WebAssembly, with the FM-1's screen, knobs, buttons and keys (computer keyboard and Web MIDI too).
@@ -37,7 +38,9 @@ the MIDI map.
 
 | Page | K1 | K2 | K3 | K4 | Button |
 | --- | --- | --- | --- | --- | --- |
-| **FRODHES** (main) | TYPE | DRIVE | REVERB | KEY VEL | HOME |
+| **PERFORM** | TREM/WAH | PHASER | CHORUS | DELAY | HOME (assignable on ASSIGN) |
+| **ASSIGN** | what K1 plays | what K2 plays | what K3 plays | what K4 plays | (SELECT) |
+| **FRODHES** (main) | TYPE | DRIVE | REVERB | KEY VEL | HOME twice |
 | **VOICE** | TONE | BARK | BELL | HAMMER | EDIT |
 | **DECAY** | DECAY | RELEASE | NOISE | TUNE | ENV |
 | **COMPRESSOR** | THRESHOLD | RATIO | ATTACK | MAKEUP | ENV twice (there: on / off) |
@@ -49,7 +52,7 @@ the MIDI map.
 | **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | (SELECT) |
 | **SETUP** | MIDI CLOCK | DELAY TONE | LEVEL | (name, version) | GLO twice |
 
-**SELECT** turns the pages, **K1–K4** turn the cards, **ALGORITHM** picks the TYPE, **PRESETS** browses sounds,
+**SELECT** turns the pages, **K1–K4** turn the cards (on **PERFORM**: the effects' dry / wet, or what you assign), **ALGORITHM** picks the TYPE, **PRESETS** browses sounds,
 **FX** switches all effects off / on, **PLAY** taps the tempo, **REC** is the sustain pedal, **SAVE** stores a preset.
 
 ## Build

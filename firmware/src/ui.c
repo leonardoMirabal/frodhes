@@ -4,10 +4,10 @@
  * (a full screen is ~77 ms of SPI: drawn at once it would delay the keys).
  *
  *   SELECT     turns through the pages (the order of the chain):
- *              FRODHES (the main page) VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE SETUP
+ *              PERFORM ASSIGN FRODHES (the main page) VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE SETUP
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on any page)          PRESETS  sounds (presets.c)
- *   shortcuts  HOME = the main page, EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEQ / SEL / ARP = TREM / PHASER /
+ *   shortcuts  HOME = PERFORM (again: the main page), EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEQ / SEL / ARP = TREM / PHASER /
  *              CHORUS / DELAY (on that page: the effect on / off), GLO = TEMPO (again: SETUP).
  *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo. REC: sustain. */
 
@@ -19,14 +19,18 @@ static void preset_name(uint32_t idx, char *s);
 static void tempo_tap(void);                          /* tempo.c */
 static void tempo_set10(uint32_t b);
 
-enum { PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_TEMPO, PG_SCALE, PG_SETUP, PG_N };
+enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_TEMPO, PG_SCALE,
+       PG_SETUP, PG_N };
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_N = 8, E_CARDS = 10 };   /* E_CARDS: all four */
 /* card slots: a parameter id (< P_COUNT) or one of these */
-enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_NONE = 0xFF };
+enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
+       S_NONE = 0xFF };
 
-static const char *const PAGE_TITLE[PG_N] = {"FRODHES", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
+static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
                                              "CHORUS", "DELAY", "TEMPO", "SCALE", "SETUP"};
 static const uint8_t PAGE_S[PG_N][4] = {
+    {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
+    {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
     {P_TYPE, P_DRIVE, P_RV_DEPTH, S_KVEL},
     {P_TONE, P_BARK, P_BELL, P_HAMMER},
     {P_DECAY, P_RELEASE, P_NOISE, S_TUNE},
@@ -40,6 +44,8 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {S_CLOCK, P_DL_TONE, P_LEVEL, S_NONE},
 };
 static const char *const PAGE_LAB[PG_N][4] = {
+    {"", "", "", ""},                                   /* PERFORM: the assigned parameter's name (slot_label) */
+    {"PLAYS", "PLAYS", "PLAYS", "PLAYS"},
     {"TYPE", "DRIVE", "REVERB", "KEY VEL"},
     {"TONE", "BARK", "BELL", "HAMMER"},
     {"DECAY", "RELEASE", "NOISE", "TUNE"},
@@ -52,7 +58,8 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"MODE", "SCALE", "ROOT", "TRANSP"},
     {"CLOCK", "DLY TONE", "LEVEL", ""},
 };
-static const char *const PAGE_HINT[PG_N] = {"FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
+static const char *const PAGE_HINT[PG_N] = {"NEXT PAGE: ASSIGN THE KNOBS", "WHAT EACH PERFORM KNOB PLAYS",
+                                            "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
                                             "", "LFO BUTTON: ON / OFF", "SEQ BUTTON: ON / OFF", "SEL BUTTON: ON / OFF",
                                             "ARP BUTTON: ON / OFF", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT", ""};
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
@@ -109,6 +116,44 @@ static void fx_wake(uint32_t sw_id)
         }
 }
 
+/* ---- PERFORM: four knobs that play whatever ASSIGN gives them; by default the effects' dry / wet. The list is
+ * append-only (settings keep an index into it). */
+typedef struct { uint8_t id; const char *name; } perf_t;
+static const perf_t PERF_T[] = {
+    {P_TW_DEPTH, "TREM/WAH"}, {P_PH_DEPTH, "PHASER"}, {P_CP_DEPTH, "CHORUS"}, {P_DL_DEPTH, "DELAY"},
+    {P_RV_DEPTH, "REVERB"}, {P_DRIVE, "DRIVE"}, {P_CMP_AMT, "COMP THR"}, {P_CMP_GAIN, "COMP MKUP"},
+    {P_TW_RATE, "TREM RATE"}, {P_TW_SHAPE, "TREM SHAPE"}, {P_PH_SPEED, "PHA SPEED"}, {P_PH_FDBK, "PHA FEEDBK"},
+    {P_CP_SPEED, "CHO SPEED"}, {P_DL_TIME, "DLY TIME"}, {P_DL_FDBK, "DLY FEEDBK"}, {P_DL_TONE, "DLY TONE"},
+    {P_TONE, "TONE"}, {P_BARK, "BARK"}, {P_BELL, "BELL"}, {P_HAMMER, "HAMMER"}, {P_DECAY, "DECAY"},
+    {P_RELEASE, "RELEASE"}, {P_NOISE, "NOISE"}, {S_KVEL, "KEY VEL"}, {P_LEVEL, "LEVEL"},
+};
+#define PERF_N (sizeof PERF_T / sizeof PERF_T[0])
+static uint32_t perf_idx(uint32_t k)                     /* knob k's entry in PERF_T */
+{
+    uint32_t v = set.perf[k];
+    return v && v <= PERF_N ? v - 1u : k;                /* default: TREM/WAH, PHASER, CHORUS, DELAY */
+}
+/* turning an effect's amount up from PERFORM switches the effect on (TREM/WAH: as TREM unless WAH was chosen) */
+static void perf_wake(uint32_t id)
+{
+    if (!PV(id)) return;
+    if (id == P_TW_DEPTH && !PV(P_TW_SW)) param_set(P_TW_SW, 1);
+    else if (id == P_PH_DEPTH && !PV(P_PH_SW)) param_set(P_PH_SW, 1);
+    else if (id == P_CP_DEPTH && !PV(P_CP_SW)) param_set(P_CP_SW, 1);
+    else if (id == P_DL_DEPTH && !PV(P_DL_SW)) param_set(P_DL_SW, 1);
+    else if (id == P_CMP_AMT && !PV(P_CMP_SW)) { param_set(P_CMP_SW, 1); if (!PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, 15); }
+}
+/* the slot a card shows: PERFORM's are resolved to the assigned parameter */
+static uint32_t slot_at(uint32_t pg, uint32_t k)
+{
+    uint32_t s = PAGE_S[pg][k];
+    return s >= S_PERF0 && s < S_PERF0 + 4u ? PERF_T[perf_idx(s - S_PERF0)].id : s;
+}
+static const char *slot_label(uint32_t pg, uint32_t k)
+{
+    return pg == PG_PERF ? PERF_T[perf_idx(k)].name : PAGE_LAB[pg][k];
+}
+
 /* ---- card slots */
 static uint32_t tw_kind(void)
 {
@@ -128,6 +173,7 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_ROOT: *hi = 11; return set.sc_root;
     case S_TRANS: *hi = 48; return set.sc_trans + 24;
     case S_TWKIND: *hi = 3; return (int32_t)tw_kind();
+    case S_ASG0: case S_ASG0 + 1: case S_ASG0 + 2: case S_ASG0 + 3: *hi = PERF_N - 1; return (int32_t)perf_idx(s - S_ASG0);
     default: *hi = 0; return 0;
     }
 }
@@ -164,6 +210,7 @@ static void slot_text(uint32_t s, char *v)
     case S_ROOT: p_strcpy(v, NOTE_NAME[set.sc_root], 3); return;
     case S_TRANS: fmt_signed(v, set.sc_trans); return;
     case S_TWKIND: p_strcpy(v, TWKIND_NAME[tw_kind()], 5); return;
+    case S_ASG0: case S_ASG0 + 1: case S_ASG0 + 2: case S_ASG0 + 3: p_strcpy(v, PERF_T[perf_idx(s - S_ASG0)].name, 12); return;
     case S_NONE: return;
     default: break;
     }
@@ -204,6 +251,9 @@ static void slot_turn(uint32_t s, int32_t d)
         fx_wake(P_TW_SW);
         break;
     }
+    case S_ASG0: case S_ASG0 + 1: case S_ASG0 + 2: case S_ASG0 + 3:
+        set.perf[s - S_ASG0] = (uint8_t)(clampi((int32_t)perf_idx(s - S_ASG0) + sgn(d), 0, PERF_N - 1) + 1);
+        break;
     default: break;
     }
     ui_changed();
@@ -264,7 +314,7 @@ static void draw_title(void)
 
 static void draw_card(uint32_t k)
 {
-    uint32_t s = PAGE_S[ui_page][k];
+    uint32_t s = slot_at(ui_page, k);
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
     cv_begin(118, 68, C_BLACK);
     if (s != S_NONE) {
@@ -273,7 +323,7 @@ static void draw_card(uint32_t k)
         cv_rect(0, 0, 118, 68, hot ? UI_ACC : C_LINE);
         cv_rect(1, 1, 116, 66, C_BLACK);
         cv_text(5, 3, &FONT_S, kk, C_DIM);
-        cv_text(28, 3, &FONT_S, PAGE_LAB[ui_page][k], C_GRAY);
+        cv_text(28, 3, &FONT_S, slot_label(ui_page, k), C_GRAY);
         slot_text(s, v);
         if (text_w(&FONT_L, v) <= 112) text_c(0, 21, 118, &FONT_L, v, C_HI);
         else text_c(0, 29, 118, &FONT_S, v, C_HI);
@@ -428,7 +478,7 @@ static void ui_draw(void)
 /* ---- input */
 static void ui_goto(uint32_t pg)
 {
-    if (pg >= PG_N) pg = PG_PIANO;
+    if (pg >= PG_N) pg = PG_PERF;
     ui_page = (uint8_t)pg;
     ui_hot_card = 0xFF;
     ui_draw_page_change();
@@ -463,7 +513,7 @@ static void ui_input(uint32_t b, uint32_t rel)
         presets_poll(d[ENC_PRESETS], was ? d[ENC_KNOB1] : 0, b, rel);
         if (was || pr_save_mode) { ui_mark(E_FOOTER); return; }      /* the save mode owns the pass */
     }
-    if (b >> BTN_HOME & 1u) ui_goto(PG_PIANO);
+    if (b >> BTN_HOME & 1u) ui_goto(ui_page == PG_PERF ? PG_PIANO : PG_PERF);    /* PERFORM <-> the main page */
     if (b >> BTN_EDIT & 1u) ui_goto(PG_VOICE);
     if (b >> BTN_ENV & 1u) {                            /* DECAY -> COMP; on COMP: the compressor on / off */
         if (ui_page == PG_COMP) ui_fx_button(PG_COMP, 4);
@@ -493,9 +543,10 @@ static void ui_input(uint32_t b, uint32_t rel)
         ui_mark(E_CARDS);
     }
     for (k = 0; k < 4u; k++) {
-        uint32_t s = PAGE_S[ui_page][k];
+        uint32_t s = slot_at(ui_page, k);
         if (!d[ENC_KNOB1 + k] || s == S_NONE) continue;
         slot_turn(s, d[ENC_KNOB1 + k]);
+        if (ui_page == PG_PERF && s < P_COUNT) perf_wake(s);
         if (ui_msg_t) { ui_msg_t = 0; ui_mark(E_FOOTER); }   /* an old message would contradict the card */
         if (ui_hot_card != k && ui_hot_card < 4u) ui_mark(E_CARD0 + ui_hot_card);
         ui_hot_card = (uint8_t)k; ui_hot_t = fm1_ms;
@@ -515,7 +566,7 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     fm1_led_key(BTN_SEL, PV(P_CP_SW) != 0);
     fm1_led_key(BTN_ARP, PV(P_DL_SW) != 0);
     fm1_led_key(BTN_SEQ, PV(P_PH_SW) != 0);
-    fm1_led_key(BTN_HOME, ui_page == PG_PIANO);
+    fm1_led_key(BTN_HOME, ui_page == PG_PIANO || ui_page == PG_PERF);
     fm1_led_key(BTN_EDIT, ui_page == PG_VOICE);
     fm1_led_key(BTN_ENV, PV(P_CMP_SW) != 0);
     fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP);

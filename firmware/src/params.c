@@ -90,7 +90,8 @@ typedef struct {
     uint8_t last_on[3], hints_seen;
     uint8_t panel[32], undo[32], undo_valid;   /* version 1: ids 0..31 */
     uint8_t panel2[16], undo2[16];             /* version 2: ids 32..47 (byte 89 on: the old reserved area) */
-    uint8_t reserved[135];
+    uint8_t perf[4];                           /* 0.9: the PERFORM knobs, ui.c PERF_T index + 1 (0 = the default) */
+    uint8_t reserved[131];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 
@@ -136,6 +137,7 @@ static void params_sanitize(void)
         for (i = 0; i < P_SLOTS; i++) p[i] = i < 32u ? set.panel[i] : i < P_COUNT ? PARAMS[i].def : 0;
         for (i = 0; i < 16u; i++) set.panel2[i] = set.undo2[i] = 0;
         for (i = 0; i < sizeof set.reserved; i++) set.reserved[i] = 0;
+        for (i = 0; i < 4u; i++) set.perf[i] = 0;
         params_split_phaser(p, P_SLOTS);
         for (i = 0; i < P_SLOTS; i++) PV(i) = p[i];
         set.undo_valid = 0;

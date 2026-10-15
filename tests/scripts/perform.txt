@@ -1,0 +1,29 @@
+# PERFORM (the first page): K1..K4 are the effects' dry / wet by default: TREM/WAH, PHASER, CHORUS, DELAY.
+# Buttons: LFO 5, SEQ 11, SEL 3, ARP 10, HOME 8; encoders SELECT 0, K1..K4 = 2..5.
+# Turning an amount up switches its effect on (its LED lights), with the sound changing at once.
+100 expect led 5 0
+100 expect led 11 0
+200 turn 3 20
+300 expect led 11 1
+400 turn 2 20
+400 turn 4 20
+400 turn 5 20
+500 expect led 5 1
+500 expect led 3 1
+500 expect led 10 1
+600 keys 0x80
+900 keys 0
+950 shot
+# ASSIGN (SELECT one detent): K1 steps to the next entry, PHASER; back on PERFORM, K1 turns the phaser too
+1000 turn 0 1
+1100 turn 2 4
+1200 shot
+1300 turn 0 -1
+1400 turn 2 30
+1500 shot
+# HOME flips to the main page; HOME again: PERFORM
+1600 btn 8
+1700 expect led 8 1
+1800 shot
+1900 btn 8
+2000 end

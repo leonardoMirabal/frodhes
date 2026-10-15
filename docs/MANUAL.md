@@ -7,7 +7,7 @@ strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns 
 are played back. Around the piano sits an effects chain modelled on the Yamaha reface CP: compressor, drive,
 tremolo or wah, phaser, chorus, delay and reverb.
 
-![The main page, VOICE, PHASER and COMPRESSOR](manual/img/overview.png)
+![The PERFORM, main, PHASER and COMPRESSOR pages](manual/img/overview.png)
 
 ## Contents
 
@@ -36,7 +36,7 @@ tremolo or wah, phaser, chorus, delay and reverb.
 
 <img src="manual/img/splash.png" alt="The start screen" width="240" align="right">
 
-Frodhes starts with its own screen: the name and the version installed. It gives way to the main page after a moment,
+Frodhes starts with its own screen: the name and the version installed. It gives way to the PERFORM page after a moment,
 or as soon as you touch a button or a knob.
 <br clear="right">
 
@@ -61,7 +61,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **ALGORITHM** (knob) | The Rhodes TYPE, from any page |
 | **PRESETS** (knob) | Browse the sounds F01–F12 and your U01–U16 (loads when you stop turning) |
 | **MASTER** (knob) | Volume |
-| **HOME** | The main page (titled FRODHES) |
+| **HOME** | PERFORM page; press again for the main page (titled FRODHES), and back |
 | **EDIT** | VOICE page |
 | **ENV** | DECAY page; press again for COMPRESSOR; on COMPRESSOR it switches the compressor on / off |
 | **LFO** | TREM/WAH page; press again there to switch it on / off |
@@ -76,9 +76,35 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **OCT− / OCT+** | Octave down / up (±2) |
 
 The lights tell you what is on: LFO, SEQ, SEL, ARP and ENV light up when their effect is on, FX when the effects are
-active, REC while the sustain holds, PLAY on the beat when something is synced, and HOME / EDIT on their page.
+active, REC while the sustain holds, PLAY on the beat when something is synced, HOME on PERFORM and the main page, EDIT on VOICE.
 
 ## 4. The pages
+
+### PERFORM
+
+![PERFORM](manual/img/perform.png)
+
+The first page, made for playing: four knobs for the sound while you play. Out of the box they are the dry / wet of
+the effects:
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **TREM/WAH** | How much tremolo (or auto-pan / wah, as chosen on its page) |
+| K2 | **PHASER** | How much phaser |
+| K3 | **CHORUS** | How much chorus |
+| K4 | **DELAY** | How much delay |
+
+Turning an effect up from here **switches it on**, so you can go from dry to wet with one knob; its light comes on.
+Turning it back to 0 makes it dry again. **FX** still bypasses all of them at once.
+
+### ASSIGN
+
+![ASSIGN](manual/img/assign.png)
+
+Choose what each PERFORM knob plays: K1 here sets what K1 on PERFORM does, and so on. Each knob can play any of:
+TREM/WAH, PHASER, CHORUS, DELAY, REVERB, DRIVE, COMP THR, COMP MKUP, TREM RATE, TREM SHAPE, PHA SPEED, PHA FEEDBK,
+CHO SPEED, DLY TIME, DLY FEEDBK, DLY TONE, TONE, BARK, BELL, HAMMER, DECAY, RELEASE, NOISE, KEY VEL and LEVEL. The
+choice is kept when you switch off (it belongs to the FM-1, not to a preset).
 
 ### FRODHES (the main page)
 

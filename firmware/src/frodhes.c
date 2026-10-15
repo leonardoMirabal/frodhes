@@ -123,7 +123,7 @@ static void app_main(void)
     tempo_set10(set.bpm10);
     set_dirty = 0;
     presets_load_bank();
-    ui_goto(PG_PIANO);
+    ui_goto(PG_PERF);
     ui_splash();
 
     for (;;) {

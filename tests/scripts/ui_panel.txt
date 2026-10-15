@@ -1,6 +1,8 @@
 # Pages (ui.c): buttons LFO 5, FX 2, ARP 10, EDIT 6, HOME 8, GLO 7, PLAY 12; encoders SELECT 0, K1 = 2.
-# boot: the PIANO page (HOME lit). SELECT walks the pages: one detent -> VOICE (EDIT lit).
+# boot: the PERFORM page (HOME lit); HOME: the main page (still lit). SELECT walks the pages: one detent -> VOICE
+# (EDIT lit).
 100 expect led 8 1
+150 btn 8
 200 turn 0 1
 300 expect led 6 1
 300 expect led 8 0
