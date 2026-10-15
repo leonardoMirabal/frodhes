@@ -2,7 +2,7 @@
 
 **A physically modelled Fender Rhodes electric piano for the M-VAVE FM-1.**
 
-![Frodhes on the FM-1: the PIANO, VOICE, PHASER and COMPRESSOR pages](docs/manual/img/overview.png)
+![Frodhes on the FM-1: the main page, VOICE, PHASER and COMPRESSOR](docs/manual/img/overview.png)
 
 Frodhes turns the FM-1 into an electric piano. Every note is computed live from the mechanics of a Rhodes: a hammer
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound, with the bark of
@@ -37,7 +37,7 @@ the MIDI map.
 
 | Page | K1 | K2 | K3 | K4 | Button |
 | --- | --- | --- | --- | --- | --- |
-| **PIANO** | TYPE | DRIVE | REVERB | KEY VEL | HOME |
+| **FRODHES** (main) | TYPE | DRIVE | REVERB | KEY VEL | HOME |
 | **VOICE** | TONE | BARK | BELL | HAMMER | EDIT |
 | **DECAY** | DECAY | RELEASE | NOISE | TUNE | ENV |
 | **COMPRESSOR** | THRESHOLD | RATIO | ATTACK | MAKEUP | ENV twice (there: on / off) |

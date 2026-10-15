@@ -4,10 +4,10 @@
  * (a full screen is ~77 ms of SPI: drawn at once it would delay the keys).
  *
  *   SELECT     turns through the pages (the order of the chain):
- *              PIANO VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE SETUP
+ *              FRODHES (the main page) VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE SETUP
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on any page)          PRESETS  sounds (presets.c)
- *   shortcuts  HOME = PIANO, EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEQ / SEL / ARP = TREM / PHASER /
+ *   shortcuts  HOME = the main page, EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEQ / SEL / ARP = TREM / PHASER /
  *              CHORUS / DELAY (on that page: the effect on / off), GLO = TEMPO (again: SETUP).
  *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo. REC: sustain. */
 
@@ -24,7 +24,7 @@ enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_N = 
 /* card slots: a parameter id (< P_COUNT) or one of these */
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_NONE = 0xFF };
 
-static const char *const PAGE_TITLE[PG_N] = {"PIANO", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
+static const char *const PAGE_TITLE[PG_N] = {"FRODHES", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
                                              "CHORUS", "DELAY", "TEMPO", "SCALE", "SETUP"};
 static const uint8_t PAGE_S[PG_N][4] = {
     {P_TYPE, P_DRIVE, P_RV_DEPTH, S_KVEL},

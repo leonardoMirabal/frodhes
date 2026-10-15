@@ -7,7 +7,7 @@ strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns 
 are played back. Around the piano sits an effects chain modelled on the Yamaha reface CP: compressor, drive,
 tremolo or wah, phaser, chorus, delay and reverb.
 
-![The PIANO, VOICE, PHASER and COMPRESSOR pages](manual/img/overview.png)
+![The main page, VOICE, PHASER and COMPRESSOR](manual/img/overview.png)
 
 ## Contents
 
@@ -36,7 +36,7 @@ tremolo or wah, phaser, chorus, delay and reverb.
 
 <img src="manual/img/splash.png" alt="The start screen" width="240" align="right">
 
-Frodhes starts with its own screen: the name and the version installed. It gives way to the PIANO page after a moment,
+Frodhes starts with its own screen: the name and the version installed. It gives way to the main page after a moment,
 or as soon as you touch a button or a knob.
 <br clear="right">
 
@@ -61,7 +61,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **ALGORITHM** (knob) | The Rhodes TYPE, from any page |
 | **PRESETS** (knob) | Browse the sounds F01–F12 and your U01–U16 (loads when you stop turning) |
 | **MASTER** (knob) | Volume |
-| **HOME** | PIANO page |
+| **HOME** | The main page (titled FRODHES) |
 | **EDIT** | VOICE page |
 | **ENV** | DECAY page; press again for COMPRESSOR; on COMPRESSOR it switches the compressor on / off |
 | **LFO** | TREM/WAH page; press again there to switch it on / off |
@@ -80,9 +80,11 @@ active, REC while the sustain holds, PLAY on the beat when something is synced, 
 
 ## 4. The pages
 
-### PIANO
+### FRODHES (the main page)
 
-![PIANO](manual/img/piano.png)
+The first page carries the instrument's name as its title and holds the piano's essentials.
+
+![The main page](manual/img/piano.png)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -266,7 +268,7 @@ release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with ha
 
 ## 10. Sound and volume tips
 
-- **KEY VEL** on the PIANO page is your touch. 96–108 is a good start; the bark comes in above about 100.
+- **KEY VEL** on the main page is your touch. 96–108 is a good start; the bark comes in above about 100.
 - **MASTER is digital.** For the least hiss on the headphone jack, keep MASTER high and turn your speakers or
   headphones down instead. Between notes the output is exact silence, so the jack is silent too.
 - **TYPE** changes the whole instrument: try BELL DYNO for glassy ballads and SUITCASE for the classic vibrato with
@@ -299,7 +301,7 @@ jack's hiss.
 ## 12. If something goes wrong
 
 - **No sound:** check MASTER, that FX has not bypassed a sound you relied on (BYP in the header), and LEVEL on SETUP.
-- **The sound is thin or quiet:** raise KEY VEL on the PIANO page.
+- **The sound is thin or quiet:** raise KEY VEL on the main page.
 - **A crash** shows a message with a PC number, then the FM-1 restarts. Please report the number.
 - **It does not start:** switch the FM-1 off, hold **OCT−** and switch it on. That is the USB rescue: install again
   from the hub or with `fm1_install.py`. Your FM-1 can always be recovered this way.
