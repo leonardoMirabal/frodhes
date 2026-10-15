@@ -1,151 +1,369 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Frodhes engine: the electric piano voices.
+/* Frodhes engine: the physically modelled Rhodes voice (IMPLEMENTATION-v3 §4.3, §5).
  *
- * PLACEHOLDER. This is a decaying sine with a touch of second harmonic, only so that the voice handling,
- * the damper and the sustain pedal can be built and heard now. The physical model (hammer, tine, tonebar,
- * pickup) replaces the inside of rh_render() and rh_strike(); the interface below stays.
+ * Per voice: a hammer force pulse (shapes from a host contact simulation) drives the tine's normal modes (V1 the
+ * tine-bar sustain mode exactly on f0, V2 the other tine-bar mode, O1/O2 the tine's 2nd/3rd modes, H1 the
+ * horizontal polarisation in Phase 3). Each mode is an exact-pole coupled-form resonator ("MC3") with first-order
+ * error feedback. The tip displacement goes through the electromagnetic pickup: a radial flux table Phi~(s),
+ * s = (x + off)^2 + h^2, evaluated by cubic Hermite, output = the exact flux difference. The voices sum into a
+ * mono mix that passes the pickup load (RLC biquad). All the physics is precomputed per key on the host
+ * (tools/gen_rhodes.py -> firmware/gen/rhodes_tables.h).
  *
- * The interface (frodhes.c uses only this):
- *   rh_note_on(note, vel)   main loop: strike a tine
- *   rh_note_off(note)       main loop: key up; the damper falls unless the pedal holds it
- *   rh_pedal(on)            main loop: the sustain pedal (MIDI CC 64)
- *   rh_render(out, n)       audio ISR: add n stereo frames (L R L R, Q15) to out
- *   rh_quiet()              main loop: nothing sounds (safe to write the flash)
- *   rh_lit(base, n)         main loop: bit k = note base + k is held (for the LEDs and the screen)
- *
- * Main loop / ISR handover: the main loop writes a voice's parameters first and bumps `strike` last; the ISR
- * starts the voice when it sees `strike` change. `damped` is a single byte, written by the main loop only.
- * Integers only (docs/RULES.md): Q15 levels, 32-bit phases, envelopes once per RH_BLOCK frames. */
+ * Main loop interface (unchanged for frodhes.c):
+ *   rh_note_on(note, vel), rh_note_off(note), rh_pedal(on) / rh_pedal_level(cc)   post events
+ *   rh_quiet(), rh_lit(base, n), rh_hold                                            read summaries
+ * ISR: rh_render(out, n) adds n stereo frames (L R L R, Q15) to out.
+ * The ISR owns every voice; the main loop only posts 32-bit events into a single-producer ring (P1). */
+#include "fxp.h"
+#ifndef RING_PUBLISH
+#define RING_PUBLISH() do { } while (0)     /* host mode: one thread, no barrier needed */
+#endif
 
-#define RH_NV 8u                                /* voices */
-#define RH_BLOCK 16u                            /* frames per envelope step */
-#define RH_ENV_ONE (1 << 24)                    /* envelope full scale: Q24 */
+/* ---- generated-table types (must match tools/gen_rhodes.py) */
+typedef struct { int32_t sh, ch, th, d, drel, cr, b; } rh_mode_t;
+typedef struct {
+    rh_mode_t m[5];
+    int32_t off, gain, kill, hc, pk;
+    uint16_t prate, life;
+    uint8_t band, fam, res, pad;
+} rh_key_t;
+typedef struct {
+    int8_t band_shift;
+    int32_t gscale, off_delta, bell;
+    uint8_t rlc, drive_row;
+    int16_t eq_lo, eq_hi;
+} rh_type_t;
+#include "rhodes_tables.h"
 
-static struct {
-    /* written by the main loop */
-    volatile uint32_t inc;                      /* phase step per frame: f * 2^32 / FS */
-    volatile int32_t level;                     /* strike level, Q15 */
-    volatile int32_t decay;                     /* envelope factor per block while the key is held, Q24 */
-    volatile uint32_t strike;                   /* bumped last: the ISR starts the voice */
-    volatile uint8_t damped;                    /* the damper is on the tine */
-    uint8_t note, key;                          /* the note; key: still held */
-    uint32_t age;
-    /* written by the ISR (the main loop only reads `seen` and `env`) */
-    volatile uint32_t seen;
-    volatile int32_t env;                       /* Q24; 0 = silent */
-    uint32_t ph;
-} rv[RH_NV];
+#define RH_V1 0u
+#define RH_O1 2u
+#define RH_O2 3u
+#define RH_NV 8u
+#define SUB 32u
+#define RAMP_SUB 7u
+#define FADE_SAMPLES 64u
+#define Q30 (1 << 30)
+#define RH_S_MAX_HI 2048u                      /* s >> 44 at 32 gap^2 */
 
-static volatile uint8_t rh_hold;                /* sustain pedal down */
+typedef struct {
+    int32_t x, y, ex, ey;                      /* Q25 gap, MC3 states and error-feedback remainders */
+    int32_t e, eps;                            /* live Q30 */
+    int32_t e0, eps0, e1, eps1;                /* sustain pair, release pair */
+    int32_t es, epss;                          /* values at the start of the current crossfade */
+    int32_t b;                                 /* Q30 force (Q15) -> y (Q25), with the TYPE bell */
+    int32_t peak;
+    uint8_t live;
+} rh_ms_t;
+
+typedef struct {
+    rh_ms_t m[RH_NM];
+    const rh_key_t *k;
+    uint8_t note, vel, alive, held;
+    uint8_t ramp;                              /* damper crossfade sub-blocks left */
+    int32_t w_tgt;                             /* damper weight Q15: 0 = undamped, 32768 = full felt */
+    uint8_t pend, pend_note, pend_vel;         /* a start waiting for the steal fade */
+    int32_t fade;                              /* Q15 output gain while fading out (32768 = not fading) */
+    uint32_t age, life;
+    int32_t Hprev, off, gain;
+    uint32_t ppos, prate;
+    int32_t pamp;
+    const int16_t *ptab;
+} rh_voice_t;
+
+static rh_voice_t rv[RH_NV];
+static int32_t rh_mono[256], rh_x[SUB], rh_F[SUB];
 static uint32_t rh_ages;
+static int32_t rh_pedal_w = 32768;             /* ISR copy: damper weight for keys that are up */
+static int32_t rlc_m1, rlc_m2, rlc_o1, rlc_o2, rlc_e;
+static uint8_t rh_type;
 
-static int32_t rh_sine(uint32_t ph)             /* a full cycle over 2^32 -> -32767..32767 (refined parabola, ~0.1 %) */
+/* ISR-written summaries (one writer each) */
+static volatile uint32_t rh_active_bits, rh_held_bits, rh_quiet_blocks;
+static volatile uint8_t rh_notes[RH_NV];
+
+/* ---- the event ring (main loop writes ev_w, ISR writes ev_r) */
+#define EV_NOTE_ON 1u
+#define EV_NOTE_OFF 2u
+#define EV_PEDAL 3u
+#define EV_ALL_OFF 4u
+static volatile uint32_t ev_q[32];
+static volatile uint32_t ev_w, ev_r, ev_drop;
+static volatile uint8_t rh_hold;               /* main loop: the sustain pedal is down (for the screen/LED) */
+
+static void rh_post(uint32_t type, uint32_t note, uint32_t val)
 {
-    int32_t x = (int32_t)ph >> 16, ax = x < 0 ? -x : x, y, ay;
-    y = (x * (32768 - ax)) >> 13;
-    ay = y < 0 ? -y : y;
-    y += ((((y * ay) >> 15) - y) * 7373) >> 15;
-    return y > 32767 ? 32767 : y < -32767 ? -32767 : y;
+    uint32_t w = ev_w;
+    if (w - ev_r >= 32u) { ev_drop++; return; }
+    ev_q[w & 31u] = type << 28 | (note & 127u) << 16 | (val & 0xFFFFu);
+    RING_PUBLISH();
+    ev_w = w + 1u;
 }
 
-/* ---- audio ISR */
-#define RH_RELEASE ((int32_t)(RH_ENV_ONE - 101460)) /* damped: ~60 ms time constant at 44.1 kHz, 16-frame blocks */
+static void rh_note_on(uint32_t note, uint32_t vel) { if (note < 128u && vel && vel < 128u) rh_post(EV_NOTE_ON, note, vel); }
+static void rh_note_off(uint32_t note) { if (note < 128u) rh_post(EV_NOTE_OFF, note, 0); }
+static void rh_pedal_level(uint32_t cc) { rh_hold = (uint8_t)(cc >= 64u); rh_post(EV_PEDAL, 0, cc > 127u ? 127u : cc); }
+static void rh_pedal(int on) { rh_pedal_level(on ? 127u : 0u); }
+static void rh_all_off(void) { rh_post(EV_ALL_OFF, 0, 0); }
 
-static void rh_render(int32_t *out, uint32_t n)
-{
-    uint32_t v, i, j;
-    for (v = 0; v < RH_NV; v++) {
-        uint32_t ph, inc;
-        int32_t env, lvl, k;
-        if (rv[v].strike != rv[v].seen) {       /* a new strike: from the top */
-            rv[v].seen = rv[v].strike;
-            rv[v].ph = 0;
-            rv[v].env = RH_ENV_ONE;
-        }
-        env = rv[v].env;
-        if (!env)
-            continue;                           /* silent: costs nothing */
-        ph = rv[v].ph;
-        inc = rv[v].inc;
-        lvl = rv[v].level;
-        k = rv[v].damped ? RH_RELEASE : rv[v].decay;
-        for (i = 0; i < n; i += RH_BLOCK) {
-            int32_t a = (int32_t)(((int64_t)lvl * env) >> 24);   /* Q15 amplitude for this block */
-            for (j = i; j < i + RH_BLOCK && j < n; j++) {
-                int32_t s;
-                ph += inc;
-                s = rh_sine(ph) + (rh_sine(ph << 1) >> 3);          /* PLACEHOLDER timbre */
-                s = (s * a) >> 15;
-                out[2u * j] += s;
-                out[2u * j + 1u] += s;
-            }
-            env = (int32_t)(((int64_t)env * k) >> 24);
-            if (env < 256) { env = 0; break; }  /* -96 dB: off */
-        }
-        rv[v].ph = ph;
-        rv[v].env = env;
-    }
-}
-
-/* ---- main loop */
-static const uint32_t RH_INC_C9[12] = {         /* MIDI 120..131 (C9..B9) at 44.1 kHz; lower octaves shift right */
-    815363807u, 863847862u, 915214929u, 969636441u, 1027294024u, 1088380105u,
-    1153098554u, 1221665363u, 1294309365u, 1371273005u, 1452813141u, 1539201906u};
-
-static void rh_note_on(uint32_t note, uint32_t vel)
-{
-    uint32_t v, pick = 0, best = 0xFFFFFFFFu;
-    if (note > 127u || !vel || vel > 127u) return;
-    for (v = 0; v < RH_NV; v++) {               /* the same note, else a silent voice, else a damped one, else the oldest */
-        uint32_t score = rv[v].note == note ? 0u
-                       : !rv[v].env && rv[v].strike == rv[v].seen ? 1u   /* (a strike not yet started is busy) */
-                       : rv[v].damped ? 0x40000000u + rv[v].age
-                       : 0x80000000u + rv[v].age;
-        if (score < best) { best = score; pick = v; }
-    }
-    rv[pick].note = (uint8_t)note;
-    rv[pick].key = 1;
-    rv[pick].age = ++rh_ages;
-    rv[pick].inc = RH_INC_C9[note % 12u] >> (10u - note / 12u);
-    rv[pick].level = (int32_t)(vel * vel * 2u);             /* 127 -> 32258 Q15; the square: a softer touch */
-    rv[pick].level >>= 2;                                   /* headroom for RH_NV voices */
-    rv[pick].decay = RH_ENV_ONE - (int32_t)(1200u + note * 90u);   /* PLACEHOLDER: high notes die sooner */
-    rv[pick].damped = 0;
-    rv[pick].strike++;                          /* last: the ISR picks it up */
-}
-
-static void rh_note_off(uint32_t note)
-{
-    uint32_t v;
-    for (v = 0; v < RH_NV; v++)
-        if (rv[v].note == note && rv[v].key) {
-            rv[v].key = 0;
-            if (!rh_hold) rv[v].damped = 1;
-        }
-}
-
-static void rh_pedal(int on)
-{
-    uint32_t v;
-    rh_hold = (uint8_t)(on != 0);
-    if (!on)
-        for (v = 0; v < RH_NV; v++)
-            if (!rv[v].key) rv[v].damped = 1;
-}
-
-static int rh_quiet(void)
-{
-    uint32_t v;
-    for (v = 0; v < RH_NV; v++)
-        if (rv[v].env || rv[v].strike != rv[v].seen) return 0;
-    return 1;
-}
+static int rh_quiet(void) { return rh_active_bits == 0 && rh_quiet_blocks >= 2u && ev_w == ev_r; }
 
 static uint32_t rh_lit(uint32_t base, uint32_t n)
 {
-    uint32_t v, lit = 0;
+    uint32_t v, lit = 0, act = rh_active_bits & rh_held_bits;
     for (v = 0; v < RH_NV; v++)
-        if (rv[v].key && rv[v].note >= base && rv[v].note < base + n)
-            lit |= 1u << (rv[v].note - base);
+        if (act >> v & 1u && rh_notes[v] >= base && rh_notes[v] < base + n)
+            lit |= 1u << (rh_notes[v] - base);
     return lit;
+}
+
+/* ---- run-time coefficient path (§5.6): (E, eps) from (sin, cos of theta/2, theta, d, cr), cents t, decay k */
+static void rh_coef(const rh_mode_t *m, int32_t d30, int32_t t30, int32_t k16, int32_t *E, int32_t *eps)
+{
+    int32_t a = (int32_t)(((int64_t)k16 * (k16 - 65536)) >> 16);          /* k(k-1), Q16 */
+    int32_t c = (int32_t)(((int64_t)a * (k16 - 131072)) >> 16);           /* k(k-1)(k-2), Q16 */
+    int32_t d2 = mul30(d30, d30), d3 = mul30(d2, d30);
+    int64_t dp = (((int64_t)k16 * d30) >> 16) - ((((int64_t)a * d2) >> 16) >> 1)
+               + (int32_t)(((int64_t)c * d3) >> 16) / 6;
+    int32_t dpi = dp < 1 ? 1 : (int32_t)dp;
+    int32_t dp2 = mul30(dpi, dpi), dp3 = mul30(dp2, dpi);
+    int32_t q = Q30 - (dpi >> 2) - 3 * (dp2 >> 5);
+    int32_t om = (dpi >> 1) + (dp2 >> 3) + (dp3 >> 4);
+    int32_t dl = mul30(m->th, t30);
+    int32_t dl2 = mul30(dl, dl), dl3 = mul30(dl2, dl), dl4 = mul30(dl2, dl2), dl5 = mul30(dl4, dl);
+    int32_t cdl = Q30 - (dl2 >> 1) + dl4 / 24, sdl = dl - dl3 / 6 + dl5 / 120;
+    int32_t sp = mul30(m->sh, cdl) + mul30(m->ch, sdl);
+    int32_t cr = m->cr - 2 * mul30(m->cr, t30) + 3 * mul30(m->cr, mul30(t30, t30));
+    int32_t corr = Q30 + mul16(mul30(om, om), cr);
+    int32_t t1 = (int32_t)(((int64_t)q * sp) >> 29);                      /* 2 q sin(theta'/2), Q30 */
+    *E = mul30(t1, corr);
+    *eps = dpi;
+}
+
+/* ---- voices (ISR) */
+static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
+{
+    uint32_t key = (uint32_t)(v->k - RH_KEYS), i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
+    const uint16_t *pa = RH_PAMP[key];
+    const uint32_t *pr = RH_PRATE[key];
+    v->ptab = RH_PULSE[key][RH_VLAYER[vel]];
+    v->pamp = (int32_t)pa[i] + ((((int32_t)pa[i + 1] - (int32_t)pa[i]) * (int32_t)f) >> 8);
+    v->prate = (uint32_t)((int32_t)pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;  /* Q12 -> Q16 */
+    v->ppos = 0;
+}
+
+static int32_t rh_hermite(const int32_t *P, const int32_t *M, int64_t s)
+{
+    uint32_t i, t;
+    int32_t p0, p1, m0, m1, c2, c3, a;
+    if (s < 0) s = 0;
+    if ((uint64_t)s >= ((uint64_t)RH_S_MAX_HI << 44)) s = ((int64_t)RH_S_MAX_HI << 44) - 1;
+    i = (uint32_t)(s >> 44);
+    t = (uint32_t)(s >> 22) & 0x3FFFFFu;
+    p0 = P[i]; p1 = P[i + 1]; m0 = M[i]; m1 = M[i + 1];
+    c3 = 2 * (p0 - p1) + m0 + m1;
+    c2 = 3 * (p1 - p0) - 2 * m0 - m1;
+    a = c2 + (int32_t)(((int64_t)t * c3) >> 22);
+    a = m0 + (int32_t)(((int64_t)t * a) >> 22);
+    return p0 + (int32_t)(((int64_t)t * a) >> 22);
+}
+
+static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
+{
+    const rh_type_t *ty = &RH_TYPE[rh_type];
+    uint32_t m, n = note < RH_KEY_LO ? RH_KEY_LO : note > RH_KEY_LO + RH_NKEY - 1u ? RH_KEY_LO + RH_NKEY - 1u : note;
+    const rh_key_t *k = &RH_KEYS[n - RH_KEY_LO];
+    int32_t u;
+    v->k = k;
+    for (m = 0; m < RH_NM; m++) {
+        rh_ms_t *s = &v->m[m];
+        const rh_mode_t *km = &k->m[m];
+        s->x = s->y = s->ex = s->ey = 0;
+        s->peak = 0;
+        s->live = km->th != 0;
+        if (!s->live) { s->e = s->eps = 0; continue; }
+        rh_coef(km, km->d, 0, 65536, &s->e0, &s->eps0);
+        rh_coef(km, km->drel, 0, 65536, &s->e1, &s->eps1);
+        s->e = s->es = s->e0; s->eps = s->epss = s->eps0;
+        s->b = (m == RH_O1 || m == RH_O2) ? mul16(km->b, ty->bell) : km->b;
+    }
+    v->note = (uint8_t)note; v->vel = (uint8_t)vel;
+    v->off = k->off + ty->off_delta;
+    v->gain = k->gain;
+    u = v->off;
+    v->Hprev = rh_hermite(RH_PHI[k->fam], RH_SLOPE[k->fam], (int64_t)u * u);
+    v->alive = 1; v->held = 1; v->ramp = 0; v->w_tgt = 0;
+    v->fade = 32768; v->pend = 0;
+    v->age = ++rh_ages;
+    v->life = k->life;
+    rh_load_pulse(v, vel);
+}
+
+static void rh_set_damper(rh_voice_t *v, int32_t w)
+{
+    uint32_t m;
+    if (w == v->w_tgt) return;
+    for (m = 0; m < RH_NM; m++) { v->m[m].es = v->m[m].e; v->m[m].epss = v->m[m].eps; }
+    v->w_tgt = w;
+    v->ramp = RAMP_SUB;
+}
+
+static void rh_strike(uint32_t note, uint32_t vel)
+{
+    uint32_t i, pick = RH_NV, best = 0xFFFFFFFFu;
+    for (i = 0; i < RH_NV; i++)                         /* the same note still sounding: re-strike, superpose */
+        if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) {
+            rh_voice_t *v = &rv[i];
+            uint32_t m;
+            for (m = 0; m < RH_NM; m++) if (v->k->m[m].th) v->m[m].live = 1;
+            v->vel = (uint8_t)vel; v->held = 1; v->age = ++rh_ages; v->life = v->k->life;
+            rh_set_damper(v, 0);
+            rh_load_pulse(v, vel);
+            return;
+        }
+    for (i = 0; i < RH_NV; i++)
+        if (!rv[i].alive) { rh_init(&rv[i], note, vel); return; }
+    for (i = 0; i < RH_NV; i++) {                       /* steal: the quietest released voice, else the oldest */
+        uint32_t m, sum = 0, score;
+        if (rv[i].pend) continue;
+        for (m = 0; m < RH_NM; m++) sum += (uint32_t)rv[i].m[m].peak >> 4;
+        score = rv[i].held ? 0x80000000u + (rv[i].age & 0x7FFFFFFFu) : (sum > 0x7FFFFFFFu ? 0x7FFFFFFFu : sum);
+        if (score < best) { best = score; pick = i; }
+    }
+    if (pick == RH_NV) pick = 0;
+    rv[pick].pend = 1; rv[pick].pend_note = (uint8_t)note; rv[pick].pend_vel = (uint8_t)vel;
+    if (rv[pick].fade == 32768) rv[pick].fade = 32767;
+}
+
+static void rh_events(void)
+{
+    while (ev_r != ev_w) {
+        uint32_t e = ev_q[ev_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu, i;
+        ev_r = ev_r + 1u;
+        if (type == EV_NOTE_ON) rh_strike(note, val);
+        else if (type == EV_NOTE_OFF) {
+            for (i = 0; i < RH_NV; i++)
+                if (rv[i].alive && rv[i].note == note && rv[i].held) { rv[i].held = 0; rh_set_damper(&rv[i], rh_pedal_w); }
+        } else if (type == EV_PEDAL) {
+            rh_pedal_w = PEDAL_W[val];
+            for (i = 0; i < RH_NV; i++)
+                if (rv[i].alive && !rv[i].held) rh_set_damper(&rv[i], rh_pedal_w);
+        } else if (type == EV_ALL_OFF) {
+            for (i = 0; i < RH_NV; i++)
+                if (rv[i].alive) { rv[i].held = 0; rh_set_damper(&rv[i], 32768); }
+        }
+    }
+}
+
+/* one voice, one 32-frame sub-block, added into mix[0..SUB) */
+static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
+{
+    const rh_key_t *k = v->k;
+    const int32_t *P = RH_PHI[k->fam], *M = RH_SLOPE[k->fam];
+    uint32_t j, m;
+    int32_t sum = 0, Hp = v->Hprev, off = v->off, gain = v->gain;
+    if (v->ramp) {                                        /* damper crossfade: E and eps together */
+        int32_t f;
+        v->ramp--;
+        f = (int32_t)(RAMP_SUB - v->ramp) * 4681;         /* Q15 of i/7 */
+        if (f > 32768) f = 32768;
+        if (!v->ramp) f = 32768;
+        for (m = 0; m < RH_NM; m++) {
+            rh_ms_t *s = &v->m[m];
+            int32_t et, pt;
+            if (!s->live) continue;
+            et = s->e0 + (int32_t)(((int64_t)(s->e1 - s->e0) * v->w_tgt) >> 15);
+            pt = s->eps0 + (int32_t)(((int64_t)(s->eps1 - s->eps0) * v->w_tgt) >> 15);
+            s->e = s->es + (int32_t)(((int64_t)(et - s->es) * f) >> 15);
+            s->eps = s->epss + (int32_t)(((int64_t)(pt - s->epss) * f) >> 15);
+        }
+    }
+    for (j = 0; j < SUB; j++) {                           /* hammer force for the sub-block */
+        if (v->ptab) {
+            uint32_t i = v->ppos >> 16;
+            int32_t f = (int32_t)((v->ppos >> 1) & 0x7FFFu);
+            int32_t a = v->ptab[i], b = v->ptab[i + 1];
+            rh_F[j] = mul15s(a + (int32_t)(((int64_t)(b - a) * f) >> 15), v->pamp);
+            v->ppos += v->prate;
+            if ((v->ppos >> 16) >= RH_PLEN) v->ptab = 0;
+        } else
+            rh_F[j] = 0;
+        rh_x[j] = 0;
+    }
+    for (m = 0; m < RH_NM; m++) {                         /* modes: MC3 + error feedback, mode-outer */
+        rh_ms_t *s = &v->m[m];
+        int32_t x, y, ex, ey, e, eps, b, pk = 0;
+        if (!s->live) continue;
+        x = s->x; y = s->y; ex = s->ex; ey = s->ey; e = s->e; eps = s->eps; b = s->b;
+        for (j = 0; j < SUB; j++) {
+            int64_t t;
+            if (rh_F[j]) y += (int32_t)(((int64_t)rh_F[j] * b) >> 20);
+            t = (int64_t)e * y + ex;
+            x += (int32_t)(t >> 30); ex = (int32_t)(t & 0x3FFFFFFF);
+            t = -(int64_t)eps * y - (int64_t)e * x + ey;
+            y += (int32_t)(t >> 30); ey = (int32_t)(t & 0x3FFFFFFF);
+            rh_x[j] += x;
+            if (iabs(x) > pk) pk = iabs(x);
+            if (iabs(y) > pk) pk = iabs(y);
+        }
+        s->x = sat28(x); s->y = sat28(y); s->ex = ex; s->ey = ey; s->peak = pk;
+        sum += pk >> 3;
+    }
+    for (j = 0; j < SUB; j++) {                           /* pickup, then the per-key gain into the mix */
+        int32_t u = rh_x[j] + off;
+        int32_t H = rh_hermite(P, M, (int64_t)u * u);
+        int32_t o = (int32_t)(((int64_t)(H - Hp) * gain) >> 24);
+        Hp = H;
+        if (v->fade != 32768) {
+            o = (int32_t)(((int64_t)o * v->fade) >> 15);
+            v->fade -= (int32_t)(32768 / FADE_SAMPLES);
+            if (v->fade < 0) v->fade = 0;
+        }
+        mix[j] += o;
+    }
+    v->Hprev = Hp;
+    if (v->fade == 0) {                                   /* a steal finished fading: start the waiting note */
+        v->alive = 0;
+        if (v->pend) rh_init(v, v->pend_note, v->pend_vel);
+        return;
+    }
+    if (!v->ptab && sum < (k->kill >> 3)) { v->alive = 0; return; }
+    for (m = 1; m < RH_NM; m++)                           /* sleep overtone modes that have died away */
+        if (v->m[m].live && !v->ptab && v->m[m].peak < (k->kill >> 3)) {
+            v->m[m].live = 0; v->m[m].x = v->m[m].y = v->m[m].ex = v->m[m].ey = 0;
+        }
+}
+
+static void rh_render(int32_t *out, uint32_t n)
+{
+    uint32_t i, sb, j, act = 0, held = 0;
+    int32_t mx = 0;
+    const int32_t *c = RH_RLC[RH_TYPE[rh_type].rlc];
+    rh_events();
+    for (i = 0; i < n; i++) rh_mono[i] = 0;
+    for (i = 0; i < RH_NV; i++) {
+        rh_voice_t *v = &rv[i];
+        for (sb = 0; sb < n && v->alive; sb += SUB)
+            rh_voice_sub(v, rh_mono + sb);
+        if (v->alive && v->life && --v->life == 0) v->alive = 0;
+    }
+    for (j = 0; j < n; j++) {     /* pickup load: RLC low-pass on the mix (Q28 DF1, error feedback); Q20 -> Q15 */
+        int32_t m = rh_mono[j], o;
+        int64_t acc = (int64_t)c[0] * m + (int64_t)c[1] * rlc_m1 + (int64_t)c[2] * rlc_m2
+                    - (int64_t)c[3] * rlc_o1 - (int64_t)c[4] * rlc_o2 + rlc_e;
+        o = (int32_t)(acc >> 28); rlc_e = (int32_t)(acc & 0xFFFFFFF);
+        rlc_m2 = rlc_m1; rlc_m1 = m; rlc_o2 = rlc_o1; rlc_o1 = o;
+        o = (o + 16) >> 5;                                   /* round, no DC bias */
+        if (iabs(o) > mx) mx = iabs(o);
+        out[2u * j] += o;
+        out[2u * j + 1u] += o;
+    }
+    for (i = 0; i < RH_NV; i++)
+        if (rv[i].alive) { act |= 1u << i; rh_notes[i] = rv[i].note; if (rv[i].held) held |= 1u << i; }
+    if (!act && mx < 2) {                                 /* exact silence once everything has ended */
+        rlc_m1 = rlc_m2 = rlc_o1 = rlc_o2 = rlc_e = 0;
+        if (rh_quiet_blocks < 0xFFFFu) rh_quiet_blocks++;
+    } else
+        rh_quiet_blocks = 0;
+    rh_held_bits = held;
+    rh_active_bits = act;
 }

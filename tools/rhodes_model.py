@@ -19,6 +19,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pickup as pu  # noqa: E402
+import rh_coefs as rc  # noqa: E402
 
 FS = 44100.0
 SUB = 32
@@ -31,36 +32,55 @@ def layer_of(v):
     return int(np.argmin([abs(v - c) for c in LAYER_V]))
 
 
-def ED(f, t60):
-    """Exact MC3 coefficients: E = sqrt(1 + r^2 - 2 r cos(theta)), D = r^2; f = 0 -> absent (E = 0, D = 0)."""
-    if f <= 0 or f > 18000:
+def ED(f, t60, t60_rel=None, release=False):
+    """MC3 coefficients (E, D = 1 - eps) as floats, from the SAME integer coefficient path as the C engine
+    (rh_coefs.coef), so the golden model and the firmware share their pitch and decay to the last bit."""
+    w = rc.mode_coefs(f, t60, t60_rel if t60_rel else t60)
+    if not w["th"]:
         return 0.0, 0.0
-    th = 2 * math.pi * f / FS
-    r = math.exp(-6.907755279 / (t60 * FS))
-    return math.sqrt(1 + r * r - 2 * r * math.cos(th)), r * r
+    E, eps = rc.coef(w, w["drel"] if release else w["d"])
+    return E / rc.Q30, 1.0 - eps / rc.Q30
 
 
-def _prep(specs, bands, vels):
+V_ANCH = [1, 8, 24, 40, 56, 72, 88, 104, 120, 127]
+
+
+def vpos(v):
+    i = max(a for a in range(len(V_ANCH) - 1) if V_ANCH[a] <= v)
+    return i, int(round(256 * (v - V_ANCH[i]) / (V_ANCH[i + 1] - V_ANCH[i])))
+
+
+def pulse_params(spec, v):
+    """(shape int16 list, pamp Q15, prate Q16) exactly as rh_load_pulse() computes them."""
+    pz = spec["pulse"]
+    i, f = vpos(v)
+    f = min(f, 255)
+    pa = pz["pamp"][i] + (((pz["pamp"][i + 1] - pz["pamp"][i]) * f) >> 8)
+    pr = (pz["prate"][i] + (((pz["prate"][i + 1] - pz["prate"][i]) * f) >> 8)) << 4
+    return pz["shapes"][layer_of(v)], pa, pr
+
+
+def _prep(specs, vels):
     n = len(specs)
     nm = len(specs[0]["modes"])
     E0 = np.zeros((n, nm)); D0 = np.zeros((n, nm)); E1 = np.zeros((n, nm)); D1 = np.zeros((n, nm))
     B = np.zeros((n, nm))
     shapes = np.zeros((n, PLEN + 2)); pamp = np.zeros(n); prate = np.zeros(n)
     for i, (s, v) in enumerate(zip(specs, vels)):
-        bd = bands[s["band"]]
         for m, md in enumerate(s["modes"]):
-            E0[i, m], D0[i, m] = ED(md["f"], md["t60"])
-            E1[i, m], D1[i, m] = ED(md["f"], md["t60_rel"])
-            B[i, m] = md.get("b", 0.0) if E0[i, m] else 0.0
-        shapes[i, :PLEN] = bd["shapes"][layer_of(v)]
-        pamp[i] = bd["vamp"][v - 1]
-        prate[i] = s["prate"] * bd["vrate"][v - 1]
+            E0[i, m], D0[i, m] = ED(md["f"], md["t60"], md["t60_rel"])
+            E1[i, m], D1[i, m] = ED(md["f"], md["t60"], md["t60_rel"], release=True)
+            B[i, m] = round(md.get("b", 0.0) * rc.Q30) / rc.Q30 if E0[i, m] else 0.0
+        sh, pa, pr = pulse_params(s, v)
+        shapes[i, :PLEN] = np.array(sh) / 32768.0
+        pamp[i] = pa / 32768.0
+        prate[i] = pr / 65536.0
     return E0, D0, E1, D1, B, shapes, pamp, prate
 
 
-def modes_batch(specs, bands, vels, n, off_at=None):
+def modes_batch(specs, vels, n, off_at=None):
     """Tip displacement (gap units) per note: x[n_notes, n] = sum of the mode states, the exact C structure."""
-    E0, D0, E1, D1, B, shapes, pamp, prate = _prep(specs, bands, vels)
+    E0, D0, E1, D1, B, shapes, pamp, prate = _prep(specs, vels)
     nn, nm = E0.shape
     x = np.zeros((nn, nm)); y = np.zeros((nn, nm))
     E = E0.copy(); D = D0.copy()
@@ -116,24 +136,24 @@ def rlc(x, q, f0=5000.0):
     return lfilter([b0, b1, b2], [1, a1, a2], x, axis=-1)
 
 
-def render_batch(specs, bands, fams, vels, dur, off_at=None, gains=None, q=1.0):
+def render_batch(specs, fams, vels, dur, off_at=None, gains=None, q=1.0):
     """Q15-unit output per note: ((dPhi~/A * 2^28) * (gain * 2^16) >> 24) >> 5 = dPhi~/A * gain * 2^15, then the RLC.
     fams: [{"A": table normalisation, "R": pole radius / gap}] per pickup family."""
     n = int(dur * FS)
-    tip = modes_batch(specs, bands, vels, n, off_at)
+    tip = modes_batch(specs, vels, n, off_at)
     d = pickup_batch(tip, [s["off"] for s in specs], [s["fam"] for s in specs],
                      [f["A"] for f in fams], [f["R"] for f in fams])
     g = np.array([1.0 if gains is None else gains[i] for i in range(len(specs))])
     return rlc(d * g[:, None] * 32768.0, q)
 
 
-def v1_peak(spec, bands, vel, dur=0.15):
+def v1_peak(spec, vel, dur=0.15):
     """Peak |x| of V1 alone for one strike (used to scale b so the tip reaches its target amplitude)."""
     s = dict(spec)
     s["modes"] = [dict(m) for m in spec["modes"]]
     for m in s["modes"][1:]:
         m["b"] = 0.0
-    tip = modes_batch([s], bands, [vel], int(dur * FS))
+    tip = modes_batch([s], [vel], int(dur * FS))
     return float(np.max(np.abs(tip)))
 
 

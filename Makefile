@@ -15,7 +15,7 @@ setup:                     ## project-local venv, toolchain and the 3 SDK files
 	[ -x .local/jieli/toolchain/pi32v2/bin/clang ] || sh tools/get_toolchain.sh .local/jieli
 	sh tools/get_sdk.sh .local/fw-AC79_AIoT_SDK
 
-$(HOSTBIN): firmware/src/*.c firmware/src/*.h tests/host.c
+$(HOSTBIN): firmware/src/*.c firmware/src/*.h firmware/gen/*.h tests/host.c
 	@mkdir -p build/host
 	$(CC) $(CFLAGS_HOST) -o $@ firmware/src/frodhes.c -lm
 

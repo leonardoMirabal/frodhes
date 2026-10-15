@@ -17,7 +17,26 @@ OS = 16
 
 def contact(v, m_h, K, p=2.5, Rd=0.0, modes=(), fs=44100, t_max=0.02, os_=OS):
     """Force on the tine (N) at fs*os_, from first touch until t_max. modes: [(f_hz, sigma, phi_at_strike)].
-    With no modes the tine is a rigid, immovable wall."""
+    With no modes the tine is a rigid, immovable wall. A stiff contact that makes the explicit RK4 blow up is
+    re-run at 4x the internal rate (up to 256x fs)."""
+    with np.errstate(over="ignore", invalid="ignore"):
+        r = _contact(v, m_h, K, p, Rd, modes, fs, t_max, os_)
+    while not np.all(np.isfinite(r["F"])) and os_ < 256:
+        os_ *= 4
+        with np.errstate(over="ignore", invalid="ignore"):
+            r = _contact(v, m_h, K, p, Rd, modes, fs, t_max, os_)
+    if not np.all(np.isfinite(r["F"])):
+        raise FloatingPointError("contact: unstable even at 256x fs")
+    if os_ != OS:                                   # resample the force to the standard 16x grid
+        step = os_ // OS
+        n = len(r["F"]) // step
+        r["F"] = r["F"][:n * step].reshape(n, step).mean(axis=1)
+        r["dt"] = r["dt"] * step
+        r["t"] = np.arange(n) * r["dt"]
+    return r
+
+
+def _contact(v, m_h, K, p, Rd, modes, fs, t_max, os_):
     dt = 1.0 / (fs * os_)
     nm = len(modes)
     w = np.array([2 * np.pi * m[0] for m in modes])
@@ -49,16 +68,23 @@ def contact(v, m_h, K, p=2.5, Rd=0.0, modes=(), fs=44100, t_max=0.02, os_=OS):
     y[1] = v
     n = int(t_max / dt)
     F = np.zeros(n)
+    touched = False
     for i in range(n):
         k1, F[i] = deriv(y)
         k2, _ = deriv(y + 0.5 * dt * k1)
         k3, _ = deriv(y + 0.5 * dt * k2)
         k4, _ = deriv(y + dt * k3)
         y = y + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+        touched |= F[i] > 0
+        if touched and F[i] == 0 and y[1] < 0:      # free and moving away: stop once clearly clear of the tine
+            xt = float(ph @ y[2:2 + nm]) if nm else 0.0
+            if xt - y[0] > 2e-4:
+                F = F[:i + 1]
+                break
     nz = np.nonzero(F > 0)[0]
     Tc = (nz[-1] + 1) * dt if len(nz) else 0.0
     first_end = nz[np.argmax(np.diff(np.append(nz, nz[-1] + 2)) > 1)] + 1 if len(nz) else 0
-    return dict(F=F, t=np.arange(n) * dt, Tc=Tc, Tc_first=first_end * dt, impulse=float(np.sum(F) * dt),
+    return dict(F=F, t=np.arange(len(F)) * dt, Tc=Tc, Tc_first=first_end * dt, impulse=float(np.sum(F) * dt),
                 v_out=float(y[1]), dt=dt)
 
 

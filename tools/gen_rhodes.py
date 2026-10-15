@@ -177,44 +177,54 @@ def contact_run(p, K, v, modes):
     return hm.contact(hammer_speed(p, v), h["mass_kg"], K, h["p"], Rd, modes=modes, t_max=0.03)
 
 
-def band_pulses(p, phys_by_key):
-    out = []
-    for b in range(NBAND):
-        rep = p["bands"]["rep_key"][b]
-        modes = phys_by_key[rep]["fe_modes"]
-        K = p["bands"]["K"][b]
-        shapes = []
-        for v in LAYER_V:
-            r = contact_run(p, K, v, modes)
-            n = int(round(r["Tc"] / r["dt"]))
-            Fv = r["F"][:max(n, 2)]
-            x = np.linspace(0, len(Fv) - 1, PLEN)
-            sh = np.interp(x, np.arange(len(Fv)), Fv)
-            shapes.append(sh / max(sh.max(), 1e-30))
-        vs = [1, 8, 16, 32, 48, 64, 80, 96, 100, 112, 127]
-        tcs, fpk = [], []
-        for v in vs:
-            r = contact_run(p, K, v, modes)
-            tcs.append(r["Tc"]); fpk.append(r["F"].max())
-        allv = np.arange(1, 128)
-        tc_all = np.exp(np.interp(allv, vs, np.log(tcs)))
-        fp_all = np.exp(np.interp(allv, vs, np.log(fpk)))
-        tc100 = float(np.exp(np.interp(100, vs, np.log(tcs))))
-        out.append(dict(K=K, tc100=tc100, shapes=shapes, tc=tc_all, fpk=fp_all,
-                        vamp=fp_all / fp_all[-1], vrate=tc100 / tc_all))
-    return out
+V_ANCH = [1, 8, 24, 40, 56, 72, 88, 104, 120, 127]   # velocity anchors of the per-key amplitude / rate laws
+
+
+def key_pulses(p, k):
+    """The key's own coupled hammer-tine contact (§6.6), per velocity anchor: the force shape at the 8 layer
+    velocities (64 points over the contact, peak 32767), and at every anchor the pulse rate (Q12 samples of the
+    shape per output sample) and the peak force (Q15 re v = 127). Ints, exactly what the C tables hold."""
+    tc = p["hammer"]["tc_v100"]
+    tgt = max(min(tc["max_ms"] * 1e-3, tc["period_frac"] / k["f0"]), tc.get("min_ms", 0.0) * 1e-3)
+    lo, hi = 1e6, 1e14                                # felt stiffness for this key, by log bisection on T_c(v = 100)
+    for _ in range(26):
+        K = math.sqrt(lo * hi)
+        if contact_run(p, K, 100, k["fe_modes"])["Tc"] > tgt:
+            lo = K
+        else:
+            hi = K
+    K = math.sqrt(lo * hi)
+    sims = {v: contact_run(p, K, v, k["fe_modes"]) for v in V_ANCH}
+    for v in LAYER_V:
+        if v not in sims:
+            sims[v] = contact_run(p, K, v, k["fe_modes"])
+    shapes = []
+    for v in LAYER_V:
+        r = sims[v]
+        n = int(round(r["Tc"] / r["dt"]))
+        Fv = r["F"][:max(n, 2)]
+        x = np.linspace(0, len(Fv) - 1, PLEN)
+        sh = np.interp(x, np.arange(len(Fv)), Fv)
+        shapes.append([int(round(q * 32767 / max(sh.max(), 1e-30))) for q in sh])
+    fmax = max(sims[v]["F"].max() for v in V_ANCH)        # Q15 re the strongest anchor (normally v = 127)
+    prate = [int(round(64.0 / (sims[v]["Tc"] * FS) * Q12)) for v in V_ANCH]
+    pamp = [max(1, int(round(sims[v]["F"].max() / fmax * 32767))) for v in V_ANCH]
+    assert all(0 < q < 2 ** 31 for q in prate), prate
+    return dict(shapes=shapes, prate=prate, pamp=pamp, K=K, tc_ms=[sims[v]["Tc"] * 1e3 for v in V_ANCH])
+
+
+def vpos():
+    """Per MIDI velocity: the anchor index below it and the Q8 fraction toward the next (shared by C and model)."""
+    idx, frac = [0] * 128, [0] * 128
+    for v in range(1, 128):
+        i = max(a for a in range(len(V_ANCH) - 1) if V_ANCH[a] <= v)
+        idx[v] = i
+        frac[v] = int(round(256 * (v - V_ANCH[i]) / (V_ANCH[i + 1] - V_ANCH[i])))
+    return idx, frac
 
 
 # ---------------------------------------------------------------- coefficients
-def mode_coefs(f, t60, t60_rel):
-    if f <= 0 or f > 18000:
-        return dict(sh=0, ch=0, th=0, d=0, drel=0, cr=0)
-    th = 2 * math.pi * f / FS
-    r = math.exp(-6.907755279 / (t60 * FS))
-    rr = math.exp(-6.907755279 / (t60_rel * FS))
-    return dict(sh=int(round(math.sin(th / 2) * Q30)), ch=int(round(math.cos(th / 2) * Q30)),
-                th=max(1, int(round(th * Q29))), d=int(math.ceil((1 - r * r) * Q30)),
-                drel=int(math.ceil((1 - rr * rr) * Q30)), cr=int(round(Q16 / (8 * math.sin(th / 2) ** 2))))
+from rh_coefs import mode_coefs  # noqa: E402  (shared with the golden model)
 
 
 def rom_safe(v):
@@ -242,7 +252,7 @@ def build():
     p = load_params()
     Ls = tine_lengths()
     phys = {n: key_physics(p, n, Ls[n]) for n in range(KEY_LO, KEY_HI + 1)}
-    bands = band_pulses(p, phys)
+    pulses = {n: key_pulses(p, phys[n]) for n in range(KEY_LO, KEY_HI + 1)}
     fam_tabs = [pickup_tables(R) for R in p["pickup"]["R"]]
     fams = [dict(A=t[2], R=R) for t, R in zip(fam_tabs, p["pickup"]["R"])]
     import rhodes_model as gm                          # the golden model calibrates b, gain, kill
@@ -253,8 +263,9 @@ def build():
         b = k["band"]
         frac = (n - KEY_LO) / (KEY_HI - KEY_LO)
         target_peak = tp["lo"] + (tp["hi"] - tp["lo"]) * frac
-        prate = 64.0 / (bands[b]["tc100"] * FS)      # pulse samples per output sample at v = 100
-        spec = dict(midi=n, f0=k["f0"], band=b, fam=k["fam"], off=k["off"], prate=prate,
+        pz = pulses[n]
+        spec = dict(midi=n, f0=k["f0"], band=b, fam=k["fam"], off=k["off"], pulse=pz,
+                    tc_ms=float(np.interp(100, V_ANCH, pz["tc_ms"])),
                     modes=[dict(name=m["name"], f=m["f"], t60=m["t60"], t60_rel=m["t60_rel"], w=m["amp"])
                            for m in k["modes"]],
                     ratios=k["ratios"], spring_g=k["spring_g"], L=k["L"])
@@ -262,25 +273,33 @@ def build():
         w1 = spec["modes"][0]["w"]
         for m in spec["modes"]:
             m["b"] = m["w"] / abs(w1) if w1 else 0.0
-        pk = gm.v1_peak(spec, bands, 127)
+        pk = gm.v1_peak(spec, 127)
         scale = target_peak / pk
+        bmax = max(abs(m["b"]) for m in spec["modes"]) * scale
+        if bmax * Q30 >= 2 ** 31 - 1:                  # extremely short treble contacts: keep b in int32
+            scale *= (2 ** 31 - 2) / (bmax * Q30)
         for m in spec["modes"]:
             m["b"] *= scale
         spec_keys.append(spec)
     # gain: v = 100, 1 s RMS -> target dBFS, smoothed over +-3 keys; kill: output below 1 LSB, x2 margin
-    y = gm.render_batch(spec_keys, bands, fams, [100] * len(spec_keys), 1.0)
+    y = gm.render_batch(spec_keys, fams, [100] * len(spec_keys), 1.0)
     rms = [float(np.sqrt(np.mean(r[2205:] ** 2))) + 1e-12 for r in y]
     target = 10 ** (p["gain_target_dbfs"] / 20) * 32767
     g_raw = np.array([target / r for r in rms])
+    # headroom: one voice struck at v = 127 must peak at or below peak_dbfs (the bark spike of the attack)
+    yp = gm.render_batch(spec_keys, fams, [127] * len(spec_keys), 0.25)
+    pk = np.array([float(np.max(np.abs(r))) + 1e-12 for r in yp])
+    g_cap = 10 ** (p.get("peak_dbfs", -9.0) / 20) * 32767 / pk
     g_s = np.array([np.exp(np.mean(np.log(g_raw[max(0, i - 3):i + 4]))) for i in range(len(g_raw))])
+    g_s = np.minimum(g_s, g_cap)                       # the cap applies after smoothing
+    g_s = np.minimum(g_s, (2 ** 31 - 1) / Q16)         # Q16 in int32
     for spec, g in zip(spec_keys, g_s):
         spec["gain"] = float(g)
         spec["kill"] = gm.kill_level(spec, fams, g)
         spec["life_blocks"] = int(min(6891, math.ceil((2 * spec["modes"][0]["t60"] + 1.0) * FS / 256)))
-    spec = dict(gen_version=GEN_VERSION, fs=FS, params=p, keys=spec_keys,
-                bands=[dict(K=b["K"], tc100=b["tc100"], shapes=[s.tolist() for s in b["shapes"]],
-                            vamp=b["vamp"].tolist(), vrate=b["vrate"].tolist()) for b in bands],
-                pickup=fams)
+    idx, frac = vpos()
+    spec = dict(gen_version=GEN_VERSION, fs=FS, params=p, keys=spec_keys, v_anchors=V_ANCH,
+                vpos_idx=idx, vpos_frac=frac, layer_v=LAYER_V, pickup=fams)
     return spec, fam_tabs
 
 
@@ -303,26 +322,28 @@ def emit(spec, fam_tabs):
             b = rom_safe(int(round(m["b"] * Q30))) if c["th"] else 0
             ms.append("{%d,%d,%d,%d,%d,%d,%d}" % (rom_safe(c["sh"]), rom_safe(c["ch"]), rom_safe(c["th"]),
                                                   rom_safe(c["d"]), rom_safe(c["drel"]), rom_safe(c["cr"]), b))
-        prate = int(round(k["prate"] * Q12))
+        prate = min(65535, k["pulse"]["prate"][V_ANCH.index(104)])   # informational only (per-key tables rule)
         rows.append("    {{%s}, %d, %d, %d, 0, 0, %d, %d, %d, %d, 0xFF, 0}," % (
             ",".join(ms), rom_safe(int(round(k["off"] * Q25))), int(round(k["gain"] * Q16)),
             int(round(k["kill"] * Q25)), prate, k["life_blocks"], k["band"], k["fam"]))
     w("static const rh_key_t RH_KEYS[RH_NKEY] = {")
     L.extend(rows)
     w("};")
-    w("static const int16_t RH_PULSE[RH_NBAND][RH_NLAYER][RH_PLEN + 2] = {")
-    for b in spec["bands"]:
-        w("  {")
-        for sh in b["shapes"]:
-            w("    {" + ",".join(str(int(round(x * 32767))) for x in sh) + ",0,0},")
-        w("  },")
+    w("static const int16_t RH_PULSE[RH_NKEY][RH_NLAYER][RH_PLEN + 2] = {")
+    for k in spec["keys"]:
+        w("  {" + ",".join("{" + ",".join(map(str, sh)) + ",0,0}" for sh in k["pulse"]["shapes"]) + "},")
     w("};")
-    for name, key in (("RH_VAMP", "vamp"), ("RH_VRATE", "vrate")):
-        w(f"static const uint16_t {name}[RH_NBAND][128] = {{")
-        for b in spec["bands"]:
-            vals = [0] + [int(round(x * (32767 if key == "vamp" else 4096))) for x in b[key]]
-            w("  {" + ",".join(str(min(v, 65535)) for v in vals) + "},")
-        w("};")
+    w(f"#define RH_NANCH {len(V_ANCH)}")
+    w("static const uint32_t RH_PRATE[RH_NKEY][RH_NANCH] = {")
+    for k in spec["keys"]:
+        w("  {" + ",".join(map(str, k["pulse"]["prate"])) + "},")
+    w("};")
+    w("static const uint16_t RH_PAMP[RH_NKEY][RH_NANCH] = {")
+    for k in spec["keys"]:
+        w("  {" + ",".join(map(str, k["pulse"]["pamp"])) + "},")
+    w("};")
+    w("static const uint8_t RH_VPOS_I[128] = {" + ",".join(map(str, spec["vpos_idx"])) + "};")
+    w("static const uint8_t RH_VPOS_F[128] = {" + ",".join(str(min(255, f)) for f in spec["vpos_frac"]) + "};")
     vl = [int(np.argmin([abs(v - c) for c in LAYER_V])) for v in range(128)]
     w("static const uint8_t RH_VLAYER[128] = {" + ",".join(map(str, vl)) + "};")
     w("static const int32_t RH_PHI[2][RH_PU_N + 1] = {")
@@ -352,12 +373,10 @@ def emit(spec, fam_tabs):
     w("};")
     w("static const int32_t TUNE_T[101] = {" + ",".join(
         str(rom_safe(int(round((2 ** (c / 1200) - 1) * Q30)))) for c in range(-50, 51)) + "};")
-    w("static const uint16_t DECAY_K[128] = {" + ",".join(
-        str(min(65535 * 4, int(round(Q16 / 2 ** ((v - 64) / 32))))) for v in range(128)) + "};")
+    w("static const uint32_t DECAY_K[128] = {" + ",".join(
+        str(int(round(Q16 / 2 ** ((v - 64) / 32)))) for v in range(128)) + "};")
     w("static const uint16_t PEDAL_W[128] = {" + ",".join(str(x) for x in pedal_w()) + "};")
-    names = ["30 duro", "50 duro", "70 duro", "90 duro", "wood"]
-    w("/* hammer bands: " + ", ".join("%s K=%.3g Tc100=%.2f ms" % (nm, b["K"], b["tc100"] * 1e3)
-                                    for nm, b in zip(names, spec["bands"])) + " */")
+    w("/* hammer bands (felt K): " + ", ".join("%s %.3g" % (nm, K) for nm, K in zip(p["bands"]["names"], p["bands"]["K"])) + " */")
     body = "\n".join(L) + "\n"
     digest = hashlib.sha256(body.encode()).hexdigest()
     return body + f"/* sha256(body) = {digest} */\n"
@@ -383,9 +402,8 @@ def main():
         print("key %3d f0 %7.1f band %d fam %d ratio %.2f  V1 %.1fHz T60 %.1fs | V2 %.1fHz T60 %.1fs w %.3f | O1 T60 %.2fs  gain %.0f" % (
             n, s["f0"], s["band"], s["fam"], s["ratios"][0], s["modes"][0]["f"], s["modes"][0]["t60"], s["modes"][1]["f"],
             s["modes"][1]["t60"], abs(s["modes"][1]["w"] / s["modes"][0]["w"]), s["modes"][2]["t60"], s["gain"]))
-    for i, b in enumerate(spec["bands"]):
-        print("band %d K %.3g Tc(100) %.2f ms  Tc(127)/Tc(8) %.2f" % (i, b["K"], b["tc100"] * 1e3,
-                                                                        b["vrate"][7] / b["vrate"][126]))
+    for n in (28, 60, 84, 100):
+        print("key %d contact ms at v=%s: %s" % (n, V_ANCH, " ".join("%.2f" % t for t in k[n]["pulse"]["tc_ms"])))
 
 
 if __name__ == "__main__":

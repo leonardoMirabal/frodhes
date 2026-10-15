@@ -124,18 +124,24 @@
     "p": 2.5,
     "damping_rel": 0.05,
     "v_max": 4.0,
-    "range_db": 30.0
+    "range_db": 30.0,
+    "tc_v100": {
+      "_doc": "per-key felt stiffness K is solved so the coupled contact at v = 100 lasts min(max_ms, period_frac / f0): longer contacts give energy back to the tine and a non-monotonic velocity response (2026-10-15). max_ms = the measured 6.42 ms average (Muenster & Pfeifle 2014) ; min_ms floors the treble (wood tips)",
+      "max_ms": 6.42,
+      "period_frac": 0.4,
+      "min_ms": 0.08
+    }
   },
   "tip_peak_gap_v127": {
     "_doc": "V1 tip peak (gap units) at v = 127: bass .. treble",
-    "lo": 1.6,
-    "hi": 0.7
+    "lo": 1.0,
+    "hi": 0.5
   },
   "pickup": {
-    "_doc": "pole radius / gap per family; family 0 = 1/16 inch gap, family 1 = 1/32 inch gap",
+    "_doc": "pole radius / gap per family (R03 code geometry: R = 1 gap); family 0 = 1/16 inch gap, family 1 = 1/32 inch gap. R = 2 gave a non-monotonic velocity response (2026-10-15 test), so both start at 1.0 until the fit.",
     "R": [
       1.0,
-      2.0
+      1.0
     ],
     "family0_keys": [
       [
@@ -193,5 +199,7 @@
       0.0,
       0.0
     ]
-  }
+  },
+  "peak_dbfs": -9.0,
+  "_doc_levels": "gain_target_dbfs: 1 s RMS of one voice at v = 100; peak_dbfs: the cap on one voice's v = 127 peak (headroom for chords before the master limiter)"
 }
