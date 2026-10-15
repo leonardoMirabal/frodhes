@@ -227,6 +227,33 @@ def vpos():
 from rh_coefs import mode_coefs  # noqa: E402  (shared with the golden model)
 
 
+def biquad(kind, f0, q, gain_db):
+    """RBJ cookbook biquad, normalised (b0, b1, b2, a1, a2)."""
+    A = 10 ** (gain_db / 40)
+    w0 = 2 * math.pi * f0 / FS
+    c, al = math.cos(w0), math.sin(w0) / (2 * q)
+    if kind == "lp2":       # prewarped bilinear, as before (bit-identical for the STAGE 77 load)
+        K = math.tan(math.pi * f0 / FS)
+        nrm = 1 / (1 + K / q + K * K)
+        b0 = K * K * nrm
+        return (b0, 2 * b0, b0, 2 * (K * K - 1) * nrm, (1 - K / q + K * K) * nrm)
+    if kind == "hp2":
+        b, a = [(1 + c) / 2, -(1 + c), (1 + c) / 2], [1 + al, -2 * c, 1 - al]
+    elif kind == "peak":
+        b, a = [1 + al * A, -2 * c, 1 - al * A], [1 + al / A, -2 * c, 1 - al / A]
+    elif kind in ("lshelf", "hshelf"):
+        sq = 2 * math.sqrt(A) * al
+        if kind == "lshelf":
+            b = [A * ((A + 1) - (A - 1) * c + sq), 2 * A * ((A - 1) - (A + 1) * c), A * ((A + 1) - (A - 1) * c - sq)]
+            a = [(A + 1) + (A - 1) * c + sq, -2 * ((A - 1) + (A + 1) * c), (A + 1) + (A - 1) * c - sq]
+        else:
+            b = [A * ((A + 1) + (A - 1) * c + sq), -2 * A * ((A - 1) + (A + 1) * c), A * ((A + 1) + (A - 1) * c - sq)]
+            a = [(A + 1) - (A - 1) * c + sq, 2 * ((A - 1) - (A + 1) * c), (A + 1) - (A - 1) * c - sq]
+    else:
+        raise ValueError(kind)
+    return (b[0] / a[0], b[1] / a[0], b[2] / a[0], a[1] / a[0], a[2] / a[0])
+
+
 def rom_safe(v):
     """Nudge a 32-bit word out of the chip-ROM window (§3.6)."""
     u = v & 0xFFFFFFFF
@@ -354,22 +381,27 @@ def emit(spec, fam_tabs):
     for P, M, A in fam_tabs:
         w("  {" + ",".join(map(str, M)) + "},")
     w("};")
-    # post-mix RLC low-pass per TYPE (prewarped bilinear), Q28
-    w("static const int32_t RH_RLC[4][5] = {")
-    for q in p["rlc"]["q"]:
-        f0 = p["rlc"]["f_hz"]
-        K = math.tan(math.pi * f0 / FS)
-        nrm = 1 / (1 + K / q + K * K)
-        b0 = K * K * nrm; b1 = 2 * b0; b2 = b0; a1 = 2 * (K * K - 1) * nrm; a2 = (1 - K / q + K * K) * nrm
-        w("  {" + ",".join(str(rom_safe(int(round(x * Q28)))) for x in (b0, b1, b2, a1, a2)) + "},")
-    w("};")
+    # per TYPE (physical voicing, docs/model/data/params.json "types"): the pickup load (RLC low-pass), then the
+    # instrument's amp / speaker "body" (up to 2 biquads, identity when unused); all Q28 DF1 (b0 b1 b2 a1 a2)
     ty = p["types"]
-    w("static const rh_type_t RH_TYPE[4] = {")
-    for i, name in enumerate(("STAGE77", "SUITCASE", "FELT", "DYNO")):
-        bs, gs, od, bell, lo, hi = ty[name]
-        w("  {%d, %d, %d, %d, %d, %d, %d, %d}," % (bs, int(round(gs * Q16)), int(round(od * Q25)),
-                                                 int(round(bell * Q16)), i, i,
-                                                 int(round(4096 * 10 ** (lo / 20))), int(round(4096 * 10 ** (hi / 20)))))
+    names = ("STAGE77", "SUITCASE", "FELT", "DYNO")
+    q28 = lambda c: "{" + ",".join(str(rom_safe(int(round(x * Q28)))) for x in c) + "}"
+    w("static const int32_t RH_RLC[4][5] = {")
+    for name in names:
+        f0, q = ty[name]["rlc"]
+        w("  " + q28(biquad("lp2", f0, q, 0.0)) + ",")
+    w("};")
+    w("static const int32_t RH_BODY[4][2][5] = {")
+    for name in names:
+        bq = [biquad(*b) for b in ty[name]["body"]] + [(1.0, 0.0, 0.0, 0.0, 0.0)] * 2
+        w("  {" + ",".join(q28(c) for c in bq[:2]) + "},")
+    w("};")
+    w("static const rh_type_t RH_TYPE[4] = {   /* off (Q25 gap), bark, level/bark, bell, ham (Q16), body biquads, drive row */")
+    for i, name in enumerate(names):
+        t = ty[name]
+        w("  {%d, %d, %d, %d, %d, %d, %d}," % (int(round(t["off"] * Q25)), int(round(t["bark"] * Q16)),
+                                               int(round(Q16 * 10 ** (t.get("level_db", 0.0) / 20) / t["bark"])), int(round(t["bell"] * Q16)),
+                                               int(round(t["ham"] * Q16)), len(t["body"]), t["drive_row"]))
     w("};")
     w("static const int32_t TUNE_T[101] = {" + ",".join(
         str(rom_safe(int(round((2 ** (c / 1200) - 1) * Q30)))) for c in range(-50, 51)) + "};")

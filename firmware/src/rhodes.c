@@ -27,11 +27,11 @@ typedef struct {
     uint16_t prate, life;
     uint8_t band, fam, res, pad;
 } rh_key_t;
-typedef struct {
-    int8_t band_shift;
-    int32_t gscale, off_delta, bell;
-    uint8_t rlc, drive_row;
-    int16_t eq_lo, eq_hi;
+typedef struct {              /* physical voicing per TYPE (params.json "types"); STAGE 77 = all unity */
+    int32_t off_delta;        /* Q25 gap: pickup offset change (+ = toward the pole axis) */
+    int32_t bark, bark_g;     /* Q16: tip / gap scale (pickup distance) and its gain compensation */
+    int32_t bell, ham;        /* Q16: overtone force scale, hammer contact-rate scale */
+    uint8_t nbody, drive_row; /* body biquads in use (RH_BODY), the drive's row */
 } rh_type_t;
 #include "rhodes_tables.h"
 
@@ -77,6 +77,7 @@ static int32_t rh_mono[256], rh_x[SUB], rh_F[SUB];
 static uint32_t rh_ages;
 static int32_t rh_pedal_w = 32768;             /* ISR copy: damper weight for keys that are up */
 static int32_t rlc_m1, rlc_m2, rlc_o1, rlc_o2, rlc_e;
+static int32_t bd_m[2][2], bd_o[2][2], bd_e[2];          /* the TYPE's body biquads */
 static uint8_t rh_type;
 /* voicing, written by the main loop (params.c), applied at each note-on (IMPLEMENTATION-v3 §4.4, §10.1) */
 static volatile int32_t rh_tone_off;           /* Q25: added to the pickup offset (TONE) */
@@ -163,7 +164,13 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
     v->ptab = RH_PULSE[key][RH_VLAYER[vel]];
     v->pamp = (int32_t)pa[i] + ((((int32_t)pa[i + 1] - (int32_t)pa[i]) * (int32_t)f) >> 8);
     v->prate = (uint32_t)((int32_t)pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;  /* Q12 -> Q16 */
-    v->prate = (uint32_t)(((uint64_t)v->prate * (uint32_t)rh_ham) >> 16);                                     /* HAMMER */
+    {   /* HAMMER knob x TYPE tips scale the contact rate; the force scales with it so the impulse (the hammer's
+         * momentum) is kept: a softer tip pushes longer and less hard, it does not give more energy */
+        uint32_t h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
+        v->prate = (uint32_t)(((uint64_t)v->prate * h) >> 16);
+        v->pamp = (int32_t)(((int64_t)v->pamp * h) >> 16);
+        if (v->pamp > 32767) v->pamp = 32767;                                 /* mul15s range */
+    }
     v->ppos = 0;
 }
 
@@ -201,14 +208,14 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
         rh_coef(km, km->drel, rh_tune_t, rh_k_rel, &s->e1, &s->eps1);
         s->e = s->es = s->e0; s->eps = s->epss = s->eps0;
         {   /* force gain: BARK scales the tip (the pickup then barks), BELL the overtones; saturating */
-            int64_t b = ((int64_t)km->b * rh_bark_s) >> 16;
+            int64_t b = ((((int64_t)km->b * rh_bark_s) >> 16) * ty->bark) >> 16;
             if (m == RH_O1 || m == RH_O2) b = (((b * ty->bell) >> 16) * rh_bell) >> 16;
             s->b = b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;
         }
     }
     v->note = (uint8_t)note; v->vel = (uint8_t)vel;
     v->off = k->off + ty->off_delta + rh_tone_off;
-    v->gain = mul16(k->gain, rh_bark_g);
+    v->gain = mul16(mul16(k->gain, rh_bark_g), ty->bark_g);
     u = v->off;
     v->Hprev = rh_hermite(RH_PHI[k->fam], RH_SLOPE[k->fam], (int64_t)u * u);
     v->alive = 1; v->held = 1; v->ramp = 0; v->w_tgt = 0;
@@ -390,7 +397,8 @@ static void rh_render(int32_t *mono_out, uint32_t n)
 {
     uint32_t i, sb, j, act = 0, held = 0;
     int32_t mx = 0;
-    const int32_t *c = RH_RLC[RH_TYPE[rh_type].rlc];
+    uint32_t ty = rh_type & 3u, nb = RH_TYPE[ty].nbody;
+    const int32_t *c = RH_RLC[ty];
     rh_events();
     if (rh_shed_req) { rh_shed_req = 0; rh_shed(); }
     for (i = 0; i < n; i++) rh_mono[i] = 0;
@@ -406,6 +414,15 @@ static void rh_render(int32_t *mono_out, uint32_t n)
                     - (int64_t)c[3] * rlc_o1 - (int64_t)c[4] * rlc_o2 + rlc_e;
         o = (int32_t)(acc >> 28); rlc_e = (int32_t)(acc & 0xFFFFFFF);
         rlc_m2 = rlc_m1; rlc_m1 = m; rlc_o2 = rlc_o1; rlc_o1 = o;
+        for (sb = 0; sb < nb; sb++) {                        /* the instrument's amp / speaker (Q28 DF1) */
+            const int32_t *b = RH_BODY[ty][sb];
+            int64_t a2 = (int64_t)b[0] * o + (int64_t)b[1] * bd_m[sb][0] + (int64_t)b[2] * bd_m[sb][1]
+                       - (int64_t)b[3] * bd_o[sb][0] - (int64_t)b[4] * bd_o[sb][1] + bd_e[sb];
+            int32_t y = (int32_t)(a2 >> 28);
+            bd_e[sb] = (int32_t)(a2 & 0xFFFFFFF);
+            bd_m[sb][1] = bd_m[sb][0]; bd_m[sb][0] = o; bd_o[sb][1] = bd_o[sb][0]; bd_o[sb][0] = y;
+            o = y;
+        }
         o = (o + 16) >> 5;                                   /* round, no DC bias */
         if (iabs(o) > mx) mx = iabs(o);
         mono_out[j] = o;
@@ -414,6 +431,7 @@ static void rh_render(int32_t *mono_out, uint32_t n)
         if (rv[i].alive) { act |= 1u << i; rh_notes[i] = rv[i].note; if (rv[i].held) held |= 1u << i; }
     if (!act && mx < 2) {                                 /* exact silence once everything has ended */
         rlc_m1 = rlc_m2 = rlc_o1 = rlc_o2 = rlc_e = 0;
+        for (sb = 0; sb < 2u; sb++) bd_m[sb][0] = bd_m[sb][1] = bd_o[sb][0] = bd_o[sb][1] = bd_e[sb] = 0;
         if (rh_quiet_blocks < 0xFFFFu) rh_quiet_blocks++;
     } else
         rh_quiet_blocks = 0;

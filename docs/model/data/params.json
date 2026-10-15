@@ -1,205 +1,252 @@
 {
-  "_comment": "Physical parameters for tools/gen_rhodes.py. ALL VALUES ARE PRIORS (ESTIMATE) until the reference fit (IMPLEMENTATION-v3 \u00a77) replaces them.",
-  "version": 1,
-  "spring_pos": 0.65,
-  "t60_v1": {
-    "_doc": "sustain T60 of V1 (s) at MIDI keys, log-interpolated; flat below the first point, halving every 10 keys above the last (floor). Source: Shear 2011 tine Q (1974 Mark I), T60 = 6.908 Q/(pi f0) (research/09)",
-    "points": [
-      [
-        39,
-        26.8
-      ],
-      [
-        51,
-        10.3
-      ],
-      [
-        63,
-        10.7
-      ],
-      [
-        75,
-        7.7
-      ],
-      [
-        87,
-        3.1
-      ]
-    ],
-    "halve_keys": 10.0,
-    "floor_s": 0.8
+ "_comment": "Physical parameters for tools/gen_rhodes.py. ALL VALUES ARE PRIORS (ESTIMATE) until the reference fit (IMPLEMENTATION-v3 \u00a77) replaces them.",
+ "version": 1,
+ "spring_pos": 0.65,
+ "t60_v1": {
+  "_doc": "sustain T60 of V1 (s) at MIDI keys, log-interpolated; flat below the first point, halving every 10 keys above the last (floor). Source: Shear 2011 tine Q (1974 Mark I), T60 = 6.908 Q/(pi f0) (research/09)",
+  "points": [
+   [
+    39,
+    26.8
+   ],
+   [
+    51,
+    10.3
+   ],
+   [
+    63,
+    10.7
+   ],
+   [
+    75,
+    7.7
+   ],
+   [
+    87,
+    3.1
+   ]
+  ],
+  "halve_keys": 10.0,
+  "floor_s": 0.8
+ },
+ "tinebar": {
+  "_doc": "bar_cents_points: [midi, cents of the bar's own f0 relative to the tine] (Muenster & Pfeifle ISMA 2014 Table 1, research/09); k_rel coupling rel. to w_t^2 (ESTIMATE); mu bar/tine mass (ESTIMATE); tine T60 = target; bar T60 multiple (ESTIMATE)",
+  "bar_cents_points": [
+   [
+    39,
+    -757.6
+   ],
+   [
+    46,
+    -928.9
+   ],
+   [
+    53,
+    -1386.8
+   ],
+   [
+    60,
+    -1589.6
+   ],
+   [
+    67,
+    -1811.8
+   ],
+   [
+    74,
+    -2020.8
+   ],
+   [
+    81,
+    -3182.5
+   ],
+   [
+    88,
+    -3818.4
+   ],
+   [
+    95,
+    -3778.6
+   ]
+  ],
+  "k_rel": 0.02,
+  "mu": 3.0,
+  "tine_t60_frac": 1.0,
+  "bar_t60_mult": 2.0
+ },
+ "release_t60": {
+  "_doc": "damper-on T60 (s) by MIDI upper bound (soft targets, jRhodes sfz)",
+  "33": 0.5,
+  "60": 0.4,
+  "83": 0.3,
+  "108": 0.2
+ },
+ "overtone_damping_exp": 2.0,
+ "strike": {
+  "_doc": "strike point from the clamp (m) at key 21 and key 108, linear in key (R05 W1)",
+  "lo_m": 0.05715,
+  "hi_m": 0.003175
+ },
+ "bands": {
+  "_doc": "hammer tip bands: first MIDI key of each band (A0 = position 1 of R05 W1)",
+  "first_key": [
+   21,
+   51,
+   61,
+   71,
+   85
+  ],
+  "names": [
+   "30 duro",
+   "50 duro",
+   "70 duro",
+   "90 duro",
+   "wood"
+  ],
+  "rep_key": [
+   28,
+   55,
+   66,
+   77,
+   96
+  ],
+  "K": [
+   150000000.0,
+   300000000.0,
+   600000000.0,
+   2000000000.0,
+   30000000000.0
+  ],
+  "_doc_K": "felt stiffness K (N/m^p) per band, ESTIMATE; set so mid-keyboard contact is near the measured 6.42 ms average (Muenster & Pfeifle 2014); the contact simulation decides per key and velocity"
+ },
+ "hammer": {
+  "mass_kg": 0.011,
+  "p": 2.5,
+  "damping_rel": 0.05,
+  "v_max": 4.0,
+  "range_db": 30.0,
+  "tc_v100": {
+   "_doc": "per-key felt stiffness K is solved so the coupled contact at v = 100 lasts min(max_ms, period_frac / f0): longer contacts give energy back to the tine and a non-monotonic velocity response (2026-10-15). max_ms = the measured 6.42 ms average (Muenster & Pfeifle 2014) ; min_ms floors the treble (wood tips)",
+   "max_ms": 6.42,
+   "period_frac": 0.4,
+   "min_ms": 0.08
+  }
+ },
+ "tip_peak_gap_v127": {
+  "_doc": "V1 tip peak (gap units) at v = 127: bass .. treble",
+  "lo": 1.0,
+  "hi": 0.5
+ },
+ "pickup": {
+  "_doc": "pole radius / gap per family (R03 code geometry: R = 1 gap); family 0 = 1/16 inch gap, family 1 = 1/32 inch gap. R = 2 gave a non-monotonic velocity response (2026-10-15 test), so both start at 1.0 until the fit.",
+  "R": [
+   1.0,
+   1.0
+  ],
+  "family0_keys": [
+   [
+    21,
+    32
+   ],
+   [
+    96,
+    108
+   ]
+  ],
+  "off_gap": -0.3
+ },
+ "gain_target_dbfs": -20.0,
+ "rlc": {
+  "_doc": "moved into types[*].rlc"
+ },
+ "types": {
+  "_doc": "Physical voicing per TYPE, relative to the STAGE 77 priors. off: pickup offset change in gap units (+ = toward the pole axis: H2 up, fundamental down, 'bell'; - = off-axis: round, mellow; W6). bark: tip displacement / gap scale (pickup distance: closer = more bark and output, W3); the gain is compensated by 1/bark. ham: hammer contact-rate scale (felt tips 1970-71 are softer: longer contact, fewer high partials; W2/W9). bell: tine overtone (O1/O2) force scale. rlc: pickup inductance x cable/input capacitance resonance [f_hz, q]. body: up to 2 biquads after the load: [kind, f_hz, q, gain_db], kinds hp2 / peak / lshelf / hshelf; the amp and speaker of the instrument (Suitcase: Peterson preamp into four 12-inch speakers, W5/W6; Dyno-My-Piano: active treble-boost preamp). level_db: output trim so the types play at matched loudness (measured A3 v100 + A4 v70, host).",
+  "STAGE77": {
+   "off": 0.0,
+   "bark": 1.0,
+   "ham": 1.0,
+   "bell": 1.0,
+   "rlc": [
+    5000.0,
+    1.0
+   ],
+   "body": [],
+   "drive_row": 0,
+   "level_db": 0.0
   },
-  "tinebar": {
-    "_doc": "bar_cents_points: [midi, cents of the bar's own f0 relative to the tine] (Muenster & Pfeifle ISMA 2014 Table 1, research/09); k_rel coupling rel. to w_t^2 (ESTIMATE); mu bar/tine mass (ESTIMATE); tine T60 = target; bar T60 multiple (ESTIMATE)",
-    "bar_cents_points": [
-      [
-        39,
-        -757.6
-      ],
-      [
-        46,
-        -928.9
-      ],
-      [
-        53,
-        -1386.8
-      ],
-      [
-        60,
-        -1589.6
-      ],
-      [
-        67,
-        -1811.8
-      ],
-      [
-        74,
-        -2020.8
-      ],
-      [
-        81,
-        -3182.5
-      ],
-      [
-        88,
-        -3818.4
-      ],
-      [
-        95,
-        -3778.6
-      ]
+  "SUITCASE": {
+   "off": -0.05,
+   "bark": 1.35,
+   "ham": 1.0,
+   "bell": 0.9,
+   "rlc": [
+    4500.0,
+    1.3
+   ],
+   "body": [
+    [
+     "hp2",
+     85.0,
+     0.8,
+     0.0
     ],
-    "k_rel": 0.02,
-    "mu": 3.0,
-    "tine_t60_frac": 1.0,
-    "bar_t60_mult": 2.0
-  },
-  "release_t60": {
-    "_doc": "damper-on T60 (s) by MIDI upper bound (soft targets, jRhodes sfz)",
-    "33": 0.5,
-    "60": 0.4,
-    "83": 0.3,
-    "108": 0.2
-  },
-  "overtone_damping_exp": 2.0,
-  "strike": {
-    "_doc": "strike point from the clamp (m) at key 21 and key 108, linear in key (R05 W1)",
-    "lo_m": 0.05715,
-    "hi_m": 0.003175
-  },
-  "bands": {
-    "_doc": "hammer tip bands: first MIDI key of each band (A0 = position 1 of R05 W1)",
-    "first_key": [
-      21,
-      51,
-      61,
-      71,
-      85
-    ],
-    "names": [
-      "30 duro",
-      "50 duro",
-      "70 duro",
-      "90 duro",
-      "wood"
-    ],
-    "rep_key": [
-      28,
-      55,
-      66,
-      77,
-      96
-    ],
-    "K": [
-      150000000.0,
-      300000000.0,
-      600000000.0,
-      2000000000.0,
-      30000000000.0
-    ],
-    "_doc_K": "felt stiffness K (N/m^p) per band, ESTIMATE; set so mid-keyboard contact is near the measured 6.42 ms average (Muenster & Pfeifle 2014); the contact simulation decides per key and velocity"
-  },
-  "hammer": {
-    "mass_kg": 0.011,
-    "p": 2.5,
-    "damping_rel": 0.05,
-    "v_max": 4.0,
-    "range_db": 30.0,
-    "tc_v100": {
-      "_doc": "per-key felt stiffness K is solved so the coupled contact at v = 100 lasts min(max_ms, period_frac / f0): longer contacts give energy back to the tine and a non-monotonic velocity response (2026-10-15). max_ms = the measured 6.42 ms average (Muenster & Pfeifle 2014) ; min_ms floors the treble (wood tips)",
-      "max_ms": 6.42,
-      "period_frac": 0.4,
-      "min_ms": 0.08
-    }
-  },
-  "tip_peak_gap_v127": {
-    "_doc": "V1 tip peak (gap units) at v = 127: bass .. treble",
-    "lo": 1.0,
-    "hi": 0.5
-  },
-  "pickup": {
-    "_doc": "pole radius / gap per family (R03 code geometry: R = 1 gap); family 0 = 1/16 inch gap, family 1 = 1/32 inch gap. R = 2 gave a non-monotonic velocity response (2026-10-15 test), so both start at 1.0 until the fit.",
-    "R": [
-      1.0,
-      1.0
-    ],
-    "family0_keys": [
-      [
-        21,
-        32
-      ],
-      [
-        96,
-        108
-      ]
-    ],
-    "off_gap": -0.3
-  },
-  "gain_target_dbfs": -20.0,
-  "rlc": {
-    "f_hz": 5000.0,
-    "q": [
-      1.0,
-      1.2,
-      0.8,
-      1.5
+    [
+     "peak",
+     250.0,
+     0.7,
+     3.5
     ]
+   ],
+   "drive_row": 1,
+   "level_db": -4.3
   },
-  "types": {
-    "_doc": "band_shift, gscale, off_delta (gap), bell, eq_lo_db, eq_hi_db",
-    "STAGE77": [
-      0,
-      1.0,
-      0.0,
-      1.0,
-      0.0,
-      0.0
-    ],
-    "SUITCASE": [
-      0,
-      1.0,
-      0.0,
-      1.0,
-      2.0,
-      3.0
-    ],
-    "FELT": [
-      -1,
-      0.9,
-      0.0,
-      0.8,
-      0.0,
-      0.0
-    ],
-    "DYNO": [
-      1,
-      1.2,
-      -0.1,
-      1.2,
-      0.0,
-      0.0
+  "FELT": {
+   "off": -0.2,
+   "bark": 0.75,
+   "ham": 0.55,
+   "bell": 0.45,
+   "rlc": [
+    3200.0,
+    0.8
+   ],
+   "body": [
+    [
+     "peak",
+     300.0,
+     0.8,
+     1.5
     ]
+   ],
+   "drive_row": 2,
+   "level_db": -7.3
   },
-  "peak_dbfs": -9.0,
-  "_doc_levels": "gain_target_dbfs: 1 s RMS of one voice at v = 100; peak_dbfs: the cap on one voice's v = 127 peak (headroom for chords before the master limiter)"
+  "DYNO": {
+   "off": 0.1,
+   "bark": 1.1,
+   "ham": 1.35,
+   "bell": 1.8,
+   "rlc": [
+    7000.0,
+    1.3
+   ],
+   "body": [
+    [
+     "lshelf",
+     150.0,
+     0.7,
+     -3.0
+    ],
+    [
+     "hshelf",
+     3000.0,
+     0.7,
+     7.0
+    ]
+   ],
+   "drive_row": 3,
+   "level_db": -3.0
+  }
+ },
+ "peak_dbfs": -9.0,
+ "_doc_levels": "gain_target_dbfs: 1 s RMS of one voice at v = 100; peak_dbfs: the cap on one voice's v = 127 peak (headroom for chords before the master limiter)"
 }
