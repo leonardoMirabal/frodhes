@@ -531,7 +531,8 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
             fx_L[j] = (int32_t)(((int64_t)fx_L[j] * fx_wet + (int64_t)dry[j] * (32768 - fx_wet)) >> 15);
             fx_R[j] = (int32_t)(((int64_t)fx_R[j] * fx_wet + (int64_t)dry[j] * (32768 - fx_wet)) >> 15);
         }
-        l = dc_block(fx_L[j], &dc_l, &dce_l); r = dc_block(fx_R[j], &dc_r, &dce_r);
+        l = dc_block(fx_L[j], &dc_l, &dce_l) * 2; r = dc_block(fx_R[j], &dc_r, &dce_r) * 2;   /* +6 dB: the
+                                                        * look-ahead limiter holds the big chords (0.8) */
         if (lvl != 4096) { l = (int32_t)(((int64_t)l * lvl) >> 12); r = (int32_t)(((int64_t)r * lvl) >> 12); }   /* LEVEL */
         fx_L[j] = l; fx_R[j] = r;
     }

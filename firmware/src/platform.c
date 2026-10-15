@@ -68,6 +68,9 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 
 /* ---- flash: read anywhere; erase / program only the update's staging area and the settings sector */
 #define SETTINGS_AT 0x000FC000u                 /* one 4 KiB sector of Felucca's globals area */
+#ifndef APP_OUT_SHIFT                          /* the app may drive the codec to full scale (8) */
+#define APP_OUT_SHIFT 7u
+#endif
 #ifndef APP_FL_RANGE                           /* the app may allow more sectors (e.g. a preset bank) */
 #define APP_FL_RANGE(off, n) 0
 #endif
@@ -248,7 +251,7 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
         for (b = 0; b < HALF_FRAMES; b += 32u)
             uac_tap(o + 2u * b, 32u);           /* the computer records what the speaker plays */
         for (i = 0; i < HALF_WORDS; i++)
-            o[i] <<= 7;
+            o[i] <<= APP_OUT_SHIFT;             /* Q15 -> 24 bit: 7 = a -6 dBFS ceiling (Dinghy), 8 = full scale */
         fm1_audio_ack_half();
     }
     in_audio = 0;

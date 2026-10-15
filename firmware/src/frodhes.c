@@ -12,6 +12,8 @@
  * Rules of the road (no FPU, no libgcc): integers only, no float, no 64-bit division. docs/RULES.md.
  * tests/host.c runs this file on a computer: the screen as a PNG, the sound as a WAV. */
 #define APP_NAME "FRODHES"
+#define APP_OUT_SHIFT 8u   /* the codec at full scale: +6 dB on the jack over Dinghy's -6 dBFS ceiling (the look-ahead
+                            * limiter keeps every sample under -2.7 dBFS, so it never clips; 0.8) */
 #define APP_FL_RANGE(off, n) FL_IN(off, n, 0x97000u, 0x98FFFu)    /* the user preset bank (presets.c) */
 #include "platform.c"
 #include "rhodes.c"
