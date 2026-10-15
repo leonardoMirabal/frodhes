@@ -475,7 +475,8 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 }
 
 /* ---- master: DC blocker, peak limiter, soft clip (Felucca master_out) */
-#define LIM_T 18000
+#define LIM_T 22000                                     /* -3.4 dBFS (0.8; was 18000) */
+#define CLIP_K 24576                                    /* the soft clip is linear up to -2.5 dBFS (0.8) */
 static int32_t lim_env = LIM_T, dc_l, dc_r, dce_l, dce_r;
 static inline int32_t dc_block(int32_t x, int32_t *dc, int32_t *err)
 {
@@ -485,6 +486,15 @@ static inline int32_t dc_block(int32_t x, int32_t *dc, int32_t *err)
     return x - ((*dc + 32) >> 6);
 }
 static int32_t fx_L[256], fx_R[256];
+/* the master clip: exactly linear up to CLIP_K, a tanh knee above it to full scale. The old tanh over the whole
+ * range bent everything from about -12 dBFS up: ~2 % distortion on chords (FM-1, headphones, 0.8) */
+static inline int32_t clip_knee(int32_t x)
+{
+    int32_t a = x < 0 ? -x : x, y;
+    if (a <= CLIP_K) return x;
+    y = CLIP_K + ((8191 * softclip((a - CLIP_K) << 2)) >> 15);   /* (32767 - K) = 8191; tanh of the excess */
+    return x < 0 ? -y : y;
+}
 #define GATE_LO 16                                      /* -66 dBFS (Q15) */
 #define GATE_HI 32
 static int32_t gate_g = 32768, gate_tgt = 32768, fx_wet = 32768;
@@ -518,14 +528,14 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
         l = dc_block(fx_L[j], &dc_l, &dce_l); r = dc_block(fx_R[j], &dc_r, &dce_r);
         if (lvl != 4096) { l = (int32_t)(((int64_t)l * lvl) >> 12); r = (int32_t)(((int64_t)r * lvl) >> 12); }   /* LEVEL */
         al = l < 0 ? -l : l; ar = r < 0 ? -r : r; a = al > ar ? al : ar;
-        if (a > lim_env) lim_env += (a - lim_env) >> 2;
+        if (a > lim_env) lim_env += (a - lim_env) >> 5;   /* ~0.7 ms: not inside a bass cycle (0.8; was >> 2) */
         else if (lim_env > LIM_T) lim_env -= ((lim_env - LIM_T) >> 12) + 1;
         if (lim_env > LIM_T) {
             int32_t g = (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)lim_env);
             l = ((l >> 4) * g) >> 11;
             r = ((r >> 4) * g) >> 11;
         }
-        fx_L[j] = l = softclip(l); fx_R[j] = r = softclip(r);
+        fx_L[j] = l = clip_knee(l); fx_R[j] = r = clip_knee(r);
         if (iabs(l) > pk) pk = iabs(l);
         if (iabs(r) > pk) pk = iabs(r);
     }
