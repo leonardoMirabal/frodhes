@@ -11,7 +11,7 @@ from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "docs", "manual", "img")
-PAGES = ["perform", "assign", "piano", "voice", "decay", "comp", "trem", "phaser", "chorus", "delay", "tempo", "scale", "arp", "setup"]
+PAGES = ["perform", "assign", "piano", "voice", "decay", "comp", "trem", "phaser", "chorus", "delay", "tempo", "scale", "chord", "seq", "arp", "setup"]
 
 
 def main():
@@ -29,6 +29,21 @@ def main():
     for i, name in enumerate(PAGES):
         if i:
             L.append(f"{t} turn 0 1"); t += 700
+        if name == "chord":                                 # chord mode MAJ7 with a strum, a key held
+            L.append(f"{t} midi 0xB0 56 6"); L.append(f"{t + 20} midi 0xB0 59 4"); L.append(f"{t + 100} keys 0x80"); t += 700
+            L.append(f"{t} shot"); shots[t] = name
+            L.append(f"{t + 50} keys 0x0"); t += 300
+            continue
+        if name == "seq":                                   # four bars recorded (C, Am, F, G), then playing bar 2
+            L.append(f"{t} midi 0xB0 61 4"); L.append(f"{t + 20} midi 0xB0 46 0"); L.append(f"{t + 40} midi 0xB0 63 127")
+            L.append(f"{t + 60} midi 0xB0 56 1"); t += 100                     # DIATONIC (C major)
+            for k in (7, 16, 12, 14):                                          # C4, A4, F4, G4
+                L.append(f"{t} keys {1 << k:#x}"); L.append(f"{t + 60} keys 0x0"); t += 150
+            L.append(f"{t} midi 0xB0 63 0"); L.append(f"{t + 20} midi 0xB0 46 1"); L.append(f"{t + 40} midi 0xB0 60 127")
+            t += 2800
+            L.append(f"{t} shot"); shots[t] = name
+            L.append(f"{t + 50} midi 0xB0 60 0"); L.append(f"{t + 60} midi 0xB0 56 0"); t += 300
+            continue
         if name == "arp":                                   # the arpeggiator on (UP) over a held chord, then off
             L.append(f"{t} turn 2 1"); L.append(f"{t + 100} keys 0x4880"); t += 900
             L.append(f"{t} shot"); shots[t] = name

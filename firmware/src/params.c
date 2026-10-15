@@ -93,7 +93,10 @@ typedef struct {
     uint8_t perf[4];                           /* 0.9: the PERFORM knobs, ui.c PERF_T index + 1 (0 = the default) */
     uint8_t arp[6];                            /* 0.9: the arpeggiator: mode, rate, octaves, gate, last mode, hold */
     uint8_t usb_fixed;                         /* 0.9: 1 = the USB audio does not follow the MASTER knob */
-    uint8_t reserved[124];
+    uint8_t chord[4];                          /* 0.9.1: chord mode: type, inversion, voicing, strum (notes.c) */
+    uint8_t seq_bars, seq_rhythm;              /* 0.9.1: the chord sequencer (seq.c) */
+    uint8_t seq_step[16][6];                   /*        each bar's chord, low to high, 0 = none */
+    uint8_t reserved[22];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 

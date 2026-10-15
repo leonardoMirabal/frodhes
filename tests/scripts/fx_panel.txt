@@ -19,10 +19,9 @@
 1700 expect rms < -90
 1800 btn 2
 1900 expect led 2 1
-# PHASER: SEQ (11) twice -> on; CHORUS: SEL (3) twice -> on
-2000 btn 11
-2100 btn 11
-2200 expect led 11 1
+# PHASER (0.9.1: no button; CC 12 here) -> on; CHORUS: SEL (3) twice -> on
+2000 midi 0xB0 12 127
+2100 midi 0xB0 13 80
 2300 btn 3
 2400 btn 3
 2500 expect led 3 1

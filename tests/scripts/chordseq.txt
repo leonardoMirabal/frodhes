@@ -1,0 +1,25 @@
+# CHORD and SEQUENCER (0.9.1). Keys: F3 = key 0, C4 = 7, F4 = 12. Buttons: SEQ 11, PLAY 12.
+# chord mode MAJ (CC 56 = 3): one key, a triad
+100 midi 0xB0 56 3
+200 expect led 11 1
+300 keys 0x80
+800 expect rms > -60
+900 keys 0
+# SEQ: chord mode is on, so straight to SEQUENCER; SEQ there: recording (stopped: step entry)
+1500 btn 11
+1600 btn 11
+1700 midi 0xB0 61 2
+# C into bar 1, F into bar 2 (the edited bar moves on by itself)
+1800 keys 0x80
+1900 keys 0
+2000 keys 0x1000
+2100 keys 0
+2200 shot
+# recording off; PLAY: the sequence (120 BPM: a bar is 2 s): C major, then F major
+2300 btn 11
+3000 btn 12
+3100 expect rms > -60
+4500 shot
+7000 btn 12
+8500 expect rms < -70
+8600 end

@@ -5,12 +5,12 @@
  *
  *   SELECT     turns through the pages (the order of the chain):
  *              PERFORM ASSIGN FRODHES (the main page) VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE
- *              ARPEGGIO SETUP
+ *              CHORD SEQUENCER ARPEGGIO SETUP
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on any page)          PRESETS  sounds (presets.c)
- *   shortcuts  HOME = PERFORM (again: the main page), EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEQ / SEL = TREM /
- *              PHASER / CHORUS (on that page: the effect on / off), ARP = ARPEGGIO (on it: on / off), GLO = TEMPO
- *              (again: SETUP).
+ *   shortcuts  HOME = PERFORM (again: the main page), EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEL = TREM /
+ *              CHORUS (on that page: the effect on / off), SEQ = CHORD (chord mode on: SEQUENCER; on it: REC),
+ *              ARP = ARPEGGIO (on it: on / off), GLO = TEMPO (again: SETUP).
  *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo. REC: sustain. */
 
 #define PR_NF_UI 12u                                  /* presets.c: PR_NF factory presets, then the user ones */
@@ -22,14 +22,16 @@ static void tempo_tap(void);                          /* tempo.c */
 static void tempo_set10(uint32_t b);
 
 enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_TEMPO, PG_SCALE,
-       PG_ARP, PG_SETUP, PG_N };
+       PG_CHORD, PG_SEQ, PG_ARP, PG_SETUP, PG_N };
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_N = 8, E_CARDS = 10 };   /* E_CARDS: all four */
 /* card slots: a parameter id (< P_COUNT) or one of these */
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
-       S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_NONE = 0xFF };
+       S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
+       S_SQBARS, S_SQBAR, S_SQRHY, S_SQCHORD, S_NONE = 0xFF };
 
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
-                                             "CHORUS", "DELAY", "TEMPO", "SCALE", "ARPEGGIO", "SETUP"};
+                                             "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
+                                             "ARPEGGIO", "SETUP"};
 static const uint8_t PAGE_S[PG_N][4] = {
     {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
     {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
@@ -43,6 +45,8 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {P_DL_SW, P_DL_DEPTH, P_DL_TIME, P_DL_FDBK},
     {S_BPM, P_TW_SYNC, P_PH_SYNC, P_DL_SYNC},
     {S_SCMODE, S_SCALE, S_ROOT, S_TRANS},
+    {S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM},
+    {S_SQBARS, S_SQBAR, S_SQRHY, S_SQCHORD},
     {S_ARPMODE, S_ARPRATE, S_ARPOCT, S_ARPGATE},
     {S_CLOCK, P_DL_TONE, P_LEVEL, S_USBVOL},
 };
@@ -59,14 +63,16 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"EFFECT", "MIX", "TIME", "FEEDBK"},
     {"BPM", "TREM SYNC", "PHA SYNC", "DLY SYNC"},
     {"MODE", "SCALE", "ROOT", "TRANSP"},
+    {"TYPE", "INVERSION", "VOICING", "STRUM"},
+    {"BARS", "BAR", "RHYTHM", "CHORD"},
     {"MODE", "RATE", "OCTAVES", "GATE"},
     {"CLOCK", "DLY TONE", "LEVEL", "USB VOL"},
 };
 static const char *const PAGE_HINT[PG_N] = {"NEXT PAGE: ASSIGN THE KNOBS", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
-                                            "", "LFO BUTTON: ON / OFF", "SEQ BUTTON: ON / OFF", "SEL BUTTON: ON / OFF",
+                                            "", "LFO BUTTON: ON / OFF", "K1: ON / OFF", "SEL BUTTON: ON / OFF",
                                             "K1: OFF / DIGITAL / ANALOG", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
-                                            "ARP: ON / OFF   PLAY: HOLD", ""};
+                                            "SEQ: THE SEQUENCER", "", "ARP: ON / OFF   PLAY: HOLD", ""};
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
                                            "PENTA", "MPENTA", "BLUES"};
 static const char *const NOTE_NAME[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -189,13 +195,21 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_ARPOCT: *hi = 3; return ARP_OCT;
     case S_ARPGATE: *hi = 90; return ARP_GATE - 10;
     case S_USBVOL: *hi = 1; return set.usb_fixed;
+    case S_CHTYPE: *hi = CH_NTYPE - 1; return CH_TYPE;
+    case S_CHINV: *hi = 3; return CH_INV;
+    case S_CHVOICE: *hi = 2; return CH_VOICE;
+    case S_CHSTRUM: *hi = 12; return CH_STRUM;
+    case S_SQBARS: *hi = 16; return set.seq_bars;
+    case S_SQBAR: *hi = set.seq_bars - 1; return seq_cursor;
+    case S_SQRHY: *hi = 3; return set.seq_rhythm;
+    case S_SQCHORD: *hi = 1; return (int32_t)(seq_count(seq_cursor) != 0);
     default: *hi = 0; return 0;
     }
 }
 static int slot_is_level(uint32_t s)                    /* a gauge only for amounts, not for choices */
 {
     if (s < P_COUNT) return PARAMS[s].fmt != F_ENUM && PARAMS[s].fmt != F_DIV;
-    return s == S_KVEL || s == S_TUNE || s == S_BPM || s == S_TRANS || s == S_ARPGATE;
+    return s == S_KVEL || s == S_TUNE || s == S_BPM || s == S_TRANS || s == S_ARPGATE || s == S_CHSTRUM;
 }
 static void fmt_signed(char *s, int32_t v) { if (v > 0) { s[0] = '+'; p_fmt_int(s + 1, v); } else p_fmt_int(s, v); }
 static void slot_text(uint32_t s, char *v)
@@ -229,6 +243,14 @@ static void slot_text(uint32_t s, char *v)
     case S_ARPMODE: p_strcpy(v, ARP_MODE_NAME[ARP_MODE], 7); return;
     case S_ARPRATE: p_strcpy(v, ARP_RATE_NAME[ARP_RATE], 6); return;
     case S_USBVOL: p_strcpy(v, set.usb_fixed ? "FIXED" : "KNOB", 5); return;
+    case S_CHTYPE: p_strcpy(v, CH_TYPE_NAME[CH_TYPE], 9); return;
+    case S_CHINV: p_strcpy(v, CH_INV_NAME[CH_INV], 4); return;
+    case S_CHVOICE: p_strcpy(v, CH_VOICE_NAME[CH_VOICE], 5); return;
+    case S_CHSTRUM: { uint32_t n = 0; p_fmt_int(v, CH_STRUM * 5); while (v[n]) n++; p_strcpy(v + n, " MS", 3); return; }
+    case S_SQBARS: p_fmt_int(v, set.seq_bars); return;
+    case S_SQBAR: p_fmt_int(v, seq_cursor + 1); return;
+    case S_SQRHY: p_strcpy(v, SEQ_RHY_NAME[set.seq_rhythm], 4); return;
+    case S_SQCHORD: chord_name(set.seq_step[seq_cursor], seq_count(seq_cursor), v); return;
     case S_ARPOCT: p_fmt_int(v, ARP_OCT + 1); return;
     case S_ARPGATE: { uint32_t n = 0; p_fmt_int(v, ARP_GATE); while (v[n]) n++; v[n++] = '%'; v[n] = 0; return; }
     case S_NONE: return;
@@ -282,6 +304,18 @@ static void slot_turn(uint32_t s, int32_t d)
     case S_ARPOCT: ARP_OCT = (uint8_t)clampi(ARP_OCT + sgn(d), 0, 3); break;
     case S_ARPGATE: ARP_GATE = (uint8_t)clampi(ARP_GATE + 5 * sgn(d), 10, 100); break;
     case S_USBVOL: set.usb_fixed = d > 0; usb_pre_master = set.usb_fixed; break;
+    case S_CHTYPE: CH_TYPE = (uint8_t)clampi(CH_TYPE + sgn(d), 0, CH_NTYPE - 1); break;
+    case S_CHINV: CH_INV = (uint8_t)clampi(CH_INV + sgn(d), 0, 3); break;
+    case S_CHVOICE: CH_VOICE = (uint8_t)clampi(CH_VOICE + sgn(d), 0, 2); break;
+    case S_CHSTRUM: CH_STRUM = (uint8_t)clampi(CH_STRUM + sgn(d), 0, 12); break;
+    case S_SQBARS:
+        set.seq_bars = (uint8_t)clampi(set.seq_bars + sgn(d), 2, 16);
+        if (seq_cursor >= set.seq_bars) seq_cursor = (uint8_t)(set.seq_bars - 1u);
+        ui_mark(E_FOOTER);
+        break;
+    case S_SQBAR: seq_cursor = (uint8_t)clampi(seq_cursor + sgn(d), 0, set.seq_bars - 1); ui_mark(E_FOOTER); break;
+    case S_SQRHY: set.seq_rhythm = (uint8_t)clampi(set.seq_rhythm + sgn(d), 0, 3); break;
+    case S_SQCHORD: seq_edit_chord(sgn(d)); ui_mark(E_FOOTER); break;
     default: break;
     }
     ui_changed();
@@ -383,6 +417,22 @@ static void draw_footer(void)
             } else text_c(0, 18, 240, &FONT_S, "ENV BUTTON: ON / OFF", C_DIM);
             gr_shown = 0xFFFF;                          /* the meter rows: draw them again */
             ui_mark(E_METER);
+            cv_blit(0, 205);
+            return;
+        }
+        if (ui_page == PG_SEQ) {                       /* the bars: filled = a chord, white = playing, a line = edited */
+            uint32_t i, n = set.seq_bars;
+            int32_t w = 236 / (int32_t)n;
+            uint32_t cur = seq_play ? seq_now_step(0) : 0xFFu;
+            for (i = 0; i < n; i++) {
+                int32_t x = 2 + (int32_t)i * w;
+                uint16_t c = i == cur ? C_WHITE : seq_count(i) ? C_AMB : C_LINE;
+                if (seq_count(i) || i == cur) cv_rect(x, 3, w - 2, 9, c);
+                else { cv_rect(x, 3, w - 2, 9, C_LINE); cv_rect(x + 1, 4, w - 4, 7, C_BLACK); }
+                if (i == seq_cursor) cv_rect(x, 14, w - 2, 2, UI_ACC);
+            }
+            text_c(0, 18, 240, &FONT_S, seq_rec ? "REC: PLAY THE CHORDS" : seq_play ? "PLAY: STOP   SEQ: REC" :
+                   "PLAY: START   SEQ: REC", seq_rec ? UI_ACC : C_DIM);
             cv_blit(0, 205);
             return;
         }
@@ -556,13 +606,19 @@ static void ui_input(uint32_t b, uint32_t rel)
         ui_say(fx_bypass ? "EFFECTS OFF" : "EFFECTS ON");
         ui_mark(E_HEADER);
     }
-    if (b >> BTN_SEQ & 1u) ui_fx_button(PG_PHA, 3);
+    if (b >> BTN_SEQ & 1u) {                            /* CHORD (or straight to SEQUENCER when chord mode is on);
+                                                         * CHORD -> SEQUENCER; on SEQUENCER: recording on / off */
+        if (ui_page == PG_SEQ) { seq_toggle_rec(); ui_say(seq_rec ? "REC ON" : "REC OFF"); }
+        else if (ui_page == PG_CHORD || chord_on()) ui_goto(PG_SEQ);
+        else ui_goto(PG_CHORD);
+    }
     if (b >> BTN_ARP & 1u) {                            /* ARPEGGIO; on it: the arpeggiator on / off */
         if (ui_page != PG_ARP) ui_goto(PG_ARP);
         else { arp_toggle(); ui_say(arp_on() ? "ARP ON" : "ARP OFF"); ui_changed(); ui_mark(E_CARDS); }
     }
     if (b >> BTN_PLAY & 1u) {                           /* tap tempo; on ARPEGGIO: HOLD on / off */
         if (ui_page == PG_ARP) { arp_hold_toggle(); ui_say(ARP_HOLD ? "HOLD ON" : "HOLD OFF"); ui_changed(); }
+        else if (ui_page == PG_SEQ) seq_toggle_play();
         else tempo_tap();
     }
     if (b >> BTN_OCT_DOWN & 1u && set.oct > -2) { set.oct--; ui_changed(); ui_mark(E_HEADER); }
@@ -601,13 +657,13 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     fm1_led_key(BTN_FX, !fx_bypass);
     fm1_led_key(BTN_SEL, PV(P_CP_SW) != 0);
     fm1_led_key(BTN_ARP, arp_on());
-    fm1_led_key(BTN_SEQ, PV(P_PH_SW) != 0);
+    fm1_led_key(BTN_SEQ, seq_rec ? (fm1_ms & 256u) != 0 : chord_on());   /* chord mode; blinks: recording */
     fm1_led_key(BTN_HOME, ui_page == PG_PIANO || ui_page == PG_PERF);
     fm1_led_key(BTN_EDIT, ui_page == PG_VOICE);
     fm1_led_key(BTN_ENV, PV(P_CMP_SW) != 0);
     fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP);
     fm1_led_key(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));
-    fm1_led_key(BTN_PLAY, ui_page == PG_ARP ? ARP_HOLD : beat_on);   /* on ARPEGGIO: HOLD */
+    fm1_led_key(BTN_PLAY, ui_page == PG_ARP ? ARP_HOLD : ui_page == PG_SEQ ? seq_play && beat_on : beat_on);   /* ARPEGGIO: HOLD */
     fm1_led_key(BTN_OCT_DOWN, set.oct < 0);
     fm1_led_key(BTN_OCT_UP, set.oct > 0);
     fm1_led_key(BTN_REC, rh_hold);

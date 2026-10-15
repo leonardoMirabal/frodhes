@@ -21,6 +21,8 @@
 #include "params.c"
 #include "tempo.c"
 #include "arp.c"
+#include "notes.c"
+#include "seq.c"
 #include "ui.c"
 #include "presets.c"
 
@@ -51,23 +53,6 @@ static uint8_t sus_held, sus_latched, sus_midi, sus_was_latched;
 static uint32_t sus_t;
 
 static void sustain_update(void) { rh_pedal_level(sus_held || sus_latched ? 127u : sus_midi); ui_mark(E_HEADER); }
-
-/* a note from the keys or USB-MIDI: to the piano, or to the arpeggiator while it runs (each note remembers which,
- * so switching the arpeggiator under held keys never leaves one hanging); the keys' notes are echoed to USB-MIDI */
-static uint8_t note_to_arp[128];
-static void note_in_on(uint32_t n, uint32_t vel, int echo)
-{
-    if (arp_on()) { note_to_arp[n] = 1; arp_in_on(n, vel); return; }
-    note_to_arp[n] = 0;
-    rh_note_on(n, vel);
-    if (echo) midi_send(0x90, n, vel);
-}
-static void note_in_off(uint32_t n, int echo)
-{
-    if (note_to_arp[n]) { note_to_arp[n] = 0; arp_in_off(n); return; }
-    rh_note_off(n);
-    if (echo) midi_send(0x80, n, 0);
-}
 
 static void sustain_button(uint32_t pressed, uint32_t released)
 {
@@ -111,6 +96,21 @@ static void midi_cc(uint32_t cc, uint32_t v)
         ui_mark(E_CARDS);
         return;
     }
+    if (cc >= 56u && cc <= 63u) {                      /* chord mode and the sequencer (0.9.1): 56 TYPE 0..14, 57
+                                                        * INVERSION 0..3, 58 VOICING 0..2, 59 STRUM 0..12 (x 5 ms); 60 play
+                                                        * (>= 64) / stop, 61 BARS 2..16, 62 RHYTHM 0..3, 63 recording */
+        if (cc == 56u) CH_TYPE = (uint8_t)(v < CH_NTYPE ? v : CH_NTYPE - 1u);
+        else if (cc == 57u) CH_INV = (uint8_t)(v > 3u ? 3u : v);
+        else if (cc == 58u) CH_VOICE = (uint8_t)(v > 2u ? 2u : v);
+        else if (cc == 59u) CH_STRUM = (uint8_t)(v > 12u ? 12u : v);
+        else if (cc == 60u) { if ((v >= 64u) != (seq_play != 0)) seq_toggle_play(); }
+        else if (cc == 61u) { set.seq_bars = (uint8_t)(v < 2u ? 2u : v > 16u ? 16u : v); if (seq_cursor >= set.seq_bars) seq_cursor = 0; }
+        else if (cc == 62u) set.seq_rhythm = (uint8_t)(v > 3u ? 3u : v);
+        else { if ((v >= 64u) != (seq_rec != 0)) seq_toggle_rec(); }
+        ui_mark(E_CARDS); ui_mark(E_FOOTER);
+        return;
+    }
+    if (cc == 46u) { seq_cursor = (uint8_t)(v < set.seq_bars ? v : 0u); ui_mark(E_CARDS); ui_mark(E_FOOTER); return; }   /* the edited bar */
     if (cc == 120u || cc == 123u) { rh_all_off(); return; }
     if (cc == 85u) {                                   /* reface CHO/PHA switch: off / chorus / phaser (one of them) */
         param_set(P_CP_SW, v >= 43u && v < 86u); param_set(P_PH_SW, v >= 86u);
@@ -142,11 +142,11 @@ static int note_sounding(uint32_t n)
 static void app_main(void)
 {
     uint32_t prev = 0, k;
-    uint8_t held[NKEYS], cnt[128] = {0};          /* the note each key plays (255 none); per-note key counts */
-    for (k = 0; k < NKEYS; k++) held[k] = 255;
     if (settings_load(&set, sizeof set) != 0) params_defaults();
     params_sanitize();
     arp_sanitize();
+    chord_sanitize();
+    seq_sanitize();
     if (set.usb_fixed > 1u) set.usb_fixed = 0;
     usb_pre_master = set.usb_fixed;
     palette_set(set.color);
@@ -166,17 +166,12 @@ static void app_main(void)
         down = keys & ~prev;
         up = prev & ~keys;
         prev = keys;
-        for (k = 0; k < NKEYS; k++) {           /* a key stops exactly the note it started */
+        for (k = 0; k < NKEYS; k++) {           /* a key stops exactly the notes it started (notes.c sources) */
             if (down >> k & 1u) {
                 uint32_t n = scale_key_note(k);
-                held[k] = (uint8_t)n;
-                if (n < 128u && cnt[n]++ == 0u) note_in_on(n, set.key_vel, 1);
+                if (n < 128u) src_on(SRC_KEYS + k, n, set.key_vel, 1);
             }
-            if (up >> k & 1u && held[k] < 128u) {
-                uint32_t n = held[k];
-                if (cnt[n] && --cnt[n] == 0u) note_in_off(n, 1);
-                held[k] = 255;
-            }
+            if (up >> k & 1u) src_off(SRC_KEYS + k);
         }
 
         b = fm1_input_edges(&rel);              /* buttons pressed / released since the last call */
@@ -185,16 +180,18 @@ static void app_main(void)
 
         while (midi_get(&st, &d1, &d2)) {       /* USB-MIDI in, any channel */
             uint8_t ty = st & 0xF0u;
-            if (ty == 0x90u && d2) note_in_on(d1 & 127u, d2, 0);
-            else if (ty == 0x80u || ty == 0x90u) note_in_off(d1 & 127u, 0);
+            if (ty == 0x90u && d2) src_on(SRC_MIDI + (d1 & 127u), d1 & 127u, d2, 0);
+            else if (ty == 0x80u || ty == 0x90u) src_off(SRC_MIDI + (d1 & 127u));
             else if (ty == 0xB0u) midi_cc(d1, d2);
             else if (st >= 0xF8u) tempo_clock(st);
             else if (ty == 0xC0u) preset_load(d1 < 12u ? d1 : d1 >= 16u && d1 < 32u ? PR_NF + d1 - 16u : 255u);
         }
 
         for (k = 0; k < NKEYS; k++)             /* LEDs per key: held, or its note still rings */
-            if (held[k] < 128u ? 1 : 0) lit |= 1u << k;
+            if (src_active[SRC_KEYS + k]) lit |= 1u << k;
             else if (rh_hold && note_sounding((uint32_t)scale_key_note(k))) lit |= 1u << k;
+        src_poll();
+        seq_poll();
         arp_poll();
         ui_leds(lit, tempo_beat_led() || (arp_on() && arp_n && arp_playing < 128u));
         ui_draw();

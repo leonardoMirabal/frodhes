@@ -65,17 +65,18 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **EDIT** | VOICE page |
 | **ENV** | DECAY page; press again for COMPRESSOR; on COMPRESSOR it switches the compressor on / off |
 | **LFO** | TREM/WAH page; press again there to switch it on / off |
-| **SEQ** | PHASER page; press again there to switch it on / off |
+| **SEQ** | CHORD page (straight to SEQUENCER when chord mode is on); on CHORD it goes to SEQUENCER; on SEQUENCER it switches recording on / off |
 | **SEL** | CHORUS page; press again there to switch it on / off |
 | **ARP** | ARPEGGIO page; press again there to switch the arpeggiator on / off |
 | **GLO** | TEMPO page; press again for SETUP |
 | **FX** | All effects off / on at once (see [6](#6-effects-on-and-off)) |
-| **PLAY** | Tap tempo; on ARPEGGIO, the arpeggiator's HOLD on / off |
+| **PLAY** | Tap tempo; on ARPEGGIO, the arpeggiator's HOLD on / off; on SEQUENCER, start / stop |
 | **REC** | Sustain pedal |
 | **SAVE** | Save the sound to a user preset; hold to undo the last preset load |
 | **OCT− / OCT+** | Octave down / up (±2) |
 
-The lights tell you what is on: LFO, SEQ, SEL and ENV light up when their effect is on, ARP while the arpeggiator runs, FX when the effects are
+The lights tell you what is on: LFO, SEL and ENV light up when their effect is on, ARP while the arpeggiator runs, SEQ
+while chord mode is on (blinking while the sequencer records), FX when the effects are
 active, REC while the sustain holds, PLAY on the beat when something is synced, HOME on PERFORM and the main page, EDIT on VOICE.
 
 ## 4. The pages
@@ -228,6 +229,46 @@ wider in stereo, which on headphones sounds bigger; their level is set so that i
 | K3 | **ROOT** | The scale's key |
 | K4 | **TRANSP** | Transpose ±24 semitones |
 
+### CHORD
+
+![CHORD](manual/img/chord.png)
+
+Chord mode: **one key plays a whole chord**. Press **SEQ** to come here.
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **TYPE** | **OFF**; **DIATONIC** / **DIA 7TH**: the chord (triad / seventh) that belongs to the key and scale set on the SCALE page, so in C major D plays Dm, G plays G, B plays Bdim; or a fixed shape on every key: **MAJ**, **MIN**, **7**, **MAJ7**, **MIN7**, **SUS2**, **SUS4**, **ADD9**, **DIM**, **AUG**, **6**, **MIN6** |
+| K2 | **INVERSION** | **ROOT**, **1ST**, **2ND**, **3RD** (the lowest notes moved up an octave) |
+| K3 | **VOICING** | **CLOSE**; **OPEN** (the second note up an octave, wider); **+BASS** (the root added an octave below) |
+| K4 | **STRUM** | 0 to 60 ms between the notes, low to high, like a strum |
+
+It works with the scales (with SNAP the key first moves onto the scale), with notes from USB-MIDI, with the
+arpeggiator (which then arpeggiates the chord) and with the sequencer.
+
+### SEQUENCER
+
+![SEQUENCER](manual/img/seq.png)
+
+A chord sequencer: **2 to 16 bars**, one chord per bar, in time with the tempo. Press **SEQ** on CHORD to come here
+(or SEQ from anywhere while chord mode is on).
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **BARS** | How many bars, 2 to 16 |
+| K2 | **BAR** | The bar you are editing (underlined in the strip at the bottom) |
+| K3 | **RHYTHM** | **HOLD** (each chord struck once and held), **1/2**, **1/4**, **1/8** (struck again on each) |
+| K4 | **CHORD** | The edited bar's chord, by name (C, A MIN7, F MAJ7...): turn left to empty the bar, right to copy the chord before it |
+
+**PLAY** starts and stops it; **SEQ** switches recording on / off (the SEQ light blinks). While recording:
+
+- **Stopped:** play a chord (or one key in chord mode) and it goes into the edited bar, which then moves on: play
+  your progression chord by chord.
+- **Playing:** what you play goes into the bar that is playing (a chord started just before a bar line counts for
+  the next bar).
+
+An empty bar lets the chord before it go on. The strip at the bottom shows every bar: filled = it has a chord, white
+= playing now. With the arpeggiator on, the sequence is arpeggiated. The sequence is kept on the FM-1.
+
 ### ARPEGGIO
 
 ![ARPEGGIO](manual/img/arp.png)
@@ -283,8 +324,8 @@ again to store it, or **HOME** to cancel. The name is made from the type and the
 
 ## 6. Effects on and off
 
-Each effect has its own on / off: its page button pressed twice (LFO, SEQ, SEL, and ENV for the compressor), or
-its EFFECT card (the delay: K1 on DELAY, or turning DELAY up on PERFORM). Switching an effect on whose depth is 0 gives it a useful starting depth, so you always hear it.
+Each effect has its own on / off: its page button pressed twice (LFO, SEL, and ENV for the compressor), or its
+EFFECT card (the phaser and the delay: K1 on their page, or turning them up on PERFORM). Switching an effect on whose depth is 0 gives it a useful starting depth, so you always hear it.
 
 **FX** switches **all** effects off at once and back on, without changing any setting: compare the dry piano with
 your sound. The header shows **BYP** while they are off. It is not saved, so the FM-1 always starts with the effects
@@ -343,6 +384,9 @@ also send their notes to the computer. **Program Change** 0–11 loads F01–F12
 | 111 | All effects off (≥ 64) / on | 28–31 | TONE / BARK / BELL / HAMMER |
 | 114 | USB VOL: knob (< 64) / fixed | | |
 | 102 / 103 / 104 | DECAY / RELEASE / NOISE | 120 / 123 | All sound off / all notes off |
+| 56 / 57 | CHORD TYPE (0–14 as listed) / INVERSION (0–3) | 58 / 59 | CHORD VOICING (0–2) / STRUM (0–12 × 5 ms) |
+| 60 / 61 | SEQUENCER play (≥ 64) / stop, BARS (2–16) | 62 / 63 | SEQUENCER RHYTHM (0–3) / recording (≥ 64) |
+| 46 | SEQUENCER edited bar (0–15) | | |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
 The FM-1 also appears as a USB audio input: you can record exactly what it plays, digitally, without the headphone

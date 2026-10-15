@@ -8,7 +8,7 @@ Frodhes turns the FM-1 into an electric piano. Every note is computed live from 
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound, with the bark of
 hard notes and the bell of the attack. Four instrument types (Stage 77, Suitcase, Early Felt, Bell Dyno), a
 reface CP-style effects chain (compressor, drive, tremolo / wah, phaser, chorus, delay, reverb), tap tempo with MIDI
-clock sync, an arpeggiator, scales, a sustain pedal and 12 factory plus 16 user presets. The screen shows one page at a time with
+clock sync, chord mode, a chord sequencer (2–16 bars), an arpeggiator, scales, a sustain pedal and 12 factory plus 16 user presets. The screen shows one page at a time with
 four cards, one for each of the FM-1's four knobs; the first page, PERFORM, puts the effects' dry / wet (or
 anything you assign) on those four knobs for playing live.
 
@@ -45,16 +45,18 @@ the MIDI map.
 | **DECAY** | DECAY | RELEASE | NOISE | TUNE | ENV |
 | **COMPRESSOR** | THRESHOLD | RATIO | ATTACK | MAKEUP | ENV twice (there: on / off) |
 | **TREM/WAH** | OFF / PAN / TREM / WAH | DEPTH | RATE | SHAPE | LFO |
-| **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | SEQ |
+| **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | (SELECT) |
 | **CHORUS** | OFF / ON | DEPTH | SPEED | SYNC | SEL |
 | **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | (SELECT) |
 | **TEMPO** | BPM | TREM SYNC | PHA SYNC | DLY SYNC | GLO |
 | **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | (SELECT) |
+| **CHORD** | OFF / DIATONIC / DIA 7TH / MAJ ... MIN6 | INVERSION | VOICING | STRUM | SEQ |
+| **SEQUENCER** | BARS 2–16 | BAR | RHYTHM | CHORD | SEQ again (there: REC; PLAY: start / stop) |
 | **ARPEGGIO** | OFF / UP / DOWN / UP-DN / ORDER / RANDOM | RATE | OCTAVES | GATE | ARP (there: on / off; PLAY: HOLD) |
 | **SETUP** | MIDI CLOCK | DELAY TONE | LEVEL | USB VOL (KNOB / FIXED) | GLO twice |
 
 **SELECT** turns the pages, **K1–K4** turn the cards (on **PERFORM**: the effects' dry / wet, or what you assign), **ALGORITHM** picks the TYPE, **PRESETS** browses sounds,
-**FX** switches all effects off / on, **ARP** runs the arpeggiator, **PLAY** taps the tempo, **REC** is the sustain pedal, **SAVE** stores a preset.
+**FX** switches all effects off / on, **SEQ** chord mode and the sequencer, **ARP** the arpeggiator, **PLAY** taps the tempo, **REC** is the sustain pedal, **SAVE** stores a preset.
 
 ## Build
 
