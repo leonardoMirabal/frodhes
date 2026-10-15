@@ -90,7 +90,17 @@ class Rig:
         d = dict(DRY)
         d.update(kv)
         self.setup(**d)
-        time.sleep(0.25)
+        self.wait_silence()
+
+    def wait_silence(self, limit=10.0):
+        """until the output is exact zero (the gate), so no delay / reverb tail of the last test leaks in"""
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < limit:
+            x = self.sd.rec(int(0.3 * FS), samplerate=FS, channels=2, device=self.dev, dtype="int16")
+            self.sd.wait()
+            if not np.any(x):
+                return True
+        return False
 
     def take(self, dur, events):
         """record dur s; events: [(t_s, kind, a, b)], kind on/off/cc/pc"""
@@ -383,7 +393,7 @@ def presets(r, rep):
     for p in range(12):
         r.out.send(r.mido.Message("control_change", control=120, value=0))
         r.out.send(r.mido.Message("program_change", program=p))
-        time.sleep(0.3)
+        r.wait_silence()
         x = r.take(2.0, CHORD)
         i = max(onset(x), 0)
         rows.append(dict(preset=p + 1, level=db(x[i:i + int(1.1 * FS)]),
