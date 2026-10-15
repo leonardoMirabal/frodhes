@@ -136,7 +136,9 @@ static void param_apply(uint32_t id)
     case P_HAMMER: rh_ham = (int32_t)KN_HAM[v]; break;
     case P_DECAY: rh_k_decay = (int32_t)DECAY_K[v]; break;           /* k = 1/S, S = 2^((v-64)/32): higher = longer */
     case P_RELEASE: rh_k_rel = (int32_t)DECAY_K[v]; break;
-    default: break;                                                   /* SYNC, TONE of the delay, NOISE, SPREAD: later */
+    case P_NOISE: rh_thump = KN_THUMP[v]; rh_felt = KN_FELT[v]; break;
+    case P_DL_TONE: fx_set(FXP_DL_TONE, v); break;
+    default: break;                                                   /* SYNC: tempo.c; SPREAD: not yet in the engine */
     }
 }
 static void params_apply_all(void)

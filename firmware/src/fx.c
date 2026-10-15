@@ -20,8 +20,9 @@
 enum { FXP_DRIVE, FXP_TW_SW, FXP_TW_DEPTH, FXP_TW_RATE, FXP_TW_MODE, FXP_TW_SHAPE,
        FXP_CP_SW, FXP_CP_DEPTH, FXP_CP_SPEED, FXP_CP_FDBK,
        FXP_DL_SW, FXP_DL_DEPTH, FXP_DL_TIME, FXP_DL_FDBK, FXP_DL_SYNC,
-       FXP_RV_DEPTH, FXP_DRIVE_ROW, FXP_RAW, FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
-static volatile int32_t fx_p[FXP_N] = {[FXP_DL_FDBK] = 80};
+       FXP_RV_DEPTH, FXP_DRIVE_ROW, FXP_RAW, FXP_DL_TONE, FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
+static volatile int32_t fx_p[FXP_N] = {[FXP_DL_FDBK] = 80, [FXP_DL_TONE] = 70};
+static volatile uint32_t fx_cp_sync_inc;         /* main loop: a synced chorus/phaser rate, 0 = free */
 static volatile uint32_t fx_dly_sync_samples;    /* main loop (tempo.c): a synced delay time, 0 = free */
 static volatile uint32_t fx_tw_sync_inc;         /* main loop: a synced tremolo rate (Q32 step), 0 = free */
 static volatile int32_t fx_peak;                 /* ISR: last block's max |out| */
@@ -132,7 +133,7 @@ static int32_t ph_coef(uint32_t ph, int32_t depth)
 static void fx_mod(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t sw = fx_p[FXP_CP_SW], depth = fx_p[FXP_CP_DEPTH];
-    uint32_t inc = FX_LFO_INC[fx_p[FXP_CP_SPEED]] >> 1, sb, j, s, k;
+    uint32_t inc = fx_cp_sync_inc ? fx_cp_sync_inc : FX_LFO_INC[fx_p[FXP_CP_SPEED]] >> 1, sb, j, s, k;
     if (!sw) return;
     for (sb = 0; sb < n; sb += 32u) {
         if (sw == 2) {                                   /* phaser */
@@ -179,7 +180,8 @@ static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
     int32_t sw = fx_p[FXP_DL_SW], depth = fx_p[FXP_DL_DEPTH];
     uint32_t sync = fx_dly_sync_samples, j;
     int32_t target = (int32_t)(sync ? sync : FX_DLY_T[fx_p[FXP_DL_TIME]]);
-    int32_t wet = depth * 258, fb = (depth * 180 * fx_p[FXP_DL_FDBK]) >> 7, col = sw == 2 ? 9000 : 20000;
+    int32_t wet = depth * 258, fb = (depth * 180 * fx_p[FXP_DL_FDBK]) >> 7, col = 2000 + fx_p[FXP_DL_TONE] * 240;
+    if (sw == 2) col = (col * 19661) >> 15;                 /* tape: darker */
     while (target >= (int32_t)DLY_LEN - 2) target >>= 1;
     target <<= 8;
     if (fb > 27853) fb = 27853;

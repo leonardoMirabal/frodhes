@@ -49,6 +49,9 @@ def main():
     out.append(arr("KN_P64I", "uint32_t", [int(round(65536 / 2 ** ((v - 64) / 64))) for v in range(128)], 8))
     out.append(arr("KN_P32", "uint32_t", [int(round(65536 * 2 ** ((v - 64) / 32))) for v in range(128)], 8))
     out.append(arr("KN_HAM", "uint32_t", [int(round(65536 * 2 ** ((v - 64) / 128))) for v in range(128)], 8))
+    # NOISE knob: damper-thump force (Q15 re the v = 127 strike) and felt-noise level (Q15 output): -60 + 36 v/127 dB
+    out.append(arr("KN_THUMP", "uint16_t", [0] + [int(round(32767 * 10 ** ((-60 + 36 * v / 127 - 6) / 20) * 40)) for v in range(1, 128)], 12))
+    out.append(arr("KN_FELT", "uint16_t", [0] + [int(round(32767 * 10 ** ((-60 + 36 * v / 127 - 20) / 20))) for v in range(1, 128)], 12))
     os.makedirs(os.path.join(ROOT, "firmware/gen"), exist_ok=True)
     open(os.path.join(ROOT, "firmware/gen/fx_tables.h"), "w").write("\n".join(out))
 

@@ -22,12 +22,17 @@ static void tempo_sync_publish(void)
         fx_tw_sync_inc = 0xFFFFFFFFu / (s ? s : 1u);                         /* one LFO cycle per division */
     } else
         fx_tw_sync_inc = 0;
+    {
+        uint32_t c = set.panel[P_CP_SYNC], s = c ? beat_samples() * SYNC_UNITS[c] / 96u : 0u;
+        fx_cp_sync_inc = c ? 0xFFFFFFFFu / (s ? s : 1u) : 0u;
+    }
 }
 
 static void tempo_set10(uint32_t b)
 {
     if ((int32_t)b < 400) b = 400;
     if (b > 2400) b = 2400;
+    if (b == set.bpm10 && beat_ms == 600000u / b) return;
     set.bpm10 = (uint16_t)b;
     beat_ms = 600000u / set.bpm10;
     tempo_sync_publish();
@@ -49,12 +54,35 @@ static void tempo_tap(void)
     }
 }
 
+/* MIDI clock in (CLOCK AUTO / USB): the tempo from 24 pulses, smoothed; FA restarts the beat. Pulses 8..80 ms
+ * (31..312 BPM); without pulses the internal tempo simply goes on at the last value. */
+static uint32_t clk_last, clk_acc, clk_n;
+static void tempo_clock(uint8_t st)
+{
+    uint32_t now = fm1_ms, dt;
+    if (set.clock == 0) return;
+    if (st == 0xFAu) { beat_t0 = now; clk_n = clk_acc = 0; return; }
+    if (st != 0xF8u) return;
+    dt = now - clk_last;
+    clk_last = now;
+    if (dt < 8u || dt > 80u) { clk_n = clk_acc = 0; return; }
+    clk_acc += dt;
+    if (++clk_n == 24u) {
+        uint32_t b = 600000u / clk_acc, cur = set.bpm10;
+        int32_t diff = (int32_t)b - (int32_t)cur;
+        if (diff > (int32_t)cur / 10 || -diff > (int32_t)cur / 10) tempo_set10(b);   /* a jump: follow at once */
+        else tempo_set10((uint32_t)((int32_t)cur + diff / 4));                       /* else smooth */
+        beat_t0 = now;
+        clk_n = clk_acc = 0;
+    }
+}
+
 /* the beat LED: on for 1/6 of a beat, only while something is synced */
 static uint32_t tempo_beat_led(void)
 {
     uint32_t ph = (fm1_ms - beat_t0) % (beat_ms ? beat_ms : 1u);
     if (fm1_ms - tap_t[tap_n ? tap_n - 1u : 0] < 80u) return 1;
-    if (!set.panel[P_DL_SYNC] && !set.panel[P_TW_SYNC]) return 0;
+    if (!set.panel[P_DL_SYNC] && !set.panel[P_TW_SYNC] && !set.panel[P_CP_SYNC]) return 0;
     return ph < beat_ms / 6u;
 }
 

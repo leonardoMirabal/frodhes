@@ -62,7 +62,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
             else if (id == P_TYPE) x = (int32_t)(v >> 5);
             else if (PARAMS[id].hi < 127u) x = (int32_t)(v * (PARAMS[id].hi + 1u) >> 7);
             param_set(id, x);
-            if (id == P_DL_SYNC || id == P_TW_SYNC) tempo_sync_publish();
+            if (id == P_DL_SYNC || id == P_TW_SYNC || id == P_CP_SYNC) tempo_sync_publish();
             ui_mark_param(id);
             return;
         }
@@ -122,6 +122,7 @@ static void app_main(void)
             if (ty == 0x90u && d2) rh_note_on(d1, d2);
             else if (ty == 0x80u || ty == 0x90u) rh_note_off(d1);
             else if (ty == 0xB0u) midi_cc(d1, d2);
+            else if (st >= 0xF8u) tempo_clock(st);
             else if (ty == 0xC0u) preset_load(d1 < 12u ? d1 : d1 >= 16u && d1 < 32u ? PR_NF + d1 - 16u : 255u);
         }
 

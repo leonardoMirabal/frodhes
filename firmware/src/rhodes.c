@@ -68,6 +68,8 @@ typedef struct {
     uint32_t ppos, prate;
     int32_t pamp;
     const int16_t *ptab;
+    uint16_t felt_n;                           /* felt-noise samples left (key-up) */
+    int32_t felt_lp;
 } rh_voice_t;
 
 static rh_voice_t rv[RH_NV];
@@ -85,6 +87,8 @@ static volatile int32_t rh_ham = 65536;        /* Q16: contact-rate multiplier (
 static volatile int32_t rh_k_decay = 65536;    /* Q16: 1/S of the sustain T60 (DECAY) */
 static volatile int32_t rh_k_rel = 65536;      /* Q16: 1/S of the release T60 (RELEASE) */
 static volatile int32_t rh_tune_t;             /* Q30: 2^(c/1200) - 1 (TUNE) */
+static volatile int32_t rh_thump, rh_felt;     /* Q15: damper thump force, felt-noise level (NOISE) */
+static uint32_t rh_lfsr = 0xACE1u;
 
 /* ISR-written summaries (one writer each) */
 static volatile uint32_t rh_active_bits, rh_held_bits, rh_quiet_blocks;
@@ -206,7 +210,7 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
     u = v->off;
     v->Hprev = rh_hermite(RH_PHI[k->fam], RH_SLOPE[k->fam], (int64_t)u * u);
     v->alive = 1; v->held = 1; v->ramp = 0; v->w_tgt = 0;
-    v->fade = 32768; v->pend = 0;
+    v->fade = 32768; v->pend = 0; v->felt_n = 0; v->felt_lp = 0;
     v->age = ++rh_ages;
     v->life = k->life;
     rh_load_pulse(v, vel);
@@ -256,7 +260,19 @@ static void rh_events(void)
         if (type == EV_NOTE_ON) rh_strike(note, val);
         else if (type == EV_NOTE_OFF) {
             for (i = 0; i < RH_NV; i++)
-                if (rv[i].alive && rv[i].note == note && rv[i].held) { rv[i].held = 0; rh_set_damper(&rv[i], rh_pedal_w); }
+                if (rv[i].alive && rv[i].note == note && rv[i].held) {
+                    rh_voice_t *v = &rv[i];
+                    v->held = 0;
+                    rh_set_damper(v, rh_pedal_w);
+                    if (rh_pedal_w && rh_thump && !v->ptab) {  /* the felt lands on the tine: a soft knock */
+                        uint32_t key = (uint32_t)(v->k - RH_KEYS);
+                        v->ptab = RH_PULSE[key][0];
+                        v->pamp = rh_thump > 32767 ? 32767 : rh_thump;
+                        v->prate = (uint32_t)RH_PRATE[key][1] << 4;
+                        v->ppos = 0;
+                    }
+                    if (rh_pedal_w && rh_felt) v->felt_n = 353;  /* 8 ms of felt noise */
+                }
         } else if (type == EV_PEDAL) {
             rh_pedal_w = PEDAL_W[val];
             for (i = 0; i < RH_NV; i++)
@@ -332,6 +348,14 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
             v->fade -= (int32_t)(32768 / FADE_SAMPLES);
             if (v->fade < 0) v->fade = 0;
         }
+        if (v->felt_n) {                                  /* felt noise: LFSR, one-pole ~2 kHz */
+            int32_t nz;
+            rh_lfsr = (rh_lfsr >> 1) ^ (-(rh_lfsr & 1u) & 0xB400u);
+            nz = (int32_t)(rh_lfsr & 0xFFFFu) - 32768;
+            v->felt_lp += (nz - v->felt_lp) >> 3;
+            o += (int32_t)(((int64_t)v->felt_lp * rh_felt) >> 10);   /* Q15 * Q15 >> 10 = Q20 */
+            v->felt_n--;
+        }
         mix[j] += o;
     }
     v->Hprev = Hp;
@@ -340,7 +364,7 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
         if (v->pend) rh_init(v, v->pend_note, v->pend_vel);
         return;
     }
-    if (!v->ptab && sum < (k->kill >> 3)) { v->alive = 0; return; }
+    if (!v->ptab && !v->felt_n && sum < (k->kill >> 3)) { v->alive = 0; return; }
     for (m = 1; m < RH_NM; m++)                           /* sleep overtone modes that have died away */
         if (v->m[m].live && !v->ptab && v->m[m].peak < (k->kill >> 3)) {
             v->m[m].live = 0; v->m[m].x = v->m[m].y = v->m[m].ex = v->m[m].ey = 0;

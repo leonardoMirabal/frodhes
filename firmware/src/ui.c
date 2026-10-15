@@ -40,7 +40,7 @@ static const uint8_t COL_K[3][2] = {{P_TW_DEPTH, P_TW_RATE}, {P_CP_DEPTH, P_CP_S
 static const uint8_t COL_LAYER[3][4] = {{P_TW_SW, P_TW_SYNC, P_TW_MODE, P_TW_SHAPE},
                                         {P_CP_SW, P_CP_SYNC, P_CP_FDBK, 0xFF},
                                         {P_DL_SW, P_DL_SYNC, P_DL_FDBK, P_DL_TONE}};
-static const uint8_t PAGE_P[5][4] = {{0}, {P_TONE, P_BARK, P_BELL, P_HAMMER}, {P_DECAY, P_RELEASE, P_NOISE, P_SPREAD},
+static const uint8_t PAGE_P[5][4] = {{0}, {P_TONE, P_BARK, P_BELL, P_HAMMER}, {P_DECAY, P_RELEASE, P_NOISE, 0xFF},
                                      {0}, {0}};
 static const char *const PAGE_NAME[5] = {"", "VOICING", "VOICING 2", "TEMPO", "SCALE"};
 static const char *const SCALE_NAME[11] = {"MAJ", "MIN", "DOR", "MIX", "LYD", "PHRY", "HARM", "MEL", "PEN", "MPEN", "BLUE"};
@@ -210,7 +210,7 @@ static void draw_footer(void)
         if (ui_page == PG_PANEL && set.focus == 1) a = "K1 DPTH K2 SPD K3 DRV K4 REV";
         if (ui_layer != 0xFF) { a = ui_layer == 0 ? "K1 SW K2 SYNC K3 MODE K4 SHPE" : ui_layer == 1 ? "K1 SW K2 SYNC K3 FDBK" : "K1 SW K2 SYNC K3 FDBK K4 TONE"; b = "LET GO: PANEL"; }
         if (ui_page == PG_VOICE) { a = "K1TONE K2BARK K3BELL K4HAMR"; b = "[ENV]DECAY  [HOME]PANEL"; }
-        if (ui_page == PG_VOICE2) { a = "K1 DCAY K2 REL K3 NOIS K4 SPRD"; b = "[EDIT]VOICING [HOME]PANEL"; }
+        if (ui_page == PG_VOICE2) { a = "K1 DCAY K2 REL K3 NOIS K4 TUNE"; b = "[EDIT]VOICING [HOME]PANEL"; }
         if (ui_page == PG_GLO) { a = "K1 BPM K2 KVEL K3 TUNE"; b = "[PLAY]TAP  [HOME]PANEL"; }
         if (ui_page == PG_SCALE) { a = "K1 MODE K2 SCAL K3 ROOT K4 TRN"; b = "[HOME]PANEL"; }
         if (ui_msg_t && fm1_ms - ui_msg_t < 1500u) b = ui_msg;
@@ -240,7 +240,10 @@ static void draw_cards(void)
     uint32_t k;
     cv_begin(240, 80, C_BLACK);
     if (ui_page == PG_VOICE || ui_page == PG_VOICE2) {
-        for (k = 0; k < 4u; k++) { param_text(PAGE_P[ui_page][k], v[k]); card((int32_t)k, PARAMS[PAGE_P[ui_page][k]].lab, v[k], set.panel[PAGE_P[ui_page][k]], 127); }
+        for (k = 0; k < 4u; k++) {
+            if (PAGE_P[ui_page][k] == 0xFF) { p_fmt_int(v[k], set.tune); card((int32_t)k, "TUNE", v[k], set.tune + 50, 100); continue; }
+            param_text(PAGE_P[ui_page][k], v[k]); card((int32_t)k, PARAMS[PAGE_P[ui_page][k]].lab, v[k], set.panel[PAGE_P[ui_page][k]], 127);
+        }
     } else if (ui_page == PG_GLO) {
         p_fmt_int(v[0], set.bpm10 / 10);
         p_fmt_int(v[1], set.key_vel);
@@ -369,7 +372,10 @@ static void ui_input(uint32_t b, uint32_t rel)
     if (ui_layer != 0xFF) {
         for (k = 0; k < 4u; k++) {
             uint32_t id = COL_LAYER[ui_layer][k];
-            if (d[ENC_KNOB1 + k] && id != 0xFF) ui_param_turn(id, d[ENC_KNOB1 + k] > 0 ? 1 : -1);
+            if (d[ENC_KNOB1 + k] && id != 0xFF) {
+                ui_param_turn(id, d[ENC_KNOB1 + k] > 0 ? 1 : -1);
+                if (id == P_TW_SYNC || id == P_CP_SYNC || id == P_DL_SYNC) tempo_sync_publish();
+            }
         }
         return;
     }
@@ -386,7 +392,15 @@ static void ui_input(uint32_t b, uint32_t rel)
         break;
     case PG_VOICE:
     case PG_VOICE2:
-        for (k = 0; k < 4u; k++) ui_param_turn(PAGE_P[ui_page][k], d[ENC_KNOB1 + k]);
+        for (k = 0; k < 4u; k++) {
+            if (PAGE_P[ui_page][k] == 0xFF) {
+                if (d[ENC_KNOB1 + k]) {
+                    int32_t v = set.tune + d[ENC_KNOB1 + k];
+                    set.tune = (int8_t)(v < -50 ? -50 : v > 50 ? 50 : v); rh_tune_t = TUNE_T[set.tune + 50];
+                    set_dirty = 1; set_t_change = fm1_ms; ui_mark(E_CARDS);
+                }
+            } else ui_param_turn(PAGE_P[ui_page][k], d[ENC_KNOB1 + k]);
+        }
         break;
     case PG_GLO:
         if (d[ENC_KNOB1]) tempo_set10((uint32_t)((int32_t)set.bpm10 + d[ENC_KNOB1] * 10));

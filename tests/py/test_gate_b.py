@@ -27,6 +27,7 @@ def c_render(note, vel, dur_ms, off_ms=None, tag="gb"):
     scr = out + ".txt"
     with open(scr, "w") as f:
         f.write("50 midi 0xB0 119 127\n")                 # developer: bypass the effects, test the voice
+        f.write("50 midi 0xB0 104 0\n")                   # NOISE off: the golden model has no thump / felt noise
         f.write(f"100 midi 0x90 {note} {vel}\n")
         if off_ms:
             f.write(f"{off_ms} midi 0x80 {note} 0\n")

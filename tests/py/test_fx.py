@@ -80,3 +80,14 @@ def test_effect_finite_and_bounded(name, ccs):
     L, R = run(name, ccs, [(100, 48, 127, 800), (150, 64, 127, 800), (200, 71, 127, 800)], 2500)
     assert np.all(np.isfinite(L)) and np.max(np.abs(L)) < 32767 and np.max(np.abs(R)) < 32767
     assert rms_db(seg(L, 0.2, 0.8)) > -50
+
+
+def test_noise_knock_at_key_up():
+    """NOISE: the damper's knock and felt noise follow the key-up, and only then."""
+    base = [(81, 0), (91, 0), (119, 127)]
+    Lq, _ = run("noise0", base + [(104, 0)], [(100, 64, 100, 500)], 1200)
+    Ln, _ = run("noise1", base + [(104, 127)], [(100, 64, 100, 500)], 1200)
+    pre = slice(int(0.3 * FS), int(0.55 * FS))
+    assert np.array_equal(Lq[pre], Ln[pre])                     # identical before the key-up
+    post = slice(int(0.6 * FS), int(0.7 * FS))
+    assert np.sum((Ln[post] - Lq[post]) ** 2) > 0               # something added after it
