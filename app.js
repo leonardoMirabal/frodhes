@@ -43,8 +43,12 @@ function frame() {
   }
   g.putImageData(img, 0, 0);
   const led = new Uint8Array(M.HEAPU8.buffer, M._web_leds(), 64);
-  for (const b of document.querySelectorAll("button.b")) b.classList.toggle("on", !!led[+b.dataset.id]);
-  for (const k of document.querySelectorAll(".kb > div")) k.classList.toggle("lit", !!led[14 + (+k.dataset.k)]);
+  for (const b of document.querySelectorAll("button.b")) b.classList.toggle("on", led[+b.dataset.id] === 1);
+  for (const k of document.querySelectorAll(".kb > div")) {
+    const v = led[14 + (+k.dataset.k)];
+    k.classList.toggle("lit", v === 1);
+    k.classList.toggle("glow", v === 2);
+  }
   if (M._web_store_take_dirty()) {
     try {
       const b = new Uint8Array(M.HEAPU8.buffer, M._web_store(), 260);
