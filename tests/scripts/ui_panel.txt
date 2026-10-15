@@ -32,4 +32,10 @@
 3300 btn 8
 3400 expect led 8 1
 3500 shot
-3600 end
+# FX: all effects off (its LED goes out, BYP on the header) and on again
+3600 btn 2
+3700 expect led 2 0
+3750 shot
+3800 btn 2
+3900 expect led 2 1
+4000 end

@@ -29,6 +29,7 @@ static volatile uint32_t fx_ph_sync_inc;         /* main loop: a synced phaser r
 static volatile int32_t fx_cmp_gr;               /* ISR: the compressor's gain reduction now, log2 Q12 (>= 0) */
 static volatile uint32_t fx_dly_sync_samples;    /* main loop (tempo.c): a synced delay time, 0 = free */
 static volatile uint32_t fx_tw_sync_inc;         /* main loop: a synced tremolo rate (Q32 step), 0 = free */
+static volatile uint8_t fx_bypass;              /* main loop (the FX button): all effects off, settings kept */
 static volatile int32_t fx_peak;                 /* ISR: last block's max |out| */
 static volatile uint32_t prof_us, prof_max_us;   /* ISR (frodhes.c app_audio): its own time, this block / maximum */
 static uint32_t prof_over;
@@ -283,7 +284,10 @@ static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
     if (!sw && iabs(dly_lp) < 2) dly_lp = dly_hp = 0;
 }
 
-/* ---- REVERB: Felucca's HALL (fx.c, GPL-3.0-only), unchanged except for its parameters' source */
+/* ---- REVERB: Felucca's HALL (fx.c, GPL-3.0-only), unchanged except for its parameters' source and its internal
+ * level: the int16 lines run 4x hotter (HL_IN) and the output gain is 4x lower (HL_OUT), the same reverb level
+ * with 12 dB less rounding noise (at a piano's -9 dBFS the original level left the lines a few hundred LSB wide:
+ * an audible hiss under every note, 0.4) */
 #define CTL 32u
 static int16_t rev_comb[1116 + 1188 + 1277 + 1356] POOL;
 static int16_t rev_ap[556 + 441] POOL;
@@ -294,7 +298,8 @@ static int16_t rev_ap[556 + 441] POOL;
 #define HL_LPM 0x69u
 #define HL_KD(d) (32767 - (d) * 180)
 #define HL_LOUD 32
-#define HL_OUT 4
+#define HL_OUT 1
+#define HL_IN 10320                 /* Felucca: 2580 with HL_OUT 4 */
 static const uint16_t HL_LEN[HL_NL] = {467, 509, 547, 593, 631, 673, 709, 743};
 static const uint16_t HL_AP[HL_NAP] = {131, 307};
 static const int16_t HL_APG[HL_NAP] = {11469, 10240};
@@ -371,7 +376,7 @@ static void rev_hall(const int32_t *rev_in, int32_t *mid, int32_t *side, int32_t
     for (i = 0; i < HL_NC; i++) {
         int32_t x = (xp + 2 * rev_in[2u * i] + rev_in[2u * i + 1u]) >> 2, v;
         xp = rev_in[2u * i + 1u];
-        x = mulq15(clampi(x, -262143, 262143), 2580);
+        x = mulq15(clampi(x, -131071, 131071), HL_IN);
         v = x - hp + he;
         he = v & 31;
         hp += v >> 5;
@@ -474,16 +479,20 @@ static inline int32_t dc_block(int32_t x, int32_t *dc, int32_t *err)
     return x - ((*dc + 32) >> 6);
 }
 static int32_t fx_L[256], fx_R[256];
+#define GATE_LO 16                                      /* -66 dBFS (Q15) */
+#define GATE_HI 32
+static int32_t gate_g = 32768, gate_tgt = 32768, fx_wet = 32768;
+static uint32_t gate_quiet;
 static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
 {
-    static int32_t m[256];
+    static int32_t m[256], dry[256];
     uint32_t j;
     int32_t pk = 0;
     if (fx_p[FXP_RAW]) {                               /* developer: the voice engine's output untouched */
         for (j = 0; j < n; j++) { out[2u * j] += mono[j]; out[2u * j + 1u] += mono[j]; }
         return;
     }
-    for (j = 0; j < n; j++) { m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }
+    for (j = 0; j < n; j++) { dry[j] = m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }
     fx_comp(m, n);
     fx_drive(m, n);
     fx_trem(m, fx_L, fx_R, n);
@@ -492,9 +501,16 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
     fx_delay(fx_L, fx_R, n);
     fx_reverb(fx_L, fx_R, n);
     for (j = 0; j < n; j++) {
-        int32_t l = dc_block(fx_L[j], &dc_l, &dce_l), r = dc_block(fx_R[j], &dc_r, &dce_r);
+        int32_t l, r, al, ar, a;
+        /* the bypass: the effects keep running (their tails stay current), the output crossfades in 5.8 ms */
+        if (fx_bypass ? fx_wet > 0 : fx_wet < 32768) fx_wet += fx_bypass ? -128 : 128;
+        if (fx_wet != 32768) {
+            fx_L[j] = (int32_t)(((int64_t)fx_L[j] * fx_wet + (int64_t)dry[j] * (32768 - fx_wet)) >> 15);
+            fx_R[j] = (int32_t)(((int64_t)fx_R[j] * fx_wet + (int64_t)dry[j] * (32768 - fx_wet)) >> 15);
+        }
+        l = dc_block(fx_L[j], &dc_l, &dce_l); r = dc_block(fx_R[j], &dc_r, &dce_r);
         l = (l * 3) >> 1; r = (r * 3) >> 1;           /* +3.5 dB: sit higher above the codec's analog hiss (0.4) */
-        int32_t al = l < 0 ? -l : l, ar = r < 0 ? -r : r, a = al > ar ? al : ar;
+        al = l < 0 ? -l : l; ar = r < 0 ? -r : r; a = al > ar ? al : ar;
         if (a > lim_env) lim_env += (a - lim_env) >> 2;
         else if (lim_env > LIM_T) lim_env -= ((lim_env - LIM_T) >> 12) + 1;
         if (lim_env > LIM_T) {
@@ -502,11 +518,20 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
             l = ((l >> 4) * g) >> 11;
             r = ((r >> 4) * g) >> 11;
         }
-        l = softclip(l); r = softclip(r);
-        out[2u * j] += l;
-        out[2u * j + 1u] += r;
+        fx_L[j] = l = softclip(l); fx_R[j] = r = softclip(r);
         if (iabs(l) > pk) pk = iabs(l);
         if (iabs(r) > pk) pk = iabs(r);
+    }
+    /* silence gate: the codec mutes itself on digital zero, but while anything at all comes out its analog hiss
+     * is there; a held note's last -66 dBFS lie under that hiss anyway. So after 200 ms under GATE_LO the output
+     * fades (46 ms) to exact zero, and it opens within 1.5 ms of the first block above GATE_HI (0.4) */
+    if (pk >= GATE_HI) { gate_quiet = 0; gate_tgt = 32768; }
+    else if (pk < GATE_LO && ++gate_quiet >= 35u) { gate_quiet = 35u; gate_tgt = 0; }
+    for (j = 0; j < n; j++) {
+        if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
+        else if (gate_g > gate_tgt) gate_g = gate_g - 16 < gate_tgt ? gate_tgt : gate_g - 16;
+        out[2u * j] += gate_g == 32768 ? fx_L[j] : (fx_L[j] * gate_g) >> 15;
+        out[2u * j + 1u] += gate_g == 32768 ? fx_R[j] : (fx_R[j] * gate_g) >> 15;
     }
     fx_peak = pk;
     if (pk < 16) { if (fx_quiet_blocks < 0xFFFFu) fx_quiet_blocks++; } else fx_quiet_blocks = 0;

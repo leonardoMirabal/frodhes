@@ -43,15 +43,16 @@ One page at a time, and each page has exactly four cards: **K1–K4 always turn 
 | **COMPRESSOR** | OFF / ON | AMOUNT | ATTACK | RELEASE | ENV twice |
 | **TREM/WAH** | OFF / PAN / TREM / WAH | DEPTH | RATE | SHAPE | LFO |
 | **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | SEQ |
-| **CHORUS** | OFF / ON | DEPTH | SPEED | SYNC | FX |
+| **CHORUS** | OFF / ON | DEPTH | SPEED | SYNC | SEL |
 | **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | ARP |
 | **TEMPO** | BPM | TREM SYNC | PHA SYNC | DLY SYNC | GLO |
-| **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | SEL |
+| **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | (SELECT) |
 | **SETUP** | MIDI CLOCK | DELAY TONE | | | GLO twice |
 
 | Control | What it does |
 | --- | --- |
-| **LFO / SEQ / FX / ARP** | Open the TREM, PHASER, CHORUS or DELAY page; press again there to switch the effect on / off. Their LEDs show which effects are on. |
+| **FX** | All effects off / on (a bypass: no setting changes, not saved; BYP on the header). Lit = effects active. |
+| **LFO / SEQ / SEL / ARP** | Open the TREM, PHASER, CHORUS or DELAY page; press again there to switch the effect on / off. Their LEDs show which effects are on. |
 | **ALGORITHM** | TYPE on any page: STAGE 77, SUITCASE, EARLY FELT, BELL DYNO. |
 | **PRESETS** | Browse F01–F12 and your U01–U16; loads after the knob rests 400 ms. |
 | **SAVE** | Press: the footer asks where (PRESETS or K1 picks U01–U16); SAVE again stores, HOME cancels. Hold: undo the last preset load. |
@@ -65,6 +66,8 @@ SETUP also shows the audio time per block (it must stay under ~2900 µs); COMPRE
 The chain: COMP → DRIVE → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter.
 
 **MASTER is a digital volume**: for the least hiss keep it high and turn the speaker / headphones down instead.
+The codec mutes itself on digital zero; a silence gate fades the output to exact zero once it stays under -66 dBFS,
+so a held, faded note does not leave the codec's hiss running. All effect depths default to 0.
 
 ## Build
 

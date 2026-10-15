@@ -7,9 +7,9 @@
  *              PIANO VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE SETUP
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on any page)          PRESETS  sounds (presets.c)
- *   shortcuts  HOME = PIANO, EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEQ / FX / ARP = TREM / PHASER /
- *              CHORUS / DELAY (on that page: the effect on / off), GLO = TEMPO (again: SETUP), SEL = SCALE.
- *              PLAY: tap tempo. REC: sustain. */
+ *   shortcuts  HOME = PIANO, EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEQ / SEL / ARP = TREM / PHASER /
+ *              CHORUS / DELAY (on that page: the effect on / off), GLO = TEMPO (again: SETUP).
+ *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo. REC: sustain. */
 
 #define PR_NF_UI 12u                                  /* presets.c: PR_NF factory presets, then the user ones */
 #define PR_NALL_UI 28u
@@ -52,8 +52,8 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"MODE", "SCALE", "ROOT", "TRANSP"},
     {"CLOCK", "DLY TONE", "", ""},
 };
-static const char *const PAGE_HINT[PG_N] = {"REC: SUSTAIN  SAVE: STORE", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
-                                            "", "LFO BUTTON: ON / OFF", "SEQ BUTTON: ON / OFF", "FX BUTTON: ON / OFF",
+static const char *const PAGE_HINT[PG_N] = {"FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
+                                            "", "LFO BUTTON: ON / OFF", "SEQ BUTTON: ON / OFF", "SEL BUTTON: ON / OFF",
                                             "ARP BUTTON: ON / OFF", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT", ""};
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
                                            "PENTA", "MPENTA", "BLUES"};
@@ -208,9 +208,10 @@ static void draw_header(void)
     cv_text(2, 2, &FONT_S, nm, C_HI);
     if (set.oct) {
         char o[4] = {'O', set.oct < 0 ? '-' : '+', (char)('0' + (set.oct < 0 ? -set.oct : set.oct)), 0};
-        cv_text(122, 2, &FONT_S, o, C_GRAY);
+        cv_text(116, 2, &FONT_S, o, C_GRAY);
     }
-    if (rh_hold) cv_text(150, 2, &FONT_S, "SUS", UI_ACC);
+    if (rh_hold) cv_text(142, 2, &FONT_S, "SUS", UI_ACC);
+    if (fx_bypass) cv_text(166, 2, &FONT_S, "BYP", C_HI);
     slot_text(S_BPM, b);
     cv_text(238 - text_w(&FONT_S, b), 2, &FONT_S, b, C_AMB);
     cv_rect(0, 19, 240, 1, C_LINE);
@@ -348,10 +349,14 @@ static void ui_input(uint32_t b, uint32_t rel)
     if (b >> BTN_HOME & 1u) ui_goto(PG_PIANO);
     if (b >> BTN_EDIT & 1u) ui_goto(PG_VOICE);
     if (b >> BTN_ENV & 1u) ui_goto(ui_page == PG_DECAY ? PG_COMP : PG_DECAY);
-    if (b >> BTN_SEL & 1u) ui_goto(PG_SCALE);
     if (b >> BTN_GLO & 1u) ui_goto(ui_page == PG_TEMPO ? PG_SETUP : PG_TEMPO);
     if (b >> BTN_LFO & 1u) ui_fx_button(PG_TREM, 0);
-    if (b >> BTN_FX & 1u) ui_fx_button(PG_CHO, 1);
+    if (b >> BTN_SEL & 1u) ui_fx_button(PG_CHO, 1);
+    if (b >> BTN_FX & 1u) {                             /* bypass all effects: nothing else changes */
+        fx_bypass = !fx_bypass;
+        ui_say(fx_bypass ? "EFFECTS OFF" : "EFFECTS ON");
+        ui_mark(E_HEADER);
+    }
     if (b >> BTN_SEQ & 1u) ui_fx_button(PG_PHA, 3);
     if (b >> BTN_ARP & 1u) ui_fx_button(PG_DELAY, 2);
     if (b >> BTN_PLAY & 1u) tempo_tap();
@@ -386,14 +391,14 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
 {
     uint32_t k;
     fm1_led_key(BTN_LFO, PV(P_TW_SW) != 0);
-    fm1_led_key(BTN_FX, PV(P_CP_SW) != 0);
+    fm1_led_key(BTN_FX, !fx_bypass);
+    fm1_led_key(BTN_SEL, PV(P_CP_SW) != 0);
     fm1_led_key(BTN_ARP, PV(P_DL_SW) != 0);
     fm1_led_key(BTN_SEQ, PV(P_PH_SW) != 0);
     fm1_led_key(BTN_HOME, ui_page == PG_PIANO);
     fm1_led_key(BTN_EDIT, ui_page == PG_VOICE);
     fm1_led_key(BTN_ENV, ui_page == PG_DECAY || ui_page == PG_COMP);
     fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP);
-    fm1_led_key(BTN_SEL, ui_page == PG_SCALE);
     fm1_led_key(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));
     fm1_led_key(BTN_PLAY, beat_on);
     fm1_led_key(BTN_OCT_DOWN, set.oct < 0);
