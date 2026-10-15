@@ -276,22 +276,27 @@ def effects(r, rep):
     ref = r.take(1.5, CHORD)
     i0 = max(onset(ref), 0)
     base = db(ref[i0:i0 + int(1.1 * FS)])
+    base_direct = db(ref[i0:i0 + int(0.25 * FS)])
     rows, bad = [], []
     for name, kv in FX:
         r.dry(**kv)
         x = r.take(2.2, CHORD)
         i = max(onset(x), 0)
-        lv = db(x[i:i + int(1.1 * FS)])
+        timed = name.startswith(("delay", "reverb"))     # echoes / a tail add level by design: check the direct
+        lv = db(x[i:i + int(0.25 * FS)]) - base_direct + base if timed else db(x[i:i + int(1.1 * FS)])
         clip = int((np.abs(x) >= 32700).sum())
         row = dict(name=name, delta_db=lv - base, peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12), clipped=clip,
                    lr_corr=float(np.corrcoef(x[i:i + FS, 0], x[i:i + FS, 1])[0, 1]) if i + FS < len(x) else 1.0,
                    tail_db=db(x[i + int(1.3 * FS):i + int(1.9 * FS)]), clicks=clicks(x))
         rows.append(row)
-        if abs(row["delta_db"]) > 4 or clip or row["clicks"]:
+        row["with_tail_db"] = db(x[i:i + int(1.1 * FS)]) - base
+        lim = 99 if name.startswith(("comp", "everything")) else 3   # a compressor's level depends on the playing
+        if abs(row["delta_db"]) > lim or clip or row["clicks"]:
             bad.append(name)
     rep["effects"] = dict(dry_db=base, rows=rows)
     summary = "; ".join(f"{q['name']} {q['delta_db']:+.1f}" for q in rows)
-    return not bad, f"level vs dry (dB): {summary}; problems: {bad or 'none'}"
+    return not bad, (f"level vs dry (dB; delay/reverb: the direct sound; compressor: information): {summary}; "
+                     f"problems: {bad or 'none'}")
 
 
 @test

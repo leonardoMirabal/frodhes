@@ -115,7 +115,8 @@ static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
                 hi = x - wah_lp - ((q * wah_bp) >> 14);
                 wah_bp += (f * (hi >> 1)) >> 13;
                 wah_lp += (f * (wah_bp >> 1)) >> 13;
-                x = (7 * wah_bp + 3 * wah_lp) / 10;
+                x = (9 * ((wah_bp >> 2) * q >> 11) + 4 * wah_lp) / 10;   /* bp x 2q: the resonant peak's gain held,
+                                                                         * louder playing no longer gets louder (0.7) */
             }
             gl += dl; gr += dr;
             L[j] += (int32_t)(((int64_t)x * gl) >> 15);
