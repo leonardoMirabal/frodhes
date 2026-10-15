@@ -308,17 +308,49 @@ def build():
         for m in spec["modes"]:
             m["b"] *= scale
         spec_keys.append(spec)
-    # gain: v = 100, 1 s RMS -> target dBFS, smoothed over +-3 keys; kill: output below 1 LSB, x2 margin
+    # velocity calibration (FM-1 scan, 0.6): on some keys the hammer's contact at middle velocities partly cancels
+    # the tine's fundamental, so their level against velocity had holes of up to 20 dB next to normal keys. Each
+    # key's force amplitude per velocity anchor is fitted so its level curve (re the v = 104 anchor) follows the
+    # median curve of all keys (made monotonic); the physics still shapes the timbre, the level is made even.
+    def anchor_levels():
+        out = np.zeros((len(spec_keys), len(V_ANCH)))
+        for a, v in enumerate(V_ANCH):
+            yv = gm.render_batch(spec_keys, fams, [v] * len(spec_keys), 0.5)
+            out[:, a] = [20 * np.log10(np.sqrt(np.mean(r[2205:22050] ** 2)) + 1e-9) for r in yv]
+        return out
+    ref = V_ANCH.index(104)
+    for it in range(4):
+        Lv = anchor_levels()
+        rel = Lv - Lv[:, ref:ref + 1]
+        tgt = np.median(rel, axis=0)
+        tgt = np.maximum.accumulate(tgt)                    # louder with velocity, never less
+        corr = np.clip(tgt[None, :] - rel, -24, 24)
+        corr[:, ref] = 0
+        print("velocity fit %d: worst %.1f dB, median |err| %.2f dB" % (it, np.abs(corr).max(), np.median(np.abs(corr))),
+              file=sys.stderr)
+        for k, spec in zip(range(len(spec_keys)), spec_keys):
+            pa = spec["pulse"]["pamp"]
+            for a in range(len(V_ANCH)):
+                pa[a] = int(min(32767, max(8, round(pa[a] * 10 ** (0.85 * corr[k, a] / 20)))))
+    # gain: v = 100, RMS of 50..500 ms (what is heard as the note's level) -> target dBFS, per key exactly: the
+    # contact time against the tine's period makes the raw output of neighbouring keys differ by up to 18 dB, and
+    # a +-3-key smoothing kept those holes (FM-1 scan, 0.6); kill: output below 1 LSB, x2 margin
     y = gm.render_batch(spec_keys, fams, [100] * len(spec_keys), 1.0)
-    rms = [float(np.sqrt(np.mean(r[2205:] ** 2))) + 1e-12 for r in y]
+    rms = [float(np.sqrt(np.mean(r[2205:22050] ** 2))) + 1e-12 for r in y]
     target = 10 ** (p["gain_target_dbfs"] / 20) * 32767
     g_raw = np.array([target / r for r in rms])
     # headroom: one voice struck at v = 127 must peak at or below peak_dbfs (the bark spike of the attack)
     yp = gm.render_batch(spec_keys, fams, [127] * len(spec_keys), 0.25)
     pk = np.array([float(np.max(np.abs(r))) + 1e-12 for r in yp])
     g_cap = 10 ** (p.get("peak_dbfs", -9.0) / 20) * 32767 / pk
-    g_s = np.array([np.exp(np.mean(np.log(g_raw[max(0, i - 3):i + 4]))) for i in range(len(g_raw))])
-    g_s = np.minimum(g_s, g_cap)                       # the cap applies after smoothing
+    g_s = g_raw.copy()
+    # the cap is smoothed too (geometric mean over +-3 keys): the v = 127 bark spike jumps from key to key with the
+    # pickup's nonlinearity, and a raw per-key cap made neighbouring keys differ by up to 23 dB (FM-1 scan, 0.6);
+    # the few keys whose spike now passes peak_dbfs by a little are the master limiter's job
+    g_cs = np.array([np.exp(np.mean(np.log(g_cap[max(0, i - 3):i + 4]))) for i in range(len(g_cap))])
+    # (0.6) no per-key cap any more: it overrode the level calibration on keys with a large attack spike; a
+    # global cap keeps 90 % of the keys' v = 127 spike under peak_dbfs + 3 dB, the master limiter does the rest
+    g_s = g_s * min(1.0, float(np.percentile(g_cap * 10 ** (3 / 20) / g_s, 10)))   # 90 % of keys under it
     g_s = np.minimum(g_s, (2 ** 31 - 1) / Q16)         # Q16 in int32
     for spec, g in zip(spec_keys, g_s):
         spec["gain"] = float(g)
