@@ -134,8 +134,8 @@ static void param_apply(uint32_t id)
     case P_BARK: rh_bark_s = (int32_t)KN_P64[v]; rh_bark_g = (int32_t)KN_P64I[v]; break;
     case P_BELL: rh_bell = (int32_t)KN_P32[v]; break;
     case P_HAMMER: rh_ham = (int32_t)KN_HAM[v]; break;
-    case P_DECAY: rh_k_decay = (int32_t)DECAY_K[127 - v]; break;     /* higher = longer: k = 1/S */
-    case P_RELEASE: rh_k_rel = (int32_t)DECAY_K[127 - v]; break;
+    case P_DECAY: rh_k_decay = (int32_t)DECAY_K[v]; break;           /* k = 1/S, S = 2^((v-64)/32): higher = longer */
+    case P_RELEASE: rh_k_rel = (int32_t)DECAY_K[v]; break;
     default: break;                                                   /* SYNC, TONE of the delay, NOISE, SPREAD: later */
     }
 }
@@ -165,7 +165,7 @@ static void fmt_r10(char *s, int32_t v)           /* reface 0.0 .. 10.0 */
     if (t >= 100) { s[0] = '1'; s[1] = '0'; s[2] = '.'; s[3] = '0'; s[4] = 0; return; }
     s[0] = (char)('0' + t / 10); s[1] = '.'; s[2] = (char)('0' + t % 10); s[3] = 0;
 }
-static void fmt_int(char *s, int32_t v)
+static void p_fmt_int(char *s, int32_t v)
 {
     char t[8];
     int32_t i = 0, n = 0;
@@ -190,13 +190,13 @@ static void param_text(uint32_t id, char *s)
     case F_HZ: {                                   /* 0.5 * 24^(v/127) Hz in tenths, shown as "4.7" or "12" */
         int32_t t = (int32_t)(((uint64_t)FX_LFO_INC[v] * 441u) >> 32 >> 0);   /* inc * fs / 2^32 * 10 */
         t = (int32_t)(((uint64_t)FX_LFO_INC[v] * 441000u) >> 32);
-        if (t >= 100) fmt_int(s, t / 10);
+        if (t >= 100) p_fmt_int(s, t / 10);
         else { s[0] = (char)('0' + t / 10); s[1] = '.'; s[2] = (char)('0' + t % 10); s[3] = 0; }
         break;
     }
     case F_MS: {
         int32_t ms = (int32_t)((uint32_t)FX_DLY_T[v] * 1000u / 44100u);
-        if (ms < 1000) fmt_int(s, ms);
+        if (ms < 1000) p_fmt_int(s, ms);
         else { s[0] = (char)('0' + ms / 1000); s[1] = '.'; s[2] = (char)('0' + (ms / 100) % 10); s[3] = 'S'; s[4] = 0; }
         break;
     }

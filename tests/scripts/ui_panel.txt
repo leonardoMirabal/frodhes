@@ -1,0 +1,29 @@
+# Panel behaviour (IMPLEMENTATION-v3 §10.3): buttons LFO 5, FX 2, ARP 10, EDIT 6, HOME 8, PLAY 12; encoders K1 = 2.
+# TREM is focused at boot: a tap on LFO toggles it OFF -> TRM (its LED lights), another tap -> OFF (never WAH).
+100 btn 5
+200 expect led 5 1
+300 btn 5
+1100 expect led 5 0
+# FX on an unfocused column only focuses it; a second tap turns CHO on.
+1200 btn 2
+1300 btn 2
+1400 expect led 2 1
+# hold ARP and turn K1: the delay's switch steps OFF -> DIG; after letting go the DLY LED stays lit.
+1500 press 10
+2000 turn 2 1
+2100 release 10
+2200 expect led 10 1
+2300 shot
+# pages: EDIT lights EDIT, HOME goes back to the panel.
+2400 btn 6
+2500 expect led 6 1
+2600 shot
+2700 btn 8
+2800 expect led 6 0
+2800 expect led 8 1
+# tap tempo: three taps 400 ms apart -> 150.0 BPM on the header
+3000 btn 12
+3400 btn 12
+3800 btn 12
+4200 shot
+4300 end

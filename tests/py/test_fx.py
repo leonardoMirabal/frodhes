@@ -41,7 +41,7 @@ def seg(x, t0, t1):
 
 
 def test_dry_chain_is_clean():
-    L, R = run("dry", [], [(100, 60, 100, 400)], 3000)
+    L, R = run("dry", [(81, 0), (91, 0)], [(100, 60, 100, 400)], 3000)
     assert np.max(np.abs(L)) < 32000 and np.array_equal(L, R)
     assert rms_db(seg(L, 2.5, 3.0)) < -90          # the damped note ends
 
@@ -50,7 +50,7 @@ def test_delay_echoes():
     # TIME 64 -> 20 ms * 74^(64/127) ~ 175 ms; a short note, then echoes after it
     L, R = run("dly", [(88, 64), (89, 100), (90, 64)], [(100, 72, 110, 60)], 2500)
     assert rms_db(seg(L, 0.6, 1.2)) > -60          # echoes ring after the damped note
-    L0, _ = run("dly0", [], [(100, 72, 110, 60)], 2500)
+    L0, _ = run("dly0", [(81, 0), (91, 0)], [(100, 72, 110, 60)], 2500)
     assert rms_db(seg(L0, 0.6, 1.2)) < rms_db(seg(L, 0.6, 1.2)) - 20
 
 
