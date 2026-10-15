@@ -39,7 +39,7 @@ static void tempo_set10(uint32_t b)
     set_dirty = 1;
     set_t_change = fm1_ms;
     ui_mark(0);                                                              /* E_HEADER: the BPM */
-    ui_mark(10);                                                             /* E_CARDS (TEMPO page) */
+    ui_mark(10);                                                             /* E_CARDS: the TEMPO page */
 }
 
 static void tempo_tap(void)

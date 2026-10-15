@@ -4,12 +4,13 @@
  * last; load picks the valid copy with the higher sequence number, so a cut-off save never loses the bank.
  *
  *   PRESETS encoder   browse F01..F12, U01..U16; loads 400 ms after the last detent (the edit goes to undo)
- *   SAVE              open the save mode: PRESETS / K1 pick the slot, OCT+ saves (when quiet), OCT- / SAVE cancel
+ *   SAVE              open the save mode: PRESETS / K1 pick the slot, SAVE again saves (when quiet), HOME cancels
  *   SAVE held 700 ms  undo / redo the last load
  *   MIDI PC           0..11 -> F01..F12, 16..31 -> U01..U16 */
 
 #define PR_NF 12u
 #define PR_NU 16u
+_Static_assert(PR_NF == PR_NF_UI && PR_NF + PR_NU == PR_NALL_UI, "ui.c preset counts");
 #define PR_BANK_A 0x97000u
 #define PR_BANK_B 0x98000u
 #define PR_MAGIC 0x42505246u                    /* "FRPB" */
@@ -136,7 +137,6 @@ static void preset_load(uint32_t idx)
     set.preset = (uint8_t)idx;
     tempo_sync_publish();
     set_dirty = 1; set_t_change = fm1_ms;
-    ui_goto(ui_page);
     ui_draw_page_change();
     {
         char s[20];
@@ -179,12 +179,28 @@ static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t r
     static uint32_t save_t;
     char s[20];
     if (b >> BTN_SAVE & 1u) save_t = fm1_ms;
-    if (fm1_in.buttons >> BTN_SAVE & 1u && save_t && fm1_ms - save_t >= 700u) { save_t = 0; preset_undo(); return; }
-    if (rel >> BTN_SAVE & 1u && save_t) {               /* a tap: open / close the save mode */
+    if (!pr_save_mode && fm1_in.buttons >> BTN_SAVE & 1u && save_t && fm1_ms - save_t >= 700u) {
+        save_t = 0; preset_undo(); return;
+    }
+    if (rel >> BTN_SAVE & 1u && save_t) {               /* a tap: open the save mode, or (in it) save */
         save_t = 0;
-        pr_save_mode = !pr_save_mode;
-        if (pr_save_mode) { pr_save_slot = 0; preset_name(PR_NF, s); ui_say("SAVE TO: U01 [OCT+]"); }
-        else ui_say("CANCELLED");
+        if (!pr_save_mode) {
+            pr_save_mode = 1;
+            pr_save_slot = set.preset >= PR_NF && set.preset < PR_NF + PR_NU ? (uint8_t)(set.preset - PR_NF) : 0;
+            return;
+        }
+        {
+            preset_t *u = &pr_user[pr_save_slot];
+            u->ver = 1; u->np = P_COUNT; u->used = 1; u->rsv = 0;
+            preset_autoname(u->name);
+            memcpy(u->p, set.panel, sizeof u->p);
+            set.preset = (uint8_t)(PR_NF + pr_save_slot);
+            set_dirty = 1; set_t_change = fm1_ms;
+            pr_save_mode = 0;
+            pr_save_pending = 1;
+            ui_mark(E_HEADER);
+            ui_say("SAVING...");
+        }
         return;
     }
     if (pr_save_mode) {
@@ -192,19 +208,8 @@ static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t r
         if (d) {
             int32_t v = pr_save_slot + (d > 0 ? 1 : -1);
             pr_save_slot = (uint8_t)(v < 0 ? 0 : v > (int32_t)PR_NU - 1 ? PR_NU - 1u : (uint32_t)v);
-            preset_name(PR_NF + pr_save_slot, s);
-            ui_say(s);
         }
-        if (b >> BTN_OCT_DOWN & 1u) { pr_save_mode = 0; ui_say("CANCELLED"); }
-        if (b >> BTN_OCT_UP & 1u) {
-            preset_t *u = &pr_user[pr_save_slot];
-            u->ver = 1; u->np = P_COUNT; u->used = 1; u->rsv = 0;
-            preset_autoname(u->name);
-            memcpy(u->p, set.panel, sizeof u->p);
-            pr_save_mode = 0;
-            pr_save_pending = 1;
-            ui_say("SAVING WHEN QUIET");
-        }
+        if ((b >> BTN_HOME | b >> BTN_OCT_DOWN) & 1u) { pr_save_mode = 0; ui_say("NOT SAVED"); }
         return;
     }
     if (d_presets) {

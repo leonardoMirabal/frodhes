@@ -103,7 +103,7 @@ static void app_main(void)
     set_dirty = 0;
     presets_load_bank();
     lcd_fill(0, 0, 240, 240, C_BLACK);
-    ui_goto(PG_PANEL);
+    ui_goto(PG_PIANO);
 
     for (;;) {
         uint32_t keys, down, up, rel, b, lit = 0;

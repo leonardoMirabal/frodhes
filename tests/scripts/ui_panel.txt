@@ -1,29 +1,35 @@
-# Panel behaviour (IMPLEMENTATION-v3 §10.3): buttons LFO 5, FX 2, ARP 10, EDIT 6, HOME 8, PLAY 12; encoders K1 = 2.
-# TREM is focused at boot: a tap on LFO toggles it OFF -> TRM (its LED lights), another tap -> OFF (never WAH).
-100 btn 5
-200 expect led 5 1
-300 btn 5
-1100 expect led 5 0
-# FX on an unfocused column only focuses it; a second tap turns CHO on.
-1200 btn 2
-1300 btn 2
-1400 expect led 2 1
-# hold ARP and turn K1: the delay's switch steps OFF -> DIG; after letting go the DLY LED stays lit.
-1500 press 10
-2000 turn 2 1
-2100 release 10
-2200 expect led 10 1
-2300 shot
-# pages: EDIT lights EDIT, HOME goes back to the panel.
-2400 btn 6
-2500 expect led 6 1
-2600 shot
-2700 btn 8
-2800 expect led 6 0
-2800 expect led 8 1
-# tap tempo: three taps 400 ms apart -> 150.0 BPM on the header
-3000 btn 12
-3400 btn 12
-3800 btn 12
-4200 shot
-4300 end
+# Pages (ui.c): buttons LFO 5, FX 2, ARP 10, EDIT 6, HOME 8, GLO 7, PLAY 12; encoders SELECT 0, K1 = 2.
+# boot: the PIANO page (HOME lit). SELECT walks the pages: one detent -> VOICE (EDIT lit).
+100 expect led 8 1
+200 turn 0 1
+300 expect led 6 1
+300 expect led 8 0
+400 shot
+# LFO: the first tap opens the TREM/WAH page (the effect stays off), the second tap turns it on, a third off
+500 btn 5
+600 expect led 5 0
+700 btn 5
+800 expect led 5 1
+900 btn 5
+1000 expect led 5 0
+# on the TREM page K1 is the EFFECT card: OFF -> PAN -> TREM -> WAH (the LFO LED follows)
+1100 turn 2 1
+1200 expect led 5 1
+1300 shot
+# ARP opens DELAY; K1 there turns the delay on
+1400 btn 10
+1500 turn 2 1
+1600 expect led 10 1
+1700 shot
+# GLO: TEMPO; tap tempo: three taps 400 ms apart -> 150.0 BPM
+1800 btn 7
+1900 expect led 7 1
+2000 btn 12
+2400 btn 12
+2800 btn 12
+3200 shot
+# HOME back to PIANO
+3300 btn 8
+3400 expect led 8 1
+3500 shot
+3600 end

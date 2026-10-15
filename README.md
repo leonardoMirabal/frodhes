@@ -32,27 +32,34 @@ docs/model/               <- notes and references for the physical model
 
 ## Playing it
 
-The screen is a reface CP-style panel of seven columns: **TYPE, DRIVE, TREM/WAH, CHO/PHA, DELAY, REVERB, VOLUME**.
+One page at a time, and each page has exactly four cards: **K1–K4 always turn the four cards on screen.**
+**SELECT** turns through the pages; the marks under the title show where you are.
+
+| Page | K1 | K2 | K3 | K4 | Shortcut |
+| --- | --- | --- | --- | --- | --- |
+| **PIANO** | TYPE | DRIVE | REVERB | KEY VEL | HOME |
+| **VOICE** | TONE | BARK | BELL | HAMMER | EDIT |
+| **DECAY** | DECAY | RELEASE | NOISE | TUNE | ENV |
+| **TREM/WAH** | OFF / PAN / TREM / WAH | DEPTH | RATE | SHAPE | LFO |
+| **CHO/PHASER** | OFF / CHO / PHA | DEPTH | SPEED | FEEDBACK | FX |
+| **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | ARP |
+| **TEMPO** | BPM | TREM SYNC | CHO SYNC | DLY SYNC | GLO |
+| **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | SEL |
+| **SETUP** | MIDI CLOCK | DELAY TONE | | | GLO twice |
 
 | Control | What it does |
 | --- | --- |
-| **Keys** | Play the piano (8 voices) at the KEY VEL velocity, through the scale mode. Notes go out over USB-MIDI too. |
-| **ALGORITHM** | TYPE: STAGE '77, SUITCASE, EARLY FELT, BELL/DYNO. Applies to new notes. |
-| **LFO / FX / ARP** | Focus the TREM, CHO or DELAY column. Tap the focused one again: off ↔ its last effect. Hold it and turn K1–K4: that column's switch, sync and extra settings. |
-| **K1 / K2** | The focused column's depth and rate / speed / time (a note value when synced). |
-| **K3 / K4** | DRIVE / REVERB. |
-| **SELECT** | KEY VEL: how hard the FM-1's own keys play (the keys are not velocity-sensitive): this is where the bark lives. |
+| **LFO / FX / ARP** | Open that effect's page; press again there to switch the effect on / off. Their LEDs show which effects are on. |
+| **ALGORITHM** | TYPE on any page: STAGE 77, SUITCASE, EARLY FELT, BELL DYNO. |
 | **PRESETS** | Browse F01–F12 and your U01–U16; loads after the knob rests 400 ms. |
-| **SAVE** | Tap: save mode (PRESETS or K1 picks the slot, OCT+ saves, OCT− cancels). Hold: undo the last preset load. |
-| **EDIT / ENV** | VOICING: TONE (pickup voicing), BARK, BELL, HAMMER. VOICING 2: DECAY, RELEASE, NOISE, TUNE. |
-| **GLO** | TEMPO: BPM, KEY VEL, TUNE, clock (follows USB MIDI clock); shows the audio CPU time. |
-| **SEL** | SCALE: off / SNAP / DEGREES (white keys walk the scale), 11 scales, root, transpose. |
-| **PLAY** | Tap tempo. |
+| **SAVE** | Press: the footer asks where (PRESETS or K1 picks U01–U16); SAVE again stores, HOME cancels. Hold: undo the last preset load. |
+| **PLAY** | Tap tempo. A synced TIME / RATE / SPEED card shows the note value and steps through note values. |
 | **REC** | Sustain pedal: hold it, or tap to latch (tap again to release). |
-| **HOME** | Back to the panel. |
-| **OCT− / OCT+** | Octave ±2. |
-| **MASTER** | Volume. |
+| **OCT− / OCT+** | Octave ±2. **MASTER**: volume. |
 | **USB-MIDI** | Notes with velocity; the reface CP CC map (80 TYPE, 81 DRIVE, 17–19 TREM/WAH, 85–87 CHO/PHA, 88–90 DELAY, 91 REVERB); CC 64 sustain with half-pedal; Program Change for presets; clock. |
+
+KEY VEL sets how hard the FM-1's own keys play (they are not velocity-sensitive): this is where the bark lives.
+SETUP also shows the audio time per block (it must stay under ~2900 µs).
 
 ## Build
 
