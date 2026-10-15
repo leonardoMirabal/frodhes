@@ -20,4 +20,15 @@
 # PLAY: stop
 5200 btn 12
 6500 expect rms < -70
-6600 end
+# stopped: ALGORITHM (encoder 1) moves a cursor step by step: 4 steps on = beat 2, where E4 starts
+6600 turn 1 4
+6700 shot
+# PRESETS (encoder 6) on SEQUENCER: bar by bar (the loop is 1 bar: back to the same bar)
+6800 midi 0xB0 61 2
+6900 turn 6 1
+7000 shot
+# back to bar 1, step 5 (beat 2): EDIT (K4, encoder 5) left deletes that step's notes
+7100 turn 6 -1
+7200 turn 5 -1
+7300 shot
+7400 end

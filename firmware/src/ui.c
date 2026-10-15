@@ -7,7 +7,7 @@
  *              PERFORM ASSIGN FRODHES (the main page) VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE
  *              CHORD SEQUENCER ARPEGGIO SETUP
  *   K1..K4     the four cards of the page, always
- *   ALGORITHM  TYPE (on any page)          PRESETS  sounds (presets.c)
+ *   ALGORITHM  TYPE (on SEQUENCER: a cursor, step by step)   PRESETS  sounds (presets.c; on SEQUENCER: bar by bar)
  *   shortcuts  HOME = PERFORM (again: the main page), EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEL = TREM /
  *              CHORUS (on that page: the effect on / off), SEQ = CHORD (chord mode on: SEQUENCER; on it: REC),
  *              ARP = ARPEGGIO (on it: on / off), GLO = TEMPO (again: SETUP).
@@ -30,6 +30,10 @@ enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, 
        S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
        S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_NONE = 0xFF };
 
+static int sq_browsing(void);                           /* the SEQUENCER page's cursor (below) */
+static uint32_t sq_cur_t;                               /* when it last moved */
+static uint32_t sq_delete_step(void);
+static void sq_browse(int32_t d);
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
                                              "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
                                              "ARPEGGIO", "SETUP"};
@@ -251,7 +255,7 @@ static void slot_text(uint32_t s, char *v)
     case S_SQBARS: p_fmt_int(v, SQ_BARS); return;
     case S_SQQUANT: p_strcpy(v, SQ_QUANT_NAME[SQ_QUANT], 5); return;
     case S_SQSWING: { uint32_t n = 0; p_fmt_int(v, SQ_SWING); while (v[n]) n++; v[n++] = '%'; v[n] = 0; return; }
-    case S_SQEDIT: p_strcpy(v, sq_erase ? "ERASE" : "UNDO", 5); return;
+    case S_SQEDIT: p_strcpy(v, sq_erase ? "ERASE" : sq_browsing() ? "DELETE" : "UNDO", 6); return;
     case S_ARPOCT: p_fmt_int(v, ARP_OCT + 1); return;
     case S_ARPGATE: { uint32_t n = 0; p_fmt_int(v, ARP_GATE); while (v[n]) n++; v[n++] = '%'; v[n] = 0; return; }
     case S_NONE: return;
@@ -315,8 +319,12 @@ static void slot_turn(uint32_t s, int32_t d)
     case S_SQEDIT:                                      /* left: UNDO the last pass; right: ERASE on / off */
         if (d < 0) {
             char m[24];
-            uint32_t n = seq_undo(), k = 0;
-            p_strcpy(m, "UNDO: ", 6); p_fmt_int(m + 6, (int32_t)n);
+            int del = sq_browsing();
+            uint32_t n = del ? sq_delete_step() : seq_undo(), k = 0;
+            if (del) sq_cur_t = fm1_ms;
+            p_strcpy(m, del ? "DELETED: " : "UNDO: ", 9);
+            while (m[k]) k++;
+            p_fmt_int(m + k, (int32_t)n);
             while (m[k]) k++;
             p_strcpy(m + k, " NOTES", 6);
             ui_say(m);
@@ -420,15 +428,39 @@ static void draw_card(uint32_t k)
 #define SQ_STRIP_Y 104
 #define SQ_CARD_Y 171
 #define SQ_CARD_H 33
-static uint32_t sq_view_tick(void) { return seq_play ? sq_tick() : 0u; }
-static void seq_pos_text(char *t)                       /* BAR 2/4 . 3 (bar / bars . beat) */
+static int32_t sq_cur = -1;                              /* the cursor: ALGORITHM steps it (16ths), PRESETS by bars */
+static int sq_browsing(void) { return sq_cur >= 0 && (!seq_play || fm1_ms - sq_cur_t < 4000u); }
+static uint32_t sq_view_tick(void)                      /* the place looked at: the cursor's step, else the loop's */
+{
+    if (sq_browsing()) return (uint32_t)(sq_cur < (int32_t)(SQ_BARS * 16u) ? sq_cur : 0) * 24u;
+    return seq_play ? sq_tick() : 0u;
+}
+static void sq_browse(int32_t d)                        /* d in 16ths (a bar = 16), around the loop */
+{
+    int32_t n = (int32_t)SQ_BARS * 16, c = sq_browsing() ? sq_cur : (int32_t)(sq_view_tick() / 24u);
+    sq_cur = ((c + d) % n + n) % n;
+    sq_cur_t = fm1_ms;
+}
+static uint32_t sq_delete_step(void)                    /* the notes starting in the cursor's step go */
+{
+    uint32_t i, j, t0 = (uint32_t)(sq_cur < 0 ? 0 : sq_cur) * 24u, got = 0, L = sq_len();
+    for (i = j = 0; i < sq_n; i++) {
+        uint32_t t = sq_ev[i].tick < L ? sq_at(&sq_ev[i]) : 0xFFFFu;
+        if (t >= t0 && t < t0 + 24u) got++; else sq_ev[j++] = sq_ev[i];
+    }
+    sq_n = j;
+    if (got) { sq_all_off(); sq_changed(); }
+    return got;
+}
+static void seq_pos_text(char *t)                       /* BAR 2/4 . 3 (bar / bars . beat); on a step: . 3.2 (16th) */
 {
     uint32_t p = sq_view_tick(), n = 0;
     p_strcpy(t, "BAR ", 4); n = 4;
     p_fmt_int(t + n, (int32_t)(p / (4u * SQ_PPQ) + 1u)); while (t[n]) n++;
     t[n++] = '/'; p_fmt_int(t + n, SQ_BARS); while (t[n]) n++;
     t[n++] = ' '; t[n++] = '.'; t[n++] = ' ';
-    p_fmt_int(t + n, (int32_t)(p / SQ_PPQ % 4u + 1u));
+    p_fmt_int(t + n, (int32_t)(p / SQ_PPQ % 4u + 1u)); while (t[n]) n++;
+    if (sq_browsing()) { t[n++] = '.'; p_fmt_int(t + n, (int32_t)(p / 24u % 4u + 1u)); }
 }
 /* the notes struck together at tick g (their quantized start) and a name for them: a chord name, or C4 for one note */
 static uint32_t sq_group(uint32_t g, uint8_t *notes)
@@ -464,21 +496,27 @@ static void sq_now_next(uint32_t p, uint32_t *now, uint32_t *next)
     *now = a != 0xFFFFu ? a : hi;                       /* nothing before: the last one of the loop goes on */
     *next = b != 0xFFFFu ? b : lo;                      /* nothing after: the loop's first */
 }
-static uint32_t sq_shown_now = 0xFFFFFFFFu, sq_shown_cell = 0xFFFFFFFFu, sq_shown_beat = 0xFFFFFFFFu;
+static uint32_t sq_shown_now = 0xFFFFFFFFu, sq_shown_cell = 0xFFFFFFFFu, sq_shown_beat = 0xFFFFFFFFu, sq_shown_ph;
 static void sq_shown_beat_set(void) { sq_shown_beat = sq_view_tick() / SQ_PPQ; }
 static void draw_now(void)                              /* NOW (big) and NEXT */
 {
     char v[20], t[40];
     uint32_t now, next, n = 0;
+    int empty = 0;
     sq_now_next(sq_view_tick(), &now, &next);
     sq_shown_now = now;
+    if (sq_browsing()) {                                /* the cursor's step: what starts there, or nothing */
+        uint32_t t0 = sq_view_tick();
+        empty = !(now != 0xFFFFu && now >= t0 && now < t0 + 24u);
+        sq_now_next(empty ? t0 + 23u : now, &now, &next);
+    }
     cv_begin(240, 60, C_BLACK);
     if (!sq_n) {
         text_c(0, 8, 240, &FONT_L, "EMPTY", C_DIM);
         text_c(0, 42, 240, &FONT_S, "SEQ: REC, THEN PLAY", C_GRAY);
     } else {
-        sq_group_name(now, v);
-        if (text_w(&FONT_L, v) <= 236) text_c(0, 4, 240, &FONT_L, v, seq_play ? C_WHITE : C_HI);
+        if (empty) p_strcpy(v, "-", 1); else sq_group_name(now, v);
+        if (text_w(&FONT_L, v) <= 236) text_c(0, 4, 240, &FONT_L, v, sq_browsing() ? UI_ACC : seq_play ? C_WHITE : C_HI);
         else text_c(0, 12, 240, &FONT_S, v, C_HI);
         sq_group_name(next, v);
         p_strcpy(t, "NEXT ", 5); n = 5; p_strcpy(t + n, v, 12); while (t[n]) n++;
@@ -491,9 +529,11 @@ static void draw_now(void)                              /* NOW (big) and NEXT */
 }
 static void draw_strip(void)                            /* the bar playing: 16 cells (16ths) in two rows of 8 */
 {
-    uint32_t p = sq_view_tick(), b0 = p / (4u * SQ_PPQ) * 4u * SQ_PPQ, cur = (p - b0) / 24u, i, L = sq_len();
+    uint32_t p = sq_view_tick(), b0 = p / (4u * SQ_PPQ) * 4u * SQ_PPQ, i, L = sq_len();
+    uint32_t cur = seq_play && sq_tick() >= b0 && sq_tick() < b0 + 4u * SQ_PPQ ? (sq_tick() - b0) / 24u : 99u;   /* the playhead */
     uint8_t hit[16] = {0};
     sq_shown_cell = p / 24u;
+    sq_shown_ph = seq_play ? sq_tick() / 24u : 0u;
     for (i = 0; i < sq_n; i++) {
         uint32_t t;
         if (sq_ev[i].tick >= L) continue;
@@ -503,9 +543,15 @@ static void draw_strip(void)                            /* the bar playing: 16 c
     cv_begin(240, 62, C_BLACK);
     for (i = 0; i < 16u; i++) {
         int32_t x = 4 + (int32_t)(i % 8u) * 29, y = i < 8u ? 2 : 33;
-        uint16_t c = seq_play && i == cur ? C_WHITE : hit[i] ? C_AMB : C_LINE;
-        if (hit[i] || (seq_play && i == cur)) cv_rect(x, y, 26, 26, c);
+        uint16_t c = i == cur ? C_WHITE : hit[i] ? C_AMB : C_LINE;
+        if (hit[i] || i == cur) cv_rect(x, y, 26, 26, c);
         else { cv_rect(x, y, 26, 26, i % 4u == 0u ? C_DIM : C_LINE); cv_rect(x + 2, y + 2, 22, 22, C_BLACK); }
+        if (sq_browsing() && i == (p - b0) / 24u) {    /* the cursor: a white frame around its cell (inside: */
+            cv_rect(x - 2, y - 2, 30, 3, C_WHITE); cv_rect(x - 2, y + 25, 30, 3, C_WHITE);   /* black on a filled */
+            cv_rect(x - 2, y - 2, 3, 30, C_WHITE); cv_rect(x + 25, y - 2, 3, 30, C_WHITE);   /* one, so it shows) */
+            if (hit[i] && i != cur) { cv_rect(x + 1, y + 1, 24, 2, C_BLACK); cv_rect(x + 1, y + 23, 24, 2, C_BLACK);
+                                      cv_rect(x + 1, y + 1, 2, 24, C_BLACK); cv_rect(x + 23, y + 1, 2, 24, C_BLACK); }
+        }
     }
     cv_blit(0, SQ_STRIP_Y);
 }
@@ -669,10 +715,14 @@ static void ui_draw(void)
         static uint32_t ph_t, roll_t;
         uint32_t now, next, p = sq_view_tick();
         (void)ph_t;
-        if (p / 24u != sq_shown_cell) ui_mark(E_METER);
+        if (p / 24u != sq_shown_cell || (seq_play && sq_tick() / 24u != sq_shown_ph)) ui_mark(E_METER);
         if (p / SQ_PPQ != sq_shown_beat) ui_mark(E_TITLE);
         sq_now_next(p, &now, &next);
-        if (now != sq_shown_now) ui_mark(E_ROLL);
+        if (now != sq_shown_now && !sq_browsing()) ui_mark(E_ROLL);
+        {                                               /* the cursor timing out (playing): back to the loop */
+            static int was;
+            if (was != sq_browsing()) { was = sq_browsing(); ui_mark(E_ROLL); ui_mark(E_METER); ui_mark(E_TITLE); ui_mark(E_CARD0 + 3); }
+        }
         if (sq_roll_dirty && fm1_ms - roll_t >= 250u) { roll_t = fm1_ms; sq_roll_dirty = 0; ui_mark(E_ROLL); ui_mark(E_METER); ui_mark(E_FOOTER); }
     }
     d = ui_dirty & ((1u << E_N) - 1u);
@@ -734,6 +784,11 @@ static void ui_input(uint32_t b, uint32_t rel)
     }
     {
         uint8_t was = pr_save_mode;
+        if (ui_page == PG_SEQ && !was && d[ENC_PRESETS]) {   /* on SEQUENCER: PRESETS moves the cursor bar by bar */
+            sq_browse(sgn(d[ENC_PRESETS]) * 16);
+            ui_mark(E_TITLE); ui_mark(E_ROLL); ui_mark(E_METER); ui_mark(E_CARD0 + 3);
+            d[ENC_PRESETS] = 0;
+        }
         presets_poll(d[ENC_PRESETS], was ? d[ENC_KNOB1] : 0, b, rel);
         if (was || pr_save_mode) { ui_mark(E_FOOTER); return; }      /* the save mode owns the pass */
     }
@@ -773,7 +828,10 @@ static void ui_input(uint32_t b, uint32_t rel)
         int32_t p = clampi((int32_t)ui_page + sgn(d[ENC_SELECT]), 0, PG_N - 1);
         if (p != ui_page) ui_goto((uint32_t)p);
     }
-    if (d[ENC_ALGORITHM]) {
+    if (d[ENC_ALGORITHM] && ui_page == PG_SEQ) {        /* on SEQUENCER: the cursor, step by step */
+        sq_browse(d[ENC_ALGORITHM]);
+        ui_mark(E_TITLE); ui_mark(E_ROLL); ui_mark(E_METER); ui_mark(E_CARD0 + 3);
+    } else if (d[ENC_ALGORITHM]) {
         slot_turn(P_TYPE, sgn(d[ENC_ALGORITHM]));
         ui_say(N_TYPE_LONG[PV(P_TYPE)]);
         ui_mark(E_CARDS);

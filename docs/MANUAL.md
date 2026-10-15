@@ -58,8 +58,8 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | --- | --- |
 | **SELECT** (knob) | Next / previous page |
 | **K1 K2 K3 K4** | The four cards on the current page |
-| **ALGORITHM** (knob) | The Rhodes TYPE, from any page |
-| **PRESETS** (knob) | Browse the sounds F01–F12 and your U01–U16 (loads when you stop turning) |
+| **ALGORITHM** (knob) | The Rhodes TYPE, from any page (on SEQUENCER: the step cursor) |
+| **PRESETS** (knob) | Browse the sounds F01–F12 and your U01–U16 (loads when you stop turning; on SEQUENCER: bar by bar) |
 | **MASTER** (knob) | Volume |
 | **HOME** | PERFORM page; press again for the main page (titled FRODHES), and back |
 | **EDIT** | VOICE page |
@@ -260,8 +260,13 @@ notes start, the white one is where the loop is.
 | K1 | **BARS** | The loop's length, 1 to 16 bars (notes past the end are kept and come back if you make it longer) |
 | K2 | **QUANT** | **OFF**, **1/4**, **1/8**, **1/16**, **1/8T**, **1/16T**: the grid the notes snap to as they play. It never changes what you recorded, so you can switch it at any time and hear the pattern tighten or loosen |
 | K3 | **SWING** | 50 % (straight) to 75 %: pushes the off-beat 1/8s or 1/16s |
-| K4 | **EDIT** | Turn **left: UNDO** the last pass you recorded (again: the one before). Turn **right: ERASE** on / off: while it plays, hold keys and their notes are removed as the loop passes them |
+| K4 | **EDIT** | Turn **left: UNDO** the last pass you recorded (again: the one before), or, with the cursor on a step, **DELETE** that step's notes. Turn **right: ERASE** on / off: while it plays, hold keys and their notes are removed as the loop passes them |
 
+- **Look through it, step by step:** on this page **ALGORITHM** moves a cursor (a white frame) one 16th at a time,
+  across the bars, and **PRESETS** jumps a whole bar. The top line shows where (**BAR 2/4 . 3.2** = bar 2, beat 3,
+  second 16th) and the big letters show what starts on that step ("-": nothing). Turn **EDIT left** there to
+  **delete** that step's notes. While the loop plays, the view goes back to following it 4 s after you stop turning.
+  (On every other page ALGORITHM is the TYPE and PRESETS the presets, as always.)
 - **PLAY** starts and stops the loop.
 - **SEQ** switches recording on / off (the SEQ light blinks). Armed while stopped, the loop **starts with your first
   note**. While recording, every pass adds what you play on top (overdub), and the loop never stops.
