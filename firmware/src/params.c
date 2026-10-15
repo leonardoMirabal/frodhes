@@ -9,10 +9,11 @@ enum { P_TYPE, P_DRIVE, P_TW_SW, P_TW_DEPTH, P_TW_RATE, P_TW_SYNC, P_TW_MODE, P_
        P_RV_DEPTH, P_TONE, P_BARK, P_BELL, P_HAMMER, P_DECAY, P_RELEASE, P_NOISE, P_SPREAD,
        P_PH_SW, P_PH_DEPTH, P_PH_SPEED, P_PH_SYNC, P_PH_FDBK,                 /* 0.4: the phaser on its own */
        P_CMP_SW, P_CMP_AMT, P_CMP_ATK, P_CMP_REL,                             /* 0.4: the compressor */
+       P_LEVEL,                                                               /* 0.8: the preset's volume trim */
        P_COUNT };
 #define P_SLOTS 48u                /* room in the settings / preset records (P_COUNT <= P_SLOTS) */
 
-enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP };
+enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB };
 typedef struct {
     const char *lab;          /* <= 4 chars: panel / card label */
     uint8_t hi, def, fmt, cc;
@@ -67,6 +68,7 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_CMP_AMT] = {"AMT", 127, 0, F_R10, 107, 0},
     [P_CMP_ATK] = {"ATK", 127, 40, F_R10, 108, 0},
     [P_CMP_REL] = {"REL", 127, 50, F_R10, 109, 0},
+    [P_LEVEL] = {"LVL", 127, 64, F_DB, 110, 0},              /* 64 = 0 dB, 0.1875 dB a step: -12 .. +11.8 dB */
 };
 _Static_assert(P_COUNT <= P_SLOTS, "records hold P_SLOTS parameters");
 
@@ -136,6 +138,7 @@ static void params_sanitize(void)
         set.ver = SET_VER;
     }
     if (set.ver != SET_VER) { params_defaults(); return; }
+    if (!(set.flags & 1u)) { PV(P_LEVEL) = PARAMS[P_LEVEL].def; set.flags |= 1u; }   /* records before 0.8 */
     for (i = 0; i < P_COUNT; i++) if (PV(i) > PARAMS[i].hi) PV(i) = PARAMS[i].def;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.bpm10 < 400 || set.bpm10 > 2400) set.bpm10 = 1200;
@@ -186,6 +189,7 @@ static void param_apply(uint32_t id)
     case P_CMP_AMT: fx_set(FXP_CMP_AMT, v); break;
     case P_CMP_ATK: fx_set(FXP_CMP_ATK, v); break;
     case P_CMP_REL: fx_set(FXP_CMP_REL, v); break;
+    case P_LEVEL: fx_set(FXP_LEVEL, v); break;
     default: break;                                                   /* SYNC: tempo.c; SPREAD: not yet in the engine */
     }
 }
@@ -256,6 +260,13 @@ static void param_text(uint32_t id, char *s)
         b[0] = t < 0 ? '-' : '+'; t = t < 0 ? -t : t;
         b[1] = (char)('0' + t / 10); b[2] = '.'; b[3] = (char)('0' + t % 10); b[4] = 0;
         for (t = 0; t < 5; t++) s[t] = b[t];
+        break;
+    }
+    case F_DB: {                                   /* "+1.5" / "-12" dB */
+        int32_t t = (v - 64) * 15 / 8, a = t < 0 ? -t : t, n = 0;  /* tenths of a dB */
+        s[n++] = t < 0 ? '-' : '+';
+        if (a >= 100) { p_fmt_int(s + n, a / 10); break; }
+        s[n++] = (char)('0' + a / 10); s[n++] = '.'; s[n++] = (char)('0' + a % 10); s[n] = 0;
         break;
     }
     default: fmt_r10(s, v); break;

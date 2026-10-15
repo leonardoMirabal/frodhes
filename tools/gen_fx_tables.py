@@ -61,6 +61,8 @@ def main():
     out.append(arr("FX_EXP2F", "uint32_t", [int(round(65536 * 2 ** (i / 256))) for i in range(256)], 8))
     # drive make-up trim (Q15): the measured +0.09 dB per DRIVE step taken back, so DRIVE is level-neutral
     out.append(arr("FX_DRV_LVL", "uint16_t", [int(round(32767 * 10 ** (-0.0896 * v / 20))) for v in range(128)], 12))
+    # LEVEL (the preset's volume trim): Q12 gain, 64 = 0 dB, 0.1875 dB a step
+    out.append(arr("FX_LVL", "uint16_t", [int(round(4096 * 10 ** ((v - 64) * 0.1875 / 20))) for v in range(128)], 12))
     os.makedirs(os.path.join(ROOT, "firmware/gen"), exist_ok=True)
     open(os.path.join(ROOT, "firmware/gen/fx_tables.h"), "w").write("\n".join(out))
 

@@ -47,7 +47,7 @@ One page at a time, and each page has exactly four cards: **K1–K4 always turn 
 | **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | ARP |
 | **TEMPO** | BPM | TREM SYNC | PHA SYNC | DLY SYNC | GLO |
 | **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | (SELECT) |
-| **SETUP** | MIDI CLOCK | DELAY TONE | | | GLO twice |
+| **SETUP** | MIDI CLOCK | DELAY TONE | LEVEL (preset volume ±12 dB) | | GLO twice |
 
 | Control | What it does |
 | --- | --- |

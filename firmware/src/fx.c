@@ -22,8 +22,9 @@ enum { FXP_DRIVE, FXP_TW_SW, FXP_TW_DEPTH, FXP_TW_RATE, FXP_TW_MODE, FXP_TW_SHAP
        FXP_CP_SW, FXP_CP_DEPTH, FXP_CP_SPEED, FXP_CP_FDBK,
        FXP_DL_SW, FXP_DL_DEPTH, FXP_DL_TIME, FXP_DL_FDBK, FXP_DL_SYNC,
        FXP_RV_DEPTH, FXP_DRIVE_ROW, FXP_RAW, FXP_DL_TONE,
-       FXP_PH_SW, FXP_PH_DEPTH, FXP_PH_SPEED, FXP_PH_FDBK, FXP_CMP_SW, FXP_CMP_AMT, FXP_CMP_ATK, FXP_CMP_REL, FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
-static volatile int32_t fx_p[FXP_N] = {[FXP_DL_FDBK] = 80, [FXP_DL_TONE] = 70};
+       FXP_PH_SW, FXP_PH_DEPTH, FXP_PH_SPEED, FXP_PH_FDBK, FXP_CMP_SW, FXP_CMP_AMT, FXP_CMP_ATK, FXP_CMP_REL,
+       FXP_LEVEL, FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
+static volatile int32_t fx_p[FXP_N] = {[FXP_DL_FDBK] = 80, [FXP_DL_TONE] = 70, [FXP_LEVEL] = 64};
 static volatile uint32_t fx_cp_sync_inc;         /* main loop: a synced chorus rate, 0 = free */
 static volatile uint32_t fx_ph_sync_inc;         /* main loop: a synced phaser rate, 0 = free */
 static volatile int32_t fx_cmp_gr;               /* ISR: the compressor's gain reduction now, log2 Q12 (>= 0) */
@@ -491,6 +492,7 @@ static uint32_t gate_quiet;
 static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
 {
     static int32_t m[256], dry[256];
+    int32_t lvl = (int32_t)FX_LVL[fx_p[FXP_LEVEL] & 127];   /* the preset's volume trim, Q12 */
     uint32_t j;
     int32_t pk = 0;
     if (fx_p[FXP_RAW]) {                               /* developer: the voice engine's output untouched */
@@ -514,6 +516,7 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
             fx_R[j] = (int32_t)(((int64_t)fx_R[j] * fx_wet + (int64_t)dry[j] * (32768 - fx_wet)) >> 15);
         }
         l = dc_block(fx_L[j], &dc_l, &dce_l); r = dc_block(fx_R[j], &dc_r, &dce_r);
+        if (lvl != 4096) { l = (int32_t)(((int64_t)l * lvl) >> 12); r = (int32_t)(((int64_t)r * lvl) >> 12); }   /* LEVEL */
         al = l < 0 ? -l : l; ar = r < 0 ? -r : r; a = al > ar ? al : ar;
         if (a > lim_env) lim_env += (a - lim_env) >> 2;
         else if (lim_env > LIM_T) lim_env -= ((lim_env - LIM_T) >> 12) + 1;

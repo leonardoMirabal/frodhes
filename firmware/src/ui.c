@@ -37,7 +37,7 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {P_DL_SW, P_DL_DEPTH, P_DL_TIME, P_DL_FDBK},
     {S_BPM, P_TW_SYNC, P_PH_SYNC, P_DL_SYNC},
     {S_SCMODE, S_SCALE, S_ROOT, S_TRANS},
-    {S_CLOCK, P_DL_TONE, S_NONE, S_NONE},
+    {S_CLOCK, P_DL_TONE, P_LEVEL, S_NONE},
 };
 static const char *const PAGE_LAB[PG_N][4] = {
     {"TYPE", "DRIVE", "REVERB", "KEY VEL"},
@@ -50,7 +50,7 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"EFFECT", "MIX", "TIME", "FEEDBK"},
     {"BPM", "TREM SYNC", "PHA SYNC", "DLY SYNC"},
     {"MODE", "SCALE", "ROOT", "TRANSP"},
-    {"CLOCK", "DLY TONE", "", ""},
+    {"CLOCK", "DLY TONE", "LEVEL", ""},
 };
 static const char *const PAGE_HINT[PG_N] = {"FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
                                             "", "LFO BUTTON: ON / OFF", "SEQ BUTTON: ON / OFF", "SEL BUTTON: ON / OFF",

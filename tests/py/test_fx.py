@@ -110,3 +110,12 @@ def test_phaser_and_chorus_together():
     pha, _ = run("phonly", [(12, 127), (13, 100)], [(100, 60, 100, 1500)], 1800)
     assert np.max(np.abs(both)) < 32767 and np.isfinite(both).all()
     assert rms_db(seg(both - pha, 0.2, 1.5)) > rms_db(seg(both, 0.2, 1.5)) - 20
+
+
+def test_level_trim():
+    # LEVEL (CC 110, 0.8): 64 = 0 dB, 0 = -12 dB, 0.1875 dB a step; it scales everything after the effects
+    notes = [(100, 57, 100, 600)]
+    ref, _ = run("lvl64", [(81, 0), (91, 0), (110, 64)], notes, 800)
+    lo, _ = run("lvl0", [(81, 0), (91, 0), (110, 0)], notes, 800)
+    d = rms_db(seg(lo, 0.12, 0.6)) - rms_db(seg(ref, 0.12, 0.6))
+    assert abs(d + 12.0) < 0.5, d
