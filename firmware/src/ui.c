@@ -30,7 +30,7 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {P_TYPE, P_DRIVE, P_RV_DEPTH, S_KVEL},
     {P_TONE, P_BARK, P_BELL, P_HAMMER},
     {P_DECAY, P_RELEASE, P_NOISE, S_TUNE},
-    {P_CMP_SW, P_CMP_AMT, P_CMP_ATK, P_CMP_REL},
+    {P_CMP_AMT, P_CMP_RATIO, P_CMP_ATK, P_CMP_GAIN},
     {S_TWKIND, P_TW_DEPTH, P_TW_RATE, P_TW_SHAPE},
     {P_PH_SW, P_PH_DEPTH, P_PH_SPEED, P_PH_FDBK},
     {P_CP_SW, P_CP_DEPTH, P_CP_SPEED, P_CP_SYNC},
@@ -43,7 +43,7 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"TYPE", "DRIVE", "REVERB", "KEY VEL"},
     {"TONE", "BARK", "BELL", "HAMMER"},
     {"DECAY", "RELEASE", "NOISE", "TUNE"},
-    {"EFFECT", "AMOUNT", "ATTACK", "RELEASE"},
+    {"THRESH", "RATIO", "ATTACK", "MAKEUP"},
     {"EFFECT", "DEPTH", "RATE", "SHAPE"},
     {"EFFECT", "DEPTH", "SPEED", "FEEDBK"},
     {"EFFECT", "DEPTH", "SPEED", "SYNC"},
@@ -285,7 +285,7 @@ static void draw_footer(void)
             int32_t db10 = PV(P_CMP_SW) ? fx_cmp_gr * 602 / 4096 : 0;      /* log2 Q12 -> dB x 10 */
             p_strcpy(gr, "REDUCING ", 9); p_fmt_int(gr + 9, db10 / 10);
             { uint32_t n = 0; while (gr[n]) n++; gr[n++] = '.'; gr[n++] = (char)('0' + db10 % 10); p_strcpy(gr + n, " DB", 3); }
-            text_c(0, 18, 240, &FONT_S, PV(P_CMP_SW) ? gr : "ENV BUTTON: DECAY / COMP", C_DIM);
+            text_c(0, 18, 240, &FONT_S, PV(P_CMP_SW) ? gr : "ENV BUTTON: ON / OFF", C_DIM);
         } else if (ui_page == PG_SETUP) {
             static char cpu[32];
             uint32_t n = 0;
@@ -336,8 +336,8 @@ static void ui_goto(uint32_t pg)
 /* LFO / FX / ARP: go to the effect's page; on it, the effect on <-> off (back to the last one used) */
 static void ui_fx_button(uint32_t pg, uint32_t k)
 {
-    static const uint8_t SW[4] = {P_TW_SW, P_CP_SW, P_DL_SW, P_PH_SW};
-    static const char *const NAME[4] = {"TREM/WAH", "CHORUS", "DELAY", "PHASER"};
+    static const uint8_t SW[5] = {P_TW_SW, P_CP_SW, P_DL_SW, P_PH_SW, P_CMP_SW};
+    static const char *const NAME[5] = {"TREM/WAH", "CHORUS", "DELAY", "PHASER", "COMP"};
     uint32_t id = SW[k], sw = PV(id), n = 0;
     char s[24];
     if (ui_page != pg) { ui_goto(pg); return; }
@@ -363,7 +363,10 @@ static void ui_input(uint32_t b, uint32_t rel)
     }
     if (b >> BTN_HOME & 1u) ui_goto(PG_PIANO);
     if (b >> BTN_EDIT & 1u) ui_goto(PG_VOICE);
-    if (b >> BTN_ENV & 1u) ui_goto(ui_page == PG_DECAY ? PG_COMP : PG_DECAY);
+    if (b >> BTN_ENV & 1u) {                            /* DECAY -> COMP; on COMP: the compressor on / off */
+        if (ui_page == PG_COMP) ui_fx_button(PG_COMP, 4);
+        else ui_goto(ui_page == PG_DECAY ? PG_COMP : PG_DECAY);
+    }
     if (b >> BTN_GLO & 1u) ui_goto(ui_page == PG_TEMPO ? PG_SETUP : PG_TEMPO);
     if (b >> BTN_LFO & 1u) ui_fx_button(PG_TREM, 0);
     if (b >> BTN_SEL & 1u) ui_fx_button(PG_CHO, 1);
@@ -412,7 +415,7 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     fm1_led_key(BTN_SEQ, PV(P_PH_SW) != 0);
     fm1_led_key(BTN_HOME, ui_page == PG_PIANO);
     fm1_led_key(BTN_EDIT, ui_page == PG_VOICE);
-    fm1_led_key(BTN_ENV, ui_page == PG_DECAY || ui_page == PG_COMP);
+    fm1_led_key(BTN_ENV, PV(P_CMP_SW) != 0);
     fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP);
     fm1_led_key(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));
     fm1_led_key(BTN_PLAY, beat_on);

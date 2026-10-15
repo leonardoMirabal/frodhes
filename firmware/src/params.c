@@ -10,10 +10,11 @@ enum { P_TYPE, P_DRIVE, P_TW_SW, P_TW_DEPTH, P_TW_RATE, P_TW_SYNC, P_TW_MODE, P_
        P_PH_SW, P_PH_DEPTH, P_PH_SPEED, P_PH_SYNC, P_PH_FDBK,                 /* 0.4: the phaser on its own */
        P_CMP_SW, P_CMP_AMT, P_CMP_ATK, P_CMP_REL,                             /* 0.4: the compressor */
        P_LEVEL,                                                               /* 0.8: the preset's volume trim */
+       P_CMP_RATIO, P_CMP_GAIN,                                               /* 0.8: the compressor's 4 knobs */
        P_COUNT };
 #define P_SLOTS 48u                /* room in the settings / preset records (P_COUNT <= P_SLOTS) */
 
-enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB };
+enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB, F_THR, F_GAIN };
 typedef struct {
     const char *lab;          /* <= 4 chars: panel / card label */
     uint8_t hi, def, fmt, cc;
@@ -25,6 +26,7 @@ static const char *const N_TYPE_LONG[] = {"STAGE 77", "SUITCASE", "EARLY FELT", 
 static const char *const N_TW[] = {"OFF", "TRM", "WAH"};
 static const char *const N_CP[] = {"OFF", "CHO", "PHA"};   /* "PHA": records before 0.4 */
 static const char *const N_ONOFF[] = {"OFF", "ON"};
+static const char *const N_RATIO[] = {"1.5:1", "2:1", "3:1", "4:1", "6:1", "8:1", "10:1", "20:1"};
 static const char *const N_DL[] = {"OFF", "DIG", "ANA"};
 static const char *const N_TWM[] = {"PAN", "AM"};
 static const char *const N_SYNC[] = {"FREE", "1/32", "16T", "1/16", "8T", "16D", "1/8", "4T", "8D", "1/4", "4D", "1/2",
@@ -65,10 +67,12 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_PH_SYNC] = {"SYNC", 14, 0, F_DIV, 15, N_SYNC},
     [P_PH_FDBK] = {"FDBK", 127, 50, F_R10, 16, 0},
     [P_CMP_SW] = {"COMP", 1, 0, F_ENUM, 106, N_ONOFF},
-    [P_CMP_AMT] = {"AMT", 127, 0, F_R10, 107, 0},
+    [P_CMP_AMT] = {"THR", 127, 0, F_THR, 107, 0},            /* threshold 0 .. -40 dBFS (0.8; was AMOUNT) */
     [P_CMP_ATK] = {"ATK", 127, 40, F_R10, 108, 0},
     [P_CMP_REL] = {"REL", 127, 50, F_R10, 109, 0},
     [P_LEVEL] = {"LVL", 127, 64, F_DB, 110, 0},              /* 64 = 0 dB, 0.1875 dB a step: -12 .. +11.8 dB */
+    [P_CMP_RATIO] = {"RAT", 7, 3, F_ENUM, 112, N_RATIO},     /* 4:1 */
+    [P_CMP_GAIN] = {"MKUP", 127, 0, F_GAIN, 113, 0},         /* make-up 0 .. +24 dB */
 };
 _Static_assert(P_COUNT <= P_SLOTS, "records hold P_SLOTS parameters");
 
@@ -139,6 +143,7 @@ static void params_sanitize(void)
     }
     if (set.ver != SET_VER) { params_defaults(); return; }
     if (!(set.flags & 1u)) { PV(P_LEVEL) = PARAMS[P_LEVEL].def; set.flags |= 1u; }   /* records before 0.8 */
+    if (!(set.flags & 2u)) { PV(P_CMP_RATIO) = PARAMS[P_CMP_RATIO].def; PV(P_CMP_GAIN) = 0; set.flags |= 2u; }
     for (i = 0; i < P_COUNT; i++) if (PV(i) > PARAMS[i].hi) PV(i) = PARAMS[i].def;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.bpm10 < 400 || set.bpm10 > 2400) set.bpm10 = 1200;
@@ -190,6 +195,8 @@ static void param_apply(uint32_t id)
     case P_CMP_ATK: fx_set(FXP_CMP_ATK, v); break;
     case P_CMP_REL: fx_set(FXP_CMP_REL, v); break;
     case P_LEVEL: fx_set(FXP_LEVEL, v); break;
+    case P_CMP_RATIO: fx_set(FXP_CMP_RATIO, v); break;
+    case P_CMP_GAIN: fx_set(FXP_CMP_GAIN, v); break;
     default: break;                                                   /* SYNC: tempo.c; SPREAD: not yet in the engine */
     }
 }
@@ -260,6 +267,16 @@ static void param_text(uint32_t id, char *s)
         b[0] = t < 0 ? '-' : '+'; t = t < 0 ? -t : t;
         b[1] = (char)('0' + t / 10); b[2] = '.'; b[3] = (char)('0' + t % 10); b[4] = 0;
         for (t = 0; t < 5; t++) s[t] = b[t];
+        break;
+    }
+    case F_THR:                                    /* "-20" dB */
+        if (v) { s[0] = '-'; p_fmt_int(s + 1, (v * 40 + 63) / 127); } else { s[0] = '0'; s[1] = 0; }
+        break;
+    case F_GAIN: {                                 /* "+6.0" dB */
+        int32_t t = (v * 240 + 63) / 127, n = 0;
+        s[n++] = '+';
+        if (t >= 100) { p_fmt_int(s + n, t / 10); break; }
+        s[n++] = (char)('0' + t / 10); s[n++] = '.'; s[n++] = (char)('0' + t % 10); s[n] = 0;
         break;
     }
     case F_DB: {                                   /* "+1.5" / "-12" dB */

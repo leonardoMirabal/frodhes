@@ -23,8 +23,8 @@ enum { FXP_DRIVE, FXP_TW_SW, FXP_TW_DEPTH, FXP_TW_RATE, FXP_TW_MODE, FXP_TW_SHAP
        FXP_DL_SW, FXP_DL_DEPTH, FXP_DL_TIME, FXP_DL_FDBK, FXP_DL_SYNC,
        FXP_RV_DEPTH, FXP_DRIVE_ROW, FXP_RAW, FXP_DL_TONE,
        FXP_PH_SW, FXP_PH_DEPTH, FXP_PH_SPEED, FXP_PH_FDBK, FXP_CMP_SW, FXP_CMP_AMT, FXP_CMP_ATK, FXP_CMP_REL,
-       FXP_LEVEL, FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
-static volatile int32_t fx_p[FXP_N] = {[FXP_DL_FDBK] = 80, [FXP_DL_TONE] = 70, [FXP_LEVEL] = 64};
+       FXP_LEVEL, FXP_CMP_RATIO, FXP_CMP_GAIN, FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
+static volatile int32_t fx_p[FXP_N] = {[FXP_DL_FDBK] = 80, [FXP_DL_TONE] = 70, [FXP_LEVEL] = 64, [FXP_CMP_RATIO] = 3};
 static volatile uint32_t fx_cp_sync_inc;         /* main loop: a synced chorus rate, 0 = free */
 static volatile uint32_t fx_ph_sync_inc;         /* main loop: a synced phaser rate, 0 = free */
 static volatile int32_t fx_cmp_gr;               /* ISR: the compressor's gain reduction now, log2 Q12 (>= 0) */
@@ -68,6 +68,7 @@ static void fx_drive(int32_t *m, uint32_t n)
     k = 32000 - d * 95;
     mk = ((30000 - d * 120) * DR_MU[row]) >> 12;
     mk = (mk * (int32_t)FX_DRV_LVL[d]) >> 15;          /* level-neutral: the drive adds tone, not volume (0.6) */
+    mk = (mk * 39000) >> 15;                           /* +1.5 dB: measured on the FM-1, LUFS (0.8) */
     bias = DR_BIAS[row];
     b0 = softclip(bias);
     for (i = 0; i < n; i++) {
@@ -141,6 +142,8 @@ static int32_t ph_coef(uint32_t ph, int32_t depth)
 static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t depth = fx_p[FXP_PH_DEPTH], fbk = fx_p[FXP_PH_FDBK] * 180;
+    /* 0.707 x (1 - 0.25 depth/127): wide stereo sounds ~2.5 dB louder on headphones than the mono clean (0.8) */
+    int32_t pg = (int32_t)(((int64_t)23170 * (32768 - depth * 64)) >> 0);
     uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, j, s, k;
     if (!fx_p[FXP_PH_SW]) return;
     for (sb = 0; sb < n; sb += 32u) {
@@ -156,7 +159,8 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
                     ph_x[s][k] = u; ph_y[s][k] = y; u = y;
                 }
                 ph_fb[s] = clampi(y, -32767, 32767);
-                io[j] = ((x + (y << 2)) * 23170) >> 15;   /* x 0.707: the notches cost ~3 dB (0.6) */
+                io[j] = (int32_t)(((int64_t)(x + (y << 2)) * pg) >> 30);   /* x 0.707 (the notches) and the
+                                                                         * stereo width's loudness taken back */
             }
         ph_ph += inc * 32u;
     }
@@ -183,8 +187,8 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
             tr = (cho_buf[i1] + (((cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * (drq & 255)) >> 8)) << 1;
             L[j] += mulq15(tl - L[j], mix);
             R[j] += mulq15(tr - R[j], mix);
-            L[j] = (L[j] * (32768 + (mix * 13540 >> 14))) >> 15;   /* the comb costs ~3 dB at full mix (0.6) */
-            R[j] = (R[j] * (32768 + (mix * 13540 >> 14))) >> 15;
+            L[j] = (L[j] * (32768 + (mix * 1950 >> 14))) >> 15;   /* the comb (+3 dB) minus the stereo width's
+            R[j] = (R[j] * (32768 + (mix * 1950 >> 14))) >> 15;    * loudness on headphones (-2.5 dB) (0.8) */
             cho_w++;
         }
         cp_ph += inc * 32u;
@@ -218,11 +222,12 @@ static int32_t exp2_q16(int32_t g)                       /* 2^(g / 4096) in Q16;
 }
 static void fx_comp(int32_t *m, uint32_t n)
 {
-    int32_t amt = fx_p[FXP_CMP_AMT], ka = (int32_t)FX_CMP_ATK[fx_p[FXP_CMP_ATK]], kr = (int32_t)FX_CMP_REL[fx_p[FXP_CMP_REL]];
-    int32_t thr = -6144 - amt * 20480 / 127;                       /* log2 re full scale: -1.5 .. -6.5 (-9 .. -39 dB) */
-    int32_t slope = 4096 - 4096 * 2 * 127 / (3 * 127 + 9 * amt);    /* 1 - 1/R, R = 1.5 + 4.5 amt/127; Q12 */
-    int32_t mk = -17736 > thr ? (slope * (-17736 - thr)) >> 12 : 0;   /* make-up: the reduction a typical piano
-                                                                     * level (-26 dBFS) gets: level-neutral (0.7) */
+    /* the four knobs (0.8): THRESHOLD 0 .. -40 dBFS, RATIO 1.5:1 .. 20:1, ATTACK, MAKEUP 0 .. +24 dB; RELEASE CC 109 */
+    static const int16_t SLOPE[8] = {1365, 2048, 2731, 3072, 3413, 3584, 3686, 3891};   /* 1 - 1/R, Q12 */
+    int32_t ka = (int32_t)FX_CMP_ATK[fx_p[FXP_CMP_ATK]], kr = (int32_t)FX_CMP_REL[fx_p[FXP_CMP_REL]];
+    int32_t thr = -((fx_p[FXP_CMP_AMT] * 27434) >> 7);              /* log2 Q12 re full scale: 0 .. -6.64 (-40 dB) */
+    int32_t slope = SLOPE[fx_p[FXP_CMP_RATIO] & 7];
+    int32_t mk = (fx_p[FXP_CMP_GAIN] * 16461) >> 7;                /* make-up, log2 Q12: 0 .. 3.99 (+24 dB) */
     uint32_t sb, j;
     if (!fx_p[FXP_CMP_SW]) { fx_cmp_gr = 0; return; }
     for (sb = 0; sb < n; sb += 16u) {
