@@ -55,21 +55,54 @@ function frame() {
 }
 
 // ---- sound: the audio callback is the FM-1's audio interrupt (256-frame blocks at 44.1 kHz)
-async function startAudio() {
-  if (ctx) { await ctx.resume(); return; }
-  ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100, latencyHint: "interactive" });
-  node = ctx.createScriptProcessor(1024, 0, 2);
+// the engine runs at 44.1 kHz; a phone that will not open a 44.1 kHz context gets the engine resampled (linear)
+const ENG = 44100;
+let fifo = new Float32Array(2 * 8192), fifoN = 0, frac = 0;
+function pull(frames) {                              // engine frames into the fifo (L R interleaved)
+  const blocks = Math.ceil(frames / 256), p = M._web_audio(blocks) >> 2, f = M.HEAPF32;
+  fifo.set(f.subarray(p, p + 2 * 256 * blocks), 2 * fifoN);
+  fifoN += 256 * blocks;
+}
+function startAudio() {                              // synchronous up to resume(): iOS wants it inside the tap
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = "playback";   // iPhone: play with the silent switch on
+  } catch (e) { }
+  if (ctx) { if (ctx.state !== "running") ctx.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  try { ctx = new AC({ sampleRate: ENG, latencyHint: "interactive" }); } catch (e) { ctx = new AC(); }
+  const ratio = ENG / ctx.sampleRate;
+  node = ctx.createScriptProcessor(2048, 0, 2);
   node.onaudioprocess = ev => {
-    const L = ev.outputBuffer.getChannelData(0), R = ev.outputBuffer.getChannelData(1);
+    const L = ev.outputBuffer.getChannelData(0), R = ev.outputBuffer.getChannelData(1), n = L.length;
     if (!M) { L.fill(0); R.fill(0); return; }
-    const n = L.length / 256, p = M._web_audio(n) >> 2, f = M.HEAPF32;
-    for (let i = 0; i < L.length; i++) { L[i] = f[p + 2 * i]; R[i] = f[p + 2 * i + 1]; }
+    if (ratio === 1) {
+      const p = M._web_audio(n / 256) >> 2, f = M.HEAPF32;
+      for (let i = 0; i < n; i++) { L[i] = f[p + 2 * i]; R[i] = f[p + 2 * i + 1]; }
+      return;
+    }
+    const need = Math.ceil(n * ratio + frac) + 2;
+    if (fifoN < need) pull(need - fifoN);
+    let pos = frac;
+    for (let i = 0; i < n; i++, pos += ratio) {
+      const k = pos | 0, t = pos - k;
+      L[i] = fifo[2 * k] + (fifo[2 * k + 2] - fifo[2 * k]) * t;
+      R[i] = fifo[2 * k + 1] + (fifo[2 * k + 3] - fifo[2 * k + 1]) * t;
+    }
+    const used = pos | 0;
+    frac = pos - used;
+    fifo.copyWithin(0, 2 * used, 2 * fifoN);
+    fifoN -= used;
   };
   node.connect(ctx.destination);
-  await ctx.resume();
-  status(`Sound on (${ctx.sampleRate} Hz). Play the keys, the computer keyboard or a MIDI keyboard.`);
-  $("start").textContent = "Sound on";
+  const unlock = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+  unlock.play().catch(() => { });                   // older iPhones: an <audio> play in the tap opens the audio session
+  ctx.resume().then(() => {
+    status(`Sound on (${ctx.sampleRate} Hz${ratio !== 1 ? ", resampled" : ""}). Play the keys, the computer keyboard or a MIDI keyboard.`);
+    $("start").textContent = "Sound on";
+  }, e => status("Sound could not start: " + e));
 }
+window.addEventListener("error", e => status("Error: " + e.message));
+window.addEventListener("unhandledrejection", e => status("Error: " + e.reason));
 $("start").onclick = startAudio;
 
 // ---- the panel
