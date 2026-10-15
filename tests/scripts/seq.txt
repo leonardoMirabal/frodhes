@@ -1,0 +1,23 @@
+# SEQUENCER (0.9.1): a loop recorder. Keys: C4 = 7, E4 = 11, G4 = 14. Buttons: SEQ 11, PLAY 12.
+# SEQ: CHORD (chord mode off), SEQ again: SEQUENCER. 1 bar at 120 BPM = a 2 s loop, QUANT 1/8 (CC 61, 62)
+100 btn 11
+200 btn 11
+300 midi 0xB0 61 1
+350 midi 0xB0 62 2
+# SEQ on SEQUENCER: recording armed; the first note starts the loop (t = 1000: beat 1)
+400 btn 11
+1000 keys 0x80
+1200 keys 0
+1500 keys 0x800
+1700 keys 0
+2030 keys 0x4000
+2230 keys 0
+2900 shot
+# REC off after the first pass; the loop plays C E G on its own, G quantized to beat 3
+3100 btn 11
+3400 expect rms > -60
+4100 shot
+# PLAY: stop
+5200 btn 12
+6500 expect rms < -70
+6600 end

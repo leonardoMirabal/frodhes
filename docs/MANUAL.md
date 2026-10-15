@@ -65,12 +65,12 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **EDIT** | VOICE page |
 | **ENV** | DECAY page; press again for COMPRESSOR; on COMPRESSOR it switches the compressor on / off |
 | **LFO** | TREM/WAH page; press again there to switch it on / off |
-| **SEQ** | CHORD page (straight to SEQUENCER when chord mode is on); on CHORD it goes to SEQUENCER; on SEQUENCER it switches recording on / off |
+| **SEQ** | CHORD page (straight to SEQUENCER when chord mode is on); on CHORD it goes to SEQUENCER; on SEQUENCER it switches recording on / off, held 1 s it clears the pattern |
 | **SEL** | CHORUS page; press again there to switch it on / off |
 | **ARP** | ARPEGGIO page; press again there to switch the arpeggiator on / off |
 | **GLO** | TEMPO page; press again for SETUP |
 | **FX** | All effects off / on at once (see [6](#6-effects-on-and-off)) |
-| **PLAY** | Tap tempo; on ARPEGGIO, the arpeggiator's HOLD on / off; on SEQUENCER, start / stop |
+| **PLAY** | Tap tempo; on ARPEGGIO, the arpeggiator's HOLD on / off; on SEQUENCER, start / stop the loop |
 | **REC** | Sustain pedal |
 | **SAVE** | Save the sound to a user preset; hold to undo the last preset load |
 | **OCT− / OCT+** | Octave down / up (±2) |
@@ -243,31 +243,31 @@ Chord mode: **one key plays a whole chord**. Press **SEQ** to come here.
 | K4 | **STRUM** | 0 to 60 ms between the notes, low to high, like a strum |
 
 It works with the scales (with SNAP the key first moves onto the scale), with notes from USB-MIDI, with the
-arpeggiator (which then arpeggiates the chord) and with the sequencer.
+arpeggiator (which then arpeggiates the chord) and with the sequencer (which records the chord's notes).
 
 ### SEQUENCER
 
 ![SEQUENCER](manual/img/seq.png)
 
-A chord sequencer: **2 to 16 bars**, one chord per bar, in time with the tempo. Press **SEQ** on CHORD to come here
-(or SEQ from anywhere while chord mode is on).
+A **pattern recorder**: play notes or chords (chord mode too) and they loop, quantized, while you keep adding and
+editing. The screen shows what is recorded as a **piano roll**: the loop left to right (bars as lines, beats as dots),
+pitches bottom to top, the last pass brighter, and the playhead running along the top.
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **BARS** | How many bars, 2 to 16 |
-| K2 | **BAR** | The bar you are editing (underlined in the strip at the bottom) |
-| K3 | **RHYTHM** | **HOLD** (each chord struck once and held), **1/2**, **1/4**, **1/8** (struck again on each) |
-| K4 | **CHORD** | The edited bar's chord, by name (C, A MIN7, F MAJ7...): turn left to empty the bar, right to copy the chord before it |
+| K1 | **BARS** | The loop's length, 1 to 16 bars (notes past the end are kept and come back if you make it longer) |
+| K2 | **QUANT** | **OFF**, **1/4**, **1/8**, **1/16**, **1/8T**, **1/16T**: the grid the notes snap to as they play. It never changes what you recorded, so you can switch it at any time and hear the pattern tighten or loosen |
+| K3 | **SWING** | 50 % (straight) to 75 %: pushes the off-beat 1/8s or 1/16s |
+| K4 | **EDIT** | Turn **left: UNDO** the last pass you recorded (again: the one before). Turn **right: ERASE** on / off: while it plays, hold keys and their notes are removed as the loop passes them |
 
-**PLAY** starts and stops it; **SEQ** switches recording on / off (the SEQ light blinks). While recording:
+- **PLAY** starts and stops the loop.
+- **SEQ** switches recording on / off (the SEQ light blinks). Armed while stopped, the loop **starts with your first
+  note**. While recording, every pass adds what you play on top (overdub), and the loop never stops.
+- **Hold SEQ** for a second: **clear** the whole pattern.
 
-- **Stopped:** play a chord (or one key in chord mode) and it goes into the edited bar, which then moves on: play
-  your progression chord by chord.
-- **Playing:** what you play goes into the bar that is playing (a chord started just before a bar line counts for
-  the next bar).
-
-An empty bar lets the chord before it go on. The strip at the bottom shows every bar: filled = it has a chord, white
-= playing now. With the arpeggiator on, the sequence is arpeggiated. The sequence is kept on the FM-1.
+Press **SEQ** on CHORD to come here (or SEQ from anywhere while chord mode is on). The pattern goes through the
+arpeggiator when it runs, plays the effects like your hands do, and is kept on the FM-1 when you switch off (it is
+stored when the loop is stopped).
 
 ### ARPEGGIO
 
@@ -385,8 +385,8 @@ also send their notes to the computer. **Program Change** 0–11 loads F01–F12
 | 114 | USB VOL: knob (< 64) / fixed | | |
 | 102 / 103 / 104 | DECAY / RELEASE / NOISE | 120 / 123 | All sound off / all notes off |
 | 56 / 57 | CHORD TYPE (0–14 as listed) / INVERSION (0–3) | 58 / 59 | CHORD VOICING (0–2) / STRUM (0–12 × 5 ms) |
-| 60 / 61 | SEQUENCER play (≥ 64) / stop, BARS (2–16) | 62 / 63 | SEQUENCER RHYTHM (0–3) / recording (≥ 64) |
-| 46 | SEQUENCER edited bar (0–15) | | |
+| 60 / 61 | SEQUENCER play (≥ 64) / stop, BARS (1–16) | 62 / 63 | SEQUENCER QUANT (0–5) / recording (≥ 64) |
+| 43 / 44 | SEQUENCER CLEAR / UNDO (≥ 64) | 45 / 46 | SEQUENCER ERASE (≥ 64 on) / SWING (50–75) |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
 The FM-1 also appears as a USB audio input: you can record exactly what it plays, digitally, without the headphone

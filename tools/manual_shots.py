@@ -34,15 +34,17 @@ def main():
             L.append(f"{t} shot"); shots[t] = name
             L.append(f"{t + 50} keys 0x0"); t += 300
             continue
-        if name == "seq":                                   # four bars recorded (C, Am, F, G), then playing bar 2
-            L.append(f"{t} midi 0xB0 61 4"); L.append(f"{t + 20} midi 0xB0 46 0"); L.append(f"{t + 40} midi 0xB0 63 127")
-            L.append(f"{t + 60} midi 0xB0 56 1"); t += 100                     # DIATONIC (C major)
-            for k in (7, 16, 12, 14):                                          # C4, A4, F4, G4
-                L.append(f"{t} keys {1 << k:#x}"); L.append(f"{t + 60} keys 0x0"); t += 150
-            L.append(f"{t} midi 0xB0 63 0"); L.append(f"{t + 20} midi 0xB0 46 1"); L.append(f"{t + 40} midi 0xB0 60 127")
-            t += 2800
+        if name == "seq":                                   # a 2-bar pattern recorded live (chord mode, then notes)
+            L.append(f"{t} midi 0xB0 61 2"); L.append(f"{t + 20} midi 0xB0 62 3"); L.append(f"{t + 40} midi 0xB0 43 127")
+            L.append(f"{t + 60} midi 0xB0 63 127"); L.append(f"{t + 80} midi 0xB0 56 7"); t += 200   # MIN7 chords
+            for k, dt, hold in ((12, 0, 900), (16, 1000, 900), (9, 2000, 400), (14, 2500, 400)):  # F, A, D, G
+                L.append(f"{t + dt} keys {1 << k:#x}"); L.append(f"{t + dt + hold} keys 0x0")
+            L.append(f"{t + 3200} midi 0xB0 56 0"); t += 3300
+            for k, dt in ((19, 0), (21, 250), (23, 500), (24, 750)):          # a little line on top
+                L.append(f"{t + dt} keys {1 << k:#x}"); L.append(f"{t + dt + 150} keys 0x0")
+            t += 1200
             L.append(f"{t} shot"); shots[t] = name
-            L.append(f"{t + 50} midi 0xB0 60 0"); L.append(f"{t + 60} midi 0xB0 56 0"); t += 300
+            L.append(f"{t + 50} midi 0xB0 63 0"); L.append(f"{t + 60} midi 0xB0 60 0"); t += 300
             continue
         if name == "arp":                                   # the arpeggiator on (UP) over a held chord, then off
             L.append(f"{t} turn 2 1"); L.append(f"{t + 100} keys 0x4880"); t += 900

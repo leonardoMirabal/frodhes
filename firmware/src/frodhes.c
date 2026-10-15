@@ -14,7 +14,8 @@
 #define APP_NAME "FRODHES"
 #define APP_OUT_SHIFT 8u   /* the codec at full scale: +6 dB on the jack over Dinghy's -6 dBFS ceiling (the look-ahead
                             * limiter keeps every sample under -2.7 dBFS, so it never clips; 0.8) */
-#define APP_FL_RANGE(off, n) FL_IN(off, n, 0x97000u, 0x98FFFu)    /* the user preset bank (presets.c) */
+#define APP_FL_RANGE(off, n) FL_IN(off, n, 0x97000u, 0x9AFFFu)    /* the user preset bank (presets.c), the
+                                                                       * sequencer's pattern (seq.c) */
 #include "platform.c"
 #include "rhodes.c"
 #include "fx.c"
@@ -98,19 +99,27 @@ static void midi_cc(uint32_t cc, uint32_t v)
     }
     if (cc >= 56u && cc <= 63u) {                      /* chord mode and the sequencer (0.9.1): 56 TYPE 0..14, 57
                                                         * INVERSION 0..3, 58 VOICING 0..2, 59 STRUM 0..12 (x 5 ms); 60 play
-                                                        * (>= 64) / stop, 61 BARS 2..16, 62 RHYTHM 0..3, 63 recording */
+                                                        * (>= 64) / stop, 61 BARS 1..16, 62 QUANT 0..5, 63 recording */
         if (cc == 56u) CH_TYPE = (uint8_t)(v < CH_NTYPE ? v : CH_NTYPE - 1u);
         else if (cc == 57u) CH_INV = (uint8_t)(v > 3u ? 3u : v);
         else if (cc == 58u) CH_VOICE = (uint8_t)(v > 2u ? 2u : v);
         else if (cc == 59u) CH_STRUM = (uint8_t)(v > 12u ? 12u : v);
         else if (cc == 60u) { if ((v >= 64u) != (seq_play != 0)) seq_toggle_play(); }
-        else if (cc == 61u) { set.seq_bars = (uint8_t)(v < 2u ? 2u : v > 16u ? 16u : v); if (seq_cursor >= set.seq_bars) seq_cursor = 0; }
-        else if (cc == 62u) set.seq_rhythm = (uint8_t)(v > 3u ? 3u : v);
+        else if (cc == 61u) { SQ_BARS = (uint8_t)(v < 1u ? 1u : v > 16u ? 16u : v); sq_roll_dirty = 1; }
+        else if (cc == 62u) { SQ_QUANT = (uint8_t)(v > 5u ? 5u : v); sq_roll_dirty = 1; }
         else { if ((v >= 64u) != (seq_rec != 0)) seq_toggle_rec(); }
         ui_mark(E_CARDS); ui_mark(E_FOOTER);
         return;
     }
-    if (cc == 46u) { seq_cursor = (uint8_t)(v < set.seq_bars ? v : 0u); ui_mark(E_CARDS); ui_mark(E_FOOTER); return; }   /* the edited bar */
+    if (cc >= 43u && cc <= 46u) {                      /* the sequencer's edits: 43 CLEAR (>= 64), 44 UNDO (>= 64),
+                                                        * 45 ERASE (>= 64 on), 46 SWING 50..75 */
+        if (cc == 43u && v >= 64u) seq_clear();
+        else if (cc == 44u && v >= 64u) seq_undo();
+        else if (cc == 45u) sq_erase = v >= 64u;
+        else if (cc == 46u) { SQ_SWING = (uint8_t)(v < 50u ? 50u : v > 75u ? 75u : v); sq_roll_dirty = 1; }
+        ui_mark(E_CARDS); ui_mark(E_FOOTER);
+        return;
+    }
     if (cc == 120u || cc == 123u) { rh_all_off(); return; }
     if (cc == 85u) {                                   /* reface CHO/PHA switch: off / chorus / phaser (one of them) */
         param_set(P_CP_SW, v >= 43u && v < 86u); param_set(P_PH_SW, v >= 86u);
@@ -154,6 +163,7 @@ static void app_main(void)
     tempo_set10(set.bpm10);
     set_dirty = 0;
     presets_load_bank();
+    seq_load();
     ui_goto(PG_PERF);
     ui_splash();
 
@@ -196,6 +206,7 @@ static void app_main(void)
         ui_leds(lit, tempo_beat_led() || (arp_on() && arp_n && arp_playing < 128u));
         ui_draw();
         presets_save_poll();
+        seq_save_poll();
 
         if (set_dirty && fm1_ms - set_t_change > 2000u && rh_quiet() && fx_quiet()) {
             settings_save(&set, sizeof set);    /* only when silent: the erase stalls the audio */

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Frodhes notes (0.9.1), main loop only: where a played note goes, and chord mode.
  *
- *   sources   each FM-1 key (0..26), each USB-MIDI note (27..154) and the sequencer (155) is a source: src_on()
+ *   sources   each FM-1 key (0..26) and each USB-MIDI note (27..154) is a source (155: spare): src_on()
  *             plays a chord or a single note for it (chord mode), src_off() stops exactly those notes. A strum
  *             starts the notes one after another (src_poll).
  *   out       out_on / out_off count each pitch, so two sources sharing a note never cut each other; the first
@@ -9,7 +9,8 @@
  *   chords    CHORD page: TYPE (OFF, DIATONIC and DIA 7TH from the SCALE page's key and scale, or a fixed shape),
  *             INVERSION, VOICING (close / open / +bass), STRUM; chord_name() names a set of notes for the screen
  *
- * The keys' notes and the sequencer's are echoed to USB-MIDI; notes from USB-MIDI are not. */
+ * The keys' notes are echoed to USB-MIDI, notes from USB-MIDI are not; every note started is told to the
+ * sequencer's recorder (seq.c live_note_on / off). */
 
 #define SRC_KEYS 0u
 #define SRC_MIDI 27u
@@ -137,8 +138,13 @@ static void chord_name(const uint8_t *notes, uint32_t c, char *s)
 typedef struct { uint8_t n[CH_MAX], c, started, vel, echo; uint32_t t0; } src_t;
 static src_t src[SRC_N];
 static uint8_t src_active[SRC_N];
-static void seq_capture_on(uint32_t slot, const uint8_t *notes, uint32_t c);   /* seq.c */
-static void seq_capture_off(uint32_t slot);
+static void live_note_on(uint32_t n, uint32_t vel);   /* seq.c: what is played, for the recorder */
+static void live_note_off(uint32_t n);
+static void src_note_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
+{
+    out_on(n, vel, echo);
+    if (slot != SRC_SEQ) live_note_on(n, vel);
+}
 
 static void src_start(uint32_t slot, const uint8_t *notes, uint32_t c, uint32_t vel, int echo)
 {
@@ -148,8 +154,8 @@ static void src_start(uint32_t slot, const uint8_t *notes, uint32_t c, uint32_t 
     for (i = 0; i < s->c; i++) s->n[i] = notes[i];
     s->vel = (uint8_t)vel; s->echo = (uint8_t)echo; s->t0 = fm1_ms; s->started = 0;
     src_active[slot] = 1;
-    if (s->c) { out_on(s->n[0], vel, echo); s->started = 1; }
-    for (i = 1; i < s->c && !CH_STRUM; i++) { out_on(s->n[i], vel, echo); s->started = (uint8_t)(i + 1u); }
+    if (s->c) { src_note_on(slot, s->n[0], vel, echo); s->started = 1; }
+    for (i = 1; i < s->c && !CH_STRUM; i++) { src_note_on(slot, s->n[i], vel, echo); s->started = (uint8_t)(i + 1u); }
 }
 /* a key or a MIDI note pressed: root n (after the scale) */
 static void src_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
@@ -159,17 +165,18 @@ static void src_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
     if (src_active[slot]) return;
     if (chord_on()) c = chord_build(n, notes); else { notes[0] = (uint8_t)n; c = 1; }
     src_start(slot, notes, c, vel, echo);
-    if (slot != SRC_SEQ) seq_capture_on(slot, notes, c);
 }
 static void src_off(uint32_t slot)
 {
     src_t *s = &src[slot];
     uint32_t i;
     if (!src_active[slot]) return;
-    for (i = 0; i < s->started; i++) out_off(s->n[i]);       /* a strum cut short: the rest never starts */
+    for (i = 0; i < s->started; i++) {                        /* a strum cut short: the rest never starts */
+        out_off(s->n[i]);
+        if (slot != SRC_SEQ) live_note_off(s->n[i]);
+    }
     src_active[slot] = 0;
     s->c = s->started = 0;
-    if (slot != SRC_SEQ) seq_capture_off(slot);
 }
 /* the strum: the next notes when their time comes */
 static void src_poll(void)
@@ -177,13 +184,13 @@ static void src_poll(void)
     uint32_t i;
     if (!CH_STRUM) {
         for (i = 0; i < SRC_N; i++)                           /* (a strum set to 0 mid-chord: the rest at once) */
-            while (src_active[i] && src[i].started < src[i].c) { out_on(src[i].n[src[i].started], src[i].vel, src[i].echo); src[i].started++; }
+            while (src_active[i] && src[i].started < src[i].c) { src_note_on(i, src[i].n[src[i].started], src[i].vel, src[i].echo); src[i].started++; }
         return;
     }
     for (i = 0; i < SRC_N; i++) {
         src_t *s = &src[i];
         while (src_active[i] && s->started < s->c && fm1_ms - s->t0 >= (uint32_t)s->started * CH_STRUM * 5u) {
-            out_on(s->n[s->started], s->vel, s->echo);
+            src_note_on(i, s->n[s->started], s->vel, s->echo);
             s->started++;
         }
     }

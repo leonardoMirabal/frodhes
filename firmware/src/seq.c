@@ -1,147 +1,240 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Frodhes chord sequencer (0.9.1), main loop only: 2..16 bars of 4/4, one chord per bar, on the tempo (tempo.c).
+/* Frodhes sequencer (0.9.1), main loop only: a looping pattern recorder. What is played (single notes, chords, chord
+ * mode's chords) is recorded as notes with their own timing; QUANT snaps them as they play, so changing it reshapes
+ * the pattern at once, and nothing is lost. Edits never stop the loop:
  *
- *   SEQUENCER page   BARS 2..16, BAR (the one being edited), RHYTHM (HOLD: struck once per chord; 1/2, 1/4, 1/8:
- *                    struck on each, 3/4 of it long), CHORD (the edited bar's: turn left to empty it, right to copy
- *                    the chord before it)
- *   PLAY             start / stop (on that page)          SEQ   recording on / off (on that page)
- *   recording        stopped: what you play (a chord, or one key in chord mode) goes into the edited bar, which then
- *                    moves on; playing: into the bar that plays (a chord started in the last 1/8 of a bar counts
- *                    for the next one)
- *   an empty bar     the chord before it goes on (none yet: silence)
+ *   PLAY            start / stop (on the SEQUENCER page)
+ *   SEQ             recording on / off: every pass over the loop adds what you play (overdub); held 1 s: CLEAR
+ *   BARS 1..16      the loop's length (notes past it stay, and come back when it grows)
+ *   QUANT           OFF, 1/4, 1/8, 1/16, 1/8T, 1/16T        SWING 50..75 % (the off-beats of 1/8 and 1/16)
+ *   EDIT            left: UNDO the last pass recorded; right: ERASE on / off (hold keys: their notes go as the loop
+ *                   passes them)
  *
- * The chords play as the sequencer source of notes.c, so they go through the arpeggiator when it runs (then each
- * chord is simply held for the arpeggio). Kept in the settings (set.seq_*): one sequence on the FM-1. */
+ * Recording armed while stopped starts the loop with the first note played. The notes play through notes.c (the
+ * arpeggiator takes them when it runs) and are kept in two flash sectors written in turn (0x99000 / 0x9A000). */
 
-#define SEQ_STEPS 16u
-static const uint8_t SEQ_DIV[4] = {1, 2, 4, 8};
-static const char *const SEQ_RHY_NAME[4] = {"HOLD", "1/2", "1/4", "1/8"};
-static uint8_t seq_play, seq_rec, seq_cursor, seq_last_step = 0xFF;
-static uint32_t seq_t0, seq_last_sub = 0xFFFFFFFFu, seq_gate_t;
-static int seq_gate_on;
-static uint8_t cap_notes[CH_MAX], cap_n, cap_keys, cap_step, cap_slot[SRC_N];
+#define SQ_PPQ 96u                                  /* ticks per beat */
+#define SQ_MAXEV 448u
+#define SQ_MAXACT 32u
+#define SQ_A 0x99000u
+#define SQ_B 0x9A000u
+#define SQ_MAGIC 0x46535131u                        /* "FSQ1" */
+typedef struct { uint16_t tick, len; uint8_t note, vel, take, rsv; } sq_ev_t;
+typedef struct { uint32_t magic, seq, n, crc; } sq_hdr_t;
+static sq_ev_t sq_ev[SQ_MAXEV];
+static uint32_t sq_n, sq_flash_seq;
+static uint8_t seq_play, seq_rec, sq_erase, sq_take;
+static uint32_t sq_pos, sq_last_ms, sq_prev;        /* sq_pos: ticks in Q16 */
+static struct { uint8_t note; uint16_t off; } sq_act[SQ_MAXACT];
+static uint32_t sq_nact;
+static uint16_t rec_start[128];
+static uint8_t rec_vel[128], live_held[128];
+static uint8_t sq_dirty, sq_roll_dirty, sq_btn_down;
+static uint32_t sq_change_t, sq_btn_t;
+static const uint8_t SQ_GRID[6] = {0, 96, 48, 24, 32, 16};
+static const char *const SQ_QUANT_NAME[6] = {"OFF", "1/4", "1/8", "1/16", "1/8T", "1/16T"};
+#define SQ_BARS (set.seq_bars)
+#define SQ_QUANT (set.seq_quant)
+#define SQ_SWING (set.seq_swing)
 static void ui_mark(uint32_t e);
 
+static uint32_t sq_len(void) { return (uint32_t)SQ_BARS * 4u * SQ_PPQ; }
+static uint32_t sq_tick(void) { return sq_pos >> 16; }
 static void seq_sanitize(void)
 {
-    uint32_t i, j;
-    if (set.seq_bars < 2u || set.seq_bars > SEQ_STEPS) set.seq_bars = 4;
-    if (set.seq_rhythm > 3u) set.seq_rhythm = 0;
-    for (i = 0; i < SEQ_STEPS; i++) for (j = 0; j < CH_MAX; j++) if (set.seq_step[i][j] > 127u) set.seq_step[i][j] = 0;
+    if (SQ_BARS < 1u || SQ_BARS > 16u) SQ_BARS = 4;
+    if (SQ_QUANT > 5u) SQ_QUANT = 3;
+    if (SQ_SWING < 50u || SQ_SWING > 75u) SQ_SWING = 50;
 }
-static uint32_t seq_count(uint32_t step)                       /* the notes stored in a bar (0: empty) */
+static void sq_changed(void) { sq_dirty = 1; sq_roll_dirty = 1; sq_change_t = fm1_ms; }
+
+/* where a note plays: its tick on the QUANT grid (with SWING), inside the loop */
+static uint32_t sq_at(const sq_ev_t *e)
 {
-    uint32_t c = 0;
-    while (c < CH_MAX && set.seq_step[step][c]) c++;
-    return c;
-}
-/* the chord a bar plays: its own, else the last one before it (around the loop); -1: none at all */
-static int32_t seq_effective(uint32_t step)
-{
-    uint32_t i, s;
-    for (i = 0; i < set.seq_bars; i++) {
-        s = (step + set.seq_bars - i) % set.seq_bars;
-        if (seq_count(s)) return (int32_t)s;
+    uint32_t g = SQ_GRID[SQ_QUANT], t = e->tick, i, L = sq_len();
+    if (g) {
+        i = (t + g / 2u) / g;
+        t = i * g;
+        if ((g == 48u || g == 24u) && (i & 1u)) t += 2u * g * SQ_SWING / 100u - g;
     }
-    return -1;
+    return t % L;
 }
-static void seq_strike(int32_t s)
+static int sq_in(uint32_t t, uint32_t p0, uint32_t p1)   /* t in (p0, p1], around the loop's end */
 {
-    src_off(SRC_SEQ);
-    if (s >= 0) src_start(SRC_SEQ, set.seq_step[s], seq_count((uint32_t)s), set.key_vel, 1);
+    return p0 <= p1 ? t > p0 && t <= p1 : t > p0 || t <= p1;
 }
 
-static void seq_stop(void)
+static void sq_all_off(void)
 {
-    seq_play = 0;
-    src_off(SRC_SEQ);
-    seq_last_step = 0xFF; seq_last_sub = 0xFFFFFFFFu; seq_gate_on = 0;
-    ui_mark(6);                                                 /* E_FOOTER */
+    uint32_t i;
+    for (i = 0; i < sq_nact; i++) out_off(sq_act[i].note);
+    sq_nact = 0;
 }
+static void sq_add(uint32_t tick, uint32_t len, uint32_t note, uint32_t vel)
+{
+    sq_ev_t *e;
+    if (sq_n >= SQ_MAXEV) return;
+    e = &sq_ev[sq_n++];
+    e->tick = (uint16_t)tick; e->len = (uint16_t)len; e->note = (uint8_t)note; e->vel = (uint8_t)vel;
+    e->take = sq_take; e->rsv = 0;
+    sq_changed();
+}
+static void sq_rec_close(uint32_t n)                    /* a recorded note ends: it becomes an event */
+{
+    uint32_t L = sq_len(), t = sq_tick(), len;
+    if (rec_start[n] == 0xFFFFu) return;
+    len = (t + L - rec_start[n]) % L;
+    if (len < 6u) len = 6u;
+    sq_add(rec_start[n], len, n, rec_vel[n]);
+    rec_start[n] = 0xFFFFu;
+}
+static void sq_rec_close_all(void) { uint32_t n; for (n = 0; n < 128u; n++) sq_rec_close(n); }
+
 static void seq_start(void)
 {
     seq_play = 1;
-    seq_t0 = beat_t0 = fm1_ms;                                  /* bar 1 now, the tempo's beat with it */
-    seq_last_step = 0xFF; seq_last_sub = 0xFFFFFFFFu;
+    sq_pos = 0; sq_prev = sq_len() - 1u; sq_last_ms = fm1_ms;
+    beat_t0 = fm1_ms;                                   /* the tempo's beat (arpeggiator, LED) from bar 1 */
     ui_mark(6);
 }
-static void seq_toggle_play(void) { if (seq_play) seq_stop(); else seq_start(); }
-static void seq_toggle_rec(void) { seq_rec = (uint8_t)!seq_rec; cap_keys = 0; ui_mark(6); }
-
-/* the bar playing now and how far into it (ms) */
-static uint32_t seq_now_step(uint32_t *into)
+static void seq_stop(void)
 {
-    uint32_t bar = beat_ms * 4u, el = fm1_ms - seq_t0;
-    if (into) *into = el % bar;
-    return (el / bar) % set.seq_bars;
+    sq_rec_close_all();
+    seq_play = 0;
+    sq_all_off();
+    ui_mark(6); ui_mark(7);
+}
+static void seq_toggle_play(void) { if (seq_play) seq_stop(); else seq_start(); }
+static void seq_toggle_rec(void)
+{
+    if (seq_rec) { sq_rec_close_all(); seq_rec = 0; }
+    else { seq_rec = 1; sq_erase = 0; sq_take++; }
+    ui_mark(6); ui_mark(10);
+}
+static void seq_clear(void)
+{
+    uint32_t n;
+    sq_all_off();
+    for (n = 0; n < 128u; n++) rec_start[n] = 0xFFFFu;
+    sq_n = 0;
+    sq_changed();
+}
+static uint32_t seq_undo(void)                          /* the last pass recorded goes: how many notes */
+{
+    uint32_t i, j, got = 0, best = 256u;
+    uint8_t hi = 0;
+    if (!sq_n) return 0;
+    for (i = 0; i < sq_n; i++) {                        /* the most recent pass: the take closest behind sq_take */
+        uint32_t d = (uint8_t)(sq_take - sq_ev[i].take);
+        if (d < best) { best = d; hi = sq_ev[i].take; }
+    }
+    for (i = j = 0; i < sq_n; i++) { if (sq_ev[i].take == hi) got++; else sq_ev[j++] = sq_ev[i]; }
+    sq_n = j;
+    sq_all_off();
+    sq_changed();
+    return got;
+}
+
+/* live notes (keys, USB-MIDI, chord mode's notes; not the sequencer's own): notes.c calls these */
+static void live_note_on(uint32_t n, uint32_t vel)
+{
+    if (n > 127u) return;
+    live_held[n]++;
+    if (!seq_rec || sq_erase) return;
+    if (!seq_play) seq_start();                         /* armed and stopped: the first note starts the loop */
+    if (rec_start[n] == 0xFFFFu) { rec_start[n] = (uint16_t)sq_tick(); rec_vel[n] = (uint8_t)vel; }
+}
+static void live_note_off(uint32_t n)
+{
+    if (n > 127u) return;
+    if (live_held[n]) live_held[n]--;
+    if (!live_held[n]) sq_rec_close(n);
 }
 
 static void seq_poll(void)
 {
-    uint32_t bar, el, step, div, sub, sub_ms;
+    uint32_t L = sq_len(), dt, p0, p1, i;
     if (!seq_play) return;
-    bar = beat_ms * 4u;
-    el = fm1_ms - seq_t0;
-    step = (el / bar) % set.seq_bars;
-    div = arp_on() ? 1u : SEQ_DIV[set.seq_rhythm];
-    sub_ms = bar / div;
-    sub = el / sub_ms;
-    if (seq_gate_on && (int32_t)(fm1_ms - seq_gate_t) >= 0) { seq_gate_on = 0; src_off(SRC_SEQ); }
-    if (sub != seq_last_sub) {
-        int32_t s = seq_effective(step);
-        seq_last_sub = sub;
-        if (div == 1u) {                                        /* HOLD (or the arpeggiator): a chord change only */
-            if (step != seq_last_step && (seq_count(step) || !src_active[SRC_SEQ] || s < 0)) seq_strike(s);
-        } else {
-            seq_strike(s);
-            if (s >= 0) { seq_gate_on = 1; seq_gate_t = fm1_ms + sub_ms * 3u / 4u; }
+    dt = fm1_ms - sq_last_ms;
+    sq_last_ms = fm1_ms;
+    if (dt > 1000u) dt = 1000u;                         /* (32-bit: no 64-bit division on this chip) */
+    sq_pos += dt * ((SQ_PPQ << 16) / (beat_ms ? beat_ms : 500u));
+    while (sq_pos >= L << 16) sq_pos -= L << 16;
+    p0 = sq_prev % L; p1 = sq_tick();
+    if (p0 == p1) return;
+    for (i = 0; i < sq_nact;) {                         /* note offs first: a repeated note restarts cleanly */
+        if (sq_in(sq_act[i].off, p0, p1)) { out_off(sq_act[i].note); sq_act[i] = sq_act[--sq_nact]; }
+        else i++;
+    }
+    for (i = 0; i < sq_n;) {
+        sq_ev_t *e = &sq_ev[i];
+        uint32_t t;
+        if (e->tick >= L) { i++; continue; }            /* past the loop (BARS made shorter): kept, silent */
+        t = sq_at(e);
+        if (sq_in(t, p0, p1)) {
+            if (sq_erase && live_held[e->note]) { sq_ev[i] = sq_ev[--sq_n]; sq_changed(); continue; }
+            if (sq_nact < SQ_MAXACT) {
+                out_on(e->note, e->vel, 1);
+                sq_act[sq_nact].note = e->note;
+                sq_act[sq_nact].off = (uint16_t)((t + (e->len < L ? e->len : L - 1u)) % L);
+                sq_nact++;
+            }
         }
+        i++;
     }
-    if (step != seq_last_step) { seq_last_step = (uint8_t)step; ui_mark(6); }
+    if (p1 < p0 && seq_rec) sq_take++;                  /* a new pass: UNDO takes it away on its own */
+    sq_prev = p1;
 }
 
-/* recording: the notes played while the keys are down make one chord, stored when the last key comes up */
-static void seq_capture_on(uint32_t slot, const uint8_t *notes, uint32_t c)
+/* ---- the pattern in flash (only when stopped and quiet: an erase stalls the audio) */
+#ifdef DINGHY_HOST
+static uint32_t crc32(const uint8_t *p, uint32_t n);   /* presets.c (host) */
+static uint8_t sq_host_fl[2][4096];
+static int sq_fl_read(uint32_t at, void *p, uint32_t n) { memcpy(p, sq_host_fl[at == SQ_B], n); return 0; }
+static int sq_fl_erase(uint32_t at) { memset(sq_host_fl[at == SQ_B], 0xFF, 4096); return 0; }
+static int sq_fl_write(uint32_t at, uint32_t off, const void *p, uint32_t n) { memcpy(&sq_host_fl[at == SQ_B][off], p, n); return 0; }
+#else
+static int sq_fl_read(uint32_t at, void *p, uint32_t n) { return flash_ok ? st_read(at, p, n) : -1; }
+static int sq_fl_erase(uint32_t at) { uint32_t took; return fl_erase4k(at, &took); }
+static int sq_fl_write(uint32_t at, uint32_t off, const void *p, uint32_t n) { return fl_write(at + off, p, n); }
+#endif
+static int sq_valid(uint32_t at, sq_hdr_t *h)
 {
-    uint32_t i, j;
-    if (!seq_rec) return;
-    if (!cap_keys) {
-        uint32_t into;
-        cap_n = 0;
-        if (seq_play) {
-            cap_step = (uint8_t)seq_now_step(&into);
-            if (into > beat_ms * 4u * 7u / 8u) cap_step = (uint8_t)((cap_step + 1u) % set.seq_bars);
-        } else cap_step = seq_cursor;
-    }
-    cap_slot[slot] = 1;
-    cap_keys++;
-    for (i = 0; i < c; i++) {
-        for (j = 0; j < cap_n && cap_notes[j] != notes[i]; j++) {}
-        if (j == cap_n && cap_n < CH_MAX) cap_notes[cap_n++] = notes[i];
-    }
+    if (sq_fl_read(at, h, sizeof *h) || h->magic != SQ_MAGIC || h->n > SQ_MAXEV) return 0;
+    if (sq_fl_read(at + sizeof *h, sq_ev, h->n * sizeof(sq_ev_t))) return 0;
+    return crc32((const uint8_t *)sq_ev, h->n * sizeof(sq_ev_t)) == h->crc;
 }
-static void seq_capture_off(uint32_t slot)
+static void seq_load(void)
 {
-    uint32_t i, j;
-    if (!cap_slot[slot]) return;
-    cap_slot[slot] = 0;
-    if (!cap_keys || --cap_keys) return;
-    if (!seq_rec || !cap_n) return;
-    for (i = 1; i < cap_n; i++)                                 /* low to high */
-        for (j = i; j > 0u && cap_notes[j - 1u] > cap_notes[j]; j--) { uint8_t t = cap_notes[j]; cap_notes[j] = cap_notes[j - 1u]; cap_notes[j - 1u] = t; }
-    for (i = 0; i < CH_MAX; i++) set.seq_step[cap_step][i] = i < cap_n ? cap_notes[i] : 0u;
-    if (!seq_play) seq_cursor = (uint8_t)((cap_step + 1u) % set.seq_bars);
-    set_dirty = 1; set_t_change = fm1_ms;
-    ui_mark(10); ui_mark(6);                                    /* E_CARDS, E_FOOTER */
-}
-
-/* the CHORD card: left empties the edited bar, right copies the chord that plays before it */
-static void seq_edit_chord(int32_t d)
-{
-    uint32_t i;
-    if (d < 0) { for (i = 0; i < CH_MAX; i++) set.seq_step[seq_cursor][i] = 0; return; }
+    sq_hdr_t a, b;
+    int va = sq_valid(SQ_A, &a), vb = sq_valid(SQ_B, &b);
+    uint32_t n;
+    for (n = 0; n < 128u; n++) rec_start[n] = 0xFFFFu;
+    sq_n = 0;
+    if (!va && !vb) return;
     {
-        int32_t s = seq_effective((seq_cursor + set.seq_bars - 1u) % set.seq_bars);
-        if (s >= 0 && (uint32_t)s != seq_cursor) for (i = 0; i < CH_MAX; i++) set.seq_step[seq_cursor][i] = set.seq_step[s][i];
+        uint32_t at = va && (!vb || (int32_t)(a.seq - b.seq) > 0) ? SQ_A : SQ_B;
+        sq_hdr_t h;
+        if (!sq_valid(at, &h)) { sq_n = 0; return; }   /* (re-reads it into sq_ev) */
+        sq_n = h.n; sq_flash_seq = h.seq;
     }
+    for (n = 0; n < sq_n; n++) if (sq_ev[n].take > sq_take) sq_take = sq_ev[n].take;
+}
+static void seq_save_poll(void)
+{
+    sq_hdr_t h, cur;
+    uint32_t at = SQ_A;
+    if (!sq_dirty || seq_play || fm1_ms - sq_change_t < 1500u || !rh_quiet() || !fx_quiet()) return;
+    {
+        static sq_ev_t keep[SQ_MAXEV];                  /* sq_valid() reads into sq_ev: keep ours aside */
+        uint32_t n = sq_n;
+        memcpy(keep, sq_ev, n * sizeof(sq_ev_t));
+        if (sq_valid(SQ_A, &cur) && (!sq_valid(SQ_B, &h) || (int32_t)(cur.seq - h.seq) > 0)) at = SQ_B;
+        memcpy(sq_ev, keep, n * sizeof(sq_ev_t));
+        sq_n = n;
+    }
+    h.magic = SQ_MAGIC; h.seq = ++sq_flash_seq; h.n = sq_n; h.crc = crc32((const uint8_t *)sq_ev, sq_n * sizeof(sq_ev_t));
+    if (sq_fl_erase(at) == 0 && (!sq_n || sq_fl_write(at, sizeof h, sq_ev, sq_n * sizeof(sq_ev_t)) == 0))
+        sq_fl_write(at, 0, &h, sizeof h);              /* the header last: a cut save stays invalid */
+    sq_dirty = 0;
 }

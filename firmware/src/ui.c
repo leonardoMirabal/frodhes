@@ -23,11 +23,12 @@ static void tempo_set10(uint32_t b);
 
 enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_TEMPO, PG_SCALE,
        PG_CHORD, PG_SEQ, PG_ARP, PG_SETUP, PG_N };
-enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_N = 8, E_CARDS = 10 };   /* E_CARDS: all four */
+enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL = 8, E_N = 9, E_CARDS = 10 };   /* E_CARDS: all four;
+                                    * E_METER: COMP's meter / SEQUENCER's playhead, E_ROLL: SEQUENCER's notes */
 /* card slots: a parameter id (< P_COUNT) or one of these */
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
        S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
-       S_SQBARS, S_SQBAR, S_SQRHY, S_SQCHORD, S_NONE = 0xFF };
+       S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_NONE = 0xFF };
 
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
                                              "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
@@ -46,7 +47,7 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {S_BPM, P_TW_SYNC, P_PH_SYNC, P_DL_SYNC},
     {S_SCMODE, S_SCALE, S_ROOT, S_TRANS},
     {S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM},
-    {S_SQBARS, S_SQBAR, S_SQRHY, S_SQCHORD},
+    {S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT},
     {S_ARPMODE, S_ARPRATE, S_ARPOCT, S_ARPGATE},
     {S_CLOCK, P_DL_TONE, P_LEVEL, S_USBVOL},
 };
@@ -64,7 +65,7 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"BPM", "TREM SYNC", "PHA SYNC", "DLY SYNC"},
     {"MODE", "SCALE", "ROOT", "TRANSP"},
     {"TYPE", "INVERSION", "VOICING", "STRUM"},
-    {"BARS", "BAR", "RHYTHM", "CHORD"},
+    {"BARS", "QUANT", "SWING", "EDIT"},
     {"MODE", "RATE", "OCTAVES", "GATE"},
     {"CLOCK", "DLY TONE", "LEVEL", "USB VOL"},
 };
@@ -199,10 +200,10 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_CHINV: *hi = 3; return CH_INV;
     case S_CHVOICE: *hi = 2; return CH_VOICE;
     case S_CHSTRUM: *hi = 12; return CH_STRUM;
-    case S_SQBARS: *hi = 16; return set.seq_bars;
-    case S_SQBAR: *hi = set.seq_bars - 1; return seq_cursor;
-    case S_SQRHY: *hi = 3; return set.seq_rhythm;
-    case S_SQCHORD: *hi = 1; return (int32_t)(seq_count(seq_cursor) != 0);
+    case S_SQBARS: *hi = 16; return SQ_BARS;
+    case S_SQQUANT: *hi = 5; return SQ_QUANT;
+    case S_SQSWING: *hi = 25; return SQ_SWING - 50;
+    case S_SQEDIT: *hi = 1; return sq_erase;
     default: *hi = 0; return 0;
     }
 }
@@ -247,10 +248,10 @@ static void slot_text(uint32_t s, char *v)
     case S_CHINV: p_strcpy(v, CH_INV_NAME[CH_INV], 4); return;
     case S_CHVOICE: p_strcpy(v, CH_VOICE_NAME[CH_VOICE], 5); return;
     case S_CHSTRUM: { uint32_t n = 0; p_fmt_int(v, CH_STRUM * 5); while (v[n]) n++; p_strcpy(v + n, " MS", 3); return; }
-    case S_SQBARS: p_fmt_int(v, set.seq_bars); return;
-    case S_SQBAR: p_fmt_int(v, seq_cursor + 1); return;
-    case S_SQRHY: p_strcpy(v, SEQ_RHY_NAME[set.seq_rhythm], 4); return;
-    case S_SQCHORD: chord_name(set.seq_step[seq_cursor], seq_count(seq_cursor), v); return;
+    case S_SQBARS: p_fmt_int(v, SQ_BARS); return;
+    case S_SQQUANT: p_strcpy(v, SQ_QUANT_NAME[SQ_QUANT], 5); return;
+    case S_SQSWING: { uint32_t n = 0; p_fmt_int(v, SQ_SWING); while (v[n]) n++; v[n++] = '%'; v[n] = 0; return; }
+    case S_SQEDIT: p_strcpy(v, sq_erase ? "ERASE" : "UNDO", 5); return;
     case S_ARPOCT: p_fmt_int(v, ARP_OCT + 1); return;
     case S_ARPGATE: { uint32_t n = 0; p_fmt_int(v, ARP_GATE); while (v[n]) n++; v[n++] = '%'; v[n] = 0; return; }
     case S_NONE: return;
@@ -308,14 +309,19 @@ static void slot_turn(uint32_t s, int32_t d)
     case S_CHINV: CH_INV = (uint8_t)clampi(CH_INV + sgn(d), 0, 3); break;
     case S_CHVOICE: CH_VOICE = (uint8_t)clampi(CH_VOICE + sgn(d), 0, 2); break;
     case S_CHSTRUM: CH_STRUM = (uint8_t)clampi(CH_STRUM + sgn(d), 0, 12); break;
-    case S_SQBARS:
-        set.seq_bars = (uint8_t)clampi(set.seq_bars + sgn(d), 2, 16);
-        if (seq_cursor >= set.seq_bars) seq_cursor = (uint8_t)(set.seq_bars - 1u);
-        ui_mark(E_FOOTER);
+    case S_SQBARS: SQ_BARS = (uint8_t)clampi(SQ_BARS + sgn(d), 1, 16); sq_roll_dirty = 1; break;
+    case S_SQQUANT: SQ_QUANT = (uint8_t)clampi(SQ_QUANT + sgn(d), 0, 5); sq_roll_dirty = 1; break;
+    case S_SQSWING: SQ_SWING = (uint8_t)clampi(SQ_SWING + sgn(d), 50, 75); sq_roll_dirty = 1; break;
+    case S_SQEDIT:                                      /* left: UNDO the last pass; right: ERASE on / off */
+        if (d < 0) {
+            char m[24];
+            uint32_t n = seq_undo(), k = 0;
+            p_strcpy(m, "UNDO: ", 6); p_fmt_int(m + 6, (int32_t)n);
+            while (m[k]) k++;
+            p_strcpy(m + k, " NOTES", 6);
+            ui_say(m);
+        } else { sq_erase = (uint8_t)!sq_erase; if (sq_erase && seq_rec) seq_toggle_rec(); ui_say(sq_erase ? "ERASE: HOLD KEYS" : "ERASE OFF"); }
         break;
-    case S_SQBAR: seq_cursor = (uint8_t)clampi(seq_cursor + sgn(d), 0, set.seq_bars - 1); ui_mark(E_FOOTER); break;
-    case S_SQRHY: set.seq_rhythm = (uint8_t)clampi(set.seq_rhythm + sgn(d), 0, 3); break;
-    case S_SQCHORD: seq_edit_chord(sgn(d)); ui_mark(E_FOOTER); break;
     default: break;
     }
     ui_changed();
@@ -394,6 +400,66 @@ static void draw_card(uint32_t k)
     cv_blit(k & 1u ? 121u : 1u, k & 2u ? 135u : 63u);
 }
 
+/* ---- the SEQUENCER page: a piano roll (the loop left to right, the notes' pitches bottom to top), a playhead,
+ * and its four cards as a compact row */
+#define ROLL_Y 68
+#define ROLL_H 92
+#define SQ_CARD_Y 163
+static void roll_part(int32_t y0, int32_t h)            /* the roll's rows y0 .. y0+h-1 (screen y ROLL_Y + y0) */
+{
+    uint32_t L = sq_len(), i, beat;
+    int32_t lo = 127, hi = 0, rows;
+    cv_begin(240, (uint32_t)h, C_BLACK);
+    cv_oy = -y0;
+    for (i = 0; i < sq_n; i++) if (sq_ev[i].tick < L) { if (sq_ev[i].note < lo) lo = sq_ev[i].note; if (sq_ev[i].note > hi) hi = sq_ev[i].note; }
+    if (lo > hi) { lo = 48; hi = 72; }
+    if (hi - lo < 12) { int32_t m = (hi + lo) / 2; lo = m - 6; hi = m + 6; }
+    rows = hi - lo + 1;
+    for (beat = 0; beat <= SQ_BARS * 4u; beat++) {      /* bars: lines; beats: dots */
+        int32_t x = (int32_t)(beat * 239u / (SQ_BARS * 4u)), y;
+        if (beat % 4u == 0u) cv_rect(x, 0, 1, ROLL_H, C_LINE);
+        else for (y = 0; y < ROLL_H; y += 6) cv_rect(x, y, 1, 1, C_LINE);
+    }
+    for (i = 0; i < sq_n; i++) {
+        const sq_ev_t *e = &sq_ev[i];
+        uint32_t t, len;
+        int32_t x0, x1, y, rh = ROLL_H / rows > 2 ? ROLL_H / rows - 1 : 2;
+        if (e->tick >= L) continue;
+        t = sq_at(e); len = e->len < L ? e->len : L - 1u;
+        x0 = (int32_t)(t * 240u / L); x1 = (int32_t)((t + len) * 240u / L);
+        y = (hi - e->note) * ROLL_H / rows;
+        if (x1 <= x0 + 1) x1 = x0 + 2;
+        if (x1 <= 240) cv_rect(x0, y, x1 - x0 - 1, rh, e->take == sq_take ? C_HI : C_AMB);
+        else { cv_rect(x0, y, 240 - x0, rh, C_AMB); cv_rect(0, y, x1 - 240 - 1, rh, C_AMB); }   /* around the end */
+    }
+    if (!sq_n && y0 == 0) text_c(0, 30, 240, &FONT_S, "SEQ: REC, THEN PLAY", C_DIM);
+    cv_oy = 0;
+    cv_blit(0, (uint32_t)(ROLL_Y + y0));
+}
+static void draw_roll(void) { roll_part(0, ROLL_H / 2); roll_part(ROLL_H / 2, ROLL_H - ROLL_H / 2); }
+static void draw_playhead(void)
+{
+    uint32_t L = sq_len();
+    int32_t x = seq_play ? (int32_t)(sq_tick() * 240u / L) : 0;
+    cv_begin(240, 4, C_BLACK);
+    cv_rect(0, 1, 240, 2, C_LINE);
+    if (seq_play) cv_rect(x > 236 ? 236 : x, 0, 4, 4, seq_rec ? C_WHITE : UI_ACC);
+    cv_blit(0, 63);
+}
+static void draw_card_small(uint32_t k)
+{
+    uint32_t s = PAGE_S[PG_SEQ][k];
+    int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
+    char v[16];
+    cv_begin(58, 40, C_BLACK);
+    cv_rect(0, 0, 58, 40, hot ? UI_ACC : C_LINE);
+    cv_rect(1, 1, 56, 38, C_BLACK);
+    text_c(0, 3, 58, &FONT_S, PAGE_LAB[PG_SEQ][k], C_GRAY);
+    slot_text(s, v);
+    text_c(0, 21, 58, &FONT_S, v, s == S_SQEDIT && sq_erase ? UI_ACC : C_HI);
+    cv_blit(1u + k * 60u, SQ_CARD_Y);
+}
+
 static void draw_footer(void)
 {
     cv_begin(240, 35, C_BLACK);
@@ -420,19 +486,14 @@ static void draw_footer(void)
             cv_blit(0, 205);
             return;
         }
-        if (ui_page == PG_SEQ) {                       /* the bars: filled = a chord, white = playing, a line = edited */
-            uint32_t i, n = set.seq_bars;
-            int32_t w = 236 / (int32_t)n;
-            uint32_t cur = seq_play ? seq_now_step(0) : 0xFFu;
-            for (i = 0; i < n; i++) {
-                int32_t x = 2 + (int32_t)i * w;
-                uint16_t c = i == cur ? C_WHITE : seq_count(i) ? C_AMB : C_LINE;
-                if (seq_count(i) || i == cur) cv_rect(x, 3, w - 2, 9, c);
-                else { cv_rect(x, 3, w - 2, 9, C_LINE); cv_rect(x + 1, 4, w - 4, 7, C_BLACK); }
-                if (i == seq_cursor) cv_rect(x, 14, w - 2, 2, UI_ACC);
-            }
-            text_c(0, 18, 240, &FONT_S, seq_rec ? "REC: PLAY THE CHORDS" : seq_play ? "PLAY: STOP   SEQ: REC" :
-                   "PLAY: START   SEQ: REC", seq_rec ? UI_ACC : C_DIM);
+        if (ui_page == PG_SEQ) {                       /* the state, and what the buttons do */
+            char t[32];
+            uint32_t n = 0;
+            if (seq_rec) p_strcpy(t, seq_play ? "REC: OVERDUB" : "REC: PLAY TO START", 20);
+            else if (sq_erase) p_strcpy(t, "ERASE: HOLD KEYS", 20);
+            else { p_strcpy(t, seq_play ? "PLAYING  " : "STOPPED  ", 10); n = 9; p_fmt_int(t + n, (int32_t)sq_n); while (t[n]) n++; p_strcpy(t + n, " NOTES", 6); }
+            text_c(0, 2, 240, &FONT_S, t, seq_rec || sq_erase ? UI_ACC : C_GRAY);
+            text_c(0, 18, 240, &FONT_S, "SEQ: REC   HOLD SEQ: CLEAR", C_DIM);
             cv_blit(0, 205);
             return;
         }
@@ -541,6 +602,11 @@ static void ui_draw(void)
         ui_mark(E_CARD0 + ui_hot_card);
     if (ui_page == PG_SETUP && (fm1_ms & 255u) == 0u) ui_mark(E_FOOTER);   /* live readouts */
     meter_poll();
+    if (ui_page == PG_SEQ) {                            /* the playhead ~25 Hz; the notes when they change (4 Hz) */
+        static uint32_t ph_t, roll_t;
+        if (seq_play && fm1_ms - ph_t >= 40u) { ph_t = fm1_ms; ui_mark(E_METER); }
+        if (sq_roll_dirty && fm1_ms - roll_t >= 250u) { roll_t = fm1_ms; sq_roll_dirty = 0; ui_mark(E_ROLL); ui_mark(E_FOOTER); }
+    }
     d = ui_dirty & ((1u << E_N) - 1u);
     if (!d || fm1_ms - ui_last_draw < 4u) return;
     e = d >> E_FOOTER & 1u ? E_FOOTER : d & 1u ? E_HEADER : d >> E_TITLE & 1u ? E_TITLE : 0xFF;
@@ -550,7 +616,11 @@ static void ui_draw(void)
     if (e == E_HEADER) draw_header();
     else if (e == E_TITLE) draw_title();
     else if (e == E_FOOTER) draw_footer();
-    else if (e == E_METER) { if (ui_page == PG_COMP && !pr_save_mode && !(ui_msg_t && fm1_ms - ui_msg_t < MSG_MS)) draw_meter(); }
+    else if (e == E_METER) {
+        if (ui_page == PG_COMP && !pr_save_mode && !(ui_msg_t && fm1_ms - ui_msg_t < MSG_MS)) draw_meter();
+        else if (ui_page == PG_SEQ) draw_playhead();
+    } else if (e == E_ROLL) { if (ui_page == PG_SEQ) draw_roll(); }
+    else if (ui_page == PG_SEQ) { draw_card_small(e - E_CARD0); if (e == E_CARD0) ui_mark(E_ROLL); }
     else draw_card(e - E_CARD0);
 }
 
@@ -558,6 +628,7 @@ static void ui_draw(void)
 static void ui_goto(uint32_t pg)
 {
     if (pg >= PG_N) pg = PG_PERF;
+    if ((pg == PG_SEQ) != (ui_page == PG_SEQ)) lcd_fill(0, 62, 240, 142, C_BLACK);   /* its own layout: no leftovers */
     ui_page = (uint8_t)pg;
     ui_hot_card = 0xFF;
     ui_draw_page_change();
@@ -587,6 +658,12 @@ static void ui_input(uint32_t b, uint32_t rel)
     uint32_t k, i;
     for (i = 0; i < 7u; i++) d[i] = fm1_enc_take(i);
     if (ui_splash_on) for (i = 0; i < 7u; i++) if (d[i] || b) ui_splash_t = fm1_ms - UI_SPLASH_MS;
+    if (sq_btn_down) {                                  /* SEQ on SEQUENCER: a press toggles REC, a hold clears */
+        if (!(fm1_in.buttons >> BTN_SEQ & 1u) || rel >> BTN_SEQ & 1u) {
+            sq_btn_down = 0;
+            seq_toggle_rec(); ui_say(seq_rec ? "REC ON" : "REC OFF");
+        } else if (fm1_ms - sq_btn_t >= 1000u) { sq_btn_down = 0; seq_clear(); if (seq_rec) seq_toggle_rec(); ui_say("PATTERN CLEARED"); }
+    }
     {
         uint8_t was = pr_save_mode;
         presets_poll(d[ENC_PRESETS], was ? d[ENC_KNOB1] : 0, b, rel);
@@ -608,7 +685,7 @@ static void ui_input(uint32_t b, uint32_t rel)
     }
     if (b >> BTN_SEQ & 1u) {                            /* CHORD (or straight to SEQUENCER when chord mode is on);
                                                          * CHORD -> SEQUENCER; on SEQUENCER: recording on / off */
-        if (ui_page == PG_SEQ) { seq_toggle_rec(); ui_say(seq_rec ? "REC ON" : "REC OFF"); }
+        if (ui_page == PG_SEQ) { sq_btn_down = 1; sq_btn_t = fm1_ms; }   /* short: REC on / off; held 1 s: CLEAR */
         else if (ui_page == PG_CHORD || chord_on()) ui_goto(PG_SEQ);
         else ui_goto(PG_CHORD);
     }
