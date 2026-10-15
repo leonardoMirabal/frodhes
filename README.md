@@ -47,7 +47,7 @@ the MIDI map.
 | **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | ARP |
 | **TEMPO** | BPM | TREM SYNC | PHA SYNC | DLY SYNC | GLO |
 | **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | (SELECT) |
-| **SETUP** | MIDI CLOCK | DELAY TONE | LEVEL | | GLO twice |
+| **SETUP** | MIDI CLOCK | DELAY TONE | LEVEL | (name, version) | GLO twice |
 
 **SELECT** turns the pages, **K1–K4** turn the cards, **ALGORITHM** picks the TYPE, **PRESETS** browses sounds,
 **FX** switches all effects off / on, **PLAY** taps the tempo, **REC** is the sustain pedal, **SAVE** stores a preset.

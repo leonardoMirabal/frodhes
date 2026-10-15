@@ -87,6 +87,8 @@ static void ui_say(const char *s)
     ui_mark(E_FOOTER);
 }
 static void p_strcpy(char *d, const char *s, uint32_t max) { uint32_t i = 0; while (s[i] && i < max) { d[i] = s[i]; i++; } d[i] = 0; }
+/* the version on screen: a release build's ("0.8.1"), else DEV (dev builds are "0.0", host / web "dev" / "web") */
+static const char *ui_version(void) { return (APP_VER[0] >= '1' && APP_VER[0] <= '9') || (APP_VER[0] == '0' && APP_VER[2] != '0') ? APP_VER : "DEV"; }
 static void ui_changed(void) { set_dirty = 1; set_t_change = fm1_ms; }
 static int32_t sgn(int32_t d) { return d > 0 ? 1 : -1; }
 
@@ -276,6 +278,11 @@ static void draw_card(uint32_t k)
         if (text_w(&FONT_L, v) <= 112) text_c(0, 21, 118, &FONT_L, v, C_HI);
         else text_c(0, 29, 118, &FONT_S, v, C_HI);
         if (hi && slot_is_level(s)) gauge(5, 56, 108, val, hi);
+    } else if (ui_page == PG_SETUP) {                   /* the free card: what this is */
+        cv_rect(0, 0, 118, 68, C_LINE);
+        cv_rect(1, 1, 116, 66, C_BLACK);
+        text_c(0, 10, 118, &FONT_L, "FRODHES", UI_ACC);
+        text_c(0, 46, 118, &FONT_S, ui_version(), C_DIM);
     }
     cv_blit(k & 1u ? 121u : 1u, k & 2u ? 135u : 63u);
 }
@@ -360,6 +367,32 @@ static void meter_poll(void)
     if (key != gr_shown) { gr_shown = key; ui_mark(E_METER); }
 }
 
+/* the start screen: the name, what it is, the version; the pages follow after UI_SPLASH_MS or at the first touch */
+#define UI_SPLASH_MS 1600u
+static uint32_t ui_splash_t;
+static uint8_t ui_splash_on;
+static void ui_splash(void)
+{
+    static char v[20];
+    uint32_t i;
+    lcd_fill(0, 0, 240, 240, C_BLACK);
+    cv_begin(240, 64, C_BLACK);
+    for (i = 0; i < 9u; i++)                            /* nine tines, long to short, over the name */
+        cv_rect(48 + 18 * (int32_t)i, 4 + 2 * (int32_t)i, 4, 22 - 2 * (int32_t)i, i == 4u ? C_HI : C_DIM);
+    cv_rect(40, 30, 160, 2, C_LINE);
+    cv_blit(0, 46);
+    cv_begin(240, 64, C_BLACK);
+    text_c(0, 0, 240, &FONT_L, "FRODHES", UI_ACC);
+    text_c(0, 40, 240, &FONT_S, "ELECTRIC PIANO", C_GRAY);
+    cv_blit(0, 110);
+    cv_begin(240, 20, C_BLACK);
+    p_strcpy(v, "VERSION ", 8); p_strcpy(v + 8, ui_version(), 10);
+    text_c(0, 2, 240, &FONT_S, v, C_DIM);
+    cv_blit(0, 206);
+    ui_splash_t = fm1_ms;
+    ui_splash_on = 1;
+}
+
 static void ui_draw_page_change(void) { ui_dirty |= (1u << E_N) - 1u; }
 
 /* one element per pass, in priority order: footer, header, title, cards */
@@ -367,6 +400,12 @@ static void ui_draw(void)
 {
     uint32_t e, d;
     static uint8_t cleared;
+    if (ui_splash_on) {
+        if (fm1_ms - ui_splash_t < UI_SPLASH_MS) return;
+        ui_splash_on = 0;
+        cleared = 0;
+        ui_draw_page_change();
+    }
     if (!cleared) { lcd_fill(0, 0, 240, 240, C_BLACK); cleared = 1; }
     if (ui_msg_t && fm1_ms - ui_msg_t >= MSG_MS && fm1_ms - ui_msg_t < MSG_MS + 100u) ui_mark(E_FOOTER);
     if (ui_hot_t && ui_hot_card < 4u && fm1_ms - ui_hot_t >= HOT_MS && fm1_ms - ui_hot_t < HOT_MS + 100u)
@@ -418,6 +457,7 @@ static void ui_input(uint32_t b, uint32_t rel)
     int32_t d[7];
     uint32_t k, i;
     for (i = 0; i < 7u; i++) d[i] = fm1_enc_take(i);
+    if (ui_splash_on) for (i = 0; i < 7u; i++) if (d[i] || b) ui_splash_t = fm1_ms - UI_SPLASH_MS;
     {
         uint8_t was = pr_save_mode;
         presets_poll(d[ENC_PRESETS], was ? d[ENC_KNOB1] : 0, b, rel);

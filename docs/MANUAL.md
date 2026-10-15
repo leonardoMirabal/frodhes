@@ -34,6 +34,12 @@ tremolo or wah, phaser, chorus, delay and reverb.
    on [thefirmwarehub.com](https://thefirmwarehub.com), its web installer works too (Chrome or Edge).
 4. The FM-1 restarts into Frodhes. If it does not come back by itself, switch it off and on.
 
+<img src="manual/img/splash.png" alt="The start screen" width="240" align="right">
+
+Frodhes starts with its own screen: the name and the version installed. It gives way to the PIANO page after a moment,
+or as soon as you touch a button or a knob.
+<br clear="right">
+
 To go back to M-VAVE's own firmware, use the hub's "Official firmware" section with the V15 file from m-vave.com.
 
 ## 2. The idea: one page, four knobs
@@ -202,6 +208,7 @@ wider in stereo, which on headphones sounds bigger; their level is set so that i
 | K1 | **CLOCK** | Tempo source: **INT** (internal), **AUTO** (follows USB MIDI clock when it arrives), **USB** |
 | K2 | **DLY TONE** | The delay's echo colour |
 | K3 | **LEVEL** | This preset's volume, ±12 dB, saved with the preset |
+| | **FRODHES** | The fourth card shows the name and the version installed |
 
 The bottom line shows the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 4800).
 

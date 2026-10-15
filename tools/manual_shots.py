@@ -19,9 +19,10 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(os.path.join(ROOT, "build", "host"), exist_ok=True)
     tag = os.path.join(ROOT, "build", "host", "manual")
-    L, shots, t = [], {}, 100
+    L, shots, t = ["400 shot"], {400: "splash"}, 100           # the start screen, before anything is touched
     # a sound with something on every page: F04 80S BALLAD, then the tremolo, phaser and compressor on
-    L.append(f"{t} midi 0xC0 3 0"); t += 600
+    t = 500
+    L.append(f"{t} midi 0xC0 3 0"); t += 1300                # (the start screen holds the pages for 1.6 s)
     for cc, v in ((17, 64), (18, 70), (12, 127), (13, 70), (106, 127), (107, 64), (113, 15)):
         L.append(f"{t} midi 0xB0 {cc} {v}")
     t += 1500                                               # the preset name message has gone
