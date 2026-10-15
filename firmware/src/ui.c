@@ -101,7 +101,7 @@ static void fx_wake(uint32_t sw_id)
     for (i = 0; i < 5u; i++)
         if (SW[i] == sw_id && PV(sw_id) && !PV(DEPTH[i])) {
             param_set(DEPTH[i], START[i]);
-            if (sw_id == P_CMP_SW && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, 23);   /* -20 dB, 4:1: +4.3 dB is
+            if (sw_id == P_CMP_SW && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, 15);   /* -20 dB, 4:1: +4.3 dB is
                                                                                 * level-neutral (FM-1, LUFS) */
             ui_mark(E_CARDS);
         }

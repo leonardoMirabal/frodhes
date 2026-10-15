@@ -88,6 +88,7 @@ static int32_t tw_gl = 32768, tw_gr = 32768, wah_env, wah_lp, wah_bp;
 static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t sw = fx_p[FXP_TW_SW], depth = fx_p[FXP_TW_DEPTH], rate = fx_p[FXP_TW_RATE];
+    int32_t wg = 26214 + ((depth < 16 ? 16 : depth) - 32) * 159;   /* wah: x0.80 at depth 32 .. x1.26 at 127 */
     uint32_t inc = fx_tw_sync_inc ? fx_tw_sync_inc : FX_LFO_INC[rate], sb, j;
     for (sb = 0; sb < n; sb += 32u) {
         int32_t tl = 32768, tr = 32768, dl, dr, gl = tw_gl, gr = tw_gr;
@@ -119,6 +120,7 @@ static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
                 wah_lp += (f * (wah_bp >> 1)) >> 13;
                 x = (9 * ((wah_bp >> 2) * q >> 11) + 4 * wah_lp) / 10;   /* bp x 2q: the resonant peak's gain held,
                                                                          * louder playing no longer gets louder (0.7) */
+                x = (int32_t)(((int64_t)x * wg) >> 15);  /* the depth's level law (FM-1, LUFS: +1.9 at 32, -2.0 at 127) */
             }
             gl += dl; gr += dr;
             L[j] += (int32_t)(((int64_t)x * gl) >> 15);
@@ -144,7 +146,7 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
     int32_t depth = fx_p[FXP_PH_DEPTH], fbk = fx_p[FXP_PH_FDBK] * 180;
     /* 0.707 x a depth law fitted on the FM-1 (LUFS): little depth loses level in the notch, much depth is wide stereo
      * (heard ~2.5 dB louder on headphones than the mono clean) and feedback adds resonance (0.8) */
-    int32_t pg = (int32_t)(((int64_t)23170 * (46000 - depth * 200 - fx_p[FXP_PH_FDBK] * 30)) >> 0);
+    int32_t pg = (int32_t)(((int64_t)23170 * (50000 - depth * 230)) >> 0);
     uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, j, s, k;
     if (!fx_p[FXP_PH_SW]) return;
     for (sb = 0; sb < n; sb += 32u) {
@@ -291,7 +293,7 @@ static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
         dly_buf[dly_w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + mulq15(f, fb), -32768, 32767);
         dly_w++;
         r = mulq15(r, wet);
-        dly_dg += ((sw ? 32768 - depth * 90 : 32768) - dly_dg) >> 9;   /* the dry eases down as the mix rises: a
+        dly_dg += ((sw ? 32768 - depth * depth : 32768) - dly_dg) >> 9;   /* -0.7 dB at 50, -5.9 dB at 127 */   /* the dry eases down as the mix rises: a
                                                                      * full-mix delay no longer jumps +5 LU (0.8) */
         L[j] = (int32_t)(((int64_t)L[j] * dly_dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dly_dg) >> 15) + r;
     }
