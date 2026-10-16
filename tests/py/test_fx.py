@@ -134,8 +134,8 @@ def band_db(x, f0, f1):
     return 10 * np.log10(np.sum(sp[(fr >= f0) & (fr < f1)]) + 1e-12)
 
 
-# the FILTER (0.9.3): CC 70 TYPE in 9 bands of 14.2 (OFF, LP12 15-28, LP18, LP24 43-56, HP12 57-71, HP18, HP24,
-# BP 100-113, NOTCH 114-127), 74 cutoff,
+# the FILTER (0.9.3): CC 70 TYPE in 7 bands of 18.3 (OFF 0-18, LP12 19-36, LP18 37-54, HP12 55-73, HP18 74-91,
+# BP 92-109, NOTCH 110-127), 74 cutoff,
 # 71 resonance, 72 LFO amount; the LFO: 75 shape in 6 bands (square: 86-106), 76 rate
 CHORD = [(100, n, 110, 1600) for n in (48, 55, 60, 64, 67, 72, 76)]
 

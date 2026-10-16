@@ -25,11 +25,11 @@ static volatile uint8_t fx_lfo_retrig;
 
 int main(int argc, char **argv)
 {
-    static const int types[] = {1, 2, 3, 4, 5, 6, 7, 8};    /* LP12 LP18 LP24 HP12 HP18 HP24 BP NOTCH */
+    static const int types[] = {1, 2, 3, 4, 5, 6};          /* LP12 LP18 HP12 HP18 BP NOTCH */
     static const int freqs[] = {20, 40, 60, 80, 100, 120};
     static const int resos[] = {0, 64, 127};
     (void)argc; (void)argv;
-    for (unsigned ti = 0; ti < 8; ti++)
+    for (unsigned ti = 0; ti < 6; ti++)
         for (unsigned fi = 0; fi < 6; fi++)
             for (unsigned ri = 0; ri < 3; ri++) {
                 for (double hz = 25; hz < 20000; hz *= 1.12) {

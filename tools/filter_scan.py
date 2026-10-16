@@ -3,9 +3,9 @@
 """The FILTER's frequency response, measured on the firmware's own code and compared with what it is meant to be.
 
 tests/c/filter_scan.c runs fx.c's filter (copied out between its markers into build/filter_scan/filter_core.c) on a
-sine sweep, 25 Hz .. 20 kHz, for every TYPE (LP12 LP18 LP24 HP12 HP18 HP24 BP NOTCH) x FREQ (20 40 60 80 100 120)
+sine sweep, 25 Hz .. 20 kHz, for every TYPE (LP12 LP18 HP12 HP18 BP NOTCH) x FREQ (20 40 60 80 100 120)
 x RESO (0 64 127). The reference is the analog prototype each type is built from (one or two state-variable stages,
-an 18 dB one-pole), with the bilinear frequency warping the TPT design has: f_a = tan(pi f / fs) / tan(pi fc / fs).
+the 18 dB one-pole), with the bilinear frequency warping the TPT design has: f_a = tan(pi f / fs) / tan(pi fc / fs).
 
   python3 tools/filter_scan.py          -> build/filter_scan/report.txt, scan.csv, curves.png
 
@@ -22,7 +22,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "build", "filter_scan")
 FS = 44100.0
-NAMES = {1: "LP12", 2: "LP18", 3: "LP24", 4: "HP12", 5: "HP18", 6: "HP24", 7: "BP", 8: "NOTCH"}
+NAMES = {1: "LP12", 2: "LP18", 3: "HP12", 4: "HP18", 5: "BP", 6: "NOTCH"}
 
 
 def fc_of(v):                       # fx.c: fl_pos = v * 516 (Q8 over 256 table steps), 30 Hz .. 16 kHz
@@ -40,11 +40,9 @@ def ideal_db(t, v, r, hz):
     def stage(k, mode):
         d = s * s + k * s + 1
         return {0: 1 / d, 1: s * s / d, 2: k * s / d, 3: (s * s + 1) / d}[mode]
-    mode = {1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1, 7: 2, 8: 3}[t]
+    mode = {1: 0, 2: 0, 3: 1, 4: 1, 5: 2, 6: 3}[t]
     h = stage(k_of(r), mode)
-    if t in (3, 6):
-        h *= stage(1 / 0.7071, mode)
-    if t in (2, 5):
+    if t in (2, 4):
         h *= 1 / (1 + s) if mode == 0 else s / (1 + s)
     return 20 * math.log10(abs(h) + 1e-12)
 
@@ -93,12 +91,12 @@ def main():
 
 def plot(cases):                    # a grid of curves: one panel per type, the 6 cutoffs at RESO 0 and 127
     from PIL import Image, ImageDraw
-    W, H, cols = 420, 260, 4
+    W, H, cols = 420, 260, 3
     img = Image.new("RGB", (W * cols, H * 2), (250, 248, 243))
     d = ImageDraw.Draw(img)
     fx = lambda hz: 40 + (W - 60) * math.log10(hz / 25) / math.log10(20000 / 25)
     fy = lambda db: 20 + (H - 50) * (24 - max(-60, min(24, db))) / 84
-    for ti, t in enumerate(range(1, 9)):
+    for ti, t in enumerate(range(1, 7)):
         ox, oy = (ti % cols) * W, (ti // cols) * H
         d.text((ox + 44, oy + 4), NAMES[t] + "   measured (colour) / reference (grey)   RESO 0 / 127", fill=(0, 0, 0))
         for db in (12, 0, -12, -24, -36, -48):

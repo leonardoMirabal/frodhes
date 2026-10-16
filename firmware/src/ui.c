@@ -165,7 +165,7 @@ static uint32_t perf_idx(uint32_t k)                     /* knob k's entry in PE
 /* turning an effect's amount up from PERFORM switches the effect on (TREM/WAH: as TREM unless WAH was chosen) */
 static void perf_wake(uint32_t id)
 {
-    if (id == P_FL_FREQ) { if (!PV(P_FL_TYPE) && PV(P_FL_FREQ) < 127) param_set(P_FL_TYPE, 3); return; }   /* LP24 */
+    if (id == P_FL_FREQ) { if (!PV(P_FL_TYPE) && PV(P_FL_FREQ) < 127) param_set(P_FL_TYPE, 2); return; }   /* LP18 */
     if (!PV(id)) return;
     if (id == P_TW_DEPTH && !PV(P_TW_SW)) param_set(P_TW_SW, 1);
     else if (id == P_PH_DEPTH && !PV(P_PH_SW)) param_set(P_PH_SW, 1);

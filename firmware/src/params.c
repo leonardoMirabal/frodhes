@@ -31,7 +31,7 @@ static const char *const N_ONOFF[] = {"OFF", "ON"};
 static const char *const N_RATIO[] = {"1.5:1", "2:1", "3:1", "4:1", "6:1", "8:1", "10:1", "20:1"};
 static const char *const N_DL[] = {"OFF", "DIG", "ANA"};
 static const char *const N_TWM[] = {"PAN", "AM"};
-static const char *const N_FLT[] = {"OFF", "LP12", "LP18", "LP24", "HP12", "HP18", "HP24", "BP", "NOTCH"};
+static const char *const N_FLT[] = {"OFF", "LP12", "LP18", "HP12", "HP18", "BP", "NOTCH"};
 static const char *const N_LFOS[] = {"SINE", "TRI", "SAW", "RAMP", "SQR", "S&H"};
 static const char *const N_RETRIG[] = {"FREE", "KEY"};
 static const char *const N_SYNC[] = {"FREE", "1/32", "16T", "1/16", "8T", "16D", "1/8", "4T", "8D", "1/4", "4D", "1/2",
@@ -78,7 +78,7 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_LEVEL] = {"LVL", 127, 64, F_DB, 110, 0},              /* 64 = 0 dB, 0.1875 dB a step: -12 .. +11.8 dB */
     [P_CMP_RATIO] = {"RAT", 7, 3, F_ENUM, 112, N_RATIO},     /* 4:1 */
     [P_CMP_GAIN] = {"MKUP", 127, 0, F_GAIN, 113, 0},         /* make-up 0 .. +24 dB */
-    [P_FL_TYPE] = {"FILT", 8, 0, F_ENUM, 70, N_FLT},         /* 0.9.3: CC 70 type, 74 cutoff, 71 resonance, 72 LFO */
+    [P_FL_TYPE] = {"FILT", 6, 0, F_ENUM, 70, N_FLT},         /* 0.9.3: CC 70 type, 74 cutoff, 71 resonance, 72 LFO */
     [P_FL_FREQ] = {"FREQ", 127, 127, F_FHZ, 74, 0},
     [P_FL_RESO] = {"RESO", 127, 0, F_R10, 71, 0},
     [P_FL_LFO] = {"LFO", 127, 0, F_R10, 72, 0},

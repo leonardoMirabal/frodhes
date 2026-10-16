@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Frodhes effects: the Yamaha reface CP chain (IMPLEMENTATION-v3 §9):
  *   COMP -> FILTER -> DRIVE -> TREMOLO/WAH (mono -> stereo) -> PHASER -> CHORUS -> D.DELAY/A.DELAY -> REVERB (HALL)
- *   -> master   (0.9.3: the FILTER, 12 / 18 / 24 dB, with its LFO)
+ *   -> master   (0.9.3: the FILTER, 12 / 18 dB, with its LFO)
  * (0.4: the reface's CHO/PHA switch became two effects that can run together, and a compressor came first)
  * Mono int32 Q15 (with headroom) until the tremolo, stereo after. Every effect keeps its state while bypassed
  * (switching on never clicks); switching an effect off cuts its input and lets the tail ring.
@@ -61,12 +61,12 @@ static inline int32_t osc_sine(uint32_t ph)               /* Q32 phase -> +-3276
     return FX_SINE[i] + (((FX_SINE[i + 1] - FX_SINE[i]) * f) >> 15);
 }
 
-/* ---- the LFO (its page) and the FILTER: TPT state-variable stages (stable at any setting). TYPE: OFF, LP12 LP18 LP24,
- * HP12 HP18 HP24, BP, NOTCH. 12 dB / octave = one resonant stage; 24 = a flat (Q 0.707) stage, then the resonant one;
- * 18 = the resonant stage and a 6 dB one-pole. FREQ 30 Hz .. 16 kHz (log), RESO Q 0.707 .. 20, LFO moves FREQ by up to
+/* ---- the LFO (its page) and the FILTER: a TPT state-variable stage (stable at any setting). TYPE: OFF, LP12 LP18,
+ * HP12 HP18, BP, NOTCH. 12 dB / octave = the resonant stage; 18 = it and a 6 dB one-pole (no 24: its second stage cost
+ * ~190 us of the audio block at the worst case). FREQ 30 Hz .. 16 kHz (log), RESO Q 0.707 .. 20, LFO moves FREQ by up to
  * +-4 octaves. Coefficients every 32 samples (smoothed), 32-bit division only (two partial quotients). */
 static uint32_t lfo_ph, lfo_rnd = 0x9E3779B9u;
-static int32_t lfo_sh, fl_ic[2][2], fl_op, fl_pos = 127 * 516;
+static int32_t lfo_sh, fl_ic[2], fl_op, fl_pos = 127 * 516;
 static uint8_t fl_was_on;
 static int32_t lfo_value(void)                            /* +-32767 */
 {
@@ -105,18 +105,18 @@ static inline int32_t svf_tick(const svf_t *c, int32_t *ic, int32_t x, uint32_t 
 }
 static void fx_filter(int32_t *m, uint32_t n)
 {
-    static const uint8_t MODE[9] = {0, 0, 0, 0, 1, 1, 1, 2, 3}, POLES[9] = {0, 2, 3, 4, 2, 3, 4, 2, 2};
+    static const uint8_t MODE[7] = {0, 0, 0, 1, 1, 2, 3}, POLES[7] = {0, 2, 3, 2, 3, 2, 2};
     uint32_t type = fx_p[FXP_FL_TYPE], inc = fx_lfo_sync_inc ? fx_lfo_sync_inc : FX_LFO_INC[fx_p[FXP_LFO_RATE]], sb, j;
     int32_t k = (int32_t)FX_FL_K[fx_p[FXP_FL_RESO]], base = fx_p[FXP_FL_FREQ] * 516, depth = fx_p[FXP_FL_LFO];
     uint32_t mode, poles;
     if (fx_lfo_retrig) { fx_lfo_retrig = 0; lfo_ph = 0; }
-    if (!type || type > 8u) { fl_was_on = 0; lfo_ph += inc * n; return; }   /* off: the LFO keeps time, the filter rests */
+    if (!type || type > 6u) { fl_was_on = 0; lfo_ph += inc * n; return; }   /* off: the LFO keeps time, the filter rests */
     mode = MODE[type]; poles = POLES[type];
     if (!fl_was_on) { memset(fl_ic, 0, sizeof fl_ic); fl_op = 0; fl_pos = base; fl_was_on = 1; }
     for (sb = 0; sb < n; sb += 32u) {
         uint32_t prev = lfo_ph, i;
         int32_t tgt, g, f, gp = 0;
-        svf_t c, c0;
+        svf_t c;
         lfo_ph += inc * 32u;
         if (lfo_ph < prev) { lfo_rnd = lfo_rnd * 1664525u + 1013904223u; lfo_sh = (int32_t)(lfo_rnd >> 16) - 32768; }
         tgt = clampi(base + (int32_t)(((int64_t)lfo_value() * depth * 28932) >> 22), 0, 65535);   /* 4 octaves */
@@ -124,12 +124,10 @@ static void fx_filter(int32_t *m, uint32_t n)
         i = (uint32_t)fl_pos >> 8; f = fl_pos & 255;
         g = (int32_t)FX_FL_G[i] + ((((int32_t)FX_FL_G[i + 1] - (int32_t)FX_FL_G[i]) * f) >> 8);         /* Q24 */
         svf_coef(&c, g, k);
-        if (poles == 4u) svf_coef(&c0, g, (int32_t)FX_FL_K[0]);                                          /* Q 0.707 */
         if (poles == 3u) gp = (1 << 27) - recip27(65536u + ((uint32_t)g >> 8));                           /* g/(1+g) */
         for (j = sb; j < sb + 32u && j < n; j++) {
             int32_t x = m[j] * 8;                                            /* 8x finer inside: a lower noise floor */
-            if (poles == 4u) x = svf_tick(&c0, fl_ic[0], x, mode);           /* 24: the flat stage first */
-            x = svf_tick(&c, fl_ic[1], x, mode);
+            x = svf_tick(&c, fl_ic, x, mode);
             if (poles == 3u) {                                               /* 18: + a 6 dB one-pole */
                 int32_t v = (int32_t)(((int64_t)(x - fl_op) * gp + (1 << 26)) >> 27), lp = v + fl_op;
                 fl_op = clampi(lp + v, -(1 << 24), 1 << 24);
