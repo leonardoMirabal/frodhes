@@ -158,6 +158,7 @@ static void app_main(void)
     seq_sanitize();
     if (set.usb_fixed > 1u) set.usb_fixed = 0;
     usb_pre_master = set.usb_fixed;
+    uart_midi_on = !set.trs_off;
     palette_set(set.color);
     params_apply_all();
     tempo_set10(set.bpm10);
@@ -188,8 +189,9 @@ static void app_main(void)
         sustain_button(b, rel);
         ui_input(b, rel);
 
-        while (midi_get(&st, &d1, &d2)) {       /* USB-MIDI in, any channel */
+        while (midi_get(&st, &d1, &d2)) {       /* USB-MIDI and the TRS jack; the MIDI page's CHANNEL (0 = all) */
             uint8_t ty = st & 0xF0u;
+            if (st < 0xF0u && set.midi_ch && (st & 0x0Fu) != set.midi_ch - 1u) continue;
             if (ty == 0x90u && d2) src_on(SRC_MIDI + (d1 & 127u), d1 & 127u, d2, 0);
             else if (ty == 0x80u || ty == 0x90u) src_off(SRC_MIDI + (d1 & 127u));
             else if (ty == 0xB0u) midi_cc(d1, d2);

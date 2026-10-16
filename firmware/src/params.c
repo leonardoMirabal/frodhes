@@ -95,7 +95,8 @@ typedef struct {
     uint8_t usb_fixed;                         /* 0.9: 1 = the USB audio does not follow the MASTER knob */
     uint8_t chord[4];                          /* 0.9.1: chord mode: type, inversion, voicing, strum (notes.c) */
     uint8_t seq_bars, seq_quant, seq_swing;    /* 0.9.1: the sequencer (seq.c; the pattern itself is in flash) */
-    uint8_t seq_rsv[95];
+    uint8_t trs_off;                           /* 0.9.1: 1 = the TRS MIDI input is ignored (MIDI page) */
+    uint8_t seq_rsv[94];
     uint8_t reserved[22];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
@@ -154,6 +155,8 @@ static void params_sanitize(void)
     for (i = 0; i < P_COUNT; i++) if (PV(i) > PARAMS[i].hi) PV(i) = PARAMS[i].def;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.bpm10 < 400 || set.bpm10 > 2400) set.bpm10 = 1200;
+    if (set.midi_ch > 16u) set.midi_ch = 0;                 /* 0 = all channels, 1..16 */
+    if (set.trs_off > 1u) set.trs_off = 0;
     if (!set.key_vel || set.key_vel > 127) set.key_vel = 96;
     if (set.tune < -50 || set.tune > 50) set.tune = 0;
     if (set.focus > 2) set.focus = 0;

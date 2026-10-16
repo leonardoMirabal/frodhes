@@ -25,13 +25,13 @@ static void note_in_on(uint32_t n, uint32_t vel, int echo)
     if (arp_on()) { note_to_arp[n] = 1; arp_in_on(n, vel); return; }
     note_to_arp[n] = 0;
     rh_note_on(n, vel);
-    if (echo) midi_send(0x90, n, vel);
+    if (echo) midi_send(0x90 | MIDI_OUT_CH, n, vel);
 }
 static void note_in_off(uint32_t n, int echo)
 {
     if (note_to_arp[n]) { note_to_arp[n] = 0; arp_in_off(n); return; }
     rh_note_off(n);
-    if (echo) midi_send(0x80, n, 0);
+    if (echo) midi_send(0x80 | MIDI_OUT_CH, n, 0);
 }
 static void out_on(uint32_t n, uint32_t vel, int echo)
 {

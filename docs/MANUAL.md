@@ -68,7 +68,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **SEQ** | CHORD page (straight to SEQUENCER when chord mode is on); on CHORD it goes to SEQUENCER; on SEQUENCER it switches recording on / off, held 1 s it clears the pattern |
 | **SEL** | CHORUS page; press again there to switch it on / off |
 | **ARP** | ARPEGGIO page; press again there to switch the arpeggiator on / off |
-| **GLO** | TEMPO page; press again for SETUP |
+| **GLO** | TEMPO page; press again for SETUP, again for MIDI |
 | **FX** | All effects off / on at once (see [6](#6-effects-on-and-off)) |
 | **PLAY** | Tap tempo; on ARPEGGIO, the arpeggiator's HOLD on / off; on SEQUENCER, start / stop the loop |
 | **REC** | Sustain pedal |
@@ -309,12 +309,24 @@ settings belong to the FM-1, not to a preset; ARP RATE and ARP GATE can also be 
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **CLOCK** | Tempo source: **INT** (internal), **AUTO** (follows USB MIDI clock when it arrives), **USB** |
-| K2 | **DLY TONE** | The delay's echo colour |
-| K3 | **LEVEL** | This preset's volume, ±12 dB, saved with the preset |
-| K4 | **USB VOL** | **KNOB**: the USB audio follows the MASTER knob, as the headphones do. **FIXED**: the USB audio always comes at full level, whatever the knob (and headphones plugged in) do; the headphone jack still follows MASTER |
+| K1 | **DLY TONE** | The delay's echo colour |
+| K2 | **LEVEL** | This preset's volume, ±12 dB, saved with the preset |
+| K3 | **USB VOL** | **KNOB**: the USB audio follows the MASTER knob, as the headphones do. **FIXED**: the USB audio always comes at full level, whatever the knob (and headphones plugged in) do; the headphone jack still follows MASTER |
 
 The bottom line shows the name and the version installed, and the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 4800).
+
+### MIDI
+
+![MIDI](manual/img/midi.png)
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **CHANNEL** | **ALL** (the default: every channel is played) or **1–16**: only that channel is played, from USB-MIDI and from the TRS jack alike, and the FM-1 sends its notes on it (on ALL it sends on 1) |
+| K2 | **TRS IN** | **ON** / **OFF**: MIDI from the 3.5 mm TRS MIDI input (for a DAWless setup: a keyboard, a sequencer, a drum machine's clock) |
+| K3 | **CLOCK** | Tempo source: **INT** (internal), **AUTO** (follows MIDI clock when it arrives, USB or TRS), **USB** |
+
+Press **GLO** three times to come here (TEMPO, SETUP, MIDI). Clock, start and stop from the TRS jack drive the tempo
+like USB's.
 
 ## 5. Presets
 
@@ -380,7 +392,8 @@ release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with ha
 
 ## 11. MIDI
 
-Frodhes is a class-compliant USB-MIDI device. Notes play with their velocity (and go through the arpeggiator when it runs); the FM-1's keys
+Frodhes is a class-compliant USB-MIDI device and also listens to the FM-1's **TRS MIDI input** (3.5 mm; MIDI page:
+TRS IN, CHANNEL). Notes play with their velocity (and go through the arpeggiator when it runs); the FM-1's keys
 also send their notes to the computer. **Program Change** 0–11 loads F01–F12, 16–31 loads U01–U16.
 
 | CC | Parameter | CC | Parameter |

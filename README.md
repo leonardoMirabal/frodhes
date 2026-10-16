@@ -8,7 +8,7 @@ Frodhes turns the FM-1 into an electric piano. Every note is computed live from 
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound, with the bark of
 hard notes and the bell of the attack. Four instrument types (Stage 77, Suitcase, Early Felt, Bell Dyno), a
 reface CP-style effects chain (compressor, drive, tremolo / wah, phaser, chorus, delay, reverb), tap tempo with MIDI
-clock sync, chord mode, a pattern recorder (1–16 bar loops, quantize, overdub, undo / erase), an arpeggiator, scales, a sustain pedal and 12 factory plus 16 user presets. The screen shows one page at a time with
+clock sync, MIDI over USB and the TRS jack, chord mode, a pattern recorder (1–16 bar loops, quantize, overdub, undo / erase), an arpeggiator, scales, a sustain pedal and 12 factory plus 16 user presets. The screen shows one page at a time with
 four cards, one for each of the FM-1's four knobs; the first page, PERFORM, puts the effects' dry / wet (or
 anything you assign) on those four knobs for playing live.
 
@@ -53,7 +53,8 @@ the MIDI map.
 | **CHORD** | OFF / DIATONIC / DIA 7TH / MAJ ... MIN6 | INVERSION | VOICING | STRUM | SEQ |
 | **SEQUENCER** | BARS 1–16 | QUANT | SWING | EDIT (UNDO / ERASE) | SEQ again (there: REC, hold: CLEAR; PLAY: start / stop) |
 | **ARPEGGIO** | OFF / UP / DOWN / UP-DN / ORDER / RANDOM | RATE | OCTAVES | GATE | ARP (there: on / off; PLAY: HOLD) |
-| **SETUP** | MIDI CLOCK | DELAY TONE | LEVEL | USB VOL (KNOB / FIXED) | GLO twice |
+| **SETUP** | DELAY TONE | LEVEL | USB VOL (KNOB / FIXED) | | GLO twice |
+| **MIDI** | CHANNEL (ALL / 1–16) | TRS IN (ON / OFF) | CLOCK | | GLO three times |
 
 **SELECT** turns the pages, **K1–K4** turn the cards (on **PERFORM**: the effects' dry / wet, or what you assign), **ALGORITHM** picks the TYPE, **PRESETS** browses sounds,
 **FX** switches all effects off / on, **SEQ** chord mode and the sequencer, **ARP** the arpeggiator, **PLAY** taps the tempo, **REC** is the sustain pedal, **SAVE** stores a preset.
@@ -90,10 +91,11 @@ velocity, every effect, presets); `tools/hil_jack.py` compares the headphone jac
 against the USB audio. `tools/manual_shots.py` renders the manual's screenshots. `web/build.sh` builds the browser
 emulator (Emscripten; `web/web_hal.c` stands in for the hardware) into `web/dist/`.
 
-Frodhes changes Dinghy's platform files in four small places: the app may allow its preset flash sectors
-(`APP_FL_RANGE`), drive the codec to full scale (`APP_OUT_SHIFT`), build for the browser (`DINGHY_WEB`), and a
-host-mode fix in `gfx.c`. Dinghy stays
-the `upstream` remote: `git fetch upstream && git merge upstream/main`.
+Frodhes changes Dinghy's platform files in a few small places: the app may allow its flash sectors (presets and the
+sequencer's pattern, `APP_FL_RANGE`), drive the codec to full scale (`APP_OUT_SHIFT`), send the USB audio before the
+MASTER knob (`usb_pre_master`), the MASTER knob reading is smoothed, the TRS MIDI input is on (`FELUCCA_UART`, with
+Felucca's `midi_uart.c`), it builds for the browser (`DINGHY_WEB`), and a host-mode fix in `gfx.c`. Dinghy stays the
+`upstream` remote: `git fetch upstream && git merge upstream/main`.
 
 [docs/API.md](docs/API.md) describes what the platform provides; [docs/RULES.md](docs/RULES.md) lists the chip's
 rules (no FPU, no 64-bit division, a 5.8 ms audio budget per 256 frames) and the checks the build runs.

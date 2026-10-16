@@ -5,12 +5,12 @@
  *
  *   SELECT     turns through the pages (the order of the chain):
  *              PERFORM ASSIGN FRODHES (the main page) VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE
- *              CHORD SEQUENCER ARPEGGIO SETUP
+ *              CHORD SEQUENCER ARPEGGIO SETUP MIDI
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on SEQUENCER: a cursor, step by step)   PRESETS  sounds (presets.c; on SEQUENCER: bar by bar)
  *   shortcuts  HOME = PERFORM (again: the main page), EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEL = TREM /
  *              CHORUS (on that page: the effect on / off), SEQ = CHORD (chord mode on: SEQUENCER; on it: REC),
- *              ARP = ARPEGGIO (on it: on / off), GLO = TEMPO (again: SETUP).
+ *              ARP = ARPEGGIO (on it: on / off), GLO = TEMPO (again: SETUP, MIDI).
  *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo. REC: sustain. */
 
 #define PR_NF_UI 12u                                  /* presets.c: PR_NF factory presets, then the user ones */
@@ -22,20 +22,20 @@ static void tempo_tap(void);                          /* tempo.c */
 static void tempo_set10(uint32_t b);
 
 enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_TEMPO, PG_SCALE,
-       PG_CHORD, PG_SEQ, PG_ARP, PG_SETUP, PG_N };
+       PG_CHORD, PG_SEQ, PG_ARP, PG_SETUP, PG_MIDI, PG_N };
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL = 8, E_N = 9, E_CARDS = 10 };   /* E_CARDS: all four;
                                     * E_METER: COMP's meter / SEQUENCER's cells, E_ROLL: SEQUENCER's NOW / NEXT */
 /* card slots: a parameter id (< P_COUNT) or one of these */
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
        S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
-       S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_NONE = 0xFF };
+       S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_MCH, S_TRS, S_NONE = 0xFF };
 
 static int sq_browsing(void);                           /* the SEQUENCER page's cursor (below) */
 static uint32_t sq_delete_step(void);
 static void sq_browse(int32_t d);
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
                                              "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
-                                             "ARPEGGIO", "SETUP"};
+                                             "ARPEGGIO", "SETUP", "MIDI"};
 static const uint8_t PAGE_S[PG_N][4] = {
     {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
     {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
@@ -52,7 +52,8 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM},
     {S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT},
     {S_ARPMODE, S_ARPRATE, S_ARPOCT, S_ARPGATE},
-    {S_CLOCK, P_DL_TONE, P_LEVEL, S_USBVOL},
+    {P_DL_TONE, P_LEVEL, S_USBVOL, S_NONE},
+    {S_MCH, S_TRS, S_CLOCK, S_NONE},
 };
 static const char *const PAGE_LAB[PG_N][4] = {
     {"", "", "", ""},                                   /* PERFORM: the assigned parameter's name (slot_label) */
@@ -70,13 +71,15 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"TYPE", "INVERSION", "VOICING", "STRUM"},
     {"BARS", "QUANT", "SWING", "EDIT"},
     {"MODE", "RATE", "OCTAVES", "GATE"},
-    {"CLOCK", "DLY TONE", "LEVEL", "USB VOL"},
+    {"DLY TONE", "LEVEL", "USB VOL", ""},
+    {"CHANNEL", "TRS IN", "CLOCK", ""},
 };
 static const char *const PAGE_HINT[PG_N] = {"NEXT PAGE: ASSIGN THE KNOBS", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
                                             "", "LFO BUTTON: ON / OFF", "K1: ON / OFF", "SEL BUTTON: ON / OFF",
                                             "K1: OFF / DIGITAL / ANALOG", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
-                                            "SEQ: THE SEQUENCER", "", "ARP: ON / OFF   PLAY: HOLD", ""};
+                                            "SEQ: THE SEQUENCER", "", "ARP: ON / OFF   PLAY: HOLD", "",
+                                            "USB AND TRS: THE SAME CHANNEL"};
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
                                            "PENTA", "MPENTA", "BLUES"};
 static const char *const NOTE_NAME[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -199,6 +202,8 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_ARPOCT: *hi = 3; return ARP_OCT;
     case S_ARPGATE: *hi = 90; return ARP_GATE - 10;
     case S_USBVOL: *hi = 1; return set.usb_fixed;
+    case S_MCH: *hi = 16; return set.midi_ch;
+    case S_TRS: *hi = 1; return !set.trs_off;
     case S_CHTYPE: *hi = CH_NTYPE - 1; return CH_TYPE;
     case S_CHINV: *hi = 3; return CH_INV;
     case S_CHVOICE: *hi = 2; return CH_VOICE;
@@ -247,6 +252,8 @@ static void slot_text(uint32_t s, char *v)
     case S_ARPMODE: p_strcpy(v, ARP_MODE_NAME[ARP_MODE], 7); return;
     case S_ARPRATE: p_strcpy(v, ARP_RATE_NAME[ARP_RATE], 6); return;
     case S_USBVOL: p_strcpy(v, set.usb_fixed ? "FIXED" : "KNOB", 5); return;
+    case S_MCH: if (set.midi_ch) p_fmt_int(v, set.midi_ch); else p_strcpy(v, "ALL", 3); return;
+    case S_TRS: p_strcpy(v, set.trs_off ? "OFF" : "ON", 3); return;
     case S_CHTYPE: p_strcpy(v, CH_TYPE_NAME[CH_TYPE], 9); return;
     case S_CHINV: p_strcpy(v, CH_INV_NAME[CH_INV], 4); return;
     case S_CHVOICE: p_strcpy(v, CH_VOICE_NAME[CH_VOICE], 5); return;
@@ -308,6 +315,8 @@ static void slot_turn(uint32_t s, int32_t d)
     case S_ARPOCT: ARP_OCT = (uint8_t)clampi(ARP_OCT + sgn(d), 0, 3); break;
     case S_ARPGATE: ARP_GATE = (uint8_t)clampi(ARP_GATE + 5 * sgn(d), 10, 100); break;
     case S_USBVOL: set.usb_fixed = d > 0; usb_pre_master = set.usb_fixed; break;
+    case S_MCH: set.midi_ch = (uint8_t)clampi(set.midi_ch + sgn(d), 0, 16); break;
+    case S_TRS: set.trs_off = d < 0; uart_midi_on = !set.trs_off; break;
     case S_CHTYPE: CH_TYPE = (uint8_t)clampi(CH_TYPE + sgn(d), 0, CH_NTYPE - 1); break;
     case S_CHINV: CH_INV = (uint8_t)clampi(CH_INV + sgn(d), 0, 3); break;
     case S_CHVOICE: CH_VOICE = (uint8_t)clampi(CH_VOICE + sgn(d), 0, 2); break;
@@ -804,7 +813,7 @@ static void ui_input(uint32_t b, uint32_t rel)
         if (ui_page == PG_COMP) ui_fx_button(PG_COMP, 4);
         else ui_goto(ui_page == PG_DECAY ? PG_COMP : PG_DECAY);
     }
-    if (b >> BTN_GLO & 1u) ui_goto(ui_page == PG_TEMPO ? PG_SETUP : PG_TEMPO);
+    if (b >> BTN_GLO & 1u) ui_goto(ui_page == PG_TEMPO ? PG_SETUP : ui_page == PG_SETUP ? PG_MIDI : PG_TEMPO);   /* TEMPO -> SETUP -> MIDI */
     if (b >> BTN_LFO & 1u) ui_fx_button(PG_TREM, 0);
     if (b >> BTN_SEL & 1u) ui_fx_button(PG_CHO, 1);
     if (b >> BTN_FX & 1u) {                             /* bypass all effects: nothing else changes */
@@ -877,7 +886,7 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     fm1_led_key(BTN_HOME, ui_page == PG_PIANO || ui_page == PG_PERF);
     fm1_led_key(BTN_EDIT, ui_page == PG_VOICE);
     fm1_led_key(BTN_ENV, PV(P_CMP_SW) != 0);
-    fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP);
+    fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP || ui_page == PG_MIDI);
     fm1_led_key(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));
     fm1_led_key(BTN_PLAY, ui_page == PG_ARP ? ARP_HOLD : ui_page == PG_SEQ ? seq_play && beat_on : beat_on);   /* ARPEGGIO: HOLD */
     fm1_led_key(BTN_OCT_DOWN, set.oct < 0);

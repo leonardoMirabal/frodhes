@@ -67,8 +67,11 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 #define FELUCCA_OTA 1
 #define FELUCCA_CDC 0
 #define FELUCCA_UAC 1
-#define FELUCCA_UART 0
+#define FELUCCA_UART 1                          /* TRS MIDI IN (Frodhes 0.9.1; Felucca's midi_uart.c) */
 #include "usb.c"
+#if FELUCCA_UART
+#include "midi_uart.c"
+#endif
 
 /* ---- flash: read anywhere; erase / program only the update's staging area and the settings sector */
 #define SETTINGS_AT 0x000FC000u                 /* one 4 KiB sector of Felucca's globals area */
@@ -215,7 +218,11 @@ void fm1_timer5_irq(void)
         fm1_ms++;
     }
     if (usb_due)
-        owed = 1;
+        owed |= 1u;
+#if FELUCCA_UART
+    if (sub % 5u == 2u)
+        owed |= 2u;                             /* 2 kHz: the TRS MIDI input (<= ~7 bytes a call) */
+#endif
     if (++sub == 10u)
         sub = 0;
     if (in_audio) {
@@ -223,8 +230,12 @@ void fm1_timer5_irq(void)
             uac_service();
         return;
     }
-    if (owed)
+    if (owed & 1u)
         usb_poll();
+#if FELUCCA_UART
+    if (owed & 2u)
+        uart_midi_poll();
+#endif
     owed = 0;
 }
 extern void isr_timer5(void);
@@ -361,6 +372,9 @@ void fm1_cstart(void)
     fm1_adc_init();
     fm1_audio_init(abuf, HALF_WORDS, isr_alnk0, 3);   /* (abuf is zero: .bss) */
     usb_start();
+#if FELUCCA_UART
+    uart_midi_init();
+#endif
     fm1_timer5_start(isr_timer5, 4);
     fm1_guard_lock_top();
     fm1_irq_enable_all();

@@ -1,0 +1,21 @@
+# MIDI page (0.9.1): GLO (7) three times: TEMPO, SETUP, MIDI. K1 (encoder 2) CHANNEL: ALL -> 1
+100 btn 7
+200 btn 7
+300 btn 7
+400 expect led 7 1
+500 turn 2 1
+600 shot
+# a note on channel 2: not played
+700 midi 0x91 60 100
+1200 expect rms < -90
+1300 midi 0x81 60 0
+# the same on channel 1: played
+1400 midi 0x90 60 100
+1900 expect rms > -60
+2000 midi 0x80 60 0
+# CHANNEL back to ALL: channel 2 plays again
+3500 turn 2 -1
+3600 midi 0x91 64 100
+4100 expect rms > -60
+4200 midi 0x81 64 0
+4300 end
