@@ -10,3 +10,15 @@ Rhodes physical-model firmware for the M-VAVE FM-1 (JieLi AC791N, pi32v2, no FPU
 - To test on the host, run `tests/run_host.sh`. It writes `build/host/frodhes.wav` and screen PNGs and works on macOS without Docker.
 - To build firmware, run `./build.sh` to get `build/frodhes.fwsc`. It needs the JieLi toolchain, the AC79 SDK, and Docker on macOS.
 - Package identity is `FM-1_958` for every version and dev build; the version is text only (`./build.sh --release X.Y.Z`).
+
+## Every change: test and document (a standing rule)
+
+No change is finished until both are done, and the commit says what was tested:
+
+1. **Test.** `make test` (host scripts; add or update one for new behaviour) and `make pytest`. Then on the FM-1:
+   build, install (`tools/fm1_install.py`), and check over MIDI + USB audio (`tools/hil_scan.py`, `tools/hil_cpu.py`,
+   `tools/hil_seq.py`, or a script for the new feature). Say plainly what could not be tested (e.g. no TRS source,
+   the screen itself) and ask the user to check that part.
+2. **Document.** Update `docs/MANUAL.md` (the page, buttons, MIDI CCs, contents), `README.md` (the page table and the
+   description), regenerate the screenshots (`tools/manual_shots.py`, and `overview.png`), and rebuild and publish the
+   web emulator (`web/build.sh`, then the `gh-pages` worktree in `build/pages`).

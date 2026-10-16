@@ -5,7 +5,8 @@
 Frodhes turns the FM-1 into an electric piano. Every note is computed from the physics of a real Rhodes: the hammer
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound. No recordings
 are played back. Around the piano sits an effects chain modelled on the Yamaha reface CP: compressor, drive,
-tremolo or wah, phaser, chorus, delay and reverb.
+tremolo or wah, phaser, chorus, delay and reverb. For playing there is a PERFORM page with four assignable knobs,
+chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo, and MIDI over USB and the TRS jack.
 
 ![The PERFORM, main, PHASER and COMPRESSOR pages](manual/img/overview.png)
 
@@ -46,7 +47,10 @@ To go back to M-VAVE's own firmware, use the hub's "Official firmware" section w
 
 The screen shows **one page at a time**, with **four cards**, one per knob: **K1–K4 always turn the four cards you
 see**. The page name is at the top, with a row of marks under it showing where you are. Turn **SELECT** to move
-between pages, or press a page's button to jump straight there.
+between pages, or press a page's button to jump straight there. The pages, in SELECT order:
+
+PERFORM · ASSIGN · FRODHES (main) · VOICE · DECAY · COMPRESSOR · TREM/WAH · PHASER · CHORUS · DELAY · TEMPO ·
+SCALE · CHORD · SEQUENCER · ARPEGGIO · SETUP · MIDI
 
 The top line shows the preset, the octave (O+1, O−2...), **SUS** while the sustain is held, **BYP** while the effects
 are bypassed, and the tempo. The bottom line explains the page's button or shows a live reading; when you change a
@@ -364,9 +368,10 @@ end keeps even big chords of eight notes from ever clipping.
 ## 7. Tempo and sync
 
 Tap **PLAY** three times or more in time to set the tempo, or set **BPM** on the TEMPO page. With **CLOCK** on AUTO
-(the default), Frodhes follows MIDI clock from the USB host. The tremolo, phaser and delay can each lock to the
+(the default; MIDI page), Frodhes follows MIDI clock from USB or the TRS jack. The tremolo, phaser and delay can each lock to the
 tempo on the TEMPO page (TREM SYNC, PHA SYNC, DLY SYNC). When one is synced, its RATE / SPEED / TIME card shows a note
 value (1/16, 8T, 1/4 ...) and turning it steps through note values. PLAY blinks on the beat while anything is synced.
+The tempo also drives the arpeggiator and the sequencer.
 
 ## 8. Scales
 
@@ -420,7 +425,10 @@ jack's hiss.
 
 ## 12. If something goes wrong
 
-- **No sound:** check MASTER, that FX has not bypassed a sound you relied on (BYP in the header), and LEVEL on SETUP.
+- **No sound:** check MASTER, that FX has not bypassed a sound you relied on (BYP in the header), LEVEL on SETUP,
+  and on the MIDI page that CHANNEL is ALL or the channel your keyboard sends on.
+- **Keys play odd notes or keep playing:** chord mode (CHORD page), the arpeggiator with HOLD (ARPEGGIO) or the
+  sequencer may be on; the SEQ and ARP lights show it.
 - **The sound is thin or quiet:** raise KEY VEL on the main page.
 - **A crash** shows a message with a PC number, then the FM-1 restarts. Please report the number.
 - **It does not start:** switch the FM-1 off, hold **OCT−** and switch it on. That is the USB rescue: install again
