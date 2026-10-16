@@ -233,6 +233,7 @@ async function setupMidi() {
 buildPanel();
 buildKeys();
 fit();
+if (innerWidth < 1000) $("guide").open = false;            // phones: the guide folded, one tap opens it
 setupMidi();
 
 // ---- ?selftest: a note through the engine, its level and the screen's state in the title (for headless checks)

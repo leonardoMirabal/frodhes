@@ -24,18 +24,21 @@
   #status { color: #111; font-size: 13px; flex: 1 1 260px; }
 
   /* the device, drawn at 1200 x 700 and scaled to fit the window (fit() in app.js) */
-  .wrap { max-width: 1400px; margin: 0 auto; padding: 0 16px; display: flex; gap: 22px; align-items: flex-start; }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 0 16px; display: flex; gap: 22px; align-items: flex-start; justify-content: center; }
   #stage { flex: 1 1 760px; min-width: 0; overflow: hidden; }
-  aside { flex: 0 0 330px; background: #f3f1ec; color: #1b1b1b; border-radius: 16px; padding: 14px 18px; font-size: 13.5px;
-          line-height: 1.45; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
-  aside h2 { font: 19px/1.1 "DotGothic16", system-ui, sans-serif; margin: 2px 0 8px; letter-spacing: .04em; }
-  aside h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: #8a5a1c; margin: 12px 0 4px; }
-  aside p, aside ul { margin: 0 0 6px; }
-  aside ul { padding-left: 16px; }
-  aside li { margin: 2px 0; }
-  aside b { color: #000; }
+  aside { flex: 0 0 250px; background: #f3f1ec; color: #1b1b1b; border-radius: 16px; padding: 12px 16px; font-size: 13px;
+          line-height: 1.3; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+  aside summary { font: 18px/1.1 "DotGothic16", system-ui, sans-serif; letter-spacing: .04em; cursor: pointer; list-style: none; }
+  aside summary::-webkit-details-marker { display: none; }
+  aside summary::after { content: " +"; color: #8a5a1c; }
+  aside details[open] summary::after { content: " −"; }
+  aside dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 10px 0 8px; }
+  aside dt { font-weight: 800; }
+  aside dd { margin: 0; color: #444; }
+  aside p { margin: 0 0 5px; color: #555; font-size: 12px; }
   aside a { color: #8a5a1c; }
-  @media (max-width: 1100px) { .wrap { flex-direction: column; } aside { flex: none; width: 100%; } #stage { width: 100%; } }
+  @media (max-width: 1000px) { .wrap { flex-direction: column; align-items: center; } aside { flex: none; width: 100%; } #stage { width: 100%; flex: none; }
+                              aside dl { grid-template-columns: auto 1fr auto 1fr; } }
   #device { width: 1200px; height: 700px; transform-origin: 0 0; position: relative;
             background: var(--body); border-radius: 46px; box-shadow: inset 0 1px 0 #333; }
   .lab { font: 18px/1 "DotGothic16", system-ui, sans-serif; color: var(--ink); text-align: center; letter-spacing: .02em; }
@@ -72,7 +75,7 @@
   .key.glow::after { background: #c98a3a; }
   .key.lit::after, .key.down::after { background: var(--amber); box-shadow: 0 0 12px var(--amber); }
   .key.down { background: #1b1612; }
-  .help { max-width: 1132px; margin: 16px auto 6px; padding: 0 16px; color: #111; text-align: center; font-size: 14px; line-height: 2; }
+  .help { max-width: 1140px; margin: 16px auto 6px; padding: 0 16px; color: #111; text-align: center; font-size: 14px; line-height: 2; }
   .help kbd { display: inline-block; min-width: 20px; padding: 0 5px; border: 1px solid #333; border-radius: 3px;
               background: #e4e2dd; font: 12px/18px ui-monospace, Menlo, monospace; text-align: center; }
   .foot { text-align: center; color: #222; font-size: 13px; padding: 6px 16px 26px; max-width: 1132px; margin: 0 auto; }
@@ -98,35 +101,34 @@
   <div class="keys" id="kb" aria-label="Keyboard F3 to G5"></div>
 </div></div>
 
-<aside>
-  <h2>QUICK GUIDE</h2>
-  <p>One page at a time, with four cards: <b>KNOB 1–4 turn the four cards</b> you see. <b>SELECT</b> turns the pages,
-    or press a button to jump to its page (press it again on its page for the second action).</p>
-  <h3>Play</h3>
-  <ul>
-    <li><b>PRESETS</b> knob: the sounds (F01–F12 factory, U01–U16 yours). <b>ALGORITHM</b>: the Rhodes type.</li>
-    <li><b>PERFORM</b> (the first page, HOME): K1–K4 are the effects' dry / wet. Choose what they do on <b>ASSIGN</b>.</li>
-    <li><b>REC</b> is the sustain pedal (hold, or tap to latch). <b>OCT− / OCT+</b>: octave.</li>
-  </ul>
-  <h3>Buttons</h3>
-  <ul>
-    <li><b>HOME</b> PERFORM ↔ the main page (type, drive, reverb, touch) · <b>EDIT</b> the voice (tone, bark, bell, hammer)</li>
-    <li><b>ENV</b> decay, again: compressor · <b>LFO</b> tremolo / wah · <b>SEL</b> chorus — on their page: on / off</li>
-    <li><b>FX</b> all effects off / on · <b>SAVE</b> store a preset (hold: undo a load)</li>
-    <li><b>SEQ</b> chord mode, again: the sequencer · <b>ARP</b> the arpeggiator (again: on / off)</li>
-    <li><b>GLO</b> tempo, again: setup, again: MIDI · <b>PLAY</b> tap tempo (ARPEGGIO: hold; SEQUENCER: start / stop)</li>
-  </ul>
-  <h3>Sequencer</h3>
-  <p>On its page: <b>SEQ</b> = record (playing: overdub; stopped: step by step), <b>PLAY</b> = start / stop,
-    hold <b>SEQ</b> = clear. ALGORITHM moves a cursor step by step, PRESETS bar by bar; K4 EDIT: undo / delete / erase.</p>
-  <p><a href="https://github.com/leonardoMirabal/frodhes/blob/main/docs/MANUAL.md">The full manual</a></p>
-</aside>
+<aside><details id="guide" open>
+  <summary>QUICK GUIDE</summary>
+  <dl>
+    <dt>KNOB 1–4</dt><dd>the 4 cards</dd>
+    <dt>SELECT</dt><dd>pages</dd>
+    <dt>PRESETS</dt><dd>sounds</dd>
+    <dt>ALGORITHM</dt><dd>piano type</dd>
+    <dt>HOME</dt><dd>perform / main</dd>
+    <dt>EDIT</dt><dd>voice</dd>
+    <dt>ENV</dt><dd>decay / comp</dd>
+    <dt>LFO</dt><dd>trem / wah</dd>
+    <dt>SEL</dt><dd>chorus</dd>
+    <dt>FX</dt><dd>all effects off</dd>
+    <dt>SEQ</dt><dd>chords / sequencer</dd>
+    <dt>ARP</dt><dd>arpeggiator</dd>
+    <dt>GLO</dt><dd>tempo / setup / midi</dd>
+    <dt>SAVE</dt><dd>store a preset</dd>
+    <dt>PLAY</dt><dd>tap tempo / start</dd>
+    <dt>REC</dt><dd>sustain</dd>
+  </dl>
+  <p>Press a button again on its page for its second job.</p>
+  <p><a href="https://github.com/leonardoMirabal/frodhes/blob/main/docs/MANUAL.md">Full manual</a></p>
+</details></aside>
 </div>
 
 <div class="help">
-  <kbd>A</kbd>–<kbd>;</kbd> keys (A = F3; W E R Y U O P the black keys) &nbsp;·&nbsp; <kbd>Z</kbd> <kbd>X</kbd> OCT &nbsp;·&nbsp;
-  <kbd>Space</kbd> REC (sustain) &nbsp;·&nbsp; <kbd>←</kbd> <kbd>→</kbd> SELECT &nbsp;·&nbsp; <kbd>↑</kbd> <kbd>↓</kbd> PRESETS &nbsp;·&nbsp;
-  knobs: drag up / down or the mouse wheel &nbsp;·&nbsp; buttons can be held &nbsp;·&nbsp; MIDI keyboards: Web MIDI (Chrome, Edge)
+  Computer keys: <kbd>A</kbd>–<kbd>;</kbd> play · <kbd>Z</kbd> <kbd>X</kbd> octave · <kbd>Space</kbd> sustain ·
+  <kbd>←</kbd> <kbd>→</kbd> pages · <kbd>↑</kbd> <kbd>↓</kbd> presets · knobs: drag or wheel
 </div>
 <div class="foot">
   A physically modelled Fender Rhodes for the M-VAVE FM-1: the same firmware code, compiled to WebAssembly ·
