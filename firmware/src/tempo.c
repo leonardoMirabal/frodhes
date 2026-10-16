@@ -58,7 +58,7 @@ static void tempo_tap(void)
     }
 }
 
-/* MIDI clock in (CLOCK AUTO / USB): the tempo from 24 pulses, smoothed; FA restarts the beat. Pulses 8..80 ms
+/* MIDI clock in (CLOCK EXT; USB-MIDI and the TRS jack alike): the tempo from 24 pulses, smoothed; FA restarts the beat. Pulses 8..80 ms
  * (31..312 BPM); without pulses the internal tempo simply goes on at the last value. */
 static uint32_t clk_last, clk_acc, clk_n;
 static void tempo_clock(uint8_t st)

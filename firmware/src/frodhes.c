@@ -195,7 +195,11 @@ static void app_main(void)
             if (ty == 0x90u && d2) src_on(SRC_MIDI + (d1 & 127u), d1 & 127u, d2, 0);
             else if (ty == 0x80u || ty == 0x90u) src_off(SRC_MIDI + (d1 & 127u));
             else if (ty == 0xB0u) midi_cc(d1, d2);
-            else if (st >= 0xF8u) tempo_clock(st);
+            else if (st >= 0xF8u) {             /* clock and transport, from USB or TRS (CLOCK EXT) */
+                tempo_clock(st);
+                if (set.clock && (st == 0xFAu || st == 0xFBu) && !seq_play) seq_start();   /* Start / Continue */
+                else if (set.clock && st == 0xFCu && seq_play) seq_stop();               /* Stop */
+            }
             else if (ty == 0xC0u) preset_load(d1 < 12u ? d1 : d1 >= 16u && d1 < 32u ? PR_NF + d1 - 16u : 255u);
         }
 

@@ -4,7 +4,7 @@
 
 Frodhes turns the FM-1 into an electric piano. Every note is computed from the physics of a real Rhodes: the hammer
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound. No recordings
-are played back. Around the piano sits an effects chain modelled on the Yamaha reface CP: compressor, drive,
+are played back. Around the piano sits an effects chain modelled on the Yamaha reface CP: compressor, a resonant filter, drive,
 tremolo or wah, phaser, chorus, delay and reverb. For playing there is a PERFORM page with four assignable knobs,
 chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo, and MIDI over USB and the TRS jack.
 
@@ -49,8 +49,8 @@ The screen shows **one page at a time**, with **four cards**, one per knob: **K1
 see**. The page name is at the top, with a row of marks under it showing where you are. Turn **SELECT** to move
 between pages, or press a page's button to jump straight there. The pages, in SELECT order:
 
-PERFORM · ASSIGN · FRODHES (main) · VOICE · DECAY · COMPRESSOR · TREM/WAH · PHASER · CHORUS · DELAY · TEMPO ·
-SCALE · CHORD · SEQUENCER · ARPEGGIO · SETUP · MIDI
+PERFORM · ASSIGN · FRODHES (main) · VOICE · DECAY · COMPRESSOR · FILTER · TREM/WAH · PHASER · CHORUS · DELAY ·
+TEMPO · SCALE · CHORD · SEQUENCER · ARPEGGIO · LFO · SETUP · MIDI
 
 The top line shows the preset, the octave (O+1, O−2...), **SUS** while the sustain is held, **BYP** while the effects
 are bypassed, and the tempo. The bottom line explains the page's button or shows a live reading; when you change a
@@ -90,13 +90,13 @@ active, REC while the sustain holds, PLAY on the beat when something is synced, 
 ![PERFORM](manual/img/perform.png)
 
 The first page, made for playing: four knobs for the sound while you play. Out of the box they are the dry / wet of
-the effects:
+the effects and the filter's cutoff:
 
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **TREM/WAH** | How much tremolo (or auto-pan / wah, as chosen on its page) |
 | K2 | **PHASER** | How much phaser |
-| K3 | **CHORUS** | How much chorus |
+| K3 | **FILTER** | The filter's cutoff (turning it down with the filter off switches it on as LP18) |
 | K4 | **DELAY** | How much delay |
 
 Turning an effect up from here **switches it on**, so you can go from dry to wet with one knob; its light comes on.
@@ -163,6 +163,21 @@ volume about the same (back to OFF switches it off). The bottom of the page is a
 to 30 dB of reduction (scale 3, 6, 10, 20, 30), a bright segment holds the peak for a second, and the number on the
 right is the reduction now in dB. The compressor
 comes first in the chain, right after the piano.
+
+### FILTER
+
+![FILTER](manual/img/filter.png)
+
+A resonant filter right after the compressor (before drive and the other effects), moved by its own LFO.
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **TYPE** | **OFF**; **LP12** / **LP18** low-pass (12 or 18 dB per octave: the higher, the steeper); **HP12** / **HP18** high-pass; **BP** band-pass; **NOTCH** |
+| K2 | **FREQ** | The cutoff, 30 Hz to 16 kHz |
+| K3 | **RESO** | Resonance: from smooth to a whistling peak at the cutoff |
+| K4 | **LFO** | How far the LFO moves the cutoff (up to ±4 octaves); the LFO itself is set on the LFO page |
+
+On PERFORM, K3 is the filter's cutoff by default. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 LFO amount.
 
 ### TREM/WAH
 
@@ -307,6 +322,19 @@ pattern. Switching HOLD off stops the notes you are no longer holding. The susta
 pedal. It works with the scales (the notes are already on the scale) and with notes from USB-MIDI. The
 settings belong to the FM-1, not to a preset; ARP RATE and ARP GATE can also be put on a PERFORM knob.
 
+### LFO
+
+![LFO](manual/img/lfo.png)
+
+The filter's LFO (it moves FREQ by the FILTER page's LFO amount).
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **SHAPE** | **SINE**, **TRI**, **SAW** (rising), **RAMP** (falling), **SQR** (square), **S&H** (a random step each cycle) |
+| K2 | **RATE** | Free, 0.5 to 12 Hz; when SYNC is set it shows and steps note values |
+| K3 | **SYNC** | **FREE**, or locked to the tempo: 1/32 to 4 bars |
+| K4 | **RETRIG** | **FREE** (it runs on its own) or **KEY** (it starts from the beginning with every note) |
+
 ### SETUP
 
 ![SETUP](manual/img/setup.png)
@@ -327,10 +355,10 @@ The bottom line shows the name and the version installed, and the audio engine's
 | --- | --- | --- |
 | K1 | **CHANNEL** | **ALL** (the default: every channel is played) or **1–16**: only that channel is played, from USB-MIDI and from the TRS jack alike, and the FM-1 sends its notes on it (on ALL it sends on 1) |
 | K2 | **TRS IN** | **ON** / **OFF**: MIDI from the 3.5 mm TRS MIDI input (for a DAWless setup: a keyboard, a sequencer, a drum machine's clock) |
-| K3 | **CLOCK** | Tempo source: **INT** (internal), **AUTO** (follows MIDI clock when it arrives, USB or TRS), **USB** |
+| K3 | **CLOCK** | **INT**: its own tempo. **EXT** (the default): follows MIDI clock from USB or the TRS jack when it comes, and a MIDI **Start** / **Continue** starts the sequencer, **Stop** stops it |
 
-Press **GLO** three times to come here (TEMPO, SETUP, MIDI). Clock, start and stop from the TRS jack drive the tempo
-like USB's.
+Press **GLO** three times to come here (TEMPO, SETUP, MIDI). Everything MIDI does, it does the same from USB and from
+the TRS jack: notes, every CC in the table below, program changes, clock, start and stop.
 
 ## 5. Presets
 
@@ -362,14 +390,16 @@ on.
 
 ![FX bypass](manual/img/bypass.png)
 
-The order of the chain: **COMP → DRIVE → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter.** The limiter at the
+The order of the chain: **COMP → FILTER → DRIVE → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter.** The limiter at the
 end keeps even big chords of eight notes from ever clipping.
 
 ## 7. Tempo and sync
 
-Tap **PLAY** three times or more in time to set the tempo, or set **BPM** on the TEMPO page. With **CLOCK** on AUTO
-(the default; MIDI page), Frodhes follows MIDI clock from USB or the TRS jack. The tremolo, phaser and delay can each lock to the
-tempo on the TEMPO page (TREM SYNC, PHA SYNC, DLY SYNC). When one is synced, its RATE / SPEED / TIME card shows a note
+Tap **PLAY** three times or more in time to set the tempo, or set **BPM** on the TEMPO page. With **CLOCK** on EXT
+(the default; MIDI page), Frodhes follows MIDI clock from USB or the TRS jack, and an external Start / Stop starts and
+stops the sequencer (send clock from one of them at a time: two clocks at once would add up). The tremolo, phaser and
+delay can each lock to the tempo on the TEMPO page (TREM SYNC, PHA SYNC, DLY SYNC), and the filter's LFO on the LFO
+page. When one is synced, its RATE / SPEED / TIME card shows a note
 value (1/16, 8T, 1/4 ...) and turning it steps through note values. PLAY blinks on the beat while anything is synced.
 The tempo also drives the arpeggiator and the sequencer.
 
@@ -418,6 +448,8 @@ also send their notes to the computer. **Program Change** 0–11 loads F01–F12
 | 56 / 57 | CHORD TYPE (0–14 as listed) / INVERSION (0–3) | 58 / 59 | CHORD VOICING (0–2) / STRUM (0–12 × 5 ms) |
 | 60 / 61 | SEQUENCER play (≥ 64) / stop, BARS (1–16) | 62 / 63 | SEQUENCER QUANT (0–5) / recording (≥ 64) |
 | 43 / 44 | SEQUENCER CLEAR / UNDO (≥ 64) | 45 / 46 | SEQUENCER ERASE (≥ 64 on) / SWING (50–75) |
+| 70 / 74 | FILTER TYPE (7 bands: off, LP12, LP18, HP12, HP18, BP, notch) / CUTOFF | 71 / 72 | FILTER RESONANCE / LFO AMOUNT |
+| 75 / 76 | LFO SHAPE (6 bands) / RATE | 77 / 78 | LFO SYNC / RETRIG (free, key) |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
 The FM-1 also appears as a USB audio input: you can record exactly what it plays, digitally, without the headphone

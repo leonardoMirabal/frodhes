@@ -11,7 +11,7 @@ from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "docs", "manual", "img")
-PAGES = ["perform", "assign", "piano", "voice", "decay", "comp", "trem", "phaser", "chorus", "delay", "tempo", "scale", "chord", "seq", "arp", "setup", "midi"]
+PAGES = ["perform", "assign", "piano", "voice", "decay", "comp", "filter", "trem", "phaser", "chorus", "delay", "tempo", "scale", "chord", "seq", "arp", "lfo", "setup", "midi"]
 
 
 def main():
@@ -29,6 +29,13 @@ def main():
     for i, name in enumerate(PAGES):
         if i:
             L.append(f"{t} turn 0 1"); t += 700
+        if name == "filter":                                # LP18 at 1.2 kHz, some resonance, the LFO moving it
+            for cc, v in ((70, 45), (74, 75), (71, 50), (72, 40)):
+                L.append(f"{t} midi 0xB0 {cc} {v}"); t += 20
+            L.append(f"{t} keys 0x80"); t += 600
+            L.append(f"{t} shot"); shots[t] = name
+            L.append(f"{t + 50} keys 0x0"); t += 300
+            continue
         if name == "chord":                                 # chord mode MAJ7 with a strum, a key held
             L.append(f"{t} midi 0xB0 56 6"); L.append(f"{t + 20} midi 0xB0 59 4"); L.append(f"{t + 100} keys 0x80"); t += 700
             L.append(f"{t} shot"); shots[t] = name

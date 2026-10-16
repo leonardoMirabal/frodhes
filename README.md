@@ -7,7 +7,8 @@
 Frodhes turns the FM-1 into an electric piano. Every note is computed live from the mechanics of a Rhodes: a hammer
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound, with the bark of
 hard notes and the bell of the attack. Four instrument types (Stage 77, Suitcase, Early Felt, Bell Dyno), a
-reface CP-style effects chain (compressor, drive, tremolo / wah, phaser, chorus, delay, reverb), tap tempo with MIDI
+reface CP-style effects chain (compressor, a resonant filter with its LFO, drive, tremolo / wah, phaser, chorus, delay,
+reverb), tap tempo with MIDI
 clock sync, MIDI over USB and the TRS jack, chord mode, a pattern recorder (1–16 bar loops, quantize, overdub, undo / erase), an arpeggiator, scales, a sustain pedal and 12 factory plus 16 user presets. The screen shows one page at a time with
 four cards, one for each of the FM-1's four knobs; the first page, PERFORM, puts the effects' dry / wet (or
 anything you assign) on those four knobs for playing live.
@@ -38,12 +39,13 @@ the MIDI map.
 
 | Page | K1 | K2 | K3 | K4 | Button |
 | --- | --- | --- | --- | --- | --- |
-| **PERFORM** | TREM/WAH | PHASER | CHORUS | DELAY | HOME (assignable on ASSIGN) |
+| **PERFORM** | TREM/WAH | PHASER | FILTER | DELAY | HOME (assignable on ASSIGN) |
 | **ASSIGN** | what K1 plays | what K2 plays | what K3 plays | what K4 plays | (SELECT) |
 | **FRODHES** (main) | TYPE | DRIVE | REVERB | KEY VEL | HOME twice |
 | **VOICE** | TONE | BARK | BELL | HAMMER | EDIT |
 | **DECAY** | DECAY | RELEASE | NOISE | TUNE | (SELECT) |
 | **COMPRESSOR** | THRESHOLD (OFF / on) | RATIO | ATTACK | MAKEUP | (SELECT) |
+| **FILTER** | OFF / LP12 / LP18 / HP12 / HP18 / BP / NOTCH | FREQ | RESO | LFO | (SELECT) |
 | **TREM/WAH** | OFF / PAN / TREM / WAH | DEPTH | RATE | SHAPE | LFO |
 | **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | ENV (there: on / off) |
 | **CHORUS** | OFF / ON | DEPTH | SPEED | SYNC | (SELECT) |
@@ -53,8 +55,9 @@ the MIDI map.
 | **CHORD** | OFF / DIATONIC / DIA 7TH / MAJ ... MIN6 | INVERSION | VOICING | STRUM | SEQ |
 | **SEQUENCER** | BARS 1–16 | QUANT | SWING | EDIT (UNDO / ERASE) | SEQ again (there: REC, hold: CLEAR; PLAY: start / stop) |
 | **ARPEGGIO** | OFF / UP / DOWN / UP-DN / ORDER / RANDOM | RATE | OCTAVES | GATE | ARP (there: on / off; PLAY: HOLD) |
+| **LFO** | SHAPE | RATE | SYNC | RETRIG | (SELECT) |
 | **SETUP** | DELAY TONE | LEVEL | USB VOL (KNOB / FIXED) | | GLO twice |
-| **MIDI** | CHANNEL (ALL / 1–16) | TRS IN (ON / OFF) | CLOCK | | GLO three times |
+| **MIDI** | CHANNEL (ALL / 1–16) | TRS IN (ON / OFF) | CLOCK (INT / EXT) | | GLO three times |
 
 **SELECT** turns the pages, **K1–K4** turn the cards (on **PERFORM**: the effects' dry / wet, or what you assign), **ALGORITHM** picks the TYPE, **PRESETS** browses sounds,
 **FX** switches all effects off / on, **SEQ** chord mode and the sequencer, **ARP** the arpeggiator, **PLAY** taps the tempo, **REC** is the sustain pedal, **SAVE** stores a preset.

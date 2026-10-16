@@ -139,7 +139,7 @@ static void params_defaults(void)
     set.ver = SET_VER;
     set.preset = 0;
     set.bpm10 = 1200;
-    set.clock = 1;                 /* AUTO */
+    set.clock = 1;                 /* EXT: follows MIDI clock when it comes (USB or TRS) */
     set.key_vel = 96;
     set.focus = 0;                 /* TREM column */
     set.color = 1;                 /* AMBER */
@@ -169,6 +169,7 @@ static void params_sanitize(void)
     for (i = 0; i < P_COUNT; i++) if (PV(i) > PARAMS[i].hi) PV(i) = PARAMS[i].def;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.bpm10 < 400 || set.bpm10 > 2400) set.bpm10 = 1200;
+    if (set.clock > 1u) set.clock = 1;                       /* 0.9.3: INT / EXT (was INT / AUTO / USB) */
     if (set.midi_ch > 16u) set.midi_ch = 0;                 /* 0 = all channels, 1..16 */
     if (set.trs_off > 1u) set.trs_off = 0;
     if (!set.key_vel || set.key_vel > 127) set.key_vel = 96;

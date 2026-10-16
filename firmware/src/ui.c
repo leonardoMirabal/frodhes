@@ -89,7 +89,7 @@ static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "
 static const char *const NOTE_NAME[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const SCMODE_NAME[3] = {"OFF", "SNAP", "DEGREE"};
 static const char *const TWKIND_NAME[4] = {"OFF", "PAN", "TREM", "WAH"};
-static const char *const CLOCK_NAME[3] = {"INT", "AUTO", "USB"};
+static const char *const CLOCK_NAME[2] = {"INT", "EXT"};   /* EXT: MIDI clock from USB or TRS */
 
 static uint8_t ui_page;
 static uint32_t ui_dirty = ~0u;
@@ -197,7 +197,7 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_KVEL: *hi = 127; return set.key_vel;
     case S_TUNE: *hi = 100; return set.tune + 50;
     case S_BPM: *hi = 2000; return set.bpm10 - 400;
-    case S_CLOCK: *hi = 2; return set.clock;
+    case S_CLOCK: *hi = 1; return set.clock;
     case S_SCMODE: *hi = 2; return set.sc_mode;
     case S_SCALE: *hi = 10; return set.sc_scale;
     case S_ROOT: *hi = 11; return set.sc_root;
@@ -307,7 +307,7 @@ static void slot_turn(uint32_t s, int32_t d)
     case S_KVEL: set.key_vel = (uint8_t)clampi(set.key_vel + d * (d > 1 || d < -1 ? 4 : 1), 1, 127); break;
     case S_TUNE: set.tune = (int8_t)clampi(set.tune + d, -50, 50); rh_tune_t = TUNE_T[set.tune + 50]; break;
     case S_BPM: tempo_set10((uint32_t)clampi((int32_t)set.bpm10 + d * 10, 400, 2400)); break;
-    case S_CLOCK: set.clock = (uint8_t)clampi(set.clock + sgn(d), 0, 2); break;
+    case S_CLOCK: set.clock = (uint8_t)clampi(set.clock + sgn(d), 0, 1); break;
     case S_SCMODE: set.sc_mode = (uint8_t)clampi(set.sc_mode + sgn(d), 0, 2); break;
     case S_SCALE: set.sc_scale = (uint8_t)clampi(set.sc_scale + sgn(d), 0, 10); break;
     case S_ROOT: set.sc_root = (uint8_t)((set.sc_root + (d > 0 ? 1u : 11u)) % 12u); break;
