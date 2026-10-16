@@ -75,6 +75,7 @@ static void cmd_midi(void)
 {
     uint32_t v, t;
     for (v = 0; v < 128u; v++) { midi_cc(80, (uint8_t)v); printf("cc80.%u %u\n", v, PV(P_TYPE)); }
+    for (v = 0; v < 128u; v++) { midi_cc(79, (uint8_t)v); printf("cc79.%u %u\n", v, PV(P_TYPE)); }
     for (t = 0; t < N_TYPE_N; t++) {
         param_set(P_TYPE, (int32_t)t);
         for (v = 0; v < 128u; v++) { midi_cc(21, (uint8_t)v); printf("cc21.%u.%u %u\n", t, v, PV(P_TW_MODE)); }

@@ -39,16 +39,23 @@ DRY = dict(DRIVE=0, REV=0, TW_SW=0, CP_SW=0, PH_SW=0, DL_SW=0, CMP_SW=0, RAW=0, 
 RHODES_TYPES = 4           # TYPE 0..3 (ST77 SUIT FELT DYNO); 4.. are bar types (VIBES), scanned by their own tests
 
 
-def type_cc(t):
-    """the CC 80 value inside TYPE t's band (frodhes.c midi_cc: 0..95 by 32, 96..127 shared by DYNO and the bar
-    types): 8, 40, 72, then 104 (DYNO), 120 (VIBES) with 5 types"""
+def n_types():
     import re
     src = open(os.path.join(ROOT, "firmware", "src", "params.c")).read()
-    n = int(re.search(r'\[P_TYPE\] = \{"[^"]*", (\d+),', src).group(1)) + 1
-    if t < 3:
+    return int(re.search(r'\[P_TYPE\] = \{"[^"]*", (\d+),', src).group(1)) + 1
+
+
+def type_cc(t):
+    """the CC value selecting TYPE t on the CC that type_ccnum(t) names: CC 80 (by 32) for the Rhodes types 0..3 as
+    before, CC 79 for the bar types (one band each over 0..127)"""
+    if t < 4:
         return t * 32 + 8
-    w = 32 / (n - 3)                       # the width of each band above 96
-    return int(96 + (t - 3) * w + w / 2)
+    w = 128 / max(1, n_types() - 4)
+    return int((t - 4) * w + w / 2)
+
+
+def type_ccnum(t):
+    return 80 if t < 4 else 79
 
 
 def param_defaults():

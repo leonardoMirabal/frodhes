@@ -226,7 +226,7 @@ def matrix(typ, full, smoke=False):
     # engine swaps while notes ring (S13)
     ev = S(noise=None) + sum((bm.note(200 + 5 * i, n, 100, 3000) for i, n in enumerate((48, 52, 55, 60, 64, 67, 71, 74))), [])
     for k in range(6):
-        ev.append((600 + 400 * k, f"midi 0xB0 80 {bm.type_cc(other if k % 2 == 0 else typ)}"))
+        ev.append((600 + 400 * k, f"midi 0xB0 {bm.type_ccnum(other if k % 2 == 0 else typ)} {bm.type_cc(other if k % 2 == 0 else typ)}"))
     C.append(Case("swap cc80", "swap", ev, 8000, ["S13"], swaps=[600 + 400 * k for k in range(6)]))
     pc_other, pc_this = (12, 0) if typ >= 4 else (2, 0)            # F13 (VIBES) / F01; Rhodes: F03 / F01
     ev = [(20, "midi 0xB0 119 127")] + sum((bm.note(200 + 5 * i, n, 100, 2500) for i, n in enumerate((57, 64, 69, 76))), [])
@@ -234,7 +234,7 @@ def matrix(typ, full, smoke=False):
     C.append(Case("swap preset", "swap", ev, 7000, ["S13"], swaps=[700, 1400, 2100]))
     ev = S(noise=None, ARP_MODE=1, ARP_RATE=3, ARP_OCT=1) + clock_lines(30, 4300) + sum((bm.note(300, n, 100, 3500) for n in (60, 64, 67)), [])
     sweep = [(400 + 25 * k, f"midi 0xB0 80 {(k * 4) % 128}") for k in range(128)]
-    ev += sweep + [(3700, "midi 0xB0 52 0"), (3800, f"midi 0xB0 80 {bm.type_cc(typ)}")]
+    ev += sweep + [(3700, "midi 0xB0 52 0"), (3800, f"midi 0xB0 {bm.type_ccnum(typ)} {bm.type_cc(typ)}")]
     C.append(Case("swap sweep arp", "swap", ev, 9000, ["S13"], swaps=[t for t, _ in sweep]))
     # the long run: pedal held, the 37 F3..F6 keys struck once each, the motor deep and fast
     dur = 60000 if full else 20000

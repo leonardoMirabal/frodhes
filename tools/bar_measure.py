@@ -32,11 +32,16 @@ def n_types():
 
 
 def type_cc(t):
-    """a CC 80 value inside TYPE t's band (0..95 by 32; 96..127 shared by DYNO and the bar types)"""
-    if t < 3:
+    """the CC value selecting TYPE t on the CC that type_ccnum(t) names: CC 80 (by 32) for the Rhodes types 0..3 as
+    before, CC 79 for the bar types (one band each over 0..127)"""
+    if t < 4:
         return t * 32 + 8
-    w = 32 / (n_types() - 3)
-    return int(96 + (t - 3) * w + w / 2)
+    w = 128 / max(1, n_types() - 4)
+    return int((t - 4) * w + w / 2)
+
+
+def type_ccnum(t):
+    return 80 if t < 4 else 79
 
 
 def type_name(t):
@@ -79,7 +84,7 @@ def counters(log):
 
 
 def setup_events(t0=20, typ=0, raw=True, noise=None, **cc):
-    ev = [(t0, f"midi 0xB0 80 {type_cc(typ)}")]
+    ev = [(t0, f"midi 0xB0 {type_ccnum(typ)} {type_cc(typ)}")]
     if raw:
         ev.append((t0, "midi 0xB0 119 127"))
     if noise is not None:

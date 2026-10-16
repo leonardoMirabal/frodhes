@@ -120,6 +120,12 @@ static void midi_cc(uint32_t cc, uint32_t v)
         ui_mark(E_CARDS); ui_mark(E_FOOTER);
         return;
     }
+    if (cc == 79u) {                                   /* the bar types (VIBES ...): bands over 0..127, one per type;
+                                                        * CC 80 keeps the four Rhodes types exactly as before */
+        param_set(P_TYPE, (int32_t)(4u + ((v * (N_TYPE_N - 4u)) >> 7)));
+        ui_mark_param(P_TYPE);
+        return;
+    }
     if (cc == 120u || cc == 123u) { rh_all_off(); return; }
     if (cc == 85u) {                                   /* reface CHO/PHA switch: off / chorus / phaser (one of them) */
         param_set(P_CP_SW, v >= 43u && v < 86u); param_set(P_PH_SW, v >= 86u);
@@ -134,9 +140,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
                                                         * bar TYPE, so a Rhodes TYPE keeps exactly the old bands */
                 x = v < 64u ? 0 : v >= 112u && TYPE_IS_BARS(PV(P_TYPE)) ? 2 : 1;
             else if (PARAMS[id].hi == 2u) x = v < 43u ? 0 : v < 86u ? 1 : 2;
-            else if (id == P_TYPE)                     /* 0..95 as before (32 each); the rest shared by DYNO and the
-                                                        * new types: 5 types = 96..111 DYNO, 112..127 VIBES */
-                x = v < 96u ? (int32_t)(v >> 5) : 3 + (int32_t)(((v - 96u) * (N_TYPE_N - 3u)) >> 5);
+            else if (id == P_TYPE) x = (int32_t)(v >> 5);   /* the Rhodes types, as before; bar types: CC 79 */
             else if (PARAMS[id].hi < 127u) x = (int32_t)(v * (PARAMS[id].hi + 1u) >> 7);
             param_set(id, x);
             if (id == P_DL_SYNC || id == P_TW_SYNC || id == P_CP_SYNC || id == P_PH_SYNC) tempo_sync_publish();

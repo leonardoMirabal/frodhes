@@ -180,4 +180,4 @@ and later in the same paragraph: "... a sustain pedal and **14** factory plus 16
 - TYPE 4 VIBES (`N_TYPE` "VIBE", `N_TYPE_LONG` "VIBES"); `TYPE_ENGINE` / `TYPE_SUB` / `TYPE_DRIVE_ROW` in params.c.
 - TW_MODE 2 = MOTOR (`N_TWM` "MOT"); the TREM/WAH card's kinds OFF PAN TREM WAH MOTOR (MOTOR only on a bar TYPE).
 - Factory presets F13 / F14 (PR_NF 14); the saved preset index moves once (settings `flags & 4`).
-- CC 80: 96–111 DYNO, 112–127 VIBES; CC 21: 0–63 PAN, 64–127 AM as before, 112–127 MOTOR on VIBES only; PC 12 / 13.
+- CC 80: the four Rhodes types, unchanged (96–127 DYNO); CC 79: the bar types (VIBES; later types get bands); CC 21: 0–63 PAN, 64–127 AM as before, 112–127 MOTOR on VIBES only; PC 12 / 13.
