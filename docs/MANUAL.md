@@ -67,10 +67,10 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **MASTER** (knob) | Volume |
 | **HOME** | PERFORM page; press again for the main page (titled FRODHES), and back |
 | **EDIT** | VOICE page |
-| **ENV** | DECAY page; press again for COMPRESSOR; on COMPRESSOR it switches the compressor on / off |
+| **ENV** | PHASER page; press again there to switch the phaser on / off |
 | **LFO** | TREM/WAH page; press again there to switch it on / off |
 | **SEQ** | CHORD page (straight to SEQUENCER when chord mode is on); on CHORD it goes to SEQUENCER; on SEQUENCER it switches recording on / off, held 1 s it clears the pattern |
-| **SEL** | CHORUS page; press again there to switch it on / off |
+| **SEL** | DELAY page; press again there to switch the delay on / off |
 | **ARP** | ARPEGGIO page; press again there to switch the arpeggiator on / off |
 | **GLO** | TEMPO page; press again for SETUP, again for MIDI |
 | **FX** | All effects off / on at once (see [6](#6-effects-on-and-off)) |
@@ -79,7 +79,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **SAVE** | Save the sound to a user preset; hold to undo the last preset load |
 | **OCT− / OCT+** | Octave down / up (±2) |
 
-The lights tell you what is on: LFO, SEL and ENV light up when their effect is on, ARP while the arpeggiator runs, SEQ
+The lights tell you what is on: LFO (tremolo / wah), ENV (phaser) and SEL (delay) light up when their effect is on, ARP while the arpeggiator runs, SEQ
 while chord mode is on (blinking while the sequencer records), FX when the effects are
 active, REC while the sustain holds, PLAY on the beat when something is synced, HOME on PERFORM and the main page, EDIT on VOICE.
 
@@ -153,13 +153,13 @@ The first page carries the instrument's name as its title and holds the piano's 
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **THRESH** | Where the compression starts: 0 to −40 dB. Lower = more compression |
+| K1 | **THRESH** | **OFF** at 0: turn it up to switch the compressor on; then where it starts, down to −40 dB. Lower = more compression |
 | K2 | **RATIO** | How strongly it compresses: 1.5:1 to 20:1 |
 | K3 | **ATTACK** | How fast it grabs a note: low lets the hammer's attack through, high catches it |
 | K4 | **MAKEUP** | Gives back the volume the compression takes: 0 to +24 dB |
 
-Press **ENV** on this page to switch it on or off. When you switch it on it starts at −20 dB, 4:1 and +2.8 dB, which
-keeps the volume about the same. The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
+**THRESH** is its on / off: turn it up from OFF and the compressor comes on with MAKEUP at +2.8 dB, which keeps the
+volume about the same (back to OFF switches it off). The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
 to 30 dB of reduction (scale 3, 6, 10, 20, 30), a bright segment holds the peak for a second, and the number on the
 right is the reduction now in dB. The compressor
 comes first in the chain, right after the piano.
@@ -353,8 +353,8 @@ again to store it, or **HOME** to cancel. The name is made from the type and the
 
 ## 6. Effects on and off
 
-Each effect has its own on / off: its page button pressed twice (LFO, SEL, and ENV for the compressor), or its
-EFFECT card (the phaser and the delay: K1 on their page, or turning them up on PERFORM). Switching an effect on whose depth is 0 gives it a useful starting depth, so you always hear it.
+Each effect has its own on / off: its page button pressed twice (LFO: tremolo / wah, ENV: phaser, SEL: delay), its
+K1 card on its page (chorus: EFFECT; compressor: THRESH), or turning it up on PERFORM. Switching an effect on whose depth is 0 gives it a useful starting depth, so you always hear it.
 
 **FX** switches **all** effects off at once and back on, without changing any setting: compare the dry piano with
 your sound. The header shows **BYP** while they are off. It is not saved, so the FM-1 always starts with the effects

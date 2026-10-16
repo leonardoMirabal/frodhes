@@ -42,12 +42,12 @@ the MIDI map.
 | **ASSIGN** | what K1 plays | what K2 plays | what K3 plays | what K4 plays | (SELECT) |
 | **FRODHES** (main) | TYPE | DRIVE | REVERB | KEY VEL | HOME twice |
 | **VOICE** | TONE | BARK | BELL | HAMMER | EDIT |
-| **DECAY** | DECAY | RELEASE | NOISE | TUNE | ENV |
-| **COMPRESSOR** | THRESHOLD | RATIO | ATTACK | MAKEUP | ENV twice (there: on / off) |
+| **DECAY** | DECAY | RELEASE | NOISE | TUNE | (SELECT) |
+| **COMPRESSOR** | THRESHOLD (OFF / on) | RATIO | ATTACK | MAKEUP | (SELECT) |
 | **TREM/WAH** | OFF / PAN / TREM / WAH | DEPTH | RATE | SHAPE | LFO |
-| **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | (SELECT) |
-| **CHORUS** | OFF / ON | DEPTH | SPEED | SYNC | SEL |
-| **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | (SELECT) |
+| **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | ENV (there: on / off) |
+| **CHORUS** | OFF / ON | DEPTH | SPEED | SYNC | (SELECT) |
+| **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | SEL (there: on / off) |
 | **TEMPO** | BPM | TREM SYNC | PHA SYNC | DLY SYNC | GLO |
 | **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | (SELECT) |
 | **CHORD** | OFF / DIATONIC / DIA 7TH / MAJ ... MIN6 | INVERSION | VOICING | STRUM | SEQ |

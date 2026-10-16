@@ -113,7 +113,7 @@ $("start").onclick = startAudio;
 const KNOBS = [["MASTER", -1, 50, 22, "VOLUME"], ["SELECT", 0, 200, 22, "PAGES"], ["PRESETS", 6, 50, 152, "SOUNDS"],
                ["ALGORITHM", 1, 200, 152, "PIANO TYPE"], ["KNOB 1", 2, 685, 22, "CARD 1"], ["KNOB 2", 3, 800, 22, "CARD 2"],
                ["KNOB 3", 4, 915, 22, "CARD 3"], ["KNOB 4", 5, 1030, 22, "CARD 4"]];
-const HINT = { FX: "ALL FX", SEL: "CHORUS", ENV: "DECAY·COMP", LFO: "TREM·WAH", EDIT: "VOICE", GLO: "TEMPO·MIDI",
+const HINT = { FX: "ALL FX", SEL: "DELAY", ENV: "PHASER", LFO: "TREM·WAH", EDIT: "VOICE", GLO: "TEMPO·MIDI",
                HOME: "PERFORM", SAVE: "PRESET", ARP: "ARPEGGIO", SEQ: "CHORD·SEQ", PLAY: "TAP·START", REC: "SUSTAIN",
                "OCT−": "", "OCT+": "" };
 const ROWS = [["FX", "SEL", "ENV", "LFO", "EDIT", "GLO"], ["HOME", "SAVE", "ARP", "SEQ", "PLAY", "REC"]];
@@ -162,12 +162,18 @@ function buildPanel() {
   c.appendChild(button("OCT+", BTN["OCT+"], 216, 299, "oct"));
   ROWS.forEach((row, r) => row.forEach((n, i) => c.appendChild(button(n, BTN[n], 712 + i * 76, 198 + r * 76, n === "REC" ? "rec" : ""))));
 }
-function fit() {                                     // the device scaled to the window's width (phones too)
-  const st = $("stage"), d = $("device"), w = st.clientWidth, s = Math.min(1, w / 1200);
+function fit() {                                     // as big as the window allows: its width (beside the guide) and height
+  const st = $("stage"), d = $("device"), g = document.querySelector("aside"), narrow = innerWidth <= 760;
+  const top = st.getBoundingClientRect().top + scrollY, room = innerHeight - top - 70;
+  const zg = narrow ? 1 : Math.max(1, Math.min(1.5, innerHeight / 760, innerWidth / 1200));   // the guide's text grows with the window
+  if (g) g.style.setProperty("--z", zg);
+  const w = narrow ? innerWidth - 32 : innerWidth - 32 - 22 - 250 * zg - 32;
+  const s = Math.max(0.2, Math.min(w / 1200, narrow ? 9 : room / 700, 1.6));
   d.style.transform = `scale(${s})`;
   d.classList.toggle("shrunk", s < 0.999);
-  d.style.marginLeft = Math.max(0, (w - 1200 * s) / 2) + "px";
+  st.style.width = 1200 * s + "px";
   st.style.height = 700 * s + "px";
+  d.style.marginLeft = "0px";
 }
 addEventListener("resize", fit);
 
@@ -233,7 +239,7 @@ async function setupMidi() {
 buildPanel();
 buildKeys();
 fit();
-if (innerWidth < 1000) $("guide").open = false;            // phones: the guide folded, one tap opens it
+if (innerWidth <= 760) $("guide").open = false;            // phones: the guide folded, one tap opens it
 setupMidi();
 
 // ---- ?selftest: a note through the engine, its level and the screen's state in the title (for headless checks)

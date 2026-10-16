@@ -8,8 +8,8 @@
  *              CHORD SEQUENCER ARPEGGIO SETUP MIDI
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on SEQUENCER: a cursor, step by step)   PRESETS  sounds (presets.c; on SEQUENCER: bar by bar)
- *   shortcuts  HOME = PERFORM (again: the main page), EDIT = VOICE, ENV = DECAY (again: COMP), LFO / SEL = TREM /
- *              CHORUS (on that page: the effect on / off), SEQ = CHORD (chord mode on: SEQUENCER; on it: REC),
+ *   shortcuts  HOME = PERFORM (again: the main page), EDIT = VOICE, LFO / ENV / SEL = TREM / PHASER / DELAY (on
+ *              that page: the effect on / off), SEQ = CHORD (chord mode on: SEQUENCER; on it: REC),
  *              ARP = ARPEGGIO (on it: on / off), GLO = TEMPO (again: SETUP, MIDI).
  *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo. REC: sustain. */
 
@@ -76,8 +76,8 @@ static const char *const PAGE_LAB[PG_N][4] = {
 };
 static const char *const PAGE_HINT[PG_N] = {"NEXT PAGE: ASSIGN THE KNOBS", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
-                                            "", "LFO BUTTON: ON / OFF", "K1: ON / OFF", "SEL BUTTON: ON / OFF",
-                                            "K1: OFF / DIGITAL / ANALOG", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
+                                            "K1 THRESH: UP = ON, 0 = OFF", "LFO BUTTON: ON / OFF", "ENV BUTTON: ON / OFF",
+                                            "K1: ON / OFF", "SEL: ON / OFF  K1: DIG / ANA", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
                                             "SEQ: THE SEQUENCER", "", "ARP: ON / OFF   PLAY: HOLD", "",
                                             "USB AND TRS: THE SAME CHANNEL"};
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
@@ -226,6 +226,7 @@ static void slot_text(uint32_t s, char *v)
     v[0] = 0;
     switch (s) {
     case P_TYPE: p_strcpy(v, N_TYPE_LONG[PV(P_TYPE)], 12); return;
+    case P_CMP_AMT: if (!PV(P_CMP_SW)) { p_strcpy(v, "OFF", 3); return; } break;
     case P_DL_TIME: if (PV(P_DL_SYNC)) { p_strcpy(v, N_SYNC[PV(P_DL_SYNC)], 5); return; } break;
     case P_CP_SPEED: if (PV(P_CP_SYNC)) { p_strcpy(v, N_SYNC[PV(P_CP_SYNC)], 5); return; } break;
     case P_PH_SPEED: if (PV(P_PH_SYNC)) { p_strcpy(v, N_SYNC[PV(P_PH_SYNC)], 5); return; } break;
@@ -285,6 +286,11 @@ static void slot_turn(uint32_t s, int32_t d)
         if (id != s && v < 1) v = 1;
         param_set(id, clampi(v, 0, PARAMS[id].hi));
         fx_wake(id);
+        if (id == P_CMP_AMT) {                          /* THRESH is the compressor's switch: 0 = OFF, up = on */
+            if (PV(P_CMP_AMT) && !PV(P_CMP_SW) && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, 15);   /* level-neutral */
+            param_set(P_CMP_SW, PV(P_CMP_AMT) != 0);
+            ui_mark(E_CARDS); ui_mark(E_FOOTER);
+        }
         if (id == P_TW_SYNC || id == P_CP_SYNC || id == P_DL_SYNC || id == P_PH_SYNC) tempo_sync_publish();
         return;
     }
@@ -604,7 +610,7 @@ static void draw_footer(void)
                 for (i = 0; i < GR_SEGS; i++)
                     if (GR_LAB[i]) { char t[4]; p_fmt_int(t, GR_DB10[i] / 10); text_c(GR_X0 + (int32_t)i * GR_W - 4, 18, GR_W + 6, &FONT_S, t, C_DIM); }
                 text_c(GR_X1, 18, 240 - GR_X1, &FONT_S, "GR DB", C_DIM);
-            } else text_c(0, 18, 240, &FONT_S, "ENV BUTTON: ON / OFF", C_DIM);
+            } else text_c(0, 18, 240, &FONT_S, "K1 THRESH: TURN UP = ON", C_DIM);
             gr_shown = 0xFFFF;                          /* the meter rows: draw them again */
             ui_mark(E_METER);
             cv_blit(0, 205);
@@ -809,13 +815,10 @@ static void ui_input(uint32_t b, uint32_t rel)
     }
     if (b >> BTN_HOME & 1u) ui_goto(ui_page == PG_PERF ? PG_PIANO : PG_PERF);    /* PERFORM <-> the main page */
     if (b >> BTN_EDIT & 1u) ui_goto(PG_VOICE);
-    if (b >> BTN_ENV & 1u) {                            /* DECAY -> COMP; on COMP: the compressor on / off */
-        if (ui_page == PG_COMP) ui_fx_button(PG_COMP, 4);
-        else ui_goto(ui_page == PG_DECAY ? PG_COMP : PG_DECAY);
-    }
+    if (b >> BTN_ENV & 1u) ui_fx_button(PG_PHA, 3);   /* PHASER; on it: on / off (0.9.2: was DECAY / COMP) */
     if (b >> BTN_GLO & 1u) ui_goto(ui_page == PG_TEMPO ? PG_SETUP : ui_page == PG_SETUP ? PG_MIDI : PG_TEMPO);   /* TEMPO -> SETUP -> MIDI */
     if (b >> BTN_LFO & 1u) ui_fx_button(PG_TREM, 0);
-    if (b >> BTN_SEL & 1u) ui_fx_button(PG_CHO, 1);
+    if (b >> BTN_SEL & 1u) ui_fx_button(PG_DELAY, 2); /* DELAY; on it: on / off (0.9.2: was CHORUS) */
     if (b >> BTN_FX & 1u) {                             /* bypass all effects: nothing else changes */
         fx_bypass = !fx_bypass;
         ui_say(fx_bypass ? "EFFECTS OFF" : "EFFECTS ON");
@@ -880,12 +883,12 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     uint32_t k;
     fm1_led_key(BTN_LFO, PV(P_TW_SW) != 0);
     fm1_led_key(BTN_FX, !fx_bypass);
-    fm1_led_key(BTN_SEL, PV(P_CP_SW) != 0);
+    fm1_led_key(BTN_SEL, PV(P_DL_SW) != 0);
     fm1_led_key(BTN_ARP, arp_on());
     fm1_led_key(BTN_SEQ, seq_rec ? (fm1_ms & 256u) != 0 : chord_on());   /* chord mode; blinks: recording */
     fm1_led_key(BTN_HOME, ui_page == PG_PIANO || ui_page == PG_PERF);
     fm1_led_key(BTN_EDIT, ui_page == PG_VOICE);
-    fm1_led_key(BTN_ENV, PV(P_CMP_SW) != 0);
+    fm1_led_key(BTN_ENV, PV(P_PH_SW) != 0);
     fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP || ui_page == PG_MIDI);
     fm1_led_key(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));
     fm1_led_key(BTN_PLAY, ui_page == PG_ARP ? ARP_HOLD : ui_page == PG_SEQ ? seq_play && beat_on : beat_on);   /* ARPEGGIO: HOLD */

@@ -19,11 +19,20 @@
 1700 expect rms < -90
 1800 btn 2
 1900 expect led 2 1
-# PHASER (0.9.1: no button; CC 12 here) -> on; CHORUS: SEL (3) twice -> on
-2000 midi 0xB0 12 127
-2100 midi 0xB0 13 80
+# PHASER: ENV (4) opens it, ENV again -> on (ENV lit); DELAY: SEL (3) opens it, SEL again -> off, again -> on
+2000 btn 4
+2100 btn 4
+2200 expect led 4 1
 2300 btn 3
 2400 btn 3
-2500 expect led 3 1
-2600 shot
-2700 end
+2500 expect led 3 0
+2550 btn 3
+2600 expect led 3 1
+# the COMPRESSOR (no button; 4 pages back from DELAY): K1 THRESH up switches it on
+2610 turn 0 -1
+2620 turn 0 -1
+2630 turn 0 -1
+2640 turn 0 -1
+2700 turn 2 10
+2750 shot
+2800 end
