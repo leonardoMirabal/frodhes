@@ -1,0 +1,40 @@
+# TYPE changes across the engines while notes ring (engine.c; CC 79 = VIBES, CC 80 = the Rhodes types): the old engine fades out over one block (256
+# samples), its voices stop, the new engine plays the next notes; nothing stuck, exact silence at the end.
+50 midi 0xB0 119 127
+60 midi 0xB0 64 127
+# ST77, a chord under the pedal
+100 midi 0x90 48 100
+100 midi 0x90 55 100
+100 midi 0x90 64 100
+600 expect rms > -40
+# -> VIBES while it rings; the new notes play on the bar engine
+700 midi 0xB0 79 64
+720 midi 0x90 60 100
+720 midi 0x90 67 100
+1200 expect rms > -40
+# -> SUITCASE (CC 80 40) while the bars ring
+1300 midi 0xB0 80 40
+1320 midi 0x90 57 100
+1800 expect rms > -40
+# back and forth within a few blocks, then a note on VIBES
+1900 midi 0xB0 79 64
+1903 midi 0xB0 80 0
+1906 midi 0xB0 79 64
+1950 midi 0x90 72 100
+2400 expect rms > -40
+# CC 80 104: DYNO (CC 80 keeps the four Rhodes types; VIBES is CC 79)
+2500 midi 0xB0 80 104
+2520 midi 0x90 52 100
+3000 expect rms > -40
+# pedal up, all notes off: everything stops
+3100 midi 0x80 48 0
+3100 midi 0x80 55 0
+3100 midi 0x80 64 0
+3100 midi 0x80 60 0
+3100 midi 0x80 67 0
+3100 midi 0x80 57 0
+3100 midi 0x80 72 0
+3100 midi 0x80 52 0
+3150 midi 0xB0 64 0
+4500 expect rms < -90
+4500 end

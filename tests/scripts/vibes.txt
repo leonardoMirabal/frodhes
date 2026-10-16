@@ -1,0 +1,69 @@
+# VIBES (TYPE 4, the bar engine, bars.c): a note, its damper, a pedal chord with steals, the loudest voicing, a
+# re-struck note, no tube (BELL 0), silence at the end. RAW: the engine without the effects.
+50 midi 0xB0 119 127
+60 midi 0xB0 79 64
+# one note, key-up: the felt stops it
+100 midi 0x90 60 100
+600 expect rms > -40
+1500 midi 0x80 60 0
+2500 expect rms < -60
+# pedal down, 10 notes one after the other on 8 voices (two steals, 256-sample fades), then pedal up
+2600 midi 0xB0 64 127
+2700 midi 0x90 53 90
+2740 midi 0x90 57 90
+2780 midi 0x90 60 90
+2820 midi 0x90 64 90
+2860 midi 0x90 67 90
+2900 midi 0x90 69 90
+2940 midi 0x90 72 90
+2980 midi 0x90 76 90
+3020 midi 0x90 79 90
+3060 midi 0x90 81 90
+3100 midi 0x80 53 0
+3100 midi 0x80 57 0
+3100 midi 0x80 60 0
+3100 midi 0x80 64 0
+3100 midi 0x80 67 0
+3100 midi 0x80 69 0
+3100 midi 0x80 72 0
+3100 midi 0x80 76 0
+3100 midi 0x80 79 0
+3100 midi 0x80 81 0
+3500 expect rms > -40
+4000 midi 0xB0 64 0
+5000 expect rms < -60
+# the loudest voicing: edge strike, RUBBER, the heaviest mallet, the biggest tube, v127, no clipping
+5100 midi 0xB0 28 127
+5101 midi 0xB0 29 127
+5102 midi 0xB0 30 127
+5103 midi 0xB0 31 127
+5200 midi 0x90 101 127
+5300 expect rms < -6
+5300 expect rms > -40
+5400 midi 0x80 101 0
+# one note struck again 10 times at 50 ms (superposed on its own voice)
+6000 midi 0x90 48 127
+6050 midi 0x90 48 127
+6100 midi 0x90 48 127
+6150 midi 0x90 48 127
+6200 midi 0x90 48 127
+6250 midi 0x90 48 127
+6300 midi 0x90 48 127
+6350 midi 0x90 48 127
+6400 midi 0x90 48 127
+6450 midi 0x90 48 127
+6500 expect rms < -3
+6500 expect rms > -40
+6600 midi 0x80 48 0
+# no tube (BELL 0), soft yarn, NOISE 0
+7600 midi 0xB0 30 0
+7601 midi 0xB0 29 0
+7602 midi 0xB0 104 0
+7603 midi 0xB0 28 64
+7700 midi 0x90 65 100
+8000 expect rms > -50
+8100 midi 0x80 65 0
+# everything off: exact silence
+9000 midi 0xB0 123 0
+10000 expect rms < -90
+10000 end

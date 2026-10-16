@@ -262,7 +262,7 @@ static void seq_save_poll(void)
 {
     sq_hdr_t h, cur;
     uint32_t at = SQ_A;
-    if (!sq_dirty || seq_play || fm1_ms - sq_change_t < 1500u || !rh_quiet() || !fx_quiet()) return;
+    if (!sq_dirty || seq_play || fm1_ms - sq_change_t < 1500u || !eng_quiet() || !fx_quiet()) return;
     {
         static sq_ev_t keep[SQ_MAXEV];                  /* sq_valid() reads into sq_ev: keep ours aside */
         uint32_t n = sq_n;

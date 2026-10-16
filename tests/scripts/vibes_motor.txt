@@ -1,0 +1,35 @@
+# TREM/WAH MODE = MOTOR (CC 21 112..127, bar types only) on VIBES: the bar engine's tube discs turn (the tremolo comes from the
+# engine; fx_trem passes); on a Rhodes TYPE, MOTOR is the amplitude tremolo. Effects on (no RAW).
+50 midi 0xB0 79 64
+51 midi 0xB0 17 64
+52 midi 0xB0 21 127
+53 midi 0xB0 18 127
+54 midi 0xB0 19 78
+55 midi 0xB0 64 127
+100 midi 0x90 69 100
+100 midi 0x90 57 100
+1500 expect rms > -45
+3000 expect rms > -50
+# synced rate (1/8): the motor follows the tempo
+3100 midi 0xB0 20 64
+3200 midi 0x90 64 100
+4000 expect rms > -50
+3990 midi 0xB0 20 0
+# depth 0: the discs stay open
+4100 midi 0xB0 18 0
+4200 midi 0x90 62 100
+4800 expect rms > -45
+# ST77 with MODE = MOTOR: the amplitude tremolo
+4900 midi 0xB0 18 100
+5000 midi 0xB0 80 0
+5100 midi 0x90 60 100
+5600 expect rms > -45
+5700 midi 0xB0 64 0
+5700 midi 0x80 69 0
+5700 midi 0x80 57 0
+5700 midi 0x80 64 0
+5700 midi 0x80 62 0
+5700 midi 0x80 60 0
+5800 midi 0xB0 17 0
+7500 expect rms < -60
+7500 end

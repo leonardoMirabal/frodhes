@@ -90,6 +90,7 @@ static void midi_send(uint32_t st, uint32_t d1, uint32_t d2) { printf("%6u ms  M
 
 static void app_audio(int32_t *out, uint32_t n);
 static void app_main(void);
+static void eng_host_report(void);              /* engine.c: the engines' host counters */
 
 /* the script: at t ms, keys down (bit k = key k, 0 = F3), a button edge, a MIDI message. A script file (the second
  * argument) replaces it, a line each:
@@ -258,6 +259,7 @@ static void platform_poll(void)                 /* one call = one millisecond */
         write_ppm(SHOT[shot++]);
     if (fm1_ms >= end_ms) {
         write_wav();
+        eng_host_report();
         if (host_fails) printf("%u expect(s) FAILED\n", host_fails);
         exit(host_fails ? 1 : 0);
     }

@@ -17,7 +17,7 @@
 #define APP_FL_RANGE(off, n) FL_IN(off, n, 0x97000u, 0x9AFFFu)    /* the user preset bank (presets.c), the
                                                                        * sequencer's pattern (seq.c) */
 #include "platform.c"
-#include "rhodes.c"
+#include "engine.c"     /* the voice engines: rhodes.c (the Rhodes), bars.c (VIBES), and the dispatcher */
 #include "fx.c"
 #include "params.c"
 #include "tempo.c"
@@ -33,7 +33,7 @@ static void app_audio(int32_t *out, uint32_t n)
 #ifndef DINGHY_HOST
     uint32_t t0 = fm1_ticks(), us;
 #endif
-    rh_render(voice_mono, n);
+    eng_render(voice_mono, n);
     fx_process(voice_mono, out, n);
 #ifndef DINGHY_HOST
     us = (fm1_ticks() - t0) / 24u;                 /* 24 MHz ticks -> us (a constant divide) */
@@ -41,7 +41,7 @@ static void app_audio(int32_t *out, uint32_t n)
     if (us > prof_max_us) prof_max_us = us;
     prof_over = us > 5000u ? prof_over + 1u : 0u;  /* two blocks over 5.0 ms of the 5.8 ms: shed a voice (8 voices
                                                     * struck with every effect on peak at 4.8 ms: tools/hil_cpu.py) */
-    if (prof_over >= 2u) { rh_shed_req = 1; prof_over = 0; }
+    if (prof_over >= 2u) { eng_shed_req = 1; prof_over = 0; }
 #endif
 }
 
@@ -53,7 +53,7 @@ static void app_audio(int32_t *out, uint32_t n)
 static uint8_t sus_held, sus_latched, sus_midi, sus_was_latched;
 static uint32_t sus_t;
 
-static void sustain_update(void) { rh_pedal_level(sus_held || sus_latched ? 127u : sus_midi); ui_mark(E_HEADER); }
+static void sustain_update(void) { eng_pedal_level(sus_held || sus_latched ? 127u : sus_midi); ui_mark(E_HEADER); }
 
 static void sustain_button(uint32_t pressed, uint32_t released)
 {
@@ -84,7 +84,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
         if (mx > 16383u) mx = 16383u;
         midi_send(0xB0, 116, mx >> 7); midi_send(0xB0, 117, mx & 127u);
         midi_send(0xB0, 118, prof_us >> 5 > 127u ? 127u : prof_us >> 5);
-        midi_send(0xB0, 115, rh_shed_count & 127u);
+        midi_send(0xB0, 115, eng_shed_count() & 127u);
         prof_max_us = 0;
         return;
     }
@@ -126,7 +126,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
         ui_mark_param(P_TYPE);
         return;
     }
-    if (cc == 120u || cc == 123u) { rh_all_off(); return; }
+    if (cc == 120u || cc == 123u) { eng_all_off(); return; }
     if (cc == 85u) {                                   /* reface CHO/PHA switch: off / chorus / phaser (one of them) */
         param_set(P_CP_SW, v >= 43u && v < 86u); param_set(P_PH_SW, v >= 86u);
         ui_mark_param(P_CP_SW);
@@ -152,9 +152,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
 /* a note a voice is still sounding (for the per-key LEDs under sustain) */
 static int note_sounding(uint32_t n)
 {
-    uint32_t v, act = rh_active_bits;
-    for (v = 0; v < RH_NV; v++) if (act >> v & 1u && rh_notes[v] == n) return 1;
-    return 0;
+    return eng_note_sounding(n);
 }
 
 static void app_main(void)
@@ -223,7 +221,7 @@ static void app_main(void)
         presets_save_poll();
         seq_save_poll();
 
-        if (set_dirty && fm1_ms - set_t_change > 2000u && rh_quiet() && fx_quiet()) {
+        if (set_dirty && fm1_ms - set_t_change > 2000u && eng_quiet() && fx_quiet()) {
             settings_save(&set, sizeof set);    /* only when silent: the erase stalls the audio */
             set_dirty = 0;
         }
