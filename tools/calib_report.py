@@ -3,7 +3,7 @@
 """Calibration report of the Frodhes voice: every key, many velocities, measured the same way every time.
 
     tools/calib_report.py                       golden model (tools/rhodes_model.py), keys 28..103
-    tools/calib_report.py --host                + the C engine on the host (build/host/frodhes): the 4 TYPEs
+    tools/calib_report.py --host                + the C engine on the host (build/host/frodhes): the 4 Rhodes TYPEs
     tools/calib_report.py --name before         save build/calib/before.{json,txt}
     tools/calib_report.py --compare before      print this run against build/calib/before.json
     tools/calib_report.py --keys 40-80 --quick  fewer velocities, shorter renders
@@ -41,7 +41,7 @@ import rhodes_model as gm     # noqa: E402
 FS = 44100
 VELS = [1, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 127]
 VELS_QUICK = [1, 8, 24, 40, 56, 72, 88, 100, 104, 120, 127]
-TYPES = ["STAGE77", "SUITCASE", "FELT", "DYNO"]
+TYPES = ["STAGE77", "SUITCASE", "FELT", "DYNO"]   # the Rhodes TYPEs (CC 80 = index x 32); bar types: tools/bar_scan.py
 BIN = os.path.join(ROOT, "build", "host", "frodhes")
 
 
@@ -486,7 +486,7 @@ def main():
     ap.add_argument("--spec", default=os.path.join(ROOT, "docs/model/data/rhodes_spec.json"))
     ap.add_argument("--keys", default="28-103")
     ap.add_argument("--name", default="latest")
-    ap.add_argument("--host", action="store_true", help="also render the 4 TYPEs through the C engine")
+    ap.add_argument("--host", action="store_true", help="also render the 4 Rhodes TYPEs through the C engine")
     ap.add_argument("--quick", action="store_true", help="fewer velocities, no decay / tuning renders")
     ap.add_argument("--allvel", action="store_true", help="levels at every velocity 1..127 (monotonic check)")
     ap.add_argument("--compare", default=None, help="a previous run's name (build/calib/<name>.json)")

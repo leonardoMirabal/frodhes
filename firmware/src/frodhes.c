@@ -130,8 +130,13 @@ static void midi_cc(uint32_t cc, uint32_t v)
     for (id = 0; id < P_COUNT; id++)
         if (PARAMS[id].cc == cc) {
             int32_t x = (int32_t)v;
-            if (PARAMS[id].hi == 2u) x = v < 43u ? 0 : v < 86u ? 1 : 2;
-            else if (id == P_TYPE) x = (int32_t)(v >> 5);
+            if (id == P_TW_MODE)                       /* PAN 0..63, AM 64..127 as before; MOTOR (112..127) only on a
+                                                        * bar TYPE, so a Rhodes TYPE keeps exactly the old bands */
+                x = v < 64u ? 0 : v >= 112u && TYPE_IS_BARS(PV(P_TYPE)) ? 2 : 1;
+            else if (PARAMS[id].hi == 2u) x = v < 43u ? 0 : v < 86u ? 1 : 2;
+            else if (id == P_TYPE)                     /* 0..95 as before (32 each); the rest shared by DYNO and the
+                                                        * new types: 5 types = 96..111 DYNO, 112..127 VIBES */
+                x = v < 96u ? (int32_t)(v >> 5) : 3 + (int32_t)(((v - 96u) * (N_TYPE_N - 3u)) >> 5);
             else if (PARAMS[id].hi < 127u) x = (int32_t)(v * (PARAMS[id].hi + 1u) >> 7);
             param_set(id, x);
             if (id == P_DL_SYNC || id == P_TW_SYNC || id == P_CP_SYNC || id == P_PH_SYNC) tempo_sync_publish();
@@ -200,7 +205,7 @@ static void app_main(void)
                 if (set.clock && (st == 0xFAu || st == 0xFBu) && !seq_play) seq_start();   /* Start / Continue */
                 else if (set.clock && st == 0xFCu && seq_play) seq_stop();               /* Stop */
             }
-            else if (ty == 0xC0u) preset_load(d1 < 12u ? d1 : d1 >= 16u && d1 < 32u ? PR_NF + d1 - 16u : 255u);
+            else if (ty == 0xC0u) preset_load(d1 < PR_NF ? d1 : d1 >= 16u && d1 < 32u ? PR_NF + d1 - 16u : 255u);
         }
 
         for (k = 0; k < NKEYS; k++)             /* LEDs per key: held, or its note still rings */

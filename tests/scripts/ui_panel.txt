@@ -40,4 +40,30 @@
 3750 shot
 3800 btn 2
 3900 expect led 2 1
-4000 end
+# VIBES (the first bar TYPE): ALGORITHM (encoder 1) four steps from ST77 to VIBES on the main page
+4100 turn 1 1
+4150 turn 1 1
+4200 turn 1 1
+4250 turn 1 1
+4400 shot
+# EDIT: VOICE shows the bar cards (STRIKE, MALLET, TUBE, WEIGHT); SELECT: DECAY (RING, DAMPER, NOISE, TUNE)
+4500 btn 6
+4600 expect led 6 1
+4700 shot
+4800 turn 0 1
+4900 shot
+# LFO: TREM/WAH (the effect is PAN); K1 right: TREM, WAH, then MOTOR (bar types only); the LFO LED stays lit
+5000 btn 5
+5100 turn 2 1
+5200 turn 2 1
+5300 turn 2 1
+5400 expect led 5 1
+5500 shot
+# back to STAGE 77: the card says TREM (MOTOR plays as AM on a Rhodes TYPE), still on
+5600 turn 1 -1
+5650 turn 1 -1
+5700 turn 1 -1
+5750 turn 1 -1
+5900 expect led 5 1
+6000 shot
+6100 end

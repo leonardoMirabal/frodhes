@@ -18,4 +18,23 @@
 3600 midi 0x91 64 100
 4100 expect rms > -60
 4200 midi 0x81 64 0
-4300 end
+# CC 80 TYPE: 104 = DYNO (as before), 112..127 = VIBES; both play
+4400 midi 0xB0 80 104
+4500 midi 0x90 60 100
+5000 expect rms > -60
+5100 midi 0x80 60 0
+5200 midi 0xB0 80 120
+5300 midi 0x90 60 100
+5800 expect rms > -60
+5900 shot
+6000 midi 0x80 60 0
+# CC 21 127 on VIBES: MOTOR (TREM/WAH on: CC 17 64), the LFO LED lit; program change 13: F14 VIBES DRY (off)
+6100 midi 0xB0 17 64
+6200 midi 0xB0 21 127
+6300 expect led 5 1
+6400 midi 0xC0 13 0
+6500 expect led 5 0
+6600 midi 0x90 64 100
+7100 expect rms > -60
+7200 midi 0x80 64 0
+7300 end

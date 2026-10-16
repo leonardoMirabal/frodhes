@@ -22,6 +22,7 @@ static void tempo_sync_publish(void)
         fx_tw_sync_inc = 0xFFFFFFFFu / (s ? s : 1u);                         /* one LFO cycle per division */
     } else
         fx_tw_sync_inc = 0;
+    mot_rate_apply();                                                        /* the vibraphone's motor follows TREM SYNC */
     {
         uint32_t c = PV(P_CP_SYNC), s = c ? beat_samples() * SYNC_UNITS[c] / 96u : 0u;
         fx_cp_sync_inc = c ? 0xFFFFFFFFu / (s ? s : 1u) : 0u;

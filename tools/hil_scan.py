@@ -36,6 +36,21 @@ DRY = dict(DRIVE=0, REV=0, TW_SW=0, CP_SW=0, PH_SW=0, DL_SW=0, CMP_SW=0, RAW=0, 
 # (ARP, CHORD, SEQ, SQREC: the arpeggiator, chord mode, the sequencer and its recording off)
 
 
+RHODES_TYPES = 4           # TYPE 0..3 (ST77 SUIT FELT DYNO); 4.. are bar types (VIBES), scanned by their own tests
+
+
+def type_cc(t):
+    """the CC 80 value inside TYPE t's band (frodhes.c midi_cc: 0..95 by 32, 96..127 shared by DYNO and the bar
+    types): 8, 40, 72, then 104 (DYNO), 120 (VIBES) with 5 types"""
+    import re
+    src = open(os.path.join(ROOT, "firmware", "src", "params.c")).read()
+    n = int(re.search(r'\[P_TYPE\] = \{"[^"]*", (\d+),', src).group(1)) + 1
+    if t < 3:
+        return t * 32 + 8
+    w = 32 / (n - 3)                       # the width of each band above 96
+    return int(96 + (t - 3) * w + w / 2)
+
+
 def param_defaults():
     """every parameter's CC and the CC value that sets its default (parsed from firmware/src/params.c), so each test
     starts from the same state whatever the FM-1 had saved"""
@@ -45,7 +60,7 @@ def param_defaults():
     for name, hi, de, cc in re.findall(r'\[P_(\w+)\] = \{"[^"]*", (\d+), (\d+), F_\w+, (\d+)', src):
         hi, de, cc = int(hi), int(de), int(cc)
         if name == "TYPE":
-            v = de * 32 + 8
+            v = type_cc(de)
         elif hi == 2:
             v = (0, 64, 127)[de]
         elif hi < 127:
@@ -256,8 +271,8 @@ def velocity(r, rep):
 @test
 def types(r, rep):
     out = {}
-    for t in range(4):
-        r.dry(TYPE=t * 32 + 8)
+    for t in range(RHODES_TYPES):                   # the Rhodes TYPEs (the bar types have their own tests)
+        r.dry(TYPE=type_cc(t))
         x = r.take(1.6, [(0.05, "on", 57, 100), (0.7, "off", 57, 0), (0.8, "on", 69, 100), (1.4, "off", 69, 0)])
         a = x[int(0.1 * FS):int(0.6 * FS), 0]
         b = x[int(0.85 * FS):int(1.3 * FS), 0]
@@ -266,8 +281,8 @@ def types(r, rep):
     lv = [out[t]["level"] for t in out]
     ce = [out[t]["centroid_a3"] for t in out]
     distinct = max(ce) / max(min(ce), 1) > 1.3
-    return distinct and max(lv) - min(lv) < 3, ("levels " + ", ".join(f"{lv[t]:.1f}" for t in range(4)) +
-                                                " dB; A3 centroid " + ", ".join(f"{ce[t]:.0f}" for t in range(4)) + " Hz")
+    return distinct and max(lv) - min(lv) < 3, ("levels " + ", ".join(f"{lv[t]:.1f}" for t in range(RHODES_TYPES)) +
+                                                " dB; A3 centroid " + ", ".join(f"{ce[t]:.0f}" for t in range(RHODES_TYPES)) + " Hz")
 
 
 CHORD = [(0.05, "on", n, 100) for n in (57, 64, 69)] + [(1.25, "off", n, 0) for n in (57, 64, 69)]

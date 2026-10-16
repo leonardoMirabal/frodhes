@@ -1,16 +1,17 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Frodhes presets (IMPLEMENTATION-v3 §10.6, §12): 12 factory presets (const) and 16 user presets in a bank of two
+/* Frodhes presets (IMPLEMENTATION-v3 §10.6, §12): 14 factory presets (const; F13 / F14 are VIBES) and 16 user presets in a bank of two
  * flash sectors written alternately (A 0x97000, B 0x98000): erase the older sector, write the records, the header
  * last; load picks the valid copy with the higher sequence number, so a cut-off save never loses the bank.
  *
- *   PRESETS encoder   browse F01..F12, U01..U16; loads 400 ms after the last detent (the edit goes to undo)
+ *   PRESETS encoder   browse F01..F14, U01..U16; loads 400 ms after the last detent (the edit goes to undo)
  *   SAVE              open the save mode: PRESETS / K1 pick the slot, SAVE again saves (when quiet), HOME cancels
  *   SAVE held 700 ms  undo / redo the last load
- *   MIDI PC           0..11 -> F01..F12, 16..31 -> U01..U16 */
+ *   MIDI PC           0..13 -> F01..F14, 16..31 -> U01..U16 */
 
-#define PR_NF 12u
+#define PR_NF 14u                               /* 12 Rhodes (F01..F12, unchanged), then the bar types' */
 #define PR_NU 16u
-_Static_assert(PR_NF == PR_NF_UI && PR_NF + PR_NU == PR_NALL_UI, "ui.c preset counts");
+_Static_assert(PR_NF == PR_NF_UI && PR_NF + PR_NU == PR_NALL_UI && PR_NF == PR_NF_SET, "ui.c / params.c preset counts");
+_Static_assert(PR_NF <= 16u, "program changes 16..31 are the user presets");
 #define PR_BANK_A 0x97000u
 #define PR_BANK_B 0x98000u
 #define PR_MAGIC 0x42505246u                    /* "FRPB" */
@@ -26,7 +27,8 @@ static uint32_t pr_seq;
 
 /* factory presets: (param id, value) pairs over the defaults, 0xFF ends (values ESTIMATE, tuned by ear) */
 static const char *const PR_FNAME[PR_NF] = {"STAGE 77", "70S PHASER", "SUITCASE", "80S BALLAD", "SLAPBACK", "BRIGHT CHO",
-                                            "FUNK WAH", "BARK", "TAPE ECHO", "DREAM", "RADIO", "AM TREMOLO"};
+                                            "FUNK WAH", "BARK", "TAPE ECHO", "DREAM", "RADIO", "AM TREMOLO",
+                                            "VIBE MOTOR", "VIBES DRY"};
 static const uint8_t PR_FDATA[PR_NF][32] = {
     {P_TYPE, 0, P_DRIVE, 13, P_RV_DEPTH, 25, 0xFF},
     {P_TYPE, 0, P_DRIVE, 25, P_PH_SW, 1, P_PH_DEPTH, 83, P_PH_SPEED, 38, P_PH_FDBK, 50, P_RV_DEPTH, 32, 0xFF},
@@ -44,6 +46,9 @@ static const uint8_t PR_FDATA[PR_NF][32] = {
      P_DL_DEPTH, 42, P_DL_TIME, 100, P_RV_DEPTH, 70, P_DECAY, 80, 0xFF},
     {P_TYPE, 3, P_DRIVE, 115, P_RV_DEPTH, 0, P_TONE, 94, 0xFF},
     {P_TYPE, 0, P_DRIVE, 13, P_TW_SW, 1, P_TW_DEPTH, 70, P_TW_RATE, 100, P_TW_MODE, 1, P_TW_SHAPE, 90, P_RV_DEPTH, 25, 0xFF},
+    /* VIBES (PLAN §8.3; estimates, tuned by ear on the FM-1): the motor at 3.5 Hz (RATE 78), and without it */
+    {P_TYPE, 4, P_TW_SW, 1, P_TW_MODE, 2, P_TW_DEPTH, 90, P_TW_RATE, 78, P_TW_SHAPE, 0, P_RV_DEPTH, 45, 0xFF},
+    {P_TYPE, 4, P_RV_DEPTH, 20, 0xFF},
 };
 
 /* ---- bank storage (host: two RAM sectors) */
@@ -177,7 +182,7 @@ static void preset_autoname(char *n)                     /* TYPE + the effects o
     const char *parts[5];
     uint32_t i = 0, k, np = 0;
     parts[np++] = N_TYPE[PV(P_TYPE)];
-    if (PV(P_TW_SW)) parts[np++] = N_TW[PV(P_TW_SW)];
+    if (PV(P_TW_SW)) parts[np++] = PV(P_TW_SW) == 1u && PV(P_TW_MODE) == 2u ? "MOT" : N_TW[PV(P_TW_SW)];
     if (PV(P_CP_SW)) parts[np++] = "CHO";
     if (PV(P_PH_SW) && np < 4u) parts[np++] = "PHA";
     if (PV(P_DL_SW) && np < 5u) parts[np++] = PV(P_DL_SW) == 1 ? "DD" : "AD";

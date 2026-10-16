@@ -23,14 +23,34 @@ typedef struct {
     const char *const *names; /* F_ENUM */
 } pdesc_t;
 
-static const char *const N_TYPE[] = {"ST77", "SUIT", "FELT", "DYNO"};
-static const char *const N_TYPE_LONG[] = {"STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO"};
+static const char *const N_TYPE[] = {"ST77", "SUIT", "FELT", "DYNO", "VIBE"};
+static const char *const N_TYPE_LONG[] = {"STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "VIBES"};
+/* TYPE -> engine (0 Rhodes, 1 bars), the engine's own type index, and the drive row (fx.c, 0..3). Append-only, in
+ * step with N_TYPE. The Rhodes types 0..3 are unchanged; VIBES (4) is the first bar type. */
+#define N_TYPE_N 5u
+static const uint8_t TYPE_ENGINE[N_TYPE_N] = {0, 0, 0, 0, 1};
+static const uint8_t TYPE_SUB[N_TYPE_N] = {0, 1, 2, 3, 0};
+static const uint8_t TYPE_DRIVE_ROW[N_TYPE_N] = {0, 1, 2, 3, 0};
+_Static_assert(sizeof N_TYPE / sizeof N_TYPE[0] == N_TYPE_N && sizeof N_TYPE_LONG / sizeof N_TYPE_LONG[0] == N_TYPE_N,
+               "one name per TYPE");
+#define TYPE_IS_BARS(t) ((uint32_t)(t) < N_TYPE_N && TYPE_ENGINE[(t)] != 0u)   /* the main loop's TYPE (the UI) */
+/* the engine queries (engine.c, lane C, after the merge: it defines ENG_HAS_BARS, the BK_* knob ids and these
+ * functions). Until then a stub: a bar TYPE plays as STAGE 77 and MOTOR as the tremolo's AM, so the tree builds and
+ * plays; the UI already shows the bar cards (it asks TYPE_IS_BARS of the main loop's TYPE, not the engine) */
+#ifndef ENG_HAS_BARS
+enum { BK_STRIKE, BK_MALLET, BK_TUBE, BK_WEIGHT, BK_RING, BK_DAMPER, BK_NOISE,      /* the VOICE / DECAY cards, 0..127 */
+       BK_MOT_ON, BK_MOT_DEPTH, BK_MOT_SHAPE, BK_MOT_INC };                          /* the motor (INC: a Q32 step) */
+static void eng_set_type(uint32_t t) { rh_type = (uint8_t)(t < N_TYPE_N && TYPE_ENGINE[t] ? 0u : t); }
+static int eng_is_bars(void) { return 0; }       /* the engine plays bars for the TYPE last set (not the ISR latch) */
+static void eng_bar_knob(uint32_t k, uint32_t v) { (void)k; (void)v; }
+#endif
+#define PR_NF_SET 14u              /* presets.c PR_NF: the factory presets (12 before VIBES) */
 static const char *const N_TW[] = {"OFF", "TRM", "WAH"};
 static const char *const N_CP[] = {"OFF", "CHO", "PHA"};   /* "PHA": records before 0.4 */
 static const char *const N_ONOFF[] = {"OFF", "ON"};
 static const char *const N_RATIO[] = {"1.5:1", "2:1", "3:1", "4:1", "6:1", "8:1", "10:1", "20:1"};
 static const char *const N_DL[] = {"OFF", "DIG", "ANA"};
-static const char *const N_TWM[] = {"PAN", "AM"};
+static const char *const N_TWM[] = {"PAN", "AM", "MOT"};   /* MOT (2): the vibraphone's motor, bar types only */
 static const char *const N_FLT[] = {"OFF", "LP12", "LP18", "HP12", "HP18", "BP", "NOTCH"};
 static const char *const N_LFOS[] = {"SINE", "TRI", "SAW", "RAMP", "SQR", "S&H"};
 static const char *const N_RETRIG[] = {"FREE", "KEY"};
@@ -38,13 +58,13 @@ static const char *const N_SYNC[] = {"FREE", "1/32", "16T", "1/16", "8T", "16D",
                                      "1/1", "2BAR", "4BAR"};
 
 static const pdesc_t PARAMS[P_COUNT] = {
-    [P_TYPE] = {"TYPE", 3, 0, F_ENUM, 80, N_TYPE},
+    [P_TYPE] = {"TYPE", 4, 0, F_ENUM, 80, N_TYPE},
     [P_DRIVE] = {"DRV", 127, 0, F_R10, 81, 0},
     [P_TW_SW] = {"TREM", 2, 0, F_ENUM, 17, N_TW},
     [P_TW_DEPTH] = {"DPTH", 127, 0, F_R10, 18, 0},
     [P_TW_RATE] = {"RATE", 127, 90, F_HZ, 19, 0},
     [P_TW_SYNC] = {"SYNC", 13, 0, F_DIV, 20, N_SYNC},
-    [P_TW_MODE] = {"MODE", 1, 0, F_ENUM, 21, N_TWM},
+    [P_TW_MODE] = {"MODE", 2, 0, F_ENUM, 21, N_TWM},
     [P_TW_SHAPE] = {"SHPE", 127, 0, F_R10, 22, 0},
     [P_CP_SW] = {"CHO", 1, 0, F_ENUM, 85, N_ONOFF},
     [P_CP_DEPTH] = {"DPTH", 127, 0, F_R10, 86, 0},
@@ -137,6 +157,7 @@ static void params_defaults(void)
     uint32_t i;
     for (i = 0; i < sizeof set; i++) ((uint8_t *)&set)[i] = 0;
     set.ver = SET_VER;
+    set.flags = 4u;                /* a fresh record: its preset index is already in the VIBES layout */
     set.preset = 0;
     set.bpm10 = 1200;
     set.clock = 1;                 /* EXT: follows MIDI clock when it comes (USB or TRS) */
@@ -166,6 +187,10 @@ static void params_sanitize(void)
     if (!(set.flags & 1u)) { PV(P_LEVEL) = PARAMS[P_LEVEL].def; set.flags |= 1u; }   /* records before 0.8 */
     if (!(set.flags & 2u)) { PV(P_CMP_RATIO) = PARAMS[P_CMP_RATIO].def; PV(P_CMP_GAIN) = 0; set.flags |= 2u; }
     if (!(set.flags & 8u)) { for (i = P_FL_TYPE; i <= P_LFO_RETRIG; i++) PV(i) = PARAMS[i].def; set.flags |= 8u; }   /* 0.9.3 */
+    if (!(set.flags & 4u)) {                         /* records before VIBES had 12 factory presets: U01 was 12 */
+        if (set.preset >= 12u && set.preset < 12u + 16u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 12u);
+        set.flags |= 4u;
+    }
     for (i = 0; i < P_COUNT; i++) if (PV(i) > PARAMS[i].hi) PV(i) = PARAMS[i].def;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.bpm10 < 400 || set.bpm10 > 2400) set.bpm10 = 1200;
@@ -182,18 +207,37 @@ static void params_sanitize(void)
     for (i = 0; i < 3; i++) if (set.last_on[i] < 1 || set.last_on[i] > 2) set.last_on[i] = 1;
 }
 
-/* ---- apply a parameter to the engine (main loop; volatile one-writer handover) */
+/* the TREM/WAH switch and mode as fx.c gets them. MOTOR (SW 1, MODE 2) is the bar engine's: the tremolo stays off
+ * (its gains ramp to unity) and the engine drives the tubes; on a Rhodes TYPE (or before the bar engine is merged)
+ * MOTOR plays as the tremolo's AM. PAN / AM / WAH reach fx.c unchanged. */
+static int tw_motor(void) { return PV(P_TW_SW) == 1u && PV(P_TW_MODE) == 2u; }
+static void tw_apply(void)
+{
+    int m = tw_motor(), bars = eng_is_bars();
+    fx_set(FXP_TW_SW, m && bars ? 0 : PV(P_TW_SW));
+    fx_set(FXP_TW_MODE, m ? 1 : PV(P_TW_MODE));
+    eng_bar_knob(BK_MOT_ON, (uint32_t)(m && bars));
+}
+/* the motor's rate: 0.5 .. 10 Hz (the tremolo's law, clamped at 120 = 10.08 Hz), or TREM SYNC's (tempo.c) */
+#define MOT_RATE_V(v) ((v) > 120 ? 120 : (v))
+static void mot_rate_apply(void)
+{
+    eng_bar_knob(BK_MOT_INC, fx_tw_sync_inc ? fx_tw_sync_inc : FX_LFO_INC[MOT_RATE_V(PV(P_TW_RATE))]);
+}
+
+/* ---- apply a parameter to the engine (main loop; volatile one-writer handover). The Rhodes volatiles are written
+ * exactly as before; the bar engine gets the same knobs through eng_bar_knob() (each engine reads only its own) */
 static void param_apply(uint32_t id)
 {
     int32_t v = PV(id);
     switch (id) {
-    case P_TYPE: rh_type = (uint8_t)v; fx_set(FXP_DRIVE_ROW, v); break;
+    case P_TYPE: eng_set_type((uint32_t)v); fx_set(FXP_DRIVE_ROW, TYPE_DRIVE_ROW[v]); tw_apply(); break;
     case P_DRIVE: fx_set(FXP_DRIVE, v); break;
-    case P_TW_SW: fx_set(FXP_TW_SW, v); break;
-    case P_TW_DEPTH: fx_set(FXP_TW_DEPTH, v); break;
-    case P_TW_RATE: fx_set(FXP_TW_RATE, v); break;
-    case P_TW_MODE: fx_set(FXP_TW_MODE, v); break;
-    case P_TW_SHAPE: fx_set(FXP_TW_SHAPE, v); break;
+    case P_TW_SW: tw_apply(); break;
+    case P_TW_DEPTH: fx_set(FXP_TW_DEPTH, v); eng_bar_knob(BK_MOT_DEPTH, (uint32_t)v); break;
+    case P_TW_RATE: fx_set(FXP_TW_RATE, v); mot_rate_apply(); break;
+    case P_TW_MODE: tw_apply(); break;
+    case P_TW_SHAPE: fx_set(FXP_TW_SHAPE, v); eng_bar_knob(BK_MOT_SHAPE, (uint32_t)v); break;
     case P_CP_SW: fx_set(FXP_CP_SW, v); break;
     case P_CP_DEPTH: fx_set(FXP_CP_DEPTH, v); break;
     case P_CP_SPEED: fx_set(FXP_CP_SPEED, v); break;
@@ -203,13 +247,13 @@ static void param_apply(uint32_t id)
     case P_DL_TIME: fx_set(FXP_DL_TIME, v); break;
     case P_DL_FDBK: fx_set(FXP_DL_FDBK, v); break;
     case P_RV_DEPTH: fx_set(FXP_RV_DEPTH, v); break;
-    case P_TONE: rh_tone_off = (v - 64) * (1 << 18); break;          /* +-0.5 gap */
-    case P_BARK: rh_bark_s = (int32_t)KN_P64[v]; rh_bark_g = (int32_t)KN_P64I[v]; break;
-    case P_BELL: rh_bell = (int32_t)KN_P32[v]; break;
-    case P_HAMMER: rh_ham = (int32_t)KN_HAM[v]; break;
-    case P_DECAY: rh_k_decay = (int32_t)DECAY_K[v]; break;           /* k = 1/S, S = 2^((v-64)/32): higher = longer */
-    case P_RELEASE: rh_k_rel = (int32_t)DECAY_K[v]; break;
-    case P_NOISE: rh_thump = KN_THUMP[v]; rh_felt = KN_FELT[v]; break;
+    case P_TONE: rh_tone_off = (v - 64) * (1 << 18); eng_bar_knob(BK_STRIKE, (uint32_t)v); break;   /* +-0.5 gap */
+    case P_BARK: rh_bark_s = (int32_t)KN_P64[v]; rh_bark_g = (int32_t)KN_P64I[v]; eng_bar_knob(BK_MALLET, (uint32_t)v); break;
+    case P_BELL: rh_bell = (int32_t)KN_P32[v]; eng_bar_knob(BK_TUBE, (uint32_t)v); break;
+    case P_HAMMER: rh_ham = (int32_t)KN_HAM[v]; eng_bar_knob(BK_WEIGHT, (uint32_t)v); break;
+    case P_DECAY: rh_k_decay = (int32_t)DECAY_K[v]; eng_bar_knob(BK_RING, (uint32_t)v); break;   /* k = 1/S, S = 2^((v-64)/32): higher = longer */
+    case P_RELEASE: rh_k_rel = (int32_t)DECAY_K[v]; eng_bar_knob(BK_DAMPER, (uint32_t)v); break;
+    case P_NOISE: rh_thump = KN_THUMP[v]; rh_felt = KN_FELT[v]; eng_bar_knob(BK_NOISE, (uint32_t)v); break;
     case P_DL_TONE: fx_set(FXP_DL_TONE, v); break;
     case P_PH_SW: fx_set(FXP_PH_SW, v); break;
     case P_PH_DEPTH: fx_set(FXP_PH_DEPTH, v); break;
