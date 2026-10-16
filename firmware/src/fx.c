@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Frodhes effects: the Yamaha reface CP chain (IMPLEMENTATION-v3 §9):
- *   COMP -> DRIVE -> TREMOLO/WAH (mono -> stereo) -> PHASER -> CHORUS -> D.DELAY/A.DELAY -> REVERB (HALL) -> master
+ *   COMP -> FILTER -> DRIVE -> TREMOLO/WAH (mono -> stereo) -> PHASER -> CHORUS -> D.DELAY/A.DELAY -> REVERB (HALL)
+ *   -> master   (0.9.3: the FILTER, 12 / 18 / 24 dB, with its LFO)
  * (0.4: the reface's CHO/PHA switch became two effects that can run together, and a compressor came first)
  * Mono int32 Q15 (with headroom) until the tremolo, stereo after. Every effect keeps its state while bypassed
  * (switching on never clicks); switching an effect off cuts its input and lets the tail ring.
@@ -23,8 +24,12 @@ enum { FXP_DRIVE, FXP_TW_SW, FXP_TW_DEPTH, FXP_TW_RATE, FXP_TW_MODE, FXP_TW_SHAP
        FXP_DL_SW, FXP_DL_DEPTH, FXP_DL_TIME, FXP_DL_FDBK, FXP_DL_SYNC,
        FXP_RV_DEPTH, FXP_DRIVE_ROW, FXP_RAW, FXP_DL_TONE,
        FXP_PH_SW, FXP_PH_DEPTH, FXP_PH_SPEED, FXP_PH_FDBK, FXP_CMP_SW, FXP_CMP_AMT, FXP_CMP_ATK, FXP_CMP_REL,
-       FXP_LEVEL, FXP_CMP_RATIO, FXP_CMP_GAIN, FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
-static volatile int32_t fx_p[FXP_N] = {[FXP_DL_FDBK] = 80, [FXP_DL_TONE] = 70, [FXP_LEVEL] = 64, [FXP_CMP_RATIO] = 3};
+       FXP_LEVEL, FXP_CMP_RATIO, FXP_CMP_GAIN,
+       FXP_FL_TYPE, FXP_FL_FREQ, FXP_FL_RESO, FXP_FL_LFO, FXP_LFO_SHAPE, FXP_LFO_RATE, FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
+static volatile int32_t fx_p[FXP_N] = {[FXP_DL_FDBK] = 80, [FXP_DL_TONE] = 70, [FXP_LEVEL] = 64, [FXP_CMP_RATIO] = 3,
+                                       [FXP_FL_FREQ] = 127, [FXP_LFO_RATE] = 40};
+static volatile uint32_t fx_lfo_sync_inc;        /* main loop: a synced LFO rate (Q32 step), 0 = free */
+static volatile uint8_t fx_lfo_retrig;           /* main loop: a note started and RETRIG is on: the LFO from 0 */
 static volatile uint32_t fx_cp_sync_inc;         /* main loop: a synced chorus rate, 0 = free */
 static volatile uint32_t fx_ph_sync_inc;         /* main loop: a synced phaser rate, 0 = free */
 static volatile int32_t fx_cmp_gr;               /* ISR: the compressor's gain reduction now, log2 Q12 (>= 0) */
@@ -54,6 +59,85 @@ static inline int32_t osc_sine(uint32_t ph)               /* Q32 phase -> +-3276
     uint32_t i = ph >> 22;
     int32_t f = (int32_t)((ph >> 7) & 0x7FFFu);
     return FX_SINE[i] + (((FX_SINE[i + 1] - FX_SINE[i]) * f) >> 15);
+}
+
+/* ---- the LFO (its page) and the FILTER: TPT state-variable stages (stable at any setting). TYPE: OFF, LP12 LP18 LP24,
+ * HP12 HP18 HP24, BP, NOTCH. 12 dB / octave = one resonant stage; 24 = a flat (Q 0.707) stage, then the resonant one;
+ * 18 = the resonant stage and a 6 dB one-pole. FREQ 30 Hz .. 16 kHz (log), RESO Q 0.707 .. 20, LFO moves FREQ by up to
+ * +-4 octaves. Coefficients every 32 samples (smoothed), 32-bit division only (two partial quotients). */
+static uint32_t lfo_ph, lfo_rnd = 0x9E3779B9u;
+static int32_t lfo_sh, fl_ic[2][2], fl_op, fl_pos = 127 * 516;
+static uint8_t fl_was_on;
+static int32_t lfo_value(void)                            /* +-32767 */
+{
+    uint32_t ph = lfo_ph;
+    switch (fx_p[FXP_LFO_SHAPE]) {
+    case 1: return ph < 0x80000000u ? (int32_t)(ph >> 15) - 32768 : 98303 - (int32_t)(ph >> 15);   /* triangle */
+    case 2: return (int32_t)(ph >> 16) - 32768;                                                     /* saw up */
+    case 3: return 32767 - (int32_t)(ph >> 16);                                                     /* saw down */
+    case 4: return ph < 0x80000000u ? 32767 : -32767;                                               /* square */
+    case 5: return lfo_sh;                                                                          /* sample & hold */
+    default: return osc_sine(ph);
+    }
+}
+static int32_t recip27(uint32_t den)                      /* 2^43 / den (den Q16) = 1 / den in Q27, 32-bit only */
+{
+    uint32_t q = 0x80000000u / den, r = 0x80000000u - q * den;
+    return (int32_t)((q << 12) + (r << 12) / den);
+}
+typedef struct { int32_t a1, a2, a3, k; } svf_t;
+static void svf_coef(svf_t *c, int32_t g, int32_t k)      /* g, k in Q24 */
+{
+    c->a1 = recip27(65536u + (uint32_t)(((int64_t)g * (g + k)) >> 32));
+    c->a2 = (int32_t)(((int64_t)g * c->a1) >> 24);
+    c->a3 = (int32_t)(((int64_t)g * c->a2) >> 24);
+    c->k = k;
+}
+static inline int32_t svf_tick(const svf_t *c, int32_t *ic, int32_t x, uint32_t mode)   /* 0 LP 1 HP 2 BP 3 NOTCH */
+{
+    int32_t v3 = x - ic[1], v1, v2, kv1;
+    v1 = (int32_t)(((int64_t)c->a1 * ic[0] + (int64_t)c->a2 * v3 + (1 << 26)) >> 27);   /* rounded: no DC creep */
+    v2 = ic[1] + (int32_t)(((int64_t)c->a2 * ic[0] + (int64_t)c->a3 * v3 + (1 << 26)) >> 27);
+    ic[0] = clampi(2 * v1 - ic[0], -(1 << 24), 1 << 24);
+    ic[1] = clampi(2 * v2 - ic[1], -(1 << 24), 1 << 24);
+    kv1 = (int32_t)(((int64_t)c->k * v1 + (1 << 23)) >> 24);
+    return mode == 0u ? v2 : mode == 1u ? x - kv1 - v2 : mode == 2u ? kv1 : x - kv1;
+}
+static void fx_filter(int32_t *m, uint32_t n)
+{
+    static const uint8_t MODE[9] = {0, 0, 0, 0, 1, 1, 1, 2, 3}, POLES[9] = {0, 2, 3, 4, 2, 3, 4, 2, 2};
+    uint32_t type = fx_p[FXP_FL_TYPE], inc = fx_lfo_sync_inc ? fx_lfo_sync_inc : FX_LFO_INC[fx_p[FXP_LFO_RATE]], sb, j;
+    int32_t k = (int32_t)FX_FL_K[fx_p[FXP_FL_RESO]], base = fx_p[FXP_FL_FREQ] * 516, depth = fx_p[FXP_FL_LFO];
+    uint32_t mode, poles;
+    if (fx_lfo_retrig) { fx_lfo_retrig = 0; lfo_ph = 0; }
+    if (!type || type > 8u) { fl_was_on = 0; lfo_ph += inc * n; return; }   /* off: the LFO keeps time, the filter rests */
+    mode = MODE[type]; poles = POLES[type];
+    if (!fl_was_on) { memset(fl_ic, 0, sizeof fl_ic); fl_op = 0; fl_pos = base; fl_was_on = 1; }
+    for (sb = 0; sb < n; sb += 32u) {
+        uint32_t prev = lfo_ph, i;
+        int32_t tgt, g, f, gp = 0;
+        svf_t c, c0;
+        lfo_ph += inc * 32u;
+        if (lfo_ph < prev) { lfo_rnd = lfo_rnd * 1664525u + 1013904223u; lfo_sh = (int32_t)(lfo_rnd >> 16) - 32768; }
+        tgt = clampi(base + (int32_t)(((int64_t)lfo_value() * depth * 28932) >> 22), 0, 65535);   /* 4 octaves */
+        fl_pos += (tgt - fl_pos) >> 2;
+        i = (uint32_t)fl_pos >> 8; f = fl_pos & 255;
+        g = (int32_t)FX_FL_G[i] + ((((int32_t)FX_FL_G[i + 1] - (int32_t)FX_FL_G[i]) * f) >> 8);         /* Q24 */
+        svf_coef(&c, g, k);
+        if (poles == 4u) svf_coef(&c0, g, (int32_t)FX_FL_K[0]);                                          /* Q 0.707 */
+        if (poles == 3u) gp = (1 << 27) - recip27(65536u + ((uint32_t)g >> 8));                           /* g/(1+g) */
+        for (j = sb; j < sb + 32u && j < n; j++) {
+            int32_t x = m[j] * 8;                                            /* 8x finer inside: a lower noise floor */
+            if (poles == 4u) x = svf_tick(&c0, fl_ic[0], x, mode);           /* 24: the flat stage first */
+            x = svf_tick(&c, fl_ic[1], x, mode);
+            if (poles == 3u) {                                               /* 18: + a 6 dB one-pole */
+                int32_t v = (int32_t)(((int64_t)(x - fl_op) * gp + (1 << 26)) >> 27), lp = v + fl_op;
+                fl_op = clampi(lp + v, -(1 << 24), 1 << 24);
+                x = mode == 0u ? lp : x - lp;
+            }
+            m[j] = (x + 4) >> 3;
+        }
+    }
 }
 
 /* ---- DRIVE (Felucca track_dist; per TYPE drive row: gain scale, bias, make-up) */
@@ -528,6 +612,7 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
     }
     for (j = 0; j < n; j++) { dry[j] = m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }
     fx_comp(m, n);
+    fx_filter(m, n);
     fx_drive(m, n);
     fx_trem(m, fx_L, fx_R, n);
     fx_phaser(fx_L, fx_R, n);

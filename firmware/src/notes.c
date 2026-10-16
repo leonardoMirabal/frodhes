@@ -163,6 +163,7 @@ static void src_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
     uint8_t notes[CH_MAX];
     uint32_t c;
     if (src_active[slot]) return;
+    if (PV(P_LFO_RETRIG)) fx_lfo_retrig = 1;                  /* the filter's LFO from the start (LFO page: KEY) */
     if (chord_on()) c = chord_build(n, notes); else { notes[0] = (uint8_t)n; c = 1; }
     src_start(slot, notes, c, vel, echo);
 }

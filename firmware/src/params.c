@@ -11,10 +11,12 @@ enum { P_TYPE, P_DRIVE, P_TW_SW, P_TW_DEPTH, P_TW_RATE, P_TW_SYNC, P_TW_MODE, P_
        P_CMP_SW, P_CMP_AMT, P_CMP_ATK, P_CMP_REL,                             /* 0.4: the compressor */
        P_LEVEL,                                                               /* 0.8: the preset's volume trim */
        P_CMP_RATIO, P_CMP_GAIN,                                               /* 0.8: the compressor's 4 knobs */
+       P_FL_TYPE, P_FL_FREQ, P_FL_RESO, P_FL_LFO,                             /* 0.9.3: the filter */
+       P_LFO_SHAPE, P_LFO_RATE, P_LFO_SYNC, P_LFO_RETRIG,                     /*        its LFO */
        P_COUNT };
 #define P_SLOTS 48u                /* room in the settings / preset records (P_COUNT <= P_SLOTS) */
 
-enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB, F_THR, F_GAIN };
+enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB, F_THR, F_GAIN, F_FHZ };
 typedef struct {
     const char *lab;          /* <= 4 chars: panel / card label */
     uint8_t hi, def, fmt, cc;
@@ -29,6 +31,9 @@ static const char *const N_ONOFF[] = {"OFF", "ON"};
 static const char *const N_RATIO[] = {"1.5:1", "2:1", "3:1", "4:1", "6:1", "8:1", "10:1", "20:1"};
 static const char *const N_DL[] = {"OFF", "DIG", "ANA"};
 static const char *const N_TWM[] = {"PAN", "AM"};
+static const char *const N_FLT[] = {"OFF", "LP12", "LP18", "LP24", "HP12", "HP18", "HP24", "BP", "NOTCH"};
+static const char *const N_LFOS[] = {"SINE", "TRI", "SAW", "RAMP", "SQR", "S&H"};
+static const char *const N_RETRIG[] = {"FREE", "KEY"};
 static const char *const N_SYNC[] = {"FREE", "1/32", "16T", "1/16", "8T", "16D", "1/8", "4T", "8D", "1/4", "4D", "1/2",
                                      "1/1", "2BAR", "4BAR"};
 
@@ -73,6 +78,14 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_LEVEL] = {"LVL", 127, 64, F_DB, 110, 0},              /* 64 = 0 dB, 0.1875 dB a step: -12 .. +11.8 dB */
     [P_CMP_RATIO] = {"RAT", 7, 3, F_ENUM, 112, N_RATIO},     /* 4:1 */
     [P_CMP_GAIN] = {"MKUP", 127, 0, F_GAIN, 113, 0},         /* make-up 0 .. +24 dB */
+    [P_FL_TYPE] = {"FILT", 8, 0, F_ENUM, 70, N_FLT},         /* 0.9.3: CC 70 type, 74 cutoff, 71 resonance, 72 LFO */
+    [P_FL_FREQ] = {"FREQ", 127, 127, F_FHZ, 74, 0},
+    [P_FL_RESO] = {"RESO", 127, 0, F_R10, 71, 0},
+    [P_FL_LFO] = {"LFO", 127, 0, F_R10, 72, 0},
+    [P_LFO_SHAPE] = {"SHPE", 5, 0, F_ENUM, 75, N_LFOS},      /*        CC 75 shape, 76 rate, 77 sync, 78 retrig */
+    [P_LFO_RATE] = {"RATE", 127, 40, F_HZ, 76, 0},
+    [P_LFO_SYNC] = {"SYNC", 14, 0, F_DIV, 77, N_SYNC},
+    [P_LFO_RETRIG] = {"TRIG", 1, 0, F_ENUM, 78, N_RETRIG},
 };
 _Static_assert(P_COUNT <= P_SLOTS, "records hold P_SLOTS parameters");
 
@@ -152,6 +165,7 @@ static void params_sanitize(void)
     if (set.ver != SET_VER) { params_defaults(); return; }
     if (!(set.flags & 1u)) { PV(P_LEVEL) = PARAMS[P_LEVEL].def; set.flags |= 1u; }   /* records before 0.8 */
     if (!(set.flags & 2u)) { PV(P_CMP_RATIO) = PARAMS[P_CMP_RATIO].def; PV(P_CMP_GAIN) = 0; set.flags |= 2u; }
+    if (!(set.flags & 8u)) { for (i = P_FL_TYPE; i <= P_LFO_RETRIG; i++) PV(i) = PARAMS[i].def; set.flags |= 8u; }   /* 0.9.3 */
     for (i = 0; i < P_COUNT; i++) if (PV(i) > PARAMS[i].hi) PV(i) = PARAMS[i].def;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
     if (set.bpm10 < 400 || set.bpm10 > 2400) set.bpm10 = 1200;
@@ -207,6 +221,12 @@ static void param_apply(uint32_t id)
     case P_LEVEL: fx_set(FXP_LEVEL, v); break;
     case P_CMP_RATIO: fx_set(FXP_CMP_RATIO, v); break;
     case P_CMP_GAIN: fx_set(FXP_CMP_GAIN, v); break;
+    case P_FL_TYPE: fx_set(FXP_FL_TYPE, v); break;
+    case P_FL_FREQ: fx_set(FXP_FL_FREQ, v); break;
+    case P_FL_RESO: fx_set(FXP_FL_RESO, v); break;
+    case P_FL_LFO: fx_set(FXP_FL_LFO, v); break;
+    case P_LFO_SHAPE: fx_set(FXP_LFO_SHAPE, v); break;
+    case P_LFO_RATE: fx_set(FXP_LFO_RATE, v); break;
     default: break;                                                   /* SYNC: tempo.c; SPREAD: not yet in the engine */
     }
 }
@@ -263,6 +283,13 @@ static void param_text(uint32_t id, char *s)
         t = (int32_t)(((uint64_t)FX_LFO_INC[v] * 441000u) >> 32);
         if (t >= 100) p_fmt_int(s, t / 10);
         else { s[0] = (char)('0' + t / 10); s[1] = '.'; s[2] = (char)('0' + t % 10); s[3] = 0; }
+        break;
+    }
+    case F_FHZ: {                                  /* the filter's cutoff: "850" Hz / "4.2K" */
+        int32_t hz = FX_FL_HZ[v];
+        if (hz < 1000) p_fmt_int(s, hz);
+        else if (hz < 10000) { s[0] = (char)('0' + hz / 1000); s[1] = '.'; s[2] = (char)('0' + (hz / 100) % 10); s[3] = 'K'; s[4] = 0; }
+        else { p_fmt_int(s, hz / 1000); s[2] = 'K'; s[3] = 0; }
         break;
     }
     case F_MS: {

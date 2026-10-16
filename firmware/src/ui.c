@@ -4,8 +4,8 @@
  * (a full screen is ~77 ms of SPI: drawn at once it would delay the keys).
  *
  *   SELECT     turns through the pages (the order of the chain):
- *              PERFORM ASSIGN FRODHES (the main page) VOICE DECAY COMP TREM/WAH PHASER CHORUS DELAY TEMPO SCALE
- *              CHORD SEQUENCER ARPEGGIO SETUP MIDI
+ *              PERFORM ASSIGN FRODHES (the main page) VOICE DECAY COMP FILTER TREM/WAH PHASER CHORUS DELAY TEMPO
+ *              SCALE CHORD SEQUENCER ARPEGGIO LFO SETUP MIDI
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on SEQUENCER: a cursor, step by step)   PRESETS  sounds (presets.c; on SEQUENCER: bar by bar)
  *   shortcuts  HOME = PERFORM (again: the main page), EDIT = VOICE, LFO / ENV / SEL = TREM / PHASER / DELAY (on
@@ -21,8 +21,8 @@ static void preset_name(uint32_t idx, char *s);
 static void tempo_tap(void);                          /* tempo.c */
 static void tempo_set10(uint32_t b);
 
-enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_TEMPO, PG_SCALE,
-       PG_CHORD, PG_SEQ, PG_ARP, PG_SETUP, PG_MIDI, PG_N };
+enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_FILTER, PG_TREM, PG_PHA, PG_CHO, PG_DELAY,
+       PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_SETUP, PG_MIDI, PG_N };
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL = 8, E_N = 9, E_CARDS = 10 };   /* E_CARDS: all four;
                                     * E_METER: COMP's meter / SEQUENCER's cells, E_ROLL: SEQUENCER's NOW / NEXT */
 /* card slots: a parameter id (< P_COUNT) or one of these */
@@ -33,9 +33,9 @@ enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, 
 static int sq_browsing(void);                           /* the SEQUENCER page's cursor (below) */
 static uint32_t sq_delete_step(void);
 static void sq_browse(int32_t d);
-static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "TREM/WAH", "PHASER",
+static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "FILTER", "TREM/WAH", "PHASER",
                                              "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
-                                             "ARPEGGIO", "SETUP", "MIDI"};
+                                             "ARPEGGIO", "LFO", "SETUP", "MIDI"};
 static const uint8_t PAGE_S[PG_N][4] = {
     {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
     {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
@@ -43,6 +43,7 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {P_TONE, P_BARK, P_BELL, P_HAMMER},
     {P_DECAY, P_RELEASE, P_NOISE, S_TUNE},
     {P_CMP_AMT, P_CMP_RATIO, P_CMP_ATK, P_CMP_GAIN},
+    {P_FL_TYPE, P_FL_FREQ, P_FL_RESO, P_FL_LFO},
     {S_TWKIND, P_TW_DEPTH, P_TW_RATE, P_TW_SHAPE},
     {P_PH_SW, P_PH_DEPTH, P_PH_SPEED, P_PH_FDBK},
     {P_CP_SW, P_CP_DEPTH, P_CP_SPEED, P_CP_SYNC},
@@ -52,6 +53,7 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM},
     {S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT},
     {S_ARPMODE, S_ARPRATE, S_ARPOCT, S_ARPGATE},
+    {P_LFO_SHAPE, P_LFO_RATE, P_LFO_SYNC, P_LFO_RETRIG},
     {P_DL_TONE, P_LEVEL, S_USBVOL, S_NONE},
     {S_MCH, S_TRS, S_CLOCK, S_NONE},
 };
@@ -62,6 +64,7 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"TONE", "BARK", "BELL", "HAMMER"},
     {"DECAY", "RELEASE", "NOISE", "TUNE"},
     {"THRESH", "RATIO", "ATTACK", "MAKEUP"},
+    {"TYPE", "FREQ", "RESO", "LFO"},
     {"EFFECT", "DEPTH", "RATE", "SHAPE"},
     {"EFFECT", "DEPTH", "SPEED", "FEEDBK"},
     {"EFFECT", "DEPTH", "SPEED", "SYNC"},
@@ -71,14 +74,15 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"TYPE", "INVERSION", "VOICING", "STRUM"},
     {"BARS", "QUANT", "SWING", "EDIT"},
     {"MODE", "RATE", "OCTAVES", "GATE"},
+    {"SHAPE", "RATE", "SYNC", "RETRIG"},
     {"DLY TONE", "LEVEL", "USB VOL", ""},
     {"CHANNEL", "TRS IN", "CLOCK", ""},
 };
 static const char *const PAGE_HINT[PG_N] = {"NEXT PAGE: ASSIGN THE KNOBS", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
-                                            "K1 THRESH: UP = ON, 0 = OFF", "LFO BUTTON: ON / OFF", "ENV BUTTON: ON / OFF",
+                                            "K1 THRESH: UP = ON, 0 = OFF", "THE LFO: ITS OWN PAGE", "LFO BUTTON: ON / OFF", "ENV BUTTON: ON / OFF",
                                             "K1: ON / OFF", "SEL: ON / OFF  K1: DIG / ANA", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
-                                            "SEQ: THE SEQUENCER", "", "ARP: ON / OFF   PLAY: HOLD", "",
+                                            "SEQ: THE SEQUENCER", "", "ARP: ON / OFF   PLAY: HOLD", "MOVES THE FILTER (ITS LFO)", "",
                                             "USB AND TRS: THE SAME CHANNEL"};
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
                                            "PENTA", "MPENTA", "BLUES"};
@@ -149,16 +153,19 @@ static const perf_t PERF_T[] = {
     {P_TONE, "TONE"}, {P_BARK, "BARK"}, {P_BELL, "BELL"}, {P_HAMMER, "HAMMER"}, {P_DECAY, "DECAY"},
     {P_RELEASE, "RELEASE"}, {P_NOISE, "NOISE"}, {S_KVEL, "KEY VEL"}, {P_LEVEL, "LEVEL"},
     {S_ARPRATE, "ARP RATE"}, {S_ARPGATE, "ARP GATE"},
+    {P_FL_FREQ, "FILTER"}, {P_FL_RESO, "FILT RESO"}, {P_FL_LFO, "FILT LFO"}, {P_LFO_RATE, "LFO RATE"},   /* 0.9.3 */
 };
 #define PERF_N (sizeof PERF_T / sizeof PERF_T[0])
 static uint32_t perf_idx(uint32_t k)                     /* knob k's entry in PERF_T */
 {
     uint32_t v = set.perf[k];
-    return v && v <= PERF_N ? v - 1u : k;                /* default: TREM/WAH, PHASER, CHORUS, DELAY */
+    static const uint8_t DEF[4] = {0, 1, 27, 3};         /* default: TREM/WAH, PHASER, FILTER (0.9.3), DELAY */
+    return v && v <= PERF_N ? v - 1u : DEF[k & 3u];
 }
 /* turning an effect's amount up from PERFORM switches the effect on (TREM/WAH: as TREM unless WAH was chosen) */
 static void perf_wake(uint32_t id)
 {
+    if (id == P_FL_FREQ) { if (!PV(P_FL_TYPE) && PV(P_FL_FREQ) < 127) param_set(P_FL_TYPE, 3); return; }   /* LP24 */
     if (!PV(id)) return;
     if (id == P_TW_DEPTH && !PV(P_TW_SW)) param_set(P_TW_SW, 1);
     else if (id == P_PH_DEPTH && !PV(P_PH_SW)) param_set(P_PH_SW, 1);
@@ -230,6 +237,7 @@ static void slot_text(uint32_t s, char *v)
     case P_DL_TIME: if (PV(P_DL_SYNC)) { p_strcpy(v, N_SYNC[PV(P_DL_SYNC)], 5); return; } break;
     case P_CP_SPEED: if (PV(P_CP_SYNC)) { p_strcpy(v, N_SYNC[PV(P_CP_SYNC)], 5); return; } break;
     case P_PH_SPEED: if (PV(P_PH_SYNC)) { p_strcpy(v, N_SYNC[PV(P_PH_SYNC)], 5); return; } break;
+    case P_LFO_RATE: if (PV(P_LFO_SYNC)) { p_strcpy(v, N_SYNC[PV(P_LFO_SYNC)], 5); return; } break;
     case P_TW_RATE:
         if (PV(P_TW_SW) == 2) { fmt_r10(v, PV(s)); return; }          /* WAH: resonance */
         if (PV(P_TW_SYNC)) { p_strcpy(v, N_SYNC[PV(P_TW_SYNC)], 5); return; }
@@ -282,6 +290,7 @@ static void slot_turn(uint32_t s, int32_t d)
         else if (id == P_CP_SPEED && PV(P_CP_SYNC)) { id = P_CP_SYNC; step = -sgn(d); }
         else if (id == P_PH_SPEED && PV(P_PH_SYNC)) { id = P_PH_SYNC; step = -sgn(d); }
         else if (id == P_TW_RATE && PV(P_TW_SYNC) && PV(P_TW_SW) != 2) { id = P_TW_SYNC; step = -sgn(d); }
+        else if (id == P_LFO_RATE && PV(P_LFO_SYNC)) { id = P_LFO_SYNC; step = -sgn(d); }
         v = PV(id) + step;
         if (id != s && v < 1) v = 1;
         param_set(id, clampi(v, 0, PARAMS[id].hi));
@@ -291,7 +300,7 @@ static void slot_turn(uint32_t s, int32_t d)
             param_set(P_CMP_SW, PV(P_CMP_AMT) != 0);
             ui_mark(E_CARDS); ui_mark(E_FOOTER);
         }
-        if (id == P_TW_SYNC || id == P_CP_SYNC || id == P_DL_SYNC || id == P_PH_SYNC) tempo_sync_publish();
+        if (id == P_TW_SYNC || id == P_CP_SYNC || id == P_DL_SYNC || id == P_PH_SYNC || id == P_LFO_SYNC) tempo_sync_publish();
         return;
     }
     switch (s) {
@@ -871,7 +880,7 @@ static void ui_input(uint32_t b, uint32_t rel)
         ui_hot_card = (uint8_t)k; ui_hot_t = fm1_ms;
         ui_mark(E_CARD0 + k);
         if (s == P_DL_SW || s == P_CP_SW || s == S_TWKIND || s == P_TW_SYNC || s == P_CP_SYNC || s == P_DL_SYNC ||
-            s == P_PH_SYNC || s == P_CMP_SW)
+            s == P_PH_SYNC || s == P_CMP_SW || s == P_LFO_SYNC || s == P_FL_TYPE)
             ui_mark(E_CARDS);                           /* a switch or sync changes what the other cards show */
     }
 }

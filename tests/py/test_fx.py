@@ -24,6 +24,7 @@ def run(tag, ccs, notes, end_ms):
     lines = [f"20 midi 0xB0 {cc} {v}" for cc, v in ccs]
     for t, n, v, dur in notes:
         lines += [f"{t} midi 0x90 {n} {v}", f"{t + dur} midi 0x80 {n} 0"]
+    lines.sort(key=lambda l: int(l.split()[0]))         # the host runs the script in time order (chords: all on first)
     lines.append(f"{end_ms} end")
     open(out + ".txt", "w").write("\n".join(lines) + "\n")
     subprocess.run([BIN, out, out + ".txt"], check=True, capture_output=True)
@@ -119,3 +120,54 @@ def test_level_trim():
     lo, _ = run("lvl0", [(81, 0), (91, 0), (110, 0)], notes, 800)
     d = rms_db(seg(lo, 0.12, 0.6)) - rms_db(seg(ref, 0.12, 0.6))
     assert abs(d + 12.0) < 0.5, d
+
+
+def centroid(x):
+    sp = np.abs(np.fft.rfft(x * np.hanning(len(x))))
+    fr = np.fft.rfftfreq(len(x), 1 / FS)
+    return float(np.sum(sp * fr) / np.sum(sp))
+
+
+def band_db(x, f0, f1):
+    sp = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    fr = np.fft.rfftfreq(len(x), 1 / FS)
+    return 10 * np.log10(np.sum(sp[(fr >= f0) & (fr < f1)]) + 1e-12)
+
+
+# the FILTER (0.9.3): CC 70 TYPE in 9 bands of 14.2 (OFF, LP12 15-28, LP18, LP24 43-56, HP12 57-71, HP18, HP24,
+# BP 100-113, NOTCH 114-127), 74 cutoff,
+# 71 resonance, 72 LFO amount; the LFO: 75 shape in 6 bands (square: 86-106), 76 rate
+CHORD = [(100, n, 110, 1600) for n in (48, 55, 60, 64, 67, 72, 76)]
+
+
+def test_filter_off_is_transparent():
+    L0, _ = run("flt0", [(81, 0), (91, 0), (70, 0)], CHORD, 1900)
+    L1, _ = run("flt1", [(81, 0), (91, 0), (70, 20), (74, 127), (72, 0), (71, 0)], CHORD, 1900)   # LP wide open: 16 kHz
+    a, b = seg(L0, 0.3, 1.5), seg(L1, 0.3, 1.5)
+    assert abs(rms_db(a) - rms_db(b)) < 0.5          # the open low-pass changes nothing audible
+    assert np.max(np.abs(L1)) < 32000
+
+
+def test_filter_types_do_their_job():
+    dry, _ = run("fltd", [(81, 0), (91, 0), (70, 0), (72, 0)], CHORD, 1900)   # (OFF: settings persist between runs)
+    lp, _ = run("fltlp", [(81, 0), (91, 0), (70, 20), (74, 40), (71, 0), (72, 0)], CHORD, 1900)   # LP ~200 Hz
+    hp, _ = run("flthp", [(81, 0), (91, 0), (70, 64), (74, 90), (71, 0), (72, 0)], CHORD, 1900)   # HP ~2 kHz
+    d, l, h = (seg(x, 0.3, 1.5) for x in (dry, lp, hp))
+    assert band_db(l, 1000, 8000) < band_db(d, 1000, 8000) - 20      # the low-pass takes the highs away
+    assert band_db(h, 50, 400) < band_db(d, 50, 400) - 20            # the high-pass the lows
+    assert centroid(l) < centroid(d) < centroid(h)
+    for x in (l, h):
+        assert np.all(np.isfinite(x)) and np.max(np.abs(x)) < 32000
+
+
+def test_filter_resonance_and_lfo():
+    q0, _ = run("fltq0", [(81, 0), (91, 0), (70, 20), (74, 60), (71, 0), (72, 0)], CHORD, 1900)
+    q1, _ = run("fltq1", [(81, 0), (91, 0), (70, 20), (74, 60), (71, 127), (72, 0)], CHORD, 1900)
+    fc = 30 * (16000 / 30) ** (60 * 2 / 254)                         # the card's cutoff for 60
+    a, b = seg(q0, 0.3, 1.5), seg(q1, 0.3, 1.5)
+    assert band_db(b, fc / 1.3, fc * 1.3) > band_db(a, fc / 1.3, fc * 1.3) + 6   # resonance: a peak at the cutoff
+    assert np.all(np.isfinite(b)) and np.max(np.abs(b)) < 32700
+    # the LFO (square, ~2 Hz, full depth) moves the cutoff: the brightness changes over time
+    m, _ = run("fltlfo", [(81, 0), (91, 0), (70, 20), (74, 70), (72, 127), (75, 96), (76, 40)], CHORD, 1900)
+    cs = [centroid(seg(m, t, t + 0.1)) for t in np.arange(0.3, 1.4, 0.1)]
+    assert max(cs) > 1.3 * min(cs)                   # (LP12: the centroid swings ~1.5x)

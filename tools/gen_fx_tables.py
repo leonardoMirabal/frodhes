@@ -9,6 +9,9 @@
   FX_PH_A[33]       phaser allpass coefficients (Q14) for corner frequencies 150 Hz .. 4.8 kHz (log), 33 points
   FX_WAH[64][3]     wah SVF rows (g Q14 for 300 Hz .. 2.5 kHz, log); the resonance k is applied at run time
   FX_CMP_*, FX_LOG2F, FX_EXP2F   the compressor's detector and gain computer
+  FX_FL_G[258]      the FILTER's g = tan(pi fc / fs) in Q24 for fc 30 Hz .. 16 kHz (log, 256 steps + guards)
+  FX_FL_K[128]      its damping k = 1 / Q in Q24: Q 0.707 .. 20 (RESO, exponential)
+  FX_FL_HZ[128]     FREQ's value in Hz (the card)
 """
 import math
 import os
@@ -63,6 +66,11 @@ def main():
     out.append(arr("FX_DRV_LVL", "uint16_t", [int(round(32767 * 10 ** (-0.0896 * v / 20))) for v in range(128)], 12))
     # LEVEL (the preset's volume trim): Q12 gain, 64 = 0 dB, 0.1875 dB a step
     out.append(arr("FX_LVL", "uint16_t", [int(round(4096 * 10 ** ((v - 64) * 0.1875 / 20))) for v in range(128)], 12))
+    # FILTER (a TPT state-variable filter, fx.c fx_filter): cutoff 30 Hz .. 16 kHz over 256 log steps
+    fl = lambda i: 30 * (16000 / 30) ** (min(i, 256) / 256)
+    out.append(arr("FX_FL_G", "uint32_t", [int(round(math.tan(math.pi * fl(i) / FS) * 2 ** 24)) for i in range(258)], 8))
+    out.append(arr("FX_FL_K", "uint32_t", [int(round(2 ** 24 / (0.7071 * (20 / 0.7071) ** (v / 127)))) for v in range(128)], 8))
+    out.append(arr("FX_FL_HZ", "uint16_t", [int(round(fl(v * 256 / 127))) for v in range(128)], 12))
     os.makedirs(os.path.join(ROOT, "firmware/gen"), exist_ok=True)
     open(os.path.join(ROOT, "firmware/gen/fx_tables.h"), "w").write("\n".join(out))
 

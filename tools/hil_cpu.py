@@ -68,7 +68,8 @@ def main():
         return attack, held
 
     heavy = dict(DRIVE=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
-                 CP_SW=64, CP_DEPTH=127, DL_SW=127, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127)
+                 CP_SW=64, CP_DEPTH=127, DL_SW=127, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
+                 FL_TYPE=50, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # the filter: LP24 (its two stages), the LFO
     bass8 = [28, 31, 33, 35, 36, 38, 40, 41]
     chord8 = [48, 52, 55, 59, 62, 64, 67, 71]
     rows = []
