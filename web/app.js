@@ -25,7 +25,7 @@ var Module = window.Module = {
         M.HEAPU8.set(b.subarray(0, 260), M._web_store());
       }
     } catch (e) { /* private window: no storage */ }
-    M._web_master(+$("master").value);
+    M._web_master(master);
     requestAnimationFrame(frame);
   },
   print: t => console.log(t), printErr: t => console.warn(t),
@@ -44,7 +44,7 @@ function frame() {
   g.putImageData(img, 0, 0);
   const led = new Uint8Array(M.HEAPU8.buffer, M._web_leds(), 64);
   for (const b of document.querySelectorAll("button.b")) b.classList.toggle("on", led[+b.dataset.id] === 1);
-  for (const k of document.querySelectorAll(".kb > div")) {
+  for (const k of document.querySelectorAll("#kb > .key")) {
     const v = led[14 + (+k.dataset.k)];
     k.classList.toggle("lit", v === 1);
     k.classList.toggle("glow", v === 2);
@@ -109,44 +109,77 @@ window.addEventListener("error", e => status("Error: " + e.message));
 window.addEventListener("unhandledrejection", e => status("Error: " + e.reason));
 $("start").onclick = startAudio;
 
-// ---- the panel
-function buildPanel() {
-  const encs = $("encs");
-  for (const [name, id] of ENCS) {
-    const k = document.createElement("div"); k.className = "knob";
-    k.innerHTML = `<div class="dial"></div><span>${name}</span>`;
-    let angle = 0, lastY = null, acc = 0;
-    const turn = d => { if (!M || !d) return; M._web_enc(id, d); angle += d * 15; k.firstChild.style.setProperty("--a", angle + "deg"); };
-    k.addEventListener("wheel", e => { e.preventDefault(); turn(e.deltaY < 0 ? 1 : -1); }, { passive: false });
-    k.addEventListener("pointerdown", e => { lastY = e.clientY; acc = 0; k.setPointerCapture(e.pointerId); });
-    k.addEventListener("pointermove", e => {
-      if (lastY === null) return;
-      acc += lastY - e.clientY; lastY = e.clientY;
-      while (Math.abs(acc) >= 8) { turn(acc > 0 ? 1 : -1); acc -= Math.sign(acc) * 8; }
-    });
-    k.addEventListener("pointerup", () => { lastY = null; });
-    encs.appendChild(k);
-  }
-  const btns = $("btns");
-  for (const name of BTN_ORDER) {
-    const b = document.createElement("button"); b.className = "b"; b.textContent = name; b.dataset.id = BTN[name];
-    const down = e => { e.preventDefault(); if (!M) return; startAudio(); M._web_btn(BTN[name], 1); b.classList.add("down"); };
-    const up = () => { if (!M || !b.classList.contains("down")) return; M._web_btn(BTN[name], 0); b.classList.remove("down"); };
-    b.addEventListener("pointerdown", down); b.addEventListener("pointerup", up); b.addEventListener("pointerleave", up);
-    btns.appendChild(b);
-  }
-  $("master").oninput = e => M && M._web_master(+e.target.value);
+// ---- the panel, laid out as the FM-1 (device coordinates, 1200 x 700; fit() scales it to the window)
+const KNOBS = [["MASTER", -1, 50, 22, "VOLUME"], ["SELECT", 0, 200, 22, "PAGES"], ["PRESETS", 6, 50, 152, "SOUNDS"],
+               ["ALGORITHM", 1, 200, 152, "PIANO TYPE"], ["KNOB 1", 2, 685, 22, "CARD 1"], ["KNOB 2", 3, 800, 22, "CARD 2"],
+               ["KNOB 3", 4, 915, 22, "CARD 3"], ["KNOB 4", 5, 1030, 22, "CARD 4"]];
+const HINT = { FX: "ALL FX", SEL: "CHORUS", ENV: "DECAY·COMP", LFO: "TREM·WAH", EDIT: "VOICE", GLO: "TEMPO·MIDI",
+               HOME: "PERFORM", SAVE: "PRESET", ARP: "ARPEGGIO", SEQ: "CHORD·SEQ", PLAY: "TAP·START", REC: "SUSTAIN",
+               "OCT−": "", "OCT+": "" };
+const ROWS = [["FX", "SEL", "ENV", "LFO", "EDIT", "GLO"], ["HOME", "SAVE", "ARP", "SEQ", "PLAY", "REC"]];
+let master = 3500;
+function knob(name, id, x, y, sub) {
+  const k = document.createElement("div");
+  k.className = "knob" + (id >= 0 ? " endless" : "");
+  k.style.left = x + "px"; k.style.top = y + "px";
+  k.innerHTML = `<div class="lab">${name}</div><div class="dial"></div><div class="sub">${sub}</div>`;
+  const dial = k.children[1];
+  let angle = 0, lastY = null, acc = 0;
+  const show = () => dial.style.setProperty("--a", (id < 0 ? -135 + 270 * master / 4096 : angle) + "deg");
+  const turn = d => {
+    if (!d) return;
+    if (id < 0) { master = Math.max(0, Math.min(4096, master + d * 128)); if (M) M._web_master(master); }
+    else { if (!M) return; M._web_enc(id, d); angle += d * 15; }
+    show();
+  };
+  k.addEventListener("wheel", e => { e.preventDefault(); turn(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+  k.addEventListener("pointerdown", e => { e.preventDefault(); lastY = e.clientY; acc = 0; k.setPointerCapture(e.pointerId); });
+  k.addEventListener("pointermove", e => {
+    if (lastY === null) return;
+    acc += lastY - e.clientY; lastY = e.clientY;
+    while (Math.abs(acc) >= 8) { turn(acc > 0 ? 1 : -1); acc -= Math.sign(acc) * 8; }
+  });
+  k.addEventListener("pointerup", () => { lastY = null; });
+  k.addEventListener("pointercancel", () => { lastY = null; });
+  show();
+  return k;
 }
+function button(name, id, x, y, cls) {
+  const b = document.createElement("button");
+  b.className = "b" + (cls ? " " + cls : ""); b.dataset.id = id;
+  b.style.left = x + "px"; b.style.top = y + "px";
+  b.innerHTML = (name === "PLAY" ? "PLAY/STOP" : name) + (HINT[name] ? `<small>${HINT[name]}</small>` : "");
+  if (name === "PLAY") b.classList.add("small");
+  const down = e => { e.preventDefault(); if (!M) return; startAudio(); M._web_btn(id, 1); b.classList.add("down"); b.setPointerCapture(e.pointerId); };
+  const up = () => { if (!M || !b.classList.contains("down")) return; M._web_btn(id, 0); b.classList.remove("down"); };
+  b.addEventListener("pointerdown", down); b.addEventListener("pointerup", up); b.addEventListener("pointercancel", up);
+  return b;
+}
+function buildPanel() {
+  const c = $("ctrls");
+  for (const [n, id, x, y, sub] of KNOBS) c.appendChild(knob(n, id, x, y, sub));
+  c.appendChild(button("OCT−", BTN["OCT−"], 68, 299, "oct"));
+  c.appendChild(button("OCT+", BTN["OCT+"], 216, 299, "oct"));
+  ROWS.forEach((row, r) => row.forEach((n, i) => c.appendChild(button(n, BTN[n], 712 + i * 76, 198 + r * 76, n === "REC" ? "rec" : ""))));
+}
+function fit() {                                     // the device scaled to the window's width (phones too)
+  const st = $("stage"), d = $("device"), w = st.clientWidth, s = Math.min(1, w / 1200);
+  d.style.transform = `scale(${s})`;
+  d.classList.toggle("shrunk", s < 0.999);
+  d.style.marginLeft = Math.max(0, (w - 1200 * s) / 2) + "px";
+  st.style.height = 700 * s + "px";
+}
+addEventListener("resize", fit);
 
-function buildKeys() {
+function buildKeys() {                               // 16 white keys below, the 11 black ones above, as on the FM-1
   const kb = $("kb"), whites = [];
   const black = s => [1, 3, 6, 8, 10].includes((5 + s) % 12);   // F3 = key 0 = pitch class 5
   for (let k = 0; k < NKEYS; k++) if (!black(k)) whites.push(k);
-  const W = 100 / whites.length;
+  const step = (1140 - 40) / whites.length;
   for (let k = 0; k < NKEYS; k++) {
-    const d = document.createElement("div"); d.dataset.k = k;
-    if (black(k)) { const left = whites.indexOf(k - 1); d.className = "k"; d.style.left = `calc(${(left + 1) * W}% - ${W * 0.3}%)`; d.style.width = `${W * 0.6}%`; }
-    else { d.className = "w"; d.style.left = `${whites.indexOf(k) * W}%`; d.style.width = `${W}%`; }
+    const d = document.createElement("div"); d.dataset.k = k; d.className = "key";
+    if (black(k)) { const w = whites.indexOf(k - 1); d.style.left = `${20 + (w + 1) * step - 27}px`; d.style.top = "26px"; }
+    else { d.style.left = `${20 + whites.indexOf(k) * step + (step - 54) / 2}px`; d.style.top = "160px"; }
     d.addEventListener("pointerdown", e => { e.preventDefault(); d.setPointerCapture(e.pointerId); press(k, true); });
     d.addEventListener("pointerup", () => press(k, false));
     d.addEventListener("pointercancel", () => press(k, false));
@@ -158,7 +191,7 @@ function press(k, down) {
   startAudio();
   keysDown = down ? keysDown | (1 << k) : keysDown & ~(1 << k);
   M._web_keys(keysDown >>> 0);
-  const el = document.querySelector(`.kb > div[data-k="${k}"]`); if (el) el.classList.toggle("down", down);
+  const el = document.querySelector(`#kb > .key[data-k="${k}"]`); if (el) el.classList.toggle("down", down);
 }
 
 // ---- the computer keyboard
@@ -199,6 +232,7 @@ async function setupMidi() {
 
 buildPanel();
 buildKeys();
+fit();
 setupMidi();
 
 // ---- ?selftest: a note through the engine, its level and the screen's state in the title (for headless checks)
