@@ -4,7 +4,10 @@
 firmware for the longest audio block since the last query (frodhes.c midi_cc; replies on CC 116/117 = us / 4).
 The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder starts at 5000 us.
 
-    python3 tools/hil_cpu.py
+    python3 tools/hil_cpu.py [--engine vibes]
+
+--engine vibes selects VIBES (CC 79), with the motor in the trem slot (CC 17 64 + CC 21 127) wherever the effects
+are on, and adds the bar engine's worst voicings (edge strike, RUBBER, tube and weight at 127).
 """
 import os
 import sys
@@ -13,11 +16,14 @@ import time
 sys.path.insert(0, os.path.dirname(__file__))
 from hil_scan import CC, DRY, param_defaults  # noqa: E402
 
+CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31)
+
 BLOCK_US = 5805
 
 
 def main():
     import mido
+    vibes = "--engine" in sys.argv and sys.argv[sys.argv.index("--engine") + 1] == "vibes"
     outs = [n for n in mido.get_output_names() if any(k in n.lower() for k in ("felucca", "fm-1"))]
     ins = [n for n in mido.get_input_names() if any(k in n.lower() for k in ("felucca", "fm-1"))]
     if not outs or not ins:
@@ -37,6 +43,11 @@ def main():
             cc(CC["CP_SW"], d.pop("CP_SW"))
         for k, v in d.items():
             cc(CC[k], v)
+        if vibes:
+            cc(79, 64)                                # VIBES
+            if d.get("TW_SW"):
+                cc(17, 64)
+                cc(21, 127)                           # MOTOR (the trem slot on a bar type)
         time.sleep(0.3)
 
     def query():
@@ -92,6 +103,12 @@ def main():
         print(f"{name:44s} attack {att:5d} us ({100 * att / BLOCK_US:4.1f} %)   held {held:5d} us "
               f"({100 * held / BLOCK_US:4.1f} %)   voices shed {shed}")
 
+    if vibes:
+        edge = dict(TONE=127, BARK=127, BELL=127, HAMMER=127)
+        run("8 bass v127, edge strike, rubber, no effects", edge, bass8, 127)
+        run("8-note chord v127, edge, every effect + motor", dict(heavy, **edge), chord8, 127)
+        run("8 bass v127, edge + pedal, every effect + motor", dict(heavy, **edge), bass8, 127, pedal=True, hold=3.0)
+        heavy = dict(heavy, **edge)                   # the repeated-chord test at the worst voicing too
     run("idle, no effects", {})
     run("idle, every effect on (heaviest)", heavy)
     run("8-note chord v100, no effects", {}, chord8)
