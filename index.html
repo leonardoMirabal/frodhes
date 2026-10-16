@@ -5,93 +5,139 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Frodhes emulator</title>
 <meta name="description" content="Frodhes, a physically modelled Fender Rhodes for the M-VAVE FM-1, running in the browser: the same firmware code, compiled to WebAssembly.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
 <style>
-  :root { --bg: #151515; --panel: #232323; --edge: #333; --ink: #e8e2d6; --dim: #8a8478; --acc: #ff9a1f; --led: #ff5a1f; }
+  :root { --page: #8e8c90; --body: #1c1c1e; --tray: #161618; --well: #121213; --knob: #2a2a2c; --knob-edge: #0e0e0f;
+          --btn: #3a3a3c; --btn-ink: #e9e7e2; --lit: #fff4d6; --lit-ink: #151515; --key: #0d0d0e; --key-line: #c9c6bf;
+          --amber: #ffa63a; --ink: #f2f0ea; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif;
-         touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
-  main { max-width: 980px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 20px; margin: 0 0 2px; letter-spacing: .02em; }
-  .sub { color: var(--dim); margin: 0 0 14px; }
-  .sub a { color: var(--acc); }
-  .unit { background: var(--panel); border: 1px solid var(--edge); border-radius: 14px; padding: 16px; display: grid;
-          grid-template-columns: auto 1fr; gap: 18px; }
-  .screen { width: 360px; height: 360px; image-rendering: pixelated; border-radius: 6px; background: #000;
-            border: 6px solid #0c0c0c; display: block; }
-  .right { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
-  .knob { width: 64px; text-align: center; user-select: none; touch-action: none; }
-  .knob .dial { width: 48px; height: 48px; margin: 0 auto 4px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #4a4a4a, #1d1d1d);
-                border: 1px solid #555; position: relative; cursor: ns-resize; }
-  .knob .dial::after { content: ""; position: absolute; left: 50%; top: 5px; width: 3px; height: 13px; margin-left: -1.5px;
-                       background: var(--ink); border-radius: 2px; transform-origin: 50% 19px; transform: rotate(var(--a, 0deg)); }
-  .knob span { font-size: 11px; color: var(--dim); letter-spacing: .04em; }
-  .btns { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
-  button.b { background: #2c2c2c; color: var(--ink); border: 1px solid #444; border-radius: 7px; padding: 8px 2px 6px;
-             font: 600 11px/1 system-ui, sans-serif; letter-spacing: .05em; cursor: pointer; position: relative; user-select: none; touch-action: none; }
-  button.b::before { content: ""; display: block; width: 7px; height: 7px; border-radius: 50%; margin: 0 auto 5px; background: #3a2a22; }
-  button.b.on::before { background: var(--led); box-shadow: 0 0 6px var(--led); }
-  button.b:active, button.b.down { background: #3a3a3a; }
-  .master { display: flex; align-items: center; gap: 8px; color: var(--dim); font-size: 12px; }
-  .master input { width: 160px; accent-color: var(--acc); }
-  .kb { position: relative; height: 120px; margin-top: 16px; user-select: none; touch-action: none; }
-  .kb .w, .kb .k { position: absolute; top: 0; border: 1px solid #111; border-radius: 0 0 5px 5px; }
-  .kb .w { height: 120px; background: #e9e4da; z-index: 1; }
-  .kb .k { height: 74px; background: #1b1b1b; z-index: 2; }
-  .kb .w.lit { background: #ffd08a; } .kb .k.lit { background: #8a5a20; }
-  .kb .w.glow { background: #efe0c4; box-shadow: inset 0 -10px 0 #ffb347; } .kb .k.glow { background: #3a2a18; box-shadow: inset 0 -8px 0 #a8621a; }
-  .kb .w.down { background: #ffb347; } .kb .k.down { background: #c47a1e; }
-  .bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 14px; color: var(--dim); font-size: 12px; }
-  .bar.top { margin: 0 0 14px; }
-  .bar button { background: var(--acc); color: #111; border: 0; border-radius: 7px; padding: 8px 14px; font-weight: 700; cursor: pointer; }
-  .bar select { background: #2c2c2c; color: var(--ink); border: 1px solid #444; border-radius: 6px; padding: 5px; }
-  details { margin-top: 14px; color: var(--dim); }
-  details summary { cursor: pointer; color: var(--ink); }
-  code, kbd { background: #2c2c2c; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
-  @media (max-width: 760px) {
-    .unit { grid-template-columns: 1fr; }
-    .screen { width: 100%; height: auto; aspect-ratio: 1; }
-    .btns { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-  }
+  html, body { margin: 0; background: var(--page); color: #222; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  .top { max-width: none; margin: 0 auto; padding: 14px 16px 10px; display: flex; flex-wrap: wrap; gap: 10px 16px;
+         align-items: center; }
+  .top h1 { font: 24px/1 "DotGothic16", system-ui, sans-serif; margin: 0; color: #111; letter-spacing: .06em; }
+  .top button { background: #111; color: #ffd18a; border: 0; border-radius: 8px; padding: 9px 16px; font-weight: 700;
+                cursor: pointer; }
+  .top select { background: #eee; border: 1px solid #555; border-radius: 6px; padding: 5px; }
+  #status { color: #111; font-size: 13px; flex: 1 1 260px; }
+
+  /* the device, drawn at 1200 x 700 and scaled to fit the window (fit() in app.js) */
+  .wrap { max-width: none; margin: 0 auto; padding: 0 16px; display: flex; gap: 22px; align-items: flex-start; justify-content: center; }
+  #stage { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+  aside { flex: 0 0 calc(250px * var(--z, 1)); background: #f3f1ec; color: #1b1b1b; border-radius: 16px; padding: 12px 16px;
+          font-size: calc(13px * var(--z, 1));
+          line-height: 1.3; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+  aside summary { font: calc(18px * var(--z, 1))/1.1 "DotGothic16", system-ui, sans-serif; letter-spacing: .04em; cursor: pointer; list-style: none; }
+  aside summary::-webkit-details-marker { display: none; }
+  aside summary::after { content: " +"; color: #8a5a1c; }
+  aside details[open] summary::after { content: " −"; }
+  aside dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 10px 0 8px; }
+  aside dt { font-weight: 800; }
+  aside dd { margin: 0; color: #444; }
+  aside p { margin: 0 0 5px; color: #555; font-size: calc(12px * var(--z, 1)); }
+  aside a { color: #8a5a1c; }
+  @media (max-width: 760px) { .wrap { flex-direction: column; align-items: center; } aside { flex: none; width: 100%; --z: 1; } #stage { width: 100%; flex: none; }
+                              aside dl { grid-template-columns: auto 1fr auto 1fr; } }
+  #device { width: 1200px; height: 700px; transform-origin: 0 0; position: relative;
+            background: var(--body); border-radius: 46px; box-shadow: inset 0 1px 0 #333; }
+  .lab { font: 18px/1 "DotGothic16", system-ui, sans-serif; color: var(--ink); text-align: center; letter-spacing: .02em; }
+  .knob { position: absolute; width: 120px; text-align: center; touch-action: none; cursor: ns-resize; }
+  .knob .dial { width: 66px; height: 66px; margin: 12px auto 0; border-radius: 50%; position: relative;
+                background: radial-gradient(circle at 50% 38%, #3a3a3c 0, var(--knob) 55%, #222 100%);
+                box-shadow: 0 0 0 6px var(--knob-edge), 0 4px 8px rgba(0,0,0,.6); }
+  .knob .dial::after { content: ""; position: absolute; left: 50%; top: 7px; width: 3px; height: 15px; margin-left: -1.5px;
+                       border-radius: 2px; background: #e8e8e8; transform-origin: 50% 26px; transform: rotate(var(--a, 0deg)); }
+  .knob.endless .dial::after { background: #555; }
+  .tray { position: absolute; background: var(--tray); border-radius: 18px; }
+  .b { position: absolute; width: 68px; height: 64px; border: 0; border-radius: 10px; background: var(--btn);
+       color: var(--btn-ink); font: 700 18px/1.05 system-ui, -apple-system, sans-serif; letter-spacing: .02em;
+       box-shadow: 0 3px 0 #141415, inset 0 1px 0 #4c4c4e; cursor: pointer; touch-action: none; padding: 0; }
+  .b.small { font-size: 12px; }
+  .b small { display: block; margin-top: 5px; font: 600 9.5px/1.1 system-ui, sans-serif; letter-spacing: .04em; opacity: .62; }
+  .knob .sub { font: 600 10px/1 system-ui, sans-serif; color: #9a978f; letter-spacing: .06em; margin-top: 4px; }
+  .b.on { background: var(--lit); color: var(--lit-ink); box-shadow: 0 0 16px rgba(255, 230, 170, .45), 0 3px 0 #b9ad8f; }
+  .b.down { transform: translateY(2px); box-shadow: 0 1px 0 #141415; }
+  .b.rec { color: #ff5a4a; }
+  .b.rec.on { background: #ff5a4a; color: #fff; box-shadow: 0 0 16px rgba(255, 90, 74, .55); }
+  .b.oct { width: 112px; height: 44px; font-size: 17px; }
+  .screenbox { position: absolute; left: 380px; top: 40px; width: 300px; height: 300px; background: #0a0a0a;
+               border-radius: 18px; padding: 18px; box-shadow: inset 0 0 0 2px #262628; }
+  #screen { width: 264px; height: 264px; display: block; image-rendering: pixelated; border-radius: 4px; background: #000; }
+  #device.shrunk #screen { image-rendering: auto; }   /* scaled down: smooth, or whole pixel rows go missing */
+  .keys { position: absolute; left: 30px; top: 372px; width: 1140px; height: 300px; background: var(--well);
+          border-radius: 24px; touch-action: none; }
+  .key { position: absolute; width: 54px; height: 120px; border-radius: 27px; background: var(--key);
+         box-shadow: inset 0 0 0 2px #202022; cursor: pointer; }
+  .key::after { content: ""; position: absolute; left: 50%; top: 18px; bottom: 18px; width: 5px; margin-left: -2.5px;
+                border-radius: 3px; background: var(--key-line); }
+  .key.glow { box-shadow: inset 0 0 0 2px #6b4a1e; }
+  .key.glow::after { background: #c98a3a; }
+  .key.lit::after, .key.down::after { background: var(--amber); box-shadow: 0 0 12px var(--amber); }
+  .key.down { background: #1b1612; }
+  .help { max-width: 1140px; margin: 16px auto 6px; padding: 0 16px; color: #111; text-align: center; font-size: 14px; line-height: 2; }
+  .help kbd { display: inline-block; min-width: 20px; padding: 0 5px; border: 1px solid #333; border-radius: 3px;
+              background: #e4e2dd; font: 12px/18px ui-monospace, Menlo, monospace; text-align: center; }
+  .foot { text-align: center; color: #222; font-size: 13px; padding: 6px 16px 26px; max-width: 1132px; margin: 0 auto; }
+  .foot a { color: #111; }
 </style>
 </head>
 <body>
-<main>
-  <h1>Frodhes · emulator</h1>
-  <p class="sub">A physically modelled Fender Rhodes for the M-VAVE FM-1, running in your browser: the same firmware
-    code, compiled to WebAssembly. <a href="https://github.com/leonardoMirabal/frodhes">Source</a> ·
-    <a href="https://github.com/leonardoMirabal/frodhes/blob/main/docs/MANUAL.md">Manual</a> ·
-    <a href="https://github.com/leonardoMirabal/frodhes/releases/latest">Firmware</a></p>
+<div class="top">
+  <h1>FRODHES</h1>
+  <button id="start">Start sound</button>
+  <span id="status">Tap "Start sound" (browsers need a tap before they play audio).</span>
+  <label>MIDI in <select id="midi"><option value="">none</option></select></label>
+</div>
 
-  <div class="bar top">
-    <button id="start">Start sound</button>
-    <span id="status">Tap "Start sound" (browsers need a tap before they play audio).</span>
-  </div>
+<div class="wrap">
+<div id="stage"><div id="device">
+  <!-- left: MASTER SELECT / PRESETS ALGORITHM / OCT- OCT+; centre: the screen; right: K1-K4, two rows of buttons;
+       below: the keys (app.js places the knobs, buttons and keys) -->
+  <div class="tray" style="left:52px; top:288px; width:292px; height:66px"></div>
+  <div class="screenbox"><canvas id="screen" width="240" height="240" aria-label="The FM-1 screen"></canvas></div>
+  <div class="tray" style="left:700px; top:186px; width:462px; height:164px"></div>
+  <div id="ctrls"></div>
+  <div class="keys" id="kb" aria-label="Keyboard F3 to G5"></div>
+</div></div>
 
-  <div class="unit">
-    <canvas class="screen" id="screen" width="240" height="240" aria-label="The FM-1 screen"></canvas>
-    <div class="right">
-      <div class="row" id="encs"></div>
-      <div class="btns" id="btns"></div>
-      <div class="master">MASTER <input id="master" type="range" min="0" max="4096" value="3500"></div>
-    </div>
-  </div>
+<aside><details id="guide" open>
+  <summary>QUICK GUIDE</summary>
+  <dl>
+    <dt>KNOB 1–4</dt><dd>the 4 cards</dd>
+    <dt>SELECT</dt><dd>pages</dd>
+    <dt>PRESETS</dt><dd>sounds</dd>
+    <dt>ALGORITHM</dt><dd>piano type</dd>
+    <dt>HOME</dt><dd>perform / main</dd>
+    <dt>EDIT</dt><dd>voice</dd>
+    <dt>ENV</dt><dd>phaser</dd>
+    <dt>LFO</dt><dd>trem / wah</dd>
+    <dt>SEL</dt><dd>delay</dd>
+    <dt>FX</dt><dd>all effects off</dd>
+    <dt>SEQ</dt><dd>chords / sequencer</dd>
+    <dt>ARP</dt><dd>arpeggiator</dd>
+    <dt>GLO</dt><dd>tempo / setup / midi</dd>
+    <dt>SAVE</dt><dd>store a preset</dd>
+    <dt>PLAY</dt><dd>tap tempo / start</dd>
+    <dt>REC</dt><dd>sustain</dd>
+  </dl>
+  <p>Press a button again on its page for its second job.</p>
+  <p><a href="https://github.com/leonardoMirabal/frodhes/blob/main/docs/MANUAL.md">Full manual</a></p>
+</details></aside>
+</div>
 
-  <div class="kb" id="kb" aria-label="Keyboard F3 to G5"></div>
-
-  <div class="bar">
-    <label>MIDI in <select id="midi"><option value="">none</option></select></label>
-  </div>
-
-  <details>
-    <summary>How to play</summary>
-    <p>Computer keys play the keyboard: <kbd>A</kbd> is F3, <kbd>W S E D R F G Y H U J K O L P ;</kbd> go up
-      chromatically. <kbd>Z</kbd> / <kbd>X</kbd> = OCT− / OCT+, <kbd>Space</kbd> = REC (sustain), <kbd>←</kbd>
-      <kbd>→</kbd> = SELECT (pages), <kbd>↑</kbd> <kbd>↓</kbd> = PRESETS.</p>
-    <p>Knobs: turn with the mouse wheel or drag up / down. Buttons can be held (REC, SAVE). A MIDI keyboard works through
-      Web MIDI (Chrome, Edge). Settings are kept in this browser; user presets last until you reload.</p>
-  </details>
-</main>
+<div class="help">
+  Computer keys: <kbd>A</kbd>–<kbd>;</kbd> play · <kbd>Z</kbd> <kbd>X</kbd> octave · <kbd>Space</kbd> sustain ·
+  <kbd>←</kbd> <kbd>→</kbd> pages · <kbd>↑</kbd> <kbd>↓</kbd> presets · knobs: drag or wheel
+</div>
+<div class="foot">
+  A physically modelled Fender Rhodes for the M-VAVE FM-1: the same firmware code, compiled to WebAssembly ·
+  <a href="https://github.com/leonardoMirabal/frodhes">Source</a> ·
+  <a href="https://github.com/leonardoMirabal/frodhes/blob/main/docs/MANUAL.md">Manual</a> ·
+  <a href="https://github.com/leonardoMirabal/frodhes/releases/latest">Firmware</a> · GPL-3.0 ·
+  built on Dinghy and Felucca · DotGothic16 font, SIL OFL 1.1
+</div>
 <script src="app.js"></script>
 <script src="frodhes.js"></script>
 </body>
