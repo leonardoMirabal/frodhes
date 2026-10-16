@@ -22,3 +22,12 @@ No change is finished until both are done, and the commit says what was tested:
 2. **Document.** Update `docs/MANUAL.md` (the page, buttons, MIDI CCs, contents), `README.md` (the page table and the
    description), regenerate the screenshots (`tools/manual_shots.py`, and `overview.png`), and rebuild and publish the
    web emulator (`web/build.sh`, then the `gh-pages` worktree in `build/pages`).
+
+## Releases (automatic from a tag)
+
+Version numbers are patch bumps (0.9.1, 0.9.2 ...); the package identity stays `FM-1_958`. To release: run the
+tests above (host + FM-1, with `./build.sh --release X.Y.Z` installed and checked on the device), point README.md /
+MANUAL.md at the new file name, write `docs/releases/vX.Y.Z.md`, commit, then `git tag -a vX.Y.Z -m "Frodhes X.Y.Z"`
+and `git push origin vX.Y.Z`. `.github/workflows/release.yml` builds the firmware from the tag and publishes the
+GitHub release with the `.fwsc` and those notes.
+
