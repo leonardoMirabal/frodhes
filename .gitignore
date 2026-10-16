@@ -59,8 +59,8 @@ docs/model/reviews/scratch-*/*
 # Local backups (full pre-rewrite history bundle, sources tarball): kept on disk, never pushed
 .local-backup/
 
-# Claude Code session state
-.claude/scheduled_tasks.lock
+# Claude Code session state (worktrees, locks, settings): never pushed
+.claude/
 
 # the emulator's build output (published to the gh-pages branch)
 web/dist/
