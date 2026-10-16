@@ -216,3 +216,8 @@ static void app_main(void)
         }
     }
 }
+
+#ifdef DINGHY_WEB
+/* the emulator (web/app.js): which page is shown, so the buttons' captions can say what they do there */
+EMSCRIPTEN_KEEPALIVE const char *web_page(void) { return PAGE_TITLE[ui_page]; }
+#endif
