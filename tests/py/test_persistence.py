@@ -73,12 +73,10 @@ def boot(tag, flash, lines=(), end=400, check_preset=True):
 ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 64), cc(11, 104, 0)]}
 
 
-@pytest.mark.xfail(strict=True, reason="bars.c (VIBES, being changed elsewhere): a note let go 200 ms after its strike "
-                                       "keeps a voice in bar_active_bits forever (silent output), eng_quiet() stays 0, so "
-                                       "the settings, presets and pattern never save; NOISE 0 or DAMPER 0 avoid it")
 def test_vibes_notes_let_go_so_it_saves():
     """VIBES: a C4 held 200 ms, let go: the engine goes quiet (no voice left) and a change made then is saved 2 s
-    later, as on the Rhodes"""
+    later, as on the Rhodes. (A released note used to keep a silent voice alive forever, so nothing ever saved; fixed
+    by the bar engine's kill under 1 LSB and the noise envelope reaching zero, 5bce504.)"""
     r = run("vibes-quiet", [cc(10, 79, 64), "300 midi 0x90 60 100", "500 midi 0x80 60 0", "3000 dump", cc(3000, 81, 40)],
             6000, flash=flash_file("vibes-quiet"))
     assert r.state(3000)["voices"] == "0" and r.state(3000)["quiet"] == "1", (r.state(3000)["voices"], r.state(3000)["quiet"])
