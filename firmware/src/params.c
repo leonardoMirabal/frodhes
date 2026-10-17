@@ -16,7 +16,7 @@ enum { P_TYPE, P_DRIVE, P_TW_SW, P_TW_DEPTH, P_TW_RATE, P_TW_SYNC, P_TW_MODE, P_
        P_COUNT };
 #define P_SLOTS 48u                /* room in the settings / preset records (P_COUNT <= P_SLOTS) */
 
-enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB, F_THR, F_GAIN, F_FHZ };
+enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB, F_THR, F_GAIN, F_FHZ, F_HZH };   /* F_HZH: half of F_HZ */
 typedef struct {
     const char *lab;          /* <= 4 chars: panel / card label */
     uint8_t hi, def, fmt, cc;
@@ -68,7 +68,7 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_TW_SHAPE] = {"SHPE", 127, 0, F_R10, 22, 0},
     [P_CP_SW] = {"CHO", 1, 0, F_ENUM, 85, N_ONOFF},
     [P_CP_DEPTH] = {"DPTH", 127, 0, F_R10, 86, 0},
-    [P_CP_SPEED] = {"SPD", 127, 50, F_HZ, 87, 0},
+    [P_CP_SPEED] = {"SPD", 127, 50, F_HZH, 87, 0},
     [P_CP_SYNC] = {"SYNC", 14, 0, F_DIV, 23, N_SYNC},
     [P_CP_FDBK] = {"FDBK", 127, 40, F_R10, 24, 0},
     [P_DL_SW] = {"DLY", 2, 0, F_ENUM, 88, N_DL},
@@ -88,7 +88,7 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_SPREAD] = {"SPRD", 127, 0, F_R10, 105, 0},
     [P_PH_SW] = {"PHA", 1, 0, F_ENUM, 12, N_ONOFF},
     [P_PH_DEPTH] = {"DPTH", 127, 0, F_R10, 13, 0},
-    [P_PH_SPEED] = {"SPD", 127, 40, F_HZ, 14, 0},
+    [P_PH_SPEED] = {"SPD", 127, 40, F_HZH, 14, 0},
     [P_PH_SYNC] = {"SYNC", 14, 0, F_DIV, 15, N_SYNC},
     [P_PH_FDBK] = {"FDBK", 127, 50, F_R10, 16, 0},
     [P_CMP_SW] = {"COMP", 1, 0, F_ENUM, 106, N_ONOFF},
@@ -323,9 +323,11 @@ static void param_text(uint32_t id, char *s)
         s[i] = 0;
         break;
     }
-    case F_HZ: {                                   /* 0.5 * 24^(v/127) Hz in tenths, shown as "4.7" or "12" */
-        int32_t t = (int32_t)(((uint64_t)FX_LFO_INC[v] * 441u) >> 32 >> 0);   /* inc * fs / 2^32 * 10 */
-        t = (int32_t)(((uint64_t)FX_LFO_INC[v] * 441000u) >> 32);
+    case F_HZ:                                     /* 0.5 * 24^(v/127) Hz in tenths, shown as "4.7" or "12" */
+    case F_HZH: {                                  /* the chorus and phaser run their LFO at half the table's rate
+                                                    * (fx.c: FX_LFO_INC >> 1), 0.25 .. 6 Hz: shown as it plays */
+        int32_t t = (int32_t)(((uint64_t)FX_LFO_INC[v] * 441000u) >> 32);   /* inc * fs / 2^32, tenths of a Hz */
+        if (d->fmt == F_HZH) t = (t + 1) >> 1;
         if (t >= 100) p_fmt_int(s, t / 10);
         else { s[0] = (char)('0' + t / 10); s[1] = '.'; s[2] = (char)('0' + t % 10); s[3] = 0; }
         break;
