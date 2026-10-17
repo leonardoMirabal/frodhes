@@ -167,6 +167,8 @@ static void fx_drive(int32_t *m, uint32_t n)
 /* ---- TREMOLO (autopan / amplitude) and touch WAH; mono in, stereo out */
 static uint32_t tw_ph;
 static int32_t tw_gl = 32768, tw_gr = 32768, wah_env, wah_lp, wah_bp;
+static int32_t wah_ein, wah_eout, wah_g = 4096, wah_pi, wah_po;   /* the wah's make-up: loudness envelopes of the
+                                                 * input and the output (pre-emphasised), the gain (Q12), last samples */
 static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t sw = fx_p[FXP_TW_SW], depth = fx_p[FXP_TW_DEPTH], rate = fx_p[FXP_TW_RATE];
@@ -188,6 +190,15 @@ static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
             }
         }
         tw_ph += inc * 32u;
+        if (sw == 2) {                                  /* the wah's make-up gain (0.9.3): the band-pass kept its peak,
+                                                         * but where the chord sat against the band moved the level
+                                                         * -14.6 .. +5.7 LU (high chords lost most); the output's slow
+                                                         * envelope now follows the input's, so the wah only colours */
+            int32_t ei = wah_ein, eo = wah_eout, tg = 4096;
+            while (ei > 0x7FFFF || eo > 0x7FFFF) { ei >>= 1; eo >>= 1; }
+            if (eo > 8) tg = clampi((ei << 12) / eo, 512, 32768);    /* x0.125 .. x8 */
+            wah_g += (tg - wah_g) >> 3;                  /* ~10 ms per step of a sub-block: no zipper, no pumping */
+        }
         dl = (tl - gl) >> 5; dr = (tr - gr) >> 5;
         for (j = sb; j < sb + 32u && j < n; j++) {
             int32_t x = m[j];
@@ -203,6 +214,15 @@ static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
                 wah_lp += (f * (wah_bp >> 1)) >> 13;
                 x = (9 * ((wah_bp >> 2) * q >> 11) + 4 * wah_lp) / 10;   /* bp x 2q: the resonant peak's gain held,
                                                                          * louder playing no longer gets louder (0.7) */
+                {   /* ~46 ms envelopes of the input and the filtered output, each pre-emphasised (x - 3/4 x[-1]:
+                     * +12 dB from the bass to the treble, roughly the ear's weighting) so a closed wah's rumble does
+                     * not count as loudness */
+                    int32_t pi = m[j] - ((3 * wah_pi) >> 2), po = x - ((3 * wah_po) >> 2);
+                    wah_pi = m[j]; wah_po = x;
+                    wah_ein += (((pi < 0 ? -pi : pi) << 8) - wah_ein) >> 11;    /* x 2^8: a Q15 level's steps */
+                    wah_eout += (((po < 0 ? -po : po) << 8) - wah_eout) >> 11;  /* survive the >> 11 */
+                }
+                x = (int32_t)(((int64_t)x * wah_g) >> 12);
                 x = (int32_t)(((int64_t)x * wg) >> 15);  /* the depth's level law (FM-1, LUFS: +1.9 at 32, -2.0 at 127) */
             }
             gl += dl; gr += dr;
