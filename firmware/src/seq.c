@@ -228,7 +228,14 @@ static void seq_poll(void)
 #ifdef DINGHY_HOST
 static uint32_t crc32(const uint8_t *p, uint32_t n);   /* presets.c (host) */
 static uint8_t sq_host_fl[2][4096];
-static int sq_fl_read(uint32_t at, void *p, uint32_t n) { memcpy(p, sq_host_fl[at == SQ_B], n); return 0; }
+static int sq_fl_read(uint32_t at, void *p, uint32_t n)   /* at: a sector and an offset in it (sq_valid reads the
+                                                              * events after the header) */
+{
+    uint32_t s = at >= SQ_B, off = at - (s ? SQ_B : SQ_A);
+    if (off + n > 4096u) return -1;
+    memcpy(p, &sq_host_fl[s][off], n);
+    return 0;
+}
 static int sq_fl_erase(uint32_t at)
 {
     printf("%6u ms  pattern %c erased\n", fm1_ms, at == SQ_B ? 'B' : 'A');   /* (tests: when it saves) */
