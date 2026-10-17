@@ -310,6 +310,23 @@ static void p_fmt_int(char *s, int32_t v)
     while (i) s[n++] = t[--i];
     s[n] = 0;
 }
+/* every number on a card is rounded to its last digit (0.9.3: they were cut: 1.486 s showed "1.4S", +11.8 dB "+11") */
+static void fmt_hz(char *s, uint32_t inc)        /* a Q32 phase step per sample as Hz: "0.6", "4.7", "12" */
+{
+    int32_t t = (int32_t)(((uint64_t)inc * 441000u + 0x80000000u) >> 32);   /* inc * fs / 2^32, tenths of a Hz */
+    if (t >= 100) p_fmt_int(s, (int32_t)(((uint64_t)inc * 44100u + 0x80000000u) >> 32));
+    else { s[0] = (char)('0' + t / 10); s[1] = '.'; s[2] = (char)('0' + t % 10); s[3] = 0; }
+}
+/* log2 in Q12 (>= 0) as dB (20 log10(2) = 6.0206 dB an octave), rounded to tenths / to whole dB */
+static int32_t q12_db10(int32_t q) { return (q * 60206 + 2048000) / 4096000; }
+static int32_t q12_db1(int32_t q) { return (q * 60206 + 20480000) / 40960000; }
+static void fmt_db10(char *s, int32_t t10, int32_t t1)   /* "+1.5", "-6.4"; from 10 dB on whole dB: "+12" */
+{
+    int32_t a = t10 < 0 ? -t10 : t10, n = 0;
+    s[n++] = t10 < 0 ? '-' : '+';
+    if (a >= 100) { p_fmt_int(s + n, t1 < 0 ? -t1 : t1); return; }
+    s[n++] = (char)('0' + a / 10); s[n++] = '.'; s[n++] = (char)('0' + a % 10); s[n] = 0;
+}
 static void param_text(uint32_t id, char *s)
 {
     const pdesc_t *d = &PARAMS[id];
@@ -323,26 +340,23 @@ static void param_text(uint32_t id, char *s)
         s[i] = 0;
         break;
     }
-    case F_HZ:                                     /* 0.5 * 24^(v/127) Hz in tenths, shown as "4.7" or "12" */
-    case F_HZH: {                                  /* the chorus and phaser run their LFO at half the table's rate
+    case F_HZ:                                     /* 0.5 * 24^(v/127) Hz, shown as "4.7" or "12" */
+    case F_HZH:                                    /* the chorus and phaser run their LFO at half the table's rate
                                                     * (fx.c: FX_LFO_INC >> 1), 0.25 .. 6 Hz: shown as it plays */
-        int32_t t = (int32_t)(((uint64_t)FX_LFO_INC[v] * 441000u) >> 32);   /* inc * fs / 2^32, tenths of a Hz */
-        if (d->fmt == F_HZH) t = (t + 1) >> 1;
-        if (t >= 100) p_fmt_int(s, t / 10);
-        else { s[0] = (char)('0' + t / 10); s[1] = '.'; s[2] = (char)('0' + t % 10); s[3] = 0; }
+        fmt_hz(s, d->fmt == F_HZH ? FX_LFO_INC[v] >> 1 : FX_LFO_INC[v]);
         break;
-    }
-    case F_FHZ: {                                  /* the filter's cutoff: "850" Hz / "4.2K" */
-        int32_t hz = FX_FL_HZ[v];
+    case F_FHZ: {                                  /* the filter's cutoff: "850" Hz / "4.2K" / "12K", rounded */
+        int32_t hz = FX_FL_HZ[v], c = (hz + 50) / 100;
         if (hz < 1000) p_fmt_int(s, hz);
-        else if (hz < 10000) { s[0] = (char)('0' + hz / 1000); s[1] = '.'; s[2] = (char)('0' + (hz / 100) % 10); s[3] = 'K'; s[4] = 0; }
-        else { p_fmt_int(s, hz / 1000); s[2] = 'K'; s[3] = 0; }
+        else if (c < 100) { s[0] = (char)('0' + c / 10); s[1] = '.'; s[2] = (char)('0' + c % 10); s[3] = 'K'; s[4] = 0; }
+        else { p_fmt_int(s, (hz + 500) / 1000); s[2] = 'K'; s[3] = 0; }
         break;
     }
-    case F_MS: {
-        int32_t ms = (int32_t)((uint32_t)FX_DLY_T[v] * 1000u / 44100u);
+    case F_MS: {                                   /* "356" ms / "1.5S", rounded */
+        int32_t ms = (int32_t)(((uint32_t)FX_DLY_T[v] * 1000u + 22050u) / 44100u);
+        int32_t c = (int32_t)(((uint32_t)FX_DLY_T[v] * 10u + 22050u) / 44100u);   /* tenths of a second */
         if (ms < 1000) p_fmt_int(s, ms);
-        else { s[0] = (char)('0' + ms / 1000); s[1] = '.'; s[2] = (char)('0' + (ms / 100) % 10); s[3] = 'S'; s[4] = 0; }
+        else { s[0] = (char)('0' + c / 10); s[1] = '.'; s[2] = (char)('0' + c % 10); s[3] = 'S'; s[4] = 0; }
         break;
     }
     case F_BIP: {
@@ -353,23 +367,15 @@ static void param_text(uint32_t id, char *s)
         for (t = 0; t < 5; t++) s[t] = b[t];
         break;
     }
-    case F_THR:                                    /* "-20" dB */
-        if (v) { s[0] = '-'; p_fmt_int(s + 1, (v * 40 + 63) / 127); } else { s[0] = '0'; s[1] = 0; }
+    case F_THR:                                    /* "-20" dB: fx.c's threshold (log2 Q12), rounded */
+        if (v) { s[0] = '-'; p_fmt_int(s + 1, q12_db1((v * 27434) >> 7)); } else { s[0] = '0'; s[1] = 0; }
         break;
-    case F_GAIN: {                                 /* "+6.0" dB */
-        int32_t t = (v * 240 + 63) / 127, n = 0;
-        s[n++] = '+';
-        if (t >= 100) { p_fmt_int(s + n, t / 10); break; }
-        s[n++] = (char)('0' + t / 10); s[n++] = '.'; s[n++] = (char)('0' + t % 10); s[n] = 0;
+    case F_GAIN:                                   /* "+6.0" / "+23" dB: fx.c's make-up (log2 Q12) */
+        fmt_db10(s, q12_db10((v * 16461) >> 7), q12_db1((v * 16461) >> 7));
         break;
-    }
-    case F_DB: {                                   /* "+1.5" / "-12" dB */
-        int32_t t = (v - 64) * 15 / 8, a = t < 0 ? -t : t, n = 0;  /* tenths of a dB */
-        s[n++] = t < 0 ? '-' : '+';
-        if (a >= 100) { p_fmt_int(s + n, a / 10); break; }
-        s[n++] = (char)('0' + a / 10); s[n++] = '.'; s[n++] = (char)('0' + a % 10); s[n] = 0;
+    case F_DB:                                     /* "+1.5" / "-12" dB: 0.1875 dB a step (FX_LVL) */
+        fmt_db10(s, ((v - 64) * 15 + (v >= 64 ? 4 : -4)) / 8, ((v - 64) * 3 + (v >= 64 ? 8 : -8)) / 16);
         break;
-    }
     default: fmt_r10(s, v); break;
     }
 }

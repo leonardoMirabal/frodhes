@@ -93,7 +93,7 @@ def test_vibes_cards(new):
     assert [d[f"bark4.{v}"] for v in (0, 42, 85, 127, 20)] == ["SOFT", "YARN", "CORD", "RUBBER", "1.6"]
     up = [d[f"kind4.up{i}"].split()[0] for i in range(6)]
     assert up == ["OFF", "PAN", "TREM", "WAH", "MOTOR", "MOTOR"]       # MOTOR after the existing kinds
-    assert "sw=1 mode=2" in d["kind4.up4"] and d["kind4.up4"].endswith("rate=4.7HZ")
+    assert "sw=1 mode=2" in d["kind4.up4"] and d["kind4.up4"].endswith("rate=4.8HZ")
     assert [d[f"kind4.down{i}"] for i in range(6)] == ["MOTOR", "WAH", "TREM", "PAN", "OFF", "OFF"]
     # a stored MOTOR on a Rhodes TYPE: the card shows TREM and the tremolo plays AM
     assert d["motor_on_rhodes"] == "TREM fxsw=1 fxmode=1"
