@@ -529,11 +529,17 @@ static void draw_title(void)
     if (ui_page == PG_SEQ) {                            /* a small title and where the loop is: BAR 2/4 . 3 */
         char t[24];
         cv_begin(240, 18, C_BLACK);
-        cv_text(2, 1, &FONT_S, "< SEQUENCER >", UI_ACC);
         seq_pos_text(t);
         sq_shown_beat_set();
-        cv_text(238 - text_w(&FONT_S, t), 1, &FONT_S, t, C_HI);
-        cv_rect(0, 17, 240, 1, C_LINE);
+        if (ui_style == UI_FOCUS) {
+            aa_text(10, 0, &AF_M, "SEQUENCER", UI_ACC, FC_BG);
+            aa_text_r(230, 2, &AF_S, t, FC_LAB, FC_BG);
+            cv_rect(10, 17, 220, 1, FC_HAIR);
+        } else {
+            cv_text(2, 1, &FONT_S, "< SEQUENCER >", UI_ACC);
+            cv_text(238 - text_w(&FONT_S, t), 1, &FONT_S, t, C_HI);
+            cv_rect(0, 17, 240, 1, C_LINE);
+        }
         cv_blit(0, 21);
         return;
     }
@@ -722,6 +728,16 @@ static void sq_now_next(uint32_t p, uint32_t *now, uint32_t *next)
 }
 static uint32_t sq_shown_now = 0xFFFFFFFFu, sq_shown_cell = 0xFFFFFFFFu, sq_shown_beat = 0xFFFFFFFFu, sq_shown_ph;
 static void sq_shown_beat_set(void) { sq_shown_beat = sq_view_tick() / SQ_PPQ; }
+/* text for the footer and the SEQUENCER: the FOCUS look's anti-aliased faces (its quiet greys), the other looks'
+ * bitmap fonts; big: FONT_L / AF_L */
+static uint16_t fc_col(uint16_t c) { return c == C_DIM ? RGB(90, 90, 96) : c == C_GRAY ? FC_LAB : c == C_HI ? FC_VAL : c; }
+static void ft_cf(int32_t x, int32_t y, int32_t w, int big, const char *s, uint16_t c)
+{
+    if (ui_style != UI_FOCUS) { text_c(x, y, w, big ? &FONT_L : &FONT_S, s, c); return; }
+    aa_text_c(x, big ? y : y - 1, w, big ? &AF_L : &AF_S, s, fc_col(c), FC_BG);
+}
+static void ft_c(int32_t x, int32_t y, int32_t w, const char *s, uint16_t c) { ft_cf(x, y, w, 0, s, c); }
+
 static void draw_now(void)                              /* NOW (big) and NEXT */
 {
     char v[20], t[40];
@@ -736,18 +752,19 @@ static void draw_now(void)                              /* NOW (big) and NEXT */
     }
     cv_begin(240, 60, C_BLACK);
     if (!sq_n) {
-        text_c(0, 8, 240, &FONT_L, "EMPTY", C_DIM);
-        text_c(0, 42, 240, &FONT_S, "SEQ: REC, THEN PLAY", C_GRAY);
+        ft_cf(0, 8, 240, 1, "EMPTY", C_DIM);
+        ft_c(0, 42, 240, "SEQ: REC, THEN PLAY", C_GRAY);
     } else {
         if (empty) p_strcpy(v, "-", 1); else sq_group_name(now, v);
-        if (text_w(&FONT_L, v) <= 236) text_c(0, 4, 240, &FONT_L, v, sq_browsing() ? UI_ACC : seq_play ? C_WHITE : C_HI);
-        else text_c(0, 12, 240, &FONT_S, v, C_HI);
+        if ((ui_style == UI_FOCUS ? aa_text_w(&AF_L, v) : text_w(&FONT_L, v)) <= 236)
+            ft_cf(0, 4, 240, 1, v, sq_browsing() ? UI_ACC : seq_play ? C_WHITE : C_HI);
+        else ft_c(0, 12, 240, v, C_HI);
         sq_group_name(next, v);
         p_strcpy(t, "NEXT ", 5); n = 5; p_strcpy(t + n, v, 12); while (t[n]) n++;
         p_strcpy(t + n, "  BAR ", 6); n += 6;
         p_fmt_int(t + n, (int32_t)(next / (4u * SQ_PPQ) + 1u)); while (t[n]) n++;
         t[n++] = '.'; p_fmt_int(t + n, (int32_t)(next / SQ_PPQ % 4u + 1u));
-        text_c(0, 42, 240, &FONT_S, t, C_GRAY);
+        ft_c(0, 42, 240, t, C_GRAY);
     }
     cv_blit(0, SQ_NOW_Y);
 }
@@ -793,19 +810,18 @@ static void draw_card_small(uint32_t k)
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
     char v[16];
     cv_begin(58, SQ_CARD_H, C_BLACK);
-    cv_rect(0, 0, 58, SQ_CARD_H, hot ? UI_ACC : C_LINE);
-    cv_rect(1, 1, 56, SQ_CARD_H - 2, C_BLACK);
-    text_c(0, 1, 58, &FONT_S, PAGE_LAB[PG_SEQ][k], C_GRAY);
     slot_text(s, v);
-    text_c(0, 16, 58, &FONT_S, v, s == S_SQEDIT && sq_erase ? UI_ACC : C_HI);
+    if (ui_style == UI_FOCUS) {                     /* no frame: the name (amber while turned), the value, a hairline */
+        aa_text_c(0, 1, 58, &AF_S, PAGE_LAB[PG_SEQ][k], hot ? UI_ACC : FC_LAB, FC_BG);
+        aa_text_c(0, 15, 58, &AF_M, v, s == S_SQEDIT && sq_erase ? UI_ACC : FC_VAL, FC_BG);
+        cv_rect(4, SQ_CARD_H - 1, 50, 1, FC_HAIR);
+    } else {
+        cv_rect(0, 0, 58, SQ_CARD_H, hot ? UI_ACC : C_LINE);
+        cv_rect(1, 1, 56, SQ_CARD_H - 2, C_BLACK);
+        text_c(0, 1, 58, &FONT_S, PAGE_LAB[PG_SEQ][k], C_GRAY);
+        text_c(0, 16, 58, &FONT_S, v, s == S_SQEDIT && sq_erase ? UI_ACC : C_HI);
+    }
     cv_blit(1u + k * 60u, SQ_CARD_Y);
-}
-
-/* footer text: the FOCUS look's anti-aliased small face (its quiet greys), the other looks' bitmap font */
-static void ft_c(int32_t x, int32_t y, int32_t w, const char *s, uint16_t c)
-{
-    if (ui_style != UI_FOCUS) { text_c(x, y, w, &FONT_S, s, c); return; }
-    aa_text_c(x, y - 1, w, &AF_S, s, c == C_DIM ? RGB(90, 90, 96) : c == C_GRAY ? FC_LAB : c, FC_BG);
 }
 
 static void draw_footer(void)
