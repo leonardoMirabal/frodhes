@@ -51,8 +51,8 @@ The screen shows **one page at a time**, with **four cards**, one per knob: **K1
 see**. The page name is at the top, with a row of marks under it showing where you are. Turn **SELECT** to move
 between pages, or press a page's button to jump straight there. The pages, in SELECT order:
 
-PERFORM · ASSIGN · FRODHES (main) · VOICE · DECAY · COMPRESSOR · FILTER · TREM/WAH · PHASER · CHORUS · DELAY ·
-TEMPO · SCALE · CHORD · SEQUENCER · ARPEGGIO · LFO · SETUP · MIDI
+PERFORM · FRODHES (main) · VOICE · DECAY · COMPRESSOR · FILTER · TREM/WAH · PHASER · CHORUS · DELAY ·
+TEMPO · SCALE · CHORD · SEQUENCER · ARPEGGIO · LFO · ASSIGN · SETUP · MIDI
 
 The top line shows the preset, the octave (O+1, O−2...), **SUS** while the sustain is held, **BYP** while the effects
 are bypassed, and the tempo. The bottom line explains the page's button or shows a live reading; when you change a
@@ -111,7 +111,8 @@ Turning it back to 0 makes it dry again (the effect stays switched on; its butto
 
 ![ASSIGN](manual/img/assign.png)
 
-Choose what each PERFORM knob plays: K1 here sets what K1 on PERFORM does, and so on. Each knob can play any of:
+Choose what each PERFORM knob plays: K1 here sets what K1 on PERFORM does, and so on. ASSIGN sits near the end of
+the pages, just before SETUP (the hint on PERFORM says so). Each knob can play any of:
 TREM/WAH, PHASER, CHORUS, DELAY, REVERB, DRIVE, COMP THR, COMP MKUP, TREM RATE, TREM SHAPE, PHA SPEED, PHA FEEDBK,
 CHO SPEED, DLY TIME, DLY FEEDBK, DLY TONE, TONE, BARK, BELL, HAMMER, DECAY, RELEASE, NOISE, KEY VEL, LEVEL, ARP RATE,
 ARP GATE, FILTER, FILT RESO, FILT LFO and LFO RATE. The

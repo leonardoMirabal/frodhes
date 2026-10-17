@@ -33,6 +33,17 @@ enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, 
 static int sq_browsing(void);                           /* the SEQUENCER page's cursor (below) */
 static uint32_t sq_delete_step(void);
 static void sq_browse(int32_t d);
+/* the SELECT order (0.9.3, user: the instrument pages next to each other right after PERFORM; ASSIGN, rarely used,
+ * next to SETUP); the PG_ ids stay as they are (the tables below and the buttons use them) */
+static const uint8_t PG_ORDER[PG_N] = {PG_PERF, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_FILTER, PG_TREM, PG_PHA, PG_CHO,
+                                      PG_DELAY, PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_ASSIGN, PG_SETUP,
+                                      PG_MIDI};
+static uint32_t pg_pos(uint32_t pg)                     /* a page's place in the SELECT order */
+{
+    uint32_t i;
+    for (i = 0; i < PG_N; i++) if (PG_ORDER[i] == pg) return i;
+    return 0;
+}
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "FILTER", "TREM/WAH", "PHASER",
                                              "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
                                              "ARPEGGIO", "LFO", "SETUP", "MIDI"};
@@ -85,7 +96,7 @@ static const char *const PAGE_LAB_BAR[2][4] = {
 };
 static const char *const PAGE_HINT_BAR[2] = {"HOW THE MALLET STRIKES", "HOW BARS RING AND STOP"};
 static int ui_bars(void) { return TYPE_IS_BARS(PV(P_TYPE)); }    /* the main loop's TYPE (not the ISR's latch) */
-static const char *const PAGE_HINT[PG_N] = {"NEXT PAGE: ASSIGN THE KNOBS", "WHAT EACH PERFORM KNOB PLAYS",
+static const char *const PAGE_HINT[PG_N] = {"THE KNOBS: SET ON ASSIGN", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
                                             "K1 THRESH: UP = ON, 0 = OFF", "THE LFO: ITS OWN PAGE", "LFO BUTTON: ON / OFF", "ENV BUTTON: ON / OFF",
                                             "K1: ON / OFF", "SEL: ON / OFF  K1: DIG / ANA", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
@@ -413,8 +424,9 @@ static void text_c(int32_t x, int32_t y, int32_t w, const felucca_font_t *f, con
 }
 static void gauge(int32_t x, int32_t y, int32_t w, int32_t v, int32_t hi)
 {
-    cv_rect(x, y, w, 6, C_LINE);
-    cv_rect(x + 1, y + 1, (w - 2) * v / (hi ? hi : 1), 4, C_AMB);
+    cv_rect(x, y, w, 6, C_LINE);                        /* a frame with a black inside: on the FM-1's panel the darkest */
+    cv_rect(x + 1, y + 1, w - 2, 4, C_BLACK);           /* palette step shows nearly as bright as the fill, so a solid */
+    cv_rect(x + 1, y + 1, (w - 2) * v / (hi ? hi : 1), 4, C_AMB);   /* dim bar read as full at 0 (user photo, 0.9.3) */
 }
 
 static void draw_header(void)
@@ -455,11 +467,11 @@ static void draw_title(void)
         return;
     }
     cv_begin(240, 40, C_BLACK);
-    if (ui_page > 0) cv_text(4, 0, &FONT_L, "<", C_DIM);
-    if (ui_page + 1u < PG_N) cv_text(220, 0, &FONT_L, ">", C_DIM);
+    if (pg_pos(ui_page) > 0) cv_text(4, 0, &FONT_L, "<", C_DIM);
+    if (pg_pos(ui_page) + 1u < PG_N) cv_text(220, 0, &FONT_L, ">", C_DIM);
     text_c(0, 0, 240, &FONT_L, PAGE_TITLE[ui_page], UI_ACC);
-    for (i = 0; i < PG_N; i++)                          /* where we are: one mark per page */
-        cv_rect(x0 + 10 * (int32_t)i, 35, i == ui_page ? 8 : 4, 3, i == ui_page ? UI_ACC : C_LINE);
+    for (i = 0; i < PG_N; i++)                          /* where we are: one mark per page, in the SELECT order */
+        cv_rect(x0 + 10 * (int32_t)i, 35, i == pg_pos(ui_page) ? 8 : 4, 3, i == pg_pos(ui_page) ? UI_ACC : C_LINE);
     cv_blit(0, 21);
 }
 
@@ -897,8 +909,8 @@ static void ui_input(uint32_t b, uint32_t rel)
     if (b >> BTN_OCT_UP & 1u && set.oct < 2) { set.oct++; ui_changed(); ui_mark(E_HEADER); }
 
     if (d[ENC_SELECT]) {                                /* the pages: no wrap, so the ends are easy to find */
-        int32_t p = clampi((int32_t)ui_page + sgn(d[ENC_SELECT]), 0, PG_N - 1);
-        if (p != ui_page) ui_goto((uint32_t)p);
+        int32_t p = clampi((int32_t)pg_pos(ui_page) + sgn(d[ENC_SELECT]), 0, PG_N - 1);
+        if (PG_ORDER[p] != ui_page) ui_goto(PG_ORDER[p]);
     }
     if (d[ENC_ALGORITHM] && ui_page == PG_SEQ) {        /* on SEQUENCER: the cursor, step by step */
         if (seq_step_held()) {                          /* step recording, keys held: the step gets longer */

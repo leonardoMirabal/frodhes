@@ -11,7 +11,7 @@ from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "docs", "manual", "img")
-PAGES = ["perform", "assign", "piano", "voice", "decay", "comp", "filter", "trem", "phaser", "chorus", "delay", "tempo", "scale", "chord", "seq", "arp", "lfo", "setup", "midi"]
+PAGES = ["perform", "piano", "voice", "decay", "comp", "filter", "trem", "phaser", "chorus", "delay", "tempo", "scale", "chord", "seq", "arp", "lfo", "assign", "setup", "midi"]   # the SELECT order (ui.c PG_ORDER)
 
 
 def main():
