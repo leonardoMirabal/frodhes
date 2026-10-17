@@ -897,7 +897,8 @@ static void ui_draw_page_change(void) { ui_dirty |= (1u << E_N) - 1u; }
 /* one element per pass, in priority order: footer, header, title, cards */
 /* developer (MIDI CC 3 >= 64, 0.9.3): a colour test pattern for calibrating the screenshots and the palettes against
  * the FM-1's panel (a photo of it). Rows of 30 px: the 6 palettes' 5 steps + white (40 px each), then a grey ramp
- * 0 32 64 128 192 255, then pure red, green, blue, yellow, black, white. CC 3 < 64 draws the page again. */
+ * 0 32 64 128 192 255 and under it (15 px each) a dark ramp 0 4 8 12 16 20, then pure red, green, blue, yellow,
+ * black, white. CC 3 < 64 draws the page again. */
 static uint8_t ui_testpat, ui_testpat_shown;
 static void ui_draw_testpat(void)
 {
@@ -908,7 +909,8 @@ static void ui_draw_testpat(void)
         for (i = 0; i < 5u; i++) lcd_fill(40 * i, 30 * r, 40, 30, PALETTES[r].c[i]);
         lcd_fill(200, 30 * r, 40, 30, C_WHITE);
     }
-    for (i = 0; i < 6u; i++) lcd_fill(40 * i, 180, 40, 30, RGB(G[i], G[i], G[i]));
+    for (i = 0; i < 6u; i++) lcd_fill(40 * i, 180, 40, 15, RGB(G[i], G[i], G[i]));
+    for (i = 0; i < 6u; i++) lcd_fill(40 * i, 195, 40, 15, RGB(4 * i, 4 * i, 4 * i));   /* the dark end: 0 4 8 12 16 20 */
     for (i = 0; i < 6u; i++) lcd_fill(40 * i, 210, 40, 30, P[i]);
 }
 
