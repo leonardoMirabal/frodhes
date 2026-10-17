@@ -176,6 +176,14 @@ def centroid(x):
     return float((sp * fr).sum() / (sp.sum() + 1e-12))
 
 
+def bands_db(x):
+    """third-octave band levels (dB) 100 Hz .. 10 kHz of a mono signal"""
+    sp = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    f = np.fft.rfftfreq(len(x), 1 / FS)
+    c = 100 * 2 ** (np.arange(0, 21) / 3)
+    return np.array([10 * np.log10(sp[(f >= fc / 2 ** (1 / 6)) & (f < fc * 2 ** (1 / 6))].sum() + 1e-12) for fc in c])
+
+
 def clicks(x):
     """dropout / click detector: second difference spikes far above the local level"""
     m = x.mean(axis=1) if x.ndim == 2 else x
@@ -283,13 +291,19 @@ def types(r, rep):
         x = r.take(1.6, [(0.05, "on", 57, 100), (0.7, "off", 57, 0), (0.8, "on", 69, 100), (1.4, "off", 69, 0)])
         a = x[int(0.1 * FS):int(0.6 * FS), 0]
         b = x[int(0.85 * FS):int(1.3 * FS), 0]
-        out[t] = dict(level=(db(a) + db(b)) / 2, centroid_a3=centroid(a), centroid_a4=centroid(b))
-    rep["types"] = out
+        out[t] = dict(level=(db(a) + db(b)) / 2, centroid_a3=centroid(a), centroid_a4=centroid(b),
+                      bands=bands_db(np.concatenate([a, b])))
+    rep["types"] = {t: {k: v for k, v in d.items() if k != "bands"} for t, d in out.items()}
     lv = [out[t]["level"] for t in out]
-    ce = [out[t]["centroid_a3"] for t in out]
-    distinct = max(ce) / max(min(ce), 1) > 1.3
-    return distinct and max(lv) - min(lv) < 3, ("levels " + ", ".join(f"{lv[t]:.1f}" for t in range(RHODES_TYPES)) +
-                                                " dB; A3 centroid " + ", ".join(f"{ce[t]:.0f}" for t in range(RHODES_TYPES)) + " Hz")
+    # distinct: every pair of types differs in its spectral envelope (third-octave bands 100 Hz - 10 kHz, levels
+    # aligned), by more than 1.5 dB RMS. One centroid ratio (> 1.3, the old limit) never held: the types differ in
+    # their bell, bark and decay more than in their mean brightness.
+    dist = [float(np.sqrt(np.mean(((out[i]["bands"] - out[i]["bands"].mean()) - (out[j]["bands"] - out[j]["bands"].mean())) ** 2)))
+            for i in range(RHODES_TYPES) for j in range(i + 1, RHODES_TYPES)]
+    rep["types_distance_db"] = dist
+    return min(dist) > 1.5 and max(lv) - min(lv) < 3, ("levels " + ", ".join(f"{lv[t]:.1f}" for t in range(RHODES_TYPES)) +
+                                                     " dB; spectral distance between types min " + f"{min(dist):.1f} dB (" +
+                                                     ", ".join(f"{d:.1f}" for d in dist) + ")")
 
 
 CHORD = [(0.05, "on", n, 100) for n in (57, 64, 69)] + [(1.25, "off", n, 0) for n in (57, 64, 69)]
@@ -320,18 +334,23 @@ def effects(r, rep):
         i = max(onset(x), 0)
         timed = name.startswith(("delay", "reverb"))     # echoes / a tail add level by design: check the direct
         lv = db(x[i:i + int(0.25 * FS)]) - base_direct + base if timed else db(x[i:i + int(1.1 * FS)])
+        lu = (lufs(x[i:i + int(0.25 * FS)] / 32768.0) - lufs(ref[i0:i0 + int(0.25 * FS)] / 32768.0) if timed else
+              lufs(x[i:i + int(1.1 * FS)] / 32768.0) - lufs(ref[i0:i0 + int(1.1 * FS)] / 32768.0))
         clip = int((np.abs(x) >= 32700).sum())
-        row = dict(name=name, delta_db=lv - base, peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12), clipped=clip,
+        row = dict(name=name, delta_db=lv - base, delta_lu=lu, peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12), clipped=clip,
                    lr_corr=float(np.corrcoef(x[i:i + FS, 0], x[i:i + FS, 1])[0, 1]) if i + FS < len(x) else 1.0,
                    tail_db=db(x[i + int(1.3 * FS):i + int(1.9 * FS)]), clicks=clicks(x))
         rows.append(row)
         row["with_tail_db"] = db(x[i:i + int(1.1 * FS)]) - base
         lim = 99 if name.startswith(("comp", "everything")) else 3   # a compressor's level depends on the playing
-        if abs(row["delta_db"]) > lim or clip or row["clicks"]:
+        # loudness, not RMS: the wah's resonance adds +4.5 dB RMS in the mids but +0.2 LU (fx_all) to the ear
+        wide = row["lr_corr"] < 0.8
+        target = -2.5 if wide and name.startswith(("phaser", "chorus")) else 0.0   # width compensation (0.8)
+        if abs(row["delta_lu"] - target) > lim or clip or row["clicks"]:
             bad.append(name)
     rep["effects"] = dict(dry_db=base, rows=rows)
-    summary = "; ".join(f"{q['name']} {q['delta_db']:+.1f}" for q in rows)
-    return not bad, (f"level vs dry (dB; delay/reverb: the direct sound; compressor: information): {summary}; "
+    summary = "; ".join(f"{q['name']} {q['delta_lu']:+.1f}" for q in rows)
+    return not bad, (f"loudness vs dry (LU; delay/reverb: the direct sound; compressor: information): {summary}; "
                      f"problems: {bad or 'none'}")
 
 
@@ -340,7 +359,7 @@ def bypass(r, rep):
     """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs no effects at all"""
     r.dry()
     a = r.take(1.5, CHORD)
-    r.dry(PH_SW=127, PH_DEPTH=80, CP_SW=64, CP_DEPTH=64, REV=50, DRIVE=30, CMP_SW=127, CMP_AMT=50)
+    r.dry(PH_SW=127, PH_DEPTH=80, CP_SW=64, CP_DEPTH=64, REV=50, DRIVE=30, CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
     b = r.take(2.2, CHORD)
     r.out.send(r.mido.Message("control_change", control=111, value=127))
     r.wait_silence()
@@ -349,10 +368,12 @@ def bypass(r, rep):
     lv = []
     for x in (a, b, c):
         i = max(onset(x), 0)
-        lv.append(db(x[i:i + int(1.1 * FS)]))
+        lv.append(lufs(x[i:i + int(1.1 * FS)] / 32768.0))
     rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2])
+    # the compressor as the panel switches it on (THRESH up: +2.8 dB makeup); before, it ran with no makeup and the
+    # effects-on level sat 5 dB under the bypass by construction
     ok = abs(lv[2] - lv[0]) < 0.5 and abs(lv[1] - lv[2]) < 3
-    return ok, f"no effects {lv[0]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} dBFS"
+    return ok, f"no effects {lv[0]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} LUFS"
 
 
 FXALL = [  # (name, settings, expected: LU re clean within +-tol)
@@ -426,6 +447,8 @@ def fx_all(r, rep):
         wide = row["corr"] < 0.8
         tol = 99.0 if name.startswith(("comp -40", "all on")) else 2.0     # extreme comp: MAKEUP is the player's
         target = -2.5 if wide and name.startswith(("phaser", "chorus")) else 0.0   # width compensation (0.8)
+        if name.startswith("delay"):                  # the echoes add loudness by design (full mix: about +3 LU)
+            target, tol = 1.5, 3.0
         if abs(row["usb_lu"] - target) > tol or row["clipped"] or row["clicks"] or \
                 ("jack_lu" in row and abs(row["jack_lu"] - row["usbL_lu"]) > 1.0):
             bad.append(name)
@@ -471,7 +494,8 @@ def fx_toggle(r, rep):
         dn = (st(x, 2.45, 2.85) - st(x, 1.95, 2.35)) - (st(ref, 2.45, 2.85) - st(ref, 1.95, 2.35))
         ck = clicks(x[int(1.1 * FS):int(1.4 * FS)]) + clicks(x[int(2.3 * FS):int(2.6 * FS)])
         rows.append(dict(name=name, on_step=up, off_step=dn, clicks=ck))
-        lim = 3.5 if name in ("phaser", "chorus") else 2.0
+        lim = 3.5 if name in ("phaser", "chorus", "wah") else 4.0 if name == "comp" else 2.0   # wah: a moving
+        # resonance (0.4 s windows catch its sweep); comp: the +2.8 dB makeup plus its attack / release
         if abs(up) > lim or abs(dn) > lim or ck:
             bad.append(name)
         print(f"    {name:10s} on {up:+5.1f} LU   off {dn:+5.1f} LU   clicks {ck}", flush=True)
@@ -566,15 +590,15 @@ def presets(r, rep):
         r.wait_silence()
         x = r.take(2.0, CHORD)
         i = max(onset(x), 0)
-        rows.append(dict(preset=p + 1, level=db(x[i:i + int(1.1 * FS)]),
+        rows.append(dict(preset=p + 1, level=lufs(x[i:i + int(1.1 * FS)] / 32768.0), rms_db=db(x[i:i + int(1.1 * FS)]),
                          peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
                          clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x)))
     rep["presets"] = rows
     lv = [q["level"] for q in rows]
     bad = [q["preset"] for q in rows if q["clipped"] or q["clicks"]]
     r.out.send(r.mido.Message("program_change", program=0))
-    return max(lv) - min(lv) < 8 and not bad, ("F01..F12 levels " + ", ".join(f"{v:.0f}" for v in lv) +
-                                               f" dB (span {max(lv) - min(lv):.1f}); clipping/clicks {bad or 'none'}")
+    return max(lv) - min(lv) < 8 and not bad, ("F01..F12 loudness " + ", ".join(f"{v:.0f}" for v in lv) +
+                                               f" LUFS (span {max(lv) - min(lv):.1f}); clipping/clicks {bad or 'none'}")
 
 
 def main():
