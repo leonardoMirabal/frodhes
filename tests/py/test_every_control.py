@@ -1004,13 +1004,18 @@ def _chtype():
 
 @case("CHORD-INVERSION")
 def _chinv():
-    """INVERSION (K2): MIN7 ROOT / 1ST / 2ND / 3RD put the lowest notes an octave up (on a triad 3RD = 2ND: see the
-    audit)"""
+    """INVERSION (K2): MIN7 ROOT / 1ST / 2ND / 3RD put the lowest notes an octave up (a triad's 3RD: the root
+    position an octave up)"""
     sets = []
     for i in range(4):
         st, on = chord_notes(detents(2, 1, 7, 100) + detents(3, 1, i, 130))
         sets.append([a - 60 for _, a in on])
     assert sets == [[0, 3, 7, 10], [3, 7, 10, 12], [7, 10, 12, 15], [10, 12, 15, 19]], sets
+    tri = []                                         # a triad (MIN): 3RD is the root position an octave up (it was
+    for i in range(4):                               # the 2ND again: the audit)
+        st, on = chord_notes(detents(2, 1, 4, 100) + detents(3, 1, i, 130))
+        tri.append([a - 60 for _, a in on])
+    assert tri == [[0, 3, 7], [3, 7, 12], [7, 12, 15], [12, 15, 19]], tri
     return 1.0, 1.0, "ok"
 
 

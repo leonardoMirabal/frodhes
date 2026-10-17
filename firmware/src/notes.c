@@ -121,7 +121,8 @@ static uint32_t chord_build(uint32_t n, uint8_t *out)
         const uint8_t *s = CH_SHAPE[CH_TYPE - CH_FIXED];
         for (i = 0; i < 5u && s[i] != 0xFF; i++) v[c++] = (int32_t)n + s[i];
     }
-    for (i = 0; i < CH_INV && i + 1u < c; i++) {               /* inversions: the lowest note up an octave */
+    for (i = 0; i < CH_INV && c > 1u; i++) {                  /* inversions: the lowest note up an octave (3RD on a
+                                                                * triad: the root position an octave up; it was the 2ND) */
         t = v[0] + 12;
         for (j = 0; j + 1u < c; j++) v[j] = v[j + 1u];
         v[c - 1u] = t;
