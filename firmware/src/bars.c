@@ -4,10 +4,20 @@
  * Per voice: a mallet force pulse (the BARK family x velocity shapes blended once at note-on) drives up to 8 modes
  * of one bar: V1 TUBE V2 V3 V4 T1 T2 X. V1 and the tube's fundamental are a two-way coupled pair (stiffness
  * coupling, the tube's pressure acts on the bar and the bar drives the tube); the motor's discs scale the coupling
- * and the tube's radiation per sub-block, ramped per sample. The other modes are independent exact-pole coupled-form
- * resonators with first-order error feedback (as the Rhodes modes). Output = bar displacement + the tube's
- * radiation, times the key's gain: no pickup. Upper modes go to sleep when they fall 42 dB under the fundamental,
- * and a mode budget caps the live upper modes over all voices (the CPU).
+ * and the tube's radiation per sub-block, ramped per sample. Every mode is the exact-pole MC3 resonator of the Rhodes
+ * modes, run in its equivalent two-multiply form: x[n+1] = a1 x[n] - a2 x[n-1] + e u[n] with a1 = 2 - eps - e^2,
+ * a2 = 1 - eps (the same poles and the same force-to-x transfer as MC3's x += e y, y += -eps y - e x, y += u), with
+ * first-order error feedback (noise floor < -100 dBFS on every key and mode). Output = bar displacement + the tube's
+ * radiation, times the key's gain: no pickup.
+ *
+ * Levels: each mode's amplitude comes once per block from its last two samples (x1^2 - a1 x1 x2 + a2 x2^2 =
+ * A^2 sin^2 theta), in log2. A voice ends when its output falls under 1 LSB; upper modes sleep 54 dB under the
+ * fundamental (faded over a sub-block).
+ *
+ * CPU, by construction: every block, a cost model of this block's work (voices, pulses, noise, the effects that
+ * are on) gives the number of upper modes that fit under the 4800 us gate; when more are live, the least audible
+ * go (their level re the loudest fundamental in the mix, less where a louder partial nearby masks them; a strike's
+ * modes before they sound are ranked by their predicted level), faded over a sub-block, never cut.
  *
  * Its own voices, constants, summaries and render: nothing here changes the Rhodes engine (rhodes.c). It reuses the
  * Rhodes run-time coefficient path rh_coef() unchanged, the velocity layer tables and the main-loop voicing values
@@ -32,44 +42,51 @@ typedef struct {
 #include "bars_tables.h"
 _Static_assert(BAR_NM == 8, "bars.c: 8 mode slots");
 
-#define BAR_NV 8u                                   /* voices: 8, as the Rhodes (the mode budget and the relative
-                                                     * sleep are CPU protection for edge strikes with every effect on) */
+#define BAR_NV 8u                                   /* voices: 8, as the Rhodes */
+#define BAR_N 256u                                  /* the block */
 #define BAR_SUB 32u
+#define BAR_NSUB (BAR_N / BAR_SUB)
 #define BAR_RAMP_SUB 7u
 #define BAR_UP0 2u                                  /* first upper slot (V2) */
+#define BAR_NUP (BAR_NM - BAR_UP0)
+#define BAR_LZERO (-32768)                          /* log2 of nothing */
+#define BAR_EFM 0x3FFFFFFF                          /* the error-feedback remainder (30 bits) */
 _Static_assert(BAR_NV <= 32u, "summaries are 32-bit masks");
 
 typedef struct {
-    int32_t x, y, ex, ey;                           /* Q25, MC3 states and error-feedback remainders */
+    int32_t x1, x2, err;                            /* x[n], x[n-1] (Q25); the error-feedback remainder */
+    int32_t k1, k2;                                 /* lo: c1 = eps + e^2, c2 = eps (Q32); hi: a1 = 2 - c1, a2 = 1 - eps (Q30) */
     int32_t e, eps, e0, eps0, e1, eps1, es, epss;   /* live, held pair, felt pair, crossfade start (Q30) */
-    int32_t b;                                      /* Q30 force -> y, strike-position weighted */
-    int32_t peak;
-    uint8_t live;
+    int32_t b, be;                                  /* Q30 force -> y, strike-position weighted; be = b e >> 30 */
+    int32_t amp;                                    /* Q25 amplitude at the last block's end */
+    int16_t lsin;                                   /* log2 sin(theta), Q8 (<= 0) */
+    int16_t lpred;                                  /* the strike's predicted log2 amplitude (Q8), BAR_LZERO = none */
+    uint8_t live, bin, fresh, lo;                   /* live 1, 2 = fades out over the next sub-block; 1/3-octave band;
+                                                     * fresh: struck this block, its level not measured yet; lo: the
+                                                     * Q32 form (c1 < 1/2: every mode under ~4.9 kHz, V1 and the tube
+                                                     * always), else the Q30 form */
 } bar_ms_t;
 
 typedef struct {
     bar_ms_t m[BAR_NM];
     const bar_key_t *k;
-    uint8_t note, vel, alive, held, ramp, pend, pend_note, pend_vel;
+    uint8_t note, vel, alive, held, ramp, pend, pend_note, pend_vel, struck, pred;
     int32_t w_tgt, fade;
     uint32_t age, life;
-    int32_t gain, kbt, ktb, wt;                     /* BELL-scaled coupling and radiation, discs open */
+    int32_t gain, kbt, ktb, wt, kill1;              /* BELL-scaled coupling and radiation, discs open; kill1: 1 LSB */
     uint32_t ppos, prate;
     int32_t pamp;
     const int16_t *ptab;                            /* pbuf (the strike) or pthump (the damper's knock) */
     const int16_t *pthump;
     uint32_t prate_thump;
     int16_t pbuf[BAR_PLEN + 2];
-    uint16_t felt_n, nz_n;
-    int32_t felt_lp, nz_lvl;
+    uint16_t felt_n;
+    int32_t felt_lp;
 } bar_voice_t;
 
 static bar_voice_t bv[BAR_NV];
-static int32_t bar_mono[256], bar_x[BAR_SUB], bar_F[BAR_SUB];
-/* contact noise: every voice uses the same filter, so one filtered noise per block, weighted by the sum of the
- * voices' envelopes (10 multiplies a sample in all, not per voice) */
-static int32_t bar_nzenv[256], bar_nz_s[4];
-static uint8_t bar_nz_dirty;
+static int32_t bar_mono[BAR_N], bar_x[BAR_N], bar_tb[BAR_N], bar_F[BAR_N + 2];   /* F: the force << 12 */
+static int32_t bar_nz_e, bar_nz_s[4];               /* contact noise: one envelope for every voice (one decay) */
 static uint32_t bar_ages, bar_lfsr = 0x1D872u;
 static int32_t bar_pedal_w = 32768;
 static int32_t bar_bd_m[2][2], bar_bd_o[2][2], bar_bd_e[2];
@@ -84,6 +101,8 @@ static volatile int32_t bar_k_decay = 65536, bar_k_rel = 65536;   /* DECAY_K[RIN
 static volatile int32_t bar_thump, bar_felt;        /* KN_THUMP / KN_FELT[NOISE]: the damper's knock and felt noise */
 static volatile uint8_t bar_mot_on, bar_mot_depth, bar_mot_shape;   /* TREM/WAH = MOTOR, DEPTH, SHAPE (0..127) */
 static volatile uint32_t bar_mot_inc;               /* Q32 phase step per sample (the AM rate, or TREM SYNC's) */
+static volatile uint8_t bar_budget_force;           /* developer (MIDI CC 9): 0 = the cost model, 1..49 = 0..48 upper
+                                                     * modes, 50.. = no cap (CPU calibration on the FM-1) */
 /* the motor: one global phase, gains per sub-block edge (ISR) */
 static uint32_t bar_mot_ph;
 static int32_t bar_mot_g[9] = {32768, 32768, 32768, 32768, 32768, 32768, 32768, 32768, 32768};
@@ -92,14 +111,21 @@ static const int32_t BAR_FAM_NZ[BAR_NFAM] = {8192, 14336, 22528, 32767};    /* Q
 static volatile uint32_t bar_active_bits, bar_held_bits, bar_quiet_blocks;
 static volatile uint8_t bar_notes[BAR_NV];
 static volatile uint32_t bar_shed_count;
+static uint32_t bar_plan_us;                        /* the cost model's time for this block (bar_budget) */
+static volatile uint32_t bar_prof_cap = 0xFFFFu, bar_prof_used;   /* since the last profiler query (CC 116): the lowest
+                                                     * cap and the most live upper modes, in modes (x 8 = units) */
 #ifdef DINGHY_HOST
 static uint64_t bar_h_sat, bar_h_ms, bar_h_mul;     /* host counters: sat28 hits, mode-samples, int64 multiplies */
-static uint32_t bar_h_blk_ms, bar_h_blk_mul, bar_h_blk_ns;   /* this block's; ns: the FM-1 cost proxy (P0 costs) */
+static uint32_t bar_h_blk_ms, bar_h_blk_mul, bar_h_blk_ns;   /* this block's; ns: the cost model's FM-1 time */
 static int bar_h_nobudget, bar_h_nosleep;           /* host tests (S12 transparency): FRODHES_NOBUDGET / NOSLEEP */
+static int bar_h_fxus = -1;                         /* FRODHES_FXUS: the effects' cost the budget plans with (us; RAW
+                                                     * renders that budget as if the effects ran) */
+static FILE *bar_h_pred;                            /* FRODHES_PREDLOG: predicted vs measured strike levels */
 #define BAR_SLEEP_ON && !bar_h_nosleep
 #else
 #define BAR_SLEEP_ON
 #endif
+static uint32_t fx_cost_us(void);                   /* fx.c: the effects that run now, us per block */
 
 static int32_t bar_sat(int32_t v)
 {
@@ -109,31 +135,92 @@ static int32_t bar_sat(int32_t v)
     return sat28(v);
 }
 
-/* live upper slots over the alive voices, fading ones included (the mode budget counts these) */
-static uint32_t bar_upper_live(void)
+/* ---- log2 in Q8 (a linear mantissa: within 0.09, 0.5 dB) and back; 32-bit shifts only */
+static int32_t bar_log2_32(uint32_t v)
 {
-    uint32_t i, m, c = 0;
-    for (i = 0; i < BAR_NV; i++)
-        if (bv[i].alive)
-            for (m = BAR_UP0; m < BAR_NM; m++) c += bv[i].m[m].live != 0;
-    return c;
+    int32_t p = 0;
+    uint32_t t = v;
+    if (!v) return BAR_LZERO;
+    if (t >> 16) { t >>= 16; p += 16; }
+    if (t >> 8) { t >>= 8; p += 8; }
+    if (t >> 4) { t >>= 4; p += 4; }
+    if (t >> 2) { t >>= 2; p += 2; }
+    if (t >> 1) p += 1;
+    return p * 256 + (int32_t)((p >= 8 ? v >> (p - 8) : v << (8 - p)) & 255u);
+}
+static int32_t bar_log2_64(uint64_t q)
+{
+    uint32_t hi = (uint32_t)(q >> 32), lo = (uint32_t)q;
+    int32_t p, s;
+    if (!hi) return bar_log2_32(lo);
+    p = (bar_log2_32(hi) >> 8) + 32;
+    s = p - 8;                                      /* >= 24 */
+    return p * 256 + (int32_t)((s >= 32 ? hi >> (s - 32) : (hi << (32 - s)) | (lo >> s)) & 255u);
+}
+static int32_t bar_exp2(int32_t l)                  /* 2^(l / 256); 0 under 1 */
+{
+    int32_t i = l >> 8;
+    uint32_t m = 256u + (uint32_t)(l & 255);
+    if (l < 0) return 0;
+    if (i >= 30) return 0x7FFFFFFF;
+    return (int32_t)(i >= 8 ? m << (i - 8) : m >> (8 - i));
 }
 
-/* the mode budget: the most upper slots (V2 .. X) that run at once over the 8 voices. A hard cap by construction,
- * so the bar engine never needs the shedder. From the FM-1 costs (research/P0-cpu.md: 0.54 us per voice-sample
- * fixed, 0.17 per mode-sample, 0.33 the Rhodes pickup) as the host proxy counts them (engine.c; the proxy reads
- * 3130 us for the Rhodes' 8 bass v127 that measure 3500 us, so x 1.12): a block is 1388 us (idle, every effect and
- * the filter) + 1.12 x 256 x (8 x (0.54 + 0.06 gain) + 0.17 x (24 pair + U upper) + 0.68 noise) us. U = 11 gives
- * 4.69 ms at most: under the 4800 us gate with ~100 us to spare (and under the Rhodes' own 4.90 ms). The type's
- * table value can only lower it. */
-#define BAR_BUDGET_MAX 11u
-static uint32_t bar_budget_now(void)
+/* a slot's log2 amplitude (Q8, Q25 units) from x[n], x[n-1]: x1^2 - a1 x1 x2 + a2 x2^2 (= (x1 - x2)^2 + c1 x1 x2 -
+ * c2 x2^2) = A^2 sin^2(theta) for a damped sinusoid */
+static int32_t bar_lamp(const bar_ms_t *s)
 {
-    uint32_t b = BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u].budget;
+    int64_t q;
+    if (s->lo) {
+        int32_t d = s->x1 - s->x2;
+        q = (int64_t)d * d + (int64_t)(int32_t)(((int64_t)s->k1 * s->x1) >> 32) * s->x2
+          - (int64_t)(int32_t)(((int64_t)s->k2 * s->x2) >> 32) * s->x2;
+    } else {
+        int32_t c = (int32_t)(((int64_t)s->k1 * s->x2) >> 30), d = (int32_t)(((int64_t)s->k2 * s->x2) >> 30);
+        q = (int64_t)s->x1 * (s->x1 - c) + (int64_t)s->x2 * d;
+    }
+    if (q <= 0) return BAR_LZERO;
+    return (bar_log2_64((uint64_t)q) >> 1) - s->lsin;
+}
+
+static int32_t bar_sat31(int64_t v)
+{
 #ifdef DINGHY_HOST
-    if (bar_h_nobudget) return 255u;
+    if (v > 0x7FFFFFFF || v < -0x7FFFFFFF) bar_h_sat++;
 #endif
-    return b < BAR_BUDGET_MAX ? b : BAR_BUDGET_MAX;
+    return v > 0x7FFFFFFF ? 0x7FFFFFFF : v < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)v;
+}
+
+/* (e, eps) -> the two-multiply form's coefficients and the force gain. A mode under ~4.9 kHz (c1 < 1/2) runs in Q32:
+ * x' = 2x - xp + hi(err - c1 x + c2 xp), err = lo (the pole 4x finer than Q30, no shifts); above, in Q30:
+ * x' = (err + a1 x - a2 xp) >> 30. The force: F << 12 times be = b e >> 30 (Q32) or >> 32 (Q30). */
+static void bar_coefs(bar_ms_t *s)
+{
+    int64_t c1 = ((int64_t)s->eps << 2) + ((((int64_t)s->e * s->e) + (1 << 27)) >> 28);
+    uint8_t lo = c1 < 0x7FFFFFFF;
+    if (lo != s->lo) s->err = lo ? (int32_t)((uint32_t)s->err << 2) : (int32_t)((uint32_t)s->err >> 2);   /* rescale */
+    s->lo = lo;
+    if (lo) {
+        s->k1 = (int32_t)c1;
+        s->k2 = s->eps << 2;
+        s->be = bar_sat31(((int64_t)s->b * s->e) >> 30);
+    } else {
+        s->k1 = (int32_t)(((int64_t)2 << 30) - s->eps - ((((int64_t)s->e * s->e) + (1 << 29)) >> 30));
+        s->k2 = (1 << 30) - s->eps;
+        s->be = bar_sat31(((int64_t)s->b * s->e) >> 32);
+    }
+}
+
+/* log2 sin(theta), Q8, from the coefficients: sin^2 = 1 - a1^2 / (4 a2) */
+static int32_t bar_lsin(const bar_ms_t *s)
+{
+    int64_t num;
+    if (s->lo) {                                    /* (c1 - c2 - c1^2 / 4) / (1 - c2), in Q32 */
+        num = (int64_t)s->k1 - s->k2 - (((int64_t)s->k1 * s->k1) >> 34);
+        return num > 0 ? (bar_log2_64((uint64_t)num) - bar_log2_64((1ull << 32) - (uint32_t)s->k2)) >> 1 : 0;
+    }
+    num = ((int64_t)s->k2 << 32) - (int64_t)s->k1 * s->k1;
+    return num > 0 ? (bar_log2_64((uint64_t)num) - bar_log2_32((uint32_t)s->k2) - 32 * 256) >> 1 : 0;
 }
 
 static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
@@ -148,8 +235,8 @@ static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
     p11 = BAR_PULSE[v->k->band][f][l]; p12 = BAR_PULSE[v->k->band][f][l2];
     p21 = BAR_PULSE[v->k->band][f2][l]; p22 = BAR_PULSE[v->k->band][f2][l2];
     for (i = 0; i < BAR_PLEN + 2u; i++) {       /* hardness x velocity: one shape, once */
-        int32_t A = p11[i] + (int32_t)(((int64_t)(p12[i] - p11[i]) * w) >> 15);
-        int32_t B = p21[i] + (int32_t)(((int64_t)(p22[i] - p21[i]) * w) >> 15);
+        int32_t A = p11[i] + (((p12[i] - p11[i]) * w) >> 15);   /* |d| < 2^16, w <= 2^15: 32 bits are exact */
+        int32_t B = p21[i] + (((p22[i] - p21[i]) * w) >> 15);
         v->pbuf[i] = (int16_t)(A + (((B - A) * a) >> 8));
     }
     pa = (int32_t)BAR_PAMP[key][f][vi] + ((((int32_t)BAR_PAMP[key][f][vi + 1] - (int32_t)BAR_PAMP[key][f][vi]) * (int32_t)vf) >> 8);
@@ -159,10 +246,51 @@ static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
     pa += ((pa2 - pa) * a) >> 8;
     pr += (int32_t)(((int64_t)(pr2 - pr) * a) >> 8);
     v->prate = (uint32_t)(((uint64_t)((uint32_t)pr << 4) * (uint32_t)bar_mass) >> 12);   /* Q12 -> Q16, x mass */
+    if (!v->prate) v->prate = 1u;
     pa = (int32_t)(((int64_t)pa * bar_massi) >> 12);
     v->pamp = pa > 32767 ? 32767 : pa < 0 ? 0 : pa;
     v->ptab = v->pbuf;
     v->ppos = 0;
+    v->pred = 0;                                    /* the slots' strike levels: predicted only if the budget asks */
+}
+
+/* the strike's level in each slot, before it sounds (for the mode budget): the mode's amplitude after a short force
+ * pulse is |u(theta)| / cos(theta / 2), u the pulse's spectrum at the mode (u = F b >> 20 a sample). The table's 66
+ * points are played Delta = 2^16 / prate samples apart, so |u| = |b| / 2^20 x pamp / 2^15 x Delta x |P(theta Delta)|,
+ * P the table's spectrum (Goertzel, 66 MACs). A mode over half the table's point rate gets nothing. */
+static void bar_predict(bar_voice_t *v)
+{
+    uint32_t m, dq = 0xFFFFFFFFu / v->prate;        /* Delta, Q16 */
+    int32_t lp = bar_log2_32((uint32_t)v->pamp) + bar_log2_32(dq) - (16 + 35) * 256;
+    v->pred = 1;
+    for (m = 0; m < BAR_NM; m++) {
+        bar_ms_t *s = &v->m[m];
+        const rh_mode_t *km = &v->k->m[m];
+        uint64_t tpe;
+        uint32_t ph, i, k;
+        int32_t c, s1 = 0, s2 = 0, l;
+        int64_t q;
+        s->lpred = BAR_LZERO;
+        if (!s->live || !s->b || m == 1u) continue;
+        /* turns per sample (Q32) = theta / 2 pi = th 4 / pi (th = theta / 2, Q30), then per table point */
+        tpe = ((((uint64_t)(uint32_t)km->th * 1367130551u) >> 30) * dq) >> 16;
+        if (tpe >= 0x80000000u) continue;           /* over half the point rate: nothing to speak of */
+        ph = (uint32_t)tpe;
+        i = ph >> 22;                               /* 2 pi ph in 512 steps over [0, pi) */
+        c = i < 256u ? BAR_MOT_COS[i] : -BAR_MOT_COS[512u - i];   /* cos, Q15 = 2 cos in Q14 */
+        for (k = 0; k < BAR_PLEN + 2u; k++) {
+            int32_t s0 = v->pbuf[k] + (int32_t)(((int64_t)c * s1) >> 14) - s2;
+            s2 = s1; s1 = s0;
+        }
+        q = (int64_t)s1 * s1 + (int64_t)s2 * s2 - (((int64_t)c * s1) >> 14) * s2;
+        if (q <= 0) continue;
+        l = (bar_log2_64((uint64_t)q) >> 1) + bar_log2_32((uint32_t)(s->b < 0 ? -s->b : s->b)) + lp
+          - (bar_log2_32((uint32_t)km->ch) - 30 * 256);
+        s->lpred = (int16_t)(l < -32767 ? -32767 : l > 32767 ? 32767 : l);
+    }
+#ifdef DINGHY_HOST
+    if (bar_h_pred) for (m = 0; m < BAR_NM; m++) v->m[m].fresh |= 2u;   /* report it after the first block */
+#endif
 }
 
 static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
@@ -178,12 +306,15 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
         bar_ms_t *ms = &v->m[m];
         const rh_mode_t *km = &k->m[m];
         int64_t b;
-        int32_t w;
-        ms->x = ms->y = ms->ex = ms->ey = 0;
-        ms->peak = 0;
+        int32_t w, lf;
+        ms->x1 = ms->x2 = ms->err = 0;
+        ms->amp = 0;
         ms->live = 0;
+        ms->fresh = 1;
         ms->b = 0;
-        if (!km->th) { ms->e = ms->eps = 0; continue; }
+        ms->lpred = BAR_LZERO;
+        ms->lo = 1;
+        if (!km->th) { ms->e = ms->eps = 0; ms->k1 = ms->k2 = ms->be = 0; ms->lsin = 0; ms->bin = 0; continue; }
         rh_coef(km, km->d, rh_tune_t, m == 1u ? 65536 : bar_k_decay, &ms->e0, &ms->eps0);
         rh_coef(km, km->drel, rh_tune_t, m == 1u ? 65536 : bar_k_rel, &ms->e1, &ms->eps1);
         ms->e = ms->es = ms->e0; ms->eps = ms->epss = ms->eps0;
@@ -191,27 +322,31 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
         b = ((int64_t)km->b * w) >> 14;
         if (m == 5u || m == 6u) b = tone > 64 ? (b * ty->tors_db) >> 15 : 0;   /* torsion: off the centreline only */
         ms->b = b > 0x7FFFFFFF ? 0x7FFFFFFF : b < -0x7FFFFFFF ? -0x7FFFFFFF : (int32_t)b;
+        bar_coefs(ms);
+        ms->lsin = (int16_t)bar_lsin(ms);
+        lf = bar_log2_32((uint32_t)km->th) - 20 * 256;              /* 1/3-octave bands from about 14 Hz */
+        ms->bin = (uint8_t)(lf <= 0 ? 0 : (lf * 3) >> 8 > 35 ? 35 : (lf * 3) >> 8);
         if (m == 0u) ms->live = 1;
         else if (m == 1u) ms->live = s != 0;                       /* BELL 0: no tube at all */
         else ms->live = ms->b != 0;                 /* bar_budget() trims, before the slot ever sounds */
     }
     v->note = (uint8_t)note; v->vel = (uint8_t)vel;
     v->gain = k->gain;
+    v->kill1 = (int32_t)((1u << 29) / (uint32_t)(k->gain > 0 ? k->gain : 1));   /* 1 LSB out, in Q25 units */
+    if (v->kill1 < 1) v->kill1 = 1;
     v->kbt = (int32_t)(((int64_t)k->k_bt * s) >> 15);
     v->ktb = (int32_t)(((int64_t)k->k_tb * s) >> 15);
     v->wt = (int32_t)(((int64_t)k->wt * s) >> 15);
-    v->alive = 1; v->held = 1; v->ramp = 0; v->w_tgt = 0;
+    v->alive = 1; v->held = 1; v->ramp = 0; v->w_tgt = 0; v->struck = 1;
     v->fade = 32768; v->pend = 0; v->felt_n = 0; v->felt_lp = 0;
     v->age = ++bar_ages;
     v->life = k->life;
     v->pthump = BAR_PULSE[k->band][BAR_NFAM - 1u][0];             /* the felt's knock: RUBBER, softest layer */
     v->prate_thump = BAR_PRATE[n - BAR_KEY_LO][BAR_NFAM - 1u][1] << 4;
     bar_load_pulse(v, vel);
-    {   /* contact noise: 100 ms of filtered noise, louder for harder mallets and faster strikes */
+    {   /* contact noise: filtered noise, louder for harder mallets and faster strikes, decaying (tau ~ 23 ms) */
         uint32_t f = (uint32_t)bar_fam >> 8;
-        int64_t l = ((int64_t)bar_nz * BAR_FAM_NZ[f < BAR_NFAM ? f : BAR_NFAM - 1u] * vel) >> 22;
-        v->nz_lvl = (int32_t)l;
-        v->nz_n = l ? 4410u : 0u;
+        bar_nz_e += (int32_t)(((int64_t)bar_nz * BAR_FAM_NZ[f < BAR_NFAM ? f : BAR_NFAM - 1u] * vel) >> 22);
     }
 }
 
@@ -225,6 +360,13 @@ static void bar_set_damper(bar_voice_t *v, int32_t w)
 }
 
 /* ---- events (engine.c, ISR, before bar_render) */
+static uint32_t bar_level_sum(const bar_voice_t *v)
+{
+    uint32_t m, sum = 0;
+    for (m = 0; m < BAR_NM; m++) sum += (uint32_t)v->m[m].amp >> 4;
+    return sum;
+}
+
 static void bar_strike(uint32_t note, uint32_t vel)
 {
     uint32_t i, pick = BAR_NV, best = 0xFFFFFFFFu;
@@ -233,18 +375,24 @@ static void bar_strike(uint32_t note, uint32_t vel)
             bar_voice_t *v = &bv[i];
             uint32_t m;
             for (m = BAR_UP0; m < BAR_NM; m++)       /* relight (a fading slot keeps its state); bar_budget() trims */
-                if (v->m[m].b) v->m[m].live = 1;
-            v->vel = (uint8_t)vel; v->held = 1; v->age = ++bar_ages; v->life = v->k->life;
+                if (v->m[m].b) { if (!v->m[m].live) { v->m[m].amp = 0; v->m[m].x1 = v->m[m].x2 = v->m[m].err = 0; }
+                                 v->m[m].live = 1; v->m[m].fresh = 1; }
+            v->m[0].fresh = 1;
+            v->vel = (uint8_t)vel; v->held = 1; v->age = ++bar_ages; v->life = v->k->life; v->struck = 1;
             bar_set_damper(v, 0);
             bar_load_pulse(v, vel);
+            {
+                uint32_t f = (uint32_t)bar_fam >> 8;
+                bar_nz_e += (int32_t)(((int64_t)bar_nz * BAR_FAM_NZ[f < BAR_NFAM ? f : BAR_NFAM - 1u] * vel) >> 22);
+            }
             return;
         }
     for (i = 0; i < BAR_NV; i++)
         if (!bv[i].alive) { bar_init(&bv[i], note, vel); return; }
     for (i = 0; i < BAR_NV; i++) {                  /* steal: the quietest released voice, else the oldest */
-        uint32_t m, sum = 0, score;
+        uint32_t sum, score;
         if (bv[i].pend) continue;
-        for (m = 0; m < BAR_NM; m++) sum += (uint32_t)bv[i].m[m].peak >> 4;
+        sum = bar_level_sum(&bv[i]);
         score = bv[i].held ? 0x80000000u + (bv[i].age & 0x7FFFFFFFu) : (sum > 0x7FFFFFFFu ? 0x7FFFFFFFu : sum);
         if (score < best) { best = score; pick = i; }
     }
@@ -288,11 +436,11 @@ static void bar_all_off(void)
 
 static void bar_shed(void)                          /* overload: fade the quietest voice, released first */
 {
-    uint32_t i, m, pick = BAR_NV, best = 0xFFFFFFFFu;
+    uint32_t i, pick = BAR_NV, best = 0xFFFFFFFFu;
     for (i = 0; i < BAR_NV; i++) {
-        uint32_t sum = 0, score;
+        uint32_t sum, score;
         if (!bv[i].alive || bv[i].fade != 32768) continue;
-        for (m = 0; m < BAR_NM; m++) sum += (uint32_t)bv[i].m[m].peak >> 4;
+        sum = bar_level_sum(&bv[i]);
         score = (bv[i].held ? 0x40000000u : 0u) + (sum > 0x3FFFFFFFu ? 0x3FFFFFFFu : sum);
         if (score < best) { best = score; pick = i; }
     }
@@ -306,8 +454,8 @@ static void bar_kill_all(void)
     for (i = 0; i < BAR_NV; i++) { bv[i].alive = 0; bv[i].pend = 0; }
     for (sb = 0; sb < 2u; sb++) bar_bd_m[sb][0] = bar_bd_m[sb][1] = bar_bd_o[sb][0] = bar_bd_o[sb][1] = bar_bd_e[sb] = 0;
     bar_active_bits = bar_held_bits = 0;
+    bar_nz_e = 0;
     bar_nz_s[0] = bar_nz_s[1] = bar_nz_s[2] = bar_nz_s[3] = 0;
-    bar_nz_dirty = 1;                               /* the next block clears the envelopes */
 }
 
 static int bar_quiet(void) { return bar_active_bits == 0 && bar_quiet_blocks >= 2u; }
@@ -338,180 +486,359 @@ static void bar_motor_block(void)
     bar_mot_ph += 256u * inc;
 }
 
-/* ---- the mode budget, at block start (after this block's strikes): while more upper slots are live than the cap,
- * drop the least audible one. Order: (1) ringing slots under -30 dB re their voice's fundamental (faded out over a
- * sub-block), (2) slots of a new strike that have not sounded yet, the least important partial first (T2, X, V4,
- * T1, V3, V2): dropping those is silent, (3) louder ringing slots, quietest relative to their voice first (faded). */
-static const uint8_t BAR_KEEP[BAR_NM] = {0, 0, 5, 4, 2, 3, 0, 1};      /* V2 > V3 > T1 > V4 > X > T2 */
+/* ---- the CPU cost model: ns on the FM-1 per 256-frame block. Derived from the measured costs of the previous kernels
+ * (tools/hil_cpu.py 2026-10-17: an upper slot 40 us a block for 44 instructions a sample = 3.6 ns an instruction in
+ * register-bound loops; the pair + pulse + output 1.46 us a voice-sample for ~248 = 5.9 ns where the loop spills)
+ * applied to the instruction counts of these loops in build/frodhes.dis, then x 1.25 (x 1.3 for the slots) so each
+ * is an upper bound. tools/hil_cpu.py --calib and --fx-each measure the real ones: replace these with them. The cap
+ * is the gate minus a margin minus everything that is not an upper mode, in units of one upper mode for one
+ * sub-block (a fading slot is one unit). Loop sizes (instructions a sample): upper slot 8 (Q32) / 9 (Q30), with the
+ * force 13 / 20; the pair 34, with the motor 38.5, with the force 38 / 44.5; the tube's radiation 6; the gain 9; the
+ * slow output (steal fade, felt) 46; the pulse 25; the contact noise 48. */
+#define BAR_NS_GATE 4800000u      /* the worst block allowed; the shedder is at 5000 us */
+#define BAR_NS_MARGIN 150000u     /* the model's own error */
+#define BAR_NS_BASE 312000u       /* idle, no effects: the platform, the master, an empty render (measured) */
+#define BAR_NS_VOICE 100000u      /* a sounding voice: the pair (motor), the radiation, the gain, the levels, setup */
+#define BAR_NS_FORCE 50000u       /* a voice whose pulse runs this block (the pulse, the pair's force), whole block */
+#define BAR_NS_STRIKE 40000u      /* a note-on: 16 coefficient sets, the pulse blend, the slots' set-up */
+#define BAR_NS_SLOW 45000u        /* a voice fading (steal) or with felt noise: the slow output loop */
+#define BAR_NS_NOISE 65000u       /* the contact noise (one for all voices) */
+#define BAR_NS_RANK 70000u        /* the budget's ranking (only when over) */
+#define BAR_NS_PRED 3000u         /* one slot's strike prediction (only when over) */
+#define BAR_NS_UNIT 1400u         /* one upper mode for one sub-block */
+#define BAR_NS_UNITF 1500u        /* ... more while any voice's pulse runs (the force MAC; counted for every slot) */
+
+static uint32_t bar_upper_units(void)               /* live upper slots over the alive voices, in sub-block units */
+{
+    uint32_t i, m, c = 0;
+    for (i = 0; i < BAR_NV; i++)
+        if (bv[i].alive)
+            for (m = BAR_UP0; m < BAR_NM; m++) c += bv[i].m[m].live == 1u ? BAR_NSUB : bv[i].m[m].live ? 1u : 0u;
+    return c;
+}
+
+/* everything this block will do except the upper modes (ns); *unit = one unit's ns */
+static uint32_t bar_cost_fixed(uint32_t *unit)
+{
+    uint32_t i, ns = BAR_NS_BASE + 1000u * fx_cost_us(), f = 0;
+#ifdef DINGHY_HOST
+    if (bar_h_fxus >= 0) ns = BAR_NS_BASE + 1000u * (uint32_t)bar_h_fxus;
+#endif
+    for (i = 0; i < BAR_NV; i++) {
+        const bar_voice_t *v = &bv[i];
+        if (!v->alive) continue;
+        ns += BAR_NS_VOICE;
+        if (v->ptab) { ns += BAR_NS_FORCE; f = 1; }
+        if (v->struck) ns += BAR_NS_STRIKE;
+        if (v->fade != 32768 || v->felt_n) ns += BAR_NS_SLOW;
+        if (v->pend && v->fade != 32768) ns += BAR_NS_STRIKE;       /* the waiting note starts at this block's end */
+    }
+    if (bar_nz_e) ns += BAR_NS_NOISE;
+    *unit = BAR_NS_UNIT + (f ? BAR_NS_UNITF : 0u);
+    return ns;
+}
+
+/* ---- the mode budget, at block start (after this block's strikes): while the live upper modes cost more than the
+ * block can take, the least audible go. Audibility: a partial's output level re the loudest fundamental (V1) in the
+ * mix, and under the masking of the loudest other partials in its own and the three neighbouring third-octave bands
+ * (12 dB under a masker in the same band, 8 dB more per band above it, 15 dB more per band below it). A strike's
+ * slots that have not sounded are ranked by their predicted level (bar_predict). Ringing slots fade out over a
+ * sub-block (live 2); slots that never sounded just stay silent. */
+#define BAR_DB(x) ((int32_t)(x) * 5442 / 128)       /* dB -> log2 Q8 (256 / 6.0206 = 42.52) */
+#define BAR_NBIN 36u
+#include <stdlib.h>
+static int xp_get(const char *n, int d) { const char *p = getenv(n); return p ? atoi(p) : d; }
+#define XP_FLOOR xp_get("XP_FLOOR", 70)
+#define XP_OFF xp_get("XP_OFF", 12)
+#define XP_UP xp_get("XP_UP", 8)
+#define XP_DN xp_get("XP_DN", 15)
+#define XP_TAU xp_get("XP_TAU", 0)
+typedef struct { int16_t l; uint8_t v, m; } bar_lv_t;
+static bar_lv_t bar_lv[BAR_NV * BAR_NM];
+static int16_t bar_top[BAR_NBIN][2];
+static uint8_t bar_topi[BAR_NBIN][2];
+
+static uint32_t bar_budget_run(void);
 static void bar_budget(void)
 {
-    uint32_t used = bar_upper_live(), budget = bar_budget_now();
-    while (used > budget) {
-        uint32_t i, m, bi = BAR_NV, bm = 0, best = 0xFFFFFFFFu;
-        for (i = 0; i < BAR_NV; i++) {
-            const bar_voice_t *v = &bv[i];
-            uint32_t ref;
-            if (!v->alive) continue;
-            ref = (uint32_t)v->m[0].peak + (uint32_t)(((int64_t)v->m[1].peak * iabs(v->wt)) >> 28);
-            ref = (ref >> 10) + 1u;                                     /* the fundamental / 1024 */
-            for (m = BAR_UP0; m < BAR_NM; m++) {
-                const bar_ms_t *s = &v->m[m];
-                uint32_t sc, r;
-                if (s->live != 1u) continue;
-                if (!s->peak) sc = 32u + BAR_KEEP[m];                   /* not sounded yet */
-                else {
-                    r = (uint32_t)s->peak / ref;                        /* Q10 level re the fundamental */
-                    sc = r < 32u ? r : 64u + (r > 0x3FFFFFu ? 0x3FFFFFu : r);   /* 32/1024 = -30 dB */
-                }
-                if (sc < best) { best = sc; bi = i; bm = m; }
-            }
+    uint32_t unit, ns = bar_cost_fixed(&unit) + bar_budget_run();
+    bar_plan_us = (ns + unit * bar_upper_units() + 999u) / 1000u;
+}
+static uint32_t bar_budget_run(void)                /* returns the ranking's own cost (ns) */
+{
+    uint32_t i, m, n = 0, nc = 0, used = bar_upper_units(), unit, cap, rank = 0;
+    uint32_t fixed = bar_cost_fixed(&unit);
+    int32_t lref = BAR_LZERO;
+    uint8_t cand[BAR_NV * BAR_NUP];
+    int16_t aud[BAR_NV * BAR_NUP];
+    for (;;) {                                      /* the cap, in units: (gate - margin - the rest) / unit */
+        uint32_t lim = BAR_NS_GATE - BAR_NS_MARGIN, cost = fixed + rank;
+        cap = cost < lim ? (lim - cost) / unit : 0u;
+        if (used <= cap || rank) break;
+        rank = BAR_NS_RANK;                         /* over: the ranking itself costs, take it from the cap */
+        for (i = 0; i < BAR_NV; i++)
+            if (bv[i].alive && !bv[i].pred && bv[i].ptab == bv[i].pbuf)
+                for (m = 0; m < BAR_NM; m++) rank += bv[i].m[m].fresh & 1u ? BAR_NS_PRED : 0u;
+    }
+#ifdef DINGHY_HOST
+    if (bar_h_pred)
+        for (i = 0; i < BAR_NV; i++) if (bv[i].alive && bv[i].ptab == bv[i].pbuf && !bv[i].pred) bar_predict(&bv[i]);
+#endif
+    {   /* the type's own cap (BAR_TYPE.budget, upper modes; 48 = all) can only lower it */
+        uint32_t tcap = (uint32_t)BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u].budget * BAR_NSUB;
+        if (tcap < cap) cap = tcap;
+    }
+    if (bar_budget_force) cap = bar_budget_force >= 50u ? 0xFFFFu : (uint32_t)(bar_budget_force - 1u) * BAR_NSUB;
+#ifdef DINGHY_HOST
+    if (bar_h_nobudget) cap = 0xFFFFu;
+#endif
+    if (cap / BAR_NSUB < bar_prof_cap) bar_prof_cap = cap / BAR_NSUB;
+    if (used <= cap) { if ((used + 7u) / 8u > bar_prof_used) bar_prof_used = (used + 7u) / 8u; return rank; }
+    /* every partial's output level, log2 Q8 in Q15 output units (gain Q16: amp gain / 2^29) */
+    for (i = 0; i < BAR_NV; i++) {
+        bar_voice_t *v = &bv[i];
+        int32_t lg;
+        if (!v->alive) continue;
+        if (v->ptab == v->pbuf && !v->pred) bar_predict(v);
+        lg = bar_log2_32((uint32_t)v->gain) - 29 * 256;
+        for (m = 0; m < BAR_NM; m++) {
+            const bar_ms_t *s = &v->m[m];
+            int32_t l;
+            if (s->live != 1u) continue;
+            l = s->amp ? bar_log2_32((uint32_t)s->amp) : BAR_LZERO;
+            if ((s->fresh & 1u) && v->ptab == v->pbuf && s->lpred > l) l = s->lpred;   /* struck now: predicted */
+            if (l == BAR_LZERO) { if (m < BAR_UP0) continue; l = -32767 - lg; }   /* nothing to go on: goes first */
+            l += lg;
+            if (m == 1u) l += bar_log2_32((uint32_t)(v->wt < 0 ? -v->wt : v->wt)) - 28 * 256;
+            if (m == 0u && l > lref) lref = l;
+            bar_lv[n].l = (int16_t)(l < -32767 ? -32767 : l > 32767 ? 32767 : l);
+            bar_lv[n].v = (uint8_t)i; bar_lv[n].m = (uint8_t)m;
+            n++;
         }
-        if (bi == BAR_NV) break;
-        {
-            bar_ms_t *s = &bv[bi].m[bm];
-            if (s->peak) s->live = 2;               /* faded out over its next sub-block, never cut */
-            else { s->live = 0; s->x = s->y = s->ex = s->ey = 0; }      /* never sounded: nothing to fade */
+    }
+    for (i = 0; i < BAR_NBIN; i++) { bar_top[i][0] = bar_top[i][1] = -32767; bar_topi[i][0] = bar_topi[i][1] = 0xFF; }
+    for (i = 0; i < n; i++) {                       /* the two loudest partials in every band */
+        uint32_t b = bv[bar_lv[i].v].m[bar_lv[i].m].bin;
+        int16_t l = bar_lv[i].l;
+        if (l > bar_top[b][0]) { bar_top[b][1] = bar_top[b][0]; bar_topi[b][1] = bar_topi[b][0]; bar_top[b][0] = l; bar_topi[b][0] = (uint8_t)i; }
+        else if (l > bar_top[b][1]) { bar_top[b][1] = l; bar_topi[b][1] = (uint8_t)i; }
+    }
+    for (i = 0; i < n; i++) {                       /* the candidates' audibility: level - max(floor, masking) */
+        const bar_voice_t *v = &bv[bar_lv[i].v];
+        int32_t b = v->m[bar_lv[i].m].bin, t = lref - BAR_DB(XP_FLOOR), d, a;
+        uint32_t j;
+        if (bar_lv[i].m < BAR_UP0) continue;
+        for (d = -3; d <= 3; d++) {
+            int32_t bb = b + d, mk;
+            if (bb < 0 || bb >= (int32_t)BAR_NBIN) continue;
+            j = bar_topi[bb][0] == i ? 1u : 0u;     /* not masked by itself */
+            if (bar_topi[bb][j] == 0xFF) continue;
+            mk = bar_top[bb][j] - BAR_DB(XP_OFF) - (d < 0 ? BAR_DB(XP_UP) * -d : BAR_DB(XP_DN) * d);
+            if (mk > t) t = mk;
         }
-        used--;
+        a = bar_lv[i].l - t;
+        if (XP_TAU) a -= (bar_log2_32((uint32_t)v->m[bar_lv[i].m].eps) - 16 * 256) * XP_TAU / 2;   /* short-lived: less */
+        if (v->fade != 32768) a -= BAR_DB(200);     /* a stolen voice's partials go first: it fades out anyway */
+        aud[nc] = (int16_t)(a < -32767 ? -32767 : a > 32767 ? 32767 : a);
+        cand[nc++] = (uint8_t)i;
+    }
+    for (i = 1; i < nc; i++) {                      /* least audible first (insertion sort, <= 48) */
+        int16_t a = aud[i];
+        uint8_t c = cand[i];
+        uint32_t j = i;
+        while (j && aud[j - 1u] > a) { aud[j] = aud[j - 1u]; cand[j] = cand[j - 1u]; j--; }
+        aud[j] = a; cand[j] = c;
+    }
+    for (i = 0; i < nc && used > cap; i++) {
+        bar_ms_t *s = &bv[bar_lv[cand[i]].v].m[bar_lv[cand[i]].m];
+        if (s->amp) { s->live = 2; used -= BAR_NSUB - 1u; }                       /* faded over its next sub-block */
+        else { s->live = 0; s->x1 = s->x2 = s->err = 0; used -= BAR_NSUB; }      /* never sounded: nothing to fade */
+    }
+    if (used > cap) {                               /* still over (should not happen): every unranked upper slot goes */
+        for (i = 0; i < BAR_NV; i++)
+            for (m = BAR_UP0; m < BAR_NM && used > cap; m++)
+                if (bv[i].alive && bv[i].m[m].live == 1u) { bv[i].m[m].live = 2; used -= BAR_NSUB - 1u; }
+    }
+    if ((used + 7u) / 8u > bar_prof_used) bar_prof_used = (used + 7u) / 8u;
+    return rank;
+}
+
+/* ---- the kernels: two samples a turn (x[n] and x[n-1] swap roles), first-order error feedback. 2 multiplies a
+ * sample (3 while the force runs): Q32 for the modes under ~4.9 kHz, Q30 above (bar_coefs). */
+#define BAR_LO(XN, XO, F) do { int64_t a_ = (int64_t)(uint32_t)err - (int64_t)k1 * (XN) + (int64_t)k2 * (XO) F; \
+        (XO) = 2 * (XN) - (XO) + (int32_t)(a_ >> 32); err = (int32_t)a_; } while (0)
+#define BAR_HI(XN, XO, F) do { int64_t a_ = (int64_t)(uint32_t)err + (int64_t)k1 * (XN) - (int64_t)k2 * (XO) F; \
+        (XO) = (int32_t)(a_ >> 30); err = (int32_t)a_ & BAR_EFM; } while (0)
+#define BAR_KERNEL(NAME, STEP, FRC) \
+static void NAME(bar_ms_t *s, int32_t *bx, const int32_t *F, uint32_t n) \
+{ \
+    int32_t x1 = s->x1, x2 = s->x2, err = s->err, k1 = s->k1, k2 = s->k2, be = s->be; \
+    int32_t *e = bx + n; \
+    (void)F; (void)be; \
+    while (bx < e) { \
+        STEP(x1, x2, FRC); *bx++ += x2; \
+        STEP(x2, x1, FRC); *bx++ += x1; \
+    } \
+    s->x1 = x1; s->x2 = x2; s->err = err; \
+}
+#define BAR_NOF
+#define BAR_F_ + (int64_t)*F++ * be
+BAR_KERNEL(bar_run_lo, BAR_LO, BAR_NOF)
+BAR_KERNEL(bar_run_lo_f, BAR_LO, BAR_F_)
+BAR_KERNEL(bar_run_hi, BAR_HI, BAR_NOF)
+BAR_KERNEL(bar_run_hi_f, BAR_HI, BAR_F_)
+
+static void bar_run(bar_ms_t *s, int32_t *bx, const int32_t *F, uint32_t n)   /* an upper slot, n even; F 0: none */
+{
+    if (s->lo) { if (F) bar_run_lo_f(s, bx, F, n); else bar_run_lo(s, bx, 0, n); }
+    else { if (F) bar_run_hi_f(s, bx, F, n); else bar_run_hi(s, bx, 0, n); }
+}
+
+static void bar_run_fade(bar_ms_t *s, int32_t *bx, const int32_t *F)  /* one sub-block, faded out, then asleep */
+{
+    int32_t t[BAR_SUB], j;
+    for (j = 0; j < (int32_t)BAR_SUB; j++) t[j] = 0;
+    bar_run(s, t, F, BAR_SUB);
+    for (j = 0; j < (int32_t)BAR_SUB; j++) bx[j] += (int32_t)(((int64_t)t[j] * (1024 * ((int32_t)BAR_SUB - j))) >> 15);
+    s->live = 0; s->x1 = s->x2 = s->err = 0; s->amp = 0;
+}
+
+/* V1 <-> TUBE for one sub-block, sample-inner (the motor ramps the couplings per sample), Q32 form (both modes are
+ * under 4.9 kHz on every key): bx = x0, tb = the tube's x1 (its radiation weight is the output loop's). The tube's
+ * pressure on the bar (ktb x1 into y0) enters x0 as e0 ktb x1, likewise e1 kbt x0 into x1: ktbe = ktb e0 >> 16
+ * then >> 12 (the product keeps 12 more bits: ktb e0 is 2^33 .. 2^46 over the keys), kbte = kbt e1 >> 28. */
+#define BAR_PSTEP(X0N, X0O, X1N, X1O, FRC, MOT) do { \
+        int64_t a_ = (int64_t)(uint32_t)e0r - (int64_t)c10 * (X0N) + (int64_t)c20 * (X0O) \
+                   + (((int64_t)ktbe * (X1N)) >> 12); \
+        if (FRC) a_ += (int64_t)*F++ * be0; \
+        (X0O) = 2 * (X0N) - (X0O) + (int32_t)(a_ >> 32); e0r = (int32_t)a_; \
+        a_ = (int64_t)(uint32_t)e1r - (int64_t)c11 * (X1N) + (int64_t)c21 * (X1O) + (int64_t)kbte * (X0O); \
+        (X1O) = 2 * (X1N) - (X1O) + (int32_t)(a_ >> 32); e1r = (int32_t)a_; \
+        *bx++ = (X0O); *tb++ = (X1O); \
+        if (MOT) { ktbe += dk0; kbte += dk1; } \
+    } while (0)
+#define BAR_PAIR(NAME, FRC, MOT) \
+static void NAME(bar_ms_t *s0, bar_ms_t *s1, int32_t *bx, int32_t *tb, const int32_t *F, int32_t ktbe, int32_t kbte, \
+                 int32_t dk0, int32_t dk1) \
+{ \
+    int32_t x0 = s0->x1, x0p = s0->x2, e0r = s0->err, c10 = s0->k1, c20 = s0->k2, be0 = s0->be; \
+    int32_t x1 = s1->x1, x1p = s1->x2, e1r = s1->err, c11 = s1->k1, c21 = s1->k2; \
+    int32_t *e = bx + BAR_SUB; \
+    (void)F; (void)be0; (void)dk0; (void)dk1; \
+    while (bx < e) { BAR_PSTEP(x0, x0p, x1, x1p, FRC, MOT); BAR_PSTEP(x0p, x0, x1p, x1, FRC, MOT); } \
+    s0->x1 = x0; s0->x2 = x0p; s0->err = e0r; s1->x1 = x1; s1->x2 = x1p; s1->err = e1r; \
+}
+BAR_PAIR(bar_pair_00, 0, 0)
+BAR_PAIR(bar_pair_01, 0, 1)
+BAR_PAIR(bar_pair_10, 1, 0)
+BAR_PAIR(bar_pair_11, 1, 1)
+
+static bar_ms_t bar_notube;                         /* BELL 0: a silent tube (the same work, so the same cost) */
+static void bar_pair(bar_voice_t *v, int32_t *bx, int32_t *tb, const int32_t *F, uint32_t sb)
+{
+    bar_ms_t *s0 = &v->m[0], *s1 = v->m[1].live ? &v->m[1] : &bar_notube;
+    int32_t g0 = bar_mot_g[sb], g1 = bar_mot_g[sb + 1u], ktbe, kbte, dk0, dk1;
+    ktbe = bar_sat31((((int64_t)v->ktb * g0) >> 15) * s0->e >> 16);
+    kbte = bar_sat31((((int64_t)v->kbt * g0) >> 15) * s1->e >> 28);
+    dk0 = (bar_sat31((((int64_t)v->ktb * g1) >> 15) * s0->e >> 16) - ktbe) >> 5;
+    dk1 = (bar_sat31((((int64_t)v->kbt * g1) >> 15) * s1->e >> 28) - kbte) >> 5;
+    if (!v->m[1].live) ktbe = kbte = dk0 = dk1 = 0;
+    if (dk0 | dk1) {
+        if (F) bar_pair_11(s0, s1, bx, tb, F, ktbe, kbte, dk0, dk1); else bar_pair_01(s0, s1, bx, tb, 0, ktbe, kbte, dk0, dk1);
+    } else {
+        if (F) bar_pair_10(s0, s1, bx, tb, F, ktbe, kbte, 0, 0); else bar_pair_00(s0, s1, bx, tb, 0, ktbe, kbte, 0, 0);
     }
 }
 
-/* one MC3 step with first-order error feedback (Q30 coefficients, the Rhodes kernel copied) */
-#define BAR_MC3(x, y, ex, ey, e, eps) do { \
-        int64_t t_ = (int64_t)(e) * (y) + (ex); \
-        (x) += (int32_t)(t_ >> 30); (ex) = (int32_t)(t_ & 0x3FFFFFFF); \
-        t_ = -(int64_t)(eps) * (y) - (int64_t)(e) * (x) + (ey); \
-        (y) += (int32_t)(t_ >> 30); (ey) = (int32_t)(t_ & 0x3FFFFFFF); \
-    } while (0)
-
-/* one voice, one 32-frame sub-block (number sb of the block), added into mix[0..BAR_SUB) */
-static void bar_voice_sub(bar_voice_t *v, int32_t *mix, uint32_t sb)
+/* the pulse into bar_F[0 .. nF) as F << 12, F exactly the Q15 force of before (the kernels' be scales it) */
+static uint32_t bar_force(bar_voice_t *v)
 {
-    const bar_key_t *k = v->k;
-    const bar_type_t *ty = &BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u];
-    uint32_t j, m, base = sb * BAR_SUB;
-    int32_t sum = 0, gain = v->gain, frc, tube, slow;
-#ifdef DINGHY_HOST
-    uint32_t nlive = 0;
-#endif
-    if (v->ramp) {                                  /* damper crossfade: E and eps together, 7 sub-blocks */
-        int32_t f;
-        v->ramp--;
-        f = (int32_t)(BAR_RAMP_SUB - v->ramp) * 4681;
-        if (f > 32768) f = 32768;
-        if (!v->ramp) f = 32768;
-        for (m = 0; m < BAR_NM; m++) {
-            bar_ms_t *s = &v->m[m];
-            int32_t et, pt;
-            if (!s->live) continue;
-            et = s->e0 + (int32_t)(((int64_t)(s->e1 - s->e0) * v->w_tgt) >> 15);
-            pt = s->eps0 + (int32_t)(((int64_t)(s->eps1 - s->eps0) * v->w_tgt) >> 15);
-            s->e = s->es + (int32_t)(((int64_t)(et - s->es) * f) >> 15);
-            s->eps = s->epss + (int32_t)(((int64_t)(pt - s->epss) * f) >> 15);
-        }
+    const int16_t *t = v->ptab;
+    uint32_t pos = v->ppos, rate = v->prate, j = 0;
+    int32_t amp = v->pamp;
+    if (!t) return 0;
+    while (j < BAR_N) {
+        uint32_t i = pos >> 16;
+        int32_t f = (int32_t)((pos >> 1) & 0x7FFFu), a = t[i], d = t[i + 1u] - a;
+        bar_F[j++] = (((a + ((d * f) >> 15)) * amp) >> 15) << 12;
+        pos += rate;
+        if ((pos >> 16) >= BAR_PLEN) { t = 0; break; }
     }
-    frc = v->ptab != 0;
-    if (frc)                                        /* mallet (or felt) force for the sub-block, while it lasts */
-        for (j = 0; j < BAR_SUB; j++) {
-            if (v->ptab) {
-                uint32_t i = v->ppos >> 16;
-                int32_t f = (int32_t)((v->ppos >> 1) & 0x7FFFu);
-                int32_t a = v->ptab[i], b = v->ptab[i + 1];
-                bar_F[j] = mul15s(a + (int32_t)(((int64_t)(b - a) * f) >> 15), v->pamp);
-                v->ppos += v->prate;
-                if ((v->ppos >> 16) >= BAR_PLEN) v->ptab = 0;
-            } else
-                bar_F[j] = 0;
-        }
-    for (j = 0; j < BAR_SUB; j++) bar_x[j] = 0;
-    tube = v->m[1].live != 0;
-    for (m = tube ? BAR_UP0 : 0u; m < BAR_NM; m++) {    /* the upper modes (and V1 without a tube): MC3 + error
-                                                         * feedback, mode-outer */
+    v->ppos = pos; v->ptab = t;
+    {   /* zeros to the end of the sub-block (the kernels run in pairs, the pair per sub-block) */
+        uint32_t z, e = (j + BAR_SUB) & ~(BAR_SUB - 1u);
+        for (z = j; z < e && z < BAR_N + 2u; z++) bar_F[z] = 0;
+    }
+    return j;
+}
+
+/* damper crossfade: E and eps together, 7 sub-blocks */
+static void bar_damper_step(bar_voice_t *v)
+{
+    uint32_t m;
+    int32_t f;
+    v->ramp--;
+    f = (int32_t)(BAR_RAMP_SUB - v->ramp) * 4681;
+    if (f > 32768 || !v->ramp) f = 32768;
+    for (m = 0; m < BAR_NM; m++) {
         bar_ms_t *s = &v->m[m];
-        int32_t x, y, ex, ey, e, eps, b, pk = 0;
-        if (!s->live || m == 1u) continue;
-        x = s->x; y = s->y; ex = s->ex; ey = s->ey; e = s->e; eps = s->eps; b = s->b;
-        if (s->live == 2u) {                        /* going to sleep: faded out over this sub-block, never cut */
-            for (j = 0; j < BAR_SUB; j++) {
-                if (frc) y += (int32_t)(((int64_t)bar_F[j] * b) >> 20);
-                BAR_MC3(x, y, ex, ey, e, eps);
-                bar_x[j] += (int32_t)(((int64_t)x * (int32_t)(1024u * (BAR_SUB - j))) >> 15);
-            }
-            s->live = 0; s->x = s->y = s->ex = s->ey = 0; s->peak = 0;
-#ifdef DINGHY_HOST
-            nlive++;
-#endif
-            continue;
-        }
-        if (frc)
-            for (j = 0; j < BAR_SUB; j++) {
-                y += (int32_t)(((int64_t)bar_F[j] * b) >> 20);
-                BAR_MC3(x, y, ex, ey, e, eps);
-                bar_x[j] += x;
-                if (iabs(x) > pk) pk = iabs(x);
-                if (iabs(y) > pk) pk = iabs(y);
-            }
-        else
-            for (j = 0; j < BAR_SUB; j++) {
-                BAR_MC3(x, y, ex, ey, e, eps);
-                bar_x[j] += x;
-                if (iabs(x) > pk) pk = iabs(x);
-                if (iabs(y) > pk) pk = iabs(y);
-            }
-        s->x = bar_sat(x); s->y = bar_sat(y); s->ex = ex; s->ey = ey; s->peak = pk;
-        sum += pk >> 3;
-#ifdef DINGHY_HOST
-        nlive++;
-#endif
+        int32_t et, pt;
+        if (!s->live) continue;
+        et = s->e0 + (int32_t)(((int64_t)(s->e1 - s->e0) * v->w_tgt) >> 15);
+        pt = s->eps0 + (int32_t)(((int64_t)(s->eps1 - s->eps0) * v->w_tgt) >> 15);
+        s->e = s->es + (int32_t)(((int64_t)(et - s->es) * f) >> 15);
+        s->eps = s->epss + (int32_t)(((int64_t)(pt - s->epss) * f) >> 15);
+        bar_coefs(s);
     }
-    slow = v->fade != 32768 || v->nz_n || v->felt_n || !tube;
-    if (tube) {                                     /* V1 <-> TUBE, sample-inner (the motor ramps per sample), then
-                                                     * the gain straight into the mix */
-        bar_ms_t *s0 = &v->m[0], *s1 = &v->m[1];
-        int32_t x0 = s0->x, y0 = s0->y, ex0 = s0->ex, ey0 = s0->ey, e0 = s0->e, p0 = s0->eps, b0 = s0->b;
-        int32_t x1 = s1->x, y1 = s1->y, ex1 = s1->ex, ey1 = s1->ey, e1 = s1->e, p1 = s1->eps;
-        int32_t g0 = bar_mot_g[sb], g1 = bar_mot_g[sb + 1u], pk0 = 0, pk1 = 0;
-        int32_t kbt = (int32_t)(((int64_t)v->kbt * g0) >> 15), ktb = (int32_t)(((int64_t)v->ktb * g0) >> 15);
-        int32_t wt = (int32_t)(((int64_t)v->wt * g0) >> 15);
-        int32_t dkbt = ((int32_t)(((int64_t)v->kbt * g1) >> 15) - kbt) >> 5;
-        int32_t dktb = ((int32_t)(((int64_t)v->ktb * g1) >> 15) - ktb) >> 5;
-        int32_t dwt = ((int32_t)(((int64_t)v->wt * g1) >> 15) - wt) >> 5;
-        for (j = 0; j < BAR_SUB; j++) {
-            int32_t u;
-            if (frc) y0 += (int32_t)(((int64_t)bar_F[j] * b0) >> 20);
-            y0 += (int32_t)(((int64_t)ktb * x1) >> 30);              /* the tube's pressure on the bar */
-            BAR_MC3(x0, y0, ex0, ey0, e0, p0);
-            y1 += (int32_t)(((int64_t)kbt * x0) >> 30);              /* the bar drives the tube */
-            BAR_MC3(x1, y1, ex1, ey1, e1, p1);
-            u = bar_x[j] + x0 + (int32_t)(((int64_t)wt * x1) >> 28); /* the bar's own sound + the tube's */
-            if (slow) bar_x[j] = u;
-            else mix[j] += (int32_t)(((int64_t)u * gain) >> 24);
-            if (iabs(x0) > pk0) pk0 = iabs(x0);
-            if (iabs(y0) > pk0) pk0 = iabs(y0);
-            if (iabs(x1) > pk1) pk1 = iabs(x1);
-            if (iabs(y1) > pk1) pk1 = iabs(y1);
-            kbt += dkbt; ktb += dktb; wt += dwt;
+}
+
+/* one voice, one block, added into mix[0 .. 256) */
+static void bar_voice_block(bar_voice_t *v, int32_t *mix)
+{
+    const bar_type_t *ty = &BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u];
+    uint32_t j, m, sb, nf = bar_force(v), nf2 = (nf + 1u) & ~1u, nlive = 0, fade0 = 0;
+    int32_t gain = v->gain, ref, sum, la[BAR_NM];
+    if (v->ramp) {                                  /* the damper moves: every slot's coefficients per sub-block */
+        for (sb = 0; sb < BAR_NSUB; sb++) {
+            uint32_t o = sb * BAR_SUB;
+            const int32_t *F = o < nf ? bar_F + o : 0;
+            if (v->ramp) bar_damper_step(v);
+            bar_pair(v, bar_x + o, bar_tb + o, F, sb);
+            for (m = BAR_UP0; m < BAR_NM; m++) {
+                bar_ms_t *s = &v->m[m];
+                if (!s->live) continue;
+                if (s->live == 2u) { bar_run_fade(s, bar_x + o, F); fade0++; continue; }
+                bar_run(s, bar_x + o, F, BAR_SUB);
+            }
         }
-        s0->x = bar_sat(x0); s0->y = bar_sat(y0); s0->ex = ex0; s0->ey = ey0; s0->peak = pk0;
-        s1->x = bar_sat(x1); s1->y = bar_sat(y1); s1->ex = ex1; s1->ey = ey1; s1->peak = pk1;
-        sum += (pk0 >> 3) + (pk1 >> 3);
-#ifdef DINGHY_HOST
-        nlive += 3;                                 /* the coupling costs about one more mode (P0) */
-#endif
+    } else {
+        for (sb = 0; sb < BAR_NSUB; sb++)
+            bar_pair(v, bar_x + sb * BAR_SUB, bar_tb + sb * BAR_SUB, sb * BAR_SUB < nf ? bar_F + sb * BAR_SUB : 0, sb);
+        for (m = BAR_UP0; m < BAR_NM; m++) {        /* the upper modes: the whole block at once */
+            bar_ms_t *s = &v->m[m];
+            uint32_t o = 0;
+            if (!s->live) continue;
+            if (s->live == 2u) { bar_run_fade(s, bar_x, nf ? bar_F : 0); fade0++; continue; }
+            if (nf2) { bar_run(s, bar_x, bar_F, nf2); o = nf2; }
+            if (o < BAR_N) bar_run(s, bar_x + o, 0, BAR_N - o);
+        }
     }
-    if (slow)
-        for (j = 0; j < BAR_SUB; j++) {             /* gain, steal fade, contact noise, felt noise */
+    if (v->m[1].live)
+        for (sb = 0; sb < BAR_NSUB; sb++) {         /* + the tube's radiation, its weight ramped by the motor */
+            int32_t wt = (int32_t)(((int64_t)v->wt * bar_mot_g[sb]) >> 15);
+            int32_t dw = ((int32_t)(((int64_t)v->wt * bar_mot_g[sb + 1u]) >> 15) - wt) >> 5;
+            int32_t *x = bar_x + sb * BAR_SUB, *t = bar_tb + sb * BAR_SUB;
+            for (j = 0; j < BAR_SUB; j++) { x[j] += (int32_t)(((int64_t)wt * t[j]) >> 28); wt += dw; }
+        }
+    if (v->fade == 32768 && !v->felt_n)             /* the gain into the mix */
+        for (j = 0; j < BAR_N; j++) mix[j] += (int32_t)(((int64_t)bar_x[j] * gain) >> 24);
+    else
+        for (j = 0; j < BAR_N; j++) {               /* gain, steal fade, felt noise */
             int32_t o = (int32_t)(((int64_t)bar_x[j] * gain) >> 24);
             if (v->fade != 32768) {
                 o = (int32_t)(((int64_t)o * v->fade) >> 15);
                 v->fade -= BAR_FADE_STEP;
                 if (v->fade < 0) v->fade = 0;
-            }
-            if (v->nz_n) {                          /* contact noise: this voice's envelope into the shared noise */
-                bar_nzenv[base + j] += v->nz_lvl;
-                v->nz_lvl -= v->nz_lvl >> 10;       /* tau ~ 23 ms */
-                v->nz_n--;
-                bar_nz_dirty = 1;
             }
             if (v->felt_n) {                        /* felt noise: LFSR, one-pole ~2 kHz (as the Rhodes) */
                 int32_t nz;
@@ -523,22 +850,46 @@ static void bar_voice_sub(bar_voice_t *v, int32_t *mix, uint32_t sb)
             }
             mix[j] += o;
         }
+    /* the levels, once a block: each live slot's amplitude, the voice's output, then the end and the sleep */
+    sum = 0;
+    for (m = 0; m < BAR_NM; m++) {
+        bar_ms_t *s = &v->m[m];
+        la[m] = BAR_LZERO;
+        if (!s->live) continue;
+        s->x1 = bar_sat(s->x1); s->x2 = bar_sat(s->x2);
+        la[m] = bar_lamp(s);
+        s->amp = bar_exp2(la[m]);
 #ifdef DINGHY_HOST
-    bar_h_blk_ms += nlive * BAR_SUB; bar_h_blk_mul += (3u * nlive + 1u) * BAR_SUB; bar_h_blk_ns += BAR_SUB * (540u + 57u + 170u * nlive);
+        if (getenv("BAR_DBG")) fprintf(stderr, "m%u la %d amp %d x1 %d x2 %d lsin %d live %u\n", (unsigned)m, (int)la[m], (int)s->amp, (int)s->x1, (int)s->x2, (int)s->lsin, (unsigned)s->live);
 #endif
+#ifdef DINGHY_HOST
+        if ((s->fresh & 2u) && bar_h_pred && m != 1u)
+            fprintf(bar_h_pred, "%u %u %d %d\n", (unsigned)v->note, (unsigned)m, (int)s->lpred, (int)la[m]);
+        s->fresh &= 1u;
+#endif
+        if (!v->ptab) s->fresh = 0;                 /* measured from here on */
+        sum += m == 1u ? (int32_t)(((int64_t)s->amp * iabs(v->wt)) >> 28) : s->amp;
+        nlive += m == 1u ? 0u : m == 0u ? 3u : 1u;  /* the pair: about three modes' work (P0) */
+    }
+#ifdef DINGHY_HOST
+    bar_h_blk_ms += nlive * BAR_N + fade0 * BAR_SUB;
+    bar_h_blk_mul += (2u * nlive + 1u) * BAR_N;
+#endif
+    v->struck = 0;
     if (v->fade == 0) {                             /* a steal finished fading: start the waiting note */
         v->alive = 0;
         if (v->pend) bar_init(v, v->pend_note, v->pend_vel);
         return;
     }
-    if (!v->ptab && !v->felt_n && !v->nz_n && sum < (k->kill >> 3)) { v->alive = 0; return; }
-    if (!v->ptab BAR_SLEEP_ON) {                    /* upper modes: absolute and relative sleep, faded out over
-                                                     * the next sub-block (live = 2); they never wake on their own */
-        int32_t ref = v->m[0].peak + (int32_t)(((int64_t)v->m[1].peak * iabs(v->wt)) >> 28);
-        int32_t rel = ref >> ty->sleep_rel, ab = k->kill >> 3;
+    if (!v->ptab && !v->felt_n && sum < v->kill1) { v->alive = 0; return; }   /* under 1 LSB out: the voice ends */
+    if (!v->ptab BAR_SLEEP_ON) {                    /* upper modes: absolute and relative sleep, faded out over the
+                                                     * next sub-block (live = 2); they never wake on their own */
+        ref = v->m[0].amp + (int32_t)(((int64_t)v->m[1].amp * iabs(v->wt)) >> 28);
+        ref >>= ty->sleep_rel;
+        if (ref < (v->kill1 >> 4)) ref = v->kill1 >> 4;
         for (m = BAR_UP0; m < BAR_NM; m++) {
             bar_ms_t *s = &v->m[m];
-            if (s->live == 1u && (s->peak < ab || s->peak < rel)) s->live = 2;
+            if (s->live == 1u && s->amp < ref) s->live = 2;
         }
     }
 }
@@ -550,35 +901,40 @@ static void bar_render(int32_t *mono_out, uint32_t n)
     bar_motor_block();
     bar_budget();
     for (i = 0; i < n; i++) bar_mono[i] = 0;
-    if (bar_nz_dirty) { for (i = 0; i < n; i++) bar_nzenv[i] = 0; bar_nz_dirty = 0; }
 #ifdef DINGHY_HOST
-    bar_h_blk_ms = bar_h_blk_mul = bar_h_blk_ns = 0;
+    bar_h_blk_ns = 1000u * bar_plan_us;             /* the cost model's time for this block, effects included */
 #endif
     for (i = 0; i < BAR_NV; i++) {
         bar_voice_t *v = &bv[i];
-        for (sb = 0; sb < n && v->alive; sb += BAR_SUB)
-            bar_voice_sub(v, bar_mono + sb, sb / BAR_SUB);
+        if (!v->alive) continue;
+        bar_voice_block(v, bar_mono);
         if (v->alive && v->life && --v->life == 0) v->alive = 0;
     }
-    if (bar_nz_dirty) {                             /* LFSR -> two biquads (Q14, transposed DF2) x the envelopes */
+    if (bar_nz_e) {                                 /* contact noise: LFSR -> two biquads (Q14, transposed DF2) x the
+                                                     * envelope (tau ~ 23 ms); off, and exactly silent, under 1/2 LSB */
+        int32_t e = bar_nz_e, s0 = bar_nz_s[0], s1 = bar_nz_s[1], s2 = bar_nz_s[2], s3 = bar_nz_s[3];
+        uint32_t r = bar_lfsr;
         for (j = 0; j < n; j++) {
             int32_t nz, y;
-            bar_lfsr = (bar_lfsr >> 1) ^ (-(bar_lfsr & 1u) & 0xB400u);
-            nz = ((int32_t)(bar_lfsr & 0xFFFFu) - 32768) >> 2;
-            y = (int32_t)(((int64_t)NZ_BQ[0][0] * nz) >> 14) + bar_nz_s[0];
-            bar_nz_s[0] = (int32_t)(((int64_t)NZ_BQ[0][1] * nz - (int64_t)NZ_BQ[0][3] * y) >> 14) + bar_nz_s[1];
-            bar_nz_s[1] = (int32_t)(((int64_t)NZ_BQ[0][2] * nz - (int64_t)NZ_BQ[0][4] * y) >> 14);
+            r = (r >> 1) ^ (-(r & 1u) & 0xB400u);
+            nz = ((int32_t)(r & 0xFFFFu) - 32768) >> 2;
+            y = ((NZ_BQ[0][0] * nz) >> 14) + s0;
+            s0 = (int32_t)(((int64_t)NZ_BQ[0][1] * nz - (int64_t)NZ_BQ[0][3] * y) >> 14) + s1;
+            s1 = (int32_t)(((int64_t)NZ_BQ[0][2] * nz - (int64_t)NZ_BQ[0][4] * y) >> 14);
             nz = y;
-            y = (int32_t)(((int64_t)NZ_BQ[1][0] * nz) >> 14) + bar_nz_s[2];
-            bar_nz_s[2] = (int32_t)(((int64_t)NZ_BQ[1][1] * nz - (int64_t)NZ_BQ[1][3] * y) >> 14) + bar_nz_s[3];
-            bar_nz_s[3] = (int32_t)(((int64_t)NZ_BQ[1][2] * nz - (int64_t)NZ_BQ[1][4] * y) >> 14);
-            bar_mono[j] += (int32_t)(((int64_t)y * bar_nzenv[j]) >> 13);
+            y = (int32_t)(((int64_t)NZ_BQ[1][0] * nz) >> 14) + s2;
+            s2 = (int32_t)(((int64_t)NZ_BQ[1][1] * nz - (int64_t)NZ_BQ[1][3] * y) >> 14) + s3;
+            s3 = (int32_t)(((int64_t)NZ_BQ[1][2] * nz - (int64_t)NZ_BQ[1][4] * y) >> 14);
+            bar_mono[j] += (int32_t)(((int64_t)y * e) >> 13);
+            e -= (e + 1023) >> 10;                  /* reaches 0: no floor at 1023 */
         }
+        bar_lfsr = r;
+        if (e < 16) e = s0 = s1 = s2 = s3 = 0;
+        bar_nz_e = e; bar_nz_s[0] = s0; bar_nz_s[1] = s1; bar_nz_s[2] = s2; bar_nz_s[3] = s3;
 #ifdef DINGHY_HOST
-        bar_h_blk_mul += 11u * n; bar_h_blk_ns += 680u * n;
+        bar_h_blk_mul += 11u * n;
 #endif
-    } else
-        bar_nz_s[0] = bar_nz_s[1] = bar_nz_s[2] = bar_nz_s[3] = 0;
+    }
     for (j = 0; j < n; j++) {                       /* the type's room / mic EQ (Q28 DF1, 0..2 biquads); Q20 -> Q15 */
         int32_t o = bar_mono[j];
         for (sb = 0; sb < nb; sb++) {

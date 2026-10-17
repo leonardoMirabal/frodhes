@@ -666,3 +666,33 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
     fx_peak = pk;
     if (pk < 16) { if (fx_quiet_blocks < 0xFFFFu) fx_quiet_blocks++; } else fx_quiet_blocks = 0;
 }
+
+/* ---- what the effects that run now cost on the FM-1, us per block: the bar engine's CPU model (bars.c
+ * bar_cost_fixed) takes it from its budget. An effect costs while it runs: the delay and the reverb also while their
+ * tails ring after they are switched off; the bypass (FX) keeps everything running. PLACEHOLDERS: split by hand from
+ * the measured total (every effect + the filter LP18 / LFO: 1388 - 312 = 1076 us, tools/hil_cpu.py 2026-10-16), each
+ * rounded up; replace them with tools/hil_cpu.py --fx-each (idle, one effect at a time, minus idle without effects). */
+#define FX_US_COMP 90u
+#define FX_US_FILTER 150u      /* LP18 + the LFO, the heaviest type */
+#define FX_US_DRIVE 80u
+#define FX_US_TREM 40u         /* tremolo / pan (sw 1) */
+#define FX_US_WAH 90u          /* touch wah (sw 2) */
+#define FX_US_PHASER 150u
+#define FX_US_CHORUS 160u
+#define FX_US_DELAY 150u
+#define FX_US_REVERB 260u
+static uint32_t fx_cost_us(void)
+{
+    uint32_t us = 0, t = (uint32_t)fx_p[FXP_FL_TYPE];
+    if (fx_p[FXP_RAW]) return 0;
+    if (fx_p[FXP_CMP_SW]) us += FX_US_COMP;
+    if (t && t <= 6u) us += FX_US_FILTER;
+    if (fx_p[FXP_DRIVE]) us += FX_US_DRIVE;
+    if (fx_p[FXP_TW_SW] == 1) us += FX_US_TREM;
+    else if (fx_p[FXP_TW_SW] == 2) us += FX_US_WAH;
+    if (fx_p[FXP_PH_SW]) us += FX_US_PHASER;
+    if (fx_p[FXP_CP_SW]) us += FX_US_CHORUS;
+    if (fx_p[FXP_DL_SW] || dly_lp || dly_hp) us += FX_US_DELAY;
+    if (fx_p[FXP_RV_DEPTH] || rv_running) us += FX_US_REVERB;
+    return us;
+}

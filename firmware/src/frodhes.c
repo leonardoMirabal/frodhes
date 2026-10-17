@@ -75,6 +75,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
     uint32_t id;
     if (cc == 64u) { sus_midi = (uint8_t)v; sustain_update(); return; }
     if (cc == 119u) { fx_set(FXP_RAW, v >= 64u); return; }
+    if (cc == 9u) { bar_budget_force = (uint8_t)v; return; }   /* developer: the bar engine's mode cap (0 = auto) */
     if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
     if (cc == 114u) { set.usb_fixed = v >= 64u; usb_pre_master = set.usb_fixed; ui_mark(E_CARDS); return; }   /* USB VOL */
     if (cc == 116u) {                                  /* profiler query: CC 116 -> CC 116/117 = max audio us (MSB, LSB
@@ -85,6 +86,9 @@ static void midi_cc(uint32_t cc, uint32_t v)
         midi_send(0xB0, 116, mx >> 7); midi_send(0xB0, 117, mx & 127u);
         midi_send(0xB0, 118, prof_us >> 5 > 127u ? 127u : prof_us >> 5);
         midi_send(0xB0, 115, eng_shed_count() & 127u);
+        midi_send(0xB0, 112, bar_prof_cap > 127u ? 127u : bar_prof_cap);   /* the bar engine: the lowest mode cap */
+        midi_send(0xB0, 113, bar_prof_used > 127u ? 127u : bar_prof_used); /* and the most live upper modes */
+        bar_prof_cap = 0xFFFFu; bar_prof_used = 0;
         prof_max_us = 0;
         return;
     }

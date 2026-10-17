@@ -171,6 +171,10 @@ static void eng_render(int32_t *mono, uint32_t n)
             const char *p = getenv("FRODHES_MSLOG");
             eng_h_log = p ? fopen(p, "w") : 0; eng_h_log_open = 1;
             bar_h_nobudget = getenv("FRODHES_NOBUDGET") != 0; bar_h_nosleep = getenv("FRODHES_NOSLEEP") != 0;
+            p = getenv("FRODHES_FXUS");
+            if (p) bar_h_fxus = atoi(p);
+            p = getenv("FRODHES_PREDLOG");
+            bar_h_pred = p ? fopen(p, "w") : 0;
         }
         if (eng_h_log) fprintf(eng_h_log, "%u %u %u %u\n", (unsigned)eng_cur, ms, mul, ns / 1000u);
     }
@@ -191,8 +195,10 @@ static void eng_host_report(void)                /* tests/host.c, at the end of 
     printf("mode-samples %llu (max per block %u, blocks %llu)\n", (unsigned long long)eng_h_ms, eng_h_max_ms,
            (unsigned long long)eng_h_blocks);
     printf("mul64 %llu (max per block %u)\n", (unsigned long long)eng_h_mul, eng_h_max_mul);
-    printf("cpu-proxy max %u us per block (voices only, P0 costs; + 312 idle, + 1388 with every effect)\n", eng_h_max_us);
+    printf("cpu-proxy max %u us per block (%s)\n", eng_h_max_us, eng_cur == ENG_BARS ?
+           "bars: the cost model's whole block, effects included" : "voices only, P0 costs; + 312 idle, + 1388 with every effect");
     printf("ev_drop %u\n", (unsigned)(eq_drop + ev_drop));
     if (eng_h_log) fclose(eng_h_log);
+    if (bar_h_pred) fclose(bar_h_pred);
 }
 #endif

@@ -160,8 +160,8 @@
            "gain_target_dbfs": -26.0, "peak_dbfs": -6.0, "st77_chord": [57, 64, 69],
            "_doc_st77": "then one global factor so the A3-E4-A4 chord at v100 (RMS 0..1 s) equals the Rhodes ST77 golden render (S9: within 1 LU)", "trim_iterations": 3, "trim_gain": 0.85, "trim_max_db": 12.0,
            "src": "docs/model/data/params.json (gain_target_dbfs, peak_dbfs, velocity_trim)", "status": "CONFIRMED"},
- "type_rec": {"_doc": "BAR_TYPE record: mode budget (upper live slots over all voices, P0 decides), relative-sleep shift (9 = -54 dB re the f0 component: -42 dB failed S12, lane C), budget 11 = bars.c BAR_BUDGET_MAX (the table can only lower it), torsion level scale (Q15, the per-key calibration is already in b)",
-              "budget": 11, "sleep_rel": 9, "tors_q15": 32767, "nbody": 0, "drive_row": 0,
-              "src": "PLAN 5.8, 6.6 (P0 decides the budget)", "status": "ESTIMATE",
+ "type_rec": {"_doc": "BAR_TYPE record: mode budget (a cap on the upper live slots over all voices; 48 = every slot: bars.c's CPU cost model sets the cap each block from what runs, the table can only lower it), relative-sleep shift (9 = -54 dB re the f0 component: -42 dB failed S12, lane C), torsion level scale (Q15, the per-key calibration is already in b)",
+              "budget": 48, "sleep_rel": 9, "tors_q15": 32767, "nbody": 0, "drive_row": 0,
+              "src": "PLAN 5.8, 6.6 (the budget: bars.c cost model, 2026-10-17)", "status": "ESTIMATE",
               "settle": "O3 / O13: P0 cost calibration, the S12 residual, listening on 8 / 12-note chords"}
 }

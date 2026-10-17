@@ -166,6 +166,52 @@ def note_init(spec, n, vel, kn):
     return out
 
 
+# ---------------------------------------------------------------- the levels, exactly as bars.c (integers, log2 Q8)
+LZERO = -32768
+
+
+def log2q8(v):
+    """bars.c bar_log2_32 / bar_log2_64: msb * 256 + the next 8 bits (a linear mantissa)."""
+    v = int(v)
+    if v <= 0:
+        return LZERO
+    p = v.bit_length() - 1
+    return p * 256 + (((v >> (p - 8)) if p >= 8 else (v << (8 - p))) & 255)
+
+
+def exp2q8(l):
+    """bars.c bar_exp2: 2^(l / 256), 0 under 1."""
+    if l < 0:
+        return 0
+    i, m = l >> 8, 256 + (l & 255)
+    if i >= 30:
+        return 0x7FFFFFFF
+    return m << (i - 8) if i >= 8 else m >> (8 - i)
+
+
+def df2_coefs(E, P):
+    """(E, eps) Q30 ints -> the two-multiply form's (a1, a2): a1 = 2 - eps - e^2, a2 = 1 - eps."""
+    return (2 << 30) - P - ((E * E) >> 30), (1 << 30) - P
+
+
+def log2_sin(E, P):
+    """bars.c bar_init lsin: log2 sin(theta) Q8 from a1, a2 (sin^2 = (a2 2^32 - a1^2) / (a2 2^32))."""
+    a1, a2 = df2_coefs(E, P)
+    num = (a2 << 32) - a1 * a1
+    return (log2q8(num) - log2q8(a2) - 32 * 256) >> 1 if num > 0 else 0
+
+
+def amp_q25(x1, x2, E, P, lsin):
+    """bars.c bar_lamp + bar_exp2: a slot's amplitude (Q25 int) from x[n], x[n-1] (ints)."""
+    a1, a2 = df2_coefs(E, P)
+    c = (a1 * x2) >> 30
+    d = (a2 * x2) >> 30
+    q = x1 * (x1 - c) + x2 * d
+    if q <= 0:
+        return 0
+    return exp2q8((log2q8(q) >> 1) - lsin)
+
+
 # ---------------------------------------------------------------- the render
 def _knobs_list(knobs, n):
     if knobs is None:
@@ -184,9 +230,10 @@ def _knobs_list(knobs, n):
 
 def render_batch(spec, keys, vels, dur, knobs=None, off_at=None, motor=None, parts=False, slots=False,
                  sleep_rel=None, sleep=True, pedal_w=32768, peaks=False):
-    """See the module docstring. sleep_rel: the relative-sleep shift (None = the type's, 0 = off); sleep: the
-    absolute and relative sleep (a slot goes when peak < max(kill >> 3, ref >> sleep_rel), faded out over the next
-    sub-block) and the kill on (as bars.c) or off (the pure linear model, for VA measurements); peaks=True returns
+    """See the module docstring. sleep_rel: the relative-sleep shift (None = the type's, 0 = off); sleep: at every
+    block's end, the voice ends under 1 LSB out and an upper slot sleeps under max(1/16 LSB, ref >> sleep_rel),
+    faded out over the next sub-block, levels from bars.c's estimator (amp_q25); off = the pure linear model, for VA
+    measurements; peaks=True returns
     (out, the per-note per-slot max |x|, |y| over the render in real state units, 1.0 = 2^25)."""
     N = len(keys)
     n = int(round(dur * FS))
@@ -207,7 +254,8 @@ def render_batch(spec, keys, vels, dur, knobs=None, off_at=None, motor=None, par
     ktb = np.array([i["ktb"] for i in ini], np.int64)
     wtw = np.array([i["wt"] for i in ini], np.int64)
     gain = np.array([i["gain"] for i in ini], float)
-    kill = np.array([i["kill"] for i in ini], np.int64)
+    kill1 = [max(1, (1 << 29) // max(1, int(i["gain"]))) for i in ini]     # 1 LSB out, Q25 (bars.c kill1)
+    lsin = [[log2_sin(int(a), int(b)) if a else 0 for a, b in zip(i["E0"], i["eps0"])] for i in ini]
     life = np.array([i["life"] for i in ini], np.int64)
     pbuf = np.array([i["pbuf"] for i in ini], np.int64)
     prate = np.array([i["prate"] for i in ini], np.int64)
@@ -294,6 +342,8 @@ def render_batch(spec, keys, vels, dur, knobs=None, off_at=None, motor=None, par
             xo = x * fw
             up = np.sum(xo[:, 2:], axis=1)
             o = (x[:, 0] + wj * x[:, 1] + up) * alive
+            if (j + 2) % BLOCK == 0:
+                xprev = x.copy()
             out[:, j] = o
             if bar is not None:
                 bar[:, j] = (x[:, 0] + up) * alive
@@ -306,19 +356,28 @@ def render_batch(spec, keys, vels, dur, knobs=None, off_at=None, motor=None, par
         pk[fading] = 0.0
         if peaks:
             np.maximum(pkall, pk, out=pkall)
-        # end of the sub-block: kill, then sleep (bars.c), in Q25 integer units
-        if sleep:
-            pq = np.floor(pk * (1 << 25)).astype(np.int64)
-            tot = np.sum(np.where(live, pq >> 3, 0), axis=1)
-            dead = alive & ~pon & (tot < (kill >> 3))
-            alive &= ~dead
-            ab = kill >> 3
-            ref = pq[:, 0] + ((pq[:, 1] * np.abs(wtw)) >> 28)
-            th = np.maximum(ab, (ref >> sr) if sr else 0)
-            go = upper & ~pon[:, None] & (pq < th[:, None])
-            go[:, :2] = False
-            live &= ~go
-            going |= go
+        # end of the block: the levels, the kill, then the sleep (bars.c bar_voice_block), Q25 integers
+        if sleep and (sb + SUB) % BLOCK == 0:
+            xi = np.round(x * (1 << 25)).astype(np.int64)
+            xp = np.round(xprev * (1 << 25)).astype(np.int64)
+            for r in range(N):
+                if not alive[r]:
+                    continue
+                am = [amp_q25(int(xi[r, m]), int(xp[r, m]), int(Ecur[r, m]), int(Pcur[r, m]), lsin[r][m])
+                      if live[r, m] else 0 for m in range(NM)]
+                wa = abs(int(wtw[r]))
+                tot = sum(am[m] for m in range(NM) if m != 1) + ((am[1] * wa) >> 28)
+                if not pon[r] and tot < kill1[r]:
+                    alive[r] = False
+                    continue
+                if pon[r]:
+                    continue
+                ref = (am[0] + ((am[1] * wa) >> 28)) >> sr if sr else 0
+                ref = max(ref, kill1[r] >> 4)
+                for m in range(2, NM):
+                    if live[r, m] and am[m] < ref:
+                        live[r, m] = False
+                        going[r, m] = True
         if (sb + SUB) % BLOCK == 0:
             life -= 1
             alive &= life > 0

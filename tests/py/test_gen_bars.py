@@ -182,7 +182,7 @@ def test_knob_tables():
     assert all(a < b for a, b in zip(t, t[1:]))
     assert SPEC["kn_mass"][64] == 4096 and SPEC["kn_massi"][64] == 4096
     assert SPEC["kn_mass"][0] > 4096 > SPEC["kn_mass"][127]                     # heavier: a longer contact
-    assert SPEC["kn_nz"][0] == 0 and SPEC["type"]["sleep_rel"] == 9 and SPEC["type"]["budget"] <= 11
+    assert SPEC["kn_nz"][0] == 0 and SPEC["type"]["sleep_rel"] == 9 and SPEC["type"]["budget"] == 48
     c = SPEC["mot_cos"]
     assert c[0] == 32767 and c[256] == 0 and c[128] == round(32767 * np.cos(np.pi / 4))   # |cos(pi i / 512)|
 
