@@ -66,6 +66,8 @@ def param_defaults():
     out = []
     for name, hi, de, cc in re.findall(r'\[P_(\w+)\] = \{"[^"]*", (\d+), (\d+), F_\w+, (\d+)', src):
         hi, de, cc = int(hi), int(de), int(cc)
+        if not cc:                                   # (records v3: a parameter without a CC yet)
+            continue
         if name == "TYPE":
             v = type_cc(de)
         elif hi == 2:

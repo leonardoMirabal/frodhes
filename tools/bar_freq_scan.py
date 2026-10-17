@@ -52,9 +52,9 @@ def parse_keys(s):
 
 def measure_key(n, a, spec, spec_design=None):
     ev = bm.setup_events(typ=a.type, raw=not a.motor, noise=0)
-    if a.motor:                                     # MOTOR: TREM/WAH on (CC 17), MODE 112..127 (bar types)
-        ev += [(20, "midi 0xB0 17 64"), (20, "midi 0xB0 21 127"), (20, f"midi 0xB0 18 {a.depth}"),
-               (20, f"midi 0xB0 19 {a.rate}"), (20, "midi 0xB0 22 0")]
+    if a.motor:                                     # the motor (records v3: CC 47 ON, 48 DEPTH, 49 RATE, 50 SHAPE)
+        ev += [(21, "midi 0xB0 47 127"), (21, f"midi 0xB0 48 {a.depth}"), (21, f"midi 0xB0 49 {a.rate}"),
+               (21, "midi 0xB0 50 0")]
         for k in ("DRIVE", "REV"):
             ev.append((20, f"midi 0xB0 {bm.CC[k]} 0"))
     ev += bm.note(100, n, a.vel, a.dur - 200)

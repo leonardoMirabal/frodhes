@@ -88,6 +88,8 @@ def counters(log):
 
 def setup_events(t0=20, typ=0, raw=True, noise=None, **cc):
     ev = [(t0, f"midi 0xB0 {type_ccnum(typ)} {type_cc(typ)}")]
+    if typ >= 4:
+        ev.append((t0, "midi 0xB0 47 0"))            # the motor starts with a bar TYPE: off (motor tests turn it on)
     if raw:
         ev.append((t0, "midi 0xB0 119 127"))
     if noise is not None:

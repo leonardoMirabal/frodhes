@@ -36,6 +36,8 @@ static void cmd_labels(void)
         printf("type.%u %s bars=%d\n", t, N_TYPE_LONG[t], ui_bars());
         snprintf(tag, sizeof tag, "voice%u", t); show_page(tag, PG_VOICE);
         snprintf(tag, sizeof tag, "decay%u", t); show_page(tag, PG_DECAY);
+        snprintf(tag, sizeof tag, "motor%u", t); show_page(tag, PG_MOTOR);
+        printf("pages%u shown=%d count=%u motor_pos=%u\n", t, pg_shown(PG_MOTOR), pg_count(), pg_pos(PG_MOTOR));
         snprintf(tag, sizeof tag, "perf%u", t);
         for (i = 0; i < PERF_N; i++) printf("%s.%u %s\n", tag, i, perf_name(i));
         for (i = 0; i < sizeof TONES; i++) { char v[16]; param_set(P_TONE, TONES[i]); slot_text(P_TONE, v); printf("tone%u.%u %s\n", t, TONES[i], v); }
@@ -57,17 +59,17 @@ static void cmd_labels(void)
             slot_turn(S_TWKIND, -1);
         }
     }
-    /* MOTOR stored, then a Rhodes TYPE: the card says TREM, fx.c plays AM */
-    param_set(P_TYPE, 4); param_set(P_TW_SW, 1); param_set(P_TW_MODE, 2); param_set(P_TYPE, 0);
+    /* the motor on, then a Rhodes TYPE: TREM/WAH stays as it was (off): no tremolo comes on */
+    param_set(P_TW_SW, 0); param_set(P_TYPE, 4); param_set(P_MOT_ON, 1); param_set(P_TYPE, 0);
     {
         char v[16];
         slot_text(S_TWKIND, v);
         printf("motor_on_rhodes %s fxsw=%d fxmode=%d\n", v, (int)fx_p[FXP_TW_SW], (int)fx_p[FXP_TW_MODE]);
     }
-    for (i = 0; i <= 127u; i += 1u) {                   /* the MOTOR rate text */
+    for (i = 0; i <= 127u; i += 1u) {                   /* the MOTOR page's SPEED text */
         char v[16];
-        param_set(P_TYPE, 4); param_set(P_TW_SYNC, 0); param_set(P_TW_RATE, (int32_t)i);
-        slot_text(P_TW_RATE, v);
+        param_set(P_TYPE, 4); param_set(P_MOT_SYNC, 0); param_set(P_MOT_RATE, (int32_t)i);
+        slot_text(P_MOT_RATE, v);
         printf("motrate.%u %s\n", i, v);
     }
 }
@@ -91,8 +93,8 @@ static void cmd_midi(void)
         for (i = 12; i < PR_NF; i++) {
             char nm[20];
             preset_load(i); preset_name(i, nm);
-            printf("factory.%u %s type=%u sw=%u mode=%u depth=%u rate=%u rev=%u\n", i, nm, PV(P_TYPE), PV(P_TW_SW),
-                   PV(P_TW_MODE), PV(P_TW_DEPTH), PV(P_TW_RATE), PV(P_RV_DEPTH));
+            printf("factory.%u %s type=%u sw=%u mode=%u mot=%u depth=%u rate=%u shape=%u rev=%u\n", i, nm, PV(P_TYPE),
+                   PV(P_TW_SW), PV(P_TW_MODE), PV(P_MOT_ON), PV(P_MOT_DEPTH), PV(P_MOT_RATE), PV(P_MOT_SHAPE), PV(P_RV_DEPTH));
         }
     }
 }

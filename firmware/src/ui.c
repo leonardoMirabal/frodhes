@@ -24,7 +24,8 @@ static void tempo_tap(void);                          /* tempo.c */
 static void tempo_set10(uint32_t b);
 
 enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_FILTER, PG_TREM, PG_PHA, PG_CHO, PG_DELAY,
-       PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_SETUP, PG_MIDI, PG_DRIVE, PG_REVERB, PG_N };
+       PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_SETUP, PG_MIDI, PG_DRIVE, PG_REVERB, PG_MOTOR, PG_N };   /* PG_MOTOR (records
+                                    * v3): the vibraphone's motor, shown on a bar TYPE only */
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL = 8, E_N = 9, E_CARDS = 10 };   /* E_CARDS: all four;
                                     * E_METER: COMP's meter / SEQUENCER's cells, E_ROLL: SEQUENCER's NOW / NEXT */
 /* card slots: a parameter id (< P_COUNT) or one of these */
@@ -37,19 +38,33 @@ static uint32_t sq_delete_step(void);
 static void sq_browse(int32_t d);
 /* the SELECT order (0.9.3, user: the instrument pages next to each other right after PERFORM; ASSIGN, rarely used,
  * next to SETUP); the PG_ ids stay as they are (the tables below and the buttons use them) */
-static const uint8_t PG_ORDER[PG_N] = {PG_PERF, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_FILTER, PG_DRIVE, PG_TREM,
-                                      PG_PHA, PG_CHO, PG_DELAY, PG_REVERB, PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP,
-                                      PG_LFO, PG_ASSIGN, PG_SETUP, PG_MIDI};   /* DRIVE after FILTER, REVERB the last
-                                                                               * effect, as in the chain */
-static uint32_t pg_pos(uint32_t pg)                     /* a page's place in the SELECT order */
+static const uint8_t PG_ORDER[PG_N] = {PG_PERF, PG_PIANO, PG_VOICE, PG_DECAY, PG_MOTOR, PG_COMP, PG_FILTER,
+                                      PG_DRIVE, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_REVERB, PG_TEMPO, PG_SCALE,
+                                      PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_ASSIGN, PG_SETUP, PG_MIDI};   /* DRIVE after
+                                    * FILTER, REVERB the last effect, as in the chain; MOTOR on a bar TYPE only */
+static int ui_bars(void);
+static void ui_goto(uint32_t pg);
+static int pg_shown(uint32_t pg) { return pg != PG_MOTOR || ui_bars(); }   /* MOTOR: on a bar TYPE only */
+static uint32_t pg_count(void) { return ui_bars() ? PG_N : PG_N - 1u; }    /* the pages SELECT walks */
+static uint32_t pg_pos(uint32_t pg)                     /* a page's place in the SELECT order (of the pages shown) */
+{
+    uint32_t i, k = 0;
+    for (i = 0; i < PG_N; i++) {
+        if (PG_ORDER[i] == pg) return k;
+        if (pg_shown(PG_ORDER[i])) k++;
+    }
+    return 0;
+}
+static uint32_t pg_at(uint32_t k)                       /* the k-th page shown */
 {
     uint32_t i;
-    for (i = 0; i < PG_N; i++) if (PG_ORDER[i] == pg) return i;
-    return 0;
+    for (i = 0; i < PG_N; i++)
+        if (pg_shown(PG_ORDER[i]) && !k--) return PG_ORDER[i];
+    return PG_PERF;
 }
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "FILTER", "TREM/WAH", "PHASER",
                                              "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
-                                             "ARPEGGIO", "LFO", "SETUP", "MIDI", "DRIVE", "REVERB"};
+                                             "ARPEGGIO", "LFO", "SETUP", "MIDI", "DRIVE", "REVERB", "MOTOR"};
 static const uint8_t PAGE_S[PG_N][4] = {
     {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
     {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
@@ -72,6 +87,7 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {S_MCH, S_TRS, S_CLOCK, S_NONE},
     {P_DRV_SW, P_DRIVE, P_DRV_TONE, P_DRV_MIX},
     {P_RV_DEPTH, P_RV_DECAY, P_RV_TONE, P_RV_PREDLY},
+    {P_MOT_ON, P_MOT_DEPTH, P_MOT_RATE, P_MOT_SHAPE},
 };
 static const char *const PAGE_LAB[PG_N][4] = {
     {"", "", "", ""},                                   /* PERFORM: the assigned parameter's name (slot_label) */
@@ -95,6 +111,7 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"CHANNEL", "TRS IN", "CLOCK", ""},
     {"EFFECT", "AMOUNT", "TONE", "MIX"},
     {"MIX", "DECAY", "TONE", "PRE-DELAY"},
+    {"MOTOR", "DEPTH", "SPEED", "SHAPE"},
 };
 /* a bar TYPE (VIBES): the same parameters, what they do on a vibraphone (UI option A: engine-aware cards) */
 static const char *const PAGE_LAB_BAR[2][4] = {
@@ -108,7 +125,7 @@ static const char *const PAGE_HINT[PG_N] = {"THE KNOBS: SET ON ASSIGN", "WHAT EA
                                             "K1 THRESH: UP = ON, 0 = OFF", "THE LFO: ITS OWN PAGE", "LFO BUTTON: ON / OFF", "ENV BUTTON: ON / OFF",
                                             "K1: ON / OFF", "SEL: ON / OFF  K1: DIG / ANA", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
                                             "SEQ: THE SEQUENCER", "", "ARP: ON / OFF   PLAY: HOLD", "MOVES THE FILTER (ITS LFO)", "",
-                                            "USB AND TRS: THE SAME CHANNEL", "K1: ON / OFF", "MIX ALSO SETS THE SIZE"};
+                                            "USB AND TRS: THE SAME CHANNEL", "K1: ON / OFF", "MIX ALSO SETS THE SIZE", "THE VIBRAPHONE'S MOTOR"};
 static const char *page_hint(uint32_t pg)
 {
     return ui_bars() && (pg == PG_VOICE || pg == PG_DECAY) ? PAGE_HINT_BAR[pg - PG_VOICE] : PAGE_HINT[pg];
@@ -117,7 +134,7 @@ static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "
                                            "PENTA", "MPENTA", "BLUES"};
 static const char *const NOTE_NAME[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const SCMODE_NAME[3] = {"OFF", "SNAP", "DEGREE"};
-static const char *const TWKIND_NAME[5] = {"OFF", "PAN", "TREM", "WAH", "MOTOR"};   /* MOTOR: bar types only */
+static const char *const TWKIND_NAME[4] = {"OFF", "PAN", "TREM", "WAH"};
 static const char *const BAR_FAM_NAME[4] = {"SOFT", "YARN", "CORD", "RUBBER"};     /* MALLET: the pulse families */
 static const uint8_t BAR_FAM_V[4] = {0, 42, 85, 127};   /* MALLET (BARK) values at each family's centre (bars.c's
                                                          * KN_FAM must put them there); the name shows within +-4 */
@@ -236,10 +253,10 @@ static const char *slot_label(uint32_t pg, uint32_t k)
 }
 
 /* ---- card slots */
-static uint32_t tw_kind(void)                          /* OFF PAN TREM WAH, then MOTOR (bar types; elsewhere TREM) */
+static uint32_t tw_kind(void)                          /* OFF PAN TREM WAH */
 {
     uint32_t sw = PV(P_TW_SW), m = PV(P_TW_MODE);
-    return sw == 2u ? 3u : sw != 1u ? 0u : m == 2u ? (ui_bars() ? 4u : 2u) : 1u + m;
+    return sw == 2u ? 3u : sw != 1u ? 0u : m ? 2u : 1u;
 }
 static int32_t slot_val(uint32_t s, int32_t *hi)
 {
@@ -253,7 +270,7 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_SCALE: *hi = 10; return set.sc_scale;
     case S_ROOT: *hi = 11; return set.sc_root;
     case S_TRANS: *hi = 48; return set.sc_trans + 24;
-    case S_TWKIND: *hi = ui_bars() ? 4 : 3; return (int32_t)tw_kind();
+    case S_TWKIND: *hi = 3; return (int32_t)tw_kind();
     case S_ASG0: case S_ASG0 + 1: case S_ASG0 + 2: case S_ASG0 + 3: *hi = PERF_N - 1; return (int32_t)perf_idx(s - S_ASG0);
     case S_ARPMODE: *hi = ARP_NMODE - 1; return ARP_MODE;
     case S_ARPRATE: *hi = 5; return ARP_RATE;
@@ -293,14 +310,16 @@ static void slot_text(uint32_t s, char *v)
     case P_TW_RATE:
         if (PV(P_TW_SW) == 2) { fmt_r10(v, PV(s)); return; }          /* WAH: resonance */
         if (PV(P_TW_SYNC)) { p_strcpy(v, N_SYNC[PV(P_TW_SYNC)], 5); return; }
-        if (tw_kind() == 4u) {                                       /* MOTOR: 0.5 .. 10 Hz ("3.5HZ") */
+        break;
+    case P_MOT_RATE:                                                 /* the motor: 0.5 .. 10 Hz ("3.5HZ") */
+        if (PV(P_MOT_SYNC)) { p_strcpy(v, N_SYNC[PV(P_MOT_SYNC)], 5); return; }
+        {
             uint32_t n = 0;
             fmt_hz(v, FX_LFO_INC[MOT_RATE_V(PV(s))]);   /* (params.c: rounded) */
             while (v[n]) n++;
             v[n++] = 'H'; v[n++] = 'Z'; v[n] = 0;
             return;
         }
-        break;
     case P_TONE:                                                     /* bars: STRIKE, centre .. L/3 .. edge */
         if (ui_bars() && (PV(s) == 0 || PV(s) == 64 || PV(s) == 127)) {
             p_strcpy(v, PV(s) == 0 ? "CENTRE" : PV(s) == 64 ? "L/3" : "EDGE", 6);
@@ -363,16 +382,21 @@ static void slot_turn(uint32_t s, int32_t d)
         else if (id == P_PH_SPEED && PV(P_PH_SYNC)) { id = P_PH_SYNC; step = -sgn(d); }
         else if (id == P_TW_RATE && PV(P_TW_SYNC) && PV(P_TW_SW) != 2) { id = P_TW_SYNC; step = -sgn(d); }
         else if (id == P_LFO_RATE && PV(P_LFO_SYNC)) { id = P_LFO_SYNC; step = -sgn(d); }
+        else if (id == P_MOT_RATE && PV(P_MOT_SYNC)) { id = P_MOT_SYNC; step = -sgn(d); }
         v = PV(id) + step;
         if (id != s && v < 1) v = 1;
-        param_set(id, clampi(v, 0, PARAMS[id].hi));
+        if (id == P_MOT_RATE && v > 120) v = 120;       /* the motor's top speed (10 Hz) */
+        if (id == P_TYPE) type_pick(clampi(v, 0, PARAMS[id].hi));   /* a TYPE change (bar types: the motor on) */
+        else param_set(id, clampi(v, 0, PARAMS[id].hi));
+        if (id == P_MOT_ON) set.mot_user_off = !PV(P_MOT_ON);        /* off by hand: no auto-on at TYPE VIBES */
         fx_wake(id);
         if (id == P_CMP_AMT) {                          /* THRESH is the compressor's switch: 0 = OFF, up = on */
             if (PV(P_CMP_AMT) && !PV(P_CMP_SW) && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, 15);   /* level-neutral */
             param_set(P_CMP_SW, PV(P_CMP_AMT) != 0);
             ui_mark(E_CARDS); ui_mark(E_FOOTER);
         }
-        if (id == P_TW_SYNC || id == P_CP_SYNC || id == P_DL_SYNC || id == P_PH_SYNC || id == P_LFO_SYNC) tempo_sync_publish();
+        if (id == P_TW_SYNC || id == P_CP_SYNC || id == P_DL_SYNC || id == P_PH_SYNC || id == P_LFO_SYNC || id == P_MOT_SYNC)
+            tempo_sync_publish();
         return;
     }
     switch (s) {
@@ -384,11 +408,10 @@ static void slot_turn(uint32_t s, int32_t d)
     case S_SCALE: set.sc_scale = (uint8_t)clampi(set.sc_scale + sgn(d), 0, 10); break;
     case S_ROOT: set.sc_root = (uint8_t)((set.sc_root + (d > 0 ? 1u : 11u)) % 12u); break;
     case S_TRANS: set.sc_trans = (int8_t)clampi(set.sc_trans + d, -24, 24); break;
-    case S_TWKIND: {                                    /* OFF PAN TREM WAH (+ MOTOR on a bar TYPE) */
-        int32_t k = clampi((int32_t)tw_kind() + sgn(d), 0, ui_bars() ? 4 : 3);
+    case S_TWKIND: {                                    /* OFF PAN TREM WAH */
+        int32_t k = clampi((int32_t)tw_kind() + sgn(d), 0, 3);
         param_set(P_TW_SW, k == 0 ? 0 : k == 3 ? 2 : 1);
         if (k == 1 || k == 2) param_set(P_TW_MODE, k - 1);
-        else if (k == 4) param_set(P_TW_MODE, 2);
         fx_wake(P_TW_SW);
         break;
     }
@@ -494,7 +517,8 @@ static void sq_shown_beat_set(void);
 static void draw_title(void)
 {
     uint32_t i;
-    int32_t x0 = 120 - (int32_t)PG_N * 5;
+    uint32_t npg = pg_count();
+    int32_t x0 = 120 - (int32_t)npg * 5;
     if (ui_page == PG_SEQ) {                            /* a small title and where the loop is: BAR 2/4 . 3 */
         char t[24];
         cv_begin(240, 18, C_BLACK);
@@ -512,7 +536,7 @@ static void draw_title(void)
         uint32_t q = pg_pos(ui_page) + 1u, n = 0;
         if (q >= 10u) t[n++] = (char)('0' + q / 10u);
         t[n++] = (char)('0' + q % 10u); t[n++] = '/';
-        t[n++] = (char)('0' + PG_N / 10u); t[n++] = (char)('0' + PG_N % 10u); t[n] = 0;
+        t[n++] = (char)('0' + npg / 10u); t[n++] = (char)('0' + npg % 10u); t[n] = 0;
         aa_text(10, 3, &AF_M, PAGE_TITLE[ui_page], UI_ACC, FC_BG);
         aa_text_r(230, 6, &AF_S, t, FC_LAB, FC_BG);
         cv_rect(10, 27, 220, 1, FC_HAIR);
@@ -520,7 +544,7 @@ static void draw_title(void)
         return;
     }
     if (ui_style == 1u) {                               /* MINIMAL: the title, and where we are as a hairline */
-        int32_t w = 200 / (int32_t)PG_N;
+        int32_t w = 200 / (int32_t)npg;
         text_c(0, 0, 240, &FONT_L, PAGE_TITLE[ui_page], C_HI);
         cv_rect(20, 36, 200, 1, C_LINE);
         cv_rect(20 + w * (int32_t)pg_pos(ui_page), 35, w, 3, UI_ACC);
@@ -531,7 +555,7 @@ static void draw_title(void)
         char t[8];
         uint32_t q = pg_pos(ui_page) + 1u;
         t[0] = (char)('0' + q / 10u); t[1] = (char)('0' + q % 10u); t[2] = '/';
-        t[3] = (char)('0' + PG_N / 10u); t[4] = (char)('0' + PG_N % 10u); t[5] = 0;
+        t[3] = (char)('0' + npg / 10u); t[4] = (char)('0' + npg % 10u); t[5] = 0;
         cv_text(6, 0, &FONT_L, PAGE_TITLE[ui_page], UI_ACC);
         cv_text(234 - text_w(&FONT_S, t), 14, &FONT_S, t, C_GRAY);
         cv_rect(6, 36, 228, 1, C_LINE);
@@ -539,9 +563,9 @@ static void draw_title(void)
         return;
     }
     if (pg_pos(ui_page) > 0) cv_text(4, 0, &FONT_L, "<", C_DIM);
-    if (pg_pos(ui_page) + 1u < PG_N) cv_text(220, 0, &FONT_L, ">", C_DIM);
+    if (pg_pos(ui_page) + 1u < npg) cv_text(220, 0, &FONT_L, ">", C_DIM);
     text_c(0, 0, 240, &FONT_L, PAGE_TITLE[ui_page], UI_ACC);
-    for (i = 0; i < PG_N; i++)                          /* where we are: one mark per page, in the SELECT order */
+    for (i = 0; i < npg; i++)                           /* where we are: one mark per page, in the SELECT order */
         cv_rect(x0 + 10 * (int32_t)i, 35, i == pg_pos(ui_page) ? 8 : 4, 3, i == pg_pos(ui_page) ? UI_ACC : C_LINE);
     cv_blit(0, 21);
 }
@@ -924,7 +948,12 @@ static void ui_draw_testpat(void)
 static void ui_draw(void)
 {
     uint32_t e, d;
-    static uint8_t cleared;
+    static uint8_t cleared, was_bars;
+    if ((uint8_t)ui_bars() != was_bars) {               /* the TYPE crossed engines: the MOTOR page comes or goes */
+        was_bars = (uint8_t)ui_bars();
+        if (ui_page == PG_MOTOR && !was_bars) ui_goto(PG_DECAY);
+        else ui_mark(E_TITLE);                          /* the page marks: one more or one less */
+    }
     if (ui_testpat) {
         if (!ui_testpat_shown) { ui_draw_testpat(); ui_testpat_shown = 1; }
         return;
@@ -982,6 +1011,7 @@ static void ui_draw(void)
 static void ui_goto(uint32_t pg)
 {
     if (pg >= PG_N) pg = PG_PERF;
+    if (!pg_shown(pg)) pg = PG_DECAY;                   /* MOTOR on a Rhodes TYPE: its neighbour */
     if ((pg == PG_SEQ) != (ui_page == PG_SEQ)) lcd_fill(0, 21, 240, 183, C_BLACK);   /* its own layout: no leftovers */
     ui_page = (uint8_t)pg;
     ui_hot_card = 0xFF;
@@ -1058,8 +1088,8 @@ static void ui_input(uint32_t b, uint32_t rel)
     if (b >> BTN_OCT_UP & 1u && set.oct < 2) { set.oct++; ui_changed(); ui_mark(E_HEADER); }
 
     if (d[ENC_SELECT]) {                                /* the pages: no wrap, so the ends are easy to find */
-        int32_t p = clampi((int32_t)pg_pos(ui_page) + sgn(d[ENC_SELECT]), 0, PG_N - 1);
-        if (PG_ORDER[p] != ui_page) ui_goto(PG_ORDER[p]);
+        int32_t p = clampi((int32_t)pg_pos(ui_page) + sgn(d[ENC_SELECT]), 0, (int32_t)pg_count() - 1);
+        if (pg_at((uint32_t)p) != ui_page) ui_goto(pg_at((uint32_t)p));
     }
     if (d[ENC_ALGORITHM] && ui_page == PG_SEQ) {        /* on SEQUENCER: the cursor, step by step */
         if (seq_step_held()) {                          /* step recording, keys held: the step gets longer */

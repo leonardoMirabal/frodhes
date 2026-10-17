@@ -45,10 +45,11 @@ the MIDI map.
 | **FRODHES** (main) | TYPE | DRIVE | REVERB | KEY VEL | HOME twice |
 | **VOICE** | TONE (VIBES: STRIKE) | BARK (MALLET) | BELL (TUBE) | HAMMER (WEIGHT) | EDIT |
 | **DECAY** | DECAY (VIBES: RING) | RELEASE (DAMPER) | NOISE | TUNE | (SELECT) |
+| **MOTOR** (VIBES only) | ON / OFF | DEPTH | SPEED | SHAPE | (SELECT) |
 | **COMPRESSOR** | THRESHOLD (OFF / on) | RATIO | ATTACK | MAKEUP | (SELECT) |
 | **FILTER** | OFF / LP12 / LP18 / HP12 / HP18 / BP / NOTCH | FREQ | RESO | LFO | (SELECT) |
 | **DRIVE** | OFF / ON | AMOUNT | TONE | MIX | (SELECT) |
-| **TREM/WAH** | OFF / PAN / TREM / WAH (VIBES: + MOTOR, the vibraphone's motor) | DEPTH | RATE | SHAPE | LFO (there: on / off) |
+| **TREM/WAH** | OFF / PAN / TREM / WAH | DEPTH | RATE | SHAPE | LFO (there: on / off) |
 | **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | ENV (there: on / off) |
 | **CHORUS** | OFF / ON | DEPTH | SPEED | SYNC | (SELECT) |
 | **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | SEL (there: on / off) |

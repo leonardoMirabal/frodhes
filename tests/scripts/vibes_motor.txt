@@ -1,27 +1,32 @@
-# TREM/WAH MODE = MOTOR (CC 21 112..127, bar types only) on VIBES: the bar engine's tube discs turn (the tremolo comes from the
-# engine; fx_trem passes); on a Rhodes TYPE, MOTOR is the amplitude tremolo. Effects on (no RAW).
+# The VIBES motor by MIDI (records v3: its own CCs, 47 ON, 48 DEPTH, 49 RATE, 50 SHAPE, 51 SYNC): the bar engine's
+# tube discs turn; TREM/WAH stays off. Effects on (no RAW).
 50 midi 0xB0 79 64
-51 midi 0xB0 17 64
-52 midi 0xB0 21 127
-53 midi 0xB0 18 127
-54 midi 0xB0 19 78
+51 midi 0xB0 47 127
+53 midi 0xB0 48 127
+54 midi 0xB0 49 78
 55 midi 0xB0 64 127
+60 dump
+60 expect state card.21.0 ON
+60 expect state card.21.2 3.5HZ
+60 expect state card.7.0 OFF
 100 midi 0x90 69 100
 100 midi 0x90 57 100
 1500 expect rms > -45
 3000 expect rms > -50
-# synced rate (1/8): the motor follows the tempo
-3100 midi 0xB0 20 64
+# synced rate (CC 51 64 = 4T): the motor follows the tempo
+3100 midi 0xB0 51 64
+3150 expect state card.21.2 4T
 3200 midi 0x90 64 100
 4000 expect rms > -50
-3990 midi 0xB0 20 0
+3990 midi 0xB0 51 0
 # depth 0: the discs stay open
-4100 midi 0xB0 18 0
+4100 midi 0xB0 48 0
 4200 midi 0x90 62 100
 4800 expect rms > -45
-# ST77 with MODE = MOTOR: the amplitude tremolo
-4900 midi 0xB0 18 100
+# ST77 with the motor on: the Rhodes has no motor (and no tremolo comes on)
+4900 midi 0xB0 48 100
 5000 midi 0xB0 80 0
+5050 expect state card.7.0 OFF
 5100 midi 0x90 60 100
 5600 expect rms > -45
 5700 midi 0xB0 64 0
@@ -30,6 +35,6 @@
 5700 midi 0x80 64 0
 5700 midi 0x80 62 0
 5700 midi 0x80 60 0
-5800 midi 0xB0 17 0
+5800 midi 0xB0 47 0
 7500 expect rms < -60
 7500 end

@@ -650,7 +650,9 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
     rv_running = 1;
     for (sb = 0; sb < n; sb += CTL) {
         int32_t act = 0;
-        for (j = 0; j < CTL; j++) rv_in[j] = mulq15((L[sb + j] + R[sb + j]) >> 1, send);
+        for (j = 0; j < CTL; j++)                      /* 64-bit: the bus can be several times full scale here
+                                                        * (feedback effects, many v127 notes: fuzz seed 95) */
+            rv_in[j] = (int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15);
         if (pd || pd_on) fx_predelay(rv_in, pd);
         if (rv_off != off) rv_off += rv_off < off ? 1 : -1;
         if (rv_damp != damp) rv_damp += rv_damp < damp ? (damp - rv_damp > 2 ? 2 : damp - rv_damp)

@@ -92,26 +92,27 @@
 6800 expect preset
 6800 expect sound
 6800 expect state bars 1
-# ---- F13 VIBE MOTOR: the motor is the TREM/WAH effect (LFO lit), its card says MOTOR
+# ---- F13 VIBE MOTOR: the motor is the engine's (the MOTOR page: ON, 3.5 Hz); TREM/WAH stays off (LFO dark)
 6900 midi 0xC0 12 0
 7000 expect preset
 7000 expect sound
 7000 expect state header F13_VIBE_MOTOR
-7000 expect led 5 1
-7000 expect state card.7.0 MOTOR
-7000 expect state card.7.2 3.5HZ
+7000 expect led 5 0
+7000 expect state card.7.0 OFF
+7000 expect state card.21.0 ON
+7000 expect state card.21.2 3.5HZ
 7000 expect state label.3.0 STRIKE
 # ---- TYPE swaps: CC 80 (Rhodes SUITCASE), the cards turn back; CC 79 (VIBES) again; ALGORITHM steps it
 7100 midi 0xB0 80 40
 7200 expect sound
 7200 expect state bars 0
 7200 expect state card.2.0 SUITCASE
-7200 expect state card.7.0 TREM
+7200 expect state card.7.0 OFF
 7200 expect state label.3.0 TONE
 7300 midi 0xB0 79 64
 7400 expect sound
 7400 expect state bars 1
-7400 expect state card.7.0 MOTOR
+7400 expect state card.21.0 ON
 7500 turn 1 -1
 7600 expect sound
 7600 expect state bars 0
@@ -125,16 +126,16 @@
 7900 btn 2
 8000 expect led 2 1
 8000 expect state byp 0
-# ---- the effect buttons: LFO -> TREM/WAH page; again: off (LFO dark), again: on (lit)
+# ---- the effect buttons: LFO -> TREM/WAH page; again: on (lit, its last kind: PAN), again: off (LFO dark)
 8100 btn 5
 8200 expect state page TREM/WAH
 8300 btn 5
-8400 expect led 5 0
-8400 expect state card0 OFF
+8400 expect led 5 1
+8400 expect state card0 PAN
 8400 expect sound
 8500 btn 5
-8600 expect led 5 1
-8600 expect state card0 TREM
+8600 expect led 5 0
+8600 expect state card0 OFF
 8600 expect sound
 # ENV -> PHASER, again: on (ENV lit, a starting depth); SEL -> DELAY, again: on (SEL lit)
 8700 btn 4

@@ -30,10 +30,10 @@ def host_build():
 def c_render(note, vel, dur_ms, off_ms=None, motor=None, tag="vb", **kn):
     k = dict(gm.DEFAULT_KNOBS, **kn)
     out = os.path.join(ROOT, "build", "host", f"{tag}-{note}-{vel}")
-    s = "50 midi 0xB0 119 127\n50 midi 0xB0 104 0\n52 midi 0xB0 79 64\n" + KNOBS.format(**k)
-    if motor:
-        s += f"56 midi 0xB0 17 64\n56 midi 0xB0 21 127\n56 midi 0xB0 18 {motor['depth']}\n" \
-             f"56 midi 0xB0 19 {motor['rate']}\n56 midi 0xB0 20 {motor.get('shape', 0)}\n"
+    s = "50 midi 0xB0 119 127\n50 midi 0xB0 104 0\n52 midi 0xB0 79 64\n53 midi 0xB0 47 0\n" + KNOBS.format(**k)
+    if motor:                                       # the motor (records v3: CC 47 ON, 48 DEPTH, 49 RATE, 50 SHAPE)
+        s += f"56 midi 0xB0 47 127\n56 midi 0xB0 48 {motor['depth']}\n" \
+             f"56 midi 0xB0 49 {motor['rate']}\n56 midi 0xB0 50 {motor.get('shape', 0)}\n"
     s += f"100 midi 0x90 {note} {vel}\n"
     if off_ms:
         s += f"{off_ms} midi 0x80 {note} 0\n"

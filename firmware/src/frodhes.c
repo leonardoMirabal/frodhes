@@ -129,7 +129,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
     }
     if (cc == 79u) {                                   /* the bar types (VIBES ...): bands over 0..127, one per type;
                                                         * CC 80 keeps the four Rhodes types exactly as before */
-        param_set(P_TYPE, (int32_t)(4u + ((v * (N_TYPE_N - 4u)) >> 7)));
+        type_pick((int32_t)(4u + ((v * (N_TYPE_N - 4u)) >> 7)));   /* (a TYPE change: the motor starts) */
         ui_mark_param(P_TYPE);
         return;
     }
@@ -150,16 +150,15 @@ static void midi_cc(uint32_t cc, uint32_t v)
     }
     if ((cc == 86u || cc == 87u) && PV(P_PH_SW) && !PV(P_CP_SW)) cc += 13u - 86u;   /* reface: the phaser's */
     for (id = 0; id < P_COUNT; id++)
-        if (PARAMS[id].cc == cc) {
+        if (PARAMS[id].cc && PARAMS[id].cc == cc) {        /* cc 0: a parameter without a CC */
             int32_t x = (int32_t)v;
-            if (id == P_TW_MODE)                       /* PAN 0..63, AM 64..127 as before; MOTOR (112..127) only on a
-                                                        * bar TYPE, so a Rhodes TYPE keeps exactly the old bands */
-                x = v < 64u ? 0 : v >= 112u && TYPE_IS_BARS(PV(P_TYPE)) ? 2 : 1;
+            if (id == P_TW_MODE) x = v >= 64u;          /* PAN 0..63, AM 64..127 (records v3: MOTOR, 112..127 on a bar
+                                                        * TYPE, is the motor's own CC 47 now) */
             else if (PARAMS[id].hi == 2u) x = v < 43u ? 0 : v < 86u ? 1 : 2;
             else if (id == P_TYPE) x = (int32_t)(v >> 5);   /* the Rhodes types, as before; bar types: CC 79 */
             else if (PARAMS[id].hi < 127u) x = (int32_t)(v * (PARAMS[id].hi + 1u) >> 7);
             param_set(id, x);
-            if (id == P_DL_SYNC || id == P_TW_SYNC || id == P_CP_SYNC || id == P_PH_SYNC) tempo_sync_publish();
+            if (id == P_DL_SYNC || id == P_TW_SYNC || id == P_CP_SYNC || id == P_PH_SYNC || id == P_MOT_SYNC) tempo_sync_publish();
             ui_mark_param(id);
             return;
         }

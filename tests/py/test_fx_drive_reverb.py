@@ -2,7 +2,7 @@
 """The DRIVE and REVERB pages (0.9.3) on the host build: every new control has an audible, measured effect, the
 defaults are the sound before the pages (sample for sample), and moving any of them does not click.
 
-CCs: DRIVE 81 (AMOUNT), 82 TONE, 83 MIX, 84 ON / OFF; REVERB 91 (MIX), 47 DECAY, 48 TONE, 49 PRE-DELAY."""
+CCs: DRIVE 81 (AMOUNT), 82 TONE, 83 MIX, 84 ON / OFF; REVERB 91 (MIX), 92 DECAY, 93 TONE, 94 PRE-DELAY."""
 import os
 import subprocess
 import wave
@@ -66,7 +66,7 @@ def test_defaults_are_the_old_sound():
     """the new controls sent at their defaults change nothing, with the drive and the reverb both on"""
     on = [(81, 90), (91, 90)]
     a, ar = run("def0", on, CHORD, 2500)
-    b, br = run("def1", on + [(82, 64), (83, 127), (84, 127), (47, 64), (48, 64), (49, 0)], CHORD, 2500)
+    b, br = run("def1", on + [(82, 64), (83, 127), (84, 127), (92, 64), (93, 64), (94, 0)], CHORD, 2500)
     assert np.array_equal(a, b) and np.array_equal(ar, br)
 
 
@@ -122,9 +122,9 @@ def t60(x, t0=0.45):
 
 
 def test_reverb_decay_moves_t60():
-    lo = t60(wet("dcy0", REV + [(47, 0)]))
+    lo = t60(wet("dcy0", REV + [(92, 0)]))
     mid = t60(wet("dcy64", REV))
-    hi = t60(wet("dcy127", REV + [(47, 127)], end_ms=7000))
+    hi = t60(wet("dcy127", REV + [(92, 127)], end_ms=7000))
     assert lo < mid < hi, (lo, mid, hi)
     assert hi / lo >= 2, (lo, mid, hi)               # >= 2x over its range (designed: x0.5 .. x1.96 around 64)
     assert 0.4 < mid < 6.0, mid                      # the hall as before: a plausible length
@@ -135,7 +135,7 @@ def test_reverb_tone_tilts():
     against its lows (100 .. 600 Hz: TONE 0 also takes some of the body away)"""
     notes = [(100, n, 127, 150) for n in (48, 60, 72, 84, 91, 96)]
     def tilt(v):
-        x = seg(wet(f"rtn{v}", [(81, 127), (91, 80), (48, v)], notes, 3000), 0.3, 0.8)
+        x = seg(wet(f"rtn{v}", [(81, 127), (91, 80), (93, v)], notes, 3000), 0.3, 0.8)
         return band_db(x, 6000, 10000) - band_db(x, 100, 600)
     d0, d64, d127 = tilt(0), tilt(64), tilt(127)
     assert d0 < d64 < d127, (d0, d64, d127)
@@ -143,7 +143,7 @@ def test_reverb_tone_tilts():
 
 
 def test_reverb_mix0_is_dry():
-    w, _ = run("rmix0", [(81, 0), (91, 0), (47, 127), (48, 0), (49, 127)], HIT, 2000)
+    w, _ = run("rmix0", [(81, 0), (91, 0), (92, 127), (93, 0), (94, 127)], HIT, 2000)
     d, _ = run("rv-dry2", [(81, 0), (91, 0)], HIT, 2000)
     assert np.array_equal(w, d)                      # MIX 0: no reverb, whatever the other three say
 
@@ -151,7 +151,7 @@ def test_reverb_mix0_is_dry():
 @pytest.mark.parametrize("v", [32, 64, 127])
 def test_reverb_predelay_moves_the_onset(v):
     ref = wet("pd0", REV)
-    got = wet(f"pd{v}", REV + [(49, v)])
+    got = wet(f"pd{v}", REV + [(94, v)])
     ms = v * 3528 // 127 / FS * 1000                 # the stated pre-delay (fx.c FX_PDLY_SAMPLES; the card's ms)
     a, b = seg(ref, 0.05, 0.6), seg(got, 0.05, 0.6)
     c = np.correlate(b, a[:len(a) - 4096], "valid")  # lags 0 .. 4096 samples (93 ms)
@@ -172,7 +172,7 @@ def jumps(x, t0, t1):
 
 
 @pytest.mark.parametrize("name,base,cc", [("dtone", DRV, 82), ("dmix", DRV, 83), ("dsw", DRV, 84),
-                                          ("rdecay", REV, 47), ("rtone", REV, 48), ("rpre", REV, 49)])
+                                          ("rdecay", REV, 92), ("rtone", REV, 93), ("rpre", REV, 94)])
 def test_sweeps_do_not_click(name, base, cc):
     chord = [(100, n, 100, 2600) for n in (48, 55, 60, 64, 67, 72)]
     still_lo, _ = run(f"sw-{name}-lo", base + [(cc, 0)], chord, 2800)

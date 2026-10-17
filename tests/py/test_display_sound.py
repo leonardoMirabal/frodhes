@@ -20,11 +20,11 @@ import pytest
 
 from hostrun import FS, ROOT, card_hz, cc, env_rms, note, rate_of, rms_db, run
 
-ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 64)]}
+ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 64), cc(11, 47, 0)]}   # VIBES: its motor (on with it) off
 CLEAN = [cc(20, 81, 0), cc(21, 91, 0)]              # F01's drive and reverb off: the effect alone
 PEDAL = [cc(22, 64, 127)]
 PG = {"TREM": 7, "PHA": 8, "CHO": 9, "DELAY": 10, "TEMPO": 11, "FILTER": 6, "LFO": 16, "COMP": 5, "SETUP": 17,
-      "ARP": 15, "SEQ": 14}
+      "ARP": 15, "SEQ": 14, "DRIVE": 19, "REVERB": 20, "MOTOR": 21}
 UNITS = {"1/32": 12, "16T": 16, "1/16": 24, "8T": 32, "16D": 36, "1/8": 48, "4T": 64, "8D": 72, "1/4": 96, "4D": 144,
          "1/2": 192, "1/1": 384, "2BAR": 768, "4BAR": 1536}
 ARP_UNITS = {"1/4": 96, "1/8": 48, "1/8T": 32, "1/16": 24, "1/16T": 16, "1/32": 12}
@@ -136,16 +136,16 @@ def test_tremolo_rate_and_depth(eng):
 
 
 def test_motor_rate():
-    """VIBES MOTOR: the tubes' discs modulate the sound at the RATE card's rate ("3.5HZ"), 0.5-10 Hz"""
+    """VIBES MOTOR (its own page): the tubes' discs modulate the sound at the SPEED card's rate ("3.5HZ"), 0.5-10 Hz"""
     pre = ENGINES["vibes"] + CLEAN + PEDAL
     ref = run("ds-mot-ref", pre + restruck(CHORD), 10500)
     for v in (20, 78, 127):
-        w = run(f"ds-mot{v}", pre + [cc(30, 17, 64), cc(31, 21, 120), cc(32, 18, 127), cc(33, 19, v), "100 dump"]
+        w = run(f"ds-mot{v}", pre + [cc(30, 47, 127), cc(32, 48, 127), cc(33, 49, v), "100 dump"]
                 + restruck(CHORD), 10500)
         st = w.state(100)
-        assert st[f"card.{PG['TREM']}.0"] == "MOTOR"
+        assert st[f"card.{PG['MOTOR']}.0"] == "ON" and st[f"card.{PG['TREM']}.0"] == "OFF"
         g, fps = gain_ratio(w, ref, 0.5, 10.2, hop=256)
-        txt = st[f"card.{PG['TREM']}.2"]
+        txt = st[f"card.{PG['MOTOR']}.2"]
         assert_rate(rate_of(np.log(g), fps, card_hz(txt)), txt, f"MOTOR RATE {v}")
 
 
@@ -328,22 +328,24 @@ def sync_v(i, hi=13):
 @pytest.mark.parametrize("eng", ENGINES)
 def test_tempo_and_sync(eng):
     """BPM set by the TEMPO page's knob, by tapping PLAY and by MIDI clock: the BPM card, and the tremolo synced
-    (TREM SYNC 1/16, 1/8, 1/4) runs at that BPM's note value; on VIBES the MOTOR follows TREM SYNC too"""
+    (TREM SYNC 1/16, 1/8, 1/4) runs at that BPM's note value; on VIBES the MOTOR's own SYNC (CC 51) too"""
     pre = ENGINES[eng] + CLEAN + PEDAL
     ref = run(f"ds-sync-ref-{eng}", pre + restruck(CHORD, t0=2600, n=4), 10500)
     clock = [f"{300 + i * 25} midi 0xF8 0 0" for i in range(24 * 8)]   # 25 ms a pulse: 100 BPM (smoothed in)
     cases = [("knob", ["40 btn 7", "50 turn 2 -20"], 3), ("tap", ["40 btn 7"] + [f"{60 + 600 * i} btn 12" for i in range(4)], 6),
              ("clock", ["40 btn 7"] + clock, 9)]
     for how, lines, si in cases:
-        mode = 120 if eng == "vibes" and how == "clock" else 80            # VIBES: MOTOR once, synced
-        w = run(f"ds-sync-{how}-{eng}", pre + [cc(30, 17, 64), cc(31, 21, mode), cc(32, 18, 100), cc(33, 20, sync_v(si)),
-                                              "2550 dump"] + lines + restruck(CHORD, t0=2600, n=4), 10500)
+        mode = 120 if eng == "vibes" and how == "clock" else 80            # VIBES: the MOTOR once, synced
+        fx = ([cc(30, 47, 127), cc(32, 48, 100), cc(33, 51, sync_v(si))] if mode == 120 else
+              [cc(30, 17, 64), cc(31, 21, mode), cc(32, 18, 100), cc(33, 20, sync_v(si))])
+        w = run(f"ds-sync-{how}-{eng}", pre + fx + ["2550 dump"] + lines + restruck(CHORD, t0=2600, n=4), 10500)
         st = w.state(2550)
         assert st["page"] == "TEMPO" and st["card0"] == st["bpm"]
         bpm = float(st["card0"])
         assert abs(bpm - 100) <= 2.0, f"{how}: BPM {bpm}"
-        assert st[f"card.{PG['TREM']}.2"] == st["card1"], (st[f"card.{PG['TREM']}.2"], st["card1"])   # RATE shows the sync
-        hz = bpm / 60 * 96 / UNITS[st["card1"]]
+        div = st[f"card.{PG['MOTOR']}.2"] if mode == 120 else st["card1"]   # the SPEED / TREM SYNC card: the note
+        assert st[f"card.{PG['MOTOR' if mode == 120 else 'TREM']}.2"] == div, (st[f"card.{PG['TREM']}.2"], div)
+        hz = bpm / 60 * 96 / UNITS[div]
         g, fps = gain_ratio(w, ref, 2.7, 10.2, hop=256 if mode == 120 else 64)
         meas = rate_of(np.log(g) if mode == 120 else g, fps, hz)
         assert abs(meas - hz) <= 0.01 * hz, f"{how}: BPM {bpm}, {st['card1']} = {hz:.3f} Hz, the tremolo runs {meas:.3f}"

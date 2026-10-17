@@ -262,8 +262,8 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     v->fade = 32768; v->pend = 0; v->felt_n = 0; v->felt_lp = 0;
     v->age = ++bar_ages;
     v->life = k->life;
-    v->pthump = BAR_PULSE[k->band][BAR_NFAM - 1u][0];             /* the felt's knock: RUBBER, softest layer */
-    v->prate_thump = BAR_PRATE[n - BAR_KEY_LO][BAR_NFAM - 1u][1] << 4;
+    v->pthump = BAR_PULSE[k->band][0][0];             /* the felt's knock: SOFT, the softest layer */
+    v->prate_thump = BAR_PRATE[n - BAR_KEY_LO][0][1] << 4;
     bar_load_pulse(v, vel);
     /* contact noise: filtered noise, louder for harder mallets and faster strikes, decaying (tau ~ 23 ms) */
     bar_nz_e += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * vel) >> 22);
@@ -333,6 +333,9 @@ static void bar_note_off(uint32_t note)
             }
             if (bar_pedal_w && bar_felt) v->felt_n = 353;    /* 8 ms of felt noise */
         }
+    for (i = 0; i < BAR_NV; i++)                    /* a note let go while it waits for a steal's fade: it starts let go
+                                                     * (it was held for good: fuzz, a fast arpeggio over 8 voices) */
+        if (bv[i].alive && bv[i].pend && bv[i].pend_note == note) bv[i].pend = 2;
 }
 
 static void bar_pedal(uint32_t cc)
@@ -376,26 +379,33 @@ static void bar_kill_all(void)
 
 static int bar_quiet(void) { return bar_active_bits == 0 && bar_quiet_blocks >= 2u; }
 
-/* ---- the motor: the discs' opening per sub-block edge, once per block (the TREM/WAH page through eng_bar_knob) */
+/* ---- the motor: the discs' opening per sub-block edge, once per block (the MOTOR page through eng_bar_knob) */
+#define BAR_MOT_SLEW 512                            /* the depth's slew, Q15 a sub-block: off <-> full in 64 sub-blocks
+                                                     * (46 ms), so switching the motor or turning DEPTH never clicks */
+static int32_t bar_mot_d;                           /* the discs' depth as it plays, Q15 (DEPTH x ON, slewed) */
 static void bar_motor_block(void)
 {
     uint32_t i, inc = bar_mot_inc;
     int32_t depth = bar_mot_depth > 127u ? 127 : bar_mot_depth, shape = bar_mot_shape > 127u ? 127 : bar_mot_shape;
     int32_t gc = BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u].mot_gc;
-    int32_t gmin = 32768 - (depth * (32768 - gc)) / 127;
-    if (!bar_mot_on) {                              /* not MOTOR: the discs parked open */
+    int32_t tgt = bar_mot_on ? (depth << 15) / 127 : 0, d0 = bar_mot_d;
+    bar_mot_g[0] = bar_mot_g[8];                    /* the last block's end: continuous */
+    if (!tgt && !d0) {                              /* off: the discs parked open */
         for (i = 0; i < 9u; i++) bar_mot_g[i] = 32768;
         bar_mot_ph += 256u * inc;
         return;
     }
-    for (i = 0; i < 9u; i++) {
+    for (i = 1; i < 9u; i++) {                      /* each sub-block's end (its start is the one before) */
         /* |cos phi|, phi = pi t / 512, t = ph >> 23 folded on the quarter-turn table: one AM period per 2^32 phase
-         * cycle (bit-exact to tools/bartube.py mot_block) */
+         * cycle (bit-exact to tools/bartube.py mot_block at a steady depth) */
         uint32_t ph = bar_mot_ph + i * 32u * inc, t = ph >> 23, fr = (ph >> 15) & 255u, t1 = (t + 1u) & 511u;
         int32_t c0 = t < 256u ? BAR_MOT_COS[t] : BAR_MOT_COS[512u - t];
         int32_t c1 = t1 < 256u ? BAR_MOT_COS[t1] : BAR_MOT_COS[512u - t1];
         int32_t c = c0 + (((c1 - c0) * (int32_t)fr) >> 8);
-        int32_t o = 32768 - c, op = o;
+        int32_t o = 32768 - c, op = o, gmin, dd = tgt - bar_mot_d;
+        bar_mot_d += dd > BAR_MOT_SLEW ? BAR_MOT_SLEW : dd < -BAR_MOT_SLEW ? -BAR_MOT_SLEW : dd;   /* DEPTH x ON, slewed */
+        gmin = bar_mot_d == tgt ? 32768 - (depth * (32768 - gc)) / 127 * (tgt != 0)   /* steady: DEPTH exactly */
+                                : 32768 - (int32_t)(((int64_t)bar_mot_d * (32768 - gc)) >> 15);
         if (shape) op = o + (((((o * o) >> 15) - o) * shape) / 127);   /* p = 1 + SHAPE/127: a narrower open window */
         bar_mot_g[i] = gmin + (((32768 - gmin) * op) >> 15);
     }
@@ -798,7 +808,11 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix)
     v->struck = 0;
     if (v->fade == 0) {                             /* a steal finished fading: start the waiting note */
         v->alive = 0;
-        if (v->pend) bar_init(v, v->pend_note, v->pend_vel);
+        if (v->pend) {
+            uint32_t rel = v->pend == 2u;
+            bar_init(v, v->pend_note, v->pend_vel);
+            if (rel) { v->held = 0; bar_set_damper(v, bar_pedal_w); }
+        }
         return;
     }
     if (!v->ptab && !v->felt_n && sum < v->kill1) { v->alive = 0; return; }   /* under 1 LSB out: the voice ends */
