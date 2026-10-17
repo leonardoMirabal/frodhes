@@ -48,6 +48,7 @@ static int fx_quiet(void) { return fx_quiet_blocks >= 86u; }   /* 500 ms under -
 
 static inline int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
 static inline int32_t mulq15(int32_t a, int32_t b) { return (a * b) >> 15; }        /* |a|,|b| small enough */
+static inline int64_t clampi64(int64_t v) { return v > 131071 ? 131071 : v < -131072 ? -131072 : v; }   /* softclip's range */
 static inline int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15, flat beyond +-4 */
 {
     uint32_t i;
@@ -159,6 +160,9 @@ static void fx_drive(int32_t *m, uint32_t n)
     if (!d) { dr_w = wt; return; }                      /* AMOUNT 0: off, as before (no glide: there is no drive) */
     if (!wt && !dr_w) { dr_ton = 0; dr_tg = 4096; return; }   /* off, or MIX 0: the dry signal, untouched */
     g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
+    if (d > 16) g = 4096 + (int32_t)((((int64_t)(g - 4096)) * (16 + d)) >> 5);   /* above 16 up to ~40x: a single
+                                                       * note reaches the knee (was ~9x: nothing heard, TODO #4); <= 16 (the
+                                                       * presets' low drive) exactly as before */
     k = 32000 - d * 95;
     mk = ((30000 - d * 120) * DR_MU[row]) >> 12;
     mk = (mk * (int32_t)FX_DRV_LVL[d]) >> 15;          /* level-neutral: the drive adds tone, not volume (0.6) */
@@ -171,7 +175,7 @@ static void fx_drive(int32_t *m, uint32_t n)
             int32_t x = m[i], y;
             dr_hp += (x - dr_hp + 64) >> 7;
             x = clampi(x - dr_hp, -230000, 230000);
-            y = softclip((((x >> 2) * g) >> 10) + bias) - b0;
+            y = softclip((int32_t)clampi64((((int64_t)(x >> 2) * g) >> 10) + bias)) - b0;
             dr_lp1 += mulq15(y - dr_lp1, k);
             dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
             m[i] = mulq15(dr_lp2, mk);
@@ -182,7 +186,7 @@ static void fx_drive(int32_t *m, uint32_t n)
         int32_t x0 = m[i], x, y;
         dr_hp += (x0 - dr_hp + 64) >> 7;
         x = clampi(x0 - dr_hp, -230000, 230000);
-        y = softclip((((x >> 2) * g) >> 10) + bias) - b0;
+        y = softclip((int32_t)clampi64((((int64_t)(x >> 2) * g) >> 10) + bias)) - b0;
         dr_lp1 += mulq15(y - dr_lp1, k);
         dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
         y = mulq15(dr_lp2, mk);

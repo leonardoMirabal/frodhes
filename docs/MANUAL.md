@@ -191,7 +191,7 @@ The amp drive, right after the filter. AMOUNT is the same as DRIVE on the main p
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **EFFECT** | **ON** / **OFF** (switching it on with AMOUNT at 0 gives it a starting amount) |
-| K2 | **AMOUNT** | From clean to growl. It changes the tone, not the volume; at 0 there is no drive |
+| K2 | **AMOUNT** | From clean to growl: low settings warm the sound a little, above the middle a single note breaks up and the top is a hard, compressed overdrive. It changes the tone, not the volume (big chords come out a little lower at the top, as an amp squashes them); at 0 there is no drive |
 | K3 | **TONE** | After the drive: darker (down to the highs gone) or brighter (up to +6 dB of treble); the middle (+0.0) leaves it as it is |
 | K4 | **MIX** | Dry / driven: 10.0 is all drive (as before), lower blends the clean piano back in, 0 is clean |
 

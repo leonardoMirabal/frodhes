@@ -212,3 +212,22 @@ def test_delay_keeps_its_echoes_under_stereo_effects(fx, eng):
         p = lambda a, b: 10 * np.log10(np.mean(seg(L, a, b) ** 2) + np.mean(seg(R, a, b) ** 2) + 1e-9)
         return p(0.66, 0.76) - p(0.30, 0.40)
     assert abs(rel(fx) - rel([])) <= 1.0, (rel(fx), rel([]))
+
+
+@pytest.mark.parametrize("eng", ["rhodes", "vibes"])
+def test_drive_is_heard(eng):
+    """DRIVE distorts a single note audibly at the top (TODO #4: "drive effect is bare noticiable ... does nothing"):
+    A3 v110 at AMOUNT 127 vs 0 raises the 1-3 kHz band re the lows 15 dB or more and drops the crest factor; at 64
+    the level stays within 2 LU (it changes the tone, not the volume)"""
+    sel = [(79, 64), (47, 0)] if eng == "vibes" else []
+    out = {}
+    for d in (0, 64, 127):
+        L, R = run(f"drh-{eng}-{d}", [(91, 0), (84, 127), (81, d)] + sel, [(300, 57, 110, 2000)], 2500)
+        x = seg((L + R) / 2, 0.5, 1.5)
+        X = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+        f = np.fft.rfftfreq(len(x), 1 / FS)
+        hi = 10 * np.log10(X[(f >= 1000) & (f < 3000)].sum() + 1e-9) - 10 * np.log10(X[f < 300].sum() + 1e-9)
+        out[d] = (hi, 20 * np.log10(np.abs(x).max() / np.sqrt(np.mean(x * x))), rms_db(x))
+    assert out[127][0] - out[0][0] >= 15, out          # (VIBES starts brighter: +17 dB, the Rhodes +55)
+    assert out[127][1] < out[0][1] - 2, out
+    assert abs(out[64][2] - out[0][2]) <= 2.0, out
