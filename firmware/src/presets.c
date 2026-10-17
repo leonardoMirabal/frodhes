@@ -260,7 +260,7 @@ static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t r
 
 static void presets_save_poll(void)
 {
-    if (pr_save_pending && eng_quiet() && fx_quiet()) {
+    if (pr_save_pending && eng_idle() && fx_quiet()) {
         pr_save_pending = 0;
         ui_say(presets_save_bank() ? "SAVE FAILED" : "SAVED");
     }

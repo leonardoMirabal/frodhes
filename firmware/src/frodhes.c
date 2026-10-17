@@ -53,7 +53,7 @@ static void app_audio(int32_t *out, uint32_t n)
 static uint8_t sus_held, sus_latched, sus_midi, sus_was_latched;
 static uint32_t sus_t;
 
-static void sustain_update(void) { eng_pedal_level(sus_held || sus_latched ? 127u : sus_midi); ui_mark(E_HEADER); }
+static void sustain_update(void) { eng_q(EV_PEDAL, 0, sus_held || sus_latched ? 127u : sus_midi); ui_mark(E_HEADER); }
 
 static void sustain_button(uint32_t pressed, uint32_t released)
 {
@@ -130,8 +130,10 @@ static void midi_cc(uint32_t cc, uint32_t v)
                                                         * came (0.9.3: a lost note-off left that note dead, and the
                                                         * arpeggiator playing it), then the dampers on everything */
         uint32_t n;
+        out_quiet_off = 1;                             /* (one EV_ALL_OFF below damps them all) */
         for (n = 0; n < 128u; n++) src_off(SRC_MIDI + n);
-        eng_all_off();
+        out_quiet_off = 0;
+        eng_q(EV_ALL_OFF, 0, 0);
         return;
     }
     if (cc == 85u) {                                   /* reface CHO/PHA switch: off / chorus / phaser (one of them) */
@@ -229,6 +231,7 @@ static void app_main(void)
             if (src_active[SRC_KEYS + k]) lit |= 1u << k;
             else if (rh_hold && note_sounding((uint32_t)scale_key_note(k))) lit |= 1u << k;
         src_poll();
+        eng_pump();                             /* (notes.c: events that waited for room in the engine's ring) */
         seq_poll();
         arp_poll();
         ui_leds(lit, tempo_beat_led() || (arp_on() && arp_n && arp_playing < 128u));
@@ -236,7 +239,7 @@ static void app_main(void)
         presets_save_poll();
         seq_save_poll();
 
-        if (set_dirty && fm1_ms - set_t_change > 2000u && eng_quiet() && fx_quiet()) {
+        if (set_dirty && fm1_ms - set_t_change > 2000u && eng_idle() && fx_quiet()) {
             settings_save(&set, sizeof set);    /* only when silent: the erase stalls the audio */
             set_dirty = 0;
         }
@@ -356,17 +359,19 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "dirty")) snprintf(v, n, "%u", set_dirty);
     else if (!strcmp(key, "bars")) snprintf(v, n, "%d", eng_is_bars());
     else if (!strcmp(key, "voices")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits));
+    else if (!strcmp(key, "held")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_held_bits : rh_held_bits));
     else if (!strcmp(key, "srcs")) { for (i = c = 0; i < SRC_N; i++) c += src_active[i]; snprintf(v, n, "%u", c); }
     else if (!strcmp(key, "refs")) { for (i = c = 0; i < 128u; i++) c += out_ref[i]; snprintf(v, n, "%u", c); }
     else if (!strcmp(key, "quiet")) snprintf(v, n, "%d", eng_quiet() && fx_quiet());
+    else if (!strcmp(key, "drops")) snprintf(v, n, "%u", (unsigned)(eq_drop + ev_drop + engq_drop));   /* events lost */
     else return 1;
     return 0;
 }
 static void host_dump(void)
 {
     static const char *const K[] = {"header", "preset", "page", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
-                                    "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "bars", "voices",
-                                    "srcs", "refs", "quiet", "label0", "card0", "label1", "card1", "label2", "card2",
+                                    "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "bars", "voices", "held",
+                                    "srcs", "refs", "quiet", "drops", "label0", "card0", "label1", "card1", "label2", "card2",
                                     "label3", "card3"};
     char key[24], v[64];
     uint32_t i, k;

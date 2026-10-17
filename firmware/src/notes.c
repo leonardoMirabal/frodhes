@@ -18,19 +18,52 @@
 #define SRC_N 156u
 #define CH_MAX 6u
 
+/* ---- to the engine: its ring (engine.c) holds 32 events a block; a burst beyond that (six chord-mode keys let go
+ * at once, a DAW's 40 notes in 5 ms) waits here, in order, instead of being dropped (a dropped note-off was a stuck
+ * note, 0.9.3). Every note, pedal and all-off goes through here; eng_pump() moves what fits, each main-loop pass. */
+#define ENGQ_N 256u
+static uint32_t engq[ENGQ_N], engq_r, engq_w, engq_drop;
+static int eng_ring_room(void) { return eq_w - eq_r < 31u; }   /* (one spare: a TYPE change to the Rhodes posts the
+                                                                 * pedal into rhodes.c's ring before the 31 move in) */
+static void eng_send(uint32_t type, uint32_t n, uint32_t v)
+{
+    if (type == EV_NOTE_ON) eng_note_on(n, v);
+    else if (type == EV_NOTE_OFF) eng_note_off(n);
+    else if (type == EV_PEDAL) eng_pedal_level(v);
+    else eng_all_off();
+}
+static void eng_q(uint32_t type, uint32_t n, uint32_t v)
+{
+    if (engq_r == engq_w && eng_ring_room()) { eng_send(type, n, v); return; }
+    if (engq_w - engq_r >= ENGQ_N) { engq_drop++; return; }
+    engq[engq_w % ENGQ_N] = type << 24 | (n & 127u) << 8 | (v & 255u);
+    engq_w++;
+}
+static void eng_pump(void)
+{
+    while (engq_r != engq_w && eng_ring_room()) {
+        uint32_t e = engq[engq_r % ENGQ_N];
+        engq_r++;
+        eng_send(e >> 24, e >> 8 & 127u, e & 255u);
+    }
+}
+static int eng_idle(void) { return engq_r == engq_w && eng_quiet(); }   /* nothing waiting, nothing sounding */
+
 /* ---- out: the piano or the arpeggiator, per pitch counted */
 static uint8_t note_to_arp[128], out_ref[128], out_echo[128];
+static uint8_t out_quiet_off;                    /* all notes off (frodhes.c): the engine gets one EV_ALL_OFF instead
+                                                  * of a note-off per note (a burst of them overflowed its ring) */
 static void note_in_on(uint32_t n, uint32_t vel, int echo)
 {
     if (arp_on()) { note_to_arp[n] = 1; arp_in_on(n, vel); return; }
     note_to_arp[n] = 0;
-    eng_note_on(n, vel);
+    eng_q(EV_NOTE_ON, n, vel);
     if (echo) midi_send(0x90 | MIDI_OUT_CH, n, vel);
 }
 static void note_in_off(uint32_t n, int echo)
 {
     if (note_to_arp[n]) { note_to_arp[n] = 0; arp_in_off(n); return; }
-    eng_note_off(n);
+    if (!out_quiet_off) eng_q(EV_NOTE_OFF, n, 0);
     if (echo) midi_send(0x80 | MIDI_OUT_CH, n, 0);
 }
 static void out_on(uint32_t n, uint32_t vel, int echo)
