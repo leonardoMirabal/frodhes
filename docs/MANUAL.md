@@ -6,7 +6,7 @@ Frodhes turns the FM-1 into an electric piano. Every note is computed from the p
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound. No recordings
 are played back. Around the piano sits an effects chain modelled on the Yamaha reface CP: compressor, a resonant filter, drive,
 tremolo or wah, phaser, chorus, delay and reverb. For playing there is a PERFORM page with four assignable knobs,
-chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo, and MIDI over USB and the TRS jack.
+chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo, USB-MIDI in and out and TRS MIDI in.
 
 ![The PERFORM, main, PHASER and COMPRESSOR pages](manual/img/overview.png)
 
@@ -24,6 +24,7 @@ chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo
 10. [Sound and volume tips](#10-sound-and-volume-tips)
 11. [MIDI](#11-midi)
 12. [If something goes wrong](#12-if-something-goes-wrong)
+13. [Specifications](#13-specifications)
 
 ## 1. Install
 
@@ -63,7 +64,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **SELECT** (knob) | Next / previous page |
 | **K1 K2 K3 K4** | The four cards on the current page |
 | **ALGORITHM** (knob) | The Rhodes TYPE, from any page (on SEQUENCER: the step cursor) |
-| **PRESETS** (knob) | Browse the sounds F01–F12 and your U01–U16 (loads when you stop turning; on SEQUENCER: bar by bar) |
+| **PRESETS** (knob) | Browse the sounds F01–F14 and your U01–U16 (loads when you stop turning; on SEQUENCER: bar by bar) |
 | **MASTER** (knob) | Volume |
 | **HOME** | PERFORM page; press again for the main page (titled FRODHES), and back |
 | **EDIT** | VOICE page |
@@ -72,7 +73,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **SEQ** | CHORD page (straight to SEQUENCER when chord mode is on); on CHORD it goes to SEQUENCER; on SEQUENCER it switches recording on / off, held 1 s it clears the pattern |
 | **SEL** | DELAY page; press again there to switch the delay on / off |
 | **ARP** | ARPEGGIO page; press again there to switch the arpeggiator on / off |
-| **GLO** | TEMPO page; press again for SETUP, again for MIDI |
+| **GLO** | TEMPO page; press again for SETUP, again for MIDI, and back to TEMPO |
 | **FX** | All effects off / on at once (see [6](#6-effects-on-and-off)) |
 | **PLAY** | Tap tempo; on ARPEGGIO, the arpeggiator's HOLD on / off; on SEQUENCER, start / stop the loop |
 | **REC** | Sustain pedal |
@@ -81,7 +82,10 @@ preset or switch an effect it briefly shows what happened, in large letters.
 
 The lights tell you what is on: LFO (tremolo / wah), ENV (phaser) and SEL (delay) light up when their effect is on, ARP while the arpeggiator runs, SEQ
 while chord mode is on (blinking while the sequencer records), FX when the effects are
-active, REC while the sustain holds, PLAY on the beat when something is synced, HOME on PERFORM and the main page, EDIT on VOICE.
+active, REC while the sustain holds (from MIDI CC 64 too), PLAY on the beat when something is synced (and while the
+sequencer or the arpeggiator plays), HOME on PERFORM and the main page, EDIT on VOICE, GLO on TEMPO, SETUP and MIDI,
+OCT− / OCT+ while the octave is shifted, SAVE blinking in save mode, and each key while its note is held or still
+rings under the sustain.
 
 ## 4. The pages
 
@@ -100,7 +104,7 @@ the effects and the filter's cutoff:
 | K4 | **DELAY** | How much delay |
 
 Turning an effect up from here **switches it on**, so you can go from dry to wet with one knob; its light comes on.
-Turning it back to 0 makes it dry again. **FX** still bypasses all of them at once.
+Turning it back to 0 makes it dry again (the effect stays switched on; its button switches it off). **FX** still bypasses all of them at once.
 
 ### ASSIGN
 
@@ -296,6 +300,8 @@ notes start, a cell with a band is where they are still held, the white one is w
     **ALGORITHM** to make that note or chord longer (LENGTH n STEPS); turn ALGORITHM without playing to leave a rest.
     UNDO takes back the last step you entered.
 - **Hold SEQ** for a second: **clear** the whole pattern.
+- **Limits:** 4/4, up to 448 notes per pattern (96 steps per beat inside), 32 sounding at once. A new FM-1 starts
+  with 4 bars, QUANT OFF and SWING 50 %; SWING acts on the 1/8 and 1/16 grids.
 
 Press **SEQ** on CHORD to come here (or SEQ from anywhere while chord mode is on). The pattern goes through the
 arpeggiator when it runs, plays the effects like your hands do, and is kept on the FM-1 when you switch off (it is
@@ -311,9 +317,11 @@ too). Press **ARP** to come here, and **ARP** again to switch it on / off (the A
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **MODE** | **OFF**, **UP**, **DOWN**, **UP-DN** (up and back down), **ORDER** (the order you played the notes), **RANDOM** |
-| K2 | **RATE** | Note length: 1/4, 1/8, 1/8T, 1/16, 1/16T, 1/32 of the beat |
+| K2 | **RATE** | The note value: 1/4 (one note per beat), 1/8, 1/8T, 1/16, 1/16T, 1/32 |
 | K3 | **OCTAVES** | 1 to 4: the pattern repeated octaves up |
 | K4 | **GATE** | How long each note sounds: 10 % short and plucked, 100 % legato |
+
+Up to 16 notes; every note of the arpeggio plays at the velocity of the first note you held.
 
 It plays while you hold the keys. **PLAY** on this page switches **HOLD** (the latch) on / off: the PLAY light and the
 bottom line show it. With HOLD on, play a chord and let go, and the arpeggio keeps going with those notes; the next
@@ -342,10 +350,10 @@ The filter's LFO (it moves FREQ by the FILTER page's LFO amount).
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **DLY TONE** | The delay's echo colour |
-| K2 | **LEVEL** | This preset's volume, ±12 dB, saved with the preset |
+| K2 | **LEVEL** | This preset's volume, −12 to +11.8 dB, saved with the preset |
 | K3 | **USB VOL** | **KNOB**: the USB audio follows the MASTER knob, as the headphones do. **FIXED**: the USB audio always comes at full level, whatever the knob (and headphones plugged in) do; the headphone jack still follows MASTER |
 
-The bottom line shows the name and the version installed, and the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 4800).
+The bottom line shows the name and the version installed, and the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 4900).
 
 ### MIDI
 
@@ -353,7 +361,7 @@ The bottom line shows the name and the version installed, and the audio engine's
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **CHANNEL** | **ALL** (the default: every channel is played) or **1–16**: only that channel is played, from USB-MIDI and from the TRS jack alike, and the FM-1 sends its notes on it (on ALL it sends on 1) |
+| K1 | **CHANNEL** | **ALL** (the default: every channel is played) or **1–16**: only that channel is heard (notes, CCs and program changes; clock, Start and Stop always are), from USB-MIDI and from the TRS jack alike, and the FM-1 sends its notes on it (on ALL it sends on 1) |
 | K2 | **TRS IN** | **ON** / **OFF**: MIDI from the 3.5 mm TRS MIDI input (for a DAWless setup: a keyboard, a sequencer, a drum machine's clock) |
 | K3 | **CLOCK** | **INT**: its own tempo. **EXT** (the default): follows MIDI clock from USB or the TRS jack when it comes, and a MIDI **Start** / **Continue** starts the sequencer, **Stop** stops it |
 
@@ -365,7 +373,8 @@ the TRS jack: notes, every CC in the table below, program changes, clock, start 
 ![Browsing presets](manual/img/browse.png)
 
 Turn **PRESETS** to browse: **F01–F14** are the factory sounds, **U01–U16** your own. A preset loads when you stop
-turning (after 0.4 s). If you did not mean to, **hold SAVE** to go back to what you had (undo). The first time Frodhes
+turning (after 0.4 s). If you did not mean to, **hold SAVE** (0.7 s) to go back to the sound you had before the
+last load; hold it again to return (redo). The first time Frodhes
 starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 
 | | | | |
@@ -376,17 +385,31 @@ starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 | F13 VIBE MOTOR | F14 VIBES DRY | | |
 
 **Saving:** press **SAVE**. The bottom line asks where; turn **PRESETS** or **K1** to pick U01–U16; press **SAVE**
-again to store it, or **HOME** to cancel. The name is made from the type and the effects that are on
+again to store it, or **HOME** (or **OCT−**) to cancel. The name is made from the type and the effects that are on
 ("SUIT TRM PHA").
 
 ![Save mode](manual/img/save.png)
+
+The save waits for silence: the bottom line says **SAVING...** until the sound has died away, then **SAVED**. A user
+preset can be overwritten but not deleted, and browsing skips the empty ones. There is no factory reset: F01–F14 are
+always there to start again from.
+
+**What is kept, and when:**
+
+| A preset (U01–U16) | The FM-1 itself (settings) | The pattern |
+| --- | --- | --- |
+| The sound: TYPE, every VOICE / DECAY card, every effect and its sync, the filter and LFO, LEVEL | KEY VEL, TUNE, TRANSP, the octave, tempo and CLOCK, scale, chord mode, arpeggiator, sequencer settings, PERFORM assignments, the MIDI page, USB VOL, COLOR, and the last sound | The sequencer's notes |
+| When you press SAVE (once silent) | About 2 s after your last change, once the sound has died away | 1.5 s after a change, while stopped and silent |
+
+So after a change, let the sound die away for a couple of seconds before you switch off.
 
 ## 6. Effects on and off
 
 Each effect has its own on / off: its page button pressed twice (LFO: tremolo / wah, ENV: phaser, SEL: delay), its
 K1 card on its page (chorus: EFFECT; compressor: THRESH), or turning it up on PERFORM. Switching an effect on whose depth is 0 gives it a useful starting depth, so you always hear it.
 
-**FX** switches **all** effects off at once and back on, without changing any setting: compare the dry piano with
+**FX** switches **all** effects off at once and back on (the compressor, filter, drive and reverb included, with a
+short crossfade), without changing any setting: compare the dry piano with
 your sound. The header shows **BYP** while they are off. It is not saved, so the FM-1 always starts with the effects
 on.
 
@@ -402,7 +425,12 @@ Tap **PLAY** three times or more in time to set the tempo, or set **BPM** on the
 stops the sequencer (send clock from one of them at a time: two clocks at once would add up). The tremolo, phaser and
 delay can each lock to the tempo on the TEMPO page (TREM SYNC, PHA SYNC, DLY SYNC), and the filter's LFO on the LFO
 page. When one is synced, its RATE / SPEED / TIME card shows a note
-value (1/16, 8T, 1/4 ...) and turning it steps through note values. PLAY blinks on the beat while anything is synced.
+value and turning it steps through them: 1/32, 16T, 1/16, 8T, 16D, 1/8, 4T, 8D, 1/4, 4D, 1/2, 1/1, 2 BAR (and 4 BAR
+for the chorus, phaser and the LFO). A synced echo longer than the delay's 1.48 s plays at half (or a quarter) of
+that time. PLAY blinks on the beat while anything is synced.
+
+MIDI clock in is 24 pulses per beat, from 40 to 240 BPM. **Start** and **Continue** both start the pattern from bar
+1. Frodhes does not send MIDI clock.
 The tempo also drives the arpeggiator and the sequencer.
 
 ## 8. Scales
@@ -439,7 +467,12 @@ block, and the guard never acts.
 
 Frodhes is a class-compliant USB-MIDI device and also listens to the FM-1's **TRS MIDI input** (3.5 mm; MIDI page:
 TRS IN, CHANNEL). Notes play with their velocity (and go through the arpeggiator when it runs); the FM-1's keys
-also send their notes to the computer. **Program Change** 0–13 loads F01–F14, 16–31 loads U01–U16.
+also send their notes to the computer.
+
+**MIDI out is USB only:** the FM-1's keys, chord mode, the arpeggiator and the sequencer send their notes on CHANNEL
+(channel 1 when ALL). Notes that come in over MIDI are not sent back, but what the arpeggiator or the sequencer
+makes from them is, so switch MIDI thru off in your computer's software. No clock, CCs or program changes are sent.
+The TRS jack is MIDI in only. **Program Change** 0–13 loads F01–F14, 16–31 loads U01–U16.
 
 | CC | Parameter | CC | Parameter |
 | --- | --- | --- | --- |
@@ -451,12 +484,12 @@ also send their notes to the computer. **Program Change** 0–13 loads F01–F14
 | 86 / 87 | CHORUS DEPTH / SPEED (the phaser's, when only the phaser is on) | 23 | CHORUS SYNC |
 | 12 / 13 / 14 | PHASER on / DEPTH / SPEED | 15 / 16 | PHASER SYNC / FEEDBACK |
 | 88 / 89 / 90 | DELAY type / MIX / TIME | 25 / 26 / 27 | DELAY SYNC / FEEDBACK / TONE |
-| 106 / 107 | COMP on / THRESHOLD | 112 / 113 | COMP RATIO / MAKEUP |
+| 106 / 107 | COMP on (≥ 64) / THRESHOLD (0 to −40 dB; switch it on with 106) | 112 / 113 | COMP RATIO / MAKEUP |
 | 108 / 109 | COMP ATTACK / RELEASE | 110 | LEVEL (64 = 0 dB) |
 | 111 | All effects off (≥ 64) / on | 28–31 | TONE / BARK / BELL / HAMMER |
 | 114 | USB VOL: knob (< 64) / fixed | 24 / 105 | Reserved (accepted and saved, no effect yet) |
 | 116 | Developer: CPU load query (replies on CC 115–118) | 119 | Developer: raw voice (≥ 64 bypasses every effect and the limiter; FX does not undo it) |
-| 102 / 103 / 104 | DECAY / RELEASE / NOISE | 120 / 123 | All sound off / all notes off |
+| 102 / 103 / 104 | DECAY / RELEASE / NOISE | 120 / 123 | All notes off (they ring out through the dampers; the arpeggiator and sequencer keep going) |
 | 56 / 57 | CHORD TYPE (0–14 as listed) / INVERSION (0–3) | 58 / 59 | CHORD VOICING (0–2) / STRUM (0–12 × 5 ms) |
 | 60 / 61 | SEQUENCER play (≥ 64) / stop, BARS (1–16) | 62 / 63 | SEQUENCER QUANT (0–5) / recording (≥ 64) |
 | 43 / 44 | SEQUENCER CLEAR / UNDO (≥ 64) | 45 / 46 | SEQUENCER ERASE (≥ 64 on) / SWING (50–75) |
@@ -464,8 +497,8 @@ also send their notes to the computer. **Program Change** 0–13 loads F01–F14
 | 75 / 76 | LFO SHAPE (6 bands) / RATE | 77 / 78 | LFO SYNC / RETRIG (free, key) |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
-The FM-1 also appears as a USB audio input: you can record exactly what it plays, digitally, without the headphone
-jack's hiss.
+The FM-1 also appears as a USB audio input (class-compliant, stereo, 16-bit, 44.1 or 48 kHz): you can record exactly
+what it plays, digitally, without the headphone jack's hiss. It does not play audio from the computer.
 
 ## 12. If something goes wrong
 
@@ -474,7 +507,10 @@ jack's hiss.
 - **Keys play odd notes or keep playing:** chord mode (CHORD page), the arpeggiator with HOLD (ARPEGGIO) or the
   sequencer may be on; the SEQ and ARP lights show it.
 - **The sound is thin or quiet:** raise KEY VEL on the main page.
-- **A crash** shows a message with a PC number, then the FM-1 restarts. Please report the number.
+- **A crash** shows FRODHES CRASH and three numbers for 8 s, then the FM-1 restarts. Please report all three.
+- **At power-on** Frodhes comes back as you left it, on the PERFORM page: the sound, octave, tempo, scale, chord mode,
+  arpeggiator (HOLD too) and MIDI settings, with the effects on and the sustain off. So if keys play chords or an
+  arpeggio right away, check the CHORD and ARPEGGIO pages.
 - **It does not start:** switch the FM-1 off, hold **OCT−** and switch it on. That is the USB rescue: install again
   from the hub or with `fm1_install.py`. Your FM-1 can always be recovered this way.
 - **Back to the original firmware:** the hub's "Official firmware" section, with V15 from m-vave.com.
@@ -484,3 +520,33 @@ jack's hiss.
 Frodhes is free software under the GPL-3.0 licence, built on [Dinghy](https://github.com/zvenson/dinghy),
 [Felucca](https://github.com/hugelton/Felucca) and [SLOOP](https://github.com/isod89/sloop-fm1). Source and
 issues: [github.com/leonardoMirabal/frodhes](https://github.com/leonardoMirabal/frodhes).
+
+## 13. Specifications
+
+| | |
+| --- | --- |
+| **Sound** | A physical model computed live, no samples. Rhodes: hammer, tine, tonebar and pickup; 4 types (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO) |
+| **Polyphony** | 8 voices; a 9th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
+| **Range** | 88 notes, A0–C8 over MIDI (notes outside play the nearest end); the 27 keys play F3–G5, OCT ±2 octaves, TRANSP ±24 semitones, TUNE ±50 cents |
+| **Velocity** | MIDI 1–127; the FM-1's keys play at KEY VEL (1–127, default 96) |
+| **Audio** | 44.1 kHz, integer processing, 256-frame blocks (5.8 ms); output limiter; exact digital silence 200 ms after the sound falls below −66 dBFS |
+| **Latency** | About 12.5 ms from a MIDI note to the USB audio (measured, including the computer's buffers) |
+| **Outputs** | Stereo headphone jack (MASTER); USB audio to the computer, stereo 16-bit, 44.1 or 48 kHz, following MASTER or fixed (USB VOL) |
+| **MIDI in** | USB-MIDI and the TRS jack (on / off); CHANNEL ALL or 1–16 |
+| **MIDI out** | USB only: notes from the keys, chord mode, arpeggiator and sequencer. No clock, CC or program change out |
+| **Clock** | CLOCK INT or EXT: 24 PPQN in from USB or TRS, 40–240 BPM; Start / Continue start the pattern from bar 1, Stop stops it |
+| **Tempo** | 40–240 BPM; tap tempo on PLAY |
+| **Presets** | 14 factory (F01–F14) + 16 user (U01–U16); Program Change 0–13 and 16–31 |
+| **Effects** | COMP → FILTER → DRIVE → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter |
+| Compressor | Threshold 0 to −40 dB, ratio 1.5:1–20:1, attack 0.1–50 ms, release 20 ms–1.5 s (CC 109), makeup 0 to +24 dB |
+| Filter | LP12, LP18, HP12, HP18, BP, NOTCH; 30 Hz–16 kHz; resonance Q 0.7–20; LFO ±4 octaves |
+| LFO | SINE, TRI, SAW, RAMP, SQR, S&H; 0.5–12 Hz or synced; FREE or KEY retrigger |
+| Tremolo / wah | PAN, TREM, WAH; 0.5–12 Hz or synced |
+| Phaser / chorus | Stereo phaser with feedback, stereo chorus; 0.25–6 Hz or synced |
+| Delay | DIG or ANA (tape); 20 ms–1.48 s or synced |
+| **Scales** | 11 scales, any root; OFF / SNAP / DEGREE |
+| **Chords** | 15 chord types, inversions, CLOSE / OPEN / +BASS voicing, strum 0–60 ms |
+| **Sequencer** | 1–16 bars of 4/4, up to 448 notes; QUANT OFF, 1/4, 1/8, 1/16, 1/8T, 1/16T; SWING 50–75 %; overdub and step recording |
+| **Arpeggiator** | UP, DOWN, UP-DN, ORDER, RANDOM; 1/4–1/32; 1–4 octaves; gate 10–100 %; HOLD; up to 16 notes |
+| **Sustain** | REC (hold, or tap to latch) and CC 64 with half-pedalling |
+| **Recovery** | Hold OCT− while switching on: the USB rescue. No factory reset |
