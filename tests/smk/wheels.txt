@@ -1,0 +1,23 @@
+# SMK-37: the pitch wheel bends +-2 semitones (every sounding tine retuned), the mod wheel sets the TREM/WAH depth
+# (switched on as TREM once it moves). The wheels rest at 535 (pitch) and 620 (mod), as a unit reads them
+400 expect val bend 0
+410 expect val tune_t 0
+500 keys 0x80
+600 wheel 0 700
+700 expect val bend 8192
+710 expect val tune_t 131492623
+900 wheel 0 535
+1000 expect val bend 0
+1010 expect val tune_t 0
+1100 wheel 0 380
+1200 expect val bend -8192
+1300 wheel 0 535
+1400 expect val tune_t 0
+1500 keys 0
+1600 expect val tw_sw 0
+1700 wheel 1 480
+1800 expect val tw_depth 127
+1810 expect val tw_sw 1
+1900 wheel 1 620
+2000 expect val tw_depth 0
+2100 end

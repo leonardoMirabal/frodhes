@@ -30,6 +30,22 @@ enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, 
        S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
        S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_MCH, S_TRS, S_NONE = 0xFF };
 
+#if BOARD_SMK37
+/* the SMK-37 (frodhes_smk.h): no TRS MIDI IN; KEY VEL is the keys' VELOCITY curve; the hints name its buttons */
+#define UI_TRS S_NONE
+#define UI_TRS_LAB ""
+#define UI_KVEL_LAB "VELOCITY"
+#define UI_SAVE_HINT "BT: YES   PATCH: NO"
+#define UI_FOOT_HINT "K6: PAGE  K8: SOUND"
+#define SMK_VC_N 4                                      /* VELOCITY: the keybed's curve as it is, softer, harder, fixed */
+static const char *const SMK_VC_NAME[SMK_VC_N] = {"NORMAL", "SOFT", "HARD", "FIXED"};
+#else
+#define UI_TRS S_TRS
+#define UI_TRS_LAB "TRS IN"
+#define UI_KVEL_LAB "KEY VEL"
+#define UI_SAVE_HINT "SAVE: YES   HOME: NO"
+#define UI_FOOT_HINT "SELECT: PAGE  PRESETS: SOUND"
+#endif
 static int sq_browsing(void);                           /* the SEQUENCER page's cursor (below) */
 static uint32_t sq_delete_step(void);
 static void sq_browse(int32_t d);
@@ -53,12 +69,12 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT},
     {S_ARPMODE, S_ARPRATE, S_ARPOCT, S_ARPGATE},
     {P_DL_TONE, P_LEVEL, S_USBVOL, S_NONE},
-    {S_MCH, S_TRS, S_CLOCK, S_NONE},
+    {S_MCH, UI_TRS, S_CLOCK, S_NONE},
 };
 static const char *const PAGE_LAB[PG_N][4] = {
     {"", "", "", ""},                                   /* PERFORM: the assigned parameter's name (slot_label) */
     {"PLAYS", "PLAYS", "PLAYS", "PLAYS"},
-    {"TYPE", "DRIVE", "REVERB", "KEY VEL"},
+    {"TYPE", "DRIVE", "REVERB", UI_KVEL_LAB},
     {"TONE", "BARK", "BELL", "HAMMER"},
     {"DECAY", "RELEASE", "NOISE", "TUNE"},
     {"THRESH", "RATIO", "ATTACK", "MAKEUP"},
@@ -72,14 +88,23 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"BARS", "QUANT", "SWING", "EDIT"},
     {"MODE", "RATE", "OCTAVES", "GATE"},
     {"DLY TONE", "LEVEL", "USB VOL", ""},
-    {"CHANNEL", "TRS IN", "CLOCK", ""},
+    {"CHANNEL", UI_TRS_LAB, "CLOCK", ""},
 };
+#if BOARD_SMK37
+static const char *const PAGE_HINT[PG_N] = {"NEXT PAGE: ASSIGN THE KNOBS", "WHAT EACH PERFORM KNOB PLAYS",
+                                            "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
+                                            "K1 THRESH: UP = ON, 0 = OFF", "NOTE REPEAT: ON / OFF", "CHORD: ON / OFF",
+                                            "K1: ON / OFF", "SCALE: ON / OFF  K1: DIG / ANA", "SEQ PLAY: TAP TEMPO",
+                                            "DEGREE: WHITE KEYS PLAY IT", "SEQ: THE SEQUENCER", "",
+                                            "ARP: ON / OFF  SEQ PLAY: HOLD", "", "USB MIDI: ONE CHANNEL OR ALL"};
+#else
 static const char *const PAGE_HINT[PG_N] = {"NEXT PAGE: ASSIGN THE KNOBS", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
                                             "K1 THRESH: UP = ON, 0 = OFF", "LFO BUTTON: ON / OFF", "ENV BUTTON: ON / OFF",
                                             "K1: ON / OFF", "SEL: ON / OFF  K1: DIG / ANA", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
                                             "SEQ: THE SEQUENCER", "", "ARP: ON / OFF   PLAY: HOLD", "",
                                             "USB AND TRS: THE SAME CHANNEL"};
+#endif
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
                                            "PENTA", "MPENTA", "BLUES"};
 static const char *const NOTE_NAME[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -147,7 +172,7 @@ static const perf_t PERF_T[] = {
     {P_TW_RATE, "TREM RATE"}, {P_TW_SHAPE, "TREM SHAPE"}, {P_PH_SPEED, "PHA SPEED"}, {P_PH_FDBK, "PHA FEEDBK"},
     {P_CP_SPEED, "CHO SPEED"}, {P_DL_TIME, "DLY TIME"}, {P_DL_FDBK, "DLY FEEDBK"}, {P_DL_TONE, "DLY TONE"},
     {P_TONE, "TONE"}, {P_BARK, "BARK"}, {P_BELL, "BELL"}, {P_HAMMER, "HAMMER"}, {P_DECAY, "DECAY"},
-    {P_RELEASE, "RELEASE"}, {P_NOISE, "NOISE"}, {S_KVEL, "KEY VEL"}, {P_LEVEL, "LEVEL"},
+    {P_RELEASE, "RELEASE"}, {P_NOISE, "NOISE"}, {S_KVEL, UI_KVEL_LAB}, {P_LEVEL, "LEVEL"},
     {S_ARPRATE, "ARP RATE"}, {S_ARPGATE, "ARP GATE"},
 };
 #define PERF_N (sizeof PERF_T / sizeof PERF_T[0])
@@ -187,7 +212,11 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
 {
     if (s < P_COUNT) { *hi = PARAMS[s].hi; return PV(s); }
     switch (s) {
+#if BOARD_SMK37
+    case S_KVEL: *hi = SMK_VC_N - 1; return set.vel_curve;
+#else
     case S_KVEL: *hi = 127; return set.key_vel;
+#endif
     case S_TUNE: *hi = 100; return set.tune + 50;
     case S_BPM: *hi = 2000; return set.bpm10 - 400;
     case S_CLOCK: *hi = 2; return set.clock;
@@ -218,7 +247,7 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
 static int slot_is_level(uint32_t s)                    /* a gauge only for amounts, not for choices */
 {
     if (s < P_COUNT) return PARAMS[s].fmt != F_ENUM && PARAMS[s].fmt != F_DIV;
-    return s == S_KVEL || s == S_TUNE || s == S_BPM || s == S_TRANS || s == S_ARPGATE || s == S_CHSTRUM;
+    return (s == S_KVEL && !BOARD_SMK37) || s == S_TUNE || s == S_BPM || s == S_TRANS || s == S_ARPGATE || s == S_CHSTRUM;
 }
 static void fmt_signed(char *s, int32_t v) { if (v > 0) { s[0] = '+'; p_fmt_int(s + 1, v); } else p_fmt_int(s, v); }
 static void slot_text(uint32_t s, char *v)
@@ -234,7 +263,11 @@ static void slot_text(uint32_t s, char *v)
         if (PV(P_TW_SW) == 2) { fmt_r10(v, PV(s)); return; }          /* WAH: resonance */
         if (PV(P_TW_SYNC)) { p_strcpy(v, N_SYNC[PV(P_TW_SYNC)], 5); return; }
         break;
+#if BOARD_SMK37
+    case S_KVEL: p_strcpy(v, SMK_VC_NAME[set.vel_curve % SMK_VC_N], 7); return;
+#else
     case S_KVEL: p_fmt_int(v, set.key_vel); return;
+#endif
     case S_TUNE: fmt_signed(v, set.tune); return;
     case S_BPM: {
         uint32_t n = 0;
@@ -295,7 +328,11 @@ static void slot_turn(uint32_t s, int32_t d)
         return;
     }
     switch (s) {
+#if BOARD_SMK37
+    case S_KVEL: set.vel_curve = (uint8_t)clampi(set.vel_curve + sgn(d), 0, SMK_VC_N - 1); break;
+#else
     case S_KVEL: set.key_vel = (uint8_t)clampi(set.key_vel + d * (d > 1 || d < -1 ? 4 : 1), 1, 127); break;
+#endif
     case S_TUNE: set.tune = (int8_t)clampi(set.tune + d, -50, 50); rh_tune_t = TUNE_T[set.tune + 50]; break;
     case S_BPM: tempo_set10((uint32_t)clampi((int32_t)set.bpm10 + d * 10, 400, 2400)); break;
     case S_CLOCK: set.clock = (uint8_t)clampi(set.clock + sgn(d), 0, 2); break;
@@ -599,7 +636,7 @@ static void draw_footer(void)
         preset_name(PR_NF_UI + pr_save_slot, s);
         p_strcpy(t, "SAVE TO ", 8); p_strcpy(t + 8, s, 20);
         text_c(0, 2, 240, &FONT_S, t, C_HI);
-        text_c(0, 18, 240, &FONT_S, "SAVE: YES   HOME: NO", UI_ACC);
+        text_c(0, 18, 240, &FONT_S, UI_SAVE_HINT, UI_ACC);
     } else if (ui_msg_t && fm1_ms - ui_msg_t < MSG_MS) {
         if (text_w(&FONT_L, ui_msg) <= 236) text_c(0, 2, 240, &FONT_L, ui_msg, C_HI);
         else text_c(0, 10, 240, &FONT_S, ui_msg, C_HI);
@@ -633,7 +670,7 @@ static void draw_footer(void)
             char t[24];
             p_strcpy(t, "FRODHES ", 8); p_strcpy(t + 8, ui_version(), 12);
             text_c(0, 2, 240, &FONT_S, t, UI_ACC);
-        } else text_c(0, 2, 240, &FONT_S, "SELECT: PAGE  PRESETS: SOUND", C_GRAY);
+        } else text_c(0, 2, 240, &FONT_S, UI_FOOT_HINT, C_GRAY);
         if (ui_page == PG_SETUP) {
             static char cpu[32];
             uint32_t n = 0;
@@ -793,10 +830,17 @@ static void ui_fx_button(uint32_t pg, uint32_t k)
 
 static void ui_input(uint32_t b, uint32_t rel)
 {
+#if BOARD_SMK37
+    int32_t d[8];                                       /* (SMK-37: 8 encoders; K5 is MASTER: platform.c's, not read here) */
+    uint32_t k, i;
+    for (i = 0; i < 8u; i++) d[i] = i == ENC_MASTER ? 0 : fm1_enc_take(i);
+    if (ui_splash_on) for (i = 0; i < 8u; i++) if (d[i] || b) ui_splash_t = fm1_ms - UI_SPLASH_MS;
+#else
     int32_t d[7];
     uint32_t k, i;
     for (i = 0; i < 7u; i++) d[i] = fm1_enc_take(i);
     if (ui_splash_on) for (i = 0; i < 7u; i++) if (d[i] || b) ui_splash_t = fm1_ms - UI_SPLASH_MS;
+#endif
     if (sq_btn_down) {                                  /* SEQ on SEQUENCER: a press toggles REC, a hold clears */
         if (!(fm1_in.buttons >> BTN_SEQ & 1u) || rel >> BTN_SEQ & 1u) {
             sq_btn_down = 0;

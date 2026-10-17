@@ -1,0 +1,95 @@
+# SMK-37: the pads. Top row: 1-4 the TYPE, 5 / 6 the previous / next preset, 7 DRIVE, 8 CHORD. Bottom row: 9 COMP,
+# 10 TREM/WAH, 11 PHASER, 12 CHORUS, 13 DELAY, 14 REVERB, 15 ARP, 16 SUSTAIN. Lights: 0 off (dark orange), 1 on (light
+# blue), 2 active (bright, while it sounds). A pad counts once per press (180 ms)
+100 dump
+150 expect val pad1 1
+160 expect val pad2 0
+200 pad 2 100
+210 pad 2 0
+260 expect val type 2
+270 expect val pad3 1
+280 expect val pad1 0
+# the effects: off -> on -> off (TREM/WAH, PHASER, CHORUS, DELAY, COMP; DRIVE and REVERB: the amount)
+500 pad 9 100
+510 pad 9 0
+550 expect val tw_sw 1
+560 expect val pad10 1
+600 pad 10 100
+610 pad 10 0
+650 expect val ph_sw 1
+700 pad 11 100
+710 pad 11 0
+750 expect val cp_sw 1
+800 pad 12 100
+810 pad 12 0
+850 expect val dl_sw 1
+900 pad 8 100
+910 pad 8 0
+950 expect val cmp_sw 1
+1000 pad 13 100
+1010 pad 13 0
+1050 expect val rv_depth 32
+1100 pad 6 100
+1110 pad 6 0
+1150 expect val drive 32
+1200 dump
+1300 pad 9 100
+1310 pad 9 0
+1320 pad 9 100
+1330 pad 9 0
+1350 expect val tw_sw 0
+1360 expect val pad10 0
+1400 pad 13 100
+1410 pad 13 0
+1450 expect val rv_depth 0
+1700 pad 13 100
+1710 pad 13 0
+1750 expect val rv_depth 32
+# CHORD and ARP on / off
+1800 pad 7 100
+1810 pad 7 0
+1850 expect val chord 1
+2100 pad 7 100
+2110 pad 7 0
+2150 expect val chord 0
+2200 pad 14 100
+2210 pad 14 0
+2250 expect val arp 1
+2500 pad 14 100
+2510 pad 14 0
+2550 expect val arp 0
+# the presets: 6 = next (loads 400 ms after), 5 = previous
+2600 pad 5 100
+2610 pad 5 0
+3100 expect val preset 1
+3200 pad 4 100
+3210 pad 4 0
+3700 expect val preset 0
+3710 expect val type 0
+# a note: the TYPE pad and the effects that are on light bright while it sounds
+3800 pad 10 100
+3810 pad 10 0
+3850 expect val pad11 1
+3900 keys 0x80
+3950 expect val pad1 2
+3960 expect val pad11 2
+4000 keys 0
+# SUSTAIN (16): held = down; a tap latches, a second tap lets go
+5200 pad 15 100
+5250 expect val sustain 1
+5300 keys 0x80
+5400 keys 0
+5900 expect rms > -40
+5950 expect val pad16 2
+6000 pad 15 0
+6050 expect val sustain 0
+6600 expect rms < -60
+6700 pad 15 90
+6750 pad 15 0
+6800 expect val sustain 1
+6900 pad 15 90
+6950 pad 15 0
+7000 expect val sustain 0
+7100 dump
+7200 shot
+7300 end

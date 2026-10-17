@@ -6,6 +6,7 @@
  *   REC        the sustain pedal: hold it, or tap it to latch (tap again to let go)
  *   MASTER     the volume (platform.c)
  *   USB-MIDI   notes in (with velocity), the reface CP CC map, CC 64 sustain with half-pedal
+ *   SMK-37     (BOARD_SMK37, SMK37.md): the 37 keys with velocity, the pads, faders, wheels and the pedal: frodhes_smk.h
  *
  * This file is the app: panel, MIDI, screen, settings. The sound is rhodes.c. Below both is platform.c
  * (Dinghy / SLOOP / Felucca): updates, the USB rescue, USB-MIDI, USB audio, keys, knobs, LEDs, screen, settings.
@@ -14,8 +15,10 @@
 #define APP_NAME "FRODHES"
 #define APP_OUT_SHIFT 8u   /* the codec at full scale: +6 dB on the jack over Dinghy's -6 dBFS ceiling (the look-ahead
                             * limiter keeps every sample under -2.7 dBFS, so it never clips; 0.8) */
+#if !BOARD_SMK37                    /* (SMK-37: those sectors are in its store window, smk_store.h) */
 #define APP_FL_RANGE(off, n) FL_IN(off, n, 0x97000u, 0x9AFFFu)    /* the user preset bank (presets.c), the
                                                                        * sequencer's pattern (seq.c) */
+#endif
 #include "platform.c"
 #include "rhodes.c"
 #include "fx.c"
@@ -53,7 +56,12 @@ static void app_audio(int32_t *out, uint32_t n)
 static uint8_t sus_held, sus_latched, sus_midi, sus_was_latched;
 static uint32_t sus_t;
 
+#if BOARD_SMK37
+static uint8_t smk_sus;                         /* the SUSTAIN pad or the pedal jack (frodhes_smk.h) */
+static void sustain_update(void) { rh_pedal_level(sus_held || sus_latched || smk_sus ? 127u : sus_midi); ui_mark(E_HEADER); }
+#else
 static void sustain_update(void) { rh_pedal_level(sus_held || sus_latched ? 127u : sus_midi); ui_mark(E_HEADER); }
+#endif
 
 static void sustain_button(uint32_t pressed, uint32_t released)
 {
@@ -148,6 +156,13 @@ static int note_sounding(uint32_t n)
     return 0;
 }
 
+#if BOARD_SMK37
+#include "frodhes_smk.h"
+#define KEY_VEL(k) smk_vel(fm1_in.key_vel[SMK_KEY_F3 + (k)])   /* (the SMK's middle keys: keybed 5..31) */
+#else
+#define KEY_VEL(k) set.key_vel
+#endif
+
 static void app_main(void)
 {
     uint32_t prev = 0, k;
@@ -166,6 +181,9 @@ static void app_main(void)
     presets_load_bank();
     seq_load();
     ui_goto(PG_PERF);
+#if BOARD_SMK37
+    smk_init();
+#endif
     ui_splash();
 
     for (;;) {
@@ -180,12 +198,18 @@ static void app_main(void)
         for (k = 0; k < NKEYS; k++) {           /* a key stops exactly the notes it started (notes.c sources) */
             if (down >> k & 1u) {
                 uint32_t n = scale_key_note(k);
-                if (n < 128u) src_on(SRC_KEYS + k, n, set.key_vel, 1);
+                if (n < 128u) src_on(SRC_KEYS + k, n, KEY_VEL(k), 1);
             }
             if (up >> k & 1u) src_off(SRC_KEYS + k);
         }
 
+#if BOARD_SMK37
+        smk_poll();                             /* the outer keys, the pads, the faders, the wheels, the pedal */
+#endif
         b = fm1_input_edges(&rel);              /* buttons pressed / released since the last call */
+#if BOARD_SMK37
+        smk_buttons(b);
+#endif
         sustain_button(b, rel);
         ui_input(b, rel);
 
@@ -206,6 +230,10 @@ static void app_main(void)
         seq_poll();
         arp_poll();
         ui_leds(lit, tempo_beat_led() || (arp_on() && arp_n && arp_playing < 128u));
+#if BOARD_SMK37
+        smk_leds();
+        if (!smk_check())                       /* KNOB BANK held: the panel check instead */
+#endif
         ui_draw();
         presets_save_poll();
         seq_save_poll();

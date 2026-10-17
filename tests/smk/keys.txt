@@ -1,0 +1,45 @@
+# SMK-37: the keys strike the hammer at their own velocity; the outer keys (keybed 0..4, 32..36) go on beyond the
+# FM-1's 27; VELOCITY (the main page's K4) bends the curve or fixes it
+# Run: BOARD=smk37 tests/run_host.sh tests/smk/keys.txt
+100 vel 20
+200 keys 0x80
+260 expect val note_vel 20
+300 expect rms > -70
+400 expect rms < -24
+600 keys 0
+1500 vel 127
+1600 keys 0x80
+1660 expect val note_vel 127
+1700 expect rms > -24
+2000 keys 0
+2900 xkey 0 90
+2960 expect val note_vel 90
+3000 xkey 0 0
+3100 xkey 36 70
+3160 expect val note_vel 70
+3200 xkey 36 0
+# VELOCITY: SOFT (64 -> 95), HARD (64 -> 32), FIXED (KEY VEL 96)
+3300 btn 12
+3450 expect val page 2
+3500 turn 3 1
+3550 expect val vcurve 1
+3600 vel 64
+3700 keys 0x80
+3760 expect val note_vel 95
+3800 keys 0
+3900 turn 3 1
+3950 expect val vcurve 2
+4000 keys 0x80
+4060 expect val note_vel 32
+4100 keys 0
+4200 turn 3 1
+4250 expect val vcurve 3
+4300 xkey 33 5
+4360 expect val note_vel 96
+4400 xkey 33 0
+4500 turn 3 -1
+4510 turn 3 -1
+4520 turn 3 -1
+4550 expect val vcurve 0
+4600 shot
+4700 end

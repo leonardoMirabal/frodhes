@@ -15,7 +15,12 @@
 #define SRC_KEYS 0u
 #define SRC_MIDI 27u
 #define SRC_SEQ 155u
+#if BOARD_SMK37
+#define SRC_EXT 156u                             /* (SMK-37: its 10 outer keys, C3-E3 and G#5-C6: frodhes_smk.h) */
+#define SRC_N 166u
+#else
 #define SRC_N 156u
+#endif
 #define CH_MAX 6u
 
 /* ---- out: the piano or the arpeggiator, per pitch counted */

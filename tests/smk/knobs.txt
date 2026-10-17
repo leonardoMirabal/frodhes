@@ -1,0 +1,32 @@
+# SMK-37: K1-K4 the page's knobs (KNOB 1-4), K5 MASTER (never a page knob), K6 SELECT, K7 ALGORITHM (the TYPE),
+# K8 PRESETS; < > (buttons 2, 3) the pages; REC (SEQ REC, button 17) held: the sustain, as on the FM-1;
+# KNOB BANK held: the panel check
+100 turn 4 5
+150 expect val page 0
+200 turn 0 10
+250 expect val tw_depth 10
+260 expect val tw_sw 1
+300 turn 5 1
+350 expect val page 1
+400 btn 3
+450 expect val page 2
+500 btn 2
+550 btn 2
+600 expect val page 0
+700 turn 6 1
+750 expect val type 1
+800 turn 7 1
+1300 expect val preset 1
+1400 press 17
+1450 expect val sustain 1
+1800 release 17
+1850 expect val sustain 0
+# KNOB BANK held (button 0): the panel check instead of the pages; let go: the page again
+2000 press 0
+2050 expect led 0 1
+2200 shot
+2400 release 0
+2450 expect led 0 0
+2460 expect val page 0
+2600 shot
+2700 end
