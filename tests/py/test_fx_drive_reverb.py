@@ -1,0 +1,187 @@
+# SPDX-License-Identifier: GPL-3.0-only
+"""The DRIVE and REVERB pages (0.9.3) on the host build: every new control has an audible, measured effect, the
+defaults are the sound before the pages (sample for sample), and moving any of them does not click.
+
+CCs: DRIVE 81 (AMOUNT), 82 TONE, 83 MIX, 84 ON / OFF; REVERB 91 (MIX), 47 DECAY, 48 TONE, 49 PRE-DELAY."""
+import os
+import subprocess
+import wave
+
+import numpy as np
+import pytest
+
+ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
+BIN = os.path.join(ROOT, "build", "host", "frodhes")
+FS = 44100
+CHORD = [(100, n, 110, 900) for n in (48, 55, 60, 64, 67, 72)]
+HIT = [(100, 60, 120, 150)]                          # a short note: the damper ends it, the reverb rings on
+
+
+@pytest.fixture(scope="module", autouse=True)
+def host_build():
+    subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
+
+
+def run(tag, ccs, notes, end_ms, extra=()):
+    """ccs at 20 ms (before the notes); extra: (ms, cc, value) during the run"""
+    out = os.path.join(ROOT, "build", "host", f"drv-{tag}")
+    ev = [(20, f"midi 0xB0 {cc} {v}") for cc, v in ccs] + [(t, f"midi 0xB0 {cc} {v}") for t, cc, v in extra]
+    for t, n, v, dur in notes:
+        ev += [(t, f"midi 0x90 {n} {v}"), (t + dur, f"midi 0x80 {n} 0")]
+    ev.sort(key=lambda e: e[0])                      # (a stable sort: the order given within one ms is kept)
+    open(out + ".txt", "w").write("".join(f"{t} {e}\n" for t, e in ev) + f"{end_ms} end\n")
+    subprocess.run([BIN, out, out + ".txt"], check=True, capture_output=True)
+    w = wave.open(out + ".wav")
+    x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float).reshape(-1, 2)
+    return x[:, 0], x[:, 1]
+
+
+def seg(x, t0, t1):
+    return x[int(t0 * FS):int(t1 * FS)]
+
+
+def rms_db(x):
+    return 20 * np.log10(np.sqrt(np.mean(x * x)) / 32767 + 1e-12)
+
+
+def band_db(x, f0, f1):
+    sp = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    fr = np.fft.rfftfreq(len(x), 1 / FS)
+    return 10 * np.log10(np.sum(sp[(fr >= f0) & (fr < f1)]) + 1e-12)
+
+
+def tilt_db(x):
+    """the treble around 8 kHz against the body (200 Hz .. 2 kHz), dB"""
+    return band_db(x, 6000, 10000) - band_db(x, 200, 2000)
+
+
+DRY = [(81, 0), (91, 0)]
+DRV = [(81, 110), (91, 0)]
+REV = [(81, 0), (91, 80)]
+
+
+# ---- the defaults: the sound before the pages, exactly
+
+def test_defaults_are_the_old_sound():
+    """the new controls sent at their defaults change nothing, with the drive and the reverb both on"""
+    on = [(81, 90), (91, 90)]
+    a, ar = run("def0", on, CHORD, 2500)
+    b, br = run("def1", on + [(82, 64), (83, 127), (84, 127), (47, 64), (48, 64), (49, 0)], CHORD, 2500)
+    assert np.array_equal(a, b) and np.array_equal(ar, br)
+
+
+# ---- DRIVE
+
+def test_drive_mix_and_switch():
+    dry, _ = run("dry", DRY, CHORD, 1300)
+    full, _ = run("full", DRV, CHORD, 1300)
+    m0, _ = run("mix0", DRV + [(83, 0)], CHORD, 1300)
+    off, _ = run("off", DRV + [(84, 0)], CHORD, 1300)
+    half, _ = run("mix64", DRV + [(83, 64)], CHORD, 1300)
+    assert np.array_equal(m0, dry)                   # MIX 0 = dry, sample for sample
+    assert np.array_equal(off, dry)                  # OFF = dry, whatever the AMOUNT
+    a, b, h = (seg(x, 0.15, 0.95) for x in (dry, full, half))
+    sig = rms_db(b)
+    assert rms_db(b - a) > sig - 20                  # the drive is audible against the dry
+    assert rms_db(h - a) > sig - 30 and rms_db(h - b) > sig - 30   # MIX 64 lies audibly between the two
+    assert rms_db(h - a) < rms_db(b - a) - 3         # ... nearer the dry than the full drive is
+
+
+def test_drive_tone_tilts():
+    t0, _ = run("tone0", DRV + [(82, 0)], CHORD, 1300)
+    t64, _ = run("full", DRV, CHORD, 1300)
+    t127, _ = run("tone127", DRV + [(82, 127)], CHORD, 1300)
+    d0, d64, d127 = (tilt_db(seg(x, 0.15, 0.95)) for x in (t0, t64, t127))
+    assert d0 < d64 < d127, (d0, d64, d127)
+    assert d127 - d0 >= 6, (d0, d127)                # dark .. bright: >= 6 dB at 8 kHz
+    assert d127 - d64 >= 3 and d64 - d0 >= 3, (d0, d64, d127)   # both halves of the knob do something
+    for x in (t0, t127):
+        assert np.all(np.isfinite(x)) and np.max(np.abs(x)) < 32767
+
+
+# ---- REVERB
+
+def wet(tag, ccs, notes=HIT, end_ms=5000):
+    """the reverb's own sound: the render with it minus the same render without it (the chain before it is the same,
+    the return is added to the dry signal)"""
+    w, _ = run(tag, ccs, notes, end_ms)
+    d, _ = run("rv-dry", [c for c in ccs if c[0] != 91] + [(91, 0)], notes, end_ms)
+    return w - d
+
+
+def t60(x, t0=0.45):
+    """T60 from the energy envelope's slope (50 ms frames), fitted over its first 25 dB below t0's level"""
+    n = int(0.05 * FS)
+    y = x[int(t0 * FS):]
+    e = 10 * np.log10(np.array([np.mean(y[i:i + n] ** 2) for i in range(0, len(y) - n, n)]) + 1e-9)
+    k = np.argmax(e < e[0] - 25)
+    k = k if k > 3 else len(e)
+    t = np.arange(k) * 0.05
+    slope = np.polyfit(t, e[:k], 1)[0]
+    return -60 / slope
+
+
+def test_reverb_decay_moves_t60():
+    lo = t60(wet("dcy0", REV + [(47, 0)]))
+    mid = t60(wet("dcy64", REV))
+    hi = t60(wet("dcy127", REV + [(47, 127)], end_ms=7000))
+    assert lo < mid < hi, (lo, mid, hi)
+    assert hi / lo >= 2, (lo, mid, hi)               # >= 2x over its range (designed: x0.5 .. x1.96 around 64)
+    assert 0.4 < mid < 6.0, mid                      # the hall as before: a plausible length
+
+
+def test_reverb_tone_tilts():
+    """a bright source (high notes, driven: the plain piano's tail has next to nothing at 8 kHz), the tail's treble
+    against its lows (100 .. 600 Hz: TONE 0 also takes some of the body away)"""
+    notes = [(100, n, 127, 150) for n in (48, 60, 72, 84, 91, 96)]
+    def tilt(v):
+        x = seg(wet(f"rtn{v}", [(81, 127), (91, 80), (48, v)], notes, 3000), 0.3, 0.8)
+        return band_db(x, 6000, 10000) - band_db(x, 100, 600)
+    d0, d64, d127 = tilt(0), tilt(64), tilt(127)
+    assert d0 < d64 < d127, (d0, d64, d127)
+    assert d127 - d0 >= 6, (d0, d127)                # (measured: ~22 dB; the dark end sits on the 16-bit floor)
+
+
+def test_reverb_mix0_is_dry():
+    w, _ = run("rmix0", [(81, 0), (91, 0), (47, 127), (48, 0), (49, 127)], HIT, 2000)
+    d, _ = run("rv-dry2", [(81, 0), (91, 0)], HIT, 2000)
+    assert np.array_equal(w, d)                      # MIX 0: no reverb, whatever the other three say
+
+
+@pytest.mark.parametrize("v", [32, 64, 127])
+def test_reverb_predelay_moves_the_onset(v):
+    ref = wet("pd0", REV)
+    got = wet(f"pd{v}", REV + [(49, v)])
+    ms = v * 3528 // 127 / FS * 1000                 # the stated pre-delay (fx.c FX_PDLY_SAMPLES; the card's ms)
+    a, b = seg(ref, 0.05, 0.6), seg(got, 0.05, 0.6)
+    c = np.correlate(b, a[:len(a) - 4096], "valid")  # lags 0 .. 4096 samples (93 ms)
+    lag = int(np.argmax(c)) / FS * 1000
+    assert abs(lag - ms) <= 1.0, (v, lag, ms)
+    # and the onset itself: nothing of the reverb before the pre-delay has passed
+    on_ref = np.argmax(np.abs(ref) > 30) / FS * 1000
+    on_got = np.argmax(np.abs(got) > 30) / FS * 1000
+    assert abs((on_got - on_ref) - ms) <= 1.0, (v, on_ref, on_got, ms)
+
+
+# ---- no clicks, no zipper: every new knob swept while a chord rings
+
+def jumps(x, t0, t1):
+    """the largest second difference (a click or a step shows as a spike in it)"""
+    y = seg(x, t0, t1)
+    return float(np.max(np.abs(np.diff(y, 2))))
+
+
+@pytest.mark.parametrize("name,base,cc", [("dtone", DRV, 82), ("dmix", DRV, 83), ("dsw", DRV, 84),
+                                          ("rdecay", REV, 47), ("rtone", REV, 48), ("rpre", REV, 49)])
+def test_sweeps_do_not_click(name, base, cc):
+    chord = [(100, n, 100, 2600) for n in (48, 55, 60, 64, 67, 72)]
+    still_lo, _ = run(f"sw-{name}-lo", base + [(cc, 0)], chord, 2800)
+    still_hi, _ = run(f"sw-{name}-hi", base + [(cc, 127)], chord, 2800)
+    sweep = [(300 + 8 * i, cc, int(round(127 * (0.5 - 0.5 * np.cos(np.pi * i / 64))))) for i in range(129)]   # up
+    sweep += [(1400 + 4 * i, cc, 127 if i % 2 else 0) for i in range(40)] if cc == 84 else \
+             [(1400 + 4 * i, cc, 127 - int(127 * i / 63)) for i in range(64)]                                 # down, fast
+    L, R = run(f"sw-{name}", base + [(cc, 0)], chord, 2800, sweep)
+    ref = max(jumps(still_lo, 0.3, 2.5), jumps(still_hi, 0.3, 2.5))
+    got = max(jumps(L, 0.3, 2.5), jumps(R, 0.3, 2.5))
+    assert got <= 1.5 * ref + 40, (name, got, ref)
+    assert np.all(np.isfinite(L)) and np.max(np.abs(L)) < 32767 and np.max(np.abs(R)) < 32767

@@ -149,12 +149,13 @@
 9200 expect state card0 DIG
 9200 expect state card1 3.9
 9200 expect sound
-# the compressor's THRESH is its switch: up = on with MAKEUP +2.8 (a 4:1 level-neutral start)
+# the compressor's THRESH is its switch: up = on with MAKEUP +2.8 (a 4:1 level-neutral start) (6 pages back from DELAY: DRIVE is between)
 9300 turn 0 -1
 9310 turn 0 -1
 9320 turn 0 -1
 9330 turn 0 -1
 9340 turn 0 -1
+9345 turn 0 -1
 9400 expect state page COMPRESSOR
 9400 expect state card0 OFF
 9400 turn 2 10

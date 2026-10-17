@@ -47,10 +47,12 @@ the MIDI map.
 | **DECAY** | DECAY (VIBES: RING) | RELEASE (DAMPER) | NOISE | TUNE | (SELECT) |
 | **COMPRESSOR** | THRESHOLD (OFF / on) | RATIO | ATTACK | MAKEUP | (SELECT) |
 | **FILTER** | OFF / LP12 / LP18 / HP12 / HP18 / BP / NOTCH | FREQ | RESO | LFO | (SELECT) |
+| **DRIVE** | OFF / ON | AMOUNT | TONE | MIX | (SELECT) |
 | **TREM/WAH** | OFF / PAN / TREM / WAH (VIBES: + MOTOR, the vibraphone's motor) | DEPTH | RATE | SHAPE | LFO (there: on / off) |
 | **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | ENV (there: on / off) |
 | **CHORUS** | OFF / ON | DEPTH | SPEED | SYNC | (SELECT) |
 | **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | SEL (there: on / off) |
+| **REVERB** | MIX | DECAY | TONE | PRE-DELAY | (SELECT) |
 | **TEMPO** | BPM | TREM SYNC | PHA SYNC | DLY SYNC | GLO |
 | **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | (SELECT) |
 | **CHORD** | OFF / DIATONIC / DIA 7TH / MAJ ... MIN6 | INVERSION | VOICING | STRUM | SEQ |

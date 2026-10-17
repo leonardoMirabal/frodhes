@@ -25,9 +25,12 @@ enum { FXP_DRIVE, FXP_TW_SW, FXP_TW_DEPTH, FXP_TW_RATE, FXP_TW_MODE, FXP_TW_SHAP
        FXP_RV_DEPTH, FXP_DRIVE_ROW, FXP_RAW, FXP_DL_TONE,
        FXP_PH_SW, FXP_PH_DEPTH, FXP_PH_SPEED, FXP_PH_FDBK, FXP_CMP_SW, FXP_CMP_AMT, FXP_CMP_ATK, FXP_CMP_REL,
        FXP_LEVEL, FXP_CMP_RATIO, FXP_CMP_GAIN,
-       FXP_FL_TYPE, FXP_FL_FREQ, FXP_FL_RESO, FXP_FL_LFO, FXP_LFO_SHAPE, FXP_LFO_RATE, FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
+       FXP_FL_TYPE, FXP_FL_FREQ, FXP_FL_RESO, FXP_FL_LFO, FXP_LFO_SHAPE, FXP_LFO_RATE,
+       FXP_DRV_TONE, FXP_DRV_MIX, FXP_DRV_SW, FXP_RV_DECAY, FXP_RV_TONE, FXP_RV_PREDLY,   /* 0.9.3: DRIVE / REVERB pages */
+       FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
 static volatile int32_t fx_p[FXP_N] = {[FXP_DL_FDBK] = 80, [FXP_DL_TONE] = 70, [FXP_LEVEL] = 64, [FXP_CMP_RATIO] = 3,
-                                       [FXP_FL_FREQ] = 127, [FXP_LFO_RATE] = 40};
+                                       [FXP_FL_FREQ] = 127, [FXP_LFO_RATE] = 40, [FXP_DRV_TONE] = 64,
+                                       [FXP_DRV_MIX] = 127, [FXP_DRV_SW] = 1, [FXP_RV_DECAY] = 64, [FXP_RV_TONE] = 64};
 static volatile uint32_t fx_lfo_sync_inc;        /* main loop: a synced LFO rate (Q32 step), 0 = free */
 static volatile uint8_t fx_lfo_retrig;           /* main loop: a note started and RETRIG is on: the LFO from 0 */
 static volatile uint32_t fx_cp_sync_inc;         /* main loop: a synced chorus rate, 0 = free */
@@ -138,14 +141,23 @@ static void fx_filter(int32_t *m, uint32_t n)
     }
 }
 
-/* ---- DRIVE (Felucca track_dist; per TYPE drive row: gain scale, bias, make-up) */
+/* ---- DRIVE (Felucca track_dist; per TYPE drive row: gain scale, bias, make-up). Its page (0.9.3): ON / OFF, AMOUNT,
+ * TONE (after the drive: a shelf at ~1.8 kHz, 0 = the highs gone (a one-pole low-pass), 64 = flat, 127 = +6 dB) and MIX
+ * (dry / driven). At TONE 64 and MIX 127 the loop is the one before the page, sample for sample. TONE's gain and the
+ * wet share glide (TONE 0 .. 127 in ~23 ms, MIX in ~46 ms, ON / OFF a 46 ms crossfade): no zipper, no click. */
+#define DR_TA 7700                                      /* the shelf's one-pole: 1 - e^(-2 pi 1.8 kHz / fs), Q15 */
 static const int16_t DR_S[4] = {16, 20, 14, 24}, DR_BIAS[4] = {2400, 2400, 1800, 3200}, DR_MU[4] = {4096, 4096, 4300, 3700};
 static int32_t dr_hp, dr_lp1, dr_lp2;
+static int32_t dr_w = 32768, dr_tg = 4096, dr_tlp;      /* the wet share (Q15), the shelf's high gain (Q12), its low-pass */
+static uint8_t dr_ton;                                  /* the shelf runs (its gain is not 1, or on its way) */
 static void fx_drive(int32_t *m, uint32_t n)
 {
-    int32_t d = fx_p[FXP_DRIVE], row = fx_p[FXP_DRIVE_ROW] & 3, g, k, mk, bias, b0;
+    int32_t d = fx_p[FXP_DRIVE], row = fx_p[FXP_DRIVE_ROW] & 3, g, k, mk, bias, b0, tv = fx_p[FXP_DRV_TONE], mv = fx_p[FXP_DRV_MIX];
+    int32_t wt = !fx_p[FXP_DRV_SW] ? 0 : mv >= 127 ? 32768 : mv * 258;          /* the wet share it goes to */
+    int32_t tt = tv >= 64 ? 4096 + (((tv - 64) * 4161) >> 6) : tv * 64;         /* the shelf's gain: 0 .. 1 .. 2 (Q12) */
     uint32_t i;
-    if (!d) return;
+    if (!d) { dr_w = wt; return; }                      /* AMOUNT 0: off, as before (no glide: there is no drive) */
+    if (!wt && !dr_w) { dr_ton = 0; dr_tg = 4096; return; }   /* off, or MIX 0: the dry signal, untouched */
     g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
     k = 32000 - d * 95;
     mk = ((30000 - d * 120) * DR_MU[row]) >> 12;
@@ -153,14 +165,36 @@ static void fx_drive(int32_t *m, uint32_t n)
     mk = (mk * 39000) >> 15;                           /* +1.5 dB: measured on the FM-1, LUFS (0.8) */
     bias = DR_BIAS[row];
     b0 = softclip(bias);
+    if (tt > 8192) tt = 8192;
+    if (wt == 32768 && dr_w == 32768 && tt == 4096 && !dr_ton) {   /* the defaults: the loop before the page */
+        for (i = 0; i < n; i++) {
+            int32_t x = m[i], y;
+            dr_hp += (x - dr_hp + 64) >> 7;
+            x = clampi(x - dr_hp, -230000, 230000);
+            y = softclip((((x >> 2) * g) >> 10) + bias) - b0;
+            dr_lp1 += mulq15(y - dr_lp1, k);
+            dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
+            m[i] = mulq15(dr_lp2, mk);
+        }
+        return;
+    }
     for (i = 0; i < n; i++) {
-        int32_t x = m[i], y;
-        dr_hp += (x - dr_hp + 64) >> 7;
-        x = clampi(x - dr_hp, -230000, 230000);
+        int32_t x0 = m[i], x, y;
+        dr_hp += (x0 - dr_hp + 64) >> 7;
+        x = clampi(x0 - dr_hp, -230000, 230000);
         y = softclip((((x >> 2) * g) >> 10) + bias) - b0;
         dr_lp1 += mulq15(y - dr_lp1, k);
         dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
-        m[i] = mulq15(dr_lp2, mk);
+        y = mulq15(dr_lp2, mk);
+        if (dr_ton || tt != 4096) {                     /* TONE: lows + the highs x gain (lp + g (y - lp)) */
+            if (!dr_ton) { dr_tlp = y; dr_ton = 1; }    /* (from the signal itself: no step when it starts) */
+            dr_tg += dr_tg < tt ? (tt - dr_tg > 8 ? 8 : tt - dr_tg) : -(dr_tg - tt > 8 ? 8 : dr_tg - tt);
+            dr_tlp += mulq15(y - dr_tlp, DR_TA);
+            y = dr_tlp + (int32_t)(((int64_t)(y - dr_tlp) * dr_tg) >> 12);
+            if (dr_tg == 4096 && tt == 4096) dr_ton = 0;   /* back to flat: the shelf rests (y is exact again) */
+        }
+        if (dr_w != wt) dr_w += dr_w < wt ? (wt - dr_w > 16 ? 16 : wt - dr_w) : -(dr_w - wt > 16 ? 16 : dr_w - wt);
+        m[i] = dr_w == 32768 ? y : x0 + (int32_t)(((int64_t)(y - x0) * dr_w) >> 15);
     }
 }
 
@@ -574,25 +608,62 @@ static void rev_hall(const int32_t *rev_in, int32_t *mid, int32_t *side, int32_t
     }
     hl.m = mp, hl.s = sp;
 }
+/* the REVERB page (0.9.3): MIX (the send, the size and the return as before), DECAY (moves the hall's size: 64 = as
+ * before, 0 = about half the time, 127 = about twice: each step of the size is 2^(1/30) in T60), TONE (the lines' high
+ * damping: 64 = as before (60), 0 = 150 dark, 127 = 0 bright) and PRE-DELAY (0 .. 80 ms before the hall; at 0 there is
+ * no line at all). DECAY and TONE glide one step per 32 frames; a new pre-delay crossfades from the old tap (5.8 ms). */
+#define PD_LEN 4096u                                    /* 92.9 ms: the pre-delay's line (int32: the send has headroom) */
+#define FX_PDLY_SAMPLES(v) ((uint32_t)(v) * 3528u / 127u)   /* 0 .. 3528 samples = 80 ms (params.c shows it in ms) */
+static int32_t pd_buf[PD_LEN] POOL;
+static uint32_t pd_w, pd_d, pd_d0, pd_x;                /* write index, the tap, the old tap and the crossfade (0 = none) */
+static uint8_t pd_on;
 static int32_t rv_in[CTL], rv_mid[CTL], rv_side[CTL];
+static int32_t rv_off, rv_damp = 60;                   /* DECAY's size offset and TONE's damping, as they glide */
 static uint8_t rv_running;
+static void fx_predelay(int32_t *x, uint32_t tgt)      /* one control block: x[] delayed by the tap */
+{
+    uint32_t j;
+    if (!pd_on) { memset(pd_buf, 0, sizeof pd_buf); pd_d = pd_d0 = pd_x = 0; pd_on = 1; }   /* no old sound in it */
+    if (!pd_x && tgt != pd_d) { pd_d0 = pd_d; pd_d = tgt; pd_x = 1; }
+    for (j = 0; j < CTL; j++) {
+        int32_t a;
+        pd_buf[pd_w & (PD_LEN - 1u)] = x[j];
+        a = pd_buf[(pd_w - pd_d) & (PD_LEN - 1u)];
+        if (pd_x) {                                     /* 256 samples from the old tap to the new one */
+            int32_t b = pd_buf[(pd_w - pd_d0) & (PD_LEN - 1u)];
+            a = b + (int32_t)(((int64_t)(a - b) * (int32_t)(pd_x << 7)) >> 15);
+            if (++pd_x > 256u) pd_x = 0;
+        }
+        x[j] = a;
+        pd_w++;
+    }
+    if (!pd_x && !pd_d && !tgt) pd_on = 0;              /* back at 0: no line */
+}
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t v = fx_p[FXP_RV_DEPTH], send = v * 258, size = 40 + v * 70 / 127;
-    uint32_t sb, j;
+    int32_t dv = fx_p[FXP_RV_DECAY], tv = fx_p[FXP_RV_TONE];
+    int32_t off = ((dv - 64) * 15) / 32;                /* -30 .. +29 size steps: x0.5 .. x1.96 in T60 */
+    int32_t damp = tv >= 64 ? 60 - ((tv - 64) * 60) / 63 : 60 + ((64 - tv) * 90) / 64;   /* 150 .. 60 .. 0 */
+    uint32_t sb, j, pd = FX_PDLY_SAMPLES(fx_p[FXP_RV_PREDLY]);
     if (!v && !rv_running) return;
     rv_running = 1;
     for (sb = 0; sb < n; sb += CTL) {
         int32_t act = 0;
         for (j = 0; j < CTL; j++) rv_in[j] = mulq15((L[sb + j] + R[sb + j]) >> 1, send);
-        rev_hall(rv_in, rv_mid, rv_side, size, 60);
+        if (pd || pd_on) fx_predelay(rv_in, pd);
+        if (rv_off != off) rv_off += rv_off < off ? 1 : -1;
+        if (rv_damp != damp) rv_damp += rv_damp < damp ? (damp - rv_damp > 2 ? 2 : damp - rv_damp)
+                                                      : -(rv_damp - damp > 2 ? 2 : rv_damp - damp);
+        rev_hall(rv_in, rv_mid, rv_side, size + rv_off, rv_damp);
         for (j = 0; j < CTL; j++) {                    /* the return eases off as the send rises: x1 .. x0.5 (0.6) */
             int32_t wm = (rv_mid[j] * (254 - v)) / 254, ws = (rv_side[j] * (254 - v)) / 254;
             L[sb + j] += wm + ws;
             R[sb + j] += wm - ws;
             act |= rv_mid[j] | rv_side[j];
         }
-        if (!v && !act) rv_running = 0;               /* the tail has ended in exact silence */
+        if (!v && !act) { rv_running = 0; pd_on = 0; }  /* the tail has ended in exact silence (the line: cleared at
+                                                         * its next use) */
     }
 }
 
@@ -716,7 +787,7 @@ static uint32_t fx_cost_us(void)
     if (fx_p[FXP_RAW]) return 0;
     if (fx_p[FXP_CMP_SW]) us += FX_US_COMP;
     if (t && t <= 6u) us += FX_US_FILTER;
-    if (fx_p[FXP_DRIVE]) us += FX_US_DRIVE;
+    if (fx_p[FXP_DRIVE] && (fx_p[FXP_DRV_SW] || dr_w)) us += FX_US_DRIVE;
     if (fx_p[FXP_TW_SW] == 1) us += FX_US_TREM;
     else if (fx_p[FXP_TW_SW] == 2) us += FX_US_WAH;
     if (fx_p[FXP_PH_SW]) us += FX_US_PHASER;

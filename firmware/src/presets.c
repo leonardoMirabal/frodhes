@@ -104,7 +104,7 @@ static void presets_load_bank(void)
                 memcpy(u->name, o[i].name, sizeof u->name);
                 for (j = 0; j < P_SLOTS; j++) u->p[j] = j < 32u && j < o[i].np ? o[i].p[j] : j < P_COUNT ? PARAMS[j].def : 0;
                 params_split_phaser(u->p, P_SLOTS);
-                u->np = P_COUNT;
+                u->np = P_SLOTS;
             }
         }
         pr_seq = at == PR_BANK_A ? ha.seq : hb.seq;
@@ -143,7 +143,7 @@ static void preset_name(uint32_t idx, char *s)          /* "F03 SUITCASE" / "U05
 
 static void preset_load(uint32_t idx)
 {
-    uint8_t p[P_SLOTS];
+    uint8_t p[P_COUNT];                                 /* ids from P_SLOTS on are not in presets yet: defaults */
     uint32_t i;
     if (idx >= PR_NF + PR_NU) return;
     if (idx >= PR_NF && !pr_user[idx - PR_NF].used) return;
@@ -153,7 +153,7 @@ static void preset_load(uint32_t idx)
         for (i = 0; i < 32u && d[i] != 0xFF; i += 2u) p[d[i]] = d[i + 1u];
     } else {
         const preset_t *u = &pr_user[idx - PR_NF];
-        for (i = 0; i < P_COUNT && i < u->np; i++) p[i] = u->p[i] <= PARAMS[i].hi ? u->p[i] : PARAMS[i].def;
+        for (i = 0; i < P_SLOTS && i < P_COUNT && i < u->np; i++) p[i] = u->p[i] <= PARAMS[i].hi ? u->p[i] : PARAMS[i].def;
     }
     for (i = 0; i < P_COUNT; i++) UV(i) = PV(i);
     set.undo_valid = 1;
@@ -172,7 +172,7 @@ static void preset_load(uint32_t idx)
 
 static void preset_undo(void)
 {
-    uint8_t t[P_SLOTS];
+    uint8_t t[P_COUNT];
     uint32_t i;
     if (!set.undo_valid) return;
     for (i = 0; i < P_COUNT; i++) t[i] = PV(i);
@@ -225,7 +225,7 @@ static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t r
         }
         {
             preset_t *u = &pr_user[pr_save_slot];
-            u->ver = 2; u->np = P_COUNT; u->used = 1; u->rsv = 0;
+            u->ver = 2; u->np = P_SLOTS; u->used = 1; u->rsv = 0;
             preset_autoname(u->name);
             for (i = 0; i < P_SLOTS; i++) u->p[i] = i < P_COUNT ? PV(i) : 0;
             set.preset = (uint8_t)(PR_NF + pr_save_slot);

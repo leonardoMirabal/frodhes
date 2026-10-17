@@ -13,10 +13,13 @@ enum { P_TYPE, P_DRIVE, P_TW_SW, P_TW_DEPTH, P_TW_RATE, P_TW_SYNC, P_TW_MODE, P_
        P_CMP_RATIO, P_CMP_GAIN,                                               /* 0.8: the compressor's 4 knobs */
        P_FL_TYPE, P_FL_FREQ, P_FL_RESO, P_FL_LFO,                             /* 0.9.3: the filter */
        P_LFO_SHAPE, P_LFO_RATE, P_LFO_SYNC, P_LFO_RETRIG,                     /*        its LFO */
+       P_DRV_TONE, P_DRV_MIX, P_DRV_SW, P_RV_DECAY, P_RV_TONE, P_RV_PREDLY,   /* 0.9.3: the DRIVE and REVERB pages */
        P_COUNT };
-#define P_SLOTS 48u                /* room in the settings / preset records (P_COUNT <= P_SLOTS) */
+#define P_SLOTS 48u                /* room in the preset records: ids 0..47 (the ones above are not in presets yet) */
+#define P_PANEL3 8u                /* the settings record's third block: ids 48 .. 55 */
 
-enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB, F_THR, F_GAIN, F_FHZ, F_HZH };   /* F_HZH: half of F_HZ */
+enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB, F_THR, F_GAIN, F_FHZ, F_HZH, F_PDLY };   /* F_HZH: half of F_HZ,
+                                                                                         * F_PDLY: the pre-delay, ms */
 typedef struct {
     const char *lab;          /* <= 4 chars: panel / card label */
     uint8_t hi, def, fmt, cc;
@@ -106,8 +109,14 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_LFO_RATE] = {"RATE", 127, 40, F_HZ, 76, 0},
     [P_LFO_SYNC] = {"SYNC", 14, 0, F_DIV, 77, N_SYNC},
     [P_LFO_RETRIG] = {"TRIG", 1, 0, F_ENUM, 78, N_RETRIG},
+    [P_DRV_TONE] = {"DTON", 127, 64, F_BIP, 82, 0},          /* 0.9.3: the DRIVE page: tone dark .. bright (64 = flat) */
+    [P_DRV_MIX] = {"DMIX", 127, 127, F_R10, 83, 0},          /*        dry / wet (127 = all driven, as before) */
+    [P_DRV_SW] = {"DRV", 1, 1, F_ENUM, 84, N_ONOFF},         /*        on / off (on: DRIVE 0 is still off) */
+    [P_RV_DECAY] = {"RDCY", 127, 64, F_R10, 47, 0},          /*        the REVERB page: the hall's length (64 = as before) */
+    [P_RV_TONE] = {"RTON", 127, 64, F_BIP, 48, 0},           /*        its high damping, dark .. bright (64 = as before) */
+    [P_RV_PREDLY] = {"PDLY", 127, 0, F_PDLY, 49, 0},         /*        pre-delay 0 .. 80 ms */
 };
-_Static_assert(P_COUNT <= P_SLOTS, "records hold P_SLOTS parameters");
+_Static_assert(P_COUNT <= P_SLOTS + P_PANEL3, "the settings record holds P_SLOTS + P_PANEL3 parameters");
 
 /* ---- the settings record: always 256 B, versioned, append-only (§10.5) */
 #define SET_VER 2u                 /* 2 (0.4): panel / undo hold P_SLOTS; version 1 records are converted */
@@ -130,14 +139,15 @@ typedef struct {
     uint8_t seq_bars, seq_quant, seq_swing;    /* 0.9.1: the sequencer (seq.c; the pattern itself is in flash) */
     uint8_t trs_off;                           /* 0.9.1: 1 = the TRS MIDI input is ignored (MIDI page) */
     uint8_t undo_preset;                       /* 0.9.3: the preset the undo copy is (index + 1; 0 = not known) */
-    uint8_t seq_rsv[93];
+    uint8_t panel3[P_PANEL3], undo3[P_PANEL3];           /* 0.9.3: ids 48..55 (the DRIVE / REVERB pages; flags 16) */
+    uint8_t seq_rsv[77];
     uint8_t reserved[22];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 
 static settings_t set;
-#define PV(id) (*((id) < 32u ? &set.panel[(id)] : &set.panel2[(id) - 32u]))   /* a parameter's value */
-#define UV(id) (*((id) < 32u ? &set.undo[(id)] : &set.undo2[(id) - 32u]))
+#define PV(id) (*((id) < 32u ? &set.panel[(id)] : (id) < P_SLOTS ? &set.panel2[(id) - 32u] : &set.panel3[(id) - P_SLOTS]))
+#define UV(id) (*((id) < 32u ? &set.undo[(id)] : (id) < P_SLOTS ? &set.undo2[(id) - 32u] : &set.undo3[(id) - P_SLOTS]))
 
 /* records before 0.4 had the phaser as CHO/PHA = 2, sharing the chorus' depth, speed, sync and feedback */
 static void params_split_phaser(uint8_t *p, uint32_t np)
@@ -182,12 +192,17 @@ static void params_sanitize(void)
         params_split_phaser(p, P_SLOTS);
         for (i = 0; i < P_SLOTS; i++) PV(i) = p[i];
         set.undo_valid = 0; set.undo_preset = 0;
+        set.flags &= (uint8_t)~16u;                      /* the DRIVE / REVERB page parameters get their defaults */
         set.ver = SET_VER;
     }
     if (set.ver != SET_VER) { params_defaults(); return; }
     if (!(set.flags & 1u)) { PV(P_LEVEL) = PARAMS[P_LEVEL].def; set.flags |= 1u; }   /* records before 0.8 */
     if (!(set.flags & 2u)) { PV(P_CMP_RATIO) = PARAMS[P_CMP_RATIO].def; PV(P_CMP_GAIN) = 0; set.flags |= 2u; }
     if (!(set.flags & 8u)) { for (i = P_FL_TYPE; i <= P_LFO_RETRIG; i++) PV(i) = PARAMS[i].def; set.flags |= 8u; }   /* 0.9.3 */
+    if (!(set.flags & 16u)) {                        /* 0.9.3: the DRIVE / REVERB pages (their bytes were reserved) */
+        for (i = P_DRV_TONE; i < P_COUNT; i++) UV(i) = PV(i) = PARAMS[i].def;
+        set.flags |= 16u;
+    }
     if (!(set.flags & 4u)) {                         /* records before VIBES had 12 factory presets: U01 was 12 */
         if (set.preset >= 12u && set.preset < 12u + 16u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 12u);
         set.flags |= 4u;
@@ -274,6 +289,12 @@ static void param_apply(uint32_t id)
     case P_FL_LFO: fx_set(FXP_FL_LFO, v); break;
     case P_LFO_SHAPE: fx_set(FXP_LFO_SHAPE, v); break;
     case P_LFO_RATE: fx_set(FXP_LFO_RATE, v); break;
+    case P_DRV_TONE: fx_set(FXP_DRV_TONE, v); break;
+    case P_DRV_MIX: fx_set(FXP_DRV_MIX, v); break;
+    case P_DRV_SW: fx_set(FXP_DRV_SW, v); break;
+    case P_RV_DECAY: fx_set(FXP_RV_DECAY, v); break;
+    case P_RV_TONE: fx_set(FXP_RV_TONE, v); break;
+    case P_RV_PREDLY: fx_set(FXP_RV_PREDLY, v); break;
     default: break;                                                   /* SYNC: tempo.c; SPREAD: not yet in the engine */
     }
 }
@@ -369,6 +390,9 @@ static void param_text(uint32_t id, char *s)
         for (t = 0; t < 5; t++) s[t] = b[t];
         break;
     }
+    case F_PDLY:                                   /* "0" .. "80" ms (fx.c FX_PDLY_SAMPLES), rounded */
+        p_fmt_int(s, (int32_t)((FX_PDLY_SAMPLES(v) * 1000u + 22050u) / 44100u));
+        break;
     case F_THR:                                    /* "-20" dB: fx.c's threshold (log2 Q12), rounded */
         if (v) { s[0] = '-'; p_fmt_int(s + 1, q12_db1((v * 27434) >> 7)); } else { s[0] = '0'; s[1] = 0; }
         break;

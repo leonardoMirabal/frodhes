@@ -51,8 +51,8 @@ The screen shows **one page at a time**, with **four cards**, one per knob: **K1
 see**. The page name is at the top, with a row of marks under it showing where you are. Turn **SELECT** to move
 between pages, or press a page's button to jump straight there. The pages, in SELECT order:
 
-PERFORM · FRODHES (main) · VOICE · DECAY · COMPRESSOR · FILTER · TREM/WAH · PHASER · CHORUS · DELAY ·
-TEMPO · SCALE · CHORD · SEQUENCER · ARPEGGIO · LFO · ASSIGN · SETUP · MIDI
+PERFORM · FRODHES (main) · VOICE · DECAY · COMPRESSOR · FILTER · DRIVE · TREM/WAH · PHASER · CHORUS · DELAY ·
+REVERB · TEMPO · SCALE · CHORD · SEQUENCER · ARPEGGIO · LFO · ASSIGN · SETUP · MIDI
 
 A card that sets an amount has a **gauge** under its number: a thin frame that fills from the left, empty at 0
 (DRIVE 0.0 shows an empty frame). Cards for a choice (TYPE, ON / OFF, a note value) have none. The numbers are
@@ -182,6 +182,23 @@ A resonant filter right after the compressor (before drive and the other effects
 
 On PERFORM, K3 is the filter's cutoff by default. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 LFO amount.
 
+### DRIVE
+
+![DRIVE](manual/img/drive.png)
+
+The amp drive, right after the filter. AMOUNT is the same as DRIVE on the main page.
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **EFFECT** | **ON** / **OFF** (switching it on with AMOUNT at 0 gives it a starting amount) |
+| K2 | **AMOUNT** | From clean to growl. It changes the tone, not the volume; at 0 there is no drive |
+| K3 | **TONE** | After the drive: darker (down to the highs gone) or brighter (up to +6 dB of treble); the middle (+0.0) leaves it as it is |
+| K4 | **MIX** | Dry / driven: 10.0 is all drive (as before), lower blends the clean piano back in, 0 is clean |
+
+When the drive is off, the DRIVE card on the main page (and on PERFORM) shows **OFF**; turning it up there switches
+the drive on. Moving any of the knobs glides, so you can turn them while you play. Over MIDI: CC 81 AMOUNT, 82 TONE,
+83 MIX, 84 on (≥ 64) / off.
+
 ### TREM/WAH
 
 ![TREM/WAH](manual/img/trem.png)
@@ -230,6 +247,21 @@ wider in stereo, which on headphones sounds bigger; their level is set so that i
 | K2 | **MIX** | How loud the echoes are |
 | K3 | **TIME** | Echo time, free in milliseconds; when DLY SYNC is set on TEMPO it shows and steps note values |
 | K4 | **FEEDBK** | How many echoes |
+
+### REVERB
+
+![REVERB](manual/img/reverb.png)
+
+The hall reverb, the last effect. MIX is the same as REVERB on the main page.
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **MIX** | How much reverb; more also makes the hall bigger (0 = none, the tail rings out) |
+| K2 | **DECAY** | How long the hall rings: 5.0 as before, 0 about half as long, 10.0 about twice |
+| K3 | **TONE** | The tail's treble: darker (more damping) or brighter (less); +0.0 as before |
+| K4 | **PRE-DELAY** | A gap before the reverb starts, 0–80 ms, so the notes stay clear in front of the hall |
+
+Over MIDI: CC 91 MIX, 47 DECAY, 48 TONE, 49 PRE-DELAY. All four glide when moved.
 
 ### TEMPO
 
@@ -561,7 +593,8 @@ The TRS jack is MIDI in only. **Program Change** 0–13 loads F01–F14, 16–31
 | --- | --- | --- | --- |
 | 64 | Sustain (half-pedal) | 80 | TYPE (0–31 STAGE, 32–63 SUITCASE, 64–95 FELT, 96–127 DYNO) |
 | 79 | TYPE VIBES (any value) | 9 | Developer: VIBES mode cap (0 = automatic, 1–49 = 0–48 upper modes, ≥ 50 = none; not saved) |
-| 81 | DRIVE | 91 | REVERB |
+| 81 | DRIVE (AMOUNT) | 91 | REVERB (MIX) |
+| 82 / 83 / 84 | DRIVE TONE / MIX / on (≥ 64) | 47 / 48 / 49 | REVERB DECAY / TONE / PRE-DELAY (0–80 ms) |
 | 17 | TREM/WAH: 0–42 off, 43–85 trem/pan, 86–127 wah | 18 / 19 | TREM DEPTH / RATE |
 | 20 / 21 / 22 | TREM SYNC / MODE (0–63 pan, 64–127 am; on VIBES 112–127 motor) / SHAPE | 85 | Chorus / phaser (reface): off / chorus / phaser |
 | 86 / 87 | CHORUS DEPTH / SPEED (the phaser's, when only the phaser is on) | 23 | CHORUS SYNC |
