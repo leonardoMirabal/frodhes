@@ -777,10 +777,32 @@ static void ui_splash(void)
 static void ui_draw_page_change(void) { ui_dirty |= (1u << E_N) - 1u; }
 
 /* one element per pass, in priority order: footer, header, title, cards */
+/* developer (MIDI CC 3 >= 64, 0.9.3): a colour test pattern for calibrating the screenshots and the palettes against
+ * the FM-1's panel (a photo of it). Rows of 30 px: the 6 palettes' 5 steps + white (40 px each), then a grey ramp
+ * 0 32 64 128 192 255, then pure red, green, blue, yellow, black, white. CC 3 < 64 draws the page again. */
+static uint8_t ui_testpat, ui_testpat_shown;
+static void ui_draw_testpat(void)
+{
+    static const uint8_t G[6] = {0, 32, 64, 128, 192, 255};
+    static const uint16_t P[6] = {RGB(255, 0, 0), RGB(0, 255, 0), RGB(0, 0, 255), RGB(255, 255, 0), C_BLACK, C_WHITE};
+    uint32_t r, i;
+    for (r = 0; r < NPALETTES && r < 6u; r++) {
+        for (i = 0; i < 5u; i++) lcd_fill(40 * i, 30 * r, 40, 30, PALETTES[r].c[i]);
+        lcd_fill(200, 30 * r, 40, 30, C_WHITE);
+    }
+    for (i = 0; i < 6u; i++) lcd_fill(40 * i, 180, 40, 30, RGB(G[i], G[i], G[i]));
+    for (i = 0; i < 6u; i++) lcd_fill(40 * i, 210, 40, 30, P[i]);
+}
+
 static void ui_draw(void)
 {
     uint32_t e, d;
     static uint8_t cleared;
+    if (ui_testpat) {
+        if (!ui_testpat_shown) { ui_draw_testpat(); ui_testpat_shown = 1; }
+        return;
+    }
+    if (ui_testpat_shown) { ui_testpat_shown = 0; cleared = 0; ui_draw_page_change(); }
     if (ui_splash_on) {
         if (fm1_ms - ui_splash_t < UI_SPLASH_MS) return;
         ui_splash_on = 0;
