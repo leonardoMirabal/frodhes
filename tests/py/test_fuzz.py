@@ -105,7 +105,9 @@ def chaos(seed, eng):
 def settle(eng):
     """the panic, then the probes; returns (lines, marks)"""
     t0 = CHAOS_MS + 50
-    L = [(t0, "keys 0")] + [(t0, f"release {b}") for b in range(14)] + [(t0 + 2, "btn 8")]   # (HOME: no save mode)
+    L = [(t0 - 17, "dump"), (t0 - 7, "dump")]                         # 40 ms after the last event (twice: a note-off
+                                                                      # in flight for one block is not a stuck note)
+    L += [(t0, "keys 0")] + [(t0, f"release {b}") for b in range(14)] + [(t0 + 2, "btn 8")]   # (HOME: no save mode)
     t = t0 + 5
     for c in ALL16:                                                   # transport, arp, sustain, bypass off; all off
         for num, v in ((64, 0), (60, 0), (63, 0), (45, 0), (52, 0), (111, 0), (123, 0)):
@@ -123,7 +125,7 @@ def settle(eng):
     p0 = gone + 500                                                   # a note over MIDI, every channel
     L += [(p0 + c, f"midi 0x{0x90 | c:02X} 60 100") for c in ALL16] + [(p0 + 700 + c, f"midi 0x{0x80 | c:02X} 60 0") for c in ALL16]
     L += [(p0 + 800, "dump"), (p0 + 1000, "keys 128"), (p0 + 1500, "keys 0")]
-    return L, dict(quiet=quiet, gone=gone, probe=(p0 + 250, p0 + 650), key=(p0 + 1200, p0 + 1450), end=p0 + 2000, dump=p0 + 800)
+    return L, dict(before=(t0 - 17, t0 - 7), quiet=quiet, gone=gone, probe=(p0 + 250, p0 + 650), key=(p0 + 1200, p0 + 1450), end=p0 + 2000, dump=p0 + 800)
 
 
 def clicks(x):
@@ -153,6 +155,9 @@ def one(seed, eng, sanitized):
     q = slice(int((mk["gone"] - 500) / 1000 * FS), int(mk["gone"] / 1000 * FS))
     if x[q].max() > 2:
         bad.append(f"not silent after the panic (RAW): peak {x[q].max():.0f}")
+    b0, b1 = (r.state(t) for t in mk["before"])                     # a stuck note before the panic: a voice held
+    if all(int(b["held"]) > int(b["pitches"]) for b in (b0, b1)):   # that no key, MIDI note or arp step holds
+        bad.append(f"{b0['held']} voices held for {b0['pitches']} notes held (a stuck note before the panic)")
     st = r.state(mk["gone"])
     if st["held"] != "0":                                           # a stuck note: a voice still held down
         bad.append(f"{st['held']} voices still held after the panic")
@@ -190,7 +195,7 @@ def sanitizer_build():
 def test_fuzz(eng, request, sanitizer_build):
     long = request.config.getoption("--long")
     jobs = [(s, eng, long or s % 5 == 0) for s in seeds(request, 200)]
-    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as ex:
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 4)) as ex:
         results = list(ex.map(lambda a: one(*a), jobs))
     failed = [(tag, bad) for tag, bad in results if bad]
     msg = "\n".join(f"{tag} ({os.path.join(OUT, tag)}.txt): {'; '.join(bad)}" for tag, bad in failed[:12])

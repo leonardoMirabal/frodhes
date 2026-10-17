@@ -360,6 +360,7 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "bars")) snprintf(v, n, "%d", eng_is_bars());
     else if (!strcmp(key, "voices")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits));
     else if (!strcmp(key, "held")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_held_bits : rh_held_bits));
+    else if (!strcmp(key, "pitches")) { for (i = c = 0; i < 128u; i++) c += out_ref[i] != 0; snprintf(v, n, "%u", c + (arp_playing < 128u)); }   /* held by a source or the arpeggiator */
     else if (!strcmp(key, "srcs")) { for (i = c = 0; i < SRC_N; i++) c += src_active[i]; snprintf(v, n, "%u", c); }
     else if (!strcmp(key, "refs")) { for (i = c = 0; i < 128u; i++) c += out_ref[i]; snprintf(v, n, "%u", c); }
     else if (!strcmp(key, "quiet")) snprintf(v, n, "%d", eng_quiet() && fx_quiet());
@@ -370,7 +371,7 @@ static int host_state(const char *key, char *v, unsigned n)
 static void host_dump(void)
 {
     static const char *const K[] = {"header", "preset", "page", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
-                                    "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "bars", "voices", "held",
+                                    "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "label0", "card0", "label1", "card1", "label2", "card2",
                                     "label3", "card3"};
     char key[24], v[64];
