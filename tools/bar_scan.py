@@ -18,7 +18,8 @@ The checks (numbers from PLAN §9.2):
       > -40 dB re the window, > 10 dB over the HF energy 3 ms either side (a transient, not a high partial) and
       above -90 dBFS (not the last bit's rounding),
       outside 3 ms before / 17 ms after any event (one block of latency + the 8 ms damper noise)
-  S2  clipping: output samples >= 32700 = 0; the host's "sat28 hits" = 0 (when the build prints it)
+  S2  clipping: output samples >= 32700 = 0; the host's "sat28 hits" = 0 (when the build prints it); the polyphony
+      cases (8..16 voices at once) judge the clipping through the master (their "fx" copy: the limiter), RAW only sat28
   S3  linearity: a 3-note chord vs the sum of its notes alone (RAW, NOISE 0): residual <= -60 dB; no spectral line
       off the spec's partials (+-3 %) above -80 dB re V1, 0.2..2 s after the strike (s3_lines: why lines)
   S4  steals / ends: S1 in the polyphony and steal cases; the last non-zero sample before the end <= 1 LSB
@@ -216,12 +217,15 @@ def matrix(typ, full, smoke=False):
         notes = list(range(48, 48 + 3 * nn, 3))[:nn]
         ev = S(noise=None) + [(150, "midi 0xB0 64 127")] + sum((bm.note(200 + 10 * i, n, 100, 400) for i, n in enumerate(notes)), [])
         ev += [(4000, "midi 0xB0 64 0")]
-        C.append(Case(f"poly {nn}", "poly", ev, 8000, ["S1", "S2", "S4"]))
+        C.append(Case(f"poly {nn}", "poly", ev, 8000, ["S1", "S2m", "S4"]))
     ev = S(noise=None)
     chords = [(36, 48, 55, 60, 64, 67, 72, 76, 79, 84), (38, 50, 57, 62, 65, 69, 74, 77, 81, 86)]
     for k in range(16):
         ev += sum((bm.note(200 + 250 * k, n, 127, 240) for n in chords[k % 2]), [])
-    C.append(Case("poly repeat", "poly", ev, 14000, ["S1", "S2", "S4"]))
+    C.append(Case("poly repeat", "poly", ev, 14000, ["S1", "S2m", "S4"]))
+    # S2 for many voices at once: the same through the master (F01's effects, the look-ahead limiter)
+    for c in [c for c in C if c.group == "poly"]:
+        C.append(Case(f"{c.name} fx", "polyfx", [e for e in c.events if e[1] != "midi 0xB0 119 127"], c.end, ["S2"]))
     # the arpeggiator (UP, 1/16, 4 octaves, the pedal) and a recorded 2-bar pattern, 240 BPM
     ev = S(noise=None, ARP_MODE=1, ARP_RATE=3, ARP_OCT=3) + [(150, "midi 0xB0 64 127")] + clock_lines(30, 4200)
     ev += sum((bm.note(300, n, 100, 3000) for n in (60, 64, 67)), []) + [(3500, "midi 0xB0 64 0"), (3600, "midi 0xB0 52 0")]
@@ -377,6 +381,16 @@ def run_checks(case, spec, typ, all_cases):
             s28 = cnt["sat28 hits"]
             R["S2"] = (clip == 0 and not s28, clip + (s28 or 0),
                        f"samples >= 32700: {clip}; sat28 hits {'n/a' if s28 is None else s28}")
+        elif ck == "S2m":
+            # several voices at once in RAW: the sum of 8..10 voices at v127, each at the Rhodes level, is over full
+            # scale by arithmetic (+18..20 dB over one voice; the Rhodes clips 1041 samples on "poly repeat" RAW,
+            # VIBES 80); RAW taps the engine ahead of the master, where the limiter is. Judged here: no internal
+            # overflow (sat28); the clipping on the "<case> fx" render through the master, the per-voice peak on the
+            # single-voice renders (S2)
+            clip = int((np.abs(x) >= 32700).sum())
+            s28 = cnt["sat28 hits"]
+            R["S2"] = (not s28, s28 or 0, f"sat28 hits {'n/a' if s28 is None else s28}; RAW sum of voices: samples >= "
+                                          f"32700: {clip} (not judged: no limiter in RAW; see '{case.name} fx')")
         elif ck == "S4":
             m = np.abs(bm.mono(x))
             nz = np.flatnonzero(m > 0)
