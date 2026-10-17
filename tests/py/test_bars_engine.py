@@ -112,7 +112,8 @@ def test_motor_on_a_rhodes_type_is_the_am_tremolo():
 
 def test_motor_passes_fx_trem_on_vibes():
     """On VIBES the effects chain's tremolo is unity in MOTOR mode: with RAW off the motor's AM equals the RAW one"""
-    s = VIBES + MOTOR.format(rate=78) + "70 midi 0xB0 64 127\n200 midi 0x90 69 100\n4200 end\n"
+    s = ("20 midi 0xB0 81 0\n21 midi 0xB0 91 0\n" + VIBES + MOTOR.format(rate=78)   # dry: F01's drive / reverb off
+         + "70 midi 0xB0 64 127\n200 midi 0x90 69 100\n4200 end\n")
     raw, _ = render("mot_raw", RAW + s)
     fx, _ = render("mot_fx", s)
     _, d_raw = am(raw)

@@ -1,0 +1,14 @@
+# A first boot (no settings record): the header shows F01 STAGE 77, and the sound must be F01 too (it was the bare
+# defaults until 0.9.3: DRIVE 0 / REVERB 0 instead of F01's 13 / 25)
+100 expect preset
+200 midi 0x90 60 100
+700 expect rms > -40
+800 midi 0x80 60 0
+# every factory preset by program change: the panel is that preset
+1000 midi 0xC0 1 0
+1500 expect preset
+1600 midi 0xC0 11 0
+2100 expect preset
+2200 midi 0xC0 0 0
+2700 expect preset
+3000 end

@@ -103,8 +103,10 @@ static void eng_host_report(void);              /* engine.c: the engines' host c
  *   T shot               a screenshot (OUT-T.ppm)
  *   T expect led ID V    fails the run unless LED ID is V (0/1)
  *   T expect rms OP DB   fails unless the RMS of the last 50 ms is OP (< or >) DB dBFS
+ *   T expect preset      fails unless every parameter equals what the preset the header shows sets (frodhes.c)
  *   T end                stop; the exit code is the number of failed expects */
-enum { EV_KEYS, EV_BTN, EV_PRESS, EV_RELEASE, EV_TURN, EV_MIDI, EV_SHOT, EV_EXP_LED, EV_EXP_RMS };
+enum { EV_KEYS, EV_BTN, EV_PRESS, EV_RELEASE, EV_TURN, EV_MIDI, EV_SHOT, EV_EXP_LED, EV_EXP_RMS, EV_EXP_PRESET };
+static int host_preset_check(char *msg, unsigned n);   /* frodhes.c: 0 if the panel is the shown preset */
 typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; uint8_t kind; int32_t a, b; char op; } host_ev_t;
 static const host_ev_t SCRIPT0[] = {
     {200, 1u << 7, -1, 0, 0, 0, EV_KEYS, 0, 0, 0},                                /* C4 */
@@ -142,7 +144,8 @@ static void read_script(const char *path)
         else if (!strcmp(what, "midi")) { e.kind = EV_MIDI; sscanf(line, "%*u %*s %i %u %u", (int *)&a, &b, &c); e.st = (uint8_t)a; e.d1 = (uint8_t)b; e.d2 = (uint8_t)c; }
         else if (!strcmp(what, "shot")) e.kind = EV_SHOT;
         else if (!strcmp(what, "expect") && sscanf(line, "%*u %*s %15s", sub) == 1) {
-            if (!strcmp(sub, "led")) { e.kind = EV_EXP_LED; sscanf(line, "%*u %*s %*s %d %d", &e.a, &e.b); }
+            if (!strcmp(sub, "preset")) e.kind = EV_EXP_PRESET;
+            else if (!strcmp(sub, "led")) { e.kind = EV_EXP_LED; sscanf(line, "%*u %*s %*s %d %d", &e.a, &e.b); }
             else if (!strcmp(sub, "rms") && sscanf(line, "%*u %*s %*s %3s %lf", op, &db) == 2) { e.kind = EV_EXP_RMS; e.op = op[0]; e.a = (int32_t)(db * 100.0); }
             else continue;
         }
@@ -213,6 +216,12 @@ static void platform_poll(void)                 /* one call = one millisecond */
         case EV_RELEASE: host_released |= 1u << e->btn; fm1_in.buttons &= ~(1u << e->btn); break;
         case EV_TURN: if ((uint32_t)e->a < 8u) host_enc[e->a] += e->b; break;
         case EV_SHOT: write_ppm(fm1_ms); break;
+        case EV_EXP_PRESET: {
+            char msg[96];
+            if (host_preset_check(msg, sizeof msg)) { printf("%6u ms  FAIL expect preset: %s\n", fm1_ms, msg); host_fails++; }
+            else printf("%6u ms  ok   expect preset: %s\n", fm1_ms, msg);
+            break;
+        }
         case EV_EXP_LED:
             if ((uint32_t)e->a >= 64u || host_led[e->a] != (uint8_t)e->b) {
                 printf("%6u ms  FAIL expect led %d = %d (is %d)\n", fm1_ms, e->a, e->b, (uint32_t)e->a < 64u ? host_led[e->a] : -1);
