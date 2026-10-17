@@ -95,7 +95,7 @@ def measure_like_ref(path):
 
 def v1_t60(r):
     rows = [p for p in r["rows"] if abs(p["ratio"] - 1) < 0.03 and p["t60"]]
-    return rows[0]["t60"] if rows else None
+    return max(rows, key=lambda p: p["lvl"])["t60"] if rows else None   # the fundamental itself, not a weak side peak
 
 
 def host_render(m, vel, hold, out):
