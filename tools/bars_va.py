@@ -56,6 +56,21 @@ def peak_freq(x, f, t0, t1):
     return float(fr[i] + p * (fr[1] - fr[0]))
 
 
+def ref_band_t60(x, f0, floor_dbfs=-80.0, seed=0):
+    """V1 T60 as tools/vib_ref_measure.measure() reads it from a recording: white noise at floor_dbfs (RMS, Q15) added
+    (deterministic), the 5 ms RMS envelope's onset (the first frame within 40 dB of its peak), the f0 band's level
+    (band_env) from there, fit_t60 from its peak to 10 dB over the floor (the median of the last tenth, - 6 dB)"""
+    import vib_ref_measure as vrm
+    x = np.asarray(x, float) + np.random.default_rng(seed).normal(0, 32768 * 10 ** (floor_dbfs / 20), len(x))
+    hop = int(0.005 * FS)
+    env = vrm.envelope_db(x, FS, hop)
+    pk = int(np.argmax(env))
+    onset = next((i for i in range(pk + 1) if env[i] > env[pk] - 40), 0)
+    floor = float(np.percentile(env[-max(10, len(env) // 10):], 50))
+    lv, _ = vrm.band_env(x[onset * hop:], FS, f0, 0, hop)
+    return vrm.fit_t60(lv, hop / FS, floor - 6)[0]
+
+
 def am_depth(env_db, t, t0, t1):
     """Peak-to-trough (dB) of an envelope over [t0, t1] after removing its linear decay."""
     m = (t >= t0) & (t <= t1)
@@ -223,6 +238,20 @@ def checks(spec=None):
     rawt = dict(zip(*gb.table(vb["T1b"]["t60_s"])))
     bad = [(n, round(D[n]["t60_v1"], 2), round(s, 2)) for n, s in zip(xs, ys) if abs(D[n]["t60_v1"] / s - 1) > 0.15]
     add("V1 T60 at the reference pitches within +-15 % of the smoothed table: misses", bad, not bad)
+    # the same quantity the reference table holds: the golden render (v100, the default cards, pedal down, the
+    # reference files' 6 s) measured with vib_ref_measure's own procedure (onset, the f0 band's 4096-point STFT,
+    # the line from its peak to 10 dB over the noise floor), over a recording-like floor (white noise, -80 dBFS RMS).
+    # Without a floor the engine's exact digital zero at the end (the voice ending under 1 LSB; through the effects,
+    # the silence gate's fade under -66 dBFS) puts the cliff into the fit and reads ~6 % short (the FM-1 sample-back's
+    # raw host / device readings): the floor is the recordings' condition, not a correction
+    yb = gm.render_batch(spec, xs, [100] * len(xs), 6.0, None, sleep=False)
+    bad, rows = [], []
+    for n, sm_, r_ in zip(xs, ys, yb):
+        t = ref_band_t60(r_, D[n]["f0"])
+        rows.append((n, round(t, 2), round(sm_, 2)))
+        if t is None or abs(t / sm_ - 1) > 0.02:
+            bad.append((n, t and round(t, 2), round(sm_, 2)))
+    add("V1 T60 by the recordings' band fit (6 s, -80 dBFS floor) within +-2 % of the smoothed table: misses", bad, not bad)
     bad = [(n, round(D[n]["t60_v1"], 2), rawt[n]) for n in xs if abs(D[n]["t60_v1"] / rawt[n] - 1) > 0.30]
     add("V1 T60 vs the RAW per-note values +-30 % (report): misses", bad, True, "report")
     for nm, slot in (("V2", 2), ("V3", 3)):
