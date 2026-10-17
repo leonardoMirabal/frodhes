@@ -752,39 +752,83 @@ class Take:
         self.on(src)
         return self._on[src][1]
 
+    def lat_at(self, src, t):
+        """the latency (s) in force at event time t: the last note-on's at or before it (the USB stream can slip)"""
+        self.on(src)
+        ls = [l for s, l in zip(self.sched, self._on[src][2]) if s <= t + 1e-9]
+        return ls[-1] if ls else self._on[src][1]
+
+    def slip_ms(self, src):
+        """the largest change of the latency between the note-ons (ms): a stream that slipped"""
+        self.on(src)
+        ls = self._on[src][2]
+        return float(1000 * (max(ls) - min(ls))) if ls else 0.0
+
     def at(self, src, t):
         """a sample index for event time t (s) in this source"""
-        return int(round((t + self.lat(src)) * FS))
+        return int(round((t + self.lat_at(src, t)) * FS))
+
+    def pre(self, src):
+        """the pre-roll: the source before the first note-on reaches it (5 ms margin). USB: exact zero (the gate);
+        the jack: the interface's and the FM-1's analogue hiss, the floor its measures stand on"""
+        on = [t for t, k, a, b in self.ev if k == "on"]
+        if not on:
+            return self.m(src)[:0]
+        return self.m(src)[:max(0, self.at(src, min(on)) - FS // 200)]
 
 
-def align(m, sched, lat_max=0.3):
-    """onsets of the scheduled note-ons: the first sound (5 % of the take's peak) belongs to the last strike due
-    before it (within lat_max): that gives the latency; each onset is then refined to a 6 dB rise within +-8 ms"""
+def align(m, sched, lat_max=0.3, slip_max=0.35):
+    """onsets of the scheduled note-ons: the first sound (5 % of the take's peak, never before the first event: a
+    residue in the pre-roll is not a note) belongs to the last strike due before it (within lat_max): that gives the
+    latency; each onset is then refined to a 6 dB rise within +-8 ms of its prediction. The USB stream can slip
+    (round 1: +232 / -25 ms between strikes in the silent gaps of the VOICE takes; the jack, recorded at once, shows
+    no slip): when the prediction holds no rise, the onset is searched +-slip_max around it (after the previous one)
+    for the first rise of 10 dB, and the next prediction follows the latency found. Returns the onsets, the first
+    latency (s) and the latency at each onset (s)."""
     if not sched:
-        return [], 0.0
+        return [], 0.0, []
     a = np.abs(m)
-    mx = float(a.max()) if len(a) else 0.0
+    i0 = max(0, int((sched[0] - 0.005) * FS))
+    mx = float(a[i0:].max()) if len(a) > i0 else 0.0
     if mx <= 0:
-        return [int(s * FS) for s in sched], 0.0
-    i = int(np.argmax(a > 0.05 * mx))
+        return [int(s * FS) for s in sched], 0.0, [0.0] * len(sched)
+    i = i0 + int(np.argmax(a[i0:] > 0.05 * mx))
     t = i / FS
     ks = [k for k, s in enumerate(sched) if s - 0.01 <= t <= s + lat_max]
     k = ks[-1] if ks else int(np.argmin([abs(t - s) for s in sched]))
     lat = t - sched[k]
-    out = []
     w = FS // 1000
+    nf = len(m) // w
+    e = 10 * np.log10(np.mean(np.asarray(m[:nf * w], float).reshape(nf, w) ** 2, axis=1) + 1e-20)   # 1 ms frames
+
+    def rise(f, before=12):
+        if f < 3 or f + 3 > nf:
+            return 0.0
+        return float(e[f:f + 3].max() - e[max(0, f - before):f - 1].max())
+    out, lats, prev = [], [], -1
     for s in sched:
         j = int(round((s + lat) * FS))
         a0, a1 = max(0, j - 10 * w), min(len(m), j + 8 * w)
         x = m[a0:a1]
-        nf = len(x) // w
-        if nf > 3:
-            e = np.sqrt(np.mean(x[:nf * w].reshape(nf, w) ** 2, axis=1)) + 1e-9
-            r = np.flatnonzero(e[2:] > 2 * e[:-2])
+        n = len(x) // w
+        if n > 3:
+            en = np.sqrt(np.mean(x[:n * w].reshape(n, w) ** 2, axis=1)) + 1e-9
+            r = np.flatnonzero(en[2:] > 2 * en[:-2])
             if len(r):
                 j = a0 + (int(r[0]) + 1) * w
+        f = j // w
+        r0 = max(rise(g) for g in range(max(1, f - 8), f + 9))
+        if r0 < 3.0:                                     # nothing starts where it was due: the stream slipped?
+            lo = max(prev // w + 30 if prev >= 0 else 0, f - int(slip_max * 1000))
+            hi = min(nf - 3, f + int(slip_max * 1000))
+            cand = [g for g in range(lo, hi) if rise(g) >= 15.0 and e[g:g + 3].max() > e[lo:hi + 3].max() - 30]
+            if cand:
+                j = min(cand, key=lambda c: abs(c - f)) * w
+                lat = j / FS - s
         out.append(j)
-    return out, lat
+        lats.append(j / FS - s)
+        prev = j
+    return out, lats[0], lats
 
 
 def synth(dur, ev):
@@ -814,10 +858,14 @@ def synth(dur, ev):
 
 
 class VRig:
-    def __init__(self, source="both", jack_dev="M6", jack_ch=5, dry_run=False, wav=False):
-        self.source, self.dry_run, self.wav = source, dry_run, wav
+    def __init__(self, source="both", jack_dev="M6", jack_ch=5, dry_run=False, wav=False, offline=None):
+        self.source, self.dry_run, self.wav, self.offline = source, dry_run, wav and not offline, offline
         self.want_usb, self.want_jack = source in ("usb", "both"), source in ("jack", "both")
-        self.plan_s, self.takes, self.r, self.jack_name = 0.0, [], None, None
+        self.plan_s, self.takes, self.r, self.jack_name, self.delay_on = 0.0, [], None, None, False
+        if offline:
+            self._jack_peak = offline_jack_peaks(offline)
+            self.jack_name = "the saved takes"
+            return
         if dry_run:
             return
         self.r = Rig()
@@ -845,6 +893,8 @@ class VRig:
         settings in order; waits for the gate's exact silence"""
         self.plan_s += RESET_S
         sets = ccs(settings)
+        if self.offline:
+            return
         if self.dry_run:
             print(f"  reset{' [' + label + ']' if label else ''}: defaults + DRY, CC 79={VIBES_CC79}, CC 47="
                   f"{127 if motor else 0}" + "".join(f", {n}={x} (CC {c}={v})" for (n, x), (c, v) in zip(settings, sets)))
@@ -858,15 +908,24 @@ class VRig:
             self.r.cc(k, v)
         self.send(79, VIBES_CC79)
         self.send(vp()["MOT_ON"]["cc"], 127 if motor else 0)
+        if self.delay_on:                              # the last take ran the delay: empty its line first (DEPTH 0
+            self.send(vp()["DL_SW"]["cc"], ccv("DL_SW", 1))   # = no feedback, silence in) - round 1: a 1.48 s line
+            self.send(vp()["DL_DEPTH"]["cc"], 0)       # replayed the previous take's echoes into the next take
+            time.sleep(1.6)
+            self.send(vp()["DL_SW"]["cc"], 0)
         for c, v in sets:
             self.send(c, v)
+        self.delay_on = any(n == "DL_SW" and x for n, x in settings)
         time.sleep(0.3)
-        self.r.wait_silence()
+        if not self.r.wait_silence(15.0):
+            print(f"   (reset {label}: no exact silence in 15 s; the take may start on a residue)", flush=True)
 
     def take(self, tag, dur, events):
         ev = sorted(events, key=lambda e: e[0])
         self.plan_s += dur + TAKE_S
-        if self.dry_run:
+        if self.offline:
+            u, j = load_take(self.offline, tag, self._jack_peak, self.want_usb, self.want_jack)
+        elif self.dry_run:
             print(f"    take {tag} ({dur:.1f} s): " + "; ".join(
                 f"{t:.2f} {k} {a}" + (f" v{b}" if k == "on" else f"={b}" if k == "cc" else "") for t, k, a, b in ev))
             u, j = synth(dur, ev)
@@ -930,21 +989,74 @@ class VRig:
 
 
 def save_wav(T):
+    """every take to build/hil/vibes/: USB as recorded (int16), the jack at its peak 0.5 (a 16-bit file) with the
+    scale in the take's sidecar {tag}.json (jack_scale: the recorded value = the file's sample / 32768 * jack_scale),
+    with the events, so --offline re-reads it exactly"""
     import wave
     d = os.path.join(OUT, "vibes")
     os.makedirs(d, exist_ok=True)
+    side = dict(tag=T.tag, dur=T.dur, ev=[list(e) for e in T.ev], fs=FS)
     for s, x in (("usb", T.usb), ("jack", T.jack)):
         if x is None:
             continue
         x = np.atleast_2d(np.asarray(x).T).T
         if s == "jack":
-            x = x / (np.abs(x).max() + 1e-12) * 0.5
+            pk = float(np.abs(x).max()) + 1e-12
+            side["jack_scale"] = pk / 0.5
+            side["jack_peak_db"] = float(20 * np.log10(pk))
+            x = x / pk * 0.5
         w = wave.open(os.path.join(d, f"{T.tag}-{s}.wav"), "wb")
         w.setnchannels(x.shape[1])
         w.setsampwidth(2)
         w.setframerate(FS)
         w.writeframes(np.clip(np.round(x * 32768), -32768, 32767).astype("<i2").tobytes())
         w.close()
+    json.dump(side, open(os.path.join(d, f"{T.tag}.json"), "w"))
+
+
+def offline_jack_peaks(d):
+    """--offline: each take's jack peak (dBFS), to undo save_wav's normalisation (the jack's level changes between
+    takes are measured): from the takes' sidecars, else from the scan's report json (round 1 saved no sidecar; its
+    take_stats() jack_peak_db is that peak, to the float)"""
+    out = {}
+    for rp in (os.path.join(d, "..", "vibes-report.json"), os.path.join(d, "vibes-report.json")):
+        if os.path.exists(rp):
+            for t in json.load(open(rp)).get("takes", []):
+                if "jack_peak_db" in t:
+                    out[t["tag"]] = float(t["jack_peak_db"])
+            break
+    for f in os.listdir(d):
+        if f.endswith(".json") and not f.startswith("vibes-"):
+            j = json.load(open(os.path.join(d, f)))
+            if "jack_peak_db" in j:
+                out[j["tag"]] = float(j["jack_peak_db"])
+    return out
+
+
+def read_wav(path):
+    import wave
+    w = wave.open(path, "rb")
+    n, ch = w.getnframes(), w.getnchannels()
+    x = np.frombuffer(w.readframes(n), "<i2").astype(float).reshape(n, ch) / 32768
+    w.close()
+    return x
+
+
+def load_take(d, tag, peaks, want_usb, want_jack):
+    """--offline: a saved take (USB stereo as recorded; the jack restored to its recorded scale)"""
+    u = j = None
+    pu, pj = os.path.join(d, f"{tag}-usb.wav"), os.path.join(d, f"{tag}-jack.wav")
+    if want_usb:
+        if not os.path.exists(pu):
+            raise FileNotFoundError(pu)
+        u = read_wav(pu)
+    if want_jack and os.path.exists(pj):
+        j = read_wav(pj)[:, 0]
+        if tag in peaks:
+            j = j / (np.abs(j).max() + 1e-12) * 10 ** (peaks[tag] / 20)
+        else:
+            print(f"   (offline: no recorded jack peak for {tag}: its jack levels are relative to the file)")
+    return u, j
 
 
 def clicks_guarded(m16, guards, before_ms=3, after_ms=17):
@@ -970,13 +1082,31 @@ def take_stats(T):
         g = [T.at("usb", t) for t in notes]
         st["usb_clicks"] = clicks_guarded(raw[:, 0], g) + clicks_guarded(raw[:, 1], g)
         st["usb_clicks_raw"] = clicks(raw[:, 0]) + clicks(raw[:, 1])
+        st["usb_slip_ms"] = _safe(lambda: max_jump_ms(T, "usb", "jack" if T.jack is not None else None)) or 0.0
+        p_ = T.usb[:max(0, int(min([t for t, k, a, b in T.ev if k in ("on", "cc")] or [0]) * FS) - FS // 200), 0]
+        st["usb_pre_db"] = float(20 * np.log10(np.abs(p_).max() + 1e-12)) if len(p_) else -240.0
     if T.jack is not None:
         st["jack_peak_db"] = float(20 * np.log10(np.abs(T.jack).max() + 1e-12))
         st["jack_over"] = int((np.abs(T.jack) >= 0.999).sum())
         ref = T.usb[:, 0] if T.usb is not None else None
         gain = (np.sqrt(np.mean(ref ** 2)) / (np.sqrt(np.mean(T.jack ** 2)) + 1e-12)) if ref is not None else 1.0
         st["jack_clicks"] = clicks_guarded(T.jack * gain * 32768, [T.at("jack", t) for t in notes])
+        st["jack_slip_ms"] = _safe(lambda: max_jump_ms(T, "jack")) or 0.0
     return st
+
+
+SLIP_MS = 15.0                 # a latency step between two note-ons over this: the stream slipped (onsets jitter ~5 ms)
+
+
+def max_jump_ms(T, src, ref=None):
+    """the largest latency step between consecutive note-ons (ms; align()'s per-onset latency); with ref (the other
+    source, recorded at once) the step of the difference: a note sent late moves both alike"""
+    T.on(src)
+    ls = np.array(T._on[src][2])
+    if ref is not None:
+        T.on(ref)
+        ls = ls - np.array(T._on[ref][2])
+    return float(max((abs(b - a) * 1000 for a, b in zip(ls, ls[1:])), default=0.0))
 
 
 # ---------------------------------------------------------------- measures (FS 48 kHz; mono unless named)
@@ -1039,9 +1169,10 @@ def strike_feats(m, i, n):
     sp = bspec().get(n, {})
     att = cut(m, i, 0.005, 0.3)
     l1 = pk_db(att, sp.get("V1", f1(n)))
+    w = cut(m, i, 0, 0.5)
     return dict(lufs=lu(cut(m, i, 0, 1.0)), cen_a=cen(cut(m, i, 0, 0.3)),
                 v2=pk_db(att, sp["V2"]) - l1 if "V2" in sp else float("nan"),
-                v3=pk_db(att, sp["V3"]) - l1 if "V3" in sp else float("nan"), bands=third(cut(m, i, 0, 0.5)))
+                v3=pk_db(att, sp["V3"]) - l1 if "V3" in sp else float("nan"), bands=third(w))
 
 
 def partial_trace(x, f, n=4096, hop=480):
@@ -1166,17 +1297,6 @@ def env_lin(x, w=96, hop=48):
     return np.sqrt(np.convolve(x * x, np.ones(w) / w, "same"))[::hop]       # 1 ms frames
 
 
-def echo_gap_ms(x, exp_ms=None):
-    """the first echo after the direct sound (x starts at the onset): envelope peaks as hil_scan delay_time()"""
-    from scipy.signal import find_peaks
-    e = env_lin(x)
-    p0 = int(np.argmax(e[:50]))                                 # the direct sound's peak (ms)
-    dist = max(8, int(0.6 * exp_ms)) if exp_ms else 100
-    pk, _ = find_peaks(e, distance=dist, prominence=max(1e-9, 0.05 * e.max()))
-    pk = [p for p in pk if p > p0 + 8]
-    return float(pk[0] - p0) if pk else float("nan")
-
-
 def echo_levels(x, T_ms, kmax=10):
     """the echoes' levels (dB re the direct sound's peak) at k * T, k = 1 .. kmax"""
     e = env_lin(x)
@@ -1212,16 +1332,144 @@ def tail_t60(x):
     return float(-60.0 / np.polyfit(t, e[:n], 1)[0])
 
 
-def side_onset_ms(st, i):
-    """the reverb's arrival: the side signal (L - R; the dry VIBES is mono) re the onset, ms"""
-    s = (st[:, 0] - st[:, 1]) / 2
-    e = env_lin(s[i:i + int(0.5 * FS)])
-    k = np.flatnonzero(e > 0.1 * e.max())
-    return float(k[0]) if len(k) and e.max() > 1e-7 else float("nan")
-
-
 def corr_lr(st):
     return float(np.corrcoef(st[:, 0], st[:, 1])[0, 1])
+
+
+# ---- round 2: the measures that stand above the floor (the jack's hiss: -92 dBFS; USB's own rounding) and the ones
+# taken against a reference take of the same stimulus (the effect at 0): what the control adds, not the notes' own
+# decay, beating or attack (round 1's failures, re-analysed offline: tools/hil_scan.py --offline)
+def welch(x, n=4096):
+    """the mean power spectrum of hann windows (50 % overlap): per-bin power of one n-window"""
+    x = np.asarray(x, float)
+    w = np.hanning(n)
+    idx = range(0, max(1, len(x) - n + 1), n // 2)
+    if len(x) < n:
+        return None, np.fft.rfftfreq(n, 1 / FS)
+    return np.mean([np.abs(np.fft.rfft(x[i:i + n] * w)) ** 2 for i in idx], 0), np.fft.rfftfreq(n, 1 / FS)
+
+
+def motion_f(x, fl=None, margin=10.0):
+    """motion_db() over the bands that stand margin dB over the floor (fl: a pre-roll) 90 % of the time: the jack's
+    hiss bands move at random in every take alike and diluted the difference (PHASER DEPTH, round 1: +3.1 dB USB,
+    +1.8 jack)"""
+    F, fr, fps = stft(x)
+    Ff = stft(fl)[0].mean(0) if fl is not None and len(fl) > 2048 and np.any(fl) else None
+    rows, fls = [], []
+    for c in [250 * 2 ** (i / 3) for i in range(17)]:
+        s = (fr >= c * 2 ** (-1 / 6)) & (fr < c * 2 ** (1 / 6))
+        if s.any():
+            rows.append(10 * np.log10(F[:, s].sum(1) + 1e-30))
+            fls.append(10 * np.log10(Ff[s].sum() + 1e-30) if Ff is not None else -1e9)
+    B, FL = np.array(rows), np.array(fls)
+    t = np.arange(B.shape[1]) / fps
+    tn = (t - t.mean()) / (t.max() - t.min() + 1e-9)
+    A = np.column_stack([np.ones_like(t), tn, tn * tn])
+    R = B - (A @ np.linalg.lstsq(A, B.T, rcond=None)[0]).T
+    keep = (B.mean(1) > B.mean(1).max() - 40) & (np.percentile(B, 10, axis=1) > FL + margin)
+    return float(R[keep].std(1).mean()) if keep.any() else float("nan")
+
+
+def band_trace(x, lo, hi, n=2048, hop=240):
+    """a band's power per frame (5 ms hop)"""
+    fr = np.fft.rfftfreq(n, 1 / FS)
+    m = (fr >= lo) & (fr < hi)
+    w = np.hanning(n)
+    idx = np.arange(0, len(x) - n, hop)
+    return np.array([np.sum(np.abs(np.fft.rfft(x[i:i + n] * w))[m] ** 2) for i in idx]), FS / hop
+
+
+def rel_trace(t, r, q, a, b, lo, hi):
+    """a band's level (dB, 5 ms frames) of take t re the reference take r (the same stimulus, the effect at 0), from
+    each one's onset: what the control moves, not the chord's decay and beating; and its distance over t's floor"""
+    x, y = cut(t.m(q), t.on(q)[0], a, b), cut(r.m(q), r.on(q)[0], a, b)
+    n = min(len(x), len(y))
+    A, fps = band_trace(x[:n], lo, hi)
+    B, _ = band_trace(y[:n], lo, hi)
+    fl = t.pre(q)
+    F = band_trace(fl, lo, hi)[0].mean() if len(fl) > 2400 and np.any(fl) else 0.0
+    return 10 * np.log10((A + 1e-30) / (B + 1e-30)), 10 * np.log10(A / (F + 1e-30) + 1e-30), fps
+
+
+def detrend2(d):
+    k = np.arange(len(d))
+    return d - np.polyval(np.polyfit(k, d, 2), k)
+
+
+def p2p(d, lo=2, hi=98):
+    return float(np.percentile(d, hi) - np.percentile(d, lo))
+
+
+def gain_trace(t, r, q, a, b, hop=240):
+    """the linear gain of take t re the reference r per 5 ms frame (a tremolo's own wave: in dB a sine AM of 40+ dB
+    is all cusps, round 1's TREM SHAPE read the sine as the squarer one)"""
+    x, y = cut(t.m(q), t.on(q)[0], a, b), cut(r.m(q), r.on(q)[0], a, b)
+    n = min(len(x), len(y)) // hop * hop
+    ex = np.sqrt(np.mean(x[:n].reshape(-1, hop) ** 2, 1))
+    ey = np.sqrt(np.mean(y[:n].reshape(-1, hop) ** 2, 1))
+    return ex / (ey + 1e-12)
+
+
+def edb1(x, w=96, hop=48):
+    """the power envelope in dB, 1 ms frames (a 2 ms window)"""
+    return 10 * np.log10(np.convolve(np.asarray(x, float) ** 2, np.ones(w) / w, "same")[::hop] + 1e-20)
+
+
+def echo_cep_ms(x, y, b_s, lo, hi):
+    """the delay as the peak of the cepstrum of x minus y's (y: the same stimulus without the echo): an echo is a
+    ripple of the log spectrum, the notes' own pitch cancels; (ms, the peak's z-score)"""
+    a, b = int(0.005 * FS), int(b_s * FS)
+    n = 1 << int(np.ceil(np.log2(2 * b)))
+
+    def cep(s):
+        s = s[a:b]
+        return np.fft.irfft(np.log(np.abs(np.fft.rfft(s * np.hanning(len(s)), n)) + 1e-9))
+    m = min(len(x), len(y))
+    c = cep(x[:m]) - cep(y[:m])
+    qs = np.arange(int(lo * FS / 1000), int(hi * FS / 1000))
+    k = qs[int(np.argmax(c[qs]))]
+    return k * 1000.0 / FS, float(c[k] / (np.std(c[qs]) + 1e-12))
+
+
+def echo_ms(x, y, exp_ms=None, flr_db=-120.0, t_min=30, rel=-20.0):
+    """the first echo's arrival (ms; x and y from their onsets; y: the delay at DEPTH 0, the same stimulus). Round 1
+    took the first envelope peak after the direct sound's: a vibraphone note keeps rising 60-90 ms (the tube), so
+    it read 33-42 ms for every TIME. Here: a short delay (exp_ms <= 60: a comb on the note itself) by the cepstrum
+    against y; else the first frame from t_min where x stands 6 dB over y (the direct sound with the delay's dry
+    share) and over its floor, for 3 ms, within rel dB of the direct's peak (a residue of an earlier take is not an
+    echo)"""
+    if exp_ms is not None and exp_ms <= 60:
+        k, z = echo_cep_ms(x, y, 0.3, 5, 60)
+        return k if z >= 6 else float("nan")
+    n = min(len(x), len(y))
+    ex, ey = edb1(x[:n]), edb1(y[:n])
+
+    def mis(k):
+        d = (ex - np.roll(ey, k))[10:80]
+        return np.sum(np.abs(d - np.median(d)))
+    ey = np.roll(ey, min(range(-6, 7), key=mis))           # the two takes' onsets to the ms
+    base = np.median((ex - ey)[5:15])
+    top = ex[:150].max()
+    exc = np.where(ex >= top + rel, ex - np.maximum(ey + base, flr_db + 6), -99.0)
+    ok = np.flatnonzero((exc[t_min:-3] >= 6) & (exc[t_min + 1:-2] >= 6) & (exc[t_min + 2:-1] >= 6))
+    if not len(ok):
+        return float("nan")
+    k = int(ok[0]) + t_min
+    while k > t_min and ex[k - 1] - max(ey[k - 1] + base, flr_db + 6) >= 1.0:   # back to where it began to stand out
+        k -= 1
+    return float(k)
+
+
+def floor_db(t, q):
+    """the source's floor (dBFS rms, the pre-roll); -120 when there is none (USB: exact zeros)"""
+    fl = t.pre(q)
+    return rdb(fl) if len(fl) > 2000 and np.any(fl) else -120.0
+
+
+def pk_rel(x, sp, keys, ref="V1"):
+    """bar partials (bspec names) re V1, dB"""
+    l1 = pk_db(x, sp[ref])
+    return [pk_db(x, sp[k]) - l1 for k in keys]
 
 
 def finite(v):
@@ -1243,9 +1491,10 @@ class VSuite:
     def usb(self, fn):
         return {"usb": _safe(fn, "usb")} if self.V.want_usb else {}
 
-    def check(self, check, setting, vals, ok, crit, level=False, fmt=None, info=False):
+    def check(self, check, setting, vals, ok, crit, level=False, fmt=None, info=False, floor=None):
         """one row: vals {src: value}; ok(value) -> bool on each source; level: a level change in dB / LU, compared
-        between USB and the jack"""
+        between USB and the jack; floor {src: True}: that source's value stands on its floor (the jack's hiss), so the
+        two are not compared (no MISMATCH) and its cell says so"""
         fmt = fmt or (lambda v: f"{v:+.2f}")
         res, txt = {}, {}
         for s in ("usb", "jack"):
@@ -1260,16 +1509,18 @@ class VSuite:
                 res[s] = bool(ok(v))
             except Exception:
                 res[s] = False
-            txt[s] = _safe(fmt, v) or str(v)
+            txt[s] = (_safe(fmt, v) or str(v)) + (" (floor)" if floor and floor.get(s) else "")
         mm = None
-        if level and all(s in vals and vals[s] is not None and finite(vals[s]) for s in ("usb", "jack")):
+        if level and all(s in vals and vals[s] is not None and finite(vals[s]) for s in ("usb", "jack")) and \
+                not (floor and any(floor.values())):
             mm = float(vals["jack"] - vals["usb"])
         if not res and not info:                       # (a USB-only measure with --source jack)
             self.rows.append(dict(check=check, setting=setting, usb=txt["usb"], jack=txt["jack"], crit=crit,
                                   mismatch=None, status="skip", ok=True))
             return
         passed = info or all(res.values())
-        bad_mm = mm is not None and abs(mm) > MISMATCH_DB
+        # (a large change: 5 % of it, the analogue path's own spread; round 1: REVERB 0 -> 127, +36.8 / +35.7)
+        bad_mm = mm is not None and abs(mm) > max(MISMATCH_DB, 0.05 * abs(vals["usb"]))
         status = ("info" if info else "ok" if passed else "FAIL") + (" MISMATCH" if bad_mm else "")
         self.rows.append(dict(check=check, setting=setting, usb=txt["usb"], jack=txt["jack"], crit=crit,
                               mismatch=mm, status=status, ok=bool(passed and not bad_mm)))
@@ -1304,13 +1555,18 @@ def v_report(suites, V, path, dry):
     L += ["", "## Every take: clipping and clicks", "",
           "Criteria: no USB sample at full scale (-32768 / +32767); 0 clicks (hil_scan clicks(), outside 3 ms before / "
           "17 ms after each note event, a switch is not guarded); the jack's interface input not overloaded "
-          "(|x| >= 0.999: its numbers are then not valid). 'raw' = clicks() with no guard (information).", "",
-          "| take | s | USB peak dBFS | full-scale | >= 32700 | clicks L+R (raw) | jack peak dBFS | jack over | jack clicks |",
-          "|---|---|---|---|---|---|---|---|---|"]
+          "(|x| >= 0.999: its numbers are then not valid). 'raw' = clicks() with no guard (information). 'slip': the "
+          f"largest latency step between two note-ons (USB: of its latency re the jack's, recorded at once; over "
+          f"{SLIP_MS:.0f} ms its stream slipped and that strike's USB numbers are not the sound). 'pre-roll': USB before the "
+          "first event (above -240: a residue of the last take, e.g. a delay line still sounding).", "",
+          "| take | s | USB peak dBFS | full-scale | >= 32700 | clicks L+R (raw) | jack peak dBFS | jack over | jack clicks |"
+          " slip USB re jack / jack ms | pre-roll USB dBFS |",
+          "|---|---|---|---|---|---|---|---|---|---|---|"]
     for t in tk:
         L.append(f"| {t['tag']} | {t['dur']:.1f} | {t.get('usb_peak_db', float('nan')):.1f} | {t.get('usb_fs', '-')} | "
                  f"{t.get('usb_near', '-')} | {t.get('usb_clicks', '-')} ({t.get('usb_clicks_raw', '-')}) | "
-                 f"{t.get('jack_peak_db', float('nan')):.1f} | {t.get('jack_over', '-')} | {t.get('jack_clicks', '-')} |")
+                 f"{t.get('jack_peak_db', float('nan')):.1f} | {t.get('jack_over', '-')} | {t.get('jack_clicks', '-')} | "
+                 f"{t.get('usb_slip_ms', 0):.0f} / {t.get('jack_slip_ms', 0):.0f} | {t.get('usb_pre_db', -240):.0f} |")
     L += ["", f"Takes with a problem: {', '.join(t['tag'] for t in bad) or 'none'}", ""]
     open(path, "w").write("\n".join(L))
     json.dump(dict(suites={S.name: S.rows for S in suites}, takes=tk), open(path[:-3] + ".json", "w"), indent=1,
@@ -1470,15 +1726,23 @@ def vibes_decay(V, S):
             ring = ms_db(cut(m[0], o[0], 0, 0.06))
             c = {x: excess_db(cut(m[x], o[x], 0, 0.06), cut(m[0], o[0], 0, 0.06)) - ring for x in (de, 127)}
             kn = {x: excess_db(cut(m[x], o[x], 1.5, 1.65), cut(m[0], o[0], 1.5, 1.65)) for x in (de, 127)}
-            return dict(c=c, k=kn, strike=rdb(cut(m[0], o[0], 0.05, 0.3)), note=rdb(cut(m[0], o[0], 1.4, 1.5)))
+            # the floor: two takes of hiss alone leave an excess 3.5 dB under the hiss (E[max(P - 1.26 Q, 0)] =
+            # P / 2.26 for exponential bins); a value within 6 dB of it is the jack's hiss, not NOISE (round 1:
+            # MISMATCH on F6's knock, +54.5 USB / +40.9 jack)
+            pr = [T[x].pre(q) for x in T]
+            fx = max((10 * np.log10(np.mean(np.asarray(p_, float) ** 2) + 1e-24) for p_ in pr if len(p_) > 2000 and np.any(p_)),
+                     default=-240.0) - 3.5 + 6.0
+            return dict(c=c, k=kn, strike=rdb(cut(m[0], o[0], 0.05, 0.3)), note=rdb(cut(m[0], o[0], 1.4, 1.5)),
+                        cfl=c[de] + ring < fx, kfl=kn[de] < fx)
         vals = S.per(nz)
         CC = P["NOISE"]["cc"]
         S.check(f"NOISE (CC {CC}) contact {de} -> 127", f"key {n}, 0..60 ms", {s: v and v["c"][127] - v["c"][de] for s, v in vals.items()},
-                lambda v: v >= 6, ">= +6 dB", level=True)
+                lambda v: v >= 6, ">= +6 dB", level=True, floor={s: bool(v and v["cfl"]) for s, v in vals.items()})
         S.check("NOISE 127 contact re the note", f"key {n}", {s: v and v["c"][127] for s, v in vals.items()},
                 lambda v: v > -35, "> -35 dB (a clear tick)", fmt=lambda v: f"{v:.1f} dB")
         S.check(f"NOISE knock {de} -> 127", f"key {n}, 0..150 ms after the key-up",
-                {s: v and v["k"][127] - v["k"][de] for s, v in vals.items()}, lambda v: v >= 6, ">= +6 dB", level=True)
+                {s: v and v["k"][127] - v["k"][de] for s, v in vals.items()}, lambda v: v >= 6, ">= +6 dB", level=True,
+                floor={s: bool(v and v["kfl"]) for s, v in vals.items()})
         S.check(f"NOISE {de} knock under the strike / the note", f"key {n}",
                 {s: v and (v["k"][de] - v["strike"], v["k"][de] - v["note"]) for s, v in vals.items()},
                 lambda v: v[0] < -18 and v[1] < 0, "< -18 dB re the strike, < the note it damps",
@@ -1662,6 +1926,22 @@ def vibes_fx(V, S):
     def B(t, q, a=0.05, b=1.05):
         return third(cut(t.m(q), t.on(q)[0], a, b))
 
+    def SD(t1, t2, q, a=0.05, b=1.05):
+        """the spectral distance of two takes (sdist), the same window from each onset"""
+        return sdist(B(t1, q, a, b), B(t2, q, a, b))
+
+    def band_re(t, r, q, lo, hi, a=0.05, b=1.05):
+        """a band's level (dB) of take t re the reference take r, the same window from each onset; and whether t's
+        band is within 6 dB of its floor (then it reads the floor: an upper bound)"""
+        x, y = cut(t.m(q), t.on(q)[0], a, b), cut(r.m(q), r.on(q)[0], a, b)
+        n = min(len(x), len(y))
+        X, fr = welch(x[:n])
+        Y, _ = welch(y[:n])
+        m_ = (fr >= lo) & (fr < hi)
+        F, _ = welch(t.pre(q)) if np.any(t.pre(q)) else (None, None)
+        lim = F is not None and X[m_].sum() < 4 * F[m_].sum()
+        return float(10 * np.log10(X[m_].sum() / (Y[m_].sum() + 1e-30) + 1e-30)), bool(lim)
+
     def nm(n):
         return f"{n} (CC {P[n]['cc']})"
     dry = {k: run(f"fx-dry-{k}", [], st) for k, st in (("ch", ST_CH), ("long", ST_LONG))}
@@ -1705,35 +1985,48 @@ def vibes_fx(V, S):
           ("LFO_SYNC", 0), ("LFO_RETRIG", 0)]
     names = ("OFF", "LP12", "LP18", "HP12", "HP18", "BP", "NOTCH")
     T = {x: run(f"filter-type-{names[x]}", with_(fb, ("FL_TYPE", x)), ST_CH) for x in range(7)}
-    S.check(f"FILTER TYPE {nm('FL_TYPE')} OFF passes", "FREQ 64", S.per(lambda q: sdist(B(T[0], q), B(dry['ch'], q))),
+    S.check(f"FILTER TYPE {nm('FL_TYPE')} OFF passes", "FREQ 64", S.per(lambda q: SD(T[0], dry['ch'], q)),
             lambda v: v <= 0.5, "<= 0.5 dB re no filter", fmt=lambda v: f"{v:.2f} dB")
     for x in range(1, 7):
         lim = 2.0 if names[x] == "NOTCH" else 3.0
         S.check(f"FILTER TYPE {names[x]}", "FREQ 64, RESO 0, vs no filter",
-                S.per(lambda q: sdist(B(T[x], q), B(dry['ch'], q))), lambda v: v >= lim, f">= {lim:.0f} dB",
+                S.per(lambda q: SD(T[x], dry['ch'], q)), lambda v: v >= lim, f">= {lim:.0f} dB",
                 fmt=lambda v: f"{v:.1f} dB")
     for a, b in ((1, 2), (3, 4)):
-        S.check(f"FILTER {names[a]} vs {names[b]}", "the slope", S.per(lambda q: sdist(B(T[a], q), B(T[b], q))),
+        S.check(f"FILTER {names[a]} vs {names[b]}", "the slope", S.per(lambda q: SD(T[a], T[b], q)),
                 lambda v: v >= 1, ">= 1 dB", fmt=lambda v: f"{v:.1f} dB")
     T = {x: run(f"filter-freq-{x}", with_(fb, ("FL_FREQ", x)), ST_CH) for x in (0, 64, 127)}
-    S.check(f"FILTER FREQ {nm('FL_FREQ')} 0 vs 127", "LP12", S.per(lambda q: sdist(B(T[0], q), B(T[127], q))),
+    S.check(f"FILTER FREQ {nm('FL_FREQ')} 0 vs 127", "LP12", S.per(lambda q: SD(T[0], T[127], q)),
             lambda v: v >= 3, ">= 3 dB", fmt=lambda v: f"{v:.1f} dB")
-    S.check("FILTER FREQ 0 / 64 / 127: centroid", "LP12", S.per(lambda q: [cen(cut(T[x].m(q), T[x].on(q)[0], 0.05, 1.05)) for x in (0, 64, 127)]),
-            lambda v: v[0] < v[1] < v[2], "rising", fmt=lambda v: " / ".join(f"{c:.0f}" for c in v) + " Hz")
+    # round 1 took the centroid: with the low-pass shut (FREQ 0) the take is 28 dB down and its flat floor (USB's
+    # rounding, the jack's hiss) made it the brightest (2583 / 343 / 425 Hz). The band over the cutoff instead, re
+    # the chord without the filter (tests/py/test_every_control.py FILTER-FREQ: 2 kHz -60 dB from 127 to 10)
+    fq = S.per(lambda q: [band_re(T[x], dry["ch"], q, 1000, 4000) for x in (0, 64, 127)])
+    S.check("FILTER FREQ 0 / 64 / 127: 1-4 kHz re no filter", "LP12", {s_: v and [c for c, _ in v] for s_, v in fq.items()},
+            lambda v: v[0] <= v[1] - 3 and v[1] <= v[2] - 3, "rising, >= 3 dB a step (0: under the floor reads the floor)",
+            fmt=lambda v: " / ".join(f"{c:+.1f}" for c in v) + " dB", floor={s_: bool(v and v[0][1]) for s_, v in fq.items()})
     T = {x: run(f"filter-reso-{x}", with_(fb, ("FL_RESO", x)), ST_CH) for x in (0, 64, 127)}
-    S.check(f"FILTER RESO {nm('FL_RESO')} 0 vs 127", "LP12, FREQ 64", S.per(lambda q: sdist(B(T[0], q), B(T[127], q))),
+    S.check(f"FILTER RESO {nm('FL_RESO')} 0 vs 127", "LP12, FREQ 64", S.per(lambda q: SD(T[0], T[127], q)),
             lambda v: v >= 2, ">= 2 dB (the peak at the cutoff)", fmt=lambda v: f"{v:.1f} dB")
-    S.check("FILTER RESO 0 vs 64", "", S.per(lambda q: sdist(B(T[0], q), B(T[64], q))), lambda v: True, "information",
+    S.check("FILTER RESO 0 vs 64", "", S.per(lambda q: SD(T[0], T[64], q)), lambda v: True, "information",
             fmt=lambda v: f"{v:.1f} dB", info=True)
 
     def mot(t, q, a=0.2, b=5.3):
-        return motion_db(cut(t.m(q), t.on(q)[0], a, b))
+        return motion_f(cut(t.m(q), t.on(q)[0], a, b), t.pre(q))
     T = {x: run(f"filter-lfo-{x}", with_(fb, ("FL_LFO", x)), ST_LONG) for x in (0, 64, 127)}
     S.check(f"FILTER LFO depth {nm('FL_LFO')} 0 -> 127", "LP12 FREQ 64, LFO SINE 1.4 Hz",
             S.per(lambda q: mot(T[127], q) - mot(T[0], q)), lambda v: v >= 3, "spectral motion >= +3 dB", fmt=lambda v: f"{v:+.1f} dB")
     S.check("FILTER LFO 0 -> 64", "", S.per(lambda q: mot(T[64], q) - mot(T[0], q)), lambda v: v >= 1, ">= +1 dB",
             fmt=lambda v: f"{v:+.1f} dB")
+    lref = T[0]                                       # LP12 FREQ 64, the LFO at 0: the sweeps' reference
     lb = with_(fb, ("FL_LFO", 127))
+
+    def sweep(t, q):
+        """the filter's sweep: the 250-2000 Hz band (dB) re the LFO-0 take. Round 1 followed the centroid, which
+        saturates as the cutoff passes the chord's partials (a SINE sweep read H3/H1 0.95) and on the jack fell into
+        the hiss whenever the filter closed (SYNC 1/4 0.53 Hz, RATE 0 0.63 Hz)"""
+        d, _, fps_ = rel_trace(t, lref, q, 0.2, 5.3, 250, 2000)
+        return detrend2(d), fps_
 
     def ctr(t, q, a=0.2, b=5.3):
         return cen_trace(cut(t.m(q), t.on(q)[0], a, b))[0]
@@ -1741,23 +2034,32 @@ def vibes_fx(V, S):
     T = {x: run(f"filter-shape-{x}", with_(lb, ("LFO_SHAPE", x)), ST_LONG) for x in (0, 4, 5)}
 
     def shp(t, q):
-        f = pfit(ctr(t, q), fps, rate_of(ctr(t, q), fps, e))
-        return f["amps"][2] / (f["amps"][0] + 1e-12), f["r2"]
-    S.check(f"LFO SHAPE {nm('LFO_SHAPE')} SINE vs SQR", "the filter's sweep: H3/H1",
-            S.per(lambda q: (shp(T[0], q)[0], shp(T[4], q)[0])), lambda v: v[1] >= max(0.2, 2 * v[0]),
-            "SQR >= 0.2 and >= 2x SINE", fmt=lambda v: f"{v[0]:.2f} -> {v[1]:.2f}")
-    S.check("LFO SHAPE SINE vs S&H", "the sweep's share at the LFO's fundamental (r2)",
-            S.per(lambda q: (shp(T[0], q)[1], shp(T[5], q)[1])), lambda v: v[1] <= 0.5 * v[0], "S&H <= half SINE's",
-            fmt=lambda v: f"{v[0]:.2f} -> {v[1]:.2f}")
+        """the sweep's steepest slope re a sine of its p-p and rate (SINE ~6 with the band's bends, SQR its steps:
+        20+), and the spread of its cycle means at the card's rate (S&H holds a new level every cycle)"""
+        d, f_ = sweep(t, q)
+        sm = np.convolve(d, np.ones(5) / 5, "same")
+        slope = float(np.percentile(np.abs(np.diff(sm)) * f_, 99) / (p2p(d) * e + 1e-9))
+        tt = np.arange(len(d)) / f_
+        cyc = [d[(tt >= a0) & (tt < a0 + 1 / e)].mean() for a0 in np.arange(0, tt[-1] - 1 / e, 1 / e)]
+        return slope, float(np.std(cyc))
+    S.check(f"LFO SHAPE {nm('LFO_SHAPE')} SINE vs SQR", "the sweep (250-2000 Hz re LFO 0): steepest slope re a sine's",
+            S.per(lambda q: (shp(T[0], q)[0], shp(T[4], q)[0])), lambda v: v[1] >= 2 * v[0],
+            "SQR >= 2x SINE (its steps)", fmt=lambda v: f"{v[0]:.1f} -> {v[1]:.1f}")
+    S.check("LFO SHAPE SINE vs S&H", "the sweep's cycle means at the card's rate: spread (dB)",
+            S.per(lambda q: (shp(T[0], q)[1], shp(T[5], q)[1])), lambda v: v[1] >= 2 * v[0],
+            "S&H >= 2x SINE's (a square's cycle means move with the cycles' cut: not compared)",
+            fmt=lambda v: f"{v[0]:.2f} -> {v[1]:.2f} dB")
     for x in (0, P["LFO_RATE"]["de"], 127):
         t = run(f"filter-rate-{x}", with_(lb, ("LFO_RATE", x)), ST_LONG)
         ex = lfo_hz(x)
         tol = 0.15 if x == 0 else 0.10
-        S.check(f"LFO RATE {nm('LFO_RATE')} {x}", f"expected {ex:.2f} Hz", S.per(lambda q: rate_of(ctr(t, q), fps, ex)),
-                lambda v: abs(v / ex - 1) <= tol, f"within {tol:.0%}", fmt=lambda v: f"{v:.2f} Hz")
+        S.check(f"LFO RATE {nm('LFO_RATE')} {x}", f"expected {ex:.2f} Hz (the sweep, 250-2000 Hz re LFO 0)",
+                S.per(lambda q: (rate_of(sweep(t, q)[0], fps, ex), p2p(sweep(t, q)[0]))),
+                lambda v: abs(v[0] / ex - 1) <= tol and v[1] >= 6, f"within {tol:.0%}, the sweep >= 6 dB p-p",
+                fmt=lambda v: f"{v[0]:.2f} Hz ({v[1]:.0f} dB p-p)")
     T = {k: run(f"filter-sync-{k.replace('/', '')}", with_(lb, ("LFO_SYNC", sync_idx(k))), ST_LONG) for k in ("1/4", "1/8")}
-    S.check(f"LFO SYNC {nm('LFO_SYNC')} 1/8 vs 1/4", "", S.per(lambda q: (rate_of(ctr(T['1/8'], q), fps, 2, 0.2, 5),
-                                                                       rate_of(ctr(T['1/4'], q), fps, 2, 0.2, 5))),
+    S.check(f"LFO SYNC {nm('LFO_SYNC')} 1/8 vs 1/4", "the sweep, 250-2000 Hz re LFO 0",
+            S.per(lambda q: (rate_of(sweep(T['1/8'], q)[0], fps, 2, 0.2, 5), rate_of(sweep(T['1/4'], q)[0], fps, 2, 0.2, 5))),
             lambda v: abs(v[0] / v[1] / 2 - 1) <= 0.05, "ratio 2 +-5 %",
             fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz ({60 * v[1]:.0f} BPM)")
     rt = [0.1, 1.47, 2.93, 4.31]
@@ -1787,10 +2089,17 @@ def vibes_fx(V, S):
     S.check("DRIVE 0 -> 127 loudness", "", S.per(lambda q: L(T[127], q, 0, 1.4) - L(T[0], q, 0, 1.4)), lambda v: abs(v) <= 3,
             "within +-3 LU (fx_all: +-2 on the Rhodes)", level=True)
     T = {x: run(f"drive-tone-{x}", with_(db_, ("DRIVE", 64), ("DRV_TONE", x)), ST_NOTE) for x in (0, 64, 127)}
-    S.check(f"DRIVE TONE {nm('DRV_TONE')} 0 vs 127", "DRIVE 64",
-            S.per(lambda q: (sdist(B(T[0], q), B(T[127], q)), cen(cut(T[127].m(q), T[127].on(q)[0], 0.1, 1.1)) /
-                             cen(cut(T[0].m(q), T[0].on(q)[0], 0.1, 1.1)))),
-            lambda v: v[0] >= 3 or v[1] >= 1.2, ">= 3 dB or centroid x1.2", fmt=lambda v: f"{v[0]:.1f} dB / x{v[1]:.2f}")
+    # round 1: a spectral distance / centroid of the whole note (3.1 dB / x1.29 USB, 2.5 / x1.09 jack: the bands
+    # over the hiss, the centroid on the fundamental). TONE is a shelf at 1.8 kHz (fx.c DR_TA: highs x0 .. x2): the
+    # A4 bar's V2 (1.77 kHz) and V3 (4.41 kHz) re V1 move by it
+    sp69 = bspec()[69]
+
+    def dtone(t, q):
+        return pk_rel(cut(t.m(q), t.on(q)[0], 0.005, 0.3), sp69, ("V2", "V3"))
+    S.check(f"DRIVE TONE {nm('DRV_TONE')} 0 -> 127", "DRIVE 64: A4's V2 / V3 re V1 (5..300 ms)",
+            S.per(lambda q: [b_ - a_ for a_, b_ in zip(dtone(T[0], q), dtone(T[127], q))]),
+            lambda v: v[0] >= 2 and v[1] >= 6, "V2 >= +2 dB and V3 >= +6 dB (the shelf: -3 / -9 dB at 0, +6 at 127)",
+            fmt=lambda v: f"{v[0]:+.1f} / {v[1]:+.1f} dB")
     T = {x: run(f"drive-mix-{x}", with_(db_, ("DRIVE", 64), ("DRV_MIX", x)), ST_NOTE) for x in (0, 64, 127)}
     S.check(f"DRIVE MIX {nm('DRV_MIX')} 0 -> 127", "DRIVE 64", S.per(lambda q: hd(T[127], q) - hd(T[0], q)),
             lambda v: v >= 6, ">= +6 dB distortion", fmt=lambda v: f"{v:+.1f} dB")
@@ -1806,6 +2115,7 @@ def vibes_fx(V, S):
         m = sig if sig is not None else t.m(q)
         return pfit(env_db(cut(m, t.on(q)[0], 0.3, 1.9)), fps, rate)
     T = {x: run(f"trem-depth-{x}", with_(tb, ("TW_DEPTH", x)), ST_CH) for x in (0, 64, 127)}
+    tref = T[0]                                       # the tremolo at DEPTH 0: SHAPE's reference
     S.check(f"TREM DEPTH {nm('TW_DEPTH')} 127", f"AM, {er:.1f} Hz", S.per(lambda q: amq(T[127], q, er)["pp"]),
             lambda v: v >= 6, ">= 6 dB", fmt=lambda v: f"{v:.1f} dB")
     S.check("TREM DEPTH 64", "", S.per(lambda q: amq(T[64], q, er)["pp"]), lambda v: v >= 2, ">= 2 dB", fmt=lambda v: f"{v:.1f} dB")
@@ -1842,21 +2152,29 @@ def vibes_fx(V, S):
     T = {x: run(f"trem-shape-{x}", with_(tb127, ("TW_SHAPE", x)), ST_CH) for x in (0, 127)}
 
     def hh(t, q):
-        a = amq(t, q, er)["amps"]
+        """the AM's own wave, linear (the gain re DEPTH 0): a sine has no H2 / H3, a square H3 = H1 / 3. Round 1
+        took the dB envelope, where a 40 dB sine AM is all cusps (0.80 -> 0.45: the sine read squarer)"""
+        a = pfit(gain_trace(t, tref, q, 0.3, 1.9), fps, er)["amps"]
         return (a[1] + a[2]) / (a[0] + 1e-12)
-    S.check(f"TREM SHAPE {nm('TW_SHAPE')} 0 vs 127", "AM, DEPTH 127: (H2+H3)/H1", S.per(lambda q: (hh(T[0], q), hh(T[127], q))),
+    S.check(f"TREM SHAPE {nm('TW_SHAPE')} 0 vs 127", "AM, DEPTH 127: (H2+H3)/H1 of the gain re DEPTH 0",
+            S.per(lambda q: (hh(T[0], q), hh(T[127], q))),
             lambda v: v[1] >= max(0.15, 1.5 * v[0]), ">= 0.15 and >= 1.5x", fmt=lambda v: f"{v[0]:.2f} -> {v[1]:.2f}")
     T = {x: run(f"wah-{x}", [("TW_SW", 2), ("TW_DEPTH", x)], ST_CH) for x in (0, 64, 127)}
     S.check(f"WAH (TREM/WAH {nm('TW_SW')} = WAH) DEPTH 127", "vs no effect", S.per(lambda q: sdist(B(T[127], q), B(dry['ch'], q))),
             lambda v: v >= 3, ">= 3 dB", fmt=lambda v: f"{v:.1f} dB")
-    S.check("WAH DEPTH 127 vs 0", "", S.per(lambda q: sdist(B(T[127], q), B(dry['ch'], q)) - sdist(B(T[0], q), B(dry['ch'], q))),
-            lambda v: v >= 1, ">= +1 dB more", fmt=lambda v: f"{v:+.1f} dB")
+    # a touch wah: DEPTH is how far the strike opens it (host TREM-WAH). Round 1 compared the spectral distances to
+    # dry, which the wah's static filter dominates at any DEPTH (14.1 / 14.2 dB at 127 / 64)
+    wo = S.per(lambda q: [band_re(T[x], dry["ch"], q, 1000, 4000, 0.02, 0.3)[0] for x in (0, 64, 127)])
+    S.check("WAH DEPTH 0 / 64 / 127: the strike opens it", "1-4 kHz re no effect, 20..300 ms", wo,
+            lambda v: v[0] < v[1] < v[2] and v[2] - v[0] >= 6, "in order, 127 >= 6 dB over 0",
+            fmt=lambda v: " / ".join(f"{c:+.1f}" for c in v) + " dB")
     S.check("WAH DEPTH 64", "vs no effect", S.per(lambda q: sdist(B(T[64], q), B(dry['ch'], q))), lambda v: v >= 1.5,
             ">= 1.5 dB", fmt=lambda v: f"{v:.1f} dB")
 
     # PHASER
     pb = [("PH_SW", 1), ("PH_DEPTH", 80), ("PH_SPEED", P["PH_SPEED"]["de"]), ("PH_FDBK", P["PH_FDBK"]["de"]), ("PH_SYNC", 0)]
     T = {x: run(f"phaser-depth-{x}", with_(pb, ("PH_DEPTH", x)), ST_LONG) for x in (0, 80, 127)}
+    p80 = T[80]                                       # = phaser-fdbk at FDBK's default: the take-to-take spread
     S.check(f"PHASER DEPTH {nm('PH_DEPTH')} 0 -> 127", "spectral motion", S.per(lambda q: mot(T[127], q) - mot(T[0], q)),
             lambda v: v >= 2, ">= +2 dB", fmt=lambda v: f"{v:+.1f} dB")
     S.check("PHASER DEPTH 0 -> 80 (the panel's start)", "", S.per(lambda q: mot(T[80], q) - mot(T[0], q)), lambda v: v >= 1,
@@ -1864,31 +2182,42 @@ def vibes_fx(V, S):
     S.check("PHASER DEPTH 80 loudness re no effect", "information (vibes_jump judges it)",
             S.per(lambda q: L(T[80], q, 0, 5.0) - L(dry["long"], q, 0, 5.0)), lambda v: True, "information", level=True, info=True)
     pb127 = with_(pb, ("PH_DEPTH", 127))
+    pref = T[0]                                       # DEPTH 0: the notches stand still
+
+    def phrate(t, q, ex, lo=0.4, hi=2.6):
+        """the LFO's rate from the 300-3000 Hz band re DEPTH 0: the notches cross the band up and down, twice a
+        cycle (round 2's new phaser: the centroid read 0.50 Hz for SPEED 0's 0.25 and 2.06 for SYNC 1/4's 0.69)"""
+        d, _, f_ = rel_trace(t, pref, q, 0.2, 5.3, 300, 3000)
+        return rate_of(detrend2(d), f_, 2 * ex, lo, hi) / 2
     sp = {}
     for x in (0, P["PH_SPEED"]["de"], 127):
         t = run(f"phaser-speed-{x}", with_(pb127, ("PH_SPEED", x)), ST_LONG)
         ex = lfo_hz(x, half=True)
-        sp[x] = S.per(lambda q: rate_of(ctr(t, q), fps, ex))
+        sp[x] = S.per(lambda q: phrate(t, q, ex))
         if x:
-            S.check(f"PHASER SPEED {nm('PH_SPEED')} {x}", f"expected {ex:.2f} Hz (centroid sweep)", sp[x],
-                    lambda v: abs(v / ex - 1) <= 0.10, "within 10 %", fmt=lambda v: f"{v:.2f} Hz")
+            S.check(f"PHASER SPEED {nm('PH_SPEED')} {x}", f"expected {ex:.2f} Hz (300-3000 Hz re DEPTH 0, at 2x)",
+                    sp[x], lambda v: abs(v / ex - 1) <= 0.10, "within 10 %", fmt=lambda v: f"{v:.2f} Hz")
     d0 = P["PH_SPEED"]["de"]
     S.check(f"PHASER SPEED 0 slower than {d0}", f"expected {lfo_hz(0, True):.2f} Hz",
             {s: (sp[0][s], sp[d0][s]) if sp[0].get(s) is not None and sp[d0].get(s) is not None else None for s in sp[0]},
             lambda v: v[0] <= 0.7 * v[1], "<= 0.7x (a period longer than the take)", fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz")
     T = {x: run(f"phaser-fdbk-{x}", with_(pb, ("PH_FDBK", x)), ST_LONG) for x in (0, P["PH_FDBK"]["de"], 127)}
     S.check(f"PHASER FDBK {nm('PH_FDBK')} 0 vs 127", "DEPTH 80",
-            S.per(lambda q: (mot(T[127], q) - mot(T[0], q), sdist(B(T[127], q), B(T[0], q)))),
-            lambda v: v[0] >= 1.5 or v[1] >= 2, "motion >= +1.5 dB or >= 2 dB apart", fmt=lambda v: f"{v[0]:+.1f} / {v[1]:.1f} dB")
+            S.per(lambda q: (mot(T[127], q) - mot(T[0], q), SD(T[127], T[0], q, 0.2, 5.3),
+                              SD(p80, T[P["PH_FDBK"]["de"]], q, 0.2, 5.3))),
+            lambda v: v[0] >= 1.5 or v[1] >= max(2, 2 * v[2]),
+            "motion >= +1.5 dB or >= 2 dB apart (and 2x the spread of two takes of one setting)",
+            fmt=lambda v: f"{v[0]:+.1f} / {v[1]:.1f} dB (spread {v[2]:.1f})")
     T = {k: run(f"phaser-sync-{k.replace('/', '')}", with_(pb127, ("PH_SYNC", sync_idx(k))), ST_LONG) for k in ("1/4", "1/8")}
-    S.check(f"PHASER SYNC {nm('PH_SYNC')} 1/8 vs 1/4", "", S.per(lambda q: (rate_of(ctr(T['1/8'], q), fps, 2, 0.2, 5),
-                                                                         rate_of(ctr(T['1/4'], q), fps, 2, 0.2, 5))),
+    S.check(f"PHASER SYNC {nm('PH_SYNC')} 1/8 vs 1/4", "300-3000 Hz re DEPTH 0",
+            S.per(lambda q: (phrate(T['1/8'], q, 2, 0.2, 5), phrate(T['1/4'], q, 2, 0.2, 5))),
             lambda v: abs(v[0] / v[1] / 2 - 1) <= 0.05, "ratio 2 +-5 %",
             fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz ({60 * v[1]:.0f} BPM)")
 
     # CHORUS
     chb = [("CP_SW", 1), ("CP_DEPTH", 64), ("CP_SPEED", P["CP_SPEED"]["de"]), ("CP_FDBK", P["CP_FDBK"]["de"]), ("CP_SYNC", 0)]
     T = {x: run(f"chorus-depth-{x}", with_(chb, ("CP_DEPTH", x)), ST_LONG) for x in (0, 64, 127)}
+    c64 = T[64]                                       # = chorus-fdbk at FDBK's default: the take-to-take spread
     S.check(f"CHORUS DEPTH {nm('CP_DEPTH')} 0 -> 127", "spectral motion", S.per(lambda q: mot(T[127], q) - mot(T[0], q)),
             lambda v: v >= 1, ">= +1 dB", fmt=lambda v: f"{v:+.1f} dB")
     S.check("CHORUS DEPTH 0 -> 127: width", "USB stereo L/R correlation",
@@ -1909,8 +2238,11 @@ def vibes_fx(V, S):
             lambda v: v[0] <= 0.7 * v[1], "<= 0.7x", fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz")
     T = {x: run(f"chorus-fdbk-{x}", with_(chb, ("CP_FDBK", x)), ST_LONG) for x in (0, P["CP_FDBK"]["de"], 127)}
     S.check(f"CHORUS FDBK {nm('CP_FDBK')} 0 vs 127", "DEPTH 64",
-            S.per(lambda q: (mot(T[127], q) - mot(T[0], q), sdist(B(T[127], q), B(T[0], q)))),
-            lambda v: v[0] >= 1 or v[1] >= 2, "motion >= +1 dB or >= 2 dB apart", fmt=lambda v: f"{v[0]:+.1f} / {v[1]:.1f} dB")
+            S.per(lambda q: (mot(T[127], q) - mot(T[0], q), SD(T[127], T[0], q, 0.2, 5.3),
+                              SD(c64, T[P["CP_FDBK"]["de"]], q, 0.2, 5.3))),
+            lambda v: v[0] >= 1 or v[1] >= max(2, 2 * v[2]),
+            "motion >= +1 dB or >= 2 dB apart (and 2x the spread of two takes of one setting)",
+            fmt=lambda v: f"{v[0]:+.1f} / {v[1]:.1f} dB (spread {v[2]:.1f})")
     T = {k: run(f"chorus-sync-{k.replace('/', '')}", with_(cb127, ("CP_SYNC", sync_idx(k))), ST_LONG) for k in ("1/4", "1/8")}
     S.check(f"CHORUS SYNC {nm('CP_SYNC')} 1/8 vs 1/4", "", S.per(lambda q: (rate_of(ctr(T['1/8'], q), fps, 2, 0.2, 5),
                                                                          rate_of(ctr(T['1/4'], q), fps, 2, 0.2, 5))),
@@ -1925,6 +2257,10 @@ def vibes_fx(V, S):
         return cut(t.m(q), t.on(q)[0], a, b)
     T0 = dly_ms(P["DL_TIME"]["de"])
     T = {x: run(f"delay-depth-{x}", with_(dlb, ("DL_DEPTH", x)), ST_STAC) for x in (0, 50, 127)}
+    dref = T[0]                                       # DEPTH 0: the direct sound alone, the echoes' reference
+
+    def gap(t, q, ex=None):
+        return echo_ms(xs(t, q), xs(dref, q), ex, floor_db(t, q))
     S.check(f"DELAY DEPTH {nm('DL_DEPTH')} 0 -> 50", f"the 1st echo ({T0:.0f} ms) re the direct",
             S.per(lambda q: (echo_levels(xs(T[0], q), T0, 1)[0], echo_levels(xs(T[50], q), T0, 1)[0])),
             lambda v: v[1] - v[0] >= 6, "50 stands >= 6 dB over 0 (0: the note's own residue)",
@@ -1936,17 +2272,23 @@ def vibes_fx(V, S):
         t = run(f"delay-time-{x}", with_(dl100, ("DL_TIME", x)), ST_STAC)
         ex = dly_ms(x)
         tol = max(8.0, 0.10 * ex) if x == 0 else max(5.0, 0.05 * ex)
-        S.check(f"DELAY TIME {nm('DL_TIME')} {x}", f"expected {ex:.0f} ms", S.per(lambda q: echo_gap_ms(xs(t, q), ex)),
-                lambda v: abs(v - ex) <= tol, f"within {tol:.0f} ms", fmt=lambda v: f"{v:.0f} ms")
+        S.check(f"DELAY TIME {nm('DL_TIME')} {x}", f"expected {ex:.0f} ms (the 1st echo re DEPTH 0)",
+                S.per(lambda q: gap(t, q, ex)), lambda v: abs(v - ex) <= tol, f"within {tol:.0f} ms", fmt=lambda v: f"{v:.0f} ms")
     T1 = dly_ms(64)
     T = {x: run(f"delay-fdbk-{x}", with_(dl100, ("DL_TIME", 64), ("DL_FDBK", x)), ST_STAC) for x in (0, P["DL_FDBK"]["de"], 127)}
     S.check(f"DELAY FDBK {nm('DL_FDBK')} 0 vs 127", f"TIME 64 ({T1:.0f} ms): echoes above -40 dB",
             S.per(lambda q: (n_echoes(echo_levels(xs(T[0], q), T1, 15)), n_echoes(echo_levels(xs(T[127], q), T1, 15)))),
             lambda v: v[1] >= v[0] + 3, "127: >= 3 more", fmt=lambda v: f"{v[0]} -> {v[1]}")
     T = {x: run(f"delay-tone-{x}", with_(dl100, ("DL_TIME", 64), ("DL_TONE", x)), ST_STAC) for x in (0, P["DL_TONE"]["de"], 127)}
-    S.check(f"DELAY TONE {nm('DL_TONE')} 0 vs 127", "the echoes 2..5: centroid",
-            S.per(lambda q: cen(xs(T[127], q, 1.5 * T1 / 1000, 5.5 * T1 / 1000)) / cen(xs(T[0], q, 1.5 * T1 / 1000, 5.5 * T1 / 1000))),
-            lambda v: v >= 1.2, "x1.2 brighter", fmt=lambda v: f"x{v:.2f}")
+    # round 1: the centroid of 1.5..5.5 echo times (x1.06 / x0.89), mostly the direct sound's tail and the floor.
+    # TONE darkens each pass (a one-pole in the loop): A4's V2 re V1 in the 2nd and 3rd echoes, re the direct's
+    def etone(t, q):
+        i, m_ = t.on(q)[0], t.m(q)
+        d0 = pk_rel(cut(m_, i, 0, 0.12), sp69, ("V2",))[0]
+        return [pk_rel(cut(m_, i, k * T1 / 1000, k * T1 / 1000 + 0.12), sp69, ("V2",))[0] - d0 for k in (2, 3)]
+    S.check(f"DELAY TONE {nm('DL_TONE')} 0 -> 127", "echoes 2 and 3: A4's V2 re V1, re the direct's",
+            S.per(lambda q: (etone(T[0], q), etone(T[127], q))), lambda v: np.mean(v[1]) - np.mean(v[0]) >= 6,
+            "127 >= 6 dB brighter", fmt=lambda v: f"{v[0][0]:.1f} / {v[0][1]:.1f} -> {v[1][0]:.1f} / {v[1][1]:.1f} dB")
     T = {x: run(f"delay-type-{x}", with_(dl100, ("DL_SW", x)), ST_STAC) for x in (1, 2)}
 
     def eb(t, q):
@@ -1957,7 +2299,7 @@ def vibes_fx(V, S):
             lambda v: v[0] >= 2 or abs(np.log(v[1])) >= np.log(1.15), ">= 2 dB or centroid x1.15 either way",
             fmt=lambda v: f"{v[0]:.1f} dB / x{v[1]:.2f}")
     T = {k: run(f"delay-sync-{k.replace('/', '')}", with_(dl100, ("DL_SYNC", sync_idx(k))), ST_STAC) for k in ("1/4", "1/8")}
-    S.check(f"DELAY SYNC {nm('DL_SYNC')} 1/4 vs 1/8", "", S.per(lambda q: (echo_gap_ms(xs(T['1/4'], q)), echo_gap_ms(xs(T['1/8'], q)))),
+    S.check(f"DELAY SYNC {nm('DL_SYNC')} 1/4 vs 1/8", "the 1st echo re DEPTH 0", S.per(lambda q: (gap(T['1/4'], q), gap(T['1/8'], q))),
             lambda v: abs(v[0] / v[1] / 2 - 1) <= 0.05, "ratio 2 +-5 %",
             fmt=lambda v: f"{v[0]:.0f} / {v[1]:.0f} ms ({60000 / v[0]:.0f} BPM)")
 
@@ -1968,7 +2310,8 @@ def vibes_fx(V, S):
         return max(rdb(xs(t, q, 0.45, 0.95)), -120) - rdb(xs(t, q, 0, 0.15))
     T = {x: run(f"reverb-{x}", with_(rb, ("RV_DEPTH", x)), ST_STAC) for x in (0, 64, 127)}
     S.check(f"REVERB {nm('RV_DEPTH')} 0 -> 127", "the tail 0.3..0.8 s after the key-up re the direct",
-            S.per(lambda q: tail(T[127], q) - tail(T[0], q)), lambda v: v >= 10, ">= +10 dB", level=True)
+            S.per(lambda q: tail(T[127], q) - tail(T[0], q)), lambda v: v >= 10, ">= +10 dB", level=True,
+            floor={q: rdb(xs(T[0], q, 0.45, 0.95)) < floor_db(T[0], q) + 6 for q in V.sources()})
     S.check("REVERB 0 / 64 / 127 in order", "", S.per(lambda q: [tail(T[x], q) for x in (0, 64, 127)]),
             lambda v: v[1] >= v[0] + 3 and v[1] <= v[2] + 0.5, "64: >= 3 dB over 0, not over 127", fmt=fmt_s)
     r100 = with_(rb, ("RV_DEPTH", 100))
@@ -1977,15 +2320,42 @@ def vibes_fx(V, S):
             S.per(lambda q: [tail_t60(xs(T[x], q, 0.35, 3.2)) for x in sorted(T)]),
             lambda v: v[0] < v[1] < v[2] and v[2] / v[0] >= 2, "in order, 127 / 0 >= 2x", fmt=lambda v: fmt_s(v) + " s")
     T = {x: run(f"reverb-tone-{x}", with_(r100, ("RV_TONE", x)), ST_STAC) for x in (0, P["RV_TONE"]["de"], 127)}
-    S.check(f"REVERB TONE {nm('RV_TONE')} 0 / {P['RV_TONE']['de']} / 127", "the tail's centroid",
-            S.per(lambda q: [cen(xs(T[x], q, 0.35, 1.15)) for x in sorted(T)]),
-            lambda v: v[0] < v[1] < v[2] and v[2] / v[0] >= 1.2, "rising, x1.2", fmt=lambda v: " / ".join(f"{c:.0f}" for c in v) + " Hz")
+    # round 1: the tail's centroid (3353 / 1097 / 1400 Hz): the dark tail at 0 is quiet and its flat floor won.
+    # TONE damps the hall's highs: A4's V2 (1.77 kHz) re V1 in the tail, re the direct sound's own
+    def rtilt(t, q):
+        d = pk_rel(xs(t, q, 0.0, 0.15), sp69, ("V2",))[0]
+        return pk_rel(xs(t, q, 0.35, 1.15), sp69, ("V2",))[0] - d
+
+    def rfloor(t, q):
+        """the tail's V2 within 12 dB of the floor's (the pre-roll, per sample; the floor while the FM-1 plays stands
+        over its idle hiss): it reads the floor, an upper bound (round 2, jack: TONE 0 -11.9 dB, USB -19.4)"""
+        fl, tl = t.pre(q), xs(t, q, 0.35, 1.15)
+        if len(fl) < 4800 or not np.any(fl):
+            return False
+        return pk_db(fl, sp69["V2"]) - 10 * np.log10(len(fl)) > pk_db(tl, sp69["V2"]) - 10 * np.log10(len(tl)) - 12
+    rf = {q: _safe(rfloor, T[0], q) for q in V.sources()}
+    S.check(f"REVERB TONE {nm('RV_TONE')} 0 / {P['RV_TONE']['de']} / 127", "the tail's V2 re V1, re the direct's",
+            S.per(lambda q: [rtilt(T[x], q) for x in sorted(T)] + [bool(rf.get(q)) or q == "jack"]),
+            lambda v: (v[0] < v[1] or v[3]) and v[1] < v[2] and v[2] - v[0] >= 6,
+            "rising, 127 >= 6 dB over 0 (the jack: 0's dark tail is near its floor, 0 vs 64 not judged)",
+            fmt=lambda v: " / ".join(f"{c:+.1f}" for c in v[:3]) + " dB", floor=rf)
     T = {x: run(f"reverb-pdly-{x}", with_(r100, ("RV_PREDLY", x)), ST_STAC) for x in (0, 64, 127)}
+    def side_lag(t, t0, q):
+        """the hall's side signal (L - R; the dry VIBES is mono) of t against PDLY 0's: the lag (ms) of best
+        correlation of their dB envelopes (floor at -60 dB), 0..120 ms. Round 1 took a 10 % threshold crossing, which
+        the hall's own build-up moved (23 ms for 40)"""
+        def env(tk):
+            i = tk.on(q)[0]
+            e_ = edb1(((tk.usb[:, 0] - tk.usb[:, 1]) / 2)[i:i + int(0.6 * FS)])
+            return np.maximum(e_, e_.max() - 60)
+        a_, b_ = env(t), env(t0)
+        c_ = [np.corrcoef(a_[k:k + 400], b_[:400])[0, 1] for k in range(0, 121)]
+        return float(np.argmax(c_))
     for x in (64, 127):
         ex = pdly_ms(x)
-        S.check(f"REVERB PRE-DELAY {nm('RV_PREDLY')} {x}", f"the side signal's arrival re PDLY 0, expected {ex:.0f} ms",
-                S.usb(lambda q: side_onset_ms(T[x].usb, T[x].on(q)[0]) - side_onset_ms(T[0].usb, T[0].on(q)[0])),
-                lambda v: abs(v - ex) <= 15, "within 15 ms (USB stereo)", fmt=lambda v: f"{v:.0f} ms")
+        S.check(f"REVERB PRE-DELAY {nm('RV_PREDLY')} {x}", f"the side signal re PDLY 0's (envelope lag), expected {ex:.0f} ms",
+                S.usb(lambda q: side_lag(T[x], T[0], q)), lambda v: abs(v - ex) <= 15, "within 15 ms (USB stereo)",
+                fmt=lambda v: f"{v:.0f} ms")
 
     # LEVEL (CC 110): the preset's trim, A4 v40
     T = {x: run(f"level-{x}", [("LEVEL", x)], ST_QUIET) for x in (0, 64, 127)}
@@ -2041,35 +2411,78 @@ def vibes_jump(V, S):
         rows.append((name, held, tog))
     V.reset(label="jump ref (end)")
     refs.append(V.take("jump-ref-b", *st))
+    lfo = {"TW_SW": lfo_hz(P["TW_RATE"]["de"]), "PH_SW": lfo_hz(P["PH_SPEED"]["de"], True),
+           "CP_SW": lfo_hz(P["CP_SPEED"]["de"], True), "MOT_ON": mot_hz(P["MOT_RATE"]["de"])}
     for name, held, tog in rows:
+        sw = [j for n_, b_, j in JUMPS if n_ == name][0]
+        rate = lfo.get(sw[0]) if not (sw[0] == "TW_SW" and sw[1] == 2) else None     # (the wah: no LFO)
+        # a modulating effect is judged over whole cycles of its LFO (round 1: 0.4 s of a 3.5 Hz motor or a
+        # 0.68 Hz phaser sweep read the LFO's phase, -6.2 / +7.1 LU); the held window: the most cycles in 0..3.2 s
+        hw = (int(3.2 * rate) / rate if rate and int(3.2 * rate) >= 1 else 1.8)
+        sww = None if not rate else next((k / rate for k in range(1, 9) if 0.38 <= k / rate <= 0.6), None)
+        comp, wide = sw[0] == "CMP_SW", sw[0] in ("PH_SW", "CP_SW")
+        # the targets: the chorus' loudness is set 2.5 LU under dry when it is wide (L/R correlation < 0.8: fx_all,
+        # 0.8's width compensation; the host 2026-10-17: -2.2 LU at DEPTH 64, correlation 0.51); a compressor's
+        # level follows the playing (fx_all: 99, fx_toggle: 4 LU; host: -2.5 LU held, +2.3 / -2.8 switched)
+        cor = corr_lr(cut(held.usb, held.on("usb")[0], 0.2, 1.8)) if held.usb is not None else 1.0
+        tgt = -2.5 if wide and cor < 0.8 else 0.0
+        lim = 3.0 if comp else JUMP_LU
+        tlim = 4.0 if comp else JUMP_LU
+
         def static(q, stereo=False):
-            return lq(held, q, 0, 1.8, stereo) - np.mean([lq(r, q, 0, 1.8, stereo) for r in refs])
+            return lq(held, q, 0, hw, stereo) - np.mean([lq(r, q, 0, hw, stereo) for r in refs])
 
         def direct(q):
             return lq(held, q, 0, 0.25) - np.mean([lq(r, q, 0, 0.25) for r in refs])
-        S.check(f"{name}: on vs off", "held on, 0..1.8 s, USB stereo (as heard)", S.usb(lambda q: static(q, True)),
-                lambda d: abs(d) <= JUMP_LU, f"|step| <= {JUMP_LU} LU", fmt=lambda d: f"{d:+.2f} LU")
-        S.check(f"{name}: on vs off, USB L vs jack", "0..1.8 s", S.per(static), lambda d: abs(d) <= JUMP_LU,
-                f"|step| <= {JUMP_LU} LU", level=True)
+        win = f"0..{hw:.2f} s" + (f" ({int(round(hw * rate))} cycles of {rate:.2f} Hz)" if rate else "")
+        crit = f"|step{f' - ({tgt:+.1f})' if tgt else ''}| <= {lim} LU" + (" (a compressor)" if comp else
+                                                                             " (wide: 0.8's width target)" if tgt else "")
+        S.check(f"{name}: on vs off", f"held on, {win}, USB stereo (as heard)", S.usb(lambda q: static(q, True)),
+                lambda d: abs(d - tgt) <= lim, crit, fmt=lambda d: f"{d:+.2f} LU")
+        S.check(f"{name}: on vs off, USB L vs jack", win, S.per(static), lambda d: abs(d - tgt) <= lim, crit, level=True)
         S.check(f"{name}: the direct sound", "0..0.25 s (echoes / the hall not yet in)", S.per(direct), lambda d: True,
                 "information", level=True, info=True)
+        # the level re dry along the hold: an effect that changes the decay (round 1: the motor, +4.4 dB/s; the
+        # compressor rises as the chord falls under its threshold, information)
+        def slope(q):
+            w_ = 1 / rate if rate else 0.3
+            while w_ < 0.25:
+                w_ *= 2
+            r = refs[0]
+            ks = np.arange(0.2, 3.2 - w_, w_ / 2)
+            d = [lq(held, q, k, k + w_) - lq(r, q, k, k + w_) for k in ks]
+            return float(np.polyfit(ks, d, 1)[0])
+        timed = sw[0] in ("DL_SW", "RV_DEPTH")
+        S.check(f"{name}: level re dry along the hold", "0.2..3.2 s, the slope", S.per(slope),
+                lambda d: abs(d) <= 1.0, "|slope| <= 1 dB/s" + (" (information: a compressor / echoes / a hall)"
+                                                                if comp or timed else ""),
+                fmt=lambda d: f"{d:+.2f} dB/s", info=comp or timed)
 
         def steps(q):
             r = refs[0]
+            w_ = sww or 0.4
 
             def sl(t, a, b):
                 return lq(t, q, a - 0.1, b - 0.1)
-            up = (sl(tog, 1.25, 1.65) - sl(tog, 0.75, 1.15)) - (sl(r, 1.25, 1.65) - sl(r, 0.75, 1.15))
-            dn = (sl(tog, 2.45, 2.85) - sl(tog, 1.95, 2.35)) - (sl(r, 2.45, 2.85) - sl(r, 1.95, 2.35))
+            out = []
+            for s_ in (1.2, 2.4):
+                aa, bb = (s_ + 0.05, s_ + 0.05 + w_), (s_ - 0.05 - w_, s_ - 0.05)
+                out.append((sl(tog, *aa) - sl(tog, *bb)) - (sl(r, *aa) - sl(r, *bb)))
             m = tog.m(q)
             g = 32768 if q == "usb" else 32768 * np.sqrt(np.mean(tog.usb[:, 0] ** 2) / (np.mean(m ** 2) + 1e-20)) \
                 if tog.usb is not None else 32768 * 0.3 / (np.abs(m).max() + 1e-12)
             ck = sum(clicks(m[tog.at(q, s) - int(0.1 * FS):tog.at(q, s) + int(0.2 * FS)] * g) for s in (1.2, 2.4))
-            return up, dn, ck
+            return out[0], out[1], ck
         v = S.per(steps)
-        S.check(f"{name}: switched under a chord", "the step at on / at off (fx_toggle)",
-                {s: x and (x[0], x[1]) for s, x in v.items()}, lambda d: abs(d[0]) <= JUMP_LU and abs(d[1]) <= JUMP_LU,
-                f"|step| <= {JUMP_LU} LU", fmt=lambda d: f"{d[0]:+.2f} / {d[1]:+.2f} LU")
+        cyc = rate and not sww
+        S.check(f"{name}: switched under a chord", "the step at on / at off (fx_toggle)" +
+                (f", windows of {int(round((sww or 0) * rate))} cycles" if sww else
+                 f": its {1 / rate:.2f} s cycle does not fit the 0.4 s windows, they read its phase (information)" if cyc
+                 else ""),
+                {s: x and (x[0], x[1]) for s, x in v.items()},
+                lambda d: abs(d[0] - tgt) <= tlim and abs(d[1] + tgt) <= tlim,
+                (f"|step -+ ({tgt:+.1f})| <= {tlim} LU" if tgt else f"|step| <= {tlim} LU") + (" (fx_toggle: comp 4)" if comp else ""),
+                fmt=lambda d: f"{d[0]:+.2f} / {d[1]:+.2f} LU", info=bool(cyc))
         S.check(f"{name}: clicks at the switches", "", {s: x and x[2] for s, x in v.items()}, lambda c: c == 0, "0",
                 fmt=lambda c: str(c))
     S.check("reference drift", "the dry chord, start vs end", S.per(lambda q: lq(refs[1], q, 0, 1.8) - lq(refs[0], q, 0, 1.8)),
@@ -2092,7 +2505,7 @@ VORDER = ("vibes_jump", "vibes_voice", "vibes_decay", "vibes_motor", "vibes_vel"
 def vibes_main(names, a):
     global VDEBUG
     VDEBUG = a.dry_run
-    V = VRig(a.source, a.jack_dev, a.jack_ch, a.dry_run, a.wav)
+    V = VRig(a.source, a.jack_dev, a.jack_ch, a.dry_run, a.wav, a.offline)
     os.makedirs(OUT, exist_ok=True)
     suites, fails = [], 0
     for n in names:
@@ -2113,6 +2526,12 @@ def vibes_main(names, a):
         if bad_t:
             S.rows.append(dict(check="takes: full scale / clicks", setting="", usb=", ".join(bad_t), jack="", crit="none",
                                mismatch=None, status="FAIL", ok=False))
+        slip = [f"{t['tag']} ({t['usb_slip_ms']:.0f} ms)" for t in S.ttakes if t.get("usb_slip_ms", 0) > SLIP_MS]
+        if slip:
+            S.rows.append(dict(check="takes: the USB stream slipped (the jack did not)", setting="latency step between note-ons",
+                               usb=", ".join(slip), jack="", crit=f"<= {SLIP_MS:.0f} ms (the USB numbers of those strikes are "
+                               "not the sound: USB capture / the FM-1's USB audio, to look at)", mismatch=None,
+                               status="FAIL", ok=False))
         fails += bool(S.fails())
         for r in S.rows:
             if not r["ok"] or a.dry_run:
@@ -2122,7 +2541,7 @@ def vibes_main(names, a):
               f"{S.ntakes} takes, {S.secs:.0f} s{' (estimated)' if a.dry_run else ''}", flush=True)
         suites.append(S)
     V.finish()
-    path = os.path.join(OUT, "vibes-dryrun.md" if a.dry_run else "vibes-report.md")
+    path = os.path.join(OUT, "vibes-dryrun.md" if a.dry_run else "vibes-offline.md" if a.offline else "vibes-report.md")
     v_report(suites, V, path, a.dry_run)
     if a.dry_run:
         print(f"estimated device time: {V.plan_s / 60:.1f} min ({len(V.takes)} takes); "
@@ -2163,11 +2582,16 @@ def main():
     ap.add_argument("--jack-ch", type=int, default=5, help="VIBES suites: its input (1-based)")
     ap.add_argument("--dry-run", action="store_true", help="VIBES suites: print the planned events, open no MIDI / audio")
     ap.add_argument("--wav", action="store_true", help="VIBES suites: save every take to build/hil/vibes/")
+    ap.add_argument("--offline", nargs="?", const=os.path.join(OUT, "vibes"), metavar="DIR",
+                    help="VIBES suites: re-analyse the takes saved by --wav (default build/hil/vibes/), no MIDI / audio;"
+                         " report build/hil/vibes-offline.md (+ .json)")
     a = ap.parse_args()
     if a.list:
         print(" ".join(TESTS))
         print("VIBES (--vibes or --only):", " ".join(VORDER))
         return 0
+    if a.offline and not a.only:
+        a.vibes = True
     names = a.only.split(",") if a.only else ([] if a.vibes else list(TESTS))
     if a.vibes:
         names += [n for n in VORDER if n not in names]
@@ -2177,9 +2601,11 @@ def main():
     classic, vib = [n for n in names if n in TESTS], [n for n in names if n in VTESTS]
     os.makedirs(OUT, exist_ok=True)
     fails = 0
-    if a.dry_run:
+    if a.dry_run or a.offline:
+        if a.offline:
+            a.dry_run = False
         if classic:
-            print(f"--dry-run covers the VIBES suites only: not running {', '.join(classic)}")
+            print(f"--dry-run / --offline cover the VIBES suites only: not running {', '.join(classic)}")
         return 1 if vibes_main(vib, a) else 0
     if classic:
         fails += run_classic(classic)
