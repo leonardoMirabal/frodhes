@@ -77,6 +77,11 @@ def measure_key(n, a, spec, spec_design=None):
         f = float(m["f"])
         if f <= 1 or f >= bm.FS / 2 * 0.95:
             continue
+        if i > 1 and (not m.get("b") or (m.get("name") in ("T1", "T2") and not getattr(a, "edge", False))):
+            # a mode this strike does not excite is not judged: pruned (b = 0, never lit), or the torsion T1 / T2,
+            # which bars.c lights only off the centreline (TONE > 64; here the default 64): their bands then read a
+            # neighbour (T2 at 10..12.5 f0 shares V3's band on the low keys: V3's T60, its cents)
+            continue
         if m.get("name") == "TUBE":
             # The tube is not a line of its own: V1 and the tube are one coupled pair whose tube-like normal mode lies
             # within ~5 c of V1 and dies in its T60 (0.02..0.5 s, before the 0.3 s measuring window opens), so a

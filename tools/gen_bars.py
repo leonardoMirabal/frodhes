@@ -222,10 +222,12 @@ def make_pair(vb, n, zr, target):
     return bt, cl, weak
 
 
-def pair_peak_ms(vb, bt):
-    """The model's f0-envelope peak, measured exactly as the recordings were (bartube.f0_peak_ms), and wt (T5b)."""
+def pair_peak_ms(vb, bt, dur=0.8):
+    """The model's f0-envelope peak, measured exactly as the recordings were (bartube.f0_peak_ms), and wt (T5b).
+    dur: the render (s); 0.8 s holds every reference note's peak (<= 145 ms), the design record of the low keys
+    outside F3..F6 (A0's tube builds up for ~0.9 s) needs longer: there 0.8 s read the window's end."""
     wt = btm.wt_for_ratio(bt, vb["T5b"]["db"], vb["T5b"]["t_s"])
-    x = bt.impulse(FS, int(0.8 * FS), wt=wt)
+    x = bt.impulse(FS, int(dur * FS), wt=wt)
     return btm.f0_peak_ms(x, bt.v1()[0]), wt
 
 
@@ -552,7 +554,7 @@ def key_physics(vb, n, fec, zt):
     zr, zflag = zt[n]
     target = t1b(vb, n)
     bt, cl, weak = make_pair(vb, n, zr, target)
-    pk, wt = pair_peak_ms(vb, bt)
+    pk, wt = pair_peak_ms(vb, bt, dur=2.5)
     if cl or weak:
         flags |= 4
     modes = []
