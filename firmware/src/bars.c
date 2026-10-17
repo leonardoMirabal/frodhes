@@ -546,13 +546,12 @@ static uint32_t bar_cost_fixed(uint32_t *unit)
  * sub-block (live 2); slots that never sounded just stay silent. */
 #define BAR_DB(x) ((int32_t)(x) * 5442 / 128)       /* dB -> log2 Q8 (256 / 6.0206 = 42.52) */
 #define BAR_NBIN 36u
-#include <stdlib.h>
-static int xp_get(const char *n, int d) { const char *p = getenv(n); return p ? atoi(p) : d; }
-#define XP_FLOOR xp_get("XP_FLOOR", 70)
-#define XP_OFF xp_get("XP_OFF", 12)
-#define XP_UP xp_get("XP_UP", 8)
-#define XP_DN xp_get("XP_DN", 15)
-#define XP_TAU xp_get("XP_TAU", 0)
+#define BAR_FLOOR_DB 70                             /* the audibility floor under the loudest V1 */
+#define BAR_MOFF_DB 12                              /* masking: 12 dB under a partial in the same band */
+#define BAR_MUP_DB 8                                /* + 8 dB per band above the masker */
+#define BAR_MDN_DB 15                               /* + 15 dB per band below it */
+#define BAR_MCAP_DB 6                               /* the most masking can take off (it breaks near ties: S12
+                                                     * measured an uncapped credit dropping louder partials first) */
 typedef struct { int16_t l; uint8_t v, m; } bar_lv_t;
 static bar_lv_t bar_lv[BAR_NV * BAR_NM];
 static int16_t bar_top[BAR_NBIN][2];
@@ -625,7 +624,7 @@ static uint32_t bar_budget_run(void)                /* returns the ranking's own
     }
     for (i = 0; i < n; i++) {                       /* the candidates' audibility: level - max(floor, masking) */
         const bar_voice_t *v = &bv[bar_lv[i].v];
-        int32_t b = v->m[bar_lv[i].m].bin, t = lref - BAR_DB(XP_FLOOR), d, a;
+        int32_t b = v->m[bar_lv[i].m].bin, t = lref - BAR_DB(BAR_FLOOR_DB), d, a;
         uint32_t j;
         if (bar_lv[i].m < BAR_UP0) continue;
         for (d = -3; d <= 3; d++) {
@@ -633,11 +632,16 @@ static uint32_t bar_budget_run(void)                /* returns the ranking's own
             if (bb < 0 || bb >= (int32_t)BAR_NBIN) continue;
             j = bar_topi[bb][0] == i ? 1u : 0u;     /* not masked by itself */
             if (bar_topi[bb][j] == 0xFF) continue;
-            mk = bar_top[bb][j] - BAR_DB(XP_OFF) - (d < 0 ? BAR_DB(XP_UP) * -d : BAR_DB(XP_DN) * d);
+            mk = bar_top[bb][j] - BAR_DB(BAR_MOFF_DB) - (d < 0 ? BAR_DB(BAR_MUP_DB) * -d : BAR_DB(BAR_MDN_DB) * d);
             if (mk > t) t = mk;
         }
-        a = bar_lv[i].l - t;
-        if (XP_TAU) a -= (bar_log2_32((uint32_t)v->m[bar_lv[i].m].eps) - 16 * 256) * XP_TAU / 2;   /* short-lived: less */
+        {   /* masking only breaks near ties: its credit is capped */
+            int32_t fl = lref - BAR_DB(BAR_FLOOR_DB), cr = t - fl;
+            if (cr > BAR_DB(BAR_MCAP_DB)) cr = BAR_DB(BAR_MCAP_DB);
+            a = bar_lv[i].l - fl - cr;
+        }
+        a -= (bar_log2_32((uint32_t)v->m[bar_lv[i].m].eps) - 16 * 256) >> 1;   /* short-lived partials count less:
+                                                     * energy ~ A^2 tau, tau ~ 1 / eps (half a log2 per octave of eps) */
         if (v->fade != 32768) a -= BAR_DB(200);     /* a stolen voice's partials go first: it fades out anyway */
         aud[nc] = (int16_t)(a < -32767 ? -32767 : a > 32767 ? 32767 : a);
         cand[nc++] = (uint8_t)i;
