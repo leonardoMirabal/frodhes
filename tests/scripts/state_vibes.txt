@@ -1,5 +1,5 @@
 # The state after every action on VIBES (state.txt's rules: the panel is what the header names, the engines run what
-# the panel says, the LEDs and cards agree). LFO LED 5 = the TREM/WAH effect (the MOTOR on VIBES), SAVE 9.
+# the panel says, the LEDs and cards agree). LFO LED 5 = the TREM/WAH effect, SAVE 9; the MOTOR page is 19.
 # ---- F14 VIBES DRY by program change: the bar engine, its own card names, no motor
 100 midi 0xC0 13 0
 200 expect preset
@@ -16,18 +16,20 @@
 300 keys 0x80
 700 expect rms > -40
 800 keys 0
-# ---- the motor from the panel: LFO -> TREM/WAH, LFO again: on (as PAN, its last kind), K1 to MOTOR
-1700 btn 5
-1800 btn 5
-1900 expect led 5 1
-1900 expect state card0 PAN
-2000 turn 2 1
+# ---- the motor from the panel (records v3: the MOTOR page, after DECAY, on a bar TYPE only): F14 has it off.
+# EDIT (VOICE), SELECT twice: MOTOR; K1: ON (3.5 Hz); TREM/WAH stays off (LFO dark)
+1700 btn 6
+1800 turn 0 1
+1900 turn 0 1
+2000 expect state page MOTOR
+2000 expect state hint THE_VIBRAPHONE'S_MOTOR
+2000 expect state card0 OFF
 2010 turn 2 1
-2020 turn 2 1
-2100 expect state card0 MOTOR
-2100 expect state card2 4.8HZ
+2100 expect state card0 ON
+2100 expect state card1 8.7
+2100 expect state card2 3.5HZ
 2100 expect sound
-2100 expect led 5 1
+2100 expect led 5 0
 # ---- save it to U01; program change 16 plays the stored copy
 2200 btn 9
 2300 btn 9
@@ -35,36 +37,44 @@
 2400 expect preset
 2500 midi 0xC0 0 0
 2600 expect state bars 0
+2600 expect state page DECAY
 2600 expect preset
 2700 midi 0xC0 16 0
 2800 expect preset
 2800 expect sound
 2800 expect state bars 1
-2800 expect state card.7.0 MOTOR
+2800 expect state card.19.0 ON
 # ---- browse back to F13 VIBE MOTOR (loads after 400 ms), then hold SAVE: undo to U01, the header with it
 2900 turn 6 -1
 3000 turn 6 -1
 3600 expect state header F13_VIBE_MOTOR
 3600 expect preset
-3600 expect state card.7.2 3.5HZ
+3600 expect state card.19.2 3.5HZ
 3700 press 9
 4500 release 9
 4600 expect state header U01_VIBE_MOT
 4600 expect preset
 4600 expect sound
-4600 expect state card.7.2 4.8HZ
-# ---- ALGORITHM: VIBES -> BELL DYNO (the Rhodes): MOTOR shows and plays as the tremolo; back: MOTOR again
+4600 expect state card.19.0 ON
+# ---- ALGORITHM: VIBES -> BELL DYNO (the Rhodes): no tremolo (TREM/WAH off, LFO dark), the MOTOR page is not
+# shown (SELECT from DECAY goes to COMPRESSOR); back to VIBES: the motor as it was
 4700 turn 1 -1
 4800 expect state bars 0
 4800 expect state card.2.0 BELL_DYNO
 4800 expect state label.3.0 TONE
-4800 expect state card.7.0 TREM
+4800 expect state card.7.0 OFF
 4800 expect sound
-4800 expect led 5 1
-4900 turn 1 1
+4800 expect led 5 0
+4810 btn 6
+4820 turn 0 1
+4830 turn 0 1
+4900 expect state page COMPRESSOR
+4910 turn 1 1
 5000 expect state bars 1
-5000 expect state card.7.0 MOTOR
+5000 expect state card.19.0 ON
 5000 expect sound
+5010 turn 0 -1
+5050 expect state page MOTOR
 # ---- F13 by program change while a note rings: the swap and the load agree
 5100 midi 0x90 60 100
 5200 midi 0xC0 12 0

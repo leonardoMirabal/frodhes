@@ -119,7 +119,7 @@ def main():
     L.append(f"{t} btn 8"); t += 1800
     L.append(f"{t} btn 2"); t += 300
     L.append(f"{t} shot"); shots[t] = "bypass"; t += 100
-    # VIBES (a bar TYPE): the VOICE and DECAY cards renamed, and the TREM/WAH page's MOTOR (after the shots above,
+    # VIBES (a bar TYPE): the VOICE and DECAY cards renamed, and the MOTOR page (after the shots above,
     # so they stay as they were)
     L.append(f"{t} btn 2"); t += 100                        # effects on again
     L.append(f"{t} midi 0xC0 12 0"); t += 100               # F13 VIBES MOTOR (TYPE VIBES, the motor at 3.5 Hz)
@@ -131,9 +131,9 @@ def main():
     L.append(f"{t} shot"); shots[t] = "voice-vibes"; t += 100
     L.append(f"{t} turn 0 1"); t += 700
     L.append(f"{t} shot"); shots[t] = "decay-vibes"; t += 100
-    L.append(f"{t} btn 5"); t += 100                        # LFO: TREM/WAH, the preset's motor
+    L.append(f"{t} turn 0 1"); t += 100                     # SELECT: the MOTOR page (bar types only), the preset's motor
     L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 900
-    L.append(f"{t} shot"); shots[t] = "trem-motor"; t += 100
+    L.append(f"{t} shot"); shots[t] = "motor"; t += 100
     L.append(f"{t} end")
     open(tag + ".txt", "w").write("\n".join(L) + "\n")
     subprocess.run([os.path.join(ROOT, "build", "host", "frodhes"), tag, tag + ".txt"], check=True, capture_output=True)

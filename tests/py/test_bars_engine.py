@@ -19,7 +19,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 BIN = os.path.join(ROOT, "build", "host", "frodhes")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 FS = 44100
-VIBES = "60 midi 0xB0 79 64\n"             # CC 79: the bar types (VIBES)
+VIBES = "60 midi 0xB0 79 64\n60 midi 0xB0 47 0\n"   # CC 79: the bar types (VIBES); the motor (on with it) off
 RAW = "50 midi 0xB0 119 127\n"
 F3B = [53, 55, 57, 59, 60, 62, 64, 65]
 
@@ -84,35 +84,37 @@ def am(x, t0=1.0, t1=4.0, hop=220):
     return f[k], np.percentile(r, 98) - np.percentile(r, 2)
 
 
-MOTOR = "61 midi 0xB0 104 0\n62 midi 0xB0 17 64\n63 midi 0xB0 21 127\n64 midi 0xB0 18 127\n65 midi 0xB0 19 {rate}\n"
+MOTOR = "61 midi 0xB0 104 0\n62 midi 0xB0 47 127\n64 midi 0xB0 48 127\n65 midi 0xB0 49 {rate}\n"   # records v3: CC 47-49
 
 
 @pytest.mark.parametrize("rate", [40, 78, 110])
 def test_motor_rate_is_the_displayed_rate(rate):
     x, _ = render(f"mot{rate}", RAW + VIBES + MOTOR.format(rate=rate) + "70 midi 0xB0 64 127\n"
                   "200 midi 0x90 69 100\n4200 end\n")
-    hz = 0.5 * 24 ** (rate / 127)                   # FX_LFO_INC, the TREM/WAH card's Hz
+    hz = 0.5 * 24 ** (rate / 127)                   # FX_LFO_INC, the MOTOR page's SPEED card
     f, depth = am(x)
     assert abs(f / hz - 1) < 0.05, (f, hz)
     assert depth > 3.0, depth                       # the depth target (7-11 dB) is the generator's (VA-M)
 
 
 def test_motor_off_and_depth_zero_do_not_modulate():
-    x, _ = render("mot0", RAW + VIBES + MOTOR.format(rate=78).replace("18 127", "18 0") + "70 midi 0xB0 64 127\n"
+    x, _ = render("mot0", RAW + VIBES + MOTOR.format(rate=78).replace("48 127", "48 0") + "70 midi 0xB0 64 127\n"
                   "200 midi 0x90 69 100\n4200 end\n")
     y, _ = render("motoff", RAW + VIBES + "61 midi 0xB0 104 0\n70 midi 0xB0 64 127\n200 midi 0x90 69 100\n4200 end\n")
     assert np.array_equal(x, y)                     # discs parked open = no motor at all
 
 
-def test_motor_on_a_rhodes_type_is_the_am_tremolo():
+def test_the_motor_does_nothing_on_a_rhodes_type():
+    """records v3: the motor is the bar engine's; on a Rhodes TYPE its CCs change nothing, and CC 21 has two bands
+    (PAN / AM) on every TYPE"""
     base = "50 midi 0xB0 80 0\n51 midi 0xB0 17 64\n53 midi 0xB0 18 100\n54 midi 0xB0 19 80\n200 midi 0x90 60 100\n2000 end\n"
     a, _ = render("rh_am", base + "52 midi 0xB0 21 64\n")
-    m, _ = render("rh_mot", base + "52 midi 0xB0 21 127\n")
+    m, _ = render("rh_mot", base + "52 midi 0xB0 21 127\n55 midi 0xB0 47 127\n56 midi 0xB0 48 127\n")
     assert np.array_equal(a, m)
 
 
 def test_motor_passes_fx_trem_on_vibes():
-    """On VIBES the effects chain's tremolo is unity in MOTOR mode: with RAW off the motor's AM equals the RAW one"""
+    """On VIBES the motor is the engine's, the effects' tremolo stays off: with RAW off the motor's AM equals the RAW one"""
     s = ("20 midi 0xB0 81 0\n21 midi 0xB0 91 0\n" + VIBES + MOTOR.format(rate=78)   # dry: F01's drive / reverb off
          + "70 midi 0xB0 64 127\n200 midi 0x90 69 100\n4200 end\n")
     raw, _ = render("mot_raw", RAW + s)
@@ -217,7 +219,7 @@ def test_budget_order_when_it_must_cut(bark, cap, limit):
 def test_idle_is_digital_zero():
     """NOISE 127, the motor on, notes struck and released: once they end the engine's output is exact digital zero
     (no LFSR, contact-noise or motor residue: the codec mutes), and the voices end under 1 LSB"""
-    s = RAW + VIBES + "61 midi 0xB0 104 127\n62 midi 0xB0 17 64\n63 midi 0xB0 21 127\n64 midi 0xB0 18 127\n"
+    s = RAW + VIBES + "61 midi 0xB0 104 127\n62 midi 0xB0 47 127\n64 midi 0xB0 48 127\n"
     s += "".join(f"200 midi 0x90 {n} 127\n" for n in (53, 60, 67, 74)) + "".join(f"700 midi 0x80 {n} 0\n" for n in (53, 60, 67, 74))
     s += "6000 end\n"
     x, _ = render("idle0", s)

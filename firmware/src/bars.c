@@ -374,26 +374,33 @@ static void bar_kill_all(void)
 
 static int bar_quiet(void) { return bar_active_bits == 0 && bar_quiet_blocks >= 2u; }
 
-/* ---- the motor: the discs' opening per sub-block edge, once per block (the TREM/WAH page through eng_bar_knob) */
+/* ---- the motor: the discs' opening per sub-block edge, once per block (the MOTOR page through eng_bar_knob) */
+#define BAR_MOT_SLEW 512                            /* the depth's slew, Q15 a sub-block: off <-> full in 64 sub-blocks
+                                                     * (46 ms), so switching the motor or turning DEPTH never clicks */
+static int32_t bar_mot_d;                           /* the discs' depth as it plays, Q15 (DEPTH x ON, slewed) */
 static void bar_motor_block(void)
 {
     uint32_t i, inc = bar_mot_inc;
     int32_t depth = bar_mot_depth > 127u ? 127 : bar_mot_depth, shape = bar_mot_shape > 127u ? 127 : bar_mot_shape;
     int32_t gc = BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u].mot_gc;
-    int32_t gmin = 32768 - (depth * (32768 - gc)) / 127;
-    if (!bar_mot_on) {                              /* not MOTOR: the discs parked open */
+    int32_t tgt = bar_mot_on ? (depth << 15) / 127 : 0, d0 = bar_mot_d;
+    bar_mot_g[0] = bar_mot_g[8];                    /* the last block's end: continuous */
+    if (!tgt && !d0) {                              /* off: the discs parked open */
         for (i = 0; i < 9u; i++) bar_mot_g[i] = 32768;
         bar_mot_ph += 256u * inc;
         return;
     }
-    for (i = 0; i < 9u; i++) {
+    for (i = 1; i < 9u; i++) {                      /* each sub-block's end (its start is the one before) */
         /* |cos phi|, phi = pi t / 512, t = ph >> 23 folded on the quarter-turn table: one AM period per 2^32 phase
-         * cycle (bit-exact to tools/bartube.py mot_block) */
+         * cycle (bit-exact to tools/bartube.py mot_block at a steady depth) */
         uint32_t ph = bar_mot_ph + i * 32u * inc, t = ph >> 23, fr = (ph >> 15) & 255u, t1 = (t + 1u) & 511u;
         int32_t c0 = t < 256u ? BAR_MOT_COS[t] : BAR_MOT_COS[512u - t];
         int32_t c1 = t1 < 256u ? BAR_MOT_COS[t1] : BAR_MOT_COS[512u - t1];
         int32_t c = c0 + (((c1 - c0) * (int32_t)fr) >> 8);
-        int32_t o = 32768 - c, op = o;
+        int32_t o = 32768 - c, op = o, gmin, dd = tgt - bar_mot_d;
+        bar_mot_d += dd > BAR_MOT_SLEW ? BAR_MOT_SLEW : dd < -BAR_MOT_SLEW ? -BAR_MOT_SLEW : dd;   /* DEPTH x ON, slewed */
+        gmin = bar_mot_d == tgt ? 32768 - (depth * (32768 - gc)) / 127 * (tgt != 0)   /* steady: DEPTH exactly */
+                                : 32768 - (int32_t)(((int64_t)bar_mot_d * (32768 - gc)) >> 15);
         if (shape) op = o + (((((o * o) >> 15) - o) * shape) / 127);   /* p = 1 + SHAPE/127: a narrower open window */
         bar_mot_g[i] = gmin + (((32768 - gmin) * op) >> 15);
     }

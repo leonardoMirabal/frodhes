@@ -6,8 +6,8 @@ The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder st
 
     python3 tools/hil_cpu.py [--engine vibes] [--fx-each] [--calib]
 
---engine vibes selects VIBES (CC 79), with the motor in the trem slot (CC 17 64 + CC 21 127) wherever the effects
-are on, and adds the bar engine's worst voicings (edge strike, RUBBER, tube and weight at 127). It also prints the
+--engine vibes selects VIBES (CC 79), with the motor on (CC 47; records v3: the engine's own) wherever the effects
+are on (the tremolo too: it can run on top of the motor), off elsewhere, and adds the bar engine's worst voicings (edge strike, RUBBER, tube and weight at 127). It also prints the
 bar engine's lowest mode cap and most live upper modes per scenario (CC 112 / 113 replies).
 --fx-each: idle, then each effect alone (minus idle without effects) = the per-effect cost table of fx.c (FX_US_*).
 --calib (VIBES): 8 RUBBER edge strikes at v127 with the mode cap forced (developer CC 9) to 0, 8, 16, 24, 32, 40, 48
@@ -49,10 +49,10 @@ def main():
         for k, v in d.items():
             cc(CC[k], v)
         if vibes:
-            cc(79, 64)                                # VIBES
+            cc(79, 64)                                # VIBES (the motor starts with the TYPE change)
+            cc(47, 127 if d.get("TW_SW") else 0)      # the motor with the effects (records v3: its own CC), else off
             if d.get("TW_SW"):
                 cc(17, 64)
-                cc(21, 127)                           # MOTOR (the trem slot on a bar type)
         time.sleep(0.3)
 
     def query():  # noqa: C901

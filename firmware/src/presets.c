@@ -49,7 +49,7 @@ static const uint8_t PR_FDATA[PR_NF][32] = {
     {P_TYPE, 3, P_DRIVE, 115, P_RV_DEPTH, 0, P_TONE, 94, P_LEVEL, 98, 0xFF},
     {P_TYPE, 0, P_DRIVE, 13, P_TW_SW, 1, P_TW_DEPTH, 70, P_TW_RATE, 100, P_TW_MODE, 1, P_TW_SHAPE, 90, P_RV_DEPTH, 25, 0xFF},
     /* VIBES (PLAN §8.3; estimates, tuned by ear on the FM-1): the motor at 3.5 Hz (RATE 78), and without it */
-    {P_TYPE, 4, P_TW_SW, 1, P_TW_MODE, 2, P_TW_DEPTH, 90, P_TW_RATE, 78, P_TW_SHAPE, 0, P_RV_DEPTH, 45, 0xFF},
+    {P_TYPE, 4, P_MOT_ON, 1, P_MOT_DEPTH, 110, P_MOT_RATE, 78, P_MOT_SHAPE, 0, P_RV_DEPTH, 45, 0xFF},   /* the motor at 3.5 Hz */
     {P_TYPE, 4, P_RV_DEPTH, 20, 0xFF},
 };
 
@@ -203,7 +203,8 @@ static void preset_autoname(char *n)                     /* TYPE + the effects o
     const char *parts[5];
     uint32_t i = 0, k, np = 0;
     parts[np++] = N_TYPE[PV(P_TYPE)];
-    if (PV(P_TW_SW)) parts[np++] = PV(P_TW_SW) == 1u && PV(P_TW_MODE) == 2u ? "MOT" : N_TW[PV(P_TW_SW)];
+    if (PV(P_MOT_ON) && TYPE_IS_BARS(PV(P_TYPE))) parts[np++] = "MOT";   /* the motor (records v3) */
+    if (PV(P_TW_SW) && np < 3u) parts[np++] = N_TW[PV(P_TW_SW)];
     if (PV(P_CP_SW)) parts[np++] = "CHO";
     if (PV(P_PH_SW) && np < 4u) parts[np++] = "PHA";
     if (PV(P_DL_SW) && np < 5u) parts[np++] = PV(P_DL_SW) == 1 ? "DD" : "AD";

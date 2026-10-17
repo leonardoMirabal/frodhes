@@ -15,6 +15,8 @@ enum { P_TYPE, P_DRIVE, P_TW_SW, P_TW_DEPTH, P_TW_RATE, P_TW_SYNC, P_TW_MODE, P_
        P_LFO_SHAPE, P_LFO_RATE, P_LFO_SYNC, P_LFO_RETRIG,                     /*        its LFO */
        P_DRV_TONE, P_DRV_MIX, P_DRV_SW, P_RV_DECAY, P_RV_TONE, P_RV_PREDLY,   /* records v3: the drive's and the
                                                                                * reverb's new controls (fx.c) */
+       P_MOT_ON, P_MOT_DEPTH, P_MOT_RATE, P_MOT_SHAPE, P_MOT_SYNC,            /* records v3: the vibraphone's motor
+                                                                               * (the bar engine; the MOTOR page) */
        P_COUNT };
 #define P_SLOTS 64u                /* room in the settings / preset records (P_COUNT <= P_SLOTS); 48 before the v3
                                     * records (presets.c preset_t 96 B, the settings' panel3 / undo3) */
@@ -53,7 +55,7 @@ static const char *const N_CP[] = {"OFF", "CHO", "PHA"};   /* "PHA": records bef
 static const char *const N_ONOFF[] = {"OFF", "ON"};
 static const char *const N_RATIO[] = {"1.5:1", "2:1", "3:1", "4:1", "6:1", "8:1", "10:1", "20:1"};
 static const char *const N_DL[] = {"OFF", "DIG", "ANA"};
-static const char *const N_TWM[] = {"PAN", "AM", "MOT"};   /* MOT (2): the vibraphone's motor, bar types only */
+static const char *const N_TWM[] = {"PAN", "AM"};   /* (MOTOR was a third mode until records v3: P_MOT_*) */
 static const char *const N_FLT[] = {"OFF", "LP12", "LP18", "HP12", "HP18", "BP", "NOTCH"};
 static const char *const N_LFOS[] = {"SINE", "TRI", "SAW", "RAMP", "SQR", "S&H"};
 static const char *const N_RETRIG[] = {"FREE", "KEY"};
@@ -67,7 +69,7 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_TW_DEPTH] = {"DPTH", 127, 0, F_R10, 18, 0},
     [P_TW_RATE] = {"RATE", 127, 90, F_HZ, 19, 0},
     [P_TW_SYNC] = {"SYNC", 13, 0, F_DIV, 20, N_SYNC},
-    [P_TW_MODE] = {"MODE", 2, 0, F_ENUM, 21, N_TWM},
+    [P_TW_MODE] = {"MODE", 1, 0, F_ENUM, 21, N_TWM},
     [P_TW_SHAPE] = {"SHPE", 127, 0, F_R10, 22, 0},
     [P_CP_SW] = {"CHO", 1, 0, F_ENUM, 85, N_ONOFF},
     [P_CP_DEPTH] = {"DPTH", 127, 0, F_R10, 86, 0},
@@ -115,6 +117,11 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_RV_DECAY] = {"DCAY", 127, 64, F_R10, 0, 0},
     [P_RV_TONE] = {"TONE", 127, 64, F_R10, 0, 0},
     [P_RV_PREDLY] = {"PDLY", 127, 0, F_R10, 0, 0},
+    [P_MOT_ON] = {"MOT", 1, 0, F_ENUM, 47, N_ONOFF},         /* on by itself when the TYPE turns to a bar type */
+    [P_MOT_DEPTH] = {"DPTH", 127, 110, F_R10, 48, 0},        /* 110: a clear 6-9 dB pulse over F3..F6 (audit) */
+    [P_MOT_RATE] = {"RATE", 127, 78, F_HZ, 49, 0},           /* 0.5 .. 10.1 Hz (120 and up: 10.1); 78 = 3.5 Hz */
+    [P_MOT_SHAPE] = {"SHPE", 127, 0, F_R10, 50, 0},
+    [P_MOT_SYNC] = {"SYNC", 13, 0, F_DIV, 51, N_SYNC},
 };
 _Static_assert(P_COUNT <= P_SLOTS, "records hold P_SLOTS parameters");
 _Static_assert(P_SLOTS <= 64u, "ui.c card slots: a parameter id is under 64 (S_KVEL)");
@@ -141,14 +148,16 @@ typedef struct {
     uint8_t trs_off;                           /* 0.9.1: 1 = the TRS MIDI input is ignored (MIDI page) */
     uint8_t undo_preset;                       /* 0.9.3: the preset the undo copy is (index + 1; 0 = not known) */
     uint8_t panel3[16], undo3[16];             /* records v3: ids 48..63 (flags bit 16: present) */
-    uint8_t seq_rsv[61];
+    uint8_t mot_user_off;                      /* records v3: 1 = switched off on the MOTOR page (no auto-on) */
+    uint8_t seq_rsv[60];
     uint8_t reserved[22];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 
 static settings_t set;
-#define PV(id) (*((id) < 32u ? &set.panel[(id)] : (id) < 48u ? &set.panel2[(id) - 32u] : &set.panel3[(id) - 48u]))   /* a value */
-#define UV(id) (*((id) < 32u ? &set.undo[(id)] : (id) < 48u ? &set.undo2[(id) - 32u] : &set.undo3[(id) - 48u]))
+/* a parameter's value (PV) and its undo copy (UV); the masks keep the branches not taken in range (constant ids) */
+#define PV(id) (*((id) < 32u ? &set.panel[(id) & 31u] : (id) < 48u ? &set.panel2[((id) - 32u) & 15u] : &set.panel3[((id) - 48u) & 15u]))
+#define UV(id) (*((id) < 32u ? &set.undo[(id) & 31u] : (id) < 48u ? &set.undo2[((id) - 32u) & 15u] : &set.undo3[((id) - 48u) & 15u]))
 
 /* records before 0.4 had the phaser as CHO/PHA = 2, sharing the chorus' depth, speed, sync and feedback */
 static void params_split_phaser(uint8_t *p, uint32_t np)
@@ -163,7 +172,20 @@ static void params_split_phaser(uint8_t *p, uint32_t np)
 }
 /* a record from before v3 (ids 0..47; 48.. already at their defaults): what the v3 ids take over (presets.c converts
  * old user presets with it too) */
-static void params_v3_convert(uint8_t *p) { (void)p; }
+static void params_v3_convert(uint8_t *p)
+{
+    if (p[P_TW_SW] == 1u && p[P_TW_MODE] == 2u) {    /* TREM/WAH = MOTOR (VIBES, 0.9.3 drafts) */
+        if (TYPE_IS_BARS(p[P_TYPE])) {               /* a bar TYPE: the motor's own parameters, the effect off */
+            p[P_MOT_ON] = 1;
+            p[P_MOT_DEPTH] = p[P_TW_DEPTH];
+            p[P_MOT_RATE] = p[P_TW_RATE] > 120u ? 120u : p[P_TW_RATE];
+            p[P_MOT_SHAPE] = p[P_TW_SHAPE];
+            p[P_MOT_SYNC] = p[P_TW_SYNC];
+            p[P_TW_SW] = 0;
+        }
+        p[P_TW_MODE] = 1;                            /* a Rhodes TYPE played MOTOR as the AM tremolo: it still does */
+    }
+}
 static uint8_t set_dirty;
 static uint32_t set_t_change;
 
@@ -212,6 +234,7 @@ static void params_sanitize(void)
         for (i = 0; i < P_SLOTS; i++) p[i] = UV(i);
         params_v3_convert(p);
         for (i = 0; i < P_SLOTS; i++) UV(i) = p[i];
+        set.mot_user_off = 0;
         set.flags |= 16u;
     }
     if (!(set.flags & 4u)) {                         /* records before VIBES had 12 factory presets: U01 was 12 */
@@ -224,6 +247,7 @@ static void params_sanitize(void)
     if (set.clock > 1u) set.clock = 1;                       /* 0.9.3: INT / EXT (was INT / AUTO / USB) */
     if (set.midi_ch > 16u) set.midi_ch = 0;                 /* 0 = all channels, 1..16 */
     if (set.trs_off > 1u) set.trs_off = 0;
+    if (set.mot_user_off > 1u) set.mot_user_off = 0;
     if (set.undo_preset > PR_NF_SET + 16u) set.undo_preset = 0;
     if (!set.key_vel || set.key_vel > 127) set.key_vel = 96;
     if (set.tune < -50 || set.tune > 50) set.tune = 0;
@@ -235,22 +259,19 @@ static void params_sanitize(void)
     for (i = 0; i < 3; i++) if (set.last_on[i] < 1 || set.last_on[i] > 2) set.last_on[i] = 1;
 }
 
-/* the TREM/WAH switch and mode as fx.c gets them. MOTOR (SW 1, MODE 2) is the bar engine's: the tremolo stays off
- * (its gains ramp to unity) and the engine drives the tubes; on a Rhodes TYPE (or before the bar engine is merged)
- * MOTOR plays as the tremolo's AM. PAN / AM / WAH reach fx.c unchanged. */
-static int tw_motor(void) { return PV(P_TW_SW) == 1u && PV(P_TW_MODE) == 2u; }
+/* the TREM/WAH switch and mode as fx.c gets them (records v3: a pure effect on every TYPE; the vibraphone's motor
+ * has its own parameters, P_MOT_*, and runs inside the bar engine) */
 static void tw_apply(void)
 {
-    int m = tw_motor(), bars = eng_is_bars();
-    fx_set(FXP_TW_SW, m && bars ? 0 : PV(P_TW_SW));
-    fx_set(FXP_TW_MODE, m ? 1 : PV(P_TW_MODE));
-    eng_bar_knob(BK_MOT_ON, (uint32_t)(m && bars));
+    fx_set(FXP_TW_SW, PV(P_TW_SW));
+    fx_set(FXP_TW_MODE, PV(P_TW_MODE));
 }
-/* the motor's rate: 0.5 .. 10 Hz (the tremolo's law, clamped at 120 = 10.08 Hz), or TREM SYNC's (tempo.c) */
+/* the motor's rate: 0.5 .. 10 Hz (the tremolo's law up to 120 = 10.08 Hz), or MOT SYNC's (tempo.c) */
 #define MOT_RATE_V(v) ((v) > 120 ? 120 : (v))
+static uint32_t mot_sync_inc;                    /* main loop: a synced motor (Q32 step a sample), 0 = free */
 static void mot_rate_apply(void)
 {
-    eng_bar_knob(BK_MOT_INC, fx_tw_sync_inc ? fx_tw_sync_inc : FX_LFO_INC[MOT_RATE_V(PV(P_TW_RATE))]);
+    eng_bar_knob(BK_MOT_INC, mot_sync_inc ? mot_sync_inc : FX_LFO_INC[MOT_RATE_V(PV(P_MOT_RATE))]);
 }
 
 /* ---- apply a parameter to the engine (main loop; volatile one-writer handover). The Rhodes volatiles are written
@@ -262,10 +283,10 @@ static void param_apply(uint32_t id)
     case P_TYPE: eng_set_type((uint32_t)v); fx_set(FXP_DRIVE_ROW, TYPE_DRIVE_ROW[v]); tw_apply(); break;
     case P_DRIVE: fx_set(FXP_DRIVE, v); break;
     case P_TW_SW: tw_apply(); break;
-    case P_TW_DEPTH: fx_set(FXP_TW_DEPTH, v); eng_bar_knob(BK_MOT_DEPTH, (uint32_t)v); break;
-    case P_TW_RATE: fx_set(FXP_TW_RATE, v); mot_rate_apply(); break;
+    case P_TW_DEPTH: fx_set(FXP_TW_DEPTH, v); break;
+    case P_TW_RATE: fx_set(FXP_TW_RATE, v); break;
     case P_TW_MODE: tw_apply(); break;
-    case P_TW_SHAPE: fx_set(FXP_TW_SHAPE, v); eng_bar_knob(BK_MOT_SHAPE, (uint32_t)v); break;
+    case P_TW_SHAPE: fx_set(FXP_TW_SHAPE, v); break;
     case P_CP_SW: fx_set(FXP_CP_SW, v); break;
     case P_CP_DEPTH: fx_set(FXP_CP_DEPTH, v); break;
     case P_CP_SPEED: fx_set(FXP_CP_SPEED, v); break;
@@ -306,6 +327,10 @@ static void param_apply(uint32_t id)
     case P_RV_DECAY: fx_set(FXP_RV_DECAY, v); break;
     case P_RV_TONE: fx_set(FXP_RV_TONE, v); break;
     case P_RV_PREDLY: fx_set(FXP_RV_PREDLY, v); break;
+    case P_MOT_ON: eng_bar_knob(BK_MOT_ON, (uint32_t)v); break;        /* the bar engine reads these, the Rhodes not */
+    case P_MOT_DEPTH: eng_bar_knob(BK_MOT_DEPTH, (uint32_t)v); break;
+    case P_MOT_RATE: mot_rate_apply(); break;
+    case P_MOT_SHAPE: eng_bar_knob(BK_MOT_SHAPE, (uint32_t)v); break;
     default: break;                                                   /* SYNC: tempo.c; SPREAD: not yet in the engine */
     }
 }
@@ -326,6 +351,16 @@ static void param_set(uint32_t id, int32_t v)
     param_apply(id);
     set_dirty = 1;
     set_t_change = fm1_ms;
+}
+
+/* a TYPE picked on the panel (the TYPE card, ALGORITHM) or by CC 79, not by a preset load: turning to a bar TYPE
+ * from a Rhodes one starts the motor (VIBES is heard with its motor), unless it was switched off on the MOTOR page
+ * (set.mot_user_off, kept until its ON card turns it on again) */
+static void type_pick(int32_t t)
+{
+    int was = TYPE_IS_BARS(PV(P_TYPE));
+    param_set(P_TYPE, t);
+    if (!was && TYPE_IS_BARS(PV(P_TYPE)) && !PV(P_MOT_ON) && !set.mot_user_off) param_set(P_MOT_ON, 1);
 }
 
 /* ---- value text (<= 5 chars) */

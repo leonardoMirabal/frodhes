@@ -102,7 +102,7 @@ def host_render(m, vel, hold, out):
     """the same note on the host build (tests/host.c), measured like the device"""
     import subprocess
     base = os.path.join(out, f"VIBES {name(m)} v{vel} host")
-    open(base + ".txt", "w").write(f"20 midi 0xB0 79 64\n30 midi 0xB0 64 127\n100 midi 0x90 {m} {vel}\n"
+    open(base + ".txt", "w").write(f"20 midi 0xB0 79 64\n21 midi 0xB0 47 0\n30 midi 0xB0 64 127\n100 midi 0x90 {m} {vel}\n"
                                    f"{int((hold - 0.6) * 1000)} midi 0x80 {m} 0\n{int(hold * 1000)} end\n")
     subprocess.run([os.path.join(ROOT, "build", "host", "frodhes"), base, base + ".txt"], check=True, capture_output=True)
     return measure_like_ref(base + ".wav")
@@ -137,6 +137,7 @@ def main():
     for m in range(lo, hi + 1, a.step):
         rig.dry()
         rig.out.send(rig.mido.Message("control_change", control=79, value=64))      # VIBES
+        rig.out.send(rig.mido.Message("control_change", control=47, value=0))       # the motor off (no motor refs)
         rig.out.send(rig.mido.Message("control_change", control=64, value=127))     # pedal down: the free ring
         time.sleep(0.3)
         x = rig.take(a.hold, [(0.1, "on", m, a.vel), (a.hold - 0.6, "off", m, 0)])

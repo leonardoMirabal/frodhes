@@ -100,7 +100,7 @@ def test_power_cycle_keeps_everything(eng):
     lines += [cc(700, 63, 0), "6000 dump"]
     r1 = run(f"pc1-{eng}", lines, 6500, flash=fl)
     s1 = r1.state(6000)
-    assert s1["header"] == "U03 " + ("VIBE" if eng == "vibes" else "ST77") and s1["notes"] == "9"   # (chord mode: triads)
+    assert s1["header"] == "U03 " + ("VIBE MOT" if eng == "vibes" else "ST77") and s1["notes"] == "9"   # (VIBES: the motor on)
     assert r1.saves and r1.bank_saves and r1.seq_saves, (r1.saves, r1.bank_saves, r1.seq_saves)
     r2 = boot(f"pc2-{eng}", fl, ["150 keys 0x80", "600 keys 0", "700 expect rms > -45"], 900)
     assert not r2.fails, r2.fails
@@ -318,3 +318,54 @@ def test_v2_bank_converts_to_v3_and_round_trips():
     assert all(b.state(250)[k] == s[k] for k in s if k.startswith("p."))
     n = int(1.5 * FS)
     assert np.array_equal(a.L[:n], b.L[:n]) and np.abs(a.L[int(0.3 * FS):n]).max() > 300   # the same sound, sample for sample
+
+
+MOT_ON, MOT_DEPTH, MOT_RATE, MOT_SHAPE, MOT_SYNC = 54, 55, 56, 57, 58   # params.c P_MOT_* (records v3)
+
+
+def motor_v2(p, type_):
+    """a 0.9.3-draft panel with TREM/WAH = MOTOR (SW 1, MODE 2): depth 90, rate 70, shape 30, sync 0"""
+    p[P["TYPE"]], p[P["TW_SW"]], p[P["TW_MODE"]], p[P["TW_DEPTH"]], p[P["TW_RATE"]], p[7] = type_, 1, 2, 90, 70, 30
+
+
+def test_v2_motor_becomes_the_motor_page():
+    """records v3: a v2 settings record or user preset whose TREM/WAH was MOTOR on VIBES gets MOT_ON with that depth
+    / rate / shape, and TREM/WAH off; on a Rhodes TYPE (where MOTOR played the AM tremolo) it stays the AM tremolo"""
+    dflt = defaults()
+    fl = flash_file("motv2")
+    img = bytearray(b"\xff" * 5 * SECTOR)
+    r = v1_record({}, preset=14)
+    r[O_VER], r[O_FLAGS] = 2, 1 | 2 | 4 | 8                  # a 0.9.3-draft record (no flags bit 16)
+    p = bytearray(dflt[:48])
+    motor_v2(p, 4)
+    r[O_PANEL:O_PANEL + 32] = p[:32]
+    r[O_PANEL2:O_PANEL2 + 16] = p[32:48]
+    put_settings(img, r)
+    recs = []
+    for i in range(16):
+        q = bytearray(dflt[:48])
+        motor_v2(q, 4 if i == 0 else 2)
+        name = b"U1          " if i == 0 else b"U2          "
+        recs.append(struct.pack("<BBBB", 2, 48, 1 if i < 2 else 0, 0) + name + bytes(q))
+    put_bank(img, BANK_A, 3, recs)
+    open(fl, "wb").write(img)
+    b = boot("motv2", fl, ["150 dump", "200 midi 0xC0 16 0", "300 dump", "400 midi 0xC0 17 0", "500 dump"], 600,
+             check_preset=False)
+    want = {MOT_ON: 1, MOT_DEPTH: 90, MOT_RATE: 70, MOT_SHAPE: 30, MOT_SYNC: 0, P["TW_SW"]: 0}
+    for t in (150, 300):                                       # the panel, then U01 (VIBES)
+        s = b.state(t)
+        assert {k: int(s[f"p.{k}"]) for k in want} == want, (t, {k: s[f"p.{k}"] for k in want})
+        assert s["card.19.0"] == "ON" and s["card.7.0"] == "OFF"
+    s = b.state(500)                                           # U02, FELT with MOTOR: still the AM tremolo
+    assert (s["p.0"], s[f"p.{P['TW_SW']}"], s[f"p.{P['TW_MODE']}"], s["card.7.0"]) == ("2", "1", "1", "TREM")
+
+
+def test_motor_off_by_hand_survives_a_power_cycle():
+    """the MOTOR page's ON card switched off is kept (and with it, no motor when the TYPE turns to VIBES again)"""
+    fl = flash_file("motoff")
+    lines = ["100 turn 1 1", "110 turn 1 1", "120 turn 1 1", "130 turn 1 1", "200 btn 6", "300 turn 0 1",
+             "400 turn 0 1", "500 turn 2 -1", "600 turn 1 -1", "700 dump"]
+    r1 = run("motoff-1", lines, 4000, flash=fl)
+    assert r1.state(700)["card.19.0"] == "OFF" and r1.saves
+    r2 = boot("motoff-2", fl, ["200 turn 1 1", "300 dump"], 400, check_preset=False)
+    assert r2.state(300)["bars"] == "1" and r2.state(300)["card.19.0"] == "OFF"

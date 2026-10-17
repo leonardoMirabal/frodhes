@@ -194,7 +194,7 @@ On PERFORM, K3 is the filter's cutoff by default. Over MIDI: CC 70 TYPE, 74 cuto
 | K4 | **SHAPE** | From a smooth sine to a square, choppy pulse |
 
 
-On **VIBES**, EFFECT has a fifth kind after WAH, **MOTOR**: the vibraphone's motor (see [the motor: on and off](#the-motor-on-and-off)).
+On **VIBES** the vibraphone's motor is not here but on its own page, MOTOR (see [the motor: on and off](#the-motor-on-and-off)); TREM/WAH can run on top of it.
 ### PHASER
 
 ![PHASER](manual/img/phaser.png)
@@ -394,7 +394,7 @@ VIBES plays about **2.5 dB louder** than the Rhodes types: a struck bar is peaki
 loudness it sounded weaker and came out closer to the headphone jack's hiss. The limiter still keeps big chords from
 clipping.
 
-The pages stay the same: on VIBES, the VOICE and DECAY cards change their names and what they do.
+On VIBES the VOICE and DECAY cards change their names and what they do, and one page joins them: **MOTOR**.
 
 ![VOICE on VIBES](manual/img/voice-vibes.png)
 
@@ -419,25 +419,31 @@ half-pedal too). Without it the damper stops each note when you let go.
 
 ### The motor: on and off
 
-The motor (the vibrato's pulse) is the TREM/WAH effect's fifth kind, **MOTOR**, after WAH; it only appears on VIBES.
+The motor (the vibrato's pulse) is part of the vibraphone, not an effect: it has its own page, **MOTOR**, right
+after DECAY in the SELECT order. The page is there only while the TYPE is VIBES (on the Rhodes types SELECT goes from
+DECAY straight to COMPRESSOR).
 
-- **On:** press **LFO** (the TREM/WAH page opens), turn **K1 EFFECT** to **MOTOR**.
-- **Off and on again:** press **LFO** again on that page: off; once more: on, as MOTOR again. The LFO light is lit
-  while the motor turns.
-- **Or a preset:** **F13 VIBE MOTOR** has the motor on, **F14 VIBES DRY** has it off.
-- **Over MIDI:** CC 17 (TREM/WAH on) with CC 21 at 112–127 (MOTOR, on VIBES).
+- **On by itself:** turning the TYPE to VIBES (ALGORITHM, the TYPE card or CC 79) starts the motor at its default:
+  DEPTH 8.7, 3.5 Hz, a clear, regular pulse.
+- **Off and on:** on the MOTOR page, **K1** turns it **OFF** or **ON**. Switched off there, it stays off: changing the
+  TYPE to a Rhodes and back to VIBES does not start it again (and the choice is saved), until K1 turns it on.
+- **Presets keep theirs:** loading a preset is not a TYPE change: **F13 VIBE MOTOR** has the motor on, **F14 VIBES
+  DRY** has it off, and a user preset saved with the motor off stays off.
+- **The Rhodes types** have no motor: going back to one leaves no tremolo running (TREM/WAH stays as it was).
+- **TREM/WAH** (the LFO button) is the same effect on VIBES as on the Rhodes and can run on top of the motor.
+- **Over MIDI:** CC 47 ON (≥ 64), 48 DEPTH, 49 SPEED, 50 SHAPE, 51 SYNC.
 
-![MOTOR on TREM/WAH](manual/img/trem-motor.png)
+![MOTOR](manual/img/motor.png)
 
-| Knob | Card | What it does with MOTOR |
+| Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **EFFECT** | **MOTOR** (OFF switches the motor off) |
-| K2 | **DEPTH** | How far the discs close the tubes: a gentle pulse to a deep throb |
-| K3 | **RATE** | The motor speed, 0.5–10 Hz (about 3.5 Hz is classic); synced to the tempo when TREM SYNC (TEMPO page) is set |
+| K1 | **MOTOR** | **ON** / **OFF**; it fades in and out over about 50 ms, so switching never clicks |
+| K2 | **DEPTH** | How far the discs close the tubes: a gentle pulse to a deep throb (the default 8.7 gives about 6–9 dB from F3 to F6) |
+| K3 | **SPEED** | The motor speed, 0.5–10 Hz (about 3.5 Hz is classic). With a SYNC set over MIDI (CC 51) it shows the note value and follows the tempo |
 | K4 | **SHAPE** | How sharply the discs open: soft is a smooth pulse, sharp a shorter, more pointed one |
 
 As on a real vibraphone the motor works on the tubes, so it pulses the ringing note and leaves the high overtones
-alone. A preset with MOTOR played on a Rhodes type gives the TREM tremolo.
+alone. Its pulse is a little shallower in the lowest octave, where more of the sound comes from the bar itself.
 
 ### Range, presets, polyphony
 
@@ -560,10 +566,11 @@ The TRS jack is MIDI in only. **Program Change** 0–13 loads F01–F14, 16–31
 | CC | Parameter | CC | Parameter |
 | --- | --- | --- | --- |
 | 64 | Sustain (half-pedal) | 80 | TYPE (0–31 STAGE, 32–63 SUITCASE, 64–95 FELT, 96–127 DYNO) |
+| 47 / 48 | VIBES MOTOR on (≥ 64) / DEPTH | 49 / 50 / 51 | VIBES MOTOR SPEED / SHAPE / SYNC |
 | 79 | TYPE VIBES (any value) | 9 | Developer: VIBES mode cap (0 = automatic, 1–49 = 0–48 upper modes, ≥ 50 = none; not saved) |
 | 81 | DRIVE | 91 | REVERB |
 | 17 | TREM/WAH: 0–42 off, 43–85 trem/pan, 86–127 wah | 18 / 19 | TREM DEPTH / RATE |
-| 20 / 21 / 22 | TREM SYNC / MODE (0–63 pan, 64–127 am; on VIBES 112–127 motor) / SHAPE | 85 | Chorus / phaser (reface): off / chorus / phaser |
+| 20 / 21 / 22 | TREM SYNC / MODE (0–63 pan, 64–127 am) / SHAPE | 85 | Chorus / phaser (reface): off / chorus / phaser |
 | 86 / 87 | CHORUS DEPTH / SPEED (the phaser's, when only the phaser is on) | 23 | CHORUS SYNC |
 | 12 / 13 / 14 | PHASER on / DEPTH / SPEED | 15 / 16 | PHASER SYNC / FEEDBACK |
 | 88 / 89 / 90 | DELAY type / MIX / TIME | 25 / 26 / 27 | DELAY SYNC / FEEDBACK / TONE |
@@ -625,7 +632,7 @@ issues: [github.com/leonardoMirabal/frodhes](https://github.com/leonardoMirabal/
 | Compressor | Threshold 0 to −40 dB, ratio 1.5:1–20:1, attack 0.1–50 ms, release 20 ms–1.5 s (CC 109), makeup 0 to +24 dB |
 | Filter | LP12, LP18, HP12, HP18, BP, NOTCH; 30 Hz–16 kHz; resonance Q 0.7–20; LFO ±4 octaves |
 | LFO | SINE, TRI, SAW, RAMP, SQR, S&H; 0.5–12 Hz or synced; FREE or KEY retrigger |
-| Tremolo / wah | PAN, TREM, WAH (the wah keeps the level); on VIBES also MOTOR, 0.5–10 Hz; 0.5–12 Hz or synced |
+| Tremolo / wah | PAN, TREM, WAH (the wah keeps the level); 0.5–12 Hz or synced. VIBES: its own motor, 0.5–10 Hz |
 | Phaser / chorus | Stereo phaser with feedback, stereo chorus; 0.25–6 Hz or synced |
 | Delay | DIG or ANA (tape); 20 ms–1.48 s or synced |
 | **Scales** | 11 scales, any root; OFF / SNAP / DEGREE |

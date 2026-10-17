@@ -102,6 +102,7 @@ def main():
         def dry(**kv):
             dry0(**kv)
             J.r.out.send(J.r.mido.Message("control_change", control=79, value=64))
+            J.r.out.send(J.r.mido.Message("control_change", control=47, value=0))   # the motor off (it starts with VIBES)
             time.sleep(0.3)
         J.r.dry = dry
     rep = {}

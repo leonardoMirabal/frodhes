@@ -25,17 +25,21 @@
 3200 btn 9
 3300 btn 8
 3400 expect led 5 0
-# the VIBES presets (F13 VIBES MOTOR: the motor on, so the LFO LED; F14 VIBES DRY: off): program change 12, 13
+# the VIBES presets (F13 VIBES MOTOR: the motor on, the engine's: TREM/WAH stays off, LFO dark; F14 VIBES DRY:
+# the motor off): program change 12, 13
 3600 midi 0xC0 12 0
-3700 expect led 5 1
+3700 expect led 5 0
+3700 expect state card.19.0 ON
 3800 shot
 3900 midi 0xC0 13 0
 4000 expect led 5 0
+4000 expect state card.19.0 OFF
 # PRESETS after F14 goes to U01 (the user presets follow the factory ones), back: F14, F13
 4100 turn 6 1
 4600 expect led 5 1
 4700 turn 6 -1
 5200 expect led 5 0
 5300 turn 6 -1
-5800 expect led 5 1
+5800 expect led 5 0
+5800 expect state card.19.0 ON
 5900 end

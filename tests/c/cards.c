@@ -40,7 +40,7 @@ int main(void)
         param_set(P_CMP_GAIN, (int32_t)v); put("CMP_GAIN", P_CMP_GAIN, v, ((int32_t)v * 16461) >> 7);    /* log2 Q12 */
         param_set(P_CMP_SW, 1); param_set(P_CMP_AMT, (int32_t)v); put("CMP_AMT", P_CMP_AMT, v, ((int32_t)v * 27434) >> 7);
     }
-    param_set(P_TYPE, 4); param_set(P_TW_MODE, 2);                  /* VIBES, MOTOR: its own rate text */
-    for (v = 0; v < 128u; v++) { param_set(P_TW_RATE, (int32_t)v); put("MOTOR", P_TW_RATE, v, bar_mot_inc); }
+    param_set(P_TYPE, 4); param_set(P_MOT_ON, 1);                   /* VIBES, the MOTOR page: its SPEED text */
+    for (v = 0; v < 128u; v++) { param_set(P_MOT_RATE, (int32_t)v); put("MOTOR", P_MOT_RATE, v, bar_mot_inc); }
     return 0;
 }
