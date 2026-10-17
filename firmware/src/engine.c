@@ -65,7 +65,7 @@ static void eng_bar_knob(uint32_t k, uint32_t v)
     switch (k) {
     case BK_STRIKE: bar_pos = (int32_t)c; break;
     case BK_MALLET: bar_fam = KN_FAM[c]; break;
-    case BK_TUBE: bar_tube = KN_TUBE[c]; break;
+    case BK_TUBE: bar_tube = KN_TUBE[c]; bar_bell = (int32_t)c; break;
     case BK_WEIGHT: bar_mass = KN_MASS[c]; bar_massi = KN_MASSI[c]; break;
     case BK_RING: bar_k_decay = (int32_t)DECAY_K[c]; break;
     case BK_DAMPER: bar_k_rel = (int32_t)DECAY_K[c]; break;

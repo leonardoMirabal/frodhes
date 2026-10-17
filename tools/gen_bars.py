@@ -790,7 +790,9 @@ def build_spec(vb, phys, fec, ct, st):
     ty = vb["type_rec"]
     li, lw = vlayers()
     vi, vf = vpos()
+    flat = [[[Q14] * NPOS for _ in range(NFAM)] for _ in range(NBAND)]
     return dict(gen_version=GEN_VERSION, fs=FS, key_lo=KEY_LO, keys=keys, bar_pos=pos, pos_arg=arg,
+                pos_gain=st.get("pos_gain", flat), tube_gain=st.get("tube_gain", flat),
                 pos_exact=st["pos_exact"], pulse=pulse,
                 prate=prate, pamp=pamp, kn_fam=kn_fam(), kn_mass=kn_mass(vb), kn_massi=kn_massi(vb), kn_tube=kn_tube(),
                 kn_nz=kn_nz(vb), nz_bq=nz_bq(vb), mot_cos=list(btm.MOT_COS),
@@ -824,6 +826,68 @@ def lufs_k(x, t0=0.0, t1=1.0, fs=FS):
     import bar_measure as bmz
     y = sosfilt(bmz.k_weight_sos(fs), np.asarray(x, float) / 32767.0)[int(t0 * fs):int(t1 * fs)]
     return -0.691 + 10 * math.log10(float(np.mean(y * y)) + 1e-15)
+
+
+def card_points():
+    """the card value (raw 0..127) that lands exactly on each of the 17 points (bar_init: q = raw 4096 / 127, the
+    point q >> 8): the smallest raw with q >> 8 = p"""
+    return [next(r for r in range(128) if (r * 4096 // 127) >> 8 == p) for p in range(NPOS)]
+
+
+def card_gains(vb, spec, keys):
+    """BAR_POSG / BAR_TUBEG [band][family][17] (Q14): the output gain per band and mallet family at each TONE / BELL
+    point, from the golden model's loudness (K-weighted over card_level t_s, v100, HAMMER 64, the family at its
+    detent, the other cards at their defaults, the mean over the band's keys) re the default point (TONE 64 / BELL
+    64 = point 8, exactly 1.0). Per family because the cards' level change depends on the mallet: at the bar's
+    centre a RUBBER strike's V3 (an antinode there) lifts the level 5..10 LU where SOFT YARN's falls 0..4. The level
+    the card moves is scaled to the allowed span (tone_span_db / bell_span_db): 0 = held, s = the physical curve's
+    shape over s dB."""
+    cl = vb["card_level"]
+    t0, t1 = cl["t_s"]
+    pts = card_points()
+    bands = [BANDS["of"][n] for n in keys]
+    out = {}
+    rep = []
+    for card, span in (("tone", cl["tone_span_db"]), ("bell", cl["bell_span_db"])):
+        tab = [[None] * NFAM for _ in range(NBAND)]
+        spans = []
+        for q, bark in enumerate(FAM_DETENT):
+            kn = [dict(gm.DEFAULT_KNOBS, bark=bark, **{card: r}) for r in pts for _ in keys]
+            y = render_chunks(spec, keys * NPOS, [100] * (len(keys) * NPOS), t1 + 0.01, kn, chunk=440)
+            L = np.array([lufs_k(r, t0, t1) for r in y]).reshape(NPOS, len(keys))
+            D = L - L[8:9, :]                              # re the default point (8 = raw 64, its fraction 16 / 256)
+            for b in range(NBAND):
+                ks = [i for i, bb in enumerate(bands) if bb == b]
+                d = D[:, ks].mean(axis=1) if ks else np.zeros(NPOS)
+                sp = float(d.max() - d.min())
+                sc = min(1.0, span / sp) if sp > 0 else 1.0
+                g = 10 ** ((sc * d - d) / 20)               # the level becomes sc x the physical delta
+                row = [int(round(min(65535, x * Q14))) for x in g]
+                row[8] = Q14
+                tab[b][q] = row
+                spans.append(sp)
+        out[card] = tab
+        rep.append("%s span %.1f..%.1f dB -> %.1f" % (card.upper(), min(spans), max(spans), span))
+    return out["tone"], out["bell"], "; ".join(rep)
+
+
+def voicing_peaks(vb, spec, keys):
+    """every key's largest single-strike output peak (Q15 units) at v127 over card_level peak_grid (the golden model,
+    no contact noise), and the voicing that gives it"""
+    g = vb["card_level"]["peak_grid"]
+    pk = np.zeros(len(keys))
+    worst = [""] * len(keys)
+    for tone in g["tone"]:
+        for bell in g["bell"]:
+            for bark in g["bark"]:
+                for ham in g["hammer"]:
+                    kn = dict(gm.DEFAULT_KNOBS, tone=tone, bell=bell, bark=bark, hammer=ham)
+                    y = render_chunks(spec, keys, [127] * len(keys), g["dur_s"], kn, chunk=440)
+                    p = np.abs(y).max(axis=1)
+                    for i in np.flatnonzero(p > pk):
+                        pk[i] = p[i]
+                        worst[i] = "TONE %d BELL %d MALLET %d HAMMER %d" % (tone, bell, bark, ham)
+    return pk, worst
 
 
 def build():
@@ -998,6 +1062,10 @@ def build():
             st["keys"][n]["S"] /= f
         spec = build_spec(vb, phys, fec, ct, st)
     rescale_b()
+    # the TONE / BELL level compensation per band (card_level): a card that is not a volume knob keeps the level
+    st["pos_gain"], st["tube_gain"], cl_rep = card_gains(vb, spec, keys)
+    spec = build_spec(vb, phys, fec, ct, st)
+    print("card level: " + cl_rep, file=sys.stderr)
     # gain: v100 at the default knobs, RMS 50..300 ms -> gain_target_dbfs; a global cap for the v127 RUBBER peak
     y = render_chunks(spec, keys, [100] * len(keys), 0.32, dict(gm.DEFAULT_KNOBS))
     g_now = np.array([spec["keys"][n - KEY_LO]["gain"] for n in keys], float)
@@ -1038,6 +1106,22 @@ def build():
     spec = build_spec(vb, phys, fec, ct, st)
     print("ST77 level per key: corrections %+.2f .. %+.2f dB (median %+.2f)" % (corr.min(), corr.max(), np.median(corr)),
           file=sys.stderr)
+    # the per-voice peak ceiling over the whole voicing space (card_level peak_grid): every key, v127, every
+    # TONE x BELL x MALLET x HAMMER corner of the grid; a key over the ceiling is turned down (reported)
+    pk, worst = voicing_peaks(vb, spec, keys)
+    ceil_ = 10 ** (vb["card_level"]["peak_ceiling_dbfs"] / 20) * 32768
+    over = [(n, 20 * math.log10(pk[i] / 32768)) for i, n in enumerate(keys) if pk[i] > ceil_]
+    for i, n in enumerate(keys):
+        if pk[i] > ceil_:
+            f = ceil_ / pk[i]
+            st["keys"][n]["gain"] *= f
+            st["keys"][n]["kill"] = max(1, int(round(st["keys"][n]["kill"] / f)))
+    st["peak_dbfs"] = [float(20 * math.log10(min(pk[i], ceil_) / 32768)) for i in range(len(keys))]
+    st["peak_worst"] = worst
+    spec = build_spec(vb, phys, fec, ct, st)
+    print("voicing peaks: worst %.2f dBFS (key %d, %s), ceiling %.1f dBFS, keys turned down: %s" % (
+        max(20 * math.log10(x / 32768) for x in pk), keys[int(np.argmax(pk))], worst[int(np.argmax(pk))],
+        vb["card_level"]["peak_ceiling_dbfs"], ", ".join("%d (%+.1f)" % o for o in over) or "none"), file=sys.stderr)
     # slots that never sound (vibes.json prune): the loudest single strike of the voicing grid, first t_s
     pr = vb["prune"]
     rel = np.zeros((len(keys), NM))
@@ -1092,6 +1176,8 @@ def build():
     spec["st77_trim_db"] = st["st77_trim_db"]
     spec["st77_lufs"] = st["st77_lufs"]
     spec["v4_trim_db"] = st["v4_trim_db"]
+    spec["peak_dbfs"] = st["peak_dbfs"]
+    spec["peak_worst"] = st["peak_worst"]
     spec["pruned"] = {str(n): st["keys"][n]["off"] for n in keys if st["keys"][n]["off"]}
     spec["prune_rel_db"] = st["prune_rel_db"]
     spec["pamp_phys"] = st["pamp_phys"]
@@ -1155,6 +1241,14 @@ def emit(spec):
     for b in spec["bar_pos"]:
         w("  {" + ",".join("{" + ",".join(map(str, r)) + "}" for r in b) + "},")
     w("};")
+    w("/* the output gain per band and mallet family at the 17 TONE / BELL points (Q14; point 8 = 1.0): per family as")
+    w(" * BAR_POS, g = R[i] + ((R[i+1] - R[i]) (q & 255) >> 8), then the families as the pulse (KN_FAM's Q8 fraction);")
+    w(" * gain = key gain x g(TONE) >> 14 x g(BELL) >> 14 at note-on (vibes.json card_level) */")
+    for nm, key in (("BAR_POSG", "pos_gain"), ("BAR_TUBEG", "tube_gain")):
+        w("static const uint16_t %s[BAR_NBAND][BAR_NFAM][BAR_NPOS] = {" % nm)
+        for b in spec[key]:
+            w("  {" + ",".join("{" + ",".join(map(str, r)) + "}" for r in b) + "},")
+        w("};")
     w("static const int32_t BAR_BODY[BAR_NTYPE][2][5] = {")
     w("  {{%d,0,0,0,0},{%d,0,0,0,0}}," % (Q28, Q28))
     w("};")

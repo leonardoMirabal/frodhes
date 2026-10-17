@@ -180,6 +180,20 @@ static void bar_predict(bar_voice_t *v)
 #endif
 }
 
+/* a card's level compensation (BAR_POSG / BAR_TUBEG of one band, Q14): the 17 points at q = raw 4096 / 127 for
+ * the family fm and the next, blended by the MALLET fraction fa (Q8), as the pulse */
+static int32_t bar_card_gain(const uint16_t (*t)[BAR_NPOS], uint32_t fm, int32_t fa, uint32_t q)
+{
+    uint32_t i = q >> 8, f2 = fm + 1u < BAR_NFAM ? fm + 1u : fm;
+    int32_t fr = (int32_t)(q & 255u), g0, g1;
+    if (i >= BAR_NPOS - 1u) { g0 = t[fm][BAR_NPOS - 1u]; g1 = t[f2][BAR_NPOS - 1u]; }
+    else {
+        g0 = t[fm][i] + ((((int32_t)t[fm][i + 1u] - (int32_t)t[fm][i]) * fr) >> 8);
+        g1 = t[f2][i] + ((((int32_t)t[f2][i + 1u] - (int32_t)t[f2][i]) * fr) >> 8);
+    }
+    return g0 + (((g1 - g0) * fa) >> 8);
+}
+
 static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
 {
     const bar_type_t *ty = &BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u];
@@ -218,7 +232,17 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
         else ms->live = ms->b != 0;                 /* bar_budget() trims, before the slot ever sounds */
     }
     v->note = (uint8_t)note; v->vel = (uint8_t)vel;
-    v->gain = k->gain;
+    {   /* the key's gain x the band's level compensation at this TONE and BELL for this mallet (Q14, vibes.json
+         * card_level: the strike position holds the level, the tube's own gain is scaled to its allowed span) */
+        uint32_t qb = (uint32_t)bar_bell * (16u * 256u) / 127u, fm = (uint32_t)bar_fam >> 8;
+        int32_t fa = (int32_t)((uint32_t)bar_fam & 255u), gt, gb;
+        int64_t g;
+        if (fm > BAR_NFAM - 1u) { fm = BAR_NFAM - 1u; fa = 0; }
+        gt = bar_card_gain(BAR_POSG[k->band], fm, fa, q);
+        gb = bar_card_gain(BAR_TUBEG[k->band], fm, fa, qb);
+        g = ((((int64_t)k->gain * gt) >> 14) * gb) >> 14;
+        v->gain = g > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)g;
+    }
     v->kill1 = (int32_t)((1u << 29) / (uint32_t)(k->gain > 0 ? k->gain : 1));   /* 1 LSB out, in Q25 units */
     if (v->kill1 < 1) v->kill1 = 1;
     v->kbt = (int32_t)(((int64_t)k->k_bt * s) >> 15);

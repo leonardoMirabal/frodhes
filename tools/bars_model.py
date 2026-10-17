@@ -162,8 +162,40 @@ def note_init(spec, n, vel, kn):
     out["kbt"], out["ktb"], out["wt"] = (k["k_bt"] * s) >> 15, (k["k_tb"] * s) >> 15, (k["wt"] * s) >> 15
     out["pbuf"] = blend_pulse(spec, k["band"], kn["bark"], vel) + [0, 0]
     out["prate"], out["pamp"] = pulse_rate_amp(spec, kidx, kn["bark"], kn["hammer"], vel)
-    out.update(gain=k["gain"], kill=k["kill"], life=k["life"], key=k)
+    out.update(gain=card_gain(spec, k, kn), kill=k["kill"], life=k["life"], key=k)
     return out
+
+
+def point_gain(row, raw):
+    """BAR_POSG / BAR_TUBEG row (Q14, 17 points over raw 0..127) at a card value, as bar_init: q = raw 4096 / 127,
+    i = q >> 8, g = R[i] + ((R[i+1] - R[i]) (q & 255) >> 8) (the last point as is)."""
+    q = int(raw) * 16 * 256 // 127
+    i, fr = q >> 8, q & 255
+    if i >= len(row) - 1:
+        return row[-1]
+    return row[i] + (((row[i + 1] - row[i]) * fr) >> 8)
+
+
+def fam_gain(tab, kf, raw):
+    """BAR_POSG / BAR_TUBEG [family][17] of one band at a card value: per family over the points (point_gain), then
+    the MALLET blend (KN_FAM: family << 8 | Q8 fraction), as bar_init"""
+    f, a = kf >> 8, kf & 255
+    if f > len(tab) - 1:
+        f, a = len(tab) - 1, 0
+    f1 = min(f + 1, len(tab) - 1)
+    g0 = point_gain(tab[f], raw)
+    return g0 + (((point_gain(tab[f1], raw) - g0) * a) >> 8)
+
+
+def card_gain(spec, k, kn):
+    """bars.c bar_init's output gain: the key's gain x the strike position's (TONE) and the tube's (BELL) level
+    compensation of its band and mallet (Q14 tables; none in an older spec)"""
+    g = int(k["gain"])
+    if "pos_gain" in spec:
+        kf = spec["kn_fam"][kn["bark"]]
+        g = (g * fam_gain(spec["pos_gain"][k["band"]], kf, kn["tone"])) >> 14
+        g = (g * fam_gain(spec["tube_gain"][k["band"]], kf, kn["bell"])) >> 14
+    return min(g, 0x7FFFFFFF)
 
 
 # ---------------------------------------------------------------- the levels, exactly as bars.c (integers, log2 Q8)

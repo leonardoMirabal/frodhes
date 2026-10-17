@@ -95,6 +95,7 @@ static uint8_t bar_sub;                             /* main loop: the bar TYPE (
 static volatile int32_t bar_pos = 64;               /* TONE raw 0..127: strike position (64 = 0) */
 static volatile int32_t bar_fam = 1 << 8;           /* KN_FAM[BARK]: family << 8 | Q8 fraction */
 static volatile int32_t bar_tube = 32768;           /* KN_TUBE[BELL], Q15 */
+static volatile int32_t bar_bell = 64;              /* BELL raw 0..127 (its level compensation, BAR_TUBEG) */
 static volatile int32_t bar_mass = 4096, bar_massi = 4096;   /* KN_MASS / KN_MASSI[HAMMER], Q12 */
 static volatile int32_t bar_nz;                     /* KN_NZ[NOISE], Q15 */
 static volatile int32_t bar_k_decay = 65536, bar_k_rel = 65536;   /* DECAY_K[RING], DECAY_K[DAMPER], Q16 */

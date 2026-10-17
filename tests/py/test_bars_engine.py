@@ -261,3 +261,34 @@ def test_voice_ends_under_one_lsb(note):
     nz = np.flatnonzero(m)
     assert len(nz) and nz[-1] < 4.5 * FS
     assert m[nz[-1]] <= 1.0 and m[max(0, nz[-1] - 256):nz[-1] + 1].max() <= 1.0, (nz[-1] / FS, m[nz[-1] - 256:nz[-1] + 1].max())
+
+
+def lufs300(m, t):
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import bar_measure as bm
+    return bm.lufs(m[int(t * FS):int((t + 0.3) * FS)])
+
+
+@pytest.mark.parametrize("tone,bell", [(0, 127), (16, 0), (32, 127), (127, 127), (0, 0)])
+def test_no_clipping_at_any_voicing(tone, bell):
+    """S2: one voice at v127, RUBBER, HAMMER 127, NOISE 0, RAW (no limiter): the peak stays under the generator's
+    ceiling (vibes.json card_level, -3 dBFS) at every TONE / BELL; before the strike position's level compensation
+    TONE 0 clipped (full scale on F3..F4)"""
+    keys = [41, 53, 59, 65, 69, 77, 89, 101]
+    s = RAW + VIBES + f"61 midi 0xB0 104 0\n62 midi 0xB0 28 {tone}\n63 midi 0xB0 30 {bell}\n64 midi 0xB0 29 127\n65 midi 0xB0 31 127\n"
+    s += "".join(f"{200 + 700 * i} midi 0x90 {n} 127\n{600 + 700 * i} midi 0x80 {n} 0\n" for i, n in enumerate(keys))
+    x, _ = render(f"clip{tone}_{bell}", s + f"{200 + 700 * len(keys) + 500} end\n")
+    assert np.max(np.abs(x)) <= 32768 * 10 ** (-2.5 / 20), np.max(np.abs(x))
+
+
+@pytest.mark.parametrize("cc,limit", [(28, 1.5), (30, 6.0)])
+def test_card_sweep_level(cc, limit):
+    """S9: TONE (strike position) holds the level, BELL (tube size) moves it no more than the plan allows (6 LU over
+    the sweep, 0..300 ms, the mean of keys 53 69 89); before the compensation TONE moved it 6.2 LU, BELL 10.8"""
+    lv = []
+    for v in (0, 32, 64, 96, 127):
+        s = RAW + VIBES + f"61 midi 0xB0 104 0\n62 midi 0xB0 {cc} {v}\n"
+        s += "".join(f"{200 + 1500 * i} midi 0x90 {n} 100\n{1100 + 1500 * i} midi 0x80 {n} 0\n" for i, n in enumerate((53, 69, 89)))
+        x, _ = render(f"sweep{cc}_{v}", s + "4800 end\n")
+        lv.append(np.mean([lufs300(x[:, 0], 0.2 + 1.5 * i) for i in range(3)]))
+    assert max(lv) - min(lv) <= limit, lv
