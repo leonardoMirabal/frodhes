@@ -35,7 +35,7 @@ def code_ccs():
 def manual_ccs():
     """the CC numbers listed in the MIDI section's table (first and third columns: "86 / 87", "28-31", "12 / 13")"""
     got = set()
-    for line in section("## 11. MIDI").splitlines():
+    for line in section("## 12. MIDI").splitlines():
         if not line.startswith("| ") or "---" in line:
             continue
         cells = [c.strip() for c in line.strip("|").split("|")]
@@ -62,6 +62,15 @@ def test_assign_list_matches_perf_t():
 
 def test_factory_presets_listed():
     names = re.findall(r'"([^"]+)"', src("presets.c")[src("presets.c").index("PR_FNAME[PR_NF] = {"):].split("};")[0])
-    table = section("## 5. Presets")
+    table = section("## 6. Presets")
     missing = [f"F{i + 1:02d} {n}" for i, n in enumerate(names) if f"F{i + 1:02d} {n}" not in table]
     assert not missing, missing
+
+
+def test_manual_links_resolve():
+    """every in-page link (#anchor) points at a heading that exists (GitHub's anchor rule: lower case, spaces to -,
+    punctuation dropped); sections were renumbered when VIBES got its own (5)"""
+    heads = {re.sub(r"[^a-z0-9 -]", "", h.lower()).replace(" ", "-")
+             for h in re.findall(r"^#{2,4} (.+)$", MANUAL, re.M)}
+    bad = sorted({a for a in re.findall(r"\]\(#([^)]+)\)", MANUAL) if a not in heads})
+    assert not bad, bad

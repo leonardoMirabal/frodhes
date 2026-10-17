@@ -1,12 +1,14 @@
 # Frodhes
 
-**A physically modelled Fender Rhodes electric piano for the M-VAVE FM-1.**
+**A physically modelled Fender Rhodes and vibraphone for the M-VAVE FM-1.**
 
 ![Frodhes on the FM-1: the PERFORM, main, PHASER and COMPRESSOR pages](docs/manual/img/overview.png)
 
-Frodhes turns the FM-1 into an electric piano. Every note is computed live from the mechanics of a Rhodes: a hammer
-strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound, with the bark of
-hard notes and the bell of the attack. Four instrument types (Stage 77, Suitcase, Early Felt, Bell Dyno), a
+Frodhes turns the FM-1 into an electric piano and a vibraphone. Every note is computed live from the mechanics of the
+instrument: on a Rhodes a hammer strikes a tine, the tine rings against its tonebar and a magnetic pickup turns the
+motion into sound, with the bark of hard notes and the bell of the attack; on the vibraphone a mallet strikes a bar,
+its tuned tube rings along and the motor makes it pulse. Five instrument types (Stage 77, Suitcase, Early Felt, Bell
+Dyno and Vibes), a
 reface CP-style effects chain (compressor, a resonant filter with its LFO, drive, tremolo / wah, phaser, chorus, delay,
 reverb), tap tempo with MIDI
 clock sync, USB-MIDI in and out and TRS MIDI in, chord mode, a pattern recorder (1–16 bar loops, quantize, overdub, undo / erase), an arpeggiator, scales, a sustain pedal, 8-voice polyphony and 14 factory plus 16 user presets. The screen shows one page at a time with
@@ -42,11 +44,11 @@ the MIDI map.
 | **PERFORM** | TREM/WAH | PHASER | FILTER | DELAY | HOME (assignable on ASSIGN) |
 | **ASSIGN** | what K1 plays | what K2 plays | what K3 plays | what K4 plays | (SELECT) |
 | **FRODHES** (main) | TYPE | DRIVE | REVERB | KEY VEL | HOME twice |
-| **VOICE** | TONE | BARK | BELL | HAMMER | EDIT |
-| **DECAY** | DECAY | RELEASE | NOISE | TUNE | (SELECT) |
+| **VOICE** | TONE (VIBES: STRIKE) | BARK (MALLET) | BELL (TUBE) | HAMMER (WEIGHT) | EDIT |
+| **DECAY** | DECAY (VIBES: RING) | RELEASE (DAMPER) | NOISE | TUNE | (SELECT) |
 | **COMPRESSOR** | THRESHOLD (OFF / on) | RATIO | ATTACK | MAKEUP | (SELECT) |
 | **FILTER** | OFF / LP12 / LP18 / HP12 / HP18 / BP / NOTCH | FREQ | RESO | LFO | (SELECT) |
-| **TREM/WAH** | OFF / PAN / TREM / WAH | DEPTH | RATE | SHAPE | LFO |
+| **TREM/WAH** | OFF / PAN / TREM / WAH (VIBES: + MOTOR) | DEPTH | RATE | SHAPE | LFO |
 | **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | ENV (there: on / off) |
 | **CHORUS** | OFF / ON | DEPTH | SPEED | SYNC | (SELECT) |
 | **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | SEL (there: on / off) |

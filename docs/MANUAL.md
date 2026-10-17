@@ -16,15 +16,16 @@ chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo
 2. [The idea: one page, four knobs](#2-the-idea-one-page-four-knobs)
 3. [Buttons and knobs](#3-buttons-and-knobs)
 4. [The pages](#4-the-pages)
-5. [Presets](#5-presets)
-6. [Effects on and off](#6-effects-on-and-off)
-7. [Tempo and sync](#7-tempo-and-sync)
-8. [Scales](#8-scales)
-9. [Sustain and polyphony](#9-sustain-and-polyphony)
-10. [Sound and volume tips](#10-sound-and-volume-tips)
-11. [MIDI](#11-midi)
-12. [If something goes wrong](#12-if-something-goes-wrong)
-13. [Specifications](#13-specifications)
+5. [VIBES: the vibraphone](#5-vibes-the-vibraphone)
+6. [Presets](#6-presets)
+7. [Effects on and off](#7-effects-on-and-off)
+8. [Tempo and sync](#8-tempo-and-sync)
+9. [Scales](#9-scales)
+10. [Sustain and polyphony](#10-sustain-and-polyphony)
+11. [Sound and volume tips](#11-sound-and-volume-tips)
+12. [MIDI](#12-midi)
+13. [If something goes wrong](#13-if-something-goes-wrong)
+14. [Specifications](#14-specifications)
 
 ## 1. Install
 
@@ -63,7 +64,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | --- | --- |
 | **SELECT** (knob) | Next / previous page |
 | **K1 K2 K3 K4** | The four cards on the current page |
-| **ALGORITHM** (knob) | The Rhodes TYPE, from any page (on SEQUENCER: the step cursor) |
+| **ALGORITHM** (knob) | The TYPE (the four Rhodes and VIBES), from any page (on SEQUENCER: the step cursor) |
 | **PRESETS** (knob) | Browse the sounds F01–F14 and your U01–U16 (loads when you stop turning; on SEQUENCER: bar by bar) |
 | **MASTER** (knob) | Volume |
 | **HOME** | PERFORM page; press again for the main page (titled FRODHES), and back |
@@ -74,7 +75,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **SEL** | DELAY page; press again there to switch the delay on / off |
 | **ARP** | ARPEGGIO page; press again there to switch the arpeggiator on / off |
 | **GLO** | TEMPO page; press again for SETUP, again for MIDI, and back to TEMPO |
-| **FX** | All effects off / on at once (see [6](#6-effects-on-and-off)) |
+| **FX** | All effects off / on at once (see [7](#7-effects-on-and-off)) |
 | **PLAY** | Tap tempo; on ARPEGGIO, the arpeggiator's HOLD on / off; on SEQUENCER, start / stop the loop |
 | **REC** | Sustain pedal |
 | **SAVE** | Save the sound to a user preset; hold to undo the last preset load |
@@ -140,6 +141,8 @@ The first page carries the instrument's name as its title and holds the piano's 
 | K3 | **BELL** | The bright metallic overtone at the start of each note |
 | K4 | **HAMMER** | Hammer hardness: softer is darker, harder is brighter |
 
+
+On **VIBES** these cards are the vibraphone's: see [VIBES](#5-vibes-the-vibraphone).
 ### DECAY
 
 ![DECAY](manual/img/decay.png)
@@ -151,6 +154,8 @@ The first page carries the instrument's name as its title and holds the piano's 
 | K3 | **NOISE** | The damper's soft knock and the felt's sound when you let go |
 | K4 | **TUNE** | Fine tuning, ±50 cents |
 
+
+On **VIBES** these cards are the vibraphone's: see [VIBES](#5-vibes-the-vibraphone).
 ### COMPRESSOR
 
 ![COMPRESSOR](manual/img/comp.png)
@@ -194,6 +199,8 @@ On PERFORM, K3 is the filter's cutoff by default. Over MIDI: CC 70 TYPE, 74 cuto
 | K3 | **RATE** | How fast; on WAH, the resonance. When synced it shows a note value |
 | K4 | **SHAPE** | From a smooth sine to a square, choppy pulse |
 
+
+On **VIBES**, EFFECT has a fifth kind after WAH, **MOTOR**: the vibraphone's motor (see [VIBES](#5-vibes-the-vibraphone)).
 ### PHASER
 
 ![PHASER](manual/img/phaser.png)
@@ -368,11 +375,63 @@ The bottom line shows the name and the version installed, and the audio engine's
 Press **GLO** three times to come here (TEMPO, SETUP, MIDI). Everything MIDI does, it does the same from USB and from
 the TRS jack: notes, every CC in the table below, program changes, clock, start and stop.
 
-## 5. Presets
+## 5. VIBES: the vibraphone
+
+Turn **ALGORITHM** (or the TYPE card) to **VIBES** and the FM-1 plays a vibraphone: aluminium bars struck with
+mallets, each with its tuned tube underneath, and the motor that gives the vibraphone its pulsing shimmer. Like the
+Rhodes it is computed, not sampled: the bar's own modes (the fundamental and its tuned overtones, about 4 and 10
+times higher), the tube that takes a moment to build up under the bar, and the motor's discs. Switching between a
+Rhodes type and VIBES fades out what is still ringing.
+
+The pages stay the same: on VIBES, the VOICE and DECAY cards change their names and what they do.
+
+![VOICE on VIBES](manual/img/voice-vibes.png)
+
+| Knob | Card | What it does on VIBES |
+| --- | --- | --- |
+| K1 | **STRIKE** | Where the mallet hits the bar: **CENTRE** (left end), the purest tone; **L/3** (the middle of the knob, the usual spot), more of the bright overtone; toward the **EDGE** (right), off the centre line, a slightly metallic tone |
+| K2 | **MALLET** | How hard the mallet is: **SOFT** and **YARN** (round, warm), **CORD** (clearer), **RUBBER** (hard, bright, with a click). The card shows the mallet's name, or a number between two of them |
+| K3 | **TUBE** | How much the tube rings with the bar: 0 is a bare bar (dry, thin, rings longer); up is a fuller, warmer note that blooms just after the strike and dies sooner, as on a real vibraphone |
+| K4 | **WEIGHT** | The mallet's weight: light is brighter and quicker, heavy rounder. How hard you play (KEY VEL, MIDI velocity) stays the strike's speed |
+
+![DECAY on VIBES](manual/img/decay-vibes.png)
+
+| Knob | Card | What it does on VIBES |
+| --- | --- | --- |
+| K1 | **RING** | How long a struck bar rings: from a quarter to about four times the normal time |
+| K2 | **DAMPER** | How firmly the damper stops the notes when you let go: soft lets them fade, firm stops them short |
+| K3 | **NOISE** | The mallet's contact and the damper's touch |
+| K4 | **TUNE** | Fine tuning, ±50 cents (many vibraphones are tuned to A = 442 Hz: +8) |
+
+**The pedal** works like the Rhodes' sustain: **REC** (hold, or tap to latch) or a sustain pedal over MIDI (CC 64,
+half-pedal too). Without it the damper stops each note when you let go.
+
+**The motor.** On the TREM/WAH page, turn **EFFECT** to **MOTOR** (after WAH; it only appears on VIBES):
+
+![MOTOR on TREM/WAH](manual/img/trem-motor.png)
+
+| Knob | Card | What it does with MOTOR |
+| --- | --- | --- |
+| K1 | **EFFECT** | **MOTOR** |
+| K2 | **DEPTH** | How far the discs close the tubes: a gentle pulse to a deep throb |
+| K3 | **RATE** | The motor speed, 0.5–10 Hz (about 3.5 Hz is classic); synced to the tempo when TREM SYNC (TEMPO page) is set |
+| K4 | **SHAPE** | How sharply the discs open: soft is a smooth pulse, sharp a shorter, more pointed one |
+
+As on a real vibraphone the motor works on the tubes, so it pulses the ringing note and leaves the high overtones
+alone. A preset with MOTOR played on a Rhodes type gives the TREM tremolo.
+
+**The range.** A concert vibraphone has three octaves, **F3 to F6**; that is where VIBES is measured against the real
+instrument. Every other MIDI note plays too, extended from the same physics. The FM-1's keys (F3–G5) sit in the
+vibraphone's range.
+
+**Presets:** **F13 VIBE MOTOR** (the motor at 3.5 Hz, a little reverb) and **F14 VIBES DRY** (motor off, close).
+**Polyphony:** 8 notes, as the Rhodes.
+
+## 6. Presets
 
 ![Browsing presets](manual/img/browse.png)
 
-Turn **PRESETS** to browse: **F01–F14** are the factory sounds, **U01–U16** your own. A preset loads when you stop
+Turn **PRESETS** to browse: **F01–F14** are the factory sounds (F13 and F14 are VIBES), **U01–U16** your own. A preset loads when you stop
 turning (after 0.4 s). If you did not mean to, **hold SAVE** (0.7 s) to go back to the sound you had before the
 last load (the top line names it again); hold it again to return (redo). The first time Frodhes
 starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
@@ -403,7 +462,7 @@ always there to start again from.
 
 So after a change, let the sound die away for a couple of seconds before you switch off.
 
-## 6. Effects on and off
+## 7. Effects on and off
 
 Each effect has its own on / off: its page button pressed twice (LFO: tremolo / wah, ENV: phaser, SEL: delay), its
 K1 card on its page (chorus: EFFECT; compressor: THRESH), or turning it up on PERFORM. Switching an effect on whose depth is 0 gives it a useful starting depth, so you always hear it.
@@ -418,7 +477,7 @@ on.
 The order of the chain: **COMP → FILTER → DRIVE → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter.** The limiter at the
 end keeps even big chords of eight notes from ever clipping.
 
-## 7. Tempo and sync
+## 8. Tempo and sync
 
 Tap **PLAY** three times or more in time to set the tempo, or set **BPM** on the TEMPO page. With **CLOCK** on EXT
 (the default; MIDI page), Frodhes follows MIDI clock from USB or the TRS jack, and an external Start / Stop starts and
@@ -433,14 +492,14 @@ MIDI clock in is 24 pulses per beat, from 40 to 240 BPM. **Start** and **Continu
 1. Frodhes does not send MIDI clock.
 The tempo also drives the arpeggiator and the sequencer.
 
-## 8. Scales
+## 9. Scales
 
 On the SCALE page, **SNAP** lets every key play but moves out-of-scale notes onto the scale, and **DEGREE** turns the
 white keys into the scale's steps (C plays the root) so you can play any scale with white keys only.
 While a scale is on, the keys that play its root glow dimly (in DEGREE: the C keys), so you can always find the
 keynote.
 
-## 9. Sustain and polyphony
+## 10. Sustain and polyphony
 
 **REC** is the sustain pedal. **Hold** it like a pedal, or **tap** it to latch the sustain on, and tap again to
 release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with half-pedalling.
@@ -453,7 +512,7 @@ late, the quietest released note would be faded out rather than letting the soun
 case (8 low notes at full velocity with the pedal and every effect on) uses 4.9 ms of the 5.8 ms available per audio
 block, and the guard never acts.
 
-## 10. Sound and volume tips
+## 11. Sound and volume tips
 
 - **KEY VEL** on the main page is your touch. 96–108 is a good start; the bark comes in above about 100.
 - **MASTER is digital.** For the least hiss on the headphone jack, keep MASTER high and turn your speakers or
@@ -463,7 +522,7 @@ block, and the guard never acts.
 - Every effect is set to keep about the same volume when you switch it on; the compressor's MAKEUP and each preset's
   LEVEL (SETUP) let you fine-tune it.
 
-## 11. MIDI
+## 12. MIDI
 
 Frodhes is a class-compliant USB-MIDI device and also listens to the FM-1's **TRS MIDI input** (3.5 mm; MIDI page:
 TRS IN, CHANNEL). Notes play with their velocity (and go through the arpeggiator when it runs); the FM-1's keys
@@ -500,7 +559,7 @@ The TRS jack is MIDI in only. **Program Change** 0–13 loads F01–F14, 16–31
 The FM-1 also appears as a USB audio input (class-compliant, stereo, 16-bit, 44.1 or 48 kHz): you can record exactly
 what it plays, digitally, without the headphone jack's hiss. It does not play audio from the computer.
 
-## 12. If something goes wrong
+## 13. If something goes wrong
 
 - **No sound:** check MASTER, that FX has not bypassed a sound you relied on (BYP in the header), LEVEL on SETUP,
   and on the MIDI page that CHANNEL is ALL or the channel your keyboard sends on.
@@ -521,11 +580,11 @@ Frodhes is free software under the GPL-3.0 licence, built on [Dinghy](https://gi
 [Felucca](https://github.com/hugelton/Felucca) and [SLOOP](https://github.com/isod89/sloop-fm1). Source and
 issues: [github.com/leonardoMirabal/frodhes](https://github.com/leonardoMirabal/frodhes).
 
-## 13. Specifications
+## 14. Specifications
 
 | | |
 | --- | --- |
-| **Sound** | A physical model computed live, no samples. Rhodes: hammer, tine, tonebar and pickup; 4 types (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO) |
+| **Sound** | A physical model computed live, no samples. Rhodes: hammer, tine, tonebar and pickup; 4 types (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO). VIBES: a vibraphone, mallet, bar modes, tuned tube and motor |
 | **Polyphony** | 8 voices; a 9th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
 | **Range** | 88 notes, A0–C8 over MIDI (notes outside play the nearest end); the 27 keys play F3–G5, OCT ±2 octaves, TRANSP ±24 semitones, TUNE ±50 cents |
 | **Velocity** | MIDI 1–127; the FM-1's keys play at KEY VEL (1–127, default 96) |
