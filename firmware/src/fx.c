@@ -160,8 +160,9 @@ static void fx_drive(int32_t *m, uint32_t n)
     if (!d) { dr_w = wt; return; }                      /* AMOUNT 0: off, as before (no glide: there is no drive) */
     if (!wt && !dr_w) { dr_ton = 0; dr_tg = 4096; return; }   /* off, or MIX 0: the dry signal, untouched */
     g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
-    if (d > 16) g = 4096 + (int32_t)((((int64_t)(g - 4096)) * (16 + d)) >> 5);   /* above 16 up to ~40x: a single
-                                                       * note reaches the knee (was ~9x: nothing heard, TODO #4); <= 16 (the
+    if (d > 16) g = 4096 + (int32_t)((((int64_t)(g - 4096)) * (95 + d)) / 111);   /* above 16 the gain rises to ~18x
+                                                       * at the top (was ~9x: a single note never reached the knee, TODO #4;
+                                                       * ~36x was a distortion, the user wants an overdrive); <= 16 (the
                                                        * presets' low drive) exactly as before */
     k = 32000 - d * 95;
     mk = ((30000 - d * 120) * DR_MU[row]) >> 12;

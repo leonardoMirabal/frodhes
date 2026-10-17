@@ -65,7 +65,7 @@ def main():
     # drive make-up trim (Q15): the measured +0.09 dB per DRIVE step taken back, so DRIVE is level-neutral; and (0.9.3,
     # the drive's gain up to ~40x: it did nothing audible, TODO #4) the loudness its saturation adds, measured on the
     # host (A3 v80 / v110, A2, A4, a chord v110 / v70, LUFS, the mean) at these AMOUNT anchors, taken back too
-    DRV_RISE = [(0, 0.0), (8, -0.39), (16, -0.25), (24, 0.69), (32, 2.16), (40, 3.82), (48, 5.43), (56, 6.86), (64, 8.02), (72, 8.89), (80, 9.47), (88, 9.75), (96, 9.77), (104, 9.55), (112, 9.12), (120, 8.51), (127, 7.84)]
+    DRV_RISE = [(0, 0.0), (16, -0.71), (24, -0.48), (32, 0.11), (40, 0.9), (48, 1.77), (56, 2.62), (64, 3.39), (72, 4.04), (80, 4.55), (88, 4.91), (96, 5.11), (104, 5.15), (112, 5.03), (120, 4.76), (127, 4.39)]
     def drv_rise(v):
         for (a, ra), (b, rb) in zip(DRV_RISE, DRV_RISE[1:]):
             if a <= v <= b:
