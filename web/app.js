@@ -32,15 +32,28 @@ var Module = window.Module = {
 };
 
 // ---- the screen and the LEDs, every animation frame
+// RGB565 -> the colours as the FM-1's panel shows them (the dark tones lifted, the hue towards yellow): the "device
+// look" of tools/manual_shots.py, same numbers (measured by tools/display_cal.py from photos of the FM-1);
+// ?raw shows the framebuffer's own colours
+const LOOK = { g: [1.0907, 0.8288, 0.9032], m: [[2.4821, 0.5194, -0.2992], [0.1402, 3.4473, 0.2092], [0.0378, 0.0352, 3.4810]],
+               f: [0.0356, 0.0340, 0.0583] };
+const RGB = new Uint32Array(65536), RAW = /[?&]raw\b/.test(location.search);   // 565 -> RGBA bytes (little-endian)
+for (let v = 0; v < 65536; v++) {
+  const x = [((v >> 11) & 31) / 31, ((v >> 5) & 63) / 63, (v & 31) / 31], o = [0, 0, 0];
+  for (let c = 0; c < 3; c++) {
+    if (RAW) { o[c] = Math.round(x[c] * 255); continue; }
+    let l = LOOK.f[c];
+    for (let k = 0; k < 3; k++) l += LOOK.m[c][k] * Math.pow(x[k], LOOK.g[k]);
+    o[c] = Math.round(255 * Math.pow(Math.min(1, Math.max(0, l)), 1 / 2.2));
+  }
+  RGB[v] = o[0] | o[1] << 8 | o[2] << 16 | 0xFF000000;
+}
 let img = null;
 function frame() {
   const c = $("screen"), g = c.getContext("2d");
   if (!img) img = g.createImageData(240, 240);
-  const fb = new Uint16Array(M.HEAPU8.buffer, M._web_fb(), 240 * 240), d = img.data;
-  for (let i = 0, j = 0; i < 240 * 240; i++, j += 4) {
-    const v = fb[i];                                 // RGB565
-    d[j] = ((v >> 11) & 31) * 255 / 31; d[j + 1] = ((v >> 5) & 63) * 255 / 63; d[j + 2] = (v & 31) * 255 / 31; d[j + 3] = 255;
-  }
+  const fb = new Uint16Array(M.HEAPU8.buffer, M._web_fb(), 240 * 240), d = new Uint32Array(img.data.buffer);
+  for (let i = 0; i < 240 * 240; i++) d[i] = RGB[fb[i]];
   g.putImageData(img, 0, 0);
   const led = new Uint8Array(M.HEAPU8.buffer, M._web_leds(), 64);
   for (const b of document.querySelectorAll("button.b")) b.classList.toggle("on", led[+b.dataset.id] === 1);
