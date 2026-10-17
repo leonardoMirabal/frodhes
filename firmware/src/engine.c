@@ -77,7 +77,13 @@ static void eng_bar_knob(uint32_t k, uint32_t v)
     case BK_WEIGHT: bar_mass = KN_MASS[c]; bar_massi = KN_MASSI[c]; break;
     case BK_RING: bar_k_decay = (int32_t)DECAY_K[c]; break;
     case BK_DAMPER: bar_k_rel = (int32_t)DECAY_K[c]; break;
-    case BK_NOISE: bar_nz = KN_NZ[c]; bar_thump = rh_thump; bar_felt = rh_felt; break;   /* params.c sets those first */
+    case BK_NOISE:                  /* params.c sets rh_thump / rh_felt first. The Rhodes levels did not fit the bars
+                                     * (audit 2026-10-17): the contact noise came out 75 dB under the note (exactly 0
+                                     * at the default), so it is 48 dB up (NOISE 127: about -25 dB re the note, the
+                                     * default -50); the damper's knock struck the bar as hard as a v100 RUBBER mallet
+                                     * (louder than the strike at 127, louder than the note it damps), so it is 30 dB
+                                     * down and a felt (SOFT) pulse: the default -31 .. -40 dB re the strike */
+        bar_nz = (int32_t)KN_NZ[c] << 8; bar_thump = rh_thump >> 5; bar_felt = rh_felt; break;
     case BK_MOT_ON: bar_mot_on = (uint8_t)(v != 0); break;
     case BK_MOT_DEPTH: bar_mot_depth = (uint8_t)c; break;
     case BK_MOT_SHAPE: bar_mot_shape = (uint8_t)c; break;

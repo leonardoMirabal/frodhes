@@ -252,8 +252,8 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     v->fade = 32768; v->pend = 0; v->felt_n = 0; v->felt_lp = 0;
     v->age = ++bar_ages;
     v->life = k->life;
-    v->pthump = BAR_PULSE[k->band][BAR_NFAM - 1u][0];             /* the felt's knock: RUBBER, softest layer */
-    v->prate_thump = BAR_PRATE[n - BAR_KEY_LO][BAR_NFAM - 1u][1] << 4;
+    v->pthump = BAR_PULSE[k->band][0][0];             /* the felt's knock: SOFT, the softest layer */
+    v->prate_thump = BAR_PRATE[n - BAR_KEY_LO][0][1] << 4;
     bar_load_pulse(v, vel);
     {   /* contact noise: filtered noise, louder for harder mallets and faster strikes, decaying (tau ~ 23 ms) */
         uint32_t f = (uint32_t)bar_fam >> 8;
