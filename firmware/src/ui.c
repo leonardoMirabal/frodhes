@@ -190,9 +190,9 @@ static void ui_changed(void) { set_dirty = 1; set_t_change = fm1_ms; }
 static int32_t sgn(int32_t d) { return d > 0 ? 1 : -1; }
 
 /* the FRODHES page's K2 / K3 belong to the engine (the user, 2026-10-17: "2 options depend on the selected engine"):
- * one row per engine, so a new engine adds its own; K1 TYPE and K4 KEY VEL stay. The Rhodes row is the page as before. */
+ * one row per engine, so a new engine adds its own; K1 TYPE and K4 KEY VEL stay (PLAN rev. 12: Rhodes TONE + BELL). */
 static const struct { uint8_t s[2]; const char *lab[2]; uint8_t cmp_mkup; } ENG_HEAD[2] = {
-    {{P_DRIVE, P_RV_DEPTH}, {"DRIVE", "REVERB"}, 15},   /* Rhodes */
+    {{P_TONE, P_BELL}, {"TONE", "BELL"}, 15},           /* Rhodes: the tine's voicing (DRIVE / REVERB have their pages) */
     {{P_BARK, P_MOT_ON}, {"MALLET", "MOTOR"}, 28},      /* the bar engine: VOICE's MALLET, MOTOR on / off */
 };
 /* cmp_mkup: the compressor's make-up when the panel switches it on with none set (-20 dB 4:1): level-neutral for that

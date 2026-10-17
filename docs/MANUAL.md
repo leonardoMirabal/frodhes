@@ -120,8 +120,8 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **TYPE** | The instrument: **STAGE 77** (the classic Mark I), **SUITCASE** (with its Peterson amp and 4×12 speakers), **EARLY FELT** (1970 felt hammers: rounder, darker), **BELL DYNO** (Dyno-My-Piano voicing: glassy, bell-like), or **VIBES**, the vibraphone (see [VIBES](#5-vibes-the-vibraphone)). Applies to the next notes. |
-| K2 | **DRIVE** | Amp drive, from clean to growl. It changes the tone, not the volume. |
-| K3 | **REVERB** | Hall reverb amount |
+| K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE's TONE). On VIBES: **MALLET** |
+| K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE's BELL). On VIBES: **MOTOR** on / off |
 | K4 | **KEY VEL** | How hard the FM-1's own keys strike. The keys are not velocity-sensitive, so this decides the touch: around 60–80 soft and round, 96 medium, 108–127 hard with bark. MIDI notes keep their own velocity. |
 
 ### VOICE
@@ -425,7 +425,7 @@ Rhodes type and VIBES fades out what is still ringing.
 ![The main page on VIBES](manual/img/piano-vibes.png)
 
 The main page's middle cards belong to the engine: on VIBES they are **MALLET** (the same as VOICE's MALLET) and
-**MOTOR** (on / off, the same as the MOTOR page's first card); on a Rhodes type they stay **DRIVE** and **REVERB**.
+**MOTOR** (on / off, the same as the MOTOR page's first card); on a Rhodes type they are **TONE** and **BELL** (DRIVE and REVERB have their own pages).
 
 VIBES plays about **2.5 dB louder** than the Rhodes types: a struck bar is peakier than a Rhodes note, so at the same
 loudness it sounded weaker and came out closer to the headphone jack's hiss. The limiter still keeps big chords from
