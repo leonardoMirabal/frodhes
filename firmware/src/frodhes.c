@@ -159,6 +159,8 @@ static void app_main(void)
 {
     uint32_t prev = 0, k;
     int fresh = settings_load(&set, sizeof set) != 0;
+    if (!fresh && set.ver != 1u && set.ver != SET_VER) fresh = 1;   /* a record this firmware cannot read (another
+                                                                     * version): as a first boot, so it plays F01 too */
     if (fresh) params_defaults();
     params_sanitize();
     arp_sanitize();
