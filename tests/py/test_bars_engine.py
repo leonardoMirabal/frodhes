@@ -248,3 +248,16 @@ def test_noise_zero_is_noiseless():
                   "990 midi 0xB0 104 0\n1000 midi 0x90 60 100\n2000 midi 0x80 60 0\n3000 end\n")
     s = slice(int(1.0 * FS), int(3.0 * FS))
     assert np.array_equal(a[s], b[s])
+
+
+@pytest.mark.parametrize("note", [36, 41, 48, 55, 69, 96])
+def test_voice_ends_under_one_lsb(note):
+    """S4: a released note ends where its output is under 1 LSB (the last non-zero sample is 1 LSB at most), on the
+    low keys too: there the modes' level measure (x1^2 - a1 x1 x2 + a2 x2^2) lost its small terms to the Q32 product's
+    truncation (c1 x1 >> 32 = 0 for an 65 Hz mode under ~8 LSB) and the voice was cut at up to 7 LSB"""
+    s = RAW + VIBES + "61 midi 0xB0 104 0\n" + f"200 midi 0x90 {note} 127\n440 midi 0x80 {note} 0\n5000 end\n"
+    x, _ = render(f"end{note}", s)
+    m = np.abs(x[:, 0])
+    nz = np.flatnonzero(m)
+    assert len(nz) and nz[-1] < 4.5 * FS
+    assert m[nz[-1]] <= 1.0 and m[max(0, nz[-1] - 256):nz[-1] + 1].max() <= 1.0, (nz[-1] / FS, m[nz[-1] - 256:nz[-1] + 1].max())

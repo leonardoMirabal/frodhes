@@ -42,15 +42,26 @@ static int32_t bar_exp2(int32_t l)                  /* 2^(l / 256); 0 under 1 */
     return (int32_t)(i >= 8 ? m << (i - 8) : m >> (8 - i));
 }
 
+/* k p / 2^32 for a Q32 coefficient 0 <= k < 2^31 and |p| < 2^57, without losing p's low bits when p is small (the
+ * products stay under 2^63) */
+static int64_t bar_q32mul(int32_t k, int64_t p)
+{
+    int64_t a = p < 0 ? -p : p;
+    if (a < (1ll << 31)) return ((int64_t)k * p) >> 32;
+    if (a < (1ll << 47)) return ((int64_t)k * (p >> 16)) >> 16;
+    return ((int64_t)k * (p >> 24)) >> 8;
+}
+
 /* a slot's log2 amplitude (Q8, Q25 units) from x[n], x[n-1]: x1^2 - a1 x1 x2 + a2 x2^2 (= (x1 - x2)^2 + c1 x1 x2 -
- * c2 x2^2) = A^2 sin^2(theta) for a damped sinusoid */
+ * c2 x2^2) = A^2 sin^2(theta) for a damped sinusoid. Q32 form: the c terms on the products x1 x2 and x2^2 (rounding
+ * c1 x1 first lost them on the low modes near the end: c1 x1 >> 32 is 0 for a 65 Hz mode under ~8 LSB out, and the
+ * level read near 0 cut the voice at up to 7 LSB) */
 static int32_t bar_lamp(const bar_ms_t *s)
 {
     int64_t q;
     if (s->lo) {
         int32_t d = s->x1 - s->x2;
-        q = (int64_t)d * d + (int64_t)(int32_t)(((int64_t)s->k1 * s->x1) >> 32) * s->x2
-          - (int64_t)(int32_t)(((int64_t)s->k2 * s->x2) >> 32) * s->x2;
+        q = (int64_t)d * d + bar_q32mul(s->k1, (int64_t)s->x1 * s->x2) - bar_q32mul(s->k2, (int64_t)s->x2 * s->x2);
     } else {
         int32_t c = (int32_t)(((int64_t)s->k1 * s->x2) >> 30), d = (int32_t)(((int64_t)s->k2 * s->x2) >> 30);
         q = (int64_t)s->x1 * (s->x1 - c) + (int64_t)s->x2 * d;
