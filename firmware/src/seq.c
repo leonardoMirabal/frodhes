@@ -228,8 +228,20 @@ static void seq_poll(void)
 #ifdef DINGHY_HOST
 static uint32_t crc32(const uint8_t *p, uint32_t n);   /* presets.c (host) */
 static uint8_t sq_host_fl[2][4096];
-static int sq_fl_read(uint32_t at, void *p, uint32_t n) { memcpy(p, sq_host_fl[at == SQ_B], n); return 0; }
-static int sq_fl_erase(uint32_t at) { memset(sq_host_fl[at == SQ_B], 0xFF, 4096); return 0; }
+static int sq_fl_read(uint32_t at, void *p, uint32_t n)   /* at: a sector and an offset in it (sq_valid reads the
+                                                              * events after the header) */
+{
+    uint32_t s = at >= SQ_B, off = at - (s ? SQ_B : SQ_A);
+    if (off + n > 4096u) return -1;
+    memcpy(p, &sq_host_fl[s][off], n);
+    return 0;
+}
+static int sq_fl_erase(uint32_t at)
+{
+    printf("%6u ms  pattern %c erased\n", fm1_ms, at == SQ_B ? 'B' : 'A');   /* (tests: when it saves) */
+    memset(sq_host_fl[at == SQ_B], 0xFF, 4096);
+    return 0;
+}
 static int sq_fl_write(uint32_t at, uint32_t off, const void *p, uint32_t n) { memcpy(&sq_host_fl[at == SQ_B][off], p, n); return 0; }
 #else
 static int sq_fl_read(uint32_t at, void *p, uint32_t n) { return flash_ok ? st_read(at, p, n) : -1; }
@@ -262,7 +274,7 @@ static void seq_save_poll(void)
 {
     sq_hdr_t h, cur;
     uint32_t at = SQ_A;
-    if (!sq_dirty || seq_play || fm1_ms - sq_change_t < 1500u || !eng_quiet() || !fx_quiet()) return;
+    if (!sq_dirty || seq_play || fm1_ms - sq_change_t < 1500u || !eng_idle() || !fx_quiet()) return;
     {
         static sq_ev_t keep[SQ_MAXEV];                  /* sq_valid() reads into sq_ev: keep ours aside */
         uint32_t n = sq_n;

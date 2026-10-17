@@ -61,7 +61,12 @@ static uint32_t crc32(const uint8_t *p, uint32_t n)
 }
 static uint8_t host_bank[2][4096];
 static int bank_read(uint32_t at, void *p, uint32_t n) { memcpy(p, &host_bank[at == PR_BANK_B][0], n); return 0; }
-static int bank_erase(uint32_t at) { memset(&host_bank[at == PR_BANK_B][0], 0xFF, 4096); return 0; }
+static int bank_erase(uint32_t at)
+{
+    printf("%6u ms  preset bank %c erased\n", fm1_ms, at == PR_BANK_B ? 'B' : 'A');   /* (tests: when it saves) */
+    memset(&host_bank[at == PR_BANK_B][0], 0xFF, 4096);
+    return 0;
+}
 static int bank_write(uint32_t at, uint32_t off, const void *p, uint32_t n) { memcpy(&host_bank[at == PR_BANK_B][off], p, n); return 0; }
 #else
 static int bank_read(uint32_t at, void *p, uint32_t n) { return flash_ok ? st_read(at, p, n) : -1; }
@@ -152,6 +157,7 @@ static void preset_load(uint32_t idx)
     }
     for (i = 0; i < P_COUNT; i++) UV(i) = PV(i);
     set.undo_valid = 1;
+    set.undo_preset = (uint8_t)(set.preset < PR_NF + PR_NU ? set.preset + 1u : 0u);   /* what the undo copy was */
     for (i = 0; i < P_COUNT; i++) param_set(i, p[i]);
     set.preset = (uint8_t)idx;
     tempo_sync_publish();
@@ -172,6 +178,13 @@ static void preset_undo(void)
     for (i = 0; i < P_COUNT; i++) t[i] = PV(i);
     for (i = 0; i < P_COUNT; i++) param_set(i, UV(i));
     for (i = 0; i < P_COUNT; i++) UV(i) = t[i];
+    if (set.undo_preset) {                              /* the header names the sound that plays (0.9.3: it kept
+                                                         * the loaded preset's name over the sound before it) */
+        uint8_t was = set.preset;
+        set.preset = (uint8_t)(set.undo_preset - 1u);
+        set.undo_preset = (uint8_t)(was < PR_NF + PR_NU ? was + 1u : 0u);
+    }
+    set_dirty = 1; set_t_change = fm1_ms;
     tempo_sync_publish();
     ui_draw_page_change();
     ui_say("UNDO");
@@ -247,7 +260,7 @@ static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t r
 
 static void presets_save_poll(void)
 {
-    if (pr_save_pending && eng_quiet() && fx_quiet()) {
+    if (pr_save_pending && eng_idle() && fx_quiet()) {
         pr_save_pending = 0;
         ui_say(presets_save_bank() ? "SAVE FAILED" : "SAVED");
     }

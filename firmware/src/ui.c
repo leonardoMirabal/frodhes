@@ -260,9 +260,7 @@ static void slot_text(uint32_t s, char *v)
         if (PV(P_TW_SYNC)) { p_strcpy(v, N_SYNC[PV(P_TW_SYNC)], 5); return; }
         if (tw_kind() == 4u) {                                       /* MOTOR: 0.5 .. 10 Hz ("3.5HZ") */
             uint32_t n = 0;
-            int32_t t = (int32_t)(((uint64_t)FX_LFO_INC[MOT_RATE_V(PV(s))] * 441000u) >> 32);   /* tenths of a Hz */
-            if (t >= 100) p_fmt_int(v, t / 10);
-            else { v[0] = (char)('0' + t / 10); v[1] = '.'; v[2] = (char)('0' + t % 10); v[3] = 0; }
+            fmt_hz(v, FX_LFO_INC[MOT_RATE_V(PV(s))]);   /* (params.c: rounded) */
             while (v[n]) n++;
             v[n++] = 'H'; v[n++] = 'Z'; v[n] = 0;
             return;

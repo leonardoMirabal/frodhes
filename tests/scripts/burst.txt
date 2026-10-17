@@ -1,0 +1,65 @@
+# More note events in one main-loop pass than the engine's ring holds (32 a block, engine.c): chord mode MAJ7 with
+# +BASS (5 notes a key), eight keys pressed and let go at once = 40 note-ons, then 40 note-offs. Until 0.9.3 the rest
+# were dropped: notes missing, and voices left held (stuck notes). Now they wait (notes.c eng_q) and nothing is lost.
+# Found by the fuzz tests (tests/py/test_fuzz.py).
+50 midi 0xB0 56 6
+60 midi 0xB0 58 2
+100 keys 0xFF
+600 expect state drops 0
+600 expect rms > -40
+1000 keys 0
+1100 expect state drops 0
+3000 expect state held 0
+3000 expect state srcs 0
+# the same on VIBES, and a burst over MIDI (40 note-ons in one millisecond)
+3100 midi 0xB0 79 64
+3200 keys 0xFF00
+3700 keys 0
+3700 expect state drops 0
+5000 expect state held 0
+5100 midi 0xB0 56 0
+5200 midi 0x90 40 100
+5200 midi 0x90 41 100
+5200 midi 0x90 42 100
+5200 midi 0x90 43 100
+5200 midi 0x90 44 100
+5200 midi 0x90 45 100
+5200 midi 0x90 46 100
+5200 midi 0x90 47 100
+5200 midi 0x90 48 100
+5200 midi 0x90 49 100
+5200 midi 0x90 50 100
+5200 midi 0x90 51 100
+5200 midi 0x90 52 100
+5200 midi 0x90 53 100
+5200 midi 0x90 54 100
+5200 midi 0x90 55 100
+5200 midi 0x90 56 100
+5200 midi 0x90 57 100
+5200 midi 0x90 58 100
+5200 midi 0x90 59 100
+5200 midi 0x90 60 100
+5200 midi 0x90 61 100
+5200 midi 0x90 62 100
+5200 midi 0x90 63 100
+5200 midi 0x90 64 100
+5200 midi 0x90 65 100
+5200 midi 0x90 66 100
+5200 midi 0x90 67 100
+5200 midi 0x90 68 100
+5200 midi 0x90 69 100
+5200 midi 0x90 70 100
+5200 midi 0x90 71 100
+5200 midi 0x90 72 100
+5200 midi 0x90 73 100
+5200 midi 0x90 74 100
+5200 midi 0x90 75 100
+5200 midi 0x90 76 100
+5200 midi 0x90 77 100
+5200 midi 0x90 78 100
+5200 midi 0x90 79 100
+5300 midi 0xB0 123 0
+5400 expect state drops 0
+7000 expect state held 0
+7000 expect state srcs 0
+7100 end

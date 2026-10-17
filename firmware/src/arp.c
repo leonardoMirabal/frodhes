@@ -13,6 +13,7 @@
  * Settings (set.arp[]) belong to the FM-1, not to a preset. Nothing here runs in the audio ISR. */
 
 #define MIDI_OUT_CH (set.midi_ch ? set.midi_ch - 1u : 0u)   /* the MIDI page's CHANNEL (ALL: sent on 1) */
+static void eng_q(uint32_t type, uint32_t n, uint32_t v);   /* notes.c: to the engine, in order */
 #define ARP_MAX 16u
 enum { ARP_OFF, ARP_UP, ARP_DOWN, ARP_UPDN, ARP_ORDER, ARP_RANDOM, ARP_NMODE };
 static const char *const ARP_MODE_NAME[ARP_NMODE] = {"OFF", "UP", "DOWN", "UP-DN", "ORDER", "RANDOM"};
@@ -40,7 +41,7 @@ static int arp_on(void) { return ARP_MODE != ARP_OFF; }
 
 static void arp_stop_note(void)
 {
-    if (arp_playing < 128u) { eng_note_off(arp_playing); midi_send(0x80 | MIDI_OUT_CH, arp_playing, 0); }
+    if (arp_playing < 128u) { eng_q(EV_NOTE_OFF, arp_playing, 0); midi_send(0x80 | MIDI_OUT_CH, arp_playing, 0); }
     arp_playing = 255;
 }
 
@@ -120,7 +121,7 @@ static void arp_poll(void)
         uint32_t n = arp_next(), v = arp_vel[0];                       /* one velocity: the first note's */
         arp_step_no = step;
         arp_stop_note();
-        eng_note_on(n, v); midi_send(0x90 | MIDI_OUT_CH, n, v);
+        eng_q(EV_NOTE_ON, n, v); midi_send(0x90 | MIDI_OUT_CH, n, v);
         arp_playing = (uint8_t)n;
         arp_off_t = now + unit_ms10 * ARP_GATE / 1000u - (ARP_GATE >= 100u ? 2u : 0u);
     }
