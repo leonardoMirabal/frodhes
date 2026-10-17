@@ -16,7 +16,7 @@ chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo
 2. [The idea: one page, four knobs](#2-the-idea-one-page-four-knobs)
 3. [Buttons and knobs](#3-buttons-and-knobs)
 4. [The pages](#4-the-pages)
-5. [VIBES: the vibraphone](#5-vibes-the-vibraphone)
+5. [VIBES: the vibraphone](#5-vibes-the-vibraphone) (the motor: [on and off](#the-motor-on-and-off))
 6. [Presets](#6-presets)
 7. [Effects on and off](#7-effects-on-and-off)
 8. [Tempo and sync](#8-tempo-and-sync)
@@ -53,6 +53,10 @@ between pages, or press a page's button to jump straight there. The pages, in SE
 
 PERFORM · FRODHES (main) · VOICE · DECAY · COMPRESSOR · FILTER · TREM/WAH · PHASER · CHORUS · DELAY ·
 TEMPO · SCALE · CHORD · SEQUENCER · ARPEGGIO · LFO · ASSIGN · SETUP · MIDI
+
+A card that sets an amount has a **gauge** under its number: a thin frame that fills from the left, empty at 0
+(DRIVE 0.0 shows an empty frame). Cards for a choice (TYPE, ON / OFF, a note value) have none. The numbers are
+rounded to what fits on the card (1.486 s shows 1.5S, +11.8 dB shows +12).
 
 The top line shows the preset, the octave (O+1, O−2...), **SUS** while the sustain is held, **BYP** while the effects
 are bypassed, and the tempo. The bottom line explains the page's button or shows a live reading; when you change a
@@ -107,26 +111,15 @@ the effects and the filter's cutoff:
 Turning an effect up from here **switches it on**, so you can go from dry to wet with one knob; its light comes on.
 Turning it back to 0 makes it dry again (the effect stays switched on; its button switches it off). **FX** still bypasses all of them at once.
 
-### ASSIGN
-
-![ASSIGN](manual/img/assign.png)
-
-Choose what each PERFORM knob plays: K1 here sets what K1 on PERFORM does, and so on. ASSIGN sits near the end of
-the pages, just before SETUP (the hint on PERFORM says so). Each knob can play any of:
-TREM/WAH, PHASER, CHORUS, DELAY, REVERB, DRIVE, COMP THR, COMP MKUP, TREM RATE, TREM SHAPE, PHA SPEED, PHA FEEDBK,
-CHO SPEED, DLY TIME, DLY FEEDBK, DLY TONE, TONE, BARK, BELL, HAMMER, DECAY, RELEASE, NOISE, KEY VEL, LEVEL, ARP RATE,
-ARP GATE, FILTER, FILT RESO, FILT LFO and LFO RATE. The
-choice is kept when you switch off (it belongs to the FM-1, not to a preset).
-
 ### FRODHES (the main page)
 
-The first page carries the instrument's name as its title and holds the piano's essentials.
+The page after PERFORM (press **HOME** twice) carries the instrument's name as its title and holds the essentials.
 
 ![The main page](manual/img/piano.png)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **TYPE** | The instrument: **STAGE 77** (the classic Mark I), **SUITCASE** (with its Peterson amp and 4×12 speakers), **EARLY FELT** (1970 felt hammers: rounder, darker), **BELL DYNO** (Dyno-My-Piano voicing: glassy, bell-like). Applies to the next notes. |
+| K1 | **TYPE** | The instrument: **STAGE 77** (the classic Mark I), **SUITCASE** (with its Peterson amp and 4×12 speakers), **EARLY FELT** (1970 felt hammers: rounder, darker), **BELL DYNO** (Dyno-My-Piano voicing: glassy, bell-like), or **VIBES**, the vibraphone (see [VIBES](#5-vibes-the-vibraphone)). Applies to the next notes. |
 | K2 | **DRIVE** | Amp drive, from clean to growl. It changes the tone, not the volume. |
 | K3 | **REVERB** | Hall reverb amount |
 | K4 | **KEY VEL** | How hard the FM-1's own keys strike. The keys are not velocity-sensitive, so this decides the touch: around 60–80 soft and round, 96 medium, 108–127 hard with bark. MIDI notes keep their own velocity. |
@@ -195,13 +188,13 @@ On PERFORM, K3 is the filter's cutoff by default. Over MIDI: CC 70 TYPE, 74 cuto
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **EFFECT** | **OFF**, **PAN** (the Suitcase stereo vibrato), **TREM** (volume tremolo), **WAH** (touch wah: harder playing opens it) |
+| K1 | **EFFECT** | **OFF**, **PAN** (the Suitcase stereo vibrato), **TREM** (volume tremolo), **WAH** (touch wah: harder playing opens it; it keeps the sound's level, so a closed wah on a high chord is not quieter and a low one not louder) |
 | K2 | **DEPTH** | How deep |
 | K3 | **RATE** | How fast; on WAH, the resonance. When synced it shows a note value |
 | K4 | **SHAPE** | From a smooth sine to a square, choppy pulse |
 
 
-On **VIBES**, EFFECT has a fifth kind after WAH, **MOTOR**: the vibraphone's motor (see [VIBES](#5-vibes-the-vibraphone)).
+On **VIBES**, EFFECT has a fifth kind after WAH, **MOTOR**: the vibraphone's motor (see [the motor: on and off](#the-motor-on-and-off)).
 ### PHASER
 
 ![PHASER](manual/img/phaser.png)
@@ -351,6 +344,17 @@ The filter's LFO (it moves FREQ by the FILTER page's LFO amount).
 | K3 | **SYNC** | **FREE**, or locked to the tempo: 1/32 to 4 bars |
 | K4 | **RETRIG** | **FREE** (it runs on its own) or **KEY** (it starts from the beginning with every note) |
 
+### ASSIGN
+
+![ASSIGN](manual/img/assign.png)
+
+Choose what each PERFORM knob plays: K1 here sets what K1 on PERFORM does, and so on. ASSIGN sits near the end of
+the pages, just before SETUP (the hint on PERFORM says so). Each knob can play any of:
+TREM/WAH, PHASER, CHORUS, DELAY, REVERB, DRIVE, COMP THR, COMP MKUP, TREM RATE, TREM SHAPE, PHA SPEED, PHA FEEDBK,
+CHO SPEED, DLY TIME, DLY FEEDBK, DLY TONE, TONE, BARK, BELL, HAMMER, DECAY, RELEASE, NOISE, KEY VEL, LEVEL, ARP RATE,
+ARP GATE, FILTER, FILT RESO, FILT LFO and LFO RATE. The
+choice is kept when you switch off (it belongs to the FM-1, not to a preset).
+
 ### SETUP
 
 ![SETUP](manual/img/setup.png)
@@ -384,6 +388,12 @@ Rhodes it is computed, not sampled: the bar's own modes (the fundamental and its
 times higher), the tube that takes a moment to build up under the bar, and the motor's discs. Switching between a
 Rhodes type and VIBES fades out what is still ringing.
 
+![The main page on VIBES](manual/img/piano-vibes.png)
+
+VIBES plays about **2.5 dB louder** than the Rhodes types: a struck bar is peakier than a Rhodes note, so at the same
+loudness it sounded weaker and came out closer to the headphone jack's hiss. The limiter still keeps big chords from
+clipping.
+
 The pages stay the same: on VIBES, the VOICE and DECAY cards change their names and what they do.
 
 ![VOICE on VIBES](manual/img/voice-vibes.png)
@@ -407,19 +417,29 @@ The pages stay the same: on VIBES, the VOICE and DECAY cards change their names 
 **The pedal** works like the Rhodes' sustain: **REC** (hold, or tap to latch) or a sustain pedal over MIDI (CC 64,
 half-pedal too). Without it the damper stops each note when you let go.
 
-**The motor.** On the TREM/WAH page, turn **EFFECT** to **MOTOR** (after WAH; it only appears on VIBES):
+### The motor: on and off
+
+The motor (the vibrato's pulse) is the TREM/WAH effect's fifth kind, **MOTOR**, after WAH; it only appears on VIBES.
+
+- **On:** press **LFO** (the TREM/WAH page opens), turn **K1 EFFECT** to **MOTOR**.
+- **Off and on again:** press **LFO** again on that page: off; once more: on, as MOTOR again. The LFO light is lit
+  while the motor turns.
+- **Or a preset:** **F13 VIBE MOTOR** has the motor on, **F14 VIBES DRY** has it off.
+- **Over MIDI:** CC 17 (TREM/WAH on) with CC 21 at 112–127 (MOTOR, on VIBES).
 
 ![MOTOR on TREM/WAH](manual/img/trem-motor.png)
 
 | Knob | Card | What it does with MOTOR |
 | --- | --- | --- |
-| K1 | **EFFECT** | **MOTOR** |
+| K1 | **EFFECT** | **MOTOR** (OFF switches the motor off) |
 | K2 | **DEPTH** | How far the discs close the tubes: a gentle pulse to a deep throb |
 | K3 | **RATE** | The motor speed, 0.5–10 Hz (about 3.5 Hz is classic); synced to the tempo when TREM SYNC (TEMPO page) is set |
 | K4 | **SHAPE** | How sharply the discs open: soft is a smooth pulse, sharp a shorter, more pointed one |
 
 As on a real vibraphone the motor works on the tubes, so it pulses the ringing note and leaves the high overtones
 alone. A preset with MOTOR played on a Rhodes type gives the TREM tremolo.
+
+### Range, presets, polyphony
 
 **The range.** A concert vibraphone has three octaves, **F3 to F6**; that is where VIBES is measured against the real
 instrument. Every other MIDI note plays too, extended from the same physics. The FM-1's keys (F3–G5) sit in the
@@ -443,6 +463,9 @@ starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 | F05 SLAPBACK | F06 BRIGHT CHO | F07 FUNK WAH | F08 BARK |
 | F09 TAPE ECHO | F10 DREAM | F11 RADIO | F12 AM TREMOLO |
 | F13 VIBE MOTOR | F14 VIBES DRY | | |
+
+The Rhodes presets F01–F12 are level-matched: each one's LEVEL (SETUP) brings it to about the loudness of F01, so
+browsing does not jump in volume (VIBES, F13–F14, sits 2.5 dB above, as the type does).
 
 **Saving:** press **SAVE**. The bottom line asks where; turn **PRESETS** or **K1** to pick U01–U16; press **SAVE**
 again to store it, or **HOME** (or **OCT−**) to cancel. The name is made from the type and the effects that are on
@@ -540,7 +563,7 @@ The TRS jack is MIDI in only. **Program Change** 0–13 loads F01–F14, 16–31
 | 79 | TYPE VIBES (any value) | 9 | Developer: VIBES mode cap (0 = automatic, 1–49 = 0–48 upper modes, ≥ 50 = none; not saved) |
 | 81 | DRIVE | 91 | REVERB |
 | 17 | TREM/WAH: 0–42 off, 43–85 trem/pan, 86–127 wah | 18 / 19 | TREM DEPTH / RATE |
-| 20 / 21 / 22 | TREM SYNC / MODE (pan, am) / SHAPE | 85 | Chorus / phaser (reface): off / chorus / phaser |
+| 20 / 21 / 22 | TREM SYNC / MODE (0–63 pan, 64–127 am; on VIBES 112–127 motor) / SHAPE | 85 | Chorus / phaser (reface): off / chorus / phaser |
 | 86 / 87 | CHORUS DEPTH / SPEED (the phaser's, when only the phaser is on) | 23 | CHORUS SYNC |
 | 12 / 13 / 14 | PHASER on / DEPTH / SPEED | 15 / 16 | PHASER SYNC / FEEDBACK |
 | 88 / 89 / 90 | DELAY type / MIX / TIME | 25 / 26 / 27 | DELAY SYNC / FEEDBACK / TONE |
@@ -555,6 +578,7 @@ The TRS jack is MIDI in only. **Program Change** 0–13 loads F01–F14, 16–31
 | 43 / 44 | SEQUENCER CLEAR / UNDO (≥ 64) | 45 / 46 | SEQUENCER ERASE (≥ 64 on) / SWING (50–75) |
 | 70 / 74 | FILTER TYPE (7 bands: off, LP12, LP18, HP12, HP18, BP, notch) / CUTOFF | 71 / 72 | FILTER RESONANCE / LFO AMOUNT |
 | 75 / 76 | LFO SHAPE (6 bands) / RATE | 77 / 78 | LFO SYNC / RETRIG (free, key) |
+| 2 | Developer: the UI look, a design study (0 classic, 1 minimal, 2 solid, 3 instrument; not saved) | 3 | Developer: a colour test pattern on the screen (≥ 64; < 64 back to the page), to calibrate screenshots against the panel |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
 The FM-1 also appears as a USB audio input (class-compliant, stereo, 16-bit, 44.1 or 48 kHz): you can record exactly
@@ -601,7 +625,7 @@ issues: [github.com/leonardoMirabal/frodhes](https://github.com/leonardoMirabal/
 | Compressor | Threshold 0 to −40 dB, ratio 1.5:1–20:1, attack 0.1–50 ms, release 20 ms–1.5 s (CC 109), makeup 0 to +24 dB |
 | Filter | LP12, LP18, HP12, HP18, BP, NOTCH; 30 Hz–16 kHz; resonance Q 0.7–20; LFO ±4 octaves |
 | LFO | SINE, TRI, SAW, RAMP, SQR, S&H; 0.5–12 Hz or synced; FREE or KEY retrigger |
-| Tremolo / wah | PAN, TREM, WAH; 0.5–12 Hz or synced |
+| Tremolo / wah | PAN, TREM, WAH (the wah keeps the level); on VIBES also MOTOR, 0.5–10 Hz; 0.5–12 Hz or synced |
 | Phaser / chorus | Stereo phaser with feedback, stereo chorus; 0.25–6 Hz or synced |
 | Delay | DIG or ANA (tape); 20 ms–1.48 s or synced |
 | **Scales** | 11 scales, any root; OFF / SNAP / DEGREE |

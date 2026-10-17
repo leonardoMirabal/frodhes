@@ -1,0 +1,13 @@
+# The manual's way to the VIBES motor: F13 VIBE MOTOR, LFO opens TREM/WAH (MOTOR on), LFO again: off, again: MOTOR
+# back on (the effect button remembers the kind: SW 1 + MODE 2).
+100 midi 0xC0 12 0
+2000 btn 5
+2100 expect state card0 MOTOR
+2100 expect led 5 1
+2200 btn 5
+2300 expect state card0 OFF
+2300 expect led 5 0
+2400 btn 5
+2500 expect state card0 MOTOR
+2500 expect led 5 1
+2600 end

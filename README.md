@@ -42,13 +42,12 @@ the MIDI map.
 | Page | K1 | K2 | K3 | K4 | Button |
 | --- | --- | --- | --- | --- | --- |
 | **PERFORM** | TREM/WAH | PHASER | FILTER | DELAY | HOME (assignable on ASSIGN) |
-| **ASSIGN** | what K1 plays | what K2 plays | what K3 plays | what K4 plays | (SELECT) |
 | **FRODHES** (main) | TYPE | DRIVE | REVERB | KEY VEL | HOME twice |
 | **VOICE** | TONE (VIBES: STRIKE) | BARK (MALLET) | BELL (TUBE) | HAMMER (WEIGHT) | EDIT |
 | **DECAY** | DECAY (VIBES: RING) | RELEASE (DAMPER) | NOISE | TUNE | (SELECT) |
 | **COMPRESSOR** | THRESHOLD (OFF / on) | RATIO | ATTACK | MAKEUP | (SELECT) |
 | **FILTER** | OFF / LP12 / LP18 / HP12 / HP18 / BP / NOTCH | FREQ | RESO | LFO | (SELECT) |
-| **TREM/WAH** | OFF / PAN / TREM / WAH (VIBES: + MOTOR) | DEPTH | RATE | SHAPE | LFO |
+| **TREM/WAH** | OFF / PAN / TREM / WAH (VIBES: + MOTOR, the vibraphone's motor) | DEPTH | RATE | SHAPE | LFO (there: on / off) |
 | **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | ENV (there: on / off) |
 | **CHORUS** | OFF / ON | DEPTH | SPEED | SYNC | (SELECT) |
 | **DELAY** | OFF / DIG / ANA | MIX | TIME | FEEDBACK | SEL (there: on / off) |
@@ -58,6 +57,7 @@ the MIDI map.
 | **SEQUENCER** | BARS 1–16 | QUANT | SWING | EDIT (UNDO / ERASE) | SEQ again (there: REC, hold: CLEAR; PLAY: start / stop) |
 | **ARPEGGIO** | OFF / UP / DOWN / UP-DN / ORDER / RANDOM | RATE | OCTAVES | GATE | ARP (there: on / off; PLAY: HOLD) |
 | **LFO** | SHAPE | RATE | SYNC | RETRIG | (SELECT) |
+| **ASSIGN** | what K1 plays | what K2 plays | what K3 plays | what K4 plays | (SELECT) |
 | **SETUP** | DELAY TONE | LEVEL | USB VOL (KNOB / FIXED) | | GLO twice |
 | **MIDI** | CHANNEL (ALL / 1–16) | TRS IN (ON / OFF) | CLOCK (INT / EXT) | | GLO three times |
 
