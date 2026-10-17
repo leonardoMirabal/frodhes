@@ -108,8 +108,8 @@ Turning it back to 0 makes it dry again. **FX** still bypasses all of them at on
 
 Choose what each PERFORM knob plays: K1 here sets what K1 on PERFORM does, and so on. Each knob can play any of:
 TREM/WAH, PHASER, CHORUS, DELAY, REVERB, DRIVE, COMP THR, COMP MKUP, TREM RATE, TREM SHAPE, PHA SPEED, PHA FEEDBK,
-CHO SPEED, DLY TIME, DLY FEEDBK, DLY TONE, TONE, BARK, BELL, HAMMER, DECAY, RELEASE, NOISE, KEY VEL, LEVEL, ARP RATE
-and ARP GATE. The
+CHO SPEED, DLY TIME, DLY FEEDBK, DLY TONE, TONE, BARK, BELL, HAMMER, DECAY, RELEASE, NOISE, KEY VEL, LEVEL, ARP RATE,
+ARP GATE, FILTER, FILT RESO, FILT LFO and LFO RATE. The
 choice is kept when you switch off (it belongs to the FM-1, not to a preset).
 
 ### FRODHES (the main page)
@@ -364,7 +364,7 @@ the TRS jack: notes, every CC in the table below, program changes, clock, start 
 
 ![Browsing presets](manual/img/browse.png)
 
-Turn **PRESETS** to browse: **F01–F12** are the factory sounds, **U01–U16** your own. A preset loads when you stop
+Turn **PRESETS** to browse: **F01–F14** are the factory sounds, **U01–U16** your own. A preset loads when you stop
 turning (after 0.4 s). If you did not mean to, **hold SAVE** to go back to what you had (undo). The first time Frodhes
 starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 
@@ -373,6 +373,7 @@ starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 | F01 STAGE 77 | F02 70S PHASER | F03 SUITCASE | F04 80S BALLAD |
 | F05 SLAPBACK | F06 BRIGHT CHO | F07 FUNK WAH | F08 BARK |
 | F09 TAPE ECHO | F10 DREAM | F11 RADIO | F12 AM TREMOLO |
+| F13 VIBE MOTOR | F14 VIBES DRY | | |
 
 **Saving:** press **SAVE**. The bottom line asks where; turn **PRESETS** or **K1** to pick U01–U16; press **SAVE**
 again to store it, or **HOME** to cancel. The name is made from the type and the effects that are on
@@ -438,11 +439,12 @@ block, and the guard never acts.
 
 Frodhes is a class-compliant USB-MIDI device and also listens to the FM-1's **TRS MIDI input** (3.5 mm; MIDI page:
 TRS IN, CHANNEL). Notes play with their velocity (and go through the arpeggiator when it runs); the FM-1's keys
-also send their notes to the computer. **Program Change** 0–11 loads F01–F12, 16–31 loads U01–U16.
+also send their notes to the computer. **Program Change** 0–13 loads F01–F14, 16–31 loads U01–U16.
 
 | CC | Parameter | CC | Parameter |
 | --- | --- | --- | --- |
 | 64 | Sustain (half-pedal) | 80 | TYPE (0–31 STAGE, 32–63 SUITCASE, 64–95 FELT, 96–127 DYNO) |
+| 79 | TYPE VIBES (any value) | | |
 | 81 | DRIVE | 91 | REVERB |
 | 17 | TREM/WAH: 0–42 off, 43–85 trem/pan, 86–127 wah | 18 / 19 | TREM DEPTH / RATE |
 | 20 / 21 / 22 | TREM SYNC / MODE (pan, am) / SHAPE | 85 | Chorus / phaser (reface): off / chorus / phaser |
@@ -452,7 +454,8 @@ also send their notes to the computer. **Program Change** 0–11 loads F01–F12
 | 106 / 107 | COMP on / THRESHOLD | 112 / 113 | COMP RATIO / MAKEUP |
 | 108 / 109 | COMP ATTACK / RELEASE | 110 | LEVEL (64 = 0 dB) |
 | 111 | All effects off (≥ 64) / on | 28–31 | TONE / BARK / BELL / HAMMER |
-| 114 | USB VOL: knob (< 64) / fixed | | |
+| 114 | USB VOL: knob (< 64) / fixed | 24 / 105 | Reserved (accepted and saved, no effect yet) |
+| 116 | Developer: CPU load query (replies on CC 115–118) | 119 | Developer: raw voice (≥ 64 bypasses every effect and the limiter; FX does not undo it) |
 | 102 / 103 / 104 | DECAY / RELEASE / NOISE | 120 / 123 | All sound off / all notes off |
 | 56 / 57 | CHORD TYPE (0–14 as listed) / INVERSION (0–3) | 58 / 59 | CHORD VOICING (0–2) / STRUM (0–12 × 5 ms) |
 | 60 / 61 | SEQUENCER play (≥ 64) / stop, BARS (1–16) | 62 / 63 | SEQUENCER QUANT (0–5) / recording (≥ 64) |
