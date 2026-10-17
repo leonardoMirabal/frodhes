@@ -176,7 +176,8 @@ static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
         int32_t tl = 32768, tr = 32768, dl, dr, gl = tw_gl, gr = tw_gr;
         if (sw == 1) {                                  /* tremolo: the LFO this sub-block */
             int32_t lfo = osc_sine(tw_ph), shp = fx_p[FXP_TW_SHAPE];
-            lfo = clampi((lfo * (32768 + 7 * 258 * shp)) >> 15, -32767, 32767);   /* sine -> rounded square */
+            lfo = clampi((int32_t)(((int64_t)lfo * (32768 + 7 * 258 * shp)) >> 15), -32767, 32767);
+            /* sine -> rounded square (x up to 8: 64-bit, 0.9.3: in 32 bits it overflowed above SHAPE 18) */
             if (fx_p[FXP_TW_MODE] == 0) {               /* autopan: equal power around the centre */
                 uint32_t th = (1u << 29) + (uint32_t)((depth * lfo) * 129);
                 tl = (osc_sine(th + (1u << 30)) * 46341) >> 15;   /* sqrt2 cos(theta): unity at the centre */

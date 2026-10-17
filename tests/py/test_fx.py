@@ -205,3 +205,24 @@ def test_phaser_speed_card_matches_the_sound():
         # the sweep repeats at the rate the card shows; at the table's rate (half its period) it is a time-reversed
         # half sweep, so it does not correlate
         assert corr(shown) > 0.15 and corr(shown) > corr(table) + 0.1, (v, corr(shown), corr(table))
+
+
+def test_tremolo_shape_is_a_rounded_square():
+    """TREM SHAPE bends the sine toward a square: the gain still swings once down and once up per cycle at every
+    SHAPE (0.9.3: above SHAPE 18 the shaping overflowed 32 bits and the gain chattered, up to 20 swings a cycle;
+    F12 AM TREMOLO has SHAPE 90); and more SHAPE spends more of the cycle near the ends"""
+    pre = [(81, 0), (91, 0), (64, 127)]
+    chord = [(200, n, 100, 3800) for n in (48, 55, 60, 64, 67, 72)]
+    ref, _ = run("shape-ref", pre, chord, 4000)
+    hz = lfo_rate_shown(40, half=False)
+    flat = []
+    for s in (0, 18, 30, 64, 90, 127):
+        L, _ = run(f"shape{s}", pre + [(17, 64), (21, 80), (18, 127), (19, 40), (22, s)], chord, 4000)
+        n = 32
+        g = (np.sqrt(np.mean(seg(L, 0.5, 3.5)[:len(seg(L, 0.5, 3.5)) // n * n].reshape(-1, n) ** 2, axis=1))
+             / (np.sqrt(np.mean(seg(ref, 0.5, 3.5)[:len(seg(ref, 0.5, 3.5)) // n * n].reshape(-1, n) ** 2, axis=1)) + 1e-9))
+        h = (g > 0.5 * g.max()).astype(int)
+        swings = np.sum(np.abs(np.diff(h))) / (3.0 * hz)
+        assert abs(swings - 2) < 0.4, (s, swings)
+        flat.append(np.mean((g > 0.9 * g.max()) | (g < 0.1 * g.max())))
+    assert all(b >= a - 0.02 for a, b in zip(flat, flat[1:])) and flat[-1] > flat[0] + 0.2, flat
