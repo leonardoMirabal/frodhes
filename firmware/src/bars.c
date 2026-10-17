@@ -328,6 +328,9 @@ static void bar_note_off(uint32_t note)
             }
             if (bar_pedal_w && bar_felt) v->felt_n = 353;    /* 8 ms of felt noise */
         }
+    for (i = 0; i < BAR_NV; i++)                    /* a note let go while it waits for a steal's fade: it starts let go
+                                                     * (it was held for good: fuzz, a fast arpeggio over 8 voices) */
+        if (bv[i].alive && bv[i].pend && bv[i].pend_note == note) bv[i].pend = 2;
 }
 
 static void bar_pedal(uint32_t cc)
@@ -793,7 +796,11 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix)
     v->struck = 0;
     if (v->fade == 0) {                             /* a steal finished fading: start the waiting note */
         v->alive = 0;
-        if (v->pend) bar_init(v, v->pend_note, v->pend_vel);
+        if (v->pend) {
+            uint32_t rel = v->pend == 2u;
+            bar_init(v, v->pend_note, v->pend_vel);
+            if (rel) { v->held = 0; bar_set_damper(v, bar_pedal_w); }
+        }
         return;
     }
     if (!v->ptab && !v->felt_n && sum < v->kill1) { v->alive = 0; return; }   /* under 1 LSB out: the voice ends */
