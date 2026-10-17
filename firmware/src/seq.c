@@ -18,8 +18,13 @@
 #define SQ_PPQ 96u                                  /* ticks per beat */
 #define SQ_MAXEV 448u
 #define SQ_MAXACT 32u
+#if BOARD_SMK37
+#define SQ_A (SMK_APP_DATA_LO + 0x2000u)        /* (SMK-37: in the store window, smk_store.h) */
+#define SQ_B (SMK_APP_DATA_LO + 0x3000u)
+#else
 #define SQ_A 0x99000u
 #define SQ_B 0x9A000u
+#endif
 #define SQ_MAGIC 0x46535131u                        /* "FSQ1" */
 typedef struct { uint16_t tick, len; uint8_t note, vel, take, rsv; } sq_ev_t;
 typedef struct { uint32_t magic, seq, n, crc; } sq_hdr_t;

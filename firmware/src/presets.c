@@ -11,8 +11,13 @@
 #define PR_NF 12u
 #define PR_NU 16u
 _Static_assert(PR_NF == PR_NF_UI && PR_NF + PR_NU == PR_NALL_UI, "ui.c preset counts");
+#if BOARD_SMK37
+#define PR_BANK_A SMK_APP_DATA_LO               /* (SMK-37: in the store window, smk_store.h) */
+#define PR_BANK_B (SMK_APP_DATA_LO + 0x1000u)
+#else
 #define PR_BANK_A 0x97000u
 #define PR_BANK_B 0x98000u
+#endif
 #define PR_MAGIC 0x42505246u                    /* "FRPB" */
 
 typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[P_SLOTS]; } preset_t;   /* 0.4 on */

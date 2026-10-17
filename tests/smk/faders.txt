@@ -1,0 +1,37 @@
+# SMK-37: the faders, two banks (FADER BANK, button 1; lit on B). A: TONE, BARK, PHASER, COMP THRESH. B: DRIVE, CHORUS,
+# DELAY, REVERB. A fader acts once it moves (its first readings settle), up from 0 an effect goes on
+100 fader 0 64
+150 fader 2 0
+250 expect val tone 64
+400 fader 0 127
+450 expect val tone 127
+500 fader 1 10
+550 expect val bark 10
+600 fader 2 80
+650 expect val ph_depth 80
+660 expect val ph_sw 1
+700 fader 3 60
+750 expect val cmp_sw 1
+760 expect val cmp_amt 60
+800 fader 3 0
+850 expect val cmp_sw 0
+900 btn 1
+950 expect val bank 1
+960 expect led 1 1
+# a new bank: the faders wait until they move, so DRIVE keeps its value until fader 1 moves
+1000 expect val drive 0
+1100 fader 0 50
+1150 expect val drive 50
+1200 fader 1 70
+1250 expect val cp_depth 70
+1260 expect val cp_sw 1
+1300 fader 2 40
+1350 expect val dl_depth 40
+1360 expect val dl_sw 1
+1400 fader 3 90
+1450 expect val rv_depth 90
+1500 btn 1
+1550 expect val bank 0
+1560 expect led 1 0
+1600 shot
+1700 end

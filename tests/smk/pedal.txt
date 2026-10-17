@@ -1,0 +1,11 @@
+# SMK-37: a sustain pedal in the pedal jack, either polarity: the reading at power-on is "up" (985: nothing plugged in)
+400 expect val sustain 0
+500 pedal 30
+550 expect val sustain 1
+600 keys 0x80
+700 keys 0
+1200 expect rms > -40
+1300 pedal 985
+1350 expect val sustain 0
+1900 expect rms < -60
+2000 end

@@ -11,6 +11,7 @@ complete source under the same licence too.
 | The platform: `firmware/hal/`, `firmware/loader/`, `crt0.S`, `app.ld`, `firmware/src/` (`usb.c`, `ota.c`, `recovery.c`, `lcd.c`, `gfx.c`, `libc.c`, `bootguard.h`, `uac_fir.h`), `tools/` | Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments ([Felucca](https://github.com/hugelton/Felucca)), with the changes of [SLOOP](https://github.com/isod89/sloop-fm1) (isod89) |
 | The wiring `platform.c`, the host mode `tests/`, `docs/API.md`, `docs/RULES.md` ([Dinghy](https://github.com/zvenson/dinghy)) | zvenson |
 | The app `firmware/src/frodhes.c` (derived from Dinghy's app), the engine `firmware/src/rhodes.c` | Leonardo Mirabal |
+| The SMK-37 layer (`BOARD_SMK37`): `firmware/hal/smk_input.h`, `fm1_flash_map.h`, the SMK parts of `hal/`, `loader/`, `ota.c`, `lcd.c`, `platform.c`, `tools/build.py`, `fm1pkg_make.py`, `fm1_install.py`, after the SLOOP SMK-37 target; `firmware/src/frodhes_smk.h`, `smk_store.h`, `smk_wheel.h`, the SMK parts of the app, `tests/smk*`, `tests/run_tests.sh`, the other SMK-37 test files, `SMK37.md` | M. Geisler (genkigenki/makkuro); the pad event queue in `smk_input.h`: zvenson |
 
 ## Third-party material
 

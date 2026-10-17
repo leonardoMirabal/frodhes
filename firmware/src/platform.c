@@ -18,10 +18,26 @@
  */
 /* the panel by name: buttons (fm1_in.buttons, fm1_input_edges, fm1_led_key: bit / id), the encoders
  * (fm1_enc_take); the 27 note keys are fm1_in.notes bit 0 (F3) .. 26 (G5), LED id 14 + key */
+#ifndef BOARD_SMK37
+#define BOARD_SMK37 0                           /* 1: the M-Vave SMK-37 (tools/build.py BOARD=smk37; hal/fm1_cc.h) */
+#endif
+#if BOARD_SMK37
+/* the M-Vave SMK-37 (SMK37.md): the FM-1's buttons on the SMK buttons that mean the same (printed names: PATCH = HOME,
+ * PARA = EDIT, CHORD = ENV, NOTE REPEAT = LFO, SCALE = SEL, GLOBE = GLO, BT = SAVE), the four extras; K1..K4 are
+ * KNOB 1..4 (the page's four, left to right), K5 the MASTER pot (hal/smk_input.h), K6 SELECT, K7 ALGORITHM, K8 PRESETS.
+ * The note keys have no LEDs here (the pads light): KEY_LED ids are past the button LEDs and do nothing */
+enum { BTN_KNOB_BANK = 0, BTN_FADER_BANK = 1, BTN_LEFT = 2, BTN_RIGHT = 3, BTN_OCT_DOWN = 4, BTN_OCT_UP = 5,
+       BTN_ARP = 6, BTN_LFO = 7, BTN_SEL = 8, BTN_ENV = 9, BTN_GLO = 10, BTN_SAVE = 11, BTN_HOME = 12, BTN_EDIT = 13,
+       BTN_FX = 14, BTN_SEQ = 15, BTN_PLAY = 16, BTN_REC = 17 };
+enum { ENC_KNOB1 = 0, ENC_KNOB2 = 1, ENC_KNOB3 = 2, ENC_KNOB4 = 3, ENC_MASTER = 4, ENC_SELECT = 5, ENC_ALGORITHM = 6,
+       ENC_PRESETS = 7 };
+#define KEY_LED(k) (32u + (k))
+#else
 enum { BTN_OCT_DOWN = 0, BTN_OCT_UP = 1, BTN_FX = 2, BTN_SEL = 3, BTN_ENV = 4, BTN_LFO = 5, BTN_EDIT = 6,
        BTN_GLO = 7, BTN_HOME = 8, BTN_SAVE = 9, BTN_ARP = 10, BTN_SEQ = 11, BTN_PLAY = 12, BTN_REC = 13 };
 enum { ENC_SELECT = 0, ENC_ALGORITHM = 1, ENC_KNOB1 = 2, ENC_KNOB2 = 3, ENC_KNOB3 = 4, ENC_KNOB4 = 5, ENC_PRESETS = 6 };
 #define KEY_LED(k) (14u + (k))
+#endif
 
 #ifdef DINGHY_HOST
 #ifdef DINGHY_WEB
@@ -35,18 +51,28 @@ enum { ENC_SELECT = 0, ENC_ALGORITHM = 1, ENC_KNOB1 = 2, ENC_KNOB2 = 3, ENC_KNOB
 #include "fm1_sys.h"
 #include "fm1_irq.h"
 #include "fm1_guard.h"
+#if BOARD_SMK37
+#include "smk_input.h"                          /* keys with velocity, buttons, 8 encoders, LEDs, pads, faders, wheels */
+#else
 #include "fm1_input.h"
+#endif
 #include "fm1_timer.h"
 #include "fm1_lcd_hw.h"
 #include "fm1_audio.h"
-#include "fm1_adc.h"
+#if !BOARD_SMK37
+#include "fm1_adc.h"                            /* (SMK: smk_input.h stands in, MASTER = K5) */
+#endif
 #include "bootguard.h"
 
 #ifndef APP_NAME
 #define APP_NAME "DINGHY"
 #endif
 #ifndef FELUCCA_ID
+#if BOARD_SMK37
+#define FELUCCA_ID SMK_MODEL "_470"             /* SMK-37 Pro_470 (Elite, MKE-P37: SMK_MODEL), tools/build.py */
+#else
 #define FELUCCA_ID "FM-1_990"                   /* package identity: 99N = Dinghy build N (tools/build.py) */
+#endif
 #endif
 #ifndef APP_VER
 #define APP_VER "0.0"
@@ -67,22 +93,37 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 #define FELUCCA_OTA 1
 #define FELUCCA_CDC 0
 #define FELUCCA_UAC 1
+#if BOARD_SMK37
+#define FELUCCA_UART 0                          /* (SMK-37: there is no TRS MIDI IN, PH8 is a key-matrix row: keep it 0) */
+#else
 #define FELUCCA_UART 1                          /* TRS MIDI IN (Frodhes 0.9.1; Felucca's midi_uart.c) */
+#endif
+#if BOARD_SMK37 && FELUCCA_UART
+#error "BOARD_SMK37: no UART MIDI IN (RX on PH8, a key-matrix row on the SMK)"
+#endif
 #include "usb.c"
 #if FELUCCA_UART
 #include "midi_uart.c"
+#elif BOARD_SMK37
+static volatile uint8_t uart_midi_on;           /* (no TRS MIDI IN: the MIDI page's TRS IN is not shown) */
 #endif
 
 /* ---- flash: read anywhere; erase / program only the update's staging area and the settings sector */
+#if BOARD_SMK37
+#include "smk_store.h"                          /* the SMK-37 layout: the settings and an owner tag in the store window */
+#else
 #define SETTINGS_AT 0x000FC000u                 /* one 4 KiB sector of Felucca's globals area */
+#endif
 #ifndef APP_OUT_SHIFT                          /* the app may drive the codec to full scale (8) */
 #define APP_OUT_SHIFT 7u
 #endif
 #ifndef APP_FL_RANGE                           /* the app may allow more sectors (e.g. a preset bank) */
 #define APP_FL_RANGE(off, n) 0
 #endif
+#if !BOARD_SMK37                                /* (SMK: smk_store.h's allow-list has the app's own sectors) */
 #define FL_RANGE_OK(off, n) (FL_IN(off, n, FL_OTA_LO, FL_OTA_HI) || FL_IN(off, n, SETTINGS_AT, SETTINGS_AT + 0x1000u) || \
                              APP_FL_RANGE(off, n))
+#endif
 #include "fm1_flash.h"
 static uint8_t flash_ok;
 static int st_read(uint32_t off, void *dst, uint32_t n)
@@ -102,7 +143,11 @@ static int st_read(uint32_t off, void *dst, uint32_t n)
 }
 
 static uint8_t recovery_active;
+#if BOARD_SMK37
+#define OTA_IDENTITY (recovery_active ? SMK_MODEL "_000" : FELUCCA_ID)
+#else
 #define OTA_IDENTITY (recovery_active ? "FM-1_000" : FELUCCA_ID)
+#endif
 #include "ota.c"
 static void recovery_poll(void);
 static uint32_t ota_now_ms(void) { return fm1_ms; }
@@ -128,7 +173,11 @@ static int ota_prog(uint32_t off, const void *p, uint32_t n)
 static int ota_fread(uint32_t off, void *p, uint32_t n) { return st_read(off, p, n); }
 static void ota_show(uint32_t step, int32_t code)
 {
+#if BOARD_SMK37   /* step 5 stays on screen while the loader writes the flash: say so */
+    static const char *const STEP[] = {"", "PACKAGE", "CHECK HEAD", "LOADER", "CONFIRM", "UPDATING..."};
+#else
     static const char *const STEP[] = {"", "PACKAGE", "CHECK HEAD", "LOADER", "CONFIRM", "RESTART"};
+#endif
     if (recovery_active) return;
     lcd_fill(0, 0, 240, 240, C_BLACK);
     draw_text_box(0, 92, 240, &FONT_S, "UPDATE", C_WHITE, 1);
@@ -183,6 +232,42 @@ static int settings_save(const void *p, uint32_t n)   /* p in RAM, n <= 256 */
         return rc;
     return fl_write(SETTINGS_AT, (const uint8_t *)h, sizeof h);   /* the header last: a cut save stays invalid */
 }
+#if BOARD_SMK37
+/* the store's owner (the kit's convention, smk_store.h): our tag, load as ever; anything else (the stock VM settings,
+ * another port's data) is cleared once and the tag written, before the audio starts. USRFLASH is never touched */
+static uint8_t smk_store_cleared, smk_trim_ok;   /* (the panel check shows them) */
+static uint32_t smk_jedec;
+static void smk_owner_check(void)
+{
+    uint8_t tag[16], want[16];
+    uint32_t i, ours = 1, took;
+    if (!flash_ok)
+        return;
+    smk_owner_tag(want);
+    if (st_read(OWNER_AT, tag, 16))
+        return;
+    for (i = 0; i < 16u; i++)
+        ours &= tag[i] == want[i];
+    if (ours)
+        return;
+    fl_erase4k(SETTINGS_AT, &took);
+    fm1_wdt_feed();                             /* (~50 ms an erase) */
+    for (i = SMK_APP_DATA_LO; i < SMK_APP_DATA_HI; i += 0x1000u) {   /* the app's own sectors (presets, pattern) */
+        fl_erase4k(i, &took);
+        fm1_wdt_feed();
+    }
+    fl_erase4k(OWNER_AT, &took);
+    fl_write(OWNER_AT, want, 16);
+    smk_store_cleared = 1;
+}
+/* the factory key / pad velocity curves (USRTRIM 0xC1000, read only; smk_input.h checks them, else its defaults) */
+static void smk_trim_read(void)
+{
+    static uint8_t rec[0x22Cu];
+    if (flash_ok && !st_read(SMK_TRIM_FLASH, rec, sizeof rec))
+        smk_trim_ok = (uint8_t)smk_trim_load(rec);
+}
+#endif
 
 /* ---- MIDI over USB: 4-byte USB-MIDI packets, cable 0 */
 static int midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)   /* 1: a message (status, data 1, data 2) */
@@ -364,12 +449,21 @@ void fm1_cstart(void)
     fm1_boot.p3_rst = (uint8_t)p3;
     if (boot_mode == BOOT_RECOVERY || recovery_key())
         recovery_main();                        /* OCT- at power-on: the USB rescue */
-    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;
+#if BOARD_SMK37
+    smk_jedec = FL_FAR(fl_jedec_ram)();         /* (the panel check shows it: units may carry another part) */
+    flash_ok = FL_JEDEC_OK(smk_jedec);
+#else
+    flash_ok = FL_JEDEC_OK(FL_FAR(fl_jedec_ram)());
+#endif
     ota_boot_cleanup();
     lcd_init();
     lcd_fill(0, 0, 240, 240, C_BLACK);
     fm1_input_init();
     fm1_adc_init();
+#if BOARD_SMK37
+    smk_trim_read();                            /* (after fm1_input_init: it sets the defaults first) */
+    smk_owner_check();
+#endif
     fm1_audio_init(abuf, HALF_WORDS, isr_alnk0, 3);   /* (abuf is zero: .bss) */
     usb_start();
 #if FELUCCA_UART

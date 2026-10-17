@@ -89,6 +89,10 @@ static volatile int32_t rh_ham = 65536;        /* Q16: contact-rate multiplier (
 static volatile int32_t rh_k_decay = 65536;    /* Q16: 1/S of the sustain T60 (DECAY) */
 static volatile int32_t rh_k_rel = 65536;      /* Q16: 1/S of the release T60 (RELEASE) */
 static volatile int32_t rh_tune_t;             /* Q30: 2^(c/1200) - 1 (TUNE) */
+#if BOARD_SMK37
+static int32_t rh_tune_used;                   /* ISR: the tuning the voices' coefficients were made for (the SMK's
+                                                * pitch wheel bends rh_tune_t: frodhes_smk.h) */
+#endif
 static volatile int32_t rh_thump, rh_felt;     /* Q15: damper thump force, felt-noise level (NOISE) */
 static uint32_t rh_lfsr = 0xACE1u;
 
@@ -401,6 +405,30 @@ static void rh_shed(void)                                 /* overload: fade the 
     if (pick < RH_NV) { rv[pick].fade = 32767; rv[pick].pend = 0; rh_shed_count++; }
 }
 
+#if BOARD_SMK37
+/* the tuning moved (the pitch wheel, TUNE): new resonator frequencies for every sounding voice, their decay kept (eps
+ * depends on the decay only); a damper crossfade under way goes on from the new frequency */
+static void rh_retune(void)
+{
+    uint32_t i, m;
+    int32_t t = rh_tune_t, eps;
+    rh_tune_used = t;
+    for (i = 0; i < RH_NV; i++) {
+        rh_voice_t *v = &rv[i];
+        if (!v->alive) continue;
+        for (m = 0; m < RH_NM; m++) {
+            rh_ms_t *s = &v->m[m];
+            const rh_mode_t *km = &v->k->m[m];
+            if (!km->th) continue;
+            rh_coef(km, km->d, t, rh_k_decay, &s->e0, &eps);
+            rh_coef(km, km->drel, t, rh_k_rel, &s->e1, &eps);
+            s->e = s->e0 + (int32_t)(((int64_t)(s->e1 - s->e0) * v->w_tgt) >> 15);
+            s->es = s->e;
+        }
+    }
+}
+#endif
+
 static void rh_render(int32_t *mono_out, uint32_t n)
 {
     uint32_t i, sb, j, act = 0, held = 0;
@@ -408,6 +436,9 @@ static void rh_render(int32_t *mono_out, uint32_t n)
     uint32_t ty = rh_type & 3u, nb = RH_TYPE[ty].nbody;
     const int32_t *c = RH_RLC[ty];
     rh_events();
+#if BOARD_SMK37
+    if (rh_tune_t != rh_tune_used) rh_retune();
+#endif
     if (rh_shed_req) { rh_shed_req = 0; rh_shed(); }
     for (i = 0; i < n; i++) rh_mono[i] = 0;
     for (i = 0; i < RH_NV; i++) {
