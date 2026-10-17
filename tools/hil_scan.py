@@ -2237,12 +2237,12 @@ def vibes_fx(V, S):
             {s: (sp[0][s], sp[d0][s]) if sp[0].get(s) is not None and sp[d0].get(s) is not None else None for s in sp[0]},
             lambda v: v[0] <= 0.7 * v[1], "<= 0.7x", fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz")
     T = {x: run(f"chorus-fdbk-{x}", with_(chb, ("CP_FDBK", x)), ST_LONG) for x in (0, P["CP_FDBK"]["de"], 127)}
-    S.check(f"CHORUS FDBK {nm('CP_FDBK')} 0 vs 127", "DEPTH 64",
+    S.check(f"CHORUS FDBK {nm('CP_FDBK')} 0 vs 127 (reserved: no card, no effect; MANUAL CC 24)", "DEPTH 64",
             S.per(lambda q: (mot(T[127], q) - mot(T[0], q), SD(T[127], T[0], q, 0.2, 5.3),
                               SD(c64, T[P["CP_FDBK"]["de"]], q, 0.2, 5.3))),
             lambda v: v[0] >= 1 or v[1] >= max(2, 2 * v[2]),
             "motion >= +1 dB or >= 2 dB apart (and 2x the spread of two takes of one setting)",
-            fmt=lambda v: f"{v[0]:+.1f} / {v[1]:.1f} dB (spread {v[2]:.1f})")
+            fmt=lambda v: f"{v[0]:+.1f} / {v[1]:.1f} dB (spread {v[2]:.1f})", info=True)
     T = {k: run(f"chorus-sync-{k.replace('/', '')}", with_(cb127, ("CP_SYNC", sync_idx(k))), ST_LONG) for k in ("1/4", "1/8")}
     S.check(f"CHORUS SYNC {nm('CP_SYNC')} 1/8 vs 1/4", "", S.per(lambda q: (rate_of(ctr(T['1/8'], q), fps, 2, 0.2, 5),
                                                                          rate_of(ctr(T['1/4'], q), fps, 2, 0.2, 5))),

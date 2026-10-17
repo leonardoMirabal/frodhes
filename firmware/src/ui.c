@@ -189,6 +189,14 @@ static const char *ui_version(void)
 static void ui_changed(void) { set_dirty = 1; set_t_change = fm1_ms; }
 static int32_t sgn(int32_t d) { return d > 0 ? 1 : -1; }
 
+/* the FRODHES page's K2 / K3 belong to the engine (the user, 2026-10-17: "2 options depend on the selected engine"):
+ * one row per engine, so a new engine adds its own; K1 TYPE and K4 KEY VEL stay. The Rhodes row is the page as before. */
+static const struct { uint8_t s[2]; const char *lab[2]; uint8_t cmp_mkup; } ENG_HEAD[2] = {
+    {{P_DRIVE, P_RV_DEPTH}, {"DRIVE", "REVERB"}, 15},   /* Rhodes */
+    {{P_BARK, P_MOT_ON}, {"MALLET", "MOTOR"}, 28},      /* the bar engine: VOICE's MALLET, MOTOR on / off */
+};
+/* cmp_mkup: the compressor's make-up when the panel switches it on with none set (-20 dB 4:1): level-neutral for that
+ * engine on the FM-1 (Rhodes 15 = +4.3 dB, 0.8; VIBES is peakier, the same threshold takes more: 28 = +6.8 dB) */
 /* switching an effect on from the panel while its depth is 0 would be silent (the depths default to 0): give it a
  * starting depth then; a depth the player set is never touched */
 static void fx_wake(uint32_t sw_id)
@@ -200,7 +208,7 @@ static void fx_wake(uint32_t sw_id)
     for (i = 0; i < 6u; i++)
         if (SW[i] == sw_id && PV(sw_id) && !PV(DEPTH[i])) {
             param_set(DEPTH[i], START[i]);
-            if (sw_id == P_CMP_SW && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, 15);   /* -20 dB, 4:1: +4.3 dB is
+            if (sw_id == P_CMP_SW && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, ENG_HEAD[ui_bars() ? 1 : 0].cmp_mkup);   /* -20 dB, 4:1: +4.3 dB is
                                                                                 * level-neutral (FM-1, LUFS) */
             ui_mark(E_CARDS);
         }
@@ -236,15 +244,9 @@ static void perf_wake(uint32_t id)
     else if (id == P_CP_DEPTH && !PV(P_CP_SW)) param_set(P_CP_SW, 1);
     else if (id == P_DL_DEPTH && !PV(P_DL_SW)) param_set(P_DL_SW, 1);
     else if (id == P_DRIVE && !PV(P_DRV_SW)) param_set(P_DRV_SW, 1);
-    else if (id == P_CMP_AMT && !PV(P_CMP_SW)) { param_set(P_CMP_SW, 1); if (!PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, 15); }
+    else if (id == P_CMP_AMT && !PV(P_CMP_SW)) { param_set(P_CMP_SW, 1); if (!PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, ENG_HEAD[ui_bars() ? 1 : 0].cmp_mkup); }
 }
 /* the slot a card shows: PERFORM's are resolved to the assigned parameter */
-/* the FRODHES page's K2 / K3 belong to the engine (the user, 2026-10-17: "2 options depend on the selected engine"):
- * one row per engine, so a new engine adds its own; K1 TYPE and K4 KEY VEL stay. The Rhodes row is the page as before. */
-static const struct { uint8_t s[2]; const char *lab[2]; } ENG_HEAD[2] = {
-    {{P_DRIVE, P_RV_DEPTH}, {"DRIVE", "REVERB"}},       /* Rhodes */
-    {{P_BARK, P_MOT_ON}, {"MALLET", "MOTOR"}},          /* the bar engine: VOICE's MALLET, MOTOR on / off */
-};
 static uint32_t slot_at(uint32_t pg, uint32_t k)
 {
     uint32_t s = pg == PG_PIANO && (k == 1u || k == 2u) ? ENG_HEAD[ui_bars() ? 1 : 0].s[k - 1u] : PAGE_S[pg][k];
@@ -398,7 +400,7 @@ static void slot_turn(uint32_t s, int32_t d)
         if (id == P_MOT_ON) set.mot_user_off = !PV(P_MOT_ON);        /* off by hand: no auto-on at TYPE VIBES */
         fx_wake(id);
         if (id == P_CMP_AMT) {                          /* THRESH is the compressor's switch: 0 = OFF, up = on */
-            if (PV(P_CMP_AMT) && !PV(P_CMP_SW) && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, 15);   /* level-neutral */
+            if (PV(P_CMP_AMT) && !PV(P_CMP_SW) && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, ENG_HEAD[ui_bars() ? 1 : 0].cmp_mkup);   /* level-neutral */
             param_set(P_CMP_SW, PV(P_CMP_AMT) != 0);
             ui_mark(E_CARDS); ui_mark(E_FOOTER);
         }
