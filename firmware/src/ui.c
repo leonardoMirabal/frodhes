@@ -123,6 +123,16 @@ static uint8_t ui_hot_card = 0xFF;
 static char ui_msg[32];
 
 #define UI_ACC pal[3]
+/* the look (0.9.3 design study, developer MIDI CC 2, not saved): 0 = the classic cards, 1 = MINIMAL (no boxes, hairlines,
+ * left-aligned values, one accent), 2 = SOLID (filled dark cards with soft corners, a bar in each card's base),
+ * 3 = INSTRUMENT (a left-aligned title and page count, each level card a vertical fader with ticks) */
+static uint8_t ui_style;
+static uint16_t ui_deep(void)                          /* the palette's darkest step at a quarter (the FM-1's panel lifts
+                                                        * the dark tones a lot: a fill must start much darker) */
+{
+    uint32_t c = C_LINE, rr = (c >> 11) & 31u, gg = (c >> 5) & 63u, bb = c & 31u;
+    return (uint16_t)(((rr >> 2) << 11) | ((gg >> 2) << 5) | (bb >> 2));
+}
 #define MSG_MS 1500u
 #define HOT_MS 1000u
 
@@ -433,9 +443,10 @@ static void draw_header(void)
 {
     char nm[20], b[8];
     cv_begin(240, 20, C_BLACK);
+    if (ui_style == 2u) cv_rect(0, 0, 240, 19, ui_deep());
     if (set.preset < PR_NALL_UI) preset_name(set.preset, nm); else p_strcpy(nm, "FRODHES", 8);
     nm[14] = 0;
-    cv_text(2, 2, &FONT_S, nm, C_HI);
+    cv_text(ui_style ? 4 : 2, 2, &FONT_S, nm, ui_style == 3u ? C_GRAY : C_HI);
     if (set.oct) {
         char o[4] = {'O', set.oct < 0 ? '-' : '+', (char)('0' + (set.oct < 0 ? -set.oct : set.oct)), 0};
         cv_text(116, 2, &FONT_S, o, C_GRAY);
@@ -443,8 +454,8 @@ static void draw_header(void)
     if (rh_hold) cv_text(142, 2, &FONT_S, "SUS", UI_ACC);
     if (fx_bypass) cv_text(166, 2, &FONT_S, "BYP", C_HI);
     slot_text(S_BPM, b);
-    cv_text(238 - text_w(&FONT_S, b), 2, &FONT_S, b, C_AMB);
-    cv_rect(0, 19, 240, 1, C_LINE);
+    cv_text((ui_style ? 236 : 238) - text_w(&FONT_S, b), 2, &FONT_S, b, ui_style == 1u ? C_GRAY : ui_style == 2u ? C_HI : C_AMB);
+    if (ui_style != 1u && ui_style != 2u) cv_rect(0, 19, 240, 1, C_LINE);
     cv_blit(0, 0);
 }
 
@@ -467,6 +478,25 @@ static void draw_title(void)
         return;
     }
     cv_begin(240, 40, C_BLACK);
+    if (ui_style == 1u) {                               /* MINIMAL: the title, and where we are as a hairline */
+        int32_t w = 200 / (int32_t)PG_N;
+        text_c(0, 0, 240, &FONT_L, PAGE_TITLE[ui_page], C_HI);
+        cv_rect(20, 36, 200, 1, C_LINE);
+        cv_rect(20 + w * (int32_t)pg_pos(ui_page), 35, w, 3, UI_ACC);
+        cv_blit(0, 21);
+        return;
+    }
+    if (ui_style == 3u) {                               /* INSTRUMENT: left-aligned, the page count on the right */
+        char t[8];
+        uint32_t q = pg_pos(ui_page) + 1u;
+        t[0] = (char)('0' + q / 10u); t[1] = (char)('0' + q % 10u); t[2] = '/';
+        t[3] = (char)('0' + PG_N / 10u); t[4] = (char)('0' + PG_N % 10u); t[5] = 0;
+        cv_text(6, 0, &FONT_L, PAGE_TITLE[ui_page], UI_ACC);
+        cv_text(234 - text_w(&FONT_S, t), 14, &FONT_S, t, C_GRAY);
+        cv_rect(6, 36, 228, 1, C_LINE);
+        cv_blit(0, 21);
+        return;
+    }
     if (pg_pos(ui_page) > 0) cv_text(4, 0, &FONT_L, "<", C_DIM);
     if (pg_pos(ui_page) + 1u < PG_N) cv_text(220, 0, &FONT_L, ">", C_DIM);
     text_c(0, 0, 240, &FONT_L, PAGE_TITLE[ui_page], UI_ACC);
@@ -480,6 +510,38 @@ static void draw_card(uint32_t k)
     uint32_t s = slot_at(ui_page, k);
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
     cv_begin(118, 68, C_BLACK);
+    if (s != S_NONE && ui_style) {                      /* the design study's looks (ui_style) */
+        char v[16];
+        int32_t hi, val = slot_val(s, &hi), lv = hi && slot_is_level(s), x0 = 6;
+        slot_text(s, v);
+        if (ui_style == 1u) {                           /* MINIMAL: hairline dividers, no boxes */
+            if (!(k & 1u)) cv_rect(117, 6, 1, 56, C_LINE);
+            if (!(k & 2u)) cv_rect(6, 67, 106, 1, C_LINE);
+        } else if (ui_style == 2u) {                    /* SOLID: a filled card, soft corners */
+            cv_rect(2, 2, 114, 64, hot ? UI_ACC : ui_deep());
+            cv_rect(3, 3, 112, 62, ui_deep());
+            cv_pset(2, 2, C_BLACK); cv_pset(115, 2, C_BLACK); cv_pset(2, 65, C_BLACK); cv_pset(115, 65, C_BLACK);
+        } else if (lv) {                                /* INSTRUMENT: a fader on the left, ticks beside it */
+            int32_t h = 54, f = h * val / (hi ? hi : 1), i;
+            cv_rect(6, 7, 8, h + 2, C_GRAY);
+            cv_rect(7, 8, 6, h, C_BLACK);
+            cv_rect(7, 8 + h - f, 6, f, C_AMB);
+            for (i = 0; i <= 4; i++) cv_rect(16, 8 + h * i / 4, 3, 1, C_DIM);
+            x0 = 24;
+        }
+        cv_text(x0, 4, &FONT_S, slot_label(ui_page, k), hot ? UI_ACC : C_GRAY);
+        if (s != P_TYPE && text_w(&FONT_L, v) <= 112 - x0) cv_text(x0, 22, &FONT_L, v, C_HI);
+        else cv_text(x0, 30, &FONT_S, v, C_HI);
+        if (lv && ui_style == 1u) {                     /* a slim line under the value */
+            cv_rect(6, 58, 106, 1, C_LINE);
+            cv_rect(6, 57, 106 * val / (hi ? hi : 1), 3, C_AMB);
+        } else if (lv && ui_style == 2u) {              /* a bar in the card's base */
+            cv_rect(8, 56, 102, 5, C_BLACK);
+            cv_rect(8, 56, 102 * val / (hi ? hi : 1), 5, C_AMB);
+        }
+        cv_blit(k & 1u ? 121u : 1u, k & 2u ? 135u : 63u);
+        return;
+    }
     if (s != S_NONE) {
         char v[16], kk[3] = {'K', (char)('1' + k), 0};
         int32_t hi, val = slot_val(s, &hi);
@@ -654,7 +716,7 @@ static void draw_card_small(uint32_t k)
 static void draw_footer(void)
 {
     cv_begin(240, 35, C_BLACK);
-    cv_rect(0, 0, 240, 1, C_LINE);
+    if (ui_style == 0u || ui_style == 3u) cv_rect(0, 0, 240, 1, C_LINE);
     if (pr_save_mode) {                                 /* the save mode owns the footer until it ends */
         char s[24], t[32];
         preset_name(PR_NF_UI + pr_save_slot, s);
