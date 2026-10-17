@@ -422,6 +422,9 @@ Rhodes type and VIBES fades out what is still ringing.
 
 ![The main page on VIBES](manual/img/piano-vibes.png)
 
+The main page's middle cards belong to the engine: on VIBES they are **MALLET** (the same as VOICE's MALLET) and
+**MOTOR** (on / off, the same as the MOTOR page's first card); on a Rhodes type they stay **DRIVE** and **REVERB**.
+
 VIBES plays about **2.5 dB louder** than the Rhodes types: a struck bar is peakier than a Rhodes note, so at the same
 loudness it sounded weaker and came out closer to the headphone jack's hiss. The limiter still keeps big chords from
 clipping.

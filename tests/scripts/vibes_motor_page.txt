@@ -1,6 +1,6 @@
 # The VIBES motor (records v3): its own page (MOTOR, after DECAY, shown on a bar TYPE only), on by itself when the
 # TYPE turns to VIBES, off by hand on its ON card and then kept off; presets keep what they store; TREM/WAH is a
-# pure effect (LFO 5) that never comes on by itself. MOTOR page = 19, its ON card = card.21.0.
+# pure effect (LFO 5) that never comes on by itself. MOTOR page = 21, its ON card = card.21.0.
 # ---- a fresh FM-1 (F01, STAGE 77): ALGORITHM four steps to VIBES: the motor on, TREM/WAH off
 100 btn 8
 200 turn 1 1

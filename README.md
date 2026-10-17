@@ -42,7 +42,7 @@ the MIDI map.
 | Page | K1 | K2 | K3 | K4 | Button |
 | --- | --- | --- | --- | --- | --- |
 | **PERFORM** | TREM/WAH | PHASER | FILTER | DELAY | HOME (assignable on ASSIGN) |
-| **FRODHES** (main) | TYPE | DRIVE | REVERB | KEY VEL | HOME twice |
+| **FRODHES** (main) | TYPE | DRIVE (VIBES: MALLET) | REVERB (VIBES: MOTOR) | KEY VEL | HOME twice |
 | **VOICE** | TONE (VIBES: STRIKE) | BARK (MALLET) | BELL (TUBE) | HAMMER (WEIGHT) | EDIT |
 | **DECAY** | DECAY (VIBES: RING) | RELEASE (DAMPER) | NOISE | TUNE | (SELECT) |
 | **MOTOR** (VIBES only) | ON / OFF | DEPTH | SPEED | SHAPE | (SELECT) |

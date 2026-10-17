@@ -1,0 +1,28 @@
+# The FRODHES page's K2 / K3 belong to the engine: the Rhodes DRIVE / REVERB (as before), VIBES MALLET (VOICE's) and
+# MOTOR (on / off, the MOTOR page's ON card). K1 TYPE and K4 KEY VEL on both. (turn 3 = K2, turn 4 = K3)
+# ---- the Rhodes (F01): DRIVE, REVERB
+100 turn 0 1
+300 expect state page FRODHES
+300 expect state label.2.1 DRIVE
+300 expect state label.2.2 REVERB
+# ---- VIBES (CC 79): MALLET, MOTOR (on by itself)
+400 midi 0xB0 79 64
+600 expect state bars 1
+600 expect state label.2.0 TYPE
+600 expect state label.2.1 MALLET
+600 expect state label.2.2 MOTOR
+600 expect state card.2.2 ON
+600 expect state card.2.1 5.0
+# K3 left: the motor off (the MOTOR page agrees); K2 up: the mallet moves (VOICE's MALLET agrees)
+700 turn 4 -1
+900 expect state card.2.2 OFF
+900 expect state card.21.0 OFF
+1000 turn 3 20
+1300 expect state card.3.1 CORD
+1300 expect state card.2.1 CORD
+# ---- back to the Rhodes (CC 80): DRIVE / REVERB again
+1400 midi 0xB0 80 0
+1600 expect state bars 0
+1600 expect state label.2.1 DRIVE
+1600 expect state label.2.2 REVERB
+1600 expect state card.2.1 1.0

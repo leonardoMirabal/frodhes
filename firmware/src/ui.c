@@ -239,9 +239,15 @@ static void perf_wake(uint32_t id)
     else if (id == P_CMP_AMT && !PV(P_CMP_SW)) { param_set(P_CMP_SW, 1); if (!PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, 15); }
 }
 /* the slot a card shows: PERFORM's are resolved to the assigned parameter */
+/* the FRODHES page's K2 / K3 belong to the engine (the user, 2026-10-17: "2 options depend on the selected engine"):
+ * one row per engine, so a new engine adds its own; K1 TYPE and K4 KEY VEL stay. The Rhodes row is the page as before. */
+static const struct { uint8_t s[2]; const char *lab[2]; } ENG_HEAD[2] = {
+    {{P_DRIVE, P_RV_DEPTH}, {"DRIVE", "REVERB"}},       /* Rhodes */
+    {{P_BARK, P_MOT_ON}, {"MALLET", "MOTOR"}},          /* the bar engine: VOICE's MALLET, MOTOR on / off */
+};
 static uint32_t slot_at(uint32_t pg, uint32_t k)
 {
-    uint32_t s = PAGE_S[pg][k];
+    uint32_t s = pg == PG_PIANO && (k == 1u || k == 2u) ? ENG_HEAD[ui_bars() ? 1 : 0].s[k - 1u] : PAGE_S[pg][k];
     return s >= S_PERF0 && s < S_PERF0 + 4u ? PERF_T[perf_idx(s - S_PERF0)].id : s;
 }
 static const char *perf_name(uint32_t i) { return ui_bars() && PERF_T[i].bar ? PERF_T[i].bar : PERF_T[i].name; }
@@ -249,6 +255,7 @@ static const char *slot_label(uint32_t pg, uint32_t k)
 {
     if (pg == PG_PERF) return perf_name(perf_idx(k));
     if (ui_bars() && (pg == PG_VOICE || pg == PG_DECAY)) return PAGE_LAB_BAR[pg - PG_VOICE][k];
+    if (pg == PG_PIANO && (k == 1u || k == 2u)) return ENG_HEAD[ui_bars() ? 1 : 0].lab[k - 1u];
     return PAGE_LAB[pg][k];
 }
 
