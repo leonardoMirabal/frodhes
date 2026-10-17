@@ -1,0 +1,26 @@
+# Rhodes (STAGE 77): a note let go while it waits for a voice (the steal's 1.5 ms fade) starts let go and is not held for good.
+# Eight notes held fill the voices; a ninth is struck and let go at once (one audio block): it steals the oldest
+# voice; when every key is let go, no voice is still held (found by test_fuzz: 8 voices held for 6 notes). The same fix as bars.c (c697051), in rhodes.c.
+100 midi 0x90 53 100
+100 midi 0x90 57 100
+100 midi 0x90 60 100
+100 midi 0x90 64 100
+100 midi 0x90 65 100
+100 midi 0x90 69 100
+100 midi 0x90 72 100
+100 midi 0x90 76 100
+500 midi 0x90 81 100
+500 midi 0x80 81 0
+700 expect state held 7
+1000 midi 0x80 53 0
+1000 midi 0x80 57 0
+1000 midi 0x80 60 0
+1000 midi 0x80 64 0
+1000 midi 0x80 65 0
+1000 midi 0x80 69 0
+1000 midi 0x80 72 0
+1000 midi 0x80 76 0
+1100 expect state held 0
+1100 expect state pitches 0
+6000 expect rms < -60
+6000 end

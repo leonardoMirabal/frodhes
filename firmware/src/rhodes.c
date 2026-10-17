@@ -286,6 +286,10 @@ static void rh_events(void)
                     }
                     if (rh_pedal_w && rh_felt) v->felt_n = 353;  /* 8 ms of felt noise */
                 }
+            for (i = 0; i < RH_NV; i++)                 /* a note let go while it waits for a steal's fade: it
+                                                         * starts let go (it was held for good: fuzz seed 160, a fast
+                                                         * pattern over 8 voices; the same fix as bars.c) */
+                if (rv[i].alive && rv[i].pend && rv[i].pend_note == note) rv[i].pend = 2;
         } else if (type == EV_PEDAL) {
             rh_pedal_w = PEDAL_W[val];
             for (i = 0; i < RH_NV; i++)
@@ -378,7 +382,11 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
     v->Hprev = Hp;
     if (v->fade == 0) {                                   /* a steal finished fading: start the waiting note */
         v->alive = 0;
-        if (v->pend) rh_init(v, v->pend_note, v->pend_vel);
+        if (v->pend) {
+            uint32_t rel = v->pend == 2u;
+            rh_init(v, v->pend_note, v->pend_vel);
+            if (rel) { v->held = 0; rh_set_damper(v, rh_pedal_w); }
+        }
         return;
     }
     if (!v->ptab && !v->felt_n && sum < (k->kill >> 3)) { v->alive = 0; return; }
