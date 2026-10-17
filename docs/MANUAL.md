@@ -234,9 +234,9 @@ On **VIBES** the vibraphone's motor is not here but on its own page, MOTOR (see 
 | K3 | **SPEED** | How fast: 0.25–6 Hz (a note value when synced) |
 | K4 | **SYNC** | Free, or locked to the tempo as a note value |
 
-Phaser and chorus are two separate effects and can run together (the phaser feeds the chorus). The phaser only cuts
-(its notches sweep through the sound; nothing is lifted, so switching it on does not jump in level) and keeps the
-sound close to the middle (its two sides 30° apart). The chorus makes the sound wider in stereo, which on headphones
+Phaser and chorus are two separate effects and can run together (the phaser feeds the chorus). Switched on at the
+panel's depth the phaser keeps the level (its notches sweep through the sound; the bass is no longer lifted) and keeps
+the sound close to the middle (its two sides 30° apart). The chorus makes the sound wider in stereo, which on headphones
 sounds bigger; its level is set so that it does not also sound louder.
 
 ### DELAY

@@ -281,12 +281,12 @@ static int32_t ph_coef(uint32_t ph, int32_t depth)
 static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t depth = fx_p[FXP_PH_DEPTH], fbk = fx_p[FXP_PH_FDBK] * 180;
-    /* the mix: 0.56 x (dry + allpasses), as a 50/50 phaser: where they are in phase it is +1 dB at most, the notches
-     * only cut. It was 0.707 x a depth law fitted on the FM-1 by LUFS (0.8): 0.81 at DEPTH 80, so a low note (the
+    /* the mix: 0.70 x (dry + allpasses): +3 dB at most where they are in phase, the notches cut (0.56, a cut-only
+     * 50/50 mix, came out 2-5 LU quieter on the FM-1 and dropped the phaser presets). It was 0.707 x a depth law fitted on the FM-1 by LUFS (0.8): 0.81 at DEPTH 80, so a low note (the
      * notches above it) came out +4 LU, the bass +6 dB, and the feedback resonated on the bass: heard as a jump in
      * level when switched on (the user, 2026-10-17). The feedback now passes a DC block and the sides are 30 degrees
      * apart (they were 90: a mono sound turned very wide). */
-    int32_t pg = 18350 << 15;
+    int32_t pg = 22940 << 15;
     uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, j, s;
     if (!fx_p[FXP_PH_SW]) return;
     for (sb = 0; sb < n; sb += 32u) {
