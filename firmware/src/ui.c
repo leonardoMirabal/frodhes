@@ -801,6 +801,13 @@ static void draw_card_small(uint32_t k)
     cv_blit(1u + k * 60u, SQ_CARD_Y);
 }
 
+/* footer text: the FOCUS look's anti-aliased small face (its quiet greys), the other looks' bitmap font */
+static void ft_c(int32_t x, int32_t y, int32_t w, const char *s, uint16_t c)
+{
+    if (ui_style != UI_FOCUS) { text_c(x, y, w, &FONT_S, s, c); return; }
+    aa_text_c(x, y - 1, w, &AF_S, s, c == C_DIM ? RGB(90, 90, 96) : c == C_GRAY ? FC_LAB : c, FC_BG);
+}
+
 static void draw_footer(void)
 {
     cv_begin(240, 35, C_BLACK);
@@ -815,19 +822,19 @@ static void draw_footer(void)
         char s[24], t[32];
         preset_name(PR_NF_UI + pr_save_slot, s);
         p_strcpy(t, "SAVE TO ", 8); p_strcpy(t + 8, s, 20);
-        text_c(0, 2, 240, &FONT_S, t, C_HI);
-        text_c(0, 18, 240, &FONT_S, "SAVE: YES   HOME: NO", UI_ACC);
+        ft_c(0, 2, 240, t, C_HI);
+        ft_c(0, 18, 240, "SAVE: YES   HOME: NO", UI_ACC);
     } else if (ui_msg_t && fm1_ms - ui_msg_t < MSG_MS) {
         if (text_w(&FONT_L, ui_msg) <= 236) text_c(0, 2, 240, &FONT_L, ui_msg, C_HI);
-        else text_c(0, 10, 240, &FONT_S, ui_msg, C_HI);
+        else ft_c(0, 10, 240, ui_msg, C_HI);
     } else {
         if (ui_page == PG_COMP) {                        /* the gain-reduction meter (draw_meter) and its scale */
             uint32_t i;
             if (PV(P_CMP_SW)) {
                 for (i = 0; i < GR_SEGS; i++)
-                    if (GR_LAB[i]) { char t[4]; p_fmt_int(t, GR_DB10[i] / 10); text_c(GR_X0 + (int32_t)i * GR_W - 4, 18, GR_W + 6, &FONT_S, t, C_DIM); }
-                text_c(GR_X1, 18, 240 - GR_X1, &FONT_S, "GR DB", C_DIM);
-            } else text_c(0, 18, 240, &FONT_S, "K1 THRESH: TURN UP = ON", C_DIM);
+                    if (GR_LAB[i]) { char t[4]; p_fmt_int(t, GR_DB10[i] / 10); ft_c(GR_X0 + (int32_t)i * GR_W - 4, 18, GR_W + 6, t, C_DIM); }
+                ft_c(GR_X1, 18, 240 - GR_X1, "GR DB", C_DIM);
+            } else ft_c(0, 18, 240, "K1 THRESH: TURN UP = ON", C_DIM);
             gr_shown = 0xFFFF;                          /* the meter rows: draw them again */
             ui_mark(E_METER);
             cv_blit(0, 205);
@@ -839,18 +846,18 @@ static void draw_footer(void)
             if (seq_rec) p_strcpy(t, seq_play ? "REC: OVERDUB" : "STEP REC: PLAY NOTES", 20);
             else if (sq_erase) p_strcpy(t, "ERASE: HOLD KEYS", 20);
             else { p_strcpy(t, seq_play ? "PLAYING  " : "STOPPED  ", 10); n = 9; p_fmt_int(t + n, (int32_t)sq_n); while (t[n]) n++; p_strcpy(t + n, " NOTES", 6); }
-            text_c(0, 2, 240, &FONT_S, t, seq_rec || sq_erase ? UI_ACC : C_GRAY);
-            text_c(0, 18, 240, &FONT_S, "SEQ: REC   HOLD SEQ: CLEAR", C_DIM);
+            ft_c(0, 2, 240, t, seq_rec || sq_erase ? UI_ACC : C_GRAY);
+            ft_c(0, 18, 240, "SEQ: REC   HOLD SEQ: CLEAR", C_DIM);
             cv_blit(0, 205);
             return;
         }
-        if (ui_page == PG_ARP) text_c(0, 2, 240, &FONT_S, ARP_HOLD ? "HOLD ON: NOTES KEEP PLAYING" : "HOLD OFF",
+        if (ui_page == PG_ARP) ft_c(0, 2, 240, ARP_HOLD ? "HOLD ON: NOTES KEEP PLAYING" : "HOLD OFF",
                                       ARP_HOLD ? UI_ACC : C_GRAY);
         else if (ui_page == PG_SETUP) {                 /* what this is: the name and the version */
             char t[24];
             p_strcpy(t, "FRODHES ", 8); p_strcpy(t + 8, ui_version(), 12);
-            text_c(0, 2, 240, &FONT_S, t, UI_ACC);
-        } else text_c(0, 2, 240, &FONT_S, "SELECT: PAGE  PRESETS: SOUND", C_GRAY);
+            ft_c(0, 2, 240, t, UI_ACC);
+        } else ft_c(0, 2, 240, "SELECT: PAGE  PRESETS: SOUND", C_GRAY);
         if (ui_page == PG_SETUP) {
             static char cpu[32];
             uint32_t n = 0;
@@ -859,8 +866,8 @@ static void draw_footer(void)
             p_strcpy(cpu + n, " MAX ", 5); n += 5; p_fmt_int(cpu + n, (int32_t)prof_max_us);
             while (cpu[n]) n++;
             p_strcpy(cpu + n, " US", 3);
-            text_c(0, 18, 240, &FONT_S, cpu, C_DIM);
-        } else text_c(0, 18, 240, &FONT_S, page_hint(ui_page), C_DIM);
+            ft_c(0, 18, 240, cpu, C_DIM);
+        } else ft_c(0, 18, 240, page_hint(ui_page), C_DIM);
     }
     cv_blit(0, 205);
 }
