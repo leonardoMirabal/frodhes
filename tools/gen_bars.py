@@ -759,10 +759,11 @@ def kn_massi(vb):
 
 
 def kn_tube():
-    """BELL -> tube size s Q15: 0 at 0, -24 dB at 1 rising log-linearly to 1.0 at 64, then 1.0 -> 1.2 (log) at 127."""
+    """BELL -> tube size s Q15: 0 at 0, -24 dB at 1 rising log-linearly to 1.0 at 64, then 1.0 -> 1.45 (log) at 127 (was
+    1.2: the upper half was +2 dB and heard as nothing, the user 2026-10-17)."""
     out = [0]
     for v in range(1, 128):
-        s = 10 ** (-24.0 * (64 - v) / 63.0 / 20) if v <= 64 else 1.2 ** ((v - 64) / 63.0)
+        s = 10 ** (-24.0 * (64 - v) / 63.0 / 20) if v <= 64 else 1.45 ** ((v - 64) / 63.0)
         out.append(int(round(s * 32768)))
     return out
 

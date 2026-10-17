@@ -120,7 +120,7 @@
 
  "T7a": {"_doc": "contact law F = K d^p while compressed, re-contact allowed (tools/hammer.py)", "src": "[DC94], [RUCZ21] (E:2.1)", "status": "CONFIRMED"},
  "T7b": {"_doc": "effective mallet mass (g) at HAMMER 0 / 64 / 127, log between; the contacts are simulated at HAMMER 64",
-         "head_factor": 1.2, "m_g": [12.0, 30.0, 60.0], "_doc_2026_10_17": "was 15 / 30 / 45 g (the contact 0.79x .. 1.14x: WEIGHT was heard as a level change only); 12 g (a light rattan mallet) to 60 g (a heavy bass mallet) gives 0.74x .. 1.26x, light brighter, heavy darker",
+         "head_factor": 1.2, "m_g": [10.0, 30.0, 70.0], "_doc_2026_10_17": "was 15 / 30 / 45 g (the contact 0.79x .. 1.14x: WEIGHT was heard as a level change only); 12 g (a light rattan mallet) to 60 g (a heavy bass mallet) gives 0.74x .. 1.26x, light brighter, heavy darker",
          "level_comp": 0.6, "_doc_level_comp": "share of HAMMER's physical V1 level change (impulse ~ M) that is taken back: 0 = none, 1 = level-neutral",
          "src": "[DC94] factor (M); masses E:4 row 2 (SIM/PRACT, E-VAL #20)", "status": "ESTIMATE",
          "settle": "O11: listening (VL) on HAMMER"},

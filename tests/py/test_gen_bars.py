@@ -199,7 +199,7 @@ def test_knob_tables():
     # the default mallet (64)
     assert all(a <= b for a, b in zip(fam, fam[1:]))
     t = SPEC["kn_tube"]
-    assert t[0] == 0 and t[64] == 32768 and abs(t[127] - 1.2 * 32768) <= 1
+    assert t[0] == 0 and t[64] == 32768 and abs(t[127] - 1.45 * 32768) <= 1
     assert all(a < b for a, b in zip(t, t[1:]))
     assert SPEC["kn_mass"][64] == 4096 and SPEC["kn_massi"][64] == 4096
     assert SPEC["kn_mass"][0] > 4096 > SPEC["kn_mass"][127]                     # heavier: a longer contact
