@@ -882,7 +882,7 @@ static void ui_splash(void)
     cv_blit(0, 46);
     cv_begin(240, 64, C_BLACK);
     text_c(0, 0, 240, &FONT_L, "FRODHES", UI_ACC);
-    text_c(0, 40, 240, &FONT_S, "ELECTRIC PIANO", C_GRAY);
+    text_c(0, 40, 240, &FONT_S, "ELECTRIC PIANO + VIBES", C_GRAY);
     cv_blit(0, 110);
     cv_begin(240, 20, C_BLACK);
     p_strcpy(v, "VERSION ", 8); p_strcpy(v + 8, ui_version(), 10);
