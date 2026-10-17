@@ -221,7 +221,7 @@ On **VIBES** the vibraphone's motor is not here but on its own page, MOTOR (see 
 | K1 | **EFFECT** | Off / on |
 | K2 | **DEPTH** | How far it sweeps |
 | K3 | **SPEED** | How fast: 0.25–6 Hz (a note value when synced) |
-| K4 | **FEEDBK** | Resonance: more pronounced, vocal sweeps |
+| K4 | **FEEDBK** | Resonance: more pronounced, vocal sweeps (it never builds up on the bass) |
 
 ### CHORUS
 
@@ -234,8 +234,10 @@ On **VIBES** the vibraphone's motor is not here but on its own page, MOTOR (see 
 | K3 | **SPEED** | How fast: 0.25–6 Hz (a note value when synced) |
 | K4 | **SYNC** | Free, or locked to the tempo as a note value |
 
-Phaser and chorus are two separate effects and can run together (the phaser feeds the chorus). Both make the sound
-wider in stereo, which on headphones sounds bigger; their level is set so that it does not also sound louder.
+Phaser and chorus are two separate effects and can run together (the phaser feeds the chorus). The phaser only cuts
+(its notches sweep through the sound; nothing is lifted, so switching it on does not jump in level) and keeps the
+sound close to the middle (its two sides 30° apart). The chorus makes the sound wider in stereo, which on headphones
+sounds bigger; its level is set so that it does not also sound louder.
 
 ### DELAY
 
@@ -438,8 +440,8 @@ The VOICE cards act on the next strike (a ringing bar keeps the strike that star
 | --- | --- | --- |
 | K1 | **STRIKE** | Where the mallet hits the bar: **CENTRE** (left end), a fuller, rounder fundamental with the 10th partial and no 4th; **L/3** (the middle of the knob, the usual spot), the 4th partial back; toward the **EDGE** (right), off the centre line, the bar's twisting modes ring in: metallic and slightly out of tune |
 | K2 | **MALLET** | How hard the mallet is: **SOFT** (0) a dark, round, almost pure fundamental with a soft onset, even when you play hard; **YARN** (42) round and warm, the overtones held back; the middle (64, the default) the usual vibes sound; **CORD** (85) clearer, the 10th partial rings; **RUBBER** (127) hard and bright, bell-like, with a click. The card shows the mallet's name, or a number between two of them. The low bars show the soft mallets apart best, the middle and high bars the hard ones |
-| K3 | **TUBE** | How much the tube rings with the bar: 0 is a bare bar (about 8-11 dB quieter, thin, rings longer, no bloom); up is a fuller, warmer, louder note that blooms just after the strike and dies sooner, as on a real vibraphone |
-| K4 | **WEIGHT** | The mallet's weight: light is brighter, quicker and quieter; heavy is darker, with more body (about 5 dB louder at the top than at the bottom). How hard you play (KEY VEL, MIDI velocity) stays the strike's speed |
+| K3 | **TUBE** | How much the tube rings with the bar: 0 is a bare bar (about 6-7 dB quieter than the middle, thin, rings longer, no bloom); up is a fuller, warmer, louder note that blooms just after the strike and dies sooner, as on a real vibraphone (the right end about 3-4 dB over the middle) |
+| K4 | **WEIGHT** | The mallet's weight: light is brighter, quicker and quieter; heavy is darker, with more body (about 6 dB louder at the top than at the bottom). How hard you play (KEY VEL, MIDI velocity) stays the strike's speed: a harder strike is louder and brighter (the overtones come up), a soft one round |
 
 ![DECAY on VIBES](manual/img/decay-vibes.png)
 
@@ -466,6 +468,8 @@ DECAY straight to COMPRESSOR).
 - **Presets keep theirs:** loading a preset is not a TYPE change: **F13 VIBE MOTOR** has the motor on, **F14 VIBES
   DRY** has it off, and a user preset saved with the motor off stays off.
 - **The Rhodes types** have no motor: going back to one leaves no tremolo running (TREM/WAH stays as it was).
+- **The level** stays the same with the motor on or off (the discs close the tubes part of each turn; the motor
+  makes up for what they take).
 - **TREM/WAH** (the LFO button) is the same effect on VIBES as on the Rhodes and can run on top of the motor.
 - **Over MIDI:** CC 47 ON (≥ 64), 48 DEPTH, 49 SPEED, 50 SHAPE, 51 SYNC.
 
