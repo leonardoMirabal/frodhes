@@ -66,6 +66,11 @@ VELS = [1, 8, 24, 40, 64, 88, 104, 120, 127]
 CARD_VALS = [0, 32, 64, 96, 127]
 FX_ALL_US = 1080                        # fx.c FX_US_*: tools/hil_cpu.py's heavy set (the trem slot = MOTOR)
 S11_FLAG_US = 4500
+# S9 card sweeps: the 0..300 ms level a card may move over 0..127 (PLAN 9.2: <= 6 LU "unless that is its job"). Since the
+# cards-audible pass (2026-10-17) TUBE's level is its job (vibes.json card_level bell_span_db 12: the bare bar is the
+# quieter one), WEIGHT's partly (the heavier mallet's body: T7b level_comp 0.6, ~5..7 LU), STRIKE's a little (the fuller
+# centre, tone_span_db 3); an unintended jump on any other card still fails at 6
+S9_CARD_LU = dict(TONE=4.0, BELL=13.0, HAMMER=8.0)
 
 
 class Case:
@@ -579,8 +584,9 @@ def group_checks(cases, typ):
         if cs:
             lv = [np.mean([bm.lufs(seg(c.x, 200 + i * 1500, 300)) for i in range(3)]) for c in cs]
             span = max(lv) - min(lv)
-            G.append(("S9", f"card {card}", span <= 6, float(span), f"{bm.BAR_NAME[card]} ({card}) 0..127: the 0..300 ms "
-                                                                     f"level moves {span:.1f} LU"))
+            lim = S9_CARD_LU.get(card, 6.0)
+            G.append(("S9", f"card {card}", span <= lim, float(span), f"{bm.BAR_NAME[card]} ({card}) 0..127: the 0..300 ms "
+                                                                       f"level moves {span:.1f} LU (limit {lim:.1f})"))
     s12c = [c for c in cases if c.group == "s12"]
     for pr in sorted({c.meta["pair"] for c in s12c}):
         a = next((c for c in s12c if c.meta["pair"] == pr and c.meta["kind"] != "ref"), None)

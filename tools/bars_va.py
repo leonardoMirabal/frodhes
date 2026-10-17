@@ -27,7 +27,10 @@ import rh_coefs as rc    # noqa: E402
 
 FS = gm.FS
 VA_KEYS = [53, 60, 65, 69, 77, 84, 89]
-SOFT, MED, CORD, RUBBER = 0, 42, 85, 127
+SOFT, YARN, DEFAULT, CORD, RUBBER = 0, 42, 64, 85, 127   # MALLET at the families (gen_bars FAM_DETENT)
+MEDK = dict(kf=5 << 8)   # the reference checks play the generator's calibration law (tools/gen_bars.py CAL: the MED
+                         # YARN of before 2026-10-17, which the radiation / torsion / V4 fits use; kept in the spec,
+                         # no MALLET value reaches it)
 LN1000 = 6.907755279
 
 
@@ -260,7 +263,7 @@ def checks(spec=None):
                if abs(D[int(n)]["modes"][slot - 2]["t60"] / v - 1) > 0.25]
         add("%s T60 within +-25 %% of the per-note values: misses" % nm, bad, not bad)
     ks = sorted(int(n) for n in vb["T2"]["V2"]["level_db"])
-    y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, bark=MED), sleep=False)
+    y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, **MEDK), sleep=False)
     lv = [gm.band_level(r_, D[n]["modes"][0]["f"], 0.03, 0.53, 0.015) - gm.band_level(r_, D[n]["f0"], 0.03, 0.53, 0.015)
           for n, r_ in zip(ks, y)]
     lo, hi = -47.0, -17.0
@@ -268,16 +271,22 @@ def checks(spec=None):
         [round(v, 1) for v in lv], all(lo - 2 <= v <= hi + 2 for v in lv))
     sl = np.polyfit(ks, lv, 1)[0]
     add("V2 level decreases with pitch (slope dB / key)", round(float(sl), 3), sl < 0)
-    add("no V2 above G5 (b = 0 for keys > 79)", [n for n in range(80, 109) if K[n]["modes"][2]["b"]],
-        not [n for n in range(80, 109) if K[n]["modes"][2]["b"]])
-    add("no V3 above C5 (b = 0 for keys > 72)", [n for n in range(73, 109) if K[n]["modes"][3]["b"]],
-        not [n for n in range(73, 109) if K[n]["modes"][3]["b"]])
+    # the reference has no V2 above G5 and no V3 above C5: there they are under its -50 dB detection floor with its
+    # mallet (vibes.json T2 _doc). The bar keeps them for the harder mallets; MED YARN v100 stays under the floor
+    for nm, slot, k0 in (("V2", 2, 80), ("V3", 3, 73)):
+        ks = [n for n in range(k0, 109) if K[n]["modes"][slot]["b"]]
+        y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, **MEDK), sleep=False) if ks else []
+        hi = [(n, round(gm.band_level(r_, D[n]["modes"][slot - 2]["f"], 0.03, 0.53, 0.015)
+                        - gm.band_level(r_, D[n]["f0"], 0.03, 0.53, 0.015), 1)) for n, r_ in zip(ks, y)]
+        bad = [x for x in hi if x[1] > -50]
+        add("%s above %s (keys >= %d): MED v100 under the reference's -50 dB detection floor re V1 (30..530 ms), "
+            "misses" % (nm, "G5" if slot == 2 else "C5", k0), bad, not bad)
     add("radiation trims V2 / V3 / V4 (dB, R1b)", {k: round(v, 1) for k, v in spec["rad_db"].items()}, True, "report")
     # V4 (R1b _doc_v4): MED v100 V4 re V1 against the measured levels F3..G4. The measured V4 is flat while V3 falls,
     # which no mallet pulse gives: V4 follows it from F3 to C4 and stays under it above (the brightest-voicing ceiling)
     ref4 = {int(n): v for n, v in vb["T2"]["V4"]["level_db"].items()}
     ks = list(range(53, 68))
-    y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, bark=MED), sleep=False)
+    y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, **MEDK), sleep=False)
     l4 = {n: gm.band_level(r_, D[n]["modes"][2]["f"], 0.03, 0.53, 0.015) - gm.band_level(r_, D[n]["f0"], 0.03, 0.53, 0.015)
           for n, r_ in zip(ks, y)}
     lo4 = [(n, round(l4[n], 1), ref4[n]) for n in sorted(ref4) if n <= 60]
@@ -294,17 +303,26 @@ def checks(spec=None):
     bad = []
     for n in range(53, 90):
         for q, fm in enumerate(fams):
+            if "blend" in fm:                                    # the default mallet: two laws blended (checked as such)
+                continue
             tc = D[n]["mallet"][q]["tc_ms"][1:9]                 # the layers v8..v120
             win = D[n]["mallet"][q]["win_ms"][1:9]
             lo, hi = fm["tc_window_ms"]
-            played = [min(a, b) for a, b in zip(tc, win)]
-            if min(played) < lo - 1e-9 or max(played) > hi + 1e-9:
-                bad.append((n, fm["short"], round(min(played), 3), round(max(played), 3)))
-    add("contact times (played) per family x layer in the T7d windows, F3..F6: misses", bad[:12], not bad)
+            # the contact itself; where T7f's main-lobe cap plays it faster (the yarn families on the top bars), the
+            # played window is the cap by design
+            if min(tc) < lo - 1e-9 or max(tc) > hi + 1e-9:
+                bad.append((n, fm["short"], round(min(tc), 3), round(max(tc), 3)))
+            cap = vb["T7f"]["f_tau_max"] / D[n]["f0"] * 1e3
+            if any(w_ > min(t_, cap) + 1e-3 for t_, w_ in zip(tc, win)):
+                bad.append((n, fm["short"], "played", round(max(win), 3), round(cap, 3)))
+    add("contact times per family x layer in the T7c windows (played: the contact, or T7f's cap), F3..F6: misses",
+        bad[:12], not bad)
     # independent hammer.contact() at C4 v100
     worst = 0.0
     import gen_bars as gb
     for q, fm in enumerate(fams):
+        if "blend" in fm:
+            continue
         n = 60
         kd = D[n]
         v = 100
@@ -318,7 +336,9 @@ def checks(spec=None):
     add("contact time vs an independent hammer.contact() run at C4 v100, worst rel.", round(worst, 3), worst <= 0.10)
     # pulse spectrum -6 dB point
     worst, yarn = 0.0, []
-    for q in range(4):
+    for q in range(len(fams)):
+        if "blend" in fams[q]:
+            continue
         sh = np.array(D[60]["mallet"][q]["shapes"][5], float)    # v88 layer
         tau = D[60]["mallet"][q]["win_ms"][6] * 1e-3
         nf = 1 << 16
@@ -352,6 +372,8 @@ def checks(spec=None):
     add("C4 V3/V1: RUBBER v127 - SOFT v40 >= 20 dB", round(rr[0] - rr[1], 1), rr[0] - rr[1] >= 20)
     worst = 0.0
     for q, fm in enumerate(fams):
+        if "blend" in fm:
+            continue
         for n in (53, 60, 69):
             tc = D[n]["mallet"][q]["tc_ms"]
             want = 11.67 ** (-(fm["p"] - 1) / (fm["p"] + 1))
@@ -364,7 +386,7 @@ def checks(spec=None):
     v2 = max(20 * math.log10(np.abs(y["slots"][i, 2]).max() / np.abs(y["slots"][i, 0]).max() + 1e-30) for i in range(3))
     add("TONE -64: V2 / V1 (slot peaks) <= -40 dB", round(v2, 1), v2 <= -40)
     # TONE 0 vs an independent modal simulation at the key's own FE weights at x = 0.35 L (the band table vs the key)
-    y = gm.render_batch(spec, ks, [100] * 3, 0.3, dict(gm.DEFAULT_KNOBS, bark=MED), slots=True, sleep=False)
+    y = gm.render_batch(spec, ks, [100] * 3, 0.3, dict(gm.DEFAULT_KNOBS, **MEDK), slots=True, sleep=False)
     worst = 0.0
     for i, n in enumerate(ks):
         g = 20 * math.log10(np.abs(y["slots"][i, 2]).max() / np.abs(y["slots"][i, 0]).max())
@@ -373,12 +395,12 @@ def checks(spec=None):
     add("TONE 0: V2 / V1 within +-3 dB of the key's own FE strike weights (band-table error)", round(worst, 2), worst <= 3)
     add("band strike tables vs each key's own FE weights, V2 V3 V4 re V1 at TONE raw 0 / 32 / 96 / 127 (worst dB where "
         "the weight is within 20 dB of its maximum; exact at raw 64), report", band_pos_error(spec), True, "report")
-    y = gm.render_batch(spec, ks, [100] * 3, 0.03, dict(gm.DEFAULT_KNOBS, tone=127, bark=MED), slots=True, sleep=False)
+    y = gm.render_batch(spec, ks, [100] * 3, 0.03, dict(gm.DEFAULT_KNOBS, tone=127, **MEDK), slots=True, sleep=False)
     worst = 0.0
     for i in range(3):
         t1 = 20 * math.log10(np.abs(y["slots"][i, 5]).max() / np.abs(y["slots"][i, 0]).max())
         worst = max(worst, abs(t1 - vb["T9c"]["t1_db"]))
-    add("TONE +63: T1 / V1 = T9c (-24 dB) +-3 dB, worst", round(worst, 2), worst <= 3)
+    add("TONE +63: T1 / V1 = T9c (%.0f dB) +-3 dB, worst" % vb["T9c"]["t1_db"], round(worst, 2), worst <= 3)
     y = gm.render_batch(spec, ks, [100] * 3, 0.1, dict(gm.DEFAULT_KNOBS, tone=64), slots=True, sleep=False)
     z = float(np.abs(y["slots"][:, 5:7]).max())
     add("T1 = T2 = 0 for TONE <= 0", z, z == 0.0)
@@ -453,7 +475,7 @@ def indep_v2v1(spec, n):
     v2 = k["modes"][2]["b"] * W[8][1] * P[q[2]][2] / W[q[2]][1]
     g1 = k["modes"][0]["b"] * P[8][0] / 16384.0
     g2 = k["modes"][2]["b"] * P[8][2] / 16384.0
-    y = gm.render_batch(spec, [n], [100], 0.3, dict(gm.DEFAULT_KNOBS, bark=MED), slots=True, sleep=False)
+    y = gm.render_batch(spec, [n], [100], 0.3, dict(gm.DEFAULT_KNOBS, **MEDK), slots=True, sleep=False)
     gold = 20 * math.log10(np.abs(y["slots"][0, 2]).max() / np.abs(y["slots"][0, 0]).max())
     return gold + 20 * math.log10((v2 / v1) / (g2 / g1))
 

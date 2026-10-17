@@ -32,7 +32,7 @@ def arr(name):
 
 
 def test_defines_match_the_contract():
-    want = dict(BAR_GEN_VERSION=1, BAR_KEY_LO=21, BAR_NKEY=88, BAR_NM=8, BAR_NFAM=4, BAR_NBAND=16, BAR_NLAYER=8,
+    want = dict(BAR_GEN_VERSION=1, BAR_KEY_LO=21, BAR_NKEY=88, BAR_NM=8, BAR_NFAM=5, BAR_NBAND=17, BAR_NLAYER=8,
                 BAR_PLEN=64, BAR_NPOS=17, BAR_NTYPE=1, BAR_FADE_STEP=128)
     for k, v in want.items():
         assert re.search(r"#define %s %d\b" % (k, v), HDR), k
@@ -40,10 +40,10 @@ def test_defines_match_the_contract():
 
 
 def test_array_sizes():
-    assert len(arr("BAR_PULSE")) == 16 * 4 * 8 * 66
-    assert len(arr("BAR_PRATE")) == 88 * 4 * 10
-    assert len(arr("BAR_PAMP")) == 88 * 4 * 10
-    assert len(arr("BAR_POS")) == 16 * 17 * 8
+    assert len(arr("BAR_PULSE")) == 17 * 5 * 8 * 66
+    assert len(arr("BAR_PRATE")) == 88 * 5 * 10
+    assert len(arr("BAR_PAMP")) == 88 * 5 * 10
+    assert len(arr("BAR_POS")) == 17 * 17 * 8
     for n in ("KN_FAM", "KN_MASS", "KN_MASSI", "KN_TUBE", "KN_NZ"):
         assert len(arr(n)) == 128, n
     assert len(arr("BAR_MOT_COS")) == 257 and len(arr("NZ_BQ")) == 10
@@ -148,10 +148,14 @@ def test_contact_time_windows():
     fams = SPEC["vibes"]["T7c"]["families"]
     for n in range(53, 90):
         for q, fm in enumerate(fams):
+            if "blend" in fm:                                     # the default mallet (MALLET 64): two laws blended
+                continue
             m = D[n]["mallet"][q]
-            played = [min(a, b) for a, b in zip(m["tc_ms"][1:9], m["win_ms"][1:9])]
+            tc = m["tc_ms"][1:9]                                  # the contact (T7f may play it faster: the cap)
             lo, hi = fm["tc_window_ms"]
-            assert lo <= min(played) and max(played) <= hi, (n, fm["name"], min(played), max(played))
+            assert lo <= min(tc) and max(tc) <= hi, (n, fm["name"], min(tc), max(tc))
+            cap = SPEC["vibes"]["T7f"]["f_tau_max"] / D[n]["f0"] * 1e3
+            assert all(w <= min(t, cap) + 1e-3 for t, w in zip(tc, m["win_ms"][1:9])), (n, fm["name"])
 
 
 def excitation(shape, prate_q12, freqs):
@@ -172,7 +176,7 @@ def test_band_shape_error():
         b = K[n]["band"]
         rep = SPEC["band_rep"][b]
         fr = [D[n]["f0"], D[n]["modes"][0]["f"], D[n]["modes"][1]["f"]]
-        for q in range(4):
+        for q in range(len(D[n]["mallet"])):
             own, band = D[n]["mallet"][q]["shapes"], D[rep]["mallet"][q]["shapes"]
             for v in (40, 100, 127):
                 l, w = gm.vlayer(v)
@@ -191,7 +195,8 @@ def test_band_shape_error():
 
 def test_knob_tables():
     fam = SPEC["kn_fam"]
-    assert [fam[v] for v in (0, 42, 85, 127)] == [0, 1 << 8, 2 << 8, 3 << 8]     # the UI's MALLET detents
+    assert [fam[v] for v in (0, 42, 64, 85, 127)] == [0, 1 << 8, 2 << 8, 3 << 8, 4 << 8]   # the UI's MALLET detents and
+    # the default mallet (64)
     assert all(a <= b for a, b in zip(fam, fam[1:]))
     t = SPEC["kn_tube"]
     assert t[0] == 0 and t[64] == 32768 and abs(t[127] - 1.2 * 32768) <= 1

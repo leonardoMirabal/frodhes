@@ -202,7 +202,12 @@ def test_budget_drops_only_quiet_detail():
     assert clicks(bud) == 0
 
 
-@pytest.mark.parametrize("bark,cap,limit", [(42, 16, -45.0), (85, 16, -40.0), (127, 32, -33.0)])
+# the limits: the measured order a margin above, next to the best any order can do (the golden model's quietest-first
+# energies, build/cards_exp/best.py-style): YARN -98 (measured -88), CORD -57 (-35), the edge chord -36.5 (-28.6). Since
+# 2026-10-17 (the cards-audible pass: the harder CORD, the edge's torsion at -15 dB) more of the chord sits in its upper
+# partials, so a forced cut costs more (before: CORD -64 / -46, edge -40.5 / -37). The FM-1 never forces it: the cost
+# model fits 8 edge RUBBER strikes with every effect on (test_budget_drops_only_quiet_detail)
+@pytest.mark.parametrize("bark,cap,limit", [(42, 16, -45.0), (85, 16, -33.0), (127, 32, -27.0)])
 def test_budget_order_when_it_must_cut(bark, cap, limit):
     """When the cap does bind (forced with the developer CC 9), the least audible go first: an 8-note chord at v100
     (YARN, CORD) cut to 16 modes stays under the S12 limit; the extreme edge chord cut to 32 within 3 dB of the
@@ -284,14 +289,16 @@ def test_no_clipping_at_any_voicing(tone, bell):
     assert np.max(np.abs(x)) <= 32768 * 10 ** ((ceil + 0.5) / 20), (np.max(np.abs(x)), ceil)   # the ceiling + rounding
 
 
-@pytest.mark.parametrize("cc,limit", [(28, 1.5), (30, 6.0)])
-def test_card_sweep_level(cc, limit):
-    """S9: TONE (strike position) holds the level, BELL (tube size) moves it no more than the plan allows (6 LU over
-    the sweep, 0..300 ms, the mean of keys 53 69 89); before the compensation TONE moved it 6.2 LU, BELL 10.8"""
+@pytest.mark.parametrize("cc,lo,limit", [(28, 1.5, 4.0), (30, 6.0, 13.0), (29, 0.0, 6.0)])
+def test_card_sweep_level(cc, lo, limit):
+    """S9 (tools/bar_scan.py S9_CARD_LU): the 0..300 ms level over each card's sweep, the mean of keys 53 69 89. TONE
+    (strike position) moves it a little (the fuller centre, vibes.json tone_span_db 3), BELL (tube size) by its job (the
+    bare bar the quieter one: bell_span_db 12; it was scaled to 4 LU and not heard), MALLET holds it (the families are
+    level-matched). Before any compensation TONE moved it 6.2 LU and clipped at v127"""
     lv = []
     for v in (0, 32, 64, 96, 127):
         s = RAW + VIBES + f"61 midi 0xB0 104 0\n62 midi 0xB0 {cc} {v}\n"
         s += "".join(f"{200 + 1500 * i} midi 0x90 {n} 100\n{1100 + 1500 * i} midi 0x80 {n} 0\n" for i, n in enumerate((53, 69, 89)))
         x, _ = render(f"sweep{cc}_{v}", s + "4800 end\n")
         lv.append(np.mean([lufs300(x[:, 0], 0.2 + 1.5 * i) for i in range(3)]))
-    assert max(lv) - min(lv) <= limit, lv
+    assert lo <= max(lv) - min(lv) <= limit, lv

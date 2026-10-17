@@ -42,7 +42,7 @@ KEY_LO, KEY_HI = 21, 108
 NKEY = KEY_HI - KEY_LO + 1
 NM = 8
 SLOT_NAMES = ["V1", "TUBE", "V2", "V3", "V4", "T1", "T2", "X"]
-NFAM, NBAND, NLAYER, PLEN, NPOS, NTYPE = 4, 16, 8, 64, 17, 1
+NFAM, NBAND, NLAYER, PLEN, NPOS, NTYPE = 5, 17, 8, 64, 17, 1
 FADE_STEP = 128
 V_ANCH = gm.V_ANCH
 LAYER_V = gm.LAYER_V
@@ -50,7 +50,10 @@ LN1000 = 6.907755279
 Q30, Q28, Q25, Q16, Q15, Q14, Q12 = 1 << 30, 1 << 28, 1 << 25, 1 << 16, 1 << 15, 1 << 14, 1 << 12
 STATUSES = {"CONFIRMED", "CORRECTED", "DERIVED", "MEASURED-REF", "ESTIMATE"}
 VIBES = os.path.join(ROOT, "docs", "model", "data", "vibes.json")
-FAM_DETENT = [0, 42, 85, 127]          # BARK values that are exactly one family (KN_FAM)
+FAM_DETENT = [0, 42, 64, 85, 127]      # BARK values that are exactly one family (KN_FAM; vibes.json T7c detent): SOFT,
+                                       # YARN, the default (MALLET 64, frozen), CORD, RUBBER
+CAL = NFAM                             # + one family the calibration renders with (T7c calib), dropped before the tables
+CAL_KF = CAL << 8                      # its KN_FAM word (golden-model knob kf; no MALLET value reaches it)
 PEAK_TOL_MS, PEAK_TOL_REL = 15.0, 0.30  # Gate VA: the f0 peak within +-15 ms or +-30 % (the larger)
 POS_DEF = 8                            # BAR_POS point of TONE raw 64 (x_bal on the centreline): b is exact per key there
 POS_EXACT_MIN = 0.02                   # ... unless the band's table is under 2 % of its maximum there (near a node)
@@ -473,7 +476,7 @@ def shape_error(phys, ct, n, r):
     k = phys[n]
     fr = [k["f0"], k["modes"][0]["f"], k["modes"][1]["f"]]
     worst = 0.0
-    for q in range(NFAM):
+    for q in range(len(ct[n])):
         own, oth = ct[n][q]["shapes"], ct[r][q]["shapes"]
         pr = ct[n][q]["prate"]
         for v in BAND_VELS:
@@ -539,6 +542,41 @@ def assign_bands(phys, ct, reach=12):
     return dict(of=of, rep=rep, err=err)
 
 
+def pinned_bands(vb, phys, ct, tol=0.45):
+    """the bands of vibes.json bands (first key and representative of each); a band where a family's shape error
+    exceeds tol is split in two (the split and the two representatives that minimise the worst error), so families
+    added later never move the others' bands"""
+    pb = vb["bands"]
+    fk = list(pb["first_key"]) + [KEY_HI + 1]
+    segs = [(list(range(fk[b], fk[b + 1])), pb["rep"][b]) for b in range(len(pb["rep"]))]
+    E = {}
+
+    def err(ks, r):
+        for n in ks:
+            if (n, r) not in E:
+                E[n, r] = 0.0 if n == r else shape_error(phys, ct, n, r)
+        return max(E[n, r] for n in ks)
+
+    def best(ks):
+        return min(((err(ks, r), r) for r in ks), key=lambda x: x[0])
+    while True:
+        errs = [err(ks, r) for ks, r in segs]
+        w = int(np.argmax(errs))
+        if errs[w] <= tol or len(segs[w][0]) < 2:
+            break
+        ks, r0 = segs[w]
+        cand = []
+        for i in range(1, len(ks)):                       # the half with the band's representative keeps it
+            a_, b_ = ks[:i], ks[i:]
+            (e1, r1), (e2, r2) = ((err(a_, r0), r0), best(b_)) if r0 in a_ else (best(a_), (err(b_, r0), r0))
+            cand.append((max(e1, e2), i, r1, r2))
+        _, i, r1, r2 = min(cand)
+        segs[w:w + 1] = [(ks[:i], r1), (ks[i:], r2)]
+        print("bands: split %d..%d at %d (worst %.2f dB)" % (ks[0], ks[-1], ks[i], errs[w]), file=sys.stderr)
+    of = {n: b for b, (ks, _) in enumerate(segs) for n in ks}
+    return dict(of=of, rep=[r for _, r in segs], err=[err(ks, r) for ks, r in segs])
+
+
 def key_physics(vb, n, fec, zt):
     """Float design of key n: slot frequencies, T60 held / felt, strike-weight source, the pair."""
     a, b = vb["keys"]["authentic"]
@@ -581,13 +619,37 @@ def key_physics(vb, n, fec, zt):
 
 
 # ---------------------------------------------------------------- mallets (T7, T8)
-def fam_K(vb, q):
-    fm = vb["T7c"]["families"][q]
+def law_K(vb, fm):
+    """K (N/m^p) of a contact law {p, K} or {p, tau_ms_1ms}"""
     if "K" in fm:
         return fm["K"]
     m = vb["T7b"]["m_g"][1] * 1e-3
     tc1 = hm.hertz_tc(1.0, m, 1.0, fm["p"])                # Tc at K = 1: Tc ~ K^(-1/(p+1))
     return (tc1 / (fm["tau_ms_1ms"] * 1e-3)) ** (fm["p"] + 1)
+
+
+def fam_laws(fm):
+    """the contact laws a family is simulated with: its own, or (a blend family) its two"""
+    return [fm["blend"]["lo"], fm["blend"]["hi"]] if "blend" in fm else [fm]
+
+
+def fams_int(vb):
+    """the families the generator simulates: the played ones (T7c families) + the calibration law (T7c calib)"""
+    return vb["T7c"]["families"] + [dict(vb["T7c"]["calib"], name="CALIB", short="CAL")]
+
+
+def fam_K(vb, q):
+    """K of family q (a blend family: its first law's)"""
+    return law_K(vb, fam_laws(vb["T7c"]["families"][q])[0])
+
+
+def fam_p(vb, q):
+    return fam_laws(vb["T7c"]["families"][q])[0]["p"]
+
+
+def blend_int(a, b, f):
+    """bars.c's family blend: a + ((b - a) f >> 8) (Q8), on ints"""
+    return [x + (((y - x) * f) >> 8) for x, y in zip(a, b)]
 
 
 def speed(vb, v):
@@ -614,46 +676,67 @@ def contacts(vb, phys, fec):
         fs_ = [k["f0"]] + [md["f"] for md in k["modes"][:3]]
         ts = [k["t1a"]] + [md["t60"] for md in k["modes"][:3]]
         modes = [(f, LN1000 / t, W[i]) for i, (f, t) in enumerate(zip(fs_, ts))]
-        for q, fm in enumerate(vb["T7c"]["families"]):
-            K = fam_K(vb, q)
-            for v in V_ANCH:
-                cases.append(dict(v=speed(vb, v), m_h=m0, K=K, p=fm["p"], modes=modes))
+        for fm in fams_int(vb):
+            for law in fam_laws(fm):
+                K = law_K(vb, law)
+                for v in V_ANCH:
+                    cases.append(dict(v=speed(vb, v), m_h=m0, K=K, p=law["p"], modes=modes))
     res = hm.contact_batch(cases, fs=FS, t_max=0.012)
     out = {}
     i = 0
     for n in range(KEY_LO, KEY_HI + 1):
         out[n] = []
-        for q in range(NFAM):
-            sims = dict(zip(V_ANCH, res[i:i + len(V_ANCH)]))
-            i += len(V_ANCH)
-            seg = {v: contact_segments(sims[v]["F"]) for v in V_ANCH}
-            ratio = min(8.0, max(sg[-1][1] / sg[0][1] for sg in seg.values()))
-            dt = sims[V_ANCH[0]]["dt"]
-            cap_ = vb["T7f"]["f_tau_max"] / (phys[n]["f0"] * dt)        # the main-lobe cap (T7f), 16x samples
-            win = {v: ratio * seg[v][0][1] for v in V_ANCH}                # the whole contact: the shape
-            play = {v: min(win[v], cap_) for v in V_ANCH}                  # played faster where capped
-            shapes = []
-            for v in LAYER_V:
-                Fv = sims[v]["F"]
-                nn = max(2, int(round(win[v])))
-                Fv = np.concatenate([Fv, np.zeros(max(0, nn - len(Fv)))])[:nn]
-                shapes.append(area_resample(Fv))
-            out[n].append(dict(shapes=shapes, prate=[int(round(64.0 / (play[v] * dt * FS) * Q12)) for v in V_ANCH],
-                               fpk=[float(sims[v]["F"].max()) for v in V_ANCH],
-                               tc_ms=[seg[v][0][1] * dt * 1e3 for v in V_ANCH],
-                               win_ms=[play[v] * dt * 1e3 for v in V_ANCH],
-                               ncont=[len(seg[v]) for v in V_ANCH],
-                               impulse=[float(sims[v]["impulse"]) for v in V_ANCH]))
+        for fm in fams_int(vb):
+            laws = []
+            for _ in fam_laws(fm):
+                laws.append(contact_tables(vb, phys, n, dict(zip(V_ANCH, res[i:i + len(V_ANCH)]))))
+                i += len(V_ANCH)
+            if len(laws) == 1:
+                out[n].append(laws[0])
+                continue
+            lo, hi = laws                                  # a blend family: the tables bars.c blended at its detent
+            a = fm["blend"]["a"]
+            out[n].append(dict(shapes=[blend_int(x, y, a) for x, y in zip(lo["shapes"], hi["shapes"])],
+                               prate=blend_int(lo["prate"], hi["prate"], a),
+                               fpk=[x + (y - x) * a / 256.0 for x, y in zip(lo["fpk"], hi["fpk"])],
+                               tc_ms=[x + (y - x) * a / 256.0 for x, y in zip(lo["tc_ms"], hi["tc_ms"])],
+                               win_ms=[x + (y - x) * a / 256.0 for x, y in zip(lo["win_ms"], hi["win_ms"])],
+                               ncont=[max(x, y) for x, y in zip(lo["ncont"], hi["ncont"])],
+                               impulse=[x + (y - x) * a / 256.0 for x, y in zip(lo["impulse"], hi["impulse"])]))
     return out
+
+
+def contact_tables(vb, phys, n, sims):
+    """one family's tables at key n from its simulated contacts (per velocity anchor)"""
+    seg = {v: contact_segments(sims[v]["F"]) for v in V_ANCH}
+    ratio = min(8.0, max(sg[-1][1] / sg[0][1] for sg in seg.values()))
+    dt = sims[V_ANCH[0]]["dt"]
+    cap_ = vb["T7f"]["f_tau_max"] / (phys[n]["f0"] * dt)        # the main-lobe cap (T7f), 16x samples
+    win = {v: ratio * seg[v][0][1] for v in V_ANCH}                # the whole contact: the shape
+    play = {v: min(win[v], cap_) for v in V_ANCH}                  # played faster where capped
+    shapes = []
+    for v in LAYER_V:
+        Fv = sims[v]["F"]
+        nn = max(2, int(round(win[v])))
+        Fv = np.concatenate([Fv, np.zeros(max(0, nn - len(Fv)))])[:nn]
+        shapes.append(area_resample(Fv))
+    return dict(shapes=shapes, prate=[int(round(64.0 / (play[v] * dt * FS) * Q12)) for v in V_ANCH],
+                fpk=[float(sims[v]["F"].max()) for v in V_ANCH],
+                tc_ms=[seg[v][0][1] * dt * 1e3 for v in V_ANCH],
+                win_ms=[play[v] * dt * 1e3 for v in V_ANCH],
+                ncont=[len(seg[v]) for v in V_ANCH],
+                impulse=[float(sims[v]["impulse"]) for v in V_ANCH])
 
 
 # ---------------------------------------------------------------- knob tables
 def kn_fam():
+    """MALLET raw -> family << 8 | Q8 fraction toward the next: exactly one family at each FAM_DETENT, linear between"""
     out = []
+    last = len(FAM_DETENT) - 1
     for v in range(128):
-        j = 0 if v < FAM_DETENT[1] else 1 if v < FAM_DETENT[2] else 2 if v < FAM_DETENT[3] else 3
-        if j == 3:
-            out.append(3 << 8)
+        j = max(i for i in range(len(FAM_DETENT)) if FAM_DETENT[i] <= v)
+        if j == last:
+            out.append(last << 8)
             continue
         a = int(round(256 * (v - FAM_DETENT[j]) / (FAM_DETENT[j + 1] - FAM_DETENT[j])))
         out.append(j << 8 | min(a, 255))
@@ -736,6 +819,8 @@ def build_spec(vb, phys, fec, ct, st):
     """The integer spec (what the header holds and the golden model reads) from the design state st:
     st[n] = dict(S (b scale), pamp (float [fam][anch], relative), tors (T1/T2 b factor), gain, kill)."""
     pos, arg = st["pos"], st["pos_arg"]
+    nf = len(ct[KEY_LO])                                   # NFAM + CAL (the spec keeps CAL for the golden model's
+                                                           # references, Gate VA; the header has the NFAM played ones)
     keys = []
     for n in range(KEY_LO, KEY_HI + 1):
         k = phys[n]
@@ -782,23 +867,23 @@ def build_spec(vb, phys, fec, ct, st):
                          life=int(s.get("life", 4096))))
     prate, pamp = [], []
     for n in range(KEY_LO, KEY_HI + 1):
-        prate.append([ct[n][q]["prate"] for q in range(NFAM)])
+        prate.append([ct[n][q]["prate"] for q in range(nf)])
         pa = st["keys"][n]["pamp"]
-        pamp.append([[max(1, min(65535, int(round(x)))) for x in pa[q]] for q in range(NFAM)])
+        pamp.append([[max(1, min(65535, int(round(x)))) for x in pa[q]] for q in range(nf)])
     pulse = []
     for b in range(NBAND):
         r = band_rep(b)
-        pulse.append([[list(sh) + [0, 0] for sh in ct[r][q]["shapes"]] for q in range(NFAM)])
+        pulse.append([[list(sh) + [0, 0] for sh in ct[r][q]["shapes"]] for q in range(nf)])
     ty = vb["type_rec"]
     li, lw = vlayers()
     vi, vf = vpos()
-    flat = [[[Q14] * NPOS for _ in range(NFAM)] for _ in range(NBAND)]
+    flat = [[[Q14] * NPOS for _ in range(nf)] for _ in range(NBAND)]
     return dict(gen_version=GEN_VERSION, fs=FS, key_lo=KEY_LO, keys=keys, bar_pos=pos, pos_arg=arg,
                 pos_gain=st.get("pos_gain", flat), tube_gain=st.get("tube_gain", flat),
                 pos_exact=st["pos_exact"], pulse=pulse,
                 prate=prate, pamp=pamp, kn_fam=kn_fam(), kn_mass=kn_mass(vb), kn_massi=kn_massi(vb), kn_tube=kn_tube(),
                 kn_nz=kn_nz(vb), nz_bq=nz_bq(vb), mot_cos=list(btm.MOT_COS),
-                fam_names=[f["name"] for f in vb["T7c"]["families"]], fam_detent=FAM_DETENT,
+                fam_names=[f["name"] for f in fams_int(vb)][:nf], fam_detent=FAM_DETENT,
                 type=dict(tube_cents=0, mot_gc=int(round(vb["T6c"]["g_c"] * 32768)), tors_db=ty["tors_q15"],
                           nbody=ty["nbody"], drive_row=ty["drive_row"], sleep_rel=ty["sleep_rel"], budget=ty["budget"]),
                 decay_k=[int(round(Q16 / 2 ** ((v - 64) / 32))) for v in range(128)],
@@ -894,6 +979,7 @@ def voicing_peaks(vb, spec, keys):
 
 def build():
     vb = load_vibes(strict="--strict" in sys.argv)
+    assert [f["detent"] for f in vb["T7c"]["families"]] == FAM_DETENT and len(FAM_DETENT) == NFAM, "T7c detents"
     fec = fe_all(vb)
     print("tube: solving zeta_r at the reference notes", file=sys.stderr)
     zt = tube_zetas(vb)
@@ -911,7 +997,9 @@ def build():
     print("mallets: contact simulations", file=sys.stderr)
     ct = contacts(vb, phys, fec)
     BANDS.clear()
-    BANDS.update(assign_bands(phys, ct))
+    BANDS.update(pinned_bands(vb, phys, ct) if "bands" in vb else assign_bands(phys, ct))
+    global NBAND
+    NBAND = len(BANDS["rep"])
     for n in range(KEY_LO, KEY_HI + 1):
         phys[n]["band"] = BANDS["of"][n]
     print("bands: reps %s, worst shape error %.2f dB" % (BANDS["rep"], max(BANDS["err"])), file=sys.stderr)
@@ -925,7 +1013,7 @@ def build():
         W = np.array(fec[k["ng"]]["weights"])
         fref = max(max(c["fpk"]) for c in ct[n])
         pamp_max = math.floor(32767 * 4096 / max(kn_massi(vb)))
-        pamp = [[x / fref * pamp_max for x in ct[n][q]["fpk"]] for q in range(NFAM)]
+        pamp = [[x / fref * pamp_max for x in ct[n][q]["fpk"]] for q in range(len(ct[n]))]
         # b per unit Q15 force (real y units): (F_N per F unit) dt |phi(x_q)| / P_band(q) (f/f1)^R1 / omega: the
         # band's strike table (BAR_POS, the band's representative key) times b gives the key's OWN weight exactly at
         # the point q = pos_exact[band][slot]: the default strike (TONE raw 64, point POS_DEF) for V1..V4, the band's
@@ -962,7 +1050,7 @@ def build():
 
     rescale_b()
     # torsion level (T9c): T1 slot peak re V1 slot peak in the first 20 ms at TONE +63, MED YARN, v100
-    kn = dict(gm.DEFAULT_KNOBS, tone=127, bark=FAM_DETENT[1])
+    kn = dict(gm.DEFAULT_KNOBS, tone=127, kf=CAL_KF)
     r = gm.render_batch(spec, keys, [100] * len(keys), 0.02, kn, slots=True, sleep=False)
     for i, n in enumerate(keys):
         v1 = np.abs(r["slots"][i, 0]).max()
@@ -977,7 +1065,7 @@ def build():
         for slot, nm in ((2, "V2"), (3, "V3"), (4, "V4")):
             ref = {int(k): v for k, v in vb["T2"][nm]["level_db"].items()}
             ks = [n for n in sorted(ref) if phys[n]["modes"][slot - 2]["present"]]
-            y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, bark=FAM_DETENT[1]), sleep=False)
+            y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, kf=CAL_KF), sleep=False)
             off = []
             for n, r in zip(ks, y):
                 l1 = gm.band_level(r, phys[n]["f0"], 0.03, 0.53, 0.015)
@@ -998,13 +1086,13 @@ def build():
     ref = {int(k): v for k, v in vb["T2"]["V4"]["level_db"].items()}
     tline = np.polyfit(sorted(ref), [ref[n] for n in sorted(ref)], 1)
     ks = [n for n in range(fa, fb + 1) if phys[n]["modes"][2]["present"]]
-    y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, bark=FAM_DETENT[1]), sleep=False)
+    y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, kf=CAL_KF), sleep=False)
     m0 = [gm.band_level(r, phys[n]["modes"][2]["f"], 0.03, 0.53, 0.015) - gm.band_level(r, phys[n]["f0"], 0.03, 0.53, 0.015)
           for n, r in zip(ks, y)]
     cl4 = np.polyfit(ks, [float(np.polyval(tline, n)) - m for n, m in zip(ks, m0)], 1)
     bright = np.full(len(keys), -999.0)                   # V4 onset (free ringing) re V1 at the brightest voicing
     for tone in (0, 64, 127):
-        kn = dict(gm.DEFAULT_KNOBS, bark=FAM_DETENT[3], hammer=0, tone=tone)
+        kn = dict(gm.DEFAULT_KNOBS, bark=FAM_DETENT[-1], hammer=0, tone=tone)
         r = gm.render_batch(spec, keys, [127] * len(keys), 0.05, kn, sleep=False, slots=True)["slots"]
         p = np.abs(r[:, :, int(0.005 * FS):]).max(axis=2)
         bright = np.maximum(bright, 20 * np.log10(p[:, 4] / p[:, 0] + 1e-30))
@@ -1026,32 +1114,33 @@ def build():
           "%+.1f dB re V1), 0 from %d" % (v4tr[fa], fa, v4tr[fb], fb, float(np.polyval(cl4, fb)), ceil4,
                                          min(n for n in keys if n > fb and v4tr[n] == 0)), file=sys.stderr)
     st["v4_trim_db"] = [rad["V4"] + v4tr[n] for n in keys]
-    # velocity trim per family + family level match (MED YARN is the reference)
+    # velocity trim per family + family level match (the calibration law, the old MED YARN, is the reference)
     cal = vb["calib"]
     ref_a = V_ANCH.index(104)
     for it in range(int(cal["trim_iterations"])):
-        L = np.zeros((len(keys), NFAM, len(V_ANCH)))
+        nf = NFAM + 1
+        L = np.zeros((len(keys), nf, len(V_ANCH)))
         allk, allv, allkn, idx = [], [], [], []
-        for q in range(NFAM):
+        for q in range(nf):
             for a, v in enumerate(V_ANCH):
                 for i, n in enumerate(keys):
-                    allk.append(n); allv.append(v); allkn.append(dict(gm.DEFAULT_KNOBS, bark=FAM_DETENT[q])); idx.append((i, q, a))
+                    allk.append(n); allv.append(v); allkn.append(dict(gm.DEFAULT_KNOBS, kf=q << 8)); idx.append((i, q, a))
         y = render_chunks(spec, allk, allv, 0.32, allkn, chunk=440)
         lv = levels(y)
         for (i, q, a), l in zip(idx, lv):
             L[i, q, a] = l
         rel = L - L[:, :, ref_a:ref_a + 1]
         corr = np.zeros_like(L)
-        for q in range(NFAM):
+        for q in range(nf):
             tgt = np.maximum.accumulate(np.median(rel[:, q, :], axis=0))
             corr[:, q, :] = tgt[None, :] - rel[:, q, :]
-            corr[:, q, :] += (L[:, 1, ref_a] - L[:, q, ref_a])[:, None]       # families level-matched at v104
+            corr[:, q, :] += (L[:, CAL, ref_a] - L[:, q, ref_a])[:, None]     # families level-matched at v104
         corr = np.clip(corr, -cal["trim_max_db"], cal["trim_max_db"])
         print("velocity / family fit %d: worst %.2f dB, median |err| %.2f dB" % (it, np.abs(corr).max(), np.median(np.abs(corr))),
               file=sys.stderr)
         for i, n in enumerate(keys):
             pa = st["keys"][n]["pamp"]
-            for q in range(NFAM):
+            for q in range(nf):
                 for a in range(len(V_ANCH)):
                     pa[q][a] *= 10 ** (cal["trim_gain"] * corr[i, q, a] / 20)
         # keep pamp in range: the key's largest at pamp_max, the factor moved into b
@@ -1211,7 +1300,7 @@ def emit(spec):
     w(f"#define BAR_KEY_LO {KEY_LO}            /* every MIDI note 21..108 plays its own pitch */")
     w(f"#define BAR_NKEY {NKEY}")
     w(f"#define BAR_NM {NM}                 /* V1 TUBE V2 V3 V4 T1 T2 X */")
-    w(f"#define BAR_NFAM {NFAM}               /* SOFT YARN, MED YARN, CORD, RUBBER */")
+    w(f"#define BAR_NFAM {NFAM}               /* SOFT YARN, MED YARN, the default (MALLET 64), CORD, RUBBER */")
     w(f"#define BAR_NBAND {NBAND}")
     w(f"#define BAR_NLAYER {NLAYER}")
     w(f"#define BAR_PLEN {PLEN}")
@@ -1229,15 +1318,15 @@ def emit(spec):
     w("};")
     w("static const int16_t BAR_PULSE[BAR_NBAND][BAR_NFAM][BAR_NLAYER][BAR_PLEN + 2] = {")
     for b in spec["pulse"]:
-        w("  {" + ",".join("{" + ",".join("{" + ",".join(map(str, sh)) + "}" for sh in fam) + "}" for fam in b) + "},")
+        w("  {" + ",".join("{" + ",".join("{" + ",".join(map(str, sh)) + "}" for sh in fam) + "}" for fam in b[:NFAM]) + "},")
     w("};")
     w("static const uint32_t BAR_PRATE[BAR_NKEY][BAR_NFAM][RH_NANCH] = {")
     for k in spec["prate"]:
-        w("  {" + ",".join("{" + ",".join(str(rom_safe(x)) for x in q) + "}" for q in k) + "},")
+        w("  {" + ",".join("{" + ",".join(str(rom_safe(x)) for x in q) + "}" for q in k[:NFAM]) + "},")
     w("};")
     w("static const uint16_t BAR_PAMP[BAR_NKEY][BAR_NFAM][RH_NANCH] = {")
     for k in spec["pamp"]:
-        w("  {" + ",".join("{" + ",".join(map(str, q)) + "}" for q in k) + "},")
+        w("  {" + ",".join("{" + ",".join(map(str, q)) + "}" for q in k[:NFAM]) + "},")
     w("};")
     w("static const int16_t BAR_POS[BAR_NBAND][BAR_NPOS][BAR_NM] = {")
     for b in spec["bar_pos"]:
@@ -1266,8 +1355,11 @@ def emit(spec):
     w("static const int16_t NZ_BQ[2][5] = {" + ",".join("{" + ",".join(map(str, r)) + "}" for r in spec["nz_bq"]) + "};")
     w("static const int16_t BAR_MOT_COS[257] = {" + ",".join(map(str, spec["mot_cos"])) + "};")
     fams = spec["vibes"]["T7c"]["families"]
-    w("/* mallet families (K N/m^p, p): " + ", ".join("%s %.3g %.1f" % (f["name"], fam_K(spec["vibes"], q), f["p"])
-                                                      for q, f in enumerate(fams)) + " */")
+    w("/* mallet families (K N/m^p, p): " + ", ".join(
+        "%s %.3g %.1f" % (f["name"], fam_K(spec["vibes"], q), fam_p(spec["vibes"], q)) if "blend" not in f else
+        "%s = the blend %d/256 of %.3g %.1f and %.3g %.1f" % (f["name"], f["blend"]["a"], law_K(spec["vibes"], f["blend"]["lo"]),
+                                                            f["blend"]["lo"]["p"], law_K(spec["vibes"], f["blend"]["hi"]),
+                                                            f["blend"]["hi"]["p"]) for q, f in enumerate(fams)) + " */")
     body = "\n".join(L) + "\n"
     digest = hashlib.sha256(body.encode()).hexdigest()
     return body + f"/* sha256(body) = {digest} */\n"

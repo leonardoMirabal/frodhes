@@ -194,6 +194,16 @@ static int32_t bar_card_gain(const uint16_t (*t)[BAR_NPOS], uint32_t fm, int32_t
     return g0 + (((g1 - g0) * fa) >> 8);
 }
 
+/* the contact noise's level for this mallet (Q15): BAR_FAM_NZ blended by the MALLET fraction, as the pulse */
+static int32_t bar_fam_nz(void)
+{
+    uint32_t f = (uint32_t)bar_fam >> 8, f2;
+    int32_t a = (int32_t)((uint32_t)bar_fam & 255u);
+    if (f > BAR_NFAM - 1u) { f = BAR_NFAM - 1u; a = 0; }
+    f2 = f + 1u < BAR_NFAM ? f + 1u : f;
+    return BAR_FAM_NZ[f] + (((BAR_FAM_NZ[f2] - BAR_FAM_NZ[f]) * a) >> 8);
+}
+
 static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
 {
     const bar_type_t *ty = &BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u];
@@ -255,10 +265,8 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     v->pthump = BAR_PULSE[k->band][BAR_NFAM - 1u][0];             /* the felt's knock: RUBBER, softest layer */
     v->prate_thump = BAR_PRATE[n - BAR_KEY_LO][BAR_NFAM - 1u][1] << 4;
     bar_load_pulse(v, vel);
-    {   /* contact noise: filtered noise, louder for harder mallets and faster strikes, decaying (tau ~ 23 ms) */
-        uint32_t f = (uint32_t)bar_fam >> 8;
-        bar_nz_e += (int32_t)(((int64_t)bar_nz * BAR_FAM_NZ[f < BAR_NFAM ? f : BAR_NFAM - 1u] * vel) >> 22);
-    }
+    /* contact noise: filtered noise, louder for harder mallets and faster strikes, decaying (tau ~ 23 ms) */
+    bar_nz_e += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * vel) >> 22);
 }
 
 static void bar_set_damper(bar_voice_t *v, int32_t w)
@@ -292,10 +300,7 @@ static void bar_strike(uint32_t note, uint32_t vel)
             v->vel = (uint8_t)vel; v->held = 1; v->age = ++bar_ages; v->life = v->k->life; v->struck = 1;
             bar_set_damper(v, 0);
             bar_load_pulse(v, vel);
-            {
-                uint32_t f = (uint32_t)bar_fam >> 8;
-                bar_nz_e += (int32_t)(((int64_t)bar_nz * BAR_FAM_NZ[f < BAR_NFAM ? f : BAR_NFAM - 1u] * vel) >> 22);
-            }
+            bar_nz_e += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * vel) >> 22);
             return;
         }
     for (i = 0; i < BAR_NV; i++)

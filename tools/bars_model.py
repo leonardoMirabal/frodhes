@@ -14,7 +14,8 @@ matches it to its own rounding (residual <= -60 dB, Gate VB).
     spec = load_spec()                                            # docs/model/data/bars_spec.json (gen_bars.py)
     y = render_batch(spec, keys, vels, dur, knobs=None, off_at=None, motor=None, parts=False, slots=False)
         keys: MIDI notes; vels: 1..127; knobs: dict (or one per note) with tone bark bell hammer decay release tune
-        (raw 0..127 as the panel sends them, tune in cents -50..50); off_at: key-up time (s) or None (pedal down);
+        (raw 0..127 as the panel sends them, tune in cents -50..50; kf: a KN_FAM word in place of bark's, for the
+        generator's calibration family); off_at: key-up time (s) or None (pedal down);
         motor: dict(rate=0..127, depth=0..127, shape=0..127) or None. Output: Q15-unit float samples per note
         ([n_notes, n]); parts=True returns dict(out, bar, tube); slots=True also the per-slot x traces (output units).
 
@@ -87,10 +88,10 @@ def pos_weight(P, tone):
     return [a + (((b - a) * fr) >> 8) for a, b in zip(P[i], P[i + 1])]
 
 
-def blend_pulse(spec, band, bark, vel):
+def blend_pulse(spec, band, bark, vel, kf=None):
     """pbuf[66]: the four shapes BAR_PULSE[band][f..f+1][l..l+1] blended as bars.c does: per family the two layers
     (Q15 weight w), then the two families (Q8 weight a)."""
-    kf = spec["kn_fam"][bark]
+    kf = spec["kn_fam"][bark] if kf is None else kf
     f, a = kf >> 8, kf & 255
     f1 = min(f + 1, len(spec["fam_names"]) - 1)
     l, w = vlayer(vel)
@@ -107,9 +108,9 @@ def blend_pulse(spec, band, bark, vel):
     return [x + (((y - x) * a) >> 8) for x, y in zip(s0, s1)]
 
 
-def pulse_rate_amp(spec, kidx, bark, hammer, vel):
+def pulse_rate_amp(spec, kidx, bark, hammer, vel, kf=None):
     """(prate Q16 per output sample, pamp Q15) as bar_load_pulse: anchors (RH_VPOS), families (Q8), HAMMER."""
-    kf = spec["kn_fam"][bark]
+    kf = spec["kn_fam"][bark] if kf is None else kf
     f, a = kf >> 8, kf & 255
     f1 = min(f + 1, len(spec["fam_names"]) - 1)
     i, vf = vpos(vel)
@@ -160,8 +161,8 @@ def note_init(spec, n, vel, kn):
     if k["modes"][S_TUBE]["w"]["th"]:
         out["live"][S_TUBE] = s != 0                 # BELL 0: no tube at all
     out["kbt"], out["ktb"], out["wt"] = (k["k_bt"] * s) >> 15, (k["k_tb"] * s) >> 15, (k["wt"] * s) >> 15
-    out["pbuf"] = blend_pulse(spec, k["band"], kn["bark"], vel) + [0, 0]
-    out["prate"], out["pamp"] = pulse_rate_amp(spec, kidx, kn["bark"], kn["hammer"], vel)
+    out["pbuf"] = blend_pulse(spec, k["band"], kn["bark"], vel, kn.get("kf")) + [0, 0]
+    out["prate"], out["pamp"] = pulse_rate_amp(spec, kidx, kn["bark"], kn["hammer"], vel, kn.get("kf"))
     out.update(gain=card_gain(spec, k, kn), kill=k["kill"], life=k["life"], key=k)
     return out
 
@@ -192,7 +193,7 @@ def card_gain(spec, k, kn):
     compensation of its band and mallet (Q14 tables; none in an older spec)"""
     g = int(k["gain"])
     if "pos_gain" in spec:
-        kf = spec["kn_fam"][kn["bark"]]
+        kf = spec["kn_fam"][kn["bark"]] if kn.get("kf") is None else kn["kf"]
         g = (g * fam_gain(spec["pos_gain"][k["band"]], kf, kn["tone"])) >> 14
         g = (g * fam_gain(spec["tube_gain"][k["band"]], kf, kn["bell"])) >> 14
     return min(g, 0x7FFFFFFF)

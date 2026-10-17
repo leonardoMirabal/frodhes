@@ -394,16 +394,17 @@ VIBES plays about **2.5 dB louder** than the Rhodes types: a struck bar is peaki
 loudness it sounded weaker and came out closer to the headphone jack's hiss. The limiter still keeps big chords from
 clipping.
 
-The pages stay the same: on VIBES, the VOICE and DECAY cards change their names and what they do.
+The pages stay the same: on VIBES, the VOICE and DECAY cards change their names and what they do. The VOICE cards act on
+the next strike (a ringing bar keeps the strike that started it, as a real one does).
 
 ![VOICE on VIBES](manual/img/voice-vibes.png)
 
 | Knob | Card | What it does on VIBES |
 | --- | --- | --- |
-| K1 | **STRIKE** | Where the mallet hits the bar: **CENTRE** (left end), the purest tone; **L/3** (the middle of the knob, the usual spot), more of the bright overtone; toward the **EDGE** (right), off the centre line, a slightly metallic tone |
-| K2 | **MALLET** | How hard the mallet is: **SOFT** and **YARN** (round, warm), **CORD** (clearer), **RUBBER** (hard, bright, with a click). The card shows the mallet's name, or a number between two of them |
-| K3 | **TUBE** | How much the tube rings with the bar: 0 is a bare bar (dry, thin, rings longer); up is a fuller, warmer note that blooms just after the strike and dies sooner, as on a real vibraphone |
-| K4 | **WEIGHT** | The mallet's weight: light is brighter and quicker, heavy rounder. How hard you play (KEY VEL, MIDI velocity) stays the strike's speed |
+| K1 | **STRIKE** | Where the mallet hits the bar: **CENTRE** (left end), a fuller, rounder fundamental with the 10th partial and no 4th; **L/3** (the middle of the knob, the usual spot), the 4th partial back; toward the **EDGE** (right), off the centre line, the bar's twisting modes ring in: metallic and slightly out of tune |
+| K2 | **MALLET** | How hard the mallet is: **SOFT** (0) a dark, round, almost pure fundamental with a soft onset, even when you play hard; **YARN** (42) round and warm, the overtones held back; the middle (64, the default) the usual vibes sound; **CORD** (85) clearer, the 10th partial rings; **RUBBER** (127) hard and bright, bell-like, with a click. The card shows the mallet's name, or a number between two of them. The low bars show the soft mallets apart best, the middle and high bars the hard ones |
+| K3 | **TUBE** | How much the tube rings with the bar: 0 is a bare bar (about 8-11 dB quieter, thin, rings longer, no bloom); up is a fuller, warmer, louder note that blooms just after the strike and dies sooner, as on a real vibraphone |
+| K4 | **WEIGHT** | The mallet's weight: light is brighter, quicker and quieter; heavy is darker, with more body (about 5 dB louder at the top than at the bottom). How hard you play (KEY VEL, MIDI velocity) stays the strike's speed |
 
 ![DECAY on VIBES](manual/img/decay-vibes.png)
 

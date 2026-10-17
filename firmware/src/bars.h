@@ -107,7 +107,9 @@ static volatile uint8_t bar_budget_force;           /* developer (MIDI CC 9): 0 
 /* the motor: one global phase, gains per sub-block edge (ISR) */
 static uint32_t bar_mot_ph;
 static int32_t bar_mot_g[9] = {32768, 32768, 32768, 32768, 32768, 32768, 32768, 32768, 32768};
-static const int32_t BAR_FAM_NZ[BAR_NFAM] = {8192, 14336, 22528, 32767};    /* Q15: harder mallets click more */
+static const int32_t BAR_FAM_NZ[BAR_NFAM] = {2048, 8192, 14336, 22528, 32767};   /* Q15 per family (SOFT, YARN, the default,
+                                                     * CORD, RUBBER), blended as the pulse: harder mallets click more,
+                                                     * soft yarn hardly at all (the default's 14336 as before) */
 /* ISR-written summaries */
 static volatile uint32_t bar_active_bits, bar_held_bits, bar_quiet_blocks;
 static volatile uint8_t bar_notes[BAR_NV];

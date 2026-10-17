@@ -128,7 +128,10 @@ def test_centroid_continuous_across_bands():
         for i in range(len(KEYS) - 1):
             a, b = KEYS[i], KEYS[i + 1]
             if K[a]["band"] != K[b]["band"] and a in AUTH and b in AUTH:
-                assert abs(c[i + 1] / c[i] - 1) <= 0.25, (v, a, b, c[i], c[i + 1])
+                # (E5 / F#5, 77 / 78: RUBBER's 0.15 ms pulse puts its first null on V4 (13.6 f0, 9.5 -> 10.5 kHz) and
+                # the attack centroid falls ~40 % by the per-key data alone; a band boundary there since the
+                # 2026-10-17 families: the bands' own share stays the 10 % below)
+                assert abs(c[i + 1] / c[i] - 1) <= (0.42 if a == 77 else 0.25), (v, a, b, c[i], c[i + 1])
                 for x, other in ((a, b), (b, a)):
                     sp = copy.deepcopy(SPEC)
                     sp["pulse"][K[x]["band"]] = SPEC["pulse"][K[other]["band"]]
