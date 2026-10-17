@@ -52,6 +52,8 @@ STATUSES = {"CONFIRMED", "CORRECTED", "DERIVED", "MEASURED-REF", "ESTIMATE"}
 VIBES = os.path.join(ROOT, "docs", "model", "data", "vibes.json")
 FAM_DETENT = [0, 42, 85, 127]          # BARK values that are exactly one family (KN_FAM)
 PEAK_TOL_MS, PEAK_TOL_REL = 15.0, 0.30  # Gate VA: the f0 peak within +-15 ms or +-30 % (the larger)
+POS_DEF = 8                            # BAR_POS point of TONE raw 64 (x_bal on the centreline): b is exact per key there
+POS_EXACT_MIN = 0.02                   # ... unless the band's table is under 2 % of its maximum there (near a node)
 PEAK_SLOT = 0.9                        # single-strike slot peak (real units, 1.0 = 2^25): x2 re-strike stays < 2^26
 
 
@@ -227,22 +229,23 @@ def pair_peak_ms(vb, bt):
     return btm.f0_peak_ms(x, bt.v1()[0]), wt
 
 
-KC_MAX = 1.5      # bartube.pair_words' kc (the discrete coupling's decay correction) is ~1.0..1.05 in F3..F6; on the
-#                   extrapolated top keys (theta > 0.3 rad) its bisection runs into its 4.0 bound and the map turns
-#                   anti-damping: there kc is capped (V1 then decays a little slower than the continuous design)
+KC_MAX = 1.5      # bartube.pair_words' kc (the discrete coupling's decay correction): 1.00..1.06 over 21..108 with the
+#                   tube tuned within a few cents (T4b). Why it can fail: the MC3 pair's coupling acts with a per-sample
+#                   phase lag of about theta = 2 pi f / fs, which rotates the coupling's complex decay shift
+#                   sigma^2 / (4 (i (zr - zn) + delta)) by ~theta. With the old +100 c tube (delta = 5.9 %, the shift's
+#                   angle ~56 deg at zr 4 %) the rotation reached 90 deg at theta ~0.6 rad (C8): the coupling stopped
+#                   shortening V1 (and turned anti-damping beyond), so the bisection ran into its 4.0 bound and the grid
+#                   missed +-2 % by up to 57 %. With a few cents the angle is small and kc stays ~1.
 
 
 def pair_words_safe(bt, wt, felt, f0):
-    """bartube.pair_words with the discrete retune, kc capped at KC_MAX (then retuned here with kc fixed)."""
+    """bartube.pair_words with the discrete retune; the kc correction must stay under KC_MAX (else the integer pair
+    cannot follow the continuous design within the grid's +-2 %: fail loudly instead of capping)."""
     w = btm.pair_words(bt, wt, felt, f0=f0)
-    if w["kc"] <= KC_MAX:
-        return w
-    b = bt
-    for _ in range(6):
-        w = btm.pair_words(b, wt, felt, kc=KC_MAX)
-        M = btm.pair_map(w)
-        b = b.scaled(f0 / btm.map_modes(M)[btm.map_v1(M)][0])
-    return btm.pair_words(b, wt, felt, kc=KC_MAX)
+    if not w["kc"] <= KC_MAX:
+        raise SystemExit("pair: kc %.3f > %.1f at f0 %.1f Hz (the discrete coupling cannot reach the design's V1 decay; "
+                         "see KC_MAX)" % (w["kc"], KC_MAX, f0))
+    return w
 
 
 def map_check_words(k):
@@ -274,31 +277,67 @@ def map_check_words(k):
     return rho, derr, cents, n
 
 
+def peak_band(vb, target_ms):
+    """The f0-peak readings the T60 trade may move to: the Gate VA tolerance (+-15 ms or +-30 %, the larger) less
+    trade_margin_ms; a reading cannot go below 0, so when the target is within the tolerance of 0 every reading from 0
+    up passes the gate whatever the golden render reads, and the band runs down to 0."""
+    tol = max(PEAK_TOL_MS, PEAK_TOL_REL * target_ms)
+    m = vb["T4a"]["trade_margin_ms"]
+    return (0.0 if target_ms <= tol else target_ms - tol + m), target_ms + tol - m
+
+
 def solve_zeta(vb, n, target_ms):
-    """zeta_r in [zeta_lo, hi] whose peak meets the measured one (the smallest with peak <= target); flag -1 when even
-    zeta_lo peaks too early, +1 when even hi peaks too late."""
+    """zeta_r in [zeta_lo, hi] for a reference note (T4a), in three steps:
+    1. the peak: the smallest zeta_r whose model peak reads <= the target (the peak falls with zeta_r);
+    2. resolution: for targets <= PEAK_TOL_MS (the build-up is not resolved by the 93 ms window) the radiation estimate
+       max(E_floor_pct, the E curve) when it is larger and reads within peak_band;
+    3. T60 first: where sigma clamps there (V1 rings too long: sigma would exceed hi; too short: under lo), zeta_r moves
+       (down / up) until T1b is met, as far as the peak reading stays within peak_band.
+    Returns (zeta_r, flag): flag bit0..: -1 / +1 = the peak clamped at the floor / top, -2 = the E curve (step 2);
+    +16 = traded for T60 and met, +32 = traded to the band edge and T1b still not met."""
     lo, hi = zeta_lo(vb, n), vb["T4a"]["hi_pct"] / 100
     tb = t1b(vb, n)
+    memo = {}
 
-    def pk(z):
-        return pair_peak_ms(vb, make_pair(vb, n, z, tb)[0])[0]
-    if pk(lo) <= target_ms:
-        # even the floor peaks too early: the peak cannot be met by zeta_r. Take the larger, E-curve value when its peak
-        # is still within the Gate VA tolerance (it keeps the coupling headroom for T1b and the integer map stable at
-        # the top, where theta is large), else the floor
-        alt = min(hi, max(vb["T4a"]["E_floor_pct"] / 100, e_curve(vb, n)))
-        if abs(pk(alt) - target_ms) <= max(PEAK_TOL_MS, PEAK_TOL_REL * target_ms):
-            return alt, -2
-        return lo, -1
-    if pk(hi) > target_ms:
-        return hi, +1
-    for _ in range(24):
-        m = math.sqrt(lo * hi)
-        if pk(m) > target_ms:
-            lo = m
-        else:
-            hi = m
-    return hi, 0
+    def ev(z):
+        """(peak reading ms, sigma clamp: -1 / 0 / +1, the weak-regime limit counting as +1)"""
+        if z not in memo:
+            bt, cl, weak = make_pair(vb, n, z, tb)
+            memo[z] = (pair_peak_ms(vb, bt)[0], 1 if weak else cl)
+        return memo[z]
+
+    def bisect(a, b, good, it=24):
+        """a satisfies good, b does not: the boundary point on a's side (geometric bisection)."""
+        for _ in range(it):
+            m = math.sqrt(a * b)
+            a, b = (m, b) if good(m) else (a, m)
+        return a
+
+    # 1. the peak
+    if ev(lo)[0] <= target_ms:
+        z, flag = lo, -1
+    elif ev(hi)[0] > target_ms:
+        z, flag = hi, +1
+    else:
+        z, flag = bisect(hi, lo, lambda m: ev(m)[0] <= target_ms), 0
+    b_lo, b_hi = peak_band(vb, target_ms)
+    # 2. the resolution limit: the radiation estimate where the reading cannot tell
+    if target_ms <= PEAK_TOL_MS:
+        ze = min(hi, max(vb["T4a"]["E_floor_pct"] / 100, e_curve(vb, n)))
+        if ze > z and b_lo <= ev(ze)[0] <= b_hi:
+            z, flag = ze, -2
+    # 3. T60 first
+    cl = ev(z)[1]
+
+    def in_band(m):
+        return b_lo <= ev(m)[0] <= b_hi
+    if cl and in_band(z):
+        far = lo if cl > 0 else hi          # too long: less tube damping (a stronger, later tube); too short: more
+        edge = far if in_band(far) else bisect(z, far, in_band)
+        if ev(edge)[1] == cl:               # even the band edge cannot reach T1b: the best the band allows
+            return edge, flag + 32
+        return bisect(edge, z, lambda m: ev(m)[1] != cl), flag + 16
+    return z, flag + (32 if cl else 0)
 
 
 def tube_zetas(vb):
@@ -716,6 +755,8 @@ def build_spec(vb, phys, fec, ct, st):
                 continue
             w = rc.mode_coefs(md["f"], md["t60"], md["t60_rel"])
             bf = s["S"] * s["bphys"][slot] * md.get("taper", 1.0) if md["present"] else 0.0
+            if slot in s.get("off", ()):                   # never sounds (vibes.json prune): never lit
+                bf = 0.0
             if slot in (5, 6):
                 bf *= s["tors"]
             modes.append(dict(name=md["name"], f=md["f"], w=w, bf=bf))
@@ -727,7 +768,8 @@ def build_spec(vb, phys, fec, ct, st):
         modes[1].update(t60=LN1000 / bt.sig_tube, t60_rel=LN1000 / bt.sig_tube)
         for slot in range(2, NM):
             md = k["modes"][slot - 2]
-            modes[slot].update(t60=md["t60"], t60_rel=md["t60_rel"], present=bool(md["present"] and modes[slot]["w"]["th"]))
+            modes[slot].update(t60=md["t60"], t60_rel=md["t60_rel"], present=bool(md["present"] and modes[slot]["w"]["th"]
+                                                                                   and slot not in s.get("off", ())))
         modes[0]["present"] = modes[1]["present"] = True
         for m in modes:
             m["b"] = rom_safe(int(max(-2 ** 31 + 1, min(2 ** 31 - 1, round(m["bf"] * Q30 * 2 ** 15))))) if m["w"]["th"] else 0
@@ -748,7 +790,8 @@ def build_spec(vb, phys, fec, ct, st):
     ty = vb["type_rec"]
     li, lw = vlayers()
     vi, vf = vpos()
-    return dict(gen_version=GEN_VERSION, fs=FS, key_lo=KEY_LO, keys=keys, bar_pos=pos, pos_arg=arg, pulse=pulse,
+    return dict(gen_version=GEN_VERSION, fs=FS, key_lo=KEY_LO, keys=keys, bar_pos=pos, pos_arg=arg,
+                pos_exact=st["pos_exact"], pulse=pulse,
                 prate=prate, pamp=pamp, kn_fam=kn_fam(), kn_mass=kn_mass(vb), kn_massi=kn_massi(vb), kn_tube=kn_tube(),
                 kn_nz=kn_nz(vb), nz_bq=nz_bq(vb), mot_cos=list(btm.MOT_COS),
                 fam_names=[f["name"] for f in vb["T7c"]["families"]], fam_detent=FAM_DETENT,
@@ -772,6 +815,15 @@ def render_chunks(spec, keys, vels, dur, knobs, chunk=400, **kw):
 
 def levels(y, t0=0.05, t1=0.30):
     return np.array([gm.rms_db(r, t0, t1) for r in y])
+
+
+def lufs_k(x, t0=0.0, t1=1.0, fs=FS):
+    """BS.1770 K-weighted loudness (LUFS re Q15 full scale) of one mono render over [t0, t1] (the S9 measure,
+    bar_measure.lufs, at the golden model's 44.1 kHz)."""
+    from scipy.signal import sosfilt
+    import bar_measure as bmz
+    y = sosfilt(bmz.k_weight_sos(fs), np.asarray(x, float) / 32767.0)[int(t0 * fs):int(t1 * fs)]
+    return -0.691 + 10 * math.log10(float(np.mean(y * y)) + 1e-15)
 
 
 def build():
@@ -798,23 +850,28 @@ def build():
         phys[n]["band"] = BANDS["of"][n]
     print("bands: reps %s, worst shape error %.2f dB" % (BANDS["rep"], max(BANDS["err"])), file=sys.stderr)
     pos, arg = strike_tables(fec)
+    pex = [[POS_DEF if s in (0, 2, 3, 4) and pos[b][POS_DEF][s] >= POS_EXACT_MIN * Q14 else arg[b][s] for s in range(NM)]
+           for b in range(NBAND)]
     rexp = vb["R1"]["exp"]
-    st = dict(pos=pos, pos_arg=arg, keys={})
+    st = dict(pos=pos, pos_arg=arg, pos_exact=pex, keys={})
     for n in range(KEY_LO, KEY_HI + 1):
         k = phys[n]
         W = np.array(fec[k["ng"]]["weights"])
         fref = max(max(c["fpk"]) for c in ct[n])
         pamp_max = math.floor(32767 * 4096 / max(kn_massi(vb)))
         pamp = [[x / fref * pamp_max for x in ct[n][q]["fpk"]] for q in range(NFAM)]
-        # b per unit Q15 force (real y units): (F_N per F unit) dt |phi(x*)| (f/f1)^R1 / omega, x* = the band's
-        # maximum point of the slot (BAR_POS is 1.0 there)
+        # b per unit Q15 force (real y units): (F_N per F unit) dt |phi(x_q)| / P_band(q) (f/f1)^R1 / omega: the
+        # band's strike table (BAR_POS, the band's representative key) times b gives the key's OWN weight exactly at
+        # the point q = pos_exact[band][slot]: the default strike (TONE raw 64, point POS_DEF) for V1..V4, the band's
+        # maximum point for the torsion (zero on the centreline). Elsewhere the band's shape stands for the key's.
         cols = {0: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5}
         fs_ = {0: k["f0"]}
         for slot in range(2, 7):
             fs_[slot] = k["modes"][slot - 2]["f"]
         bph = [0.0] * NM
         for slot, c in cols.items():
-            phi = W[arg[k["band"]][slot], c]
+            q = pex[k["band"]][slot]
+            phi = W[q, c] * Q14 / pos[k["band"]][q][slot]
             bph[slot] = (fref / pamp_max) / FS * phi * (fs_[slot] / k["f0"]) ** rexp / (2 * math.pi * fs_[slot])
         st["keys"][n] = dict(S=1.0, bphys=bph, pamp=pamp, tors=1.0)
         st.setdefault("pamp_phys", []).append([list(r) for r in pamp])
@@ -867,6 +924,42 @@ def build():
         spec = build_spec(vb, phys, fec, ct, st)
     print("radiation trims (dB): " + " ".join("%s %+.1f" % kv for kv in sorted(rad.items())), file=sys.stderr)
     st["rad_db"] = rad
+    # V4 per key (R1b _doc_v4): a straight-line trim in key that puts MED YARN v100 V4 (re V1, 30..530 ms) on the
+    # straight-line fit of the measured levels over v4_fit_keys, never brighter at the brightest voicing than the
+    # single-constant model ever is in F3..F6 (the ceiling); held below the fit keys, returned to the constant above
+    fa, fb = vb["R1b"]["v4_fit_keys"]
+    ret = vb["R1b"]["v4_return_db_per_key"]
+    ref = {int(k): v for k, v in vb["T2"]["V4"]["level_db"].items()}
+    tline = np.polyfit(sorted(ref), [ref[n] for n in sorted(ref)], 1)
+    ks = [n for n in range(fa, fb + 1) if phys[n]["modes"][2]["present"]]
+    y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, bark=FAM_DETENT[1]), sleep=False)
+    m0 = [gm.band_level(r, phys[n]["modes"][2]["f"], 0.03, 0.53, 0.015) - gm.band_level(r, phys[n]["f0"], 0.03, 0.53, 0.015)
+          for n, r in zip(ks, y)]
+    cl4 = np.polyfit(ks, [float(np.polyval(tline, n)) - m for n, m in zip(ks, m0)], 1)
+    bright = np.full(len(keys), -999.0)                   # V4 onset (free ringing) re V1 at the brightest voicing
+    for tone in (0, 64, 127):
+        kn = dict(gm.DEFAULT_KNOBS, bark=FAM_DETENT[3], hammer=0, tone=tone)
+        r = gm.render_batch(spec, keys, [127] * len(keys), 0.05, kn, sleep=False, slots=True)["slots"]
+        p = np.abs(r[:, :, int(0.005 * FS):]).max(axis=2)
+        bright = np.maximum(bright, 20 * np.log10(p[:, 4] / p[:, 0] + 1e-30))
+    live4 = [i for i, n in enumerate(keys) if spec["keys"][i]["modes"][4]["b"]]
+    sm4 = {keys[i]: float(np.mean([bright[j] for j in live4 if abs(keys[j] - keys[i]) <= 3])) for i in live4}
+    ceil4 = max(sm4[n] for n in sm4 if 53 <= n <= 89) + vb["R1b"]["v4_ceiling_db"]
+    b4 = {n: st["keys"][n]["bphys"][4] for n in keys}
+
+    def v4_trim(n):
+        d = float(np.polyval(cl4, min(max(n, fa), fb)))
+        if n > fb:
+            d = math.copysign(max(0.0, abs(d) - ret * (n - fb)), d)
+        return min(d, ceil4 - sm4[n]) if n in sm4 else d
+    v4tr = {n: v4_trim(n) for n in keys}
+    for n in keys:
+        st["keys"][n]["bphys"][4] = b4[n] * 10 ** (v4tr[n] / 20)
+    spec = build_spec(vb, phys, fec, ct, st)
+    print("V4 trim per key (dB re the R1b constant): %+.1f at %d .. %+.1f at %d (line %+.1f, the brightest-voicing ceiling "
+          "%+.1f dB re V1), 0 from %d" % (v4tr[fa], fa, v4tr[fb], fb, float(np.polyval(cl4, fb)), ceil4,
+                                         min(n for n in keys if n > fb and v4tr[n] == 0)), file=sys.stderr)
+    st["v4_trim_db"] = [rad["V4"] + v4tr[n] for n in keys]
     # velocity trim per family + family level match (MED YARN is the reference)
     cal = vb["calib"]
     ref_a = V_ANCH.index(104)
@@ -924,22 +1017,45 @@ def build():
         t60d = k["bt"]._with(sig_bar=k["bt"].sig_bar / 2 ** (63 / 32)).t60_v1()     # DECAY 127
         st["keys"][n]["life"] = int(min(65535, math.ceil((2 * max(t60d, k["bt"].t60_v1()) + 1.0) * FS / 256)))
     spec = build_spec(vb, phys, fec, ct, st)
-    # level-matched to the Rhodes STAGE 77: the A3-E4-A4 chord at v100, RMS over 0..1 s, both golden, no effects
+    # the Rhodes level per key (calib _doc_st77): each key's v100 loudness (K-weighted, lufs_t) = the STAGE 77 golden
+    # render's at the same key (both no effects), the ST77 curve moving-averaged over +-lufs_smooth_keys
     import rhodes_model as rm
     rs = json.load(open(os.path.join(ROOT, "docs", "model", "data", "rhodes_spec.json")))
     rk = {k["midi"]: k for k in rs["keys"]}
-    chord = cal["st77_chord"]
-    yb = gm.render_batch(spec, chord, [100] * len(chord), 1.0, None, sleep=False).sum(axis=0)
-    yr = rm.render_batch([rk[n] for n in chord], rs["pickup"], [100] * len(chord), 1.0,
-                         gains=[rk[n]["gain"] for n in chord]).sum(axis=0)
-    trim = 10 ** ((gm.rms_db(yr, 0.0, 1.0) - gm.rms_db(yb, 0.0, 1.0)) / 20)
-    print("ST77 chord match: x %.3f (%+.2f dB)" % (trim, 20 * math.log10(trim)), file=sys.stderr)
-    for n in keys:
-        g = min(st["keys"][n]["gain"] * trim, 2 ** 31 - 1)
+    l0, l1 = cal["lufs_t"]
+    lb = np.array([lufs_k(r, l0, l1) for r in render_chunks(spec, keys, [100] * len(keys), l1, dict(gm.DEFAULT_KNOBS))])
+    lr = np.array([lufs_k(r, l0, l1) for r in rm.render_batch([rk[n] for n in keys], rs["pickup"], [100] * len(keys), l1,
+                                                               gains=[rk[n]["gain"] for n in keys])])
+    sk = int(cal["lufs_smooth_keys"])
+    lrs = np.array([np.mean(lr[max(0, i - sk):i + sk + 1]) for i in range(len(keys))])
+    corr = lrs - lb
+    for i, n in enumerate(keys):
+        g = min(st["keys"][n]["gain"] * 10 ** (corr[i] / 20), 2 ** 31 - 1)
         st["keys"][n]["kill"] = max(1, int(round(st["keys"][n]["kill"] * st["keys"][n]["gain"] / g)))
         st["keys"][n]["gain"] = g
-    st["st77_trim_db"] = 20 * math.log10(trim)
+    st["st77_trim_db"] = float(np.median(corr))
+    st["st77_lufs"] = [float(x) for x in lrs]
     spec = build_spec(vb, phys, fec, ct, st)
+    print("ST77 level per key: corrections %+.2f .. %+.2f dB (median %+.2f)" % (corr.min(), corr.max(), np.median(corr)),
+          file=sys.stderr)
+    # slots that never sound (vibes.json prune): the loudest single strike of the voicing grid, first t_s
+    pr = vb["prune"]
+    rel = np.zeros((len(keys), NM))
+    for q in FAM_DETENT:
+        for h in (0, 64, 127):
+            for tone in (0, 32, 64, 96, 127):
+                kn = dict(gm.DEFAULT_KNOBS, bark=q, hammer=h, tone=tone)
+                r = gm.render_batch(spec, keys, [127] * len(keys), pr["t_s"], kn, sleep=False, slots=True)["slots"]
+                p = np.abs(r[:, :, int(pr["t0_s"] * FS):]).max(axis=2)      # free ringing, after the contact
+                rel = np.maximum(rel, p / p[:, :1])
+    npr = 0
+    for i, n in enumerate(keys):
+        off = [s for s in range(2, NM) if spec["keys"][i]["modes"][s]["b"] and rel[i, s] < 10 ** (pr["db"] / 20)]
+        st["keys"][n]["off"] = off
+        npr += len(off)
+    spec = build_spec(vb, phys, fec, ct, st)
+    print("pruned %d key x slot pairs (under %.0f dB re V1 at every voicing)" % (npr, pr["db"]), file=sys.stderr)
+    st["prune_rel_db"] = [[float(20 * math.log10(x)) if x > 0 else -999.0 for x in row] for row in rel]
     # the stability grid (§4.5) for every key
     print("stability grid", file=sys.stderr)
     grid = []
@@ -974,6 +1090,10 @@ def build():
     spec["rad_db"] = st["rad_db"]
     spec["band_rep"] = list(BANDS["rep"])
     spec["st77_trim_db"] = st["st77_trim_db"]
+    spec["st77_lufs"] = st["st77_lufs"]
+    spec["v4_trim_db"] = st["v4_trim_db"]
+    spec["pruned"] = {str(n): st["keys"][n]["off"] for n in keys if st["keys"][n]["off"]}
+    spec["prune_rel_db"] = st["prune_rel_db"]
     spec["pamp_phys"] = st["pamp_phys"]
     spec["band_err_db"] = list(BANDS["err"])
     spec["vibes"] = vb

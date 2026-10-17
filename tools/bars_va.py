@@ -244,6 +244,21 @@ def checks(spec=None):
     add("no V3 above C5 (b = 0 for keys > 72)", [n for n in range(73, 109) if K[n]["modes"][3]["b"]],
         not [n for n in range(73, 109) if K[n]["modes"][3]["b"]])
     add("radiation trims V2 / V3 / V4 (dB, R1b)", {k: round(v, 1) for k, v in spec["rad_db"].items()}, True, "report")
+    # V4 (R1b _doc_v4): MED v100 V4 re V1 against the measured levels F3..G4. The measured V4 is flat while V3 falls,
+    # which no mallet pulse gives: V4 follows it from F3 to C4 and stays under it above (the brightest-voicing ceiling)
+    ref4 = {int(n): v for n, v in vb["T2"]["V4"]["level_db"].items()}
+    ks = list(range(53, 68))
+    y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, bark=MED), sleep=False)
+    l4 = {n: gm.band_level(r_, D[n]["modes"][2]["f"], 0.03, 0.53, 0.015) - gm.band_level(r_, D[n]["f0"], 0.03, 0.53, 0.015)
+          for n, r_ in zip(ks, y)}
+    lo4 = [(n, round(l4[n], 1), ref4[n]) for n in sorted(ref4) if n <= 60]
+    add("V4 level re V1 (TONE 0, MED, v100, 30..530 ms) at the F3..C4 reference notes within +-10 dB of the measured "
+        "(F3 was -16 vs -45)", lo4, all(abs(a - b) <= 10 for _, a, b in lo4))
+    hi4 = max(l4.values())
+    add("V4 level F3..G4 never over the measured maximum + 3 dB (%.0f)" % max(ref4.values()), round(hi4, 1),
+        hi4 <= max(ref4.values()) + 3)
+    add("V4 level vs the measured, every key F3..G4 (report: model, measured)",
+        [(n, round(l4[n], 1), ref4.get(n)) for n in ks], True, "report")
 
     # ---------------------------------------------------------- mallets
     fams = vb["T7c"]["families"]
@@ -327,6 +342,8 @@ def checks(spec=None):
         ind = indep_v2v1(spec, n)
         worst = max(worst, abs(g - ind))
     add("TONE 0: V2 / V1 within +-3 dB of the key's own FE strike weights (band-table error)", round(worst, 2), worst <= 3)
+    add("band strike tables vs each key's own FE weights, V2 V3 V4 re V1 at TONE raw 0 / 32 / 96 / 127 (worst dB where "
+        "the weight is within 20 dB of its maximum; exact at raw 64), report", band_pos_error(spec), True, "report")
     y = gm.render_batch(spec, ks, [100] * 3, 0.03, dict(gm.DEFAULT_KNOBS, tone=127, bark=MED), slots=True, sleep=False)
     worst = 0.0
     for i in range(3):
@@ -343,8 +360,11 @@ def checks(spec=None):
     g = [d["grid"] for d in spec["design"]]
     add("stability grid: rho < 1 at every point of every key (max rho)", max(x["rho"] for x in g), all(x["rho"] < 1 for x in g))
     bad = [(d["midi"], round(d["grid"]["decay_err"], 3)) for d in spec["design"] if d["grid"]["decay_err"] > 0.02]
-    add("stability grid: normal-mode decay rates within +-2 % of the float design (misses, keys)", bad,
-        all(n > 90 for n, _ in bad))
+    add("stability grid: normal-mode decay rates within +-2 % of the float design (misses, keys), every key 21..108", bad,
+        not bad)
+    add("stability grid: worst normal-mode decay error, and the discrete coupling correction kc range (report)",
+        (round(max(x["decay_err"] for x in g), 4), round(min(d["kc"] for d in spec["design"]), 3),
+         round(max(d["kc"] for d in spec["design"]), 3)), True, "report")
     add("stability grid: V1 at f0 +-0.5 c (s = 1, g = 1, TUNE 0), worst", max(abs(x["v1_cents"]) for x in g),
         max(abs(x["v1_cents"]) for x in g) <= 0.5)
 
@@ -366,6 +386,28 @@ def spec_phi(spec, n, m):
     return fe_["weights"][8][m]
 
 
+def band_pos_error(spec):
+    import gen_bars as gb
+    fe_ = gb.fe_all(spec["vibes"])
+    worst = 0.0
+    for k in spec["keys"]:
+        n = k["midi"]
+        if not 53 <= n <= 89:
+            continue
+        W = np.array(fe_[n]["weights"])
+        P = np.array(spec["bar_pos"][k["band"]], float)
+        q = spec["pos_exact"][k["band"]]
+        cols = {0: 0, 2: 1, 3: 2, 4: 3}
+        eff = {s: W[q[s], c] / P[q[s], s] for s, c in cols.items()}       # b per unit table weight
+        for p in (0, 4, 12, 16):
+            for s, c in cols.items():
+                if s == 0 or not k["modes"][s]["b"] or W[p, c] < 0.1 * W[:, c].max() or W[p, 0] <= 0:
+                    continue
+                e = (eff[s] * P[p, s] / (eff[0] * P[p, 0])) / (W[p, c] / W[p, 0])
+                worst = max(worst, abs(20 * math.log10(e)))
+    return round(worst, 2)
+
+
 def indep_v2v1(spec, n):
     """V2 / V1 slot-peak ratio (dB) for TONE 0, MED v100 from the key's OWN FE weights at x = 0.35 L, the same
     radiation weights and trims, and the key's pulse: the golden model's band table should agree."""
@@ -373,15 +415,15 @@ def indep_v2v1(spec, n):
     vb = spec["vibes"]
     d = {x["midi"]: x for x in spec["design"]}[n]
     W = gb.fe_all(vb)[d["ng"]]["weights"]
-    b = spec["bar_pos"][d["flags"] and 0 or {k["midi"]: k for k in spec["keys"]}[n]["band"]]
     k = {x["midi"]: x for x in spec["keys"]}[n]
-    arg = spec["pos_arg"][k["band"]]
-    # the key's b were computed at the band's argmax point; at TONE 0 the golden uses BAR_POS[8]; the key's own
-    # weight ratio at point 8 vs the argmax point gives the exact value
-    v1 = k["modes"][0]["b"] * W[8][0] / W[arg[0]][0]
-    v2 = k["modes"][2]["b"] * W[8][1] / W[arg[2]][1]
-    g1 = k["modes"][0]["b"] * b[8][0] / 16384.0
-    g2 = k["modes"][2]["b"] * b[8][2] / 16384.0
+    q = spec["pos_exact"][k["band"]]
+    P = spec["bar_pos"][k["band"]]
+    # the key's b make the band table exact at the point q (gen_bars: b ~ W_key(q) / P_band(q)); the key's own weight
+    # at point 8 (TONE raw 64) is then b W(8) P(q) / W(q)
+    v1 = k["modes"][0]["b"] * W[8][0] * P[q[0]][0] / W[q[0]][0]
+    v2 = k["modes"][2]["b"] * W[8][1] * P[q[2]][2] / W[q[2]][1]
+    g1 = k["modes"][0]["b"] * P[8][0] / 16384.0
+    g2 = k["modes"][2]["b"] * P[8][2] / 16384.0
     y = gm.render_batch(spec, [n], [100], 0.3, dict(gm.DEFAULT_KNOBS, bark=MED), slots=True, sleep=False)
     gold = 20 * math.log10(np.abs(y["slots"][0, 2]).max() / np.abs(y["slots"][0, 0]).max())
     return gold + 20 * math.log10((v2 / v1) / (g2 / g1))

@@ -162,7 +162,8 @@ static int note_sounding(uint32_t n)
 static void app_main(void)
 {
     uint32_t prev = 0, k;
-    if (settings_load(&set, sizeof set) != 0) params_defaults();
+    int fresh = settings_load(&set, sizeof set) != 0;
+    if (fresh) params_defaults();
     params_sanitize();
     arp_sanitize();
     chord_sanitize();
@@ -175,6 +176,11 @@ static void app_main(void)
     tempo_set10(set.bpm10);
     set_dirty = 0;
     presets_load_bank();
+    if (fresh) {                                /* a first boot (or a lost record) plays F01, as the header says */
+        preset_load(0);
+        set.undo_valid = 0;
+        set_dirty = 0;
+    }
     seq_load();
     ui_goto(PG_PERF);
     ui_splash();
@@ -235,4 +241,20 @@ static void app_main(void)
 #ifdef DINGHY_WEB
 /* the emulator (web/app.js): which page is shown, so the buttons' captions can say what they do there */
 EMSCRIPTEN_KEEPALIVE const char *web_page(void) { return PAGE_TITLE[ui_page]; }
+#endif
+
+#ifdef DINGHY_HOST
+/* tests/host.c "expect preset": the panel equals what the preset the header names sets (presets.c preset_load) */
+static int host_preset_check(char *msg, unsigned n)
+{
+    uint8_t p[P_SLOTS];
+    uint32_t i, idx = set.preset;
+    if (idx >= PR_NF) { snprintf(msg, n, "preset %u is not a factory preset", idx); return 1; }
+    for (i = 0; i < P_COUNT; i++) p[i] = PARAMS[i].def;
+    for (i = 0; i < 32u && PR_FDATA[idx][i] != 0xFF; i += 2u) p[PR_FDATA[idx][i]] = PR_FDATA[idx][i + 1u];
+    for (i = 0; i < P_COUNT; i++)
+        if (PV(i) != p[i]) { snprintf(msg, n, "F%02u %s: %s is %u, the preset sets %u", idx + 1u, PR_FNAME[idx], PARAMS[i].lab, PV(i), p[i]); return 1; }
+    snprintf(msg, n, "F%02u %s", idx + 1u, PR_FNAME[idx]);
+    return 0;
+}
 #endif

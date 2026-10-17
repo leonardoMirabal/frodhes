@@ -171,3 +171,37 @@ def test_filter_resonance_and_lfo():
     m, _ = run("fltlfo", [(81, 0), (91, 0), (70, 20), (74, 70), (72, 127), (75, 96), (76, 40)], CHORD, 1900)
     cs = [centroid(seg(m, t, t + 0.1)) for t in np.arange(0.3, 1.4, 0.1)]
     assert max(cs) > 1.3 * min(cs)                   # (LP12: the centroid swings ~1.5x)
+
+
+def lfo_rate_shown(v, half):
+    """the rate the SPEED / RATE card shows (params.c F_HZ / F_HZH): 0.5 * 24^(v/127) Hz, halved for F_HZH"""
+    hz = 0.5 * 24 ** (v / 127)
+    return hz / 2 if half else hz
+
+
+
+def band_share(x, lo, hi, n=441):
+    """the share of energy in the lo..hi Hz band, in 10 ms frames, with the notes' decay removed"""
+    fr = np.fft.rfftfreq(n, 1 / FS)
+    m = (fr >= lo) & (fr < hi)
+    sh = []
+    for i in range(0, len(x) - n, n):
+        s = np.abs(np.fft.rfft(x[i:i + n] * np.hanning(n))) ** 2
+        sh.append(s[m].sum() / (s.sum() + 1e-9))
+    sh = np.array(sh)
+    t = np.arange(len(sh))
+    return sh - np.polyval(np.polyfit(t, sh, 3), t)
+
+def test_phaser_speed_card_matches_the_sound():
+    """the PHASER SPEED card shows the rate the sweep really runs at: fx.c runs the phaser (and the chorus, the same
+    code path: FX_LFO_INC >> 1) at half the LFO table's rate, so the card (F_HZH) shows half; one triangle sweep,
+    up and down, per cycle moves the notches once"""
+    for v in (40, 64, 90):
+        chord = [(100, n, 100, 5800) for n in (36, 43, 48, 55, 60, 64, 67, 72)]
+        L, _ = run(f"phrate{v}", [(81, 0), (91, 0), (64, 127), (85, 127), (13, 127), (16, 0), (14, v)], chord, 6000)
+        sh, fps = band_share(seg(L, 0.5, 5.9), 300, 3000), FS / 441
+        corr = lambda hz: np.corrcoef(sh[:-int(round(fps / hz))], sh[int(round(fps / hz)):])[0, 1]
+        shown, table = lfo_rate_shown(v, half=True), lfo_rate_shown(v, half=False)
+        # the sweep repeats at the rate the card shows; at the table's rate (half its period) it is a time-reversed
+        # half sweep, so it does not correlate
+        assert corr(shown) > 0.15 and corr(shown) > corr(table) + 0.1, (v, corr(shown), corr(table))
