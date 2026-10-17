@@ -185,3 +185,13 @@ def test_sweeps_do_not_click(name, base, cc):
     got = max(jumps(L, 0.3, 2.5), jumps(R, 0.3, 2.5))
     assert got <= 1.5 * ref + 40, (name, got, ref)
     assert np.all(np.isfinite(L)) and np.max(np.abs(L)) < 32767 and np.max(np.abs(R)) < 32767
+
+
+@pytest.mark.parametrize("mix,fdbk", [(127, 127), (100, 127), (127, 100)])
+def test_delay_echoes_always_die(mix, fdbk):
+    """the delay's loop gain stays under 1 at any MIX x FEEDBK (the audit, 2026-10-17: over MIX x FDBK ~ 11650 one short
+    note's echoes grew to the limiter: -14.7, -7.3, -4.8, -3.6 dBFS at 1, 3, 6, 11 s). Reverb off, one short note."""
+    L, R = run(f"dly{mix}-{fdbk}", [(91, 0), (88, 64), (89, mix), (26, fdbk)], HIT, 12000)
+    x = np.maximum(np.abs(L), np.abs(R))
+    early, late = rms_db(seg(x, 1.0, 2.0)), rms_db(seg(x, 10.5, 11.5))
+    assert late < early - 20, (early, late)

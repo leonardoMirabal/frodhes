@@ -415,7 +415,9 @@ static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
     if (sw == 2) col = (col * 19661) >> 15;                 /* tape: darker */
     while (target >= (int32_t)DLY_LEN - 2) target >>= 1;
     target <<= 8;
-    if (fb > 27853) fb = 27853;
+    if (fb > 13926) fb = 13926;                             /* the loop gain is 2 fb (the line holds half level): at most
+                                                             * 0.85, the echoes always die (they grew forever over MIX x
+                                                             * FDBK ~ 11650: the audit, 2026-10-17) */
     if (!sw && !dly_lp && !dly_hp) { dly_w += n; return; }    /* fully quiet and off: only keep time */
     for (j = 0; j < n; j++) {
         int32_t d, r, in = sw ? (L[j] + R[j]) >> 1 : 0, f;
