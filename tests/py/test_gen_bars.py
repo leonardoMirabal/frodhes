@@ -100,12 +100,28 @@ def test_slot_and_sum_bounds_at_the_worst_voicing():
 
 
 def test_stability_grid_every_key():
+    """rho < 1 and both normal modes within +-2 % of the float design at every grid point of every key 21..108; the
+    discrete coupling correction kc stays near 1 (with the tube tuned within a few cents, T4b: the old +100 c top
+    made the pair anti-damping above D7, see gen_bars.KC_MAX)."""
     for d in SPEC["design"]:
         g = d["grid"]
         assert g["rho"] < 1.0, d["midi"]
         assert g["points"] == 270 and abs(g["v1_cents"]) <= 0.5
-        if d["midi"] <= 90:                                      # the extrapolated top: see bars_va (kc cap)
-            assert g["decay_err"] <= 0.02, (d["midi"], g["decay_err"])
+        assert g["decay_err"] <= 0.02, (d["midi"], g["decay_err"])
+        assert 0.95 <= d["kc"] <= 1.1, (d["midi"], d["kc"])
+
+
+def test_slot_x_off_and_pruned_slots_never_lit():
+    """Slot X (the spare, T15) is off everywhere (th = 0, b = 0: bars.c never lights it); a pruned slot (vibes.json
+    prune: under -60 dB re V1 at every voicing) has b = 0; every lit upper slot reaches -60 dB at some voicing."""
+    thr = SPEC["vibes"]["prune"]["db"]
+    for i, k in enumerate(SPEC["keys"]):
+        assert k["modes"][7]["w"]["th"] == 0 and k["modes"][7]["b"] == 0, k["midi"]
+        for s in SPEC["pruned"].get(str(k["midi"]), []):
+            assert k["modes"][s]["b"] == 0 and not k["modes"][s]["present"], (k["midi"], s)
+        for s in range(2, 7):
+            if k["modes"][s]["b"]:
+                assert SPEC["prune_rel_db"][i][s] >= thr, (k["midi"], s)
 
 
 def test_weak_regime_every_key():

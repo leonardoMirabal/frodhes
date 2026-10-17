@@ -15,7 +15,7 @@ bar + wt * tube.
     bt.retune(f0)             # scaled so the V1-like (late-sustain) normal mode is exactly f0
     bt.with_damper(sig)       # the felt on the bar (the tube is never felt-damped)
     bt.with_motor(g)          # coupling (and, for the output, the radiation wt) x g; g_c = 0.15 closed
-    bt.solve_sigma(t60)       # sigma for a V1-with-tube T60, bounded 0.0015..0.006, .clamped / .sigma_wanted
+    bt.solve_sigma(t60)       # sigma for a V1-with-tube T60, bounded 0.0015..0.007, .clamped / .sigma_wanted
     pair_words(bt, ...)       # the quantised slot words + Q30 couplings + Q28 wt (§4.2, §4.5)
     pair_map(words) / map_check(...)   # the exact per-sample 4x4 integer map, its spectral radius and modes (§4.5)
 
@@ -39,7 +39,7 @@ import vib_ref_measure as vrm  # noqa: E402  (only its envelope functions: the m
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FS = 44100.0
 LN1000 = 6.907755279
-SIG_LO, SIG_HI = 0.0015, 0.006         # T5a: the exposed coupling range (E-VAL V14)
+SIG_LO, SIG_HI = 0.0015, 0.007         # T5a: the exposed coupling range (E-VAL V14; hi 0.007 per vibes.json T5a)
 S_MAX = 1.2                             # KN_TUBE[127] (§4.4): BELL's top
 WEAK_MARGIN = 0.9                       # §4.5: s_max * sigma <= 0.9 (zeta_r - zeta_n)
 ZR_HI = 0.04                            # T4a: tube zeta_r upper bound
@@ -544,8 +544,9 @@ def zeta_lo(n):
 
 
 def tube_cents(n):
-    """T4b: +5 c (F3) -> +20 c (C6) -> +100 c (F6), linear in semitones, held outside."""
-    return float(np.interp(n, [53, 84, 89], [5.0, 20.0, 100.0]))
+    """T4b: +5 c at every key (vibes.json T4b, 2026-10-17: the old +5 c (F3) -> +20 c (C6) -> +100 c (F6) curve is
+    contradicted by the reference's F6 T60 and D5..A5 f0 peaks, and made the integer pair anti-damping above D7)."""
+    return float(np.interp(n, [53, 89], [5.0, 5.0]))
 
 
 def build_pair(n, zr, t1b, sigma=None, s=1.0):
@@ -667,7 +668,7 @@ def main(argv):
     L = ["# bartube per-key solve (tools/bartube.py)", "",
          "zeta_r from the measured f0-peak times (model output measured with vib_ref_measure's procedure, tube +%.0f dB "
          "over the bar at 0.2 s%s), sigma from the +-3-key median of the measured V1-with-tube T60. Bounds: zeta_r "
-         "max(0.73 %%, E curve)..4 %%, sigma 0.0015..0.006, then sigma <= 0.9 (zeta_r - zeta_n) / 1.2." % (
+         "max(0.73 %%, E curve)..4 %%, sigma 0.0015..0.007, then sigma <= 0.9 (zeta_r - zeta_n) / 1.2." % (
              RATIO_DB, "; peak times +-3-key median smoothed" if sp else "; raw per-note peak times"), "",
          "note | T1a | T1b | T60 got | zeta_r % (flag) | sigma (wanted) clamp | weak-max | peak ms got/target/formula | wt | G | x1/x0 | rho | dErr | V1 c"]
     for r in rows:

@@ -22,14 +22,9 @@ D = {d["midi"]: d for d in SPEC["design"]}
 KEYS = list(range(21, 109))
 AUTH = list(range(53, 90))
 
-# Gate VA checks that fail on the present data, with the reason (PLAN §10 vs the measurements and the bounds):
-KNOWN = {
-    "f0 peak (recordings' procedure)": "the model peaks earlier than the smoothed table at D5 / G5 / A5 even at the "
-                                       "0.5 % zeta_r floor (the tube cannot be slower without a lower floor or more "
-                                       "tube share T5b)",
-    "V1 T60 at the reference pitches within +-15 % of the smoothed table": "sigma clamped at 0.006 at G3 / D4 / F6 "
-                                       "(zeta_r is set by the peak time first); the keys are flagged (bit2)",
-}
+# Gate VA checks that fail on the present data, with the reason (PLAN §10 vs the measurements and the bounds). Empty
+# since 2026-10-17 (the tube tuned within a few cents, T4b; the T60-first zeta_r trade, T4a; sigma up to 0.007, T5a).
+KNOWN = {}
 
 
 @pytest.fixture(scope="module")
@@ -42,7 +37,7 @@ def test_gate_va(va_checks):
     unknown = [n for n in failed if not any(n.startswith(k) for k in KNOWN)]
     assert not unknown, [(n, v) for n, v, ok, kind in va_checks if n in unknown]
     gated = [n for n, v, ok, kind in va_checks if kind == "gate"]
-    assert len(gated) >= 38
+    assert len(gated) >= 42
 
 
 def test_known_va_conflicts_reported(va_checks):
@@ -89,6 +84,28 @@ def test_level_matched_to_st77():
     assert abs(lb - lr) <= 1.0, (lb, lr)
 
 
+def lufs_k(x, t0=0.0, t1=1.0):
+    from scipy.signal import sosfilt
+    import bar_measure as bm
+    y = sosfilt(bm.k_weight_sos(gm.FS), np.asarray(x, float) / 32767.0)[int(t0 * gm.FS):int(t1 * gm.FS)]
+    return -0.691 + 10 * math.log10(float(np.mean(y * y)) + 1e-15)
+
+
+def test_rhodes_level_per_region():
+    """The hiss / SNR rule: VIBES plays at the Rhodes level. Single notes at v100, K-weighted loudness over 0..1 s (S9),
+    golden VIBES vs golden ST77: within 1 LU per key region; VIBES neighbours within 1.5 dB."""
+    rs = json.load(open(os.path.join(ROOT, "docs", "model", "data", "rhodes_spec.json")))
+    rk = {k["midi"]: k for k in rs["keys"]}
+    lb = np.array([lufs_k(r) for r in gm.render_batch(SPEC, KEYS, [100] * len(KEYS), 1.0, None, sleep=False)])
+    lr = np.array([lufs_k(r) for r in rm.render_batch([rk[n] for n in KEYS], rs["pickup"], [100] * len(KEYS), 1.0,
+                                                      gains=[rk[n]["gain"] for n in KEYS])])
+    for a, b in ((21, 40), (41, 52), (53, 59), (60, 71), (72, 83), (84, 89), (90, 99), (100, 108)):
+        i = [j for j, n in enumerate(KEYS) if a <= n <= b]
+        d = float(np.mean(lb[i]) - np.mean(lr[i]))
+        assert abs(d) <= 1.0, (a, b, d)
+    assert np.abs(np.diff(lb)).max() <= 1.5, np.abs(np.diff(lb)).max()
+
+
 def centroid(y, f0, t1=0.05):
     n = int(t1 * gm.FS)
     S = np.abs(np.fft.rfft(y[:n] * np.hanning(n), 1 << 15)) ** 2
@@ -97,16 +114,25 @@ def centroid(y, f0, t1=0.05):
 
 
 def test_centroid_continuous_across_bands():
-    """Centroid (re f0) of the attack (0..50 ms, where the pulse shape is heard; later the measured per-note decays
-    dominate, e.g. V2 3.4 s at E4 -> 1.0 s at F4) step <= 15 % between neighbouring keys in different pulse bands,
-    at v100 and v127 RUBBER."""
+    """Continuous timbre across the pulse bands. The band tables' own share, at every band boundary in F3..F6 (v100
+    and v127 RUBBER, the attack 0..50 ms where the pulse is heard): playing each boundary key with its neighbour's
+    pulse band changes its centroid (re f0) by <= 10 % (the strike table is exact per key at the default TONE, gen_bars
+    POS_DEF). The whole step between the two keys <= 25 %: on top of the bands, the per-key data moves the attack
+    centroid by up to ~20 % between neighbours on its own (RUBBER's attack is V4-dominated at 13.76 f0 and V4 carries
+    the T11 per-key detune of +-70 c on the pulse's steep slope; the measured per-note V2 / V3 decays)."""
+    import copy
     for v, kn in ((100, None), (127, dict(gm.DEFAULT_KNOBS, bark=127))):
-        y = gm.render_batch(SPEC, KEYS, [v] * len(KEYS), 0.32, kn, sleep=False)
+        y = gm.render_batch(SPEC, KEYS, [v] * len(KEYS), 0.06, kn, sleep=False)
         c = np.array([centroid(r, D[n]["f0"]) for n, r in zip(KEYS, y)])
         for i in range(len(KEYS) - 1):
             a, b = KEYS[i], KEYS[i + 1]
             if K[a]["band"] != K[b]["band"] and a in AUTH and b in AUTH:
-                assert abs(c[i + 1] / c[i] - 1) <= 0.15, (v, a, b, c[i], c[i + 1])
+                assert abs(c[i + 1] / c[i] - 1) <= 0.25, (v, a, b, c[i], c[i + 1])
+                for x, other in ((a, b), (b, a)):
+                    sp = copy.deepcopy(SPEC)
+                    sp["pulse"][K[x]["band"]] = SPEC["pulse"][K[other]["band"]]
+                    cx = centroid(gm.render_batch(sp, [x], [v], 0.06, kn, sleep=False)[0], D[x]["f0"])
+                    assert abs(cx / c[KEYS.index(x)] - 1) <= 0.10, (v, x, other, c[KEYS.index(x)], cx)
 
 
 def test_trim_small_in_the_real_range():
