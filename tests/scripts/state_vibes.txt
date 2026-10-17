@@ -1,0 +1,103 @@
+# The state after every action on VIBES (state.txt's rules: the panel is what the header names, the engines run what
+# the panel says, the LEDs and cards agree). LFO LED 5 = the TREM/WAH effect (the MOTOR on VIBES), SAVE 9.
+# ---- F14 VIBES DRY by program change: the bar engine, its own card names, no motor
+100 midi 0xC0 13 0
+200 expect preset
+200 expect sound
+200 expect state header F14_VIBES_DRY
+200 expect state bars 1
+200 expect state card.2.0 VIBES
+200 expect state label.3.0 STRIKE
+200 expect state label.4.0 RING
+200 expect state label.4.3 TUNE
+200 expect state card.7.0 OFF
+200 expect led 5 0
+# a key plays it
+300 keys 0x80
+700 expect rms > -40
+800 keys 0
+# ---- the motor from the panel: LFO -> TREM/WAH, LFO again: on (as PAN, its last kind), K1 to MOTOR
+1700 btn 5
+1800 btn 5
+1900 expect led 5 1
+1900 expect state card0 PAN
+2000 turn 2 1
+2010 turn 2 1
+2020 turn 2 1
+2100 expect state card0 MOTOR
+2100 expect state card2 4.8HZ
+2100 expect sound
+2100 expect led 5 1
+# ---- save it to U01; program change 16 plays the stored copy
+2200 btn 9
+2300 btn 9
+2400 expect state header U01_VIBE_MOT
+2400 expect preset
+2500 midi 0xC0 0 0
+2600 expect state bars 0
+2600 expect preset
+2700 midi 0xC0 16 0
+2800 expect preset
+2800 expect sound
+2800 expect state bars 1
+2800 expect state card.7.0 MOTOR
+# ---- browse back to F13 VIBE MOTOR (loads after 400 ms), then hold SAVE: undo to U01, the header with it
+2900 turn 6 -1
+3000 turn 6 -1
+3600 expect state header F13_VIBE_MOTOR
+3600 expect preset
+3600 expect state card.7.2 3.5HZ
+3700 press 9
+4500 release 9
+4600 expect state header U01_VIBE_MOT
+4600 expect preset
+4600 expect sound
+4600 expect state card.7.2 4.8HZ
+# ---- ALGORITHM: VIBES -> BELL DYNO (the Rhodes): MOTOR shows and plays as the tremolo; back: MOTOR again
+4700 turn 1 -1
+4800 expect state bars 0
+4800 expect state card.2.0 BELL_DYNO
+4800 expect state label.3.0 TONE
+4800 expect state card.7.0 TREM
+4800 expect sound
+4800 expect led 5 1
+4900 turn 1 1
+5000 expect state bars 1
+5000 expect state card.7.0 MOTOR
+5000 expect sound
+# ---- F13 by program change while a note rings: the swap and the load agree
+5100 midi 0x90 60 100
+5200 midi 0xC0 12 0
+5300 expect preset
+5300 expect sound
+5400 midi 0x80 60 0
+# ---- the bypass and the octave on VIBES
+5500 btn 2
+5600 expect led 2 0
+5600 expect sound
+5700 btn 2
+5800 expect led 2 1
+5900 btn 1
+6000 expect state oct 1
+6000 expect led 1 1
+6100 btn 0
+6200 expect state oct 0
+6200 expect led 1 0
+# ---- the arpeggiator and chord mode on VIBES (ARP lit, SEQ lit for chord mode), then off
+6300 btn 10
+6400 btn 10
+6500 expect led 10 1
+6600 keys 0x80
+7000 expect rms > -45
+7100 keys 0
+7200 btn 10
+7300 expect led 10 0
+7400 btn 11
+7500 turn 2 1
+7600 expect led 11 1
+7700 turn 2 -1
+7800 expect led 11 0
+# the end: everything let go dies away
+10500 expect rms < -80
+10500 expect sound
+10600 end

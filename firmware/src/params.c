@@ -129,7 +129,8 @@ typedef struct {
     uint8_t chord[4];                          /* 0.9.1: chord mode: type, inversion, voicing, strum (notes.c) */
     uint8_t seq_bars, seq_quant, seq_swing;    /* 0.9.1: the sequencer (seq.c; the pattern itself is in flash) */
     uint8_t trs_off;                           /* 0.9.1: 1 = the TRS MIDI input is ignored (MIDI page) */
-    uint8_t seq_rsv[94];
+    uint8_t undo_preset;                       /* 0.9.3: the preset the undo copy is (index + 1; 0 = not known) */
+    uint8_t seq_rsv[93];
     uint8_t reserved[22];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
@@ -180,7 +181,7 @@ static void params_sanitize(void)
         for (i = 0; i < 4u; i++) set.perf[i] = 0;
         params_split_phaser(p, P_SLOTS);
         for (i = 0; i < P_SLOTS; i++) PV(i) = p[i];
-        set.undo_valid = 0;
+        set.undo_valid = 0; set.undo_preset = 0;
         set.ver = SET_VER;
     }
     if (set.ver != SET_VER) { params_defaults(); return; }
@@ -197,6 +198,7 @@ static void params_sanitize(void)
     if (set.clock > 1u) set.clock = 1;                       /* 0.9.3: INT / EXT (was INT / AUTO / USB) */
     if (set.midi_ch > 16u) set.midi_ch = 0;                 /* 0 = all channels, 1..16 */
     if (set.trs_off > 1u) set.trs_off = 0;
+    if (set.undo_preset > PR_NF_SET + 16u) set.undo_preset = 0;
     if (!set.key_vel || set.key_vel > 127) set.key_vel = 96;
     if (set.tune < -50 || set.tune > 50) set.tune = 0;
     if (set.focus > 2) set.focus = 0;

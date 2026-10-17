@@ -157,6 +157,7 @@ static void preset_load(uint32_t idx)
     }
     for (i = 0; i < P_COUNT; i++) UV(i) = PV(i);
     set.undo_valid = 1;
+    set.undo_preset = (uint8_t)(set.preset < PR_NF + PR_NU ? set.preset + 1u : 0u);   /* what the undo copy was */
     for (i = 0; i < P_COUNT; i++) param_set(i, p[i]);
     set.preset = (uint8_t)idx;
     tempo_sync_publish();
@@ -177,6 +178,13 @@ static void preset_undo(void)
     for (i = 0; i < P_COUNT; i++) t[i] = PV(i);
     for (i = 0; i < P_COUNT; i++) param_set(i, UV(i));
     for (i = 0; i < P_COUNT; i++) UV(i) = t[i];
+    if (set.undo_preset) {                              /* the header names the sound that plays (0.9.3: it kept
+                                                         * the loaded preset's name over the sound before it) */
+        uint8_t was = set.preset;
+        set.preset = (uint8_t)(set.undo_preset - 1u);
+        set.undo_preset = (uint8_t)(was < PR_NF + PR_NU ? was + 1u : 0u);
+    }
+    set_dirty = 1; set_t_change = fm1_ms;
     tempo_sync_publish();
     ui_draw_page_change();
     ui_say("UNDO");

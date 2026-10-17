@@ -374,7 +374,7 @@ the TRS jack: notes, every CC in the table below, program changes, clock, start 
 
 Turn **PRESETS** to browse: **F01–F14** are the factory sounds, **U01–U16** your own. A preset loads when you stop
 turning (after 0.4 s). If you did not mean to, **hold SAVE** (0.7 s) to go back to the sound you had before the
-last load; hold it again to return (redo). The first time Frodhes
+last load (the top line names it again); hold it again to return (redo). The first time Frodhes
 starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 
 | | | | |

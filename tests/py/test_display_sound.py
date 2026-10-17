@@ -448,10 +448,11 @@ def test_compressor_threshold_and_makeup(eng):
 
 @pytest.mark.parametrize("eng", ENGINES)
 def test_level(eng):
-    """LEVEL (SETUP K2): the output moves by the card's dB (a quiet note: the limiter stays out of it)"""
+    """LEVEL (SETUP K2): the output is the engine's own (CC 119 RAW: the effects and the master skipped) moved by the
+    card's dB, "+0.0" included (a quiet note: the limiter stays out of it)"""
     pre = ENGINES[eng] + CLEAN + PEDAL
-    ref = run(f"ds-lvl-ref-{eng}", pre + note(100, 60, 40, 1500), 1700)
-    for v in (0, 30, 127):
+    ref = run(f"ds-lvl-ref-{eng}", pre + [cc(30, 119, 127)] + note(100, 60, 40, 1500), 1700)
+    for v in (0, 30, 64, 127):
         w = run(f"ds-lvl{v}-{eng}", pre + [cc(30, 110, v), "50 dump"] + note(100, 60, 40, 1500), 1700)
         txt = w.state(50)[f"card.{PG['SETUP']}.1"]
         assert_db(rms_db(w.seg(0.2, 1.5)) - rms_db(ref.seg(0.2, 1.5)), txt, f"LEVEL {v}")
