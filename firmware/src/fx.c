@@ -587,7 +587,9 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
     rv_running = 1;
     for (sb = 0; sb < n; sb += CTL) {
         int32_t act = 0;
-        for (j = 0; j < CTL; j++) rv_in[j] = mulq15((L[sb + j] + R[sb + j]) >> 1, send);
+        for (j = 0; j < CTL; j++)                      /* 64-bit: the bus can be several times full scale here
+                                                        * (feedback effects, many v127 notes: fuzz seed 95) */
+            rv_in[j] = (int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15);
         rev_hall(rv_in, rv_mid, rv_side, size, 60);
         for (j = 0; j < CTL; j++) {                    /* the return eases off as the send rises: x1 .. x0.5 (0.6) */
             int32_t wm = (rv_mid[j] * (254 - v)) / 254, ws = (rv_side[j] * (254 - v)) / 254;
