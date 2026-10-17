@@ -13,7 +13,7 @@ what matter):
   max level      a loud chord's peak and RMS on the jack (and on USB)
   snr            loud-chord RMS minus the hiss (A-weighting not applied)
   harmonics      A1 / A2 at 4 velocities: H2..H6 re H1 on USB and on the jack (distortion added by the jack)
-Results also go to build/hil/jack.json.
+Results also go to build/hil/jack.json (jack-vibes.json with --engine vibes).
 """
 import argparse
 import json
@@ -94,8 +94,16 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dev", default="M6")
     ap.add_argument("--ch", type=int, default=5)
+    ap.add_argument("--engine", default="rhodes", choices=("rhodes", "vibes"))
     a = ap.parse_args()
     J = Jack(a.dev, a.ch)
+    if a.engine == "vibes":                       # every reset then selects VIBES (CC 79)
+        dry0 = J.r.dry
+        def dry(**kv):
+            dry0(**kv)
+            J.r.out.send(J.r.mido.Message("control_change", control=79, value=64))
+            time.sleep(0.3)
+        J.r.dry = dry
     rep = {}
     J.r.dry()
     # silence: the codec muted (exact digital zero)
@@ -129,7 +137,7 @@ def main():
     rep["harmonics"] = rows
     J.r.dry()
     os.makedirs(os.path.join(hs.ROOT, "build", "hil"), exist_ok=True)
-    json.dump(rep, open(os.path.join(hs.ROOT, "build", "hil", "jack.json"), "w"), indent=1)
+    json.dump(rep, open(os.path.join(hs.ROOT, "build", "hil", "jack.json" if a.engine == "rhodes" else "jack-vibes.json"), "w"), indent=1)
     print(f"silence      jack {rep['silence']['jack_db']:.1f} dB (8-20k {rep['silence']['jack_hf_db']:.1f})")
     print(f"hiss         8-20 kHz under a quiet low note: jack {rep['hiss']['jack_hf_db']:.1f} dB, USB "
           f"{rep['hiss']['usb_hf_db']:.1f} dBFS -> the jack adds {rep['hiss_added_db']:.1f} dB over the music's own")
