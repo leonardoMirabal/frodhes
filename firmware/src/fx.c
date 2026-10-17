@@ -230,24 +230,32 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
     /* 0.707 x a depth law fitted on the FM-1 (LUFS): little depth loses level in the notch, much depth is wide stereo
      * (heard ~2.5 dB louder on headphones than the mono clean) and feedback adds resonance (0.8) */
     int32_t pg = (int32_t)(((int64_t)23170 * (50000 - depth * 230)) >> 0);
-    uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, j, s, k;
+    uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, j, s;
     if (!fx_p[FXP_PH_SW]) return;
     for (sb = 0; sb < n; sb += 32u) {
         int32_t a[2];
         a[0] = ph_coef(ph_ph, depth);
         a[1] = ph_coef(ph_ph + 0x40000000u, depth);
-        for (j = sb; j < sb + 32u && j < n; j++)
-            for (s = 0; s < 2u; s++) {
-                int32_t *io = s ? R : L, x = io[j], xs = clampi((x + 2) >> 2, -16383, 16383);
-                int32_t u = xs + mulq15(ph_fb[s], fbk), y = 0;
-                for (k = 0; k < 4u; k++) {
-                    y = clampi(ph_x[s][k] + ((a[s] * (u - ph_y[s][k]) + 8192) >> 14), -65535, 65535);
-                    ph_x[s][k] = u; ph_y[s][k] = y; u = y;
-                }
-                ph_fb[s] = clampi(y, -32767, 32767);
+        for (s = 0; s < 2u; s++) {                   /* the sides are independent: one at a time, the state in
+                                                        * registers (the same arithmetic as per sample and side) */
+            int32_t *io = s ? R : L, as = a[s], fb = ph_fb[s];
+            int32_t x0 = ph_x[s][0], x1 = ph_x[s][1], x2 = ph_x[s][2], x3 = ph_x[s][3];
+            int32_t y0 = ph_y[s][0], y1 = ph_y[s][1], y2 = ph_y[s][2], y3 = ph_y[s][3];
+            for (j = sb; j < sb + 32u && j < n; j++) {
+                int32_t x = io[j], xs = clampi((x + 2) >> 2, -16383, 16383);
+                int32_t u = xs + mulq15(fb, fbk), y;
+                y = clampi(x0 + ((as * (u - y0) + 8192) >> 14), -65535, 65535); x0 = u; y0 = y; u = y;
+                y = clampi(x1 + ((as * (u - y1) + 8192) >> 14), -65535, 65535); x1 = u; y1 = y; u = y;
+                y = clampi(x2 + ((as * (u - y2) + 8192) >> 14), -65535, 65535); x2 = u; y2 = y; u = y;
+                y = clampi(x3 + ((as * (u - y3) + 8192) >> 14), -65535, 65535); x3 = u; y3 = y;
+                fb = clampi(y, -32767, 32767);
                 io[j] = (int32_t)(((int64_t)(x + (y << 2)) * pg) >> 30);   /* x 0.707 (the notches) and the
                                                                          * stereo width's loudness taken back */
             }
+            ph_x[s][0] = x0; ph_x[s][1] = x1; ph_x[s][2] = x2; ph_x[s][3] = x3;
+            ph_y[s][0] = y0; ph_y[s][1] = y1; ph_y[s][2] = y2; ph_y[s][3] = y3;
+            ph_fb[s] = fb;
+        }
         ph_ph += inc * 32u;
     }
 }
