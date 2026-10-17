@@ -441,7 +441,8 @@ static void param_text(uint32_t id, char *s)
         p_fmt_int(s, (int32_t)((FX_PDLY_SAMPLES(v) * 1000u + 22050u) / 44100u));
         break;
     case F_THR:                                    /* "-20" dB: fx.c's threshold (log2 Q12), rounded */
-        if (v) { s[0] = '-'; p_fmt_int(s + 1, q12_db1((v * 27434) >> 7)); } else { s[0] = '0'; s[1] = 0; }
+        if (v && q12_db1((v * 27434) >> 7)) { s[0] = '-'; p_fmt_int(s + 1, q12_db1((v * 27434) >> 7)); }
+        else { s[0] = '0'; s[1] = 0; }               /* (no "-0" at 1: -0.3 dB rounds to 0) */
         break;
     case F_GAIN:                                   /* "+6.0" / "+23" dB: fx.c's make-up (log2 Q12) */
         fmt_db10(s, q12_db10((v * 16461) >> 7), q12_db1((v * 16461) >> 7));

@@ -158,7 +158,7 @@ On **VIBES** these cards are the vibraphone's: see [VIBES](#5-vibes-the-vibrapho
 | --- | --- | --- |
 | K1 | **THRESH** | **OFF** at 0: turn it up to switch the compressor on; then where it starts, down to −40 dB. Lower = more compression |
 | K2 | **RATIO** | How strongly it compresses: 1.5:1 to 20:1 |
-| K3 | **ATTACK** | How fast it grabs a note: low lets the hammer's attack through, high catches it |
+| K3 | **ATTACK** | How fast it grabs a note: low (0.1 ms) catches the hammer's attack, high (50 ms) lets it through |
 | K4 | **MAKEUP** | Gives back the volume the compression takes: 0 to +24 dB |
 
 **THRESH** is its on / off: turn it up from OFF and the compressor comes on with MAKEUP at +2.8 dB, which keeps the
@@ -520,7 +520,7 @@ always there to start again from.
 
 | A preset (U01–U16) | The FM-1 itself (settings) | The pattern |
 | --- | --- | --- |
-| The sound: TYPE, every VOICE / DECAY card, every effect and its sync, the filter and LFO, LEVEL | KEY VEL, TUNE, TRANSP, the octave, tempo and CLOCK, scale, chord mode, arpeggiator, sequencer settings, PERFORM assignments, the MIDI page, USB VOL, COLOR, and the last sound | The sequencer's notes |
+| The sound: TYPE, every VOICE / DECAY card, every effect and its sync, the filter and LFO, LEVEL | KEY VEL, TUNE, TRANSP, the octave, tempo and CLOCK, scale, chord mode, arpeggiator, sequencer settings, PERFORM assignments, the MIDI page, USB VOL, and the last sound | The sequencer's notes |
 | When you press SAVE (once silent) | About 2 s after your last change, once the sound has died away | 1.5 s after a change, while stopped and silent |
 
 So after a change, let the sound die away for a couple of seconds before you switch off.

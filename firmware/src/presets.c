@@ -257,10 +257,10 @@ static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t r
         return;
     }
     if (d_presets) {
-        int32_t v = (pr_cand == 255 ? (set.preset < PR_NF + PR_NU ? set.preset : 0) : pr_cand) + (d_presets > 0 ? 1 : -1);
+        int32_t v0 = pr_cand == 255 ? (set.preset < PR_NF + PR_NU ? set.preset : 0) : pr_cand, v = v0 + (d_presets > 0 ? 1 : -1);
         while (v >= (int32_t)PR_NF && v < (int32_t)(PR_NF + PR_NU) && !pr_user[v - PR_NF].used) v += d_presets > 0 ? 1 : -1;
         if (v < 0) v = 0;
-        if (v >= (int32_t)(PR_NF + PR_NU)) v = (int32_t)PR_NF - 1;
+        if (v >= (int32_t)(PR_NF + PR_NU)) v = v0;          /* past the last saved preset: stay (it went back to F14) */
         pr_cand = (uint8_t)v; pr_cand_t = fm1_ms;
         preset_name((uint32_t)v, s);
         ui_say(s);
