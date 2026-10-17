@@ -478,7 +478,9 @@ static void draw_card(uint32_t k)
         cv_text(5, 3, &FONT_S, kk, C_DIM);
         cv_text(28, 3, &FONT_S, slot_label(ui_page, k), C_GRAY);
         slot_text(s, v);
-        if (text_w(&FONT_L, v) <= 112) text_c(0, 21, 118, &FONT_L, v, C_HI);
+        /* TYPE names are drawn alike for every engine: the long Rhodes names never fit FONT_L, so a short one
+         * (VIBES) must not jump to it either */
+        if (s != P_TYPE && text_w(&FONT_L, v) <= 112) text_c(0, 21, 118, &FONT_L, v, C_HI);
         else text_c(0, 29, 118, &FONT_S, v, C_HI);
         if (hi && slot_is_level(s)) gauge(5, 56, 108, val, hi);
     }
