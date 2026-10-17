@@ -108,7 +108,7 @@ def test_power_cycle_keeps_everything(eng):
     for k in ("header", "oct", "bpm", "notes", "bars", "u.3", "card.4.3", "card.15.1", "card.13.0", "card.14.0",
               "card.14.2"):
         assert s2[k] == s1[k], (k, s1[k], s2[k])
-    assert all(s2[f"p.{i}"] == s1[f"p.{i}"] for i in range(48))
+    assert all(s2[k] == s1[k] for k in s1 if k.startswith("p."))
     assert (s2["oct"], s2["card.4.3"], s2["bpm"], s2["card.14.0"]) == ("1", "+7", "108.0", "2")
 
 
@@ -246,6 +246,8 @@ def test_old_settings_records_convert():
     for k in ("LEVEL", "CMP_RATIO", "CMP_GAIN", "FL_TYPE", "FL_FREQ", "LFO_RATE"):
         assert s[f"p.{P[k]}"] == str(dflt[P[k]]), (k, s[f"p.{P[k]}"])
     assert (s["p.0"], s["p.1"], s["preset"]) == ("1", "20", "15"), (s["p.0"], s["p.1"], s["preset"])
+    for i in range(48, len(dflt)):                          # records v3: ids 48.. (panel3) at their defaults
+        assert s[f"p.{i}"] == str(dflt[i]), (i, s[f"p.{i}"])
 
 
 def test_old_preset_bank_converts():
@@ -270,3 +272,49 @@ def test_old_preset_bank_converts():
     got = {k: s[f"p.{P[k]}"] for k in ("TYPE", "DRIVE", "CP_SW", "PH_SW", "PH_DEPTH", "PH_SPEED", "LEVEL", "FL_FREQ")}
     assert got == dict(TYPE="3", DRIVE="77", CP_SW="0", PH_SW="1", PH_DEPTH="90", PH_SPEED="44",
                        LEVEL=str(dflt[P["LEVEL"]]), FL_FREQ=str(dflt[P["FL_FREQ"]])), got
+
+
+V3_LEN = 96                                                # presets.c preset_t v3: 4 + 12 name + 64 values + 16 spare
+
+
+def bank_len(img, k):
+    magic, seq, n, crc = struct.unpack("<IIII", sector(img, k)[:16])
+    return n if magic == 0x42505246 else None
+
+
+def test_v2_bank_converts_to_v3_and_round_trips():
+    """records v3 (P_SLOTS 64): a 0.4-0.9.2 bank (64-byte records, 48 parameters) loads with the new ids at their
+    defaults and plays exactly as before; saving writes a v3 bank (96-byte records), which loads back to the same
+    parameters and the same sound after a power cycle"""
+    dflt = defaults()
+    assert len(dflt) > 48
+    fl = flash_file("bank2")
+    img = bytearray(b"\xff" * 5 * SECTOR)
+    recs = []
+    for i in range(16):
+        p = bytearray(dflt[:48])
+        p[P["TYPE"]], p[P["DRIVE"]], p[P["RV_DEPTH"]], p[P["TW_SW"]], p[P["TW_MODE"]], p[P["TW_DEPTH"]] = 1, 33, 40, 1, 1, 70
+        name = b"OLD V2      " if i == 0 else b" " * 12
+        recs.append(struct.pack("<BBBB", 2, 48, 1 if i == 0 else 0, 0) + name + bytes(p))
+    assert len(recs[0]) == 64
+    put_bank(img, BANK_A, 7, recs)
+    open(fl, "wb").write(img)
+    play = ["150 midi 0xC0 16 0", "250 dump", "250 expect preset", "250 expect sound", "300 midi 0x90 60 100",
+            "900 midi 0x80 60 0", "300 midi 0x90 67 90", "900 midi 0x80 67 0"]
+    a = boot("bank2-a", fl, play + ["4000 btn 9", "4100 btn 9", "6000 dump"], end=6500)   # SAVE to U01 again
+    assert not a.fails, a.fails
+    s = a.state(250)
+    assert s["header"] == "U01 OLD V2"
+    for k, v in dict(TYPE=1, DRIVE=33, RV_DEPTH=40, TW_SW=1, TW_MODE=1, TW_DEPTH=70).items():
+        assert s[f"p.{P[k]}"] == str(v), k
+    for i in range(48, len(dflt)):
+        assert s[f"p.{i}"] == str(dflt[i]), (i, s[f"p.{i}"], dflt[i])
+    out = read_img(fl)
+    assert a.bank_saves and bank_len(out, BANK_B) == 16 * V3_LEN, (a.bank_saves, bank_len(out, BANK_B))
+    rec = bytes(sector(out, BANK_B)[16:16 + V3_LEN])
+    assert rec[0] == 3 and rec[1] == len(dflt) and rec[4:16] == b"SUIT TRM    ", rec[:16]   # (saving names it)
+    b = boot("bank2-b", fl, play, end=2000)
+    assert not b.fails, b.fails
+    assert all(b.state(250)[k] == s[k] for k in s if k.startswith("p."))
+    n = int(1.5 * FS)
+    assert np.array_equal(a.L[:n], b.L[:n]) and np.abs(a.L[int(0.3 * FS):n]).max() > 300   # the same sound, sample for sample

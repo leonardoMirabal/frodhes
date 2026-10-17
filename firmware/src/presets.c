@@ -16,8 +16,10 @@ _Static_assert(PR_NF <= 16u, "program changes 16..31 are the user presets");
 #define PR_BANK_B 0x98000u
 #define PR_MAGIC 0x42505246u                    /* "FRPB" */
 
-typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[P_SLOTS]; } preset_t;   /* 0.4 on */
-_Static_assert(sizeof(preset_t) == 64, "preset record is 64 B");
+typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[P_SLOTS]; uint8_t rsv2[16]; } preset_t;   /* v3 */
+_Static_assert(sizeof(preset_t) == 96, "preset record is 96 B (v3: 64 parameters, 16 bytes spare)");
+typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[48]; } preset_v2_t;     /* 0.4 .. 0.9.2 */
+_Static_assert(sizeof(preset_v2_t) == 64, "v2 preset record is 64 B");
 typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[32]; } preset_v1_t;     /* 0.1 .. 0.3 */
 _Static_assert(sizeof(preset_v1_t) == 48, "old preset record is 48 B");
 typedef struct { uint32_t magic, seq, len, crc; } bank_hdr_t;
@@ -75,10 +77,11 @@ static int bank_write(uint32_t at, uint32_t off, const void *p, uint32_t n) { re
 #endif
 
 static uint8_t bank_buf[sizeof(bank_hdr_t) + sizeof pr_user];
-static int bank_valid(uint32_t at, bank_hdr_t *h)          /* the records: 0.4 (64 B) or 0.1 .. 0.3 (48 B) */
+_Static_assert(sizeof(bank_hdr_t) + sizeof pr_user <= 4096u, "a bank copy is one 4 KiB sector");
+static int bank_valid(uint32_t at, bank_hdr_t *h)          /* the records: v3 (96 B), 0.4 (64 B) or 0.1 .. 0.3 (48 B) */
 {
     if (bank_read(at, h, sizeof *h) || h->magic != PR_MAGIC) return 0;
-    if (h->len != sizeof pr_user && h->len != PR_NU * sizeof(preset_v1_t)) return 0;
+    if (h->len != sizeof pr_user && h->len != PR_NU * sizeof(preset_v2_t) && h->len != PR_NU * sizeof(preset_v1_t)) return 0;
     if (bank_read(at, bank_buf, sizeof(bank_hdr_t) + h->len)) return 0;
     return crc32(bank_buf + sizeof(bank_hdr_t), h->len) == h->crc;
 }
@@ -95,15 +98,20 @@ static void presets_load_bank(void)
         bank_hdr_t h;
         if (!bank_valid(at, &h)) return;                      /* (re-reads it into bank_buf) */
         if (h.len == sizeof pr_user) memcpy(pr_user, bank_buf + sizeof(bank_hdr_t), sizeof pr_user);
-        else {
-            const preset_v1_t *o = (const preset_v1_t *)(bank_buf + sizeof(bank_hdr_t));
+        else {                                                /* an older bank: v3 records, the new ids at their
+                                                               * defaults (it is written as v3 at the next save) */
+            const uint8_t *b = bank_buf + sizeof(bank_hdr_t);
+            uint32_t rl = h.len / PR_NU, nold = rl == sizeof(preset_v1_t) ? 32u : 48u;
             for (i = 0; i < PR_NU; i++) {
+                const preset_v2_t *o = (const preset_v2_t *)(b + i * rl);   /* v1 has the same head, p[32] */
                 preset_t *u = &pr_user[i];
                 uint32_t j;
-                u->ver = 2; u->used = o[i].used; u->rsv = 0;
-                memcpy(u->name, o[i].name, sizeof u->name);
-                for (j = 0; j < P_SLOTS; j++) u->p[j] = j < 32u && j < o[i].np ? o[i].p[j] : j < P_COUNT ? PARAMS[j].def : 0;
-                params_split_phaser(u->p, P_SLOTS);
+                u->ver = 3; u->used = o->used; u->rsv = 0;
+                memcpy(u->name, o->name, sizeof u->name);
+                for (j = 0; j < P_SLOTS; j++) u->p[j] = j < nold && j < o->np ? o->p[j] : j < P_COUNT ? PARAMS[j].def : 0;
+                for (j = 0; j < sizeof u->rsv2; j++) u->rsv2[j] = 0;
+                if (nold == 32u) params_split_phaser(u->p, P_SLOTS);
+                params_v3_convert(u->p);
                 u->np = P_COUNT;
             }
         }
@@ -225,9 +233,10 @@ static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t r
         }
         {
             preset_t *u = &pr_user[pr_save_slot];
-            u->ver = 2; u->np = P_COUNT; u->used = 1; u->rsv = 0;
+            u->ver = 3; u->np = P_COUNT; u->used = 1; u->rsv = 0;
             preset_autoname(u->name);
             for (i = 0; i < P_SLOTS; i++) u->p[i] = i < P_COUNT ? PV(i) : 0;
+            for (i = 0; i < sizeof u->rsv2; i++) u->rsv2[i] = 0;
             set.preset = (uint8_t)(PR_NF + pr_save_slot);
             set_dirty = 1; set_t_change = fm1_ms;
             pr_save_mode = 0;

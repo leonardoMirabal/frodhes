@@ -150,7 +150,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
     }
     if ((cc == 86u || cc == 87u) && PV(P_PH_SW) && !PV(P_CP_SW)) cc += 13u - 86u;   /* reface: the phaser's */
     for (id = 0; id < P_COUNT; id++)
-        if (PARAMS[id].cc == cc) {
+        if (PARAMS[id].cc && PARAMS[id].cc == cc) {        /* cc 0: a parameter without a CC */
             int32_t x = (int32_t)v;
             if (id == P_TW_MODE)                       /* PAN 0..63, AM 64..127 as before; MOTOR (112..127) only on a
                                                         * bar TYPE, so a Rhodes TYPE keeps exactly the old bands */

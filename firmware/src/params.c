@@ -13,8 +13,11 @@ enum { P_TYPE, P_DRIVE, P_TW_SW, P_TW_DEPTH, P_TW_RATE, P_TW_SYNC, P_TW_MODE, P_
        P_CMP_RATIO, P_CMP_GAIN,                                               /* 0.8: the compressor's 4 knobs */
        P_FL_TYPE, P_FL_FREQ, P_FL_RESO, P_FL_LFO,                             /* 0.9.3: the filter */
        P_LFO_SHAPE, P_LFO_RATE, P_LFO_SYNC, P_LFO_RETRIG,                     /*        its LFO */
+       P_DRV_TONE, P_DRV_MIX, P_DRV_SW, P_RV_DECAY, P_RV_TONE, P_RV_PREDLY,   /* records v3: the drive's and the
+                                                                               * reverb's new controls (fx.c) */
        P_COUNT };
-#define P_SLOTS 48u                /* room in the settings / preset records (P_COUNT <= P_SLOTS) */
+#define P_SLOTS 64u                /* room in the settings / preset records (P_COUNT <= P_SLOTS); 48 before the v3
+                                    * records (presets.c preset_t 96 B, the settings' panel3 / undo3) */
 
 enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB, F_THR, F_GAIN, F_FHZ, F_HZH };   /* F_HZH: half of F_HZ */
 typedef struct {
@@ -106,8 +109,15 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_LFO_RATE] = {"RATE", 127, 40, F_HZ, 76, 0},
     [P_LFO_SYNC] = {"SYNC", 14, 0, F_DIV, 77, N_SYNC},
     [P_LFO_RETRIG] = {"TRIG", 1, 0, F_ENUM, 78, N_RETRIG},
+    [P_DRV_TONE] = {"TONE", 127, 64, F_R10, 0, 0},           /* records v3; CC 0 = none yet */
+    [P_DRV_MIX] = {"MIX", 127, 127, F_R10, 0, 0},
+    [P_DRV_SW] = {"ON", 1, 1, F_ENUM, 0, N_ONOFF},
+    [P_RV_DECAY] = {"DCAY", 127, 64, F_R10, 0, 0},
+    [P_RV_TONE] = {"TONE", 127, 64, F_R10, 0, 0},
+    [P_RV_PREDLY] = {"PDLY", 127, 0, F_R10, 0, 0},
 };
 _Static_assert(P_COUNT <= P_SLOTS, "records hold P_SLOTS parameters");
+_Static_assert(P_SLOTS <= 64u, "ui.c card slots: a parameter id is under 64 (S_KVEL)");
 
 /* ---- the settings record: always 256 B, versioned, append-only (§10.5) */
 #define SET_VER 2u                 /* 2 (0.4): panel / undo hold P_SLOTS; version 1 records are converted */
@@ -130,14 +140,15 @@ typedef struct {
     uint8_t seq_bars, seq_quant, seq_swing;    /* 0.9.1: the sequencer (seq.c; the pattern itself is in flash) */
     uint8_t trs_off;                           /* 0.9.1: 1 = the TRS MIDI input is ignored (MIDI page) */
     uint8_t undo_preset;                       /* 0.9.3: the preset the undo copy is (index + 1; 0 = not known) */
-    uint8_t seq_rsv[93];
+    uint8_t panel3[16], undo3[16];             /* records v3: ids 48..63 (flags bit 16: present) */
+    uint8_t seq_rsv[61];
     uint8_t reserved[22];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 
 static settings_t set;
-#define PV(id) (*((id) < 32u ? &set.panel[(id)] : &set.panel2[(id) - 32u]))   /* a parameter's value */
-#define UV(id) (*((id) < 32u ? &set.undo[(id)] : &set.undo2[(id) - 32u]))
+#define PV(id) (*((id) < 32u ? &set.panel[(id)] : (id) < 48u ? &set.panel2[(id) - 32u] : &set.panel3[(id) - 48u]))   /* a value */
+#define UV(id) (*((id) < 32u ? &set.undo[(id)] : (id) < 48u ? &set.undo2[(id) - 32u] : &set.undo3[(id) - 48u]))
 
 /* records before 0.4 had the phaser as CHO/PHA = 2, sharing the chorus' depth, speed, sync and feedback */
 static void params_split_phaser(uint8_t *p, uint32_t np)
@@ -150,6 +161,9 @@ static void params_split_phaser(uint8_t *p, uint32_t np)
         }
     }
 }
+/* a record from before v3 (ids 0..47; 48.. already at their defaults): what the v3 ids take over (presets.c converts
+ * old user presets with it too) */
+static void params_v3_convert(uint8_t *p) { (void)p; }
 static uint8_t set_dirty;
 static uint32_t set_t_change;
 
@@ -182,12 +196,24 @@ static void params_sanitize(void)
         params_split_phaser(p, P_SLOTS);
         for (i = 0; i < P_SLOTS; i++) PV(i) = p[i];
         set.undo_valid = 0; set.undo_preset = 0;
+        set.flags &= (uint8_t)~16u;                  /* ids 48.. come from the defaults below */
         set.ver = SET_VER;
     }
     if (set.ver != SET_VER) { params_defaults(); return; }
     if (!(set.flags & 1u)) { PV(P_LEVEL) = PARAMS[P_LEVEL].def; set.flags |= 1u; }   /* records before 0.8 */
     if (!(set.flags & 2u)) { PV(P_CMP_RATIO) = PARAMS[P_CMP_RATIO].def; PV(P_CMP_GAIN) = 0; set.flags |= 2u; }
     if (!(set.flags & 8u)) { for (i = P_FL_TYPE; i <= P_LFO_RETRIG; i++) PV(i) = PARAMS[i].def; set.flags |= 8u; }   /* 0.9.3 */
+    if (!(set.flags & 16u)) {                        /* records before v3: ids 48.. get their defaults */
+        uint8_t p[P_SLOTS];
+        for (i = 48u; i < P_SLOTS; i++) PV(i) = UV(i) = i < P_COUNT ? PARAMS[i].def : 0u;
+        for (i = 0; i < P_SLOTS; i++) p[i] = PV(i);
+        params_v3_convert(p);
+        for (i = 0; i < P_SLOTS; i++) PV(i) = p[i];
+        for (i = 0; i < P_SLOTS; i++) p[i] = UV(i);
+        params_v3_convert(p);
+        for (i = 0; i < P_SLOTS; i++) UV(i) = p[i];
+        set.flags |= 16u;
+    }
     if (!(set.flags & 4u)) {                         /* records before VIBES had 12 factory presets: U01 was 12 */
         if (set.preset >= 12u && set.preset < 12u + 16u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 12u);
         set.flags |= 4u;
@@ -274,6 +300,12 @@ static void param_apply(uint32_t id)
     case P_FL_LFO: fx_set(FXP_FL_LFO, v); break;
     case P_LFO_SHAPE: fx_set(FXP_LFO_SHAPE, v); break;
     case P_LFO_RATE: fx_set(FXP_LFO_RATE, v); break;
+    case P_DRV_TONE: fx_set(FXP_DRV_TONE, v); break;                  /* records v3: the drive's and the reverb's */
+    case P_DRV_MIX: fx_set(FXP_DRV_MIX, v); break;
+    case P_DRV_SW: fx_set(FXP_DRV_SW, v); break;
+    case P_RV_DECAY: fx_set(FXP_RV_DECAY, v); break;
+    case P_RV_TONE: fx_set(FXP_RV_TONE, v); break;
+    case P_RV_PREDLY: fx_set(FXP_RV_PREDLY, v); break;
     default: break;                                                   /* SYNC: tempo.c; SPREAD: not yet in the engine */
     }
 }

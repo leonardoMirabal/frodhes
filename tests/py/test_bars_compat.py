@@ -134,7 +134,9 @@ def test_vibes_record_on_old_firmware(new, old):
     d = run(old, "load", rec)
     assert d["set.type"] == "0" and d["set.tw_mode"] == "0"         # out of the old range: the defaults
     assert d["set.rev"] == "33" and d["rh_type"] == "0"             # the rest kept, no crash
-    assert d["u01.used"] == "1" and d["u01.type"] == "0" and d["u01.tw_mode"] == "0" and d["u01.rev"] == "33"
+    # records v3: a bank of 96-byte records is not one the old firmware knows, so it shows no user presets (and
+    # plays nothing it cannot read); the settings above still load
+    assert d["u01.used"] == "0"
     d = run(new, "load", rec)                                       # and on this firmware it is all there
     assert (d["set.type"], d["set.tw_mode"], d["set.preset"]) == ("4", "2", "14")
     assert (d["u01.type"], d["u01.tw_mode"], d["u01.preset"]) == ("4", "2", "14")
