@@ -195,3 +195,20 @@ def test_delay_echoes_always_die(mix, fdbk):
     x = np.maximum(np.abs(L), np.abs(R))
     early, late = rms_db(seg(x, 1.0, 2.0)), rms_db(seg(x, 10.5, 11.5))
     assert late < early - 20, (early, late)
+
+
+@pytest.mark.parametrize("fx", [[(12, 127), (13, 80)], [(85, 64), (86, 127)]], ids=["phaser", "chorus"])
+@pytest.mark.parametrize("eng", ["rhodes", "vibes"])
+def test_delay_keeps_its_echoes_under_stereo_effects(fx, eng):
+    """the delay's send is the mono sum (L + R) / 2: under the phaser or chorus (L and R differ) the echoes came out
+    1-2.5 dB weaker in stereo power (3-6 dB on one side; the user: "when chorus or phaser enabled I lost the delay", 2026-10-18); the send keeps the stereo
+    power now: the first echo within 1 dB of what it is with the delay alone, re its direct sound"""
+    sel = [(79, 64), (47, 0)] if eng == "vibes" else []
+    base = [(81, 0), (91, 0), (88, 64), (89, 90), (90, 85), (26, 40)]
+    hit = [(300, 72, 110, 120)]
+
+    def rel(ccs):
+        L, R = run(f"dlst-{eng}-{len(ccs)}", base + sel + ccs, hit, 2500)
+        p = lambda a, b: 10 * np.log10(np.mean(seg(L, a, b) ** 2) + np.mean(seg(R, a, b) ** 2) + 1e-9)
+        return p(0.66, 0.76) - p(0.30, 0.40)
+    assert abs(rel(fx) - rel([])) <= 1.0, (rel(fx), rel([]))
