@@ -191,6 +191,26 @@ def build_app():
     return bytes(img), syms, dis, rt
 
 
+def hot_loop(dis):
+    """the Rhodes MC3 inner loop inside app_audio (the loop with the two & 0x3FFFFFFF error-feedback masks):
+    (instructions, stack stores, stack loads), or None"""
+    body = re.search(r"^app_audio:\n(.*?)\n\n[A-Za-z_][\w.]*:\n", dis, re.S | re.M)
+    if not body:
+        return None
+    lines = [mm for mm in (LINE.match(ln) for ln in body.group(1).splitlines()) if mm]
+    seen = 0
+    for i, mm in enumerate(lines):
+        seen += "& 0x3FFFFFFF" in mm.group(3)
+        br = re.search(r"goto -\d+ <[^:>]*: ([0-9a-f]+) >", mm.group(3))
+        if seen >= 2 and br:
+            lo, hi = int(br.group(1), 16), int(mm.group(1), 16)
+            loop = [x.group(3) for x in lines if lo <= int(x.group(1), 16) <= hi]
+            st = sum(bool(re.search(r"(?:^|\s)[dh]?\[sp\+\d+\] = ", t)) for t in loop)
+            ld = sum(bool(re.search(r"= [dh]?\[sp\+\d+\]", t)) for t in loop)
+            return len(loop), st, ld
+    return None
+
+
 def check(img, syms, dis, rt):
     errors, notes = [], []
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
@@ -213,6 +233,16 @@ def check(img, syms, dis, rt):
                 errors.append(f"reference to ROM address {val:#010x}")
     if len(img) > APP_SLOT:
         errors.append(f"image {len(img)} B exceeds the app slot")
+    hot = hot_loop(dis)
+    if hot is None:
+        errors.append("the Rhodes mode loop (MC3) not found in app_audio")
+    else:
+        n_ins, st, ld = hot
+        msg = f"Rhodes mode loop: {n_ins} insns, {st} stack stores, {ld} stack loads"
+        if st or n_ins > 40:            # 2026-10-17: 39 insns, 0 stores, 4 loads; a spill here cost ~35 us per block
+            errors.append(msg + " (was 39 / 0 / 4: a global-merge split of rh_F / rh_x? see engine.c eq)")
+        else:
+            notes.append(msg)
 
     def sym(name):
         mm = re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M)

@@ -29,7 +29,15 @@ static uint8_t eng_swapping;                   /* ISR: this block fades the old 
 static uint8_t eng_shed_req;                   /* ISR (frodhes.c app_audio): shed a voice of the running engine */
 static uint8_t eng_pedal_cc;                   /* ISR: the last pedal level (handed to the new engine at a change) */
 
-static volatile uint32_t eq[32];
+/* the ring has a section of its own (firmware only) so the compiler's global merge leaves it out: merged in, it pushed
+ * rhodes.c's rh_F and rh_x into two merged blocks, and the Rhodes mode loop needed a second base register and spilled
+ * (about 35 us per block with 8 voices, 2026-10-17; tools/build.py checks that loop) */
+#ifdef DINGHY_HOST
+#define ENG_OWN_SECTION
+#else
+#define ENG_OWN_SECTION __attribute__((section(".bss.eng_eq")))
+#endif
+static volatile uint32_t eq[32] ENG_OWN_SECTION;
 static volatile uint32_t eq_w, eq_r, eq_drop;
 
 static void eng_post(uint32_t type, uint32_t note, uint32_t val)
