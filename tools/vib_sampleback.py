@@ -9,7 +9,9 @@ loop the Rhodes was tuned with: a difference is fixed in the data / generator, n
 
 Writes build/vib_sampleback/rN/*.wav (the FM-1's own output) and appends a table to
 private/vibraphone/research/P7-sampleback.md. Gate VD (PLAN §10): pitch +-1 c, V1 T60 +-10 % (pedal down), level
-per key +-1 dB re its neighbours' trend. Needs the FM-1 on USB (sandbox off for CoreAudio).
+per key +-1 dB re its neighbours' trend, all **device vs the host render** of the same events measured the same way
+(PLAN §10; the spec's modal T60 is not what a band fit of the fundamental reads, since the tube shares that
+frequency: about 5 % apart on the host too). Needs the FM-1 on USB (sandbox off for CoreAudio).
 """
 import argparse
 import json
@@ -77,6 +79,16 @@ def v1_t60(r):
     return rows[0]["t60"] if rows else None
 
 
+def host_render(m, vel, hold, out):
+    """the same note on the host build (tests/host.c), measured like the device"""
+    import subprocess
+    base = os.path.join(out, f"VIBES {name(m)} v{vel} host")
+    open(base + ".txt", "w").write(f"20 midi 0xB0 79 64\n30 midi 0xB0 64 127\n100 midi 0x90 {m} {vel}\n"
+                                   f"{int((hold - 0.6) * 1000)} midi 0x80 {m} 0\n{int(hold * 1000)} end\n")
+    subprocess.run([os.path.join(ROOT, "build", "host", "frodhes"), base, base + ".txt"], check=True, capture_output=True)
+    return vm.measure(base + ".wav")
+
+
 def write_wav(path, x):
     w = wave.open(path, "wb")
     w.setnchannels(2)
@@ -98,6 +110,8 @@ def main():
     lo, hi = (int(v) for v in a.keys.split("-"))
     out = os.path.join(ROOT, "build", "vib_sampleback", f"r{a.round}")
     os.makedirs(out, exist_ok=True)
+    import subprocess
+    subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
     rig = hs.Rig()
     spec, ref = spec_targets(), reference(a.ref)
     rows = []
@@ -113,8 +127,9 @@ def main():
         r = vm.measure(p)
         if not r:
             continue
-        s, q = spec.get(m), ref.get(m)
+        s, q, h = spec.get(m), ref.get(m), host_render(m, a.vel, a.hold, out)
         rows.append(dict(midi=m, cents=1200 * np.log2(fine_f0(x, s["f0"]) / s["f0"]) if s else None, t60=v1_t60(r),
+                         t60_host=v1_t60(h) if h else None,
                          t60_spec=s["t60"] if s else None, t60_ref=v1_t60(q) if q else None,
                          pk=r["f0pk_ms"], pk_ref=q["f0pk_ms"] if q else None,
                          level=float(20 * np.log10(np.sqrt(np.mean((x[int(0.1 * FS):int(1.1 * FS)] / 32768) ** 2)) + 1e-12))))
@@ -123,16 +138,16 @@ def main():
     lv = np.array([q["level"] for q in rows])
     trend = np.convolve(np.pad(lv, 2, mode="edge"), np.ones(5) / 5, "valid") if len(lv) >= 3 else lv
     lines = [f"\n## Round {a.round} ({time.strftime('%Y-%m-%d %H:%M')}): v{a.vel}, pedal down, keys {a.keys} step {a.step}\n",
-             "| key | pitch vs spec (c) | V1 T60 device / spec / reference (s) | f0 peak device / ref (ms) | level dB (vs trend) | VD |",
+             "| key | pitch vs spec (c) | V1 T60 device / host / spec / reference (s) | f0 peak device / ref (ms) | level dB (vs trend) | VD |",
              "| --- | --- | --- | --- | --- | --- |"]
     bad = 0
     for q, tr in zip(rows, trend):
         ok = (q["cents"] is None or abs(q["cents"]) <= 1) and \
-             (q["t60"] is None or q["t60_spec"] is None or abs(q["t60"] / q["t60_spec"] - 1) <= 0.10) and \
+             (q["t60"] is None or q["t60_host"] is None or abs(q["t60"] / q["t60_host"] - 1) <= 0.10) and \
              abs(q["level"] - tr) <= 1.0
         bad += not ok
         f = lambda v, fmt: "-" if v is None else format(v, fmt)
-        lines.append(f"| {name(q['midi'])} | {f(q['cents'], '+.1f')} | {f(q['t60'], '.2f')} / {f(q['t60_spec'], '.2f')} / "
+        lines.append(f"| {name(q['midi'])} | {f(q['cents'], '+.1f')} | {f(q['t60'], '.2f')} / {f(q['t60_host'], '.2f')} / {f(q['t60_spec'], '.2f')} / "
                      f"{f(q['t60_ref'], '.2f')} | {q['pk']:.0f} / {f(q['pk_ref'], '.0f')} | {q['level']:.1f} ({q['level'] - tr:+.1f}) | "
                      f"{'ok' if ok else 'FAIL'} |")
     lines.append(f"\n{len(rows)} notes, {bad} outside Gate VD. Recordings: build/vib_sampleback/r{a.round}/ (the FM-1's own output).")
