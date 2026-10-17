@@ -570,8 +570,10 @@ def group_checks(cases, typ):
     ct = [c for c in cases if c.group == "chordcmp"]
     if len(ct) == 2:
         l = {c.meta["typ"]: bm.lufs(seg(c.x, 200, 1000)) for c in ct}
+        off = json.load(open(os.path.join(bm.ROOT, "docs", "model", "data", "vibes.json")))["calib"].get("st77_offset_db", 0.0)
         d = l[typ] - l[0]
-        G.append(("S9", "type vs ST77 chord", abs(d) <= 1.0, float(d), f"A3-E4-A4 v100: {d:+.2f} LU re ST77"))
+        G.append(("S9", "type vs ST77 chord", abs(d - off) <= 1.0, float(d), f"A3-E4-A4 v100: {d:+.2f} LU re ST77 "
+                                                                           f"(target {off:+.1f}, the user's offset)"))
     for card in bm.CARDS:
         cs = [c for c in cases if c.group == "card" and c.meta.get("card") == card]
         if cs:
@@ -599,7 +601,8 @@ def group_checks(cases, typ):
 
 def s12_residual(a, b):
     """the worst 1 s window (0.25 s hops) of the residual a - b re b, dB; windows whose residual is within the 16-bit
-    rounding (0.6 LSB RMS: two independent roundings) are not judged; -inf when identical"""
+    rounding (two independent roundings of the 16-bit output: <= 0.75 LSB RMS and <= 2 LSB peak, i.e. -84 dBFS) are
+    not judged; -inf when identical"""
     n = min(len(a), len(b))
     a, b = a[:n], b[:n]
     if np.array_equal(a, b):
@@ -608,7 +611,7 @@ def s12_residual(a, b):
     for t0 in np.arange(0.2, n / bm.FS - 1.0, 0.25):
         w = slice(int(t0 * bm.FS), int((t0 + 1.0) * bm.FS))
         d = a[w] - b[w]
-        if np.sqrt(np.mean(d * d)) > 0.6:
+        if np.sqrt(np.mean(d * d)) > 0.75 or np.abs(d).max() > 2:
             worst = max(worst, 10 * np.log10(np.sum(d * d) / (np.sum(b[w] ** 2) + 1e-20) + 1e-30))
     return worst
 

@@ -1098,7 +1098,7 @@ def build():
                                                                gains=[rk[n]["gain"] for n in keys])])
     sk = int(cal["lufs_smooth_keys"])
     lrs = np.array([np.mean(lr[max(0, i - sk):i + sk + 1]) for i in range(len(keys))])
-    corr = lrs - lb
+    corr = lrs - lb + float(cal.get("st77_offset_db", 0.0))    # the user's offset over the Rhodes (calib)
     for i, n in enumerate(keys):
         g = min(st["keys"][n]["gain"] * 10 ** (corr[i] / 20), 2 ** 31 - 1)
         st["keys"][n]["kill"] = max(1, int(round(st["keys"][n]["kill"] * st["keys"][n]["gain"] / g)))

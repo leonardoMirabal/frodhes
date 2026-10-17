@@ -81,7 +81,8 @@ def test_level_matched_to_st77():
     yr = rm.render_batch([rk[n] for n in chord], rs["pickup"], [100] * 3, 1.0,
                          gains=[rk[n]["gain"] for n in chord]).sum(axis=0)
     lb, lr = gm.rms_db(yb, 0.0, 1.0), gm.rms_db(yr, 0.0, 1.0)
-    assert abs(lb - lr) <= 1.0, (lb, lr)
+    off = SPEC["vibes"]["calib"].get("st77_offset_db", 0.0)       # VIBES 2.5 dB over the Rhodes (user, 2026-10-17)
+    assert abs(lb - lr - off) <= 1.0, (lb, lr, off)
 
 
 def lufs_k(x, t0=0.0, t1=1.0):
@@ -101,7 +102,7 @@ def test_rhodes_level_per_region():
                                                       gains=[rk[n]["gain"] for n in KEYS])])
     for a, b in ((21, 40), (41, 52), (53, 59), (60, 71), (72, 83), (84, 89), (90, 99), (100, 108)):
         i = [j for j, n in enumerate(KEYS) if a <= n <= b]
-        d = float(np.mean(lb[i]) - np.mean(lr[i]))
+        d = float(np.mean(lb[i]) - np.mean(lr[i])) - SPEC["vibes"]["calib"].get("st77_offset_db", 0.0)
         assert abs(d) <= 1.0, (a, b, d)
     assert np.abs(np.diff(lb)).max() <= 1.5, np.abs(np.diff(lb)).max()
 

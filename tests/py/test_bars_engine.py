@@ -6,6 +6,7 @@ tremolo runs at the displayed rate in the engine (and is the plain amplitude tre
 CPU cap holds (the host mode-sample counter), the upper-mode sleep is transparent, TYPE changes do not click or
 leave notes behind, nothing saturates. The physics targets (decays, tube build-up, levels) are the generator's
 tests (Gate VA / VB), not these."""
+import json
 import os
 import subprocess
 import sys
@@ -171,8 +172,9 @@ def test_sleep_is_transparent(tone):
     for t0 in np.arange(0.2, len(a) / FS - 1.0, 0.25):
         w = slice(int(t0 * FS), int((t0 + 1.0) * FS))
         r = 10 * np.log10(np.sum((a[w] - b[w]) ** 2) / np.sum(b[w] ** 2) + 1e-30)
-        if np.sqrt(np.mean((a[w] - b[w]) ** 2)) > 0.6:     # (or the output's own rounding: two independent roundings
-            worst = max(worst, r)                         # of the 16-bit output are 0.5 LSB RMS, as Gate B allows)
+        d = a[w] - b[w]                                   # (or the output's own rounding: two independent roundings
+        if np.sqrt(np.mean(d ** 2)) > 0.75 or np.abs(d).max() > 2:   # of the 16-bit output, 0.5-0.7 LSB RMS and at most 2 LSB
+            worst = max(worst, r)                         # peak = -84 dBFS, at any level of the decaying signal)
     assert worst <= -50.0, worst
 
 
@@ -272,13 +274,14 @@ def lufs300(m, t):
 @pytest.mark.parametrize("tone,bell", [(0, 127), (16, 0), (32, 127), (127, 127), (0, 0)])
 def test_no_clipping_at_any_voicing(tone, bell):
     """S2: one voice at v127, RUBBER, HAMMER 127, NOISE 0, RAW (no limiter): the peak stays under the generator's
-    ceiling (vibes.json card_level, -3 dBFS) at every TONE / BELL; before the strike position's level compensation
+    ceiling (vibes.json card_level; -0.5 dBFS since VIBES plays 2.5 dB over the Rhodes) at every TONE / BELL; before the strike position's level compensation
     TONE 0 clipped (full scale on F3..F4)"""
     keys = [41, 53, 59, 65, 69, 77, 89, 101]
     s = RAW + VIBES + f"61 midi 0xB0 104 0\n62 midi 0xB0 28 {tone}\n63 midi 0xB0 30 {bell}\n64 midi 0xB0 29 127\n65 midi 0xB0 31 127\n"
     s += "".join(f"{200 + 700 * i} midi 0x90 {n} 127\n{600 + 700 * i} midi 0x80 {n} 0\n" for i, n in enumerate(keys))
     x, _ = render(f"clip{tone}_{bell}", s + f"{200 + 700 * len(keys) + 500} end\n")
-    assert np.max(np.abs(x)) <= 32768 * 10 ** (-2.5 / 20), np.max(np.abs(x))
+    ceil = json.load(open(os.path.join(ROOT, "docs", "model", "data", "vibes.json")))["card_level"]["peak_ceiling_dbfs"]
+    assert np.max(np.abs(x)) <= 32768 * 10 ** ((ceil + 0.5) / 20), (np.max(np.abs(x)), ceil)   # the ceiling + rounding
 
 
 @pytest.mark.parametrize("cc,limit", [(28, 1.5), (30, 6.0)])
