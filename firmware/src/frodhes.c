@@ -126,7 +126,14 @@ static void midi_cc(uint32_t cc, uint32_t v)
         ui_mark_param(P_TYPE);
         return;
     }
-    if (cc == 120u || cc == 123u) { eng_all_off(); return; }
+    if (cc == 120u || cc == 123u) {                    /* all notes off: every MIDI note is let go as if its note-off
+                                                        * came (0.9.3: a lost note-off left that note dead, and the
+                                                        * arpeggiator playing it), then the dampers on everything */
+        uint32_t n;
+        for (n = 0; n < 128u; n++) src_off(SRC_MIDI + n);
+        eng_all_off();
+        return;
+    }
     if (cc == 85u) {                                   /* reface CHO/PHA switch: off / chorus / phaser (one of them) */
         param_set(P_CP_SW, v >= 43u && v < 86u); param_set(P_PH_SW, v >= 86u);
         ui_mark_param(P_CP_SW);

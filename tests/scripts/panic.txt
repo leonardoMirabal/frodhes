@@ -1,0 +1,40 @@
+# All notes off (CC 123, 120) lets every MIDI note go as if its note-off had come. Until 0.9.3 it only damped the
+# voices: a note whose note-off was lost stayed "held", so the same note played again was ignored (dead until its
+# note-off), and the arpeggiator went on playing it. Found while building the fuzz tests (tests/py/test_fuzz.py).
+100 midi 0xB0 64 0
+200 midi 0x90 60 100
+# the note-off is lost; the DAW's panic:
+1000 midi 0xB0 123 0
+2000 expect rms < -80
+2000 expect state srcs 0
+2000 expect state refs 0
+# the same note again plays
+2100 midi 0x90 60 100
+2500 expect rms > -40
+2600 midi 0x80 60 0
+# the arpeggiator: a held note, its note-off lost, CC 120 (all sound off): it stops
+3000 midi 0xB0 52 1
+3100 midi 0x90 64 100
+4000 midi 0xB0 120 0
+6000 expect rms < -80
+6000 expect state arpn 0
+# a FM-1 key held through the panic keeps its note; its LED too
+6100 midi 0xB0 52 0
+6200 keys 0x80
+6300 midi 0xB0 123 0
+6400 expect state srcs 1
+6400 expect led 21 1
+6500 keys 0
+6600 expect state srcs 0
+# with HOLD latched the arpeggiator keeps going (the manual: HOLD and the sequencer keep going)
+6700 midi 0xB0 52 1
+6800 btn 10
+6900 btn 12
+7000 midi 0x90 67 100
+7100 midi 0x80 67 0
+7200 midi 0xB0 123 0
+8000 expect rms > -45
+8000 expect state hold 1
+8100 midi 0xB0 52 0
+10500 expect rms < -80
+10600 end
