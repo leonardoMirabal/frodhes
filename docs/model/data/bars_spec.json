@@ -282001,7 +282001,7 @@
 31463037
 ],
 "type":{
-"budget":11,
+"budget":48,
 "drive_row":0,
 "mot_gc":4915,
 "nbody":0,
@@ -282802,13 +282802,13 @@
 },
 "type":"VIBES",
 "type_rec":{
-"_doc":"BAR_TYPE record: mode budget (upper live slots over all voices, P0 decides), relative-sleep shift (9 = -54 dB re the f0 component: -42 dB failed S12, lane C), budget 11 = bars.c BAR_BUDGET_MAX (the table can only lower it), torsion level scale (Q15, the per-key calibration is already in b)",
-"budget":11,
+"_doc":"BAR_TYPE record: mode budget (a cap on the upper live slots over all voices; 48 = every slot: bars.c's CPU cost model sets the cap each block from what runs, the table can only lower it), relative-sleep shift (9 = -54 dB re the f0 component: -42 dB failed S12, lane C), torsion level scale (Q15, the per-key calibration is already in b)",
+"budget":48,
 "drive_row":0,
 "nbody":0,
 "settle":"O3 / O13: P0 cost calibration, the S12 residual, listening on 8 / 12-note chords",
 "sleep_rel":9,
-"src":"PLAN 5.8, 6.6 (P0 decides the budget)",
+"src":"PLAN 5.8, 6.6 (the budget: bars.c cost model, 2026-10-17)",
 "status":"ESTIMATE",
 "tors_q15":32767
 },
