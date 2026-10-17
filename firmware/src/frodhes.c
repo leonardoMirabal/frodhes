@@ -262,7 +262,7 @@ EMSCRIPTEN_KEEPALIVE const char *web_page(void) { return PAGE_TITLE[ui_page]; }
 /* tests/host.c "expect preset": the panel equals what the preset the header names sets (presets.c preset_load) */
 static int host_preset_check(char *msg, unsigned n)
 {
-    uint8_t p[P_SLOTS];
+    uint8_t p[P_COUNT];
     char nm[20];
     uint32_t i, idx = set.preset;
     if (idx >= PR_NF + PR_NU) { snprintf(msg, n, "preset %u is no preset", idx); return 1; }
@@ -272,7 +272,7 @@ static int host_preset_check(char *msg, unsigned n)
     if (idx < PR_NF)
         for (i = 0; i < 32u && PR_FDATA[idx][i] != 0xFF; i += 2u) p[PR_FDATA[idx][i]] = PR_FDATA[idx][i + 1u];
     else
-        for (i = 0; i < P_COUNT && i < pr_user[idx - PR_NF].np; i++)    /* as preset_load reads it */
+        for (i = 0; i < P_SLOTS && i < P_COUNT && i < pr_user[idx - PR_NF].np; i++)    /* as preset_load reads it */
             p[i] = pr_user[idx - PR_NF].p[i] <= PARAMS[i].hi ? pr_user[idx - PR_NF].p[i] : PARAMS[i].def;
     for (i = 0; i < P_COUNT; i++)
         if (PV(i) != p[i]) { snprintf(msg, n, "%s: %s (%u) is %u, the preset sets %u", nm, PARAMS[i].lab, i, PV(i), p[i]); return 1; }

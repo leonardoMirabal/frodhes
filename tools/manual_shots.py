@@ -54,7 +54,8 @@ def overview(names, gap=16, bg=(24, 24, 24)):
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "docs", "manual", "img")
-PAGES = ["perform", "piano", "voice", "decay", "comp", "filter", "trem", "phaser", "chorus", "delay", "tempo", "scale", "chord", "seq", "arp", "lfo", "assign", "setup", "midi"]   # the SELECT order (ui.c PG_ORDER)
+PAGES = ["perform", "piano", "voice", "decay", "comp", "filter", "drive", "trem", "phaser", "chorus", "delay", "reverb",
+         "tempo", "scale", "chord", "seq", "arp", "lfo", "assign", "setup", "midi"]   # the SELECT order (ui.c PG_ORDER)
 
 
 def main():
@@ -79,6 +80,13 @@ def main():
             L.append(f"{t} keys 0x80"); t += 600
             L.append(f"{t} shot"); shots[t] = name
             L.append(f"{t + 50} keys 0x0"); t += 300
+            continue
+        if name in ("drive", "reverb"):                     # a little growl, darker; a hall with a pre-delay
+            ccs = ((81, 64), (82, 50), (83, 110)) if name == "drive" else ((91, 70), (47, 80), (48, 56), (49, 40))
+            for cc, v in ccs:
+                L.append(f"{t} midi 0xB0 {cc} {v}"); t += 20
+            L.append(f"{t} keys 0x1"); L.append(f"{t + 300} keys 0x0"); t += 900
+            L.append(f"{t} shot"); shots[t] = name; t += 100
             continue
         if name == "chord":                                 # chord mode MAJ7 with a strum, a key held
             L.append(f"{t} midi 0xB0 56 6"); L.append(f"{t + 20} midi 0xB0 59 4"); L.append(f"{t + 100} keys 0x80"); t += 700
