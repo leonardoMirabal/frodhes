@@ -74,6 +74,25 @@ def fine_f0(x, f_guess):
     return (k + 0.5 * (a - c) / (a - 2 * b + c)) * FS / N
 
 
+def measure_like_ref(path):
+    """vib_ref_measure.measure on a copy with a recording-like -80 dBFS white floor: the engine ends in exact digital
+    zero, and the reference procedure's fit (down to 10 dB over the floor) otherwise runs into that cliff and reads the
+    decay ~6 % short (found by the P6 scan lane; Gate VA uses the same floor, bars_va.ref_band_t60)"""
+    w = wave.open(path)
+    x = np.frombuffer(w.readframes(w.getnframes()), "<i2").astype(float).reshape(-1, w.getnchannels())
+    fs = w.getframerate()
+    rng = np.random.default_rng(1)
+    x = x + rng.standard_normal(x.shape) * 32768 * 10 ** (-80 / 20)
+    tmp = path[:-4] + ".floor.wav"
+    o = wave.open(tmp, "wb")
+    o.setnchannels(x.shape[1]); o.setsampwidth(2); o.setframerate(fs)
+    o.writeframes(np.clip(np.round(x), -32768, 32767).astype("<i2").tobytes())
+    o.close()
+    r = vm.measure(tmp)
+    os.unlink(tmp)
+    return r
+
+
 def v1_t60(r):
     rows = [p for p in r["rows"] if abs(p["ratio"] - 1) < 0.03 and p["t60"]]
     return rows[0]["t60"] if rows else None
@@ -86,7 +105,7 @@ def host_render(m, vel, hold, out):
     open(base + ".txt", "w").write(f"20 midi 0xB0 79 64\n30 midi 0xB0 64 127\n100 midi 0x90 {m} {vel}\n"
                                    f"{int((hold - 0.6) * 1000)} midi 0x80 {m} 0\n{int(hold * 1000)} end\n")
     subprocess.run([os.path.join(ROOT, "build", "host", "frodhes"), base, base + ".txt"], check=True, capture_output=True)
-    return vm.measure(base + ".wav")
+    return measure_like_ref(base + ".wav")
 
 
 def write_wav(path, x):
@@ -124,7 +143,7 @@ def main():
         rig.out.send(rig.mido.Message("control_change", control=64, value=0))
         p = os.path.join(out, f"VIBES {name(m)} v{a.vel}.wav")
         write_wav(p, x)
-        r = vm.measure(p)
+        r = measure_like_ref(p)
         if not r:
             continue
         s, q, h = spec.get(m), ref.get(m), host_render(m, a.vel, a.hold, out)
