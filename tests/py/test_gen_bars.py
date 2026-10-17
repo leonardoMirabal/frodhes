@@ -155,7 +155,10 @@ def test_contact_time_windows():
             lo, hi = fm["tc_window_ms"]
             assert lo <= min(tc) and max(tc) <= hi, (n, fm["name"], min(tc), max(tc))
             cap = SPEC["vibes"]["T7f"]["f_tau_max"] / D[n]["f0"] * 1e3
-            assert all(w <= min(t, cap) + 1e-3 for t, w in zip(tc, m["win_ms"][1:9])), (n, fm["name"])
+            t8, xv = SPEC["vibes"]["T8"], SPEC["vibes"].get("T7g", {}).get("vel_exp", 0.0)
+            spd = lambda v: t8["v_lo"] * (t8["v_hi"] / t8["v_lo"]) ** ((v - 1) / 126.0)
+            fv = [(spd(v) / spd(100)) ** (-xv) for v in gm.V_ANCH[1:9]]   # T7g: velocity's own contact scale
+            assert all(w <= min(t * f, cap) + 1e-3 for t, w, f in zip(tc, m["win_ms"][1:9], fv)), (n, fm["name"])
 
 
 def excitation(shape, prate_q12, freqs):

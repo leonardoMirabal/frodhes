@@ -713,7 +713,12 @@ def contact_tables(vb, phys, n, sims):
     dt = sims[V_ANCH[0]]["dt"]
     cap_ = vb["T7f"]["f_tau_max"] / (phys[n]["f0"] * dt)        # the main-lobe cap (T7f), 16x samples
     win = {v: ratio * seg[v][0][1] for v in V_ANCH}                # the whole contact: the shape
-    play = {v: min(win[v], cap_) for v in V_ANCH}                  # played faster where capped
+    t8, xv = vb["T8"], vb.get("T7g", {}).get("vel_exp", 0.0)
+    spd = lambda v: t8["v_lo"] * (t8["v_hi"] / t8["v_lo"]) ** ((v - 1) / 126.0)
+    play0 = {v: min(win[v], cap_) for v in V_ANCH}                 # played faster where capped
+    play = {v: min(win[v] * (spd(v) / spd(100)) ** (-xv), cap_) for v in V_ANCH}   # T7g: a harder strike's contact
+    # shorter than the simulated felt gives (the felt stiffens: brighter, the user); its energy kept (the peak force
+    # x sqrt(play0 / play): the impulse kept clipped the max-cards corner, S2), velocity's level range >= 10 dB
     shapes = []
     for v in LAYER_V:
         Fv = sims[v]["F"]
@@ -721,7 +726,7 @@ def contact_tables(vb, phys, n, sims):
         Fv = np.concatenate([Fv, np.zeros(max(0, nn - len(Fv)))])[:nn]
         shapes.append(area_resample(Fv))
     return dict(shapes=shapes, prate=[int(round(64.0 / (play[v] * dt * FS) * Q12)) for v in V_ANCH],
-                fpk=[float(sims[v]["F"].max()) for v in V_ANCH],
+                fpk=[float(sims[v]["F"].max()) * (play0[v] / play[v]) ** 0.5 for v in V_ANCH],
                 tc_ms=[seg[v][0][1] * dt * 1e3 for v in V_ANCH],
                 win_ms=[play[v] * dt * 1e3 for v in V_ANCH],
                 ncont=[len(seg[v]) for v in V_ANCH],

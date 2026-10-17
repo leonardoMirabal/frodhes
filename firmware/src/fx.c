@@ -267,9 +267,9 @@ static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
     }
 }
 
-/* ---- PHASER: 4 first-order allpasses per side, the right one 90 degrees behind */
+/* ---- PHASER: 4 first-order allpasses per side, the right one 30 degrees behind */
 static uint32_t ph_ph;
-static int32_t ph_x[2][4], ph_y[2][4], ph_fb[2];
+static int32_t ph_x[2][4], ph_y[2][4], ph_fb[2], ph_hp[2];
 static int32_t ph_coef(uint32_t ph, int32_t depth)
 {
     int32_t q = (int32_t)(ph < 0x80000000u ? ph >> 16 : (0xFFFFFFFFu - ph) >> 16);   /* triangle 0..32767 */
@@ -281,18 +281,22 @@ static int32_t ph_coef(uint32_t ph, int32_t depth)
 static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t depth = fx_p[FXP_PH_DEPTH], fbk = fx_p[FXP_PH_FDBK] * 180;
-    /* 0.707 x a depth law fitted on the FM-1 (LUFS): little depth loses level in the notch, much depth is wide stereo
-     * (heard ~2.5 dB louder on headphones than the mono clean) and feedback adds resonance (0.8) */
-    int32_t pg = (int32_t)(((int64_t)23170 * (50000 - depth * 230)) >> 0);
+    /* the mix: 0.56 x (dry + allpasses), as a 50/50 phaser: where they are in phase it is +1 dB at most, the notches
+     * only cut. It was 0.707 x a depth law fitted on the FM-1 by LUFS (0.8): 0.81 at DEPTH 80, so a low note (the
+     * notches above it) came out +4 LU, the bass +6 dB, and the feedback resonated on the bass: heard as a jump in
+     * level when switched on (the user, 2026-10-17). The feedback now passes a DC block and the sides are 30 degrees
+     * apart (they were 90: a mono sound turned very wide). */
+    int32_t pg = 18350 << 15;
     uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, j, s;
     if (!fx_p[FXP_PH_SW]) return;
     for (sb = 0; sb < n; sb += 32u) {
         int32_t a[2];
         a[0] = ph_coef(ph_ph, depth);
-        a[1] = ph_coef(ph_ph + 0x40000000u, depth);
+        a[1] = ph_coef(ph_ph + 0x15555555u, depth);   /* the right side 30 degrees behind (was 90: a mono sound
+                                                       * turned very wide, heard as a jump in level, the user 2026-10-17) */
         for (s = 0; s < 2u; s++) {                   /* the sides are independent: one at a time, the state in
                                                         * registers (the same arithmetic as per sample and side) */
-            int32_t *io = s ? R : L, as = a[s], fb = ph_fb[s];
+            int32_t *io = s ? R : L, as = a[s], fb = ph_fb[s], hp = ph_hp[s], g13 = pg >> 16;
             int32_t x0 = ph_x[s][0], x1 = ph_x[s][1], x2 = ph_x[s][2], x3 = ph_x[s][3];
             int32_t y0 = ph_y[s][0], y1 = ph_y[s][1], y2 = ph_y[s][2], y3 = ph_y[s][3];
             for (j = sb; j < sb + 32u && j < n; j++) {
@@ -302,13 +306,14 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
                 y = clampi(x1 + ((as * (u - y1) + 8192) >> 14), -65535, 65535); x1 = u; y1 = y; u = y;
                 y = clampi(x2 + ((as * (u - y2) + 8192) >> 14), -65535, 65535); x2 = u; y2 = y; u = y;
                 y = clampi(x3 + ((as * (u - y3) + 8192) >> 14), -65535, 65535); x3 = u; y3 = y;
-                fb = clampi(y, -32767, 32767);
-                io[j] = (int32_t)(((int64_t)(x + (y << 2)) * pg) >> 30);   /* x 0.707 (the notches) and the
-                                                                         * stereo width's loudness taken back */
+                hp += (y - hp) >> 6;                    /* the feedback without its lows (~110 Hz): it resonated on
+                                                         * the bass (C2 +4 LU with the phaser on) */
+                fb = clampi(y - hp, -32767, 32767);
+                io[j] = ((xs + y) * g13) >> 12;         /* (x + 4 y) pg >> 30 in 32 bits: |xs + y| < 2^17 */
             }
             ph_x[s][0] = x0; ph_x[s][1] = x1; ph_x[s][2] = x2; ph_x[s][3] = x3;
             ph_y[s][0] = y0; ph_y[s][1] = y1; ph_y[s][2] = y2; ph_y[s][3] = y3;
-            ph_fb[s] = fb;
+            ph_fb[s] = fb; ph_hp[s] = hp;
         }
         ph_ph += inc * 32u;
     }

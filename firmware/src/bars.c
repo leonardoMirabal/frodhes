@@ -383,6 +383,8 @@ static int bar_quiet(void) { return bar_active_bits == 0 && bar_quiet_blocks >= 
 #define BAR_MOT_SLEW 512                            /* the depth's slew, Q15 a sub-block: off <-> full in 64 sub-blocks
                                                      * (46 ms), so switching the motor or turning DEPTH never clicks */
 static int32_t bar_mot_d;                           /* the discs' depth as it plays, Q15 (DEPTH x ON, slewed) */
+#define BAR_MOT_MK 20600                            /* the motor's make-up at full depth (Q15: x 1.63) */
+static int32_t bar_mk0 = 32768, bar_mk1 = 32768;     /* its gain at the block's start and end (Q15) */
 static void bar_motor_block(void)
 {
     uint32_t i, inc = bar_mot_inc;
@@ -728,6 +730,15 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix)
     const bar_type_t *ty = &BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u];
     uint32_t j, m, sb, nf = bar_force(v), nf2 = (nf + 1u) & ~1u, nlive = 0, fade0 = 0;
     int32_t gain = v->gain, ref, sum, la[BAR_NM];
+    int32_t g1 = gain, dg = 0;
+    if (bar_mk0 != 32768 || bar_mk1 != 32768) {     /* the motor's discs close the tubes part of each turn: the mean
+                                                     * level fell 3.8 LU at DEPTH 110 (FM-1, 2026-10-17); made up,
+                                                     * gliding over the block while the depth moves (no step) */
+        int64_t a = ((int64_t)gain * bar_mk0) >> 15, b = ((int64_t)gain * bar_mk1) >> 15;
+        gain = a > 0x3FFFFFFF ? 0x3FFFFFFF : (int32_t)a;
+        g1 = b > 0x3FFFFFFF ? 0x3FFFFFFF : (int32_t)b;
+        dg = (g1 - gain) / (int32_t)BAR_N;
+    }
     if (v->ramp) {                                  /* the damper moves: every slot's coefficients per sub-block */
         for (sb = 0; sb < BAR_NSUB; sb++) {
             uint32_t o = sb * BAR_SUB;
@@ -760,11 +771,12 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix)
             int32_t *x = bar_x + sb * BAR_SUB, *t = bar_tb + sb * BAR_SUB;
             for (j = 0; j < BAR_SUB; j++) { x[j] += (int32_t)(((int64_t)wt * t[j]) >> 28); wt += dw; }
         }
-    if (v->fade == 32768 && !v->felt_n)             /* the gain into the mix */
+    if (v->fade == 32768 && !v->felt_n && !dg)      /* the gain into the mix */
         for (j = 0; j < BAR_N; j++) mix[j] += (int32_t)(((int64_t)bar_x[j] * gain) >> 24);
     else
-        for (j = 0; j < BAR_N; j++) {               /* gain, steal fade, felt noise */
+        for (j = 0; j < BAR_N; j++) {               /* gain (gliding), steal fade, felt noise */
             int32_t o = (int32_t)(((int64_t)bar_x[j] * gain) >> 24);
+            gain += dg;
             if (v->fade != 32768) {
                 o = (int32_t)(((int64_t)o * v->fade) >> 15);
                 v->fade -= BAR_FADE_STEP;
@@ -833,6 +845,8 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
     uint32_t i, sb, j, act = 0, held = 0, ty = bar_sub < BAR_NTYPE ? bar_sub : 0u, nb = BAR_TYPE[ty].nbody;
     int32_t mx = 0;
     bar_motor_block();
+    bar_mk0 = bar_mk1;
+    bar_mk1 = 32768 + ((bar_mot_d * BAR_MOT_MK) >> 15);
     bar_budget();
     for (i = 0; i < n; i++) bar_mono[i] = 0;
 #ifdef DINGHY_HOST

@@ -143,6 +143,7 @@
           "f_tau_max": 1.2,
           "src": "E:2.2 (pulse spectrum, first null 1.5); gen_rhodes main-lobe bound (tc f0 < 0.6) as the precedent", "status": "ESTIMATE",
           "settle": "listening: SOFT / MED YARN in the top octave (VL)"},
+ "T7g": {"_doc": "velocity brightness: the played contact x (V / V(v100))^-vel_exp on top of the simulated p-law contact (a yarn or cord mallet stiffens as it is struck harder); 0 = the simulation alone", "vel_exp": 0.1, "_doc_2026_10_17": "audit: v40 -> v117 was +13 dB but the timbre barely moved (F3 the same, A4 +2 dB above 3 kHz); a vibraphone played harder is brighter", "src": "user listening 2026-10-17 (audit); felt stiffening [DC94]", "status": "ESTIMATE", "settle": "listening"},
  "T8": {"_doc": "mallet speed vs MIDI velocity: V(v) = v_lo (v_hi / v_lo)^((v - 1) / 126) m/s", "v_lo": 0.3, "v_hi": 3.5,
         "src": "E:2.4 (1 m/s SIM, 2.1 m/s M); E-VAL #24", "status": "ESTIMATE",
         "settle": "O11: the velocity trim levels it; listening on the feel"},
