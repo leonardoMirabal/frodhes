@@ -62,19 +62,62 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 #define CV_MAX (240u * 64u)
 #include "gfx.c"
 
-static uint8_t host_store[256 + 4];
+static uint8_t host_store[256 + 4];             /* the settings record: [0] = 1 when saved, the bytes from [4] */
+static uint32_t host_store_len = 256;           /* its length (platform.c: a record of another size is "nothing") */
 static int settings_load(void *p, uint32_t n)
 {
-    if (host_store[0] != 1 || n > 256u) return -1;
+    if (host_store[0] != 1 || n > 256u || n != host_store_len) return -1;
     memcpy(p, host_store + 4, n);
     return 0;
 }
 static int settings_save(const void *p, uint32_t n)
 {
     host_store[0] = 1;
+    host_store_len = n;
     memcpy(host_store + 4, p, n);
     printf("%6u ms  settings saved (%u B)\n", fm1_ms, n);
     return 0;
+}
+
+/* The flash across power cycles: with FRODHES_FLASH=FILE the run starts from FILE's flash (if it exists) and writes
+ * the flash back at its end, so a second run is the FM-1 switched on again. Only what the firmware saved is there.
+ * FILE is five 4 KiB sectors as on the FM-1: the settings ([magic DNGY][len][crc32] + the record, platform.c's
+ * format and checks), the preset bank A / B (presets.c), the pattern A / B (seq.c). */
+static uint8_t host_bank[2][4096];              /* presets.c's and seq.c's sectors (their definitions: there) */
+static uint8_t sq_host_fl[2][4096];
+static uint32_t crc32(const uint8_t *p, uint32_t n);   /* presets.c (host) */
+#define HOST_FLASH_MAGIC 0x59474E44u            /* "DNGY", platform.c SETTINGS_MAGIC */
+static void host_flash_load(const char *path)
+{
+    static uint8_t img[5][4096];
+    uint32_t h[3];
+    FILE *f = fopen(path, "rb");
+    if (!f) return;                             /* no file: a new FM-1 (nothing saved) */
+    if (fread(img, 1, sizeof img, f) != sizeof img) { fprintf(stderr, "%s: short flash image\n", path); exit(2); }
+    fclose(f);
+    memcpy(h, img[0], sizeof h);
+    if (h[0] == HOST_FLASH_MAGIC && h[1] <= 256u && crc32(img[0] + sizeof h, h[1]) == h[2]) {
+        host_store[0] = 1; host_store_len = h[1];
+        memcpy(host_store + 4, img[0] + sizeof h, h[1]);
+    }                                           /* else: a bad magic, length or CRC reads as nothing saved */
+    memcpy(host_bank, img[1], sizeof host_bank);
+    memcpy(sq_host_fl, img[3], sizeof sq_host_fl);
+}
+static void host_flash_save(const char *path)
+{
+    static uint8_t img[5][4096];
+    uint32_t h[3] = {HOST_FLASH_MAGIC, host_store_len, 0};
+    FILE *f;
+    memset(img, 0xFF, sizeof img);
+    if (host_store[0] == 1) {
+        h[2] = crc32(host_store + 4, host_store_len);
+        memcpy(img[0], h, sizeof h);
+        memcpy(img[0] + sizeof h, host_store + 4, host_store_len);
+    }
+    memcpy(img[1], host_bank, sizeof host_bank);
+    memcpy(img[3], sq_host_fl, sizeof sq_host_fl);
+    if (!(f = fopen(path, "wb")) || fwrite(img, 1, sizeof img, f) != sizeof img) { perror(path); exit(2); }
+    fclose(f);
 }
 
 static uint8_t mq[64][3];
@@ -103,11 +146,21 @@ static void eng_host_report(void);              /* engine.c: the engines' host c
  *   T shot               a screenshot (OUT-T.ppm)
  *   T expect led ID V    fails the run unless LED ID is V (0/1)
  *   T expect rms OP DB   fails unless the RMS of the last 50 ms is OP (< or >) DB dBFS
- *   T expect preset      fails unless every parameter equals what the preset the header shows sets (frodhes.c)
- *   T end                stop; the exit code is the number of failed expects */
-enum { EV_KEYS, EV_BTN, EV_PRESS, EV_RELEASE, EV_TURN, EV_MIDI, EV_SHOT, EV_EXP_LED, EV_EXP_RMS, EV_EXP_PRESET };
+ *   T expect preset      fails unless every parameter equals what the preset the header shows sets (frodhes.c), a
+ *                        factory or a user preset
+ *   T expect sound       fails unless what the engines and effects run with is what the panel says (frodhes.c)
+ *   T expect state K V   fails unless the state K (frodhes.c host_state: header, page, card0..3, oct, ...) reads V
+ *                        (V: one word, '_' for a space)
+ *   T dump               prints the state, one "@ T K V" line each (every page's cards, the parameters, LEDs ...)
+ *   T end                stop; the exit code is the number of failed expects
+ * With FRODHES_FLASH=FILE the flash is kept in FILE across runs (host_flash_load / host_flash_save). */
+enum { EV_KEYS, EV_BTN, EV_PRESS, EV_RELEASE, EV_TURN, EV_MIDI, EV_SHOT, EV_EXP_LED, EV_EXP_RMS, EV_EXP_PRESET,
+       EV_EXP_SOUND, EV_EXP_STATE, EV_DUMP };
 static int host_preset_check(char *msg, unsigned n);   /* frodhes.c: 0 if the panel is the shown preset */
-typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; uint8_t kind; int32_t a, b; char op; } host_ev_t;
+static int host_sound_check(char *msg, unsigned n);    /* frodhes.c: 0 if the engines run what the panel says */
+static int host_state(const char *key, char *val, unsigned n);   /* frodhes.c: 0 if K is known */
+static void host_dump(void);                           /* frodhes.c */
+typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; uint8_t kind; int32_t a, b; char op; char key[24], val[24]; } host_ev_t;
 static const host_ev_t SCRIPT0[] = {
     {200, 1u << 7, -1, 0, 0, 0, EV_KEYS, 0, 0, 0},                                /* C4 */
     {700, 1u << 7 | 1u << 11 | 1u << 14, -1, 0, 0, 0, EV_KEYS, 0, 0, 0},          /* + E4 G4: a chord */
@@ -143,8 +196,16 @@ static void read_script(const char *path)
         else if (!strcmp(what, "turn")) { e.kind = EV_TURN; sscanf(line, "%*u %*s %d %d", &e.a, &e.b); }
         else if (!strcmp(what, "midi")) { e.kind = EV_MIDI; sscanf(line, "%*u %*s %i %u %u", (int *)&a, &b, &c); e.st = (uint8_t)a; e.d1 = (uint8_t)b; e.d2 = (uint8_t)c; }
         else if (!strcmp(what, "shot")) e.kind = EV_SHOT;
+        else if (!strcmp(what, "dump")) e.kind = EV_DUMP;
         else if (!strcmp(what, "expect") && sscanf(line, "%*u %*s %15s", sub) == 1) {
             if (!strcmp(sub, "preset")) e.kind = EV_EXP_PRESET;
+            else if (!strcmp(sub, "sound")) e.kind = EV_EXP_SOUND;
+            else if (!strcmp(sub, "state")) {
+                char *u;
+                if (sscanf(line, "%*u %*s %*s %23s %23s", e.key, e.val) != 2) continue;
+                for (u = e.val; *u; u++) if (*u == '_') *u = ' ';
+                e.kind = EV_EXP_STATE;
+            }
             else if (!strcmp(sub, "led")) { e.kind = EV_EXP_LED; sscanf(line, "%*u %*s %*s %d %d", &e.a, &e.b); }
             else if (!strcmp(sub, "rms") && sscanf(line, "%*u %*s %*s %3s %lf", op, &db) == 2) { e.kind = EV_EXP_RMS; e.op = op[0]; e.a = (int32_t)(db * 100.0); }
             else continue;
@@ -222,6 +283,20 @@ static void platform_poll(void)                 /* one call = one millisecond */
             else printf("%6u ms  ok   expect preset: %s\n", fm1_ms, msg);
             break;
         }
+        case EV_EXP_SOUND: {
+            char msg[128];
+            if (host_sound_check(msg, sizeof msg)) { printf("%6u ms  FAIL expect sound: %s\n", fm1_ms, msg); host_fails++; }
+            else printf("%6u ms  ok   expect sound\n", fm1_ms);
+            break;
+        }
+        case EV_EXP_STATE: {
+            char v[64];
+            if (host_state(e->key, v, sizeof v)) { printf("%6u ms  FAIL expect state %s: no such state\n", fm1_ms, e->key); host_fails++; }
+            else if (strcmp(v, e->val)) { printf("%6u ms  FAIL expect state %s = \"%s\" (is \"%s\")\n", fm1_ms, e->key, e->val, v); host_fails++; }
+            else printf("%6u ms  ok   expect state %s = \"%s\"\n", fm1_ms, e->key, v);
+            break;
+        }
+        case EV_DUMP: host_dump(); break;
         case EV_EXP_LED:
             if ((uint32_t)e->a >= 64u || host_led[e->a] != (uint8_t)e->b) {
                 printf("%6u ms  FAIL expect led %d = %d (is %d)\n", fm1_ms, e->a, e->b, (uint32_t)e->a < 64u ? host_led[e->a] : -1);
@@ -268,6 +343,7 @@ static void platform_poll(void)                 /* one call = one millisecond */
         write_ppm(SHOT[shot++]);
     if (fm1_ms >= end_ms) {
         write_wav();
+        if (getenv("FRODHES_FLASH")) host_flash_save(getenv("FRODHES_FLASH"));
         eng_host_report();
         if (host_fails) printf("%u expect(s) FAILED\n", host_fails);
         exit(host_fails ? 1 : 0);
@@ -279,6 +355,7 @@ int main(int argc, char **argv)
     if (argc > 1) host_out = argv[1];
     if (argc > 2) read_script(argv[2]);
     if (argc > 3) frame_fps = (uint32_t)atoi(argv[3]);
+    if (getenv("FRODHES_FLASH")) host_flash_load(getenv("FRODHES_FLASH"));
     app_main();
     return 0;
 }

@@ -61,7 +61,12 @@ static uint32_t crc32(const uint8_t *p, uint32_t n)
 }
 static uint8_t host_bank[2][4096];
 static int bank_read(uint32_t at, void *p, uint32_t n) { memcpy(p, &host_bank[at == PR_BANK_B][0], n); return 0; }
-static int bank_erase(uint32_t at) { memset(&host_bank[at == PR_BANK_B][0], 0xFF, 4096); return 0; }
+static int bank_erase(uint32_t at)
+{
+    printf("%6u ms  preset bank %c erased\n", fm1_ms, at == PR_BANK_B ? 'B' : 'A');   /* (tests: when it saves) */
+    memset(&host_bank[at == PR_BANK_B][0], 0xFF, 4096);
+    return 0;
+}
 static int bank_write(uint32_t at, uint32_t off, const void *p, uint32_t n) { memcpy(&host_bank[at == PR_BANK_B][off], p, n); return 0; }
 #else
 static int bank_read(uint32_t at, void *p, uint32_t n) { return flash_ok ? st_read(at, p, n) : -1; }

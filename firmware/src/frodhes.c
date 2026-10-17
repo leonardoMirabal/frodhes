@@ -239,18 +239,136 @@ static void app_main(void)
 EMSCRIPTEN_KEEPALIVE const char *web_page(void) { return PAGE_TITLE[ui_page]; }
 #endif
 
-#ifdef DINGHY_HOST
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
 /* tests/host.c "expect preset": the panel equals what the preset the header names sets (presets.c preset_load) */
 static int host_preset_check(char *msg, unsigned n)
 {
     uint8_t p[P_SLOTS];
+    char nm[20];
     uint32_t i, idx = set.preset;
-    if (idx >= PR_NF) { snprintf(msg, n, "preset %u is not a factory preset", idx); return 1; }
+    if (idx >= PR_NF + PR_NU) { snprintf(msg, n, "preset %u is no preset", idx); return 1; }
+    preset_name(idx, nm);
+    if (idx >= PR_NF && !pr_user[idx - PR_NF].used) { snprintf(msg, n, "%s: the header names an empty user preset", nm); return 1; }
     for (i = 0; i < P_COUNT; i++) p[i] = PARAMS[i].def;
-    for (i = 0; i < 32u && PR_FDATA[idx][i] != 0xFF; i += 2u) p[PR_FDATA[idx][i]] = PR_FDATA[idx][i + 1u];
+    if (idx < PR_NF)
+        for (i = 0; i < 32u && PR_FDATA[idx][i] != 0xFF; i += 2u) p[PR_FDATA[idx][i]] = PR_FDATA[idx][i + 1u];
+    else
+        for (i = 0; i < P_COUNT && i < pr_user[idx - PR_NF].np; i++)    /* as preset_load reads it */
+            p[i] = pr_user[idx - PR_NF].p[i] <= PARAMS[i].hi ? pr_user[idx - PR_NF].p[i] : PARAMS[i].def;
     for (i = 0; i < P_COUNT; i++)
-        if (PV(i) != p[i]) { snprintf(msg, n, "F%02u %s: %s is %u, the preset sets %u", idx + 1u, PR_FNAME[idx], PARAMS[i].lab, PV(i), p[i]); return 1; }
-    snprintf(msg, n, "F%02u %s", idx + 1u, PR_FNAME[idx]);
+        if (PV(i) != p[i]) { snprintf(msg, n, "%s: %s (%u) is %u, the preset sets %u", nm, PARAMS[i].lab, i, PV(i), p[i]); return 1; }
+    snprintf(msg, n, "%s", nm);
     return 0;
+}
+
+/* "expect sound": what the ISR runs with (the effects' fx_p, the Rhodes and bar volatiles, the engine, the synced
+ * rates) is what the panel says: a copy, every parameter applied again (param_apply is idempotent), compared */
+typedef struct {
+    int32_t fx[FXP_N];
+    uint32_t sync[5];
+    int32_t rh[11];
+    int32_t bar[14];
+    uint8_t want;
+} host_snd_t;
+static void host_snd(host_snd_t *s)
+{
+    uint32_t i;
+    memset(s, 0, sizeof *s);
+    for (i = 0; i < FXP_N; i++) s->fx[i] = i == FXP_RAW ? 0 : fx_p[i];    /* RAW: CC 119, not the panel */
+    s->sync[0] = fx_dly_sync_samples; s->sync[1] = fx_tw_sync_inc; s->sync[2] = fx_cp_sync_inc;
+    s->sync[3] = fx_ph_sync_inc; s->sync[4] = fx_lfo_sync_inc;
+    s->rh[0] = rh_tone_off; s->rh[1] = rh_bark_s; s->rh[2] = rh_bark_g; s->rh[3] = rh_bell; s->rh[4] = rh_ham;
+    s->rh[5] = rh_k_decay; s->rh[6] = rh_k_rel; s->rh[7] = rh_thump; s->rh[8] = rh_felt; s->rh[9] = rh_type;
+    s->rh[10] = rh_tune_t;
+    s->bar[0] = bar_pos; s->bar[1] = bar_fam; s->bar[2] = bar_tube; s->bar[3] = bar_mass; s->bar[4] = bar_massi;
+    s->bar[5] = bar_nz; s->bar[6] = bar_k_decay; s->bar[7] = bar_k_rel; s->bar[8] = bar_thump; s->bar[9] = bar_felt;
+    s->bar[10] = bar_mot_on; s->bar[11] = bar_mot_depth; s->bar[12] = bar_mot_shape; s->bar[13] = (int32_t)bar_mot_inc;
+    s->want = eng_want;
+    (void)bar_sub;
+}
+static int host_sound_check(char *msg, unsigned n)
+{
+    static const char *const FXN[FXP_N] = {"DRIVE", "TW_SW", "TW_DEPTH", "TW_RATE", "TW_MODE", "TW_SHAPE", "CP_SW",
+        "CP_DEPTH", "CP_SPEED", "CP_FDBK", "DL_SW", "DL_DEPTH", "DL_TIME", "DL_FDBK", "DL_SYNC", "RV_DEPTH",
+        "DRIVE_ROW", "RAW", "DL_TONE", "PH_SW", "PH_DEPTH", "PH_SPEED", "PH_FDBK", "CMP_SW", "CMP_AMT", "CMP_ATK",
+        "CMP_REL", "LEVEL", "CMP_RATIO", "CMP_GAIN", "FL_TYPE", "FL_FREQ", "FL_RESO", "FL_LFO", "LFO_SHAPE", "LFO_RATE"};
+    host_snd_t a, b;
+    uint32_t i;
+    host_snd(&a);
+    params_apply_all();
+    tempo_sync_publish();
+    host_snd(&b);
+    for (i = 0; i < FXP_N; i++)
+        if (a.fx[i] != b.fx[i]) { snprintf(msg, n, "fx_p[FXP_%s] is %d, the panel says %d", FXN[i], a.fx[i], b.fx[i]); return 1; }
+    for (i = 0; i < 5u; i++)
+        if (a.sync[i] != b.sync[i]) { snprintf(msg, n, "synced rate %u is %u, the panel says %u", i, a.sync[i], b.sync[i]); return 1; }
+    for (i = 0; i < 11u; i++)
+        if (a.rh[i] != b.rh[i]) { snprintf(msg, n, "Rhodes volatile %u is %d, the panel says %d", i, a.rh[i], b.rh[i]); return 1; }
+    for (i = 0; i < 14u; i++)
+        if (a.bar[i] != b.bar[i]) { snprintf(msg, n, "bar knob %u is %d, the panel says %d", i, a.bar[i], b.bar[i]); return 1; }
+    if (a.want != b.want) { snprintf(msg, n, "the engine is %u, TYPE says %u", a.want, b.want); return 1; }
+    return 0;
+}
+
+/* "expect state" / "dump": what the screen, the LEDs and the state say, by name */
+static uint32_t host_bits(uint32_t x) { uint32_t c = 0; while (x) { c += x & 1u; x >>= 1; } return c; }
+static int host_state(const char *key, char *v, unsigned n)
+{
+    unsigned a = 0, b = 0;
+    uint32_t i, c;
+    char t[24];
+    v[0] = 0;
+    if (!strcmp(key, "header")) { if (set.preset < PR_NALL_UI) preset_name(set.preset, t); else p_strcpy(t, "FRODHES", 8); t[14] = 0; snprintf(v, n, "%s", t); }
+    else if (!strcmp(key, "preset")) snprintf(v, n, "%u", set.preset);
+    else if (!strcmp(key, "page")) snprintf(v, n, "%s", PAGE_TITLE[ui_page]);
+    else if (!strcmp(key, "hint")) snprintf(v, n, "%s", page_hint(ui_page));
+    else if (!strcmp(key, "msg")) snprintf(v, n, "%s", ui_msg_t && fm1_ms - ui_msg_t < MSG_MS ? ui_msg : "");
+    else if (sscanf(key, "card.%u.%u", &a, &b) == 2 && a < PG_N && b < 4u) { slot_text(slot_at(a, b), t); snprintf(v, n, "%s", t); }
+    else if (sscanf(key, "label.%u.%u", &a, &b) == 2 && a < PG_N && b < 4u) snprintf(v, n, "%s", slot_label(a, b));
+    else if (sscanf(key, "card%u", &a) == 1 && a < 4u) { slot_text(slot_at(ui_page, a), t); snprintf(v, n, "%s", t); }
+    else if (sscanf(key, "label%u", &a) == 1 && a < 4u) snprintf(v, n, "%s", slot_label(ui_page, a));
+    else if (sscanf(key, "p.%u", &a) == 1 && a < P_COUNT) snprintf(v, n, "%u", PV(a));
+    else if (sscanf(key, "led.%u", &a) == 1 && a < 64u) snprintf(v, n, "%u", host_led[a]);
+    else if (sscanf(key, "glow.%u", &a) == 1 && a < 64u) snprintf(v, n, "%u", host_glow[a]);
+    else if (sscanf(key, "u.%u", &a) == 1 && a >= 1u && a <= PR_NU) { preset_name(PR_NF + a - 1u, t); snprintf(v, n, "%s", t); }
+    else if (!strcmp(key, "oct")) snprintf(v, n, "%d", set.oct);
+    else if (!strcmp(key, "bpm")) { slot_text(S_BPM, t); snprintf(v, n, "%s", t); }
+    else if (!strcmp(key, "sus")) snprintf(v, n, "%u", rh_hold);
+    else if (!strcmp(key, "byp")) snprintf(v, n, "%u", fx_bypass);
+    else if (!strcmp(key, "arp")) snprintf(v, n, "%u", arp_on());
+    else if (!strcmp(key, "hold")) snprintf(v, n, "%u", ARP_HOLD);
+    else if (!strcmp(key, "arpn")) snprintf(v, n, "%u", arp_n);
+    else if (!strcmp(key, "chord")) snprintf(v, n, "%u", chord_on());
+    else if (!strcmp(key, "play")) snprintf(v, n, "%u", seq_play);
+    else if (!strcmp(key, "rec")) snprintf(v, n, "%u", seq_rec);
+    else if (!strcmp(key, "notes")) snprintf(v, n, "%u", sq_n);
+    else if (!strcmp(key, "savemode")) snprintf(v, n, "%u", pr_save_mode);
+    else if (!strcmp(key, "undo")) snprintf(v, n, "%u", set.undo_valid);
+    else if (!strcmp(key, "dirty")) snprintf(v, n, "%u", set_dirty);
+    else if (!strcmp(key, "bars")) snprintf(v, n, "%d", eng_is_bars());
+    else if (!strcmp(key, "voices")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits));
+    else if (!strcmp(key, "srcs")) { for (i = c = 0; i < SRC_N; i++) c += src_active[i]; snprintf(v, n, "%u", c); }
+    else if (!strcmp(key, "refs")) { for (i = c = 0; i < 128u; i++) c += out_ref[i]; snprintf(v, n, "%u", c); }
+    else if (!strcmp(key, "quiet")) snprintf(v, n, "%d", eng_quiet() && fx_quiet());
+    else return 1;
+    return 0;
+}
+static void host_dump(void)
+{
+    static const char *const K[] = {"header", "preset", "page", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
+                                    "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "bars", "voices",
+                                    "srcs", "refs", "quiet", "label0", "card0", "label1", "card1", "label2", "card2",
+                                    "label3", "card3"};
+    char key[24], v[64];
+    uint32_t i, k;
+    for (i = 0; i < sizeof K / sizeof K[0]; i++) { host_state(K[i], v, sizeof v); printf("@ %u %s %s\n", fm1_ms, K[i], v); }
+    for (i = 0; i < PG_N; i++)
+        for (k = 0; k < 4u; k++) {
+            snprintf(key, sizeof key, "label.%u.%u", i, k); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
+            snprintf(key, sizeof key, "card.%u.%u", i, k); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
+        }
+    for (i = 0; i < P_COUNT; i++) printf("@ %u p.%u %u\n", fm1_ms, i, PV(i));
+    for (i = 0; i < 41u; i++) printf("@ %u led.%u %u\n", fm1_ms, i, host_led[i]);
+    for (i = 1; i <= PR_NU; i++) { snprintf(key, sizeof key, "u.%u", i); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v); }
 }
 #endif

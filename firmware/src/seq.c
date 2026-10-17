@@ -229,7 +229,12 @@ static void seq_poll(void)
 static uint32_t crc32(const uint8_t *p, uint32_t n);   /* presets.c (host) */
 static uint8_t sq_host_fl[2][4096];
 static int sq_fl_read(uint32_t at, void *p, uint32_t n) { memcpy(p, sq_host_fl[at == SQ_B], n); return 0; }
-static int sq_fl_erase(uint32_t at) { memset(sq_host_fl[at == SQ_B], 0xFF, 4096); return 0; }
+static int sq_fl_erase(uint32_t at)
+{
+    printf("%6u ms  pattern %c erased\n", fm1_ms, at == SQ_B ? 'B' : 'A');   /* (tests: when it saves) */
+    memset(sq_host_fl[at == SQ_B], 0xFF, 4096);
+    return 0;
+}
 static int sq_fl_write(uint32_t at, uint32_t off, const void *p, uint32_t n) { memcpy(&sq_host_fl[at == SQ_B][off], p, n); return 0; }
 #else
 static int sq_fl_read(uint32_t at, void *p, uint32_t n) { return flash_ok ? st_read(at, p, n) : -1; }
