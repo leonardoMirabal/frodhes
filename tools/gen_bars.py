@@ -881,7 +881,7 @@ def build_spec(vb, phys, fec, ct, st):
     return dict(gen_version=GEN_VERSION, fs=FS, key_lo=KEY_LO, keys=keys, bar_pos=pos, pos_arg=arg,
                 pos_gain=st.get("pos_gain", flat), tube_gain=st.get("tube_gain", flat),
                 pos_exact=st["pos_exact"], pulse=pulse,
-                prate=prate, pamp=pamp, kn_fam=kn_fam(), kn_mass=kn_mass(vb), kn_massi=kn_massi(vb), kn_tube=kn_tube(),
+                prate=prate, pamp=pamp, kn_fam=kn_fam(), kn_mass=kn_mass(vb), kn_massi=kn_massi(vb), kn_tube=st.get("kn_tube", kn_tube()),
                 kn_nz=kn_nz(vb), nz_bq=nz_bq(vb), mot_cos=list(btm.MOT_COS),
                 fam_names=[f["name"] for f in fams_int(vb)][:nf], fam_detent=FAM_DETENT,
                 type=dict(tube_cents=0, mot_gc=int(round(vb["T6c"]["g_c"] * 32768)), tors_db=ty["tors_q15"],
@@ -913,6 +913,32 @@ def lufs_k(x, t0=0.0, t1=1.0, fs=FS):
     import bar_measure as bmz
     y = sosfilt(bmz.k_weight_sos(fs), np.asarray(x, float) / 32767.0)[int(t0 * fs):int(t1 * fs)]
     return -0.691 + 10 * math.log10(float(np.mean(y * y)) + 1e-15)
+
+
+def shape_kn_tube(vb, spec, keys=(53, 60, 69, 77, 89), npt=13):
+    """KN_TUBE[1..64] re-spaced so the loudness moves evenly with BELL: the golden model's loudness (K-weighted over
+    card_level t_s, v100, the default cards, the mean of keys) at npt tube sizes from -24 dB to 1.0, then each raw
+    value gets the size whose loudness is on the straight line between raw 1 and 64 (the tube's level grows little
+    under ~-12 dB and steeply near 1.0: an even dB map left a 2.3 dB step between adjacent 4-raw steps, S10).
+    0 (no tube) and 64..127 as kn_tube()"""
+    t0, t1 = vb["card_level"]["t_s"]
+    sdb = np.linspace(-24.0, 0.0, npt)
+    tmp = list(spec["kn_tube"])
+    for i, d in enumerate(sdb):
+        tmp[1 + i] = int(round(10 ** (d / 20) * 32768))
+    sp = dict(spec, kn_tube=tmp)
+    ks = list(keys) * npt
+    kn = [dict(gm.DEFAULT_KNOBS, bell=1 + i) for i in range(npt) for _ in keys]
+    y = render_chunks(sp, ks, [100] * len(ks), t1 + 0.01, kn)
+    L = np.array([lufs_k(r, t0, t1) for r in y]).reshape(npt, len(keys)).mean(axis=1)
+    L = np.maximum.accumulate(L)                           # (monotonic for the inverse)
+    out = kn_tube()
+    for v in range(1, 64):
+        lt = L[0] + (L[-1] - L[0]) * (v - 1) / 63.0
+        d = float(np.interp(lt, L + np.arange(npt) * 1e-9, sdb))
+        out[v] = max(out[v - 1] + 1 if v > 1 else 1, int(round(10 ** (d / 20) * 32768)))
+    assert out[64] == 32768 and all(a < b for a, b in zip(out, out[1:]))
+    return out, [float(x) for x in L]
 
 
 def card_points():
@@ -1153,6 +1179,11 @@ def build():
             st["keys"][n]["S"] /= f
         spec = build_spec(vb, phys, fec, ct, st)
     rescale_b()
+    # BELL's tube size per raw value: the loudness even over the knob (S10)
+    st["kn_tube"], lt = shape_kn_tube(vb, spec)
+    spec = build_spec(vb, phys, fec, ct, st)
+    print("tube map: loudness %.1f .. %.1f LU from BELL 1 to 64, size at 16 / 32 / 48: %.1f %.1f %.1f dB" % (
+        lt[0], lt[-1], *[20 * math.log10(spec["kn_tube"][v] / 32768) for v in (16, 32, 48)]), file=sys.stderr)
     # the TONE / BELL level compensation per band (card_level): a card that is not a volume knob keeps the level
     st["pos_gain"], st["tube_gain"], cl_rep = card_gains(vb, spec, keys)
     spec = build_spec(vb, phys, fec, ct, st)
