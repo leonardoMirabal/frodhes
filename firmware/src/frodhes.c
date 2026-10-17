@@ -78,7 +78,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 119u) { fx_set(FXP_RAW, v >= 64u); return; }
     if (cc == 9u) { bar_budget_force = (uint8_t)v; return; }   /* developer: the bar engine's mode cap (0 = auto) */
     if (cc == 3u) { ui_testpat = v >= 64u; return; }            /* developer: the colour test pattern (ui.c) */
-    if (cc == 2u) { ui_style = (uint8_t)(v > 3u ? 0u : v); ui_draw_page_change(); return; }   /* developer: the UI look (ui.c) */
+    if (cc == 2u) { ui_style = (uint8_t)(v > 4u ? 0u : v); ui_draw_page_change(); return; }   /* developer: the UI look (ui.c) */
     if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
     if (cc == 114u) { set.usb_fixed = v >= 64u; usb_pre_master = set.usb_fixed; ui_mark(E_CARDS); return; }   /* USB VOL */
     if (cc == 116u) {                                  /* profiler query: CC 116 -> CC 116/117 = max audio us (MSB, LSB

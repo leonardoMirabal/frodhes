@@ -13,6 +13,8 @@
  *              ARP = ARPEGGIO (on it: on / off), GLO = TEMPO (again: SETUP, MIDI).
  *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo. REC: sustain. */
 
+#include "aatext.c"                                   /* anti-aliased Inter Tight text (Felucca), the FOCUS look */
+
 #define PR_NF_UI PR_NF_SET                            /* presets.c: PR_NF factory presets, then the user ones */
 #define PR_NALL_UI (PR_NF_SET + 16u)
 static uint8_t pr_save_mode, pr_save_slot;            /* presets.c */
@@ -127,6 +129,11 @@ static char ui_msg[32];
  * left-aligned values, one accent), 2 = SOLID (filled dark cards with soft corners, a bar in each card's base),
  * 3 = INSTRUMENT (a left-aligned title and page count, each level card a vertical fader with ticks) */
 static uint8_t ui_style;
+#define UI_FOCUS 4u                                    /* the chosen look (user, 2026-10-17): rows, amber name when turned */
+#define FC_BG C_BLACK
+#define FC_HAIR RGB(30, 30, 34)                        /* dividers, the gauge's track: very dark (the panel lifts darks) */
+#define FC_LAB RGB(122, 122, 128)                      /* names, units */
+#define FC_VAL RGB(236, 236, 230)                      /* values */
 static uint16_t ui_deep(void)                          /* the palette's darkest step at a quarter (the FM-1's panel lifts
                                                         * the dark tones a lot: a fill must start much darker) */
 {
@@ -443,6 +450,21 @@ static void draw_header(void)
 {
     char nm[20], b[8];
     cv_begin(240, 20, C_BLACK);
+    if (ui_style == UI_FOCUS) {
+        if (set.preset < PR_NALL_UI) preset_name(set.preset, nm); else p_strcpy(nm, "FRODHES", 8);
+        nm[16] = 0;
+        aa_text(10, 3, &AF_S, nm, FC_LAB, FC_BG);
+        if (set.oct) {
+            char o[4] = {'O', set.oct < 0 ? '-' : '+', (char)('0' + (set.oct < 0 ? -set.oct : set.oct)), 0};
+            aa_text(128, 3, &AF_S, o, FC_LAB, FC_BG);
+        }
+        if (rh_hold) aa_text(150, 3, &AF_S, "SUS", UI_ACC, FC_BG);
+        if (fx_bypass) aa_text(176, 3, &AF_S, "BYP", FC_VAL, FC_BG);
+        slot_text(S_BPM, b);
+        aa_text_r(230, 3, &AF_S, b, FC_LAB, FC_BG);
+        cv_blit(0, 0);
+        return;
+    }
     if (ui_style == 2u) cv_rect(0, 0, 240, 19, ui_deep());
     if (set.preset < PR_NALL_UI) preset_name(set.preset, nm); else p_strcpy(nm, "FRODHES", 8);
     nm[14] = 0;
@@ -478,6 +500,18 @@ static void draw_title(void)
         return;
     }
     cv_begin(240, 40, C_BLACK);
+    if (ui_style == UI_FOCUS) {                         /* the title, where we are, a hairline */
+        char t[8];
+        uint32_t q = pg_pos(ui_page) + 1u, n = 0;
+        if (q >= 10u) t[n++] = (char)('0' + q / 10u);
+        t[n++] = (char)('0' + q % 10u); t[n++] = '/';
+        t[n++] = (char)('0' + PG_N / 10u); t[n++] = (char)('0' + PG_N % 10u); t[n] = 0;
+        aa_text(10, 3, &AF_M, PAGE_TITLE[ui_page], UI_ACC, FC_BG);
+        aa_text_r(230, 6, &AF_S, t, FC_LAB, FC_BG);
+        cv_rect(10, 27, 220, 1, FC_HAIR);
+        cv_blit(0, 21);
+        return;
+    }
     if (ui_style == 1u) {                               /* MINIMAL: the title, and where we are as a hairline */
         int32_t w = 200 / (int32_t)PG_N;
         text_c(0, 0, 240, &FONT_L, PAGE_TITLE[ui_page], C_HI);
@@ -509,6 +543,22 @@ static void draw_card(uint32_t k)
 {
     uint32_t s = slot_at(ui_page, k);
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
+    if (ui_style == UI_FOCUS) {                          /* a full-width row: the name, the value, a slim gauge */
+        char v[16], kk[3] = {'K', (char)('1' + k), 0};
+        cv_begin(240, 35, FC_BG);
+        if (s != S_NONE) {
+            int32_t hi, val = slot_val(s, &hi);
+            slot_text(s, v);
+            aa_text(10, 9, &AF_S, kk, FC_HAIR == C_BLACK ? FC_LAB : RGB(70, 70, 76), FC_BG);
+            aa_text(30, 9, &AF_S, slot_label(ui_page, k), hot ? UI_ACC : FC_LAB, FC_BG);
+            if (aa_text_w(&AF_L, v) <= 150) aa_text_r(230, -3, &AF_L, v, FC_VAL, FC_BG);
+            else aa_text_r(230, 7, &AF_M, v, FC_VAL, FC_BG);
+            cv_rect(30, 33, 200, 1, FC_HAIR);
+            if (hi && slot_is_level(s)) cv_rect(30, 32, 200 * val / (hi ? hi : 1), 2, UI_ACC);
+        }
+        cv_blit(0, 63u + 35u * k);
+        return;
+    }
     cv_begin(118, 68, C_BLACK);
     if (s != S_NONE && ui_style) {                      /* the design study's looks (ui_style) */
         char v[16];
@@ -716,6 +766,12 @@ static void draw_card_small(uint32_t k)
 static void draw_footer(void)
 {
     cv_begin(240, 35, C_BLACK);
+    if (ui_style == UI_FOCUS && !pr_save_mode && !(ui_msg_t && fm1_ms - ui_msg_t < MSG_MS) && ui_page != PG_COMP &&
+        ui_page != PG_SEQ && ui_page != PG_ARP && ui_page != PG_SETUP) {
+        aa_text_c(0, 9, 240, &AF_S, page_hint(ui_page), RGB(90, 90, 96), FC_BG);
+        cv_blit(0, 205);
+        return;
+    }
     if (ui_style == 0u || ui_style == 3u) cv_rect(0, 0, 240, 1, C_LINE);
     if (pr_save_mode) {                                 /* the save mode owns the footer until it ends */
         char s[24], t[32];
