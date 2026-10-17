@@ -20,7 +20,7 @@ chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo
 6. [Effects on and off](#6-effects-on-and-off)
 7. [Tempo and sync](#7-tempo-and-sync)
 8. [Scales](#8-scales)
-9. [Sustain](#9-sustain)
+9. [Sustain and polyphony](#9-sustain-and-polyphony)
 10. [Sound and volume tips](#10-sound-and-volume-tips)
 11. [MIDI](#11-midi)
 12. [If something goes wrong](#12-if-something-goes-wrong)
@@ -198,7 +198,7 @@ On PERFORM, K3 is the filter's cutoff by default. Over MIDI: CC 70 TYPE, 74 cuto
 | --- | --- | --- |
 | K1 | **EFFECT** | Off / on |
 | K2 | **DEPTH** | How far it sweeps |
-| K3 | **SPEED** | How fast (a note value when synced) |
+| K3 | **SPEED** | How fast: 0.25–6 Hz (a note value when synced) |
 | K4 | **FEEDBK** | Resonance: more pronounced, vocal sweeps |
 
 ### CHORUS
@@ -209,7 +209,7 @@ On PERFORM, K3 is the filter's cutoff by default. Over MIDI: CC 70 TYPE, 74 cuto
 | --- | --- | --- |
 | K1 | **EFFECT** | Off / on |
 | K2 | **DEPTH** | Amount and width |
-| K3 | **SPEED** | How fast (a note value when synced) |
+| K3 | **SPEED** | How fast: 0.25–6 Hz (a note value when synced) |
 | K4 | **SYNC** | Free, or locked to the tempo as a note value |
 
 Phaser and chorus are two separate effects and can run together (the phaser feeds the chorus). Both make the sound
@@ -365,7 +365,8 @@ the TRS jack: notes, every CC in the table below, program changes, clock, start 
 ![Browsing presets](manual/img/browse.png)
 
 Turn **PRESETS** to browse: **F01–F12** are the factory sounds, **U01–U16** your own. A preset loads when you stop
-turning (after 0.4 s). If you did not mean to, **hold SAVE** to go back to what you had (undo).
+turning (after 0.4 s). If you did not mean to, **hold SAVE** to go back to what you had (undo). The first time Frodhes
+starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 
 | | | | |
 | --- | --- | --- | --- |
@@ -410,10 +411,18 @@ white keys into the scale's steps (C plays the root) so you can play any scale w
 While a scale is on, the keys that play its root glow dimly (in DEGREE: the C keys), so you can always find the
 keynote.
 
-## 9. Sustain
+## 9. Sustain and polyphony
 
 **REC** is the sustain pedal. **Hold** it like a pedal, or **tap** it to latch the sustain on, and tap again to
 release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with half-pedalling.
+
+**Polyphony: 8 voices.** Up to 8 notes sound at the same time, counting notes still ringing under the sustain and
+the notes that chord mode, the arpeggiator and the sequencer play. Striking a note that is still sounding reuses its
+voice, so repeated notes do not use up voices. A 9th note takes over the quietest released note first, or else the
+oldest held one, with a short fade (1.5 ms) so there is no click. The audio also has a safety guard: if it ever ran
+late, the quietest released note would be faded out rather than letting the sound break up. In testing the worst
+case (8 low notes at full velocity with the pedal and every effect on) uses 4.9 ms of the 5.8 ms available per audio
+block, and the guard never acts.
 
 ## 10. Sound and volume tips
 
