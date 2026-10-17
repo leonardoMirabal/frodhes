@@ -61,13 +61,16 @@ def tune_lines(t, cents):
     return [(t, "btn 6"), (t + 10, "turn 0 1"), (t + 20, f"turn 5 {int(cents)}"), (t + 30, "btn 8")]
 
 
-def render(tag, events, end_ms, outdir):
-    """events: (ms, line-without-time) pairs, e.g. (100, "midi 0x90 60 100"); returns (left float array, log text)"""
+def render(tag, events, end_ms, outdir, env=None):
+    """events: (ms, line-without-time) pairs, e.g. (100, "midi 0x90 60 100"); env: extra environment for the host
+    build (its switches: FRODHES_NOSLEEP, FRODHES_NOBUDGET, FRODHES_FXUS, FRODHES_MSLOG); returns (left float array,
+    log text)"""
     os.makedirs(outdir, exist_ok=True)
     out = os.path.join(outdir, tag)
     lines = sorted(((int(t), s) for t, s in events), key=lambda e: e[0])
     open(out + ".txt", "w").write("".join(f"{t} {s}\n" for t, s in lines) + f"{int(end_ms)} end\n")
-    r = subprocess.run([BIN, out, out + ".txt"], capture_output=True, text=True)
+    r = subprocess.run([BIN, out, out + ".txt"], capture_output=True, text=True,
+                       env=dict(os.environ, **env) if env else None)
     w = wave.open(out + ".wav")
     x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").reshape(-1, 2).astype(float)
     return x, r.stdout + r.stderr
@@ -256,6 +259,14 @@ def load_spec(path):
         return None
     s = json.load(open(path))
     return {k["midi"]: k for k in s.get("keys", [])}
+
+
+def load_design(path):
+    """bars_spec.json's design rows (tools/gen_bars.py: f0, peak_ms, ...), [] when missing or a Rhodes spec"""
+    import json
+    if not path or not os.path.exists(path):
+        return []
+    return json.load(open(path)).get("design", [])
 
 
 def spec_for_type(t):

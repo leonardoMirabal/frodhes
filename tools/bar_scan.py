@@ -19,25 +19,32 @@ The checks (numbers from PLAN §9.2):
       above -90 dBFS (not the last bit's rounding),
       outside 3 ms before / 17 ms after any event (one block of latency + the 8 ms damper noise)
   S2  clipping: output samples >= 32700 = 0; the host's "sat28 hits" = 0 (when the build prints it)
-  S3  linearity: a 3-note chord vs the sum of its notes alone (RAW, NOISE 0): residual <= -60 dB; energy outside
-      +-3 % of every spec partial 0.2..2 s after the strike <= -80 dB re V1 (with the spec)
+  S3  linearity: a 3-note chord vs the sum of its notes alone (RAW, NOISE 0): residual <= -60 dB; no spectral line
+      off the spec's partials (+-3 %) above -80 dB re V1, 0.2..2 s after the strike (s3_lines: why lines)
   S4  steals / ends: S1 in the polyphony and steal cases; the last non-zero sample before the end <= 1 LSB
       (-90 dBFS); exact zeros at the end (RAW: no limit cycles)
   S5  instability: after the fundamental's peak, its band never rises > 0.5 dB over its running maximum outside
       50 ms after an event (motor off); every render finite; exact zero once all notes end
   S6  pitch and decay vs the spec: tools/bar_freq_scan.py (+-1 c, T60 +-10 %)
-  S7  unwanted noise: between-partial floor <= -80 dB re V1 (0.2..2 s, NOISE 0, RAW); every 1/3-octave band
+  S7  unwanted noise: between-partial floor <= -80 dB re V1 (0.2..2 s, NOISE 0, RAW; Blackman-Harris, the lines'
+      bands widened by the 64-bin smoothing's half width, which otherwise averages a line into the floor); every 1/3-octave band
       2..8 s after a released strike <= -96 dBFS; motor on: no line at k x 1378 Hz (the sub-block rate) above
-      -80 dB re V1; NOISE 64: its difference to NOISE 0 <= -80 dB re the peak after 150 ms
+      -80 dB re V1; NOISE 64: its difference to NOISE 0 <= -80 dB re the peak from 150 ms to the key-up (the
+      damper's knock at the key-up is NOISE's too)
   S8  attack spike: peak / RMS(50..300 ms) at v127, no key > 3 dB above its neighbours' median (and the spec's
       peak_dbfs cap when the spec has one)
   S9  level evenness (LUFS 0..1 s, v100): neighbour step <= 1.5 dB; deviation from the +-3-key median <= 1.5 dB over
       F3..F6 (53..89), <= 3 dB outside; velocity monotonic (no drop > 0.5 dB); the type vs ST77 on the A3-E4-A4 chord
       within +-1 LU; each card's sweep moves the 0..300 ms level <= 6 LU
-  S10 knob continuity: each card in 32 steps, a strike at each: level step <= 1.5 dB, centroid step <= 15 %
-  S11 CPU proxy: the host's "mode-samples" per block x the P0 costs; > 4500 us flagged (when the build prints it)
-  S12 sleep / budget transparency: needs the engine's switches (lane C: a host build with relative sleep and the
-      mode budget off); reported n/a until then
+  S10 knob continuity: each card in 32 steps, a strike at each (1.5 s apart: on a bar at rest): level step <= 1.5 dB,
+      centroid step <= 15 %
+  S11 CPU proxy: the host's "cpu-proxy max" (the bar engine's cost model: its FM-1 time of the worst block, effects
+      included) <= 4500 us, every render; the heavy ones (polyphony, corners, the long run, 8 edge strikes) once more
+      planned as if every effect ran (FRODHES_FXUS=1080, RAW renders otherwise plan with none). A flag, not a gate:
+      tools/hil_cpu.py on the FM-1 clears it (P7)
+  S12 sleep / budget transparency: a render vs the same with the sleep and the budget off (FRODHES_NOSLEEP /
+      FRODHES_NOBUDGET): sleep <= -50 dB, budget (8 notes, planned with every effect and with nearly twice that)
+      <= -40 dB re the signal, in every 1 s window whose residual is above the 16-bit rounding (0.6 LSB RMS)
   S13 swap: no S1 hit outside the fade block (the 6 ms after the swap event); "ev_drop" = 0 (when printed); no stuck
       notes (exact zero at the end, RAW)
 """
@@ -56,12 +63,14 @@ import bar_measure as bm  # noqa: E402
 OUT = os.path.join(bm.ROOT, "build", "bar_scan")
 VELS = [1, 8, 24, 40, 64, 88, 104, 120, 127]
 CARD_VALS = [0, 32, 64, 96, 127]
-PERF_US_PER_MODE_SAMPLE = None          # P0's measured cost (O1); S11 stays n/a until it is known
+FX_ALL_US = 1080                        # fx.c FX_US_*: tools/hil_cpu.py's heavy set (the trem slot = MOTOR)
+S11_FLAG_US = 4500
 
 
 class Case:
-    def __init__(self, name, group, events, end, checks, **meta):
+    def __init__(self, name, group, events, end, checks, env=None, **meta):
         self.name, self.group, self.events, self.end, self.checks, self.meta = name, group, events, end, checks, meta
+        self.env = env
         self.x = self.log = None
 
 
@@ -243,12 +252,39 @@ def matrix(typ, full, smoke=False):
         ev += bm.note(200 + i * (dur - 4000) // 37, n, 100, 200)
     ev += [(dur - 1500, "midi 0xB0 64 0")]
     C.append(Case(f"long {dur // 1000} s", "long", ev, dur + 12000, ["S1", "S2", "S4", "S5"]))
-    # S10: each card in 32 steps, a strike at each
+    # S11: the heavy renders planned as if every effect ran; S12: sleep and budget vs a render without them
+    if bars:
+        for c in [c for c in C if c.group in ("poly", "corner", "long")]:
+            C.append(Case(f"cpu {c.name}", "cpu", c.events, c.end, [], env={"FRODHES_FXUS": str(FX_ALL_US)}))
+        f3b = [53, 55, 57, 59, 60, 62, 64, 65]
+        edge = S(noise=0, TONE=127, BARK=127, BELL=127, HAMMER=127) + [(150, "midi 0xB0 64 127")]
+        for r in range(4):
+            edge += [(200 + 400 * r, f"midi 0x90 {n} 127") for n in f3b]
+        C.append(Case("cpu edge 8", "cpu", edge, 3000, [], env={"FRODHES_FXUS": str(FX_ALL_US)}))
+        for tag, cc in (("TONE 64", {}), ("TONE 127", dict(TONE=127)), ("RUBBER edge", dict(TONE=127, BARK=127, HAMMER=127))):
+            ev = S(noise=0, **cc) + [(150, "midi 0xB0 64 127")] + [(200, f"midi 0x90 {n} 100") for n in f3b]
+            ks = list(range(53, 90, 3))
+            ev2 = S(noise=0, **cc) + sum((bm.note(200 + 700 * i, n, 100, 500) for i, n in enumerate(ks)), [])
+            for nm, e, end in ((f"chord {tag}", ev, 4000), (f"keys {tag}", ev2, 200 + 700 * len(ks) + 800)):
+                C.append(Case(f"s12 sleep {nm}", "s12", e, end, [], env={"FRODHES_NOBUDGET": "1"}, kind="sleep", pair=nm))
+                C.append(Case(f"s12 ref {nm}", "s12", e, end, [], env={"FRODHES_NOBUDGET": "1", "FRODHES_NOSLEEP": "1"},
+                              kind="ref", pair=nm))
+        for us in (FX_ALL_US, 2000):
+            for nm, cc, v in (("yarn v100", {}, 100), ("rubber edge v127", dict(TONE=127, BARK=127, BELL=127, HAMMER=127), 127)):
+                ev = S(noise=0, **cc) + [(150, "midi 0xB0 64 127")] + [(200, f"midi 0x90 {n} {v}") for n in f3b]
+                C.append(Case(f"s12 budget {nm} fx {us}", "s12", ev, 2200, [], env={"FRODHES_FXUS": str(us)},
+                              kind="budget", pair=f"b {nm} {us}"))
+                C.append(Case(f"s12 nobudget {nm} fx {us}", "s12", ev, 2200, [], env={"FRODHES_NOBUDGET": "1"},
+                              kind="ref", pair=f"b {nm} {us}"))
+    # S10: each card in 32 steps, a strike at each on a bar at rest: 1.5 s apart, the key held 300 ms (the felt's
+    # T60 is about 0.5 s, so the last strike is gone). 500 ms apart the bar was still ringing about -25 dB at the
+    # next strike and the superposition's phase swung its 0..300 ms level by up to +-2.5 dB at any fixed card value
+    G10 = 1500
     for card in bm.CARDS:
         ev = S(noise=0 if card != "NOISE" else None)
         for k in range(32):
-            ev += [(150 + 500 * k, f"midi 0xB0 {bm.CC[card]} {min(127, k * 4 + (k == 31) * 3)}")] + bm.note(200 + 500 * k, 69, 100, 300)
-        C.append(Case(f"steps {card}", "steps", ev, 200 + 500 * 32 + 500, ["S1", "S10"], card=card, gap=500))
+            ev += [(150 + G10 * k, f"midi 0xB0 {bm.CC[card]} {min(127, k * 4 + (k == 31) * 3)}")] + bm.note(200 + G10 * k, 69, 100, 300)
+        C.append(Case(f"steps {card}", "steps", ev, 200 + G10 * 32 + 500, ["S1", "S10"], card=card, gap=G10))
     return C
 
 
@@ -287,6 +323,42 @@ def click_count(x, events, guard_ms=17):
     loud = (ea > (32767 * 1e-4) ** 2) & (eh > (32767 * 10 ** (-90 / 20)) ** 2)   # above -80 dBFS, HF above -90
     b = int((g & loud & (share > -40) & (eh > 10 * nb)).sum())
     return a, b
+
+
+def s3_lines(x, sk, t0=0.2, t1=2.0):
+    """S3 (single note): the strongest spectral line that is not a designed partial (+-3 %), its power (+-4 bins) re
+    V1's (+-3 %), 0.2..2 s after the strike; a line is a local peak 10 dB over the median floor (401 bins). Why lines,
+    not the broadband energy outside the partials (the plan's first wording): a linear modal engine's distortion or
+    intermodulation can only show as lines at harmonic / combination frequencies, while the energy between them is
+    the 16-bit output's rounding: a pure decaying sine rounded to int16 at the render's level reads -57 dB re V1 at
+    F6 (-62 at F3) on that broadband measure, exactly what the engine reads. Blackman-Harris (sidelobes -92 dB): a
+    Hann window leaks -63 dB of a decaying F3 line into its +-3 % neighbourhood. Returns (dB, Hz, broadband dB)."""
+    from scipy.signal import find_peaks
+    from scipy.signal.windows import blackmanharris
+    from scipy.ndimage import median_filter
+    m = bm.mono(x)
+    st = int(np.argmax(np.abs(m) > 0))
+    s_ = m[st + int(t0 * bm.FS):st + int(t1 * bm.FS)]
+    sp = np.abs(np.fft.rfft(s_ * blackmanharris(len(s_)))) ** 2
+    fr = np.fft.rfftfreq(len(s_), 1 / bm.FS)
+    parts = [md["f"] for md in sk["modes"] if md.get("f", 0) > 1]
+    v1 = (fr > parts[0] * 0.97) & (fr < parts[0] * 1.03)
+    e1 = sp[v1].sum() + 1e-30
+    keep = np.ones(len(sp), bool)
+    for f in parts:
+        keep &= ~((fr > f * 0.97) & (fr < f * 1.03))
+    bb = 10 * np.log10(sp[keep].sum() / e1 + 1e-30)
+    L = 10 * np.log10(sp + 1e-30)
+    flo = median_filter(L, 401)
+    idx, _ = find_peaks(L, distance=4)
+    worst, wf = -240.0, 0.0
+    for i in idx:
+        if fr[i] < 20 or not keep[i] or L[i] < flo[i] + 10:
+            continue
+        r = 10 * np.log10(sp[max(0, i - 4):i + 5].sum() / e1)
+        if r > worst:
+            worst, wf = r, float(fr[i])
+    return worst, wf, bb
 
 
 def run_checks(case, spec, typ, all_cases):
@@ -384,32 +456,24 @@ def run_checks(case, spec, typ, all_cases):
             if not spec or n not in spec:
                 R["S3"] = (None, None, "n/a: needs the spec's partials")
                 continue
-            s_ = bm.mono(seg(x, 200, 2200))
-            st = int(np.argmax(np.abs(s_) > 0))
-            s_ = s_[st + int(0.2 * bm.FS):st + int(2.0 * bm.FS)]
-            sp = np.abs(np.fft.rfft(s_ * np.hanning(len(s_)))) ** 2
-            fr = np.fft.rfftfreq(len(s_), 1 / bm.FS)
-            keep = np.ones(len(sp), bool)
-            for m in spec[n]["modes"]:
-                if m.get("f", 0) > 1:
-                    keep &= ~((fr > m["f"] * 0.97) & (fr < m["f"] * 1.03))
-            v1 = (fr > spec[n]["modes"][0]["f"] * 0.97) & (fr < spec[n]["modes"][0]["f"] * 1.03)
-            r = 10 * np.log10(sp[keep].sum() / (sp[v1].sum() + 1e-20) + 1e-20)
-            R["S3"] = (r <= -80, float(r), f"energy outside the partials {r:.1f} dB re V1")
+            r, f, bb = s3_lines(x, spec[n])
+            R["S3"] = (r <= -80, float(r), f"strongest line off the partials {r:.1f} dB re V1"
+                                          + (f" at {f:.0f} Hz" if f else "") + f" (broadband outside {bb:.1f} dB, the 16-bit floor)")
         elif ck == "S7f":
             n = case.meta["key"]
             s_ = bm.mono(seg(x, 200, 2200))
             st = int(np.argmax(np.abs(s_) > 0))
             s_ = s_[st + int(0.2 * bm.FS):st + int(2.0 * bm.FS)]
-            sp = 20 * np.log10(np.abs(np.fft.rfft(s_ * np.hanning(len(s_)))) + 1e-9)
+            from scipy.signal.windows import blackmanharris
+            sp = 20 * np.log10(np.abs(np.fft.rfft(s_ * blackmanharris(len(s_)))) + 1e-9)
             fr = np.fft.rfftfreq(len(s_), 1 / bm.FS)
             parts = [m["f"] for m in spec[n]["modes"] if m.get("f", 0) > 1] if spec and n in spec else []
             pk = sp.max()
             from scipy.signal import find_peaks
             idx, _ = find_peaks(sp, height=pk - 60, distance=20)        # every line within 60 dB: a partial, kept
             keep = np.ones(len(sp), bool)
-            for f in parts + list(fr[idx]):
-                keep &= ~((fr > f * 0.97) & (fr < f * 1.03))
+            for f in parts + list(fr[idx]):                            # the band, widened by the smoothing's half
+                keep &= ~((fr > f * 0.97 - 32 * fr[1]) & (fr < f * 1.03 + 32 * fr[1]))   # width (64 bins)
             keep &= (fr > 30) & (fr < 16000)
             from scipy.ndimage import uniform_filter1d
             floor = float(uniform_filter1d(sp, 64)[keep].max() - pk) if keep.any() else -240
@@ -455,9 +519,13 @@ def run_checks(case, spec, typ, all_cases):
             R["S13"] = (a + b == 0 and silent and not evd, a + b + (0 if silent else 1),
                         f"clicks {a}, bursts {b} (outside the fade blocks); {'silent at the end' if silent else 'STUCK: sound at the end'}; "
                         f"ev_drop {'n/a' if evd is None else evd}")
-    if cnt["mode-samples"] is not None and PERF_US_PER_MODE_SAMPLE:
-        us = cnt["mode-samples"] * PERF_US_PER_MODE_SAMPLE
-        R["S11"] = (us <= 4500, us, f"predicted {us:.0f} us a block")
+    import re
+    m = re.search(r"cpu-proxy max (\d+) us per block \(bars", log or "")
+    fxus = (case.env or {}).get("FRODHES_FXUS")
+    if m and fxus in (None, str(FX_ALL_US)):          # (the S12 stress renders plan with a load that does not exist)
+        us = int(m.group(1))
+        R["S11"] = (us <= S11_FLAG_US, us, f"cost model's worst block {us} us"
+                    + (f" (planned with every effect, {FX_ALL_US} us)" if fxus else ""))
     return R
 
 
@@ -477,9 +545,14 @@ def group_checks(cases, typ):
             d = bm.mono(b.x) - bm.mono(a.x)
             pk = np.abs(bm.mono(b.x)).max() + 1e-9
             st = int(np.argmax(np.abs(bm.mono(a.x)) > 0))
-            tail = d[st + int(0.15 * bm.FS):st + int(1.0 * bm.FS)]
+            # the contact burst only: 150 ms after the strike up to 10 ms before the key-up (its block). NOISE also sets the
+            # damper's knock and felt noise at the key-up (bars.c bar_note_off), which is the card's job too and
+            # not the burst the plan's "<= -80 dB by 150 ms" is about (a 1.0 s window read the knock: -22 dB)
+            off = max(t for t, e in b.events if e.startswith("midi 0x80"))
+            tail = d[st + int(0.15 * bm.FS):int((off - 10) * bm.FS / 1000)]      # (- one block of latency)
             r = 20 * np.log10(np.sqrt(np.mean(tail ** 2)) / pk + 1e-12) if len(tail) else -240
-            G.append(("S7", f"noise64 {n}", r <= -80, float(r), f"NOISE 64 - NOISE 0 after 150 ms {r:.1f} dB re the peak"))
+            G.append(("S7", f"noise64 {n}", r <= -80, float(r), f"NOISE 64 - NOISE 0, 150 ms after the strike to the "
+                                                                 f"key-up, {r:.1f} dB re the peak"))
     ct = [c for c in cases if c.group == "chordcmp"]
     if len(ct) == 2:
         l = {c.meta["typ"]: bm.lufs(seg(c.x, 200, 1000)) for c in ct}
@@ -492,11 +565,41 @@ def group_checks(cases, typ):
             span = max(lv) - min(lv)
             G.append(("S9", f"card {card}", span <= 6, float(span), f"{bm.BAR_NAME[card]} ({card}) 0..127: the 0..300 ms "
                                                                      f"level moves {span:.1f} LU"))
-    G.append(("S12", "sleep / budget", None, None, "n/a: needs the engine's host switches (relative sleep, mode budget off)"))
+    s12c = [c for c in cases if c.group == "s12"]
+    for pr in sorted({c.meta["pair"] for c in s12c}):
+        a = next((c for c in s12c if c.meta["pair"] == pr and c.meta["kind"] != "ref"), None)
+        b = next((c for c in s12c if c.meta["pair"] == pr and c.meta["kind"] == "ref"), None)
+        if a is None or b is None:
+            continue
+        lim = -50.0 if a.meta["kind"] == "sleep" else -40.0
+        r = s12_residual(bm.mono(a.x), bm.mono(b.x))
+        # planned with nearly twice the every-effect load: a load the FM-1 never has (fx.c's heaviest set is
+        # FX_ALL_US), so the budget must cut audible partials there: reported, not judged (test_bars_engine bounds
+        # the order it cuts in against the best possible one)
+        stress = (a.env or {}).get("FRODHES_FXUS") not in (None, str(FX_ALL_US))
+        G.append(("S12", a.name, None if stress else r <= lim, float(r), f"{a.meta['kind']} vs off: worst 1 s window "
+                  f"{'exact' if r == -np.inf else f'{r:.1f} dB'} re the signal" + (" (a load the FM-1 never has: reported)"
+                                                                                 if stress else f" (limit {lim:.0f})")))
     return G
 
 
-def s6(typ, keys, spec):
+def s12_residual(a, b):
+    """the worst 1 s window (0.25 s hops) of the residual a - b re b, dB; windows whose residual is within the 16-bit
+    rounding (0.6 LSB RMS: two independent roundings) are not judged; -inf when identical"""
+    n = min(len(a), len(b))
+    a, b = a[:n], b[:n]
+    if np.array_equal(a, b):
+        return -np.inf
+    worst = -240.0
+    for t0 in np.arange(0.2, n / bm.FS - 1.0, 0.25):
+        w = slice(int(t0 * bm.FS), int((t0 + 1.0) * bm.FS))
+        d = a[w] - b[w]
+        if np.sqrt(np.mean(d * d)) > 0.6:
+            worst = max(worst, 10 * np.log10(np.sum(d * d) / (np.sum(b[w] ** 2) + 1e-20) + 1e-30))
+    return worst
+
+
+def s6(typ, keys, spec, design=None):
     import bar_freq_scan as fs
     if spec is None:
         return [("S6", "pitch / decay", None, None, "n/a: no spec file")]
@@ -504,13 +607,13 @@ def s6(typ, keys, spec):
     class A:
         pass
     a = A()
-    a.type, a.vel, a.dur, a.motor, a.rate, a.depth = typ, 100, 8200, False, 78, 127
+    a.type, a.vel, a.dur, a.motor, a.rate, a.depth, a.sleep = typ, 100, 8200, False, 78, 127, False
     out = []
     fs.OUT = os.path.join(OUT, "s6")
     for n in keys:
         if n not in spec:
             continue
-        r = fs.measure_key(n, a, spec)
+        r = fs.measure_key(n, a, spec, design)
         bad = fs.judge(r, True)
         out.append(("S6", f"key {n}", not bad, len(bad), "; ".join(bad) or "pitch and T60 within tolerance"))
     return out
@@ -538,7 +641,7 @@ def main():
     from concurrent.futures import ThreadPoolExecutor
 
     def go(c):
-        c.x, c.log = bm.render(fname(c.name), c.events, c.end, os.path.join(OUT, "wav"))
+        c.x, c.log = bm.render(fname(c.name), c.events, c.end, os.path.join(OUT, "wav"), env=c.env)
         return c
     with ThreadPoolExecutor(a.jobs) as ex:
         cases = list(ex.map(go, cases))
@@ -550,7 +653,8 @@ def main():
             rows.append((ck, c.name, ok, metric, det))
     if not a.smoke:
         rows += group_checks(cases, a.type)
-        rows += s6(a.type, [53, 60, 65, 69, 77, 84, 89] if not a.full else keys_for(True), spec)
+        rows += s6(a.type, [53, 60, 65, 69, 77, 84, 89] if not a.full else keys_for(True), spec,
+                   bm.load_design(a.spec or spath))
     if only:
         rows = [r for r in rows if r[0] in only]
     order = ["S%d" % i for i in range(1, 14)]
