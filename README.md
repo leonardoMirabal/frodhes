@@ -15,6 +15,9 @@ anything you assign) on those four knobs for playing live.
 **Try it in your browser: [the Frodhes emulator](https://leonardomirabal.github.io/frodhes/)**: the same firmware
 code compiled to WebAssembly, with the FM-1's screen, knobs, buttons and keys (computer keyboard and Web MIDI too).
 
+Frodhes also builds for the M-Vave SMK-37 (Pro, Elite, MKE-P37): 37 velocity keys, 16 pads, 4 faders, the wheels
+and the pedal jack. See [SMK37.md](SMK37.md).
+
 ## Download
 
 **Latest release: [Frodhes 0.9.2](https://github.com/leonardoMirabal/frodhes/releases/latest)**: the firmware file is
