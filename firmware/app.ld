@@ -18,7 +18,11 @@ MEMORY
 }
 SECTIONS
 {
-    .text : { KEEP(*(.text.crt0)) *(.text*) *(.rodata*) . = ALIGN(4); _etext = .; } > XIP
+    /* the audio hot path first, at a fixed address: the FM-1 runs code from flash through a cache, and where the
+     * Rhodes and effects loops (inlined into app_audio) and rh_hermite land changes their time by up to 150 us
+     * (measured 2026-10-17 when the bar engine grew); pinned here, adding an engine no longer moves them */
+    .text : { KEEP(*(.text.crt0)) . = ALIGN(32); KEEP(*(.text.app_audio)) *(.text.rh_hermite) *(.text*) *(.rodata*)
+              . = ALIGN(4); _etext = .; } > XIP
     .ram_text : { _rt_start = .; KEEP(*(.ram_text*)) . = ALIGN(4); _rt_end = .; } > RAMTEXT AT > XIP
     _rt_load = LOADADDR(.ram_text);
     .data : { . = ALIGN(4); _data_start = .; *(.data*) *(.sdata*) . = ALIGN(4); _data_end = .; } > RAM AT > XIP

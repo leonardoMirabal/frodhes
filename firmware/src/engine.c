@@ -15,7 +15,7 @@
  * those 256 samples, then all its voices stop and the other engine takes over; events wait in the ring during that
  * block (they are played by the new engine one block later). With no voice sounding the change is immediate. */
 #include "rhodes.c"
-#include "bars.c"
+#include "bars.h"     /* the bar engine's state; its code (bars.c) comes last, in frodhes.c */
 
 #define ENG_HAS_BARS 1                         /* params.c: the engine hooks below replace its stubs */
 #define ENG_RHODES 0u

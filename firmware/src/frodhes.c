@@ -26,6 +26,7 @@
 #include "seq.c"
 #include "ui.c"
 #include "presets.c"
+#include "bars.c"       /* last: the bar engine's code (see bars.c) */
 
 static int32_t voice_mono[256];
 static void app_audio(int32_t *out, uint32_t n)

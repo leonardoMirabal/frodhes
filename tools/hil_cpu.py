@@ -167,7 +167,7 @@ def main():
         run("8-note chord v127, edge, every effect + motor", dict(heavy, **edge), chord8, 127)
         run("8 bass v127, edge + pedal, every effect + motor", dict(heavy, **edge), bass8, 127, pedal=True, hold=3.0)
         query.bars = (None, None)
-    heavy = dict(heavy, **edge)                   # the repeated-chord test at the worst voicing too
+        heavy = dict(heavy, **edge)               # the repeated-chord test at the worst voicing too
     run("idle, no effects", {})
     run("idle, every effect on (heaviest)", heavy)
     run("8-note chord v100, no effects", {}, chord8)
