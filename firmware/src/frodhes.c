@@ -17,6 +17,19 @@
 #define APP_FL_RANGE(off, n) FL_IN(off, n, 0x97000u, 0x9AFFFu)    /* the user preset bank (presets.c), the
                                                                        * sequencer's pattern (seq.c) */
 #include "platform.c"
+#if defined(RH_PROF_STAGES) && !defined(DINGHY_HOST)
+/* developer build only (APP_DEFS=-DRH_PROF_STAGES ./build.sh; never shipped): where the audio block's time goes.
+ * PROF_STAMP(i) charges the 24 MHz ticks since the previous stamp to stage i (its maximum since the last CC 116
+ * query); app_audio stamps 1 after the engine and 15 at the end, fx_process may stamp 2..14 between its stages.
+ * tools/hil_cpu.py --stages reads them (CC 116 replies also CC 97 = stage, CC 98 / 99 = us MSB / LSB). */
+#define PROF_NST 16u
+static uint32_t prof_st_t __attribute__((section(".bss.prof_t")));     /* own sections: out of the global merge */
+static uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof_st")));     /* (engine.c eq) */
+#define PROF_STAMP(i) do { uint32_t t_ = fm1_ticks(), d_ = t_ - prof_st_t; prof_st_t = t_; \
+                           if (d_ > prof_st_max[i]) prof_st_max[i] = d_; } while (0)
+#else
+#define PROF_STAMP(i) ((void)0)
+#endif
 #include "engine.c"     /* the voice engines: rhodes.c (the Rhodes), bars.c (VIBES), and the dispatcher */
 #include "fx.c"
 #include "params.c"
@@ -34,8 +47,13 @@ static void app_audio(int32_t *out, uint32_t n)
 #ifndef DINGHY_HOST
     uint32_t t0 = fm1_ticks(), us;
 #endif
+#if defined(RH_PROF_STAGES) && !defined(DINGHY_HOST)
+    prof_st_t = t0;
+#endif
     eng_render(voice_mono, n);
+    PROF_STAMP(1);
     fx_process(voice_mono, out, n);
+    PROF_STAMP(15);
 #ifndef DINGHY_HOST
     us = (fm1_ticks() - t0) / 24u;                 /* 24 MHz ticks -> us (a constant divide) */
     prof_us = us;
@@ -100,6 +118,15 @@ static void midi_cc(uint32_t cc, uint32_t v)
         midi_send(0xB0, 112, bar_prof_cap > 127u ? 127u : bar_prof_cap);   /* the bar engine: the lowest mode cap */
         midi_send(0xB0, 113, bar_prof_used > 127u ? 127u : bar_prof_used); /* and the most live upper modes */
         bar_prof_cap = 0xFFFFu; bar_prof_used = 0;
+#if defined(RH_PROF_STAGES) && !defined(DINGHY_HOST)
+        for (id = 1; id < PROF_NST; id++) {           /* the stage maxima (us), then they reset */
+            uint32_t su = prof_st_max[id] / 24u;
+            if (!prof_st_max[id]) continue;           /* a stage without a stamp (the MIDI out ring holds 64) */
+            if (su > 16383u) su = 16383u;
+            midi_send(0xB0, 97, id); midi_send(0xB0, 98, su >> 7); midi_send(0xB0, 99, su & 127u);
+            prof_st_max[id] = 0;
+        }
+#endif
         prof_max_us = 0;
         return;
     }
