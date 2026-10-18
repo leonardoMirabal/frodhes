@@ -195,6 +195,24 @@ static int32_t rh_hermite(const int32_t *P, const int32_t *M, int64_t s)
     return p0 + (int32_t)(((int64_t)t * a) >> 22);
 }
 
+/* rh_hermite of s = u * u, inlined into the pickup loops: the same arithmetic. s >= 0 always (|u| < 2^31: the square
+ * fits), so the low clamp could never fire; for s >= 0, s >= RH_S_MAX_HI << 44 exactly when hi32(s) >= RH_S_MAX_HI << 12 */
+static inline __attribute__((always_inline)) int32_t rh_hermite_u(const int32_t *P, const int32_t *M, int32_t u)
+{
+    int64_t s = (int64_t)u * u;
+    uint32_t i, t;
+    int32_t p0, p1, m0, m1, c2, c3, a;
+    if ((uint32_t)(s >> 32) >= (RH_S_MAX_HI << 12)) s = ((int64_t)RH_S_MAX_HI << 44) - 1;
+    i = (uint32_t)(s >> 44);
+    t = (uint32_t)(s >> 22) & 0x3FFFFFu;
+    p0 = P[i]; p1 = P[i + 1]; m0 = M[i]; m1 = M[i + 1];
+    c3 = 2 * (p0 - p1) + m0 + m1;
+    c2 = 3 * (p1 - p0) - 2 * m0 - m1;
+    a = c2 + (int32_t)(((int64_t)t * c3) >> 22);
+    a = m0 + (int32_t)(((int64_t)t * a) >> 22);
+    return p0 + (int32_t)(((int64_t)t * a) >> 22);
+}
+
 static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
 {
     const rh_type_t *ty = &RH_TYPE[rh_type];
@@ -385,9 +403,17 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
         s->x = sat28i(x); s->y = sat28i(y); s->ex = ex; s->ey = ey; s->peak = pk;
         sum += pk >> 3;
     }
-    for (j = 0; j < SUB; j++) {                           /* pickup, then the per-key gain into the mix */
-        int32_t u = rh_x[j] + off;
-        int32_t H = rh_hermite(P, M, (int64_t)u * u);
+    if (v->fade == 32768 && !v->felt_n)                   /* pickup, then the per-key gain into the mix: no steal fade
+                                                           * and no felt noise (only this loop changes them in a render:
+                                                           * the tests below would never fire) */
+        for (j = 0; j < SUB; j++) {
+            int32_t H = rh_hermite_u(P, M, rh_x[j] + off);
+            mix[j] += (int32_t)(((int64_t)(H - Hp) * gain) >> 24);
+            Hp = H;
+        }
+    else
+    for (j = 0; j < SUB; j++) {                           /* the same, with the fade and the felt noise */
+        int32_t H = rh_hermite_u(P, M, rh_x[j] + off);
         int32_t o = (int32_t)(((int64_t)(H - Hp) * gain) >> 24);
         Hp = H;
         if (v->fade != 32768) {

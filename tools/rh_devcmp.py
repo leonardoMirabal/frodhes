@@ -61,7 +61,8 @@ def takes():
     ev = [(0.3, "on", n, 100) for n in ch8] + [(2.3, "off", n, 0) for n in ch8]
     T["fx_chord"] = (dict(HEAVY), 7.0, ev, [("fx_chord", 0.3, 6.8, None, 2.0)])
     T["held45"] = (dict(), 11.0, [(0.3, "on", 45, 100), (9.3, "off", 45, 0)], [("held45", 0.3, 10.8, 45, 9.0)])
-    return T
+    only = os.environ.get("DEVCMP_ONLY")              # a pilot: the takes whose name starts with it (the first keeps its panel)
+    return {k: v for k, v in T.items() if not only or k.startswith(only) or k.startswith("ST77_33_v40")}
 
 
 def both44(J, dur, events):
@@ -104,16 +105,18 @@ def record(name, dev, ch):
     r = J.r
     os.makedirs(os.path.join(OUT, name), exist_ok=True)
     r.cc_raw = lambda c, v: r.out.send(r.mido.Message("control_change", control=c, value=v))
+    typ = 0
     for tk, (panel, dur, ev, seg) in takes().items():
-        if panel is None:                                 # the same panel: only wait for silence (the gate's zero)
-            r.wait_silence()
-        else:
+        if panel is not None:
             p = dict(panel)
             typ = p.pop("TYPE", 0)
             r.dry(**p)
-            r.cc_raw(80, typ)
-            time.sleep(0.5)
-            r.wait_silence()
+        r.cc_raw(47, 0)
+        r.cc_raw(79, 64)                                  # VIBES and back: every Rhodes voice ends (eng_switch kills
+        time.sleep(0.2)                                   # them, the RLC / body states zeroed). The gate's silence
+        r.cc_raw(80, typ)                                 # alone leaves tails ringing under -66 dBFS that come back
+        time.sleep(0.3)                                   # with the next note (+-0.4 dB run to run)
+        r.wait_silence()
         r.cc_raw(114, 127)                                # USB VOL FIXED: USB = the app's output before MASTER
         u44, j = both44(J, dur, ev)
         from scipy.signal import resample_poly
@@ -126,17 +129,26 @@ def record(name, dev, ch):
     r.dry()
 
 
-def exact(A, B, tk, t0, t1):
-    """USB at 44.1 kHz, both runs aligned on their first non-zero sample: the samples that differ (and the largest
-    difference) over the segment; 0 = the firmware's output identical to the sample"""
+def exact(A, B, tk, t0, t1, hold):
+    """USB at 44.1 kHz over the held part, run B aligned on run A to the sample (cross-correlation of the attack):
+    the samples that differ and the largest difference (LSB); 0 = the firmware's output identical to the sample"""
     a = np.load(os.path.join(OUT, A, tk + ".npz"))["usb44"].astype(int)
     b = np.load(os.path.join(OUT, B, tk + ".npz"))["usb44"].astype(int)
     i0 = int(t0 * 44100) - 2205
     a, b = a[i0:int(t1 * 44100)], b[i0:int(t1 * 44100)]
-    oa, ob = int(np.argmax(a != 0)), int(np.argmax(b != 0))
-    n = min(len(a) - oa, len(b) - ob) - 8820
-    d = b[ob:ob + n] - a[oa:oa + n]
-    return int(np.count_nonzero(d)), int(np.abs(d).max()), n
+
+    def on(x):
+        h = np.abs(x[:int(0.35 * 44100)])
+        return int(np.argmax(h > 0.1 * max(h.max(), 1)))
+    oa, ob = on(a), on(b)
+    w = 2205
+    best = max(range(-64, 65), key=lambda k: np.dot(a[oa - 100:oa - 100 + w].astype(float),
+                                                    b[ob - 100 + k:ob - 100 + k + w].astype(float)))
+    sa, sb = oa - 441, ob - 441 + best                    # from 10 ms before the attack
+    n = min((int((hold - 0.1) * 44100) if hold else len(a)) + 441, len(a) - sa, len(b) - sb)   # (the 10 ms lead-in inside the clamp)
+    d = b[sb:sb + n] - a[sa:sa + n]
+    res = 20 * np.log10(np.sqrt(np.mean(d.astype(float) ** 2)) / (np.sqrt(np.mean(a[sa:sa + n].astype(float) ** 2)) + 1e-9) + 1e-12)
+    return int(np.count_nonzero(d)), int(np.abs(d).max()), n, float(res)
 
 
 # ---------------------------------------------------------------- measures
@@ -179,7 +191,8 @@ def measure(x, note, hold, ons=(0.0,)):
     """x: the segment from 50 ms before its first note-on; ons: its note-ons (s re the first). Measured from the
     detected onset over a fixed length (the segment minus 0.15 s: the next note's jittered start stays out)"""
     on = onset(x)
-    y = x[on:on + len(x) - int(0.2 * FS)]
+    y = x[on:on + (int((hold - 0.1) * FS) if hold else len(x) - int(0.2 * FS))]   # the held part: the note-off
+                                                          # comes with its own MIDI / block jitter (+-6 ms)
     g = [on + int(t * FS) for t in ons]                   # the notes' own attacks are not clicks (bar_scan S1)
     e = env2ms(y)
     ed = 20 * np.log10(e)
@@ -248,7 +261,7 @@ def compare(A, B, md=None):
     ra, rb = analyse(A), analyse(B)
     rows, fails = [], 0
     segs = [(tk, s) for tk, (_, _, _, seg) in takes().items() for s in seg]
-    hdr = "| take | src | LUFS A | LUFS B | d | max band d | T60 A | T60 B | d % | pitch max d (c) | partial lvl max d | onset A / B ms | clicks A / B | residual dB | USB 44.1k samples differing (max) |"
+    hdr = "| take | src | LUFS A | LUFS B | d | max band d | T60 A | T60 B | d % | pitch max d (c) | partial lvl max d | onset A / B ms | clicks A / B | residual dB (USB: 44.1 kHz aligned) | USB 44.1k samples differing (max LSB) |"
     rows.append(hdr)
     rows.append("|" + "---|" * 15)
     nex = 0
@@ -265,7 +278,7 @@ def compare(A, B, md=None):
             ex = ""
             if src == "usb":
                 try:
-                    nd, mx, n = exact(A, B, tk, t0, t1)
+                    nd, mx, n, res = exact(A, B, tk, t0, t1, hold)   # USB: the residual from the 44.1 kHz samples
                     ex = f"{nd} of {n} ({mx})"
                     nex += nd == 0
                 except KeyError:
