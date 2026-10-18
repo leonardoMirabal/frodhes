@@ -9,6 +9,8 @@ Rhodes; voice1-vibes.png .. voice3-vibes.png on VIBES). Files left in the folder
   tools/manual_shots.py           the framebuffer's own colours (what the firmware writes: the default since
                                   2026-10-18, the user: the panel model's yellow is not what the eye sees)
   tools/manual_shots.py --device-look   the colours through the panel model below (camera-calibrated)
+  tools/manual_shots.py --cards N --out DIR   the rows' design variant N (developer CC 11: 0 TODAY, 1 FADER, 2 LINE),
+                                  the PNGs to DIR (tools/cards_sheet.py; overview.png and the stale list skipped)
 
 The device look. The FM-1's ST7789 panel, behind its window, lifts the dark tones a lot and shifts the hue towards
 yellow: the AMBER palette's darkest step C_LINE = RGB(60,26,0) (frames) reads light khaki, the title UI_ACC =
@@ -107,8 +109,16 @@ def names(pages, suffix=""):
     return out
 
 
+def opt(name, default=None):
+    a = sys.argv[1:]
+    return a[a.index(name) + 1] if name in a and a.index(name) + 1 < len(a) else default
+
+
 def main():
+    global OUT
     raw = "--device-look" not in sys.argv[1:]
+    cards = opt("--cards")
+    OUT = os.path.abspath(opt("--out", OUT))
     subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(os.path.join(ROOT, "build", "host"), exist_ok=True)
@@ -116,7 +126,9 @@ def main():
     PAGES = names(walk_pages())                             # the SELECT order, as the firmware has it
     vibes = names(walk_pages(["100 midi 0xB0 79 64"]), "-vibes")
     vibes = vibes[vibes.index("piano-vibes") + 1:vibes.index("comp-vibes")]   # VIBES' own pages (VOICE 1..3)
-    L, shots, t = ["400 shot"], {400: "splash"}, 100           # the start screen, before anything is touched
+    L, shots, t = ["400 shot"], {400: "splash"}, 100
+    if cards is not None:                                   # the rows' design variant (developer CC 11)
+        L.insert(0, f"50 midi 0xB0 11 {int(cards)}")           # the start screen, before anything is touched
     # a sound with something on every page: F04 80S BALLAD, then the tremolo, phaser and compressor on
     t = 500
     L.append(f"{t} midi 0xC0 3 0"); t += 1300                # (the start screen holds the pages for 1.6 s)
@@ -198,6 +210,9 @@ def main():
         im = Image.open(src).convert("RGB")
         (im if raw else device_look(im)).resize((480, 480), Image.NEAREST).save(os.path.join(OUT, f"{name}.png"))
         os.remove(src)
+    if cards is not None:
+        print(sorted(set(shots.values())))
+        return
     overview(["perform", "voice1", "phaser", "comp"])
     made = set(shots.values()) | {"overview"}
     print(sorted(made))
