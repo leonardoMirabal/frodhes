@@ -64,7 +64,7 @@ order; changing the TYPE changes the pages with it.
 figures, every value the same size and ending at the same place, with the unit beside it in small letters (Hz, kHz,
 ms, s, dB, c for cents, %). What is drawn behind the value tells you at a glance what kind of control it is:
 
-- **An amount** (DEPTH, MIX, a time, a frequency ...): the card is a fader. It fills with dim amber from the left up
+- **An amount** (DEPTH, MIX, a time, a frequency ...): the card is a fader. It fills with warm amber from the left up
   to the value, with a bright amber edge where the fill ends (the edge stops short of the letters, so it never cuts a
   number): empty at 0, full at the top.
 - **A selector** (TYPE, EFFECT DIG / ANA, a filter type, a note value, a scale, a chord type ...): the card is cut
@@ -80,7 +80,7 @@ ms, s, dB, c for cents, %). What is drawn behind the value tells you at a glance
 A few names too long for their card are written shorter, in the same large letters: on ASSIGN **TRM/WAH**, **TRM
 RATE**, **TRM SHP**, **PHA SPD**, **PHA FDBK**, **CHO SPD**, **DLY FDBK**, **CMP GAIN** (the compressor's make-up).
 
-**The card you are turning** gets a thin amber frame and its name turns amber, for about a second after you stop.
+**The card you are turning** gets a thin amber frame and its name turns amber (white where it sits on the fill), for about a second after you stop.
 The numbers are rounded to what fits on the card (1.486 s shows 1.5 s, +11.8 dB shows +12 dB).
 
 The top line shows the preset, the octave (O+1, O−2...), **SUS** while the sustain is held, **BYP** while the effects

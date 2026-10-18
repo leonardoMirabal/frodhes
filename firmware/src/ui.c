@@ -251,7 +251,7 @@ static void mt_update(void)                             /* the tokens for the lo
     mt.fill = amber && l->amb_fill ? l->amb_fill : (uint16_t)((rr << 11) | (gg << 5) | bb);
 #if UI_FILL_PCT > 0                                     /* the fill as a share of the accent (the user: "the orange /
                                                          * yellow effect on the fader"; the strength sheet) */
-    mt.fill = cd_shade(amber && l->amb_acc ? l->amb_acc : pal[3], UI_FILL_PCT);
+    if (!(amber && l->amb_fill)) mt.fill = cd_shade(pal[3], UI_FILL_PCT);   /* (look C on AMBER: its own, matched) */
 #endif
     mt.acc = mt.edge = mt.frame = amber && l->amb_acc ? l->amb_acc : pal[3];
     mt.surf = l->surf; mt.track = l->track; mt.outline = l->outline; mt.hair = l->hair; mt.seq = l->seq;

@@ -369,7 +369,9 @@ def test_cards_hot_frame(variant):
             box = M.row_box(im, j)
             fo, tb = M.frame_on(im, box, acc)
             x0, y0 = M.ROW_X0, M.ROW_Y0 + M.ROW_DY * j               # the label's accent cores (its box)
-            lab = int(M.is_acc(im[y0 + base - 10:y0 + base, x0 + 6:x0 + 6 + 40], acc).sum())
+            lb = im[y0 + base - 10:y0 + base, x0 + 6:x0 + 6 + 40]
+            on_fill = b is not None and j == k and b["fw"] > 6 and b["style"] in "FS"   # (the label on the fill:
+            lab = int((M.white(lb) if on_fill else M.is_acc(lb, acc)).sum())          # white, amber would vanish)
             on = dt < 1000 and j == k
             if on and (fo < 0.8 or lab < 8):
                 errs.append(f"{NAMES[variant]} K{k + 1} +{dt}: row {j + 1} no frame ({fo:.2f}) / label ({lab})")
