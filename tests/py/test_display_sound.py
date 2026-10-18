@@ -143,9 +143,9 @@ def test_motor_rate():
         w = run(f"ds-mot{v}", pre + [cc(30, 47, 127), cc(32, 48, 127), cc(33, 49, v), "100 dump"]
                 + restruck(CHORD), 10500)
         st = w.state(100)
-        assert st[f"card.{PG['MOTOR']}.0"] == "ON" and st[f"card.{PG['TREM']}.0"] == "OFF"
+        assert st[f"vcard.2.0"] == "ON" and st[f"card.{PG['TREM']}.0"] == "OFF"
         g, fps = gain_ratio(w, ref, 0.5, 10.2, hop=256)
-        txt = st[f"card.{PG['MOTOR']}.2"]
+        txt = st[f"vcard.2.2"]
         assert_rate(rate_of(np.log(g), fps, card_hz(txt)), txt, f"MOTOR RATE {v}")
 
 
@@ -303,7 +303,7 @@ def test_tune_transpose_octave(eng):
     for d in (-37, 12, 50):                            # SELECT -> FRODHES, VOICE, DECAY, K4
         w = run(f"ds-tune{d}-{eng}", pre + ["10 turn 0 1", "11 turn 0 1", "12 turn 0 1", f"14 turn 5 {d}", "20 dump"] + C4_KEY, 2000)
         st = w.state(20)
-        assert st["page"] == "DECAY" and st["label3"] == "TUNE"
+        assert st["page"] == "VOICE" and st["vpage"] == "2/2" and st["label3"] == "TUNE"
         c = 1200 * math.log2(pitch(w.seg(0.3, 1.5), 261.63 * 2 ** (d / 1200)) / f0)
         assert abs(c - int(st["card3"])) <= 1.0, f"TUNE: the card says {st['card3']} cents, the pitch moved {c:+.2f}"
     for d in (-5, 3, 24):                              # GLO -> TEMPO, SELECT -> SCALE, K4
@@ -343,8 +343,8 @@ def test_tempo_and_sync(eng):
         assert st["page"] == "TEMPO" and st["card0"] == st["bpm"]
         bpm = float(st["card0"])
         assert abs(bpm - 100) <= 2.0, f"{how}: BPM {bpm}"
-        div = st[f"card.{PG['MOTOR']}.2"] if mode == 120 else st["card1"]   # the SPEED / TREM SYNC card: the note
-        assert st[f"card.{PG['MOTOR' if mode == 120 else 'TREM']}.2"] == div, (st[f"card.{PG['TREM']}.2"], div)
+        div = st[f"vcard.2.2"] if mode == 120 else st["card1"]   # the SPEED / TREM SYNC card: the note
+        assert st["vcard.2.2" if mode == 120 else f"card.{PG['TREM']}.2"] == div, (st[f"card.{PG['TREM']}.2"], div)
         hz = bpm / 60 * 96 / UNITS[div]
         g, fps = gain_ratio(w, ref, 2.7, 10.2, hop=256 if mode == 120 else 64)
         meas = rate_of(np.log(g) if mode == 120 else g, fps, hz)

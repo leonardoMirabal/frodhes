@@ -114,7 +114,7 @@ def test_pedal_holds_and_half_pedals(note):
 def test_tune_by_the_panel():
     """the DECAY page's K4 (the panel; TUNE has no CC): -50 / +50 cents"""
     pre = ["100 turn 1 1", "120 turn 1 1", "140 turn 1 1", "160 turn 1 1", "300 turn 0 1", "350 turn 0 1", "400 turn 0 1",
-           "450 expect state label.4.3 TUNE"]
+           "450 expect state vlabel.1.3 TUNE"]
     got = {}
     for tu in (-50, 0, 50):
         x = run(f"va-tune{tu}", pre + RAW + MOTOR_OFF + ([f"600 turn 5 {tu}"] if tu else []) +
@@ -162,7 +162,7 @@ def test_motor_depth_is_a_clear_pulse(note):
         r = play(f"va-mot{depth}-{note}", motor(depth), note, on=300, dur=6000, end=4000)
         d[depth], rate = am_db(r.L[int(0.8 * FS):int(t1 * FS)], 3.5)
         if depth:
-            shown = card_hz(r.state(100)["card.21.2"])
+            shown = card_hz(r.state(100)["vcard.2.2"])
             assert abs(rate / shown - 1) < 0.05, (note, rate, shown)
     assert d[127] >= 6.0 and d[0] < 1.0, (note, d)
 
@@ -170,7 +170,7 @@ def test_motor_depth_is_a_clear_pulse(note):
 def test_motor_rate_follows_the_card():
     for v in (20, 78, 110):
         r = play(f"va-motrate{v}", motor(127, v), 69, on=300, dur=6000, end=4300)
-        shown = card_hz(r.state(100)["card.21.2"])
+        shown = card_hz(r.state(100)["vcard.2.2"])
         _, rate = am_db(r.L[int(0.8 * FS):int(4.0 * FS)], shown)
         assert abs(rate / shown - 1) < 0.05, (v, rate, shown)
 

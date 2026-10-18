@@ -24,9 +24,10 @@ static void preset_name(uint32_t idx, char *s);
 static void tempo_tap(void);                          /* tempo.c */
 static void tempo_set10(uint32_t b);
 
-enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_DECAY, PG_COMP, PG_FILTER, PG_TREM, PG_PHA, PG_CHO, PG_DELAY,
-       PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_SETUP, PG_MIDI, PG_DRIVE, PG_REVERB, PG_MOTOR, PG_N };   /* PG_MOTOR (records
-                                    * v3): the vibraphone's motor, shown on a bar TYPE only */
+/* the pages. The ids are the host API's (tests: card.<page>.<k>), so they stay: 4 was DECAY and 21 MOTOR until the
+ * engines' pages came from their tables (eng_pages.h): VOICE 1/n .. n/n, one PG_VOICE page with its number ui_vp */
+enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_RETIRED4, PG_COMP, PG_FILTER, PG_TREM, PG_PHA, PG_CHO, PG_DELAY,
+       PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_SETUP, PG_MIDI, PG_DRIVE, PG_REVERB, PG_N };
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL = 8, E_N = 9, E_CARDS = 10 };   /* E_CARDS: all four;
                                     * E_METER: COMP's meter / SEQUENCER's cells, E_ROLL: SEQUENCER's NOW / NEXT */
 /* card slots: a parameter id (< P_COUNT) or one of these */
@@ -42,46 +43,64 @@ static const ectl_t *eng_ctl(uint32_t id)              /* the TYPE's engine's co
     for (i = 0; i < e->n; i++) if (e->c[i].id == id) return &e->c[i];
     return 0;
 }
+static const ectl_t *eng_head(uint32_t h)              /* the engine's headline control h (1: FRODHES K2, 2: K3) */
+{
+    const engui_t *e = eng_ui();
+    uint32_t i;
+    for (i = 0; i < e->n; i++) if (e->c[i].head == h) return &e->c[i];
+    return 0;
+}
+static uint32_t vp_count(void) { return (eng_ui()->n + 3u) / 4u; }   /* the engine's VOICE pages */
+static const ectl_t *voice_ctl(uint32_t vp, uint32_t k)   /* VOICE page vp's K(k+1) (0: an empty row) */
+{
+    uint32_t i = vp * 4u + k;
+    return i < eng_ui()->n ? &eng_ui()->c[i] : 0;
+}
 
 static int sq_browsing(void);                           /* the SEQUENCER page's cursor (below) */
 static uint32_t sq_delete_step(void);
 static void sq_browse(int32_t d);
 /* the SELECT order (0.9.3, user: the instrument pages next to each other right after PERFORM; ASSIGN, rarely used,
- * next to SETUP); the PG_ ids stay as they are (the tables below and the buttons use them) */
-static const uint8_t PG_ORDER[PG_N] = {PG_PERF, PG_PIANO, PG_VOICE, PG_DECAY, PG_MOTOR, PG_COMP, PG_FILTER,
-                                      PG_DRIVE, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_REVERB, PG_TEMPO, PG_SCALE,
-                                      PG_CHORD, PG_ARP, PG_LFO, PG_SEQ, PG_ASSIGN, PG_SETUP, PG_MIDI};   /* DRIVE after
-                                    * FILTER, REVERB the last effect, as in the chain; MOTOR on a bar TYPE only;
-                                    * SEQUENCER after LFO (user, TODO 3: SEQ reaches it directly) */
-static int ui_bars(void);
+ * next to SETUP); VOICE stands for all the engine's VOICE pages */
+#define PG_NORD 20u
+static const uint8_t PG_ORDER[PG_NORD] = {PG_PERF, PG_PIANO, PG_VOICE, PG_COMP, PG_FILTER, PG_DRIVE, PG_TREM, PG_PHA,
+                                          PG_CHO, PG_DELAY, PG_REVERB, PG_TEMPO, PG_SCALE, PG_CHORD, PG_ARP, PG_LFO,
+                                          PG_SEQ, PG_ASSIGN, PG_SETUP, PG_MIDI};   /* DRIVE after FILTER, REVERB the
+                                    * last effect, as in the chain; SEQUENCER after LFO (user, TODO 3) */
+static uint8_t ui_vp;                                   /* the VOICE page shown: 0 .. vp_count() - 1 */
+static int ui_bars(void) { return TYPE_IS_BARS(PV(P_TYPE)); }    /* the main loop's TYPE (not the ISR's latch) */
 static void ui_goto(uint32_t pg);
-static int pg_shown(uint32_t pg) { return pg != PG_MOTOR || ui_bars(); }   /* MOTOR: on a bar TYPE only */
-static uint32_t pg_count(void) { return ui_bars() ? PG_N : PG_N - 1u; }    /* the pages SELECT walks */
-static uint32_t pg_pos(uint32_t pg)                     /* a page's place in the SELECT order (of the pages shown) */
+static void ui_goto_v(uint32_t pg, uint32_t vp);
+static uint32_t pg_count(void) { return PG_NORD - 1u + vp_count(); }    /* the pages SELECT walks */
+static uint32_t pg_pos(uint32_t pg, uint32_t vp)        /* a page's place in the SELECT order */
 {
     uint32_t i, k = 0;
-    for (i = 0; i < PG_N; i++) {
-        if (PG_ORDER[i] == pg) return k;
-        if (pg_shown(PG_ORDER[i])) k++;
+    for (i = 0; i < PG_NORD; i++) {
+        if (PG_ORDER[i] == pg) return k + (pg == PG_VOICE ? vp : 0u);
+        k += PG_ORDER[i] == PG_VOICE ? vp_count() : 1u;
     }
     return 0;
 }
-static uint32_t pg_at(uint32_t k)                       /* the k-th page shown */
+static uint32_t pg_at(uint32_t k, uint32_t *vp)         /* the k-th page (and its VOICE number) */
 {
-    uint32_t i;
-    for (i = 0; i < PG_N; i++)
-        if (pg_shown(PG_ORDER[i]) && !k--) return PG_ORDER[i];
+    uint32_t i, n;
+    for (i = 0; i < PG_NORD; i++) {
+        n = PG_ORDER[i] == PG_VOICE ? vp_count() : 1u;
+        if (k < n) { *vp = PG_ORDER[i] == PG_VOICE ? k : 0u; return PG_ORDER[i]; }
+        k -= n;
+    }
+    *vp = 0;
     return PG_PERF;
 }
-static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "DECAY", "COMPRESSOR", "FILTER", "TREM/WAH", "PHASER",
-                                             "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
-                                             "ARPEGGIO", "LFO", "SETUP", "MIDI", "DRIVE", "REVERB", "MOTOR"};
-static const uint8_t PAGE_S[PG_N][4] = {
+static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "", "COMPRESSOR", "FILTER", "TREM/WAH",
+                                             "PHASER", "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
+                                             "ARPEGGIO", "LFO", "SETUP", "MIDI", "DRIVE", "REVERB"};
+static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 / K3: the engine's (slot_at) */
     {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
     {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
-    {P_TYPE, P_DRIVE, P_RV_DEPTH, S_KVEL},
-    {P_TONE, P_BARK, P_BELL, P_HAMMER},
-    {P_DECAY, P_RELEASE, P_NOISE, S_TUNE},
+    {P_TYPE, S_NONE, S_NONE, S_KVEL},
+    {S_NONE, S_NONE, S_NONE, S_NONE},
+    {S_NONE, S_NONE, S_NONE, S_NONE},
     {P_CMP_AMT, P_CMP_RATIO, P_CMP_ATK, P_CMP_GAIN},
     {P_FL_TYPE, P_FL_FREQ, P_FL_RESO, P_FL_LFO},
     {S_TWKIND, P_TW_DEPTH, P_TW_RATE, P_TW_SHAPE},
@@ -98,14 +117,13 @@ static const uint8_t PAGE_S[PG_N][4] = {
     {S_MCH, S_TRS, S_CLOCK, S_NONE},
     {P_DRV_SW, P_DRIVE, P_DRV_TONE, P_DRV_MIX},
     {P_RV_DEPTH, P_RV_DECAY, P_RV_TONE, P_RV_PREDLY},
-    {P_MOT_ON, P_MOT_DEPTH, P_MOT_RATE, P_MOT_SHAPE},
 };
 static const char *const PAGE_LAB[PG_N][4] = {
     {"", "", "", ""},                                   /* PERFORM: the assigned parameter's name (slot_label) */
     {"PLAYS", "PLAYS", "PLAYS", "PLAYS"},
-    {"TYPE", "DRIVE", "REVERB", "KEY VEL"},
-    {"TONE", "BARK", "BELL", "HAMMER"},
-    {"DECAY", "RELEASE", "NOISE", "TUNE"},
+    {"TYPE", "", "", "KEY VEL"},
+    {"", "", "", ""},
+    {"", "", "", ""},
     {"THRESH", "RATIO", "ATTACK", "MAKEUP"},
     {"TYPE", "FREQ", "RESO", "LFO"},
     {"EFFECT", "DEPTH", "RATE", "SHAPE"},
@@ -122,25 +140,15 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"CHANNEL", "TRS IN", "CLOCK", ""},
     {"EFFECT", "AMOUNT", "TONE", "MIX"},
     {"MIX", "DECAY", "TONE", "PRE-DELAY"},
-    {"MOTOR", "DEPTH", "SPEED", "SHAPE"},
 };
-/* a bar TYPE (VIBES): the same parameters, what they do on a vibraphone (UI option A: engine-aware cards) */
-static const char *const PAGE_LAB_BAR[2][4] = {
-    {"STRIKE", "MALLET", "TUBE", "WEIGHT"},             /* VOICE: TONE BARK BELL HAMMER */
-    {"RING", "DAMPER", "NOISE", "TUNE"},                /* DECAY: DECAY RELEASE NOISE TUNE */
-};
-static const char *const PAGE_HINT_BAR[2] = {"HOW THE MALLET STRIKES", "HOW BARS RING AND STOP"};
-static int ui_bars(void) { return TYPE_IS_BARS(PV(P_TYPE)); }    /* the main loop's TYPE (not the ISR's latch) */
 static const char *const PAGE_HINT[PG_N] = {"THE KNOBS: SET ON ASSIGN", "WHAT EACH PERFORM KNOB PLAYS",
-                                            "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
+                                            "FX: ALL EFFECTS ON / OFF", "", "",
                                             "K1 THRESH: UP = ON, 0 = OFF", "THE LFO: ITS OWN PAGE", "LFO BUTTON: ON / OFF", "ENV BUTTON: ON / OFF",
                                             "K1: ON / OFF", "SEL: ON / OFF  K1: DIG / ANA", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
                                             "EDIT: CHORDS ON / OFF", "", "ARP: ON / OFF   SEL: HOLD", "MOVES THE FILTER (ITS LFO)", "",
-                                            "USB AND TRS: THE SAME CHANNEL", "K1: ON / OFF", "MIX ALSO SETS THE SIZE", "THE VIBRAPHONE'S MOTOR"};
-static const char *page_hint(uint32_t pg)
-{
-    return ui_bars() && (pg == PG_VOICE || pg == PG_DECAY) ? PAGE_HINT_BAR[pg - PG_VOICE] : PAGE_HINT[pg];
-}
+                                            "USB AND TRS: THE SAME CHANNEL", "K1: ON / OFF", "MIX ALSO SETS THE SIZE"};
+static uint32_t ui_vp_ok(void) { return ui_vp < vp_count() ? ui_vp : vp_count() - 1u; }
+static const char *page_hint(uint32_t pg) { return pg == PG_VOICE ? eng_ui()->hint[ui_vp_ok()] : PAGE_HINT[pg]; }
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
                                            "PENTA", "MPENTA", "BLUES"};
 static const char *const NOTE_NAME[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -224,16 +232,8 @@ static const char *ui_version(void)
 static void ui_changed(void) { set_dirty = 1; set_t_change = fm1_ms; }
 static int32_t sgn(int32_t d) { return d > 0 ? 1 : -1; }
 
-/* the FRODHES page's K2 / K3 belong to the engine (the user, 2026-10-17: "2 options depend on the selected engine"):
- * one row per engine, so a new engine adds its own; K1 TYPE and K4 KEY VEL stay (PLAN rev. 12: Rhodes TONE + BELL). */
-static const struct { uint8_t s[2]; const char *lab[2]; uint8_t cmp_mkup; } ENG_HEAD[2] = {
-    {{P_TONE, P_BELL}, {"TONE", "BELL"}, 15},           /* Rhodes: the tine's voicing (DRIVE / REVERB have their pages) */
-    {{P_BARK, P_MOT_ON}, {"MALLET", "MOTOR"}, 28},      /* the bar engine: VOICE's MALLET, MOTOR on / off */
-};
-/* cmp_mkup: the compressor's make-up when the panel switches it on with none set (-20 dB 4:1): level-neutral for that
- * engine on the FM-1 (Rhodes 15 = +4.3 dB, 0.8; VIBES is peakier, the same threshold takes more: 28 = +6.8 dB) */
 /* switching an effect on from the panel while its depth is 0 would be silent (the depths default to 0): give it a
- * starting depth then; a depth the player set is never touched */
+ * starting depth then; a depth the player set is never touched. The compressor's make-up: the engine's (cmp_mkup) */
 static void fx_wake(uint32_t sw_id)
 {
     static const uint8_t SW[6] = {P_TW_SW, P_PH_SW, P_CP_SW, P_DL_SW, P_CMP_SW, P_DRV_SW};
@@ -243,22 +243,21 @@ static void fx_wake(uint32_t sw_id)
     for (i = 0; i < 6u; i++)
         if (SW[i] == sw_id && PV(sw_id) && !PV(DEPTH[i])) {
             param_set(DEPTH[i], START[i]);
-            if (sw_id == P_CMP_SW && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, ENG_HEAD[ui_bars() ? 1 : 0].cmp_mkup);   /* -20 dB, 4:1: +4.3 dB is
-                                                                                * level-neutral (FM-1, LUFS) */
+            if (sw_id == P_CMP_SW && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, eng_ui()->cmp_mkup);
             ui_mark(E_CARDS);
         }
 }
 
 /* ---- PERFORM: four knobs that play whatever ASSIGN gives them; by default the effects' dry / wet. The list is
- * append-only (settings keep an index into it). */
-typedef struct { uint8_t id; const char *name, *bar; } perf_t;   /* bar: the name on a bar TYPE (0 = the same) */
+ * append-only (settings keep an index into it). An engine's parameter shows the engine's name for it (eng_pages.h) */
+typedef struct { uint8_t id; const char *name; } perf_t;
 static const perf_t PERF_T[] = {
     {P_TW_DEPTH, "TREM/WAH"}, {P_PH_DEPTH, "PHASER"}, {P_CP_DEPTH, "CHORUS"}, {P_DL_DEPTH, "DELAY"},
     {P_RV_DEPTH, "REVERB"}, {P_DRIVE, "DRIVE"}, {P_CMP_AMT, "COMP THR"}, {P_CMP_GAIN, "COMP MKUP"},
     {P_TW_RATE, "TREM RATE"}, {P_TW_SHAPE, "TREM SHAPE"}, {P_PH_SPEED, "PHA SPEED"}, {P_PH_FDBK, "PHA FEEDBK"},
     {P_CP_SPEED, "CHO SPEED"}, {P_DL_TIME, "DLY TIME"}, {P_DL_FDBK, "DLY FEEDBK"}, {P_DL_TONE, "DLY TONE"},
-    {P_TONE, "TONE", "STRIKE"}, {P_BARK, "BARK", "MALLET"}, {P_BELL, "BELL", "TUBE"}, {P_HAMMER, "HAMMER", "WEIGHT"},
-    {P_DECAY, "DECAY", "RING"}, {P_RELEASE, "RELEASE", "DAMPER"}, {P_NOISE, "NOISE"}, {S_KVEL, "KEY VEL"}, {P_LEVEL, "LEVEL"},
+    {P_TONE, "TONE"}, {P_BARK, "BARK"}, {P_BELL, "BELL"}, {P_HAMMER, "HAMMER"},
+    {P_DECAY, "DECAY"}, {P_RELEASE, "RELEASE"}, {P_NOISE, "NOISE"}, {S_KVEL, "KEY VEL"}, {P_LEVEL, "LEVEL"},
     {S_ARPRATE, "ARP RATE"}, {S_ARPGATE, "ARP GATE"},
     {P_FL_FREQ, "FILTER"}, {P_FL_RESO, "FILT RESO"}, {P_FL_LFO, "FILT LFO"}, {P_LFO_RATE, "LFO RATE"},   /* 0.9.3 */
 };
@@ -279,23 +278,32 @@ static void perf_wake(uint32_t id)
     else if (id == P_CP_DEPTH && !PV(P_CP_SW)) param_set(P_CP_SW, 1);
     else if (id == P_DL_DEPTH && !PV(P_DL_SW)) param_set(P_DL_SW, 1);
     else if (id == P_DRIVE && !PV(P_DRV_SW)) param_set(P_DRV_SW, 1);
-    else if (id == P_CMP_AMT && !PV(P_CMP_SW)) { param_set(P_CMP_SW, 1); if (!PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, ENG_HEAD[ui_bars() ? 1 : 0].cmp_mkup); }
+    else if (id == P_CMP_AMT && !PV(P_CMP_SW)) { param_set(P_CMP_SW, 1); if (!PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, eng_ui()->cmp_mkup); }
 }
-/* the slot a card shows: PERFORM's are resolved to the assigned parameter */
-static uint32_t slot_at(uint32_t pg, uint32_t k)
+/* the control a card shows from the engine's table: VOICE page vp, or FRODHES K2 / K3 (the headlines); 0: none */
+static const ectl_t *page_ctl(uint32_t pg, uint32_t vp, uint32_t k)
 {
-    uint32_t s = pg == PG_PIANO && (k == 1u || k == 2u) ? ENG_HEAD[ui_bars() ? 1 : 0].s[k - 1u] : PAGE_S[pg][k];
+    if (pg == PG_VOICE) return voice_ctl(vp, k);
+    if (pg == PG_PIANO && (k == 1u || k == 2u)) return eng_head(k);
+    return 0;
+}
+/* the slot a card shows: the engine's, else the page's; PERFORM's are resolved to the assigned parameter */
+static uint32_t slot_at_v(uint32_t pg, uint32_t vp, uint32_t k)
+{
+    const ectl_t *c = page_ctl(pg, vp, k);
+    uint32_t s = c ? c->id : pg == PG_VOICE ? S_NONE : PAGE_S[pg][k];
     return s >= S_PERF0 && s < S_PERF0 + 4u ? PERF_T[perf_idx(s - S_PERF0)].id : s;
 }
-static const char *perf_name(uint32_t i) { return ui_bars() && PERF_T[i].bar ? PERF_T[i].bar : PERF_T[i].name; }
-static const char *slot_label(uint32_t pg, uint32_t k)
+static uint32_t slot_at(uint32_t pg, uint32_t k) { return slot_at_v(pg, ui_vp_ok(), k); }
+static const char *perf_name(uint32_t i) { const ectl_t *c = eng_ctl(PERF_T[i].id); return c ? c->name : PERF_T[i].name; }
+static const char *slot_label_v(uint32_t pg, uint32_t vp, uint32_t k)
 {
+    const ectl_t *c = page_ctl(pg, vp, k);
     if (pg == PG_PERF) return perf_name(perf_idx(k));
-    if (ui_bars() && (pg == PG_VOICE || pg == PG_DECAY)) return PAGE_LAB_BAR[pg - PG_VOICE][k];
-    if (pg == PG_PIANO && (k == 1u || k == 2u)) return ENG_HEAD[ui_bars() ? 1 : 0].lab[k - 1u];
-    return PAGE_LAB[pg][k];
+    if (c) return c->name;
+    return pg == PG_VOICE ? "" : PAGE_LAB[pg][k];
 }
-
+static const char *slot_label(uint32_t pg, uint32_t k) { return slot_label_v(pg, ui_vp_ok(), k); }
 /* ---- card slots */
 static uint32_t tw_kind(void)                          /* OFF PAN TREM WAH */
 {
@@ -426,7 +434,7 @@ static void slot_turn(uint32_t s, int32_t d)
         if (id == P_MOT_ON) set.mot_user_off = !PV(P_MOT_ON);        /* off by hand: no auto-on at TYPE VIBES */
         fx_wake(id);
         if (id == P_CMP_AMT) {                          /* THRESH is the compressor's switch: 0 = OFF, up = on */
-            if (PV(P_CMP_AMT) && !PV(P_CMP_SW) && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, ENG_HEAD[ui_bars() ? 1 : 0].cmp_mkup);   /* level-neutral */
+            if (PV(P_CMP_AMT) && !PV(P_CMP_SW) && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, eng_ui()->cmp_mkup);   /* level-neutral */
             param_set(P_CMP_SW, PV(P_CMP_AMT) != 0);
             ui_mark(E_CARDS); ui_mark(E_FOOTER);
         }
@@ -599,11 +607,15 @@ static void draw_title(void)
 {
     char t[24];
     cv_begin(240, TI_H, FC_BG);
-    aa_text(10, S_TOP(10), &AF_S, PAGE_TITLE[ui_page], UI_ACC, FC_BG);
+    int32_t x = aa_text(10, S_TOP(10), &AF_S, PAGE_TITLE[ui_page], UI_ACC, FC_BG);
+    if (ui_page == PG_VOICE) {                          /* VOICE 2/3: which of the engine's pages */
+        fmt_frac(t, ui_vp_ok() + 1u, vp_count());
+        aa_text(x + 5, S_TOP(10), &AF_S, t, FC_VAL, FC_BG);
+    }
     if (ui_page == PG_SEQ) {                            /* BAR 2/4 . 3 */
         seq_pos_text(t);
         sq_shown_beat_set();
-    } else fmt_frac(t, pg_pos(ui_page) + 1u, pg_count());
+    } else fmt_frac(t, pg_pos(ui_page, ui_vp_ok()) + 1u, pg_count());
     aa_text_r(230, S_TOP(10), &AF_S, t, FC_LAB, FC_BG);
     cv_blit(0, TI_Y);
 }
@@ -990,12 +1002,14 @@ static void ui_draw_testpat(void)
 static void ui_draw(void)
 {
     uint32_t e, d;
-    static uint8_t cleared, was_bars;
+    static uint8_t cleared, eng_shown;
     batt_poll();                                        /* (from the start: the splash too) */
-    if ((uint8_t)ui_bars() != was_bars) {               /* the TYPE crossed engines: the MOTOR page comes or goes */
-        was_bars = (uint8_t)ui_bars();
-        if (ui_page == PG_MOTOR && !was_bars) ui_goto(PG_DECAY);
-        else ui_mark(E_TITLE);                          /* the page marks: one more or one less */
+    if (eng_ui() != &ENG_UI[eng_shown]) {               /* the TYPE crossed engines (ALGORITHM, CC 80 / 79, a preset):
+                                                         * other VOICE pages, names and hints; marked once per change */
+        eng_shown = (uint8_t)(eng_ui() - ENG_UI);
+        if (ui_page == PG_VOICE && ui_vp >= vp_count()) ui_goto_v(PG_VOICE, vp_count() - 1u);   /* (VIBES 3/3 ->
+                                                         * the Rhodes' last) */
+        ui_mark(E_TITLE); ui_mark(E_CARDS); ui_mark(E_FOOTER);
     }
     if (ui_testpat) {
         if (!ui_testpat_shown) { ui_draw_testpat(); ui_testpat_shown = 1; }
@@ -1013,11 +1027,6 @@ static void ui_draw(void)
     if (ui_hot_t && ui_hot_card < 4u && fm1_ms - ui_hot_t >= HOT_MS && fm1_ms - ui_hot_t < HOT_MS + 100u)
         ui_mark(E_CARD0 + ui_hot_card);
     if (ui_page == PG_SETUP && (fm1_ms & 255u) == 0u) ui_mark(E_FOOTER);   /* live readouts */
-    {                                                   /* TYPE crossed engines (ALGORITHM, CC 80, a preset): the cards
-                                                         * and the hint say other things; marked once per change */
-        static uint8_t bars_shown;
-        if ((uint8_t)ui_bars() != bars_shown) { bars_shown = (uint8_t)ui_bars(); ui_mark(E_CARDS); ui_mark(E_FOOTER); }
-    }
     meter_poll();
     if (ui_page == PG_SEQ) {                            /* the playhead ~25 Hz; the notes when they change (4 Hz) */
         static uint32_t ph_t, roll_t;
@@ -1051,15 +1060,16 @@ static void ui_draw(void)
 }
 
 /* ---- input */
-static void ui_goto(uint32_t pg)
+static void ui_goto_v(uint32_t pg, uint32_t vp)         /* a page (VOICE: its number vp) */
 {
-    if (pg >= PG_N) pg = PG_PERF;
-    if (!pg_shown(pg)) pg = PG_DECAY;                   /* MOTOR on a Rhodes TYPE: its neighbour */
+    if (pg >= PG_N || pg == PG_RETIRED4) pg = PG_PERF;
     if ((pg == PG_SEQ) != (ui_page == PG_SEQ)) lcd_fill(0, TI_Y, 240, FT_Y - TI_Y, C_BLACK);   /* its own layout: no leftovers */
     ui_page = (uint8_t)pg;
+    ui_vp = (uint8_t)(pg == PG_VOICE && vp < vp_count() ? vp : 0u);
     ui_hot_card = 0xFF;
     ui_draw_page_change();
 }
+static void ui_goto(uint32_t pg) { ui_goto_v(pg, 0); }
 
 /* LFO / SEQ / SEL / ENV: go to the effect's page; on it, the effect on <-> off (back to the last one used) */
 static void ui_fx_button(uint32_t pg, uint32_t k)
@@ -1136,8 +1146,9 @@ static void ui_input(uint32_t b, uint32_t rel)
     if (b >> BTN_OCT_UP & 1u && set.oct < 2) { set.oct++; ui_changed(); ui_mark(E_HEADER); }
 
     if (d[ENC_SELECT]) {                                /* the pages: no wrap, so the ends are easy to find */
-        int32_t p = clampi((int32_t)pg_pos(ui_page) + sgn(d[ENC_SELECT]), 0, (int32_t)pg_count() - 1);
-        if (pg_at((uint32_t)p) != ui_page) ui_goto(pg_at((uint32_t)p));
+        int32_t p = clampi((int32_t)pg_pos(ui_page, ui_vp_ok()) + sgn(d[ENC_SELECT]), 0, (int32_t)pg_count() - 1);
+        uint32_t vp, pg = pg_at((uint32_t)p, &vp);
+        if (pg != ui_page || vp != ui_vp) ui_goto_v(pg, vp);   /* (VOICE n -> n + 1: a page of its own) */
     }
     if (d[ENC_ALGORITHM] && ui_page == PG_SEQ) {        /* on SEQUENCER: the cursor, step by step */
         if (seq_step_held()) {                          /* step recording, keys held: the step gets longer */

@@ -8,9 +8,9 @@
 240 turn 1 1
 260 turn 1 1
 400 expect state bars 1
-400 expect state card.21.0 ON
-400 expect state card.21.1 8.7
-400 expect state card.21.2 3.5HZ
+400 expect state vcard.2.0 ON
+400 expect state vcard.2.1 8.7
+400 expect state vcard.2.2 3.5HZ
 400 expect state card.7.0 OFF
 400 expect led 5 0
 400 expect sound
@@ -21,49 +21,49 @@
 1600 turn 0 1
 1700 turn 0 1
 1800 turn 0 1
-1900 expect state page MOTOR
+1900 expect state vpage 3/3
 1900 turn 2 -1
 2000 expect state card0 OFF
 2000 expect sound
 # ---- to BELL DYNO and back: the MOTOR page goes (DECAY shown), no tremolo; back on VIBES the motor stays off
 2100 turn 1 -1
 2200 expect state bars 0
-2200 expect state page DECAY
+2200 expect state vpage 2/2
 2200 expect state card.7.0 OFF
 2200 expect led 5 0
 2300 turn 1 1
 2400 expect state bars 1
-2400 expect state card.21.0 OFF
+2400 expect state vcard.2.0 OFF
 2400 expect sound
 # ---- on again by hand: the TYPE round trip keeps it on
 2500 turn 0 1
-2600 expect state page MOTOR
+2600 expect state vpage 3/3
 2600 turn 2 1
 2700 expect state card0 ON
 2800 turn 1 -1
 2900 turn 1 1
-3000 expect state card.21.0 ON
+3000 expect state vcard.2.0 ON
 # ---- off by MIDI (CC 47), STAGE 77 by CC 80, VIBES by CC 79: on again (only the ON card's off is remembered)
 3100 midi 0xB0 47 0
-3200 expect state card.21.0 OFF
+3200 expect state vcard.2.0 OFF
 3300 midi 0xB0 80 0
 3400 expect state bars 0
 3500 midi 0xB0 79 127
 3600 expect state bars 1
-3600 expect state card.21.0 ON
+3600 expect state vcard.2.0 ON
 3600 expect sound
 # ---- presets keep what they store: F14 VIBES DRY off, F13 on, F14 again off (a load is not a TYPE change)
 3700 midi 0xC0 13 0
 3800 expect preset
-3800 expect state card.21.0 OFF
+3800 expect state vcard.2.0 OFF
 3900 midi 0xC0 12 0
 4000 expect preset
-4000 expect state card.21.0 ON
+4000 expect state vcard.2.0 ON
 4100 midi 0xC0 0 0
 4200 expect state bars 0
 4300 midi 0xC0 13 0
 4400 expect preset
-4400 expect state card.21.0 OFF
+4400 expect state vcard.2.0 OFF
 4400 expect sound
 # ---- the tremolo on top of the motor: F13, LFO (TREM/WAH), LFO again: on (PAN), the motor still on
 4500 midi 0xC0 12 0
@@ -71,9 +71,9 @@
 4700 btn 5
 4800 expect led 5 1
 4800 expect state card0 PAN
-4800 expect state card.21.0 ON
+4800 expect state vcard.2.0 ON
 4800 expect sound
 4900 btn 5
 5000 expect led 5 0
-5000 expect state card.21.0 ON
+5000 expect state vcard.2.0 ON
 5100 end

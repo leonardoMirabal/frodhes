@@ -377,8 +377,14 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "page")) snprintf(v, n, "%s", PAGE_TITLE[ui_page]);
     else if (!strcmp(key, "hint")) snprintf(v, n, "%s", page_hint(ui_page));
     else if (!strcmp(key, "msg")) snprintf(v, n, "%s", ui_msg_t && fm1_ms - ui_msg_t < MSG_MS ? ui_msg : "");
-    else if (sscanf(key, "card.%u.%u", &a, &b) == 2 && a < PG_N && b < 4u) { slot_text(slot_at(a, b), t); snprintf(v, n, "%s", t); }
-    else if (sscanf(key, "label.%u.%u", &a, &b) == 2 && a < PG_N && b < 4u) snprintf(v, n, "%s", slot_label(a, b));
+    else if (sscanf(key, "card.%u.%u", &a, &b) == 2 && a < PG_N && b < 4u) { slot_text(slot_at_v(a, 0, b), t); snprintf(v, n, "%s", t); }
+    else if (sscanf(key, "label.%u.%u", &a, &b) == 2 && a < PG_N && b < 4u) snprintf(v, n, "%s", slot_label_v(a, 0, b));
+    else if (!strcmp(key, "vpage")) { if (ui_page == PG_VOICE) snprintf(v, n, "%u/%u", ui_vp_ok() + 1u, vp_count()); }   /* VOICE n/m */
+    else if (sscanf(key, "vcard.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) { slot_text(slot_at_v(PG_VOICE, a, b), t); snprintf(v, n, "%s", t); }
+    else if (sscanf(key, "vlabel.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) snprintf(v, n, "%s", slot_label_v(PG_VOICE, a, b));
+    else if (sscanf(key, "vhint.%u", &a) == 1) snprintf(v, n, "%s", a < vp_count() ? eng_ui()->hint[a] : "");
+    else if (!strcmp(key, "vpages")) snprintf(v, n, "%u", vp_count());
+    else if (!strcmp(key, "pages")) snprintf(v, n, "%u", pg_count());
     else if (sscanf(key, "card%u", &a) == 1 && a < 4u) { slot_text(slot_at(ui_page, a), t); snprintf(v, n, "%s", t); }
     else if (sscanf(key, "label%u", &a) == 1 && a < 4u) snprintf(v, n, "%s", slot_label(ui_page, a));
     else if (sscanf(key, "p.%u", &a) == 1 && a < P_COUNT) snprintf(v, n, "%u", PV(a));
@@ -414,7 +420,7 @@ static int host_state(const char *key, char *v, unsigned n)
 }
 static void host_dump(void)
 {
-    static const char *const K[] = {"header", "preset", "page", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
+    static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
                                     "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "label0", "card0", "label1", "card1", "label2", "card2",
                                     "label3", "card3"};
@@ -426,6 +432,13 @@ static void host_dump(void)
             snprintf(key, sizeof key, "label.%u.%u", i, k); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
             snprintf(key, sizeof key, "card.%u.%u", i, k); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
         }
+    for (i = 0; i < vp_count(); i++) {                  /* the engine's VOICE pages */
+        snprintf(key, sizeof key, "vhint.%u", i); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
+        for (k = 0; k < 4u; k++) {
+            snprintf(key, sizeof key, "vlabel.%u.%u", i, k); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
+            snprintf(key, sizeof key, "vcard.%u.%u", i, k); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
+        }
+    }
     for (i = 0; i < P_COUNT; i++) printf("@ %u p.%u %u\n", fm1_ms, i, PV(i));
     for (i = 0; i < 41u; i++) printf("@ %u led.%u %u\n", fm1_ms, i, host_led[i]);
     for (i = 1; i <= PR_NU; i++) { snprintf(key, sizeof key, "u.%u", i); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v); }
