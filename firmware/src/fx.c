@@ -483,15 +483,27 @@ static void fx_comp(int32_t *m, uint32_t n)
 static int16_t dly_buf[DLY_LEN] POOL;
 static uint32_t dly_w, dly_wow, dly_flt;
 static int32_t dly_d = 4410 << 8, dly_lp, dly_hp, dly_dg = 32768, dly_sg;   /* dly_sg: the send's stereo make-up, log2 Q12 */
+/* the developer reset (CC 10) empties the line over ~16 blocks instead of one 128 KB memset in one block (that block took
+ * ~5 ms of the 5.8: USB packets lost): while dly_rst, [dly_rb, dly_w) is clean (cleared or written since the reset), the
+ * reads behind dly_rb return 0 (what the cleared line held), and each block clears DLY_CLR more below dly_rb */
+#define DLY_CLR 4096u
+/* (a section of their own, as engine.c's ring: kept out of the compiler's global merge) */
+#ifdef DINGHY_HOST
+#define FX_OWN_SECTION
+#else
+#define FX_OWN_SECTION __attribute__((section(".bss.fx_rst")))
+#endif
+static uint32_t dly_rb FX_OWN_SECTION;
+static uint8_t dly_rst FX_OWN_SECTION;
 /* the delay's sample loop, one version for TAPE (tape = 1) and one for DIGITAL / off (tape = 0: a constant after
  * inlining), the state in locals: the same arithmetic per sample as one loop with the tests inside. msk: the send on
  * (-1) or off (0, the tail rings); sg16: the send's make-up (Q16, exactly 65536 when dly_sg is 0: x 1); dgt: the dry's
  * gain it eases to. */
 static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *R, uint32_t n, const int tape,
                                                            int32_t msk, int32_t sg16, int32_t target, int32_t col,
-                                                           int32_t fb, int32_t wet, int32_t dgt)
+                                                           int32_t fb, int32_t wet, int32_t dgt, const int rst)
 {
-    uint32_t w = dly_w, wow = dly_wow, flt = dly_flt, j;
+    uint32_t w = dly_w, wow = dly_wow, flt = dly_flt, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;   /* c: the clean span behind w */
     int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg;
     FX_K32 ksg = sg16;
     for (j = 0; j < n; j++) {
@@ -511,7 +523,15 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
             d = dd;
         }
         i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
-        r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
+        if (rst) {                                       /* a tap behind the clean span reads 0 (lookback L clean: L <= c,
+                                                          * 0 counts as DLY_LEN) */
+            uint32_t lb = (w - i) & (DLY_LEN - 1u);
+            int32_t a0 = ((lb - 1u) & (DLY_LEN - 1u)) < c ? dly_buf[i] : 0;
+            int32_t a1 = (lb & (DLY_LEN - 1u)) < c ? dly_buf[(i - 1u) & (DLY_LEN - 1u)] : 0;
+            r = (a0 + (((a1 - a0) * (d & 255)) >> 8)) << 1;
+            c++;
+        } else
+            r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
         lp += mulq15w(r - lp, col);                    /* (r - lp reaches 2^17 on a full-scale swing) */
         f = tape ? softclip(lp) : lp;
         hp += (f - hp + 64) >> 7;
@@ -524,7 +544,21 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
     }
     dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg;
 }
-static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
+__attribute__((noinline)) static void dly_clear_step(void)   /* one block's share of the reset's clearing */
+{
+    uint32_t c = dly_w - dly_rb, k, p;
+    if (c >= DLY_LEN) { dly_rst = 0; return; }
+    k = DLY_LEN - c < DLY_CLR ? DLY_LEN - c : DLY_CLR;
+    p = (dly_rb - k) & (DLY_LEN - 1u);
+    if (p + k <= DLY_LEN) memset(dly_buf + p, 0, k * sizeof dly_buf[0]);
+    else { memset(dly_buf + p, 0, (DLY_LEN - p) * sizeof dly_buf[0]); memset(dly_buf, 0, (p + k - DLY_LEN) * sizeof dly_buf[0]); }
+    dly_rb -= k;
+    if (dly_w - dly_rb >= DLY_LEN) dly_rst = 0;
+}
+/* fx_delay's body. rst is always 1: the masked reads run in every block (outside a reset c is huge and every tap is
+ * clean). A separate reset version (out of line, or inlined) moved the Rhodes loops' registers in app_audio, whatever
+ * the arrangement tried (tools/build.py's hot-loop counts, 2026-10-18); this one leaves them as they were. */
+static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
 {
     int32_t sw = fx_p[FXP_DL_SW], depth = fx_p[FXP_DL_DEPTH];
     uint32_t sync = fx_dly_sync_samples, j;
@@ -536,7 +570,12 @@ static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
     if (fb > 13926) fb = 13926;                             /* the loop gain is 2 fb (the line holds half level): at most
                                                              * 0.85, the echoes always die (they grew forever over MIX x
                                                              * FDBK ~ 11650: the audit, 2026-10-17) */
-    if (!sw && !dly_lp && !dly_hp) { dly_w += n; return; }    /* fully quiet and off: only keep time */
+    if (!sw && !dly_lp && !dly_hp) {                        /* fully quiet and off: only keep time */
+        if (dly_rst)                                        /* (the skipped span is clean too: what the reset left) */
+            for (j = 0; j < n; j++) dly_buf[(dly_w + j) & (DLY_LEN - 1u)] = 0;
+        dly_w += n;
+        return;
+    }
     {   /* the send is the mono sum (L + R) / 2; when the phaser / chorus / pan make L and R differ, the sum loses up to
          * 3-6 dB (the echoes "lost" under the chorus or phaser: the user, 2026-10-18). The send keeps the stereo
          * power instead: x sqrt(mean(L^2 + R^2) / 2 / mean(sum^2)), per block, gliding, at most +6 dB; exactly 1 when
@@ -557,9 +596,13 @@ static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
     }
     sg16 = exp2_q16(dly_sg);
     /* the dry eases down as the mix rises (-0.7 dB at 50, -5.9 dB at 127): a full-mix delay no longer jumps +5 LU (0.8) */
-    if (sw == 2) dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, 32768 - depth * depth);
-    else dly_loop(L, R, n, 0, sw ? -1 : 0, sg16, target, col, fb, wet, sw ? 32768 - depth * depth : 32768);
+    if (sw == 2) dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, 32768 - depth * depth, rst);
+    else dly_loop(L, R, n, 0, sw ? -1 : 0, sg16, target, col, fb, wet, sw ? 32768 - depth * depth : 32768, rst);
     if (!sw && iabs(dly_lp) < 2) dly_lp = dly_hp = 0;
+}
+static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
+{
+    fx_delay_t(L, R, n, 1);
 }
 
 /* ---- REVERB: Felucca's HALL (fx.c, GPL-3.0-only), unchanged except for its parameters' source and its internal
@@ -734,20 +777,27 @@ static void rev_hall(const int32_t *rev_in, int32_t *mid, int32_t *side, int32_t
 static int32_t pd_buf[PD_LEN] POOL;
 static uint32_t pd_w, pd_d, pd_d0, pd_x;                /* write index, the tap, the old tap and the crossfade (0 = none) */
 static uint8_t pd_on;
+static uint32_t pd_fill FX_OWN_SECTION;                              /* writes since the line came on: a tap further back reads 0 */
 static int32_t rv_in[CTL], rv_mid[CTL], rv_side[CTL];
 static int32_t rv_off, rv_damp = 60;                   /* DECAY's size offset and TONE's damping, as they glide */
 static uint8_t rv_running;
 static void fx_predelay(int32_t *x, uint32_t tgt)      /* one control block: x[] delayed by the tap */
 {
     uint32_t j;
-    if (!pd_on) { memset(pd_buf, 0, sizeof pd_buf); pd_d = pd_d0 = pd_x = 0; pd_on = 1; }   /* no old sound in it */
+    /* no old sound in it: the line reads as cleared until it has been written all through (a memset of 16 KB in the
+     * audio block cost ~0.4 ms on the FM-1; this is the same sound) */
+    if (!pd_on) { pd_fill = 0; pd_d = pd_d0 = pd_x = 0; pd_on = 1; }
+#ifdef FX_RESET_ONE_BLOCK                               /* (the host test's reference: the old memsets, tests/py/test_reset_cc.py) */
+    if (pd_fill == 0) memset(pd_buf, 0, sizeof pd_buf);
+#endif
     if (!pd_x && tgt != pd_d) { pd_d0 = pd_d; pd_d = tgt; pd_x = 1; }
     for (j = 0; j < CTL; j++) {
         int32_t a;
         pd_buf[pd_w & (PD_LEN - 1u)] = x[j];
-        a = pd_buf[(pd_w - pd_d) & (PD_LEN - 1u)];
+        if (pd_fill < PD_LEN) pd_fill++;
+        a = pd_d < pd_fill ? pd_buf[(pd_w - pd_d) & (PD_LEN - 1u)] : 0;
         if (pd_x) {                                     /* 256 samples from the old tap to the new one */
-            int32_t b = pd_buf[(pd_w - pd_d0) & (PD_LEN - 1u)];
+            int32_t b = pd_d0 < pd_fill ? pd_buf[(pd_w - pd_d0) & (PD_LEN - 1u)] : 0;
             a = b + (int32_t)(((int64_t)(a - b) * (int32_t)(pd_x << 7)) >> 15);
             if (++pd_x > 256u) pd_x = 0;
         }
@@ -820,27 +870,40 @@ static uint32_t gate_quiet;
 /* developer CC 10 (>= 64): every free-running part back to its boot state, for before / after recordings that must
  * compare sample for sample (the user, 2026-10-18): the effect LFOs, the tape's wow / flutter, the reverb's modulation,
  * the delay / chorus / pre-delay / reverb lines, the phaser's allpasses, the engines' noise generators and the motor.
- * Runs once, at the next audio block (the lines are cleared there: one heavy block, on request only). */
+ * At the next audio block: everything but the delay line at once (~16 KB of small lines), the delay line in chunks
+ * over the next ~16 blocks while its reads behind the cleared span return 0 (dly_rst): the same sound, sample for
+ * sample, as clearing it all at once (that one block took ~5 ms of the 5.8 on the FM-1); the pre-delay line is
+ * cleared the same way at its next use (pd_on = 0). */
 static volatile uint8_t fx_reset_req;
 static void fx_reset_state(void)
 {
     lfo_ph = 0; lfo_rnd = 0x9E3779B9u; tw_ph = 0; ph_ph = 0; cp_ph = 0; dly_wow = 0; dly_flt = 0;
     memset(ph_x, 0, sizeof ph_x); memset(ph_y, 0, sizeof ph_y); memset(ph_fb, 0, sizeof ph_fb); memset(ph_hp, 0, sizeof ph_hp); memset(ph_ls, 0, sizeof ph_ls);
-    memset(dly_buf, 0, sizeof dly_buf); dly_lp = dly_hp = 0;
+    dly_rb = dly_w; dly_rst = 1; dly_lp = dly_hp = 0;   /* the delay line: dly_clear_step(), the next blocks */
     memset(cho_buf, 0, sizeof cho_buf);
     memset(rev_comb, 0, sizeof rev_comb); memset(rev_ap, 0, sizeof rev_ap); memset(&hl, 0, sizeof hl);
-    memset(pd_buf, 0, sizeof pd_buf); pd_on = 0; rv_running = 0;
+    pd_on = 0; rv_running = 0;                          /* (the pre-delay line: at its next use) */
     rh_lfsr = 0xACE1u; bar_lfsr = 0x1D872u; bar_mot_ph = 0;
+    /* every voice ends and the shared pickup RLC / body states go to 0 (as at an engine change), and this block's
+     * voice output is dropped (fx_process): the tails a take left under the gate's -66 dBFS rang on and the next take
+     * met them (its level moved up to 5 LU with what was played before, on the FM-1: the presets suite) */
+    eng_rh_kill_all(); bar_kill_all();
     lfo_sh = 0; fl_ic[0] = fl_ic[1] = 0; fl_op = 0;                 /* the filters, the smoothers, the master */
     dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; wah_env = wah_lp = wah_bp = 0; cmp_env = 0; cmp_g = 65536;
     dc_l = dc_r = dce_l = dce_r = 0; memset(lk_l, 0, sizeof lk_l); memset(lk_r, 0, sizeof lk_r); lk_pk = 0; lk_g = 32768;
     gate_g = gate_tgt = 32768; gate_quiet = 0;
+#ifdef FX_RESET_ONE_BLOCK
+    memset(dly_buf, 0, sizeof dly_buf); memset(pd_buf, 0, sizeof pd_buf); dly_rst = 0;
+#endif
 }
 
 static inline __attribute__((always_inline)) void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /* (into app_audio, as it always was: the 0.9.3 delay fix took it over the inliner's limit, and the mode loop moved) */
 {
     static int32_t m[256];
-    if (fx_reset_req) { fx_reset_state(); fx_reset_req = 0; }
+    if (fx_reset_req) {                                /* (the voices' last block too: mono is frodhes.c's voice_mono) */
+        fx_reset_state(); memset((void *)mono, 0, n * sizeof mono[0]); fx_reset_req = 0;
+    }
+    else if (dly_rst) dly_clear_step();
     int32_t lvl = (int32_t)FX_LVL[fx_p[FXP_LEVEL] & 127];   /* the preset's volume trim, Q12 */
     uint32_t j, sb;
     int32_t pk = 0, wet = fx_wet, byp = fx_bypass, dl = dc_l, el = dce_l, dr = dc_r, er = dce_r;

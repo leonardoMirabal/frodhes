@@ -26,7 +26,9 @@ VIBES motor, the engines' noise) and a delay / reverb line could still hold the 
 spectral distance of 0.9 dB in one run and 1.8 in the next, 'presets' spanned 7.5 / 6.7 / 5.3 LU, fx_all's extremes
 flipped. Now:
   - the developer reset, MIDI CC 10 >= 64 (fx.c fx_reset_state: every LFO, the delay / chorus / pre-delay / reverb
-    lines, the phaser, the noise generators, the motor back to their boot state at the next audio block), goes out
+    lines, the phaser, the noise generators, the motor back to their boot state at the next audio block; every voice
+    ends and the pickup RLC / body states go to 0, so no tail under the gate meets the next take; the delay line is
+    cleared over the next ~16 blocks, with no heavy block), goes out
     RESET_LEAD (50 ms) before the first note of every take (with_reset(); classic Rig.take, VRig.take, fx_all's jack
     takes), after the settings, and once more at the end of every r.dry() / V.reset() (which also empties the delay
     line: the VIBES reset's 1.6 s DEPTH-0 flush is gone). What is left is the note's arrival within an audio block:
