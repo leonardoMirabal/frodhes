@@ -53,6 +53,9 @@ static int fx_quiet(void) { return fx_quiet_blocks >= 86u; }   /* 500 ms under -
 #define FX_K32 volatile int32_t
 static inline int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
 static inline int32_t mulq15(int32_t a, int32_t b) { return (a * b) >> 15; }        /* |a|,|b| small enough */
+/* (a * b) >> 15, the same bits, for |a| < 2^18 and 0 <= b < 2^15 (a = 4q + s: (q * b + (s * b >> 2)) >> 13), where
+ * a * b itself overflows int32 (from |a| 65536): the delay line's tone filter and feedback (fuzz vibes 4300-san) */
+static inline int32_t mulq15w(int32_t a, int32_t b) { return ((a >> 2) * b + (((a & 3) * b) >> 2)) >> 13; }
 static inline int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15, flat beyond +-4 */
 {
     uint32_t i;
@@ -394,7 +397,10 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
         int32_t dlq = 308 * 256 + ((osc_sine(cp_ph) * (154 * depth / 127)) >> 7);
         int32_t drq = 308 * 256 + ((osc_sine(cp_ph + 0x40000000u) * (154 * depth / 127)) >> 7);
         int32_t mix = (16384 * (2 * depth > 127 ? 127 : 2 * depth)) / 127;
-        int32_t cg = 32768 + (mix * 1950 >> 14) + (((mix * (16384 - mix)) >> 14) * 11 >> 3);   /* + half-mix comb */
+        int32_t cg = (mix * 1950 >> 14) + (((mix * (16384 - mix)) >> 14) * 11 >> 3);   /* + half-mix comb; the gain is
+                                                         * 1 + cg / 32768 (cg < 7600: l * cg fits up to |l| 282000; l * the
+                                                         * whole gain overflowed from |l| 61856: a hot chord, fuzz 2390) */
+        FX_K32 kmix = mix;                              /* (tl - l) * mix: 64-bit (it overflowed from |tl - l| 131072) */
         uint32_t w = cho_w, je = sb + 32u < n ? sb + 32u : n;
         int32_t fl = dlq & 255, fr = drq & 255;
         uint32_t ol = (uint32_t)(dlq >> 8), orr = (uint32_t)(drq >> 8);
@@ -404,10 +410,10 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
             cho_buf[w & 1023u] = clampi(x, -1048575, 1048575);
             tl = cho_buf[i0] + (int32_t)(((int64_t)(cho_buf[(i0 - 1u) & 1023u] - cho_buf[i0]) * fl) >> 8);
             tr = cho_buf[i1] + (int32_t)(((int64_t)(cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * fr) >> 8);
-            l += mulq15(tl - l, mix);
-            r += mulq15(tr - r, mix);
-            L[j] = (l * cg) >> 15;                      /* the comb's loss, minus the stereo width's loudness (0.8) */
-            R[j] = (r * cg) >> 15;
+            l += (int32_t)(((int64_t)(tl - l) * kmix) >> 15);
+            r += (int32_t)(((int64_t)(tr - r) * kmix) >> 15);
+            L[j] = l + ((l * cg) >> 15);                /* the comb's loss, minus the stereo width's loudness (0.8); */
+            R[j] = r + ((r * cg) >> 15);                /* (= (l * (32768 + cg)) >> 15 exactly, without its overflow) */
             w++;
         }
         cho_w = w;
@@ -506,11 +512,11 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
         }
         i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
         r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
-        lp += mulq15(r - lp, col);
+        lp += mulq15w(r - lp, col);                    /* (r - lp reaches 2^17 on a full-scale swing) */
         f = tape ? softclip(lp) : lp;
         hp += (f - hp + 64) >> 7;
         f -= hp;
-        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + mulq15(f, fb), -32768, 32767);
+        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + mulq15w(f, fb), -32768, 32767);   /* (f too) */
         w++;
         r = mulq15(r, wet);
         dg += (dgt - dg) >> 9;
@@ -831,7 +837,7 @@ static void fx_reset_state(void)
     gate_g = gate_tgt = 32768; gate_quiet = 0;
 }
 
-static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
+static inline __attribute__((always_inline)) void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /* (into app_audio, as it always was: the 0.9.3 delay fix took it over the inliner's limit, and the mode loop moved) */
 {
     static int32_t m[256];
     if (fx_reset_req) { fx_reset_state(); fx_reset_req = 0; }

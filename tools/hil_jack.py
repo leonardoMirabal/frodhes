@@ -41,7 +41,13 @@ class Jack:
     def both(self, dur, events):
         """USB and the jack at once, by callback, each device at its own rate (PortAudio resampling the M6's 48 kHz to
         44.1 while the FM-1 streamed made the USB capture skip ~200 ms in some takes, 2026-10-18); the jack resampled
-        to FS afterwards"""
+        to FS afterwards. With the rig's persistent recorder (hs.Rig.persistent, the default): slices of its streams,
+        open for the whole run (no stream opened per take: the FM-1 keeps its automatic flash saves back while a
+        computer reads its USB audio, and a save inside a take dropped ~250 ms of USB)"""
+        if getattr(self.r, "persistent", False):
+            self.r.add_jack(self.jdev, self.jch)
+            d = self.r.both(dur, events, jack=True)
+            return d["usb"][:, 0], d["jack"][:, 0]
         sd = self.sd
         jsr = int(sd.query_devices(self.jdev)["default_samplerate"])
         usr = int(sd.query_devices(self.r.dev)["default_samplerate"])   # each device at its own rate (no conversion)
