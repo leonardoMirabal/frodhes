@@ -59,7 +59,7 @@ A card that sets an amount has a **gauge** under its number: a thin frame that f
 rounded to what fits on the card (1.486 s shows 1.5S, +11.8 dB shows +12).
 
 The top line shows the preset, the octave (O+1, O−2...), **SUS** while the sustain is held, **BYP** while the effects
-are bypassed, the battery and the tempo. The battery has three segments (the last one left turns the accent colour,
+are bypassed, the tempo and, last, the battery. The battery has three segments (the last one left turns the accent colour,
 an empty outline means charge it soon); while USB powers the FM-1 it shows a bolt instead. It follows the battery
 slowly (over about ten seconds), so it does not flicker. The levels are a first estimate and may be adjusted. The bottom line explains the page's button or shows a live reading; when you change a
 preset or switch an effect it briefly shows what happened, in large letters.

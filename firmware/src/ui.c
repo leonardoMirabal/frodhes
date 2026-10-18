@@ -548,7 +548,7 @@ static void batt_icon(int32_t x, int32_t y, uint16_t ink, uint16_t hi, uint16_t 
     for (i = 0; i < lv; i++) cv_rect(x + 2 + 4 * (int32_t)i, y + 2, 3, 5, lv == 1u ? UI_ACC : hi);
 }
 
-/* the header, right to left: the BPM, the battery, BYP, SUS, the octave; the preset name gets what is left (cut only
+/* the header, right to left: the battery, the BPM, BYP, SUS, the octave; the preset name gets what is left (cut only
  * when the flags reach it) */
 static void draw_header(void)
 {
@@ -559,11 +559,10 @@ static void draw_header(void)
     slot_text(S_BPM, b);
     if (ui_style == UI_FOCUS) {
         nm[16] = 0;
-        x = 230 - aa_text_w(&AF_S, b);
+        batt_icon(230 - 17, 6, FC_LAB, FC_VAL, FC_BG);                  /* the battery last (the user) */
+        x = 230 - 17 - 6 - aa_text_w(&AF_S, b);
         aa_text(x, 3, &AF_S, b, FC_LAB, FC_BG);
-        x -= 24;
-        batt_icon(x, 6, FC_LAB, FC_VAL, FC_BG);
-        x -= 4;
+        x -= 6;
         if (fx_bypass) { x -= aa_text_w(&AF_S, "BYP"); aa_text(x, 3, &AF_S, "BYP", FC_VAL, FC_BG); x -= 6; }
         if (rh_hold) { x -= aa_text_w(&AF_S, "SUS"); aa_text(x, 3, &AF_S, "SUS", UI_ACC, FC_BG); x -= 6; }
         if (set.oct) {
@@ -577,10 +576,10 @@ static void draw_header(void)
     }
     if (ui_style == 2u) cv_rect(0, 0, 240, 19, ui_deep());
     nm[14] = 0;
-    x = (ui_style ? 236 : 238) - text_w(&FONT_S, b);
+    x = (ui_style ? 236 : 238) - 17;                                    /* the battery last (the user), then */
+    batt_icon(x, 5, C_GRAY, C_HI, ui_style == 2u ? ui_deep() : C_BLACK);   /* the BPM */
+    x -= 5 + text_w(&FONT_S, b);
     cv_text(x, 2, &FONT_S, b, ui_style == 1u ? C_GRAY : ui_style == 2u ? C_HI : C_AMB);
-    x -= 22;
-    batt_icon(x, 5, C_GRAY, C_HI, ui_style == 2u ? ui_deep() : C_BLACK);
     x -= 4;
     if (fx_bypass) { x -= text_w(&FONT_S, "BYP"); cv_text(x, 2, &FONT_S, "BYP", C_HI); x -= 4; }
     if (rh_hold) { x -= text_w(&FONT_S, "SUS"); cv_text(x, 2, &FONT_S, "SUS", UI_ACC); x -= 4; }
