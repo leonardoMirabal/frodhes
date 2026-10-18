@@ -316,7 +316,7 @@ def render_batch(spec, keys, vels, dur, knobs=None, off_at=None, motor=None, par
         k_sub = sb // SUB
         if sb % BLOCK == 0:
             if motor:
-                gedge, ph = btm.mot_block(ph, inc, motor.get("depth", 127), motor.get("shape", 0), gc, True)
+                gedge, ph = btm.mot_rad(ph, inc, motor.get("depth", 127), motor.get("shape", 0), gc, True)
             else:
                 gedge = [32768] * 9
         if off_sub is not None and k_sub == off_sub:
@@ -333,13 +333,16 @@ def render_batch(spec, keys, vels, dur, knobs=None, off_at=None, motor=None, par
             Pcur = np.where(live, Ps + (((pt - Ps) * f) >> 15), Pcur)
             E = Ecur / q30
             D = 1.0 - Pcur / q30
-        # motor words over this sub-block (bars.c §5.5 step 3)
+        # the motor over this sub-block: the tube's radiation weight only (x its make-up, Q27 as bars.c); the coupling
+        # is the discs-open one whether the motor runs or not (the bar's decay is the same)
         bi = (sb % BLOCK) // SUB
         g0, g1 = gedge[bi], gedge[bi + 1]
-        kb0, kb1 = (kbt * g0) >> 15, (kbt * g1) >> 15
-        kt0, kt1 = (ktb * g0) >> 15, (ktb * g1) >> 15
-        w0, w1 = (wtw * g0) >> 15, (wtw * g1) >> 15
-        dkb, dkt, dw = (kb1 - kb0) >> 5, (kt1 - kt0) >> 5, (w1 - w0) >> 5
+        kb0, kt0, dkb, dkt = kbt, ktb, 0, 0
+        if motor:                                   # (Q27 in C; doubled here to the Q28 the loop reads)
+            w0, w1 = ((wtw * g0) >> 16) * 2, ((wtw * g1) >> 16) * 2
+            dw = ((w1 - w0) >> 6) * 2
+        else:
+            w0, dw = wtw, 0
         pk = np.zeros((N, NM))
         if peaks and sb == 0:
             pkall = np.zeros((N, NM))

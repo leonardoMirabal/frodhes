@@ -363984,7 +363984,7 @@
 "type":{
 "budget":48,
 "drive_row":0,
-"mot_gc":4915,
+"mot_gc":6554,
 "nbody":0,
 "sleep_rel":9,
 "tors_db":32767,
@@ -364564,8 +364564,8 @@
 "status":"CORRECTED"
 },
 "T6c":{
-"_doc":"closed-state residual on the tube path",
-"g_c":0.15,
+"_doc":"closed-state residual on the tube path (2026-10-18: the motor gates the tube radiation only; 0.15 gave VA-M 12.2 dB, 0.20 gives 10.8 / f0-band 10.4)",
+"g_c":0.2,
 "settle":"O9: VA-M depth 7-11 dB and listening",
 "src":"US 7,732,691 (C; F-VAL F5)",
 "status":"ESTIMATE"

@@ -14,13 +14,14 @@ bar + wt * tube.
     bt.impulse(fs, n, part, wt)   # displacement for a unit force impulse on the bar (part "out": bar + wt tube)
     bt.retune(f0)             # scaled so the V1-like (late-sustain) normal mode is exactly f0
     bt.with_damper(sig)       # the felt on the bar (the tube is never felt-damped)
-    bt.with_motor(g)          # coupling (and, for the output, the radiation wt) x g; g_c = 0.15 closed
+    bt.with_motor(g)          # coupling x g: the closed-disc physics (longer V1), a report only; bars.c gates wt alone
     bt.solve_sigma(t60)       # sigma for a V1-with-tube T60, bounded 0.0015..0.007, .clamped / .sigma_wanted
     pair_words(bt, ...)       # the quantised slot words + Q30 couplings + Q28 wt (§4.2, §4.5)
     pair_map(words) / map_check(...)   # the exact per-sample 4x4 integer map, its spectral radius and modes (§4.5)
 
-Motor (§7): mot_law (float), MOT_COS / mot_block (bit-exact to bar_motor_block), mot_ramp (the per-sample word ramp),
-mot_inc (the rate law of FX_LFO_INC).
+Motor (§7): mot_law (float), MOT_COS / mot_block (the disc law of bar_motor_block), mot_mk / mot_rad (x its make-up:
+bar_mot_g, bit-exact; the radiation weight only, 2026-10-18), mot_ramp (the per-sample word ramp), mot_inc (the rate
+law of FX_LFO_INC).
 
 Per-key design: `python3 tools/bartube.py [--smooth-peaks]` solves tube zeta_r (from the measured f0-peak times) and sigma (from the
 measured V1-with-tube T60s) for every key 21..108 and writes build/bartube/solve.csv and summary.txt.
@@ -43,7 +44,7 @@ SIG_LO, SIG_HI = 0.0015, 0.007         # T5a: the exposed coupling range (E-VAL 
 S_MAX = 1.2                             # KN_TUBE[127] (§4.4): BELL's top
 WEAK_MARGIN = 0.9                       # §4.5: s_max * sigma <= 0.9 (zeta_r - zeta_n)
 ZR_HI = 0.04                            # T4a: tube zeta_r upper bound
-G_C = 0.15                              # T6c: closed-disc residual on the tube path
+G_C = 0.20                              # T6c: closed-disc residual on the tube path (vibes.json)
 G_PLAN_MAX = 8                          # §4.5: G in {1, 2, 4, 8}
 COUPLE_SIGN = +1                        # y0 += SIGN * (k_tb * x1) >> 30.  +1 = a physical (symmetric) spring. The
 #                                         plan's §4.5 listing has "y0 -= ...", i.e. -1: a skew coupling that pumps
@@ -439,6 +440,41 @@ def mot_block(ph, inc, depth=127, shape=0, gc_q15=None, on=True):
         op = o + rc._tdiv((((o * o) >> 15) - o) * shape, 127) if shape else o
         g.append(gmin + (((32768 - gmin) * op) >> 15))
     return g, (ph + 256 * inc) & 0xFFFFFFFF
+
+
+MOT_E = [11907, 7430, 5431, 4288]      # E[o^k], k = 1..4, o = 1 - |cos| over a turn, Q15 (bars.c BAR_MOT_E1..E4)
+
+
+def isqrt32(x):
+    """bars.c bar_isqrt: floor(sqrt(x))"""
+    return math.isqrt(int(x))
+
+
+def mot_mk(gmin, shape=0):
+    """bars.c bar_mot_mk, bit-exact: the tube radiation's make-up 1 / sqrt(mean g^2) over a turn (Q15) for the disc
+    law g = gmin + (1 - gmin) op, op = (1 - a) o + a o^2. The motor no longer touches the coupling (the user's level
+    rule, 2026-10-18: the bar's decay is the same with the motor on or off); it gates the tube's radiation only, and
+    this keeps the tube's mean power, so the loudness matches the discs open at any DEPTH / SHAPE and along the decay."""
+    e1_, e2_, e3_, e4_ = MOT_E
+    a = (shape << 15) // 127
+    b, h = 32768 - a, 32768 - gmin
+    e1 = (b * e1_ + a * e2_) >> 15
+    e2 = (b * b * e2_ + 2 * a * b * e3_ + a * a * e4_) >> 30
+    m2 = ((gmin * gmin) >> 15) + ((2 * gmin * h * e1) >> 30) + ((h * h * e2) >> 30)
+    r = isqrt32(m2 << 15)
+    return (1 << 30) // r if r else 32768
+
+
+def mot_rad(ph, inc, depth=127, shape=0, gc_q15=None, on=True):
+    """bar_mot_g as bars.c keeps it (steady depth): the disc law of mot_block times its make-up, Q15 (up to x 2.4), at
+    the 9 edges; and the next phase. The radiation weight is wt x this >> 16, applied >> 27."""
+    g, ph2 = mot_block(ph, inc, depth, shape, gc_q15, on)
+    if not on:
+        return g, ph2
+    gc = int(round(G_C * 32768)) if gc_q15 is None else gc_q15
+    gmin = 32768 - rc._tdiv(depth * (32768 - gc), 127)
+    mk = mot_mk(gmin, shape)
+    return [(x * mk) >> 15 for x in g], ph2
 
 
 def mot_ramp(word, g):

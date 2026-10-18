@@ -172,7 +172,8 @@ def test_motor_block_bit_exact_law_and_rate():
     # one 2^32 phase cycle is ONE AM period: exactly one closed trough per cycle
     t = np.arange(0, 2 ** 32, 2 ** 20)
     g = [bt.mot_block(int(x), 0, 127, 0)[0][0] for x in t]
-    troughs = sum(1 for i in range(len(g)) if g[i] < 6000 and g[i - 1] >= 6000)
+    lo = int((bt.G_C + 0.03) * 32768)                     # just over the closed state
+    troughs = sum(1 for i in range(len(g)) if g[i] < lo and g[i - 1] >= lo)
     assert troughs == 1
     assert bt.mot_block(0, inc, 127, 0, on=False)[0] == [32768] * 9
     assert bt.mot_inc(127) == bt.mot_inc(120)              # rate capped at 10.08 Hz
@@ -191,3 +192,18 @@ def test_f0_peak_procedure_like_the_recordings():
     y = np.sin(2 * np.pi * 440 * t) * (np.exp(-2 * t) - np.exp(-20 * t))   # a tube build-up peaking at 128 ms
     pk = bt.f0_peak_ms(y, 440.0)
     assert 60 < pk < 128                                      # read at the 93 ms window's start: ~46 ms early
+
+
+def test_motor_makeup_keeps_the_tube_power():
+    """bars.c bar_mot_mk (the motor gates the tube's radiation only, 2026-10-18): mk^2 mean(g^2) = 1 over a turn for
+    every DEPTH / SHAPE (the loudness of the discs open), x 1 exactly when parked, and at most x 2.4"""
+    phi = np.linspace(0, np.pi, 20001)[:-1]
+    gc = int(round(bt.G_C * 32768))
+    assert bt.mot_mk(32768, 0) == 32768 and bt.mot_mk(32768, 127) == 32768
+    for depth in (16, 64, 110, 127):
+        for shape in (0, 40, 127):
+            gmin = 32768 - (depth * (32768 - gc)) // 127
+            mk = bt.mot_mk(gmin, shape) / 32768
+            g = bt.mot_law(phi, depth, shape)
+            assert abs(mk * mk * np.mean(g * g) - 1) < 0.004, (depth, shape, mk)
+            assert mk <= 2.4

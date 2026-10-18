@@ -493,8 +493,10 @@ types have two VOICE pages: SELECT goes from VOICE 2/2 straight to COMPRESSOR).
 - **Presets keep theirs:** loading a preset is not a TYPE change: **F13 VIBE MOTOR** has the motor on, **F14 VIBES
   DRY** has it off, and a user preset saved with the motor off stays off.
 - **The Rhodes types** have no motor: going back to one leaves no tremolo running (TREM/WAH stays as it was).
-- **The level** stays the same with the motor on or off (the discs close the tubes part of each turn; the motor
-  makes up for what they take).
+- **The level** stays the same with the motor on or off, from the strike to the end of the note: the discs close
+  the tubes' sound part of each turn and the motor makes up for what they take, while the bar rings exactly as long
+  as with the discs open. Switching the motor on or off under a held chord starts or stops the pulse without a jump
+  in level.
 - **TREM/WAH** (the LFO button) is the same effect on VIBES as on the Rhodes and can run on top of the motor.
 - **Over MIDI:** CC 47 ON (≥ 64), 48 DEPTH, 49 SPEED, 50 SHAPE, 51 SYNC.
 
@@ -503,12 +505,13 @@ types have two VOICE pages: SELECT goes from VOICE 2/2 straight to COMPRESSOR).
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **MOTOR** | **ON** / **OFF**; it fades in and out over about 50 ms, so switching never clicks |
-| K2 | **DEPTH** | How far the discs close the tubes: a gentle pulse to a deep throb (the default 8.7 gives about 6–9 dB from F3 to F6) |
+| K2 | **DEPTH** | How far the discs close the tubes: a gentle pulse to a deep throb (the default 8.7 gives about 8 dB from F3 to F6, full depth about 10–11 dB) |
 | K3 | **SPEED** | The motor speed, 0.5–10 Hz (about 3.5 Hz is classic). With a SYNC set over MIDI (CC 51) it shows the note value and follows the tempo |
 | K4 | **SHAPE** | How sharply the discs open: soft is a smooth pulse, sharp a shorter, more pointed one |
 
 As on a real vibraphone the motor works on the tubes, so it pulses the ringing note and leaves the high overtones
-alone. Its pulse is a little shallower in the lowest octave, where more of the sound comes from the bar itself.
+and the strike alone. (Real discs held closed also let a bar ring longer; Frodhes keeps the ring the same with the
+motor on, so turning it on or off never changes the level or the length of a note.)
 
 ### Range, presets, polyphony
 
