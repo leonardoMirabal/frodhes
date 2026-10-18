@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""Every TYPE name is drawn alike on the main page's K1 card, whatever the engine: a short name (VIBES) must not
-jump to the large font while the long Rhodes names use the small one (a bug found 2026-10-17)."""
+"""Every TYPE name is drawn alike on the main page's K1 row, whatever the engine: a short name (VIBES) must not
+jump to the large font while the long Rhodes names use the small one (a bug found 2026-10-17). METERS: the row's
+choice name (the short TYPE names, AF_S) at the right, after the segments."""
 import os
 import subprocess
 
@@ -30,7 +31,7 @@ def test_type_names_same_size():
     heights = []
     for i in range(len(sel)):
         im = ppm(f"{OUT}-{300 + 300 * i}.ppm").astype(int)
-        card = im[63 + 18:63 + 66, 2:118].sum(axis=2)                 # K1 card, below its label row
+        card = im[46:84, 6 + 170:6 + 222].sum(axis=2)                 # K1 row (y 46, x 6), the name right of the segments
         rows = np.nonzero((card > 0.6 * card.max()).any(axis=1))[0]
         heights.append(rows[-1] - rows[0] + 1)
     assert len(set(heights)) == 1, heights
