@@ -128,7 +128,7 @@ static void sustain_button(uint32_t pressed, uint32_t released)
 
 /* MIDI CC: every parameter's CC from the PARAMS table (the reface CP map for the panel: switch CCs 0-42 off,
  * 43-85 A, 86-127 B; TYPE in bands of 32), CC 64 sustain (continuous: half-pedal), 120/123 all off,
- * 119 developer: bypass the effects (tests of the voice engine); the other developer CCs below (2 3 4 8 9 10 116) */
+ * 119 developer: bypass the effects (tests of the voice engine); the other developer CCs below (2 3 4 8 9 10 11 116) */
 static void midi_cc(uint32_t cc, uint32_t v)
 {
     uint32_t id;
@@ -139,6 +139,8 @@ static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 3u) { ui_testpat = v >= 64u; return; }            /* developer: the colour test pattern (ui.c) */
     if (cc == 2u) { ui_look = (uint8_t)(v < MT_NLOOKS ? v : MT_NLOOKS - 1u); return; }   /* developer: the METERS
                                                         * colour candidate, 0 A 1 B 2 C (ui.c MT_LOOKS; not saved) */
+    if (cc == 11u) { ui_cards = (uint8_t)(v < UI_CARDS_N ? v : UI_CARDS_N - 1u); return; }   /* developer: the rows'
+                                                        * design variant, 0 TODAY 1 FADER 2 LINE 3 A 4 B 5 C (ui.c; not saved) */
     if (cc == 4u) {                                    /* developer: the battery query (ui.c, for calibrating its
                                                         * thresholds): CC 4 / 5 = the smoothed 10-bit reading (MSB = raw
                                                         * >> 3, LSB = raw & 7), CC 6 = the segments shown (4 = USB power) */
@@ -426,9 +428,20 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (sscanf(key, "vlabel.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) snprintf(v, n, "%s", slot_label_v(PG_VOICE, a, b));
     else if (sscanf(key, "vhint.%u", &a) == 1) snprintf(v, n, "%s", a < vp_count() ? eng_ui()->hint[a] : "");
     else if (!strcmp(key, "vpages")) snprintf(v, n, "%u", vp_count());
-    else if (sscanf(key, "row%u", &a) == 1 && a < 4u) {   /* what row a shows: KIND V HI (ui.c ui_row_drawn) */
-        static const char *const RK[] = {"none", "amount", "detent", "choice", "bar"};
-        snprintf(v, n, "%s %d %d", RK[ui_row_drawn[a].kind], ui_row_drawn[a].v, ui_row_drawn[a].hi);
+    else if (!strcmp(key, "cards")) snprintf(v, n, "%u", ui_cards);   /* the rows' design variant (CC 11) */
+    else if (sscanf(key, "rowbox%u", &a) == 1 && a < 4u)   /* the variants' row a: FIT SHORT FW VX0 VX1 UX0 UX1 LX1 BASE
+                                                        * CAP STYLE N LIT (row x; UX 0 0: no unit; STYLE ui.c
+                                                        * CS_LETTER, N / LIT a selector's options and the one lit) */
+        snprintf(v, n, "%u %u %d %d %d %d %d %d %d %d %c %d %d", ui_row_drawn[a].fit, ui_row_drawn[a].shortf,
+                 ui_row_drawn[a].fw, ui_row_drawn[a].vx0, ui_row_drawn[a].vx1, ui_row_drawn[a].ux0, ui_row_drawn[a].ux1,
+                 ui_row_drawn[a].lx1, (int)CD_BASE, AF_L_CAP_H, ui_row_drawn[a].style ? ui_row_drawn[a].style : '-',
+                 ui_row_drawn[a].sn, ui_row_drawn[a].si);
+    else if (!strcmp(key, "fitscan")) snprintf(v, n, "%u", ui_fit_scan());   /* every value of every card: how many
+                                                        * do not fit (printed: FITSCAN lines) */
+    else if (sscanf(key, "row%u", &a) == 1 && a < 4u) {   /* what row a shows: KIND V HI FACE (ui_row_drawn; FACE L / S) */
+        static const char *const RK[] = {"none", "amount", "detent", "choice"};
+        snprintf(v, n, "%s %d %d %c", RK[ui_row_drawn[a].kind], ui_row_drawn[a].v, ui_row_drawn[a].hi,
+                 ui_row_drawn[a].big ? 'L' : 'S');
     }
     else if (!strcmp(key, "look")) {                   /* the METERS colours (CC 2): letter, then RGB565 hex: surf track
                                                         * outline hair fill edge tag lab val dim */

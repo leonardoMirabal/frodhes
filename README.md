@@ -12,8 +12,9 @@ Dyno and Vibes), a
 reface CP-style effects chain (compressor, a resonant filter with its LFO, drive, tremolo / wah, phaser, chorus, delay,
 reverb), tap tempo with MIDI
 clock sync, USB-MIDI in and out and TRS MIDI in, chord mode, a pattern recorder (1–16 bar loops, quantize, overdub, undo / erase), an arpeggiator, scales, a sustain pedal, 9-voice polyphony and 14 factory plus 16 user presets. The screen shows one page at a time with
-four cards, one for each of the FM-1's four knobs, drawn as meter rows (an amount fills its row, a choice lights one
-segment per option); the instrument brings its own VOICE pages; the first page, PERFORM, puts the effects' dry / wet (or
+four cards, one for each of the FM-1's four knobs, each read at a glance by its kind (an amount fills its row like a
+fader, a selector lights one block per option up to its choice, an ON / OFF switch shows a lit dot), the value always
+in the same large letters; the instrument brings its own VOICE pages; the first page, PERFORM, puts the effects' dry / wet (or
 anything you assign) on those four knobs for playing live.
 
 **Try it in your browser: [the Frodhes emulator](https://leonardomirabal.github.io/frodhes/)**: the same firmware

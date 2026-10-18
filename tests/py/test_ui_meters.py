@@ -7,17 +7,20 @@ it drew, by name, with "expect state KEY ~" probes (frodhes.c host_state: an exp
 '(is "...")'). The test then measures the pixels against that state:
 
   title / count   the title line (y 20-42): the page name in the accent colour on the left, "n/m" grey on the right
-  row0..row3      "KIND V HI" per knob row: KIND amount | detent | choice | bar | meter | none; V the value 0..HI
-                  (an amount's fill fraction = V / HI; a choice's lit segment = V, its options = HI + 1; a bar: a
-                  choice with more than 8 options, a position bar at V / HI)
+  row0..row3      "KIND V HI FACE" per knob row: KIND amount | detent | choice | meter | none; V the value 0..HI
+                  (an amount's fill fraction = V / HI; a choice: option V of HI + 1); FACE L | S, the face its value
+                  is written in (S: the small face, a value too wide for the large one)
   hot             the row with the amber frame now (0..3), or "-"
   label0..3, card0..3, page, hint: as today
 
 Checks (plan §5):
   - no text overlaps: a value is at least 3 px clear of the label on its left; no text touches a row's border (a
-    clipped value); a choice's label ends before its segments, its name starts after them;
+    clipped value);
   - an amount's (and a named detent's) row fill = V / HI of the row's width, +-1 px, with its bright edge;
-  - a choice: one segment per option, the lit one = V; a bar: its accent at V / HI;
+  - a choice (TYPE, EFFECT, ON / OFF, SYNC ..., the user's change of 2026-10-18): no fill and no segments (nothing
+    amber in its row), its whole name written right-aligned where an amount's number ends, in the large face (the
+    face the firmware reports is the one measured); every option of every choice card on both engines in the large
+    face, except the ones listed in SMALL_OK; the name changes as its knob turns;
   - the amber frame only on the turned knob, for about 1 s (and the label amber with it);
   - the title amber, the count "n/m" right-aligned;
   - dynamic VOICE pages: Rhodes VOICE 1/2, 2/2, VIBES 1/3, 2/3, 3/3 with their labels, right after FRODHES, SELECT
@@ -48,7 +51,10 @@ VOICE = {"rhodes": [["TONE", "BARK", "BELL", "HAMMER"], ["DECAY", "RELEASE", "NO
          "vibes": [["STRIKE", "MALLET", "TUBE", "WEIGHT"], ["RING", "DAMPER", "NOISE", "TUNE"],
                    ["MOTOR", "DEPTH", "SPEED", "SHAPE"]]}
 ROW_X0, ROW_X1, ROW_Y0, ROW_DY, ROW_H = 6, 233, 46, 42, 38      # plan §2: x 6-233, y 46 + 42 k, height 38
-SEG_X0, SEG_X1 = 92, 168                                          # plan §2: a choice's segments
+LABEL_X1 = 90                                                     # the labels end before x 90 (where amber is looked for)
+VALUE_XR = ROW_X0 + 220                                           # ui.c draw_row: values right-aligned at row x 220
+# a choice's option written in the small face (too wide for the large one next to its label): (page, label, value)
+SMALL_OK = set()                                                  # (28 px: TREM SHAPE; the 24 px face fits all)
 T0, STEP, NWALK = 2500, 600, 30                                   # after the start screen and the TYPE message
 PROBE = "~"
 KEYS = (["title", "count", "page", "vpage", "hint", "hot"] + [f"row{k}" for k in range(4)] + [f"label{k}" for k in range(4)]
@@ -79,15 +85,21 @@ def ppm(tag, t):
 
 
 def parse_row(s):
-    """'KIND V HI' -> (kind, v, hi)"""
+    """'KIND V HI FACE' -> (kind, v, hi)"""
     p = (s or "").split()
     if not p:
         return ("none", 0, 0)
     return (p[0], int(p[1]) if len(p) > 1 else 0, int(p[2]) if len(p) > 2 else 0)
 
 
+def row_face(s):
+    """the face of the row's value as the firmware reports it: 'L', 'S' or None (an older build)"""
+    p = (s or "").split()
+    return p[3] if len(p) > 3 else None
+
+
 def type_lines(cc_n, v):
-    return [cc(100, cc_n, v)]
+    return [cc(90, 11, 0), cc(100, cc_n, v)]                       # today's rows (developer CC 11 0; the default is A)
 
 
 def walk(tag, cc_n, v, turns=None, look=None):
@@ -143,7 +155,7 @@ NORM = np.ones(3)                                                 # the text's t
 
 
 def ink(im):
-    """text cores: grey to white, not tinted (the fill, the segments and the frame are amber)"""
+    """text cores: grey to white, not tinted (the fill and the frame are amber)"""
     im = np.minimum(im * NORM, 255)
     return lowsat(im) & (im.max(axis=2) >= 90)
 
@@ -250,29 +262,30 @@ def value_is_small(im, box):
     return len(ys) and ys[-1] - ys[0] + 1 < 15
 
 
-def segments(im, box, acc):
-    """a choice's segments: [(x0, x1, lit)] in the row's segment band, and the band's columns"""
+def value_cols(im, box):
+    """the value's ink columns in the text band (the value is the rightmost text): (first white, last ink) or None"""
     x0, x1, y0, y1 = box
-    reg = im[y0 + 2:y1 - 1, x0 + 2:x1 - 1]
-    surf = np.median(im[y1 - 2, x0 + 2:x0 + 40], axis=0)   # the row surface (no fill on a choice row)
-    lit = is_acc(reg, acc)
-    off = (np.abs(reg - surf).sum(axis=-1) >= 12) & ~ink(reg) & ~amberish(reg)
-    if off.any():                                           # the dark segments' colour: the commonest "off" colour
-        cols, n = np.unique(reg[off].reshape(-1, 3), axis=0, return_counts=True)
-        track = cols[np.argmax(n)]
-        off = np.abs(reg - track).sum(axis=-1) <= 8
-    seg = lit | off
-    lines = np.nonzero(seg.sum(axis=1) >= 20)[0]
-    if not len(lines):
-        return [], None
-    l0, l1 = lines[0], lines[-1]
-    colmask = seg[l0:l1 + 1].mean(axis=0) >= 0.6
-    colmask |= seg[l0] & seg[l1]                            # an outlined segment (looks A, B): its top and bottom lines
-    out = []
-    for a, b in runs(colmask):
-        if b - a + 1 >= 3:
-            out.append((x0 + 2 + a, x0 + 2 + b, bool(lit[l0:l1 + 1, a:b + 1].mean() >= 0.5)))
-    return out, (y0 + 2 + l0, y0 + 2 + l1)
+    a, b = text_band(box)
+    w = np.nonzero(white(im[a:b, x0 + 2:x1 - 1]).any(axis=0))[0]
+    e = np.nonzero(ink(im[a:b, x0 + 2:x1 - 1]).any(axis=0))[0]
+    return (x0 + 2 + int(w[0]), x0 + 2 + int(e[-1])) if len(w) else None
+
+
+def check_choice(im, box, acc, w):
+    """a choice row: nothing amber in it (no fill, no segments, no position bar), its name white at the right where
+    an amount's number ends"""
+    x0, x1, y0, y1 = box
+    errs = []
+    n_acc = int(is_acc(im[y0 + 1:y1, x0 + 1:x1], acc).sum())
+    end, _ = fill_end(im, box)
+    if n_acc or end:                                        # (amberish, not on the text: look C tints its text)
+        errs.append(f"{w}: amber in a choice row ({n_acc} accent px, a fill to x {end}): segments / a fill?")
+    vc = value_cols(im, box)
+    if vc is None:
+        return errs + [f"{w}: no name drawn"]
+    if not VALUE_XR - 9 <= vc[1] <= VALUE_XR + 1:              # (the last glyph's right bearing: 1 T X up to 8 px)
+        errs.append(f"{w}: the name ends at x {vc[1]}, the values at x {VALUE_XR}")
+    return errs + check_value_clear(im, box, w)
 
 
 def frame_on(im, box, acc):
@@ -292,8 +305,8 @@ def frame_on(im, box, acc):
 def label_amber(im, box, acc):
     x0, x1, y0, y1 = box
     a, b = text_band(box)
-    m = is_acc(im[a:b, x0 + 4:min(x0 + 84, SEG_X0 - 2)], acc)
-    edge = is_acc(im[y1 - 3:y1, x0 + 4:min(x0 + 84, SEG_X0 - 2)], acc).any(axis=0)   # the fill's edge: not the label
+    m = is_acc(im[a:b, x0 + 4:min(x0 + 84, LABEL_X1)], acc)
+    edge = is_acc(im[y1 - 3:y1, x0 + 4:min(x0 + 84, LABEL_X1)], acc).any(axis=0)   # the fill's edge: not the label
     return int(m[:, ~edge].sum())
 
 
@@ -347,42 +360,13 @@ def check_screen(im, s, where, fallbacks):
             errs += check_value_clear(im, box, w)
             if value_is_small(im, box) and kind == "amount":
                 fallbacks.append(f"{w}: the value in the small face")
-        elif kind in ("choice", "bar"):
-            segs, band = segments(im, box, acc)
-            a, b = text_band(box)
-            if not segs:
-                errs.append(f"{w}: no segments / bar")
-                continue
-            sx0, sx1 = segs[0][0], segs[-1][1]
-            m = ink(im[a:b, :]).any(axis=0)
-            if m[sx0 - 2:sx1 + 3].any():
-                errs.append(f"{w}: text over or touching the segments (x {sx0}-{sx1})")
-            lab = np.nonzero(m[box[0] + 2:sx0])[0]
-            if len(lab) and box[0] + 2 + lab[-1] > 88:
-                errs.append(f"{w}: the label runs to x {box[0] + 2 + lab[-1]} (segments from x 92)")
-            if not m[sx1 + 1:box[1] - 1].any():
-                errs.append(f"{w}: no choice name right of the segments")
-            if kind == "choice":
-                n = hi + 1
-                if n > 8:
-                    errs.append(f"{w}: {n} options shown as segments (more than 8: a position bar)")
-                if len(segs) != n:
-                    errs.append(f"{w}: {len(segs)} segments for {n} options")
-                lit = [i for i, sg in enumerate(segs) if sg[2]]
-                if lit != [v]:
-                    errs.append(f"{w}: lit segment(s) {lit}, the value is {v}")
-            else:
-                if hi + 1 <= 8:
-                    errs.append(f"{w}: a position bar for {hi + 1} options (8 or fewer: segments)")
-                y_a, y_b = band
-                acc_cols = np.nonzero(is_acc(im[y_a:y_b + 1, sx0:sx1 + 1], acc).any(axis=0))[0]
-                want = sx0 + (sx1 - sx0) * v / hi if hi else sx0
-                if len(acc_cols):
-                    right, mid = sx0 + acc_cols[-1], sx0 + (acc_cols[0] + acc_cols[-1]) / 2
-                    if min(abs(right - want), abs(mid - want)) > 3:
-                        errs.append(f"{w}: the bar's mark at x {right}, the value says {want:.0f}")
-                elif v:
-                    errs.append(f"{w}: the bar shows nothing at {v}/{hi}")
+        elif kind == "choice":
+            errs += check_choice(im, box, acc, w)
+            face, small = row_face(s.get(f"row{k}")), bool(value_is_small(im, box))
+            if face is not None and (face == "S") != small:
+                errs.append(f"{w}: the firmware says face {face}, the screen shows the {'small' if small else 'large'}")
+            if small and (title_of(s).split(" ")[0], s.get(f"label{k}"), s.get(f"card{k}")) not in SMALL_OK:
+                errs.append(f"{w}: a choice in the small face (not in SMALL_OK)")
         else:
             errs.append(f"{w}: unknown row kind {kind!r}")
     return errs
@@ -425,7 +409,7 @@ def turns_for(pages):
             lab = s.get(f"label{k}")
             if kind in ("none", "meter") or lab in ("TYPE", "CHANNEL"):
                 continue
-            ks.append((k, 9 if kind in ("amount", "detent") else 3 if kind == "bar" else 1))
+            ks.append((k, 9 if kind in ("amount", "detent") else 1))
         if ks:
             tt[i] = ks
     return tt
@@ -433,7 +417,7 @@ def turns_for(pages):
 
 @pytest.mark.parametrize("name,cc_n,v", TYPES, ids=[t[0] for t in TYPES])
 def test_every_page_defaults(meters, name, cc_n, v):
-    """every page at its defaults: geometry, fills, segments, title, no frame"""
+    """every page at its defaults: geometry, fills, choice names, title, no frame"""
     pages = pages_of(name, cc_n, v)[0]
     errs, fb = [], []
     for t, im, s in pages:
@@ -491,6 +475,69 @@ def test_dynamic_voice_pages(meters, name, cc_n, v):
     at = ids.index(page_id(fwd[-1][2]))
     want_back = [ids[(at - 1 - i) % m] if wrap else ids[max(at - 1 - i, 0)] for i in range(len(bwd))]
     assert [page_id(s) for _, _, s in bwd] == want_back
+
+
+@pytest.mark.parametrize("name,cc_n,v", [TYPES[0], TYPES[4]], ids=["ST77", "VIBE"])
+def test_every_choice_option_written(meters, name, cc_n, v):
+    """every choice card of every page (both engines; not TYPE: test_type_names_written), turned through each of its
+    options and shot 1.1 s later (the frame gone): its name written large where the values end, nothing amber in its
+    row, a different name at each option, the face the firmware reports the one on the screen; then turned back"""
+    pages = pages_of(name, cc_n, v)[0]
+    L, t, marks = type_lines(cc_n, v), T0, []
+    for i, (_, _, s) in enumerate(pages):
+        if i:
+            L.append(f"{t} turn 0 1"); t += 400
+        if s.get("page") in SPECIAL or title_of(s) in SPECIAL:
+            continue
+        for k in range(4):
+            kind, v0, hi = parse_row(s.get(f"row{k}"))
+            if kind != "choice" or s.get(f"label{k}") == "TYPE":
+                continue
+            for _ in range(hi + 1):                                     # to option 0 (a choice: one step a detent)
+                L.append(f"{t} turn {2 + k} -1"); t += 20
+            t += 1100
+            for o in range(hi + 1):
+                if o:
+                    L.append(f"{t} turn {2 + k} 1"); t += 1100
+                L += [f"{t} shot"] + probes(t, ["title", "page", "hot", f"row{k}", f"label{k}", f"card{k}"])
+                marks.append((i, k, o, t)); t += 10
+            for d in [-1] * (hi + 1) + [1] * v0:                        # back to where it was
+                L.append(f"{t} turn {2 + k} {d}"); t += 20
+            t += 1100
+    tag = f"meters_choices_{name}"
+    r = run(tag, L, t + 50, check=False)
+    st = read_probes(r)
+    errs, names, n, small_seen = [], {}, 0, set()
+    for i, k, o, tt in marks:
+        s, im = st.get(tt, {}), ppm(tag, tt)
+        want = title_of(pages[i][2])
+        w = f"{name} {title_of(s)} K{k + 1} {s.get(f'label{k}')}={s.get(f'card{k}')} (option {o})"
+        if title_of(s) != want:
+            errs.append(f"{w}: on {title_of(s)}, not {want}"); continue
+        kind, v1, hi = parse_row(s.get(f"row{k}"))
+        if kind != "choice" or v1 != o:
+            errs.append(f"{w}: row says {s.get(f'row{k}')}, expected choice {o}"); continue
+        acc = accent_of(im)
+        box = row_box(im, k)
+        errs += check_choice(im, box, acc, w) + check_clear_of_borders(im, box, w)
+        face, small = row_face(s.get(f"row{k}")), bool(value_is_small(im, box))
+        if (face == "S") != small:
+            errs.append(f"{w}: the firmware says face {face}, the screen shows the {'small' if small else 'large'}")
+        key = (want.split(" ")[0], s.get(f"label{k}"), s.get(f"card{k}"))
+        if face != "L":
+            small_seen.add(key)
+            if key in SMALL_OK:
+                warnings.warn(f"{w}: in the small face (too wide for the large one)")
+            else:
+                errs.append(f"{w}: in the small face (not in SMALL_OK)")
+        names.setdefault((i, k), []).append(s.get(f"card{k}"))
+        n += 1
+    for (i, k), got in names.items():
+        if len(set(got)) != len(got):
+            errs.append(f"{name} {title_of(pages[i][2])} K{k + 1}: the same name at two options: {got}")
+    assert n >= 60, n                                                 # (both engines: ~30 cards, ~190 options)
+    assert small_seen == SMALL_OK, f"SMALL_OK is stale: the small face was used for {sorted(small_seen)}"
+    assert not errs, "\n".join(errs[:40])
 
 
 def test_vibes_has_one_page_more(meters):
