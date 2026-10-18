@@ -58,11 +58,13 @@ def binary(px):
     b = os.path.join(hostrun.ROOT, "build", "host", f"frodhes_v{px}")
     src = [os.path.join(hostrun.ROOT, "firmware", d) for d in ("src", "gen")]
     newest = max(os.path.getmtime(os.path.join(d, f)) for d in src for f in os.listdir(d))
-    if not os.path.exists(b) or os.path.getmtime(b) < newest:
-        subprocess.run(["cc", "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", '-DAPP_VER="dev"',
-                        f"-DUI_VAL_PX={px}", "-Ifirmware/src", "-Ifirmware/gen", "-o", b, "firmware/src/frodhes.c",
-                        "-lm"], cwd=hostrun.ROOT, check=True)
-    return b
+
+    def make(b):
+        if not os.path.exists(b) or os.path.getmtime(b) < newest:
+            subprocess.run(["cc", "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", '-DAPP_VER="dev"',
+                            f"-DUI_VAL_PX={px}", "-Ifirmware/src", "-Ifirmware/gen", "-o", b, "firmware/src/frodhes.c",
+                            "-lm"], cwd=hostrun.ROOT, check=True)
+    return hostrun.once(b, make)          # (pytest-xdist: one worker builds it)
 
 
 def run(tag, lines, end, px=DEF_PX):

@@ -18,7 +18,7 @@ import subprocess
 import numpy as np
 import pytest
 
-from hostrun import FS, ROOT, card_hz, cc, env_rms, note, rate_of, rms_db, run
+from hostrun import FS, ROOT, card_hz, cc, env_rms, note, once, rate_of, rms_db, run
 
 ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 64), cc(11, 47, 0)]}   # VIBES: its motor (on with it) off
 CLEAN = [cc(20, 81, 0), cc(21, 91, 0)]              # F01's drive and reverb off: the effect alone
@@ -76,10 +76,10 @@ def gain_ratio(wet, ref, t0, t1, hop=64):
 
 @pytest.fixture(scope="module")
 def cards():
-    exe = os.path.join(ROOT, "build", "host", "cards")
-    subprocess.run(["cc", "-O1", "-w", "-DDINGHY_HOST", "-DAPP_VER=\"dev\"", "-Dmain=host_main",
-                    "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
-                    "-o", exe, os.path.join(ROOT, "tests", "c", "cards.c"), "-lm"], check=True)
+    exe = once(os.path.join(ROOT, "build", "host", "cards"), lambda exe: subprocess.run(
+        ["cc", "-O1", "-w", "-DDINGHY_HOST", "-DAPP_VER=\"dev\"", "-Dmain=host_main",
+         "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
+         "-o", exe, os.path.join(ROOT, "tests", "c", "cards.c"), "-lm"], check=True))
     out = subprocess.run([exe], check=True, capture_output=True, text=True).stdout
     d = {}
     for name, v, text, raw in re.findall(r"^card (\S+) (\d+) (\S+) (-?\d+)$", out, re.M):

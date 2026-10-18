@@ -10,7 +10,8 @@ permissions:
 jobs:
   # ci.yml already runs every host test (host + generators-macos) on each push to main. If ci passed on exactly this
   # commit (waiting up to 40 min if it is still running), the release skips its own copy of the tests; if ci failed,
-  # never ran or timed out, the fallback below runs them here, and a failure stops the release before publish.
+  # never ran or timed out, the fallback jobs below (host, generators-macos) run them here, and a failure stops the
+  # release before the build and publish.
   ci-gate:
     runs-on: ubuntu-latest
     outputs:
@@ -34,19 +35,27 @@ jobs:
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
       - run: python -m pytest -q -rs tests/py/test_gen_bars.py
       - run: '! python -m pytest -q -rs tests/py/test_gen_bars.py -k deterministic | grep -q SKIPPED'
+  host:                              # fallback only: every host test (ci.yml's host job, on the same arm64 runner)
+    needs: ci-gate
+    if: needs.ci-gate.outputs.passed != 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest pytest-xdist==3.8.0
+      - name: host tests (fallback only, when ci did not pass on this commit)
+        run: make test && make host && make pytest PY=python3
   release:
-    needs: [ci-gate, generators-macos]
-    # runs when ci passed on this commit (generators-macos skipped) or when the fallback macOS job passed
+    needs: [ci-gate, generators-macos, host]
+    # runs when ci passed on this commit (the fallback jobs skipped) or when both fallback jobs passed. x86_64: the
+    # JieLi toolchain (tools/get_toolchain.sh) runs on nothing else
     if: >-
       !cancelled() && needs.ci-gate.result == 'success' &&
-      (needs.ci-gate.outputs.passed == 'true' || needs.generators-macos.result == 'success')
+      (needs.ci-gate.outputs.passed == 'true' ||
+       (needs.generators-macos.result == 'success' && needs.host.result == 'success'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
-      - name: host tests (fallback only, when ci did not pass on this commit)
-        if: needs.ci-gate.outputs.passed != 'true'
-        run: make test && make pytest PY=python3
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1
       - name: the JieLi toolchain and the 3 AC79 SDK files (checked by sha256 in the build)
         run: |
           sh tools/get_toolchain.sh .local/jieli

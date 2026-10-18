@@ -116,8 +116,15 @@ def test_release_workflow_wiring():
     assert j["generators-macos"]["if"] == "needs.ci-gate.outputs.passed != 'true'"
     cond = " ".join(j["release"]["if"].split())
     assert cond == ("!cancelled() && needs.ci-gate.result == 'success' && (needs.ci-gate.outputs.passed == 'true' "
-                    "|| needs.generators-macos.result == 'success')")
-    tests = [s for s in j["release"]["steps"] if "make test" in s.get("run", "")]
-    assert len(tests) == 1 and tests[0]["if"] == "needs.ci-gate.outputs.passed != 'true'"
+                    "|| (needs.generators-macos.result == 'success' && needs.host.result == 'success'))")
+    assert j["release"]["needs"] == ["ci-gate", "generators-macos", "host"]
+    # the fallback host tests: their own job on ci.yml's arm64 runner; the build stays on x86_64 (the JieLi toolchain)
+    assert j["host"]["if"] == "needs.ci-gate.outputs.passed != 'true'" and j["host"]["needs"] == "ci-gate"
+    assert j["host"]["runs-on"] == "ubuntu-24.04-arm" and j["release"]["runs-on"] == "ubuntu-latest"
+    tests = [s for s in j["host"]["steps"] if "make test" in s.get("run", "")]
+    assert len(tests) == 1 and "make pytest" in tests[0]["run"]
+    assert not [s for s in j["release"]["steps"] if "make test" in s.get("run", "") or "pytest" in s.get("run", "")]
     names = [s.get("name") for s in j["release"]["steps"]]
-    assert names.index("publish") > names.index("build") > names.index(tests[0]["name"])
+    assert names.index("publish") > names.index("build")
+    ci = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))["jobs"]
+    assert ci["host"]["runs-on"] == "ubuntu-24.04-arm" and set(ci) >= {"host", "generators-macos"}   # ci_gate.sh's jobs

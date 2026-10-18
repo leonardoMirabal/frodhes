@@ -9,6 +9,8 @@ import wave
 import numpy as np
 import pytest
 
+import hostrun  # noqa: E402  (tests/py: the per-worker render paths)
+
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 BIN = os.path.join(ROOT, "build", "host", "frodhes")
 FS = 44100
@@ -20,7 +22,7 @@ def host_build():
 
 
 def run(tag, ccs, notes, end_ms):
-    out = os.path.join(ROOT, "build", "host", f"fx-{tag}")
+    out = hostrun.out(f"fx-{tag}")
     lines = [f"20 midi 0xB0 {cc} {v}" for cc, v in ccs]
     for t, n, v, dur in notes:
         lines += [f"{t} midi 0x90 {n} {v}", f"{t + dur} midi 0x80 {n} 0"]

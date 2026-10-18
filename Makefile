@@ -40,8 +40,12 @@ testv:                     ## another voice count: make testv V=8 (or 10) runs e
 test10:                    ## make testv V=10
 	@$(MAKE) -s testv V=10
 
-pytest:                    ## Python tools' unit tests (analysis, generators)
-	$(PY) -m pytest -q tests/py
+PYTEST_N ?= auto           # make pytest PYTEST_N=4 (or 0: serial); serial anyway without pytest-xdist
+pytest:                    ## Python tools' unit tests (analysis, generators), in parallel with pytest-xdist
+	@if [ "$(strip $(PYTEST_N))" != 0 ] && $(PY) -c "import xdist" 2>/dev/null; then \
+	  echo "$(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup tests/py"; \
+	  $(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup tests/py; \
+	else echo "$(PY) -m pytest -q tests/py  (serial: no pytest-xdist)"; $(PY) -m pytest -q tests/py; fi
 
 firmware:                  ## build/frodhes.fwsc (Docker on macOS)
 	PYTHON=$(PY) ./build.sh

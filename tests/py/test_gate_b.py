@@ -13,6 +13,8 @@ import wave
 import numpy as np
 import pytest
 
+import hostrun  # noqa: E402  (tests/py: the per-worker render paths)
+
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import rhodes_model as gm  # noqa: E402
@@ -23,7 +25,7 @@ KEYS = {k["midi"]: k for k in SPEC["keys"]}
 
 
 def c_render(note, vel, dur_ms, off_ms=None, tag="gb"):
-    out = os.path.join(ROOT, "build", "host", f"{tag}-{note}-{vel}")
+    out = hostrun.out(f"{tag}-{note}-{vel}")
     scr = out + ".txt"
     with open(scr, "w") as f:
         f.write("50 midi 0xB0 119 127\n")                 # developer: bypass the effects, test the voice
