@@ -173,14 +173,14 @@ static char ui_msg[32];
 
 /* ---- the look (METERS, the user's choice 2026-10-18; private/UI-SIMPLIFY-PLAN.md): a header, the page's title, four
  * horizontal rows = K1..K4 (an amount fills its row from the left: a dim fill + a 2 px accent edge, the number large
- * at the right with its unit small; a choice shows its name and one segment per option, or a position bar over 8), a
- * hint. Two faces: AF_S for all small text, AF_L for values.
+ * at the right with its unit small; a choice has no fill, its whole name in the same large face: 2026-10-18, it
+ * replaced one segment per option), a hint. Two faces: AF_S for all small text, AF_L for values and choice names.
  *
  * Its colours, every one here (mt, from MT_LOOKS and the palette, mt_update). The FM-1's panel lifts dark tones a lot
  * (tools/manual_shots.py DEVICE_LOOK: the mock-up's near-black RGB(16,16,18) shows light teal, one RGB565 green unit
  * lifts black from L* 24 to 41), so three candidates, to be chosen by eye on the FM-1 (developer CC 2: 0 A, 1 B, 2 C;
  * not saved; tools/meters_palettes.py draws them in the device look):
- *   A black          surfaces and tracks black, an unlit segment / a track a 1 px dim outline; the fill the
+ *   A black          surfaces and tracks black, a track (the gain-reduction meter) a 1 px dim outline; the fill the
  *                    palette's darkest step x 5/16 (AMBER: RGB565 R 2 G 1), the edge, the frame, the title the accent;
  *   B dim outline    as A, a hairline on each row's top, the fill x 7/16 (AMBER: R 3 G 2);
  *   C model-matched  every grey, and on the AMBER palette the fill and the accent, picked by inverting DEVICE_LOOK
@@ -217,12 +217,12 @@ static void mt_update(void)                             /* the tokens for the lo
     mt.surf = l->surf; mt.track = l->track; mt.outline = l->outline; mt.hair = l->hair; mt.seq = l->seq;
     mt.tag = l->tag; mt.lab = l->lab; mt.val = l->val; mt.unit = l->unit; mt.dim = l->dim;
 }
-#define UI_ACC mt.acc                                   /* the title, SUS, a turned knob's label, the lit segment */
+#define UI_ACC mt.acc                                   /* the title, SUS, a turned knob's label, the frame */
 #define FC_BG C_BLACK
 #define FC_LAB mt.lab                                   /* names */
 #define FC_VAL mt.val                                   /* values */
 #define FC_DIM mt.dim                                   /* hints */
-/* a track (an unlit segment, the position bar, the meter's scale): solid, or black in a 1 px outline */
+/* a track (the gain-reduction meter's scale): solid, or black in a 1 px outline */
 static void mt_track(int32_t x, int32_t y, int32_t w, int32_t h)
 {
     if (!mt.outline || w < 3 || h < 3) { cv_rect(x, y, w, h, mt.outline ? mt.outline : mt.track); return; }
@@ -685,17 +685,12 @@ static const char *slot_unit(uint32_t s, char *v)
     if (s == S_TUNE) return "c";
     return 0;
 }
-/* the name a choice shows on its row: the short TYPE names (ST77 SUIT ...), else its text */
-static void slot_short(uint32_t s, char *v)
-{
-    if (s == P_TYPE) p_strcpy(v, N_TYPE[PV(P_TYPE)], 5);
-    else slot_text(s, v);
-}
-
-/* a row: K tag, label (accent while its knob turns, with a 1 px frame for HOT_MS), then an amount (the fill, the
- * number large, its unit small) or a choice (its name, one segment per option up to 8, else a position bar) */
-enum { RK_NONE, RK_AMOUNT, RK_DETENT, RK_CHOICE, RK_BAR };
-static struct { uint8_t kind; int16_t v, hi; } ui_row_drawn[4];   /* what each row shows (the host's tests read it) */
+/* a row: K tag, label (accent while its knob turns, with a 1 px frame for HOT_MS), then its value at the right in the
+ * large face (the small one only for a value too wide for its row): an amount fills the row (a dim fill, a 2 px edge)
+ * with its number and its unit small; a choice (TYPE, EFFECT, ON / OFF, SYNC ...) has no fill and its whole name
+ * written as large as a number (the user, 2026-10-18: easier to read than one segment per option) */
+enum { RK_NONE, RK_AMOUNT, RK_DETENT, RK_CHOICE };
+static struct { uint8_t kind, big; int16_t v, hi; } ui_row_drawn[4];   /* what each row shows (the host's tests read it) */
 static void draw_row(uint32_t k)
 {
     uint32_t s = slot_at(ui_page, k);
@@ -703,10 +698,10 @@ static void draw_row(uint32_t k)
     char v[16], kk[3] = {'K', (char)('1' + k), 0};
     cv_begin(RW_W, RW_H, mt.surf);
     if (mt.hair) cv_rect(0, 0, RW_W, 1, mt.hair);         /* B: the row's top hairline (under the fill) */
-    ui_row_drawn[k].kind = RK_NONE;
+    ui_row_drawn[k].kind = RK_NONE; ui_row_drawn[k].big = 0;
     if (s != S_NONE) {
         const char *lab = slot_label(ui_page, k), *u;
-        int32_t hi, val = slot_val(s, &hi), le, xr, w;
+        int32_t hi, val = slot_val(s, &hi), le, xr;
         const ectl_t *c = eng_ctl(s);
         ui_row_drawn[k].v = (int16_t)(hi ? clampi(val, 0, hi) : 0);
         ui_row_drawn[k].hi = (int16_t)hi;
@@ -715,36 +710,17 @@ static void draw_row(uint32_t k)
             cv_rect(0, 0, fw, RW_H, mt.fill);
             cv_rect(ex, 0, 2, RW_H, mt.edge);
             ui_row_drawn[k].kind = c && c->kind == EK_DETENT ? RK_DETENT : RK_AMOUNT;
-        }
+        } else if (hi) ui_row_drawn[k].kind = RK_CHOICE;   /* a choice: no fill, its whole name (TYPE: STAGE 77) */
         aa_text_ov(6, S_TOP(9), &AF_S, kk, mt.tag);
         le = aa_text_ov(6, S_TOP(26), &AF_S, lab, hot ? UI_ACC : FC_LAB);   /* where the label ends */
         if (le < 6 + aa_text_w(&AF_S, kk)) le = 6 + aa_text_w(&AF_S, kk);
-        if (hi && !slot_is_level(s)) {                  /* a choice */
-            int32_t n = hi + 1, x0 = le + 6 > 86 ? le + 6 : 86, x1;
-            slot_short(s, v);
-            w = aa_text_ovr(220, S_TOP(19), &AF_S, v, FC_VAL);
-            x1 = w - 8 < 162 ? w - 8 : 162;
-            if (n <= 8 && x1 - x0 >= n * 4 - 1) {       /* one segment per option, the chosen one lit */
-                int32_t j, sw = (x1 - x0 - (n - 1) * 3) / n;
-                for (j = 0; j < n; j++) {
-                    if (j == val) cv_rect(x0 + j * (sw + 3), 13, sw, 12, UI_ACC);
-                    else mt_track(x0 + j * (sw + 3), 13, sw, 12);
-                }
-                ui_row_drawn[k].kind = RK_CHOICE;
-            } else if (x1 - x0 >= 16) {                  /* a position bar: index / (n - 1) */
-                int32_t p = x0 + (x1 - x0 - 3) * clampi(val, 0, hi) / hi;
-                mt_track(x0, 18, x1 - x0, 3);
-                cv_rect(p, 13, 3, 13, UI_ACC);
-                ui_row_drawn[k].kind = RK_BAR;
-            }
-        } else {                                        /* an amount: the number large, its unit small at the right */
-            slot_text(s, v);
-            u = slot_unit(s, v);
-            xr = 220 - (u ? aa_text_w(&AF_S, u) + 4 : 0);
-            if (big_ok(v, xr - le - 8)) aa_text_ovr(xr, L_TOP(19), &AF_L, v, FC_VAL);
-            else aa_text_ovr(xr, S_TOP(19), &AF_S, v, FC_VAL);   /* too wide for the large face (a test reports it) */
-            if (u) aa_text_ovr(220, L_TOP(19) + AF_L.asc - AF_S.asc, &AF_S, u, mt.unit);   /* on the number's baseline */
-        }
+        slot_text(s, v);                                /* the value at the right: large, its unit small */
+        u = slot_unit(s, v);                            /* (a choice has none: a name, a note value, 4:1, ALL / 1) */
+        xr = 220 - (u ? aa_text_w(&AF_S, u) + 4 : 0);
+        ui_row_drawn[k].big = (uint8_t)big_ok(v, xr - le - 8);
+        if (ui_row_drawn[k].big) aa_text_ovr(xr, L_TOP(19), &AF_L, v, FC_VAL);
+        else aa_text_ovr(xr, S_TOP(19), &AF_S, v, FC_VAL);   /* too wide for the large face (a test reports it) */
+        if (u) aa_text_ovr(220, L_TOP(19) + AF_L.asc - AF_S.asc, &AF_S, u, mt.unit);   /* on the number's baseline */
         if (hot) {                                      /* the knob being turned: a 1 px frame */
             cv_rect(0, 0, RW_W, 1, mt.frame); cv_rect(0, RW_H - 1, RW_W, 1, mt.frame);
             cv_rect(0, 0, 1, RW_H, mt.frame); cv_rect(RW_W - 1, 0, 1, RW_H, mt.frame);

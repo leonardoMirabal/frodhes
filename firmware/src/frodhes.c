@@ -401,9 +401,10 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (sscanf(key, "vlabel.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) snprintf(v, n, "%s", slot_label_v(PG_VOICE, a, b));
     else if (sscanf(key, "vhint.%u", &a) == 1) snprintf(v, n, "%s", a < vp_count() ? eng_ui()->hint[a] : "");
     else if (!strcmp(key, "vpages")) snprintf(v, n, "%u", vp_count());
-    else if (sscanf(key, "row%u", &a) == 1 && a < 4u) {   /* what row a shows: KIND V HI (ui.c ui_row_drawn) */
-        static const char *const RK[] = {"none", "amount", "detent", "choice", "bar"};
-        snprintf(v, n, "%s %d %d", RK[ui_row_drawn[a].kind], ui_row_drawn[a].v, ui_row_drawn[a].hi);
+    else if (sscanf(key, "row%u", &a) == 1 && a < 4u) {   /* what row a shows: KIND V HI FACE (ui_row_drawn; FACE L / S) */
+        static const char *const RK[] = {"none", "amount", "detent", "choice"};
+        snprintf(v, n, "%s %d %d %c", RK[ui_row_drawn[a].kind], ui_row_drawn[a].v, ui_row_drawn[a].hi,
+                 ui_row_drawn[a].big ? 'L' : 'S');
     }
     else if (!strcmp(key, "look")) {                   /* the METERS colours (CC 2): letter, then RGB565 hex: surf track
                                                         * outline hair fill edge tag lab val dim */

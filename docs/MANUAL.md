@@ -65,9 +65,9 @@ figures, with the unit beside it in small letters (Hz, kHz, ms, dB, c for cents,
 
 - **An amount** (DEPTH, MIX, a time, a frequency ...): the card itself is the gauge. It fills with dim amber from the
   left up to the value, with a bright amber edge where the fill ends: empty at 0, full at the top.
-- **A choice** (TYPE, EFFECT, ON / OFF ...): its name on the right and **one small segment per option**, the current
-  one lit amber. A choice with more than eight options (a note value, a scale, a chord type ...) shows a slim
-  position bar instead.
+- **A choice** (TYPE, EFFECT, ON / OFF, a note value, a scale, a chord type ...): no fill; the option it is on is
+  written out in full on the right, in the same large letters as a number (**STAGE 77**, **LP18**, **ON**, **1/16**),
+  and changes as you turn. (The one name too long for its card, ASSIGN's **TREM SHAPE**, is written smaller.)
 - **A knob with named spots** (VIBES' STRIKE: CENTRE, L/3, EDGE; MALLET: SOFT, YARN, CORD, RUBBER): a fill like an
   amount, with the name when the knob is on one, else the number between two of them.
 

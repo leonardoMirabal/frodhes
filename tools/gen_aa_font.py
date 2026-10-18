@@ -8,8 +8,8 @@ tools/build.py generate() with --preset inter-tight).
   gen_aa_font.py OUT.h --face NAME=FONT[#index]:PX:FIRST-LAST[+0xNN,...] ...   (explicit faces)
 
 Faces of the presets: two (UI-SIMPLIFY, the METERS look of private/display/ui-meters-final.png):
-  S  13 px Medium (500): all small text (header, title, labels, units, choice names, hints), ASCII 32..126
-  L  28 px SemiBold (600): the values, trimmed to L_CHARS (digits, capitals, signs); Huffman-coded
+  S  13 px Medium (500): all small text (header, title, labels, units, hints), ASCII 32..126
+  L  28 px SemiBold (600): the values and choice names, trimmed to L_CHARS (digits, capitals, signs); Huffman-coded
   standin     an installed Inter (~/Library/Fonts/Inter.ttc, else Inter in fonts/ next to tools/) with
               -2.5 % tracking: a stand-in for Inter Tight, for previews only.
   inter-tight assets/fonts/InterTight[wght].ttf (SIL OFL 1.1, Google Fonts; assets/fonts/OFL-InterTight.txt).
@@ -47,16 +47,18 @@ PHASES, PHASES_L = 4, 2                # horizontal phases per glyph (aa_raster.
 # faces stored Huffman-coded (--huff): L. S, the most drawn and the least compressible (-15 %), stays 2 px per
 # byte, so the labels draw at full speed
 HUFF = [("L",)]
-# L draws the values only (UI-SIMPLIFY section 2: units, choice names and messages are S): a sparse face, the space
+# L draws the values and the choices' names (units and messages are S): a sparse face, the space
 # as its range and the rest as extras. The set, from every slot_text value at every value / TYPE / page, the chord
 # names (notes.c chord_name), the TYPE names, the bars' detents and the splash (the scan of private/ui-simplify/P1.md),
-# minus what moves to S (the units Hz kHz s ms, the choices):
+# minus what moves to S (the units Hz kHz s ms):
 #   numbers 0-9 + - . : %; sync divisions / (1/16 16T 8D 2BAR); chords # * (C#, the unknown-chord mark);
-#   capitals A-J L-P R-V Y: OFF, CENTRE L/3 EDGE SOFT YARN CORD RUBBER, STAGE 77 SUITCASE EARLY FELT BELL DYNO
-#   VIBES, MAJ7 MIN7 M7B5 DIM7 ADD9 SUS4 AUG, FRODHES, EMPTY.
-# Not in L: K Q W X Z (only in units / choices: 1.0K, SQR, SAW, EXT, HZ), & (S&H, a choice), lower case (folded to
-# capitals by aatext.c aa_fold). aatext.c aa_covers(f, s) tells whether L has every character of a string.
-L_CHARS = " #%*+-./0123456789:ABCDEFGHIJLMNOPRSTUVY"
+#   capitals A-Y: OFF, CENTRE L/3 EDGE SOFT YARN CORD RUBBER, STAGE 77 SUITCASE EARLY FELT BELL DYNO
+#   VIBES, MAJ7 MIN7 M7B5 DIM7 ADD9 SUS4 AUG, FRODHES, EMPTY;
+#   the choices too since 2026-10-18 (the user: their whole names large, no segments): K Q W X & for KEY, KNOB,
+#   SQR, WAH, SAW, EXT, MIXO, FIXED, S&H, COMP MKUP (+1.4 KB).
+# Not in L: Z, lower case (folded to capitals by aatext.c aa_fold). aatext.c aa_covers(f, s) tells whether L has every
+# character of a string.
+L_CHARS = " #%&*+-./0123456789:ABCDEFGHIJKLMNOPQRSTUVWXY"
 
 
 def preset(name):
