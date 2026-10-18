@@ -118,6 +118,8 @@ def record(name, dev, ch):
         time.sleep(0.3)                                   # with the next note (+-0.4 dB run to run)
         r.wait_silence()
         r.cc_raw(114, 127)                                # USB VOL FIXED: USB = the app's output before MASTER
+        r.cc_raw(10, 127)                                 # developer reset: every LFO / line / noise to boot state
+        time.sleep(0.05)
         u44, j = both44(J, dur, ev)
         from scipy.signal import resample_poly
         u = resample_poly(u44.astype(float) / 32768, 160, 147)          # the measures run at 48 kHz on both
