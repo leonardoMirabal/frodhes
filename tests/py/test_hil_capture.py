@@ -189,9 +189,12 @@ def test_rig_takes_are_slices_on_the_event_clock():
         for k in range(3):
             d = r.both(0.5, [(0.1, "on", 60, 100), (0.4, "off", 60, 0)], jack=True)
             assert d["usb"].shape == (int(0.5 * h.FS), 2) and d["jack"].shape == (int(0.5 * h.FS), 1)
-            for key, lat in (("usb", 0.006), ("jack", 0.002)):
-                i = int(np.argmax(np.abs(d[key][:, 0]) > 0.01))
-                assert abs(i / h.FS - (0.1 + lat)) < 0.002, (k, key, i / h.FS)
+            at = {key: int(np.argmax(np.abs(d[key][:, 0]) > 0.01)) / h.FS for key in ("usb", "jack")}
+            # both devices saw the same note-on: their offset is the latency difference (4 ms), exactly, whatever
+            # the sender's own lateness (a busy machine sends a few ms late: that is not the recorder's error)
+            assert abs((at["usb"] - at["jack"]) - 0.004) < 0.001, (k, at)
+            for key, lat in (("usb", 0.006), ("jack", 0.002)):  # and at the event time + latency: a rate mix-up
+                assert abs(at[key] - (0.1 + lat)) < 0.008, (k, key, at[key])   # (44.1 / 48 kHz) moves it ~9 ms
             assert len(r.cap.streams) == 2                                          # no stream opened per take
             sd.sent.clear()
             assert r.wait_silence(2.0)                                              # the polls: slices too
