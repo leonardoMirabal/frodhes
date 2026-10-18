@@ -32,15 +32,28 @@ var Module = window.Module = {
 };
 
 // ---- the screen and the LEDs, every animation frame
+// RGB565 -> the framebuffer's own colours (the default since 2026-10-18: the camera-calibrated panel model's yellow is
+// not what the eye sees); ?look shows them through that "device look" of tools/manual_shots.py --device-look (the
+// dark tones lifted, the hue towards yellow; tools/display_cal.py)
+const LOOK = { g: [1.0907, 0.8288, 0.9032], m: [[2.4821, 0.5194, -0.2992], [0.1402, 3.4473, 0.2092], [0.0378, 0.0352, 3.4810]],
+               f: [0.0356, 0.0340, 0.0583] };
+const RGB = new Uint32Array(65536), RAW = !/[?&]look\b/.test(location.search);   // 565 -> RGBA bytes (little-endian)
+for (let v = 0; v < 65536; v++) {
+  const x = [((v >> 11) & 31) / 31, ((v >> 5) & 63) / 63, (v & 31) / 31], o = [0, 0, 0];
+  for (let c = 0; c < 3; c++) {
+    if (RAW) { o[c] = Math.round(x[c] * 255); continue; }
+    let l = LOOK.f[c];
+    for (let k = 0; k < 3; k++) l += LOOK.m[c][k] * Math.pow(x[k], LOOK.g[k]);
+    o[c] = Math.round(255 * Math.pow(Math.min(1, Math.max(0, l)), 1 / 2.2));
+  }
+  RGB[v] = o[0] | o[1] << 8 | o[2] << 16 | 0xFF000000;
+}
 let img = null;
 function frame() {
   const c = $("screen"), g = c.getContext("2d");
   if (!img) img = g.createImageData(240, 240);
-  const fb = new Uint16Array(M.HEAPU8.buffer, M._web_fb(), 240 * 240), d = img.data;
-  for (let i = 0, j = 0; i < 240 * 240; i++, j += 4) {
-    const v = fb[i];                                 // RGB565
-    d[j] = ((v >> 11) & 31) * 255 / 31; d[j + 1] = ((v >> 5) & 63) * 255 / 63; d[j + 2] = (v & 31) * 255 / 31; d[j + 3] = 255;
-  }
+  const fb = new Uint16Array(M.HEAPU8.buffer, M._web_fb(), 240 * 240), d = new Uint32Array(img.data.buffer);
+  for (let i = 0; i < 240 * 240; i++) d[i] = RGB[fb[i]];
   g.putImageData(img, 0, 0);
   const led = new Uint8Array(M.HEAPU8.buffer, M._web_leds(), 64);
   for (const b of document.querySelectorAll("button.b")) b.classList.toggle("on", led[+b.dataset.id] === 1);
@@ -49,7 +62,7 @@ function frame() {
     k.classList.toggle("lit", v === 1);
     k.classList.toggle("glow", v === 2);
   }
-  captions();
+  captions(led[10] === 1);                           // the ARP light: the arpeggiator on
   if (M._web_store_take_dirty()) {
     try {
       const b = new Uint8Array(M.HEAPU8.buffer, M._web_store(), 260);
@@ -114,25 +127,26 @@ $("start").onclick = startAudio;
 const KNOBS = [["MASTER", -1, 50, 22, "VOLUME"], ["SELECT", 0, 200, 22, "PAGES"], ["PRESETS", 6, 50, 152, "SOUNDS"],
                ["ALGORITHM", 1, 200, 152, "PIANO TYPE"], ["KNOB 1", 2, 685, 22, "CARD 1"], ["KNOB 2", 3, 800, 22, "CARD 2"],
                ["KNOB 3", 4, 915, 22, "CARD 3"], ["KNOB 4", 5, 1030, 22, "CARD 4"]];
-const HINT = { FX: "ALL FX", SEL: "DELAY", ENV: "PHASER", LFO: "TREM·WAH", EDIT: "VOICE", GLO: "TEMPO·MIDI",
-               HOME: "PERFORM", SAVE: "PRESET", ARP: "ARPEGGIO", SEQ: "CHORD·SEQ", PLAY: "TAP TEMPO", REC: "SUSTAIN",
+const HINT = { FX: "ALL FX", SEL: "DELAY", ENV: "PHASER", LFO: "TREM·WAH", EDIT: "CHORD", GLO: "TEMPO·MIDI",
+               HOME: "PERFORM", SAVE: "PRESET", ARP: "ARPEGGIO", SEQ: "SEQUENCER", PLAY: "TAP TEMPO", REC: "SUSTAIN",
                "OCT−": "", "OCT+": "" };
 const HINT_ON = {                                    // what a button does on a given page (else HINT)
-  ARPEGGIO: { PLAY: "HOLD", ARP: "ON·OFF" },
+  ARPEGGIO: { SEL: "HOLD", ARP: "ON·OFF" },
   SEQUENCER: { PLAY: "START·STOP", SEQ: "REC" },
   PHASER: { ENV: "ON·OFF" }, DELAY: { SEL: "ON·OFF" }, "TREM/WAH": { LFO: "ON·OFF" },
-  TEMPO: { GLO: "SETUP" }, SETUP: { GLO: "MIDI" }, MIDI: { GLO: "TEMPO" }, CHORD: { SEQ: "SEQUENCER" },
+  TEMPO: { GLO: "SETUP" }, SETUP: { GLO: "MIDI" }, MIDI: { GLO: "TEMPO" }, CHORD: { EDIT: "ON·OFF" },
   PERFORM: { HOME: "MAIN" }, FRODHES: { HOME: "PERFORM" },
 };
+const HINT_ARP = { SEL: "HOLD", PLAY: "TAP TEMPO" };   // while the arpeggiator is on, on every page
 let shownPage = "";
-function captions() {                                // the page shown on the FM-1's screen: the buttons' captions
+function captions(arp) {                             // the page shown on the FM-1's screen: the buttons' captions
   const p = M.HEAPU8, a = M._web_page();
   let page = ""; for (let i = a; p[i] && i < a + 16; i++) page += String.fromCharCode(p[i]);
-  if (page === shownPage) return;
-  shownPage = page;
+  if (page + arp === shownPage) return;
+  shownPage = page + arp;
   for (const b of document.querySelectorAll("button.b")) {
     const n = b.dataset.name, sm = b.querySelector("small");
-    if (sm) sm.textContent = (HINT_ON[page] && HINT_ON[page][n]) || HINT[n];
+    if (sm) sm.textContent = (arp && HINT_ARP[n]) || (HINT_ON[page] && HINT_ON[page][n]) || HINT[n];
   }
 }
 const ROWS = [["FX", "SEL", "ENV", "LFO", "EDIT", "GLO"], ["HOME", "SAVE", "ARP", "SEQ", "PLAY", "REC"]];
@@ -266,6 +280,7 @@ if (location.search.includes("selftest")) {
   const t0 = performance.now();
   const wait = () => {
     if (!M || performance.now() - t0 < 1500) return setTimeout(wait, 100);
+    if (location.search.includes("vibes")) M._web_midi(0xB0, 79, 64);   // ?selftest&vibes: TYPE VIBES (CC 79)
     M._web_keys(1 << 7);                               // C4
     setTimeout(() => {
       const p = M._web_audio(16) >> 2, f = M.HEAPF32;
