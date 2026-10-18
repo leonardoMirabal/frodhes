@@ -57,6 +57,28 @@ static int flash_auto_ok(void) { return !usb_recording() || fx_quiet_blocks >= F
 #include "bars.c"       /* last: the bar engine's code (see bars.c) */
 
 static int32_t voice_mono[256];
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+/* host only (tests/py/test_race_fuzz.py): after each block, with nothing in flight (both rings empty, no TYPE change
+ * pending), every voice held down must be a note the notes layer wants sounding (a source's pitch sent to the engine,
+ * or the arpeggiator's note): "RACE STUCK" after 3 blocks without one; a voice that ended while a note waited for its
+ * steal's fade lost that note: "RACE LOST" (the waiting note never starts) */
+static void host_race_check(void)
+{
+    static uint8_t bad[16], lost[16];
+    uint32_t i, nv = eng_cur == ENG_BARS ? BAR_NV : RH_NV;
+    int calm = eq_r == eq_w && engq_r == engq_w && eng_want == eng_cur && !eng_swapping;
+    for (i = 0; i < nv && i < 16u; i++) {
+        uint32_t alive = eng_cur == ENG_BARS ? bv[i].alive : rv[i].alive, held = eng_cur == ENG_BARS ? bv[i].held : rv[i].held;
+        uint32_t note = eng_cur == ENG_BARS ? bv[i].note : rv[i].note, pend = eng_cur == ENG_BARS ? bv[i].pend : rv[i].pend;
+        uint32_t pn = eng_cur == ENG_BARS ? bv[i].pend_note : rv[i].pend_note;
+        int want = (out_ref[note & 127u] && !note_to_arp[note & 127u]) || arp_playing == note;
+        if (calm && alive && held && !want) { if (bad[i] < 255u && ++bad[i] == 3u) printf("%6u ms  RACE STUCK voice %u note %u\n", fm1_ms, i, note); }
+        else bad[i] = 0;
+        if (!alive && pend) { if (!lost[i]) printf("%6u ms  RACE LOST voice %u note %u (pend %u)\n", fm1_ms, i, pn, pend); lost[i] = 1; }
+        else lost[i] = 0;
+    }
+}
+#endif
 static void app_audio(int32_t *out, uint32_t n)
 {
 #ifndef DINGHY_HOST
@@ -65,12 +87,10 @@ static void app_audio(int32_t *out, uint32_t n)
 #if defined(RH_PROF_STAGES) && !defined(DINGHY_HOST)
     prof_st_t = t0;
 #endif
-    if (fx_reset_req) { eng_rh_kill_all(); bar_kill_all(); }   /* developer CC 10: every voice ends and the shared
-                                                    * pickup RLC / body states go to 0 (as at an engine change) before this
-                                                    * block, whose effects then start from boot (fx_process): the tails a
-                                                    * take left under the gate's -66 dBFS rang on, and the next take met
-                                                    * them (its level moved with what was played before, on the FM-1) */
     eng_render(voice_mono, n);
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    host_race_check();
+#endif
     PROF_STAMP(1);
     fx_process(voice_mono, out, n);
     PROF_STAMP(15);
@@ -108,7 +128,7 @@ static void sustain_button(uint32_t pressed, uint32_t released)
 
 /* MIDI CC: every parameter's CC from the PARAMS table (the reface CP map for the panel: switch CCs 0-42 off,
  * 43-85 A, 86-127 B; TYPE in bands of 32), CC 64 sustain (continuous: half-pedal), 120/123 all off,
- * 119 developer: bypass the effects (tests of the voice engine); the other developer CCs below (2 3 4 8 9 10 116) */
+ * 119 developer: bypass the effects (tests of the voice engine); the other developer CCs below (2 3 4 8 9 10 11 116) */
 static void midi_cc(uint32_t cc, uint32_t v)
 {
     uint32_t id;
@@ -119,6 +139,8 @@ static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 3u) { ui_testpat = v >= 64u; return; }            /* developer: the colour test pattern (ui.c) */
     if (cc == 2u) { ui_look = (uint8_t)(v < MT_NLOOKS ? v : MT_NLOOKS - 1u); return; }   /* developer: the METERS
                                                         * colour candidate, 0 A 1 B 2 C (ui.c MT_LOOKS; not saved) */
+    if (cc == 11u) { ui_cards = (uint8_t)(v < UI_CARDS_N ? v : UI_CARDS_N - 1u); return; }   /* developer: the rows'
+                                                        * design variant, 0 TODAY 1 FADER 2 LINE 3 A 4 B 5 C (ui.c; not saved) */
     if (cc == 4u) {                                    /* developer: the battery query (ui.c, for calibrating its
                                                         * thresholds): CC 4 / 5 = the smoothed 10-bit reading (MSB = raw
                                                         * >> 3, LSB = raw & 7), CC 6 = the segments shown (4 = USB power) */
@@ -406,9 +428,20 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (sscanf(key, "vlabel.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) snprintf(v, n, "%s", slot_label_v(PG_VOICE, a, b));
     else if (sscanf(key, "vhint.%u", &a) == 1) snprintf(v, n, "%s", a < vp_count() ? eng_ui()->hint[a] : "");
     else if (!strcmp(key, "vpages")) snprintf(v, n, "%u", vp_count());
-    else if (sscanf(key, "row%u", &a) == 1 && a < 4u) {   /* what row a shows: KIND V HI (ui.c ui_row_drawn) */
-        static const char *const RK[] = {"none", "amount", "detent", "choice", "bar"};
-        snprintf(v, n, "%s %d %d", RK[ui_row_drawn[a].kind], ui_row_drawn[a].v, ui_row_drawn[a].hi);
+    else if (!strcmp(key, "cards")) snprintf(v, n, "%u", ui_cards);   /* the rows' design variant (CC 11) */
+    else if (sscanf(key, "rowbox%u", &a) == 1 && a < 4u)   /* the variants' row a: FIT SHORT FW VX0 VX1 UX0 UX1 LX1 BASE
+                                                        * CAP STYLE N LIT (row x; UX 0 0: no unit; STYLE ui.c
+                                                        * CS_LETTER, N / LIT a selector's options and the one lit) */
+        snprintf(v, n, "%u %u %d %d %d %d %d %d %d %d %c %d %d", ui_row_drawn[a].fit, ui_row_drawn[a].shortf,
+                 ui_row_drawn[a].fw, ui_row_drawn[a].vx0, ui_row_drawn[a].vx1, ui_row_drawn[a].ux0, ui_row_drawn[a].ux1,
+                 ui_row_drawn[a].lx1, (int)CD_BASE, AF_L_CAP_H, ui_row_drawn[a].style ? ui_row_drawn[a].style : '-',
+                 ui_row_drawn[a].sn, ui_row_drawn[a].si);
+    else if (!strcmp(key, "fitscan")) snprintf(v, n, "%u", ui_fit_scan());   /* every value of every card: how many
+                                                        * do not fit (printed: FITSCAN lines) */
+    else if (sscanf(key, "row%u", &a) == 1 && a < 4u) {   /* what row a shows: KIND V HI FACE (ui_row_drawn; FACE L / S) */
+        static const char *const RK[] = {"none", "amount", "detent", "choice"};
+        snprintf(v, n, "%s %d %d %c", RK[ui_row_drawn[a].kind], ui_row_drawn[a].v, ui_row_drawn[a].hi,
+                 ui_row_drawn[a].big ? 'L' : 'S');
     }
     else if (!strcmp(key, "look")) {                   /* the METERS colours (CC 2): letter, then RGB565 hex: surf track
                                                         * outline hair fill edge tag lab val dim */

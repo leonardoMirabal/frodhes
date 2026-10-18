@@ -61,17 +61,26 @@ have two VOICE pages (VOICE 1/2: TONE, BARK, BELL, HAMMER; VOICE 2/2: DECAY, REL
 order; changing the TYPE changes the pages with it.
 
 **Reading a card.** Each card shows its knob (K1–K4, small), the control's name, and its value on the right in large
-figures, with the unit beside it in small letters (Hz, kHz, ms, dB, c for cents, x). Then, by the kind of control:
+figures, every value the same size and ending at the same place, with the unit beside it in small letters (Hz, kHz,
+ms, s, dB, c for cents, %). What is drawn behind the value tells you at a glance what kind of control it is:
 
-- **An amount** (DEPTH, MIX, a time, a frequency ...): the card itself is the gauge. It fills with dim amber from the
-  left up to the value, with a bright amber edge where the fill ends: empty at 0, full at the top.
-- **A choice** (TYPE, EFFECT, ON / OFF ...): its name on the right and **one small segment per option**, the current
-  one lit amber. A choice with more than eight options (a note value, a scale, a chord type ...) shows a slim
-  position bar instead.
-- **A knob with named spots** (VIBES' STRIKE: CENTRE, L/3, EDGE; MALLET: SOFT, YARN, CORD, RUBBER): a fill like an
-  amount, with the name when the knob is on one, else the number between two of them.
+- **An amount** (DEPTH, MIX, a time, a frequency ...): the card is a fader. It fills with warm amber from the left up
+  to the value, with a bright amber edge where the fill ends (the edge stops short of the letters, so it never cuts a
+  number): empty at 0, full at the top.
+- **A selector** (TYPE, EFFECT DIG / ANA, a filter type, a note value, a scale, a chord type ...): the card is cut
+  into one block per option, and the blocks light up to the option it is on, each with a small cap at its foot (amber
+  lit, grey not); the option is written out in full (**STAGE 77**, **LP18**, **1/16**). An option called OFF lights no
+  block. With more than 16 options (MIDI CHANNEL, ASSIGN) only the caps are drawn, as a ruler. A rate or a time synced
+  to the tempo is a selector too: its note value.
+- **A switch** (ON / OFF: an effect on its page, the motor, TRS IN): a round light before the word, amber when ON, an
+  empty ring when OFF.
+- **A knob with named spots** (VIBES' STRIKE: CENTRE, L/3, EDGE; MALLET: SOFT, YARN, CORD, RUBBER): a fader, with the
+  name when the knob is on one, else the number between two of them.
 
-**The card you are turning** gets a thin amber frame and its name turns amber, for about a second after you stop.
+A few names too long for their card are written shorter, in the same large letters: on ASSIGN **TRM/WAH**, **TRM
+RATE**, **TRM SHP**, **PHA SPD**, **PHA FDBK**, **CHO SPD**, **DLY FDBK**, **CMP GAIN** (the compressor's make-up).
+
+**The card you are turning** gets a thin amber frame and its name turns amber (white where it sits on the fill), for about a second after you stop.
 The numbers are rounded to what fits on the card (1.486 s shows 1.5 s, +11.8 dB shows +12 dB).
 
 The top line shows the preset, the octave (O+1, O−2...), **SUS** while the sustain is held, **BYP** while the effects
@@ -663,6 +672,7 @@ The TRS jack is MIDI in only. **Program Change** 0–13 loads F01–F14, 16–31
 | 70 / 74 | FILTER TYPE (7 bands: off, LP12, LP18, HP12, HP18, BP, notch) / CUTOFF | 71 / 72 | FILTER RESONANCE / LFO AMOUNT |
 | 75 / 76 | LFO SHAPE (6 bands) / RATE | 77 / 78 | LFO SYNC / RETRIG (free, key) |
 | 3 | Developer: a colour test pattern on the screen (≥ 64; < 64 back to the page), to calibrate screenshots against the panel | 2 | Developer: the screen's colour candidate, for choosing on the FM-1: 0 = A black (the default), 1 = B dim outline, 2 (or more) = C model-matched; not saved |
+| 11 | Developer: the cards' design, for comparing on the FM-1 (not saved): 3 = the normal look (faders, selector blocks, switch lights); 0 = the rows before the design pass (a choice written large, no fill), 1 = a fill on every card, 2 = a thin meter line under each row, 4 = selectors as small pips under the value, 5 (or more) = a switch lights its whole card | | |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
 The FM-1 also appears as a USB audio input (class-compliant, stereo, 16-bit, 44.1 or 48 kHz): you can record exactly

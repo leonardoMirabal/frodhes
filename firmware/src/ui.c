@@ -173,14 +173,14 @@ static char ui_msg[32];
 
 /* ---- the look (METERS, the user's choice 2026-10-18; private/UI-SIMPLIFY-PLAN.md): a header, the page's title, four
  * horizontal rows = K1..K4 (an amount fills its row from the left: a dim fill + a 2 px accent edge, the number large
- * at the right with its unit small; a choice shows its name and one segment per option, or a position bar over 8), a
- * hint. Two faces: AF_S for all small text, AF_L for values.
+ * at the right with its unit small; a choice has no fill, its whole name in the same large face: 2026-10-18, it
+ * replaced one segment per option), a hint. Two faces: AF_S for all small text, AF_L for values and choice names.
  *
  * Its colours, every one here (mt, from MT_LOOKS and the palette, mt_update). The FM-1's panel lifts dark tones a lot
  * (tools/manual_shots.py DEVICE_LOOK: the mock-up's near-black RGB(16,16,18) shows light teal, one RGB565 green unit
  * lifts black from L* 24 to 41), so three candidates, to be chosen by eye on the FM-1 (developer CC 2: 0 A, 1 B, 2 C;
  * not saved; tools/meters_palettes.py draws them in the device look):
- *   A black          surfaces and tracks black, an unlit segment / a track a 1 px dim outline; the fill the
+ *   A black          surfaces and tracks black, a track (the gain-reduction meter) a 1 px dim outline; the fill the
  *                    palette's darkest step x 5/16 (AMBER: RGB565 R 2 G 1), the edge, the frame, the title the accent;
  *   B dim outline    as A, a hairline on each row's top, the fill x 7/16 (AMBER: R 3 G 2);
  *   C model-matched  every grey, and on the AMBER palette the fill and the accent, picked by inverting DEVICE_LOOK
@@ -203,6 +203,42 @@ static const mt_look_t MT_LOOKS[] = {
 };
 #define MT_NLOOKS (sizeof MT_LOOKS / sizeof MT_LOOKS[0])
 static uint8_t ui_look;                                 /* developer CC 2 (not saved) */
+/* the design pass (2026-10-18, private/ui-simplify/design-pass/): the rows' typography and meter, three variants for
+ * the user to choose from; developer CC 11 (not saved), the default by build (APP_DEFS=-DUI_CARDS_DEF=n):
+ *   0 TODAY   the rows before the design pass (kept for comparing on the FM-1);
+ *   1 FADER   the row's amber fill (the METERS look) on every card, a choice's too (its option's place in its list,
+ *             OFF empty); one value size, one value edge, one baseline; the fill's bright edge stops 3 px short of
+ *             any text (above and below it), so nothing crosses a digit or a letter; no edge at 0;
+ *   2 LINE    the same typography with no fill: a 3 px meter line along each row's bottom, amber for the amount;
+ * then the card kinds told apart at a glance (the user: "not clear what is a toggle or selector and what is a fader"),
+ * an amount always the FADER fill:
+ *   3 A       THE DEFAULT (the user's pick, 2026-10-18): selectors SEGMENTS (one block per option, 2 px apart, lit up to the option), toggles LED (a dot before
+ *             ON / OFF: lit ON, a ring OFF);
+ *   4 B       selectors PIPS (one small pip per option under the value, the option's amber), toggles LED;
+ *   5 C       selectors SEGMENTS, toggles BACK (the whole card lit ON, nothing OFF, no edge).
+ * The large face's size is the build's (aatext.c UI_VAL_PX: 24 the default, 25, 28), and its breathing room
+ * (UI_BREATHE: 1 the default, 0 the tighter first version). */
+#ifndef UI_CARDS_DEF
+#define UI_CARDS_DEF 3
+#endif
+#define UI_CARDS_N 6u
+/* the fader fill's strength (build define, for the strength sheet; 0 = the look's dim token): the accent x
+ * UI_FILL_PCT / 100; UI_FILL_GRAD 1: a gradient from UI_FILL_LO % at the left to UI_FILL_PCT % at the edge */
+#ifndef UI_FILL_PCT
+#define UI_FILL_PCT 45                                  /* the user's pick, 2026-10-18 (final-A24-fill45.png) */
+#endif
+#ifndef UI_FILL_GRAD
+#define UI_FILL_GRAD 0
+#endif
+#ifndef UI_FILL_LO
+#define UI_FILL_LO 15
+#endif
+static uint16_t cd_shade(uint16_t c, uint32_t pct)      /* an RGB565 colour x pct / 100 */
+{
+    uint32_t r = (c >> 11) & 31u, g = (c >> 5) & 63u, b = c & 31u;
+    return (uint16_t)((r * pct / 100u) << 11 | (g * pct / 100u) << 5 | (b * pct / 100u));
+}
+static uint8_t ui_cards = UI_CARDS_DEF;
 static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab, val, unit, dim, acc, seq; } mt;
 static void mt_update(void)                             /* the tokens for the look and the palette (each pass) */
 {
@@ -213,16 +249,20 @@ static void mt_update(void)                             /* the tokens for the lo
     gg = gg ? (gg * n / 16u ? gg * n / 16u : 1u) : 0u;
     bb = bb ? (bb * n / 16u ? bb * n / 16u : 1u) : 0u;
     mt.fill = amber && l->amb_fill ? l->amb_fill : (uint16_t)((rr << 11) | (gg << 5) | bb);
+#if UI_FILL_PCT > 0                                     /* the fill as a share of the accent (the user: "the orange /
+                                                         * yellow effect on the fader"; the strength sheet) */
+    if (!(amber && l->amb_fill)) mt.fill = cd_shade(pal[3], UI_FILL_PCT);   /* (look C on AMBER: its own, matched) */
+#endif
     mt.acc = mt.edge = mt.frame = amber && l->amb_acc ? l->amb_acc : pal[3];
     mt.surf = l->surf; mt.track = l->track; mt.outline = l->outline; mt.hair = l->hair; mt.seq = l->seq;
     mt.tag = l->tag; mt.lab = l->lab; mt.val = l->val; mt.unit = l->unit; mt.dim = l->dim;
 }
-#define UI_ACC mt.acc                                   /* the title, SUS, a turned knob's label, the lit segment */
+#define UI_ACC mt.acc                                   /* the title, SUS, a turned knob's label, the frame */
 #define FC_BG C_BLACK
 #define FC_LAB mt.lab                                   /* names */
 #define FC_VAL mt.val                                   /* values */
 #define FC_DIM mt.dim                                   /* hints */
-/* a track (an unlit segment, the position bar, the meter's scale): solid, or black in a 1 px outline */
+/* a track (the gain-reduction meter's scale): solid, or black in a 1 px outline */
 static void mt_track(int32_t x, int32_t y, int32_t w, int32_t h)
 {
     if (!mt.outline || w < 3 || h < 3) { cv_rect(x, y, w, h, mt.outline ? mt.outline : mt.track); return; }
@@ -685,28 +725,31 @@ static const char *slot_unit(uint32_t s, char *v)
     if (s == S_TUNE) return "c";
     return 0;
 }
-/* the name a choice shows on its row: the short TYPE names (ST77 SUIT ...), else its text */
-static void slot_short(uint32_t s, char *v)
-{
-    if (s == P_TYPE) p_strcpy(v, N_TYPE[PV(P_TYPE)], 5);
-    else slot_text(s, v);
-}
-
-/* a row: K tag, label (accent while its knob turns, with a 1 px frame for HOT_MS), then an amount (the fill, the
- * number large, its unit small) or a choice (its name, one segment per option up to 8, else a position bar) */
-enum { RK_NONE, RK_AMOUNT, RK_DETENT, RK_CHOICE, RK_BAR };
-static struct { uint8_t kind; int16_t v, hi; } ui_row_drawn[4];   /* what each row shows (the host's tests read it) */
+/* a row: K tag, label (accent while its knob turns, with a 1 px frame for HOT_MS), then its value at the right in the
+ * large face (the small one only for a value too wide for its row): an amount fills the row (a dim fill, a 2 px edge)
+ * with its number and its unit small; a choice (TYPE, EFFECT, ON / OFF, SYNC ...) has no fill and its whole name
+ * written as large as a number (the user, 2026-10-18: easier to read than one segment per option) */
+enum { RK_NONE, RK_AMOUNT, RK_DETENT, RK_CHOICE };
+static struct {
+    uint8_t kind, big, fit, shortf;                     /* fit: the value fits its room; shortf: its short form shown */
+    uint8_t style;                                      /* the variants: how the card is drawn (CS_LETTER) */
+    int16_t v, hi, fw, sn, si;                          /* fw: the fill / line width (px); a selector's n, its option
+                                                         * lit (-1: none) */
+    int16_t vx0, vx1, ux0, ux1, lx1;                    /* the variants: the value's, the unit's x, the label's end */
+} ui_row_drawn[4];                                      /* what each row shows (the host's tests read it) */
+static void draw_row_cards(uint32_t k);
 static void draw_row(uint32_t k)
 {
     uint32_t s = slot_at(ui_page, k);
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
     char v[16], kk[3] = {'K', (char)('1' + k), 0};
+    if (ui_cards) { draw_row_cards(k); return; }        /* the design pass's variants (developer CC 11) */
     cv_begin(RW_W, RW_H, mt.surf);
     if (mt.hair) cv_rect(0, 0, RW_W, 1, mt.hair);         /* B: the row's top hairline (under the fill) */
-    ui_row_drawn[k].kind = RK_NONE;
+    ui_row_drawn[k].kind = RK_NONE; ui_row_drawn[k].big = 0;
     if (s != S_NONE) {
         const char *lab = slot_label(ui_page, k), *u;
-        int32_t hi, val = slot_val(s, &hi), le, xr, w;
+        int32_t hi, val = slot_val(s, &hi), le, xr;
         const ectl_t *c = eng_ctl(s);
         ui_row_drawn[k].v = (int16_t)(hi ? clampi(val, 0, hi) : 0);
         ui_row_drawn[k].hi = (int16_t)hi;
@@ -715,36 +758,17 @@ static void draw_row(uint32_t k)
             cv_rect(0, 0, fw, RW_H, mt.fill);
             cv_rect(ex, 0, 2, RW_H, mt.edge);
             ui_row_drawn[k].kind = c && c->kind == EK_DETENT ? RK_DETENT : RK_AMOUNT;
-        }
+        } else if (hi) ui_row_drawn[k].kind = RK_CHOICE;   /* a choice: no fill, its whole name (TYPE: STAGE 77) */
         aa_text_ov(6, S_TOP(9), &AF_S, kk, mt.tag);
         le = aa_text_ov(6, S_TOP(26), &AF_S, lab, hot ? UI_ACC : FC_LAB);   /* where the label ends */
         if (le < 6 + aa_text_w(&AF_S, kk)) le = 6 + aa_text_w(&AF_S, kk);
-        if (hi && !slot_is_level(s)) {                  /* a choice */
-            int32_t n = hi + 1, x0 = le + 6 > 86 ? le + 6 : 86, x1;
-            slot_short(s, v);
-            w = aa_text_ovr(220, S_TOP(19), &AF_S, v, FC_VAL);
-            x1 = w - 8 < 162 ? w - 8 : 162;
-            if (n <= 8 && x1 - x0 >= n * 4 - 1) {       /* one segment per option, the chosen one lit */
-                int32_t j, sw = (x1 - x0 - (n - 1) * 3) / n;
-                for (j = 0; j < n; j++) {
-                    if (j == val) cv_rect(x0 + j * (sw + 3), 13, sw, 12, UI_ACC);
-                    else mt_track(x0 + j * (sw + 3), 13, sw, 12);
-                }
-                ui_row_drawn[k].kind = RK_CHOICE;
-            } else if (x1 - x0 >= 16) {                  /* a position bar: index / (n - 1) */
-                int32_t p = x0 + (x1 - x0 - 3) * clampi(val, 0, hi) / hi;
-                mt_track(x0, 18, x1 - x0, 3);
-                cv_rect(p, 13, 3, 13, UI_ACC);
-                ui_row_drawn[k].kind = RK_BAR;
-            }
-        } else {                                        /* an amount: the number large, its unit small at the right */
-            slot_text(s, v);
-            u = slot_unit(s, v);
-            xr = 220 - (u ? aa_text_w(&AF_S, u) + 4 : 0);
-            if (big_ok(v, xr - le - 8)) aa_text_ovr(xr, L_TOP(19), &AF_L, v, FC_VAL);
-            else aa_text_ovr(xr, S_TOP(19), &AF_S, v, FC_VAL);   /* too wide for the large face (a test reports it) */
-            if (u) aa_text_ovr(220, L_TOP(19) + AF_L.asc - AF_S.asc, &AF_S, u, mt.unit);   /* on the number's baseline */
-        }
+        slot_text(s, v);                                /* the value at the right: large, its unit small */
+        u = slot_unit(s, v);                            /* (a choice has none: a name, a note value, 4:1, ALL / 1) */
+        xr = 220 - (u ? aa_text_w(&AF_S, u) + 4 : 0);
+        ui_row_drawn[k].big = (uint8_t)big_ok(v, xr - le - 8);
+        if (ui_row_drawn[k].big) aa_text_ovr(xr, L_TOP(19), &AF_L, v, FC_VAL);
+        else aa_text_ovr(xr, S_TOP(19), &AF_S, v, FC_VAL);   /* too wide for the large face (a test reports it) */
+        if (u) aa_text_ovr(220, L_TOP(19) + AF_L.asc - AF_S.asc, &AF_S, u, mt.unit);   /* on the number's baseline */
         if (hot) {                                      /* the knob being turned: a 1 px frame */
             cv_rect(0, 0, RW_W, 1, mt.frame); cv_rect(0, RW_H - 1, RW_W, 1, mt.frame);
             cv_rect(0, 0, 1, RW_H, mt.frame); cv_rect(RW_W - 1, 0, 1, RW_H, mt.frame);
@@ -752,6 +776,307 @@ static void draw_row(uint32_t k)
     } else aa_text_ov(6, S_TOP(9), &AF_S, kk, mt.outline ? mt.outline : mt.track);   /* an empty row: its K tag, dim */
     cv_blit(RW_X, RW_Y0 + RW_DY * k);
 }
+
+/* ---- the design pass's rows (ui_cards 1 FADER, 2 LINE): one typographic system for every card of every page.
+ *   - every value in the large face, right-aligned at CD_VR, on the baseline CD_BASE (the label's and the unit's too);
+ *   - a unit (Hz kHz ms s dB c %) small, CD_UGAP right of the number, in a column every row keeps (CD_UNIT_W, the
+ *     widest unit), so numbers, names and ON / OFF all end at the same x;
+ *   - a value never changes size: one too wide for its room (the label's end + CD_GAP .. CD_VR) is written in its
+ *     defined short form (CD_LONG / CD_SHORT); a test (host_state "fitscan") walks every value of every card of both
+ *     engines and fails on one that still does not fit;
+ *   - the meter: an amount's fraction; a choice's option at its place in its list ((i + 1) / n); OFF empty (a choice
+ *     or an amount that reads OFF); a synced knob its note value's place;
+ *   - FADER: the row filled from the left (the dim fill) with a 2 px bright edge that stops CD_KEEP px short of every
+ *     text box (the K tag, the label, the value, the unit), above and below it: the fill's soft step may pass under
+ *     a digit, a line never does; LINE: no fill, a CD_LINE_H px line at the row's bottom (a dim track, amber to the
+ *     fraction);
+ *   - the turned knob: its label in the accent and the 1 px frame (HOT_MS), as today. */
+#define CD_PAD 6                                        /* the text's margin on the left */
+#define CD_PAD_R (UI_BREATHE ? 12 : 10)                 /* and on the right (after the unit column) */
+#define CD_UNIT_W 22                                    /* the unit column: "kHz" in AF_S */
+#define CD_UGAP (UI_BREATHE ? 5 : 3)                    /* between the number and its unit */
+#define CD_VR ((int32_t)RW_W - CD_PAD_R - CD_UNIT_W - CD_UGAP)   /* where every value ends (189; 193 tight) */
+#define CD_BASE (((int32_t)RW_H + AF_L_CAP_H + 1) / 2)  /* the baseline of the label, the value and the unit: the
+                                                         * capitals centred in the row (28 px: 30, 25: 29, 24: 28) */
+#define CD_GAP (UI_BREATHE ? 14 : 12)                   /* the least room between the label and the value */
+#define CD_KEEP 3                                       /* FADER: the edge stops this far from any text */
+#define CD_MINSEG 3                                     /* FADER: an edge piece shorter than this is left out */
+#define CD_LINE_H 3                                     /* LINE: the meter line, rows 34 .. 36 (37: the frame) */
+#define CD_LINE_Y 34
+#define CD_SEG_GAP 2                                    /* SEGMENTS: the gap between two options' blocks */
+#define CD_SEGOFF RGB(8, 8, 8)                          /* SEGMENTS: an option not reached (RGB565 1 2 1, neutral) */
+#define CD_SEG_CAP 2                                    /* SEGMENTS: the cap at each block's foot */
+#define CD_SEG_MAX 16                                   /* SEGMENTS: more options (CHANNEL 17, ASSIGN 31): caps only */
+#define CD_PIP_H 3                                      /* PIPS: the pips' height, CD_PIP_DY under the baseline */
+#define CD_PIP_DY 4
+#define CD_PIP_MAXP 10                                  /* PIPS: the pitch (pip + gap) at most, ... */
+#define CD_PIP_SPAN 180                                 /* ... and so that n pips take at most this (31: 5 px) */
+#define CD_PIPOFF RGB(56, 56, 60)                       /* PIPS: the other options */
+#define CD_LED_D 12                                     /* LED: the dot's size, CD_LED_GAP left of the value */
+#define CD_LED_GAP 8
+#define CD_KTAG_TOP S_TOP(9)
+/* the short forms, used only where the long one does not fit (at 28 px: TYPE 143 px, ASSIGN PLAYS 136; fewer at 25 / 24) */
+static const char *const CD_LONG[] = {"EARLY FELT", "BELL DYNO", "TREM/WAH", "COMP THR", "COMP MKUP", "TREM RATE",
+                                      "TREM SHAPE", "PHA SPEED", "PHA FEEDBK", "CHO SPEED", "DLY FEEDBK"};
+static const char *const CD_SHORT[] = {"FELT", "DYNO", "TRM/WAH", "CMP THR", "CMP GAIN", "TRM RATE", "TRM SHP",
+                                       "PHA SPD", "PHA FDBK", "CHO SPD", "DLY FDBK"};
+_Static_assert(sizeof CD_LONG == sizeof CD_SHORT, "one short form per long one");
+static int cd_eq(const char *a, const char *b) { while (*a && *a == *b) { a++; b++; } return *a == *b; }
+/* the value's text, its unit apart (slot_unit, and a number's "%"); 0: none */
+static const char *cd_unit(uint32_t s, char *v)
+{
+    const char *u = slot_unit(s, v);
+    uint32_t n = 0;
+    while (v[n]) n++;
+    if (!u && n > 1u && v[n - 1u] == '%' && v[0] >= '0' && v[0] <= '9') { v[n - 1u] = 0; u = "%"; }
+    return u;
+}
+/* the meter's width (0 .. w) for slot s showing v */
+static int32_t cd_frac(uint32_t s, const char *v, int32_t val, int32_t hi, int32_t w)
+{
+    if (!hi || cd_eq(v, "OFF")) return 0;
+    if (slot_synced(s)) {                               /* the note value's place among the sync divisions */
+        uint32_t y = slot_sync_id(s);
+        return w * ((int32_t)PV(y) + 1) / ((int32_t)PARAMS[y].hi + 1);
+    }
+    if (slot_is_level(s)) return w * clampi(val, 0, hi) / hi;
+    return w * (clampi(val, 0, hi) + 1) / (hi + 1);     /* a choice: option i of n at (i + 1) / n */
+}
+/* the value and the room it has (the label ends at le): its text (the short form if the long one does not fit) */
+static int cd_fit(char *v, int32_t room, uint8_t *shortf)
+{
+    uint32_t i;
+    *shortf = 0;
+    if (aa_text_w(&AF_L, v) <= room) return 1;
+    for (i = 0; i < sizeof CD_LONG / sizeof CD_LONG[0]; i++)
+        if (cd_eq(v, CD_LONG[i])) { p_strcpy(v, CD_SHORT[i], 11); *shortf = 1; break; }
+    return aa_text_w(&AF_L, v) <= room;
+}
+/* FADER: the bright edge at x ex (2 px), in the rows no text box (grown by CD_KEEP) covers at that x */
+static void cd_edge(int32_t ex, const int16_t *bx, uint32_t nb)
+{
+    uint64_t blocked = 0;
+    uint32_t i;
+    int32_t y, y0 = -1;
+    for (i = 0; i < nb; i++) {
+        const int16_t *b = bx + 4u * i;                 /* x0 x1 y0 y1 (inclusive) */
+        if (ex + 1 < b[0] - CD_KEEP || ex > b[1] + CD_KEEP) continue;
+        for (y = b[2] - CD_KEEP; y <= b[3] + CD_KEEP; y++) if (y >= 0 && y < (int32_t)RW_H) blocked |= 1ull << y;
+    }
+    for (y = 0; y <= (int32_t)RW_H; y++) {
+        int free_row = y < (int32_t)RW_H && !(blocked >> y & 1u);
+        if (free_row && y0 < 0) y0 = y;
+        if (!free_row && y0 >= 0) { if (y - y0 >= CD_MINSEG) cv_rect(ex, y0, 2, y - y0, mt.edge); y0 = -1; }
+    }
+}
+/* the card's kind and how it is drawn (ui_cards 3..5: the kinds told apart at a glance; 1, 2: one meter for all) */
+enum { CK_AMOUNT, CK_SELECT, CK_TOGGLE };
+enum { CS_FADER, CS_LINE, CS_SEG, CS_PIPS, CS_LED, CS_BACK };
+static const char CS_LETTER[] = "FLSPDB";
+/* an amount (a fill); a selector (n options: a choice, or a synced knob's note value); a toggle (a choice of two that
+ * reads ON / OFF). idx / n: the selector's option and its count */
+static uint32_t cd_kind(uint32_t s, const char *v, int32_t val, int32_t hi, int32_t *idx, int32_t *n)
+{
+    if (slot_synced(s)) {
+        uint32_t y = slot_sync_id(s);
+        *idx = (int32_t)PV(y); *n = (int32_t)PARAMS[y].hi + 1;
+        return CK_SELECT;
+    }
+    *idx = clampi(val, 0, hi); *n = hi + 1;
+    if (!hi || slot_is_level(s)) return CK_AMOUNT;
+    if (hi == 1 && (cd_eq(v, "ON") || cd_eq(v, "OFF"))) return CK_TOGGLE;
+    return CK_SELECT;
+}
+static uint32_t cd_style(uint32_t kind)
+{
+    if (ui_cards == 1u) return CS_FADER;
+    if (ui_cards == 2u) return CS_LINE;
+    if (kind == CK_AMOUNT) return CS_FADER;
+    if (kind == CK_TOGGLE) return ui_cards == 5u ? CS_BACK : CS_LED;
+    return ui_cards == 4u ? CS_PIPS : CS_SEG;
+}
+/* the value's room: from the label's end + CD_GAP (and the LED's place) to CD_VR */
+static int32_t cd_room(int32_t le, uint32_t style)
+{
+    return CD_VR - le - CD_GAP - (style == CS_LED ? CD_LED_D + CD_LED_GAP : 0);
+}
+/* LED: a 12 px dot (half-widths per row), OFF a ring (the hole's half-widths) */
+static const uint8_t CD_DOT[CD_LED_D] = {2, 4, 5, 5, 6, 6, 6, 6, 5, 5, 4, 2};
+static const uint8_t CD_HOLE[CD_LED_D] = {0, 0, 2, 3, 4, 4, 4, 4, 3, 2, 0, 0};
+static void cd_led(int32_t x, int32_t y, int on)
+{
+    uint32_t r;
+    for (r = 0; r < CD_LED_D; r++) {
+        int32_t w = CD_DOT[r], h = CD_HOLE[r], cx = x + CD_LED_D / 2;
+        if (on || !h) cv_rect(cx - w, y + (int32_t)r, 2 * w, 1, on ? mt.edge : mt.dim);
+        else { cv_rect(cx - w, y + (int32_t)r, w - h, 1, mt.dim); cv_rect(cx + h, y + (int32_t)r, w - h, 1, mt.dim); }
+    }
+}
+static void draw_row_cards(uint32_t k)
+{
+    uint32_t s = slot_at(ui_page, k);
+    int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
+    char v[16], kk[3] = {'K', (char)('1' + k), 0};
+    const int32_t ltop = CD_BASE - AF_S.asc, vtop = CD_BASE - AF_L.asc;
+    cv_begin(RW_W, RW_H, mt.surf);
+    if (mt.hair) cv_rect(0, 0, RW_W, 1, mt.hair);         /* look B: the row's top hairline (under the fill) */
+    ui_row_drawn[k].kind = RK_NONE; ui_row_drawn[k].big = 1; ui_row_drawn[k].fit = 1; ui_row_drawn[k].shortf = 0;
+    ui_row_drawn[k].fw = 0; ui_row_drawn[k].vx0 = ui_row_drawn[k].vx1 = ui_row_drawn[k].ux0 = ui_row_drawn[k].ux1 = 0;
+    ui_row_drawn[k].lx1 = 0; ui_row_drawn[k].style = '-'; ui_row_drawn[k].sn = ui_row_drawn[k].si = 0;
+    if (s != S_NONE) {
+        const char *lab = slot_label(ui_page, k), *u;
+        int32_t hi, val = slot_val(s, &hi), le, kw = aa_text_w(&AF_S, kk), lw = aa_text_w(&AF_S, lab), vw, uw = 0, fw;
+        int32_t idx, n, lit;
+        const ectl_t *c = eng_ctl(s);
+        int16_t bx[16];
+        uint8_t shortf;
+        uint32_t kind, style;
+        ui_row_drawn[k].v = (int16_t)(hi ? clampi(val, 0, hi) : 0);
+        ui_row_drawn[k].hi = (int16_t)hi;
+        ui_row_drawn[k].kind = (uint8_t)(!hi ? RK_NONE : !slot_is_level(s) ? RK_CHOICE :
+                                         c && c->kind == EK_DETENT ? RK_DETENT : RK_AMOUNT);
+        slot_text(s, v);
+        kind = cd_kind(s, v, val, hi, &idx, &n);
+        style = cd_style(kind);
+        lit = cd_eq(v, "OFF") ? -1 : idx;               /* the option lit (OFF: none) */
+        u = cd_unit(s, v);
+        le = CD_PAD + (lw > kw ? lw : kw);
+        ui_row_drawn[k].fit = (uint8_t)cd_fit(v, cd_room(le, style), &shortf);
+        ui_row_drawn[k].shortf = shortf;
+        vw = aa_text_w(&AF_L, v);
+        if (u) uw = aa_text_w(&AF_S, u);
+        fw = cd_frac(s, v, val, hi, (int32_t)RW_W);
+        ui_row_drawn[k].fw = (int16_t)fw;
+        ui_row_drawn[k].style = (uint8_t)CS_LETTER[style];
+        ui_row_drawn[k].sn = (int16_t)n; ui_row_drawn[k].si = (int16_t)lit;
+        ui_row_drawn[k].vx0 = (int16_t)(CD_VR - vw); ui_row_drawn[k].vx1 = (int16_t)CD_VR;
+        ui_row_drawn[k].ux0 = (int16_t)(u ? CD_VR + CD_UGAP : 0);
+        ui_row_drawn[k].ux1 = (int16_t)(u ? CD_VR + CD_UGAP + uw : 0);
+        ui_row_drawn[k].lx1 = (int16_t)(CD_PAD + lw);
+        if (style == CS_FADER && fw > 0) {              /* FADER: the fill, then its edge clear of the text */
+            uint32_t nb = 0;
+#if UI_FILL_GRAD && UI_FILL_PCT > 0
+            {                                           /* brighter toward the edge */
+                int32_t x;
+                for (x = 0; x < fw; x++)
+                    cv_rect(x, 0, 1, RW_H, cd_shade(mt.edge, (uint32_t)(UI_FILL_LO + (UI_FILL_PCT - UI_FILL_LO) * (x + 1) / fw)));
+            }
+#else
+            cv_rect(0, 0, fw, RW_H, mt.fill);
+#endif
+#define CD_BOX(a, b, c0, d) do { bx[4u * nb] = (int16_t)(a); bx[4u * nb + 1u] = (int16_t)(b); \
+                                 bx[4u * nb + 2u] = (int16_t)(c0); bx[4u * nb + 3u] = (int16_t)(d); nb++; } while (0)
+            CD_BOX(CD_PAD, CD_PAD + (lw > kw ? lw : kw) - 1, CD_KTAG_TOP + AF_S_CAP_Y, CD_BASE - 1);   /* the K tag and
+                                                         * the label as one block: no stray bits between them */
+            CD_BOX(CD_VR - vw, CD_VR - 1, CD_BASE - AF_L_CAP_H, CD_BASE - 1);
+            if (u) CD_BOX(CD_VR + CD_UGAP, CD_VR + CD_UGAP + uw - 1, ltop + AF_S_CAP_Y, CD_BASE - 1);
+#undef CD_BOX
+            cd_edge(clampi(fw - 2, 0, (int32_t)RW_W - 2), bx, nb);
+        } else if (style == CS_LINE) {                  /* LINE: the track, amber to the fraction */
+            cv_rect(0, CD_LINE_Y, RW_W, CD_LINE_H, mt.outline ? mt.outline : mt.track);
+            if (fw > 0) cv_rect(0, CD_LINE_Y, fw, CD_LINE_H, mt.edge);
+        } else if (style == CS_SEG) {                   /* SEGMENTS: one block per option, lit up to the option: the
+                                                         * block's fill and a 2 px cap at its foot (amber lit, grey
+                                                         * not); over CD_SEG_MAX options only the caps (a ruler) */
+            int32_t i;
+            for (i = 0; i < n; i++) {
+                int32_t x0 = i * ((int32_t)RW_W + CD_SEG_GAP) / n;
+                int32_t x1 = (i + 1) * ((int32_t)RW_W + CD_SEG_GAP) / n - CD_SEG_GAP;
+                if (n <= CD_SEG_MAX) cv_rect(x0, 0, x1 - x0, RW_H - CD_SEG_CAP, i <= lit ? mt.fill : CD_SEGOFF);
+                cv_rect(x0, RW_H - CD_SEG_CAP, x1 - x0, CD_SEG_CAP, i <= lit ? mt.edge : CD_PIPOFF);
+            }
+        } else if (style == CS_PIPS) {                  /* PIPS: one per option under the value, the option's amber */
+            int32_t p = CD_PIP_SPAN / n, w, i;
+            if (p > CD_PIP_MAXP) p = CD_PIP_MAXP;
+            w = p / 2 > 2 ? p / 2 : 2;
+            for (i = 0; i < n; i++)
+                cv_rect(CD_VR - (n - i) * p + (p - w), CD_BASE + CD_PIP_DY, w, CD_PIP_H, i == lit ? mt.edge : CD_PIPOFF);
+        } else if (style == CS_LED) {                   /* LED: a dot before the value, lit ON, a ring OFF */
+            cd_led(CD_VR - vw - CD_LED_GAP - CD_LED_D, CD_BASE - AF_L_CAP_H / 2 - CD_LED_D / 2, lit == 1);
+        } else if (style == CS_BACK && lit == 1)        /* BACK: the whole card lit ON, nothing OFF */
+            cv_rect(0, 0, RW_W, RW_H, mt.fill);
+#if UI_FILL_PCT >= 30                                   /* a strong fill under the K tag / label: lighter greys */
+        if (fw > CD_PAD && (style == CS_FADER || (style == CS_SEG && lit >= 0))) {
+            aa_text_ov(CD_PAD, CD_KTAG_TOP, &AF_S, kk, RGB(170, 170, 176));
+            aa_text_ov(CD_PAD, ltop, &AF_S, lab, hot ? FC_VAL : RGB(206, 206, 210));
+        } else
+#endif
+        {
+            aa_text_ov(CD_PAD, CD_KTAG_TOP, &AF_S, kk, mt.tag);
+            aa_text_ov(CD_PAD, ltop, &AF_S, lab, hot ? UI_ACC : FC_LAB);
+        }
+        aa_text_ovr(CD_VR, vtop, &AF_L, v, FC_VAL);
+        if (u) aa_text_ov(CD_VR + CD_UGAP, ltop, &AF_S, u, mt.unit);
+        if (hot) {                                      /* the knob being turned: a 1 px frame */
+            cv_rect(0, 0, RW_W, 1, mt.frame); cv_rect(0, RW_H - 1, RW_W, 1, mt.frame);
+            cv_rect(0, 0, 1, RW_H, mt.frame); cv_rect(RW_W - 1, 0, 1, RW_H, mt.frame);
+        }
+    } else aa_text_ov(CD_PAD, CD_KTAG_TOP, &AF_S, kk, mt.outline ? mt.outline : mt.track);   /* an empty row */
+    cv_blit(RW_X, RW_Y0 + RW_DY * k);
+}
+#ifdef DINGHY_HOST
+/* the host's fit scan (host_state "fitscan", tests/py/test_ui_cards.py): every value every card of every page can
+ * show, on every TYPE, with the effects' switches as they are and all on (WAH, the compressor's and the drive's
+ * numbers), the synced knobs' note values too; prints "FITSCAN BAD|SHORT page K label = value w room" and returns the
+ * values that do not fit in the large face (0 = the rule holds). It walks the settings and restores them; the host
+ * run it is in is for this alone (the side effects of the setup slots' turns are not undone). */
+static uint32_t cd_check(uint32_t pg, uint32_t vp, uint32_t k, uint32_t s)
+{
+    char v[16], kk[3] = {'K', (char)('1' + k), 0};
+    const char *lab = slot_label_v(pg, vp, k);
+    int32_t kw = aa_text_w(&AF_S, kk), lw = aa_text_w(&AF_S, lab), room, hi, val = slot_val(s, &hi), idx, n;
+    uint8_t sf;
+    int fit;
+    slot_text(s, v);
+    room = cd_room(CD_PAD + (lw > kw ? lw : kw), cd_style(cd_kind(s, v, val, hi, &idx, &n)));
+    (void)cd_unit(s, v);
+    fit = cd_fit(v, room, &sf);
+    if (!fit || sf || !aa_covers(&AF_L, v))
+        printf("FITSCAN %s %s%s K%u %s = %s %d %d\n", !fit || !aa_covers(&AF_L, v) ? "BAD" : "SHORT", PAGE_TITLE[pg],
+               pg == PG_VOICE ? (vp == 0 ? " 1" : vp == 1 ? " 2" : " 3") : "", k + 1u, lab, v, aa_text_w(&AF_L, v), room);
+    return !fit || !aa_covers(&AF_L, v);
+}
+static uint32_t ui_fit_scan(void)
+{
+    static settings_t keep;
+    static const uint8_t SYNC[] = {P_TW_SYNC, P_CP_SYNC, P_PH_SYNC, P_DL_SYNC, P_LFO_SYNC, P_MOT_SYNC};
+    uint32_t bad = 0, t, pass, pg, vp, k, i, nv;
+    uint8_t page0 = ui_page, vp0 = ui_vp;
+    keep = set;
+    for (pass = 0; pass < 2u; pass++)
+        for (t = 0; t < N_TYPE_N; t++) {
+            PV(P_TYPE) = (uint8_t)t;
+            if (pass) { PV(P_CMP_SW) = 1; PV(P_DRV_SW) = 1; PV(P_TW_SW) = 2; }
+            for (pg = 0; pg < PG_N; pg++)
+                for (vp = 0, nv = pg == PG_VOICE ? vp_count() : 1u; vp < nv; vp++) {
+                    if (pg == PG_SEQ || !PAGE_TITLE[pg][0]) continue;
+                    ui_page = (uint8_t)pg; ui_vp = (uint8_t)vp;
+                    for (k = 0; k < 4u; k++) {
+                        uint32_t s = slot_at_v(pg, vp, k), y = 0;
+                        int32_t hi, v0, j;
+                        if (s == S_NONE) continue;
+                        v0 = slot_val(s, &hi);
+                        if (s < P_COUNT) {
+                            uint8_t sv[sizeof SYNC];
+                            for (j = 0; j <= hi; j++) { PV(s) = (uint8_t)j; bad += cd_check(pg, vp, k, s); }
+                            PV(s) = (uint8_t)v0;
+                            if (s == P_TYPE) continue;
+                            for (i = 0; i < sizeof SYNC; i++) { sv[i] = (uint8_t)PV(SYNC[i]); PV(SYNC[i]) = 1; }
+                            y = slot_sync_id(s);
+                            for (j = 1; y && j <= (int32_t)PARAMS[y].hi; j++) { PV(y) = (uint8_t)j; bad += cd_check(pg, vp, k, s); }
+                            for (i = 0; i < sizeof SYNC; i++) PV(SYNC[i]) = sv[i];
+                        } else {
+                            for (j = 0; j <= hi + 2; j++) slot_turn(s, -1);
+                            for (j = 0; j <= hi + 2; j++) { bad += cd_check(pg, vp, k, s); slot_turn(s, 1); }
+                        }
+                    }
+                }
+        }
+    set = keep;
+    ui_page = page0; ui_vp = vp0;
+    return bad;
+}
+#endif
 /* ---- the SEQUENCER page, made to be read on a small screen: what plays NOW in big letters, what comes NEXT, and the
  * bar as 16 big cells (a filled cell: notes start there; white: playing). Its four cards are a compact row. */
 #define SQ_NOW_Y 40
@@ -1057,10 +1382,11 @@ static void ui_draw_testpat(void)
 static void ui_draw(void)
 {
     uint32_t e, d;
-    static uint8_t cleared, eng_shown, look_shown;
+    static uint8_t cleared, eng_shown, look_shown, cards_shown = UI_CARDS_DEF;
     batt_poll();                                        /* (from the start: the splash too) */
     mt_update();
     if (ui_look != look_shown) { look_shown = ui_look; cleared = 0; ui_draw_page_change(); }   /* CC 2: all again */
+    if (ui_cards != cards_shown) { cards_shown = ui_cards; ui_mark(E_CARDS); }                /* CC 11: the rows */
     if (eng_ui() != &ENG_UI[eng_shown]) {               /* the TYPE crossed engines (ALGORITHM, CC 80 / 79, a preset):
                                                          * other VOICE pages, names and hints; marked once per change */
         eng_shown = (uint8_t)(eng_ui() - ENG_UI);

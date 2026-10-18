@@ -9,12 +9,13 @@
  * the parameter's own (PARAMS[id].hi / .fmt, or the slot's in ui.c slot_val / slot_text), so the table cannot disagree
  * with the CC map, the records or the presets. Included by ui.c after its S_* slot ids. */
 
-enum { EK_AMT, EK_CHOICE, EK_DETENT };      /* an amount (a fill and a number), a choice (segments), named detents (a
-                                             * fill and the detent's name, the number between two of them) */
+enum { EK_AMT, EK_CHOICE, EK_DETENT };      /* an amount (a fill and a number), a choice (its name,
+                                             * large), named detents (a fill and the detent's name, the number
+                                             * between two of them) */
 enum { EU_NONE, EU_HZ, EU_MS, EU_DB, EU_C };   /* the unit, small next to the number: Hz, ms, dB, c (cents) */
 typedef struct {
     uint8_t id;                              /* the slot */
-    const char *name;                        /* the row's label (it ends before the segments, x 88) */
+    const char *name;                        /* the row's label (short: the value is right of it) */
     uint8_t kind, unit;                      /* EK_*, EU_* */
     uint8_t head;                            /* 1 = the FRODHES page's K2, 2 = its K3 (0: not a headline) */
     uint8_t nn, tol;                         /* EK_DETENT: the names; how far from a detent its name still shows */
