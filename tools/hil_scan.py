@@ -1509,6 +1509,14 @@ def env_db(x, hop=240):
     return 20 * np.log10(np.sqrt(np.mean(np.asarray(x[:n * hop], float).reshape(n, hop) ** 2, axis=1)) + 1e-9)
 
 
+def until_floor(e, drop=50.0):
+    """an envelope (dB) up to its first frame drop dB under its peak: a note that ends inside the window (the voice's
+    1 LSB end, the gate's fade to digital zero on USB) leaves a -180 dB step the rate search would read"""
+    e = np.asarray(e, float)
+    lo = np.nonzero(e < e.max() - drop)[0]
+    return e[:lo[0]] if len(lo) else e
+
+
 def pfit(tr, fps, rate, H=3):
     """a periodic wave (H harmonics of rate) on a quadratic trend: peak-to-peak of the periodic part, the harmonics'
     amplitudes, and the share of the detrended variance the fundamental explains (r2)"""
@@ -2061,7 +2069,7 @@ def vibes_motor(V, S):
         S.check(f"MOTOR DEPTH (CC {P['MOT_DEPTH']['cc']}) 127", s, S.per(lambda q: am("d127", q, k)["pp"]),
                 lambda v: v >= 6, ">= 6 dB AM", fmt=lambda v: f"{v:.1f} dB")
         S.check(f"MOTOR DEPTH default {P['MOT_DEPTH']['de']}", s, S.per(lambda q: am("d110", q, k)["pp"]),
-                lambda v: v >= 6, ">= 6 dB AM (params.c: 6-9 dB)", fmt=lambda v: f"{v:.1f} dB")
+                lambda v: v >= 6, ">= 6 dB AM (params.c: ~8 dB)", fmt=lambda v: f"{v:.1f} dB")
         S.check("MOTOR DEPTH 0", s, S.per(lambda q: am("d0", q, k)["pp"]), lambda v: v < 1, "< 1 dB",
                 fmt=lambda v: f"{v:.2f} dB")
         S.check(f"MOTOR OFF (CC {P['MOT_ON']['cc']} = 0), DEPTH 127", s, S.per(lambda q: am("off", q, k)["pp"]),
@@ -2077,7 +2085,9 @@ def vibes_motor(V, S):
     one = chord((69,), 100, 0.3, 6.3)
 
     def rate(t, q, guess, lo=0.4, hi=2.6):
-        return rate_of(env_db(cut(t.m(q), t.on(q)[0], 0.5, 5.8)), fps, guess, lo, hi)
+        # until the note falls 50 dB: with the motor A4 rings as long as dry (round 2: the coupling no longer
+        # lengthens it) and its end, inside 5.8 s, would be read as part of the AM
+        return rate_of(until_floor(env_db(cut(t.m(q), t.on(q)[0], 0.5, 5.8))), fps, guess, lo, hi)
     for x in (0, dflt, 127):
         V.reset([("MOT_DEPTH", 127), ("MOT_RATE", x)], motor=True, label=f"MOTOR SPEED {x}")
         t = V.take(f"motor-rate-{x}", 6.6, one)

@@ -92,3 +92,30 @@ def test_c_matches_golden_edge_strikes(note, tone, bark):
     g = gm.render_batch(SPEC, [note], [127], 1.8, knobs=dict(tone=tone, bark=bark, hammer=127))[0]
     r, rms = residual_db(c, g)
     assert r <= -60.0 or rms <= 0.5, (note, r, rms)
+
+
+def c_render_motor(note, mot):
+    """the motor set well before the note (its depth slewed in), CC 10 at 60 ms (the phase to 0 at the next block)"""
+    out = os.path.join(ROOT, "build", "host", f"vbm-{note}")
+    s = ("20 midi 0xB0 119 127\n20 midi 0xB0 104 0\n21 midi 0xB0 79 64\n"
+         + KNOBS.format(**gm.DEFAULT_KNOBS).replace("55 midi", "22 midi")
+         + f"23 midi 0xB0 47 127\n23 midi 0xB0 48 {mot['depth']}\n23 midi 0xB0 49 {mot['rate']}\n"
+         f"23 midi 0xB0 50 {mot.get('shape', 0)}\n60 midi 0xB0 10 127\n100 midi 0x90 {note} 100\n2200 end\n")
+    with open(out + ".txt", "w") as f:
+        f.write(s)
+    subprocess.run([BIN, out, out + ".txt"], check=True, capture_output=True, env=dict(os.environ, FRODHES_NOBUDGET="1"))
+    w = wave.open(out + ".wav")
+    return np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")[0::2].astype(float)
+
+
+@pytest.mark.parametrize("note,mot", [(53, dict(depth=110, rate=78)), (69, dict(depth=127, rate=105, shape=127)),
+                                      (89, dict(depth=64, rate=40))])
+def test_c_matches_golden_with_motor(note, mot):
+    """the motor (the tube's radiation gated, x its make-up; the coupling untouched): <= -50 dB. The golden model's
+    phase at the note is k blocks after the reset; the best k of 12 (the host's block grid, not a free fit: one k
+    matches, its neighbours are 20+ dB worse)"""
+    import bartube as bt
+    c = c_render_motor(note, mot)
+    best = min(residual_db(c, gm.render_batch(SPEC, [note], [100], 1.8, motor=dict(
+        mot, ph0=(k * 256 * bt.mot_inc(mot["rate"])) & 0xFFFFFFFF))[0]) for k in range(12))
+    assert best[0] <= -50.0 or best[1] <= 0.5, (note, best)

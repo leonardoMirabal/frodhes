@@ -379,12 +379,46 @@ static void bar_kill_all(void)
 
 static int bar_quiet(void) { return bar_active_bits == 0 && bar_quiet_blocks >= 2u; }
 
-/* ---- the motor: the discs' opening per sub-block edge, once per block (the MOTOR page through eng_bar_knob) */
+/* ---- the motor: the discs' opening per sub-block edge, once per block (the MOTOR page through eng_bar_knob). The
+ * discs gate the tube's radiation only (bar_voice_block), x the make-up that keeps its mean power; the bar <-> tube
+ * coupling stays the discs-open one. Until 2026-10-18 they scaled the coupling too: with the motor on the tube drained
+ * the bar less, the bar rang about twice as long (C3 G3 C4 E4: -9.5 dB/s open, -5.0 with the motor; real discs
+ * closed do sustain longer), so the motor drifted +4.4 dB/s above the dry level along a held chord and switching it
+ * off jumped +4.7 LU (FM-1 vibes_jump, USB and the jack alike). The user's rule wins: the motor is a tremolo at the
+ * same level and decay as the discs open (tests/py/test_vibes_motor_level.py). */
 #define BAR_MOT_SLEW 512                            /* the depth's slew, Q15 a sub-block: off <-> full in 64 sub-blocks
                                                      * (46 ms), so switching the motor or turning DEPTH never clicks */
 static int32_t bar_mot_d;                           /* the discs' depth as it plays, Q15 (DEPTH x ON, slewed) */
-#define BAR_MOT_MK 20600                            /* the motor's make-up at full depth (Q15: x 1.63) */
-static int32_t bar_mk0 = 32768, bar_mk1 = 32768;     /* its gain at the block's start and end (Q15) */
+static uint8_t bar_mot_park = 1;                    /* this block: the discs parked open (bar_mot_g all x 1) */
+static uint32_t bar_isqrt(uint32_t x)               /* floor(sqrt(x)), 32-bit */
+{
+    uint32_t r = 0, b = 1u << 30;
+    while (b > x) b >>= 2;
+    while (b) {
+        if (x >= r + b) { x -= r + b; r = (r >> 1) + b; } else r >>= 1;
+        b >>= 2;
+    }
+    return r;
+}
+/* the make-up of the tube's radiation for a disc law g = gmin + (1 - gmin) op (Q15), op = (1 - a) o + a o^2 (SHAPE a),
+ * o = 1 - |cos|: 1 / sqrt(mean g^2) over a turn, so the tube's mean power stays what it is with the discs open (the
+ * loudness matched at any DEPTH and SHAPE, and along the whole decay). The moments of o over a turn, Q15: E[o] = 1 -
+ * 2/pi, E[o^2], E[o^3], E[o^4]. Q15 out (x 1 .. x 2.4) */
+#define BAR_MOT_E1 11907
+#define BAR_MOT_E2 7430
+#define BAR_MOT_E3 5431
+#define BAR_MOT_E4 4288
+static int32_t bar_mot_mk(int32_t gmin, int32_t shape)
+{
+    int32_t a = (shape << 15) / 127, b = 32768 - a, h = 32768 - gmin;
+    int32_t e1 = (b * BAR_MOT_E1 + a * BAR_MOT_E2) >> 15;                       /* E[op] */
+    int32_t e2 = (int32_t)(((int64_t)b * b * BAR_MOT_E2 + 2 * (int64_t)a * b * BAR_MOT_E3
+                            + (int64_t)a * a * BAR_MOT_E4) >> 30);              /* E[op^2] */
+    int32_t m2 = ((gmin * gmin) >> 15) + (int32_t)((2 * (int64_t)gmin * h * e1) >> 30)
+               + (int32_t)(((int64_t)h * h * e2) >> 30);                        /* E[g^2], Q15 */
+    uint32_t r = bar_isqrt((uint32_t)m2 << 15);                                 /* sqrt, Q15 */
+    return r ? (int32_t)((1u << 30) / r) : 32768;
+}
 static void bar_motor_block(void)
 {
     uint32_t i, inc = bar_mot_inc;
@@ -392,14 +426,15 @@ static void bar_motor_block(void)
     int32_t gc = BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u].mot_gc;
     int32_t tgt = bar_mot_on ? (depth << 15) / 127 : 0, d0 = bar_mot_d;
     bar_mot_g[0] = bar_mot_g[8];                    /* the last block's end: continuous */
-    if (!tgt && !d0) {                              /* off: the discs parked open */
+    bar_mot_park = !tgt && !d0;
+    if (bar_mot_park) {                             /* off: the discs parked open */
         for (i = 0; i < 9u; i++) bar_mot_g[i] = 32768;
         bar_mot_ph += 256u * inc;
         return;
     }
     for (i = 1; i < 9u; i++) {                      /* each sub-block's end (its start is the one before) */
         /* |cos phi|, phi = pi t / 512, t = ph >> 23 folded on the quarter-turn table: one AM period per 2^32 phase
-         * cycle (bit-exact to tools/bartube.py mot_block at a steady depth) */
+         * cycle (bit-exact to tools/bartube.py mot_rad at a steady depth: mot_block x mot_mk) */
         uint32_t ph = bar_mot_ph + i * 32u * inc, t = ph >> 23, fr = (ph >> 15) & 255u, t1 = (t + 1u) & 511u;
         int32_t c0 = t < 256u ? BAR_MOT_COS[t] : BAR_MOT_COS[512u - t];
         int32_t c1 = t1 < 256u ? BAR_MOT_COS[t1] : BAR_MOT_COS[512u - t1];
@@ -409,7 +444,7 @@ static void bar_motor_block(void)
         gmin = bar_mot_d == tgt ? 32768 - (depth * (32768 - gc)) / 127 * (tgt != 0)   /* steady: DEPTH exactly */
                                 : 32768 - (int32_t)(((int64_t)bar_mot_d * (32768 - gc)) >> 15);
         if (shape) op = o + (((((o * o) >> 15) - o) * shape) / 127);   /* p = 1 + SHAPE/127: a narrower open window */
-        bar_mot_g[i] = gmin + (((32768 - gmin) * op) >> 15);
+        bar_mot_g[i] = (int32_t)(((int64_t)(gmin + (((32768 - gmin) * op) >> 15)) * bar_mot_mk(gmin, shape)) >> 15);
     }
     bar_mot_ph += 256u * inc;
 }
@@ -421,12 +456,12 @@ static void bar_motor_block(void)
  * is an upper bound. tools/hil_cpu.py --calib and --fx-each measure the real ones: replace these with them. The cap
  * is the gate minus a margin minus everything that is not an upper mode, in units of one upper mode for one
  * sub-block (a fading slot is one unit). Loop sizes (instructions a sample): upper slot 8 (Q32) / 9 (Q30), with the
- * force 13 / 20; the pair 34, with the motor 38.5, with the force 38 / 44.5; the tube's radiation 6; the gain 9; the
- * slow output (steal fade, felt) 46; the pulse 25; the contact noise 48. */
+ * force 13 / 20; the pair 34 (the motor no longer ramps it: 38.5 before 2026-10-18), with the force 38 / 44.5; the
+ * tube's radiation 6; the gain 9; the slow output (steal fade, felt) 46; the pulse 25; the contact noise 48. */
 #define BAR_NS_GATE 4800000u      /* the worst block allowed; the shedder is at 5000 us */
 #define BAR_NS_MARGIN 150000u     /* the model's own error */
 #define BAR_NS_BASE 312000u       /* idle, no effects: the platform, the master, an empty render (measured) */
-#define BAR_NS_VOICE 100000u      /* a sounding voice: the pair (motor), the radiation, the gain, the levels, setup */
+#define BAR_NS_VOICE 100000u      /* a sounding voice: the pair, the radiation (motor), the gain, the levels, setup */
 #define BAR_NS_FORCE 50000u       /* a voice whose pulse runs this block (the pulse, the pair's force), whole block */
 #define BAR_NS_STRIKE 40000u      /* a note-on: 16 coefficient sets, the pulse blend, the slots' set-up */
 #define BAR_NS_SLOW 45000u        /* a voice fading (steal) or with felt noise: the slow output loop */
@@ -635,11 +670,12 @@ static void bar_run_fade(bar_ms_t *s, int32_t *bx, const int32_t *F)  /* one sub
     s->live = 0; s->x1 = s->x2 = s->err = 0; s->amp = 0;
 }
 
-/* V1 <-> TUBE for one sub-block, sample-inner (the motor ramps the couplings per sample), Q32 form (both modes are
- * under 4.9 kHz on every key): bx = x0, tb = the tube's x1 (its radiation weight is the output loop's). The tube's
- * pressure on the bar (ktb x1 into y0) enters x0 as e0 ktb x1, likewise e1 kbt x0 into x1: ktbe = ktb e0 >> 16
- * then >> 12 (the product keeps 12 more bits: ktb e0 is 2^33 .. 2^46 over the keys), kbte = kbt e1 >> 28. */
-#define BAR_PSTEP(X0N, X0O, X1N, X1O, FRC, MOT) do { \
+/* V1 <-> TUBE for one sub-block, sample-inner, Q32 form (both modes are under 4.9 kHz on every key): bx = x0, tb = the
+ * tube's x1 (its radiation weight is the output loop's). The tube's pressure on the bar (ktb x1 into y0) enters x0 as
+ * e0 ktb x1, likewise e1 kbt x0 into x1: ktbe = ktb e0 >> 16 then >> 12 (the product keeps 12 more bits: ktb e0 is
+ * 2^33 .. 2^46 over the keys), kbte = kbt e1 >> 28. The motor does not touch the coupling (bar_motor_block): the pair,
+ * and so the bar's decay, is the same with the motor on or off. */
+#define BAR_PSTEP(X0N, X0O, X1N, X1O, FRC) do { \
         int64_t a_ = (int64_t)(uint32_t)e0r - (int64_t)c10 * (X0N) + (int64_t)c20 * (X0O) \
                    + (((int64_t)ktbe * (X1N)) >> 12); \
         if (FRC) a_ += (int64_t)*F++ * be0; \
@@ -647,39 +683,30 @@ static void bar_run_fade(bar_ms_t *s, int32_t *bx, const int32_t *F)  /* one sub
         a_ = (int64_t)(uint32_t)e1r - (int64_t)c11 * (X1N) + (int64_t)c21 * (X1O) + (int64_t)kbte * (X0O); \
         (X1O) = 2 * (X1N) - (X1O) + (int32_t)(a_ >> 32); e1r = (int32_t)a_; \
         *bx++ = (X0O); *tb++ = (X1O); \
-        if (MOT) { ktbe += dk0; kbte += dk1; } \
     } while (0)
-#define BAR_PAIR(NAME, FRC, MOT) \
-static void NAME(bar_ms_t *s0, bar_ms_t *s1, int32_t *bx, int32_t *tb, const int32_t *F, int32_t ktbe, int32_t kbte, \
-                 int32_t dk0, int32_t dk1) \
+#define BAR_PAIR(NAME, FRC) \
+static void NAME(bar_ms_t *s0, bar_ms_t *s1, int32_t *bx, int32_t *tb, const int32_t *F, int32_t ktbe, int32_t kbte) \
 { \
     int32_t x0 = s0->x1, x0p = s0->x2, e0r = s0->err, c10 = s0->k1, c20 = s0->k2, be0 = s0->be; \
     int32_t x1 = s1->x1, x1p = s1->x2, e1r = s1->err, c11 = s1->k1, c21 = s1->k2; \
     int32_t *e = bx + BAR_SUB; \
-    (void)F; (void)be0; (void)dk0; (void)dk1; \
-    while (bx < e) { BAR_PSTEP(x0, x0p, x1, x1p, FRC, MOT); BAR_PSTEP(x0p, x0, x1p, x1, FRC, MOT); } \
+    (void)F; (void)be0; \
+    while (bx < e) { BAR_PSTEP(x0, x0p, x1, x1p, FRC); BAR_PSTEP(x0p, x0, x1p, x1, FRC); } \
     s0->x1 = x0; s0->x2 = x0p; s0->err = e0r; s1->x1 = x1; s1->x2 = x1p; s1->err = e1r; \
 }
-BAR_PAIR(bar_pair_00, 0, 0)
-BAR_PAIR(bar_pair_01, 0, 1)
-BAR_PAIR(bar_pair_10, 1, 0)
-BAR_PAIR(bar_pair_11, 1, 1)
+BAR_PAIR(bar_pair_0, 0)
+BAR_PAIR(bar_pair_1, 1)
 
 static bar_ms_t bar_notube;                         /* BELL 0: a silent tube (the same work, so the same cost) */
-static void bar_pair(bar_voice_t *v, int32_t *bx, int32_t *tb, const int32_t *F, uint32_t sb)
+static void bar_pair(bar_voice_t *v, int32_t *bx, int32_t *tb, const int32_t *F)
 {
     bar_ms_t *s0 = &v->m[0], *s1 = v->m[1].live ? &v->m[1] : &bar_notube;
-    int32_t g0 = bar_mot_g[sb], g1 = bar_mot_g[sb + 1u], ktbe, kbte, dk0, dk1;
-    ktbe = bar_sat31((((int64_t)v->ktb * g0) >> 15) * s0->e >> 16);
-    kbte = bar_sat31((((int64_t)v->kbt * g0) >> 15) * s1->e >> 28);
-    dk0 = (bar_sat31((((int64_t)v->ktb * g1) >> 15) * s0->e >> 16) - ktbe) >> 5;
-    dk1 = (bar_sat31((((int64_t)v->kbt * g1) >> 15) * s1->e >> 28) - kbte) >> 5;
-    if (!v->m[1].live) ktbe = kbte = dk0 = dk1 = 0;
-    if (dk0 | dk1) {
-        if (F) bar_pair_11(s0, s1, bx, tb, F, ktbe, kbte, dk0, dk1); else bar_pair_01(s0, s1, bx, tb, 0, ktbe, kbte, dk0, dk1);
-    } else {
-        if (F) bar_pair_10(s0, s1, bx, tb, F, ktbe, kbte, 0, 0); else bar_pair_00(s0, s1, bx, tb, 0, ktbe, kbte, 0, 0);
+    int32_t ktbe = 0, kbte = 0;
+    if (v->m[1].live) {
+        ktbe = bar_sat31((int64_t)v->ktb * s0->e >> 16);
+        kbte = bar_sat31((int64_t)v->kbt * s1->e >> 28);
     }
+    if (F) bar_pair_1(s0, s1, bx, tb, F, ktbe, kbte); else bar_pair_0(s0, s1, bx, tb, 0, ktbe, kbte);
 }
 
 /* the pulse into bar_F[0 .. nF) as F << 12, F exactly the Q15 force of before (the kernels' be scales it) */
@@ -730,21 +757,12 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix)
     const bar_type_t *ty = &BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u];
     uint32_t j, m, sb, nf = bar_force(v), nf2 = (nf + 1u) & ~1u, nlive = 0, fade0 = 0;
     int32_t gain = v->gain, ref, sum, la[BAR_NM];
-    int32_t g1 = gain, dg = 0;
-    if (bar_mk0 != 32768 || bar_mk1 != 32768) {     /* the motor's discs close the tubes part of each turn: the mean
-                                                     * level fell 3.8 LU at DEPTH 110 (FM-1, 2026-10-17); made up,
-                                                     * gliding over the block while the depth moves (no step) */
-        int64_t a = ((int64_t)gain * bar_mk0) >> 15, b = ((int64_t)gain * bar_mk1) >> 15;
-        gain = a > 0x3FFFFFFF ? 0x3FFFFFFF : (int32_t)a;
-        g1 = b > 0x3FFFFFFF ? 0x3FFFFFFF : (int32_t)b;
-        dg = (g1 - gain) / (int32_t)BAR_N;
-    }
     if (v->ramp) {                                  /* the damper moves: every slot's coefficients per sub-block */
         for (sb = 0; sb < BAR_NSUB; sb++) {
             uint32_t o = sb * BAR_SUB;
             const int32_t *F = o < nf ? bar_F + o : 0;
             if (v->ramp) bar_damper_step(v);
-            bar_pair(v, bar_x + o, bar_tb + o, F, sb);
+            bar_pair(v, bar_x + o, bar_tb + o, F);
             for (m = BAR_UP0; m < BAR_NM; m++) {
                 bar_ms_t *s = &v->m[m];
                 if (!s->live) continue;
@@ -754,7 +772,7 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix)
         }
     } else {
         for (sb = 0; sb < BAR_NSUB; sb++)
-            bar_pair(v, bar_x + sb * BAR_SUB, bar_tb + sb * BAR_SUB, sb * BAR_SUB < nf ? bar_F + sb * BAR_SUB : 0, sb);
+            bar_pair(v, bar_x + sb * BAR_SUB, bar_tb + sb * BAR_SUB, sb * BAR_SUB < nf ? bar_F + sb * BAR_SUB : 0);
         for (m = BAR_UP0; m < BAR_NM; m++) {        /* the upper modes: the whole block at once */
             bar_ms_t *s = &v->m[m];
             uint32_t o = 0;
@@ -764,19 +782,22 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix)
             if (o < BAR_N) bar_run(s, bar_x + o, 0, BAR_N - o);
         }
     }
-    if (v->m[1].live)
-        for (sb = 0; sb < BAR_NSUB; sb++) {         /* + the tube's radiation, its weight ramped by the motor */
-            int32_t wt = (int32_t)(((int64_t)v->wt * bar_mot_g[sb]) >> 15);
-            int32_t dw = ((int32_t)(((int64_t)v->wt * bar_mot_g[sb + 1u]) >> 15) - wt) >> 5;
+    if (v->m[1].live && bar_mot_park) {             /* + the tube's radiation (the discs parked open) */
+        int32_t wt = v->wt;
+        for (j = 0; j < BAR_N; j++) bar_x[j] += (int32_t)(((int64_t)wt * bar_tb[j]) >> 28);
+    } else if (v->m[1].live)
+        for (sb = 0; sb < BAR_NSUB; sb++) {         /* ... its weight ramped by the motor (x its make-up: up to x 2.4,
+                                                     * so Q27: |wt| <= 5.8 x 2.4 / 2 < 2^31 / 2^28) */
+            int32_t wt = bar_sat31(((int64_t)v->wt * bar_mot_g[sb]) >> 16);
+            int32_t dw = (bar_sat31(((int64_t)v->wt * bar_mot_g[sb + 1u]) >> 16) - wt) >> 5;
             int32_t *x = bar_x + sb * BAR_SUB, *t = bar_tb + sb * BAR_SUB;
-            for (j = 0; j < BAR_SUB; j++) { x[j] += (int32_t)(((int64_t)wt * t[j]) >> 28); wt += dw; }
+            for (j = 0; j < BAR_SUB; j++) { x[j] += (int32_t)(((int64_t)wt * t[j]) >> 27); wt += dw; }
         }
-    if (v->fade == 32768 && !v->felt_n && !dg)      /* the gain into the mix */
+    if (v->fade == 32768 && !v->felt_n)             /* the gain into the mix */
         for (j = 0; j < BAR_N; j++) mix[j] += (int32_t)(((int64_t)bar_x[j] * gain) >> 24);
     else
-        for (j = 0; j < BAR_N; j++) {               /* gain (gliding), steal fade, felt noise */
+        for (j = 0; j < BAR_N; j++) {               /* gain, steal fade, felt noise */
             int32_t o = (int32_t)(((int64_t)bar_x[j] * gain) >> 24);
-            gain += dg;
             if (v->fade != 32768) {
                 o = (int32_t)(((int64_t)o * v->fade) >> 15);
                 v->fade -= BAR_FADE_STEP;
@@ -845,8 +866,6 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
     uint32_t i, sb, j, act = 0, held = 0, ty = bar_sub < BAR_NTYPE ? bar_sub : 0u, nb = BAR_TYPE[ty].nbody;
     int32_t mx = 0;
     bar_motor_block();
-    bar_mk0 = bar_mk1;
-    bar_mk1 = 32768 + ((bar_mot_d * BAR_MOT_MK) >> 15);
     bar_budget();
     for (i = 0; i < n; i++) bar_mono[i] = 0;
 #ifdef DINGHY_HOST

@@ -110,7 +110,7 @@
          "src": "F:1.3 (0.8-5 Hz specs)", "status": "CONFIRMED",
          "above_5hz": {"src": "F:1.3, F-VAL F1", "status": "ESTIMATE", "settle": "O9: a motor-on recording; listening"}},
  "T6b": {"_doc": "opening law o = 1 - |cos phi|, g = g_c + (1 - g_c) o^p, p = 1 + SHAPE/127", "src": "F:1.5; F-VAL #20/F4", "status": "CORRECTED"},
- "T6c": {"_doc": "closed-state residual on the tube path", "g_c": 0.15,
+ "T6c": {"_doc": "closed-state residual on the tube path (2026-10-18: the motor gates the tube radiation only; 0.15 gave VA-M 12.2 dB, 0.20 gives 10.8 / f0-band 10.4)", "g_c": 0.20,
          "src": "US 7,732,691 (C; F-VAL F5)", "status": "ESTIMATE", "settle": "O9: VA-M depth 7-11 dB and listening"},
  "T6d": {"_doc": "motor depth target: full-band peak-to-trough late in the note (dB), at depth 127, 3.5 Hz, A4", "full_db": [7.0, 11.0],
          "f0_min_db": 10.0, "v3_max_db": 1.0, "src": "F-VAL #16/F6 (Gough Fig. 15.124)", "status": "CORRECTED"},

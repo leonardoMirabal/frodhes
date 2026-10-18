@@ -119,7 +119,7 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_RV_TONE] = {"RTON", 127, 64, F_BIP, 93, 0},           /*        its high damping, dark .. bright (64 = as before) */
     [P_RV_PREDLY] = {"PDLY", 127, 0, F_PDLY, 94, 0},         /*        pre-delay 0 .. 80 ms */
     [P_MOT_ON] = {"MOT", 1, 0, F_ENUM, 47, N_ONOFF},         /* on by itself when the TYPE turns to a bar type */
-    [P_MOT_DEPTH] = {"DPTH", 127, 110, F_R10, 48, 0},        /* 110: a clear 6-9 dB pulse over F3..F6 (audit) */
+    [P_MOT_DEPTH] = {"DPTH", 127, 110, F_R10, 48, 0},        /* 110: a clear ~8 dB pulse over F3..F6 (host) */
     [P_MOT_RATE] = {"RATE", 127, 78, F_HZ, 49, 0},           /* 0.5 .. 10.1 Hz (120 and up: 10.1); 78 = 3.5 Hz */
     [P_MOT_SHAPE] = {"SHPE", 127, 0, F_R10, 50, 0},
     [P_MOT_SYNC] = {"SYNC", 13, 0, F_DIV, 51, N_SYNC},
