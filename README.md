@@ -2,7 +2,7 @@
 
 **A physically modelled Fender Rhodes and vibraphone for the M-VAVE FM-1.**
 
-![Frodhes on the FM-1: the PERFORM, main, PHASER and COMPRESSOR pages](docs/manual/img/overview.png)
+![Frodhes on the FM-1: the FRODHES page (TYPE, TONE, BELL, KEY VEL)](docs/manual/img/piano.png)
 
 Frodhes turns the FM-1 into an electric piano and a vibraphone. Every note is computed live from the mechanics of the
 instrument: on a Rhodes a hammer strikes a tine, the tine rings against its tonebar and a magnetic pickup turns the
@@ -18,6 +18,13 @@ anything you assign) on those four knobs for playing live.
 
 **Try it in your browser: [the Frodhes emulator](https://leonardomirabal.github.io/frodhes/)**: the same firmware
 code compiled to WebAssembly, with the FM-1's screen, knobs, buttons and keys (computer keyboard and Web MIDI too).
+
+## Screens
+
+![The PERFORM, VOICE, PHASER and COMPRESSOR pages](docs/manual/img/overview.png)
+
+Every page is in the
+[manual](docs/MANUAL.md), with its screenshot.
 
 ## Download
 
