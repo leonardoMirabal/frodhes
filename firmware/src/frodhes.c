@@ -88,7 +88,7 @@ static void sustain_button(uint32_t pressed, uint32_t released)
 
 /* MIDI CC: every parameter's CC from the PARAMS table (the reface CP map for the panel: switch CCs 0-42 off,
  * 43-85 A, 86-127 B; TYPE in bands of 32), CC 64 sustain (continuous: half-pedal), 120/123 all off,
- * 119 developer: bypass the effects (tests of the voice engine) */
+ * 119 developer: bypass the effects (tests of the voice engine); the other developer CCs below (2 3 4 8 9 10 116) */
 static void midi_cc(uint32_t cc, uint32_t v)
 {
     uint32_t id;
@@ -97,6 +97,8 @@ static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 9u) { bar_budget_force = (uint8_t)v; return; }   /* developer: the bar engine's mode cap (0 = auto) */
     if (cc == 10u) { if (v >= 64u) fx_reset_req = 1; return; }   /* developer: every LFO / line / noise to its boot state (fx.c) */
     if (cc == 3u) { ui_testpat = v >= 64u; return; }            /* developer: the colour test pattern (ui.c) */
+    if (cc == 2u) { ui_look = (uint8_t)(v < MT_NLOOKS ? v : MT_NLOOKS - 1u); return; }   /* developer: the METERS
+                                                        * colour candidate, 0 A 1 B 2 C (ui.c MT_LOOKS; not saved) */
     if (cc == 4u) {                                    /* developer: the battery query (ui.c, for calibrating its
                                                         * thresholds): CC 4 / 5 = the smoothed 10-bit reading (MSB = raw
                                                         * >> 3, LSB = raw & 7), CC 6 = the segments shown (4 = USB power) */
@@ -387,6 +389,12 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (sscanf(key, "row%u", &a) == 1 && a < 4u) {   /* what row a shows: KIND V HI (ui.c ui_row_drawn) */
         static const char *const RK[] = {"none", "amount", "detent", "choice", "bar"};
         snprintf(v, n, "%s %d %d", RK[ui_row_drawn[a].kind], ui_row_drawn[a].v, ui_row_drawn[a].hi);
+    }
+    else if (!strcmp(key, "look")) {                   /* the METERS colours (CC 2): letter, then RGB565 hex: surf track
+                                                        * outline hair fill edge tag lab val dim */
+        mt_update();
+        snprintf(v, n, "%c %04X %04X %04X %04X %04X %04X %04X %04X %04X %04X", 'A' + ui_look, mt.surf, mt.track,
+                 mt.outline, mt.hair, mt.fill, mt.edge, mt.tag, mt.lab, mt.val, mt.dim);
     }
     else if (!strcmp(key, "hot")) { if (ui_hot_card < 4u && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS) snprintf(v, n, "%u", ui_hot_card); else snprintf(v, n, "-"); }
     else if (!strcmp(key, "title")) {                  /* the title line's left text: VOICE 2/3 */
