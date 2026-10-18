@@ -38,7 +38,11 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #define RH_V1 0u
 #define RH_O1 2u
 #define RH_O2 3u
-#define RH_NV 8u
+#ifndef FR_VOICES
+#define FR_VOICES 9u                           /* voices per engine (bars.h BAR_NV too); a build may set another
+                                                * count with -DFR_VOICES=N (APP_DEFS / HOST_DEFS) */
+#endif
+#define RH_NV FR_VOICES
 #define SUB 32u
 #define RAMP_SUB 7u
 #define FADE_SAMPLES 64u

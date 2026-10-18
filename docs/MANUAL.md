@@ -422,7 +422,7 @@ choice is kept when you switch off (it belongs to the FM-1, not to a preset).
 | K3 | **USB VOL** | **KNOB**: the USB audio follows the MASTER knob, as the headphones do. **FIXED**: the USB audio always comes at full level, whatever the knob (and headphones plugged in) do; the headphone jack still follows MASTER |
 
 The bottom line shows the name and the version installed, the battery's reading (BAT, the raw value the battery
-segments are worked out from), and the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 3700 on the Rhodes, 3100 on VIBES).
+segments are worked out from), and the audio engine's time per block (it must stay under 5800 µs; nine notes struck at once with every effect on reach about 4000-4200 on the Rhodes, 3500 on VIBES, measured).
 
 ### MIDI
 
@@ -520,7 +520,7 @@ instrument. Every other MIDI note plays too, extended from the same physics. The
 vibraphone's range.
 
 **Presets:** **F13 VIBE MOTOR** (the motor at 3.5 Hz, a little reverb) and **F14 VIBES DRY** (motor off, close).
-**Polyphony:** 8 notes, as the Rhodes.
+**Polyphony:** 9 notes, as the Rhodes.
 
 ## 6. Presets
 
@@ -608,13 +608,13 @@ keynote.
 **REC** is the sustain pedal. **Hold** it like a pedal, or **tap** it to latch the sustain on, and tap again to
 release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with half-pedalling.
 
-**Polyphony: 8 voices.** Up to 8 notes sound at the same time, counting notes still ringing under the sustain and
+**Polyphony: 9 voices.** Up to 9 notes sound at the same time, counting notes still ringing under the sustain and
 the notes that chord mode, the arpeggiator and the sequencer play. Striking a note that is still sounding reuses its
-voice, so repeated notes do not use up voices. A 9th note takes over the quietest released note first, or else the
+voice, so repeated notes do not use up voices. A 10th note takes over the quietest released note first, or else the
 oldest held one, with a short fade (1.5 ms) so there is no click. The audio also has a safety guard: if it ever ran
 late, the quietest released note would be faded out rather than letting the sound break up. In testing the worst
-case (8 low notes at full velocity with the pedal and every effect on) uses 3.6 ms of the 5.8 ms available per audio
-block, and the guard never acts.
+case (9 low notes at full velocity with the pedal and every effect on) uses about 4.0-4.2 ms on the Rhodes and 3.5 ms
+on VIBES of the 5.8 ms available per audio block (measured), and the guard never acts.
 
 ## 11. Sound and volume tips
 
@@ -695,7 +695,7 @@ issues: [github.com/leonardoMirabal/frodhes](https://github.com/leonardoMirabal/
 | | |
 | --- | --- |
 | **Sound** | A physical model computed live, no samples. Rhodes: hammer, tine, tonebar and pickup; 4 types (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO). VIBES: a vibraphone, mallet, bar modes, tuned tube and motor |
-| **Polyphony** | 8 voices; a 9th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
+| **Polyphony** | 9 voices; a 10th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
 | **Range** | 88 notes, A0–C8 over MIDI (notes outside play the nearest end); the 27 keys play F3–G5, OCT ±2 octaves, TRANSP ±24 semitones, TUNE ±50 cents |
 | **Velocity** | MIDI 1–127; the FM-1's keys play at KEY VEL (1–127, default 96) |
 | **Audio** | 44.1 kHz, integer processing, 256-frame blocks (5.8 ms); output limiter; exact digital silence 200 ms after the sound falls below −66 dBFS |

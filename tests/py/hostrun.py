@@ -25,7 +25,8 @@ def build(binary=BIN, extra=()):
     else:
         os.makedirs(os.path.dirname(binary), exist_ok=True)
         subprocess.run(["cc", "-O1", "-g", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", "-DAPP_VER=\"dev\"",
-                        *extra, "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
+                        *extra, *os.environ.get("HOST_DEFS", "").split(),   # the Makefile's experiment flags too
+                        "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
                         "-o", binary, os.path.join(ROOT, "firmware", "src", "frodhes.c"), "-lm"], check=True)
     _built[binary] = True
     return binary
@@ -46,6 +47,8 @@ class Run:
         self.seq_saves = [int(t) for t in re.findall(r"^\s*(\d+) ms  pattern . erased", out, re.M)]
         m = re.search(r"cpu-proxy max (\d+) us", out)
         self.cpu_proxy = int(m.group(1)) if m else None
+        m = re.search(r"cpu-proxy-each rhodes (\d+) bars (\d+)", out)   # each engine's own (a run can use both)
+        self.cpu_proxy_rh, self.cpu_proxy_bars = (int(m.group(1)), int(m.group(2))) if m else (None, None)
 
     def state(self, t):
         """the dump taken at t ms"""

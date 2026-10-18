@@ -7,7 +7,7 @@
 600 expect rms > -40
 1500 midi 0x80 60 0
 2500 expect rms < -60
-# pedal down, 10 notes one after the other on 8 voices (two steals, 256-sample fades), then pedal up
+# pedal down, 11 notes one after the other on 9 voices (two steals, 256-sample fades), then pedal up
 2600 midi 0xB0 64 127
 2700 midi 0x90 53 90
 2740 midi 0x90 57 90
@@ -19,6 +19,7 @@
 2980 midi 0x90 76 90
 3020 midi 0x90 79 90
 3060 midi 0x90 81 90
+3080 midi 0x90 84 90
 3100 midi 0x80 53 0
 3100 midi 0x80 57 0
 3100 midi 0x80 60 0
@@ -29,6 +30,7 @@
 3100 midi 0x80 76 0
 3100 midi 0x80 79 0
 3100 midi 0x80 81 0
+3100 midi 0x80 84 0
 3500 expect rms > -40
 4000 midi 0xB0 64 0
 5000 expect rms < -60

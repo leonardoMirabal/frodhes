@@ -42,7 +42,7 @@ typedef struct {
 #include "bars_tables.h"
 _Static_assert(BAR_NM == 8, "bars.c: 8 mode slots");
 
-#define BAR_NV 8u                                   /* voices: 8, as the Rhodes */
+#define BAR_NV FR_VOICES                            /* voices: as the Rhodes (rhodes.c FR_VOICES, 9 by default) */
 #define BAR_N 256u                                  /* the block */
 #define BAR_SUB 32u
 #define BAR_NSUB (BAR_N / BAR_SUB)

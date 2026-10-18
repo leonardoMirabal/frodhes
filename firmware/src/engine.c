@@ -137,7 +137,7 @@ static void eng_switch(uint32_t want)
 
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
 static uint64_t eng_h_ms, eng_h_mul, eng_h_blocks;
-static uint32_t eng_h_max_ms, eng_h_max_mul, eng_h_max_us;
+static uint32_t eng_h_max_ms, eng_h_max_mul, eng_h_max_us[2];   /* us: per engine (ENG_RHODES, ENG_BARS) */
 static FILE *eng_h_log;
 static int eng_h_log_open;
 #endif
@@ -180,7 +180,7 @@ static void eng_render(int32_t *mono, uint32_t n)
         eng_h_ms += ms; eng_h_mul += mul; eng_h_blocks++;
         if (ms > eng_h_max_ms) eng_h_max_ms = ms;
         if (mul > eng_h_max_mul) eng_h_max_mul = mul;
-        if (ns / 1000u > eng_h_max_us) eng_h_max_us = ns / 1000u;
+        if (ns / 1000u > eng_h_max_us[eng_cur & 1u]) eng_h_max_us[eng_cur & 1u] = ns / 1000u;
         if (!eng_h_log_open) {
             const char *p = getenv("FRODHES_MSLOG");
             eng_h_log = p ? fopen(p, "w") : 0; eng_h_log_open = 1;
@@ -209,8 +209,9 @@ static void eng_host_report(void)                /* tests/host.c, at the end of 
     printf("mode-samples %llu (max per block %u, blocks %llu)\n", (unsigned long long)eng_h_ms, eng_h_max_ms,
            (unsigned long long)eng_h_blocks);
     printf("mul64 %llu (max per block %u)\n", (unsigned long long)eng_h_mul, eng_h_max_mul);
-    printf("cpu-proxy max %u us per block (%s)\n", eng_h_max_us, eng_cur == ENG_BARS ?
+    printf("cpu-proxy max %u us per block (%s)\n", eng_h_max_us[eng_cur & 1u], eng_cur == ENG_BARS ?
            "bars: the cost model's whole block, effects included" : "voices only, P0 costs; + 312 idle, + 1388 with every effect");
+    printf("cpu-proxy-each rhodes %u bars %u\n", eng_h_max_us[ENG_RHODES], eng_h_max_us[ENG_BARS]);   /* a run on both */
     printf("ev_drop %u\n", (unsigned)(eq_drop + ev_drop));
     if (eng_h_log) fclose(eng_h_log);
     if (bar_h_pred) fclose(bar_h_pred);

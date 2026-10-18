@@ -22,6 +22,7 @@ FS = 44100
 VIBES = "60 midi 0xB0 79 64\n60 midi 0xB0 47 0\n"   # CC 79: the bar types (VIBES); the motor (on with it) off
 RAW = "50 midi 0xB0 119 127\n"
 F3B = [53, 55, 57, 59, 60, 62, 64, 65]
+F3B9 = F3B + [67]                             # every voice (rhodes.c FR_VOICES 9)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -127,8 +128,8 @@ def test_motor_passes_fx_trem_on_vibes():
 def edge_chord(vel=127, noise=48, end=3000):
     s = RAW + VIBES + ("62 midi 0xB0 28 127\n63 midi 0xB0 29 127\n64 midi 0xB0 30 127\n65 midi 0xB0 31 127\n"
                        f"66 midi 0xB0 104 {noise}\n70 midi 0xB0 64 127\n")
-    s += "".join(f"200 midi 0x90 {n} {vel}\n" for n in F3B)
-    s += "".join(f"{200 + 400 * r} midi 0x90 {n} {vel}\n" for r in range(1, 4) for n in F3B)
+    s += "".join(f"200 midi 0x90 {n} {vel}\n" for n in F3B9)
+    s += "".join(f"{200 + 400 * r} midi 0x90 {n} {vel}\n" for r in range(1, 4) for n in F3B9)
     return s + f"{end} end\n"
 
 
@@ -141,7 +142,7 @@ def proxy_us(log):
 
 @pytest.mark.parametrize("fxus", [0, FX_ALL_US, 2000])
 def test_cpu_model_holds(fxus):
-    """8 voices struck at the edge with everything at maximum, again and again, the budget planned for no effects,
+    """9 voices (every voice) struck at the edge with everything at maximum, again and again, the budget planned for no effects,
     every effect, and nearly twice that effect load: the cost model's worst block stays under the 4800 us gate
     minus its margin (bars.c BAR_NS_*), by construction; no saturation, no clicks"""
     x, log = render(f"cpu{fxus}", edge_chord(), {"FRODHES_FXUS": str(fxus)})
@@ -197,9 +198,9 @@ EDGE = {28: 127, 29: 127, 30: 127, 31: 127}
 
 
 def test_budget_drops_only_quiet_detail():
-    """The budget on 8 simultaneous RUBBER edge strikes at v127 (the worst case it exists for), planned as if every
+    """The budget on 9 simultaneous RUBBER edge strikes at v127 (every voice) (the worst case it exists for), planned as if every
     effect ran: the cost model fits them all (residual exactly 0), no clicks"""
-    r, bud, _ = s12("bud", F3B, 127, EDGE, {"FRODHES_FXUS": str(FX_ALL_US)})
+    r, bud, _ = s12("bud", F3B9, 127, EDGE, {"FRODHES_FXUS": str(FX_ALL_US)})
     assert r == -np.inf, r
     assert clicks(bud) == 0
 
@@ -208,7 +209,7 @@ def test_budget_drops_only_quiet_detail():
 # energies, build/cards_exp/best.py-style): YARN -98 (measured -88), CORD -57 (-35), the edge chord -36.5 (-28.6). Since
 # 2026-10-17 (the cards-audible pass: the harder CORD, the edge's torsion at -15 dB) more of the chord sits in its upper
 # partials, so a forced cut costs more (before: CORD -64 / -46, edge -40.5 / -37). The FM-1 never forces it: the cost
-# model fits 8 edge RUBBER strikes with every effect on (test_budget_drops_only_quiet_detail)
+# model fits 9 edge RUBBER strikes with every effect on (test_budget_drops_only_quiet_detail)
 @pytest.mark.parametrize("bark,cap,limit", [(42, 16, -45.0), (85, 16, -33.0), (127, 32, -27.0)])
 def test_budget_order_when_it_must_cut(bark, cap, limit):
     """When the cap does bind (forced with the developer CC 9), the least audible go first: an 8-note chord at v100
@@ -219,6 +220,48 @@ def test_budget_order_when_it_must_cut(bark, cap, limit):
                     cap=cap)
     assert r <= limit, r
     assert clicks(bud) == 0
+
+
+HIL_HEAVY = [(85, 64), (81, 127), (106, 127), (107, 100), (17, 127), (18, 127), (12, 127), (13, 127), (16, 127),
+             (86, 127), (88, 127), (89, 127), (90, 127), (26, 127), (91, 127), (70, 45), (74, 60), (71, 100), (72, 64),
+             (28, 127), (29, 127), (30, 127), (31, 127)]   # tools/hil_cpu.py's heavy set + the edge voicing (CC 85 first)
+
+
+def fr_voices():
+    """the host build's voice count: HOST_DEFS -DFR_VOICES=N, else rhodes.c's default"""
+    import re
+    m = re.search(r"FR_VOICES=(\d+)", os.environ.get("HOST_DEFS", ""))
+    if m:
+        return int(m.group(1))
+    return int(re.search(r"#define FR_VOICES (\d+)u", open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read()).group(1))
+
+
+@pytest.mark.parametrize("case", ["chord", "bass", "repeated"])
+def test_no_trim_in_the_hil_cpu_worst(case):
+    """tools/hil_cpu.py --engine vibes's worst cases with every voice (FR_VOICES): the N-note chord and the N bass
+    notes (+ pedal) at v127, edge, every effect + motor, and the repeated N-note chords every 0.4 s (steals): the
+    cost model (which reads ~20 % high on the FM-1) never trims an upper mode: the lowest cap answered on CC 112 stays
+    48 (every mode). 9 voices, 2026-10-18: planned 4211 us (chord, bass) and 4551 us (repeated) of the 4650 limit."""
+    nv = fr_voices()
+    bass = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48][:nv]
+    chord = [48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83][:nv]
+    s = "50 midi 0xB0 79 64\n" + "".join(f"55 midi 0xB0 {c} {v}\n" for c, v in HIL_HEAVY)
+    s += "60 midi 0xB0 47 127\n60 midi 0xB0 17 64\n399 midi 0xB0 116 127\n"
+    if case == "repeated":
+        for i in range(12):
+            t, ns = 400 + 400 * i, chord if i % 2 else bass
+            s += "".join(f"{t} midi 0x90 {n} 127\n" for n in ns) + f"{t + 300} midi 0xB0 116 127\n"
+            s += "".join(f"{t + 399} midi 0x80 {n} 0\n" for n in ns)
+        s += "5300 end\n"
+    else:
+        ns, hold = (chord, 1500) if case == "chord" else (bass, 3000)
+        s += ("400 midi 0xB0 64 127\n" if case == "bass" else "") + "".join(f"400 midi 0x90 {n} 127\n" for n in ns)
+        s += f"700 midi 0xB0 116 127\n{400 + hold} midi 0xB0 116 127\n{400 + hold + 100} end\n"
+    _, log = render(f"notrim-{case}", s)
+    import re
+    caps = [int(c) for c in re.findall(r"MIDI out B0 112 (\d+)", log)][1:]     # (the first: before the notes)
+    assert caps and min(caps) == 48, (nv, caps, proxy_us(log))
+    assert proxy_us(log) <= 4650, proxy_us(log)
 
 
 def test_idle_is_digital_zero():
