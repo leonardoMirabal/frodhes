@@ -406,7 +406,7 @@ choice is kept when you switch off (it belongs to the FM-1, not to a preset).
 | K3 | **USB VOL** | **KNOB**: the USB audio follows the MASTER knob, as the headphones do. **FIXED**: the USB audio always comes at full level, whatever the knob (and headphones plugged in) do; the headphone jack still follows MASTER |
 
 The bottom line shows the name and the version installed, the battery's reading (BAT, the raw value the battery
-segments are worked out from), and the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 4900).
+segments are worked out from), and the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 3900).
 
 ### MIDI
 
@@ -586,7 +586,7 @@ the notes that chord mode, the arpeggiator and the sequencer play. Striking a no
 voice, so repeated notes do not use up voices. A 9th note takes over the quietest released note first, or else the
 oldest held one, with a short fade (1.5 ms) so there is no click. The audio also has a safety guard: if it ever ran
 late, the quietest released note would be faded out rather than letting the sound break up. In testing the worst
-case (8 low notes at full velocity with the pedal and every effect on) uses 4.9 ms of the 5.8 ms available per audio
+case (8 low notes at full velocity with the pedal and every effect on) uses 3.9 ms of the 5.8 ms available per audio
 block, and the guard never acts.
 
 ## 11. Sound and volume tips

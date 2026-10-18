@@ -44,6 +44,8 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #define FADE_SAMPLES 64u
 #define Q30 (1 << 30)
 #define RH_S_MAX_HI 2048u                      /* s >> 44 at 32 gap^2 */
+/* sat28 (fxp.h) for an int32: the same bounds, without the 64-bit compares */
+static inline int32_t sat28i(int32_t v) { return v > ((1 << 28) - 1) ? ((1 << 28) - 1) : v < -((1 << 28) - 1) ? -((1 << 28) - 1) : v; }
 
 typedef struct {
     int32_t x, y, ex, ey;                      /* Q25 gap, MC3 states and error-feedback remainders */
@@ -193,6 +195,24 @@ static int32_t rh_hermite(const int32_t *P, const int32_t *M, int64_t s)
     return p0 + (int32_t)(((int64_t)t * a) >> 22);
 }
 
+/* rh_hermite of s = u * u, inlined into the pickup loops: the same arithmetic. s >= 0 always (|u| < 2^31: the square
+ * fits), so the low clamp could never fire; for s >= 0, s >= RH_S_MAX_HI << 44 exactly when hi32(s) >= RH_S_MAX_HI << 12 */
+static inline __attribute__((always_inline)) int32_t rh_hermite_u(const int32_t *P, const int32_t *M, int32_t u)
+{
+    int64_t s = (int64_t)u * u;
+    uint32_t i, t;
+    int32_t p0, p1, m0, m1, c2, c3, a;
+    if ((uint32_t)(s >> 32) >= (RH_S_MAX_HI << 12)) s = ((int64_t)RH_S_MAX_HI << 44) - 1;
+    i = (uint32_t)(s >> 44);
+    t = (uint32_t)(s >> 22) & 0x3FFFFFu;
+    p0 = P[i]; p1 = P[i + 1]; m0 = M[i]; m1 = M[i + 1];
+    c3 = 2 * (p0 - p1) + m0 + m1;
+    c2 = 3 * (p1 - p0) - 2 * m0 - m1;
+    a = c2 + (int32_t)(((int64_t)t * c3) >> 22);
+    a = m0 + (int32_t)(((int64_t)t * a) >> 22);
+    return p0 + (int32_t)(((int64_t)t * a) >> 22);
+}
+
 static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
 {
     const rh_type_t *ty = &RH_TYPE[rh_type];
@@ -307,7 +327,7 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
     const rh_key_t *k = v->k;
     const int32_t *P = RH_PHI[k->fam], *M = RH_SLOPE[k->fam];
     uint32_t j, m;
-    int32_t sum = 0, Hp = v->Hprev, off = v->off, gain = v->gain;
+    int32_t sum = 0, Hp = v->Hprev, off = v->off, gain = v->gain, fnz = 0;
     if (v->ramp) {                                        /* damper crossfade: E and eps together */
         int32_t f;
         v->ramp--;
@@ -324,44 +344,76 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
             s->eps = s->epss + (int32_t)(((int64_t)(pt - s->epss) * f) >> 15);
         }
     }
-    for (j = 0; j < SUB; j++) {                           /* hammer force for the sub-block */
-        if (v->ptab) {
-            uint32_t i = v->ppos >> 16;
-            int32_t f = (int32_t)((v->ppos >> 1) & 0x7FFFu);
-            int32_t a = v->ptab[i], b = v->ptab[i + 1];
-            if (v->pmix) {
-                a += (int32_t)(((int64_t)(v->ptab2[i] - a) * v->pmix) >> 15);
-                b += (int32_t)(((int64_t)(v->ptab2[i + 1] - b) * v->pmix) >> 15);
-            }
-            rh_F[j] = mul15s(a + (int32_t)(((int64_t)(b - a) * f) >> 15), v->pamp);
-            v->ppos += v->prate;
-            if ((v->ppos >> 16) >= RH_PLEN) v->ptab = 0;
-        } else
-            rh_F[j] = 0;
-        rh_x[j] = 0;
-    }
+    if (v->ptab) {                                        /* hammer force for the sub-block: the fields in locals
+                                                           * (only this loop touches them); 32-bit products, exact:
+                                                           * pulses 0..32767, pmix <= 30720, so every |product| < 2^31 */
+        const int16_t *pt = v->ptab, *pt2 = v->ptab2;
+        int32_t pmix = v->pmix, pamp = v->pamp;
+        uint32_t ppos = v->ppos, prate = v->prate;
+        fnz = 1;
+        for (j = 0; j < SUB; j++) {
+            if (pt) {
+                uint32_t i = ppos >> 16;
+                int32_t f = (int32_t)((ppos >> 1) & 0x7FFFu);
+                int32_t a = pt[i], b = pt[i + 1];
+                if (pmix) {
+                    a += ((pt2[i] - a) * pmix) >> 15;
+                    b += ((pt2[i + 1] - b) * pmix) >> 15;
+                }
+                rh_F[j] = mul15s(a + (((b - a) * f) >> 15), pamp);
+                ppos += prate;
+                if ((ppos >> 16) >= RH_PLEN) pt = 0;
+            } else
+                rh_F[j] = 0;
+            rh_x[j] = 0;
+        }
+        v->ppos = ppos; v->ptab = pt;
+    } else
+        for (j = 0; j < SUB; j++) rh_x[j] = 0;            /* no force: rh_F is not read (fnz = 0) */
     for (m = 0; m < RH_NM; m++) {                         /* modes: MC3 + error feedback, mode-outer */
         rh_ms_t *s = &v->m[m];
         int32_t x, y, ex, ey, e, eps, b, pk = 0;
         if (!s->live) continue;
         x = s->x; y = s->y; ex = s->ex; ey = s->ey; e = s->e; eps = s->eps; b = s->b;
-        for (j = 0; j < SUB; j++) {
-            int64_t t;
-            if (rh_F[j]) y += (int32_t)(((int64_t)rh_F[j] * b) >> 20);
-            t = (int64_t)e * y + ex;
-            x += (int32_t)(t >> 30); ex = (int32_t)(t & 0x3FFFFFFF);
-            t = -(int64_t)eps * y - (int64_t)e * x + ey;
-            y += (int32_t)(t >> 30); ey = (int32_t)(t & 0x3FFFFFFF);
-            rh_x[j] += x;
-            if (iabs(x) > pk) pk = iabs(x);
-            if (iabs(y) > pk) pk = iabs(y);
-        }
-        s->x = sat28(x); s->y = sat28(y); s->ex = ex; s->ey = ey; s->peak = pk;
+        if (fnz)                                          /* the hammer pushes in this sub-block */
+            for (j = 0; j < SUB; j++) {
+                int64_t t;
+                if (rh_F[j]) y += (int32_t)(((int64_t)rh_F[j] * b) >> 20);
+                t = (int64_t)e * y + ex;
+                x += (int32_t)(t >> 30); ex = (int32_t)(t & 0x3FFFFFFF);
+                t = ey - (int64_t)eps * y - (int64_t)e * x;   /* = -eps y - e x + ey: every term exact in int64
+                                                               * (< 2^62), the same integer; two 32x32 MACs */
+                y += (int32_t)(t >> 30); ey = (int32_t)(t & 0x3FFFFFFF);
+                rh_x[j] += x;
+                if (iabs(x) > pk) pk = iabs(x);
+                if (iabs(y) > pk) pk = iabs(y);
+            }
+        else                                              /* no force (no pulse at the sub-block's start: every
+                                                           * rh_F[j] would be 0, the add never ran) */
+            for (j = 0; j < SUB; j++) {
+                int64_t t;
+                t = (int64_t)e * y + ex;
+                x += (int32_t)(t >> 30); ex = (int32_t)(t & 0x3FFFFFFF);
+                t = ey - (int64_t)eps * y - (int64_t)e * x;
+                y += (int32_t)(t >> 30); ey = (int32_t)(t & 0x3FFFFFFF);
+                rh_x[j] += x;
+                if (iabs(x) > pk) pk = iabs(x);
+                if (iabs(y) > pk) pk = iabs(y);
+            }
+        s->x = sat28i(x); s->y = sat28i(y); s->ex = ex; s->ey = ey; s->peak = pk;
         sum += pk >> 3;
     }
-    for (j = 0; j < SUB; j++) {                           /* pickup, then the per-key gain into the mix */
-        int32_t u = rh_x[j] + off;
-        int32_t H = rh_hermite(P, M, (int64_t)u * u);
+    if (v->fade == 32768 && !v->felt_n)                   /* pickup, then the per-key gain into the mix: no steal fade
+                                                           * and no felt noise (only this loop changes them in a render:
+                                                           * the tests below would never fire) */
+        for (j = 0; j < SUB; j++) {
+            int32_t H = rh_hermite_u(P, M, rh_x[j] + off);
+            mix[j] += (int32_t)(((int64_t)(H - Hp) * gain) >> 24);
+            Hp = H;
+        }
+    else
+    for (j = 0; j < SUB; j++) {                           /* the same, with the fade and the felt noise */
+        int32_t H = rh_hermite_u(P, M, rh_x[j] + off);
         int32_t o = (int32_t)(((int64_t)(H - Hp) * gain) >> 24);
         Hp = H;
         if (v->fade != 32768) {

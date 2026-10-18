@@ -4,7 +4,7 @@
 firmware for the longest audio block since the last query (frodhes.c midi_cc; replies on CC 116/117 = us / 4).
 The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder starts at 5000 us.
 
-    python3 tools/hil_cpu.py [--engine vibes] [--fx-each] [--calib]
+    python3 tools/hil_cpu.py [--engine vibes] [--fx-each] [--calib] [--stages] [--tail]
 
 --engine vibes selects VIBES (CC 79), with the motor on (CC 47; records v3: the engine's own) wherever the effects
 are on (the tremolo too: it can run on top of the motor), off elsewhere, and adds the bar engine's worst voicings (edge strike, RUBBER, tube and weight at 127). It also prints the
@@ -13,6 +13,10 @@ bar engine's lowest mode cap and most live upper modes per scenario (CC 112 / 11
 --calib (VIBES): 8 RUBBER edge strikes at v127 with the mode cap forced (developer CC 9) to 0, 8, 16, 24, 32, 40, 48
 upper modes, no effects, then 4 and 1 voices: fits the cost per upper mode-block and the fixed part per voice, for
 bars.c BAR_NS_UNIT / BAR_NS_VOICE + BAR_NS_FORCE + BAR_NS_STRIKE.
+--stages: a developer build (APP_DEFS=-DRH_PROF_STAGES ./build.sh) also answers each stage's longest time (frodhes.c
+PROF_STAMP: 1 the engine, 2..14 fx_process's stages when it is stamped, 15 the rest): printed per scenario.
+--tail: a build with the ISR tail stamps (CC 110/109 = the longest tail after app_audio, CC 108/107 = the longest
+whole ISR, us / 4; RHODES-CPU-PLAN C0) prints them per scenario. Neither is in a shipped build.
 """
 import os
 import sys
@@ -24,6 +28,9 @@ from hil_scan import CC, DRY, param_defaults  # noqa: E402
 CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31)
 
 BLOCK_US = 5805
+STAGES = {1: "engine (eng_render)", 2: "fx copy", 3: "compressor", 4: "filter + LFO", 5: "drive", 6: "trem / wah",
+          7: "phaser", 8: "chorus", 9: "delay", 10: "reverb", 11: "bypass / DC / LEVEL", 12: "limiter", 13: "gate",
+          14: "fx (other)", 15: "after the last stamp"}
 
 
 def main():
@@ -59,21 +66,34 @@ def main():
         for _ in inp.iter_pending():
             pass
         cc(116, 127)
-        got, t0 = {}, time.monotonic()
-        while time.monotonic() - t0 < 1.0 and not {115, 116, 117, 118} <= got.keys():
-            for m in inp.iter_pending():
-                if m.type == "control_change" and m.control in (115, 116, 117, 118):
+        got, st = {}, dict(cur=None, msb=0)
+
+        def take():                                        # every reply: the profiler (115-118), the bar engine's
+            for m in inp.iter_pending():                   # cap / live modes (112 / 113), the ISR tail (107-110),
+                if m.type != "control_change":             # the stage profiler (97 stage, 98 / 99 us)
+                    continue
+                if m.control in (115, 116, 117, 118, 112, 113, 107, 108, 109, 110):
                     got[m.control] = m.value
+                elif m.control == 97:
+                    st["cur"] = m.value
+                elif m.control == 98:
+                    st["msb"] = m.value
+                elif m.control == 99 and st["cur"] is not None:
+                    query.st[st["cur"]] = max(query.st.get(st["cur"], 0), st["msb"] << 7 | m.value)
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 1.0 and not {115, 116, 117, 118} <= got.keys():
+            take()
             time.sleep(0.005)
         if not {116, 117} <= got.keys():
             sys.exit("no profiler reply (a firmware without CC 116?)")
         t0 = time.monotonic()
-        while time.monotonic() - t0 < 0.05:                # the bar engine's cap / live modes (newer firmware)
-            for m in inp.iter_pending():
-                if m.type == "control_change" and m.control in (112, 113):
-                    got[m.control] = m.value
+        while time.monotonic() - t0 < (0.15 if "--stages" in sys.argv else 0.05):   # the replies after 115-118
+            take()
             time.sleep(0.005)
         query.bars = (got.get(112), got.get(113))
+        if {107, 108, 109, 110} <= got.keys():
+            query.tail = (max(query.tail[0], (got[110] << 7 | got[109]) * 4),
+                          max(query.tail[1], (got[108] << 7 | got[107]) * 4))
         return (got[116] << 7 | got[117]) * 4, got[118] * 32, got[115]
 
     def play(notes, vel, hold, pedal=False):
@@ -91,6 +111,7 @@ def main():
         return attack, held
 
     query.bars = (None, None)
+    query.st, query.tail = {}, (0, 0)
     heavy = dict(DRIVE=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
                  CP_SW=64, CP_DEPTH=127, DL_SW=127, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
                  FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # the filter at its heaviest: LP18, the LFO
@@ -101,6 +122,7 @@ def main():
     def run(name, fx, notes=(), vel=100, hold=1.5, pedal=False, rep=3):
         att = held = 0
         shed0 = query()[2]
+        query.st, query.tail = {}, (0, 0)
         for _ in range(rep):
             reset(**fx)
             query()                                   # clears the max
@@ -116,6 +138,10 @@ def main():
         extra = f"   modes cap/live {query.bars[0]}/{query.bars[1]}" if vibes and query.bars[0] is not None else ""
         print(f"{name:44s} attack {att:5d} us ({100 * att / BLOCK_US:4.1f} %)   held {held:5d} us "
               f"({100 * held / BLOCK_US:4.1f} %)   voices shed {shed}{extra}")
+        if "--tail" in sys.argv:
+            print(f"{'':44s} ISR tail after app_audio {query.tail[0]:4d} us, whole ISR {query.tail[1]:5d} us")
+        if "--stages" in sys.argv and query.st:
+            print("    " + ", ".join(f"{STAGES.get(i, i)} {us}" for i, us in sorted(query.st.items())) + " (us, max)")
 
     if "--fx-each" in sys.argv:
         one = [("compressor", dict(CMP_SW=127, CMP_AMT=100)), ("filter LP18 + LFO", dict(FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)),
