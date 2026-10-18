@@ -22,12 +22,13 @@ import pytest
 
 from hostrun import FS, cc, env_rms, note, rate_of, rms_db, run
 
-CLEAN = [cc(20, 81, 0), cc(21, 91, 0)]              # F01's drive and reverb off: each control alone
+CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(21, 70, 0)]   # F01's drive, reverb and filter (on by default since 0.9.3:
+                                                        # LP18 at 16K) off: each control alone
 PEDAL = [cc(22, 64, 127)]
 SHORT = [cc(23, 103, 0), cc(24, 104, 0)]            # RELEASE 0, NOISE 0: a note let go stops at once
 # the SELECT order (ui.c PG_ORDER) and the page ids the dump's card.<page>.<k> use (ui.c PG_*)
 ORDER = ["PERF", "PIANO", "VOICE", "DECAY", "COMP", "FILTER", "DRIVE", "TREM", "PHA", "CHO", "DELAY", "REVERB", "TEMPO",
-         "SCALE", "CHORD", "SEQ", "ARP", "LFO", "ASSIGN", "SETUP", "MIDI"]   # (a Rhodes TYPE: no MOTOR page)
+         "SCALE", "CHORD", "ARP", "LFO", "SEQ", "ASSIGN", "SETUP", "MIDI"]   # (a Rhodes TYPE: no MOTOR page)
 PG = {n: i for i, n in enumerate(["PERF", "ASSIGN", "PIANO", "VOICE", "DECAY", "COMP", "FILTER", "TREM", "PHA", "CHO",
                                   "DELAY", "TEMPO", "SCALE", "CHORD", "SEQ", "ARP", "LFO", "SETUP", "MIDI",
                                   "DRIVE", "REVERB", "MOTOR"])}
@@ -253,8 +254,8 @@ _voice_cases()
 def _voice_panel():
     """the VOICE page's knobs (EDIT, K1-K4) reach the sound as the CCs do: K3 BELL to 10 brightens the attack
     (a C5's attack above 3 kHz); at least 6"""
-    a = R(CLEAN + ["30 btn 6", "40 turn 4 -64", "50 dump"] + note(200, 72, 100, 1300), 1700)
-    b = R(CLEAN + ["30 btn 6", "40 turn 4 63", "50 dump"] + note(200, 72, 100, 1300), 1700)
+    a = R(CLEAN + ["30 turn 0 1", "33 turn 0 1", "40 turn 4 -64", "50 dump"] + note(200, 72, 100, 1300), 1700)
+    b = R(CLEAN + ["30 turn 0 1", "33 turn 0 1", "40 turn 4 63", "50 dump"] + note(200, 72, 100, 1300), 1700)
     assert a.state(50)["page"] == "VOICE" and a.state(50)["label2"] == "BELL" and b.state(50)["card2"] == "10.0"
     h = [band_db(w.seg(0.2, 0.3), 3000, 16000) for w in (a, b)]
     return h[1] - h[0], 6.0, f"{h[0]:.1f} -> {h[1]:.1f} dB"
@@ -264,7 +265,7 @@ def _voice_panel():
 def _tune():
     """TUNE (DECAY K4): +50 on the card moves a key's pitch +50 cents (test_display_sound checks +-1 cent); here at
     least 40"""
-    pre = CLEAN + PEDAL + ["30 btn 6", "33 turn 0 1"]
+    pre = CLEAN + PEDAL + ["30 turn 0 1", "31 turn 0 1", "33 turn 0 1"]   # SELECT: FRODHES, VOICE, DECAY
     f = [pitch(R(pre + [f"40 turn 5 {d}"] + ["100 keys 0x80", "1800 keys 0"], 2000).seg(0.3, 1.5), C4) for d in (-50, 50)]
     return cents(f[1], f[0]), 80.0, f"-50 -> +50: {cents(f[1], f[0]):.1f} cents"
 
@@ -985,7 +986,7 @@ def _scale():
 
 
 def chord_notes(setup):
-    w = R(CLEAN + ["40 btn 11"] + setup + ["195 dump", "200 keys 0x80", "600 keys 0"], 800)
+    w = R(CLEAN + ["40 btn 6"] + setup + ["195 dump", "200 keys 0x80", "600 keys 0"], 800)
     return w.state(195), ons(w, 200)
 
 
@@ -1040,7 +1041,7 @@ def _chstrum():
 
 # ---- SEQUENCER
 
-SEQ_BASE = CLEAN + ["40 btn 11", "45 btn 11", cc(50, 61, 1), cc(51, 62, 0), "60 btn 11", "100 btn 12"]
+SEQ_BASE = CLEAN + ["40 btn 11", cc(50, 61, 1), cc(51, 62, 0), "60 btn 11", "100 btn 12"]
 SEQ_LIVE = ["150 keys 0x80", "260 keys 0", "680 keys 0x800", "790 keys 0", "1227 keys 0x4000", "1330 keys 0", "2050 btn 11"]
 
 
@@ -1092,7 +1093,7 @@ def _seqedit():
 @case("SEQ-STEP")
 def _seqstep():
     """step recording (REC while stopped): notes on the cursor's steps, QUANT 1/16, then played back 125 ms apart"""
-    lines = CLEAN + ["40 btn 11", "45 btn 11", cc(50, 61, 1), cc(51, 62, 3), "60 btn 11"]
+    lines = CLEAN + ["40 btn 11", cc(50, 61, 1), cc(51, 62, 3), "60 btn 11"]
     for i, k in enumerate((7, 11, 14, 18)):
         lines += [f"{100 + 50 * i} keys {1 << k:#x}", f"{120 + 50 * i} keys 0"]
     lines += ["400 btn 11", "500 btn 12"]
@@ -1151,8 +1152,8 @@ def _arpgate():
 
 @case("ARP-HOLD")
 def _arphold():
-    """HOLD (PLAY on ARPEGGIO): the notes go on after the keys are let go; without it they stop"""
-    w, on, _ = arp_run(["100 turn 2 1", "120 btn 12"], hold_ms=600)
+    """HOLD (SEL on ARPEGGIO, 0.9.3): the notes go on after the keys are let go; without it they stop"""
+    w, on, _ = arp_run(["100 turn 2 1", "120 btn 3"], hold_ms=600)
     w2, on2, _ = arp_run(["100 turn 2 1"], hold_ms=600)
     assert w.state(195)["hold"] == "1" and not [t for t, _ in on2 if t > 900]
     return float(len([t for t, _ in on if t > 900])), 10.0, f"{len(on)} notes"
@@ -1286,19 +1287,21 @@ def _bypass():
 
 @case("BUTTONS")
 def _buttons():
-    """the page buttons and their LEDs: HOME (PERFORM <-> main), EDIT (VOICE), ENV (PHASER), LFO (TREM/WAH), SEL
-    (DELAY), SEQ (CHORD -> SEQUENCER), ARP, GLO (TEMPO -> SETUP -> MIDI)"""
-    seq = [("HOME", "FRODHES"), ("HOME", "PERFORM"), ("EDIT", "VOICE"), ("ENV", "PHASER"), ("LFO", "TREM/WAH"),
-           ("SEL", "DELAY"), ("SEQ", "CHORD"), ("SEQ", "SEQUENCER"), ("ARP", "ARPEGGIO"), ("GLO", "TEMPO"),
+    """the page buttons and their LEDs: HOME (PERFORM <-> main), EDIT (CHORD), ENV (PHASER), LFO (TREM/WAH), SEL
+    (DELAY; on ARPEGGIO: HOLD), SEQ (SEQUENCER, straight), ARP, GLO (TEMPO -> SETUP -> MIDI) (0.9.3)"""
+    seq = [("HOME", "FRODHES"), ("HOME", "PERFORM"), ("EDIT", "CHORD"), ("ENV", "PHASER"), ("LFO", "TREM/WAH"),
+           ("SEL", "DELAY"), ("SEQ", "SEQUENCER"), ("ARP", "ARPEGGIO"), ("SEL", "ARPEGGIO"), ("GLO", "TEMPO"),
            ("GLO", "SETUP"), ("GLO", "MIDI"), ("GLO", "TEMPO")]
     w = R(CLEAN + [f"{100 + 100 * i} btn {BTN[b]}" for i, (b, _) in enumerate(seq)]
           + [f"{150 + 100 * i} dump" for i in range(len(seq))], 100 + 100 * len(seq) + 100)
     got = [w.state(150 + 100 * i)["page"] for i in range(len(seq))]
     assert got == [p for _, p in seq], got
-    led = {"FRODHES": 8, "PERFORM": 8, "VOICE": 6, "TEMPO": 7, "SETUP": 7, "MIDI": 7}
+    led = {"FRODHES": 8, "PERFORM": 8, "TEMPO": 7, "SETUP": 7, "MIDI": 7}
     for i, (_, p) in enumerate(seq):
         if p in led:
             assert w.state(150 + 100 * i)[f"led.{led[p]}"] == "1", p
+    i = seq.index(("SEL", "ARPEGGIO"))                  # SEL on ARPEGGIO: HOLD on, SEL lit
+    assert w.state(150 + 100 * i)["hold"] == "1" and w.state(150 + 100 * i)["led.3"] == "1"
     return 1.0, 1.0, "ok"
 
 

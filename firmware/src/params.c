@@ -104,7 +104,7 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_LEVEL] = {"LVL", 127, 64, F_DB, 110, 0},              /* 64 = 0 dB, 0.1875 dB a step: -12 .. +11.8 dB */
     [P_CMP_RATIO] = {"RAT", 7, 3, F_ENUM, 112, N_RATIO},     /* 4:1 */
     [P_CMP_GAIN] = {"MKUP", 127, 0, F_GAIN, 113, 0},         /* make-up 0 .. +24 dB */
-    [P_FL_TYPE] = {"FILT", 6, 0, F_ENUM, 70, N_FLT},         /* 0.9.3: CC 70 type, 74 cutoff, 71 resonance, 72 LFO */
+    [P_FL_TYPE] = {"FILT", 6, 2, F_ENUM, 70, N_FLT},         /* 0.9.3: CC 70 type, 74 cutoff, 71 resonance, 72 LFO */
     [P_FL_FREQ] = {"FREQ", 127, 127, F_FHZ, 74, 0},
     [P_FL_RESO] = {"RESO", 127, 0, F_R10, 71, 0},
     [P_FL_LFO] = {"LFO", 127, 0, F_R10, 72, 0},
@@ -150,7 +150,8 @@ typedef struct {
     uint8_t undo_preset;                       /* 0.9.3: the preset the undo copy is (index + 1; 0 = not known) */
     uint8_t panel3[16], undo3[16];             /* records v3: ids 48..63 (flags bit 16: present) */
     uint8_t mot_user_off;                      /* records v3: 1 = switched off on the MOTOR page (no auto-on) */
-    uint8_t seq_rsv[60];
+    uint8_t chord_last;                        /* 0.9.3: the chord type EDIT turns back on (0 = none yet: MAJ) */
+    uint8_t seq_rsv[59];
     uint8_t reserved[22];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");

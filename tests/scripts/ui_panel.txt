@@ -1,10 +1,11 @@
 # Pages (ui.c): buttons LFO 5, FX 2, ARP 10, EDIT 6, HOME 8, GLO 7, PLAY 12; encoders SELECT 0, K1 = 2.
 # boot: the PERFORM page (HOME lit); HOME: the main page (still lit). SELECT walks the pages: one detent -> VOICE
-# (EDIT lit).
+# (EDIT is CHORD since 0.9.3: dark, chord mode off).
 100 expect led 8 1
 150 btn 8
 200 turn 0 1
-300 expect led 6 1
+300 expect state page VOICE
+300 expect led 6 0
 300 expect led 8 0
 400 shot
 # LFO: the first tap opens the TREM/WAH page (the effect stays off), the second tap turns it on, a third off
@@ -46,9 +47,10 @@
 4200 turn 1 1
 4250 turn 1 1
 4400 shot
-# EDIT: VOICE shows the bar cards (STRIKE, MALLET, TUBE, WEIGHT); SELECT: DECAY (RING, DAMPER, NOISE, TUNE)
-4500 btn 6
-4600 expect led 6 1
+# SELECT twice (PERFORM -> FRODHES -> VOICE): VOICE shows the bar cards (STRIKE, MALLET, TUBE, WEIGHT); SELECT: DECAY (RING, DAMPER, NOISE, TUNE)
+4500 turn 0 1
+4550 turn 0 1
+4600 expect state page VOICE
 4700 shot
 4800 turn 0 1
 4900 shot

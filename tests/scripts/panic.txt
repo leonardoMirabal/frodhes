@@ -29,7 +29,7 @@
 # with HOLD latched the arpeggiator keeps going (the manual: HOLD and the sequencer keep going)
 6700 midi 0xB0 52 1
 6800 btn 10
-6900 btn 12
+6900 btn 3
 7000 midi 0x90 67 100
 7100 midi 0x80 67 0
 7200 midi 0xB0 123 0

@@ -1,0 +1,31 @@
+# 0.9.3 (TODO 8): the battery in the header. The host simulates the ADC (600 = 3 of 3 segments); developer CC 8 sets
+# a simulated reading (v x 8; 0 = the real one) so the steps and the smoothing can be checked; batt = the segments
+# shown (4 = USB power), battraw = the smoothed reading (read every 500 ms, ~10 s smoothing)
+1000 expect state batt 3
+1000 expect state battraw 600
+1100 shot
+# a low reading (512): the display follows over seconds and steps down once per threshold (no flicker)
+1200 midi 0xB0 8 64
+1700 expect state batt 3
+6000 expect state batt 2
+30000 expect state batt 0
+30100 shot
+# 70 x 8 = 560: 1 segment (561 not reached)
+30200 midi 0xB0 8 70
+55000 expect state batt 1
+# 72 x 8 = 576: past 561 + the hysteresis: 2
+55100 midi 0xB0 8 72
+80000 expect state batt 2
+# the hysteresis: 70 x 8 = 560 is under 561 but not 4 under it: it stays at 2
+80100 midi 0xB0 8 70
+125000 expect state batt 2
+125000 expect state battraw 560
+# the real (simulated) reading again: full
+125100 midi 0xB0 8 0
+150000 expect state batt 3
+# the SETUP page shows the raw reading for calibrating
+150100 btn 7
+150200 btn 7
+150300 expect state page SETUP
+150600 shot
+151000 end

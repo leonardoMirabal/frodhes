@@ -165,9 +165,11 @@
 9500 expect state p.33 1
 9500 expect sound
 9600 btn 6
-9700 expect state page VOICE
-9700 expect led 6 1
+9700 expect state page CHORD
+9700 expect led 6 0
 9700 expect led 8 0
+9800 btn 8
+9900 expect state page PERFORM
 # ---- the octave: OCT+ twice (lit), OCT- three times (OCT- lit), back up
 10000 btn 1
 10010 btn 1
@@ -184,47 +186,47 @@
 10500 expect state oct 0
 10500 expect led 0 0
 10500 expect led 1 0
-# ---- chord mode: SEQ -> CHORD page, K1 right: MAJ (SEQ lit); left: off (dark)
-10600 btn 11
+# ---- chord mode: EDIT -> CHORD page (0.9.3), K1 right: DIATONIC (EDIT lit); left: off (dark)
+10600 btn 6
 10700 expect state page CHORD
 10800 turn 2 3
 10900 expect state card0 DIATONIC
 10900 expect state chord 1
-10900 expect led 11 1
+10900 expect led 6 1
 11000 turn 2 -3
 11100 expect state chord 0
-11100 expect led 11 0
-# ---- the arpeggiator: ARP -> its page, again: on (ARP lit), PLAY = HOLD (PLAY lit on this page), off again
+11100 expect led 6 0
+# ---- the arpeggiator: ARP -> its page, again: on (ARP lit), SEL = HOLD (SEL lit on this page; 0.9.3), off again
 11200 btn 10
 11300 expect state page ARPEGGIO
 11400 btn 10
 11500 expect state arp 1
 11500 expect led 10 1
 11500 expect state card0 UP
-11600 btn 12
+11600 btn 3
 11700 expect state hold 1
-11700 expect led 12 1
-11800 btn 12
+11700 expect led 3 1
+11800 btn 3
 11900 expect state hold 0
-11900 expect led 12 0
+11900 expect led 3 0
 12000 btn 10
 12100 expect state arp 0
 12100 expect led 10 0
 12100 expect state card0 OFF
-# ---- the sequencer: SEQ, SEQ -> SEQUENCER; a tap: REC (SEQ blinks); PLAY: playing; PLAY: stopped; REC off
+# ---- the sequencer: SEQ -> SEQUENCER (0.9.3: straight there); a tap: REC (SEQ blinks); PLAY: playing (SEQ lit); PLAY: stopped; REC off
 12200 btn 11
-12210 btn 11
 12300 expect state page SEQUENCER
 12400 btn 11
 12500 expect state rec 1
 12600 btn 12
 12700 expect state play 1
+12700 expect led 11 1
 12800 btn 12
 12900 expect state play 0
 13000 btn 11
 13100 expect state rec 0
 13100 expect led 11 0
-# ---- HOME: PERFORM <-> the main page (HOME lit on both), EDIT lit on VOICE only
+# ---- HOME: PERFORM <-> the main page (HOME lit on both), EDIT dark (chord mode off)
 13200 btn 8
 13300 expect state page PERFORM
 13300 expect led 8 1
