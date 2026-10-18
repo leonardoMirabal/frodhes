@@ -521,14 +521,19 @@ def emit(spec, fam_tabs):
     li, lw = vlayers()
     w("static const uint8_t RH_VLAY_I[128] = {" + ",".join(map(str, li)) + "};")
     w("static const uint16_t RH_VLAY_W[128] = {" + ",".join(map(str, lw)) + "};")
-    w("static const int32_t RH_PHI[2][RH_PU_N + 1] = {")
-    for P, M, A in fam_tabs:
-        w("  {" + ",".join(map(str, P)) + "},")
-    w("};")
-    w("static const int32_t RH_SLOPE[2][RH_PU_N + 1] = {")
-    for P, M, A in fam_tabs:
-        w("  {" + ",".join(map(str, M)) + "},")
-    w("};")
+    # one row per DISTINCT pickup family (both have R = 1.0 today, so one row each), and a pointer table so
+    # rhodes.c's RH_PHI[k->fam] / RH_SLOPE[k->fam] still give the row; families that differ get their own rows
+    for name, col in (("RH_PHI", 0), ("RH_SLOPE", 1)):
+        rows, idx = [], []
+        for t in fam_tabs:
+            r = list(t[col])
+            if r not in rows:
+                rows.append(r)
+            idx.append(rows.index(r))
+        for j, r in enumerate(rows):
+            w("static const int32_t %s_%d[RH_PU_N + 1] = {%s};" % (name, j, ",".join(map(str, r))))
+        w("static const int32_t *const %s[%d] = {%s};" % (name, len(fam_tabs),
+                                                          ", ".join("%s_%d" % (name, j) for j in idx)))
     # per TYPE (physical voicing, docs/model/data/params.json "types"): the pickup load (RLC low-pass), then the
     # instrument's amp / speaker "body" (up to 2 biquads, identity when unused); all Q28 DF1 (b0 b1 b2 a1 a2)
     ty = p["types"]
