@@ -45,6 +45,9 @@ def table(path, name):
     j = s.index("= {", m.start()) + 2
     k = s.index("};", j)
     body = re.sub(r"/\*.*?\*/", "", s[j:k], flags=re.S)
+    rows = re.findall(r"(?<!\w)[A-Za-z_]\w*", body)
+    if rows:                                            # a pointer table (RH_PHI = {RH_PHI_0, RH_PHI_0}): its rows
+        return np.concatenate([table(path, r) for r in rows])
     return np.array([int(x, 0) for x in re.findall(r"-?(?:0x[0-9a-fA-F]+|\d+)", body)], dtype=np.int64)
 
 
