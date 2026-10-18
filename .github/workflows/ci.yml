@@ -11,8 +11,9 @@ jobs:
       - run: make host
       - run: make pytest PY=python3
   # The engines' tables are generated on macOS (Accelerate); their regeneration must give the committed headers byte
-  # for byte. Linux's OpenBLAS rounds some fits differently, so this check runs here, on macOS, with the same numpy /
-  # scipy as the development machine. It is required: a failure fails the run.
+  # for byte on every machine (the solver-sensitive stages are pinned: rhodes_pins.json, bars_fe_pins.json,
+  # bars_pins.json). The host job checks it on Linux arm64; this one on macOS, with the same numpy / scipy as the
+  # development machine. It is required: a failure fails the run.
   generators-macos:
     runs-on: macos-latest
     steps:

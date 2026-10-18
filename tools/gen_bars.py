@@ -4,15 +4,21 @@
 
     tools/gen_bars.py [--strict] [--out DIR]   -> firmware/gen/bars_tables.h  +  docs/model/data/bars_spec.json
                                                   (or both into DIR)
-    tools/gen_bars.py --repin [--out DIR]      the pair stage solved afresh (eig4) and written to bars_pins.json
-                                                  (or DIR/bars_pins.json): a deliberate, reviewed table change
+    tools/gen_bars.py --repin [--out DIR]      the FE and the pair stage solved afresh and written to bars_fe_pins.json
+                                                  and bars_pins.json (or into DIR): a deliberate, reviewed table change
 
 PINS (docs/model/data/bars_pins.json): the pair stage of every key (tube zeta_r, the solved BarTube, wt, the f0 peak,
 the pair words of bartube.pair_words and the stability grid) as recorded on the machine that made the approved
 tables. That stage bisects on eigenvalue-derived decays (solve_sigma, pair_words' kc correction, which lands on the
 edge where an integer coupling word changes by design) and LAPACK's last bits differ between machines, so it picked
-different integer words on different machines. Everything else is computed; tests/py/test_gen_bars.py recomputes the
-pins with tools/eig4.py (machine-independent decimal eig) and checks they are the physics.
+different integer words on different machines. tests/py/test_gen_bars.py recomputes the pins with tools/eig4.py
+(machine-independent decimal eig) and checks they are the physics.
+
+FE PINS (docs/model/data/bars_fe_pins.json): the bar FE of every geometric key 53..89 (the profile bar_fe.tune solved
+and everything read from it). The profile has more parameters than tuning targets, so least_squares stops on a
+different, equally exact profile on another BLAS / CPU (GitHub's macOS and Linux runners: ~1 um apart, the strike
+weights and every downstream word moved). The test evaluates the FE at each pinned profile (every field follows from
+it) and checks it solves the tuning. Everything else is computed.
 
 Per key 21..108: the undercut bar (bar_fe: Timoshenko bending, Saint-Venant torsion, the profile optimised for
 1:4:10) gives the strike-position weights and the torsion ratios; the decays come from vibes.json (the reference
@@ -25,7 +31,7 @@ families level-matched), the b scale (slot peaks <= 2^26 with x2 re-strike headr
 per-key gain (v100 RMS 50..300 ms = the Rhodes' -26 dBFS), a global v127 peak cap, kill and life.
 
 Output is deterministic (byte-identical every run). --strict fails on an ESTIMATE row without a settle entry
-(release builds). The FE profiles are cached in build/gen_bars/fe_cache.json (keyed by their inputs).
+(release builds). The FE profiles are pinned too (docs/model/data/bars_fe_pins.json, see FE_PINS_DOC).
 """
 import hashlib
 import json
@@ -60,6 +66,15 @@ Q30, Q28, Q25, Q16, Q15, Q14, Q12 = 1 << 30, 1 << 28, 1 << 25, 1 << 16, 1 << 15,
 STATUSES = {"CONFIRMED", "CORRECTED", "DERIVED", "MEASURED-REF", "ESTIMATE"}
 VIBES = os.path.join(ROOT, "docs", "model", "data", "vibes.json")
 PINS = os.path.join(ROOT, "docs", "model", "data", "bars_pins.json")
+FE_PINS = os.path.join(ROOT, "docs", "model", "data", "bars_fe_pins.json")
+FE_PINS_DOC = ("gen_bars.py FE pins: per geometric key the undercut profile bar_fe.tune solved (A) and everything "
+               "gen_bars reads from it (frequencies, ratios, err_c, torsion ratios, strike weights at the 17 points, V1 "
+               "nodes, mass, h_min, curvature), recorded where the approved tables were made. The profile has more "
+               "free parameters than tuning targets, so the exactly tuned profiles form a family and least_squares "
+               "stops on a different member (~1 um apart) on another BLAS / CPU: the strike weights then move and so "
+               "do the header words. tests/py/test_gen_bars.py recomputes every field from the pinned A and checks "
+               "that each profile is a solution of the tuning (exact to 1e-5 cent, or the penalised optimum). "
+               "fingerprint: the FE inputs (stale = --repin). Regenerate only on purpose: tools/gen_bars.py --repin.")
 PINS_DOC = ("gen_bars.py pins: the pair stage per key (tube zeta_r + flag, the solved BarTube, sigma clamp / weak flags, "
             "the f0 peak (ms), wt, bartube.pair_words' words and the stability grid), recorded where the approved tables "
             "were made. That stage bisects on eigenvalue-derived decays, which differ in the last bits between machines' "
@@ -73,6 +88,35 @@ PEAK_TOL_MS, PEAK_TOL_REL = 15.0, 0.30  # Gate VA: the f0 peak within +-15 ms or
 POS_DEF = 8                            # BAR_POS point of TONE raw 64 (x_bal on the centreline): b is exact per key there
 POS_EXACT_MIN = 0.02                   # ... unless the band's table is under 2 % of its maximum there (near a node)
 PEAK_SLOT = 0.9                        # single-strike slot peak (real units, 1.0 = 2^25): x2 re-strike stays < 2^26
+
+
+# ---------------------------------------------------------------- GEN_TRACE=path: a float-exact digest per stage
+TRACE = {}
+
+
+def _tr_plain(x):
+    if isinstance(x, np.ndarray):
+        return _tr_plain(x.tolist())
+    if isinstance(x, dict):
+        return {str(k): _tr_plain(v) for k, v in x.items() if not isinstance(v, btm.BarTube)}
+    if isinstance(x, (list, tuple)):
+        return [_tr_plain(v) for v in x]
+    return plain(x)
+
+
+def trace(stage, obj, full=False):
+    """GEN_TRACE: the sha256 of obj's float-exact JSON (repr floats); per item when obj is a dict; full: obj too."""
+    if not os.environ.get("GEN_TRACE"):
+        return
+    o = _tr_plain(obj)
+    sha = lambda v: hashlib.sha256(json.dumps(v, sort_keys=True).encode()).hexdigest()[:16]
+    TRACE[stage] = dict(sha=sha(o), items={k: sha(v) for k, v in o.items()} if isinstance(o, dict) else None,
+                        full=o if full else None)
+
+
+def write_trace():
+    if os.environ.get("GEN_TRACE"):
+        open(os.environ["GEN_TRACE"], "w").write(json.dumps(TRACE, indent=0, sort_keys=True) + "\n")
 
 
 def midi_hz(n):
@@ -392,37 +436,53 @@ def strike_xy(vb, raw, L, w, nodes):
     return max(x, lo), y
 
 
-def fe_key(vb, ng, A_init=None):
-    """FE of the geometric key ng (53..89): the optimised profile, ratios, torsion, strike weights at the 17 points."""
+def fe_setup(vb, ng):
+    """The FE problem of the geometric key ng: dict(L, w, t, h_min, mat, ratios (the tuned ones), f0)."""
     r = vb["T12"]
     L, w = fe.outline(ng, vb["keys"]["authentic"][0], vb["keys"]["authentic"][1], r["L_mm"], r["w_mm"])
-    t = r["t_mm"] * 1e-3
-    mat = dict(E=r["E_pa"], rho=r["rho"], G=r["G_pa"], kappa=r["kappa"])
     ratios = (vb["T9a"]["V2"], vb["T9a"]["V3"]) if ng <= vb["T9a"]["v3_tuned_max_key"] else (vb["T9a"]["V2"],)
-    p = fe.tune(midi_hz(ng), L, w, t, ratios=ratios, h_min=r["h_min_mm"] * 1e-3, A_init=A_init, **mat)
-    bar = p["bar"]
+    return dict(L=L, w=w, t=r["t_mm"] * 1e-3, h_min=r["h_min_mm"] * 1e-3, ratios=ratios, f0=midi_hz(ng),
+                mat=dict(E=r["E_pa"], rho=r["rho"], G=r["G_pa"], kappa=r["kappa"]))
+
+
+def fe_derive(vb, ng, A):
+    """Everything gen_bars reads from the FE of key ng, given its profile A (as bar_fe.tune returns it): the
+    frequencies, ratios, err_c, torsion, strike weights at the 17 points, V1 nodes, mass, h_min, curvature."""
+    q = fe_setup(vb, ng)
+    L, w = q["L"], q["w"]
+    A = np.array(A, float)
+    bar = fe.Bar(L, w, q["t"], fe.cos_profile(A, L, q["t"], q["h_min"]), **q["mat"])
+    targets = np.array([q["f0"]] + [q["f0"] * x for x in q["ratios"]])
+    f, _ = bar.bending(len(targets))
+    f4, _ = bar.bending(4)
     ft, _ = bar.torsion(2)
     nodes = bar.v1_nodes()
     W = []
     for i in range(NPOS):
         x, y = strike_xy(vb, gm.pos_point(i, NPOS), L, w, nodes)
         W.append(fe.strike_weights(bar, x, y, 4, 2))
-    return dict(ng=ng, L=L, w=w, A=p["A"], f=p["f"], ratios=p["ratios"], err_c=p["err_c"],
-                tors=[float(x / p["f"][0]) for x in ft], weights=W, nodes=[x / L for x in nodes], mass=bar.mass(),
-                hmin=float(bar.H.min()), curv=p["curv"])
+    return plain(dict(ng=ng, L=L, w=w, A=[float(a) for a in A], f=[float(x) for x in f4],
+                      ratios=[float(x / f4[0]) for x in f4], err_c=[float(x) for x in 1200 * np.log2(f / targets)],
+                      tors=[float(x / f4[0]) for x in ft], weights=W, nodes=[x / L for x in nodes], mass=bar.mass(),
+                      hmin=float(bar.H.min()), curv=fe._curvature(A, L)))
 
 
-def fe_all(vb):
-    """FE for every geometric key, cached by the inputs' hash."""
-    key = hashlib.sha256(json.dumps([vb["T12"], vb["T9a"], vb["T13a"], vb["T2"]["V3"]["max_key"], vb["keys"],
-                                     open(os.path.join(HERE, "bar_fe.py")).read(), "pos=127i/16", "continuation"], sort_keys=True).encode()).hexdigest()
-    path = os.path.join(ROOT, "build", "gen_bars", "fe_cache.json")
-    try:
-        c = json.load(open(path))
-        if c.get("key") == key:
-            return {int(k): v for k, v in c["fe"].items()}
-    except (OSError, ValueError):
-        pass
+def fe_key(vb, ng, A_init=None):
+    """FE of the geometric key ng (53..89): the profile optimised on this machine (bar_fe.tune), then fe_derive."""
+    q = fe_setup(vb, ng)
+    p = fe.tune(q["f0"], q["L"], q["w"], q["t"], ratios=q["ratios"], h_min=q["h_min"], A_init=A_init, **q["mat"])
+    return fe_derive(vb, ng, p["A"])
+
+
+def fe_fingerprint(vb):
+    """sha256 of every input the FE results depend on (bar_fe.py's source included): a change means --repin."""
+    return hashlib.sha256(json.dumps([vb["T12"], vb["T9a"], vb["T13a"], vb["T2"]["V3"]["max_key"], vb["keys"],
+                                      open(os.path.join(HERE, "bar_fe.py")).read(), "pos=127i/16", "continuation"],
+                                     sort_keys=True).encode()).hexdigest()
+
+
+def fe_compute(vb):
+    """The FE of every geometric key, solved on this machine (bar_fe.tune: continuation along the keyboard)."""
     a, b = vb["keys"]["authentic"]
     out = {}
     prev = None
@@ -431,9 +491,42 @@ def fe_all(vb):
         prev = out[ng]["A"] if len(out[ng]["A"]) else None
         print("fe %d: ratios %s torsion %s hmin %.1f mm" % (ng, " ".join("%.3f" % x for x in out[ng]["ratios"]),
               " ".join("%.3f" % x for x in out[ng]["tors"]), out[ng]["hmin"] * 1e3), file=sys.stderr)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    json.dump(dict(key=key, fe={str(k): v for k, v in out.items()}), open(path, "w"))
-    return out
+    return {ng: plain(v) for ng, v in out.items()}
+
+
+def load_fe_pins(vb, path=FE_PINS):
+    """{ng: fe_key dict} from bars_fe_pins.json, or None when it is missing or stale (another fingerprint)."""
+    if not os.path.exists(path):
+        return None
+    d = json.load(open(path))
+    if d.get("version") != 1 or d.get("fingerprint") != fe_fingerprint(vb):
+        return None
+    return {int(k): v for k, v in d["fe"].items()}
+
+
+def write_fe_pins(path, vb, fe_):
+    """One key per line; json writes floats as repr, which reads back bit for bit."""
+    head = json.dumps(dict(_doc=FE_PINS_DOC, version=1, fingerprint=fe_fingerprint(vb)), indent=1, sort_keys=True)
+    lines = ['  "%d": %s' % (ng, json.dumps(fe_[ng], sort_keys=True)) for ng in sorted(fe_)]
+    txt = head[:-2] + ',\n "fe": {\n' + ",\n".join(lines) + "\n }\n}\n"
+    assert {int(k): v for k, v in json.loads(txt)["fe"].items()} == fe_
+    open(path, "w").write(txt)
+
+
+BUILD_FE = {}                          # the FE of the last --repin build (written to bars_fe_pins.json)
+
+
+def fe_all(vb):
+    """The FE of every geometric key: the pins (FE_PINS); --repin solves it afresh on this machine."""
+    if "--repin" in sys.argv:
+        BUILD_FE.clear()
+        BUILD_FE.update(fe_compute(vb))
+        return dict(BUILD_FE)
+    fe_ = load_fe_pins(vb)
+    if fe_ is None:
+        raise SystemExit("bars_fe_pins.json missing or stale (the FE inputs changed): tools/gen_bars.py --repin "
+                         "(a reviewed table change)")
+    return fe_
 
 
 # ---------------------------------------------------------------- per-key physics
@@ -1121,6 +1214,7 @@ def build():
     vb = load_vibes(strict="--strict" in sys.argv)
     assert [f["detent"] for f in vb["T7c"]["families"]] == FAM_DETENT and len(FAM_DETENT) == NFAM, "T7c detents"
     fec = fe_all(vb)
+    trace("fe", fec, full=True)
     pins = None if "--repin" in sys.argv else load_pins()
     phys = {}
     if pins:                                        # the pinned pair stage (PINS): the same words on every machine
@@ -1137,8 +1231,10 @@ def build():
         phys = pair_stage(vb, fec, zt)
         BUILD_PINS.clear()
         BUILD_PINS.update({n: pin_of(phys[n], zt[n]) for n in phys})
+    trace("phys", phys, full=True)
     print("mallets: contact simulations", file=sys.stderr)
     ct = contacts(vb, phys, fec)
+    trace("contacts", {"%d.%d" % (n, q): c for n in ct for q, c in enumerate(ct[n])})
     BANDS.clear()
     BANDS.update(pinned_bands(vb, phys, ct) if "bands" in vb else assign_bands(phys, ct))
     global NBAND
@@ -1146,7 +1242,9 @@ def build():
     for n in range(KEY_LO, KEY_HI + 1):
         phys[n]["band"] = BANDS["of"][n]
     print("bands: reps %s, worst shape error %.2f dB" % (BANDS["rep"], max(BANDS["err"])), file=sys.stderr)
+    trace("bands", dict(BANDS), full=True)
     pos, arg = strike_tables(fec)
+    trace("strike", dict(pos=pos, arg=arg))
     pex = [[POS_DEF if s in (0, 2, 3, 4) and pos[b][POS_DEF][s] >= POS_EXACT_MIN * Q14 else arg[b][s] for s in range(NM)]
            for b in range(NBAND)]
     rexp = vb["R1"]["exp"]
@@ -1173,6 +1271,7 @@ def build():
         st["keys"][n] = dict(S=1.0, bphys=bph, pamp=pamp, tors=1.0)
         st.setdefault("pamp_phys", []).append([list(r) for r in pamp])
     keys = list(range(KEY_LO, KEY_HI + 1))
+    trace("st0", st["keys"], full=True)
     spec = build_spec(vb, phys, fec, ct, st)
 
     def rescale_b(target=PEAK_SLOT):
@@ -1188,6 +1287,7 @@ def build():
                 pk[i0:i0 + len(ks)] = np.maximum(pk[i0:i0 + len(ks)], p.max(axis=1))
         for i, n in enumerate(keys):
             st["keys"][n]["S"] *= target / pk[i]
+        trace("rescale_b%d" % len([k for k in TRACE if k.startswith("rescale_b")]), dict(pk=pk), full=True)
         spec = build_spec(vb, phys, fec, ct, st)
         return pk
 
@@ -1200,6 +1300,7 @@ def build():
         t1 = np.abs(r["slots"][i, 5]).max()
         if t1 > 0 and v1 > 0:
             st["keys"][n]["tors"] = 10 ** ((vb["T9c"]["t1_db"] - 20 * math.log10(t1 / v1)) / 20)
+    trace("tors", {n: st["keys"][n]["tors"] for n in keys}, full=True)
     spec = build_spec(vb, phys, fec, ct, st)
     # radiation efficiency per upper mode (R1b): one constant per mode over all keys, the median offset of the model's
     # level re V1 (TONE 0, MED YARN, v100, 30..530 ms, the reference procedure's window) from the measured levels
@@ -1215,6 +1316,7 @@ def build():
                 lm = gm.band_level(r, phys[n]["modes"][slot - 2]["f"], 0.03, 0.53, 0.015)
                 off.append(ref[n] - (lm - l1))
             d = float(np.median(off))
+            trace("rad%d%s" % (it, nm), dict(off=off, d=d), full=True)
             rad[nm] = rad.get(nm, 0.0) + d
             for n in keys:
                 st["keys"][n]["bphys"][slot] *= 10 ** (d / 20)
@@ -1243,6 +1345,7 @@ def build():
     sm4 = {keys[i]: float(np.mean([bright[j] for j in live4 if abs(keys[j] - keys[i]) <= 3])) for i in live4}
     ceil4 = max(sm4[n] for n in sm4 if 53 <= n <= 89) + vb["R1b"]["v4_ceiling_db"]
     b4 = {n: st["keys"][n]["bphys"][4] for n in keys}
+    trace("v4", dict(tline=tline, m0=m0, cl4=cl4, bright=bright, ceil4=ceil4), full=True)
 
     def v4_trim(n):
         d = float(np.polyval(cl4, min(max(n, fa), fb)))
@@ -1279,6 +1382,7 @@ def build():
             corr[:, q, :] = tgt[None, :] - rel[:, q, :]
             corr[:, q, :] += (L[:, CAL, ref_a] - L[:, q, ref_a])[:, None]     # families level-matched at v104
         corr = np.clip(corr, -cal["trim_max_db"], cal["trim_max_db"])
+        trace("vtrim%d" % it, dict(L=L, corr=corr))
         print("velocity / family fit %d: worst %.2f dB, median |err| %.2f dB" % (it, np.abs(corr).max(), np.median(np.abs(corr))),
               file=sys.stderr)
         for i, n in enumerate(keys):
@@ -1295,14 +1399,17 @@ def build():
             st["keys"][n]["pamp"] = [[x * f for x in r_] for r_ in pa]
             st["keys"][n]["S"] /= f
         spec = build_spec(vb, phys, fec, ct, st)
+    trace("st_vtrim", st["keys"], full=True)
     rescale_b()
     # BELL's tube size per raw value: the loudness even over the knob (S10)
     st["kn_tube"], lt = shape_kn_tube(vb, spec)
+    trace("kn_tube", dict(kn=st["kn_tube"], lt=lt), full=True)
     spec = build_spec(vb, phys, fec, ct, st)
     print("tube map: loudness %.1f .. %.1f LU from BELL 1 to 64, size at 16 / 32 / 48: %.1f %.1f %.1f dB" % (
         lt[0], lt[-1], *[20 * math.log10(spec["kn_tube"][v] / 32768) for v in (16, 32, 48)]), file=sys.stderr)
     # the TONE / BELL level compensation per band (card_level): a card that is not a volume knob keeps the level
     st["pos_gain"], st["tube_gain"], cl_rep = card_gains(vb, spec, keys)
+    trace("cards", dict(pos=st["pos_gain"], tube=st["tube_gain"]))
     spec = build_spec(vb, phys, fec, ct, st)
     print("card level: " + cl_rep, file=sys.stderr)
     # gain: v100 at the default knobs, RMS 50..300 ms -> gain_target_dbfs; a global cap for the v127 RUBBER peak
@@ -1314,6 +1421,7 @@ def build():
     yp = render_chunks(spec, keys, [127] * len(keys), 0.3, dict(gm.DEFAULT_KNOBS, bark=127, hammer=127, bell=127))
     pk = np.array([np.max(np.abs(r)) for r in yp]) * g_raw / g_now + 1e-12
     capg = min(1.0, float(np.percentile(10 ** ((cal["peak_dbfs"] + 3) / 20) * 32768 / pk, 10)))
+    trace("gain", dict(rms=rms, pk=pk, capg=capg), full=True)
     print("gain: target %.1f dBFS, global peak cap %.2f dB" % (cal["gain_target_dbfs"], 20 * math.log10(capg)), file=sys.stderr)
     for i, n in enumerate(keys):
         g = min(g_raw[i] * capg, 2 ** 31 - 1)
@@ -1341,6 +1449,7 @@ def build():
         st["keys"][n]["kill"] = max(1, int(round(st["keys"][n]["kill"] * st["keys"][n]["gain"] / g)))
         st["keys"][n]["gain"] = g
     st["st77_trim_db"] = float(np.median(corr))
+    trace("st77", dict(lb=lb, lr=lr, corr=corr), full=True)
     st["st77_lufs"] = [float(x) for x in lrs]
     spec = build_spec(vb, phys, fec, ct, st)
     print("ST77 level per key: corrections %+.2f .. %+.2f dB (median %+.2f)" % (corr.min(), corr.max(), np.median(corr)),
@@ -1355,6 +1464,7 @@ def build():
             f = ceil_ / pk[i]
             st["keys"][n]["gain"] *= f
             st["keys"][n]["kill"] = max(1, int(round(st["keys"][n]["kill"] / f)))
+    trace("vpeaks", dict(pk=pk), full=True)
     st["peak_dbfs"] = [float(20 * math.log10(min(pk[i], ceil_) / 32768)) for i in range(len(keys))]
     st["peak_worst"] = worst
     spec = build_spec(vb, phys, fec, ct, st)
@@ -1371,11 +1481,13 @@ def build():
                 r = gm.render_batch(spec, keys, [127] * len(keys), pr["t_s"], kn, sleep=False, slots=True)["slots"]
                 p = np.abs(r[:, :, int(pr["t0_s"] * FS):]).max(axis=2)      # free ringing, after the contact
                 rel = np.maximum(rel, p / p[:, :1])
+    trace("prune", dict(rel=rel))
     npr = 0
     for i, n in enumerate(keys):
         off = [s for s in range(2, NM) if spec["keys"][i]["modes"][s]["b"] and rel[i, s] < 10 ** (pr["db"] / 20)]
         st["keys"][n]["off"] = off
         npr += len(off)
+    trace("st_final", st["keys"], full=True)
     spec = build_spec(vb, phys, fec, ct, st)
     print("pruned %d key x slot pairs (under %.0f dB re V1 at every voicing)" % (npr, pr["db"]), file=sys.stderr)
     st["prune_rel_db"] = [[float(20 * math.log10(x)) if x > 0 else -999.0 for x in row] for row in rel]
@@ -1548,6 +1660,9 @@ def main():
     for v in all_words(spec):
         assert not (0xFFC00000 <= (v & 0xFFFFFFFF) <= 0xFFCFFFFF), v
     hdr = emit(spec)
+    trace("keys_int", {k["midi"]: k for k in spec["keys"]}, full=True)
+    trace("tables", {kk: spec[kk] for kk in ("pulse", "prate", "pamp", "bar_pos", "pos_gain", "tube_gain", "kn_tube")})
+    write_trace()
     hp = os.path.join(out, "bars_tables.h") if out else os.path.join(ROOT, "firmware/gen/bars_tables.h")
     jp = os.path.join(out, "bars_spec.json") if out else os.path.join(ROOT, "docs/model/data/bars_spec.json")
     os.makedirs(os.path.dirname(hp), exist_ok=True)
@@ -1557,6 +1672,9 @@ def main():
     if "--repin" in sys.argv:
         pp = os.path.join(out, "bars_pins.json") if out else PINS
         write_pins(pp, BUILD_PINS)
+        fp = os.path.join(out, "bars_fe_pins.json") if out else FE_PINS
+        write_fe_pins(fp, spec["vibes"], BUILD_FE)
+        print("FE pins written: %s" % fp, file=sys.stderr)
         print("pins written: %s (review the table change before committing)" % pp, file=sys.stderr)
     summary(spec)
 

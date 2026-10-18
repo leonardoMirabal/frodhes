@@ -135,6 +135,94 @@ def test_pins_are_the_physics():
     assert len(exact) + len(edge) == gb.NKEY
 
 
+VB = gb.load_vibes()
+FE_PINS = gb.load_fe_pins(VB)
+FE_KEYS = range(VB["keys"]["authentic"][0], VB["keys"]["authentic"][1] + 1)
+# The pinned FE recomputed at its profile is bit for bit the same on the recording Mac. Elsewhere the eigensolver's last
+# bits differ: the Timoshenko K, M (242 dofs) are conditioned ~1e7, so eigh's relative error is ~eps x 1e7; measured
+# on GitHub's Apple M1, Neoverse-N2 (Linux arm64) and Xeon 8370C (Linux x86_64): frequencies 1.7e-9 relative, err_c
+# 4.1e-6 cent, nodes 3.6e-10 of L, weights 8.8e-10 of the key's largest. The tolerances are ~6x those; a different
+# profile (the one GitHub's least_squares found, ~1 um away) moves the weights by 1e-4..1e-1, far outside them.
+FE_TOL = dict(eig=1e-8, cents=2e-5, nodes=2e-9, weight=1e-8, exact=1e-12)
+FE_ALPHA = 0.02                                           # bar_fe.tune's curvature weight (fe_key keeps the default)
+FE_LOCAL = 5e-5                                           # the penalised optimum: no probe lowers its cost by more
+
+
+def test_fe_pins_are_current():
+    """bars_fe_pins.json exists and its fingerprint is the FE inputs' (vibes.json T12 / T9a / T13a / keys, bar_fe.py)."""
+    assert FE_PINS is not None, "bars_fe_pins.json missing or stale: tools/gen_bars.py --repin"
+    assert sorted(FE_PINS) == list(FE_KEYS)
+    for ng in FE_KEYS:
+        q = gb.fe_setup(VB, ng)
+        assert FE_PINS[ng]["ng"] == ng and (FE_PINS[ng]["L"], FE_PINS[ng]["w"]) == pytest.approx((q["L"], q["w"]), rel=1e-12)
+
+
+@pytest.mark.parametrize("ng", FE_KEYS)
+def test_fe_pins_follow_from_the_profile(ng):
+    """Every pinned field is the FE model evaluated at the pinned profile A (forward: bar_fe's Timoshenko bending,
+    Saint-Venant torsion, the strike weights at the 17 points), within the eigensolver's accuracy (FE_TOL); mass,
+    h_min and curvature (no eigensolver) to 1e-12."""
+    p = FE_PINS[ng]
+    d = gb.fe_derive(VB, ng, p["A"])
+    assert d["A"] == p["A"]
+    for k in ("f", "ratios", "tors"):
+        assert d[k] == pytest.approx(p[k], rel=FE_TOL["eig"]), (ng, k)
+    for k in ("mass", "hmin", "curv"):
+        assert d[k] == pytest.approx(p[k], rel=FE_TOL["exact"]), (ng, k)
+    assert d["err_c"] == pytest.approx(p["err_c"], abs=FE_TOL["cents"]), ng
+    assert d["nodes"] == pytest.approx(p["nodes"], abs=FE_TOL["nodes"]), ng
+    W, Wp = np.array(d["weights"]), np.array(p["weights"])
+    assert W.shape == Wp.shape and np.abs(W - Wp).max() <= FE_TOL["weight"] * np.abs(Wp).max(), ng
+
+
+def _fe_resid(ng, A, alpha):
+    """bar_fe.tune's residual (cents to f0 and the tuned ratios, + alpha x the curvature term)."""
+    import bar_fe as fe
+    q = gb.fe_setup(VB, ng)
+    bar = fe.Bar(q["L"], q["w"], q["t"], fe.cos_profile(A, q["L"], q["t"], q["h_min"]), **q["mat"])
+    tg = np.array([q["f0"]] + [q["f0"] * x for x in q["ratios"]])
+    f, _ = bar.bending(len(tg))
+    r = 1200 * np.log2(f / tg)
+    return np.concatenate([r, [alpha * fe._curvature(A, q["L"])]]) if alpha else r
+
+
+def _fe_probe(ng, A, h=1e-6, seed=0):
+    """The largest relative cost decrease of tune's penalised objective over probes A + s d around A (forward
+    evaluations only): d = the 4 axes, the eigenvectors of the cost's finite-difference Hessian (step h, the valley
+    directions) and 16 fixed random unit vectors, both signs, s = 0.1, 1 and 10 um."""
+    cost = lambda a: (lambda r: 0.5 * float(r @ r))(_fe_resid(ng, a, FE_ALPHA))
+    c0 = cost(A)
+    E = np.eye(4) * h
+    H = np.array([[cost(A + E[i] + E[j]) - cost(A + E[i] - E[j]) - cost(A - E[i] + E[j]) + cost(A - E[i] - E[j])
+                   for j in range(4)] for i in range(4)]) / (4 * h * h)
+    R = np.random.default_rng(seed).standard_normal((16, 4))
+    D = np.vstack([np.eye(4), np.linalg.eigh(H)[1].T, R / np.linalg.norm(R, axis=1)[:, None]])
+    return max((c0 - cost(A + sg * s * d)) / c0 for d in D for sg in (1, -1) for s in (1e-7, 1e-6, 1e-5))
+
+
+@pytest.mark.parametrize("ng", FE_KEYS)
+def test_fe_pins_are_a_solution_of_the_tuning(ng):
+    """Each pinned profile solves bar_fe.tune's problem, checked forward (no re-optimisation): its thinnest point at or
+    above h_min, and either
+    - tuned exactly: |err| < 1e-5 cent on f0 and every tuned ratio, the minimum (0) of tune's polish objective. The
+      profile has more parameters than targets, so the exact solutions form a family: the pin is one member (why it
+      is pinned); or
+    - the penalised optimum tune keeps when it is within 0.05 cent (no polish): |err| <= 0.05 cent, and no probe
+      within 10 um (_fe_probe) lowers the penalised cost by more than FE_LOCAL (5e-5) of itself. The worst seen is
+      1.7e-5 (key 78; the profile's clip to the stock thickness t towards the ends makes the cost non-smooth, so a
+      least_squares stop is a local optimum only to that level); keys 68..77 at most 6e-7."""
+    A = np.array(FE_PINS[ng]["A"], float)
+    q = gb.fe_setup(VB, ng)
+    assert q["h_min"] <= FE_PINS[ng]["hmin"] < q["t"], ng
+    err = np.abs(_fe_resid(ng, A, 0)).max()
+    if err < 1e-5:
+        return
+    assert err <= 0.05, (ng, err)
+    dec = _fe_probe(ng, A)
+    print("key %d: penalised optimum, |err| %.3f cent, best probe decrease %.1e" % (ng, err, dec))
+    assert dec < FE_LOCAL, (ng, dec)
+
+
 def test_pair_bounds():
     for k in SPEC["keys"]:
         assert abs(k["wt"]) <= 4 << 28                                  # |wt| <= 4.0 in Q28
