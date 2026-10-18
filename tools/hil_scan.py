@@ -984,7 +984,8 @@ class VRig:
         for s in streams:
             s.stop()
             s.close()
-        u = to_fs(bufs["usb"][:, 0].astype(float) / 32768, rate["usb"], dur) if self.want_usb else None
+        u = (np.stack([to_fs(bufs["usb"][:, c].astype(float) / 32768, rate["usb"], dur) for c in (0, 1)], 1)
+             if self.want_usb else None)                # (stereo, as the suites expect)
         j = to_fs(bufs["jack"][:, self.jch].astype(float), rate["jack"], dur) if self.want_jack else None
         return u, j
 
