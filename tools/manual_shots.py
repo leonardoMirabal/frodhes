@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Screenshots for the manual: the host build walks every page (and a few states) and saves PNGs to docs/manual/img/,
-then composes overview.png (PERFORM, FRODHES, PHASER, COMPRESSOR).
+then composes overview.png (PERFORM, FRODHES, PHASER, COMPRESSOR). The page list is the firmware's: a first host run
+walks SELECT and reads each page's name back (the engine's VOICE pages are dynamic: voice1.png, voice2.png on the
+Rhodes; voice1-vibes.png .. voice3-vibes.png on VIBES). Files left in the folder from pages that went are listed.
 
   tools/manual_shots.py           the "device look": the colours as the FM-1's panel shows them
   tools/manual_shots.py --raw     the framebuffer's own colours (what the firmware writes)
@@ -22,6 +24,7 @@ Black -> (56, 55, 70), C_LINE -> (201, 194, 76), UI_ACC -> (255, 255, 139), C_HI
 reads (56, 55, 61), (201, 193, 107), and the bright steps clipped at about 254. web/app.js uses the same numbers.
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -54,8 +57,52 @@ def overview(names, gap=16, bg=(24, 24, 24)):
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "docs", "manual", "img")
-PAGES = ["perform", "piano", "voice", "decay", "comp", "filter", "drive", "trem", "phaser", "chorus", "delay", "reverb",
-         "tempo", "scale", "chord", "arp", "lfo", "seq", "assign", "setup", "midi"]   # the SELECT order (ui.c PG_ORDER)
+BIN = os.path.join(ROOT, "build", "host", "frodhes")
+# a page's file name, by its base title (host_state "page"); the VOICE pages are numbered in the SELECT order
+# (voice1.png, voice2.png; VIBES: voice1-vibes.png ...), as the engine's table makes them. (DECAY / MOTOR: the pages
+# of the builds before the dynamic VOICE pages.)
+NAME = {"PERFORM": "perform", "FRODHES": "piano", "DECAY": "decay", "MOTOR": "motor", "COMPRESSOR": "comp",
+        "FILTER": "filter", "DRIVE": "drive", "TREM/WAH": "trem", "PHASER": "phaser", "CHORUS": "chorus",
+        "DELAY": "delay", "REVERB": "reverb", "TEMPO": "tempo", "SCALE": "scale", "CHORD": "chord", "ARPEGGIO": "arp",
+        "LFO": "lfo", "SEQUENCER": "seq", "ASSIGN": "assign", "SETUP": "setup", "MIDI": "midi"}
+
+
+def walk_pages(pre=(), t0=2500, n=30):
+    """the pages SELECT walks, as the host build says: [(page, title)] from PERFORM, up to the first one seen again
+    (SELECT stops at the last page). Read with "expect state page ~" probes: a failed expect prints the value.
+    pre: script lines first (a TYPE)"""
+    tag = os.path.join(ROOT, "build", "host", "manual_walk")
+    L, t = list(pre), t0
+    for i in range(n):
+        if i:
+            L.append(f"{t} turn 0 1"); t += 300
+        L += [f"{t} expect state page ~", f"{t} expect state title ~"]; t += 10
+    L.append(f"{t} end")
+    open(tag + ".txt", "w").write("\n".join(L) + "\n")
+    out = subprocess.run([BIN, tag, tag + ".txt"], capture_output=True, text=True).stdout
+    got = {}
+    for ms, k, v in re.findall(r'^\s*(\d+) ms  FAIL expect state (\w+) = "~" \(is "(.*)"\)$', out, re.M):
+        got.setdefault(int(ms), {})[k] = v
+    pages = []
+    for ms in sorted(got):
+        p = (got[ms].get("page"), got[ms].get("title", got[ms].get("page")))
+        if p in pages:
+            break
+        pages.append(p)
+    return pages
+
+
+def names(pages, suffix=""):
+    """file names for the walked pages: NAME by the base title, the VOICE pages numbered"""
+    out, nv = [], 0
+    for page, title in pages:
+        base = page if page in NAME else (title or page or "").split(" ")[0]
+        if base == "VOICE":
+            nv += 1
+            out.append(f"voice{nv}{suffix}")
+        else:
+            out.append(NAME.get(base, base.lower().replace("/", "")) + suffix)
+    return out
 
 
 def main():
@@ -64,6 +111,9 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(os.path.join(ROOT, "build", "host"), exist_ok=True)
     tag = os.path.join(ROOT, "build", "host", "manual")
+    PAGES = names(walk_pages())                             # the SELECT order, as the firmware has it
+    vibes = names(walk_pages(["100 midi 0xB0 79 64"]), "-vibes")
+    vibes = vibes[vibes.index("piano-vibes") + 1:vibes.index("comp-vibes")]   # VIBES' own pages (VOICE 1..3)
     L, shots, t = ["400 shot"], {400: "splash"}, 100           # the start screen, before anything is touched
     # a sound with something on every page: F04 80S BALLAD, then the tremolo, phaser and compressor on
     t = 500
@@ -127,31 +177,31 @@ def main():
     L.append(f"{t} btn 8"); t += 1800
     L.append(f"{t} btn 2"); t += 300
     L.append(f"{t} shot"); shots[t] = "bypass"; t += 100
-    # VIBES (a bar TYPE): the VOICE and DECAY cards renamed, and the MOTOR page (after the shots above,
-    # so they stay as they were)
+    # VIBES (a bar TYPE): its own VOICE pages from the engine's table (VOICE 1/3 .. 3/3, the motor on the last), after
+    # the shots above, so they stay as they were
     L.append(f"{t} btn 2"); t += 100                        # effects on again
     L.append(f"{t} midi 0xC0 12 0"); t += 100               # F13 VIBES MOTOR (TYPE VIBES, the motor at 3.5 Hz)
     L.append(f"{t} btn 8"); t += 100                        # HOME: the FRODHES page with TYPE VIBES
     L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 1700
     L.append(f"{t} shot"); shots[t] = "piano-vibes"; t += 100
-    L.append(f"{t} turn 0 1"); t += 100                     # SELECT: VOICE
-    L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 1700   # (the TYPE message has gone)
-    L.append(f"{t} shot"); shots[t] = "voice-vibes"; t += 100
-    L.append(f"{t} turn 0 1"); t += 700
-    L.append(f"{t} shot"); shots[t] = "decay-vibes"; t += 100
-    L.append(f"{t} turn 0 1"); t += 100                     # SELECT: the MOTOR page (bar types only), the preset's motor
-    L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 900
-    L.append(f"{t} shot"); shots[t] = "motor"; t += 100
+    for name in vibes:                                      # SELECT through them, a note on each (live readouts)
+        L.append(f"{t} turn 0 1"); t += 100
+        L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 1700   # (the TYPE message has gone)
+        L.append(f"{t} shot"); shots[t] = name; t += 100
     L.append(f"{t} end")
     open(tag + ".txt", "w").write("\n".join(L) + "\n")
-    subprocess.run([os.path.join(ROOT, "build", "host", "frodhes"), tag, tag + ".txt"], check=True, capture_output=True)
+    subprocess.run([BIN, tag, tag + ".txt"], check=True, capture_output=True)
     for ms, name in shots.items():
         src = f"{tag}-{ms}.ppm"
         im = Image.open(src).convert("RGB")
         (im if raw else device_look(im)).resize((480, 480), Image.NEAREST).save(os.path.join(OUT, f"{name}.png"))
         os.remove(src)
     overview(["perform", "piano", "phaser", "comp"])
-    print(sorted(os.listdir(OUT)))
+    made = set(shots.values()) | {"overview"}
+    print(sorted(made))
+    stale = sorted(f for f in os.listdir(OUT) if f.endswith(".png") and f[:-4] not in made)
+    if stale:
+        print("not made by this run (pages that went: git rm them):", stale)
 
 
 if __name__ == "__main__":
