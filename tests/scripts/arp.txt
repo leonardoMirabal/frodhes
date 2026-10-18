@@ -2,16 +2,16 @@
 100 btn 10
 200 btn 10
 300 expect led 10 1
-# HOLD off (PLAY 12 unlit): a C major triad held (F3 = key 0: C4 = 7, E4 = 11, G4 = 14) plays one note at a time
-300 expect led 12 0
+# HOLD off (SEL 3 unlit): a C major triad held (F3 = key 0: C4 = 7, E4 = 11, G4 = 14) plays one note at a time
+300 expect led 3 0
 400 keys 0x4880
 1400 expect rms > -60
 # let go: it stops (the last note's release dies away)
 1500 keys 0
 2700 expect rms < -70
-# PLAY: HOLD on (PLAY lit); the chord, let go: the pattern goes on
-2800 btn 12
-2900 expect led 12 1
+# SEL: HOLD on (SEL lit on this page; 0.9.3: was PLAY); the chord, let go: the pattern goes on
+2800 btn 3
+2900 expect led 3 1
 3000 keys 0x4880
 3200 keys 0
 3300 shot
@@ -20,9 +20,9 @@
 4100 keys 0x10000
 4200 keys 0
 5000 expect rms > -60
-# PLAY again: HOLD off, the held-over notes go
-5100 btn 12
-5200 expect led 12 0
+# SEL again: HOLD off, the held-over notes go
+5100 btn 3
+5200 expect led 3 0
 6400 expect rms < -70
 # ARP: off; the chord now sounds as a chord
 6500 btn 10

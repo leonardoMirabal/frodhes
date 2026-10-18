@@ -90,7 +90,7 @@ def test_power_cycle_keeps_everything(eng):
     fl = flash_file(f"pc-{eng}")
     lines = ENGINES[eng] + [cc(20, 81, 90), cc(21, 91, 40),           # the panel: an edit of F01 (DRIVE, REVERB)
                             "30 btn 1",                                 # OCT+ (the FM-1's)
-                            "40 btn 6", "45 turn 0 1", "50 turn 5 7",   # DECAY page, TUNE +7
+                            "40 turn 0 1", "42 turn 0 1", "45 turn 0 1", "50 turn 5 7",   # DECAY page, TUNE +7
                             "60 btn 7", "65 turn 2 -12",                # TEMPO, BPM 108
                             cc(70, 53, 2), cc(71, 56, 4), cc(72, 61, 2), cc(73, 46, 60),   # ARP RATE, chord, BARS, SWING
                             "100 btn 9", "120 turn 2 1", "125 turn 2 1", "140 btn 9",   # SAVE to U03
@@ -363,7 +363,7 @@ def test_v2_motor_becomes_the_motor_page():
 def test_motor_off_by_hand_survives_a_power_cycle():
     """the MOTOR page's ON card switched off is kept (and with it, no motor when the TYPE turns to VIBES again)"""
     fl = flash_file("motoff")
-    lines = ["100 turn 1 1", "110 turn 1 1", "120 turn 1 1", "130 turn 1 1", "200 btn 6", "300 turn 0 1",
+    lines = ["100 turn 1 1", "110 turn 1 1", "120 turn 1 1", "130 turn 1 1", "200 turn 0 1", "250 turn 0 1", "300 turn 0 1",
              "400 turn 0 1", "500 turn 2 -1", "600 turn 1 -1", "700 dump"]
     r1 = run("motoff-1", lines, 4000, flash=fl)
     assert r1.state(700)["card.21.0"] == "OFF" and r1.saves

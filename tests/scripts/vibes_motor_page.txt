@@ -17,8 +17,8 @@
 # it plays (the motor's pulse: tests/py/test_vibes_controls_audible.py measures it)
 500 keys 0x10000
 1500 keys 0
-# ---- EDIT, SELECT twice: the MOTOR page; K1 left: OFF
-1600 btn 6
+# ---- SELECT three times: VOICE, DECAY, the MOTOR page; K1 left: OFF
+1600 turn 0 1
 1700 turn 0 1
 1800 turn 0 1
 1900 expect state page MOTOR

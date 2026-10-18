@@ -1,7 +1,6 @@
 # SEQUENCER (0.9.1). Keys: C4 = 7, E4 = 11, G4 = 14. Buttons: SEQ 11, PLAY 12. Encoders: ALGORITHM 1, PRESETS 6, K4 5.
-# SEQ: CHORD (chord mode off), SEQ again: SEQUENCER. 1 bar at 120 BPM = a 2 s loop, QUANT 1/8 (CC 61, 62)
+# SEQ: the SEQUENCER page (0.9.3: straight there). 1 bar at 120 BPM = a 2 s loop, QUANT 1/8 (CC 61, 62)
 100 btn 11
-200 btn 11
 300 midi 0xB0 61 1
 350 midi 0xB0 62 2
 # live: SEQ = REC armed, PLAY starts the loop (t = 950); C, E, a late G

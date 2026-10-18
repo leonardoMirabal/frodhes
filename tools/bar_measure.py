@@ -55,10 +55,12 @@ def build():
 
 
 def tune_lines(t, cents):
-    """TUNE is a panel setting (no CC): EDIT (VOICE), SELECT to DECAY, K4"""
+    """TUNE is a panel setting (no CC): GLO then HOME (PERFORM from any page), SELECT to DECAY (FRODHES, VOICE,
+    DECAY: EDIT is CHORD since 0.9.3), K4"""
     if not cents:
         return []
-    return [(t, "btn 6"), (t + 10, "turn 0 1"), (t + 20, f"turn 5 {int(cents)}"), (t + 30, "btn 8")]
+    return [(t, "btn 7"), (t + 3, "btn 8"), (t + 6, "turn 0 1"), (t + 9, "turn 0 1"), (t + 12, "turn 0 1"),
+            (t + 20, f"turn 5 {int(cents)}"), (t + 30, "btn 8")]
 
 
 def render(tag, events, end_ms, outdir, env=None):

@@ -62,8 +62,16 @@ def main():
     out.append(arr("FX_CMP_REL", "uint32_t", [max(1, int(round(65536 * (1 - math.exp(-1 / (0.020 * 75 ** (v / 127) * FS)))))) for v in range(128)], 8))
     out.append(arr("FX_LOG2F", "uint16_t", [int(round(4096 * math.log2(1 + i / 256))) for i in range(256)], 16))
     out.append(arr("FX_EXP2F", "uint32_t", [int(round(65536 * 2 ** (i / 256))) for i in range(256)], 8))
-    # drive make-up trim (Q15): the measured +0.09 dB per DRIVE step taken back, so DRIVE is level-neutral
-    out.append(arr("FX_DRV_LVL", "uint16_t", [int(round(32767 * 10 ** (-0.0896 * v / 20))) for v in range(128)], 12))
+    # drive make-up trim (Q15): the measured +0.09 dB per DRIVE step taken back, so DRIVE is level-neutral; and (0.9.3,
+    # the drive's gain up to ~40x: it did nothing audible, TODO #4) the loudness its saturation adds, measured on the
+    # host (A3 v80 / v110, A2, A4, a chord v110 / v70, LUFS, the mean) at these AMOUNT anchors, taken back too
+    DRV_RISE = [(0, 0.0), (16, -0.71), (24, -0.48), (32, 0.11), (40, 0.9), (48, 1.77), (56, 2.62), (64, 3.39), (72, 4.04), (80, 4.55), (88, 4.91), (96, 5.11), (104, 5.15), (112, 5.03), (120, 4.76), (127, 4.39)]
+    def drv_rise(v):
+        for (a, ra), (b, rb) in zip(DRV_RISE, DRV_RISE[1:]):
+            if a <= v <= b:
+                return ra + (rb - ra) * (v - a) / (b - a)
+        return DRV_RISE[-1][1]
+    out.append(arr("FX_DRV_LVL", "uint16_t", [int(round(32767 * 10 ** ((-0.0896 * v - (drv_rise(v) if v > 16 else 0.0)) / 20))) for v in range(128)], 12))   # (<= 16: as before)
     # LEVEL (the preset's volume trim): Q12 gain, 64 = 0 dB, 0.1875 dB a step
     out.append(arr("FX_LVL", "uint16_t", [int(round(4096 * 10 ** ((v - 64) * 0.1875 / 20))) for v in range(128)], 12))
     # FILTER (a TPT state-variable filter, fx.c fx_filter): cutoff 30 Hz .. 16 kHz over 256 log steps

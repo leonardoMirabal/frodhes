@@ -1,0 +1,85 @@
+# 0.9.3 buttons (TODO 2 / 3). Buttons: SEL 3, EDIT 6, ARP 10, SEQ 11, PLAY 12; SELECT = encoder 0.
+# SEQ: straight to the SEQUENCER page (no CHORD page on the way), its LED off while stopped
+100 btn 11
+150 expect state page SEQUENCER
+150 expect led 11 0
+# EDIT: the CHORD page; EDIT again: chord mode on (MAJ the first time), the EDIT LED lit; again: off
+200 btn 6
+250 expect state page CHORD
+250 expect state hint EDIT:_CHORDS_ON_/_OFF
+250 expect state chord 0
+250 expect led 6 0
+300 btn 6
+350 expect state chord 1
+350 expect state card0 MAJ
+350 expect led 6 1
+400 btn 6
+450 expect state chord 0
+450 expect led 6 0
+# the type turned on K1 is the one EDIT brings back
+500 turn 2 1
+510 turn 2 1
+520 turn 2 1
+530 turn 2 1
+550 expect state card0 MIN
+600 btn 6
+650 expect state chord 0
+700 btn 6
+750 expect state card0 MIN
+800 btn 6
+# chord mode on does not send SEQ to another page: SEQ = SEQUENCER from anywhere
+850 btn 11
+900 expect state page SEQUENCER
+# ARPEGGIO: ARP opens it, ARP again = on; SEL = HOLD on / off there (lit while on); PLAY = tap tempo
+1000 btn 10
+1050 expect state page ARPEGGIO
+1100 btn 10
+1150 expect state arp 1
+1200 btn 3
+1250 expect state hold 1
+1250 expect state msg HOLD_ON
+1250 expect state page ARPEGGIO
+1250 expect led 3 1
+1300 btn 3
+1350 expect state hold 0
+1350 expect led 3 0
+1400 btn 12
+1800 btn 12
+2200 btn 12
+2600 btn 12
+2700 expect state bpm 150.0
+2700 expect state hold 0
+2700 expect state page ARPEGGIO
+# away from ARPEGGIO, SEL is DELAY again (goes to its page; again: the delay on)
+2750 btn 8
+2800 btn 3
+2850 expect state page DELAY
+2900 btn 3
+2950 expect state p.13 1
+2950 expect led 3 1
+# the SELECT order: ... SCALE CHORD ARPEGGIO LFO SEQUENCER ASSIGN SETUP MIDI
+3000 btn 10
+3100 turn 0 1
+3150 expect state page LFO
+3200 turn 0 1
+3250 expect state page SEQUENCER
+3300 turn 0 1
+3350 expect state page ASSIGN
+3400 turn 0 -1
+3450 turn 0 -1
+3500 turn 0 -1
+3550 expect state page ARPEGGIO
+3600 turn 0 -1
+3650 expect state page CHORD
+3700 turn 0 -1
+3750 expect state page SCALE
+# on SEQUENCER: PLAY starts / stops the loop (unchanged), the SEQ LED lit while it plays
+3800 btn 11
+3850 expect state page SEQUENCER
+3900 btn 12
+3950 expect state play 1
+4000 expect led 11 1
+4100 btn 12
+4150 expect state play 0
+4150 expect led 11 0
+4200 end

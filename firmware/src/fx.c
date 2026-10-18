@@ -48,6 +48,7 @@ static int fx_quiet(void) { return fx_quiet_blocks >= 86u; }   /* 500 ms under -
 
 static inline int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
 static inline int32_t mulq15(int32_t a, int32_t b) { return (a * b) >> 15; }        /* |a|,|b| small enough */
+static inline int64_t clampi64(int64_t v) { return v > 131071 ? 131071 : v < -131072 ? -131072 : v; }   /* softclip's range */
 static inline int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15, flat beyond +-4 */
 {
     uint32_t i;
@@ -159,6 +160,10 @@ static void fx_drive(int32_t *m, uint32_t n)
     if (!d) { dr_w = wt; return; }                      /* AMOUNT 0: off, as before (no glide: there is no drive) */
     if (!wt && !dr_w) { dr_ton = 0; dr_tg = 4096; return; }   /* off, or MIX 0: the dry signal, untouched */
     g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
+    if (d > 16) g = 4096 + (int32_t)((((int64_t)(g - 4096)) * (95 + d)) / 111);   /* above 16 the gain rises to ~18x
+                                                       * at the top (was ~9x: a single note never reached the knee, TODO #4;
+                                                       * ~36x was a distortion, the user wants an overdrive); <= 16 (the
+                                                       * presets' low drive) exactly as before */
     k = 32000 - d * 95;
     mk = ((30000 - d * 120) * DR_MU[row]) >> 12;
     mk = (mk * (int32_t)FX_DRV_LVL[d]) >> 15;          /* level-neutral: the drive adds tone, not volume (0.6) */
@@ -171,7 +176,7 @@ static void fx_drive(int32_t *m, uint32_t n)
             int32_t x = m[i], y;
             dr_hp += (x - dr_hp + 64) >> 7;
             x = clampi(x - dr_hp, -230000, 230000);
-            y = softclip((((x >> 2) * g) >> 10) + bias) - b0;
+            y = softclip((int32_t)clampi64((((int64_t)(x >> 2) * g) >> 10) + bias)) - b0;
             dr_lp1 += mulq15(y - dr_lp1, k);
             dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
             m[i] = mulq15(dr_lp2, mk);
@@ -182,7 +187,7 @@ static void fx_drive(int32_t *m, uint32_t n)
         int32_t x0 = m[i], x, y;
         dr_hp += (x0 - dr_hp + 64) >> 7;
         x = clampi(x0 - dr_hp, -230000, 230000);
-        y = softclip((((x >> 2) * g) >> 10) + bias) - b0;
+        y = softclip((int32_t)clampi64((((int64_t)(x >> 2) * g) >> 10) + bias)) - b0;
         dr_lp1 += mulq15(y - dr_lp1, k);
         dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
         y = mulq15(dr_lp2, mk);
@@ -410,13 +415,13 @@ static void fx_comp(int32_t *m, uint32_t n)
 #define DLY_LEN 65536u
 static int16_t dly_buf[DLY_LEN] POOL;
 static uint32_t dly_w, dly_wow, dly_flt;
-static int32_t dly_d = 4410 << 8, dly_lp, dly_hp, dly_dg = 32768;
+static int32_t dly_d = 4410 << 8, dly_lp, dly_hp, dly_dg = 32768, dly_sg;   /* dly_sg: the send's stereo make-up, log2 Q12 */
 static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t sw = fx_p[FXP_DL_SW], depth = fx_p[FXP_DL_DEPTH];
     uint32_t sync = fx_dly_sync_samples, j;
     int32_t target = (int32_t)(sync ? sync : FX_DLY_T[fx_p[FXP_DL_TIME]]);
-    int32_t wet = depth * 258, fb = (depth * 180 * fx_p[FXP_DL_FDBK]) >> 7, col = 2000 + fx_p[FXP_DL_TONE] * 240;
+    int32_t wet = depth * 258, fb = (depth * 180 * fx_p[FXP_DL_FDBK]) >> 7, col = 2000 + fx_p[FXP_DL_TONE] * 240, sg16;
     if (sw == 2) col = (col * 19661) >> 15;                 /* tape: darker */
     while (target >= (int32_t)DLY_LEN - 2) target >>= 1;
     target <<= 8;
@@ -424,8 +429,28 @@ static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
                                                              * 0.85, the echoes always die (they grew forever over MIX x
                                                              * FDBK ~ 11650: the audit, 2026-10-17) */
     if (!sw && !dly_lp && !dly_hp) { dly_w += n; return; }    /* fully quiet and off: only keep time */
+    {   /* the send is the mono sum (L + R) / 2; when the phaser / chorus / pan make L and R differ, the sum loses up to
+         * 3-6 dB (the echoes "lost" under the chorus or phaser: the user, 2026-10-18). The send keeps the stereo
+         * power instead: x sqrt(mean(L^2 + R^2) / 2 / mean(sum^2)), per block, gliding, at most +6 dB; exactly 1 when
+         * L == R (the old send, sample for sample) */
+        int64_t e = 0, m = 0;
+        int32_t tg = 0;
+        if (sw) for (j = 0; j < n; j++) {
+            int32_t a = L[j], b = R[j], c = (a + b) >> 1;
+            e += (int64_t)a * a + (int64_t)b * b;
+            m += (int64_t)c * c;
+        }
+        if (m > 0 && (e >> 1) != m) {
+            while (e >= ((int64_t)1 << 31)) { e >>= 1; m >>= 1; }
+            if (m > 0) tg = clampi((ilog2_q12((uint32_t)e) - 4096 - ilog2_q12((uint32_t)m)) >> 1, 0, 4096);
+        }
+        dly_sg += (tg - dly_sg) >> 2;
+        if (tg == 0 && dly_sg < 4) dly_sg = 0;
+    }
+    sg16 = exp2_q16(dly_sg);
     for (j = 0; j < n; j++) {
         int32_t d, r, in = sw ? (L[j] + R[j]) >> 1 : 0, f;
+        if (dly_sg) in = (int32_t)(((int64_t)in * sg16) >> 16);
         uint32_t i;
         if (sw == 2) {                                   /* tape: slewed time, wow and flutter */
             dly_d += (target - dly_d) >> 12;
