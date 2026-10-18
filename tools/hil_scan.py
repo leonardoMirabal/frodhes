@@ -38,11 +38,16 @@ flipped. Now:
   - a level over a modulated sound is taken over whole cycles of its one LFO where they fit (cyc_win(): effects,
     fx_all; fx_toggle's 0.4 s windows become whole cycles in 0.38-0.6 s, as vibes_jump);
   - the noisy ones take the median of REPEATS takes (types 3, presets 3, fx_all 2; --repeats N overrides) and report
-    the takes' own spread next to the verdict.
-Expected run-to-run spread on the device (USB stream jitter, the 44.1 -> 48 kHz capture; the host proves the block
-jitter alone, tests/py/test_hil_determinism.py): types' distances +-0.1 dB, presets' loudness / span +-0.2 LU, fx_all
-+-0.3 LU, effects and fx_toggle +-0.3 LU; a verdict closer than that to its limit can still flip and is then a real
-borderline. The same checks run on the host build: tools/hil_scan.py --host [SEED] --only types,presets (no FM-1;
+    the takes' own spread next to the verdict;
+  - the classic chords hold no octave (CHORD A3 C4 E4, was A3 E4 A4; fx_all / fx_toggle C3 G3 E4, was C3 G3 C4 E4):
+    an octave's coinciding partials sum at the phase the notes' onsets set, and one note landing a block late moved
+    a preset's loudness by up to 2.0 LU (the main cause of 'presets' 7.5 / 6.7 / 5.3); now <= 0.2 LU;
+  - 'types' sums the two notes' band powers instead of joining the two windows end to end (the junction's step
+    splashed broadband into the gaps between the partials: up to 0.8 dB of the distance from take to take).
+Expected run-to-run spread (host, block jitter alone, tests/py/test_hil_determinism.py: types' distances <= 0.05 dB,
+presets <= 0.04 LU, effects / fx_all / fx_toggle <= 0.09 LU; without CC 10 presets moved 4.6 LU). On the device add
+the USB capture (44.1 -> 48 kHz, stream slips): expect types +-0.1 dB, presets +-0.2 LU, the others +-0.3 LU; a
+verdict closer than that to its limit is a real borderline, not noise. The same checks run on the host build: tools/hil_scan.py --host [SEED] --only types,presets (no FM-1;
 report build/hil/host-report.txt): each take a fresh host run that replays the panel's CCs, idles a random 0.3-1.3 s
 (the LFOs run on, as on the device between takes) and plays the take 3-25 ms late (MIDI + USB latency).
 """
