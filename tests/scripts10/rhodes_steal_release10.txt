@@ -1,4 +1,4 @@
-# FR_VOICES=10 build only (make test10): tests/scripts/rhodes_steal_release.txt with ten voices. Ten notes held
+# FR_VOICES=10 build only (make testv V=10): tests/scripts/rhodes_steal_release.txt with ten voices. Ten notes held
 # fill the voices; an eleventh is struck and let go at once: it steals the oldest voice and starts let go; when
 # every key is let go, no voice is still held.
 100 midi 0x90 53 100

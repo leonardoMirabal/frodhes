@@ -39,8 +39,8 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #define RH_O1 2u
 #define RH_O2 3u
 #ifndef FR_VOICES
-#define FR_VOICES 8u                           /* voices per engine (bars.h BAR_NV too); an experiment may build
-                                                * with -DFR_VOICES=10u (APP_DEFS / HOST_DEFS); the default stays 8 */
+#define FR_VOICES 9u                           /* voices per engine (bars.h BAR_NV too); a build may set another
+                                                * count with -DFR_VOICES=N (APP_DEFS / HOST_DEFS) */
 #endif
 #define RH_NV FR_VOICES
 #define SUB 32u

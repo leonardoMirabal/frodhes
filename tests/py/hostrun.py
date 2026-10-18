@@ -47,6 +47,8 @@ class Run:
         self.seq_saves = [int(t) for t in re.findall(r"^\s*(\d+) ms  pattern . erased", out, re.M)]
         m = re.search(r"cpu-proxy max (\d+) us", out)
         self.cpu_proxy = int(m.group(1)) if m else None
+        m = re.search(r"cpu-proxy-each rhodes (\d+) bars (\d+)", out)   # each engine's own (a run can use both)
+        self.cpu_proxy_rh, self.cpu_proxy_bars = (int(m.group(1)), int(m.group(2))) if m else (None, None)
 
     def state(self, t):
         """the dump taken at t ms"""

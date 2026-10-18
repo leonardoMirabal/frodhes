@@ -73,8 +73,8 @@ static void app_audio(int32_t *out, uint32_t n)
     us = (fm1_ticks() - t0) / 24u;                 /* 24 MHz ticks -> us (a constant divide) */
     prof_us = us;
     if (us > prof_max_us) prof_max_us = us;
-    prof_over = us > 5000u ? prof_over + 1u : 0u;  /* two blocks over 5.0 ms of the 5.8 ms: shed a voice (8 voices
-                                                    * struck with every effect on peak at 4.8 ms: tools/hil_cpu.py) */
+    prof_over = us > 5000u ? prof_over + 1u : 0u;  /* two blocks over 5.0 ms of the 5.8 ms: shed a voice (9 voices
+                                                    * struck with every effect on peak at ~4.2 ms: tools/hil_cpu.py) */
     if (prof_over >= 2u) { eng_shed_req = 1; prof_over = 0; }
 #endif
 }

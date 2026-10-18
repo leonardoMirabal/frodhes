@@ -6,8 +6,9 @@ The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder st
 
     python3 tools/hil_cpu.py [--engine vibes] [--voices N] [--worst] [--fx-each] [--calib] [--stages] [--tail]
 
---voices N (default 8) plays N-note chords and N bass notes instead of 8 (for a build with -DFR_VOICES=N; on the
-8-voice firmware N > 8 steals). The extra notes continue the lists: bass 43 45 47 48, chord 74 76 79 83.
+--voices N (default 9, the firmware's FR_VOICES) plays N-note chords and N bass notes (for a build with
+-DFR_VOICES=N; more notes than the firmware's voices steal). The lists: bass 28 31 33 35 36 38 40 41 43 45 47 48,
+chord 48 52 55 59 62 64 67 71 74 76 79 83 (the first N).
 --worst runs only the worst-case scenarios (N bass v127 + pedal, every effect; VIBES: its edge-strike versions too)
 and the idle-with-every-effect one (the fixed part), 3 takes each as usual.
 
@@ -120,10 +121,10 @@ def main():
     heavy = dict(DRIVE=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
                  CP_SW=64, CP_DEPTH=127, DL_SW=127, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
                  FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # the filter at its heaviest: LP18, the LFO
-    nv = int(sys.argv[sys.argv.index("--voices") + 1]) if "--voices" in sys.argv else 8
+    nv = int(sys.argv[sys.argv.index("--voices") + 1]) if "--voices" in sys.argv else 9   # rhodes.c FR_VOICES
     if not 1 <= nv <= 12:
         sys.exit("--voices: 1..12")
-    bass8 = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48][:nv]          # 8: the lists as before
+    bass8 = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48][:nv]          # the first 8: the lists as before
     chord8 = [48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83][:nv]
     worst_only = "--worst" in sys.argv
     rows = []

@@ -12,8 +12,11 @@ Each seed must:
     silent voice, a reported bars.c bug, test_persistence.py);
   - sound when a note is played afterwards over MIDI (and from a key when KEY VEL allows), without a click (the
     second-difference detector of tools/bar_measure.py / hil_scan) and nothing near clipping;
-  - keep the engine's CPU proxy (the host's per-block estimate of the voices, + 1700 us for every effect and the
-    rest) under the 5805 us block.
+  - keep each engine's CPU proxy under the block: the Rhodes' (the host's estimate of the voices alone, engine.c,
+    at the P0 costs) + 1700 us for every effect and the rest under the 5805 us block; VIBES' (bars.c's cost model,
+    the whole block with the effects already in it) under its own 4800 us gate (BAR_NS_GATE). Until 2026-10-18 the
+    VIBES proxy got the 1700 us a second time, and a run that switched engines (program changes) compared one
+    maximum for both.
 
 200 seeds per engine by default (the sanitizer build runs every 5th); --long: 2000 per engine, all sanitized;
 --fuzz-seeds N sets the count. A failing seed prints its script (build/host/py/fz-*.txt) to replay it."""
@@ -176,8 +179,10 @@ def one(seed, eng, sanitized):
         bad.append(f"the C4 key (KEY VEL {kv}): {rms_db(r.L[kq]):.1f} dBFS")
     if r.state(mk["dump"])["drops"] != "0":                         # (the engine's ring and the backlog before it)
         bad.append(f"{r.state(mk['dump'])['drops']} note / pedal events dropped")
-    if r.cpu_proxy is not None and r.cpu_proxy + 1700 > 5805:
-        bad.append(f"CPU proxy {r.cpu_proxy} + 1700 us over the block")
+    if r.cpu_proxy_rh is not None and r.cpu_proxy_rh + 1700 > 5805:         # (program changes switch engines:
+        bad.append(f"Rhodes CPU proxy {r.cpu_proxy_rh} + 1700 us over the block")   # each engine's own proxy)
+    if r.cpu_proxy_bars is not None and r.cpu_proxy_bars > 4800:            # the effects are in the bars model
+        bad.append(f"VIBES CPU proxy {r.cpu_proxy_bars} us over the bars gate (4800)")
     return tag, bad
 
 
