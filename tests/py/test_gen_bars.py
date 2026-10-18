@@ -65,14 +65,74 @@ def test_rom_window_and_int32():
             assert -2 ** 31 < x < 2 ** 31
 
 
-@pytest.mark.skipif(sys.platform != "darwin", reason="the tables are generated on macOS (Accelerate); another BLAS / "
-                    "LAPACK (the CI's Linux OpenBLAS) moves some fitted values by thousands: the committed header is "
-                    "the reference, and Gate R checks the sound built from it")
 def test_deterministic_and_up_to_date(tmp_path):
-    """A fresh run (into a temporary directory) gives the committed header byte for byte (on macOS)."""
+    """A fresh run (into a temporary directory) gives the committed header byte for byte, on any machine (the pair
+    stage pinned, docs/model/data/bars_pins.json; the rest machine-independent). bars_spec.json's report floats may
+    move by ~1e-14 relative off the recording machine (libm / FFT last bits), never a header word."""
     subprocess.run([sys.executable, os.path.join(ROOT, "tools", "gen_bars.py"), "--out", str(tmp_path)], check=True,
                    capture_output=True, cwd=ROOT)
     assert open(tmp_path / "bars_tables.h").read() == HDR
+
+
+PINS = gb.load_pins()
+
+
+def _map_v1(w):
+    import bartube as btm
+    M = btm.pair_map(w)
+    return btm.map_modes(M)[btm.map_v1(M)]
+
+
+def test_pinned_zeta_r_is_the_physics():
+    """The pinned tube zeta_r of every key = gen_bars.tube_zetas solved again (eig4): the flags exactly, the value
+    within one step of solve_zeta's 24-step geometric bisection (1e-6 relative)."""
+    zt = gb.tube_zetas(gb.load_vibes())
+    for n in range(gb.KEY_LO, gb.KEY_HI + 1):
+        assert zt[n][1] == PINS[n]["zt"][1] and zt[n][0] == pytest.approx(PINS[n]["zt"][0], rel=1e-6), n
+
+
+def test_pins_are_the_physics():
+    """Honesty check of the pins: the pair stage solved again from the pinned zeta_r with tools/eig4.py (decimal
+    eig, the same on every machine) agrees with every pin: the floats within 1e-8 relative, the flags exactly, and the
+    integer words exactly, or (an EDGE key: pair_words' kc bisection ends on the edge where a coupling word steps,
+    so the last-bit eig of the recording machine chose the neighbouring words) the pinned words are an equally good
+    solution, checked with eig4 on their exact integer map: V1 within 0.01 cent of f0 and its decay within 2e-4 of
+    the design's, kc within 1e-5 and every word within a few LSB of the fresh solve. Prints the counts."""
+    vb = gb.load_vibes()
+    exact, edge = [], []
+    for n in range(gb.KEY_LO, gb.KEY_HI + 1):
+        p = PINS[n]
+        zr = p["zt"][0]
+        bt, cl, weak = gb.make_pair(vb, n, zr, gb.t1b(vb, n))
+        assert (cl, weak, bt.clamped) == (p["cl"], p["weak"], p["bt"]["clamped"]), n
+        for kk, v in (("f_bar", bt.f_t), ("f_tube", bt.f_b), ("sigma", bt.k_rel), ("sig_bar", bt.sigma_t),
+                      ("sig_tube", bt.sigma_b), ("sigma_wanted", bt.sigma_wanted)):
+            assert v == pytest.approx(p["bt"][kk], rel=1e-8, nan_ok=True), (n, kk)
+        pk, wt = gb.pair_peak_ms(vb, bt, dur=2.5)
+        assert wt == pytest.approx(p["wt"], rel=1e-8) and abs(pk - p["peak_ms"]) <= 0.05, n
+        felt = min(gb.felt_v1(vb, n), gb.t1a(vb, n))
+        k = dict(bt=bt, felt_v1=felt)
+        for kk, v in gb.v1_vals(k).items():
+            assert v == pytest.approx(p["v1"][kk], rel=1e-8), (n, kk)
+        pw, pp = gb.pair_words_safe(bt, wt, felt, gb.midi_hz(n)), gb.pin_words(p)
+        ints = [kk for kk in pp if kk not in ("kc", "f_slot0", "f_slot1")]
+        if all(pw[kk] == pp[kk] for kk in ints):
+            exact.append(n)
+            assert pw["kc"] == pytest.approx(pp["kc"], rel=1e-8), n
+            continue
+        edge.append(n)
+        assert pp["G"] == pw["G"] and pw["kc"] == pytest.approx(pp["kc"], rel=1e-5), n
+        assert pw["f_slot0"] == pytest.approx(pp["f_slot0"], rel=2e-6), n
+        for kk in ("k_tb", "k_bt", "E0", "eps0", "E1", "eps1"):
+            assert abs(pw[kk] - pp[kk]) <= max(2, 1e-5 * abs(pp[kk])), (n, kk, pw[kk], pp[kk])
+        for s in ("w0", "w1"):
+            for kk in pp[s]:
+                assert abs(pw[s][kk] - pp[s][kk]) <= max(2, 2e-6 * abs(pp[s][kk])), (n, s, kk, pw[s][kk], pp[s][kk])
+        f, sig, _ = _map_v1(pp)
+        assert abs(1200 * np.log2(f / gb.midi_hz(n))) <= 0.01, n
+        assert abs(sig / bt.v1()[1] - 1) <= 2e-4, (n, sig, bt.v1()[1])
+    print("pins: %d keys exact, %d edge keys %s" % (len(exact), len(edge), edge))
+    assert len(exact) + len(edge) == gb.NKEY
 
 
 def test_pair_bounds():
