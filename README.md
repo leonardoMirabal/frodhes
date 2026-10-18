@@ -97,7 +97,8 @@ make host         # render build/host/frodhes.wav and screen PNGs on the compute
 
 Testing on the real FM-1 over USB: `tools/hil_scan.py` plays it over MIDI and analyses its USB audio (keys,
 velocity, every effect, presets); `tools/hil_jack.py` compares the headphone jack, recorded with an audio interface,
-against the USB audio. `tools/manual_shots.py` renders the manual's screenshots. `web/build.sh` builds the browser
+against the USB audio; `tools/hil_usb_onset.py` checks that every note reaches the USB recording as soon as the jack
+(after a knob turn and a pause too: the automatic saves wait while a computer records). `tools/manual_shots.py` renders the manual's screenshots. `web/build.sh` builds the browser
 emulator (Emscripten; `web/web_hal.c` stands in for the hardware) into `web/dist/`.
 
 Frodhes changes Dinghy's platform files in a few small places: the app may allow its flash sectors (presets and the

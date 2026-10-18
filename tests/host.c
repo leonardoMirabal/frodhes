@@ -62,6 +62,7 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 #define CV_MAX (240u * 64u)
 #include "gfx.c"
 
+static uint8_t host_usb_rec;                    /* "T usbrec 1": a computer reads the USB audio (frodhes.c usb_recording) */
 static uint8_t host_store[256 + 4];             /* the settings record: [0] = 1 when saved, the bytes from [4] */
 static uint32_t host_store_len = 256;           /* its length (platform.c: a record of another size is "nothing") */
 static int settings_load(void *p, uint32_t n)
@@ -151,11 +152,12 @@ static void eng_host_report(void);              /* engine.c: the engines' host c
  *   T expect sound       fails unless what the engines and effects run with is what the panel says (frodhes.c)
  *   T expect state K V   fails unless the state K (frodhes.c host_state: header, page, card0..3, oct, ...) reads V
  *                        (V: one word, '_' for a space)
+ *   T usbrec V           a computer reads the USB audio (1) or not (0): the automatic flash saves wait (frodhes.c)
  *   T dump               prints the state, one "@ T K V" line each (every page's cards, the parameters, LEDs ...)
  *   T end                stop; the exit code is the number of failed expects
  * With FRODHES_FLASH=FILE the flash is kept in FILE across runs (host_flash_load / host_flash_save). */
 enum { EV_KEYS, EV_BTN, EV_PRESS, EV_RELEASE, EV_TURN, EV_MIDI, EV_SHOT, EV_EXP_LED, EV_EXP_RMS, EV_EXP_PRESET,
-       EV_EXP_SOUND, EV_EXP_STATE, EV_DUMP };
+       EV_EXP_SOUND, EV_EXP_STATE, EV_DUMP, EV_USBREC };
 static int host_preset_check(char *msg, unsigned n);   /* frodhes.c: 0 if the panel is the shown preset */
 static int host_sound_check(char *msg, unsigned n);    /* frodhes.c: 0 if the engines run what the panel says */
 static int host_state(const char *key, char *val, unsigned n);   /* frodhes.c: 0 if K is known */
@@ -197,6 +199,7 @@ static void read_script(const char *path)
         else if (!strcmp(what, "midi")) { e.kind = EV_MIDI; sscanf(line, "%*u %*s %i %u %u", (int *)&a, &b, &c); e.st = (uint8_t)a; e.d1 = (uint8_t)b; e.d2 = (uint8_t)c; }
         else if (!strcmp(what, "shot")) e.kind = EV_SHOT;
         else if (!strcmp(what, "dump")) e.kind = EV_DUMP;
+        else if (!strcmp(what, "usbrec")) { e.kind = EV_USBREC; sscanf(line, "%*u %*s %d", &e.a); }
         else if (!strcmp(what, "expect") && sscanf(line, "%*u %*s %15s", sub) == 1) {
             if (!strcmp(sub, "preset")) e.kind = EV_EXP_PRESET;
             else if (!strcmp(sub, "sound")) e.kind = EV_EXP_SOUND;
@@ -297,6 +300,7 @@ static void platform_poll(void)                 /* one call = one millisecond */
             break;
         }
         case EV_DUMP: host_dump(); break;
+        case EV_USBREC: host_usb_rec = e->a != 0; break;
         case EV_EXP_LED:
             if ((uint32_t)e->a >= 64u || host_led[e->a] != (uint8_t)e->b) {
                 printf("%6u ms  FAIL expect led %d = %d (is %d)\n", fm1_ms, e->a, e->b, (uint32_t)e->a < 64u ? host_led[e->a] : -1);

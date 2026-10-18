@@ -36,6 +36,21 @@ static uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof_st"))); 
 #include "tempo.c"
 #include "arp.c"
 #include "notes.c"
+/* Flash writes and the USB audio: an erase holds the interrupts off (the settings: 24 ms) and no USB audio packet goes
+ * out meanwhile. macOS then hands the recording stale input for ~250 ms (2026-10-18, tools/hil_usb_onset.py: a note
+ * 0.2 s after a settings save lost its first 180-260 ms on USB while the jack had it at once; interrupts off for 20 ms
+ * did the same, 5 ms did not). So while a computer reads the USB audio, the automatic saves (the settings, the
+ * sequencer's pattern) wait until it stops, or for FL_REC_QUIET blocks of silence (so changes made during a long
+ * session are kept even if the FM-1 is switched off before the computer lets go). SAVE (a preset) goes at once. */
+#define FL_REC_QUIET 10336u                    /* 60 s of 5.8 ms blocks under -66 dBFS (fx_quiet_blocks) */
+#if !defined(DINGHY_HOST)
+static int usb_recording(void) { return uac.alt && uac.flowing; }
+#elif defined(DINGHY_WEB)
+static int usb_recording(void) { return 0; }
+#else
+static int usb_recording(void) { return host_usb_rec; }
+#endif
+static int flash_auto_ok(void) { return !usb_recording() || fx_quiet_blocks >= FL_REC_QUIET; }
 #include "seq.c"
 #include "ui.c"
 #include "presets.c"
@@ -283,7 +298,7 @@ static void app_main(void)
         presets_save_poll();
         seq_save_poll();
 
-        if (set_dirty && fm1_ms - set_t_change > 2000u && eng_idle() && fx_quiet()) {
+        if (set_dirty && fm1_ms - set_t_change > 2000u && eng_idle() && fx_quiet() && flash_auto_ok()) {
             settings_save(&set, sizeof set);    /* only when silent: the erase stalls the audio */
             set_dirty = 0;
         }
