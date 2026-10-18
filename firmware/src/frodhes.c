@@ -105,7 +105,6 @@ static void midi_cc(uint32_t cc, uint32_t v)
         return;
     }
     if (cc == 8u) { batt_sim = (uint8_t)v; return; }           /* developer: a simulated battery reading (v x 8; 0 = the ADC) */
-    if (cc == 2u) { ui_style = (uint8_t)(v > 4u ? 0u : v); ui_draw_page_change(); return; }   /* developer: the UI look (ui.c) */
     if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
     if (cc == 114u) { set.usb_fixed = v >= 64u; usb_pre_master = set.usb_fixed; ui_mark(E_CARDS); return; }   /* USB VOL */
     if (cc == 116u) {                                  /* profiler query: CC 116 -> CC 116/117 = max audio us (MSB, LSB
@@ -378,8 +377,28 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "page")) snprintf(v, n, "%s", PAGE_TITLE[ui_page]);
     else if (!strcmp(key, "hint")) snprintf(v, n, "%s", page_hint(ui_page));
     else if (!strcmp(key, "msg")) snprintf(v, n, "%s", ui_msg_t && fm1_ms - ui_msg_t < MSG_MS ? ui_msg : "");
-    else if (sscanf(key, "card.%u.%u", &a, &b) == 2 && a < PG_N && b < 4u) { slot_text(slot_at(a, b), t); snprintf(v, n, "%s", t); }
-    else if (sscanf(key, "label.%u.%u", &a, &b) == 2 && a < PG_N && b < 4u) snprintf(v, n, "%s", slot_label(a, b));
+    else if (sscanf(key, "card.%u.%u", &a, &b) == 2 && a < PG_N && b < 4u) { slot_text(slot_at_v(a, 0, b), t); snprintf(v, n, "%s", t); }
+    else if (sscanf(key, "label.%u.%u", &a, &b) == 2 && a < PG_N && b < 4u) snprintf(v, n, "%s", slot_label_v(a, 0, b));
+    else if (!strcmp(key, "vpage")) { if (ui_page == PG_VOICE) snprintf(v, n, "%u/%u", ui_vp_ok() + 1u, vp_count()); }   /* VOICE n/m */
+    else if (sscanf(key, "vcard.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) { slot_text(slot_at_v(PG_VOICE, a, b), t); snprintf(v, n, "%s", t); }
+    else if (sscanf(key, "vlabel.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) snprintf(v, n, "%s", slot_label_v(PG_VOICE, a, b));
+    else if (sscanf(key, "vhint.%u", &a) == 1) snprintf(v, n, "%s", a < vp_count() ? eng_ui()->hint[a] : "");
+    else if (!strcmp(key, "vpages")) snprintf(v, n, "%u", vp_count());
+    else if (sscanf(key, "row%u", &a) == 1 && a < 4u) {   /* what row a shows: KIND V HI (ui.c ui_row_drawn) */
+        static const char *const RK[] = {"none", "amount", "detent", "choice", "bar"};
+        snprintf(v, n, "%s %d %d", RK[ui_row_drawn[a].kind], ui_row_drawn[a].v, ui_row_drawn[a].hi);
+    }
+    else if (!strcmp(key, "hot")) { if (ui_hot_card < 4u && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS) snprintf(v, n, "%u", ui_hot_card); else snprintf(v, n, "-"); }
+    else if (!strcmp(key, "title")) {                  /* the title line's left text: VOICE 2/3 */
+        if (ui_page == PG_VOICE) snprintf(v, n, "%s %u/%u", PAGE_TITLE[ui_page], ui_vp_ok() + 1u, vp_count());
+        else snprintf(v, n, "%s", PAGE_TITLE[ui_page]);
+    }
+    else if (!strcmp(key, "seqpos")) { seq_pos_text(t); snprintf(v, n, "%s", t); }   /* the SEQUENCER title's right text */
+    else if (!strcmp(key, "count")) {                  /* the title's right text: the page n/m */
+        fmt_frac(t, pg_pos(ui_page, ui_vp_ok()) + 1u, pg_count());   /* (the SEQUENCER draws seqpos there) */
+        snprintf(v, n, "%s", t);
+    }
+    else if (!strcmp(key, "pages")) snprintf(v, n, "%u", pg_count());
     else if (sscanf(key, "card%u", &a) == 1 && a < 4u) { slot_text(slot_at(ui_page, a), t); snprintf(v, n, "%s", t); }
     else if (sscanf(key, "label%u", &a) == 1 && a < 4u) snprintf(v, n, "%s", slot_label(ui_page, a));
     else if (sscanf(key, "p.%u", &a) == 1 && a < P_COUNT) snprintf(v, n, "%u", PV(a));
@@ -415,7 +434,7 @@ static int host_state(const char *key, char *v, unsigned n)
 }
 static void host_dump(void)
 {
-    static const char *const K[] = {"header", "preset", "page", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
+    static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
                                     "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "label0", "card0", "label1", "card1", "label2", "card2",
                                     "label3", "card3"};
@@ -427,6 +446,13 @@ static void host_dump(void)
             snprintf(key, sizeof key, "label.%u.%u", i, k); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
             snprintf(key, sizeof key, "card.%u.%u", i, k); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
         }
+    for (i = 0; i < vp_count(); i++) {                  /* the engine's VOICE pages */
+        snprintf(key, sizeof key, "vhint.%u", i); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
+        for (k = 0; k < 4u; k++) {
+            snprintf(key, sizeof key, "vlabel.%u.%u", i, k); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
+            snprintf(key, sizeof key, "vcard.%u.%u", i, k); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v);
+        }
+    }
     for (i = 0; i < P_COUNT; i++) printf("@ %u p.%u %u\n", fm1_ms, i, PV(i));
     for (i = 0; i < 41u; i++) printf("@ %u led.%u %u\n", fm1_ms, i, host_led[i]);
     for (i = 1; i <= PR_NU; i++) { snprintf(key, sizeof key, "u.%u", i); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v); }

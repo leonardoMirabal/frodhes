@@ -105,11 +105,11 @@ def test_power_cycle_keeps_everything(eng):
     r2 = boot(f"pc2-{eng}", fl, ["150 keys 0x80", "600 keys 0", "700 expect rms > -45"], 900)
     assert not r2.fails, r2.fails
     s2 = r2.state(100)
-    for k in ("header", "oct", "bpm", "notes", "bars", "u.3", "card.4.3", "card.15.1", "card.13.0", "card.14.0",
+    for k in ("header", "oct", "bpm", "notes", "bars", "u.3", "vcard.1.3", "card.15.1", "card.13.0", "card.14.0",
               "card.14.2"):
         assert s2[k] == s1[k], (k, s1[k], s2[k])
     assert all(s2[k] == s1[k] for k in s1 if k.startswith("p."))
-    assert (s2["oct"], s2["card.4.3"], s2["bpm"], s2["card.14.0"]) == ("1", "+7", "108.0", "2")
+    assert (s2["oct"], s2["vcard.1.3"], s2["bpm"], s2["card.14.0"]) == ("1", "+7", "108.0", "2")
 
 
 def test_save_timing():
@@ -355,7 +355,7 @@ def test_v2_motor_becomes_the_motor_page():
     for t in (150, 300):                                       # the panel, then U01 (VIBES)
         s = b.state(t)
         assert {k: int(s[f"p.{k}"]) for k in want} == want, (t, {k: s[f"p.{k}"] for k in want})
-        assert s["card.21.0"] == "ON" and s["card.7.0"] == "OFF"
+        assert s["vcard.2.0"] == "ON" and s["card.7.0"] == "OFF"
     s = b.state(500)                                           # U02, FELT with MOTOR: still the AM tremolo
     assert (s["p.0"], s[f"p.{P['TW_SW']}"], s[f"p.{P['TW_MODE']}"], s["card.7.0"]) == ("2", "1", "1", "TREM")
 
@@ -366,6 +366,6 @@ def test_motor_off_by_hand_survives_a_power_cycle():
     lines = ["100 turn 1 1", "110 turn 1 1", "120 turn 1 1", "130 turn 1 1", "200 turn 0 1", "250 turn 0 1", "300 turn 0 1",
              "400 turn 0 1", "500 turn 2 -1", "600 turn 1 -1", "700 dump"]
     r1 = run("motoff-1", lines, 4000, flash=fl)
-    assert r1.state(700)["card.21.0"] == "OFF" and r1.saves
+    assert r1.state(700)[f"p.{MOT_ON}"] == "0" and r1.saves             # (a Rhodes TYPE now: no VOICE 3)
     r2 = boot("motoff-2", fl, ["200 turn 1 1", "300 dump"], 400, check_preset=False)
-    assert r2.state(300)["bars"] == "1" and r2.state(300)["card.21.0"] == "OFF"
+    assert r2.state(300)["bars"] == "1" and r2.state(300)["vcard.2.0"] == "OFF"

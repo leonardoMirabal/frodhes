@@ -99,8 +99,8 @@
 7000 expect state header F13_VIBE_MOTOR
 7000 expect led 5 0
 7000 expect state card.7.0 OFF
-7000 expect state card.21.0 ON
-7000 expect state card.21.2 3.5HZ
+7000 expect state vcard.2.0 ON
+7000 expect state vcard.2.2 3.5HZ
 7000 expect state label.3.0 STRIKE
 # ---- TYPE swaps: CC 80 (Rhodes SUITCASE), the cards turn back; CC 79 (VIBES) again; ALGORITHM steps it
 7100 midi 0xB0 80 40
@@ -112,7 +112,7 @@
 7300 midi 0xB0 79 64
 7400 expect sound
 7400 expect state bars 1
-7400 expect state card.21.0 ON
+7400 expect state vcard.2.0 ON
 7500 turn 1 -1
 7600 expect sound
 7600 expect state bars 0
