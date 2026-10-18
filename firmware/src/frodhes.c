@@ -57,6 +57,28 @@ static int flash_auto_ok(void) { return !usb_recording() || fx_quiet_blocks >= F
 #include "bars.c"       /* last: the bar engine's code (see bars.c) */
 
 static int32_t voice_mono[256];
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+/* host only (tests/py/test_race_fuzz.py): after each block, with nothing in flight (both rings empty, no TYPE change
+ * pending), every voice held down must be a note the notes layer wants sounding (a source's pitch sent to the engine,
+ * or the arpeggiator's note): "RACE STUCK" after 3 blocks without one; a voice that ended while a note waited for its
+ * steal's fade lost that note: "RACE LOST" (the waiting note never starts) */
+static void host_race_check(void)
+{
+    static uint8_t bad[16], lost[16];
+    uint32_t i, nv = eng_cur == ENG_BARS ? BAR_NV : RH_NV;
+    int calm = eq_r == eq_w && engq_r == engq_w && eng_want == eng_cur && !eng_swapping;
+    for (i = 0; i < nv && i < 16u; i++) {
+        uint32_t alive = eng_cur == ENG_BARS ? bv[i].alive : rv[i].alive, held = eng_cur == ENG_BARS ? bv[i].held : rv[i].held;
+        uint32_t note = eng_cur == ENG_BARS ? bv[i].note : rv[i].note, pend = eng_cur == ENG_BARS ? bv[i].pend : rv[i].pend;
+        uint32_t pn = eng_cur == ENG_BARS ? bv[i].pend_note : rv[i].pend_note;
+        int want = (out_ref[note & 127u] && !note_to_arp[note & 127u]) || arp_playing == note;
+        if (calm && alive && held && !want) { if (bad[i] < 255u && ++bad[i] == 3u) printf("%6u ms  RACE STUCK voice %u note %u\n", fm1_ms, i, note); }
+        else bad[i] = 0;
+        if (!alive && pend) { if (!lost[i]) printf("%6u ms  RACE LOST voice %u note %u (pend %u)\n", fm1_ms, i, pn, pend); lost[i] = 1; }
+        else lost[i] = 0;
+    }
+}
+#endif
 static void app_audio(int32_t *out, uint32_t n)
 {
 #ifndef DINGHY_HOST
@@ -66,6 +88,9 @@ static void app_audio(int32_t *out, uint32_t n)
     prof_st_t = t0;
 #endif
     eng_render(voice_mono, n);
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    host_race_check();
+#endif
     PROF_STAMP(1);
     fx_process(voice_mono, out, n);
     PROF_STAMP(15);
