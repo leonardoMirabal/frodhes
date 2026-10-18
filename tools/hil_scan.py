@@ -1864,7 +1864,8 @@ class VSuite:
         bad_mm = mm is not None and abs(mm) > max(MISMATCH_DB, 0.05 * abs(vals["usb"]))
         status = ("info" if info else "ok" if passed else "FAIL") + (" MISMATCH" if bad_mm else "")
         self.rows.append(dict(check=check, setting=setting, usb=txt["usb"], jack=txt["jack"], crit=crit,
-                              mismatch=mm, status=status, ok=bool(passed and not bad_mm)))
+                              mismatch=mm, status=status, ok=bool(passed and not bad_mm),
+                              src_ok=None if info else res))       # per source (tools/full_scan.py: the jack decides)
 
     def fails(self):
         return [r for r in self.rows if not r["ok"]]
