@@ -1297,5 +1297,3 @@ static const uint8_t AF_L_EX[39] = {35, 37, 42, 43, 45, 46, 47, 48, 49, 50, 51, 
 static const aafont_t AF_L = {35, 28, 32, 32, 39, 143, AF_L_G, AF_L_DATA, AF_L_KERN, AF_L_KD, AF_L_EX, 1, AF_L_HC};
 #define AF_L_CAP_Y 7   /* the ink of H: rows 7 .. 27 of the line */
 #define AF_L_CAP_H 21
-
-#define AF_M AF_S   /* transitional (UI-SIMPLIFY P1): until ui.c stops using AF_M */
