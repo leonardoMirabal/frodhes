@@ -422,7 +422,7 @@ choice is kept when you switch off (it belongs to the FM-1, not to a preset).
 | K3 | **USB VOL** | **KNOB**: the USB audio follows the MASTER knob, as the headphones do. **FIXED**: the USB audio always comes at full level, whatever the knob (and headphones plugged in) do; the headphone jack still follows MASTER |
 
 The bottom line shows the name and the version installed, the battery's reading (BAT, the raw value the battery
-segments are worked out from), and the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 3900).
+segments are worked out from), and the audio engine's time per block (it must stay under 5800 µs; eight notes struck at once with every effect on reach about 3700 on the Rhodes, 3100 on VIBES).
 
 ### MIDI
 
