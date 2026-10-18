@@ -1305,22 +1305,25 @@ def _buttons():
     return 1.0, 1.0, "ok"
 
 
-@case("DEV-CC2-CC3")
+@case("DEV-CC3")
 def _dev_ui():
-    """developer CC 2 (the UI look) and CC 3 (the colour test pattern) change the screen"""
+    """developer CC 3 (the colour test pattern) changes the screen, < 64 gives the page back (CC 2, the design
+    study's looks, went with the METERS look: test_ui_meters.py checks it changes nothing)"""
     import os
     from hostrun import OUT
     _n[0] += 1
     tag = f"ec{_n[0]}"
-    run(tag, ["2500 shot", cc(2600, 2, 1), "3500 shot", cc(3600, 3, 127), "4000 shot"], 4100)
+    run(tag, ["2500 shot", cc(2600, 3, 127), "3000 shot", cc(3100, 3, 0), "3600 shot"], 3700)
 
     def ppm(t):
         d = open(os.path.join(OUT, f"{tag}-{t}.ppm"), "rb").read()
         return np.frombuffer(d[-240 * 240 * 3:], np.uint8).reshape(240, 240, 3).astype(int)
-    a, b, c = ppm(2500), ppm(3500), ppm(4000)
+    a, b, c = ppm(2500), ppm(3000), ppm(3600)
     n1 = int((np.abs(b - a).sum(axis=2) > 30).sum())
-    n2 = int((np.abs(c - b).sum(axis=2) > 30).sum())
-    return min(n1, n2), 2000.0, f"pixels changed: CC 2 {n1}, CC 3 {n2}"
+    a[0:19] = c[0:19] = 0                               # (the header's live BPM / battery)
+    n2 = int((np.abs(c - a).sum(axis=2) > 30).sum())
+    assert n2 == 0, f"CC 3 < 64: {n2} pixels differ from the page before the pattern"
+    return n1, 2000.0, f"pixels changed: CC 3 {n1}, back {n2}"
 
 
 @case("DEV-CC9-CC116")
