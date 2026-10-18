@@ -11,6 +11,8 @@ tables per gap family from the closed-form flux (pickup). The float spec (rhodes
 (tools/rhodes_model.py); the header feeds the C engine. Output is deterministic (byte-identical every run).
 
 Inputs: docs/model/data/params.json (priors until the reference fit), docs/model/data/tine_lengths.csv.
+The tine FE results come from docs/model/data/rhodes_pins.json (tools/rhodes_pins.py: the same header on every
+machine); --repin recomputes them here after a model change.
 """
 import hashlib
 import json
@@ -25,6 +27,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import hammer as hm        # noqa: E402
 import pickup as pu        # noqa: E402
+import rhodes_pins as rp   # noqa: E402
 import tine_fe as fe       # noqa: E402
 import tinebar as tbm      # noqa: E402
 
@@ -109,20 +112,35 @@ def strike_m(p, n):
     return s["lo_m"] + (s["hi_m"] - s["lo_m"]) * (n - KEY_LO) / (KEY_HI - KEY_LO)
 
 
+PINS = None                 # {midi: FE results} from docs/model/data/rhodes_pins.json (build(); rhodes_pins.py)
+
+
+def fe_key(p, n, L):
+    """The tine FE results of key n on this machine: spring mass (None: the bare tine is already below f0), the 6
+    partials (Hz), the mass-normalised mode shapes at the strike point and the tip. Their last bits depend on the
+    LAPACK build, so the tables use the pinned copies (rhodes_pins.py)."""
+    try:
+        ms = fe.tune_spring(L, midi_hz(n), p["spring_pos"])
+    except ValueError:
+        ms = None
+    tine = fe.Tine(L, p["spring_pos"], ms or 0.0)
+    f, sh = tine.modes(6)
+    xc = min(strike_m(p, n), 0.9 * L)
+    return dict(L=L, ms=ms, f=[float(x) for x in f], psi_c=[sh(xc, m) for m in range(6)],
+                psi_t=[sh(L, m) for m in range(6)])
+
+
 def key_physics(p, n, L):
     """Float description of one key: modes (f, T60 hold, T60 release, amplitude per unit impulse at the tip)."""
     f0 = midi_hz(n)
     tb = p["tinebar"]
     # the tine's own target: the bar sits bar_cents above it; the 2-DOF retune then puts V1 exactly on f0
-    try:
-        ms = fe.tune_spring(L, f0, p["spring_pos"])
-    except ValueError:
-        ms = 0.0
-    tine = fe.Tine(L, p["spring_pos"], ms)
-    f, sh = tine.modes(6)
-    xc = min(strike_m(p, n), 0.9 * L)
-    psi_c = [sh(xc, m) for m in range(6)]
-    psi_t = [sh(L, m) for m in range(6)]
+    fr = PINS[n] if PINS else fe_key(p, n, L)
+    if PINS:
+        assert abs(fr["L"] / L - 1) < 1e-12, "key %d: tine length %r is not the pinned %r" % (n, L, fr["L"])
+    ms = fr["ms"] or 0.0
+    f = np.array(fr["f"])
+    psi_c, psi_t = fr["psi_c"], fr["psi_t"]
     T1 = t60_v1(p, n)
     sig_t = 6.907755 / (T1 * tb["tine_t60_frac"])
     sig_b = 6.907755 / (T1 * tb["bar_t60_mult"])
@@ -391,9 +409,16 @@ def pickup_tables(R):
 
 
 # ---------------------------------------------------------------- main
-def build():
+def build(repin=False):
+    global PINS
     p = load_params()
     Ls = tine_lengths()
+    if repin:
+        rp.save(p, {n: fe_key(p, n, Ls[n]) for n in range(KEY_LO, KEY_HI + 1)})
+    PINS = rp.load(p)
+    if PINS is None:
+        print("rhodes_pins.json is missing or stale (python3 tools/gen_rhodes.py --repin): the FE runs on this machine "
+              "and the tables may differ in the last bits", file=sys.stderr)
     phys = {n: key_physics(p, n, Ls[n]) for n in range(KEY_LO, KEY_HI + 1)}
     pulses = key_pulses_all(p, phys)
     fam_tabs = [pickup_tables(R) for R in p["pickup"]["R"]]
@@ -575,7 +600,7 @@ def pedal_w():
 
 
 def main():
-    spec, fam_tabs = build()
+    spec, fam_tabs = build(repin="--repin" in sys.argv[1:])
     hdr = emit(spec, fam_tabs)
     os.makedirs(os.path.join(ROOT, "firmware/gen"), exist_ok=True)
     open(os.path.join(ROOT, "firmware/gen/rhodes_tables.h"), "w").write(hdr)
