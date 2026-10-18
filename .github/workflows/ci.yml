@@ -5,7 +5,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install Pillow numpy scipy pytest
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
       - run: make test
       - run: make host
       - run: make pytest PY=python3
+  # The engines' tables are generated on macOS (Accelerate); their regeneration must give the committed headers byte
+  # for byte. Linux's OpenBLAS rounds some fits differently, so this check runs here, on macOS, with the same numpy /
+  # scipy as the development machine. It is required: a failure fails the run.
+  generators-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
+      - run: python -m pytest -q -rs tests/py/test_gen_bars.py
+      - run: '! python -m pytest -q -rs tests/py/test_gen_bars.py -k deterministic | grep -q SKIPPED'

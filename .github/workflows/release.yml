@@ -7,11 +7,21 @@ on:
 permissions:
   contents: write
 jobs:
+  generators-macos:                  # the tables regenerate byte for byte (macOS, as ci.yml); the release needs it
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
+      - run: python -m pytest -q -rs tests/py/test_gen_bars.py
   release:
+    needs: generators-macos
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install Pillow numpy scipy pytest
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
       - name: host tests
         run: make test && make pytest PY=python3
       - name: the JieLi toolchain and the 3 AC79 SDK files (checked by sha256 in the build)
