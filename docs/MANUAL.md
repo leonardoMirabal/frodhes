@@ -47,16 +47,32 @@ To go back to M-VAVE's own firmware, use the hub's "Official firmware" section w
 
 ## 2. The idea: one page, four knobs
 
-The screen shows **one page at a time**, with **four cards**, one per knob: **K1–K4 always turn the four cards you
-see**. The page name is at the top, with a row of marks under it showing where you are. Turn **SELECT** to move
-between pages, or press a page's button to jump straight there. The pages, in SELECT order:
+The screen shows **one page at a time**, with **four cards**, one per knob, drawn as rows from K1 at the top to K4
+at the bottom: **K1–K4 always turn the four cards you see**. Under the top line, the page's name is on the left in
+amber and its place in the SELECT order on the right (3/21). Turn **SELECT** to move between pages, or press a
+page's button to jump straight there. The pages, in SELECT order:
 
-PERFORM · FRODHES (main) · VOICE · DECAY · COMPRESSOR · FILTER · DRIVE · TREM/WAH · PHASER · CHORUS · DELAY ·
-REVERB · TEMPO · SCALE · CHORD · ARPEGGIO · LFO · SEQUENCER · ASSIGN · SETUP · MIDI
+PERFORM · FRODHES (main) · VOICE 1/2 · VOICE 2/2 · COMPRESSOR · FILTER · DRIVE · TREM/WAH · PHASER · CHORUS ·
+DELAY · REVERB · TEMPO · SCALE · CHORD · ARPEGGIO · LFO · SEQUENCER · ASSIGN · SETUP · MIDI
 
-A card that sets an amount has a **gauge** under its number: a thin frame that fills from the left, empty at 0
-(DRIVE 0.0 shows an empty frame). Cards for a choice (TYPE, ON / OFF, a note value) have none. The numbers are
-rounded to what fits on the card (1.486 s shows 1.5S, +11.8 dB shows +12).
+**The VOICE pages belong to the instrument.** Each TYPE brings its own controls, four to a page: the Rhodes types
+have two VOICE pages (VOICE 1/2: TONE, BARK, BELL, HAMMER; VOICE 2/2: DECAY, RELEASE, NOISE, TUNE), VIBES has three
+(VOICE 1/3: STRIKE, MALLET, TUBE, WEIGHT; 2/3: RING, DAMPER, NOISE, TUNE; 3/3: the motor). SELECT walks them in
+order; changing the TYPE changes the pages with it.
+
+**Reading a card.** Each card shows its knob (K1–K4, small), the control's name, and its value on the right in large
+figures, with the unit beside it in small letters (Hz, kHz, ms, dB, c for cents, x). Then, by the kind of control:
+
+- **An amount** (DEPTH, MIX, a time, a frequency ...): the card itself is the gauge. It fills with dim amber from the
+  left up to the value, with a bright amber edge where the fill ends: empty at 0, full at the top.
+- **A choice** (TYPE, EFFECT, ON / OFF ...): its name on the right and **one small segment per option**, the current
+  one lit amber. A choice with more than eight options (a note value, a scale, a chord type ...) shows a slim
+  position bar instead.
+- **A knob with named spots** (VIBES' STRIKE: CENTRE, L/3, EDGE; MALLET: SOFT, YARN, CORD, RUBBER): a fill like an
+  amount, with the name when the knob is on one, else the number between two of them.
+
+**The card you are turning** gets a thin amber frame and its name turns amber, for about a second after you stop.
+The numbers are rounded to what fits on the card (1.486 s shows 1.5 s, +11.8 dB shows +12 dB).
 
 The top line shows the preset, the octave (O+1, O−2...), **SUS** while the sustain is held, **BYP** while the effects
 are bypassed, the tempo and, last, the battery. The battery has three segments (the last one left turns the accent colour,
@@ -123,13 +139,16 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **TYPE** | The instrument: **STAGE 77** (the classic Mark I), **SUITCASE** (with its Peterson amp and 4×12 speakers), **EARLY FELT** (1970 felt hammers: rounder, darker), **BELL DYNO** (Dyno-My-Piano voicing: glassy, bell-like), or **VIBES**, the vibraphone (see [VIBES](#5-vibes-the-vibraphone)). Applies to the next notes. |
-| K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE's TONE). On VIBES: **MALLET** |
-| K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE's BELL). On VIBES: **MOTOR** on / off |
+| K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE 1/2's TONE). On VIBES: **MALLET** |
+| K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE 1/2's BELL). On VIBES: **MOTOR** on / off |
 | K4 | **KEY VEL** | How hard the FM-1's own keys strike. The keys are not velocity-sensitive, so this decides the touch: around 60–80 soft and round, 96 medium, 108–127 hard with bark. MIDI notes keep their own velocity. |
 
-### VOICE
+### VOICE 1/2 and 2/2
 
-![VOICE](manual/img/voice.png)
+The instrument's own pages: on a Rhodes type there are two, right after the main page. On **VIBES** there are three,
+with the vibraphone's controls: see [VIBES](#5-vibes-the-vibraphone).
+
+![VOICE 1/2](manual/img/voice1.png)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -138,11 +157,7 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 | K3 | **BELL** | The bright metallic overtone at the start of each note |
 | K4 | **HAMMER** | Hammer hardness: softer is darker, harder is brighter |
 
-
-On **VIBES** these cards are the vibraphone's: see [VIBES](#5-vibes-the-vibraphone).
-### DECAY
-
-![DECAY](manual/img/decay.png)
+![VOICE 2/2](manual/img/voice2.png)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -151,8 +166,6 @@ On **VIBES** these cards are the vibraphone's: see [VIBES](#5-vibes-the-vibrapho
 | K3 | **NOISE** | The damper's soft knock and the felt's sound when you let go |
 | K4 | **TUNE** | Fine tuning, ±50 cents |
 
-
-On **VIBES** these cards are the vibraphone's: see [VIBES](#5-vibes-the-vibraphone).
 ### COMPRESSOR
 
 ![COMPRESSOR](manual/img/comp.png)
@@ -216,7 +229,7 @@ the drive on. Moving any of the knobs glides, so you can turn them while you pla
 | K4 | **SHAPE** | From a smooth sine to a square, choppy pulse |
 
 
-On **VIBES** the vibraphone's motor is not here but on its own page, MOTOR (see [the motor: on and off](#the-motor-on-and-off)); TREM/WAH can run on top of it.
+On **VIBES** the vibraphone's motor is not here but on its last VOICE page, VOICE 3/3 (see [the motor: on and off](#the-motor-on-and-off)); TREM/WAH can run on top of it.
 ### PHASER
 
 ![PHASER](manual/img/phaser.png)
@@ -431,17 +444,19 @@ Rhodes type and VIBES fades out what is still ringing.
 
 ![The main page on VIBES](manual/img/piano-vibes.png)
 
-The main page's middle cards belong to the engine: on VIBES they are **MALLET** (the same as VOICE's MALLET) and
-**MOTOR** (on / off, the same as the MOTOR page's first card); on a Rhodes type they are **TONE** and **BELL** (DRIVE and REVERB have their own pages).
+The main page's middle cards belong to the engine: on VIBES they are **MALLET** (the same as VOICE 1/3's MALLET)
+and **MOTOR** (on / off, the same as VOICE 3/3's first card); on a Rhodes type they are **TONE** and **BELL** (DRIVE
+and REVERB have their own pages).
 
 VIBES plays about **2.5 dB louder** than the Rhodes types: a struck bar is peakier than a Rhodes note, so at the same
 loudness it sounded weaker and came out closer to the headphone jack's hiss. The limiter still keeps big chords from
 clipping.
 
-On VIBES the VOICE and DECAY cards change their names and what they do, and one page joins them: **MOTOR**.
-The VOICE cards act on the next strike (a ringing bar keeps the strike that started it, as a real one does).
+VIBES has its own VOICE pages, three of them: **VOICE 1/3** (the strike), **VOICE 2/3** (how the bars ring and stop)
+and **VOICE 3/3** (the motor). VOICE 1/3 acts on the next strike (a ringing bar keeps the strike that started it, as
+a real one does).
 
-![VOICE on VIBES](manual/img/voice-vibes.png)
+![VOICE 1/3 on VIBES](manual/img/voice1-vibes.png)
 
 | Knob | Card | What it does on VIBES |
 | --- | --- | --- |
@@ -450,7 +465,7 @@ The VOICE cards act on the next strike (a ringing bar keeps the strike that star
 | K3 | **TUBE** | How much the tube rings with the bar: 0 is a bare bar (about 6-7 dB quieter than the middle, thin, rings longer, no bloom); up is a fuller, warmer, louder note that blooms just after the strike and dies sooner, as on a real vibraphone (the right end about 3-4 dB over the middle) |
 | K4 | **WEIGHT** | The mallet's weight: light is brighter, quicker and quieter; heavy is darker, with more body (about 6 dB louder at the top than at the bottom). How hard you play (KEY VEL, MIDI velocity) stays the strike's speed: a harder strike is louder and brighter (the overtones come up), a soft one round |
 
-![DECAY on VIBES](manual/img/decay-vibes.png)
+![VOICE 2/3 on VIBES](manual/img/voice2-vibes.png)
 
 | Knob | Card | What it does on VIBES |
 | --- | --- | --- |
@@ -464,13 +479,13 @@ half-pedal too). Without it the damper stops each note when you let go.
 
 ### The motor: on and off
 
-The motor (the vibrato's pulse) is part of the vibraphone, not an effect: it has its own page, **MOTOR**, right
-after DECAY in the SELECT order. The page is there only while the TYPE is VIBES (on the Rhodes types SELECT goes from
-DECAY straight to COMPRESSOR).
+The motor (the vibrato's pulse) is part of the vibraphone, not an effect: it has VIBES' last VOICE page,
+**VOICE 3/3**, right after VOICE 2/3 in the SELECT order. The page is there only while the TYPE is VIBES (the Rhodes
+types have two VOICE pages: SELECT goes from VOICE 2/2 straight to COMPRESSOR).
 
 - **On by itself:** turning the TYPE to VIBES (ALGORITHM, the TYPE card or CC 79) starts the motor at its default:
   DEPTH 8.7, 3.5 Hz, a clear, regular pulse.
-- **Off and on:** on the MOTOR page, **K1** turns it **OFF** or **ON**. Switched off there, it stays off: changing the
+- **Off and on:** on VOICE 3/3, **K1** turns it **OFF** or **ON**. Switched off there, it stays off: changing the
   TYPE to a Rhodes and back to VIBES does not start it again (and the choice is saved), until K1 turns it on.
 - **Presets keep theirs:** loading a preset is not a TYPE change: **F13 VIBE MOTOR** has the motor on, **F14 VIBES
   DRY** has it off, and a user preset saved with the motor off stays off.
@@ -480,7 +495,7 @@ DECAY straight to COMPRESSOR).
 - **TREM/WAH** (the LFO button) is the same effect on VIBES as on the Rhodes and can run on top of the motor.
 - **Over MIDI:** CC 47 ON (≥ 64), 48 DEPTH, 49 SPEED, 50 SHAPE, 51 SYNC.
 
-![MOTOR](manual/img/motor.png)
+![VOICE 3/3 on VIBES: the motor](manual/img/voice3-vibes.png)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -534,7 +549,7 @@ always there to start again from.
 
 | A preset (U01–U16) | The FM-1 itself (settings) | The pattern |
 | --- | --- | --- |
-| The sound: TYPE, every VOICE / DECAY card, every effect and its sync, the filter and LFO, LEVEL | KEY VEL, TUNE, TRANSP, the octave, tempo and CLOCK, scale, chord mode, arpeggiator, sequencer settings, PERFORM assignments, the MIDI page, USB VOL, and the last sound | The sequencer's notes |
+| The sound: TYPE, every VOICE card, every effect and its sync, the filter and LFO, LEVEL | KEY VEL, TUNE, TRANSP, the octave, tempo and CLOCK, scale, chord mode, arpeggiator, sequencer settings, PERFORM assignments, the MIDI page, USB VOL, and the last sound | The sequencer's notes |
 | When you press SAVE (once silent) | About 2 s after your last change, once the sound has died away | 1.5 s after a change, while stopped and silent |
 
 So after a change, let the sound die away for a couple of seconds before you switch off.
@@ -635,7 +650,7 @@ The TRS jack is MIDI in only. **Program Change** 0–13 loads F01–F14, 16–31
 | 43 / 44 | SEQUENCER CLEAR / UNDO (≥ 64) | 45 / 46 | SEQUENCER ERASE (≥ 64 on) / SWING (50–75) |
 | 70 / 74 | FILTER TYPE (7 bands: off, LP12, LP18, HP12, HP18, BP, notch) / CUTOFF | 71 / 72 | FILTER RESONANCE / LFO AMOUNT |
 | 75 / 76 | LFO SHAPE (6 bands) / RATE | 77 / 78 | LFO SYNC / RETRIG (free, key) |
-| 2 | Developer: the UI look, a design study (0 classic, 1 minimal, 2 solid, 3 instrument, 4 focus; not saved) | 3 | Developer: a colour test pattern on the screen (≥ 64; < 64 back to the page), to calibrate screenshots against the panel |
+| 3 | Developer: a colour test pattern on the screen (≥ 64; < 64 back to the page), to calibrate screenshots against the panel | | |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
 The FM-1 also appears as a USB audio input (class-compliant, stereo, 16-bit, 44.1 or 48 kHz): you can record exactly

@@ -296,14 +296,14 @@ C4_KEY = ["30 keys 0x80", "1800 keys 0"]            # key 7 = C4
 
 @pytest.mark.parametrize("eng", ENGINES)
 def test_tune_transpose_octave(eng):
-    """TUNE (DECAY K4) in cents, TRANSP (SCALE K4) in semitones, OCT- / OCT+ (the header, the LEDs): the key's pitch
+    """TUNE (VOICE 2 K4) in cents, TRANSP (SCALE K4) in semitones, OCT- / OCT+ (the header, the LEDs): the key's pitch
     moves by exactly that (+-1 cent)"""
     pre = ENGINES[eng] + CLEAN + PEDAL
     f0 = pitch(run(f"ds-pitch-ref-{eng}", pre + C4_KEY, 2000).seg(0.3, 1.5), 261.63)
-    for d in (-37, 12, 50):                            # SELECT -> FRODHES, VOICE, DECAY, K4
+    for d in (-37, 12, 50):                            # SELECT -> FRODHES, VOICE 1, VOICE 2, K4
         w = run(f"ds-tune{d}-{eng}", pre + ["10 turn 0 1", "11 turn 0 1", "12 turn 0 1", f"14 turn 5 {d}", "20 dump"] + C4_KEY, 2000)
         st = w.state(20)
-        assert st["page"] == "DECAY" and st["label3"] == "TUNE"
+        assert st["page"] == "VOICE" and st["label0"] in ("DECAY", "RING") and st["label3"] == "TUNE", st["page"]
         c = 1200 * math.log2(pitch(w.seg(0.3, 1.5), 261.63 * 2 ** (d / 1200)) / f0)
         assert abs(c - int(st["card3"])) <= 1.0, f"TUNE: the card says {st['card3']} cents, the pitch moved {c:+.2f}"
     for d in (-5, 3, 24):                              # GLO -> TEMPO, SELECT -> SCALE, K4

@@ -12,7 +12,8 @@ Dyno and Vibes), a
 reface CP-style effects chain (compressor, a resonant filter with its LFO, drive, tremolo / wah, phaser, chorus, delay,
 reverb), tap tempo with MIDI
 clock sync, USB-MIDI in and out and TRS MIDI in, chord mode, a pattern recorder (1–16 bar loops, quantize, overdub, undo / erase), an arpeggiator, scales, a sustain pedal, 8-voice polyphony and 14 factory plus 16 user presets. The screen shows one page at a time with
-four cards, one for each of the FM-1's four knobs; the first page, PERFORM, puts the effects' dry / wet (or
+four cards, one for each of the FM-1's four knobs, drawn as meter rows (an amount fills its row, a choice lights one
+segment per option); the instrument brings its own VOICE pages; the first page, PERFORM, puts the effects' dry / wet (or
 anything you assign) on those four knobs for playing live.
 
 **Try it in your browser: [the Frodhes emulator](https://leonardomirabal.github.io/frodhes/)**: the same firmware
@@ -43,9 +44,9 @@ the MIDI map.
 | --- | --- | --- | --- | --- | --- |
 | **PERFORM** | TREM/WAH | PHASER | FILTER | DELAY | HOME (assignable on ASSIGN) |
 | **FRODHES** (main) | TYPE | TONE (VIBES: MALLET) | BELL (VIBES: MOTOR) | KEY VEL | HOME twice |
-| **VOICE** | TONE (VIBES: STRIKE) | BARK (MALLET) | BELL (TUBE) | HAMMER (WEIGHT) | (SELECT) |
-| **DECAY** | DECAY (VIBES: RING) | RELEASE (DAMPER) | NOISE | TUNE | (SELECT) |
-| **MOTOR** (VIBES only) | ON / OFF | DEPTH | SPEED | SHAPE | (SELECT) |
+| **VOICE 1/2** (VIBES: 1/3) | TONE (VIBES: STRIKE) | BARK (MALLET) | BELL (TUBE) | HAMMER (WEIGHT) | (SELECT) |
+| **VOICE 2/2** (VIBES: 2/3) | DECAY (VIBES: RING) | RELEASE (DAMPER) | NOISE | TUNE | (SELECT) |
+| **VOICE 3/3** (VIBES only: the motor) | MOTOR (ON / OFF) | DEPTH | SPEED | SHAPE | (SELECT) |
 | **COMPRESSOR** | THRESHOLD (OFF / on) | RATIO | ATTACK | MAKEUP | (SELECT) |
 | **FILTER** | OFF / LP12 / LP18 (default) / HP12 / HP18 / BP / NOTCH | FREQ | RESO | LFO | (SELECT) |
 | **DRIVE** | OFF / ON | AMOUNT | TONE | MIX | (SELECT) |

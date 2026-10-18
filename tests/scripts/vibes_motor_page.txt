@@ -1,6 +1,6 @@
-# The VIBES motor (records v3): its own page (MOTOR, after DECAY, shown on a bar TYPE only), on by itself when the
+# The VIBES motor (records v3): VIBES' VOICE 3/3 (after VOICE 2/3, a bar TYPE only), on by itself when the
 # TYPE turns to VIBES, off by hand on its ON card and then kept off; presets keep what they store; TREM/WAH is a
-# pure effect (LFO 5) that never comes on by itself. MOTOR page = 21, its ON card = card.21.0.
+# pure effect (LFO 5) that never comes on by itself. Its ON card = card.21.0 (the dump keeps the old MOTOR id, 21).
 # ---- a fresh FM-1 (F01, STAGE 77): ALGORITHM four steps to VIBES: the motor on, TREM/WAH off
 100 btn 8
 200 turn 1 1
@@ -17,18 +17,20 @@
 # it plays (the motor's pulse: tests/py/test_vibes_controls_audible.py measures it)
 500 keys 0x10000
 1500 keys 0
-# ---- SELECT three times: VOICE, DECAY, the MOTOR page; K1 left: OFF
+# ---- SELECT three times: VOICE 1/3, 2/3, 3/3 (the motor); K1 left: OFF
 1600 turn 0 1
 1700 turn 0 1
 1800 turn 0 1
-1900 expect state page MOTOR
+1900 expect state page VOICE
+1900 expect state label0 MOTOR
 1900 turn 2 -1
 2000 expect state card0 OFF
 2000 expect sound
-# ---- to BELL DYNO and back: the MOTOR page goes (DECAY shown), no tremolo; back on VIBES the motor stays off
+# ---- to BELL DYNO and back: VOICE 3/3 goes (the last Rhodes VOICE page, 2/2, shown), no tremolo; back on VIBES the motor stays off
 2100 turn 1 -1
 2200 expect state bars 0
-2200 expect state page DECAY
+2200 expect state page VOICE
+2200 expect state label0 DECAY
 2200 expect state card.7.0 OFF
 2200 expect led 5 0
 2300 turn 1 1
@@ -37,7 +39,8 @@
 2400 expect sound
 # ---- on again by hand: the TYPE round trip keeps it on
 2500 turn 0 1
-2600 expect state page MOTOR
+2600 expect state page VOICE
+2600 expect state label0 MOTOR
 2600 turn 2 1
 2700 expect state card0 ON
 2800 turn 1 -1
