@@ -586,7 +586,7 @@ the notes that chord mode, the arpeggiator and the sequencer play. Striking a no
 voice, so repeated notes do not use up voices. A 9th note takes over the quietest released note first, or else the
 oldest held one, with a short fade (1.5 ms) so there is no click. The audio also has a safety guard: if it ever ran
 late, the quietest released note would be faded out rather than letting the sound break up. In testing the worst
-case (8 low notes at full velocity with the pedal and every effect on) uses 3.9 ms of the 5.8 ms available per audio
+case (8 low notes at full velocity with the pedal and every effect on) uses 3.6 ms of the 5.8 ms available per audio
 block, and the guard never acts.
 
 ## 11. Sound and volume tips
