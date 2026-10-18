@@ -366,6 +366,6 @@ def test_motor_off_by_hand_survives_a_power_cycle():
     lines = ["100 turn 1 1", "110 turn 1 1", "120 turn 1 1", "130 turn 1 1", "200 turn 0 1", "250 turn 0 1", "300 turn 0 1",
              "400 turn 0 1", "500 turn 2 -1", "600 turn 1 -1", "700 dump"]
     r1 = run("motoff-1", lines, 4000, flash=fl)
-    assert r1.state(700)["vcard.2.0"] == "OFF" and r1.saves
+    assert r1.state(700)[f"p.{MOT_ON}"] == "0" and r1.saves             # (a Rhodes TYPE now: no VOICE 3)
     r2 = boot("motoff-2", fl, ["200 turn 1 1", "300 dump"], 400, check_preset=False)
     assert r2.state(300)["bars"] == "1" and r2.state(300)["vcard.2.0"] == "OFF"

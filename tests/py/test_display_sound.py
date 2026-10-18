@@ -303,7 +303,7 @@ def test_tune_transpose_octave(eng):
     for d in (-37, 12, 50):                            # SELECT -> FRODHES, VOICE, DECAY, K4
         w = run(f"ds-tune{d}-{eng}", pre + ["10 turn 0 1", "11 turn 0 1", "12 turn 0 1", f"14 turn 5 {d}", "20 dump"] + C4_KEY, 2000)
         st = w.state(20)
-        assert st["page"] == "VOICE" and st["vpage"] == "2/2" and st["label3"] == "TUNE"
+        assert st["page"] == "VOICE" and st["vpage"].startswith("2/") and st["label3"] == "TUNE"
         c = 1200 * math.log2(pitch(w.seg(0.3, 1.5), 261.63 * 2 ** (d / 1200)) / f0)
         assert abs(c - int(st["card3"])) <= 1.0, f"TUNE: the card says {st['card3']} cents, the pitch moved {c:+.2f}"
     for d in (-5, 3, 24):                              # GLO -> TEMPO, SELECT -> SCALE, K4
