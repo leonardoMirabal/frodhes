@@ -111,15 +111,33 @@ static inline int32_t svf_tick(const svf_t *c, int32_t *ic, int32_t x, uint32_t 
     kv1 = (int32_t)(((int64_t)c->k * v1 + (1 << 23)) >> 24);
     return mode == 0u ? v2 : mode == 1u ? x - kv1 - v2 : mode == 2u ? kv1 : x - kv1;
 }
+/* one sub-block of the filter; mode and p18 are constants after inlining (a version per TYPE), the state in locals */
+static inline __attribute__((always_inline)) void fl_run(int32_t *m, uint32_t n, const svf_t *c, const uint32_t mode,
+                                                         const int p18, int32_t gp)
+{
+    int32_t ic[2] = {fl_ic[0], fl_ic[1]}, op = fl_op;
+    uint32_t j;
+    for (j = 0; j < n; j++) {
+        int32_t x = m[j] * 8;                                            /* 8x finer inside: a lower noise floor */
+        x = svf_tick(c, ic, x, mode);
+        if (p18) {                                                       /* 18: + a 6 dB one-pole */
+            int32_t v = (int32_t)(((int64_t)(x - op) * gp + (1 << 26)) >> 27), lp = v + op;
+            op = clampi(lp + v, -(1 << 24), 1 << 24);
+            x = mode == 0u ? lp : x - lp;
+        }
+        m[j] = (x + 4) >> 3;
+    }
+    fl_ic[0] = ic[0]; fl_ic[1] = ic[1]; fl_op = op;
+}
 static void fx_filter(int32_t *m, uint32_t n)
 {
-    static const uint8_t MODE[7] = {0, 0, 0, 1, 1, 2, 3}, POLES[7] = {0, 2, 3, 2, 3, 2, 2};
+    static const uint8_t POLES[7] = {0, 2, 3, 2, 3, 2, 2};   /* TYPE -> poles; the mode (LP HP BP NOTCH) is in the switch below */
     uint32_t type = fx_p[FXP_FL_TYPE], inc = fx_lfo_sync_inc ? fx_lfo_sync_inc : FX_LFO_INC[fx_p[FXP_LFO_RATE]], sb, j;
     int32_t k = (int32_t)FX_FL_K[fx_p[FXP_FL_RESO]], base = fx_p[FXP_FL_FREQ] * 516, depth = fx_p[FXP_FL_LFO];
-    uint32_t mode, poles;
+    uint32_t poles;
     if (fx_lfo_retrig) { fx_lfo_retrig = 0; lfo_ph = 0; }
     if (!type || type > 6u) { fl_was_on = 0; lfo_ph += inc * n; return; }   /* off: the LFO keeps time, the filter rests */
-    mode = MODE[type]; poles = POLES[type];
+    poles = POLES[type];
     if (!fl_was_on) { memset(fl_ic, 0, sizeof fl_ic); fl_op = 0; fl_pos = base; fl_was_on = 1; }
     for (sb = 0; sb < n; sb += 32u) {
         uint32_t prev = lfo_ph, i;
@@ -133,15 +151,14 @@ static void fx_filter(int32_t *m, uint32_t n)
         g = (int32_t)FX_FL_G[i] + ((((int32_t)FX_FL_G[i + 1] - (int32_t)FX_FL_G[i]) * f) >> 8);         /* Q24 */
         svf_coef(&c, g, k);
         if (poles == 3u) gp = (1 << 27) - recip27(65536u + ((uint32_t)g >> 8));                           /* g/(1+g) */
-        for (j = sb; j < sb + 32u && j < n; j++) {
-            int32_t x = m[j] * 8;                                            /* 8x finer inside: a lower noise floor */
-            x = svf_tick(&c, fl_ic, x, mode);
-            if (poles == 3u) {                                               /* 18: + a 6 dB one-pole */
-                int32_t v = (int32_t)(((int64_t)(x - fl_op) * gp + (1 << 26)) >> 27), lp = v + fl_op;
-                fl_op = clampi(lp + v, -(1 << 24), 1 << 24);
-                x = mode == 0u ? lp : x - lp;
-            }
-            m[j] = (x + 4) >> 3;
+        j = sb + 32u < n ? sb + 32u : n;
+        switch (type) {                                  /* one loop per (mode, poles): no tests per sample */
+        case 1: fl_run(m + sb, j - sb, &c, 0, 0, gp); break;
+        case 2: fl_run(m + sb, j - sb, &c, 0, 1, gp); break;
+        case 3: fl_run(m + sb, j - sb, &c, 1, 0, gp); break;
+        case 4: fl_run(m + sb, j - sb, &c, 1, 1, gp); break;
+        case 5: fl_run(m + sb, j - sb, &c, 2, 0, gp); break;
+        default: fl_run(m + sb, j - sb, &c, 3, 0, gp); break;
         }
     }
 }
