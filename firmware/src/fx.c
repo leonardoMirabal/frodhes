@@ -304,17 +304,20 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
             int32_t *io = s ? R : L, as = a[s], fb = ph_fb[s], hp = ph_hp[s], g13 = pg >> 16;
             int32_t x0 = ph_x[s][0], x1 = ph_x[s][1], x2 = ph_x[s][2], x3 = ph_x[s][3];
             int32_t y0 = ph_y[s][0], y1 = ph_y[s][1], y2 = ph_y[s][2], y3 = ph_y[s][3];
-            for (j = sb; j < sb + 32u && j < n; j++) {
-                int32_t x = io[j], xs = clampi((x + 2) >> 2, -16383, 16383);
-                int32_t u = xs + mulq15(fb, fbk), y;
-                y = clampi(x0 + ((as * (u - y0) + 8192) >> 14), -65535, 65535); x0 = u; y0 = y; u = y;
-                y = clampi(x1 + ((as * (u - y1) + 8192) >> 14), -65535, 65535); x1 = u; y1 = y; u = y;
-                y = clampi(x2 + ((as * (u - y2) + 8192) >> 14), -65535, 65535); x2 = u; y2 = y; u = y;
-                y = clampi(x3 + ((as * (u - y3) + 8192) >> 14), -65535, 65535); x3 = u; y3 = y;
+            for (j = sb; j < sb + 32u && j < n; j++) {   /* at 4x the bus (it ran at a quarter: x >> 2 in, the allpasses'
+                                                         * rounding x 4 out: a broadband floor ~55 dB under the note,
+                                                         * heard as hiss / air and "more volume", TODO #7); the products
+                                                         * 32 x 32 -> 64, one instruction each */
+                int32_t x = io[j], xs = clampi(x, -65535, 65535) << 2;   /* x 4 inside: 2 more bits */
+                int32_t u = xs + (int32_t)(((int64_t)fb * fbk) >> 15), y;
+                y = clampi(x0 + (int32_t)(((int64_t)as * (u - y0) + 8192) >> 14), -1048575, 1048575); x0 = u; y0 = y; u = y;
+                y = clampi(x1 + (int32_t)(((int64_t)as * (u - y1) + 8192) >> 14), -1048575, 1048575); x1 = u; y1 = y; u = y;
+                y = clampi(x2 + (int32_t)(((int64_t)as * (u - y2) + 8192) >> 14), -1048575, 1048575); x2 = u; y2 = y; u = y;
+                y = clampi(x3 + (int32_t)(((int64_t)as * (u - y3) + 8192) >> 14), -1048575, 1048575); x3 = u; y3 = y;
                 hp += (y - hp) >> 6;                    /* the feedback without its lows (~110 Hz): it resonated on
                                                          * the bass (C2 +4 LU with the phaser on) */
-                fb = clampi(y - hp, -32767, 32767);
-                io[j] = ((xs + y) * g13) >> 12;         /* (x + 4 y) pg >> 30 in 32 bits: |xs + y| < 2^17 */
+                fb = clampi(y - hp, -524287, 524287);
+                io[j] = (int32_t)(((int64_t)(xs + y) * g13) >> 16);   /* 0.70 x (dry + allpasses), / 4 */
             }
             ph_x[s][0] = x0; ph_x[s][1] = x1; ph_x[s][2] = x2; ph_x[s][3] = x3;
             ph_y[s][0] = y0; ph_y[s][1] = y1; ph_y[s][2] = y2; ph_y[s][3] = y3;
@@ -326,7 +329,8 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
 
 /* ---- CHORUS: 7 ms +- 3.5 ms, two taps 90 degrees apart */
 static uint32_t cp_ph;
-static int16_t cho_buf[1024] POOL;
+static int32_t cho_buf[1024] POOL;                     /* full precision (it was int16 of x / 2: a noise floor
+                                                         * ~65 dB under the note, TODO #7) */
 static uint32_t cho_w;
 static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
 {
@@ -341,9 +345,9 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
         for (j = sb; j < sb + 32u && j < n; j++) {
             int32_t x = (L[j] + R[j]) >> 1, tl, tr;
             uint32_t i0 = (cho_w - (uint32_t)(dlq >> 8)) & 1023u, i1 = (cho_w - (uint32_t)(drq >> 8)) & 1023u;
-            cho_buf[cho_w & 1023u] = (int16_t)clampi(x >> 1, -32768, 32767);
-            tl = (cho_buf[i0] + (((cho_buf[(i0 - 1u) & 1023u] - cho_buf[i0]) * (dlq & 255)) >> 8)) << 1;
-            tr = (cho_buf[i1] + (((cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * (drq & 255)) >> 8)) << 1;
+            cho_buf[cho_w & 1023u] = clampi(x, -1048575, 1048575);
+            tl = cho_buf[i0] + (int32_t)(((int64_t)(cho_buf[(i0 - 1u) & 1023u] - cho_buf[i0]) * (dlq & 255)) >> 8);
+            tr = cho_buf[i1] + (int32_t)(((int64_t)(cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * (drq & 255)) >> 8);
             L[j] += mulq15(tl - L[j], mix);
             R[j] += mulq15(tr - R[j], mix);
             L[j] = (L[j] * cg) >> 15;                   /* the comb's loss, minus the stereo width's loudness (0.8) */
