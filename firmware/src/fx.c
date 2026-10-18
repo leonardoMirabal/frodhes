@@ -48,7 +48,6 @@ static int fx_quiet(void) { return fx_quiet_blocks >= 86u; }   /* 500 ms under -
 
 static inline int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
 static inline int32_t mulq15(int32_t a, int32_t b) { return (a * b) >> 15; }        /* |a|,|b| small enough */
-static inline int64_t clampi64(int64_t v) { return v > 131071 ? 131071 : v < -131072 ? -131072 : v; }   /* softclip's range */
 static inline int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15, flat beyond +-4 */
 {
     uint32_t i;
@@ -170,13 +169,16 @@ static void fx_drive(int32_t *m, uint32_t n)
     mk = (mk * 39000) >> 15;                           /* +1.5 dB: measured on the FM-1, LUFS (0.8) */
     bias = DR_BIAS[row];
     b0 = softclip(bias);
+    /* the shaper's input (x >> 2) g >> 10 + bias needs a 64-bit product (|x >> 2| <= 57500, g <= 100870 at AMOUNT 127),
+     * but its result fits 32 bits (<= 5.67e6 + 3200), so softclip's own 32-bit clamp to +-4 is the whole clamp (it was
+     * a second, 64-bit one before it: the same value) */
     if (tt > 8192) tt = 8192;
     if (wt == 32768 && dr_w == 32768 && tt == 4096 && !dr_ton) {   /* the defaults: the loop before the page */
         for (i = 0; i < n; i++) {
             int32_t x = m[i], y;
             dr_hp += (x - dr_hp + 64) >> 7;
             x = clampi(x - dr_hp, -230000, 230000);
-            y = softclip((int32_t)clampi64((((int64_t)(x >> 2) * g) >> 10) + bias)) - b0;
+            y = softclip((int32_t)(((int64_t)(x >> 2) * g) >> 10) + bias) - b0;
             dr_lp1 += mulq15(y - dr_lp1, k);
             dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
             m[i] = mulq15(dr_lp2, mk);
@@ -187,7 +189,7 @@ static void fx_drive(int32_t *m, uint32_t n)
         int32_t x0 = m[i], x, y;
         dr_hp += (x0 - dr_hp + 64) >> 7;
         x = clampi(x0 - dr_hp, -230000, 230000);
-        y = softclip((int32_t)clampi64((((int64_t)(x >> 2) * g) >> 10) + bias)) - b0;
+        y = softclip((int32_t)(((int64_t)(x >> 2) * g) >> 10) + bias) - b0;
         dr_lp1 += mulq15(y - dr_lp1, k);
         dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
         y = mulq15(dr_lp2, mk);
