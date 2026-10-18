@@ -65,6 +65,11 @@ static void app_audio(int32_t *out, uint32_t n)
 #if defined(RH_PROF_STAGES) && !defined(DINGHY_HOST)
     prof_st_t = t0;
 #endif
+    if (fx_reset_req) { eng_rh_kill_all(); bar_kill_all(); }   /* developer CC 10: every voice ends and the shared
+                                                    * pickup RLC / body states go to 0 (as at an engine change) before this
+                                                    * block, whose effects then start from boot (fx_process): the tails a
+                                                    * take left under the gate's -66 dBFS rang on, and the next take met
+                                                    * them (its level moved with what was played before, on the FM-1) */
     eng_render(voice_mono, n);
     PROF_STAMP(1);
     fx_process(voice_mono, out, n);
