@@ -1192,6 +1192,8 @@ class VRig:
             u, j = (u if self.want_usb else None), (j if self.want_jack else None)
         else:
             u, j = self._rec(dur, with_reset(ev))
+            if self.xruns:
+                print(f"   xrun {tag}: {self.xruns[:4]}", flush=True)
         T = Take(tag, dur, ev, u, j)
         self.takes.append(take_stats(T))
         if self.wav:
@@ -1205,6 +1207,7 @@ class VRig:
         takes (2026-10-18)"""
         sd = self.sd
         bufs, pos, lim, rate, streams = {}, {}, {}, {}, []
+        self.xruns = []                                 # PortAudio's status flags per take (overflow = lost input)
 
         def mk(key, sr, ch, dt):
             nlen = int(dur * sr)
@@ -1212,6 +1215,8 @@ class VRig:
             pos[key], lim[key], rate[key] = 0, nlen, sr
 
             def cb(indata, frames, ti, status):
+                if status:
+                    self.xruns.append((key, pos[key] / sr, str(status)))
                 p = pos[key]
                 k = min(frames, lim[key] - p)
                 if k > 0:
