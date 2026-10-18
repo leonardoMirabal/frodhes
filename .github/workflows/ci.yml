@@ -2,10 +2,11 @@ name: ci
 on: [push, pull_request]
 jobs:
   host:
-    runs-on: ubuntu-latest
+    # arm64 Linux: the same machine as a local `docker run python:3.14` on an Apple-silicon Mac (a replica of this job)
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest pytest-xdist==3.8.0
       - run: make test
       - run: make host
       - run: make pytest PY=python3

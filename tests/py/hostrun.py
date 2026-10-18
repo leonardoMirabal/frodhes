@@ -2,6 +2,7 @@
 """Run the host build (tests/host.c) with a script and read back everything it says: the sound (L, R), the state
 dumps ("T dump": every page's cards, the parameters, the LEDs ...), the expects, MIDI out, the flash writes. Shared
 by the display-vs-sound, state, persistence and fuzz tests."""
+import fcntl
 import os
 import re
 import subprocess
@@ -11,25 +12,50 @@ import numpy as np
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BIN = os.path.join(ROOT, "build", "host", "frodhes")
-OUT = os.path.join(ROOT, "build", "host", "py")
+WORKER = os.environ.get("PYTEST_XDIST_WORKER", "")    # pytest-xdist (make pytest): each worker renders in its own
+HOST = os.path.join(ROOT, "build", "host", WORKER) if WORKER else os.path.join(ROOT, "build", "host")   # directory
+OUT = os.path.join(HOST, "py")
 FS = 44100
 _built = {}
 
 
-def build(binary=BIN, extra=()):
-    """the host build (make's rule), or a variant with extra compiler flags (sanitizers) at binary"""
+def out(name):
+    """a render's path (no extension) in this worker's build/host directory"""
+    os.makedirs(HOST, exist_ok=True)
+    return os.path.join(HOST, name)
+
+
+def once(binary, make):
+    """make(binary) once per test run: pytest-xdist's workers share the binary (the first one builds it under a file
+    lock, the others wait and reuse it); a serial run builds it once per process, as before"""
     if binary in _built:
         return binary
-    if not extra:
-        subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
+    uid = os.environ.get("PYTEST_XDIST_TESTRUNUID")
+    os.makedirs(os.path.dirname(binary), exist_ok=True)
+    if uid is None:
+        make(binary)
     else:
-        os.makedirs(os.path.dirname(binary), exist_ok=True)
-        subprocess.run(["cc", "-O1", "-g", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", "-DAPP_VER=\"dev\"",
-                        *extra, *os.environ.get("HOST_DEFS", "").split(),   # the Makefile's experiment flags too
-                        "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
-                        "-o", binary, os.path.join(ROOT, "firmware", "src", "frodhes.c"), "-lm"], check=True)
+        with open(binary + ".lock", "w") as lk:
+            fcntl.flock(lk, fcntl.LOCK_EX)
+            stamp = binary + ".run"
+            if not (os.path.exists(binary) and os.path.exists(stamp) and open(stamp).read() == uid):
+                make(binary)
+                open(stamp, "w").write(uid)
     _built[binary] = True
     return binary
+
+
+def build(binary=BIN, extra=()):
+    """the host build (make's rule), or a variant with extra compiler flags (sanitizers) at binary"""
+    def make(b):
+        if not extra:
+            subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
+        else:
+            subprocess.run(["cc", "-O1", "-g", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", "-DAPP_VER=\"dev\"",
+                            *extra, *os.environ.get("HOST_DEFS", "").split(),   # the Makefile's experiment flags too
+                            "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
+                            "-o", b, os.path.join(ROOT, "firmware", "src", "frodhes.c"), "-lm"], check=True)
+    return once(binary, make)
 
 
 class Run:

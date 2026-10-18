@@ -4,4 +4,5 @@ python-rtmidi
 numpy
 scipy
 pytest
+pytest-xdist
 sounddevice

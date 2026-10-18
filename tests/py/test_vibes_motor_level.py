@@ -19,6 +19,8 @@ import wave
 
 import numpy as np
 import pytest
+
+import hostrun  # noqa: E402  (tests/py: the per-worker render paths)
 from scipy.signal import resample_poly
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -45,7 +47,7 @@ def take(tag, motor, notes, vel, on, off, end, cc=()):
     s += [f"{int(on * 1000)} midi 0x90 {n} {vel}" for n in notes] + [f"{int(off * 1000)} midi 0x80 {n} 0" for n in notes]
     s += [f"{int(t * 1000)} midi 0xB0 {c} {v}" for t, c, v in cc] + [f"{int(end * 1000)} end"]
     s.sort(key=lambda ln: int(ln.split()[0]))
-    out = os.path.join(ROOT, "build", "host", f"motlvl-{tag}")
+    out = hostrun.out(f"motlvl-{tag}")
     with open(out + ".txt", "w") as f:
         f.write("\n".join(s) + "\n")
     subprocess.run([BIN, out, out + ".txt"], check=True, capture_output=True)

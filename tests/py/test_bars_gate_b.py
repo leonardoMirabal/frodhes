@@ -11,6 +11,8 @@ import wave
 import numpy as np
 import pytest
 
+import hostrun  # noqa: E402  (tests/py: the per-worker render paths)
+
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import bars_model as gm  # noqa: E402
@@ -29,7 +31,7 @@ def host_build():
 
 def c_render(note, vel, dur_ms, off_ms=None, motor=None, tag="vb", **kn):
     k = dict(gm.DEFAULT_KNOBS, **kn)
-    out = os.path.join(ROOT, "build", "host", f"{tag}-{note}-{vel}")
+    out = hostrun.out(f"{tag}-{note}-{vel}")
     s = "50 midi 0xB0 119 127\n50 midi 0xB0 104 0\n52 midi 0xB0 79 64\n53 midi 0xB0 47 0\n" + KNOBS.format(**k)
     if motor:                                       # the motor (records v3: CC 47 ON, 48 DEPTH, 49 RATE, 50 SHAPE)
         s += f"56 midi 0xB0 47 127\n56 midi 0xB0 48 {motor['depth']}\n" \
@@ -96,7 +98,7 @@ def test_c_matches_golden_edge_strikes(note, tone, bark):
 
 def c_render_motor(note, mot):
     """the motor set well before the note (its depth slewed in), CC 10 at 60 ms (the phase to 0 at the next block)"""
-    out = os.path.join(ROOT, "build", "host", f"vbm-{note}")
+    out = hostrun.out(f"vbm-{note}")
     s = ("20 midi 0xB0 119 127\n20 midi 0xB0 104 0\n21 midi 0xB0 79 64\n"
          + KNOBS.format(**gm.DEFAULT_KNOBS).replace("55 midi", "22 midi")
          + f"23 midi 0xB0 47 127\n23 midi 0xB0 48 {mot['depth']}\n23 midi 0xB0 49 {mot['rate']}\n"

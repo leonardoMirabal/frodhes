@@ -24,7 +24,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bar_measure as bm  # noqa: E402
 
-OUT = os.path.join(bm.ROOT, "build", "bar_cards")
+OUT = os.path.join(bm.ROOT, "build", "bar_cards", os.environ.get("PYTEST_XDIST_WORKER", ""))  # (pytest -n: per worker)
 KEYS = (53, 69, 89)
 VELS = (100, 127)
 CARDS = ("TONE", "BARK", "BELL", "HAMMER")          # K1..K4 on VOICE (VIBES: STRIKE MALLET TUBE WEIGHT)

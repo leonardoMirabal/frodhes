@@ -10,6 +10,8 @@ import wave
 import numpy as np
 import pytest
 
+import hostrun  # noqa: E402  (tests/py: the per-worker render paths)
+
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 BIN = os.path.join(ROOT, "build", "host", "frodhes")
 FS = 44100
@@ -24,7 +26,7 @@ def host_build():
 
 def run(tag, ccs, notes, end_ms, extra=()):
     """ccs at 20 ms (before the notes); extra: (ms, cc, value) during the run"""
-    out = os.path.join(ROOT, "build", "host", f"drv-{tag}")
+    out = hostrun.out(f"drv-{tag}")
     ev = [(20, f"midi 0xB0 {cc} {v}") for cc, v in ccs] + [(t, f"midi 0xB0 {cc} {v}") for t, cc, v in extra]
     for t, n, v, dur in notes:
         ev += [(t, f"midi 0x90 {n} {v}"), (t + dur, f"midi 0x80 {n} 0")]

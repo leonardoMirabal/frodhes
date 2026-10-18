@@ -98,7 +98,8 @@ only). Everything installs inside the project, in `.local/` (git-ignored):
 ```sh
 make setup        # .local/venv, the JieLi toolchain, the AC79 SDK files (sha256-checked)
 make test         # the host scripts in tests/scripts
-make pytest       # the Python tests (generators, the C engine against its reference, effects)
+make pytest       # the Python tests (generators, the C engine against its reference, effects); in parallel
+                  # with pytest-xdist (PYTEST_N=auto; PYTEST_N=0 or no xdist: serial)
 make host         # render build/host/frodhes.wav and screen PNGs on the computer, no FM-1 needed
 ./build.sh        # build/frodhes.fwsc;  ./build.sh --release X.Y.Z -> build/frodhes-X.Y.Z.fwsc (always FM-1_958)
 ```

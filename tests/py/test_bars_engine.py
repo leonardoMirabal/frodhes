@@ -15,6 +15,8 @@ import wave
 import numpy as np
 import pytest
 
+import hostrun  # noqa: E402  (tests/py: the per-worker render paths)
+
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 BIN = os.path.join(ROOT, "build", "host", "frodhes")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -31,7 +33,7 @@ def host_build():
 
 
 def render(tag, script, env=None):
-    out = os.path.join(ROOT, "build", "host", f"bars-{tag}")
+    out = hostrun.out(f"bars-{tag}")
     with open(out + ".txt", "w") as f:
         f.write(script)
     r = subprocess.run([BIN, out, out + ".txt"], check=True, capture_output=True, text=True,
