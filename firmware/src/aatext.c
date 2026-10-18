@@ -17,11 +17,26 @@ typedef struct {
     uint8_t psh;                        /* log2 of the phases per glyph */
     const uint8_t *hc;                  /* data's Huffman code (aa_alpha_hc), 0 = 2 px per byte (aa_alpha) */
 } aafont_t;
-#include "aa_font.h"                    /* AF_S 12 px / 400, AF_M 15 px / 500, AF_L 28 px / 600 */
+#include "aa_font.h"                    /* AF_S: all small text; AF_L 28 px / 600: values */
 #define AA_ELLIPSIS '\x85'
 
 /* the blend of ink over background in 16 steps (a light-on-dark coverage curve), byte-swapped for the panel */
 static const uint8_t AA_CURVE[16] = {0, 24, 43, 62, 80, 97, 114, 130, 147, 163, 178, 194, 210, 225, 240, 255};
+/* aa_text_ov: the ink blended over each pixel the canvas already holds (a value over a row's fill and its edge), not
+ * over one background colour */
+static uint8_t aa_ov;
+static uint16_t aa_ov_fg;
+static uint16_t aa_ov_px(uint16_t d, uint32_t a)
+{
+    static const uint8_t SH[3] = {11, 5, 0}, MK[3] = {31, 63, 31};
+    uint32_t c = swap16(d), out = 0, k;
+    int32_t w = AA_CURVE[a];
+    for (k = 0; k < 3u; k++) {
+        int32_t x = (int32_t)((c >> SH[k]) & MK[k]), y = (aa_ov_fg >> SH[k]) & MK[k];
+        out |= (uint32_t)(x + (((y - x) * w + 128) >> 8)) << SH[k];
+    }
+    return swap16(out);
+}
 #define AA_NRAMP 8u
 static struct { uint16_t fg[AA_NRAMP], bg[AA_NRAMP], v[AA_NRAMP][16]; uint8_t next, n; } aa_rc;
 static const uint16_t *aa_ramp(uint16_t fg, uint16_t bg)
@@ -62,7 +77,7 @@ static void aa_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t
         for (gx = 0; gx < w; gx++, k++) {
             uint32_t v = (d[k >> 1] >> ((k & 1u) ? 0 : 4)) & 15u;
             int32_t px = x + (int32_t)gx;
-            if (v && (uint32_t)px < cv_w) row[px] = rv[v];
+            if (v && (uint32_t)px < cv_w) row[px] = aa_ov ? aa_ov_px(row[px], v) : rv[v];
         }
     }
 }
@@ -122,7 +137,7 @@ static void aa_alpha_hc(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint
             if (v && row) {
                 int32_t px = x + (int32_t)gx;
                 uint32_t q;
-                for (q = 0; q < n; q++, px++) if ((uint32_t)px < cv_w) row[px] = rv[v];
+                for (q = 0; q < n; q++, px++) if ((uint32_t)px < cv_w) row[px] = aa_ov ? aa_ov_px(row[px], v) : rv[v];
             }
             gx += n;
             run -= n;
@@ -174,10 +189,11 @@ static int32_t aa_text_w(const aafont_t *f, const char *s)
 /* y = the top of the line box (the baseline is y + f->asc); fg on bg (what lies under the text); the pen x at the end */
 static int32_t aa_text(int32_t x, int32_t y, const aafont_t *f, const char *s, uint16_t fg, uint16_t bg)
 {
-    const uint16_t *rv = aa_ramp(fg, bg);
+    const uint16_t *rv = aa_ov ? 0 : aa_ramp(fg, bg);
     int32_t pen = 0, err = 0;
     const int32_t step = 16 >> f->psh;
     uint32_t prev = 0;
+    aa_ov_fg = fg;
     for (; *s; s++) {
         uint32_t c = aa_fold(f, (uint8_t)*s);
         const aag_t *g;
@@ -213,4 +229,23 @@ static int32_t aa_text_r(int32_t xr, int32_t y, const aafont_t *f, const char *s
 static void aa_text_c(int32_t x, int32_t y, int32_t w, const aafont_t *f, const char *s, uint16_t fg, uint16_t bg)
 {
     aa_text(x + (w - aa_text_w(f, s)) / 2, y, f, s, fg, bg);
+}
+/* the same over what the canvas holds (aa_ov_px): left / right-aligned / centred in w */
+static int32_t aa_text_ov(int32_t x, int32_t y, const aafont_t *f, const char *s, uint16_t fg)
+{
+    int32_t r;
+    aa_ov = 1;
+    r = aa_text(x, y, f, s, fg, 0);
+    aa_ov = 0;
+    return r;
+}
+static int32_t aa_text_ovr(int32_t xr, int32_t y, const aafont_t *f, const char *s, uint16_t fg)
+{
+    int32_t w = aa_text_w(f, s);
+    aa_text_ov(xr - w, y, f, s, fg);
+    return xr - w;
+}
+static void aa_text_ovc(int32_t x, int32_t y, int32_t w, const aafont_t *f, const char *s, uint16_t fg)
+{
+    aa_text_ov(x + (w - aa_text_w(f, s)) / 2, y, f, s, fg);
 }

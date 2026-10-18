@@ -33,6 +33,15 @@ enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
        S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
        S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_MCH, S_TRS, S_NONE = 0xFF };
+#include "eng_pages.h"                                /* the engines' controls: VOICE pages, FRODHES K2 / K3, names */
+static const engui_t *eng_ui(void) { return &ENG_UI[PV(P_TYPE) < N_TYPE_N ? TYPE_ENGINE[PV(P_TYPE)] : 0u]; }
+static const ectl_t *eng_ctl(uint32_t id)              /* the TYPE's engine's control for a slot (0: not one of its) */
+{
+    const engui_t *e = eng_ui();
+    uint32_t i;
+    for (i = 0; i < e->n; i++) if (e->c[i].id == id) return &e->c[i];
+    return 0;
+}
 
 static int sq_browsing(void);                           /* the SEQUENCER page's cursor (below) */
 static uint32_t sq_delete_step(void);
@@ -137,9 +146,6 @@ static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "
 static const char *const NOTE_NAME[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const SCMODE_NAME[3] = {"OFF", "SNAP", "DEGREE"};
 static const char *const TWKIND_NAME[4] = {"OFF", "PAN", "TREM", "WAH"};
-static const char *const BAR_FAM_NAME[4] = {"SOFT", "YARN", "CORD", "RUBBER"};     /* MALLET: the pulse families */
-static const uint8_t BAR_FAM_V[4] = {0, 42, 85, 127};   /* MALLET (BARK) values at each family's centre (bars.c's
-                                                         * KN_FAM must put them there); the name shows within +-4 */
 static const char *const CLOCK_NAME[2] = {"INT", "EXT"};   /* EXT: MIDI clock from USB or TRS */
 
 static uint8_t ui_page;
@@ -148,22 +154,46 @@ static uint32_t ui_msg_t, ui_hot_t, ui_last_draw;
 static uint8_t ui_hot_card = 0xFF;
 static char ui_msg[32];
 
+/* ---- the look (METERS, the user's choice 2026-10-18; private/UI-SIMPLIFY-PLAN.md): a header, the page's title, four
+ * horizontal rows = K1..K4 (an amount fills its row from the left: dim amber + a 2 px amber edge, the number large at
+ * the right with its unit small; a choice shows its name and one segment per option, or a position bar over 8), a
+ * hint. Two faces: AF_S for all small text, AF_L for values. Colours: the palette's accent, neutral greys and a near
+ * black row surface (the FM-1's panel lifts dark tones: the fill starts at half the palette's darkest step). */
 #define UI_ACC pal[3]
-/* the look (0.9.3 design study, developer MIDI CC 2, not saved): 0 = the classic cards, 1 = MINIMAL (no boxes, hairlines,
- * left-aligned values, one accent), 2 = SOLID (filled dark cards with soft corners, a bar in each card's base),
- * 3 = INSTRUMENT (a left-aligned title and page count, each level card a vertical fader with ticks) */
-static uint8_t ui_style;
-#define UI_FOCUS 4u                                    /* the chosen look (user, 2026-10-17): rows, amber name when turned */
 #define FC_BG C_BLACK
-#define FC_HAIR RGB(30, 30, 34)                        /* dividers, the gauge's track: very dark (the panel lifts darks) */
+#define FC_HAIR RGB(30, 30, 34)                        /* the SEQUENCER's hairlines */
 #define FC_LAB RGB(122, 122, 128)                      /* names, units */
 #define FC_VAL RGB(236, 236, 230)                      /* values */
-static uint16_t ui_deep(void)                          /* the palette's darkest step at a quarter (the FM-1's panel lifts
-                                                        * the dark tones a lot: a fill must start much darker) */
+#define FC_DIM RGB(90, 90, 96)                         /* hints */
+#define MT_SURF RGB(16, 16, 18)                        /* a row's surface */
+#define MT_TRACK RGB(40, 40, 44)                       /* the segments not chosen, the position bar's track */
+#define MT_TAG RGB(100, 100, 106)                      /* K1 .. K4 */
+static uint16_t mt_fill(void)                          /* the fill: the palette's darkest step at half */
 {
     uint32_t c = C_LINE, rr = (c >> 11) & 31u, gg = (c >> 5) & 63u, bb = c & 31u;
-    return (uint16_t)(((rr >> 2) << 11) | ((gg >> 2) << 5) | (bb >> 2));
+    return (uint16_t)(((rr >> 1) << 11) | ((gg >> 1) << 5) | (bb >> 1));
 }
+#ifndef AF_S_CAP_Y
+#define AF_S_CAP_Y 3
+#define AF_S_CAP_H 9
+#endif
+#ifndef AF_L_CAP_Y
+#define AF_L_CAP_Y 7
+#define AF_L_CAP_H 21
+#endif
+#define S_TOP(yc) ((yc) - AF_S_CAP_Y - AF_S_CAP_H / 2)  /* the line top that centres AF_S's capitals on row yc */
+#define L_TOP(yc) ((yc) - AF_L_CAP_Y - AF_L_CAP_H / 2)
+/* the screen: header 0..19, title 20..39, rows 46 + 42 k (38 high, x 6..233), footer 210..239 */
+#define HD_H 20u
+#define TI_Y 20u
+#define TI_H 20u
+#define RW_X 6u
+#define RW_Y0 46u
+#define RW_DY 42u
+#define RW_W 228u
+#define RW_H 38u
+#define FT_Y 210u
+#define FT_H 30u
 #define MSG_MS 1500u
 #define HOT_MS 1000u
 
@@ -173,14 +203,17 @@ static void ui_mark(uint32_t e)
     else ui_dirty |= 1u << e;
 }
 static void ui_mark_param(uint32_t id) { (void)id; ui_mark(E_CARDS); }   /* cheap: the marks coalesce */
-static void ui_say(const char *s)
+static uint8_t ui_msg_big;                            /* the message in the large face (the TYPE flash) */
+static void ui_say(const char *s)                     /* a message in the footer for MSG_MS, small */
 {
     uint32_t i = 0;
     while (s[i] && i < sizeof ui_msg - 1u) { ui_msg[i] = s[i]; i++; }
     ui_msg[i] = 0;
     ui_msg_t = fm1_ms;
+    ui_msg_big = 0;
     ui_mark(E_FOOTER);
 }
+static void ui_say_big(const char *s) { ui_say(s); ui_msg_big = 1; }
 static void p_strcpy(char *d, const char *s, uint32_t max) { uint32_t i = 0; while (s[i] && i < max) { d[i] = s[i]; i++; } d[i] = 0; }
 /* the version on screen: a release build's ("0.8.1"), else DEV (dev builds are "0.0", host / web "dev" / "web") */
 static const char *ui_version(void)
@@ -307,23 +340,32 @@ static int slot_is_level(uint32_t s)                    /* a gauge only for amou
     return s == S_KVEL || s == S_TUNE || s == S_BPM || s == S_TRANS || s == S_ARPGATE || s == S_CHSTRUM;
 }
 static void fmt_signed(char *s, int32_t v) { if (v > 0) { s[0] = '+'; p_fmt_int(s + 1, v); } else p_fmt_int(s, v); }
+/* a rate / time knob that is synced to the tempo: its SYNC parameter (the knob shows and steps the note value), else 0 */
+static uint32_t slot_sync_id(uint32_t s)
+{
+    uint32_t y = s == P_DL_TIME ? P_DL_SYNC : s == P_CP_SPEED ? P_CP_SYNC : s == P_PH_SPEED ? P_PH_SYNC :
+                 s == P_LFO_RATE ? P_LFO_SYNC : s == P_MOT_RATE ? P_MOT_SYNC :
+                 s == P_TW_RATE && PV(P_TW_SW) != 2u ? P_TW_SYNC : 0u;   /* (WAH: RATE is a resonance) */
+    return y && PV(y) ? y : 0u;
+}
+static int slot_synced(uint32_t s) { return slot_sync_id(s) != 0u; }
 static void slot_text(uint32_t s, char *v)
 {
     v[0] = 0;
+    if (slot_synced(s)) { p_strcpy(v, N_SYNC[PV(slot_sync_id(s))], 5); return; }
+    if (s < P_COUNT) {                                  /* an engine's named detents (STRIKE, MALLET): the name near one */
+        const ectl_t *c = eng_ctl(s);
+        uint32_t f;
+        if (c && c->kind == EK_DETENT)
+            for (f = 0; f < c->nn; f++)
+                if (PV(s) + c->tol >= c->at[f] && PV(s) <= c->at[f] + c->tol) { p_strcpy(v, c->names[f], 8); return; }
+    }
     switch (s) {
     case P_TYPE: p_strcpy(v, N_TYPE_LONG[PV(P_TYPE)], 12); return;
     case P_CMP_AMT: if (!PV(P_CMP_SW)) { p_strcpy(v, "OFF", 3); return; } break;
     case P_DRIVE: if (!PV(P_DRV_SW) && ui_page != PG_DRIVE) { p_strcpy(v, "OFF", 3); return; } break;   /* (its page: K1) */
-    case P_DL_TIME: if (PV(P_DL_SYNC)) { p_strcpy(v, N_SYNC[PV(P_DL_SYNC)], 5); return; } break;
-    case P_CP_SPEED: if (PV(P_CP_SYNC)) { p_strcpy(v, N_SYNC[PV(P_CP_SYNC)], 5); return; } break;
-    case P_PH_SPEED: if (PV(P_PH_SYNC)) { p_strcpy(v, N_SYNC[PV(P_PH_SYNC)], 5); return; } break;
-    case P_LFO_RATE: if (PV(P_LFO_SYNC)) { p_strcpy(v, N_SYNC[PV(P_LFO_SYNC)], 5); return; } break;
-    case P_TW_RATE:
-        if (PV(P_TW_SW) == 2) { fmt_r10(v, PV(s)); return; }          /* WAH: resonance */
-        if (PV(P_TW_SYNC)) { p_strcpy(v, N_SYNC[PV(P_TW_SYNC)], 5); return; }
-        break;
+    case P_TW_RATE: if (PV(P_TW_SW) == 2) { fmt_r10(v, PV(s)); return; } break;   /* WAH: resonance */
     case P_MOT_RATE:                                                 /* the motor: 0.5 .. 10 Hz ("3.5HZ") */
-        if (PV(P_MOT_SYNC)) { p_strcpy(v, N_SYNC[PV(P_MOT_SYNC)], 5); return; }
         {
             uint32_t n = 0;
             fmt_hz(v, FX_LFO_INC[MOT_RATE_V(PV(s))]);   /* (params.c: rounded) */
@@ -331,19 +373,6 @@ static void slot_text(uint32_t s, char *v)
             v[n++] = 'H'; v[n++] = 'Z'; v[n] = 0;
             return;
         }
-    case P_TONE:                                                     /* bars: STRIKE, centre .. L/3 .. edge */
-        if (ui_bars() && (PV(s) == 0 || PV(s) == 64 || PV(s) == 127)) {
-            p_strcpy(v, PV(s) == 0 ? "CENTRE" : PV(s) == 64 ? "L/3" : "EDGE", 6);
-            return;
-        }
-        break;
-    case P_BARK:                                                     /* bars: MALLET, the family near its centre */
-        if (ui_bars()) {
-            uint32_t f;
-            for (f = 0; f < 4u; f++)
-                if (PV(s) + 4 >= BAR_FAM_V[f] && PV(s) <= BAR_FAM_V[f] + 4) { p_strcpy(v, BAR_FAM_NAME[f], 6); return; }
-        }
-        break;
     case S_KVEL: p_fmt_int(v, set.key_vel); return;
     case S_TUNE: fmt_signed(v, set.tune); return;
     case S_BPM: {
@@ -388,12 +417,7 @@ static void slot_turn(uint32_t s, int32_t d)
         uint32_t id = s;
         int32_t step = PARAMS[id].fmt == F_ENUM || PARAMS[id].fmt == F_DIV ? sgn(d) : d, v;
         /* a synced rate / time knob steps the note value (clockwise: longer time, faster rate); never unsyncs */
-        if (id == P_DL_TIME && PV(P_DL_SYNC)) { id = P_DL_SYNC; step = sgn(d); }
-        else if (id == P_CP_SPEED && PV(P_CP_SYNC)) { id = P_CP_SYNC; step = -sgn(d); }
-        else if (id == P_PH_SPEED && PV(P_PH_SYNC)) { id = P_PH_SYNC; step = -sgn(d); }
-        else if (id == P_TW_RATE && PV(P_TW_SYNC) && PV(P_TW_SW) != 2) { id = P_TW_SYNC; step = -sgn(d); }
-        else if (id == P_LFO_RATE && PV(P_LFO_SYNC)) { id = P_LFO_SYNC; step = -sgn(d); }
-        else if (id == P_MOT_RATE && PV(P_MOT_SYNC)) { id = P_MOT_SYNC; step = -sgn(d); }
+        if (slot_synced(id)) { step = id == P_DL_TIME ? sgn(d) : -sgn(d); id = slot_sync_id(id); }
         v = PV(id) + step;
         if (id != s && v < 1) v = 1;
         if (id == P_MOT_RATE && v > 120) v = 120;       /* the motor's top speed (10 Hz) */
@@ -467,26 +491,12 @@ static void slot_turn(uint32_t s, int32_t d)
 
 /* ---- drawing */
 #define GR_SEGS 15u
-#define GR_X0 4
-#define GR_W 12
-#define GR_X1 (GR_X0 + (int32_t)GR_SEGS * GR_W + 2)
+#define GR_X 6                                          /* the gain-reduction bar: x 6 .. 233 */
+#define GR_W 228
 static const int16_t GR_DB10[GR_SEGS] = {10, 20, 30, 40, 50, 60, 80, 100, 120, 150, 180, 200, 240, 270, 300};
-static const uint8_t GR_LAB[GR_SEGS] = {0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 1};    /* 3 6 10 20 30 */
 static int32_t gr_db10;
 static uint8_t gr_peak;
 static uint32_t gr_shown = 0xFFFF;
-
-static void text_c(int32_t x, int32_t y, int32_t w, const felucca_font_t *f, const char *s, uint16_t c)
-{
-    cv_text(x + (w - text_w(f, s)) / 2, y, f, s, c);
-}
-static void gauge(int32_t x, int32_t y, int32_t w, int32_t v, int32_t hi)
-{
-    cv_rect(x, y, w, 6, C_LINE);                        /* a frame with a black inside: on the FM-1's panel the darkest */
-    cv_rect(x + 1, y + 1, w - 2, 4, C_BLACK);           /* palette step shows nearly as bright as the fill, so a solid */
-    cv_rect(x + 1, y + 1, (w - 2) * v / (hi ? hi : 1), 4, C_AMB);   /* dim bar read as full at 0 (user photo, 0.9.3) */
-}
-
 /* ---- the battery (0.9.3, TODO 8): the FM-1's PB1 divider on ADC ch3 (hal/fm1_adc.h), read from the main loop every
  * BATT_POLL_MS (never in the audio ISR), smoothed over ~10 s, shown as 3 segments in the header with a hysteresis so
  * it never flickers between two. USB power: a bolt (the reading is the charger's then).
@@ -548,192 +558,140 @@ static void batt_icon(int32_t x, int32_t y, uint16_t ink, uint16_t hi, uint16_t 
     for (i = 0; i < lv; i++) cv_rect(x + 2 + 4 * (int32_t)i, y + 2, 3, 5, lv == 1u ? UI_ACC : hi);
 }
 
-/* the header, right to left: the battery, the BPM, BYP, SUS, the octave; the preset name gets what is left (cut only
- * when the flags reach it) */
+/* the header, right to left: the battery (last, the user), the BPM, BYP, SUS, the octave; the preset name gets what is
+ * left (cut only when the flags reach it) */
 static void draw_header(void)
 {
     char nm[20], b[8];
     int32_t x;
-    cv_begin(240, 20, C_BLACK);
+    uint32_t n = 0;
+    cv_begin(240, HD_H, FC_BG);
     if (set.preset < PR_NALL_UI) preset_name(set.preset, nm); else p_strcpy(nm, "FRODHES", 8);
+    nm[16] = 0;
     slot_text(S_BPM, b);
-    if (ui_style == UI_FOCUS) {
-        nm[16] = 0;
-        batt_icon(230 - 17, 6, FC_LAB, FC_VAL, FC_BG);                  /* the battery last (the user) */
-        x = 230 - 17 - 6 - aa_text_w(&AF_S, b);
-        aa_text(x, 3, &AF_S, b, FC_LAB, FC_BG);
-        x -= 6;
-        if (fx_bypass) { x -= aa_text_w(&AF_S, "BYP"); aa_text(x, 3, &AF_S, "BYP", FC_VAL, FC_BG); x -= 6; }
-        if (rh_hold) { x -= aa_text_w(&AF_S, "SUS"); aa_text(x, 3, &AF_S, "SUS", UI_ACC, FC_BG); x -= 6; }
-        if (set.oct) {
-            char o[4] = {'O', set.oct < 0 ? '-' : '+', (char)('0' + (set.oct < 0 ? -set.oct : set.oct)), 0};
-            x -= aa_text_w(&AF_S, o); aa_text(x, 3, &AF_S, o, FC_LAB, FC_BG); x -= 6;
-        }
-        { uint32_t n = 0; while (nm[n]) n++; while (n && 10 + aa_text_w(&AF_S, nm) > x - 4) nm[--n] = 0; }
-        aa_text(10, 3, &AF_S, nm, FC_LAB, FC_BG);
-        cv_blit(0, 0);
-        return;
-    }
-    if (ui_style == 2u) cv_rect(0, 0, 240, 19, ui_deep());
-    nm[14] = 0;
-    x = (ui_style ? 236 : 238) - 17;                                    /* the battery last (the user), then */
-    batt_icon(x, 5, C_GRAY, C_HI, ui_style == 2u ? ui_deep() : C_BLACK);   /* the BPM */
-    x -= 5 + text_w(&FONT_S, b);
-    cv_text(x, 2, &FONT_S, b, ui_style == 1u ? C_GRAY : ui_style == 2u ? C_HI : C_AMB);
-    x -= 4;
-    if (fx_bypass) { x -= text_w(&FONT_S, "BYP"); cv_text(x, 2, &FONT_S, "BYP", C_HI); x -= 4; }
-    if (rh_hold) { x -= text_w(&FONT_S, "SUS"); cv_text(x, 2, &FONT_S, "SUS", UI_ACC); x -= 4; }
+    batt_icon(230 - 17, 6, FC_LAB, FC_VAL, FC_BG);
+    x = 230 - 17 - 6 - aa_text_w(&AF_S, b);
+    aa_text(x, S_TOP(10), &AF_S, b, FC_LAB, FC_BG);
+    x -= 6;
+    if (fx_bypass) { x -= aa_text_w(&AF_S, "BYP"); aa_text(x, S_TOP(10), &AF_S, "BYP", FC_VAL, FC_BG); x -= 6; }
+    if (rh_hold) { x -= aa_text_w(&AF_S, "SUS"); aa_text(x, S_TOP(10), &AF_S, "SUS", UI_ACC, FC_BG); x -= 6; }
     if (set.oct) {
         char o[4] = {'O', set.oct < 0 ? '-' : '+', (char)('0' + (set.oct < 0 ? -set.oct : set.oct)), 0};
-        x -= text_w(&FONT_S, o); cv_text(x, 2, &FONT_S, o, C_GRAY); x -= 4;
+        x -= aa_text_w(&AF_S, o); aa_text(x, S_TOP(10), &AF_S, o, FC_LAB, FC_BG); x -= 6;
     }
-    { uint32_t n = 0; while (nm[n]) n++; while (n && (ui_style ? 4 : 2) + text_w(&FONT_S, nm) > x - 2) nm[--n] = 0; }
-    cv_text(ui_style ? 4 : 2, 2, &FONT_S, nm, ui_style == 3u ? C_GRAY : C_HI);
-    if (ui_style != 1u && ui_style != 2u) cv_rect(0, 19, 240, 1, C_LINE);
+    while (nm[n]) n++;
+    while (n && 10 + aa_text_w(&AF_S, nm) > x - 4) nm[--n] = 0;
+    aa_text(10, S_TOP(10), &AF_S, nm, FC_LAB, FC_BG);
     cv_blit(0, 0);
 }
 
 static void seq_pos_text(char *t);
 static uint32_t sq_view_tick(void);
 static void sq_shown_beat_set(void);
+static void fmt_frac(char *t, uint32_t a, uint32_t b)   /* "a/b" */
+{
+    uint32_t n = 0;
+    p_fmt_int(t, (int32_t)a); while (t[n]) n++;
+    t[n++] = '/'; p_fmt_int(t + n, (int32_t)b);
+}
+/* the title: the page's name in the accent, where we are at the right (the SEQUENCER: where the loop is) */
 static void draw_title(void)
 {
-    uint32_t i;
-    uint32_t npg = pg_count();
-    int32_t x0 = 120 - (int32_t)npg * 5;
-    if (ui_page == PG_SEQ) {                            /* a small title and where the loop is: BAR 2/4 . 3 */
-        char t[24];
-        cv_begin(240, 18, C_BLACK);
+    char t[24];
+    cv_begin(240, TI_H, FC_BG);
+    aa_text(10, S_TOP(10), &AF_S, PAGE_TITLE[ui_page], UI_ACC, FC_BG);
+    if (ui_page == PG_SEQ) {                            /* BAR 2/4 . 3 */
         seq_pos_text(t);
         sq_shown_beat_set();
-        if (ui_style == UI_FOCUS) {
-            aa_text(10, 0, &AF_M, "SEQUENCER", UI_ACC, FC_BG);
-            aa_text_r(230, 2, &AF_S, t, FC_LAB, FC_BG);
-            cv_rect(10, 17, 220, 1, FC_HAIR);
-        } else {
-            cv_text(2, 1, &FONT_S, "< SEQUENCER >", UI_ACC);
-            cv_text(238 - text_w(&FONT_S, t), 1, &FONT_S, t, C_HI);
-            cv_rect(0, 17, 240, 1, C_LINE);
-        }
-        cv_blit(0, 21);
-        return;
-    }
-    cv_begin(240, 40, C_BLACK);
-    if (ui_style == UI_FOCUS) {                         /* the title, where we are, a hairline */
-        char t[8];
-        uint32_t q = pg_pos(ui_page) + 1u, n = 0;
-        if (q >= 10u) t[n++] = (char)('0' + q / 10u);
-        t[n++] = (char)('0' + q % 10u); t[n++] = '/';
-        t[n++] = (char)('0' + npg / 10u); t[n++] = (char)('0' + npg % 10u); t[n] = 0;
-        aa_text(10, 3, &AF_M, PAGE_TITLE[ui_page], UI_ACC, FC_BG);
-        aa_text_r(230, 6, &AF_S, t, FC_LAB, FC_BG);
-        cv_rect(10, 27, 220, 1, FC_HAIR);
-        cv_blit(0, 21);
-        return;
-    }
-    if (ui_style == 1u) {                               /* MINIMAL: the title, and where we are as a hairline */
-        int32_t w = 200 / (int32_t)npg;
-        text_c(0, 0, 240, &FONT_L, PAGE_TITLE[ui_page], C_HI);
-        cv_rect(20, 36, 200, 1, C_LINE);
-        cv_rect(20 + w * (int32_t)pg_pos(ui_page), 35, w, 3, UI_ACC);
-        cv_blit(0, 21);
-        return;
-    }
-    if (ui_style == 3u) {                               /* INSTRUMENT: left-aligned, the page count on the right */
-        char t[8];
-        uint32_t q = pg_pos(ui_page) + 1u;
-        t[0] = (char)('0' + q / 10u); t[1] = (char)('0' + q % 10u); t[2] = '/';
-        t[3] = (char)('0' + npg / 10u); t[4] = (char)('0' + npg % 10u); t[5] = 0;
-        cv_text(6, 0, &FONT_L, PAGE_TITLE[ui_page], UI_ACC);
-        cv_text(234 - text_w(&FONT_S, t), 14, &FONT_S, t, C_GRAY);
-        cv_rect(6, 36, 228, 1, C_LINE);
-        cv_blit(0, 21);
-        return;
-    }
-    if (pg_pos(ui_page) > 0) cv_text(4, 0, &FONT_L, "<", C_DIM);
-    if (pg_pos(ui_page) + 1u < npg) cv_text(220, 0, &FONT_L, ">", C_DIM);
-    text_c(0, 0, 240, &FONT_L, PAGE_TITLE[ui_page], UI_ACC);
-    for (i = 0; i < npg; i++)                           /* where we are: one mark per page, in the SELECT order */
-        cv_rect(x0 + 10 * (int32_t)i, 35, i == pg_pos(ui_page) ? 8 : 4, 3, i == pg_pos(ui_page) ? UI_ACC : C_LINE);
-    cv_blit(0, 21);
+    } else fmt_frac(t, pg_pos(ui_page) + 1u, pg_count());
+    aa_text_r(230, S_TOP(10), &AF_S, t, FC_LAB, FC_BG);
+    cv_blit(0, TI_Y);
 }
 
-static void draw_card(uint32_t k)
+/* a row's text and its unit: the number apart from its unit ("16K" -> "16" + "kHz", "3.5HZ" -> "3.5" + "Hz", "1.5S" ->
+ * "1.5" + "s", "60 MS" -> "60" + "ms"); 0: no unit (a name, a note value, a plain number) */
+static int slot_synced(uint32_t s);
+static const char *slot_unit(uint32_t s, char *v)
+{
+    uint32_t n = 0, f = s < P_COUNT ? PARAMS[s].fmt : 0xFFu;
+    while (v[n]) n++;
+    if (!n || !((v[0] >= '0' && v[0] <= '9') || v[0] == '+' || v[0] == '-') || slot_synced(s)) return 0;
+    if (s == P_TW_RATE && PV(P_TW_SW) == 2u) return 0;                 /* WAH: RATE is a resonance */
+    if (f == F_HZ || f == F_HZH || f == F_FHZ || s == P_MOT_RATE) {
+        if (n > 2u && v[n - 2u] == 'H' && v[n - 1u] == 'Z') v[n -= 2u] = 0;
+        if (v[n - 1u] == 'K') { v[n - 1u] = 0; return "kHz"; }
+        return "Hz";
+    }
+    if (f == F_MS || f == F_PDLY || s == S_CHSTRUM) {
+        if (n > 3u && v[n - 3u] == ' ') { v[n - 3u] = 0; return "ms"; }
+        if (v[n - 1u] == 'S') { v[n - 1u] = 0; return "s"; }
+        return "ms";
+    }
+    if (f == F_THR || f == F_GAIN || f == F_DB) return "dB";
+    if (s == S_TUNE) return "c";
+    return 0;
+}
+/* the name a choice shows on its row: the short TYPE names (ST77 SUIT ...), else its text */
+static void slot_short(uint32_t s, char *v)
+{
+    if (s == P_TYPE) p_strcpy(v, N_TYPE[PV(P_TYPE)], 5);
+    else slot_text(s, v);
+}
+
+/* a row: K tag, label (accent while its knob turns, with a 1 px frame for HOT_MS), then an amount (the fill, the
+ * number large, its unit small) or a choice (its name, one segment per option up to 8, else a position bar) */
+static void draw_row(uint32_t k)
 {
     uint32_t s = slot_at(ui_page, k);
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
-    if (ui_style == UI_FOCUS) {                          /* a full-width row: the name, the value, a slim gauge */
-        char v[16], kk[3] = {'K', (char)('1' + k), 0};
-        cv_begin(240, 35, FC_BG);
-        if (s != S_NONE) {
-            int32_t hi, val = slot_val(s, &hi);
-            slot_text(s, v);
-            aa_text(10, 9, &AF_S, kk, FC_HAIR == C_BLACK ? FC_LAB : RGB(70, 70, 76), FC_BG);
-            aa_text(30, 9, &AF_S, slot_label(ui_page, k), hot ? UI_ACC : FC_LAB, FC_BG);
-            if (aa_text_w(&AF_L, v) <= 150) aa_text_r(230, -3, &AF_L, v, FC_VAL, FC_BG);
-            else aa_text_r(230, 7, &AF_M, v, FC_VAL, FC_BG);
-            cv_rect(30, 33, 200, 1, FC_HAIR);
-            if (hi && slot_is_level(s)) cv_rect(30, 32, 200 * val / (hi ? hi : 1), 2, UI_ACC);
-        }
-        cv_blit(0, 63u + 35u * k);
-        return;
-    }
-    cv_begin(118, 68, C_BLACK);
-    if (s != S_NONE && ui_style) {                      /* the design study's looks (ui_style) */
-        char v[16];
-        int32_t hi, val = slot_val(s, &hi), lv = hi && slot_is_level(s), x0 = 6;
-        slot_text(s, v);
-        if (ui_style == 1u) {                           /* MINIMAL: hairline dividers, no boxes */
-            if (!(k & 1u)) cv_rect(117, 6, 1, 56, C_LINE);
-            if (!(k & 2u)) cv_rect(6, 67, 106, 1, C_LINE);
-        } else if (ui_style == 2u) {                    /* SOLID: a filled card, soft corners */
-            cv_rect(2, 2, 114, 64, hot ? UI_ACC : ui_deep());
-            cv_rect(3, 3, 112, 62, ui_deep());
-            cv_pset(2, 2, C_BLACK); cv_pset(115, 2, C_BLACK); cv_pset(2, 65, C_BLACK); cv_pset(115, 65, C_BLACK);
-        } else if (lv) {                                /* INSTRUMENT: a fader on the left, ticks beside it */
-            int32_t h = 54, f = h * val / (hi ? hi : 1), i;
-            cv_rect(6, 7, 8, h + 2, C_GRAY);
-            cv_rect(7, 8, 6, h, C_BLACK);
-            cv_rect(7, 8 + h - f, 6, f, C_AMB);
-            for (i = 0; i <= 4; i++) cv_rect(16, 8 + h * i / 4, 3, 1, C_DIM);
-            x0 = 24;
-        }
-        cv_text(x0, 4, &FONT_S, slot_label(ui_page, k), hot ? UI_ACC : C_GRAY);
-        if (s != P_TYPE && text_w(&FONT_L, v) <= 112 - x0) cv_text(x0, 22, &FONT_L, v, C_HI);
-        else cv_text(x0, 30, &FONT_S, v, C_HI);
-        if (lv && ui_style == 1u) {                     /* a slim line under the value */
-            cv_rect(6, 58, 106, 1, C_LINE);
-            cv_rect(6, 57, 106 * val / (hi ? hi : 1), 3, C_AMB);
-        } else if (lv && ui_style == 2u) {              /* a bar in the card's base */
-            cv_rect(8, 56, 102, 5, C_BLACK);
-            cv_rect(8, 56, 102 * val / (hi ? hi : 1), 5, C_AMB);
-        }
-        cv_blit(k & 1u ? 121u : 1u, k & 2u ? 135u : 63u);
-        return;
-    }
+    char v[16], kk[3] = {'K', (char)('1' + k), 0};
+    cv_begin(RW_W, RW_H, MT_SURF);
     if (s != S_NONE) {
-        char v[16], kk[3] = {'K', (char)('1' + k), 0};
-        int32_t hi, val = slot_val(s, &hi);
-        cv_rect(0, 0, 118, 68, hot ? UI_ACC : C_LINE);
-        cv_rect(1, 1, 116, 66, C_BLACK);
-        cv_text(5, 3, &FONT_S, kk, C_DIM);
-        cv_text(28, 3, &FONT_S, slot_label(ui_page, k), C_GRAY);
-        slot_text(s, v);
-        /* TYPE names are drawn alike for every engine: the long Rhodes names never fit FONT_L, so a short one
-         * (VIBES) must not jump to it either */
-        if (s != P_TYPE && text_w(&FONT_L, v) <= 112) text_c(0, 21, 118, &FONT_L, v, C_HI);
-        else text_c(0, 29, 118, &FONT_S, v, C_HI);
-        if (hi && slot_is_level(s)) gauge(5, 56, 108, val, hi);
-    }
-    cv_blit(k & 1u ? 121u : 1u, k & 2u ? 135u : 63u);
+        const char *lab = slot_label(ui_page, k), *u;
+        int32_t hi, val = slot_val(s, &hi), le, xr, w;
+        if (hi && slot_is_level(s)) {                   /* the gauge: the row's fill to the value, a 2 px edge */
+            int32_t fw = (int32_t)RW_W * clampi(val, 0, hi) / hi, ex = clampi(fw - 2, 0, (int32_t)RW_W - 2);
+            cv_rect(0, 0, fw, RW_H, mt_fill());
+            cv_rect(ex, 0, 2, RW_H, UI_ACC);
+        }
+        aa_text_ov(6, S_TOP(9), &AF_S, kk, MT_TAG);
+        le = aa_text_ov(6, S_TOP(26), &AF_S, lab, hot ? UI_ACC : FC_LAB);   /* where the label ends */
+        if (le < 6 + aa_text_w(&AF_S, kk)) le = 6 + aa_text_w(&AF_S, kk);
+        if (hi && !slot_is_level(s)) {                  /* a choice */
+            int32_t n = hi + 1, x0 = le + 6 > 86 ? le + 6 : 86, x1;
+            slot_short(s, v);
+            w = aa_text_ovr(220, S_TOP(19), &AF_S, v, FC_VAL);
+            x1 = w - 8 < 162 ? w - 8 : 162;
+            if (n <= 8 && x1 - x0 >= n * 4 - 1) {       /* one segment per option, the chosen one lit */
+                int32_t j, sw = (x1 - x0 - (n - 1) * 3) / n;
+                for (j = 0; j < n; j++) cv_rect(x0 + j * (sw + 3), 13, sw, 12, j == val ? UI_ACC : MT_TRACK);
+            } else if (x1 - x0 >= 16) {                  /* a position bar: index / (n - 1) */
+                int32_t p = x0 + (x1 - x0 - 3) * clampi(val, 0, hi) / hi;
+                cv_rect(x0, 18, x1 - x0, 3, MT_TRACK);
+                cv_rect(x0, 18, p - x0, 3, mt_fill());
+                cv_rect(p, 13, 3, 13, UI_ACC);
+            }
+        } else {                                        /* an amount: the number large, its unit small at the right */
+            slot_text(s, v);
+            u = slot_unit(s, v);
+            xr = 220 - (u ? aa_text_w(&AF_S, u) + 4 : 0);
+            if (aa_text_w(&AF_L, v) <= xr - le - 8) aa_text_ovr(xr, L_TOP(19), &AF_L, v, FC_VAL);
+            else aa_text_ovr(xr, S_TOP(19), &AF_S, v, FC_VAL);   /* too wide for the large face (a test reports it) */
+            if (u) aa_text_ovr(220, L_TOP(19) + AF_L.asc - AF_S.asc, &AF_S, u, FC_LAB);   /* on the number's baseline */
+        }
+        if (hot) {                                      /* the knob being turned: a 1 px frame */
+            cv_rect(0, 0, RW_W, 1, UI_ACC); cv_rect(0, RW_H - 1, RW_W, 1, UI_ACC);
+            cv_rect(0, 0, 1, RW_H, UI_ACC); cv_rect(RW_W - 1, 0, 1, RW_H, UI_ACC);
+        }
+    } else aa_text_ov(6, S_TOP(9), &AF_S, kk, MT_TRACK);   /* an empty row: its K tag, dim */
+    cv_blit(RW_X, RW_Y0 + RW_DY * k);
 }
-
 /* ---- the SEQUENCER page, made to be read on a small screen: what plays NOW in big letters, what comes NEXT, and the
  * bar as 16 big cells (a filled cell: notes start there; white: playing). Its four cards are a compact row. */
 #define SQ_NOW_Y 40
 #define SQ_STRIP_Y 104
 #define SQ_CARD_Y 171
-#define SQ_CARD_H 33
+#define SQ_CARD_H 38                                    /* 171 .. 208: the footer starts at 210 */
 static int sq_browsing(void) { return (sq_cur >= 0 || (seq_rec && !seq_play)) && (!seq_play || fm1_ms - sq_cur_t < 4000u); }
 static uint32_t sq_view_tick(void)                      /* the place looked at: the cursor's step, else the loop's */
 {
@@ -803,15 +761,10 @@ static void sq_now_next(uint32_t p, uint32_t *now, uint32_t *next)
 }
 static uint32_t sq_shown_now = 0xFFFFFFFFu, sq_shown_cell = 0xFFFFFFFFu, sq_shown_beat = 0xFFFFFFFFu, sq_shown_ph;
 static void sq_shown_beat_set(void) { sq_shown_beat = sq_view_tick() / SQ_PPQ; }
-/* text for the footer and the SEQUENCER: the FOCUS look's anti-aliased faces (its quiet greys), the other looks'
- * bitmap fonts; big: FONT_L / AF_L */
-static uint16_t fc_col(uint16_t c) { return c == C_DIM ? RGB(90, 90, 96) : c == C_GRAY ? FC_LAB : c == C_HI ? FC_VAL : c; }
-static void ft_cf(int32_t x, int32_t y, int32_t w, int big, const char *s, uint16_t c)
-{
-    if (ui_style != UI_FOCUS) { text_c(x, y, w, big ? &FONT_L : &FONT_S, s, c); return; }
-    aa_text_c(x, big ? y : y - 1, w, big ? &AF_L : &AF_S, s, fc_col(c), FC_BG);
-}
-static void ft_c(int32_t x, int32_t y, int32_t w, const char *s, uint16_t c) { ft_cf(x, y, w, 0, s, c); }
+/* centred text in the two faces (the SEQUENCER, the footer, the splash): small = AF_S, big = AF_L; yc: the row its
+ * capitals are centred on */
+static void ft_c(int32_t yc, const char *s, uint16_t c) { aa_text_c(0, S_TOP(yc), 240, &AF_S, s, c, FC_BG); }
+static void ft_big(int32_t yc, const char *s, uint16_t c) { aa_text_c(0, L_TOP(yc), 240, &AF_L, s, c, FC_BG); }
 
 static void draw_now(void)                              /* NOW (big) and NEXT */
 {
@@ -825,21 +778,20 @@ static void draw_now(void)                              /* NOW (big) and NEXT */
         empty = !(now != 0xFFFFu && now >= t0 && now < t0 + 24u);
         sq_now_next(empty ? t0 + 23u : now, &now, &next);
     }
-    cv_begin(240, 60, C_BLACK);
+    cv_begin(240, 60, FC_BG);
     if (!sq_n) {
-        ft_cf(0, 8, 240, 1, "EMPTY", C_DIM);
-        ft_c(0, 42, 240, "SEQ: REC, THEN PLAY", C_GRAY);
+        ft_big(22, "EMPTY", FC_DIM);
+        ft_c(50, "SEQ: REC, THEN PLAY", FC_LAB);
     } else {
         if (empty) p_strcpy(v, "-", 1); else sq_group_name(now, v);
-        if ((ui_style == UI_FOCUS ? aa_text_w(&AF_L, v) : text_w(&FONT_L, v)) <= 236)
-            ft_cf(0, 4, 240, 1, v, sq_browsing() ? UI_ACC : seq_play ? C_WHITE : C_HI);
-        else ft_c(0, 12, 240, v, C_HI);
+        if (aa_text_w(&AF_L, v) <= 236) ft_big(22, v, sq_browsing() ? UI_ACC : seq_play ? C_WHITE : FC_VAL);
+        else ft_c(22, v, FC_VAL);
         sq_group_name(next, v);
         p_strcpy(t, "NEXT ", 5); n = 5; p_strcpy(t + n, v, 12); while (t[n]) n++;
         p_strcpy(t + n, "  BAR ", 6); n += 6;
         p_fmt_int(t + n, (int32_t)(next / (4u * SQ_PPQ) + 1u)); while (t[n]) n++;
         t[n++] = '.'; p_fmt_int(t + n, (int32_t)(next / SQ_PPQ % 4u + 1u));
-        ft_c(0, 42, 240, t, C_GRAY);
+        ft_c(50, t, FC_LAB);
     }
     cv_blit(0, SQ_NOW_Y);
 }
@@ -879,114 +831,97 @@ static void draw_strip(void)                            /* the bar playing: 16 c
     }
     cv_blit(0, SQ_STRIP_Y);
 }
-static void draw_card_small(uint32_t k)
+static void draw_card_small(uint32_t k)                 /* the SEQUENCER's four: the name, the value, a hairline */
 {
     uint32_t s = PAGE_S[PG_SEQ][k];
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
+    uint16_t c = s == S_SQEDIT && sq_erase ? UI_ACC : FC_VAL;
     char v[16];
-    cv_begin(58, SQ_CARD_H, C_BLACK);
+    cv_begin(58, SQ_CARD_H, FC_BG);
     slot_text(s, v);
-    if (ui_style == UI_FOCUS) {                     /* no frame: the name (amber while turned), the value, a hairline */
-        aa_text_c(0, 1, 58, &AF_S, PAGE_LAB[PG_SEQ][k], hot ? UI_ACC : FC_LAB, FC_BG);
-        aa_text_c(0, 15, 58, &AF_M, v, s == S_SQEDIT && sq_erase ? UI_ACC : FC_VAL, FC_BG);
-        cv_rect(4, SQ_CARD_H - 1, 50, 1, FC_HAIR);
-    } else {
-        cv_rect(0, 0, 58, SQ_CARD_H, hot ? UI_ACC : C_LINE);
-        cv_rect(1, 1, 56, SQ_CARD_H - 2, C_BLACK);
-        text_c(0, 1, 58, &FONT_S, PAGE_LAB[PG_SEQ][k], C_GRAY);
-        text_c(0, 16, 58, &FONT_S, v, s == S_SQEDIT && sq_erase ? UI_ACC : C_HI);
-    }
+    aa_text_c(0, S_TOP(7), 58, &AF_S, PAGE_LAB[PG_SEQ][k], hot ? UI_ACC : FC_LAB, FC_BG);
+    if (aa_text_w(&AF_L, v) <= 56) aa_text_c(0, L_TOP(24), 58, &AF_L, v, c, FC_BG);
+    else aa_text_c(0, S_TOP(24), 58, &AF_S, v, c, FC_BG);
+    cv_rect(4, SQ_CARD_H - 1, 50, 1, hot ? UI_ACC : FC_HAIR);
     cv_blit(1u + k * 60u, SQ_CARD_Y);
 }
 
+/* the footer (210..239): the save prompt, a message for MSG_MS (the TYPE flash large), the COMPRESSOR's meter, the
+ * SEQUENCER's state, the ARPEGGIO's HOLD and the SETUP's readouts on two lines, else the page's hint */
+static void draw_meter(void);
 static void draw_footer(void)
 {
-    cv_begin(240, 35, C_BLACK);
-    if (ui_style == UI_FOCUS && !pr_save_mode && !(ui_msg_t && fm1_ms - ui_msg_t < MSG_MS) && ui_page != PG_COMP &&
-        ui_page != PG_SEQ && ui_page != PG_ARP && ui_page != PG_SETUP) {
-        aa_text_c(0, 9, 240, &AF_S, page_hint(ui_page), RGB(90, 90, 96), FC_BG);
-        cv_blit(0, 205);
-        return;
-    }
-    if (ui_style == 0u || ui_style == 3u) cv_rect(0, 0, 240, 1, C_LINE);
+    cv_begin(240, FT_H, FC_BG);
     if (pr_save_mode) {                                 /* the save mode owns the footer until it ends */
         char s[24], t[32];
         preset_name(PR_NF_UI + pr_save_slot, s);
         p_strcpy(t, "SAVE TO ", 8); p_strcpy(t + 8, s, 20);
-        ft_c(0, 2, 240, t, C_HI);
-        ft_c(0, 18, 240, "SAVE: YES   HOME: NO", UI_ACC);
+        ft_c(7, t, FC_VAL);
+        ft_c(22, "SAVE: YES   HOME: NO", UI_ACC);
     } else if (ui_msg_t && fm1_ms - ui_msg_t < MSG_MS) {
-        if (text_w(&FONT_L, ui_msg) <= 236) text_c(0, 2, 240, &FONT_L, ui_msg, C_HI);
-        else ft_c(0, 10, 240, ui_msg, C_HI);
-    } else {
-        if (ui_page == PG_COMP) {                        /* the gain-reduction meter (draw_meter) and its scale */
-            uint32_t i;
-            if (PV(P_CMP_SW)) {
-                for (i = 0; i < GR_SEGS; i++)
-                    if (GR_LAB[i]) { char t[4]; p_fmt_int(t, GR_DB10[i] / 10); ft_c(GR_X0 + (int32_t)i * GR_W - 4, 18, GR_W + 6, t, C_DIM); }
-                ft_c(GR_X1, 18, 240 - GR_X1, "GR DB", C_DIM);
-            } else ft_c(0, 18, 240, "K1 THRESH: TURN UP = ON", C_DIM);
-            gr_shown = 0xFFFF;                          /* the meter rows: draw them again */
-            ui_mark(E_METER);
-            cv_blit(0, 205);
-            return;
-        }
-        if (ui_page == PG_SEQ) {                       /* the state, and what the buttons do */
-            char t[32];
-            uint32_t n = 0;
-            if (seq_rec) p_strcpy(t, seq_play ? "REC: OVERDUB" : "STEP REC: PLAY NOTES", 20);
-            else if (sq_erase) p_strcpy(t, "ERASE: HOLD KEYS", 20);
-            else { p_strcpy(t, seq_play ? "PLAYING  " : "STOPPED  ", 10); n = 9; p_fmt_int(t + n, (int32_t)sq_n); while (t[n]) n++; p_strcpy(t + n, " NOTES", 6); }
-            ft_c(0, 2, 240, t, seq_rec || sq_erase ? UI_ACC : C_GRAY);
-            ft_c(0, 18, 240, "SEQ: REC   HOLD SEQ: CLEAR", C_DIM);
-            cv_blit(0, 205);
-            return;
-        }
-        if (ui_page == PG_ARP) ft_c(0, 2, 240, ARP_HOLD ? "HOLD ON: NOTES KEEP PLAYING" : "HOLD OFF",
-                                      ARP_HOLD ? UI_ACC : C_GRAY);
-        else if (ui_page == PG_SETUP) {                 /* what this is: the name and the version */
-            char t[32];
-            uint32_t n;
-            p_strcpy(t, "FRODHES ", 8); p_strcpy(t + 8, ui_version(), 12);
-            n = 0; while (t[n]) n++;
-            p_strcpy(t + n, "  BAT ", 6); p_fmt_int(t + n + 6, batt_raw());   /* the battery's reading (calibration) */
-            ft_c(0, 2, 240, t, UI_ACC);
-        } else ft_c(0, 2, 240, "SELECT: PAGE  PRESETS: SOUND", C_GRAY);
-        if (ui_page == PG_SETUP) {
-            static char cpu[32];
-            uint32_t n = 0;
-            p_strcpy(cpu, "AUDIO ", 6); p_fmt_int(cpu + 6, (int32_t)prof_us);
-            while (cpu[n]) n++;
-            p_strcpy(cpu + n, " MAX ", 5); n += 5; p_fmt_int(cpu + n, (int32_t)prof_max_us);
-            while (cpu[n]) n++;
-            p_strcpy(cpu + n, " US", 3);
-            ft_c(0, 18, 240, cpu, C_DIM);
-        } else ft_c(0, 18, 240, page_hint(ui_page), C_DIM);
-    }
-    cv_blit(0, 205);
+        if (ui_msg_big && aa_text_w(&AF_L, ui_msg) <= 236) ft_big(15, ui_msg, FC_VAL);
+        else ft_c(15, ui_msg, FC_VAL);
+    } else if (ui_page == PG_COMP) {                    /* the gain-reduction meter (draw_meter), or how to start it */
+        if (PV(P_CMP_SW)) { gr_shown = 0xFFFF; draw_meter(); return; }
+        ft_c(19, "K1 THRESH: TURN UP = ON", FC_DIM);
+    } else if (ui_page == PG_SEQ) {                     /* the state, and what the buttons do */
+        char t[32];
+        uint32_t n = 0;
+        if (seq_rec) p_strcpy(t, seq_play ? "REC: OVERDUB" : "STEP REC: PLAY NOTES", 20);
+        else if (sq_erase) p_strcpy(t, "ERASE: HOLD KEYS", 20);
+        else { p_strcpy(t, seq_play ? "PLAYING  " : "STOPPED  ", 10); n = 9; p_fmt_int(t + n, (int32_t)sq_n); while (t[n]) n++; p_strcpy(t + n, " NOTES", 6); }
+        ft_c(7, t, seq_rec || sq_erase ? UI_ACC : FC_LAB);
+        ft_c(22, "SEQ: REC   HOLD SEQ: CLEAR", FC_DIM);
+    } else if (ui_page == PG_ARP) {
+        ft_c(7, ARP_HOLD ? "HOLD ON: NOTES KEEP PLAYING" : "HOLD OFF", ARP_HOLD ? UI_ACC : FC_LAB);
+        ft_c(22, page_hint(ui_page), FC_DIM);
+    } else if (ui_page == PG_SETUP) {                   /* what this is: the name, the version, the battery's reading
+                                                         * (calibration), the audio's time */
+        char t[32];
+        uint32_t n;
+        p_strcpy(t, "FRODHES ", 8); p_strcpy(t + 8, ui_version(), 12);
+        n = 0; while (t[n]) n++;
+        p_strcpy(t + n, "  BAT ", 6); p_fmt_int(t + n + 6, batt_raw());
+        ft_c(7, t, UI_ACC);
+        p_strcpy(t, "AUDIO ", 6); p_fmt_int(t + 6, (int32_t)prof_us);
+        n = 0; while (t[n]) n++;
+        p_strcpy(t + n, " MAX ", 5); n += 5; p_fmt_int(t + n, (int32_t)prof_max_us);
+        while (t[n]) n++;
+        p_strcpy(t + n, " US", 3);
+        ft_c(22, t, FC_DIM);
+    } else ft_c(19, page_hint(ui_page), FC_DIM);
+    cv_blit(0, FT_Y);
 }
 
-/* the compressor's gain-reduction meter, as on a hardware compressor: LED segments that light from 1 dB to 30 dB,
- * a peak that holds for a second, and the reading in dB; footer rows 1..16, redrawn only when they change (~30 Hz) */
+/* the compressor's gain reduction, as a hardware meter reads: a full-width bar filled from the right (1 .. 30 dB on the
+ * scale GR_DB10, its 15 steps evenly apart), a peak that holds for a second, the reading in dB; the footer's canvas,
+ * drawn again only when it changes (~30 Hz) */
+static int32_t gr_px(int32_t db10)                      /* a reduction's place on the bar, from its right end */
+{
+    uint32_t i;
+    int32_t lo = 0;
+    for (i = 0; i < GR_SEGS; i++) {
+        if (db10 <= GR_DB10[i]) return ((int32_t)i * GR_W + GR_W * (db10 - lo) / (GR_DB10[i] - lo)) / (int32_t)GR_SEGS;
+        lo = GR_DB10[i];
+    }
+    return GR_W;
+}
 static void draw_meter(void)
 {
     char t[12];
-    uint32_t i, n = 0;
-    int32_t db10 = gr_db10;
-    cv_begin(240, 16, C_BLACK);
-    for (i = 0; i < GR_SEGS; i++) {
-        uint16_t c = C_LINE;
-        if (PV(P_CMP_SW) && db10 >= GR_DB10[i]) c = GR_DB10[i] > 100 ? C_HI : C_AMB;
-        else if (PV(P_CMP_SW) && i + 1u == gr_peak) c = C_WHITE;
-        cv_rect(GR_X0 + (int32_t)i * GR_W, 3, GR_W - 2, 10, c);
-    }
-    if (PV(P_CMP_SW)) {
-        t[n++] = '-'; p_fmt_int(t + n, db10 / 10);
-        while (t[n]) n++;
-        t[n++] = '.'; t[n++] = (char)('0' + db10 % 10); t[n] = 0;
-        text_c(GR_X1, 0, 240 - GR_X1, &FONT_S, db10 ? t : "0.0", db10 ? C_HI : C_DIM);
-    } else text_c(GR_X1, 0, 240 - GR_X1, &FONT_S, "OFF", C_DIM);
-    cv_blit(0, 206);
+    uint32_t n = 0;
+    int32_t db10 = gr_db10, fw = gr_px(db10), pk = gr_peak ? gr_px(GR_DB10[gr_peak - 1u]) : 0;
+    cv_begin(240, FT_H, FC_BG);
+    cv_rect(GR_X, 3, GR_W, 9, MT_SURF);
+    cv_rect(GR_X + GR_W - fw, 3, fw, 9, mt_fill());
+    cv_rect(GR_X + GR_W - (fw > 2 ? fw : 2), 3, 2, 9, UI_ACC);   /* the fill's edge (at 0: the bar's right end) */
+    if (pk > fw) cv_rect(GR_X + GR_W - pk, 3, 2, 9, FC_VAL);    /* the peak */
+    t[n++] = '-'; p_fmt_int(t + n, db10 / 10);
+    while (t[n]) n++;
+    t[n++] = '.'; t[n++] = (char)('0' + db10 % 10); t[n++] = ' '; t[n++] = 'd'; t[n++] = 'B'; t[n] = 0;
+    aa_text(10, S_TOP(21), &AF_S, "GAIN REDUCTION", FC_LAB, FC_BG);
+    aa_text_r(230, S_TOP(21), &AF_S, db10 ? t : "0.0 dB", db10 ? FC_VAL : FC_DIM, FC_BG);
+    cv_blit(0, FT_Y);
 }
 /* ~30 Hz on the COMP page: follow the ISR's reduction (it rises at once, falls at 15 dB/s, like a meter's needle) */
 static void meter_poll(void)
@@ -1020,17 +955,16 @@ static void ui_splash(void)
     cv_rect(40, 30, 160, 2, C_LINE);
     cv_blit(0, 46);
     cv_begin(240, 64, C_BLACK);
-    text_c(0, 0, 240, &FONT_L, "FRODHES", UI_ACC);
-    text_c(0, 40, 240, &FONT_S, "ELECTRIC PIANO + VIBES", C_GRAY);
+    ft_big(16, "FRODHES", UI_ACC);
+    ft_c(48, "ELECTRIC PIANO + VIBES", FC_LAB);
     cv_blit(0, 110);
     cv_begin(240, 20, C_BLACK);
     p_strcpy(v, "VERSION ", 8); p_strcpy(v + 8, ui_version(), 10);
-    text_c(0, 2, 240, &FONT_S, v, C_DIM);
-    cv_blit(0, 206);
+    ft_c(10, v, FC_DIM);
+    cv_blit(0, 210);
     ui_splash_t = fm1_ms;
     ui_splash_on = 1;
 }
-
 static void ui_draw_page_change(void) { ui_dirty |= (1u << E_N) - 1u; }
 
 /* one element per pass, in priority order: footer, header, title, cards */
@@ -1113,7 +1047,7 @@ static void ui_draw(void)
         else if (ui_page == PG_SEQ) draw_strip();
     } else if (e == E_ROLL) { if (ui_page == PG_SEQ) draw_now(); }
     else if (ui_page == PG_SEQ) { draw_card_small(e - E_CARD0); if (e == E_CARD0) ui_mark(E_ROLL); }
-    else draw_card(e - E_CARD0);
+    else draw_row(e - E_CARD0);
 }
 
 /* ---- input */
@@ -1121,7 +1055,7 @@ static void ui_goto(uint32_t pg)
 {
     if (pg >= PG_N) pg = PG_PERF;
     if (!pg_shown(pg)) pg = PG_DECAY;                   /* MOTOR on a Rhodes TYPE: its neighbour */
-    if ((pg == PG_SEQ) != (ui_page == PG_SEQ)) lcd_fill(0, 21, 240, 183, C_BLACK);   /* its own layout: no leftovers */
+    if ((pg == PG_SEQ) != (ui_page == PG_SEQ)) lcd_fill(0, TI_Y, 240, FT_Y - TI_Y, C_BLACK);   /* its own layout: no leftovers */
     ui_page = (uint8_t)pg;
     ui_hot_card = 0xFF;
     ui_draw_page_change();
@@ -1217,7 +1151,7 @@ static void ui_input(uint32_t b, uint32_t rel)
         ui_mark(E_TITLE); ui_mark(E_ROLL); ui_mark(E_METER); ui_mark(E_CARD0 + 3);
     } else if (d[ENC_ALGORITHM]) {
         slot_turn(P_TYPE, sgn(d[ENC_ALGORITHM]));
-        ui_say(N_TYPE_LONG[PV(P_TYPE)]);
+        ui_say_big(N_TYPE_LONG[PV(P_TYPE)]);           /* the TYPE flash: large */
         ui_mark(E_CARDS);
     }
     for (k = 0; k < 4u; k++) {

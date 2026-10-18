@@ -105,7 +105,6 @@ static void midi_cc(uint32_t cc, uint32_t v)
         return;
     }
     if (cc == 8u) { batt_sim = (uint8_t)v; return; }           /* developer: a simulated battery reading (v x 8; 0 = the ADC) */
-    if (cc == 2u) { ui_style = (uint8_t)(v > 4u ? 0u : v); ui_draw_page_change(); return; }   /* developer: the UI look (ui.c) */
     if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
     if (cc == 114u) { set.usb_fixed = v >= 64u; usb_pre_master = set.usb_fixed; ui_mark(E_CARDS); return; }   /* USB VOL */
     if (cc == 116u) {                                  /* profiler query: CC 116 -> CC 116/117 = max audio us (MSB, LSB
