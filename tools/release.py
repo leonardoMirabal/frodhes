@@ -308,7 +308,9 @@ class Release:
         sh(["git", "tag", "-a", tag, "-m", f"Frodhes {self.ver}"])
         sh(["git", "push", "origin", tag])
         ev.append(f"tag {tag} pushed")
-        ev.append(wait_run("release.yml", self.head))
+        # ci just passed on this commit, so release.yml's ci-gate skips the fallback tests (its generators-macos job
+        # is "skipped"): toolchain + build + publish only
+        ev.append(wait_run("release.yml", self.head, ok=("success", "skipped")))
         d = tempfile.mkdtemp(prefix="frodhes-rel-", dir=os.path.join(ROOT, "build"))
         try:
             sh(["gh", "release", "download", tag, "-R", REPO, "-p", f"frodhes-{self.ver}.fwsc", "-D", d])
@@ -430,8 +432,9 @@ def check_jack(eng, rep):
     return f"hil_jack {eng}: SNR {rep['snr_db']:.1f} dB, loud chord jack peak {peak:.1f} dBFS"
 
 
-def wait_run(workflow, sha, appear_s=300):
-    """wait for workflow's run on commit sha; Stop with the failing jobs' log lines unless it succeeds"""
+def wait_run(workflow, sha, appear_s=300, ok=("success",)):
+    """wait for workflow's run on commit sha; Stop with the failing jobs' log lines unless it succeeds and every job's
+    conclusion is in ok"""
     t0, run = time.time(), None
     while time.time() - t0 < appear_s:
         rows = json.loads(out(["gh", "run", "list", "-R", REPO, "--workflow", workflow, "--commit", sha,
@@ -448,11 +451,11 @@ def wait_run(workflow, sha, appear_s=300):
                  timeout=7200)
     v = json.loads(out(["gh", "run", "view", rid, "-R", REPO, "--json", "conclusion,jobs,url"]))
     jobs = [(j["name"], j["conclusion"]) for j in v["jobs"]]
-    if code or v["conclusion"] != "success" or any(c != "success" for _, c in jobs):
+    if code or v["conclusion"] != "success" or any(c not in ok for _, c in jobs):
         _, logs = sh(["gh", "run", "view", rid, "-R", REPO, "--log-failed"], check=False, quiet=True)
         errs = [l for l in logs.splitlines() if re.search(r"error|fail|assert", l, re.I)][-30:]
         raise Stop(f"{workflow} {v['url']}: {v['conclusion']}, jobs {jobs}\n" + "\n".join(errs or [tail(logs)]))
-    return f"{workflow} {v['url']}: success, jobs {', '.join(n for n, _ in jobs)} all green"
+    return f"{workflow} {v['url']}: success, jobs {', '.join(f'{n} {c}' for n, c in jobs)}"
 
 
 def fetch_sha(url):

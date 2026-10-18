@@ -6,8 +6,25 @@ on:
     tags: ['v*']
 permissions:
   contents: write
+  actions: read                      # ci-gate reads the ci runs
 jobs:
-  generators-macos:                  # the tables regenerate byte for byte (macOS, as ci.yml); the release needs it
+  # ci.yml already runs every host test (host + generators-macos) on each push to main. If ci passed on exactly this
+  # commit (waiting up to 40 min if it is still running), the release skips its own copy of the tests; if ci failed,
+  # never ran or timed out, the fallback below runs them here, and a failure stops the release before publish.
+  ci-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      passed: ${{ steps.gate.outputs.passed }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: sh tools/ci_gate.sh "$GITHUB_SHA"
+  generators-macos:                  # fallback only: the tables regenerate byte for byte (macOS, as ci.yml)
+    needs: ci-gate
+    if: needs.ci-gate.outputs.passed != 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,13 +33,19 @@ jobs:
           python-version: '3.14'
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
       - run: python -m pytest -q -rs tests/py/test_gen_bars.py
+      - run: '! python -m pytest -q -rs tests/py/test_gen_bars.py -k deterministic | grep -q SKIPPED'
   release:
-    needs: generators-macos
+    needs: [ci-gate, generators-macos]
+    # runs when ci passed on this commit (generators-macos skipped) or when the fallback macOS job passed
+    if: >-
+      !cancelled() && needs.ci-gate.result == 'success' &&
+      (needs.ci-gate.outputs.passed == 'true' || needs.generators-macos.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
-      - name: host tests
+      - name: host tests (fallback only, when ci did not pass on this commit)
+        if: needs.ci-gate.outputs.passed != 'true'
         run: make test && make pytest PY=python3
       - name: the JieLi toolchain and the 3 AC79 SDK files (checked by sha256 in the build)
         run: |
