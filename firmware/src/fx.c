@@ -46,6 +46,11 @@ static volatile uint32_t fx_quiet_blocks;
 static void fx_set(uint32_t id, int32_t v) { if (id < FXP_N) fx_p[id] = v < 0 ? 0 : v > 127 ? 127 : v; }
 static int fx_quiet(void) { return fx_quiet_blocks >= 86u; }   /* 500 ms under -66 dBFS */
 
+/* FX_K32: a local multiplier that is constant over a loop and used in (int64_t)a * v, read from the stack where it is
+ * used (volatile: one load, the same value). Kept in a register instead, the compiler widens it to 64 bits once before
+ * the loop and then, inside it, no longer sees a 32 x 32 product: it multiplies 64 x 64 (four multiplies and the
+ * carries) instead of one instruction. */
+#define FX_K32 volatile int32_t
 static inline int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
 static inline int32_t mulq15(int32_t a, int32_t b) { return (a * b) >> 15; }        /* |a|,|b| small enough */
 static inline int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15, flat beyond +-4 */
@@ -422,6 +427,47 @@ static void fx_comp(int32_t *m, uint32_t n)
 static int16_t dly_buf[DLY_LEN] POOL;
 static uint32_t dly_w, dly_wow, dly_flt;
 static int32_t dly_d = 4410 << 8, dly_lp, dly_hp, dly_dg = 32768, dly_sg;   /* dly_sg: the send's stereo make-up, log2 Q12 */
+/* the delay's sample loop, one version for TAPE (tape = 1) and one for DIGITAL / off (tape = 0: a constant after
+ * inlining), the state in locals: the same arithmetic per sample as one loop with the tests inside. msk: the send on
+ * (-1) or off (0, the tail rings); sg16: the send's make-up (Q16, exactly 65536 when dly_sg is 0: x 1); dgt: the dry's
+ * gain it eases to. */
+static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *R, uint32_t n, const int tape,
+                                                           int32_t msk, int32_t sg16, int32_t target, int32_t col,
+                                                           int32_t fb, int32_t wet, int32_t dgt)
+{
+    uint32_t w = dly_w, wow = dly_wow, flt = dly_flt, j;
+    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg;
+    FX_K32 ksg = sg16;
+    for (j = 0; j < n; j++) {
+        int32_t d, r, in = ((L[j] + R[j]) >> 1) & msk, f;
+        uint32_t i;
+        in = (int32_t)(((int64_t)in * ksg) >> 16);
+        if (tape) {                                      /* tape: slewed time, wow and flutter */
+            int32_t sf;
+            dd += (target - dd) >> 12;
+            wow += 69000u; flt += 690000u;              /* ~0.7 Hz, ~7 Hz */
+            sf = osc_sine(flt);
+            sf = (sf + (int32_t)((uint32_t)sf >> 31)) >> 1;   /* sf / 2 (towards 0) without the divide */
+            d = dd + (int32_t)(((int64_t)dd * (osc_sine(wow) * 3 + sf)) >> 25);
+        } else {
+            if (dd < target) dd = dd + 256 > target ? target : dd + 256;
+            else if (dd > target) dd = dd - 256 < target ? target : dd - 256;
+            d = dd;
+        }
+        i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
+        r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
+        lp += mulq15(r - lp, col);
+        f = tape ? softclip(lp) : lp;
+        hp += (f - hp + 64) >> 7;
+        f -= hp;
+        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + mulq15(f, fb), -32768, 32767);
+        w++;
+        r = mulq15(r, wet);
+        dg += (dgt - dg) >> 9;
+        L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
+    }
+    dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg;
+}
 static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t sw = fx_p[FXP_DL_SW], depth = fx_p[FXP_DL_DEPTH];
@@ -454,32 +500,9 @@ static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
         if (tg == 0 && dly_sg < 4) dly_sg = 0;
     }
     sg16 = exp2_q16(dly_sg);
-    for (j = 0; j < n; j++) {
-        int32_t d, r, in = sw ? (L[j] + R[j]) >> 1 : 0, f;
-        if (dly_sg) in = (int32_t)(((int64_t)in * sg16) >> 16);
-        uint32_t i;
-        if (sw == 2) {                                   /* tape: slewed time, wow and flutter */
-            dly_d += (target - dly_d) >> 12;
-            dly_wow += 69000u; dly_flt += 690000u;      /* ~0.7 Hz, ~7 Hz */
-            d = dly_d + (int32_t)(((int64_t)dly_d * (osc_sine(dly_wow) * 3 + osc_sine(dly_flt) / 2)) >> 25);
-        } else {
-            if (dly_d < target) dly_d = dly_d + 256 > target ? target : dly_d + 256;
-            else if (dly_d > target) dly_d = dly_d - 256 < target ? target : dly_d - 256;
-            d = dly_d;
-        }
-        i = (dly_w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
-        r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
-        dly_lp += mulq15(r - dly_lp, col);
-        f = sw == 2 ? softclip(dly_lp) : dly_lp;
-        dly_hp += (f - dly_hp + 64) >> 7;
-        f -= dly_hp;
-        dly_buf[dly_w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + mulq15(f, fb), -32768, 32767);
-        dly_w++;
-        r = mulq15(r, wet);
-        dly_dg += ((sw ? 32768 - depth * depth : 32768) - dly_dg) >> 9;   /* -0.7 dB at 50, -5.9 dB at 127 */   /* the dry eases down as the mix rises: a
-                                                                     * full-mix delay no longer jumps +5 LU (0.8) */
-        L[j] = (int32_t)(((int64_t)L[j] * dly_dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dly_dg) >> 15) + r;
-    }
+    /* the dry eases down as the mix rises (-0.7 dB at 50, -5.9 dB at 127): a full-mix delay no longer jumps +5 LU (0.8) */
+    if (sw == 2) dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, 32768 - depth * depth);
+    else dly_loop(L, R, n, 0, sw ? -1 : 0, sg16, target, col, fb, wet, sw ? 32768 - depth * depth : 32768);
     if (!sw && iabs(dly_lp) < 2) dly_lp = dly_hp = 0;
 }
 
