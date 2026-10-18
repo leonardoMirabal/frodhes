@@ -50,4 +50,4 @@ def test_type_names_same_size():
         names = re.findall(r'expect state card.2.0 = "~" \(is "([^"]*)"\)', out)
         assert names == ["STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "VIBES"], names
         assert len(rows) == len(sel) and all(r.split()[0] == "choice" and r.split()[-1] == "L" for r in rows), rows
-        assert heights[0] >= 18, heights                                # the large face (~20 px), not the small
+        assert heights[0] >= 16, heights                                # the large face (24 px: ~18), not the small

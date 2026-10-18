@@ -5,6 +5,8 @@ same pages, in the framebuffer's own colours (tools/manual_shots.py's default), 
 build per size: -DUI_VAL_PX=28 / 25 / 24, aatext.c).
 
   tools/cards_sheet.py [OUT_DIR]     (default private/ui-simplify/design-pass)
+  tools/cards_sheet.py --breathe [OUT_DIR]   only breathe.png: A at 24 px, the tight first version (UI_BREATHE=0)
+                                             next to the breathing one (the default)
 
 Writes to OUT_DIR:
   sheet-<combo>-<px>px.png     the ten pages, one combination at one size (A = SEGMENTS + LED, B = PIPS + LED,
@@ -40,16 +42,17 @@ def font(px):
     return ImageFont.truetype(os.path.join(ROOT, "assets", "fonts", "InterTight[wght].ttf"), px)
 
 
-def host(px):
-    b = os.path.join(ROOT, "build", "host", f"frodhes_v{px}")
+def host(px, breathe=1):
+    b = os.path.join(ROOT, "build", "host", f"frodhes_v{px}" + ("" if breathe else "_tight"))
     subprocess.run(["cc", "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", "-DAPP_VER=\"dev\"", f"-DUI_VAL_PX={px}",
-                    "-Ifirmware/src", "-Ifirmware/gen", "-o", b, "firmware/src/frodhes.c", "-lm"], cwd=ROOT, check=True)
+                    f"-DUI_BREATHE={breathe}", "-Ifirmware/src", "-Ifirmware/gen", "-o", b, "firmware/src/frodhes.c",
+                    "-lm"], cwd=ROOT, check=True)
     return b
 
 
-def shoot(n, px):
-    out = os.path.join(ROOT, "build", "design", f"c{n}-{px}")
-    env = dict(os.environ, FRODHES_HOST_BIN=host(px))
+def shoot(n, px, breathe=1):
+    out = os.path.join(ROOT, "build", "design", f"c{n}-{px}" + ("" if breathe else "-tight"))
+    env = dict(os.environ, FRODHES_HOST_BIN=host(px, breathe))
     subprocess.run([sys.executable, os.path.join(ROOT, "tools", "manual_shots.py"), "--cards", str(n), "--out", out],
                    check=True, capture_output=True, env=env)
     return out
@@ -67,9 +70,28 @@ def grid(ims, cols, caps, title, w=480):
     return o
 
 
+BREATHE = [("piano", "FRODHES (Rhodes)"), ("piano-vibes", "FRODHES (VIBES)"), ("voice1-vibes", "VIBES VOICE 1/3")] + CHOICES
+
+
+def breathe(dst):
+    """breathe.png: A at 24 px, the tight first version (UI_BREATHE=0) next to the breathing one"""
+    tight, air = shoot(3, 24, 0), shoot(3, 24, 1)
+    ims, caps = [], []
+    for p, c in BREATHE:
+        for d, t in ((tight, "now"), (air, "breathing")):
+            ims.append(Image.open(os.path.join(d, f"{p}.png")).convert("RGB")); caps.append(f"{c}: {t}")
+    grid(ims, 4, caps, "A at 24 px: now | breathing (+0.75 px between the value's letters, the value 4 px further "
+         "in, the unit 2 px further out, 14 px after the label)").save(os.path.join(dst, "breathe.png"))
+
+
 def main():
-    dst = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "private", "ui-simplify", "design-pass"))
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    dst = os.path.abspath(args[0] if args else os.path.join(ROOT, "private", "ui-simplify", "design-pass"))
     os.makedirs(dst, exist_ok=True)
+    if "--breathe" in sys.argv:
+        breathe(dst)
+        print(os.path.join(dst, "breathe.png"))
+        return
     src = {}
 
     def get(n, tag, px, page):

@@ -36,18 +36,23 @@ W, RH = 228, 38                                                   # ui.c RW_W, R
 STYLE = {1: {"amount": "F", "select": "F", "toggle": "F"}, 2: {"amount": "L", "select": "L", "toggle": "L"},
          3: {"amount": "F", "select": "S", "toggle": "D"}, 4: {"amount": "F", "select": "P", "toggle": "D"},
          5: {"amount": "F", "select": "S", "toggle": "B"}}
-# every value written in its short form (ui.c CD_LONG / CD_SHORT) at 28 px: (page, label, short form)
-SHORT = {("FRODHES", "TYPE", "FELT"), ("FRODHES", "TYPE", "DYNO")} | {("ASSIGN", "PLAYS", s) for s in
-                                          ("TRM/WAH", "CMP THR", "CMP GAIN", "TRM RATE", "TRM SHP", "PHA SPD",
-                                           "PHA FDBK", "CHO SPD", "DLY FDBK")}
+# every value written in its short form (ui.c CD_LONG / CD_SHORT) in the default build (24 px, breathing):
+# (page, label, short form); the other sizes: no value that does not fit
+SHORT = {("ASSIGN", "PLAYS", s) for s in ("TRM/WAH", "CMP GAIN", "TRM RATE", "TRM SHP", "PHA SPD", "PHA FDBK",
+                                          "CHO SPD", "DLY FDBK")}
+DEF_PX = 24                                                       # aatext.c UI_VAL_PX
 KEYS = M.KEYS + [f"rowbox{k}" for k in range(4)] + ["cards"]
 SYNC_NAMES = {"1/32", "16T", "1/16", "8T", "16D", "1/8", "4T", "8D", "1/4", "4D", "1/2", "1/1", "2BAR", "4BAR"}
 LOOK_C = [False]
 
 
+def type_lines(cc_n, v):
+    return [cc(100, cc_n, v)]
+
+
 def binary(px):
-    """the host build with the large face at px (28: the normal one)"""
-    if px == 28:
+    """the host build with the large face at px (DEF_PX: the normal one)"""
+    if px == DEF_PX:
         hostrun.build()
         return hostrun.BIN
     b = os.path.join(hostrun.ROOT, "build", "host", f"frodhes_v{px}")
@@ -60,12 +65,12 @@ def binary(px):
     return b
 
 
-def run(tag, lines, end, px=28):
+def run(tag, lines, end, px=DEF_PX):
     return hostrun.run(tag, lines, end, binary=binary(px), check=False)
 
 
-def walk(tag, cc_n, v, variant, turns=None, look=None, px=28):
-    L, t, visits = [cc(50, 11, variant)] + ([cc(60, 2, look)] if look else []) + M.type_lines(cc_n, v), M.T0, []
+def walk(tag, cc_n, v, variant, turns=None, look=None, px=DEF_PX):
+    L, t, visits = [cc(50, 11, variant)] + ([cc(60, 2, look)] if look else []) + type_lines(cc_n, v), M.T0, []
     for i in range(M.NWALK):
         if i:
             L.append(f"{t} turn 0 1"); t += M.STEP
@@ -228,7 +233,7 @@ def check_page(im, s, where, variant):
 _pages = {}
 
 
-def pages(name, cc_n, v, variant, px=28):
+def pages(name, cc_n, v, variant, px=DEF_PX):
     key = (name, variant, px)
     if key not in _pages:
         _pages[key] = walk(f"cards{variant}_{px}_{name}", cc_n, v, variant, px=px)
@@ -250,26 +255,26 @@ def every_page(name, cc_n, v, variant, px):
 @pytest.mark.parametrize("variant", [1, 2, 3, 4, 5], ids=[NAMES[i] for i in range(1, 6)])
 @pytest.mark.parametrize("name,cc_n,v", TYPES3, ids=[t[0] for t in TYPES3])
 def test_cards_every_page(name, cc_n, v, variant):
-    """every page at its defaults, then with each knob turned (amounts +9, choices +1), 28 px"""
-    every_page(name, cc_n, v, variant, 28)
+    """every page at its defaults, then with each knob turned (amounts +9, choices +1), the default face"""
+    every_page(name, cc_n, v, variant, DEF_PX)
 
 
-@pytest.mark.parametrize("px", [25, 24])
+@pytest.mark.parametrize("px", [25, 28])
 @pytest.mark.parametrize("variant", [3, 4, 5], ids=["A", "B", "C"])
 @pytest.mark.parametrize("name,cc_n,v", [M.TYPES[2], M.TYPES[4]], ids=["FELT", "VIBE"])
 def test_cards_every_page_small_faces(name, cc_n, v, variant, px):
-    """the same at the smaller value faces (-10 %, -15 %)"""
+    """the same with the other value faces (25, 28 px)"""
     every_page(name, cc_n, v, variant, px)
 
 
-@pytest.mark.parametrize("px", [28, 24])
+@pytest.mark.parametrize("px", [24, 28])
 @pytest.mark.parametrize("variant", [1, 2, 3, 4, 5], ids=[NAMES[i] for i in range(1, 6)])
 def test_cards_every_choice_option(variant, px):
     """every choice card of both engines through every option: each drawn by its kind's rule at each option"""
     errs, n = [], 0
     for name, cc_n, v in (M.TYPES[0], M.TYPES[4]):
         ps = pages(name, cc_n, v, variant, px)
-        L, t, marks = [cc(50, 11, variant)] + M.type_lines(cc_n, v), M.T0, []
+        L, t, marks = [cc(50, 11, variant)] + type_lines(cc_n, v), M.T0, []
         for i, (_, _, s) in enumerate(ps):
             if i:
                 L.append(f"{t} turn 0 1"); t += 400
@@ -326,16 +331,14 @@ def test_cards_other_looks(variant, look):
 @pytest.mark.parametrize("variant", [1, 3, 4, 5])
 def test_fitscan(variant, px):
     """every value of every card (every TYPE, the switches as they are and all on, the synced note values) fits the
-    large face, the LED's place too; the short forms used are SHORT (28 px; the smaller faces need fewer)"""
+    large face, the LED's place too; the short forms used are SHORT in the default build"""
     r = run(f"cards_fitscan{variant}_{px}", [cc(50, 11, variant), f"{M.T0} expect state fitscan 0"], M.T0 + 50, px)
     bad = re.findall(r"^FITSCAN BAD (.*)$", r.out, re.M)
     assert not bad, sorted(set(bad))[:40]
     assert 'ok   expect state fitscan' in r.out, r.out[-2000:]
     got = set(re.findall(r"^FITSCAN SHORT (\S+)(?: \d)? K\d (.+?) = (.+?) -?\d+ -?\d+$", r.out, re.M))
-    if px == 28:
+    if px == DEF_PX:
         assert got == SHORT, (sorted(got - SHORT), sorted(SHORT - got))
-    else:
-        assert got <= SHORT, sorted(got - SHORT)
     print(f"{NAMES[variant]} {px} px short forms: {sorted(got)}")
 
 
@@ -344,7 +347,7 @@ def test_cards_hot_frame(variant):
     """turn K1..K4 on REVERB one at a time: that row alone framed with an amber label while turned, none at 1.5 s"""
     ps = pages("ST77", 80, 8, variant)
     pos = [M.title_of(s) for _, _, s in ps].index("REVERB")
-    L, t = [cc(50, 11, variant)] + M.type_lines(80, 8), M.T0
+    L, t = [cc(50, 11, variant)] + type_lines(80, 8), M.T0
     for _ in range(pos):
         L.append(f"{t} turn 0 1"); t += 100
     t += 500
@@ -375,7 +378,7 @@ def test_cards_hot_frame(variant):
     assert not errs, "\n".join(errs)
 
 
-def test_default_is_today():
-    """no CC 11: the rows as today (cards 0)"""
-    r = run("cards_default", [f"{M.T0} expect state cards 0"], M.T0 + 50)
+def test_default_is_a():
+    """no CC 11: A (cards 3), the user's pick"""
+    r = run("cards_default", [f"{M.T0} expect state cards 3"], M.T0 + 50)
     assert 'ok   expect state cards' in r.out, r.out[-1500:]

@@ -205,20 +205,21 @@ static const mt_look_t MT_LOOKS[] = {
 static uint8_t ui_look;                                 /* developer CC 2 (not saved) */
 /* the design pass (2026-10-18, private/ui-simplify/design-pass/): the rows' typography and meter, three variants for
  * the user to choose from; developer CC 11 (not saved), the default by build (APP_DEFS=-DUI_CARDS_DEF=n):
- *   0 TODAY   the rows as they are (the default until the user picks);
+ *   0 TODAY   the rows before the design pass (kept for comparing on the FM-1);
  *   1 FADER   the row's amber fill (the METERS look) on every card, a choice's too (its option's place in its list,
  *             OFF empty); one value size, one value edge, one baseline; the fill's bright edge stops 3 px short of
  *             any text (above and below it), so nothing crosses a digit or a letter; no edge at 0;
  *   2 LINE    the same typography with no fill: a 3 px meter line along each row's bottom, amber for the amount;
  * then the card kinds told apart at a glance (the user: "not clear what is a toggle or selector and what is a fader"),
  * an amount always the FADER fill:
- *   3 A       selectors SEGMENTS (one block per option, 2 px apart, lit up to the option), toggles LED (a dot before
+ *   3 A       THE DEFAULT (the user's pick, 2026-10-18): selectors SEGMENTS (one block per option, 2 px apart, lit up to the option), toggles LED (a dot before
  *             ON / OFF: lit ON, a ring OFF);
  *   4 B       selectors PIPS (one small pip per option under the value, the option's amber), toggles LED;
  *   5 C       selectors SEGMENTS, toggles BACK (the whole card lit ON, nothing OFF, no edge).
- * The large face's size is the build's (aatext.c UI_VAL_PX: 28, 25, 24). */
+ * The large face's size is the build's (aatext.c UI_VAL_PX: 24 the default, 25, 28), and its breathing room
+ * (UI_BREATHE: 1 the default, 0 the tighter first version). */
 #ifndef UI_CARDS_DEF
-#define UI_CARDS_DEF 0
+#define UI_CARDS_DEF 3
 #endif
 #define UI_CARDS_N 6u
 static uint8_t ui_cards = UI_CARDS_DEF;
@@ -771,13 +772,13 @@ static void draw_row(uint32_t k)
  *     fraction);
  *   - the turned knob: its label in the accent and the 1 px frame (HOT_MS), as today. */
 #define CD_PAD 6                                        /* the text's margin on the left */
-#define CD_PAD_R 10                                     /* and on the right (after the unit column) */
+#define CD_PAD_R (UI_BREATHE ? 12 : 10)                 /* and on the right (after the unit column) */
 #define CD_UNIT_W 22                                    /* the unit column: "kHz" in AF_S */
-#define CD_UGAP 3
-#define CD_VR ((int32_t)RW_W - CD_PAD_R - CD_UNIT_W - CD_UGAP)   /* 193: where every value ends */
+#define CD_UGAP (UI_BREATHE ? 5 : 3)                    /* between the number and its unit */
+#define CD_VR ((int32_t)RW_W - CD_PAD_R - CD_UNIT_W - CD_UGAP)   /* where every value ends (189; 193 tight) */
 #define CD_BASE (((int32_t)RW_H + AF_L_CAP_H + 1) / 2)  /* the baseline of the label, the value and the unit: the
                                                          * capitals centred in the row (28 px: 30, 25: 29, 24: 28) */
-#define CD_GAP 12                                       /* the least room between the label and the value */
+#define CD_GAP (UI_BREATHE ? 14 : 12)                   /* the least room between the label and the value */
 #define CD_KEEP 3                                       /* FADER: the edge stops this far from any text */
 #define CD_MINSEG 3                                     /* FADER: an edge piece shorter than this is left out */
 #define CD_LINE_H 3                                     /* LINE: the meter line, rows 34 .. 36 (37: the frame) */

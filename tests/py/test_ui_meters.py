@@ -54,7 +54,7 @@ ROW_X0, ROW_X1, ROW_Y0, ROW_DY, ROW_H = 6, 233, 46, 42, 38      # plan §2: x 6-
 LABEL_X1 = 90                                                     # the labels end before x 90 (where amber is looked for)
 VALUE_XR = ROW_X0 + 220                                           # ui.c draw_row: values right-aligned at row x 220
 # a choice's option written in the small face (too wide for the large one next to its label): (page, label, value)
-SMALL_OK = {("ASSIGN", "PLAYS", "TREM SHAPE")}                    # 170 px in the large face, 167 px free
+SMALL_OK = set()                                                  # (28 px: TREM SHAPE; the 24 px face fits all)
 T0, STEP, NWALK = 2500, 600, 30                                   # after the start screen and the TYPE message
 PROBE = "~"
 KEYS = (["title", "count", "page", "vpage", "hint", "hot"] + [f"row{k}" for k in range(4)] + [f"label{k}" for k in range(4)]
@@ -99,7 +99,7 @@ def row_face(s):
 
 
 def type_lines(cc_n, v):
-    return [cc(100, cc_n, v)]
+    return [cc(90, 11, 0), cc(100, cc_n, v)]                       # today's rows (developer CC 11 0; the default is A)
 
 
 def walk(tag, cc_n, v, turns=None, look=None):
