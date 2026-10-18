@@ -557,6 +557,12 @@ always there to start again from.
 
 So after a change, let the sound die away for a couple of seconds before you switch off.
 
+While a computer records the FM-1's USB audio, the settings and the pattern wait to be saved until the recording
+stops (the program closes the FM-1's input), or until a whole minute of silence: writing the flash pauses the FM-1
+for a moment, and a Mac then loses the start of the next note in the recording. So when you have been recording,
+close the recording program (or stay silent for a minute) before you switch off. Pressing SAVE still saves a preset
+at once.
+
 ## 7. Effects on and off
 
 Each effect has its own on / off: its page button pressed twice (LFO: tremolo / wah, ENV: phaser, SEL: delay), its
@@ -657,7 +663,8 @@ The TRS jack is MIDI in only. **Program Change** 0–13 loads F01–F14, 16–31
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
 The FM-1 also appears as a USB audio input (class-compliant, stereo, 16-bit, 44.1 or 48 kHz): you can record exactly
-what it plays, digitally, without the headphone jack's hiss. It does not play audio from the computer.
+what it plays, digitally, without the headphone jack's hiss. It does not play audio from the computer. While it is
+recorded, the automatic saves wait (section 6, "What is kept, and when").
 
 ## 13. If something goes wrong
 

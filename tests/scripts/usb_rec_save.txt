@@ -1,0 +1,17 @@
+# The automatic settings save waits while a computer reads the USB audio (frodhes.c usb_recording / flash_auto_ok):
+# a flash erase holds the interrupts off and macOS then hands the recording ~250 ms of stale input. It goes as soon
+# as the stream stops, or after 60 s of silence while it runs.
+50 usbrec 1
+100 midi 0xB0 90 50
+# 2 s after the change and silent: it would save now; it waits
+3500 expect state dirty 1
+3600 usbrec 0
+3800 expect state dirty 0
+# again while recording: a note (the silence counts from its end), then 60 s of silence lets the save through
+4000 usbrec 1
+4100 midi 0xB0 90 60
+4200 midi 0x90 60 100
+4500 midi 0x80 60 0
+50000 expect state dirty 1
+75000 expect state dirty 0
+75100 end
