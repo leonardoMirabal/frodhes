@@ -8,7 +8,7 @@ are played back. Around the piano sits an effects chain modelled on the Yamaha r
 tremolo or wah, phaser, chorus, delay and reverb. For playing there is a PERFORM page with four assignable knobs,
 chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo, USB-MIDI in and out and TRS MIDI in.
 
-![The PERFORM, main, PHASER and COMPRESSOR pages](manual/img/overview.png)
+![The FRODHES page: STAGE 77 with TONE, BELL and KEY VEL](manual/img/piano.png)
 
 ## Contents
 
