@@ -7,10 +7,12 @@ tools/build.py generate() with --preset inter-tight).
   gen_aa_font.py OUT.h --preset standin|inter-tight [--tracking EM] [--gamma G] [--kern-min N]
   gen_aa_font.py OUT.h --face NAME=FONT[#index]:PX:FIRST-LAST[+0xNN,...] ...   (explicit faces)
 
-Faces of the presets (S labels, M values/headers, L big numerals / titles):
+Faces of the presets: two (UI-SIMPLIFY, the METERS look of private/display/ui-meters-final.png):
+  S  13 px Medium (500): all small text (header, title, labels, units, choice names, hints), ASCII 32..126
+  L  28 px SemiBold (600): the values, trimmed to L_CHARS (digits, capitals, signs); Huffman-coded
   standin     an installed Inter (~/Library/Fonts/Inter.ttc, else Inter in fonts/ next to tools/) with
               -2.5 % tracking: a stand-in for Inter Tight, for previews only.
-  inter-tight assets/fonts/InterTight[wght].ttf (SIL OFL 1.1, Google Fonts) at weights 400 / 500 / 600.
+  inter-tight assets/fonts/InterTight[wght].ttf (SIL OFL 1.1, Google Fonts; assets/fonts/OFL-InterTight.txt).
 
 Output (a C header; the glyph / font types live in the renderer, firmware/src/gfx.c):
   AF_<N>_DATA   4-bit alpha, trimmed to the ink box, rows back to back, each glyph a byte-aligned bit stream
@@ -18,7 +20,7 @@ Output (a C header; the glyph / font types live in the renderer, firmware/src/gf
                 a run of 1..16 zeros or 15s, or one value 1..14 (huff_pack; about 28 % less than 2 px per byte)
   AF_<N>_HC     the code: the number of codes of each length 1..15, then the symbols in code order
                 ((count - 1) << 4 | value)
-  AF_<N>_G      aag_t {off, adv (1/16 px), bx, by, bw, bh} per glyph and phase (PHASES of S M, PHASES_L of L:
+  AF_<N>_G      aag_t {off, adv (1/16 px), bx, by, bw, bh} per glyph and phase (PHASES of S, PHASES_L of L:
                 the glyph drawn at a pen of +0, +1/phases .. px, next to each other), ASCII 32..126, then the
                 extras (Latin-1 by their code; the ellipsis U+2026 as code 0x85, as in Windows-1252)
   AF_<N>_KERN / _KD  kerning pairs (key = a<<8|b, sorted) and their deltas in 1/16 px (GPOS of the weight)
@@ -36,25 +38,31 @@ import aa_raster as ar  # noqa: E402
 
 FONTS = Path(__file__).resolve().parents[1] / "fonts"
 LOCAL_INTER = os.path.expanduser("~/Library/Fonts/Inter.ttc")   # 4.001: 0 Regular, 10 Medium, 12 SemiBold
-EXTRAS = [0xA9, 0xB0, 0xB7, 0xC4, 0xD6, 0xDC, 0xE4, 0xF6, 0xFC, 0x2026]  # (c) deg . A: O: U: a: o: u: (Latin-1), ...
+# extra glyphs past ASCII 126 (Latin-1 by their code; outside Latin-1 -> CODE): none since UI-SIMPLIFY P1 (Felucca's
+# (c) deg . A: O: U: a: o: u: ... were never drawn by Frodhes: no string of the firmware has them; a missing glyph
+# draws as '?' in S, see aatext.c aa_glyph)
+EXTRAS = []
 CODE = {0x2026: 0x85}                  # characters outside Latin-1 -> their one-byte code in the firmware
-PHASES, PHASES_L = 4, 2                # horizontal phases per glyph (aa_raster.raster_font): S M, L
-# faces stored Huffman-coded (--huff): M and L. S, the most drawn and the least compressible (-15 %), stays
-# 2 px per byte, so the labels draw at full speed
-HUFF = [("M", "L")]
-# L draws only "FELUCCA", the UPDATE MODE countdown digit, the calibration's control names (panel.c
-# B_NAME / E_NAME) and MENU > LARGE's card values and page titles (ui_draw.c draw_column_tall, ui_graph.c
-# graph_title: # . / J W too; a value with another character is set in M): a sparse face of those glyphs, the
-# space as its range and the rest as extras
-# (ui_test.c checks that every L string is covered)
-L_CHARS = " #+-./0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ%"   # (Frodhes: + Z for HZ, %, : for RATIO 4:1)
+PHASES, PHASES_L = 4, 2                # horizontal phases per glyph (aa_raster.raster_font): S, L
+# faces stored Huffman-coded (--huff): L. S, the most drawn and the least compressible (-15 %), stays 2 px per
+# byte, so the labels draw at full speed
+HUFF = [("L",)]
+# L draws the values only (UI-SIMPLIFY section 2: units, choice names and messages are S): a sparse face, the space
+# as its range and the rest as extras. The set, from every slot_text value at every value / TYPE / page, the chord
+# names (notes.c chord_name), the TYPE names, the bars' detents and the splash (the scan of private/ui-simplify/P1.md),
+# minus what moves to S (the units Hz kHz s ms, the choices):
+#   numbers 0-9 + - . : %; sync divisions / (1/16 16T 8D 2BAR); chords # * (C#, the unknown-chord mark);
+#   capitals A-J L-P R-V Y: OFF, CENTRE L/3 EDGE SOFT YARN CORD RUBBER, STAGE 77 SUITCASE EARLY FELT BELL DYNO
+#   VIBES, MAJ7 MIN7 M7B5 DIM7 ADD9 SUS4 AUG, FRODHES, EMPTY.
+# Not in L: K Q W X Z (only in units / choices: 1.0K, SQR, SAW, EXT, HZ), & (S&H, a choice), lower case (folded to
+# capitals by aatext.c aa_fold). aatext.c aa_covers(f, s) tells whether L has every character of a string.
+L_CHARS = " #%*+-./0123456789:ABCDEFGHIJLMNOPRSTUVY"
 
 
 def preset(name):
     if name == "inter-tight":
         v = str(FONTS.parent / "assets" / "fonts" / "InterTight[wght].ttf")   # SIL OFL 1.1, Google Fonts
-        return [("S", v + "@400", 12, (32, 126), EXTRAS, 0.0, PHASES),
-                ("M", v + "@500", 15, (32, 126), EXTRAS, 0.0, PHASES),
+        return [("S", v + "@500", 13, (32, 126), EXTRAS, 0.0, PHASES),
                 ("L", v + "@600", 28, (32, 32), [ord(c) for c in L_CHARS[1:]], 0.0, PHASES_L)]
     if name == "standin":
         if os.path.exists(LOCAL_INTER):
@@ -62,7 +70,7 @@ def preset(name):
         else:                                  # the repo's Inter 3.019 (only Regular + Light)
             reg = med = semi = str(FONTS / "Inter-Regular.ttf")
         t = -0.025                             # Inter Tight is Inter with tighter spacing
-        return [("S", reg, 12, (32, 126), EXTRAS, t, PHASES), ("M", med, 15, (32, 126), EXTRAS, t, PHASES),
+        return [("S", med, 13, (32, 126), EXTRAS, t, PHASES),
                 ("L", semi, 28, (32, 32), [ord(c) for c in L_CHARS[1:]], t, PHASES_L)]
     raise SystemExit(f"unknown preset {name}")
 
@@ -79,6 +87,8 @@ def parse_face(s):
 
 
 HC_MAXLEN = 15
+# faces gone, kept compilable by a define to a face that remains (removed once nothing uses the old name)
+TRANSITIONAL = [("M", "S")]
 
 
 def huff_symbols(v):
@@ -243,7 +253,7 @@ def main():
     if not faces:
         ap.error("--preset or --face is required")
     out = ["/* generated by tools/gen_aa_font.py: 4-bit alpha glyphs (Inter Tight, SIL OFL 1.1, "
-           "Copyright 2022 The Inter Project Authors; see assets/fonts/OFL.txt) */",
+           "Copyright 2022 The Inter Project Authors; see assets/fonts/OFL-InterTight.txt) */",
            "#pragma once", "#include <stdint.h>", ""]
     total = 0
     for f in faces:
@@ -253,6 +263,10 @@ def main():
         print(f"face {f[0]}: {c['font']} {c['px']}px h{c['h']} base{c['asc']}  {c['glyphs']} glyphs x {c['phases']}  "
               f"data {c['data']} B + table {c['glyph_table']} B + kern {c['kern']} B ({c['pairs']} pairs) "
               f"= {c['total']} B   digit adv {c['adv_digit']:.2f}px")
+    names = {f[0] for f in faces}
+    for old, new in TRANSITIONAL:
+        if old not in names and new in names:
+            out.append(f"#define AF_{old} AF_{new}   /* transitional (UI-SIMPLIFY P1): until ui.c stops using AF_{old} */\n")
     Path(a.out).write_text("\n".join(out))
     print(f"fonts total {total} B  -> {a.out}")
 

@@ -181,16 +181,10 @@ static uint16_t mt_fill(void)                          /* the fill: the palette'
     uint32_t c = C_LINE, rr = (c >> 11) & 31u, gg = (c >> 5) & 63u, bb = c & 31u;
     return (uint16_t)(((rr >> 1) << 11) | ((gg >> 1) << 5) | (bb >> 1));
 }
-#ifndef AF_S_CAP_Y
-#define AF_S_CAP_Y 3
-#define AF_S_CAP_H 9
-#endif
-#ifndef AF_L_CAP_Y
-#define AF_L_CAP_Y 7
-#define AF_L_CAP_H 21
-#endif
 #define S_TOP(yc) ((yc) - AF_S_CAP_Y - AF_S_CAP_H / 2)  /* the line top that centres AF_S's capitals on row yc */
 #define L_TOP(yc) ((yc) - AF_L_CAP_Y - AF_L_CAP_H / 2)
+/* the large face for s: it has every character (aa_covers: AF_L is trimmed to the values' characters) and s fits w */
+static int big_ok(const char *s, int32_t w) { return aa_covers(&AF_L, s) && aa_text_w(&AF_L, s) <= w; }
 /* the screen: header 0..19, title 20..39, rows 46 + 42 k (38 high, x 6..233), footer 210..239 */
 #define HD_H 20u
 #define TI_Y 20u
@@ -687,7 +681,7 @@ static void draw_row(uint32_t k)
             slot_text(s, v);
             u = slot_unit(s, v);
             xr = 220 - (u ? aa_text_w(&AF_S, u) + 4 : 0);
-            if (aa_text_w(&AF_L, v) <= xr - le - 8) aa_text_ovr(xr, L_TOP(19), &AF_L, v, FC_VAL);
+            if (big_ok(v, xr - le - 8)) aa_text_ovr(xr, L_TOP(19), &AF_L, v, FC_VAL);
             else aa_text_ovr(xr, S_TOP(19), &AF_S, v, FC_VAL);   /* too wide for the large face (a test reports it) */
             if (u) aa_text_ovr(220, L_TOP(19) + AF_L.asc - AF_S.asc, &AF_S, u, FC_LAB);   /* on the number's baseline */
         }
@@ -796,7 +790,7 @@ static void draw_now(void)                              /* NOW (big) and NEXT */
         ft_c(50, "SEQ: REC, THEN PLAY", FC_LAB);
     } else {
         if (empty) p_strcpy(v, "-", 1); else sq_group_name(now, v);
-        if (aa_text_w(&AF_L, v) <= 236) ft_big(22, v, sq_browsing() ? UI_ACC : seq_play ? C_WHITE : FC_VAL);
+        if (big_ok(v, 236)) ft_big(22, v, sq_browsing() ? UI_ACC : seq_play ? C_WHITE : FC_VAL);
         else ft_c(22, v, FC_VAL);
         sq_group_name(next, v);
         p_strcpy(t, "NEXT ", 5); n = 5; p_strcpy(t + n, v, 12); while (t[n]) n++;
@@ -852,7 +846,7 @@ static void draw_card_small(uint32_t k)                 /* the SEQUENCER's four:
     cv_begin(58, SQ_CARD_H, FC_BG);
     slot_text(s, v);
     aa_text_c(0, S_TOP(7), 58, &AF_S, PAGE_LAB[PG_SEQ][k], hot ? UI_ACC : FC_LAB, FC_BG);
-    if (aa_text_w(&AF_L, v) <= 56) aa_text_c(0, L_TOP(24), 58, &AF_L, v, c, FC_BG);
+    if (big_ok(v, 56)) aa_text_c(0, L_TOP(24), 58, &AF_L, v, c, FC_BG);
     else aa_text_c(0, S_TOP(24), 58, &AF_S, v, c, FC_BG);
     cv_rect(4, SQ_CARD_H - 1, 50, 1, hot ? UI_ACC : FC_HAIR);
     cv_blit(1u + k * 60u, SQ_CARD_Y);
@@ -871,7 +865,7 @@ static void draw_footer(void)
         ft_c(7, t, FC_VAL);
         ft_c(22, "SAVE: YES   HOME: NO", UI_ACC);
     } else if (ui_msg_t && fm1_ms - ui_msg_t < MSG_MS) {
-        if (ui_msg_big && aa_text_w(&AF_L, ui_msg) <= 236) ft_big(15, ui_msg, FC_VAL);
+        if (ui_msg_big && big_ok(ui_msg, 236)) ft_big(15, ui_msg, FC_VAL);
         else ft_c(15, ui_msg, FC_VAL);
     } else if (ui_page == PG_COMP) {                    /* the gain-reduction meter (draw_meter), or how to start it */
         if (PV(P_CMP_SW)) { gr_shown = 0xFFFF; draw_meter(); return; }

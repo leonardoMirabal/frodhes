@@ -39,34 +39,38 @@ class Jack:
         self.jn = sd.query_devices(self.jdev)["max_input_channels"]
 
     def both(self, dur, events):
+        """USB and the jack at once, by callback, each device at its own rate (PortAudio resampling the M6's 48 kHz to
+        44.1 while the FM-1 streamed made the USB capture skip ~200 ms in some takes, 2026-10-18); the jack resampled
+        to FS afterwards"""
         sd = self.sd
-        n = int(dur * FS)
-        u = np.zeros(n)
-        j = np.zeros(n)
-        s1 = sd.InputStream(device=self.r.dev, samplerate=FS, channels=2, dtype="int16")
-        s2 = sd.InputStream(device=self.jdev, samplerate=FS, channels=self.jn, dtype="float32")
+        jsr = int(sd.query_devices(self.jdev)["default_samplerate"])
+        usr = int(sd.query_devices(self.r.dev)["default_samplerate"])   # each device at its own rate (no conversion)
+        n, nu, nj = int(dur * FS), int(dur * usr), int(dur * jsr)
+        bufs = {"u": np.zeros((nu, 2), np.int16), "j": np.zeros((nj, self.jn), np.float32)}
+        pos, lim = {"u": 0, "j": 0}, {"u": nu, "j": nj}
+
+        def mk(key):
+            def cb(indata, frames, ti, status):
+                p = pos[key]
+                k = min(frames, lim[key] - p)
+                if k > 0:
+                    bufs[key][p:p + k] = indata[:k]
+                    pos[key] = p + k
+            return cb
+        s1 = sd.InputStream(device=self.r.dev, samplerate=usr, channels=2, dtype="int16", callback=mk("u"))
+        s2 = sd.InputStream(device=self.jdev, samplerate=jsr, channels=self.jn, dtype="float32", callback=mk("j"))
         s1.start()
         s2.start()
-        t0, k, g1, g2 = time.monotonic(), 0, 0, 0
-        evs = sorted(events, key=lambda e: e[0])
-        while g1 < n or g2 < n:
-            while k < len(evs) and time.monotonic() - t0 >= evs[k][0]:
-                t, kind, a, b = evs[k]
-                M = self.r.mido.Message
-                self.r.out.send(M("note_on", note=a, velocity=b) if kind == "on" else
-                                M("note_off", note=a) if kind == "off" else M("control_change", control=a, value=b))
-                k += 1
-            if g1 < n:
-                d, _ = s1.read(min(512, n - g1))
-                u[g1:g1 + len(d)] = d[:, 0] / 32768.0
-                g1 += len(d)
-            if g2 < n:
-                d, _ = s2.read(min(512, n - g2))
-                j[g2:g2 + len(d)] = d[:, self.jch]
-                g2 += len(d)
-        s1.stop()
-        s2.stop()
-        return u, j
+        t0, M = time.monotonic(), self.r.mido.Message
+        for t, kind, a, b in sorted(events, key=lambda e: e[0]):
+            while time.monotonic() - t0 < t:
+                time.sleep(0.0005)
+            self.r.out.send(M("note_on", note=a, velocity=b) if kind == "on" else
+                            M("note_off", note=a) if kind == "off" else M("control_change", control=a, value=b))
+        while (pos["u"] < nu or pos["j"] < nj) and time.monotonic() - t0 < dur + 5:
+            time.sleep(0.01)
+        s1.stop(); s1.close(); s2.stop(); s2.close()
+        return hs.to_fs(bufs["u"][:, 0] / 32768.0, usr, dur), hs.to_fs(bufs["j"][:, self.jch].astype(float), jsr, dur)
 
 
 def db(x):

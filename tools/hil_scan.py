@@ -939,27 +939,33 @@ class VRig:
         return T
 
     def _rec(self, dur, ev):
-        """both inputs by callback while the events go out on time (one thread: the sends are not held up by reads)"""
-        sd, n = self.sd, int(dur * FS)
-        bufs, pos, streams = {}, {}, []
+        """both inputs by callback while the events go out on time (one thread: the sends are not held up by reads).
+        Each device at ITS OWN rate (the FM-1 44.1 kHz, the M6 48 kHz), resampled to FS here afterwards: letting
+        PortAudio convert a device's rate while the other one also streamed made the USB capture skip ~200 ms in some
+        takes (2026-10-18)"""
+        sd = self.sd
+        bufs, pos, lim, rate, streams = {}, {}, {}, {}, []
 
-        def mk(key, ch, dt):
-            bufs[key] = np.zeros((n, ch), dt)
-            pos[key] = 0
+        def mk(key, sr, ch, dt):
+            nlen = int(dur * sr)
+            bufs[key] = np.zeros((nlen, ch), dt)
+            pos[key], lim[key], rate[key] = 0, nlen, sr
 
             def cb(indata, frames, ti, status):
                 p = pos[key]
-                k = min(frames, n - p)
+                k = min(frames, lim[key] - p)
                 if k > 0:
                     bufs[key][p:p + k] = indata[:k]
                     pos[key] = p + k
             return cb
         if self.want_usb:
-            streams.append(sd.InputStream(device=self.r.dev, samplerate=FS, channels=2, dtype="int16",
-                                          callback=mk("usb", 2, np.int16)))
+            sr = int(sd.query_devices(self.r.dev)["default_samplerate"])
+            streams.append(sd.InputStream(device=self.r.dev, samplerate=sr, channels=2, dtype="int16",
+                                          callback=mk("usb", sr, 2, np.int16)))
         if self.want_jack:
-            streams.append(sd.InputStream(device=self.jdev, samplerate=FS, channels=self.jn, dtype="float32",
-                                          callback=mk("jack", self.jn, np.float32)))
+            sr = int(sd.query_devices(self.jdev)["default_samplerate"])
+            streams.append(sd.InputStream(device=self.jdev, samplerate=sr, channels=self.jn, dtype="float32",
+                                          callback=mk("jack", sr, self.jn, np.float32)))
         for s in streams:
             s.start()
         M = self.r.mido.Message
@@ -973,19 +979,31 @@ class VRig:
                 self.r.out.send(M("note_off", note=a))
             elif kind == "cc":
                 self.r.out.send(M("control_change", control=a, value=b))
-        while any(pos[k] < n for k in pos) and time.monotonic() - t0 < dur + 5:
+        while any(pos[k] < lim[k] for k in pos) and time.monotonic() - t0 < dur + 5:
             time.sleep(0.01)
         for s in streams:
             s.stop()
             s.close()
-        u = bufs["usb"].astype(float) / 32768 if self.want_usb else None
-        j = bufs["jack"][:, self.jch].astype(float) if self.want_jack else None
+        u = to_fs(bufs["usb"][:, 0].astype(float) / 32768, rate["usb"], dur) if self.want_usb else None
+        j = to_fs(bufs["jack"][:, self.jch].astype(float), rate["jack"], dur) if self.want_jack else None
         return u, j
 
     def finish(self):
         if self.r:
             self.reset()
             self.r.out.send(self.r.mido.Message("program_change", program=0))
+
+
+
+def to_fs(x, sr, dur):
+    """a capture at a device's own rate -> FS (polyphase), dur s long"""
+    if sr != FS:
+        from math import gcd
+        from scipy.signal import resample_poly
+        g = gcd(FS, sr)
+        x = resample_poly(x, FS // g, sr // g)
+    n = int(dur * FS)
+    return np.pad(x, (0, max(0, n - len(x))))[:n]
 
 
 def save_wav(T):
