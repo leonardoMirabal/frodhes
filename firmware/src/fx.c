@@ -318,7 +318,7 @@ static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
 
 /* ---- PHASER: 4 first-order allpasses per side, the right one 30 degrees behind */
 static uint32_t ph_ph;
-static int32_t ph_x[2][4], ph_y[2][4], ph_fb[2], ph_hp[2];
+static int32_t ph_x[2][4], ph_y[2][4], ph_fb[2], ph_hp[2], ph_ls[2];
 static int32_t ph_coef(uint32_t ph, int32_t depth)
 {
     int32_t q = (int32_t)(ph < 0x80000000u ? ph >> 16 : (0xFFFFFFFFu - ph) >> 16);   /* triangle 0..32767 */
@@ -345,7 +345,7 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
                                                        * turned very wide, heard as a jump in level, the user 2026-10-17) */
         for (s = 0; s < 2u; s++) {                   /* the sides are independent: one at a time, the state in
                                                         * registers (the same arithmetic as per sample and side) */
-            int32_t *io = s ? R : L, *pe, as = a[s], hp = ph_hp[s], g13 = pg >> 16;
+            int32_t *io = s ? R : L, *pe, as = a[s], hp = ph_hp[s], g13 = pg >> 16, ls = ph_ls[s];
             int32_t x0 = ph_x[s][0], y0 = ph_y[s][0], y1 = ph_y[s][1], y2 = ph_y[s][2], y3 = ph_y[s][3];
             /* fewer registers (they spilled), the same values: an allpass's last input is the one before's last output
              * (x1 = y0, x2 = y1, x3 = y2, always: they start at 0 and take the same clamped value each sample), so
@@ -364,11 +364,17 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
                 y = clampi(y2 + (int32_t)(((int64_t)as * (t2 - y3) + 8192) >> 14), -1048575, 1048575); y2 = t2; y3 = y;
                 hp += (y - hp) >> 6;                    /* (~110 Hz: it resonated on the bass, C2 +4 LU with the
                                                          * phaser on) */
-                *io = (int32_t)(((int64_t)(xs + y) * g13) >> 16);   /* 0.70 x (dry + allpasses), / 4 */
+                {   /* 0.70 x (dry + allpasses), / 4; then a low shelf: below ~150 Hz the allpasses are in phase
+                     * with the dry, the sum +3 dB on the low notes (C2 / C3 heard ~25 % louder with the phaser on,
+                     * Zwicker loudness, TODO #7): x 0.71 down there, the notches and the sweep above untouched */
+                    int32_t o = (int32_t)(((int64_t)(xs + y) * g13) >> 16);
+                    ls += (int32_t)(((int64_t)(o - ls) * 700) >> 15);
+                    *io = o - (int32_t)(((int64_t)ls * 9500) >> 15);
+                }
             }
             ph_x[s][0] = x0; ph_x[s][1] = y0; ph_x[s][2] = y1; ph_x[s][3] = y2;
             ph_y[s][0] = y0; ph_y[s][1] = y1; ph_y[s][2] = y2; ph_y[s][3] = y3;
-            ph_fb[s] = clampi(y3 - hp, -524287, 524287); ph_hp[s] = hp;
+            ph_fb[s] = clampi(y3 - hp, -524287, 524287); ph_hp[s] = hp; ph_ls[s] = ls;
         }
         ph_ph += inc * 32u;
     }
@@ -813,7 +819,7 @@ static volatile uint8_t fx_reset_req;
 static void fx_reset_state(void)
 {
     lfo_ph = 0; lfo_rnd = 0x9E3779B9u; tw_ph = 0; ph_ph = 0; cp_ph = 0; dly_wow = 0; dly_flt = 0;
-    memset(ph_x, 0, sizeof ph_x); memset(ph_y, 0, sizeof ph_y); memset(ph_fb, 0, sizeof ph_fb); memset(ph_hp, 0, sizeof ph_hp);
+    memset(ph_x, 0, sizeof ph_x); memset(ph_y, 0, sizeof ph_y); memset(ph_fb, 0, sizeof ph_fb); memset(ph_hp, 0, sizeof ph_hp); memset(ph_ls, 0, sizeof ph_ls);
     memset(dly_buf, 0, sizeof dly_buf); dly_lp = dly_hp = 0;
     memset(cho_buf, 0, sizeof cho_buf);
     memset(rev_comb, 0, sizeof rev_comb); memset(rev_ap, 0, sizeof rev_ap); memset(&hl, 0, sizeof hl);
