@@ -76,6 +76,7 @@ static inline int32_t osc_sine(uint32_t ph)               /* Q32 phase -> +-3276
 static uint32_t lfo_ph, lfo_rnd = 0x9E3779B9u;
 static int32_t lfo_sh, fl_ic[2], fl_op, fl_pos = 127 * 516;
 static uint8_t fl_was_on;
+static int32_t fl_ow = 32768, fl_dry[32];         /* the filter's wet share (0 = fully open: dry), a sub-block of dry */
 static int32_t lfo_value(void)                            /* +-32767 */
 {
     uint32_t ph = lfo_ph;
@@ -135,10 +136,13 @@ static void fx_filter(int32_t *m, uint32_t n)
     uint32_t type = fx_p[FXP_FL_TYPE], inc = fx_lfo_sync_inc ? fx_lfo_sync_inc : FX_LFO_INC[fx_p[FXP_LFO_RATE]], sb, j;
     int32_t k = (int32_t)FX_FL_K[fx_p[FXP_FL_RESO]], base = fx_p[FXP_FL_FREQ] * 516, depth = fx_p[FXP_FL_LFO];
     uint32_t poles;
+    int open;
     if (fx_lfo_retrig) { fx_lfo_retrig = 0; lfo_ph = 0; }
     if (!type || type > 6u) { fl_was_on = 0; lfo_ph += inc * n; return; }   /* off: the LFO keeps time, the filter rests */
     poles = POLES[type];
-    if (!fl_was_on) { memset(fl_ic, 0, sizeof fl_ic); fl_op = 0; fl_pos = base; fl_was_on = 1; }
+    open = (type == 1u || type == 2u) && fx_p[FXP_FL_FREQ] >= 127 && !fx_p[FXP_FL_RESO] && !depth;   /* LP fully open:
+                         * transparent (the default LP18 at 16 kHz trimmed the top: SNR -1 dB, TODO #5) */
+    if (!fl_was_on) { memset(fl_ic, 0, sizeof fl_ic); fl_op = 0; fl_pos = base; fl_was_on = 1; fl_ow = open ? 0 : 32768; }
     for (sb = 0; sb < n; sb += 32u) {
         uint32_t prev = lfo_ph, i;
         int32_t tgt, g, f, gp = 0;
@@ -152,6 +156,7 @@ static void fx_filter(int32_t *m, uint32_t n)
         svf_coef(&c, g, k);
         if (poles == 3u) gp = (1 << 27) - recip27(65536u + ((uint32_t)g >> 8));                           /* g/(1+g) */
         j = sb + 32u < n ? sb + 32u : n;
+        if (fl_ow != 32768 || open) memcpy(fl_dry, m + sb, (j - sb) * sizeof *m);
         switch (type) {                                  /* one loop per (mode, poles): no tests per sample */
         case 1: fl_run(m + sb, j - sb, &c, 0, 0, gp); break;
         case 2: fl_run(m + sb, j - sb, &c, 0, 1, gp); break;
@@ -159,6 +164,21 @@ static void fx_filter(int32_t *m, uint32_t n)
         case 4: fl_run(m + sb, j - sb, &c, 1, 1, gp); break;
         case 5: fl_run(m + sb, j - sb, &c, 2, 0, gp); break;
         default: fl_run(m + sb, j - sb, &c, 3, 0, gp); break;
+        }
+        if (fl_ow != 32768 || open) {                    /* fully open: the sound passes untouched (the filter keeps
+                                                         * running, its state current); in / out of it a 46 ms glide */
+            int32_t w1 = open ? (fl_ow > 512 ? fl_ow - 512 : 0) : (fl_ow < 32256 ? fl_ow + 512 : 32768);
+            uint32_t q, len = j - sb;
+            if (!fl_ow && !w1) memcpy(m + sb, fl_dry, len * sizeof *m);   /* open: the dry block exactly */
+            else {
+                int32_t w = fl_ow, dw = (w1 - fl_ow) / 32;               /* (+-16 per sample over a 32 sub-block) */
+                for (q = 0; q < len; q++) {
+                    int32_t d = fl_dry[q];
+                    w += dw;
+                    m[sb + q] = d + (int32_t)(((int64_t)(m[sb + q] - d) * w) >> 15);
+                }
+            }
+            fl_ow = w1;
         }
     }
 }
