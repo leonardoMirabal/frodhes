@@ -732,8 +732,29 @@ static inline int32_t clip_knee(int32_t x)
 #define GATE_HI 32
 static int32_t gate_g = 32768, gate_tgt = 32768, fx_wet = 32768;
 static uint32_t gate_quiet;
+/* developer CC 10 (>= 64): every free-running part back to its boot state, for before / after recordings that must
+ * compare sample for sample (the user, 2026-10-18): the effect LFOs, the tape's wow / flutter, the reverb's modulation,
+ * the delay / chorus / pre-delay / reverb lines, the phaser's allpasses, the engines' noise generators and the motor.
+ * Runs once, at the next audio block (the lines are cleared there: one heavy block, on request only). */
+static volatile uint8_t fx_reset_req;
+static void fx_reset_state(void)
+{
+    lfo_ph = 0; lfo_rnd = 0x9E3779B9u; tw_ph = 0; ph_ph = 0; cp_ph = 0; dly_wow = 0; dly_flt = 0;
+    memset(ph_x, 0, sizeof ph_x); memset(ph_y, 0, sizeof ph_y); memset(ph_fb, 0, sizeof ph_fb); memset(ph_hp, 0, sizeof ph_hp);
+    memset(dly_buf, 0, sizeof dly_buf); dly_lp = dly_hp = 0;
+    memset(cho_buf, 0, sizeof cho_buf);
+    memset(rev_comb, 0, sizeof rev_comb); memset(rev_ap, 0, sizeof rev_ap); memset(&hl, 0, sizeof hl);
+    memset(pd_buf, 0, sizeof pd_buf); pd_on = 0; rv_running = 0;
+    rh_lfsr = 0xACE1u; bar_lfsr = 0x1D872u; bar_mot_ph = 0;
+    lfo_sh = 0; fl_ic[0] = fl_ic[1] = 0; fl_op = 0;                 /* the filters, the smoothers, the master */
+    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; wah_env = wah_lp = wah_bp = 0; cmp_env = 0; cmp_g = 65536;
+    dc_l = dc_r = dce_l = dce_r = 0; memset(lk_l, 0, sizeof lk_l); memset(lk_r, 0, sizeof lk_r); lk_pk = 0; lk_g = 32768;
+    gate_g = gate_tgt = 32768; gate_quiet = 0;
+}
+
 static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
 {
+    if (fx_reset_req) { fx_reset_state(); fx_reset_req = 0; }
     static int32_t m[256], dry[256];
     int32_t lvl = (int32_t)FX_LVL[fx_p[FXP_LEVEL] & 127];   /* the preset's volume trim, Q12 */
     uint32_t j, sb;

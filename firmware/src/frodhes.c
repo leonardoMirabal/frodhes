@@ -77,6 +77,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 64u) { sus_midi = (uint8_t)v; sustain_update(); return; }
     if (cc == 119u) { fx_set(FXP_RAW, v >= 64u); return; }
     if (cc == 9u) { bar_budget_force = (uint8_t)v; return; }   /* developer: the bar engine's mode cap (0 = auto) */
+    if (cc == 10u) { if (v >= 64u) fx_reset_req = 1; return; }   /* developer: every LFO / line / noise to its boot state (fx.c) */
     if (cc == 3u) { ui_testpat = v >= 64u; return; }            /* developer: the colour test pattern (ui.c) */
     if (cc == 4u) {                                    /* developer: the battery query (ui.c, for calibrating its
                                                         * thresholds): CC 4 / 5 = the smoothed 10-bit reading (MSB = raw
