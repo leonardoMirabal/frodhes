@@ -48,7 +48,8 @@ Expected run-to-run spread (host, block jitter alone, tests/py/test_hil_determin
 presets <= 0.04 LU, effects / fx_all / fx_toggle <= 0.09 LU; without CC 10 presets moved 4.6 LU). On the device add
 the USB capture (44.1 -> 48 kHz, stream slips): expect types +-0.1 dB, presets +-0.2 LU, the others +-0.3 LU; a
 verdict closer than that to its limit is a real borderline, not noise. The same checks run on the host build: tools/hil_scan.py --host [SEED] --only types,presets (no FM-1;
-report build/hil/host-report.txt): each take a fresh host run that replays the panel's CCs, idles a random 0.3-1.3 s
+report build/hil/host-report.txt; a VIBES suite, e.g. --only vibes_fx, too: USB only, the FM-1's default 120 BPM,
+report build/hil/vibes-host.md): each take a fresh host run that replays the panel's CCs, idles a random 0.3-1.3 s
 (the LFOs run on, as on the device between takes) and plays the take 3-25 ms late (MIDI + USB latency).
 """
 import argparse
@@ -1118,10 +1119,13 @@ def synth(dur, ev):
 
 
 class VRig:
-    def __init__(self, source="both", jack_dev="M6", jack_ch=5, dry_run=False, wav=False, offline=None):
+    def __init__(self, source="both", jack_dev="M6", jack_ch=5, dry_run=False, wav=False, offline=None, host=None):
         self.source, self.dry_run, self.wav, self.offline = source, dry_run, wav and not offline, offline
         self.want_usb, self.want_jack = source in ("usb", "both"), source in ("jack", "both")
-        self.plan_s, self.takes, self.r, self.jack_name = 0.0, [], None, None
+        self.plan_s, self.takes, self.r, self.jack_name, self.host = 0.0, [], None, None, host is not None
+        if self.host:                                  # --host: the host build plays the takes; USB only (no jack)
+            self.want_usb, self.want_jack, self.r = True, False, HostRig(host, tag="vhost")
+            return
         if offline:
             self._jack_peak = offline_jack_peaks(offline)
             self.jack_name = "the saved takes"
@@ -1174,6 +1178,8 @@ class VRig:
         for c, v in sets:
             self.send(c, v)
         self.send(RESET_CC, 127)                       # (was: 1.6 s of DEPTH 0 to empty the delay line)
+        if self.host:
+            return
         time.sleep(0.3)
         if not self.r.wait_silence(15.0):
             print(f"   (reset {label}: no exact silence in 15 s; the take may start on a residue)", flush=True)
@@ -1185,6 +1191,8 @@ class VRig:
         self.plan_s += dur + TAKE_S
         if self.offline:
             u, j = load_take(self.offline, tag, self._jack_peak, self.want_usb, self.want_jack)
+        elif self.host:                                # (HostRig: int16 scale; the device's USB reads / 32768)
+            u, j = self.r._rec(dur, with_reset(ev)) / 32768, None
         elif self.dry_run:
             print(f"    take {tag} ({dur:.1f} s): " + "; ".join(
                 f"{t:.2f} {k} {a}" + (f" v{b}" if k == "on" else f"={b}" if k == "cc" else "") for t, k, a, b in with_reset(ev)))
@@ -1250,7 +1258,7 @@ class VRig:
         return u, j
 
     def finish(self):
-        if self.r:
+        if self.r and not self.host:
             self.reset()
             self.r.out.send(self.r.mido.Message("program_change", program=0))
 
@@ -1435,6 +1443,17 @@ def sdist(b1, b2):
     return float(np.sqrt(np.mean(d[use] ** 2)))
 
 
+def frame_dist(x1, x2, n=2048):
+    """the spectral distance (sdist) of two takes frame by frame (n samples, 43 ms), the median over the frames: for
+    two settings of a swept effect whose sweeps run in step (CC 10 restarts the LFO at the take, +-1 block), where
+    the whole window's spectrum averages the sweep away. A PHASER FDBK resonance moves with the notches; over the
+    5 s window the FM-1's jack read FDBK 0 vs 127 1.8 dB apart (the old measure), frame by frame 3.9 dB (2026-10-18)"""
+    k = min(len(x1), len(x2)) // n
+    if k < 1:
+        return float("nan")
+    return float(np.median([sdist(third(x1[i * n:(i + 1) * n]), third(x2[i * n:(i + 1) * n])) for i in range(k)]))
+
+
 def pk_db(x, f, rel=0.03):
     nf = 1 << max(15, int(np.ceil(np.log2(len(x)))) + 2)
     S = np.abs(np.fft.rfft(x * np.hanning(len(x)), nf)) ** 2
@@ -1527,6 +1546,36 @@ def pfit(tr, fps, rate, H=3):
 
 def rate_of(tr, fps, guess, lo=0.4, hi=2.6):
     return float(hr().rate_of(np.asarray(tr, float), fps, guess, lo=lo, hi=hi))
+
+
+def lfo_rate(tr, fps, lo_hz, hi_hz, H=6):
+    """the repetition rate (Hz) of a periodic trace whose harmonics may outweigh its fundamental (a band's level as a
+    triangle LFO sweeps notches up and down: the jack's 1/4 at 69 BPM had harmonics 3 and 4 at 2.5x the fundamental's
+    amplitude, and rate_of's harmonic sum picked the 3rd: PHASER SYNC read 1.72 Hz for 1.15). The period is the
+    shortest lag at which the trace repeats itself: the autocorrelation's (over the whole trace's energy, so a long
+    lag's few overlapping frames do not win) first peak of at least 0.85 of its best one between 1 / hi_hz and
+    1 / lo_hz (at most 80 % of the trace), refined by a least-squares fit of H harmonics on a quadratic trend
+    (+-8 %). A trace shorter than a period returns about the longest lag (tests/py/test_phaser_measures.py)"""
+    d = detrend2(np.asarray(tr, float))
+    n = len(d)
+    lmin = max(2, int(fps / hi_hz))
+    lmax = max(lmin + 2, min(int(0.8 * n), int(np.ceil(fps / lo_hz))))
+    r = np.full(lmax + 2, -1.0)
+    e = np.dot(d, d) + 1e-30
+    for lag in range(lmin, min(lmax + 2, n - 1)):
+        r[lag] = np.dot(d[:-lag], d[lag:]) / e
+    pk = [lag for lag in range(lmin + 1, lmax + 1) if r[lag] >= r[lag - 1] and r[lag] >= r[lag + 1] and r[lag] > 0]
+    best = max((r[lag] for lag in pk), default=None)
+    l0 = min(lag for lag in pk if r[lag] >= 0.85 * best) if pk else lmax
+    t = np.arange(n) / fps
+    tn = (t - t.mean()) / (t.max() - t.min() + 1e-9)
+    trend = [np.ones_like(t), tn, tn * tn]
+
+    def resid(f):
+        A = np.column_stack(trend + [g(2 * np.pi * h * f * t) for h in range(1, H + 1) for g in (np.cos, np.sin)])
+        return np.sum((d - A @ np.linalg.lstsq(A, d, rcond=None)[0]) ** 2)
+    fine = fps / l0 * np.linspace(0.92, 1.08, 161)
+    return float(fine[int(np.argmin([resid(f) for f in fine]))])
 
 
 def stft(x, n=1024, hop=240):
@@ -2209,6 +2258,10 @@ def vibes_fx(V, S):
         """the spectral distance of two takes (sdist), the same window from each onset"""
         return sdist(B(t1, q, a, b), B(t2, q, a, b))
 
+    def FD(t1, t2, q, a=0.2, b=5.3):
+        """frame_dist of two takes, the same window from each onset"""
+        return frame_dist(cut(t1.m(q), t1.on(q)[0], a, b), cut(t2.m(q), t2.on(q)[0], a, b))
+
     def band_re(t, r, q, lo, hi, a=0.05, b=1.05):
         """a band's level (dB) of take t re the reference take r, the same window from each onset; and whether t's
         band is within 6 dB of its floor (then it reads the floor: an upper bound)"""
@@ -2464,32 +2517,39 @@ def vibes_fx(V, S):
     pref = T[0]                                       # DEPTH 0: the notches stand still
 
     def phrate(t, q, ex, lo=0.4, hi=2.6):
-        """the LFO's rate from the 300-3000 Hz band re DEPTH 0: the notches cross the band up and down, twice a
-        cycle (round 2's new phaser: the centroid read 0.50 Hz for SPEED 0's 0.25 and 2.06 for SYNC 1/4's 0.69)"""
+        """the LFO's rate from the 300-3000 Hz band re DEPTH 0 (round 2's new phaser: the centroid read 0.50 Hz for
+        SPEED 0's 0.25 and 2.06 for SYNC 1/4's 0.69), searched in ex * lo .. ex * hi. The band's level repeats once
+        an LFO cycle (the sweep up and the sweep down are mirror images, not repeats), with strong harmonics. It
+        assumed two dips a cycle (rate_of at 2x, halved) until 2026-10-18, which on the jack picked the 3rd harmonic
+        for SYNC 1/4 at the FM-1's 69 BPM (1.72 Hz for 1.15: a firmware 'fault' that was the measure; the host shows
+        it at 69 BPM, tests/py/test_phaser_measures.py). lfo_rate() takes the period instead"""
         d, _, f_ = rel_trace(t, pref, q, 0.2, 5.3, 300, 3000)
-        return rate_of(detrend2(d), f_, 2 * ex, lo, hi) / 2
+        return lfo_rate(d, f_, ex * lo, ex * hi)
     sp = {}
     for x in (0, P["PH_SPEED"]["de"], 127):
         t = run(f"phaser-speed-{x}", with_(pb127, ("PH_SPEED", x)), ST_LONG)
         ex = lfo_hz(x, half=True)
         sp[x] = S.per(lambda q: phrate(t, q, ex))
         if x:
-            S.check(f"PHASER SPEED {nm('PH_SPEED')} {x}", f"expected {ex:.2f} Hz (300-3000 Hz re DEPTH 0, at 2x)",
+            S.check(f"PHASER SPEED {nm('PH_SPEED')} {x}", f"expected {ex:.2f} Hz (300-3000 Hz re DEPTH 0, its period)",
                     sp[x], lambda v: abs(v / ex - 1) <= 0.10, "within 10 %", fmt=lambda v: f"{v:.2f} Hz")
     d0 = P["PH_SPEED"]["de"]
     S.check(f"PHASER SPEED 0 slower than {d0}", f"expected {lfo_hz(0, True):.2f} Hz",
             {s: (sp[0][s], sp[d0][s]) if sp[0].get(s) is not None and sp[d0].get(s) is not None else None for s in sp[0]},
             lambda v: v[0] <= 0.7 * v[1], "<= 0.7x (a period longer than the take)", fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz")
     T = {x: run(f"phaser-fdbk-{x}", with_(pb, ("PH_FDBK", x)), ST_LONG) for x in (0, P["PH_FDBK"]["de"], 127)}
-    S.check(f"PHASER FDBK {nm('PH_FDBK')} 0 vs 127", "DEPTH 80",
-            S.per(lambda q: (mot(T[127], q) - mot(T[0], q), SD(T[127], T[0], q, 0.2, 5.3),
-                              SD(p80, T[P["PH_FDBK"]["de"]], q, 0.2, 5.3))),
+    # the feedback fills the notches as it raises the resonance between them (fx.c: x + y with the allpasses' output
+    # fed back, as Felucca's; host response at DEPTH 80: the peak +2.9 -> +9.3 dB, the notches -62 .. -79 -> -11 ..
+    # -17 dB), so the motion stays (vibes: -0.5 dB) and the whole window's spectrum averages the moving peak away
+    # (the FM-1's jack: 1.8 dB). Frame by frame, the sweeps in step, the timbre is 3.9 dB apart (2026-10-18)
+    S.check(f"PHASER FDBK {nm('PH_FDBK')} 0 vs 127", "DEPTH 80; frame by frame",
+            S.per(lambda q: (mot(T[127], q) - mot(T[0], q), FD(T[127], T[0], q), FD(p80, T[P["PH_FDBK"]["de"]], q))),
             lambda v: v[0] >= 1.5 or v[1] >= max(2, 2 * v[2]),
-            "motion >= +1.5 dB or >= 2 dB apart (and 2x the spread of two takes of one setting)",
+            "motion >= +1.5 dB or >= 2 dB apart frame by frame (and 2x the spread of two takes of one setting)",
             fmt=lambda v: f"{v[0]:+.1f} / {v[1]:.1f} dB (spread {v[2]:.1f})")
     T = {k: run(f"phaser-sync-{k.replace('/', '')}", with_(pb127, ("PH_SYNC", sync_idx(k))), ST_LONG) for k in ("1/4", "1/8")}
     S.check(f"PHASER SYNC {nm('PH_SYNC')} 1/8 vs 1/4", "300-3000 Hz re DEPTH 0",
-            S.per(lambda q: (phrate(T['1/8'], q, 2, 0.2, 5), phrate(T['1/4'], q, 2, 0.2, 5))),
+            S.per(lambda q: (phrate(T['1/8'], q, 2, 0.125, 5), phrate(T['1/4'], q, 2, 0.125, 5))),   # 0.25-10 Hz: any BPM
             lambda v: abs(v[0] / v[1] / 2 - 1) <= 0.05, "ratio 2 +-5 %",
             fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz ({60 * v[1]:.0f} BPM)")
 
@@ -2784,7 +2844,7 @@ VORDER = ("vibes_jump", "vibes_voice", "vibes_decay", "vibes_motor", "vibes_vel"
 def vibes_main(names, a):
     global VDEBUG
     VDEBUG = a.dry_run
-    V = VRig(a.source, a.jack_dev, a.jack_ch, a.dry_run, a.wav, a.offline)
+    V = VRig(a.source, a.jack_dev, a.jack_ch, a.dry_run, a.wav, a.offline, getattr(a, "host", None))
     os.makedirs(OUT, exist_ok=True)
     suites, fails = [], 0
     for n in names:
@@ -2820,7 +2880,8 @@ def vibes_main(names, a):
               f"{S.ntakes} takes, {S.secs:.0f} s{' (estimated)' if a.dry_run else ''}", flush=True)
         suites.append(S)
     V.finish()
-    path = os.path.join(OUT, "vibes-dryrun.md" if a.dry_run else "vibes-offline.md" if a.offline else "vibes-report.md")
+    path = os.path.join(OUT, "vibes-dryrun.md" if a.dry_run else "vibes-offline.md" if a.offline else
+                        "vibes-host.md" if getattr(a, "host", None) is not None else "vibes-report.md")
     v_report(suites, V, path, a.dry_run)
     if a.dry_run:
         print(f"estimated device time: {V.plan_s / 60:.1f} min ({len(V.takes)} takes); "
@@ -2864,7 +2925,8 @@ def main():
     ap.add_argument("--repeats", type=int, help="takes per measure for every repeated one (default: REPEATS)")
     ap.add_argument("--host", nargs="?", type=int, const=1, metavar="SEED",
                     help="the classic suites on the host build (tests/host.c), no FM-1: prerolls / latencies from SEED;"
-                         " report build/hil/host-report.txt")
+                         " report build/hil/host-report.txt; VIBES suites (--only vibes_fx ...): USB only,"
+                         " build/hil/vibes-host.md")
     ap.add_argument("--no-reset", action="store_true", help="no CC 10 before the takes (to see what it changes)")
     ap.add_argument("--offline", nargs="?", const=os.path.join(OUT, "vibes"), metavar="DIR",
                     help="VIBES suites: re-analyse the takes saved by --wav (default build/hil/vibes/), no MIDI / audio;"
@@ -2891,10 +2953,12 @@ def main():
     if a.no_reset:
         RigBase.reset = False
         globals()["with_reset"] = lambda events, lead=RESET_LEAD: sorted(events, key=lambda e: e[0])
-    if a.host is not None:
+    if a.host is not None:                          # the VIBES suites too: USB only, report build/hil/vibes-host.md
+        if classic:
+            fails += run_classic(classic, HostRig(a.host, reset=not a.no_reset), "host-report")
         if vib:
-            print(f"--host covers the classic suites only: not running {', '.join(vib)}")
-        return 1 if run_classic(classic, HostRig(a.host, reset=not a.no_reset), "host-report") else 0
+            fails += vibes_main(vib, a)
+        return 1 if fails else 0
     if a.dry_run or a.offline:
         if a.offline:
             a.dry_run = False
