@@ -124,6 +124,7 @@ def main():
     ap.add_argument("--settle", type=float, default=3.0, help="s after the reset (its own save lands there)")
     a = ap.parse_args()
     rig = H.Rig()
+    rig.persistent = False                         # (a stream per take: this tool measures what that does)
     jack = None
     if not a.no_jack:
         devs = rig.sd.query_devices()

@@ -44,6 +44,14 @@ flipped. Now:
     a preset's loudness by up to 2.0 LU (the main cause of 'presets' 7.5 / 6.7 / 5.3); now <= 0.2 LU;
   - 'types' sums the two notes' band powers instead of joining the two windows end to end (the junction's step
     splashed broadband into the gaps between the partials: up to 0.8 dB of the distance from take to take).
+One recording stream for the whole run (2026-10-18): the FM-1 holds its automatic flash saves (the settings 2 s after a
+change, the sequencer's pattern) back while a computer reads its USB audio (frodhes.c flash_auto_ok), because a save
+holds the interrupts off ~24 ms, no USB audio packet goes out and macOS then hands ~250 ms of stale input. The scan
+used to open a new input stream per take and per silence poll, so between them nobody read the audio and a save could
+land at the start of the next take. Now Rig opens one stream per device (Capture: the FM-1's USB, and the jack's
+interface input where a suite records it) at the first take and keeps it running; each take is cut out of it by the
+streams' ADC times (Ring.cut, tests/py/test_hil_capture.py). Rig.persistent = False brings back a stream per take
+(tools/hil_usb_onset.py, which measures exactly that case).
 Expected run-to-run spread (host, block jitter alone, tests/py/test_hil_determinism.py: types' distances <= 0.05 dB,
 presets <= 0.04 LU, effects / fx_all / fx_toggle <= 0.09 LU; without CC 10 presets moved 4.6 LU). On the device add
 the USB capture (44.1 -> 48 kHz, stream slips): expect types +-0.1 dB, presets +-0.2 LU, the others +-0.3 LU; a
@@ -226,7 +234,170 @@ class RigBase:
         return i - int(round(min(on) * FS)) if i >= 0 else 0
 
 
+class Ring:
+    """one input stream's recent history (secs at the device's own rate, float32; only the channels kept): every
+    callback block pushed with its ADC time (PortAudio's stream clock), so a take is cut by TIME, not by stream start.
+    The persistent recorder (Capture) keeps the FM-1's USB stream open for a whole suite: the FM-1 holds its automatic
+    flash saves back while a computer reads its USB audio (frodhes.c flash_auto_ok: uac.alt && uac.flowing), and a
+    stream opened per take let 'flowing' drop between takes, so a save (interrupts off ~24 ms: no USB packet, macOS
+    then hands ~250 ms of stale input) landed at the start of the next take"""
+
+    def __init__(self, sr, ch, secs=120.0):
+        self.sr, self.ch = int(sr), int(ch)
+        self.N = int(secs * sr)
+        self.buf = np.zeros((self.N, ch), np.float32)
+        self.w = 0                                   # frames pushed so far (absolute)
+        import threading
+        from collections import deque
+        self.lock = threading.Lock()
+        self.log = deque(maxlen=max(64, self.N // 32))   # (absolute frame, ADC time of that frame)
+        self.status = deque(maxlen=1000)             # (ADC time, PortAudio status flags)
+        self.gaps = []
+
+    def push(self, block, adc, status=None):
+        """a callback's frames (n, ch) whose first was captured at adc (s, the stream clock)"""
+        n = len(block)
+        if not n:
+            return
+        if n > self.N:
+            block, adc = block[-self.N:], adc + (n - self.N) / self.sr
+            self.w += n - self.N
+            n = self.N
+        i = self.w % self.N
+        k = min(n, self.N - i)
+        self.buf[i:i + k] = block[:k]
+        if k < n:
+            self.buf[:n - k] = block[k:]
+        with self.lock:
+            self.log.append((self.w, float(adc)))
+            if status:
+                self.status.append((float(adc), str(status)))
+            self.w += n
+
+    def frame_at(self, t):
+        """the absolute frame captured at stream time t: the blocks' ADC times interpolated, extrapolated past the ends
+        at the nominal rate"""
+        with self.lock:
+            L = np.array(self.log, float)
+        if not len(L):
+            return None
+        if t <= L[0, 1]:
+            return L[0, 0] + (t - L[0, 1]) * self.sr
+        if t >= L[-1, 1]:
+            return L[-1, 0] + (t - L[-1, 1]) * self.sr
+        return float(np.interp(t, L[:, 1], L[:, 0]))
+
+    def end_time(self):
+        """the stream time of the last frame held (None before the first block)"""
+        with self.lock:
+            if not self.log:
+                return None
+            (f, a), w = self.log[-1], self.w
+        return a + (w - 1 - f) / self.sr
+
+    def cut(self, t0, dur, tol=0.006):
+        """the frames from stream time t0 for dur s ((n, ch), n = dur * sr), or None while they are not all in yet.
+        Placed by the blocks' ADC times: the first block anchors the take, the rest follow on contiguously; where a
+        block's ADC time steps more than tol s off its predecessor's length (input the stream never delivered, or a
+        block delivered twice) the take re-anchors there: the missing time stays zeros, a repeat is overwritten, so
+        what comes after is still on the event clock (tol 6 ms: on the FM-1 the ADC times jitter up to ~3 ms from block
+        to block, 2026-10-18; a lost USB block is >= 11.6 ms). self.gaps: [(stream time, s)] of the last cut. Frames
+        that already left the ring (or came before the first block) read as zeros"""
+        with self.lock:
+            L = np.array(self.log, float)
+            w = self.w
+        n = int(round(dur * self.sr))
+        if not len(L):
+            return None
+        if L[-1, 1] + (w - 1 - L[-1, 0]) / self.sr < t0 + (n - 1) / self.sr:
+            return None
+        ends = np.append(L[1:, 0], w)
+        k0 = max(0, int(np.searchsorted(L[:, 1], t0, "right")) - 1)
+        out = np.zeros((n, self.ch), np.float32)
+        self.gaps = []
+        pos = None
+        for k in range(k0, len(L)):
+            a, f0, f1 = L[k, 1], int(L[k, 0]), int(ends[k])
+            if pos is None:
+                pos = int(round((a - t0) * self.sr))
+            else:
+                step = a - L[k - 1, 1] - (f0 - L[k - 1, 0]) / self.sr
+                if abs(step) > tol:
+                    self.gaps.append((float(a), float(step)))
+                    pos += int(round(step * self.sr))
+            if pos >= n:
+                break
+            lo, hi = max(f0, w - self.N, f0 - pos), min(f1, f0 + n - pos)   # (frames still held, inside the take)
+            if hi > lo:
+                out[pos + lo - f0:pos + hi - f0] = self.buf[np.arange(lo, hi) % self.N]
+            pos += f1 - f0
+        return out
+
+    def flags_between(self, t0, t1):
+        with self.lock:
+            st = list(self.status)
+        return [s for a, s in st if t0 <= a <= t1]
+
+
+class Capture:
+    """the persistent recorder: one InputStream per device (the FM-1's USB at its own rate, stereo; the jack interface
+    at its own, one channel kept), opened once and left running for the whole run; each take is a slice of it by the
+    streams' ADC times (Ring.cut). The callbacks only copy; everything else runs in the caller's thread"""
+
+    def __init__(self, sd):
+        self.sd, self.rings, self.streams, self.keep = sd, {}, {}, {}
+
+    def add(self, key, dev, ch_keep, n_in, secs=120.0):
+        sd = self.sd
+        sr = int(sd.query_devices(dev)["default_samplerate"])
+        ring = Ring(sr, len(ch_keep), secs)
+        sel = list(ch_keep)
+
+        def cb(indata, frames, ti, status):
+            adc = ti.inputBufferAdcTime or (ti.currentTime - frames / sr)
+            ring.push(indata[:, sel], adc, status)
+        s = sd.InputStream(device=dev, samplerate=sr, channels=n_in, dtype="float32", callback=cb)
+        s.start()
+        self.rings[key], self.streams[key] = ring, s
+        t0 = time.monotonic()
+        while ring.end_time() is None and time.monotonic() - t0 < 5:
+            time.sleep(0.01)
+        return ring
+
+    def now(self):
+        """every stream's clock now (s), {key: stream.time}"""
+        return {k: s.time for k, s in self.streams.items()}
+
+    def cut(self, key, t0, dur, timeout=5.0):
+        """the take's frames from stream time t0 (a now() stamp), waiting until they are in"""
+        r = self.rings[key]
+        lim = time.monotonic() + dur + timeout
+        while True:
+            x = r.cut(t0, dur)
+            if x is not None:
+                return x
+            if time.monotonic() > lim:
+                raise RuntimeError(f"{key}: the stream stopped delivering ({r.w} frames)")
+            time.sleep(0.01)
+
+    def close(self):
+        for s in self.streams.values():
+            try:
+                s.stop()
+                s.close()
+            except Exception:
+                pass
+        self.streams = {}
+
+
 class Rig(RigBase):
+    """the FM-1 over USB-MIDI + its USB audio (and an interface input recording the headphone jack, add_jack()).
+    persistent (default): one input stream per device for the whole run (Capture), every take and every silence poll
+    a slice of it by the ADC time, so the FM-1 sees a computer reading its audio the whole time and keeps its
+    automatic flash saves back (no save inside a take). persistent = False: a stream per take / poll, as before
+    2026-10-18 (tools/hil_usb_onset.py measures exactly that case; rh_devcmp.py switches the device's rate)"""
+    persistent = True
+
     def __init__(self):
         import mido
         import sounddevice as sd
@@ -241,6 +412,36 @@ class Rig(RigBase):
         if not devs:
             sys.exit("no FM-1 audio input")
         self.dev = devs[0]
+        self.cap, self.xruns = None, []
+
+    def capture(self):
+        """the persistent recorder, opened at the first use (the FM-1's USB, stereo)"""
+        if self.cap is None:
+            import atexit
+            self.cap = Capture(self.sd)
+            self.cap.add("usb", self.dev, (0, 1), 2)
+            atexit.register(self.cap.close)
+        return self.cap
+
+    def add_jack(self, dev, ch0):
+        """the jack's interface input ch0 (0-based) into the persistent recorder too"""
+        cap = self.capture()
+        if "jack" not in cap.rings:
+            cap.add("jack", dev, (ch0,), int(self.sd.query_devices(dev)["max_input_channels"]))
+        return cap
+
+    def jack(self, name="M6", ch=5):
+        """the headphone jack on the interface 'name' input ch (1-based; hil_jack's defaults) into the persistent
+        recorder when it is connected: True if it is there"""
+        if not hasattr(self, "_jack"):
+            self._jack = False
+            if self.persistent:
+                devs = self.sd.query_devices()
+                js = [i for i, d in enumerate(devs) if d["name"] == name and d["max_input_channels"] >= ch]
+                if js:
+                    self.add_jack(js[0], ch - 1)
+                    self._jack = True
+        return self._jack
 
     def _send(self, kind, a, b=0):
         M = self.mido.Message
@@ -251,13 +452,36 @@ class Rig(RigBase):
         """until the output is exact zero (the gate), so no delay / reverb tail of the last test leaks in"""
         t0 = time.monotonic()
         while time.monotonic() - t0 < limit:
-            x = self.sd.rec(int(0.3 * FS), samplerate=FS, channels=2, device=self.dev, dtype="int16")
-            self.sd.wait()
+            if self.persistent:
+                cap = self.capture()
+                x = cap.cut("usb", cap.now()["usb"], 0.3)
+            else:
+                x = self.sd.rec(int(0.3 * FS), samplerate=FS, channels=2, device=self.dev, dtype="int16")
+                self.sd.wait()
             if not np.any(x):
                 return True
         return False
 
+    def both(self, dur, events, jack=False):
+        """dur s from now while the events go out on time: {"usb": (n, 2), "jack": (n, 1) with jack} at FS, full scale
+        1.0 (the persistent recorder; each source cut from ITS stream's clock at the moment the event clock starts).
+        self.xruns: PortAudio's status flags inside the take"""
+        cap = self.capture()
+        keys = ["usb"] + (["jack"] if jack else [])
+        st = cap.now()
+        t0 = time.monotonic()
+        for t, kind, a, b in sorted(events, key=lambda e: e[0]):
+            while time.monotonic() - t0 < t:
+                time.sleep(0.0005)
+            self._send(kind, a, b)
+        out = {k: to_fs(cap.cut(k, st[k], dur).astype(float), cap.rings[k].sr, dur) for k in keys}
+        self.xruns = [(k, f) for k in keys for f in cap.rings[k].flags_between(st[k], st[k] + dur)] + \
+                     [(k, f"gap {1000 * g:+.0f} ms at {a - st[k]:.2f} s") for k in keys for a, g in cap.rings[k].gaps]
+        return out
+
     def _rec(self, dur, events):
+        if self.persistent:
+            return self.both(dur, events)["usb"] * 32768
         rec = self.sd.rec(int(dur * FS), samplerate=FS, channels=2, device=self.dev, dtype="int16")
         t0 = time.monotonic()
         for t, kind, a, b in events:
@@ -845,31 +1069,74 @@ def stress(r, rep):
 
 @test
 def presets(r, rep):
-    """F01..F12: the chord's loudness, the median of REPEATS['presets'] takes each (every take after the reset)"""
+    """F01..F12: the chord's loudness, the median of REPEATS['presets'] takes each (every take after the reset), on USB
+    and on the headphone jack when the interface is there (Rig.jack(): the M6 input 5, recorded at once; the jack is
+    the reference). The takes go to build/hil/presets/ (F01-1.npz ...: usb, jack)"""
+    jk = isinstance(r, Rig) and r.jack()
+    d = os.path.join(OUT, "presets")
+    os.makedirs(d, exist_ok=True)
     rows = []
+
+    def level(x, thr, t=0.05):
+        i = max(onset(x, thr, t), 0)
+        return lufs(x[i:i + int(1.1 * FS)]), i
     for p in range(12):
         r.cc_raw(120, 0)
         r.pc(p)
         ks = []
         for k in range(reps("presets")):
-            r.settle()
-            x = r.take(2.0, CHORD)
-            i = max(onset(x, t=0.05), 0)
-            ks.append(dict(level=lufs(x[i:i + int(1.1 * FS)] / 32768.0), rms_db=db(x[i:i + int(1.1 * FS)]),
-                           peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
-                           clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x)))
+            quiet = r.settle()                         # (False: no exact silence in 10 s, a note still sounds)
+            if jk:
+                dd = r.both(2.0, with_reset(CHORD), jack=True)
+                x, j = dd["usb"] * 32768, dd["jack"][:, 0]
+            else:
+                x, j = r.take(2.0, CHORD), None
+            lv, i = level(x / 32768.0, 200 / 32768)
+            q = dict(level=lv, onset_ms=1000 * i / FS, rms_db=db(x[i:i + int(1.1 * FS)]),
+                     peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
+                     clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x), quiet=bool(quiet),
+                     gaps=[str(g) for g in getattr(r, "xruns", []) if "gap" in str(g)])
+            if j is not None:
+                floor = float(np.abs(j[:int(0.04 * FS)]).max()) if len(j) else 0.0
+                q["jack"], ij = level(j, max(4 * floor, 0.01 * float(np.abs(j).max())))
+                q["jack_onset_ms"] = 1000 * ij / FS
+            ks.append(q)
+            np.savez_compressed(os.path.join(d, f"F{p + 1:02d}-{k + 1}.npz"), usb=(x / 32768).astype(np.float32),
+                                jack=(j if j is not None else np.zeros(0)).astype(np.float32))
         lv = [q["level"] for q in ks]
-        rows.append(dict(preset=p + 1, level=float(np.median(lv)), spread_lu=float(max(lv) - min(lv)),
-                         rms_db=float(np.median([q["rms_db"] for q in ks])), peak_db=max(q["peak_db"] for q in ks),
-                         clipped=max(q["clipped"] for q in ks), clicks=max(q["clicks"] for q in ks)))
+        row = dict(preset=p + 1, level=float(np.median(lv)), spread_lu=float(max(lv) - min(lv)),
+                   rms_db=float(np.median([q["rms_db"] for q in ks])), peak_db=max(q["peak_db"] for q in ks),
+                   clipped=max(q["clipped"] for q in ks), clicks=max(q["clicks"] for q in ks),
+                   onset_ms=[round(q["onset_ms"], 1) for q in ks], not_quiet=sum(not q["quiet"] for q in ks),
+                   gaps=sum(len(q["gaps"]) for q in ks))
+        if jk:
+            jl = [q["jack"] for q in ks]
+            row.update(jack=float(np.median(jl)), jack_spread_lu=float(max(jl) - min(jl)),
+                       jack_onset_ms=[round(q["jack_onset_ms"], 1) for q in ks])
+        rows.append(row)
     rep["presets"] = rows
     lv = [q["level"] for q in rows]
     bad = [q["preset"] for q in rows if q["clipped"] or q["clicks"]]
+    loud = [q["preset"] for q in rows if q["not_quiet"]]      # a take started over a sound that never ended
+    gapped = [q["preset"] for q in rows if q["gaps"]]
     r.pc(0)
     spread = max(q["spread_lu"] for q in rows)
-    return max(lv) - min(lv) < 8 and not bad, ("F01..F12 loudness " + ", ".join(f"{v:.1f}" for v in lv) +
-                                               f" LUFS (span {max(lv) - min(lv):.2f}; median of {reps('presets')} takes,"
-                                               f" their own spread <= {spread:.2f} LU); clipping/clicks {bad or 'none'}")
+    ok = max(lv) - min(lv) < 8 and not bad and not loud and not gapped
+    msg = ("F01..F12 loudness " + ", ".join(f"{v:.1f}" for v in lv) + f" LUFS (span {max(lv) - min(lv):.2f}; median of"
+           f" {reps('presets')} takes, their own spread <= {spread:.2f} LU); clipping/clicks {bad or 'none'}")
+    if loud:
+        msg += f"; no exact silence before a take at F{loud} (a note still sounding: those levels are not the preset)"
+    if gapped:
+        msg += f"; a recording gap at F{gapped}"
+    if jk:                                             # the jack: the reference (what the player hears)
+        jl = [q["jack"] for q in rows]
+        rel = [(a - lv[0]) - (b - jl[0]) for a, b in zip(lv, jl)]      # USB vs jack, each re its own F01
+        mis = [q["preset"] for q, m in zip(rows, rel) if abs(m) > MISMATCH_DB]
+        ok = ok and max(jl) - min(jl) < 8
+        msg += (f"; jack (re its own scale) {', '.join(f'{v - jl[0]:+.1f}' for v in jl)} LU re F01 (span"
+                f" {max(jl) - min(jl):.2f}, spread <= {max(q['jack_spread_lu'] for q in rows):.2f}); USB-jack"
+                f" disagreement <= {max(abs(m) for m in rel):.2f} LU{' at F' + str(mis) if mis else ''}")
+    return ok, msg
 
 
 # ==================================================================================================================
@@ -1144,6 +1411,9 @@ class VRig:
             self.jack_name = f"{devs[js[0]]['name']} input {jack_ch}"
             if not 0 <= self.jch < self.jn:
                 sys.exit(f"--jack-ch {jack_ch}: '{jack_dev}' has {self.jn} inputs")
+        self.r.capture()                               # the persistent recorder: open for the whole suite
+        if self.want_jack:
+            self.r.add_jack(self.jdev, self.jch)
 
     def sources(self):
         return [s for s, w in (("usb", self.want_usb), ("jack", self.want_jack)) if w]
@@ -1203,63 +1473,24 @@ class VRig:
             if self.xruns:
                 print(f"   xrun {tag}: {self.xruns[:4]}", flush=True)
         T = Take(tag, dur, ev, u, j)
+        T.gaps = [f"{k} {x}" for k, _, x in getattr(self, "xruns", []) if str(x).startswith("gap")] \
+            if not (self.offline or self.dry_run or self.host) else []
         self.takes.append(take_stats(T))
         if self.wav:
             save_wav(T)
         return T
 
     def _rec(self, dur, ev):
-        """both inputs by callback while the events go out on time (one thread: the sends are not held up by reads).
-        Each device at ITS OWN rate (the FM-1 44.1 kHz, the M6 48 kHz), resampled to FS here afterwards: letting
-        PortAudio convert a device's rate while the other one also streamed made the USB capture skip ~200 ms in some
-        takes (2026-10-18)"""
-        sd = self.sd
-        bufs, pos, lim, rate, streams = {}, {}, {}, {}, []
-        self.xruns = []                                 # PortAudio's status flags per take (overflow = lost input)
-
-        def mk(key, sr, ch, dt):
-            nlen = int(dur * sr)
-            bufs[key] = np.zeros((nlen, ch), dt)
-            pos[key], lim[key], rate[key] = 0, nlen, sr
-
-            def cb(indata, frames, ti, status):
-                if status:
-                    self.xruns.append((key, pos[key] / sr, str(status)))
-                p = pos[key]
-                k = min(frames, lim[key] - p)
-                if k > 0:
-                    bufs[key][p:p + k] = indata[:k]
-                    pos[key] = p + k
-            return cb
-        if self.want_usb:
-            sr = int(sd.query_devices(self.r.dev)["default_samplerate"])
-            streams.append(sd.InputStream(device=self.r.dev, samplerate=sr, channels=2, dtype="int16",
-                                          callback=mk("usb", sr, 2, np.int16)))
-        if self.want_jack:
-            sr = int(sd.query_devices(self.jdev)["default_samplerate"])
-            streams.append(sd.InputStream(device=self.jdev, samplerate=sr, channels=self.jn, dtype="float32",
-                                          callback=mk("jack", sr, self.jn, np.float32)))
-        for s in streams:
-            s.start()
-        M = self.r.mido.Message
-        t0 = time.monotonic()
-        for t, kind, a, b in ev:
-            while time.monotonic() - t0 < t:
-                time.sleep(0.0005)
-            if kind == "on":
-                self.r.out.send(M("note_on", note=a, velocity=b))
-            elif kind == "off":
-                self.r.out.send(M("note_off", note=a))
-            elif kind == "cc":
-                self.r.out.send(M("control_change", control=a, value=b))
-        while any(pos[k] < lim[k] for k in pos) and time.monotonic() - t0 < dur + 5:
-            time.sleep(0.01)
-        for s in streams:
-            s.stop()
-            s.close()
-        u = (np.stack([to_fs(bufs["usb"][:, c].astype(float) / 32768, rate["usb"], dur) for c in (0, 1)], 1)
-             if self.want_usb else None)                # (stereo, as the suites expect)
-        j = to_fs(bufs["jack"][:, self.jch].astype(float), rate["jack"], dur) if self.want_jack else None
+        """both inputs while the events go out on time: slices of the rig's persistent recorder (Rig.both: one stream
+        per device for the whole suite, each at ITS OWN rate, the FM-1 44.1 kHz, the M6 48 kHz, resampled to FS here;
+        letting PortAudio convert a device's rate while the other one also streamed made the USB capture skip ~200 ms
+        in some takes, 2026-10-18). The USB stream stays open between the takes, so the FM-1 keeps its automatic
+        flash saves back for the whole suite: a save (interrupts off ~24 ms) inside a take dropped ~250 ms of the
+        USB recording (stale input), which a stream opened per take let in at every take's start"""
+        d = self.r.both(dur, ev, jack=self.want_jack)
+        self.xruns = [(k, 0.0, f) for k, f in self.r.xruns]
+        u = d["usb"] if self.want_usb else None           # (stereo, as the suites expect)
+        j = d["jack"][:, 0] if self.want_jack else None
         return u, j
 
     def finish(self):
@@ -1270,14 +1501,14 @@ class VRig:
 
 
 def to_fs(x, sr, dur):
-    """a capture at a device's own rate -> FS (polyphase), dur s long"""
+    """a capture at a device's own rate -> FS (polyphase), dur s long; (n,) or (n, ch)"""
     if sr != FS:
         from math import gcd
         from scipy.signal import resample_poly
         g = gcd(FS, sr)
-        x = resample_poly(x, FS // g, sr // g)
+        x = resample_poly(x, FS // g, sr // g, axis=0)
     n = int(dur * FS)
-    return np.pad(x, (0, max(0, n - len(x))))[:n]
+    return np.pad(x, [(0, max(0, n - len(x)))] + [(0, 0)] * (np.ndim(x) - 1))[:n]
 
 
 def save_wav(T):
@@ -1365,6 +1596,8 @@ def clicks_guarded(m16, guards, before_ms=3, after_ms=17):
 def take_stats(T):
     """every take: full-scale samples on USB (-32768 / +32767), the peak, clicks on each channel / the jack"""
     st = dict(tag=T.tag, dur=T.dur)
+    if getattr(T, "gaps", None):                      # input a stream never delivered / delivered twice (Ring.cut)
+        st["gaps"] = list(T.gaps)
     notes = [t for t, k, a, b in T.ev if k in ("on", "off")]
     if T.usb is not None:
         raw = np.round(T.usb * 32768)
@@ -2880,6 +3113,11 @@ def vibes_main(names, a):
         bad_t = [t["tag"] for t in S.ttakes if t.get("usb_fs") or t.get("usb_clicks") or t.get("jack_clicks")]
         if bad_t:
             S.rows.append(dict(check="takes: full scale / clicks", setting="", usb=", ".join(bad_t), jack="", crit="none",
+                               mismatch=None, status="FAIL", ok=False))
+        gap = [f"{t['tag']} ({'; '.join(t['gaps'][:3])})" for t in S.ttakes if t.get("gaps")]
+        if gap:
+            S.rows.append(dict(check="takes: a recording stream had a gap", setting="ADC time vs frames",
+                               usb=", ".join(gap), jack="", crit="none (the numbers of those takes are not the sound)",
                                mismatch=None, status="FAIL", ok=False))
         slip = [f"{t['tag']} ({t['usb_slip_ms']:.0f} ms)" for t in S.ttakes if t.get("usb_slip_ms", 0) > SLIP_MS]
         if slip:
