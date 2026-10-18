@@ -62,7 +62,7 @@ function frame() {
     k.classList.toggle("lit", v === 1);
     k.classList.toggle("glow", v === 2);
   }
-  captions();
+  captions(led[10] === 1);                           // the ARP light: the arpeggiator on
   if (M._web_store_take_dirty()) {
     try {
       const b = new Uint8Array(M.HEAPU8.buffer, M._web_store(), 260);
@@ -137,15 +137,16 @@ const HINT_ON = {                                    // what a button does on a 
   TEMPO: { GLO: "SETUP" }, SETUP: { GLO: "MIDI" }, MIDI: { GLO: "TEMPO" }, CHORD: { EDIT: "ON·OFF" },
   PERFORM: { HOME: "MAIN" }, FRODHES: { HOME: "PERFORM" },
 };
+const HINT_ARP = { SEL: "HOLD", PLAY: "TAP TEMPO" };   // while the arpeggiator is on, on every page
 let shownPage = "";
-function captions() {                                // the page shown on the FM-1's screen: the buttons' captions
+function captions(arp) {                             // the page shown on the FM-1's screen: the buttons' captions
   const p = M.HEAPU8, a = M._web_page();
   let page = ""; for (let i = a; p[i] && i < a + 16; i++) page += String.fromCharCode(p[i]);
-  if (page === shownPage) return;
-  shownPage = page;
+  if (page + arp === shownPage) return;
+  shownPage = page + arp;
   for (const b of document.querySelectorAll("button.b")) {
     const n = b.dataset.name, sm = b.querySelector("small");
-    if (sm) sm.textContent = (HINT_ON[page] && HINT_ON[page][n]) || HINT[n];
+    if (sm) sm.textContent = (arp && HINT_ARP[n]) || (HINT_ON[page] && HINT_ON[page][n]) || HINT[n];
   }
 }
 const ROWS = [["FX", "SEL", "ENV", "LFO", "EDIT", "GLO"], ["HOME", "SAVE", "ARP", "SEQ", "PLAY", "REC"]];

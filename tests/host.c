@@ -160,7 +160,7 @@ static int host_preset_check(char *msg, unsigned n);   /* frodhes.c: 0 if the pa
 static int host_sound_check(char *msg, unsigned n);    /* frodhes.c: 0 if the engines run what the panel says */
 static int host_state(const char *key, char *val, unsigned n);   /* frodhes.c: 0 if K is known */
 static void host_dump(void);                           /* frodhes.c */
-typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; uint8_t kind; int32_t a, b; char op; char key[24], val[24]; } host_ev_t;
+typedef struct { uint32_t t, keys; int btn; uint8_t st, d1, d2; uint8_t kind; int32_t a, b; char op; char key[24], val[40]; } host_ev_t;
 static const host_ev_t SCRIPT0[] = {
     {200, 1u << 7, -1, 0, 0, 0, EV_KEYS, 0, 0, 0},                                /* C4 */
     {700, 1u << 7 | 1u << 11 | 1u << 14, -1, 0, 0, 0, EV_KEYS, 0, 0, 0},          /* + E4 G4: a chord */
@@ -202,7 +202,7 @@ static void read_script(const char *path)
             else if (!strcmp(sub, "sound")) e.kind = EV_EXP_SOUND;
             else if (!strcmp(sub, "state")) {
                 char *u;
-                if (sscanf(line, "%*u %*s %*s %23s %23s", e.key, e.val) != 2) continue;
+                if (sscanf(line, "%*u %*s %*s %23s %39s", e.key, e.val) != 2) continue;
                 for (u = e.val; *u; u++) if (*u == '_') *u = ' ';
                 e.kind = EV_EXP_STATE;
             }
