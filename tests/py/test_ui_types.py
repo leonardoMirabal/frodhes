@@ -38,4 +38,6 @@ def test_type_names_same_size():
             card = im[63 + 18:63 + 66, 2:118].sum(axis=2)             # K1 card, below its label row
         rows = np.nonzero((card > 0.6 * card.max()).any(axis=1))[0]
         heights.append(rows[-1] - rows[0] + 1)
-    assert len(set(heights)) == 1, heights
+    # one face: the same height within 1 px (round letters, S O D, overshoot by a row of antialiasing, which crosses
+    # the threshold on a black row surface: the colour candidates of developer CC 2); the large face is ~20 px
+    assert max(heights) - min(heights) <= 1, heights

@@ -21,7 +21,8 @@ Checks (plan §5):
   - the amber frame only on the turned knob, for about 1 s (and the label amber with it);
   - the title amber, the count "n/m" right-aligned;
   - dynamic VOICE pages: Rhodes VOICE 1/2, 2/2, VIBES 1/3, 2/3, 3/3 with their labels, right after FRODHES, SELECT
-    walking them in order both ways; no DECAY or MOTOR page; developer CC 2 (the old looks) changes nothing.
+    walking them in order both ways; no DECAY or MOTOR page; developer CC 2 (the colour candidates A B C) changes
+    colours only (the same checks pass in each, the rows show the same); look C = tools/meters_palettes.py search.
 The large face's small fallback (a value that does not fit 28 px) is reported, not failed.
 
 Skips cleanly (pytest.skip) while the METERS build is not merged: host_state then has no "row0"."""
@@ -89,10 +90,11 @@ def type_lines(cc_n, v):
     return [cc(100, cc_n, v)]
 
 
-def walk(tag, cc_n, v, turns=None):
+def walk(tag, cc_n, v, turns=None, look=None):
     """every page by SELECT (forward to the end, then back to PERFORM); turns: {forward step: [(knob, delta)]}, turned
-    at the visit and shot 1.5 s later (the frame gone). Returns [(t, image, state)] forward, then backward."""
-    L, t, visits = type_lines(cc_n, v), T0, []
+    at the visit and shot 1.5 s later (the frame gone); look: the colour candidate (developer CC 2) first. Returns
+    [(t, image, state)] forward, then backward."""
+    L, t, visits = type_lines(cc_n, v) + ([cc(50, 2, look)] if look is not None else []), T0, []
     for i in range(NWALK):
         if i:
             L.append(f"{t} turn 0 1"); t += STEP
@@ -137,12 +139,17 @@ def lowsat(im):
     return im.max(axis=2) - im.min(axis=2) <= 40
 
 
+NORM = np.ones(3)                                                 # the text's tint undone (look C: set_look)
+
+
 def ink(im):
     """text cores: grey to white, not tinted (the fill, the segments and the frame are amber)"""
+    im = np.minimum(im * NORM, 255)
     return lowsat(im) & (im.max(axis=2) >= 90)
 
 
 def white(im):
+    im = np.minimum(im * NORM, 255)
     return lowsat(im) & (im.min(axis=2) >= 190)
 
 
@@ -155,7 +162,7 @@ def amberish(im):
 def accent_of(im):
     """the accent colour, from the title's ink (the brightest amber pixels of the title line)"""
     reg = im[20:43, 4:150].reshape(-1, 3)
-    a = reg[(reg[:, 0] >= 120) & (reg[:, 0] - reg[:, 2] >= 80)]
+    a = reg[(reg[:, 0] >= 100) & (reg[:, 0] - reg[:, 2] >= 80)]       # (look C's accent: 106 12 0)
     if len(a) < 10:
         return None
     lum = a.sum(axis=1)
@@ -260,6 +267,7 @@ def segments(im, box, acc):
         return [], None
     l0, l1 = lines[0], lines[-1]
     colmask = seg[l0:l1 + 1].mean(axis=0) >= 0.6
+    colmask |= seg[l0] & seg[l1]                            # an outlined segment (looks A, B): its top and bottom lines
     out = []
     for a, b in runs(colmask):
         if b - a + 1 >= 3:
@@ -531,11 +539,56 @@ def test_hot_frame(meters, eng, cc_n, v):
     assert not errs, "\n".join(errs)
 
 
-def test_cc2_changes_nothing(meters):
-    """one look: the old developer CC 2 (the design study's looks) is gone, the screen stays the same"""
-    tag = "meters_cc2"
-    L = [f"{T0} shot", cc(T0 + 100, 2, 1), f"{T0 + 900} shot", cc(T0 + 1000, 2, 4), f"{T0 + 1800} shot"]
-    run(tag, L, T0 + 1900, check=False)
-    a, b, c = ppm(tag, T0), ppm(tag, T0 + 900), ppm(tag, T0 + 1800)
-    a[0:19] = b[0:19] = c[0:19] = 0                                             # (the header's live battery / BPM)
-    assert (np.abs(b - a).sum(axis=2) > 30).sum() == 0 and (np.abs(c - a).sum(axis=2) > 30).sum() == 0
+LOOKS = {0: "A", 1: "B", 2: "C"}
+
+
+def look_tokens(look):
+    """the look's colours as the firmware has them (host_state "look"): {name: (r, g, b) as the PPM expands them}"""
+    r = run(f"meters_look{look}", [cc(100, 2, look), f"{T0} expect state look ~"], T0 + 50, check=False)
+    v = read_probes(r)[T0]["look"].split()
+    names = ["surf", "track", "outline", "hair", "fill", "edge", "tag", "lab", "val", "dim"]
+    tok = {n: int(h, 16) for n, h in zip(names, v[1:])}
+    return v[0], {n: ((c >> 11) * 255 // 31, (c >> 5 & 63) * 255 // 63, (c & 31) * 255 // 31) for n, c in tok.items()}
+
+
+@pytest.mark.parametrize("look", [0, 1, 2], ids=["A", "B", "C"])
+@pytest.mark.parametrize("name,cc_n,v", [TYPES[0], TYPES[4]], ids=["ST77", "VIBE"])
+def test_looks_same_geometry(meters, look, name, cc_n, v):
+    """developer CC 2 (the colour candidates A / B / C, ui.c MT_LOOKS) changes colours only: every page, its knobs
+    turned, passes the same checks (look C's text is tinted for the panel: NORM undoes it), and what each row shows
+    is the same as in look A"""
+    global NORM
+    letter, tok = look_tokens(look)
+    assert letter == LOOKS[look]
+    a_lab = np.array(look_tokens(0)[1]["lab"], float)
+    pages = pages_of(name, cc_n, v)[0]
+    fwd, _ = walk(f"meters_{name}_look{look}", cc_n, v, turns_for(pages), look=look)
+    ref, _ = walk(f"meters_{name}_turned", cc_n, v, turns_for(pages))
+    errs, fb = [], []
+    NORM = a_lab / np.maximum(np.array(tok["lab"], float), 1)
+    try:
+        for (t, im, s), (_, _, s0) in zip(distinct(fwd), distinct(ref)):
+            errs += check_screen(im, s, f"look {letter} {name} {title_of(s)} {s.get('count')} @{t}", fb)
+            for k in [f"row{k}" for k in range(4)] + ["title", "count"]:
+                if s.get(k) != s0.get(k):
+                    errs.append(f"look {letter} {name} {title_of(s)}: {k} = {s.get(k)!r}, look A {s0.get(k)!r}")
+    finally:
+        NORM = np.ones(3)
+    assert not errs, "\n".join(errs)
+
+
+def test_look_default_and_c_matches_the_model(meters):
+    """the default look is A (no CC 2); out-of-range values clamp to C; look C's colours are the ones
+    tools/meters_palettes.py search finds (the firmware and the tool agree)"""
+    r = run("meters_look_default", [f"{T0} expect state look ~", cc(T0 + 10, 2, 99), f"{T0 + 50} expect state look ~"],
+            T0 + 100, check=False)
+    st = read_probes(r)
+    assert st[T0]["look"].split()[0] == "A"
+    assert st[T0 + 50]["look"].split()[0] == "C"
+    import sys
+    sys.path.insert(0, os.path.join(hostrun.ROOT, "tools"))
+    import meters_palettes as mp
+    want = mp.search()
+    _, tok = look_tokens(2)
+    for role in ("surf", "track", "fill", "edge", "dim", "lab", "val"):
+        assert tok[role] == tuple(int(x) for x in mp.expand([want[role]])[0]), (role, tok[role], want[role])
