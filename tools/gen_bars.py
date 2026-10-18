@@ -4,6 +4,15 @@
 
     tools/gen_bars.py [--strict] [--out DIR]   -> firmware/gen/bars_tables.h  +  docs/model/data/bars_spec.json
                                                   (or both into DIR)
+    tools/gen_bars.py --repin [--out DIR]      the pair stage solved afresh (eig4) and written to bars_pins.json
+                                                  (or DIR/bars_pins.json): a deliberate, reviewed table change
+
+PINS (docs/model/data/bars_pins.json): the pair stage of every key (tube zeta_r, the solved BarTube, wt, the f0 peak,
+the pair words of bartube.pair_words and the stability grid) as recorded on the machine that made the approved
+tables. That stage bisects on eigenvalue-derived decays (solve_sigma, pair_words' kc correction, which lands on the
+edge where an integer coupling word changes by design) and LAPACK's last bits differ between machines, so it picked
+different integer words on different machines. Everything else is computed; tests/py/test_gen_bars.py recomputes the
+pins with tools/eig4.py (machine-independent decimal eig) and checks they are the physics.
 
 Per key 21..108: the undercut bar (bar_fe: Timoshenko bending, Saint-Venant torsion, the profile optimised for
 1:4:10) gives the strike-position weights and the torsion ratios; the decays come from vibes.json (the reference
@@ -50,6 +59,12 @@ LN1000 = 6.907755279
 Q30, Q28, Q25, Q16, Q15, Q14, Q12 = 1 << 30, 1 << 28, 1 << 25, 1 << 16, 1 << 15, 1 << 14, 1 << 12
 STATUSES = {"CONFIRMED", "CORRECTED", "DERIVED", "MEASURED-REF", "ESTIMATE"}
 VIBES = os.path.join(ROOT, "docs", "model", "data", "vibes.json")
+PINS = os.path.join(ROOT, "docs", "model", "data", "bars_pins.json")
+PINS_DOC = ("gen_bars.py pins: the pair stage per key (tube zeta_r + flag, the solved BarTube, sigma clamp / weak flags, "
+            "the f0 peak (ms), wt, bartube.pair_words' words and the stability grid), recorded where the approved tables "
+            "were made. That stage bisects on eigenvalue-derived decays, which differ in the last bits between machines' "
+            "LAPACKs, so the pins make the tables machine-independent. tests/py/test_gen_bars.py recomputes them with "
+            "tools/eig4.py. Regenerate only on purpose: tools/gen_bars.py --repin (a reviewed table change).")
 FAM_DETENT = [0, 42, 64, 85, 127]      # BARK values that are exactly one family (KN_FAM; vibes.json T7c detent): SOFT,
                                        # YARN, the default (MALLET 64, frozen), CORD, RUBBER
 CAL = NFAM                             # + one family the calibration renders with (T7c calib), dropped before the tables
@@ -270,7 +285,7 @@ def map_check_words(k):
                         w = btm.scaled_words(w_ref, btm.pair_words(btn, wt, felt, t30=t30, k16=k16, release=rel,
                                                                    G=w_ref["G"], kc=w_ref["kc"]), s, g)
                         M = btm.pair_map(w)
-                        rho = max(rho, float(max(abs(np.linalg.eigvals(M)))))
+                        rho = max(rho, btm.map_rho(M))
                         tt = 2 ** (c / 1200)
                         d = bt.with_bell(s).with_motor(g)._with(sig_bar=(sig_rel if rel else bt.sig_bar) * k16 / 65536.0)
                         d = d.scaled(tt).with_sigma(bt.sigma / tt)
@@ -577,8 +592,77 @@ def pinned_bands(vb, phys, ct, tol=0.45):
     return dict(of=of, rep=[r for _, r in segs], err=[err(ks, r) for ks, r in segs])
 
 
-def key_physics(vb, n, fec, zt):
-    """Float design of key n: slot frequencies, T60 held / felt, strike-weight source, the pair."""
+def plain(x):
+    """JSON-able copy (numpy scalars to Python numbers; floats keep every bit through repr)."""
+    if isinstance(x, dict):
+        return {k: plain(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [plain(v) for v in x]
+    if isinstance(x, (bool, np.bool_)):
+        return bool(x)
+    if isinstance(x, (int, np.integer)):
+        return int(x)
+    if isinstance(x, (float, np.floating)):
+        return float(x)
+    return x
+
+
+def pin_of(k, zt):
+    """The pin of one key's pair stage (k: key_physics + pw + grid)."""
+    bt = k["bt"]
+    return plain(dict(zt=list(zt), bt=dict(f_bar=bt.f_t, f_tube=bt.f_b, sigma=bt.k_rel, sig_bar=bt.sigma_t,
+                                         sig_tube=bt.sigma_b, g=bt.g, s=bt.s, mu=bt.mu, clamped=bt.clamped,
+                                         sigma_wanted=bt.sigma_wanted),
+                      cl=k["sigma_clamp"], weak=k["weak"], peak_ms=k["peak_ms"], wt=k["wt"], pw=k["pw"],
+                      grid=list(k["grid"]), v1=v1_vals(k)))
+
+
+def v1_vals(k):
+    """The V1-with-tube T60s (s) and the peak formula (ms) the spec reports and KEYS.life reads: from the pin (the
+    pinned machine's eig) when the pair is pinned, else from k's BarTube."""
+    if k.get("v1"):
+        return k["v1"]
+    bt = k["bt"]
+    return dict(t60=bt.t60_v1(), t60_rel=bt.with_damper(LN1000 / k["felt_v1"] - bt.sig_bar).t60_v1(),
+                t60_bell127=bt.with_bell(KN_TUBE_TOP).t60_v1(),
+                t60_decay127=bt._with(sig_bar=bt.sig_bar / 2 ** (63 / 32)).t60_v1(),       # DECAY 127
+                peak_formula_ms=1000 * bt.t_peak_formula())
+
+
+def pin_pair(p):
+    """(bt, clamp, weak, peak ms, wt) of a pin."""
+    b = p["bt"]
+    bt = btm.BarTube(b["f_bar"], b["f_tube"], b["sigma"], b["sig_bar"], b["sig_tube"], g=b["g"], s=b["s"], mu=b["mu"])
+    bt.clamped, bt.sigma_wanted = b["clamped"], b["sigma_wanted"]
+    return bt, p["cl"], p["weak"], p["peak_ms"], p["wt"]
+
+
+PW_ORDER = ("E0", "eps0", "E1", "eps1", "k_tb", "k_bt", "wt_q28", "G", "kc", "w0", "w1", "f_slot0", "f_slot1")
+W_ORDER = tuple(rc.mode_coefs(0, 1, 1))
+
+
+def pin_words(p):
+    """The pinned bartube.pair_words dict (its own key order)."""
+    pw = p["pw"]
+    return {k: ({kk: pw[k][kk] for kk in W_ORDER} if k in ("w0", "w1") else pw[k]) for k in PW_ORDER}
+
+
+def load_pins(path=PINS):
+    if not os.path.exists(path):
+        return None
+    d = json.load(open(path))
+    assert d.get("version") == 1, "bars_pins.json: unknown version"
+    return {int(n): p for n, p in d["keys"].items()}
+
+
+def write_pins(path, pins):
+    d = {"_doc": PINS_DOC, "version": 1, "keys": {str(n): pins[n] for n in sorted(pins)}}
+    open(path, "w").write(json.dumps(d, indent=1, sort_keys=True) + "\n")
+
+
+def key_physics(vb, n, fec, zt, pin=None):
+    """Float design of key n: slot frequencies, T60 held / felt, strike-weight source, the pair (pin: the pinned pair
+    stage instead of make_pair / pair_peak_ms, see PINS)."""
     a, b = vb["keys"]["authentic"]
     ng = min(max(n, a), b)
     F = fec[ng]
@@ -591,8 +675,11 @@ def key_physics(vb, n, fec, zt):
     up = vb["T3"]["upper_mult"]
     zr, zflag = zt[n]
     target = t1b(vb, n)
-    bt, cl, weak = make_pair(vb, n, zr, target)
-    pk, wt = pair_peak_ms(vb, bt, dur=2.5)
+    if pin:
+        bt, cl, weak, pk, wt = pin_pair(pin)
+    else:
+        bt, cl, weak = make_pair(vb, n, zr, target)
+        pk, wt = pair_peak_ms(vb, bt, dur=2.5)
     if cl or weak:
         flags |= 4
     modes = []
@@ -856,7 +943,8 @@ def build_spec(vb, phys, fec, ct, st):
         # the design targets per mode (the scan tools read keys[].modes[].f / t60 as in rhodes_spec.json): V1 = the
         # V1-like normal mode (f0, the V1-with-tube T60 at BELL 64), TUBE = the tube slot, the others their slot
         bt = k["bt"]
-        modes[0].update(f=k["f0"], t60=bt.t60_v1(), t60_rel=bt.with_damper(LN1000 / k["felt_v1"] - bt.sig_bar).t60_v1(),
+        v1 = v1_vals(k)
+        modes[0].update(f=k["f0"], t60=v1["t60"], t60_rel=v1["t60_rel"],
                         f_slot=pw["f_slot0"])
         modes[1].update(t60=LN1000 / bt.sig_tube, t60_rel=LN1000 / bt.sig_tube)
         for slot in range(2, NM):
@@ -1009,12 +1097,11 @@ def voicing_peaks(vb, spec, keys):
     return pk, worst
 
 
-def build():
-    vb = load_vibes(strict="--strict" in sys.argv)
-    assert [f["detent"] for f in vb["T7c"]["families"]] == FAM_DETENT and len(FAM_DETENT) == NFAM, "T7c detents"
-    fec = fe_all(vb)
-    print("tube: solving zeta_r at the reference notes", file=sys.stderr)
-    zt = tube_zetas(vb)
+BUILD_PINS = {}                        # the pair stage of the last unpinned build (--repin writes it)
+
+
+def pair_stage(vb, fec, zt):
+    """The pair of every key, solved (zt is updated where a map needs more tube damping)."""
     phys = {}
     for n in range(KEY_LO, KEY_HI + 1):
         for _ in range(20):                         # a pair whose integer map is not contracting: more tube damping
@@ -1025,7 +1112,31 @@ def build():
                 break
             zt[n] = (min(vb["T4a"]["hi_pct"] / 100, zt[n][0] * 1.25), zt[n][1] | 8)
             print("key %d: unstable map, zeta_r -> %.4f" % (n, zt[n][0]), file=sys.stderr)
+        k["v1"] = v1_vals(k)
         phys[n] = k
+    return phys
+
+
+def build():
+    vb = load_vibes(strict="--strict" in sys.argv)
+    assert [f["detent"] for f in vb["T7c"]["families"]] == FAM_DETENT and len(FAM_DETENT) == NFAM, "T7c detents"
+    fec = fe_all(vb)
+    pins = None if "--repin" in sys.argv else load_pins()
+    phys = {}
+    if pins:                                        # the pinned pair stage (PINS): the same words on every machine
+        assert sorted(pins) == list(range(KEY_LO, KEY_HI + 1)), "bars_pins.json: keys"
+        for n in range(KEY_LO, KEY_HI + 1):
+            k = key_physics(vb, n, fec, {n: tuple(pins[n]["zt"])}, pin=pins[n])
+            k["pw"] = pin_words(pins[n])
+            k["grid"] = tuple(pins[n]["grid"])
+            k["v1"] = dict(pins[n]["v1"])
+            phys[n] = k
+    else:
+        print("tube: solving zeta_r at the reference notes", file=sys.stderr)
+        zt = tube_zetas(vb)
+        phys = pair_stage(vb, fec, zt)
+        BUILD_PINS.clear()
+        BUILD_PINS.update({n: pin_of(phys[n], zt[n]) for n in phys})
     print("mallets: contact simulations", file=sys.stderr)
     ct = contacts(vb, phys, fec)
     BANDS.clear()
@@ -1210,8 +1321,8 @@ def build():
         st["keys"][n]["gain"] = g
         wt = abs(k["pw"]["wt_q28"]) / Q28 * KN_TUBE_TOP
         st["keys"][n]["kill"] = max(1, int(round(4.0 / (g * max(1.0, wt)) * Q25)))
-        t60d = k["bt"]._with(sig_bar=k["bt"].sig_bar / 2 ** (63 / 32)).t60_v1()     # DECAY 127
-        st["keys"][n]["life"] = int(min(65535, math.ceil((2 * max(t60d, k["bt"].t60_v1()) + 1.0) * FS / 256)))
+        v1 = v1_vals(k)
+        st["keys"][n]["life"] = int(min(65535, math.ceil((2 * max(v1["t60_decay127"], v1["t60"]) + 1.0) * FS / 256)))
     spec = build_spec(vb, phys, fec, ct, st)
     # the Rhodes level per key (calib _doc_st77): each key's v100 loudness (K-weighted, lufs_t) = the STAGE 77 golden
     # render's at the same key (both no effects), the ST77 curve moving-averaged over +-lufs_smooth_keys
@@ -1282,11 +1393,11 @@ def build():
         k = phys[n]
         bt = k["bt"]
         d = dict(midi=n, f0=k["f0"], flags=spec["keys"][n - KEY_LO]["flags"], ng=k["ng"], t1a=k["t1a"], t1b=k["t1b"],
-                 t60_v1=bt.t60_v1(), t60_v1_bell127=bt.with_bell(KN_TUBE_TOP).t60_v1(), felt_v1=k["felt_v1"],
+                 t60_v1=v1_vals(k)["t60"], t60_v1_bell127=v1_vals(k)["t60_bell127"], felt_v1=k["felt_v1"],
                  zeta_r=k["zeta_r"], zeta_flag=k["zeta_flag"], zeta_n=bt.zetas()[0], sigma=bt.sigma,
                  sigma_wanted=bt.sigma_wanted, sigma_clamp=k["sigma_clamp"], weak_limited=k["weak"],
                  sigma_weak_max=bt.sigma_weak_max(s_max=KN_TUBE_TOP, margin=vb["T5a"]["weak_margin"]),
-                 peak_ms=k["peak_ms"], peak_formula_ms=1000 * bt.t_peak_formula(), wt=k["wt"], G=k["pw"]["G"],
+                 peak_ms=k["peak_ms"], peak_formula_ms=v1_vals(k)["peak_formula_ms"], wt=k["wt"], G=k["pw"]["G"],
                  kc=k["pw"]["kc"], tube_cents=k["tube_cents"], f_tube=bt.f_tube, t60_tube=LN1000 / bt.sig_tube,
                  modes=[dict(name=m["name"], f=m["f"], ratio=m["ratio"], t60=m["t60"], t60_rel=m["t60_rel"],
                              present=m["present"]) for m in k["modes"]],
@@ -1443,6 +1554,10 @@ def main():
     open(hp, "w").write(hdr)
     js = json.dumps(spec, indent=0, sort_keys=True, default=float, separators=(",", ":"))
     open(jp, "w").write(js + "\n")
+    if "--repin" in sys.argv:
+        pp = os.path.join(out, "bars_pins.json") if out else PINS
+        write_pins(pp, BUILD_PINS)
+        print("pins written: %s (review the table change before committing)" % pp, file=sys.stderr)
     summary(spec)
 
 

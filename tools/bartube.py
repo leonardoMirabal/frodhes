@@ -33,6 +33,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import eig4  # noqa: E402
 import rh_coefs as rc  # noqa: E402
 import tinebar  # noqa: E402
 import vib_ref_measure as vrm  # noqa: E402  (only its envelope functions: the model is measured like the recordings)
@@ -91,14 +92,16 @@ class BarTube(tinebar.TineBar):
         return A, B, Cout
 
     def modes2(self):
-        """[(f_hz, sigma, r_bar, r_tube)] sorted by frequency."""
-        A, B, _ = self._ss()
-        lam, V = np.linalg.eig(A)
-        Vi = np.linalg.inv(V)
-        vb = Vi @ B
-        out = [(abs(l.imag) / (2 * np.pi), -l.real, V[0, i] * vb[i], V[1, i] * vb[i])
-               for i, l in enumerate(lam) if l.imag > 0]
-        return sorted(out, key=lambda m: m[0])
+        """[(f_hz, sigma, r_bar, r_tube)] sorted by frequency (eig4: the same bits on every machine; the state-space
+        matrix of _ss built entry by entry in floats, so no BLAS sum decides a bit)."""
+        wb, wr = 2 * np.pi * self.f_t, 2 * np.pi * self.f_b
+        k = self.k_rel * wb * wb
+        c = self.s * self.g
+        mi = 1.0 / self.mu
+        A = [[0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0],
+             [-(wb * wb + k), -(-c * k), -(2 * self.sigma_t), 0.0],
+             [-(mi * (-c * k)), -(mi * (self.mu * wr * wr + k)), 0.0, -(mi * (2 * self.mu * self.sigma_b))]]
+        return [tuple(m) for m in eig4.ss_modes(A, [0.0, 0.0, 1.0, 0.0], rows=(0, 1))]
 
     def modes(self, part="bar"):
         return [(f, s, rb if part == "bar" else rt) for f, s, rb, rt in self.modes2()]
@@ -296,32 +299,32 @@ def pair_map(w, sign=None):
         y1 += k_bt x0 (the updated x0);  x1 += E1 y1;  y1 += -eps1 y1 - E1 x1.
     The error feedback makes the long-run arithmetic exact, so the integer words / 2^30 define the map."""
     sign = COUPLE_SIGN if sign is None else sign
-    q = float(rc.Q30)
-    E0, e0, E1, e1 = w["E0"] / q, w["eps0"] / q, w["E1"] / q, w["eps1"] / q
-    kt, kb = w["k_tb"] / q, w["k_bt"] / q
-
-    def op(i, j, a):                     # state[i] += a * state[j]
-        m = np.eye(4)
-        m[i, j] += a
-        return m
-    seq = [op(1, 2, sign * kt), op(0, 1, E0), op(1, 1, -e0), op(1, 0, -E0),
-           op(3, 0, kb), op(2, 3, E1), op(3, 3, -e1), op(3, 2, -E1)]
-    M = np.eye(4)
-    for s in seq:
-        M = s @ M
+    q = eig4.dec(rc.Q30)
+    E0, e0, E1, e1 = (eig4.CTX.divide(eig4.dec(w[k]), q) for k in ("E0", "eps0", "E1", "eps1"))
+    kt, kb = eig4.CTX.divide(eig4.dec(w["k_tb"]), q), eig4.CTX.divide(eig4.dec(w["k_bt"]), q)
+    seq = [(1, 2, eig4.CTX.multiply(eig4.dec(sign), kt)), (0, 1, E0), (1, 1, eig4.CTX.minus(e0)), (1, 0, eig4.CTX.minus(E0)),
+           (3, 0, kb), (2, 3, E1), (3, 3, eig4.CTX.minus(e1)), (3, 2, eig4.CTX.minus(E1))]
+    Md = [[eig4.D1 if i == j else eig4.D0 for j in range(4)] for i in range(4)]
+    for i, j, a in seq:                  # state[i] += a * state[j]: row i of the map += a * row j (decimal, exact
+        Md[i] = [eig4.CTX.add(Md[i][c], eig4.CTX.multiply(a, Md[j][c])) for c in range(4)]   # to 60 digits)
+    M = np.array([[float(x) for x in r] for r in Md]).view(_ExactMap)
+    M.exact = Md
     return M
 
 
+class _ExactMap(np.ndarray):
+    """pair_map's float matrix; .exact holds the decimal map that map_modes / map_rho analyse (eig4)."""
+
+
+def map_rho(M):
+    """The spectral radius of a pair map (eig4: machine-independent)."""
+    return eig4.spectral_radius(getattr(M, "exact", M))
+
+
 def map_modes(M, fs=FS):
-    """[(f_hz, sigma_per_s, bar_share)] of the map's two oscillatory eigenpairs (positive frequencies)."""
-    lam, V = np.linalg.eig(M)
-    out = []
-    for i, l in enumerate(lam):
-        if l.imag > 0:
-            v = V[:, i]
-            share = (abs(v[0]) ** 2 + abs(v[1]) ** 2) / (np.sum(np.abs(v) ** 2) + 1e-300)
-            out.append((np.angle(l) * fs / (2 * np.pi), -math.log(abs(l)) * fs, share))
-    return sorted(out, key=lambda m: m[0])
+    """[(f_hz, sigma_per_s, bar_share)] of the map's two oscillatory eigenpairs (positive frequencies), sorted by
+    frequency (eig4: the same bits on every machine; the decimal map of pair_map when M carries it)."""
+    return eig4.map_modes(getattr(M, "exact", M), fs)
 
 
 def map_v1(M):
@@ -386,7 +389,7 @@ def map_check(bt, wt, f0, t60_rel_bar, grid=None):
                         w = scaled_words(w_ref, pair_words(btn, wt, t60_rel_bar, t30=t30, k16=k16, release=rel,
                                                            G=w_ref["G"], kc=w_ref["kc"]), s, g)
                         M = pair_map(w)
-                        rho = max(rho, max(abs(np.linalg.eigvals(M))))
+                        rho = max(rho, map_rho(M))
                         tt = 2 ** (c / 1200)
                         d = bt.with_bell(s).with_motor(g)._with(sig_bar=(sig_rel if rel else bt.sig_bar) * k16 / 65536.0)
                         d = d.scaled(tt).with_sigma(bt.sigma / tt)
