@@ -46,9 +46,13 @@ static volatile uint32_t fx_quiet_blocks;
 static void fx_set(uint32_t id, int32_t v) { if (id < FXP_N) fx_p[id] = v < 0 ? 0 : v > 127 ? 127 : v; }
 static int fx_quiet(void) { return fx_quiet_blocks >= 86u; }   /* 500 ms under -66 dBFS */
 
+/* FX_K32: a local multiplier that is constant over a loop and used in (int64_t)a * v, read from the stack where it is
+ * used (volatile: one load, the same value). Kept in a register instead, the compiler widens it to 64 bits once before
+ * the loop and then, inside it, no longer sees a 32 x 32 product: it multiplies 64 x 64 (four multiplies and the
+ * carries) instead of one instruction. */
+#define FX_K32 volatile int32_t
 static inline int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
 static inline int32_t mulq15(int32_t a, int32_t b) { return (a * b) >> 15; }        /* |a|,|b| small enough */
-static inline int64_t clampi64(int64_t v) { return v > 131071 ? 131071 : v < -131072 ? -131072 : v; }   /* softclip's range */
 static inline int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15, flat beyond +-4 */
 {
     uint32_t i;
@@ -107,15 +111,33 @@ static inline int32_t svf_tick(const svf_t *c, int32_t *ic, int32_t x, uint32_t 
     kv1 = (int32_t)(((int64_t)c->k * v1 + (1 << 23)) >> 24);
     return mode == 0u ? v2 : mode == 1u ? x - kv1 - v2 : mode == 2u ? kv1 : x - kv1;
 }
+/* one sub-block of the filter; mode and p18 are constants after inlining (a version per TYPE), the state in locals */
+static inline __attribute__((always_inline)) void fl_run(int32_t *m, uint32_t n, const svf_t *c, const uint32_t mode,
+                                                         const int p18, int32_t gp)
+{
+    int32_t ic[2] = {fl_ic[0], fl_ic[1]}, op = fl_op;
+    uint32_t j;
+    for (j = 0; j < n; j++) {
+        int32_t x = m[j] * 8;                                            /* 8x finer inside: a lower noise floor */
+        x = svf_tick(c, ic, x, mode);
+        if (p18) {                                                       /* 18: + a 6 dB one-pole */
+            int32_t v = (int32_t)(((int64_t)(x - op) * gp + (1 << 26)) >> 27), lp = v + op;
+            op = clampi(lp + v, -(1 << 24), 1 << 24);
+            x = mode == 0u ? lp : x - lp;
+        }
+        m[j] = (x + 4) >> 3;
+    }
+    fl_ic[0] = ic[0]; fl_ic[1] = ic[1]; fl_op = op;
+}
 static void fx_filter(int32_t *m, uint32_t n)
 {
-    static const uint8_t MODE[7] = {0, 0, 0, 1, 1, 2, 3}, POLES[7] = {0, 2, 3, 2, 3, 2, 2};
+    static const uint8_t POLES[7] = {0, 2, 3, 2, 3, 2, 2};   /* TYPE -> poles; the mode (LP HP BP NOTCH) is in the switch below */
     uint32_t type = fx_p[FXP_FL_TYPE], inc = fx_lfo_sync_inc ? fx_lfo_sync_inc : FX_LFO_INC[fx_p[FXP_LFO_RATE]], sb, j;
     int32_t k = (int32_t)FX_FL_K[fx_p[FXP_FL_RESO]], base = fx_p[FXP_FL_FREQ] * 516, depth = fx_p[FXP_FL_LFO];
-    uint32_t mode, poles;
+    uint32_t poles;
     if (fx_lfo_retrig) { fx_lfo_retrig = 0; lfo_ph = 0; }
     if (!type || type > 6u) { fl_was_on = 0; lfo_ph += inc * n; return; }   /* off: the LFO keeps time, the filter rests */
-    mode = MODE[type]; poles = POLES[type];
+    poles = POLES[type];
     if (!fl_was_on) { memset(fl_ic, 0, sizeof fl_ic); fl_op = 0; fl_pos = base; fl_was_on = 1; }
     for (sb = 0; sb < n; sb += 32u) {
         uint32_t prev = lfo_ph, i;
@@ -129,15 +151,14 @@ static void fx_filter(int32_t *m, uint32_t n)
         g = (int32_t)FX_FL_G[i] + ((((int32_t)FX_FL_G[i + 1] - (int32_t)FX_FL_G[i]) * f) >> 8);         /* Q24 */
         svf_coef(&c, g, k);
         if (poles == 3u) gp = (1 << 27) - recip27(65536u + ((uint32_t)g >> 8));                           /* g/(1+g) */
-        for (j = sb; j < sb + 32u && j < n; j++) {
-            int32_t x = m[j] * 8;                                            /* 8x finer inside: a lower noise floor */
-            x = svf_tick(&c, fl_ic, x, mode);
-            if (poles == 3u) {                                               /* 18: + a 6 dB one-pole */
-                int32_t v = (int32_t)(((int64_t)(x - fl_op) * gp + (1 << 26)) >> 27), lp = v + fl_op;
-                fl_op = clampi(lp + v, -(1 << 24), 1 << 24);
-                x = mode == 0u ? lp : x - lp;
-            }
-            m[j] = (x + 4) >> 3;
+        j = sb + 32u < n ? sb + 32u : n;
+        switch (type) {                                  /* one loop per (mode, poles): no tests per sample */
+        case 1: fl_run(m + sb, j - sb, &c, 0, 0, gp); break;
+        case 2: fl_run(m + sb, j - sb, &c, 0, 1, gp); break;
+        case 3: fl_run(m + sb, j - sb, &c, 1, 0, gp); break;
+        case 4: fl_run(m + sb, j - sb, &c, 1, 1, gp); break;
+        case 5: fl_run(m + sb, j - sb, &c, 2, 0, gp); break;
+        default: fl_run(m + sb, j - sb, &c, 3, 0, gp); break;
         }
     }
 }
@@ -170,13 +191,16 @@ static void fx_drive(int32_t *m, uint32_t n)
     mk = (mk * 39000) >> 15;                           /* +1.5 dB: measured on the FM-1, LUFS (0.8) */
     bias = DR_BIAS[row];
     b0 = softclip(bias);
+    /* the shaper's input (x >> 2) g >> 10 + bias needs a 64-bit product (|x >> 2| <= 57500, g <= 100870 at AMOUNT 127),
+     * but its result fits 32 bits (<= 5.67e6 + 3200), so softclip's own 32-bit clamp to +-4 is the whole clamp (it was
+     * a second, 64-bit one before it: the same value) */
     if (tt > 8192) tt = 8192;
     if (wt == 32768 && dr_w == 32768 && tt == 4096 && !dr_ton) {   /* the defaults: the loop before the page */
         for (i = 0; i < n; i++) {
             int32_t x = m[i], y;
             dr_hp += (x - dr_hp + 64) >> 7;
             x = clampi(x - dr_hp, -230000, 230000);
-            y = softclip((int32_t)clampi64((((int64_t)(x >> 2) * g) >> 10) + bias)) - b0;
+            y = softclip((int32_t)(((int64_t)(x >> 2) * g) >> 10) + bias) - b0;
             dr_lp1 += mulq15(y - dr_lp1, k);
             dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
             m[i] = mulq15(dr_lp2, mk);
@@ -187,7 +211,7 @@ static void fx_drive(int32_t *m, uint32_t n)
         int32_t x0 = m[i], x, y;
         dr_hp += (x0 - dr_hp + 64) >> 7;
         x = clampi(x0 - dr_hp, -230000, 230000);
-        y = softclip((int32_t)clampi64((((int64_t)(x >> 2) * g) >> 10) + bias)) - b0;
+        y = softclip((int32_t)(((int64_t)(x >> 2) * g) >> 10) + bias) - b0;
         dr_lp1 += mulq15(y - dr_lp1, k);
         dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
         y = mulq15(dr_lp2, mk);
@@ -292,7 +316,7 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
      * level when switched on (the user, 2026-10-17). The feedback now passes a DC block and the sides are 30 degrees
      * apart (they were 90: a mono sound turned very wide). */
     int32_t pg = 22940 << 15;
-    uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, j, s;
+    uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, s;
     if (!fx_p[FXP_PH_SW]) return;
     for (sb = 0; sb < n; sb += 32u) {
         int32_t a[2];
@@ -301,24 +325,30 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
                                                        * turned very wide, heard as a jump in level, the user 2026-10-17) */
         for (s = 0; s < 2u; s++) {                   /* the sides are independent: one at a time, the state in
                                                         * registers (the same arithmetic as per sample and side) */
-            int32_t *io = s ? R : L, as = a[s], fb = ph_fb[s], hp = ph_hp[s], g13 = pg >> 16;
-            int32_t x0 = ph_x[s][0], x1 = ph_x[s][1], x2 = ph_x[s][2], x3 = ph_x[s][3];
-            int32_t y0 = ph_y[s][0], y1 = ph_y[s][1], y2 = ph_y[s][2], y3 = ph_y[s][3];
-            for (j = sb; j < sb + 32u && j < n; j++) {
-                int32_t x = io[j], xs = clampi((x + 2) >> 2, -16383, 16383);
-                int32_t u = xs + mulq15(fb, fbk), y;
-                y = clampi(x0 + ((as * (u - y0) + 8192) >> 14), -65535, 65535); x0 = u; y0 = y; u = y;
-                y = clampi(x1 + ((as * (u - y1) + 8192) >> 14), -65535, 65535); x1 = u; y1 = y; u = y;
-                y = clampi(x2 + ((as * (u - y2) + 8192) >> 14), -65535, 65535); x2 = u; y2 = y; u = y;
-                y = clampi(x3 + ((as * (u - y3) + 8192) >> 14), -65535, 65535); x3 = u; y3 = y;
-                hp += (y - hp) >> 6;                    /* the feedback without its lows (~110 Hz): it resonated on
-                                                         * the bass (C2 +4 LU with the phaser on) */
-                fb = clampi(y - hp, -32767, 32767);
-                io[j] = ((xs + y) * g13) >> 12;         /* (x + 4 y) pg >> 30 in 32 bits: |xs + y| < 2^17 */
+            int32_t *io = s ? R : L, *pe, as = a[s], hp = ph_hp[s], g13 = pg >> 16;
+            int32_t x0 = ph_x[s][0], y0 = ph_y[s][0], y1 = ph_y[s][1], y2 = ph_y[s][2], y3 = ph_y[s][3];
+            /* fewer registers (they spilled), the same values: an allpass's last input is the one before's last output
+             * (x1 = y0, x2 = y1, x3 = y2, always: they start at 0 and take the same clamped value each sample), so
+             * only x0 is kept; the feedback is clamp(y3 - hp) of the last sample, computed where it is used */
+            pe = io + (sb + 32u < n ? sb + 32u : n);
+            for (io += sb; io < pe; io++) {             /* at 4x the bus (it ran at a quarter: x >> 2 in, the allpasses'
+                                                         * rounding x 4 out: a broadband floor ~55 dB under the note,
+                                                         * heard as hiss / air and "more volume", TODO #7); the products
+                                                         * 32 x 32 -> 64, one instruction each */
+                int32_t x = *io, xs = clampi(x, -65535, 65535) << 2;   /* x 4 inside: 2 more bits */
+                int32_t fb = clampi(y3 - hp, -524287, 524287);         /* the feedback without its lows */
+                int32_t u = xs + (int32_t)(((int64_t)fb * fbk) >> 15), t0, t1, t2, y;
+                t0 = clampi(x0 + (int32_t)(((int64_t)as * (u - y0) + 8192) >> 14), -1048575, 1048575); x0 = u;
+                t1 = clampi(y0 + (int32_t)(((int64_t)as * (t0 - y1) + 8192) >> 14), -1048575, 1048575); y0 = t0;
+                t2 = clampi(y1 + (int32_t)(((int64_t)as * (t1 - y2) + 8192) >> 14), -1048575, 1048575); y1 = t1;
+                y = clampi(y2 + (int32_t)(((int64_t)as * (t2 - y3) + 8192) >> 14), -1048575, 1048575); y2 = t2; y3 = y;
+                hp += (y - hp) >> 6;                    /* (~110 Hz: it resonated on the bass, C2 +4 LU with the
+                                                         * phaser on) */
+                *io = (int32_t)(((int64_t)(xs + y) * g13) >> 16);   /* 0.70 x (dry + allpasses), / 4 */
             }
-            ph_x[s][0] = x0; ph_x[s][1] = x1; ph_x[s][2] = x2; ph_x[s][3] = x3;
+            ph_x[s][0] = x0; ph_x[s][1] = y0; ph_x[s][2] = y1; ph_x[s][3] = y2;
             ph_y[s][0] = y0; ph_y[s][1] = y1; ph_y[s][2] = y2; ph_y[s][3] = y3;
-            ph_fb[s] = fb; ph_hp[s] = hp;
+            ph_fb[s] = clampi(y3 - hp, -524287, 524287); ph_hp[s] = hp;
         }
         ph_ph += inc * 32u;
     }
@@ -326,7 +356,8 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
 
 /* ---- CHORUS: 7 ms +- 3.5 ms, two taps 90 degrees apart */
 static uint32_t cp_ph;
-static int16_t cho_buf[1024] POOL;
+static int32_t cho_buf[1024] POOL;                     /* full precision (it was int16 of x / 2: a noise floor
+                                                         * ~65 dB under the note, TODO #7) */
 static uint32_t cho_w;
 static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
 {
@@ -338,18 +369,22 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
         int32_t drq = 308 * 256 + ((osc_sine(cp_ph + 0x40000000u) * (154 * depth / 127)) >> 7);
         int32_t mix = (16384 * (2 * depth > 127 ? 127 : 2 * depth)) / 127;
         int32_t cg = 32768 + (mix * 1950 >> 14) + (((mix * (16384 - mix)) >> 14) * 11 >> 3);   /* + half-mix comb */
-        for (j = sb; j < sb + 32u && j < n; j++) {
-            int32_t x = (L[j] + R[j]) >> 1, tl, tr;
-            uint32_t i0 = (cho_w - (uint32_t)(dlq >> 8)) & 1023u, i1 = (cho_w - (uint32_t)(drq >> 8)) & 1023u;
-            cho_buf[cho_w & 1023u] = (int16_t)clampi(x >> 1, -32768, 32767);
-            tl = (cho_buf[i0] + (((cho_buf[(i0 - 1u) & 1023u] - cho_buf[i0]) * (dlq & 255)) >> 8)) << 1;
-            tr = (cho_buf[i1] + (((cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * (drq & 255)) >> 8)) << 1;
-            L[j] += mulq15(tl - L[j], mix);
-            R[j] += mulq15(tr - R[j], mix);
-            L[j] = (L[j] * cg) >> 15;                   /* the comb's loss, minus the stereo width's loudness (0.8) */
-            R[j] = (R[j] * cg) >> 15;
-            cho_w++;
+        uint32_t w = cho_w, je = sb + 32u < n ? sb + 32u : n;
+        int32_t fl = dlq & 255, fr = drq & 255;
+        uint32_t ol = (uint32_t)(dlq >> 8), orr = (uint32_t)(drq >> 8);
+        for (j = sb; j < je; j++) {                     /* (L, R and the write index in registers) */
+            int32_t l = L[j], r = R[j], x = (l + r) >> 1, tl, tr;
+            uint32_t i0 = (w - ol) & 1023u, i1 = (w - orr) & 1023u;
+            cho_buf[w & 1023u] = clampi(x, -1048575, 1048575);
+            tl = cho_buf[i0] + (int32_t)(((int64_t)(cho_buf[(i0 - 1u) & 1023u] - cho_buf[i0]) * fl) >> 8);
+            tr = cho_buf[i1] + (int32_t)(((int64_t)(cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * fr) >> 8);
+            l += mulq15(tl - l, mix);
+            r += mulq15(tr - r, mix);
+            L[j] = (l * cg) >> 15;                      /* the comb's loss, minus the stereo width's loudness (0.8) */
+            R[j] = (r * cg) >> 15;
+            w++;
         }
+        cho_w = w;
         cp_ph += inc * 32u;
     }
 }
@@ -416,6 +451,47 @@ static void fx_comp(int32_t *m, uint32_t n)
 static int16_t dly_buf[DLY_LEN] POOL;
 static uint32_t dly_w, dly_wow, dly_flt;
 static int32_t dly_d = 4410 << 8, dly_lp, dly_hp, dly_dg = 32768, dly_sg;   /* dly_sg: the send's stereo make-up, log2 Q12 */
+/* the delay's sample loop, one version for TAPE (tape = 1) and one for DIGITAL / off (tape = 0: a constant after
+ * inlining), the state in locals: the same arithmetic per sample as one loop with the tests inside. msk: the send on
+ * (-1) or off (0, the tail rings); sg16: the send's make-up (Q16, exactly 65536 when dly_sg is 0: x 1); dgt: the dry's
+ * gain it eases to. */
+static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *R, uint32_t n, const int tape,
+                                                           int32_t msk, int32_t sg16, int32_t target, int32_t col,
+                                                           int32_t fb, int32_t wet, int32_t dgt)
+{
+    uint32_t w = dly_w, wow = dly_wow, flt = dly_flt, j;
+    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg;
+    FX_K32 ksg = sg16;
+    for (j = 0; j < n; j++) {
+        int32_t d, r, in = ((L[j] + R[j]) >> 1) & msk, f;
+        uint32_t i;
+        in = (int32_t)(((int64_t)in * ksg) >> 16);
+        if (tape) {                                      /* tape: slewed time, wow and flutter */
+            int32_t sf;
+            dd += (target - dd) >> 12;
+            wow += 69000u; flt += 690000u;              /* ~0.7 Hz, ~7 Hz */
+            sf = osc_sine(flt);
+            sf = (sf + (int32_t)((uint32_t)sf >> 31)) >> 1;   /* sf / 2 (towards 0) without the divide */
+            d = dd + (int32_t)(((int64_t)dd * (osc_sine(wow) * 3 + sf)) >> 25);
+        } else {
+            if (dd < target) dd = dd + 256 > target ? target : dd + 256;
+            else if (dd > target) dd = dd - 256 < target ? target : dd - 256;
+            d = dd;
+        }
+        i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
+        r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
+        lp += mulq15(r - lp, col);
+        f = tape ? softclip(lp) : lp;
+        hp += (f - hp + 64) >> 7;
+        f -= hp;
+        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + mulq15(f, fb), -32768, 32767);
+        w++;
+        r = mulq15(r, wet);
+        dg += (dgt - dg) >> 9;
+        L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
+    }
+    dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg;
+}
 static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t sw = fx_p[FXP_DL_SW], depth = fx_p[FXP_DL_DEPTH];
@@ -448,32 +524,9 @@ static void fx_delay(int32_t *L, int32_t *R, uint32_t n)
         if (tg == 0 && dly_sg < 4) dly_sg = 0;
     }
     sg16 = exp2_q16(dly_sg);
-    for (j = 0; j < n; j++) {
-        int32_t d, r, in = sw ? (L[j] + R[j]) >> 1 : 0, f;
-        if (dly_sg) in = (int32_t)(((int64_t)in * sg16) >> 16);
-        uint32_t i;
-        if (sw == 2) {                                   /* tape: slewed time, wow and flutter */
-            dly_d += (target - dly_d) >> 12;
-            dly_wow += 69000u; dly_flt += 690000u;      /* ~0.7 Hz, ~7 Hz */
-            d = dly_d + (int32_t)(((int64_t)dly_d * (osc_sine(dly_wow) * 3 + osc_sine(dly_flt) / 2)) >> 25);
-        } else {
-            if (dly_d < target) dly_d = dly_d + 256 > target ? target : dly_d + 256;
-            else if (dly_d > target) dly_d = dly_d - 256 < target ? target : dly_d - 256;
-            d = dly_d;
-        }
-        i = (dly_w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
-        r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
-        dly_lp += mulq15(r - dly_lp, col);
-        f = sw == 2 ? softclip(dly_lp) : dly_lp;
-        dly_hp += (f - dly_hp + 64) >> 7;
-        f -= dly_hp;
-        dly_buf[dly_w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + mulq15(f, fb), -32768, 32767);
-        dly_w++;
-        r = mulq15(r, wet);
-        dly_dg += ((sw ? 32768 - depth * depth : 32768) - dly_dg) >> 9;   /* -0.7 dB at 50, -5.9 dB at 127 */   /* the dry eases down as the mix rises: a
-                                                                     * full-mix delay no longer jumps +5 LU (0.8) */
-        L[j] = (int32_t)(((int64_t)L[j] * dly_dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dly_dg) >> 15) + r;
-    }
+    /* the dry eases down as the mix rises (-0.7 dB at 50, -5.9 dB at 127): a full-mix delay no longer jumps +5 LU (0.8) */
+    if (sw == 2) dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, 32768 - depth * depth);
+    else dly_loop(L, R, n, 0, sw ? -1 : 0, sg16, target, col, fb, wet, sw ? 32768 - depth * depth : 32768);
     if (!sw && iabs(dly_lp) < 2) dly_lp = dly_hp = 0;
 }
 
@@ -754,16 +807,16 @@ static void fx_reset_state(void)
 
 static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
 {
+    static int32_t m[256];
     if (fx_reset_req) { fx_reset_state(); fx_reset_req = 0; }
-    static int32_t m[256], dry[256];
     int32_t lvl = (int32_t)FX_LVL[fx_p[FXP_LEVEL] & 127];   /* the preset's volume trim, Q12 */
     uint32_t j, sb;
-    int32_t pk = 0;
+    int32_t pk = 0, wet = fx_wet, byp = fx_bypass, dl = dc_l, el = dce_l, dr = dc_r, er = dce_r;
     if (fx_p[FXP_RAW]) {                               /* developer: the voice engine's output untouched */
         for (j = 0; j < n; j++) { out[2u * j] += mono[j]; out[2u * j + 1u] += mono[j]; }
         return;
     }
-    for (j = 0; j < n; j++) { dry[j] = m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }
+    for (j = 0; j < n; j++) { m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }   /* (mono is the dry signal for the bypass) */
     fx_comp(m, n);
     fx_filter(m, n);
     fx_drive(m, n);
@@ -772,31 +825,50 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
     fx_chorus(fx_L, fx_R, n);
     fx_delay(fx_L, fx_R, n);
     fx_reverb(fx_L, fx_R, n);
-    for (j = 0; j < n; j++) {
-        int32_t l, r;
-        /* the bypass: the effects keep running (their tails stay current), the output crossfades in 5.8 ms */
-        if (fx_bypass ? fx_wet > 0 : fx_wet < 32768) fx_wet += fx_bypass ? -128 : 128;
-        if (fx_wet != 32768) {
-            fx_L[j] = (int32_t)(((int64_t)fx_L[j] * fx_wet + (int64_t)dry[j] * (32768 - fx_wet)) >> 15);
-            fx_R[j] = (int32_t)(((int64_t)fx_R[j] * fx_wet + (int64_t)dry[j] * (32768 - fx_wet)) >> 15);
-        }
-        l = dc_block(fx_L[j], &dc_l, &dce_l); r = dc_block(fx_R[j], &dc_r, &dce_r);   /* (0.8: a +6 dB push here put
-                                * single notes on the limiter: everything squashed; the jack gain is APP_OUT_SHIFT) */
-        if (lvl != 4096) { l = (int32_t)(((int64_t)l * lvl) >> 12); r = (int32_t)(((int64_t)r * lvl) >> 12); }   /* LEVEL */
-        fx_L[j] = l; fx_R[j] = r;
-    }
     for (sb = 0; sb < n; sb += LK) {                   /* the look-ahead limiter, one sub-block late */
         int32_t pn = 0, tgt, g0 = lk_g, i;
-        for (j = sb; j < sb + LK; j++) {
-            int32_t al = iabs(fx_L[j]), ar = iabs(fx_R[j]);
-            if (al > pn) pn = al;
-            if (ar > pn) pn = ar;
+        /* first the bypass, the DC blocker and LEVEL, sample by sample in the same order as a pass of their own (the
+         * limiter's peak scan of this sub-block is the only reader): the bypass crossfades in 5.8 ms (the effects
+         * keep running, their tails stay current); (0.8: a +6 dB push here put single notes on the limiter: everything
+         * squashed; the jack gain is APP_OUT_SHIFT) */
+        if (!byp && wet == 32768 && lvl == 4096) {     /* the usual case: effects on, LEVEL at unity */
+            for (j = sb; j < sb + LK; j++) {
+                int32_t l = dc_block(fx_L[j], &dl, &el), r = dc_block(fx_R[j], &dr, &er), al = iabs(l), ar = iabs(r);
+                fx_L[j] = l; fx_R[j] = r;
+                if (al > pn) pn = al;
+                if (ar > pn) pn = ar;
+            }
+        } else {
+            for (j = sb; j < sb + LK; j++) {
+                int32_t l, r, al, ar;
+                if (byp ? wet > 0 : wet < 32768) wet += byp ? -128 : 128;
+                if (wet != 32768) {
+                    fx_L[j] = (int32_t)(((int64_t)fx_L[j] * wet + (int64_t)mono[j] * (32768 - wet)) >> 15);
+                    fx_R[j] = (int32_t)(((int64_t)fx_R[j] * wet + (int64_t)mono[j] * (32768 - wet)) >> 15);
+                }
+                l = dc_block(fx_L[j], &dl, &el); r = dc_block(fx_R[j], &dr, &er);
+                if (lvl != 4096) { l = (int32_t)(((int64_t)l * lvl) >> 12); r = (int32_t)(((int64_t)r * lvl) >> 12); }
+                fx_L[j] = l; fx_R[j] = r;
+                al = iabs(l); ar = iabs(r);
+                if (al > pn) pn = al;
+                if (ar > pn) pn = ar;
+            }
         }
         tgt = lk_g + ((32768 - lk_g) >> 6) + 1;        /* release */
         if (tgt > 32768) tgt = 32768;
         if (lk_need(lk_pk) < tgt) tgt = lk_need(lk_pk);
         if (lk_need(pn) < tgt) tgt = lk_need(pn);
-        for (i = 0; i < (int32_t)LK; i++) {
+        if (g0 == 32768 && tgt == 32768) {
+            /* not limiting: the gain is 1 over the sub-block, and tgt = 32768 means the delayed sub-block's peak
+             * lk_pk <= LIM_T < CLIP_K, so the clip passes it too: the output is lk_l / lk_r as they are, and its peak
+             * is lk_pk (computed from those very values) */
+            for (i = 0; i < (int32_t)LK; i++) {
+                int32_t xl = lk_l[i], xr = lk_r[i];
+                lk_l[i] = fx_L[sb + (uint32_t)i]; lk_r[i] = fx_R[sb + (uint32_t)i];
+                fx_L[sb + (uint32_t)i] = xl; fx_R[sb + (uint32_t)i] = xr;
+            }
+            if (lk_pk > pk) pk = lk_pk;
+        } else for (i = 0; i < (int32_t)LK; i++) {
             int32_t g = g0 + (int32_t)(((int64_t)(tgt - g0) * (i + 1)) >> 5), xl = lk_l[i], xr = lk_r[i];
             lk_l[i] = fx_L[sb + (uint32_t)i]; lk_r[i] = fx_R[sb + (uint32_t)i];
             if (g != 32768) { xl = (int32_t)(((int64_t)xl * g) >> 15); xr = (int32_t)(((int64_t)xr * g) >> 15); }
@@ -807,17 +879,22 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
         lk_pk = pn;
         lk_g = tgt;
     }
+    fx_wet = wet; dc_l = dl; dce_l = el; dc_r = dr; dce_r = er;
     /* silence gate: the codec mutes itself on digital zero, but while anything at all comes out its analog hiss
      * is there; a held note's last -66 dBFS lie under that hiss anyway. So after 200 ms under GATE_LO the output
      * fades (46 ms) to exact zero, and it opens within 1.5 ms of the first block above GATE_HI (0.4) */
     if (pk >= GATE_HI) { gate_quiet = 0; gate_tgt = 32768; }
     else if (pk < GATE_LO && ++gate_quiet >= 35u) { gate_quiet = 35u; gate_tgt = 0; }
-    for (j = 0; j < n; j++) {
-        if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
-        else if (gate_g > gate_tgt) gate_g = gate_g - 16 < gate_tgt ? gate_tgt : gate_g - 16;
-        out[2u * j] += gate_g == 32768 ? fx_L[j] : (fx_L[j] * gate_g) >> 15;
-        out[2u * j + 1u] += gate_g == 32768 ? fx_R[j] : (fx_R[j] * gate_g) >> 15;
-    }
+    /* (out is 0 here: platform.c clears it before app_audio, so "=" is "+=") */
+    if (gate_g == 32768 && gate_tgt == 32768)          /* open, and staying open this block */
+        for (j = 0; j < n; j++) { out[2u * j] = fx_L[j]; out[2u * j + 1u] = fx_R[j]; }
+    else
+        for (j = 0; j < n; j++) {
+            if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
+            else if (gate_g > gate_tgt) gate_g = gate_g - 16 < gate_tgt ? gate_tgt : gate_g - 16;
+            out[2u * j] = gate_g == 32768 ? fx_L[j] : (fx_L[j] * gate_g) >> 15;
+            out[2u * j + 1u] = gate_g == 32768 ? fx_R[j] : (fx_R[j] * gate_g) >> 15;
+        }
     fx_peak = pk;
     if (pk < 16) { if (fx_quiet_blocks < 0xFFFFu) fx_quiet_blocks++; } else fx_quiet_blocks = 0;
 }
