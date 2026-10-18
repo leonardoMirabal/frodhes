@@ -19,6 +19,32 @@ the effects' loudness jumps, recorded on USB and on the headphone jack through a
 
 Before: MASTER fully up and left alone. The scan changes the current panel settings (not the user
 presets); it ends on F01. Needs mido + python-rtmidi, sounddevice, numpy.
+
+Determinism (2026-10-18): the same firmware scanned twice gives the same verdicts. Before, free-running parts started
+each take at another phase (the tremolo / phaser / chorus / filter LFOs, the tape's wow, the reverb's modulation, the
+VIBES motor, the engines' noise) and a delay / reverb line could still hold the last take: 'types' read a minimum
+spectral distance of 0.9 dB in one run and 1.8 in the next, 'presets' spanned 7.5 / 6.7 / 5.3 LU, fx_all's extremes
+flipped. Now:
+  - the developer reset, MIDI CC 10 >= 64 (fx.c fx_reset_state: every LFO, the delay / chorus / pre-delay / reverb
+    lines, the phaser, the noise generators, the motor back to their boot state at the next audio block), goes out
+    RESET_LEAD (50 ms) before the first note of every take (with_reset(); classic Rig.take, VRig.take, fx_all's jack
+    takes), after the settings, and once more at the end of every r.dry() / V.reset() (which also empties the delay
+    line: the VIBES reset's 1.6 s DEPTH-0 flush is gone). What is left is the note's arrival within an audio block:
+    the reset-to-note gap is a whole number of 256-frame blocks, +-1 block (5.8 ms) of MIDI / scheduling jitter, so an
+    LFO's phase at the note moves by at most 5.8 ms of its period (10 degrees of the 4.75 Hz tremolo);
+  - every window is anchored on the measured onset (Rig.lag(), align()), never on the recording's start (the USB
+    capture starts 10-60 ms off the MIDI clock from take to take: 'types' cut its windows into the attack at another
+    place each time; sustain, held_tail, tremolo_rate, fx_toggle, stress did the same);
+  - a level over a modulated sound is taken over whole cycles of its one LFO where they fit (cyc_win(): effects,
+    fx_all; fx_toggle's 0.4 s windows become whole cycles in 0.38-0.6 s, as vibes_jump);
+  - the noisy ones take the median of REPEATS takes (types 3, presets 3, fx_all 2; --repeats N overrides) and report
+    the takes' own spread next to the verdict.
+Expected run-to-run spread on the device (USB stream jitter, the 44.1 -> 48 kHz capture; the host proves the block
+jitter alone, tests/py/test_hil_determinism.py): types' distances +-0.1 dB, presets' loudness / span +-0.2 LU, fx_all
++-0.3 LU, effects and fx_toggle +-0.3 LU; a verdict closer than that to its limit can still flip and is then a real
+borderline. The same checks run on the host build: tools/hil_scan.py --host [SEED] --only types,presets (no FM-1;
+report build/hil/host-report.txt): each take a fresh host run that replays the panel's CCs, idles a random 0.3-1.3 s
+(the LFOs run on, as on the device between takes) and plays the take 3-25 ms late (MIDI + USB latency).
 """
 import argparse
 import json
@@ -93,7 +119,108 @@ def db(x):
     return 20 * np.log10(np.sqrt(np.mean(x * x)) / 32767 + 1e-12) if x.size else -240.0
 
 
-class Rig:
+RESET_CC, RESET_LEAD = 10, 0.05   # the developer reset (fx.c fx_reset_state) and how long before a take's first note
+REPEATS = dict(types=3, presets=3, fx_all=2)   # takes per measure, their median judged (--repeats N: all of them)
+
+
+def with_reset(events, lead=RESET_LEAD):
+    """the take's events with CC 10 = 127 lead s before its first note-on (at 0 when the note comes sooner): every LFO,
+    line and noise generator starts the note from its boot state, +-1 audio block"""
+    on = [e[0] for e in events if e[1] == "on"]
+    if not on:
+        return list(events)
+    return sorted(list(events) + [(max(0.0, min(on) - lead), "cc", RESET_CC, 127)], key=lambda e: e[0])
+
+
+def reps(name):
+    return max(1, int(REPEATS.get(name, 1)))
+
+
+class _Msg:
+    """a stand-in for mido.Message (HostRig: no mido needed)"""
+    def __init__(self, type, **kw):
+        self.type = type
+        self.note = self.velocity = self.control = self.value = self.program = 0
+        self.__dict__.update(kw)
+
+
+class _Mido:
+    Message = _Msg
+
+
+class RigBase:
+    """what the classic suites call: the panel (cc / dry / setup / pc ...) on _send(), takes on _rec(); the device
+    (Rig) or the host build (HostRig)"""
+    reset = True                                         # CC 10 before every take's first note
+
+    def _send(self, kind, a, b=0):
+        raise NotImplementedError
+
+    def send(self, msg):                                 # r.out.send(r.mido.Message(...)) as before
+        k = msg.type
+        if k == "note_on":
+            self._send("on", msg.note, msg.velocity)
+        elif k == "note_off":
+            self._send("off", msg.note, 0)
+        elif k == "control_change":
+            self._send("cc", msg.control, msg.value)
+        elif k == "program_change":
+            self._send("pc", msg.program, 0)
+
+    def cc(self, name, v):
+        self._send("cc", CC[name], int(v))
+
+    def cc_raw(self, n, v):
+        self._send("cc", int(n), int(v))
+
+    def pc(self, p):
+        self._send("pc", int(p), 0)
+
+    def note_off(self, n):
+        self._send("off", int(n), 0)
+
+    def fx_reset(self):
+        """CC 10: the effects' and engines' free-running state to boot (at the next audio block)"""
+        self._send("cc", RESET_CC, 127)
+
+    def setup(self, **kv):
+        for k, v in kv.items():
+            self.cc(k, v)
+        time.sleep(0.05)
+
+    def settle(self):
+        """the reset, then the gate's exact silence (the reset empties the delay / reverb lines: no tail to wait out)"""
+        self.fx_reset()
+        time.sleep(0.02)
+        return self.wait_silence()
+
+    def dry(self, **kv):
+        self._send("cc", 120, 0)
+        if not hasattr(self, "defaults"):
+            self.defaults = param_defaults()
+        for cc, v in self.defaults:                    # a known state: every parameter at its default
+            self._send("cc", cc, v)
+        d = dict(DRY)
+        d.update(kv)
+        self.setup(**d)
+        self.settle()
+
+    def take(self, dur, events):
+        """record dur s; events: [(t_s, kind, a, b)], kind on/off/cc/pc; CC 10 goes out RESET_LEAD before the first
+        note (self.reset)"""
+        ev = with_reset(events) if self.reset else sorted(events, key=lambda e: e[0])
+        return self._rec(dur, ev)
+
+    @staticmethod
+    def lag(x, events, thr=200):
+        """samples from the take's event clock to its recording: the first sound's onset minus the first note-on's
+        time (the USB capture starts 10-60 ms off the MIDI clock, differently each take; 0 when nothing sounds)"""
+        on = [e[0] for e in events if e[1] == "on"]
+        i = onset(x, thr, min(on)) if on else -1
+        return i - int(round(min(on) * FS)) if i >= 0 else 0
+
+
+class Rig(RigBase):
     def __init__(self):
         import mido
         import sounddevice as sd
@@ -109,24 +236,10 @@ class Rig:
             sys.exit("no FM-1 audio input")
         self.dev = devs[0]
 
-    def cc(self, name, v):
-        self.out.send(self.mido.Message("control_change", control=CC[name], value=int(v)))
-
-    def setup(self, **kv):
-        for k, v in kv.items():
-            self.cc(k, v)
-        time.sleep(0.05)
-
-    def dry(self, **kv):
-        self.out.send(self.mido.Message("control_change", control=120, value=0))
-        if not hasattr(self, "defaults"):
-            self.defaults = param_defaults()
-        for cc, v in self.defaults:                    # a known state: every parameter at its default
-            self.out.send(self.mido.Message("control_change", control=cc, value=v))
-        d = dict(DRY)
-        d.update(kv)
-        self.setup(**d)
-        self.wait_silence()
+    def _send(self, kind, a, b=0):
+        M = self.mido.Message
+        self.out.send(M("note_on", note=a, velocity=b) if kind == "on" else M("note_off", note=a) if kind == "off" else
+                      M("program_change", program=a) if kind == "pc" else M("control_change", control=a, value=b))
 
     def wait_silence(self, limit=10.0):
         """until the output is exact zero (the gate), so no delay / reverb tail of the last test leaks in"""
@@ -138,29 +251,77 @@ class Rig:
                 return True
         return False
 
-    def take(self, dur, events):
-        """record dur s; events: [(t_s, kind, a, b)], kind on/off/cc/pc"""
+    def _rec(self, dur, events):
         rec = self.sd.rec(int(dur * FS), samplerate=FS, channels=2, device=self.dev, dtype="int16")
         t0 = time.monotonic()
-        for t, kind, a, b in sorted(events, key=lambda e: e[0]):
+        for t, kind, a, b in events:
             while time.monotonic() - t0 < t:
                 time.sleep(0.0005)
-            if kind == "on":
-                self.out.send(self.mido.Message("note_on", note=a, velocity=b))
-            elif kind == "off":
-                self.out.send(self.mido.Message("note_off", note=a))
-            elif kind == "cc":
-                self.out.send(self.mido.Message("control_change", control=a, value=b))
-            elif kind == "pc":
-                self.out.send(self.mido.Message("program_change", program=a))
+            self._send(kind, a, b)
         self.sd.wait()
         return rec.astype(float)
 
 
-def onset(x, thr=200):
-    a = np.abs(x).max(axis=1) if x.ndim == 2 else np.abs(x)
+class HostRig(RigBase):
+    """the classic suites on the host build (tests/host.c through tests/py/hostrun.py), as the device would play them:
+    each take is a fresh host run that replays the panel's state (every CC / program change sent so far, the last of
+    each since the last program change), idles a random preroll (the LFOs run on, as on the FM-1 between takes; a
+    take without the reset starts them at another phase) and plays the take lat ms late (MIDI + USB latency; +-1 ms
+    of jitter per event), then resamples 44.1 -> 48 kHz. seed: the prerolls and latencies; reset=False: no CC 10"""
+
+    def __init__(self, seed=0, reset=True, preroll=(300, 1300), lat=(3, 25), tag="hil"):
+        self.rng = np.random.default_rng(seed)
+        self.reset, self.preroll, self.latr, self.tag = reset, preroll, lat, f"{tag}-{seed}-{int(reset)}"
+        self.hist, self.n, self.mido, self.out, self.dev = [], 0, _Mido, self, None
+
+    def _send(self, kind, a, b=0):
+        if kind == "pc":
+            self.hist.append((0xC0, a, 0))
+        elif kind == "cc" and a not in (RESET_CC, 120):     # (no note sounds outside a take)
+            last_pc = max([k for k, h in enumerate(self.hist) if h[0] == 0xC0], default=-1)
+            self.hist = [h for k, h in enumerate(self.hist) if k <= last_pc or h[:2] != (0xB0, a)] + [(0xB0, a, b)]
+
+    def wait_silence(self, limit=10.0):
+        return True
+
+    def _rec(self, dur, events):
+        from scipy.signal import resample_poly
+        H = hr()
+        lines = [f"{5 + k // 16} midi 0x{s:02X} {a} {b}" if s != 0xC0 else f"{5 + k // 16} midi 0xC0 {a}"
+                 for k, (s, a, b) in enumerate(self.hist)]
+        R = max(5 + len(self.hist) // 16 + 100, int(self.rng.integers(*self.preroll)))
+        L = float(self.rng.uniform(*self.latr))
+        for t, kind, a, b in events:
+            ms = int(round(R + L + 1000 * t + self.rng.uniform(-1, 1)))
+            if kind == "on":
+                lines.append(f"{ms} midi 0x90 {a} {b}")
+            elif kind == "off":
+                lines.append(f"{ms} midi 0x80 {a} 0")
+            elif kind == "cc":
+                lines.append(f"{ms} midi 0xB0 {a} {b}")
+                if a != RESET_CC:                          # (the take's CCs stay set, as on the device)
+                    self._send("cc", a, b)
+            elif kind == "pc":
+                lines.append(f"{ms} midi 0xC0 {a}")
+                self._send("pc", a)
+        self.n += 1
+        run = H.run(f"{self.tag}-{self.n}", lines, R + int(np.ceil(1000 * dur)) + 20)
+        i0 = int(R * H.FS / 1000)
+        x = np.stack([run.L[i0:], run.R[i0:]], 1)
+        x = resample_poly(x, 160, 147, axis=0)             # 44.1 -> 48 kHz
+        n = int(dur * FS)
+        return np.round(np.pad(x, ((0, max(0, n - len(x))), (0, 0)))[:n])
+
+
+def onset(x, thr=200, t=0.0):
+    """the first sample over thr (LSB), searched from 5 ms before event time t (s): a release tail of the last take
+    before its first note is not its onset"""
+    s = max(0, int((t - 0.005) * FS))
+    a = np.abs(x[s:]).max(axis=1) if x.ndim == 2 else np.abs(x[s:])
+    if not len(a):
+        return -1
     i = np.argmax(a > thr)
-    return int(i) if a[i] > thr else -1
+    return int(i) + s if a[i] > thr else -1
 
 
 def f0_of(x, guess):
@@ -237,7 +398,7 @@ def latency(r, rep):
     lat = []
     for k in range(5):
         x = r.take(0.8, [(0.2, "on", 72, 110), (0.5, "off", 72, 0)])
-        i = onset(x)
+        i = onset(x, t=0.2)
         if i > 0:
             lat.append((i / FS - 0.2) * 1000)
     rep["latency_ms"] = lat
@@ -252,7 +413,7 @@ def keyboard(r, rep):
     rows = []
     for n in range(28, 104):
         x = r.take(0.75, [(0.05, "on", n, 100), (0.6, "off", n, 0)])
-        i = onset(x, 100)
+        i = onset(x, 100, 0.05)
         if i < 0:
             rows.append(dict(note=n, level=-240.0, cents=None, peak=0.0))
             continue
@@ -282,7 +443,7 @@ def velocity(r, rep):
         lv, ce = [], []
         for v in range(8, 128, 8):
             x = r.take(0.6, [(0.05, "on", n, v), (0.45, "off", n, 0)])
-            i = onset(x, 20)
+            i = onset(x, 20, 0.05)
             seg = x[max(i, 0):max(i, 0) + int(0.3 * FS), 0]
             lv.append(db(seg))
             ce.append(centroid(seg) if len(seg) else 0)
@@ -296,27 +457,59 @@ def velocity(r, rep):
 @test
 def types(r, rep):
     out = {}
+    ev = [(0.05, "on", 57, 100), (0.7, "off", 57, 0), (0.8, "on", 69, 100), (1.4, "off", 69, 0)]
+
+    def bdist(p, q, fl=None):
+        if fl is not None:                            # (information: only the bands within fl dB of the loudest)
+            p, q = np.maximum(p, p.max() - fl), np.maximum(q, q.max() - fl)
+        return float(np.sqrt(np.mean(((p - p.mean()) - (q - q.mean())) ** 2)))
     for t in range(RHODES_TYPES):                   # the Rhodes TYPEs (the bar types have their own tests)
         r.dry(TYPE=type_cc(t))
-        x = r.take(1.6, [(0.05, "on", 57, 100), (0.7, "off", 57, 0), (0.8, "on", 69, 100), (1.4, "off", 69, 0)])
-        a = x[int(0.1 * FS):int(0.6 * FS), 0]
-        b = x[int(0.85 * FS):int(1.3 * FS), 0]
-        out[t] = dict(level=(db(a) + db(b)) / 2, centroid_a3=centroid(a), centroid_a4=centroid(b),
-                      bands=bands_db(np.concatenate([a, b])))
+        ks = []
+        for k in range(reps("types")):
+            if k:
+                r.settle()
+            x = r.take(1.6, ev)
+            # each window from its note's own onset (align: the A4's too), never from the recording's start (it
+            # starts 10-60 ms off the MIDI clock: the windows cut into the attack at another place each take)
+            on = align(x[:, 0], [0.05, 0.8])[0]
+            a = x[on[0] + int(0.05 * FS):on[0] + int(0.55 * FS), 0]
+            b = x[on[1] + int(0.05 * FS):on[1] + int(0.5 * FS), 0]
+            # the two notes' band powers summed (before: the bands of the two windows joined end to end, whose
+            # junction - a step at a sample the onset sets - splashed 100-117 dB of broadband into the gaps between
+            # the partials: it alone moved the distances by up to 0.8 dB from take to take)
+            ks.append(dict(level=(db(a) + db(b)) / 2, centroid_a3=centroid(a), centroid_a4=centroid(b),
+                           bands=10 * np.log10(10 ** (bands_db(a) / 10) + 10 ** (bands_db(b) / 10))))
+        med = np.median([q["bands"] for q in ks], 0)          # per band, over the takes
+        out[t] = dict(level=float(np.median([q["level"] for q in ks])),
+                      centroid_a3=float(np.median([q["centroid_a3"] for q in ks])),
+                      centroid_a4=float(np.median([q["centroid_a4"] for q in ks])), bands=med,
+                      repeat_db=max([bdist(q["bands"], med) for q in ks] + [0.0]))   # the takes' own spread
     rep["types"] = {t: {k: v for k, v in d.items() if k != "bands"} for t, d in out.items()}
     lv = [out[t]["level"] for t in out]
     # distinct: every pair of types differs in its spectral envelope (third-octave bands 100 Hz - 10 kHz, levels
     # aligned), by more than 1.5 dB RMS. One centroid ratio (> 1.3, the old limit) never held: the types differ in
     # their bell, bark and decay more than in their mean brightness.
-    dist = [float(np.sqrt(np.mean(((out[i]["bands"] - out[i]["bands"].mean()) - (out[j]["bands"] - out[j]["bands"].mean())) ** 2)))
-            for i in range(RHODES_TYPES) for j in range(i + 1, RHODES_TYPES)]
+    dist = [bdist(out[i]["bands"], out[j]["bands"]) for i in range(RHODES_TYPES) for j in range(i + 1, RHODES_TYPES)]
     rep["types_distance_db"] = dist
+    rep["types_distance_60db"] = [bdist(out[i]["bands"], out[j]["bands"], 60.0) for i in range(RHODES_TYPES)
+                                  for j in range(i + 1, RHODES_TYPES)]   # (information: the bands 60 dB down floored)
+    spread = max(out[t]["repeat_db"] for t in out)
+    rep["types_repeat_db"] = spread
     return min(dist) > 1.5 and max(lv) - min(lv) < 3, ("levels " + ", ".join(f"{lv[t]:.1f}" for t in range(RHODES_TYPES)) +
-                                                     " dB; spectral distance between types min " + f"{min(dist):.1f} dB (" +
-                                                     ", ".join(f"{d:.1f}" for d in dist) + ")")
+                                                     " dB; spectral distance between types min " + f"{min(dist):.2f} dB (" +
+                                                     ", ".join(f"{d:.2f}" for d in dist) + f"); median of {reps('types')}"
+                                                     f" takes, their own spread <= {spread:.2f} dB")
 
 
-CHORD = [(0.05, "on", n, 100) for n in (57, 64, 69)] + [(1.25, "off", n, 0) for n in (57, 64, 69)]
+# The classic chords hold no octave: two notes an octave apart sum their coinciding partials (A3's 2nd and A4's 1st,
+# exactly harmonic in the pickup) at the phase their onsets set, and a note landing one audio block (5.8 ms) after
+# the others moved the chord's loudness by up to 2.0 LU (host: F06 A3-E4-A4; C3-G3-C4-E4 1.7 LU); without an octave
+# the coincidences are tempered fifths and thirds, which drift through every phase within the window: <= 0.2 LU
+# (tests/py/test_hil_determinism.py). (Before 2026-10-18: A3 E4 A4 and C3 G3 C4 E4.)
+CH_NOTES = (57, 60, 64)                   # A3 C4 E4 (v100)
+FX_NOTES = (48, 55, 64)                   # C3 G3 E4 (v108: the FM-1's own keys)
+CHORD = [(0.05, "on", n, 100) for n in CH_NOTES] + [(1.25, "off", n, 0) for n in CH_NOTES]
 FX = [
     ("drive 64", dict(DRIVE=64)), ("drive 127", dict(DRIVE=127)),
     ("comp 64", dict(CMP_SW=127, CMP_AMT=64)), ("comp 127", dict(CMP_SW=127, CMP_AMT=127)),
@@ -330,35 +523,58 @@ FX = [
 ]
 
 
+def lfo_rates(kv):
+    """the free-running LFOs (Hz) a classic setting (CC values by CC name) turns on: the tremolo (TREM/WAH = TREM),
+    the phaser (CC 12), the chorus (CC 85 43..85); rates at their defaults unless kv sets them"""
+    P, out = vp(), []
+    if (kv.get("TW_SW", 0) * 3) >> 7 == 1:
+        out.append(lfo_hz(kv.get("TW_RATE", P["TW_RATE"]["de"])))
+    if kv.get("PH_SW", 0) >= 64:
+        out.append(lfo_hz(kv.get("PH_SPEED", P["PH_SPEED"]["de"]), True))
+    if 43 <= kv.get("CP_SW", 0) <= 85:
+        out.append(lfo_hz(kv.get("CP_SPEED", P["CP_SPEED"]["de"]), True))
+    return out
+
+
+def cyc_win(base, rates, min_frac=0.6):
+    """a window (s) of whole cycles of the one LFO running, the most that fit in base s (and >= min_frac * base);
+    else base (no LFO, several, or a cycle longer than base: the reset holds its phase, +-1 block)"""
+    if len(rates) != 1:
+        return base
+    n = int(base * rates[0])
+    return n / rates[0] if n >= 1 and n / rates[0] >= min_frac * base else base
+
+
 @test
 def effects(r, rep):
     r.dry()
     ref = r.take(1.5, CHORD)
-    i0 = max(onset(ref), 0)
-    base = db(ref[i0:i0 + int(1.1 * FS)])
+    i0 = max(onset(ref, t=0.05), 0)
     base_direct = db(ref[i0:i0 + int(0.25 * FS)])
     rows, bad = [], []
     for name, kv in FX:
         r.dry(**kv)
         x = r.take(2.2, CHORD)
-        i = max(onset(x), 0)
+        i = max(onset(x, t=0.05), 0)
         timed = name.startswith(("delay", "reverb"))     # echoes / a tail add level by design: check the direct
-        lv = db(x[i:i + int(0.25 * FS)]) - base_direct + base if timed else db(x[i:i + int(1.1 * FS)])
+        w = cyc_win(1.1, lfo_rates(kv))                  # (a modulated level: whole cycles of its LFO)
+        base = db(ref[i0:i0 + int(w * FS)])
+        lv = db(x[i:i + int(0.25 * FS)]) - base_direct + base if timed else db(x[i:i + int(w * FS)])
         lu = (lufs(x[i:i + int(0.25 * FS)] / 32768.0) - lufs(ref[i0:i0 + int(0.25 * FS)] / 32768.0) if timed else
-              lufs(x[i:i + int(1.1 * FS)] / 32768.0) - lufs(ref[i0:i0 + int(1.1 * FS)] / 32768.0))
+              lufs(x[i:i + int(w * FS)] / 32768.0) - lufs(ref[i0:i0 + int(w * FS)] / 32768.0))
         clip = int((np.abs(x) >= 32700).sum())
         row = dict(name=name, delta_db=lv - base, delta_lu=lu, peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12), clipped=clip,
                    lr_corr=float(np.corrcoef(x[i:i + FS, 0], x[i:i + FS, 1])[0, 1]) if i + FS < len(x) else 1.0,
-                   tail_db=db(x[i + int(1.3 * FS):i + int(1.9 * FS)]), clicks=clicks(x))
+                   tail_db=db(x[i + int(1.3 * FS):i + int(1.9 * FS)]), clicks=clicks(x), window_s=w)
         rows.append(row)
-        row["with_tail_db"] = db(x[i:i + int(1.1 * FS)]) - base
+        row["with_tail_db"] = db(x[i:i + int(w * FS)]) - base
         lim = 99 if name.startswith(("comp", "everything")) else 3   # a compressor's level depends on the playing
         # loudness, not RMS: the wah's resonance adds +4.5 dB RMS in the mids but +0.2 LU (fx_all) to the ear
         wide = row["lr_corr"] < 0.8
         target = -2.5 if wide and name.startswith(("phaser", "chorus")) else 0.0   # width compensation (0.8)
         if abs(row["delta_lu"] - target) > lim or clip or row["clicks"]:
             bad.append(name)
-    rep["effects"] = dict(dry_db=base, rows=rows)
+    rep["effects"] = dict(dry_db=db(ref[i0:i0 + int(1.1 * FS)]), rows=rows)
     summary = "; ".join(f"{q['name']} {q['delta_lu']:+.1f}" for q in rows)
     return not bad, (f"loudness vs dry (LU; delay/reverb: the direct sound; compressor: information): {summary}; "
                      f"problems: {bad or 'none'}")
@@ -371,13 +587,13 @@ def bypass(r, rep):
     a = r.take(1.5, CHORD)
     r.dry(PH_SW=127, PH_DEPTH=80, CP_SW=64, CP_DEPTH=64, REV=50, DRIVE=30, CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
     b = r.take(2.2, CHORD)
-    r.out.send(r.mido.Message("control_change", control=111, value=127))
-    r.wait_silence()
+    r.cc_raw(111, 127)
+    r.settle()
     c = r.take(1.5, CHORD)
-    r.out.send(r.mido.Message("control_change", control=111, value=0))
+    r.cc_raw(111, 0)
     lv = []
     for x in (a, b, c):
-        i = max(onset(x), 0)
+        i = max(onset(x, t=0.05), 0)
         lv.append(lufs(x[i:i + int(1.1 * FS)] / 32768.0))
     rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2])
     # the compressor as the panel switches it on (THRESH up: +2.8 dB makeup); before, it ran with no makeup and the
@@ -415,45 +631,56 @@ def lufs(x):
 @test
 def fx_all(r, rep):
     """every effect at several settings: loudness (LUFS) re clean on USB (and the jack when an interface is there),
-    stereo width, peak, clipping, clicks; a 4-note chord at v108 (the FM-1's own keys' velocity)"""
+    stereo width, peak, clipping, clicks; the chord C3 G3 E4 at v108 (the FM-1's own keys' velocity). Each setting: the
+    median of REPEATS['fx_all'] takes; a modulated one over whole cycles of its LFO (cyc_win of 1.8 s)"""
     jack = None
     try:
-        import hil_jack as hj
-        jack = hj.Jack("M6", 5)
-        jack.r = r
+        if isinstance(r, Rig):                       # (the device only: HostRig opens no MIDI / audio)
+            import hil_jack as hj
+            jack = hj.Jack("M6", 5)
+            jack.r = r
     except Exception:
         pass
-    ch = [(0.1, "on", n, 108) for n in (48, 55, 60, 64)] + [(2.1, "off", n, 0) for n in (48, 55, 60, 64)]
-    def take():
-        if jack:
-            u, j = jack.both(2.6, ch)
-            x = r.take(2.6, ch) if False else None
-            return u, j
-        x = r.take(2.6, ch) / 32768.0
-        return x, None
-    def seg(x):
+    ch = [(0.1, "on", n, 108) for n in FX_NOTES] + [(2.1, "off", n, 0) for n in FX_NOTES]
+    nrep = reps("fx_all")
+
+    def seg(x, w=1.8):
         a = np.abs(x) if x.ndim == 1 else np.abs(x).max(axis=1)
         i = int(np.argmax(a > 0.3 * a.max()))
-        return x[i:i + int(1.8 * FS)]
+        return x[i:i + int(w * FS)]
+
+    def takes(jk=True):
+        """nrep takes: [(USB (n, 2) / 32768, the jack or None)], each after the reset"""
+        out = []
+        for k in range(nrep):
+            if k:
+                r.settle()
+            u = r.take(2.6, ch) / 32768.0
+            j = jack.both(2.6, with_reset(ch))[1] if jack and jk else None
+            out.append((u, j))
+        return out
+
+    def med(f, ts):
+        return float(np.median([f(u, j) for u, j in ts]))
     r.dry()
-    if jack:
-        u0 = r.take(2.6, ch) / 32768.0
-        _, j0 = jack.both(2.6, ch)
-    else:
-        u0, j0 = take()
-    base_u, base_j = lufs(seg(u0)), (lufs(seg(j0)) if j0 is not None else None)
+    t0 = takes()
     rows, bad = [], []
     for name, kv in FXALL:
         r.dry(**kv)
-        u = r.take(2.6, ch) / 32768.0
-        j = jack.both(2.6, ch)[1] if jack else None
-        su = seg(u)
-        row = dict(name=name, usb_lu=lufs(su) - base_u, peak_db=float(20 * np.log10(np.abs(u).max() + 1e-12)),
-                   clipped=int((np.abs(u) >= 0.9995).sum()), clicks=clicks(u * 32768),
-                   corr=float(np.corrcoef(su[:, 0], su[:, 1])[0, 1]))
-        if j is not None:
-            row["jack_lu"] = lufs(seg(j)) - base_j
-            row["usbL_lu"] = lufs(su[:, 0]) - lufs(seg(u0)[:, 0])        # the jack cable carries the left channel
+        ts = takes()
+        w = cyc_win(1.8, lfo_rates(kv))
+        base_u = med(lambda u, j: lufs(seg(u, w)), t0)
+        lus = [lufs(seg(u, w)) - base_u for u, j in ts]
+        row = dict(name=name, usb_lu=float(np.median(lus)), usb_lu_spread=float(max(lus) - min(lus)), window_s=w,
+                   peak_db=float(max(20 * np.log10(np.abs(u).max() + 1e-12) for u, j in ts)),
+                   clipped=int(max((np.abs(u) >= 0.9995).sum() for u, j in ts)),
+                   clicks=int(max(clicks(u * 32768) for u, j in ts)),
+                   corr=med(lambda u, j: float(np.corrcoef(seg(u, w)[:, 0], seg(u, w)[:, 1])[0, 1]), ts))
+        if jack:
+            base_j = med(lambda u, j: lufs(seg(j, w)), t0)
+            base_l = med(lambda u, j: lufs(seg(u, w)[:, 0]), t0)
+            row["jack_lu"] = med(lambda u, j: lufs(seg(j, w)), ts) - base_j
+            row["usbL_lu"] = med(lambda u, j: lufs(seg(u, w)[:, 0]), ts) - base_l   # the jack cable carries the left channel
         wide = row["corr"] < 0.8
         tol = 99.0 if name.startswith(("comp -40", "all on")) else 2.0     # extreme comp: MAKEUP is the player's
         target = -2.5 if wide and name.startswith(("phaser", "chorus")) else 0.0   # width compensation (0.8)
@@ -464,21 +691,23 @@ def fx_all(r, rep):
             bad.append(name)
         rows.append(row)
         print(f"    {name:28s} USB {row['usb_lu']:+5.1f} LU" + (f"  jack {row['jack_lu']:+5.1f}" if "jack_lu" in row else "") +
-              f"  L/R {row['corr']:.2f}  peak {row['peak_db']:6.1f}  clip {row['clipped']}  clicks {row['clicks']}", flush=True)
+              f"  L/R {row['corr']:.2f}  peak {row['peak_db']:6.1f}  clip {row['clipped']}  clicks {row['clicks']}"
+              f"  (window {w:.2f} s, {nrep} takes within {row['usb_lu_spread']:.2f} LU)", flush=True)
     # the FX bypass (CC 111) with everything on: back to the clean level (clean measured again right before)
     r.dry()
-    base_u = lufs(seg(r.take(2.6, ch) / 32768.0))
+    base_u = med(lambda u, j: lufs(seg(u)), takes(False))
     r.dry(**dict(FXALL[-1][1]))
-    r.out.send(r.mido.Message("control_change", control=111, value=127))
-    r.wait_silence()
-    ub = r.take(2.6, ch) / 32768.0
-    r.out.send(r.mido.Message("control_change", control=111, value=0))
-    byp = lufs(seg(ub)) - base_u
+    r.cc_raw(111, 127)
+    r.settle()
+    byp = med(lambda u, j: lufs(seg(u)), takes(False)) - base_u
+    r.cc_raw(111, 0)
     print(f"    {'FX bypass (all on)':28s} USB {byp:+5.1f} LU", flush=True)
     if abs(byp) > 0.5:
         bad.append("bypass")
-    rep["fx_all"] = dict(rows=rows, bypass_lu=byp, base_usb_lufs=base_u)
-    return not bad, f"{len(FXALL)} settings + bypass; out of tolerance: {bad or 'none'}"
+    rep["fx_all"] = dict(rows=rows, bypass_lu=byp, base_usb_lufs=base_u, repeats=nrep)
+    spread = max(q["usb_lu_spread"] for q in rows)
+    return not bad, (f"{len(FXALL)} settings + bypass, median of {nrep} takes (their own spread <= {spread:.2f} LU); "
+                     f"out of tolerance: {bad or 'none'}")
 
 
 TOGGLES = [("drive 64", "DRIVE", 64, 0), ("comp", "CMP_SW", 127, 0), ("trem pan", "TW_SW", 64, 0), ("wah", "TW_SW", 127, 0),
@@ -488,27 +717,36 @@ TOGGLES = [("drive 64", "DRIVE", 64, 0), ("comp", "CMP_SW", 127, 0), ("trem pan"
 @test
 def fx_toggle(r, rep):
     """each effect switched on and off while a chord sounds (as the panel does, at its starting depth): the loudness
-    step at each switch (0.4 s before vs 0.4 s after, the chord's own decay taken out) and clicks around it"""
+    step at each switch (before vs after, the chord's own decay taken out) and clicks around it. The windows: from
+    the chord's measured onset; whole cycles of the effect's LFO in 0.38-0.6 s when they fit (vibes_jump), else 0.4 s"""
     starts = dict(TW_DEPTH=64, PH_DEPTH=80, CP_DEPTH=64, DL_DEPTH=50, CMP_AMT=64, CMP_RAT=64, CMP_GAIN=15)
     rows, bad = [], []
-    ch = [(0.1, "on", n, 108) for n in (48, 55, 60, 64)] + [(3.4, "off", n, 0) for n in (48, 55, 60, 64)]
-    def st(x, a, b):
-        return lufs(x[int(a * FS):int(b * FS)] / 32768.0)
+    ch = [(0.1, "on", n, 108) for n in FX_NOTES] + [(3.4, "off", n, 0) for n in FX_NOTES]
+
+    def st(x, g, a, b):
+        return lufs(x[g + int(a * FS):g + int(b * FS)] / 32768.0)
     r.dry(**starts)
     ref = r.take(3.6, ch)
+    gr = r.lag(ref, ch)
     for name, key, on, off in TOGGLES:
         r.dry(**starts)
         x = r.take(3.6, ch + [(1.2, "cc", CC[key], on), (2.4, "cc", CC[key], off)])
+        g = r.lag(x, ch)
+        rates = lfo_rates({key: on})
+        w = next((k / rates[0] for k in range(1, 9) if rates and 0.38 <= k / rates[0] <= 0.6), 0.4)
         # the step at a switch, the chord's natural decay (ref) taken out
-        up = (st(x, 1.25, 1.65) - st(x, 0.75, 1.15)) - (st(ref, 1.25, 1.65) - st(ref, 0.75, 1.15))
-        dn = (st(x, 2.45, 2.85) - st(x, 1.95, 2.35)) - (st(ref, 2.45, 2.85) - st(ref, 1.95, 2.35))
-        ck = clicks(x[int(1.1 * FS):int(1.4 * FS)]) + clicks(x[int(2.3 * FS):int(2.6 * FS)])
-        rows.append(dict(name=name, on_step=up, off_step=dn, clicks=ck))
+        steps = []
+        for sw in (1.2, 2.4):
+            aa, bb = (sw + 0.05, sw + 0.05 + w), (sw - 0.05 - w, sw - 0.05)
+            steps.append((st(x, g, *aa) - st(x, g, *bb)) - (st(ref, gr, *aa) - st(ref, gr, *bb)))
+        up, dn = steps
+        ck = clicks(x[g + int(1.1 * FS):g + int(1.4 * FS)]) + clicks(x[g + int(2.3 * FS):g + int(2.6 * FS)])
+        rows.append(dict(name=name, on_step=up, off_step=dn, clicks=ck, window_s=w))
         lim = 3.5 if name in ("phaser", "chorus", "wah") else 4.0 if name == "comp" else 2.0   # wah: a moving
         # resonance (0.4 s windows catch its sweep); comp: the +2.8 dB makeup plus its attack / release
         if abs(up) > lim or abs(dn) > lim or ck:
             bad.append(name)
-        print(f"    {name:10s} on {up:+5.1f} LU   off {dn:+5.1f} LU   clicks {ck}", flush=True)
+        print(f"    {name:10s} on {up:+5.1f} LU   off {dn:+5.1f} LU   clicks {ck}   (windows {w:.2f} s)", flush=True)
     rep["fx_toggle"] = rows
     return not bad, f"{len(TOGGLES)} effects switched on/off under a chord; out of tolerance: {bad or 'none'}"
 
@@ -519,7 +757,7 @@ def delay_time(r, rep):
     x = r.take(1.6, [(0.05, "on", 72, 110), (0.1, "off", 72, 0)])
     from scipy.signal import find_peaks
     env = np.sqrt(np.convolve(x[:, 0] ** 2, np.ones(480) / 480, "same"))
-    i = onset(x)
+    i = max(onset(x, t=0.05), 0)
     # echoes: envelope peaks at least 100 ms apart, standing out of the decay between them
     pk, _ = find_peaks(env[i:], distance=int(0.1 * FS), prominence=max(10.0, 0.05 * env[i:].max()))
     pk = [i + k for k in pk if k > int(0.05 * FS)]
@@ -533,8 +771,10 @@ def delay_time(r, rep):
 @test
 def tremolo_rate(r, rep):
     r.dry(TW_SW=64, TW_DEPTH=127, TW_MODE=127, TW_RATE=64)
-    x = r.take(3.0, [(0.05, "on", 60, 100), (2.9, "off", 60, 0)])
-    env = np.sqrt(np.convolve(x[:, 0] ** 2, np.ones(480) / 480, "same"))[int(0.3 * FS):int(2.8 * FS)]
+    ev = [(0.05, "on", 60, 100), (2.9, "off", 60, 0)]
+    x = r.take(3.0, ev)
+    g = r.lag(x, ev)                                  # 0.3 .. 2.8 s on the event clock, from the note's onset
+    env = np.sqrt(np.convolve(x[:, 0] ** 2, np.ones(480) / 480, "same"))[g + int(0.3 * FS):g + int(2.8 * FS)]
     env = env / (np.convolve(env, np.ones(9600) / 9600, "same") + 1e-9) - 1
     sp = np.abs(np.fft.rfft(env * np.hanning(len(env)), 1 << 18))
     fr = np.fft.rfftfreq(1 << 18, 1 / FS)
@@ -548,11 +788,14 @@ def tremolo_rate(r, rep):
 @test
 def sustain(r, rep):
     r.dry()
-    a = r.take(2.0, [(0.05, "on", 60, 100), (0.5, "off", 60, 0)])
+    ea = [(0.05, "on", 60, 100), (0.5, "off", 60, 0)]
+    a = r.take(2.0, ea)
     r.dry()
-    b = r.take(2.0, [(0.02, "cc", 64, 127), (0.05, "on", 60, 100), (0.5, "off", 60, 0)])
+    eb = [(0.02, "cc", 64, 127), (0.05, "on", 60, 100), (0.5, "off", 60, 0)]
+    b = r.take(2.0, eb)
     r.setup(SUS=0)
-    la, lb = db(a[int(1.0 * FS):int(1.5 * FS)]), db(b[int(1.0 * FS):int(1.5 * FS)])
+    ga, gb = r.lag(a, ea), r.lag(b, eb)               # 1.0 .. 1.5 s on the event clock
+    la, lb = db(a[ga + int(1.0 * FS):ga + int(1.5 * FS)]), db(b[gb + int(1.0 * FS):gb + int(1.5 * FS)])
     rep["sustain"] = dict(released_db=la, pedal_db=lb)
     return lb - la > 15, f"0.5 s after the key: damped {la:.1f} dB, with the pedal {lb:.1f} dB"
 
@@ -560,11 +803,13 @@ def sustain(r, rep):
 @test
 def held_tail(r, rep):
     r.dry(REV=40)
-    x = r.take(16.0, [(0.05, "on", 57, 100)])
-    r.out.send(r.mido.Message("note_off", note=57))
-    env = [db(x[int(t * FS):int((t + 0.5) * FS)]) for t in np.arange(0, 15.5, 0.5)]
+    ev = [(0.05, "on", 57, 100)]
+    x = r.take(16.0, ev)
+    r.note_off(57)
+    g = r.lag(x, ev)                                  # times on the event clock (the note-on at 0.05 s)
+    env = [db(x[g + int(t * FS):g + int((t + 0.5) * FS)]) for t in np.arange(0, 15.5, 0.5)]
     nz = np.flatnonzero(np.abs(x).max(axis=1) > 0)
-    rep["held_tail"] = dict(env_db=env, last_nonzero_s=float(nz[-1] / FS) if len(nz) else 0.0,
+    rep["held_tail"] = dict(env_db=env, last_nonzero_s=float((nz[-1] - g) / FS) if len(nz) else 0.0,
                             hiss_8k_db=None)
     last = rep["held_tail"]["last_nonzero_s"]
     return last < 15.0, f"held A3 with reverb: output reaches exact zero at {last:.1f} s (gate)"
@@ -585,7 +830,8 @@ def stress(r, rep):
             ev.append((t - 0.01, "off", n, 0))
     ev.append((t + 0.1, "cc", 64, 0))
     x = r.take(t + 1.5, ev)
-    c, z = clicks(x[int(0.1 * FS):int(t * FS)]), zero_runs(x[int(0.2 * FS):int(t * FS)])
+    g = r.lag(x, ev)
+    c, z = clicks(x[g + int(0.1 * FS):g + int(t * FS)]), zero_runs(x[g + int(0.2 * FS):g + int(t * FS)])
     rep["stress"] = dict(clicks=c, zero_runs=z, peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
                          clipped=int((np.abs(x) >= 32700).sum()))
     return c == 0 and z == 0, f"clicks {c}, zero runs {z}, peak {rep['stress']['peak_db']:.1f} dBFS, clipped {rep['stress']['clipped']}"
@@ -593,22 +839,31 @@ def stress(r, rep):
 
 @test
 def presets(r, rep):
+    """F01..F12: the chord's loudness, the median of REPEATS['presets'] takes each (every take after the reset)"""
     rows = []
     for p in range(12):
-        r.out.send(r.mido.Message("control_change", control=120, value=0))
-        r.out.send(r.mido.Message("program_change", program=p))
-        r.wait_silence()
-        x = r.take(2.0, CHORD)
-        i = max(onset(x), 0)
-        rows.append(dict(preset=p + 1, level=lufs(x[i:i + int(1.1 * FS)] / 32768.0), rms_db=db(x[i:i + int(1.1 * FS)]),
-                         peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
-                         clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x)))
+        r.cc_raw(120, 0)
+        r.pc(p)
+        ks = []
+        for k in range(reps("presets")):
+            r.settle()
+            x = r.take(2.0, CHORD)
+            i = max(onset(x, t=0.05), 0)
+            ks.append(dict(level=lufs(x[i:i + int(1.1 * FS)] / 32768.0), rms_db=db(x[i:i + int(1.1 * FS)]),
+                           peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
+                           clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x)))
+        lv = [q["level"] for q in ks]
+        rows.append(dict(preset=p + 1, level=float(np.median(lv)), spread_lu=float(max(lv) - min(lv)),
+                         rms_db=float(np.median([q["rms_db"] for q in ks])), peak_db=max(q["peak_db"] for q in ks),
+                         clipped=max(q["clipped"] for q in ks), clicks=max(q["clicks"] for q in ks)))
     rep["presets"] = rows
     lv = [q["level"] for q in rows]
     bad = [q["preset"] for q in rows if q["clipped"] or q["clicks"]]
-    r.out.send(r.mido.Message("program_change", program=0))
-    return max(lv) - min(lv) < 8 and not bad, ("F01..F12 loudness " + ", ".join(f"{v:.0f}" for v in lv) +
-                                               f" LUFS (span {max(lv) - min(lv):.1f}); clipping/clicks {bad or 'none'}")
+    r.pc(0)
+    spread = max(q["spread_lu"] for q in rows)
+    return max(lv) - min(lv) < 8 and not bad, ("F01..F12 loudness " + ", ".join(f"{v:.1f}" for v in lv) +
+                                               f" LUFS (span {max(lv) - min(lv):.2f}; median of {reps('presets')} takes,"
+                                               f" their own spread <= {spread:.2f} LU); clipping/clicks {bad or 'none'}")
 
 
 # ==================================================================================================================
@@ -861,7 +1116,7 @@ class VRig:
     def __init__(self, source="both", jack_dev="M6", jack_ch=5, dry_run=False, wav=False, offline=None):
         self.source, self.dry_run, self.wav, self.offline = source, dry_run, wav and not offline, offline
         self.want_usb, self.want_jack = source in ("usb", "both"), source in ("jack", "both")
-        self.plan_s, self.takes, self.r, self.jack_name, self.delay_on = 0.0, [], None, None, False
+        self.plan_s, self.takes, self.r, self.jack_name = 0.0, [], None, None
         if offline:
             self._jack_peak = offline_jack_peaks(offline)
             self.jack_name = "the saved takes"
@@ -890,14 +1145,17 @@ class VRig:
 
     def reset(self, settings=(), motor=False, label=""):
         """CC 120, every parameter at its default (TYPE not touched), DRY, VIBES (CC 79), the motor (CC 47), then the
-        settings in order; waits for the gate's exact silence"""
+        settings in order, then the reset (CC 10: every LFO, line, noise and the motor to boot; it also empties the
+        delay line, which round 1 heard replaying the previous take's echoes); waits for the gate's exact silence.
+        take() sends CC 10 again RESET_LEAD before its first note"""
         self.plan_s += RESET_S
         sets = ccs(settings)
         if self.offline:
             return
         if self.dry_run:
             print(f"  reset{' [' + label + ']' if label else ''}: defaults + DRY, CC 79={VIBES_CC79}, CC 47="
-                  f"{127 if motor else 0}" + "".join(f", {n}={x} (CC {c}={v})" for (n, x), (c, v) in zip(settings, sets)))
+                  f"{127 if motor else 0}" + "".join(f", {n}={x} (CC {c}={v})" for (n, x), (c, v) in zip(settings, sets))
+                  + f", CC {RESET_CC}=127")
             return
         self.send(120, 0)
         if not hasattr(self, "defaults"):
@@ -908,30 +1166,27 @@ class VRig:
             self.r.cc(k, v)
         self.send(79, VIBES_CC79)
         self.send(vp()["MOT_ON"]["cc"], 127 if motor else 0)
-        if self.delay_on:                              # the last take ran the delay: empty its line first (DEPTH 0
-            self.send(vp()["DL_SW"]["cc"], ccv("DL_SW", 1))   # = no feedback, silence in) - round 1: a 1.48 s line
-            self.send(vp()["DL_DEPTH"]["cc"], 0)       # replayed the previous take's echoes into the next take
-            time.sleep(1.6)
-            self.send(vp()["DL_SW"]["cc"], 0)
         for c, v in sets:
             self.send(c, v)
-        self.delay_on = any(n == "DL_SW" and x for n, x in settings)
+        self.send(RESET_CC, 127)                       # (was: 1.6 s of DEPTH 0 to empty the delay line)
         time.sleep(0.3)
         if not self.r.wait_silence(15.0):
             print(f"   (reset {label}: no exact silence in 15 s; the take may start on a residue)", flush=True)
 
     def take(self, tag, dur, events):
+        """the events go out with the reset (with_reset: CC 10 RESET_LEAD before the first note); the Take keeps the
+        stimulus' own events (the analysis, --offline's sidecars)"""
         ev = sorted(events, key=lambda e: e[0])
         self.plan_s += dur + TAKE_S
         if self.offline:
             u, j = load_take(self.offline, tag, self._jack_peak, self.want_usb, self.want_jack)
         elif self.dry_run:
             print(f"    take {tag} ({dur:.1f} s): " + "; ".join(
-                f"{t:.2f} {k} {a}" + (f" v{b}" if k == "on" else f"={b}" if k == "cc" else "") for t, k, a, b in ev))
+                f"{t:.2f} {k} {a}" + (f" v{b}" if k == "on" else f"={b}" if k == "cc" else "") for t, k, a, b in with_reset(ev)))
             u, j = synth(dur, ev)
             u, j = (u if self.want_usb else None), (j if self.want_jack else None)
         else:
-            u, j = self._rec(dur, ev)
+            u, j = self._rec(dur, with_reset(ev))
         T = Take(tag, dur, ev, u, j)
         self.takes.append(take_stats(T))
         if self.wav:
@@ -2568,9 +2823,9 @@ def vibes_main(names, a):
     return fails
 
 
-def run_classic(names):
-    """the Rhodes-era tests (unchanged): report.txt / report.json, ends on F01"""
-    r = Rig()
+def run_classic(names, r=None, report="report"):
+    """the Rhodes-era tests: build/hil/report.txt / report.json (r: a HostRig -> host-report.*), ends on F01"""
+    r = r or Rig()
     rep, lines, fails = {}, [], 0
     for n in names:
         t0 = time.time()
@@ -2583,10 +2838,10 @@ def run_classic(names):
         print(line, flush=True)
         lines.append(line)
     r.dry()
-    r.out.send(r.mido.Message("program_change", program=0))
-    json.dump(rep, open(os.path.join(OUT, "report.json"), "w"), indent=1, default=float)
-    open(os.path.join(OUT, "report.txt"), "w").write("\n".join(lines) + "\n")
-    print(f"{fails} failed; report: build/hil/report.txt, report.json")
+    r.pc(0)
+    json.dump(rep, open(os.path.join(OUT, report + ".json"), "w"), indent=1, default=float)
+    open(os.path.join(OUT, report + ".txt"), "w").write("\n".join(lines) + "\n")
+    print(f"{fails} failed; report: build/hil/{report}.txt, {report}.json")
     return fails
 
 
@@ -2600,6 +2855,11 @@ def main():
     ap.add_argument("--jack-ch", type=int, default=5, help="VIBES suites: its input (1-based)")
     ap.add_argument("--dry-run", action="store_true", help="VIBES suites: print the planned events, open no MIDI / audio")
     ap.add_argument("--wav", action="store_true", help="VIBES suites: save every take to build/hil/vibes/")
+    ap.add_argument("--repeats", type=int, help="takes per measure for every repeated one (default: REPEATS)")
+    ap.add_argument("--host", nargs="?", type=int, const=1, metavar="SEED",
+                    help="the classic suites on the host build (tests/host.c), no FM-1: prerolls / latencies from SEED;"
+                         " report build/hil/host-report.txt")
+    ap.add_argument("--no-reset", action="store_true", help="no CC 10 before the takes (to see what it changes)")
     ap.add_argument("--offline", nargs="?", const=os.path.join(OUT, "vibes"), metavar="DIR",
                     help="VIBES suites: re-analyse the takes saved by --wav (default build/hil/vibes/), no MIDI / audio;"
                          " report build/hil/vibes-offline.md (+ .json)")
@@ -2619,6 +2879,16 @@ def main():
     classic, vib = [n for n in names if n in TESTS], [n for n in names if n in VTESTS]
     os.makedirs(OUT, exist_ok=True)
     fails = 0
+    if a.repeats:
+        for k in REPEATS:
+            REPEATS[k] = a.repeats
+    if a.no_reset:
+        RigBase.reset = False
+        globals()["with_reset"] = lambda events, lead=RESET_LEAD: sorted(events, key=lambda e: e[0])
+    if a.host is not None:
+        if vib:
+            print(f"--host covers the classic suites only: not running {', '.join(vib)}")
+        return 1 if run_classic(classic, HostRig(a.host, reset=not a.no_reset), "host-report") else 0
     if a.dry_run or a.offline:
         if a.offline:
             a.dry_run = False
