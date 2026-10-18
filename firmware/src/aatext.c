@@ -17,7 +17,8 @@ typedef struct {
     uint8_t psh;                        /* log2 of the phases per glyph */
     const uint8_t *hc;                  /* data's Huffman code (aa_alpha_hc), 0 = 2 px per byte (aa_alpha) */
 } aafont_t;
-#include "aa_font.h"                    /* AF_S 12 px / 400, AF_M 15 px / 500, AF_L 28 px / 600 */
+#include "aa_font.h"                    /* AF_S 13 px / 500 (all small text), AF_L 28 px / 600 (values:
+                                         * gen_aa_font.py L_CHARS; aa_covers) */
 #define AA_ELLIPSIS '\x85'
 
 /* the blend of ink over background in 16 steps (a light-on-dark coverage curve), byte-swapped for the panel */
@@ -67,8 +68,9 @@ static void aa_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t
     }
 }
 
-/* the same from a glyph's Huffman-coded bit stream (gen_aa_font.py huff_pack); a 256-entry table per font in RAM */
-#define AA_HC_FONTS 3
+/* the same from a glyph's Huffman-coded bit stream (gen_aa_font.py huff_pack); a 256-entry table per font in RAM
+ * (one: only L is Huffman-coded; another coded face would share the slot, rebuilt when the face changes) */
+#define AA_HC_FONTS 1
 static struct { const uint8_t *hc; uint16_t lut[256]; } aa_hc_tab[AA_HC_FONTS] POOL;
 static const uint16_t *aa_hc_lut(const uint8_t *hc)
 {
@@ -157,6 +159,12 @@ static int32_t aa_kern(const aafont_t *f, uint32_t a, uint32_t b)
     return 0;
 }
 static uint32_t aa_fold(const aafont_t *f, uint32_t c) { return c >= 'a' && c <= 'z' && f->last < 'a' ? c - 32u : c; }
+/* 1 when the face has a glyph for every character of s (L is sparse: a value with another character is set in S) */
+static int aa_covers(const aafont_t *f, const char *s)
+{
+    for (; *s; s++) if (aa_glyph_at(f, aa_fold(f, (uint8_t)*s)) < 0) return 0;
+    return 1;
+}
 
 static int32_t aa_text_w(const aafont_t *f, const char *s)
 {
