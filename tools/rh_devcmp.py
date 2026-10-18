@@ -102,6 +102,7 @@ def both44(J, dur, events):
 def record(name, dev, ch):
     import hil_jack as hj
     J = hj.Jack(dev, ch)
+    J.r.persistent = False                            # (both44 opens its own streams and switches the rate)
     r = J.r
     os.makedirs(os.path.join(OUT, name), exist_ok=True)
     r.cc_raw = lambda c, v: r.out.send(r.mido.Message("control_change", control=c, value=v))
