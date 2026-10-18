@@ -269,7 +269,7 @@ def check(img, syms, dis, rt):
     # the fonts' tables in the image (UI-SIMPLIFY: the flash they take; a face the code no longer uses is gone):
     # AF_<N>* (aa_font.h, gen_aa_font.py) and FONT_<N>* (felucca_font.h, gfx.c), by objdump -t sizes
     font = {}
-    for mm in re.finditer(r"^[0-9a-f]+ .*\s([0-9a-f]{8})\s+((?:AF|FONT)_[A-Z])(?:_\w+)?$", syms, re.M):
+    for mm in re.finditer(r"^[0-9a-f]+ .*\s([0-9a-f]{8})\s+((?:AF|FONT)_[A-Z]\d*)(?:_\w+)?$", syms, re.M):
         font[mm.group(2)] = font.get(mm.group(2), 0) + int(mm.group(1), 16)
     notes.append("fonts " + ", ".join(f"{k} {v}" for k, v in sorted(font.items())) + f" = {sum(font.values())} B")
     if ram > 96 * 1024:

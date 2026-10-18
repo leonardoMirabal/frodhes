@@ -663,7 +663,7 @@ The TRS jack is MIDI in only. **Program Change** 0–13 loads F01–F14, 16–31
 | 70 / 74 | FILTER TYPE (7 bands: off, LP12, LP18, HP12, HP18, BP, notch) / CUTOFF | 71 / 72 | FILTER RESONANCE / LFO AMOUNT |
 | 75 / 76 | LFO SHAPE (6 bands) / RATE | 77 / 78 | LFO SYNC / RETRIG (free, key) |
 | 3 | Developer: a colour test pattern on the screen (≥ 64; < 64 back to the page), to calibrate screenshots against the panel | 2 | Developer: the screen's colour candidate, for choosing on the FM-1: 0 = A black (the default), 1 = B dim outline, 2 (or more) = C model-matched; not saved |
-| 11 | Developer: the rows' design variant, for choosing on the FM-1: 0 = today's rows (the default), 1 = FADER (the row fill on every card, one value size, the fill's edge never crosses text), 2 (or more) = LINE (one value size, a thin meter line under each row); not saved | | |
+| 11 | Developer: the rows' design variant, for choosing on the FM-1: 0 = today's rows (the default), 1 = FADER (the row fill on every card, one value size, the fill's edge never crosses text), 2 = LINE (one value size, a thin meter line under each row); then the card kinds told apart (amounts the fill): 3 = A (selectors in blocks, ON / OFF a lit dot), 4 = B (selectors as pips under the value, ON / OFF a lit dot), 5 (or more) = C (selectors in blocks, ON lights the whole card); not saved | | |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
 The FM-1 also appears as a USB audio input (class-compliant, stereo, 16-bit, 44.1 or 48 kHz): you can record exactly

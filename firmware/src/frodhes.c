@@ -115,7 +115,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 2u) { ui_look = (uint8_t)(v < MT_NLOOKS ? v : MT_NLOOKS - 1u); return; }   /* developer: the METERS
                                                         * colour candidate, 0 A 1 B 2 C (ui.c MT_LOOKS; not saved) */
     if (cc == 11u) { ui_cards = (uint8_t)(v < UI_CARDS_N ? v : UI_CARDS_N - 1u); return; }   /* developer: the rows'
-                                                        * design variant, 0 TODAY 1 FADER 2 LINE (ui.c; not saved) */
+                                                        * design variant, 0 TODAY 1 FADER 2 LINE 3 A 4 B 5 C (ui.c; not saved) */
     if (cc == 4u) {                                    /* developer: the battery query (ui.c, for calibrating its
                                                         * thresholds): CC 4 / 5 = the smoothed 10-bit reading (MSB = raw
                                                         * >> 3, LSB = raw & 7), CC 6 = the segments shown (4 = USB power) */
@@ -405,10 +405,12 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "vpages")) snprintf(v, n, "%u", vp_count());
     else if (!strcmp(key, "cards")) snprintf(v, n, "%u", ui_cards);   /* the rows' design variant (CC 11) */
     else if (sscanf(key, "rowbox%u", &a) == 1 && a < 4u)   /* the variants' row a: FIT SHORT FW VX0 VX1 UX0 UX1 LX1 BASE
-                                                        * (row x; UX 0 0: no unit) */
-        snprintf(v, n, "%u %u %d %d %d %d %d %d %d", ui_row_drawn[a].fit, ui_row_drawn[a].shortf, ui_row_drawn[a].fw,
-                 ui_row_drawn[a].vx0, ui_row_drawn[a].vx1, ui_row_drawn[a].ux0, ui_row_drawn[a].ux1, ui_row_drawn[a].lx1,
-                 CD_BASE);
+                                                        * CAP STYLE N LIT (row x; UX 0 0: no unit; STYLE ui.c
+                                                        * CS_LETTER, N / LIT a selector's options and the one lit) */
+        snprintf(v, n, "%u %u %d %d %d %d %d %d %d %d %c %d %d", ui_row_drawn[a].fit, ui_row_drawn[a].shortf,
+                 ui_row_drawn[a].fw, ui_row_drawn[a].vx0, ui_row_drawn[a].vx1, ui_row_drawn[a].ux0, ui_row_drawn[a].ux1,
+                 ui_row_drawn[a].lx1, (int)CD_BASE, AF_L_CAP_H, ui_row_drawn[a].style ? ui_row_drawn[a].style : '-',
+                 ui_row_drawn[a].sn, ui_row_drawn[a].si);
     else if (!strcmp(key, "fitscan")) snprintf(v, n, "%u", ui_fit_scan());   /* every value of every card: how many
                                                         * do not fit (printed: FITSCAN lines) */
     else if (sscanf(key, "row%u", &a) == 1 && a < 4u) {   /* what row a shows: KIND V HI FACE (ui_row_drawn; FACE L / S) */

@@ -209,11 +209,18 @@ static uint8_t ui_look;                                 /* developer CC 2 (not s
  *   1 FADER   the row's amber fill (the METERS look) on every card, a choice's too (its option's place in its list,
  *             OFF empty); one value size, one value edge, one baseline; the fill's bright edge stops 3 px short of
  *             any text (above and below it), so nothing crosses a digit or a letter; no edge at 0;
- *   2 LINE    the same typography with no fill: a 3 px meter line along each row's bottom, amber for the amount */
+ *   2 LINE    the same typography with no fill: a 3 px meter line along each row's bottom, amber for the amount;
+ * then the card kinds told apart at a glance (the user: "not clear what is a toggle or selector and what is a fader"),
+ * an amount always the FADER fill:
+ *   3 A       selectors SEGMENTS (one block per option, 2 px apart, lit up to the option), toggles LED (a dot before
+ *             ON / OFF: lit ON, a ring OFF);
+ *   4 B       selectors PIPS (one small pip per option under the value, the option's amber), toggles LED;
+ *   5 C       selectors SEGMENTS, toggles BACK (the whole card lit ON, nothing OFF, no edge).
+ * The large face's size is the build's (aatext.c UI_VAL_PX: 28, 25, 24). */
 #ifndef UI_CARDS_DEF
 #define UI_CARDS_DEF 0
 #endif
-#define UI_CARDS_N 3u
+#define UI_CARDS_N 6u
 static uint8_t ui_cards = UI_CARDS_DEF;
 static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab, val, unit, dim, acc, seq; } mt;
 static void mt_update(void)                             /* the tokens for the look and the palette (each pass) */
@@ -704,7 +711,9 @@ static const char *slot_unit(uint32_t s, char *v)
 enum { RK_NONE, RK_AMOUNT, RK_DETENT, RK_CHOICE };
 static struct {
     uint8_t kind, big, fit, shortf;                     /* fit: the value fits its room; shortf: its short form shown */
-    int16_t v, hi, fw;                                  /* fw: the variants' fill / line width (px) */
+    uint8_t style;                                      /* the variants: how the card is drawn (CS_LETTER) */
+    int16_t v, hi, fw, sn, si;                          /* fw: the fill / line width (px); a selector's n, its option
+                                                         * lit (-1: none) */
     int16_t vx0, vx1, ux0, ux1, lx1;                    /* the variants: the value's, the unit's x, the label's end */
 } ui_row_drawn[4];                                      /* what each row shows (the host's tests read it) */
 static void draw_row_cards(uint32_t k);
@@ -761,21 +770,34 @@ static void draw_row(uint32_t k)
  *     a digit, a line never does; LINE: no fill, a CD_LINE_H px line at the row's bottom (a dim track, amber to the
  *     fraction);
  *   - the turned knob: its label in the accent and the 1 px frame (HOT_MS), as today. */
-#define CD_PAD 6                                        /* the text's margin, left and right */
+#define CD_PAD 6                                        /* the text's margin on the left */
+#define CD_PAD_R 10                                     /* and on the right (after the unit column) */
 #define CD_UNIT_W 22                                    /* the unit column: "kHz" in AF_S */
 #define CD_UGAP 3
-#define CD_VR ((int32_t)RW_W - CD_PAD - CD_UNIT_W - CD_UGAP)   /* 197: where every value ends */
-#define CD_BASE 30                                      /* the baseline of the label, the value and the unit */
+#define CD_VR ((int32_t)RW_W - CD_PAD_R - CD_UNIT_W - CD_UGAP)   /* 193: where every value ends */
+#define CD_BASE (((int32_t)RW_H + AF_L_CAP_H + 1) / 2)  /* the baseline of the label, the value and the unit: the
+                                                         * capitals centred in the row (28 px: 30, 25: 29, 24: 28) */
 #define CD_GAP 12                                       /* the least room between the label and the value */
 #define CD_KEEP 3                                       /* FADER: the edge stops this far from any text */
 #define CD_MINSEG 3                                     /* FADER: an edge piece shorter than this is left out */
 #define CD_LINE_H 3                                     /* LINE: the meter line, rows 34 .. 36 (37: the frame) */
 #define CD_LINE_Y 34
+#define CD_SEG_GAP 2                                    /* SEGMENTS: the gap between two options' blocks */
+#define CD_SEGOFF RGB(8, 8, 8)                          /* SEGMENTS: an option not reached (RGB565 1 2 1, neutral) */
+#define CD_SEG_CAP 2                                    /* SEGMENTS: the cap at each block's foot */
+#define CD_SEG_MAX 16                                   /* SEGMENTS: more options (CHANNEL 17, ASSIGN 31): caps only */
+#define CD_PIP_H 3                                      /* PIPS: the pips' height, CD_PIP_DY under the baseline */
+#define CD_PIP_DY 4
+#define CD_PIP_MAXP 10                                  /* PIPS: the pitch (pip + gap) at most, ... */
+#define CD_PIP_SPAN 180                                 /* ... and so that n pips take at most this (31: 5 px) */
+#define CD_PIPOFF RGB(56, 56, 60)                       /* PIPS: the other options */
+#define CD_LED_D 12                                     /* LED: the dot's size, CD_LED_GAP left of the value */
+#define CD_LED_GAP 8
 #define CD_KTAG_TOP S_TOP(9)
-/* the short forms, used only where the long one does not fit (TYPE: 147 px, ASSIGN PLAYS: 140) */
-static const char *const CD_LONG[] = {"EARLY FELT", "TREM/WAH", "COMP THR", "COMP MKUP", "TREM RATE", "TREM SHAPE",
-                                      "PHA SPEED", "PHA FEEDBK", "CHO SPEED", "DLY FEEDBK"};
-static const char *const CD_SHORT[] = {"FELT", "TRM/WAH", "CMP THR", "CMP GAIN", "TRM RATE", "TRM SHP",
+/* the short forms, used only where the long one does not fit (at 28 px: TYPE 143 px, ASSIGN PLAYS 136; fewer at 25 / 24) */
+static const char *const CD_LONG[] = {"EARLY FELT", "BELL DYNO", "TREM/WAH", "COMP THR", "COMP MKUP", "TREM RATE",
+                                      "TREM SHAPE", "PHA SPEED", "PHA FEEDBK", "CHO SPEED", "DLY FEEDBK"};
+static const char *const CD_SHORT[] = {"FELT", "DYNO", "TRM/WAH", "CMP THR", "CMP GAIN", "TRM RATE", "TRM SHP",
                                        "PHA SPD", "PHA FDBK", "CHO SPD", "DLY FDBK"};
 _Static_assert(sizeof CD_LONG == sizeof CD_SHORT, "one short form per long one");
 static int cd_eq(const char *a, const char *b) { while (*a && *a == *b) { a++; b++; } return *a == *b; }
@@ -826,6 +848,49 @@ static void cd_edge(int32_t ex, const int16_t *bx, uint32_t nb)
         if (!free_row && y0 >= 0) { if (y - y0 >= CD_MINSEG) cv_rect(ex, y0, 2, y - y0, mt.edge); y0 = -1; }
     }
 }
+/* the card's kind and how it is drawn (ui_cards 3..5: the kinds told apart at a glance; 1, 2: one meter for all) */
+enum { CK_AMOUNT, CK_SELECT, CK_TOGGLE };
+enum { CS_FADER, CS_LINE, CS_SEG, CS_PIPS, CS_LED, CS_BACK };
+static const char CS_LETTER[] = "FLSPDB";
+/* an amount (a fill); a selector (n options: a choice, or a synced knob's note value); a toggle (a choice of two that
+ * reads ON / OFF). idx / n: the selector's option and its count */
+static uint32_t cd_kind(uint32_t s, const char *v, int32_t val, int32_t hi, int32_t *idx, int32_t *n)
+{
+    if (slot_synced(s)) {
+        uint32_t y = slot_sync_id(s);
+        *idx = (int32_t)PV(y); *n = (int32_t)PARAMS[y].hi + 1;
+        return CK_SELECT;
+    }
+    *idx = clampi(val, 0, hi); *n = hi + 1;
+    if (!hi || slot_is_level(s)) return CK_AMOUNT;
+    if (hi == 1 && (cd_eq(v, "ON") || cd_eq(v, "OFF"))) return CK_TOGGLE;
+    return CK_SELECT;
+}
+static uint32_t cd_style(uint32_t kind)
+{
+    if (ui_cards == 1u) return CS_FADER;
+    if (ui_cards == 2u) return CS_LINE;
+    if (kind == CK_AMOUNT) return CS_FADER;
+    if (kind == CK_TOGGLE) return ui_cards == 5u ? CS_BACK : CS_LED;
+    return ui_cards == 4u ? CS_PIPS : CS_SEG;
+}
+/* the value's room: from the label's end + CD_GAP (and the LED's place) to CD_VR */
+static int32_t cd_room(int32_t le, uint32_t style)
+{
+    return CD_VR - le - CD_GAP - (style == CS_LED ? CD_LED_D + CD_LED_GAP : 0);
+}
+/* LED: a 12 px dot (half-widths per row), OFF a ring (the hole's half-widths) */
+static const uint8_t CD_DOT[CD_LED_D] = {2, 4, 5, 5, 6, 6, 6, 6, 5, 5, 4, 2};
+static const uint8_t CD_HOLE[CD_LED_D] = {0, 0, 2, 3, 4, 4, 4, 4, 3, 2, 0, 0};
+static void cd_led(int32_t x, int32_t y, int on)
+{
+    uint32_t r;
+    for (r = 0; r < CD_LED_D; r++) {
+        int32_t w = CD_DOT[r], h = CD_HOLE[r], cx = x + CD_LED_D / 2;
+        if (on || !h) cv_rect(cx - w, y + (int32_t)r, 2 * w, 1, on ? mt.edge : mt.dim);
+        else { cv_rect(cx - w, y + (int32_t)r, w - h, 1, mt.dim); cv_rect(cx + h, y + (int32_t)r, w - h, 1, mt.dim); }
+    }
+}
 static void draw_row_cards(uint32_t k)
 {
     uint32_t s = slot_at(ui_page, k);
@@ -836,44 +901,71 @@ static void draw_row_cards(uint32_t k)
     if (mt.hair) cv_rect(0, 0, RW_W, 1, mt.hair);         /* look B: the row's top hairline (under the fill) */
     ui_row_drawn[k].kind = RK_NONE; ui_row_drawn[k].big = 1; ui_row_drawn[k].fit = 1; ui_row_drawn[k].shortf = 0;
     ui_row_drawn[k].fw = 0; ui_row_drawn[k].vx0 = ui_row_drawn[k].vx1 = ui_row_drawn[k].ux0 = ui_row_drawn[k].ux1 = 0;
-    ui_row_drawn[k].lx1 = 0;
+    ui_row_drawn[k].lx1 = 0; ui_row_drawn[k].style = '-'; ui_row_drawn[k].sn = ui_row_drawn[k].si = 0;
     if (s != S_NONE) {
         const char *lab = slot_label(ui_page, k), *u;
         int32_t hi, val = slot_val(s, &hi), le, kw = aa_text_w(&AF_S, kk), lw = aa_text_w(&AF_S, lab), vw, uw = 0, fw;
+        int32_t idx, n, lit;
         const ectl_t *c = eng_ctl(s);
         int16_t bx[16];
         uint8_t shortf;
+        uint32_t kind, style;
         ui_row_drawn[k].v = (int16_t)(hi ? clampi(val, 0, hi) : 0);
         ui_row_drawn[k].hi = (int16_t)hi;
         ui_row_drawn[k].kind = (uint8_t)(!hi ? RK_NONE : !slot_is_level(s) ? RK_CHOICE :
                                          c && c->kind == EK_DETENT ? RK_DETENT : RK_AMOUNT);
         slot_text(s, v);
+        kind = cd_kind(s, v, val, hi, &idx, &n);
+        style = cd_style(kind);
+        lit = cd_eq(v, "OFF") ? -1 : idx;               /* the option lit (OFF: none) */
         u = cd_unit(s, v);
         le = CD_PAD + (lw > kw ? lw : kw);
-        ui_row_drawn[k].fit = (uint8_t)cd_fit(v, CD_VR - le - CD_GAP, &shortf);
+        ui_row_drawn[k].fit = (uint8_t)cd_fit(v, cd_room(le, style), &shortf);
         ui_row_drawn[k].shortf = shortf;
         vw = aa_text_w(&AF_L, v);
         if (u) uw = aa_text_w(&AF_S, u);
         fw = cd_frac(s, v, val, hi, (int32_t)RW_W);
         ui_row_drawn[k].fw = (int16_t)fw;
+        ui_row_drawn[k].style = (uint8_t)CS_LETTER[style];
+        ui_row_drawn[k].sn = (int16_t)n; ui_row_drawn[k].si = (int16_t)lit;
         ui_row_drawn[k].vx0 = (int16_t)(CD_VR - vw); ui_row_drawn[k].vx1 = (int16_t)CD_VR;
-        ui_row_drawn[k].ux0 = (int16_t)(u ? CD_VR + CD_UGAP : 0); ui_row_drawn[k].ux1 = (int16_t)(u ? CD_VR + CD_UGAP + uw : 0);
+        ui_row_drawn[k].ux0 = (int16_t)(u ? CD_VR + CD_UGAP : 0);
+        ui_row_drawn[k].ux1 = (int16_t)(u ? CD_VR + CD_UGAP + uw : 0);
         ui_row_drawn[k].lx1 = (int16_t)(CD_PAD + lw);
-        if (ui_cards == 1u && fw > 0) {                 /* FADER: the fill, then its edge clear of the text */
+        if (style == CS_FADER && fw > 0) {              /* FADER: the fill, then its edge clear of the text */
             uint32_t nb = 0;
             cv_rect(0, 0, fw, RW_H, mt.fill);
 #define CD_BOX(a, b, c0, d) do { bx[4u * nb] = (int16_t)(a); bx[4u * nb + 1u] = (int16_t)(b); \
                                  bx[4u * nb + 2u] = (int16_t)(c0); bx[4u * nb + 3u] = (int16_t)(d); nb++; } while (0)
             CD_BOX(CD_PAD, CD_PAD + (lw > kw ? lw : kw) - 1, CD_KTAG_TOP + AF_S_CAP_Y, CD_BASE - 1);   /* the K tag and
                                                          * the label as one block: no stray bits between them */
-            CD_BOX(CD_VR - vw, CD_VR - 1, vtop + AF_L_CAP_Y, CD_BASE - 1);
+            CD_BOX(CD_VR - vw, CD_VR - 1, CD_BASE - AF_L_CAP_H, CD_BASE - 1);
             if (u) CD_BOX(CD_VR + CD_UGAP, CD_VR + CD_UGAP + uw - 1, ltop + AF_S_CAP_Y, CD_BASE - 1);
 #undef CD_BOX
             cd_edge(clampi(fw - 2, 0, (int32_t)RW_W - 2), bx, nb);
-        } else if (ui_cards == 2u) {                    /* LINE: the track, amber to the fraction */
+        } else if (style == CS_LINE) {                  /* LINE: the track, amber to the fraction */
             cv_rect(0, CD_LINE_Y, RW_W, CD_LINE_H, mt.outline ? mt.outline : mt.track);
             if (fw > 0) cv_rect(0, CD_LINE_Y, fw, CD_LINE_H, mt.edge);
-        }
+        } else if (style == CS_SEG) {                   /* SEGMENTS: one block per option, lit up to the option: the
+                                                         * block's fill and a 2 px cap at its foot (amber lit, grey
+                                                         * not); over CD_SEG_MAX options only the caps (a ruler) */
+            int32_t i;
+            for (i = 0; i < n; i++) {
+                int32_t x0 = i * ((int32_t)RW_W + CD_SEG_GAP) / n;
+                int32_t x1 = (i + 1) * ((int32_t)RW_W + CD_SEG_GAP) / n - CD_SEG_GAP;
+                if (n <= CD_SEG_MAX) cv_rect(x0, 0, x1 - x0, RW_H - CD_SEG_CAP, i <= lit ? mt.fill : CD_SEGOFF);
+                cv_rect(x0, RW_H - CD_SEG_CAP, x1 - x0, CD_SEG_CAP, i <= lit ? mt.edge : CD_PIPOFF);
+            }
+        } else if (style == CS_PIPS) {                  /* PIPS: one per option under the value, the option's amber */
+            int32_t p = CD_PIP_SPAN / n, w, i;
+            if (p > CD_PIP_MAXP) p = CD_PIP_MAXP;
+            w = p / 2 > 2 ? p / 2 : 2;
+            for (i = 0; i < n; i++)
+                cv_rect(CD_VR - (n - i) * p + (p - w), CD_BASE + CD_PIP_DY, w, CD_PIP_H, i == lit ? mt.edge : CD_PIPOFF);
+        } else if (style == CS_LED) {                   /* LED: a dot before the value, lit ON, a ring OFF */
+            cd_led(CD_VR - vw - CD_LED_GAP - CD_LED_D, CD_BASE - AF_L_CAP_H / 2 - CD_LED_D / 2, lit == 1);
+        } else if (style == CS_BACK && lit == 1)        /* BACK: the whole card lit ON, nothing OFF */
+            cv_rect(0, 0, RW_W, RW_H, mt.fill);
         aa_text_ov(CD_PAD, CD_KTAG_TOP, &AF_S, kk, mt.tag);
         aa_text_ov(CD_PAD, ltop, &AF_S, lab, hot ? UI_ACC : FC_LAB);
         aa_text_ovr(CD_VR, vtop, &AF_L, v, FC_VAL);
@@ -895,10 +987,11 @@ static uint32_t cd_check(uint32_t pg, uint32_t vp, uint32_t k, uint32_t s)
 {
     char v[16], kk[3] = {'K', (char)('1' + k), 0};
     const char *lab = slot_label_v(pg, vp, k);
-    int32_t kw = aa_text_w(&AF_S, kk), lw = aa_text_w(&AF_S, lab), room = CD_VR - CD_PAD - (lw > kw ? lw : kw) - CD_GAP;
+    int32_t kw = aa_text_w(&AF_S, kk), lw = aa_text_w(&AF_S, lab), room, hi, val = slot_val(s, &hi), idx, n;
     uint8_t sf;
     int fit;
     slot_text(s, v);
+    room = cd_room(CD_PAD + (lw > kw ? lw : kw), cd_style(cd_kind(s, v, val, hi, &idx, &n)));
     (void)cd_unit(s, v);
     fit = cd_fit(v, room, &sf);
     if (!fit || sf || !aa_covers(&AF_L, v))

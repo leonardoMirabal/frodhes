@@ -115,11 +115,14 @@ def opt(name, default=None):
 
 
 def main():
-    global OUT
+    global OUT, BIN
     raw = "--device-look" not in sys.argv[1:]
     cards = opt("--cards")
     OUT = os.path.abspath(opt("--out", OUT))
-    subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
+    if os.environ.get("FRODHES_HOST_BIN"):                  # another host build (tools/cards_sheet.py: a face size)
+        BIN = os.environ["FRODHES_HOST_BIN"]
+    else:
+        subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(os.path.join(ROOT, "build", "host"), exist_ok=True)
     tag = os.path.join(ROOT, "build", "host", "manual")
