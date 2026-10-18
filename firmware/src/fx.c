@@ -316,7 +316,7 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
      * level when switched on (the user, 2026-10-17). The feedback now passes a DC block and the sides are 30 degrees
      * apart (they were 90: a mono sound turned very wide). */
     int32_t pg = 22940 << 15;
-    uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, j, s;
+    uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, s;
     if (!fx_p[FXP_PH_SW]) return;
     for (sb = 0; sb < n; sb += 32u) {
         int32_t a[2];
@@ -325,27 +325,30 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
                                                        * turned very wide, heard as a jump in level, the user 2026-10-17) */
         for (s = 0; s < 2u; s++) {                   /* the sides are independent: one at a time, the state in
                                                         * registers (the same arithmetic as per sample and side) */
-            int32_t *io = s ? R : L, as = a[s], fb = ph_fb[s], hp = ph_hp[s], g13 = pg >> 16;
-            int32_t x0 = ph_x[s][0], x1 = ph_x[s][1], x2 = ph_x[s][2], x3 = ph_x[s][3];
-            int32_t y0 = ph_y[s][0], y1 = ph_y[s][1], y2 = ph_y[s][2], y3 = ph_y[s][3];
-            for (j = sb; j < sb + 32u && j < n; j++) {   /* at 4x the bus (it ran at a quarter: x >> 2 in, the allpasses'
+            int32_t *io = s ? R : L, *pe, as = a[s], hp = ph_hp[s], g13 = pg >> 16;
+            int32_t x0 = ph_x[s][0], y0 = ph_y[s][0], y1 = ph_y[s][1], y2 = ph_y[s][2], y3 = ph_y[s][3];
+            /* fewer registers (they spilled), the same values: an allpass's last input is the one before's last output
+             * (x1 = y0, x2 = y1, x3 = y2, always: they start at 0 and take the same clamped value each sample), so
+             * only x0 is kept; the feedback is clamp(y3 - hp) of the last sample, computed where it is used */
+            pe = io + (sb + 32u < n ? sb + 32u : n);
+            for (io += sb; io < pe; io++) {             /* at 4x the bus (it ran at a quarter: x >> 2 in, the allpasses'
                                                          * rounding x 4 out: a broadband floor ~55 dB under the note,
                                                          * heard as hiss / air and "more volume", TODO #7); the products
                                                          * 32 x 32 -> 64, one instruction each */
-                int32_t x = io[j], xs = clampi(x, -65535, 65535) << 2;   /* x 4 inside: 2 more bits */
-                int32_t u = xs + (int32_t)(((int64_t)fb * fbk) >> 15), y;
-                y = clampi(x0 + (int32_t)(((int64_t)as * (u - y0) + 8192) >> 14), -1048575, 1048575); x0 = u; y0 = y; u = y;
-                y = clampi(x1 + (int32_t)(((int64_t)as * (u - y1) + 8192) >> 14), -1048575, 1048575); x1 = u; y1 = y; u = y;
-                y = clampi(x2 + (int32_t)(((int64_t)as * (u - y2) + 8192) >> 14), -1048575, 1048575); x2 = u; y2 = y; u = y;
-                y = clampi(x3 + (int32_t)(((int64_t)as * (u - y3) + 8192) >> 14), -1048575, 1048575); x3 = u; y3 = y;
-                hp += (y - hp) >> 6;                    /* the feedback without its lows (~110 Hz): it resonated on
-                                                         * the bass (C2 +4 LU with the phaser on) */
-                fb = clampi(y - hp, -524287, 524287);
-                io[j] = (int32_t)(((int64_t)(xs + y) * g13) >> 16);   /* 0.70 x (dry + allpasses), / 4 */
+                int32_t x = *io, xs = clampi(x, -65535, 65535) << 2;   /* x 4 inside: 2 more bits */
+                int32_t fb = clampi(y3 - hp, -524287, 524287);         /* the feedback without its lows */
+                int32_t u = xs + (int32_t)(((int64_t)fb * fbk) >> 15), t0, t1, t2, y;
+                t0 = clampi(x0 + (int32_t)(((int64_t)as * (u - y0) + 8192) >> 14), -1048575, 1048575); x0 = u;
+                t1 = clampi(y0 + (int32_t)(((int64_t)as * (t0 - y1) + 8192) >> 14), -1048575, 1048575); y0 = t0;
+                t2 = clampi(y1 + (int32_t)(((int64_t)as * (t1 - y2) + 8192) >> 14), -1048575, 1048575); y1 = t1;
+                y = clampi(y2 + (int32_t)(((int64_t)as * (t2 - y3) + 8192) >> 14), -1048575, 1048575); y2 = t2; y3 = y;
+                hp += (y - hp) >> 6;                    /* (~110 Hz: it resonated on the bass, C2 +4 LU with the
+                                                         * phaser on) */
+                *io = (int32_t)(((int64_t)(xs + y) * g13) >> 16);   /* 0.70 x (dry + allpasses), / 4 */
             }
-            ph_x[s][0] = x0; ph_x[s][1] = x1; ph_x[s][2] = x2; ph_x[s][3] = x3;
+            ph_x[s][0] = x0; ph_x[s][1] = y0; ph_x[s][2] = y1; ph_x[s][3] = y2;
             ph_y[s][0] = y0; ph_y[s][1] = y1; ph_y[s][2] = y2; ph_y[s][3] = y3;
-            ph_fb[s] = fb; ph_hp[s] = hp;
+            ph_fb[s] = clampi(y3 - hp, -524287, 524287); ph_hp[s] = hp;
         }
         ph_ph += inc * 32u;
     }
