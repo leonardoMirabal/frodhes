@@ -43,11 +43,11 @@ the MIDI map.
 | --- | --- | --- | --- | --- | --- |
 | **PERFORM** | TREM/WAH | PHASER | FILTER | DELAY | HOME (assignable on ASSIGN) |
 | **FRODHES** (main) | TYPE | TONE (VIBES: MALLET) | BELL (VIBES: MOTOR) | KEY VEL | HOME twice |
-| **VOICE** | TONE (VIBES: STRIKE) | BARK (MALLET) | BELL (TUBE) | HAMMER (WEIGHT) | EDIT |
+| **VOICE** | TONE (VIBES: STRIKE) | BARK (MALLET) | BELL (TUBE) | HAMMER (WEIGHT) | (SELECT) |
 | **DECAY** | DECAY (VIBES: RING) | RELEASE (DAMPER) | NOISE | TUNE | (SELECT) |
 | **MOTOR** (VIBES only) | ON / OFF | DEPTH | SPEED | SHAPE | (SELECT) |
 | **COMPRESSOR** | THRESHOLD (OFF / on) | RATIO | ATTACK | MAKEUP | (SELECT) |
-| **FILTER** | OFF / LP12 / LP18 / HP12 / HP18 / BP / NOTCH | FREQ | RESO | LFO | (SELECT) |
+| **FILTER** | OFF / LP12 / LP18 (default) / HP12 / HP18 / BP / NOTCH | FREQ | RESO | LFO | (SELECT) |
 | **DRIVE** | OFF / ON | AMOUNT | TONE | MIX | (SELECT) |
 | **TREM/WAH** | OFF / PAN / TREM / WAH | DEPTH | RATE | SHAPE | LFO (there: on / off) |
 | **PHASER** | OFF / ON | DEPTH | SPEED | FEEDBACK | ENV (there: on / off) |
@@ -56,16 +56,16 @@ the MIDI map.
 | **REVERB** | MIX | DECAY | TONE | PRE-DELAY | (SELECT) |
 | **TEMPO** | BPM | TREM SYNC | PHA SYNC | DLY SYNC | GLO |
 | **SCALE** | OFF / SNAP / DEGREE | SCALE | ROOT | TRANSPOSE | (SELECT) |
-| **CHORD** | OFF / DIATONIC / DIA 7TH / MAJ ... MIN6 | INVERSION | VOICING | STRUM | SEQ |
-| **SEQUENCER** | BARS 1–16 | QUANT | SWING | EDIT (UNDO / ERASE) | SEQ again (there: REC, hold: CLEAR; PLAY: start / stop) |
-| **ARPEGGIO** | OFF / UP / DOWN / UP-DN / ORDER / RANDOM | RATE | OCTAVES | GATE | ARP (there: on / off; PLAY: HOLD) |
+| **CHORD** | OFF / DIATONIC / DIA 7TH / MAJ ... MIN6 | INVERSION | VOICING | STRUM | EDIT (there: chord mode on / off) |
+| **ARPEGGIO** | OFF / UP / DOWN / UP-DN / ORDER / RANDOM | RATE | OCTAVES | GATE | ARP (there: on / off; SEL: HOLD) |
 | **LFO** | SHAPE | RATE | SYNC | RETRIG | (SELECT) |
+| **SEQUENCER** | BARS 1–16 | QUANT | SWING | EDIT (UNDO / ERASE) | SEQ (there: REC, hold: CLEAR; PLAY: start / stop) |
 | **ASSIGN** | what K1 plays | what K2 plays | what K3 plays | what K4 plays | (SELECT) |
 | **SETUP** | DELAY TONE | LEVEL | USB VOL (KNOB / FIXED) | | GLO twice |
 | **MIDI** | CHANNEL (ALL / 1–16) | TRS IN (ON / OFF) | CLOCK (INT / EXT) | | GLO three times |
 
 **SELECT** turns the pages, **K1–K4** turn the cards (on **PERFORM**: the effects' dry / wet, or what you assign), **ALGORITHM** picks the TYPE, **PRESETS** browses sounds,
-**FX** switches all effects off / on, **SEQ** chord mode and the sequencer, **ARP** the arpeggiator, **PLAY** taps the tempo, **REC** is the sustain pedal, **SAVE** stores a preset.
+**FX** switches all effects off / on, **EDIT** chord mode, **SEQ** the sequencer, **ARP** the arpeggiator, **PLAY** taps the tempo (everywhere but SEQUENCER, where it starts / stops), **REC** is the sustain pedal, **SAVE** stores a preset. The top line shows the battery next to the tempo.
 
 ## Build
 

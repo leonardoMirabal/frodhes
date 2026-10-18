@@ -55,7 +55,7 @@ def overview(names, gap=16, bg=(24, 24, 24)):
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "docs", "manual", "img")
 PAGES = ["perform", "piano", "voice", "decay", "comp", "filter", "drive", "trem", "phaser", "chorus", "delay", "reverb",
-         "tempo", "scale", "chord", "seq", "arp", "lfo", "assign", "setup", "midi"]   # the SELECT order (ui.c PG_ORDER)
+         "tempo", "scale", "chord", "arp", "lfo", "seq", "assign", "setup", "midi"]   # the SELECT order (ui.c PG_ORDER)
 
 
 def main():
@@ -91,7 +91,7 @@ def main():
         if name == "chord":                                 # chord mode MAJ7 with a strum, a key held
             L.append(f"{t} midi 0xB0 56 6"); L.append(f"{t + 20} midi 0xB0 59 4"); L.append(f"{t + 100} keys 0x80"); t += 700
             L.append(f"{t} shot"); shots[t] = name
-            L.append(f"{t + 50} keys 0x0"); t += 300
+            L.append(f"{t + 50} keys 0x0"); L.append(f"{t + 100} midi 0xB0 56 0"); t += 300   # chord mode off again
             continue
         if name == "seq":                                   # a 2-bar pattern recorded live (chord mode, then notes)
             L.append(f"{t} midi 0xB0 61 2"); L.append(f"{t + 20} midi 0xB0 62 3"); L.append(f"{t + 40} midi 0xB0 43 127")
@@ -134,7 +134,7 @@ def main():
     L.append(f"{t} btn 8"); t += 100                        # HOME: the FRODHES page with TYPE VIBES
     L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 1700
     L.append(f"{t} shot"); shots[t] = "piano-vibes"; t += 100
-    L.append(f"{t} btn 6"); t += 100                        # EDIT: VOICE
+    L.append(f"{t} turn 0 1"); t += 100                     # SELECT: VOICE
     L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 1700   # (the TYPE message has gone)
     L.append(f"{t} shot"); shots[t] = "voice-vibes"; t += 100
     L.append(f"{t} turn 0 1"); t += 700

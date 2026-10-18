@@ -127,14 +127,14 @@ $("start").onclick = startAudio;
 const KNOBS = [["MASTER", -1, 50, 22, "VOLUME"], ["SELECT", 0, 200, 22, "PAGES"], ["PRESETS", 6, 50, 152, "SOUNDS"],
                ["ALGORITHM", 1, 200, 152, "PIANO TYPE"], ["KNOB 1", 2, 685, 22, "CARD 1"], ["KNOB 2", 3, 800, 22, "CARD 2"],
                ["KNOB 3", 4, 915, 22, "CARD 3"], ["KNOB 4", 5, 1030, 22, "CARD 4"]];
-const HINT = { FX: "ALL FX", SEL: "DELAY", ENV: "PHASER", LFO: "TREM·WAH", EDIT: "VOICE", GLO: "TEMPO·MIDI",
-               HOME: "PERFORM", SAVE: "PRESET", ARP: "ARPEGGIO", SEQ: "CHORD·SEQ", PLAY: "TAP TEMPO", REC: "SUSTAIN",
+const HINT = { FX: "ALL FX", SEL: "DELAY", ENV: "PHASER", LFO: "TREM·WAH", EDIT: "CHORD", GLO: "TEMPO·MIDI",
+               HOME: "PERFORM", SAVE: "PRESET", ARP: "ARPEGGIO", SEQ: "SEQUENCER", PLAY: "TAP TEMPO", REC: "SUSTAIN",
                "OCT−": "", "OCT+": "" };
 const HINT_ON = {                                    // what a button does on a given page (else HINT)
-  ARPEGGIO: { PLAY: "HOLD", ARP: "ON·OFF" },
+  ARPEGGIO: { SEL: "HOLD", ARP: "ON·OFF" },
   SEQUENCER: { PLAY: "START·STOP", SEQ: "REC" },
   PHASER: { ENV: "ON·OFF" }, DELAY: { SEL: "ON·OFF" }, "TREM/WAH": { LFO: "ON·OFF" },
-  TEMPO: { GLO: "SETUP" }, SETUP: { GLO: "MIDI" }, MIDI: { GLO: "TEMPO" }, CHORD: { SEQ: "SEQUENCER" },
+  TEMPO: { GLO: "SETUP" }, SETUP: { GLO: "MIDI" }, MIDI: { GLO: "TEMPO" }, CHORD: { EDIT: "ON·OFF" },
   PERFORM: { HOME: "MAIN" }, FRODHES: { HOME: "PERFORM" },
 };
 let shownPage = "";

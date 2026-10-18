@@ -1,0 +1,22 @@
+# 0.9.3 (TODO 5): the FILTER is on by default: TYPE LP18 (id 40 = 2), FREQ 16K (41 = 127), RESO / LFO 0. A first
+# boot plays F01, which never stored the filter: it gets the default; so does every factory preset
+100 expect state p.40 2
+100 expect state p.41 127
+100 expect state p.42 0
+100 expect state p.43 0
+100 expect state card.6.0 LP18
+100 expect preset
+100 expect sound
+200 midi 0xC0 4 0
+700 expect state p.40 2
+700 expect preset
+700 midi 0xC0 13 0
+1200 expect state p.40 2
+1200 expect preset
+# the panel can still switch it off (CC 70 = 0) and a preset load brings the default back
+1300 midi 0xB0 70 0
+1350 expect state p.40 0
+1400 midi 0xC0 0 0
+1900 expect state p.40 2
+1900 expect sound
+2000 end

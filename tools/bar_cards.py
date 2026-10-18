@@ -44,10 +44,14 @@ def spec():
     return _SPEC
 
 
+VOICE_PAGE = [(200, "btn 7"), (203, "btn 8"), (206, "turn 0 1"), (209, "turn 0 1")]   # GLO, HOME: PERFORM from any
+# page; SELECT twice: VOICE (EDIT is CHORD since 0.9.3)
+
+
 def events(card_vals, keys=KEYS, vels=VELS, noise=0):
-    """VIBES, RAW, then EDIT (VOICE) and each card turned from 64 to its value; strikes from T0"""
+    """VIBES, RAW, then the VOICE page and each card turned from 64 to its value; strikes from T0"""
     ev = bm.setup_events(t0=20, typ=4, raw=True, noise=noise)
-    ev += [(200, "btn 6")]
+    ev += VOICE_PAGE
     for i, (c, v) in enumerate(sorted(card_vals.items())):
         if v != 64:
             ev.append((220 + 10 * i, f"turn {ENC[c]} {int(v) - 64}"))
@@ -147,7 +151,7 @@ def listen(out=os.path.join(bm.ROOT, "build", "listen", "cards")):
     for vel in (100, 117):
         for name, card, vals in LISTEN:
             for v, lab in vals:
-                ev = bm.setup_events(t0=20, typ=4, raw=False, noise=None) + [(200, "btn 6")]
+                ev = bm.setup_events(t0=20, typ=4, raw=False, noise=None) + VOICE_PAGE
                 if v != 64:
                     ev.append((220, f"turn {ENC[card]} {v - 64}"))
                 t = 500
@@ -162,7 +166,7 @@ def listen(out=os.path.join(bm.ROOT, "build", "listen", "cards")):
     open(os.path.join(out, "README.txt"), "w").write(
         "VIBES VOICE cards, A/B listening set (host build, tools/bar_cards.py --listen).\n"
         "Each file: A4 (0.5 s), a C major chord C4-E4-G4 (3.0 s), F3 (6.5 s); VIBES, the default panel (effects as\n"
-        "default), one card turned on the VOICE page (EDIT, K1..K4), the others at 64. v117 = the FM-1 keys at KEY VEL 117.\n"
+        "default), one card turned on the VOICE page (K1..K4), the others at 64. v117 = the FM-1 keys at KEY VEL 117.\n"
         "Compare within a group: mallet_* (MALLET: SOFT 0, YARN 42, the default 64, CORD 85, RUBBER 127), strike_*\n"
         "(STRIKE 0 centre / 64 / 127 edge), tube_* (TUBE 0 / 64 / 127), weight_* (WEIGHT 0 light / 64 / 127 heavy).\n\n"
         + "\n".join(rows) + "\n")

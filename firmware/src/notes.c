@@ -93,14 +93,22 @@ static const char *const CH_VOICE_NAME[3] = {"CLOSE", "OPEN", "+BASS"};
 #define CH_INV (set.chord[1])
 #define CH_VOICE (set.chord[2])
 #define CH_STRUM (set.chord[3])                  /* 0..12: x 5 ms between the notes */
+#define CH_LAST (set.chord_last)                 /* the type EDIT turns back on (0: none yet) */
 static void chord_sanitize(void)
 {
     if (CH_TYPE >= CH_NTYPE) CH_TYPE = 0;
     if (CH_INV > 3u) CH_INV = 0;
     if (CH_VOICE > 2u) CH_VOICE = 0;
     if (CH_STRUM > 12u) CH_STRUM = 0;
+    if (CH_LAST >= CH_NTYPE) CH_LAST = 0;
 }
 static int chord_on(void) { return CH_TYPE != CH_OFF; }
+/* EDIT on the CHORD page (0.9.3): chord mode off, or back on with the last type (MAJ the first time) */
+static void chord_toggle(void)
+{
+    if (chord_on()) { CH_LAST = CH_TYPE; CH_TYPE = CH_OFF; }
+    else CH_TYPE = CH_LAST ? CH_LAST : CH_FIXED;
+}
 
 /* the chord on root n (already on the scale if SNAP / DEGREE did it): its notes in out[], their count */
 static uint32_t chord_build(uint32_t n, uint8_t *out)

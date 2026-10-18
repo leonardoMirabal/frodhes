@@ -5,13 +5,14 @@
  *
  *   SELECT     turns through the pages (the order of the chain):
  *              PERFORM FRODHES (the main page) VOICE DECAY COMP FILTER DRIVE TREM/WAH PHASER CHORUS DELAY REVERB
- *              TEMPO SCALE CHORD SEQUENCER ARPEGGIO LFO ASSIGN SETUP MIDI (PG_ORDER)
+ *              TEMPO SCALE CHORD ARPEGGIO LFO SEQUENCER ASSIGN SETUP MIDI (PG_ORDER)
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on SEQUENCER: a cursor, step by step)   PRESETS  sounds (presets.c; on SEQUENCER: bar by bar)
- *   shortcuts  HOME = PERFORM (again: the main page), EDIT = VOICE, LFO / ENV / SEL = TREM / PHASER / DELAY (on
- *              that page: the effect on / off), SEQ = CHORD (chord mode on: SEQUENCER; on it: REC),
- *              ARP = ARPEGGIO (on it: on / off), GLO = TEMPO (again: SETUP, MIDI).
- *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo. REC: sustain. */
+ *   shortcuts  HOME = PERFORM (again: the main page), EDIT = CHORD (on it: chord mode on / off), LFO / ENV / SEL =
+ *              TREM / PHASER / DELAY (on that page: the effect on / off; on ARPEGGIO SEL is HOLD), SEQ = SEQUENCER (on
+ *              it: REC), ARP = ARPEGGIO (on it: on / off), GLO = TEMPO (again: SETUP, MIDI).
+ *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo (on SEQUENCER: start /
+ *              stop). REC: sustain. */
 
 #include "aatext.c"                                   /* anti-aliased Inter Tight text (Felucca), the FOCUS look */
 
@@ -40,8 +41,9 @@ static void sq_browse(int32_t d);
  * next to SETUP); the PG_ ids stay as they are (the tables below and the buttons use them) */
 static const uint8_t PG_ORDER[PG_N] = {PG_PERF, PG_PIANO, PG_VOICE, PG_DECAY, PG_MOTOR, PG_COMP, PG_FILTER,
                                       PG_DRIVE, PG_TREM, PG_PHA, PG_CHO, PG_DELAY, PG_REVERB, PG_TEMPO, PG_SCALE,
-                                      PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_ASSIGN, PG_SETUP, PG_MIDI};   /* DRIVE after
-                                    * FILTER, REVERB the last effect, as in the chain; MOTOR on a bar TYPE only */
+                                      PG_CHORD, PG_ARP, PG_LFO, PG_SEQ, PG_ASSIGN, PG_SETUP, PG_MIDI};   /* DRIVE after
+                                    * FILTER, REVERB the last effect, as in the chain; MOTOR on a bar TYPE only;
+                                    * SEQUENCER after LFO (user, TODO 3: SEQ reaches it directly) */
 static int ui_bars(void);
 static void ui_goto(uint32_t pg);
 static int pg_shown(uint32_t pg) { return pg != PG_MOTOR || ui_bars(); }   /* MOTOR: on a bar TYPE only */
@@ -124,7 +126,7 @@ static const char *const PAGE_HINT[PG_N] = {"THE KNOBS: SET ON ASSIGN", "WHAT EA
                                             "FX: ALL EFFECTS ON / OFF", "HOW THE TINE IS STRUCK", "HOW NOTES DIE AWAY",
                                             "K1 THRESH: UP = ON, 0 = OFF", "THE LFO: ITS OWN PAGE", "LFO BUTTON: ON / OFF", "ENV BUTTON: ON / OFF",
                                             "K1: ON / OFF", "SEL: ON / OFF  K1: DIG / ANA", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
-                                            "SEQ: THE SEQUENCER", "", "ARP: ON / OFF   PLAY: HOLD", "MOVES THE FILTER (ITS LFO)", "",
+                                            "EDIT: CHORDS ON / OFF", "", "ARP: ON / OFF   SEL: HOLD", "MOVES THE FILTER (ITS LFO)", "",
                                             "USB AND TRS: THE SAME CHANNEL", "K1: ON / OFF", "MIX ALSO SETS THE SIZE", "THE VIBRAPHONE'S MOTOR"};
 static const char *page_hint(uint32_t pg)
 {
@@ -437,7 +439,7 @@ static void slot_turn(uint32_t s, int32_t d)
     case S_USBVOL: set.usb_fixed = d > 0; usb_pre_master = set.usb_fixed; break;
     case S_MCH: set.midi_ch = (uint8_t)clampi(set.midi_ch + sgn(d), 0, 16); break;
     case S_TRS: set.trs_off = d < 0; uart_midi_on = !set.trs_off; break;
-    case S_CHTYPE: CH_TYPE = (uint8_t)clampi(CH_TYPE + sgn(d), 0, CH_NTYPE - 1); break;
+    case S_CHTYPE: CH_TYPE = (uint8_t)clampi(CH_TYPE + sgn(d), 0, CH_NTYPE - 1); if (CH_TYPE) CH_LAST = CH_TYPE; break;
     case S_CHINV: CH_INV = (uint8_t)clampi(CH_INV + sgn(d), 0, 3); break;
     case S_CHVOICE: CH_VOICE = (uint8_t)clampi(CH_VOICE + sgn(d), 0, 2); break;
     case S_CHSTRUM: CH_STRUM = (uint8_t)clampi(CH_STRUM + sgn(d), 0, 12); break;
@@ -485,37 +487,109 @@ static void gauge(int32_t x, int32_t y, int32_t w, int32_t v, int32_t hi)
     cv_rect(x + 1, y + 1, (w - 2) * v / (hi ? hi : 1), 4, C_AMB);   /* dim bar read as full at 0 (user photo, 0.9.3) */
 }
 
+/* ---- the battery (0.9.3, TODO 8): the FM-1's PB1 divider on ADC ch3 (hal/fm1_adc.h), read from the main loop every
+ * BATT_POLL_MS (never in the audio ISR), smoothed over ~10 s, shown as 3 segments in the header with a hysteresis so
+ * it never flickers between two. USB power: a bolt (the reading is the charger's then).
+ * PROVISIONAL thresholds: the stock firmware's (Felucca uses the same 531 / 561 / 591); calibrate them on the FM-1
+ * from the SETUP footer's BAT reading or the developer query CC 4 (frodhes.c). */
+#define BATT_T1 531                                   /* >= : 1 segment  (PROVISIONAL) */
+#define BATT_T2 561                                   /* >= : 2 segments (PROVISIONAL) */
+#define BATT_T3 591                                   /* >= : 3 segments (PROVISIONAL) */
+#define BATT_HYST 4                                   /* a step needs the reading this far past its threshold */
+#define BATT_POLL_MS 500u
+#define BATT_HOST_RAW 600                             /* the host / web build: no ADC, a full battery */
+static const int16_t BATT_T[3] = {BATT_T1, BATT_T2, BATT_T3};
+static int32_t batt_avg;                            /* the smoothed reading x 256 (0: none yet) */
+static uint8_t batt_lvl, batt_sim;                    /* the segments shown; batt_sim: developer CC 8 (x 8, 0 = real) */
+#ifdef DINGHY_HOST
+static int32_t batt_adc(void) { return BATT_HOST_RAW; }
+static int batt_usb(void) { return 0; }
+#else
+static int32_t batt_adc(void) { return fm1_adc_read(FM1_ADC_BATT); }
+static int batt_usb(void) { return usb.config && !usb.suspended; }
+#endif
+static int32_t batt_raw(void) { return (batt_avg + 128) / 256; }
+static uint32_t batt_shown(void) { return batt_usb() ? 4u : batt_lvl; }
+static void batt_poll(void)
+{
+    static uint32_t t;
+    static uint8_t shown = 0xFF;
+    int32_t a, r;
+    uint32_t l;
+    if (batt_avg && fm1_ms - t < BATT_POLL_MS) return;
+    t = fm1_ms;
+    a = batt_sim ? (int32_t)batt_sim * 8 : batt_adc();
+    if (a <= 0) return;                               /* (a timeout, or nothing on the pin) */
+    if (!batt_avg) batt_avg = a * 256;
+    else { int32_t d = a * 256 - batt_avg; batt_avg += (d + (d > 0 ? 10 : -10)) / 20; }   /* 500 ms x 20: ~10 s;
+                                                    * rounded, so it settles on the reading itself */
+    r = batt_raw();
+    for (l = 0; l < 3u && r >= BATT_T[l]; l++) {}
+    if (shown == 0xFF) batt_lvl = (uint8_t)l;        /* the first reading: at once */
+    else if (l > batt_lvl && r >= BATT_T[l - 1u] + BATT_HYST) batt_lvl = (uint8_t)l;
+    else if (l < batt_lvl && r < BATT_T[batt_lvl - 1u] - BATT_HYST) batt_lvl = (uint8_t)l;
+    if (batt_shown() != shown) { shown = (uint8_t)batt_shown(); ui_mark(E_HEADER); }
+}
+/* the icon, 18 x 9 at (x, y): a body with a tip, three segments, or a bolt on USB power. ink: the outline; the
+ * segments in hi, the last one (or the empty outline) in the accent */
+static void batt_icon(int32_t x, int32_t y, uint16_t ink, uint16_t hi, uint16_t bg)
+{
+    static const uint8_t BOLT[7] = {0x08, 0x10, 0x30, 0x7E, 0x0C, 0x08, 0x10};   /* 7 x 7, bit 6 = left */
+    uint32_t lv = batt_shown(), i, j;
+    uint16_t o = lv == 0u ? UI_ACC : ink;
+    cv_rect(x, y, 15, 9, o); cv_rect(x + 1, y + 1, 13, 7, bg);
+    cv_rect(x + 15, y + 2, 2, 5, o);
+    if (lv == 4u) {
+        for (j = 0; j < 7u; j++)
+            for (i = 0; i < 7u; i++)
+                if (BOLT[j] >> (6u - i) & 1u) cv_pset(x + 4 + (int32_t)i, y + 1 + (int32_t)j, hi);
+        return;
+    }
+    for (i = 0; i < lv; i++) cv_rect(x + 2 + 4 * (int32_t)i, y + 2, 3, 5, lv == 1u ? UI_ACC : hi);
+}
+
+/* the header, right to left: the BPM, the battery, BYP, SUS, the octave; the preset name gets what is left (cut only
+ * when the flags reach it) */
 static void draw_header(void)
 {
     char nm[20], b[8];
+    int32_t x;
     cv_begin(240, 20, C_BLACK);
+    if (set.preset < PR_NALL_UI) preset_name(set.preset, nm); else p_strcpy(nm, "FRODHES", 8);
+    slot_text(S_BPM, b);
     if (ui_style == UI_FOCUS) {
-        if (set.preset < PR_NALL_UI) preset_name(set.preset, nm); else p_strcpy(nm, "FRODHES", 8);
         nm[16] = 0;
-        aa_text(10, 3, &AF_S, nm, FC_LAB, FC_BG);
+        x = 230 - aa_text_w(&AF_S, b);
+        aa_text(x, 3, &AF_S, b, FC_LAB, FC_BG);
+        x -= 24;
+        batt_icon(x, 6, FC_LAB, FC_VAL, FC_BG);
+        x -= 4;
+        if (fx_bypass) { x -= aa_text_w(&AF_S, "BYP"); aa_text(x, 3, &AF_S, "BYP", FC_VAL, FC_BG); x -= 6; }
+        if (rh_hold) { x -= aa_text_w(&AF_S, "SUS"); aa_text(x, 3, &AF_S, "SUS", UI_ACC, FC_BG); x -= 6; }
         if (set.oct) {
             char o[4] = {'O', set.oct < 0 ? '-' : '+', (char)('0' + (set.oct < 0 ? -set.oct : set.oct)), 0};
-            aa_text(128, 3, &AF_S, o, FC_LAB, FC_BG);
+            x -= aa_text_w(&AF_S, o); aa_text(x, 3, &AF_S, o, FC_LAB, FC_BG); x -= 6;
         }
-        if (rh_hold) aa_text(150, 3, &AF_S, "SUS", UI_ACC, FC_BG);
-        if (fx_bypass) aa_text(176, 3, &AF_S, "BYP", FC_VAL, FC_BG);
-        slot_text(S_BPM, b);
-        aa_text_r(230, 3, &AF_S, b, FC_LAB, FC_BG);
+        { uint32_t n = 0; while (nm[n]) n++; while (n && 10 + aa_text_w(&AF_S, nm) > x - 4) nm[--n] = 0; }
+        aa_text(10, 3, &AF_S, nm, FC_LAB, FC_BG);
         cv_blit(0, 0);
         return;
     }
     if (ui_style == 2u) cv_rect(0, 0, 240, 19, ui_deep());
-    if (set.preset < PR_NALL_UI) preset_name(set.preset, nm); else p_strcpy(nm, "FRODHES", 8);
     nm[14] = 0;
-    cv_text(ui_style ? 4 : 2, 2, &FONT_S, nm, ui_style == 3u ? C_GRAY : C_HI);
+    x = (ui_style ? 236 : 238) - text_w(&FONT_S, b);
+    cv_text(x, 2, &FONT_S, b, ui_style == 1u ? C_GRAY : ui_style == 2u ? C_HI : C_AMB);
+    x -= 22;
+    batt_icon(x, 5, C_GRAY, C_HI, ui_style == 2u ? ui_deep() : C_BLACK);
+    x -= 4;
+    if (fx_bypass) { x -= text_w(&FONT_S, "BYP"); cv_text(x, 2, &FONT_S, "BYP", C_HI); x -= 4; }
+    if (rh_hold) { x -= text_w(&FONT_S, "SUS"); cv_text(x, 2, &FONT_S, "SUS", UI_ACC); x -= 4; }
     if (set.oct) {
         char o[4] = {'O', set.oct < 0 ? '-' : '+', (char)('0' + (set.oct < 0 ? -set.oct : set.oct)), 0};
-        cv_text(116, 2, &FONT_S, o, C_GRAY);
+        x -= text_w(&FONT_S, o); cv_text(x, 2, &FONT_S, o, C_GRAY); x -= 4;
     }
-    if (rh_hold) cv_text(142, 2, &FONT_S, "SUS", UI_ACC);
-    if (fx_bypass) cv_text(166, 2, &FONT_S, "BYP", C_HI);
-    slot_text(S_BPM, b);
-    cv_text((ui_style ? 236 : 238) - text_w(&FONT_S, b), 2, &FONT_S, b, ui_style == 1u ? C_GRAY : ui_style == 2u ? C_HI : C_AMB);
+    { uint32_t n = 0; while (nm[n]) n++; while (n && (ui_style ? 4 : 2) + text_w(&FONT_S, nm) > x - 2) nm[--n] = 0; }
+    cv_text(ui_style ? 4 : 2, 2, &FONT_S, nm, ui_style == 3u ? C_GRAY : C_HI);
     if (ui_style != 1u && ui_style != 2u) cv_rect(0, 19, 240, 1, C_LINE);
     cv_blit(0, 0);
 }
@@ -872,8 +946,11 @@ static void draw_footer(void)
         if (ui_page == PG_ARP) ft_c(0, 2, 240, ARP_HOLD ? "HOLD ON: NOTES KEEP PLAYING" : "HOLD OFF",
                                       ARP_HOLD ? UI_ACC : C_GRAY);
         else if (ui_page == PG_SETUP) {                 /* what this is: the name and the version */
-            char t[24];
+            char t[32];
+            uint32_t n;
             p_strcpy(t, "FRODHES ", 8); p_strcpy(t + 8, ui_version(), 12);
+            n = 0; while (t[n]) n++;
+            p_strcpy(t + n, "  BAT ", 6); p_fmt_int(t + n + 6, batt_raw());   /* the battery's reading (calibration) */
             ft_c(0, 2, 240, t, UI_ACC);
         } else ft_c(0, 2, 240, "SELECT: PAGE  PRESETS: SOUND", C_GRAY);
         if (ui_page == PG_SETUP) {
@@ -981,6 +1058,7 @@ static void ui_draw(void)
 {
     uint32_t e, d;
     static uint8_t cleared, was_bars;
+    batt_poll();                                        /* (from the start: the splash too) */
     if ((uint8_t)ui_bars() != was_bars) {               /* the TYPE crossed engines: the MOTOR page comes or goes */
         was_bars = (uint8_t)ui_bars();
         if (ui_page == PG_MOTOR && !was_bars) ui_goto(PG_DECAY);
@@ -1091,29 +1169,34 @@ static void ui_input(uint32_t b, uint32_t rel)
         if (was || pr_save_mode) { ui_mark(E_FOOTER); return; }      /* the save mode owns the pass */
     }
     if (b >> BTN_HOME & 1u) ui_goto(ui_page == PG_PERF ? PG_PIANO : PG_PERF);    /* PERFORM <-> the main page */
-    if (b >> BTN_EDIT & 1u) ui_goto(PG_VOICE);
+    if (b >> BTN_EDIT & 1u) {                           /* CHORD; on it: chord mode on / off (0.9.3: was VOICE) */
+        if (ui_page != PG_CHORD) ui_goto(PG_CHORD);
+        else { chord_toggle(); ui_say(chord_on() ? "CHORDS ON" : "CHORDS OFF"); ui_changed(); ui_mark(E_CARDS); }
+    }
     if (b >> BTN_ENV & 1u) ui_fx_button(PG_PHA, 3);   /* PHASER; on it: on / off (0.9.2: was DECAY / COMP) */
     if (b >> BTN_GLO & 1u) ui_goto(ui_page == PG_TEMPO ? PG_SETUP : ui_page == PG_SETUP ? PG_MIDI : PG_TEMPO);   /* TEMPO -> SETUP -> MIDI */
     if (b >> BTN_LFO & 1u) ui_fx_button(PG_TREM, 0);
-    if (b >> BTN_SEL & 1u) ui_fx_button(PG_DELAY, 2); /* DELAY; on it: on / off (0.9.2: was CHORUS) */
+    if (b >> BTN_SEL & 1u) {                            /* DELAY; on it: on / off (0.9.2: was CHORUS); on ARPEGGIO:
+                                                         * HOLD on / off (0.9.3: was PLAY, so PLAY taps the tempo there) */
+        if (ui_page == PG_ARP) { arp_hold_toggle(); ui_say(ARP_HOLD ? "HOLD ON" : "HOLD OFF"); ui_changed(); ui_mark(E_FOOTER); }
+        else ui_fx_button(PG_DELAY, 2);
+    }
     if (b >> BTN_FX & 1u) {                             /* bypass all effects: nothing else changes */
         fx_bypass = !fx_bypass;
         ui_say(fx_bypass ? "EFFECTS OFF" : "EFFECTS ON");
         ui_mark(E_HEADER);
     }
-    if (b >> BTN_SEQ & 1u) {                            /* CHORD (or straight to SEQUENCER when chord mode is on);
-                                                         * CHORD -> SEQUENCER; on SEQUENCER: recording on / off */
+    if (b >> BTN_SEQ & 1u) {                            /* SEQUENCER (0.9.3: no CHORD page on the way, EDIT has it);
+                                                         * on SEQUENCER: recording on / off */
         if (ui_page == PG_SEQ) { sq_btn_down = 1; sq_btn_t = fm1_ms; }   /* short: REC on / off; held 1 s: CLEAR */
-        else if (ui_page == PG_CHORD || chord_on()) ui_goto(PG_SEQ);
-        else ui_goto(PG_CHORD);
+        else ui_goto(PG_SEQ);
     }
     if (b >> BTN_ARP & 1u) {                            /* ARPEGGIO; on it: the arpeggiator on / off */
         if (ui_page != PG_ARP) ui_goto(PG_ARP);
         else { arp_toggle(); ui_say(arp_on() ? "ARP ON" : "ARP OFF"); ui_changed(); ui_mark(E_CARDS); }
     }
-    if (b >> BTN_PLAY & 1u) {                           /* tap tempo; on ARPEGGIO: HOLD on / off */
-        if (ui_page == PG_ARP) { arp_hold_toggle(); ui_say(ARP_HOLD ? "HOLD ON" : "HOLD OFF"); ui_changed(); }
-        else if (ui_page == PG_SEQ) seq_toggle_play();
+    if (b >> BTN_PLAY & 1u) {                           /* tap tempo (ARPEGGIO too: HOLD is SEL there, 0.9.3) */
+        if (ui_page == PG_SEQ) seq_toggle_play();
         else tempo_tap();
     }
     if (b >> BTN_OCT_DOWN & 1u && set.oct > -2) { set.oct--; ui_changed(); ui_mark(E_HEADER); }
@@ -1153,22 +1236,22 @@ static void ui_input(uint32_t b, uint32_t rel)
     }
 }
 
-/* ---- LEDs, once per pass: the page's shortcut button is lit; LFO / SEQ / SEL / ENV: that effect is on, ARP: the
- * arpeggiator */
+/* ---- LEDs, once per pass: the page's shortcut button is lit; LFO / SEL / ENV: that effect is on (SEL on ARPEGGIO:
+ * HOLD), ARP: the arpeggiator, EDIT: chord mode, SEQ: the sequencer playing (blinking: recording) */
 static void ui_leds(uint32_t lit, uint32_t beat_on)
 {
     uint32_t k;
     fm1_led_key(BTN_LFO, PV(P_TW_SW) != 0);
     fm1_led_key(BTN_FX, !fx_bypass);
-    fm1_led_key(BTN_SEL, PV(P_DL_SW) != 0);
+    fm1_led_key(BTN_SEL, ui_page == PG_ARP ? ARP_HOLD : PV(P_DL_SW) != 0);   /* ARPEGGIO: HOLD */
     fm1_led_key(BTN_ARP, arp_on());
-    fm1_led_key(BTN_SEQ, seq_rec ? (fm1_ms & 256u) != 0 : chord_on());   /* chord mode; blinks: recording */
+    fm1_led_key(BTN_SEQ, seq_rec ? (fm1_ms & 256u) != 0 : seq_play);     /* playing; blinks: recording */
     fm1_led_key(BTN_HOME, ui_page == PG_PIANO || ui_page == PG_PERF);
-    fm1_led_key(BTN_EDIT, ui_page == PG_VOICE);
+    fm1_led_key(BTN_EDIT, chord_on());                                  /* chord mode (0.9.3) */
     fm1_led_key(BTN_ENV, PV(P_PH_SW) != 0);
     fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP || ui_page == PG_MIDI);
     fm1_led_key(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));
-    fm1_led_key(BTN_PLAY, ui_page == PG_ARP ? ARP_HOLD : ui_page == PG_SEQ ? seq_play && beat_on : beat_on);   /* ARPEGGIO: HOLD */
+    fm1_led_key(BTN_PLAY, ui_page == PG_SEQ ? seq_play && beat_on : beat_on);
     fm1_led_key(BTN_OCT_DOWN, set.oct < 0);
     fm1_led_key(BTN_OCT_UP, set.oct > 0);
     fm1_led_key(BTN_REC, rh_hold);

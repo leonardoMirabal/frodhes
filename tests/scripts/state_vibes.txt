@@ -17,8 +17,9 @@
 700 expect rms > -40
 800 keys 0
 # ---- the motor from the panel (records v3: the MOTOR page, after DECAY, on a bar TYPE only): F14 has it off.
-# EDIT (VOICE), SELECT twice: MOTOR; K1: ON (3.5 Hz); TREM/WAH stays off (LFO dark)
-1700 btn 6
+# HOME (the main page), SELECT three times: VOICE, DECAY, MOTOR; K1: ON (3.5 Hz); TREM/WAH stays off (LFO dark)
+1700 btn 8
+1750 turn 0 1
 1800 turn 0 1
 1900 turn 0 1
 2000 expect state page MOTOR
@@ -65,7 +66,9 @@
 4800 expect state card.7.0 OFF
 4800 expect sound
 4800 expect led 5 0
-4810 btn 6
+4805 btn 8
+4810 btn 8
+4815 turn 0 1
 4820 turn 0 1
 4830 turn 0 1
 4900 expect state page COMPRESSOR
@@ -93,7 +96,7 @@
 6100 btn 0
 6200 expect state oct 0
 6200 expect led 1 0
-# ---- the arpeggiator and chord mode on VIBES (ARP lit, SEQ lit for chord mode), then off
+# ---- the arpeggiator and chord mode on VIBES (ARP lit, EDIT lit for chord mode), then off
 6300 btn 10
 6400 btn 10
 6500 expect led 10 1
@@ -102,11 +105,11 @@
 7100 keys 0
 7200 btn 10
 7300 expect led 10 0
-7400 btn 11
+7400 btn 6
 7500 turn 2 1
-7600 expect led 11 1
+7600 expect led 6 1
 7700 turn 2 -1
-7800 expect led 11 0
+7800 expect led 6 0
 # the end: everything let go dies away
 10500 expect rms < -80
 10500 expect sound

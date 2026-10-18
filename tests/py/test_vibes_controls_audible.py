@@ -113,7 +113,7 @@ def test_pedal_holds_and_half_pedals(note):
 
 def test_tune_by_the_panel():
     """the DECAY page's K4 (the panel; TUNE has no CC): -50 / +50 cents"""
-    pre = ["100 turn 1 1", "120 turn 1 1", "140 turn 1 1", "160 turn 1 1", "300 btn 6", "400 turn 0 1",
+    pre = ["100 turn 1 1", "120 turn 1 1", "140 turn 1 1", "160 turn 1 1", "300 turn 0 1", "350 turn 0 1", "400 turn 0 1",
            "450 expect state label.4.3 TUNE"]
     got = {}
     for tu in (-50, 0, 50):

@@ -78,6 +78,14 @@ static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 119u) { fx_set(FXP_RAW, v >= 64u); return; }
     if (cc == 9u) { bar_budget_force = (uint8_t)v; return; }   /* developer: the bar engine's mode cap (0 = auto) */
     if (cc == 3u) { ui_testpat = v >= 64u; return; }            /* developer: the colour test pattern (ui.c) */
+    if (cc == 4u) {                                    /* developer: the battery query (ui.c, for calibrating its
+                                                        * thresholds): CC 4 / 5 = the smoothed 10-bit reading (MSB = raw
+                                                        * >> 3, LSB = raw & 7), CC 6 = the segments shown (4 = USB power) */
+        int32_t r = batt_raw();
+        midi_send(0xB0, 4, (uint32_t)r >> 3 & 127u); midi_send(0xB0, 5, (uint32_t)r & 7u); midi_send(0xB0, 6, batt_shown());
+        return;
+    }
+    if (cc == 8u) { batt_sim = (uint8_t)v; return; }           /* developer: a simulated battery reading (v x 8; 0 = the ADC) */
     if (cc == 2u) { ui_style = (uint8_t)(v > 4u ? 0u : v); ui_draw_page_change(); return; }   /* developer: the UI look (ui.c) */
     if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
     if (cc == 114u) { set.usb_fixed = v >= 64u; usb_pre_master = set.usb_fixed; ui_mark(E_CARDS); return; }   /* USB VOL */
@@ -107,7 +115,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
     if (cc >= 56u && cc <= 63u) {                      /* chord mode and the sequencer (0.9.1): 56 TYPE 0..14, 57
                                                         * INVERSION 0..3, 58 VOICING 0..2, 59 STRUM 0..12 (x 5 ms); 60 play
                                                         * (>= 64) / stop, 61 BARS 1..16, 62 QUANT 0..5, 63 recording */
-        if (cc == 56u) CH_TYPE = (uint8_t)(v < CH_NTYPE ? v : CH_NTYPE - 1u);
+        if (cc == 56u) { CH_TYPE = (uint8_t)(v < CH_NTYPE ? v : CH_NTYPE - 1u); if (CH_TYPE) CH_LAST = CH_TYPE; }
         else if (cc == 57u) CH_INV = (uint8_t)(v > 3u ? 3u : v);
         else if (cc == 58u) CH_VOICE = (uint8_t)(v > 2u ? 2u : v);
         else if (cc == 59u) CH_STRUM = (uint8_t)(v > 12u ? 12u : v);
@@ -371,6 +379,8 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "srcs")) { for (i = c = 0; i < SRC_N; i++) c += src_active[i]; snprintf(v, n, "%u", c); }
     else if (!strcmp(key, "refs")) { for (i = c = 0; i < 128u; i++) c += out_ref[i]; snprintf(v, n, "%u", c); }
     else if (!strcmp(key, "quiet")) snprintf(v, n, "%d", eng_quiet() && fx_quiet());
+    else if (!strcmp(key, "batt")) snprintf(v, n, "%u", batt_shown());
+    else if (!strcmp(key, "battraw")) snprintf(v, n, "%d", batt_raw());
     else if (!strcmp(key, "drops")) snprintf(v, n, "%u", (unsigned)(eq_drop + ev_drop + engq_drop));   /* events lost */
     else return 1;
     return 0;
