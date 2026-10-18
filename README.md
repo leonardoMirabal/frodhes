@@ -109,6 +109,16 @@ against the USB audio; `tools/hil_usb_onset.py` checks that every note reaches t
 (after a knob turn and a pause too: the automatic saves wait while a computer records). `tools/manual_shots.py` renders the manual's screenshots. `web/build.sh` builds the browser
 emulator (Emscripten; `web/web_hal.c` stands in for the hardware) into `web/dist/`.
 
+Releases are one command: `tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device] [--no-emulator] [--yes]`
+picks the next version from the latest tag, checks the tree (on `main`, clean, not behind `origin/main`, the notes
+in `docs/releases/vX.Y.Z.md` written and no longer marked DRAFT; a missing file gets a draft from the git log),
+runs the host tests and the release build, installs it on the FM-1 and runs the CPU, scan and jack tests on both
+engines, points this README and the manual at the new file, commits, asks before publishing, then pushes `main`,
+waits for CI to pass on that commit, tags, waits for the release workflow and checks that the published `.fwsc` is
+byte for byte the one tested, publishes the emulator and checks the live files. It stops at the first failure and
+ends with a table of every step (done, skipped and why, failed); `--dry-run` runs the local checks only and stops
+before anything is pushed.
+
 Frodhes changes Dinghy's platform files in a few small places: the app may allow its flash sectors (presets and the
 sequencer's pattern, `APP_FL_RANGE`), drive the codec to full scale (`APP_OUT_SHIFT`), send the USB audio before the
 MASTER knob (`usb_pre_master`), the MASTER knob reading is smoothed, the TRS MIDI input is on (`FELUCCA_UART`, with
