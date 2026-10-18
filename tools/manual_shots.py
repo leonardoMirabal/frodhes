@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Screenshots for the manual: the host build walks every page (and a few states) and saves PNGs to docs/manual/img/,
-then composes overview.png (PERFORM, FRODHES, PHASER, COMPRESSOR). The page list is the firmware's: a first host run
+then composes overview.png (PERFORM, VOICE, PHASER, COMPRESSOR; the README's Screens section: its intro picture is piano.png, the FRODHES page). The page list is the firmware's: a first host run
 walks SELECT and reads each page's name back (the engine's VOICE pages are dynamic: voice1.png, voice2.png on the
 Rhodes; voice1-vibes.png .. voice3-vibes.png on VIBES). Files left in the folder from pages that went are listed.
 
   tools/manual_shots.py           the "device look": the colours as the FM-1's panel shows them
-  tools/manual_shots.py --raw     the framebuffer's own colours (what the firmware writes)
+  tools/manual_shots.py           the framebuffer's own colours (what the firmware writes: the default since
+                                  2026-10-18, the user: the panel model's yellow is not what the eye sees)
+  tools/manual_shots.py --device-look   the colours through the panel model below (camera-calibrated)
 
 The device look. The FM-1's ST7789 panel, behind its window, lifts the dark tones a lot and shifts the hue towards
 yellow: the AMBER palette's darkest step C_LINE = RGB(60,26,0) (frames) reads light khaki, the title UI_ACC =
@@ -106,7 +108,7 @@ def names(pages, suffix=""):
 
 
 def main():
-    raw = "--raw" in sys.argv[1:]
+    raw = "--device-look" not in sys.argv[1:]
     subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(os.path.join(ROOT, "build", "host"), exist_ok=True)
@@ -196,7 +198,7 @@ def main():
         im = Image.open(src).convert("RGB")
         (im if raw else device_look(im)).resize((480, 480), Image.NEAREST).save(os.path.join(OUT, f"{name}.png"))
         os.remove(src)
-    overview(["perform", "piano", "phaser", "comp"])
+    overview(["perform", "voice1", "phaser", "comp"])
     made = set(shots.values()) | {"overview"}
     print(sorted(made))
     stale = sorted(f for f in os.listdir(OUT) if f.endswith(".png") and f[:-4] not in made)

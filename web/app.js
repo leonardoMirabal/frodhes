@@ -32,12 +32,12 @@ var Module = window.Module = {
 };
 
 // ---- the screen and the LEDs, every animation frame
-// RGB565 -> the colours as the FM-1's panel shows them (the dark tones lifted, the hue towards yellow): the "device
-// look" of tools/manual_shots.py, same numbers (measured by tools/display_cal.py from photos of the FM-1);
-// ?raw shows the framebuffer's own colours
+// RGB565 -> the framebuffer's own colours (the default since 2026-10-18: the camera-calibrated panel model's yellow is
+// not what the eye sees); ?look shows them through that "device look" of tools/manual_shots.py --device-look (the
+// dark tones lifted, the hue towards yellow; tools/display_cal.py)
 const LOOK = { g: [1.0907, 0.8288, 0.9032], m: [[2.4821, 0.5194, -0.2992], [0.1402, 3.4473, 0.2092], [0.0378, 0.0352, 3.4810]],
                f: [0.0356, 0.0340, 0.0583] };
-const RGB = new Uint32Array(65536), RAW = /[?&]raw\b/.test(location.search);   // 565 -> RGBA bytes (little-endian)
+const RGB = new Uint32Array(65536), RAW = !/[?&]look\b/.test(location.search);   // 565 -> RGBA bytes (little-endian)
 for (let v = 0; v < 65536; v++) {
   const x = [((v >> 11) & 31) / 31, ((v >> 5) & 63) / 63, (v & 31) / 31], o = [0, 0, 0];
   for (let c = 0; c < 3; c++) {
