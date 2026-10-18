@@ -183,8 +183,8 @@ A resonant filter right after the compressor (before drive and the other effects
 | K3 | **RESO** | Resonance: from smooth to a whistling peak at the cutoff |
 | K4 | **LFO** | How far the LFO moves the cutoff (up to ±4 octaves); the LFO itself is set on the LFO page |
 
-On PERFORM, K3 is the filter's cutoff by default. Fully open it leaves the piano as it is up to about 8 kHz (−0.4 dB
-there, −1.4 dB at 12 kHz). The factory presets use the default; your own presets keep what you saved, and so does the
+On PERFORM, K3 is the filter's cutoff by default. Fully open (LP12 or LP18 at 16 kHz, no resonance, no LFO) the
+sound passes untouched, exactly as with the filter off; turning FREQ down glides into the filter, without a click. The factory presets use the default; your own presets keep what you saved, and so does the
 sound the FM-1 was left on. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 LFO amount.
 
 ### DRIVE
