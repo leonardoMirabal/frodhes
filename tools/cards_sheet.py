@@ -84,10 +84,41 @@ def breathe(dst):
          "in, the unit 2 px further out, 14 px after the label)").save(os.path.join(dst, "breathe.png"))
 
 
+FILL_PAGES = [("piano", "FRODHES (Rhodes)"), ("piano-vibes", "FRODHES (VIBES)"), ("voice1-vibes", "VIBES VOICE 1/3"),
+              ("voice3-vibes", "VIBES VOICE 3/3"), ("filter", "FILTER"), ("lfo", "LFO"), ("delay", "DELAY"),
+              ("comp", "COMPRESSOR")]
+FILLS = [("now", []), ("30 %", ["-DUI_FILL_PCT=30"]), ("45 %", ["-DUI_FILL_PCT=45"]), ("60 %", ["-DUI_FILL_PCT=60"]),
+         ("gradient 15-60 %", ["-DUI_FILL_PCT=60", "-DUI_FILL_GRAD=1"])]
+
+
+def fill(dst):
+    """fill-strength.png: A 24 px, the fader fill as today's dim token and as 30 / 45 / 60 % of the accent, and a
+    gradient brightening toward the edge (ui.c UI_FILL_PCT / UI_FILL_GRAD)"""
+    cols = []
+    for i, (t, defs) in enumerate(FILLS):
+        b = os.path.join(ROOT, "build", "host", f"frodhes_fill{i}")
+        subprocess.run(["cc", "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", "-DAPP_VER=\"dev\""] + defs +
+                       ["-Ifirmware/src", "-Ifirmware/gen", "-o", b, "firmware/src/frodhes.c", "-lm"], cwd=ROOT, check=True)
+        out = os.path.join(ROOT, "build", "design", f"fill{i}")
+        subprocess.run([sys.executable, os.path.join(ROOT, "tools", "manual_shots.py"), "--cards", "3", "--out", out],
+                       check=True, capture_output=True, env=dict(os.environ, FRODHES_HOST_BIN=b))
+        cols.append((t, out))
+    ims, caps = [], []
+    for p, c in FILL_PAGES:
+        for t, d in cols:
+            ims.append(Image.open(os.path.join(d, f"{p}.png")).convert("RGB")); caps.append(f"{c}: {t}")
+    grid(ims, len(cols), caps, "A 24 px, the fader fill: now | 30 % | 45 % | 60 % of the accent | a gradient 15-60 %").save(
+        os.path.join(dst, "fill-strength.png"))
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     dst = os.path.abspath(args[0] if args else os.path.join(ROOT, "private", "ui-simplify", "design-pass"))
     os.makedirs(dst, exist_ok=True)
+    if "--fill" in sys.argv:
+        fill(dst)
+        print(os.path.join(dst, "fill-strength.png"))
+        return
     if "--breathe" in sys.argv:
         breathe(dst)
         print(os.path.join(dst, "breathe.png"))

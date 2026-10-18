@@ -222,6 +222,22 @@ static uint8_t ui_look;                                 /* developer CC 2 (not s
 #define UI_CARDS_DEF 3
 #endif
 #define UI_CARDS_N 6u
+/* the fader fill's strength (build define, for the strength sheet; 0 = the look's dim token): the accent x
+ * UI_FILL_PCT / 100; UI_FILL_GRAD 1: a gradient from UI_FILL_LO % at the left to UI_FILL_PCT % at the edge */
+#ifndef UI_FILL_PCT
+#define UI_FILL_PCT 45                                  /* the user's pick, 2026-10-18 (final-A24-fill45.png) */
+#endif
+#ifndef UI_FILL_GRAD
+#define UI_FILL_GRAD 0
+#endif
+#ifndef UI_FILL_LO
+#define UI_FILL_LO 15
+#endif
+static uint16_t cd_shade(uint16_t c, uint32_t pct)      /* an RGB565 colour x pct / 100 */
+{
+    uint32_t r = (c >> 11) & 31u, g = (c >> 5) & 63u, b = c & 31u;
+    return (uint16_t)((r * pct / 100u) << 11 | (g * pct / 100u) << 5 | (b * pct / 100u));
+}
 static uint8_t ui_cards = UI_CARDS_DEF;
 static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab, val, unit, dim, acc, seq; } mt;
 static void mt_update(void)                             /* the tokens for the look and the palette (each pass) */
@@ -233,6 +249,10 @@ static void mt_update(void)                             /* the tokens for the lo
     gg = gg ? (gg * n / 16u ? gg * n / 16u : 1u) : 0u;
     bb = bb ? (bb * n / 16u ? bb * n / 16u : 1u) : 0u;
     mt.fill = amber && l->amb_fill ? l->amb_fill : (uint16_t)((rr << 11) | (gg << 5) | bb);
+#if UI_FILL_PCT > 0                                     /* the fill as a share of the accent (the user: "the orange /
+                                                         * yellow effect on the fader"; the strength sheet) */
+    mt.fill = cd_shade(amber && l->amb_acc ? l->amb_acc : pal[3], UI_FILL_PCT);
+#endif
     mt.acc = mt.edge = mt.frame = amber && l->amb_acc ? l->amb_acc : pal[3];
     mt.surf = l->surf; mt.track = l->track; mt.outline = l->outline; mt.hair = l->hair; mt.seq = l->seq;
     mt.tag = l->tag; mt.lab = l->lab; mt.val = l->val; mt.unit = l->unit; mt.dim = l->dim;
@@ -935,7 +955,15 @@ static void draw_row_cards(uint32_t k)
         ui_row_drawn[k].lx1 = (int16_t)(CD_PAD + lw);
         if (style == CS_FADER && fw > 0) {              /* FADER: the fill, then its edge clear of the text */
             uint32_t nb = 0;
+#if UI_FILL_GRAD && UI_FILL_PCT > 0
+            {                                           /* brighter toward the edge */
+                int32_t x;
+                for (x = 0; x < fw; x++)
+                    cv_rect(x, 0, 1, RW_H, cd_shade(mt.edge, (uint32_t)(UI_FILL_LO + (UI_FILL_PCT - UI_FILL_LO) * (x + 1) / fw)));
+            }
+#else
             cv_rect(0, 0, fw, RW_H, mt.fill);
+#endif
 #define CD_BOX(a, b, c0, d) do { bx[4u * nb] = (int16_t)(a); bx[4u * nb + 1u] = (int16_t)(b); \
                                  bx[4u * nb + 2u] = (int16_t)(c0); bx[4u * nb + 3u] = (int16_t)(d); nb++; } while (0)
             CD_BOX(CD_PAD, CD_PAD + (lw > kw ? lw : kw) - 1, CD_KTAG_TOP + AF_S_CAP_Y, CD_BASE - 1);   /* the K tag and
@@ -967,8 +995,16 @@ static void draw_row_cards(uint32_t k)
             cd_led(CD_VR - vw - CD_LED_GAP - CD_LED_D, CD_BASE - AF_L_CAP_H / 2 - CD_LED_D / 2, lit == 1);
         } else if (style == CS_BACK && lit == 1)        /* BACK: the whole card lit ON, nothing OFF */
             cv_rect(0, 0, RW_W, RW_H, mt.fill);
-        aa_text_ov(CD_PAD, CD_KTAG_TOP, &AF_S, kk, mt.tag);
-        aa_text_ov(CD_PAD, ltop, &AF_S, lab, hot ? UI_ACC : FC_LAB);
+#if UI_FILL_PCT >= 30                                   /* a strong fill under the K tag / label: lighter greys */
+        if (fw > CD_PAD && (style == CS_FADER || (style == CS_SEG && lit >= 0))) {
+            aa_text_ov(CD_PAD, CD_KTAG_TOP, &AF_S, kk, RGB(170, 170, 176));
+            aa_text_ov(CD_PAD, ltop, &AF_S, lab, hot ? FC_VAL : RGB(206, 206, 210));
+        } else
+#endif
+        {
+            aa_text_ov(CD_PAD, CD_KTAG_TOP, &AF_S, kk, mt.tag);
+            aa_text_ov(CD_PAD, ltop, &AF_S, lab, hot ? UI_ACC : FC_LAB);
+        }
         aa_text_ovr(CD_VR, vtop, &AF_L, v, FC_VAL);
         if (u) aa_text_ov(CD_VR + CD_UGAP, ltop, &AF_S, u, mt.unit);
         if (hot) {                                      /* the knob being turned: a 1 px frame */
