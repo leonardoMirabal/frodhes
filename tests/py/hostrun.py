@@ -25,7 +25,8 @@ def build(binary=BIN, extra=()):
     else:
         os.makedirs(os.path.dirname(binary), exist_ok=True)
         subprocess.run(["cc", "-O1", "-g", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", "-DAPP_VER=\"dev\"",
-                        *extra, "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
+                        *extra, *os.environ.get("HOST_DEFS", "").split(),   # the Makefile's experiment flags too
+                        "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
                         "-o", binary, os.path.join(ROOT, "firmware", "src", "frodhes.c"), "-lm"], check=True)
     _built[binary] = True
     return binary

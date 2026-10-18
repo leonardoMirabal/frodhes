@@ -1,0 +1,30 @@
+# FR_VOICES=10 build only (make test10): tests/scripts/rhodes_steal_release.txt with ten voices. Ten notes held
+# fill the voices; an eleventh is struck and let go at once: it steals the oldest voice and starts let go; when
+# every key is let go, no voice is still held.
+100 midi 0x90 53 100
+100 midi 0x90 57 100
+100 midi 0x90 60 100
+100 midi 0x90 64 100
+100 midi 0x90 65 100
+100 midi 0x90 69 100
+100 midi 0x90 72 100
+100 midi 0x90 76 100
+100 midi 0x90 79 100
+100 midi 0x90 83 100
+500 midi 0x90 86 100
+500 midi 0x80 86 0
+700 expect state held 9
+1000 midi 0x80 53 0
+1000 midi 0x80 57 0
+1000 midi 0x80 60 0
+1000 midi 0x80 64 0
+1000 midi 0x80 65 0
+1000 midi 0x80 69 0
+1000 midi 0x80 72 0
+1000 midi 0x80 76 0
+1000 midi 0x80 79 0
+1000 midi 0x80 83 0
+1100 expect state held 0
+1100 expect state pitches 0
+6000 expect rms < -60
+6000 end
