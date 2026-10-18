@@ -9,10 +9,11 @@
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on SEQUENCER: a cursor, step by step)   PRESETS  sounds (presets.c; on SEQUENCER: bar by bar)
  *   shortcuts  HOME = PERFORM (again: the main page), EDIT = CHORD (on it: chord mode on / off), LFO / ENV / SEL =
- *              TREM / PHASER / DELAY (on that page: the effect on / off; on ARPEGGIO SEL is HOLD), SEQ = SEQUENCER (on
- *              it: REC), ARP = ARPEGGIO (on it: on / off), GLO = TEMPO (again: SETUP, MIDI).
+ *              TREM / PHASER / DELAY (on that page: the effect on / off; SEL is HOLD on ARPEGGIO and, while the
+ *              arpeggiator is on, on every page), SEQ = SEQUENCER (on it: REC), ARP = ARPEGGIO (on it: on / off),
+ *              GLO = TEMPO (again: SETUP, MIDI).
  *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo (on SEQUENCER: start /
- *              stop). REC: sustain. */
+ *              stop, unless the arpeggiator is on: then a tap there too). REC: sustain. */
 
 #include "aatext.c"                                   /* anti-aliased Inter Tight text (Felucca), the FOCUS look */
 
@@ -148,7 +149,11 @@ static const char *const PAGE_HINT[PG_N] = {"THE KNOBS: SET ON ASSIGN", "WHAT EA
                                             "EDIT: CHORDS ON / OFF", "", "ARP: ON / OFF   SEL: HOLD", "MOVES THE FILTER (ITS LFO)", "",
                                             "USB AND TRS: THE SAME CHANNEL", "K1: ON / OFF", "MIX ALSO SETS THE SIZE"};
 static uint32_t ui_vp_ok(void) { return ui_vp < vp_count() ? ui_vp : vp_count() - 1u; }
-static const char *page_hint(uint32_t pg) { return pg == PG_VOICE ? eng_ui()->hint[ui_vp_ok()] : PAGE_HINT[pg]; }
+static const char *page_hint(uint32_t pg)
+{
+    if (pg == PG_DELAY && arp_on()) return "SEL: ARP HOLD  K1: DIG / ANA";
+    return pg == PG_VOICE ? eng_ui()->hint[ui_vp_ok()] : PAGE_HINT[pg];
+}
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
                                            "PENTA", "MPENTA", "BLUES"};
 static const char *const NOTE_NAME[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
@@ -157,6 +162,10 @@ static const char *const TWKIND_NAME[4] = {"OFF", "PAN", "TREM", "WAH"};
 static const char *const CLOCK_NAME[2] = {"INT", "EXT"};   /* EXT: MIDI clock from USB or TRS */
 
 static uint8_t ui_page;
+/* SEL is the arpeggiator's HOLD on ARPEGGIO and, while the arpeggiator is on, on every page (else DELAY); PLAY starts /
+ * stops the sequencer on SEQUENCER only while the arpeggiator is off (else it taps the tempo, like everywhere) */
+static int sel_is_hold(void) { return ui_page == PG_ARP || arp_on(); }
+static int play_is_seq(void) { return ui_page == PG_SEQ && !arp_on(); }
 static uint32_t ui_dirty = ~0u;
 static uint32_t ui_msg_t, ui_hot_t, ui_last_draw;
 static uint8_t ui_hot_card = 0xFF;
@@ -1168,9 +1177,9 @@ static void ui_input(uint32_t b, uint32_t rel)
     if (b >> BTN_ENV & 1u) ui_fx_button(PG_PHA, 3);   /* PHASER; on it: on / off (0.9.2: was DECAY / COMP) */
     if (b >> BTN_GLO & 1u) ui_goto(ui_page == PG_TEMPO ? PG_SETUP : ui_page == PG_SETUP ? PG_MIDI : PG_TEMPO);   /* TEMPO -> SETUP -> MIDI */
     if (b >> BTN_LFO & 1u) ui_fx_button(PG_TREM, 0);
-    if (b >> BTN_SEL & 1u) {                            /* DELAY; on it: on / off (0.9.2: was CHORUS); on ARPEGGIO:
-                                                         * HOLD on / off (0.9.3: was PLAY, so PLAY taps the tempo there) */
-        if (ui_page == PG_ARP) { arp_hold_toggle(); ui_say(ARP_HOLD ? "HOLD ON" : "HOLD OFF"); ui_changed(); ui_mark(E_FOOTER); }
+    if (b >> BTN_SEL & 1u) {                            /* DELAY; on it: on / off (0.9.2: was CHORUS); HOLD on / off on
+                                                         * ARPEGGIO and, while the arpeggiator is on, on every page (0.9.3) */
+        if (sel_is_hold()) { arp_hold_toggle(); ui_say(ARP_HOLD ? "HOLD ON" : "HOLD OFF"); ui_changed(); ui_mark(E_FOOTER); }
         else ui_fx_button(PG_DELAY, 2);
     }
     if (b >> BTN_FX & 1u) {                             /* bypass all effects: nothing else changes */
@@ -1187,8 +1196,9 @@ static void ui_input(uint32_t b, uint32_t rel)
         if (ui_page != PG_ARP) ui_goto(PG_ARP);
         else { arp_toggle(); ui_say(arp_on() ? "ARP ON" : "ARP OFF"); ui_changed(); ui_mark(E_CARDS); }
     }
-    if (b >> BTN_PLAY & 1u) {                           /* tap tempo (ARPEGGIO too: HOLD is SEL there, 0.9.3) */
-        if (ui_page == PG_SEQ) seq_toggle_play();
+    if (b >> BTN_PLAY & 1u) {                           /* tap tempo; on SEQUENCER start / stop, but only while the
+                                                         * arpeggiator is off (0.9.3: with it on, PLAY taps everywhere) */
+        if (play_is_seq()) seq_toggle_play();
         else tempo_tap();
     }
     if (b >> BTN_OCT_DOWN & 1u && set.oct > -2) { set.oct--; ui_changed(); ui_mark(E_HEADER); }
@@ -1229,14 +1239,14 @@ static void ui_input(uint32_t b, uint32_t rel)
     }
 }
 
-/* ---- LEDs, once per pass: the page's shortcut button is lit; LFO / SEL / ENV: that effect is on (SEL on ARPEGGIO:
- * HOLD), ARP: the arpeggiator, EDIT: chord mode, SEQ: the sequencer playing (blinking: recording) */
+/* ---- LEDs, once per pass: the page's shortcut button is lit; LFO / SEL / ENV: that effect is on (SEL while it is
+ * HOLD: HOLD), ARP: the arpeggiator, EDIT: chord mode, SEQ: the sequencer playing (blinking: recording) */
 static void ui_leds(uint32_t lit, uint32_t beat_on)
 {
     uint32_t k;
     fm1_led_key(BTN_LFO, PV(P_TW_SW) != 0);
     fm1_led_key(BTN_FX, !fx_bypass);
-    fm1_led_key(BTN_SEL, ui_page == PG_ARP ? ARP_HOLD : PV(P_DL_SW) != 0);   /* ARPEGGIO: HOLD */
+    fm1_led_key(BTN_SEL, sel_is_hold() ? ARP_HOLD : PV(P_DL_SW) != 0);       /* HOLD (ARPEGGIO, or the arp on) */
     fm1_led_key(BTN_ARP, arp_on());
     fm1_led_key(BTN_SEQ, seq_rec ? (fm1_ms & 256u) != 0 : seq_play);     /* playing; blinks: recording */
     fm1_led_key(BTN_HOME, ui_page == PG_PIANO || ui_page == PG_PERF);
@@ -1244,7 +1254,7 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     fm1_led_key(BTN_ENV, PV(P_PH_SW) != 0);
     fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP || ui_page == PG_MIDI);
     fm1_led_key(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));
-    fm1_led_key(BTN_PLAY, ui_page == PG_SEQ ? seq_play && beat_on : beat_on);
+    fm1_led_key(BTN_PLAY, play_is_seq() ? seq_play && beat_on : beat_on);
     fm1_led_key(BTN_OCT_DOWN, set.oct < 0);
     fm1_led_key(BTN_OCT_UP, set.oct > 0);
     fm1_led_key(BTN_REC, rh_hold);

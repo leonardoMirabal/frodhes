@@ -50,7 +50,10 @@
 2700 expect state bpm 150.0
 2700 expect state hold 0
 2700 expect state page ARPEGGIO
-# away from ARPEGGIO, SEL is DELAY again (goes to its page; again: the delay on)
+# the arpeggiator off, then away from ARPEGGIO SEL is DELAY again (goes to its page; again: the delay on). While the
+# arpeggiator is on SEL stays HOLD on every page (tests/scripts/arp_buttons.txt)
+2720 btn 10
+2730 expect state arp 0
 2750 btn 8
 2800 btn 3
 2850 expect state page DELAY

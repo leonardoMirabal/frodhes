@@ -94,17 +94,17 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **ENV** | PHASER page; press again there to switch the phaser on / off |
 | **LFO** | TREM/WAH page; press again there to switch it on / off |
 | **SEQ** | SEQUENCER page; there it switches recording on / off, held 1 s it clears the pattern |
-| **SEL** | DELAY page; press again there to switch the delay on / off. On ARPEGGIO: the arpeggiator's HOLD on / off |
+| **SEL** | DELAY page; press again there to switch the delay on / off. On ARPEGGIO, and on every page while the arpeggiator is on: the arpeggiator's HOLD on / off |
 | **ARP** | ARPEGGIO page; press again there to switch the arpeggiator on / off |
 | **GLO** | TEMPO page; press again for SETUP, again for MIDI, and back to TEMPO |
 | **FX** | All effects off / on at once (see [7](#7-effects-on-and-off)) |
-| **PLAY** | Tap tempo, on every page (ARPEGGIO too); on SEQUENCER, start / stop the loop |
+| **PLAY** | Tap tempo, on every page (ARPEGGIO too); on SEQUENCER, start / stop the loop, except while the arpeggiator is on: then it taps the tempo there too |
 | **REC** | Sustain pedal |
 | **SAVE** | Save the sound to a user preset; hold to undo the last preset load |
 | **OCT− / OCT+** | Octave down / up (±2) |
 
 The lights tell you what is on: LFO (tremolo / wah), ENV (phaser) and SEL (delay) light up when their effect is on
-(on ARPEGGIO, SEL shows HOLD), ARP while the arpeggiator runs, EDIT while chord mode is on, SEQ while the sequencer
+(on ARPEGGIO, and on every page while the arpeggiator is on, SEL shows HOLD), ARP while the arpeggiator runs, EDIT while chord mode is on, SEQ while the sequencer
 plays (blinking while it records), FX when the effects are
 active, REC while the sustain holds (from MIDI CC 64 too), PLAY on the beat when something is synced (and while the
 sequencer or the arpeggiator plays), HOME on PERFORM and the main page, GLO on TEMPO, SETUP and MIDI,
@@ -338,8 +338,11 @@ too). Press **ARP** to come here, and **ARP** again to switch it on / off (the A
 
 Up to 16 notes; every note of the arpeggio plays at the velocity of the first note you held.
 
-It plays while you hold the keys. **SEL** on this page switches **HOLD** (the latch) on / off: the SEL light and the
-bottom line show it (PLAY taps the tempo here too, as on every page). With HOLD on, play a chord and let go, and the arpeggio keeps going with those notes; the next
+It plays while you hold the keys. **SEL** switches **HOLD** (the latch) on / off: on this page, and on every page
+while the arpeggiator is on (the DELAY shortcut comes back when you switch it off; the DELAY page's hint says
+SEL: ARP HOLD meanwhile). The SEL light shows HOLD, and so does the bottom line here. While the arpeggiator is on,
+**PLAY** is tap tempo on every page, SEQUENCER included (start the sequencer with MIDI CC 60, or a MIDI Start with CLOCK on EXT, then,
+or switch the arpeggiator off first); **EDIT** stays the CHORD page and chord mode. With HOLD on, play a chord and let go, and the arpeggio keeps going with those notes; the next
 chord you play (after letting go of every key) replaces them, and keys you add while others are still held join the
 pattern. Switching HOLD off stops the notes you are no longer holding. The sustain (REC) stays the piano's sustain
 pedal. It works with the scales (the notes are already on the scale) and with notes from USB-MIDI. The

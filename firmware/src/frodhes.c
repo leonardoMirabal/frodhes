@@ -138,7 +138,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
         else if (cc == 53u) ARP_RATE = (uint8_t)(v > 5u ? 5u : v);
         else if (cc == 54u) ARP_OCT = (uint8_t)(v > 3u ? 3u : v);
         else ARP_GATE = (uint8_t)(v < 10u ? 10u : v > 100u ? 100u : v);
-        ui_mark(E_CARDS);
+        ui_mark(E_CARDS); ui_mark(E_FOOTER);             /* DELAY's hint: SEL is HOLD while the arp is on */
         return;
     }
     if (cc >= 56u && cc <= 63u) {                      /* chord mode and the sequencer (0.9.1): 56 TYPE 0..14, 57

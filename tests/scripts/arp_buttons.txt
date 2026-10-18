@@ -1,0 +1,101 @@
+# TODO 2, the user's reading (0.9.3): while the arpeggiator is on, SEL is HOLD on every page and PLAY taps the tempo on
+# every page (SEQUENCER too: no start / stop); EDIT stays CHORD. With the arpeggiator off both do what they did.
+# Buttons: SEL 3, EDIT 6, HOME 8, ARP 10, SEQ 11, PLAY 12. Delay on / off = p.13.
+# the arpeggiator on (ARP opens its page, ARP again: on), then away to PERFORM
+100 btn 10
+200 btn 10
+250 expect state arp 1
+300 btn 8
+350 expect state page PERFORM
+350 expect led 3 0
+# SEL on PERFORM: HOLD on, no page change, the delay untouched; SEL lit (HOLD)
+400 btn 3
+450 expect state hold 1
+450 expect state page PERFORM
+450 expect state msg HOLD_ON
+450 expect state p.13 0
+450 expect led 3 1
+# a C major triad, let go: HOLD keeps it playing
+500 keys 0x4880
+700 keys 0
+1500 expect state arpn 3
+1500 expect rms > -60
+# PLAY on PERFORM taps the tempo (400 ms = 150 BPM); the arpeggiator goes on
+1600 btn 12
+2000 btn 12
+2400 btn 12
+2800 btn 12
+2900 expect state bpm 150.0
+2900 expect state arp 1
+2900 expect state arpn 3
+3000 expect rms > -60
+# EDIT with the arpeggiator on: CHORD, again chord mode on / off (as before)
+3100 btn 6
+3150 expect state page CHORD
+3200 btn 6
+3250 expect state chord 1
+3300 btn 6
+3350 expect state chord 0
+3350 expect state hold 1
+# SEQUENCER: PLAY taps (300 ms = 200 BPM), the sequencer stays stopped, the arpeggiator goes on
+3400 btn 11
+3450 expect state page SEQUENCER
+3500 btn 12
+3800 btn 12
+4100 btn 12
+4400 btn 12
+4500 expect state bpm 200.0
+4500 expect state play 0
+4500 expect state arp 1
+4500 expect state arpn 3
+4600 expect rms > -60
+# SEL on SEQUENCER: HOLD off, the held-over notes go
+4700 btn 3
+4750 expect state hold 0
+4750 expect state page SEQUENCER
+4750 expect led 3 0
+5900 expect rms < -70
+# ARPEGGIO page: PLAY taps there too (500 ms = 120 BPM), SEL = HOLD (as before)
+6000 btn 10
+6050 expect state page ARPEGGIO
+6100 btn 12
+6600 btn 12
+7100 btn 12
+7600 btn 12
+7700 expect state bpm 120.0
+7700 expect state arp 1
+7800 btn 3
+7850 expect state hold 1
+7900 btn 3
+7950 expect state hold 0
+# the arpeggiator off: SEL is DELAY again away from ARPEGGIO, PLAY starts / stops the sequencer on SEQUENCER
+8000 btn 10
+8050 expect state arp 0
+8100 btn 8
+8200 btn 3
+8250 expect state page DELAY
+8250 expect state hint SEL:_ON_/_OFF__K1:_DIG_/_ANA
+8300 btn 3
+8350 expect state p.13 1
+8350 expect state hold 0
+8400 btn 3
+8450 expect state p.13 0
+# the arpeggiator on by MIDI (CC 52) while on DELAY: SEL is HOLD there now (the delay untouched), the hint says so
+8500 midi 0xB0 52 1
+8550 expect state arp 1
+8550 expect state hint SEL:_ARP_HOLD__K1:_DIG_/_ANA
+8600 btn 3
+8650 expect state hold 1
+8650 expect state p.13 0
+8650 expect state page DELAY
+8700 btn 3
+8750 expect state hold 0
+8800 midi 0xB0 52 0
+8850 expect state arp 0
+# off again: SEQUENCER's PLAY starts / stops the loop
+8900 btn 11
+9000 btn 12
+9050 expect state play 1
+9100 btn 12
+9150 expect state play 0
+9200 end
