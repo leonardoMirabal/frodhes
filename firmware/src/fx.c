@@ -763,15 +763,15 @@ static int32_t gate_g = 32768, gate_tgt = 32768, fx_wet = 32768;
 static uint32_t gate_quiet;
 static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
 {
-    static int32_t m[256], dry[256];
+    static int32_t m[256];
     int32_t lvl = (int32_t)FX_LVL[fx_p[FXP_LEVEL] & 127];   /* the preset's volume trim, Q12 */
     uint32_t j, sb;
-    int32_t pk = 0;
+    int32_t pk = 0, wet = fx_wet, byp = fx_bypass, dl = dc_l, el = dce_l, dr = dc_r, er = dce_r;
     if (fx_p[FXP_RAW]) {                               /* developer: the voice engine's output untouched */
         for (j = 0; j < n; j++) { out[2u * j] += mono[j]; out[2u * j + 1u] += mono[j]; }
         return;
     }
-    for (j = 0; j < n; j++) { dry[j] = m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }
+    for (j = 0; j < n; j++) { m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }   /* (mono is the dry signal for the bypass) */
     fx_comp(m, n);
     fx_filter(m, n);
     fx_drive(m, n);
@@ -780,31 +780,50 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
     fx_chorus(fx_L, fx_R, n);
     fx_delay(fx_L, fx_R, n);
     fx_reverb(fx_L, fx_R, n);
-    for (j = 0; j < n; j++) {
-        int32_t l, r;
-        /* the bypass: the effects keep running (their tails stay current), the output crossfades in 5.8 ms */
-        if (fx_bypass ? fx_wet > 0 : fx_wet < 32768) fx_wet += fx_bypass ? -128 : 128;
-        if (fx_wet != 32768) {
-            fx_L[j] = (int32_t)(((int64_t)fx_L[j] * fx_wet + (int64_t)dry[j] * (32768 - fx_wet)) >> 15);
-            fx_R[j] = (int32_t)(((int64_t)fx_R[j] * fx_wet + (int64_t)dry[j] * (32768 - fx_wet)) >> 15);
-        }
-        l = dc_block(fx_L[j], &dc_l, &dce_l); r = dc_block(fx_R[j], &dc_r, &dce_r);   /* (0.8: a +6 dB push here put
-                                * single notes on the limiter: everything squashed; the jack gain is APP_OUT_SHIFT) */
-        if (lvl != 4096) { l = (int32_t)(((int64_t)l * lvl) >> 12); r = (int32_t)(((int64_t)r * lvl) >> 12); }   /* LEVEL */
-        fx_L[j] = l; fx_R[j] = r;
-    }
     for (sb = 0; sb < n; sb += LK) {                   /* the look-ahead limiter, one sub-block late */
         int32_t pn = 0, tgt, g0 = lk_g, i;
-        for (j = sb; j < sb + LK; j++) {
-            int32_t al = iabs(fx_L[j]), ar = iabs(fx_R[j]);
-            if (al > pn) pn = al;
-            if (ar > pn) pn = ar;
+        /* first the bypass, the DC blocker and LEVEL, sample by sample in the same order as a pass of their own (the
+         * limiter's peak scan of this sub-block is the only reader): the bypass crossfades in 5.8 ms (the effects
+         * keep running, their tails stay current); (0.8: a +6 dB push here put single notes on the limiter: everything
+         * squashed; the jack gain is APP_OUT_SHIFT) */
+        if (!byp && wet == 32768 && lvl == 4096) {     /* the usual case: effects on, LEVEL at unity */
+            for (j = sb; j < sb + LK; j++) {
+                int32_t l = dc_block(fx_L[j], &dl, &el), r = dc_block(fx_R[j], &dr, &er), al = iabs(l), ar = iabs(r);
+                fx_L[j] = l; fx_R[j] = r;
+                if (al > pn) pn = al;
+                if (ar > pn) pn = ar;
+            }
+        } else {
+            for (j = sb; j < sb + LK; j++) {
+                int32_t l, r, al, ar;
+                if (byp ? wet > 0 : wet < 32768) wet += byp ? -128 : 128;
+                if (wet != 32768) {
+                    fx_L[j] = (int32_t)(((int64_t)fx_L[j] * wet + (int64_t)mono[j] * (32768 - wet)) >> 15);
+                    fx_R[j] = (int32_t)(((int64_t)fx_R[j] * wet + (int64_t)mono[j] * (32768 - wet)) >> 15);
+                }
+                l = dc_block(fx_L[j], &dl, &el); r = dc_block(fx_R[j], &dr, &er);
+                if (lvl != 4096) { l = (int32_t)(((int64_t)l * lvl) >> 12); r = (int32_t)(((int64_t)r * lvl) >> 12); }
+                fx_L[j] = l; fx_R[j] = r;
+                al = iabs(l); ar = iabs(r);
+                if (al > pn) pn = al;
+                if (ar > pn) pn = ar;
+            }
         }
         tgt = lk_g + ((32768 - lk_g) >> 6) + 1;        /* release */
         if (tgt > 32768) tgt = 32768;
         if (lk_need(lk_pk) < tgt) tgt = lk_need(lk_pk);
         if (lk_need(pn) < tgt) tgt = lk_need(pn);
-        for (i = 0; i < (int32_t)LK; i++) {
+        if (g0 == 32768 && tgt == 32768) {
+            /* not limiting: the gain is 1 over the sub-block, and tgt = 32768 means the delayed sub-block's peak
+             * lk_pk <= LIM_T < CLIP_K, so the clip passes it too: the output is lk_l / lk_r as they are, and its peak
+             * is lk_pk (computed from those very values) */
+            for (i = 0; i < (int32_t)LK; i++) {
+                int32_t xl = lk_l[i], xr = lk_r[i];
+                lk_l[i] = fx_L[sb + (uint32_t)i]; lk_r[i] = fx_R[sb + (uint32_t)i];
+                fx_L[sb + (uint32_t)i] = xl; fx_R[sb + (uint32_t)i] = xr;
+            }
+            if (lk_pk > pk) pk = lk_pk;
+        } else for (i = 0; i < (int32_t)LK; i++) {
             int32_t g = g0 + (int32_t)(((int64_t)(tgt - g0) * (i + 1)) >> 5), xl = lk_l[i], xr = lk_r[i];
             lk_l[i] = fx_L[sb + (uint32_t)i]; lk_r[i] = fx_R[sb + (uint32_t)i];
             if (g != 32768) { xl = (int32_t)(((int64_t)xl * g) >> 15); xr = (int32_t)(((int64_t)xr * g) >> 15); }
@@ -815,17 +834,22 @@ static void fx_process(const int32_t *mono, int32_t *out, uint32_t n)
         lk_pk = pn;
         lk_g = tgt;
     }
+    fx_wet = wet; dc_l = dl; dce_l = el; dc_r = dr; dce_r = er;
     /* silence gate: the codec mutes itself on digital zero, but while anything at all comes out its analog hiss
      * is there; a held note's last -66 dBFS lie under that hiss anyway. So after 200 ms under GATE_LO the output
      * fades (46 ms) to exact zero, and it opens within 1.5 ms of the first block above GATE_HI (0.4) */
     if (pk >= GATE_HI) { gate_quiet = 0; gate_tgt = 32768; }
     else if (pk < GATE_LO && ++gate_quiet >= 35u) { gate_quiet = 35u; gate_tgt = 0; }
-    for (j = 0; j < n; j++) {
-        if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
-        else if (gate_g > gate_tgt) gate_g = gate_g - 16 < gate_tgt ? gate_tgt : gate_g - 16;
-        out[2u * j] += gate_g == 32768 ? fx_L[j] : (fx_L[j] * gate_g) >> 15;
-        out[2u * j + 1u] += gate_g == 32768 ? fx_R[j] : (fx_R[j] * gate_g) >> 15;
-    }
+    /* (out is 0 here: platform.c clears it before app_audio, so "=" is "+=") */
+    if (gate_g == 32768 && gate_tgt == 32768)          /* open, and staying open this block */
+        for (j = 0; j < n; j++) { out[2u * j] = fx_L[j]; out[2u * j + 1u] = fx_R[j]; }
+    else
+        for (j = 0; j < n; j++) {
+            if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
+            else if (gate_g > gate_tgt) gate_g = gate_g - 16 < gate_tgt ? gate_tgt : gate_g - 16;
+            out[2u * j] = gate_g == 32768 ? fx_L[j] : (fx_L[j] * gate_g) >> 15;
+            out[2u * j + 1u] = gate_g == 32768 ? fx_R[j] : (fx_R[j] * gate_g) >> 15;
+        }
     fx_peak = pk;
     if (pk < 16) { if (fx_quiet_blocks < 0xFFFFu) fx_quiet_blocks++; } else fx_quiet_blocks = 0;
 }
