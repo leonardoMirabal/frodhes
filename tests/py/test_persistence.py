@@ -105,11 +105,11 @@ def test_power_cycle_keeps_everything(eng):
     r2 = boot(f"pc2-{eng}", fl, ["150 keys 0x80", "600 keys 0", "700 expect rms > -45"], 900)
     assert not r2.fails, r2.fails
     s2 = r2.state(100)
-    for k in ("header", "oct", "bpm", "notes", "bars", "u.3", "card.4.3", "card.15.1", "card.13.0", "card.14.0",
+    for k in ("header", "oct", "bpm", "notes", "bars", "u.3", "vcard.1.3", "card.15.1", "card.13.0", "card.14.0",
               "card.14.2"):
         assert s2[k] == s1[k], (k, s1[k], s2[k])
     assert all(s2[k] == s1[k] for k in s1 if k.startswith("p."))
-    assert (s2["oct"], s2["card.4.3"], s2["bpm"], s2["card.14.0"]) == ("1", "+7", "108.0", "2")
+    assert (s2["oct"], s2["vcard.1.3"], s2["bpm"], s2["card.14.0"]) == ("1", "+7", "108.0", "2")
 
 
 def test_save_timing():

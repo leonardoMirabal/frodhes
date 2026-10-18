@@ -384,6 +384,20 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (sscanf(key, "vlabel.%u.%u", &a, &b) == 2 && a < ENG_VP_MAX && b < 4u) snprintf(v, n, "%s", slot_label_v(PG_VOICE, a, b));
     else if (sscanf(key, "vhint.%u", &a) == 1) snprintf(v, n, "%s", a < vp_count() ? eng_ui()->hint[a] : "");
     else if (!strcmp(key, "vpages")) snprintf(v, n, "%u", vp_count());
+    else if (sscanf(key, "row%u", &a) == 1 && a < 4u) {   /* what row a shows: KIND V HI (ui.c ui_row_drawn) */
+        static const char *const RK[] = {"none", "amount", "detent", "choice", "bar"};
+        snprintf(v, n, "%s %d %d", RK[ui_row_drawn[a].kind], ui_row_drawn[a].v, ui_row_drawn[a].hi);
+    }
+    else if (!strcmp(key, "hot")) { if (ui_hot_card < 4u && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS) snprintf(v, n, "%u", ui_hot_card); else snprintf(v, n, "-"); }
+    else if (!strcmp(key, "title")) {                  /* the title line's left text: VOICE 2/3 */
+        if (ui_page == PG_VOICE) snprintf(v, n, "%s %u/%u", PAGE_TITLE[ui_page], ui_vp_ok() + 1u, vp_count());
+        else snprintf(v, n, "%s", PAGE_TITLE[ui_page]);
+    }
+    else if (!strcmp(key, "seqpos")) { seq_pos_text(t); snprintf(v, n, "%s", t); }   /* the SEQUENCER title's right text */
+    else if (!strcmp(key, "count")) {                  /* the title's right text: the page n/m */
+        fmt_frac(t, pg_pos(ui_page, ui_vp_ok()) + 1u, pg_count());   /* (the SEQUENCER draws seqpos there) */
+        snprintf(v, n, "%s", t);
+    }
     else if (!strcmp(key, "pages")) snprintf(v, n, "%u", pg_count());
     else if (sscanf(key, "card%u", &a) == 1 && a < 4u) { slot_text(slot_at(ui_page, a), t); snprintf(v, n, "%s", t); }
     else if (sscanf(key, "label%u", &a) == 1 && a < 4u) snprintf(v, n, "%s", slot_label(ui_page, a));

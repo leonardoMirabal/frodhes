@@ -646,19 +646,26 @@ static void slot_short(uint32_t s, char *v)
 
 /* a row: K tag, label (accent while its knob turns, with a 1 px frame for HOT_MS), then an amount (the fill, the
  * number large, its unit small) or a choice (its name, one segment per option up to 8, else a position bar) */
+enum { RK_NONE, RK_AMOUNT, RK_DETENT, RK_CHOICE, RK_BAR };
+static struct { uint8_t kind; int16_t v, hi; } ui_row_drawn[4];   /* what each row shows (the host's tests read it) */
 static void draw_row(uint32_t k)
 {
     uint32_t s = slot_at(ui_page, k);
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
     char v[16], kk[3] = {'K', (char)('1' + k), 0};
     cv_begin(RW_W, RW_H, MT_SURF);
+    ui_row_drawn[k].kind = RK_NONE;
     if (s != S_NONE) {
         const char *lab = slot_label(ui_page, k), *u;
         int32_t hi, val = slot_val(s, &hi), le, xr, w;
+        const ectl_t *c = eng_ctl(s);
+        ui_row_drawn[k].v = (int16_t)(hi ? clampi(val, 0, hi) : 0);
+        ui_row_drawn[k].hi = (int16_t)hi;
         if (hi && slot_is_level(s)) {                   /* the gauge: the row's fill to the value, a 2 px edge */
             int32_t fw = (int32_t)RW_W * clampi(val, 0, hi) / hi, ex = clampi(fw - 2, 0, (int32_t)RW_W - 2);
             cv_rect(0, 0, fw, RW_H, mt_fill());
             cv_rect(ex, 0, 2, RW_H, UI_ACC);
+            ui_row_drawn[k].kind = c && c->kind == EK_DETENT ? RK_DETENT : RK_AMOUNT;
         }
         aa_text_ov(6, S_TOP(9), &AF_S, kk, MT_TAG);
         le = aa_text_ov(6, S_TOP(26), &AF_S, lab, hot ? UI_ACC : FC_LAB);   /* where the label ends */
@@ -671,11 +678,12 @@ static void draw_row(uint32_t k)
             if (n <= 8 && x1 - x0 >= n * 4 - 1) {       /* one segment per option, the chosen one lit */
                 int32_t j, sw = (x1 - x0 - (n - 1) * 3) / n;
                 for (j = 0; j < n; j++) cv_rect(x0 + j * (sw + 3), 13, sw, 12, j == val ? UI_ACC : MT_TRACK);
+                ui_row_drawn[k].kind = RK_CHOICE;
             } else if (x1 - x0 >= 16) {                  /* a position bar: index / (n - 1) */
                 int32_t p = x0 + (x1 - x0 - 3) * clampi(val, 0, hi) / hi;
                 cv_rect(x0, 18, x1 - x0, 3, MT_TRACK);
-                cv_rect(x0, 18, p - x0, 3, mt_fill());
                 cv_rect(p, 13, 3, 13, UI_ACC);
+                ui_row_drawn[k].kind = RK_BAR;
             }
         } else {                                        /* an amount: the number large, its unit small at the right */
             slot_text(s, v);
@@ -1060,6 +1068,7 @@ static void ui_goto_v(uint32_t pg, uint32_t vp)         /* a page (VOICE: its nu
     if ((pg == PG_SEQ) != (ui_page == PG_SEQ)) lcd_fill(0, TI_Y, 240, FT_Y - TI_Y, C_BLACK);   /* its own layout: no leftovers */
     ui_page = (uint8_t)pg;
     ui_vp = (uint8_t)(pg == PG_VOICE && vp < vp_count() ? vp : 0u);
+    for (vp = 0; vp < 4u; vp++) ui_row_drawn[vp].kind = RK_NONE;   /* (drawn again below) */
     ui_hot_card = 0xFF;
     ui_draw_page_change();
 }
