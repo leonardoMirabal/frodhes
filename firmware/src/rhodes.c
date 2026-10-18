@@ -44,6 +44,8 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #define FADE_SAMPLES 64u
 #define Q30 (1 << 30)
 #define RH_S_MAX_HI 2048u                      /* s >> 44 at 32 gap^2 */
+/* sat28 (fxp.h) for an int32: the same bounds, without the 64-bit compares */
+static inline int32_t sat28i(int32_t v) { return v > ((1 << 28) - 1) ? ((1 << 28) - 1) : v < -((1 << 28) - 1) ? -((1 << 28) - 1) : v; }
 
 typedef struct {
     int32_t x, y, ex, ey;                      /* Q25 gap, MC3 states and error-feedback remainders */
@@ -350,13 +352,14 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
             if (rh_F[j]) y += (int32_t)(((int64_t)rh_F[j] * b) >> 20);
             t = (int64_t)e * y + ex;
             x += (int32_t)(t >> 30); ex = (int32_t)(t & 0x3FFFFFFF);
-            t = -(int64_t)eps * y - (int64_t)e * x + ey;
+            t = ey - (int64_t)eps * y - (int64_t)e * x;    /* = -eps y - e x + ey: every term exact in int64 (< 2^62),
+                                                            * so the same integer; written so both are 32x32 MACs */
             y += (int32_t)(t >> 30); ey = (int32_t)(t & 0x3FFFFFFF);
             rh_x[j] += x;
             if (iabs(x) > pk) pk = iabs(x);
             if (iabs(y) > pk) pk = iabs(y);
         }
-        s->x = sat28(x); s->y = sat28(y); s->ex = ex; s->ey = ey; s->peak = pk;
+        s->x = sat28i(x); s->y = sat28i(y); s->ex = ex; s->ey = ey; s->peak = pk;
         sum += pk >> 3;
     }
     for (j = 0; j < SUB; j++) {                           /* pickup, then the per-key gain into the mix */

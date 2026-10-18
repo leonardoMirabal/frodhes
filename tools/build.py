@@ -153,7 +153,8 @@ def build_loader():
 # ---- app
 
 def build_app():
-    flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen", f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or "0.0"}"']
+    flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen", f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or "0.0"}"',
+             *os.environ.get("APP_DEFS", "").split()]   # developer builds only, e.g. APP_DEFS=-DRH_PROF_STAGES
     cmds = [("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
             ("cc", "-c", FW / "hal" / "fm1_vec.S", "-o", OUT / "fm1_vec.o"),
             ("cc", "-c", FW / "hal" / "fm1_isr.S", "-o", OUT / "fm1_isr.o"),
@@ -191,24 +192,35 @@ def build_app():
     return bytes(img), syms, dis, rt
 
 
-def hot_loop(dis):
-    """the Rhodes MC3 inner loop inside app_audio (the loop with the two & 0x3FFFFFFF error-feedback masks):
-    (instructions, stack stores, stack loads), or None"""
+def hot_loops(dis):
+    """the innermost loops of app_audio (a backward branch with no other one inside it): dicts with the instruction
+    count, stack stores / loads, the error-feedback masks (& 0x3FFFFFFF: the Rhodes MC3 mode loops have two), the
+    64-bit >>= 22 shifts (the pickup's Hermite has three) and calls. None if app_audio is not in the disassembly"""
     body = re.search(r"^app_audio:\n(.*?)\n\n[A-Za-z_][\w.]*:\n", dis, re.S | re.M)
     if not body:
         return None
-    lines = [mm for mm in (LINE.match(ln) for ln in body.group(1).splitlines()) if mm]
-    seen = 0
-    for i, mm in enumerate(lines):
-        seen += "& 0x3FFFFFFF" in mm.group(3)
-        br = re.search(r"goto -\d+ <[^:>]*: ([0-9a-f]+) >", mm.group(3))
-        if seen >= 2 and br:
-            lo, hi = int(br.group(1), 16), int(mm.group(1), 16)
-            loop = [x.group(3) for x in lines if lo <= int(x.group(1), 16) <= hi]
-            st = sum(bool(re.search(r"(?:^|\s)[dh]?\[sp\+\d+\] = ", t)) for t in loop)
-            ld = sum(bool(re.search(r"= [dh]?\[sp\+\d+\]", t)) for t in loop)
-            return len(loop), st, ld
-    return None
+    lines = [(int(mm.group(1), 16), mm.group(3)) for mm in (LINE.match(ln) for ln in body.group(1).splitlines()) if mm]
+    br = []
+    for a, t in lines:
+        mm = re.search(r"goto -\d+ <[^:>]*: ([0-9a-f]+) >", t)
+        if mm:
+            br.append((int(mm.group(1), 16), a))
+    loops = []
+    for lo, hi in br:
+        if any(lo <= lo2 and hi2 < hi for lo2, hi2 in br if (lo2, hi2) != (lo, hi)):
+            continue
+        loop = [t for a, t in lines if lo <= a <= hi]
+        loops.append(dict(
+            lo=lo, n=len(loop),
+            st=sum(bool(re.search(r"(?:^|\s)[dh]?\[sp\+\d+\] = ", t)) for t in loop),
+            ld=sum(bool(re.search(r"= [dh]?\[sp\+\d+\]", t)) for t in loop),
+            masks=sum("& 0x3FFFFFFF" in t for t in loop),
+            sh22=sum(bool(re.search(r"r\d+_r\d+ >>= 22", t)) for t in loop),
+            calls=[c.strip() for t in loop for c in re.findall(r"call -?\d+ <([^:>]*)", t)]))
+    return loops
+
+
+MODE_MAX = 32       # the Rhodes MC3 mode loops (RHODES-CPU-PLAN R1: 39 -> 29 insns); a spill there cost ~35 us
 
 
 def check(img, syms, dis, rt):
@@ -233,16 +245,20 @@ def check(img, syms, dis, rt):
                 errors.append(f"reference to ROM address {val:#010x}")
     if len(img) > APP_SLOT:
         errors.append(f"image {len(img)} B exceeds the app slot")
-    hot = hot_loop(dis)
-    if hot is None:
+    loops = hot_loops(dis)
+    mode = [lp for lp in loops or [] if lp["masks"] == 2]
+    if not mode:
         errors.append("the Rhodes mode loop (MC3) not found in app_audio")
-    else:
-        n_ins, st, ld = hot
-        msg = f"Rhodes mode loop: {n_ins} insns, {st} stack stores, {ld} stack loads"
-        if st or n_ins > 40:            # 2026-10-17: 39 insns, 0 stores, 4 loads; a spill here cost ~35 us per block
-            errors.append(msg + " (was 39 / 0 / 4: a global-merge split of rh_F / rh_x? see engine.c eq)")
+    for lp in mode:
+        msg = f"Rhodes mode loop: {lp['n']} insns, {lp['st']} stack stores, {lp['ld']} stack loads"
+        if lp["st"] or lp["n"] > MODE_MAX:
+            errors.append(msg + f" (limit {MODE_MAX} / 0: a global-merge split of rh_F / rh_x? see engine.c eq)")
         else:
             notes.append(msg)
+    for lp in loops or []:          # the pickup loop(s): the Hermite (inlined, 3 shifts) or its call
+        if lp["sh22"] >= 3 or "rh_hermite" in lp["calls"]:
+            notes.append(f"Rhodes pickup loop: {lp['n']} insns, {lp['st']} stack stores, {lp['ld']} stack loads"
+                         + (f", calls {' '.join(lp['calls'])}" if lp["calls"] else ""))
 
     def sym(name):
         mm = re.search(r"^([0-9a-f]+) .*\s" + name + r"$", syms, re.M)
