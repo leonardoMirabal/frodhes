@@ -366,18 +366,22 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)
         int32_t drq = 308 * 256 + ((osc_sine(cp_ph + 0x40000000u) * (154 * depth / 127)) >> 7);
         int32_t mix = (16384 * (2 * depth > 127 ? 127 : 2 * depth)) / 127;
         int32_t cg = 32768 + (mix * 1950 >> 14) + (((mix * (16384 - mix)) >> 14) * 11 >> 3);   /* + half-mix comb */
-        for (j = sb; j < sb + 32u && j < n; j++) {
-            int32_t x = (L[j] + R[j]) >> 1, tl, tr;
-            uint32_t i0 = (cho_w - (uint32_t)(dlq >> 8)) & 1023u, i1 = (cho_w - (uint32_t)(drq >> 8)) & 1023u;
-            cho_buf[cho_w & 1023u] = clampi(x, -1048575, 1048575);
-            tl = cho_buf[i0] + (int32_t)(((int64_t)(cho_buf[(i0 - 1u) & 1023u] - cho_buf[i0]) * (dlq & 255)) >> 8);
-            tr = cho_buf[i1] + (int32_t)(((int64_t)(cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * (drq & 255)) >> 8);
-            L[j] += mulq15(tl - L[j], mix);
-            R[j] += mulq15(tr - R[j], mix);
-            L[j] = (L[j] * cg) >> 15;                   /* the comb's loss, minus the stereo width's loudness (0.8) */
-            R[j] = (R[j] * cg) >> 15;
-            cho_w++;
+        uint32_t w = cho_w, je = sb + 32u < n ? sb + 32u : n;
+        int32_t fl = dlq & 255, fr = drq & 255;
+        uint32_t ol = (uint32_t)(dlq >> 8), orr = (uint32_t)(drq >> 8);
+        for (j = sb; j < je; j++) {                     /* (L, R and the write index in registers) */
+            int32_t l = L[j], r = R[j], x = (l + r) >> 1, tl, tr;
+            uint32_t i0 = (w - ol) & 1023u, i1 = (w - orr) & 1023u;
+            cho_buf[w & 1023u] = clampi(x, -1048575, 1048575);
+            tl = cho_buf[i0] + (int32_t)(((int64_t)(cho_buf[(i0 - 1u) & 1023u] - cho_buf[i0]) * fl) >> 8);
+            tr = cho_buf[i1] + (int32_t)(((int64_t)(cho_buf[(i1 - 1u) & 1023u] - cho_buf[i1]) * fr) >> 8);
+            l += mulq15(tl - l, mix);
+            r += mulq15(tr - r, mix);
+            L[j] = (l * cg) >> 15;                      /* the comb's loss, minus the stereo width's loudness (0.8) */
+            R[j] = (r * cg) >> 15;
+            w++;
         }
+        cho_w = w;
         cp_ph += inc * 32u;
     }
 }
