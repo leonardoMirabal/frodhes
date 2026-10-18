@@ -183,6 +183,12 @@ def one(seed, eng, sanitized):
         bad.append(f"Rhodes CPU proxy {r.cpu_proxy_rh} + 1700 us over the block")   # each engine's own proxy)
     if r.cpu_proxy_bars is not None and r.cpu_proxy_bars > 4800:            # the effects are in the bars model
         bad.append(f"VIBES CPU proxy {r.cpu_proxy_bars} us over the bars gate (4800)")
+    if not bad:                                                     # a passing seed keeps nothing (3.4 MB a WAV:
+        for ext in (".wav", ".txt", "-1000.ppm", "-3000.ppm"):   # (the host's two screenshots too)                                # 10,000 seeds filled the disk, 2026-10-18)
+            try:
+                os.remove(os.path.join(OUT, tag) + ext)
+            except OSError:
+                pass
     return tag, bad
 
 
@@ -205,3 +211,32 @@ def test_fuzz(eng, request, sanitizer_build):
     failed = [(tag, bad) for tag, bad in results if bad]
     msg = "\n".join(f"{tag} ({os.path.join(OUT, tag)}.txt): {'; '.join(bad)}" for tag, bad in failed[:12])
     assert not failed, f"{len(failed)} of {len(jobs)} seeds failed:\n{msg}"
+
+
+HOT_CHORD = ["1309 turn 1 5", "1765 midi 0xB0 17 119", "1992 midi 0xBF 56 33", "2288 turn 1 5", "2473 turn 1 5",
+             "2496 midi 0xB0 85 73", "2505 midi 0x9D 101 99", "2661 midi 0x9C 25 108"]
+
+
+def test_chorus_hot_chord(sanitizer_build):
+    """fuzz rhodes 2390-san (10,000 seeds, 2026-10-18; 2570 5580 5860 7690 7945 9215 the same), minimised: three
+    TYPE turns, TREM 119, chord mode MIN6 (CC 56 on channel 16), the chorus on, two chords at v99 / v108: the
+    chorus got more than 61856 (about 1.9 x full scale) and l * its gain (up to 34718) overflowed int32 (fx.c; on the
+    chip it wraps: a full-scale spike of the wrong sign), as did (tl - l) * mix from 131072. The gain is now applied as
+    l + (l * (gain - 1)) >> 15 (the same bits) and the mix's product is 64-bit"""
+    r = run("chorus-hot-chord-san", HOT_CHORD, 4000, binary=SAN, check=False,
+            env={"ASAN_OPTIONS": "detect_leaks=0", "UBSAN_OPTIONS": "print_stacktrace=0"})
+    assert r.code == 0 and "runtime error" not in r.out, re.findall(r"\S+: runtime error: [^\n]*", r.out)[:2]
+
+
+HOT_DELAY = ["808 btn 3", "1042 midi 0xC0 12 0", "1771 keys 48", "1783 midi 0xB0 106 96", "1962 midi 0xB2 113 108",
+             "2104 turn 2 5", "2122 midi 0xB0 56 117", "2711 midi 0x98 102 125"]
+
+
+def test_delay_hot_line(sanitizer_build):
+    """fuzz vibes 4300-san (10,000 seeds, 2026-10-18), minimised: F13, the DELAY page and its K1 turned (TAPE), the
+    compressor, chord mode MIN6, a v125 chord: a full-scale swing in the delay line made r - lp (its tone filter) and
+    f (the feedback) reach 2^17, and their products with TONE / FEEDBACK overflowed int32 (fx.c, 124921 * 18800); fx.c
+    mulq15w gives the same bits without the overflow"""
+    r = run("delay-hot-line-san", HOT_DELAY, 4500, binary=SAN, check=False,
+            env={"ASAN_OPTIONS": "detect_leaks=0", "UBSAN_OPTIONS": "print_stacktrace=0"})
+    assert r.code == 0 and "runtime error" not in r.out, re.findall(r"\S+: runtime error: [^\n]*", r.out)[:2]
