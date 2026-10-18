@@ -15,16 +15,19 @@
 static void put_settings(void) { settings_save(&set, sizeof set); }
 
 #ifndef BARS_UI_OLD
-static void show_page(const char *tag, uint32_t pg)
+static void show_page(const char *tag, uint32_t pg, uint32_t vp)   /* (VOICE: its page vp; past the engine's last: none) */
 {
     uint32_t k;
+    if (pg == PG_VOICE && vp >= vp_count()) return;
+    ui_vp = (uint8_t)vp;
     for (k = 0; k < 4u; k++) {
         char v[24];
-        uint32_t s = slot_at(pg, k);
+        uint32_t s = slot_at_v(pg, vp, k);
         slot_text(s, v);
-        printf("%s.%u %s=%s\n", tag, k, slot_label(pg, k), v);
+        printf("%s.%u %s=%s\n", tag, k, slot_label_v(pg, vp, k), v);
     }
     printf("%s.hint %s\n", tag, page_hint(pg));
+    ui_vp = 0;
 }
 static void cmd_labels(void)
 {
@@ -34,10 +37,10 @@ static void cmd_labels(void)
         char tag[16];
         param_set(P_TYPE, (int32_t)t);
         printf("type.%u %s bars=%d\n", t, N_TYPE_LONG[t], ui_bars());
-        snprintf(tag, sizeof tag, "voice%u", t); show_page(tag, PG_VOICE);
-        snprintf(tag, sizeof tag, "decay%u", t); show_page(tag, PG_DECAY);
-        snprintf(tag, sizeof tag, "motor%u", t); show_page(tag, PG_MOTOR);
-        printf("pages%u shown=%d count=%u motor_pos=%u\n", t, pg_shown(PG_MOTOR), pg_count(), pg_pos(PG_MOTOR));
+        snprintf(tag, sizeof tag, "voice%u", t); show_page(tag, PG_VOICE, 0);   /* VOICE 1 */
+        snprintf(tag, sizeof tag, "decay%u", t); show_page(tag, PG_VOICE, 1);   /* VOICE 2 (was DECAY) */
+        snprintf(tag, sizeof tag, "motor%u", t); show_page(tag, PG_VOICE, 2);   /* VOICE 3 (was MOTOR): bars only */
+        printf("pages%u vpages=%u count=%u comp_pos=%u\n", t, vp_count(), pg_count(), pg_pos(PG_COMP, 0));
         snprintf(tag, sizeof tag, "perf%u", t);
         for (i = 0; i < PERF_N; i++) printf("%s.%u %s\n", tag, i, perf_name(i));
         for (i = 0; i < sizeof TONES; i++) { char v[16]; param_set(P_TONE, TONES[i]); slot_text(P_TONE, v); printf("tone%u.%u %s\n", t, TONES[i], v); }

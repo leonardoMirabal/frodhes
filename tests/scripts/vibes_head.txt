@@ -16,7 +16,7 @@
 # K3 left: the motor off (the MOTOR page agrees); K2 up: the mallet moves (VOICE's MALLET agrees)
 700 turn 4 -1
 900 expect state card.2.2 OFF
-900 expect state card.21.0 OFF
+900 expect state vcard.2.0 OFF
 1000 turn 3 20
 1300 expect state card.3.1 CORD
 1300 expect state card.2.1 CORD

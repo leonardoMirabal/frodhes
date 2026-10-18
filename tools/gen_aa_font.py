@@ -88,7 +88,7 @@ def parse_face(s):
 
 HC_MAXLEN = 15
 # faces gone, kept compilable by a define to a face that remains (removed once nothing uses the old name)
-TRANSITIONAL = [("M", "S")]
+TRANSITIONAL = []   # (AF_M -> AF_S was for the UI rewrite; ui.c no longer uses AF_M)
 
 
 def huff_symbols(v):
