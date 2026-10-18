@@ -66,31 +66,34 @@ def main():
         for _ in inp.iter_pending():
             pass
         cc(116, 127)
-        got, t0 = {}, time.monotonic()
-        while time.monotonic() - t0 < 1.0 and not {115, 116, 117, 118} <= got.keys():
-            for m in inp.iter_pending():
-                if m.type == "control_change" and m.control in (115, 116, 117, 118):
+        got, st = {}, dict(cur=None, msb=0)
+
+        def take():                                        # every reply: the profiler (115-118), the bar engine's
+            for m in inp.iter_pending():                   # cap / live modes (112 / 113), the ISR tail (107-110),
+                if m.type != "control_change":             # the stage profiler (97 stage, 98 / 99 us)
+                    continue
+                if m.control in (115, 116, 117, 118, 112, 113, 107, 108, 109, 110):
                     got[m.control] = m.value
+                elif m.control == 97:
+                    st["cur"] = m.value
+                elif m.control == 98:
+                    st["msb"] = m.value
+                elif m.control == 99 and st["cur"] is not None:
+                    query.st[st["cur"]] = max(query.st.get(st["cur"], 0), st["msb"] << 7 | m.value)
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 1.0 and not {115, 116, 117, 118} <= got.keys():
+            take()
             time.sleep(0.005)
         if not {116, 117} <= got.keys():
             sys.exit("no profiler reply (a firmware without CC 116?)")
-        t0, cur, msb = time.monotonic(), None, 0
-        while time.monotonic() - t0 < (0.15 if "--stages" in sys.argv else 0.05):   # the bar engine's cap / live
-            for m in inp.iter_pending():                   # modes (newer firmware), the stage / tail profiler
-                if m.type != "control_change":
-                    continue
-                if m.control in (112, 113, 107, 108, 109, 110):
-                    got[m.control] = m.value
-                elif m.control == 97:
-                    cur = m.value
-                elif m.control == 98:
-                    msb = m.value
-                elif m.control == 99 and cur is not None:
-                    query.st[cur] = max(query.st.get(cur, 0), msb << 7 | m.value)
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < (0.15 if "--stages" in sys.argv else 0.05):   # the replies after 115-118
+            take()
             time.sleep(0.005)
         query.bars = (got.get(112), got.get(113))
         if {107, 108, 109, 110} <= got.keys():
-            query.tail = max(query.tail[0], (got[110] << 7 | got[109]) * 4), max(query.tail[1], (got[108] << 7 | got[107]) * 4)
+            query.tail = (max(query.tail[0], (got[110] << 7 | got[109]) * 4),
+                          max(query.tail[1], (got[108] << 7 | got[107]) * 4))
         return (got[116] << 7 | got[117]) * 4, got[118] * 32, got[115]
 
     def play(notes, vel, hold, pedal=False):
