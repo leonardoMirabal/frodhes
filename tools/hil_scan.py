@@ -1752,6 +1752,27 @@ def excess_db(x, ref):
     return float(10 * np.log10(ex + 1e-24))
 
 
+def knock_db(mx, ox, mref, oref, t0=1.5, t1=1.65, slack=0.012):
+    """NOISE's knock in take mx (onset ox): what t0..t1 after the onset (the key-up) adds to the NOISE 0 take mref
+    (onset oref), as excess_db but over the reference's windows shifted by up to +-slack (1 ms steps, the per-bin
+    maximum). The engine takes a MIDI event at its next 256-frame block (5.8 ms), so the key-up moves +-1 block
+    against the note-on from take to take: a take let go a block later than the reference held ~6 ms more of the
+    undamped note in the window, an excess ~25 dB over its knock at NOISE 48 and 127 alike, and A4's row read +0 dB
+    at random (the FM-1 scan of 2026-10-18 19:35: USB -0.15, jack +0.23; host seeds 2 5 6 7;
+    tests/py/test_vibes_knock_measure.py)"""
+    x = cut(mx, ox, t0, t1)
+    nn = len(x)
+    w = np.hanning(nn)
+    P = np.abs(np.fft.rfft(x * w)) ** 2
+    Q = np.zeros_like(P)
+    for d in range(-int(slack * 1000), int(slack * 1000) + 1):
+        r = cut(mref, oref + d * FS // 1000, t0, t1)
+        if len(r) == nn:
+            Q = np.maximum(Q, np.abs(np.fft.rfft(r * w)) ** 2)
+    ex = np.maximum(P - 1.26 * Q, 0).sum() * 2 / (nn * (w * w).sum())
+    return float(10 * np.log10(ex + 1e-24))
+
+
 def ms_db(x):
     w = np.hanning(len(x))
     return float(10 * np.log10((np.abs(np.fft.rfft(x * w)) ** 2).sum() * 2 / (len(x) * (w * w).sum()) + 1e-24))
@@ -2302,7 +2323,7 @@ def vibes_decay(V, S):
             m = {x: T[x].m(q) for x in T}
             ring = ms_db(cut(m[0], o[0], 0, 0.06))
             c = {x: excess_db(cut(m[x], o[x], 0, 0.06), cut(m[0], o[0], 0, 0.06)) - ring for x in (de, 127)}
-            kn = {x: excess_db(cut(m[x], o[x], 1.5, 1.65), cut(m[0], o[0], 1.5, 1.65)) for x in (de, 127)}
+            kn = {x: knock_db(m[x], o[x], m[0], o[0]) for x in (de, 127)}
             # the floor: two takes of hiss alone leave an excess 3.5 dB under the hiss (E[max(P - 1.26 Q, 0)] =
             # P / 2.26 for exponential bins); a value within 6 dB of it is the jack's hiss, not NOISE (round 1:
             # MISMATCH on F6's knock, +54.5 USB / +40.9 jack)
