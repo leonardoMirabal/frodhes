@@ -309,7 +309,7 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
     const rh_key_t *k = v->k;
     const int32_t *P = RH_PHI[k->fam], *M = RH_SLOPE[k->fam];
     uint32_t j, m;
-    int32_t sum = 0, Hp = v->Hprev, off = v->off, gain = v->gain;
+    int32_t sum = 0, Hp = v->Hprev, off = v->off, gain = v->gain, fnz = 0;
     if (v->ramp) {                                        /* damper crossfade: E and eps together */
         int32_t f;
         v->ramp--;
@@ -326,39 +326,62 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
             s->eps = s->epss + (int32_t)(((int64_t)(pt - s->epss) * f) >> 15);
         }
     }
-    for (j = 0; j < SUB; j++) {                           /* hammer force for the sub-block */
-        if (v->ptab) {
-            uint32_t i = v->ppos >> 16;
-            int32_t f = (int32_t)((v->ppos >> 1) & 0x7FFFu);
-            int32_t a = v->ptab[i], b = v->ptab[i + 1];
-            if (v->pmix) {
-                a += (int32_t)(((int64_t)(v->ptab2[i] - a) * v->pmix) >> 15);
-                b += (int32_t)(((int64_t)(v->ptab2[i + 1] - b) * v->pmix) >> 15);
-            }
-            rh_F[j] = mul15s(a + (int32_t)(((int64_t)(b - a) * f) >> 15), v->pamp);
-            v->ppos += v->prate;
-            if ((v->ppos >> 16) >= RH_PLEN) v->ptab = 0;
-        } else
-            rh_F[j] = 0;
-        rh_x[j] = 0;
-    }
+    if (v->ptab) {                                        /* hammer force for the sub-block: the fields in locals
+                                                           * (only this loop touches them); 32-bit products, exact:
+                                                           * pulses 0..32767, pmix <= 30720, so every |product| < 2^31 */
+        const int16_t *pt = v->ptab, *pt2 = v->ptab2;
+        int32_t pmix = v->pmix, pamp = v->pamp;
+        uint32_t ppos = v->ppos, prate = v->prate;
+        fnz = 1;
+        for (j = 0; j < SUB; j++) {
+            if (pt) {
+                uint32_t i = ppos >> 16;
+                int32_t f = (int32_t)((ppos >> 1) & 0x7FFFu);
+                int32_t a = pt[i], b = pt[i + 1];
+                if (pmix) {
+                    a += ((pt2[i] - a) * pmix) >> 15;
+                    b += ((pt2[i + 1] - b) * pmix) >> 15;
+                }
+                rh_F[j] = mul15s(a + (((b - a) * f) >> 15), pamp);
+                ppos += prate;
+                if ((ppos >> 16) >= RH_PLEN) pt = 0;
+            } else
+                rh_F[j] = 0;
+            rh_x[j] = 0;
+        }
+        v->ppos = ppos; v->ptab = pt;
+    } else
+        for (j = 0; j < SUB; j++) rh_x[j] = 0;            /* no force: rh_F is not read (fnz = 0) */
     for (m = 0; m < RH_NM; m++) {                         /* modes: MC3 + error feedback, mode-outer */
         rh_ms_t *s = &v->m[m];
         int32_t x, y, ex, ey, e, eps, b, pk = 0;
         if (!s->live) continue;
         x = s->x; y = s->y; ex = s->ex; ey = s->ey; e = s->e; eps = s->eps; b = s->b;
-        for (j = 0; j < SUB; j++) {
-            int64_t t;
-            if (rh_F[j]) y += (int32_t)(((int64_t)rh_F[j] * b) >> 20);
-            t = (int64_t)e * y + ex;
-            x += (int32_t)(t >> 30); ex = (int32_t)(t & 0x3FFFFFFF);
-            t = ey - (int64_t)eps * y - (int64_t)e * x;    /* = -eps y - e x + ey: every term exact in int64 (< 2^62),
-                                                            * so the same integer; written so both are 32x32 MACs */
-            y += (int32_t)(t >> 30); ey = (int32_t)(t & 0x3FFFFFFF);
-            rh_x[j] += x;
-            if (iabs(x) > pk) pk = iabs(x);
-            if (iabs(y) > pk) pk = iabs(y);
-        }
+        if (fnz)                                          /* the hammer pushes in this sub-block */
+            for (j = 0; j < SUB; j++) {
+                int64_t t;
+                if (rh_F[j]) y += (int32_t)(((int64_t)rh_F[j] * b) >> 20);
+                t = (int64_t)e * y + ex;
+                x += (int32_t)(t >> 30); ex = (int32_t)(t & 0x3FFFFFFF);
+                t = ey - (int64_t)eps * y - (int64_t)e * x;   /* = -eps y - e x + ey: every term exact in int64
+                                                               * (< 2^62), the same integer; two 32x32 MACs */
+                y += (int32_t)(t >> 30); ey = (int32_t)(t & 0x3FFFFFFF);
+                rh_x[j] += x;
+                if (iabs(x) > pk) pk = iabs(x);
+                if (iabs(y) > pk) pk = iabs(y);
+            }
+        else                                              /* no force (no pulse at the sub-block's start: every
+                                                           * rh_F[j] would be 0, the add never ran) */
+            for (j = 0; j < SUB; j++) {
+                int64_t t;
+                t = (int64_t)e * y + ex;
+                x += (int32_t)(t >> 30); ex = (int32_t)(t & 0x3FFFFFFF);
+                t = ey - (int64_t)eps * y - (int64_t)e * x;
+                y += (int32_t)(t >> 30); ey = (int32_t)(t & 0x3FFFFFFF);
+                rh_x[j] += x;
+                if (iabs(x) > pk) pk = iabs(x);
+                if (iabs(y) > pk) pk = iabs(y);
+            }
         s->x = sat28i(x); s->y = sat28i(y); s->ex = ex; s->ey = ey; s->peak = pk;
         sum += pk >> 3;
     }
