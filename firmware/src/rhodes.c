@@ -38,10 +38,15 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #define RH_V1 0u
 #define RH_O1 2u
 #define RH_O2 3u
-#define RH_NV 8u
+#ifndef FR_VOICES
+#define FR_VOICES 9u                           /* voices per engine (bars.h BAR_NV too); a build may set another
+                                                * count with -DFR_VOICES=N (APP_DEFS / HOST_DEFS) */
+#endif
+#define RH_NV FR_VOICES
 #define SUB 32u
 #define RAMP_SUB 7u
 #define FADE_SAMPLES 64u
+#define RH_OFF_LIFE 1378u                      /* blocks (8 s) a voice may still ring after an all-off */
 #define Q30 (1 << 30)
 #define RH_S_MAX_HI 2048u                      /* s >> 44 at 32 gap^2 */
 /* sat28 (fxp.h) for an int32: the same bounds, without the 64-bit compares */
@@ -309,14 +314,22 @@ static void rh_events(void)
             for (i = 0; i < RH_NV; i++)                 /* a note let go while it waits for a steal's fade: it
                                                          * starts let go (it was held for good: fuzz seed 160, a fast
                                                          * pattern over 8 voices; the same fix as bars.c) */
-                if (rv[i].alive && rv[i].pend && rv[i].pend_note == note) rv[i].pend = 2;
+                if (rv[i].alive && rv[i].pend == 1u && rv[i].pend_note == note) rv[i].pend = 2;
         } else if (type == EV_PEDAL) {
             rh_pedal_w = PEDAL_W[val];
             for (i = 0; i < RH_NV; i++)
                 if (rv[i].alive && !rv[i].held) rh_set_damper(&rv[i], rh_pedal_w);
         } else if (type == EV_ALL_OFF) {
             for (i = 0; i < RH_NV; i++)
-                if (rv[i].alive) { rv[i].held = 0; rh_set_damper(&rv[i], 32768); }
+                if (rv[i].alive) {
+                    rv[i].held = 0; rh_set_damper(&rv[i], 32768);
+                    if (rv[i].life > RH_OFF_LIFE) rv[i].life = RH_OFF_LIFE;   /* the tone-bar mode (V2) of a low
+                                                         * key barely feels the felt (T60 ~50 s, x3.9 at RELEASE 127)
+                                                         * and kept a 1-4 LSB hum and the voice for ~40 s (fuzz 628) */
+                    if (rv[i].pend) rv[i].pend = 3;     /* a note waiting for a steal's fade starts let go and
+                                                         * damped, as the struck ones (it was held for good: fuzz
+                                                         * seed 513, a strummed chord on 9 busy voices, then CC 120) */
+                }
         }
     }
 }
@@ -435,9 +448,10 @@ static void rh_voice_sub(rh_voice_t *v, int32_t *mix)
     if (v->fade == 0) {                                   /* a steal finished fading: start the waiting note */
         v->alive = 0;
         if (v->pend) {
-            uint32_t rel = v->pend == 2u;
+            uint32_t rel = v->pend;                     /* 1 held, 2 let go, 3 let go by an all-off */
             rh_init(v, v->pend_note, v->pend_vel);
-            if (rel) { v->held = 0; rh_set_damper(v, rh_pedal_w); }
+            if (rel >= 2u) { v->held = 0; rh_set_damper(v, rel == 3u ? 32768 : rh_pedal_w); }
+            if (rel == 3u && v->life > RH_OFF_LIFE) v->life = RH_OFF_LIFE;
         }
         return;
     }
@@ -474,7 +488,7 @@ static void rh_render(int32_t *mono_out, uint32_t n)
         rh_voice_t *v = &rv[i];
         for (sb = 0; sb < n && v->alive; sb += SUB)
             rh_voice_sub(v, rh_mono + sb);
-        if (v->alive && v->life && --v->life == 0) v->alive = 0;
+        if (v->alive && v->life && --v->life == 0 && v->fade == 32768) v->fade = 32767;   /* its end: the 1.5 ms fade */
     }
     for (j = 0; j < n; j++) {     /* pickup load: RLC low-pass on the mix (Q28 DF1, error feedback); Q20 -> Q15 */
         int32_t m = rh_mono[j], o;

@@ -335,7 +335,7 @@ static void bar_note_off(uint32_t note)
         }
     for (i = 0; i < BAR_NV; i++)                    /* a note let go while it waits for a steal's fade: it starts let go
                                                      * (it was held for good: fuzz, a fast arpeggio over 8 voices) */
-        if (bv[i].alive && bv[i].pend && bv[i].pend_note == note) bv[i].pend = 2;
+        if (bv[i].alive && bv[i].pend == 1u && bv[i].pend_note == note) bv[i].pend = 2;
 }
 
 static void bar_pedal(uint32_t cc)
@@ -350,7 +350,12 @@ static void bar_all_off(void)
 {
     uint32_t i;
     for (i = 0; i < BAR_NV; i++)
-        if (bv[i].alive) { bv[i].held = 0; bar_set_damper(&bv[i], 32768); }
+        if (bv[i].alive) {
+            bv[i].held = 0; bar_set_damper(&bv[i], 32768);
+            if (bv[i].pend) bv[i].pend = 3;         /* a note waiting for a steal's fade starts let go and damped, as
+                                                     * the struck ones (it was held for good: fuzz seed 780, a note-on
+                                                     * on 9 busy voices, then CC 123 within the 1.5 ms fade) */
+        }
 }
 
 static void bar_shed(void)                          /* overload: fade the quietest voice, released first */
@@ -842,9 +847,9 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix)
     if (v->fade == 0) {                             /* a steal finished fading: start the waiting note */
         v->alive = 0;
         if (v->pend) {
-            uint32_t rel = v->pend == 2u;
+            uint32_t rel = v->pend;                 /* 1 held, 2 let go, 3 let go by an all-off (bar_all_off) */
             bar_init(v, v->pend_note, v->pend_vel);
-            if (rel) { v->held = 0; bar_set_damper(v, bar_pedal_w); }
+            if (rel >= 2u) { v->held = 0; bar_set_damper(v, rel == 3u ? 32768 : bar_pedal_w); }
         }
         return;
     }

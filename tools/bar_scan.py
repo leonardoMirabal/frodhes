@@ -218,7 +218,7 @@ def matrix(typ, full, smoke=False):
         ev = bm.setup_events(typ=typ, raw=False, **d) + sum((bm.note(200, n, 100, 1500) for n in (57, 64, 69, 76)), [])
         C.append(Case(f"fx {name}", "fx", ev, 5000, ["S1c", "S2"]))
     # polyphony and steals (S1 S4)
-    for nn in (8, 12, 16):
+    for nn in (8, 9, 12, 16):                                      # 9 = every voice (FR_VOICES)
         notes = list(range(48, 48 + 3 * nn, 3))[:nn]
         ev = S(noise=None) + [(150, "midi 0xB0 64 127")] + sum((bm.note(200 + 10 * i, n, 100, 400) for i, n in enumerate(notes)), [])
         ev += [(4000, "midi 0xB0 64 0")]

@@ -4,7 +4,13 @@
 firmware for the longest audio block since the last query (frodhes.c midi_cc; replies on CC 116/117 = us / 4).
 The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder starts at 5000 us.
 
-    python3 tools/hil_cpu.py [--engine vibes] [--fx-each] [--calib] [--stages] [--tail]
+    python3 tools/hil_cpu.py [--engine vibes] [--voices N] [--worst] [--fx-each] [--calib] [--stages] [--tail]
+
+--voices N (default 9, the firmware's FR_VOICES) plays N-note chords and N bass notes (for a build with
+-DFR_VOICES=N; more notes than the firmware's voices steal). The lists: bass 28 31 33 35 36 38 40 41 43 45 47 48,
+chord 48 52 55 59 62 64 67 71 74 76 79 83 (the first N).
+--worst runs only the worst-case scenarios (N bass v127 + pedal, every effect; VIBES: its edge-strike versions too)
+and the idle-with-every-effect one (the fixed part), 3 takes each as usual.
 
 --engine vibes selects VIBES (CC 79), with the motor on (CC 47; records v3: the engine's own) wherever the effects
 are on (the tremolo too: it can run on top of the motor), off elsewhere, and adds the bar engine's worst voicings (edge strike, RUBBER, tube and weight at 127). It also prints the
@@ -115,8 +121,12 @@ def main():
     heavy = dict(DRIVE=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
                  CP_SW=64, CP_DEPTH=127, DL_SW=127, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
                  FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # the filter at its heaviest: LP18, the LFO
-    bass8 = [28, 31, 33, 35, 36, 38, 40, 41]
-    chord8 = [48, 52, 55, 59, 62, 64, 67, 71]
+    nv = int(sys.argv[sys.argv.index("--voices") + 1]) if "--voices" in sys.argv else 9   # rhodes.c FR_VOICES
+    if not 1 <= nv <= 12:
+        sys.exit("--voices: 1..12")
+    bass8 = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48][:nv]          # the first 8: the lists as before
+    chord8 = [48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83][:nv]
+    worst_only = "--worst" in sys.argv
     rows = []
 
     def run(name, fx, notes=(), vel=100, hold=1.5, pedal=False, rep=3):
@@ -162,7 +172,7 @@ def main():
         return
     if "--calib" in sys.argv:
         edge = dict(TONE=127, BARK=127, BELL=127, HAMMER=127)
-        bass8 = [28, 31, 33, 35, 36, 38, 40, 41]
+        bass8 = [28, 31, 33, 35, 36, 38, 40, 41]                         # the fit is for 8 voices
         pts = []
         for nv, notes in ((8, bass8), (4, bass8[:4]), (1, bass8[:1])):
             for cap in ((0, 8, 16, 24, 32, 40, 48) if nv == 8 else (0, 24)):
@@ -187,34 +197,47 @@ def main():
         print(f"fixed (idle + noise + 1 voice): {v[1]:.0f} us; the model's base is BAR_NS_BASE + BAR_NS_NOISE")
         reset()
         return
+    N = str(nv)
+    print(f"{nv} voices (--voices {nv}): bass {bass8}, chord {chord8}")
     if vibes:
         edge = dict(TONE=127, BARK=127, BELL=127, HAMMER=127)
-        run("8 bass v127, edge strike, rubber, no effects", edge, bass8, 127)
-        run("8-note chord v127, edge, every effect + motor", dict(heavy, **edge), chord8, 127)
-        run("8 bass v127, edge + pedal, every effect + motor", dict(heavy, **edge), bass8, 127, pedal=True, hold=3.0)
+        if not worst_only:
+            run(N + " bass v127, edge strike, rubber, no effects", edge, bass8, 127)
+        run(N + "-note chord v127, edge, every effect + motor", dict(heavy, **edge), chord8, 127)
+        run(N + " bass v127, edge + pedal, every effect + motor", dict(heavy, **edge), bass8, 127, pedal=True, hold=3.0)
         query.bars = (None, None)
         heavy = dict(heavy, **edge)               # the repeated-chord test at the worst voicing too
-    run("idle, no effects", {})
+    if not worst_only:
+        run("idle, no effects", {})
     run("idle, every effect on (heaviest)", heavy)
-    run("8-note chord v100, no effects", {}, chord8)
-    run("8 bass notes v127 at once, no effects", {}, bass8, 127)
-    run("8-note chord v100, every effect on", heavy, chord8)
-    run("8 bass notes v127 + pedal, every effect on", heavy, bass8, 127, pedal=True)
+    if not worst_only:
+        run(N + "-note chord v100, no effects", {}, chord8)
+        run(N + " bass notes v127 at once, no effects", {}, bass8, 127)
+        run(N + "-note chord v100, every effect on", heavy, chord8)
+    run(N + " bass notes v127 + pedal, every effect on", heavy, bass8, 127, pedal=True)
+    if worst_only:
+        reset()
+        rows[:] = [r for r in rows if not r[0].startswith("idle")]
+        worst = max(w for _, w in rows)
+        print(f"\nworst {worst} us with {nv} voices ({100 * worst / BLOCK_US:.0f} %); design target 4500 us "
+              f"(margin {4500 - worst}), shedder 5000 us (margin {5000 - worst})")
+        return
     att = shed0 = 0
     shed0 = query()[2]
     reset(**heavy)
     query()
-    for i in range(12):                               # 8-note chords struck again every 100 ms (voice steals)
+    for i in range(12):                               # N-note chords struck again every 0.4 s (voice steals)
         play(chord8 if i % 2 else bass8, 127, 0.4)
         att = max(att, query()[0])
     shed = (query()[2] - shed0) % 128
     rows.append(("repeated", att))
-    print(f"{'8-note chords struck every 0.4 s, every effect':44s} attack {att:5d} us ({100 * att / BLOCK_US:4.1f} %)"
+    print(f"{N + '-note chords struck every 0.4 s, every effect':44s} attack {att:5d} us ({100 * att / BLOCK_US:4.1f} %)"
           f"   voices shed {shed}")
     reset()
     worst = max(w for _, w in rows)
-    print(f"\nworst {worst} us of {BLOCK_US} us per block ({100 * worst / BLOCK_US:.0f} %); shedder at 5000 us; "
-          f"headroom to the shedder {5000 - worst} us, to real time {BLOCK_US - worst} us")
+    print(f"\nworst {worst} us of {BLOCK_US} us per block ({100 * worst / BLOCK_US:.0f} %) with {nv} voices; shedder at "
+          f"5000 us; headroom to the shedder {5000 - worst} us, to real time {BLOCK_US - worst} us; to the 4500 us "
+          f"design target {4500 - worst} us")
 
 
 if __name__ == "__main__":
