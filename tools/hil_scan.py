@@ -2165,10 +2165,17 @@ class VSuite:
         passed = info or all(res.values())
         # (a large change: 5 % of it, the analogue path's own spread; round 1: REVERB 0 -> 127, +36.8 / +35.7)
         bad_mm = mm is not None and abs(mm) > max(MISMATCH_DB, 0.05 * abs(vals["usb"]))
-        status = ("info" if info else "ok" if passed else "FAIL") + (" MISMATCH" if bad_mm else "")
-        self.rows.append(dict(check=check, setting=setting, usb=txt["usb"], jack=txt["jack"], crit=crit,
-                              mismatch=mm, status=status, ok=bool(passed and not bad_mm),
-                              src_ok=None if info else res))       # per source (tools/full_scan.py: the jack decides)
+        why = m_known(check, setting) if not passed and self.name.startswith("marimba_") else None
+        status = ("info" if info else "ok" if passed else "KNOWN" if why else "FAIL") + (" MISMATCH" if bad_mm else "")
+        row = dict(check=check, setting=setting, usb=txt["usb"], jack=txt["jack"], crit=crit,
+                   mismatch=mm, status=status, ok=bool((passed or why) and not bad_mm),
+                   src_ok=None if info else res)            # per source (tools/full_scan.py: the jack decides)
+        if why:
+            row["known"] = why                              # (a MARIMBA user decision: m_known)
+        self.rows.append(row)
+
+    def known(self):
+        return [r for r in self.rows if r.get("known")]
 
     def fails(self):
         return [r for r in self.rows if not r["ok"]]
@@ -2197,6 +2204,11 @@ def v_report(suites, V, path, dry):
             mm = f"{r['mismatch']:+.2f}" if r["mismatch"] is not None else ""
             L.append(f"| {r['check']} | {r['setting']} | {r['usb']} | {r['jack']} | {r['crit']} | {mm} | "
                      f"{'**' + r['status'] + '**' if not r['ok'] else r['status']} |")
+        kn = S.known()
+        if kn:
+            L += ["", "KNOWN (the plan's threshold, not met as written; user decisions, tools/marimba_scan.py KNOWN):", ""]
+            for r in kn:
+                L.append(f"- {r['check']} [{r['setting']}]: {r['known']}")
     bad = [t for t in tk if t.get("usb_fs") or t.get("usb_clicks") or t.get("jack_clicks") or t.get("jack_over")]
     L += ["", "## Every take: clipping and clicks", "",
           "Criteria: no USB sample at full scale (-32768 / +32767); 0 clicks (hil_scan clicks(), outside 3 ms before / "
@@ -3199,6 +3211,23 @@ M_CAPPED = {(84, "SOFT", "MED")}
 M_FX_RATE, M_FX_JIT, M_FX_SEED, M_FX_VEL = 8.0, 0.0, 1, 80   # marimba_fx's roll: per note, the jitter, the seed (m_fx_roll)          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
 
 
+def m_known(check, setting):
+    """the KNOWN reason of a MARIMBA row (tools/marimba_scan.py KNOWN / KNOWN_CARDS: the plan's thresholds a wooden bar
+    cannot meet as written, user decisions; the host scan and the tests report the same items KNOWN / xfail), or None.
+    A failing marimba_* row that matches is reported KNOWN with its reason, not FAIL; anything else fails as before."""
+    import re
+    import marimba_scan as ms
+    rules = ((r"^C4 MED: v40 -> v117 brighter$", r"", ms.KNOWN_CARDS["VELOCITY centroid"]),
+             (r"^pumping$", r"", ms.known("M5", " pumping")),
+             (r"^two-hand balance$", r"", ms.known("M5", " balance")),
+             (r"^STRIKE ", r"^key 84 ", ms.KNOWN_CARDS["STRIKE C6"]),
+             (r"^WEIGHT light brighter$", r"^key 84 ", ms.KNOWN_CARDS["WEIGHT C6 centroid"]))
+    for rc, rs, why in rules:
+        if re.search(rc, check) and re.search(rs, setting):
+            return why
+    return None
+
+
 def mt60(x, f):
     """the V1 T60 by a 30 dB fit (5..35 dB under the peak; PLAN §10.2 B1)"""
     return t60(x, f, 5.0, 35.0)
@@ -3697,9 +3726,11 @@ def vibes_main(names, a):
                                status="FAIL", ok=False))
         fails += bool(S.fails())
         for r in S.rows:
-            if not r["ok"] or a.dry_run:
+            if not r["ok"] or a.dry_run or r.get("known"):
                 mm = f"  USB-jack {r['mismatch']:+.2f}" if r["mismatch"] is not None else ""
                 print(f"   {r['status']:13s} {r['check']} [{r['setting']}]  USB {r['usb']}  jack {r['jack']}  ({r['crit']}){mm}")
+                if r.get("known"):
+                    print(f"                 KNOWN: {r['known']}")
         print(f"{'ok  ' if not S.fails() else 'FAIL'}  {n}: {len(S.rows)} checks, {len(S.fails())} failed / flagged, "
               f"{S.ntakes} takes, {S.secs:.0f} s{' (estimated)' if a.dry_run else ''}", flush=True)
         suites.append(S)
