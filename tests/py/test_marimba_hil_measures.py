@@ -441,3 +441,30 @@ def test_chorus_speed_0_takes_last_rows_in_place(monkeypatch, engine):
     pk = rows.index("PHASER SPEED PH_SPEED (CC 14) 0")                       # (PH0's rows still in place)
     assert rows[pk + 3] == f"PHASER SPEED 0 slower than {h.vp()['PH_SPEED']['de']}"
     assert len(rows) == len(set(rows))
+
+
+def test_marimba_chorus_speed_by_the_band(monkeypatch):
+    """MARIMBA CHORUS SPEED 50 / 127 (CS_BAND): the roll's centroid by the harmonic sum (rate_of) read SPEED 50 1.31 Hz
+    for 0.87 on host seed 4 (seed 13 before 95b21ac: the jitter alone). The 300-3000 Hz band re the suite's CHORUS
+    DEPTH 0 take, by its period (lfo_rate pearson), reads 0.87-0.88 on seeds 1-15 with the same takes; VIBES keeps
+    the centroid"""
+    monkeypatch.setattr(h, "ENGINE", "marimba")
+    V = h.VRig("usb", host=4)
+    got, take = {}, V.take
+
+    def keep(tag, dur, events):
+        got[tag] = take(tag, dur, events)
+        return got[tag]
+    monkeypatch.setattr(V, "take", keep)
+    S = h.VSuite("marimba_fx", V)
+    h.marimba_fx(V, S)
+    rows = {r["check"]: r for r in S.rows}
+    for x in (50, 127):
+        r = rows[f"CHORUS SPEED CP_SPEED (CC 87) {x}"]
+        assert r["status"] == "ok" and "re DEPTH 0" in r["setting"], r
+    f = h.lfo_hz(50, True)
+    t, r0 = got["chorus-speed-50"], got["chorus-depth-0"]
+    c = h.cen_trace(h.cut(t.m("usb"), t.on("usb")[0], 0.2, 5.3))[0]
+    assert h.rate_of(c, h.FS / 240, f) / f - 1 > 0.2                     # (the old measure: 1.31 Hz)
+    d, _, fps_ = h.rel_trace(t, r0, "usb", 0.2, 5.3, 300, 3000)
+    assert abs(h.lfo_rate(d, fps_, f * 0.4, f * 2.6, pearson=True) / f - 1) <= 0.02

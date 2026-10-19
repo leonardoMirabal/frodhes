@@ -2612,6 +2612,7 @@ def vibes_fx(V, S, stim=None, extra=()):
     FDN = st.get("FDN", 2048)                                          # frame_dist's frame (PHASER FDBK)
     BW = st.get("BW", (0.05, 1.05))                                    # the spectra's window (B, SD)
     cs_period = st.get("CS_PERIOD", False)                             # CHORUS SYNC by its period (lfo_rate)
+    cs_band = st.get("CS_BAND", False)     # CHORUS SPEED 50 / 127 as SPEED 0: the band re DEPTH 0 (lfo_rate pearson)
     PH0 = st.get("PH0", ST_PH0)            # PHASER / CHORUS SPEED 0's takes (and DEPTH 0 refs): ST_LONG is too short
     jfloor = st.get("JFLOOR", False)       # the DRIVE rows: the jack judged against its own distortion floor
     v3line = st.get("V3LINE", False)       # DRIVE TONE's V3 as a line (m_line_db), clear of the resampler's image
@@ -2983,6 +2984,7 @@ def vibes_fx(V, S, stim=None, extra=()):
     # CHORUS
     chb = [("CP_SW", 1), ("CP_DEPTH", 64), ("CP_SPEED", P["CP_SPEED"]["de"]), ("CP_FDBK", P["CP_FDBK"]["de"]), ("CP_SYNC", 0)]
     T = {x: run(f"chorus-depth-{x}", with_(chb, ("CP_DEPTH", x)), ST_LONG) for x in (0, 64, 127)}
+    cref = T[0]                                       # (CS_BAND: the SPEED rows' DEPTH 0 reference)
     c64 = T[64]                                       # = chorus-fdbk at FDBK's default: the take-to-take spread
     S.check(f"CHORUS DEPTH {nm('CP_DEPTH')} 0 -> 127", "spectral motion", S.per(lambda q: mot(T[127], q) - mot(T[0], q)),
             lambda v: v >= 1, ">= +1 dB", fmt=lambda v: f"{v:+.1f} dB")
@@ -3012,9 +3014,16 @@ def vibes_fx(V, S, stim=None, extra=()):
             continue
         t = run(f"chorus-speed-{x}", with_(cb127, ("CP_SPEED", x)), ST_LONG)
         ex = lfo_hz(x, half=True)
-        sp[x] = S.per(lambda q: rate_of(ctr(t, q), fps, ex))
+        if cs_band:
+            # CS_BAND (MARIMBA): the roll's centroid by the harmonic sum (rate_of) read SPEED 50 1.31 Hz for 0.87 on
+            # host seeds 4 and 13 (1.5x: the jitter alone). The 300-3000 Hz band re the CHORUS DEPTH 0 take of the
+            # same roll, by its period (lfo_rate pearson), as SPEED 0 and the phaser: no take added
+            sp[x] = S.per(lambda q: phrate(t, q, ex, ref=cref, pearson=True))
+        else:
+            sp[x] = S.per(lambda q: rate_of(ctr(t, q), fps, ex))
         if x:
-            S.check(f"CHORUS SPEED {nm('CP_SPEED')} {x}", f"expected {ex:.2f} Hz (centroid)", sp[x],
+            S.check(f"CHORUS SPEED {nm('CP_SPEED')} {x}",
+                    f"expected {ex:.2f} Hz " + ("(300-3000 Hz re DEPTH 0, its period)" if cs_band else "(centroid)"), sp[x],
                     lambda v: abs(v / ex - 1) <= 0.10, "within 10 %", fmt=lambda v: f"{v:.2f} Hz")
     if cs0_at is None:
         cslower()
@@ -3884,6 +3893,7 @@ def marimba_fx(V, S):
                 ATK=ST_CH,               # COMP ATTACK: a strike out of silence (on a roll the compressor never lets go)
                 BW=(0.05, 2.05),         # the spectra over the whole roll: two takes of one roll 0.2-0.8 dB apart at 1 s
                 CS_PERIOD=True,          # CHORUS SYNC by the period: the harmonic sum took the 1/4's 3rd harmonic
+                CS_BAND=True,            # CHORUS SPEED 50 / 127 by the band re DEPTH 0: the centroid read 1.31 for 0.87
                 SPREAD=True,             # FILTER OFF judged against two dry takes of the roll (one more take)
                 FDN=16384,               # PHASER FDBK frame by frame in 0.34 s frames: two takes of one roll are
                 #                          3.7 dB apart in 43 ms frames (the strikes' phase), 1.6 dB in 0.34 s
