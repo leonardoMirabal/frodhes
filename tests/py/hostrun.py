@@ -32,14 +32,22 @@ def once(binary, make):
         return binary
     uid = os.environ.get("PYTEST_XDIST_TESTRUNUID")
     os.makedirs(os.path.dirname(binary), exist_ok=True)
+    def make_atomic():
+        """make() into a temporary name, then rename into place (atomic): no worker ever runs a half-written binary,
+        even where the file lock does not hold (a Docker bind mount on macOS gave "Exec format error", 2026-10-19).
+        A builder that ignores its argument (make's own rule) writes its target itself."""
+        tmp = f"{binary}.tmp{os.getpid()}"
+        make(tmp)
+        if os.path.exists(tmp):
+            os.replace(tmp, binary)
     if uid is None:
-        make(binary)
+        make_atomic()
     else:
         with open(binary + ".lock", "w") as lk:
             fcntl.flock(lk, fcntl.LOCK_EX)
             stamp = binary + ".run"
             if not (os.path.exists(binary) and os.path.exists(stamp) and open(stamp).read() == uid):
-                make(binary)
+                make_atomic()
                 open(stamp, "w").write(uid)
     _built[binary] = True
     return binary
