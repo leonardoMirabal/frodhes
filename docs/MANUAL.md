@@ -41,9 +41,9 @@ chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo
 Settings and user presets saved by 0.9.3 are read as they are. 0.9.3 had 14 factory presets, so the saved preset
 number is moved past the two new MARIMBA presets once: the FM-1 comes back on the same sound it was left on.
 
-<img src="manual/img/splash.png?v=0.9.3" alt="The start screen" width="240" align="right">
+<img src="manual/img/splash.png?v=0.9.4" alt="The start screen: FRODHES, ELECTRIC PIANO + VIBES + MARIMBA" width="240" align="right">
 
-Frodhes starts with its own screen: the name and the version installed. It gives way to the PERFORM page after a moment,
+Frodhes starts with its own screen: the name, its three instruments (ELECTRIC PIANO + VIBES + MARIMBA) and the version installed. It gives way to the PERFORM page after a moment,
 or as soon as you touch a button or a knob.
 <br clear="right">
 
@@ -438,7 +438,7 @@ choice is kept when you switch off (it belongs to the FM-1, not to a preset).
 | K3 | **USB VOL** | **KNOB**: the USB audio follows the MASTER knob, as the headphones do. **FIXED**: the USB audio always comes at full level, whatever the knob (and headphones plugged in) do; the headphone jack still follows MASTER |
 
 The bottom line shows the name and the version installed, the battery's reading (BAT, the raw value the battery
-segments are worked out from), and the audio engine's time per block (it must stay under 5800 µs; nine notes struck at once with every effect on reach about 4000-4200 on the Rhodes, 3500 on VIBES and MARIMBA, measured).<!-- DRAFT: MARIMBA 3412-3444 us worst on the FM-1, build/marimba/p5/cpu-marimba.txt, commit 4a7e099 -->
+segments are worked out from), and the audio engine's time per block (it must stay under 5800 µs; nine notes struck at once with every effect on reach about 4100 on the Rhodes, 3400 on VIBES and MARIMBA, measured).<!-- FM-1, hil_cpu --worst: Rhodes 4084, VIBES 3408, MARIMBA 3412-3444 us (commit 4a7e099, build/marimba/p5/cpu-marimba.txt, cpu-vibes.txt); re-run 3: Rhodes 4072-4092, VIBES 3376-3428, MARIMBA 3436-3464 (cpu3-*.txt) -->
 
 ### MIDI
 
@@ -581,7 +581,7 @@ motor page: SELECT goes from VOICE 2/2 straight to COMPRESSOR. VOICE 1/2 acts on
 
 | Knob | Card | What it does on MARIMBA |
 | --- | --- | --- |
-| K1 | **RING** | How long a struck bar rings: from a quarter to about four times the normal time (the low notes' tube too) |
+| K1 | **RING** | How long a struck bar rings: from a quarter to about four times the normal time (the low notes' tube too). Above the middle (64) the notes are also turned down as RING rises, so that the hardest strike still stays just under full scale: the low ones the most (at 127 about 6 to 9 dB from C2 to G3, 3 dB at C4, under 1 dB from C6 up). So from about 72 up RING makes the low notes ring longer rather than louder; at 64 and under nothing changes |
 | K2 | **MUTE** | The player's hand when you let go of a key: **0** (MUTE 0.0) lets the note ring out as on a real marimba; up, the hand stops it sooner; at 10.0 it is 60 dB down well within a tenth of a second |
 | K3 | **NOISE** | The mallet's contact: a soft tick at the start of the note (no damper, so nothing at the key-up) |
 | K4 | **TUNE** | Fine tuning, ±50 cents (many marimbas are tuned to A = 442 Hz: +8) |
@@ -697,8 +697,8 @@ the notes that chord mode, the arpeggiator and the sequencer play. Striking a no
 voice, so repeated notes do not use up voices. A 10th note takes over the quietest released note first, or else the
 oldest held one, with a short fade (1.5 ms) so there is no click. The audio also has a safety guard: if it ever ran
 late, the quietest released note would be faded out rather than letting the sound break up. In testing the worst
-case (9 low notes at full velocity with the pedal and every effect on) uses about 4.0-4.2 ms on the Rhodes and 3.5 ms
-on VIBES and MARIMBA of the 5.8 ms available per audio block (measured), and the guard never acts.<!-- DRAFT: MARIMBA 3412-3444 us worst, build/marimba/p5/cpu-marimba.txt (commit 4a7e099) -->
+case (9 low notes at full velocity with the pedal and every effect on) uses about 4.1 ms on the Rhodes and 3.4 ms
+on VIBES and MARIMBA of the 5.8 ms available per audio block (measured), and the guard never acts.<!-- FM-1 hil_cpu --worst, commit 4a7e099 and build/marimba/p5/cpu*.txt: Rhodes 4072-4092 us, VIBES 3376-3428, MARIMBA 3412-3464 -->
 
 ## 11. Sound and volume tips
 
