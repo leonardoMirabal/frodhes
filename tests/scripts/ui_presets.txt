@@ -34,10 +34,14 @@
 3900 midi 0xC0 13 0
 4000 expect led 5 0
 4000 expect state vcard.2.0 OFF
-# PRESETS after F14 goes to U01 (the user presets follow the factory ones), back: F14, F13
+# PRESETS after F14: F15, F16 (MARIMBA), then U01 (the user presets follow the factory ones), back: F14, F13
 4100 turn 6 1
+4120 turn 6 1
+4140 turn 6 1
 4600 expect led 5 1
 4700 turn 6 -1
+4720 turn 6 -1
+4740 turn 6 -1
 5200 expect led 5 0
 5300 turn 6 -1
 5800 expect led 5 0
