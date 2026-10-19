@@ -45,3 +45,22 @@ def test_bar_scan_smoke_on_stage77():
     assert s["summary"]["S9"]["judged"] >= 3
     assert os.path.exists(os.path.join(out, "summary.png"))
     assert "S13" in open(os.path.join(out, "report.txt")).read()
+
+
+def test_strike_windows_and_click_guards_follow_the_block(tmp_path):
+    """bar_scan's strike windows and S1's guards are where the strike sounds: the start of its block (bar_scan.onset_ms,
+    0..5.8 ms before the script's ms), also late in a long render (the HF-burst windows are 44 samples: indexed by the
+    ms they drifted 2.3 ms a second, 107 ms at 46.7 s). MARIMBA RUBBER v127 on A4 at 0.2 / 36.2 / 46.7 s: each onset is
+    the block start bar_scan computes, and no click or burst is counted (before the fix: 2..15 bursts on steps BARK)"""
+    import bar_scan as bs
+    ts = (200, 36200, 46700)
+    ev = bm.setup_events(typ=5, noise=0, BARK=127)
+    for t in ts:
+        ev += bm.note(t, 69, 127, 300)
+    x, _ = bm.render("onsets", ev, 47400, str(tmp_path))
+    m = bm.mono(x)
+    for t in ts:
+        a = int(bs.onset_ms(t) * bm.FS / 1000)
+        assert a % 256 == 0 and a == (t * 44100 // 256000) * 256
+        assert not m[a - 600:a].any() and m[a:a + 8].any(), t       # silent up to the block, sounding from it
+    assert bs.click_count(x, [t for t, _ in ev]) == (0, 0)
