@@ -252,7 +252,15 @@ class Ring:
         import threading
         from collections import deque
         self.lock = threading.Lock()
-        self.log = deque(maxlen=max(64, self.N // 32))   # (absolute frame, ADC time of that frame)
+        # the block log: (absolute frame, ADC time of that frame) in two preallocated rings, nlog entries so far. Not
+        # a deque turned into an array per cut: np.array() of the full deque (180,000 tuples at 48 kHz, 120 s) took
+        # ~18 ms with the lock and the GIL held, so the PortAudio callback stalled and CoreAudio dropped USB input
+        # (the 13-27 ms "gaps" right after a take's last event, while the take was polled every 10 ms; 2026-10-19).
+        # A cut copies only the entries from its start (_snap): microseconds under the lock
+        self.M = max(64, self.N // 32)
+        self.lf = np.zeros(self.M, np.int64)
+        self.la = np.zeros(self.M, np.float64)
+        self.nlog = 0
         self.status = deque(maxlen=1000)             # (ADC time, PortAudio status flags)
         self.gaps = []
 
@@ -271,17 +279,39 @@ class Ring:
         if k < n:
             self.buf[:n - k] = block[k:]
         with self.lock:
-            self.log.append((self.w, float(adc)))
+            j = self.nlog % self.M
+            self.lf[j], self.la[j] = self.w, float(adc)
+            self.nlog += 1
             if status:
                 self.status.append((float(adc), str(status)))
             self.w += n
 
+    def _snap(self, t0, back=64):
+        """(L, w): the log from the last entry at or before stream time t0 (less `back` entries of margin: ADC times
+        may jitter out of order) to the newest, as an (n, 2) float array [frame, ADC time], and the frames pushed;
+        (None, w) while empty. O(log n) under the lock plus the copy of the entries after t0"""
+        with self.lock:
+            c, w = self.nlog, self.w
+            lo = max(0, c - self.M)
+            if c == lo:
+                return None, w
+            a, b = lo, c                             # the first logical index whose ADC time is > t0
+            while a < b:
+                m = (a + b) // 2
+                if self.la[m % self.M] <= t0:
+                    a = m + 1
+                else:
+                    b = m
+            idx = np.arange(max(lo, a - 1 - back), c) % self.M
+            L = np.empty((len(idx), 2), float)
+            L[:, 0], L[:, 1] = self.lf[idx], self.la[idx]
+        return L, w
+
     def frame_at(self, t):
         """the absolute frame captured at stream time t: the blocks' ADC times interpolated, extrapolated past the ends
         at the nominal rate"""
-        with self.lock:
-            L = np.array(self.log, float)
-        if not len(L):
+        L, _ = self._snap(t)
+        if L is None:
             return None
         if t <= L[0, 1]:
             return L[0, 0] + (t - L[0, 1]) * self.sr
@@ -292,9 +322,10 @@ class Ring:
     def end_time(self):
         """the stream time of the last frame held (None before the first block)"""
         with self.lock:
-            if not self.log:
+            if not self.nlog:
                 return None
-            (f, a), w = self.log[-1], self.w
+            j, w = (self.nlog - 1) % self.M, self.w
+            f, a = int(self.lf[j]), float(self.la[j])
         return a + (w - 1 - f) / self.sr
 
     def cut(self, t0, dur, tol=0.006):
@@ -305,11 +336,9 @@ class Ring:
         what comes after is still on the event clock (tol 6 ms: on the FM-1 the ADC times jitter up to ~3 ms from block
         to block, 2026-10-18; a lost USB block is >= 11.6 ms). self.gaps: [(stream time, s)] of the last cut. Frames
         that already left the ring (or came before the first block) read as zeros"""
-        with self.lock:
-            L = np.array(self.log, float)
-            w = self.w
+        L, w = self._snap(t0)
         n = int(round(dur * self.sr))
-        if not len(L):
+        if L is None:
             return None
         if L[-1, 1] + (w - 1 - L[-1, 0]) / self.sr < t0 + (n - 1) / self.sr:
             return None
