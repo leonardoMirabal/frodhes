@@ -125,3 +125,32 @@ def test_vibes_stimuli_unchanged():
     assert h.ST_CH == (3.6, h.chord(h.FXCH, 108, 0.1, 2.1))
     assert h.ST_LONG == (6.0, h.chord(h.FXCH, 108, 0.1, 5.6))
     assert h.ST_NOTE == (2.0, h.chord((69,), 108, 0.1, 1.6))
+
+
+class _V:
+    want_usb = True
+
+    @staticmethod
+    def sources():
+        return ["usb", "jack"]
+
+
+def test_known_rows_are_reported_known():
+    """a failing marimba_* row that matches tools/marimba_scan.py KNOWN / KNOWN_CARDS (m_known) is KNOWN with its
+    reason, not FAIL, and not counted as failed; the same row elsewhere (a VIBES suite) or one that does not match
+    (another key) still fails; a USB-jack mismatch on a KNOWN row still flags it"""
+    import marimba_scan as ms
+    S = h.VSuite("marimba_vel", _V())
+    S.check("C4 MED: v40 -> v117 brighter", "attack centroid 0..50 ms (flat start, VA-M5)", {"usb": 1.04, "jack": 1.03},
+            lambda v: v >= 1.4, ">= 1.4x")
+    S.check("WEIGHT light brighter", "key 84 v100", {"usb": 1.02, "jack": 1.02}, lambda v: v >= 1.05, ">= 1.05")
+    S.check("WEIGHT light brighter", "key 60 v100", {"usb": 1.02, "jack": 1.02}, lambda v: v >= 1.05, ">= 1.05")
+    S.check("pumping", "roll 8 Hz C4 v100", {"usb": 3.0, "jack": 9.0}, lambda v: v <= 1.5, "<= 1.5 LU", level=True)
+    st = [r["status"] for r in S.rows]
+    assert st == ["KNOWN", "KNOWN", "FAIL", "KNOWN MISMATCH"], st
+    assert S.rows[0]["known"] == ms.KNOWN_CARDS["VELOCITY centroid"]
+    assert S.rows[1]["known"] == ms.KNOWN_CARDS["WEIGHT C6 centroid"]
+    assert [r["check"] for r in S.fails()] == ["WEIGHT light brighter", "pumping"]
+    V = h.VSuite("vibes_vel", _V())
+    V.check("C4 MED: v40 -> v117 brighter", "", {"usb": 1.04, "jack": 1.03}, lambda v: v >= 1.4, ">= 1.4x")
+    assert V.rows[0]["status"] == "FAIL" and "known" not in V.rows[0]
