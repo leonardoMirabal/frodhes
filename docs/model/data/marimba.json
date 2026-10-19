@@ -528,7 +528,7 @@
   "_doc": "radiation trims of V2, V3, V4 PER KEY: the generator puts each slot's onset peak re V1's (the slots' max |x| over window_s, after the contact; the DEFAULT mallet, v100, the default cards) on these lines (dB, semitone interpolation). No measured level table exists (D10 = no): the lines are the pulse spectrum of a medium mallet (f tau) with the upper modes' weaker radiation, flat-ish for V2 and falling with key. Per key because one constant per mode cannot hold the Rayleigh law's register spread: with VIBES's one constant V4 (17.5 f0) came out 20 dB over V1 on every key",
   "level_db": {
    "V2": {
-    "36": -10.0,
+    "36": -12.0,
     "48": -12.0,
     "72": -20.0,
     "96": -26.0
@@ -554,6 +554,7 @@
   "status": "ESTIMATE",
   "settle": "listening pack C",
   "smooth_keys": 6,
+  "_doc_2026_10_19_p4": "V2 at key 36 -12 (was -10): the plan's low-register thud (PLAN §2.4, scan M7: C2-E2 with SOFT / MED, V2 <= -10 dB re V1 at the onset, 5..100 ms of the output) read -8.7 dB with MED on C2, golden and C alike: this line is the bar slot's peak, while the output's f0 band at the onset is still short of the tube's build-up (the bloom), so -10 here was ~-8.7 there",
   "trim_db": [
    -40.0,
    0.0
