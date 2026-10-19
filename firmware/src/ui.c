@@ -28,13 +28,13 @@ static void tempo_set10(uint32_t b);
 /* the pages. The ids are the host API's (tests: card.<page>.<k>), so they stay: 4 was DECAY and 21 MOTOR until the
  * engines' pages came from their tables (eng_pages.h): VOICE 1/n .. n/n, one PG_VOICE page with its number ui_vp */
 enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_RETIRED4, PG_COMP, PG_FILTER, PG_TREM, PG_PHA, PG_CHO, PG_DELAY,
-       PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_SETUP, PG_MIDI, PG_DRIVE, PG_REVERB, PG_N };
+       PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_SETUP, PG_MIDI, PG_DRIVE, PG_REVERB, PG_DISPLAY, PG_N };
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL = 8, E_N = 9, E_CARDS = 10 };   /* E_CARDS: all four;
                                     * E_METER: COMP's meter / SEQUENCER's cells, E_ROLL: SEQUENCER's NOW / NEXT */
 /* card slots: a parameter id (< P_COUNT) or one of these */
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
        S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
-       S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_MCH, S_TRS, S_NONE = 0xFF };
+       S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_MCH, S_TRS, S_COLOR, S_BRIGHT, S_LEDS, S_NONE = 0xFF };
 #include "eng_pages.h"                                /* the engines' controls: VOICE pages, FRODHES K2 / K3, names */
 static const engui_t *eng_ui(void) { return &ENG_UI[PV(P_TYPE) < N_TYPE_N ? TYPE_UI[PV(P_TYPE)] : 0u]; }   /* per TYPE */
 static const ectl_t *eng_ctl(uint32_t id)              /* the TYPE's engine's control for a slot (0: not one of its) */
@@ -63,10 +63,10 @@ static uint32_t sq_delete_step(void);
 static void sq_browse(int32_t d);
 /* the SELECT order (0.9.3, user: the instrument pages next to each other right after PERFORM; ASSIGN, rarely used,
  * next to SETUP); VOICE stands for all the engine's VOICE pages */
-#define PG_NORD 20u
+#define PG_NORD 21u
 static const uint8_t PG_ORDER[PG_NORD] = {PG_PERF, PG_PIANO, PG_VOICE, PG_COMP, PG_FILTER, PG_DRIVE, PG_TREM, PG_PHA,
                                           PG_CHO, PG_DELAY, PG_REVERB, PG_TEMPO, PG_SCALE, PG_CHORD, PG_ARP, PG_LFO,
-                                          PG_SEQ, PG_ASSIGN, PG_SETUP, PG_MIDI};   /* DRIVE after FILTER, REVERB the
+                                          PG_SEQ, PG_ASSIGN, PG_SETUP, PG_MIDI, PG_DISPLAY};   /* DRIVE after FILTER, REVERB the
                                     * last effect, as in the chain; SEQUENCER after LFO (user, TODO 3) */
 static uint8_t ui_vp;                                   /* the VOICE page shown: 0 .. vp_count() - 1 */
 static int ui_bars(void) { return TYPE_IS_BARS(PV(P_TYPE)); }    /* the main loop's TYPE (not the ISR's latch) */
@@ -95,7 +95,7 @@ static uint32_t pg_at(uint32_t k, uint32_t *vp)         /* the k-th page (and it
 }
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "", "COMPRESSOR", "FILTER", "TREM/WAH",
                                              "PHASER", "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
-                                             "ARPEGGIO", "LFO", "SETUP", "MIDI", "DRIVE", "REVERB"};
+                                             "ARPEGGIO", "LFO", "SETUP", "MIDI", "DRIVE", "REVERB", "DISPLAY"};
 static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 / K3: the engine's (slot_at) */
     {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
     {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
@@ -118,6 +118,7 @@ static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 
     {S_MCH, S_TRS, S_CLOCK, S_NONE},
     {P_DRV_SW, P_DRIVE, P_DRV_TONE, P_DRV_MIX},
     {P_RV_DEPTH, P_RV_DECAY, P_RV_TONE, P_RV_PREDLY},
+    {S_COLOR, S_BRIGHT, S_LEDS, S_NONE},
 };
 static const char *const PAGE_LAB[PG_N][4] = {
     {"", "", "", ""},                                   /* PERFORM: the assigned parameter's name (slot_label) */
@@ -141,13 +142,14 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"CHANNEL", "TRS IN", "CLOCK", ""},
     {"EFFECT", "AMOUNT", "TONE", "MIX"},
     {"MIX", "DECAY", "TONE", "PRE-DELAY"},
+    {"COLOR", "BRIGHTNESS", "LEDS", ""},
 };
 static const char *const PAGE_HINT[PG_N] = {"THE KNOBS: SET ON ASSIGN", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "", "",
                                             "K1 THRESH: UP = ON, 0 = OFF", "THE LFO: ITS OWN PAGE", "LFO BUTTON: ON / OFF", "ENV BUTTON: ON / OFF",
                                             "K1: ON / OFF", "SEL: ON / OFF  K1: DIG / ANA", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
                                             "EDIT: CHORDS ON / OFF", "", "ARP: ON / OFF   SEL: HOLD", "MOVES THE FILTER (ITS LFO)", "",
-                                            "USB AND TRS: THE SAME CHANNEL", "K1: ON / OFF", "MIX ALSO SETS THE SIZE"};
+                                            "USB AND TRS: THE SAME CHANNEL", "K1: ON / OFF", "MIX ALSO SETS THE SIZE", "THE SCREEN AND THE KEY LIGHTS"};
 static uint32_t ui_vp_ok(void) { return ui_vp < vp_count() ? ui_vp : vp_count() - 1u; }
 static const char *page_hint(uint32_t pg)
 {
@@ -238,13 +240,95 @@ static uint16_t cd_shade(uint16_t c, uint32_t pct)      /* an RGB565 colour x pc
     uint32_t r = (c >> 11) & 31u, g = (c >> 5) & 63u, b = c & 31u;
     return (uint16_t)((r * pct / 100u) << 11 | (g * pct / 100u) << 5 | (b * pct / 100u));
 }
-static uint8_t ui_cards = UI_CARDS_DEF;
-static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab, val, unit, dim, acc, seq; } mt;
-static void mt_update(void)                             /* the tokens for the look and the palette (each pass) */
+/* ---- COLOR (DISPLAY K1, 0.9.4): the screen's palette, set.palette. Step 0 is AMBER, gfx.c's own palette (the default,
+ * the manual's pictures); then 25 pastel hues around the colour wheel, hue falling from peach through the pinks,
+ * violets, blues, cyans and greens to yellow and back (the user's pick on the FM-1, 2026-10-19: the five anchors
+ * PEACH ROSE LILAC SKY MINT exact, the 20 between them interpolated in hue, saturation and lightness), as one RGB565
+ * accent each. The fill is cd_shade 45 as always; the palette's other steps are fractions of the accent, as AMBER's
+ * are of its own, the brightest half way to white. */
+#define COLOR_N 26u
+static const uint16_t COLOR_ACC[COLOR_N] = {
+    0xE3C1,                                           /* AMBER: PALETTES[1].c[3] (gfx.c) */
+    0xFD0E, 0xFC50, 0xFCB5, 0xFCB9, 0xFCDC,
+    0xFCFF, 0xED1F, 0xDD1F, 0xC53F, 0xACFF,
+    0x94FF, 0x957F, 0x8E1F, 0x8EFF, 0x8FBE,
+    0x8F9B, 0x8777, 0x8774, 0x8790, 0x9F90,
+    0xB7AF, 0xD7AF, 0xF7CF, 0xFF0F, 0xFE2F,
+};
+static const char *const COLOR_NAME[COLOR_N] = {
+    "AMBER", "PEACH", "CORAL", "ROSE", "PINK", "ORCHID", "MAUVE",
+    "PURPLE", "VIOLET", "LILAC", "IRIS", "BLUE", "DENIM", "SKY",
+    "OCEAN", "CYAN", "AQUA", "MINT", "JADE", "GREEN", "LEAF",
+    "LIME", "PEAR", "LEMON", "GOLD", "MANGO",
+};
+static uint16_t cd_lighten(uint16_t c)                 /* an RGB565 colour half way to white */
 {
+    uint32_t r = (c >> 11) & 31u, g = (c >> 5) & 63u, b = c & 31u;
+    return (uint16_t)((r + (31u - r) / 2u) << 11 | (g + (63u - g) / 2u) << 5 | (b + (31u - b) / 2u));
+}
+/* DISPLAY BRIGHTNESS (the user, 2026-10-19: one knob for a dark room): 10 (full) .. 1 dims the screen, colours and
+ * text alike (the backlight itself is fixed: black stays as it is), and every light together. set.dim is the steps
+ * down from full, 0 .. 9, between the ceiling and the floor picked by eye on the FM-1 (at 1 the keys are lit 1 frame
+ * in 16, the buttons 2; the HAL's glow pulse would go dimmer but costs the audio ~1.5 us a glowing column, so it stays
+ * the ROOTS landmarks' alone). Three groups, each with its own scale (the keys' LEDs are
+ * brighter parts than the buttons'): the screen's colours at dim_scr percent of themselves; the keys' and the
+ * buttons' lit duty (hal fm1_led_duty: 1 .. 16 lit on that many of 16 scan frames, spread evenly, no flicker from 2;
+ * the HAL works the patterns out in the main loop, fm1_led_build, so the scan ISR costs what it did). At 10 the keys
+ * are at full, as before DISPLAY (Leo's review: an update must not change how the FM-1 looks); below, a little under
+ * the buttons (their LEDs are the brighter parts), every step a change in both. */
+#define DIM_N 10
+static const uint8_t dim_key[DIM_N] = {16, 12, 9, 7, 6, 5, 4, 3, 2, 1};
+static const uint8_t dim_btn[DIM_N] = {16, 14, 12, 10, 8, 6, 5, 4, 3, 2};
+static const uint8_t dim_scr[DIM_N] = {100, 86, 73, 63, 54, 46, 40, 34, 29, 25};
+static uint32_t dim_pct(void) { return dim_scr[set.dim < DIM_N ? set.dim : 0u]; }
+static void color_apply(uint32_t i)                     /* the COLOR step, at BRIGHTNESS, onto gfx.c's pal[] */
+{
+    uint16_t a;
+    uint32_t k, pct = dim_pct();
+    if (i >= COLOR_N) i = 0;
+    if (i == 0u) {                                      /* AMBER: gfx.c's own ramp (exact at full) */
+        for (k = 0; k < 5u; k++) pal[k] = cd_shade(PALETTES[1].c[k], pct);
+        return;
+    }
+    a = cd_shade(COLOR_ACC[i], pct);
+    pal[0] = cd_shade(a, 25); pal[1] = cd_shade(a, 45); pal[2] = cd_shade(a, 70); pal[3] = a; pal[4] = cd_lighten(a);
+}
+static void dim_apply(void)
+{
+    uint32_t d = set.dim < DIM_N ? set.dim : 0u;
+    fm1_led_duty[0] = dim_key[d]; fm1_led_duty[1] = dim_btn[d];
+    fm1_led_build();
+    color_apply(set.palette);
+}
+/* DISPLAY LEDS: which keys light: OFF, PLAYED (as they sound), ROOTS (the played keys, and the scale's root keys glowing
+ * as landmarks while a scale is on; the default, as before DISPLAY), ALL (every key lit, a light for playing in the dark; a
+ * played key goes dark, as Felucca's INV). The played and ALL keys use the lit layer (BRIGHTNESS scaling them), the
+ * ROOTS landmarks the HAL's faint glow layer (~1/24 of a lit LED), dimmer than a played key at every BRIGHTNESS (1/16
+ * at the lowest).
+ * set.leds keeps 0 = ROOTS so an older record reads as today; the card shows the four in the order OFF PLAYED ROOTS
+ * ALL. */
+static const uint8_t LEDS_DISP[4] = {2, 0, 1, 3}, LEDS_STORED[4] = {1, 2, 0, 3};
+static const char *const LEDS_NAME[4] = {"OFF", "PLAYED", "ROOTS", "ALL"};
+static uint32_t leds_disp(void) { return LEDS_DISP[set.leds < 4u ? set.leds : 0u]; }
+static uint8_t ui_cards = UI_CARDS_DEF;
+static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab, val, unit, dim, acc, seq, white; } mt;
+/* a static in a section of its own, out of the compiler's global merge (merged in, it can split rhodes.c's rh_F / rh_x:
+ * engine.c eq); nothing on the host */
+#ifdef DINGHY_HOST
+#define UI_OWN_SECTION(name)
+#else
+#define UI_OWN_SECTION(name) __attribute__((section(name)))
+#endif
+static void mt_update(void)                             /* the tokens for the look and the palette (each pass; done
+                                                         * again only when one of them changed: the dimmed tokens
+                                                         * cost 33 divides) */
+{
+    static struct { uint16_t acc, line, pct; uint8_t look, done; } was UI_OWN_SECTION(".bss.ui_mt");
     const mt_look_t *l = &MT_LOOKS[ui_look < MT_NLOOKS ? ui_look : 0];
     uint32_t c = C_LINE, n = l->fill_n ? l->fill_n : 5u, rr = (c >> 11) & 31u, gg = (c >> 5) & 63u, bb = c & 31u;
     int amber = pal[3] == PALETTES[1].c[3];             /* (gfx.c: AMBER is the second palette) */
+    if (was.done && was.look == ui_look && was.acc == pal[3] && was.line == pal[0] && was.pct == dim_pct()) return;
+    was.done = 1; was.look = ui_look; was.acc = pal[3]; was.line = pal[0]; was.pct = (uint16_t)dim_pct();
     rr = rr ? (rr * n / 16u ? rr * n / 16u : 1u) : 0u;  /* a lit channel keeps at least one unit */
     gg = gg ? (gg * n / 16u ? gg * n / 16u : 1u) : 0u;
     bb = bb ? (bb * n / 16u ? bb * n / 16u : 1u) : 0u;
@@ -254,8 +338,13 @@ static void mt_update(void)                             /* the tokens for the lo
     if (!(amber && l->amb_fill)) mt.fill = cd_shade(pal[3], UI_FILL_PCT);   /* (look C on AMBER: its own, matched) */
 #endif
     mt.acc = mt.edge = mt.frame = amber && l->amb_acc ? l->amb_acc : pal[3];
-    mt.surf = l->surf; mt.track = l->track; mt.outline = l->outline; mt.hair = l->hair; mt.seq = l->seq;
-    mt.tag = l->tag; mt.lab = l->lab; mt.val = l->val; mt.unit = l->unit; mt.dim = l->dim;
+    {                                                   /* DISPLAY BRIGHTNESS: the fixed tokens dimmed too */
+        uint32_t pct = dim_pct();
+        mt.surf = cd_shade(l->surf, pct); mt.track = cd_shade(l->track, pct); mt.outline = cd_shade(l->outline, pct);
+        mt.hair = cd_shade(l->hair, pct); mt.seq = cd_shade(l->seq, pct);
+        mt.tag = cd_shade(l->tag, pct); mt.lab = cd_shade(l->lab, pct); mt.val = cd_shade(l->val, pct);
+        mt.unit = cd_shade(l->unit, pct); mt.dim = cd_shade(l->dim, pct); mt.white = cd_shade(C_WHITE, pct);
+    }
 }
 #define UI_ACC mt.acc                                   /* the title, SUS, a turned knob's label, the frame */
 #define FC_BG C_BLACK
@@ -392,6 +481,7 @@ static uint32_t tw_kind(void)                          /* OFF PAN TREM WAH */
     uint32_t sw = PV(P_TW_SW), m = PV(P_TW_MODE);
     return sw == 2u ? 3u : sw != 1u ? 0u : m ? 2u : 1u;
 }
+static void color_text(char *v, uint32_t i) { p_strcpy(v, COLOR_NAME[i < COLOR_N ? i : 0u], 6); }
 static int32_t slot_val(uint32_t s, int32_t *hi)
 {
     if (s < P_COUNT) { *hi = PARAMS[s].hi; return PV(s); }
@@ -413,6 +503,9 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_USBVOL: *hi = 1; return set.usb_fixed;
     case S_MCH: *hi = 16; return set.midi_ch;
     case S_TRS: *hi = 1; return !set.trs_off;
+    case S_COLOR: *hi = (int32_t)COLOR_N - 1; return set.palette;
+    case S_BRIGHT: *hi = DIM_N - 1; return DIM_N - 1 - (int32_t)set.dim;
+    case S_LEDS: *hi = 3; return (int32_t)leds_disp();
     case S_CHTYPE: *hi = CH_NTYPE - 1; return CH_TYPE;
     case S_CHINV: *hi = 3; return CH_INV;
     case S_CHVOICE: *hi = 2; return CH_VOICE;
@@ -484,6 +577,9 @@ static void slot_text(uint32_t s, char *v)
     case S_USBVOL: p_strcpy(v, set.usb_fixed ? "FIXED" : "KNOB", 5); return;
     case S_MCH: if (set.midi_ch) p_fmt_int(v, set.midi_ch); else p_strcpy(v, "ALL", 3); return;
     case S_TRS: p_strcpy(v, set.trs_off ? "OFF" : "ON", 3); return;
+    case S_COLOR: color_text(v, set.palette); return;
+    case S_BRIGHT: p_fmt_int(v, DIM_N - (int32_t)set.dim); return;
+    case S_LEDS: p_strcpy(v, LEDS_NAME[leds_disp()], 6); return;
     case S_CHTYPE: p_strcpy(v, CH_TYPE_NAME[CH_TYPE], 9); return;
     case S_CHINV: p_strcpy(v, CH_INV_NAME[CH_INV], 4); return;
     case S_CHVOICE: p_strcpy(v, CH_VOICE_NAME[CH_VOICE], 5); return;
@@ -500,6 +596,7 @@ static void slot_text(uint32_t s, char *v)
     if (s < P_COUNT) param_text(s, v);
 }
 
+static void ui_draw_page_change(void);                 /* (below: every element dirty) */
 static void slot_turn(uint32_t s, int32_t d)
 {
     if (!d || s == S_NONE) return;
@@ -553,6 +650,17 @@ static void slot_turn(uint32_t s, int32_t d)
     case S_USBVOL: set.usb_fixed = d > 0; usb_pre_master = set.usb_fixed; break;
     case S_MCH: set.midi_ch = (uint8_t)clampi(set.midi_ch + sgn(d), 0, 16); break;
     case S_TRS: set.trs_off = d < 0; uart_midi_on = !set.trs_off; break;
+    case S_COLOR:                                   /* the screen's palette (COLOR_ACC): the whole page again in it */
+        set.palette = (uint8_t)clampi(set.palette + sgn(d), 0, (int32_t)COLOR_N - 1);
+        color_apply(set.palette);
+        ui_draw_page_change();
+        break;
+    case S_BRIGHT:
+        set.dim = (uint8_t)clampi((int32_t)set.dim - sgn(d), 0, DIM_N - 1);
+        dim_apply();
+        ui_draw_page_change();
+        break;
+    case S_LEDS: set.leds = LEDS_STORED[clampi((int32_t)leds_disp() + sgn(d), 0, 3)]; break;
     case S_CHTYPE: CH_TYPE = (uint8_t)clampi(CH_TYPE + sgn(d), 0, CH_NTYPE - 1); if (CH_TYPE) CH_LAST = CH_TYPE; break;
     case S_CHINV: CH_INV = (uint8_t)clampi(CH_INV + sgn(d), 0, 3); break;
     case S_CHVOICE: CH_VOICE = (uint8_t)clampi(CH_VOICE + sgn(d), 0, 2); break;
@@ -1073,6 +1181,7 @@ static uint32_t ui_fit_scan(void)
                 }
         }
     set = keep;
+    dim_apply();                                        /* (S_COLOR and S_BRIGHT were turned through) */
     ui_page = page0; ui_vp = vp0;
     return bad;
 }
@@ -1175,7 +1284,7 @@ static void draw_now(void)                              /* NOW (big) and NEXT */
         ft_c(50, "SEQ: REC, THEN PLAY", FC_LAB);
     } else {
         if (empty) p_strcpy(v, "-", 1); else sq_group_name(now, v);
-        if (big_ok(v, 236)) ft_big(22, v, sq_browsing() ? UI_ACC : seq_play ? C_WHITE : FC_VAL);
+        if (big_ok(v, 236)) ft_big(22, v, sq_browsing() ? UI_ACC : seq_play ? mt.white : FC_VAL);
         else ft_c(22, v, FC_VAL);
         sq_group_name(next, v);
         p_strcpy(t, "NEXT ", 5); n = 5; p_strcpy(t + n, v, 12); while (t[n]) n++;
@@ -1209,13 +1318,13 @@ static void draw_strip(void)                            /* the bar playing: 16 c
     cv_begin(240, 62, C_BLACK);
     for (i = 0; i < 16u; i++) {
         int32_t x = 4 + (int32_t)(i % 8u) * 29, y = i < 8u ? 2 : 33;
-        uint16_t c = i == cur ? C_WHITE : hit[i] == 1u ? C_AMB : hit[i] ? C_LINE : C_LINE;
+        uint16_t c = i == cur ? mt.white : hit[i] == 1u ? C_AMB : hit[i] ? C_LINE : C_LINE;
         if (hit[i] == 2u && i != cur) { cv_rect(x, y, 26, 26, C_LINE); cv_rect(x, y + 9, 26, 8, C_DIM); }   /* held */
         else if (hit[i] || i == cur) cv_rect(x, y, 26, 26, c);
         else { cv_rect(x, y, 26, 26, i % 4u == 0u ? C_DIM : C_LINE); cv_rect(x + 2, y + 2, 22, 22, C_BLACK); }
         if (sq_browsing() && i == (p - b0) / 24u) {    /* the cursor: a white frame around its cell (inside: */
-            cv_rect(x - 2, y - 2, 30, 3, C_WHITE); cv_rect(x - 2, y + 25, 30, 3, C_WHITE);   /* black on a filled */
-            cv_rect(x - 2, y - 2, 3, 30, C_WHITE); cv_rect(x + 25, y - 2, 3, 30, C_WHITE);   /* one, so it shows) */
+            cv_rect(x - 2, y - 2, 30, 3, mt.white); cv_rect(x - 2, y + 25, 30, 3, mt.white);   /* black on a filled */
+            cv_rect(x - 2, y - 2, 3, 30, mt.white); cv_rect(x + 25, y - 2, 3, 30, mt.white);   /* one, so it shows) */
             if (hit[i] == 1u && i != cur) { cv_rect(x + 1, y + 1, 24, 2, C_BLACK); cv_rect(x + 1, y + 23, 24, 2, C_BLACK);
                                       cv_rect(x + 1, y + 1, 2, 24, C_BLACK); cv_rect(x + 23, y + 1, 2, 24, C_BLACK); }
         }
@@ -1501,7 +1610,8 @@ static void ui_input(uint32_t b, uint32_t rel)
         else { chord_toggle(); ui_say(chord_on() ? "CHORDS ON" : "CHORDS OFF"); ui_changed(); ui_mark(E_CARDS); }
     }
     if (b >> BTN_ENV & 1u) ui_fx_button(PG_PHA, 3);   /* PHASER; on it: on / off (0.9.2: was DECAY / COMP) */
-    if (b >> BTN_GLO & 1u) ui_goto(ui_page == PG_TEMPO ? PG_SETUP : ui_page == PG_SETUP ? PG_MIDI : PG_TEMPO);   /* TEMPO -> SETUP -> MIDI */
+    if (b >> BTN_GLO & 1u)                                                        /* TEMPO -> SETUP -> MIDI -> DISPLAY */
+        ui_goto(ui_page == PG_TEMPO ? PG_SETUP : ui_page == PG_SETUP ? PG_MIDI : ui_page == PG_MIDI ? PG_DISPLAY : PG_TEMPO);
     if (b >> BTN_LFO & 1u) ui_fx_button(PG_TREM, 0);
     if (b >> BTN_SEL & 1u) {                            /* DELAY; on it: on / off (0.9.2: was CHORUS); HOLD on / off on
                                                          * ARPEGGIO and, while the arpeggiator is on, on every page (0.9.3) */
@@ -1569,21 +1679,34 @@ static void ui_input(uint32_t b, uint32_t rel)
  * HOLD: HOLD), ARP: the arpeggiator, EDIT: chord mode, SEQ: the sequencer playing (blinking: recording) */
 static void ui_leds(uint32_t lit, uint32_t beat_on)
 {
-    uint32_t k;
-    fm1_led_key(BTN_LFO, PV(P_TW_SW) != 0);
-    fm1_led_key(BTN_FX, !fx_bypass);
-    fm1_led_key(BTN_SEL, sel_is_hold() ? ARP_HOLD : PV(P_DL_SW) != 0);       /* HOLD (ARPEGGIO, or the arp on) */
-    fm1_led_key(BTN_ARP, arp_on());
-    fm1_led_key(BTN_SEQ, seq_rec ? (fm1_ms & 256u) != 0 : seq_play);     /* playing; blinks: recording */
-    fm1_led_key(BTN_HOME, ui_page == PG_PIANO || ui_page == PG_PERF);
-    fm1_led_key(BTN_EDIT, chord_on());                                  /* chord mode (0.9.3) */
-    fm1_led_key(BTN_ENV, PV(P_PH_SW) != 0);
-    fm1_led_key(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP || ui_page == PG_MIDI);
-    fm1_led_key(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));
-    fm1_led_key(BTN_PLAY, play_is_seq() ? seq_play && beat_on : beat_on);
-    fm1_led_key(BTN_OCT_DOWN, set.oct < 0);
-    fm1_led_key(BTN_OCT_UP, set.oct > 0);
-    fm1_led_key(BTN_REC, rh_hold);
-    for (k = 0; k < 27u; k++) fm1_led_key(KEY_LED(k), lit >> k & 1u);
-    for (k = 0; k < 27u; k++) fm1_led_key_glow(KEY_LED(k), scale_is_root(k));   /* the scale's root, dimly */
+    static struct { uint32_t lit, glow, btn; uint8_t done; } was UI_OWN_SECTION(".bss.ui_leds");
+    uint32_t k, btn = 0, glow = 0;
+#define BTN(id, on) btn |= (on) ? 1u << (id) : 0u            /* the buttons' LEDs as a mask: set below, only on a change */
+    BTN(BTN_LFO, PV(P_TW_SW) != 0);
+    BTN(BTN_FX, !fx_bypass);
+    BTN(BTN_SEL, sel_is_hold() ? ARP_HOLD : PV(P_DL_SW) != 0);       /* HOLD (ARPEGGIO, or the arp on) */
+    BTN(BTN_ARP, arp_on());
+    BTN(BTN_SEQ, seq_rec ? (fm1_ms & 256u) != 0 : seq_play);     /* playing; blinks: recording */
+    BTN(BTN_HOME, ui_page == PG_PIANO || ui_page == PG_PERF);
+    BTN(BTN_EDIT, chord_on());                                  /* chord mode (0.9.3) */
+    BTN(BTN_ENV, PV(P_PH_SW) != 0);
+    BTN(BTN_GLO, ui_page == PG_TEMPO || ui_page == PG_SETUP || ui_page == PG_MIDI || ui_page == PG_DISPLAY);
+    BTN(BTN_SAVE, pr_save_mode && (fm1_ms & 256u));
+    BTN(BTN_PLAY, play_is_seq() ? seq_play && beat_on : beat_on);
+    BTN(BTN_OCT_DOWN, set.oct < 0);
+    BTN(BTN_OCT_UP, set.oct > 0);
+    BTN(BTN_REC, rh_hold);
+#undef BTN
+    for (k = 0; k < 27u; k++) if (set.leds == 0u && scale_is_root(k)) glow |= 1u << k;   /* ROOTS: the landmarks' glow */
+    lit = set.leds == 3u ? ~lit & 0x7FFFFFFu : set.leds != 1u ? lit : 0u;   /* LEDS (DISPLAY): ALL every key lit, a played
+                                                                             * one dark; ROOTS, PLAYED the played keys; OFF none */
+    if (was.done && lit == was.lit && glow == was.glow && btn == was.btn) return;   /* as last pass: nothing to set (each
+                                                                             * fm1_led_key walks the key map; then the tables) */
+    was.done = 1; was.lit = lit; was.glow = glow; was.btn = btn;
+    for (k = 0; k < 14u; k++) fm1_led_key(k, btn >> k & 1u);           /* the buttons: LED ids 0 .. 13 */
+    for (k = 0; k < 27u; k++) {
+        fm1_led_key(KEY_LED(k), lit >> k & 1u);
+        fm1_led_key_glow(KEY_LED(k), glow >> k & 1u);
+    }
+    fm1_led_build();                                                    /* (the scan ISR's tables) */
 }

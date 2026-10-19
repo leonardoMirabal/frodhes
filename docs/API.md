@@ -96,6 +96,7 @@ prev = keys;
 | --- | --- |
 | `fm1_led_key(id, on)` | a button (`BTN_...`) or a key (`KEY_LED(k)`, k = 0..26) lit or not |
 | `fm1_led[col]`, `fm1_led_dim[col]` | the raw layers, for many LEDs at once (see `hal/fm1_input.h`); `_dim` glows at ~1/24 |
+| `fm1_led_duty[2]`, `fm1_led_group_ids(id0, id1)`, `fm1_led_build()` | brightness: the lit layer's duty per group (lit on that many of 16 scan frames, 0 dark; group 0 the ids id0..id1, 1 the rest), and the scan ISR's tables, rebuilt by `fm1_led_build()` after the LEDs or a duty changed (main loop) |
 
 ## Screen
 

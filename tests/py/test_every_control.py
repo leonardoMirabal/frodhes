@@ -29,10 +29,10 @@ PEDAL = [cc(22, 64, 127)]
 SHORT = [cc(23, 103, 0), cc(24, 104, 0)]            # RELEASE 0, NOISE 0: a note let go stops at once
 # the SELECT order (ui.c PG_ORDER) and the page ids the dump's card.<page>.<k> use (ui.c PG_*)
 ORDER = ["PERF", "PIANO", "VOICE", "DECAY", "COMP", "FILTER", "DRIVE", "TREM", "PHA", "CHO", "DELAY", "REVERB", "TEMPO",
-         "SCALE", "CHORD", "ARP", "LFO", "SEQ", "ASSIGN", "SETUP", "MIDI"]   # (a Rhodes TYPE: no MOTOR page)
+         "SCALE", "CHORD", "ARP", "LFO", "SEQ", "ASSIGN", "SETUP", "MIDI", "DISPLAY"]   # (a Rhodes TYPE: no MOTOR page)
 PG = {n: i for i, n in enumerate(["PERF", "ASSIGN", "PIANO", "VOICE", "DECAY", "COMP", "FILTER", "TREM", "PHA", "CHO",
                                   "DELAY", "TEMPO", "SCALE", "CHORD", "SEQ", "ARP", "LFO", "SETUP", "MIDI",
-                                  "DRIVE", "REVERB", "MOTOR"])}
+                                  "DRIVE", "REVERB", "DISPLAY"])}
 BTN = {"OCT-": 0, "OCT+": 1, "FX": 2, "SEL": 3, "ENV": 4, "LFO": 5, "EDIT": 6, "GLO": 7, "HOME": 8, "SAVE": 9,
        "ARP": 10, "SEQ": 11, "PLAY": 12, "REC": 13}
 C4 = 261.63
@@ -1420,15 +1420,15 @@ def _bypass():
 @case("BUTTONS")
 def _buttons():
     """the page buttons and their LEDs: HOME (PERFORM <-> main), EDIT (CHORD), ENV (PHASER), LFO (TREM/WAH), SEL
-    (DELAY; on ARPEGGIO: HOLD), SEQ (SEQUENCER, straight), ARP, GLO (TEMPO -> SETUP -> MIDI) (0.9.3)"""
+    (DELAY; on ARPEGGIO: HOLD), SEQ (SEQUENCER, straight), ARP, GLO (TEMPO -> SETUP -> MIDI -> DISPLAY) (0.9.4)"""
     seq = [("HOME", "FRODHES"), ("HOME", "PERFORM"), ("EDIT", "CHORD"), ("ENV", "PHASER"), ("LFO", "TREM/WAH"),
            ("SEL", "DELAY"), ("SEQ", "SEQUENCER"), ("ARP", "ARPEGGIO"), ("SEL", "ARPEGGIO"), ("GLO", "TEMPO"),
-           ("GLO", "SETUP"), ("GLO", "MIDI"), ("GLO", "TEMPO")]
+           ("GLO", "SETUP"), ("GLO", "MIDI"), ("GLO", "DISPLAY"), ("GLO", "TEMPO")]
     w = R(CLEAN + [f"{100 + 100 * i} btn {BTN[b]}" for i, (b, _) in enumerate(seq)]
           + [f"{150 + 100 * i} dump" for i in range(len(seq))], 100 + 100 * len(seq) + 100)
     got = [w.state(150 + 100 * i)["page"] for i in range(len(seq))]
     assert got == [p for _, p in seq], got
-    led = {"FRODHES": 8, "PERFORM": 8, "TEMPO": 7, "SETUP": 7, "MIDI": 7}
+    led = {"FRODHES": 8, "PERFORM": 8, "TEMPO": 7, "SETUP": 7, "MIDI": 7, "DISPLAY": 7}
     for i, (_, p) in enumerate(seq):
         if p in led:
             assert w.state(150 + 100 * i)[f"led.{led[p]}"] == "1", p
