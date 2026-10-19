@@ -1,17 +1,18 @@
 # Frodhes
 
-**A physically modelled Fender Rhodes and vibraphone for the M-VAVE FM-1.**
+**A physically modelled Fender Rhodes, vibraphone and marimba for the M-VAVE FM-1.**
 
 ![Frodhes on the FM-1: the FRODHES page (TYPE, TONE, BELL, KEY VEL)](docs/manual/img/piano.png?v=0.9.3)
 
-Frodhes turns the FM-1 into an electric piano and a vibraphone. Every note is computed live from the mechanics of the
+Frodhes turns the FM-1 into an electric piano, a vibraphone and a marimba. Every note is computed live from the mechanics of the
 instrument: on a Rhodes a hammer strikes a tine, the tine rings against its tonebar and a magnetic pickup turns the
 motion into sound, with the bark of hard notes and the bell of the attack; on the vibraphone a mallet strikes a bar,
-its tuned tube rings along and the motor makes it pulse. Five instrument types (Stage 77, Suitcase, Early Felt, Bell
-Dyno and Vibes), a
+its tuned tube rings along and the motor makes it pulse; on the marimba a yarn mallet strikes a rosewood bar whose
+long tube makes the low notes bloom. Six instrument types (Stage 77, Suitcase, Early Felt, Bell Dyno, Vibes and
+Marimba), a
 reface CP-style effects chain (compressor, a resonant filter with its LFO, drive, tremolo / wah, phaser, chorus, delay,
 reverb), tap tempo with MIDI
-clock sync, USB-MIDI in and out and TRS MIDI in, chord mode, a pattern recorder (1–16 bar loops, quantize, overdub, undo / erase), an arpeggiator, scales, a sustain pedal, 9-voice polyphony and 14 factory plus 16 user presets. The screen shows one page at a time with
+clock sync, USB-MIDI in and out and TRS MIDI in, chord mode, a pattern recorder (1–16 bar loops, quantize, overdub, undo / erase), an arpeggiator, scales, a sustain pedal, 9-voice polyphony and 16 factory plus 16 user presets. The screen shows one page at a time with
 four cards, one for each of the FM-1's four knobs, each read at a glance by its kind (an amount fills its row like a
 fader, a selector lights one block per option up to its choice, an ON / OFF switch shows a lit dot), the value always
 in the same large letters; the instrument brings its own VOICE pages; the first page, PERFORM, puts the effects' dry / wet (or
@@ -51,9 +52,9 @@ the MIDI map.
 | Page | K1 | K2 | K3 | K4 | Button |
 | --- | --- | --- | --- | --- | --- |
 | **PERFORM** | TREM/WAH | PHASER | FILTER | DELAY | HOME (assignable on ASSIGN) |
-| **FRODHES** (main) | TYPE | TONE (VIBES: MALLET) | BELL (VIBES: MOTOR) | KEY VEL | HOME twice |
-| **VOICE 1/2** (VIBES: 1/3) | TONE (VIBES: STRIKE) | BARK (MALLET) | BELL (TUBE) | HAMMER (WEIGHT) | (SELECT) |
-| **VOICE 2/2** (VIBES: 2/3) | DECAY (VIBES: RING) | RELEASE (DAMPER) | NOISE | TUNE | (SELECT) |
+| **FRODHES** (main) | TYPE | TONE (VIBES / MARIMBA: MALLET) | BELL (VIBES: MOTOR; MARIMBA: TUBE) | KEY VEL | HOME twice |
+| **VOICE 1/2** (VIBES: 1/3) | TONE (VIBES / MARIMBA: STRIKE) | BARK (MALLET) | BELL (TUBE) | HAMMER (WEIGHT) | (SELECT) |
+| **VOICE 2/2** (VIBES: 2/3) | DECAY (VIBES / MARIMBA: RING) | RELEASE (VIBES: DAMPER; MARIMBA: MUTE) | NOISE | TUNE | (SELECT) |
 | **VOICE 3/3** (VIBES only: the motor) | MOTOR (ON / OFF) | DEPTH | SPEED | SHAPE | (SELECT) |
 | **COMPRESSOR** | THRESHOLD (OFF / on) | RATIO | ATTACK | MAKEUP | (SELECT) |
 | **FILTER** | OFF / LP12 / LP18 (default) / HP12 / HP18 / BP / NOTCH | FREQ | RESO | LFO | (SELECT) |

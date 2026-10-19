@@ -1157,6 +1157,8 @@ def presets(r, rep):
 MISMATCH_DB = 1.0              # USB (left) vs jack: a level change both must agree on
 JUMP_LU = 1.5                  # an effect switched on at its default settings: loudness step flagged above this
 VIBES_CC79 = 0                 # CC 79 = 0: TYPE VIBES (the first bar type's band starts at 0)
+MARIMBA_CC79 = 127             # CC 79 96..127: TYPE MARIMBA (frodhes.c midi_cc; tools/marimba_scan.py CC79)
+ENGINE = "vibes"               # the bar TYPE the device suites play: set per suite by vibes_main (marimba_* suites)
 RESET_S, TAKE_S = 1.2, 0.3     # the time estimate: a reset (CCs, settle, wait_silence) and a take's stream overhead
 VTESTS = {}
 VDEBUG = False                 # --dry-run: measurement exceptions are printed
@@ -1217,13 +1219,20 @@ def lvl_db(v):
     return 20 * np.log10(t[int(v)] / t[64])
 
 
+def bar_cc79():
+    return MARIMBA_CC79 if ENGINE == "marimba" else VIBES_CC79
+
+
 def bspec():
-    """the bar spec (docs/model/data/bars_spec.json, as tools/bar_cards.py): midi -> {mode name: Hz}"""
+    """the bar spec (docs/model/data/bars_spec.json, as tools/bar_cards.py): midi -> {mode name: Hz}; on the marimba
+    suites docs/model/data/marimba_spec.json once it exists (until then the stub plays VIBES's tables)"""
     global _SPEC
-    if _SPEC is None:
-        d = json.load(open(os.path.join(ROOT, "docs", "model", "data", "bars_spec.json")))
-        _SPEC = {k["midi"]: {m["name"]: m["f"] for m in k["modes"]} for k in d["keys"]}
-    return _SPEC
+    d = os.path.join(ROOT, "docs", "model", "data")
+    p = os.path.join(d, "marimba_spec.json") if ENGINE == "marimba" else None
+    p = p if p and os.path.exists(p) else os.path.join(d, "bars_spec.json")
+    if _SPEC is None or _SPEC[0] != p:
+        _SPEC = (p, {k["midi"]: {m["name"]: m["f"] for m in k["modes"]} for k in json.load(open(p))["keys"]})
+    return _SPEC[1]
 
 
 def f1(n):
@@ -1434,7 +1443,7 @@ class VRig:
         if self.offline:
             return
         if self.dry_run:
-            print(f"  reset{' [' + label + ']' if label else ''}: defaults + DRY, CC 79={VIBES_CC79}, CC 47="
+            print(f"  reset{' [' + label + ']' if label else ''}: defaults + DRY, CC 79={bar_cc79()}, CC 47="
                   f"{127 if motor else 0}" + "".join(f", {n}={x} (CC {c}={v})" for (n, x), (c, v) in zip(settings, sets))
                   + f", CC {RESET_CC}=127")
             return
@@ -1445,7 +1454,7 @@ class VRig:
             self.send(c, v)
         for k, v in DRY.items():
             self.r.cc(k, v)
-        self.send(79, VIBES_CC79)
+        self.send(79, bar_cc79())
         self.send(vp()["MOT_ON"]["cc"], 127 if motor else 0)
         for c, v in sets:
             self.send(c, v)
@@ -2129,13 +2138,14 @@ class VSuite:
 
 def v_report(suites, V, path, dry):
     tk = V.takes
-    L = [f"# VIBES device scan (tools/hil_scan.py){' - DRY RUN (synthetic audio, the numbers mean nothing)' if dry else ''}",
+    eng = "MARIMBA" if all(S.name.startswith("marimba_") for S in suites) else "VIBES"
+    L = [f"# {eng} device scan (tools/hil_scan.py){' - DRY RUN (synthetic audio, the numbers mean nothing)' if dry else ''}",
          "", f"- date: {time.strftime('%Y-%m-%d %H:%M')}; sources: {', '.join(V.sources())}"
          + (f" (jack: {V.jack_name})" if V.jack_name else ""),
          "- USB = the FM-1's USB audio, LEFT channel (what the jack cable carries) unless the row says stereo; jack = "
          "the headphone jack through the interface. Levels are changes within one source (the interface's gain "
          f"cancels); 'USB-jack' is their difference, flagged (MISMATCH) above {MISMATCH_DB:.1f} dB.",
-         f"- VIBES by CC 79 = {VIBES_CC79}; every reset: CC 120, every parameter at its default, the DRY dict, the "
+         f"- VIBES by CC 79 = {VIBES_CC79}, MARIMBA by CC 79 = {MARIMBA_CC79} (the marimba_* suites); every reset: CC 120, every parameter at its default, the DRY dict, the "
          "motor off unless the row is about it. CCs read from firmware/src/params.c PARAMS[].",
          "- Not testable over MIDI: KEY VEL (the FM-1's own keys only), TUNE's other values (DECAY page K4 has no CC; "
          "only the current value is measured), SPREAD (not in the engine), the physical keys and screen.", "",
@@ -3000,6 +3010,10 @@ ALL_ON = [("DRIVE", 30), ("CMP_SW", 1), ("CMP_AMT", 64), ("CMP_RATIO", 3), ("CMP
 def vibes_jump(V, S):
     """every effect switched on at its default settings: the loudness step (LUFS) on vs off, held on vs never on, and
     switched while a chord sounds (fx_toggle); clicks at the switch; the FX bypass"""
+    return _jump(V, S, JUMPS)
+
+
+def _jump(V, S, jumps):
     P = vp()
     ch = chord(FXCH, 108, 0.1, 3.4)
     st = (3.6, ch)
@@ -3012,7 +3026,7 @@ def vibes_jump(V, S):
         i = t.on(q)[0]
         return lu(x[max(0, i + int(a * FS)):i + int(b * FS)])
     rows = []
-    for name, base, (sw, on) in JUMPS:
+    for name, base, (sw, on) in jumps:
         mot = sw == "MOT_ON"
         V.reset(base + ([] if mot else [(sw, on)]), motor=mot, label=f"jump {name} held on")
         held = V.take(f"jump-{sw}-{on}-held", *st)
@@ -3025,7 +3039,7 @@ def vibes_jump(V, S):
     lfo = {"TW_SW": lfo_hz(P["TW_RATE"]["de"]), "PH_SW": lfo_hz(P["PH_SPEED"]["de"], True),
            "CP_SW": lfo_hz(P["CP_SPEED"]["de"], True), "MOT_ON": mot_hz(P["MOT_RATE"]["de"])}
     for name, held, tog in rows:
-        sw = [j for n_, b_, j in JUMPS if n_ == name][0]
+        sw = [j for n_, b_, j in jumps if n_ == name][0]
         rate = lfo.get(sw[0]) if not (sw[0] == "TW_SW" and sw[1] == 2) else None     # (the wah: no LFO)
         # a modulating effect is judged over whole cycles of its LFO (round 1: 0.4 s of a 3.5 Hz motor or a
         # 0.68 Hz phaser sweep read the LFO's phase, -6.2 / +7.1 LU); the held window: the most cycles in 0..3.2 s
@@ -3109,6 +3123,290 @@ def vibes_jump(V, S):
     S.check("everything on re no effects", "fx_all 'all on'", S.per(lambda q: lq(a, q, 0, 1.8) - lq(refs[0], q, 0, 1.8)),
             lambda d: True, "information", level=True, info=True)
 
+# ==================================================================================================================
+# MARIMBA (TYPE 5, CC 79 = 127): the same rig and report as the VIBES suites (USB and the jack side by side, the jack
+# decides), the thresholds of MARIMBA PLAN §10.2 / §10.3 (the D rows) as tests/py/test_marimba_cards_audible.py,
+# test_marimba_controls_audible.py and tools/marimba_scan.py judge them on the host. Not in the default run:
+# --marimba, or --only marimba_*; report build/hil/marimba-report.md (+ .json). Written for P5 (the coordinator's FM-1
+# session); --dry-run and --host run them without a device. No MOTOR suite: MARIMBA has no motor (marimba_decay checks
+# that CC 47-51 change nothing). MUTE (CC 103) is the hand at key-up: 0 rings out.
+# ==================================================================================================================
+MKEYS = (48, 60, 84)                      # C3 C4 C6 (PLAN §12 step 2)
+MFAMS = (("SOFT", 0), ("MED", 42), ("HARD", 85), ("RUBBER", 127))
+MVELS = (8, 24, 40, 64, 88, 100, 117, 127)
+MOFFSET_DB = 2.5                          # the provisional level offset re ST77 (PLAN §10.1 offset_db: VIBES's, until P5)
+
+
+def mt60(x, f):
+    """the V1 T60 by a 30 dB fit (5..35 dB under the peak; PLAN §10.2 B1)"""
+    return t60(x, f, 5.0, 35.0)
+
+
+@vtest
+def marimba_voice(V, S):
+    """MARIMBA VOICE: STRIKE, MALLET (the four families), TUBE (level and the low notes' length), WEIGHT; C3 C4 C6 v100"""
+    ev, dur = strikes(MKEYS, (100,))
+    V.reset([("RELEASE", 0)], label="MARIMBA VOICE all 64")
+    T = {64: V.take("m-voice-default", dur, ev)}
+    sets = [("TONE", 0), ("TONE", 127), ("BELL", 0), ("BELL", 127), ("HAMMER", 0), ("HAMMER", 127)] + \
+           [("BARK", v) for _, v in MFAMS]
+    for card, x in sets:
+        V.reset([(card, x), ("RELEASE", 0)], label=f"MARIMBA {card} {x}")
+        T[(card, x)] = V.take(f"m-voice-{card}-{x}", dur, ev)
+    cache = {}
+
+    def F(key, src, k):
+        if (key, src, k) not in cache:
+            t = T[key]
+            cache[(key, src, k)] = strike_feats(t.m(src), t.on(src)[k], MKEYS[k])
+        return cache[(key, src, k)]
+
+    def key(c, x):
+        return 64 if x == 64 else (c, x)
+    P = vp()
+    for k, n in enumerate(MKEYS):
+        def d(c, a, b, src):
+            return sdist(F(key(c, a), src, k)["bands"], F(key(c, b), src, k)["bands"])
+
+        def lv(c, a, b, src):
+            return F(key(c, b), src, k)["lufs"] - F(key(c, a), src, k)["lufs"]
+        s = f"key {n} v100"
+        S.check(f"STRIKE (CC {P['TONE']['cc']}) 0 vs 64", s, S.per(lambda q: d("TONE", 0, 64, q)), lambda v: v >= 3,
+                ">= 3 dB spectral distance", fmt=lambda v: f"{v:.1f} dB")
+        S.check(f"STRIKE 64 vs 127", s, S.per(lambda q: d("TONE", 64, 127, q)), lambda v: v >= 3, ">= 3 dB",
+                fmt=lambda v: f"{v:.1f} dB")
+
+        def fam(q):
+            ds = [(sdist(F(("BARK", va), q, k)["bands"], F(("BARK", vb), q, k)["bands"]), f"{na}-{nb}")
+                  for i, (na, va) in enumerate(MFAMS) for nb, vb in MFAMS[i + 1:]]
+            return min(ds)
+        S.check(f"MALLET (CC {P['BARK']['cc']}) families pairwise", s, S.per(fam), lambda v: v[0] >= 3,
+                "every pair of SOFT MED HARD RUBBER >= 3 dB", fmt=lambda v: f"closest {v[1]} {v[0]:.1f} dB")
+        S.check(f"TUBE (CC {P['BELL']['cc']}) level 0 -> 64", s, S.per(lambda q: lv("BELL", 0, 64, q)), lambda v: v >= 4.0,
+                ">= +4 LU", level=True)
+        S.check("TUBE level 64 -> 127", s, S.per(lambda q: lv("BELL", 64, 127, q)), lambda v: v >= 0.5, ">= +0.5 LU",
+                level=True)
+        S.check(f"WEIGHT (CC {P['HAMMER']['cc']}) level 0 -> 127", s, S.per(lambda q: lv("HAMMER", 0, 127, q)),
+                lambda v: v >= 2.5, ">= +2.5 LU", level=True)
+        S.check("WEIGHT light brighter", s,
+                S.per(lambda q: F(("HAMMER", 0), q, k)["cen_a"] / F(("HAMMER", 127), q, k)["cen_a"]),
+                lambda v: v >= 1.05, "attack centroid 0 / 127 >= 1.05", fmt=lambda v: f"x{v:.2f}")
+        S.check("V2 / V3 re V1 at the defaults", s, S.per(lambda q: (F(64, q, k)["v2"], F(64, q, k)["v3"])),
+                lambda v: True, "information", fmt=lambda v: f"{v[0]:.1f} / {v[1]:.1f} dB", info=True)
+    # TUBE lengthens the low notes: C2 and C3 held 4 s, MUTE 0, TUBE 0 vs 64
+    ev, dur = strikes((36, 48), (100,), gap=5.0, hold=4.5)
+    R = {}
+    for b in (0, 64):
+        V.reset([("BELL", b), ("RELEASE", 0)], label=f"MARIMBA TUBE {b} ring")
+        R[b] = V.take(f"m-tube-ring-{b}", dur, ev)
+    for k, n in enumerate((36, 48)):
+        S.check("TUBE 0 -> 64: the V1 T60", f"key {n} v100, held",
+                S.per(lambda q: [mt60(cut(R[b].m(q), R[b].on(q)[k], 0, 4.4), f1(n)) for b in (0, 64)]),
+                lambda v: v[1] >= 1.3 * v[0], "x1.3 or more (the tube lengthens the low notes)",
+                fmt=lambda v: f"{v[0]:.2f} -> {v[1]:.2f} s")
+
+
+@vtest
+def marimba_decay(V, S):
+    """MARIMBA VOICE 2/2: RING, MUTE (the hand), the pedal, NOISE (no knock), TUNE; the MOTOR CCs inert"""
+    P = vp()
+    ev, dur = strikes((36, 60, 84), (100,), gap=8.0, hold=7.5)
+    T = {}
+    for x in (0, P["DECAY"]["de"], 127):
+        V.reset([("DECAY", x), ("RELEASE", 0), ("NOISE", 0)], label=f"RING {x}")
+        T[x] = V.take(f"m-ring-{x}", dur, ev)
+    for k, n in enumerate((36, 60, 84)):
+        S.check(f"RING (CC {P['DECAY']['cc']}) T60 at 0 / {P['DECAY']['de']} / 127", f"key {n} v100, held",
+                S.per(lambda q: [mt60(cut(T[x].m(q), T[x].on(q)[k], 0, 7.4), f1(n)) for x in sorted(T)]),
+                lambda v: v[0] < v[1] < v[2] and v[2] / v[0] >= 2.0, "in order, 127 / 0 >= 2x",
+                fmt=lambda v: fmt_s(v) + " s")
+    # MUTE and the pedal: the decay 30..300 ms after the key-up (1.5 s), against the same note held
+    keys = (48, 72)
+    ev, dur = strikes(keys, (100,), gap=3.0, hold=1.5)
+    evh, _ = strikes(keys, (100,), gap=3.0, hold=2.8)
+    T = {}
+    for x in (0, 64, 127):
+        V.reset([("RELEASE", x), ("NOISE", 0)], label=f"MUTE {x}")
+        T[x] = V.take(f"m-mute-{x}", dur, ev)
+    V.reset([("NOISE", 0)], label="held")
+    T["held"] = V.take("m-held", dur, evh)
+    for p_ in (0, 50, 127):
+        V.reset([("RELEASE", 127), ("NOISE", 0)], label=f"pedal {p_} (MUTE 127)")
+        T[("ped", p_)] = V.take(f"m-pedal-{p_}", dur, ev + [(0.05, "cc", 64, p_)])
+    for k, n in enumerate(keys):
+        def r(key, q):
+            return release_rate(cut(T[key].m(q), T[key].on(q)[k], 0, 2.3), f1(n), 1.5)
+        S.check(f"MUTE (CC {P['RELEASE']['cc']}) 0 = rings out", f"key {n}, after the key-up vs held",
+                S.per(lambda q: r(0, q) / r("held", q)), lambda v: abs(v - 1) <= 0.01, "within 1 % of the held decay",
+                fmt=lambda v: f"x{v:.3f}")
+        S.check("MUTE 0 / 64 / 127", f"key {n}, after the key-up", S.per(lambda q: [r(x, q) for x in (0, 64, 127)]),
+                lambda v: v[0] < v[1] < v[2] and v[2] / v[0] >= 3.0, "in order, 127 / 0 >= 3x",
+                fmt=lambda v: f"{v[0]:.0f} / {v[1]:.0f} / {v[2]:.0f} dB/s")
+        S.check("pedal down holds at MUTE 127", f"key {n}", S.per(lambda q: r(("ped", 127), q) / r("held", q)),
+                lambda v: abs(v - 1) <= 0.01, "within 1 % of the held decay", fmt=lambda v: f"x{v:.3f}")
+        S.check("pedal up / half / down (MUTE 127)", f"key {n}",
+                S.per(lambda q: [r(("ped", p_), q) for p_ in (0, 50, 127)]),
+                lambda v: v[2] < v[1] < v[0] and v[0] / v[2] >= 3.0, "down < half < up, up / down >= 3x",
+                fmt=lambda v: f"{v[0]:.0f} / {v[1]:.0f} / {v[2]:.0f} dB/s")
+    # NOISE: the contact (0..60 ms) and, with no damper, nothing at the key-up
+    ev, dur = strikes((48, 60, 84), (100,), gap=3.0, hold=1.5)
+    T = {}
+    de = P["NOISE"]["de"]
+    for x in (0, de, 127):
+        V.reset([("NOISE", x), ("RELEASE", 64)], label=f"NOISE {x}")
+        T[x] = V.take(f"m-noise-{x}", dur, ev)
+    for k, n in enumerate((48, 60, 84)):
+        def nz(q):
+            o = {x: T[x].on(q)[k] for x in T}
+            m = {x: T[x].m(q) for x in T}
+            ring = ms_db(cut(m[0], o[0], 0, 0.06))
+            c = {x: excess_db(cut(m[x], o[x], 0, 0.06), cut(m[0], o[0], 0, 0.06)) - ring for x in (de, 127)}
+            return dict(c=c, k=knock_db(m[127], o[127], m[0], o[0]) - ms_db(cut(m[0], o[0], 1.4, 1.5)))
+        vals = S.per(nz)
+        S.check(f"NOISE (CC {P['NOISE']['cc']}) contact {de} -> 127", f"key {n}, 0..60 ms",
+                {s_: v and v["c"][127] - v["c"][de] for s_, v in vals.items()}, lambda v: v >= 6, ">= +6 dB", level=True)
+        S.check("NOISE 127 contact re the note", f"key {n}", {s_: v and v["c"][127] for s_, v in vals.items()},
+                lambda v: v > -35, "> -35 dB (a clear tick)", fmt=lambda v: f"{v:.1f} dB")
+        S.check("no knock at the key-up (NOISE 127)", f"key {n}, 0..150 ms after the key-up",
+                {s_: v and v["k"] for s_, v in vals.items()}, lambda v: v <= -60,
+                "<= -60 dB re the note (no damper on this type; the jack: its hiss floor)", fmt=lambda v: f"{v:.1f} dB")
+    # the MOTOR CCs: inert
+    ev, dur = strikes((57,), (100,), gap=3.0, hold=2.5)
+    V.reset([("RELEASE", 0)], label="motor CCs off")
+    a = V.take("m-mot-off", dur, ev)
+    V.reset([("RELEASE", 0), ("MOT_DEPTH", 127)], motor=True, label="motor CCs on (inert)")
+    b = V.take("m-mot-on", dur, ev)
+    S.check("MOTOR CCs 47 / 48 on MARIMBA", "A3 held 2.5 s, re without",
+            S.per(lambda q: lu(cut(b.m(q), b.on(q)[0], 0.3, 2.3)) - lu(cut(a.m(q), a.on(q)[0], 0.3, 2.3))),
+            lambda v: abs(v) <= 0.3, "within 0.3 LU (no motor on this type)", level=True)
+    V.reset(label="TUNE (current)")
+    t = V.take("m-tune-a4", 2.6, chord((69,), 100, 0.2, 2.2))
+    S.check("TUNE (panel only): A4 re the spec", "the FM-1's current TUNE",
+            S.per(lambda q: 1200 * np.log2(f0_of(cut(t.m(q), t.on(q)[0], 0.3, 1.0), f1(69)) / f1(69))),
+            lambda v: abs(v) <= 2.0, "|cents| <= 2 (TUNE 0)", fmt=lambda v: f"{v:+.2f} c")
+
+
+@vtest
+def marimba_vel(V, S):
+    """MARIMBA velocity on C2 C3 C4 C6 (MED on C4 for the brightness); every key C2..C7 (level, tuning)"""
+    for n in (36, 48, 60, 84):
+        ev, dur = strikes((n,), MVELS, gap=1.6, hold=1.0)
+        V.reset([("BARK", 42)] if n == 60 else [], label=f"velocity {n}")
+        t = V.take(f"m-vel-{n}", dur, ev)
+
+        def lv(q):
+            return [lu(cut(t.m(q), i, 0, 1.0)) for i in t.on(q)]
+        vals = S.per(lv)
+        S.check("velocity monotone", f"key {n}, v{MVELS[1]}..v127",
+                {s_: v and float(min(np.diff(v[1:]))) for s_, v in vals.items()}, lambda d: d >= -0.3,
+                "no drop > 0.3 dB (v8 may sit under the gate)", fmt=lambda d: f"{d:+.2f}")
+        S.check("velocity smooth", f"key {n}", {s_: v and float(np.abs(np.diff(v[1:], 2)).max()) for s_, v in vals.items()},
+                lambda d: d <= 1.5, "second difference <= 1.5 dB", fmt=lambda d: f"{d:.2f} dB")
+        S.check("velocity range v8 -> v127", f"key {n}", {s_: v and v[-1] - v[0] for s_, v in vals.items()},
+                lambda d: 26 <= d <= 32, "26..32 dB", level=True)
+        if n == 60:
+            S.check("C4 MED: v40 -> v117 brighter", "attack centroid 0..0.3 s",
+                    S.per(lambda q: cen(cut(t.m(q), t.on(q)[MVELS.index(117)], 0, 0.3)) /
+                          cen(cut(t.m(q), t.on(q)[MVELS.index(40)], 0, 0.3))),
+                    lambda v: v >= 1.4, ">= 1.4x", fmt=lambda v: f"x{v:.2f}")
+    keys = list(range(36, 97))
+    ev, dur = strikes(keys, (100,), gap=1.4, hold=0.9)
+    V.reset([("RELEASE", 64)], label="every key C2..C7")
+    t = V.take("m-keys", dur, ev)
+
+    def kl(q):
+        o = t.on(q)
+        lv = np.array([lu(cut(t.m(q), i, 0, 1.0)) for i in o])
+        c = np.array([1200 * np.log2(max(f0_of(cut(t.m(q), i, 0.05, 0.6), f1(n)), 1e-9) / f1(n)) for i, n in zip(o, keys)])
+        return lv, c
+    vals = S.per(kl)
+    S.check("keys C2..C7: neighbour step", "every key, v100",
+            {s_: v and float(np.abs(np.diff(v[0])).max()) for s_, v in vals.items()}, lambda d: d <= 1.5,
+            "<= 1.5 dB (PLAN M1, D)", fmt=lambda d: f"{d:.2f} dB")
+    S.check("keys C2..C7: level span", "", {s_: v and float(v[0].max() - v[0].min()) for s_, v in vals.items()},
+            lambda d: d <= 3.0, "<= 3 dB (PLAN M1, D)", fmt=lambda d: f"{d:.1f} dB")
+    S.check("keys C2..C7: tuning re the spec", "", {s_: v and float(np.abs(v[1]).max()) for s_, v in vals.items()},
+            lambda d: d <= 3, "|cents| <= 3", fmt=lambda d: f"{d:.2f} c")
+
+
+def m_roll(keys, rate, vel, t0=0.2, dur=4.0):
+    ev, k, dt = [], 0, 1.0 / rate
+    while k * dt < dur:
+        n = keys[k % len(keys)]
+        ev += [(t0 + k * dt, "on", n, vel), (t0 + k * dt + dt / 2, "off", n, 0)]
+        k += 1
+    return ev, t0 + dur + 1.5
+
+
+def pumping(x, i0, dur=4.0):
+    """the LUFS span over sliding 0.5 s windows (hop 0.1 s) from 0.5 s into the roll to its end (PLAN M5)"""
+    v = [lu(cut(x, i0, a, a + 0.5)) for a in np.arange(0.5, dur - 0.5 + 1e-9, 0.1)]
+    return float(max(v) - min(v))
+
+
+@vtest
+def marimba_roll(V, S):
+    """MARIMBA rolls at 8 / 12 Hz (MUTE 0): no clicks, no pumping, the two hands even; MUTE 127 on a roll"""
+    for name, keys, rate, vel, sets in (("roll 8 Hz C4 v100", (60,), 8, 100, []), ("roll 12 Hz C4 v117", (60,), 12, 117, []),
+                                        ("roll 12 Hz C2 v127 RUBBER", (36,), 12, 127, [("BARK", 127)]),
+                                        ("two-hand roll C2+G2 12 Hz v117", (36, 43), 12, 117, [])):
+        ev, dur = m_roll(keys, rate, vel)
+        V.reset(sets + [("RELEASE", 0)], label=name)
+        t = V.take("m-" + name.replace(" ", "-"), dur, ev)
+        S.check("pumping", name, S.per(lambda q: pumping(t.m(q), t.on(q)[0])), lambda v: v <= 1.5,
+                "sliding 0.5 s LUFS span <= 1.5 LU", fmt=lambda v: f"{v:.2f} LU")
+        S.check("peak", name, S.usb(lambda q: 20 * np.log10(np.abs(t.usb).max() + 1e-12)), lambda v: True,
+                "information (the limiter's ceiling -2.7 dBFS)", fmt=lambda v: f"{v:.1f} dBFS", info=True)
+        if len(keys) == 2:
+            lvs = {}
+            for n in keys:
+                e1 = [e for e in ev if e[2] == n]
+                V.reset(sets + [("RELEASE", 0)], label=f"{name}: {n} alone")
+                tt = V.take(f"m-roll-alone-{n}", dur, e1)
+                lvs[n] = tt
+            S.check("two-hand balance", name,
+                    S.per(lambda q: abs(lu(cut(lvs[keys[0]].m(q), lvs[keys[0]].on(q)[0], 0.5, 4.0)) -
+                                        lu(cut(lvs[keys[1]].m(q), lvs[keys[1]].on(q)[0], 0.5, 4.0)))),
+                    lambda v: v <= 2.0, "the two notes within 2 LU", fmt=lambda v: f"{v:.2f} LU")
+    ev, dur = m_roll((60,), 12, 100, dur=3.0)
+    off = max(t_ for t_, k, a, b in ev if k == "off")
+    R = {}
+    for mu in (0, 127):
+        V.reset([("RELEASE", mu), ("NOISE", 0)], label=f"roll MUTE {mu}")
+        R[mu] = V.take(f"m-roll-mute-{mu}", dur, ev)
+    S.check("MUTE 127 on a roll: the stop", "after the last key-up re MUTE 0",
+            S.per(lambda q: release_rate(cut(R[127].m(q), R[127].on(q)[0], 0, off + 1.0), f1(60), off - ev[0][0]) /
+                  release_rate(cut(R[0].m(q), R[0].on(q)[0], 0, off + 1.0), f1(60), off - ev[0][0])),
+            lambda v: v >= 3.0, ">= 3x faster", fmt=lambda v: f"x{v:.1f}")
+
+
+@vtest
+def marimba_fx(V, S):
+    """every effect page's every control at min / default / max on MARIMBA (vibes_fx's checks)"""
+    return vibes_fx(V, S)
+
+
+@vtest
+def marimba_jump(V, S):
+    """MARIMBA: every effect switched on (vibes_jump without the motor); the level re ST77 and VIBES on A3-E4-A4"""
+    _jump(V, S, [j for j in JUMPS if j[2][0] != "MOT_ON"])
+    ch = chord((57, 64, 69), 100, 0.4, 2.4)
+    T = {}
+    for name, sel in (("MARIMBA", []), ("VIBES", [(0.0, "cc", 79, VIBES_CC79)]), ("ST77", [(0.0, "cc", 80, 8)])):
+        V.reset([("RELEASE", 64)], label=f"level {name}")
+        T[name] = V.take(f"m-level-{name}", 3.4, sel + ch)
+
+    def L(name, q):
+        t = T[name]
+        return lu(cut(t.m(q), t.on(q)[0], 0, 1.0))
+    S.check("MARIMBA re ST77, A3-E4-A4 v100", "LUFS 0..1 s", S.per(lambda q: L("MARIMBA", q) - L("ST77", q)),
+            lambda v: abs(v - MOFFSET_DB) <= 1.0, f"{MOFFSET_DB:+.1f} +-1 LU (provisional offset; P5 sets it)", level=True)
+    S.check("MARIMBA re VIBES", "LUFS 0..1 s", S.per(lambda q: L("MARIMBA", q) - L("VIBES", q)), lambda v: True,
+            "information", level=True, info=True)
+
+
+MORDER = ("marimba_jump", "marimba_voice", "marimba_decay", "marimba_vel", "marimba_roll", "marimba_fx")
+
 
 VORDER = ("vibes_jump", "vibes_voice", "vibes_decay", "vibes_motor", "vibes_vel", "vibes_fx")
 
@@ -3122,6 +3420,8 @@ def vibes_main(names, a):
     for n in names:
         S = VSuite(n, V)
         t0, k0, p0 = time.time(), len(V.takes), V.plan_s
+        global ENGINE
+        ENGINE = "marimba" if n.startswith("marimba_") else "vibes"   # (reset's CC 79, the spec)
         print(f"== {n}: {VTESTS[n].__doc__.strip().splitlines()[0]}", flush=True)
         try:
             VTESTS[n](V, S)
@@ -3157,8 +3457,9 @@ def vibes_main(names, a):
               f"{S.ntakes} takes, {S.secs:.0f} s{' (estimated)' if a.dry_run else ''}", flush=True)
         suites.append(S)
     V.finish()
-    path = os.path.join(OUT, "vibes-dryrun.md" if a.dry_run else "vibes-offline.md" if a.offline else
-                        "vibes-host.md" if getattr(a, "host", None) is not None else "vibes-report.md")
+    pre = "marimba" if all(n.startswith("marimba_") for n in names) else "vibes"
+    path = os.path.join(OUT, f"{pre}-dryrun.md" if a.dry_run else f"{pre}-offline.md" if a.offline else
+                        f"{pre}-host.md" if getattr(a, "host", None) is not None else f"{pre}-report.md")
     v_report(suites, V, path, a.dry_run)
     if a.dry_run:
         print(f"estimated device time: {V.plan_s / 60:.1f} min ({len(V.takes)} takes); "
@@ -3194,6 +3495,7 @@ def main():
     ap.add_argument("--only")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--vibes", action="store_true", help="every VIBES suite (not part of the default run)")
+    ap.add_argument("--marimba", action="store_true", help="every MARIMBA suite (not part of the default run; P5)")
     ap.add_argument("--source", default="both", choices=("usb", "jack", "both"), help="VIBES suites: what to record")
     ap.add_argument("--jack-dev", default="M6", help="VIBES suites: the interface recording the headphone jack")
     ap.add_argument("--jack-ch", type=int, default=5, help="VIBES suites: its input (1-based)")
@@ -3212,12 +3514,15 @@ def main():
     if a.list:
         print(" ".join(TESTS))
         print("VIBES (--vibes or --only):", " ".join(VORDER))
+        print("MARIMBA (--marimba or --only):", " ".join(MORDER))
         return 0
     if a.offline and not a.only:
         a.vibes = True
-    names = a.only.split(",") if a.only else ([] if a.vibes else list(TESTS))
+    names = a.only.split(",") if a.only else ([] if a.vibes or a.marimba else list(TESTS))
     if a.vibes:
         names += [n for n in VORDER if n not in names]
+    if a.marimba:
+        names += [n for n in MORDER if n not in names]
     bad = [n for n in names if n not in TESTS and n not in VTESTS]
     if bad:
         sys.exit(f"unknown test(s) {bad}; --list")
