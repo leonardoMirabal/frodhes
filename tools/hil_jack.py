@@ -4,7 +4,12 @@
 
 Records the USB audio and an audio interface input (the jack) at the same time while MIDI plays the FM-1.
 
-  hil_jack.py [--dev NAME] [--ch N]      (default: the interface "M6", input 5 -> --ch 5)
+  hil_jack.py [--dev NAME] [--ch N] [--engine rhodes|vibes|marimba] [--dry-run]
+                                         (default: the interface "M6", input 5 -> --ch 5)
+
+--engine marimba runs its own session (ST77, MARIMBA, ST77 again: SNR within 1 dB of ST77, the drift; the muted and
+idle floors, USB exact zero at idle; the silence gate on MARIMBA tails, TEST-PLAN A5) -> build/hil/jack-marimba.json.
+--dry-run: no device (the host build plays the MIDI; the jack is simulated): checks the procedure, writes build/hil/dry/.
 
 Reports (all jack figures re the interface's full scale, so they depend on its input gain; the differences are
 what matter):
@@ -100,13 +105,179 @@ def harm(x, f0):
     return [float(20 * np.log10(H[k] / H[0] + 1e-12)) for k in range(1, 6)]
 
 
+class DryJack:
+    """--dry-run: the same calls without the device. USB = the host build playing the same MIDI (hil_scan.HostRig:
+    the panel state replayed, 44.1 -> 48 kHz); the 'jack' = USB - 3 dB + a seeded white floor at -100 dBFS while USB
+    is not exact zero and -110 dBFS while it is (a codec mute that follows the output exactly). Every jack figure of a
+    dry run is therefore SIMULATED: the run checks the procedure, the events and the measures, never the FM-1"""
+
+    def __init__(self, seed=1):
+        self.r = hs.HostRig(seed=seed, reset=False, preroll=(300, 301), lat=(5, 6), tag="jackdry")
+        self.rng = np.random.default_rng(seed)
+
+    def both(self, dur, events):
+        x = self.r._rec(dur, sorted(events, key=lambda e: e[0]))
+        u = x[:, 0] / 32768.0
+        fl = np.where(u != 0, 10 ** (-100 / 20), 10 ** (-110 / 20)) * np.sqrt(3)
+        return u, u * 10 ** (-3 / 20) + fl * self.rng.uniform(-1, 1, len(u))
+
+
+def frames_db(x, ms=10):
+    n = int(FS * ms / 1000)
+    m = len(x) // n
+    return 20 * np.log10(np.sqrt(np.mean(np.asarray(x[:m * n]).reshape(m, n) ** 2, axis=1)) + 1e-15)
+
+
+def lufs48(x):
+    """BS.1770 integrated over the whole slice (no gating), K-weighted at FS"""
+    import bar_measure as bm
+    from scipy.signal import sosfilt
+    y = sosfilt(bm.k_weight_sos(FS), np.asarray(x, float))
+    return -0.691 + 10 * np.log10(float(np.mean(y * y)) + 1e-30)
+
+
+def gate_tail(u, j, t_note):
+    """TEST-PLAN A5 on one tail: USB (full scale 1.0) and the jack. The mute instant z = the first sample after which
+    USB is exact zero to the end. 'gate' when the 200 ms before z - 46 ms stayed <= 16 LSB (fx.c: a 46 ms linear fade
+    after 203 ms under 16 LSB ends at z), else 'decayed' (the tail itself rounded to zero first, e.g. a hand mute);
+    on a gate the 50 ms before the fade start [z - 96 ms, z - 46 ms] peak <= 16 LSB. Jack, 10 ms frames from z: none
+    of the first 100 ms more than 6 dB over the muted floor (z + 300 .. 1000 ms): the codec's own mute transient;
+    hiss_step = the 100 ms before z - 50 ms minus that floor (what stops when the codec mutes)"""
+    nz = np.flatnonzero(u != 0)
+    if not len(nz) or nz[-1] >= len(u) - int(1.05 * FS):
+        return dict(ok=False, why="no exact zero (with 1 s after it) inside the take: record longer")
+    z = int(nz[-1]) + 1
+    ms = lambda t: int(t * FS / 1000)                                  # noqa: E731
+    pre = float(np.abs(u[max(0, z - ms(96)):z - ms(46)]).max() * 32768)
+    gated = bool(np.abs(u[max(0, z - ms(246)):z - ms(46)]).max() * 32768 <= 16.5)
+    last60 = np.flatnonzero(np.abs(u) > 10 ** (-60 / 20))
+    floor = float(np.median(frames_db(j[z + ms(300):z + ms(1000)])))
+    after = float(frames_db(j[z:z + ms(100)]).max() - floor)
+    hiss = float(np.median(frames_db(j[max(0, z - ms(150)):z - ms(50)])) - floor)
+    m16 = u * 32768
+    clk = int((np.abs(np.diff(m16, 2)) > 6 * (np.convolve(np.abs(m16), np.ones(480) / 480, "same")[1:-1] + 50) + 2000).sum())
+    return dict(kind="gate" if gated else "decayed", zero_s=round(z / FS - t_note, 3),
+                last_over_60dbfs_s=round(float(last60[-1]) / FS - t_note, 3) if len(last60) else None,
+                pre_fade_peak_lsb=round(pre, 1), jack_after_mute_over_floor_db=round(after, 1),
+                jack_hiss_step_db=round(hiss, 1), jack_floor_db=round(floor, 1), usb_clicks=clk,
+                ok=bool((pre <= 16.5 or not gated) and after <= 6.0 and clk == 0))
+
+
+def marimba(J, a, out):
+    """--engine marimba (PLAN §12.5, TEST-PLAN §6.3 / A5): ST77, MARIMBA, ST77 again in one session (the drift check);
+    SNR = the loud chord's jack RMS (and LUFS) over the jack's 8-20 kHz hiss. A MARIMBA note does not sustain (a low
+    quiet one ends in the gate and the codec mutes inside the hiss window), so MARIMBA's SNR is taken over the ST77
+    hiss of the same session (the codec's analog hiss is the engine's no more); MARIMBA's own hiss under a pedalled
+    RING 127 note is reported with the fraction of the window the codec was live. Then the muted floor, the silence
+    gate on MARIMBA tails (A5, MUTE 0: the tails ring out), the idle floor and USB exact zero at idle.
+    Results to build/hil/jack-marimba.json"""
+    M = J.r.mido.Message
+    dry0 = J.r.dry
+
+    def sel(engine):
+        def dry(**kv):
+            dry0(**kv)
+            if engine == "marimba":
+                J.r.out.send(M("control_change", control=79, value=127))    # MARIMBA (no motor: CC 47 inert)
+            time.sleep(0.3)
+        J.r.dry = dry
+
+    def block(engine):
+        sel(engine)
+        J.r.dry()
+        u, j = J.both(1.5, [])
+        sil = dict(jack_db=db(j), jack_hf_db=band_db(j, 8000, 20000), usb_nonzero=int(np.count_nonzero(u)))
+        ev = [(0.1, "on", 33, 30)]
+        if engine == "marimba":                    # (the pedal and RING 127 keep it sounding as long as they can)
+            ev = [(0.0, "cc", 102, 127), (0.0, "cc", 64, 127)] + ev
+        u, j = J.both(2.5, ev)
+        J.r.out.send(M("note_off", note=33))
+        J.r.out.send(M("control_change", control=64, value=0))
+        s = slice(int(0.6 * FS), int(2.4 * FS))
+        hiss = dict(usb_hf_db=band_db(u[s], 8000, 20000), jack_hf_db=band_db(j[s], 8000, 20000), usb_db=db(u[s]),
+                    jack_db=db(j[s]), usb_live_frac=round(float(np.mean(u[s] != 0)), 3))
+        J.r.dry()
+        ch = (36, 43, 48, 52, 55, 60, 64)
+        u, j = J.both(2.0, [(0.1, "on", n, 127) for n in ch] + [(1.6, "off", n, 0) for n in ch])
+        s = slice(int(0.15 * FS), int(1.5 * FS))
+        loud = dict(usb_peak_db=float(20 * np.log10(np.abs(u).max() + 1e-12)), usb_db=db(u[s]),
+                    jack_peak_db=float(20 * np.log10(np.abs(j).max() + 1e-12)), jack_db=db(j[s]),
+                    usb_lufs=lufs48(u[s]), jack_lufs=lufs48(j[s]), usb_full_scale=int(np.sum(np.abs(u) >= 32767 / 32768)))
+        return dict(silence=sil, hiss=hiss, loud=loud, jack_re_usb_db=loud["jack_db"] - loud["usb_db"])
+
+    rep = dict(engine="marimba", dry_run=bool(a.dry_run))
+    rep["st77"] = block("rhodes")
+    rep["marimba"] = block("marimba")
+    rep["st77_again"] = block("rhodes")
+    hs_ = (rep["st77"]["hiss"]["jack_hf_db"] + rep["st77_again"]["hiss"]["jack_hf_db"]) / 2   # the session's hiss
+    for k in ("st77", "marimba", "st77_again"):
+        q = rep[k]
+        q["snr_db"] = q["loud"]["jack_db"] - hs_
+        q["snr_lufs_db"] = q["loud"]["jack_lufs"] - hs_
+        q["hiss_added_db"] = q["hiss"]["jack_hf_db"] - (q["hiss"]["usb_hf_db"] + q["jack_re_usb_db"])
+    st = (rep["st77"]["snr_db"] + rep["st77_again"]["snr_db"]) / 2
+    stl = (rep["st77"]["snr_lufs_db"] + rep["st77_again"]["snr_lufs_db"]) / 2
+    rep["session_hiss_db"] = hs_
+    rep["snr_vs_st77_db"] = rep["marimba"]["snr_db"] - st
+    rep["snr_lufs_vs_st77_db"] = rep["marimba"]["snr_lufs_db"] - stl
+    rep["st77_drift_db"] = rep["st77_again"]["snr_db"] - rep["st77"]["snr_db"]
+    rep["snr_ok"] = bool(abs(rep["snr_vs_st77_db"]) <= 1.0)
+    rep["hiss_equal_db"] = rep["marimba"]["hiss"]["jack_hf_db"] - hs_
+    # the silence gate on MARIMBA tails (A5), MUTE 0 (rings out): the longest (marimba_scan PROFILE long_tail), C7 v8
+    # (the codec's mute on the shortest, quietest tail), C4 v100
+    sel("marimba")
+    mute0 = [(0.0, "cc", 103, 0)]
+    tails = {"C2 RING 127 TUBE 127 pedal": (10.0, mute0 + [(0.0, "cc", 102, 127), (0.0, "cc", 30, 127), (0.0, "cc", 64, 127),
+                                                           (0.1, "on", 36, 100), (0.4, "off", 36, 0)]),
+             "C7 v8 MUTE 0": (3.0, mute0 + [(0.1, "on", 96, 8), (0.3, "off", 96, 0)]),
+             "C4 v100 MUTE 0": (4.5, mute0 + [(0.1, "on", 60, 100), (0.6, "off", 60, 0)])}
+    rep["tails"] = {}
+    for nm, (dur, ev) in tails.items():
+        J.r.dry()
+        u, j = J.both(dur, ev)
+        J.r.out.send(M("control_change", control=64, value=0))
+        rep["tails"][nm] = gate_tail(u, j, 0.1)
+    rep["tails_ok"] = all(q.get("ok") for q in rep["tails"].values())
+    # idle: everything off, 3 s; USB exact zero, the jack at the codec-muted floor
+    J.r.dry()
+    u, j = J.both(3.0, [])
+    rep["idle"] = dict(usb_nonzero=int(np.count_nonzero(u)), jack_db=db(j), jack_hf_db=band_db(j, 8000, 20000),
+                       jack_re_muted_db=db(j) - rep["marimba"]["silence"]["jack_db"])
+    rep["idle_ok"] = bool(rep["idle"]["usb_nonzero"] == 0 and abs(rep["idle"]["jack_re_muted_db"]) <= 1.0)
+    J.r.dry = dry0
+    J.r.dry()
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    json.dump(rep, open(out, "w"), indent=1)
+    tag = "DRY RUN (host build; the jack SIMULATED) " if a.dry_run else ""
+    print(f"{tag}MARIMBA jack session -> {out}")
+    for k in ("st77", "marimba", "st77_again"):
+        q = rep[k]
+        print(f"  {k:10s} muted floor jack {q['silence']['jack_db']:.1f} dB (8-20k {q['silence']['jack_hf_db']:.1f}); hiss "
+              f"8-20k jack {q['hiss']['jack_hf_db']:.1f} / USB {q['hiss']['usb_hf_db']:.1f} (codec live "
+              f"{100 * q['hiss']['usb_live_frac']:.0f} %); loud chord USB rms {q['loud']['usb_db']:.1f} peak "
+              f"{q['loud']['usb_peak_db']:.1f}, jack rms {q['loud']['jack_db']:.1f} LUFS {q['loud']['jack_lufs']:.1f}; "
+              f"SNR {q['snr_db']:.1f} dB (LUFS {q['snr_lufs_db']:.1f})")
+    print(f"  SNR MARIMBA - ST77 {rep['snr_vs_st77_db']:+.2f} dB (within 1 dB: {'yes' if rep['snr_ok'] else 'NO'}), "
+          f"on LUFS {rep['snr_lufs_vs_st77_db']:+.2f}; ST77 drift {rep['st77_drift_db']:+.2f} dB (TEST-PLAN: +-0.3); "
+          f"MARIMBA's hiss re the session's {rep['hiss_equal_db']:+.1f} dB")
+    for nm, q in rep["tails"].items():
+        print(f"  tail {nm:28s} " + ", ".join(f"{k} {v}" for k, v in q.items()))
+    print(f"  idle         USB nonzero samples {rep['idle']['usb_nonzero']}; jack {rep['idle']['jack_db']:.1f} dB "
+          f"({rep['idle']['jack_re_muted_db']:+.1f} re the muted floor) -> {'ok' if rep['idle_ok'] else 'FAIL'}")
+    return rep
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dev", default="M6")
     ap.add_argument("--ch", type=int, default=5)
-    ap.add_argument("--engine", default="rhodes", choices=("rhodes", "vibes"))
+    ap.add_argument("--engine", default="rhodes", choices=("rhodes", "vibes", "marimba"))
+    ap.add_argument("--dry-run", action="store_true", help="no device: the host build plays, the jack is simulated; "
+                    "results to build/hil/dry/")
     a = ap.parse_args()
-    J = Jack(a.dev, a.ch)
+    J = DryJack() if a.dry_run else Jack(a.dev, a.ch)
+    if a.engine == "marimba":
+        return marimba(J, a, os.path.join(hs.ROOT, "build", "hil", *(["dry"] if a.dry_run else []), "jack-marimba.json"))
     if a.engine == "vibes":                       # every reset then selects VIBES (CC 79)
         dry0 = J.r.dry
         def dry(**kv):
@@ -147,8 +318,9 @@ def main():
             rows.append(dict(note=n, vel=v, usb=hu, jack=hj, diff_max=float(max(abs(x - y) for x, y in zip(hu, hj)))))
     rep["harmonics"] = rows
     J.r.dry()
-    os.makedirs(os.path.join(hs.ROOT, "build", "hil"), exist_ok=True)
-    json.dump(rep, open(os.path.join(hs.ROOT, "build", "hil", "jack.json" if a.engine == "rhodes" else "jack-vibes.json"), "w"), indent=1)
+    hd = os.path.join(hs.ROOT, "build", "hil", *(["dry"] if a.dry_run else []))
+    os.makedirs(hd, exist_ok=True)
+    json.dump(rep, open(os.path.join(hd, "jack.json" if a.engine == "rhodes" else "jack-vibes.json"), "w"), indent=1)
     print(f"silence      jack {rep['silence']['jack_db']:.1f} dB (8-20k {rep['silence']['jack_hf_db']:.1f})")
     print(f"hiss         8-20 kHz under a quiet low note: jack {rep['hiss']['jack_hf_db']:.1f} dB, USB "
           f"{rep['hiss']['usb_hf_db']:.1f} dBFS -> the jack adds {rep['hiss_added_db']:.1f} dB over the music's own")

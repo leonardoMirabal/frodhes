@@ -5,7 +5,15 @@ the SAME procedure as the reference recordings (tools/vib_ref_measure.py), and c
 targets (docs/model/data/bars_spec.json) and with the reference set (measured in place, numbers only). The same
 loop the Rhodes was tuned with: a difference is fixed in the data / generator, never by hand in the tables.
 
-    python3 tools/vib_sampleback.py [--round N] [--keys 53-89] [--step 1] [--vel 100] [--ref DIR]
+    python3 tools/vib_sampleback.py [--round N] [--keys 53-89] [--step 1] [--vel 100] [--ref DIR] [--dry-run]
+    python3 tools/vib_sampleback.py --engine marimba [--round N] [--keys 36-96] [--hold 2.5] [--dry-run]
+
+--engine marimba (MARIMBA PLAN §12 step 4, Gate VD-M): CC 79 127 (no motor), every key 36..96 at v100, 2.5 s, the
+pedal down; each take measured by tools/mrb_ref_measure.measure (f0, t60_v1_30db, lufs, f0_peak_ms, v2_db, v3_db) and
+compared with the host build playing the same events (hil_scan.HostRig) and with the golden model; the table goes to
+private/marimba/research/P5-sampleback.md, the takes to build/mrb_sampleback/rN/.
+--dry-run (either engine): the host build plays in the device's place (no FM-1, no CoreAudio); everything goes under
+build/ (the private tables are not touched).
 
 Writes build/vib_sampleback/rN/*.wav (the FM-1's own output) and appends a table to
 private/vibraphone/research/P7-sampleback.md. Gate VD (PLAN §10): pitch +-1 c, V1 T60 +-10 % (pedal down), level
@@ -117,21 +125,137 @@ def write_wav(path, x):
     w.close()
 
 
+def dry_rig():
+    """--dry-run: the host build in the device's place (hil_scan.HostRig: the panel state replayed each take, the take
+    played 3-25 ms late, 44.1 -> 48 kHz), so the whole procedure runs without the FM-1"""
+    return hs.HostRig(seed=7, tag="sbdry")
+
+
+# ---------------------------------------------------------------------------------------------------- MARIMBA
+MRB_GATE = dict(cents=1.0, t60_rel=0.10, pk_ms=10.0, pk_rel=0.15, lufs_db=1.0, v_db=2.0)   # Gate VD-M (PLAN §12.4)
+
+
+def mrb_take(rig, m, vel, hold):
+    """one MARIMBA note on rig (the FM-1 or HostRig): a known panel (hil_scan dry: every parameter at its default, the
+    effects off), MARIMBA (CC 79 127; no motor), the pedal down (MUTE does not stop it at key-up), strike at 0.1 s,
+    key-up 0.3 s before the end; returns the stereo take (int16 scale, hs.FS)"""
+    rig.dry()
+    rig.out.send(rig.mido.Message("control_change", control=79, value=127))     # MARIMBA
+    rig.out.send(rig.mido.Message("control_change", control=64, value=127))     # pedal down: the free ring
+    time.sleep(0.3)
+    x = rig.take(hold, [(0.1, "on", m, vel), (hold - 0.3, "off", m, 0)])
+    rig.out.send(rig.mido.Message("control_change", control=64, value=0))
+    return x
+
+
+def mrb_measures(x, m):
+    """the sample-back's numbers, by mrb_ref_measure.measure (the reference procedure): f0 (cents vs ET),
+    t60_v1_30db, lufs (0-0.4 s), f0_peak_ms, v2_db / v3_db (5-300 ms re V1)"""
+    import mrb_ref_measure as mr
+    mono = x.mean(axis=1) if x.ndim > 1 else x
+    r = mr.measure(mono, m, FS)
+    return None if r is None else {k: r[k] for k in ("f0", "cents", "t60_v1_30db", "lufs", "f0_peak_ms", "v2_db", "v3_db")}
+
+
+def mrb_gate(d, h, m):
+    """device d vs host h (both measured the same way): [(measure, ok)]"""
+    G = MRB_GATE
+    out = []
+
+    def rel(a, b):
+        return abs(a / b - 1) if a and b else None
+    out.append(("pitch", abs(1200 * np.log2(d["f0"] / h["f0"])) <= G["cents"]))
+    r = rel(d["t60_v1_30db"], h["t60_v1_30db"])
+    out.append(("t60", r is None or r <= G["t60_rel"]))
+    if m <= 60:
+        dp = abs(d["f0_peak_ms"] - h["f0_peak_ms"])
+        out.append(("bloom", dp <= G["pk_ms"] or dp <= G["pk_rel"] * max(h["f0_peak_ms"], 1.0)))
+    out.append(("lufs", abs(d["lufs"] - h["lufs"]) <= G["lufs_db"]))
+    for k in ("v2_db", "v3_db"):
+        if d[k] is not None and h[k] is not None:
+            out.append((k, abs(d[k] - h[k]) <= G["v_db"]))
+    return out
+
+
+def main_marimba(a):
+    """PLAN §12 step 4 (Gate VD-M): every key at v100, a.hold s each, the device vs the host render of the same events
+    (HostRig: the same panel state, the same MIDI), both measured by mrb_ref_measure.measure; the golden model's numbers
+    (tools/bars_model.py, the DEFAULT cards) beside them for information. Table appended to
+    private/marimba/research/P5-sampleback.md (a dry run: build/mrb_sampleback/dry-P5-sampleback.md)"""
+    import mrb_ref_measure as mr
+    lo, hi = (int(v) for v in a.keys.split("-"))
+    keys = list(range(lo, hi + 1, a.step))
+    tag = ("dry-" if a.dry_run else "") + f"r{a.round}"
+    out = os.path.join(ROOT, "build", "mrb_sampleback", tag)
+    os.makedirs(out, exist_ok=True)
+    rig = dry_rig() if a.dry_run else hs.Rig()
+    host = hs.HostRig(seed=11, tag="sbhost")
+    gold = {r["midi"]: r for r in mr.golden(keys, a.vel, a.hold - 0.1) if r}
+    rows = []
+    for m in keys:
+        x = mrb_take(rig, m, a.vel, a.hold)
+        write_wav(os.path.join(out, f"MARIMBA {name(m)} v{a.vel}.wav"), x)
+        d = mrb_measures(x, m)
+        h = mrb_measures(mrb_take(host, m, a.vel, a.hold), m)
+        g = gold.get(m)
+        if not d or not h:
+            rows.append(dict(midi=m, d=d, h=h, g=g, gate=[("measured", False)]))
+            continue
+        rows.append(dict(midi=m, d=d, h=h, g=g, gate=mrb_gate(d, h, m)))
+        print(f"{name(m):4s} " + " ".join(f"{k}={'ok' if ok else 'FAIL'}" for k, ok in rows[-1]["gate"]), flush=True)
+    rig.dry()
+    f = lambda v, fmt: "-" if v is None else format(v, fmt)     # noqa: E731
+    head = (f"\n## Round {a.round}{' DRY RUN (the host build in the device place)' if a.dry_run else ''} "
+            f"({time.strftime('%Y-%m-%d %H:%M')}): MARIMBA (CC 79 127), v{a.vel}, pedal down, {a.hold} s, keys {a.keys} "
+            f"step {a.step}\n")
+    lines = [head, "Each cell: device / host / golden. Gate VD-M (device vs host): pitch +-1 c, V1 T60 (30 dB fit) +-10 %, "
+             "bloom +-10 ms or +-15 % (keys <= 60), LUFS +-1 dB, V2 / V3 (5-300 ms re V1) +-2 dB.", "",
+             "| key | f0 vs ET (c) | V1 T60 30 dB (s) | f0 peak (ms) | LUFS 0-0.4 s | V2 dB | V3 dB | VD-M |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+    bad = 0
+
+    def cell(q, k, fmt):
+        return " / ".join(f(None if s is None else s.get(k), fmt) for s in (q["d"], q["h"], q["g"]))
+    for q in rows:
+        fails = [k for k, ok in q["gate"] if not ok]
+        bad += bool(fails)
+        lines.append(f"| {name(q['midi'])} | {cell(q, 'cents', '+.1f')} | {cell(q, 't60_v1_30db', '.2f')} | "
+                     f"{cell(q, 'f0_peak_ms', '.0f')} | {cell(q, 'lufs', '.1f')} | {cell(q, 'v2_db', '.1f')} | "
+                     f"{cell(q, 'v3_db', '.1f')} | {'ok' if not fails else 'FAIL ' + ', '.join(fails)} |")
+    lines.append(f"\n{len(rows)} notes, {bad} outside Gate VD-M. Recordings: build/mrb_sampleback/{tag}/ "
+                 f"({'the host build' if a.dry_run else 'the FM-1'}'s own output).")
+    md = (os.path.join(ROOT, "build", "mrb_sampleback", "dry-P5-sampleback.md") if a.dry_run else
+          os.path.join(ROOT, "private", "marimba", "research", "P5-sampleback.md"))
+    os.makedirs(os.path.dirname(md), exist_ok=True)
+    if not os.path.exists(md):
+        open(md, "w").write("# P5 sample-back rounds (the FM-1's MARIMBA measured like the reference recordings)\n")
+    open(md, "a").write("\n".join(lines) + "\n")
+    print("\n".join(lines))
+    return 1 if bad else 0
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--engine", default="vibes", choices=("vibes", "marimba"))
+    ap.add_argument("--dry-run", action="store_true", help="no device: the host build plays the takes (HostRig); "
+                    "output under build/ only")
     ap.add_argument("--round", type=int, default=1)
-    ap.add_argument("--keys", default="53-89")
+    ap.add_argument("--keys", default=None, help="lo-hi (default 53-89 VIBES, 36-96 MARIMBA)")
     ap.add_argument("--step", type=int, default=1)
     ap.add_argument("--vel", type=int, default=100)
-    ap.add_argument("--hold", type=float, default=8.0)
+    ap.add_argument("--hold", type=float, default=None, help="s per note (default 8.0 VIBES, 2.5 MARIMBA)")
     ap.add_argument("--ref", default=REF)
     a = ap.parse_args()
+    if a.engine == "marimba":
+        a.keys, a.hold = a.keys or "36-96", a.hold or 2.5
+        return main_marimba(a)
+    a.keys, a.hold = a.keys or "53-89", a.hold or 8.0
     lo, hi = (int(v) for v in a.keys.split("-"))
-    out = os.path.join(ROOT, "build", "vib_sampleback", f"r{a.round}")
+    out = os.path.join(ROOT, "build", "vib_sampleback", ("dry-" if a.dry_run else "") + f"r{a.round}")
     os.makedirs(out, exist_ok=True)
     import subprocess
     subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
-    rig = hs.Rig()
+    rig = dry_rig() if a.dry_run else hs.Rig()
     spec, ref = spec_targets(), reference(a.ref)
     rows = []
     for m in range(lo, hi + 1, a.step):
@@ -170,8 +294,12 @@ def main():
         lines.append(f"| {name(q['midi'])} | {f(q['cents'], '+.1f')} | {f(q['t60'], '.2f')} / {f(q['t60_host'], '.2f')} / {f(q['t60_spec'], '.2f')} / "
                      f"{f(q['t60_ref'], '.2f')} | {q['pk']:.0f} / {f(q['pk_ref'], '.0f')} | {q['level']:.1f} ({q['level'] - tr:+.1f}) | "
                      f"{'ok' if ok else 'FAIL'} |")
-    lines.append(f"\n{len(rows)} notes, {bad} outside Gate VD. Recordings: build/vib_sampleback/r{a.round}/ (the FM-1's own output).")
-    md = os.path.join(ROOT, "private", "vibraphone", "research", "P7-sampleback.md")
+    if a.dry_run:
+        lines[0] = lines[0].replace(f"## Round {a.round} ", f"## Round {a.round} DRY RUN (the host build in the device place) ")
+    lines.append(f"\n{len(rows)} notes, {bad} outside Gate VD. Recordings: build/vib_sampleback/"
+                 f"{'dry-' if a.dry_run else ''}r{a.round}/ ({'the host build' if a.dry_run else 'the FM-1'}'s own output).")
+    md = (os.path.join(ROOT, "build", "vib_sampleback", "dry-P7-sampleback.md") if a.dry_run else
+          os.path.join(ROOT, "private", "vibraphone", "research", "P7-sampleback.md"))
     if not os.path.exists(md):
         open(md, "w").write("# P7 sample-back rounds (the FM-1's VIBES measured like the reference recordings)\n")
     open(md, "a").write("\n".join(lines) + "\n")
