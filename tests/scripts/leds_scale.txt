@@ -1,0 +1,130 @@
+# DISPLAY LEDS SCALE (0.9.4, after ALL): ALL over the keys of the scale only (tempo.c scale_key_in). No scale: every
+# key lit, as ALL. SNAP: the keys whose own note (TRANS applied) is in the scale; the snapped ones dark. DEGREE: the
+# white keys (the black ones are silent). A played key flips: a scale key dark, a dark key lit. No glow (the root
+# keys' glow stays ROOTS' alone). The octave shift moves no pitch class: the same keys. Key k = LED 14 + k, F3 + k.
+100 btn 7
+200 btn 7
+300 btn 7
+400 btn 7
+450 expect state page DISPLAY
+450 expect state card2 ROOTS
+500 turn 4 1
+550 expect state card2 ALL
+600 turn 4 1
+650 expect state card2 SCALE
+700 turn 4 1
+750 expect state card2 SCALE
+# no scale on: as ALL, every key lit, a played one dark
+800 expect led 14 1
+800 expect led 15 1
+800 expect led 22 1
+800 expect led 40 1
+800 expect state glow.21 0
+850 keys 0x1
+900 expect led 14 0
+900 expect led 15 1
+950 keys 0
+1000 expect led 14 1
+# to the SCALE page; K1 SNAP (MAJ, root C): F G A B C D E lit, F# G# A# C# D# dark, no glow on the C keys
+1100 turn 0 -1
+1150 turn 0 -1
+1200 turn 0 -1
+1250 turn 0 -1
+1300 turn 0 -1
+1350 turn 0 -1
+1400 turn 0 -1
+1450 turn 0 -1
+1500 expect state page SCALE
+1550 turn 2 1
+1600 expect state card0 SNAP
+1650 expect led 14 1
+1650 expect led 15 0
+1650 expect led 16 1
+1650 expect led 17 0
+1650 expect led 18 1
+1650 expect led 19 0
+1650 expect led 20 1
+1650 expect led 21 1
+1650 expect led 22 0
+1650 expect led 23 1
+1650 expect led 24 0
+1650 expect led 25 1
+1650 expect led 40 1
+1650 expect state glow.21 0
+1650 expect state glow.33 0
+# played: F#3 (key 1, off the scale, plays F3) lights; F3 (key 0) goes dark; a MIDI D4 (62, key 9) darkens its key
+1700 keys 0x2
+1750 expect led 15 1
+1800 keys 0x3
+1850 expect led 14 0
+1850 expect led 15 1
+1900 keys 0
+1950 expect led 14 1
+1950 expect led 15 0
+2000 midi 0x90 62 100
+2050 expect led 23 0
+2100 midi 0x80 62 0
+2150 expect led 23 1
+# K2 the scale -> MIN (C D Eb F G Ab Bb): G#3 / A#3 / D#4 lit, A3 / B3 / E4 dark
+2200 turn 3 1
+2250 expect state card1 MINOR
+2300 expect led 17 1
+2300 expect led 18 0
+2300 expect led 19 1
+2300 expect led 20 0
+2300 expect led 24 1
+2300 expect led 25 0
+# K3 the root -> D (D minor: D E F G A Bb C): A3 and E4 lit again, Eb4 and B3 dark, F#3 and C#4 dark
+2350 turn 4 1
+2400 turn 4 1
+2450 expect state card2 D
+2500 expect led 15 0
+2500 expect led 18 1
+2500 expect led 19 1
+2500 expect led 20 0
+2500 expect led 21 1
+2500 expect led 22 0
+2500 expect led 24 0
+2500 expect led 25 1
+# the octave shift: the same keys lit
+2550 btn 1
+2600 expect state oct 1
+2650 expect led 15 0
+2650 expect led 18 1
+2650 expect led 19 1
+2650 expect led 20 0
+2650 expect led 24 0
+2650 expect led 25 1
+2700 btn 0
+2750 btn 0
+2800 expect state oct -1
+2850 expect led 19 1
+2850 expect led 20 0
+2900 btn 1
+2950 expect state oct 0
+# K4 TRANS +1: key k is in the scale when its note + 1 is: F3 (-> F#) dark, F#3 (-> G) lit
+3000 turn 5 1
+3050 expect state card3 +1
+3100 expect led 14 0
+3100 expect led 15 1
+3150 turn 5 -1
+3200 expect led 14 1
+3200 expect led 15 0
+# K1 DEGREE: the white keys lit, the black ones (silent) dark
+3250 turn 2 1
+3300 expect state card0 DEGREE
+3350 expect led 14 1
+3350 expect led 15 0
+3350 expect led 20 1
+3350 expect led 21 1
+3350 expect led 22 0
+3350 expect led 40 1
+3350 expect state glow.21 0
+# K1 OFF: every key lit again, as ALL
+3400 turn 2 -1
+3450 turn 2 -1
+3500 expect state card0 OFF
+3550 expect led 15 1
+3550 expect led 22 1
+3550 expect led 24 1
+3600 end

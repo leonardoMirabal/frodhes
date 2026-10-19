@@ -248,10 +248,10 @@ static void midi_cc(uint32_t cc, uint32_t v)
         }
 }
 
-/* a note a voice is still sounding (for the per-key LEDs under sustain) */
-static int note_sounding(uint32_t n)
+/* a note the pedal holds and a voice still sounds (the per-key LEDs under sustain; notes.c ped.sus) */
+static int note_sustained(uint32_t n)
 {
-    return eng_note_sounding(n);
+    return n < 128u && ped.sus[n >> 5] >> (n & 31u) & 1u && eng_note_sounding(n);
 }
 
 static void app_main(void)
@@ -268,7 +268,7 @@ static void app_main(void)
     if (set.usb_fixed > 1u) set.usb_fixed = 0;
     if (set.palette >= COLOR_N) set.palette = 0;   /* AMBER (ui.c S_COLOR) */
     if (set.dim >= DIM_N) set.dim = 0;
-    if (set.leds > 3u) set.leds = 0;
+    if (set.leds > 4u) set.leds = 0;                /* (ui.c LEDS_N: 0 ROOTS 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
     usb_pre_master = set.usb_fixed;
     uart_midi_on = !set.trs_off;
     fm1_led_group_ids(KEY_LED(0), KEY_LED(26));     /* BRIGHTNESS: the keys' LEDs are their own group */
@@ -322,11 +322,12 @@ static void app_main(void)
         }
 
         for (k = 0; k < NKEYS; k++)             /* LEDs per key: held (the FM-1's key, or its note over MIDI), or its
-                                                 * note still rings under the sustain (0.9.4: MIDI notes too) */
+                                                 * note still rings under the sustain (0.9.4: MIDI notes too; only
+                                                 * a note the pedal holds, not one let go before it went down) */
             if (src_active[SRC_KEYS + k]) lit |= 1u << k;
             else {
                 uint32_t n = scale_key_note(k);
-                if ((n < 128u && src_active[SRC_MIDI + n]) || (rh_hold && note_sounding(n))) lit |= 1u << k;
+                if ((n < 128u && src_active[SRC_MIDI + n]) || note_sustained(n)) lit |= 1u << k;
             }
         src_poll();
         eng_pump();                             /* (notes.c: events that waited for room in the engine's ring) */

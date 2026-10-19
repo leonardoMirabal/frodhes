@@ -245,8 +245,9 @@ static uint16_t cd_shade(uint16_t c, uint32_t pct)      /* an RGB565 colour x pc
  * violets, blues, cyans and greens to yellow and back (the user's pick on the FM-1, 2026-10-19: the five anchors
  * PEACH ROSE LILAC SKY MINT exact, the 20 between them interpolated in hue, saturation and lightness), as one RGB565
  * accent each. The fill is cd_shade 45 as always; the palette's other steps are fractions of the accent, as AMBER's
- * are of its own, the brightest half way to white. */
-#define COLOR_N 26u
+ * are of its own, the brightest half way to white. Last, RED (the user, 2026-10-20: "missing red"), a saturated red as
+ * AMBER is a saturated orange, appended so a saved step keeps its colour (set.palette is the index). */
+#define COLOR_N 27u
 static const uint16_t COLOR_ACC[COLOR_N] = {
     0xE3C1,                                           /* AMBER: PALETTES[1].c[3] (gfx.c) */
     0xFD0E, 0xFC50, 0xFCB5, 0xFCB9, 0xFCDC,
@@ -254,12 +255,13 @@ static const uint16_t COLOR_ACC[COLOR_N] = {
     0x94FF, 0x957F, 0x8E1F, 0x8EFF, 0x8FBE,
     0x8F9B, 0x8777, 0x8774, 0x8790, 0x9F90,
     0xB7AF, 0xD7AF, 0xF7CF, 0xFF0F, 0xFE2F,
+    0xF8C3,                                           /* RED (0.9.4, appended: the saved steps keep their colours) */
 };
 static const char *const COLOR_NAME[COLOR_N] = {
     "AMBER", "PEACH", "CORAL", "ROSE", "PINK", "ORCHID", "MAUVE",
     "PURPLE", "VIOLET", "LILAC", "IRIS", "BLUE", "DENIM", "SKY",
     "OCEAN", "CYAN", "AQUA", "MINT", "JADE", "GREEN", "LEAF",
-    "LIME", "PEAR", "LEMON", "GOLD", "MANGO",
+    "LIME", "PEAR", "LEMON", "GOLD", "MANGO", "RED",
 };
 static uint16_t cd_lighten(uint16_t c)                 /* an RGB565 colour half way to white */
 {
@@ -302,14 +304,17 @@ static void dim_apply(void)
 }
 /* DISPLAY LEDS: which keys light: OFF, PLAYED (as they sound), ROOTS (the played keys, and the scale's root keys glowing
  * as landmarks while a scale is on; the default, as before DISPLAY), ALL (every key lit, a light for playing in the dark; a
- * played key goes dark, as Felucca's INV). The played and ALL keys use the lit layer (BRIGHTNESS scaling them), the
+ * played key goes dark, as Felucca's INV), SCALE (0.9.4: ALL over the keys of the scale only, tempo.c scale_key_in: SNAP
+ * the keys whose own note is in the scale, DEGREE the white keys; a played key flips, a scale key dark, a snapped one
+ * lit; no scale on: as ALL). The played and ALL keys use the lit layer (BRIGHTNESS scaling them), the
  * ROOTS landmarks the HAL's faint glow layer (~1/24 of a lit LED), dimmer than a played key at every BRIGHTNESS (1/16
  * at the lowest).
- * set.leds keeps 0 = ROOTS so an older record reads as today; the card shows the four in the order OFF PLAYED ROOTS
- * ALL. */
-static const uint8_t LEDS_DISP[4] = {2, 0, 1, 3}, LEDS_STORED[4] = {1, 2, 0, 3};
-static const char *const LEDS_NAME[4] = {"OFF", "PLAYED", "ROOTS", "ALL"};
-static uint32_t leds_disp(void) { return LEDS_DISP[set.leds < 4u ? set.leds : 0u]; }
+ * set.leds keeps 0 = ROOTS so an older record reads as today (SCALE appended: 4); the card shows the five in the order
+ * OFF PLAYED ROOTS ALL SCALE. */
+#define LEDS_N 5u
+static const uint8_t LEDS_DISP[LEDS_N] = {2, 0, 1, 3, 4}, LEDS_STORED[LEDS_N] = {1, 2, 0, 3, 4};
+static const char *const LEDS_NAME[LEDS_N] = {"OFF", "PLAYED", "ROOTS", "ALL", "SCALE"};
+static uint32_t leds_disp(void) { return LEDS_DISP[set.leds < LEDS_N ? set.leds : 0u]; }
 static uint8_t ui_cards = UI_CARDS_DEF;
 static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab, val, unit, dim, acc, seq, white; } mt;
 /* a static in a section of its own, out of the compiler's global merge (merged in, it can split rhodes.c's rh_F / rh_x:
@@ -505,7 +510,7 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_TRS: *hi = 1; return !set.trs_off;
     case S_COLOR: *hi = (int32_t)COLOR_N - 1; return set.palette;
     case S_BRIGHT: *hi = DIM_N - 1; return DIM_N - 1 - (int32_t)set.dim;
-    case S_LEDS: *hi = 3; return (int32_t)leds_disp();
+    case S_LEDS: *hi = (int32_t)LEDS_N - 1; return (int32_t)leds_disp();
     case S_CHTYPE: *hi = CH_NTYPE - 1; return CH_TYPE;
     case S_CHINV: *hi = 3; return CH_INV;
     case S_CHVOICE: *hi = 2; return CH_VOICE;
@@ -660,7 +665,7 @@ static void slot_turn(uint32_t s, int32_t d)
         dim_apply();
         ui_draw_page_change();
         break;
-    case S_LEDS: set.leds = LEDS_STORED[clampi((int32_t)leds_disp() + sgn(d), 0, 3)]; break;
+    case S_LEDS: set.leds = LEDS_STORED[clampi((int32_t)leds_disp() + sgn(d), 0, (int32_t)LEDS_N - 1)]; break;
     case S_CHTYPE: CH_TYPE = (uint8_t)clampi(CH_TYPE + sgn(d), 0, CH_NTYPE - 1); if (CH_TYPE) CH_LAST = CH_TYPE; break;
     case S_CHINV: CH_INV = (uint8_t)clampi(CH_INV + sgn(d), 0, 3); break;
     case S_CHVOICE: CH_VOICE = (uint8_t)clampi(CH_VOICE + sgn(d), 0, 2); break;
@@ -1680,7 +1685,7 @@ static void ui_input(uint32_t b, uint32_t rel)
 static void ui_leds(uint32_t lit, uint32_t beat_on)
 {
     static struct { uint32_t lit, glow, btn; uint8_t done; } was UI_OWN_SECTION(".bss.ui_leds");
-    uint32_t k, btn = 0, glow = 0;
+    uint32_t k, btn = 0, glow = 0, all = 0x7FFFFFFu;
 #define BTN(id, on) btn |= (on) ? 1u << (id) : 0u            /* the buttons' LEDs as a mask: set below, only on a change */
     BTN(BTN_LFO, PV(P_TW_SW) != 0);
     BTN(BTN_FX, !fx_bypass);
@@ -1698,8 +1703,12 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     BTN(BTN_REC, rh_hold);
 #undef BTN
     for (k = 0; k < 27u; k++) if (set.leds == 0u && scale_is_root(k)) glow |= 1u << k;   /* ROOTS: the landmarks' glow */
-    lit = set.leds == 3u ? ~lit & 0x7FFFFFFu : set.leds != 1u ? lit : 0u;   /* LEDS (DISPLAY): ALL every key lit, a played
-                                                                             * one dark; ROOTS, PLAYED the played keys; OFF none */
+    if (set.leds == 4u)                                                     /* SCALE: the scale's keys in place of all */
+        for (k = 0; k < 27u; k++) if (!scale_key_in(k)) all &= ~(1u << k);
+    lit = set.leds >= 3u ? (all ^ lit) & 0x7FFFFFFu : set.leds != 1u ? lit : 0u;   /* LEDS (DISPLAY): ALL every key lit, a
+                                                                             * played one dark (SCALE: of the scale's keys;
+                                                                             * a played other key lit); ROOTS, PLAYED the
+                                                                             * played keys; OFF none */
     if (was.done && lit == was.lit && glow == was.glow && btn == was.btn) return;   /* as last pass: nothing to set (each
                                                                              * fm1_led_key walks the key map; then the tables) */
     was.done = 1; was.lit = lit; was.glow = glow; was.btn = btn;
