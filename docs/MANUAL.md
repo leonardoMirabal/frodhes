@@ -96,7 +96,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **SELECT** (knob) | Next / previous page |
 | **K1 K2 K3 K4** | The four cards on the current page |
 | **ALGORITHM** (knob) | The TYPE (the four Rhodes and VIBES), from any page (on SEQUENCER: the step cursor) |
-| **PRESETS** (knob) | Browse the sounds F01–F14 and your U01–U16 (loads when you stop turning; on SEQUENCER: bar by bar) |
+| **PRESETS** (knob) | Browse the sounds F01–F16 and your U01–U16 (loads when you stop turning; on SEQUENCER: bar by bar) |
 | **MASTER** (knob) | Volume |
 | **HOME** | PERFORM page; press again for the main page (titled FRODHES), and back |
 | **EDIT** | CHORD page; press again there to switch chord mode on / off (it comes back with the last chord type) |
@@ -535,7 +535,7 @@ vibraphone's range.
 
 ![Browsing presets](manual/img/browse.png?v=0.9.3)
 
-Turn **PRESETS** to browse: **F01–F14** are the factory sounds (F13 and F14 are VIBES), **U01–U16** your own. A preset loads when you stop
+Turn **PRESETS** to browse: **F01–F16** are the factory sounds (F13 and F14 are VIBES, F15 and F16 MARIMBA), **U01–U16** your own. A preset loads when you stop
 turning (after 0.4 s). If you did not mean to, **hold SAVE** (0.7 s) to go back to the sound you had before the
 last load (the top line names it again); hold it again to return (redo). The first time Frodhes
 starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
@@ -545,7 +545,7 @@ starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 | F01 STAGE 77 | F02 70S PHASER | F03 SUITCASE | F04 80S BALLAD |
 | F05 SLAPBACK | F06 BRIGHT CHO | F07 FUNK WAH | F08 BARK |
 | F09 TAPE ECHO | F10 DREAM | F11 RADIO | F12 AM TREMOLO |
-| F13 VIBE MOTOR | F14 VIBES DRY | | |
+| F13 VIBE MOTOR | F14 VIBES DRY | F15 MARIMBA | F16 MRMB SOFT |
 
 The Rhodes presets F01–F12 are level-matched: each one's LEVEL (SETUP) brings it to about the loudness of F01, so
 browsing does not jump in volume (VIBES, F13–F14, sits 2.5 dB above, as the type does).
@@ -557,7 +557,7 @@ again to store it, or **HOME** (or **OCT−**) to cancel. The name is made from 
 ![Save mode](manual/img/save.png?v=0.9.3)
 
 The save waits for silence: the bottom line says **SAVING...** until the sound has died away, then **SAVED**. A user
-preset can be overwritten but not deleted, and browsing skips the empty ones. There is no factory reset: F01–F14 are
+preset can be overwritten but not deleted, and browsing skips the empty ones. There is no factory reset: F01–F16 are
 always there to start again from.
 
 **What is kept, and when:**
@@ -644,7 +644,7 @@ also send their notes to the computer.
 **MIDI out is USB only:** the FM-1's keys, chord mode, the arpeggiator and the sequencer send their notes on CHANNEL
 (channel 1 when ALL). Notes that come in over MIDI are not sent back, but what the arpeggiator or the sequencer
 makes from them is, so switch MIDI thru off in your computer's software. No clock, CCs or program changes are sent.
-The TRS jack is MIDI in only. **Program Change** 0–13 loads F01–F14, 16–31 loads U01–U16.
+The TRS jack is MIDI in only. **Program Change** 0–15 loads F01–F16, 16–31 loads U01–U16.
 
 | CC | Parameter | CC | Parameter |
 | --- | --- | --- | --- |
@@ -715,7 +715,7 @@ issues: [github.com/leonardoMirabal/frodhes](https://github.com/leonardoMirabal/
 | **MIDI out** | USB only: notes from the keys, chord mode, arpeggiator and sequencer. No clock, CC or program change out |
 | **Clock** | CLOCK INT or EXT: 24 PPQN in from USB or TRS, 40–240 BPM; Start / Continue start the pattern from bar 1, Stop stops it |
 | **Tempo** | 40–240 BPM; tap tempo on PLAY |
-| **Presets** | 14 factory (F01–F14) + 16 user (U01–U16); Program Change 0–13 and 16–31 |
+| **Presets** | 16 factory (F01–F16) + 16 user (U01–U16); Program Change 0–15 and 16–31 |
 | **Effects** | COMP → FILTER → DRIVE → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter |
 | Compressor | Threshold 0 to −40 dB, ratio 1.5:1–20:1, attack 0.1–50 ms, release 20 ms–1.5 s (CC 109), makeup 0 to +24 dB |
 | Filter | LP12, LP18, HP12, HP18, BP, NOTCH; 30 Hz–16 kHz; resonance Q 0.7–20; LFO ±4 octaves |

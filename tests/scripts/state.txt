@@ -82,12 +82,16 @@
 5500 expect sound
 5500 expect state header U02_ST77_WAH
 5500 expect led 5 1
-# browsing skips the empty U01: F14 -> U02, and back from U02 to F14
+# browsing skips the empty U01: F14 -> F15 -> F16 -> U02, and back from U02 to F14
 5600 midi 0xC0 13 0
 5700 turn 6 1
+5720 turn 6 1
+5740 turn 6 1
 6200 expect state header U02_ST77_WAH
 6200 expect preset
 6300 turn 6 -1
+6320 turn 6 -1
+6340 turn 6 -1
 6800 expect state header F14_VIBES_DRY
 6800 expect preset
 6800 expect sound

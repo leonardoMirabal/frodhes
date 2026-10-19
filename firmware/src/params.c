@@ -58,7 +58,7 @@ static void eng_set_type(uint32_t t) { rh_type = (uint8_t)(t < N_TYPE_N && TYPE_
 static int eng_is_bars(void) { return 0; }       /* the engine plays bars for the TYPE last set (not the ISR latch) */
 static void eng_bar_knob(uint32_t k, uint32_t v) { (void)k; (void)v; }
 #endif
-#define PR_NF_SET 14u              /* presets.c PR_NF: the factory presets (12 before VIBES) */
+#define PR_NF_SET 16u              /* presets.c PR_NF: the factory presets (12 before VIBES, 14 before MARIMBA) */
 static const char *const N_TW[] = {"OFF", "TRM", "WAH"};
 static const char *const N_CP[] = {"OFF", "CHO", "PHA"};   /* "PHA": records before 0.4 */
 static const char *const N_ONOFF[] = {"OFF", "ON"};
@@ -138,7 +138,7 @@ _Static_assert(P_SLOTS <= 64u, "ui.c card slots: a parameter id is under 64 (S_K
 /* ---- the settings record: always 256 B, versioned, append-only (§10.5) */
 #define SET_VER 2u                 /* 2 (0.4): panel / undo hold P_SLOTS; version 1 records are converted */
 typedef struct {
-    uint8_t ver, flags;
+    uint8_t ver, flags;            /* flags: 1 LEVEL, 2 comp, 4 + 32 the preset index layout (VIBES, MARIMBA), 8 filter, 16 v3 */
     int8_t oct;
     uint8_t preset;
     uint16_t bpm10;
@@ -204,7 +204,7 @@ static void params_defaults(void)
     uint32_t i;
     for (i = 0; i < sizeof set; i++) ((uint8_t *)&set)[i] = 0;
     set.ver = SET_VER;
-    set.flags = 4u;                /* a fresh record: its preset index is already in the VIBES layout */
+    set.flags = 4u | 32u;          /* a fresh record: its preset index is already in today's layout (16 factory) */
     set.preset = 0;
     set.bpm10 = 1200;
     set.clock = 1;                 /* EXT: follows MIDI clock when it comes (USB or TRS) */
@@ -249,7 +249,13 @@ static void params_sanitize(void)
     }
     if (!(set.flags & 4u)) {                         /* records before VIBES had 12 factory presets: U01 was 12 */
         if (set.preset >= 12u && set.preset < 12u + 16u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 12u);
-        set.flags |= 4u;
+        set.flags |= 4u | 32u;                       /* (straight into today's layout) */
+    }
+    if (!(set.flags & 32u)) {                        /* records before MARIMBA (0.9.3) had 14 factory presets: U01
+                                                      * was 14; undo_preset is index + 1 */
+        if (set.preset >= 14u && set.preset < 14u + 16u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 14u);
+        if (set.undo_preset >= 15u && set.undo_preset < 15u + 16u) set.undo_preset = (uint8_t)(set.undo_preset + PR_NF_SET - 14u);
+        set.flags |= 32u;
     }
     for (i = 0; i < P_COUNT; i++) if (PV(i) > PARAMS[i].hi) PV(i) = PARAMS[i].def;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;

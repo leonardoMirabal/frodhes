@@ -369,7 +369,7 @@ typedef struct {
     int32_t fx[FXP_N];
     uint32_t sync[5];
     int32_t rh[11];
-    int32_t bar[14];
+    int32_t bar[16];
     uint8_t want;
 } host_snd_t;
 static void host_snd(host_snd_t *s)
@@ -386,7 +386,7 @@ static void host_snd(host_snd_t *s)
     s->bar[5] = bar_nz; s->bar[6] = bar_k_decay; s->bar[7] = bar_k_rel; s->bar[8] = bar_thump; s->bar[9] = bar_felt;
     s->bar[10] = bar_mot_on; s->bar[11] = bar_mot_depth; s->bar[12] = bar_mot_shape; s->bar[13] = (int32_t)bar_mot_inc;
     s->want = eng_want;
-    (void)bar_sub;
+    s->bar[14] = bar_mute; s->bar[15] = eng_want_sub;          /* MUTE, the bar type asked for (MARIMBA) */
 }
 static int host_sound_check(char *msg, unsigned n)
 {
@@ -406,7 +406,7 @@ static int host_sound_check(char *msg, unsigned n)
         if (a.sync[i] != b.sync[i]) { snprintf(msg, n, "synced rate %u is %u, the panel says %u", i, a.sync[i], b.sync[i]); return 1; }
     for (i = 0; i < 11u; i++)
         if (a.rh[i] != b.rh[i]) { snprintf(msg, n, "Rhodes volatile %u is %d, the panel says %d", i, a.rh[i], b.rh[i]); return 1; }
-    for (i = 0; i < 14u; i++)
+    for (i = 0; i < 16u; i++)
         if (a.bar[i] != b.bar[i]) { snprintf(msg, n, "bar knob %u is %d, the panel says %d", i, a.bar[i], b.bar[i]); return 1; }
     if (a.want != b.want) { snprintf(msg, n, "the engine is %u, TYPE says %u", a.want, b.want); return 1; }
     return 0;
