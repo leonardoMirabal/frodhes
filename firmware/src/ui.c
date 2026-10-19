@@ -1348,7 +1348,7 @@ static void ui_splash(void)
     cv_blit(0, 46);
     cv_begin(240, 64, C_BLACK);
     ft_big(16, "FRODHES", UI_ACC);
-    ft_c(48, "ELECTRIC PIANO + VIBES", FC_LAB);
+    ft_c(48, "ELECTRIC PIANO + VIBES + MARIMBA", FC_LAB);
     cv_blit(0, 110);
     cv_begin(240, 20, C_BLACK);
     p_strcpy(v, "VERSION ", 8); p_strcpy(v + 8, ui_version(), 10);

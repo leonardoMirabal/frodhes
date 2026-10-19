@@ -195,7 +195,7 @@ def test_no_saturation_at_the_top():
 @AWAIT
 def test_motor_ccs_are_inert():
     """CC 47-51 (ON, DEPTH, SPEED, SHAPE, SYNC) at their ends: the same sound as without them, and nothing breaks"""
-    mot = [cc(30, 47, 127), cc(31, 48, 127), cc(32, 49, 100), cc(33, 50, 127)]
+    mot = [cc(30, 47, 127), cc(31, 48, 127), cc(32, 49, 100), cc(33, 50, 127), cc(34, 51, 127)]
     a = play("mca-mot0", [], 57, dur=3000).L
     b = play("mca-mot1", mot, 57, dur=3000).L
     assert np.array_equal(a, b), float(np.abs(a - b).max())
