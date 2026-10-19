@@ -28,9 +28,11 @@
   preset number saved by 0.9.3 (14 factory presets) is moved once, so you come back on the same sound.
 - The start screen reads **ELECTRIC PIANO + VIBES + MARIMBA**.
 - Less flash for the same sound: the bar instruments' pulse-rate table is stored in 16 bits (every value fits,
-  nothing changes in the sound), about 17.6 kB less flash; the image (with the DISPLAY page) is 487,560 B of the
+  nothing changes in the sound), about 17.6 kB less flash; the image (with the DISPLAY page) is 487,848 B of the
   581,564 B available.
 - The developer CCs 9 (the mode cap) and 116's bar replies (112 / 113) work on MARIMBA as on VIBES.
+- MARIMBA's **MALLET** card: its steps re-spaced between the detents (SOFT, MED, HARD, RUBBER stay where they
+  were), so no key's level jumps at the changes of mallet family; VIBES' MALLET is unchanged.
 
 ## Fixed
 - A note held through a TYPE change to another engine (a Rhodes type to VIBES or MARIMBA and back, or VIBES to
@@ -63,6 +65,8 @@
   takes, drift, bypass and level rows), `hil_jack --engine marimba` (the jack connected, the tails' silence gate, the
   idle floor) and `vib_sampleback --engine marimba` (Gate VD-M on every key). `hil_scan`'s MARIMBA level row now
   expects the measured −1.5 LU re the Rhodes (±1).
+- `tools/bar_scan.py`: the strike windows (and S1's guards) start at the audio block a strike sounds in; S8 / S9
+  (the cards) are MARIMBA-aware (its short notes); MARIMBA's S10 also measures G3, C4 and E4.
 
 ## Tested
 - Host: `make test`, `make pytest` (the MARIMBA tests: Gate VA-M, every card and control audible, the scan and the

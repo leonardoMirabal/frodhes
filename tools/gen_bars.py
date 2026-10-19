@@ -11,7 +11,7 @@
     tools/gen_bars.py --marimba-offset-add DB --out DIR   an A/B header for listening (MARIMBA PLAN §12.5): MARIMBA's
                                                   calib.st77_offset_db + DB, the ceiling / roll-off stages as always
 
-The default header holds every bar TYPE (MARIMBA PLAN §8.2: per-type BAR_KEYS / BAR_PRATE / BAR_PAMP / KN_MASS /
+The default header holds every bar TYPE (MARIMBA PLAN §8.2: per-type BAR_KEYS / BAR_PRATE / BAR_PAMP / KN_FAM / KN_MASS /
 KN_MASSI / KN_TUBE / KN_NZ / BAR_BODY / BAR_TYPE, the band tables global with BAR_PBAND). Type 0 is VIBES and each of
 its rows equals the --vibes-only header's (tests/py/test_gen_bars.py, field by field).
 
@@ -1364,7 +1364,7 @@ def build_spec(vb, phys, fec, ct, st):
     return dict(gen_version=GEN_VERSION, fs=FS, key_lo=KEY_LO, keys=keys, bar_pos=pos, pos_arg=arg,
                 pos_gain=st.get("pos_gain", flat), tube_gain=st.get("tube_gain", flat),
                 pos_exact=st["pos_exact"], pulse=pulse,
-                prate=prate, pamp=pamp, kn_fam=kn_fam(), kn_mass=kn_mass(vb), kn_massi=kn_massi(vb), kn_tube=st.get("kn_tube", kn_tube()),
+                prate=prate, pamp=pamp, kn_fam=st.get("kn_fam", kn_fam()), kn_mass=kn_mass(vb), kn_massi=kn_massi(vb), kn_tube=st.get("kn_tube", kn_tube()),
                 kn_nz=kn_nz(vb), nz_bq=nz_bq(vb), mot_cos=list(btm.MOT_COS),
                 fam_names=[f["name"] for f in fams_int(vb)][:nf], fam_detent=FAM_DETENT,
                 type=dict(tube_cents=0, mot_gc=int(round(vb["T6c"]["g_c"] * 32768)), tors_db=ty["tors_q15"],
@@ -1424,6 +1424,40 @@ def shape_kn_tube(vb, spec, keys=(53, 60, 69, 77, 89), npt=13):
         out[v] = max(out[v - 1] + 1 if v > 1 else 1, int(round(10 ** (d / 20) * 32768)))
     assert out[64] == 32768 and all(a < b for a, b in zip(out, out[1:]))
     return out, [float(x) for x in L]
+
+
+def shape_kn_fam(vb, spec):
+    """MARIMBA (card_level fam_map): KN_FAM re-spaced between the detents so no key's level jumps with MALLET. Per
+    segment q (detent q .. q + 1) the golden model's loudness (K-weighted over card_level t_s) at npt fractions a,
+    every key of fam_map keys x vels, default cards; d_j = the largest per-key change from a_j to a_j+1, + floor_db /
+    (npt - 1) (a flat segment stays linear); each raw value v between the detents gets the fraction where the sum of
+    d so far is (v - c0) / (c1 - c0) of the segment's: a 1-raw step then moves no key by more than the sum / (c1 - c0).
+    The detents exact (q << 8); fractions non-decreasing, 1..255 inside a segment. Returns (table, report rows)."""
+    fm = vb["card_level"]["fam_map"]
+    t0, t1 = vb["card_level"]["t_s"]
+    keys = list(range(fm["keys"][0], fm["keys"][1] + 1))
+    vels = list(fm["vels"])
+    npt = int(fm["npt"])
+    A = np.linspace(0.0, 256.0, npt)
+    out = kn_fam()
+    rep = []
+    for q in range(len(FAM_DETENT) - 1):
+        c0, c1 = FAM_DETENT[q], FAM_DETENT[q + 1]
+        kfs = [(q + 1) << 8 if a >= 256 else q << 8 | int(round(a)) for a in A]
+        ks = [n for _ in kfs for _ in vels for n in keys]
+        vs = [v for _ in kfs for v in vels for _ in keys]
+        kn = [dict(gm.DEFAULT_KNOBS, kf=kf) for kf in kfs for _ in vels for _ in keys]
+        y = render_chunks(spec, ks, vs, t1 + 0.01, kn)
+        L = np.array([lufs_k(r, t0, t1) for r in y]).reshape(npt, len(vels) * len(keys))
+        d = np.abs(np.diff(L, axis=0)).max(axis=1) + fm["floor_db"] / (npt - 1)
+        C = np.concatenate([[0.0], np.cumsum(d)])
+        for v in range(c0 + 1, c1):
+            a = float(np.interp(C[-1] * (v - c0) / (c1 - c0), C, A))
+            out[v] = q << 8 | max(1, min(255, int(round(a))), out[v - 1] & 255 if v > c0 + 1 else 1)
+        rep.append((q, float(C[-1]), float(C[-1] * 4 / (c1 - c0))))     # the segment's sum, the 4-raw step bound
+    assert [out[v] for v in FAM_DETENT] == [q << 8 for q in range(len(FAM_DETENT))]
+    assert all(a <= b for a, b in zip(out, out[1:]))
+    return out, rep
 
 
 def card_points():
@@ -1977,6 +2011,11 @@ def build(vb=None, vspec=None):
     if mar and vb["card_level"].get("ring_ceiling"):
         ring_ceiling(vb, spec, st, keys)              # RING over 64 turned down where it would break the ceiling
         spec = build_spec(vb, phys, fec, ct, st)
+    if mar and vb["card_level"].get("fam_map"):       # MALLET's map re-spaced: no key's level jumps between detents
+        st["kn_fam"], rep = shape_kn_fam(vb, spec)
+        spec = build_spec(vb, phys, fec, ct, st)
+        print("MALLET map: per segment the largest per-key level change %s dB (4-raw step at most %s dB)" % (
+            " / ".join("%.1f" % r[1] for r in rep), " / ".join("%.2f" % r[2] for r in rep)), file=sys.stderr)
     print("voicing peaks: worst %.2f dBFS (key %d, %s), ceiling %.1f dBFS, keys turned down: %s" % (
         max(20 * math.log10(x / 32768) for x in pk), keys[int(np.argmax(pk))], worst[int(np.argmax(pk))],
         vb["card_level"]["peak_ceiling_dbfs"], ", ".join("%d (%+.1f)" % o for o in over) or "none"), file=sys.stderr)
@@ -2217,7 +2256,7 @@ def stub_type(spec):
 
 
 def emit_multi(specs, vbs):
-    """The header with one row per bar TYPE (MARIMBA PLAN §8.2): BAR_KEYS / BAR_PRATE / BAR_PAMP / KN_MASS / KN_MASSI
+    """The header with one row per bar TYPE (MARIMBA PLAN §8.2): BAR_KEYS / BAR_PRATE / BAR_PAMP / KN_FAM / KN_MASS / KN_MASSI
     / KN_TUBE / KN_NZ / BAR_BODY / BAR_TYPE indexed [type] (read at note-on or by the main loop, never per sample);
     the band tables global: the position bands (BAR_POS / BAR_POSG / BAR_TUBEG, VIBES's 0..16 then each later type's
     own) and the pulse shapes (BAR_PULSE, VIBES's 0..16 then appended ones), BAR_PBAND mapping a position band to its
@@ -2232,7 +2271,8 @@ def emit_multi(specs, vbs):
         for kk in ("bar_pos", "pos_gain", "tube_gain", "pulse"):
             assert last[kk][:len(sp[kk])] == sp[kk], kk
         assert bank[:len(v0["pulse"])] == v0["pulse"]
-        assert sp["kn_fam"] == v0["kn_fam"] and sp["nz_bq"] == v0["nz_bq"] and sp["mot_cos"] == v0["mot_cos"]
+        assert sp["nz_bq"] == v0["nz_bq"] and sp["mot_cos"] == v0["mot_cos"]
+        assert [sp["kn_fam"][v] for v in FAM_DETENT] == [v0["kn_fam"][v] for v in FAM_DETENT]   # (the shared detents)
     assert len(pband) == nb and all(0 <= p < npl for p in pband) and pband[:len(v0["bar_pos"])] == list(range(len(v0["bar_pos"])))
     L = []
     w = L.append
@@ -2331,8 +2371,7 @@ def emit_multi(specs, vbs):
     for sp, vb in zip(specs, vbs):
         w("  {%s}," % ", ".join(map(str, type_record(sp, vb))))
     w("};")
-    w("static const uint16_t KN_FAM[128] = {" + ",".join(map(str, v0["kn_fam"])) + "};")
-    for nm, key in (("KN_MASS", "kn_mass"), ("KN_MASSI", "kn_massi"), ("KN_TUBE", "kn_tube"), ("KN_NZ", "kn_nz")):
+    for nm, key in (("KN_FAM", "kn_fam"), ("KN_MASS", "kn_mass"), ("KN_MASSI", "kn_massi"), ("KN_TUBE", "kn_tube"), ("KN_NZ", "kn_nz")):
         w("static const uint16_t %s[BAR_NTYPE][128] = {" % nm)
         for sp in specs:
             w("  {" + ",".join(map(str, sp[key])) + "},")
