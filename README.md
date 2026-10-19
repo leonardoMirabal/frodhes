@@ -29,14 +29,14 @@ Every page is in the
 
 ## Download
 
-**Latest release: [Frodhes 0.9.2](https://github.com/leonardoMirabal/frodhes/releases/latest)**: the firmware file is
-`frodhes-0.9.2.fwsc` under *Assets* on the release page (package identity `FM-1_958`, the same for every version).
+**Latest release: [Frodhes 0.9.3](https://github.com/leonardoMirabal/frodhes/releases/latest)**: the firmware file is
+`frodhes-0.9.3.fwsc` under *Assets* on the release page (package identity `FM-1_958`, the same for every version).
 
 Install it over USB:
 
 ```sh
 pip install mido python-rtmidi
-python3 tools/fm1_install.py frodhes-0.9.2.fwsc
+python3 tools/fm1_install.py frodhes-0.9.3.fwsc
 ```
 
 If anything goes wrong, switch the FM-1 off, hold **OCT−** and switch it on: that is the USB rescue, from which you

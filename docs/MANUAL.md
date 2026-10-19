@@ -29,11 +29,11 @@ chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo
 
 ## 1. Install
 
-1. Download `frodhes-0.9.2.fwsc` from the
+1. Download `frodhes-0.9.3.fwsc` from the
    [releases page](https://github.com/leonardoMirabal/frodhes/releases/latest).
 2. Connect the FM-1 to your computer with USB.
 3. Install it from a terminal with the installer in this repository:
-   `python3 tools/fm1_install.py frodhes-0.9.2.fwsc` (it needs `pip install mido python-rtmidi`). Once Frodhes is listed
+   `python3 tools/fm1_install.py frodhes-0.9.3.fwsc` (it needs `pip install mido python-rtmidi`). Once Frodhes is listed
    on [thefirmwarehub.com](https://thefirmwarehub.com), its web installer works too (Chrome or Edge).
 4. The FM-1 restarts into Frodhes. If it does not come back by itself, switch it off and on.
 
