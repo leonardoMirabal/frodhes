@@ -233,7 +233,9 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
         ms->lpred = BAR_LZERO;
         ms->lo = 1;
         if (!km->th) { ms->e = ms->eps = 0; ms->k1 = ms->k2 = ms->be = 0; ms->lsin = 0; ms->bin = 0; continue; }
-        rh_coef(km, km->d, rh_tune_t, m == 1u ? 65536 : bar_k_decay, &ms->e0, &ms->eps0);
+        rh_coef(km, km->d, rh_tune_t, m == 1u && !(k->flags & 8u) ? 65536 : bar_k_decay, &ms->e0, &ms->eps0);   /* key
+                                                     * flag bit3 (MARIMBA below C4, never VIBES): RING scales the
+                                                     * strongly coupled tube too (tools/gen_bars.py, the pins' grid) */
         rh_coef(km, km->drel, rh_tune_t, m == 1u || !(ty->flags & 2u) ? 65536 : bar_k_rel, &ms->e1, &ms->eps1);   /* no
                                                      * damper: drel is the hand mute, never scaled by RELEASE (C5) */
         ms->e = ms->es = ms->e0; ms->eps = ms->epss = ms->eps0;

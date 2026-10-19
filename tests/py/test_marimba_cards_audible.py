@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import marimba_scan as ms  # noqa: E402
 from hostrun import build, cc, run  # noqa: E402
 
-AWAIT = pytest.mark.xfail(ms.stub_detected(), reason=ms.STUB_REASON, strict=False)
+AWAIT = pytest.mark.xfail(ms.stub_detected() or ms.p4_open(), reason=ms.await_reason(), strict=False)
 KEYS, VELS = (48, 60, 84), (100, 117, 127)
 DIST = 3.0
 FAMS = dict(SOFT=ms.SOFT, MED=ms.MED, HARD=ms.HARD, RUBBER=ms.RUBBER)

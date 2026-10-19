@@ -31,7 +31,8 @@ typedef struct {
     int32_t gain;               /* Q16 per-key output gain */
     int32_t kill;               /* Q25 */
     uint16_t life;              /* blocks */
-    uint8_t band, flags;        /* flags bit0: outside F3..F6; bit1: T1/T2 present; bit2: sigma clamped */
+    uint8_t band, flags;        /* flags bit0: outside the authentic range; bit1: T1/T2 present; bit2: sigma clamped;
+                                 * bit3 (MARIMBA below C4): RING (bar_k_decay) scales the tube slot too */
 } bar_key_t;
 typedef struct {
     int16_t tube_cents;         /* the type's global tube offset (per-key values are already in m[1]) */
