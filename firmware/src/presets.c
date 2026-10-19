@@ -203,7 +203,7 @@ static void preset_autoname(char *n)                     /* TYPE + the effects o
     const char *parts[5];
     uint32_t i = 0, k, np = 0;
     parts[np++] = N_TYPE[PV(P_TYPE)];
-    if (PV(P_MOT_ON) && TYPE_IS_BARS(PV(P_TYPE))) parts[np++] = "MOT";   /* the motor (records v3) */
+    if (PV(P_MOT_ON) && TYPE_HAS_MOTOR(PV(P_TYPE))) parts[np++] = "MOT";   /* the motor (records v3; VIBES only) */
     if (PV(P_TW_SW) && np < 3u) parts[np++] = N_TW[PV(P_TW_SW)];
     if (PV(P_CP_SW)) parts[np++] = "CHO";
     if (PV(P_PH_SW) && np < 4u) parts[np++] = "PHA";
