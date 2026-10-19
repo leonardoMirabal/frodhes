@@ -38,6 +38,8 @@ typedef struct {
     int16_t mot_gc;             /* Q15 closed-disc residual g_c */
     int16_t tors_db;            /* Q15 torsion scale on b at the edge */
     uint8_t nbody, drive_row, sleep_rel, budget;
+    uint8_t flags;              /* bit0 has_motor, bit1 has_damper (VIBES 3; params.c TYPE_FLAGS says the same) */
+    uint8_t kn_tube_top;        /* KN_TUBE[t][127] in 1/100 (informational) */
 } bar_type_t;
 #include "bars_tables.h"
 _Static_assert(BAR_NM == 8, "bars.c: 8 mode slots");

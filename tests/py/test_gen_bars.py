@@ -47,7 +47,7 @@ def arrays(txt):
 
 
 def arr(name):
-    m = re.search(r"\b%s\b[^=]*= \{(.*?)\};" % re.escape(name), HDR, re.S)
+    m = re.search(r"static const \w+ %s\b[^=]*= \{(.*?)\};" % re.escape(name), HDR, re.S)   # (not a comment)
     return [int(x) for x in re.findall(r"-?\d+", m.group(1))]
 
 
