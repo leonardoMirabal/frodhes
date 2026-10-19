@@ -533,7 +533,7 @@ The host proves the arithmetic; the device must confirm it through the jack (the
    FIXED. Record the VIBES take set twice (A1, A2: the floor) over USB (44.1 kHz) and the M6 input 5 at once
    (`tools/hil_jack.py Jack.both`), the `tools/rh_devcmp.py` way, with developer CC 10 before each take (it resets
    the LFOs / motor phase, lines and noise):
-   - VIBES (CC 79 64): keys F3 A3 C#4 F4 A4 C#5 F5 A5 C#6 F6 at v40 / v100 / v127 (2.5 s each, 1.5 s held),
+   - VIBES (CC 79 0): keys F3 A3 C#4 F4 A4 C#5 F5 A5 C#6 F6 at v40 / v100 / v127 (2.5 s each, 1.5 s held),
      motor on (default) and off (CC 47 0);
    - MALLET (CC 29) 0 and 127 at v100 on the same keys; the pedalled 9-note chord; a held C4 to its tail;
    - the keys this report lists as changed (every one of them, v100, motor off), plus the largest-change key at

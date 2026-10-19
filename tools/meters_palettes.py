@@ -121,7 +121,7 @@ def shots(engine, look, pages):
     for _, cc, v in SETUP:
         L.append(f"{t} midi 0xB0 {cc} {v}"); t += 20
     if engine == "vibes":
-        L.append(f"{t} midi 0xB0 79 64"); t += 20
+        L.append(f"{t} midi 0xB0 79 0"); t += 20
     t += 1500
     out = []
     for i, name in enumerate(pages):
@@ -144,7 +144,7 @@ def shots(engine, look, pages):
 def cmd_sheet(out):
     subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
     os.makedirs(out, exist_ok=True)
-    pages = {"rhodes": ms.names(ms.walk_pages()), "vibes": ms.names(ms.walk_pages(["100 midi 0xB0 79 64"]), "-vibes")}
+    pages = {"rhodes": ms.names(ms.walk_pages()), "vibes": ms.names(ms.walk_pages(["100 midi 0xB0 79 0"]), "-vibes")}
     rows = []
     for engine in ("rhodes", "vibes"):
         for look, (letter, what) in enumerate(LOOKS):

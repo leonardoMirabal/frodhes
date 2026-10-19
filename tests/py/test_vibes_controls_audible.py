@@ -27,7 +27,7 @@ from hostrun import FS, cc, card_hz, env_rms, rate_of, rms_db, run
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-VIBES = [cc(20, 79, 127)]                     # TYPE VIBES (CC 79)
+VIBES = [cc(20, 79, 0)]                     # TYPE VIBES (CC 79)
 RAW = [cc(21, 119, 127)]                      # the engine alone (no effects, no silence gate): exact decays
 MOTOR_OFF = [cc(22, 47, 0)]                   # the motor comes on with TYPE VIBES: off for the voice tests
 KEYS = (53, 69, 89)

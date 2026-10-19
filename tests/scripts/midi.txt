@@ -23,7 +23,7 @@
 4500 midi 0x90 60 100
 5000 expect rms > -60
 5100 midi 0x80 60 0
-5200 midi 0xB0 79 64
+5200 midi 0xB0 79 0
 5300 midi 0x90 60 100
 5800 expect rms > -60
 5900 shot

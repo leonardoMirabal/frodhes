@@ -46,7 +46,7 @@ def run(tag, lines, end_ms, check=False):
     return hostrun.run(tag, lines, end_ms, binary=BIN, check=check)
 
 
-TYPES = [("ST77", 80, 8), ("SUIT", 80, 40), ("FELT", 80, 72), ("DYNO", 80, 104), ("VIBE", 79, 64)]
+TYPES = [("ST77", 80, 8), ("SUIT", 80, 40), ("FELT", 80, 72), ("DYNO", 80, 104), ("VIBE", 79, 0)]
 VOICE = {"rhodes": [["TONE", "BARK", "BELL", "HAMMER"], ["DECAY", "RELEASE", "NOISE", "TUNE"]],
          "vibes": [["STRIKE", "MALLET", "TUBE", "WEIGHT"], ["RING", "DAMPER", "NOISE", "TUNE"],
                    ["MOTOR", "DEPTH", "SPEED", "SHAPE"]]}
@@ -542,11 +542,11 @@ def test_every_choice_option_written(meters, name, cc_n, v):
 
 def test_vibes_has_one_page_more(meters):
     r = len(pages_of("ST77", 80, 8)[0])
-    b = len(pages_of("VIBE", 79, 64)[0])
+    b = len(pages_of("VIBE", 79, 0)[0])
     assert b == r + 1, (r, b)
 
 
-@pytest.mark.parametrize("eng,cc_n,v", [("rhodes", 80, 8), ("vibes", 79, 64)])
+@pytest.mark.parametrize("eng,cc_n,v", [("rhodes", 80, 8), ("vibes", 79, 0)])
 def test_hot_frame(meters, eng, cc_n, v):
     """turn K1..K4 on REVERB (four amounts), one at a time: the turned row alone gets the amber frame and an amber
     label, still there at 0.8 s, gone by 1.5 s (HOT_MS 1 s)"""

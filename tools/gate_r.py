@@ -54,7 +54,7 @@ def fx_scripts():
         for name, fx in cases.items():
             ev, t = [], 50
             if vib:
-                ev.append(f'{t} midi 0xB0 79 64'); t += 10
+                ev.append(f'{t} midi 0xB0 79 0'); t += 10
             d = dict(fx)
             if 'CP_SW' in d:
                 ev.append(f'{t} midi 0xB0 85 {d.pop("CP_SW")}'); t += 5

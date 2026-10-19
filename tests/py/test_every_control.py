@@ -292,8 +292,8 @@ def _type():
 
 @case("TYPE-CC80-79")
 def _type_cc():
-    """CC 80 bands of 32 pick the Rhodes types, CC 79 any value VIBES"""
-    w = R(CLEAN + [cc(30, 80, 70), "40 dump", cc(50, 79, 3), "60 dump", cc(70, 80, 127), "80 dump"], 100)
+    """CC 80 bands of 32 pick the Rhodes types, CC 79 0 VIBES (the first bar band starts at 0)"""
+    w = R(CLEAN + [cc(30, 80, 70), "40 dump", cc(50, 79, 0), "60 dump", cc(70, 80, 127), "80 dump"], 100)
     got = [w.state(t)["p.0"] for t in (40, 60, 80)]
     assert got == ["2", "4", "3"], got
     return 1.0, 1.0, "ok"
@@ -1330,7 +1330,7 @@ def _dev_ui():
 def _dev_eng():
     """developer CC 9 caps VIBES' upper modes (1 = none: the attack above 3 kHz drops 50+ dB); CC 116 replies on CC
     115-118 and 112-113"""
-    pv = [cc(10, 79, 64), cc(20, 81, 0), cc(21, 91, 0)]
+    pv = [cc(10, 79, 0), cc(20, 81, 0), cc(21, 91, 0)]
     probe = sum((note(300, n, 110, 1000) for n in (60, 72)), [])
     a = band_db(R(pv + probe, 1500).seg(0.3, 0.5), 3000, 16000)
     b = band_db(R(pv + [cc(30, 9, 1)] + probe, 1500).seg(0.3, 0.5), 3000, 16000)

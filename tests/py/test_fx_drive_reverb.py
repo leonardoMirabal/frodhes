@@ -205,7 +205,7 @@ def test_delay_keeps_its_echoes_under_stereo_effects(fx, eng):
     """the delay's send is the mono sum (L + R) / 2: under the phaser or chorus (L and R differ) the echoes came out
     1-2.5 dB weaker in stereo power (3-6 dB on one side; the user: "when chorus or phaser enabled I lost the delay", 2026-10-18); the send keeps the stereo
     power now: the first echo within 1 dB of what it is with the delay alone, re its direct sound"""
-    sel = [(79, 64), (47, 0)] if eng == "vibes" else []
+    sel = [(79, 0), (47, 0)] if eng == "vibes" else []
     base = [(81, 0), (91, 0), (88, 64), (89, 90), (90, 85), (26, 40)]
     hit = [(300, 72, 110, 120)]
 
@@ -221,7 +221,7 @@ def test_drive_is_heard(eng):
     """DRIVE distorts a single note audibly at the top (TODO #4: "drive effect is bare noticiable ... does nothing"):
     A3 v110 at AMOUNT 127 vs 0 raises the 1-3 kHz band re the lows (Rhodes 15 dB, VIBES 5) or more and drops the crest factor; at 64
     the level stays within 2 LU (it changes the tone, not the volume)"""
-    sel = [(79, 64), (47, 0)] if eng == "vibes" else []
+    sel = [(79, 0), (47, 0)] if eng == "vibes" else []
     out = {}
     for d in (0, 64, 127):
         L, R = run(f"drh-{eng}-{d}", [(91, 0), (84, 127), (81, d)] + sel, [(300, 57, 110, 2000)], 2500)

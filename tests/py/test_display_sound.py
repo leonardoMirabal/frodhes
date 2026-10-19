@@ -2,7 +2,7 @@
 """What the screen says is what the sound does (PLAN P11.1; added 2026-10-17 after the CHORUS / PHASER SPEED cards
 showed twice the real rate). Every card with a unit is read through the firmware's own slot_text ("T dump" on the
 host build, or tests/c/cards.c for every value) and the quantity is measured from the rendered audio at three
-settings, on the Rhodes and on VIBES (TYPE by CC 79 64):
+settings, on the Rhodes and on VIBES (TYPE by CC 79 0):
 
   tremolo rate and depth, MOTOR rate, chorus and phaser speed, delay time (free and synced), the filter's LFO rate,
   the filter's cutoff, TUNE, TRANSP and OCT, BPM by knob / tap / MIDI clock with the tremolo synced, arpeggiator
@@ -20,7 +20,7 @@ import pytest
 
 from hostrun import FS, ROOT, card_hz, cc, env_rms, note, once, rate_of, rms_db, run
 
-ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 64), cc(11, 47, 0)]}   # VIBES: its motor (on with it) off
+ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 0), cc(11, 47, 0)]}   # VIBES: its motor (on with it) off
 CLEAN = [cc(20, 81, 0), cc(21, 91, 0)]              # F01's drive and reverb off: the effect alone
 PEDAL = [cc(22, 64, 127)]
 PG = {"TREM": 7, "PHA": 8, "CHO": 9, "DELAY": 10, "TEMPO": 11, "FILTER": 6, "LFO": 16, "COMP": 5, "SETUP": 17,
