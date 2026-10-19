@@ -3,7 +3,10 @@
 the jack's onsets from USB's (align() alone read the jack 2-15 ms late under its hiss, and the keys take's level
 span / step / tuning off), a roll is not a slipped stream, the MUTE drop depth stays over the jack's floor, the
 marimba_fx roll is the same in every take, and the VIBES suites keep their stimuli; PHASER SPEED 0 in a take of
-2.4 periods, NOISE's contact as the gate's aligned difference, DRIVE TONE's jack V3 on the jack's own distortion."""
+2.4 periods, NOISE's contact as the gate's aligned difference, DRIVE TONE's jack V3 on the jack's own distortion;
+DRIVE TONE's V3 clear of the 44.1 -> 48 kHz resampler's image of V1, DELAY DIG vs ANA by the tape's wow / flutter
+(the echoes' spectrum can not move on a marimba A4), and VIBES' PHASER SPEED 0 on a long take run last (every other
+VIBES take and row in place)."""
 import os
 import sys
 
@@ -256,3 +259,118 @@ def test_drive_tone_jack_floor(monkeypatch):
     up = (10 ** (-72 / 20) - 10 ** (-79 / 20)) * np.sin(2 * np.pi * sp["V3"] * 1.002 * t)
     assert h.pk_db(usb + up, sp["V3"]) - h.pk_db(usb, sp["V3"]) >= 6
     assert h.pk_db(jack + up, sp["V3"]) - h.pk_db(jack, sp["V3"]) < 2
+
+
+def roll_a4(n, sp, v3_db, fs=44100, rate=8.0):
+    """the A4 roll as the FM-1 renders it (44.1 kHz): V1 (with the tube's line 4 Hz over it) swelling at rate Hz,
+    and V3 v3_db under V1 (its mean level), shorter swells (smooth: no strike clicks, whose broadband the shelf moves
+    as it moves V3)"""
+    t = np.arange(n) / fs
+    c = 0.5 + 0.5 * np.cos(2 * np.pi * rate * t)
+    env, e3 = 0.6 + 0.4 * c, c ** 4 / np.sqrt(np.mean(c ** 8))
+    return env * (np.sin(2 * np.pi * sp["V1"] * t) + 0.3 * np.sin(2 * np.pi * sp["TUBE"] * t)) + \
+        10 ** (v3_db / 20) * e3 * np.sin(2 * np.pi * sp["V3"] * t + 0.3)
+
+
+def test_drive_tone_v3_line_clear_of_the_resampler_image(monkeypatch):
+    """DRIVE TONE 0 -> 127 raises A4's V3 12 dB re V1 (the shelf); rendered at 44.1 kHz and resampled to 48 as the
+    capture is (resample_poly 160 / 147), V1's image lands at 3900 + 440 = 4340 Hz, ~80 dB under V1, inside V3's +-3 %
+    band: with MARIMBA's V3 ~98 dB under V1 at TONE 0 the band reads the image, +6 dB at most (the FM-1 / host:
+    +5.6 .. +6.7). m_line_db (+-12 Hz round V3) reads the shelf"""
+    from scipy.signal import resample_poly
+    monkeypatch.setattr(h, "ENGINE", "marimba")
+    sp = h.bspec()[69]
+    n = int(1.4 * 44100)
+    t0, t127 = (resample_poly(roll_a4(n, sp, db), 160, 147)[int(0.005 * FS):int(1.3 * FS)] for db in (-98, -86))
+    band = h.pk_rel(t127[:int(0.3 * FS)], sp, ("V3",))[0] - h.pk_rel(t0[:int(0.3 * FS)], sp, ("V3",))[0]
+    assert band < 6, band                                                   # (the bug)
+    line = h.m_line_db(t127, sp) - h.m_line_db(t0, sp)
+    assert abs(line - 12) <= 1.5, line
+    # the image is the resampler's: at 44.1 kHz the band reads the shelf too
+    a0, a1 = (roll_a4(n, sp, db)[:int(0.3 * 44100)] for db in (-98, -86))
+    S = [np.abs(np.fft.rfft(x * np.hanning(len(x)), 1 << 16)) ** 2 for x in (a0, a1)]
+    fr = np.fft.rfftfreq(1 << 16, 1 / 44100)
+    m = (fr >= 0.97 * sp["V3"]) & (fr <= 1.03 * sp["V3"])
+    assert 10 * np.log10(S[1][m].sum() / S[0][m].sum()) >= 10
+
+
+def echoes(T_ms, n, wobble=None, fs=FS, f=440.0, k=8):
+    """a marimba A4 staccato through a delay: the note (V1, 37 dB of V2) and k echoes T apart, each -2.3 dB; wobble:
+    the tape's delay modulation (s, as a function of t), as fx.c's A.DELAY (wow ~0.7 Hz +-0.29 %, flutter ~7 Hz
+    +-0.05 % of the time)"""
+    t = np.arange(n) / fs
+
+    def note(tt):
+        tt = np.maximum(tt, 0) * (tt >= 0)
+        return (tt > 0) * np.exp(-tt / 0.11) * (np.sin(2 * np.pi * f * tt) + 0.014 * np.sin(2 * np.pi * 4.02 * f * tt))
+    x = note(t - 0.1)
+    for j in range(1, k + 1):
+        d = j * T_ms / 1000 + (wobble(t) * j if wobble else 0)
+        x = x + 10 ** (-2.3 * j / 20) * note(t - 0.1 - d)
+    return x
+
+
+def test_delay_dig_vs_ana_is_the_wow_not_the_spectrum():
+    """A.DELAY's darker loop (fx.c: TONE's one-pole x0.6) takes 0.07 dB a pass off A4's V1, 1.0 off V2: the echoes of
+    a marimba A4 (V1 alone) keep their spectrum (the FM-1's scan 3: 1.6 dB / x1.00), but they waver in time and
+    pitch. m_echo_wobble_ms: ANA re DIG >= 0.15 ms, a 2nd DIG take ~0"""
+    T = 357.0
+    n = int(3.3 * FS)
+    wob = lambda t: 15722 / 44100 * (3 * 32767 * np.sin(2 * np.pi * 0.708 * t) +      # noqa: E731
+                                     32767 / 2 * np.sin(2 * np.pi * 7.08 * t)) / 2 ** 25
+    dig, ana = echoes(T, n), echoes(T, n, wob)
+    w = slice(int((0.1 + T / 1000 - 0.02) * FS), int((0.1 + 3 * T / 1000) * FS))
+    assert h.sdist(h.third(dig[w]), h.third(ana[w])) < 2                    # the spectrum: the old row's FAIL
+    on = int(0.1 * FS)
+    a = h.m_echo_wobble_ms(ana[on:], dig[on:], 440.0, T)
+    d = h.m_echo_wobble_ms(echoes(T, n)[on:], dig[on:], 440.0, T)
+    assert a >= 0.3 and d <= 0.01, (a, d)
+
+
+def test_vibes_phaser_speed_0_long_take(monkeypatch):
+    """VIBES: SPEED 0 (0.25 Hz) read 0.33 Hz on the FM-1 and the host from ST_LONG's 5.1 s trace. ST_PH0: the chord
+    struck 3 times (held, it is under the gate by ~6.5 s), a 9.6 s trace; the host build reads 0.25 Hz"""
+    dur, ev = h.ST_PH0
+    f = h.lfo_hz(0, True)
+    assert (dur - 0.9) * f >= 2.2 and max(e[0] for e in ev) <= dur - 0.4
+    assert len([e for e in ev if e[1] == "on"]) == 3 * len(h.FXCH)
+    monkeypatch.setattr(h, "ENGINE", "vibes")
+    V = h.VRig("usb", host=2)
+    P = h.vp()
+    pb = [("PH_SW", 1), ("PH_DEPTH", 80), ("PH_SPEED", P["PH_SPEED"]["de"]), ("PH_FDBK", P["PH_FDBK"]["de"]),
+          ("PH_SYNC", 0)]
+    V.reset(h.with_(pb, ("PH_DEPTH", 127), ("PH_SPEED", 0)), label="speed 0")
+    t = V.take("tv-phaser-speed-0-long", *h.ST_PH0)
+    V.reset(h.with_(pb, ("PH_DEPTH", 0)), label="depth 0")
+    r = V.take("tv-phaser-depth-0-long", *h.ST_PH0)
+    d, _, fps = h.rel_trace(t, r, "usb", 0.2, dur - 0.7, 300, 3000)
+    assert abs(h.lfo_rate(d, fps, f * 0.4, f * 2.6, pearson=True) / f - 1) <= 0.02
+    V.reset(h.with_(pb, ("PH_DEPTH", 127), ("PH_SPEED", 0)), label="speed 0 short")
+    t = V.take("tv-phaser-speed-0", *h.ST_LONG)
+    V.reset(h.with_(pb, ("PH_DEPTH", 0)), label="depth 0 short")
+    r = V.take("tv-phaser-depth-0", *h.ST_LONG)
+    d, _, fps = h.rel_trace(t, r, "usb", 0.2, 5.3, 300, 3000)
+    assert h.lfo_rate(d, fps, f * 0.4, f * 2.6) / f - 1 > 0.2                # (the bug: 0.33 Hz)
+
+
+def test_vibes_fx_takes_and_rows_kept(monkeypatch, capsys):
+    """VIBES (--dry-run): the PH0 takes run last and replace the 6 s SPEED 0 take; every other take keeps its place
+    (the host's seeded jitter and CC history: every other row unchanged); the SPEED 0 rows stand where they did"""
+    monkeypatch.setattr(h, "VDEBUG", True, raising=False)
+    monkeypatch.setattr(h, "ENGINE", "vibes")
+    V = h.VRig("both", dry_run=True)
+    S = h.VSuite("vibes_fx", V)
+    h.vibes_fx(V, S)
+    tags = [t["tag"] for t in V.takes]
+    assert tags[-2:] == ["phaser-speed-0-long", "phaser-depth-0-long"] and "phaser-speed-0" not in tags
+    i = tags.index("phaser-speed-40")
+    assert tags[i - 1] == "phaser-depth-127"                                 # (where phaser-speed-0 was)
+    rows = [r["check"] for r in S.rows]
+    k = rows.index("PHASER SPEED PH_SPEED (CC 14) 40")
+    assert rows[k - 1] == "PHASER SPEED PH_SPEED (CC 14) 0"
+    assert rows[k + 1] == "PHASER SPEED PH_SPEED (CC 14) 127" and rows[k + 2] == "PHASER SPEED 0 slower than 40"
+    assert not any("wow" in r for r in rows)                                 # (MARIMBA's rows only)
+    dl = [r for r in S.rows if r["check"] == "DELAY DL_SW (CC 88) DIG vs ANA"][0]
+    assert dl["status"] != "info" and dl["crit"] == ">= 2 dB or centroid x1.15 either way"
+    assert [r["setting"] for r in S.rows if r["check"].startswith("DRIVE TONE")] == \
+        ["DRIVE 64: A4's V2 / V3 re V1 (5..300 ms)"]

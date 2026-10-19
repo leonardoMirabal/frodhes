@@ -1911,8 +1911,9 @@ def lfo_rate(tr, fps, lo_hz, hi_hz, H=6, pearson=False):
     lmax = max(lmin + 2, min(int((0.6 if pearson else 0.8) * n), int(np.ceil(fps / lo_hz))))
     r = np.full(lmax + 2, -1.0)
     e = np.dot(d, d) + 1e-30
-    for lag in range(lmin, min(lmax + 2, n - 1)):
-        r[lag] = np.corrcoef(d[:-lag], d[lag:])[0, 1] if pearson else np.dot(d[:-lag], d[lag:]) / e
+    with np.errstate(invalid="ignore", divide="ignore"):  # (pearson on a flat stretch: nan, never a peak)
+        for lag in range(lmin, min(lmax + 2, n - 1)):
+            r[lag] = np.corrcoef(d[:-lag], d[lag:])[0, 1] if pearson else np.dot(d[:-lag], d[lag:]) / e
     pk = [lag for lag in range(lmin + 1, lmax + 1) if r[lag] >= r[lag - 1] and r[lag] >= r[lag + 1] and r[lag] > 0]
     best = max((r[lag] for lag in pk), default=None)
     l0 = min(lag for lag in pk if r[lag] >= 0.85 * best) if pk else lmax
@@ -2276,6 +2277,11 @@ ST_NOTE = (2.0, chord((69,), 108, 0.1, 1.6))      # A4 alone: harmonics (the dri
 ST_STAC = (3.4, chord((69,), 108, 0.1, 0.25))     # A4 staccato: echoes, the reverb's tail
 ST_QUIET = (2.0, chord((69,), 40, 0.1, 1.6))      # A4 v40: LEVEL's +12 dB stays under the limiter
 ST_REL = (2.0, chord(FXCH, 127, 0.1, 0.6) + chord((69,), 40, 0.9, 1.6))   # loud, then soft: the release
+# PHASER SPEED 0 (0.25 Hz: a 4 s period) on VIBES: the chord struck 3 times, 3.3 s apart (held, it is under the gate's
+# -66 dBFS by ~6.5 s with the motor off): a 9.6 s trace, 2.4 periods (the takes and their DEPTH 0 reference share
+# the strikes; host seeds 1-3: 0.25 Hz)
+ST_PH0 = (10.5, sorted(chord(FXCH, 108, 0.1, 3.3) + chord(FXCH, 108, 3.4, 6.6) + chord(FXCH, 108, 6.7, 10.1),
+                       key=lambda e: e[0]))
 
 
 def fmt_s(v):
@@ -2606,8 +2612,10 @@ def vibes_fx(V, S, stim=None, extra=()):
     FDN = st.get("FDN", 2048)                                          # frame_dist's frame (PHASER FDBK)
     BW = st.get("BW", (0.05, 1.05))                                    # the spectra's window (B, SD)
     cs_period = st.get("CS_PERIOD", False)                             # CHORUS SYNC by its period (lfo_rate)
-    PH0 = st.get("PH0")                    # PHASER SPEED 0's take (and its DEPTH 0 reference) when ST_LONG is short
+    PH0 = st.get("PH0", ST_PH0)            # PHASER SPEED 0's take (and its DEPTH 0 reference): ST_LONG is too short
     jfloor = st.get("JFLOOR", False)       # the DRIVE rows: the jack judged against its own distortion floor
+    v3line = st.get("V3LINE", False)       # DRIVE TONE's V3 as a line (m_line_db), clear of the resampler's image
+    dl_wow = st.get("DL_WOW", False)       # DELAY DIG vs ANA judged by the tape's wow / flutter (the spectrum: info)
 
     def run(label, settings, stim, motor=False):
         V.reset(list(settings) + list(extra), motor=motor, label=label)
@@ -2813,9 +2821,13 @@ def vibes_fx(V, S, stim=None, extra=()):
     sp69 = bspec()[69]
 
     def dtone(t, q):
-        return pk_rel(cut(t.m(q), t.on(q)[0], 0.005, 0.3), sp69, ("V2", "V3"))
+        v2, v3 = pk_rel(cut(t.m(q), t.on(q)[0], 0.005, 0.3), sp69, ("V2", "V3"))
+        if v3line:                         # V3LINE (MARIMBA): V3 +-12 Hz over the roll, the resampler's image left out
+            v3 = m_line_db(cut(t.m(q), t.on(q)[0], 0.005, 1.3), sp69, "V3")
+        return [v2, v3]
+    dts = "DRIVE 64: A4's V2 / V3 re V1 (5..300 ms" + ("; V3 +-12 Hz, 5..1300 ms)" if v3line else ")")
     if not (jfloor and "jack" in V.sources()):
-        S.check(f"DRIVE TONE {nm('DRV_TONE')} 0 -> 127", "DRIVE 64: A4's V2 / V3 re V1 (5..300 ms)",
+        S.check(f"DRIVE TONE {nm('DRV_TONE')} 0 -> 127", dts,
                 S.per(lambda q: [b_ - a_ for a_, b_ in zip(dtone(T[0], q), dtone(T[127], q))]),
                 lambda v: v[0] >= 2 and v[1] >= 6, "V2 >= +2 dB and V3 >= +6 dB (the shelf: -3 / -9 dB at 0, +6 at 127)",
                 fmt=lambda v: f"{v[0]:+.1f} / {v[1]:+.1f} dB")
@@ -2825,7 +2837,7 @@ def vibes_fx(V, S, stim=None, extra=()):
         # where MARIMBA's TONE-0 V3 is -79 dB on USB: the jack's V3 band read its own line (-66 dB at every TONE,
         # +0.2 dB 0 -> 127). Its V3 is judged only where TONE 0's V3 band stands 10 dB over that line (m_line_floored)
         fl = {"jack": bool(_safe(m_line_floored, cut(T[0].m("jack"), T[0].on("jack")[0], 0.005, 1.5), sp69, "V3"))}
-        S.check(f"DRIVE TONE {nm('DRV_TONE')} 0 -> 127", "DRIVE 64: A4's V2 / V3 re V1 (5..300 ms)",
+        S.check(f"DRIVE TONE {nm('DRV_TONE')} 0 -> 127", dts,
                 S.per(lambda q: [b_ - a_ for a_, b_ in zip(dtone(T[0], q), dtone(T[127], q))] + [fl.get(q, False)]),
                 lambda v: v[0] >= 2 and (v[1] >= 6 or v[2]),
                 "V2 >= +2 dB and V3 >= +6 dB (the shelf: -3 / -9 dB at 0, +6 at 127; the jack's V3: unless TONE 0's "
@@ -2922,32 +2934,36 @@ def vibes_fx(V, S, stim=None, extra=()):
         it at 69 BPM, tests/py/test_phaser_measures.py). lfo_rate() takes the period instead"""
         d, _, f_ = rel_trace(t, pref if ref is None else ref, q, 0.2, b, 300, 3000)
         return lfo_rate(d, f_, ex * lo, ex * hi, pearson=pearson)
-    sp = {}
-    for x in (0, P["PH_SPEED"]["de"], 127):
+    psp, ph0_at = {}, None
+    pd0 = P["PH_SPEED"]["de"]
+
+    def slower():
+        S.check(f"PHASER SPEED 0 slower than {pd0}", f"expected {lfo_hz(0, True):.2f} Hz",
+                {s: (psp[0][s], psp[pd0][s]) if psp[0].get(s) is not None and psp[pd0].get(s) is not None else None
+                 for s in psp[0]},
+                lambda v: v[0] <= 0.7 * v[1], "<= 0.7x (a period longer than the take)",
+                fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz")
+    for x in (0, pd0, 127):
         ex = lfo_hz(x, half=True)
-        if x == 0 and PH0 and not (V.offline and not os.path.exists(os.path.join(V.offline, "phaser-speed-0-long.json"))):
+        if x == 0 and not (V.offline and not os.path.exists(os.path.join(V.offline, "phaser-speed-0-long.json"))):
             # (--offline on takes saved before PH0: the 6 s take as before)
-            # PH0 (MARIMBA): SPEED 0's 4 s period in a 5.1 s trace is 1.3 periods (its lag at the search's very end),
-            # and on the roll the band dips 3 times a cycle (at 0, 2 and 3 s), so half the period correlates too: the
-            # FM-1's scan 3 read 0.50 Hz on USB and the jack, the host the same. A take of 2.4 periods against a
+            # PH0: SPEED 0's 4 s period in ST_LONG's 5.1 s trace is 1.3 periods (its lag at the search's very end):
+            # VIBES read 0.33 Hz on the FM-1 and the host; MARIMBA's roll dips 3 times a cycle (at 0, 2 and 3 s), so
+            # half the period correlates too: 0.50 Hz on USB, the jack and the host. A take of 2.4 periods against a
             # DEPTH 0 reference as long, and each lag's correlation over its own overlap (lfo_rate pearson: 0.63 at
-            # 2 s, 0.99 at 4 s on the host; by the whole trace's energy 0.50 / 0.58, and 2 s passed): host 0.25 Hz
-            t = run("phaser-speed-0-long", with_(pb127, ("PH_SPEED", 0)), PH0)
-            r0 = run("phaser-depth-0-long", with_(pb, ("PH_DEPTH", 0)), PH0)
-            sp[0] = S.per(lambda q: phrate(t, q, ex, ref=r0, b=PH0[0] - 0.7, pearson=True))
-            S.check(f"PHASER SPEED {nm('PH_SPEED')} 0", f"expected {ex:.2f} Hz (300-3000 Hz re DEPTH 0, its period; "
-                    f"a {PH0[0] - 0.9:.1f} s trace)", sp[0], lambda v: abs(v / ex - 1) <= 0.10, "within 10 %",
-                    fmt=lambda v: f"{v:.2f} Hz")
+            # 2 s, 0.99 at 4 s on the MARIMBA host; by the whole trace's energy 0.50 / 0.58, and 2 s passed): 0.25 Hz.
+            # The two takes run last in the suite, their rows put back here: every other take is the same events
+            # after the same takes (the host's seeded jitter and its CC history too), so every other row is unchanged
+            ph0_at = len(S.rows)
             continue
         t = run(f"phaser-speed-{x}", with_(pb127, ("PH_SPEED", x)), ST_LONG)
-        sp[x] = S.per(lambda q: phrate(t, q, ex))
+        psp[x] = S.per(lambda q: phrate(t, q, ex))
         if x:
             S.check(f"PHASER SPEED {nm('PH_SPEED')} {x}", f"expected {ex:.2f} Hz (300-3000 Hz re DEPTH 0, its period)",
-                    sp[x], lambda v: abs(v / ex - 1) <= 0.10, "within 10 %", fmt=lambda v: f"{v:.2f} Hz")
-    d0 = P["PH_SPEED"]["de"]
-    S.check(f"PHASER SPEED 0 slower than {d0}", f"expected {lfo_hz(0, True):.2f} Hz",
-            {s: (sp[0][s], sp[d0][s]) if sp[0].get(s) is not None and sp[d0].get(s) is not None else None for s in sp[0]},
-            lambda v: v[0] <= 0.7 * v[1], "<= 0.7x (a period longer than the take)", fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz")
+                    psp[x], lambda v: abs(v / ex - 1) <= 0.10, "within 10 %", fmt=lambda v: f"{v:.2f} Hz")
+    if ph0_at is None:
+        slower()
+    sl_at = len(S.rows)                               # (where the SPEED 0 row's "slower than" goes when PH0 runs last)
     T = {x: run(f"phaser-fdbk-{x}", with_(pb, ("PH_FDBK", x)), ST_LONG) for x in (0, P["PH_FDBK"]["de"], 127)}
     # the feedback fills the notches as it raises the resonance between them (fx.c: x + y with the allpasses' output
     # fed back, as Felucca's; host response at DEPTH 80: the peak +2.9 -> +9.3 dB, the notches -62 .. -79 -> -11 ..
@@ -3021,8 +3037,9 @@ def vibes_fx(V, S, stim=None, extra=()):
     S.check("DELAY DEPTH 50 -> 127", "the 1st echo", S.per(lambda q: echo_levels(xs(T[127], q), T0, 1)[0] - echo_levels(xs(T[50], q), T0, 1)[0]),
             lambda v: v >= 3, ">= +3 dB", level=True)
     dl100 = with_(dlb, ("DL_DEPTH", 100))
+    dtk = {}
     for x in (0, P["DL_TIME"]["de"], 127):
-        t = run(f"delay-time-{x}", with_(dl100, ("DL_TIME", x)), ST_STAC)
+        t = dtk[x] = run(f"delay-time-{x}", with_(dl100, ("DL_TIME", x)), ST_STAC)
         ex = dly_ms(x)
         tol = max(8.0, 0.10 * ex) if x == 0 else max(5.0, 0.05 * ex)
         S.check(f"DELAY TIME {nm('DL_TIME')} {x}", f"expected {ex:.0f} ms (the 1st echo re DEPTH 0)",
@@ -3049,8 +3066,24 @@ def vibes_fx(V, S, stim=None, extra=()):
     S.check(f"DELAY {nm('DL_SW')} DIG vs ANA", "the echoes' spectrum",
             S.per(lambda q: (sdist(eb(T[1], q), eb(T[2], q)), cen(xs(T[2], q, T0 / 1000 - 0.02, 3 * T0 / 1000)) /
                              cen(xs(T[1], q, T0 / 1000 - 0.02, 3 * T0 / 1000)))),
-            lambda v: v[0] >= 2 or abs(np.log(v[1])) >= np.log(1.15), ">= 2 dB or centroid x1.15 either way",
-            fmt=lambda v: f"{v[0]:.1f} dB / x{v[1]:.2f}")
+            lambda v: v[0] >= 2 or abs(np.log(v[1])) >= np.log(1.15),
+            ">= 2 dB or centroid x1.15 either way" + (" (information: the tape's darker loop has ~nothing to act "
+                                                       "on, see the wow / flutter row)" if dl_wow else ""),
+            fmt=lambda v: f"{v[0]:.1f} dB / x{v[1]:.2f}", info=dl_wow)
+    if dl_wow:
+        # DL_WOW (MARIMBA): A4's marimba note is V1 with V2 37 dB and V3 80 dB under it, and gone (-26 dB) by the 1st
+        # echo, so the echoes are V1 alone. ANA's loop (fx.c: the TONE one-pole x0.6) darkens a pass by 0.07 dB at
+        # V1, 1.0 at V2, 3.2 at V3: the spectrum and centroid can not move (scan 3: 1.6 dB / x1.00 USB, 1.5 / x1.00
+        # jack, host 1.2), what a listener hears is the tape's wow and flutter: the echoes waver in pitch (+-8 cents
+        # at 0.7 Hz, +-13 at 7 Hz). Measured as the echoes' timing against DIG's: scan 3 0.63 ms USB and jack, host
+        # 0.60; two DIG takes (DELAY TIME's default take, the same settings) 0.03 ms USB, 0.002 jack, 0.000 host
+        dg = dtk[P["DL_TIME"]["de"]]
+        S.check(f"DELAY {nm('DL_SW')} DIG vs ANA: the tape's wow / flutter",
+                f"A4's V1 in echoes 1-3 ({T0:.0f} ms): ANA's timing re DIG's, p2p (a line off); DIG re a 2nd DIG take",
+                S.per(lambda q: (m_echo_wobble_ms(xs(T[2], q), xs(T[1], q), sp69["V1"], T0),
+                                 m_echo_wobble_ms(xs(dg, q), xs(T[1], q), sp69["V1"], T0))),
+                lambda v: v[0] >= 0.15 and v[0] >= 4 * v[1], ">= 0.15 ms and >= 4x DIG's",
+                fmt=lambda v: f"{v[0]:.2f} / {v[1]:.3f} ms")
     T = {k: run(f"delay-sync-{k.replace('/', '')}", with_(dl100, ("DL_SYNC", sync_idx(k))), ST_STAC) for k in ("1/4", "1/8")}
     S.check(f"DELAY SYNC {nm('DL_SYNC')} 1/4 vs 1/8", "the 1st echo re DEPTH 0", S.per(lambda q: (gap(T['1/4'], q), gap(T['1/8'], q))),
             lambda v: abs(v[0] / v[1] / 2 - 1) <= 0.05, "ratio 2 +-5 %",
@@ -3117,6 +3150,21 @@ def vibes_fx(V, S, stim=None, extra=()):
         S.check(f"LEVEL {nm('LEVEL')} {x} re 64", f"A4 v40, expected {ex:+.1f} dB",
                 S.per(lambda q: L(T[x], q, 0, 1.4) - L(T[64], q, 0, 1.4)), lambda v: abs(v - ex) <= 1.0, "within 1 dB",
                 level=True)
+
+    # PHASER SPEED 0 (PH0, see the PHASER section): its long takes last, its rows where they belong
+    if ph0_at is not None:
+        n0, ex = len(S.rows), lfo_hz(0, half=True)
+        t = run("phaser-speed-0-long", with_(pb127, ("PH_SPEED", 0)), PH0)
+        r0 = run("phaser-depth-0-long", with_(pb, ("PH_DEPTH", 0)), PH0)
+        psp[0] = S.per(lambda q: phrate(t, q, ex, ref=r0, b=PH0[0] - 0.7, pearson=True))
+        S.check(f"PHASER SPEED {nm('PH_SPEED')} 0", f"expected {ex:.2f} Hz (300-3000 Hz re DEPTH 0, its period; "
+                f"a {PH0[0] - 0.9:.1f} s trace)", psp[0], lambda v: abs(v / ex - 1) <= 0.10, "within 10 %",
+                fmt=lambda v: f"{v:.2f} Hz")
+        slower()
+        r_sp, r_sl = S.rows[n0:]
+        del S.rows[n0:]
+        S.rows.insert(sl_at, r_sl)
+        S.rows.insert(ph0_at, r_sp)
 
 
 # ---------------------------------------------------------------- loudness jumps
@@ -3397,6 +3445,51 @@ def m_line_floored(x, sp, band="V3", margin=10.0, hw=3.0):
     k = round(sp[band] / sp["V1"])
     line = 10 * np.log10(S[(fr >= k * f1m - hw) & (fr <= k * f1m + hw)].sum() + 1e-30)
     return bool(pk_db(x, sp[band]) < line + margin)
+
+
+def m_line_db(x, sp, band="V3", hw=12.0):
+    """bar partial `band` re V1 (dB) as lines: the power within +-hw Hz of each, V1 where x has it (the interface's
+    clock is not the FM-1's) and `band` scaled by the same. MARIMBA's DRIVE TONE: the 44.1 -> 48 kHz resampling
+    (resample_poly 160 / 147: to_fs on the FM-1's USB, HostRig on the host) leaves V1's image at 3900 + 440 = 4340 Hz,
+    ~80 dB under V1 (a pure 440 Hz: -80.6 dB in pk_db's +-3 % band), whatever TONE does; MARIMBA A4's V3 at TONE 0
+    stands ~98 dB under V1, so the +-3 % band (4253-4516 Hz) read the image: +6.1 .. +6.7 dB for TONE 0 -> 127 (the
+    shelf: +12.1 at V3 re V1; VIBES' V3 reads it). +-12 Hz round V3 is 44 Hz clear of the image. x: a long stretch
+    (the A4 roll's 1.3 s: lines 1 Hz wide)"""
+    x = np.asarray(x, float)
+    nf = 1 << max(15, int(np.ceil(np.log2(len(x)))) + 2)
+    S = np.abs(np.fft.rfft(x * np.hanning(len(x)), nf)) ** 2
+    fr = np.fft.rfftfreq(nf, 1 / FS)
+    m1 = np.flatnonzero((fr >= 0.992 * sp["V1"]) & (fr <= 1.008 * sp["V1"]))
+    f1m = fr[m1[int(np.argmax(S[m1]))]]
+
+    def lv(f):
+        return 10 * np.log10(S[(fr >= f - hw) & (fr <= f + hw)].sum() + 1e-30)
+    return float(lv(sp[band] * f1m / sp["V1"]) - lv(f1m))
+
+
+def m_echo_wobble_ms(x, y, f, t_ms, ks=(1, 2, 3), bw=40.0):
+    """how far the echoes of take x move in time against take y's (the same note, the same delay settings): V1's
+    phase in x re y (both +-bw Hz round f, analytic) as a delay (ms), in each echo k's window (k T + 30 ms ..
+    (k + 1) T - 10 ms), a straight line taken off; the largest peak-to-peak over ks. A.DELAY's tape (fx.c dly_loop:
+    wow ~0.7 Hz, flutter ~7 Hz, +-0.29 % / +-0.05 % of the time: +-8 / +-13 cents) moves its echoes, D.DELAY's stand
+    still: two DIG takes 0.03 ms apart on the FM-1 (0.000 on the host), ANA re DIG 0.6 ms"""
+    n = min(len(x), len(y))
+
+    def an(z):
+        Z = np.fft.fft(np.asarray(z[:n], float))
+        fr = np.fft.fftfreq(n, 1 / FS)
+        Z[(fr < f - bw) | (fr > f + bw)] = 0
+        return np.fft.ifft(Z)
+    d = np.unwrap(np.angle(an(x) * np.conj(an(y)))) / (2 * np.pi * f) * 1000
+    out = []
+    for k in ks:
+        a, b = int((k * t_ms / 1000 + 0.03) * FS), int(((k + 1) * t_ms / 1000 - 0.01) * FS)
+        s = d[a:min(b, n)]
+        if len(s) < FS // 20:
+            continue
+        i = np.arange(len(s))
+        out.append(float(np.ptp(s - np.polyval(np.polyfit(i, s, 1), i))))
+    return max(out)
 
 
 def m_drop_rate(x, t_off, db=30.0, win=0.005, hop=0.001, fit=False):
@@ -3763,7 +3856,9 @@ def marimba_fx(V, S):
                 FDN=16384,               # PHASER FDBK frame by frame in 0.34 s frames: two takes of one roll are
                 #                          3.7 dB apart in 43 ms frames (the strikes' phase), 1.6 dB in 0.34 s
                 PH0=(10.5, m_fx_roll(FXCH, v, 0.1, 10.1)),   # PHASER SPEED 0 (4 s period): a 9.6 s trace, 2.4 periods
-                JFLOOR=True)             # the DRIVE rows: the jack's own distortion at MARIMBA's quiet level
+                JFLOOR=True,             # the DRIVE rows: the jack's own distortion at MARIMBA's quiet level
+                V3LINE=True,             # DRIVE TONE's V3 as a line: the +-3 % band read the resampler's image of V1
+                DL_WOW=True)             # DELAY DIG vs ANA: the echoes (V1 alone) by the tape's wow / flutter
     return vibes_fx(V, S, stim=stim, extra=[("RELEASE", 0)])
 
 
