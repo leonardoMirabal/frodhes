@@ -18,7 +18,8 @@ what matter):
   max level      a loud chord's peak and RMS on the jack (and on USB)
   snr            loud-chord RMS minus the hiss (A-weighting not applied)
   harmonics      A1 / A2 at 4 velocities: H2..H6 re H1 on USB and on the jack (distortion added by the jack)
-Results also go to build/hil/jack.json (jack-vibes.json with --engine vibes).
+Results also go to build/hil/jack.json (jack-vibes.json with --engine vibes; --engine marimba: jack-marimba.json and its
+tail takes, USB + jack, in build/hil/jack-tails/*.npz).
 """
 import argparse
 import json
@@ -142,25 +143,33 @@ def gate_tail(u, j, t_note):
     after 203 ms under 16 LSB ends at z), else 'decayed' (the tail itself rounded to zero first, e.g. a hand mute);
     on a gate the 50 ms before the fade start [z - 96 ms, z - 46 ms] peak <= 16 LSB. Jack, 10 ms frames from z: none
     of the first 100 ms more than 6 dB over the muted floor (z + 300 .. 1000 ms): the codec's own mute transient;
-    hiss_step = the 100 ms before z - 50 ms minus that floor (what stops when the codec mutes)"""
+    hiss_step = the 100 ms before z - 50 ms minus that floor (what stops when the codec mutes).
+    A tail that ends by its own decay (a MARIMBA top note: C7's V1 T60 is 0.11 s, so a v8 note reaches exact zero
+    ~0.1 s after the strike, before the gate's 203 ms) never meets the gate: its fixed windows then lie over the note
+    itself (pre_fade_peak_lsb is the strike, jack_hiss_step_db the note, not hiss: hiss_window_has_note). What tells a
+    cut from a decay is end_peak_lsb, USB's peak in the last 10 ms before z: <= 16 LSB on a decayed tail (a voice
+    freed while still sounding ends above it), as the gate's own limit"""
     nz = np.flatnonzero(u != 0)
     if not len(nz) or nz[-1] >= len(u) - int(1.05 * FS):
         return dict(ok=False, why="no exact zero (with 1 s after it) inside the take: record longer")
     z = int(nz[-1]) + 1
     ms = lambda t: int(t * FS / 1000)                                  # noqa: E731
     pre = float(np.abs(u[max(0, z - ms(96)):z - ms(46)]).max() * 32768)
-    gated = bool(np.abs(u[max(0, z - ms(246)):z - ms(46)]).max() * 32768 <= 16.5)
+    w = u[max(0, z - ms(246)):z - ms(46)]
+    gated = bool(np.abs(w).max() * 32768 <= 16.5 and np.any(w != 0))   # (all zero: before the note, z under 246 ms)
     last60 = np.flatnonzero(np.abs(u) > 10 ** (-60 / 20))
     floor = float(np.median(frames_db(j[z + ms(300):z + ms(1000)])))
     after = float(frames_db(j[z:z + ms(100)]).max() - floor)
     hiss = float(np.median(frames_db(j[max(0, z - ms(150)):z - ms(50)])) - floor)
     m16 = u * 32768
+    end = float(np.abs(u[max(0, z - ms(10)):z]).max() * 32768)
     clk = int((np.abs(np.diff(m16, 2)) > 6 * (np.convolve(np.abs(m16), np.ones(480) / 480, "same")[1:-1] + 50) + 2000).sum())
     return dict(kind="gate" if gated else "decayed", zero_s=round(z / FS - t_note, 3),
                 last_over_60dbfs_s=round(float(last60[-1]) / FS - t_note, 3) if len(last60) else None,
-                pre_fade_peak_lsb=round(pre, 1), jack_after_mute_over_floor_db=round(after, 1),
+                pre_fade_peak_lsb=round(pre, 1), end_peak_lsb=round(end, 1), jack_after_mute_over_floor_db=round(after, 1),
                 jack_hiss_step_db=round(hiss, 1), jack_floor_db=round(floor, 1), usb_clicks=clk,
-                ok=bool((pre <= 16.5 or not gated) and after <= 6.0 and clk == 0))
+                hiss_window_has_note=bool(len(last60) and last60[-1] >= z - ms(150)),
+                ok=bool((pre <= 16.5 if gated else end <= 16.5) and after <= 6.0 and clk == 0))
 
 
 def marimba(J, a, out):
@@ -237,6 +246,10 @@ def marimba(J, a, out):
         u, j = J.both(dur, ev)
         J.r.out.send(M("control_change", control=64, value=0))
         rep["tails"][nm] = gate_tail(u, j, 0.1)
+        td = os.path.join(os.path.dirname(out), "jack-tails")          # the takes, for a look at the mute instant
+        os.makedirs(td, exist_ok=True)
+        np.savez_compressed(os.path.join(td, "marimba-" + "".join(c if c.isalnum() else "_" for c in nm) + ".npz"),
+                            usb=u.astype(np.float32), jack=np.asarray(j, np.float32), fs=FS)
     rep["tails_ok"] = all(q.get("ok") for q in rep["tails"].values())
     # idle: everything off, 3 s; USB exact zero, the jack at the codec-muted floor
     J.r.dry()
