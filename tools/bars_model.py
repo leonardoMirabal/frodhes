@@ -132,12 +132,27 @@ def sat32(v):
     return max(-0x7FFFFFFF, min(0x7FFFFFFF, v))
 
 
+def has_damper(spec):
+    """the type record's flags bit1 (a spec without flags: VIBES, a damper)"""
+    return bool(spec["type"].get("flags", 3) & 2)
+
+
+def mute_w(spec, kn, pedal_w):
+    """the key-up crossfade weight (Q15): the pedal's on a type with a damper; on one without (MARIMBA, bars.c C6
+    bar_mute_w), the pedal's x MUTE (P_RELEASE raw x 258, Q15): MUTE 0 rings out, 127 a full hand stop"""
+    if has_damper(spec):
+        return pedal_w
+    return (pedal_w * (int(kn["release"]) * 258)) >> 15
+
+
 def note_init(spec, n, vel, kn):
     """Everything bar_init computes for one note: per slot (E, eps) held and felt (ints), b (int Q30), live; the
     BELL-scaled couplings; the blended pulse, prate, pamp; gain, kill, life."""
     k = spec["keys"][min(max(n, spec["key_lo"]), spec["key_lo"] + len(spec["keys"]) - 1) - spec["key_lo"]]
     kidx = k["midi"] - spec["key_lo"]
     dk, dr = spec["decay_k"][kn["decay"]], spec["decay_k"][kn["release"]]
+    if not has_damper(spec):                         # MUTE (MARIMBA PLAN §3.4, C5): the hand-stop words unscaled
+        dr = 65536
     t30 = spec["tune_t"][int(kn["tune"]) + 50]
     pw = pos_weight(spec["bar_pos"][k["band"]], kn["tone"])
     tors = spec["type"]["tors_db"]
@@ -146,7 +161,7 @@ def note_init(spec, n, vel, kn):
         w = k["modes"][m]["w"]
         if not w["th"]:
             continue
-        k16 = 65536 if m == S_TUBE else dk
+        k16 = 65536 if m == S_TUBE and not (k["flags"] & 8) else dk   # key flag bit3 (MARIMBA below C4): RING scales the tube too
         k16r = 65536 if m == S_TUBE else dr
         out["E0"][m], out["eps0"][m] = rc.coef(w, w["d"], t30, k16)
         out["E1"][m], out["eps1"][m] = rc.coef(w, w["drel"], t30, k16r)
@@ -320,7 +335,7 @@ def render_batch(spec, keys, vels, dur, knobs=None, off_at=None, motor=None, par
             else:
                 gedge = [32768] * 9
         if off_sub is not None and k_sub == off_sub:
-            wtg = pedal_w
+            wtg = pedal_w if has_damper(spec) else np.array([mute_w(spec, kn, pedal_w) for kn in kns], np.int64)[:, None]
             Es, Ps = Ecur.copy(), Pcur.copy()
             ramp = RAMP_SUB
         if ramp:                                    # the damper crossfade, integer as rh_voice_sub

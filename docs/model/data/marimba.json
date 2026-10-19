@@ -1,0 +1,768 @@
+{
+ "_comment": "MARIMBA bar type (bar TYPE 1 of firmware/src/bars.c, panel TYPE MARIMBA): the physics data tools/gen_bars.py builds the tables from (MARIMBA PLAN §5). The VIBES schema (gen_bars.check_vibes): every T-row has src and status (CONFIRMED / CORRECTED / DERIVED / MEASURED-REF / ESTIMATE), every ESTIMATE a settle entry. No samples and no recordings: the numbers are papers, physics derivations, the FE / contact / pair tools of the tree and listening (D10 = no). Sources: ISMA = Beaton & Scavone ISMA 2019 (bar measurements); BEATON = Beaton PhD 2022; SERRA = Serra et al. (marimba C4 analysis); RUCZ = Rucz et al. JASA (mallet-bar contact); SDA23 = Soares et al. JSV 2023 (bar-tube coupling); D98 = Doutaut et al. 1998; LHS = the Malletech resonator notes; LAFAVRE = La Favre's marimba resonator tables; E-VAL / D-VAL / F-VAL = the VIBES research validations (private/vibraphone).",
+ "version": 1,
+ "type": "MARIMBA",
+ "keys": {
+  "lo": 21,
+  "hi": 108,
+  "authentic": [
+   36,
+   96
+  ],
+  "_doc": "every MIDI key 21..108 plays its own pitch; C2..C7 (5 octaves, a concert marimba) is authentic, outside extrapolated (the FE of the end bar) and flagged (bar_key_t.flags bit0)",
+  "src": "user decision D4 (MARIMBA PLAN §19)",
+  "status": "CONFIRMED"
+ },
+ "T12": {
+  "_doc": "bar outline and material: through the anchor bar (piecewise: L and w geometric in semitones C2 - anchor - C7, the thickness linear C2 25 mm - anchor 22 mm - C7 22 mm); the undercut profile tuned by tools/bar_fe.py (isotropic Timoshenko with the rosewood E along the grain, G the shear modulus; h_min the thinnest the cut may go)",
+  "anchor": {
+   "key": 54,
+   "L_mm": 423.0,
+   "w_mm": 58.0,
+   "t_mm": 22.0,
+   "mass_g": [
+    331.0,
+    447.0
+   ],
+   "_doc": "ISMA Table 1: seven F#3 bars 373-423 x 51-58 x 22-26 mm, 331-447 g (the FE's F#3 mass must fall in it, Gate VA-M12)"
+  },
+  "L_mm": [
+   700.0,
+   130.0
+  ],
+  "w_mm": [
+   76.0,
+   38.0
+  ],
+  "t_mm": [
+   25.0,
+   22.0
+  ],
+  "E_pa": 23000000000.0,
+  "rho": 1080.0,
+  "G_pa": 3000000000.0,
+  "kappa": 0.8333333333,
+  "h_min_mm": 6.0,
+  "src": "ISMA Table 1 (anchor); BEATON Table 3.1 p. 45 (rosewood after Bork 1999: rho 1080, E_x 23.0 GPa, G 3.0 GPa); the C2 / C7 outline ESTIMATE",
+  "status": "ESTIMATE",
+  "settle": "a published dimension table or a measured instrument (the user, a tape measure)"
+ },
+ "T9a": {
+  "_doc": "tuned ratios: V2 = 4 f0, V3 = 10 f0 by the undercut up to v3_tuned_max_key; above, the FE tunes V2 only and V3 is the profile's own ratio (reported)",
+  "V2": 4.0,
+  "V3": 10.0,
+  "v3_tuned_max_key": 84,
+  "src": "ISMA §4 ('consistently very near 4'); SERRA C4 1 : 4.00 : 9.39; BEATON 1:4.01:10.08",
+  "status": "CONFIRMED"
+ },
+ "T11": {
+  "_doc": "per-key detune of the upper bending modes (cents re the tuned / FE ratio), drawn uniformly per key (gen_bars.hash01, seed)",
+  "V2_c": [
+   -8.0,
+   8.0
+  ],
+  "V3_c": [
+   -60.0,
+   0.0
+  ],
+  "V4_c": [
+   -30.0,
+   30.0
+  ],
+  "seed": 2026,
+  "src": "ISMA §4-5 (V2 within a few cents, V3 'greater variability'); SERRA 9.39 (V3 flat)",
+  "status": "ESTIMATE",
+  "settle": "listening pack C (no measured per-key ratios: D10 = no)"
+ },
+ "T10": {
+  "_doc": "V4: the FE's own ratio (untuned, 16.8-17.1 x on a 1:4:10 rosewood bar); present wherever it lies under 18 kHz (mode_coefs)",
+  "from_fe": true,
+  "max_key": 108,
+  "src": "the FE of the undercut bar (tools/bar_fe.py)",
+  "status": "DERIVED"
+ },
+ "T9b": {
+  "_doc": "torsion T1, T2 per key from the FE (Saint-Venant on the undercut profile); the expected ratios at the anchor are the FE validation (VA-M12)",
+  "expected_T1": [
+   1.8,
+   2.6
+  ],
+  "expected_T2": [
+   7.5,
+   10.5
+  ],
+  "src": "BEATON Fig. 4.4 (T1 between V1 and V2, T2 near V3 from E3 to B3); LAFAVRE C2 T2 598 Hz",
+  "status": "DERIVED"
+ },
+ "T9c": {
+  "_doc": "torsion level: T1 slot peak re V1 in the first 20 ms at TONE +63 (the edge), DEFAULT mallet, v100",
+  "t1_db": -15.0,
+  "src": "VIBES T9c (the user asked for an audible edge); RUCZ §IV.C (torsion only off the centreline)",
+  "status": "ESTIMATE",
+  "settle": "listening pack C (edge strikes)"
+ },
+ "T9d": {
+  "_doc": "torsion T60 = the Rayleigh law at the torsion frequency x mult",
+  "mult": 0.85,
+  "src": "VIBES T9d",
+  "status": "ESTIMATE",
+  "settle": "listening pack C"
+ },
+ "T15": {
+  "_doc": "slot X: the lateral-torsional partner near 10 f0 (ISMA: on 6 of 7 F#3 bars), off by default; gen_bars --partner renders the A/B (V3 x (1 + u), u per key in ratio_pct, level re V3)",
+  "on": false,
+  "partner": {
+   "ratio_pct": [
+    2.0,
+    5.0
+   ],
+   "level_db": -24.0
+  },
+  "src": "ISMA §5",
+  "status": "ESTIMATE",
+  "settle": "D9: the user's ear (pack C A/B)"
+ },
+ "T2r": {
+  "_doc": "bar damping, Rayleigh: zeta(f) = (alpha / omega + beta omega) / 2, sigma = alpha / 2 + beta omega^2 / 2 (1/s, amplitude e^-sigma t), T60 = 6.908 / sigma, for every bending and torsion mode at its own frequency; alpha x the per-register multiplier alpha_reg (semitone interpolation, 1.0 = the law as measured). The law is a two-parameter fit to F#3 bars on foam supports (BEATON App. A): its alpha term is not physics, so the register settle is by ear within the brackets of T1b; RUCZ's Orff F4 bar (zeta 0.10 %) bounds the multiplier from below",
+  "law": "rayleigh",
+  "alpha": 13.877,
+  "beta": 4.754e-07,
+  "alpha_reg": [
+   [
+    36,
+    1.0
+   ],
+   [
+    54,
+    1.0
+   ],
+   [
+    96,
+    1.0
+   ]
+  ],
+  "bounds": {
+   "alpha_mult": [
+    0.4,
+    1.0
+   ]
+  },
+  "src": "BEATON Table 5.2 p. 89, eq. 5.3",
+  "status": "ESTIMATE",
+  "settle": "listening pack A per register (the T1b brackets are the hard limits)"
+ },
+ "cap": {
+  "_doc": "no bar mode rings longer than t60_max_s (a sanity cap; the law gives at most ~1 s)",
+  "t60_max_s": 4.0,
+  "src": "-",
+  "status": "DERIVED"
+ },
+ "T1b": {
+  "_doc": "V1 with the tube (BELL 64): the solver's targets per register (semitone interpolation of log T60; outside C2..C7 the Rayleigh trend of the bare bar anchored at the end key, never longer than the bare bar above C4) and the practitioner brackets VA-M2 holds the model to. Below C4 the tube LENGTHENS the note (zeta_r < zeta_n: the strongly coupled pair decays at their mean, SDA23); above C4 it shortens it (the vibraphone's weak regime)",
+  "t60_s": {
+   "36": 1.6,
+   "48": 1.33,
+   "54": 0.98,
+   "60": 0.88,
+   "72": 0.5,
+   "84": 0.3,
+   "96": 0.11
+  },
+  "bracket": {
+   "36": [
+    1.4,
+    2.0
+   ],
+   "48": [
+    1.1,
+    1.4
+   ],
+   "54": [
+    0.9,
+    1.1
+   ],
+   "60": [
+    0.7,
+    0.9
+   ],
+   "72": [
+    0.3,
+    0.7
+   ],
+   "84": [
+    0.2,
+    0.4
+   ],
+   "96": [
+    0.08,
+    0.15
+   ]
+  },
+  "src": "the Rayleigh law + the tube (MARIMBA PLAN §2.2-2.3); LHS p. 25 (low notes 1-2 s tuned); Roper (2 s low, 1/50 s to inaudibility at the top)",
+  "status": "ESTIMATE",
+  "settle": "listening pack A (D10 = no recordings)",
+  "_doc_2026_10_19": "36 1.6 (was 1.7: the two normal modes within 15 % below C4, VA-M3, need the coupling near critical), 48 1.35 (the TUBE card lengthens C3 by x1.3, VA-M9), 60 0.88 (the weak clamp and the split limit hold C4 near 0.88)"
+ },
+ "T3m": {
+  "_doc": "no damper: key-up mutes by hand with weight MUTE / 127 (MUTE = the DECAY page's K2, P_RELEASE): the drel words are the hand stop (V1 T60 v1_s, upper modes x upper_mult), crossfaded over ramp_sub sub-blocks (the hand's arrival); MUTE 0 = rings out; the pedal holds (w 0); All Notes Off mutes fully. No knock, no felt noise; tube_s: the tube slot's mute T60 (its drel word): the low tubes, strongly coupled, hold +10..16 dB over the bar at key-up and would ring 1.5-3 s on their own after the bar is stopped (the plan's MUTE 127 = 60 dB in 0.12 s needs the radiated note stopped: the hand over the bar also covers the tube's mouth)",
+  "has_damper": false,
+  "v1_s": 0.06,
+  "upper_mult": 0.6,
+  "ramp_sub": 7,
+  "src": "MARIMBA PLAN §3.4 (a hand stops a bar in a few tens of ms)",
+  "status": "ESTIMATE",
+  "settle": "listening pack D (MUTE 127 on short notes: a hand stop in ~0.1 s)",
+  "tube_s": 0.06,
+  "_doc_2026_10_19": "v1_s 0.06, tube_s 0.06 (was 0.08 and none): 60 dB down within 0.12 s of key-up including the 40 ms crossfade (VA-M8)"
+ },
+ "T4a": {
+  "_doc": "tube damping derived per key: zeta_r = alpha_vt c / omega (visco-thermal, alpha_vt = coef sqrt(f) / a, a the inner radius) + (k a)^2 / (2 pi) (radiation from the open end), x fold_mult below fold_below_key (folded / J tubes), bounded [floor_pct, hi_pct]; the inner diameters per register (step: the last row at or below the key)",
+  "derive": true,
+  "id_mm": [
+   [
+    36,
+    100.0
+   ],
+   [
+    42,
+    76.0
+   ],
+   [
+    54,
+    60.0
+   ],
+   [
+    59,
+    54.0
+   ],
+   [
+    74,
+    48.0
+   ]
+  ],
+  "wall_mm": 1.6,
+  "gap_mm": [
+   [
+    36,
+    30.0
+   ],
+   [
+    53,
+    16.0
+   ],
+   [
+    84,
+    16.0
+   ],
+   [
+    96,
+    13.0
+   ]
+  ],
+  "alpha_vt": 3e-05,
+  "c_m_s": 343.0,
+  "fold_below_key": 41,
+  "fold_mult": 1.2,
+  "floor_pct": 0.3,
+  "hi_pct": 15.0,
+  "src": "E-VAL #37 (the formula reproduces SDA23 Table 2); LAFAVRE via E-VAL #31-32 (OD 2.5 / 2.25 / 2.0 in, 1/16 in wall; low tubes ~100 / 76 mm); the fold ESTIMATE",
+  "status": "DERIVED"
+ },
+ "T4b": {
+  "_doc": "tube detune (cents re f0, semitone interpolation): the low tubes in tune (a 5-8 c sharp tube splits the strongly coupled low pair by the detune itself and beats at 0.2-0.6 Hz: build/marimba/e2.py), progressively sharp from C4 up, +50 c at C7; below C2 (extrapolated keys) flat, so the V1-like slot stays above 27.5 Hz where rh_coef's cr fits int32 (not more: the integer pair's kc, VIBES lesson 9f25209; above C6 the tube is a reflector and the detune is inaudible)",
+  "cents_points": [
+   [
+    21,
+    -30.0
+   ],
+   [
+    36,
+    2.0
+   ],
+   [
+    54,
+    3.0
+   ],
+   [
+    60,
+    10.0
+   ],
+   [
+    84,
+    25.0
+   ],
+   [
+    96,
+    50.0
+   ]
+  ],
+  "src": "LHS p. 24-25 ('slightly sharp, more than a half step at the top', qualitative); E-VAL V9",
+  "status": "ESTIMATE",
+  "settle": "listening pack B (C2 with a detuned tube)"
+ },
+ "T5a": {
+  "_doc": "coupling sigma per key solved for T1b in [lo, hi] on whichever side the V1 T60 moves (bartube.solve_sigma2), two limits: where zeta_r > zeta_n the weak-regime clamp (s_max sigma <= weak_margin (zeta_r - zeta_n): no splitting at BELL's top); where zeta_r < zeta_n the split limit (the two normal modes at BELL 64 no more than split_max_hz apart: past the critical coupling the pair splits by ~sigma f0 and the note beats); the split limit is split_max_hz past the tube's detune (the detune alone splits the pair), in the weak regime the larger of it and the weak clamp",
+  "lo": 0.002,
+  "hi": 0.05,
+  "regime": "auto",
+  "weak_margin": 0.9,
+  "split_max_hz": 0.8,
+  "src": "MARIMBA PLAN §2.3 (E1), §3.8; SDA23 eq. 41 (strong coupling: both modes at (zeta_r + zeta_n) / 2)",
+  "status": "ESTIMATE",
+  "settle": "listening packs A / B",
+  "grid_decay_tol": 0.05,
+  "_doc_grid": "grid_decay_tol: the integer pair's normal-mode decays within this of the continuous design over the stability grid (VIBES 0.02). Near zeta_r = zeta_n (F#3..C5) the two modes have near-equal decays and the discrete coupling's correction kc, fitted at DECAY 64, misses by up to ~5 % at DECAY 127 (a T60 5 % off at RING 127): the plan's 2 % is out of reach there without a per-DECAY kc"
+ },
+ "T5b": {
+  "_doc": "tube radiation weight: the tube part db over the bar's direct f0 at t_s (BELL 64), at most wt_max (the top keys' tube is a reflector: the ratio at 0.2 s, when the note is gone, would ask for a huge weight); bloom_ms_targets: the f0-band envelope's peak (vib_ref_measure's procedure) per register, +-30 % (VA-M4)",
+  "db": 16.5,
+  "t_s": 0.2,
+  "wt_max": 24.0,
+  "bloom_ms_targets": {
+   "36": 180,
+   "48": 120,
+   "60": 60,
+   "72": 15,
+   "84": 10
+  },
+  "src": "VIBES T5b; D98 Figs 9-10 (order of magnitude); t_peak = ln(sigma_t / sigma_b) / (sigma_t - sigma_b)",
+  "status": "ESTIMATE",
+  "settle": "listening pack B",
+  "_doc_2026_10_19": "db 16 (VIBES 10): at +10 dB the bar's direct f0 at the strike is as strong as the tube's build-up and the radiated f0 band peaks at 0 ms on every key (no bloom); a marimba bar radiates little at f0 (the tube carries it). The radiated peak saturates near 170 ms at C2 however large wt (the bar's own early f0): C2's target is 180 (the formula's 250-325 ms is the tube's own peak); from C5 up the weak regime's tube is a reflector (peak <= 15-20 ms)"
+ },
+ "T6": {
+  "_doc": "no motor on a marimba: has_motor 0 (bars.c parks the discs, CC 47-51 stored but inert); no damper (T3m) makes RING (DECAY) scale the tube slot's held decay too (bars.c: the tube slot at bar_k_decay on a no-damper type): below C4 the strongly coupled pair decays at the mean of bar and tube, so RING on the bar alone moved C2 by x1.3 only",
+  "has_motor": false,
+  "src": "the instrument",
+  "status": "CONFIRMED"
+ },
+ "T6c": {
+  "_doc": "the closed-disc residual (unused: no motor), kept for the type record's mot_gc",
+  "g_c": 0.2,
+  "src": "VIBES T6c",
+  "status": "DERIVED"
+ },
+ "T7a": {
+  "_doc": "contact law F = K d^p while compressed, re-contact allowed (tools/hammer.py)",
+  "src": "DC94; RUCZ (E:2.1)",
+  "status": "CONFIRMED"
+ },
+ "T7b": {
+  "_doc": "effective mallet mass (g) at WEIGHT 0 / 64 / 127 (head 15-33 g x head_factor 1.2); level_comp: the V1 level change with mass taken back by that power (VIBES T7b)",
+  "head_factor": 1.2,
+  "m_g": [
+   12.0,
+   26.0,
+   55.0
+  ],
+  "level_comp": 0.0,
+  "src": "RUCZ Table V (25-35 g, SIM); E:2 ('marimba mallets lighter' unverified)",
+  "status": "ESTIMATE",
+  "settle": "listening pack C and the WEIGHT card gate (>= 2.5 LU, centroid >= 5 %)",
+  "_doc_2026_10_19": "m_g 12 / 26 / 55 g (was 18 / 26 / 40), level_comp 0 (VIBES 0.6): the WEIGHT card must move the level >= 2.5 LU and the attack centroid >= 5 % (the VIBES lesson ad02564) also where T7f caps the contact (C5 up: the mass then changes the force alone); a light head 12 g is a light yarn mallet (10-15 g heads, practice), 55 g a heavy bass mallet"
+ },
+ "T7c": {
+  "_doc": "mallet families (BAR_NFAM order, the shared MALLET detents 0 / 42 / 64 / 85 / 127). K in N/m^p; tau_ms_1ms: K solved for that contact time at 1 m/s on a rigid wall with M_eff = T7b m_g[1]; tc_window_ms: the contact-time check over v8..v127. All yarn laws p 2 (the stiffening wrap), RUBBER p 1.5; the windows of adjacent families do not overlap at equal velocity. calib: the law the generator calibrates with (= the DEFAULT family)",
+  "families": [
+   {
+    "name": "SOFT YARN",
+    "short": "SOFT",
+    "detent": 0,
+    "p": 2.0,
+    "tau_ms_1ms": 4.4,
+    "tc_window_ms": [
+     2.4,
+     8.3
+    ]
+   },
+   {
+    "name": "MED YARN",
+    "short": "MED",
+    "detent": 42,
+    "p": 2.0,
+    "tau_ms_1ms": 2.5,
+    "tc_window_ms": [
+     1.5,
+     4.6
+    ]
+   },
+   {
+    "name": "DEFAULT",
+    "short": "DEF",
+    "detent": 64,
+    "p": 2.0,
+    "tau_ms_1ms": 1.4,
+    "tc_window_ms": [
+     0.85,
+     2.6
+    ]
+   },
+   {
+    "name": "HARD YARN",
+    "short": "HARD",
+    "detent": 85,
+    "p": 2.0,
+    "tau_ms_1ms": 0.8,
+    "tc_window_ms": [
+     0.5,
+     1.5
+    ]
+   },
+   {
+    "name": "RUBBER",
+    "short": "RUBR",
+    "detent": 127,
+    "p": 1.5,
+    "K": 1000000000.0,
+    "tc_window_ms": [
+     0.12,
+     0.3
+    ]
+   }
+  ],
+  "calib": {
+   "p": 2.0,
+   "tau_ms_1ms": 1.4
+  },
+  "src": "RUCZ 0.7 ms at K 5e7 (SIM); DC94 0.16 ms hard (MEAS); E-VAL V7; the VIBES bunching lesson (d3e61f1)",
+  "status": "ESTIMATE",
+  "settle": "listening pack C (no measured yarn force law: E:5)",
+  "_doc_2026_10_19": "SOFT YARN 4.4, MED YARN 2.5, DEFAULT 1.4 and HARD YARN 0.8 ms (were 3.5 / 2.0 / 1.2 / 0.7): a geometric spacing ~1.75, so every pair of detents is >= 3 dB apart at v100 / v117 / v127 on C3 / C4 (VA-M9; at the plan's spacing SOFT-MED, MED-DEFAULT and HARD-RUBBER came within 2.0-2.7 dB on C3); the windows follow (T8 v_lo 0.17: Hertz tau ~ v^-1/3 for p 2), ordered between neighbours at equal velocity (VA-M5)"
+ },
+ "T7d": {
+  "_doc": "the generic contact-time ranges (ms) over v1..127; each family's own check is its tc_window_ms",
+  "hard": [
+   0.12,
+   0.26
+  ],
+  "medium": [
+   0.45,
+   1.9
+  ],
+  "soft": [
+   1.2,
+   5.5
+  ],
+  "src": "E:2.2; E-VAL V7",
+  "status": "DERIVED"
+ },
+ "T7e": {
+  "_doc": "half-sine pulse spectrum: -6 dB at f tau = 0.82, -11 dB at 1.05, first null 1.5",
+  "f_tau_6db": 0.82,
+  "src": "E:2.2 (E-VAL #17)",
+  "status": "DERIVED"
+ },
+ "T7f": {
+  "_doc": "the pulse's main lobe never longer than f_tau_max / f0 (played faster where capped)",
+  "f_tau_max": 1.2,
+  "src": "VIBES T7f",
+  "status": "ESTIMATE",
+  "settle": "listening pack C (the low-register thud)"
+ },
+ "T7g": {
+  "_doc": "velocity's own contact scale (v / v100)^-vel_exp on top of Hertz (a harder strike stiffens the yarn)",
+  "vel_exp": 0.1,
+  "src": "VIBES T7g",
+  "status": "ESTIMATE",
+  "settle": "listening pack C"
+ },
+ "T8": {
+  "_doc": "mallet speed over velocity: v_lo (v1) .. v_hi (v127), geometric",
+  "v_lo": 0.17,
+  "v_hi": 3.5,
+  "src": "E-VAL #24",
+  "status": "ESTIMATE",
+  "settle": "listening pack C",
+  "_doc_2026_10_19": "v_lo 0.17 (was 0.3): the f0 level follows the impulse (m v), so the velocity range is 20 log(v_hi / v_lo) plus the brightness: 0.3 gave 21 dB, the plan asks 26-32 (VA-M10)"
+ },
+ "T13a": {
+  "_doc": "strike position over TONE raw 0..127 (STRIKE): raw 0 -> x = x_dull L (V2 null, the centre), raw 64 -> x_bal L on the centreline, raw 127 -> x_bal L at y = y_edge W off-axis (torsion); x kept node_margin L from the V1 node",
+  "x_dull": 0.5,
+  "x_bal": 0.35,
+  "y_edge": 0.45,
+  "node_margin": 0.05,
+  "npos": 17,
+  "src": "HA (L/10, L/3, L/2); RUCZ (torsion ~ the off-axis offset)",
+  "status": "CONFIRMED"
+ },
+ "T13b": {
+  "_doc": "contact noise: SERRA's 2-biquad fit (pole pairs over zero pairs), the level over NOISE 1..127 (dB re full scale), gone by gone_ms (VA-M7: <= -80 dB re the note at 100 ms)",
+  "poles": [
+   [
+    2000.0,
+    0.9
+   ],
+   [
+    4000.0,
+    0.964
+   ]
+  ],
+  "zeros": [
+   [
+    5030.0,
+    0.98
+   ],
+   [
+    8000.0,
+    0.8
+   ]
+  ],
+  "lvl_db": [
+   -77.0,
+   -41.0
+  ],
+  "gone_ms": 100,
+  "src": "SERRA p. 259-261 (marimba, MEAS fit); VIBES T13b",
+  "status": "ESTIMATE",
+  "settle": "listening pack D (the tick at NOISE 127)",
+  "_doc_2026_10_19": "lvl_db 17 dB under VIBES's: NOISE 64 = -50 dB re the note (VA-M7) on the marimba's C4 (its v100 peak is lower re full scale than the vibraphone's)"
+ },
+ "R1": {
+  "_doc": "radiation: b ~ (f / f0)^exp / omega per mode (gen_bars bphys)",
+  "exp": 2.0,
+  "src": "VIBES R1",
+  "status": "ESTIMATE",
+  "settle": "listening pack C"
+ },
+ "R1b": {
+  "_doc": "radiation trims of V2, V3, V4 PER KEY: the generator puts each slot's onset peak re V1's (the slots' max |x| over window_s, after the contact; the DEFAULT mallet, v100, the default cards) on these lines (dB, semitone interpolation). No measured level table exists (D10 = no): the lines are the pulse spectrum of a medium mallet (f tau) with the upper modes' weaker radiation, flat-ish for V2 and falling with key. Per key because one constant per mode cannot hold the Rayleigh law's register spread: with VIBES's one constant V4 (17.5 f0) came out 20 dB over V1 on every key",
+  "level_db": {
+   "V2": {
+    "36": -10.0,
+    "48": -12.0,
+    "72": -20.0,
+    "96": -26.0
+   },
+   "V3": {
+    "36": -22.0,
+    "48": -25.0,
+    "72": -32.0,
+    "96": -38.0
+   },
+   "V4": {
+    "36": -32.0,
+    "48": -35.0,
+    "72": -42.0,
+    "96": -48.0
+   }
+  },
+  "window_s": [
+   0.005,
+   0.05
+  ],
+  "src": "MARIMBA PLAN §5 R1b (EST from the pulse spectrum)",
+  "status": "ESTIMATE",
+  "settle": "listening pack C",
+  "smooth_keys": 6,
+  "trim_db": [
+   -40.0,
+   0.0
+  ],
+  "_doc_smooth": "the trim follows the median over +-smooth_keys keys (the trend; a key whose mode sits near a node of the strike point stays weak), bounded to trim_db in total: attenuation only (a radiation efficiency under the R1 law): where the DEFAULT mallet's pulse rolls a mode off under its line, lifting it made a hard mallet's V3 / V4 30 dB over V1 (RUBBER's pulse is 30 dB flatter at 5 kHz)",
+  "_doc_point": "each mode measured at its own loudest strike point (the band table BAR_POS argmax, TONE raw on that point): the line is the mode's most at any STRIKE value, so no STRIKE setting lifts it over (at TONE 64 V3 sits near a node, and a trim made there put V3 24 dB over V1 at TONE 16 with RUBBER)"
+ },
+ "prune": {
+  "_doc": "a slot whose loudest single strike (every voicing of the grid, v127, the first t_s after t0_s) stays under db re V1 is never lit (b = 0); presence by physics only, never by a detection floor",
+  "db": -60.0,
+  "t0_s": 0.005,
+  "t_s": 0.05,
+  "src": "VIBES prune (the V4 lesson, R1b _doc_v4)",
+  "status": "DERIVED"
+ },
+ "T14": {
+  "_doc": "no damper knock (no damper)",
+  "src": "the instrument",
+  "status": "CONFIRMED"
+ },
+ "T16": {
+  "_doc": "room / mic EQ: identity",
+  "body": [],
+  "src": "-",
+  "status": "ESTIMATE",
+  "settle": "listening (P7)"
+ },
+ "calib": {
+  "_doc": "as VIBES: the per-key gain to v100 RMS gain_target_dbfs, then each key's v100 loudness (K-weighted, lufs_t) on the STAGE 77 golden render's curve (+-lufs_smooth_keys) + st77_offset_db (provisional: the P5 jack session sets it with its session id), the velocity / family trim iterations",
+  "gain_target_dbfs": -26.0,
+  "peak_dbfs": -6.0,
+  "st77_chord": [
+   57,
+   64,
+   69
+  ],
+  "lufs_t": [
+   0.0,
+   0.4
+  ],
+  "lufs_smooth_keys": 2,
+  "st77_offset_db": 2.5,
+  "trim_iterations": 3,
+  "trim_gain": 0.85,
+  "trim_max_db": 12.0,
+  "level_t_s": [
+   0.0,
+   0.3
+  ],
+  "_doc_level_t_s": "the velocity / family trim measures RMS over 0..0.3 s (VIBES 50..300 ms): a hard mallet's energy on the marimba is in its upper modes, gone by 50 ms (RUBBER v127 came out 8 LU over DEFAULT v127 with VIBES's window)",
+  "roll": {
+   "rate_hz": [
+    8,
+    12
+   ],
+   "vel": [
+    100,
+    117
+   ],
+   "gr_max_db": 3.0
+  },
+  "src": "VIBES calib; D11 (start at VIBES's +2.5 dB)",
+  "status": "ESTIMATE",
+  "settle": "the P5 jack session (hil_jack: SNR_A within 1 dB of ST77)",
+  "_doc_lufs_t": "the per-key loudness match on BS.1770 momentary loudness (0..0.4 s), VIBES 0..1 s: a 0.1-0.3 s note (C6-C7) averaged over 1 s needs 4-10 dB more gain for the same heard loudness, and that gain went into the single-strike peak ceiling"
+ },
+ "card_level": {
+  "_doc": "as VIBES: TONE / BELL level compensation spans, the per-voice peak ceiling over the voicing grid",
+  "t_s": [
+   0.0,
+   0.3
+  ],
+  "tone_span_db": 3.0,
+  "bell_span_db": 12.0,
+  "peak_ceiling_dbfs": -0.5,
+  "peak_grid": {
+   "tone": [
+    0,
+    16,
+    32,
+    48,
+    64,
+    96,
+    127
+   ],
+   "bell": [
+    0,
+    64,
+    127
+   ],
+   "bark": [
+    0,
+    85,
+    127
+   ],
+   "hammer": [
+    0,
+    64,
+    127
+   ],
+   "dur_s": 0.4
+  },
+  "mute_card": {
+   "w_q15": "release * 258"
+  },
+  "src": "VIBES card_level",
+  "status": "DERIVED",
+  "family_ceiling": true,
+  "_doc_family_ceiling": "before the per-key ceiling (gen_bars.fam_ceiling): a family over peak_ceiling_dbfs by more than the DEFAULT family is turned down by the difference on that key; the DEFAULT's own excess turns the key down as a roll-off at most ceiling_slope_db per key (VA-M10 holds the level to ST77 + offset + this roll-off). A wooden bar's short note is far peakier at equal loudness (D11): the roll-off and the offset are the user's to judge (listening, the jack session)",
+  "ceiling_slope_db": 0.5
+ },
+ "type_rec": {
+  "_doc": "bar_type_t: budget (upper modes), sleep_rel, tors_q15, nbody, drive_row, flags (no motor, no damper), the BELL map's top (tube size at TUBE 127; VIBES 1.45)",
+  "budget": 48,
+  "sleep_rel": 9,
+  "tors_q15": 32767,
+  "nbody": 0,
+  "drive_row": 0,
+  "flags": {
+   "has_motor": 0,
+   "has_damper": 0
+  },
+  "kn_tube_top": 1.2,
+  "src": "MARIMBA PLAN §5, §3.8",
+  "status": "DERIVED"
+ },
+ "bands": {
+  "_doc": "position bands (BAR_POS / BAR_POSG / BAR_TUBEG rows of this type, nband, 612 B each) and the pulse shapes: runs of consecutive position bands share one shape within pulse_tol_db (gen_bars.share_pulses: a VIBES pulse band when one is within it, no flash; else a key of its own, appended, 5280 B each). The plan's 0.45 dB (the VIBES bands' tolerance) is out of reach: the marimba's own shapes need 24 bands for 0.76 dB, 17 for 1.3 dB (build/marimba/pg.py); the VIBES shapes stand for the marimba's only within 1-11 dB (other contact laws: no family is the same). pulse_tol_db trades flash against the attack's evenness, which VA-M / M2 measure",
+  "nband": 17,
+  "pulse_tol_db": 3.0,
+  "src": "MARIMBA PLAN §3.2 (E2: rosewood vs aluminium contacts within 2 %); build/marimba/pg.py",
+  "status": "ESTIMATE",
+  "settle": "the flash budget (the user) and listening pack C (the attack across the keyboard)",
+  "first_key": [
+   21,
+   38,
+   48,
+   57,
+   63,
+   67,
+   74,
+   78,
+   80,
+   83,
+   84,
+   85,
+   91,
+   94,
+   97,
+   103,
+   106
+  ],
+  "rep": [
+   32,
+   43,
+   53,
+   60,
+   64,
+   67,
+   77,
+   78,
+   82,
+   83,
+   84,
+   89,
+   92,
+   94,
+   98,
+   103,
+   106
+  ],
+  "pulse_runs": [
+   [
+    0,
+    2,
+    "K",
+    53
+   ],
+   [
+    3,
+    5,
+    "K",
+    65
+   ],
+   [
+    6,
+    7,
+    "K",
+    78
+   ],
+   [
+    8,
+    10,
+    "K",
+    84
+   ],
+   [
+    11,
+    13,
+    "K",
+    91
+   ],
+   [
+    14,
+    16,
+    "V",
+    13
+   ]
+  ],
+  "_doc_pins": "first_key / rep: the position bands gen_bars.assign_bands found (pinned: pinned_bands, never split for this type); pulse_runs: [first band, last band, V (a VIBES pulse band) / K (a key's own, appended), index] as share_pulses solved them (pinned; test_marimba_calib checks each is the solve within 1e-6 dB)"
+ }
+}

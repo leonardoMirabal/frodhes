@@ -217,6 +217,36 @@ class BarTube(tinebar.TineBar):
         out.clamped, out.sigma_wanted = cl, wanted
         return out
 
+    def solve_sigma2(self, target_t60, lo, hi, iters=60):
+        """solve_sigma for both regimes (MARIMBA PLAN §6 step 4): the V1-like T60 falls with sigma where the tube is
+        the more damped (zeta_r > zeta_n, the vibraphone) and also where it is the less damped below the critical
+        coupling (the strongly coupled pair converges on the mean decay), and may rise between; so T60(lo) and
+        T60(hi) are evaluated and the bracket that contains the target is bisected (geometric). Outside both: the
+        nearer bound, .clamped = -1 (lo) / +1 (hi), .sigma_wanted NaN. lo == hi: that sigma."""
+        base = self._with(s=1.0, g=1.0)
+
+        def t60(sg):
+            return base.with_sigma(sg).t60_v1()
+        tl, th = t60(lo), t60(hi)
+        if hi <= lo or (tl - target_t60) * (th - target_t60) > 0:
+            sg = lo if hi <= lo or abs(tl - target_t60) <= abs(th - target_t60) else hi
+            cl, wanted = (-1 if sg == lo else +1), float("nan")
+            if hi <= lo:
+                cl = 0 if tl == target_t60 else (+1 if abs(tl - target_t60) > 0 else 0)
+        else:
+            a, b, sa = lo, hi, tl > target_t60
+            for _ in range(iters):
+                m = math.sqrt(a * b)
+                if (t60(m) > target_t60) == sa:
+                    a = m
+                else:
+                    b = m
+            sg = wanted = math.sqrt(a * b)
+            cl = 0
+        out = self._with(sigma=sg)
+        out.clamped, out.sigma_wanted = cl, wanted
+        return out
+
 
 # ------------------------------------------------------------------------- measurement, like vib_ref_measure
 HOP = int(0.005 * FS)
@@ -241,7 +271,8 @@ def wt_for_ratio(bt, ratio_db, t=0.2):
 
 
 # ------------------------------------------------------------------------- integer words and the per-sample map
-def pair_words(bt, wt, t60_rel_bar=None, t30=0, k16=65536, release=False, G=None, f0=None, kc=1.0, iters=4):
+def pair_words(bt, wt, t60_rel_bar=None, t30=0, k16=65536, release=False, G=None, f0=None, kc=1.0, iters=4, fit_kc=True,
+               k16_tube=65536, tube_release=False):
     """The quantised words of the pair as bars.c will hold them (s and g of bt applied to k_bt, k_tb and wt).
 
     Slot 0 (V1): mode_coefs(f_slot0, T60_bar, t60_rel_bar) run through rc.coef with (t30, k16, d or drel).
@@ -265,7 +296,7 @@ def pair_words(bt, wt, t60_rel_bar=None, t30=0, k16=65536, release=False, G=None
         w0 = rc.mode_coefs(fs0, t60b, t60_rel_bar if t60_rel_bar else t60b)
         w1 = rc.mode_coefs(fs1, t60t, t60t)
         E0, eps0 = rc.coef(w0, w0["drel"] if release else w0["d"], t30, k16)
-        E1, eps1 = rc.coef(w1, w1["d"], t30, 65536)
+        E1, eps1 = rc.coef(w1, w1["drel"] if tube_release else w1["d"], t30, k16_tube)
         if G is None:
             G = next((c for c in (1, 2, 4, 8, 16, 32, 64) if abs(wt) * bt.s * bt.g / c <= 4.0), 64)
 
@@ -278,7 +309,7 @@ def pair_words(bt, wt, t60_rel_bar=None, t30=0, k16=65536, release=False, G=None
         words = mk(kc)
         if not f0:
             break
-        if bt.k_rel * bt.s * bt.g > 0:                 # kc: the map's V1 decay = the design's (bisection, log)
+        if fit_kc and bt.k_rel * bt.s * bt.g > 0:              # kc: the map's V1 decay = the design's (bisection, log)
             def fast(c):
                 M = pair_map(mk(c))
                 return map_modes(M)[map_v1(M)][1] > sig_target
