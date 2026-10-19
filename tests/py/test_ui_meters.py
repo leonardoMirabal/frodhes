@@ -398,7 +398,8 @@ def pages_of(name, cc_n, v):
 
 def turns_for(pages):
     """the second pass: each knob turned (amounts / detents +9 detents, a choice +1, a bar +3); not TYPE, not the
-    SEQUENCER, not MIDI CHANNEL (the probes are not MIDI, but keep the channel)"""
+    SEQUENCER, not MIDI CHANNEL (the probes are not MIDI, but keep the channel), not COLOR or BRIGHTNESS (they change
+    the palette these checks measure in amber: test_ui_display.py)"""
     tt = {}
     for i, (_, _, s) in enumerate(pages):
         if s.get("page") in SPECIAL or s.get("title") in SPECIAL:
@@ -407,7 +408,7 @@ def turns_for(pages):
         for k in range(4):
             kind, v, hi = parse_row(s.get(f"row{k}"))
             lab = s.get(f"label{k}")
-            if kind in ("none", "meter") or lab in ("TYPE", "CHANNEL"):
+            if kind in ("none", "meter") or lab in ("TYPE", "CHANNEL", "COLOR", "BRIGHTNESS"):
                 continue
             ks.append((k, 9 if kind in ("amount", "detent") else 1))
         if ks:
@@ -479,7 +480,8 @@ def test_dynamic_voice_pages(meters, name, cc_n, v):
 
 @pytest.mark.parametrize("name,cc_n,v", [TYPES[0], TYPES[4]], ids=["ST77", "VIBE"])
 def test_every_choice_option_written(meters, name, cc_n, v):
-    """every choice card of every page (both engines; not TYPE: test_type_names_written), turned through each of its
+    """every choice card of every page (both engines; not TYPE: test_type_names_written; not COLOR, the palette
+    itself: test_ui_display.py), turned through each of its
     options and shot 1.1 s later (the frame gone): its name written large where the values end, nothing amber in its
     row, a different name at each option, the face the firmware reports the one on the screen; then turned back"""
     pages = pages_of(name, cc_n, v)[0]
@@ -491,7 +493,7 @@ def test_every_choice_option_written(meters, name, cc_n, v):
             continue
         for k in range(4):
             kind, v0, hi = parse_row(s.get(f"row{k}"))
-            if kind != "choice" or s.get(f"label{k}") == "TYPE":
+            if kind != "choice" or s.get(f"label{k}") in ("TYPE", "COLOR", "BRIGHTNESS"):
                 continue
             for _ in range(hi + 1):                                     # to option 0 (a choice: one step a detent)
                 L.append(f"{t} turn {2 + k} -1"); t += 20

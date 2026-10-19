@@ -49,11 +49,11 @@ To go back to M-VAVE's own firmware, use the hub's "Official firmware" section w
 
 The screen shows **one page at a time**, with **four cards**, one per knob, drawn as rows from K1 at the top to K4
 at the bottom: **K1–K4 always turn the four cards you see**. Under the top line, the page's name is on the left in
-amber and its place in the SELECT order on the right (3/21). Turn **SELECT** to move between pages, or press a
+amber and its place in the SELECT order on the right (3/22). Turn **SELECT** to move between pages, or press a
 page's button to jump straight there. The pages, in SELECT order:
 
 PERFORM · FRODHES (main) · VOICE 1/2 · VOICE 2/2 · COMPRESSOR · FILTER · DRIVE · TREM/WAH · PHASER · CHORUS ·
-DELAY · REVERB · TEMPO · SCALE · CHORD · ARPEGGIO · LFO · SEQUENCER · ASSIGN · SETUP · MIDI
+DELAY · REVERB · TEMPO · SCALE · CHORD · ARPEGGIO · LFO · SEQUENCER · ASSIGN · SETUP · MIDI · DISPLAY
 
 **The VOICE pages belong to the instrument.** Each TYPE brings its own controls, four to a page: the Rhodes types
 have two VOICE pages (VOICE 1/2: TONE, BARK, BELL, HAMMER; VOICE 2/2: DECAY, RELEASE, NOISE, TUNE), VIBES has three
@@ -105,7 +105,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **SEQ** | SEQUENCER page; there it switches recording on / off, held 1 s it clears the pattern |
 | **SEL** | DELAY page; press again there to switch the delay on / off. On ARPEGGIO, and on every page while the arpeggiator is on: the arpeggiator's HOLD on / off |
 | **ARP** | ARPEGGIO page; press again there to switch the arpeggiator on / off |
-| **GLO** | TEMPO page; press again for SETUP, again for MIDI, and back to TEMPO |
+| **GLO** | TEMPO page; press again for SETUP, again for MIDI, again for DISPLAY, and back to TEMPO |
 | **FX** | All effects off / on at once (see [7](#7-effects-on-and-off)) |
 | **PLAY** | Tap tempo, on every page (ARPEGGIO too); on SEQUENCER, start / stop the loop, except while the arpeggiator is on: then it taps the tempo there too |
 | **REC** | Sustain pedal |
@@ -116,9 +116,9 @@ The lights tell you what is on: LFO (tremolo / wah), ENV (phaser) and SEL (delay
 (on ARPEGGIO, and on every page while the arpeggiator is on, SEL shows HOLD), ARP while the arpeggiator runs, EDIT while chord mode is on, SEQ while the sequencer
 plays (blinking while it records), FX when the effects are
 active, REC while the sustain holds (from MIDI CC 64 too), PLAY on the beat when something is synced (and while the
-sequencer or the arpeggiator plays), HOME on PERFORM and the main page, GLO on TEMPO, SETUP and MIDI,
-OCT− / OCT+ while the octave is shifted, SAVE blinking in save mode, and each key while its note is held or still
-rings under the sustain.
+sequencer or the arpeggiator plays), HOME on PERFORM and the main page, GLO on TEMPO, SETUP, MIDI and DISPLAY,
+OCT− / OCT+ while the octave is shifted, SAVE blinking in save mode, and each key while it is held, or its note is
+held over MIDI (USB or TRS), or still rings under the sustain (see LEDS on the DISPLAY page).
 
 ## 4. The pages
 
@@ -446,6 +446,19 @@ segments are worked out from), and the audio engine's time per block (it must st
 Press **GLO** three times to come here (TEMPO, SETUP, MIDI). Everything MIDI does, it does the same from USB and from
 the TRS jack: notes, every CC in the table below, program changes, clock, start and stop.
 
+### DISPLAY
+
+![DISPLAY](manual/img/display.png?v=0.9.3)
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **COLOR** | The screen's colour, 26 steps: **AMBER** (the default), then 25 pastel hues around the colour wheel: PEACH, CORAL, ROSE, PINK, ORCHID, MAUVE, PURPLE, VIOLET, LILAC, IRIS, BLUE, DENIM, SKY, OCEAN, CYAN, AQUA, MINT, JADE, GREEN, LEAF, LIME, PEAR, LEMON, GOLD, MANGO. Every page is drawn in it: the title, the fader fills and edges, the lit selector blocks |
+| K2 | **BRIGHTNESS** | For a dark room: **10** (full) to **1** dims the whole panel together, the screen (its colours and its text alike) and every light, keys and buttons alike (at 10 the keys are at full, as they always were; below, a little under the buttons, every step a change in both). The backlight itself is fixed, so black stays as it is and the screen's contrast falls at the low steps |
+| K3 | **LEDS** | Which keys light: **OFF** none; **PLAYED** a key while its note sounds; **ROOTS** (the default) the played keys, and while a scale is on its root keys glowing faintly as landmarks, never brighter than a played key; **ALL** every key lit, a light for playing in the dark; a key goes dark while its note sounds |
+
+Press **GLO** four times to come here (TEMPO, SETUP, MIDI, DISPLAY). All three are kept with the settings, not with
+a preset, so they stay as you set them whatever sound you load.
+
 ## 5. VIBES: the vibraphone
 
 Turn **ALGORITHM** (or the TYPE card) to **VIBES** and the FM-1 plays a vibraphone: aluminium bars struck with
@@ -564,7 +577,7 @@ always there to start again from.
 
 | A preset (U01–U16) | The FM-1 itself (settings) | The pattern |
 | --- | --- | --- |
-| The sound: TYPE, every VOICE card, every effect and its sync, the filter and LFO, LEVEL | KEY VEL, TUNE, TRANSP, the octave, tempo and CLOCK, scale, chord mode, arpeggiator, sequencer settings, PERFORM assignments, the MIDI page, USB VOL, and the last sound | The sequencer's notes |
+| The sound: TYPE, every VOICE card, every effect and its sync, the filter and LFO, LEVEL | KEY VEL, TUNE, TRANSP, the octave, tempo and CLOCK, scale, chord mode, arpeggiator, sequencer settings, PERFORM assignments, the MIDI page, USB VOL, the DISPLAY page, and the last sound | The sequencer's notes |
 | When you press SAVE (once silent) | About 2 s after your last change, once the sound has died away | 1.5 s after a change, while stopped and silent |
 
 So after a change, let the sound die away for a couple of seconds before you switch off.

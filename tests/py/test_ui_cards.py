@@ -284,7 +284,7 @@ def test_cards_every_choice_option(variant, px):
                 continue
             for k in range(4):
                 kind, v0, hi = M.parse_row(s.get(f"row{k}"))
-                if kind != "choice" or s.get(f"label{k}") in ("TYPE", "CHANNEL"):
+                if kind != "choice" or s.get(f"label{k}") in ("TYPE", "CHANNEL", "COLOR", "BRIGHTNESS"):   # (test_ui_display)
                     continue
                 for _ in range(hi + 1):
                     L.append(f"{t} turn {2 + k} -1"); t += 20

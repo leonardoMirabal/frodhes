@@ -72,6 +72,7 @@ the MIDI map.
 | **ASSIGN** | what K1 plays | what K2 plays | what K3 plays | what K4 plays | (SELECT) |
 | **SETUP** | DELAY TONE | LEVEL | USB VOL (KNOB / FIXED) | | GLO twice |
 | **MIDI** | CHANNEL (ALL / 1–16) | TRS IN (ON / OFF) | CLOCK (INT / EXT) | | GLO three times |
+| **DISPLAY** | COLOR (AMBER, then 25 pastel hues) | BRIGHTNESS (the screen and every light, 10 … 1) | LEDS (OFF / PLAYED / ROOTS / ALL) | | GLO four times |
 
 **SELECT** turns the pages, **K1–K4** turn the cards (on **PERFORM**: the effects' dry / wet, or what you assign), **ALGORITHM** picks the TYPE, **PRESETS** browses sounds,
 **FX** switches all effects off / on, **EDIT** chord mode, **SEQ** the sequencer, **ARP** the arpeggiator, **PLAY** taps the tempo (everywhere but SEQUENCER, where it starts / stops; while the arpeggiator is on it taps there too and **SEL** is its HOLD on every page), **REC** is the sustain pedal, **SAVE** stores a preset. The top line shows the battery next to the tempo.

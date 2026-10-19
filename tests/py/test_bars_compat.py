@@ -97,9 +97,9 @@ def test_vibes_cards(new):
     assert [d[f"kind4.down{i}"] for i in range(5)] == ["WAH", "TREM", "PAN", "OFF", "OFF"]
     assert labels(d, "motor", 4) == ["MOTOR", "DEPTH", "SPEED", "SHAPE"]
     assert d["motor4.hint"] == "THE VIBRAPHONE'S MOTOR"
-    assert d["pages4"] == "vpages=3 count=22 comp_pos=5"            # VOICE 1/3 2/3 3/3 (MOTOR), then COMPRESSOR
+    assert d["pages4"] == "vpages=3 count=23 comp_pos=5"            # VOICE 1/3 2/3 3/3 (MOTOR), then COMPRESSOR
     for t in range(4):
-        assert d[f"pages{t}"] == "vpages=2 count=21 comp_pos=4"     # VOICE 1/2 2/2, then COMPRESSOR
+        assert d[f"pages{t}"] == "vpages=2 count=22 comp_pos=4"     # VOICE 1/2 2/2, then COMPRESSOR
     # the motor on, then a Rhodes TYPE: no tremolo comes on
     assert d["motor_on_rhodes"] == "OFF fxsw=0 fxmode=0"
     assert (d["motrate.0"], d["motrate.78"], d["motrate.120"], d["motrate.127"]) == ("0.5HZ", "3.5HZ", "10HZ", "10HZ")

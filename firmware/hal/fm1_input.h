@@ -41,6 +41,9 @@
  * (~1/24 of a lit LED); fm1_led_bg[col]: the backlight (menu LIGHTS), fm1_led_bg_ns, shorter. TIMER4
  * times the pulses bit by bit; only a pulse longer than the whole shift waits for the rest. An LED in
  * several layers takes the brightest. fm1_led_key/btn helpers address them by id.
+ * Brightness (Frodhes DISPLAY): fm1_led_duty[2] thins the lit layer per group of ids (fm1_led_group_ids) to a
+ * duty of 1..16 of 16 scan frames; fm1_led_build (main loop, after the LEDs are set) works the 16 frames out into
+ * fm1_led_tab and the tick only reads it.
  */
 #pragma once
 #include <stdint.h>
@@ -103,6 +106,11 @@ static uint8_t fm1_led[FM1_NCOL];
 static uint8_t fm1_led_dim[FM1_NCOL];   /* same layout as fm1_led: the glow */
 static uint8_t fm1_led_bg[FM1_NCOL];    /* same layout: the backlight (labels readable in the dark) */
 static volatile uint16_t fm1_led_bg_ns; /* the backlight pulse a frame (ns), 0 = off (menu LIGHTS) */
+static uint8_t fm1_led_duty[2] = {16u, 16u};   /* Frodhes DISPLAY BRIGHTNESS: the lit layer's duty per group: lit on
+                                         * that many of 16 scan frames (spread evenly: no flicker from 2 up; 1 pulses
+                                         * at 57 Hz, which the eye fuses at that dimness), 0 dark; group 0 the LEDs of
+                                         * fm1_led_group_ids, 1 the rest */
+static uint8_t fm1_led_grpmask[FM1_NCOL];   /* row bits per column of group 0 */
 
 static void fm1__led_lines(uint32_t rowmask)
 {
@@ -283,11 +291,15 @@ static void fm1__frame(void)
  * column n: the lines go lit | glow | backlight of p, each layer ends when its time is up (TIMER4,
  * checked after every bit), and the latch comes with the lines dark. */
 static uint8_t fm1__tick_col;
+static uint8_t fm1__led_phase;                 /* the frame 0..15 (fm1_led_duty) */
+/* the lit lines per column and frame (fm1_led_build); [col][16] so a tick indexes it with a shift. Own section, out
+ * of the compiler's global merge (merged in, it splits the Rhodes' rh_F / rh_x: src/engine.c eq) */
+static uint8_t fm1_led_tab[FM1_NCOL][16] __attribute__((section(".bss.fm1_led_tab")));
 static void fm1_input_tick(void)
 {
     uint32_t p = fm1__tick_col, n = p + 1u == FM1_NCOL ? 0u : p + 1u, i;
     uint32_t w = 0xFFFFu ^ (1u << n) ^ (n < 2u ? 1u << (11u + n) : 0u);
-    uint32_t lit = fm1_led[p], a = fm1_led_dim[p] & ~lit, b = fm1_led_bg[p] & ~lit & ~a;
+    uint32_t f = fm1__led_phase, lit = fm1_led_tab[p][f], a = fm1_led_dim[p] & ~lit, b = fm1_led_bg[p] & ~lit & ~a;
     uint32_t ta = a ? FM1__NS_T(FM1_GLOW_NS) : 0u, tb = b ? FM1__NS_T(fm1_led_bg_ns) : 0u;
     uint32_t tmax = ta > tb ? ta : tb;
     fm1__led_lines(0);
@@ -309,7 +321,9 @@ static void fm1_input_tick(void)
     } else {
         fm1__sr_word(w);
     }
-    fm1__led_lines(fm1_led[n]);
+    if (n == 0u)
+        fm1__led_phase = (uint8_t)((f + 1u) & 15u);
+    fm1__led_lines(fm1_led_tab[n][fm1__led_phase]);
     fm1__tick_col = (uint8_t)n;
     fm1__keys(p);                                  /* its keys now: no wait for the frame's end */
     if (n == 0u)
@@ -359,6 +373,37 @@ static uint32_t fm1_input_note_edges(void)
     return p;
 }
 
+/* the LEDs with ids id0 .. id1 are group 0 of fm1_led_duty (Frodhes: the note keys; the buttons are group 1) */
+static void fm1_led_group_ids(uint32_t id0, uint32_t id1)
+{
+    uint32_t p, r;
+    for (p = 0; p < FM1_NCOL; p++) {
+        fm1_led_grpmask[p] = 0;
+        for (r = 1; r < 5u; r++)
+            if (FM1_KEYMAP[r][p] >= 0 && (uint32_t)FM1_KEYMAP[r][p] >= id0 && (uint32_t)FM1_KEYMAP[r][p] <= id1)
+                fm1_led_grpmask[p] |= (uint8_t)(1u << r);
+    }
+}
+/* the lit table of fm1_input_tick from fm1_led, fm1_led_duty and the groups, rebuilt for the columns whose inputs
+ * changed (main loop, after the LEDs are set). A duty spreads its frames evenly over the 16. A tick reading a column
+ * mid-build shows it stale one frame (~1 ms): no lock. */
+static uint32_t fm1__led_on(uint32_t duty, uint32_t f) { return duty >= 16u || ((f * duty) & 15u) < duty; }
+static void fm1_led_build(void)
+{
+    static struct { uint8_t in[FM1_NCOL][2], duty[2], built; } l __attribute__((section(".bss.fm1_led_in")));   /* (own
+                                                            * section: the table above) the inputs of the last build */
+    uint32_t p, f, d0 = fm1_led_duty[0], d1 = fm1_led_duty[1], all = !l.built || l.duty[0] != d0 || l.duty[1] != d1;
+    l.built = 1; l.duty[0] = (uint8_t)d0; l.duty[1] = (uint8_t)d1;
+    for (p = 0; p < FM1_NCOL; p++) {
+        if (!all && l.in[p][0] == fm1_led[p] && l.in[p][1] == fm1_led_grpmask[p])
+            continue;
+        l.in[p][0] = fm1_led[p]; l.in[p][1] = fm1_led_grpmask[p];
+        for (f = 0; f < 16u; f++) {
+            uint32_t keys = l.in[p][1], v = l.in[p][0];
+            fm1_led_tab[p][f] = (uint8_t)((fm1__led_on(d0, f) ? v & keys : 0u) | (fm1__led_on(d1, f) ? v & ~keys : 0u));
+        }
+    }
+}
 /* the glow (dim layer) of key id: lit ~1/24 of a lit LED, a lit LED wins */
 static void fm1_led_key_glow(uint32_t id, int on)
 {
