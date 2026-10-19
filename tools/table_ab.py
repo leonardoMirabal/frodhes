@@ -121,8 +121,9 @@ def diff_tables(pa, pb):
     defs.update(da)
     lo = int(da.get("BAR_KEY_LO", 21))
     nkey = _eval_dim("BAR_NKEY", defs) or 88
+    ntype = _eval_dim("BAR_NTYPE", defs) or 1             # MARIMBA: BAR_KEYS[BAR_NTYPE][BAR_NKEY] (type 0 VIBES)
     keys = ta.get("BAR_KEYS")
-    per_key = len(keys["vals"]) // nkey if keys else 0
+    per_key = len(keys["vals"]) // (nkey * ntype) if keys else 0
     band_keys = {}
     if keys and per_key == len(KEY_F):
         for k in range(nkey):
@@ -141,7 +142,7 @@ def diff_tables(pa, pb):
                    maxrel=float(np.max(np.abs(d[idx]) / np.maximum(np.abs(a[idx]), 1))) if len(idx) else 0.0,
                    items=[])
         for i in idx:
-            lab, ks = _label(name, int(i), dims, per_key, lo, band_keys)
+            lab, ks = _label(name, int(i), dims, per_key, lo, band_keys, nkey)
             row["items"].append(dict(i=int(i), a=int(a[i]), b=int(b[i]), d=int(d[i]), label=lab, keys=ks))
         row["keys"] = sorted({k for it in row["items"] for k in it["keys"]})
         res.append(row)
@@ -149,13 +150,14 @@ def diff_tables(pa, pb):
     return res, dd
 
 
-def _label(name, i, dims, per_key, lo, band_keys):
+def _label(name, i, dims, per_key, lo, band_keys, nkey=88):
     if name == "BAR_KEYS" and per_key:
-        k, w = divmod(i, per_key)
+        t, r = divmod(i, nkey * per_key)                  # the bar type (0 VIBES: no prefix, as before)
+        k, w = divmod(r, per_key)
         f = KEY_F[w] if per_key == len(KEY_F) else f"w{w}"
         if f.startswith("s"):
             f = f"{f} ({SLOTS[int(f[1])]})"
-        return f"{note_name(lo + k)} {f}", [lo + k]
+        return f"{'T%d ' % t if t else ''}{note_name(lo + k)} {f}", [lo + k]
     if dims and None not in dims and int(np.prod(dims)) > 0:
         sub, r = [], i
         for n in reversed(dims):
@@ -165,6 +167,8 @@ def _label(name, i, dims, per_key, lo, band_keys):
         lab = name + "".join(f"[{s}]" for s in sub)
         if dims[0] == 88:
             return lab, [lo + sub[0]]
+        if len(dims) > 1 and dims[1] == 88:               # per type: [BAR_NTYPE][BAR_NKEY]...
+            return lab, [lo + sub[1]]
         if name in ("BAR_PULSE", "BAR_POS", "BAR_POSG", "BAR_TUBEG"):     # [BAR_NBAND]...: the band's keys
             return lab + " (band)", band_keys.get(sub[0], [])
         return lab, []

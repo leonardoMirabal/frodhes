@@ -78,8 +78,8 @@ static void eng_bar_knob(uint32_t k, uint32_t v)
     switch (k) {
     case BK_STRIKE: bar_pos = (int32_t)c; break;
     case BK_MALLET: bar_fam = KN_FAM[c]; break;
-    case BK_TUBE: bar_tube = KN_TUBE[c]; bar_bell = (int32_t)c; break;
-    case BK_WEIGHT: bar_mass = KN_MASS[c]; bar_massi = KN_MASSI[c]; break;
+    case BK_TUBE: bar_tube = KN_TUBE[eng_want_sub][c]; bar_bell = (int32_t)c; break;
+    case BK_WEIGHT: bar_mass = KN_MASS[eng_want_sub][c]; bar_massi = KN_MASSI[eng_want_sub][c]; break;
     case BK_RING: bar_k_decay = (int32_t)DECAY_K[c]; break;
     case BK_DAMPER: bar_k_rel = (int32_t)DECAY_K[c]; bar_mute = (int32_t)c * 258; break;   /* MUTE: no-damper types */
     case BK_NOISE:                  /* params.c sets rh_thump / rh_felt first. The Rhodes levels did not fit the bars
@@ -88,7 +88,7 @@ static void eng_bar_knob(uint32_t k, uint32_t v)
                                      * default -50); the damper's knock struck the bar as hard as a v100 RUBBER mallet
                                      * (louder than the strike at 127, louder than the note it damps), so it is 30 dB
                                      * down and a felt (SOFT) pulse: the default -31 .. -40 dB re the strike */
-        bar_nz = (int32_t)KN_NZ[c] << 8; bar_thump = rh_thump >> 5; bar_felt = rh_felt; break;
+        bar_nz = (int32_t)KN_NZ[eng_want_sub][c] << 8; bar_thump = rh_thump >> 5; bar_felt = rh_felt; break;
     case BK_MOT_ON: bar_mot_on = (uint8_t)(v != 0); break;
     case BK_MOT_DEPTH: bar_mot_depth = (uint8_t)c; break;
     case BK_MOT_SHAPE: bar_mot_shape = (uint8_t)c; break;
