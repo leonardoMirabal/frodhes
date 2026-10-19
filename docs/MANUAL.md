@@ -1,6 +1,6 @@
 # Frodhes: user manual
 
-**A physically modelled Fender Rhodes and vibraphone for the M-VAVE FM-1.** Version 0.9.3.
+**A physically modelled Fender Rhodes, vibraphone and marimba for the M-VAVE FM-1.** Version 0.9.3.
 
 Frodhes turns the FM-1 into an electric piano. Every note is computed from the physics of a real Rhodes: the hammer
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound. No recordings
@@ -16,7 +16,7 @@ chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo
 2. [The idea: one page, four knobs](#2-the-idea-one-page-four-knobs)
 3. [Buttons and knobs](#3-buttons-and-knobs)
 4. [The pages](#4-the-pages)
-5. [VIBES: the vibraphone](#5-vibes-the-vibraphone) (the motor: [on and off](#the-motor-on-and-off))
+5. [VIBES and MARIMBA: the bar instruments](#5-vibes-and-marimba-the-bar-instruments) (VIBES: [the vibraphone](#vibes-the-vibraphone), the motor [on and off](#the-motor-on-and-off); [MARIMBA](#marimba))
 6. [Presets](#6-presets)
 7. [Effects on and off](#7-effects-on-and-off)
 8. [Tempo and sync](#8-tempo-and-sync)
@@ -147,15 +147,16 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **TYPE** | The instrument: **STAGE 77** (the classic Mark I), **SUITCASE** (with its Peterson amp and 4×12 speakers), **EARLY FELT** (1970 felt hammers: rounder, darker), **BELL DYNO** (Dyno-My-Piano voicing: glassy, bell-like), or **VIBES**, the vibraphone (see [VIBES](#5-vibes-the-vibraphone)). Applies to the next notes. |
-| K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE 1/2's TONE). On VIBES: **MALLET** |
-| K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE 1/2's BELL). On VIBES: **MOTOR** on / off |
+| K1 | **TYPE** | The instrument: **STAGE 77** (the classic Mark I), **SUITCASE** (with its Peterson amp and 4×12 speakers), **EARLY FELT** (1970 felt hammers: rounder, darker), **BELL DYNO** (Dyno-My-Piano voicing: glassy, bell-like), **VIBES**, the vibraphone (see [VIBES](#vibes-the-vibraphone)), or **MARIMBA** (see [MARIMBA](#marimba)). Applies to the next notes. |
+| K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE 1/2's TONE). On VIBES and MARIMBA: **MALLET** |
+| K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE 1/2's BELL). On VIBES: **MOTOR** on / off; on MARIMBA: **TUBE** |
 | K4 | **KEY VEL** | How hard the FM-1's own keys strike. The keys are not velocity-sensitive, so this decides the touch: around 60–80 soft and round, 96 medium, 108–127 hard with bark. MIDI notes keep their own velocity. |
 
 ### VOICE 1/2 and 2/2
 
 The instrument's own pages: on a Rhodes type there are two, right after the main page. On **VIBES** there are three,
-with the vibraphone's controls: see [VIBES](#5-vibes-the-vibraphone).
+with the vibraphone's controls: see [VIBES](#vibes-the-vibraphone). On **MARIMBA** there are two, with the marimba's
+controls: see [MARIMBA](#marimba).
 
 ![VOICE 1/2](manual/img/voice1.png?v=0.9.3)
 
@@ -446,13 +447,20 @@ segments are worked out from), and the audio engine's time per block (it must st
 Press **GLO** three times to come here (TEMPO, SETUP, MIDI). Everything MIDI does, it does the same from USB and from
 the TRS jack: notes, every CC in the table below, program changes, clock, start and stop.
 
-## 5. VIBES: the vibraphone
+## 5. VIBES and MARIMBA: the bar instruments
+
+Two of the TYPEs are struck bars instead of a Rhodes: **VIBES**, the vibraphone, and **MARIMBA**. They share one
+engine and the same VOICE cards, each with its own bars, tubes and mallets; VIBES has a damper and a motor, MARIMBA
+neither (its DECAY page's second card is **MUTE**, the player's hand). Over MIDI, CC 79 picks between them.
+
+### VIBES: the vibraphone
 
 Turn **ALGORITHM** (or the TYPE card) to **VIBES** and the FM-1 plays a vibraphone: aluminium bars struck with
 mallets, each with its tuned tube underneath, and the motor that gives the vibraphone its pulsing shimmer. Like the
 Rhodes it is computed, not sampled: the bar's own modes (the fundamental and its tuned overtones, about 4 and 10
 times higher), the tube that takes a moment to build up under the bar, and the motor's discs. Switching between a
-Rhodes type and VIBES fades out what is still ringing.
+Rhodes type and VIBES fades out what is still ringing, held notes too; a note still held plays again on the new type
+the next time it is struck (a MIDI note-on, or a key on the same note).
 
 ![The main page on VIBES](manual/img/piano-vibes.png?v=0.9.3)
 
@@ -531,6 +539,56 @@ vibraphone's range.
 **Presets:** **F13 VIBE MOTOR** (the motor at 3.5 Hz, a little reverb) and **F14 VIBES DRY** (motor off, close).
 **Polyphony:** 9 notes, as the Rhodes.
 
+### MARIMBA
+
+<!-- DRAFT (MARIMBA P6): written from the plan and today's firmware against the sync-1 stub tables; every number
+marked "about" is the design target (MARIMBA PLAN §2) and is checked against the real tables after sync 2 and on the
+FM-1 (P5) before this text is final. Screenshots follow the real tables. -->
+
+Turn **ALGORITHM** (or the TYPE card) to **MARIMBA** and the FM-1 plays a concert marimba: rosewood bars struck with
+yarn mallets, each over its tuned tube. It is the same kind of instrument as the vibraphone, computed the same way
+(the bar's own modes, here tuned 1 : 4 : 10, the tube, the mallet's contact), but it sounds very different: wood
+instead of aluminium, a warm, short note, about **1.5 s at C2, 1 s around C4 and a tenth of a second at the top**.
+Its long tubes make the low notes ring **longer** and bloom a little after the strike; at the top the tubes barely do
+anything. A marimba has **no damper and no motor**: a note rings out by itself, and the player stops it with a hand.
+Switching between VIBES and MARIMBA (or a Rhodes type) fades out what is still ringing.
+
+The main page's middle cards on MARIMBA are **MALLET** (VOICE 1/2's MALLET) and **TUBE** (VOICE 1/2's TUBE).
+MARIMBA has two VOICE pages, **VOICE 1/2** (the strike) and **VOICE 2/2** (how the bars ring and stop), and no MOTOR
+page: SELECT goes from VOICE 2/2 straight to COMPRESSOR.
+
+| Knob | Card | What it does on MARIMBA |
+| --- | --- | --- |
+| K1 | **STRIKE** | Where the mallet hits the bar: **CENTRE** (left end), a fuller, rounder fundamental; **L/3** (the middle, the usual spot); toward the **EDGE**, the bar's twisting modes ring in |
+| K2 | **MALLET** | The mallet: **SOFT** (0) soft yarn, a dark, round note even when you play hard; **MED** (42) medium yarn; the middle (64, the default) a medium-hard yarn; **HARD** (85) hard yarn, clearer, the overtones ring; **RUBBER** (127) a bright, hard, almost xylophone-like click. The card shows the mallet's name, or a number between two of them |
+| K3 | **TUBE** | How much the tube rings with the bar: 0 is a bare bar (quieter and thinner); up is a fuller, louder note; on the low bars the tube also makes the note ring longer and bloom just after the strike; on the top bars it changes little |
+| K4 | **WEIGHT** | The mallet's weight: light is brighter and quieter; heavy is darker, with more body. How hard you play (KEY VEL, MIDI velocity) stays the strike's speed: a harder strike is louder and brighter |
+
+| Knob | Card | What it does on MARIMBA |
+| --- | --- | --- |
+| K1 | **RING** | How long a struck bar rings: from a quarter to about four times the normal time |
+| K2 | **MUTE** | The player's hand when you let go of a key: **0** (MUTE 0.0) lets the note ring out as on a real marimba; up, the hand stops it sooner; 127 stops it in a few hundredths of a second |
+| K3 | **NOISE** | The mallet's contact: a soft tick at the start of the note (no damper, so nothing at the key-up) |
+| K4 | **TUNE** | Fine tuning, ±50 cents (many marimbas are tuned to A = 442 Hz: +8) |
+
+**MUTE, not DAMPER.** On VIBES the second card of VOICE 2/3 is the DAMPER, the felt bar that stops the notes when you
+let go. A marimba has no damper, so on MARIMBA the same card is **MUTE**: how firmly your hand stops a note at the
+key-up. MUTE 0 means no hand: every note rings out. It is the same setting underneath (MIDI CC 103, saved with the
+preset), shown and heard for the instrument you play.
+
+**The pedal** keeps its meaning: held (**REC**, or CC 64 over MIDI, half-pedal too), the hand never lands, whatever MUTE
+says; let go, MUTE decides. **All Notes Off** (CC 123) still stops everything.
+
+**No motor.** The MOTOR page belongs to VIBES. On MARIMBA the motor's MIDI CCs (47-51) are accepted and kept for VIBES,
+and change nothing in the marimba's sound.
+
+**The range.** A concert marimba has five octaves, **C2 to C7**; that is where MARIMBA is measured. Every other MIDI note
+plays too, extended from the same physics. The FM-1's keys (F3–G5) sit in the marimba's middle.
+
+**Presets:** **F15 MARIMBA** (the default mallet and tube, MUTE 0: rings out, a little reverb) and **F16 MRMB SOFT**
+(soft yarn, a heavier mallet, more room and a little delay). **Over MIDI:** CC 79 from 96 to 127 selects MARIMBA
+(0–95 VIBES); Program Change 14 / 15 loads F15 / F16. **Polyphony:** 9 notes, as the Rhodes.
+
 ## 6. Presets
 
 ![Browsing presets](manual/img/browse.png?v=0.9.3)
@@ -548,7 +606,8 @@ starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 | F13 VIBE MOTOR | F14 VIBES DRY | F15 MARIMBA | F16 MRMB SOFT |
 
 The Rhodes presets F01–F12 are level-matched: each one's LEVEL (SETUP) brings it to about the loudness of F01, so
-browsing does not jump in volume (VIBES, F13–F14, sits 2.5 dB above, as the type does).
+browsing does not jump in volume (VIBES, F13–F14, sits 2.5 dB above, as the type does; MARIMBA, F15–F16, plays at
+the level of its type, set on the FM-1's headphone jack as VIBES's was).<!-- DRAFT: the MARIMBA offset is P5's number -->
 
 **Saving:** press **SAVE**. The bottom line asks where; turn **PRESETS** or **K1** to pick U01–U16; press **SAVE**
 again to store it, or **HOME** (or **OCT−**) to cancel. The name is made from the type and the effects that are on
@@ -623,7 +682,7 @@ voice, so repeated notes do not use up voices. A 10th note takes over the quiete
 oldest held one, with a short fade (1.5 ms) so there is no click. The audio also has a safety guard: if it ever ran
 late, the quietest released note would be faded out rather than letting the sound break up. In testing the worst
 case (9 low notes at full velocity with the pedal and every effect on) uses about 4.0-4.2 ms on the Rhodes and 3.5 ms
-on VIBES of the 5.8 ms available per audio block (measured), and the guard never acts.
+on VIBES of the 5.8 ms available per audio block (measured), and the guard never acts.<!-- DRAFT: MARIMBA's number after P5 (hil_cpu --engine marimba) -->
 
 ## 11. Sound and volume tips
 
@@ -649,7 +708,7 @@ The TRS jack is MIDI in only. **Program Change** 0–15 loads F01–F16, 16–31
 | CC | Parameter | CC | Parameter |
 | --- | --- | --- | --- |
 | 64 | Sustain (half-pedal) | 80 | TYPE (0–31 STAGE, 32–63 SUITCASE, 64–95 FELT, 96–127 DYNO) |
-| 47 / 48 | VIBES MOTOR on (≥ 64) / DEPTH | 49 / 50 / 51 | VIBES MOTOR SPEED / SHAPE / SYNC |
+| 47 / 48 | VIBES MOTOR on (≥ 64) / DEPTH (no effect on MARIMBA) | 49 / 50 / 51 | VIBES MOTOR SPEED / SHAPE / SYNC |
 | 79 | TYPE of the bar instruments: 0–95 VIBES, 96–127 MARIMBA | 9 | Developer: VIBES mode cap (0 = automatic, 1–49 = 0–48 upper modes, ≥ 50 = none; not saved) |
 | 10 | Developer: reset (≥ 64): every LFO, the delay / reverb lines and the noise to their start state (for comparing recordings) | | |
 | 81 | DRIVE (AMOUNT) | 91 | REVERB (MIX) |
@@ -665,7 +724,7 @@ The TRS jack is MIDI in only. **Program Change** 0–15 loads F01–F16, 16–31
 | 114 | USB VOL: knob (< 64) / fixed | 24 / 105 | Reserved (accepted and saved, no effect yet) |
 | 116 | Developer: CPU load query (replies on CC 115–118; VIBES also 112 / 113: the lowest mode cap / the most live upper modes) | 119 | Developer: raw voice (≥ 64 bypasses every effect and the limiter; FX does not undo it) |
 | 4 | Developer: battery query (replies CC 4 / 5 = the reading: value / 8, value mod 8; CC 6 = the segments shown, 4 = USB power) | 8 | Developer: a simulated battery reading (value x 8; 0 = the real one) |
-| 102 / 103 / 104 | DECAY / RELEASE / NOISE | 120 / 123 | All notes off: every note held over MIDI is let go and rings out through the dampers, every tail ending within 8 s (keys still held on the FM-1, the arpeggiator's HOLD and the sequencer keep going) |
+| 102 / 103 / 104 | DECAY / RELEASE (VIBES: DAMPER; MARIMBA: MUTE) / NOISE | 120 / 123 | All notes off: every note held over MIDI is let go and rings out through the dampers, every tail ending within 8 s (keys still held on the FM-1, the arpeggiator's HOLD and the sequencer keep going) |
 | 56 / 57 | CHORD TYPE (0–14 as listed) / INVERSION (0–3) | 58 / 59 | CHORD VOICING (0–2) / STRUM (0–12 × 5 ms) |
 | 60 / 61 | SEQUENCER play (≥ 64) / stop, BARS (1–16) | 62 / 63 | SEQUENCER QUANT (0–5) / recording (≥ 64) |
 | 43 / 44 | SEQUENCER CLEAR / UNDO (≥ 64) | 45 / 46 | SEQUENCER ERASE (≥ 64 on) / SWING (50–75) |
@@ -704,7 +763,7 @@ issues: [github.com/leonardoMirabal/frodhes](https://github.com/leonardoMirabal/
 
 | | |
 | --- | --- |
-| **Sound** | A physical model computed live, no samples. Rhodes: hammer, tine, tonebar and pickup; 4 types (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO). VIBES: a vibraphone, mallet, bar modes, tuned tube and motor |
+| **Sound** | A physical model computed live, no samples. Rhodes: hammer, tine, tonebar and pickup; 4 types (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO). VIBES: a vibraphone, mallet, bar modes, tuned tube and motor. MARIMBA: rosewood bars, mallet, bar modes and tuned tube, no damper or motor (C2–C7 authentic) |
 | **Polyphony** | 9 voices; a 10th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
 | **Range** | 88 notes, A0–C8 over MIDI (notes outside play the nearest end); the 27 keys play F3–G5, OCT ±2 octaves, TRANSP ±24 semitones, TUNE ±50 cents |
 | **Velocity** | MIDI 1–127; the FM-1's keys play at KEY VEL (1–127, default 96) |
