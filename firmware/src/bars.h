@@ -105,7 +105,7 @@ static volatile int32_t bar_nz;                     /* KN_NZ[NOISE], Q15 */
 static volatile int32_t bar_k_decay = 65536, bar_k_rel = 65536;   /* DECAY_K[RING], DECAY_K[DAMPER], Q16 */
 static volatile int32_t bar_thump, bar_felt;        /* KN_THUMP / KN_FELT[NOISE]: the damper's knock and felt noise */
 static volatile int32_t bar_mute = 0;               /* MUTE (P_RELEASE, RELEASE * 258), Q15: on a type without a damper
-                                                     * the key-up damper weight's scale (0 = rings out); not read yet */
+                                                     * the key-up damper weight's scale (0 = rings out): bar_mute_w */
 static volatile uint8_t bar_mot_on, bar_mot_depth, bar_mot_shape;   /* TREM/WAH = MOTOR, DEPTH, SHAPE (0..127) */
 static volatile uint32_t bar_mot_inc;               /* Q32 phase step per sample (the AM rate, or TREM SYNC's) */
 static volatile uint8_t bar_budget_force;           /* developer (MIDI CC 9): 0 = the cost model, 1..49 = 0..48 upper

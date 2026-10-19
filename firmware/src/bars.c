@@ -695,7 +695,8 @@ static void bar_run_fade(bar_ms_t *s, int32_t *bx, const int32_t *F)  /* one sub
     s->live = 0; s->x1 = s->x2 = s->err = 0; s->amp = 0;
 }
 
-/* V1 <-> TUBE for one sub-block, sample-inner, Q32 form (both modes are under 4.9 kHz on every key): bx = x0, tb = the
+/* V1 <-> TUBE for one sub-block, sample-inner, Q32 form (both modes under ~4.9 kHz: every key but MARIMBA's 108, whose
+ * tube, damped 15 % at 4.3 kHz, takes the Q30 form: bar_pair_*h below): bx = x0, tb = the
  * tube's x1 (its radiation weight is the output loop's). The tube's pressure on the bar (ktb x1 into y0) enters x0 as
  * e0 ktb x1, likewise e1 kbt x0 into x1: ktbe = ktb e0 >> 16 then >> 12 (the product keeps 12 more bits: ktb e0 is
  * 2^33 .. 2^46 over the keys), kbte = kbt e1 >> 28. The motor does not touch the coupling (bar_motor_block): the pair,
@@ -709,18 +710,31 @@ static void bar_run_fade(bar_ms_t *s, int32_t *bx, const int32_t *F)  /* one sub
         (X1O) = 2 * (X1N) - (X1O) + (int32_t)(a_ >> 32); e1r = (int32_t)a_; \
         *bx++ = (X0O); *tb++ = (X1O); \
     } while (0)
-#define BAR_PAIR(NAME, FRC) \
+/* the same with the tube in the Q30 form (its c1 >= 1/2: a heavily damped tube near the top, MARIMBA's key 108 only;
+ * VIBES never: every VIBES tube is in Q32): x1' = (err + a1 x1 - a2 x1p + kbte x0) >> 30, kbte = kbt e1 >> 30 */
+#define BAR_PSTEP_H(X0N, X0O, X1N, X1O, FRC) do { \
+        int64_t a_ = (int64_t)(uint32_t)e0r - (int64_t)c10 * (X0N) + (int64_t)c20 * (X0O) \
+                   + (((int64_t)ktbe * (X1N)) >> 12); \
+        if (FRC) a_ += (int64_t)*F++ * be0; \
+        (X0O) = 2 * (X0N) - (X0O) + (int32_t)(a_ >> 32); e0r = (int32_t)a_; \
+        a_ = (int64_t)(uint32_t)e1r + (int64_t)c11 * (X1N) - (int64_t)c21 * (X1O) + (int64_t)kbte * (X0O); \
+        (X1O) = (int32_t)(a_ >> 30); e1r = (int32_t)a_ & BAR_EFM; \
+        *bx++ = (X0O); *tb++ = (X1O); \
+    } while (0)
+#define BAR_PAIR(NAME, STEP, FRC) \
 static void NAME(bar_ms_t *s0, bar_ms_t *s1, int32_t *bx, int32_t *tb, const int32_t *F, int32_t ktbe, int32_t kbte) \
 { \
     int32_t x0 = s0->x1, x0p = s0->x2, e0r = s0->err, c10 = s0->k1, c20 = s0->k2, be0 = s0->be; \
     int32_t x1 = s1->x1, x1p = s1->x2, e1r = s1->err, c11 = s1->k1, c21 = s1->k2; \
     int32_t *e = bx + BAR_SUB; \
     (void)F; (void)be0; \
-    while (bx < e) { BAR_PSTEP(x0, x0p, x1, x1p, FRC); BAR_PSTEP(x0p, x0, x1p, x1, FRC); } \
+    while (bx < e) { STEP(x0, x0p, x1, x1p, FRC); STEP(x0p, x0, x1p, x1, FRC); } \
     s0->x1 = x0; s0->x2 = x0p; s0->err = e0r; s1->x1 = x1; s1->x2 = x1p; s1->err = e1r; \
 }
-BAR_PAIR(bar_pair_0, 0)
-BAR_PAIR(bar_pair_1, 1)
+BAR_PAIR(bar_pair_0, BAR_PSTEP, 0)
+BAR_PAIR(bar_pair_1, BAR_PSTEP, 1)
+BAR_PAIR(bar_pair_0h, BAR_PSTEP_H, 0)
+BAR_PAIR(bar_pair_1h, BAR_PSTEP_H, 1)
 
 static bar_ms_t bar_notube;                         /* BELL 0: a silent tube (the same work, so the same cost) */
 static void bar_pair(bar_voice_t *v, int32_t *bx, int32_t *tb, const int32_t *F)
@@ -729,6 +743,11 @@ static void bar_pair(bar_voice_t *v, int32_t *bx, int32_t *tb, const int32_t *F)
     int32_t ktbe = 0, kbte = 0;
     if (v->m[1].live) {
         ktbe = bar_sat31((int64_t)v->ktb * s0->e >> 16);
+        if (!s1->lo) {                              /* the tube in Q30 (MARIMBA key 108; never VIBES): its own path */
+            kbte = bar_sat31((int64_t)v->kbt * s1->e >> 30);
+            if (F) bar_pair_1h(s0, s1, bx, tb, F, ktbe, kbte); else bar_pair_0h(s0, s1, bx, tb, 0, ktbe, kbte);
+            return;
+        }
         kbte = bar_sat31((int64_t)v->kbt * s1->e >> 28);
     }
     if (F) bar_pair_1(s0, s1, bx, tb, F, ktbe, kbte); else bar_pair_0(s0, s1, bx, tb, 0, ktbe, kbte);
