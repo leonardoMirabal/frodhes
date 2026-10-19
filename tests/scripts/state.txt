@@ -109,7 +109,7 @@
 7200 expect state card.2.0 SUITCASE
 7200 expect state card.7.0 OFF
 7200 expect state label.3.0 TONE
-7300 midi 0xB0 79 64
+7300 midi 0xB0 79 0
 7400 expect sound
 7400 expect state bars 1
 7400 expect state vcard.2.0 ON

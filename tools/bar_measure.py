@@ -33,11 +33,12 @@ def n_types():
 
 def type_cc(t):
     """the CC value selecting TYPE t on the CC that type_ccnum(t) names: CC 80 (by 32) for the Rhodes types 0..3 as
-    before, CC 79 for the bar types (one band each over 0..127)"""
+    before, CC 79 for the bar types (one band each over 0..127, frodhes.c midi_cc): the band's FIRST value, so VIBES
+    is 0 whatever the number of bar types (a band's middle moves when a type is added: MARIMBA PLAN §9.4)"""
     if t < 4:
         return t * 32 + 8
-    w = 128 / max(1, n_types() - 4)
-    return int((t - 4) * w + w / 2)
+    n = max(1, n_types() - 4)
+    return -(-(t - 4) * 128 // n)              # ceil((t - 4) * 128 / n): the first v with v * n >> 7 == t - 4
 
 
 def type_ccnum(t):

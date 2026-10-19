@@ -28,7 +28,7 @@ def voices():
 
 
 def engine_lines(eng):
-    return [cc(50, 79, 64), cc(51, 47, 0)] if eng == "vibes" else []   # VIBES, its motor off
+    return [cc(50, 79, 0), cc(51, 47, 0)] if eng == "vibes" else []   # VIBES, its motor off
 
 
 @pytest.mark.parametrize("eng,num", [

@@ -127,7 +127,7 @@ def main():
     os.makedirs(os.path.join(ROOT, "build", "host"), exist_ok=True)
     tag = os.path.join(ROOT, "build", "host", "manual")
     PAGES = names(walk_pages())                             # the SELECT order, as the firmware has it
-    vibes = names(walk_pages(["100 midi 0xB0 79 64"]), "-vibes")
+    vibes = names(walk_pages(["100 midi 0xB0 79 0"]), "-vibes")
     vibes = vibes[vibes.index("piano-vibes") + 1:vibes.index("comp-vibes")]   # VIBES' own pages (VOICE 1..3)
     L, shots, t = ["400 shot"], {400: "splash"}, 100
     if cards is not None:                                   # the rows' design variant (developer CC 11)

@@ -8,7 +8,7 @@
 100 midi 0x90 64 100
 600 expect rms > -40
 # -> VIBES while it rings; the new notes play on the bar engine
-700 midi 0xB0 79 64
+700 midi 0xB0 79 0
 720 midi 0x90 60 100
 720 midi 0x90 67 100
 1200 expect rms > -40
@@ -17,9 +17,9 @@
 1320 midi 0x90 57 100
 1800 expect rms > -40
 # back and forth within a few blocks, then a note on VIBES
-1900 midi 0xB0 79 64
+1900 midi 0xB0 79 0
 1903 midi 0xB0 80 0
-1906 midi 0xB0 79 64
+1906 midi 0xB0 79 0
 1950 midi 0x90 72 100
 2400 expect rms > -40
 # CC 80 104: DYNO (CC 80 keeps the four Rhodes types; VIBES is CC 79)

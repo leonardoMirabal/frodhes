@@ -38,7 +38,7 @@ CASES = [
 def script(notes, vel, kn, cap=None):
     k = dict(tone=64, bark=64, bell=64, hammer=64)
     k.update(kn)
-    s = "50 midi 0xB0 119 127\n52 midi 0xB0 79 64\n53 midi 0xB0 47 0\n"
+    s = "50 midi 0xB0 119 127\n52 midi 0xB0 79 0\n53 midi 0xB0 47 0\n"
     s += f"55 midi 0xB0 28 {k['tone']}\n55 midi 0xB0 29 {k['bark']}\n55 midi 0xB0 30 {k['bell']}\n"
     s += f"55 midi 0xB0 31 {k['hammer']}\n56 midi 0xB0 104 0\n70 midi 0xB0 64 127\n"
     if cap is not None:

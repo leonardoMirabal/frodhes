@@ -10,7 +10,7 @@
 500 expect state card.5.3 +2.8
 600 turn 2 -40
 700 midi 0xB0 113 0
-800 midi 0xB0 79 64
+800 midi 0xB0 79 0
 900 btn 8
 1000 turn 0 1
 1003 turn 0 1

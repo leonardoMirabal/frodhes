@@ -62,7 +62,7 @@ def main():
         for k, v in d.items():
             cc(CC[k], v)
         if vibes:
-            cc(79, 64)                                # VIBES (the motor starts with the TYPE change)
+            cc(79, 0)                                # VIBES (the motor starts with the TYPE change)
             cc(47, 127 if d.get("TW_SW") else 0)      # the motor with the effects (records v3: its own CC), else off
             if d.get("TW_SW"):
                 cc(17, 64)

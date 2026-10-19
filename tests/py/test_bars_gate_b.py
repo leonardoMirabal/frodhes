@@ -32,7 +32,7 @@ def host_build():
 def c_render(note, vel, dur_ms, off_ms=None, motor=None, tag="vb", **kn):
     k = dict(gm.DEFAULT_KNOBS, **kn)
     out = hostrun.out(f"{tag}-{note}-{vel}")
-    s = "50 midi 0xB0 119 127\n50 midi 0xB0 104 0\n52 midi 0xB0 79 64\n53 midi 0xB0 47 0\n" + KNOBS.format(**k)
+    s = "50 midi 0xB0 119 127\n50 midi 0xB0 104 0\n52 midi 0xB0 79 0\n53 midi 0xB0 47 0\n" + KNOBS.format(**k)
     if motor:                                       # the motor (records v3: CC 47 ON, 48 DEPTH, 49 RATE, 50 SHAPE)
         s += f"56 midi 0xB0 47 127\n56 midi 0xB0 48 {motor['depth']}\n" \
              f"56 midi 0xB0 49 {motor['rate']}\n56 midi 0xB0 50 {motor.get('shape', 0)}\n"
@@ -99,7 +99,7 @@ def test_c_matches_golden_edge_strikes(note, tone, bark):
 def c_render_motor(note, mot):
     """the motor set well before the note (its depth slewed in), CC 10 at 60 ms (the phase to 0 at the next block)"""
     out = hostrun.out(f"vbm-{note}")
-    s = ("20 midi 0xB0 119 127\n20 midi 0xB0 104 0\n21 midi 0xB0 79 64\n"
+    s = ("20 midi 0xB0 119 127\n20 midi 0xB0 104 0\n21 midi 0xB0 79 0\n"
          + KNOBS.format(**gm.DEFAULT_KNOBS).replace("55 midi", "22 midi")
          + f"23 midi 0xB0 47 127\n23 midi 0xB0 48 {mot['depth']}\n23 midi 0xB0 49 {mot['rate']}\n"
          f"23 midi 0xB0 50 {mot.get('shape', 0)}\n60 midi 0xB0 10 127\n100 midi 0x90 {note} 100\n2200 end\n")

@@ -1,7 +1,7 @@
 # VIBES (TYPE 4, the bar engine, bars.c): a note, its damper, a pedal chord with steals, the loudest voicing, a
 # re-struck note, no tube (BELL 0), silence at the end. RAW: the engine without the effects.
 50 midi 0xB0 119 127
-60 midi 0xB0 79 64
+60 midi 0xB0 79 0
 # one note, key-up: the felt stops it
 100 midi 0x90 60 100
 600 expect rms > -40

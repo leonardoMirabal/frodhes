@@ -314,14 +314,14 @@ def test_cards_every_choice_option(variant, px):
 @pytest.mark.parametrize("variant", [1, 2, 3, 4, 5], ids=[NAMES[i] for i in range(1, 6)])
 def test_cards_other_looks(variant, look):
     """the colour candidates B and C (developer CC 2) with each variant: the same rules on every page (VIBES, turned)"""
-    ps = pages("VIBE", 79, 64, variant)
+    ps = pages("VIBE", 79, 0, variant)
     LOOK_C[0] = look == 2
     a_lab = np.array(M.look_tokens(0)[1]["lab"], float)
     lab = np.array(M.look_tokens(look)[1]["lab"], float)
     try:
         errs = []
         M.NORM = a_lab / np.maximum(lab, 1)                       # (look C's text tint undone, as test_ui_meters)
-        for t, im, s in walk(f"cards{variant}_look{look}", 79, 64, variant, M.turns_for(ps), look=look):
+        for t, im, s in walk(f"cards{variant}_look{look}", 79, 0, variant, M.turns_for(ps), look=look):
             errs += check_page(im, s, f"{NAMES[variant]} look {'BC'[look - 1]} {M.title_of(s)} @{t}", variant)
     finally:
         LOOK_C[0] = False

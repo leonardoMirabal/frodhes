@@ -206,9 +206,17 @@ static void midi_cc(uint32_t cc, uint32_t v)
         ui_mark(E_CARDS); ui_mark(E_FOOTER);
         return;
     }
-    if (cc == 79u) {                                   /* the bar types (VIBES ...): bands over 0..127, one per type;
-                                                        * CC 80 keeps the four Rhodes types exactly as before */
-        type_pick((int32_t)(4u + ((v * (N_TYPE_N - 4u)) >> 7)));   /* (a TYPE change: the motor starts) */
+    if (cc == 79u) {                                   /* the bar types (VIBES, MARIMBA ...): bands over 0..127, one per
+                                                        * TYPE of the bar engine (TYPE_ENGINE 1), in TYPE order; band k
+                                                        * starts at the first v with v * nb >> 7 == k, so v = 0 is VIBES
+                                                        * whatever the number of bar types (the selectors use it). Other
+                                                        * engines' TYPEs never fall in. CC 80 keeps the four Rhodes types
+                                                        * exactly as before */
+        uint32_t t, nb = 0, k;
+        for (t = 0; t < N_TYPE_N; t++) nb += TYPE_ENGINE[t] == 1u;
+        k = (v * nb) >> 7;
+        for (t = 0; t < N_TYPE_N; t++) if (TYPE_ENGINE[t] == 1u && !k--) break;
+        type_pick((int32_t)t);                         /* (a TYPE change: the motor starts) */
         ui_mark_param(P_TYPE);
         return;
     }
