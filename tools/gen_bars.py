@@ -401,13 +401,27 @@ def make_pair_mar(vb, n, zr, target):
     if zr > zn and wk >= lo:                          # the weak regime (the vibraphone's): s_max sigma <= m (zr - zn);
         h = min(hi, wk * (1 - 1e-3))                  # near zeta_r = zeta_n (its clamp under lo) the split limit; 1e-3:
         #                                               the retune to f0 moves zeta_n by its scale
-    h = max(h, 1e-5)
+    h = min(max(h, 1e-5), sigma_word_max(f0))       # (P4: the coupling words' 32-bit headroom, C7# up)
     bt = bt.solve_sigma2(target, min(lo, h), h)
     limit = int(h < hi and bt.clamped == 1)
     cl, want = bt.clamped, bt.sigma_wanted
     bt = bt.retune(f0)
     bt.clamped, bt.sigma_wanted = cl, want
     return bt, cl, limit
+
+
+KC_EST = 1.1                           # pair_words' kc at the top keys (1.00..1.06): the headroom's estimate
+
+
+def sigma_word_max(f0):
+    """The largest coupling sigma bars.c's per-block coefficients hold at BELL's top: ktbe = kappa Q30^2 S / (fs^2
+    G 2^16) and kbte = kappa Q30^2 S G / (fs^2 2^28) (kappa = kc sigma w^2, S = KN_TUBE_TOP x COUPLE_MARGIN) must both
+    fit 32 bits for some power of two G; their product does not depend on G, so the best G (within sqrt 2) needs
+    kappa Q30^2 S sqrt(2) / (fs^2 2^22) <= 2^31 - 1. From C#8 down to ~G7 (keys 103..108, extrapolated) the solved
+    sigma was over it; G alone (coupling_over, pair_words_safe) holds the keys below."""
+    w = 2 * math.pi * f0
+    kap = (2 ** 31 - 1) * FS ** 2 * 2 ** 22 / (2 ** 60 * KN_TUBE_TOP * COUPLE_MARGIN * math.sqrt(2))
+    return kap / (KC_EST * w * w)
 
 
 def regime(bt):
@@ -472,7 +486,25 @@ def pair_words_safe(bt, wt, felt, f0):
     if not w["kc"] <= KC_MAX:
         raise SystemExit("pair: kc %.3f > %.1f at f0 %.1f Hz (the discrete coupling cannot reach the design's V1 decay; "
                          "see KC_MAX)" % (w["kc"], KC_MAX, f0))
+    if KC_FALLBACK:                                   # a later type (MARIMBA): the couplings' 32-bit headroom
+        while "v1_ord" not in w and coupling_over(w) and w["G"] < 64:
+            w = btm.pair_words(bt, wt, felt, f0=f0, G=2 * w["G"])
+        assert not coupling_over(w), ("pair: the coupling words overflow 32 bits even at G 64", f0)
     return tube_mute(w, bt)
+
+
+COUPLE_MARGIN = 1.10                   # the live E words over the designed: TUNE +50 c (x1.03) and the rest, rounded up
+
+
+def coupling_over(w):
+    """bars.c's per-block coupling coefficients at the top of BELL (KN_TUBE_TOP) would not fit 32 bits: ktbe =
+    k_tb s / 2^15 x E0 >> 16 and kbte = k_bt s / 2^15 x E1 >> 28 (bar_sat31 clips them). From C#7 up the MARIMBA's
+    k_tb at G 8 made ktbe 1.1..2.4 x 2^31: the tube's pull on the bar clipped to under half, the C engine 18 dB off the
+    golden model at C7, 8 LU quieter at C8 (P4). G (a power of two) moves the tube slot's scale: k_tb / G, k_bt x G,
+    wt / G; the map is the same pair (a similarity), up to the words' rounding."""
+    lim = (2 ** 31 - 1) / COUPLE_MARGIN
+    return (abs(w["k_tb"]) * KN_TUBE_TOP * w["E0"] / 2 ** 16 > lim or
+            abs(w["k_bt"]) * KN_TUBE_TOP * w["E1"] / 2 ** 28 > lim)
 
 
 TUBE_MUTE_S = None                     # a type without a damper: the tube slot's drel (T3m tube_s), else drel = d

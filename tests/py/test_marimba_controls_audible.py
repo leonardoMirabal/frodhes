@@ -23,7 +23,7 @@ import sys
 import numpy as np
 import pytest
 
-from hostrun import FS, cc, run
+from hostrun import FS, build, cc, run
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -175,6 +175,20 @@ def test_velocity_brightens_the_centroid():
     r = _velbright()
     q = r[(60, 117)]["cen_a"] / r[(60, 40)]["cen_a"]
     assert q >= 1.4, q
+
+
+def test_no_saturation_at_the_top():
+    """P4: the top two octaves at v127, TUBE 127, the edge, RUBBER, the heaviest mallet (the largest coupling and
+    force): the bar engine's state and coefficients never saturate (the host's 'sat28 hits' counts both); before P4
+    every key from 91 up hit bar_sat31 in the tube coupling at v100"""
+    build()
+    ev = ms.base(TONE=127, BARK=127, BELL=127, HAMMER=127)
+    t = 300
+    for n in range(84, 109):
+        ev += bm.note(t, n, 127, 300)
+        t += 400
+    _, _, log = ms.render(ms.bm_tag("mca-sat-top"), ev, t + 500)
+    assert bm.counters(log)["sat28 hits"] == 0, bm.counters(log)
 
 
 # ---- no motor

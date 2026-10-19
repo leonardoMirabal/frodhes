@@ -1,4 +1,4 @@
-# (real MARIMBA tables: expects within ~0.2 s of the strikes, the notes ring 0.1-0.9 s above C3; the loudest voicing (RUBBER, edge, v127) has a ~25 dB crest under the -0.5 dBFS single-strike ceiling, so its RMS sits at -40..-50 dB)
+# (real MARIMBA tables: expects within ~0.2 s of the strikes, the notes ring 0.1-0.9 s above C3; the loudest voicing (RUBBER, edge, v127) has a ~25 dB crest under the -0.5 dBFS single-strike ceiling, so its RMS sits at -40..-50 dB) (P4: C7 and C#7 up with the coupling words in range, as the golden model: C7 v100 -52.5 dB at 0.1 s, the loudest voicing on key 101 -58.7 dB; before P4, with the tube coupling clipped, they read over -50 and -55)
 # MARIMBA (TYPE 5, CC 79 127; the bar engine's second type, bars.c BAR_TYPE[1]): notes over the range, a pedal chord
 # with steals, the loudest voicing, a roll on one key, every motor CC (inert: no motor), silence at the end. RAW: the
 # engine without the effects.
@@ -15,7 +15,7 @@
 1900 expect rms > -45
 2000 midi 0x80 36 0
 2100 midi 0x90 96 100
-2200 expect rms > -50
+2200 expect rms > -56
 2300 midi 0x80 96 0
 # pedal down, 11 notes on 9 voices (two steals), then pedal up
 2600 midi 0xB0 64 127
@@ -50,7 +50,7 @@
 5103 midi 0xB0 31 127
 5200 midi 0x90 101 127
 5300 expect rms < -6
-5300 expect rms > -55
+5300 expect rms > -62
 5400 midi 0x80 101 0
 # a roll: one key struck 12 times at 83 ms (12 Hz), superposed on its own voice
 6000 midi 0x90 48 117
