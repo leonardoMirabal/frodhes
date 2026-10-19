@@ -1285,6 +1285,10 @@ class Take:
         """the onsets (samples) of the note-ons, in event order"""
         if src not in self._on:
             self._on[src] = align(self.m(src), self.sched)
+            if src == "jack" and self.usb is not None and ENGINE == "marimba":
+                o = jack_by_usb(self.m("usb"), self.on("usb"), self.jack, self._on["jack"][0])
+                self._on["jack"] = (o, (o[0] / FS - self.sched[0]) if o else 0.0,
+                                    [i / FS - s for i, s in zip(o, self.sched)])
         return self._on[src][0]
 
     def lat(self, src):
@@ -1316,6 +1320,35 @@ class Take:
         return self.m(src)[:max(0, self.at(src, min(on)) - FS // 200)]
 
 
+def jack_by_usb(u, ou, j, oj, pre=0.005, post=0.05, search=0.02, min_r=0.5):
+    """the jack's onsets from USB's, recorded at once (the MARIMBA suites): each USB strike (pre .. post s around its
+    onset; USB is exact zero before an isolated strike, so its onset is exact) found in the jack by cross-correlation
+    within +-search s of align()'s jack onset (normalised |r| >= min_r, else align's stays). align() alone put the
+    jack's onsets 2-15 ms late (the hiss under the 6 dB / 1 ms rise; the low notes' slow attack): the FM-1's keys
+    C2..C7 take of 2026-10-19 read on the jack a level span 12.1 dB, a neighbour step 4.34 dB and C7 -46 c, where the
+    jack is USB x -12.65 dB +-0.05 on every key (span 8.6 / step 0.48 dB, as USB). The interface's polarity (the M6
+    reads the jack inverted) does not matter: |r|"""
+    a0, a1, w = int(pre * FS), int(post * FS), int(search * FS)
+    out = []
+    for a, b in zip(ou, oj):
+        x = np.asarray(u[max(0, a - a0):a + a1], float)
+        lo = max(0, b - a0 - w)
+        seg = np.asarray(j[lo:b - a0 + len(x) + w], float)
+        if len(x) < a1 or not np.any(x) or len(seg) <= len(x):
+            out.append(b)
+            continue
+        c = np.correlate(seg, x, "valid")
+        e = np.sqrt(np.convolve(seg * seg, np.ones(len(x)), "valid") * np.dot(x, x)) + 1e-30
+        k = int(np.argmax(np.abs(c) / e))
+        out.append(lo + k + (a - max(0, a - a0)) if abs(c[k]) / e[k] >= min_r else b)
+    return out
+
+
+ALIGN_DENSE_S = 0.25  # align(): a note-on this soon after the previous one (a roll) is not searched for a slip: a
+                       # re-strike of a ringing bar need not rise 3 dB in 1 ms frames, and the search then took a
+                       # later strike for it (the 12 Hz rolls read 'the USB stream slipped' 217-338 ms)
+
+
 def align(m, sched, lat_max=0.3, slip_max=0.35):
     """onsets of the scheduled note-ons: the first sound (5 % of the take's peak, never before the first event: a
     residue in the pre-roll is not a note) belongs to the last strike due before it (within lat_max): that gives the
@@ -1344,8 +1377,10 @@ def align(m, sched, lat_max=0.3, slip_max=0.35):
         if f < 3 or f + 3 > nf:
             return 0.0
         return float(e[f:f + 3].max() - e[max(0, f - before):f - 1].max())
-    out, lats, prev = [], [], -1
+    out, lats, prev, prev_s = [], [], -1, None
     for s in sched:
+        dense = prev_s is not None and 0 < s - prev_s < ALIGN_DENSE_S
+        prev_s = s
         j = int(round((s + lat) * FS))
         a0, a1 = max(0, j - 10 * w), min(len(m), j + 8 * w)
         x = m[a0:a1]
@@ -1357,7 +1392,7 @@ def align(m, sched, lat_max=0.3, slip_max=0.35):
                 j = a0 + (int(r[0]) + 1) * w
         f = j // w
         r0 = max(rise(g) for g in range(max(1, f - 8), f + 9))
-        if r0 < 3.0:                                     # nothing starts where it was due: the stream slipped?
+        if r0 < 3.0 and not dense:                       # nothing starts where it was due: the stream slipped?
             lo = max(prev // w + 30 if prev >= 0 else 0, f - int(slip_max * 1000))
             hi = min(nf - 3, f + int(slip_max * 1000))
             cand = [g for g in range(lo, hi) if rise(g) >= 15.0 and e[g:g + 3].max() > e[lo:hi + 3].max() - 30]
@@ -1642,6 +1677,9 @@ def max_jump_ms(T, src, ref=None):
     if ref is not None:
         T.on(ref)
         ls = ls - np.array(T._on[ref][2])
+    s = T.sched
+    keep = [k for k in range(len(ls)) if k == 0 or not 0 < s[k] - s[k - 1] < ALIGN_DENSE_S]   # (a roll: align's
+    ls = ls[keep]                                      # latencies there are the prediction's, not measured)
     return float(max((abs(b - a) * 1000 for a, b in zip(ls, ls[1:])), default=0.0))
 
 
@@ -2521,28 +2559,38 @@ def vibes_vel(V, S):
 
 # ---------------------------------------------------------------- every shared effect page
 @vtest
-def vibes_fx(V, S):
-    """each effect page's every control at min / default / max (or the values that show it) on VIBES"""
+def vibes_fx(V, S, stim=None, extra=()):
+    """each effect page's every control at min / default / max (or the values that show it) on VIBES
+    stim: stimuli in place of the ST_* ones (CH LONG NOTE; ATK: COMP ATTACK's), BW the spectra's window, FDN the
+    frame of frame_dist, CS_PERIOD CHORUS SYNC by the period, SPREAD FILTER OFF re a 2nd dry take; extra: settings
+    added to every take. The MARIMBA suite (marimba_fx) passes a sustained roll and MUTE 0; VIBES runs with neither
+    (its takes and checks unchanged)"""
     P = vp()
     fps = FS / 240
+    st = stim or {}
+    ST_CH, ST_LONG, ST_NOTE = (st.get(k, globals()["ST_" + k]) for k in ("CH", "LONG", "NOTE"))
+    ST_ATK = st.get("ATK", ST_CH)                                      # COMP ATTACK's strike
+    FDN = st.get("FDN", 2048)                                          # frame_dist's frame (PHASER FDBK)
+    BW = st.get("BW", (0.05, 1.05))                                    # the spectra's window (B, SD)
+    cs_period = st.get("CS_PERIOD", False)                             # CHORUS SYNC by its period (lfo_rate)
 
     def run(label, settings, stim, motor=False):
-        V.reset(settings, motor=motor, label=label)
+        V.reset(list(settings) + list(extra), motor=motor, label=label)
         return V.take(label.replace(" ", "-").replace("/", ""), *stim)
 
     def L(t, q, a=0.0, b=1.8, k=0):
         return lu(cut(t.m(q), t.on(q)[k], a, b))
 
-    def B(t, q, a=0.05, b=1.05):
+    def B(t, q, a=BW[0], b=BW[1]):
         return third(cut(t.m(q), t.on(q)[0], a, b))
 
-    def SD(t1, t2, q, a=0.05, b=1.05):
+    def SD(t1, t2, q, a=BW[0], b=BW[1]):
         """the spectral distance of two takes (sdist), the same window from each onset"""
         return sdist(B(t1, q, a, b), B(t2, q, a, b))
 
     def FD(t1, t2, q, a=0.2, b=5.3):
         """frame_dist of two takes, the same window from each onset"""
-        return frame_dist(cut(t1.m(q), t1.on(q)[0], a, b), cut(t2.m(q), t2.on(q)[0], a, b))
+        return frame_dist(cut(t1.m(q), t1.on(q)[0], a, b), cut(t2.m(q), t2.on(q)[0], a, b), FDN)
 
     def band_re(t, r, q, lo, hi, a=0.05, b=1.05):
         """a band's level (dB) of take t re the reference take r, the same window from each onset; and whether t's
@@ -2576,7 +2624,7 @@ def vibes_fx(V, S):
     def crest(t, q):
         m, i = t.m(q), t.on(q)[0]
         return 20 * np.log10(np.abs(cut(m, i, 0, 0.03)).max() + 1e-12) - rdb(cut(m, i, 0.1, 0.4))
-    T = {x: run(f"comp-atk-{x}", with_(cb, ("CMP_AMT", 100), ("CMP_RATIO", 7), ("CMP_ATK", x)), ST_CH) for x in (0, 40, 127)}
+    T = {x: run(f"comp-atk-{x}", with_(cb, ("CMP_AMT", 100), ("CMP_RATIO", 7), ("CMP_ATK", x)), ST_ATK) for x in (0, 40, 127)}
     S.check(f"COMP ATTACK {nm('CMP_ATK')} 0 -> 127", "20:1, THRESH 100: the strike's crest",
             S.per(lambda q: crest(T[127], q) - crest(T[0], q)), lambda v: v >= 2, "slow attack: crest >= +2 dB",
             fmt=lambda v: f"{v:+.1f} dB")
@@ -2599,8 +2647,15 @@ def vibes_fx(V, S):
           ("LFO_SYNC", 0), ("LFO_RETRIG", 0)]
     names = ("OFF", "LP12", "LP18", "HP12", "HP18", "BP", "NOTCH")
     T = {x: run(f"filter-type-{names[x]}", with_(fb, ("FL_TYPE", x)), ST_CH) for x in range(7)}
-    S.check(f"FILTER TYPE {nm('FL_TYPE')} OFF passes", "FREQ 64", S.per(lambda q: SD(T[0], dry['ch'], q)),
-            lambda v: v <= 0.5, "<= 0.5 dB re no filter", fmt=lambda v: f"{v:.2f} dB")
+    if not st.get("SPREAD"):
+        S.check(f"FILTER TYPE {nm('FL_TYPE')} OFF passes", "FREQ 64", S.per(lambda q: SD(T[0], dry['ch'], q)),
+                lambda v: v <= 0.5, "<= 0.5 dB re no filter", fmt=lambda v: f"{v:.2f} dB")
+    else:   # (a roll: two takes of it are 0.2-1.2 dB apart, the strikes' phase on the ring: judged against that)
+        d2 = run("fx-dry-ch-again", [], ST_CH)
+        S.check(f"FILTER TYPE {nm('FL_TYPE')} OFF passes", "FREQ 64; two dry takes' spread",
+                S.per(lambda q: (SD(T[0], dry['ch'], q), SD(d2, dry['ch'], q))), lambda v: v[0] <= max(0.5, 1.5 * v[1]),
+                "<= 0.5 dB re no filter, or <= 1.5x the spread of two takes of the roll",
+                fmt=lambda v: f"{v[0]:.2f} dB (spread {v[1]:.2f})")
     for x in range(1, 7):
         lim = 2.0 if names[x] == "NOTCH" else 3.0
         S.check(f"FILTER TYPE {names[x]}", "FREQ 64, RESO 0, vs no filter",
@@ -2865,8 +2920,11 @@ def vibes_fx(V, S):
             "motion >= +1 dB or >= 2 dB apart (and 2x the spread of two takes of one setting)",
             fmt=lambda v: f"{v[0]:+.1f} / {v[1]:.1f} dB (spread {v[2]:.1f})", info=True)
     T = {k: run(f"chorus-sync-{k.replace('/', '')}", with_(cb127, ("CP_SYNC", sync_idx(k))), ST_LONG) for k in ("1/4", "1/8")}
-    S.check(f"CHORUS SYNC {nm('CP_SYNC')} 1/8 vs 1/4", "", S.per(lambda q: (rate_of(ctr(T['1/8'], q), fps, 2, 0.2, 5),
-                                                                         rate_of(ctr(T['1/4'], q), fps, 2, 0.2, 5))),
+    def csr(t, q):
+        """CS_PERIOD: the period (lfo_rate, 0.25-10 Hz: any BPM), as the phaser's: on the MARIMBA roll the harmonic
+        sum (rate_of) took the 1/4's 3rd harmonic (6.00 Hz for 2.00 at the host's 120 BPM)"""
+        return lfo_rate(ctr(t, q), fps, 0.25, 10) if cs_period else rate_of(ctr(t, q), fps, 2, 0.2, 5)
+    S.check(f"CHORUS SYNC {nm('CP_SYNC')} 1/8 vs 1/4", "", S.per(lambda q: (csr(T['1/8'], q), csr(T['1/4'], q))),
             lambda v: abs(v[0] / v[1] / 2 - 1) <= 0.05, "ratio 2 +-5 %",
             fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz ({60 * v[1]:.0f} BPM)")
 
@@ -3013,12 +3071,14 @@ def vibes_jump(V, S):
     return _jump(V, S, JUMPS)
 
 
-def _jump(V, S, jumps):
+def _jump(V, S, jumps, ch=None, extra=()):
+    """ch: the stimulus (default the FXCH chord v108 held 3.3 s), extra: settings added to every reset (marimba_jump:
+    a sustained roll, MUTE 0)"""
     P = vp()
-    ch = chord(FXCH, 108, 0.1, 3.4)
+    ch = ch or chord(FXCH, 108, 0.1, 3.4)
     st = (3.6, ch)
     refs = []
-    V.reset(label="jump ref")
+    V.reset(list(extra), label="jump ref")
     refs.append(V.take("jump-ref-a", *st))
 
     def lq(t, q, a, b, stereo=False):
@@ -3028,13 +3088,13 @@ def _jump(V, S, jumps):
     rows = []
     for name, base, (sw, on) in jumps:
         mot = sw == "MOT_ON"
-        V.reset(base + ([] if mot else [(sw, on)]), motor=mot, label=f"jump {name} held on")
+        V.reset(base + ([] if mot else [(sw, on)]) + list(extra), motor=mot, label=f"jump {name} held on")
         held = V.take(f"jump-{sw}-{on}-held", *st)
-        V.reset(base + [(sw, 0)], label=f"jump {name} switched")   # (DRV ON defaults to on)
+        V.reset(base + [(sw, 0)] + list(extra), label=f"jump {name} switched")   # (DRV ON defaults to on)
         c, v = P[sw]["cc"], ccv(sw, on)
         tog = V.take(f"jump-{sw}-{on}-switched", 3.6, ch + [(1.2, "cc", c, v), (2.4, "cc", c, 0)])
         rows.append((name, held, tog))
-    V.reset(label="jump ref (end)")
+    V.reset(list(extra), label="jump ref (end)")
     refs.append(V.take("jump-ref-b", *st))
     lfo = {"TW_SW": lfo_hz(P["TW_RATE"]["de"]), "PH_SW": lfo_hz(P["PH_SPEED"]["de"], True),
            "CP_SW": lfo_hz(P["CP_SPEED"]["de"], True), "MOT_ON": mot_hz(P["MOT_RATE"]["de"])}
@@ -3112,9 +3172,9 @@ def _jump(V, S, jumps):
                 fmt=lambda c: str(c))
     S.check("reference drift", "the dry chord, start vs end", S.per(lambda q: lq(refs[1], q, 0, 1.8) - lq(refs[0], q, 0, 1.8)),
             lambda d: abs(d) <= 0.3, "within 0.3 LU (else the scan was disturbed)", level=True)
-    V.reset(ALL_ON, label="all on")
+    V.reset(ALL_ON + list(extra), label="all on")
     a = V.take("jump-all-on", *st)
-    V.reset(ALL_ON, label="all on, FX bypass")
+    V.reset(ALL_ON + list(extra), label="all on, FX bypass")
     V.send(111, 127)
     b = V.take("jump-bypass", *st)
     V.send(111, 0)
@@ -3135,7 +3195,8 @@ MKEYS = (48, 60, 84)                      # C3 C4 C6 (PLAN §12 step 2)
 MFAMS = (("SOFT", 0), ("MED", 42), ("HARD", 85), ("RUBBER", 127))
 MVELS = (8, 24, 40, 64, 88, 100, 117, 127)
 MOFFSET_DB = 2.5                          # the provisional level offset re ST77 (PLAN §10.1 offset_db: VIBES's, until P5)
-M_CAPPED = {(84, "SOFT", "MED")}          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
+M_CAPPED = {(84, "SOFT", "MED")}
+M_FX_RATE, M_FX_JIT, M_FX_SEED, M_FX_VEL = 8.0, 0.0, 1, 80   # marimba_fx's roll: per note, the jitter, the seed (m_fx_roll)          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
 
 
 def mt60(x, f):
@@ -3209,7 +3270,7 @@ def m_ms_db(x):
     return float(10 * np.log10((np.abs(np.fft.rfft(np.asarray(x, float) * w)) ** 2).sum() * 2 / (len(x) * (w * w).sum()) + 1e-24))
 
 
-def m_drop_rate(x, t_off, db=30.0, win=0.005, hop=0.001):
+def m_drop_rate(x, t_off, db=30.0, win=0.005, hop=0.001, fit=False):
     """MARIMBA's hand mute as Gate VA-M9 measures it (marimba_va.mute_drop_s): the time from the key-up t_off (s) until
     the note (a 5 ms RMS envelope, 1 ms hop) stays db under its level just before the key-up, as a rate db / time
     (dB/s). The VIBES fit of the f0 band over 30..300 ms after the key-up runs into the floor on a marimba: a MUTE 127
@@ -3223,7 +3284,42 @@ def m_drop_rate(x, t_off, db=30.0, win=0.005, hop=0.001):
     above = np.flatnonzero((t > t_off) & (e > ref - db))
     if not len(above):
         return float("nan")
+    if fit:
+        # the slope of the envelope (dB/s, least squares) from the key-up to its last frame db under the level before
+        # it: the time to the crossing, read on the 1 ms grid from the key-up, moved C5's MUTE 0 x1.011 / x0.983 off
+        # its held decay (the host, seeds 2 / 3; the jack) where the decays were the same
+        k = np.arange(np.flatnonzero(t > t_off)[0], above[-1] + 1)
+        if len(k) >= 5:
+            return float(-np.polyfit(t[k], e[k], 1)[0])
     return float(db / max(t[above[-1]] - t_off, hop))
+
+
+def m_audible_s(m, i, fl, t0=0.05, t1=0.6, over=20.0, lo=0.15):
+    """the end (s after onset i) of a pitch window t0..t1 that stays over the source's floor (fl: its pre-roll): the
+    first 10 ms frame from t0 under the floor + over dB, at least lo. USB has no floor (exact zero): t1. On the jack
+    C6..C7 are under its hiss after ~0.3 s and the FFT peak of 0.05..0.6 s took C7 20 c flat (-46 c for C6# with
+    align's late onset)"""
+    if len(fl) < FS // 10 or not np.any(fl):
+        return t1
+    f = rdb(fl) + over
+    w = FS // 100
+    for k in range(int(t0 * FS), int(t1 * FS), w):
+        if rdb(m[i + k:i + k + w]) < f:
+            return max(lo, k / FS)
+    return t1
+
+
+def m_drop_db(takes, db=30.0, over=20.0, lo=10.0):
+    """m_drop_rate's depth for takes compared with each other [(x, t_off, the source's pre-roll)]: db, or less where a
+    take's level before its key-up stands less than db + over dB over its floor (the jack's hiss), at least lo. A
+    30 dB drop of C5 ended 14 dB over the jack's 5 ms hiss: MUTE 0 vs held read x1.015 (USB x1.000; at 20 dB x1.000)"""
+    d = db
+    for x, t_off, fl in takes:
+        if len(fl) < FS // 10 or not np.any(fl):
+            continue
+        i = int(t_off * FS)
+        d = min(d, rdb(x[max(0, i - FS // 50):i]) - rdb(fl) - over)
+    return max(lo, d)
 
 
 def m_second_diff(vels, lv, step=16):
@@ -3329,16 +3425,21 @@ def marimba_decay(V, S):
         V.reset([("RELEASE", 127), ("NOISE", 0)], label=f"pedal {p_} (MUTE 127)")
         T[("ped", p_)] = V.take(f"m-pedal-{p_}", dur, ev + [(0.05, "cc", 64, p_)])
     for k, n in enumerate(keys):
-        def r(key, q):
-            return m_drop_rate(cut(T[key].m(q), T[key].on(q)[k], 0, 2.3), holds[k])
+        dbs = {}
+
+        def r(key, q, fit=False):
+            if q not in dbs:                             # one depth for every take of this key and source
+                dbs[q] = m_drop_db([(cut(T[x].m(q), T[x].on(q)[k], 0, 2.3), holds[k], T[x].pre(q)) for x in T])
+            return m_drop_rate(cut(T[key].m(q), T[key].on(q)[k], 0, 2.3), holds[k], dbs[q], fit=fit)
         S.check(f"MUTE (CC {P['RELEASE']['cc']}) 0 = rings out", f"key {n}, after the key-up vs held",
-                S.per(lambda q: r(0, q) / r("held", q)), lambda v: abs(v - 1) <= 0.01, "within 1 % of the held decay",
+                S.per(lambda q: r(0, q, True) / r("held", q, True)), lambda v: abs(v - 1) <= 0.01,
+                "within 1 % of the held decay (the envelope's slope)",
                 fmt=lambda v: f"x{v:.3f}")
         S.check("MUTE 0 / 64 / 127", f"key {n}, after the key-up", S.per(lambda q: [r(x, q) for x in (0, 64, 127)]),
                 lambda v: v[0] < v[1] < v[2] and v[2] / v[0] >= 3.0, "in order, 127 / 0 >= 3x",
                 fmt=lambda v: f"{v[0]:.0f} / {v[1]:.0f} / {v[2]:.0f} dB/s")
-        S.check("pedal down holds at MUTE 127", f"key {n}", S.per(lambda q: r(("ped", 127), q) / r("held", q)),
-                lambda v: abs(v - 1) <= 0.01, "within 1 % of the held decay", fmt=lambda v: f"x{v:.3f}")
+        S.check("pedal down holds at MUTE 127", f"key {n}", S.per(lambda q: r(("ped", 127), q, True) / r("held", q, True)),
+                lambda v: abs(v - 1) <= 0.01, "within 1 % of the held decay (the envelope's slope)", fmt=lambda v: f"x{v:.3f}")
         S.check("pedal up / half / down (MUTE 127)", f"key {n}",
                 S.per(lambda q: [r(("ped", p_), q) for p_ in (0, 50, 127)]),
                 lambda v: v[2] < v[1] < v[0] and v[0] / v[2] >= 3.0, "down < half < up, up / down >= 3x",
@@ -3358,15 +3459,26 @@ def marimba_decay(V, S):
             c = {x: m_excess_db(cut(m[x], o[x], 0, 0.06), cut(m[0], o[0], 0, 0.06)) - ring for x in (de, 127)}
             # the knock re the note at its strike (0..100 ms): just before the key-up (1.4..1.5 s, as VIBES) a short
             # marimba note is already gone (USB -240 dBFS, the jack its hiss), and the ratio read 0 / -2 dB
-            return dict(c=c, k=knock_db(m[127], o[127], m[0], o[0]) - ms_db(cut(m[0], o[0], 0, 0.1)))
+            nl = ms_db(cut(m[0], o[0], 0, 0.1))
+            # the same excess of two hiss-only stretches (the takes' pre-rolls): what knock_db reads on a source with a
+            # floor and nothing at the key-up (the jack: C3 -58.5 dB re the note, the hiss's own excess)
+            p0, p1 = T[0].pre(q), T[127].pre(q)
+            nh = min(len(p0), len(p1), int(0.15 * FS))
+            hf = excess_db(p1[-nh:], p0[-nh:]) - nl if nh >= FS // 20 and np.any(p0) else -240.0
+            pd = T[de].pre(q)
+            nc = min(len(p0), len(pd), int(0.06 * FS))      # the contact's window on hiss alone: NOISE de's floor
+            cf = m_excess_db(pd[-nc:], p0[-nc:]) - ring if nc >= int(0.06 * FS) and np.any(p0) else -240.0
+            return dict(c=c, k=knock_db(m[127], o[127], m[0], o[0]) - nl, hf=hf, cf=c[de] < cf + 6)
         vals = S.per(nz)
         S.check(f"NOISE (CC {P['NOISE']['cc']}) contact {de} -> 127", f"key {n}, 0..60 ms",
-                {s_: v and v["c"][127] - v["c"][de] for s_, v in vals.items()}, lambda v: v >= 6, ">= +6 dB", level=True)
+                {s_: v and v["c"][127] - v["c"][de] for s_, v in vals.items()}, lambda v: v >= 6, ">= +6 dB", level=True,
+                floor={s_: bool(v and v["cf"]) for s_, v in vals.items()})   # (the jack: NOISE de's tick in its hiss)
         S.check("NOISE 127 contact re the note", f"key {n}", {s_: v and v["c"][127] for s_, v in vals.items()},
                 lambda v: v > -35, "> -35 dB (a clear tick)", fmt=lambda v: f"{v:.1f} dB")
         S.check("no knock at the key-up (NOISE 127)", f"key {n}, 0..150 ms after the key-up",
-                {s_: v and v["k"] for s_, v in vals.items()}, lambda v: v <= -60,
-                "<= -60 dB re the note (no damper on this type; the jack: its hiss floor)", fmt=lambda v: f"{v:.1f} dB")
+                {s_: v and (v["k"], v["hf"]) for s_, v in vals.items()}, lambda v: v[0] <= max(-60, v[1] + 3),
+                "<= -60 dB re the note, or within 3 dB of the source's own hiss read the same way (no damper on this "
+                "type)", fmt=lambda v: f"{v[0]:.1f} dB" + (f" (hiss {v[1]:.1f})" if v[1] > -200 else ""))
     # the MOTOR CCs: inert
     ev, dur = strikes((57,), (100,), gap=3.0, hold=2.5)
     V.reset([("RELEASE", 0)], label="motor CCs off")
@@ -3413,8 +3525,10 @@ def marimba_vel(V, S):
 
     def kl(q):
         o = t.on(q)
+        fl = t.pre(q)
         lv = np.array([lu(cut(t.m(q), i, 0, 1.0)) for i in o])
-        c = np.array([1200 * np.log2(max(f0_of(cut(t.m(q), i, 0.05, 0.6), f1(n)), 1e-9) / f1(n)) for i, n in zip(o, keys)])
+        c = np.array([1200 * np.log2(max(f0_of(cut(t.m(q), i, 0.05, m_audible_s(t.m(q), i, fl)), f1(n)), 1e-9) / f1(n))
+                      for i, n in zip(o, keys)])
         return lv, c
     vals = S.per(kl)
     S.check("keys C2..C7: neighbour step", "every key, v100",
@@ -3471,22 +3585,58 @@ def marimba_roll(V, S):
     for mu in (0, 127):
         V.reset([("RELEASE", mu), ("NOISE", 0)], label=f"roll MUTE {mu}")
         R[mu] = V.take(f"m-roll-mute-{mu}", dur, ev)
-    S.check("MUTE 127 on a roll: the stop", "after the last key-up re MUTE 0",
-            S.per(lambda q: release_rate(cut(R[127].m(q), R[127].on(q)[0], 0, off + 1.0), f1(60), off - ev[0][0]) /
-                  release_rate(cut(R[0].m(q), R[0].on(q)[0], 0, off + 1.0), f1(60), off - ev[0][0])),
+    # the stop as marimba_decay's MUTE (m_drop_rate: the time to fall 30 dB, the depth kept 20 dB over the jack's
+    # hiss): VIBES' fit of the f0 band 30..300 ms after the key-up ran into the floor (round 2 on the FM-1: x4.3 USB,
+    # x2.2 jack; this measure on the same takes: x10.4 / x10.3)
+    def stop(q):
+        xs = {mu: cut(R[mu].m(q), R[mu].on(q)[0], 0, off + 1.0) for mu in R}
+        d = m_drop_db([(xs[mu], off - ev[0][0], R[mu].pre(q)) for mu in R])
+        return m_drop_rate(xs[127], off - ev[0][0], d) / m_drop_rate(xs[0], off - ev[0][0], d)
+    S.check("MUTE 127 on a roll: the stop", "after the last key-up re MUTE 0 (the time to fall 30 dB)", S.per(stop),
             lambda v: v >= 3.0, ">= 3x faster", fmt=lambda v: f"x{v:.1f}")
+
+
+def m_fx_roll(notes, vel, t0, t1, rate=M_FX_RATE, jit=M_FX_JIT, seed=M_FX_SEED):
+    """a sustained stimulus for the effects on MARIMBA: each note of the chord re-struck at about rate Hz (staggered
+    over the notes, every interval jittered +-jit, a fixed seed: the same events in every take) from t0 to t1, each
+    strike let go half an interval later (the takes run MUTE 0: the key-up does not damp). A held marimba note is
+    60 dB down in ~1 s (C4), so the VIBES stimuli (a chord held 2 / 5.5 s, A4 held 1.6 s) left the swept effects
+    nothing to sweep after the first second: the round-2 FM-1 scan's 35 marimba_fx failures, 25 of them on the host
+    too. The jitter spreads the roll's own amplitude modulation over a band instead of a line at the strike rate,
+    where the LFO rate searches (0.25 .. 12 Hz) would find it"""
+    rng = np.random.default_rng(seed)
+    ev, n = [], len(notes)
+    for k, note in enumerate(notes):
+        t = t0 + k / (rate * n)
+        while t < t1 - 0.5 / rate:
+            dt = (1 + jit * (2 * rng.random() - 1)) / rate
+            ev += [(round(t, 4), "on", note, vel), (round(t + 0.5 * dt, 4), "off", note, 0)]
+            t += dt
+    return sorted(ev, key=lambda e: e[0])
 
 
 @vtest
 def marimba_fx(V, S):
-    """every effect page's every control at min / default / max on MARIMBA (vibes_fx's checks)"""
-    return vibes_fx(V, S)
+    """every effect page's every control at min / default / max on MARIMBA (vibes_fx's checks) on a sustained roll"""
+    v = M_FX_VEL
+    stim = dict(CH=(ST_CH[0], m_fx_roll(FXCH, v, 0.1, 2.1)), LONG=(ST_LONG[0], m_fx_roll(FXCH, v, 0.1, 5.6)),
+                NOTE=(ST_NOTE[0], m_fx_roll((69,), v, 0.1, 1.6)),
+                ATK=ST_CH,               # COMP ATTACK: a strike out of silence (on a roll the compressor never lets go)
+                BW=(0.05, 2.05),         # the spectra over the whole roll: two takes of one roll 0.2-0.8 dB apart at 1 s
+                CS_PERIOD=True,          # CHORUS SYNC by the period: the harmonic sum took the 1/4's 3rd harmonic
+                SPREAD=True,             # FILTER OFF judged against two dry takes of the roll (one more take)
+                FDN=16384)               # PHASER FDBK frame by frame in 0.34 s frames: two takes of one roll are
+    #                                      3.7 dB apart in 43 ms frames (the strikes' phase), 1.6 dB in 0.34 s
+    return vibes_fx(V, S, stim=stim, extra=[("RELEASE", 0)])
 
 
 @vtest
 def marimba_jump(V, S):
     """MARIMBA: every effect switched on (vibes_jump without the motor); the level re ST77 and VIBES on A3-E4-A4"""
-    _jump(V, S, [j for j in JUMPS if j[2][0] != "MOT_ON"])
+    # the chord re-struck (m_fx_roll, as marimba_fx): a held marimba chord is 60 dB down in ~1 s, so the switches at
+    # 1.2 / 2.4 s and the 0.2..3.2 s slope read a dying tail (round 2 on the FM-1: wah 64 switched on +9.9 LU, the
+    # phaser's and the chorus' slopes +1.4 / +1.3 dB/s)
+    _jump(V, S, [j for j in JUMPS if j[2][0] != "MOT_ON"], ch=m_fx_roll(FXCH, M_FX_VEL, 0.1, 3.4), extra=[("RELEASE", 0)])
     ch = chord((57, 64, 69), 100, 0.4, 2.4)
     T = {}
     for name, sel in (("MARIMBA", []), ("VIBES", [(0.0, "cc", 79, VIBES_CC79)]), ("ST77", [(0.0, "cc", 80, 8)])):
