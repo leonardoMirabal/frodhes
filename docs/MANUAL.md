@@ -459,7 +459,8 @@ Turn **ALGORITHM** (or the TYPE card) to **VIBES** and the FM-1 plays a vibrapho
 mallets, each with its tuned tube underneath, and the motor that gives the vibraphone its pulsing shimmer. Like the
 Rhodes it is computed, not sampled: the bar's own modes (the fundamental and its tuned overtones, about 4 and 10
 times higher), the tube that takes a moment to build up under the bar, and the motor's discs. Switching between a
-Rhodes type and VIBES fades out what is still ringing.
+Rhodes type and VIBES fades out what is still ringing, held notes too; a note still held plays again on the new type
+the next time it is struck (a MIDI note-on, or a key on the same note).
 
 ![The main page on VIBES](manual/img/piano-vibes.png?v=0.9.3)
 

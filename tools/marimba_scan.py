@@ -472,8 +472,8 @@ def swap_case():
     name = "swap VIBES->MARIMBA->ST77"
     ev = [(20, "midi 0xB0 119 127"), (20, "midi 0xB0 79 0"), (20, "midi 0xB0 47 0"), (100, "midi 0xB0 64 127")]
     ev += [(200 + 20 * i, f"midi 0x90 {n} 100") for i, n in enumerate((48, 52, 55, 59, 60, 64, 67, 71))]
-    # (the next notes are keys not held: a key still down across an engine change does not re-strike, since 0.9.3
-    # on every engine pair (ST77 <-> VIBES too); a finding reported to the coordinator, not this scan's subject)
+    # (the next notes are keys not held; a key still down across an engine change, struck again, is
+    # tests/py/test_race_fuzz.py test_type_change_held_repress's subject: silent in 0.9.3, fixed in notes.c)
     ev += [(1000, f"midi 0xB0 79 {CC79}")] + bm.note(1100, 62, 100, 600)
     ev += [(2000, "midi 0xB0 80 8")] + bm.note(2100, 65, 100, 600)
     ev += [(3000, "midi 0xB0 64 0")] + [(3000, f"midi 0x80 {n} 0") for n in (48, 52, 55, 59, 60, 64, 67, 71)]
