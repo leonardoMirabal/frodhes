@@ -103,23 +103,27 @@ static void cmd_midi(void)
 }
 static void cmd_conv(void)
 {
-    static const uint8_t PRE[] = {0, 5, 11, 12, 20, 27, 28, 200};
+    static const uint8_t PRE[] = {0, 5, 11, 12, 13, 14, 15, 20, 27, 28, 29, 30, 31, 200};
+    static const char *const F[] = {"old", "v093", "new"};   /* before VIBES (12 factory), 0.9.3 (14), today (16) */
     uint32_t i, f;
-    for (f = 0; f < 2u; f++)
+    for (f = 0; f < 3u; f++)
         for (i = 0; i < sizeof PRE; i++) {
             params_defaults();
-            set.flags = (uint8_t)(f ? 1u | 2u | 4u | 8u : 1u | 2u | 8u);
+            set.flags = (uint8_t)(f == 2u ? 1u | 2u | 4u | 8u | 32u : f == 1u ? 1u | 2u | 4u | 8u : 1u | 2u | 8u);
             set.preset = PRE[i];
+            set.undo_preset = (uint8_t)(PRE[i] + 1u);
             put_settings();
             memset(&set, 0, sizeof set);
             settings_load(&set, sizeof set);
             params_sanitize();
-            printf("conv.%s.%u %u flags4=%u\n", f ? "new" : "old", PRE[i], set.preset, (set.flags & 4u) != 0);
+            printf("conv.%s.%u %u flags4=%u flags32=%u undo=%u\n", F[f], PRE[i], set.preset, (set.flags & 4u) != 0,
+                   (set.flags & 32u) != 0, set.undo_preset);
             params_sanitize();                           /* a second boot: nothing moves again */
-            printf("conv2.%s.%u %u\n", f ? "new" : "old", PRE[i], set.preset);
+            printf("conv2.%s.%u %u\n", F[f], PRE[i], set.preset);
         }
     params_defaults();
     printf("fresh.flags4 %u\n", (set.flags & 4u) != 0);
+    printf("fresh.flags32 %u\n", (set.flags & 32u) != 0);
 }
 #endif
 
