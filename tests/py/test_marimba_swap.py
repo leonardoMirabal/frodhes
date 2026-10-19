@@ -32,9 +32,15 @@ def test_bar_type_change_stops_the_old_voices():
 
 
 def test_same_type_changes_nothing():
+    """the same TYPE sent again: sample for sample the render without it (the marimba's notes are near silent by 1 s,
+    so 'still ringing' alone would not tell)"""
     for t in ("VIBES", "MARIMBA"):
         r = ring(t, t)
-        assert np.abs(r.seg(1000 / 1000, 1200 / 1000)).max() > 100, f"{t} -> {t}: the notes stopped"
+        ls = ["50 midi 0xB0 119 127", f"60 midi 0xB0 {SEL[t]}", "61 midi 0xB0 47 0", "100 midi 0x90 60 100",
+              "100 midi 0x90 67 100"]
+        r0 = hostrun.run(f"mswap-{t}-none", ls, end_ms=1200)
+        assert np.abs(r.seg(620 / 1000, 800 / 1000)).max() > 100, f"{t} -> {t}: the notes stopped"
+        assert np.array_equal(r.seg(0, 1200 / 1000), r0.seg(0, 1200 / 1000)), f"{t} -> {t}: the render changed"
 
 
 def test_next_note_plays_on_the_new_type():

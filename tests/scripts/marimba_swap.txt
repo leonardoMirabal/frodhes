@@ -20,21 +20,21 @@
 700 midi 0x80 52 0
 720 midi 0x90 60 100
 720 midi 0x90 67 100
-1200 expect rms > -40
+920 expect rms > -40
 # back and forth within a few blocks, then a note
 1300 midi 0xB0 79 0
 1303 midi 0xB0 79 127
 1306 midi 0xB0 79 0
 1309 midi 0xB0 79 127
 1350 midi 0x90 72 100
-1800 expect rms > -40
+1550 expect rms > -40
 # -> ST77 (CC 80 0) while MARIMBA rings, then MARIMBA again
 1900 midi 0xB0 80 0
 1920 midi 0x90 57 100
 2300 expect rms > -40
 2400 midi 0xB0 79 127
 2420 midi 0x90 65 100
-2800 expect rms > -40
+2600 expect rms > -40
 # every key up, all notes off: everything stops
 3000 midi 0x80 55 0
 3000 midi 0x80 59 0

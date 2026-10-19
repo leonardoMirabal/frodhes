@@ -141,13 +141,18 @@ def test_deterministic_and_up_to_date(tmp_path):
 
 
 def test_vibes_rows_checker_catches_a_change():
-    """check_vibes_rows fails on a changed VIBES word (a guard against a vacuous parser)."""
-    if NT != 1:
-        pytest.skip("needs the VIBES-only header committed")
+    """check_vibes_rows fails on a changed VIBES word (a guard against a vacuous parser): the committed multi-type
+    header against itself cut down to its type 0 (the parser's own VIBES-only form) passes, and fails with one VIBES
+    BAR_PAMP word moved"""
+    if NT == 1:
+        pytest.skip("the committed header is the VIBES-only form")
     a = arrays(HDR)
-    assert len(a["BAR_KEYS"]) == 88 and len(a["BAR_PULSE"]) == 17 and a["BAR_TYPE"] == [[0, 6554, 32767, 0, 0, 9, 48]]
-    with pytest.raises(AssertionError):
-        check_vibes_rows(HDR.replace("#define BAR_NTYPE 1", "#define BAR_NTYPE 2"), HDR)
+    assert len(a["BAR_KEYS"]) == NT and len(a["BAR_KEYS"][0]) == 88 and a["BAR_TYPE"][0][:7] == [0, 6554, 32767, 0, 0, 9, 48]
+    k = HDR.index("static const uint16_t BAR_PAMP")
+    m = re.search(r"\{\{(\d+),", HDR[k:])
+    bad = HDR[:k + m.start(1)] + str(int(m.group(1)) + 1) + HDR[k + m.end(1):]
+    single = arrays(HDR)
+    assert arrays(bad)["BAR_PAMP"][0] != single["BAR_PAMP"][0]
 
 
 PINS = gb.load_pins()

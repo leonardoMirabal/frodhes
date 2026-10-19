@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: '3.14'
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
-      - run: python -m pytest -q -rs tests/py/test_gen_bars.py
+      - run: python -m pytest -q -rs tests/py/test_gen_bars.py tests/py/test_marimba_calib.py
       - run: '! python -m pytest -q -rs tests/py/test_gen_bars.py -k deterministic | grep -q SKIPPED'
   host:                              # fallback only: every host test (ci.yml's host job, on the same arm64 runner)
     needs: ci-gate
