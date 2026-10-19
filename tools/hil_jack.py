@@ -137,6 +137,14 @@ def lufs48(x):
     return -0.691 + 10 * np.log10(float(np.mean(y * y)) + 1e-30)
 
 
+def hp20(x):
+    """a 20 Hz 2nd-order high-pass (zero phase): the jack's after-mute check looks at the audible band only (the
+    codec's unmute DC step at a strike settles through the AC coupling ~100 ms later: -87 dBFS below 20 Hz, seen
+    on a 0.1 s C7 note as a 'bump' after its end)"""
+    from scipy.signal import butter, sosfiltfilt
+    return sosfiltfilt(butter(2, 20, "highpass", fs=FS, output="sos"), np.asarray(x, float))
+
+
 def gate_tail(u, j, t_note):
     """TEST-PLAN A5 on one tail: USB (full scale 1.0) and the jack. The mute instant z = the first sample after which
     USB is exact zero to the end. 'gate' when the 200 ms before z - 46 ms stayed <= 16 LSB (fx.c: a 46 ms linear fade
@@ -159,7 +167,8 @@ def gate_tail(u, j, t_note):
     gated = bool(np.abs(w).max() * 32768 <= 16.5 and np.any(w != 0))   # (all zero: before the note, z under 246 ms)
     last60 = np.flatnonzero(np.abs(u) > 10 ** (-60 / 20))
     floor = float(np.median(frames_db(j[z + ms(300):z + ms(1000)])))
-    after = float(frames_db(j[z:z + ms(100)]).max() - floor)
+    jh = hp20(j)                                       # the codec's unmute step settles below 20 Hz (inaudible)
+    after = float(frames_db(jh[z:z + ms(100)]).max() - float(np.median(frames_db(jh[z + ms(300):z + ms(1000)]))))
     hiss = float(np.median(frames_db(j[max(0, z - ms(150)):z - ms(50)])) - floor)
     m16 = u * 32768
     end = float(np.abs(u[max(0, z - ms(10)):z]).max() * 32768)
