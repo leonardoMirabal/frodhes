@@ -2,7 +2,8 @@
 """tools/hil_scan.py's MARIMBA measures on synthetic takes (no FM-1), each failing on the code before its fix:
 the jack's onsets from USB's (align() alone read the jack 2-15 ms late under its hiss, and the keys take's level
 span / step / tuning off), a roll is not a slipped stream, the MUTE drop depth stays over the jack's floor, the
-marimba_fx roll is the same in every take, and the VIBES suites keep their stimuli."""
+marimba_fx roll is the same in every take, and the VIBES suites keep their stimuli; PHASER SPEED 0 in a take of
+2.4 periods, NOISE's contact as the gate's aligned difference, DRIVE TONE's jack V3 on the jack's own distortion."""
 import os
 import sys
 
@@ -125,3 +126,133 @@ def test_vibes_stimuli_unchanged():
     assert h.ST_CH == (3.6, h.chord(h.FXCH, 108, 0.1, 2.1))
     assert h.ST_LONG == (6.0, h.chord(h.FXCH, 108, 0.1, 5.6))
     assert h.ST_NOTE == (2.0, h.chord((69,), 108, 0.1, 1.6))
+
+
+def band_trace(f, L, ph, seed=0):
+    """a phaser band's level (dB, the hil frames) as a triangle LFO at f Hz sweeps the notches: no repeat at half a
+    period, harmonics strong"""
+    fps = FS / 240
+    t = np.arange(int(L * fps)) / fps
+    p = 2 * np.abs(((t * f + ph) % 1) - 0.5)
+    return -8 * np.sin(np.pi * 1.3 * p) ** 2 + 0.3 * np.random.default_rng(seed).standard_normal(len(t)), fps
+
+
+def test_phaser_speed_0_needs_a_long_take():
+    """SPEED 0 (0.25 Hz) in the 5.1 s trace of ST_LONG: the period sits at the autocorrelation search's end and the
+    rate reads 0.33-0.40 Hz depending on the LFO's phase (the FM-1's scan 3 and the host: 0.50); marimba_fx's PH0
+    take gives 2.4 periods, read within 1 %"""
+    f = h.lfo_hz(0, True)
+    short = [h.lfo_rate(*band_trace(f, 5.1, ph), f * 0.4, f * 2.6) for ph in (0.2, 0.4, 0.6)]
+    assert max(abs(r / f - 1) for r in short) > 0.10, short                  # the take before PH0
+    got = {}
+    real = h.vibes_fx
+    try:
+        h.vibes_fx = lambda V, S, stim=None, extra=(): got.update(stim)
+        h.marimba_fx(None, None)
+    finally:
+        h.vibes_fx = real
+    dur, ev = got["PH0"]
+    trace = dur - 0.7 - 0.2                                                  # phrate's window: 0.2 .. dur - 0.7
+    assert trace * f >= 2.2 and max(e[0] for e in ev) <= dur - 0.4
+    for ph in np.linspace(0, 1, 7, endpoint=False):
+        r = h.lfo_rate(*band_trace(f, trace, ph, seed=int(10 * ph)), f * 0.4, f * 2.6, pearson=True)
+        assert abs(r / f - 1) <= 0.01, (ph, r)
+    assert got["JFLOOR"] is True
+
+
+def test_phaser_speed_0_on_the_host(monkeypatch):
+    """the host build, marimba_fx's PH0 takes (the roll, PHASER DEPTH 127 SPEED 0, and DEPTH 0): the 300-3000 Hz band
+    dips at 0.75, 2.75 and 3.75 s of each 4 s cycle, so half the period correlates 0.63 over its overlap and the
+    period 0.99, but 0.50 / 0.58 by the whole trace's energy (lfo_rate's default), where the 0.85 rule took 2 s:
+    0.50 Hz, as the FM-1 read. pearson: 0.25 Hz"""
+    monkeypatch.setattr(h, "ENGINE", "marimba")
+    V = h.VRig("usb", host=1)
+    P = h.vp()
+    got = {}
+    real = h.vibes_fx
+    try:
+        h.vibes_fx = lambda V_, S, stim=None, extra=(): got.update(stim)
+        h.marimba_fx(None, None)
+    finally:
+        h.vibes_fx = real
+    PH0 = got["PH0"]
+    pb = [("PH_SW", 1), ("PH_DEPTH", 80), ("PH_SPEED", P["PH_SPEED"]["de"]), ("PH_FDBK", P["PH_FDBK"]["de"]),
+          ("PH_SYNC", 0)]
+    V.reset(h.with_(pb, ("PH_DEPTH", 127), ("PH_SPEED", 0)) + [("RELEASE", 0)], label="speed 0")
+    t = V.take("t-phaser-speed-0-long", *PH0)
+    V.reset(h.with_(pb, ("PH_DEPTH", 0)) + [("RELEASE", 0)], label="depth 0")
+    r = V.take("t-phaser-depth-0-long", *PH0)
+    d, _, fps = h.rel_trace(t, r, "usb", 0.2, PH0[0] - 0.7, 300, 3000)
+    f = h.lfo_hz(0, True)
+    assert abs(h.lfo_rate(d, fps, f * 0.4, f * 2.6) / (2 * f) - 1) <= 0.02   # (the bug: twice the rate)
+    assert abs(h.lfo_rate(d, fps, f * 0.4, f * 2.6, pearson=True) / f - 1) <= 0.01
+
+
+def c6_takes(noise_db=-33.8, lag=2.37, hiss=None, seed=4):
+    """two takes of a C6 strike (V1 + V2 + V3, a fast decay): NOISE 0, and the same + a contact burst noise_db re the
+    note's RMS over 0..60 ms (tau 23 ms, white), the second take delayed lag samples (the FM-1's takes are not sample
+    aligned) and both over a hiss (the jack)"""
+    n = int(1.0 * FS)
+    t = np.arange(n) / FS
+    f = 1046.5
+
+    def ring(t):
+        tt = np.maximum(t, 0)
+        return (np.where(t >= 0, 1.0, 0.0) * (np.exp(-tt / 0.12) * np.sin(2 * np.pi * f * tt)
+                + 0.03 * np.exp(-tt / 0.03) * np.sin(2 * np.pi * 3.93 * f * tt)
+                + 0.01 * np.exp(-tt / 0.01) * np.sin(2 * np.pi * 9.8 * f * tt)))
+    t0 = 0.2
+    r0 = 0.1 * ring(t - t0)
+    r1 = 0.1 * ring(t - t0 - lag / FS)
+    w = slice(int(t0 * FS), int((t0 + 0.06) * FS))
+    rms = np.sqrt(np.mean(r0[w] ** 2))
+    tt = t - t0 - lag / FS
+    wn = np.random.default_rng(seed).standard_normal(n)
+    Z = np.fft.rfft(wn)
+    fr = np.fft.rfftfreq(n, 1 / FS)
+    wn = np.fft.irfft(Z / (1 + ((fr - f) / 150) ** 2), n)                   # (the burst coloured round V1, as the
+    z = np.where(tt >= 0, np.exp(-np.maximum(tt, 0) / 0.023), 0) * wn      # bar's own modes colour it)
+    zw = slice(int((t0 + lag / FS) * FS), int((t0 + lag / FS + 0.06) * FS))
+    z *= rms * 10 ** (noise_db / 20) / np.sqrt(np.mean(z[zw] ** 2))
+    x0, x1 = r0.copy(), r1 + z
+    if hiss is not None:
+        g = np.random.default_rng(seed + 1)
+        x0 += hiss * g.standard_normal(n)
+        x1 += hiss * g.standard_normal(n)
+    return x0, x1, int(t0 * FS), int(t0 * FS + round(lag))
+
+
+def test_noise_contact_is_the_gates_difference():
+    """NOISE 127's contact on C6 at the gate's -33.8 dB (the host's sample-exact rectangular difference): the old
+    spectral excess (flat-start window, 1.26 x the ring taken off per bin) read it 1+ dB low, under -35 (the FM-1's
+    scan 3: -35.4 on USB and the jack, the host too); the aligned difference reads it within 0.3 dB, a fractional lag
+    and the jack's hiss included"""
+    for hiss in (None, 10 ** (-92 / 20)):
+        x0, x1, o0, o1 = c6_takes(hiss=hiss)
+        old = h.m_excess_db(h.cut(x1, o1, 0, 0.06), h.cut(x0, o0, 0, 0.06)) - h.m_ms_db(h.cut(x0, o0, 0, 0.06))
+        assert old < -34.8, old                                              # (the bug)
+        c, d = h.m_contact_db(x1, o1, x0, o0)
+        assert abs(c + 33.8) <= 0.3, (hiss, c, d)
+        assert abs(d + (2.37 - 2)) <= 0.05, d               # x moved back by the fraction (o1 holds the whole 2)
+    x0, x1, o0, o1 = c6_takes(noise_db=-200)                                 # no contact: the residue is far under
+    assert h.m_contact_db(x1, o1, x0, o0)[0] <= -60
+
+
+def test_drive_tone_jack_floor(monkeypatch):
+    """A4: V1, V3 79 dB under it (TONE 0, as USB reads it) and, on the jack only, the jack's own 10th harmonic of V1
+    70 dB under V1 (23 Hz off V3) over its hiss: the jack's V3 band is floored, USB's is not"""
+    monkeypatch.setattr(h, "ENGINE", "marimba")
+    sp = h.bspec()[69]
+    assert abs(sp["V3"] / sp["V1"] - 10) * sp["V1"] > 15                     # (MARIMBA's V3: not on the 10th)
+    n = int(1.5 * FS)
+    t = np.arange(n) / FS
+    f1 = sp["V1"] * 1.002                                                    # (the interface's clock)
+    usb = np.sin(2 * np.pi * f1 * t) + 10 ** (-79 / 20) * np.sin(2 * np.pi * sp["V3"] * 1.002 * t)
+    jack = usb + 10 ** (-70 / 20) * np.sin(2 * np.pi * 10 * f1 * t) + 10 ** (-95 / 20) * \
+        np.random.default_rng(2).standard_normal(n)
+    assert not h.m_line_floored(usb, sp)
+    assert h.m_line_floored(jack, sp)
+    # V3 up 7 dB (TONE 127, USB +6.8 on the FM-1): the jack's band moves 2 dB at most (the row read +0.2)
+    up = (10 ** (-72 / 20) - 10 ** (-79 / 20)) * np.sin(2 * np.pi * sp["V3"] * 1.002 * t)
+    assert h.pk_db(usb + up, sp["V3"]) - h.pk_db(usb, sp["V3"]) >= 6
+    assert h.pk_db(jack + up, sp["V3"]) - h.pk_db(jack, sp["V3"]) < 2

@@ -1893,22 +1893,26 @@ def rate_of(tr, fps, guess, lo=0.4, hi=2.6):
     return float(hr().rate_of(np.asarray(tr, float), fps, guess, lo=lo, hi=hi))
 
 
-def lfo_rate(tr, fps, lo_hz, hi_hz, H=6):
+def lfo_rate(tr, fps, lo_hz, hi_hz, H=6, pearson=False):
     """the repetition rate (Hz) of a periodic trace whose harmonics may outweigh its fundamental (a band's level as a
     triangle LFO sweeps notches up and down: the jack's 1/4 at 69 BPM had harmonics 3 and 4 at 2.5x the fundamental's
     amplitude, and rate_of's harmonic sum picked the 3rd: PHASER SYNC read 1.72 Hz for 1.15). The period is the
     shortest lag at which the trace repeats itself: the autocorrelation's (over the whole trace's energy, so a long
     lag's few overlapping frames do not win) first peak of at least 0.85 of its best one between 1 / hi_hz and
     1 / lo_hz (at most 80 % of the trace), refined by a least-squares fit of H harmonics on a quadratic trend
-    (+-8 %). A trace shorter than a period returns about the longest lag (tests/py/test_phaser_measures.py)"""
+    (+-8 %). A trace shorter than a period returns about the longest lag (tests/py/test_phaser_measures.py).
+    pearson: each lag's correlation over its own overlap (lags up to 0.6 of the trace), not over the whole trace's
+    energy, which shrinks a long lag's peak by its overlap: MARIMBA's PHASER SPEED 0 (a 4 s period, 3 dips a cycle
+    on the roll) correlates 0.63 at 2 s and 0.99 at 4 s, but 0.50 / 0.58 by energy, and the 2 s peak passed the 0.85
+    rule: 0.50 Hz on the host and the FM-1"""
     d = detrend2(np.asarray(tr, float))
     n = len(d)
     lmin = max(2, int(fps / hi_hz))
-    lmax = max(lmin + 2, min(int(0.8 * n), int(np.ceil(fps / lo_hz))))
+    lmax = max(lmin + 2, min(int((0.6 if pearson else 0.8) * n), int(np.ceil(fps / lo_hz))))
     r = np.full(lmax + 2, -1.0)
     e = np.dot(d, d) + 1e-30
     for lag in range(lmin, min(lmax + 2, n - 1)):
-        r[lag] = np.dot(d[:-lag], d[lag:]) / e
+        r[lag] = np.corrcoef(d[:-lag], d[lag:])[0, 1] if pearson else np.dot(d[:-lag], d[lag:]) / e
     pk = [lag for lag in range(lmin + 1, lmax + 1) if r[lag] >= r[lag - 1] and r[lag] >= r[lag + 1] and r[lag] > 0]
     best = max((r[lag] for lag in pk), default=None)
     l0 = min(lag for lag in pk if r[lag] >= 0.85 * best) if pk else lmax
@@ -2602,6 +2606,8 @@ def vibes_fx(V, S, stim=None, extra=()):
     FDN = st.get("FDN", 2048)                                          # frame_dist's frame (PHASER FDBK)
     BW = st.get("BW", (0.05, 1.05))                                    # the spectra's window (B, SD)
     cs_period = st.get("CS_PERIOD", False)                             # CHORUS SYNC by its period (lfo_rate)
+    PH0 = st.get("PH0")                    # PHASER SPEED 0's take (and its DEPTH 0 reference) when ST_LONG is short
+    jfloor = st.get("JFLOOR", False)       # the DRIVE rows: the jack judged against its own distortion floor
 
     def run(label, settings, stim, motor=False):
         V.reset(list(settings) + list(extra), motor=motor, label=label)
@@ -2779,11 +2785,25 @@ def vibes_fx(V, S, stim=None, extra=()):
 
     def hd(t, q):
         return hd_db(cut(t.m(q), t.on(q)[0], 0.1, 1.1), f1(69))
+    def hdrow(check, setting, hi, lo, lim, crit):
+        """a distortion row: hd(hi) - hd(lo) >= lim. JFLOOR (MARIMBA): where the jack's drive-free take (lo) holds
+        3 dB more of H2+H3+H5+H6 than USB's, the jack reads its own analogue distortion there (scan 3, DRIVE 0:
+        H2 / H3 -48 / -49 dB re H1 on the jack, -54 / -57 on USB), its rise is a lower bound: '(floor)', not judged
+        (USB judges)"""
+        fl = {}
+        if jfloor and V.want_usb and "jack" in V.sources():
+            u, j = _safe(hd, lo, "usb"), _safe(hd, lo, "jack")
+            fl = {"jack": bool(u is not None and j is not None and j >= u + 3)}
+        if not fl:
+            S.check(check, setting, S.per(lambda q: hd(hi, q) - hd(lo, q)), lambda v: v >= lim, crit,
+                    fmt=lambda v: f"{v:+.1f} dB")
+            return
+        S.check(check, setting, S.per(lambda q: (hd(hi, q) - hd(lo, q), fl.get(q, False))),
+                lambda v: v[0] >= lim or v[1], crit + " (the jack: unless its own distortion floors it; USB judges)",
+                fmt=lambda v: f"{v[0]:+.1f} dB", floor=fl)
     T = {x: run(f"drive-{x}", with_(db_, ("DRIVE", x)), ST_NOTE) for x in (0, 40, 127)}
-    S.check(f"DRIVE {nm('DRIVE')} 0 -> 127", "A4 v108: H2+H3+H5+H6 re H1", S.per(lambda q: hd(T[127], q) - hd(T[0], q)),
-            lambda v: v >= 10, ">= +10 dB", fmt=lambda v: f"{v:+.1f} dB")
-    S.check("DRIVE 0 -> 40 (the panel's start)", "", S.per(lambda q: hd(T[40], q) - hd(T[0], q)), lambda v: v >= 3,
-            ">= +3 dB", fmt=lambda v: f"{v:+.1f} dB")
+    hdrow(f"DRIVE {nm('DRIVE')} 0 -> 127", "A4 v108: H2+H3+H5+H6 re H1", T[127], T[0], 10, ">= +10 dB")
+    hdrow("DRIVE 0 -> 40 (the panel's start)", "", T[40], T[0], 3, ">= +3 dB")
     S.check("DRIVE 0 -> 127 loudness", "", S.per(lambda q: L(T[127], q, 0, 1.4) - L(T[0], q, 0, 1.4)), lambda v: abs(v) <= 3,
             "within +-3 LU (fx_all: +-2 on the Rhodes)", level=True)
     T = {x: run(f"drive-tone-{x}", with_(db_, ("DRIVE", 64), ("DRV_TONE", x)), ST_NOTE) for x in (0, 64, 127)}
@@ -2794,16 +2814,27 @@ def vibes_fx(V, S, stim=None, extra=()):
 
     def dtone(t, q):
         return pk_rel(cut(t.m(q), t.on(q)[0], 0.005, 0.3), sp69, ("V2", "V3"))
-    S.check(f"DRIVE TONE {nm('DRV_TONE')} 0 -> 127", "DRIVE 64: A4's V2 / V3 re V1 (5..300 ms)",
-            S.per(lambda q: [b_ - a_ for a_, b_ in zip(dtone(T[0], q), dtone(T[127], q))]),
-            lambda v: v[0] >= 2 and v[1] >= 6, "V2 >= +2 dB and V3 >= +6 dB (the shelf: -3 / -9 dB at 0, +6 at 127)",
-            fmt=lambda v: f"{v[0]:+.1f} / {v[1]:+.1f} dB")
+    if not (jfloor and "jack" in V.sources()):
+        S.check(f"DRIVE TONE {nm('DRV_TONE')} 0 -> 127", "DRIVE 64: A4's V2 / V3 re V1 (5..300 ms)",
+                S.per(lambda q: [b_ - a_ for a_, b_ in zip(dtone(T[0], q), dtone(T[127], q))]),
+                lambda v: v[0] >= 2 and v[1] >= 6, "V2 >= +2 dB and V3 >= +6 dB (the shelf: -3 / -9 dB at 0, +6 at 127)",
+                fmt=lambda v: f"{v[0]:+.1f} / {v[1]:+.1f} dB")
+    else:
+        # JFLOOR (MARIMBA): the jack's own distortion of V1 puts a line at 10 x V1 (4.41 kHz, 23 Hz off A4's V3)
+        # ~70 dB under V1 in every take, DRIVE 0 too (scan 3: -70.2 / -70.4 dB at DRIVE 0 / TONE 0; USB under -89),
+        # where MARIMBA's TONE-0 V3 is -79 dB on USB: the jack's V3 band read its own line (-66 dB at every TONE,
+        # +0.2 dB 0 -> 127). Its V3 is judged only where TONE 0's V3 band stands 10 dB over that line (m_line_floored)
+        fl = {"jack": bool(_safe(m_line_floored, cut(T[0].m("jack"), T[0].on("jack")[0], 0.005, 1.5), sp69, "V3"))}
+        S.check(f"DRIVE TONE {nm('DRV_TONE')} 0 -> 127", "DRIVE 64: A4's V2 / V3 re V1 (5..300 ms)",
+                S.per(lambda q: [b_ - a_ for a_, b_ in zip(dtone(T[0], q), dtone(T[127], q))] + [fl.get(q, False)]),
+                lambda v: v[0] >= 2 and (v[1] >= 6 or v[2]),
+                "V2 >= +2 dB and V3 >= +6 dB (the shelf: -3 / -9 dB at 0, +6 at 127; the jack's V3: unless TONE 0's "
+                "band stands within 10 dB of the jack's own 10 x V1 line, USB judges)",
+                fmt=lambda v: f"{v[0]:+.1f} / {v[1]:+.1f} dB", floor=fl)
     T = {x: run(f"drive-mix-{x}", with_(db_, ("DRIVE", 64), ("DRV_MIX", x)), ST_NOTE) for x in (0, 64, 127)}
-    S.check(f"DRIVE MIX {nm('DRV_MIX')} 0 -> 127", "DRIVE 64", S.per(lambda q: hd(T[127], q) - hd(T[0], q)),
-            lambda v: v >= 6, ">= +6 dB distortion", fmt=lambda v: f"{v:+.1f} dB")
+    hdrow(f"DRIVE MIX {nm('DRV_MIX')} 0 -> 127", "DRIVE 64", T[127], T[0], 6, ">= +6 dB distortion")
     T = {x: run(f"drive-sw-{x}", with_(db_, ("DRIVE", 64), ("DRV_SW", x)), ST_NOTE) for x in (0, 1)}
-    S.check(f"DRIVE ON {nm('DRV_SW')} off -> on", "DRIVE 64", S.per(lambda q: hd(T[1], q) - hd(T[0], q)),
-            lambda v: v >= 6, ">= +6 dB distortion", fmt=lambda v: f"{v:+.1f} dB")
+    hdrow(f"DRIVE ON {nm('DRV_SW')} off -> on", "DRIVE 64", T[1], T[0], 6, ">= +6 dB distortion")
 
     # TREMOLO / WAH
     tb = [("TW_SW", 1), ("TW_DEPTH", 64), ("TW_MODE", 1), ("TW_RATE", P["TW_RATE"]["de"]), ("TW_SYNC", 0), ("TW_SHAPE", 0)]
@@ -2882,19 +2913,33 @@ def vibes_fx(V, S, stim=None, extra=()):
     pb127 = with_(pb, ("PH_DEPTH", 127))
     pref = T[0]                                       # DEPTH 0: the notches stand still
 
-    def phrate(t, q, ex, lo=0.4, hi=2.6):
+    def phrate(t, q, ex, lo=0.4, hi=2.6, ref=None, b=5.3, pearson=False):
         """the LFO's rate from the 300-3000 Hz band re DEPTH 0 (round 2's new phaser: the centroid read 0.50 Hz for
         SPEED 0's 0.25 and 2.06 for SYNC 1/4's 0.69), searched in ex * lo .. ex * hi. The band's level repeats once
         an LFO cycle (the sweep up and the sweep down are mirror images, not repeats), with strong harmonics. It
         assumed two dips a cycle (rate_of at 2x, halved) until 2026-10-18, which on the jack picked the 3rd harmonic
         for SYNC 1/4 at the FM-1's 69 BPM (1.72 Hz for 1.15: a firmware 'fault' that was the measure; the host shows
         it at 69 BPM, tests/py/test_phaser_measures.py). lfo_rate() takes the period instead"""
-        d, _, f_ = rel_trace(t, pref, q, 0.2, 5.3, 300, 3000)
-        return lfo_rate(d, f_, ex * lo, ex * hi)
+        d, _, f_ = rel_trace(t, pref if ref is None else ref, q, 0.2, b, 300, 3000)
+        return lfo_rate(d, f_, ex * lo, ex * hi, pearson=pearson)
     sp = {}
     for x in (0, P["PH_SPEED"]["de"], 127):
-        t = run(f"phaser-speed-{x}", with_(pb127, ("PH_SPEED", x)), ST_LONG)
         ex = lfo_hz(x, half=True)
+        if x == 0 and PH0 and not (V.offline and not os.path.exists(os.path.join(V.offline, "phaser-speed-0-long.json"))):
+            # (--offline on takes saved before PH0: the 6 s take as before)
+            # PH0 (MARIMBA): SPEED 0's 4 s period in a 5.1 s trace is 1.3 periods (its lag at the search's very end),
+            # and on the roll the band dips 3 times a cycle (at 0, 2 and 3 s), so half the period correlates too: the
+            # FM-1's scan 3 read 0.50 Hz on USB and the jack, the host the same. A take of 2.4 periods against a
+            # DEPTH 0 reference as long, and each lag's correlation over its own overlap (lfo_rate pearson: 0.63 at
+            # 2 s, 0.99 at 4 s on the host; by the whole trace's energy 0.50 / 0.58, and 2 s passed): host 0.25 Hz
+            t = run("phaser-speed-0-long", with_(pb127, ("PH_SPEED", 0)), PH0)
+            r0 = run("phaser-depth-0-long", with_(pb, ("PH_DEPTH", 0)), PH0)
+            sp[0] = S.per(lambda q: phrate(t, q, ex, ref=r0, b=PH0[0] - 0.7, pearson=True))
+            S.check(f"PHASER SPEED {nm('PH_SPEED')} 0", f"expected {ex:.2f} Hz (300-3000 Hz re DEPTH 0, its period; "
+                    f"a {PH0[0] - 0.9:.1f} s trace)", sp[0], lambda v: abs(v / ex - 1) <= 0.10, "within 10 %",
+                    fmt=lambda v: f"{v:.2f} Hz")
+            continue
+        t = run(f"phaser-speed-{x}", with_(pb127, ("PH_SPEED", x)), ST_LONG)
         sp[x] = S.per(lambda q: phrate(t, q, ex))
         if x:
             S.check(f"PHASER SPEED {nm('PH_SPEED')} {x}", f"expected {ex:.2f} Hz (300-3000 Hz re DEPTH 0, its period)",
@@ -3299,6 +3344,61 @@ def m_ms_db(x):
     return float(10 * np.log10((np.abs(np.fft.rfft(np.asarray(x, float) * w)) ** 2).sum() * 2 / (len(x) * (w * w).sum()) + 1e-24))
 
 
+def frac_delay(x, d):
+    """x delayed by d samples (fractional: a linear phase on its zero-padded spectrum)"""
+    x = np.asarray(x, float)
+    n = len(x)
+    N = 1 << int(np.ceil(np.log2(2 * n)))
+    X = np.fft.rfft(x, N)
+    return np.fft.irfft(X * np.exp(-2j * np.pi * np.arange(len(X)) * d / N), N)[:n]
+
+
+def m_contact_db(mx, ox, mr, orf, a=0.0, b=0.06, fit=(0.1, 0.3), lag_ms=6.0):
+    """NOISE's contact as the gate measures it (tests/py/test_marimba_controls_audible.py, marimba_scan's P4 host
+    numbers): the RMS of take x minus the NOISE 0 take r over a..b s from the strike, re r's own RMS there, both
+    rectangular windows. The engine is deterministic apart from NOISE, so once x is aligned on r to a fraction of a
+    sample the note cancels: the whole lag in samples where x - r is least over -5..300 ms (the strike: no period
+    ambiguity, which a lone C6 partial has), then the fraction (+-1 sample, 0.01 steps) where it is least over fit
+    (after the contact, the ring alone). The spectral excess before (m_excess_db: a flat-start window, the bins under
+    the ring's partials dropped, 1.26 x the ring subtracted) read C6 1.2-1.6 dB low (-35.4 dB on the FM-1, USB and
+    jack, and on the host, where the gate's sample-exact difference is -33.8; C4 -29.7 for -31.9). Returns (dB, lag)"""
+    pad = int(0.02 * FS)
+    x = np.asarray(cut(mx, ox, -0.02, 0.4), float)
+    y = np.asarray(cut(mr, orf, -0.02, 0.4), float)
+    n = min(len(x), len(y))
+    x, y = x[:n], y[:n]
+    L = int(lag_ms * FS / 1000)
+    a0, a1 = max(L, pad - int(0.005 * FS)), min(n - L, pad + int(0.3 * FS))
+    rr = [np.sum((x[a0 + k:a1 + k] - y[a0:a1]) ** 2) for k in range(-L, L + 1)]
+    d0 = -(int(np.argmin(rr)) - L)
+    f0, f1_ = pad + int(fit[0] * FS), min(n, pad + int(fit[1] * FS))
+    ds = d0 + np.linspace(-1, 1, 201)
+    d = ds[int(np.argmin([np.sum((frac_delay(x, s)[f0:f1_] - y[f0:f1_]) ** 2) for s in ds]))]
+    xs = frac_delay(x, d)
+    w0, w1 = pad + int(a * FS), pad + int(b * FS)
+    e = np.mean((xs[w0:w1] - y[w0:w1]) ** 2)
+    return float(10 * np.log10(e + 1e-30) - 10 * np.log10(np.mean(y[w0:w1] ** 2) + 1e-30)), float(d)
+
+
+def m_line_floored(x, sp, band="V3", margin=10.0, hw=3.0):
+    """whether bar partial `band` (pk_db's +-3 % band) in x stands within margin dB of the harmonic of V1 nearest it
+    (k = round(band / V1), the line +-hw Hz around k x V1 as measured in x), i.e. a tenth or more of what the band
+    reads is the source's own harmonic distortion. The FM-1's jack (not USB) has 10 x V1, 23 Hz off A4's V3, ~70 dB
+    under V1 whatever the drive (DRIVE 0 too), and V3 itself 10-15 dB under that line at TONE 0: DRIVE TONE's jack V3
+    band read the jack's own floor, +0.2 dB from TONE 0 to 127 (USB +6.8). Scan 3: the band 4.8-5.6 dB over the line
+    on the jack, 17-22 dB on USB. x: a long stretch (the A4 roll's 1.5 s: lines 1.3 Hz wide, V1 to 0.1 Hz; 0.3 s
+    took V1 2 Hz off and its 10th onto V3)"""
+    x = np.asarray(x, float)
+    nf = 1 << max(15, int(np.ceil(np.log2(len(x)))) + 2)           # (pk_db's: the two sums on one grid)
+    S = np.abs(np.fft.rfft(x * np.hanning(len(x)), nf)) ** 2
+    fr = np.fft.rfftfreq(nf, 1 / FS)
+    m1 = np.flatnonzero((fr >= 0.992 * sp["V1"]) & (fr <= 1.008 * sp["V1"]))   # (not the tube's, 1 % over)
+    f1m = fr[m1[int(np.argmax(S[m1]))]]                   # V1 as measured (the interface's clock is not the FM-1's)
+    k = round(sp[band] / sp["V1"])
+    line = 10 * np.log10(S[(fr >= k * f1m - hw) & (fr <= k * f1m + hw)].sum() + 1e-30)
+    return bool(pk_db(x, sp[band]) < line + margin)
+
+
 def m_drop_rate(x, t_off, db=30.0, win=0.005, hop=0.001, fit=False):
     """MARIMBA's hand mute as Gate VA-M9 measures it (marimba_va.mute_drop_s): the time from the key-up t_off (s) until
     the note (a 5 ms RMS envelope, 1 ms hop) stays db under its level just before the key-up, as a rate db / time
@@ -3497,13 +3597,19 @@ def marimba_decay(V, S):
             pd = T[de].pre(q)
             nc = min(len(p0), len(pd), int(0.06 * FS))      # the contact's window on hiss alone: NOISE de's floor
             cf = m_excess_db(pd[-nc:], p0[-nc:]) - ring if nc >= int(0.06 * FS) and np.any(p0) else -240.0
-            return dict(c=c, k=knock_db(m[127], o[127], m[0], o[0]) - nl, hf=hf, cf=c[de] < cf + 6)
+            # the contact re the note as the gate reads it (m_contact_db: the aligned difference, rectangular 0..60
+            # ms); NOISE de's own reading the same way bounds what the alignment leaves (its tick ~30 dB under 127's)
+            ca = {x: m_contact_db(m[x], o[x], m[0], o[0])[0] for x in (de, 127)}
+            return dict(c=c, k=knock_db(m[127], o[127], m[0], o[0]) - nl, hf=hf, cf=c[de] < cf + 6, ca=ca)
         vals = S.per(nz)
         S.check(f"NOISE (CC {P['NOISE']['cc']}) contact {de} -> 127", f"key {n}, 0..60 ms",
                 {s_: v and v["c"][127] - v["c"][de] for s_, v in vals.items()}, lambda v: v >= 6, ">= +6 dB", level=True,
                 floor={s_: bool(v and v["cf"]) for s_, v in vals.items()})   # (the jack: NOISE de's tick in its hiss)
-        S.check("NOISE 127 contact re the note", f"key {n}", {s_: v and v["c"][127] for s_, v in vals.items()},
-                lambda v: v > -35, "> -35 dB (a clear tick)", fmt=lambda v: f"{v:.1f} dB")
+        S.check("NOISE 127 contact re the note", f"key {n}, 0..60 ms, the aligned difference re NOISE 0 (the gate's)",
+                {s_: v and (v["ca"][127], v["ca"][de]) for s_, v in vals.items()},
+                lambda v: v[0] > -35 and v[0] >= v[1] + 10,
+                f"> -35 dB (a clear tick; NOISE {de} read the same way >= 10 dB under it: the alignment's residue)",
+                fmt=lambda v: f"{v[0]:.1f} dB ({de}: {v[1]:.1f})")
         S.check("no knock at the key-up (NOISE 127)", f"key {n}, 0..150 ms after the key-up",
                 {s_: v and (v["k"], v["hf"]) for s_, v in vals.items()}, lambda v: v[0] <= max(-60, v[1] + 3),
                 "<= -60 dB re the note, or within 3 dB of the source's own hiss read the same way (no damper on this "
@@ -3654,8 +3760,10 @@ def marimba_fx(V, S):
                 BW=(0.05, 2.05),         # the spectra over the whole roll: two takes of one roll 0.2-0.8 dB apart at 1 s
                 CS_PERIOD=True,          # CHORUS SYNC by the period: the harmonic sum took the 1/4's 3rd harmonic
                 SPREAD=True,             # FILTER OFF judged against two dry takes of the roll (one more take)
-                FDN=16384)               # PHASER FDBK frame by frame in 0.34 s frames: two takes of one roll are
-    #                                      3.7 dB apart in 43 ms frames (the strikes' phase), 1.6 dB in 0.34 s
+                FDN=16384,               # PHASER FDBK frame by frame in 0.34 s frames: two takes of one roll are
+                #                          3.7 dB apart in 43 ms frames (the strikes' phase), 1.6 dB in 0.34 s
+                PH0=(10.5, m_fx_roll(FXCH, v, 0.1, 10.1)),   # PHASER SPEED 0 (4 s period): a 9.6 s trace, 2.4 periods
+                JFLOOR=True)             # the DRIVE rows: the jack's own distortion at MARIMBA's quiet level
     return vibes_fx(V, S, stim=stim, extra=[("RELEASE", 0)])
 
 
