@@ -436,6 +436,31 @@ KC_MAX = 1.5      # bartube.pair_words' kc (the discrete coupling's decay correc
 #                   missed +-2 % by up to 57 %. With a few cents the angle is small and kc stays ~1.
 
 
+PITCH_T = (0.05, 0.6)                  # the window the radiated pitch is centred over (s after the strike; hil_scan's)
+
+
+def radiated_pitch(bt, wt, t=PITCH_T):
+    """The radiated f0 band's pitch (Hz) of the pair: the normal modes' frequencies weighted by their radiated
+    energy (bar + wt x tube, the output bars.c sums) over t. Two modes too close to resolve (the strongly coupled
+    marimba pair, 0.3-1 Hz apart) sound as one tone at this mean, beating at the split."""
+    num = den = 0.0
+    for f, s, rb, rt in bt.modes2():
+        e = abs(rb + wt * rt) ** 2 * (math.exp(-2 * s * t[0]) - math.exp(-2 * s * t[1])) / (2 * s)
+        num, den = num + e * f, den + e
+    return num / den
+
+
+def v1_target(vb, k):
+    """The frequency the integer pair's V1-like mode is tuned to (pair_words' f0). VIBES: f0 (byte-identical tables).
+    MARIMBA (P4): the pitch the pair radiates is centred on f0 instead. The float design puts the V1-like normal mode
+    on f0 (bt.retune), but below ~C4 both normal modes carry the note (the strong regime, and the weak one near
+    zeta_r = zeta_n) and the other mode sits 6-17 c away: the FM-1 and the golden model read C2..E3 5-10 c flat and
+    F#3..C4 2-4 c sharp. Both slots scale together, so the split, the decays and the bloom do not move."""
+    if not is_mar(vb):
+        return k["f0"]
+    return k["bt"].v1()[0] * k["f0"] / radiated_pitch(k["bt"], k["wt"])
+
+
 def pair_words_safe(bt, wt, felt, f0):
     """bartube.pair_words with the discrete retune; the kc correction must stay under KC_MAX (else the integer pair
     cannot follow the continuous design within the grid's +-2 %: fail loudly instead of capping)."""
@@ -534,8 +559,8 @@ def map_check_words(k, detail=None):
                         n += 1
     M = btm.pair_map(w_ref)
     iv = w_ref.get("v1_ord")                       # (pair_words_ordered: the V1 by frequency order)
-    cents = 1200 * math.log2(btm.map_modes(M)[btm.map_v1(M) if iv is None else iv][0] / f0)
-    return rho, derr, cents, n
+    cents = 1200 * math.log2(btm.map_modes(M)[btm.map_v1(M) if iv is None else iv][0] / k.get("f_v1", f0))
+    return rho, derr, cents, n          # (V1 cents vs its target: f0, MARIMBA v1_target)
 
 
 def peak_band(vb, target_ms):
@@ -1563,7 +1588,7 @@ def pair_stage(vb, fec, zt):
     for n in range(KEY_LO, KEY_HI + 1):
         for _ in range(20):                         # a pair whose integer map is not contracting: more tube damping
             k = key_physics(vb, n, fec, zt)
-            k["pw"] = pair_words_safe(k["bt"], k["wt"], k["felt_v1"], k["f0"])
+            k["pw"] = pair_words_safe(k["bt"], k["wt"], k["felt_v1"], k.setdefault("f_v1", v1_target(vb, k)))
             k["grid"] = map_check_words(k)
             if k["grid"][0] < 1.0:
                 break
@@ -1931,6 +1956,7 @@ def build(vb=None, vspec=None):
         if mar:                                       # the regime-aware pair's report (MARIMBA PLAN §6 step 4)
             nm_ = bt.modes2()
             d.update(regime=k["regime"], split_hz=abs(nm_[0][0] - nm_[1][0]),
+                     v1_target_cents=round(1200 * math.log2(v1_target(vb, k) / k["f0"]), 6),   # (rounded: libm exp)
                      normal_modes=[dict(f=float(f), t60=LN1000 / s) for f, s, _, _ in nm_],
                      t60_bare=k["t1a"], t60_rel_v1=v1_vals(k)["t60_rel"])
         design.append(d)

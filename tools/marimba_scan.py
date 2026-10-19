@@ -23,6 +23,10 @@ The musicality gate (PLAN §10.3), host part (D = the FM-1 part: tools/hil_scan.
   M2 even timbre     the attack centroid (0..0.3 s, MED = MALLET 42, v100): neighbour change <= 10 % except at the
                      documented knees (listed with their size); V2/V1 and V3/V1 at the onset: no step > 4 dB
   M3 no key out      peak / RMS (50..300 ms) at v127 within 3 dB of the neighbours' median
+  (P4: every measure is Gate VA-M's: onset at the strike's block start, the attack centroid over 0..50 ms and the
+   spectra with the flat-start window (feats), the bloom by bartube.f0_peak_ms against T5b +-30 %, the velocity
+   curve's second difference on an even 16-velocity grid; the thresholds the plan states that a wooden bar cannot
+   meet as written are KNOWN, user decisions, listed with the reason: KNOWN, KNOWN_CARDS)
   M4 velocity        per key LUFS monotone (no drop > 0.3 dB between anchors), second difference <= 1.5 dB, range
                      v8 -> v127 26..32 dB; the attack centroid monotone (no fall > 3 %) and >= 1.4x v40 -> v117 on C4
                      MED; V2/V1 up >= 8 dB v40 -> v127 on C3 MED
@@ -56,17 +60,66 @@ FS = bm.FS
 OUT = os.path.join(ROOT, "build", "marimba_scan", os.environ.get("PYTEST_XDIST_WORKER", ""))
 HDR = os.path.join(ROOT, "firmware", "gen", "bars_tables.h")
 STUB_REASON = "awaiting sync 2 real tables"
-P4_REASON = ("P4 open: the real tables are in (sync 2); the C engine's MARIMBA numbers of the scan are lane A's P4 "
-             "(MARIMBA_P4=1 runs them as plain tests)")
-
-
-def p4_open():
-    """the MARIMBA-specific scan numbers on the real tables await P4 (xfail, visible); MARIMBA_P4=1: gated"""
-    return os.environ.get("MARIMBA_P4") != "1"
 
 
 def await_reason():
-    return STUB_REASON if stub_detected() else P4_REASON
+    return STUB_REASON
+
+
+# The plan's thresholds that a wooden bar (or the plan itself) cannot meet as written: P4's verdict (c), each a USER
+# DECISION, never loosened here. The scan reports them KNOWN (with the number), the tests are xfail with this reason;
+# everything else is gated. In every one the golden model (tools/bars_model.py) gives the same number as the C engine:
+# none is an engine fault. (check, case regex, reason)
+KNOWN = [
+    ("M4", r"C4 MED centroid v40 -> v117$",
+     "USER DECISION (Gate VA-M's KNOWN item, VA-M5): MED's attack centroid moves x1.04 from v40 to v117 on C4 (plan "
+     ">= 1.4; golden 1.04). The velocity brightens the spectrum (V2/V1 +23 dB v40 -> v127 on C3, plan >= 8) but the "
+     "attack's energy is V1's on a wooden bar, so the centroid barely moves"),
+    ("M5", r" (pumping|balance)$",
+     "USER DECISION: the rolls' sliding 0.5 s LUFS span 1.9-3.6 LU (plan <= 1.5). A re-strike adds linearly to the ringing "
+     "V1 + tube, the one partial that carries a marimba's loudness, so each strike's level depends on its phase against "
+     "the ring. With the period on the 256-sample block grid the span is 0.1-0.7 LU; on the scan's ms grid the strike "
+     "phase slips every few strikes (1.9-3.6 LU); with a player's +-8 ms jitter 3.4-11.6 LU (VIBES, many long partials: "
+     "0.3-0.8 on the grid, 0.7-3.1 with jitter). Physics of a linear bar, not the engine (no golden roll exists). The "
+     "two-hand balance (each hand's notes alone, <= 2 LU) is the same phase: the FM-1 read 1.49 LU on the tables before "
+     "P4's pitch centring, the host 3.9 LU after it (C2 moved +9 c, the levels did not)"),
+    ("M2", r"V[23]/V1 at the onset, smooth$",
+     "USER DECISION: the steps are in partials 45-70 dB under V1 (MED v100 from C5 up, golden the same): the contact "
+     "is past the half-sine pulse's first null there (f tau 2.5-12, T7e) and V2 / V3 fall in and out of its side "
+     "lobes key by key. The plan's 4 dB smoothness is met where the partial is within 40 dB of V1 (the info row)"),
+    ("M6", r"MED v127 darker than HARD v100$",
+     "USER DECISION: MED v127 vs HARD v100, the attack centroid's ratio 20 log10 is +3.1 dB on C3, +1.8 dB on C4 (plan "
+     ">= 6 dB; golden the same). '6 dB darker (centroid)' is the scan's reading of the plan; the centroid of a "
+     "V1-dominated wooden bar cannot double between neighbouring families (the spectral distance is the info row)"),
+    ("M7", r"key (84|96) TUBE 0 (vs|->) 127 (T60|level)$",
+     "USER DECISION (VA-M9 reports these, does not gate them): C6 / C7 'reflector' TUBE 0 vs 127 T60 within 10 % and "
+     "level +1..+3 LU. The plan's own law (§2.2: weak coupling adds sigma^2 / 4 (zeta_r - zeta_n), C7 0.144 s bare -> "
+     "~0.10 s) shortens the note by ~30 % (golden x0.68 C6, x0.72 C7), and B2 / VA-M9's TUBE >= +4 LU 0 -> 64 on C6 "
+     "contradicts +1..+3 LU 0 -> 127 (golden +12.3 LU C6, +10.0 C7)"),
+]
+
+
+# the VOICE cards' KNOWN items (tests/py/test_marimba_cards_audible.py, test_marimba_controls_audible.py): user decisions
+KNOWN_CARDS = {
+    "STRIKE C6": "USER DECISION (VA-M9 reports it, gates T1 at the edge instead): STRIKE on C6 moves the spectrum 1.3-2.5 "
+                 "dB (0 vs 64) and ~1.5 dB (64 vs 127), plan >= 3 (golden the same). The DEFAULT contact is at T7f's cap "
+                 "there (f0 tau 1.2), V2 (4.2 kHz) and V3 sit past the pulse's null 30-40 dB under V1 whatever the strike "
+                 "point, and T1 (1.07 f0) shares V1's third-octave band",
+    "WEIGHT C6 centroid": "USER DECISION (Gate VA-M's KNOWN item, VA-M9): WEIGHT 0 vs 127 on C6, the light mallet's attack "
+                          "centroid x1.01-1.03 (plan >= 1.05; golden 1.008-1.029). T7f caps the contact there, so the mass "
+                          "changes the force, not the pulse's shape; the level moves 3.8-7.4 LU (gated, passes)",
+    "VELOCITY centroid": KNOWN[0][2],
+}
+
+
+def known(check, case):
+    """the KNOWN reason of a row, or None"""
+    for c, rx, why in KNOWN:
+        if c == check and re.search(rx, case):
+            return why
+    return None
+
+
 TYPE = 5
 CC79 = 127                                  # CC 79 96..127 = MARIMBA (bar_measure.type_cc(5))
 AUTH = (36, 96)                             # C2..C7, the authentic range (PLAN §2.5)
@@ -209,15 +262,25 @@ def render(tag, events, end_ms, env=None):
 
 
 # ---------------------------------------------------------------- measures
+BLK = 256                                   # frames per audio block (the ISR's, tests/host.c HALF_FRAMES)
+
+
 def onset(m, t_ms):
+    """the strike's first sample. An event at t ms is rendered in the block that contains its sample, and the
+    strike starts at that block's START (bars.c: the pulse from the block's first sample), i.e. up to 255 samples
+    BEFORE int(t_ms * FS / 1000). Searching from the event's sample (before P4) cut 0..5.8 ms off every attack, a
+    different amount per strike: C7's v100 level moved 2.3 dB with the strike's place in its block (M1's 1.8 dB
+    'steps' at the top), and the attack centroids and spectra lost the very part they measure."""
     a = int(t_ms * FS / 1000)
-    i = np.flatnonzero(np.abs(m[a:a + 4096]) > 0.5)
-    return a + (int(i[0]) if len(i) else 0)
+    b = max(0, ((a - 1) // BLK) * BLK)
+    i = np.flatnonzero(np.abs(m[b:a + 4096]) > 0.5)
+    return b + (int(i[0]) if len(i) else a - b)
 
 
 def peak_db(seg, f, rel=0.03):
+    """a partial's energy (dB) within +-rel of f: marimba_va.partial_db's flat-start window (see feats)"""
     nf = 1 << max(15, int(math.ceil(math.log2(max(len(seg), 2)))) + 2)
-    S = np.abs(np.fft.rfft(seg * np.hanning(len(seg)), nf)) ** 2
+    S = np.abs(np.fft.rfft(seg * va().flat_start(len(seg)), nf)) ** 2
     fr = np.fft.rfftfreq(nf, 1 / FS)
     sel = (fr >= (1 - rel) * f) & (fr <= (1 + rel) * f)
     return 10 * math.log10(float(S[sel].sum()) + 1e-30)
@@ -246,21 +309,42 @@ def rms_db(x):
 
 
 def feats(m, s0, n):
-    """one strike from sample s0 (bar_cards.features + the crest): lufs 0..1 s, cen_a 0..0.3 s, cen 0.32..0.82 s, v2 /
-    v3 re V1 over 5..300 ms (v2o / v3o over 5..100 ms: 'at the onset'), peak dBFS, crest (peak / RMS 50..300 ms),
-    bands 0..0.5 s"""
+    """one strike from sample s0, measured exactly as Gate VA-M measures the golden model (tools/marimba_va.py, the
+    same functions): lufs 0..1 s; cen_a the attack centroid over 0..ATT (50 ms), power-weighted, flat-start window;
+    cen 0.32..0.82 s; v2 / v3 re V1 over 5..300 ms (v2o / v3o over 5..100 ms: 'at the onset') with the flat-start
+    window; bands (1/3 octaves) over 0..0.5 s, flat-start; peak dBFS; crest (peak / RMS 50..300 ms).
+
+    Why not the VIBES measures (bar_measure.centroid, a Hann window, before P4): a Hann window opened at the strike is
+    -48 dB at 10 ms of a 0.5 s segment and weighs the middle, where a marimba note is its fundamental alone (the upper
+    modes are gone in 20-50 ms; C6's V2 T60 is 0.04 s). It measured V1 whatever the mallet, the strike point or the
+    velocity: SOFT, MED and HARD on C6 at v117 read 0.00 dB apart, STRIKE 0 vs 64 on C6 1e-5 dB, the velocity
+    'darkened' the attack by -29..-37 %. The flat-start window keeps the attack at full weight and fades only the
+    segment's last quarter, so the spectrum is the one the ear gets at the strike."""
     f = freqs(n)
     att, ons = m[s0 + int(0.005 * FS):s0 + int(0.3 * FS)], m[s0 + int(0.005 * FS):s0 + int(0.1 * FS)]
     l1, l1o = peak_db(att, f["V1"]), peak_db(ons, f["V1"])
     w = m[s0 + int(0.05 * FS):s0 + int(0.3 * FS)]
     pk = float(np.abs(m[s0:s0 + int(1.0 * FS)]).max())
-    return dict(lufs=float(bm.lufs(m[s0:s0 + FS])), cen_a=bm.centroid(m[s0:s0 + int(0.3 * FS)]),
-                cen=bm.centroid(m[s0 + int(0.32 * FS):s0 + int(0.82 * FS)]),
+    x = np.asarray(m[s0:s0 + FS], float)
+    return dict(lufs=float(bm.lufs(m[s0:s0 + FS])), cen_a=va().centroid(x, 0, va().ATT),
+                cen=va().centroid(x, 0.32, 0.82),
                 v2=peak_db(att, f["V2"]) - l1, v3=peak_db(att, f["V3"]) - l1,
                 v2o=peak_db(ons, f["V2"]) - l1o, v3o=peak_db(ons, f["V3"]) - l1o,
                 peak=float(20 * math.log10(pk / 32767 + 1e-12)),
                 crest=float(20 * math.log10((np.abs(w).max() + 1e-9) / (np.sqrt(np.mean(w * w)) + 1e-9))),
-                bands=third_oct(m[s0:s0 + int(0.5 * FS)]).tolist())
+                bands=va().third_oct(x[:int(0.5 * FS)]).tolist())
+
+
+_VA = None
+
+
+def va():
+    """tools/marimba_va.py (Gate VA-M): its measuring functions are the scan's, so the two cannot drift apart"""
+    global _VA
+    if _VA is None:
+        import marimba_va
+        _VA = marimba_va
+    return _VA
 
 
 def strike_set(tag, setup, keys, vels, gap=2500, hold=1200, t0=400):
@@ -300,8 +384,9 @@ def t60(x, f, hi=5.0, lo=35.0):
     return float(-60.0 / s) if s < 0 else float("inf")
 
 
-def bloom_ms(m, s0, n, dur=0.8):
-    """the f0 band's envelope peak after the strike (ms): a zero-phase band-pass (+-10 %) and its Hilbert envelope"""
+def bloom_true_ms(m, s0, n, dur=0.8):
+    """the f0 band's true envelope peak after the strike (ms): a zero-phase band-pass (+-10 %) and its Hilbert
+    envelope (the scan's measure before P4; reported next to bloom_ms)"""
     from scipy.signal import butter, hilbert, sosfiltfilt
     f = freqs(n)["V1"]
     x = m[s0:s0 + int(dur * FS)]
@@ -310,6 +395,14 @@ def bloom_ms(m, s0, n, dur=0.8):
     k = max(1, int(0.002 * FS))
     e = np.convolve(e, np.ones(k) / k, "same")
     return float(1000 * np.argmax(e) / FS)
+
+
+def bloom_ms(m, s0, n, dur=1.2):
+    """the bloom as T5b's targets and Gate VA-M4 define it: bartube.f0_peak_ms, vib_ref_measure's procedure (a
+    4096-point Hann STFT at f0 every 5 ms, the time of the window's START: a true peak at t reads ~46 ms early, as it
+    did on the VIBES recordings the procedure was made for)"""
+    import bartube
+    return float(bartube.f0_peak_ms(np.asarray(m[s0:s0 + int(dur * FS)], float), freqs(n)["V1"]))
 
 
 def release_rate(x, f, t_off):
@@ -571,6 +664,10 @@ def m2(F, keys):
         st = [(abs(F[b][v] - F[a][v]), a) for a, b in zip(ins, ins[1:]) if max(F[a][v], F[b][v]) > -90]
         w = max(st) if st else (0.0, None)
         rows.append(("M2", f"{v[:2].upper()}/V1 at the onset, smooth", w[0] <= 4.0, w[0], f"largest step {w[0]:.1f} dB at {w[1]} (<= 4)", True))
+        st40 = [(abs(F[b][v] - F[a][v]), a) for a, b in zip(ins, ins[1:]) if max(F[a][v], F[b][v]) > -40]
+        w40 = max(st40) if st40 else (0.0, None)
+        rows.append(("M2", f"{v[:2].upper()}/V1 at the onset, smooth within 40 dB of V1", None, w40[0],
+                     f"largest step {w40[0]:.1f} dB at {w40[1]} ({len(st40)} neighbour pairs; information: KNOWN M2)", True))
     return rows
 
 
@@ -582,18 +679,31 @@ def m3(F, keys):
     return [("M3", "peak / RMS at v127 vs neighbours", w[0] <= 3.0, w[0], f"{w[0]:.2f} dB at key {w[1]} (<= 3)", True)]
 
 
+D2_STEP = 16                                # the velocity grid the second difference is read on (VA-M10's anchors)
+
+
+def second_diff(vels, lv, step=D2_STEP):
+    """the level curve's largest second difference (dB) on an even grid of `step` velocities: the change of the
+    slope (dB per velocity) between neighbouring anchor intervals, x step. The anchors (8 24 40 64 88 100 117 127) are
+    unevenly spaced (16 .. 10 apart), so the plain np.diff(lv, 2) of before P4 read a straight curve (dB linear in
+    velocity, as T8's geometric mallet speed makes it: ~0.23 dB per velocity) as 'rough': 1.8 / 2.7 dB on an exactly
+    straight line. A curve straight in velocity reads 0 here; a kink of k dB per 16 velocities reads k."""
+    s = np.diff(lv) / np.diff(vels)
+    return float(np.abs(np.diff(s)).max() * step)
+
+
 def m4(keys=(36, 48, 60, 72, 84, 96)):
     rows = []
     for n in keys:
         r = strike_set(bm_tag("M4", n), base(), (n,), VELS, gap=2000, hold=900)
         lv = [r[(n, v)]["lufs"] for v in VELS]
         drop = min(np.diff(lv))
-        d2 = float(np.abs(np.diff(lv, 2)).max())
+        d2 = second_diff(VELS, lv)
         rng = lv[-1] - lv[0]
         cen = [r[(n, v)]["cen_a"] for v in VELS]
         fall = min(c1 / c0 - 1 for c0, c1 in zip(cen, cen[1:]))
         rows += [("M4", f"key {n} monotone", drop >= -0.3, drop, f"smallest step {drop:+.2f} dB (no drop > 0.3)", True),
-                 ("M4", f"key {n} smooth", d2 <= 1.5, d2, f"second difference {d2:.2f} dB (<= 1.5)", True),
+                 ("M4", f"key {n} smooth", d2 <= 1.5, d2, f"second difference {d2:.2f} dB per {D2_STEP} velocities (<= 1.5)", True),
                  ("M4", f"key {n} range v8-v127", 26 <= rng <= 32, rng, f"{rng:.1f} dB (26..32)", True),
                  ("M4", f"key {n} centroid monotone", fall >= -0.03, fall, f"largest fall {100 * fall:+.1f} % (no fall > 3 %)", True)]
     r = strike_set(bm_tag("M4 MED"), base(BARK=MED), (48, 60), (40, 117, 127), gap=2000, hold=900)
@@ -617,6 +727,9 @@ def m6():
     for n in (48, 60):
         d = 20 * math.log10(hard[(n, 100)]["cen_a"] / med[(n, 127)]["cen_a"])
         rows.append(("M6", f"key {n} MED v127 darker than HARD v100", d >= 6.0, d, f"attack centroid {d:+.1f} dB (>= 6)", True))
+        sd = dist(hard[(n, 100)]["bands"], med[(n, 127)]["bands"])
+        rows.append(("M6", f"key {n} MED v127 vs HARD v100 spectral distance", None, sd,
+                     f"{sd:.1f} dB (information: the cards' measure, >= 3 = audibly apart)", True))
     return rows
 
 
@@ -632,18 +745,25 @@ def ring_set(tag, setup, keys, vel=100, hold=5000, gap=6000):
     for tt, n in st:
         s0 = onset(m, tt)
         seg = m[s0:s0 + int(hold / 1000 * FS)]
-        out[n] = dict(t60=t60(seg, freqs(n)["V1"]), bloom=bloom_ms(m, s0, n), lufs=float(bm.lufs(m[s0:s0 + FS])))
+        out[n] = dict(t60=t60(seg, freqs(n)["V1"]), bloom=bloom_ms(m, s0, n), bloom_true=bloom_true_ms(m, s0, n), lufs=float(bm.lufs(m[s0:s0 + FS])))
     return out
+
+
+def bloom_targets():
+    """{key: (lo, hi) ms} below C5: marimba.json T5b bloom_ms_targets +-30 % (at least +-15 ms), as Gate VA-M4"""
+    t5b = json.load(open(os.path.join(ROOT, "docs", "model", "data", "marimba.json")))["T5b"]["bloom_ms_targets"]
+    return {int(k): (v - max(0.3 * v, 15.0), v + max(0.3 * v, 15.0)) for k, v in sorted(t5b.items(), key=lambda kv: int(kv[0]))
+            if int(k) < 72}
 
 
 def m7():
     rows = []
     keys = (36, 48, 60, 84, 90, 96)
     T = {b: ring_set(bm_tag("M7 tube", b), base(mute=0, BELL=b), keys) for b in (0, 64, 127)}
-    tgt = {36: (150, 300), 48: (84, 156), 60: (42, 78)}
-    for n, (lo, hi) in tgt.items():
-        b = T[64][n]["bloom"]
-        rows.append(("M7", f"key {n} bloom", lo <= b <= hi, b, f"{b:.0f} ms ({lo}..{hi})", True))
+    for n, (lo, hi) in bloom_targets().items():
+        b, bt = T[64][n]["bloom"], T[64][n]["bloom_true"]
+        rows.append(("M7", f"key {n} bloom", lo <= b <= hi, b, f"{b:.0f} ms ({lo:.0f}..{hi:.0f}: T5b +-30 %, VA-M4's "
+                     f"procedure; the true envelope peak {bt:.0f} ms)", True))
     for n in (84, 90, 96):
         b = T[64][n]["bloom"]
         rows.append(("M7", f"key {n} bloom (reflector)", b <= 15, b, f"{b:.0f} ms (<= 15)", True))
@@ -691,7 +811,9 @@ def status(row, stub):
         return "info"
     if ok:
         return "ok"
-    return "AWAIT" if (stub and specific) else "FAIL"
+    if stub and specific:
+        return "AWAIT"
+    return "KNOWN" if (specific and known(row[0], row[1])) else "FAIL"
 
 
 def report(rows, stub, mode, secs, extra=()):
@@ -700,18 +822,25 @@ def report(rows, stub, mode, secs, extra=()):
     head = [f"marimba_scan: TYPE {TYPE} MARIMBA (CC 79 {CC79}), {mode}, {len(rows)} checks, {secs:.0f} s",
             f"tables: {'STUB (sync 1: MARIMBA = VIBES) -> MARIMBA-specific verdicts are AWAIT (' + STUB_REASON + ')' if stub else 'real (sync 2)'}",
             f"spec: {os.path.relpath(spec_source(), ROOT) if spec_source() else 'none (1 : 4 : 9.8 on the ET pitch)'}",
-            f"ok {st.count('ok')}, FAIL {st.count('FAIL')}, AWAIT {st.count('AWAIT')}, info {st.count('info')}", ""]
+            f"ok {st.count('ok')}, FAIL {st.count('FAIL')}, KNOWN {st.count('KNOWN')} (user decisions), "
+            f"AWAIT {st.count('AWAIT')}, info {st.count('info')}", ""]
     groups = []
     for r in rows:
         if r[0] not in groups:
             groups.append(r[0])
     for g in groups:
         gs = [s for r, s in zip(rows, st) if r[0] == g]
-        head.append(f"{g:4} {'FAIL' if 'FAIL' in gs else 'AWAIT' if 'AWAIT' in gs else 'PASS'}  "
-                    f"{gs.count('ok')}/{len(gs) - gs.count('info')} pass" + (f", {gs.count('AWAIT')} await" if 'AWAIT' in gs else ""))
+        head.append(f"{g:4} {'FAIL' if 'FAIL' in gs else 'AWAIT' if 'AWAIT' in gs else 'KNOWN' if 'KNOWN' in gs else 'PASS'}  "
+                    f"{gs.count('ok')}/{len(gs) - gs.count('info')} pass" + (f", {gs.count('AWAIT')} await" if 'AWAIT' in gs else "")
+                    + (f", {gs.count('KNOWN')} known" if 'KNOWN' in gs else ""))
     head += ["", "per check:"]
     for r, s in zip(rows, st):
         head.append(f"  {r[0]:4} {s:5} {r[1]:42} {r[4]}")
+    kn = [(r, known(r[0], r[1])) for r, s in zip(rows, st) if s == "KNOWN"]
+    if kn:
+        head += ["", "KNOWN (the plan's threshold, not met as written; user decisions, the reasons):"]
+        for why in dict.fromkeys(w for _, w in kn):
+            head.append("  - " + why + " [" + ", ".join(r[1] for r, w in kn if w == why) + "]")
     head += list(extra)
     open(os.path.join(OUT, "report.txt"), "w").write("\n".join(head) + "\n")
     json.dump(dict(type=TYPE, cc79=CC79, stub=stub, reason=STUB_REASON if stub else None, mode=mode,

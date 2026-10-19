@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import marimba_scan as ms  # noqa: E402
 from hostrun import build  # noqa: E402
 
-AWAIT = pytest.mark.xfail(ms.stub_detected() or ms.p4_open(), reason=ms.await_reason(), strict=False)
+AWAIT = pytest.mark.xfail(ms.stub_detected(), reason=ms.await_reason(), strict=False)
 _ROWS = {}
 
 
@@ -96,6 +96,8 @@ def test_report_format(tmp_path, monkeypatch):
     assert st == ["ok", "AWAIT", "info"]
     st2, _ = ms.report(r, False, "smoke", 1.0)
     assert st2 == ["ok", "FAIL", "info"]                           # real tables: the same row fails
+    st3, l3 = ms.report(r + [("M5", "roll x pumping", False, 2.0, "2.0 LU", True)], False, "smoke", 1.0)
+    assert st3[-1] == "KNOWN" and any("USER DECISION" in x for x in l3)   # a KNOWN item: reported with its reason
     j = json.load(open(tmp_path / "scan.json"))
     assert j["type"] == 5 and j["cc79"] == 127 and {"check", "case", "ok", "metric", "detail", "specific", "status"} <= set(j["rows"][0])
     txt = open(tmp_path / "report.txt").read()
@@ -107,5 +109,22 @@ def test_report_format(tmp_path, monkeypatch):
 @pytest.mark.parametrize("part,checks", [("stress", {"M5", "B2"}), ("M1", None), ("M2", None), ("M3", None),
                                          ("M4", None), ("M6", None), ("M7", None)])
 def test_musicality_gate(part, checks):
+    """every row passes except the KNOWN ones (ms.KNOWN: the plan's threshold not met as written, user decisions;
+    test_known_user_decisions below keeps them visible as xfail)"""
     rs = rows(part)
-    assert rs and not fails(rs, checks), [r[1] + ": " + r[4] for r in fails(rs, checks)]
+    bad = [r for r in fails(rs, checks) if not ms.known(r[0], r[1])]
+    assert rs and not bad, [r[1] + ": " + r[4] for r in bad]
+
+
+KPART = {"M4": "M4", "M5": "stress", "M2": "M2", "M6": "M6", "M7": "M7"}
+
+
+@pytest.mark.parametrize("i", range(len(ms.KNOWN)), ids=[k[0] + "-" + k[1].strip("$ ") for k in ms.KNOWN])
+def test_known_user_decisions(request, i):
+    """each KNOWN item: its rows exist and are still failing (xfail with the reason): the day one passes (a data or
+    plan change), its xfail turns XPASS and the KNOWN entry goes"""
+    check, rx, why = ms.KNOWN[i]
+    rs = [r for r in rows(KPART[check]) if r[0] == check and ms.known(r[0], r[1]) == why]
+    assert rs, "no rows match the KNOWN entry"
+    request.applymarker(pytest.mark.xfail(reason=why, strict=False))
+    assert not fails(rs), [r[1] + ": " + r[4] for r in fails(rs)]

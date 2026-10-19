@@ -139,7 +139,7 @@ def test_marimba_pins_are_the_physics():
     """the marimba's pinned pair stage = the regime-aware solve again (bartube eig4: the same on every machine):
     zeta_r (derived) to 1e-12, the pair (sigma, decays, flags) to 1e-8, wt, the V1 values, and the integer words
     exactly or within a few LSB (an edge key: pair_words' kc bisection ends where a coupling word steps; then the
-    pinned words must hold V1 on f0 within 0.01 c)"""
+    pinned words must hold V1 on its target within 0.01 c: f0 moved by gen_bars.v1_target, the radiated pitch on f0)"""
     import numpy as np
     import bartube as btm
     exact, edge = [], []
@@ -158,7 +158,8 @@ def test_marimba_pins_are_the_physics():
             felt = min(gb.felt_v1(MVB, n), gb.t1a(MVB, n))
             for kk, v in gb.v1_vals(dict(bt=bt, felt_v1=felt)).items():
                 assert v == pytest.approx(p["v1"][kk], rel=1e-8), (n, kk)
-            pw, pp = gb.pair_words_safe(bt, wt, felt, gb.midi_hz(n)), gb.pin_words(p)
+            tgt = gb.v1_target(MVB, dict(bt=bt, wt=wt, f0=gb.midi_hz(n)))   # (the pitch-centring target, P4)
+            pw, pp = gb.pair_words_safe(bt, wt, felt, tgt), gb.pin_words(p)
             ints = [kk for kk in pp if kk not in ("kc", "f_slot0", "f_slot1")]
             if all(pw[kk] == pp[kk] for kk in ints):
                 exact.append(n)
@@ -169,7 +170,7 @@ def test_marimba_pins_are_the_physics():
             M = btm.pair_map(pp)
             iv = p["pw"].get("v1_ord")
             f, sig, _ = btm.map_modes(M)[btm.map_v1(M) if iv is None else iv]
-            assert abs(1200 * np.log2(f / gb.midi_hz(n))) <= 0.01, n
+            assert abs(1200 * np.log2(f / tgt)) <= 0.01, n
     print("marimba pins: %d keys exact, %d edge keys %s" % (len(exact), len(edge), edge))
 
 

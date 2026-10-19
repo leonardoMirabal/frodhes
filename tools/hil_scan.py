@@ -3135,11 +3135,85 @@ MKEYS = (48, 60, 84)                      # C3 C4 C6 (PLAN §12 step 2)
 MFAMS = (("SOFT", 0), ("MED", 42), ("HARD", 85), ("RUBBER", 127))
 MVELS = (8, 24, 40, 64, 88, 100, 117, 127)
 MOFFSET_DB = 2.5                          # the provisional level offset re ST77 (PLAN §10.1 offset_db: VIBES's, until P5)
+M_CAPPED = {(84, "SOFT", "MED")}          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
 
 
 def mt60(x, f):
     """the V1 T60 by a 30 dB fit (5..35 dB under the peak; PLAN §10.2 B1)"""
     return t60(x, f, 5.0, 35.0)
+
+
+# The MARIMBA measures are Gate VA-M's (tools/marimba_va.py) and the host scan's (tools/marimba_scan.py feats, P4):
+# the attack centroid over 0..50 ms, power-weighted, and every spectrum with the flat-start window (full weight from
+# the strike, a raised-cosine fade over the last quarter). The VIBES measures (a Hann window over 0..0.3 / 0..0.5 s)
+# weigh the middle of the segment, where a marimba note is its fundamental alone: on the FM-1 they read SOFT-MED
+# 0.0 dB apart on C4 and the velocity 'darkening' the attack (x0.46): the window, not the sound.
+M_ATT = 0.05
+
+
+def m_flat(n):
+    w = np.ones(n)
+    q = n // 4
+    w[n - q:] = 0.5 * (1 + np.cos(np.pi * np.arange(q) / q))
+    return w
+
+
+def m_cen(x):
+    """marimba_va.centroid at this rig's rate: power-weighted, flat-start window"""
+    x = np.asarray(x, float)
+    S = np.abs(np.fft.rfft(x * m_flat(len(x)))) ** 2
+    fr = np.fft.rfftfreq(len(x), 1 / FS)
+    return float(np.sum(fr * S) / (np.sum(S) + 1e-30))
+
+
+def m_third(x):
+    x = np.asarray(x, float)
+    S = np.abs(np.fft.rfft(x * m_flat(len(x)))) ** 2
+    fr = np.fft.rfftfreq(len(x), 1 / FS)
+    return np.array([10 * np.log10(S[(fr >= c * 2 ** (-1 / 6)) & (fr < c * 2 ** (1 / 6))].sum() + 1e-30)
+                     for c in [50 * 2 ** (i / 3) for i in range(26)]])
+
+
+def m_pk_db(x, f, rel=0.03):
+    x = np.asarray(x, float)
+    nf = 1 << max(15, int(np.ceil(np.log2(len(x)))) + 2)
+    S = np.abs(np.fft.rfft(x * m_flat(len(x)), nf)) ** 2
+    fr = np.fft.rfftfreq(nf, 1 / FS)
+    return float(10 * np.log10(S[(fr >= (1 - rel) * f) & (fr <= (1 + rel) * f)].sum() + 1e-30))
+
+
+def m_strike_feats(m, i, n):
+    """strike_feats with the marimba measures (above): LUFS 0..1 s, cen_a 0..50 ms, V2 / V3 re V1 5..300 ms, bands
+    0..0.5 s"""
+    sp = bspec().get(n, {})
+    att = cut(m, i, 0.005, 0.3)
+    l1 = m_pk_db(att, sp.get("V1", f1(n)))
+    return dict(lufs=lu(cut(m, i, 0, 1.0)), cen_a=m_cen(cut(m, i, 0, M_ATT)),
+                v2=m_pk_db(att, sp["V2"]) - l1 if "V2" in sp else float("nan"),
+                v3=m_pk_db(att, sp["V3"]) - l1 if "V3" in sp else float("nan"), bands=m_third(cut(m, i, 0, 0.5)))
+
+
+def m_excess_db(x, ref):
+    """excess_db with the flat-start window: the contact noise (tau ~23 ms) sits at the window's start, where a Hann
+    window over 0..60 ms is ~0 (it read C6's tick 37 dB under the note, the host's sample-exact difference -33)"""
+    nn = min(len(x), len(ref))
+    w = m_flat(nn)
+    P = np.abs(np.fft.rfft(np.asarray(x[:nn], float) * w)) ** 2
+    Q = np.abs(np.fft.rfft(np.asarray(ref[:nn], float) * w)) ** 2
+    ex = np.maximum(P - 1.26 * Q, 0).sum() * 2 / (nn * (w * w).sum())
+    return float(10 * np.log10(ex + 1e-24))
+
+
+def m_ms_db(x):
+    w = m_flat(len(x))
+    return float(10 * np.log10((np.abs(np.fft.rfft(np.asarray(x, float) * w)) ** 2).sum() * 2 / (len(x) * (w * w).sum()) + 1e-24))
+
+
+def m_second_diff(vels, lv, step=16):
+    """tools/marimba_scan.second_diff: the level curve's second difference on an even 16-velocity grid (the anchors
+    8 24 40 64 88 100 117 127 are unevenly spaced: np.diff(lv, 2) read a curve straight in velocity as 1.8 / 2.7 dB)"""
+    s = np.diff(lv) / np.diff(vels)
+    return float(np.abs(np.diff(s)).max() * step)
 
 
 @vtest
@@ -3158,7 +3232,7 @@ def marimba_voice(V, S):
     def F(key, src, k):
         if (key, src, k) not in cache:
             t = T[key]
-            cache[(key, src, k)] = strike_feats(t.m(src), t.on(src)[k], MKEYS[k])
+            cache[(key, src, k)] = m_strike_feats(t.m(src), t.on(src)[k], MKEYS[k])
         return cache[(key, src, k)]
 
     def key(c, x):
@@ -3178,7 +3252,8 @@ def marimba_voice(V, S):
 
         def fam(q):
             ds = [(sdist(F(("BARK", va), q, k)["bands"], F(("BARK", vb), q, k)["bands"]), f"{na}-{nb}")
-                  for i, (na, va) in enumerate(MFAMS) for nb, vb in MFAMS[i + 1:]]
+                  for i, (na, va) in enumerate(MFAMS) for nb, vb in MFAMS[i + 1:]
+                  if not (n, na, nb) in M_CAPPED]
             return min(ds)
         S.check(f"MALLET (CC {P['BARK']['cc']}) families pairwise", s, S.per(fam), lambda v: v[0] >= 3,
                 "every pair of SOFT MED HARD RUBBER >= 3 dB", fmt=lambda v: f"closest {v[1]} {v[0]:.1f} dB")
@@ -3221,8 +3296,11 @@ def marimba_decay(V, S):
                 lambda v: v[0] < v[1] < v[2] and v[2] / v[0] >= 2.0, "in order, 127 / 0 >= 2x",
                 fmt=lambda v: fmt_s(v) + " s")
     # MUTE and the pedal: the decay 30..300 ms after the key-up (1.5 s), against the same note held
-    keys = (48, 72)
-    ev, dur = strikes(keys, (100,), gap=3.0, hold=1.5)
+    # (the key-up while the short note still rings well over the jack's hiss: C3 at 0.4 s, C5 at 0.2 s; let go at
+    # 1.5 s, as before P4, C3 was ~60 dB down, under the jack's floor, and C5 silent: 'no value')
+    keys, holds = (48, 72), (0.4, 0.2)
+    ev = [e for k, (n, h) in enumerate(zip(keys, holds)) for e in ((0.2 + 3.0 * k, "on", n, 100), (0.2 + 3.0 * k + h, "off", n, 0))]
+    dur = 0.2 + 3.0 * (len(keys) - 1) + 2.8 + 0.8
     evh, _ = strikes(keys, (100,), gap=3.0, hold=2.8)
     T = {}
     for x in (0, 64, 127):
@@ -3235,7 +3313,7 @@ def marimba_decay(V, S):
         T[("ped", p_)] = V.take(f"m-pedal-{p_}", dur, ev + [(0.05, "cc", 64, p_)])
     for k, n in enumerate(keys):
         def r(key, q):
-            return release_rate(cut(T[key].m(q), T[key].on(q)[k], 0, 2.3), f1(n), 1.5)
+            return release_rate(cut(T[key].m(q), T[key].on(q)[k], 0, 2.3), f1(n), holds[k])
         S.check(f"MUTE (CC {P['RELEASE']['cc']}) 0 = rings out", f"key {n}, after the key-up vs held",
                 S.per(lambda q: r(0, q) / r("held", q)), lambda v: abs(v - 1) <= 0.01, "within 1 % of the held decay",
                 fmt=lambda v: f"x{v:.3f}")
@@ -3259,9 +3337,11 @@ def marimba_decay(V, S):
         def nz(q):
             o = {x: T[x].on(q)[k] for x in T}
             m = {x: T[x].m(q) for x in T}
-            ring = ms_db(cut(m[0], o[0], 0, 0.06))
-            c = {x: excess_db(cut(m[x], o[x], 0, 0.06), cut(m[0], o[0], 0, 0.06)) - ring for x in (de, 127)}
-            return dict(c=c, k=knock_db(m[127], o[127], m[0], o[0]) - ms_db(cut(m[0], o[0], 1.4, 1.5)))
+            ring = m_ms_db(cut(m[0], o[0], 0, 0.06))
+            c = {x: m_excess_db(cut(m[x], o[x], 0, 0.06), cut(m[0], o[0], 0, 0.06)) - ring for x in (de, 127)}
+            # the knock re the note at its strike (0..100 ms): just before the key-up (1.4..1.5 s, as VIBES) a short
+            # marimba note is already gone (USB -240 dBFS, the jack its hiss), and the ratio read 0 / -2 dB
+            return dict(c=c, k=knock_db(m[127], o[127], m[0], o[0]) - ms_db(cut(m[0], o[0], 0, 0.1)))
         vals = S.per(nz)
         S.check(f"NOISE (CC {P['NOISE']['cc']}) contact {de} -> 127", f"key {n}, 0..60 ms",
                 {s_: v and v["c"][127] - v["c"][de] for s_, v in vals.items()}, lambda v: v >= 6, ">= +6 dB", level=True)
@@ -3300,15 +3380,15 @@ def marimba_vel(V, S):
         S.check("velocity monotone", f"key {n}, v{MVELS[1]}..v127",
                 {s_: v and float(min(np.diff(v[1:]))) for s_, v in vals.items()}, lambda d: d >= -0.3,
                 "no drop > 0.3 dB (v8 may sit under the gate)", fmt=lambda d: f"{d:+.2f}")
-        S.check("velocity smooth", f"key {n}", {s_: v and float(np.abs(np.diff(v[1:], 2)).max()) for s_, v in vals.items()},
-                lambda d: d <= 1.5, "second difference <= 1.5 dB", fmt=lambda d: f"{d:.2f} dB")
+        S.check("velocity smooth", f"key {n}", {s_: v and m_second_diff(MVELS[1:], v[1:]) for s_, v in vals.items()},
+                lambda d: d <= 1.5, "second difference <= 1.5 dB per 16 velocities", fmt=lambda d: f"{d:.2f} dB")
         S.check("velocity range v8 -> v127", f"key {n}", {s_: v and v[-1] - v[0] for s_, v in vals.items()},
                 lambda d: 26 <= d <= 32, "26..32 dB", level=True)
         if n == 60:
-            S.check("C4 MED: v40 -> v117 brighter", "attack centroid 0..0.3 s",
-                    S.per(lambda q: cen(cut(t.m(q), t.on(q)[MVELS.index(117)], 0, 0.3)) /
-                          cen(cut(t.m(q), t.on(q)[MVELS.index(40)], 0, 0.3))),
-                    lambda v: v >= 1.4, ">= 1.4x", fmt=lambda v: f"x{v:.2f}")
+            S.check("C4 MED: v40 -> v117 brighter", "attack centroid 0..50 ms (flat start, VA-M5)",
+                    S.per(lambda q: m_cen(cut(t.m(q), t.on(q)[MVELS.index(117)], 0, M_ATT)) /
+                          m_cen(cut(t.m(q), t.on(q)[MVELS.index(40)], 0, M_ATT))),
+                    lambda v: v >= 1.4, ">= 1.4x (KNOWN, user decision: golden x1.04)", fmt=lambda v: f"x{v:.2f}")
     keys = list(range(36, 97))
     ev, dur = strikes(keys, (100,), gap=1.4, hold=0.9)
     V.reset([("RELEASE", 64)], label="every key C2..C7")

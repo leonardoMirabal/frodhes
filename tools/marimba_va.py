@@ -117,6 +117,18 @@ def t60_fit(x, f, drop=30.0, start_db=3.0, rel=0.03):
     return -60.0 / sl if sl < 0 else float("inf")
 
 
+def pitch_hz(x, guess, t0, t1):
+    """tools/hil_scan.py f0_of on x[t0:t1]: the FFT peak near guess (Hann, x8 zero padding, parabolic refinement)"""
+    seg = np.asarray(x[int(t0 * FS):int(t1 * FS)], float)
+    n = len(seg)
+    sp = np.abs(np.fft.rfft(seg * np.hanning(n), 8 * n))
+    fr = np.fft.rfftfreq(8 * n, 1 / FS)
+    m = (fr > guess * 0.94) & (fr < guess * 1.06)
+    i = np.flatnonzero(m)[np.argmax(sp[m])]
+    a, b, c = np.log(sp[i - 1:i + 2] + 1e-12)
+    return (i + 0.5 * (a - c) / (a - 2 * b + c)) * FS / (8 * n)
+
+
 def noise_render(spec, noise, bark, vel, n):
     """bars.c's contact noise for one strike, integers as the C (engine.c: bar_nz = KN_NZ[NOISE] << 8; bar_strike:
     e += bar_nz x bar_fam_nz() x vel >> 22; the LFSR, NZ_BQ, e -= (e + 1023) >> 10, y e >> 13 into bar_mono Q20),
@@ -197,8 +209,18 @@ def checks(spec=None, quick=False):
     add("M1 V1 normal mode at f0 (golden, 1..3 s; keys %s: T60 > 0.4 s, the pair resolvable, split >= 2 Hz), worst |c|"
         % ks1, round(worst, 3), worst <= 0.5)
     wc = max(abs(d["grid"]["v1_cents"]) for d in spec["design"])
-    add("M1 V1 normal mode at f0 on every key (the integer map's exact eigenvalue: the strongly coupled pairs, 0.3-1 Hz "
-        "apart, are not resolved by a 2 s render), worst |c|", round(wc, 4), wc <= 0.5)
+    add("M1 V1 normal mode on its target on every key (the integer map's exact eigenvalue: the strongly coupled pairs, "
+        "0.3-1 Hz apart, are not resolved by a 2 s render), worst |c|", round(wc, 4), wc <= 0.5)
+    add("M1 the V1 targets (gen_bars.v1_target: the pair's radiated pitch centred on f0), cents re f0 at the register "
+        "keys", [(n, round(D[n].get("v1_target_cents", 0.0), 2)) for n in REG], True, "report")
+    pk = list(range(36, 73, 2))
+    yp = render(spec, pk, [100] * len(pk), 1.4, None)
+    pc = [(n, round(bva.cents(pitch_hz(x, D[n]["f0"], 0.05, 0.6), D[n]["f0"]), 2),
+           round(bva.cents(pitch_hz(x, D[n]["f0"], 0.05, 1.3), D[n]["f0"]), 2)) for n, x in zip(pk, yp)]
+    wp = max(abs(c[1]) for c in pc)
+    add("M1 the radiated pitch on f0, C2..C5 (the f0 band's FFT peak over 0.05..0.6 s, as tools/hil_scan.py reads the "
+        "FM-1; the two normal modes heard as one tone; an FFT peak of a beating pair reads to ~1 c), worst |c| (<= 1.5)", round(wp, 2), wp <= 1.5)
+    add("M1 the radiated pitch per key: (key, c 0.05..0.6 s, c 0.05..1.3 s)", pc, True, "report")
     wv = 0.0
     for n in range(21, 109):
         for s, m in zip(range(2, 7), D[n]["modes"][:5]):
