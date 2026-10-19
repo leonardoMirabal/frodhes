@@ -561,9 +561,8 @@ vibraphone's range.
 ### MARIMBA
 
 <!-- DRAFT 0.9.4 (MARIMBA P6): checked against the code (params.c, eng_pages.h, presets.c, bars.c, marimba.json) and
-the host gate (tools/marimba_va.py: the decays, the bloom, the hand mute). Open until the user's review: the level
-offset (+2.5 dB, marimba.json calib.st77_offset_db, provisional), the decay lengths (marimba.json T1b), the KNOWN
-items of tools/marimba_scan.py. -->
+the host gate (tools/marimba_va.py: the decays, the bloom, the hand mute). Open until the user's review: the decay
+lengths (marimba.json T1b), the KNOWN items of tools/marimba_scan.py. -->
 
 Turn **ALGORITHM** (or the TYPE card) to **MARIMBA** and the FM-1 plays a concert marimba: rosewood bars struck with
 yarn mallets, each over its tuned tube. It is the same kind of instrument as the vibraphone, computed the same way
@@ -611,6 +610,11 @@ MUTE says; let go, MUTE decides. **All Notes Off** (CC 123 / 120) stops everythi
 **No motor.** The motor belongs to VIBES. On MARIMBA its MIDI CCs (47-51) are accepted and kept for VIBES, and change
 nothing in the marimba's sound.
 
+**MARIMBA's level.** MARIMBA is set **2.5 dB louder** than the Rhodes types, as VIBES. But every marimba strike is
+held under **−0.5 dBFS** (the top bars are rolled off and RING has its ceiling, so the hardest strike never reaches
+the limiter), and that keeps a chord lower: an A3-E4-A4 chord at velocity 100 reads about **1.5 LU under** the
+Rhodes F01 STAGE 77, on the USB audio and on the headphone jack alike.<!-- FM-1 hil_scan --marimba, scans 3 and 4 (build/marimba/p5/scan3/marimba-report.md, scan4-report.md): MARIMBA re ST77, A3-E4-A4 v100, LUFS 0..1 s, -1.50 LU USB, -1.48 jack. Level decision "A" (user, 2026-10-20): calib.st77_offset_db stays 2.5, no louder build -->
+
 **The range.** A concert marimba has five octaves, **C2 to C7**; that is where MARIMBA is measured. Every other MIDI
 note plays too (A0-C8), extended from the same physics. The FM-1's keys (F3–G5) sit in the marimba's middle.
 
@@ -635,8 +639,9 @@ starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 | F13 VIBE MOTOR | F14 VIBES DRY | F15 MARIMBA | F16 MRMB SOFT |
 
 The Rhodes presets F01–F12 are level-matched: each one's LEVEL (SETUP) brings it to about the loudness of F01, so
-browsing does not jump in volume (VIBES, F13–F14, sits 2.5 dB above, as the type does; so does MARIMBA, F15–F16,
-for now).<!-- DRAFT: MARIMBA's +2.5 dB is marimba.json calib.st77_offset_db, provisional: the P5 jack session (build/marimba/p5/jack2.log: SNR 3.8 dB under ST77) and the user decide the final offset -->
+browsing does not jump in volume (VIBES, F13–F14, sits 2.5 dB above, as the type does). MARIMBA, F15–F16, is set
+2.5 dB above as well, but every marimba strike is held just under full scale (see MARIMBA's level), so on a chord
+it comes out about 1.5 LU under F01 (measured on the FM-1).
 
 **Saving:** press **SAVE**. The bottom line asks where; turn **PRESETS** or **K1** to pick U01–U16; press **SAVE**
 again to store it, or **HOME** (or **OCT−**) to cancel. The name is made from the type and the effects that are on
