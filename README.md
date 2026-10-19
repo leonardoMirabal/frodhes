@@ -115,8 +115,8 @@ emulator (Emscripten; `web/web_hal.c` stands in for the hardware) into `web/dist
 Releases are one command: `tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device] [--no-emulator] [--yes]`
 picks the next version from the latest tag, checks the tree (on `main`, clean, not behind `origin/main`, the notes
 in `docs/releases/vX.Y.Z.md` written and no longer marked DRAFT; a missing file gets a draft from the git log),
-runs the host tests and the release build, installs it on the FM-1 and runs the CPU, scan and jack tests on both
-engines, points this README and the manual at the new file, commits, asks before publishing, then pushes `main`,
+runs the host tests and the release build, installs it on the FM-1 and runs the CPU, scan and jack tests on the
+Rhodes and VIBES (not yet MARIMBA), points this README and the manual at the new file, commits, asks before publishing, then pushes `main`,
 waits for CI to pass on that commit, tags, waits for the release workflow and checks that the published `.fwsc` is
 byte for byte the one tested, publishes the emulator and checks the live files. It stops at the first failure and
 ends with a table of every step (done, skipped and why, failed); `--dry-run` runs the local checks only and stops
