@@ -204,3 +204,40 @@ def test_rig_takes_are_slices_on_the_event_clock():
             assert r.wait_silence(2.0)                                              # the polls: slices too
     finally:
         r.cap.close()
+
+
+def test_a_cut_never_stalls_the_callback():
+    """the recorder's callback (Ring.push) waits for Ring.lock: a cut must hold it for microseconds whatever the log's
+    length. The log as a deque turned into an array per cut held the lock and the GIL ~18 ms once it was full (120 s
+    at 48 kHz: 180,000 blocks), and the FM-1's USB input lost 13-27 ms in the takes' tails (polled every 10 ms;
+    hil_scan2/3 2026-10-19: 218 gaps, every one after the take's last event, none in the first ~10 min of a run).
+    Also: the cuts from a full, wrapped log equal the old whole-log search"""
+    rng = np.random.default_rng(7)
+    sr = 48000
+    r = h.Ring(sr, 1, secs=120)
+    blk = 32
+    nb = r.M + 5000                                                                 # the log full and wrapped
+    adc = 7.0 + np.arange(nb) * blk / sr + rng.uniform(-3e-4, 3e-4, nb)
+    x = np.ones((blk, 1), np.float32)
+    for i in range(nb):
+        r.push(x, adc[i])
+    assert r.nlog == nb
+    t_end = r.end_time()
+    worst = 0.0
+    for k in range(20):
+        t0 = time.perf_counter()
+        L, _ = r._snap(t_end - 3.6 + 0.01 * k)
+        worst = max(worst, time.perf_counter() - t0)
+        assert L is not None and len(L) < 6000
+    assert worst < 0.005, worst                                                     # ~0.1 ms; the deque: ~18 ms
+    # the old search over every entry held (the newest M), for a few cut starts
+    keep = np.arange(nb - r.M, nb)
+    full = np.stack([keep * blk, adc[keep]], 1).astype(float)
+    for t0 in (t_end - 3.6, t_end - 50.0, adc[nb - r.M] + 0.5, adc[nb - r.M] - 1.0):
+        k0 = max(0, int(np.searchsorted(full[:, 1], t0, "right")) - 1)
+        L, _ = r._snap(t0)
+        j = int(np.flatnonzero(L[:, 0] == full[k0, 0])[0])
+        assert np.array_equal(L[j:], full[k0:]), t0
+        assert L[max(0, int(np.searchsorted(L[:, 1], t0, "right")) - 1), 0] == full[k0, 0]   # cut's own start
+        assert abs(r.frame_at(t0) - (full[0, 0] + (t0 - full[0, 1]) * sr if t0 <= full[0, 1] else
+                                     np.interp(t0, full[:, 1], full[:, 0]))) < 1e-6
