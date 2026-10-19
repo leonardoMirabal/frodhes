@@ -62,10 +62,15 @@ static void eng_all_off(void) { eng_post(EV_ALL_OFF, 0, 0); }
 
 /* params.c param_apply(P_TYPE): rhodes.c only ever gets 0..3 in rh_type (a bar TYPE leaves it at the last Rhodes
  * one, so a Rhodes note still fading out at the change keeps its own voicing) */
+static uint16_t eng_epoch;                     /* main loop: counts the TYPE changes that stop the sounding voices (to
+                                                * another engine, or VIBES <-> MARIMBA); notes.c re-sounds a pitch
+                                                * still held across one when it is pressed again (out_resound) */
 static void eng_set_type(uint32_t t)
 {
+    uint8_t w = eng_want, s = eng_want_sub;
     if (t < ENG_RH_NTYPE) { rh_type = (uint8_t)t; eng_want = ENG_RHODES; }
     else { t -= ENG_RH_NTYPE; eng_want_sub = (uint8_t)(t < BAR_NTYPE ? t : 0u); eng_want = ENG_BARS; }
+    if (eng_want != w || (eng_want == ENG_BARS && eng_want_sub != s)) eng_epoch++;
 }
 static int eng_is_bars(void) { return eng_want == ENG_BARS; }   /* the main loop's TYPE, not the ISR latch */
 

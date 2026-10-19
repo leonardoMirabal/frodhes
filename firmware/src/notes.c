@@ -66,10 +66,21 @@ static void note_in_off(uint32_t n, int echo)
     if (!out_quiet_off) eng_q(EV_NOTE_OFF, n, 0);
     if (echo) midi_send(0x80 | MIDI_OUT_CH, n, 0);
 }
+/* a pitch still counted held when the TYPE changed to another engine (or VIBES <-> MARIMBA) was stopped by the change
+ * (engine.c eng_switch): pressed again (a MIDI note-on with no note-off between, a second source on it), it is struck
+ * again on the new engine, once per change (eng_epoch); it stayed silent until every source let it go (0.9.3) */
+static uint16_t out_epoch[128];
+static void out_resound(uint32_t n, uint32_t vel)
+{
+    if (n > 127u || !out_ref[n] || out_epoch[n] == eng_epoch) return;
+    out_epoch[n] = eng_epoch;
+    if (!note_to_arp[n]) eng_q(EV_NOTE_ON, n, vel);          /* (the arpeggiator strikes its notes each step) */
+}
 static void out_on(uint32_t n, uint32_t vel, int echo)
 {
     if (n > 127u) return;
-    if (out_ref[n]++ == 0u) { out_echo[n] = (uint8_t)echo; note_in_on(n, vel, echo); }
+    if (out_ref[n] == 0u) { out_ref[n] = 1; out_epoch[n] = eng_epoch; out_echo[n] = (uint8_t)echo; note_in_on(n, vel, echo); }
+    else { out_resound(n, vel); out_ref[n]++; }
 }
 static void out_off(uint32_t n)
 {
@@ -204,7 +215,11 @@ static void src_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
 {
     uint8_t notes[CH_MAX];
     uint32_t c;
-    if (src_active[slot]) return;
+    if (src_active[slot]) {                                  /* pressed again, never let go: only a pitch a TYPE
+                                                               * change stopped sounds again (out_resound) */
+        for (c = 0; c < src[slot].started; c++) out_resound(src[slot].n[c], vel);
+        return;
+    }
     if (PV(P_LFO_RETRIG)) fx_lfo_retrig = 1;                  /* the filter's LFO from the start (LFO page: KEY) */
     if (chord_on()) c = chord_build(n, notes); else { notes[0] = (uint8_t)n; c = 1; }
     src_start(slot, notes, c, vel, echo);
