@@ -102,9 +102,17 @@ def band_env_db(x, f, rel=0.03, hop=64):
     return 20 * np.log10(e + 1e-12), np.arange(len(e)) * hop / FS
 
 
-def t60_fit(x, f, drop=30.0, start_db=3.0, rel=0.03):
+def t60_fit(x, f, drop=30.0, start_db=3.0, rel=None):
     """T60 of the f band by a straight-line fit of its envelope from start_db under its peak down drop dB more (the
-    plan's '30 dB fit': a 60 dB fit runs into the floor on a 0.1 s note), x 60 / drop"""
+    plan's '30 dB fit': a 60 dB fit runs into the floor on a 0.1 s note), x 60 / drop.
+
+    rel None (P4): the band +-clip(16 Hz / f, 3 %, 15 %) and x zero-padded to 3x its length (tools/mrb_ref_measure.py's
+    unbiased fit). The +-3 % brick-wall band of before is narrower than a low note's decay line (C2: +-2 Hz against a
+    Lorentzian 1.4 Hz wide) and, being circular, wraps the strike onto the tail: it read a pure exponential 26 % long
+    at C2, 8 % at C3, 6 % at C4 (0-1 % from C5 up)"""
+    if rel is None:
+        rel = float(np.clip(16.0 / f, 0.03, 0.15))
+        x = np.concatenate([np.asarray(x, float), np.zeros(2 * len(x))])
     e, t = band_env_db(x, f, rel)
     i = int(np.argmax(e))
     hi, lo = e[i] - start_db, e[i] - start_db - drop

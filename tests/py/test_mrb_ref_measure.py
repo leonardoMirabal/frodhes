@@ -128,6 +128,9 @@ def test_jack_marimba_dry_run():
     js = json.load(open(os.path.join(ROOT, "build", "hil", "dry", "jack-marimba.json")))
     assert js["dry_run"] and js["idle"]["usb_nonzero"] == 0 and js["idle_ok"]
     assert abs(js["st77_drift_db"]) <= 0.3
-    assert js["tails"]["C2 RING 127 TUBE 127 pedal"]["kind"] == "gate"
+    # (the tail hovers at the gate's 16 LSB at its end: on e849a38 the gate ended it at 5.724 s, on P4's tables (C2
+    #  retuned +9 c) the voice's own end did at 5.713 s, a sample over 16 LSB inside the gate's 200 ms; both pristine)
+    assert js["tails"]["C2 RING 127 TUBE 127 pedal"]["kind"] in ("gate", "decayed")
+    assert js["tails"]["C2 RING 127 TUBE 127 pedal"]["ok"] and js["tails"]["C2 RING 127 TUBE 127 pedal"]["usb_clicks"] == 0
     assert js["tails"]["C2 RING 127 TUBE 127 pedal"]["pre_fade_peak_lsb"] <= 16.5
     assert "SNR MARIMBA - ST77" in r.stdout
