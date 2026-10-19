@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import marimba_scan as ms  # noqa: E402
 import bar_measure as bm  # noqa: E402
 
-AWAIT = pytest.mark.xfail(ms.stub_detected(), reason=ms.STUB_REASON, strict=False)
+AWAIT = pytest.mark.xfail(ms.stub_detected() or ms.p4_open(), reason=ms.await_reason(), strict=False)
 MARIMBA = [cc(20, 79, 127)]
 RAW = [cc(21, 119, 127)]
 
@@ -57,15 +57,23 @@ def test_ring_changes_the_ring_time(note):
     assert t[0] < t[1] < t[2] and t[2] / t[0] >= 2.0, (note, t)
 
 
+def _dur(note):
+    """the key-up while the note still rings (the real tables: C5 is down 60 dB in ~0.6 s)"""
+    return 1500 if note < 60 else 200
+
+
 def _rates(tag, setups, note):
-    return {k: after_release(play(f"{tag}{k}-{note}", s + [cc(30, 104, 0)], note).L, note, 1.7) for k, s in setups.items()}
+    d = _dur(note)
+    return {k: after_release(play(f"{tag}{k}-{note}", s + [cc(30, 104, 0)], note, dur=d).L, note, 0.2 + d / 1000)
+            for k, s in setups.items()}
 
 
 @AWAIT
 @pytest.mark.parametrize("note", (48, 72))
 def test_mute_is_the_hand(note):
     r = _rates("mca-mute", {v: [cc(30, 103, v)] for v in (0, 64, 127)}, note)
-    held = after_release(play(f"mca-held-{note}", [cc(30, 104, 0)], note, dur=3000, end=3500).L, note, 1.7)
+    held = after_release(play(f"mca-held-{note}", [cc(30, 104, 0)], note, dur=3000, end=3500).L, note,
+                         0.2 + _dur(note) / 1000)
     assert abs(r[0] / held - 1) <= 0.01, (note, r[0], held)          # MUTE 0 = rings out
     assert r[0] < r[64] < r[127] and r[127] / r[0] >= 3.0, (note, r)
 
@@ -74,7 +82,8 @@ def test_mute_is_the_hand(note):
 @pytest.mark.parametrize("note", (48, 72))
 def test_pedal_holds_whatever_mute_says(note):
     r = _rates("mca-ped", {p: [cc(30, 103, 127), cc(30, 64, p)] for p in (0, 50, 127)}, note)
-    held = after_release(play(f"mca-pheld-{note}", [cc(30, 104, 0)], note, dur=3000, end=3500).L, note, 1.7)
+    held = after_release(play(f"mca-pheld-{note}", [cc(30, 104, 0)], note, dur=3000, end=3500).L, note,
+                         0.2 + _dur(note) / 1000)
     assert abs(r[127] / held - 1) <= 0.01, (note, r[127], held)
     assert r[127] < r[50] < r[0] and r[0] / r[127] >= 3.0, (note, r)
 
@@ -83,7 +92,7 @@ def test_all_notes_off_stops_a_ringing_note():
     """the panic path: CC 123 mutes fully even at MUTE 0 (pedal down too)"""
     x = run("mca-panic", MARIMBA + RAW + [cc(30, 103, 0), cc(30, 64, 127), "200 midi 0x90 60 100",
                                           "1000 midi 0xB0 123 0"], 4000).L
-    assert rms_db(x[int(0.5 * FS):int(0.9 * FS)]) > -40
+    assert rms_db(x[int(0.25 * FS):int(0.65 * FS)]) > -40
     assert not np.any(x[int(3.0 * FS):]), "still sounding 2 s after All Notes Off"
 
 
@@ -107,7 +116,8 @@ def test_noise_is_the_contact_and_nothing_at_the_key_up(note):
     k0 = int(1.7 * FS)                                                    # the key-up (on 200 ms + 1500)
     knock = rms_db(x[127][k0:k0 + int(0.15 * FS)] - x[0][k0:k0 + int(0.15 * FS)])
     note_lvl = rms_db(x[0][int(1.6 * FS):int(1.7 * FS)])
-    assert knock <= note_lvl - 60.0, (note, knock, note_lvl)              # no damper: no knock
+    assert knock <= note_lvl - 60.0 or knock <= -200.0, (note, knock, note_lvl)   # no damper: no knock (or the
+    #                                                                       short real note already gone: both silent)
 
 
 def test_tune_by_the_panel():

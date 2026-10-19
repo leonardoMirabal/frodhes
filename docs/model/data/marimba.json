@@ -508,14 +508,14 @@
    ]
   ],
   "lvl_db": [
-   -77.0,
-   -41.0
+   -87.0,
+   -31.0
   ],
   "gone_ms": 100,
   "src": "SERRA p. 259-261 (marimba, MEAS fit); VIBES T13b",
   "status": "ESTIMATE",
   "settle": "listening pack D (the tick at NOISE 127)",
-  "_doc_2026_10_19": "lvl_db 17 dB under VIBES's: NOISE 64 = -50 dB re the note (VA-M7) on the marimba's C4 (its v100 peak is lower re full scale than the vibraphone's)"
+  "_doc_2026_10_19": "lvl_db [-87, -31] (VIBES [-60, -24]): NOISE 64 = -50 dB re the note's peak on C4 (VA-M7) and NOISE 127 a clear tick, its 60 ms RMS within 35 dB of the note's (the host test of the C engine; a [-77, -41] span left NOISE 127 43 dB under)"
  },
  "R1": {
   "_doc": "radiation: b ~ (f / f0)^exp / omega per mode (gen_bars bphys)",

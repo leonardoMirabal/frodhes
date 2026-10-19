@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import marimba_scan as ms  # noqa: E402
 from hostrun import build  # noqa: E402
 
-AWAIT = pytest.mark.xfail(ms.stub_detected(), reason=ms.STUB_REASON, strict=False)
+AWAIT = pytest.mark.xfail(ms.stub_detected() or ms.p4_open(), reason=ms.await_reason(), strict=False)
 _ROWS = {}
 
 

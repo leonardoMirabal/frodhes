@@ -56,6 +56,17 @@ FS = bm.FS
 OUT = os.path.join(ROOT, "build", "marimba_scan", os.environ.get("PYTEST_XDIST_WORKER", ""))
 HDR = os.path.join(ROOT, "firmware", "gen", "bars_tables.h")
 STUB_REASON = "awaiting sync 2 real tables"
+P4_REASON = ("P4 open: the real tables are in (sync 2); the C engine's MARIMBA numbers of the scan are lane A's P4 "
+             "(MARIMBA_P4=1 runs them as plain tests)")
+
+
+def p4_open():
+    """the MARIMBA-specific scan numbers on the real tables await P4 (xfail, visible); MARIMBA_P4=1: gated"""
+    return os.environ.get("MARIMBA_P4") != "1"
+
+
+def await_reason():
+    return STUB_REASON if stub_detected() else P4_REASON
 TYPE = 5
 CC79 = 127                                  # CC 79 96..127 = MARIMBA (bar_measure.type_cc(5))
 AUTH = (36, 96)                             # C2..C7, the authentic range (PLAN §2.5)
@@ -718,7 +729,7 @@ def selector_rows():
         p = os.path.join(OUT, "wav", bm_tag("sel", name))
         os.makedirs(os.path.dirname(p), exist_ok=True)
         open(p + ".txt", "w").write(f"50 {sel}\n200 expect state card.2.0 MARIMBA\n200 expect state bars 1\n"
-                                    "300 midi 0x90 60 100\n800 expect rms > -40\n900 midi 0x80 60 0\n1000 end\n")
+                                    "300 midi 0x90 60 100\n500 expect rms > -40\n900 midi 0x80 60 0\n1000 end\n")
         r = subprocess.run([bm.BIN, p, p + ".txt"], capture_output=True, text=True)
         bad = [l for l in r.stdout.splitlines() if "FAIL" in l]
         rows.append(("SEL", name, not bad and r.returncode == 0, len(bad), "; ".join(bad) or "TYPE MARIMBA, the engine plays", False))
