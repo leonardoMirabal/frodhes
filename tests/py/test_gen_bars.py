@@ -51,16 +51,17 @@ def arr(name):
     return [int(x) for x in re.findall(r"-?\d+", m.group(1))]
 
 
-PER_TYPE = ("BAR_KEYS", "BAR_PRATE", "BAR_PAMP", "KN_MASS", "KN_MASSI", "KN_TUBE", "KN_NZ", "BAR_BODY", "BAR_TYPE")
+PER_TYPE = ("BAR_KEYS", "BAR_PRATE", "BAR_PAMP", "KN_FAM", "KN_MASS", "KN_MASSI", "KN_TUBE", "KN_NZ", "BAR_BODY", "BAR_TYPE")
 BANDED = ("BAR_PULSE", "BAR_POS", "BAR_POSG", "BAR_TUBEG")
 
 
 def check_vibes_rows(multi, single):
     """MARIMBA PLAN §8.1 item 1: type 0 of the multi-type header is the VIBES-only header, field by field: BAR_KEYS[0],
-    BAR_PRATE[0], BAR_PAMP[0], KN_MASS / KN_MASSI / KN_TUBE / KN_NZ [0], BAR_BODY[0], BAR_TYPE[0] (its first seven
-    fields; flags = motor + damper), bands 0..16 of BAR_PULSE / BAR_POS / BAR_POSG / BAR_TUBEG (BAR_PBAND the identity
-    there), KN_FAM, NZ_BQ, BAR_MOT_COS and every define but the counts. A stub type (a copy of VIBES, §8.1 item 4)
-    equals type 0 in every per-type row. Returns the parsed multi-type header."""
+    BAR_PRATE[0], BAR_PAMP[0], KN_FAM / KN_MASS / KN_MASSI / KN_TUBE / KN_NZ [0], BAR_BODY[0], BAR_TYPE[0] (its first
+    seven fields; flags = motor + damper), bands 0..16 of BAR_PULSE / BAR_POS / BAR_POSG / BAR_TUBEG (BAR_PBAND the
+    identity there), NZ_BQ, BAR_MOT_COS and every define but the counts; every type's KN_FAM at the MALLET detents.
+    A stub type (a copy of VIBES, §8.1 item 4) equals type 0 in every per-type row. Returns the parsed multi-type
+    header."""
     A, S = arrays(multi), arrays(single)
     dA, dS = defines(multi), defines(single)
     assert set(A) - {"BAR_RINGG"} == set(S) | {"BAR_PBAND"}       # (BAR_RINGG: a later type's keys with flag bit4)
@@ -69,8 +70,10 @@ def check_vibes_rows(multi, single):
     assert dS["BAR_NTYPE"] == 1 and dA["BAR_NTYPE"] >= 2
     for n in PER_TYPE:
         assert len(A[n]) == dA["BAR_NTYPE"], n
-    for n in ("BAR_KEYS", "BAR_PRATE", "BAR_PAMP", "KN_MASS", "KN_MASSI", "KN_TUBE", "KN_NZ"):
+    for n in ("BAR_KEYS", "BAR_PRATE", "BAR_PAMP", "KN_FAM", "KN_MASS", "KN_MASSI", "KN_TUBE", "KN_NZ"):
         assert A[n][0] == S[n], n
+    for row in A["KN_FAM"]:                               # the detents shared (the card's family names, BAR_FAM_V)
+        assert [row[v] for v in (0, 42, 64, 85, 127)] == [S["KN_FAM"][v] for v in (0, 42, 64, 85, 127)]
     assert A["BAR_BODY"][0] == S["BAR_BODY"][0]
     assert A["BAR_TYPE"][0][:7] == S["BAR_TYPE"][0] and A["BAR_TYPE"][0][7] == 3 and len(A["BAR_TYPE"][0]) == 9
     nb = dS["BAR_NBAND"]
@@ -78,7 +81,7 @@ def check_vibes_rows(multi, single):
         assert A[n][:nb] == S[n], n
     assert len(A["BAR_PULSE"]) == dA["BAR_NPULSE"] and len(A["BAR_POS"]) == dA["BAR_NBAND"] == len(A["BAR_PBAND"])
     assert A["BAR_PBAND"][:nb] == list(range(nb)) and max(A["BAR_PBAND"]) < dA["BAR_NPULSE"]
-    for n in ("KN_FAM", "NZ_BQ", "BAR_MOT_COS"):
+    for n in ("NZ_BQ", "BAR_MOT_COS"):
         assert A[n] == S[n], n
     if "STUB" in multi.split("*/", 3)[2]:                 # the header's type list names the stub
         for n in PER_TYPE:
@@ -102,8 +105,7 @@ def test_array_sizes():
     assert len(arr("BAR_PRATE")) == NT * 88 * 5 * 10
     assert len(arr("BAR_PAMP")) == NT * 88 * 5 * 10
     assert len(arr("BAR_POS")) == d["BAR_NBAND"] * 17 * 8
-    assert len(arr("KN_FAM")) == 128
-    for n in ("KN_MASS", "KN_MASSI", "KN_TUBE", "KN_NZ"):
+    for n in ("KN_FAM", "KN_MASS", "KN_MASSI", "KN_TUBE", "KN_NZ"):
         assert len(arr(n)) == 128 * NT, n
     assert len(arr("BAR_MOT_COS")) == 257 and len(arr("NZ_BQ")) == 10
     keys = re.search(r"BAR_KEYS\[[^=]*= \{(.*?)\n\};", HDR, re.S).group(1)

@@ -301,8 +301,9 @@ static void param_apply(uint32_t id)
     int32_t v = PV(id);
     switch (id) {
     case P_TYPE: eng_set_type((uint32_t)v); fx_set(FXP_DRIVE_ROW, TYPE_DRIVE_ROW[v]); tw_apply();
-        if (TYPE_IS_BARS(v)) {                       /* the bar type's own TUBE / WEIGHT / NOISE maps (MARIMBA C4) */
-            eng_bar_knob(BK_TUBE, PV(P_BELL)); eng_bar_knob(BK_WEIGHT, PV(P_HAMMER)); eng_bar_knob(BK_NOISE, PV(P_NOISE));
+        if (TYPE_IS_BARS(v)) {                       /* the bar type's own MALLET / TUBE / WEIGHT / NOISE maps (C4) */
+            eng_bar_knob(BK_MALLET, PV(P_BARK)); eng_bar_knob(BK_TUBE, PV(P_BELL)); eng_bar_knob(BK_WEIGHT, PV(P_HAMMER));
+            eng_bar_knob(BK_NOISE, PV(P_NOISE));
         }
         break;
     case P_DRIVE: fx_set(FXP_DRIVE, v); break;
