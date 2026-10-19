@@ -233,7 +233,7 @@ def test_old_settings_records_convert():
         assert s[f"p.{P[k]}"] == str(v), (k, s[f"p.{P[k]}"], v)
     for k in ("LEVEL", "CMP_RATIO", "CMP_GAIN", "FL_TYPE", "FL_FREQ", "LFO_RATE"):
         assert s[f"p.{P[k]}"] == str(dflt[P[k]]), k
-    assert s["preset"] == "14" and s["undo"] == "0" and s["oct"] == "1" and s["bpm"] == "100.0", (s["preset"], s["undo"])
+    assert s["preset"] == "16" and s["undo"] == "0" and s["oct"] == "1" and s["bpm"] == "100.0", (s["preset"], s["undo"])
     # a version 2 record from 0.4-0.7 (flags 0): LEVEL / ratio / makeup / filter were not there
     img2 = bytearray(b"\xff" * 5 * SECTOR)
     r = v1_record({P["TYPE"]: 1, P["DRIVE"]: 20}, preset=13)
@@ -245,7 +245,7 @@ def test_old_settings_records_convert():
     s = boot("v2old", fl).state(100)
     for k in ("LEVEL", "CMP_RATIO", "CMP_GAIN", "FL_TYPE", "FL_FREQ", "LFO_RATE"):
         assert s[f"p.{P[k]}"] == str(dflt[P[k]]), (k, s[f"p.{P[k]}"])
-    assert (s["p.0"], s["p.1"], s["preset"]) == ("1", "20", "15"), (s["p.0"], s["p.1"], s["preset"])
+    assert (s["p.0"], s["p.1"], s["preset"]) == ("1", "20", "17"), (s["p.0"], s["p.1"], s["preset"])
     for i in range(48, len(dflt)):                          # records v3: ids 48.. (panel3) at their defaults
         assert s[f"p.{i}"] == str(dflt[i]), (i, s[f"p.{i}"])
 

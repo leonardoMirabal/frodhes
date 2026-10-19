@@ -1,0 +1,52 @@
+# TYPE changes between the two bar types while notes ring (engine.c C1: VIBES <-> MARIMBA fades the bar engine out
+# over one block and kills its voices, as between engines; bar_sub latches only then), then to a Rhodes type; key-ups
+# inside the fade block; nothing stuck, exact silence at the end. CC 79 0 = VIBES, 127 = MARIMBA, CC 80 0 = ST77.
+50 midi 0xB0 119 127
+# VIBES: 9 notes ring
+60 midi 0xB0 79 0
+100 midi 0x90 48 100
+100 midi 0x90 52 100
+100 midi 0x90 55 100
+100 midi 0x90 59 100
+100 midi 0x90 62 100
+100 midi 0x90 64 100
+100 midi 0x90 67 100
+100 midi 0x90 71 100
+100 midi 0x90 74 100
+600 expect rms > -40
+# -> MARIMBA while they ring; two of them let go in the same block; new notes play on MARIMBA
+700 midi 0xB0 79 127
+700 midi 0x80 48 0
+700 midi 0x80 52 0
+720 midi 0x90 60 100
+720 midi 0x90 67 100
+1200 expect rms > -40
+# back and forth within a few blocks, then a note
+1300 midi 0xB0 79 0
+1303 midi 0xB0 79 127
+1306 midi 0xB0 79 0
+1309 midi 0xB0 79 127
+1350 midi 0x90 72 100
+1800 expect rms > -40
+# -> ST77 (CC 80 0) while MARIMBA rings, then MARIMBA again
+1900 midi 0xB0 80 0
+1920 midi 0x90 57 100
+2300 expect rms > -40
+2400 midi 0xB0 79 127
+2420 midi 0x90 65 100
+2800 expect rms > -40
+# every key up, all notes off: everything stops
+3000 midi 0x80 55 0
+3000 midi 0x80 59 0
+3000 midi 0x80 62 0
+3000 midi 0x80 64 0
+3000 midi 0x80 67 0
+3000 midi 0x80 71 0
+3000 midi 0x80 74 0
+3000 midi 0x80 60 0
+3000 midi 0x80 72 0
+3000 midi 0x80 57 0
+3000 midi 0x80 65 0
+3050 midi 0xB0 123 0
+4500 expect rms < -90
+4500 end
