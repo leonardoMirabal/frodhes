@@ -53,7 +53,7 @@ def ev_lines(name, t, eng):
         "cc120": [cc(t, 120, 0)], "cc123": [cc(t, 123, 0)],
         "ped_dn": [cc(t, 64, 127)], "ped_up": [cc(t, 64, 0)], "ped_half": [cc(t, 64, 50)],
         "pc_other": [f"{t} midi 0xC0 {other} 0"], "pc_same": [f"{t} midi 0xC0 {same} 0"],
-        "cc79": [cc(t, 79, 64)], "cc80": [cc(t, 80, 0)],
+        "cc79": [cc(t, 79, 0)], "cc80": [cc(t, 80, 0)],
         "arp_on": [cc(t, 52, 1)], "arp_off": [cc(t, 52, 0)],
         "hold": [f"{t} btn 3"],                                  # SEL: HOLD while the arp is on (else DELAY's page)
         "chord_on": [cc(t, 56, 6)], "chord_off": [cc(t, 56, 0)], # (MAJ7: four notes)
@@ -76,7 +76,7 @@ EVENTS = ["on", "on_pend", "off_pend", "off_stolen", "off_quiet", "cc120", "cc12
 
 def case_lines(eng, setup, steal, burst):
     """burst: [(event, t)]; returns (lines, marks)"""
-    L = [cc(5, 79, 64), cc(6, 47, 0)] if eng == "vibes" else []           # VIBES, its motor off
+    L = [cc(5, 79, 0), cc(6, 47, 0)] if eng == "vibes" else []           # VIBES, its motor off
     L += ["20 btn 7", "40 btn 7", "60 btn 7", "80 turn 4 1", "100 btn 8"]  # GLO x3: MIDI, CLOCK EXT; HOME
     if setup == "pedal":
         L.append(cc(110, 64, 127))

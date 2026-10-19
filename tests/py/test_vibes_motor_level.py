@@ -42,7 +42,7 @@ def host_build():
 def take(tag, motor, notes, vel, on, off, end, cc=()):
     """VRig.reset (defaults, DRY: drive / reverb off, VIBES, the motor) + CC 10 50 ms before the notes; cc: (s, CC,
     value) at absolute times. The host's 44.1 kHz resampled to FS; returns (mono, the onset index)"""
-    s = ["20 midi 0xB0 81 0", "21 midi 0xB0 91 0", "60 midi 0xB0 79 64", f"61 midi 0xB0 47 {127 if motor else 0}"]
+    s = ["20 midi 0xB0 81 0", "21 midi 0xB0 91 0", "60 midi 0xB0 79 0", f"61 midi 0xB0 47 {127 if motor else 0}"]
     s += [f"{int(on * 1000) - 50} midi 0xB0 10 127"]
     s += [f"{int(on * 1000)} midi 0x90 {n} {vel}" for n in notes] + [f"{int(off * 1000)} midi 0x80 {n} 0" for n in notes]
     s += [f"{int(t * 1000)} midi 0xB0 {c} {v}" for t, c, v in cc] + [f"{int(end * 1000)} end"]
