@@ -340,14 +340,21 @@ def octave_fix(x, fs, midi):
     return midi + best
 
 
-def measure_files(paths, keys):
+def measure_files(paths, keys, shift=None):
+    """shift: semitones added to the file names' notes instead of octave_fix (a library named two octaves off, e.g.
+    Pigments' 'Bells & Mallets/Marimba C1' sounds C3: a marimba's V2 is two octaves up, so +-24 can't be guessed)"""
     rows = []
     for p in paths:
         midi, _ = vrm.nominal(p)
-        if midi is None or not keys[0] <= midi <= keys[1]:
+        if midi is None:
+            continue
+        if shift is not None:
+            midi += shift
+        if not keys[0] <= midi <= keys[1]:
             continue
         x, fs = vrm.load(p)
-        midi = octave_fix(x, fs, midi)
+        if shift is None:
+            midi = octave_fix(x, fs, midi)
         if not keys[0] <= midi <= keys[1]:
             continue
         r = measure(x, midi, fs)
@@ -662,6 +669,7 @@ def main(argv=None):
     ap.add_argument("--out-md", default=OUT_MD)
     ap.add_argument("--plots", default=OUT_PNG)
     ap.add_argument("--no-host", action="store_true")
+    ap.add_argument("--shift", type=int, help="semitones added to the files' note names (skips the octave guess)")
     ap.add_argument("--note", action="append", default=[], help="a line for the report's 'Not measured' section")
     a = ap.parse_args(argv)
     keys = tuple(int(v) for v in a.keys.split("-"))
@@ -677,7 +685,7 @@ def main(argv=None):
         paths = []
         for f in a.files:
             paths += sorted(glob.glob(os.path.join(f, "*"))) if os.path.isdir(f) else [f]
-        R += measure_files([p for p in paths if p.lower().endswith((".wav", ".aif", ".aiff"))], keys)
+        R += measure_files([p for p in paths if p.lower().endswith((".wav", ".aif", ".aiff"))], keys, a.shift)
         src.append("Files: " + ", ".join(sorted(set(os.path.dirname(p) or "." for p in paths))))
     if not R and not a.no_ref:
         src.append("No reference note was measured (see 'Not measured').")
