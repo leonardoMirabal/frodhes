@@ -630,6 +630,18 @@
   "tone_span_db": 3.0,
   "bell_span_db": 12.0,
   "peak_ceiling_dbfs": -0.5,
+  "ring_ceiling": {
+   "_doc": "the single-strike ceiling over RING (DECAY) too (gen_bars.ring_ceiling): RING scales the strongly coupled tube's decay (key flag bit3), and the bloom's peak grows with it (C3 +9 dB at RING 127); per key and RING point (point p = RING 8p, the last 127) from from_point (9: RING 72) up, the worst v127 strike over this grid, turned down by its excess over peak_ceiling_dbfs - margin_db (BAR_RINGG, key flag bit4; the gain between two points is interpolated); RING 64 and under untouched",
+   "from_point": 9,
+   "margin_db": 0.1,
+   "tone": [0, 64, 127],
+   "bell": [64, 127],
+   "bark": [64, 85, 127],
+   "hammer": [127],
+   "dur_s": 0.8,
+   "src": "MARIMBA PLAN VA-M10 (the single-strike ceiling at every grid corner); bar_scan S2 corners (DECAY 127)",
+   "status": "DERIVED"
+  },
   "peak_grid": {
    "tone": [
     0,

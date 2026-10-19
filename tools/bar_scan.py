@@ -334,6 +334,54 @@ def click_count(x, events, guard_ms=17):
     return a, b
 
 
+DESIGN = {}                                         # the spec's design rows by key (main)
+
+
+def note_window(sk, design=None):
+    """S3 / S7's window after the strike: 0.2..2 s (VIBES: every V1 rings 2.4 s or more), on a note whose V1 (with its
+    tube: the design's t60_v1) rings under 2 s (MARIMBA: 0.04..1.6 s) 0.05 s .. 0.05 s + its T60: the 60 dB it falls
+    there. Past it the window reads the last LSBs of a dying sine, whose int16 rounding makes lines at its odd
+    harmonics (A4 v100: -25 dB re V1 at 11 f0 over 0.2..2 s)"""
+    t = (design or {}).get("t60_v1") or sk["modes"][0].get("t60") or 9.0
+    return (0.2, 2.0) if t >= 2.0 else (0.05, 0.05 + t)
+
+
+_GOLD = {}
+
+
+def golden_ref(n):
+    """the golden model (tools/bars_model.py, the scan's spec) for the floor case's note: v100, default cards, sleep as
+    the C, rounded to int16 as the host's output: what a linear modal render reads on a short note's S3 / S7 window
+    (its partials' skirts and the rounding of their last LSBs), the reference for notes under 2 s"""
+    if n not in _GOLD:
+        import bars_model as gm
+        g = np.round(gm.render_batch(SPEC_FULL[0], [n], [100], 2.3)[0])
+        _GOLD[n] = np.stack([g, g], 1)
+    return _GOLD[n]
+
+
+SPEC_FULL = [None]                                  # the scan's spec file, whole (main)
+
+
+def s7_floor(x, parts, w0, w1):
+    """S7 (single note): the between-partial floor, 64-bin smoothed, re the strongest line, w0..w1 s after the strike"""
+    from scipy.signal import find_peaks
+    from scipy.signal.windows import blackmanharris
+    from scipy.ndimage import uniform_filter1d
+    s_ = bm.mono(x)
+    st = int(np.argmax(np.abs(s_) > 0))
+    s_ = s_[st + int(w0 * bm.FS):st + int(w1 * bm.FS)]
+    sp = 20 * np.log10(np.abs(np.fft.rfft(s_ * blackmanharris(len(s_)))) + 1e-9)
+    fr = np.fft.rfftfreq(len(s_), 1 / bm.FS)
+    pk = sp.max()
+    idx, _ = find_peaks(sp, height=pk - 60, distance=20)        # every line within 60 dB: a partial, kept
+    keep = np.ones(len(sp), bool)
+    for f in parts + list(fr[idx]):                            # the band, widened by the smoothing's half
+        keep &= ~((fr > f * 0.97 - 32 * fr[1]) & (fr < f * 1.03 + 32 * fr[1]))   # width (64 bins)
+    keep &= (fr > 30) & (fr < 16000)
+    return float(uniform_filter1d(sp, 64)[keep].max() - pk) if keep.any() else -240
+
+
 def s3_lines(x, sk, t0=0.2, t1=2.0):
     """S3 (single note): the strongest spectral line that is not a designed partial (+-3 %), its power (+-4 bins) re
     V1's (+-3 %), 0.2..2 s after the strike; a line is a local peak 10 dB over the median floor (401 bins). Why lines,
@@ -475,28 +523,27 @@ def run_checks(case, spec, typ, all_cases):
             if not spec or n not in spec:
                 R["S3"] = (None, None, "n/a: needs the spec's partials")
                 continue
-            r, f, bb = s3_lines(x, spec[n])
-            R["S3"] = (r <= -80, float(r), f"strongest line off the partials {r:.1f} dB re V1"
-                                          + (f" at {f:.0f} Hz" if f else "") + f" (broadband outside {bb:.1f} dB, the 16-bit floor)")
+            w0, w1 = note_window(spec[n], DESIGN.get(n))
+            r, f, bb = s3_lines(x, spec[n], w0, w1)
+            if (w0, w1) == (0.2, 2.0):
+                R["S3"] = (r <= -80, float(r), f"strongest line off the partials {r:.1f} dB re V1"
+                                              + (f" at {f:.0f} Hz" if f else "") + f" (broadband outside {bb:.1f} dB, the 16-bit floor)")
+            else:
+                g = s3_lines(golden_ref(n), spec[n], w0, w1)[0]
+                R["S3"] = (r <= max(-80.0, g + 3.0), float(r), f"strongest line off the partials {r:.1f} dB re V1"
+                           + (f" at {f:.0f} Hz" if f else "") + f", the golden model's int16 render {g:.1f} dB ({w0:.2f}.."
+                           f"{w1:.2f} s; <= -80 or within 3 dB of it)")
         elif ck == "S7f":
             n = case.meta["key"]
-            s_ = bm.mono(seg(x, 200, 2200))
-            st = int(np.argmax(np.abs(s_) > 0))
-            s_ = s_[st + int(0.2 * bm.FS):st + int(2.0 * bm.FS)]
-            from scipy.signal.windows import blackmanharris
-            sp = 20 * np.log10(np.abs(np.fft.rfft(s_ * blackmanharris(len(s_)))) + 1e-9)
-            fr = np.fft.rfftfreq(len(s_), 1 / bm.FS)
+            w0, w1 = note_window(spec[n], DESIGN.get(n)) if spec and n in spec else (0.2, 2.0)
             parts = [m["f"] for m in spec[n]["modes"] if m.get("f", 0) > 1] if spec and n in spec else []
-            pk = sp.max()
-            from scipy.signal import find_peaks
-            idx, _ = find_peaks(sp, height=pk - 60, distance=20)        # every line within 60 dB: a partial, kept
-            keep = np.ones(len(sp), bool)
-            for f in parts + list(fr[idx]):                            # the band, widened by the smoothing's half
-                keep &= ~((fr > f * 0.97 - 32 * fr[1]) & (fr < f * 1.03 + 32 * fr[1]))   # width (64 bins)
-            keep &= (fr > 30) & (fr < 16000)
-            from scipy.ndimage import uniform_filter1d
-            floor = float(uniform_filter1d(sp, 64)[keep].max() - pk) if keep.any() else -240
-            R["S7"] = (floor <= -80, floor, f"between-partial floor {floor:.1f} dB re the strongest line")
+            floor = s7_floor(seg(x, 200, 2200), parts, w0, w1)
+            if (w0, w1) == (0.2, 2.0):
+                R["S7"] = (floor <= -80, floor, f"between-partial floor {floor:.1f} dB re the strongest line")
+            else:
+                g = s7_floor(golden_ref(n), parts, w0, w1)
+                R["S7"] = (floor <= max(-80.0, g + 3.0), floor, f"between-partial floor {floor:.1f} dB re the strongest "
+                           f"line, the golden model's int16 render {g:.1f} dB ({w0:.2f}..{w1:.2f} s; <= -80 or within 3 dB)")
         elif ck == "S7t":
             s_ = bm.mono(seg(x, 200 + 2000, 6000))
             sp = np.abs(np.fft.rfft(s_ * np.hanning(len(s_)) if len(s_) else np.zeros(16))) ** 2
@@ -511,6 +558,9 @@ def run_checks(case, spec, typ, all_cases):
                 f *= 2 ** (1 / 3)
             R["S7"] = (worst <= -96, worst, f"loudest 1/3-octave band 2..8 s after the strike {worst:.1f} dBFS")
         elif ck == "S7m":
+            if not bm.type_has_motor(typ):
+                R["S7"] = (None, None, "n/a: no motor on this type (CC 47-51 inert: test_marimba_controls_audible)")
+                continue
             s_ = bm.mono(seg(x, 700, 2400))
             sp = 20 * np.log10(np.abs(np.fft.rfft(s_ * np.hanning(len(s_)))) + 1e-9)
             fr = np.fft.rfftfreq(len(s_), 1 / bm.FS)
@@ -575,7 +625,8 @@ def group_checks(cases, typ):
     ct = [c for c in cases if c.group == "chordcmp"]
     if len(ct) == 2:
         l = {c.meta["typ"]: bm.lufs(seg(c.x, 200, 1000)) for c in ct}
-        off = json.load(open(os.path.join(bm.ROOT, "docs", "model", "data", "vibes.json")))["calib"].get("st77_offset_db", 0.0)
+        off = json.load(open(bm.data_for_type(typ) or os.path.join(bm.ROOT, "docs", "model", "data", "vibes.json"))
+                        )["calib"].get("st77_offset_db", 0.0)
         d = l[typ] - l[0]
         G.append(("S9", "type vs ST77 chord", abs(d - off) <= 1.0, float(d), f"A3-E4-A4 v100: {d:+.2f} LU re ST77 "
                                                                            f"(target {off:+.1f}, the user's offset)"))
@@ -633,12 +684,27 @@ def s6(typ, keys, spec, design=None):
     a.type, a.vel, a.dur, a.motor, a.rate, a.depth, a.sleep = typ, 100, 8200, False, 78, 127, False
     out = []
     fs.OUT = os.path.join(OUT, "s6")
+    D = {d["midi"]: d for d in (design or [])}
     for n in keys:
         if n not in spec:
             continue
-        r = fs.measure_key(n, a, spec, design)
+        pair = "regime" in D.get(n, {})            # MARIMBA: V1 and its tube, one coupled pair (strong below C4)
+        r = fs.measure_key(n, a, spec, design, keep_x=pair)
+        note = ""
+        if pair:
+            # the f0 band holds the pair's two normal modes (0.8 Hz apart at F3, strongly coupled): its decay is not one
+            # line, and the 40 dB fit of VIBES reads their beat (F3 1.25 s vs the design mode's 1.00). The plan's B1:
+            # V1 by the 30 dB fit (tools/marimba_va.t60_fit), host vs the golden model's output (Gate VA-M2's measure)
+            import bars_model as gm
+            import marimba_va as mva
+            f0 = D[n]["f0"]
+            th = mva.t60_fit(bm.mono(r.pop("x")), f0)
+            tg = mva.t60_fit(gm.render_batch(SPEC_FULL[0], [n], [100], a.dur / 1000 - 0.2, sleep=False)[0], f0)
+            v1 = r["modes"][0]
+            v1["t60"], v1["t60_spec"], v1["long"] = th, tg, False
+            note = f" (V1 by the 30 dB fit: {th:.3f} s, golden {tg:.3f} s)"
         bad = fs.judge(r, True)
-        out.append(("S6", f"key {n}", not bad, len(bad), "; ".join(bad) or "pitch and T60 within tolerance"))
+        out.append(("S6", f"key {n}", not bad, len(bad), ("; ".join(bad) or "pitch and T60 within tolerance") + note))
     return out
 
 
@@ -659,6 +725,9 @@ def main():
     os.makedirs(OUT)
     spath, bars = bm.spec_for_type(a.type)
     spec = bm.load_spec(a.spec or spath)
+    SPEC_FULL[0] = json.load(open(a.spec or spath)) if (a.spec or spath) and os.path.exists(a.spec or spath) else None
+    DESIGN.clear()
+    DESIGN.update({d["midi"]: d for d in bm.load_design(a.spec or spath)})
     cases = matrix(a.type, a.full, a.smoke)
     only = set(a.checks.split(",")) if a.checks else None
     from concurrent.futures import ThreadPoolExecutor

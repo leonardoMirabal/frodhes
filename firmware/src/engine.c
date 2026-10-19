@@ -85,7 +85,7 @@ static void eng_bar_knob(uint32_t k, uint32_t v)
     case BK_MALLET: bar_fam = KN_FAM[c]; break;
     case BK_TUBE: bar_tube = KN_TUBE[eng_want_sub][c]; bar_bell = (int32_t)c; break;
     case BK_WEIGHT: bar_mass = KN_MASS[eng_want_sub][c]; bar_massi = KN_MASSI[eng_want_sub][c]; break;
-    case BK_RING: bar_k_decay = (int32_t)DECAY_K[c]; break;
+    case BK_RING: bar_k_decay = (int32_t)DECAY_K[c]; bar_ring = (int32_t)c; break;
     case BK_DAMPER: bar_k_rel = (int32_t)DECAY_K[c]; bar_mute = (int32_t)c * 258; break;   /* MUTE: no-damper types */
     case BK_NOISE:                  /* params.c sets rh_thump / rh_felt first. The Rhodes levels did not fit the bars
                                      * (audit 2026-10-17): the contact noise came out 75 dB under the note (exactly 0

@@ -50,7 +50,7 @@ def parse_keys(s):
     return out
 
 
-def measure_key(n, a, spec, spec_design=None):
+def measure_key(n, a, spec, spec_design=None, keep_x=False):
     ev = bm.setup_events(typ=a.type, raw=not a.motor, noise=0)
     if a.motor:                                     # the motor (records v3: CC 47 ON, 48 DEPTH, 49 RATE, 50 SHAPE)
         ev += [(21, "midi 0xB0 47 127"), (21, f"midi 0xB0 48 {a.depth}"), (21, f"midi 0xB0 49 {a.rate}"),
@@ -114,6 +114,8 @@ def measure_key(n, a, spec, spec_design=None):
                                  ctol=max(1.0, float(bm.cents(f + 0.5 / (w1 - w0), f)))))   # +-1 c, or what the window resolves
     if a.motor:
         row["am_db"], row["am_hz"] = bm.am_depth(x, 1.5, 2.5)
+    if keep_x:                                      # (bar_scan.s6: MARIMBA's V1 by the 30 dB fit)
+        row["x"] = x
     return row
 
 

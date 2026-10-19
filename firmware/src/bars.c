@@ -261,6 +261,15 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
         gt = bar_card_gain(BAR_POSG[k->band], fm, fa, q);
         gb = bar_card_gain(BAR_TUBEG[k->band], fm, fa, qb);
         g = ((((int64_t)k->gain * gt) >> 14) * gb) >> 14;
+#ifdef BAR_RINGG_ROWS
+        if (k->flags & 16u) {                       /* key flag bit4 (MARIMBA, never VIBES): the single-strike ceiling
+                                                     * over RING, BAR_RINGG[key] at the RING card's value */
+            const uint16_t *r = BAR_RINGG[n - BAR_KEY_LO];
+            uint32_t qr = (uint32_t)bar_ring << 5, ri = qr >> 8;   /* point p = RING 8p: point 8 is exactly 64 */
+            int32_t gr = r[ri] + ((((int32_t)r[ri + 1u] - (int32_t)r[ri]) * (int32_t)(qr & 255u)) >> 8);
+            g = (g * gr) >> 14;
+        }
+#endif
         v->gain = g > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)g;
     }
     v->kill1 = (int32_t)((1u << 29) / (uint32_t)(k->gain > 0 ? k->gain : 1));   /* 1 LSB out, in Q25 units */

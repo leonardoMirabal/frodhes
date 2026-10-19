@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """MARIMBA key flag bit3 (bars.c bar_init: the tube slot's held words at bar_k_decay where k->flags & 8): RING moves
 the low notes, whose strongly coupled tube carries the long decay, as the golden model (tools/bars_model.py) says, on
-the host build (RAW, CC 119); the type records agree with params.c TYPE_FLAGS; VIBES never sets the bit."""
+the host build (RAW, CC 119); the type records agree with params.c TYPE_FLAGS; VIBES never sets the bit. Key flag bit4
+(BAR_RINGG, gen_bars.ring_ceiling): RING over 64 keeps the single-strike ceiling."""
 import json
 import os
 import re
 import sys
 
 import numpy as np
+import pytest
 
 import hostrun
 
@@ -65,3 +67,48 @@ def test_type_flags_agree_with_the_type_records():
     for t, e in enumerate(eng):
         if e == 1:
             assert fl[t] == recs[sub[t]][7], (t, fl[t], recs[sub[t]])
+
+
+# ---- the single-strike ceiling over RING (gen_bars.ring_ceiling, BAR_RINGG, key flag bit4)
+CORNERS = [dict(bark=127, bell=127, tone=0, hammer=127), dict(bark=127, bell=127, tone=127, hammer=127),
+           dict(bark=127, bell=0, tone=127, hammer=127), dict(bark=0, bell=127, tone=0, hammer=0)]
+
+
+def test_ring_gain_table():
+    """BAR_RINGG: one row per key, 1.0 (Q14) up to RING 64 (point 8: RING 64 exactly, so the default is untouched),
+    never above 1.0 and non-increasing in RING; flag bit4 exactly on the keys whose row goes under 1.0; never VIBES"""
+    rows = re.search(r"BAR_RINGG\[BAR_NKEY\]\[BAR_NPOS\] = \{(.*?)\n\};", HDR, re.S).group(1)
+    R = [[int(v) for v in r.split(",")] for r in re.findall(r"\{([^{}]*)\}", rows)]
+    assert len(R) == 88 and all(len(r) == 17 for r in R)
+    keys = re.search(r"BAR_KEYS\[BAR_NTYPE\]\[BAR_NKEY\] = \{(.*?)\n\};", HDR, re.S).group(1)
+    fl = [int(r[7]) for r in re.findall(r"\}, (-?\d+), (-?\d+), (-?\d+), (-?\d+), (-?\d+), (\d+), (\d+), (\d+)\},", keys)]
+    vib, mar = fl[:88], fl[88:]
+    assert not any(f & 16 for f in vib)
+    for r, f in zip(R, mar):
+        assert r[:9] == [16384] * 9 and all(b <= a for a, b in zip(r, r[1:])), r
+        assert bool(f & 16) == (min(r) < 16384)
+
+
+@pytest.mark.parametrize("ring", [80, 100, 127])
+def test_ring_keeps_the_single_strike_ceiling(ring):
+    """the golden model (the C's gain words, the RING gain included): every key's v127 single strike at the four
+    loud corners of the voicing grid (bar_scan's S2 corners) stays under the -0.5 dBFS ceiling at RING over 64
+    (before: C2..B3 up to +7 dBFS at RING 127, RUBBER TUBE 127: the RAW output clipped 35,176 samples)"""
+    keys = list(range(21, 109))
+    ceil_ = 10 ** (-0.5 / 20) * 32768 * 10 ** (0.15 / 20)        # (+0.15 dB: the corners' interpolation between points)
+    for c in CORNERS:
+        y = gm.render_batch(SPEC, keys, [127] * len(keys), 1.0, knobs=dict(gm.DEFAULT_KNOBS, decay=ring, **c))
+        pk = np.abs(y).max(axis=1)
+        over = [(n, round(20 * np.log10(p / 32768), 2)) for n, p in zip(keys, pk) if p > ceil_]
+        assert not over, (ring, c, over)
+
+
+def test_ring_corner_does_not_clip_raw():
+    """the C on the host, RAW: bar_scan's corner 1 (RUBBER, TUBE 127, centre, WEIGHT 127, RING 127) on C3 and C2, v127,
+    under full scale (before: clipped)"""
+    for key in (36, 48):
+        ls = ["50 midi 0xB0 119 127", "50 midi 0xB0 104 0", "60 midi 0xB0 79 127", "61 midi 0xB0 102 127",
+              "61 midi 0xB0 29 127", "61 midi 0xB0 30 127", "61 midi 0xB0 28 0", "61 midi 0xB0 31 127",
+              f"100 midi 0x90 {key} 127"]
+        x = hostrun.run(f"mring-corner-{key}", ls, end_ms=1600).L.astype(float)
+        assert 20 * np.log10(np.abs(x).max() / 32767) <= -0.4, (key, np.abs(x).max())
