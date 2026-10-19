@@ -135,7 +135,7 @@ PROFILE = dict(
     name="MARIMBA", file="bars.c",
     types=[dict(type=TYPE, name="MARIMBA", select=[("cc", 79, CC79)], pc=14, pc_soft=15)],
     keys=dict(range=(21, 108), authentic=AUTH, low=36, mid=60, high=84),
-    offset_db=2.5,              # provisional (VIBES's): the P5 jack session writes the measured number (marimba.json calib)
+    offset_db=2.5,              # VIBES's (marimba.json calib; the level decision "A", 2026-10-20)
     linear=True, attack_guard_ms=(3, 17), tail_bound_s=3.0,
     spec="docs/model/data/marimba_spec.json",
     cards=[dict(name="STRIKE", param="TONE", cc=28, enc=2, page="VOICE", vals=(0, 32, 64, 96, 127), keys=(48, 60, 84), job="timbre", thr=3.0),
