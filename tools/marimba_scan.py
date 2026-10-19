@@ -86,7 +86,8 @@ KNOWN = [
     ("M2", r"V[23]/V1 at the onset, smooth$",
      "USER DECISION: the steps are in partials 45-70 dB under V1 (MED v100 from C5 up, golden the same): the contact "
      "is past the half-sine pulse's first null there (f tau 2.5-12, T7e) and V2 / V3 fall in and out of its side "
-     "lobes key by key. The plan's 4 dB smoothness is met where the partial is within 40 dB of V1 (the info row)"),
+     "lobes key by key. Where the partial is within 40 dB of V1 (the info rows) the largest steps are 5.5 dB (V2, "
+     "key 57) and 4.0 dB (V3, key 42)"),
     ("M6", r"MED v127 darker than HARD v100$",
      "USER DECISION: MED v127 vs HARD v100, the attack centroid's ratio 20 log10 is +3.1 dB on C3, +1.8 dB on C4 (plan "
      ">= 6 dB; golden the same). '6 dB darker (centroid)' is the scan's reading of the plan; the centroid of a "
