@@ -3209,6 +3209,23 @@ def m_ms_db(x):
     return float(10 * np.log10((np.abs(np.fft.rfft(np.asarray(x, float) * w)) ** 2).sum() * 2 / (len(x) * (w * w).sum()) + 1e-24))
 
 
+def m_drop_rate(x, t_off, db=30.0, win=0.005, hop=0.001):
+    """MARIMBA's hand mute as Gate VA-M9 measures it (marimba_va.mute_drop_s): the time from the key-up t_off (s) until
+    the note (a 5 ms RMS envelope, 1 ms hop) stays db under its level just before the key-up, as a rate db / time
+    (dB/s). The VIBES fit of the f0 band over 30..300 ms after the key-up runs into the floor on a marimba: a MUTE 127
+    stop is 60 dB down in ~0.06 s, so the fit read MUTE 64 faster than 127 (the host: 585 / 476 dB/s)"""
+    x = np.asarray(x, float)
+    w, h = int(win * FS), int(hop * FS)
+    idx = np.arange(0, max(len(x) - w, 1), h)
+    e = np.array([10 * np.log10(np.mean(x[i:i + w] ** 2) + 1e-30) for i in idx])
+    t = (idx + w / 2) / FS
+    ref = e[(t >= t_off - 0.02) & (t <= t_off)].max()
+    above = np.flatnonzero((t > t_off) & (e > ref - db))
+    if not len(above):
+        return float("nan")
+    return float(db / max(t[above[-1]] - t_off, hop))
+
+
 def m_second_diff(vels, lv, step=16):
     """tools/marimba_scan.second_diff: the level curve's second difference on an even 16-velocity grid (the anchors
     8 24 40 64 88 100 117 127 are unevenly spaced: np.diff(lv, 2) read a curve straight in velocity as 1.8 / 2.7 dB)"""
@@ -3313,7 +3330,7 @@ def marimba_decay(V, S):
         T[("ped", p_)] = V.take(f"m-pedal-{p_}", dur, ev + [(0.05, "cc", 64, p_)])
     for k, n in enumerate(keys):
         def r(key, q):
-            return release_rate(cut(T[key].m(q), T[key].on(q)[k], 0, 2.3), f1(n), holds[k])
+            return m_drop_rate(cut(T[key].m(q), T[key].on(q)[k], 0, 2.3), holds[k])
         S.check(f"MUTE (CC {P['RELEASE']['cc']}) 0 = rings out", f"key {n}, after the key-up vs held",
                 S.per(lambda q: r(0, q) / r("held", q)), lambda v: abs(v - 1) <= 0.01, "within 1 % of the held decay",
                 fmt=lambda v: f"x{v:.3f}")
