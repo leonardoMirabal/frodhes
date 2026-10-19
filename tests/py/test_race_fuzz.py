@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pytest
 
-from hostrun import FS, OUT, cc, run
+from hostrun import FS, OUT, cc, rms_db, run
 from test_fuzz import clicks
 from test_alloff import voices
 
@@ -47,6 +47,8 @@ def ev_lines(name, t, eng):
     E = {
         "on": [f"{t} midi 0x90 {NEW} 100"],
         "on_pend": [f"{t} midi 0x90 {PEND} 90"],                 # the pending note again
+        "on_held": [f"{t} midi 0x90 {N9[2]} 95"],                # a held note again, no note-off between (after a
+                                                                 # TYPE change to the other engine: struck again)
         "off_pend": [f"{t} midi 0x80 {PEND} 0"],
         "off_stolen": [f"{t} midi 0x80 {N9[0]} 0"],              # the oldest (held: the steal's victim)
         "off_quiet": [f"{t} midi 0x80 {N9[-1]} 0"],
@@ -71,7 +73,7 @@ def ev_lines(name, t, eng):
 EVENTS = ["on", "on_pend", "off_pend", "off_stolen", "off_quiet", "cc120", "cc123", "ped_dn", "ped_up", "ped_half",
           "pc_other", "pc_same", "cc79", "cc80", "arp_on", "arp_off", "hold", "chord_on", "chord_off", "seq_play",
           "seq_stop", "rec_on", "rec_off", "tap", "clk_start", "clk_stop", "key_on", "key_off", "sus_tap", "oct_up",
-          "edit", "arp_btn", "home"]
+          "edit", "arp_btn", "home", "on_held"]
 
 
 def case_lines(eng, setup, steal, burst):
@@ -173,3 +175,35 @@ def test_race_fuzz(eng, request):
         f.write(f"{len(failed)} of {len(cases)}\n{msg}\n")
     msg = "\n".join(msg.split("\n")[:12])
     assert not failed, f"{len(failed)} of {len(cases)} cases failed:\n{msg}"
+
+
+# A note held across a TYPE change that stops the voices (to the other engine, VIBES <-> MARIMBA), pressed again with
+# no note-off between (a MIDI note-on) or by a second source on that pitch (an FM-1 key let go and pressed while the
+# MIDI note holds it), sounds on the new TYPE (notes.c out_resound; 0.9.3: silent until every source let it go).
+# Within the Rhodes (ST77 -> SUITCASE) the held voice rings on, as before. CC 79 / 80 and program changes.
+TYPESW = {"ST77": ("80 0", "0 0"), "SUITCASE": ("80 40", None), "VIBES": ("79 0", "12 0"), "MARIMBA": ("79 127", "14 0")}
+PAIRS = [("ST77", "VIBES"), ("VIBES", "ST77"), ("VIBES", "MARIMBA"), ("MARIMBA", "VIBES"), ("MARIMBA", "ST77"),
+         ("ST77", "MARIMBA"), ("ST77", "SUITCASE")]
+
+
+def _type_sw(t, ty, how):
+    c, pc = TYPESW[ty]
+    return f"{t} midi 0xC0 {pc}" if how == "pc" and pc else f"{t} midi 0xB0 {c}"
+
+
+@pytest.mark.parametrize("how", ["cc", "pc", "key"])
+@pytest.mark.parametrize("a,b", PAIRS)
+def test_type_change_held_repress(a, b, how):
+    n = 58                                                          # FM-1 key 5 at OCT 0
+    L = [cc(20, 119, 127), _type_sw(30, a, "cc"), f"100 midi 0x90 {n} 100", _type_sw(400, b, how)]
+    if how == "key":
+        L += ["100 keys 0x20", "600 keys 0", "800 keys 0x20"]
+    else:
+        L += [f"800 midi 0x90 {n} 100"]
+    L += ["1300 keys 0", f"1300 midi 0x80 {n} 0", "1900 dump"]
+    r = run(f"repress-{a}-{b}-{how}", L, 1900, check=False)
+    assert r.code == 0 and "RACE" not in r.out, r.out[-600:]
+    lvl = rms_db(r.seg(0.85, 1.25))
+    assert lvl > -40, f"{a} -> {b} ({how}): the note pressed again is silent ({lvl:.1f} dBFS)"
+    s = r.state(1900)
+    assert s["held"] == "0" and s["refs"] == "0" and s["drops"] == "0", s
