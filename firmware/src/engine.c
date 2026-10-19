@@ -82,7 +82,7 @@ static void eng_bar_knob(uint32_t k, uint32_t v)
     uint32_t c = v > 127u ? 127u : v;
     switch (k) {
     case BK_STRIKE: bar_pos = (int32_t)c; break;
-    case BK_MALLET: bar_fam = KN_FAM[c]; break;
+    case BK_MALLET: bar_fam = KN_FAM[eng_want_sub][c]; break;   /* the type's map: shared detents, MARIMBA re-spaced */
     case BK_TUBE: bar_tube = KN_TUBE[eng_want_sub][c]; bar_bell = (int32_t)c; break;
     case BK_WEIGHT: bar_mass = KN_MASS[eng_want_sub][c]; bar_massi = KN_MASSI[eng_want_sub][c]; break;
     case BK_RING: bar_k_decay = (int32_t)DECAY_K[c]; bar_ring = (int32_t)c; break;
