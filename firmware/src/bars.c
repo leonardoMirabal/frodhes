@@ -112,24 +112,30 @@ static int32_t bar_lsin(const bar_ms_t *s)
 
 static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
 {
-    uint32_t key = (uint32_t)(v->k - BAR_KEYS), fam = (uint32_t)bar_fam, f = fam >> 8, f2, l, l2, i;
+    uint32_t ty = bar_sub < BAR_NTYPE ? bar_sub : 0u;   /* constant while the voice lives (engine.c C1) */
+    uint32_t key = (uint32_t)(v->k - BAR_KEYS[ty]), fam = (uint32_t)bar_fam, f = fam >> 8, f2, l, l2, i;
+    uint32_t pb = BAR_PBAND[v->k->band];               /* the key's pulse band (shared bank) */
     int32_t a = (int32_t)(fam & 255u), w, pa, pa2, pr, pr2;
     uint32_t vi = RH_VPOS_I[vel], vf = RH_VPOS_F[vel];
     const int16_t *p11, *p12, *p21, *p22;
     if (f > BAR_NFAM - 1u) { f = BAR_NFAM - 1u; a = 0; }
     f2 = f + 1u < BAR_NFAM ? f + 1u : f;
     l = RH_VLAY_I[vel]; l2 = l + 1u < BAR_NLAYER ? l + 1u : l; w = RH_VLAY_W[vel];
-    p11 = BAR_PULSE[v->k->band][f][l]; p12 = BAR_PULSE[v->k->band][f][l2];
-    p21 = BAR_PULSE[v->k->band][f2][l]; p22 = BAR_PULSE[v->k->band][f2][l2];
+    p11 = BAR_PULSE[pb][f][l]; p12 = BAR_PULSE[pb][f][l2];
+    p21 = BAR_PULSE[pb][f2][l]; p22 = BAR_PULSE[pb][f2][l2];
     for (i = 0; i < BAR_PLEN + 2u; i++) {       /* hardness x velocity: one shape, once */
         int32_t A = p11[i] + (((p12[i] - p11[i]) * w) >> 15);   /* |d| < 2^16, w <= 2^15: 32 bits are exact */
         int32_t B = p21[i] + (((p22[i] - p21[i]) * w) >> 15);
         v->pbuf[i] = (int16_t)(A + (((B - A) * a) >> 8));
     }
-    pa = (int32_t)BAR_PAMP[key][f][vi] + ((((int32_t)BAR_PAMP[key][f][vi + 1] - (int32_t)BAR_PAMP[key][f][vi]) * (int32_t)vf) >> 8);
-    pa2 = (int32_t)BAR_PAMP[key][f2][vi] + ((((int32_t)BAR_PAMP[key][f2][vi + 1] - (int32_t)BAR_PAMP[key][f2][vi]) * (int32_t)vf) >> 8);
-    pr = (int32_t)BAR_PRATE[key][f][vi] + ((((int32_t)BAR_PRATE[key][f][vi + 1] - (int32_t)BAR_PRATE[key][f][vi]) * (int32_t)vf) >> 8);
-    pr2 = (int32_t)BAR_PRATE[key][f2][vi] + ((((int32_t)BAR_PRATE[key][f2][vi + 1] - (int32_t)BAR_PRATE[key][f2][vi]) * (int32_t)vf) >> 8);
+    {
+        const uint16_t (*PA)[RH_NANCH] = BAR_PAMP[ty][key];
+        const uint32_t (*PR)[RH_NANCH] = BAR_PRATE[ty][key];
+        pa = (int32_t)PA[f][vi] + ((((int32_t)PA[f][vi + 1] - (int32_t)PA[f][vi]) * (int32_t)vf) >> 8);
+        pa2 = (int32_t)PA[f2][vi] + ((((int32_t)PA[f2][vi + 1] - (int32_t)PA[f2][vi]) * (int32_t)vf) >> 8);
+        pr = (int32_t)PR[f][vi] + ((((int32_t)PR[f][vi + 1] - (int32_t)PR[f][vi]) * (int32_t)vf) >> 8);
+        pr2 = (int32_t)PR[f2][vi] + ((((int32_t)PR[f2][vi + 1] - (int32_t)PR[f2][vi]) * (int32_t)vf) >> 8);
+    }
     pa += ((pa2 - pa) * a) >> 8;
     pr += (int32_t)(((int64_t)(pr2 - pr) * a) >> 8);
     v->prate = (uint32_t)(((uint64_t)((uint32_t)pr << 4) * (uint32_t)bar_mass) >> 12);   /* Q12 -> Q16, x mass */
@@ -206,9 +212,10 @@ static int32_t bar_fam_nz(void)
 
 static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
 {
-    const bar_type_t *ty = &BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u];
+    uint32_t tyi = bar_sub < BAR_NTYPE ? bar_sub : 0u;
+    const bar_type_t *ty = &BAR_TYPE[tyi];
     uint32_t m, n = note < BAR_KEY_LO ? BAR_KEY_LO : note > BAR_KEY_LO + BAR_NKEY - 1u ? BAR_KEY_LO + BAR_NKEY - 1u : note;
-    const bar_key_t *k = &BAR_KEYS[n - BAR_KEY_LO];
+    const bar_key_t *k = &BAR_KEYS[tyi][n - BAR_KEY_LO];
     int32_t tone = bar_pos, s = bar_tube;
     uint32_t q = (uint32_t)tone * (16u * 256u) / 127u, pi = q >> 8, pf = q & 255u;
     const int16_t (*pos)[BAR_NM] = BAR_POS[k->band];
@@ -227,7 +234,8 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
         ms->lo = 1;
         if (!km->th) { ms->e = ms->eps = 0; ms->k1 = ms->k2 = ms->be = 0; ms->lsin = 0; ms->bin = 0; continue; }
         rh_coef(km, km->d, rh_tune_t, m == 1u ? 65536 : bar_k_decay, &ms->e0, &ms->eps0);
-        rh_coef(km, km->drel, rh_tune_t, m == 1u ? 65536 : bar_k_rel, &ms->e1, &ms->eps1);
+        rh_coef(km, km->drel, rh_tune_t, m == 1u || !(ty->flags & 2u) ? 65536 : bar_k_rel, &ms->e1, &ms->eps1);   /* no
+                                                     * damper: drel is the hand mute, never scaled by RELEASE (C5) */
         ms->e = ms->es = ms->e0; ms->eps = ms->epss = ms->eps0;
         w = pi < BAR_NPOS - 1u ? pos[pi][m] + (((pos[pi + 1u][m] - pos[pi][m]) * (int32_t)pf) >> 8) : pos[BAR_NPOS - 1u][m];
         b = ((int64_t)km->b * w) >> 14;
@@ -262,8 +270,8 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     v->fade = 32768; v->pend = 0; v->felt_n = 0; v->felt_lp = 0;
     v->age = ++bar_ages;
     v->life = k->life;
-    v->pthump = BAR_PULSE[k->band][0][0];             /* the felt's knock: SOFT, the softest layer */
-    v->prate_thump = BAR_PRATE[n - BAR_KEY_LO][0][1] << 4;
+    v->pthump = BAR_PULSE[BAR_PBAND[k->band]][0][0];  /* the felt's knock: SOFT, the softest layer */
+    v->prate_thump = BAR_PRATE[tyi][n - BAR_KEY_LO][0][1] << 4;
     bar_load_pulse(v, vel);
     /* contact noise: filtered noise, louder for harder mallets and faster strikes, decaying (tau ~ 23 ms) */
     bar_nz_e += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * vel) >> 22);
@@ -317,6 +325,14 @@ static void bar_strike(uint32_t note, uint32_t vel)
     if (bv[pick].fade == 32768) bv[pick].fade = 32767;
 }
 
+/* the damper weight a key-up gives at this pedal weight w: a type with a damper (VIBES) w itself; a type without one
+ * (MARIMBA) w x MUTE (Q15: 0 = rings out, 127 = the full hand mute in drel; the pedal still holds: w 0) (C6, C7) */
+static int bar_has_damper(void) { return (BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u].flags & 2u) != 0u; }
+static int32_t bar_mute_w(int32_t w)
+{
+    return bar_has_damper() ? w : (int32_t)(((int64_t)w * bar_mute) >> 15);
+}
+
 static void bar_note_off(uint32_t note)
 {
     uint32_t i;
@@ -324,7 +340,8 @@ static void bar_note_off(uint32_t note)
         if (bv[i].alive && bv[i].note == note && bv[i].held) {
             bar_voice_t *v = &bv[i];
             v->held = 0;
-            bar_set_damper(v, bar_pedal_w);
+            bar_set_damper(v, bar_mute_w(bar_pedal_w));
+            if (!bar_has_damper()) continue;                 /* no felt: no knock, no felt noise (C6) */
             if (bar_pedal_w && bar_thump && !v->ptab) {      /* the felt lands on the bar: a soft knock */
                 v->ptab = v->pthump;
                 v->pamp = bar_thump > 32767 ? 32767 : bar_thump;
@@ -343,7 +360,7 @@ static void bar_pedal(uint32_t cc)
     uint32_t i;
     bar_pedal_w = PEDAL_W[cc > 127u ? 127u : cc];
     for (i = 0; i < BAR_NV; i++)
-        if (bv[i].alive && !bv[i].held) bar_set_damper(&bv[i], bar_pedal_w);
+        if (bv[i].alive && !bv[i].held) bar_set_damper(&bv[i], bar_mute_w(bar_pedal_w));   /* (C7) */
 }
 
 static void bar_all_off(void)
@@ -428,8 +445,9 @@ static void bar_motor_block(void)
 {
     uint32_t i, inc = bar_mot_inc;
     int32_t depth = bar_mot_depth > 127u ? 127 : bar_mot_depth, shape = bar_mot_shape > 127u ? 127 : bar_mot_shape;
-    int32_t gc = BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u].mot_gc;
-    int32_t tgt = bar_mot_on ? (depth << 15) / 127 : 0, d0 = bar_mot_d;
+    const bar_type_t *ty = &BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u];
+    int32_t gc = ty->mot_gc;
+    int32_t tgt = bar_mot_on && (ty->flags & 1u) ? (depth << 15) / 127 : 0, d0 = bar_mot_d;   /* no motor: parked (C8) */
     bar_mot_g[0] = bar_mot_g[8];                    /* the last block's end: continuous */
     bar_mot_park = !tgt && !d0;
     if (bar_mot_park) {                             /* off: the discs parked open */
@@ -849,7 +867,7 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix)
         if (v->pend) {
             uint32_t rel = v->pend;                 /* 1 held, 2 let go, 3 let go by an all-off (bar_all_off) */
             bar_init(v, v->pend_note, v->pend_vel);
-            if (rel >= 2u) { v->held = 0; bar_set_damper(v, rel == 3u ? 32768 : bar_pedal_w); }
+            if (rel >= 2u) { v->held = 0; bar_set_damper(v, rel == 3u ? 32768 : bar_mute_w(bar_pedal_w)); }
         }
         return;
     }

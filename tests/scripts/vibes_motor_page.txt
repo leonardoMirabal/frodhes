@@ -48,7 +48,7 @@
 3200 expect state vcard.2.0 OFF
 3300 midi 0xB0 80 0
 3400 expect state bars 0
-3500 midi 0xB0 79 127
+3500 midi 0xB0 79 0
 3600 expect state bars 1
 3600 expect state vcard.2.0 ON
 3600 expect sound

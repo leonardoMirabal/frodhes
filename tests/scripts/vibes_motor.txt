@@ -1,6 +1,6 @@
 # The VIBES motor by MIDI (records v3: its own CCs, 47 ON, 48 DEPTH, 49 RATE, 50 SHAPE, 51 SYNC): the bar engine's
 # tube discs turn; TREM/WAH stays off. Effects on (no RAW).
-50 midi 0xB0 79 64
+50 midi 0xB0 79 0
 51 midi 0xB0 47 127
 53 midi 0xB0 48 127
 54 midi 0xB0 49 78

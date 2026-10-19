@@ -38,6 +38,8 @@ typedef struct {
     int16_t mot_gc;             /* Q15 closed-disc residual g_c */
     int16_t tors_db;            /* Q15 torsion scale on b at the edge */
     uint8_t nbody, drive_row, sleep_rel, budget;
+    uint8_t flags;              /* bit0 has_motor, bit1 has_damper (VIBES 3; params.c TYPE_FLAGS says the same) */
+    uint8_t kn_tube_top;        /* KN_TUBE[t][127] in 1/100 (informational) */
 } bar_type_t;
 #include "bars_tables.h"
 _Static_assert(BAR_NM == 8, "bars.c: 8 mode slots");
@@ -90,7 +92,8 @@ static int32_t bar_nz_e, bar_nz_s[4];               /* contact noise: one envelo
 static uint32_t bar_ages, bar_lfsr = 0x1D872u;
 static int32_t bar_pedal_w = 32768;
 static int32_t bar_bd_m[2][2], bar_bd_o[2][2], bar_bd_e[2];
-static uint8_t bar_sub;                             /* main loop: the bar TYPE (index into BAR_TYPE) */
+static uint8_t bar_sub;                             /* the bar TYPE (index into BAR_TYPE): written only by engine.c
+                                                     * eng_switch (ISR), so it never changes while a bar voice lives */
 /* voicing written by the main loop (params.c), read at note-on */
 static volatile int32_t bar_pos = 64;               /* TONE raw 0..127: strike position (64 = 0) */
 static volatile int32_t bar_fam = 1 << 8;           /* KN_FAM[BARK]: family << 8 | Q8 fraction */
@@ -100,6 +103,8 @@ static volatile int32_t bar_mass = 4096, bar_massi = 4096;   /* KN_MASS / KN_MAS
 static volatile int32_t bar_nz;                     /* KN_NZ[NOISE], Q15 */
 static volatile int32_t bar_k_decay = 65536, bar_k_rel = 65536;   /* DECAY_K[RING], DECAY_K[DAMPER], Q16 */
 static volatile int32_t bar_thump, bar_felt;        /* KN_THUMP / KN_FELT[NOISE]: the damper's knock and felt noise */
+static volatile int32_t bar_mute = 0;               /* MUTE (P_RELEASE, RELEASE * 258), Q15: on a type without a damper
+                                                     * the key-up damper weight's scale (0 = rings out); not read yet */
 static volatile uint8_t bar_mot_on, bar_mot_depth, bar_mot_shape;   /* TREM/WAH = MOTOR, DEPTH, SHAPE (0..127) */
 static volatile uint32_t bar_mot_inc;               /* Q32 phase step per sample (the AM rate, or TREM SYNC's) */
 static volatile uint8_t bar_budget_force;           /* developer (MIDI CC 9): 0 = the cost model, 1..49 = 0..48 upper

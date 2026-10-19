@@ -14,7 +14,7 @@ from hostrun import FS, run  # noqa: E402
 CH = [f"300 midi 0x90 {n} 110" for n in (48, 55, 60, 64, 67, 72)] + [f"2300 midi 0x80 {n} 0" for n in (48, 55, 60, 64, 67, 72)]
 
 
-@pytest.mark.parametrize("sel", [[], ["40 midi 0xB0 79 64"]], ids=["rhodes", "vibes"])
+@pytest.mark.parametrize("sel", [[], ["40 midi 0xB0 79 0"]], ids=["rhodes", "vibes"])
 @pytest.mark.parametrize("typ", [None, 1])        # the default (LP18) and LP12, both fully open
 def test_open_filter_is_transparent(sel, typ):
     on = run(f"flo-on-{len(sel)}-{typ}", sel + ([f"30 midi 0xB0 70 {typ * 19}"] if typ else []) + CH, 2600)

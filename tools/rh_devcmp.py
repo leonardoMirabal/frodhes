@@ -113,7 +113,7 @@ def record(name, dev, ch):
             typ = p.pop("TYPE", 0)
             r.dry(**p)
         r.cc_raw(47, 0)
-        r.cc_raw(79, 64)                                  # VIBES and back: every Rhodes voice ends (eng_switch kills
+        r.cc_raw(79, 0)                                  # VIBES and back: every Rhodes voice ends (eng_switch kills
         time.sleep(0.2)                                   # them, the RLC / body states zeroed). The gate's silence
         r.cc_raw(80, typ)                                 # alone leaves tails ringing under -66 dBFS that come back
         time.sleep(0.3)                                   # with the next note (+-0.4 dB run to run)

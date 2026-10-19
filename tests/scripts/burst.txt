@@ -12,7 +12,7 @@
 3000 expect state held 0
 3000 expect state srcs 0
 # the same on VIBES, and a burst over MIDI (40 note-ons in one millisecond)
-3100 midi 0xB0 79 64
+3100 midi 0xB0 79 0
 3200 keys 0xFF00
 3700 keys 0
 3700 expect state drops 0

@@ -36,7 +36,7 @@ enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, 
        S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
        S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_MCH, S_TRS, S_NONE = 0xFF };
 #include "eng_pages.h"                                /* the engines' controls: VOICE pages, FRODHES K2 / K3, names */
-static const engui_t *eng_ui(void) { return &ENG_UI[PV(P_TYPE) < N_TYPE_N ? TYPE_ENGINE[PV(P_TYPE)] : 0u]; }
+static const engui_t *eng_ui(void) { return &ENG_UI[PV(P_TYPE) < N_TYPE_N ? TYPE_UI[PV(P_TYPE)] : 0u]; }   /* per TYPE */
 static const ectl_t *eng_ctl(uint32_t id)              /* the TYPE's engine's control for a slot (0: not one of its) */
 {
     const engui_t *e = eng_ui();

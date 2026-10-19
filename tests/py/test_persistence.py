@@ -70,14 +70,14 @@ def boot(tag, flash, lines=(), end=400, check_preset=True):
 
 # VIBES with NOISE 0: a short VIBES note with the damper noise on can leave a voice alive in exact silence, and then
 # nothing saves (test_vibes_notes_let_go_so_it_saves, reported)
-ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 64), cc(11, 104, 0)]}
+ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 0), cc(11, 104, 0)]}
 
 
 def test_vibes_notes_let_go_so_it_saves():
     """VIBES: a C4 held 200 ms, let go: the engine goes quiet (no voice left) and a change made then is saved 2 s
     later, as on the Rhodes. (A released note used to keep a silent voice alive forever, so nothing ever saved; fixed
     by the bar engine's kill under 1 LSB and the noise envelope reaching zero, 5bce504.)"""
-    r = run("vibes-quiet", [cc(10, 79, 64), "300 midi 0x90 60 100", "500 midi 0x80 60 0", "3000 dump", cc(3000, 81, 40)],
+    r = run("vibes-quiet", [cc(10, 79, 0), "300 midi 0x90 60 100", "500 midi 0x80 60 0", "3000 dump", cc(3000, 81, 40)],
             6000, flash=flash_file("vibes-quiet"))
     assert r.state(3000)["voices"] == "0" and r.state(3000)["quiet"] == "1", (r.state(3000)["voices"], r.state(3000)["quiet"])
     assert any(5000 <= t <= 5300 for t in r.saves), r.saves
