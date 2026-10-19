@@ -3,7 +3,9 @@
 CC 79 127) against the float golden model with the marimba spec (tools/bars_model.py, docs/model/data/
 marimba_spec.json), note for note, as Gate VB does for VIBES (tests/py/test_bars_gate_b.py): residual energy <= -60 dB
 of the signal (or an RMS under half an LSB). RAW (no effects), NOISE 0, the budget off (FRODHES_NOBUDGET: the golden
-model has no mode budget). Cases: the plan's nine held notes (C2..C7 and the extrapolated ends 24 / 104); MUTE 127
+model has no mode budget). Cases: the plan's nine held notes (C2..C7 and the extrapolated ends 24 / 104) and key 108
+(C8: its tube, damped 15 % at 4.3 kHz, runs bars.c's Q30 pair, bar_pair_*h; it read 6-8 LU under the golden model
+before that path existed); MUTE 127
 (the hand) and MUTE 0 (rings out) with the key-up at 0.5 s; BELL 0 (no tube); a roll (8 re-strikes at 12 Hz on key 48,
 v117: the C superposes each strike on the ringing voice, the golden model is linear, so the roll is the sum of the
 strikes at their blocks; the sleep off on both sides: FRODHES_NOSLEEP, sleep=False); the pedal (down: a key-up does
@@ -98,7 +100,7 @@ def check(c, g, what):
 
 
 @pytest.mark.parametrize("note,vel", [(36, 100), (48, 127), (54, 40), (60, 100), (72, 127), (84, 64), (96, 100),
-                                      (24, 100), (104, 100)])
+                                      (24, 100), (104, 100), (108, 100), (108, 127)])
 def test_c_matches_golden_held(note, vel):
     c = c_render([(100, note, vel)], 2600, tag="vbm-held")
     g = gm.render_batch(SPEC, [note], [vel], 2.2)[0]
@@ -106,7 +108,7 @@ def test_c_matches_golden_held(note, vel):
 
 
 @pytest.mark.parametrize("mute", [0, 127])
-@pytest.mark.parametrize("note", [48, 72])
+@pytest.mark.parametrize("note", [48, 72, 108])
 def test_c_matches_golden_mute(note, mute):
     """the key-up at 0.5 s: MUTE 127 the hand stop, MUTE 0 the note rings on"""
     c = c_render([(100, note, 100)], 2200, off_ms=600, tag=f"vbm-mute{mute}", release=mute)

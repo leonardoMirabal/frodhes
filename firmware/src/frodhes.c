@@ -30,7 +30,7 @@ static uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof_st"))); 
 #else
 #define PROF_STAMP(i) ((void)0)
 #endif
-#include "engine.c"     /* the voice engines: rhodes.c (the Rhodes), bars.c (VIBES), and the dispatcher */
+#include "engine.c"     /* the voice engines: rhodes.c (the Rhodes), bars.c (VIBES + MARIMBA), and the dispatcher */
 #include "fx.c"
 #include "params.c"
 #include "tempo.c"
