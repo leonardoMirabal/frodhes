@@ -1705,10 +1705,11 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     for (k = 0; k < 27u; k++) if (set.leds == 0u && scale_is_root(k)) glow |= 1u << k;   /* ROOTS: the landmarks' glow */
     if (set.leds == 4u)                                                     /* SCALE: the scale's keys in place of all */
         for (k = 0; k < 27u; k++) if (!scale_key_in(k)) all &= ~(1u << k);
-    lit = set.leds >= 3u ? (all ^ lit) & 0x7FFFFFFu : set.leds != 1u ? lit : 0u;   /* LEDS (DISPLAY): ALL every key lit, a
-                                                                             * played one dark (SCALE: of the scale's keys;
-                                                                             * a played other key lit); ROOTS, PLAYED the
-                                                                             * played keys; OFF none */
+    lit = set.leds == 4u ? (all ^ lit) & all : set.leds == 3u ? (all ^ lit) & 0x7FFFFFFu : set.leds != 1u ? lit : 0u;
+                                                                            /* LEDS (DISPLAY): ALL every key lit, a played one
+                                                                             * dark; SCALE the same over the scale's keys, the
+                                                                             * others (out of the scale / silent) always dark;
+                                                                             * ROOTS, PLAYED the played keys; OFF none */
     if (was.done && lit == was.lit && glow == was.glow && btn == was.btn) return;   /* as last pass: nothing to set (each
                                                                              * fm1_led_key walks the key map; then the tables) */
     was.done = 1; was.lit = lit; was.glow = glow; was.btn = btn;
