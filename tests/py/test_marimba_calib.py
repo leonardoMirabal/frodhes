@@ -174,6 +174,15 @@ def test_marimba_pins_are_the_physics():
     print("marimba pins: %d keys exact, %d edge keys %s" % (len(exact), len(edge), edge))
 
 
+def test_marimba_coupling_words_fit_32_bits():
+    """P4: bars.c's per-block coupling coefficients (ktbe, kbte) at BELL's top and TUNE +50 fit 32 bits on every key
+    (gen_bars.coupling_over); before P4 they did not from key 91 (C#7) up, and bar_sat31 clipped the tube's pull on
+    the bar (the C 18 dB off the golden model at C7)"""
+    with gb.type_globals(MVB):
+        bad = [n for n in range(gb.KEY_LO, gb.KEY_HI + 1) if gb.coupling_over(gb.pin_words(MPINS[n]))]
+    assert not bad, bad
+
+
 def test_marimba_pulse_runs_are_the_solve():
     """the pinned pulse runs (marimba.json bands.pulse_runs) are what share_pulses solves on the spec's own shapes
     (the design rows; the VIBES shapes from bars_spec.json)"""
