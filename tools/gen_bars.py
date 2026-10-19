@@ -2279,7 +2279,10 @@ def emit_multi(specs, vbs):
         w("  {" + ",".join("{" + ",".join("{" + ",".join(map(str, sh)) + "}" for sh in fam) + "}" for fam in b[:NFAM]) + "},")
     w("};")
     w("static const uint8_t BAR_PBAND[BAR_NBAND] = {" + ",".join(map(str, pband)) + "};   /* position band -> pulse band */")
-    w("static const uint32_t BAR_PRATE[BAR_NTYPE][BAR_NKEY][BAR_NFAM][RH_NANCH] = {")
+    pr_all = [x for sp in specs for k in sp["prate"] for q in k[:NFAM] for x in q]
+    assert 0 < min(pr_all) and max(pr_all) <= 0xFFFF, "BAR_PRATE is uint16 (Q12 pulse points a sample: %d..%d)" % (
+        min(pr_all), max(pr_all))
+    w("static const uint16_t BAR_PRATE[BAR_NTYPE][BAR_NKEY][BAR_NFAM][RH_NANCH] = {")
     for sp in specs:
         w(" {")
         for k in sp["prate"]:

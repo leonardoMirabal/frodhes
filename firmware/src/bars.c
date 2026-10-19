@@ -130,7 +130,7 @@ static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
     }
     {
         const uint16_t (*PA)[RH_NANCH] = BAR_PAMP[ty][key];
-        const uint32_t (*PR)[RH_NANCH] = BAR_PRATE[ty][key];
+        const uint16_t (*PR)[RH_NANCH] = BAR_PRATE[ty][key];
         pa = (int32_t)PA[f][vi] + ((((int32_t)PA[f][vi + 1] - (int32_t)PA[f][vi]) * (int32_t)vf) >> 8);
         pa2 = (int32_t)PA[f2][vi] + ((((int32_t)PA[f2][vi + 1] - (int32_t)PA[f2][vi]) * (int32_t)vf) >> 8);
         pr = (int32_t)PR[f][vi] + ((((int32_t)PR[f][vi + 1] - (int32_t)PR[f][vi]) * (int32_t)vf) >> 8);
@@ -282,7 +282,7 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     v->age = ++bar_ages;
     v->life = k->life;
     v->pthump = BAR_PULSE[BAR_PBAND[k->band]][0][0];  /* the felt's knock: SOFT, the softest layer */
-    v->prate_thump = BAR_PRATE[tyi][n - BAR_KEY_LO][0][1] << 4;
+    v->prate_thump = (uint32_t)BAR_PRATE[tyi][n - BAR_KEY_LO][0][1] << 4;
     bar_load_pulse(v, vel);
     /* contact noise: filtered noise, louder for harder mallets and faster strikes, decaying (tau ~ 23 ms) */
     bar_nz_e += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * vel) >> 22);
