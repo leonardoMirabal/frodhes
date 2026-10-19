@@ -8,6 +8,8 @@
                                                   and bars_pins.json (or into DIR): a deliberate, reviewed table change
     tools/gen_bars.py --vibes-only             the one-type header (VIBES alone, BAR_NTYPE 1: the 0.9.3 format)
     tools/gen_bars.py --both --out DIR         DIR/bars_tables.h (every type) + DIR/bars_tables_vibes.h (--vibes-only)
+    tools/gen_bars.py --marimba-offset-add DB --out DIR   an A/B header for listening (MARIMBA PLAN §12.5): MARIMBA's
+                                                  calib.st77_offset_db + DB, the ceiling / roll-off stages as always
 
 The default header holds every bar TYPE (MARIMBA PLAN §8.2: per-type BAR_KEYS / BAR_PRATE / BAR_PAMP / KN_MASS /
 KN_MASSI / KN_TUBE / KN_NZ / BAR_BODY / BAR_TYPE, the band tables global with BAR_PBAND). Type 0 is VIBES and each of
@@ -2395,6 +2397,13 @@ def main():
         errs = check_vibes(mvb, "--strict" in sys.argv)
         if errs:
             raise SystemExit("marimba.json: " + "; ".join(errs))
+        if "--marimba-offset-add" in sys.argv:            # an A/B level for listening (MARIMBA PLAN §12.5): MARIMBA's
+            add = float(sys.argv[sys.argv.index("--marimba-offset-add") + 1])   # calib.st77_offset_db + add, the rest
+            mvb["calib"]["st77_offset_db"] = float(mvb["calib"]["st77_offset_db"]) + add   # as the data says (the
+            print("MARIMBA A/B: calib.st77_offset_db %+.1f dB (marimba.json %+.1f %+.1f); never the default: use --out"
+                  % (mvb["calib"]["st77_offset_db"], mvb["calib"]["st77_offset_db"] - add, add), file=sys.stderr)
+            if not out:                                   # ceiling / roll-off stages keep -0.5 dBFS)
+                raise SystemExit("--marimba-offset-add writes an alternative header: give --out DIR")
         mspec = build_type(mvb, spec)
         specs, vbs = [spec, mspec], [vb, mvb]
     for sp in specs:
