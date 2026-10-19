@@ -3369,7 +3369,10 @@ def _jump(V, S, jumps, ch=None, extra=()):
 MKEYS = (48, 60, 84)                      # C3 C4 C6 (PLAN §12 step 2)
 MFAMS = (("SOFT", 0), ("MED", 42), ("HARD", 85), ("RUBBER", 127))
 MVELS = (8, 24, 40, 64, 88, 100, 117, 127)
-MOFFSET_DB = 2.5                          # the provisional level offset re ST77 (PLAN §10.1 offset_db: VIBES's, until P5)
+# MARIMBA's chord re ST77 (the user's level decision "A", 2026-10-20: marimba.json calib.st77_offset_db stays +2.5 dB,
+# VIBES's; every MARIMBA strike is held under -0.5 dBFS by the top roll-off and the RING ceiling, so the A3-E4-A4 v100
+# chord reads -1.5 LU re ST77: FM-1 scans 3 and 4, -1.50 USB / -1.48 jack)
+MLEVEL_DB = -1.5
 M_CAPPED = {(84, "SOFT", "MED")}
 M_FX_RATE, M_FX_JIT, M_FX_SEED, M_FX_VEL = 8.0, 0.0, 1, 80   # marimba_fx's roll: per note, the jitter, the seed (m_fx_roll)          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
 
@@ -3950,7 +3953,8 @@ def marimba_jump(V, S):
         t = T[name]
         return lu(cut(t.m(q), t.on(q)[0], 0, 1.0))
     S.check("MARIMBA re ST77, A3-E4-A4 v100", "LUFS 0..1 s", S.per(lambda q: L("MARIMBA", q) - L("ST77", q)),
-            lambda v: abs(v - MOFFSET_DB) <= 1.0, f"{MOFFSET_DB:+.1f} +-1 LU (provisional offset; P5 sets it)", level=True)
+            lambda v: abs(v - MLEVEL_DB) <= 1.0, f"{MLEVEL_DB:+.1f} +-1 LU (level A: the +2.5 dB offset under the "
+            "-0.5 dBFS ceiling)", level=True)
     S.check("MARIMBA re VIBES", "LUFS 0..1 s", S.per(lambda q: L("MARIMBA", q) - L("VIBES", q)), lambda v: True,
             "information", level=True, info=True)
 
