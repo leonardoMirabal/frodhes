@@ -63,8 +63,8 @@ def check_vibes_rows(multi, single):
     equals type 0 in every per-type row. Returns the parsed multi-type header."""
     A, S = arrays(multi), arrays(single)
     dA, dS = defines(multi), defines(single)
-    assert set(A) == set(S) | {"BAR_PBAND"}
-    assert {k: v for k, v in dA.items() if k not in ("BAR_NTYPE", "BAR_NBAND", "BAR_NPULSE")} == \
+    assert set(A) - {"BAR_RINGG"} == set(S) | {"BAR_PBAND"}       # (BAR_RINGG: a later type's keys with flag bit4)
+    assert {k: v for k, v in dA.items() if k not in ("BAR_NTYPE", "BAR_NBAND", "BAR_NPULSE", "BAR_RINGG_ROWS")} == \
         {k: v for k, v in dS.items() if k not in ("BAR_NTYPE", "BAR_NBAND")}
     assert dS["BAR_NTYPE"] == 1 and dA["BAR_NTYPE"] >= 2
     for n in PER_TYPE:

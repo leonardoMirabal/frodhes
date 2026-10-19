@@ -205,12 +205,16 @@ def fam_gain(tab, kf, raw):
 
 def card_gain(spec, k, kn):
     """bars.c bar_init's output gain: the key's gain x the strike position's (TONE) and the tube's (BELL) level
-    compensation of its band and mallet (Q14 tables; none in an older spec)"""
+    compensation of its band and mallet (Q14 tables; none in an older spec), x the key's RING gain where flag bit4"""
     g = int(k["gain"])
     if "pos_gain" in spec:
         kf = spec["kn_fam"][kn["bark"]] if kn.get("kf") is None else kn["kf"]
         g = (g * fam_gain(spec["pos_gain"][k["band"]], kf, kn["tone"])) >> 14
         g = (g * fam_gain(spec["tube_gain"][k["band"]], kf, kn["bell"])) >> 14
+    if k["flags"] & 16:                              # MARIMBA ring_ceiling: the key's RING gain (BAR_RINGG)
+        q = int(kn["decay"]) << 5                    # (point p = RING 8p: point 8 is exactly 64)
+        r = k["ring_gain"]
+        g = (g * (r[q >> 8] + (((r[(q >> 8) + 1] - r[q >> 8]) * (q & 255)) >> 8))) >> 14
     return min(g, 0x7FFFFFFF)
 
 

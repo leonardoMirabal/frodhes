@@ -32,7 +32,8 @@ typedef struct {
     int32_t kill;               /* Q25 */
     uint16_t life;              /* blocks */
     uint8_t band, flags;        /* flags bit0: outside the authentic range; bit1: T1/T2 present; bit2: sigma clamped;
-                                 * bit3 (MARIMBA below C4): RING (bar_k_decay) scales the tube slot too */
+                                 * bit3 (MARIMBA below C4): RING (bar_k_decay) scales the tube slot too;
+                                 * bit4 (MARIMBA): BAR_RINGG[key] at RING scales the gain (the ceiling) */
 } bar_key_t;
 typedef struct {
     int16_t tube_cents;         /* the type's global tube offset (per-key values are already in m[1]) */
@@ -103,6 +104,7 @@ static volatile int32_t bar_bell = 64;              /* BELL raw 0..127 (its leve
 static volatile int32_t bar_mass = 4096, bar_massi = 4096;   /* KN_MASS / KN_MASSI[HAMMER], Q12 */
 static volatile int32_t bar_nz;                     /* KN_NZ[NOISE], Q15 */
 static volatile int32_t bar_k_decay = 65536, bar_k_rel = 65536;   /* DECAY_K[RING], DECAY_K[DAMPER], Q16 */
+static volatile int32_t bar_ring = 64;              /* RING raw 0..127 (BAR_RINGG: the keys with flag bit4) */
 static volatile int32_t bar_thump, bar_felt;        /* KN_THUMP / KN_FELT[NOISE]: the damper's knock and felt noise */
 static volatile int32_t bar_mute = 0;               /* MUTE (P_RELEASE, RELEASE * 258), Q15: on a type without a damper
                                                      * the key-up damper weight's scale (0 = rings out): bar_mute_w */

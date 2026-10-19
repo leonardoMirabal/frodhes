@@ -1337,10 +1337,12 @@ def build_spec(vb, phys, fec, ct, st):
         for m in modes:
             m["b"] = rom_safe(int(max(-2 ** 31 + 1, min(2 ** 31 - 1, round(m["bf"] * Q30 * 2 ** 15))))) if m["w"]["th"] else 0
             m["w"] = {kk: rom_safe(int(v)) for kk, v in m["w"].items()}
-        keys.append(dict(midi=n, band=k["band"], flags=k["flags"] | (2 if (modes[5]["w"]["th"] or modes[6]["w"]["th"]) else 0),
+        rg = st.get("ring_gain", {}).get(n)               # MARIMBA ring_ceiling: flag bit4, the 17-point RING gain
+        keys.append(dict(midi=n, band=k["band"], flags=k["flags"] | (2 if (modes[5]["w"]["th"] or modes[6]["w"]["th"]) else 0)
+                         | (16 if rg else 0),
                          modes=modes, k_bt=rom_safe(pw["k_bt"]), k_tb=rom_safe(pw["k_tb"]), wt=rom_safe(pw["wt_q28"]),
                          G=pw["G"], gain=int(round(s.get("gain", 65536))), kill=int(s.get("kill", 1)),
-                         life=int(s.get("life", 4096))))
+                         life=int(s.get("life", 4096)), **({"ring_gain": rg} if rg else {})))
     prate, pamp = [], []
     for n in range(KEY_LO, KEY_HI + 1):
         prate.append([ct[n][q]["prate"] for q in range(nf)])
@@ -1463,6 +1465,43 @@ def card_gains(vb, spec, keys):
         out[card] = tab
         rep.append("%s span %.1f..%.1f dB -> %.1f" % (card.upper(), min(spans), max(spans), span))
     return out["tone"], out["bell"], "; ".join(rep)
+
+
+def ring_ceiling(vb, spec, st, keys):
+    """MARIMBA (card_level ring_ceiling): the single-strike ceiling over RING (DECAY) too. On a strongly coupled key
+    (flag bit3, below C4) RING scales the tube's decay with the bar's: a slower tube fills higher, and the bloom's peak
+    grows with RING (C3 at RING 127: +9 dB over RING 64; C2..B3 up to +7 dBFS at the loud corners), so the ceiling the
+    voicing grid holds at RING 64 broke above it. Per key and RING point (the 17 card points, from_point up), the
+    worst v127 single strike over the ring_ceiling grid (TONE x BELL x MALLET x HAMMER, decay = the point's value);
+    where it is over the ceiling (less margin_db) the key's gain at that point is turned down by the excess (Q14, never
+    up; non-increasing in RING so the card stays smooth). The points are RING raw 0, 8 .. 120, 127 (point p = raw 8p,
+    the last at 127; bars.c: q = raw << 5, so point 8 is exactly RING 64, the default, where nothing changes).
+    st["ring_gain"][n] (17 points, Q14); the key's flag bit4 marks a key with any point under 1.0 (bars.c bar_init:
+    BAR_RINGG[key][RING])."""
+    rc_ = vb["card_level"]["ring_ceiling"]
+    ceil_ = 10 ** ((vb["card_level"]["peak_ceiling_dbfs"] - rc_.get("margin_db", 0.0)) / 20) * 32768
+    pts = [min(8 * p, 127) for p in range(NPOS)]
+    fac = np.ones((len(keys), NPOS))
+    for p in range(int(rc_["from_point"]), NPOS):
+        pk = np.zeros(len(keys))
+        for tone in rc_["tone"]:
+            for bell in rc_["bell"]:
+                for bark in rc_["bark"]:
+                    for ham in rc_["hammer"]:
+                        kn = dict(gm.DEFAULT_KNOBS, tone=tone, bell=bell, bark=bark, hammer=ham, decay=pts[p])
+                        y = render_chunks(spec, keys, [127] * len(keys), rc_["dur_s"], kn, chunk=440)
+                        pk = np.maximum(pk, np.abs(y).max(axis=1))
+        fac[:, p] = np.minimum(1.0, ceil_ / pk)
+    fac = np.minimum.accumulate(fac, axis=1)
+    st["ring_gain"] = {}
+    for i, n in enumerate(keys):
+        row = [int(math.floor(Q14 * f)) for f in fac[i]]
+        if min(row) < Q14:
+            st["ring_gain"][n] = row
+    trace("ring", dict(fac=fac), full=True)
+    dn = [(n, 20 * math.log10(st["ring_gain"][n][-1] / Q14)) for n in keys if n in st["ring_gain"]]
+    print("ring ceiling: %d keys turned down above RING 64, at 127 by %s" % (
+        len(dn), ", ".join("%d %.1f" % o for o in dn) or "none"), file=sys.stderr)
 
 
 def voicing_peaks(vb, spec, keys):
@@ -1933,6 +1972,9 @@ def build(vb=None, vspec=None):
     st["peak_dbfs"] = [float(20 * math.log10(min(pk[i], ceil_) / 32768)) for i in range(len(keys))]
     st["peak_worst"] = worst
     spec = build_spec(vb, phys, fec, ct, st)
+    if mar and vb["card_level"].get("ring_ceiling"):
+        ring_ceiling(vb, spec, st, keys)              # RING over 64 turned down where it would break the ceiling
+        spec = build_spec(vb, phys, fec, ct, st)
     print("voicing peaks: worst %.2f dBFS (key %d, %s), ceiling %.1f dBFS, keys turned down: %s" % (
         max(20 * math.log10(x / 32768) for x in pk), keys[int(np.argmax(pk))], worst[int(np.argmax(pk))],
         vb["card_level"]["peak_ceiling_dbfs"], ", ".join("%d (%+.1f)" % o for o in over) or "none"), file=sys.stderr)
@@ -2262,6 +2304,18 @@ def emit_multi(specs, vbs):
         w("static const uint16_t %s[BAR_NBAND][BAR_NFAM][BAR_NPOS] = {" % nm)
         for b in last[key]:
             w("  {" + ",".join("{" + ",".join(map(str, r)) + "}" for r in b) + "},")
+        w("};")
+    rgs = [sp for sp in specs if any("ring_gain" in k for k in sp["keys"])]
+    assert len(rgs) <= 1, "one type with a RING gain table (bars.c reads BAR_RINGG by key where flag bit4)"
+    if rgs:
+        w("/* the output gain per key at the 17 RING (DECAY) points (Q14, the card_level ring_ceiling of type %d: the single-"
+          % specs.index(rgs[0]))
+        w(" * strike ceiling over RING; read only for a key with flag bit4): q = RING << 5 (point p = RING 8p, point 8 = 64),")
+        w(" * g = R[i] + ((R[i+1] - R[i]) (q & 255) >> 8) (i = q >> 8); gain x g >> 14 at note-on after TONE and BELL's */")
+        w("#define BAR_RINGG_ROWS 1")
+        w("static const uint16_t BAR_RINGG[BAR_NKEY][BAR_NPOS] = {")
+        for k in rgs[0]["keys"]:
+            w("  {" + ",".join(map(str, k.get("ring_gain", [Q14] * NPOS))) + "},")
         w("};")
     w("static const int32_t BAR_BODY[BAR_NTYPE][2][5] = {")
     for _ in specs:
