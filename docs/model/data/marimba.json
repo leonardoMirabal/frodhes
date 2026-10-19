@@ -676,7 +676,16 @@
   "status": "DERIVED",
   "family_ceiling": true,
   "_doc_family_ceiling": "before the per-key ceiling (gen_bars.fam_ceiling): a family over peak_ceiling_dbfs by more than the DEFAULT family is turned down by the difference on that key; the DEFAULT's own excess turns the key down as a roll-off at most ceiling_slope_db per key (VA-M10 holds the level to ST77 + offset + this roll-off). A wooden bar's short note is far peakier at equal loudness (D11): the roll-off and the offset are the user's to judge (listening, the jack session)",
-  "ceiling_slope_db": 0.5
+  "ceiling_slope_db": 0.5,
+  "fam_map": {
+   "_doc": "MALLET (KN_FAM, MARIMBA's own row; VIBES keeps the linear map) re-spaced between the detents so no key's level jumps (gen_bars.shape_kn_fam): per segment the golden model's loudness (K-weighted over t_s) at npt fractions, every key of keys x vels, default cards; each raw value gets the fraction where the largest per-key change so far (plus floor_db spread evenly, so a flat segment stays linear) is its share of the segment's. The family ceiling turns HARD / RUBBER down by up to 12 dB on C4..A4, and the linear map put most of that drop just past the detent (RUBBER's faster pulse rate: the level follows amp / rate): 1.5..1.7 dB per 4-raw step on G3..E4 at the HARD -> RUBBER knee (PLAN 10.2 B4: <= 1.5 dB including the family knees). The detents are exact, so every render at 0 / 42 / 64 / 85 / 127 is unchanged",
+   "keys": [36, 96],
+   "vels": [100, 127],
+   "npt": 33,
+   "floor_db": 1.0,
+   "src": "MARIMBA PLAN 10.2 B4 (the S10 lesson 89e18a8); bar_scan S10 steps BARK",
+   "status": "DERIVED"
+  }
  },
  "type_rec": {
   "_doc": "bar_type_t: budget (upper modes), sleep_rel, tors_q15, nbody, drive_row, flags (no motor, no damper), the BELL map's top (tube size at TUBE 127; VIBES 1.45)",

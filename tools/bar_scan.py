@@ -295,6 +295,15 @@ def matrix(typ, full, smoke=False):
         for k in range(32):
             ev += [(150 + G10 * k, f"midi 0xB0 {bm.CC[card]} {min(127, k * 4 + (k == 31) * 3)}")] + bm.note(200 + G10 * k, 69, 100, 300)
         C.append(Case(f"steps {card}", "steps", ev, 200 + G10 * 32 + 500, ["S1", "S10"], card=card, gap=G10))
+    if short_type():
+        # MARIMBA: MALLET's family knees on the keys where the family ceiling turns HARD / RUBBER down most (G3 C4 E4:
+        # up to 12 dB under DEFAULT, the steepest 4-raw steps of the linear map, 1.5..1.7 dB; A4 above is the
+        # general case)
+        for n in (55, 60, 64):
+            ev = S(noise=0)
+            for k in range(32):
+                ev += [(150 + G10 * k, f"midi 0xB0 {bm.CC['BARK']} {min(127, k * 4 + (k == 31) * 3)}")] + bm.note(200 + G10 * k, n, 100, 300)
+            C.append(Case(f"steps BARK {n}", "steps", ev, 200 + G10 * 32 + 500, ["S1", "S10"], card="BARK", gap=G10))
     return C
 
 

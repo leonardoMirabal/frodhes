@@ -98,10 +98,33 @@ def test_header_rows_are_the_spec():
                            k["band"], k["flags"]]
     assert A["BAR_PRATE"][1] == [[[gb.rom_safe(x) for x in q] for q in k[:gb.NFAM]] for k in SPEC["prate"]]
     assert A["BAR_PAMP"][1] == [k[:gb.NFAM] for k in SPEC["pamp"]]
-    for n, kk in (("KN_MASS", "kn_mass"), ("KN_MASSI", "kn_massi"), ("KN_TUBE", "kn_tube"), ("KN_NZ", "kn_nz")):
+    for n, kk in (("KN_FAM", "kn_fam"), ("KN_MASS", "kn_mass"), ("KN_MASSI", "kn_massi"), ("KN_TUBE", "kn_tube"),
+                  ("KN_NZ", "kn_nz")):
         assert A[n][1] == SPEC[kk], n
     assert A["BAR_PBAND"] == SPEC["pband"] and A["BAR_TYPE"][1][7] == 0
     assert re.search(r"#define BAR_NPULSE %d\b" % len(SPEC["pulse_bank"]), hdr)
+
+
+def test_mallet_map_moves_no_key_by_a_step():
+    """card_level fam_map (gen_bars.shape_kn_fam): MARIMBA's KN_FAM row keeps the shared detents (0 / 42 / 64 / 85 /
+    127 = one family each), rises monotonically, and on the golden model no authentic key's loudness (K-weighted over
+    card_level t_s, v100 and v127, default cards) moves by more than 1.5 dB per 4 raw on the S10 grid's MALLET
+    values (0, 4 .. 120, 127: PLAN 10.2 B4, including the family knees). The linear map moved G3..E4 by 1.5..1.7 dB at the HARD ->
+    RUBBER knee (the family ceiling turns RUBBER down up to 12 dB there)"""
+    import numpy as np
+    import bars_model as gm
+    fam = SPEC["kn_fam"]
+    assert [fam[v] for v in gb.FAM_DETENT] == [q << 8 for q in range(len(gb.FAM_DETENT))]
+    assert all(a <= b for a, b in zip(fam, fam[1:])) and fam != gb.kn_fam()
+    t0, t1 = MVB["card_level"]["t_s"]
+    keys = list(range(MVB["keys"]["authentic"][0], MVB["keys"]["authentic"][1] + 1, 2)) + [55, 61, 63]
+    grid = [min(127, k * 4 + (k == 31) * 3) for k in range(32)]
+    for vel in (100, 127):
+        kn = [dict(gm.DEFAULT_KNOBS, bark=b) for b in grid for _ in keys]
+        y = gb.render_chunks(SPEC, keys * len(grid), [vel] * (len(keys) * len(grid)), t1 + 0.01, kn)
+        L = np.array([gb.lufs_k(r, t0, t1) for r in y]).reshape(len(grid), len(keys))
+        step = np.abs(np.diff(L, axis=0)) * 4 / np.diff(grid)[:, None]    # per 4 raw (the last step: 120 -> 127)
+        assert step.max() <= 1.5, (vel, keys[int(step.max(axis=0).argmax())], float(step.max()))
 
 
 # ---------------------------------------------------------------- the marimba's pins (MARIMBA PLAN §20: as VIBES's)
