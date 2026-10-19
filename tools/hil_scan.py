@@ -2277,9 +2277,9 @@ ST_NOTE = (2.0, chord((69,), 108, 0.1, 1.6))      # A4 alone: harmonics (the dri
 ST_STAC = (3.4, chord((69,), 108, 0.1, 0.25))     # A4 staccato: echoes, the reverb's tail
 ST_QUIET = (2.0, chord((69,), 40, 0.1, 1.6))      # A4 v40: LEVEL's +12 dB stays under the limiter
 ST_REL = (2.0, chord(FXCH, 127, 0.1, 0.6) + chord((69,), 40, 0.9, 1.6))   # loud, then soft: the release
-# PHASER SPEED 0 (0.25 Hz: a 4 s period) on VIBES: the chord struck 3 times, 3.3 s apart (held, it is under the gate's
-# -66 dBFS by ~6.5 s with the motor off): a 9.6 s trace, 2.4 periods (the takes and their DEPTH 0 reference share
-# the strikes; host seeds 1-3: 0.25 Hz)
+# PHASER and CHORUS SPEED 0 (0.25 Hz: a 4 s period) on VIBES: the chord struck 3 times, 3.3 s apart (held, it is
+# under the gate's -66 dBFS by ~6.5 s with the motor off): a 9.6 s trace, 2.4 periods (the takes and their DEPTH 0
+# references share the strikes; host seeds 1-5: 0.25 Hz, both effects)
 ST_PH0 = (10.5, sorted(chord(FXCH, 108, 0.1, 3.3) + chord(FXCH, 108, 3.4, 6.6) + chord(FXCH, 108, 6.7, 10.1),
                        key=lambda e: e[0]))
 
@@ -2612,7 +2612,7 @@ def vibes_fx(V, S, stim=None, extra=()):
     FDN = st.get("FDN", 2048)                                          # frame_dist's frame (PHASER FDBK)
     BW = st.get("BW", (0.05, 1.05))                                    # the spectra's window (B, SD)
     cs_period = st.get("CS_PERIOD", False)                             # CHORUS SYNC by its period (lfo_rate)
-    PH0 = st.get("PH0", ST_PH0)            # PHASER SPEED 0's take (and its DEPTH 0 reference): ST_LONG is too short
+    PH0 = st.get("PH0", ST_PH0)            # PHASER / CHORUS SPEED 0's takes (and DEPTH 0 refs): ST_LONG is too short
     jfloor = st.get("JFLOOR", False)       # the DRIVE rows: the jack judged against its own distortion floor
     v3line = st.get("V3LINE", False)       # DRIVE TONE's V3 as a line (m_line_db), clear of the resampler's image
     dl_wow = st.get("DL_WOW", False)       # DELAY DIG vs ANA judged by the tape's wow / flutter (the spectrum: info)
@@ -2990,18 +2990,35 @@ def vibes_fx(V, S, stim=None, extra=()):
             S.usb(lambda q: (corr_lr(cut(T[0].usb, T[0].on(q)[0], 0.1, 5.0)), corr_lr(cut(T[127].usb, T[127].on(q)[0], 0.1, 5.0)))),
             lambda v: v[0] - v[1] >= 0.1, "drops >= 0.1", fmt=lambda v: f"{v[0]:.2f} -> {v[1]:.2f}")
     cb127 = with_(chb, ("CP_DEPTH", 127))
-    sp = {}
-    for x in (0, P["CP_SPEED"]["de"], 127):
+    sp, cs0_at = {}, None
+    d0 = P["CP_SPEED"]["de"]
+
+    def cslower():
+        S.check(f"CHORUS SPEED 0 slower than {d0}", f"expected {lfo_hz(0, True):.2f} Hz",
+                {s: (sp[0][s], sp[d0][s]) if sp[0].get(s) is not None and sp[d0].get(s) is not None else None
+                 for s in sp[0]},
+                lambda v: v[0] <= 0.7 * v[1], "<= 0.7x", fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz")
+    for x in (0, d0, 127):
+        if x == 0 and not (V.offline and not os.path.exists(os.path.join(V.offline, "chorus-speed-0-long.json"))):
+            # (--offline on takes saved before CS0: the 6 s take as before)
+            # CS0, as PH0: SPEED 0's 4 s period in ST_LONG's 5.1 s centroid trace is 1.3 periods, and the harmonic
+            # sum read VIBES 0.36 / 0.42 Hz on the FM-1 (0.36 on the host), MARIMBA's host 0.39 or 0.25 by the jitter
+            # alone. PH0's 10.5 s take against a CHORUS DEPTH 0 take of the same strikes, read as the phaser's SPEED
+            # 0 (phrate: 300-3000 Hz re DEPTH 0, lfo_rate pearson): host seeds 1-10 0.249-0.250 Hz on both engines.
+            # (The centroid without the reference read VIBES' 3 strikes, 3.3 s apart: 0.30 Hz; the centroids'
+            # difference 0.28 on VIBES seed 4, the strikes' own centroid steps differing with the chorus on.) Its
+            # two takes run last (after PH0's), its rows put back here
+            cs0_at = len(S.rows)
+            continue
         t = run(f"chorus-speed-{x}", with_(cb127, ("CP_SPEED", x)), ST_LONG)
         ex = lfo_hz(x, half=True)
         sp[x] = S.per(lambda q: rate_of(ctr(t, q), fps, ex))
         if x:
             S.check(f"CHORUS SPEED {nm('CP_SPEED')} {x}", f"expected {ex:.2f} Hz (centroid)", sp[x],
                     lambda v: abs(v / ex - 1) <= 0.10, "within 10 %", fmt=lambda v: f"{v:.2f} Hz")
-    d0 = P["CP_SPEED"]["de"]
-    S.check(f"CHORUS SPEED 0 slower than {d0}", f"expected {lfo_hz(0, True):.2f} Hz",
-            {s: (sp[0][s], sp[d0][s]) if sp[0].get(s) is not None and sp[d0].get(s) is not None else None for s in sp[0]},
-            lambda v: v[0] <= 0.7 * v[1], "<= 0.7x", fmt=lambda v: f"{v[0]:.2f} / {v[1]:.2f} Hz")
+    if cs0_at is None:
+        cslower()
+    csl_at = len(S.rows)                              # (where the SPEED 0 row's "slower than" goes when CS0 runs last)
     T = {x: run(f"chorus-fdbk-{x}", with_(chb, ("CP_FDBK", x)), ST_LONG) for x in (0, P["CP_FDBK"]["de"], 127)}
     S.check(f"CHORUS FDBK {nm('CP_FDBK')} 0 vs 127 (reserved: no card, no effect; MANUAL CC 24)", "DEPTH 64",
             S.per(lambda q: (mot(T[127], q) - mot(T[0], q), SD(T[127], T[0], q, 0.2, 5.3),
@@ -3163,6 +3180,21 @@ def vibes_fx(V, S, stim=None, extra=()):
         slower()
         r_sp, r_sl = S.rows[n0:]
         del S.rows[n0:]
+    # CHORUS SPEED 0 (CS0, see the CHORUS section): the same way, after PH0's takes (they keep their place)
+    if cs0_at is not None:
+        n0, ex = len(S.rows), lfo_hz(0, half=True)
+        t = run("chorus-speed-0-long", with_(cb127, ("CP_SPEED", 0)), PH0)
+        r0 = run("chorus-depth-0-long", with_(chb, ("CP_DEPTH", 0)), PH0)
+        sp[0] = S.per(lambda q: phrate(t, q, ex, ref=r0, b=PH0[0] - 0.7, pearson=True))
+        S.check(f"CHORUS SPEED {nm('CP_SPEED')} 0", f"expected {ex:.2f} Hz (300-3000 Hz re DEPTH 0, its period; "
+                f"a {PH0[0] - 0.9:.1f} s trace)", sp[0], lambda v: abs(v / ex - 1) <= 0.10, "within 10 %",
+                fmt=lambda v: f"{v:.2f} Hz")
+        cslower()
+        r_cs, r_csl = S.rows[n0:]
+        del S.rows[n0:]
+        S.rows.insert(csl_at, r_csl)                  # (the later places first: the earlier ones are still right)
+        S.rows.insert(cs0_at, r_cs)
+    if ph0_at is not None:
         S.rows.insert(sl_at, r_sl)
         S.rows.insert(ph0_at, r_sp)
 
@@ -3855,7 +3887,7 @@ def marimba_fx(V, S):
                 SPREAD=True,             # FILTER OFF judged against two dry takes of the roll (one more take)
                 FDN=16384,               # PHASER FDBK frame by frame in 0.34 s frames: two takes of one roll are
                 #                          3.7 dB apart in 43 ms frames (the strikes' phase), 1.6 dB in 0.34 s
-                PH0=(10.5, m_fx_roll(FXCH, v, 0.1, 10.1)),   # PHASER SPEED 0 (4 s period): a 9.6 s trace, 2.4 periods
+                PH0=(10.5, m_fx_roll(FXCH, v, 0.1, 10.1)),   # PHASER / CHORUS SPEED 0 (4 s): 9.6 s trace, 2.4 periods
                 JFLOOR=True,             # the DRIVE rows: the jack's own distortion at MARIMBA's quiet level
                 V3LINE=True,             # DRIVE TONE's V3 as a line: the +-3 % band read the resampler's image of V1
                 DL_WOW=True)             # DELAY DIG vs ANA: the echoes (V1 alone) by the tape's wow / flutter

@@ -6,11 +6,12 @@ marimba_fx roll is the same in every take, and the VIBES suites keep their stimu
 2.4 periods, NOISE's contact as the gate's aligned difference, DRIVE TONE's jack V3 on the jack's own distortion;
 DRIVE TONE's V3 clear of the 44.1 -> 48 kHz resampler's image of V1, DELAY DIG vs ANA by the tape's wow / flutter
 (the echoes' spectrum can not move on a marimba A4), and VIBES' PHASER SPEED 0 on a long take run last (every other
-VIBES take and row in place)."""
+VIBES take and row in place); CHORUS SPEED 0 the same way on both engines, its long takes after PH0's."""
 import os
 import sys
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
 import hil_scan as h  # noqa: E402
@@ -362,7 +363,7 @@ def test_vibes_fx_takes_and_rows_kept(monkeypatch, capsys):
     S = h.VSuite("vibes_fx", V)
     h.vibes_fx(V, S)
     tags = [t["tag"] for t in V.takes]
-    assert tags[-2:] == ["phaser-speed-0-long", "phaser-depth-0-long"] and "phaser-speed-0" not in tags
+    assert tags[-4:-2] == ["phaser-speed-0-long", "phaser-depth-0-long"] and "phaser-speed-0" not in tags
     i = tags.index("phaser-speed-40")
     assert tags[i - 1] == "phaser-depth-127"                                 # (where phaser-speed-0 was)
     rows = [r["check"] for r in S.rows]
@@ -374,3 +375,69 @@ def test_vibes_fx_takes_and_rows_kept(monkeypatch, capsys):
     assert dl["status"] != "info" and dl["crit"] == ">= 2 dB or centroid x1.15 either way"
     assert [r["setting"] for r in S.rows if r["check"].startswith("DRIVE TONE")] == \
         ["DRIVE 64: A4's V2 / V3 re V1 (5..300 ms)"]
+
+
+def _fx_stim(engine):
+    """the PH0 / LONG stimuli and extra settings vibes_fx gets on the engine (marimba_fx's roll, or VIBES' own)"""
+    if engine == "vibes":
+        return h.ST_PH0, h.ST_LONG, []
+    got = {}
+    real = h.vibes_fx
+    try:
+        h.vibes_fx = lambda V, S, stim=None, extra=(): got.update(stim, extra=list(extra))
+        h.marimba_fx(None, None)
+    finally:
+        h.vibes_fx = real
+    return got["PH0"], got["LONG"], got["extra"]
+
+
+@pytest.mark.parametrize("engine,seed", [("vibes", 4), ("marimba", 2)])
+def test_chorus_speed_0_long_take(monkeypatch, engine, seed):
+    """CHORUS SPEED 0 (0.25 Hz): ST_LONG's 5.1 s centroid trace by the harmonic sum (rate_of) read VIBES 0.36 Hz
+    (FM-1 0.36 / 0.42), MARIMBA 0.39 (or 0.25, by the host's jitter alone). CS0: the PH0 take re a CHORUS DEPTH 0 take
+    of the same strikes, as the phaser's SPEED 0 (300-3000 Hz, lfo_rate pearson): 0.25 Hz. VIBES seed 4: the
+    centroids' difference read 0.28 (the strikes' own centroid steps, 3.3 s apart, differ with the chorus on)"""
+    monkeypatch.setattr(h, "ENGINE", engine)
+    PH0, LONG, extra = _fx_stim(engine)
+    V = h.VRig("usb", host=seed)
+    P = h.vp()
+    f = h.lfo_hz(0, True)
+    fps = h.FS / 240
+    chb = [("CP_SW", 1), ("CP_DEPTH", 64), ("CP_SPEED", P["CP_SPEED"]["de"]), ("CP_FDBK", P["CP_FDBK"]["de"]),
+           ("CP_SYNC", 0)]
+    s0 = h.with_(chb, ("CP_DEPTH", 127), ("CP_SPEED", 0))
+    V.reset(s0 + extra, label="speed 0 short")
+    t6 = V.take("tc-chorus-speed-0", *LONG)
+    c6 = h.cen_trace(h.cut(t6.m("usb"), t6.on("usb")[0], 0.2, 5.3))[0]
+    assert h.rate_of(c6, fps, f) / f - 1 > 0.2                               # (the bug: 0.36 / 0.39 Hz)
+    V.reset(s0 + extra, label="speed 0")
+    t = V.take("tc-chorus-speed-0-long", *PH0)
+    V.reset(h.with_(chb, ("CP_DEPTH", 0)) + extra, label="depth 0")
+    r = V.take("tc-chorus-depth-0-long", *PH0)
+    d, _, fps_ = h.rel_trace(t, r, "usb", 0.2, PH0[0] - 0.7, 300, 3000)
+    assert abs(h.lfo_rate(d, fps_, f * 0.4, f * 2.6, pearson=True) / f - 1) <= 0.02
+
+
+@pytest.mark.parametrize("engine", ["vibes", "marimba"])
+def test_chorus_speed_0_takes_last_rows_in_place(monkeypatch, engine):
+    """(--dry-run) the CS0 takes run last, after PH0's, and replace the 6 s chorus-speed-0 take; the chorus' other
+    takes keep their places, and the CHORUS SPEED 0 rows (within 10 %, slower than the default) stand where they
+    belong, before SPEED 50 and after SPEED 127"""
+    monkeypatch.setattr(h, "VDEBUG", True, raising=False)
+    monkeypatch.setattr(h, "ENGINE", engine)
+    V = h.VRig("both", dry_run=True)
+    S = h.VSuite(f"{engine}_fx", V)
+    (h.vibes_fx if engine == "vibes" else h.marimba_fx)(V, S)
+    tags = [t["tag"] for t in V.takes]
+    assert tags[-4:] == ["phaser-speed-0-long", "phaser-depth-0-long", "chorus-speed-0-long", "chorus-depth-0-long"]
+    assert "chorus-speed-0" not in tags
+    de = h.vp()["CP_SPEED"]["de"]
+    assert tags[tags.index(f"chorus-speed-{de}") - 1] == "chorus-depth-127"   # (where chorus-speed-0 was)
+    rows = [r["check"] for r in S.rows]
+    k = rows.index(f"CHORUS SPEED CP_SPEED (CC 87) {de}")
+    assert rows[k - 1] == "CHORUS SPEED CP_SPEED (CC 87) 0"
+    assert rows[k + 1] == "CHORUS SPEED CP_SPEED (CC 87) 127" and rows[k + 2] == f"CHORUS SPEED 0 slower than {de}"
+    assert rows[k + 3].startswith("CHORUS FDBK")
+    pk = rows.index("PHASER SPEED PH_SPEED (CC 14) 0")                       # (PH0's rows still in place)
+    assert rows[pk + 3] == f"PHASER SPEED 0 slower than {h.vp()['PH_SPEED']['de']}"
+    assert len(rows) == len(set(rows))
