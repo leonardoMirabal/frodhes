@@ -13,7 +13,11 @@
  *
  * TYPE change across engines: the running engine keeps playing for one more block with its output faded to zero over
  * those 256 samples, then all its voices stop and the other engine takes over; events wait in the ring during that
- * block (they are played by the new engine one block later). With no voice sounding the change is immediate. */
+ * block (they are played by the new engine one block later). With no voice sounding the change is immediate.
+ * A change between two bar types (VIBES <-> MARIMBA) goes the same way (MARIMBA PLAN §3.12, C1): the main loop asks
+ * for a bar type in eng_want_sub, the ISR latches it into bar_sub only in eng_switch, after the fade and bar_kill_all,
+ * so a voice never re-strikes with another type's tables and bar_sub is constant while any bar voice lives. A session
+ * that never leaves VIBES never takes this path. */
 #include "rhodes.c"
 #include "bars.h"     /* the bar engine's state; its code (bars.c) comes last, in frodhes.c */
 
@@ -24,6 +28,7 @@
                                                 * TYPE_ENGINE / TYPE_SUB */
 
 static volatile uint8_t eng_want;              /* main loop: the engine of the TYPE last set */
+static volatile uint8_t eng_want_sub;          /* main loop: its bar type (bar_sub follows it in eng_switch) */
 static volatile uint8_t eng_cur;               /* ISR: the engine running */
 static uint8_t eng_swapping;                   /* ISR: this block fades the old engine out */
 static uint8_t eng_shed_req;                   /* ISR (frodhes.c app_audio): shed a voice of the running engine */
@@ -60,7 +65,7 @@ static void eng_all_off(void) { eng_post(EV_ALL_OFF, 0, 0); }
 static void eng_set_type(uint32_t t)
 {
     if (t < ENG_RH_NTYPE) { rh_type = (uint8_t)t; eng_want = ENG_RHODES; }
-    else { t -= ENG_RH_NTYPE; bar_sub = (uint8_t)(t < BAR_NTYPE ? t : 0u); eng_want = ENG_BARS; }
+    else { t -= ENG_RH_NTYPE; eng_want_sub = (uint8_t)(t < BAR_NTYPE ? t : 0u); eng_want = ENG_BARS; }
 }
 static int eng_is_bars(void) { return eng_want == ENG_BARS; }   /* the main loop's TYPE, not the ISR latch */
 
@@ -76,7 +81,7 @@ static void eng_bar_knob(uint32_t k, uint32_t v)
     case BK_TUBE: bar_tube = KN_TUBE[c]; bar_bell = (int32_t)c; break;
     case BK_WEIGHT: bar_mass = KN_MASS[c]; bar_massi = KN_MASSI[c]; break;
     case BK_RING: bar_k_decay = (int32_t)DECAY_K[c]; break;
-    case BK_DAMPER: bar_k_rel = (int32_t)DECAY_K[c]; break;
+    case BK_DAMPER: bar_k_rel = (int32_t)DECAY_K[c]; bar_mute = (int32_t)c * 258; break;   /* MUTE: no-damper types */
     case BK_NOISE:                  /* params.c sets rh_thump / rh_felt first. The Rhodes levels did not fit the bars
                                      * (audit 2026-10-17): the contact noise came out 75 dB under the note (exactly 0
                                      * at the default), so it is 48 dB up (NOISE 127: about -25 dB re the note, the
@@ -94,7 +99,7 @@ static void eng_bar_knob(uint32_t k, uint32_t v)
 
 static int eng_quiet(void)
 {
-    if (eq_w != eq_r || eng_swapping || eng_want != eng_cur) return 0;
+    if (eq_w != eq_r || eng_swapping || eng_want != eng_cur || (eng_want == ENG_BARS && eng_want_sub != bar_sub)) return 0;
     return eng_cur == ENG_BARS ? bar_quiet() : rh_quiet();
 }
 
@@ -130,6 +135,7 @@ static void eng_switch(uint32_t want)
 {
     if (eng_cur == ENG_BARS) bar_kill_all(); else eng_rh_kill_all();
     eng_cur = (uint8_t)want;
+    bar_sub = eng_want_sub;                                         /* the bar type: latched only here (C1) */
     if (want == ENG_BARS) bar_pedal(eng_pedal_cc);                  /* the pedal is global */
     else rh_post(EV_PEDAL, 0, eng_pedal_cc);
     eng_swapping = 0;
@@ -145,7 +151,8 @@ static int eng_h_log_open;
 static void eng_render(int32_t *mono, uint32_t n)
 {
     uint32_t want = eng_want == ENG_BARS ? ENG_BARS : ENG_RHODES, j;
-    if (want != eng_cur && !eng_swapping) {
+    if ((want != eng_cur || (want == ENG_BARS && eng_want_sub != bar_sub)) && !eng_swapping) {   /* another engine,
+                                                                    * or another bar type (C1) */
         uint32_t busy = eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits;
         if (busy) eng_swapping = 1;                                 /* fade the old engine out this block */
         else eng_switch(want);                                      /* nothing sounding: change now */
@@ -213,6 +220,7 @@ static void eng_host_report(void)                /* tests/host.c, at the end of 
            "bars: the cost model's whole block, effects included" : "voices only, P0 costs; + 312 idle, + 1388 with every effect");
     printf("cpu-proxy-each rhodes %u bars %u\n", eng_h_max_us[ENG_RHODES], eng_h_max_us[ENG_BARS]);   /* a run on both */
     printf("ev_drop %u\n", (unsigned)(eq_drop + ev_drop));
+    printf("type %u\n", eng_cur == ENG_BARS ? ENG_RH_NTYPE + bar_sub : (unsigned)rh_type);   /* the TYPE last rendered (C11) */
     if (eng_h_log) fclose(eng_h_log);
     if (bar_h_pred) fclose(bar_h_pred);
 }
