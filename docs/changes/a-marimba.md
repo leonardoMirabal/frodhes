@@ -1,18 +1,4 @@
-> **DRAFT, not released yet.** Edit these notes, then delete this line. (MARIMBA P6: written from `git log v0.9.3..marimba`; the user validates first.)
-
-**Frodhes 0.9.4**: a physically modelled Fender Rhodes, vibraphone and marimba for the M-VAVE FM-1. Every note is computed live from the mechanics of the instrument; there are no samples.
-
-**Download:** `frodhes-0.9.4.fwsc` below. **Try it first in your browser:** https://leonardomirabal.github.io/frodhes/
-
-### Install
-```sh
-pip install mido python-rtmidi
-python3 tools/fm1_install.py frodhes-0.9.4.fwsc
-```
-If anything goes wrong, switch the FM-1 off, hold **OCT−** and switch it on to get the USB rescue, then install again.
-Settings and user presets saved by 0.9.3 carry over, and the FM-1 comes back on the sound it was left on.
-
-### New in 0.9.4
+## New
 - **MARIMBA, a concert marimba.** A sixth TYPE (ALGORITHM, or K1 on the main page): rosewood bars tuned 1 : 4 : 10,
   each over its tube, struck by yarn or rubber mallets, computed like the vibraphone (no samples). The low notes ring
   longer and swell for a moment just after the strike (the long tubes), the top ones are short and dry. Five
@@ -34,25 +20,24 @@ Settings and user presets saved by 0.9.3 carry over, and the FM-1 comes back on 
     bars' roll-off and RING's ceiling), so a chord comes out about 1.5 LU under the Rhodes F01 (measured on the
     FM-1: −1.50 LU on USB, −1.48 on the jack).
 
-- **DISPLAY page** (GLO four times): **COLOR**, the screen's colour, AMBER as before and then 25 pastel hues around the colour wheel, from PEACH through the pinks, violets, blues, cyans and greens to LEMON, GOLD and MANGO; **BRIGHTNESS**, for a dark room: the screen and every light dimmed together, 10 to 1; **LEDS**, which keys light (none, the played keys, the played keys and the scale's root keys glowing faintly, or every key lit for playing in the dark, a played key going dark). Kept with the settings. After an update the FM-1 looks as before: AMBER, BRIGHTNESS 10 and ROOTS are 0.9.3's screen and key lights.
-- **Notes over MIDI light their keys**, from USB and the TRS jack, as the FM-1's own keys do.
-
-### Changes
+## Changes
+- Settings and user presets saved by 0.9.3 carry over, and the FM-1 comes back on the sound it was left on.
 - **MIDI CC 79** (the bar TYPEs): **0–95 selects VIBES** as before (0 and 64 included), **96–127 now selects MARIMBA**
   (in 0.9.3 every value selected VIBES). CC 80 still picks the four Rhodes types.
 - **16 factory presets** (F01–F16); Program Change 0–15 loads them, 16–31 the user presets U01–U16 as before. The
   preset number saved by 0.9.3 (14 factory presets) is moved once, so you come back on the same sound.
 - The start screen reads **ELECTRIC PIANO + VIBES + MARIMBA**.
 - Less flash for the same sound: the bar instruments' pulse-rate table is stored in 16 bits (every value fits,
-  nothing changes in the sound), about 17.6 kB less flash; the image is 485,428 B of the 581,564 B available.
+  nothing changes in the sound), about 17.6 kB less flash; the image (with the DISPLAY page) is 487,560 B of the
+  581,564 B available.
 - The developer CCs 9 (the mode cap) and 116's bar replies (112 / 113) work on MARIMBA as on VIBES.
 
-### Fixes
+## Fixed
 - A note held through a TYPE change to another engine (a Rhodes type to VIBES or MARIMBA and back, or VIBES to
   MARIMBA), whose sound the change fades out, stayed silent when struck again before being let go (a second MIDI
   note-on, or an FM-1 key on a note MIDI still held). It now plays on the new type. 0.9.3 had this too.
 
-### Tools
+## Tools
 - `tools/marimba_va.py` (Gate VA-M: the marimba's model against its numbers before any C), `tools/marimba_scan.py`
   (the host scan, the rolls and stress cases, the musicality checks M1–M7), `tools/hil_scan.py --marimba` (the FM-1
   suites over USB and the jack), `tools/hil_cpu.py --engine marimba`, `tools/mrb_ref_measure.py` (numbers only from
@@ -79,7 +64,7 @@ Settings and user presets saved by 0.9.3 carry over, and the FM-1 comes back on 
   idle floor) and `vib_sampleback --engine marimba` (Gate VD-M on every key). `hil_scan`'s MARIMBA level row now
   expects the measured −1.5 LU re the Rhodes (±1).
 
-### Tested
+## Tested
 - Host: `make test`, `make pytest` (the MARIMBA tests: Gate VA-M, every card and control audible, the scan and the
   musicality checks, the compatibility with 0.9.3 settings, the held-key fix), every Rhodes and VIBES render byte for
   byte as in 0.9.3 (`tests/baselines/renders.sha256`), Gate VB-M (the firmware's MARIMBA against its reference model,
@@ -90,5 +75,3 @@ Settings and user presets saved by 0.9.3 carry over, and the FM-1 comes back on 
   under the 5.0 ms where the voice guard would act.
 - FM-1: to be completed with the release build (P5 / P7: `tools/hil_scan.py --marimba`, `tools/hil_cpu.py --engine
   marimba`, the jack session).
-
-Full manual: https://github.com/leonardoMirabal/frodhes/blob/main/docs/MANUAL.md · Built on [Dinghy](https://github.com/zvenson/dinghy). GPL-3.0.

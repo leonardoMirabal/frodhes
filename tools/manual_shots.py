@@ -5,6 +5,10 @@ then composes overview.png (PERFORM, VOICE, PHASER, COMPRESSOR; the README's Scr
 walks SELECT and reads each page's name back (the engine's VOICE pages are dynamic: voice1.png, voice2.png on the
 Rhodes; voice1-vibes.png .. voice3-vibes.png on VIBES; voice1-marimba.png, voice2-marimba.png on MARIMBA, with
 piano-vibes.png / piano-marimba.png their FRODHES page). Files left in the folder from pages that went are listed.
+Into docs/manual/img/ (the default), it then sets every picture link's ?v= in README.md / docs/MANUAL.md to the
+file's hash (tools/doc_links.py --fix). tests/py/test_manual_shots.py runs it into a temporary folder and fails if
+a committed screenshot differs from what the code draws: a PR that changes the UI re-runs this script (and a
+conflict on a PNG is resolved by re-running it, never by hand).
 
   tools/manual_shots.py           the framebuffer's own colours (what the firmware writes: the default since
                                   2026-10-18, the user: the panel model's yellow is not what the eye sees)
@@ -233,6 +237,10 @@ def main():
     stale = sorted(f for f in os.listdir(OUT) if f.endswith(".png") and f[:-4] not in made)
     if stale:
         print("not made by this run (pages that went: git rm them):", stale)
+    if OUT == os.path.join(ROOT, "docs", "manual", "img"):   # the docs' own pictures: their links follow them
+        import doc_links
+        for name in doc_links.fix(ROOT):
+            print(f"{name}: picture links set to their files' hashes (?v=)")
 
 
 if __name__ == "__main__":

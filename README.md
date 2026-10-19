@@ -2,7 +2,7 @@
 
 **A physically modelled Fender Rhodes, vibraphone and marimba for the M-VAVE FM-1.**
 
-![Frodhes on the FM-1: the FRODHES page (TYPE, TONE, BELL, KEY VEL)](docs/manual/img/piano.png?v=0.9.4)
+![Frodhes on the FM-1: the FRODHES page (TYPE, TONE, BELL, KEY VEL)](docs/manual/img/piano.png?v=1cb7a6e1)
 
 Frodhes turns the FM-1 into an electric piano, a vibraphone and a marimba. Every note is computed live from the mechanics of the
 instrument: on a Rhodes a hammer strikes a tine, the tine rings against its tonebar and a magnetic pickup turns the
@@ -23,21 +23,22 @@ code compiled to WebAssembly, with the FM-1's screen, knobs, buttons and keys (c
 
 ## Screens
 
-![The PERFORM, VOICE, PHASER and COMPRESSOR pages](docs/manual/img/overview.png?v=0.9.3)
+![The PERFORM, VOICE, PHASER and COMPRESSOR pages](docs/manual/img/overview.png?v=0a5825bc)
 
 Every page is in the
 [manual](docs/MANUAL.md), with its screenshot.
 
 ## Download
 
-**Latest release: [Frodhes 0.9.3](https://github.com/leonardoMirabal/frodhes/releases/latest)**: the firmware file is
-`frodhes-0.9.3.fwsc` under *Assets* on the release page (package identity `FM-1_958`, the same for every version).
+**Latest release: [the release page](https://github.com/leonardoMirabal/frodhes/releases/latest)** (its version, notes
+and earlier versions); the firmware file is [`frodhes.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes.fwsc), always the newest
+(package identity `FM-1_958`, the same for every version).
 
 Install it over USB:
 
 ```sh
 pip install mido python-rtmidi
-python3 tools/fm1_install.py frodhes-0.9.3.fwsc
+python3 tools/fm1_install.py frodhes.fwsc
 ```
 
 If anything goes wrong, switch the FM-1 off, hold **OCT−** and switch it on: that is the USB rescue, from which you
@@ -85,6 +86,10 @@ Frodhes is built on [Dinghy](https://github.com/zvenson/dinghy) (zvenson), which
 [SLOOP](https://github.com/isod89/sloop-fm1) (isod89) carries it. That platform handles updates, the USB rescue,
 USB-MIDI, USB audio, the panel, the screen and settings.
 
+Contributing: [CONTRIBUTING.md](CONTRIBUTING.md) says what a pull request touches (the code, its tests, its own
+release-note fragment in `docs/changes/`, the screenshots regenerated) and what it leaves alone (version numbers,
+the release notes, `?v=`).
+
 ```
 firmware/src/frodhes.c    <- the app: keys, MIDI, sustain, settings, the main loop
 firmware/src/rhodes.c     <- the voice engine: tine and tonebar, hammer, pickup, damper
@@ -110,18 +115,21 @@ make host         # render build/host/frodhes.wav and screen PNGs on the compute
 Testing on the real FM-1 over USB: `tools/hil_scan.py` plays it over MIDI and analyses its USB audio (keys,
 velocity, every effect, presets); `tools/hil_jack.py` compares the headphone jack, recorded with an audio interface,
 against the USB audio; `tools/hil_usb_onset.py` checks that every note reaches the USB recording as soon as the jack
-(after a knob turn and a pause too: the automatic saves wait while a computer records). `tools/manual_shots.py` renders the manual's screenshots. `web/build.sh` builds the browser
+(after a knob turn and a pause too: the automatic saves wait while a computer records). `tools/manual_shots.py` renders the manual's screenshots and sets each picture link's `?v=` to the file's hash
+(`tools/doc_links.py --fix` after editing a picture by hand; a test fails if a screenshot or a link is stale). `web/build.sh` builds the browser
 emulator (Emscripten; `web/web_hal.c` stands in for the hardware) into `web/dist/`.
 
 Releases are one command: `tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device] [--no-emulator] [--yes]`
 picks the next version from the latest tag, checks the tree (on `main`, clean, not behind `origin/main`, the notes
-in `docs/releases/vX.Y.Z.md` written and no longer marked DRAFT; a missing file gets a draft from the git log),
+fragments in `docs/changes/` well formed: `tools/changes.py`),
 runs the host tests and the release build, installs it on the FM-1 and runs the CPU, scan and jack tests on the
-Rhodes, VIBES and MARIMBA (and the MARIMBA sample-back), points this README and the manual at the new file, commits, asks before publishing, then pushes `main`,
+Rhodes, VIBES and MARIMBA (and the MARIMBA sample-back), checks the docs' links (no version in them: they link `releases/latest`), assembles the fragments into
+`docs/releases/vX.Y.Z.md` and commits it with the fragments removed, asks before publishing, then pushes `main`,
 waits for CI to pass on that commit, tags, waits for the release workflow and checks that the published `.fwsc` is
-byte for byte the one tested, publishes the emulator and checks the live files. It stops at the first failure and
-ends with a table of every step (done, skipped and why, failed); `--dry-run` runs the local checks only and stops
-before anything is pushed.
+byte for byte the one tested (as `frodhes-X.Y.Z.fwsc` and as the stable `frodhes.fwsc`), publishes the emulator and checks the live files. It stops at the first failure and
+ends with a table of every step (done, skipped and why, failed); `--dry-run` runs the local checks only, shows the
+assembled notes and stops before anything is pushed; `--verify-only [X.Y.Z]` re-checks a published release (step 9
+alone, read-only).
 
 Frodhes changes Dinghy's platform files in a few small places: the app may allow its flash sectors (presets and the
 sequencer's pattern, `APP_FL_RANGE`), drive the codec to full scale (`APP_OUT_SHIFT`), send the USB audio before the
