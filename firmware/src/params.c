@@ -159,7 +159,11 @@ typedef struct {
     uint8_t panel3[16], undo3[16];             /* records v3: ids 48..63 (flags bit 16: present) */
     uint8_t mot_user_off;                      /* records v3: 1 = switched off on the MOTOR page (no auto-on) */
     uint8_t chord_last;                        /* 0.9.3: the chord type EDIT turns back on (0 = none yet: MAJ) */
-    uint8_t seq_rsv[59];
+    uint8_t palette;                           /* 0.9.4: DISPLAY COLOR, the step (ui.c COLOR_ACC; 0 = AMBER) */
+    uint8_t dim;                               /* 0.9.4: DISPLAY BRIGHTNESS, steps down from full: 0 (as made) .. 9; the
+                                                * screen and every light. LEDS is in Dinghy's `leds` above (0 in every
+                                                * record so far = ROOTS; 1 OFF 2 PLAYED 3 ALL) */
+    uint8_t seq_rsv[57];
     uint8_t reserved[22];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");

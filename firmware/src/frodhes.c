@@ -266,9 +266,13 @@ static void app_main(void)
     chord_sanitize();
     seq_sanitize();
     if (set.usb_fixed > 1u) set.usb_fixed = 0;
+    if (set.palette >= COLOR_N) set.palette = 0;   /* AMBER (ui.c S_COLOR) */
+    if (set.dim >= DIM_N) set.dim = 0;
+    if (set.leds > 3u) set.leds = 0;
     usb_pre_master = set.usb_fixed;
     uart_midi_on = !set.trs_off;
-    palette_set(set.color);
+    fm1_led_group_ids(KEY_LED(0), KEY_LED(26));     /* BRIGHTNESS: the keys' LEDs are their own group */
+    dim_apply();                                    /* the palette and the LEDs at BRIGHTNESS (set.color is Dinghy's, unused) */
     params_apply_all();
     tempo_set10(set.bpm10);
     set_dirty = 0;
@@ -317,9 +321,13 @@ static void app_main(void)
             else if (ty == 0xC0u) preset_load(d1 < PR_NF ? d1 : d1 >= 16u && d1 < 32u ? PR_NF + d1 - 16u : 255u);
         }
 
-        for (k = 0; k < NKEYS; k++)             /* LEDs per key: held, or its note still rings */
+        for (k = 0; k < NKEYS; k++)             /* LEDs per key: held (the FM-1's key, or its note over MIDI), or its
+                                                 * note still rings under the sustain (0.9.4: MIDI notes too) */
             if (src_active[SRC_KEYS + k]) lit |= 1u << k;
-            else if (rh_hold && note_sounding((uint32_t)scale_key_note(k))) lit |= 1u << k;
+            else {
+                uint32_t n = scale_key_note(k);
+                if ((n < 128u && src_active[SRC_MIDI + n]) || (rh_hold && note_sounding(n))) lit |= 1u << k;
+            }
         src_poll();
         eng_pump();                             /* (notes.c: events that waited for room in the engine's ring) */
         seq_poll();
@@ -484,6 +492,7 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "savemode")) snprintf(v, n, "%u", pr_save_mode);
     else if (!strcmp(key, "undo")) snprintf(v, n, "%u", set.undo_valid);
     else if (!strcmp(key, "dirty")) snprintf(v, n, "%u", set_dirty);
+    else if (!strcmp(key, "ledduty")) snprintf(v, n, "%u %u", fm1_led_duty[0], fm1_led_duty[1]);   /* DISPLAY BRIGHTNESS: the keys', the buttons' lit duty /16 */
     else if (!strcmp(key, "bars")) snprintf(v, n, "%d", eng_is_bars());
     else if (!strcmp(key, "voices")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits));
     else if (!strcmp(key, "held")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_held_bits : rh_held_bits));
@@ -500,7 +509,7 @@ static int host_state(const char *key, char *v, unsigned n)
 static void host_dump(void)
 {
     static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
-                                    "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "bars", "voices", "held", "pitches",
+                                    "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "label0", "card0", "label1", "card1", "label2", "card2",
                                     "label3", "card3"};
     char key[24], v[64];
@@ -520,6 +529,7 @@ static void host_dump(void)
     }
     for (i = 0; i < P_COUNT; i++) printf("@ %u p.%u %u\n", fm1_ms, i, PV(i));
     for (i = 0; i < 41u; i++) printf("@ %u led.%u %u\n", fm1_ms, i, host_led[i]);
+    for (i = 0; i < 41u; i++) printf("@ %u glow.%u %u\n", fm1_ms, i, host_glow[i]);
     for (i = 1; i <= PR_NU; i++) { snprintf(key, sizeof key, "u.%u", i); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v); }
 }
 #endif

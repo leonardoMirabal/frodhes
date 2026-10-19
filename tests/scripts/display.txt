@@ -1,0 +1,149 @@
+# DISPLAY (0.9.4): the screen and the lights. GLO (button 7) four times: TEMPO, SETUP, MIDI, DISPLAY, back to TEMPO.
+# K1 COLOR (encoder 2): the palette, 26 steps (AMBER, then 25 pastel hues round the colour wheel, ui.c COLOR_ACC);
+# K2 BRIGHTNESS (3): 10 (full) .. 1 dims the screen and every light together (the keys' and the buttons' lit duty,
+# ui.c dim_key / dim_btn: state ledduty); K3 LEDS (4): OFF / PLAYED / ROOTS / ALL, which keys light (key 0 = LED 14 ..
+# key 26 = LED 40; ROOTS: the scale's root keys glowing while a scale is on; ALL: every key lit, a played one
+# dark). Device settings, kept with the record. The screen itself (the colours at each step, the power cycle):
+# tests/py/test_ui_display.py.
+100 btn 7
+150 expect state page TEMPO
+200 btn 7
+250 expect state page SETUP
+300 btn 7
+350 expect state page MIDI
+400 btn 7
+450 expect state page DISPLAY
+450 expect led 7 1
+450 expect state label0 COLOR
+450 expect state label1 BRIGHTNESS
+450 expect state label2 LEDS
+450 expect state card0 AMBER
+450 expect state card1 10
+450 expect state card2 ROOTS
+450 expect state ledduty 16_16
+500 btn 7
+550 expect state page TEMPO
+550 expect led 7 1
+600 btn 7
+700 btn 7
+800 btn 7
+850 expect state page DISPLAY
+# COLOR: a choice, one step a turn whatever the speed, and it stops at the ends
+900 turn 2 1
+950 expect state card0 PEACH
+950 expect state dirty 1
+1000 turn 2 3
+1050 expect state card0 CORAL
+1100 turn 2 -1
+1200 turn 2 -1
+1250 expect state card0 AMBER
+1300 turn 2 -1
+1350 expect state card0 AMBER
+# BRIGHTNESS: 10 .. 1, one step a turn whatever the speed; the keys' and the buttons' duties follow each step
+1400 turn 3 -1
+1450 expect state card1 9
+1450 expect state ledduty 12_14
+1500 turn 3 -5
+1550 expect state card1 8
+1550 expect state ledduty 9_12
+1600 turn 3 -1
+1650 expect state card1 7
+1650 expect state ledduty 7_10
+1700 turn 3 -1
+1750 expect state card1 6
+1750 expect state ledduty 6_8
+1800 turn 3 -1
+1850 expect state card1 5
+1850 expect state ledduty 5_6
+1900 turn 3 -1
+1950 expect state card1 4
+1950 expect state ledduty 4_5
+2000 turn 3 -1
+2050 expect state card1 3
+2050 expect state ledduty 3_4
+2100 turn 3 -1
+2150 expect state card1 2
+2150 expect state ledduty 2_3
+2200 turn 3 -1
+2250 expect state card1 1
+2250 expect state ledduty 1_2
+2300 turn 3 -1
+2350 expect state card1 1
+2400 turn 3 1
+2500 turn 3 1
+2600 turn 3 1
+2700 turn 3 1
+2800 turn 3 1
+2900 turn 3 1
+3000 turn 3 1
+3100 turn 3 1
+3200 turn 3 1
+3250 expect state card1 10
+3250 expect state ledduty 16_16
+3300 turn 3 1
+3350 expect state card1 10
+# LEDS with key 0 (F3) held: ROOTS (the scale is off: no glow, as 0.9.3; C4 = key 7 = LED 21, C5 = LED 33) -> ALL: every
+# key lit and the played one dark; back to PLAYED: the played key only; OFF: nothing; it stops at both ends
+3400 keys 0x1
+3500 expect led 14 1
+3500 expect led 21 0
+3500 expect state glow.21 0
+3500 expect state glow.33 0
+3500 expect state glow.14 0
+3500 expect led 40 0
+3600 turn 4 1
+3650 expect state card2 ALL
+3700 expect led 14 0
+3700 expect led 15 1
+3700 expect led 40 1
+3800 turn 4 1
+3850 expect state card2 ALL
+3900 turn 4 -1
+4000 turn 4 -1
+4050 expect state card2 PLAYED
+4100 expect led 14 1
+4100 expect led 21 0
+4100 expect state glow.21 0
+4200 turn 4 -1
+4250 expect state card2 OFF
+4300 expect led 14 0
+4300 expect led 21 0
+4400 turn 4 -1
+4450 expect state card2 OFF
+4500 keys 0
+4600 turn 4 1
+4700 turn 4 1
+4750 expect state card2 ROOTS
+4750 expect led 21 0
+4750 expect state glow.21 0
+4750 expect led 14 0
+# a note over MIDI lights its key too: D4 (62) is key 9 = LED 23 (the scale off, OCT 0); ROOTS: lit while held;
+# ALL: dark while held, its neighbour lit
+4800 midi 0x90 62 100
+4900 expect led 23 1
+5000 midi 0x80 62 0
+5100 expect led 23 0
+5200 turn 4 1
+5250 expect state card2 ALL
+5300 midi 0x90 62 100
+5400 expect led 23 0
+5400 expect led 24 1
+5500 midi 0x80 62 0
+5600 expect led 23 1
+5700 turn 4 -1
+5750 expect state card2 ROOTS
+# ROOTS with a scale on (SCALE K1 SNAP, root C): the C keys glow, the others not
+5800 turn 0 -1
+5850 turn 0 -1
+5900 turn 0 -1
+5950 turn 0 -1
+6000 turn 0 -1
+6050 turn 0 -1
+6100 turn 0 -1
+6150 turn 0 -1
+6200 expect state page SCALE
+6250 turn 2 1
+6350 expect state glow.21 1
+6350 expect state glow.33 1
+6350 expect state glow.23 0
+6400 end
