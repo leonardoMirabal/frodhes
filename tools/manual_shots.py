@@ -227,12 +227,16 @@ def main():
         src = f"{tag}-{ms}.ppm"
         im = Image.open(src).convert("RGB")
         (im if raw else device_look(im)).resize((480, 480), Image.NEAREST).save(os.path.join(OUT, f"{name}.png"))
+        if name == "splash":                                # the listing thumbnail (the firmware hub): the splash
+            th = im.copy()                                  # without its VERSION line, so its one path never
+            th.paste(im.getpixel((0, 239)), (0, 205, 240, 236))   # names a version (rows 215..224 at 240 px)
+            (th if raw else device_look(th)).resize((480, 480), Image.NEAREST).save(os.path.join(OUT, "thumbnail.png"))
         os.remove(src)
     if cards is not None:
         print(sorted(set(shots.values())))
         return
     overview(["perform", "voice1", "phaser", "comp"])
-    made = set(shots.values()) | {"overview"}
+    made = set(shots.values()) | {"overview", "thumbnail"}
     print(sorted(made))
     stale = sorted(f for f in os.listdir(OUT) if f.endswith(".png") and f[:-4] not in made)
     if stale:
