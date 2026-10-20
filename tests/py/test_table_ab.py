@@ -14,8 +14,8 @@ H = os.path.join(ROOT, "firmware", "gen", "bars_tables.h")
 def test_parse_sizes():
     tabs, defs = ta.parse(H)
     nkey = int(defs["BAR_NKEY"])
-    assert len(tabs["BAR_KEYS"]["vals"]) == nkey * len(ta.KEY_F)
-    assert len(tabs["KN_FAM"]["vals"]) == 128 and len(tabs["BAR_MOT_COS"]["vals"]) == 257
+    assert len(tabs["BAR_KEYS"]["vals"]) == int(defs.get("BAR_NTYPE", 1)) * nkey * len(ta.KEY_F)
+    assert len(tabs["KN_FAM"]["vals"]) == 128 * int(defs.get("BAR_NTYPE", 1)) and len(tabs["BAR_MOT_COS"]["vals"]) == 257
 
 
 def test_identical_and_perturbed(tmp_path):

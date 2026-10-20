@@ -3,9 +3,13 @@
 """Screenshots for the manual: the host build walks every page (and a few states) and saves PNGs to docs/manual/img/,
 then composes overview.png (PERFORM, VOICE, PHASER, COMPRESSOR; the README's Screens section: its intro picture is piano.png, the FRODHES page). The page list is the firmware's: a first host run
 walks SELECT and reads each page's name back (the engine's VOICE pages are dynamic: voice1.png, voice2.png on the
-Rhodes; voice1-vibes.png .. voice3-vibes.png on VIBES). Files left in the folder from pages that went are listed.
+Rhodes; voice1-vibes.png .. voice3-vibes.png on VIBES; voice1-marimba.png, voice2-marimba.png on MARIMBA, with
+piano-vibes.png / piano-marimba.png their FRODHES page). Files left in the folder from pages that went are listed.
+Into docs/manual/img/ (the default), it then sets every picture link's ?v= in README.md / docs/MANUAL.md to the
+file's hash (tools/doc_links.py --fix). tests/py/test_manual_shots.py runs it into a temporary folder and fails if
+a committed screenshot differs from what the code draws: a PR that changes the UI re-runs this script (and a
+conflict on a PNG is resolved by re-running it, never by hand).
 
-  tools/manual_shots.py           the "device look": the colours as the FM-1's panel shows them
   tools/manual_shots.py           the framebuffer's own colours (what the firmware writes: the default since
                                   2026-10-18, the user: the panel model's yellow is not what the eye sees)
   tools/manual_shots.py --device-look   the colours through the panel model below (camera-calibrated)
@@ -68,7 +72,7 @@ BIN = os.path.join(ROOT, "build", "host", "frodhes")
 NAME = {"PERFORM": "perform", "FRODHES": "piano", "DECAY": "decay", "MOTOR": "motor", "COMPRESSOR": "comp",
         "FILTER": "filter", "DRIVE": "drive", "TREM/WAH": "trem", "PHASER": "phaser", "CHORUS": "chorus",
         "DELAY": "delay", "REVERB": "reverb", "TEMPO": "tempo", "SCALE": "scale", "CHORD": "chord", "ARPEGGIO": "arp",
-        "LFO": "lfo", "SEQUENCER": "seq", "ASSIGN": "assign", "SETUP": "setup", "MIDI": "midi"}
+        "LFO": "lfo", "SEQUENCER": "seq", "ASSIGN": "assign", "SETUP": "setup", "MIDI": "midi", "DISPLAY": "display"}
 
 
 def walk_pages(pre=(), t0=2500, n=30):
@@ -127,8 +131,10 @@ def main():
     os.makedirs(os.path.join(ROOT, "build", "host"), exist_ok=True)
     tag = os.path.join(ROOT, "build", "host", "manual")
     PAGES = names(walk_pages())                             # the SELECT order, as the firmware has it
-    vibes = names(walk_pages(["100 midi 0xB0 79 64"]), "-vibes")
+    vibes = names(walk_pages(["100 midi 0xB0 79 0"]), "-vibes")
     vibes = vibes[vibes.index("piano-vibes") + 1:vibes.index("comp-vibes")]   # VIBES' own pages (VOICE 1..3)
+    mrmb = names(walk_pages(["100 midi 0xB0 79 127"]), "-marimba")             # CC 79 96..127: MARIMBA
+    mrmb = mrmb[mrmb.index("piano-marimba") + 1:mrmb.index("comp-marimba")]   # MARIMBA's own (VOICE 1..2, no motor)
     L, shots, t = ["400 shot"], {400: "splash"}, 100
     if cards is not None:                                   # the rows' design variant (developer CC 11)
         L.insert(0, f"50 midi 0xB0 11 {int(cards)}")           # the start screen, before anything is touched
@@ -205,6 +211,15 @@ def main():
         L.append(f"{t} turn 0 1"); t += 100
         L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 1700   # (the TYPE message has gone)
         L.append(f"{t} shot"); shots[t] = name; t += 100
+    # MARIMBA (the bar engine's second TYPE): F15 MARIMBA, its FRODHES page (MALLET, TUBE) and VOICE 1/2, 2/2 (MUTE)
+    L.append(f"{t} midi 0xC0 14 0"); t += 100               # F15 MARIMBA (TYPE MARIMBA, MUTE 0)
+    L.append(f"{t} btn 8"); L.append(f"{t + 100} btn 8"); t += 200   # HOME twice: PERFORM, then the FRODHES page
+    L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 1700
+    L.append(f"{t} shot"); shots[t] = "piano-marimba"; t += 100
+    for name in mrmb:
+        L.append(f"{t} turn 0 1"); t += 100
+        L.append(f"{t} keys 0x80"); L.append(f"{t + 300} keys 0x0"); t += 1700
+        L.append(f"{t} shot"); shots[t] = name; t += 100
     L.append(f"{t} end")
     open(tag + ".txt", "w").write("\n".join(L) + "\n")
     subprocess.run([BIN, tag, tag + ".txt"], check=True, capture_output=True)
@@ -212,16 +227,24 @@ def main():
         src = f"{tag}-{ms}.ppm"
         im = Image.open(src).convert("RGB")
         (im if raw else device_look(im)).resize((480, 480), Image.NEAREST).save(os.path.join(OUT, f"{name}.png"))
+        if name == "splash":                                # the listing thumbnail (the firmware hub): the splash
+            th = im.copy()                                  # without its VERSION line, so its one path never
+            th.paste(im.getpixel((0, 239)), (0, 205, 240, 236))   # names a version (rows 215..224 at 240 px)
+            (th if raw else device_look(th)).resize((480, 480), Image.NEAREST).save(os.path.join(OUT, "thumbnail.png"))
         os.remove(src)
     if cards is not None:
         print(sorted(set(shots.values())))
         return
     overview(["perform", "voice1", "phaser", "comp"])
-    made = set(shots.values()) | {"overview"}
+    made = set(shots.values()) | {"overview", "thumbnail"}
     print(sorted(made))
     stale = sorted(f for f in os.listdir(OUT) if f.endswith(".png") and f[:-4] not in made)
     if stale:
         print("not made by this run (pages that went: git rm them):", stale)
+    if OUT == os.path.join(ROOT, "docs", "manual", "img"):   # the docs' own pictures: their links follow them
+        import doc_links
+        for name in doc_links.fix(ROOT):
+            print(f"{name}: picture links set to their files' hashes (?v=)")
 
 
 if __name__ == "__main__":

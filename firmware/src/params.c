@@ -29,17 +29,25 @@ typedef struct {
     const char *const *names; /* F_ENUM */
 } pdesc_t;
 
-static const char *const N_TYPE[] = {"ST77", "SUIT", "FELT", "DYNO", "VIBE"};
-static const char *const N_TYPE_LONG[] = {"STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "VIBES"};
+static const char *const N_TYPE[] = {"ST77", "SUIT", "FELT", "DYNO", "VIBE", "MRMB"};
+static const char *const N_TYPE_LONG[] = {"STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "VIBES", "MARIMBA"};
 /* TYPE -> engine (0 Rhodes, 1 bars), the engine's own type index, and the drive row (fx.c, 0..3). Append-only, in
- * step with N_TYPE. The Rhodes types 0..3 are unchanged; VIBES (4) is the first bar type. */
-#define N_TYPE_N 5u
-static const uint8_t TYPE_ENGINE[N_TYPE_N] = {0, 0, 0, 0, 1};
-static const uint8_t TYPE_SUB[N_TYPE_N] = {0, 1, 2, 3, 0};
-static const uint8_t TYPE_DRIVE_ROW[N_TYPE_N] = {0, 1, 2, 3, 0};
+ * step with N_TYPE. The Rhodes types 0..3 are unchanged; VIBES (4) is the first bar type, MARIMBA (5) the second
+ * (bars.c BAR_TYPE[1]). TYPE_FLAGS: what the instrument has, as the bar type record's flags (bars.h bar_type_t):
+ * bit0 a motor (the MOTOR controls and their auto-on), bit1 a damper (key-up damps; without one DECAY's second card
+ * is MUTE, the player's hand: 0 = rings out). */
+#define N_TYPE_N 6u
+static const uint8_t TYPE_ENGINE[N_TYPE_N] = {0, 0, 0, 0, 1, 1};
+static const uint8_t TYPE_SUB[N_TYPE_N] = {0, 1, 2, 3, 0, 1};
+static const uint8_t TYPE_DRIVE_ROW[N_TYPE_N] = {0, 1, 2, 3, 0, 0};
+static const uint8_t TYPE_FLAGS[N_TYPE_N] = {0, 0, 0, 0, 3, 0};
+static const uint8_t TYPE_CC79[N_TYPE_N] = {0, 0, 0, 0, 0, 96};   /* the bar types' CC 79 band starts, rising in TYPE
+                                    * order (frodhes.c midi_cc): VIBES 0..95, MARIMBA 96..127 (the Rhodes: CC 80) */
 _Static_assert(sizeof N_TYPE / sizeof N_TYPE[0] == N_TYPE_N && sizeof N_TYPE_LONG / sizeof N_TYPE_LONG[0] == N_TYPE_N,
                "one name per TYPE");
 #define TYPE_IS_BARS(t) ((uint32_t)(t) < N_TYPE_N && TYPE_ENGINE[(t)] != 0u)   /* the main loop's TYPE (the UI) */
+#define TYPE_HAS_MOTOR(t) ((uint32_t)(t) < N_TYPE_N && (TYPE_FLAGS[(t)] & 1u) != 0u)   /* VIBES */
+#define TYPE_NO_DAMPER(t) (TYPE_IS_BARS(t) && !(TYPE_FLAGS[(t)] & 2u))   /* MARIMBA: DECAY's second card is MUTE */
 /* the engine queries (engine.c, lane C, after the merge: it defines ENG_HAS_BARS, the BK_* knob ids and these
  * functions). Until then a stub: a bar TYPE plays as STAGE 77 and MOTOR as the tremolo's AM, so the tree builds and
  * plays; the UI already shows the bar cards (it asks TYPE_IS_BARS of the main loop's TYPE, not the engine) */
@@ -50,7 +58,7 @@ static void eng_set_type(uint32_t t) { rh_type = (uint8_t)(t < N_TYPE_N && TYPE_
 static int eng_is_bars(void) { return 0; }       /* the engine plays bars for the TYPE last set (not the ISR latch) */
 static void eng_bar_knob(uint32_t k, uint32_t v) { (void)k; (void)v; }
 #endif
-#define PR_NF_SET 14u              /* presets.c PR_NF: the factory presets (12 before VIBES) */
+#define PR_NF_SET 16u              /* presets.c PR_NF: the factory presets (12 before VIBES, 14 before MARIMBA) */
 static const char *const N_TW[] = {"OFF", "TRM", "WAH"};
 static const char *const N_CP[] = {"OFF", "CHO", "PHA"};   /* "PHA": records before 0.4 */
 static const char *const N_ONOFF[] = {"OFF", "ON"};
@@ -64,7 +72,7 @@ static const char *const N_SYNC[] = {"FREE", "1/32", "16T", "1/16", "8T", "16D",
                                      "1/1", "2BAR", "4BAR"};
 
 static const pdesc_t PARAMS[P_COUNT] = {
-    [P_TYPE] = {"TYPE", 4, 0, F_ENUM, 80, N_TYPE},
+    [P_TYPE] = {"TYPE", 5, 0, F_ENUM, 80, N_TYPE},
     [P_DRIVE] = {"DRV", 127, 0, F_R10, 81, 0},
     [P_TW_SW] = {"TREM", 2, 0, F_ENUM, 17, N_TW},
     [P_TW_DEPTH] = {"DPTH", 127, 0, F_R10, 18, 0},
@@ -130,7 +138,7 @@ _Static_assert(P_SLOTS <= 64u, "ui.c card slots: a parameter id is under 64 (S_K
 /* ---- the settings record: always 256 B, versioned, append-only (§10.5) */
 #define SET_VER 2u                 /* 2 (0.4): panel / undo hold P_SLOTS; version 1 records are converted */
 typedef struct {
-    uint8_t ver, flags;
+    uint8_t ver, flags;            /* flags: 1 LEVEL, 2 comp, 4 + 32 the preset index layout (VIBES, MARIMBA), 8 filter, 16 v3 */
     int8_t oct;
     uint8_t preset;
     uint16_t bpm10;
@@ -151,7 +159,11 @@ typedef struct {
     uint8_t panel3[16], undo3[16];             /* records v3: ids 48..63 (flags bit 16: present) */
     uint8_t mot_user_off;                      /* records v3: 1 = switched off on the MOTOR page (no auto-on) */
     uint8_t chord_last;                        /* 0.9.3: the chord type EDIT turns back on (0 = none yet: MAJ) */
-    uint8_t seq_rsv[59];
+    uint8_t palette;                           /* 0.9.4: DISPLAY COLOR, the step (ui.c COLOR_ACC; 0 = AMBER) */
+    uint8_t dim;                               /* 0.9.4: DISPLAY BRIGHTNESS, steps down from full: 0 (as made) .. 9; the
+                                                * screen and every light. LEDS is in Dinghy's `leds` above (0 in every
+                                                * record so far = ROOTS; 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
+    uint8_t seq_rsv[57];
     uint8_t reserved[22];
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
@@ -196,7 +208,7 @@ static void params_defaults(void)
     uint32_t i;
     for (i = 0; i < sizeof set; i++) ((uint8_t *)&set)[i] = 0;
     set.ver = SET_VER;
-    set.flags = 4u;                /* a fresh record: its preset index is already in the VIBES layout */
+    set.flags = 4u | 32u;          /* a fresh record: its preset index is already in today's layout (16 factory) */
     set.preset = 0;
     set.bpm10 = 1200;
     set.clock = 1;                 /* EXT: follows MIDI clock when it comes (USB or TRS) */
@@ -241,7 +253,13 @@ static void params_sanitize(void)
     }
     if (!(set.flags & 4u)) {                         /* records before VIBES had 12 factory presets: U01 was 12 */
         if (set.preset >= 12u && set.preset < 12u + 16u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 12u);
-        set.flags |= 4u;
+        set.flags |= 4u | 32u;                       /* (straight into today's layout) */
+    }
+    if (!(set.flags & 32u)) {                        /* records before MARIMBA (0.9.3) had 14 factory presets: U01
+                                                      * was 14; undo_preset is index + 1 */
+        if (set.preset >= 14u && set.preset < 14u + 16u) set.preset = (uint8_t)(set.preset + PR_NF_SET - 14u);
+        if (set.undo_preset >= 15u && set.undo_preset < 15u + 16u) set.undo_preset = (uint8_t)(set.undo_preset + PR_NF_SET - 14u);
+        set.flags |= 32u;
     }
     for (i = 0; i < P_COUNT; i++) if (PV(i) > PARAMS[i].hi) PV(i) = PARAMS[i].def;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
@@ -282,7 +300,12 @@ static void param_apply(uint32_t id)
 {
     int32_t v = PV(id);
     switch (id) {
-    case P_TYPE: eng_set_type((uint32_t)v); fx_set(FXP_DRIVE_ROW, TYPE_DRIVE_ROW[v]); tw_apply(); break;
+    case P_TYPE: eng_set_type((uint32_t)v); fx_set(FXP_DRIVE_ROW, TYPE_DRIVE_ROW[v]); tw_apply();
+        if (TYPE_IS_BARS(v)) {                       /* the bar type's own MALLET / TUBE / WEIGHT / NOISE maps (C4) */
+            eng_bar_knob(BK_MALLET, PV(P_BARK)); eng_bar_knob(BK_TUBE, PV(P_BELL)); eng_bar_knob(BK_WEIGHT, PV(P_HAMMER));
+            eng_bar_knob(BK_NOISE, PV(P_NOISE));
+        }
+        break;
     case P_DRIVE: fx_set(FXP_DRIVE, v); break;
     case P_TW_SW: tw_apply(); break;
     case P_TW_DEPTH: fx_set(FXP_TW_DEPTH, v); break;
@@ -355,14 +378,15 @@ static void param_set(uint32_t id, int32_t v)
     set_t_change = fm1_ms;
 }
 
-/* a TYPE picked on the panel (the TYPE card, ALGORITHM) or by CC 79, not by a preset load: turning to a bar TYPE
- * from a Rhodes one starts the motor (VIBES is heard with its motor), unless it was switched off on the MOTOR page
- * (set.mot_user_off, kept until its ON card turns it on again) */
+/* a TYPE picked on the panel (the TYPE card, ALGORITHM) or by CC 79, not by a preset load: turning to a TYPE with a
+ * motor (VIBES) from one without (a Rhodes type, MARIMBA) starts the motor (VIBES is heard with its motor), unless it
+ * was switched off on the MOTOR page (set.mot_user_off, kept until its ON card turns it on again). MARIMBA leaves
+ * P_MOT_ON as it is: stored, inaudible (no motor), there for the next VIBES */
 static void type_pick(int32_t t)
 {
-    int was = TYPE_IS_BARS(PV(P_TYPE));
+    int was = TYPE_HAS_MOTOR(PV(P_TYPE));
     param_set(P_TYPE, t);
-    if (!was && TYPE_IS_BARS(PV(P_TYPE)) && !PV(P_MOT_ON) && !set.mot_user_off) param_set(P_MOT_ON, 1);
+    if (!was && TYPE_HAS_MOTOR(PV(P_TYPE)) && !PV(P_MOT_ON) && !set.mot_user_off) param_set(P_MOT_ON, 1);
 }
 
 /* ---- value text (<= 5 chars) */

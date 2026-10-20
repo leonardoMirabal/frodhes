@@ -46,7 +46,7 @@ def chaos(seed, eng):
     ev = []
     held, t, pressed = [], 50, set()
     if eng == "vibes":
-        ev.append((10, "midi 0xB0 79 64"))
+        ev.append((10, "midi 0xB0 79 0"))
 
     def ch():
         return 0 if rng.random() < 0.7 else rng.randrange(16)

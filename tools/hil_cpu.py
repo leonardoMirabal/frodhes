@@ -4,7 +4,7 @@
 firmware for the longest audio block since the last query (frodhes.c midi_cc; replies on CC 116/117 = us / 4).
 The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder starts at 5000 us.
 
-    python3 tools/hil_cpu.py [--engine vibes] [--voices N] [--worst] [--fx-each] [--calib] [--stages] [--tail]
+    python3 tools/hil_cpu.py [--engine vibes|marimba] [--voices N] [--worst] [--fx-each] [--calib] [--stages] [--tail]
 
 --voices N (default 9, the firmware's FR_VOICES) plays N-note chords and N bass notes (for a build with
 -DFR_VOICES=N; more notes than the firmware's voices steal). The lists: bass 28 31 33 35 36 38 40 41 43 45 47 48,
@@ -41,7 +41,9 @@ STAGES = {1: "engine (eng_render)", 2: "fx copy", 3: "compressor", 4: "filter + 
 
 def main():
     import mido
-    vibes = ("--engine" in sys.argv and sys.argv[sys.argv.index("--engine") + 1] == "vibes") or "--calib" in sys.argv
+    eng = sys.argv[sys.argv.index("--engine") + 1] if "--engine" in sys.argv else "rhodes"
+    marimba = eng == "marimba"                        # the second bar TYPE (CC 79 96..127): no motor
+    vibes = eng in ("vibes", "marimba") or "--calib" in sys.argv
     outs = [n for n in mido.get_output_names() if any(k in n.lower() for k in ("felucca", "fm-1"))]
     ins = [n for n in mido.get_input_names() if any(k in n.lower() for k in ("felucca", "fm-1"))]
     if not outs or not ins:
@@ -61,8 +63,10 @@ def main():
             cc(CC["CP_SW"], d.pop("CP_SW"))
         for k, v in d.items():
             cc(CC[k], v)
-        if vibes:
-            cc(79, 64)                                # VIBES (the motor starts with the TYPE change)
+        if marimba:
+            cc(79, 127)                              # MARIMBA (no motor; CC 47 is inert)
+        elif vibes:
+            cc(79, 0)                                # VIBES (the motor starts with the TYPE change)
             cc(47, 127 if d.get("TW_SW") else 0)      # the motor with the effects (records v3: its own CC), else off
             if d.get("TW_SW"):
                 cc(17, 64)

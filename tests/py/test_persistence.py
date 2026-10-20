@@ -70,14 +70,14 @@ def boot(tag, flash, lines=(), end=400, check_preset=True):
 
 # VIBES with NOISE 0: a short VIBES note with the damper noise on can leave a voice alive in exact silence, and then
 # nothing saves (test_vibes_notes_let_go_so_it_saves, reported)
-ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 64), cc(11, 104, 0)]}
+ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 0), cc(11, 104, 0)]}
 
 
 def test_vibes_notes_let_go_so_it_saves():
     """VIBES: a C4 held 200 ms, let go: the engine goes quiet (no voice left) and a change made then is saved 2 s
     later, as on the Rhodes. (A released note used to keep a silent voice alive forever, so nothing ever saved; fixed
     by the bar engine's kill under 1 LSB and the noise envelope reaching zero, 5bce504.)"""
-    r = run("vibes-quiet", [cc(10, 79, 64), "300 midi 0x90 60 100", "500 midi 0x80 60 0", "3000 dump", cc(3000, 81, 40)],
+    r = run("vibes-quiet", [cc(10, 79, 0), "300 midi 0x90 60 100", "500 midi 0x80 60 0", "3000 dump", cc(3000, 81, 40)],
             6000, flash=flash_file("vibes-quiet"))
     assert r.state(3000)["voices"] == "0" and r.state(3000)["quiet"] == "1", (r.state(3000)["voices"], r.state(3000)["quiet"])
     assert any(5000 <= t <= 5300 for t in r.saves), r.saves
@@ -233,7 +233,7 @@ def test_old_settings_records_convert():
         assert s[f"p.{P[k]}"] == str(v), (k, s[f"p.{P[k]}"], v)
     for k in ("LEVEL", "CMP_RATIO", "CMP_GAIN", "FL_TYPE", "FL_FREQ", "LFO_RATE"):
         assert s[f"p.{P[k]}"] == str(dflt[P[k]]), k
-    assert s["preset"] == "14" and s["undo"] == "0" and s["oct"] == "1" and s["bpm"] == "100.0", (s["preset"], s["undo"])
+    assert s["preset"] == "16" and s["undo"] == "0" and s["oct"] == "1" and s["bpm"] == "100.0", (s["preset"], s["undo"])
     # a version 2 record from 0.4-0.7 (flags 0): LEVEL / ratio / makeup / filter were not there
     img2 = bytearray(b"\xff" * 5 * SECTOR)
     r = v1_record({P["TYPE"]: 1, P["DRIVE"]: 20}, preset=13)
@@ -245,7 +245,7 @@ def test_old_settings_records_convert():
     s = boot("v2old", fl).state(100)
     for k in ("LEVEL", "CMP_RATIO", "CMP_GAIN", "FL_TYPE", "FL_FREQ", "LFO_RATE"):
         assert s[f"p.{P[k]}"] == str(dflt[P[k]]), (k, s[f"p.{P[k]}"])
-    assert (s["p.0"], s["p.1"], s["preset"]) == ("1", "20", "15"), (s["p.0"], s["p.1"], s["preset"])
+    assert (s["p.0"], s["p.1"], s["preset"]) == ("1", "20", "17"), (s["p.0"], s["p.1"], s["preset"])
     for i in range(48, len(dflt)):                          # records v3: ids 48.. (panel3) at their defaults
         assert s[f"p.{i}"] == str(dflt[i]), (i, s[f"p.{i}"])
 

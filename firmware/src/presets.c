@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Frodhes presets (IMPLEMENTATION-v3 §10.6, §12): 14 factory presets (const; F13 / F14 are VIBES) and 16 user presets in a bank of two
+/* Frodhes presets (IMPLEMENTATION-v3 §10.6, §12): 16 factory presets (const; F13 / F14 VIBES, F15 / F16 MARIMBA) and 16 user presets in a bank of two
  * flash sectors written alternately (A 0x97000, B 0x98000): erase the older sector, write the records, the header
  * last; load picks the valid copy with the higher sequence number, so a cut-off save never loses the bank.
  *
- *   PRESETS encoder   browse F01..F14, U01..U16; loads 400 ms after the last detent (the edit goes to undo)
+ *   PRESETS encoder   browse F01..F16, U01..U16; loads 400 ms after the last detent (the edit goes to undo)
  *   SAVE              open the save mode: PRESETS / K1 pick the slot, SAVE again saves (when quiet), HOME cancels
  *   SAVE held 700 ms  undo / redo the last load
- *   MIDI PC           0..13 -> F01..F14, 16..31 -> U01..U16 */
+ *   MIDI PC           0..15 -> F01..F16, 16..31 -> U01..U16 */
 
-#define PR_NF 14u                               /* 12 Rhodes (F01..F12, unchanged), then the bar types' */
+#define PR_NF 16u                               /* 12 Rhodes (F01..F12, unchanged), then the bar types' */
 #define PR_NU 16u
 _Static_assert(PR_NF == PR_NF_UI && PR_NF + PR_NU == PR_NALL_UI && PR_NF == PR_NF_SET, "ui.c / params.c preset counts");
 _Static_assert(PR_NF <= 16u, "program changes 16..31 are the user presets");
@@ -30,7 +30,7 @@ static uint32_t pr_seq;
 /* factory presets: (param id, value) pairs over the defaults, 0xFF ends (values ESTIMATE, tuned by ear) */
 static const char *const PR_FNAME[PR_NF] = {"STAGE 77", "70S PHASER", "SUITCASE", "80S BALLAD", "SLAPBACK", "BRIGHT CHO",
                                             "FUNK WAH", "BARK", "TAPE ECHO", "DREAM", "RADIO", "AM TREMOLO",
-                                            "VIBE MOTOR", "VIBES DRY"};
+                                            "VIBE MOTOR", "VIBES DRY", "MARIMBA", "MRMB SOFT"};   /* (the header shows 14 characters) */
 static const uint8_t PR_FDATA[PR_NF][32] = {
     {P_TYPE, 0, P_DRIVE, 13, P_RV_DEPTH, 25, 0xFF},
     {P_TYPE, 0, P_DRIVE, 25, P_PH_SW, 1, P_PH_DEPTH, 83, P_PH_SPEED, 38, P_PH_FDBK, 50, P_RV_DEPTH, 32, P_LEVEL, 70, 0xFF},
@@ -51,6 +51,10 @@ static const uint8_t PR_FDATA[PR_NF][32] = {
     /* VIBES (PLAN §8.3; estimates, tuned by ear on the FM-1): the motor at 3.5 Hz (RATE 78), and without it */
     {P_TYPE, 4, P_MOT_ON, 1, P_MOT_DEPTH, 110, P_MOT_RATE, 78, P_MOT_SHAPE, 0, P_RV_DEPTH, 45, 0xFF},   /* the motor at 3.5 Hz */
     {P_TYPE, 4, P_RV_DEPTH, 20, 0xFF},
+    /* MARIMBA (PLAN §9.3, D5 / D8; estimates, tuned by ear): MUTE 0 (rings out, as the instrument), the default
+     * mallet and tube; then soft yarn, a heavier mallet, more room and a little delay */
+    {P_TYPE, 5, P_RELEASE, 0, P_RV_DEPTH, 30, 0xFF},
+    {P_TYPE, 5, P_BARK, 20, P_HAMMER, 90, P_RELEASE, 0, P_RV_DEPTH, 45, P_DL_SW, 1, P_DL_DEPTH, 20, 0xFF},
 };
 
 /* ---- bank storage (host: two RAM sectors) */
@@ -203,7 +207,7 @@ static void preset_autoname(char *n)                     /* TYPE + the effects o
     const char *parts[5];
     uint32_t i = 0, k, np = 0;
     parts[np++] = N_TYPE[PV(P_TYPE)];
-    if (PV(P_MOT_ON) && TYPE_IS_BARS(PV(P_TYPE))) parts[np++] = "MOT";   /* the motor (records v3) */
+    if (PV(P_MOT_ON) && TYPE_HAS_MOTOR(PV(P_TYPE))) parts[np++] = "MOT";   /* the motor (records v3; VIBES only) */
     if (PV(P_TW_SW) && np < 3u) parts[np++] = N_TW[PV(P_TW_SW)];
     if (PV(P_CP_SW)) parts[np++] = "CHO";
     if (PV(P_PH_SW) && np < 4u) parts[np++] = "PHA";
@@ -260,7 +264,7 @@ static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t r
         int32_t v0 = pr_cand == 255 ? (set.preset < PR_NF + PR_NU ? set.preset : 0) : pr_cand, v = v0 + (d_presets > 0 ? 1 : -1);
         while (v >= (int32_t)PR_NF && v < (int32_t)(PR_NF + PR_NU) && !pr_user[v - PR_NF].used) v += d_presets > 0 ? 1 : -1;
         if (v < 0) v = 0;
-        if (v >= (int32_t)(PR_NF + PR_NU)) v = v0;          /* past the last saved preset: stay (it went back to F14) */
+        if (v >= (int32_t)(PR_NF + PR_NU)) v = v0;          /* past the last saved preset: stay (it went back to the last factory one) */
         pr_cand = (uint8_t)v; pr_cand_t = fm1_ms;
         preset_name((uint32_t)v, s);
         ui_say(s);

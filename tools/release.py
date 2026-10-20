@@ -3,23 +3,35 @@
 """One command for a whole Frodhes release (AGENTS.md section 9), stopping at the first failure.
 
     tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device] [--no-emulator] [--yes]
+    tools/release.py [X.Y.Z] --verify-only      step 9 alone, against a published release (read-only)
+
+The version lives in one place, the GitHub release (its tag, page, notes and assets): README / MANUAL name no version
+(they link releases/latest and releases/latest/download/frodhes.fwsc, every picture's ?v= is its file's hash:
+tools/doc_links.py), and the notes are assembled from the fragments each change adds in docs/changes/
+(tools/changes.py). Nothing is bumped by hand or by this tool.
 
  1 version       the latest v* tag bumped (patch by default, or minor), or X.Y.Z; refused if the tag exists
                  locally or on origin
- 2 preconditions on main, no tracked changes (the release notes excepted), not behind origin/main (after a fetch),
-                 docs/releases/vX.Y.Z.md present without a DRAFT banner (missing: a draft is written, then stop)
+ 2 preconditions on main, no tracked changes, not behind origin/main (after a fetch), the fragments in docs/changes/
+                 well formed (at least one) and no docs/releases/vX.Y.Z.md written by hand (one already committed with
+                 no fragments left: a re-run after step 5, accepted)
  3 host          make test, make pytest, tools/gate_r.py, ./build.sh --release X.Y.Z (its sha256)
- 4 FM-1          (--no-device skips it) the device lock, install, hil_cpu --worst (Rhodes and VIBES: <= 4500 us,
-                 nothing shed), hil_scan (the release set, then vibes_vel), hil_jack on both engines (SNR; the jack
-                 must be connected)
- 5 docs          README / MANUAL download, "Latest release" and "Version" lines, every screenshot's ?v=, then
-                 tests/py/test_docs_vs_code.py and the release commit
+ 4 FM-1          (--no-device skips it and lists its commands) the device lock, install, hil_cpu --worst (Rhodes,
+                 VIBES and MARIMBA: <= 4500 us, nothing shed), hil_scan (the release set, then vibes_vel, then
+                 --marimba: MARIMBA_MUST), hil_jack on every engine (SNR; the jack must be connected; MARIMBA: the
+                 A5 tails and the idle floor too), vib_sampleback --engine marimba (Gate VD-M, every key C2..C7)
+ 5 docs          tools/doc_links.py's check (each picture's ?v= = its file's hash, no version named in README /
+                 MANUAL), tests/py/test_docs_vs_code.py, test_doc_links.py, test_changes.py, test_manual_shots.py
+                 (the screenshots = what the code draws); the fragments assembled into docs/releases/vX.Y.Z.md (shown in
+                 full), then the release commit: the notes added, the fragments removed
  6 confirm       what will be pushed, then "Publish X.Y.Z? [y/N]" (--yes skips the prompt). --dry-run stops here.
  7 publish       push main, wait for ci on that commit (every job green), tag and push the tag, wait for the
                  release workflow, download the asset and compare its sha256 with the local build
  8 emulator      (--no-emulator skips it) web/build.sh, the Playwright selftest (Chromium + WebKit, 1280 and 390 px),
                  web/dist into the gh-pages worktree build/pages, push, compare the live files' sha256
- 9 verify        the release page lists the asset; README on GitHub at the tag links the ?v=X.Y.Z pictures
+ 9 verify        the release page (not a draft) lists frodhes-X.Y.Z.fwsc and frodhes.fwsc;
+                 releases/latest/download/frodhes.fwsc redirects to vX.Y.Z and is byte for byte the build (with
+                 --verify-only: the versioned asset); README on GitHub at the tag names no version and links it
 
 --dry-run runs every local check and test (2-5 report, but write and commit nothing) and never pushes, tags or
 publishes. Each step prints PASS / FAIL with its evidence; the summary lists every step: done, skipped (why), failed.
@@ -36,9 +48,14 @@ import tempfile
 import time
 import urllib.request
 
+import changes
+import doc_links
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = "leonardoMirabal/frodhes"
 PAGES_URL = "https://leonardomirabal.github.io/frodhes/"
+STABLE = "frodhes.fwsc"                       # release.yml uploads the package under this name too
+LATEST_DL = f"https://github.com/{REPO}/releases/latest/download/{STABLE}"
 PY = os.path.join(".local", "venv", "bin", "python")
 CPU_LIMIT_US = 4500
 JACK_PEAK_MIN_DB = -27.0          # the loud chord peaks near -15 dBFS on the jack; far below = not connected
@@ -46,6 +63,19 @@ TRAILER = ("Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
            "Claude-Session: https://claude.ai/code/session_01Dz8MB3aMWQ3NXyFVXtBmgi")
 STEPS = ["version", "preconditions", "host", "FM-1", "docs", "confirm", "publish", "emulator", "verify"]
 SCAN_SET = "silence,latency,keyboard,velocity,sustain,held_tail,stress,presets"
+ENGINES = ("rhodes", "vibes", "marimba")
+# hil_scan --marimba (every MARIMBA suite, USB and the jack) exits 1 on any FAIL row, so its report is judged here.
+# A KNOWN row (hil_scan m_known: tools/marimba_scan.py KNOWN / KNOWN_CARDS, the user's decisions) never fails.
+# As VIBES (the release runs vibes_vel, not vibes_jump / vibes_fx, whose stale effect limits fail on every version):
+# the four voice suites must pass every row; the two effect suites (the on/off loudness steps, every FX control) are
+# reported and gate only the rows below. MARIMBA_INFO: rows reported, never gating, with the reason.
+MARIMBA_MUST = ("marimba_voice", "marimba_decay", "marimba_vel", "marimba_roll")
+MARIMBA_FX = ("marimba_jump", "marimba_fx")
+MARIMBA_FX_MUST = (r"^suite error$", r"^takes: ", r": clicks at the switches$", r"^reference drift$",
+                   r"^FX bypass \(CC 111\)", r"^MARIMBA re ST77, ")
+MARIMBA_INFO = {("marimba_vel", "keys C2..C7: level span"):
+                "information, as the host scan's M1 'level span C2-C7' (tools/marimba_scan.py): a marimba is louder "
+                "low than high (FM-1 scans 3 / 4: 8.6 dB); the neighbour step gates the curve"}
 
 
 class Stop(Exception):
@@ -104,15 +134,6 @@ def next_version(latest, kind):
     return "%d.%d.%d" % v
 
 
-def bump_docs(text, ver):
-    """README / MANUAL text with the download, 'Latest release', 'Version' lines and every ?v= at ver"""
-    text = re.sub(r"frodhes-\d+\.\d+\.\d+\.fwsc", f"frodhes-{ver}.fwsc", text)
-    text = re.sub(r"(Latest release: \[Frodhes )\d+\.\d+\.\d+", rf"\g<1>{ver}", text)
-    text = re.sub(r"(\bVersion )\d+\.\d+\.\d+", rf"\g<1>{ver}", text)
-    text = re.sub(r"(\.png\?v=)[0-9A-Za-z.\-]+", rf"\g<1>{ver}", text)
-    return text
-
-
 def parse_args(argv):
     ap = argparse.ArgumentParser(description="the whole Frodhes release, stopping at the first failure")
     ap.add_argument("version", nargs="?", default="patch", help="patch (default), minor or X.Y.Z")
@@ -120,6 +141,8 @@ def parse_args(argv):
     ap.add_argument("--no-device", action="store_true", help="skip the FM-1 tests (printed loudly)")
     ap.add_argument("--no-emulator", action="store_true", help="skip publishing the web emulator")
     ap.add_argument("--yes", action="store_true", help="publish without the prompt")
+    ap.add_argument("--verify-only", action="store_true",
+                    help="only step 9 against a published release (X.Y.Z, or the latest tag); read-only")
     a = ap.parse_args(argv)
     if a.version not in ("patch", "minor"):
         try:
@@ -136,6 +159,7 @@ class Release:
         self.a = a
         self.results = {}           # step number -> (status, evidence)
         self.ver = self.prev = self.sha = self.head = None
+        self.frags = []             # docs/changes/ (step 2)
 
     def log(self, msg):
         print("   " + msg.replace("\n", "\n   "), flush=True)
@@ -166,8 +190,7 @@ class Release:
         branch = out(["git", "rev-parse", "--abbrev-ref", "HEAD"])
         if branch != "main":
             problems.append(f"on branch {branch!r}, not main")
-        dirty = [l for l in out(["git", "status", "--porcelain", "--untracked-files=no"]).splitlines()
-                 if l[3:].strip() != notes]
+        dirty = out(["git", "status", "--porcelain", "--untracked-files=no"]).splitlines()
         if dirty:
             problems.append("tracked changes:\n" + "\n".join(dirty[:15]))
         sh(["git", "fetch", "origin", "main"])
@@ -178,20 +201,24 @@ class Release:
             problems.append(f"{behind} commit(s) behind origin/main (pull first)")
         ev.append(f"branch {branch}, HEAD {self.head[:10]}, {ahead} ahead / {behind} behind origin/main, "
                   f"{len(dirty)} tracked change(s)")
-        path = os.path.join(ROOT, notes)
-        if not os.path.exists(path):
-            log = out(["git", "log", f"{self.prev}..HEAD", "--oneline", "--no-merges"]) if self.prev else ""
-            if self.a.dry_run:
-                problems.append(f"{notes} missing (a real run writes a draft from {len(log.splitlines())} commits "
-                                "and stops)")
-            else:
-                write_draft(path, self.ver, self.prev, log)
-                raise Stop(f"{notes} was missing: a draft is written from `git log {self.prev}..HEAD`; "
-                           "edit it, remove the DRAFT line, run again")
-        elif re.search(r"^\W*DRAFT", open(path, encoding="utf-8").read(), re.M):
-            problems.append(f"{notes} still has its DRAFT banner (edit it, remove the line)")
+        try:
+            self.frags = changes.load(ROOT)
+        except changes.Bad as e:
+            self.frags = []
+            problems.append(f"malformed fragment(s) in {changes.DIR}/ (tools/changes.py):\n{e}")
         else:
-            ev.append(f"{notes} present, no DRAFT banner")
+            names = ", ".join(f for f, _ in self.frags)
+            if os.path.exists(os.path.join(ROOT, notes)):
+                if self.frags:
+                    problems.append(f"{notes} exists and {changes.DIR}/ has fragments ({names}): the notes are "
+                                    f"assembled from the fragments, never written by hand (git rm {notes})")
+                else:
+                    ev.append(f"{notes} already assembled and committed, no fragments left (a re-run after step 5)")
+            elif not self.frags:
+                problems.append(f"no release-note fragments in {changes.DIR}/ (each change adds its own "
+                                f"{changes.DIR}/<topic>.md; see CONTRIBUTING.md)")
+            else:
+                ev.append(f"{changes.DIR}/: {len(self.frags)} fragment(s), well formed ({names})")
         if problems:
             msg = "\n".join(ev + ["PROBLEM: " + p for p in problems])
             if self.a.dry_run:
@@ -231,48 +258,70 @@ class Release:
             fw = f"build/frodhes-{self.ver}.fwsc"
             _, o = sh(f"echo y | {PY} tools/fm1_install.py {fw}", timeout=600)
             ev.append(f"installed {fw}: {tail(o, 1)}")
-            for eng in ("rhodes", "vibes"):
-                cmd = [PY, "tools/hil_cpu.py", "--worst"] + (["--engine", "vibes"] if eng == "vibes" else [])
-                _, o = sh(cmd, timeout=900)
+            for eng in ENGINES:
+                _, o = sh(cpu_cmd(eng), timeout=900)
                 ev.append(check_cpu(eng, o))
             _, o = sh([PY, "tools/hil_scan.py", "--only", SCAN_SET], timeout=3600)
             ev.append(f"hil_scan {SCAN_SET}: exit 0 ({tail(o, 1)})")
             _, o = sh([PY, "tools/hil_scan.py", "--only", "vibes_vel", "--source", "both"], timeout=3600)
             ev.append(f"hil_scan vibes_vel --source both: exit 0 ({tail(o, 1)})")
-            for eng in ("rhodes", "vibes"):
+            rep_m = os.path.join(ROOT, "build", "hil", "marimba-report.json")
+            t0 = time.time()
+            sh([PY, "tools/hil_scan.py", "--marimba", "--source", "both"], check=False, timeout=5400)
+            if not os.path.exists(rep_m) or os.path.getmtime(rep_m) < t0 - 1:
+                raise Stop(f"hil_scan --marimba wrote no new {os.path.relpath(rep_m, ROOT)}")
+            ev.append(check_marimba_scan(json.load(open(rep_m))))
+            for eng in ENGINES:
                 sh([PY, "tools/hil_jack.py", "--engine", eng], timeout=900)
-                rep = json.load(open(os.path.join(ROOT, "build", "hil",
-                                                  "jack.json" if eng == "rhodes" else "jack-vibes.json")))
-                ev.append(check_jack(eng, rep))
+                rep = json.load(open(os.path.join(ROOT, "build", "hil", JACK_JSON[eng])))
+                ev.append(check_jack_marimba(rep) if eng == "marimba" else check_jack(eng, rep))
+            _, o = sh([PY, "tools/vib_sampleback.py", "--engine", "marimba"], timeout=1800)
+            ev.append(check_sampleback(o))
         finally:
             shutil.rmtree(lock, ignore_errors=True)
         return "\n".join(ev)
 
     # 5
     def s_docs(self):
-        ev, changed = [], []
-        for name in ("README.md", "docs/MANUAL.md"):
-            p = os.path.join(ROOT, name)
-            old = open(p, encoding="utf-8").read()
-            new = bump_docs(old, self.ver)
-            n = sum(a != b for a, b in zip(old.splitlines(), new.splitlines()))
-            ev.append(f"{name}: {n} line(s) {'would change' if self.a.dry_run else 'changed'} to {self.ver}")
-            if new != old:
-                changed.append(name)
-                if not self.a.dry_run:
-                    open(p, "w", encoding="utf-8").write(new)
-        _, o = sh([PY, "-m", "pytest", "-q", "tests/py/test_docs_vs_code.py"])
-        ev.append(f"test_docs_vs_code: {tail(o, 1)}")
+        ev, problems = [], doc_links.problems(ROOT)
+        ev.append(f"doc_links: README.md / docs/MANUAL.md, {len(problems)} problem(s) (every picture's ?v= its "
+                  "file's hash, no version named)")
+        problems = [f"{p} (tools/doc_links.py --fix, or tools/manual_shots.py)" for p in problems]
+        _, o = sh([PY, "-m", "pytest", "-q", "tests/py/test_docs_vs_code.py", "tests/py/test_doc_links.py",
+                   "tests/py/test_changes.py", "tests/py/test_manual_shots.py"])
+        ev.append(f"test_docs_vs_code, test_doc_links, test_changes, test_manual_shots: {tail(o, 1)}")
         notes = f"docs/releases/v{self.ver}.md"
-        if self.a.dry_run:
-            ev.append(f"DRY-RUN: no commit (a real run commits {', '.join(changed + [notes])})")
+        frags, text = self.frags, None
+        if frags:
+            try:
+                text = changes.assemble(self.ver, frags, ROOT)
+            except changes.Bad as e:
+                problems.append(str(e))
+        elif not os.path.exists(os.path.join(ROOT, notes)):
+            problems.append(f"no fragments in {changes.DIR}/ and no {notes}")
+        if problems:
+            msg = "\n".join(ev + ["PROBLEM: " + p for p in problems])
+            if self.a.dry_run:
+                return "DRY-RUN, a real run stops here:\n" + msg, "warn"
+            raise Stop(msg)
+        gone = [f"{changes.DIR}/{f}" for f, _ in frags]
+        if text is None:
+            ev.append(f"{notes}: already assembled (no fragments left)")
+        elif self.a.dry_run:
+            ev.append(f"DRY-RUN: no commit. A real run writes {notes} (below, {len(text.splitlines())} lines, from "
+                      f"{', '.join(gone)}), removes the fragments and commits\n"
+                      + "-" * 30 + f" {notes} " + "-" * 30 + "\n" + text.rstrip() + "\n" + "-" * 78)
             return "\n".join(ev)
-        sh(["git", "add", *changed, notes])
+        else:
+            open(os.path.join(ROOT, notes), "w", encoding="utf-8").write(text)
+            sh(["git", "rm", "-q", *gone])
+            sh(["git", "add", notes])
+            ev.append(f"{notes} written ({len(text.splitlines())} lines) from {', '.join(gone)}; the fragments removed")
         body = "\n".join(f"- {s}: {e.splitlines()[0]}" for s, (st, e) in sorted(self.results.items())
                          if st in ("done", "skipped"))
         dev = ("FM-1: hil_cpu, hil_scan, hil_jack with the release build installed" if not self.a.no_device
                else "FM-1: NOT tested (--no-device)")
-        msg = (f"Release {self.ver}: README / MANUAL point at frodhes-{self.ver}.fwsc, the screenshots at ?v={self.ver}"
+        msg = (f"Release {self.ver}: the notes {notes}, assembled from {changes.DIR}/ (the fragments removed)"
                f"\n\nTested by tools/release.py: host (make test, make pytest, gate_r, the release build sha256 "
                f"{self.sha}); {dev}.\n{body}\n\n{TRAILER}\n")
         if out(["git", "diff", "--cached", "--name-only"]):
@@ -353,35 +402,57 @@ class Release:
     # 9
     def s_verify(self):
         tag = "v" + self.ver
+        versioned = f"frodhes-{self.ver}.fwsc"
         r = json.loads(out(["gh", "release", "view", tag, "-R", REPO, "--json", "assets,url,isDraft"]))
         names = [x["name"] for x in r["assets"]]
-        if f"frodhes-{self.ver}.fwsc" not in names or r.get("isDraft"):
-            raise Stop(f"{r['url']}: assets {names}, draft {r.get('isDraft')}")
+        missing = [n for n in (versioned, STABLE) if n not in names]
+        if missing or r.get("isDraft"):
+            raise Stop(f"{r['url']}: assets {names} (missing {missing}), draft {r.get('isDraft')}")
+        ev = [f"{r['url']} lists {', '.join(names)}"]
+        want = self.sha
+        if want is None:                               # --verify-only: the versioned asset is the reference
+            want = resolve(f"https://github.com/{REPO}/releases/download/{tag}/{versioned}")[1]
+            if want is None:
+                raise Stop(f"could not download {versioned} from {tag}")
+        loc, got = resolve(LATEST_DL)
+        if not loc or f"/releases/download/{tag}/{STABLE}" not in loc:
+            raise Stop(f"{LATEST_DL} redirects to {loc}, not to {tag}'s {STABLE} (is {tag} marked latest?)")
+        if got != want:
+            raise Stop(f"{LATEST_DL} (-> {loc}): sha256 {got}, the build's {want}")
+        ev.append(f"{LATEST_DL} -> {loc}: sha256 {got} = {'the local build' if self.sha else versioned}")
         readme = out(["gh", "api", f"repos/{REPO}/contents/README.md?ref={tag}", "-H", "Accept: application/vnd.github.raw"])
-        vs = set(re.findall(r"\.png\?v=([0-9A-Za-z.\-]+)", readme))
-        if vs != {self.ver} or f"frodhes-{self.ver}.fwsc" not in readme:
-            raise Stop(f"README on GitHub at {tag}: pictures ?v={sorted(vs)}, download line "
-                       f"{'ok' if f'frodhes-{self.ver}.fwsc' in readme else 'missing'}")
-        return f"{r['url']} lists {', '.join(names)}; README at {tag} links ?v={self.ver} only, frodhes-{self.ver}.fwsc"
+        pins = [m.group(0) for rx, _ in doc_links.PINS for m in rx.finditer(readme)]
+        if pins or LATEST_DL not in readme:
+            raise Stop(f"README on GitHub at {tag}: versions named {pins}, the stable download link "
+                       f"{'ok' if LATEST_DL in readme else 'missing'}")
+        ev.append(f"README at {tag} names no version and links {LATEST_DL}")
+        return "\n".join(ev)
 
     # ---- the driver ----
     def run(self):
         plan = [self.s_version, self.s_preconditions, self.s_host, self.s_device, self.s_docs, self.s_confirm,
                 self.s_publish, self.s_emulator, self.s_verify]
-        if self.a.no_device:
+        if self.a.no_device and not self.a.verify_only:
             print("\n" + "!" * 78 + "\n!!  --no-device: the FM-1 is NOT tested in this run (step 4 skipped)\n"
                   + "!" * 78, flush=True)
         failed = False
+        if self.a.verify_only:
+            tags = out(["git", "tag", "--sort=-v:refname", "--list", "v*"]).split()
+            self.ver = ("%d.%d.%d" % parse_version(self.a.version) if self.a.version not in ("patch", "minor")
+                        else tags[0][1:] if tags else None)
         for i, fn in enumerate(plan, 1):
             name = STEPS[i - 1]
-            skip = ("--no-device" if i == 4 and self.a.no_device else "--no-emulator" if i == 8 and self.a.no_emulator
-                    else "--dry-run" if i > 6 and self.a.dry_run else None)
+            skip = ("--verify-only" if self.a.verify_only and i != 9 else
+                    "--no-device" if i == 4 and self.a.no_device else "--no-emulator" if i == 8 and self.a.no_emulator
+                    else "--dry-run" if i > 6 and self.a.dry_run and not self.a.verify_only else None)
             if failed:
                 self.results[i] = ("not run", "an earlier step failed")
                 continue
             if skip:
                 self.results[i] = ("skipped", skip)
                 print(f"\n[{i}/9] {name}: SKIPPED ({skip})", flush=True)
+                if i == 4:
+                    self.log("with the FM-1 this step runs, in order:\n" + "\n".join(device_plan(self.ver or "X.Y.Z")))
                 continue
             print(f"\n[{i}/9] {name}", flush=True)
             try:
@@ -399,7 +470,8 @@ class Release:
         return 1 if failed else 0
 
     def summary(self):
-        print("\n" + "=" * 78 + f"\nFrodhes release {self.ver or '?'}{' (DRY-RUN)' if self.a.dry_run else ''}: summary")
+        mode = ' (VERIFY-ONLY)' if self.a.verify_only else ' (DRY-RUN)' if self.a.dry_run else ''
+        print("\n" + "=" * 78 + f"\nFrodhes release {self.ver or '?'}{mode}: summary")
         for i, name in enumerate(STEPS, 1):
             st, ev = self.results.get(i, ("not run", ""))
             lines = ev.splitlines() or [""]
@@ -411,6 +483,83 @@ class Release:
         if self.a.no_device:
             print(" !! the FM-1 was NOT tested (--no-device)")
         print("=" * 78)
+
+
+JACK_JSON = dict(rhodes="jack.json", vibes="jack-vibes.json", marimba="jack-marimba.json")
+
+
+def cpu_cmd(eng):
+    return [PY, "tools/hil_cpu.py", "--worst"] + ([] if eng == "rhodes" else ["--engine", eng])
+
+
+def device_plan(ver):
+    """step 4's commands in order (what s_device runs) with what each must show, for --no-device to list"""
+    q = " ".join
+    return ([f"echo y | {PY} tools/fm1_install.py build/frodhes-{ver}.fwsc"]
+            + [q(cpu_cmd(e)) + f"   (worst <= {CPU_LIMIT_US} us, nothing shed)" for e in ENGINES]
+            + [q([PY, "tools/hil_scan.py", "--only", SCAN_SET]) + "   (exit 0)",
+               q([PY, "tools/hil_scan.py", "--only", "vibes_vel", "--source", "both"]) + "   (exit 0)",
+               q([PY, "tools/hil_scan.py", "--marimba", "--source", "both"])
+               + f"   (marimba-report.json: {', '.join(MARIMBA_MUST)} every row; {', '.join(MARIMBA_FX)} the "
+               "takes / clicks / drift / bypass / level re ST77 rows; KNOWN rows pass)"]
+            + [q([PY, "tools/hil_jack.py", "--engine", e]) + f"   ({JACK_JSON[e]}: the jack connected"
+               + ("; the A5 tails, the idle floor)" if e == "marimba" else ")") for e in ENGINES]
+            + [q([PY, "tools/vib_sampleback.py", "--engine", "marimba"]) + "   (Gate VD-M: 0 keys outside)"])
+
+
+def check_marimba_scan(rep):
+    """build/hil/marimba-report.json against MARIMBA_MUST / MARIMBA_FX_MUST / MARIMBA_INFO; Stop with every failing
+    row that must pass"""
+    suites = rep["suites"]
+    missing = [n for n in MARIMBA_MUST + MARIMBA_FX if n not in suites]
+    if missing:
+        raise Stop(f"hil_scan --marimba: suites missing from the report: {', '.join(missing)}")
+    bad, info, known, nfx = [], [], 0, 0
+    for n, rows in suites.items():
+        for r in rows:
+            known += bool(r.get("known"))
+            if r["ok"]:
+                continue
+            if (n, r["check"]) in MARIMBA_INFO:
+                info.append(f"{n} {r['check']}: USB {r['usb']} jack {r['jack']} (not gating: "
+                            f"{MARIMBA_INFO[n, r['check']]})")
+            elif n in MARIMBA_MUST or any(re.search(x, r["check"]) for x in MARIMBA_FX_MUST):
+                bad.append(f"{n}: {r['check']} [{r['setting']}] USB {r['usb']} jack {r['jack']} ({r['crit']}) "
+                           f"{r['status']}")
+            else:
+                nfx += 1
+    if bad:
+        raise Stop("hil_scan --marimba: rows that must pass failed:\n" + "\n".join(bad))
+    lvl = [r for r in suites["marimba_jump"] if r["check"].startswith("MARIMBA re ST77")]
+    return (f"hil_scan --marimba --source both: {', '.join(MARIMBA_MUST)} every row ok ({known} KNOWN, user "
+            f"decisions); {', '.join(MARIMBA_FX)}: the must rows ok, {nfx} other row(s) failed (not gating)"
+            + (f"; MARIMBA re ST77 USB {lvl[0]['usb']} jack {lvl[0]['jack']} LU" if lvl else "")
+            + "".join("\n" + x for x in info))
+
+
+def check_jack_marimba(rep):
+    m = rep["marimba"]
+    peak = m["loud"]["jack_peak_db"]
+    if peak < JACK_PEAK_MIN_DB:
+        raise Stop(f"hil_jack marimba: the loud chord peaks at {peak:.1f} dBFS on the jack (usually about -15): "
+                   "is the jack connected to the interface?")
+    bad = [f"tail {k}: {v}" for k, v in rep["tails"].items() if not v.get("ok")]
+    if not rep["idle_ok"]:
+        bad.append(f"idle: {rep['idle']}")
+    if bad:
+        raise Stop("hil_jack marimba (TEST-PLAN A5, the idle floor):\n" + "\n".join(bad))
+    return (f"hil_jack marimba: SNR {m['snr_db']:.1f} dB ({rep['snr_vs_st77_db']:+.1f} re ST77 in the same session, "
+            f"information: MARIMBA's chord is quieter), loud chord jack peak {peak:.1f} dBFS; {len(rep['tails'])} "
+            "tails and the idle floor ok")
+
+
+def check_sampleback(text):
+    m = re.search(r"(\d+) notes, (\d+) outside Gate VD-M", text)
+    if not m:
+        raise Stop("vib_sampleback marimba: no 'outside Gate VD-M' line:\n" + tail(text))
+    if int(m.group(2)):
+        raise Stop(f"vib_sampleback marimba: {m.group(2)} of {m.group(1)} keys outside Gate VD-M:\n" + tail(text))
+    return f"vib_sampleback marimba: {m.group(1)} keys, 0 outside Gate VD-M (device vs host)"
 
 
 def check_cpu(eng, text):
@@ -466,6 +615,21 @@ def fetch_sha(url):
         return None
 
 
+def resolve(url):
+    """(the first redirect's target, the sha256 of what the redirects end at) for url; None for what failed"""
+    first = []
+
+    class Redirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            first.append(newurl)
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+    try:
+        with urllib.request.build_opener(Redirect).open(url, timeout=60) as r:
+            return (first[0] if first else None), hashlib.sha256(r.read()).hexdigest()
+    except OSError:
+        return (first[0] if first else None), None
+
+
 SELFTEST_JS = r"""
 import json, sys
 from playwright.sync_api import sync_playwright
@@ -517,16 +681,6 @@ def web_selftest(dist):
     if bad:
         raise Stop("emulator selftest: " + "; ".join(bad))
     return "selftest " + "; ".join(ok)
-
-
-def write_draft(path, ver, prev, log):
-    lines = "\n".join(f"- {l.split(' ', 1)[1]}" for l in log.splitlines() if " " in l) or "- (nothing yet)"
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(f"> **DRAFT, not released yet.** Edit these notes, then delete this line.\n\n"
-                f"**Frodhes {ver}**: a physically modelled Fender Rhodes and vibraphone for the M-VAVE FM-1.\n\n"
-                f"**Download:** `frodhes-{ver}.fwsc` below. **Try it first in your browser:** {PAGES_URL}\n\n"
-                f"## What's new since {prev}\n\n{lines}\n\n## Install\n\n"
-                f"`python3 tools/fm1_install.py frodhes-{ver}.fwsc` (see the manual, section 1, and the rescue).\n")
 
 
 def main(argv=None):

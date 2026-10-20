@@ -36,6 +36,9 @@ static int32_t fm1_enc_take(uint32_t e) { int32_t d = e < 8u ? host_enc[e] : 0; 
 static void fm1_led_key(uint32_t id, int on) { if (id < 64u) host_led[id] = (uint8_t)(on != 0); }
 static volatile uint8_t uart_midi_on = 1;        /* midi_uart.c: the TRS input (none here) */
 static volatile uint8_t usb_pre_master;          /* platform.c: USB audio before MASTER (no USB here) */
+static uint8_t fm1_led_duty[2] = {16u, 16u};   /* hal/fm1_input.h: the lit duty of the keys and the buttons, /16 (DISPLAY BRIGHTNESS) */
+static void fm1_led_group_ids(uint32_t id0, uint32_t id1) { (void)id0; (void)id1; }   /* (which LEDs are the keys: the hardware's) */
+static void fm1_led_build(void) {}               /* (the scan ISR's tables: the hardware's) */
 static uint8_t host_glow[64];                   /* the dim layer (fm1_led_key_glow) */
 static void fm1_led_key_glow(uint32_t id, int on) { if (id < 64u) host_glow[id] = (uint8_t)(on != 0); }
 

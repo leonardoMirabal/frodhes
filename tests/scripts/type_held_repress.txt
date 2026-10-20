@@ -1,0 +1,64 @@
+# A note still held across a TYPE change to another engine (or VIBES <-> MARIMBA) is stopped by the change
+# (engine.c: the old engine fades out and its voices stop); a new note-on for that pitch must sound again, though the
+# notes layer still counts it held: a MIDI note-on with no note-off between, or a second source (an FM-1 key) on a
+# pitch a MIDI note holds. Before the fix (0.9.3 too) both were silent: the notes layer dropped them as already
+# sounding (notes.c src_on / out_on). Within the Rhodes (ST77 -> SUITCASE) the held voice keeps ringing, as before.
+# CC 79 0 = VIBES, 127 = MARIMBA; CC 80 0 = ST77, 40 = SUITCASE; PC 0 = F01 (a Rhodes preset), PC 14 = MARIMBA.
+50 midi 0xB0 119 127
+# ST77 -> VIBES: 60 held, note-on 60 again
+100 midi 0x90 60 100
+400 midi 0xB0 79 0
+600 midi 0x90 60 100
+800 expect rms > -40
+900 midi 0x80 60 0
+1500 expect rms < -60
+# VIBES -> MARIMBA
+1600 midi 0x90 62 100
+1900 midi 0xB0 79 127
+2100 midi 0x90 62 100
+2300 expect rms > -40
+2400 midi 0x80 62 0
+# MARIMBA -> ST77 by program change (F01)
+2500 midi 0x90 64 100
+2800 midi 0xC0 0 0
+3000 midi 0x90 64 100
+3200 expect rms > -40
+3300 midi 0x80 64 0
+4300 expect rms < -60
+# ST77 -> SUITCASE (one engine): the held voice rings on, the second note-on changes nothing
+4400 midi 0x90 65 100
+4700 midi 0xB0 80 40
+4900 midi 0x90 65 100
+5100 expect rms > -40
+5200 midi 0x80 65 0
+6200 expect rms < -60
+# two sources on one pitch: MIDI 58 held, FM-1 key 5 (58) down; -> VIBES; the key let go and pressed again
+6300 midi 0x90 58 100
+6300 keys 0x20
+6600 midi 0xB0 79 0
+6800 keys 0
+7000 keys 0x20
+7200 expect rms > -40
+7300 keys 0
+7300 midi 0x80 58 0
+8500 expect rms < -60
+# VIBES -> ST77 -> VIBES within one block with 60 held: no change happens, the note rings on; a second note-on re-strikes
+8600 midi 0x90 60 100
+8900 midi 0xB0 80 0
+8900 midi 0xB0 79 0
+9100 midi 0x90 60 100
+9300 expect rms > -40
+9400 midi 0x80 60 0
+10500 expect rms < -60
+# the panel: VIBES, 67 held; ALGORITHM (encoder 1) four steps back to ST77; note-on 67 again
+10600 midi 0x90 67 100
+10900 turn 1 -1
+10920 turn 1 -1
+10940 turn 1 -1
+10960 turn 1 -1
+11100 expect state bars 0
+11200 midi 0x90 67 100
+11400 expect rms > -40
+11500 midi 0x80 67 0
+12500 expect rms < -60
+12500 end

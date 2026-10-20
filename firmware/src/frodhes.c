@@ -30,7 +30,7 @@ static uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof_st"))); 
 #else
 #define PROF_STAMP(i) ((void)0)
 #endif
-#include "engine.c"     /* the voice engines: rhodes.c (the Rhodes), bars.c (VIBES), and the dispatcher */
+#include "engine.c"     /* the voice engines: rhodes.c (the Rhodes), bars.c (VIBES + MARIMBA), and the dispatcher */
 #include "fx.c"
 #include "params.c"
 #include "tempo.c"
@@ -206,9 +206,13 @@ static void midi_cc(uint32_t cc, uint32_t v)
         ui_mark(E_CARDS); ui_mark(E_FOOTER);
         return;
     }
-    if (cc == 79u) {                                   /* the bar types (VIBES ...): bands over 0..127, one per type;
-                                                        * CC 80 keeps the four Rhodes types exactly as before */
-        type_pick((int32_t)(4u + ((v * (N_TYPE_N - 4u)) >> 7)));   /* (a TYPE change: the motor starts) */
+    if (cc == 79u) {                                   /* the bar types: each TYPE of the bar engine (TYPE_ENGINE 1) from
+                                                        * its TYPE_CC79 value up to the next one's: VIBES 0..95 (every
+                                                        * value 0.9.3 used for it up to 95, 0 and 64 included), MARIMBA
+                                                        * 96..127 (0.9.4). CC 80 keeps the four Rhodes types as before */
+        uint32_t t, pick = 4u;
+        for (t = 0; t < N_TYPE_N; t++) if (TYPE_ENGINE[t] == 1u && v >= TYPE_CC79[t]) pick = t;
+        type_pick((int32_t)pick);                      /* (a TYPE change: the motor starts) */
         ui_mark_param(P_TYPE);
         return;
     }
@@ -244,10 +248,10 @@ static void midi_cc(uint32_t cc, uint32_t v)
         }
 }
 
-/* a note a voice is still sounding (for the per-key LEDs under sustain) */
-static int note_sounding(uint32_t n)
+/* a note the pedal holds and a voice still sounds (the per-key LEDs under sustain; notes.c ped.sus) */
+static int note_sustained(uint32_t n)
 {
-    return eng_note_sounding(n);
+    return n < 128u && ped.sus[n >> 5] >> (n & 31u) & 1u && eng_note_sounding(n);
 }
 
 static void app_main(void)
@@ -262,9 +266,13 @@ static void app_main(void)
     chord_sanitize();
     seq_sanitize();
     if (set.usb_fixed > 1u) set.usb_fixed = 0;
+    if (set.palette >= COLOR_N) set.palette = 0;   /* AMBER (ui.c S_COLOR) */
+    if (set.dim >= DIM_N) set.dim = 0;
+    if (set.leds > 4u) set.leds = 0;                /* (ui.c LEDS_N: 0 ROOTS 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
     usb_pre_master = set.usb_fixed;
     uart_midi_on = !set.trs_off;
-    palette_set(set.color);
+    fm1_led_group_ids(KEY_LED(0), KEY_LED(26));     /* BRIGHTNESS: the keys' LEDs are their own group */
+    dim_apply();                                    /* the palette and the LEDs at BRIGHTNESS (set.color is Dinghy's, unused) */
     params_apply_all();
     tempo_set10(set.bpm10);
     set_dirty = 0;
@@ -313,9 +321,14 @@ static void app_main(void)
             else if (ty == 0xC0u) preset_load(d1 < PR_NF ? d1 : d1 >= 16u && d1 < 32u ? PR_NF + d1 - 16u : 255u);
         }
 
-        for (k = 0; k < NKEYS; k++)             /* LEDs per key: held, or its note still rings */
+        for (k = 0; k < NKEYS; k++)             /* LEDs per key: held (the FM-1's key, or its note over MIDI), or its
+                                                 * note still rings under the sustain (0.9.4: MIDI notes too; only
+                                                 * a note the pedal holds, not one let go before it went down) */
             if (src_active[SRC_KEYS + k]) lit |= 1u << k;
-            else if (rh_hold && note_sounding((uint32_t)scale_key_note(k))) lit |= 1u << k;
+            else {
+                uint32_t n = scale_key_note(k);
+                if ((n < 128u && src_active[SRC_MIDI + n]) || note_sustained(n)) lit |= 1u << k;
+            }
         src_poll();
         eng_pump();                             /* (notes.c: events that waited for room in the engine's ring) */
         seq_poll();
@@ -365,7 +378,7 @@ typedef struct {
     int32_t fx[FXP_N];
     uint32_t sync[5];
     int32_t rh[11];
-    int32_t bar[14];
+    int32_t bar[16];
     uint8_t want;
 } host_snd_t;
 static void host_snd(host_snd_t *s)
@@ -382,7 +395,7 @@ static void host_snd(host_snd_t *s)
     s->bar[5] = bar_nz; s->bar[6] = bar_k_decay; s->bar[7] = bar_k_rel; s->bar[8] = bar_thump; s->bar[9] = bar_felt;
     s->bar[10] = bar_mot_on; s->bar[11] = bar_mot_depth; s->bar[12] = bar_mot_shape; s->bar[13] = (int32_t)bar_mot_inc;
     s->want = eng_want;
-    (void)bar_sub;
+    s->bar[14] = bar_mute; s->bar[15] = eng_want_sub;          /* MUTE, the bar type asked for (MARIMBA) */
 }
 static int host_sound_check(char *msg, unsigned n)
 {
@@ -402,7 +415,7 @@ static int host_sound_check(char *msg, unsigned n)
         if (a.sync[i] != b.sync[i]) { snprintf(msg, n, "synced rate %u is %u, the panel says %u", i, a.sync[i], b.sync[i]); return 1; }
     for (i = 0; i < 11u; i++)
         if (a.rh[i] != b.rh[i]) { snprintf(msg, n, "Rhodes volatile %u is %d, the panel says %d", i, a.rh[i], b.rh[i]); return 1; }
-    for (i = 0; i < 14u; i++)
+    for (i = 0; i < 16u; i++)
         if (a.bar[i] != b.bar[i]) { snprintf(msg, n, "bar knob %u is %d, the panel says %d", i, a.bar[i], b.bar[i]); return 1; }
     if (a.want != b.want) { snprintf(msg, n, "the engine is %u, TYPE says %u", a.want, b.want); return 1; }
     return 0;
@@ -480,6 +493,7 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "savemode")) snprintf(v, n, "%u", pr_save_mode);
     else if (!strcmp(key, "undo")) snprintf(v, n, "%u", set.undo_valid);
     else if (!strcmp(key, "dirty")) snprintf(v, n, "%u", set_dirty);
+    else if (!strcmp(key, "ledduty")) snprintf(v, n, "%u %u", fm1_led_duty[0], fm1_led_duty[1]);   /* DISPLAY BRIGHTNESS: the keys', the buttons' lit duty /16 */
     else if (!strcmp(key, "bars")) snprintf(v, n, "%d", eng_is_bars());
     else if (!strcmp(key, "voices")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits));
     else if (!strcmp(key, "held")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_held_bits : rh_held_bits));
@@ -496,7 +510,7 @@ static int host_state(const char *key, char *v, unsigned n)
 static void host_dump(void)
 {
     static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
-                                    "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "bars", "voices", "held", "pitches",
+                                    "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "label0", "card0", "label1", "card1", "label2", "card2",
                                     "label3", "card3"};
     char key[24], v[64];
@@ -516,6 +530,7 @@ static void host_dump(void)
     }
     for (i = 0; i < P_COUNT; i++) printf("@ %u p.%u %u\n", fm1_ms, i, PV(i));
     for (i = 0; i < 41u; i++) printf("@ %u led.%u %u\n", fm1_ms, i, host_led[i]);
+    for (i = 0; i < 41u; i++) printf("@ %u glow.%u %u\n", fm1_ms, i, host_glow[i]);
     for (i = 1; i <= PR_NU; i++) { snprintf(key, sizeof key, "u.%u", i); host_state(key, v, sizeof v); printf("@ %u %s %s\n", fm1_ms, key, v); }
 }
 #endif
