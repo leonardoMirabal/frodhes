@@ -1,9 +1,9 @@
 # DISPLAY (0.9.4): the screen and the lights. GLO (button 7) four times: TEMPO, SETUP, MIDI, DISPLAY, back to TEMPO.
-# K1 COLOR (encoder 2): the palette, 26 steps (AMBER, then 25 pastel hues round the colour wheel, ui.c COLOR_ACC);
+# K1 COLOR (encoder 2): the palette, 27 steps (AMBER, 25 pastel hues round the colour wheel, RED; ui.c COLOR_ACC);
 # K2 BRIGHTNESS (3): 10 (full) .. 1 dims the screen and every light together (the keys' and the buttons' lit duty,
-# ui.c dim_key / dim_btn: state ledduty); K3 LEDS (4): OFF / PLAYED / ROOTS / ALL, which keys light (key 0 = LED 14 ..
+# ui.c dim_key / dim_btn: state ledduty); K3 LEDS (4): OFF / PLAYED / ROOTS / ALL / SCALE, which keys light (key 0 = LED 14 ..
 # key 26 = LED 40; ROOTS: the scale's root keys glowing while a scale is on; ALL: every key lit, a played one
-# dark). Device settings, kept with the record. The screen itself (the colours at each step, the power cycle):
+# dark; SCALE: tests/scripts/leds_scale.txt). Device settings, kept with the record. The screen itself (the colours at each step, the power cycle):
 # tests/py/test_ui_display.py.
 100 btn 7
 150 expect state page TEMPO
@@ -83,7 +83,7 @@
 3300 turn 3 1
 3350 expect state card1 10
 # LEDS with key 0 (F3) held: ROOTS (the scale is off: no glow, as 0.9.3; C4 = key 7 = LED 21, C5 = LED 33) -> ALL: every
-# key lit and the played one dark; back to PLAYED: the played key only; OFF: nothing; it stops at both ends
+# key lit and the played one dark; SCALE, the last step; back to PLAYED: the played key only; OFF: nothing; it stops at both ends
 3400 keys 0x1
 3500 expect led 14 1
 3500 expect led 21 0
@@ -96,8 +96,11 @@
 3700 expect led 14 0
 3700 expect led 15 1
 3700 expect led 40 1
+3720 turn 4 1
+3760 expect state card2 SCALE
 3800 turn 4 1
-3850 expect state card2 ALL
+3850 expect state card2 SCALE
+3870 turn 4 -1
 3900 turn 4 -1
 4000 turn 4 -1
 4050 expect state card2 PLAYED
