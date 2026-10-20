@@ -59,8 +59,7 @@ LATEST_DL = f"https://github.com/{REPO}/releases/latest/download/{STABLE}"
 PY = os.path.join(".local", "venv", "bin", "python")
 CPU_LIMIT_US = 4500
 JACK_PEAK_MIN_DB = -27.0          # the loud chord peaks near -15 dBFS on the jack; far below = not connected
-TRAILER = ("Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>\n"
-           "Claude-Session: https://claude.ai/code/session_01Dz8MB3aMWQ3NXyFVXtBmgi")
+TRAILER = "Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"   # (no session links: a public repo)
 STEPS = ["version", "preconditions", "host", "FM-1", "docs", "confirm", "publish", "emulator", "verify"]
 SCAN_SET = "silence,latency,keyboard,velocity,sustain,held_tail,stress,presets"
 ENGINES = ("rhodes", "vibes", "marimba")
@@ -139,6 +138,9 @@ def parse_args(argv):
     ap.add_argument("version", nargs="?", default="patch", help="patch (default), minor or X.Y.Z")
     ap.add_argument("--dry-run", action="store_true", help="every local check; no commit, push, tag or publish")
     ap.add_argument("--no-device", action="store_true", help="skip the FM-1 tests (printed loudly)")
+    ap.add_argument("--device-done", metavar="JSON",
+                    help="with --no-device: the FM-1 tests already ran on this exact build: {\"sha256\": the tested "
+                         ".fwsc's, \"runs\": [what ran]}; refused unless the sha256 equals the release build's")
     ap.add_argument("--no-emulator", action="store_true", help="skip publishing the web emulator")
     ap.add_argument("--yes", action="store_true", help="publish without the prompt")
     ap.add_argument("--verify-only", action="store_true",
@@ -320,7 +322,7 @@ class Release:
         body = "\n".join(f"- {s}: {e.splitlines()[0]}" for s, (st, e) in sorted(self.results.items())
                          if st in ("done", "skipped"))
         dev = ("FM-1: hil_cpu, hil_scan, hil_jack with the release build installed" if not self.a.no_device
-               else "FM-1: NOT tested (--no-device)")
+               else self.device_done() or "FM-1: NOT tested (--no-device)")
         msg = (f"Release {self.ver}: the notes {notes}, assembled from {changes.DIR}/ (the fragments removed)"
                f"\n\nTested by tools/release.py: host (make test, make pytest, gate_r, the release build sha256 "
                f"{self.sha}); {dev}.\n{body}\n\n{TRAILER}\n")
@@ -427,6 +429,15 @@ class Release:
                        f"{'ok' if LATEST_DL in readme else 'missing'}")
         ev.append(f"README at {tag} names no version and links {LATEST_DL}")
         return "\n".join(ev)
+
+    def device_done(self):
+        """--device-done: the FM-1 runs made before the release on this very build (its sha256 checked), or None"""
+        if not self.a.device_done:
+            return None
+        d = json.load(open(self.a.device_done))
+        if d.get("sha256") != self.sha:
+            raise Stop(f"--device-done {self.a.device_done}: sha256 {d.get('sha256')} is not the release build's {self.sha}")
+        return "FM-1: tested before the release on this exact build (sha256 equal): " + "; ".join(d.get("runs", []))
 
     # ---- the driver ----
     def run(self):
