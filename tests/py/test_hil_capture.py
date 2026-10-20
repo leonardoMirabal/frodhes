@@ -223,13 +223,16 @@ def test_a_cut_never_stalls_the_callback():
         r.push(x, adc[i])
     assert r.nlog == nb
     t_end = r.end_time()
-    worst = 0.0
+    took = []
     for k in range(20):
         t0 = time.perf_counter()
         L, _ = r._snap(t_end - 3.6 + 0.01 * k)
-        worst = max(worst, time.perf_counter() - t0)
+        took.append(time.perf_counter() - t0)
         assert L is not None and len(L) < 6000
-    assert worst < 0.005, worst                                                     # ~0.1 ms; the deque: ~18 ms
+    took.sort()
+    # ~0.1 ms each; the deque: ~18 ms every cut. The median, not the worst: one OS preemption on a loaded machine
+    # (a Docker build alongside) once read 5.2 ms, while the bug makes every cut slow
+    assert took[len(took) // 2] < 0.005, took
     # the old search over every entry held (the newest M), for a few cut starts
     keep = np.arange(nb - r.M, nb)
     full = np.stack([keep * blk, adc[keep]], 1).astype(float)
