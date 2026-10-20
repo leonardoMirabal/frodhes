@@ -124,7 +124,8 @@ plays (blinking while it records), FX when the effects are
 active, REC while the sustain holds (from MIDI CC 64 too), PLAY on the beat when something is synced (and while the
 sequencer or the arpeggiator plays), HOME on PERFORM and the main page, GLO on TEMPO, SETUP, MIDI and DISPLAY,
 OCT− / OCT+ while the octave is shifted, SAVE blinking in save mode, and each key while it is held, or its note is
-held over MIDI (USB or TRS), or still rings under the sustain (see LEDS on the DISPLAY page).
+held over MIDI (USB or TRS), or the sustain holds it and it still rings (a note let go before the pedal went down
+stays dark; see LEDS on the DISPLAY page).
 
 ## 4. The pages
 
@@ -455,7 +456,7 @@ the TRS jack: notes, every CC in the table below, program changes, clock, start 
 
 ### DISPLAY
 
-![DISPLAY](manual/img/display.png?v=389263b4)
+![DISPLAY](manual/img/display.png?v=d7dfb584)
 
 | Knob | Card | What it does |
 | --- | --- | --- |

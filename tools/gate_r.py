@@ -50,11 +50,11 @@ def fx_scripts():
     for t in (14, 30, 45, 60, 75, 90, 110):
         cases[f'filt{t}'] = dict(FL_TYPE=t, FL_FREQ=50 + t // 3, FL_RESO=90, FL_LFO=100, PH_SW=127, PH_DEPTH=90)
     res = {}
-    for vib in (0, 1):
+    for vib in (0, 1, 2):                         # the Rhodes (F01), VIBES (CC 79 0), MARIMBA (CC 79 127: Gate M)
         for name, fx in cases.items():
             ev, t = [], 50
             if vib:
-                ev.append(f'{t} midi 0xB0 79 0'); t += 10
+                ev.append(f'{t} midi 0xB0 79 {0 if vib == 1 else 127}'); t += 10
             d = dict(fx)
             if 'CP_SW' in d:
                 ev.append(f'{t} midi 0xB0 85 {d.pop("CP_SW")}'); t += 5
@@ -73,7 +73,7 @@ def fx_scripts():
                 t += 600
             ev.append(f'{t} midi 0xB0 64 0'); t += 2500
             ev.append(f'{t} end')
-            res[f'fx/{"v_" if vib else ""}{name}'] = '\n'.join(ev) + '\n'
+            res[f'fx/{("", "v_", "m_")[vib]}{name}'] = '\n'.join(ev) + '\n'
     return res
 
 
