@@ -304,9 +304,9 @@ static void dim_apply(void)
 }
 /* DISPLAY LEDS: which keys light: OFF, PLAYED (as they sound), ROOTS (the played keys, and the scale's root keys glowing
  * as landmarks while a scale is on; the default, as before DISPLAY), ALL (every key lit, a light for playing in the dark; a
- * played key goes dark, as Felucca's INV), SCALE (0.9.4: ALL over the keys of the scale only, tempo.c scale_key_in: SNAP
- * the keys whose own note is in the scale, DEGREE the white keys; a played key flips, a scale key dark, a snapped one
- * lit; no scale on: as ALL). The played and ALL keys use the lit layer (BRIGHTNESS scaling them), the
+ * played key goes dark, as Felucca's INV), SCALE (0.9.4: ALL over the keys of the scale only, tempo.c scale_key_in: the
+ * keys, white and black, whose own note is in the scale, SNAP and DEGREE alike; a played scale key goes dark, the others
+ * stay dark, pressed too; no scale on: as ALL). The played and ALL keys use the lit layer (BRIGHTNESS scaling them), the
  * ROOTS landmarks the HAL's faint glow layer (~1/24 of a lit LED), dimmer than a played key at every BRIGHTNESS (1/16
  * at the lowest).
  * set.leds keeps 0 = ROOTS so an older record reads as today (SCALE appended: 4); the card shows the five in the order

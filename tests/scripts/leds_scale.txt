@@ -1,6 +1,6 @@
 # DISPLAY LEDS SCALE (0.9.4, after ALL): ALL over the keys of the scale only (tempo.c scale_key_in). No scale: every
 # key lit, as ALL. SNAP: the keys whose own note (TRANS applied) is in the scale; the snapped ones dark. DEGREE: the
-# white keys (the black ones are silent). A played scale key goes dark; a key out of the scale stays dark, pressed too. No glow (the root
+# same keys (the scale on the keyboard, white and black). A played scale key goes dark; a key out of the scale stays dark, pressed too. No glow (the root
 # keys' glow stays ROOTS' alone). The octave shift moves no pitch class: the same keys. Key k = LED 14 + k, F3 + k.
 100 btn 7
 200 btn 7
@@ -110,12 +110,13 @@
 3150 turn 5 -1
 3200 expect led 14 1
 3200 expect led 15 0
-# K1 DEGREE: the white keys lit, the black ones (silent) dark
+# K1 DEGREE: the same keys as SNAP, white and black (the scale on the keyboard, D minor here: Bb3 lit, B3 dark)
 3250 turn 2 1
 3300 expect state card0 DEGREE
 3350 expect led 14 1
 3350 expect led 15 0
-3350 expect led 20 1
+3350 expect led 19 1
+3350 expect led 20 0
 3350 expect led 21 1
 3350 expect led 22 0
 3350 expect led 40 1

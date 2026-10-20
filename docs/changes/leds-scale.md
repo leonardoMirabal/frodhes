@@ -1,6 +1,6 @@
 ## New
 
-- DISPLAY LEDS: a fifth mode, **SCALE**, after ALL. As ALL, but only the keys of the scale are lit: with SNAP the keys whose own note is in the scale (the snapped keys stay dark), with DEGREE the white keys. A played scale key goes dark; the keys outside the scale (or silent) stay dark, also when pressed. With no scale on it looks as ALL. Saved LEDS settings keep their meaning.
+- DISPLAY LEDS: a fifth mode, **SCALE**, after ALL. As ALL, but only the keys of the scale are lit: the keys, white and black, whose own note is in the scale (SNAP and DEGREE alike). A played scale key goes dark; the keys outside the scale stay dark, also when pressed. With no scale on it looks as ALL. Saved LEDS settings keep their meaning.
 - DISPLAY COLOR: **RED**, a full red, appended after MANGO (27 steps). Saved COLOR settings keep their colour.
 
 ## Fixed
