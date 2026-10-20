@@ -162,7 +162,7 @@ typedef struct {
     uint8_t palette;                           /* 0.9.4: DISPLAY COLOR, the step (ui.c COLOR_ACC; 0 = AMBER) */
     uint8_t dim;                               /* 0.9.4: DISPLAY BRIGHTNESS, steps down from full: 0 (as made) .. 9; the
                                                 * screen and every light. LEDS is in Dinghy's `leds` above (0 in every
-                                                * record so far = ROOTS; 1 OFF 2 PLAYED 3 ALL) */
+                                                * record so far = ROOTS; 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
     uint8_t seq_rsv[57];
     uint8_t reserved[22];
 } settings_t;
