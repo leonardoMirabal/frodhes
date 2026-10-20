@@ -13,7 +13,8 @@ MIDI out, LEDs and cards, at the control's ends:
 
 The minimum each case asserts is about a third to a half of what the control does today (the numbers are in the
 docstrings), so a re-voicing passes and a control that stops working fails. Covered by their own tests and left out
-here: the VIBES VOICE / DECAY cards, the motor, the VIBES pedal and velocity (test_bars_*). Exact card-vs-sound
+here: the VIBES VOICE / DECAY cards, the motor, the VIBES pedal and velocity (test_bars_*); MARIMBA's cards are here
+at a minimum through the panel (their plan thresholds: test_marimba_*). Exact card-vs-sound
 accuracy (rates, times, cutoffs, dB) is test_display_sound.py; this file only asks that each control acts."""
 import math
 
@@ -28,10 +29,10 @@ PEDAL = [cc(22, 64, 127)]
 SHORT = [cc(23, 103, 0), cc(24, 104, 0)]            # RELEASE 0, NOISE 0: a note let go stops at once
 # the SELECT order (ui.c PG_ORDER) and the page ids the dump's card.<page>.<k> use (ui.c PG_*)
 ORDER = ["PERF", "PIANO", "VOICE", "DECAY", "COMP", "FILTER", "DRIVE", "TREM", "PHA", "CHO", "DELAY", "REVERB", "TEMPO",
-         "SCALE", "CHORD", "ARP", "LFO", "SEQ", "ASSIGN", "SETUP", "MIDI"]   # (a Rhodes TYPE: no MOTOR page)
+         "SCALE", "CHORD", "ARP", "LFO", "SEQ", "ASSIGN", "SETUP", "MIDI", "DISPLAY"]   # (a Rhodes TYPE: no MOTOR page)
 PG = {n: i for i, n in enumerate(["PERF", "ASSIGN", "PIANO", "VOICE", "DECAY", "COMP", "FILTER", "TREM", "PHA", "CHO",
                                   "DELAY", "TEMPO", "SCALE", "CHORD", "SEQ", "ARP", "LFO", "SETUP", "MIDI",
-                                  "DRIVE", "REVERB", "MOTOR"])}
+                                  "DRIVE", "REVERB", "DISPLAY"])}
 BTN = {"OCT-": 0, "OCT+": 1, "FX": 2, "SEL": 3, "ENV": 4, "LFO": 5, "EDIT": 6, "GLO": 7, "HOME": 8, "SAVE": 9,
        "ARP": 10, "SEQ": 11, "PLAY": 12, "REC": 13}
 C4 = 261.63
@@ -277,26 +278,157 @@ PROBE3 = sum((note(300, n, 100, 1300) for n in (48, 60, 72)), [])
 
 @case("TYPE")
 def _type():
-    """TYPE (ALGORITHM, from any page): five different instruments. The closest two (STAGE 77 / SUITCASE) are 0.84 dB
-    apart in 1/3-octave timbre, VIBES 22+ dB from every Rhodes; each pair at least 0.4, VIBES at least 8"""
+    """TYPE (ALGORITHM, from any page): six different instruments. The closest two (STAGE 77 / SUITCASE) are 0.84 dB
+    apart in 1/3-octave timbre, VIBES 22+ dB from every Rhodes, MARIMBA 29.2 dB from VIBES and 17.8+ dB from every
+    Rhodes; each Rhodes pair at least 0.4, VIBES at least 8 from a Rhodes, MARIMBA at least 6 from VIBES and 8 from a
+    Rhodes (MARIMBA PLAN §9.5)"""
     ws = []
-    for t in range(5):
+    for t in range(6):
         w = R(CLEAN + detents(1, 1, t, 40) + ["100 dump"] + PROBE3, 1800)
-        assert w.state(100)["p.0"] == str(t) and w.state(100)["bars"] == str(int(t == 4))
+        assert w.state(100)["p.0"] == str(t) and w.state(100)["bars"] == str(int(t >= 4))
         ws.append(w.seg(0.3, 1.5))
     d = min(tdist(ws[a], ws[b]) for a in range(4) for b in range(a + 1, 4))
     v = min(tdist(ws[4], ws[b]) for b in range(4))
+    mv, mr = tdist(ws[5], ws[4]), min(tdist(ws[5], ws[b]) for b in range(4))
     assert v >= 8.0, f"VIBES only {v:.2f} dB from a Rhodes type"
-    return d, 0.4, f"closest pair {d:.2f} dB, VIBES {v:.1f} dB"
+    assert mv >= 6.0 and mr >= 8.0, f"MARIMBA {mv:.2f} dB from VIBES, {mr:.2f} dB from a Rhodes type"
+    return d, 0.4, f"closest pair {d:.2f} dB, VIBES {v:.1f} dB, MARIMBA {mv:.1f} dB from VIBES, {mr:.1f} from a Rhodes"
 
 
 @case("TYPE-CC80-79")
 def _type_cc():
-    """CC 80 bands of 32 pick the Rhodes types, CC 79 any value VIBES"""
-    w = R(CLEAN + [cc(30, 80, 70), "40 dump", cc(50, 79, 3), "60 dump", cc(70, 80, 127), "80 dump"], 100)
-    got = [w.state(t)["p.0"] for t in (40, 60, 80)]
-    assert got == ["2", "4", "3"], got
+    """CC 80 bands of 32 pick the Rhodes types, CC 79 0 VIBES (the first bar band starts at 0), CC 79 127 MARIMBA
+    (VIBES 0..95, MARIMBA 96..127: every value is test_bars_compat's)"""
+    w = R(CLEAN + [cc(30, 80, 70), "40 dump", cc(50, 79, 0), "60 dump", cc(70, 80, 127), "80 dump", cc(90, 79, 127),
+                   "100 dump", cc(110, 79, 64), "120 dump"], 140)
+    got = [w.state(t)["p.0"] for t in (40, 60, 80, 100, 120)]
+    assert got == ["2", "4", "3", "5", "4"], got
     return 1.0, 1.0, "ok"
+
+
+# ---- MARIMBA (TYPE 5): its cards through the panel (ALGORITHM to MARIMBA, SELECT to VOICE 1/2 or 2/2, the knob turned
+# from its default 64 to 0 / 127), the minimum each moves the sound by (the plan's own thresholds and the scan's are
+# tests/py/test_marimba_cards_audible.py / test_marimba_controls_audible.py; here: about half of today's movement)
+
+MC3, MC4 = 130.81, 261.63
+
+
+def mrmb(page, enc, d, probe, end, extra=(), pre=()):
+    """MARIMBA by five ALGORITHM detents from STAGE 77, SELECT to the page (1 = FRODHES, 2 = VOICE 1/2, 3 = VOICE 2/2),
+    knob enc turned d detents (0 = untouched), a dump at 90 ms (the card), then the probe"""
+    turns = [f"{60 + 3 * i} turn 0 1" for i in range(page)]
+    return R(CLEAN + list(pre) + detents(1, 1, 5, 40) + turns + ([f"80 turn {enc} {d}"] if d else []) + ["90 dump"]
+             + list(extra) + probe, end)
+
+
+def mrmb_card(w, page, k):
+    st = w.state(90)
+    assert st["p.0"] == "5", st["p.0"]
+    return st["page"], st["vpage"], st[f"label{k}"], st[f"card{k}"]
+
+
+@case("MRMB-STRIKE")
+def _m_strike():
+    """STRIKE (VOICE 1/2 K1): the strike point, CENTRE to EDGE. C4 v100's 1/3-octave timbre in its first 0.3 s moves
+    52 dB from 0 to 127; at least 20"""
+    ws = [mrmb(2, 2, d, note(200, 60, 100, 1200), 1500) for d in (-64, 63)]
+    assert [mrmb_card(w, 2, 0) for w in ws] == [("VOICE", "1/2", "STRIKE", "CENTRE"), ("VOICE", "1/2", "STRIKE", "EDGE")], \
+        [mrmb_card(w, 2, 0) for w in ws]
+    x = tdist(ws[0].seg(0.2, 0.5), ws[1].seg(0.2, 0.5))
+    return x, 20.0, f"{x:.1f} dB"
+
+
+@case("MRMB-MALLET")
+def _m_mallet():
+    """MALLET (VOICE 1/2 K2): SOFT to RUBBER. C4 v100's attack (first 50 ms) above 2 kHz rises 65 dB; at least 25"""
+    ws = [mrmb(2, 3, d, note(200, 60, 100, 1200), 1500) for d in (-64, 63)]
+    assert [mrmb_card(w, 2, 1)[3] for w in ws] == ["SOFT", "RUBBER"], [mrmb_card(w, 2, 1) for w in ws]
+    h = [band_db(w.seg(0.2, 0.25), 2000, 16000) for w in ws]
+    return h[1] - h[0], 25.0, f"attack > 2 kHz {h[0]:.1f} -> {h[1]:.1f} dB"
+
+
+@case("MRMB-TUBE")
+def _m_tube():
+    """TUBE (VOICE 1/2 K3): the resonator. C3 v100 (0.2..1.2 s) is 9.6 dB louder at 64 than at 0; at least 4 (the plan's
+    +4 LU)"""
+    ws = [mrmb(2, 4, d, note(200, 48, 100, 1500), 1800) for d in (-64, 0)]
+    lv = [rms_db(w.seg(0.2, 1.2)) for w in ws]
+    return lv[1] - lv[0], 4.0, f"{lv[0]:.1f} -> {lv[1]:.1f} dB"
+
+
+@case("MRMB-WEIGHT")
+def _m_weight():
+    """WEIGHT (VOICE 1/2 K4): the mallet's mass. C4 v100 (0.2..0.6 s) is 12.7 dB louder at 127 than at
+    0; at least 5"""
+    ws = [mrmb(2, 5, d, note(200, 60, 100, 1200), 1500) for d in (-64, 63)]
+    lv = [rms_db(w.seg(0.2, 0.6)) for w in ws]
+    return lv[1] - lv[0], 5.0, f"{lv[0]:.1f} -> {lv[1]:.1f} dB"
+
+
+@case("MRMB-RING")
+def _m_ring():
+    """RING (VOICE 2/2 K1): how long a bar rings. A held C3 (pedal) takes x5.3 longer to fall 30 dB at 127 than at 0;
+    at least x2 (the plan's RING job)"""
+    ws = [mrmb(3, 2, d, note(200, 48, 100, 5000), 5500, extra=PEDAL) for d in (-64, 63)]
+    assert [mrmb_card(w, 3, 0)[2] for w in ws] == ["RING", "RING"]
+    t = [t_down(w.L, 0.25, 30) for w in ws]
+    return t[1] / t[0], 2.0, f"-30 dB in {t[0] * 1000:.0f} -> {t[1] * 1000:.0f} ms"
+
+
+@case("MRMB-MUTE")
+def _m_mute():
+    """MUTE (VOICE 2/2 K2; RELEASE's slot: a marimba has no damper, the hand stops the bar): after a C4's key-up the
+    note falls 30 dB in 419 ms at 0 (rings out) and 35 ms at 127 (x12); at least x3 (the plan's)"""
+    ws = [mrmb(3, 3, d, note(200, 60, 100, 300), 1500, extra=[cc(25, 104, 0)]) for d in (-64, 63)]
+    assert [mrmb_card(w, 3, 1)[2:] for w in ws] == [("MUTE", "0.0"), ("MUTE", "10.0")], [mrmb_card(w, 3, 1) for w in ws]
+    t = [t_down(w.L, 0.5, 30) for w in ws]
+    return t[0] / t[1], 3.0, f"-30 dB after the key-up {t[0] * 1000:.0f} -> {t[1] * 1000:.0f} ms"
+
+
+@case("MRMB-NOISE")
+def _m_noise():
+    """NOISE (VOICE 2/2 K3, default 48): the mallet's contact noise. C4 v100's first 50 ms above 1.5 kHz are 33 dB
+    louder at 127 (10.0) than at 0; at least 10"""
+    ws = [mrmb(3, 4, d, note(200, 60, 100, 1200), 1500) for d in (-64, 80)]
+    assert [mrmb_card(w, 3, 2)[3] for w in ws] == ["0.0", "10.0"], [mrmb_card(w, 3, 2) for w in ws]
+    assert [mrmb_card(w, 3, 2)[2] for w in ws] == ["NOISE", "NOISE"]
+    h = [band_db(w.seg(0.2, 0.25), 1500, 16000) + rms_db(w.seg(0.2, 0.25)) for w in ws]
+    return h[1] - h[0], 10.0, f"attack > 1.5 kHz {h[0]:.1f} -> {h[1]:.1f} dB"
+
+
+@case("MRMB-TUNE")
+def _m_tune():
+    """TUNE (VOICE 2/2 K4, panel only): -50 to +50 on the card moves C4 by 100 cents (test_marimba_controls_audible
+    checks +-1 cent); at least 80"""
+    f = [pitch(mrmb(3, 5, d, note(200, 60, 100, 1300), 1600, extra=PEDAL).seg(0.25, 1.2), MC4) for d in (-50, 50)]
+    return cents(f[1], f[0]), 80.0, f"-50 -> +50: {cents(f[1], f[0]):.1f} cents"
+
+
+@case("MRMB-HEAD")
+def _m_head():
+    """the FRODHES page on MARIMBA: K2 MALLET, K3 TUBE (ui.c ENG_HEAD) reach the sound as on VOICE 1/2: K3 from 64 to 0
+    takes C3 down 9.6 dB, K2 from 0 to 127 raises C4's attack above 2 kHz 65 dB; at least 4 each"""
+    a, b = (mrmb(1, 4, d, note(200, 48, 100, 1500), 1800) for d in (0, -64))
+    assert mrmb_card(a, 1, 2)[:3] == ("FRODHES", "", "TUBE") and mrmb_card(a, 1, 1)[2] == "MALLET"
+    tube = rms_db(a.seg(0.2, 1.2)) - rms_db(b.seg(0.2, 1.2))
+    m = [band_db(mrmb(1, 3, d, note(200, 60, 100, 1200), 1500).seg(0.2, 0.25), 2000, 16000) for d in (-64, 63)]
+    x = min(tube, m[1] - m[0])
+    return x, 4.0, f"TUBE 64 -> 0 -{tube:.1f} dB, MALLET 0 -> 127 attack > 2 kHz +{m[1] - m[0]:.1f} dB"
+
+
+@case("MRMB-MOTOR-CCS")
+def _m_motor():
+    """CC 47-51 (the VIBES motor: ON, DEPTH, SPEED, SHAPE, SYNC) on MARIMBA: accepted and stored, inaudible (no motor on
+    a marimba: the same samples as without them; no MOTOR page: test_marimba_controls_audible)"""
+    probe = note(200, 57, 100, 1500)
+    a = mrmb(0, 0, 0, probe, 2000)
+    b = mrmb(0, 0, 0, probe, 2000, pre=[cc(30, 47, 127), cc(31, 48, 127), cc(32, 49, 100), cc(33, 50, 127),
+                                        cc(34, 51, 127)])
+    assert np.array_equal(a.L, b.L) and np.array_equal(a.R, b.R), float(np.abs(a.L - b.L).max())
+    assert np.abs(a.seg(0.2, 0.6)).max() > 1000
+    st = b.state(90)                                    # stored: P_MOT_DEPTH, RATE, SHAPE, SYNC (ids 55..58)
+    assert [st[f"p.{i}"] for i in range(55, 59)] == ["127", "100", "127", "13"], [st[f"p.{i}"] for i in range(55, 59)]
+    return 1.0, 1.0, "inert"
 
 
 @case("KEY-VEL")
@@ -1288,15 +1420,15 @@ def _bypass():
 @case("BUTTONS")
 def _buttons():
     """the page buttons and their LEDs: HOME (PERFORM <-> main), EDIT (CHORD), ENV (PHASER), LFO (TREM/WAH), SEL
-    (DELAY; on ARPEGGIO: HOLD), SEQ (SEQUENCER, straight), ARP, GLO (TEMPO -> SETUP -> MIDI) (0.9.3)"""
+    (DELAY; on ARPEGGIO: HOLD), SEQ (SEQUENCER, straight), ARP, GLO (TEMPO -> SETUP -> MIDI -> DISPLAY) (0.9.4)"""
     seq = [("HOME", "FRODHES"), ("HOME", "PERFORM"), ("EDIT", "CHORD"), ("ENV", "PHASER"), ("LFO", "TREM/WAH"),
            ("SEL", "DELAY"), ("SEQ", "SEQUENCER"), ("ARP", "ARPEGGIO"), ("SEL", "ARPEGGIO"), ("GLO", "TEMPO"),
-           ("GLO", "SETUP"), ("GLO", "MIDI"), ("GLO", "TEMPO")]
+           ("GLO", "SETUP"), ("GLO", "MIDI"), ("GLO", "DISPLAY"), ("GLO", "TEMPO")]
     w = R(CLEAN + [f"{100 + 100 * i} btn {BTN[b]}" for i, (b, _) in enumerate(seq)]
           + [f"{150 + 100 * i} dump" for i in range(len(seq))], 100 + 100 * len(seq) + 100)
     got = [w.state(150 + 100 * i)["page"] for i in range(len(seq))]
     assert got == [p for _, p in seq], got
-    led = {"FRODHES": 8, "PERFORM": 8, "TEMPO": 7, "SETUP": 7, "MIDI": 7}
+    led = {"FRODHES": 8, "PERFORM": 8, "TEMPO": 7, "SETUP": 7, "MIDI": 7, "DISPLAY": 7}
     for i, (_, p) in enumerate(seq):
         if p in led:
             assert w.state(150 + 100 * i)[f"led.{led[p]}"] == "1", p
@@ -1330,7 +1462,7 @@ def _dev_ui():
 def _dev_eng():
     """developer CC 9 caps VIBES' upper modes (1 = none: the attack above 3 kHz drops 50+ dB); CC 116 replies on CC
     115-118 and 112-113"""
-    pv = [cc(10, 79, 64), cc(20, 81, 0), cc(21, 91, 0)]
+    pv = [cc(10, 79, 0), cc(20, 81, 0), cc(21, 91, 0)]
     probe = sum((note(300, n, 110, 1000) for n in (60, 72)), [])
     a = band_db(R(pv + probe, 1500).seg(0.3, 0.5), 3000, 16000)
     b = band_db(R(pv + [cc(30, 9, 1)] + probe, 1500).seg(0.3, 0.5), 3000, 16000)

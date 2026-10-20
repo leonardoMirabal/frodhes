@@ -126,5 +126,32 @@ def test_release_workflow_wiring():
     assert not [s for s in j["release"]["steps"] if "make test" in s.get("run", "") or "pytest" in s.get("run", "")]
     names = [s.get("name") for s in j["release"]["steps"]]
     assert names.index("publish") > names.index("build")
+    # the package twice: versioned, and under the stable name the docs link (releases/latest/download/frodhes.fwsc)
+    pub = " ".join(j["release"]["steps"][names.index("publish")]["run"].split())
+    assert 'cp "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc' in pub
+    assert 'gh release create "$GITHUB_REF_NAME" "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc \\ ' in pub
+    assert "--latest" in pub
     ci = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))["jobs"]
     assert ci["host"]["runs-on"] == "ubuntu-24.04-arm" and set(ci) >= {"host", "generators-macos"}   # ci_gate.sh's jobs
+
+
+def test_release_publish_step_uploads_both_names(tmp_path):
+    """release.yml's publish step, run with a fake gh: frodhes-X.Y.Z.fwsc and frodhes.fwsc (the same bytes) attached"""
+    yaml = __import__("pytest").importorskip("yaml")
+    steps = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "release.yml")))["jobs"]["release"]["steps"]
+    run = [s for s in steps if s.get("name") == "publish"][0]["run"]
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "gh").write_text('#!/bin/sh\nfor a in "$@"; do echo "$a"; done > "$GH_LOG"\n')
+    (tmp_path / "bin" / "gh").chmod(0o755)
+    (tmp_path / "build").mkdir()
+    (tmp_path / "build" / "frodhes-0.9.9.fwsc").write_bytes(b"package")
+    (tmp_path / "docs" / "releases").mkdir(parents=True)
+    (tmp_path / "docs" / "releases" / "v0.9.9.md").write_text("notes\n")
+    env = dict(os.environ, PATH=f"{tmp_path / 'bin'}:{os.environ['PATH']}", GITHUB_REF_NAME="v0.9.9",
+               GH_LOG=str(tmp_path / "gh.log"))
+    p = subprocess.run(["sh", "-e", "-c", run], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
+    assert p.returncode == 0, p.stderr
+    args = (tmp_path / "gh.log").read_text().splitlines()
+    assert args[:5] == ["release", "create", "v0.9.9", "build/frodhes-0.9.9.fwsc", "build/publish/frodhes.fwsc"]
+    assert "--latest" in args and args[args.index("--notes-file") + 1] == "docs/releases/v0.9.9.md"
+    assert (tmp_path / "build" / "publish" / "frodhes.fwsc").read_bytes() == b"package"

@@ -1,0 +1,73 @@
+# The state after every action on MARIMBA (TYPE 5, the bar engine's second type; state.txt's rules: the panel is what
+# the header names, the engines run what the panel says, the LEDs and cards agree). SAVE 9, LFO LED 5.
+# ---- F15 MARIMBA by program change 14: the bar engine, its own card names (MUTE), MUTE 0 (rings out)
+100 midi 0xC0 14 0
+200 expect preset
+200 expect sound
+200 expect state header F15_MARIMBA
+200 expect state bars 1
+200 expect state card.2.0 MARIMBA
+200 expect state label.3.0 STRIKE
+200 expect state vlabel.1.0 RING
+200 expect state vlabel.1.1 MUTE
+200 expect state vcard.1.1 0.0
+200 expect state vlabel.1.3 TUNE
+200 expect led 5 0
+# a key plays it
+300 keys 0x80
+700 expect rms > -40
+800 keys 0
+# ---- the VOICE pages: two (no MOTOR page): HOME, SELECT x3 = VOICE 1/2, VOICE 2/2, COMPRESSOR
+1700 btn 8
+1750 turn 0 1
+1800 turn 0 1
+1850 expect state vpage 2/2
+1850 expect state hint HOW_BARS_RING;_MUTE_=_HAND
+1900 turn 0 1
+2000 expect state page COMPRESSOR
+# ---- MUTE from the panel: SELECT back to VOICE 2/2, K2 up 10 detents; the engine gets it
+2010 turn 0 -1
+2050 expect state vpage 2/2
+2100 turn 3 10
+2200 expect state vcard.1.1 0.8
+2200 expect sound
+# ---- save it to U01: the name has no MOT (no motor); program change 16 plays the stored copy
+2300 btn 9
+2400 btn 9
+2500 expect state header U01_MRMB
+2500 expect preset
+2600 midi 0xC0 0 0
+2700 expect state bars 0
+2800 midi 0xC0 16 0
+2900 expect preset
+2900 expect sound
+2900 expect state bars 1
+2900 expect state card.2.0 MARIMBA
+# ---- F16 MRMB SOFT by program change 15, then VIBES by CC 79 0 (the motor starts: a TYPE with a motor) and
+# MARIMBA by CC 79 127 (the motor setting stays, inaudible)
+3000 midi 0xC0 15 0
+3100 expect state header F16_MRMB_SOFT
+3100 expect preset
+3100 expect sound
+3200 midi 0xB0 79 0
+3300 expect state card.2.0 VIBES
+3300 expect state vcard.2.0 ON
+3300 expect sound
+3400 midi 0xB0 79 127
+3500 expect state card.2.0 MARIMBA
+3500 expect state bars 1
+3500 expect sound
+# ---- ALGORITHM: MARIMBA is the last TYPE (one more detent stays); down: VIBES
+3600 turn 1 1
+3700 expect state card.2.0 MARIMBA
+3800 turn 1 -1
+3900 expect state card.2.0 VIBES
+3900 expect sound
+4000 turn 1 1
+4100 expect state card.2.0 MARIMBA
+4100 expect sound
+# the end: everything let go dies away
+8000 midi 0xB0 123 0
+9500 expect rms < -80
+9500 expect sound
+9600 end

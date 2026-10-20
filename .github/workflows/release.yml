@@ -1,6 +1,7 @@
 name: release
-# A version tag (v0.9.1, v0.9.2 ...) builds the firmware and publishes the GitHub release with the .fwsc attached.
-# The notes are docs/releases/<tag>.md. Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
+# A version tag (v0.9.1, v0.9.2 ...) builds the firmware and publishes the GitHub release with the .fwsc attached
+# (as frodhes-X.Y.Z.fwsc and frodhes.fwsc). The notes are docs/releases/<tag>.md (tools/release.py assembles them).
+# Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
 on:
   push:
     tags: ['v*']
@@ -33,7 +34,7 @@ jobs:
         with:
           python-version: '3.14'
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
-      - run: python -m pytest -q -rs tests/py/test_gen_bars.py
+      - run: python -m pytest -q -rs tests/py/test_gen_bars.py tests/py/test_marimba_calib.py
       - run: '! python -m pytest -q -rs tests/py/test_gen_bars.py -k deterministic | grep -q SKIPPED'
   host:                              # fallback only: every host test (ci.yml's host job, on the same arm64 runner)
     needs: ci-gate
@@ -73,4 +74,9 @@ jobs:
           V="${GITHUB_REF_NAME#v}"
           NOTES="docs/releases/${GITHUB_REF_NAME}.md"
           [ -f "$NOTES" ] || { echo "Frodhes $V" > /tmp/notes.md; NOTES=/tmp/notes.md; }
-          gh release create "$GITHUB_REF_NAME" "build/frodhes-$V.fwsc" --title "Frodhes $V" --notes-file "$NOTES" --latest
+          # the same file twice: frodhes-X.Y.Z.fwsc, and frodhes.fwsc, the stable name README / MANUAL link as
+          # releases/latest/download/frodhes.fwsc (the docs never name a version)
+          mkdir -p build/publish
+          cp "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc
+          gh release create "$GITHUB_REF_NAME" "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc \
+            --title "Frodhes $V" --notes-file "$NOTES" --latest

@@ -2,7 +2,7 @@
 # FR_VOICES=8 build only (make testv V=8): tests/scripts/vibes_steal_release.txt with eight voices.
 # Eight notes held fill the voices; a ninth is struck and let go at once (one audio block): it steals the oldest
 # voice; when every key is let go, no voice is still held (found by test_fuzz: 8 voices held for 6 notes).
-50 midi 0xB0 79 64
+50 midi 0xB0 79 0
 51 midi 0xB0 47 0
 100 midi 0x90 53 100
 100 midi 0x90 57 100

@@ -21,7 +21,7 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 BIN = os.path.join(ROOT, "build", "host", "frodhes")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 FS = 44100
-VIBES = "60 midi 0xB0 79 64\n60 midi 0xB0 47 0\n"   # CC 79: the bar types (VIBES); the motor (on with it) off
+VIBES = "60 midi 0xB0 79 0\n60 midi 0xB0 47 0\n"   # CC 79: the bar types (VIBES); the motor (on with it) off
 RAW = "50 midi 0xB0 119 127\n"
 F3B = [53, 55, 57, 59, 60, 62, 64, 65]
 F3B9 = F3B + [67]                             # every voice (rhodes.c FR_VOICES 9)
@@ -247,7 +247,7 @@ def test_no_trim_in_the_hil_cpu_worst(case):
     nv = fr_voices()
     bass = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48][:nv]
     chord = [48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83][:nv]
-    s = "50 midi 0xB0 79 64\n" + "".join(f"55 midi 0xB0 {c} {v}\n" for c, v in HIL_HEAVY)
+    s = "50 midi 0xB0 79 0\n" + "".join(f"55 midi 0xB0 {c} {v}\n" for c, v in HIL_HEAVY)
     s += "60 midi 0xB0 47 127\n60 midi 0xB0 17 64\n399 midi 0xB0 116 127\n"
     if case == "repeated":
         for i in range(12):
@@ -280,9 +280,9 @@ def test_idle_is_digital_zero():
 
 def test_type_swap_no_click_no_stuck_notes():
     s = RAW + "60 midi 0xB0 64 127\n" + "".join(f"100 midi 0x90 {n} 110\n" for n in (36, 48, 55, 64))
-    s += "700 midi 0xB0 79 64\n720 midi 0x90 60 110\n720 midi 0x90 67 110\n"
+    s += "700 midi 0xB0 79 0\n720 midi 0x90 60 110\n720 midi 0x90 67 110\n"
     s += "1300 midi 0xB0 80 0\n1320 midi 0x90 57 110\n"
-    s += "1900 midi 0xB0 79 64\n1903 midi 0xB0 80 40\n1906 midi 0xB0 79 64\n1950 midi 0x90 72 110\n"
+    s += "1900 midi 0xB0 79 0\n1903 midi 0xB0 80 40\n1906 midi 0xB0 79 0\n1950 midi 0x90 72 110\n"
     s += "".join(f"2500 midi 0x80 {n} 0\n" for n in (36, 48, 55, 64, 60, 67, 57, 72)) + "2550 midi 0xB0 64 0\n4500 end\n"
     x, log = render("swap", s)
     m = x[:, 0]

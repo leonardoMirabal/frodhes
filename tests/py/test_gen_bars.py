@@ -24,31 +24,92 @@ SPEC = json.load(open(os.path.join(ROOT, "docs", "model", "data", "bars_spec.jso
 D = {d["midi"]: d for d in SPEC["design"]}
 K = {k["midi"]: k for k in SPEC["keys"]}
 FS = 44100.0
+# the VIBES-only header (tools/gen_bars.py --vibes-only, BAR_NTYPE 1): the 0.9.3 tables, byte for byte (Gate V, MARIMBA
+# PLAN §8.1 item 1). Never changes: VIBES's tables are frozen.
+VIBES_ONLY_SHA = "8d2ee43dcc41a608384c77a5226beafe616854a892b964b93048ad144229349e"
+
+
+def defines(txt):
+    return {k: int(v) for k, v in re.findall(r"#define (\w+) (-?\d+)\b", txt)}
+
+
+NT = defines(HDR)["BAR_NTYPE"]                   # 1: the VIBES-only form; 2..: one row per bar TYPE (§8.2)
+
+
+def arrays(txt):
+    """every 'static const T NAME[...] = {...};' of a header as nested int lists"""
+    out = {}
+    for name, body in re.findall(r"static const \w+ (\w+)\[[^=]*= \{(.*?)\};", txt, re.S):
+        body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+        j = re.sub(r",\s*\]", "]", ("{" + body + "}").replace("{", "[").replace("}", "]"))
+        out[name] = json.loads(j)
+    return out
 
 
 def arr(name):
-    m = re.search(r"\b%s\b[^=]*= \{(.*?)\};\n" % re.escape(name), HDR, re.S)
+    m = re.search(r"static const \w+ %s\b[^=]*= \{(.*?)\};" % re.escape(name), HDR, re.S)   # (not a comment)
     return [int(x) for x in re.findall(r"-?\d+", m.group(1))]
 
 
+PER_TYPE = ("BAR_KEYS", "BAR_PRATE", "BAR_PAMP", "KN_FAM", "KN_MASS", "KN_MASSI", "KN_TUBE", "KN_NZ", "BAR_BODY", "BAR_TYPE")
+BANDED = ("BAR_PULSE", "BAR_POS", "BAR_POSG", "BAR_TUBEG")
+
+
+def check_vibes_rows(multi, single):
+    """MARIMBA PLAN §8.1 item 1: type 0 of the multi-type header is the VIBES-only header, field by field: BAR_KEYS[0],
+    BAR_PRATE[0], BAR_PAMP[0], KN_FAM / KN_MASS / KN_MASSI / KN_TUBE / KN_NZ [0], BAR_BODY[0], BAR_TYPE[0] (its first
+    seven fields; flags = motor + damper), bands 0..16 of BAR_PULSE / BAR_POS / BAR_POSG / BAR_TUBEG (BAR_PBAND the
+    identity there), NZ_BQ, BAR_MOT_COS and every define but the counts; every type's KN_FAM at the MALLET detents.
+    A stub type (a copy of VIBES, §8.1 item 4) equals type 0 in every per-type row. Returns the parsed multi-type
+    header."""
+    A, S = arrays(multi), arrays(single)
+    dA, dS = defines(multi), defines(single)
+    assert set(A) - {"BAR_RINGG"} == set(S) | {"BAR_PBAND"}       # (BAR_RINGG: a later type's keys with flag bit4)
+    assert {k: v for k, v in dA.items() if k not in ("BAR_NTYPE", "BAR_NBAND", "BAR_NPULSE", "BAR_RINGG_ROWS")} == \
+        {k: v for k, v in dS.items() if k not in ("BAR_NTYPE", "BAR_NBAND")}
+    assert dS["BAR_NTYPE"] == 1 and dA["BAR_NTYPE"] >= 2
+    for n in PER_TYPE:
+        assert len(A[n]) == dA["BAR_NTYPE"], n
+    for n in ("BAR_KEYS", "BAR_PRATE", "BAR_PAMP", "KN_FAM", "KN_MASS", "KN_MASSI", "KN_TUBE", "KN_NZ"):
+        assert A[n][0] == S[n], n
+    for row in A["KN_FAM"]:                               # the detents shared (the card's family names, BAR_FAM_V)
+        assert [row[v] for v in (0, 42, 64, 85, 127)] == [S["KN_FAM"][v] for v in (0, 42, 64, 85, 127)]
+    assert A["BAR_BODY"][0] == S["BAR_BODY"][0]
+    assert A["BAR_TYPE"][0][:7] == S["BAR_TYPE"][0] and A["BAR_TYPE"][0][7] == 3 and len(A["BAR_TYPE"][0]) == 9
+    nb = dS["BAR_NBAND"]
+    for n in BANDED:
+        assert A[n][:nb] == S[n], n
+    assert len(A["BAR_PULSE"]) == dA["BAR_NPULSE"] and len(A["BAR_POS"]) == dA["BAR_NBAND"] == len(A["BAR_PBAND"])
+    assert A["BAR_PBAND"][:nb] == list(range(nb)) and max(A["BAR_PBAND"]) < dA["BAR_NPULSE"]
+    for n in ("NZ_BQ", "BAR_MOT_COS"):
+        assert A[n] == S[n], n
+    if "STUB" in multi.split("*/", 3)[2]:                 # the header's type list names the stub
+        for n in PER_TYPE:
+            assert A[n][1] == A[n][0], n
+    return A
+
+
 def test_defines_match_the_contract():
-    want = dict(BAR_GEN_VERSION=1, BAR_KEY_LO=21, BAR_NKEY=88, BAR_NM=8, BAR_NFAM=5, BAR_NBAND=17, BAR_NLAYER=8,
-                BAR_PLEN=64, BAR_NPOS=17, BAR_NTYPE=1, BAR_FADE_STEP=128)
+    want = dict(BAR_GEN_VERSION=1, BAR_KEY_LO=21, BAR_NKEY=88, BAR_NM=8, BAR_NFAM=5, BAR_NLAYER=8,
+                BAR_PLEN=64, BAR_NPOS=17, BAR_FADE_STEP=128)
+    d = defines(HDR)
     for k, v in want.items():
-        assert re.search(r"#define %s %d\b" % (k, v), HDR), k
-    assert "typedef" not in HDR                   # the structs live in bars.c
+        assert d[k] == v, k
+    assert d["BAR_NBAND"] >= 17 and d.get("BAR_NPULSE", 17) >= 17
+    assert "typedef" not in HDR                   # the structs live in bars.h
 
 
 def test_array_sizes():
-    assert len(arr("BAR_PULSE")) == 17 * 5 * 8 * 66
-    assert len(arr("BAR_PRATE")) == 88 * 5 * 10
-    assert len(arr("BAR_PAMP")) == 88 * 5 * 10
-    assert len(arr("BAR_POS")) == 17 * 17 * 8
+    d = defines(HDR)
+    assert len(arr("BAR_PULSE")) == d.get("BAR_NPULSE", 17) * 5 * 8 * 66
+    assert len(arr("BAR_PRATE")) == NT * 88 * 5 * 10
+    assert len(arr("BAR_PAMP")) == NT * 88 * 5 * 10
+    assert len(arr("BAR_POS")) == d["BAR_NBAND"] * 17 * 8
     for n in ("KN_FAM", "KN_MASS", "KN_MASSI", "KN_TUBE", "KN_NZ"):
-        assert len(arr(n)) == 128, n
+        assert len(arr(n)) == 128 * NT, n
     assert len(arr("BAR_MOT_COS")) == 257 and len(arr("NZ_BQ")) == 10
-    keys = re.search(r"BAR_KEYS\[BAR_NKEY\] = \{(.*?)\n\};", HDR, re.S).group(1)
-    assert len(re.findall(r"-?\d+", keys)) == 88 * (8 * 7 + 8)
+    keys = re.search(r"BAR_KEYS\[[^=]*= \{(.*?)\n\};", HDR, re.S).group(1)
+    assert len(re.findall(r"-?\d+", keys)) == NT * 88 * (8 * 7 + 8)
 
 
 def test_sha256_footer():
@@ -68,10 +129,32 @@ def test_rom_window_and_int32():
 def test_deterministic_and_up_to_date(tmp_path):
     """A fresh run (into a temporary directory) gives the committed header byte for byte, on any machine (the pair
     stage pinned, docs/model/data/bars_pins.json; the rest machine-independent). bars_spec.json's report floats may
-    move by ~1e-14 relative off the recording machine (libm / FFT last bits), never a header word."""
-    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "gen_bars.py"), "--out", str(tmp_path)], check=True,
-                   capture_output=True, cwd=ROOT)
-    assert open(tmp_path / "bars_tables.h").read() == HDR
+    move by ~1e-14 relative off the recording machine (libm / FFT last bits), never a header word. One run writes both
+    forms (--both): the VIBES-only header is the 0.9.3 file (VIBES_ONLY_SHA), every VIBES row of the multi-type
+    header equals it field by field (check_vibes_rows), and the committed header is whichever form it is (the
+    VIBES-only one until bars.c reads the per-type rows)."""
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "gen_bars.py"), "--both", "--out", str(tmp_path)],
+                   check=True, capture_output=True, cwd=ROOT)
+    single = open(tmp_path / "bars_tables_vibes.h").read()
+    multi = open(tmp_path / "bars_tables.h").read()
+    assert hashlib.sha256(single.encode()).hexdigest() == VIBES_ONLY_SHA
+    check_vibes_rows(multi, single)
+    assert HDR == (single if NT == 1 else multi)
+
+
+def test_vibes_rows_checker_catches_a_change():
+    """check_vibes_rows fails on a changed VIBES word (a guard against a vacuous parser): the committed multi-type
+    header against itself cut down to its type 0 (the parser's own VIBES-only form) passes, and fails with one VIBES
+    BAR_PAMP word moved"""
+    if NT == 1:
+        pytest.skip("the committed header is the VIBES-only form")
+    a = arrays(HDR)
+    assert len(a["BAR_KEYS"]) == NT and len(a["BAR_KEYS"][0]) == 88 and a["BAR_TYPE"][0][:7] == [0, 6554, 32767, 0, 0, 9, 48]
+    k = HDR.index("static const uint16_t BAR_PAMP")
+    m = re.search(r"\{\{(\d+),", HDR[k:])
+    bad = HDR[:k + m.start(1)] + str(int(m.group(1)) + 1) + HDR[k + m.end(1):]
+    single = arrays(HDR)
+    assert arrays(bad)["BAR_PAMP"][0] != single["BAR_PAMP"][0]
 
 
 PINS = gb.load_pins()

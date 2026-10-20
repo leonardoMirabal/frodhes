@@ -17,7 +17,8 @@ The checks (numbers from PLAN §9.2):
   S1  clicks: hil_scan's second-difference detector = 0, and HP bursts = 0: 1 ms windows whose energy above 8 kHz is
       > -40 dB re the window, > 10 dB over the HF energy 3 ms either side (a transient, not a high partial) and
       above -90 dBFS (not the last bit's rounding),
-      outside 3 ms before / 17 ms after any event (one block of latency + the 8 ms damper noise)
+      outside 9 ms before / 17 ms after any event (3 ms + one block before: a block sounds from its start, so an
+      event 0..5.8 ms early; after: one block of latency + the 8 ms damper noise)
   S2  clipping: output samples >= 32700 = 0; the host's "sat28 hits" = 0 (when the build prints it); the polyphony
       cases (8..16 voices at once) judge the clipping through the master (their "fx" copy: the limiter), RAW only sat28
   S3  linearity: a 3-note chord vs the sum of its notes alone (RAW, NOISE 0): residual <= -60 dB; no spectral line
@@ -294,10 +295,28 @@ def matrix(typ, full, smoke=False):
         for k in range(32):
             ev += [(150 + G10 * k, f"midi 0xB0 {bm.CC[card]} {min(127, k * 4 + (k == 31) * 3)}")] + bm.note(200 + G10 * k, 69, 100, 300)
         C.append(Case(f"steps {card}", "steps", ev, 200 + G10 * 32 + 500, ["S1", "S10"], card=card, gap=G10))
+    if short_type():
+        # MARIMBA: MALLET's family knees on the keys where the family ceiling turns HARD / RUBBER down most (G3 C4 E4:
+        # up to 12 dB under DEFAULT, the steepest 4-raw steps of the linear map, 1.5..1.7 dB; A4 above is the
+        # general case)
+        for n in (55, 60, 64):
+            ev = S(noise=0)
+            for k in range(32):
+                ev += [(150 + G10 * k, f"midi 0xB0 {bm.CC['BARK']} {min(127, k * 4 + (k == 31) * 3)}")] + bm.note(200 + G10 * k, n, 100, 300)
+            C.append(Case(f"steps BARK {n}", "steps", ev, 200 + G10 * 32 + 500, ["S1", "S10"], card="BARK", gap=G10))
     return C
 
 
 # ---------------------------------------------------------------- the checks (§9.2)
+def onset_ms(t_ms):
+    """where a strike scripted at t_ms starts sounding: the start of the block that holds it. tests/host.c renders 256
+    frames whenever a block's worth of ms is owed and the main loop reads the MIDI after it, so the note's block is
+    the next one and begins at floor(t FS / 256000) x 256 frames: 0..5.8 ms BEFORE t_ms (measured, MARIMBA steps BARK:
+    0.05..4.7 ms). A strike window from t_ms missed that much of the attack: on a short note (MARIMBA C7, T60 0.11 s)
+    the 0..300 ms level of the same strike then swung up to 2.8 dB with the block phase (S10's alternating steps)"""
+    return (int(t_ms * bm.FS) // 256000) * 256 * 1000.0 / bm.FS + 1e-6     # (+ 1e-6: seg()'s int() lands on the frame)
+
+
 def seg(x, t_ms, dur_ms):
     a = int(t_ms * bm.FS / 1000)
     return x[a:a + int(dur_ms * bm.FS / 1000)]
@@ -307,8 +326,16 @@ def strike_starts(case):
     return sorted(t for t, s in case.events if s.startswith("midi 0x90"))
 
 
+# the guard before an event: 3 ms + one block (5.8 ms). The host (tests/host.c platform_poll), as the FM-1's ISR, renders
+# the block that holds an event from that block's start, so a note sounds 0..5.8 ms BEFORE its script time (measured:
+# MARIMBA steps BARK onsets 0.05..4.7 ms early); with 3 ms only, a hard mallet's own attack (RUBBER: a 0.2 ms contact,
+# its first ms 10 dB over the HF 3 ms later) read as a "burst" whenever its block began over 3 ms early. As
+# bar_measure.hp_bursts already guards (+ 6 ms)
+PRE_MS = 9
+
+
 def click_count(x, events, guard_ms=17):
-    """S1 (a) + (b): clicks outside the event guards, transient HF bursts"""
+    """S1 (a) + (b): clicks outside the event guards (PRE_MS before, guard_ms after), transient HF bursts"""
     m = bm.mono(x)
     d2 = np.abs(np.diff(m, 2))
     lvl = np.convolve(np.abs(m), np.ones(441) / 441, "same")[1:-1] + 50
@@ -316,7 +343,7 @@ def click_count(x, events, guard_ms=17):
     ok = np.ones(len(m), bool)
     for t in events:
         i = int(t * bm.FS / 1000)
-        ok[max(0, i - int(3 * bm.FS / 1000)):i + int(guard_ms * bm.FS / 1000)] = False
+        ok[max(0, i - int(PRE_MS * bm.FS / 1000)):i + int(guard_ms * bm.FS / 1000)] = False
     a = int(sum(ok[h] for h in hit))
     from scipy.signal import butter, sosfilt
     hp = sosfilt(butter(4, 8000, "hp", fs=bm.FS, output="sos"), m)
@@ -328,10 +355,78 @@ def click_count(x, events, guard_ms=17):
     nb = np.maximum(np.concatenate([eh[:3], eh[:-3]]), np.concatenate([eh[3:], eh[-3:]]))   # the HF 3 ms either side
     g = np.ones(n, bool)
     for t in events:
-        g[max(0, int(t) - 3):int(t) + guard_ms] = False
+        # the windows are w = 44 samples (0.998 ms), so an event's window is its sample // w, not its ms: int(t) drifted
+        # 2.3 ms a second early (82 ms at 36 s), leaving a strike's own onset unguarded late in a long render (steps
+        # BARK, MARIMBA HARD / RUBBER at 36..47 s: every "burst" was a strike's onset, within 1 ms)
+        i = int(t * bm.FS / 1000) // w
+        g[max(0, i - PRE_MS):i + guard_ms] = False
     loud = (ea > (32767 * 1e-4) ** 2) & (eh > (32767 * 10 ** (-90 / 20)) ** 2)   # above -80 dBFS, HF above -90
     b = int((g & loud & (share > -40) & (eh > 10 * nb)).sum())
     return a, b
+
+
+DESIGN = {}                                         # the spec's design rows by key (main)
+
+
+def note_window(sk, design=None):
+    """S3 / S7's window after the strike: 0.2..2 s (VIBES: every V1 rings 2.4 s or more), on a note whose V1 (with its
+    tube: the design's t60_v1) rings under 2 s (MARIMBA: 0.04..1.6 s) 0.05 s .. 0.05 s + its T60: the 60 dB it falls
+    there. Past it the window reads the last LSBs of a dying sine, whose int16 rounding makes lines at its odd
+    harmonics (A4 v100: -25 dB re V1 at 11 f0 over 0.2..2 s)"""
+    t = (design or {}).get("t60_v1") or sk["modes"][0].get("t60") or 9.0
+    return (0.2, 2.0) if t >= 2.0 else (0.05, 0.05 + t)
+
+
+def short_type():
+    """a type of short notes: its design's C4 V1 (with the tube) rings under 2 s (MARIMBA 0.88 s; VIBES 6 s)"""
+    t = (DESIGN.get(60) or {}).get("t60_v1")
+    return bool(t) and t < 2.0
+
+
+def s8_window(n):
+    """S8's body window for the peak / RMS: 50..300 ms (VIBES, every key as before), and on a type of short notes
+    (short_type: MARIMBA, the design's t60_v1 2.3 .. 0.04 s over 21..108) T60 / 32 .. 3 T60 / 16 of the key's own V1,
+    the same share of its decay on every key (= 50..300 ms at C2's 1.6 s). A fixed 50..300 ms read how far a short note
+    had decayed, not its attack: peak / RMS rose with the key 4 -> 98 dB (C8, T60 39 ms: gone by 50 ms), and the
+    fastest-changing keys at the top (102 / 105 / 108) stood 3 dB over their neighbours' median by the decay alone"""
+    t = (DESIGN.get(n) or {}).get("t60_v1")
+    return (t / 32, 3 * t / 16) if t and short_type() else (0.05, 0.3)
+
+
+_GOLD = {}
+
+
+def golden_ref(n):
+    """the golden model (tools/bars_model.py, the scan's spec) for the floor case's note: v100, default cards, sleep as
+    the C, rounded to int16 as the host's output: what a linear modal render reads on a short note's S3 / S7 window
+    (its partials' skirts and the rounding of their last LSBs), the reference for notes under 2 s"""
+    if n not in _GOLD:
+        import bars_model as gm
+        g = np.round(gm.render_batch(SPEC_FULL[0], [n], [100], 2.3)[0])
+        _GOLD[n] = np.stack([g, g], 1)
+    return _GOLD[n]
+
+
+SPEC_FULL = [None]                                  # the scan's spec file, whole (main)
+
+
+def s7_floor(x, parts, w0, w1):
+    """S7 (single note): the between-partial floor, 64-bin smoothed, re the strongest line, w0..w1 s after the strike"""
+    from scipy.signal import find_peaks
+    from scipy.signal.windows import blackmanharris
+    from scipy.ndimage import uniform_filter1d
+    s_ = bm.mono(x)
+    st = int(np.argmax(np.abs(s_) > 0))
+    s_ = s_[st + int(w0 * bm.FS):st + int(w1 * bm.FS)]
+    sp = 20 * np.log10(np.abs(np.fft.rfft(s_ * blackmanharris(len(s_)))) + 1e-9)
+    fr = np.fft.rfftfreq(len(s_), 1 / bm.FS)
+    pk = sp.max()
+    idx, _ = find_peaks(sp, height=pk - 60, distance=20)        # every line within 60 dB: a partial, kept
+    keep = np.ones(len(sp), bool)
+    for f in parts + list(fr[idx]):                            # the band, widened by the smoothing's half
+        keep &= ~((fr > f * 0.97 - 32 * fr[1]) & (fr < f * 1.03 + 32 * fr[1]))   # width (64 bins)
+    keep &= (fr > 30) & (fr < 16000)
+    return float(uniform_filter1d(sp, 64)[keep].max() - pk) if keep.any() else -240
 
 
 def s3_lines(x, sk, t0=0.2, t1=2.0):
@@ -429,11 +524,12 @@ def run_checks(case, spec, typ, all_cases):
             keys, gap = case.meta["keys"], case.meta["gap"]
             pr = []
             for i, n in enumerate(keys):
-                s_ = bm.mono(seg(x, 200 + i * gap, gap))
+                s_ = bm.mono(seg(x, onset_ms(200 + i * gap), gap))
                 st = int(np.argmax(np.abs(s_) > 0))
                 s_ = s_[st:]
-                pk = np.abs(s_[:int(0.3 * bm.FS)]).max() if len(s_) else 0
-                rms = np.sqrt(np.mean(s_[int(0.05 * bm.FS):int(0.3 * bm.FS)] ** 2)) + 1e-9
+                w0, w1 = s8_window(n)
+                pk = np.abs(s_[:int(max(0.3, w1) * bm.FS)]).max() if len(s_) else 0
+                rms = np.sqrt(np.mean(s_[int(w0 * bm.FS):int(w1 * bm.FS)] ** 2)) + 1e-9
                 pr.append(20 * np.log10(pk / rms + 1e-12))
             pr = np.array(pr)
             med = np.array([np.median(np.delete(pr[max(0, i - 3):i + 4], min(i, 3))) for i in range(len(pr))])
@@ -444,7 +540,7 @@ def run_checks(case, spec, typ, all_cases):
                                                    f"neighbours: {bad or 'none'}")
         elif ck == "S9":
             keys, gap = case.meta["keys"], case.meta["gap"]
-            lv = np.array([bm.lufs(seg(x, 200 + i * gap, 1000)) for i in range(len(keys))])
+            lv = np.array([bm.lufs(seg(x, onset_ms(200 + i * gap), 1000)) for i in range(len(keys))])
             case.meta["lufs"] = lv.tolist()
             step = np.abs(np.diff(lv)) if len(lv) > 1 else np.zeros(1)
             med = np.array([np.median(lv[max(0, i - 3):i + 4]) for i in range(len(lv))])
@@ -455,14 +551,14 @@ def run_checks(case, spec, typ, all_cases):
             R["S9"] = (not bad, float(max(step.max(), dev.max())), f"LUFS {lv.min():.1f}..{lv.max():.1f}; largest "
                                                                    f"neighbour step {step.max():.2f}, deviation {dev.max():.2f}; out: {bad or 'none'}")
         elif ck == "S9v":
-            lv = [bm.lufs(seg(x, 200 + i * case.meta["gap"], 500)) for i in range(len(case.meta["vels"]))]
+            lv = [bm.lufs(seg(x, onset_ms(200 + i * case.meta["gap"]), 500)) for i in range(len(case.meta["vels"]))]
             drop = float(max(0.0, -np.diff(lv).min()))
             R["S9"] = (drop <= 0.5, drop, f"key {case.meta['key']}: LUFS v1..v127 {lv[0]:.1f}..{lv[-1]:.1f}, largest drop {drop:.2f} dB")
         elif ck == "S10":
             card, gap = case.meta["card"], case.meta["gap"]
             lv, ce = [], []
             for k in range(32):
-                s_ = seg(x, 200 + gap * k, 300)
+                s_ = seg(x, onset_ms(200 + gap * k), 300)
                 lv.append(bm.lufs(s_)); ce.append(bm.centroid(s_))
             dl = float(np.abs(np.diff(lv)).max())
             dc = float((np.abs(np.diff(ce)) / (np.array(ce[:-1]) + 1e-9)).max())
@@ -475,28 +571,27 @@ def run_checks(case, spec, typ, all_cases):
             if not spec or n not in spec:
                 R["S3"] = (None, None, "n/a: needs the spec's partials")
                 continue
-            r, f, bb = s3_lines(x, spec[n])
-            R["S3"] = (r <= -80, float(r), f"strongest line off the partials {r:.1f} dB re V1"
-                                          + (f" at {f:.0f} Hz" if f else "") + f" (broadband outside {bb:.1f} dB, the 16-bit floor)")
+            w0, w1 = note_window(spec[n], DESIGN.get(n))
+            r, f, bb = s3_lines(x, spec[n], w0, w1)
+            if (w0, w1) == (0.2, 2.0):
+                R["S3"] = (r <= -80, float(r), f"strongest line off the partials {r:.1f} dB re V1"
+                                              + (f" at {f:.0f} Hz" if f else "") + f" (broadband outside {bb:.1f} dB, the 16-bit floor)")
+            else:
+                g = s3_lines(golden_ref(n), spec[n], w0, w1)[0]
+                R["S3"] = (r <= max(-80.0, g + 3.0), float(r), f"strongest line off the partials {r:.1f} dB re V1"
+                           + (f" at {f:.0f} Hz" if f else "") + f", the golden model's int16 render {g:.1f} dB ({w0:.2f}.."
+                           f"{w1:.2f} s; <= -80 or within 3 dB of it)")
         elif ck == "S7f":
             n = case.meta["key"]
-            s_ = bm.mono(seg(x, 200, 2200))
-            st = int(np.argmax(np.abs(s_) > 0))
-            s_ = s_[st + int(0.2 * bm.FS):st + int(2.0 * bm.FS)]
-            from scipy.signal.windows import blackmanharris
-            sp = 20 * np.log10(np.abs(np.fft.rfft(s_ * blackmanharris(len(s_)))) + 1e-9)
-            fr = np.fft.rfftfreq(len(s_), 1 / bm.FS)
+            w0, w1 = note_window(spec[n], DESIGN.get(n)) if spec and n in spec else (0.2, 2.0)
             parts = [m["f"] for m in spec[n]["modes"] if m.get("f", 0) > 1] if spec and n in spec else []
-            pk = sp.max()
-            from scipy.signal import find_peaks
-            idx, _ = find_peaks(sp, height=pk - 60, distance=20)        # every line within 60 dB: a partial, kept
-            keep = np.ones(len(sp), bool)
-            for f in parts + list(fr[idx]):                            # the band, widened by the smoothing's half
-                keep &= ~((fr > f * 0.97 - 32 * fr[1]) & (fr < f * 1.03 + 32 * fr[1]))   # width (64 bins)
-            keep &= (fr > 30) & (fr < 16000)
-            from scipy.ndimage import uniform_filter1d
-            floor = float(uniform_filter1d(sp, 64)[keep].max() - pk) if keep.any() else -240
-            R["S7"] = (floor <= -80, floor, f"between-partial floor {floor:.1f} dB re the strongest line")
+            floor = s7_floor(seg(x, 200, 2200), parts, w0, w1)
+            if (w0, w1) == (0.2, 2.0):
+                R["S7"] = (floor <= -80, floor, f"between-partial floor {floor:.1f} dB re the strongest line")
+            else:
+                g = s7_floor(golden_ref(n), parts, w0, w1)
+                R["S7"] = (floor <= max(-80.0, g + 3.0), floor, f"between-partial floor {floor:.1f} dB re the strongest "
+                           f"line, the golden model's int16 render {g:.1f} dB ({w0:.2f}..{w1:.2f} s; <= -80 or within 3 dB)")
         elif ck == "S7t":
             s_ = bm.mono(seg(x, 200 + 2000, 6000))
             sp = np.abs(np.fft.rfft(s_ * np.hanning(len(s_)) if len(s_) else np.zeros(16))) ** 2
@@ -511,6 +606,9 @@ def run_checks(case, spec, typ, all_cases):
                 f *= 2 ** (1 / 3)
             R["S7"] = (worst <= -96, worst, f"loudest 1/3-octave band 2..8 s after the strike {worst:.1f} dBFS")
         elif ck == "S7m":
+            if not bm.type_has_motor(typ):
+                R["S7"] = (None, None, "n/a: no motor on this type (CC 47-51 inert: test_marimba_controls_audible)")
+                continue
             s_ = bm.mono(seg(x, 700, 2400))
             sp = 20 * np.log10(np.abs(np.fft.rfft(s_ * np.hanning(len(s_)))) + 1e-9)
             fr = np.fft.rfftfreq(len(s_), 1 / bm.FS)
@@ -574,17 +672,43 @@ def group_checks(cases, typ):
                                                                  f"key-up, {r:.1f} dB re the peak"))
     ct = [c for c in cases if c.group == "chordcmp"]
     if len(ct) == 2:
-        l = {c.meta["typ"]: bm.lufs(seg(c.x, 200, 1000)) for c in ct}
-        off = json.load(open(os.path.join(bm.ROOT, "docs", "model", "data", "vibes.json")))["calib"].get("st77_offset_db", 0.0)
+        l = {c.meta["typ"]: bm.lufs(seg(c.x, onset_ms(200), 1000)) for c in ct}
+        off = json.load(open(bm.data_for_type(typ) or os.path.join(bm.ROOT, "docs", "model", "data", "vibes.json"))
+                        )["calib"].get("st77_offset_db", 0.0)
         d = l[typ] - l[0]
         G.append(("S9", "type vs ST77 chord", abs(d - off) <= 1.0, float(d), f"A3-E4-A4 v100: {d:+.2f} LU re ST77 "
                                                                            f"(target {off:+.1f}, the user's offset)"))
     for card in bm.CARDS:
         cs = [c for c in cases if c.group == "card" and c.meta.get("card") == card]
         if cs:
-            lv = [np.mean([bm.lufs(seg(c.x, 200 + i * 1500, 300)) for i in range(3)]) for c in cs]
+            lv = [np.mean([bm.lufs(seg(c.x, onset_ms(200 + i * 1500), 300)) for i in range(3)]) for c in cs]
             span = max(lv) - min(lv)
             lim = S9_CARD_LU.get(card, 6.0)
+            if card == "DECAY" and short_type():
+                # RING on a type of short notes (MARIMBA: F3 / A4 / F6 ring 1.0 / 0.7 / 0.2 s): the 0..300 ms window
+                # holds most of the decay that is RING's job (RING 0 -> 64 +13 LU on F3, +7 on A4), where on VIBES
+                # (T60 >= 2.4 s) it is the attack alone. Judged instead: the strike's peak (0..300 ms from its true
+                # onset), the level a decay card must not move, <= 6 dB; the 0..300 ms LU reported. RING's own job
+                # (V1 T60 0 < 64 < 127, 127 / 0 >= 2x on C2 / C4 / C6) is tests/py/test_marimba_controls_audible.py
+                pk = [np.mean([20 * np.log10(np.abs(bm.mono(seg(c.x, onset_ms(200 + i * 1500), 300))).max() + 1e-9)
+                               for i in range(3)]) for c in cs]
+                ps = max(pk) - min(pk)
+                G.append(("S9", f"card {card}", ps <= 6.0, float(ps), f"{bm.BAR_NAME[card]} ({card}) 0..127 on a type "
+                          f"of short notes: the strike's peak moves {ps:.1f} dB (limit 6.0); the 0..300 ms level "
+                          f"{span:.1f} LU (the decay: RING's job, not judged)"))
+                continue
+            if card == "HAMMER" and short_type():
+                # WEIGHT with the type's own mass law (T7b): MARIMBA's level_comp 0 (VIBES 0.6) keeps the heavier
+                # mallet's full impulse (m v) by design (marimba.json T7b _doc_2026_10_19: the WEIGHT card must move
+                # the level >= 2.5 LU also where T7f caps the contact), so the most it can move V1 is
+                # (1 - level_comp) x 20 log10(m_hi / m_lo): 13.2 dB at 12 / 55 g. VIBES' 8 LU stands for its 0.6
+                t7b = json.load(open(bm.data_for_type(typ)))["T7b"]
+                import math
+                lim = round((1 - t7b["level_comp"]) * 20 * math.log10(t7b["m_g"][-1] / t7b["m_g"][0]), 1)
+                G.append(("S9", f"card {card}", 2.5 <= span <= lim, float(span), f"{bm.BAR_NAME[card]} ({card}) 0..127: "
+                          f"the 0..300 ms level moves {span:.1f} LU (the type's mass law: 2.5 .. {lim:.1f}, T7b level_comp "
+                          f"{t7b['level_comp']}, m_g {t7b['m_g'][0]:g} .. {t7b['m_g'][-1]:g} g)"))
+                continue
             G.append(("S9", f"card {card}", span <= lim, float(span), f"{bm.BAR_NAME[card]} ({card}) 0..127: the 0..300 ms "
                                                                        f"level moves {span:.1f} LU (limit {lim:.1f})"))
     s12c = [c for c in cases if c.group == "s12"]
@@ -633,12 +757,27 @@ def s6(typ, keys, spec, design=None):
     a.type, a.vel, a.dur, a.motor, a.rate, a.depth, a.sleep = typ, 100, 8200, False, 78, 127, False
     out = []
     fs.OUT = os.path.join(OUT, "s6")
+    D = {d["midi"]: d for d in (design or [])}
     for n in keys:
         if n not in spec:
             continue
-        r = fs.measure_key(n, a, spec, design)
+        pair = "regime" in D.get(n, {})            # MARIMBA: V1 and its tube, one coupled pair (strong below C4)
+        r = fs.measure_key(n, a, spec, design, keep_x=pair)
+        note = ""
+        if pair:
+            # the f0 band holds the pair's two normal modes (0.8 Hz apart at F3, strongly coupled): its decay is not one
+            # line, and the 40 dB fit of VIBES reads their beat (F3 1.25 s vs the design mode's 1.00). The plan's B1:
+            # V1 by the 30 dB fit (tools/marimba_va.t60_fit), host vs the golden model's output (Gate VA-M2's measure)
+            import bars_model as gm
+            import marimba_va as mva
+            f0 = D[n]["f0"]
+            th = mva.t60_fit(bm.mono(r.pop("x")), f0)
+            tg = mva.t60_fit(gm.render_batch(SPEC_FULL[0], [n], [100], a.dur / 1000 - 0.2, sleep=False)[0], f0)
+            v1 = r["modes"][0]
+            v1["t60"], v1["t60_spec"], v1["long"] = th, tg, False
+            note = f" (V1 by the 30 dB fit: {th:.3f} s, golden {tg:.3f} s)"
         bad = fs.judge(r, True)
-        out.append(("S6", f"key {n}", not bad, len(bad), "; ".join(bad) or "pitch and T60 within tolerance"))
+        out.append(("S6", f"key {n}", not bad, len(bad), ("; ".join(bad) or "pitch and T60 within tolerance") + note))
     return out
 
 
@@ -659,6 +798,9 @@ def main():
     os.makedirs(OUT)
     spath, bars = bm.spec_for_type(a.type)
     spec = bm.load_spec(a.spec or spath)
+    SPEC_FULL[0] = json.load(open(a.spec or spath)) if (a.spec or spath) and os.path.exists(a.spec or spath) else None
+    DESIGN.clear()
+    DESIGN.update({d["midi"]: d for d in bm.load_design(a.spec or spath)})
     cases = matrix(a.type, a.full, a.smoke)
     only = set(a.checks.split(",")) if a.checks else None
     from concurrent.futures import ThreadPoolExecutor

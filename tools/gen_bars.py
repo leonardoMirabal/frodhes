@@ -6,6 +6,14 @@
                                                   (or both into DIR)
     tools/gen_bars.py --repin [--out DIR]      the FE and the pair stage solved afresh and written to bars_fe_pins.json
                                                   and bars_pins.json (or into DIR): a deliberate, reviewed table change
+    tools/gen_bars.py --vibes-only             the one-type header (VIBES alone, BAR_NTYPE 1: the 0.9.3 format)
+    tools/gen_bars.py --both --out DIR         DIR/bars_tables.h (every type) + DIR/bars_tables_vibes.h (--vibes-only)
+    tools/gen_bars.py --marimba-offset-add DB --out DIR   an A/B header for listening (MARIMBA PLAN §12.5): MARIMBA's
+                                                  calib.st77_offset_db + DB, the ceiling / roll-off stages as always
+
+The default header holds every bar TYPE (MARIMBA PLAN §8.2: per-type BAR_KEYS / BAR_PRATE / BAR_PAMP / KN_FAM / KN_MASS /
+KN_MASSI / KN_TUBE / KN_NZ / BAR_BODY / BAR_TYPE, the band tables global with BAR_PBAND). Type 0 is VIBES and each of
+its rows equals the --vibes-only header's (tests/py/test_gen_bars.py, field by field).
 
 PINS (docs/model/data/bars_pins.json): the pair stage of every key (tube zeta_r, the solved BarTube, wt, the f0 peak,
 the pair words of bartube.pair_words and the stability grid) as recorded on the machine that made the approved
@@ -33,6 +41,7 @@ per-key gain (v100 RMS 50..300 ms = the Rhodes' -26 dBFS), a global v127 peak ca
 Output is deterministic (byte-identical every run). --strict fails on an ESTIMATE row without a settle entry
 (release builds). The FE profiles are pinned too (docs/model/data/bars_fe_pins.json, see FE_PINS_DOC).
 """
+import contextlib
 import hashlib
 import json
 import math
@@ -175,12 +184,79 @@ def interp_log(n, xs, ys):
     return float(math.exp(np.interp(n, xs, np.log(ys))))
 
 
+# ---------------------------------------------------------------- the type (MARIMBA PLAN §6: one header, several types)
+MARIMBA = os.path.join(ROOT, "docs", "model", "data", "marimba.json")
+MAR_PINS = os.path.join(ROOT, "docs", "model", "data", "marimba_pins.json")
+MAR_FE_PINS = os.path.join(ROOT, "docs", "model", "data", "marimba_fe_pins.json")
+FE_RANGE = (53, 89)                    # the geometric (FE) keys of the type being built (its "authentic" range)
+MOT_GRID = (0.15, 0.5, 1.0)            # the stability grid's motor gains (a type without a motor: 1.0 only)
+KC_FALLBACK, KC_FALLBACK_TOL = False, 0.01   # a later type: kc = 1 where the kc fit cannot act (pair_words_safe)
+
+
+def is_mar(vb):
+    """a wooden bar type (MARIMBA): the Rayleigh damping law (T2r), the derived tube (T4a), the regime-aware pair, the
+    hand mute (T3m); VIBES (vibes.json) keeps every one of its own code paths unchanged"""
+    return vb.get("type") == "MARIMBA"
+
+
+def repinning(vb):
+    """--repin solves VIBES's FE and pair stage afresh; --repin-marimba the marimba's (VIBES's pins never move with it)"""
+    return ("--repin-marimba" if is_mar(vb) else "--repin") in sys.argv
+
+
+def interp_pts(n, pts):
+    return float(np.interp(n, [p[0] for p in pts], [p[1] for p in pts]))
+
+
+def ray_sigma(vb, n, f):
+    """T2r: sigma = alpha m(n) / 2 + beta omega^2 / 2 (1/s), m the per-register multiplier on alpha"""
+    r = vb["T2r"]
+    w = 2 * math.pi * f
+    return r["alpha"] * interp_pts(n, r["alpha_reg"]) / 2 + r["beta"] * w * w / 2
+
+
+def ray_t60(vb, n, f):
+    return min(LN1000 / ray_sigma(vb, n, f), vb["cap"]["t60_max_s"])
+
+
+def t1b_mar(vb, n):
+    """T1b (MARIMBA): the targets (log T60, semitone interpolation) in the authentic range; outside, the end value x
+    the bare bar's trend (t1a(n) / t1a(end)); above C4 never longer than the bare bar (the weak regime shortens)"""
+    xs, ys = table(vb["T1b"]["t60_s"])
+    if xs[0] <= n <= xs[-1]:
+        t = interp_log(n, xs, ys)
+    else:
+        e = xs[0] if n < xs[0] else xs[-1]
+        t = (ys[0] if n < xs[0] else ys[-1]) * t1a(vb, n) / t1a(vb, e)
+    return min(t, t1a(vb, n)) if n >= 60 else t
+
+
+def zeta_r_mar(vb, n):
+    """T4a (MARIMBA): the tube's zeta_r derived from its inner diameter: visco-thermal alpha_vt sqrt(f) / a x c /
+    omega + radiation (k a)^2 / (2 pi), x fold_mult below fold_below_key, bounded"""
+    r = vb["T4a"]
+    f = midi_hz(n)
+    a = [d for k, d in r["id_mm"] if k <= max(n, r["id_mm"][0][0])][-1] * 0.5e-3
+    w, c = 2 * math.pi * f, r["c_m_s"]
+    z = r["alpha_vt"] * math.sqrt(f) / a * c / w + (w / c * a) ** 2 / (2 * math.pi)
+    if n < r["fold_below_key"]:
+        z *= r["fold_mult"]
+    return min(max(z, r["floor_pct"] / 100), r["hi_pct"] / 100)
+
+
+def tube_top(vb):
+    """KN_TUBE[127] of the type as a tube size (VIBES 1.45: exactly KN_TUBE_TOP)"""
+    return kn_tube(vb["type_rec"].get("kn_tube_top", 1.45))[127] / 32768.0
+
+
 # ---------------------------------------------------------------- decays (T1a, T1b, T2, T3, cap)
 def cap(vb, f):
     return vb["cap"]["t60_hz_s"] / f
 
 
 def t1a(vb, n):
+    if is_mar(vb):
+        return ray_t60(vb, n, midi_hz(n))
     r = vb["T1a"]
     f = midi_hz(n)
     return min(r["a_s"] * (r["f_ref"] / f) ** r["exp"], cap(vb, f), r["max_s"])
@@ -206,6 +282,8 @@ def t1b_raw(vb, n):
 
 def t1b(vb, n):
     """The V1-with-tube target: never longer than the free bar (coordinator decision 6, keys above ~98)."""
+    if is_mar(vb):
+        return t1b_mar(vb, n)
     return min(t1b_raw(vb, n), t1a(vb, n))
 
 
@@ -216,7 +294,9 @@ def peaks_smoothed(vb):
 
 def upper_t60(vb, n, mode, ratio):
     """T2: held T60 of V2/V3/V4 at key n: the measured table (log-interpolated), past its ends the law
-    T60_1,free (f1/fn)^q anchored at the end note, then the cap."""
+    T60_1,free (f1/fn)^q anchored at the end note, then the cap. MARIMBA: the Rayleigh law at the mode's frequency."""
+    if is_mar(vb):
+        return ray_t60(vb, n, midi_hz(n) * ratio)
     r = vb["T2"]
     xs, ys = table(r[mode]["t60_s"])
     f = midi_hz(n) * ratio
@@ -230,12 +310,16 @@ def upper_t60(vb, n, mode, ratio):
 
 
 def law_t60(vb, n, ratio):
-    """The upper-mode law alone (torsion): T60_1,free (1/ratio)^q, capped."""
+    """The upper-mode law alone (torsion): T60_1,free (1/ratio)^q, capped. MARIMBA: the Rayleigh law."""
+    if is_mar(vb):
+        return ray_t60(vb, n, midi_hz(n) * ratio)
     f = midi_hz(n) * ratio
     return min(t1a(vb, n) * (1.0 / ratio) ** vb["T2"]["q"], cap(vb, f))
 
 
 def felt_v1(vb, n):
+    if is_mar(vb):                                    # the hand mute (T3m)
+        return vb["T3m"]["v1_s"]
     r = vb["T3"]
     xs = [p[0] for p in r["mult_points"]]
     ys = [p[1] for p in r["mult_points"]]
@@ -265,6 +349,8 @@ def tube_cents(vb, n):
 def make_pair(vb, n, zr, target):
     """BarTube for key n with tube zeta_r: sigma solved for the V1-with-tube T60 target (bounded, flagged),
     weak-regime limited at BELL's top, retuned to f0. Returns (bt, clamp, weak)."""
+    if is_mar(vb):
+        return make_pair_mar(vb, n, zr, target)
     f0 = midi_hz(n)
     ft = f0 * 2 ** (tube_cents(vb, n) / 1200)
     lo, hi = vb["T5a"]["lo"], vb["T5a"]["hi"]
@@ -284,11 +370,75 @@ def make_pair(vb, n, zr, target):
     return bt, cl, weak
 
 
+def pair_split_hz(bt, sigma):
+    """the two normal modes' frequency distance at BELL 64 with coupling sigma"""
+    m = bt.with_sigma(sigma)._with(s=1.0, g=1.0).modes2()
+    return abs(m[0][0] - m[1][0])
+
+
+def make_pair_mar(vb, n, zr, target):
+    """MARIMBA PLAN §6 step 4, regime-aware: sigma solved for the V1-with-tube target inside [lo, hi_eff] on whichever
+    side the T60 moves (bartube.solve_sigma2); hi_eff = the weak-regime clamp where zeta_r > zeta_n (no splitting at
+    BELL's top, as VIBES), else the split limit (the strongly coupled pair no more than T5a split_max_hz apart at
+    BELL 64: past the critical coupling the pair splits by ~sigma f0 and the note beats). Returns (bt, clamp, limit):
+    clamp -1 / +1 = the target lies beyond lo / hi_eff (the nearer bound taken), limit 1 = hi_eff bound it."""
+    f0 = midi_hz(n)
+    ft = f0 * 2 ** (tube_cents(vb, n) / 1200)
+    r = vb["T5a"]
+    lo, hi = r["lo"], r["hi"]
+    bt = btm.BarTube(f0, ft, lo, LN1000 / t1a(vb, n), zr * 2 * math.pi * ft)
+    zn = bt.zetas()[0]
+    lim = r["split_max_hz"] + abs(ft - f0)            # the coupling may split the pair by split_max_hz past the detune
+    if pair_split_hz(bt, hi) <= lim:
+        h = hi
+    elif pair_split_hz(bt, lo) > lim:
+        h = lo
+    else:                                             # the split grows with sigma: the largest sigma within the limit
+        a, b = lo, hi
+        for _ in range(40):
+            m = math.sqrt(a * b)
+            a, b = (m, b) if pair_split_hz(bt, m) <= lim else (a, m)
+        h = a
+    wk = bt.sigma_weak_max(s_max=tube_top(vb), margin=r["weak_margin"])
+    if zr > zn and wk >= lo:                          # the weak regime (the vibraphone's): s_max sigma <= m (zr - zn);
+        h = min(hi, wk * (1 - 1e-3))                  # near zeta_r = zeta_n (its clamp under lo) the split limit; 1e-3:
+        #                                               the retune to f0 moves zeta_n by its scale
+    h = min(max(h, 1e-5), sigma_word_max(f0))       # (P4: the coupling words' 32-bit headroom, C7# up)
+    bt = bt.solve_sigma2(target, min(lo, h), h)
+    limit = int(h < hi and bt.clamped == 1)
+    cl, want = bt.clamped, bt.sigma_wanted
+    bt = bt.retune(f0)
+    bt.clamped, bt.sigma_wanted = cl, want
+    return bt, cl, limit
+
+
+KC_EST = 1.1                           # pair_words' kc at the top keys (1.00..1.06): the headroom's estimate
+
+
+def sigma_word_max(f0):
+    """The largest coupling sigma bars.c's per-block coefficients hold at BELL's top: ktbe = kappa Q30^2 S / (fs^2
+    G 2^16) and kbte = kappa Q30^2 S G / (fs^2 2^28) (kappa = kc sigma w^2, S = KN_TUBE_TOP x COUPLE_MARGIN) must both
+    fit 32 bits for some power of two G; their product does not depend on G, so the best G (within sqrt 2) needs
+    kappa Q30^2 S sqrt(2) / (fs^2 2^22) <= 2^31 - 1. From C#8 down to ~G7 (keys 103..108, extrapolated) the solved
+    sigma was over it; G alone (coupling_over, pair_words_safe) holds the keys below."""
+    w = 2 * math.pi * f0
+    kap = (2 ** 31 - 1) * FS ** 2 * 2 ** 22 / (2 ** 60 * KN_TUBE_TOP * COUPLE_MARGIN * math.sqrt(2))
+    return kap / (KC_EST * w * w)
+
+
+def regime(bt):
+    """'strong' (zeta_r < zeta_n: the tube lengthens V1) or 'weak' (zeta_r > zeta_n)"""
+    zn, zr = bt.zetas()
+    return "weak" if zr > zn else "strong"
+
+
 def pair_peak_ms(vb, bt, dur=0.8):
     """The model's f0-envelope peak, measured exactly as the recordings were (bartube.f0_peak_ms), and wt (T5b).
     dur: the render (s); 0.8 s holds every reference note's peak (<= 145 ms), the design record of the low keys
     outside F3..F6 (A0's tube builds up for ~0.9 s) needs longer: there 0.8 s read the window's end."""
     wt = btm.wt_for_ratio(bt, vb["T5b"]["db"], vb["T5b"]["t_s"])
+    if "wt_max" in vb["T5b"]:                         # MARIMBA: the top keys' tube is a reflector
+        wt = min(wt, vb["T5b"]["wt_max"])
     x = bt.impulse(FS, int(dur * FS), wt=wt)
     return btm.f0_peak_ms(x, bt.v1()[0]), wt
 
@@ -302,17 +452,107 @@ KC_MAX = 1.5      # bartube.pair_words' kc (the discrete coupling's decay correc
 #                   missed +-2 % by up to 57 %. With a few cents the angle is small and kc stays ~1.
 
 
+PITCH_T = (0.05, 0.6)                  # the window the radiated pitch is centred over (s after the strike; hil_scan's)
+
+
+def radiated_pitch(bt, wt, t=PITCH_T):
+    """The radiated f0 band's pitch (Hz) of the pair: the normal modes' frequencies weighted by their radiated
+    energy (bar + wt x tube, the output bars.c sums) over t. Two modes too close to resolve (the strongly coupled
+    marimba pair, 0.3-1 Hz apart) sound as one tone at this mean, beating at the split."""
+    num = den = 0.0
+    for f, s, rb, rt in bt.modes2():
+        e = abs(rb + wt * rt) ** 2 * (math.exp(-2 * s * t[0]) - math.exp(-2 * s * t[1])) / (2 * s)
+        num, den = num + e * f, den + e
+    return num / den
+
+
+def v1_target(vb, k):
+    """The frequency the integer pair's V1-like mode is tuned to (pair_words' f0). VIBES: f0 (byte-identical tables).
+    MARIMBA (P4): the pitch the pair radiates is centred on f0 instead. The float design puts the V1-like normal mode
+    on f0 (bt.retune), but below ~C4 both normal modes carry the note (the strong regime, and the weak one near
+    zeta_r = zeta_n) and the other mode sits 6-17 c away: the FM-1 and the golden model read C2..E3 5-10 c flat and
+    F#3..C4 2-4 c sharp. Both slots scale together, so the split, the decays and the bloom do not move."""
+    if not is_mar(vb):
+        return k["f0"]
+    return k["bt"].v1()[0] * k["f0"] / radiated_pitch(k["bt"], k["wt"])
+
+
 def pair_words_safe(bt, wt, felt, f0):
     """bartube.pair_words with the discrete retune; the kc correction must stay under KC_MAX (else the integer pair
     cannot follow the continuous design within the grid's +-2 %: fail loudly instead of capping)."""
     w = btm.pair_words(bt, wt, felt, f0=f0)
+    if not w["kc"] <= KC_MAX and KC_FALLBACK:
+        w1 = pair_words_ordered(bt, wt, felt, f0)
+        if w1 is not None:
+            w = w1
     if not w["kc"] <= KC_MAX:
         raise SystemExit("pair: kc %.3f > %.1f at f0 %.1f Hz (the discrete coupling cannot reach the design's V1 decay; "
                          "see KC_MAX)" % (w["kc"], KC_MAX, f0))
-    return w
+    if KC_FALLBACK:                                   # a later type (MARIMBA): the couplings' 32-bit headroom
+        while "v1_ord" not in w and coupling_over(w) and w["G"] < 64:
+            w = btm.pair_words(bt, wt, felt, f0=f0, G=2 * w["G"])
+        assert not coupling_over(w), ("pair: the coupling words overflow 32 bits even at G 64", f0)
+    return tube_mute(w, bt)
 
 
-def map_check_words(k):
+COUPLE_MARGIN = 1.10                   # the live E words over the designed: TUNE +50 c (x1.03) and the rest, rounded up
+
+
+def coupling_over(w):
+    """bars.c's per-block coupling coefficients at the top of BELL (KN_TUBE_TOP) would not fit 32 bits: ktbe =
+    k_tb s / 2^15 x E0 >> 16 and kbte = k_bt s / 2^15 x E1 >> 28 (bar_sat31 clips them). From C#7 up the MARIMBA's
+    k_tb at G 8 made ktbe 1.1..2.4 x 2^31: the tube's pull on the bar clipped to under half, the C engine 18 dB off the
+    golden model at C7, 8 LU quieter at C8 (P4). G (a power of two) moves the tube slot's scale: k_tb / G, k_bt x G,
+    wt / G; the map is the same pair (a similarity), up to the words' rounding."""
+    lim = (2 ** 31 - 1) / COUPLE_MARGIN
+    return (abs(w["k_tb"]) * KN_TUBE_TOP * w["E0"] / 2 ** 16 > lim or
+            abs(w["k_bt"]) * KN_TUBE_TOP * w["E1"] / 2 ** 28 > lim)
+
+
+TUBE_MUTE_S = None                     # a type without a damper: the tube slot's drel (T3m tube_s), else drel = d
+
+
+def tube_mute(w, bt):
+    """MARIMBA (T3m tube_s): the tube slot's drel word = a T60 of tube_s, so the hand mute (bars.c's crossfade to the
+    drel words of every slot, the tube's at RELEASE 65536) stops the radiated note too: strongly coupled, the low
+    tubes hold +10 dB over the bar at key-up and ring 1.5-3 s on their own (the hand on the bar barely damps them:
+    sigma^2 / (4 dzeta)). The held words (d) and the pair's stability grid (held words) are unchanged."""
+    if not TUBE_MUTE_S:
+        return w
+    w1 = dict(w["w1"])
+    w1["drel"] = max(w1["d"], rc.mode_coefs(w["f_slot1"], LN1000 / bt.sig_tube, TUBE_MUTE_S)["drel"])
+    return dict(w, w1=w1)
+
+
+def v1_order(bt):
+    """the index of the V1-like normal mode in frequency order"""
+    fs = sorted(f for f, _, _, _ in bt.modes2())
+    return fs.index(bt.v1()[0])
+
+
+def pair_words_ordered(bt, wt, felt, f0, iters=6):
+    """MARIMBA, where zeta_r ~ zeta_n (around F#3): the two normal modes are near-equal mixtures of bar and tube with
+    near-equal decays, so 'the V1-like mode' (the larger late amplitude) is the continuous design's one mode and the
+    integer map's other one, and pair_words' kc fit (the map's V1 decay onto the design's) runs into its bound. Here
+    the modes are identified by frequency order instead: kc = 1, the pair scaled until the map's mode of the design
+    V1's order sits on f0; accepted (the words, tagged v1_ord) when every map mode's decay is its design partner's
+    within KC_FALLBACK_TOL, else None."""
+    iv = v1_order(bt)
+    c = 1.0
+    for _ in range(iters):
+        w = btm.pair_words(bt.scaled(c), wt, felt, fit_kc=False)
+        mm = sorted(btm.map_modes(btm.pair_map(w)))
+        c *= f0 / mm[iv][0]
+    w = btm.pair_words(bt.scaled(c), wt, felt, fit_kc=False)
+    mm = sorted(btm.map_modes(btm.pair_map(w)))
+    dm = sorted(bt.modes2())
+    if all(abs(a[1] / b[1] - 1) <= KC_FALLBACK_TOL for a, b in zip(mm, dm)):
+        w["v1_ord"] = iv
+        return w
+    return None
+
+
+def map_check_words(k, detail=None):
     """bartube.map_check on the key's own words (pair_words_safe): the §4.5 grid s x g x DECAY / RELEASE x TUNE,
     held and felt. Returns (rho_max, worst normal-mode decay error vs the float design, V1 cents vs f0, points)."""
     bt, wt, f0, felt, w_ref = k["bt"], k["wt"], k["f0"], k["felt_v1"], k["pw"]
@@ -322,23 +562,39 @@ def map_check_words(k):
     btn = bt.scaled(w_ref["f_slot0"] / bt.slot_freqs()[0])
     sig_rel = LN1000 / felt
     for s in (0.0, 0.25, 0.5, 1.0, KN_TUBE_TOP):
-        for g in (0.15, 0.5, 1.0):
+        for g in MOT_GRID:
             for k16 in dk:
                 for c, t30 in tune:
                     for rel in (False, True):
-                        w = btm.scaled_words(w_ref, btm.pair_words(btn, wt, felt, t30=t30, k16=k16, release=rel,
-                                                                   G=w_ref["G"], kc=w_ref["kc"]), s, g)
+                        if TUBE_MUTE_S and rel and k16 != 65536:   # no damper: the mute words never scaled (C5)
+                            continue
+                        kt = k16 if k.get("flags", 0) & 8 and not rel else 65536   # bit3: RING scales the tube
+                        pw_ = btm.pair_words(btn, wt, felt, t30=t30, k16=k16, release=rel, G=w_ref["G"], kc=w_ref["kc"],
+                                             k16_tube=kt)
+                        st_ = bt.sig_tube * kt / 65536.0
+                        if TUBE_MUTE_S and rel:               # the hand mute: the tube's drel word
+                            w1m = tube_mute(pw_, btn)["w1"]
+                            pw_["E1"], pw_["eps1"] = rc.coef(w1m, w1m["drel"], t30, 65536)
+                            st_ = max(bt.sig_tube, LN1000 / TUBE_MUTE_S)
+                        w = btm.scaled_words(w_ref, pw_, s, g)
                         M = btm.pair_map(w)
                         rho = max(rho, btm.map_rho(M))
                         tt = 2 ** (c / 1200)
-                        d = bt.with_bell(s).with_motor(g)._with(sig_bar=(sig_rel if rel else bt.sig_bar) * k16 / 65536.0)
+                        d = bt.with_bell(s).with_motor(g)._with(sig_bar=(sig_rel if rel else bt.sig_bar) * k16 / 65536.0,
+                                                                sig_tube=st_)
                         d = d.scaled(tt).with_sigma(bt.sigma / tt)
-                        for (fa, sa, _), (fb, sb, _) in zip(btm.map_modes(M), d.modes()):
-                            derr = max(derr, abs(sa / sb - 1))
+                        mm, dm = btm.map_modes(M), d.modes()
+                        e = max(abs(a[1] / b[1] - 1) for a, b in zip(mm, dm))
+                        if KC_FALLBACK:               # a later type: strongly coupled pairs within ~1 Hz may swap
+                            e = min(e, max(abs(a[1] / b[1] - 1) for a, b in zip(mm, dm[::-1])))   # the frequency
+                        derr = max(derr, e)           # order between the map and the design: match by decay too
+                        if detail is not None:
+                            detail.append((s, g, k16, c, rel, e, mm, dm))
                         n += 1
     M = btm.pair_map(w_ref)
-    cents = 1200 * math.log2(btm.map_modes(M)[btm.map_v1(M)][0] / f0)
-    return rho, derr, cents, n
+    iv = w_ref.get("v1_ord")                       # (pair_words_ordered: the V1 by frequency order)
+    cents = 1200 * math.log2(btm.map_modes(M)[btm.map_v1(M) if iv is None else iv][0] / k.get("f_v1", f0))
+    return rho, derr, cents, n          # (V1 cents vs its target: f0, MARIMBA v1_target)
 
 
 def peak_band(vb, target_ms):
@@ -406,7 +662,9 @@ def solve_zeta(vb, n, target_ms):
 
 def tube_zetas(vb):
     """zeta_r per key: solved at the reference notes, log-interpolated between them, outside F3..F6 the E curve's
-    trend scaled to the end note (bounded)."""
+    trend scaled to the end note (bounded). MARIMBA: derived per key (T4a), flag 0."""
+    if is_mar(vb):
+        return {n: (zeta_r_mar(vb, n), 0) for n in range(KEY_LO, KEY_HI + 1)}
     xs, ts = peaks_smoothed(vb)
     zr, flag = {}, {}
     for n, t in zip(xs, ts):
@@ -439,9 +697,19 @@ def strike_xy(vb, raw, L, w, nodes):
 def fe_setup(vb, ng):
     """The FE problem of the geometric key ng: dict(L, w, t, h_min, mat, ratios (the tuned ones), f0)."""
     r = vb["T12"]
-    L, w = fe.outline(ng, vb["keys"]["authentic"][0], vb["keys"]["authentic"][1], r["L_mm"], r["w_mm"])
     ratios = (vb["T9a"]["V2"], vb["T9a"]["V3"]) if ng <= vb["T9a"]["v3_tuned_max_key"] else (vb["T9a"]["V2"],)
-    return dict(L=L, w=w, t=r["t_mm"] * 1e-3, h_min=r["h_min_mm"] * 1e-3, ratios=ratios, f0=midi_hz(ng),
+    t = r["t_mm"]
+    if "anchor" in r:                                 # MARIMBA: through the measured anchor bar, piecewise: L and w
+        a, b = vb["keys"]["authentic"]                # geometric in semitones, the thickness linear
+        an = r["anchor"]
+        k = min(max(ng, a), b)
+        xs = [a, an["key"], b]
+        L = math.exp(np.interp(k, xs, np.log([r["L_mm"][0], an["L_mm"], r["L_mm"][1]]))) * 1e-3
+        w = math.exp(np.interp(k, xs, np.log([r["w_mm"][0], an["w_mm"], r["w_mm"][1]]))) * 1e-3
+        t = float(np.interp(k, xs, [t[0], an["t_mm"], t[1]]))
+    else:
+        L, w = fe.outline(ng, vb["keys"]["authentic"][0], vb["keys"]["authentic"][1], r["L_mm"], r["w_mm"])
+    return dict(L=L, w=w, t=t * 1e-3, h_min=r["h_min_mm"] * 1e-3, ratios=ratios, f0=midi_hz(ng),
                 mat=dict(E=r["E_pa"], rho=r["rho"], G=r["G_pa"], kappa=r["kappa"]))
 
 
@@ -476,6 +744,10 @@ def fe_key(vb, ng, A_init=None):
 
 def fe_fingerprint(vb):
     """sha256 of every input the FE results depend on (bar_fe.py's source included): a change means --repin."""
+    if is_mar(vb):
+        return hashlib.sha256(json.dumps([vb["T12"], vb["T9a"], vb["T13a"], vb["keys"],
+                                          open(os.path.join(HERE, "bar_fe.py")).read(), "pos=127i/16", "continuation",
+                                          "t linear"], sort_keys=True).encode()).hexdigest()
     return hashlib.sha256(json.dumps([vb["T12"], vb["T9a"], vb["T13a"], vb["T2"]["V3"]["max_key"], vb["keys"],
                                       open(os.path.join(HERE, "bar_fe.py")).read(), "pos=127i/16", "continuation"],
                                      sort_keys=True).encode()).hexdigest()
@@ -517,16 +789,22 @@ BUILD_FE = {}                          # the FE of the last --repin build (writt
 
 
 def fe_all(vb):
-    """The FE of every geometric key: the pins (FE_PINS); --repin solves it afresh on this machine."""
-    if "--repin" in sys.argv:
-        BUILD_FE.clear()
-        BUILD_FE.update(fe_compute(vb))
-        return dict(BUILD_FE)
-    fe_ = load_fe_pins(vb)
+    """The FE of every geometric key: the pins (FE_PINS; MARIMBA: MAR_FE_PINS); --repin (--repin-marimba) solves it
+    afresh on this machine."""
+    mar = is_mar(vb)
+    bf = BUILD_FE_MAR if mar else BUILD_FE
+    if repinning(vb):
+        bf.clear()
+        bf.update(fe_compute(vb))
+        return dict(bf)
+    fe_ = load_fe_pins(vb, MAR_FE_PINS if mar else FE_PINS)
     if fe_ is None:
-        raise SystemExit("bars_fe_pins.json missing or stale (the FE inputs changed): tools/gen_bars.py --repin "
-                         "(a reviewed table change)")
+        raise SystemExit("%s missing or stale (the FE inputs changed): tools/gen_bars.py %s (a reviewed table change)"
+                         % (("marimba_fe_pins.json", "--repin-marimba") if mar else ("bars_fe_pins.json", "--repin")))
     return fe_
+
+
+BUILD_FE_MAR = {}                      # the marimba's FE of the last --repin-marimba build (marimba_fe_pins.json)
 
 
 # ---------------------------------------------------------------- per-key physics
@@ -761,11 +1039,15 @@ def key_physics(vb, n, fec, zt, pin=None):
     F = fec[ng]
     f0 = midi_hz(n)
     flags = 0 if a <= n <= b else 1
-    rv2, rv3, rv4 = (vb["T9a"]["V2"] * 2 ** (detune(vb, n, "V2") / 1200), vb["T9a"]["V3"] * 2 ** (detune(vb, n, "V3") / 1200),
-                     vb["T10"]["ratio"] * 2 ** (detune(vb, n, "V4") / 1200))
+    mar = is_mar(vb)
+    if mar:                                           # the FE's own ratios (V3 untuned above v3_tuned_max_key, V4 always)
+        rv2, rv3, rv4 = (F["ratios"][i] * 2 ** (detune(vb, n, m) / 1200) for i, m in ((1, "V2"), (2, "V3"), (3, "V4")))
+    else:
+        rv2, rv3, rv4 = (vb["T9a"]["V2"] * 2 ** (detune(vb, n, "V2") / 1200), vb["T9a"]["V3"] * 2 ** (detune(vb, n, "V3") / 1200),
+                         vb["T10"]["ratio"] * 2 ** (detune(vb, n, "V4") / 1200))
     tr1, tr2 = F["tors"]
     fv1 = felt_v1(vb, n)
-    up = vb["T3"]["upper_mult"]
+    up = vb["T3m"]["upper_mult"] if mar else vb["T3"]["upper_mult"]
     zr, zflag = zt[n]
     target = t1b(vb, n)
     if pin:
@@ -773,6 +1055,8 @@ def key_physics(vb, n, fec, zt, pin=None):
     else:
         bt, cl, weak = make_pair(vb, n, zr, target)
         pk, wt = pair_peak_ms(vb, bt, dur=2.5)
+    if mar and regime(bt) == "strong":              # MARIMBA below C4: RING scales the tube slot too (bit3)
+        flags |= 8
     if cl or weak:
         flags |= 4
     modes = []
@@ -781,21 +1065,24 @@ def key_physics(vb, n, fec, zt, pin=None):
         t60s[name] = upper_t60(vb, n, name, ratio)
     for name, ratio in (("T1", tr1), ("T2", tr2)):
         t60s[name] = law_t60(vb, n, ratio) * vb["T9d"]["mult"]
-    present = {"V2": n <= vb["T2"]["V2"]["max_key"], "V3": n <= vb["T2"]["V3"]["max_key"],
-               "V4": n <= vb["T10"]["max_key"], "T1": True, "T2": True, "X": False}
-    maxk = {"V2": vb["T2"]["V2"]["max_key"], "V3": vb["T2"]["V3"]["max_key"], "V4": vb["T10"]["max_key"]}
-    tk = vb["T2"]["taper_keys"]
+    if mar:                                           # presence by physics only (mode_coefs drops a mode over 18 kHz)
+        present, maxk, tk, tmodes = dict(V2=True, V3=True, V4=n <= vb["T10"]["max_key"], T1=True, T2=True, X=False), {}, 0, ()
+    else:
+        present = {"V2": n <= vb["T2"]["V2"]["max_key"], "V3": n <= vb["T2"]["V3"]["max_key"],
+                   "V4": n <= vb["T10"]["max_key"], "T1": True, "T2": True, "X": False}
+        maxk = {"V2": vb["T2"]["V2"]["max_key"], "V3": vb["T2"]["V3"]["max_key"], "V4": vb["T10"]["max_key"]}
+        tk, tmodes = vb["T2"]["taper_keys"], vb["T2"]["taper_modes"]
     for name, ratio in (("V2", rv2), ("V3", rv3), ("V4", rv4), ("T1", tr1), ("T2", tr2)):
         t = t60s[name]
         tp = 1.0
-        if name in vb["T2"]["taper_modes"] and maxk[name] - tk < n <= maxk[name]:     # fade out towards the last key it is present
+        if name in tmodes and maxk[name] - tk < n <= maxk[name]:     # fade out towards the last key it is present
             tp = (maxk[name] + 1 - n) / (tk + 1.0)
         modes.append(dict(name=name, ratio=ratio, f=f0 * ratio, t60=t, t60_rel=min(t, fv1 * up), present=present[name],
                           taper=tp))
     modes.append(dict(name="X", ratio=0.0, f=0.0, t60=1.0, t60_rel=1.0, present=False))
     return dict(midi=n, f0=f0, ng=ng, flags=flags, band=band_of(n), modes=modes, bt=bt, wt=wt, zeta_r=zr,
                 zeta_flag=zflag, t1b=target, t1a=t1a(vb, n), felt_v1=min(fv1, t1a(vb, n)), peak_ms=pk, sigma_clamp=cl,
-                weak=weak, tube_cents=tube_cents(vb, n))
+                weak=weak, tube_cents=tube_cents(vb, n), regime=regime(bt))
 
 
 # ---------------------------------------------------------------- mallets (T7, T8)
@@ -943,12 +1230,16 @@ def kn_massi(vb):
     return [int(round(Q12 * (mass_kg(vb, h) / m0) ** (2.0 / 3.0 - c))) for h in range(128)]
 
 
-def kn_tube():
+KN_TOP_SIZE = 1.45                     # the BELL map's top tube size of the type being built (type_rec kn_tube_top)
+
+
+def kn_tube(top=None):
     """BELL -> tube size s Q15: 0 at 0, -24 dB at 1 rising log-linearly to 1.0 at 64, then 1.0 -> 1.45 (log) at 127 (was
-    1.2: the upper half was +2 dB and heard as nothing, the user 2026-10-17)."""
+    1.2: the upper half was +2 dB and heard as nothing, the user 2026-10-17). top: another type's top (MARIMBA 1.2)."""
+    top = KN_TOP_SIZE if top is None else top
     out = [0]
     for v in range(1, 128):
-        s = 10 ** (-24.0 * (64 - v) / 63.0 / 20) if v <= 64 else 1.45 ** ((v - 64) / 63.0)
+        s = 10 ** (-24.0 * (64 - v) / 63.0 / 20) if v <= 64 else top ** ((v - 64) / 63.0)
         out.append(int(round(s * 32768)))
     return out
 
@@ -984,7 +1275,7 @@ def strike_tables(fec):
     pos, arg = [], []
     for b in range(NBAND):
         n = band_rep(b)
-        ng = min(max(n, 53), 89)
+        ng = min(max(n, FE_RANGE[0]), FE_RANGE[1])
         W = np.array(fec[ng]["weights"])                   # [17][V1 V2 V3 V4 T1 T2]
         cols = [0, None, 1, 2, 3, 4, 5, None]
         rows = np.zeros((NPOS, NM), int)
@@ -1048,10 +1339,12 @@ def build_spec(vb, phys, fec, ct, st):
         for m in modes:
             m["b"] = rom_safe(int(max(-2 ** 31 + 1, min(2 ** 31 - 1, round(m["bf"] * Q30 * 2 ** 15))))) if m["w"]["th"] else 0
             m["w"] = {kk: rom_safe(int(v)) for kk, v in m["w"].items()}
-        keys.append(dict(midi=n, band=k["band"], flags=k["flags"] | (2 if (modes[5]["w"]["th"] or modes[6]["w"]["th"]) else 0),
+        rg = st.get("ring_gain", {}).get(n)               # MARIMBA ring_ceiling: flag bit4, the 17-point RING gain
+        keys.append(dict(midi=n, band=k["band"], flags=k["flags"] | (2 if (modes[5]["w"]["th"] or modes[6]["w"]["th"]) else 0)
+                         | (16 if rg else 0),
                          modes=modes, k_bt=rom_safe(pw["k_bt"]), k_tb=rom_safe(pw["k_tb"]), wt=rom_safe(pw["wt_q28"]),
                          G=pw["G"], gain=int(round(s.get("gain", 65536))), kill=int(s.get("kill", 1)),
-                         life=int(s.get("life", 4096))))
+                         life=int(s.get("life", 4096)), **({"ring_gain": rg} if rg else {})))
     prate, pamp = [], []
     for n in range(KEY_LO, KEY_HI + 1):
         prate.append([ct[n][q]["prate"] for q in range(nf)])
@@ -1059,6 +1352,9 @@ def build_spec(vb, phys, fec, ct, st):
         pamp.append([[max(1, min(65535, int(round(x)))) for x in pa[q]] for q in range(nf)])
     pulse = []
     for b in range(NBAND):
+        if "pulse" in BANDS:                               # a later type: the shared (or appended) shapes it plays
+            pulse.append(BANDS["pulse"][b])
+            continue
         r = band_rep(b)
         pulse.append([[list(sh) + [0, 0] for sh in ct[r][q]["shapes"]] for q in range(nf)])
     ty = vb["type_rec"]
@@ -1068,11 +1364,13 @@ def build_spec(vb, phys, fec, ct, st):
     return dict(gen_version=GEN_VERSION, fs=FS, key_lo=KEY_LO, keys=keys, bar_pos=pos, pos_arg=arg,
                 pos_gain=st.get("pos_gain", flat), tube_gain=st.get("tube_gain", flat),
                 pos_exact=st["pos_exact"], pulse=pulse,
-                prate=prate, pamp=pamp, kn_fam=kn_fam(), kn_mass=kn_mass(vb), kn_massi=kn_massi(vb), kn_tube=st.get("kn_tube", kn_tube()),
+                prate=prate, pamp=pamp, kn_fam=st.get("kn_fam", kn_fam()), kn_mass=kn_mass(vb), kn_massi=kn_massi(vb), kn_tube=st.get("kn_tube", kn_tube()),
                 kn_nz=kn_nz(vb), nz_bq=nz_bq(vb), mot_cos=list(btm.MOT_COS),
                 fam_names=[f["name"] for f in fams_int(vb)][:nf], fam_detent=FAM_DETENT,
                 type=dict(tube_cents=0, mot_gc=int(round(vb["T6c"]["g_c"] * 32768)), tors_db=ty["tors_q15"],
-                          nbody=ty["nbody"], drive_row=ty["drive_row"], sleep_rel=ty["sleep_rel"], budget=ty["budget"]),
+                          nbody=ty["nbody"], drive_row=ty["drive_row"], sleep_rel=ty["sleep_rel"], budget=ty["budget"],
+                          **({"flags": (TYPE_FLAG_MOTOR if ty["flags"]["has_motor"] else 0) |
+                              (TYPE_FLAG_DAMPER if ty["flags"]["has_damper"] else 0)} if "flags" in ty else {})),
                 decay_k=[int(round(Q16 / 2 ** ((v - 64) / 32))) for v in range(128)],
                 tune_t=[rom_safe(int(round((2 ** (c / 1200) - 1) * Q30))) for c in range(-50, 51)],
                 v_anchors=V_ANCH, layer_v=LAYER_V, vlay_i=li, vlay_w=lw, vpos_i=vi, vpos_f=[min(255, x) for x in vf])
@@ -1128,6 +1426,40 @@ def shape_kn_tube(vb, spec, keys=(53, 60, 69, 77, 89), npt=13):
     return out, [float(x) for x in L]
 
 
+def shape_kn_fam(vb, spec):
+    """MARIMBA (card_level fam_map): KN_FAM re-spaced between the detents so no key's level jumps with MALLET. Per
+    segment q (detent q .. q + 1) the golden model's loudness (K-weighted over card_level t_s) at npt fractions a,
+    every key of fam_map keys x vels, default cards; d_j = the largest per-key change from a_j to a_j+1, + floor_db /
+    (npt - 1) (a flat segment stays linear); each raw value v between the detents gets the fraction where the sum of
+    d so far is (v - c0) / (c1 - c0) of the segment's: a 1-raw step then moves no key by more than the sum / (c1 - c0).
+    The detents exact (q << 8); fractions non-decreasing, 1..255 inside a segment. Returns (table, report rows)."""
+    fm = vb["card_level"]["fam_map"]
+    t0, t1 = vb["card_level"]["t_s"]
+    keys = list(range(fm["keys"][0], fm["keys"][1] + 1))
+    vels = list(fm["vels"])
+    npt = int(fm["npt"])
+    A = np.linspace(0.0, 256.0, npt)
+    out = kn_fam()
+    rep = []
+    for q in range(len(FAM_DETENT) - 1):
+        c0, c1 = FAM_DETENT[q], FAM_DETENT[q + 1]
+        kfs = [(q + 1) << 8 if a >= 256 else q << 8 | int(round(a)) for a in A]
+        ks = [n for _ in kfs for _ in vels for n in keys]
+        vs = [v for _ in kfs for v in vels for _ in keys]
+        kn = [dict(gm.DEFAULT_KNOBS, kf=kf) for kf in kfs for _ in vels for _ in keys]
+        y = render_chunks(spec, ks, vs, t1 + 0.01, kn)
+        L = np.array([lufs_k(r, t0, t1) for r in y]).reshape(npt, len(vels) * len(keys))
+        d = np.abs(np.diff(L, axis=0)).max(axis=1) + fm["floor_db"] / (npt - 1)
+        C = np.concatenate([[0.0], np.cumsum(d)])
+        for v in range(c0 + 1, c1):
+            a = float(np.interp(C[-1] * (v - c0) / (c1 - c0), C, A))
+            out[v] = q << 8 | max(1, min(255, int(round(a))), out[v - 1] & 255 if v > c0 + 1 else 1)
+        rep.append((q, float(C[-1]), float(C[-1] * 4 / (c1 - c0))))     # the segment's sum, the 4-raw step bound
+    assert [out[v] for v in FAM_DETENT] == [q << 8 for q in range(len(FAM_DETENT))]
+    assert all(a <= b for a, b in zip(out, out[1:]))
+    return out, rep
+
+
 def card_points():
     """the card value (raw 0..127) that lands exactly on each of the 17 points (bar_init: q = raw 4096 / 127, the
     point q >> 8): the smallest raw with q >> 8 = p"""
@@ -1171,6 +1503,43 @@ def card_gains(vb, spec, keys):
     return out["tone"], out["bell"], "; ".join(rep)
 
 
+def ring_ceiling(vb, spec, st, keys):
+    """MARIMBA (card_level ring_ceiling): the single-strike ceiling over RING (DECAY) too. On a strongly coupled key
+    (flag bit3, below C4) RING scales the tube's decay with the bar's: a slower tube fills higher, and the bloom's peak
+    grows with RING (C3 at RING 127: +9 dB over RING 64; C2..B3 up to +7 dBFS at the loud corners), so the ceiling the
+    voicing grid holds at RING 64 broke above it. Per key and RING point (the 17 card points, from_point up), the
+    worst v127 single strike over the ring_ceiling grid (TONE x BELL x MALLET x HAMMER, decay = the point's value);
+    where it is over the ceiling (less margin_db) the key's gain at that point is turned down by the excess (Q14, never
+    up; non-increasing in RING so the card stays smooth). The points are RING raw 0, 8 .. 120, 127 (point p = raw 8p,
+    the last at 127; bars.c: q = raw << 5, so point 8 is exactly RING 64, the default, where nothing changes).
+    st["ring_gain"][n] (17 points, Q14); the key's flag bit4 marks a key with any point under 1.0 (bars.c bar_init:
+    BAR_RINGG[key][RING])."""
+    rc_ = vb["card_level"]["ring_ceiling"]
+    ceil_ = 10 ** ((vb["card_level"]["peak_ceiling_dbfs"] - rc_.get("margin_db", 0.0)) / 20) * 32768
+    pts = [min(8 * p, 127) for p in range(NPOS)]
+    fac = np.ones((len(keys), NPOS))
+    for p in range(int(rc_["from_point"]), NPOS):
+        pk = np.zeros(len(keys))
+        for tone in rc_["tone"]:
+            for bell in rc_["bell"]:
+                for bark in rc_["bark"]:
+                    for ham in rc_["hammer"]:
+                        kn = dict(gm.DEFAULT_KNOBS, tone=tone, bell=bell, bark=bark, hammer=ham, decay=pts[p])
+                        y = render_chunks(spec, keys, [127] * len(keys), rc_["dur_s"], kn, chunk=440)
+                        pk = np.maximum(pk, np.abs(y).max(axis=1))
+        fac[:, p] = np.minimum(1.0, ceil_ / pk)
+    fac = np.minimum.accumulate(fac, axis=1)
+    st["ring_gain"] = {}
+    for i, n in enumerate(keys):
+        row = [int(math.floor(Q14 * f)) for f in fac[i]]
+        if min(row) < Q14:
+            st["ring_gain"][n] = row
+    trace("ring", dict(fac=fac), full=True)
+    dn = [(n, 20 * math.log10(st["ring_gain"][n][-1] / Q14)) for n in keys if n in st["ring_gain"]]
+    print("ring ceiling: %d keys turned down above RING 64, at 127 by %s" % (
+        len(dn), ", ".join("%d %.1f" % o for o in dn) or "none"), file=sys.stderr)
+
+
 def voicing_peaks(vb, spec, keys):
     """every key's largest single-strike output peak (Q15 units) at v127 over card_level peak_grid (the golden model,
     no contact noise), and the voicing that gives it"""
@@ -1190,7 +1559,134 @@ def voicing_peaks(vb, spec, keys):
     return pk, worst
 
 
+def fam_ceiling(vb, spec, st, keys):
+    """MARIMBA (card_level family_ceiling): per key and mallet family (at its MALLET detent), the largest v127 single
+    strike over the TONE x BELL x HAMMER corners of peak_grid. A short hard-mallet contact on a short-ringing bar is far
+    peakier at equal loudness than the default (RUBBER v127 ~12 dB over DEFAULT v127 at C4). Two parts: a family is
+    turned down on a key by its excess over the DEFAULT family's (its pamp row, every velocity anchor: the families stay
+    level-matched where the default fits, the velocity curve's shape kept); the DEFAULT's own excess (the top octaves:
+    a 0.1-0.3 s note needs a ~20 dB crest for the ST77 loudness) turns the whole key down as a smooth roll-off (the
+    excess's upper envelope falling ceiling_slope_db per key, so neighbours never step more than that):
+    st["rolloff_db"][n], the curve VA-M10 holds the level to. The CAL row is the DEFAULT family's law (untouched)."""
+    g = vb["card_level"]["peak_grid"]
+    ceil_ = 10 ** (vb["card_level"]["peak_ceiling_dbfs"] / 20) * 32768
+    over = np.zeros((NFAM, len(keys)))
+    for q, bark in enumerate(FAM_DETENT):
+        pk = np.zeros(len(keys))
+        for tone in g["tone"]:
+            for bell in g["bell"]:
+                for ham in g["hammer"]:
+                    kn = dict(gm.DEFAULT_KNOBS, tone=tone, bell=bell, bark=bark, hammer=ham)
+                    y = render_chunks(spec, keys, [127] * len(keys), g["dur_s"], kn, chunk=440)
+                    pk = np.maximum(pk, np.abs(y).max(axis=1))
+        over[q] = 20 * np.log10(pk / ceil_)
+    od = np.maximum(0.0, over[2])
+    sl = vb["card_level"]["ceiling_slope_db"]
+    roll = np.array([max(od[j] - sl * abs(i - j) for j in range(len(keys))) for i in range(len(keys))])
+    st["rolloff_db"] = {}
+    for i, n in enumerate(keys):
+        for q in range(NFAM):
+            d = max(0.0, over[q, i] - max(0.0, over[2, i]))
+            if d > 0 and q != 2:
+                f = 10 ** (-d / 20)
+                st["keys"][n]["pamp"][q] = [x * f for x in st["keys"][n]["pamp"][q]]
+                st.setdefault("fam_down_db", {}).setdefault(n, [0.0] * NFAM)[q] = -d
+        if roll[i] > 0:
+            f = 10 ** (-roll[i] / 20)
+            st["keys"][n]["gain"] *= f
+            st["keys"][n]["kill"] = max(1, int(round(st["keys"][n]["kill"] / f)))
+        st["rolloff_db"][n] = -float(roll[i])
+    print("family ceiling: families over the default's by at most %s dB; the key roll-off %.1f dB at most%s" % (
+        ", ".join("%s %.1f" % (vb["T7c"]["families"][q]["short"], float(np.max(over[q] - np.maximum(0, over[2]))))
+                  for q in range(NFAM)), float(roll.max()),
+        " (from key %d)" % keys[int(np.flatnonzero(roll > 0)[0])] if roll.max() > 0 else ""), file=sys.stderr)
+
+
 BUILD_PINS = {}                        # the pair stage of the last unpinned build (--repin writes it)
+BUILD_PINS_MAR = {}                    # the marimba's (--repin-marimba writes marimba_pins.json)
+
+
+def shape_error_x(phys, ct, n, shapes_r, nfam=NFAM):
+    """shape_error against another type's shapes: key n's own pulse vs shapes_r[q] (a VIBES band's representative,
+    families 0..nfam-1) played at n's rate, on n's V1..V3, v40 / v100 / v127, within BAND_FLOOR_DB of the DC"""
+    k = phys[n]
+    fr = [k["f0"], k["modes"][0]["f"], k["modes"][1]["f"]]
+    worst = 0.0
+    for q in range(nfam):
+        own, oth = ct[n][q]["shapes"], shapes_r[q]
+        pr = ct[n][q]["prate"]
+        for v in BAND_VELS:
+            l, w = gm.vlayer(v)
+            l1 = min(l + 1, NLAYER - 1)
+            mix = lambda S: [x + (((y - x) * w) >> 15) for x, y in zip(S[l], S[l1])]  # noqa: E731
+            ia, f = gm.vpos(v)
+            p = pr[ia] + (((pr[ia + 1] - pr[ia]) * f) >> 8)
+            eo, dc = pulse_excitation(mix(own), p, fr)
+            eb, _ = pulse_excitation(mix(oth), p, fr)
+            for a, c in zip(eo, eb):
+                if a > dc * 10 ** (BAND_FLOOR_DB / 20):
+                    worst = max(worst, abs(20 * math.log10(c / a)))
+    return worst
+
+
+def share_pulses(vb, phys, ct, vspec):
+    """MARIMBA PLAN §3.2, as built: the pulse shapes are grouped over runs of consecutive position bands (greedy from
+    the bottom, each run as long as one shape stands for all its keys within bands.pulse_tol_db); a run plays the
+    VIBES pulse band or the key of its own whose shapes give the least worst error (shape_error: V1..V3 excitation at
+    v40 / v100 / v127 within 30 dB of the DC), a VIBES one when it is within the tolerance (no flash), else its own,
+    appended to the bank once. Sets BANDS["pulse"][b] (the shapes the band plays; its CAL family = the DEFAULT
+    family's: this type calibrates with the DEFAULT law), BANDS["pband"][b] (>= 0: the VIBES band; < 0: -1 - the
+    appended pulse's index), BANDS["own_reps"], BANDS["share_err"][b] (that run's worst error, dB)."""
+    tol = vb["bands"]["pulse_tol_db"]
+    vd = {d["midi"]: d for d in vspec["design"]}
+    vshapes = [[[list(sh) for sh in vd[r]["mallet"][q]["shapes"]] for q in range(NFAM)] for r in vspec["band_rep"]]
+    nb = len(BANDS["rep"])
+    bks = [[n for n in range(KEY_LO, KEY_HI + 1) if BANDS["of"][n] == b] for b in range(nb)]
+    E = {}
+
+    def err(n, src):                                  # src: ("V", VIBES band) or ("K", own key)
+        if (n, src) not in E:
+            E[n, src] = (shape_error_x(phys, ct, n, vshapes[src[1]]) if src[0] == "V" else
+                         0.0 if n == src[1] else shape_error(phys, ct, n, src[1]))
+        return E[n, src]
+
+    def best(ks):
+        cands = [("V", p) for p in range(len(vshapes))] + [("K", r) for r in ks]
+        sc = [(max(err(n, c) for n in ks), c) for c in cands]
+        v_ = min((s for s in sc if s[1][0] == "V"), key=lambda s: s[0])
+        return v_ if v_[0] <= tol else min(sc, key=lambda s: (s[0], s[1]))
+    runs, i = [], 0
+    if "pulse_runs" in vb["bands"]:                   # pinned (a float edge must not move a run between machines;
+        for i, j, kind, idx in vb["bands"]["pulse_runs"]:   # tests/py/test_marimba_calib.py checks they are the solve)
+            ks = sum(bks[i:j + 1], [])
+            runs.append((i, j, (max(err(n, (kind, idx)) for n in ks), (kind, idx))))
+        i = nb
+    while i < nb:
+        j, cur = i, best(bks[i])
+        while j + 1 < nb:
+            nxt = best(sum(bks[i:j + 2], []))
+            if nxt[0] > tol:
+                break
+            j, cur = j + 1, nxt
+        runs.append((i, j, cur))
+        i = j + 1
+    BANDS["runs"] = [[i, j, src[0], src[1]] for i, j, (_, src) in runs]
+    BANDS["pulse"], BANDS["pband"], BANDS["share_err"], BANDS["own_reps"] = [None] * nb, [None] * nb, [None] * nb, []
+    for i, j, (e, src) in runs:
+        if src[0] == "V":
+            s = vspec["pulse"][src[1]]
+            pl, pb = [list(s[q]) for q in range(NFAM)] + [list(s[2])], src[1]
+        else:
+            own = [[list(sh) + [0, 0] for sh in ct[src[1]][q]["shapes"]] for q in range(NFAM)]
+            pl, pb = own + [own[2]], -1 - len(BANDS["own_reps"])
+            BANDS["own_reps"].append(src[1])
+        for b in range(i, j + 1):
+            BANDS["pulse"][b], BANDS["pband"][b], BANDS["share_err"][b] = pl, pb, float(e)
+        print("pulse run: bands %d..%d (keys %d..%d) play %s, worst %.2f dB" % (
+            i, j, bks[i][0], bks[j][-1], ("VIBES band %d" % src[1]) if src[0] == "V" else ("key %d's own" % src[1]), e),
+            file=sys.stderr)
+    print("pulses: %d runs, %d appended (%d B)" % (len(runs), len(BANDS["own_reps"]),
+                                                  len(BANDS["own_reps"]) * NFAM * NLAYER * (PLEN + 2) * 2), file=sys.stderr)
 
 
 def pair_stage(vb, fec, zt):
@@ -1199,7 +1695,7 @@ def pair_stage(vb, fec, zt):
     for n in range(KEY_LO, KEY_HI + 1):
         for _ in range(20):                         # a pair whose integer map is not contracting: more tube damping
             k = key_physics(vb, n, fec, zt)
-            k["pw"] = pair_words_safe(k["bt"], k["wt"], k["felt_v1"], k["f0"])
+            k["pw"] = pair_words_safe(k["bt"], k["wt"], k["felt_v1"], k.setdefault("f_v1", v1_target(vb, k)))
             k["grid"] = map_check_words(k)
             if k["grid"][0] < 1.0:
                 break
@@ -1210,12 +1706,15 @@ def pair_stage(vb, fec, zt):
     return phys
 
 
-def build():
-    vb = load_vibes(strict="--strict" in sys.argv)
+def build(vb=None, vspec=None):
+    """The spec of one bar type: VIBES (vb None: vibes.json) or a later type (vb its data, vspec VIBES's spec: its
+    pulse shapes are shared, MARIMBA PLAN §3.2). Call build_type for a later type (the per-type globals)."""
+    vb = vb or load_vibes(strict="--strict" in sys.argv)
+    mar = is_mar(vb)
     assert [f["detent"] for f in vb["T7c"]["families"]] == FAM_DETENT and len(FAM_DETENT) == NFAM, "T7c detents"
     fec = fe_all(vb)
     trace("fe", fec, full=True)
-    pins = None if "--repin" in sys.argv else load_pins()
+    pins = None if (repinning(vb) or (is_mar(vb) and "--repin-marimba-pair" in sys.argv)) else load_pins(MAR_PINS if mar else PINS)
     phys = {}
     if pins:                                        # the pinned pair stage (PINS): the same words on every machine
         assert sorted(pins) == list(range(KEY_LO, KEY_HI + 1)), "bars_pins.json: keys"
@@ -1229,14 +1728,19 @@ def build():
         print("tube: solving zeta_r at the reference notes", file=sys.stderr)
         zt = tube_zetas(vb)
         phys = pair_stage(vb, fec, zt)
-        BUILD_PINS.clear()
-        BUILD_PINS.update({n: pin_of(phys[n], zt[n]) for n in phys})
+        bp = BUILD_PINS_MAR if mar else BUILD_PINS
+        bp.clear()
+        bp.update({n: pin_of(phys[n], zt[n]) for n in phys})
     trace("phys", phys, full=True)
     print("mallets: contact simulations", file=sys.stderr)
     ct = contacts(vb, phys, fec)
     trace("contacts", {"%d.%d" % (n, q): c for n in ct for q, c in enumerate(ct[n])})
     BANDS.clear()
-    BANDS.update(pinned_bands(vb, phys, ct) if "bands" in vb else assign_bands(phys, ct))
+    if mar:
+        BANDS.update(pinned_bands(vb, phys, ct, tol=1e9) if "first_key" in vb["bands"] else assign_bands(phys, ct))
+        share_pulses(vb, phys, ct, vspec)
+    else:
+        BANDS.update(pinned_bands(vb, phys, ct) if "bands" in vb else assign_bands(phys, ct))
     global NBAND
     NBAND = len(BANDS["rep"])
     for n in range(KEY_LO, KEY_HI + 1):
@@ -1305,15 +1809,16 @@ def build():
     # radiation efficiency per upper mode (R1b): one constant per mode over all keys, the median offset of the model's
     # level re V1 (TONE 0, MED YARN, v100, 30..530 ms, the reference procedure's window) from the measured levels
     rad = {}
-    for it in range(2):
+    for it in range(0 if mar else 2):
         for slot, nm in ((2, "V2"), (3, "V3"), (4, "V4")):
-            ref = {int(k): v for k, v in vb["T2"][nm]["level_db"].items()}
+            ref = {int(k): v for k, v in (vb["R1b"]["level_db"][nm] if mar else vb["T2"][nm]["level_db"]).items()}
             ks = [n for n in sorted(ref) if phys[n]["modes"][slot - 2]["present"]]
             y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, kf=CAL_KF), sleep=False)
             off = []
             for n, r in zip(ks, y):
-                l1 = gm.band_level(r, phys[n]["f0"], 0.03, 0.53, 0.015)
-                lm = gm.band_level(r, phys[n]["modes"][slot - 2]["f"], 0.03, 0.53, 0.015)
+                rw = vb["R1b"].get("window_s", (0.03, 0.53))   # MARIMBA: the onset (its targets are pulse spectra)
+                l1 = gm.band_level(r, phys[n]["f0"], rw[0], rw[1], 0.015)
+                lm = gm.band_level(r, phys[n]["modes"][slot - 2]["f"], rw[0], rw[1], 0.015)
                 off.append(ref[n] - (lm - l1))
             d = float(np.median(off))
             trace("rad%d%s" % (it, nm), dict(off=off, d=d), full=True)
@@ -1321,45 +1826,77 @@ def build():
             for n in keys:
                 st["keys"][n]["bphys"][slot] *= 10 ** (d / 20)
         spec = build_spec(vb, phys, fec, ct, st)
-    print("radiation trims (dB): " + " ".join("%s %+.1f" % kv for kv in sorted(rad.items())), file=sys.stderr)
+    if mar:                                           # MARIMBA (R1b): per key, the slot's onset peak re V1's on the line
+        rw = vb["R1b"]["window_s"]
+        cpt = card_points()
+        for it in range(3):
+            pk_ = {}
+            for slot in (2, 3, 4):                    # each mode at its own loudest strike point (BAR_POS argmax): the
+                kn_ = [dict(gm.DEFAULT_KNOBS, kf=CAL_KF, tone=cpt[arg[BANDS["of"][n]][slot]]) for n in keys]   # TONE
+                y = gm.render_batch(spec, keys, [100] * len(keys), rw[1], kn_, sleep=False, slots=True)["slots"]
+                pk_[slot] = np.abs(y[:, :, int(rw[0] * FS):]).max(axis=2)   # card's sweep never lifts it past the line
+            for slot, nm in ((2, "V2"), (3, "V3"), (4, "V4")):
+                p = pk_[slot]
+                xs, ys = table(vb["R1b"]["level_db"][nm])
+                raw = {n: float(np.interp(n, xs, ys)) - 20 * math.log10(p[i, slot] / p[i, 0])
+                       for i, n in enumerate(keys) if p[i, slot] > 0 and p[i, 0] > 0}
+                sk = vb["R1b"]["smooth_keys"]
+                for n in keys:                        # the trend, not each key's strike weight (a node stays a node)
+                    near = [raw[m] for m in raw if abs(m - n) <= sk]
+                    if not near:
+                        continue
+                    d = float(np.median(near))
+                    tot = rad.get(nm, {}).get(n, 0.0)
+                    d = max(vb["R1b"]["trim_db"][0] - tot, min(vb["R1b"]["trim_db"][1] - tot, d))
+                    rad.setdefault(nm, {})[n] = tot + d
+                    st["keys"][n]["bphys"][slot] *= 10 ** (d / 20)
+            spec = build_spec(vb, phys, fec, ct, st)
+        rad = {nm: [rad.get(nm, {}).get(n, 0.0) for n in keys] for nm in ("V2", "V3", "V4")}
+        print("radiation trims per key (dB): " + " ".join("%s %+.1f..%+.1f" % (nm, min(v), max(v)) for nm, v in
+                                                          sorted(rad.items())), file=sys.stderr)
+    else:
+        print("radiation trims (dB): " + " ".join("%s %+.1f" % kv for kv in sorted(rad.items())), file=sys.stderr)
     st["rad_db"] = rad
-    # V4 per key (R1b _doc_v4): a straight-line trim in key that puts MED YARN v100 V4 (re V1, 30..530 ms) on the
-    # straight-line fit of the measured levels over v4_fit_keys, never brighter at the brightest voicing than the
-    # single-constant model ever is in F3..F6 (the ceiling); held below the fit keys, returned to the constant above
-    fa, fb = vb["R1b"]["v4_fit_keys"]
-    ret = vb["R1b"]["v4_return_db_per_key"]
-    ref = {int(k): v for k, v in vb["T2"]["V4"]["level_db"].items()}
-    tline = np.polyfit(sorted(ref), [ref[n] for n in sorted(ref)], 1)
-    ks = [n for n in range(fa, fb + 1) if phys[n]["modes"][2]["present"]]
-    y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, kf=CAL_KF), sleep=False)
-    m0 = [gm.band_level(r, phys[n]["modes"][2]["f"], 0.03, 0.53, 0.015) - gm.band_level(r, phys[n]["f0"], 0.03, 0.53, 0.015)
-          for n, r in zip(ks, y)]
-    cl4 = np.polyfit(ks, [float(np.polyval(tline, n)) - m for n, m in zip(ks, m0)], 1)
-    bright = np.full(len(keys), -999.0)                   # V4 onset (free ringing) re V1 at the brightest voicing
-    for tone in (0, 64, 127):
-        kn = dict(gm.DEFAULT_KNOBS, bark=FAM_DETENT[-1], hammer=0, tone=tone)
-        r = gm.render_batch(spec, keys, [127] * len(keys), 0.05, kn, sleep=False, slots=True)["slots"]
-        p = np.abs(r[:, :, int(0.005 * FS):]).max(axis=2)
-        bright = np.maximum(bright, 20 * np.log10(p[:, 4] / p[:, 0] + 1e-30))
-    live4 = [i for i, n in enumerate(keys) if spec["keys"][i]["modes"][4]["b"]]
-    sm4 = {keys[i]: float(np.mean([bright[j] for j in live4 if abs(keys[j] - keys[i]) <= 3])) for i in live4}
-    ceil4 = max(sm4[n] for n in sm4 if 53 <= n <= 89) + vb["R1b"]["v4_ceiling_db"]
-    b4 = {n: st["keys"][n]["bphys"][4] for n in keys}
-    trace("v4", dict(tline=tline, m0=m0, cl4=cl4, bright=bright, ceil4=ceil4), full=True)
+    if mar:                                           # no measured V4 level (R1b): the FE mode at the R1 law
+        st["v4_trim_db"] = [0.0] * len(keys)
+    else:
+        # V4 per key (R1b _doc_v4): a straight-line trim in key that puts MED YARN v100 V4 (re V1, 30..530 ms) on the
+        # straight-line fit of the measured levels over v4_fit_keys, never brighter at the brightest voicing than the
+        # single-constant model ever is in F3..F6 (the ceiling); held below the fit keys, returned to the constant above
+        fa, fb = vb["R1b"]["v4_fit_keys"]
+        ret = vb["R1b"]["v4_return_db_per_key"]
+        ref = {int(k): v for k, v in vb["T2"]["V4"]["level_db"].items()}
+        tline = np.polyfit(sorted(ref), [ref[n] for n in sorted(ref)], 1)
+        ks = [n for n in range(fa, fb + 1) if phys[n]["modes"][2]["present"]]
+        y = gm.render_batch(spec, ks, [100] * len(ks), 0.6, dict(gm.DEFAULT_KNOBS, kf=CAL_KF), sleep=False)
+        m0 = [gm.band_level(r, phys[n]["modes"][2]["f"], 0.03, 0.53, 0.015) - gm.band_level(r, phys[n]["f0"], 0.03, 0.53, 0.015)
+              for n, r in zip(ks, y)]
+        cl4 = np.polyfit(ks, [float(np.polyval(tline, n)) - m for n, m in zip(ks, m0)], 1)
+        bright = np.full(len(keys), -999.0)                   # V4 onset (free ringing) re V1 at the brightest voicing
+        for tone in (0, 64, 127):
+            kn = dict(gm.DEFAULT_KNOBS, bark=FAM_DETENT[-1], hammer=0, tone=tone)
+            r = gm.render_batch(spec, keys, [127] * len(keys), 0.05, kn, sleep=False, slots=True)["slots"]
+            p = np.abs(r[:, :, int(0.005 * FS):]).max(axis=2)
+            bright = np.maximum(bright, 20 * np.log10(p[:, 4] / p[:, 0] + 1e-30))
+        live4 = [i for i, n in enumerate(keys) if spec["keys"][i]["modes"][4]["b"]]
+        sm4 = {keys[i]: float(np.mean([bright[j] for j in live4 if abs(keys[j] - keys[i]) <= 3])) for i in live4}
+        ceil4 = max(sm4[n] for n in sm4 if 53 <= n <= 89) + vb["R1b"]["v4_ceiling_db"]
+        b4 = {n: st["keys"][n]["bphys"][4] for n in keys}
+        trace("v4", dict(tline=tline, m0=m0, cl4=cl4, bright=bright, ceil4=ceil4), full=True)
 
-    def v4_trim(n):
-        d = float(np.polyval(cl4, min(max(n, fa), fb)))
-        if n > fb:
-            d = math.copysign(max(0.0, abs(d) - ret * (n - fb)), d)
-        return min(d, ceil4 - sm4[n]) if n in sm4 else d
-    v4tr = {n: v4_trim(n) for n in keys}
-    for n in keys:
-        st["keys"][n]["bphys"][4] = b4[n] * 10 ** (v4tr[n] / 20)
-    spec = build_spec(vb, phys, fec, ct, st)
-    print("V4 trim per key (dB re the R1b constant): %+.1f at %d .. %+.1f at %d (line %+.1f, the brightest-voicing ceiling "
-          "%+.1f dB re V1), 0 from %d" % (v4tr[fa], fa, v4tr[fb], fb, float(np.polyval(cl4, fb)), ceil4,
-                                         min(n for n in keys if n > fb and v4tr[n] == 0)), file=sys.stderr)
-    st["v4_trim_db"] = [rad["V4"] + v4tr[n] for n in keys]
+        def v4_trim(n):
+            d = float(np.polyval(cl4, min(max(n, fa), fb)))
+            if n > fb:
+                d = math.copysign(max(0.0, abs(d) - ret * (n - fb)), d)
+            return min(d, ceil4 - sm4[n]) if n in sm4 else d
+        v4tr = {n: v4_trim(n) for n in keys}
+        for n in keys:
+            st["keys"][n]["bphys"][4] = b4[n] * 10 ** (v4tr[n] / 20)
+        spec = build_spec(vb, phys, fec, ct, st)
+        print("V4 trim per key (dB re the R1b constant): %+.1f at %d .. %+.1f at %d (line %+.1f, the brightest-voicing ceiling "
+              "%+.1f dB re V1), 0 from %d" % (v4tr[fa], fa, v4tr[fb], fb, float(np.polyval(cl4, fb)), ceil4,
+                                             min(n for n in keys if n > fb and v4tr[n] == 0)), file=sys.stderr)
+        st["v4_trim_db"] = [rad["V4"] + v4tr[n] for n in keys]
     # velocity trim per family + family level match (the calibration law, the old MED YARN, is the reference)
     cal = vb["calib"]
     ref_a = V_ANCH.index(104)
@@ -1372,7 +1909,7 @@ def build():
                 for i, n in enumerate(keys):
                     allk.append(n); allv.append(v); allkn.append(dict(gm.DEFAULT_KNOBS, kf=q << 8)); idx.append((i, q, a))
         y = render_chunks(spec, allk, allv, 0.32, allkn, chunk=440)
-        lv = levels(y)
+        lv = levels(y, *cal.get("level_t_s", (0.05, 0.30)))   # MARIMBA: from 0 (the upper modes are gone by 50 ms)
         for (i, q, a), l in zip(idx, lv):
             L[i, q, a] = l
         rel = L - L[:, :, ref_a:ref_a + 1]
@@ -1402,7 +1939,7 @@ def build():
     trace("st_vtrim", st["keys"], full=True)
     rescale_b()
     # BELL's tube size per raw value: the loudness even over the knob (S10)
-    st["kn_tube"], lt = shape_kn_tube(vb, spec)
+    st["kn_tube"], lt = shape_kn_tube(vb, spec, **({"keys": (41, 48, 60, 72, 84)} if mar else {}))
     trace("kn_tube", dict(kn=st["kn_tube"], lt=lt), full=True)
     spec = build_spec(vb, phys, fec, ct, st)
     print("tube map: loudness %.1f .. %.1f LU from BELL 1 to 64, size at 16 / 32 / 48: %.1f %.1f %.1f dB" % (
@@ -1456,6 +1993,9 @@ def build():
           file=sys.stderr)
     # the per-voice peak ceiling over the whole voicing space (card_level peak_grid): every key, v127, every
     # TONE x BELL x MALLET x HAMMER corner of the grid; a key over the ceiling is turned down (reported)
+    if mar and vb["card_level"].get("family_ceiling"):
+        fam_ceiling(vb, spec, st, keys)               # the hard families down per key first (the default's level kept)
+        spec = build_spec(vb, phys, fec, ct, st)
     pk, worst = voicing_peaks(vb, spec, keys)
     ceil_ = 10 ** (vb["card_level"]["peak_ceiling_dbfs"] / 20) * 32768
     over = [(n, 20 * math.log10(pk[i] / 32768)) for i, n in enumerate(keys) if pk[i] > ceil_]
@@ -1468,6 +2008,14 @@ def build():
     st["peak_dbfs"] = [float(20 * math.log10(min(pk[i], ceil_) / 32768)) for i in range(len(keys))]
     st["peak_worst"] = worst
     spec = build_spec(vb, phys, fec, ct, st)
+    if mar and vb["card_level"].get("ring_ceiling"):
+        ring_ceiling(vb, spec, st, keys)              # RING over 64 turned down where it would break the ceiling
+        spec = build_spec(vb, phys, fec, ct, st)
+    if mar and vb["card_level"].get("fam_map"):       # MALLET's map re-spaced: no key's level jumps between detents
+        st["kn_fam"], rep = shape_kn_fam(vb, spec)
+        spec = build_spec(vb, phys, fec, ct, st)
+        print("MALLET map: per segment the largest per-key level change %s dB (4-raw step at most %s dB)" % (
+            " / ".join("%.1f" % r[1] for r in rep), " / ".join("%.2f" % r[2] for r in rep)), file=sys.stderr)
     print("voicing peaks: worst %.2f dBFS (key %d, %s), ceiling %.1f dBFS, keys turned down: %s" % (
         max(20 * math.log10(x / 32768) for x in pk), keys[int(np.argmax(pk))], worst[int(np.argmax(pk))],
         vb["card_level"]["peak_ceiling_dbfs"], ", ".join("%d (%+.1f)" % o for o in over) or "none"), file=sys.stderr)
@@ -1520,6 +2068,12 @@ def build():
                               win_ms=ct[n][q]["win_ms"], ncont=ct[n][q]["ncont"], shapes=ct[n][q]["shapes"],
                               prate=ct[n][q]["prate"]) for q in range(NFAM)],
                  grid=grid[n - KEY_LO])
+        if mar:                                       # the regime-aware pair's report (MARIMBA PLAN §6 step 4)
+            nm_ = bt.modes2()
+            d.update(regime=k["regime"], split_hz=abs(nm_[0][0] - nm_[1][0]),
+                     v1_target_cents=round(1200 * math.log2(v1_target(vb, k) / k["f0"]), 6),   # (rounded: libm exp)
+                     normal_modes=[dict(f=float(f), t60=LN1000 / s) for f, s, _, _ in nm_],
+                     t60_bare=k["t1a"], t60_rel_v1=v1_vals(k)["t60_rel"])
         design.append(d)
     spec["design"] = design
     spec["rad_db"] = st["rad_db"]
@@ -1535,7 +2089,62 @@ def build():
     spec["band_err_db"] = list(BANDS["err"])
     spec["vibes"] = vb
     spec["mallet_v"] = [speed(vb, v) for v in range(128)]
+    if mar:
+        spec["share_err_db"] = list(BANDS["share_err"])
+        spec["pband_local"] = list(BANDS["pband"])
+        spec["pulse_runs"] = list(BANDS["runs"])
+        spec["fam_down_db"] = {str(n): v for n, v in sorted(st.get("fam_down_db", {}).items())}
+        spec["rolloff_db"] = [st.get("rolloff_db", {}).get(n, 0.0) for n in keys]
     return spec
+
+
+@contextlib.contextmanager
+def type_globals(vb):
+    """the module's per-type settings while a later type (MARIMBA) is built or checked: its position band count, FE
+    range, BELL map top, no motor grid, the kc fallback, the tube mute (TUBE_MUTE_S), BANDS cleared; restored after"""
+    global NBAND, FE_RANGE, MOT_GRID, KN_TOP_SIZE, KN_TUBE_TOP, KC_FALLBACK, TUBE_MUTE_S
+    saved = (NBAND, FE_RANGE, MOT_GRID, KN_TOP_SIZE, KN_TUBE_TOP, KC_FALLBACK, TUBE_MUTE_S, dict(BANDS))
+    try:
+        KC_FALLBACK = True
+        TUBE_MUTE_S = vb["T3m"].get("tube_s") if not vb["type_rec"]["flags"]["has_damper"] else None
+        NBAND = vb["bands"]["nband"]
+        FE_RANGE = tuple(vb["keys"]["authentic"])
+        MOT_GRID = (1.0,) if not vb["type_rec"]["flags"]["has_motor"] else MOT_GRID
+        KN_TOP_SIZE = vb["type_rec"]["kn_tube_top"]
+        KN_TUBE_TOP = kn_tube()[127] / 32768.0
+        BANDS.clear()
+        yield
+    finally:
+        NBAND, FE_RANGE, MOT_GRID, KN_TOP_SIZE, KN_TUBE_TOP, KC_FALLBACK, TUBE_MUTE_S = saved[:7]
+        BANDS.clear()
+        BANDS.update(saved[7])
+
+
+def build_type(vb, vspec):
+    """A later bar type (MARIMBA) against VIBES's spec: build() with this type's globals (its position bands, its FE
+    range, its BELL map top, no motor grid), then its band tables made global: VIBES's position bands 0..16 first
+    (the keys' band fields offset), the pulse list per position band (the golden model's), the shared pulse bank
+    (VIBES's 0..16 + this type's appended ones) and pband (position band -> pulse band)."""
+    with type_globals(vb):
+        sp = build(vb, vspec)
+    nb = len(vspec["bar_pos"])
+    for k in sp["keys"]:
+        k["band"] += nb
+    for kk in ("bar_pos", "pos_gain", "tube_gain", "pos_arg", "pos_exact", "pulse"):
+        sp[kk] = list(vspec[kk]) + list(sp[kk])
+    bank, pband = list(vspec["pulse"]), list(range(nb))
+    own = {}
+    for j, p in enumerate(sp["pband_local"]):
+        if p < 0:                                         # an appended pulse (-1 - its index), stored once
+            if p not in own:
+                bank.append(sp["pulse"][nb + j])
+                own[p] = len(bank) - 1
+            p = own[p]
+        pband.append(p)
+    sp["pulse_bank"], sp["pband"] = bank, pband
+    sp["band_rep"] = list(vspec["band_rep"]) + [r for r in sp["band_rep"]]
+    sp["name"] = vb["type"]
+    return sp
 
 
 # ---------------------------------------------------------------- the header
@@ -1625,6 +2234,162 @@ def emit(spec):
     return body + f"/* sha256(body) = {digest} */\n"
 
 
+# ---------------------------------------------------------------- the multi-type header (MARIMBA PLAN §8.2)
+TYPE_FLAG_MOTOR, TYPE_FLAG_DAMPER = 1, 2
+
+
+def type_record(spec, vb):
+    """The bar_type_t of one type: today's seven fields + flags (bit0 has_motor, bit1 has_damper) + kn_tube_top
+    (KN_TUBE[127] in hundredths of the tube size, informational: the map itself carries it). VIBES (vibes.json has no
+    flags row and stays byte-identical, Gate V): motor and damper."""
+    ty = spec["type"]
+    fl = vb["type_rec"].get("flags", {"has_motor": 1, "has_damper": 1})
+    flags = (TYPE_FLAG_MOTOR if fl["has_motor"] else 0) | (TYPE_FLAG_DAMPER if fl["has_damper"] else 0)
+    return [ty["tube_cents"], ty["mot_gc"], ty["tors_db"], ty["nbody"], ty["drive_row"], ty["sleep_rel"], ty["budget"],
+            flags, int(round(spec["kn_tube"][127] * 100 / 32768.0))]
+
+
+def stub_type(spec):
+    """MARIMBA PLAN §8.1 item 4: type 1 = an exact copy of VIBES's tables (flags 3), so the per-type plumbing in bars.c
+    can be proven not to alter a sample (TYPE 5 renders byte-identical to TYPE 4) before any marimba data exists."""
+    return dict(spec, name="STUB (a copy of VIBES)")
+
+
+def emit_multi(specs, vbs):
+    """The header with one row per bar TYPE (MARIMBA PLAN §8.2): BAR_KEYS / BAR_PRATE / BAR_PAMP / KN_FAM / KN_MASS / KN_MASSI
+    / KN_TUBE / KN_NZ / BAR_BODY / BAR_TYPE indexed [type] (read at note-on or by the main loop, never per sample);
+    the band tables global: the position bands (BAR_POS / BAR_POSG / BAR_TUBEG, VIBES's 0..16 then each later type's
+    own) and the pulse shapes (BAR_PULSE, VIBES's 0..16 then appended ones), BAR_PBAND mapping a position band to its
+    pulse. Type 0 is VIBES: every VIBES row is the --vibes-only header's row (test_gen_bars). Each later spec holds
+    the global band lists (its own bands appended to VIBES's), so it is self-contained for the golden model."""
+    v0, last = specs[0], specs[-1]
+    nb = len(last["bar_pos"])
+    bank = last.get("pulse_bank", last["pulse"])          # the shared pulse bank (a later spec's "pulse" is per
+    npl = len(bank)                                       # position band, for the golden model; pband dedups it)
+    pband = list(last.get("pband", range(nb)))
+    for sp in specs:                                      # the earlier types' bands are a prefix of the global lists
+        for kk in ("bar_pos", "pos_gain", "tube_gain", "pulse"):
+            assert last[kk][:len(sp[kk])] == sp[kk], kk
+        assert bank[:len(v0["pulse"])] == v0["pulse"]
+        assert sp["nz_bq"] == v0["nz_bq"] and sp["mot_cos"] == v0["mot_cos"]
+        assert [sp["kn_fam"][v] for v in FAM_DETENT] == [v0["kn_fam"][v] for v in FAM_DETENT]   # (the shared detents)
+    assert len(pband) == nb and all(0 <= p < npl for p in pband) and pband[:len(v0["bar_pos"])] == list(range(len(v0["bar_pos"])))
+    L = []
+    w = L.append
+    w("/* SPDX-License-Identifier: GPL-3.0-only */")
+    w("/* GENERATED by tools/gen_bars.py from docs/model/data/vibes.json (type 0) + the later types - do not edit. */")
+    w("/* The bar engine tables, one row per bar TYPE (VIBES PLAN §4.4, MARIMBA PLAN §8.2). Include after rhodes_tables.h")
+    w(" * (rh_mode_t, RH_NANCH). Types: " + ", ".join("%d %s" % (i, s.get("name", "VIBES")) for i, s in enumerate(specs)) + ".")
+    w(" * Run-time arithmetic the golden model (tools/bars_model.py) assumes, per type t (bars.c's bar_sub):")
+    w(" *   BAR_POS: q = raw * 4096 / 127, point q >> 8, w = P[i] + (((P[i+1] - P[i]) * (q & 255)) >> 8); b = km->b * w >> 14;")
+    w(" *     T1/T2: b = b * tors_db >> 15, and b = 0, not live, for TONE raw <= 64. P = BAR_POS[key.band].")
+    w(" *   pulse: per family the two velocity layers (Q15 RH_VLAY_W), then the two families (Q8 KN_FAM & 255) into pbuf;")
+    w(" *     the shapes BAR_PULSE[BAR_PBAND[key.band]]; prate = (blended BAR_PRATE[t] << 4) * KN_MASS[t][HAMMER] >> 12,")
+    w(" *     pamp = blended BAR_PAMP[t] * KN_MASSI[t][HAMMER] >> 12 (<= 32767); the anchors as rh_load_pulse (RH_VPOS_I /")
+    w(" *     RH_VPOS_F), each family first, then the family blend.")
+    w(" *   pair: y0 += k_tb x1 >> 30 (a symmetric spring: tools/bartube.py COUPLE_SIGN), y1 += k_bt x0 >> 30 after slot 0's")
+    w(" *     step; rh_x = x0 + (wt x1 >> 28) + the other slots; k_bt, k_tb, wt x KN_TUBE[t][BELL] >> 15 at note-on.")
+    w(" *   BAR_TYPE[t].flags: bit0 has_motor, bit1 has_damper; kn_tube_top = KN_TUBE[t][127] in 1/100 (informational).")
+    w(" *   BAR_MOT_COS[i] = |cos(pi i / 512)|: t = ph >> 23, c = t < 256 ? COS[t] : COS[512 - t] (one AM period per phase")
+    w(" *     cycle, so the AM rate is the FX_LFO_INC rate). */")
+    w(f"#define BAR_GEN_VERSION {GEN_VERSION}")
+    w(f"#define BAR_KEY_LO {KEY_LO}            /* every MIDI note 21..108 plays its own pitch */")
+    w(f"#define BAR_NKEY {NKEY}")
+    w(f"#define BAR_NM {NM}                 /* V1 TUBE V2 V3 V4 T1 T2 X */")
+    w(f"#define BAR_NFAM {NFAM}               /* 5 families at the shared MALLET detents (KN_FAM) */")
+    w(f"#define BAR_NBAND {nb}              /* strike-position / card-gain bands: VIBES 0..16, then each type's own */")
+    w(f"#define BAR_NPULSE {npl}             /* pulse-shape bands: VIBES 0..16, then the appended ones (shared bank) */")
+    w(f"#define BAR_NLAYER {NLAYER}")
+    w(f"#define BAR_PLEN {PLEN}")
+    w(f"#define BAR_NPOS {NPOS}")
+    w(f"#define BAR_NTYPE {len(specs)}")
+    w(f"#define BAR_FADE_STEP {FADE_STEP}")
+    w("")
+    w("/* bar_key_t, bar_type_t: defined in firmware/src/bars.h (as rhodes.c holds rh_key_t) */")
+    w("static const bar_key_t BAR_KEYS[BAR_NTYPE][BAR_NKEY] = {")
+    for sp in specs:
+        w("  {")
+        for k in sp["keys"]:
+            ms = ",".join("{%d,%d,%d,%d,%d,%d,%d}" % (m["w"]["sh"], m["w"]["ch"], m["w"]["th"], m["w"]["d"], m["w"]["drel"],
+                                                       m["w"]["cr"], m["b"]) for m in k["modes"])
+            w("    {{%s}, %d, %d, %d, %d, %d, %d, %d, %d}," % (ms, k["k_bt"], k["k_tb"], k["wt"], rom_safe(k["gain"]),
+                                                           rom_safe(k["kill"]), k["life"], k["band"], k["flags"]))
+        w("  },")
+    w("};")
+    w("static const int16_t BAR_PULSE[BAR_NPULSE][BAR_NFAM][BAR_NLAYER][BAR_PLEN + 2] = {")
+    for b in bank:
+        w("  {" + ",".join("{" + ",".join("{" + ",".join(map(str, sh)) + "}" for sh in fam) + "}" for fam in b[:NFAM]) + "},")
+    w("};")
+    w("static const uint8_t BAR_PBAND[BAR_NBAND] = {" + ",".join(map(str, pband)) + "};   /* position band -> pulse band */")
+    pr_all = [x for sp in specs for k in sp["prate"] for q in k[:NFAM] for x in q]
+    assert 0 < min(pr_all) and max(pr_all) <= 0xFFFF, "BAR_PRATE is uint16 (Q12 pulse points a sample: %d..%d)" % (
+        min(pr_all), max(pr_all))
+    w("static const uint16_t BAR_PRATE[BAR_NTYPE][BAR_NKEY][BAR_NFAM][RH_NANCH] = {")
+    for sp in specs:
+        w(" {")
+        for k in sp["prate"]:
+            w("  {" + ",".join("{" + ",".join(str(rom_safe(x)) for x in q) + "}" for q in k[:NFAM]) + "},")
+        w(" },")
+    w("};")
+    w("static const uint16_t BAR_PAMP[BAR_NTYPE][BAR_NKEY][BAR_NFAM][RH_NANCH] = {")
+    for sp in specs:
+        w(" {")
+        for k in sp["pamp"]:
+            w("  {" + ",".join("{" + ",".join(map(str, q)) + "}" for q in k[:NFAM]) + "},")
+        w(" },")
+    w("};")
+    w("static const int16_t BAR_POS[BAR_NBAND][BAR_NPOS][BAR_NM] = {")
+    for b in last["bar_pos"]:
+        w("  {" + ",".join("{" + ",".join(map(str, r)) + "}" for r in b) + "},")
+    w("};")
+    w("/* the output gain per band and mallet family at the 17 TONE / BELL points (Q14; point 8 = 1.0): per family as")
+    w(" * BAR_POS, g = R[i] + ((R[i+1] - R[i]) (q & 255) >> 8), then the families as the pulse (KN_FAM's Q8 fraction);")
+    w(" * gain = key gain x g(TONE) >> 14 x g(BELL) >> 14 at note-on (the type file's card_level) */")
+    for nm, key in (("BAR_POSG", "pos_gain"), ("BAR_TUBEG", "tube_gain")):
+        w("static const uint16_t %s[BAR_NBAND][BAR_NFAM][BAR_NPOS] = {" % nm)
+        for b in last[key]:
+            w("  {" + ",".join("{" + ",".join(map(str, r)) + "}" for r in b) + "},")
+        w("};")
+    rgs = [sp for sp in specs if any("ring_gain" in k for k in sp["keys"])]
+    assert len(rgs) <= 1, "one type with a RING gain table (bars.c reads BAR_RINGG by key where flag bit4)"
+    if rgs:
+        w("/* the output gain per key at the 17 RING (DECAY) points (Q14, the card_level ring_ceiling of type %d: the single-"
+          % specs.index(rgs[0]))
+        w(" * strike ceiling over RING; read only for a key with flag bit4): q = RING << 5 (point p = RING 8p, point 8 = 64),")
+        w(" * g = R[i] + ((R[i+1] - R[i]) (q & 255) >> 8) (i = q >> 8); gain x g >> 14 at note-on after TONE and BELL's */")
+        w("#define BAR_RINGG_ROWS 1")
+        w("static const uint16_t BAR_RINGG[BAR_NKEY][BAR_NPOS] = {")
+        for k in rgs[0]["keys"]:
+            w("  {" + ",".join(map(str, k.get("ring_gain", [Q14] * NPOS))) + "},")
+        w("};")
+    w("static const int32_t BAR_BODY[BAR_NTYPE][2][5] = {")
+    for _ in specs:
+        w("  {{%d,0,0,0,0},{%d,0,0,0,0}}," % (Q28, Q28))
+    w("};")
+    w("static const bar_type_t BAR_TYPE[BAR_NTYPE] = {   /* tube_cents, mot_gc, tors_db, nbody, drive_row, sleep_rel, budget, "
+      "flags, kn_tube_top */")
+    for sp, vb in zip(specs, vbs):
+        w("  {%s}," % ", ".join(map(str, type_record(sp, vb))))
+    w("};")
+    for nm, key in (("KN_FAM", "kn_fam"), ("KN_MASS", "kn_mass"), ("KN_MASSI", "kn_massi"), ("KN_TUBE", "kn_tube"), ("KN_NZ", "kn_nz")):
+        w("static const uint16_t %s[BAR_NTYPE][128] = {" % nm)
+        for sp in specs:
+            w("  {" + ",".join(map(str, sp[key])) + "},")
+        w("};")
+    w("static const int16_t NZ_BQ[2][5] = {" + ",".join("{" + ",".join(map(str, r)) + "}" for r in v0["nz_bq"]) + "};")
+    w("static const int16_t BAR_MOT_COS[257] = {" + ",".join(map(str, v0["mot_cos"])) + "};")
+    for i, (sp, vb) in enumerate(zip(specs, vbs)):
+        fams = vb["T7c"]["families"]
+        w("/* type %d mallet families (K N/m^p, p): " % i + ", ".join(
+            "%s %.3g %.1f" % (f["name"], fam_K(vb, q), fam_p(vb, q)) if "blend" not in f else
+            "%s = the blend %d/256 of %.3g %.1f and %.3g %.1f" % (f["name"], f["blend"]["a"], law_K(vb, f["blend"]["lo"]),
+                                                                f["blend"]["lo"]["p"], law_K(vb, f["blend"]["hi"]),
+                                                                f["blend"]["hi"]["p"]) for q, f in enumerate(fams)) + " */")
+    body = "\n".join(L) + "\n"
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    return body + f"/* sha256(body) = {digest} */\n"
+
+
 def all_words(spec):
     """Every 32-bit word the header holds (for the ROM-window check)."""
     out = []
@@ -1656,10 +2421,35 @@ def summary(spec):
 
 def main():
     out = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else None
-    spec = build()
-    for v in all_words(spec):
-        assert not (0xFFC00000 <= (v & 0xFFFFFFFF) <= 0xFFCFFFFF), v
-    hdr = emit(spec)
+    if "--vibes-spec" in sys.argv:                        # development only: VIBES's spec as written by a full run
+        spec = json.load(open(sys.argv[sys.argv.index("--vibes-spec") + 1]))
+    else:
+        spec = build()
+    vb = spec["vibes"]
+    mspec = None
+    if "--stub" in sys.argv:                              # type 1 = a copy of VIBES (MARIMBA PLAN §8.1 item 4)
+        specs, vbs = [spec, stub_type(spec)], [vb, vb]
+    elif "--vibes-only" in sys.argv:
+        specs, vbs = [spec], [vb]
+    else:
+        mvb = json.load(open(MARIMBA))
+        errs = check_vibes(mvb, "--strict" in sys.argv)
+        if errs:
+            raise SystemExit("marimba.json: " + "; ".join(errs))
+        if "--marimba-offset-add" in sys.argv:            # an A/B level for listening (MARIMBA PLAN §12.5): MARIMBA's
+            add = float(sys.argv[sys.argv.index("--marimba-offset-add") + 1])   # calib.st77_offset_db + add, the rest
+            mvb["calib"]["st77_offset_db"] = float(mvb["calib"]["st77_offset_db"]) + add   # as the data says (the
+            print("MARIMBA A/B: calib.st77_offset_db %+.1f dB (marimba.json %+.1f %+.1f); never the default: use --out"
+                  % (mvb["calib"]["st77_offset_db"], mvb["calib"]["st77_offset_db"] - add, add), file=sys.stderr)
+            if not out:                                   # ceiling / roll-off stages keep -0.5 dBFS)
+                raise SystemExit("--marimba-offset-add writes an alternative header: give --out DIR")
+        mspec = build_type(mvb, spec)
+        specs, vbs = [spec, mspec], [vb, mvb]
+    for sp in specs:
+        for v in all_words(sp):
+            assert not (0xFFC00000 <= (v & 0xFFFFFFFF) <= 0xFFCFFFFF), v
+    hdr1 = emit(spec)                                     # VIBES alone: today's header, byte for byte (--vibes-only)
+    hdr = hdr1 if "--vibes-only" in sys.argv else emit_multi(specs, vbs)
     trace("keys_int", {k["midi"]: k for k in spec["keys"]}, full=True)
     trace("tables", {kk: spec[kk] for kk in ("pulse", "prate", "pamp", "bar_pos", "pos_gain", "tube_gain", "kn_tube")})
     write_trace()
@@ -1667,8 +2457,21 @@ def main():
     jp = os.path.join(out, "bars_spec.json") if out else os.path.join(ROOT, "docs/model/data/bars_spec.json")
     os.makedirs(os.path.dirname(hp), exist_ok=True)
     open(hp, "w").write(hdr)
+    if "--both" in sys.argv:                              # the tests: both forms from one run
+        open(os.path.join(os.path.dirname(hp), "bars_tables_vibes.h"), "w").write(hdr1)
     js = json.dumps(spec, indent=0, sort_keys=True, default=float, separators=(",", ":"))
-    open(jp, "w").write(js + "\n")
+    if "--vibes-spec" not in sys.argv:
+        open(jp, "w").write(js + "\n")
+    if mspec is not None:
+        mp = os.path.join(out, "marimba_spec.json") if out else os.path.join(ROOT, "docs/model/data/marimba_spec.json")
+        open(mp, "w").write(json.dumps(mspec, indent=0, sort_keys=True, default=float, separators=(",", ":")) + "\n")
+    if ("--repin-marimba" in sys.argv or "--repin-marimba-pair" in sys.argv) and mspec is not None:
+        pp = os.path.join(out, "marimba_pins.json") if out else MAR_PINS
+        write_pins(pp, BUILD_PINS_MAR)
+        fp = None if not BUILD_FE_MAR else os.path.join(out, "marimba_fe_pins.json") if out else MAR_FE_PINS
+        if fp:
+            write_fe_pins(fp, mspec["vibes"], BUILD_FE_MAR)
+        print("marimba pins written: %s, %s (review the table change before committing)" % (pp, fp), file=sys.stderr)
     if "--repin" in sys.argv:
         pp = os.path.join(out, "bars_pins.json") if out else PINS
         write_pins(pp, BUILD_PINS)

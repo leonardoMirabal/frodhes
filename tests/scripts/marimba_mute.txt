@@ -1,0 +1,50 @@
+# MARIMBA's MUTE (the DECAY page's K2, CC 103; P_RELEASE's slot): a marimba has no damper, the player's hand stops a
+# bar. Key-up crossfades to the hand-stop words with weight pedal x MUTE / 127 (bars.c bar_mute_w): MUTE 0 = the note
+# rings out as if held, 64 = a half hand, 127 = a full stop (about 60 dB in 0.1 s); the pedal (CC 64) down keeps the
+# hand off whatever MUTE says, a half pedal lets it land at the pedal's weight. C4 v100, RAW, NOISE 0, the key-up at
+# 0.4 s; each expect reads the last 50 ms (values on the host at 46747f6 in brackets).
+50 midi 0xB0 119 127
+50 midi 0xB0 104 0
+60 midi 0xB0 79 127
+# MUTE 0: rings on after the key-up (-33.0 / -47.2 / -54.0 / -65.4)
+100 midi 0xB0 103 0
+200 midi 0x90 60 100
+550 expect rms > -36
+600 midi 0x80 60 0
+700 expect rms > -50
+800 expect rms > -57
+1000 expect rms > -68
+# MUTE 64: half a hand (-74.5 at 0.1 s, then silent)
+2600 midi 0xB0 103 64
+2700 midi 0x90 60 100
+3050 expect rms > -36
+3100 midi 0x80 60 0
+3200 expect rms < -65
+3200 expect rms > -85
+3300 expect rms < -150
+# MUTE 127: the full stop (-98.2 at 0.1 s, then silent)
+5100 midi 0xB0 103 127
+5200 midi 0x90 60 100
+5550 expect rms > -36
+5600 midi 0x80 60 0
+5700 expect rms < -90
+5800 expect rms < -150
+# MUTE 127 with the pedal down: the hand never lands (= MUTE 0)
+7600 midi 0xB0 64 127
+7700 midi 0x90 60 100
+8050 expect rms > -36
+8100 midi 0x80 60 0
+8200 expect rms > -50
+8500 expect rms > -68
+# a half pedal (CC 64 50) with MUTE 127: the hand lands at the pedal's weight (-87.2 at 0.1 s)
+10100 midi 0xB0 64 50
+10200 midi 0x90 60 100
+10550 expect rms > -36
+10600 midi 0x80 60 0
+10700 expect rms < -80
+10700 expect rms > -95
+10800 expect rms < -150
+# pedal up; exact silence at the end
+12600 midi 0xB0 64 0
+15600 expect rms < -150
+15700 end

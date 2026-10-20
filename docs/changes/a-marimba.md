@@ -1,0 +1,83 @@
+## New
+- **MARIMBA, a concert marimba.** A sixth TYPE (ALGORITHM, or K1 on the main page): rosewood bars tuned 1 : 4 : 10,
+  each over its tube, struck by yarn or rubber mallets, computed like the vibraphone (no samples). The low notes ring
+  longer and swell for a moment just after the strike (the long tubes), the top ones are short and dry. Five
+  octaves, C2 to C7, are the real instrument's; every other MIDI note plays too.
+  - Its own VOICE pages: **VOICE 1/2** STRIKE, MALLET (**SOFT**, **MED**, **HARD**, **RUBBER**), TUBE, WEIGHT;
+    **VOICE 2/2** RING, **MUTE**, NOISE, TUNE. The main page's middle cards are MALLET and TUBE.
+  - **MUTE** instead of a damper (a marimba has none): your hand at the key-up. 0 lets every note ring out (the
+    MARIMBA presets start there), up stops it sooner. The pedal still holds; All Notes Off stops everything. It is
+    the same setting as VIBES' DAMPER (CC 103), so a sound saved on one keeps its value on the other.
+  - No motor: no motor page (SELECT goes from VOICE 2/2 to COMPRESSOR), and the motor's CCs 47–51 change nothing on
+    MARIMBA (they are kept for VIBES).
+  - Two new presets: **F15 MARIMBA** (rings out, a little reverb) and **F16 MRMB SOFT** (soft yarn, a heavier mallet,
+    more reverb and a little delay). Program change 14 / 15.
+  - **RING** above its middle (64) makes the low notes ring longer, not louder: as RING rises the notes are turned
+    down, the low ones the most (at 127 about 6–9 dB from C2 to G3, 3 dB at C4), so the hardest strike with the
+    loudest mallet and tube still stays just under full scale instead of being squashed by the output limiter. At
+    64 and under nothing changes.
+  - Its level is set 2.5 dB above the Rhodes types, as VIBES, but every strike is held under −0.5 dBFS (the top
+    bars' roll-off and RING's ceiling), so a chord comes out about 1.5 LU under the Rhodes F01 (measured on the
+    FM-1: −1.50 LU on USB, −1.48 on the jack).
+
+## Changes
+- Settings and user presets saved by 0.9.3 carry over, and the FM-1 comes back on the sound it was left on.
+- **MIDI CC 79** (the bar TYPEs): **0–95 selects VIBES** as before (0 and 64 included), **96–127 now selects MARIMBA**
+  (in 0.9.3 every value selected VIBES). CC 80 still picks the four Rhodes types.
+- **16 factory presets** (F01–F16); Program Change 0–15 loads them, 16–31 the user presets U01–U16 as before. The
+  preset number saved by 0.9.3 (14 factory presets) is moved once, so you come back on the same sound.
+- The start screen reads **ELECTRIC PIANO + VIBES + MARIMBA**.
+- Less flash for the same sound: the bar instruments' pulse-rate table is stored in 16 bits (every value fits,
+  nothing changes in the sound), about 17.6 kB less flash; the image (with the DISPLAY page) is 487,848 B of the
+  581,564 B available.
+- The developer CCs 9 (the mode cap) and 116's bar replies (112 / 113) work on MARIMBA as on VIBES.
+- MARIMBA's **MALLET** card: its steps re-spaced between the detents (SOFT, MED, HARD, RUBBER stay where they
+  were), so no key's level jumps at the changes of mallet family; VIBES' MALLET is unchanged.
+
+## Fixed
+- A note held through a TYPE change to another engine (a Rhodes type to VIBES or MARIMBA and back, or VIBES to
+  MARIMBA), whose sound the change fades out, stayed silent when struck again before being let go (a second MIDI
+  note-on, or an FM-1 key on a note MIDI still held). It now plays on the new type. 0.9.3 had this too.
+
+## Tools
+- `tools/marimba_va.py` (Gate VA-M: the marimba's model against its numbers before any C), `tools/marimba_scan.py`
+  (the host scan, the rolls and stress cases, the musicality checks M1–M7), `tools/hil_scan.py --marimba` (the FM-1
+  suites over USB and the jack), `tools/hil_cpu.py --engine marimba`, `tools/mrb_ref_measure.py` (numbers only from
+  reference recordings, never copied, played or embedded); `tools/gen_bars.py` builds both bar types (`--vibes-only`
+  still writes 0.9.3's header); `tools/hil_jack.py`: a tail that ends by its own decay is judged at its end, the after-mute
+  check high-passed at 20 Hz.
+- `tools/hil_scan.py` on MARIMBA: a failing row that matches one of `tools/marimba_scan.py`'s known, user-decided
+  items (`KNOWN` / `KNOWN_CARDS`) is reported **KNOWN** with its reason (listed after the suite's table and in the
+  json), not FAIL; a USB-jack mismatch still flags it.
+- `tools/hil_scan.py` measures fixed (the sound was right, the measure was not): PHASER SPEED 0 and CHORUS SPEED 0
+  on a long take against a DEPTH 0 reference (VIBES and MARIMBA), MARIMBA's CHORUS SPEED 50 / 127 by the same band;
+  MARIMBA's NOISE contact by the host gate's measure; MARIMBA's DRIVE TONE read clear of the 44.1 -> 48 kHz
+  resampler's image, and on the jack only above the jack's own harmonic floor; MARIMBA's DELAY DIG vs ANA judged by
+  the tape's wow and flutter in the echoes' timing (a marimba's echoes have too few overtones for ANA's darker loop
+  to show in their spectrum).
+- `tools/hil_scan.py`'s USB recorder: the 13–27 ms "gaps" in long runs' USB recordings were the recorder's own stall
+  (cutting a take copied the whole block log under a lock), not the FM-1; a cut now copies only its own part.
+- `tools/bar_scan.py --type 5` scans MARIMBA against its own spec; `tools/gen_bars.py --marimba-offset-add DB --out
+  DIR` writes an A/B header for listening to another MARIMBA level (never the default tables).
+- `tools/manual_shots.py` makes the MARIMBA screenshots; the emulator's `?selftest&marimba`.
+- `tools/release.py`'s FM-1 step tests MARIMBA too: `hil_cpu --engine marimba` (<= 4500 us, nothing shed),
+  `hil_scan --marimba --source both` (the voice suites every row, KNOWN rows passing; the effect suites their clicks,
+  takes, drift, bypass and level rows), `hil_jack --engine marimba` (the jack connected, the tails' silence gate, the
+  idle floor) and `vib_sampleback --engine marimba` (Gate VD-M on every key). `hil_scan`'s MARIMBA level row now
+  expects the measured −1.5 LU re the Rhodes (±1).
+- `tools/bar_scan.py`: the strike windows (and S1's guards) start at the audio block a strike sounds in; S8 / S9
+  (the cards) are MARIMBA-aware (its short notes); MARIMBA's S10 also measures G3, C4 and E4.
+
+## Tested
+- Host: `make test`, `make pytest` (the MARIMBA tests: Gate VA-M, every card and control audible, the scan and the
+  musicality checks, the compatibility with 0.9.3 settings, the held-key fix), every Rhodes and VIBES render byte for
+  byte as in 0.9.3 (`tests/baselines/renders.sha256`), Gate VB-M (the firmware's MARIMBA against its reference model,
+  23 cases: held notes from C1 to C8, MUTE, no tube, a roll, the pedal; this caught the top note C8 playing about
+  5 dB too quietly, fixed before release).
+- FM-1 (the final development build of this branch; the release build is checked again before publishing):
+  `tools/hil_cpu.py --worst`, nine low notes at full velocity with the pedal and every effect on: 4.1–4.2 ms of the
+  5.8 ms per audio block on the Rhodes, 3.4 ms on VIBES, 3.4–3.5 ms on MARIMBA, under the 5.0 ms where the voice
+  guard would act. The Rhodes and VIBES scans as for 0.9.3; the MARIMBA scan over USB and the headphone jack (every
+  voice, decay, roll and effect row; the remaining rows are the known, decided items); the jack: hiss and idle floor
+  as the Rhodes', no audible gate on MARIMBA's tails; every key C2–C7 recorded back and compared with the model
+  (pitch, decay, bloom, overtones).

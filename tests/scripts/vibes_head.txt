@@ -6,7 +6,7 @@
 300 expect state label.2.1 TONE
 300 expect state label.2.2 BELL
 # ---- VIBES (CC 79): MALLET, MOTOR (on by itself)
-400 midi 0xB0 79 64
+400 midi 0xB0 79 0
 600 expect state bars 1
 600 expect state label.2.0 TYPE
 600 expect state label.2.1 MALLET

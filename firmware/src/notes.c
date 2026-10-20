@@ -25,12 +25,35 @@
 static uint32_t engq[ENGQ_N], engq_r, engq_w, engq_drop;
 static int eng_ring_room(void) { return eq_w - eq_r < 31u; }   /* (one spare: a TYPE change to the Rhodes posts the
                                                                  * pedal into rhodes.c's ring before the 31 move in) */
+/* the notes the pedal holds (the key LEDs under sustain, frodhes.c note_sustained), as the engine gets the events: a
+ * note down when the pedal goes down, or struck while it is down; none once it is up or after an all-off. A note let
+ * go before the pedal is not one, though its voice may still be active (its damped tail, a MARIMBA bar ringing on):
+ * its key stays dark (the user, 2026-10-20) */
+#ifdef DINGHY_HOST
+#define PED_OWN_SECTION
+#else
+#define PED_OWN_SECTION __attribute__((section(".bss.ped")))   /* own section, out of the compiler's global merge
+                                                                * (merged in, it splits rh_F / rh_x: engine.c eq) */
+#endif
+static struct { uint32_t down[4], sus[4]; uint8_t on; } ped PED_OWN_SECTION;
 static void eng_send(uint32_t type, uint32_t n, uint32_t v)
 {
-    if (type == EV_NOTE_ON) eng_note_on(n, v);
-    else if (type == EV_NOTE_OFF) eng_note_off(n);
-    else if (type == EV_PEDAL) eng_pedal_level(v);
-    else eng_all_off();
+    uint32_t i;
+    if (type == EV_NOTE_ON) {
+        if (n < 128u && v) { ped.down[n >> 5] |= 1u << (n & 31u); if (ped.on) ped.sus[n >> 5] |= 1u << (n & 31u); }
+        eng_note_on(n, v);
+    } else if (type == EV_NOTE_OFF) {
+        if (n < 128u) ped.down[n >> 5] &= ~(1u << (n & 31u));
+        eng_note_off(n);
+    } else if (type == EV_PEDAL) {
+        uint8_t on = v >= 64u;
+        for (i = 0; i < 4u; i++) ped.sus[i] = on ? (ped.on ? ped.sus[i] : 0u) | ped.down[i] : 0u;
+        ped.on = on;
+        eng_pedal_level(v);
+    } else {
+        for (i = 0; i < 4u; i++) ped.down[i] = ped.sus[i] = 0;
+        eng_all_off();
+    }
 }
 static void eng_q(uint32_t type, uint32_t n, uint32_t v)
 {
@@ -66,10 +89,21 @@ static void note_in_off(uint32_t n, int echo)
     if (!out_quiet_off) eng_q(EV_NOTE_OFF, n, 0);
     if (echo) midi_send(0x80 | MIDI_OUT_CH, n, 0);
 }
+/* a pitch still counted held when the TYPE changed to another engine (or VIBES <-> MARIMBA) was stopped by the change
+ * (engine.c eng_switch): pressed again (a MIDI note-on with no note-off between, a second source on it), it is struck
+ * again on the new engine, once per change (eng_epoch); it stayed silent until every source let it go (0.9.3) */
+static uint16_t out_epoch[128];
+static void out_resound(uint32_t n, uint32_t vel)
+{
+    if (n > 127u || !out_ref[n] || out_epoch[n] == eng_epoch) return;
+    out_epoch[n] = eng_epoch;
+    if (!note_to_arp[n]) eng_q(EV_NOTE_ON, n, vel);          /* (the arpeggiator strikes its notes each step) */
+}
 static void out_on(uint32_t n, uint32_t vel, int echo)
 {
     if (n > 127u) return;
-    if (out_ref[n]++ == 0u) { out_echo[n] = (uint8_t)echo; note_in_on(n, vel, echo); }
+    if (out_ref[n] == 0u) { out_ref[n] = 1; out_epoch[n] = eng_epoch; out_echo[n] = (uint8_t)echo; note_in_on(n, vel, echo); }
+    else { out_resound(n, vel); out_ref[n]++; }
 }
 static void out_off(uint32_t n)
 {
@@ -204,7 +238,11 @@ static void src_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
 {
     uint8_t notes[CH_MAX];
     uint32_t c;
-    if (src_active[slot]) return;
+    if (src_active[slot]) {                                  /* pressed again, never let go: only a pitch a TYPE
+                                                               * change stopped sounds again (out_resound) */
+        for (c = 0; c < src[slot].started; c++) out_resound(src[slot].n[c], vel);
+        return;
+    }
     if (PV(P_LFO_RETRIG)) fx_lfo_retrig = 1;                  /* the filter's LFO from the start (LFO page: KEY) */
     if (chord_on()) c = chord_build(n, notes); else { notes[0] = (uint8_t)n; c = 1; }
     src_start(slot, notes, c, vel, echo);

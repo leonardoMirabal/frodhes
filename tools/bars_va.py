@@ -539,6 +539,10 @@ def motor_checks(spec):
 
 
 def main():
+    if "--type" in sys.argv and sys.argv[sys.argv.index("--type") + 1].lower() == "marimba":
+        import marimba_va                                # Gate VA-M (MARIMBA PLAN §7)
+        sys.argv = [a for a in sys.argv if a.lower() not in ("--type", "marimba")]
+        return marimba_va.main()
     res = checks()
     L = ["# Gate VA on the golden model (tools/bars_va.py)", ""]
     for name, val, ok, kind in res:
