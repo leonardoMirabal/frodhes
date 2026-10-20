@@ -74,8 +74,10 @@
   byte as in 0.9.3 (`tests/baselines/renders.sha256`), Gate VB-M (the firmware's MARIMBA against its reference model,
   23 cases: held notes from C1 to C8, MUTE, no tube, a roll, the pedal; this caught the top note C8 playing about
   5 dB too quietly, fixed before release).
-- FM-1 (a development build): `tools/hil_cpu.py --worst`, nine low notes at full velocity with the pedal and every
-  effect on: about 4.1 ms of the 5.8 ms per audio block on the Rhodes, 3.4 ms on VIBES, 3.4–3.5 ms on MARIMBA,
-  under the 5.0 ms where the voice guard would act.
-- FM-1: to be completed with the release build (P5 / P7: `tools/hil_scan.py --marimba`, `tools/hil_cpu.py --engine
-  marimba`, the jack session).
+- FM-1 (the final development build of this branch; the release build is checked again before publishing):
+  `tools/hil_cpu.py --worst`, nine low notes at full velocity with the pedal and every effect on: 4.1–4.2 ms of the
+  5.8 ms per audio block on the Rhodes, 3.4 ms on VIBES, 3.4–3.5 ms on MARIMBA, under the 5.0 ms where the voice
+  guard would act. The Rhodes and VIBES scans as for 0.9.3; the MARIMBA scan over USB and the headphone jack (every
+  voice, decay, roll and effect row; the remaining rows are the known, decided items); the jack: hiss and idle floor
+  as the Rhodes', no audible gate on MARIMBA's tails; every key C2–C7 recorded back and compared with the model
+  (pitch, decay, bloom, overtones).
