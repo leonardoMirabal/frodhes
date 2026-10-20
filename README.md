@@ -2,7 +2,10 @@
 
 **A physically modelled Fender Rhodes, vibraphone and marimba for the M-VAVE FM-1.**
 
-![Frodhes on the FM-1: the FRODHES page (TYPE, TONE, BELL, KEY VEL)](docs/manual/img/piano.png?v=1cb7a6e1)
+<p align="center">
+  <img src="docs/manual/img/thumbnail.png?v=23c51997" width="380" alt="Frodhes: the start screen (FRODHES, ELECTRIC PIANO + VIBES + MARIMBA)">
+  <img src="docs/manual/img/piano.png?v=1cb7a6e1" width="380" alt="Frodhes on the FM-1: the FRODHES page (TYPE, TONE, BELL, KEY VEL)">
+</p>
 
 Frodhes turns the FM-1 into an electric piano, a vibraphone and a marimba. Every note is computed live from the mechanics of the
 instrument: on a Rhodes a hammer strikes a tine, the tine rings against its tonebar and a magnetic pickup turns the
