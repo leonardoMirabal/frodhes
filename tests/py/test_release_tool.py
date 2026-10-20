@@ -337,3 +337,35 @@ def test_marimba_jack_and_sampleback_checks():
     for bad in ("61 notes, 2 outside Gate VD-M.", "Traceback"):
         with pytest.raises(rel.Stop):
             rel.check_sampleback(bad)
+
+
+def test_device_done_needs_the_same_build(tmp_path):
+    """--no-device --device-done: the commit says the FM-1 tests ran on this exact build only when the sha256 matches
+    (0.9.4's release commit read "NOT tested" although the full FM-1 scan had run on the same binary)"""
+    j = tmp_path / "done.json"
+    j.write_text(json.dumps(dict(sha256="ab" * 32, runs=["hil_scan (3 engines)", "hil_cpu"])))
+    r = rel.Release(rel.parse_args(["0.9.9", "--no-device", "--device-done", str(j)]))
+    r.sha = "ab" * 32
+    assert r.device_done() == "FM-1: tested before the release on this exact build (sha256 equal): hil_scan (3 engines); hil_cpu"
+    r.sha = "cd" * 32
+    with pytest.raises(rel.Stop):
+        r.device_done()
+    assert rel.Release(rel.parse_args(["0.9.9", "--no-device"])).device_done() is None
+
+
+def test_no_session_links_in_the_repo():
+    """the repo is public: no Claude session links or 'Generated with' footers in any tracked file (the user, 2026-10-20)"""
+    import subprocess
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    files = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True).stdout.split("\n")
+    bad = []
+    for f in files:
+        if not f or f == "CLAUDE.md":
+            continue
+        try:
+            t = open(os.path.join(root, f), encoding="utf-8").read()
+        except (UnicodeDecodeError, IsADirectoryError, FileNotFoundError):
+            continue
+        if "claude.ai/" + "code/session" in t or "Generated with [" + "Claude" in t:
+            bad.append(f)
+    assert not bad, bad
