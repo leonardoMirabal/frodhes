@@ -126,15 +126,15 @@ static int scale_is_root(uint32_t k)
     return set.sc_mode == 2 && n % 12 == 0;
 }
 
-/* key k plays a note of the scale as itself (DISPLAY LEDS SCALE lights these): no scale, every key; SNAP, the keys whose
- * own pitch (TRANS applied, the octave shift moves no pitch class) is in the scale, not the ones snapped to a neighbour;
- * DEGREE, the white keys (each plays a degree; the black keys are silent) */
+/* key k's own pitch is in the scale (DISPLAY LEDS SCALE lights these, white and black keys alike): no scale, every key;
+ * SNAP and DEGREE, the keys whose own pitch (TRANS applied; the octave shift moves no pitch class) is in the scale
+ * (the user, 2026-10-20: SCALE highlights the scale on the keyboard, whatever the keys play) */
 static int scale_key_in(uint32_t k)
 {
     int32_t n = 53 + (int32_t)k;
-    if (set.sc_mode == 1)
+    if (set.sc_mode == 1 || set.sc_mode == 2)
         return SCALE_MASK[set.sc_scale] >> (((n + set.sc_trans - (int32_t)set.sc_root) % 12 + 12) % 12) & 1u;
-    return set.sc_mode != 2 || DEGREE[n % 12] >= 0;
+    return 1;
 }
 
 /* the note on-board key k plays (255 = silent), octave and transpose applied */
