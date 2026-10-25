@@ -28,7 +28,6 @@ import hostrun  # noqa: E402
 #   switch: 0.8 (64 > 45); the 46 ms crossfade: 0.37. (0.9.5 also flags click 82.3x and zipper 150x.)
 # case -> why it fails on 0.9.5 (fix it, then remove the line)
 KNOWN = {
-    "rhodes TYPE": "BUGHUNT #12: a Rhodes TYPE change swaps the pickup / body filters under the ringing notes",
     "drive FDRV AMOUNT": "BUGHUNT #5: AMOUNT steps per block, AMOUNT 0 cuts to dry",
     "drive KHLON AMOUNT": "BUGHUNT #5",
     "wah RATE": "BUGHUNT #14: the wah's resonance (RATE) is not smoothed",
