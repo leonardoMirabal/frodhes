@@ -322,74 +322,83 @@ def rms_db(x):
 
 
 # ---- the invariants
-def check(events, binary=BIN, only=None):
-    """every invariant on one stream: a list of (check, message)"""
-    pl, mk = panic(RAND_MS + 50)
-    flash = tempfile.mktemp(dir=OUTD, prefix="flash-")
+def analyse(r, mk):
+    """the invariants on one run's output (Res) without the power cycle: a list of (check, message)"""
+    if r.timeout:
+        return [("crash", "the host hung (timeout)")]
+    if "runtime error" in r.out or "AddressSanitizer" in r.out:
+        m = re.findall(r"\S+:\d+:\d+: runtime error: [^\n]*", r.out)
+        return [("crash", "sanitizer: " + ("; ".join(sorted(set(m))) or "AddressSanitizer")[:500])]
+    fails = re.findall(r"^\s*\d+ ms  FAIL (.*)$", r.out, re.M)
+    if r.code != 0 and not fails:
+        return [("crash", f"exit {r.code}: {r.out[-400:]}")]
+    if not len(r.x):
+        return [("crash", "no sound file")]
     bad = []
+    race = sorted(set(re.findall(r"RACE (?:STUCK|LOST)[^\n]*", r.out)))
+    if race:
+        bad.append(("race", "; ".join(race)[:300]))
+    a = np.abs(r.x).max(1)
+    q0 = ms(mk["quiet"][0])
+    if a[:q0].max() > LIM_T:
+        bad.append(("peak", f"{a[:q0].max()} at {np.argmax(a[:q0]) / FS:.3f} s"))
+    dx = np.abs(np.diff(r.x, axis=0)).max(1)
+    if dx.max() > 40000:
+        bad.append(("wrap", f"a step of {dx.max()} at {np.argmax(dx) / FS:.4f} s"))
+    for c in (0, 1):
+        y = r.x[:, c]
+        same = np.concatenate([[False], np.diff(y) == 0]) & (np.abs(y) > 20000)
+        if same.any():
+            runs = np.diff(np.flatnonzero(np.diff(np.concatenate([[0], same.astype(int), [0]]))))[::2]
+            if runs.max() >= 32:
+                bad.append(("rail", f"{runs.max()} equal samples over 20000 (channel {c})"))
+                break
+    b0, b1 = (r.dumps.get(t, {}) for t in mk["before"])
+    if b0 and b1 and all(int(b.get("held", 0)) > int(b.get("pitches", 0)) for b in (b0, b1)):
+        bad.append(("stuck", f"{b0['held']} voices held for {b0['pitches']} notes before the panic"))
+    st = r.dumps.get(mk["gone"], {})
+    if st.get("held") != "0" or st.get("srcs") != "0" or st.get("refs") != "0":
+        bad.append(("stuck", f"after the panic: held {st.get('held')} srcs {st.get('srcs')} refs {st.get('refs')} "
+                             f"voices {st.get('voices')}"))
+    qs = slice(ms(mk["quiet"][0]), ms(mk["quiet"][1]))
+    if np.abs(r.x[qs]).max() > 0:
+        bad.append(("silence", f"not silent 10-12 s after the panic: peak {np.abs(r.x[qs]).max()}, mean "
+                               f"{r.x[qs].mean():.1f}"))
+    n0, rel = mk["note"]
+    held_db = rms_db(r.x[ms(rel - 60):ms(rel - 10)])
+    onset_db = max(rms_db(r.x[ms(n0 + k):ms(n0 + k + 20)]) for k in range(0, 200, 10))
+    if onset_db < -40:                          # (MARIMBA has died away by the key-up: its onset counts)
+        bad.append(("probe", f"the probe note after the panic: {onset_db:.1f} dBFS at its onset (dead?)"))
+    elif held_db > -70:
+        after = max(rms_db(r.x[ms(rel + k):ms(rel + k + 10)]) for k in range(0, 300, 5))
+        if after > held_db + 1.0:
+            bad.append(("probe", f"louder after its key-up: {after:.1f} dBFS against {held_db:.1f} held"))
+    for f in fails:
+        bad.append(("roundtrip", f"the saved preset: {f}"[:300]))
+    return bad
+
+
+def check(events, binary=BIN, only=None):
+    """every invariant on one stream, the power cycle too: a list of (check, message)"""
+    pl, mk = panic(RAND_MS + 50)
+    os.makedirs(OUTD, exist_ok=True)
+    fd, flash = tempfile.mkstemp(dir=OUTD, prefix="flash-")
+    os.close(fd)
+    os.remove(flash)                            # (no file: a new FM-1; the run writes it at its end)
     try:
         r = run(script_text(events, pl, mk["end"]), binary, flash=flash)
-        if r.timeout:
-            return [("crash", "the host hung (timeout)")]
-        if "runtime error" in r.out or "AddressSanitizer" in r.out:
-            m = re.findall(r"\S+:\d+:\d+: runtime error: [^\n]*", r.out)
-            return [("crash", "sanitizer: " + ("; ".join(sorted(set(m))) or "AddressSanitizer")[:500])]
-        fails = re.findall(r"^\s*\d+ ms  FAIL (.*)$", r.out, re.M)
-        if r.code != 0 and not fails:
-            return [("crash", f"exit {r.code}: {r.out[-400:]}")]
-        if not len(r.x):
-            return [("crash", "no sound file")]
-        race = sorted(set(re.findall(r"RACE (?:STUCK|LOST)[^\n]*", r.out)))
-        if race:
-            bad.append(("race", "; ".join(race)[:300]))
-        a = np.abs(r.x).max(1)
-        q0 = ms(mk["quiet"][0])
-        if a[:q0].max() > LIM_T:
-            bad.append(("peak", f"{a[:q0].max()} at {np.argmax(a[:q0]) / FS:.3f} s"))
-        dx = np.abs(np.diff(r.x, axis=0)).max(1)
-        if dx.max() > 40000:
-            bad.append(("wrap", f"a step of {dx.max()} at {np.argmax(dx) / FS:.4f} s"))
-        for c in (0, 1):
-            y = r.x[:, c]
-            hot = np.abs(y) > 20000
-            same = np.concatenate([[False], (np.diff(y) == 0)]) & hot
-            if same.any():
-                runs = np.diff(np.flatnonzero(np.diff(np.concatenate([[0], same.astype(int), [0]]))))[::2]
-                if len(runs) and runs.max() >= 32:
-                    bad.append(("rail", f"{runs.max()} equal samples over 20000 (channel {c})"))
-                    break
-        b0, b1 = (r.dumps.get(t, {}) for t in mk["before"])
-        if b0 and b1 and all(int(b.get("held", 0)) > int(b.get("pitches", 0)) for b in (b0, b1)):
-            bad.append(("stuck", f"{b0['held']} voices held for {b0['pitches']} notes before the panic"))
-        st = r.dumps.get(mk["gone"], {})
-        if st.get("held") != "0" or st.get("srcs") != "0" or st.get("refs") != "0":
-            bad.append(("stuck", f"after the panic: held {st.get('held')} srcs {st.get('srcs')} refs {st.get('refs')} "
-                                 f"voices {st.get('voices')}"))
-        qs = slice(ms(mk["quiet"][0]), ms(mk["quiet"][1]))
-        if np.abs(r.x[qs]).max() > 0:
-            bad.append(("silence", f"not silent 10-12 s after the panic: peak {np.abs(r.x[qs]).max()}, mean "
-                                   f"{r.x[qs].mean():.1f}"))
-        n0, rel = mk["note"]
-        held_db = rms_db(r.x[ms(rel - 60):ms(rel - 10)])
-        if held_db < -50:
-            bad.append(("probe", f"the probe note after the panic: {held_db:.1f} dBFS (dead?)"))
-        else:
-            after = max(rms_db(r.x[ms(rel + k):ms(rel + k + 10)]) for k in range(0, 300, 5))
-            if after > held_db + 1.0:
-                bad.append(("probe", f"louder after its key-up: {after:.1f} dBFS against {held_db:.1f} held"))
-        for f in fails:
-            bad.append(("roundtrip", f"the saved preset: {f}"[:300]))
-        saved = r.dumps.get(mk["end"] - 10, {})
-        # the power cycle: the same flash, a boot
-        r2 = run(script_text([(1400, "dump")], (), 1500), binary, flash=flash)
-        boot = r2.dumps.get(1400, {})
-        if r2.code != 0 or not boot:
-            bad.append(("roundtrip", f"the boot after the run failed: exit {r2.code} {r2.out[-200:]}"))
-        elif saved:
-            keys = [k for k in saved if k.startswith("p.")] + ["preset", "oct", "chord", "bars"]
-            diff = [f"{k} {saved.get(k)} -> {boot.get(k)}" for k in keys if saved.get(k) != boot.get(k)]
-            if diff:
-                bad.append(("roundtrip", "after a power cycle: " + ", ".join(diff[:8])))
+        bad = analyse(r, mk)
+        if not any(b[0] == "crash" for b in bad):
+            saved = r.dumps.get(mk["end"] - 10, {})
+            r2 = run(script_text([(1400, "dump")], (), 1500), binary, flash=flash)   # the power cycle: a boot
+            boot = r2.dumps.get(1400, {})
+            if r2.code != 0 or not boot:
+                bad.append(("roundtrip", f"the boot after the run failed: exit {r2.code} {r2.out[-200:]}"))
+            elif saved:
+                keys = [k for k in saved if k.startswith("p.")] + ["preset", "oct", "chord", "bars"]
+                diff = [f"{k} {saved.get(k)} -> {boot.get(k)}" for k in keys if saved.get(k) != boot.get(k)]
+                if diff:
+                    bad.append(("roundtrip", "after a power cycle: " + ", ".join(diff[:8])))
     finally:
         try:
             os.remove(flash)
@@ -403,33 +412,53 @@ def pname(i):
     return PNAME[i] if i < len(PNAME) else f"p.{i}"
 
 
+NO_CLICK_CC = {64, 120, 123, 121, 10, 1, 2, 3, 11, 4, 8, 116, 9, 42}   # sound on purpose, or developer CCs
+
+
+def starts_sound(line):
+    """an event that may start (or end) a note: its onset would read as a click"""
+    w = line.split()
+    if w[0] in ("keys", "press", "release", "vkey"):
+        return True
+    if w[0] == "midi":
+        hi = int(w[1], 16) >> 4
+        return hi in (0x8, 0x9, 0xE) or (hi == 0xB and int(w[2]) in NO_CLICK_CC)
+    return False
+
+
+NOTE_BTN = {10, 11, 12, 13}                 # ARP, SEQ, PLAY, REC: they start or stop notes
+NOTE_CC = set(range(43, 64)) | {79, 80}      # the arpeggiator, chord mode, the sequencer; (TYPE: a new engine)
+
+
 def eligible(events, i):
+    """event i can be click-checked: a CC on channel 1 (not the pedal / all-off / developer / note-making ones), a
+    Program Change, a knob or a button (not ARP / SEQ / PLAY / REC)"""
     t, line = events[i]
     w = line.split()
     if w[0] == "midi":
         st = int(w[1], 16)
         if st >> 4 == 0xB:
-            if int(w[2]) in (64, 120, 123, 121, 10, 1, 2, 3, 11, 4, 8, 116, 9, 42) or st & 15 not in (0,):
-                return False
-        elif st >> 4 != 0xC:
-            return False
-    elif w[0] not in ("turn", "btn"):
-        return False
-    for tt, l in events:                       # no note starting near it (its onset would be the "click")
-        if t - 60 <= tt <= t + 100 and (l.startswith("keys") or re.match(r"midi 0x9", l) or l.startswith("press")
-                                         or l.startswith("release") or "0xE" in l.split()[1:2][0] if l.startswith("midi") else False):
-            if tt != t or l != line:
-                return False
-    return True
+            return not st & 15 and int(w[2]) not in NO_CLICK_CC | NOTE_CC
+        return st >> 4 == 0xC
+    if w[0] == "btn":
+        return int(w[1]) not in NOTE_BTN
+    return w[0] == "turn"
+
+
+def click_stream(events, i):
+    """the stream for event i's click check: up to 140 ms after it, without the events that start a note from 60 ms
+    before it (their onsets would hide or fake a click; the notes already ringing stay)"""
+    t = events[i][0]
+    return [e for j, e in enumerate(events) if e[0] <= t + 140 and (j == i or not (t - 60 <= e[0] and
+                                                                                   starts_sound(e[1])))]
 
 
 def click_one(events, i, binary=BIN):
     """(ratio, changed parameters, ringing dB) for event i: the stream up to it + 150 ms with and without it"""
     t, line = events[i]
-    pre = [e for e in events if e[0] <= t + 140]
-    without = [e for j, e in enumerate(events) if e[0] <= t + 140 and j != i]
-    pre = [e for j, e in enumerate(events) if e[0] <= t + 140]
-    extra = [(t + 140, "dump")]
+    pre = click_stream(events, i)
+    without = [e for e in pre if e is not events[i]]
+    extra = [(t + 31, "dump")]
     a = run(script_text(pre, extra, t + 150), binary)
     b = run(script_text(without, extra, t + 150), binary)
     if a.code or b.code or not len(a.x) or not len(b.x):
@@ -442,7 +471,7 @@ def click_one(events, i, binary=BIN):
         return np.abs(np.diff(x.astype(float), 2, axis=0)).max(1)
     ref = max(d2(b.x[i0:i1]).max(), d2(a.x[s0:s1]).max(), d2(b.x[s0:s1]).max(), 1.0)
     ratio = float(d2(a.x[i0:i1]).max() / ref)
-    da, db = a.dumps.get(t + 140, {}), b.dumps.get(t + 140, {})
+    da, db = a.dumps.get(t + 31, {}), b.dumps.get(t + 31, {})
     changed = [pname(int(k[2:])) for k in da if k.startswith("p.") and da.get(k) != db.get(k)]
     if not changed:
         changed = [f"({line.split()[0]} {' '.join(line.split()[1:3])}: no parameter)"]
@@ -494,8 +523,28 @@ def ddmin(items, fails, budget=400):
     return items
 
 
+def cut_tail(events, fails):
+    """the shortest prefix of the stream (by time) that still fails: a binary search over its events"""
+    ev = sorted(events, key=lambda e: e[0])
+    lo, hi = 1, len(ev)                         # ev[:hi] fails
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if fails(ev[:mid]):
+            hi = mid
+        else:
+            lo = mid + 1
+    return ev[:hi]
+
+
+def shrink(events, fails, budget=1500):
+    """the tail cut first (cheap: log2 n runs), then ddmin, then ddmin once more on what is left"""
+    ev = cut_tail(events, fails)
+    ev = ddmin(ev, fails, budget)
+    return ddmin(ev, fails, budget // 3)
+
+
 def shrink_invariant(events, kind, binary):
-    return ddmin(list(events), lambda ev: any(b[0] == kind for b in check(ev, binary, only=kind)))
+    return shrink(list(events), lambda ev: any(b[0] == kind for b in check(ev, binary, only=kind)))
 
 
 def shrink_click(events, i, changed, binary):
@@ -506,7 +555,7 @@ def shrink_click(events, i, changed, binary):
         allv = sorted(ev + [target], key=lambda e: e[0])
         r = click_one(allv, allv.index(target), binary)
         return r is not None and r[0] > 10 and r[1] == changed
-    keep = ddmin(others, fails)
+    keep = ddmin(others, fails, 600)
     return sorted(keep + [target], key=lambda e: e[0])
 
 
@@ -519,7 +568,7 @@ def save_fail(seed, kind, events, minimal, info):
     extra = ()
     if kind == "click":
         t = info["event"][0]
-        extra = [(t + 140, "dump")]
+        extra = [(t + 31, "dump")]
         end = t + 150
     else:
         pl, mk = panic(RAND_MS + 50)
@@ -548,7 +597,7 @@ def one(seed, binary=BIN, k_clicks=3, shrink=True, strict=False):
             res["repro"].append(save_fail(seed, kind, ev, m, {"msg": msg}))
         elif shrink and kind == "crash" and kind not in seen:
             seen.add(kind)
-            m = ddmin(list(ev), lambda e: any(b[0] == "crash" for b in check(e, binary)))
+            m = shrink(list(ev), lambda e: any(b[0] == "crash" for b in check(e, binary)))
             res["repro"].append(save_fail(seed, kind, ev, m, {"msg": msg}))
     for i, e, ratio, changed, known in clicks(ev, seed, k_clicks, binary):
         row = {"event": e, "ratio": ratio, "changed": changed, "known": known}
