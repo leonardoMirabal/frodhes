@@ -60,7 +60,7 @@ CLICKS = [
     ("drive-type", "A new type takes over smoothly: the one playing fades out, then the new one fades in",
      cc(84, 64, 30) + cc(81, 70, 31), cc(84, 92), None),
     ("drive-amount-glides", "Moving any of the knobs glides, so you can turn them while you play (AMOUNT to 0)",
-     cc(84, 127, 30) + cc(81, 20, 31), cc(81, 0), "BUGHUNT #5"),
+     cc(84, 127, 30) + cc(81, 20, 31), cc(81, 0), None),
     ("khlon-last-step", "Turning AMOUNT onto its last step (10.0), or back off it, passes ... without a click",
      cc(84, 64, 30) + cc(81, 126, 31), cc(81, 127), None),
     ("filter-glides-in", "turning FREQ down glides into the filter, without a click",
@@ -74,9 +74,9 @@ CLICKS = [
     ("reverb-mix-glides", "MIX, DECAY and TONE glide when moved (MIX 90 -> 0)",
      cc(95, 40, 30) + cc(91, 90, 31), cc(91, 0), "BUGHUNT #18"),
     ("phaser-switch", "Every effect keeps its state while bypassed (switching on never clicks): the phaser off",
-     cc(13, 80, 30) + cc(12, 127, 31), cc(12, 0), "BUGHUNT #2"),
+     cc(13, 80, 30) + cc(12, 127, 31), cc(12, 0), None),
     ("chorus-switch", "Every effect keeps its state while bypassed (switching on never clicks): the chorus off",
-     cc(86, 64, 30) + cc(85, 64, 31), cc(85, 0), "BUGHUNT #2"),
+     cc(86, 64, 30) + cc(85, 64, 31), cc(85, 0), None),
     ("tremolo-switch", "Every effect keeps its state while bypassed: TREM off at a deep setting",
      cc(17, 64, 30) + cc(21, 127, 31) + cc(18, 127, 32), cc(17, 0), None),
 ]
@@ -115,7 +115,7 @@ def test_vibes_motor_switch():
 
 @pytest.mark.parametrize("name,setup,tol,known", [
     ("phaser", cc(13, 80, 30) + cc(12, 127, TE), 1.5, "BUGHUNT #2 (the phaser comes on ~2 dB quieter on low chords)"),
-    ("chorus", cc(86, 64, 30) + cc(85, 64, TE), 1.5, "mix-fix (the chorus' bass cancellation)"),
+    ("chorus", cc(86, 64, 30) + cc(85, 64, TE), 1.5, None),
     ("wah", cc(18, 90, 30) + cc(17, 127, TE), 1.5, None),
     ("comp-from-off", [f"{40 + 3 * i} turn 0 1" for i in range(4)] + [f"{TE} turn 2 1"], 1.0,
      "BUGHUNT #6: THRESH up from OFF comes on +2.8 dB louder"),

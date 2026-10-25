@@ -16,25 +16,24 @@ import control_sweep as cs  # noqa: E402
 
 import hostrun  # noqa: E402
 
+# Two checks are bounded differently on purpose (tools/control_sweep.py; 0.9.6):
+# - filter * FREQ, trans: the range takes the renders held at the statics the cutoff glides through, for the
+#   glide's first 60 ms (FREQ 127 -> 0 is 9 octaves at 1/8 octave a sub-block, 52 ms). Physical: a band-pass swept
+#   across the chord is louder at the chord's band than at either end; afterwards the two ends bound it as before.
+#   0.9.5's BP "burst" (+8.8 dB over the ends) was that pass in 3 ms, under every static it crossed; its #13 gate
+#   is the click, 25.5x (0.9.6: 5.5x).
+# - filter TYPE, jump -> xjump: the TYPEs differ by up to 23 dB on the chord, so the level must move by that much and
+#   the sweep's window-step check cannot apply. xjump bounds the speed: the moved render's largest 512-sample window
+#   step (beyond the held renders' own) at most 0.5 of the held renders' level difference. 0.9.5's one-sample
+#   switch: 0.8 (64 > 45); the 46 ms crossfade: 0.37. (0.9.5 also flags click 82.3x and zipper 150x.)
 # case -> why it fails on 0.9.5 (fix it, then remove the line)
 KNOWN = {
     "rhodes TYPE": "BUGHUNT #12: a Rhodes TYPE change swaps the pickup / body filters under the ringing notes",
     "drive FDRV AMOUNT": "BUGHUNT #5: AMOUNT steps per block, AMOUNT 0 cuts to dry",
     "drive KHLON AMOUNT": "BUGHUNT #5",
-    "drive TSH8 AMOUNT": "BUGHUNT #5",
-    "drive OHCD AMOUNT": "BUGHUNT #5 (the zipper)",
-    "drive BHLUE AMOUNT": "BUGHUNT #5",
-    "filter BP FREQ": "BUGHUNT #13: a cutoff jump on the band-pass clicks and rings over",
-    "filter TYPE": "BUGHUNT #4: a FILTER TYPE change switches the mode in one sample",
     "wah RATE": "BUGHUNT #14: the wah's resonance (RATE) is not smoothed",
     "wah SHAPE": "BUGHUNT #15: SHAPE does nothing on WAH (the card is shown)",
     "trem/wah EFFECT": "BUGHUNT #7: TREM <-> WAH switches in one sample",
-    "phaser FDBK": "BUGHUNT #16: the phaser's feedback is not smoothed",
-    "chorus DEPTH": "mix-fix: the chorus DEPTH zipper",
-    "cho/pha EFFECT": "BUGHUNT #2: phaser / chorus on and off switch in one sample",
-    "delay DIG MIX": "mix-fix: the delay's wet gain per block",
-    "delay ANA MIX": "mix-fix",
-    "delay TAPE MIX": "mix-fix",
     "delay DIG TIME": "BUGHUNT #3: DIG's time glides at one sample a sample (the read head stops)",
     "delay ANA TIME": "BUGHUNT #3: ANA scrubs at many times speed",
     "delay EFFECT": "BUGHUNT #17: DIG <-> ANA switches the tone and softclip in one sample",
@@ -49,7 +48,6 @@ KNOWN = {
     "rev HALL MOD": "BUGHUNT #10: MOD jumps the line taps",
     "rev PLATE MOD": "BUGHUNT #10",
     "rev INF MOD": "BUGHUNT #10",
-    "LEVEL": "BUGHUNT #9: LEVEL steps per block",
     "MASTER": "BUGHUNT #20: MASTER (platform.c) steps once per block (the model of that code)",
 }
 

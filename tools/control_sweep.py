@@ -27,7 +27,14 @@ FLAG. The checks (each against static renders at 0, 32, 64, 96 and 127, or at an
           absolute detector, d2 > 6 x level + 2000, missed steps of 1700 LSB on a 5000 LSB chord: private BUGHUNT-095)
   trans   the moved render's level, 20 ms windows over 300 ms after the move, outside the two held renders' range
           (3 dB over the louder, 6 dB under the quieter) flags: a dropout or a burst after the move (the wet alone
-          for delay and reverb)
+          for delay and reverb); a control that glides THROUGH values (a cutoff: 'through') takes the renders held at
+          the statics between its ends into the range too (a band-pass swept 16 kHz -> 30 Hz passes over the chord:
+          louder at 1 kHz than at either end), over the first 60 ms only (the glide's 52 ms); after that the two ends.
+          (0.9.5's BP "burst", +8.8 dB over the ends, was that pass at 3 ms: under every static it crossed; its
+          #13 gate is the click, 25.5x)
+  xjump   (crossfading selectors: FILTER TYPE) the moved render's largest step between 512-sample windows, beyond
+          the held renders' own, over the held renders' level difference: over 0.5 flags (a 46 ms crossfade spreads
+          the difference over ~4 windows; a one-sample switch puts most of it into one)
   noeff   every held value renders the same (at most 1 LSB apart): a control that does nothing
   stuck   after the sweep is back at 0, its last 300 ms against the render held at 0: over 1.5 dB flags (a state the
           control left behind)
@@ -68,7 +75,8 @@ T_END = T_SW1 + 500
 STATICS = [0, 32, 64, 96, 127]
 PARTIALS = [440.0, 880.0]
 LIMITS = {"pitch": 5.0, "zipper": 2.0, "jump": 1.5, "dropout": 20.0, "mono": 1.0, "click": 10.0, "trans_hi": 3.0,
-          "trans_lo": 6.0, "stuck": 1.5}
+          "trans_lo": 6.0, "stuck": 1.5,
+          "xjump": 0.5}
 T_FLIP = 2000                                  # the one-move renders: the control moved here (the chord rings)
 
 # every effect off: COMP, its THRESH, DRIVE type, AMOUNT, FILTER, its LFO, TREM, CHO/PHA, PHASER, DELAY, its MIX,
@@ -90,8 +98,9 @@ class Case:
     static values (default 0, 32, 64, 96, 127; an enum: its band centres)"""
 
     def __init__(self, name, cc, setup=(), engine="rhodes", kind="knob", additive=False, mono=False, statics=None,
-                 page="", skip=(), through=False):
+                 page="", skip=(), through=False, xfade=False):
         self.name, self.cc, self.setup, self.engine, self.kind = name, cc, list(setup), engine, kind
+        self.xfade = xfade                       # xjump: a crossfade between options of different levels (below)
         self.through = through                   # trans: the move glides through the values between its ends (a
         # cutoff): the range is every static from the start to the end value, not the two ends alone
         self.additive, self.mono, self.page = additive, mono, page
@@ -144,8 +153,10 @@ def _cases():
     add(Case("filter RESO", 71, [(70, 46), (74, 80)], page="FILTER"))
     add(Case("filter LFO", 72, [(70, 46), (74, 80), (71, 40)], page="FILTER"))   # (at 0 the filter still filters)
     add(Case("filter TYPE", 70, [(74, 80), (71, 40)], kind="select", statics=bands(6), page="FILTER",
-             skip={"jump"}))                     # (the TYPEs differ by up to ~20 dB on the chord at 1.5 kHz (LP vs HP):
-    # the 46 ms crossfade between them moves the level by design, as drive TYPE; the click and trans checks hold it)
+             skip={"jump"}, xfade=True))         # (the TYPEs differ by up to ~23 dB on the chord at 1.5 kHz (LP vs HP):
+    # the level has to move by that much, so the sweep's jump check does not apply; xjump bounds how fast it moves:
+    # a 46 ms crossfade spreads it over ~4 windows of 512 samples, 0.9.5's one-sample switch put up to 0.8 of it
+    # into one window)
     add(Case("lfo RATE", 76, [(70, 46), (74, 80), (71, 40), (72, 60)], page="LFO"))
     add(Case("lfo SHAPE", 75, [(70, 46), (74, 80), (71, 40), (72, 60)], kind="select", statics=bands(5), page="LFO"))
     # TREM/WAH
@@ -374,13 +385,29 @@ def win20_db(x, t0, n):
                      for k in range(n)])
 
 
+def xjump_frac(moved, start, end, w=512, nw=20):
+    """a crossfade's speed: the moved render's largest step between w-sample windows (from 50 ms before the move),
+    beyond the held renders' own largest step, as a fraction of the held renders' level difference there (0: the
+    held ones are within 0.1 dB of each other)"""
+    a = ms(T_FLIP - 50)
+    def lv(x):
+        return np.array([20 * np.log10(np.sqrt(np.mean(x[a + k * w:a + (k + 1) * w].astype(float) ** 2)) / 32767 + 1e-12)
+                         for k in range(nw)])
+    m, ls, le = lv(moved), lv(start), lv(end)
+    d = float(np.abs(ls - le).max())
+    if d < 0.1:
+        return 0.0
+    st = float(np.abs(np.diff(m)).max()) - float(np.maximum(np.abs(np.diff(ls)), np.abs(np.diff(le))).max())
+    return max(st, 0.0) / d
+
+
 def trans_db(moved, start, end, mid=()):
     """(over, under): how far the moved render's level leaves the held renders' range after the move (windows where
     the louder held one is above -70 dBFS); mid: renders held at values the move glides through (they raise the top)"""
     m, s, e = (win20_db(x, T_FLIP, 15) for x in (moved, start, end))
     hi, lo = np.maximum(s, e), np.minimum(s, e)
-    for x in mid:
-        hi = np.maximum(hi, win20_db(x, T_FLIP, 15))
+    for x in mid:                                # (only while it glides: FILTER FREQ's 9 octaves at 1/8 octave a
+        hi[:3] = np.maximum(hi[:3], win20_db(x, T_FLIP, 15)[:3])   # sub-block take 52 ms; then the ends alone)
     keep = hi > -70
     if not keep.any():
         return 0.0, 0.0
@@ -431,7 +458,7 @@ def measure(case, binary=BIN):
     stl = list(st.values())
     r = {"pitch": None, "pitch_wet": None}
     if case.name != "MASTER":                          # the one-move renders (the differential click detector)
-        r["click"], r["trans"] = {}, {}
+        r["click"], r["trans"], r["xjump"] = {}, {}, {}
         for a, b in flips(case):
             for v in (a, b):
                 if v not in st:
@@ -440,6 +467,8 @@ def measure(case, binary=BIN):
             n = len(mv)
             sa, sb = st[a][:n], st[b][:n]
             r["click"][f"{a}>{b}"] = round(click_ratio(mv, sa, sb), 1)
+            if case.xfade:
+                r["xjump"][f"{a}>{b}"] = round(xjump_frac(mv, sa, sb), 2)
             if case.additive:
                 o = off[:n]
                 mv, sa, sb = mv - o, sa - o, sb - o
@@ -499,6 +528,9 @@ def checks(case, r):
         k, v = max(r["trans"].items(), key=lambda kv: max(kv[1][0] - LIMITS["trans_hi"], kv[1][1] - LIMITS["trans_lo"]))
         out["trans"] = (f"+{v[0]}/-{v[1]} ({k})", f"+{LIMITS['trans_hi']}/-{LIMITS['trans_lo']}",
                         v[0] <= LIMITS["trans_hi"] and v[1] <= LIMITS["trans_lo"])
+    if r.get("xjump"):
+        k, v = max(r["xjump"].items(), key=lambda kv: kv[1])
+        out["xjump"] = (f"{v} ({k})", LIMITS["xjump"], v <= LIMITS["xjump"])
     if r.get("noeff") is not None:
         out["noeff"] = (r["noeff"], 1.0, r["noeff"] > 1.0)
     if r.get("stuck") is not None:
