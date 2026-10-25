@@ -9,7 +9,7 @@ set -e
 cd "$(dirname "$0")/.."
 if [ -f .local/emsdk/emsdk_env.sh ]; then . .local/emsdk/emsdk_env.sh >/dev/null 2>&1; fi
 mkdir -p web/dist
-emcc -O2 -DDINGHY_HOST -DDINGHY_WEB -DAPP_VER="\"web\"" -Ifirmware/src -Ifirmware/gen \
+emcc -O2 -DDINGHY_HOST -DDINGHY_WEB -DHOST_SAVE_MS=1u -DAPP_VER="\"web\"" -Ifirmware/src -Ifirmware/gen \
   -Wno-unused-function -Wno-unused-variable \
   firmware/src/frodhes.c -o web/dist/frodhes.js \
   -sASYNCIFY -sASYNCIFY_IMPORTS='["emscripten_sleep"]' -sALLOW_MEMORY_GROWTH=0 -sINITIAL_MEMORY=33554432 \
