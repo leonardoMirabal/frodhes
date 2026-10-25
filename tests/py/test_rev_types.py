@@ -576,13 +576,15 @@ def band_db(w, f0, f1):
 @pytest.mark.parametrize("typ", SOUNDING)
 def test_low_cut_takes_the_bass_out(exe, silent, typ):
     """60 Hz + 3 kHz in: LOW CUT 127 (800 Hz) takes >= 6 dB more of the wet's 40..100 Hz than of its 2.7..3.3 kHz,
-    which moves less than 1.5 dB; LOW CUT 0 is the default"""
+    which moves less than 1.5 dB; LOW CUT 0 is the default (SIZE 100: AUTO's at MIX 100 on HALL and PLATE, and the
+    size this was measured at on INFINITE before its AUTO became 64; a pure 3 kHz tone in a tank depends on its size)"""
     if typ in silent:
         pytest.skip("a stub")
     x = rs.sine(FS * 3, 60.0, 5000) + rs.sine(FS * 3, 3000.0, 3000)
     w = {}
     for lc in (0, 127):
-        r = rs.render(exe, x, dict(RV_TYPE=T[typ], RV_DEPTH=100, RV_LOCUT=lc), blocks=int(3 * FS / BLK))
+        r = rs.render(exe, x, dict(RV_TYPE=T[typ], RV_DEPTH=100, RV_SIZE=100, RV_LOCUT=lc),
+                      blocks=int(3 * FS / BLK))
         w[lc] = r["wet"][FS:]
     lo = band_db(w[0], 40, 100) - band_db(w[127], 40, 100)
     hi = band_db(w[0], 2700, 3300) - band_db(w[127], 2700, 3300)
@@ -623,6 +625,37 @@ def test_size_moves_the_room(exe, silent, typ):
     w = {s: rs.render(exe, x, dict(RV_TYPE=T[typ], RV_DEPTH=100, RV_SIZE=s), blocks=200)["wet"] for s in (1, 127)}
     assert not np.array_equal(w[1], w[127])
     assert build_up_ms(w[127]) > build_up_ms(w[1]), (typ, build_up_ms(w[1]), build_up_ms(w[127]))
+
+
+def _peak_hz(w, f0):
+    """the strongest frequency within 10 % of f0 (a Hann window, 8x zero padding, a parabola through the top bin)"""
+    n = len(w)
+    a = np.abs(np.fft.rfft(w * np.hanning(n), 8 * n))
+    f = np.fft.rfftfreq(8 * n, 1 / FS)
+    i = int(np.argmax(a * ((f > f0 * 0.9) & (f < f0 * 1.1))))
+    y0, y1, y2 = np.log(a[i - 1:i + 2] + 1e-9)
+    return (i + 0.5 * (y0 - y2) / (y0 - 2 * y1 + y2)) * FS / (8 * n)
+
+
+@needs_types
+def test_infinite_mix_does_not_bend_the_tail(exe, silent):
+    """MIX is INFINITE's level only (the user, 2026-10-25: turning MIX bent the pitch): a 440 Hz tone held in FREEZE,
+    then MIX 64 -> 120 over a second: the tail's pitch within 5 cents of the same take with MIX held, in every quarter
+    second from the sweep's start to 1.5 s after it (0.9.5's AUTO size from MIX glided the lines: -50 .. -250 cents);
+    AUTO on INFINITE is SIZE 64, sample for sample"""
+    sounding(silent, "INFINITE")
+    n, b0, b1 = 6 * FS, 3 * FS // BLK, 4 * FS // BLK
+    x = np.zeros(n, np.int64)
+    x[:FS] = rs.sine(FS, 440.0, 4000)
+    par = dict(RV_TYPE=T["INFINITE"], RV_DEPTH=64, RV_DECAY=127, RV_SIZE=0)
+    sw = [(b, "RV_DEPTH", 64 + 56 * (b - b0) // (b1 - b0)) for b in range(b0, b1 + 1)]
+    held, swept = (rs.render(exe, x, par, s)["wet"][:, 0].astype(float) for s in ((), sw))
+    q = FS // 4
+    d = [1200 * np.log2(_peak_hz(swept[a:a + q], 440.0) / _peak_hz(held[a:a + q], 440.0))
+         for a in range(3 * FS, int(5.5 * FS), q)]
+    assert max(abs(v) for v in d) < 5.0, ["%+.1f" % v for v in d]
+    w64 = rs.render(exe, x[:2 * FS], dict(par, RV_SIZE=64))["wet"]
+    assert np.array_equal(rs.render(exe, x[:2 * FS], par)["wet"], w64)
 
 
 @needs_types

@@ -4,7 +4,7 @@
  *   0 OFF (the send stops, the tail rings out), 1 HALL (fx.c rev_hall, today's, sample for sample), 2 PLATE
  *   (rev_plate.c), 3 INFINITE (rev_inf.c). Append-only: the records store the number; old records load as HALL.
  * REVERB 2's knobs (params.c P_RV_SIZE / P_RV_MOD / P_RV_LOCUT, fx side FXP_RV_*):
- *   SIZE   0 = AUTO (from MIX, as HALL always did), 1..127 fixed;  MOD 64 = HALL's modulation as before (0 none);
+ *   SIZE   0 = AUTO (HALL, PLATE: from MIX, as HALL always did; INFINITE: RV_INF_AUTO, fixed), 1..127 fixed;  MOD 64 = HALL's modulation as before (0 none);
  *   LOW CUT 0 = off (as before), 1..127 a one-pole high-pass on the send, 20 .. 800 Hz.
  * Only one TYPE runs at a time. HALL keeps its own lines (fx.c, bit-exact); PLATE and INFINITE share one pool union.
  * A TYPE change while a tail rings fades the old TYPE's return out over RV_FADE control blocks (5.8 ms), then the new
@@ -42,7 +42,8 @@ enum { RV_OFF, RV_HALL, RV_PLATE, RV_INF, RV_N };
 typedef struct {            /* filled by the framework once per control block */
     int32_t decay;          /* 0..127 the DECAY knob, after the framework's slew (one step a control block) */
     int32_t damp;           /* 0..150, as HALL's rv_damp (TONE: 150 dark, 60 at 64, 0 bright) */
-    int32_t size;           /* 0..127: SIZE (AUTO resolved by the framework: MIX, as HALL's size follows it) */
+    int32_t size;           /* 1..127: SIZE (AUTO resolved by the framework: MIX, as HALL's size follows it; on
+                             * INFINITE RV_INF_AUTO) */
     int32_t mod;            /* 0..127: MOD (64 the default) */
     int32_t freeze;         /* INFINITE only (the user, 2026-10-24): 0 normal; 1 INFINITE SUSTAIN, DECAY 120..126: the
                              * loop gain exactly 1, the input open (it piles up, bounded); 2 FREEZE, DECAY 127: the
@@ -80,6 +81,10 @@ _Static_assert(REV_US_DEC + REV_US_PLATE <= REV_US_MAX && REV_US_DEC + REV_US_IN
                "a REVERB TYPE over its CPU budget (REV_US_MAX: HALL + 200 us)");
 static const uint16_t REV_US[RV_N] = {0, REV_US_HALL, REV_US_DEC + REV_US_PLATE, REV_US_DEC + REV_US_INF};
 
+/* INFINITE's AUTO SIZE: fixed, not MIX (the user, 2026-10-25: MIX bent the pitch). A SIZE change glides its 8 lines'
+ * lengths, a Doppler bend of the whole tail (-50 .. -250 cents while MIX moved 64 -> 120 under a held tail), and its
+ * tails ring 4 s .. for ever: MIX is the level only. 64: AUTO's size at MIX 64 */
+#define RV_INF_AUTO 64
 #define RV_FADE 8u                                  /* control blocks of a TYPE change's fade: 256 frames, 5.8 ms */
 static REV_DATA uint8_t rv_cur = RV_HALL;           /* ISR: the TYPE that runs (0: none yet, HALL waits for rev_poll) */
 static REV_BSS uint8_t rv_fade;                     /* ISR: the fade's control blocks left, 0 = none */
@@ -189,7 +194,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
         if (cur == RV_HALL) rev_hall(rv_in, size + rv_off, rv_damp, md, om, os);
         else if (cur) {
             rev_ctl_t c;
-            c.decay = rv_dk; c.damp = rv_damp; c.size = zv ? zv : v; c.mod = fx_p[FXP_RV_MOD];
+            c.decay = rv_dk; c.damp = rv_damp; c.size = zv ? zv : cur == RV_INF ? RV_INF_AUTO : v; c.mod = fx_p[FXP_RV_MOD];
             c.freeze = cur != RV_INF || tgt != RV_INF || rv_dk < 120 ? 0 : rv_dk < 127 ? 1 : 2;   /* (OFF or a TYPE
                                                         * change releases the hold: the tail decays, silence comes) */
             rev_dec(rv_in);
