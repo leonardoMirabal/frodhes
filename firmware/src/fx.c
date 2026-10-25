@@ -59,6 +59,28 @@ static int fx_quiet(void) { return fx_quiet_blocks >= 86u; }   /* 500 ms under -
 #define FX_K32 volatile int32_t
 static inline __attribute__((always_inline)) int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
 static inline __attribute__((always_inline)) int32_t mulq15(int32_t a, int32_t b) { return (a * b) >> 15; }        /* |a|,|b| small enough */
+/* ---- the on / off crossfade (0.9.6, the bug hunt: switching an effect replaced the dry signal by the processed one,
+ * or back, in one sample: up to 1700 LSB steps under a held chord). An effect switched on or off keeps running while
+ * its wet share w (Q15) glides 0 <-> 32768 by XF_STEP a sample (46 ms, as the drive's ON / OFF), then rests: at rest
+ * (w at 0 or 32768) nothing extra runs, and at 32768 the effect's output is what it always was, bit for bit. The dry
+ * copy (xf_d) is taken before the effect runs, the blend after; the effects that use it run one after another */
+#define XF_STEP 16
+static int32_t xf_d[2][256] POOL;
+static inline int32_t xf_next(int32_t w, int on, uint32_t n)   /* the share at this block's end */
+{
+    int32_t s = XF_STEP * (int32_t)n;
+    return on ? (w + s > 32768 ? 32768 : w + s) : (w - s < 0 ? 0 : w - s);
+}
+/* x = d + (x - d) w, w ramping from w0 to w1 over the n samples (n = 256: steps of 4096, exact ends) */
+__attribute__((noinline)) static void xf_blend(int32_t *x, const int32_t *d, uint32_t n, int32_t w0, int32_t w1)
+{
+    int32_t w = w0, dw = (w1 - w0) / (int32_t)n;
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        w += dw;
+        x[i] = d[i] + (int32_t)(((int64_t)(x[i] - d[i]) * w) >> 15);
+    }
+}
 static inline int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15, flat beyond +-4 */
 {
     uint32_t i;
@@ -81,7 +103,9 @@ static inline int32_t osc_sine(uint32_t ph)               /* Q32 phase -> +-3276
  * +-4 octaves. Coefficients every 32 samples (smoothed), 32-bit division only (two partial quotients). */
 static uint32_t lfo_ph, lfo_rnd = 0x9E3779B9u;
 static int32_t lfo_sh, fl_ic[2], fl_op, fl_pos = 127 * 516;
-static uint8_t fl_was_on;
+static uint8_t fl_was_on, fl_type;                 /* fl_type: the TYPE the filter runs (it glides to dry before
+                                                     * it takes another one, or stops for OFF: the bug hunt, 2026-10-25,
+                                                     * LP12 -> HP12 was -11 dB in one sample) */
 static int32_t fl_ow = 32768, fl_dry[32];         /* the filter's wet share (0 = fully open: dry), a sub-block of dry */
 static int32_t lfo_value(void)                            /* +-32767 */
 {
@@ -144,14 +168,19 @@ static __attribute__((noinline)) void fx_filter(int32_t *m, uint32_t n)
     static const uint8_t POLES[7] = {0, 2, 3, 2, 3, 2, 2};   /* TYPE -> poles; the mode (LP HP BP NOTCH) is in the switch below */
     uint32_t type = fx_p[FXP_FL_TYPE], inc = fx_lfo_sync_inc ? fx_lfo_sync_inc : FX_LFO_INC[fx_p[FXP_LFO_RATE]], sb, j;
     int32_t k = (int32_t)FX_FL_K[fx_p[FXP_FL_RESO]], base = fx_p[FXP_FL_FREQ] * 516, depth = fx_p[FXP_FL_LFO];
-    uint32_t poles;
+    uint32_t poles, want;
     int open;
     if (fx_lfo_retrig) { fx_lfo_retrig = 0; lfo_ph = 0; }
-    if (!type || type > 6u) { fl_was_on = 0; lfo_ph += inc * n; return; }   /* off: the LFO keeps time, the filter rests */
+    if (type > 6u) type = 0;
+    if (!fl_was_on) {                                    /* off: the LFO keeps time, the filter rests */
+        if (!type) { lfo_ph += inc * n; return; }
+        memset(fl_ic, 0, sizeof fl_ic); fl_op = 0; fl_pos = base; fl_was_on = 1; fl_ow = 0; fl_type = (uint8_t)type;
+    }                                                    /* (switched on: from dry, the 46 ms glide in) */
+    want = type; type = fl_type;
     poles = POLES[type];
     open = (type == 1u || type == 2u) && fx_p[FXP_FL_FREQ] >= 127 && !fx_p[FXP_FL_RESO] && !depth;   /* LP fully open:
                          * transparent (the default LP18 at 16 kHz trimmed the top: SNR -1 dB, TODO #5) */
-    if (!fl_was_on) { memset(fl_ic, 0, sizeof fl_ic); fl_op = 0; fl_pos = base; fl_was_on = 1; fl_ow = open ? 0 : 32768; }
+    open |= want != type;                                /* another TYPE or OFF: out to dry first, as when open */
     for (sb = 0; sb < n; sb += 32u) {
         uint32_t prev = lfo_ph, i;
         int32_t tgt, g, f, gp = 0;
@@ -189,6 +218,9 @@ static __attribute__((noinline)) void fx_filter(int32_t *m, uint32_t n)
             }
             fl_ow = w1;
         }
+    }
+    if (want != type && !fl_ow) {                       /* dry now: take the new TYPE (it glides in), or rest */
+        if (want) fl_type = (uint8_t)want; else fl_was_on = 0;
     }
 }
 
@@ -235,7 +267,9 @@ static void fx_drive_classic(int32_t *m, uint32_t n, int32_t sw)   /* FDRV; sw: 
     int32_t wt = !sw ? 0 : mv >= 127 ? 32768 : mv * 258;          /* the wet share it goes to */
     int32_t tt = tv >= 64 ? 4096 + (((tv - 64) * 4161) >> 6) : tv * 64;         /* the shelf's gain: 0 .. 1 .. 2 (Q12) */
     uint32_t i;
-    if (!d) { dr_w = wt; return; }                      /* AMOUNT 0: off, as before (no glide: there is no drive) */
+    if (!d) { wt = 0; d = 1; }                          /* AMOUNT 0: off, faded out at AMOUNT 1's settings (it cut
+                                                        * to dry in one sample: AMOUNT 1 is not the dry signal, the
+                                                        * high-pass, the bias and the make-up still act; the bug hunt) */
     if (!wt && !dr_w) { dr_ton = 0; dr_tg = 4096; return; }   /* off, or MIX 0: the dry signal, untouched */
     g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
     if (d > 16) g = 4096 + (int32_t)((((int64_t)(g - 4096)) * (95 + d)) / 111);   /* above 16 the gain rises to ~18x
@@ -494,6 +528,7 @@ static __attribute__((noinline)) void fx_trem(const int32_t *m, int32_t *L, int3
 static uint32_t ph_ph;
 static int32_t ph_x[2][4], ph_y[2][4], ph_fb[2], ph_hp[2], ph_ls[2];
 static int32_t ph_cq = -1, ph_gq;                     /* the sweep's centre and the level, gliding (-1: not yet) */
+static int32_t ph_w;                                    /* the on / off crossfade's wet share (xf_next) */
 static int32_t ph_coef(uint32_t ph, int32_t depth, int32_t c)
 {
     int32_t q = (int32_t)(ph < 0x80000000u ? ph >> 16 : (0xFFFFFFFFu - ph) >> 16);   /* triangle 0..32767 */
@@ -536,8 +571,18 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
     int32_t gt = PH_G[depth >> 4] + (((PH_G[(depth >> 4) + 1] - PH_G[depth >> 4]) * (depth & 15)) >> 4);
     int32_t ct = 16384 + (depth < 64 ? (64 - depth) * 256 - (64 - depth) / 64 : 0);   /* (DEPTH 0: 32767) */
     uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, s;
-    if (!fx_p[FXP_PH_SW]) { ph_cq = -1; return; }
+    int on = fx_p[FXP_PH_SW] != 0;
+    int32_t w1, xf;
+    if (!on && !ph_w) { ph_cq = -1; return; }           /* off and faded out: the phaser rests */
+    if (!ph_w) {                                        /* switched on from rest: the allpasses start from 0 (their
+                                                         * states were stale), under the fade in */
+        memset(ph_x, 0, sizeof ph_x); memset(ph_y, 0, sizeof ph_y); memset(ph_fb, 0, sizeof ph_fb);
+        memset(ph_hp, 0, sizeof ph_hp); memset(ph_ls, 0, sizeof ph_ls);
+    }
     if (ph_cq < 0) { ph_cq = ct; ph_gq = gt; }          /* (switched on: at once) */
+    w1 = xf_next(ph_w, on, n);
+    xf = ph_w != 32768 || w1 != 32768;
+    if (xf) { memcpy(xf_d[0], L, n * sizeof *L); memcpy(xf_d[1], R, n * sizeof *R); }
     for (sb = 0; sb < n; sb += 32u) {
         int32_t a[2], pg, ksh;
         /* the centre and the level glide (a DEPTH step moved the centre a quarter of a table step at once: a step in
@@ -587,6 +632,8 @@ static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
         }
         ph_ph += inc * 32u;
     }
+    if (xf) { xf_blend(L, xf_d[0], n, ph_w, w1); xf_blend(R, xf_d[1], n, ph_w, w1); }
+    ph_w = w1;
 }
 
 /* ---- CHORUS: 7 ms +- 3.5 ms, two taps 90 degrees apart */
@@ -597,6 +644,8 @@ static uint32_t cho_w;
 #ifndef CHO_HPS
 #define CHO_HPS 5                                       /* the wet's high-pass: a one-pole, 2^-5 a sample (~220 Hz) */
 #endif
+static int32_t cho_xw;                                  /* the on / off crossfade's wet share (xf_next) */
+static uint8_t cho_fill;                                /* blocks still to fill the line before the fade in */
 static int32_t cho_el = -1, cho_er, cho_km, cho_cg, cho_hl[2];   /* the taps' end positions (Q8; -1: none yet), the
                                                          * last sub-block's mix and make-up, the wet's high-pass */
 /* one side's tap over x[0 .. k): v the tap's Q13 position in the (backwards) line, stepping by e a sample; the mix
@@ -642,8 +691,18 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
 {
     int32_t depth = fx_p[FXP_CP_DEPTH], sw = 154 * depth / 127;
     uint32_t inc = fx_cp_sync_inc ? fx_cp_sync_inc : FX_LFO_INC[fx_p[FXP_CP_SPEED]] >> 1, sb;
-    if (!fx_p[FXP_CP_SW]) { cho_el = -1; cho_km = cho_cg = 0; return; }   /* (switched on again: the taps start
-                                                         * where the LFO is, the mix ramps up from dry) */
+    int on = fx_p[FXP_CP_SW] != 0;
+    int32_t w1, xf;
+    if (!on && !cho_xw) { cho_el = -1; cho_km = cho_cg = 0; cho_fill = 0; return; }   /* off and faded out: rests (switched on
+                                                         * again: the taps start where the LFO is, the mix from dry) */
+    if (!cho_xw && !cho_fill) { memset(cho_buf, 0, sizeof cho_buf); cho_hl[0] = cho_hl[1] = 0; cho_fill = 2; }
+                                                        /* (from rest: the line held what it held when it stopped;
+                                                         * cleared, then two blocks dry while it fills: the taps read
+                                                         * 154 .. 463 samples back) */
+    w1 = cho_fill ? 0 : xf_next(cho_xw, on, n);
+    if (cho_fill) cho_fill--;
+    xf = cho_xw != 32768 || w1 != 32768;
+    if (xf) { memcpy(xf_d[0], L, n * sizeof *L); memcpy(xf_d[1], R, n * sizeof *R); }
     for (sb = 0; sb < n; sb += 32u) {
         /* the taps glide sample by sample to the next sub-block's (they jumped once per 32 samples: a step in the
          * delay time, a zipper on the chorus' output of ~10x the signal's third difference, 2026-10-24); each sub-block
@@ -687,6 +746,8 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         }
         cp_ph += inc * 32u;
     }
+    if (xf) { xf_blend(L, xf_d[0], n, cho_xw, w1); xf_blend(R, xf_d[1], n, cho_xw, w1); }
+    cho_xw = w1;
 }
 
 /* ---- COMPRESSOR (mono, before the drive): peak detector (ATTACK / RELEASE), soft knee of 6 dB, gain computed

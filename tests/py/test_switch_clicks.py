@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: GPL-3.0-only
+"""Switching an effect, a TYPE or a preset under a held chord does not click (the bug hunt on 0.9.5, 2026-10-25).
+
+A differential check: a pedalled chord C2 C3 E3 G3 C4 at v110, one change at 1500 ms; the same run without the change
+is the reference. The largest second difference |x[n+1] - 2 x[n] + x[n-1]| from -3 to +40 ms around the change must
+stay under 10x the reference's in the same span (that is 5-11 LSB there; the clicks were 150-1700). The shared click
+detector (6 x the local level + 2000) found none of them."""
+import os
+import sys
+
+import numpy as np
+import pytest
+
+sys.path.insert(0, os.path.dirname(__file__))
+import hostrun as H  # noqa: E402
+
+TE = 1500
+CLEAN = [H.cc(20, 81, 0), H.cc(21, 91, 0), H.cc(21, 70, 0), H.cc(22, 106, 0), H.cc(22, 107, 0), H.cc(22, 113, 0)]
+
+
+def chord(t=300, notes=(36, 48, 52, 55, 60), v=110, dur=3000):
+    ls = [H.cc(t - 5, 64, 127)]
+    for n in notes:
+        ls += H.note(t, n, v, dur)
+    return ls
+
+
+def cc(n, v, t=TE):
+    return [H.cc(t, n, v)]
+
+
+def d2(x):
+    return np.abs(np.diff(np.asarray(x, float), 2))
+
+
+def ratio(tag, setup, change, win=(-3, 40), end=2600, pre=()):
+    """the largest second difference around the change over the reference's (both channels)"""
+    a = H.run(tag + "-a", list(pre) + CLEAN + setup + chord() + change, end)
+    b = H.run(tag + "-b", list(pre) + CLEAN + setup + chord(), end)
+    i0, i1 = int((TE + win[0]) * 44.1), int((TE + win[1]) * 44.1)
+    return max(d2(xa[i0:i1]).max() / max(d2(xb[i0:i1]).max(), 1.0) for xa, xb in ((a.L, b.L), (a.R, b.R)))
+
+
+CASES = {
+    # #2 the phaser and the chorus switched on and off (were 41-307x)
+    "phaser-on": (cc(13, 80, 30) + cc(16, 50, 31), cc(12, 127)),
+    "phaser-off": (cc(13, 80, 30) + cc(16, 50, 31) + cc(12, 127, 32), cc(12, 0)),
+    "chorus-on": (cc(86, 64, 30), cc(85, 64)),
+    "chorus-off": (cc(86, 64, 30) + cc(85, 64, 31), cc(85, 0)),
+    # #4 the FILTER TYPE and OFF (were 70-260x; LP12 -> HP12 -11 dB in one sample)
+    "filter-lp12-hp12": (cc(70, 20, 30) + cc(74, 50, 31), cc(70, 60)),
+    "filter-off-lp12": (cc(70, 0, 30) + cc(74, 50, 31), cc(70, 20)),
+    "filter-lp12-off": (cc(70, 20, 30) + cc(74, 50, 31), cc(70, 0)),
+    # #5 DRIVE AMOUNT to 0 and back (were 23-51x)
+    "drive-fdrv-1-0": (cc(84, 127) + cc(81, 1, 30) + cc(83, 127, 31), cc(81, 0)),
+    "drive-fdrv-20-0": (cc(84, 127) + cc(81, 20, 30), cc(81, 0)),
+    "drive-khlon-20-0": (cc(84, 64) + cc(81, 20, 30), cc(81, 0)),
+    "drive-tsh8-0-30": (cc(84, 76) + cc(81, 0, 30), cc(81, 30)),
+}
+
+
+@pytest.mark.parametrize("case", sorted(CASES))
+def test_switch_does_not_click(case):
+    setup, change = CASES[case]
+    r = ratio("sw-" + case, setup, change)
+    assert r < 10, f"{case}: the largest second difference {r:.1f}x the run without the change"

@@ -242,7 +242,7 @@ static __attribute__((noinline)) void fx_drive_types(int32_t *m, uint32_t n, int
     int32_t w0, w1;
     drv_ctl_t c;
     if (drv_rst_req) { uint32_t t; drv_rst_req = 0; for (t = 2u; t < DRV_N; t++) drv_reset(t); }   /* (CC 10) */
-    if (!d) { dr_w = wt; return; }                       /* AMOUNT 0: dry (as the classic drive) */
+    if (!d) { wt = 0; d = 1; }                           /* AMOUNT 0: dry, faded out (as the classic drive) */
     dr_w &= ~255;                                        /* (from FDRV's glide: onto the TYPE's grid) */
     if (!wt && !dr_w) return;                            /* off, or MIX 0: the dry signal, untouched */
     if (n > DRV_BLK) n = DRV_BLK;
@@ -259,7 +259,7 @@ static __attribute__((noinline)) int32_t drv_switch(uint32_t t)
 {
     if (t >= DRV_N) t = 1u;
     if (t == drv_on) return (int32_t)t;
-    if (fx_p[FXP_DRIVE] && dr_w) return 0;               /* fading out first */
+    if (dr_w) return 0;                                  /* fading out first (AMOUNT 0 fades out too) */
     drv_on = (uint8_t)t;
     drv_reset(t);
     dr_ton = 0; dr_tg = 4096;                            /* (FDRV's shelf at rest, as its own OFF leaves it) */
