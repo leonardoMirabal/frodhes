@@ -56,6 +56,15 @@ CASES = {
     "drive-fdrv-20-0": (cc(84, 127) + cc(81, 20, 30), cc(81, 0)),
     "drive-khlon-20-0": (cc(84, 64) + cc(81, 20, 30), cc(81, 0)),
     "drive-tsh8-0-30": (cc(84, 76) + cc(81, 0, 30), cc(81, 30)),
+    # #6 the compressor on / off (a gain step: 8-14x, +2.8 dB in 0.36 ms)
+    "comp-on": (cc(107, 64, 30) + cc(113, 15, 31), cc(106, 127)),
+    "comp-off": (cc(107, 64, 30) + cc(113, 15, 31) + cc(106, 127, 32), cc(106, 0)),
+    "comp-thr1-on": (cc(107, 1, 30) + cc(113, 15, 31), cc(106, 127)),
+    # #7 the WAH on / off (68x on)
+    "wah-on": (cc(18, 90, 30), cc(17, 127)),
+    "wah-off": (cc(18, 90, 30) + cc(17, 127, 31), cc(17, 0)),
+    # #9 LEVEL in one step (48x)
+    "level-64-0": ([], cc(110, 0)),
 }
 
 
@@ -64,3 +73,17 @@ def test_switch_does_not_click(case):
     setup, change = CASES[case]
     r = ratio("sw-" + case, setup, change)
     assert r < 10, f"{case}: the largest second difference {r:.1f}x the run without the change"
+
+
+def test_comp_comes_on_at_the_same_volume():
+    """CC 106 (and THRESH up from OFF on the panel) switches the compressor on at -16 dB with the engine's make-up:
+    the chord's first 300 ms within 0.75 LU of the compressor off (0.9.5: CC 106 without the make-up; the panel at
+    THRESH 1, -0.3 dB, with +2.8 dB). A THRESH set over MIDI first is kept, without a make-up"""
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tools"))
+    import bar_measure as bm
+    off = H.run("cw-off", CLEAN + chord(), 1000)
+    for tag, ch in (("cc106", cc(106, 127, 30)), ("thr1", cc(107, 1, 29) + cc(106, 127, 30))):
+        on = H.run("cw-" + tag, CLEAN + ch + chord() + ["900 dump"], 1000)
+        i0, i1 = int(300 * 44.1), int(600 * 44.1)
+        d = bm.lufs(np.stack([on.L, on.R], 1)[i0:i1]) - bm.lufs(np.stack([off.L, off.R], 1)[i0:i1])
+        assert abs(d) < 0.75, f"{tag}: {d:+.2f} LU re the compressor off"

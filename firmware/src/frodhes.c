@@ -356,7 +356,8 @@ static void midi_cc(uint32_t cc, uint32_t v)
             else if (PARAMS[id].hi == 2u) x = v < 43u ? 0 : v < 86u ? 1 : 2;
             else if (id == P_TYPE) x = (int32_t)(v >> 5);   /* the Rhodes types, as before; bar types: CC 79 */
             else if (PARAMS[id].hi < 127u) x = (int32_t)(v * (PARAMS[id].hi + 1u) >> 7);
-            param_set(id, x);
+            if (id == P_CMP_SW && x && !PV(P_CMP_SW)) cmp_wake(1);   /* CC 106 on: as the panel (ui.c cmp_wake) */
+            else param_set(id, x);
             if (id == P_DL_SYNC || id == P_TW_SYNC || id == P_CP_SYNC || id == P_PH_SYNC || id == P_MOT_SYNC ||
                 id == P_LFO_SYNC) tempo_sync_publish();   /* (LFO SYNC by CC 77 kept its free rate: the audit) */
             ui_mark_param(id);

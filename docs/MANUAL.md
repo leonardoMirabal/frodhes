@@ -212,8 +212,9 @@ controls: see [MARIMBA](#marimba).
 | K3 | **ATTACK** | How fast it grabs a note: low (0.1 ms) catches the hammer's attack, high (50 ms) lets it through |
 | K4 | **MAKEUP** | Gives back the volume the compression takes: 0 to +24 dB |
 
-**THRESH** is its on / off: turn it up from OFF and the compressor comes on with MAKEUP at +2.8 dB, which keeps the
-volume about the same (back to OFF switches it off). The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
+**THRESH** is its on / off: turn it up from OFF and the compressor comes on at −16 dB (where the presets set it) with
+MAKEUP at +2.8 dB, which keeps the volume about the same (back to OFF switches it off). Switching it on or off fades
+over about 46 ms, so it never clicks. The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
 to 30 dB of reduction (scale 3, 6, 10, 20, 30), a bright segment holds the peak for a second, and the number on the
 right is the reduction now in dB. The compressor
 comes first in the chain, right after the piano.
@@ -975,7 +976,7 @@ MARIMBA ignore it.
 | 86 / 87 | CHORUS DEPTH / SPEED (the phaser's, when only the phaser is on) | 23 | CHORUS SYNC |
 | 12 / 13 / 14 | PHASER on / DEPTH / SPEED | 15 / 16 | PHASER SYNC / FEEDBACK |
 | 88 / 89 / 90 | DELAY type (0–31 off, 32–63 DIG, 64–95 ANA, 96–127 TAPE) / MIX / TIME | 25 / 26 / 27 | DELAY SYNC / FEEDBACK / TONE |
-| 106 / 107 | COMP on (≥ 64) / THRESHOLD (0 to −40 dB; switch it on with 106) | 112 / 113 | COMP RATIO / MAKEUP |
+| 106 / 107 | COMP on (≥ 64; with THRESHOLD at 0 it starts at −16 dB with the make-up, as the panel) / THRESHOLD (0 to −40 dB; switch it on with 106) | 112 / 113 | COMP RATIO / MAKEUP |
 | 108 / 109 | COMP ATTACK / RELEASE | 110 | LEVEL (64 = 0 dB) |
 | 111 | All effects off (≥ 64) / on | 28–31 | TONE / BARK / BELL / HAMMER |
 | 114 | USB VOL: knob (< 64) / fixed | 24 | Reserved (accepted and saved, no effect yet) |
