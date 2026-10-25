@@ -1,0 +1,72 @@
+# The REVERB's TYPE on CC 95 (params.c P_RV_TYPE = p.59: 0 OFF, 1 HALL, 2 PLATE, 3 INFINITE; frodhes.c midi_cc's bands
+# v * 4 >> 7: 0..31 OFF, 32..63 HALL, 64..95 PLATE, 96..127 INFINITE), and each TYPE's tail after a chord (REVERB MIX
+# 100 on CC 91): 400 ms after the keys let go a TYPE still sounds (> -60 dBFS), OFF has only the piano's release
+# (< -70; first, before any tail: OFF lets a ringing tail ring out). The band edges, both ways; the default (HALL)
+# first. tests/py/test_rev_types.py tests the sound itself.
+50 expect state p.59 1
+100 midi 0xB0 95 0
+102 expect state p.59 0
+105 midi 0xB0 95 31
+107 expect state p.59 0
+110 midi 0xB0 95 32
+112 expect state p.59 1
+115 midi 0xB0 95 63
+117 expect state p.59 1
+120 midi 0xB0 95 64
+122 expect state p.59 2
+125 midi 0xB0 95 95
+127 expect state p.59 2
+130 midi 0xB0 95 96
+132 expect state p.59 3
+135 midi 0xB0 95 127
+137 expect state p.59 3
+140 midi 0xB0 95 96
+142 expect state p.59 3
+145 midi 0xB0 95 95
+147 expect state p.59 2
+150 midi 0xB0 95 64
+152 expect state p.59 2
+155 midi 0xB0 95 63
+157 expect state p.59 1
+160 midi 0xB0 95 32
+162 expect state p.59 1
+165 midi 0xB0 95 31
+167 expect state p.59 0
+170 midi 0xB0 95 0
+172 expect state p.59 0
+175 midi 0xB0 95 48
+177 expect state p.59 1
+180 midi 0xB0 91 100
+400 midi 0xB0 95 0
+450 midi 0x90 60 110
+450 midi 0x90 64 110
+450 midi 0x90 67 110
+950 midi 0x80 60 0
+950 midi 0x80 64 0
+950 midi 0x80 67 0
+1350 expect rms < -70
+6400 midi 0xB0 95 48
+6450 midi 0x90 60 110
+6450 midi 0x90 64 110
+6450 midi 0x90 67 110
+6950 midi 0x80 60 0
+6950 midi 0x80 64 0
+6950 midi 0x80 67 0
+7350 expect rms > -60
+12400 midi 0xB0 95 80
+12450 midi 0x90 60 110
+12450 midi 0x90 64 110
+12450 midi 0x90 67 110
+12950 midi 0x80 60 0
+12950 midi 0x80 64 0
+12950 midi 0x80 67 0
+13350 expect rms > -60
+18400 midi 0xB0 95 112
+18450 midi 0x90 60 110
+18450 midi 0x90 64 110
+18450 midi 0x90 67 110
+18950 midi 0x80 60 0
+18950 midi 0x80 64 0
+18950 midi 0x80 67 0
+19350 expect rms > -60
+24400 end

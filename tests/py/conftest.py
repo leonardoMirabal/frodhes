@@ -16,6 +16,7 @@ GROUPS = {                         # node id prefix -> group
     "test_vibes_knock_measure.py::test_the_suite_row_on_the_host": "hil_scan_host",   # build/hil/vibes-host.json
     "test_bars_calib.py": "bars_calib",                             # its va_checks fixture (100 s) computed once
     "test_voice_calib.py": "voice_calib",                           # its vel fixture (13 s) computed once
+    "test_uac_ring.py": "uac_ring",                                 # build/uac_test/ (old.tar, old/, the binaries)
 }
 # (build/gen_bars/fe_cache.json is shared by test_gen_bars and test_bars_calib, the two longest, which run apart: a
 # reader that finds it half written recomputes it, and both writers write the same bytes)

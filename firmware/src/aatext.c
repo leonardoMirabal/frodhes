@@ -16,6 +16,9 @@ typedef struct {
     const uint8_t *ex;                  /* codes of the extra glyphs */
     uint8_t psh;                        /* log2 of the phases per glyph */
     const uint8_t *hc;                  /* data's Huffman code (aa_alpha_hc), 0 = 2 px per byte (aa_alpha) */
+    const uint8_t *map;                 /* the range's glyphs (code - first -> glyph, 255 = none), 0 = every code
+                                         * has its glyph in order (the font diet: gen_aa_font.py stores only what
+                                         * the firmware draws) */
 } aafont_t;
 #include "aa_font.h"                    /* AF_S 13 px / 500 (all small text), AF_L 28 px / 600 (values:
                                          * gen_aa_font.py L_CHARS; aa_covers) */
@@ -181,7 +184,8 @@ static void aa_alpha_hc(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint
 static int32_t aa_glyph_at(const aafont_t *f, uint32_t ch)
 {
     uint32_t i;
-    if (ch >= f->first && ch <= f->last) return (int32_t)(ch - f->first);
+    if (ch >= f->first && ch <= f->last)
+        return !f->map ? (int32_t)(ch - f->first) : f->map[ch - f->first] == 255u ? -1 : (int32_t)f->map[ch - f->first];
     for (i = 0; i < f->nex; i++) if (f->ex[i] == ch) return (int32_t)(f->last - f->first + 1u + i);
     return -1;
 }
@@ -212,12 +216,31 @@ static int aa_covers(const aafont_t *f, const char *s)
     return 1;
 }
 
+/* the host's glyph check (tests/py/test_font_glyphs.py, the font diet: the faces keep only the characters
+ * tools/font_chars.py finds): every character measured (1) or drawn (2) per face (0 AF_S, 1 the large face), and how
+ * many drawn characters had no glyph (they would show as '?'); host_state "glyphs.S|L", "glyphmiss" */
+#ifdef DINGHY_HOST
+static uint8_t aa_h_used[2][256];
+static uint32_t aa_h_miss;
+static void aa_h_note(const aafont_t *f, uint32_t c, uint32_t drawn)
+{
+    uint32_t lf = f != &AF_S;
+    aa_h_used[lf][c & 255u] |= (uint8_t)(drawn ? 2u : 1u);
+    if (drawn && aa_glyph_at(f, c) < 0 && (c != (uint8_t)AA_ELLIPSIS || aa_glyph_at(f, '.') < 0))
+        if (aa_h_miss++ < 20u) printf("GLYPH MISSING %c 0x%02X\n", lf ? 'L' : 'S', (unsigned)c);
+}
+#define AA_H_NOTE(f, c, d) aa_h_note(f, c, d)
+#else
+#define AA_H_NOTE(f, c, d) ((void)0)
+#endif
+
 static int32_t aa_text_w(const aafont_t *f, const char *s)
 {
     int32_t pen = 0;
     uint32_t prev = 0;
     for (; *s; s++) {
         uint32_t c = aa_fold(f, (uint8_t)*s);
+        AA_H_NOTE(f, c, 0);
         if (prev) pen += aa_kern(f, prev, c) + (f == &AF_L ? AA_L_TRACK16 : 0);   /* (the large face: tracked) */
         pen += f->g[aa_glyph(f, c)].adv;
         prev = c;
@@ -237,6 +260,7 @@ static int32_t aa_text(int32_t x, int32_t y, const aafont_t *f, const char *s, u
         uint32_t c = aa_fold(f, (uint8_t)*s);
         const aag_t *g;
         int32_t pos, d0, d1;
+        AA_H_NOTE(f, c, 1);
         if (prev) pen += aa_kern(f, prev, c) + (f == &AF_L ? AA_L_TRACK16 : 0);   /* (the large face: tracked) */
         g = &f->g[aa_glyph(f, c)];
         if (f->psh && g[1].off != g->off) {

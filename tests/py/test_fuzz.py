@@ -240,3 +240,18 @@ def test_delay_hot_line(sanitizer_build):
     r = run("delay-hot-line-san", HOT_DELAY, 4500, binary=SAN, check=False,
             env={"ASAN_OPTIONS": "detect_leaks=0", "UBSAN_OPTIONS": "print_stacktrace=0"})
     assert r.code == 0 and "runtime error" not in r.out, re.findall(r"\S+: runtime error: [^\n]*", r.out)[:2]
+
+
+def test_fuzz_reaches_every_drive_type():
+    """the default seeds send CC 84 into every band of the drive's TYPE (params.c DRV_CC84: OFF, FDRV, KHLON ...)
+    on both engines, so the checks above run with each type on"""
+    lo = [int(x) for x in re.search(r"DRV_CC84\[\d*\] = \{([^}]*)\}",
+                                    open(os.path.join(ROOT, "firmware", "src", "params.c")).read()).group(1).split(",")]
+    for eng in ("rhodes", "vibes"):
+        hit = set()
+        for seed in range(200):
+            for _, line in chaos(seed, eng):
+                f = line.split()
+                if f[0] == "midi" and int(f[1], 16) >> 4 == 0xB and f[2] == "84" and int(f[3]) < 128:
+                    hit.add(max((t for t in range(len(lo)) if lo[t] <= int(f[3])), key=lambda t: lo[t]))
+        assert hit == set(range(len(lo))), (eng, hit)

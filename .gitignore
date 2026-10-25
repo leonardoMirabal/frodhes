@@ -38,23 +38,12 @@ fw-AC79_AIoT_SDK/
 *.aif
 *.aiff
 
-# Research sources whose licence does not clearly allow redistribution: kept on disk only, never committed.
-# docs/model/research/SOURCES.md lists where to fetch each one. Committed: Felucca (GPL-3.0), STK + STKAudioKit (MIT).
-docs/model/research/sources/01-dafx17/
-docs/model/research/sources/02-sonderbo-thesis/
-docs/model/research/sources/03-falaize-phs/
-docs/model/research/sources/04-code-rdpiano-stk/rdpiano/
-docs/model/research/sources/05-empirical-jrhodes-epmk1/
-docs/model/research/sources/07-reface-manual/
-docs/model/research/sources/09-reference-samples/
+# Research notes, third-party source copies and reviewer scratch: kept privately since 0.9.5, never committed.
+docs/model/research/
 # Any future download area for reference material
 docs/model/data/reference-audio/
 
-# Reviewer scratch binaries (the .c sources are kept)
-docs/model/reviews/scratch-*/*
-!docs/model/reviews/scratch-*/*.c
-!docs/model/reviews/scratch-*/*.py
-!docs/model/reviews/scratch-*/*.md
+docs/model/reviews/scratch-*/
 
 # Local backups (full pre-rewrite history bundle, sources tarball): kept on disk, never pushed
 .local-backup/

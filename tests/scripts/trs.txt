@@ -1,0 +1,83 @@
+# TRS MIDI IN (Dinghy 0.4's midi_uart.c: the jack's messages reach the app as USB's do, midi_get says 2): a note
+# plays; a clock from the jack alone sets the tempo once (96 BPM, not counted twice); the MIDI page's CHANNEL
+# filters the jack once, as USB; TRS IN OFF drops the jack and leaves USB alone.
+200 trs 0x90 60 100
+700 expect rms > -60
+800 trs 0x80 60 0
+# 96 BPM from the jack: 26.04 ms a pulse, 48 pulses
+1000 trs 0xF8 0 0
+1026 trs 0xF8 0 0
+1052 trs 0xF8 0 0
+1078 trs 0xF8 0 0
+1104 trs 0xF8 0 0
+1130 trs 0xF8 0 0
+1156 trs 0xF8 0 0
+1182 trs 0xF8 0 0
+1208 trs 0xF8 0 0
+1234 trs 0xF8 0 0
+1260 trs 0xF8 0 0
+1286 trs 0xF8 0 0
+1312 trs 0xF8 0 0
+1338 trs 0xF8 0 0
+1364 trs 0xF8 0 0
+1390 trs 0xF8 0 0
+1416 trs 0xF8 0 0
+1442 trs 0xF8 0 0
+1468 trs 0xF8 0 0
+1494 trs 0xF8 0 0
+1520 trs 0xF8 0 0
+1546 trs 0xF8 0 0
+1572 trs 0xF8 0 0
+1598 trs 0xF8 0 0
+1625 trs 0xF8 0 0
+1651 trs 0xF8 0 0
+1677 trs 0xF8 0 0
+1703 trs 0xF8 0 0
+1729 trs 0xF8 0 0
+1755 trs 0xF8 0 0
+1781 trs 0xF8 0 0
+1807 trs 0xF8 0 0
+1833 trs 0xF8 0 0
+1859 trs 0xF8 0 0
+1885 trs 0xF8 0 0
+1911 trs 0xF8 0 0
+1937 trs 0xF8 0 0
+1963 trs 0xF8 0 0
+1989 trs 0xF8 0 0
+2015 trs 0xF8 0 0
+2041 trs 0xF8 0 0
+2067 trs 0xF8 0 0
+2093 trs 0xF8 0 0
+2119 trs 0xF8 0 0
+2145 trs 0xF8 0 0
+2171 trs 0xF8 0 0
+2197 trs 0xF8 0 0
+2223 trs 0xF8 0 0
+2270 expect state bpm 96.0
+# the MIDI page: GLO (7) three times; K1 (encoder 2) CHANNEL ALL -> 1
+2600 btn 7
+2700 btn 7
+2800 btn 7
+2900 turn 2 1
+# a note on channel 2 from the jack: not played; on channel 1: played
+3000 trs 0x91 64 100
+3500 expect rms < -90
+3600 trs 0x81 64 0
+3700 trs 0x90 64 100
+4200 expect rms > -60
+4300 trs 0x80 64 0
+# K2 (encoder 3) TRS IN -> OFF: the jack's note is dropped, a USB note still plays
+5800 turn 3 -1
+5900 shot
+6000 trs 0x90 67 100
+6500 expect rms < -90
+6600 trs 0x80 67 0
+6700 midi 0x90 67 100
+7200 expect rms > -60
+7300 midi 0x80 67 0
+# TRS IN back ON: the jack plays again
+8800 turn 3 1
+8900 trs 0x90 60 100
+9400 expect rms > -60
+9500 trs 0x80 60 0
+9600 end

@@ -65,11 +65,19 @@ def sustain_mode(modes, t_late=2.0):
     return int(np.argmax([abs(r) * np.exp(-s * t_late) for _, s, r in modes]))
 
 
-def retune(tb, f0, t_late=2.0, iters=6):
-    """Scale tb so its sustain mode is exactly f0 (frequency ratios are scale-invariant without damping; a few
-    fixed-point iterations absorb the damping's tiny pull)."""
+def tine_mode(modes, f_t):
+    """Index of the tine-like mode: the one nearest (in log frequency) to the uncoupled tine f_t. With a bar tuned
+    far below the tine (keys 104-108: -3779 cents) and short T60s, sustain_mode() picks the BAR mode (its late
+    amplitude wins although its tine weight is 10^-4 of the tine mode's): the retune then put a near-silent mode on
+    f0 and the real tine mode at 24-30 kHz. On keys 21-103 both rules pick the same mode."""
+    return int(np.argmin([abs(np.log(f / f_t)) for f, _, _ in modes]))
+
+
+def retune(tb, f0, t_late=2.0, iters=6, pick="sustain"):
+    """Scale tb so its sustain mode (pick="sustain") or its tine mode (pick="tine") is exactly f0 (frequency
+    ratios are scale-invariant without damping; a few fixed-point iterations absorb the damping's tiny pull)."""
     for _ in range(iters):
         m = tb.modes()
-        f_s = m[sustain_mode(m, t_late)][0]
-        tb = tb.scaled(f0 / f_s)
+        i = sustain_mode(m, t_late) if pick == "sustain" else tine_mode(m, tb.f_t)
+        tb = tb.scaled(f0 / m[i][0])
     return tb

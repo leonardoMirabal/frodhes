@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """tools/mrb_ref_measure.py (MARIMBA PLAN D10, numbers only) on SYNTHETIC notes (no recording is read here): the pack
-parser (an Ableton Sampler preset's zones), the in-place AIFF reader, the refusal of protected (non-PCM) pack audio,
+parser (a DAW sampler preset's zones), the in-place AIFF reader, the refusal of protected (non-PCM) pack audio,
 and measure()'s numbers against a note whose f0, partials, levels and decays are known. Plus the device tools' dry
 runs (vib_sampleback --engine marimba, hil_jack --engine marimba: the host build in the device's place)."""
 import gzip
@@ -53,11 +53,11 @@ def write_aiff(path, x, start, comp=None):
 
 
 def write_preset(path, fname, root, start, end):
-    xml = f"""<?xml version="1.0"?><Ableton><MultiSamplePart><Name Value="x" />
+    xml = f"""<?xml version="1.0"?><Preset><MultiSamplePart><Name Value="x" />
 <KeyRange><Min Value="{root}" /><Max Value="{root}" /><CrossfadeMin Value="{root}" /><CrossfadeMax Value="{root}" /></KeyRange>
 <VelocityRange><Min Value="62" /><Max Value="104" /><CrossfadeMin Value="66" /><CrossfadeMax Value="100" /></VelocityRange>
 <RootKey Value="{root}" /><Detune Value="0" /><Volume Value="1.99526584" /><SampleStart Value="{start}" /><SampleEnd Value="{end}" />
-<SampleRef><FileRef><Name Value="{fname}" /></FileRef><DefaultSampleRate Value="{FS}" /></SampleRef></MultiSamplePart></Ableton>"""
+<SampleRef><FileRef><Name Value="{fname}" /></FileRef><DefaultSampleRate Value="{FS}" /></SampleRef></MultiSamplePart></Preset>"""
     with gzip.open(path, "wb") as f:
         f.write(xml.encode())
 

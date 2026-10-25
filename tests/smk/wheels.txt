@@ -1,0 +1,44 @@
+# SMK-37 build only (make test-smk): the wheels (raw readings as the HAL gives them: pitch at rest 535, mod 620).
+# The pitch wheel bends as MIDI pitch bend does ("bend": -8192 .. 8191, the Rhodes +-2 semitones), through an IIR and a
+# hysteresis of one count; at rest it is exactly 0, a wobble of one count moves nothing. The readings count after
+# ~300 scan frames (frodhes_smk.h SMK_SETTLE).
+400 expect state bend 0
+500 keys 0x80
+600 wheel 0 1000
+800 expect state bend 8191
+900 wheel 0 535
+1100 expect state bend 0
+1100 expect state wbend 0
+1200 wheel 0 536
+1300 wheel 0 534
+1400 wheel 0 535
+1500 expect state bend 0
+1600 wheel 0 100
+1800 expect state bend -8192
+1900 wheel 0 535
+2100 expect state bend 0
+2100 expect rms > -40
+2200 keys 0
+2300 wheel 0 770
+2600 wheel 0 535
+2800 expect state bend 0
+# MIDI pitch bend still works, and the wheel at rest does not undo it (it sends only when it moves)
+2900 midi 0xE0 0 96
+3000 expect state bend 4096
+3100 midi 0xE0 0 64
+# the mod wheel (up = a lower reading): TREM/WAH's depth, the effect switched on (p.2 / p.3); back: depth 0
+3200 wheel 1 485
+3400 expect state p.3 127
+3400 expect state p.2 1
+3400 expect state modw 127
+3500 wheel 1 620
+3700 expect state p.3 0
+3700 expect state modw 0
+# VIBES (CC 79 0): the mod wheel is the motor's depth (p.55)
+3800 midi 0xB0 79 0
+3900 wheel 1 485
+4100 expect state p.55 127
+4100 expect state p.54 1
+4200 wheel 1 620
+4400 expect state p.55 0
+4500 end

@@ -56,7 +56,10 @@ static void eng_post(uint32_t type, uint32_t note, uint32_t val)
 
 /* ---- main loop */
 static void eng_note_on(uint32_t note, uint32_t vel) { if (note < 128u && vel && vel < 128u) eng_post(EV_NOTE_ON, note, vel); }
-static void eng_note_off(uint32_t note) { if (note < 128u) eng_post(EV_NOTE_OFF, note, 0); }
+/* rv: the release velocity, 1..127 (MIDI note-off velocity); 0 = none given (a note-on at velocity 0, a note-off at 0,
+ * the FM-1's keys: their domes give no release speed): the neutral release. The Rhodes uses it (rhodes.c rh_events);
+ * the bar engines ignore it */
+static void eng_note_off(uint32_t note, uint32_t rv) { if (note < 128u) eng_post(EV_NOTE_OFF, note, rv < 128u ? rv : 0u); }
 static void eng_pedal_level(uint32_t cc) { rh_hold = (uint8_t)(cc >= 64u); eng_post(EV_PEDAL, 0, cc > 127u ? 127u : cc); }
 static void eng_all_off(void) { eng_post(EV_ALL_OFF, 0, 0); }
 
@@ -73,6 +76,22 @@ static void eng_set_type(uint32_t t)
     if (eng_want != w || (eng_want == ENG_BARS && eng_want_sub != s)) eng_epoch++;
 }
 static int eng_is_bars(void) { return eng_want == ENG_BARS; }   /* the main loop's TYPE, not the ISR latch */
+
+/* ---- the pitch bend (main loop): the Rhodes only (rhodes.c rh_retune retunes the sounding tines in the next block
+ * where the bend changed, a new note starts at it); VIBES and MARIMBA ignore it. +-2 semitones. v14: the 14-bit MIDI
+ * value (8192 = centre; for an SMK-37 pitch wheel, 8192 + its bend in 1/4096 semitone). The table and rh_retune are
+ * genkigenki's (PR #3, the SMK-37 pitch wheel) */
+static const int32_t ENG_BEND_T[17] = {   /* Q30: 2^(k/48) - 1, k = -8..8 (quarter semitones, +-2 semitones) */
+    -117146609, -103232612, -89116230, -74794521, -60264498, -45523131, -30567345, -15394023, 0,
+    15617934, 31463037, 47538612, 63848011, 80394637, 97181938, 114213416, 131492623};
+static uint16_t eng_bend14 = 8192u;            /* the bend last set (the host tests read it) */
+static void eng_bend_set(int32_t v14)
+{
+    int32_t q = v14 < 0 ? 0 : v14 > 16383 ? 16383 : v14, i = q >> 10, f = q & 1023;
+    eng_bend14 = (uint16_t)q;
+    rh_bend_t = ENG_BEND_T[i] + (int32_t)(((int64_t)(ENG_BEND_T[i + 1] - ENG_BEND_T[i]) * f) >> 10);
+}
+static void eng_bend_reset(void) { eng_bend_set(8192); }
 
 /* params.c: the VOICE / DECAY cards and the motor, for the bar engine (the Rhodes keeps its own volatiles) */
 enum { BK_STRIKE, BK_MALLET, BK_TUBE, BK_WEIGHT, BK_RING, BK_DAMPER, BK_NOISE,      /* the VOICE / DECAY cards, 0..127 */
@@ -149,6 +168,7 @@ static void eng_switch(uint32_t want)
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
 static uint64_t eng_h_ms, eng_h_mul, eng_h_blocks;
 static uint32_t eng_h_max_ms, eng_h_max_mul, eng_h_max_us[2];   /* us: per engine (ENG_RHODES, ENG_BARS) */
+static uint32_t eng_h_max_nv[2];                                 /* the most voices alive at once, per engine */
 static FILE *eng_h_log;
 static int eng_h_log_open;
 #endif
@@ -177,7 +197,7 @@ static void eng_render(int32_t *mono, uint32_t n)
         eng_shed_req = 0;
         if (eng_cur == ENG_RHODES) rh_shed_req = 1; else bar_shed();
     }
-    if (eng_cur == ENG_BARS) bar_render(mono, n); else rh_render(mono, n);
+    if (eng_cur == ENG_BARS) { bar_render(mono, n); rh_side_on = 0; } else rh_render(mono, n);   /* (SPREAD: Rhodes only) */
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
     {   /* host counters: mode-samples and int64 multiplies this block (Rhodes: estimated from the live modes) */
         uint32_t ms = 0, mul = 0, ns = 0, i, m;
@@ -193,6 +213,11 @@ static void eng_render(int32_t *mono, uint32_t n)
         if (ms > eng_h_max_ms) eng_h_max_ms = ms;
         if (mul > eng_h_max_mul) eng_h_max_mul = mul;
         if (ns / 1000u > eng_h_max_us[eng_cur & 1u]) eng_h_max_us[eng_cur & 1u] = ns / 1000u;
+        {
+            uint32_t a = eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits, c = 0;
+            for (; a; a &= a - 1u) c++;
+            if (c > eng_h_max_nv[eng_cur & 1u]) eng_h_max_nv[eng_cur & 1u] = c;
+        }
         if (!eng_h_log_open) {
             const char *p = getenv("FRODHES_MSLOG");
             eng_h_log = p ? fopen(p, "w") : 0; eng_h_log_open = 1;
@@ -224,7 +249,10 @@ static void eng_host_report(void)                /* tests/host.c, at the end of 
     printf("cpu-proxy max %u us per block (%s)\n", eng_h_max_us[eng_cur & 1u], eng_cur == ENG_BARS ?
            "bars: the cost model's whole block, effects included" : "voices only, P0 costs; + 312 idle, + 1388 with every effect");
     printf("cpu-proxy-each rhodes %u bars %u\n", eng_h_max_us[ENG_RHODES], eng_h_max_us[ENG_BARS]);   /* a run on both */
+    printf("voices max rhodes %u of %u bars %u of %u\n", eng_h_max_nv[ENG_RHODES], (unsigned)RH_NV,
+           eng_h_max_nv[ENG_BARS], (unsigned)BAR_NV);               /* tools/hil_crackle.py: every voice taken */
     printf("ev_drop %u\n", (unsigned)(eq_drop + ev_drop));
+    printf("rhodes steals %u\n", (unsigned)rh_h_steals);          /* tools/engine_ab.py */
     printf("type %u\n", eng_cur == ENG_BARS ? ENG_RH_NTYPE + bar_sub : (unsigned)rh_type);   /* the TYPE last rendered (C11) */
     if (eng_h_log) fclose(eng_h_log);
     if (bar_h_pred) fclose(bar_h_pred);

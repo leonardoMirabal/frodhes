@@ -17,22 +17,26 @@ here: the VIBES VOICE / DECAY cards, the motor, the VIBES pedal and velocity (te
 at a minimum through the panel (their plan thresholds: test_marimba_*). Exact card-vs-sound
 accuracy (rates, times, cutoffs, dB) is test_display_sound.py; this file only asks that each control acts."""
 import math
+import os
+import re
 
 import numpy as np
 import pytest
 
-from hostrun import FS, cc, env_rms, note, rate_of, rms_db, run
+from hostrun import FS, ROOT, cc, env_rms, note, rate_of, rms_db, run
 
-CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(21, 70, 0)]   # F01's drive, reverb and filter (on by default since 0.9.3:
-                                                        # LP18 at 16K) off: each control alone
+CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(21, 70, 0),  # F01's drive, reverb and filter (on by default since 0.9.3:
+         cc(22, 106, 0), cc(22, 107, 0), cc(22, 113, 0),    # LP18 at 16K) off, and its compressor (on since 0.9.5:
+         cc(22, 112, 56), cc(22, 108, 40), cc(22, 109, 50)]   # off, THRESH 0, MAKEUP 0, 4:1, ATTACK and
+                                                        # RELEASE at their defaults): each control alone
 PEDAL = [cc(22, 64, 127)]
 SHORT = [cc(23, 103, 0), cc(24, 104, 0)]            # RELEASE 0, NOISE 0: a note let go stops at once
 # the SELECT order (ui.c PG_ORDER) and the page ids the dump's card.<page>.<k> use (ui.c PG_*)
-ORDER = ["PERF", "PIANO", "VOICE", "DECAY", "COMP", "FILTER", "DRIVE", "TREM", "PHA", "CHO", "DELAY", "REVERB", "TEMPO",
-         "SCALE", "CHORD", "ARP", "LFO", "SEQ", "ASSIGN", "SETUP", "MIDI", "DISPLAY"]   # (a Rhodes TYPE: no MOTOR page)
+ORDER = ["PERF", "PIANO", "VOICE", "DECAY", "COMP", "DRIVE", "FILTER", "TREM", "PHA", "CHO", "DELAY", "REVERB",
+         "REVERB2", "TEMPO", "SCALE", "CHORD", "ARP", "LFO", "SEQ", "ASSIGN", "SETUP", "MIDI", "DISPLAY"]   # (a Rhodes TYPE: no MOTOR page)
 PG = {n: i for i, n in enumerate(["PERF", "ASSIGN", "PIANO", "VOICE", "DECAY", "COMP", "FILTER", "TREM", "PHA", "CHO",
                                   "DELAY", "TEMPO", "SCALE", "CHORD", "SEQ", "ARP", "LFO", "SETUP", "MIDI",
-                                  "DRIVE", "REVERB", "DISPLAY"])}
+                                  "DRIVE", "REVERB", "DISPLAY", "REVERB2"])}
 BTN = {"OCT-": 0, "OCT+": 1, "FX": 2, "SEL": 3, "ENV": 4, "LFO": 5, "EDIT": 6, "GLO": 7, "HOME": 8, "SAVE": 9,
        "ARP": 10, "SEQ": 11, "PLAY": 12, "REC": 13}
 C4 = 261.63
@@ -238,10 +242,19 @@ def _voice_cases():
             return t[1] / t[0], 4.0, f"{t[0] * 1000:.0f} -> {t[1] * 1000:.0f} ms"
 
         def noise(ty=ty):
-            """NOISE (CC 104): the damper's knock and the felt at the note-off. The 100 ms after the note-off are
-            14-16 dB louder at 10 than at 0; at least 6"""
-            lv = [rms_db(rh_note(ty, [(104, v)], dur=800, end=2000).seg(0.99, 1.1)) for v in (0, 127)]
-            return lv[1] - lv[0], 6.0, f"note-off {lv[0]:.1f} -> {lv[1]:.1f} dB"
+            """NOISE (CC 104): the damper's knock and the felt at the note-off, never louder than the note
+            (tests/py/test_release_never_louder.py; 2026-10-25, the user: "it gets louder when I release"). What
+            NOISE 10 adds to the NOISE 0 take (the same samples but the noises) over the 100 ms after the note-off
+            is -22 .. -25 dB of that release's energy; at least -35 (a knock is there: none is -inf), and the take
+            at 10 is never louder than the note before its note-off (10 ms RMS, +0.5 dB)"""
+            a, b = (rh_note(ty, [(104, v)], dur=800, end=2000).L.astype(float) for v in (0, 127))
+            i0, i1, ip = int(0.99 * FS), int(1.1 * FS), int(0.94 * FS)
+            share = 10 * np.log10(np.sum((b - a)[i0:i1] ** 2) / np.sum(a[i0:i1] ** 2) + 1e-30)
+            w = FS // 100
+            post = max(np.sqrt(np.mean(b[j:j + w] ** 2)) for j in range(i0, i1, w))
+            pre = max(np.sqrt(np.mean(b[j:j + w] ** 2)) for j in range(ip, i0 - w + 1, w))
+            louder = 20 * np.log10(post / pre)
+            return (share if louder <= 0.5 else -99.0), -35.0, f"knock share {share:.1f} dB, after / before {louder:+.1f} dB"
 
         for k, f in (("TONE", tone), ("BARK", bark), ("BELL", bell), ("HAMMER", hammer), ("DECAY", decay),
                      ("RELEASE", release), ("NOISE", noise)):
@@ -707,11 +720,11 @@ def _trate():
 
 @case("TREM-SHAPE")
 def _tshape():
-    """SHAPE (CC 22): sine to square. The time the gain spends within 10 % of its extremes: 41 % at 0, 93 % at 10;
-    at least 25 points more"""
+    """SHAPE (CC 22): sine to square over 0..64 (65..127: the amp law, test_fx.py test_tremolo_amp_law). The time the
+    gain spends within 10 % of its extremes: 41 % at 0, more at 64; at least 25 points more"""
     ref = trem([(17, 0)])
     e = []
-    for v in (0, 127):
+    for v in (0, 64):
         g = 10 ** (gain_db(trem([(17, 64), (21, 80), (18, 127), (19, 60), (22, v)]), ref, 0.5, 6.0)[0] / 20)
         lo, hi = np.percentile(g, 1), np.percentile(g, 99)
         e.append(np.mean((g < lo + 0.1 * (hi - lo)) | (g > hi - 0.1 * (hi - lo))) * 100)
@@ -883,8 +896,8 @@ def _csync():
 
 
 @case("CC85-86-87")
-def _reface():
-    """CC 85 (reface CHO/PHA: off / chorus / phaser) sets both switches; CC 86 / 87 move the phaser's DEPTH / SPEED
+def _cho_pha_switch():
+    """CC 85 (the combined CHO/PHA switch: off / chorus / phaser) sets both switches; CC 86 / 87 move the phaser's DEPTH / SPEED
     when only the phaser is on"""
     w = R(CLEAN + [cc(30, 85, 64), "35 dump", cc(40, 85, 127), cc(45, 86, 90), cc(46, 87, 11), "50 dump", cc(60, 85, 0),
                    "70 dump"], 100)
@@ -919,7 +932,7 @@ def _dsw():
 @case("DELAY-MIX")
 def _dmix():
     """MIX (CC 89): the first echo -35 dB at 2.5, -23.5 dB at 10; at least 6 louder (and none at 0)"""
-    e = [echoes(dly([(88, 64), (89, v), (90, 64), (26, 64)]), 175)[0] for v in (0, 32, 127)]
+    e = [echoes(dly([(88, 48), (89, v), (90, 64), (26, 64)]), 175)[0] for v in (0, 32, 127)]
     assert e[0] < -200
     return e[2] - e[1], 6.0, f"{e[1]:.1f} -> {e[2]:.1f} dB"
 
@@ -933,8 +946,8 @@ def _dtime():
         t = np.arange(len(e)) * 44 / FS + 0.25 - 0.2
         m = (t >= lo) & (t < hi)
         return t[m][np.argmax(e[m])]
-    a = first(dly([(88, 64), (89, 127), (90, 10), (26, 0)], end=2500), 0.04, 0.2)
-    b = first(dly([(88, 64), (89, 127), (90, 127), (26, 0)], end=2500), 0.5, 1.8)
+    a = first(dly([(88, 48), (89, 127), (90, 10), (26, 0)], end=2500), 0.04, 0.2)
+    b = first(dly([(88, 48), (89, 127), (90, 127), (26, 0)], end=2500), 0.5, 1.8)
     return b / a, 10.0, f"{a * 1000:.0f} -> {b * 1000:.0f} ms"
 
 
@@ -942,7 +955,7 @@ def _dtime():
 def _dfb():
     """FEEDBK (CC 26) at MIX 7.9: 1 echo above -60 dB at 0, 7 at 5.0; at least 4 more (the runaway at high MIX and
     FEEDBK: see the audit)"""
-    n = [sum(x > -60 for x in echoes(dly([(88, 64), (89, 100), (90, 64), (26, v)]), 175)) for v in (0, 64)]
+    n = [sum(x > -60 for x in echoes(dly([(88, 48), (89, 100), (90, 64), (26, v)]), 175)) for v in (0, 64)]
     return n[1] - n[0], 4.0, f"{n[0]} -> {n[1]} echoes"
 
 
@@ -951,7 +964,7 @@ def _dtone():
     """DLY TONE (SETUP K1, CC 27): the echoes' energy above 2 kHz -27 dB at 0, -20 dB at 10; at least 4"""
     h = []
     for v in (0, 127):
-        w = dly([(88, 64), (89, 100), (90, 64), (26, 64), (27, v)])
+        w = dly([(88, 48), (89, 100), (90, 64), (26, 64), (27, v)])
         h.append(band_db(np.concatenate([w.seg(0.2 + k * 0.1753, 0.26 + k * 0.1753) for k in (1, 2, 3)]), 2000, 16000))
     return h[1] - h[0], 4.0, f"{h[0]:.1f} -> {h[1]:.1f} dB"
 
@@ -971,7 +984,7 @@ def _dana():
     """EFFECT DIG / ANA: the tape's wow and flutter. A held A5 under its echoes at TIME 593 ms wobbles 0.2 cents p-p
     on DIG, 83 on ANA (too much: see the audit); at least 5 more on ANA"""
     w = []
-    for t in (64, 127):
+    for t in (48, 80):                                              # CC 88: DIG, ANA
         x = R(CLEAN + PEDAL + [cc(23, 102, 127), cc(30, 88, t), cc(31, 89, 127), cc(32, 90, 100), cc(33, 26, 0)]
               + note(200, 81, 100, 5000), 5500)
         w.append(wobble(x.seg(2.5, 5.0), 880.0))
@@ -982,7 +995,7 @@ def _dana():
 def _dsync():
     """DLY SYNC (TEMPO K4): 1/8 at 120 BPM = 250 ms between the note and its echo (+-3 %; the note comes 0.5 s after
     the change: the line's time slews 1 sample a sample, and an echo written while it moves comes late)"""
-    w = R(CLEAN + SHORT + [cc(30, 88, 64), cc(31, 89, 127), cc(32, 26, 0)] + goto("TEMPO", 40) + detents(5, 1, 6, 100)
+    w = R(CLEAN + SHORT + [cc(30, 88, 48), cc(31, 89, 127), cc(32, 26, 0)] + goto("TEMPO", 40) + detents(5, 1, 6, 100)
           + ["150 dump"] + note(700, 72, 110, 40), 1700)
     assert w.state(150)[f"card.{PG['TEMPO']}.3"] == "1/8" and w.state(150)[f"card.{PG['DELAY']}.2"] == "1/8"
     x = w.seg(0.6, 1.6)                                                 # the onsets' strength, correlated
@@ -1006,6 +1019,34 @@ def _drive():
             h.append(harm(w.seg(0.25, 1.2), 130.81)[2])
         out.append(h[1] - h[0])
     return min(out), 8.0, " ".join(f"{x:.1f}" for x in out)
+
+
+DRV_NAMES = re.findall(r'"([^"]+)"', re.search(r"N_DRV\[\] = \{([^}]*)\}",
+                       open(os.path.join(ROOT, "firmware", "src", "params.c")).read()).group(1))
+DRV_STUBS = {n for n in DRV_NAMES[2:] if "DRV_STUB" in open(os.path.join(ROOT, "firmware", "src",
+                                                                         f"drv_{n.lower()}.c")).read()}
+
+
+@case("DRIVE TYPE")
+def _drive_type():
+    """DRIVE page K1 (CC 84 by band): OFF / FDRV (the classic drive) / KHLON / TSH8 / OHCD / BHLUE. A C3 + G3 at
+    AMOUNT 100 through each, chosen on the panel (K1 starts on FDRV). Every TYPE with a model is its own sound: each
+    pair apart by at least a tenth of the level (the difference over the louder at least -20 dB); a TYPE still a stub
+    (drive.c: DRV_STUB) is the dry sound, exactly OFF's"""
+    w = {}
+    for name in DRV_NAMES:
+        turns = DRV_NAMES.index(name) - 1
+        r = R(CLEAN + goto("DRIVE") + detents(2, 1 if turns > 0 else -1, abs(turns), 120) + [cc(150, 81, 100), "160 dump"]
+              + note(200, 48, 100, 1300) + note(200, 55, 100, 1300), 1700)
+        assert r.state(160)["card.19.0"] == name, (name, r.state(160)["card.19.0"])
+        w[name] = np.asarray(r.seg(0.25, 1.4), float)
+    for n in DRV_STUBS:
+        assert np.array_equal(w[n], w["OFF"]), n
+    rms = lambda x: float(np.sqrt(np.mean(x ** 2)) + 1e-9)
+    own = [n for n in DRV_NAMES if n not in DRV_STUBS]
+    d = {f"{a}-{b}": 20 * math.log10(rms(w[a] - w[b]) / max(rms(w[a]), rms(w[b])) + 1e-12)
+         for i, a in enumerate(own) for b in own[i + 1:]}
+    return min(d.values()), -20.0, " ".join(f"{k} {v:.1f} dB" for k, v in d.items())
 
 
 @case("REVERB")
@@ -1302,9 +1343,9 @@ def _perf_cases():
         def f(i=i):
             """ASSIGN K1 picks what PERFORM K1 plays; turning it on PERFORM moves that parameter (and switches the
             effect on, for an amount)"""
-            w = R(CLEAN + goto("ASSIGN") + detents(2, 1, i, 100) + ["200 dump", "210 btn 8", "220 dump", "230 turn 2 -30",
-                                                                    "240 dump", "250 turn 2 60", "260 dump"], 300)
-            a, b, c, d = (w.state(t) for t in (200, 220, 240, 260))
+            w = R(CLEAN + goto("ASSIGN") + detents(2, -1, 6, 100) + detents(2, 1, i, 130)   # (from the first entry)
+                  + ["230 dump", "240 btn 8", "250 dump", "260 turn 2 -30", "270 dump", "280 turn 2 60", "290 dump"], 330)
+            a, b, c, d = (w.state(t) for t in (230, 250, 270, 290))
             assert b["page"] == "PERFORM" and b["label0"] == a["card0"], (b["label0"], a["card0"])
             moved = sorted(k[2:] for k in a if k.startswith("p.") and (b[k] != c[k] or c[k] != d[k]))
             want = PERF_TARGET[i]
@@ -1344,16 +1385,16 @@ def _trs():
 
 @case("PRESET-LOAD-UNDO")
 def _preset():
-    """PRESETS loads a sound 0.4 s after the last detent (F11 RADIO: drive 115 and TONE: its centroid 465 Hz against
-    F01's 273); SAVE held 0.7 s goes back"""
-    w = R(CLEAN + [f"{50 + 3 * i} turn 6 1" for i in range(10)] + ["600 dump", "700 press 9", "1500 release 9",
+    """PRESETS loads a sound 0.4 s after the last detent (F12 AUTO WAH: its drive and band-pass move the energy into
+    the mids: the share of 500 Hz - 4 kHz rises from F01's; F11 RADIO until it moved to the starters, 0.9.5; F19 since); SAVE
+    held 0.7 s goes back"""
+    w = R(CLEAN + [f"{50 + 3 * i} turn 6 1" for i in range(11)] + ["600 dump", "700 press 9", "1500 release 9",
                                                                      "1600 dump"] + note(620, 60, 100, 60), 1700)
-    assert w.state(600)["header"] == "F11 RADIO" and w.state(1600)["header"] == "F01 STAGE 77", (w.state(600)["header"], w.state(1600)["header"])
+    assert w.state(600)["header"] == "F12 AUTO WAH" and w.state(1600)["header"] == "F01 STAGE 77", (w.state(600)["header"], w.state(1600)["header"])
     a = R(note(200, 60, 100, 1000), 1500)
-    b = R(["50 turn 6 1"] + [f"{60 + 3 * i} turn 6 1" for i in range(9)] + note(700, 60, 100, 1000), 2000)
-    ca = (lambda f, X: (f * X).sum() / X.sum())(*spec(a.seg(0.25, 1.1)))
-    cb = (lambda f, X: (f * X).sum() / X.sum())(*spec(b.seg(0.75, 1.6)))
-    return cb - ca, 80.0, f"centroid {ca:.0f} -> {cb:.0f} Hz"
+    b = R(["50 turn 6 1"] + [f"{60 + 3 * i} turn 6 1" for i in range(10)] + note(700, 60, 100, 1000), 2000)
+    ma, mb = band_db(a.seg(0.25, 1.1), 500, 4000), band_db(b.seg(0.75, 1.6), 500, 4000)
+    return mb - ma, 4.0, f"500 Hz - 4 kHz share {ma:.1f} -> {mb:.1f} dB"
 
 
 @case("PRESET-SAVE")
@@ -1368,13 +1409,13 @@ def _save():
 
 @case("PRESET-BROWSE-END")
 def _browse_end():
-    """PRESETS turned on past the last user preset stays there (it does not jump back to F14)"""
-    w = R(CLEAN + ["100 btn 9", "200 btn 9", "3000 dump"] + [f"{3100 + 500 * i} turn 6 1" for i in range(2)]
-          + ["3560 dump", "4060 dump"], 4200)
-    got = [w.state(t)["header"] for t in (3000, 3560, 4060)]
-    return float(got == ["U01 ST77"] * 3), 1.0, f"{got}"
-
-
+    """PRESETS turned on past the last user preset stays there (it does not jump back to F19). A new FM-1's bank holds
+    the starters after U01, to U09 (presets.c PR_NS; U10..U12 until 0.9.5's RC, now F17..F19): 8 detents from U01
+    reach U09, 5 more stay on it (a preset loads 400 ms after its detent: one every 500 ms)"""
+    w = R(CLEAN + ["100 btn 9", "200 btn 9", "3000 dump"] + [f"{3100 + 500 * i} turn 6 1" for i in range(13)]
+          + ["8560 dump", "9560 dump"], 9700)
+    got = [w.state(t)["header"] for t in (3000, 8560, 9560)]
+    return float(got[0].startswith("U01") and got[1].startswith("U09") and got[2] == got[1]), 1.0, f"{got}"
 
 
 @case("SUSTAIN")
@@ -1398,7 +1439,7 @@ def _half():
     return lv[1] - lv[0], 3.0, f"{lv[0]:.1f} -> {lv[1]:.1f} dB"
 
 
-HEAVY = [cc(30, 81, 127), cc(31, 17, 64), cc(32, 18, 127), cc(33, 85, 127), cc(34, 13, 127), cc(35, 88, 64),
+HEAVY = [cc(30, 81, 127), cc(31, 17, 64), cc(32, 18, 127), cc(33, 85, 127), cc(34, 13, 127), cc(35, 88, 48),
          cc(36, 89, 127), cc(37, 91, 127), cc(38, 70, 20), cc(39, 74, 30)]
 
 
@@ -1412,7 +1453,8 @@ def _bypass():
         w = R(CLEAN + HEAVY + extra + probe, 2000)
         assert np.abs(w.L - dry.L).max() <= 1, extra
     raw = R(CLEAN + HEAVY + [cc(100, 119, 127)] + probe, 2000)        # (RAW skips the master and the limiter too)
-    assert tdist(raw.seg(0.3, 1.0), dry.seg(0.3, 1.0)) < 0.1 and abs(rms_db(raw.seg(0.3, 1.0)) - rms_db(dry.seg(0.3, 1.0))) < 0.3
+    dry0 = R(CLEAN + [cc(25, 110, 64)] + probe, 2000)                 # (and F01's LEVEL trim, -1.7 dB since 0.9.5)
+    assert tdist(raw.seg(0.3, 1.0), dry0.seg(0.3, 1.0)) < 0.1 and abs(rms_db(raw.seg(0.3, 1.0)) - rms_db(dry0.seg(0.3, 1.0))) < 0.3
     d = tdist(wet.seg(0.3, 1.0), dry.seg(0.3, 1.0))
     return d, 10.0, f"the effects: {d:.1f} dB of timbre; bypassed: none"
 
@@ -1471,15 +1513,27 @@ def _dev_eng():
     return a - b, 20.0, f"{a:.1f} -> {b:.1f} dB"
 
 
-@case("RESERVED-CC24-105")
+@case("RESERVED-CC24")
 def _reserved():
-    """CC 24 (CHORUS FEEDBACK) and 105 (SPREAD) are reserved, as the manual says: stored, no effect yet"""
+    """CC 24 (CHORUS FEEDBACK) is reserved, as the manual says: stored, no effect yet"""
     probe = note(300, 60, 100, 800)
     d = R(CLEAN + [cc(30, 85, 64), cc(31, 86, 90)] + probe, 1500)
-    for c in (24, 105):
-        w = R(CLEAN + [cc(30, 85, 64), cc(31, 86, 90), cc(32, c, 127)] + probe, 1500)
-        assert np.array_equal(w.L, d.L), c
+    w = R(CLEAN + [cc(30, 85, 64), cc(31, 86, 90), cc(32, 24, 127)] + probe, 1500)
+    assert np.array_equal(w.L, d.L)
     return 1.0, 1.0, "no effect, as documented"
+
+
+@case("SPREAD-CC105")
+def _spread():
+    """CC 105 (SPREAD, S13): a low key moves left, a high key right; at 0 the sound is the mono sum (L == R, dry)"""
+    lo, hi = note(300, 36, 100, 600), note(1100, 93, 100, 600)
+    d = R(CLEAN + lo + hi, 2000)
+    assert np.array_equal(d.L, d.R)
+    w = R(CLEAN + [cc(30, 105, 127)] + lo + hi, 2000)
+    db = lambda x, a, b: 20 * np.log10(np.sqrt(np.mean(x[int(a * FS):int(b * FS)] ** 2)) + 1e-9)
+    bl = db(w.L, 0.35, 0.8) - db(w.R, 0.35, 0.8)
+    bh = db(w.L, 1.15, 1.6) - db(w.R, 1.15, 1.6)
+    return min(-bl, bh), 6.0, f"C2 L-R {bl:.1f} dB, A6 {bh:.1f} dB"
 
 
 @pytest.mark.parametrize("name", sorted(CASES))

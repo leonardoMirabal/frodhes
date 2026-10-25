@@ -74,7 +74,7 @@
 8100 btn 8
 8200 btn 3
 8250 expect state page DELAY
-8250 expect state hint SEL:_ON_/_OFF__K1:_DIG_/_ANA
+8250 expect state hint SEL:_ON_/_OFF__K1:_DIG_/_ANA_/_TAPE
 8300 btn 3
 8350 expect state p.13 1
 8350 expect state hold 0
@@ -83,7 +83,7 @@
 # the arpeggiator on by MIDI (CC 52) while on DELAY: SEL is HOLD there now (the delay untouched), the hint says so
 8500 midi 0xB0 52 1
 8550 expect state arp 1
-8550 expect state hint SEL:_ARP_HOLD__K1:_DIG_/_ANA
+8550 expect state hint SEL:_ARP_HOLD__K1:_DIG/ANA/TAPE
 8600 btn 3
 8650 expect state hold 1
 8650 expect state p.13 0

@@ -109,13 +109,21 @@ static uint32_t arp_next(void)
 }
 
 /* every main-loop pass: a step starts on the grid; the gate ends the note */
+static uint8_t arp_clk;                                                /* 1: the last step was on the clock */
 static void arp_poll(void)
 {
     uint32_t unit_ms10, step, now = fm1_ms;
-    if (!arp_on() || !arp_n) { if (arp_playing < 128u && !arp_on()) arp_stop_note(); return; }
+    if (!arp_on() || !arp_n) { arp_clk = (uint8_t)clk_live(); if (arp_playing < 128u && !arp_on()) arp_stop_note(); return; }
     unit_ms10 = beat_ms * 10u * ARP_UNITS[ARP_RATE] / 96u;             /* a step in 0.1 ms */
     if (!unit_ms10) unit_ms10 = 10u;
-    step = (now - beat_t0) * 10u / unit_ms10;
+    {
+        int32_t dd = (int32_t)(now - beat_t0);                        /* (a clock's beat may be a hair ahead) */
+        step = (dd > 0 ? (uint32_t)dd : 0u) * 10u / unit_ms10;
+    }
+    if (clk_live()) step = clk_k && !clk_wait ? (clk_k - 1u) / (ARP_UNITS[ARP_RATE] / 4u) : arp_step_no;  /* CLOCK EXT:
+                                                                      * on the pulses (3..24 a step), from Start's beat 1 */
+    if ((uint8_t)clk_live() != arp_clk) { arp_clk = (uint8_t)clk_live(); if (arp_step_no != 0xFFFFFFFFu) arp_step_no = step; }   /* the clock comes or
+                                                                      * goes: counted anew, no extra note */
     if (arp_playing < 128u && (int32_t)(now - arp_off_t) >= 0) arp_stop_note();
     if (step != arp_step_no) {
         uint32_t n = arp_next(), v = arp_vel[0];                       /* one velocity: the first note's */

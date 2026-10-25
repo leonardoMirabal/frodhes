@@ -142,6 +142,22 @@ def test_deterministic_and_up_to_date(tmp_path):
     assert HDR == (single if NT == 1 else multi)
 
 
+def test_st77_reference_pinned():
+    """the bar TYPEs' level reference (the Rhodes STAGE 77 golden render per key, calib _doc_st77) comes from
+    bars_st77_pins.json, not from rhodes_spec.json as it is now: a Rhodes retune (0.9.5's whirl, jitter, S7 / S10 / S8)
+    moved VIBES-only's sha256 off the 0.9.3 file before the pin (d03c4d91... against 8d2ee43d...). Every key of each
+    TYPE's lufs_t window is pinned, and st77_ref reads them (it renders only with --repin-st77)"""
+    d = json.load(open(gb.ST77_PINS))
+    assert d["version"] == 1
+    for name in ("vibes.json", "marimba.json"):
+        l0, l1 = json.load(open(os.path.join(ROOT, "docs", "model", "data", name)))["calib"]["lufs_t"]
+        w = "%r:%r" % (float(l0), float(l1))
+        assert sorted(int(n) for n in d["lufs"][w]) == list(range(gb.KEY_LO, gb.KEY_HI + 1)), (name, w)
+        keys = [gb.KEY_LO, 60, gb.KEY_HI]
+        assert list(gb.st77_ref(keys, l0, l1)) == [d["lufs"][w][str(n)] for n in keys]
+    assert not gb.BUILD_ST77                     # (nothing rendered)
+
+
 def test_vibes_rows_checker_catches_a_change():
     """check_vibes_rows fails on a changed VIBES word (a guard against a vacuous parser): the committed multi-type
     header against itself cut down to its type 0 (the parser's own VIBES-only form) passes, and fails with one VIBES

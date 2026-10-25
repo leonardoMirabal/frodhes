@@ -1,0 +1,10 @@
+# make test-smk: scripts that fail on the SMK-37 build for a known reason; reported as "known", not failed (a flash
+# call refused fails them anyway). One script name a line.
+#
+# The FM-1 only: the SMK-37 has no TRS MIDI input (FELUCCA_UART 0)
+trs
+pc_stall_trs
+# The FM-1 only: the SMK-37's keys have no LEDs (the pads have colours, for their own jobs), so DISPLAY has no LEDS card
+# there and the key LEDs (ROOTS / PLAYED / ALL / SCALE, glow.N) stay dark
+display
+leds_scale

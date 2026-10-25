@@ -15,7 +15,12 @@
 #define SRC_KEYS 0u
 #define SRC_MIDI 27u
 #define SRC_SEQ 155u
+#if BOARD_SMK37
+#define SRC_EXT 156u                             /* the SMK-37's 10 outer keys, C3..E3 and G#5..C6 (frodhes_smk.h) */
+#define SRC_N 166u
+#else
 #define SRC_N 156u
+#endif
 #define CH_MAX 6u
 
 /* ---- to the engine: its ring (engine.c) holds 32 events a block; a burst beyond that (six chord-mode keys let go
@@ -44,7 +49,7 @@ static void eng_send(uint32_t type, uint32_t n, uint32_t v)
         eng_note_on(n, v);
     } else if (type == EV_NOTE_OFF) {
         if (n < 128u) ped.down[n >> 5] &= ~(1u << (n & 31u));
-        eng_note_off(n);
+        eng_note_off(n, v);
     } else if (type == EV_PEDAL) {
         uint8_t on = v >= 64u;
         for (i = 0; i < 4u; i++) ped.sus[i] = on ? (ped.on ? ped.sus[i] : 0u) | ped.down[i] : 0u;
@@ -83,11 +88,12 @@ static void note_in_on(uint32_t n, uint32_t vel, int echo)
     eng_q(EV_NOTE_ON, n, vel);
     if (echo) midi_send(0x90 | MIDI_OUT_CH, n, vel);
 }
-static void note_in_off(uint32_t n, int echo)
+/* rv: the release velocity (MIDI note-off velocity 1..127; 0 = none given: the engines' neutral release) */
+static void note_in_off(uint32_t n, uint32_t rv, int echo)
 {
     if (note_to_arp[n]) { note_to_arp[n] = 0; arp_in_off(n); return; }
-    if (!out_quiet_off) eng_q(EV_NOTE_OFF, n, 0);
-    if (echo) midi_send(0x80 | MIDI_OUT_CH, n, 0);
+    if (!out_quiet_off) eng_q(EV_NOTE_OFF, n, rv);
+    if (echo) midi_send(0x80 | MIDI_OUT_CH, n, rv);
 }
 /* a pitch still counted held when the TYPE changed to another engine (or VIBES <-> MARIMBA) was stopped by the change
  * (engine.c eng_switch): pressed again (a MIDI note-on with no note-off between, a second source on it), it is struck
@@ -105,11 +111,12 @@ static void out_on(uint32_t n, uint32_t vel, int echo)
     if (out_ref[n] == 0u) { out_ref[n] = 1; out_epoch[n] = eng_epoch; out_echo[n] = (uint8_t)echo; note_in_on(n, vel, echo); }
     else { out_resound(n, vel); out_ref[n]++; }
 }
-static void out_off(uint32_t n)
+static void out_off_v(uint32_t n, uint32_t rv)    /* the last source to let go gives the release velocity */
 {
     if (n > 127u || !out_ref[n]) return;
-    if (--out_ref[n] == 0u) note_in_off(n, out_echo[n]);
+    if (--out_ref[n] == 0u) note_in_off(n, rv, out_echo[n]);
 }
+static void out_off(uint32_t n) { out_off_v(n, 0); }
 
 /* ---- chord mode */
 enum { CH_OFF, CH_DIA, CH_DIA7, CH_FIXED };                                    /* then the fixed shapes */
@@ -247,18 +254,19 @@ static void src_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
     if (chord_on()) c = chord_build(n, notes); else { notes[0] = (uint8_t)n; c = 1; }
     src_start(slot, notes, c, vel, echo);
 }
-static void src_off(uint32_t slot)
+static void src_off_v(uint32_t slot, uint32_t rv)          /* rv: the release velocity (0 = none) */
 {
     src_t *s = &src[slot];
     uint32_t i;
     if (!src_active[slot]) return;
     for (i = 0; i < s->started; i++) {                        /* a strum cut short: the rest never starts */
-        out_off(s->n[i]);
+        out_off_v(s->n[i], rv);
         if (slot != SRC_SEQ) live_note_off(s->n[i]);
     }
     src_active[slot] = 0;
     s->c = s->started = 0;
 }
+static void src_off(uint32_t slot) { src_off_v(slot, 0); }
 /* the strum: the next notes when their time comes */
 static void src_poll(void)
 {

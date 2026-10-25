@@ -1,0 +1,35 @@
+# The DRIVE TYPE OHCD with sound (firmware/src/drv_ohcd.c): a chord through it, AMOUNT and TONE turned while it
+# sounds (CC 81, 82; the rows glide two steps a block), a switch to BHLUE and back (CC 84: 88..99 OHCD, 100..111
+# BHLUE; the TYPE that runs fades out, then the other fades in), MIX below full (the blend), then OFF. The render is
+# in Gate R (tests/baselines/renders.sha256).
+100 midi 0xB0 81 90
+100 midi 0xB0 84 93
+200 expect state fxdrv 4
+300 midi 0x90 48 100
+300 midi 0x90 55 100
+300 midi 0x90 64 100
+300 midi 0x90 67 100
+800 expect rms > -40
+800 expect sound
+900 midi 0xB0 81 127
+1000 midi 0xB0 82 0
+1100 midi 0xB0 81 1
+1200 midi 0xB0 82 127
+1300 expect rms > -45
+1400 midi 0xB0 84 105
+1500 expect state fxdrv 5
+1700 midi 0xB0 84 93
+1800 expect state fxdrv 4
+1900 midi 0xB0 81 64
+1900 midi 0xB0 82 64
+2000 midi 0xB0 83 64
+2200 expect rms > -50
+2200 expect sound
+2300 midi 0xB0 84 0
+2400 expect state fxdrv 0
+2500 midi 0x80 48 0
+2500 midi 0x80 55 0
+2500 midi 0x80 64 0
+2500 midi 0x80 67 0
+4500 expect rms < -60
+4600 end

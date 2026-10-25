@@ -43,10 +43,10 @@
 2900 expect sound
 2900 expect state bars 1
 2900 expect state card.2.0 MARIMBA
-# ---- F16 MRMB SOFT by program change 15, then VIBES by CC 79 0 (the motor starts: a TYPE with a motor) and
+# ---- F16 WOOD ECHO by program change 15, then VIBES by CC 79 0 (the motor starts: a TYPE with a motor) and
 # MARIMBA by CC 79 127 (the motor setting stays, inaudible)
 3000 midi 0xC0 15 0
-3100 expect state header F16_MRMB_SOFT
+3100 expect state header F16_WOOD_ECHO
 3100 expect preset
 3100 expect sound
 3200 midi 0xB0 79 0

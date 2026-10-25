@@ -1,6 +1,8 @@
 # The physical model
 
-Notes, papers and design decisions for the Rhodes model go here.
+Design decisions for the Rhodes model go here. The research notes (`research/`, R01-R09) and the reviewers'
+scratch experiments (`reviews/scratch-*`) that the plans below cite are kept privately since 0.9.5 and are not
+part of the public tree; the papers themselves are cited in the source files that use them.
 
 The model lives in [`firmware/src/rhodes.c`](../../firmware/src/rhodes.c), behind the interface described at the
 top of that file. It has to follow [the chip's rules](../RULES.md):

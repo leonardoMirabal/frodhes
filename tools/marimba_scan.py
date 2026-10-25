@@ -152,7 +152,7 @@ PROFILE = dict(
     long_tail=("C2 RING 127 TUBE 127 pedal", [("cc", 102, 127), ("cc", 30, 127), ("cc", 64, 127), ("on", 36, 100), ("off", 36, 0.3)]),
 )
 EVERY_FX = dict(DRIVE=30, CMP_SW=127, CMP_AMT=64, TW_SW=64, TW_DEPTH=50, CP_SW=64, CP_DEPTH=50, PH_SW=127,
-                PH_DEPTH=60, DL_SW=64, DL_DEPTH=40, REV=40)       # hil_scan ALL_ON as CC values (TW / DL: mode 1)
+                PH_DEPTH=60, DL_SW=48, DL_DEPTH=40, REV=40)       # hil_scan ALL_ON as CC values (TW / DL: mode 1)
 KEEP = False
 
 

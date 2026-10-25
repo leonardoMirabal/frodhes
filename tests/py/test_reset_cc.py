@@ -12,7 +12,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(__file__))
 from hostrun import BIN, FS, build, cc, note, run  # noqa: E402
 
-FX = ["50 midi 0xB0 12 127", "51 midi 0xB0 13 80", "52 midi 0xB0 85 64", "53 midi 0xB0 86 64", "54 midi 0xB0 88 64",
+FX = ["50 midi 0xB0 12 127", "51 midi 0xB0 13 80", "52 midi 0xB0 85 64", "53 midi 0xB0 86 64", "54 midi 0xB0 88 48",
       "55 midi 0xB0 89 80", "56 midi 0xB0 91 60", "57 midi 0xB0 17 64", "58 midi 0xB0 18 64"]
 
 
@@ -48,12 +48,12 @@ def _dl(sw, tm):
 
 
 CHUNKED = {
-    "digital-long": _dl(127, 127) + [cc(3000, 10, 127)] + _chord(3020) + _chord(4600),
-    "tape-short-same-ms": _dl(64, 60) + [cc(3000, 10, 127)] + _chord(3000),
-    "twice": _dl(127, 60) + [cc(3000, 10, 127), cc(3040, 10, 127)] + _chord(3060),
-    "off-on": _dl(64, 127) + [cc(3000, 10, 127), cc(3005, 88, 0), cc(3090, 88, 64)] + _chord(3100),
-    "predelay": _dl(127, 60) + [cc(16, 94, 100), cc(3000, 10, 127), cc(3600, 94, 0), cc(3900, 94, 127)] + _chord(3020),
-    "vibes": ["1 midi 0xB0 80 64"] + _dl(64, 90) + [cc(3000, 10, 127)] + _chord(3020),
+    "digital-long": _dl(80, 127) + [cc(3000, 10, 127)] + _chord(3020) + _chord(4600),
+    "tape-short-same-ms": _dl(48, 60) + [cc(3000, 10, 127)] + _chord(3000),
+    "twice": _dl(80, 60) + [cc(3000, 10, 127), cc(3040, 10, 127)] + _chord(3060),
+    "off-on": _dl(48, 127) + [cc(3000, 10, 127), cc(3005, 88, 0), cc(3090, 88, 48)] + _chord(3100),
+    "predelay": _dl(80, 60) + [cc(16, 94, 100), cc(3000, 10, 127), cc(3600, 94, 0), cc(3900, 94, 127)] + _chord(3020),
+    "vibes": ["1 midi 0xB0 80 64"] + _dl(48, 90) + [cc(3000, 10, 127)] + _chord(3020),
 }
 
 

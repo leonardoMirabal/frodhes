@@ -61,21 +61,30 @@ def test_the_suite_row_on_the_host(seed):
     assert not bad, (seed, bad)
 
 
+# 2026-10-25 (the key-up never louder than the note, tests/py/test_release_never_louder.py): the knock is capped at a
+# share of the note's level left, at NOISE 48 and 127 alike for a note held 1.5 s, and it rings at the bar's own
+# pitch, inside the note's bins, where knock_db's excess cannot see it (it reads NOISE 0's own block slack). So:
+# the knock is there (NOISE 127 against NOISE 0 in the same block: the samples differ only by the noises), and
+# whatever the block, knock_db never reads it over the note.
+@pytest.mark.parametrize("key", h.VKEYS)
+def test_knock_is_there_at_noise_127(key):
+    """what NOISE 127 adds over the 150 ms after the key-up: -21 .. -35 dB of NOISE 0's release there (F3 .. F6);
+    at least -45 (none: -inf)"""
+    r, ro = take(0, key, 0)
+    b, _ = take(127, key, 0)                    # (the same script but NOISE: the same samples' times; the found
+    n = min(len(r), len(b))
+    i0, i1 = ro + int(1.5 * FS), ro + int(1.65 * FS)   # onsets differ by a sample or two, the noise on the strike)
+    d = (b[:n] - r[:n])[i0:i1]
+    share = 10 * np.log10(np.sum(d ** 2) / np.sum(r[i0:i1] ** 2) + 1e-30)
+    assert share >= -45, (key, share)
+
+
 @pytest.mark.parametrize("key", h.VKEYS)
 @pytest.mark.parametrize("ref_ms,up_ms", [(0, 0), (0, 6), (6, 0), (3, 9), (9, 3)])
-def test_knock_grows_with_noise_whatever_the_block(key, ref_ms, up_ms):
+def test_knock_never_reads_over_the_note(key, ref_ms, up_ms):
+    """the suite's measure (knock_db) on NOISE 127 and the default, a block apart or not: under the note it damps"""
     r, ro = take(0, key, ref_ms)
-    a, ao = take(DE, key, up_ms)
-    b, bo = take(127, key, up_ms)
-    d = h.knock_db(b, bo, r, ro) - h.knock_db(a, ao, r, ro)
-    assert d >= 6, (key, ref_ms, up_ms, d)
-
-
-@pytest.mark.parametrize("key", h.VKEYS)
-@pytest.mark.parametrize("ref_ms,up_ms", [(0, 6), (6, 0)])
-def test_no_knock_is_not_found(key, ref_ms, up_ms):
-    """NOISE 0 against NOISE 0 a block apart: what the measure finds is far under the knock at NOISE 127"""
-    r, ro = take(0, key, ref_ms)
-    z, zo = take(0, key, up_ms)
-    b, bo = take(127, key, up_ms)
-    assert h.knock_db(b, bo, r, ro) - h.knock_db(z, zo, r, ro) >= 6, (key, ref_ms, up_ms)
+    note = h.ms_db(h.cut(r, ro, 1.4, 1.5))
+    for x in (DE, 127):
+        b, bo = take(x, key, up_ms)
+        assert h.knock_db(b, bo, r, ro) < note, (key, ref_ms, up_ms, x)

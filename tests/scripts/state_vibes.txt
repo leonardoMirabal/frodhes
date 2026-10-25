@@ -1,10 +1,10 @@
 # The state after every action on VIBES (state.txt's rules: the panel is what the header names, the engines run what
 # the panel says, the LEDs and cards agree). LFO LED 5 = the TREM/WAH effect, SAVE 9; the MOTOR page is 19.
-# ---- F14 VIBES DRY by program change: the bar engine, its own card names, no motor
+# ---- F14 VIBES ECHO by program change: the bar engine, its own card names, no motor
 100 midi 0xC0 13 0
 200 expect preset
 200 expect sound
-200 expect state header F14_VIBES_DRY
+200 expect state header F14_VIBES_ECHO
 200 expect state bars 1
 200 expect state card.2.0 VIBES
 200 expect state label.3.0 STRIKE
@@ -31,10 +31,10 @@
 2100 expect state card2 3.5HZ
 2100 expect sound
 2100 expect led 5 0
-# ---- save it to U01; program change 16 plays the stored copy
+# ---- save it to U01 (named VIBE MOT CHO TD: the header shows its first 10 characters); program change 16 plays the stored copy
 2200 btn 9
 2300 btn 9
-2400 expect state header U01_VIBE_MOT
+2400 expect state header U01_VIBE_MOT_C
 2400 expect preset
 2500 midi 0xC0 0 0
 2600 expect state bars 0
@@ -45,17 +45,20 @@
 2800 expect sound
 2800 expect state bars 1
 2800 expect state vcard.2.0 ON
-# ---- browse back over F16, F15 (MARIMBA), F14 to F13 VIBE MOTOR (loads after 400 ms), then hold SAVE: undo to U01, the header with it
+# ---- browse back over F19..F17, F16, F15 (MARIMBA), F14 to F13 VIBES (loads after 400 ms), then hold SAVE: undo to U01, the header with it
 2900 turn 6 -1
-2950 turn 6 -1
+2920 turn 6 -1
+2940 turn 6 -1
+2960 turn 6 -1
+2980 turn 6 -1
 3000 turn 6 -1
 3050 turn 6 -1
-3600 expect state header F13_VIBE_MOTOR
+3600 expect state header F13_VIBES
 3600 expect preset
-3600 expect state vcard.2.2 3.5HZ
+3600 expect state vcard.2.2 2.6HZ
 3700 press 9
 4500 release 9
-4600 expect state header U01_VIBE_MOT
+4600 expect state header U01_VIBE_MOT_C
 4600 expect preset
 4600 expect sound
 4600 expect state vcard.2.0 ON

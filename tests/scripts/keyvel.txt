@@ -1,0 +1,55 @@
+# Key velocity (firmware/src/keyvel.c): "T vkey K RAW" hands key K's next press the driven reading RAW, as the
+# FM-1's converter would measure it (the host has none: a key without a reading plays at once at CONTEXT, which is
+# KEY VEL until an analog key has played). TOUCH is MEDIUM (vel_curve 0, every record before key velocity); KEY VEL
+# (96) is the velocity of a medium press. tests/py/test_keyvel.py checks these values against the curve in floating
+# point; tests/c/keyvel_test.c the ISR's state machine (the wait, the fallback, a release before the reading).
+100 expect state touch MEDIUM
+# no reading (the host): KEY VEL, as before key velocity
+400 keys 0x80
+420 expect state lastvel 96
+600 keys 0
+# a medium press (743 on the first floor, 450): KEY VEL
+700 vkey 7 743
+710 keys 0x80
+720 expect state lastvel 96
+900 keys 0
+# harder (500), softer (900): louder, softer
+1000 vkey 7 500
+1010 keys 0x80
+1020 expect state lastvel 121
+1200 keys 0
+1300 vkey 7 900
+1310 keys 0x80
+1320 expect state lastvel 47
+1500 keys 0
+# the firmest (400, under the floor): 127, and C4's floor learns down a step (402)
+1600 vkey 7 400
+1610 keys 0x80
+1620 expect state lastvel 127
+1800 keys 0
+# the same medium press on the lower floor: softer now (87)
+1900 vkey 7 743
+1910 keys 0x80
+1920 expect state lastvel 87
+2000 keys 0
+# a top key (D#5: no converter) plays CONTEXT, the recent average (96 121 47 127 87 -> 95)
+2100 keys 0x400000
+2120 expect state lastvel 95
+2300 keys 0
+# a chord of two analog keys and a top key, each its own: F3 110, C5 29, D#5 CONTEXT (81: after both, the last in key order)
+2400 vkey 0 600
+2400 vkey 19 950
+2410 keys 0x480001
+2490 expect state lastvel 81
+2500 keys 0
+# a short press (one millisecond, a reading): plays and stops
+2600 vkey 3 500
+2610 keys 0x8
+2611 keys 0
+2620 expect state lastvel 121
+# a vkey on a top key is ignored (no converter): CONTEXT
+2700 vkey 22 300
+2710 keys 0x400000
+2720 expect state lastvel 91
+2800 keys 0
+3000 end

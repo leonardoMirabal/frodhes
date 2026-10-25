@@ -1,7 +1,10 @@
 # Presets (presets.c): PRESETS encoder = 6, SAVE = 9, HOME = 8, OCT+ = 1, LFO LED = 5 (the tremolo on).
-# browse to F03 SUITCASE: it loads 400 ms after the last detent -> its tremolo is on
+# browse to F05 SUIT TREM (four detents; F02 SUITCASE is the dry one since 0.9.5): it loads 400 ms after the last
+# detent -> its tremolo (PAN) is on
 100 turn 6 1
-150 turn 6 1
+120 turn 6 1
+140 turn 6 1
+160 turn 6 1
 300 expect led 5 0
 700 expect led 5 1
 # SAVE opens the save mode (the footer asks), PRESETS picks the slot, SAVE again stores it in U01
@@ -25,7 +28,7 @@
 3200 btn 9
 3300 btn 8
 3400 expect led 5 0
-# the VIBES presets (F13 VIBES MOTOR: the motor on, the engine's: TREM/WAH stays off, LFO dark; F14 VIBES DRY:
+# the VIBES presets (F13 VIBES: the motor on, the engine's: TREM/WAH stays off, LFO dark; F14 VIBES ECHO:
 # the motor off): program change 12, 13
 3600 midi 0xC0 12 0
 3700 expect led 5 0
@@ -34,16 +37,46 @@
 3900 midi 0xC0 13 0
 4000 expect led 5 0
 4000 expect state vcard.2.0 OFF
-# PRESETS after F14: F15, F16 (MARIMBA), then U01 (the user presets follow the factory ones), back: F14, F13
+# PRESETS after F14: F15, F16 (MARIMBA), F17..F19 (0.9.5), then U01 (the user presets follow the factory ones),
+# back: F14, F13
 4100 turn 6 1
 4120 turn 6 1
 4140 turn 6 1
-4600 expect led 5 1
-4700 turn 6 -1
-4720 turn 6 -1
-4740 turn 6 -1
-5200 expect led 5 0
-5300 turn 6 -1
-5800 expect led 5 0
-5800 expect state vcard.2.0 ON
-5900 end
+4160 turn 6 1
+4180 turn 6 1
+4200 turn 6 1
+4700 expect led 5 1
+4700 expect state header U01_SUIT_TRM
+4800 turn 6 -1
+4820 turn 6 -1
+4840 turn 6 -1
+4860 turn 6 -1
+4880 turn 6 -1
+4900 turn 6 -1
+5400 expect led 5 0
+5400 expect state header F14_VIBES_ECHO
+5500 turn 6 -1
+6000 expect led 5 0
+6000 expect state vcard.2.0 ON
+# F17..F19 by program change 32..34 (0.9.5: 0..15 F01..F16 and 16..31 U01..U16 as before); 35 is no preset
+6100 midi 0xC0 32 0
+6200 expect state header F17_TAPE_ECHO
+6200 expect preset
+6200 expect sound
+6300 midi 0xC0 33 0
+6400 expect state header F18_DREAM
+6400 expect preset
+6500 midi 0xC0 34 0
+6600 expect state header F19_RADIO
+6600 expect preset
+6600 expect sound
+6700 midi 0xC0 35 0
+6800 expect state header F19_RADIO
+6800 expect state preset 18
+# PRESETS from F19: U01 (one detent), back: F19
+6900 turn 6 1
+7400 expect state header U01_SUIT_TRM
+7400 expect state preset 19
+7500 turn 6 -1
+8000 expect state header F19_RADIO
+8100 end

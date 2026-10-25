@@ -1,0 +1,122 @@
+# The DRIVE page's K1 EFFECT is the drive's TYPE: OFF / FDRV (the classic drive; "ON" in older records) / KHLON /
+# TSH8 / OHCD / BHLUE. Encoders: SELECT 0, K1..K4 = 2..5. fxdrv: the value fx.c runs (fx_p[FXP_DRV_SW]).
+# DRIVE is five SELECT detents from PERFORM (ui.c PG_ORDER: COMP, DRIVE, FILTER since fx-order); its K1 starts on
+# FDRV (the default, as ON was)
+100 turn 0 1
+110 turn 0 1
+120 turn 0 1
+130 turn 0 1
+140 turn 0 1
+200 expect state page DRIVE
+200 expect state label0 EFFECT
+200 expect state card0 FDRV
+200 expect state fxdrv 1
+# K1 clockwise: KHLON, TSH8, OHCD, BHLUE, and there it stops (the last TYPE)
+300 turn 2 1
+310 expect state card0 KHLON
+310 expect state p.50 2
+310 expect state fxdrv 2
+320 turn 2 1
+330 expect state card0 TSH8
+340 turn 2 1
+350 expect state card0 OHCD
+360 turn 2 1
+400 expect state card0 BHLUE
+400 expect state p.50 5
+400 expect state fxdrv 5
+410 turn 2 1
+500 expect state card0 BHLUE
+# K1 back: to FDRV, then OFF (AMOUNT's card says its value on its own page); clockwise from OFF: FDRV again
+510 turn 2 -1
+512 turn 2 -1
+514 turn 2 -1
+516 turn 2 -1
+530 expect state card0 FDRV
+540 turn 2 -1
+600 expect state card0 OFF
+600 expect state fxdrv 0
+610 turn 2 1
+700 expect state card0 FDRV
+# CC 84 by band (params.c DRV_CC84): 0..63 OFF, 64..75 KHLON, 76..87 TSH8, 88..99 OHCD, 100..111 BHLUE,
+# 112..127 FDRV (127 = FDRV, the classic drive, as ON before)
+800 midi 0xB0 84 64
+900 expect state card0 KHLON
+1000 midi 0xB0 84 63
+1100 expect state card0 OFF
+1110 midi 0xB0 84 75
+1120 expect state card0 KHLON
+1130 midi 0xB0 84 76
+1140 expect state card0 TSH8
+1150 midi 0xB0 84 87
+1160 expect state card0 TSH8
+1170 midi 0xB0 84 88
+1180 expect state card0 OHCD
+1190 midi 0xB0 84 99
+1195 expect state card0 OHCD
+1200 midi 0xB0 84 100
+1210 expect state card0 BHLUE
+1220 midi 0xB0 84 111
+1300 expect state card0 BHLUE
+1400 midi 0xB0 84 112
+1500 expect state card0 FDRV
+1600 midi 0xB0 84 0
+1700 expect state card0 OFF
+1800 midi 0xB0 84 127
+1900 expect state card0 FDRV
+2000 midi 0xB0 84 105
+2100 expect state card0 BHLUE
+2100 expect state fxdrv 5
+# PERFORM wake (D11): DRIVE off with BHLUE the last TYPE on; ASSIGN K1 is DRIVE by default (PERF_DEF, perform-defaults);
+# turning it up on PERFORM switches the drive on as BHLUE, not FDRV
+3000 midi 0xB0 84 0
+3010 midi 0xB0 81 0
+3100 expect state card0 OFF
+3200 turn 0 1
+3210 turn 0 1
+3220 turn 0 1
+3230 turn 0 1
+3240 turn 0 1
+3250 turn 0 1
+3260 turn 0 1
+3270 turn 0 1
+3280 turn 0 1
+3290 turn 0 1
+3300 turn 0 1
+3310 turn 0 1
+3320 turn 0 1
+3330 turn 0 1
+3400 expect state page ASSIGN
+3500 expect state card0 DRIVE
+3510 turn 0 -1
+3520 turn 0 -1
+3530 turn 0 -1
+3540 turn 0 -1
+3550 turn 0 -1
+3560 turn 0 -1
+3570 turn 0 -1
+3580 turn 0 -1
+3590 turn 0 -1
+3600 turn 0 -1
+3610 turn 0 -1
+3620 turn 0 -1
+3630 turn 0 -1
+3640 turn 0 -1
+3650 turn 0 -1
+3660 turn 0 -1
+3670 turn 0 -1
+3680 turn 0 -1
+3690 turn 0 -1
+3700 expect state page PERFORM
+3700 expect state card0 OFF
+3710 turn 2 20
+3800 expect state p.50 5
+3800 expect state fxdrv 5
+3800 expect state card.19.0 BHLUE
+# the same from FDRV: FDRV comes back
+3900 midi 0xB0 84 127
+3910 midi 0xB0 84 0
+3920 midi 0xB0 81 0
+3930 turn 2 20
+4000 expect state card.19.0 FDRV
+4000 expect state fxdrv 1
+4100 end

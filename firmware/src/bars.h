@@ -43,10 +43,13 @@ typedef struct {
     uint8_t flags;              /* bit0 has_motor, bit1 has_damper (VIBES 3; params.c TYPE_FLAGS says the same) */
     uint8_t kn_tube_top;        /* KN_TUBE[t][127] in 1/100 (informational) */
 } bar_type_t;
+#define BAR_MOT_COS BAR_MOT_COS_GEN                 /* (0.9.5, the flash: the generated quarter cosine is not used, */
 #include "bars_tables.h"
+#undef BAR_MOT_COS                                  /* so not linked: |cos(pi i / 512)| for i 0..256 is fx_tables.h */
+#define BAR_MOT_COS (FX_SINE + 256)                 /* FX_SINE[256 + i], the same numbers: test_fx_tables_derived.py */
 _Static_assert(BAR_NM == 8, "bars.c: 8 mode slots");
 
-#define BAR_NV FR_VOICES                            /* voices: as the Rhodes (rhodes.c FR_VOICES, 9 by default) */
+#define BAR_NV BAR_VOICES                           /* voices: rhodes.c BAR_VOICES (10 by default, as the Rhodes) */
 #define BAR_N 256u                                  /* the block */
 #define BAR_SUB 32u
 #define BAR_NSUB (BAR_N / BAR_SUB)
@@ -86,10 +89,16 @@ typedef struct {
     int16_t pbuf[BAR_PLEN + 2];
     uint16_t felt_n;
     int32_t felt_lp;
+    int32_t lvl, lvl0;                          /* the block's mode sum, the highest since the strike (bar_left) */
+    uint16_t felt_g;                            /* Q15: the key-up felt noise's gain (bar_left) */
 } bar_voice_t;
 
 static bar_voice_t bv[BAR_NV];
-static int32_t bar_mono[BAR_N], bar_x[BAR_N], bar_tb[BAR_N], bar_F[BAR_N + 2];   /* F: the force << 12 */
+static int32_t bar_mono[BAR_N];
+static int32_t bar_xt[3u * (BAR_N + 2u)];          /* the work buffer, interleaved: sample j's bar x (+ the upper
+                                                     * modes, the radiation) at [3j], the tube's x1 at [3j + 1], the
+                                                     * force << 12 at [3j + 2]: one pointer reaches all three */
+#define BAR_XT(j) (bar_xt + 3u * (j))
 static int32_t bar_nz_e, bar_nz_s[4];               /* contact noise: one envelope for every voice (one decay) */
 static uint32_t bar_ages, bar_lfsr = 0x1D872u;
 static int32_t bar_pedal_w = 32768;

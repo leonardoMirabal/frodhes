@@ -9,11 +9,11 @@ and, through tools/vib_sampleback.py --engine marimba, on the FM-1's USB audio: 
 from one procedure.
 
 Sources
-  --pack DIR   an Ableton pack (e.g. ".../Factory Packs/Orchestral Mallets"): the note boundaries, root keys and
+  --pack DIR   a DAW sample-pack folder (e.g. ".../Packs/Mallets"): the note boundaries, root keys and
                velocity layers come from its Sampler presets (Sounds/**/*.adg: gzipped XML, MultiSamplePart =
                RootKey, KeyRange, VelocityRange, SampleStart / SampleEnd in frames, the file name); each zone is read
                in place from the combined AIFF (a seek and a read of its frames, in memory). An AIFF whose
-               compression is not plain PCM (Ableton's protected pack audio, compression type 'able') is NOT read:
+               compression is not plain PCM (a DAW's protected pack audio, a vendor compression type) is NOT read:
                the tool says so and measures nothing from it (no decoding of protected content)
   FILES/DIRS   one-shot WAV / AIFF files named with their note (as vib_ref_measure.py)
   (always)     the golden model and the host render at v100, keys 36..96, for the comparison
@@ -37,7 +37,7 @@ Per note (measure()):
                     unknown, so curves are compared re C4)
   centroid          the attack centroid over 0..50 ms (marimba_va.ATT, flat-start window) and over 0..300 ms
 
-    python3 tools/mrb_ref_measure.py --pack ".../Orchestral Mallets" [--out-md PATH] [--plots DIR] [--keys 36-96]
+    python3 tools/mrb_ref_measure.py --pack ".../Mallets" [--out-md PATH] [--plots DIR] [--keys 36-96]
     python3 tools/mrb_ref_measure.py --no-ref          (the golden model and the host only)
 """
 import argparse
@@ -342,7 +342,7 @@ def octave_fix(x, fs, midi):
 
 def measure_files(paths, keys, shift=None):
     """shift: semitones added to the file names' notes instead of octave_fix (a library named two octaves off, e.g.
-    Pigments' 'Bells & Mallets/Marimba C1' sounds C3: a marimba's V2 is two octaves up, so +-24 can't be guessed)"""
+    a synth library's 'Marimba C1' that sounds C3: a marimba's V2 is two octaves up, so +-24 can't be guessed)"""
     rows = []
     for p in paths:
         midi, _ = vrm.nominal(p)
@@ -663,7 +663,7 @@ def brightness(R, G):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("files", nargs="*", help="one-shot WAV / AIFF files or folders (note names in the file names)")
-    ap.add_argument("--pack", help="an Ableton pack folder: zones from its presets")
+    ap.add_argument("--pack", help="a DAW sample-pack folder: zones from its presets")
     ap.add_argument("--no-ref", action="store_true", help="the golden model and the host only")
     ap.add_argument("--keys", default="36-96")
     ap.add_argument("--out-md", default=OUT_MD)

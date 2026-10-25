@@ -184,16 +184,23 @@ def test_sweeps_do_not_click(name, base, cc):
              [(1400 + 4 * i, cc, 127 - int(127 * i / 63)) for i in range(64)]                                 # down, fast
     L, R = run(f"sw-{name}", base + [(cc, 0)], chord, 2800, sweep)
     ref = max(jumps(still_lo, 0.3, 2.5), jumps(still_hi, 0.3, 2.5))
+    if cc == 84:                                     # the sweep plays every TYPE on its way: each one held is a
+        for v in (70, 82, 93, 105):                  # reference too (0.9.5: OHCD's full range at AMOUNT 110 has
+            held, _ = run(f"sw-{name}-{v}", base + [(cc, v)], chord, 2800)   # far sharper edges than OFF / FDRV)
+            ref = max(ref, jumps(held, 0.3, 2.5))
     got = max(jumps(L, 0.3, 2.5), jumps(R, 0.3, 2.5))
     assert got <= 1.5 * ref + 40, (name, got, ref)
     assert np.all(np.isfinite(L)) and np.max(np.abs(L)) < 32767 and np.max(np.abs(R)) < 32767
 
 
-@pytest.mark.parametrize("mix,fdbk", [(127, 127), (100, 127), (127, 100)])
-def test_delay_echoes_always_die(mix, fdbk):
-    """the delay's loop gain stays under 1 at any MIX x FEEDBK (the audit, 2026-10-17: over MIX x FDBK ~ 11650 one short
-    note's echoes grew to the limiter: -14.7, -7.3, -4.8, -3.6 dBFS at 1, 3, 6, 11 s). Reverb off, one short note."""
-    L, R = run(f"dly{mix}-{fdbk}", [(91, 0), (88, 64), (89, mix), (26, fdbk)], HIT, 12000)
+@pytest.mark.parametrize("sw,mix,fdbk", [(48, 127, 127), (48, 100, 127), (48, 127, 100), (48, 40, 127), (80, 127, 114),
+                                         (80, 64, 114), (112, 64, 110)])
+def test_delay_echoes_always_die(sw, mix, fdbk):
+    """the delay's loop gain stays under 1 at any MIX x FEEDBK on DIG, and below the oscillation zone (FDBK <= 114) on
+    ANA / TAPE (the audit, 2026-10-17: over MIX x FDBK ~ 11650 one short note's echoes grew to the limiter: -14.7,
+    -7.3, -4.8, -3.6 dBFS at 1, 3, 6, 11 s; 0.9.5: FDBK alone, ANA / TAPE self-oscillate from about 115 on purpose,
+    test_delay_tape.py). Reverb off, one short note."""
+    L, R = run(f"dly{sw}-{mix}-{fdbk}", [(91, 0), (88, sw), (89, mix), (26, fdbk)], HIT, 12000)
     x = np.maximum(np.abs(L), np.abs(R))
     early, late = rms_db(seg(x, 1.0, 2.0)), rms_db(seg(x, 10.5, 11.5))
     assert late < early - 20, (early, late)
@@ -206,7 +213,7 @@ def test_delay_keeps_its_echoes_under_stereo_effects(fx, eng):
     1-2.5 dB weaker in stereo power (3-6 dB on one side; the user: "when chorus or phaser enabled I lost the delay", 2026-10-18); the send keeps the stereo
     power now: the first echo within 1 dB of what it is with the delay alone, re its direct sound"""
     sel = [(79, 0), (47, 0)] if eng == "vibes" else []
-    base = [(81, 0), (91, 0), (88, 64), (89, 90), (90, 85), (26, 40)]
+    base = [(81, 0), (91, 0), (88, 48), (89, 90), (90, 85), (26, 40)]
     hit = [(300, 72, 110, 120)]
 
     def rel(ccs):

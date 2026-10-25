@@ -142,8 +142,14 @@ def test_noise_changes_the_contact_and_the_knock(note):
     assert contact[127] > ring - 35.0, (note, contact[127], ring)         # NOISE 127: a clear tick on the note
     k0, k1 = int(1.7 * FS), int(1.85 * FS)
     knock = {v: rms_db(x[v][k0:k1] - x[0][k0:k1]) for v in (48, 127)}   # what NOISE adds after the key-up
-    assert knock[127] - knock[48] >= 6.0, (note, knock)
     note_lvl = rms_db(x[0][int(1.6 * FS):int(1.7 * FS)])                  # the note just before the key-up
+    # 2026-10-25: the knock capped by the note's level left (never louder than the note,
+    # test_release_never_louder.py): NOISE 127 no longer adds 6 dB over 48 after a 1.5 s hold; it must be there
+    # (F3 .. F6: -25 .. -40 dB re the note; none is -inf) and the take never louder after the key-up
+    assert knock[127] > note_lvl - 50.0, (note, knock[127], note_lvl)
+    after = max(rms_db(x[127][j:j + FS // 100]) for j in range(k0, k1, FS // 100))
+    before = max(rms_db(x[127][j:j + FS // 100]) for j in range(int(1.65 * FS), int(1.69 * FS), FS // 100))
+    assert after <= before + 0.5, (note, after, before)
     peak = rms_db(x[0][int(0.25 * FS):int(0.5 * FS)])                     # the strike
     assert knock[48] < peak - 18.0, (note, knock[48], peak)               # the default knock: soft
     assert knock[48] < note_lvl, (note, knock[48], note_lvl)               # never a re-strike of what it damps
@@ -245,7 +251,7 @@ def test_key_vel_card_is_heard():
 EFFECTS = {
     "drive": [cc(30, 81, 100)], "reverb": [cc(30, 91, 100)], "filter": [cc(30, 70, 30), cc(31, 74, 40)],
     "chorus": [cc(30, 85, 64), cc(31, 86, 127)], "phaser": [cc(30, 12, 127), cc(31, 13, 127)],
-    "delay": [cc(30, 88, 64), cc(31, 89, 100)], "comp": [cc(30, 106, 127), cc(31, 107, 100)],
+    "delay": [cc(30, 88, 48), cc(31, 89, 100)], "comp": [cc(30, 106, 127), cc(31, 107, 100)],
     "trem": [cc(30, 17, 64), cc(31, 21, 127), cc(32, 18, 127)],
 }
 

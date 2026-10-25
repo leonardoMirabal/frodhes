@@ -21,10 +21,11 @@ import pytest
 from hostrun import FS, ROOT, card_hz, cc, env_rms, note, once, rate_of, rms_db, run
 
 ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 0), cc(11, 47, 0)]}   # VIBES: its motor (on with it) off
-CLEAN = [cc(20, 81, 0), cc(21, 91, 0)]              # F01's drive and reverb off: the effect alone
+CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(23, 106, 0), cc(24, 110, 64)]   # F01's drive, reverb, comp off; 0 dB
 PEDAL = [cc(22, 64, 127)]
 PG = {"TREM": 7, "PHA": 8, "CHO": 9, "DELAY": 10, "TEMPO": 11, "FILTER": 6, "LFO": 16, "COMP": 5, "SETUP": 17,
-      "ARP": 15, "SEQ": 14, "DRIVE": 19, "REVERB": 20, "MOTOR": 21}
+      "ARP": 15, "SEQ": 14, "DRIVE": 19, "REVERB": 20, "MOTOR": 21,
+      "REVERB2": 22}
 UNITS = {"1/32": 12, "16T": 16, "1/16": 24, "8T": 32, "16D": 36, "1/8": 48, "4T": 64, "8D": 72, "1/4": 96, "4D": 144,
          "1/2": 192, "1/1": 384, "2BAR": 768, "4BAR": 1536}
 ARP_UNITS = {"1/4": 96, "1/8": 48, "1/8T": 32, "1/16": 24, "1/16T": 16, "1/32": 12}
@@ -208,7 +209,7 @@ def test_delay_time(eng):
     value, and an echo longer than the line's 1.486 s at half of it (the manual says so)"""
     cases = [(10, None), (64, None), (127, None), (64, 3), (64, 9), (64, 12)]       # 1/16, 1/4, 1/1 (2.4 s -> 1.2)
     for v, sync in cases:
-        p = [cc(30, 88, 64), cc(31, 89, 100), cc(32, 26, 50), cc(33, 90, v)]
+        p = [cc(30, 88, 48), cc(31, 89, 100), cc(32, 26, 50), cc(33, 90, v)]
         if sync is not None:
             p += [cc(34, 25, -(-sync * 128 // 14)), "40 btn 7", "60 turn 2 -20"]   # TEMPO page, BPM 120 -> 100
         w = run(f"ds-dly{v}-{sync}-{eng}", ENGINES[eng] + CLEAN + SHORT + p + ["150 dump"] + note(200, 72, 110, 30), 5500)
@@ -458,3 +459,30 @@ def test_level(eng):
         w = run(f"ds-lvl{v}-{eng}", pre + [cc(30, 110, v), "50 dump"] + note(100, 60, 40, 1500), 1700)
         txt = w.state(50)[f"card.{PG['SETUP']}.1"]
         assert_db(rms_db(w.seg(0.2, 1.5)) - rms_db(ref.seg(0.2, 1.5)), txt, f"LEVEL {v}")
+
+
+def test_drive_type_card_is_what_runs():
+    """the DRIVE page's K1 names the drive TYPE fx.c runs (fx_p[FXP_DRV_SW], "fxdrv"): every CC 84 value and every
+    panel step, on the Rhodes and on VIBES. The sounds themselves: test_every_control DRIVE TYPE, test_drive_types"""
+    names = re.findall(r'"([^"]+)"', re.search(r"N_DRV\[\] = \{([^}]*)\}",
+                                               open(os.path.join(ROOT, "firmware", "src", "params.c")).read()).group(1))
+    for eng in ENGINES:
+        lines, t = list(ENGINES[eng]), 100
+        for v in range(128):
+            lines += [cc(t, 84, v), f"{t + 1} dump"]
+            t += 2
+        # SELECT from PERFORM to DRIVE (ui.c PG_ORDER: PERF PIANO VOICE 1/2 2/2 COMP DRIVE; VIBES: VOICE 3/3 too)
+        lines += [cc(t, 84, 0)] + [f"{t + 10 + 3 * i} turn 0 1" for i in range(5 + (eng == "vibes"))]
+        t += 40
+        t_panel = t
+        for d in (1, 1, 1, -1, -1, -1):
+            lines += [f"{t} turn 2 {d}", f"{t + 1} dump"]
+            t += 2
+        r = run(f"ds-drvtype-{eng}", lines, t + 10)
+        seen, bad = set(), []
+        for ms, s in sorted(r.dumps.items()):
+            txt, val = s[f"card.{PG['DRIVE']}.0"], int(s["fxdrv"])
+            seen.add(txt)
+            if txt != names[val] or (ms > t_panel and s["card0"] != txt):   # (card0: the DRIVE page on screen)
+                bad.append(f"{ms} ms: card {txt} / {s['card0']}, fx runs {val}")
+        assert not bad and seen == set(names), (eng, bad[:8], seen)

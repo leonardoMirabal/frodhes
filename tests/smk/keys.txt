@@ -1,0 +1,36 @@
+# SMK-37 build only (make test-smk): the 37 keys. Keybed 5..31 are the FM-1's 27 note keys (F3..G5), the outer ten
+# (C3..E3 = 0..4, G#5..C6 = 32..36) the sources SRC_EXT ("ext": how many sound), through OCTAVE and SCALE as the
+# others. Every key at its own velocity through the touch curve: KEY VEL (96) at a medium press (43), "vel.V": the
+# note velocity of keybed velocity V (tests/py/test_smk_app.py checks the notes' velocities on USB-MIDI out).
+100 expect state vel.1 1
+100 expect state vel.43 96
+100 expect state vel.127 127
+200 xkey 0 90
+300 expect state ext 1
+300 expect state pitches 1
+600 expect rms > -40
+700 xkey 0 0
+800 expect state ext 0
+900 xkey 36 100
+1000 expect state ext 1
+1100 xkey 36 0
+# a middle key and an outer one together; OCTAVE + moves both
+1200 xkey 5 60
+1200 xkey 4 60
+1300 expect state pitches 2
+1400 xkey 5 0
+1400 xkey 4 0
+1500 expect state pitches 0
+1600 btn 1
+1700 xkey 32 80
+1800 expect state pitches 1
+1900 xkey 32 0
+# a held outer key and a MIDI note on its pitch share it (notes.c counts each pitch)
+2000 btn 0
+2100 xkey 0 80
+2200 midi 0x90 48 100
+2300 midi 0x80 48 0
+2400 expect state pitches 1
+2500 xkey 0 0
+2600 expect state pitches 0
+2700 end

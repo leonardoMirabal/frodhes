@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """One command for a whole Frodhes release (AGENTS.md section 9), stopping at the first failure.
 
-    tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device] [--no-emulator] [--yes]
+    tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device [--device-done JSON]] [--full] [--no-emulator] [--yes]
     tools/release.py [X.Y.Z] --verify-only      step 9 alone, against a published release (read-only)
 
 The version lives in one place, the GitHub release (its tag, page, notes and assets): README / MANUAL name no version
@@ -16,10 +16,17 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
                  well formed (at least one) and no docs/releases/vX.Y.Z.md written by hand (one already committed with
                  no fragments left: a re-run after step 5, accepted)
  3 host          make test, make pytest, tools/gate_r.py, ./build.sh --release X.Y.Z (its sha256)
- 4 FM-1          (--no-device skips it and lists its commands) the device lock, install, hil_cpu --worst (Rhodes,
-                 VIBES and MARIMBA: <= 4500 us, nothing shed), hil_scan (the release set, then vibes_vel, then
-                 --marimba: MARIMBA_MUST), hil_jack on every engine (SNR; the jack must be connected; MARIMBA: the
-                 A5 tails and the idle floor too), vib_sampleback --engine marimba (Gate VD-M, every key C2..C7)
+ 4 FM-1          (--no-device skips it and lists its commands) the tiers this release needs, from
+                 `git diff <previous tag>..HEAD` through tools/test_map.py (printed with the reason): T1 on every
+                 release, T2 when an engine / the DSP changed (or --full). The device lock, install, then
+                 T1 must-pass   hil_scan --tier must (the real-use scenarios, the firmware's counters gated; S1 is
+                                stress_max, tools/hil_crackle.py, at 48 and 44.1 kHz)
+                 T2 full scans  hil_cpu --worst (Rhodes, VIBES and MARIMBA: <= 4500 us, nothing shed), hil_scan (the
+                                release set, then vibes_vel, then --marimba: MARIMBA_MUST), hil_jack on every engine
+                                (SNR; the jack must be connected; MARIMBA: the A5 tails and the idle floor too),
+                                vib_sampleback --engine marimba (Gate VD-M, every key C2..C7)
+                 --no-device --device-done JSON: those runs were made on this exact build; its "tiers" must cover the
+                 needed ones (checked here, as soon as the build's sha256 is known)
  5 docs          tools/doc_links.py's check (each picture's ?v= = its file's hash, no version named in README /
                  MANUAL), tests/py/test_docs_vs_code.py, test_doc_links.py, test_changes.py, test_manual_shots.py
                  (the screenshots = what the code draws); the fragments assembled into docs/releases/vX.Y.Z.md (shown in
@@ -29,7 +36,8 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
                  release workflow, download the asset and compare its sha256 with the local build
  8 emulator      (--no-emulator skips it) web/build.sh, the Playwright selftest (Chromium + WebKit, 1280 and 390 px),
                  web/dist into the gh-pages worktree build/pages, push, compare the live files' sha256
- 9 verify        the release page (not a draft) lists frodhes-X.Y.Z.fwsc and frodhes.fwsc;
+ 9 verify        the release page (not a draft) lists frodhes-X.Y.Z.fwsc, frodhes.fwsc and the SMK-37 packages
+                 (SMK_ASSETS, marked experimental);
                  releases/latest/download/frodhes.fwsc redirects to vX.Y.Z and is byte for byte the build (with
                  --verify-only: the versioned asset); README on GitHub at the tag names no version and links it
 
@@ -50,11 +58,20 @@ import urllib.request
 
 import changes
 import doc_links
+import lock
+import test_map
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = "leonardoMirabal/frodhes"
 PAGES_URL = "https://leonardomirabal.github.io/frodhes/"
 STABLE = "frodhes.fwsc"                       # release.yml uploads the package under this name too
+# release.yml also builds and attaches the SMK-37 packages (./build.sh --board smk37 [--model elite|mke]), marked
+# experimental (not tested on hardware): the published name -> the build's file (tools/build.py package())
+SMK_ASSETS = {"frodhes-smk37-experimental.fwsc": "frodhes-{v}-smk37.fwsc",
+              "frodhes-smk37-elite-experimental.fwsc": "frodhes-{v}-smk37-elite.fwsc",
+              "frodhes-smk37-mke-experimental.fwsc": "frodhes-{v}-smk37-mke.fwsc"}
+# and the Apache-2.0 text that goes with the 3 JieLi SDK files inside every .fwsc (Apache-2.0 section 4)
+LICENCE_ASSET = "Apache-2.0.txt"
 LATEST_DL = f"https://github.com/{REPO}/releases/latest/download/{STABLE}"
 PY = os.path.join(".local", "venv", "bin", "python")
 CPU_LIMIT_US = 4500
@@ -138,9 +155,11 @@ def parse_args(argv):
     ap.add_argument("version", nargs="?", default="patch", help="patch (default), minor or X.Y.Z")
     ap.add_argument("--dry-run", action="store_true", help="every local check; no commit, push, tag or publish")
     ap.add_argument("--no-device", action="store_true", help="skip the FM-1 tests (printed loudly)")
+    ap.add_argument("--full", action="store_true", help="the FM-1 stage runs T2 (the full scans) whatever changed")
     ap.add_argument("--device-done", metavar="JSON",
                     help="with --no-device: the FM-1 tests already ran on this exact build: {\"sha256\": the tested "
-                         ".fwsc's, \"runs\": [what ran]}; refused unless the sha256 equals the release build's")
+                         ".fwsc's, \"tiers\": [\"T1\", ...], \"runs\": [what ran]}; refused unless the sha256 "
+                         "equals the release build's and the tiers cover the ones this release needs")
     ap.add_argument("--no-emulator", action="store_true", help="skip publishing the web emulator")
     ap.add_argument("--yes", action="store_true", help="publish without the prompt")
     ap.add_argument("--verify-only", action="store_true",
@@ -162,6 +181,7 @@ class Release:
         self.results = {}           # step number -> (status, evidence)
         self.ver = self.prev = self.sha = self.head = None
         self.frags = []             # docs/changes/ (step 2)
+        self.tmap = None            # the tiers this release needs (tiers(), from step 4)
 
     def log(self, msg):
         print("   " + msg.replace("\n", "\n   "), flush=True)
@@ -246,20 +266,23 @@ class Release:
 
     # 4
     def s_device(self):
-        lock = os.path.join(ROOT, "build", "hil", "DEVICE.lockdir")
-        os.makedirs(os.path.dirname(lock), exist_ok=True)
-        try:
-            os.mkdir(lock)
-        except FileExistsError:
-            who = open(os.path.join(lock, "owner")).read() if os.path.exists(os.path.join(lock, "owner")) else "?"
-            raise Stop(f"the FM-1 is locked ({lock}): {who.strip()}")
+        lk = lock.Lock("DEVICE", root=ROOT, who=f"tools/release.py {self.ver}", wait_s=0, poll_s=0)
+        try:                                   # held by another session: stop at once; held by our caller: go on
+            lk.acquire()
+        except SystemExit:
+            raise Stop(f"the FM-1 is locked ({lk.dir}): {lk.owner()}")
         ev = []
         try:
-            with open(os.path.join(lock, "owner"), "w") as f:
-                f.write(f"tools/release.py {self.ver} pid {os.getpid()} since {time.ctime()}\n")
+            tm = self.tiers()
+            ev += tm["lines"]
             fw = f"build/frodhes-{self.ver}.fwsc"
             _, o = sh(f"echo y | {PY} tools/fm1_install.py {fw}", timeout=600)
             ev.append(f"installed {fw}: {tail(o, 1)}")
+            _, o = sh(T1_CMD, timeout=3600)
+            ev.append(f"T1 hil_scan --tier must: exit 0 ({tail(o, 1)})")
+            if "T2" not in tm["need"]:
+                ev.append("T2 not run (" + tm["why_t2"] + "; --full forces it)")
+                return "\n".join(ev)
             for eng in ENGINES:
                 _, o = sh(cpu_cmd(eng), timeout=900)
                 ev.append(check_cpu(eng, o))
@@ -280,7 +303,7 @@ class Release:
             _, o = sh([PY, "tools/vib_sampleback.py", "--engine", "marimba"], timeout=1800)
             ev.append(check_sampleback(o))
         finally:
-            shutil.rmtree(lock, ignore_errors=True)
+            lk.release()
         return "\n".join(ev)
 
     # 5
@@ -321,8 +344,12 @@ class Release:
             ev.append(f"{notes} written ({len(text.splitlines())} lines) from {', '.join(gone)}; the fragments removed")
         body = "\n".join(f"- {s}: {e.splitlines()[0]}" for s, (st, e) in sorted(self.results.items())
                          if st in ("done", "skipped"))
-        dev = ("FM-1: hil_cpu, hil_scan, hil_jack with the release build installed" if not self.a.no_device
-               else self.device_done() or "FM-1: NOT tested (--no-device)")
+        if not self.a.no_device:
+            need = self.tiers()["need"]
+            dev = (f"FM-1: tiers {'+'.join(need)} with the release build installed (hil_scan --tier must"
+                   + (", then hil_cpu, hil_scan, hil_jack, vib_sampleback)" if "T2" in need else "; T2 not needed)"))
+        else:
+            dev = self.device_done() or "FM-1: NOT tested (--no-device)"
         msg = (f"Release {self.ver}: the notes {notes}, assembled from {changes.DIR}/ (the fragments removed)"
                f"\n\nTested by tools/release.py: host (make test, make pytest, gate_r, the release build sha256 "
                f"{self.sha}); {dev}.\n{body}\n\n{TRAILER}\n")
@@ -339,7 +366,8 @@ class Release:
         self.log(f"to push to origin main:\n{commits}\n{files}\nthen the tag v{self.ver} at {self.head[:10]}")
         if self.a.dry_run:
             return "DRY-RUN: stopped before any push. A real run would now ask \"Publish %s? [y/N]\", then 7 push " \
-                   "main + wait for ci, tag v%s + wait for the release workflow, compare the asset's sha256; " \
+                   "main + wait for ci (or reuse a green run on the same git tree), tag v%s + wait for the " \
+                   "release workflow, compare the asset's sha256; " \
                    "8 the emulator%s; 9 verify on GitHub." % (self.ver, self.ver,
                                                              " (skipped: --no-emulator)" if self.a.no_emulator else "")
         if not self.a.yes:
@@ -355,11 +383,14 @@ class Release:
         ev = []
         sh(["git", "push", "origin", "HEAD:main"])
         ev.append(f"pushed main {self.head[:10]}")
-        ev.append(wait_run("ci.yml", self.head))
+        # a green ci.yml run on a commit with the identical git tree (the PR's head, when main is GitHub's merge
+        # commit of it) is the same code: reuse it instead of waiting ~38 min for a second run on main's new sha
+        ev.append(same_tree_run("ci.yml", self.head) or wait_run("ci.yml", self.head))
         sh(["git", "tag", "-a", tag, "-m", f"Frodhes {self.ver}"])
         sh(["git", "push", "origin", tag])
         ev.append(f"tag {tag} pushed")
-        # ci just passed on this commit, so release.yml's ci-gate skips the fallback tests (its generators-macos job
+        # ci passed on this commit or on one with its tree, so release.yml's ci-gate (the same tree rule) skips the
+        # fallback tests (its generators-macos job
         # is "skipped"): toolchain + build + publish only
         ev.append(wait_run("release.yml", self.head, ok=("success", "skipped")))
         d = tempfile.mkdtemp(prefix="frodhes-rel-", dir=os.path.join(ROOT, "build"))
@@ -407,7 +438,7 @@ class Release:
         versioned = f"frodhes-{self.ver}.fwsc"
         r = json.loads(out(["gh", "release", "view", tag, "-R", REPO, "--json", "assets,url,isDraft"]))
         names = [x["name"] for x in r["assets"]]
-        missing = [n for n in (versioned, STABLE) if n not in names]
+        missing = [n for n in (versioned, STABLE, *SMK_ASSETS, LICENCE_ASSET) if n not in names]
         if missing or r.get("isDraft"):
             raise Stop(f"{r['url']}: assets {names} (missing {missing}), draft {r.get('isDraft')}")
         ev = [f"{r['url']} lists {', '.join(names)}"]
@@ -430,14 +461,50 @@ class Release:
         ev.append(f"README at {tag} names no version and links {LATEST_DL}")
         return "\n".join(ev)
 
+    def tiers(self):
+        """the tiers this release needs: tools/test_map.py over `git diff --name-only <previous tag>..HEAD`, T1 on
+        every release, T2 also with --full; {'need', 'map', 'lines' (the tiers and why), 'why_t2'}"""
+        if self.tmap:
+            return self.tmap
+        if self.prev:
+            code, o = sh(["git", "diff", "--name-only", f"{self.prev}..HEAD"], check=False, quiet=True)
+            if code:
+                raise Stop(f"git diff --name-only {self.prev}..HEAD exited {code}:\n" + tail(o))
+            files = [l.strip() for l in o.splitlines() if l.strip()]
+            src = f"git diff {self.prev}..HEAD, {len(files)} file(s)"
+            m = test_map.analyze(files)
+        else:                                           # no tag yet: everything is new
+            src, m = "no previous tag: everything", test_map.analyze(["firmware/(everything)"])
+        need = sorted(set(m["tiers"]) | {"T0", "T1"} | ({"T2"} if self.a.full else set()))
+        t2_groups = [g for g, d in m["groups"].items() if "T2" in d["tiers"]]
+        why_t2 = ("the map: " + ", ".join(t2_groups) + " changed" if t2_groups else
+                  "--full (the map: no engine / DSP file changed)" if self.a.full else
+                  "the map: no engine / DSP file changed")
+        lines = [f"tiers needed: {' + '.join(need)} ({src}; T1 on every release; T2: {why_t2})"]
+        lines += ["map: " + l for l in test_map.reason(m)]
+        self.tmap = dict(need=need, map=m, lines=lines, why_t2=why_t2)
+        return self.tmap
+
+    def s_device_done(self):
+        """step 4 with --no-device --device-done: the runs made on this exact build, checked against the tiers"""
+        return "\n".join(self.tiers()["lines"] + [self.device_done()])
+
     def device_done(self):
-        """--device-done: the FM-1 runs made before the release on this very build (its sha256 checked), or None"""
+        """--device-done: the FM-1 runs made before the release on this very build (its sha256 checked, its tiers
+        covering the needed ones), or None"""
         if not self.a.device_done:
             return None
         d = json.load(open(self.a.device_done))
         if d.get("sha256") != self.sha:
             raise Stop(f"--device-done {self.a.device_done}: sha256 {d.get('sha256')} is not the release build's {self.sha}")
-        return "FM-1: tested before the release on this exact build (sha256 equal): " + "; ".join(d.get("runs", []))
+        need = [t for t in self.tiers()["need"] if t != "T0"]       # (T0: step 3, in this run)
+        done = d.get("tiers") or []
+        missing = [t for t in need if t not in done]
+        if missing:
+            raise Stop(f"--device-done {self.a.device_done}: tiers {done or '(none recorded)'} do not cover the needed "
+                       f"{need} (missing {', '.join(missing)}); " + self.tiers()["lines"][0])
+        return (f"FM-1: tested before the release on this exact build (sha256 equal), tiers {'+'.join(done)} "
+                f"(needed {'+'.join(need)}): " + "; ".join(d.get("runs", [])))
 
     # ---- the driver ----
     def run(self):
@@ -454,7 +521,7 @@ class Release:
         for i, fn in enumerate(plan, 1):
             name = STEPS[i - 1]
             skip = ("--verify-only" if self.a.verify_only and i != 9 else
-                    "--no-device" if i == 4 and self.a.no_device else "--no-emulator" if i == 8 and self.a.no_emulator
+                    "--no-device" if i == 4 and self.a.no_device and not self.a.device_done else "--no-emulator" if i == 8 and self.a.no_emulator
                     else "--dry-run" if i > 6 and self.a.dry_run and not self.a.verify_only else None)
             if failed:
                 self.results[i] = ("not run", "an earlier step failed")
@@ -463,11 +530,17 @@ class Release:
                 self.results[i] = ("skipped", skip)
                 print(f"\n[{i}/9] {name}: SKIPPED ({skip})", flush=True)
                 if i == 4:
-                    self.log("with the FM-1 this step runs, in order:\n" + "\n".join(device_plan(self.ver or "X.Y.Z")))
+                    try:
+                        tm = self.tiers()
+                    except Stop as e:
+                        tm = dict(need=["T0", "T1", "T2"], lines=[f"tiers needed: T0 + T1 + T2 (the diff failed: {e})"])
+                    self.log("\n".join(tm["lines"]))
+                    self.log("with the FM-1 this step runs, in order:\n"
+                             + "\n".join(device_plan(self.ver or "X.Y.Z", tm["need"])))
                 continue
             print(f"\n[{i}/9] {name}", flush=True)
             try:
-                r = fn()
+                r = self.s_device_done() if i == 4 and self.a.no_device else fn()
                 ev, st = r if isinstance(r, tuple) else (r, "done")
                 self.results[i] = (st, ev)
                 self.log(ev)
@@ -503,10 +576,18 @@ def cpu_cmd(eng):
     return [PY, "tools/hil_cpu.py", "--worst"] + ([] if eng == "rhodes" else ["--engine", eng])
 
 
-def device_plan(ver):
-    """step 4's commands in order (what s_device runs) with what each must show, for --no-device to list"""
+T1_CMD = [PY, "tools/hil_scan.py", "--tier", "must"]
+
+
+def device_plan(ver, tiers=("T0", "T1", "T2")):
+    """step 4's commands in order (what s_device runs for these tiers) with what each must show, for --no-device
+    to list"""
     q = " ".join
-    return ([f"echo y | {PY} tools/fm1_install.py build/frodhes-{ver}.fwsc"]
+    t1 = [f"echo y | {PY} tools/fm1_install.py build/frodhes-{ver}.fwsc",
+          q(T1_CMD) + "   (T1 must-pass: exit 0, every scenario's counters 0)"]
+    if "T2" not in tiers:
+        return t1
+    return (t1
             + [q(cpu_cmd(e)) + f"   (worst <= {CPU_LIMIT_US} us, nothing shed)" for e in ENGINES]
             + [q([PY, "tools/hil_scan.py", "--only", SCAN_SET]) + "   (exit 0)",
                q([PY, "tools/hil_scan.py", "--only", "vibes_vel", "--source", "both"]) + "   (exit 0)",
@@ -590,6 +671,59 @@ def check_jack(eng, rep):
         raise Stop(f"hil_jack {eng}: the loud chord peaks at {peak:.1f} dBFS on the jack (usually about -15): "
                    "is the jack connected to the interface?")
     return f"hil_jack {eng}: SNR {rep['snr_db']:.1f} dB, loud chord jack peak {peak:.1f} dBFS"
+
+
+def tree_of(sha):
+    """the git tree sha of commit sha: the local object, else the GitHub API's commit.tree.sha; None if unknown"""
+    code, t = sh(["git", "rev-parse", "-q", "--verify", sha + "^{tree}"], check=False, quiet=True)
+    if not code and re.fullmatch(r"[0-9a-f]{40}", t.strip()):
+        return t.strip()
+    code, t = sh(["gh", "api", f"repos/{REPO}/commits/{sha}", "--jq", ".commit.tree.sha"], check=False, quiet=True)
+    return t.strip() if not code and re.fullmatch(r"[0-9a-f]{40}", t.strip()) else None
+
+
+def same_tree_run(workflow, sha, limit=50, max_commits=20):
+    """a completed, successful workflow run (every job success) on another commit whose git tree is identical to sha's
+    (the same code by construction): its evidence line, or None (then the caller waits for a run on sha itself)"""
+    tree = tree_of(sha)
+    if not tree:
+        print(f"   the git tree of {sha[:10]} is unknown: waiting for {workflow} on exactly this commit", flush=True)
+        return None
+    code, txt = sh(["gh", "run", "list", "-R", REPO, "--workflow", workflow, "--status", "success", "-L", str(limit),
+                    "--json", "databaseId,headSha,headBranch,status,conclusion,event"], check=False, quiet=True)
+    try:
+        rows = json.loads(txt or "[]") if not code else []
+    except ValueError:
+        rows = []
+    seen = set()
+    for r in rows:
+        h = r.get("headSha") or ""
+        if r.get("status") != "completed" or r.get("conclusion") != "success" or not h or h == sha or h in seen:
+            continue
+        if len(seen) >= max_commits:
+            break
+        seen.add(h)
+        if tree_of(h) != tree:
+            continue
+        rid = str(r["databaseId"])
+        code, txt = sh(["gh", "run", "view", rid, "-R", REPO, "--json", "conclusion,jobs,url"], check=False, quiet=True)
+        try:
+            v = json.loads(txt) if not code else None
+        except ValueError:
+            v = None
+        jobs = [(j.get("name"), j.get("conclusion")) for j in (v or {}).get("jobs", [])]
+        if not v or v.get("conclusion") != "success" or not jobs or any(c != "success" for _, c in jobs):
+            print(f"   {workflow} run {rid} on {h[:10]} has tree {tree[:10]} but is not all green ({jobs}): "
+                  "not reused", flush=True)
+            continue
+        msg = (f"{workflow} {v['url']}: success on {h[:10]} ({r.get('event')}, {r.get('headBranch')}), whose git tree "
+               f"{tree[:10]} is identical to {sha[:10]}'s (the same code): reused, no second run waited for; jobs "
+               + ", ".join(f"{n} {c}" for n, c in jobs))
+        print("   " + msg, flush=True)
+        return msg
+    print(f"   no green {workflow} run on a commit with {sha[:10]}'s tree {tree[:10]}: waiting for one on {sha[:10]}",
+          flush=True)
+    return None
 
 
 def wait_run(workflow, sha, appear_s=300, ok=("success",)):

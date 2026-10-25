@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Race fuzz (2026-10-18): the bug class of fuzz seeds 513 / 780 (a note waiting for a steal's fade, every voice busy,
 an all-off in the same audio block: the note started held for good) hunted on purpose. Each case fills all the voices
-(FR_VOICES; held, under the pedal, or half held and half let go), optionally strikes one more note so a steal is
+(each engine's own count, hostrun.voices; held, under the pedal, or half held and half let go), optionally strikes one more note so a steal is
 pending, then puts two (or three) events into the same audio block (0 / 1 / 3 ms apart: a block is 5.8 ms) or into
 adjacent ones (6 / 12 ms): note-ons, the note-off of the pending or of the stolen note, CC 120 / 123, the pedal (down,
 up, half), program changes (the other engine and the same one), CC 79 / 80 TYPE, the arpeggiator (on, off, HOLD),
@@ -30,10 +30,14 @@ import pytest
 
 from hostrun import FS, OUT, cc, rms_db, run
 from test_fuzz import clicks
-from test_alloff import voices
+from hostrun import voices
 
-NV = voices()
-N9 = [33, 40, 47, 54, 61, 68, 75, 82, 89, 94, 99, 52, 57, 64, 71, 78][:NV]   # the setup's notes, one per voice
+FILL = [33, 40, 47, 54, 61, 68, 75, 82, 89, 94, 99, 52, 57, 64, 71, 78]
+
+
+def fill(eng):
+    """the setup's notes, one per voice of the engine (the Rhodes 9, VIBES 9)"""
+    return FILL[:voices(eng)]
 PEND, NEW, KEY = 96, 98, 7                     # the note that waits for a steal; a new note; the key (C4 at OCT 0)
 T0 = 700                                       # the burst
 GAPS = [0, 1, 3, 6, 12]                        # ms between the burst's events (5.8 ms a block)
@@ -42,6 +46,7 @@ SETUPS = ["held", "pedal", "mixed"]
 
 def ev_lines(name, t, eng):
     """the script lines of one burst event at t ms"""
+    N9 = fill(eng)
     other = 0 if eng == "vibes" else 12        # a program change to the other engine's first preset
     same = 13 if eng == "vibes" else 1
     E = {
@@ -78,6 +83,7 @@ EVENTS = ["on", "on_pend", "off_pend", "off_stolen", "off_quiet", "cc120", "cc12
 
 def case_lines(eng, setup, steal, burst):
     """burst: [(event, t)]; returns (lines, marks)"""
+    N9 = fill(eng)
     L = [cc(5, 79, 0), cc(6, 47, 0)] if eng == "vibes" else []           # VIBES, its motor off
     L += ["20 btn 7", "40 btn 7", "60 btn 7", "80 turn 4 1", "100 btn 8"]  # GLO x3: MIDI, CLOCK EXT; HOME
     if setup == "pedal":

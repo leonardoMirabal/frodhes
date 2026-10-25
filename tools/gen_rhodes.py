@@ -107,6 +107,45 @@ def family_of(p, n):
     return 1
 
 
+def jit(p, n, what):
+    """The per-key jitter (S2): a deterministic number in [-1, 1) from the key, the quantity and params.json
+    jitter.seed (a hash, so adding a quantity never moves the others). 0 when params.json has no "jitter"."""
+    j = p.get("jitter")
+    if not j:
+        return 0.0
+    h = hashlib.sha256(("%s:%d:%s" % (j["seed"], n, what)).encode()).digest()
+    return int.from_bytes(h[:8], "little") / 2.0 ** 63 - 1.0
+
+
+def jit_pct(p, n, what):
+    """1 + jitter[what + "_pct"] % x jit (the multiplicative jitter of one quantity)"""
+    return 1.0 + p.get("jitter", {}).get(what + "_pct", 0.0) / 100.0 * jit(p, n, what)
+
+
+def whirl(p, n, v1):
+    """The beat partner in the V2 slot (S1, the "whirl" of a real tine: its two polarisations exchange energy, a
+    slow wobble of the level and a double decay): a second mode beat_hz above or below V1 (the side and the beat
+    seeded per key), weight w re V1 (tapered over taper_keys at both ends of the range), T60 t60_ratio x V1's
+    (seeded in the range), the same release. V1's own pitch never moves. None outside params.json whirl.keys
+    (the slot then keeps the tone-bar mode, or nothing on the v2_drop keys)."""
+    w = p.get("whirl")
+    if not w or not (w["keys"][0] <= n <= w["keys"][1]):
+        return None
+    pts = w["beat_hz_points"]
+    beat = float(np.interp(n, [q[0] for q in pts], [q[1] for q in pts])) * jit_pct(p, n, "beat")
+    side = 1.0 if jit(p, n, "side") >= 0 else -1.0
+    lo, hi = w["keys"]
+    t = w["taper_keys"]
+    edge = min(1.0, (n - lo + 1) / (t + 1), (hi - n + 1) / (t + 1))
+    ww = w["w"] * edge * jit_pct(p, n, "w")
+    if w.get("pitch_cents_max"):                         # the sum's pitch swings by w / (1 - w) x beat at the trough
+        beat = min(beat, (2 ** (w["pitch_cents_max"] / 1200) - 1) * v1["f"] * (1 - ww) / ww)
+    r0, r1 = w["t60_ratio"]
+    ratio = r0 + (r1 - r0) * 0.5 * (jit(p, n, "t60_ratio") + 1.0)
+    return dict(name="V2", f=v1["f"] + side * beat, t60=v1["t60"] * ratio, t60_rel=v1["t60_rel"],
+                amp=v1["amp"] * ww, beat_hz=side * beat, w_rel=ww)
+
+
 def strike_m(p, n):
     s = p["strike"]
     return s["lo_m"] + (s["hi_m"] - s["lo_m"]) * (n - KEY_LO) / (KEY_HI - KEY_LO)
@@ -141,13 +180,13 @@ def key_physics(p, n, L):
     ms = fr["ms"] or 0.0
     f = np.array(fr["f"])
     psi_c, psi_t = fr["psi_c"], fr["psi_t"]
-    T1 = t60_v1(p, n)
+    T1 = t60_v1(p, n) * jit_pct(p, n, "t60")            # S2: each tine its own Q (V1, the overtones follow)
     sig_t = 6.907755 / (T1 * tb["tine_t60_frac"])
     sig_b = 6.907755 / (T1 * tb["bar_t60_mult"])
     sys_ = tbm.TineBar(f[0], f[0] * 2 ** (bar_cents(p, n) / 1200), tb["k_rel"], tb["mu"], sig_t, sig_b)
-    sys_ = tbm.retune(sys_, f0)
+    sys_ = tbm.retune(sys_, f0, pick="tine")
     held = sys_.modes()
-    iv1 = tbm.sustain_mode(held)
+    iv1 = tbm.tine_mode(held, sys_.f_t)          # V1 = the tine mode (S3: not the bar mode on keys 104-108)
     order = [iv1, 1 - iv1]
     Trel = release_t60(p, n)
     sig_d = 6.907755 / Trel - sig_t
@@ -170,6 +209,11 @@ def key_physics(p, n, L):
         fr, sr, _ = rel_by_held[i]
         modes.append(dict(name=["V1", "V2"][slot], f=fq, t60=6.907755 / s, t60_rel=6.907755 / sr,
                           amp=gtip * 2 * abs(r)))
+    partner = whirl(p, n, modes[0])                     # S1: the V2 slot holds the beat partner on its keys
+    if partner:
+        modes[1] = partner
+    elif any(lo <= n <= hi for lo, hi in p.get("v2_drop", {}).get("keys", [])):
+        modes[1] = dict(name="V2", f=0.0, t60=1.0, t60_rel=1.0, amp=0.0)      # O1: the tone-bar mode left out
     ex = p["overtone_damping_exp"]
     for m, name in ((1, "O1"), (2, "O2")):
         fq = f0 * f[m] / f[0]
@@ -178,7 +222,8 @@ def key_physics(p, n, L):
                           amp=psi_c[m] * psi_t[m] / (2 * math.pi * f[m])))
     modes.append(dict(name="H1", f=0.0, t60=1.0, t60_rel=1.0, amp=0.0))      # Phase 3
     return dict(midi=n, f0=f0, L=L, spring_g=ms * 1e3, ratios=[float(f[1] / f[0]), float(f[2] / f[0])],
-                band=band_of(p, n), fam=family_of(p, n), off=p["pickup"]["off_gap"], modes=modes,
+                band=band_of(p, n), fam=family_of(p, n), modes=modes,
+                off=p["pickup"]["off_gap"] + p.get("jitter", {}).get("off_gap", 0.0) * jit(p, n, "off"),
                 fe_modes=[(float(f0 * f[m] / f[0]), float(sig_t * (f[m] / f[0]) ** ex), float(psi_c[m]))
                           for m in range(6)])
 
@@ -223,7 +268,7 @@ def hammer_mass(p, k):
 
 def contact_cases(p, k, vels):
     h = p["hammer"]
-    K = band_K(p, k["band"])
+    K = band_K(p, k["band"]) * jit_pct(p, k["midi"], "contact") ** 2.5   # S2: contact time ~ K^-0.4
     return [dict(v=hammer_speed(p, v), m_h=hammer_mass(p, k), K=K, p=h["p"], alpha=h["alpha"], modes=k["fe_modes"])
             for v in vels]
 
@@ -276,7 +321,7 @@ def key_pulses_all(p, phys):
         prate = [int(round(64.0 / (win[v] * dt * FS) * Q12)) for v in V_ANCH]
         pamp = [max(1, int(round(sims[v]["F"].max() / fmax * 32767))) for v in V_ANCH]
         assert all(0 < q < 2 ** 31 for q in prate), prate
-        out[n] = dict(shapes=shapes, prate=prate, pamp=pamp, pamp_phys=list(pamp), K=band_K(p, phys[n]["band"]),
+        out[n] = dict(shapes=shapes, prate=prate, pamp=pamp, pamp_phys=list(pamp), K=cases[i * len(V_ANCH)]["K"],
                       tc_ms=[seg[v][0][1] * dt * 1e3 for v in V_ANCH], win_ms=[win[v] * dt * 1e3 for v in V_ANCH],
                       ncont=[len(seg[v]) for v in V_ANCH])
     return out
@@ -398,6 +443,21 @@ def rom_safe(v):
 
 
 # ---------------------------------------------------------------- pickup tables
+def fam_shift(p, f):
+    """S8: the pickup families differ by their gap (params pickup.gap_rel: 1/16" = 2 x the 1/32" gap). Lengths are
+    in each family's own gap, so the same pole piece is R1 / gap_rel there and every vertical offset (the rest
+    position, TYPE, TONE, the cap) is divided by gap_rel: a power of two, the engine shifts by this."""
+    g = p["pickup"]["gap_rel"][f]
+    sh = int(round(math.log2(g)))
+    assert g == 1 << sh and abs(p["pickup"]["R"][f] * g - p["pickup"]["R"][1]) < 1e-12, (f, g)
+    return sh
+
+
+def pickup_off(p, f):
+    """the rest offset of family f's keys (gap): params pickup.off_gap in the 1/32" gap, divided by gap_rel"""
+    return p["pickup"]["off_gap"] / p["pickup"]["gap_rel"][f]
+
+
 def pickup_tables(R):
     s = np.arange(PU_N + 1) * (S_MAX_GAP2 / PU_N)
     phi = pu.phi_s(s, R)
@@ -406,6 +466,28 @@ def pickup_tables(R):
     P = [rom_safe(int(round(x * Q28 / A))) for x in phi]
     M = [rom_safe(int(round(x * Q28 / A))) for x in dds]
     return P, M, A
+
+
+def rom_window_b(spec_keys):
+    """No force gain b (Q30) may sit in the chip-ROM window (0xFFC00000-0xFFCFFFFF = -4194304 .. -3145729 as int32):
+    rom_safe() used to move such a word to the window's edge, up to 25 % of its value (0.9.5: O1 of keys 51-58
+    played 0.76-0.98 of its level in C, Gate B's -53 dB on those keys). Instead the key's b are all scaled up by the
+    smallest s (<= 4/3) that takes every b out of the window, and its pulse amplitudes (RH_PAMP) down by s: the
+    force products F * b stay the same (to the pamp rounding), the words are exact and the golden model plays the
+    same numbers as the C engine."""
+    lo, hi = -(1 << 22), -(3 << 20) - 1                 # -4194304 .. -3145729
+    inw = lambda m, sc: lo <= int(round(m["b"] * sc * Q30)) <= hi
+    for spec in spec_keys:
+        live = [m for m in spec["modes"] if mode_coefs(m["f"], m["t60"], m["t60_rel"])["th"]]
+        if not any(inw(m, 1.0) for m in live):
+            continue
+        sc = next(1 + i / 4096 for i in range(1, 1366) if not any(inw(m, 1 + i / 4096) for m in live))
+        for m in spec["modes"]:
+            m["b"] *= sc
+        pa = spec["pulse"]["pamp"]
+        for a in range(len(pa)):
+            pa[a] = max(1, int(round(pa[a] / sc)))
+        spec["rom_b_scale"] = sc
 
 
 # ---------------------------------------------------------------- main
@@ -420,6 +502,8 @@ def build(repin=False):
         print("rhodes_pins.json is missing or stale (python3 tools/gen_rhodes.py --repin): the FE runs on this machine "
               "and the tables may differ in the last bits", file=sys.stderr)
     phys = {n: key_physics(p, n, Ls[n]) for n in range(KEY_LO, KEY_HI + 1)}
+    for k in phys.values():                            # S8: the rest offset in the key's own gap
+        k["off"] = pickup_off(p, k["fam"])
     pulses = key_pulses_all(p, phys)
     fam_tabs = [pickup_tables(R) for R in p["pickup"]["R"]]
     fams = [dict(A=t[2], R=R) for t, R in zip(fam_tabs, p["pickup"]["R"])]
@@ -434,8 +518,8 @@ def build(repin=False):
         pz = pulses[n]
         spec = dict(midi=n, f0=k["f0"], band=b, fam=k["fam"], off=k["off"], pulse=pz,
                     tc_ms=float(np.interp(100, V_ANCH, pz["tc_ms"])),
-                    modes=[dict(name=m["name"], f=m["f"], t60=m["t60"], t60_rel=m["t60_rel"], w=m["amp"])
-                           for m in k["modes"]],
+                    modes=[dict(name=m["name"], f=m["f"], t60=m["t60"], t60_rel=m["t60_rel"], w=m["amp"],
+                                **{q: m[q] for q in ("beat_hz", "w_rel") if q in m}) for m in k["modes"]],
                     ratios=k["ratios"], spring_g=k["spring_g"], L=k["L"])
         # unit b = mode amplitude per unit force-sample; scale so V1 peaks at target_peak (gap) at v = 127
         w1 = spec["modes"][0]["w"]
@@ -467,6 +551,10 @@ def build(repin=False):
         rel = Lv - Lv[:, ref:ref + 1]
         tgt = np.median(rel, axis=0)
         tgt = np.maximum.accumulate(tgt)                    # louder with velocity, never less
+        if "target_db" in vt:                               # frozen (params.json): edits to some keys stay local
+            tgt = np.array(vt["target_db"][it], dtype=float)
+        else:
+            print("velocity target %d: %r" % (it, [float(x) for x in tgt]), file=sys.stderr)
         corr = np.clip(tgt[None, :] - rel, -vt.get("max_db", 24.0), vt.get("max_db", 24.0))
         corr[:, ref] = 0
         print("velocity fit %d: worst %.1f dB, median |err| %.2f dB" % (it, np.abs(corr).max(), np.median(np.abs(corr))),
@@ -493,9 +581,12 @@ def build(repin=False):
     g_s = g_raw * cap
     g_s = np.minimum(g_s, (2 ** 31 - 1) / Q16)         # Q16 in int32
     for spec, g in zip(spec_keys, g_s):
+        g *= 10 ** (p.get("jitter", {}).get("level_db", 0.0) * jit(p, spec["midi"], "level") / 20)   # S2
         spec["gain"] = float(g)
         spec["kill"] = gm.kill_level(spec, fams, g)
-        spec["life_blocks"] = int(min(6891, math.ceil((2 * spec["modes"][0]["t60"] + 1.0) * FS / 256)))
+        t60 = max(spec["modes"][0]["t60"], spec["modes"][1]["t60"] if "beat_hz" in spec["modes"][1] else 0.0)
+        spec["life_blocks"] = int(min(6891, math.ceil((2 * t60 + 1.0) * FS / 256)))
+    rom_window_b(spec_keys)
     idx, frac = vpos()
     spec = dict(gen_version=GEN_VERSION, fs=FS, params=p, keys=spec_keys, v_anchors=V_ANCH,
                 vpos_idx=idx, vpos_frac=frac, layer_v=LAYER_V, pickup=fams)
@@ -518,7 +609,8 @@ def emit(spec, fam_tabs):
         for m in k["modes"]:
             c = mode_coefs(m["f"], m["t60"], m["t60_rel"])
             # y (Q25) += (F (Q15) * b) >> 20  =>  b = w_gap * 2^25 * 2^20 / 2^15 = w * 2^30
-            b = rom_safe(int(round(m["b"] * Q30))) if c["th"] else 0
+            b = int(round(m["b"] * Q30)) if c["th"] else 0
+            assert rom_safe(b) == b, (k["midi"], m["name"], b)      # rom_window_b() keeps b out of the window
             ms.append("{%d,%d,%d,%d,%d,%d,%d}" % (rom_safe(c["sh"]), rom_safe(c["ch"]), rom_safe(c["th"]),
                                                   rom_safe(c["d"]), rom_safe(c["drel"]), rom_safe(c["cr"]), b))
         prate = min(65535, k["pulse"]["prate"][V_ANCH.index(104)])   # informational only (per-key tables rule)
@@ -546,8 +638,9 @@ def emit(spec, fam_tabs):
     li, lw = vlayers()
     w("static const uint8_t RH_VLAY_I[128] = {" + ",".join(map(str, li)) + "};")
     w("static const uint16_t RH_VLAY_W[128] = {" + ",".join(map(str, lw)) + "};")
-    # one row per DISTINCT pickup family (both have R = 1.0 today, so one row each), and a pointer table so
-    # rhodes.c's RH_PHI[k->fam] / RH_SLOPE[k->fam] still give the row; families that differ get their own rows
+    # one row per DISTINCT pickup family and a pointer table, so RH_PHI[k->fam] / RH_SLOPE[k->fam] give the row
+    # (tools/gen_phim.py interleaves them into rhodes_phim.h). S8: family 0 (the 1/16" gap) has R = 0.5, family 1
+    # (1/32") R = 1.0 (params.json pickup.R), so each has its own row; equal R would share one
     for name, col in (("RH_PHI", 0), ("RH_SLOPE", 1)):
         rows, idx = [], []
         for t in fam_tabs:
@@ -581,6 +674,33 @@ def emit(spec, fam_tabs):
                                                int(round(Q16 * 10 ** (t.get("level_db", 0.0) / 20) / t["bark"])), int(round(t["bell"] * Q16)),
                                                int(round(t["ham"] * Q16)), len(t["body"]), t["drive_row"]))
     w("};")
+    # S8: the TYPEs' level/bark above was set on the 1/32" family (R = 1). On the 1/16" family a TYPE's offset step
+    # (divided by gap_rel there, as the rest offset) changes the pickup's slope at rest by a different amount, so each
+    # family gets the first-order level correction [g(o1 + d; R1) / g(o1; R1)] / [g(of + df; Rf) / g(of; Rf)]:
+    # exactly 1 (Q16 65536) on the 1/32" family and on STAGE 77 (d = 0)
+    gs = lambda u, R: abs(float(pu.g(np.array([u]), R)[0]))
+    cap = p["tone"]["off_max_gap"]
+    fams = range(len(p["pickup"]["R"]))
+    w("static const uint8_t RH_FAM_SH[%d] = {%s};   /* per pickup family: offsets >> this (1/16\" = 2 gaps) */"
+      % (len(fams), ", ".join(str(fam_shift(p, f)) for f in fams)))
+    w("static const int32_t RH_TYPE_FG[4][%d] = {   /* per TYPE x pickup family: level correction (Q16) */" % len(fams))
+    for name in names:
+        d = ty[name]["off"]
+        row = []
+        for f in fams:
+            gr = p["pickup"]["gap_rel"][f]
+            R, R1, o1, of = p["pickup"]["R"][f], p["pickup"]["R"][1], pickup_off(p, 1), pickup_off(p, f)
+            if gr == 1 or d == 0:
+                row.append(Q16)
+                continue
+            r1 = gs(min(o1 + d, cap), R1) / gs(o1, R1)
+            rf = gs(min(of + d / gr, cap / gr), R) / gs(of, R)
+            row.append(int(round(Q16 * r1 / rf)))
+        w("  {%s}," % ", ".join(map(str, row)))
+    w("};")
+    tn = p["tone"]           # the TONE knob's upper half and the offset cap (params.json "tone"; params.c P_TONE)
+    w("#define RH_TONE_UP %d   /* Q25 gap per TONE step above 64 */" % int(round(tn["up_gap"] * Q25 / 63)))
+    w("#define RH_OFF_MAX (%d) /* Q25 gap: no voice's pickup offset goes nearer the pole axis (out of the ROM window) */" % rom_safe(int(round(tn["off_max_gap"] * Q25))))
     w("static const int32_t TUNE_T[101] = {" + ",".join(
         str(rom_safe(int(round((2 ** (c / 1200) - 1) * Q30)))) for c in range(-50, 51)) + "};")
     w("static const uint32_t DECAY_K[128] = {" + ",".join(
@@ -593,7 +713,7 @@ def emit(spec, fam_tabs):
 
 
 def pedal_w():
-    """Damper weight (Q15) vs CC64: the jRhodes half-pedal curve inverted (§5.7)."""
+    """Damper weight (Q15) vs CC64: a sampled reference piano's half-pedal curve inverted (§5.7)."""
     pts = [(0, 32768), (41, 32768), (42, 29491), (54, 22938), (62, 19661), (63, 19661), (64, 0), (127, 0)]
     xs, ys = zip(*pts)
     return [min(32767, int(round(np.interp(v, xs, ys)))) for v in range(128)]

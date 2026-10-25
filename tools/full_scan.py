@@ -20,8 +20,8 @@ those: per suite ok / FAIL counts, every failing row classified
   INFO        an information row, a USB / jack MISMATCH where both pass, a known stale classic limit (AGENTS.md)
 the CPU worst per engine with its margins to 4500 / 4800 / 5000 us, hiss / SNR per engine.
 
-It never installs firmware. It takes the device lock (mkdir <root>/build/hil/DEVICE.lockdir + an owner file; waits
-while another session holds it; released in finally).
+It never installs firmware. It takes the device lock (tools/lock.py DEVICE: <root>/build/hil/DEVICE.lockdir; a
+caller holding it, FRODHES_LOCK_DEVICE, passes at once; waits while another session holds it; released in finally).
 
   tools/full_scan.py [--seq] [--skip cpu,jack] [--jack-dev M6] [--jack-ch 5] [--root MAIN_REPO] [--wait-lock 3600]
   tools/full_scan.py --from build/hil/full/<ts>         rebuild SUMMARY.md from that run's logs / JSON (no device)
@@ -38,13 +38,19 @@ import sys
 import threading
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import lock  # noqa: E402
+
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(TOOLS)
 HIL = os.path.join(REPO, "build", "hil")
 
 CPU_TARGET, CPU_GATE, CPU_SHED, CPU_BLOCK = 4500, 4800, 5000, 5805
-# AGENTS.md "Known stale limits that fail on every version": information unless the change touched that effect
-CLASSIC_STALE = {"types", "effects", "bypass", "fx_all", "fx_toggle", "presets"}
+# AGENTS.md's "known stale limits" (types, effects, bypass, fx_all, fx_toggle, presets) used to be information here.
+# Since 2026-10-24 none is: types / effects / bypass / fx_toggle / presets pass in every report since 2026-10-18, and
+# fx_all's limits follow what each effect does (hil_scan.py FXALL_EXPECT), so a classic FAIL is a finding again
+# (fx_all's wah rows were fx.c's stale wah depth law, a defect fixed 2026-10-24). Names added here are reported INFO, not FAIL
+CLASSIC_STALE = set()
 CLASSES = ("JACK FAIL", "UNDECIDED", "USB-ONLY", "INFO")
 
 
@@ -296,47 +302,10 @@ def main_repo(start):
     return start
 
 
-class DeviceLock:
-    def __init__(self, root, who, wait_s):
-        self.dir = os.path.join(root, "build", "hil", "DEVICE.lockdir")
-        self.who, self.wait_s, self.mine = who, wait_s, None
-
-    def __enter__(self):
-        os.makedirs(os.path.dirname(self.dir), exist_ok=True)
-        t0, said = time.time(), 0.0
-        while True:
-            try:
-                os.mkdir(self.dir)
-                break
-            except FileExistsError:
-                if time.time() - t0 > self.wait_s:
-                    sys.exit(f"device lock {self.dir} still held after {self.wait_s} s by: {self.owner()}")
-                if time.time() - said > 60:
-                    print(f"waiting for the device lock ({self.owner()})", flush=True)
-                    said = time.time()
-                time.sleep(10)
-        self.mine = f"{self.who} {time.strftime('%a %b %d %H:%M:%S %Z %Y')} pid {os.getpid()}"
-        open(os.path.join(self.dir, "owner"), "w").write(self.mine + "\n")
-        print(f"device lock taken: {self.dir}", flush=True)
-        return self
-
-    def owner(self):
-        return (_read(os.path.join(self.dir, "owner")) or "(no owner file)").strip()
-
-    def __exit__(self, *exc):
-        if self.mine and self.owner() == self.mine:
-            try:
-                os.remove(os.path.join(self.dir, "owner"))
-            except OSError:
-                pass
-            try:
-                os.rmdir(self.dir)
-                print("device lock released", flush=True)
-            except OSError as e:
-                print(f"could not remove the device lock {self.dir}: {e}", flush=True)
-        elif self.mine:
-            print(f"the device lock is no longer ours ({self.owner()}); left alone", flush=True)
-        return False
+def DeviceLock(root, who, wait_s, poll_s=10.0):
+    """build/hil/DEVICE.lockdir through tools/lock.py: the holder's token (FRODHES_LOCK_DEVICE) passes at once, a
+    dead holder is reaped, a stale one reported; released at the end only when still ours"""
+    return lock.Lock("DEVICE", root=root, who=who, wait_s=wait_s, poll_s=poll_s)
 
 
 # ---------------------------------------------------------------- running

@@ -1,0 +1,40 @@
+# SMK-37 build only (make test-smk): the pedal jack (985 = nothing plugged in; the reading at power-on is "up", either
+# polarity) and the SUSTAIN pad (16 = hardware pad 15): both hold the dampers as REC does (engine-neutral: eng_q
+# EV_PEDAL). "smksus": the SMK's sustain, "sus": the Rhodes' damper hold, "pedal": the jack down.
+400 expect state smksus 0
+500 pedal 100
+600 expect state pedal 1
+600 expect state smksus 1
+600 expect state sus 1
+700 keys 0x80
+900 keys 0
+1300 expect rms > -40
+1400 pedal 985
+1500 expect state smksus 0
+1500 expect state sus 0
+2000 expect rms < -60
+# the SUSTAIN pad: a tap latches, a second tap lets go
+2100 pad 15 100
+2150 pad 15 0
+2250 expect state smksus 1
+2300 keys 0x80
+2500 keys 0
+2900 expect rms > -40
+3000 pad 15 100
+3050 pad 15 0
+3150 expect state smksus 0
+3700 expect rms < -60
+# held (longer than a tap): down while held, nothing latched
+3800 pad 15 100
+4200 expect state smksus 1
+4300 pad 15 0
+4400 expect state smksus 0
+# the pedal on VIBES too (the bar engine's own pedal)
+4500 midi 0xB0 79 0
+4600 pedal 100
+4700 keys 0x80
+4900 keys 0
+5300 expect rms > -40
+5400 pedal 985
+5500 expect state smksus 0
+5600 end

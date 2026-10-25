@@ -11,7 +11,8 @@ download), and the release tool fills in everything that depends on it.
 - **Its tests**: a host script in `tests/scripts/` or a pytest in `tests/py/` for the new behaviour.
 - **The manual and README** where the change shows (a page, a control, a CC), without any version number.
 - **Its own release-note fragment**: a new file `docs/changes/<topic>.md` (lowercase, digits and `-`), for example
-  `docs/changes/display-page.md`. Only these sections, in this order, each optional, each a Markdown list:
+  `docs/changes/display-page.md` (the notes list the fragments in file-name order: a number in front, as in
+  `03-drive-types.md`, sets the order by importance at release time). Only these sections, in this order, each optional, each a Markdown list:
 
   ```markdown
   ## New

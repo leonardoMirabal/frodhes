@@ -1,6 +1,6 @@
 # Effects switched on from the panel, as on the device, with the depths at their default 0 (0.6):
 # switching an effect on gives it a starting depth, so it is audible at once.
-# DELAY: SELECT to its page (the 11th in the SELECT order of 0.9.3: DRIVE came after FILTER), K1 turns it on (DIG: MIX 0 -> 50); a short note; echoes after the damper
+# DELAY: SELECT to its page (the 11th in the SELECT order: DRIVE and FILTER before it), K1 turns it on (DIG: MIX 0 -> 50); a short note; echoes after the damper
 10 turn 0 1
 18 turn 0 1
 26 turn 0 1

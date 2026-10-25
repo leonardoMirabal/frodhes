@@ -1,0 +1,35 @@
+# The Rhodes mechanical noises under NOISE (CC 104): the pedal's thud (S12) when the sustain goes down or up, on its
+# own at silence (10 ms, at the NOISE level), none at NOISE 0 or for a half pedal; the key-down knock (S11) is not on
+# STAGE 77 (tests/py/test_rh_noises.py measures both). The engine alone (CC 119 RAW: no reverb tail).
+# Run: build/host/frodhes build/host/rh_noises tests/scripts/rh_noises.txt
+40 midi 0xB0 119 127
+50 midi 0xB0 104 127
+60 expect sound
+300 midi 0xB0 64 127
+320 expect rms > -60
+320 expect rms < -40
+500 expect rms < -100
+600 midi 0xB0 64 0
+620 expect rms > -60
+800 expect rms < -100
+# a half pedal (the dampers part-way): no thud
+900 midi 0xB0 64 50
+950 expect rms < -100
+1000 midi 0xB0 64 0
+# NOISE 0: none
+1100 midi 0xB0 104 0
+1110 expect sound
+1200 midi 0xB0 64 127
+1220 expect rms < -100
+1300 midi 0xB0 64 0
+1320 expect rms < -100
+# SUITCASE, NOISE at its default: a note with the knock, then the pedal
+1400 midi 0xB0 80 32
+1410 midi 0xB0 104 48
+1420 expect sound
+1500 midi 0x90 57 100
+1700 expect rms > -40
+1800 midi 0xB0 64 127
+2000 midi 0x80 57 0
+2400 midi 0xB0 64 0
+3000 end

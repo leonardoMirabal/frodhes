@@ -3,7 +3,10 @@
 (tools/rhodes_model.py) note for note: residual energy <= -60 dB of the signal.
 
 Each case plays one note over USB-MIDI into the host build of the firmware (build/host/frodhes) and the same note
-through the golden model with the same generated parameters (docs/model/data/rhodes_spec.json)."""
+through the golden model with the same generated parameters (docs/model/data/rhodes_spec.json). The host build here
+has -DRH_NO_S4: S4 (amplitude -> pitch in the bass, rhodes.c rh_s4_e) is a deliberate nonlinearity the golden model
+does not have (it moves keys 21-47 a few cents at the strike: -25 dB residual at key 28 v100); tests/py/
+test_rh_amp_pitch.py checks S4 against this same reference."""
 import json
 import os
 import subprocess
@@ -19,9 +22,17 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import rhodes_model as gm  # noqa: E402
 
-BIN = os.path.join(ROOT, "build", "host", "frodhes")
+BIN = os.path.join(ROOT, "build", "gate_b", "frodhes")   # the host build without S4 (exe())
 SPEC = json.load(open(os.path.join(ROOT, "docs", "model", "data", "rhodes_spec.json")))
 KEYS = {k["midi"]: k for k in SPEC["keys"]}
+
+
+def exe():
+    def make(p):
+        subprocess.run(["cc", "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", '-DAPP_VER="dev"', "-DRH_NO_S4",
+                        "-I" + os.path.join(ROOT, "firmware", "src"), "-I" + os.path.join(ROOT, "firmware", "gen"),
+                        "-o", p, os.path.join(ROOT, "firmware", "src", "frodhes.c"), "-lm"], check=True)
+    return hostrun.once(BIN, make)
 
 
 def c_render(note, vel, dur_ms, off_ms=None, tag="gb"):
@@ -34,7 +45,7 @@ def c_render(note, vel, dur_ms, off_ms=None, tag="gb"):
         if off_ms:
             f.write(f"{off_ms} midi 0x80 {note} 0\n")
         f.write(f"{dur_ms} end\n")
-    subprocess.run([BIN, out, scr], check=True, capture_output=True)
+    subprocess.run([exe(), out, scr], check=True, capture_output=True)
     w = wave.open(out + ".wav")
     x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")[0::2].astype(float)
     return x
@@ -67,8 +78,11 @@ def host_build():
     subprocess.run(["make", "-C", ROOT, "build/host/frodhes"], check=True, capture_output=True)
 
 
-@pytest.mark.parametrize("note,vel", [(28, 100), (45, 64), (60, 100), (69, 127), (84, 40), (96, 100)])
+@pytest.mark.parametrize("note,vel", [(28, 100), (45, 64), (52, 100), (55, 100), (57, 100), (60, 100), (69, 127),
+                                      (84, 40), (96, 100)])
 def test_c_matches_golden_held(note, vel):
+    # (52, 55, 57: their O1 force gain fell in the chip-ROM window and was clipped to its edge, 0.76-0.98 of its
+    # value, until gen_rhodes.rom_window_b: -53 dB here)
     c = c_render(note, vel, 1600)
     g = gold(note, vel, 1.2)
     r, lag, rms = residual_db(c, g)

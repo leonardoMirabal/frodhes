@@ -47,3 +47,16 @@ def test_damper_hits_the_tine_mode_harder():
     tine_like = int(np.argmax([abs(r) for _, _, r in b]))
     gains = [md[1] - mb[1] for mb, md in zip(b, d)]
     assert int(np.argmax(gains)) == tine_like
+
+
+def test_tine_mode_with_the_bar_far_below():
+    # the top keys' case (S3): bar 3779 cents below, tine T60 0.8 s, bar T60 1.6 s (key 108); sustain_mode picks the bar (its
+    # late amplitude wins), tine_mode the tine, and retune(pick="tine") puts the tine-weighted mode on f0
+    f0 = 3322.0
+    s = tb.TineBar(f0, f0 * 2 ** (-3779 / 1200), 0.02, 3.0, 8.63, 4.32)
+    m = s.modes()
+    assert abs(m[tb.sustain_mode(m)][2]) < 1e-2 * abs(m[tb.tine_mode(m, s.f_t)][2])
+    r = tb.retune(s, f0, pick="tine")
+    mr = r.modes()
+    i = tb.tine_mode(mr, r.f_t)
+    assert abs(1200 * np.log2(mr[i][0] / f0)) < 0.01 and abs(mr[i][2]) == max(abs(x[2]) for x in mr)

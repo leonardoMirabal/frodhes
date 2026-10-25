@@ -1,0 +1,71 @@
+# MIDI pitch bend (0xE0, +-2 semitones): the Rhodes engine only (engine.c eng_bend_set, rhodes.c rh_retune).
+# tests/py/test_pitch_bend.py measures the pitch; this script checks the state: the MIDI CHANNEL filter, CC 121, the
+# USB cable out, a preset change, a TYPE change to VIBES and back.
+100 midi 0x90 60 100
+200 expect state bend 0
+300 midi 0xE0 127 127
+310 expect state bend 8191
+400 midi 0xE0 0 0
+410 expect state bend -8192
+500 midi 0xE0 0 64
+510 expect state bend 0
+# CC 121 (reset all controllers): back to 0
+600 midi 0xE0 0 96
+610 expect state bend 4096
+700 midi 0xB0 121 0
+710 expect state bend 0
+# the USB cable out: back to 0
+800 midi 0xE0 0 32
+810 expect state bend -4096
+900 usblink 0
+910 expect state bend 0
+1000 usblink 1
+# a preset change keeps the bend (program change 1 = F02)
+1100 midi 0xE0 0 96
+1200 midi 0xC0 1 0
+1210 expect state bend 4096
+1220 expect state preset 1
+1300 expect rms > -60
+# TYPE VIBES (CC 79 0): the bend is kept, VIBES plays unbent; back on the Rhodes (CC 80 0) it bends again
+1400 midi 0x80 60 0
+1500 midi 0xB0 79 0
+1600 midi 0x90 64 100
+1700 midi 0xE0 0 32
+1710 expect state bend -4096
+1800 expect rms > -60
+1900 midi 0x80 64 0
+2000 midi 0xB0 80 0
+2100 midi 0x90 60 100
+2110 expect state bend -4096
+2500 expect rms > -60
+2600 midi 0x80 60 0
+# the MIDI page's CHANNEL 1 (GLO three times: TEMPO, SETUP, MIDI; K1 one step): a bend on channel 2 is ignored
+2700 midi 0xB0 121 0
+2800 btn 7
+2900 btn 7
+3000 btn 7
+3100 turn 2 1
+3200 midi 0xE1 127 127
+3210 expect state bend 0
+3300 midi 0xE0 127 127
+3310 expect state bend 8191
+3400 turn 2 -1
+3500 midi 0xB0 121 0
+3510 expect state bend 0
+# the retune spread (rhodes.c rh_retune): 8 voices sounding, a bend retunes a quarter of them per block (5.8 ms):
+# a block after the bend some are still pending, 4 blocks after it none (any voice count: a quarter per block;
+# tests/py/test_pitch_bend.py checks the voices per block)
+3600 midi 0x90 48 100
+3601 midi 0x90 52 100
+3602 midi 0x90 55 100
+3603 midi 0x90 59 100
+3604 midi 0x90 62 100
+3605 midi 0x90 65 100
+3606 midi 0x90 69 100
+3607 midi 0x90 72 100
+3700 expect state rtbusy 0
+3701 midi 0xE0 0 96
+3708 expect state rtbusy 1
+3724 expect state rtbusy 0
+3800 midi 0xB0 123 0
+4000 end
