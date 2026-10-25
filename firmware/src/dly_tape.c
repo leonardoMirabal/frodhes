@@ -69,15 +69,15 @@ __attribute__((noinline)) static void tp_mod(uint32_t n, int32_t target, int32_t
 }
 
 /* the tape pass: the send (m[], ramped: dly_ramp) through the tape's read, the playback head and the record head
- * (dt: the delay per sample, from tp_mod); m[j] becomes sample j's echo, heard (x wet). The dry's ease and the sum
+ * (dt: the delay per sample, from tp_mod); m[j] becomes sample j's echo (heard x wet: tp_loop). The dry's ease and the sum
  * into L / R in a pass of their own (tp_loop; 0.9.5 cpu-trim: in one loop the 20 values spilled, 128 instructions a
  * sample with 8 stack stores and 17 loads; each sample's arithmetic is the same, in the same order) */
 static inline __attribute__((always_inline)) void tp_tape_k(int32_t *m, const int32_t *dt, uint32_t n, const int32_t msk,
-                                                            int32_t fb, int32_t wet, const int rst)
+                                                            int32_t fb, const int rst)
 {
     uint32_t w = dly_w, j, c = rst ? w - dly_rb : 0x7FFFFFFFu;
     int32_t b1 = tp_b1, b2 = tp_b2, h1 = tp_h1, h2 = tp_h2;
-    FX_K32 kf = tp_kf, kr = tp_kq, kh = tp_kh, kfb = fb, kw = wet;
+    FX_K32 kf = tp_kf, kr = tp_kq, kh = tp_kh, kfb = fb;
     for (j = 0; j < n; j++) {
         int32_t d, r, x, y, in;
         uint32_t i;
@@ -113,7 +113,7 @@ static inline __attribute__((always_inline)) void tp_tape_k(int32_t *m, const in
         x &= 511;
         dly_buf[w & (DLY_LEN - 1u)] = (int16_t)(FX_TAPE_SAT[i] + (((FX_TAPE_SAT[i + 1u] - FX_TAPE_SAT[i]) * x) >> 9));
         w++;
-        m[j] = (int32_t)(((int64_t)y * kw) >> 15);
+        m[j] = y;                                       /* (heard x wet in tp_loop: ramped there) */
     }
     dly_w = w; tp_b1 = b1; tp_b2 = b2; tp_h1 = h1; tp_h2 = h2;
 }
@@ -121,23 +121,26 @@ static inline __attribute__((always_inline)) void tp_tape_k(int32_t *m, const in
  * test never true), and the send on (-1) or off (0) as constants: 78 -> 71 instructions a sample with the send on,
  * 68 off, ~600 B more code, in .ram_text with tp_tape) */
 FR_RAM __attribute__((noinline)) static void tp_tape(int32_t *m, const int32_t *dt, uint32_t n, const int32_t msk,
-                                                     int32_t fb, int32_t wet)
+                                                     int32_t fb)
 {
-    if (dly_rst) tp_tape_k(m, dt, n, msk, fb, wet, 1);
-    else if (msk) tp_tape_k(m, dt, n, -1, fb, wet, 0);
-    else tp_tape_k(m, dt, n, 0, fb, wet, 0);
+    if (dly_rst) tp_tape_k(m, dt, n, msk, fb, 1);
+    else if (msk) tp_tape_k(m, dt, n, -1, fb, 0);
+    else tp_tape_k(m, dt, n, 0, fb, 0);
 }
 
-/* the sample loop: the tape pass (tp_tape: m[] in place, the echoes), then the dry easing to dgt plus the echo */
+/* the sample loop: the tape pass (tp_tape: m[] in place, the echoes), then the dry easing to dgt plus the echo, x
+ * the echo's gain ramped from w0 (the last block's) to wet */
 __attribute__((noinline)) static void tp_loop(int32_t *L, int32_t *R, int32_t *m, const int32_t *dt, uint32_t n,
                                                           const int32_t msk, int32_t sg16, int32_t fb, int32_t wet,
-                                                          int32_t dgt)
+                                                          int32_t dgt, int32_t w0)
 {
-    int32_t dg = dly_dg, *e = L + n;
+    int32_t dg = dly_dg, *e = L + n, wq = w0 << 8, ws = DLY_WSTEP(w0, wet, n);
     if (msk) FR_FAR(dly_ramp)(m, n, sg16);                      /* (each fade piece its own ramp, as it was) */
-    FR_FAR(tp_tape)(m, dt, n, msk, fb, wet);
+    FR_FAR(tp_tape)(m, dt, n, msk, fb);
     for (; L < e; L++, R++) {
-        int32_t y = *m++;
+        int32_t y;
+        wq += ws;
+        y = (int32_t)(((int64_t)*m++ * (wq >> 8)) >> 15);
         dg += (dgt - dg) >> 9;
         *L = (int32_t)(((int64_t)*L * dg) >> 15) + y; *R = (int32_t)(((int64_t)*R * dg) >> 15) + y;
     }
@@ -158,13 +161,14 @@ __attribute__((noinline)) static void tp_block(int32_t *L, int32_t *R, uint32_t 
                                                          * bounded build-up held by the tape's saturation */
     wet = (wet * TP_WET) >> 12;                         /* level-matched to ANA */
     tp_mod(n, target, s, lv);
-    if (tp_g == gt) tp_loop(L, R, dly_m, dly_dt, n, msk, sg16, fb, wet, dgt);
+    if (tp_g == gt) tp_loop(L, R, dly_m, dly_dt, n, msk, sg16, fb, wet, dgt, (dly_wk * TP_WET) >> 12);
     else {                                              /* fading: the echo's gain (feedback and heard) steps every 8
                                                          * samples (0.4 % a step), the same loop (no second one: flash) */
         uint32_t j;
         for (j = 0; j < n; j += 8u) {
             tp_g = PH_CL(tp_g + (gt ? 8 * TP_FADE : -8 * TP_FADE), 0, 32768);
-            tp_loop(L + j, R + j, dly_m + j, dly_dt + j, 8u, msk, sg16, (fb * tp_g) >> 15, (wet * tp_g) >> 15, dgt);
+            int32_t wg = (wet * tp_g) >> 15;           /* (a fade: the echo's gain steps with it, as it did) */
+            tp_loop(L + j, R + j, dly_m + j, dly_dt + j, 8u, msk, sg16, (fb * tp_g) >> 15, wg, dgt, wg);
         }
     }
 }

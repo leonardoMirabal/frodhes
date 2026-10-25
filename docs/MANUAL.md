@@ -244,8 +244,12 @@ The types:
 | **OHCD** | A MOSFET overdrive: a firmer edge (a sharper clipping knee) and a mid-focused sound. AMOUNT covers the circuit's own drive knob over its whole range | Low: nearly clean with a little bite; the middle: a crunchy but still open overdrive; the top: a thick, saturated drive | A treble cut: darker counter-clockwise, brightest at the top |
 | **BHLUE** | A two-stage soft overdrive, transparent and amp-like: soft diodes that never clip hard, the low end driven much less than the mids | Low: almost clean, a little warmer; the middle: a light crunch; the top: a thick, round overdrive | A treble cut: at 0 the highs are gone above about 400 Hz, the middle rolls off from about 500 Hz, the top is the brightest (open to about 2 kHz) |
 
-Each type is set to about the loudness of the drive switched off, so switching types, or switching the drive on,
-changes the character of the sound, not its volume.
+Each type is set to about the loudness of the drive switched off on played phrases (chords, a bass line, a melody), so
+switching types, or switching the drive on, changes the character of the sound, not its volume. Like any overdrive
+they also even the level out: a long note's attack is held down and its fading tail held up, so a held chord's tail
+rings a few dB louder than with the drive off. The four circuit types lean to the middle: a single note in the middle
+of the keyboard comes out louder than with the drive off (about 4–9 dB at AMOUNT 80); KHLON, TSH8 and OHCD also make
+the lowest notes softer (C2 about 3–6 dB).
 
 When the drive is off, a DRIVE knob on PERFORM shows **OFF**; turning it up there switches
 the drive on with the type you used last (after the FM-1 is switched off and on: the preset's type, or FDRV if the
@@ -292,7 +296,7 @@ On **VIBES** the vibraphone's motor is not here but on its last VOICE page, VOIC
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **EFFECT** | Off / on |
-| K2 | **DEPTH** | How far it sweeps |
+| K2 | **DEPTH** | How far it sweeps. Below the middle the sweep also moves up as it narrows, to the top of its range at 0: a small DEPTH is a gentle movement in the treble, not a fixed notch in the middle of the sound |
 | K3 | **SPEED** | How fast: 0.25–6 Hz (a note value when synced) |
 | K4 | **FEEDBK** | Resonance: more pronounced, vocal sweeps (it never builds up on the bass) |
 
@@ -307,10 +311,12 @@ On **VIBES** the vibraphone's motor is not here but on its last VOICE page, VOIC
 | K3 | **SPEED** | How fast: 0.25–6 Hz (a note value when synced) |
 | K4 | **SYNC** | Free, or locked to the tempo as a note value |
 
-Phaser and chorus are two separate effects and can run together (the phaser feeds the chorus). Switched on at the
-panel's depth the phaser keeps the level (its notches sweep through the sound; the bass is no longer lifted) and keeps
-the sound close to the middle (its two sides 30° apart). The chorus makes the sound wider in stereo, which on headphones
-sounds bigger; its level is set so that it does not also sound louder.
+Phaser and chorus are two separate effects and can run together (the phaser feeds the chorus). The phaser keeps the
+level at every DEPTH (a chord's loudness matches the phaser switched off; its notches sweep through the sound, so a
+single note still dips and swells as they pass it; the bass is not lifted) and keeps the sound close to the middle
+(its two sides 30° apart). The chorus makes the sound wider in stereo, which on headphones sounds bigger; its level is
+set so that it does not also sound louder, and it leaves the bass (below about 200 Hz) as it is, so low notes keep
+their weight.
 
 ### DELAY
 
@@ -319,7 +325,7 @@ sounds bigger; its level is set so that it does not also sound louder.
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **EFFECT** | **OFF**, **DIG** (clean digital), **ANA** (darker, with a little wow and flutter), **TAPE** (a tape echo: one playback head, warm saturating repeats, playback-head EQ, wow and flutter) |
-| K2 | **MIX** | How loud the echoes are: at the middle (64) the first echo is as loud as the dry sound, at the top a little louder |
+| K2 | **MIX** | How loud the echoes are: at the middle (64) the first echo is as loud as the dry sound, at the top a little louder. Turning it up also lowers the dry sound a little (−1 dB at the middle, −6 dB at the top), so a full mix is not louder overall |
 | K3 | **TIME** | Echo time, free in milliseconds; when DLY SYNC is set on TEMPO it shows and steps note values |
 | K4 | **FEEDBK** | How many echoes, the same at any MIX. On ANA and TAPE the top of the knob (from about 115) lets the echoes build up on their own (below) |
 
@@ -370,8 +376,8 @@ half-band filters, so bright notes and cymbal-like overtones no longer fold back
 tones (a 15 kHz overtone used to come back at 7 kHz only 10 dB down; now 37 dB and more). The tail's top octave is
 cleaner on every type; its level and length are unchanged.
 
-Over MIDI: CC 95 TYPE (0–31 OFF, 32–63 HALL, 64–95 PLATE, 96–127 INFINITE), 91 MIX, 92 DECAY, 93 TONE. MIX, DECAY
-and TONE glide when moved.
+Over MIDI: CC 95 TYPE (0–31 OFF, 32–63 HALL, 64–95 PLATE, 96–127 INFINITE), 91 MIX, 92 DECAY, 93 TONE. DECAY and
+TONE glide when moved; MIX moves in small steps (every 32 samples, too small to hear).
 
 ### REVERB 2
 
