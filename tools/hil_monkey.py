@@ -26,8 +26,10 @@ then the bypass off again. The gates, per take:
             (private/BUGHUNT-095.md); hil_crackle's click detector counts them as information
   alive     the FM-1 answers a CC 116 query after the probe; the probe sounds on USB (> -50 dBFS, judged from the
             recorder's mark); the stream kept running (the frames recorded >= 98 % of the take's length)
-Any FAIL stops the run after that take (the take is saved: OUT/fail-<seed>.npz with USB, the events and the
-counters; the seed replays the stream on the host: python3 tools/monkey.py --seeds N).
+Every take runs (--stop-on-fail: stop after the first failing one; a device that no longer answers stops the run
+too). A failing take is saved: OUT/fail-<seed>.npz (USB from LEAD_S before the first message, the events, the
+counters); the seed's stream on the host: python3 tools/monkey.py --seeds N (from a fresh boot: the FM-1 carries
+the takes before it, so its sound differs).
 
 --dry-run: the plan (segments, seeds, messages per kind, the time) and a check of every message (mido builds it,
 no DEV_CC); no MIDI, no audio. The main session runs it on the FM-1 (USB only: the jack is not recorded here).
@@ -50,6 +52,9 @@ DEV_CC = {2, 3, 4, 8, 9, 10, 11, 41, 42, 114, 116, 119}
 REALTIME = {0xF8, 0xFA, 0xFB, 0xFC}
 PANIC_S, PROBE_AT, PROBE_LEN, TAIL_S = 0.3, 2.3, 0.6, 1.6
 PROBE_DB = -50.0
+LEAD_S = 0.02                                   # the take judged from this long before its first message (2026-10-26:
+                                                # the whole recording, 0.76 s of it before the stream, the last take's
+                                                # tail in it, gave the clock fit a lag of -0.010 s: the guards off)
 CLIP = 32767
 
 
@@ -228,7 +233,7 @@ def run_take(dev, sd, usb, a, s):
         time.sleep(0.5)
         M = dev.mido.Message
         with hm.Poller(dev) as acc:
-            mark = rec.mark()                   # (information: usb_judge's clock fit finds the lag)
+            mark = rec.mark()                   # (the take is cut here: the stream's clock)
             t0 = time.monotonic()
             for t, b in seg:
                 while time.monotonic() - t0 < t:
@@ -252,13 +257,21 @@ def run_take(dev, sd, usb, a, s):
     finally:
         x = rec.stop()
     xi = np.round(np.asarray(x, float) * 32768).astype(np.int64)
+    xi = xi[max(0, int((mark - LEAD_S) * a.rate)):]   # (from the first message: the fit's first sound is near it)
     rows += hm.gate_counters(acc, a.rate)
     rows.append(("CC 116 answers after the probe", "yes" if "engine_us" in alive else "no", "yes",
                  "ok" if "engine_us" in alive else "FAIL"))
     ev = judge_events(seg)
     rows += judge_audio(xi, a.rate, ev, rec.flags)
-    rows.append(("the recorder's mark", f"{mark:.3f} s", "information (the clock fit finds the lag)", "info"))
+    rows.append(("the recorder's mark", f"{mark:.3f} s", f"information (the take judged from {LEAD_S} s before it)",
+                 "info"))
     return rows, xi, ev, acc.summary()
+
+
+def alive_ok(dev):
+    """the FM-1 still answers a CC 116 query (a failed liveness row on a device that answers: the run goes on)"""
+    import hil_must as hm
+    return "engine_us" in hm.parse_reply(dev.query(0.5))
 
 
 def main(argv=None):
@@ -268,6 +281,7 @@ def main(argv=None):
     ap.add_argument("--rate", type=int, default=48000, choices=(44100, 48000))
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--stop-on-fail", action="store_true", help="stop after the first failing take")
     a = ap.parse_args(argv)
     if a.dry_run:
         return dry_run(a)
@@ -293,8 +307,11 @@ def main(argv=None):
             if bad:
                 verdict = "FAIL"
                 np.savez_compressed(os.path.join(a.out, f"fail-{s}.npz"), usb=np.clip(xi, -32768, 32767).astype(
-                    np.int16), fs=a.rate, events=json.dumps(ev), counters=json.dumps(cnt, default=str))
-                break
+                    np.int16), fs=a.rate, events=json.dumps(ev), counters=json.dumps(cnt, default=str),
+                    lead=LEAD_S)
+                if a.stop_on_fail or any(r[0].startswith(("CC 116 answers", "frames recorded", "the probe"))
+                                         for r in bad) and not alive_ok(dev):
+                    break
     finally:
         dev.close()
     js = dict(verdict=verdict, date=time.strftime("%Y-%m-%d %H:%M"), rate=a.rate, minutes=a.minutes, takes=report)
