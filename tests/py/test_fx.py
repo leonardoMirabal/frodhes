@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""Effects chain sanity on the host build (IMPLEMENTATION-v3 §9): every effect is driven by its reface CP MIDI CC,
+"""Effects chain sanity on the host build (IMPLEMENTATION-v3 §9): every effect is driven by its panel MIDI CC,
 stays finite and below full scale, and does what it is for (echo at the delay time, a reverb tail that ends in
 exact silence, the tremolo moving the image between left and right, ...)."""
 import os
@@ -51,7 +51,7 @@ def test_dry_chain_is_clean():
 
 def test_delay_echoes():
     # TIME 64 -> 20 ms * 74^(64/127) ~ 175 ms; a short note, then echoes after it
-    L, R = run("dly", [(88, 64), (89, 100), (90, 64)], [(100, 72, 110, 60)], 2500)
+    L, R = run("dly", [(88, 48), (89, 100), (90, 64)], [(100, 72, 110, 60)], 2500)
     assert rms_db(seg(L, 0.6, 1.2)) > -60          # echoes ring after the damped note
     L0, _ = run("dly0", [(81, 0), (91, 0)], [(100, 72, 110, 60)], 2500)
     assert rms_db(seg(L0, 0.6, 1.2)) < rms_db(seg(L, 0.6, 1.2)) - 20
@@ -76,8 +76,8 @@ def test_tremolo_autopan_moves():
                                       ("phaser", [(85, 127), (86, 120), (87, 60)]),
                                       ("drive", [(81, 110)]),
                                       ("wah", [(17, 127), (18, 100), (19, 80)]),
-                                      ("tape", [(88, 127), (89, 90), (90, 70)]),
-                                      ("all", [(81, 60), (17, 64), (18, 80), (85, 127), (86, 80), (88, 64),
+                                      ("tape", [(88, 80), (89, 90), (90, 70)]),
+                                      ("all", [(81, 60), (17, 64), (18, 80), (85, 127), (86, 80), (88, 48),
                                                (89, 70), (91, 80)])])
 def test_effect_finite_and_bounded(name, ccs):
     L, R = run(name, ccs, [(100, 48, 127, 800), (150, 64, 127, 800), (200, 71, 127, 800)], 2500)
@@ -163,14 +163,14 @@ def test_filter_types_do_their_job():
 
 
 def test_filter_resonance_and_lfo():
-    q0, _ = run("fltq0", [(81, 0), (91, 0), (70, 20), (74, 60), (71, 0), (72, 0)], CHORD, 1900)
-    q1, _ = run("fltq1", [(81, 0), (91, 0), (70, 20), (74, 60), (71, 127), (72, 0)], CHORD, 1900)
+    q0, _ = run("fltq0", [(81, 0), (91, 0), (106, 0), (70, 20), (74, 60), (71, 0), (72, 0)], CHORD, 1900)
+    q1, _ = run("fltq1", [(81, 0), (91, 0), (106, 0), (70, 20), (74, 60), (71, 127), (72, 0)], CHORD, 1900)
     fc = 30 * (16000 / 30) ** (60 * 2 / 254)                         # the card's cutoff for 60
     a, b = seg(q0, 0.3, 1.5), seg(q1, 0.3, 1.5)
     assert band_db(b, fc / 1.3, fc * 1.3) > band_db(a, fc / 1.3, fc * 1.3) + 6   # resonance: a peak at the cutoff
     assert np.all(np.isfinite(b)) and np.max(np.abs(b)) < 32700
     # the LFO (square, ~2 Hz, full depth) moves the cutoff: the brightness changes over time
-    m, _ = run("fltlfo", [(81, 0), (91, 0), (70, 20), (74, 70), (72, 127), (75, 96), (76, 40)], CHORD, 1900)
+    m, _ = run("fltlfo", [(81, 0), (91, 0), (106, 0), (70, 20), (74, 70), (72, 127), (75, 96), (76, 40)], CHORD, 1900)
     cs = [centroid(seg(m, t, t + 0.1)) for t in np.arange(0.3, 1.4, 0.1)]
     assert max(cs) > 1.3 * min(cs)                   # (LP12: the centroid swings ~1.5x)
 
@@ -212,13 +212,14 @@ def test_phaser_speed_card_matches_the_sound():
 def test_tremolo_shape_is_a_rounded_square():
     """TREM SHAPE bends the sine toward a square: the gain still swings once down and once up per cycle at every
     SHAPE (0.9.3: above SHAPE 18 the shaping overflowed 32 bits and the gain chattered, up to 20 swings a cycle;
-    F12 AM TREMOLO has SHAPE 90); and more SHAPE spends more of the cycle near the ends"""
+    0.9.4's F12 AM TREMOLO had SHAPE 90); and more SHAPE spends more of the cycle near the ends (0.9.5: up to SHAPE 64;
+    above it is the amp law, test_tremolo_amp_law)"""
     pre = [(81, 0), (91, 0), (64, 127)]
     chord = [(200, n, 100, 3800) for n in (48, 55, 60, 64, 67, 72)]
     ref, _ = run("shape-ref", pre, chord, 4000)
     hz = lfo_rate_shown(40, half=False)
     flat = []
-    for s in (0, 18, 30, 64, 90, 127):
+    for s in (0, 18, 30, 48, 64):
         L, _ = run(f"shape{s}", pre + [(17, 64), (21, 80), (18, 127), (19, 40), (22, s)], chord, 4000)
         n = 32
         g = (np.sqrt(np.mean(seg(L, 0.5, 3.5)[:len(seg(L, 0.5, 3.5)) // n * n].reshape(-1, n) ** 2, axis=1))
@@ -228,3 +229,90 @@ def test_tremolo_shape_is_a_rounded_square():
         assert abs(swings - 2) < 0.4, (s, swings)
         flat.append(np.mean((g > 0.9 * g.max()) | (g < 0.1 * g.max())))
     assert all(b >= a - 0.02 for a, b in zip(flat, flat[1:])) and flat[-1] > flat[0] + 0.2, flat
+
+
+def _trem_gain_db(tag, shape, depth=127, rate=60, extra=()):
+    """the AM tremolo's gain (dB, 64-sample frames, smoothed) on a held chord against the same chord dry"""
+    pre = [(81, 0), (91, 0)]
+    chord = [(200, n, 100, 3800) for n in (48, 55, 60, 64, 67, 72)]
+    ref, _ = run("amp-ref", pre, chord, 4000)
+    L, _ = run(tag, pre + [(17, 64), (21, 127), (18, depth), (19, rate), (22, shape)] + list(extra), chord, 4000)
+    n = 64
+    e = lambda x: np.sqrt(np.mean(x[:len(x) // n * n].reshape(-1, n) ** 2, axis=1))
+    g = 20 * np.log10(e(seg(L, 0.6, 3.6)) / (e(seg(ref, 0.6, 3.6)) + 1e-9) + 1e-6)
+    return np.convolve(g, np.ones(9) / 9, "valid"), L, ref
+
+
+def _fall_share(g):
+    """the share of the cycle from a top to the next dip"""
+    x = g - g.mean()
+    ac = np.correlate(x, x, "full")[len(x) - 1:]
+    per = int(np.argmax(ac[40:]) + 40)
+    h = per // 2
+    mx = [i for i in range(h, len(g) - h) if g[i] == g[i - h:i + h].max()]
+    mn = [i for i in range(h, len(g) - h) if g[i] == g[i - h:i + h].min()]
+    fs = [(min(b for b in mn if b > a) - a) / per for a in mx if any(b > a for b in mn)]
+    return float(np.mean(fs))
+
+
+def _edge_share(g, f=0.2):
+    """the fall's share of the cycle from the edges: the time the gain takes to fall from f of the span below the top to f
+    above the floor, over that plus the rise back between the same two levels. The warp is linear within each half
+    (fx.c tw_amp_sub), so this is the warp's share exactly, also on a squared, flat-topped shape (SHAPE 30..64), where
+    _fall_share's arg-max lands anywhere on the plateau (0.34 at SHAPE 30 and 64, a symmetric shape)"""
+    hi, lo = g.max() - f * (g.max() - g.min()), g.min() + f * (g.max() - g.min())
+    st, t0, falls, rises = None, 0, [], []
+    for i, v in enumerate(g):
+        if st != "low" and v < lo:
+            if st == "fall":
+                falls.append(i - t0)
+            st = "low"
+        elif st == "low" and v > lo:
+            st, t0 = "rise", i
+        elif st != "high" and v > hi:
+            if st == "rise":
+                rises.append(i - t0)
+            st = "high"
+        elif st == "high" and v < hi:
+            st, t0 = "fall", i
+    assert len(falls) >= 4 and len(rises) >= 4, (falls, rises)
+    return float(np.mean(falls) / (np.mean(falls) + np.mean(rises)))
+
+
+def test_tremolo_amp_law():
+    """TREM SHAPE 65..127 (0.9.5): the amp law. At 127 the dip is slower than the rise (the fall ~65 % of the cycle;
+    the plain sine at SHAPE 0: half), the level is that of SHAPE 0 within 1 dB (FX_TREM_MK), the deepest setting
+    still swings by 15 dB or more, and SHAPE 64 / 65 meet (no step in the knob). The fall's share at 64 / 65 is read off
+    the edges (_edge_share): SHAPE 64 is squared flat at the top, where _fall_share is not defined"""
+    g0, L0, ref = _trem_gain_db("amp0", 0)
+    g127, L127, _ = _trem_gain_db("amp127", 127)
+    assert abs(_fall_share(g0) - 0.5) < 0.05, _fall_share(g0)
+    assert 0.6 < _fall_share(g127) < 0.72, _fall_share(g127)
+    lv = lambda x: 10 * np.log10(np.mean(seg(x, 0.6, 3.6) ** 2))
+    assert abs(lv(L127) - lv(L0)) < 1.0, (lv(L127), lv(L0))
+    assert g127.max() - g127.min() > 15, (g127.max(), g127.min())
+    g64, _, _ = _trem_gain_db("amp64", 64)
+    g65, _, _ = _trem_gain_db("amp65", 65)
+    g64, g65 = np.clip(g64, -40, None), np.clip(g65, -40, None)    # (SHAPE 64's dip is silence: below -40 dB alike)
+    assert abs((g64.max() - g64.min()) - (g65.max() - g65.min())) < 1.0, (g64.min(), g65.min())
+    # the fall's share meets at 64 / 65 (0.495 / 0.490 measured, 2026-10-24) and is the law's 0.5 + 0.15 a at 127 (0.649)
+    assert abs(_edge_share(g64) - 0.5) < 0.02 and abs(_edge_share(g64) - _edge_share(g65)) < 0.04, (_edge_share(g64), _edge_share(g65))
+    assert abs(_edge_share(g127) - 0.65) < 0.02, _edge_share(g127)
+
+
+def test_tremolo_shape_sweep_does_not_click():
+    """SHAPE swept through the whole range (and DEPTH moved) under a held chord: no click, AM and PAN"""
+    from test_delay_tape import clicks
+    for mode in (127, 0):
+        moves = [(400 + 120 * k, 22, v) for k, v in enumerate(range(0, 128, 8))]
+        moves += [(2500, 18, 40), (2800, 18, 127), (3100, 22, 64), (3300, 22, 127)]
+        out = hostrun.out(f"fx-ampsweep{mode}")
+        lines = [f"20 midi 0xB0 {c} {v}" for c, v in ((81, 0), (91, 0), (17, 64), (21, mode), (18, 127), (19, 70))]
+        lines += [f"200 midi 0x90 {n} 110" for n in (41, 48, 55, 60, 64, 67)]
+        lines += [f"{t} midi 0xB0 {c} {v}" for t, c, v in moves]
+        lines += [f"3700 midi 0x80 {n} 0" for n in (41, 48, 55, 60, 64, 67)] + ["4200 end"]
+        open(out + ".txt", "w").write("\n".join(lines) + "\n")
+        subprocess.run([BIN, out, out + ".txt"], check=True, capture_output=True)
+        w = wave.open(out + ".wav")
+        x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float).reshape(-1, 2)
+        assert clicks(x[:, 0]) == 0 and clicks(x[:, 1]) == 0, mode

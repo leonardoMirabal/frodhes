@@ -1,5 +1,12 @@
 name: ci
-on: [push, pull_request]
+# a PR runs once (pull_request); main runs on its push; a newer push cancels the older run of the same ref
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
   host:
     # arm64 Linux: the same machine as a local `docker run python:3.14` on an Apple-silicon Mac (a replica of this job)

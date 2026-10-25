@@ -7,8 +7,9 @@ Each take: a stored parameter changes at its start (the delay's TIME with the de
 settings are due to be saved 2 s later, at the first silence), then three notes 2.5 s apart, each released after
 1.2 s, so the output is silent before the next one. A flash erase holds the interrupts off for tens of ms: no USB
 audio packet goes out, and macOS then hands the recording stale input for ~250 ms (the next note lost its first
-50-300 ms on USB while the jack had it at once; measured 2026-10-18). frodhes.c keeps automatic flash writes back
-while a computer reads the USB audio (usb_recording()).
+50-300 ms on USB while the jack had it at once; measured 2026-10-18). The HAL now splits every erase and program into
+~0.5 ms slices (fm1_flash.h fl_split_op) and the save lands in the take's first pause while the stream runs: this
+tool checks that the notes after it reach USB on time.
 
 USB is captured as float32 (bit exact: PortAudio's int16 conversion dithers) at the device's rate. Every callback's
 ADC time is kept and the MIDI sends are stamped in the same stream clock, so onsets are times after the send, not
@@ -36,8 +37,8 @@ import hil_scan as H  # noqa: E402
 NOTES = (53, 69, 89)
 T0, GAP, HOLD = 0.3, 2.5, 1.2
 USB_THR = 8                    # LSB
-LATE_MS = 20.0                 # a USB onset after the jack's
-LATE_NOJACK_MS = 30.0          # a USB onset after the send, no jack
+LATE_MS = 26.0                 # a USB onset after the jack's (20 before the USB ring kept a block more: +5.8 ms)
+LATE_NOJACK_MS = 36.0          # a USB onset after the send, no jack (30 before; the lost onsets were 180-260 ms)
 TOUCH_CC = H.CC["DL_TIME"]     # stored, silent with the delay off (DRY)
 
 

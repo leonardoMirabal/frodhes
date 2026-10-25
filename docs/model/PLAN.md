@@ -3,7 +3,7 @@
 > **Superseded where they differ by [IMPLEMENTATION.md](IMPLEMENTATION.md) (v2)**, which merges this plan with the four
 > reviews in [reviews/](reviews/).
 
-This plan pulls together the eight research files in [`research/`](research/). It covers a realistic
+This plan pulls together the eight research notes (`research/`, kept privately since 0.9.5; not in the public tree). It covers a realistic
 physically-modelled Rhodes, a reface CP-style effects chain and panel, tempo, scales and presets, all on the
 M-VAVE FM-1. References like (R03 §Pickup) point to `research/03-…md`, section *Pickup*.
 

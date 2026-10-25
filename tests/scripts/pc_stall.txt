@@ -1,0 +1,39 @@
+# The settings' auto save never holds the main loop (0.9.5 pc-stall; frodhes.c settings_poll, platform.c
+# settings_save_start / settings_save_poll, fm1_flash.h fl_op_start / fl_op_poll): a Program Change changes the
+# preset the record names, so the record is written 2 s later, once silent. On the FM-1 that save (a split erase and
+# three page programs, ~100 ms) held the main loop: a note sent 2 s after the Program Change came ~100 ms late over
+# USB and past hil_midi_parity's window over TRS (2026-10-25). The host's settings save takes 100 ms (tests/host.c
+# HOST_SAVE_MS): the notes sent during it must be taken at once (USB here; the TRS jack: pc_stall_trs.txt).
+100 midi 0xC0 3 0
+200 expect state dirty 1
+2050 expect state saving 0
+# the save starts at 2101 (2 s after the change, silent) and runs to 2201
+2110 expect state saving 1
+2110 expect state dirty 0
+2150 midi 0x90 60 100
+2152 expect state pitches 1
+2165 expect state voices 1
+2170 midi 0x90 64 100
+2172 expect state pitches 2
+2185 expect state voices 2
+2190 midi 0x80 60 64
+2192 expect state pitches 1
+2195 midi 0x80 64 64
+2197 expect state pitches 0
+2250 expect state saving 0
+2250 expect state dirty 0
+# a setup change made during a save is written after it: CHANNEL on the MIDI page (GLO three times)
+4000 midi 0xC0 4 0
+6010 expect state saving 1
+6010 btn 7
+6030 btn 7
+6050 btn 7
+6060 expect state page MIDI
+6070 turn 2 1
+6080 expect state dirty 1
+6120 expect state saving 0
+6120 expect state dirty 1
+8100 expect state saving 1
+8100 expect state dirty 0
+8300 expect state saving 0
+8400 end

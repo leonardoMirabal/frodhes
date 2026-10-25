@@ -33,7 +33,7 @@ TYPES = ["STAGE77", "SUITCASE", "FELT", "DYNO"]                          # tools
 def fx_scripts():
     """the 36 effect cases (from build/cpu/mkfx.py, 2026-10-16): name -> script text"""
     heavy = dict(DRIVE=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
-                 DL_SW=127, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127, FL_TYPE=45, FL_FREQ=60, FL_RESO=100,
+                 DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127, FL_TYPE=45, FL_FREQ=60, FL_RESO=100,
                  FL_LFO=64)
     cases = {
         'heavy': heavy,
@@ -42,8 +42,8 @@ def fx_scripts():
         'trem_pan': dict(TW_SW=64, TW_DEPTH=100, TW_MODE=0, PH_SW=127, PH_DEPTH=40),
         'ph_fb': dict(PH_SW=127, PH_DEPTH=127, PH_FDBK=127),
         'ph_32': dict(PH_SW=127, PH_DEPTH=32, PH_FDBK=0, PH_SPEED=100),
-        'cho': dict(CP_SW=64, CP_DEPTH=64, DL_SW=64, DL_DEPTH=80, DL_TIME=40),
-        'dl_ana': dict(DL_SW=127, DL_DEPTH=127, DL_TIME=20, DL_FDBK=120),
+        'cho': dict(CP_SW=64, CP_DEPTH=64, DL_SW=48, DL_DEPTH=80, DL_TIME=40),
+        'dl_ana': dict(DL_SW=80, DL_DEPTH=127, DL_TIME=20, DL_FDBK=120),
         'rev32': dict(REV=32), 'rev127': dict(REV=127, DRIVE=60),
         'comp': dict(CMP_SW=127, CMP_AMT=127, CMP_ATK=10, CMP_REL=100),
     }

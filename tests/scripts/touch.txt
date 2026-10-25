@@ -1,0 +1,45 @@
+# SETUP K4 TOUCH (keyvel.h, ui.c S_TOUCH): LIGHT / MEDIUM / HEAVY / FIXED, how the FM-1's keys turn a press into a
+# velocity; MEDIUM after the update (set.vel_curve 0: every older record's value). One step a turn whatever the speed,
+# stopping at the ends; a device setting, kept with the record (tests/py/test_touch.py: the upgrade and the power
+# cycle). KEY VEL stays on the FRODHES page: a medium press's velocity, under FIXED every press's. The host has no
+# converter, so a key without a reading plays KEY VEL (the velocities from readings: tests/scripts/keyvel.txt).
+100 btn 7
+200 btn 7
+250 expect state page SETUP
+250 expect state label3 TOUCH
+250 expect state card3 MEDIUM
+250 expect state touch MEDIUM
+250 expect state label.17.3 TOUCH
+250 expect state card.17.3 MEDIUM
+300 keys 0x80
+320 expect state lastvel 96
+400 keys 0
+500 turn 5 -1
+550 expect state card3 LIGHT
+550 expect state touch LIGHT
+550 expect state dirty 1
+600 turn 5 -1
+650 expect state card3 LIGHT
+700 turn 5 1
+750 expect state card3 MEDIUM
+800 turn 5 4
+850 expect state card3 HEAVY
+900 turn 5 1
+950 expect state card3 FIXED
+1000 turn 5 1
+1050 expect state card3 FIXED
+# FIXED: every press at KEY VEL (FRODHES K4)
+1100 keys 0x80
+1120 expect state lastvel 96
+1200 keys 0
+1300 btn 8
+1350 btn 8
+1400 expect state page FRODHES
+1400 expect state label3 KEY_VEL
+1450 turn 5 -10
+1500 expect state card3 56
+1550 keys 0x80
+1570 expect state lastvel 56
+1650 keys 0
+1700 expect state touch FIXED
+1800 end

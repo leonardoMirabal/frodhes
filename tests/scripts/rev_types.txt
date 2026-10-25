@@ -1,0 +1,33 @@
+# The REVERB's TYPE (firmware/src/rev_types.c; CC 95: 0-31 OFF, 32-63 HALL, 64-95 PLATE, 96-127 INFINITE): HALL by
+# default; a switch while the tail rings fades HALL out (5.8 ms) and starts PLATE (fxrv: three digits, the TYPE that runs,
+# the tail, the fade), then INFINITE; OFF (with DECAY 0) lets the tail ring out to exact silence (the tail flag drops); back to HALL, whose lines
+# the main loop cleared. REVERB 2's knobs (CC 73 SIZE, 68 MOD, 69 LOW CUT) move while it sounds.
+100 expect state p.59 1
+100 expect state fxrv 110
+100 midi 0xB0 91 90
+300 midi 0x90 48 100
+300 midi 0x90 64 100
+600 expect state fxrv 110
+600 expect sound
+700 midi 0xB0 95 70
+800 expect state fxrv 210
+800 expect state p.59 2
+900 midi 0xB0 73 100
+1000 midi 0xB0 68 127
+1100 midi 0xB0 69 64
+1200 expect sound
+1300 midi 0xB0 95 127
+1400 expect state fxrv 310
+1500 midi 0x80 48 0
+1500 midi 0x80 64 0
+1600 midi 0xB0 95 0
+1600 midi 0xB0 92 0
+1700 expect state p.59 0
+17000 expect state fxrv 300
+17100 midi 0xB0 95 40
+17100 midi 0xB0 69 0
+17200 midi 0x90 60 100
+17400 expect state fxrv 110
+17400 expect sound
+17500 midi 0x80 60 0
+17600 end

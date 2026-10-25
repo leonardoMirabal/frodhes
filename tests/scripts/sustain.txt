@@ -16,4 +16,25 @@
 3000 btn 13
 3050 expect led 13 0
 3600 expect rms < -60
-3700 end
+# a tap latches; MIDI CC 64 down leaves it latched; CC 64 up (a MIDI pedal let up) releases it
+3700 btn 13
+3750 expect led 13 1
+3800 midi 0xB0 64 127
+3850 keys 0x80
+4000 keys 0
+4100 midi 0xB0 64 127
+4600 expect rms > -40
+4700 midi 0xB0 64 0
+4750 expect led 13 0
+5300 expect rms < -60
+# notes and other CCs without CC 64 leave the latch on
+5400 btn 13
+5450 expect led 13 1
+5500 midi 0xB0 7 100
+5550 keys 0x80
+5700 keys 0
+6300 expect rms > -40
+6350 expect led 13 1
+6400 btn 13
+6450 expect led 13 0
+7000 end

@@ -346,9 +346,10 @@ def test_fitscan(variant, px):
 
 @pytest.mark.parametrize("variant", [1, 2, 3, 4, 5], ids=[NAMES[i] for i in range(1, 6)])
 def test_cards_hot_frame(variant):
-    """turn K1..K4 on REVERB one at a time: that row alone framed with an amber label while turned, none at 1.5 s"""
+    """turn K1..K4 on REVERB 2 (four amounts; REVERB's K1 is the TYPE since 0.9.5) one at a time: that row alone
+    framed with an amber label while turned, none at 1.5 s"""
     ps = pages("ST77", 80, 8, variant)
-    pos = [M.title_of(s) for _, _, s in ps].index("REVERB")
+    pos = [M.title_of(s) for _, _, s in ps].index("REVERB 2")
     L, t = [cc(50, 11, variant)] + type_lines(80, 8), M.T0
     for _ in range(pos):
         L.append(f"{t} turn 0 1"); t += 100

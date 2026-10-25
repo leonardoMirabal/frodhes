@@ -1,0 +1,37 @@
+# Release velocity (MIDI note-off velocity) on the Rhodes, pedal up: a quick lift (127) damps faster and harder than
+# the neutral release (none given = 0, or 64), a slow one (1) lets the note ring on longer. RMS of the last 50 ms,
+# 200 ms after each key-up (C3 last: its tone-bar mode hums on under the felt). FM-1 keys: no release speed (neutral).
+# The engine alone (CC 119 RAW: no reverb tail under the numbers). 2026-10-25: the neutral window -57..-50 (was -55):
+# the key-up thump capped under the note (rhodes.c RH_THUMP_CAP) leaves C4 v100 at -55.1.
+# Run: build/host/frodhes build/host/release_vel tests/scripts/release_vel.txt
+40 midi 0xB0 119 127
+100 midi 0x90 60 100
+600 midi 0x80 60 0
+800 expect rms < -50
+800 expect rms > -57
+1500 midi 0x90 60 100
+2000 midi 0x80 60 127
+2200 expect rms < -57
+2900 midi 0x90 60 100
+3400 midi 0x80 60 1
+3600 expect rms > -47
+4300 midi 0x90 72 100
+4800 midi 0x80 72 64
+5000 expect rms < -61
+5000 expect rms > -66
+5700 midi 0x90 72 100
+6200 midi 0x80 72 127
+6400 expect rms < -70
+7100 midi 0x90 72 100
+7600 midi 0x80 72 1
+7800 expect rms > -56
+8500 midi 0x90 48 100
+9000 midi 0x80 48 127
+9200 expect rms < -63
+# the FM-1's key C4: no release speed, the neutral release (as 0 / 64 over MIDI)
+9900 keys 0x80
+10400 keys 0
+10600 expect rms < -50
+10600 expect rms > -56
+12500 expect rms < -60
+12600 end

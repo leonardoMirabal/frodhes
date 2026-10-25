@@ -54,7 +54,7 @@ def coef(w, d30, t30=0, k16=Q16):
     dl2 = _mul(dl, dl, 30); dl3 = _mul(dl2, dl, 30); dl4 = _mul(dl2, dl2, 30); dl5 = _mul(dl4, dl, 30)
     cdl = _i32(Q30 - (dl2 >> 1) + _tdiv(dl4, 24)); sdl = _i32(dl - _tdiv(dl3, 6) + _tdiv(dl5, 120))
     sp = _i32(_mul(w["sh"], cdl, 30) + _mul(w["ch"], sdl, 30))
-    cr = _i32(w["cr"] - 2 * _mul(w["cr"], t30, 30) + 3 * _mul(w["cr"], _mul(t30, t30, 30), 30))
-    corr = _i32(Q30 + _mul(_mul(om, om, 30), cr, 16))
+    cr = w["cr"] - 2 * _mul(w["cr"], t30, 30) + 3 * _mul(w["cr"], _mul(t30, t30, 30), 30)   # int64 (may pass 2^31)
+    corr = Q30 + ((_mul(om, om, 30) * cr) >> 16)                                         # int64
     t1 = _i32((q * sp) >> 29)
-    return _mul(t1, corr, 30), dpi
+    return _i32((t1 * corr) >> 30), dpi

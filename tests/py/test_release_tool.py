@@ -47,7 +47,7 @@ def test_cpu_and_jack_checks():
         rel.check_jack("rhodes", dict(loud=dict(jack_peak_db=-60.0), snr_db=20.0))
 
 
-def fake_shell(root, calls, notes_draft=False):
+def fake_shell(root, calls, notes_draft=False, changed=("docs/MANUAL.md", "firmware/src/usb.c")):
     def sh(cmd, check=True, input=None, timeout=None, quiet=False):
         s = cmd if isinstance(cmd, str) else " ".join(cmd)
         calls.append(s)
@@ -61,6 +61,7 @@ def fake_shell(root, calls, notes_draft=False):
             "git rev-list --count HEAD..origin/main": "0\n",
             "git rev-list --count origin/main..HEAD": "1\n",
             "git log --oneline origin/main..HEAD": "abcdef1 something\n",
+            "git diff --name-only v0.9.2..HEAD": "".join(f + "\n" for f in changed),
         }
         if s.startswith("./build.sh --release"):
             os.makedirs(os.path.join(root, "build"), exist_ok=True)
@@ -69,7 +70,7 @@ def fake_shell(root, calls, notes_draft=False):
     return sh
 
 
-MANUAL = ("# Frodhes: user manual\n\n**A physically modelled Fender Rhodes and a test bar for the M-VAVE FM-1.**\n\n"
+MANUAL = ("# Frodhes: user manual\n\n**A physically modelled electric piano and a test bar for the M-VAVE FM-1.**\n\n"
           f"1. Download [`frodhes.fwsc`]({rel.LATEST_DL}).\n")
 FRAG = "## New\n- **A new thing.**\n  Its second line.\n\n## Fixed\n- A fix, as in 0.9.2.\n"
 
@@ -106,7 +107,7 @@ def test_dry_run_stops_before_push(tree, monkeypatch, capsys):
     # the assembled notes, shown in full: head, sections in order, the fragments in file-name order, foot
     shown = o[o.index("-" * 30 + " docs/releases/v0.9.3.md"):]
     notes = "\n".join(l[3:] for l in shown.splitlines())                 # (the log indents by 3)
-    assert "**Frodhes 0.9.3**: a physically modelled Fender Rhodes and a test bar for the M-VAVE FM-1." in notes
+    assert "**Frodhes 0.9.3**: a physically modelled electric piano and a test bar for the M-VAVE FM-1." in notes
     assert "python3 tools/fm1_install.py frodhes.fwsc" in notes
     i = [notes.index(s) for s in ("### New in 0.9.3\n- **A new thing.**\n  Its second line.",
                                   "### Changes\n- Another change.", "### Fixed\n- Fix A.\n- A fix, as in 0.9.2.",
@@ -197,7 +198,7 @@ def verify_shell(assets, readme, draft=False):
 
 def test_verify(monkeypatch, capsys):
     good = f"[`frodhes.fwsc`]({rel.LATEST_DL}) settings saved by 0.9.2 are read as they are"
-    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc"]
+    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *rel.SMK_ASSETS, rel.LICENCE_ASSET]
     tagged = "https://github.com/leonardoMirabal/frodhes/releases/download/v0.9.3/frodhes.fwsc"
     hits = []
 
@@ -209,7 +210,8 @@ def test_verify(monkeypatch, capsys):
     r.ver, r.sha = "0.9.3", "a" * 64
     monkeypatch.setattr(rel, "sh", verify_shell(both, good))
     assert "README at v0.9.3 names no version" in r.s_verify() and hits == [rel.LATEST_DL]
-    for assets, readme, sha, msg in ((both[:1], good, "a" * 64, r"missing \['frodhes.fwsc'\]"),
+    for assets, readme, sha, msg in ((both[:1] + both[2:], good, "a" * 64, r"missing \['frodhes.fwsc'\]"),
+                                     (both[:4] + both[5:], good, "a" * 64, r"missing \['frodhes-smk37-mke-experimental.fwsc'\]"),
                                      (both, good, "b" * 64, "the build's bbbb"),
                                      (both, good.replace(rel.LATEST_DL, "frodhes-0.9.3.fwsc"), "a" * 64,
                                       "versions named")):
@@ -233,44 +235,54 @@ def test_verify(monkeypatch, capsys):
                     rel.LATEST_DL]
 
 
-def test_dry_run_lists_the_device_plan(tree, monkeypatch, capsys):
-    """--no-device lists step 4's commands: the Rhodes / VIBES ones as before, then MARIMBA's"""
-    monkeypatch.setattr(rel, "sh", fake_shell(str(tree), []))
-    assert rel.main(["patch", "--dry-run", "--no-device", "--no-emulator"]) == 0
+@pytest.mark.parametrize("changed, extra, need, why", [
+    (["firmware/src/usb.c", "docs/MANUAL.md"], [], "T0 + T1", "T2: the map: no engine / DSP file changed"),
+    (["firmware/src/ui.c"], [], "T0 + T1", "T2: the map: no engine / DSP file changed"),
+    (["docs/MANUAL.md", "tools/hil_scan.py"], [], "T0 + T1", "T2: the map: no engine / DSP file changed"),
+    (["firmware/src/rhodes.c", "firmware/src/ui.c"], [], "T0 + T1 + T2", "T2: the map: engine:rhodes changed"),
+    (["firmware/src/ui.c"], ["--full"], "T0 + T1 + T2", "T2: --full (the map: no engine / DSP file changed)")])
+def test_dry_run_lists_the_device_plan(tree, monkeypatch, capsys, changed, extra, need, why):
+    """--no-device lists the tiers from the diff since the last tag (tools/test_map.py), why, and step 4's commands
+    for them: T1 (hil_scan --tier must) on every release, T2 (today's full plan) only when the map or --full asks"""
+    monkeypatch.setattr(rel, "sh", fake_shell(str(tree), [], changed=changed))
+    assert rel.main(["patch", "--dry-run", "--no-device", "--no-emulator"] + extra) == 0
     o = capsys.readouterr().out
-    plan = rel.device_plan("0.9.3")
+    assert f"tiers needed: {need} (git diff v0.9.2..HEAD, {len(changed)} file(s); T1 on every release; {why})" in o
+    for f in changed:
+        assert f in o[o.index("tiers needed:"):]                        # each file, with its group and why
+    full = "T2" in need
+    plan = rel.device_plan("0.9.3", ["T0", "T1"] + (["T2"] if full else []))
     for line in plan:
         assert line in o
     py = rel.PY
-    assert [p.split("   (")[0] for p in plan] == [
-        f"echo y | {py} tools/fm1_install.py build/frodhes-0.9.3.fwsc",
-        f"{py} tools/hil_cpu.py --worst",
-        f"{py} tools/hil_cpu.py --worst --engine vibes",
-        f"{py} tools/hil_cpu.py --worst --engine marimba",
-        f"{py} tools/hil_scan.py --only {rel.SCAN_SET}",
-        f"{py} tools/hil_scan.py --only vibes_vel --source both",
-        f"{py} tools/hil_scan.py --marimba --source both",
-        f"{py} tools/hil_jack.py --engine rhodes",
-        f"{py} tools/hil_jack.py --engine vibes",
-        f"{py} tools/hil_jack.py --engine marimba",
-        f"{py} tools/vib_sampleback.py --engine marimba"]
+    t1 = [f"echo y | {py} tools/fm1_install.py build/frodhes-0.9.3.fwsc", f"{py} tools/hil_scan.py --tier must"]
+    t2 = [f"{py} tools/hil_cpu.py --worst",
+          f"{py} tools/hil_cpu.py --worst --engine vibes",
+          f"{py} tools/hil_cpu.py --worst --engine marimba",
+          f"{py} tools/hil_scan.py --only {rel.SCAN_SET}",
+          f"{py} tools/hil_scan.py --only vibes_vel --source both",
+          f"{py} tools/hil_scan.py --marimba --source both",
+          f"{py} tools/hil_jack.py --engine rhodes",
+          f"{py} tools/hil_jack.py --engine vibes",
+          f"{py} tools/hil_jack.py --engine marimba",
+          f"{py} tools/vib_sampleback.py --engine marimba"]
+    assert [p.split("   (")[0] for p in plan] == t1 + (t2 if full else [])
+    if not full:
+        assert "hil_cpu.py --worst" not in o
 
 
-def test_device_step_runs_the_plan(tree, monkeypatch):
-    """s_device with a fake FM-1: every command of device_plan, in its order, and every check passes"""
-    import json
-    hil = tree / "build" / "hil"
-    hil.mkdir(parents=True)
+def fake_fm1(hil, calls, changed):
     jack = dict(loud=dict(jack_peak_db=-15.0), snr_db=80.0)
     for n in ("jack.json", "jack-vibes.json"):
         (hil / n).write_text(json.dumps(jack))
     (hil / "jack-marimba.json").write_text(json.dumps(dict(marimba=dict(loud=dict(jack_peak_db=-15.3), snr_db=70.5),
                                                           snr_vs_st77_db=-3.8, tails={"C4": dict(ok=True)},
                                                           idle_ok=True, idle={})))
-    calls = []
 
     def sh(cmd, check=True, input=None, timeout=None, quiet=False):
         s = cmd if isinstance(cmd, str) else " ".join(cmd)
+        if s.startswith("git diff --name-only"):
+            return 0, changed
         calls.append(s)
         if "hil_cpu" in s:
             return 0, "a   voices shed 0\n\nworst 3400 us with 9 voices"
@@ -279,14 +291,33 @@ def test_device_step_runs_the_plan(tree, monkeypatch):
             return 1, "FAIL  marimba_jump"                        # (exits 1 on any FAIL row: judged by the report)
         if "vib_sampleback" in s:
             return 0, "61 notes, 0 outside Gate VD-M."
+        if "--tier must" in s:
+            return 0, "T1 must-pass: 6 scenarios, every counter 0"
         return 0, "ok\n"
-    monkeypatch.setattr(rel, "sh", sh)
+    return sh
+
+
+@pytest.mark.parametrize("changed, full", [("firmware/src/bars.c\n", True), ("firmware/src/usb.c\n", False),
+                                           ("docs/MANUAL.md\n", False)])
+def test_device_step_runs_the_plan(tree, monkeypatch, changed, full):
+    """s_device with a fake FM-1: T1 every time, then the T2 commands only when the diff needs them, in device_plan's
+    order, and every check passes"""
+    hil = tree / "build" / "hil"
+    hil.mkdir(parents=True)
+    calls = []
+    monkeypatch.setattr(rel, "sh", fake_fm1(hil, calls, changed))
     r = rel.Release(rel.parse_args(["0.9.3"]))
-    r.ver = "0.9.3"
+    r.ver, r.prev = "0.9.3", "v0.9.2"
     ev = r.s_device()
-    assert calls == [p.split("   (")[0] for p in rel.device_plan("0.9.3")]
-    assert "hil_cpu --worst marimba: worst 3400" in ev and "vib_sampleback marimba: 61 keys" in ev
-    assert "hil_jack marimba: SNR 70.5" in ev and "every row ok" in ev
+    need = ["T0", "T1"] + (["T2"] if full else [])
+    assert calls == [p.split("   (")[0] for p in rel.device_plan("0.9.3", need)]
+    assert ev.startswith(f"tiers needed: {' + '.join(need)}") and "T1 hil_scan --tier must: exit 0" in ev
+    if full:
+        assert "hil_cpu --worst marimba: worst 3400" in ev and "vib_sampleback marimba: 61 keys" in ev
+        assert "hil_jack marimba: SNR 70.5" in ev and "every row ok" in ev
+    else:
+        assert "T2 not run (the map: no engine / DSP file changed; --full forces it)" in ev
+        assert not [c for c in calls if "hil_cpu" in c or "hil_jack" in c]
     assert not (hil / "DEVICE.lockdir").exists()
 
 
@@ -339,18 +370,52 @@ def test_marimba_jack_and_sampleback_checks():
             rel.check_sampleback(bad)
 
 
-def test_device_done_needs_the_same_build(tmp_path):
+def test_device_done_needs_the_same_build(tmp_path, monkeypatch):
     """--no-device --device-done: the commit says the FM-1 tests ran on this exact build only when the sha256 matches
-    (0.9.4's release commit read "NOT tested" although the full FM-1 scan had run on the same binary)"""
+    (0.9.4's release commit read "NOT tested" although the full FM-1 scan had run on the same binary) and the tiers
+    that ran cover the ones the diff needs"""
+    changed = ["firmware/src/ui.c"]
+    monkeypatch.setattr(rel, "sh", lambda cmd, **kw: (0, "".join(f + "\n" for f in changed)))
     j = tmp_path / "done.json"
-    j.write_text(json.dumps(dict(sha256="ab" * 32, runs=["hil_scan (3 engines)", "hil_cpu"])))
-    r = rel.Release(rel.parse_args(["0.9.9", "--no-device", "--device-done", str(j)]))
-    r.sha = "ab" * 32
-    assert r.device_done() == "FM-1: tested before the release on this exact build (sha256 equal): hil_scan (3 engines); hil_cpu"
-    r.sha = "cd" * 32
-    with pytest.raises(rel.Stop):
-        r.device_done()
+
+    def release(tiers, sha="ab" * 32, extra=()):
+        d = dict(sha256="ab" * 32, runs=["hil_scan --tier must", "hil_cpu"])
+        if tiers is not None:
+            d["tiers"] = tiers
+        j.write_text(json.dumps(d))
+        r = rel.Release(rel.parse_args(["0.9.9", "--no-device", "--device-done", str(j)] + list(extra)))
+        r.sha, r.prev = sha, "v0.9.8"
+        return r
+    assert release(["T1"]).device_done() == ("FM-1: tested before the release on this exact build (sha256 equal), "
+                                             "tiers T1 (needed T1): hil_scan --tier must; hil_cpu")
+    assert "tiers T1+T2 (needed T1)" in release(["T1", "T2"]).device_done()
+    with pytest.raises(rel.Stop, match="sha256"):
+        release(["T1"], sha="cd" * 32).device_done()
+    with pytest.raises(rel.Stop, match=r"tiers \(none recorded\) do not cover the needed \['T1'\]"):
+        release(None).device_done()                                    # the old format: no tiers recorded
+    with pytest.raises(rel.Stop, match=r"missing T2.*T2: --full"):
+        release(["T1"], extra=["--full"]).device_done()
+    changed[:] = ["firmware/src/rhodes.c"]
+    with pytest.raises(rel.Stop, match=r"missing T2.*T2: the map: engine:rhodes changed"):
+        release(["T1"]).device_done()
+    assert "needed T1+T2" in release(["T1", "T2"]).device_done()
     assert rel.Release(rel.parse_args(["0.9.9", "--no-device"])).device_done() is None
+
+
+def test_device_done_is_checked_at_step_4(tree, monkeypatch, capsys):
+    """a dry run with --device-done checks it at step 4, once the build's sha256 is known (not skipped)"""
+    import hashlib
+    j = tree / "done.json"
+    sha = hashlib.sha256(b"fw").hexdigest()                           # (the fake build writes b"fw")
+    j.write_text(json.dumps(dict(sha256=sha, tiers=["T1"], runs=["hil_scan --tier must"])))
+    monkeypatch.setattr(rel, "sh", fake_shell(str(tree), []))
+    assert rel.main(["patch", "--dry-run", "--no-device", "--device-done", str(j), "--no-emulator"]) == 0
+    o = capsys.readouterr().out
+    assert " 4  FM-1           done     tiers needed: T0 + T1" in o and "tiers T1 (needed T1)" in o
+    monkeypatch.setattr(rel, "sh", fake_shell(str(tree), [], changed=["firmware/src/fx.c"]))
+    assert rel.main(["patch", "--dry-run", "--no-device", "--device-done", str(j), "--no-emulator"]) == 1
+    o = capsys.readouterr().out
+    assert " 4  FM-1           FAILED" in o and "missing T2" in o and " 5  docs           not run" in o
 
 
 def test_no_session_links_in_the_repo():
@@ -369,3 +434,74 @@ def test_no_session_links_in_the_repo():
         if "claude.ai/" + "code/session" in t or "Generated with [" + "Claude" in t:
             bad.append(f)
     assert not bad, bad
+
+
+# ---- step 7: a green ci.yml run on a commit with the identical git tree is reused (no second ~38 min run) ----
+
+M, Q, OTHER = "m" * 40, "a" * 40, "b" * 40      # main's merge commit M has the PR head Q's tree
+TREE = "7" * 40
+GREEN_JOBS = [{"name": "host", "conclusion": "success"}, {"name": "generators-macos", "conclusion": "success"}]
+
+
+def gh_shell(trees, runs, views, calls):
+    """git rev-parse <sha>^{tree} / gh api commits/<sha> answer from trees (local: only M), gh run list --status
+    success answers runs, gh run view <id> answers views[id]; gh run watch must not be reached for a reused run"""
+    def fake(cmd, check=True, input=None, timeout=None, quiet=False):
+        calls.append(cmd)
+        if cmd[:2] == ["git", "rev-parse"]:
+            sha = cmd[-1].split("^")[0]
+            return (0, trees[sha] + "\n") if sha == M else (128, "")
+        if cmd[:2] == ["gh", "api"]:
+            sha = cmd[2].rsplit("/", 1)[1]
+            return (0, trees[sha] + "\n") if sha in trees else (1, "HTTP 404")
+        if cmd[:3] == ["gh", "run", "list"]:
+            assert "--status" in cmd and cmd[cmd.index("--workflow") + 1] == "ci.yml"
+            return 0, json.dumps(runs)
+        if cmd[:3] == ["gh", "run", "view"]:
+            return 0, json.dumps(views[cmd[3]])
+        pytest.fail(f"unexpected command {cmd}")
+    return fake
+
+
+def ci_row(i, sha, conclusion="success", status="completed"):
+    return {"databaseId": i, "headSha": sha, "headBranch": "release-095", "status": status,
+            "conclusion": conclusion, "event": "pull_request"}
+
+
+def test_same_tree_ci_run_is_reused(monkeypatch, capsys):
+    calls = []
+    runs = [ci_row(5, OTHER), ci_row(4, Q)]
+    views = {"4": {"conclusion": "success", "jobs": GREEN_JOBS, "url": "https://github.com/x/actions/runs/4"}}
+    monkeypatch.setattr(rel, "sh", gh_shell({M: TREE, Q: TREE, OTHER: "8" * 40}, runs, views, calls))
+    ev = rel.same_tree_run("ci.yml", M)
+    assert ev and "runs/4: success on aaaaaaaaaa (pull_request, release-095)" in ev
+    assert f"git tree {TREE[:10]} is identical to {M[:10]}'s" in ev and "reused" in ev
+    assert "reused" in capsys.readouterr().out                       # printed: which run and why
+    assert not any(c[:3] == ["gh", "run", "watch"] for c in calls)
+
+
+def test_different_tree_waits_for_a_run_on_the_sha(monkeypatch):
+    calls = []
+    runs = [ci_row(4, Q)]
+    monkeypatch.setattr(rel, "sh", gh_shell({M: TREE, Q: "9" * 40}, runs, {}, calls))
+    assert rel.same_tree_run("ci.yml", M) is None
+    assert not any(c[:3] == ["gh", "run", "view"] for c in calls)
+    # step 7 then falls back to wait_run on M itself
+    waited = []
+    monkeypatch.setattr(rel, "wait_run", lambda wf, sha, **kw: waited.append((wf, sha)) or f"{wf} waited on {sha}")
+    assert (rel.same_tree_run("ci.yml", M) or rel.wait_run("ci.yml", M)) == f"ci.yml waited on {M}"
+    assert waited == [("ci.yml", M)]
+
+
+@pytest.mark.parametrize("runs,views,trees", [
+    ([ci_row(4, Q, conclusion="failure")], {}, {M: TREE, Q: TREE}),                 # not success
+    ([ci_row(4, Q, status="in_progress")], {}, {M: TREE, Q: TREE}),                 # not finished
+    ([ci_row(4, M)], {}, {M: TREE}),                                                # the sha itself: wait_run's job
+    ([ci_row(4, Q)], {}, {M: TREE}),                                                # Q's tree unknown
+    ([ci_row(4, Q)], {"4": {"conclusion": "success", "url": "u", "jobs": [GREEN_JOBS[0], {
+        "name": "generators-macos", "conclusion": "skipped"}]}}, {M: TREE, Q: TREE}),  # a job not green
+    ([ci_row(4, Q)], {"4": {"conclusion": "success", "url": "u", "jobs": []}}, {M: TREE, Q: TREE}),  # no jobs
+])
+def test_same_tree_needs_everything_green(monkeypatch, runs, views, trees):
+    monkeypatch.setattr(rel, "sh", gh_shell(trees, runs, views, []))
+    assert rel.same_tree_run("ci.yml", M) is None

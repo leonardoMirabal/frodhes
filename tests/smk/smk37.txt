@@ -1,0 +1,47 @@
+# SMK-37 build only (make test-smk; BOARD=smk37 tests/run_host.sh tests/smk/smk37.txt): Dinghy's SMK host script
+# (velocity, a pad, an outer key, the wheels, a fader, the pedal) on Frodhes' SMK layer (frodhes_smk.h): the middle
+# keys at their velocity, a pad as a control (8 = DRIVE: no note), an outer key as a note, the pitch wheel back to 0;
+# then a preset save, a settings save and a pattern, twice each, so every one of Frodhes' sectors on the SMK is erased
+# and written through the allow-list (tests/host.c host_fl_check; a refused place fails the run).
+200 vel 40
+300 keys 0x80
+500 expect state pitches 1
+700 keys 0
+800 vel 127
+900 keys 0x80
+1300 keys 0
+1400 pad 8 100
+1500 shot
+1600 expect state pitches 0
+1800 pad 8 0
+2000 xkey 0 90
+2100 expect state pitches 1
+2400 xkey 0 0
+2600 keys 0x80
+2700 wheel 0 800
+3000 wheel 0 1000
+3300 wheel 0 535
+3400 fader 0 100
+3500 pedal 100
+3600 keys 0
+3700 pedal 985
+3800 expect state held 0
+3800 expect state bend 0
+# U01 saved twice (SAVE, SAVE: bank A, then B), the settings saved twice (a change, 2 s, silence), the pattern twice
+4000 midi 0xB0 81 90
+4100 btn 9
+4200 btn 9
+7000 midi 0xB0 81 30
+7100 btn 9
+7200 btn 9
+10000 midi 0xB0 63 127
+10100 midi 0x90 60 100
+10150 midi 0x80 60 0
+10200 midi 0xB0 63 0
+14000 midi 0xB0 63 127
+14100 midi 0x90 64 100
+14150 midi 0x80 64 0
+14200 midi 0xB0 63 0
+18000 midi 0xB0 81 50
+22000 expect rms < -60
+22000 end

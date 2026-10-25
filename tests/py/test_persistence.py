@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Power cycles on the host (PLAN P11.4): the host build keeps its flash in a file (FRODHES_FLASH), so a second run
-is the FM-1 switched on again with exactly what the firmware saved. The settings, the user presets and the
-sequencer's pattern survive; the saves wait 2 s after the last change (1.5 s for the pattern) and for silence; a
+is the FM-1 switched on again with exactly what the firmware saved. The settings (the system setup and the preset
+last loaded or saved, which plays again as it is stored: knobs turned after it are not kept, test_autosave_setup.py),
+the user presets and the sequencer's pattern survive; the saves wait 2 s after the last change (1.5 s for the pattern) and for silence; a
 corrupt record falls back (the settings to F01, a preset bank or pattern sector to the other copy); old record
 versions convert. The flash file is the FM-1's five sectors: settings ([magic DNGY][len][crc32] + the 256-byte
 record, platform.c), preset bank A / B ({magic FRPB, seq, len, crc} + 16 records, presets.c), pattern A / B
@@ -22,6 +23,11 @@ O_VER, O_FLAGS, O_OCT, O_PRESET, O_BPM, O_TUNE, O_TRANS, O_PANEL, O_UNDO_VALID, 
 P = dict(TYPE=0, DRIVE=1, TW_SW=2, TW_DEPTH=3, TW_RATE=4, TW_MODE=6, CP_SW=8, CP_DEPTH=9, CP_SPEED=10, CP_SYNC=11,
          CP_FDBK=12, RV_DEPTH=19, PH_SW=28, PH_DEPTH=29, PH_SPEED=30, PH_SYNC=31, PH_FDBK=32, LEVEL=37, CMP_RATIO=38,
          CMP_GAIN=39, FL_TYPE=40, FL_FREQ=41, LFO_RATE=45)
+
+
+# a record that names an empty user slot (U16, never a starter): the boot plays the record's own sound (snd_base:
+# the last preset loaded or saved), so the record's panel and its conversions are what the tests see
+NO_PRESET = 34
 
 
 def flash_file(tag):
@@ -77,7 +83,7 @@ def test_vibes_notes_let_go_so_it_saves():
     """VIBES: a C4 held 200 ms, let go: the engine goes quiet (no voice left) and a change made then is saved 2 s
     later, as on the Rhodes. (A released note used to keep a silent voice alive forever, so nothing ever saved; fixed
     by the bar engine's kill under 1 LSB and the noise envelope reaching zero, 5bce504.)"""
-    r = run("vibes-quiet", [cc(10, 79, 0), "300 midi 0x90 60 100", "500 midi 0x80 60 0", "3000 dump", cc(3000, 81, 40)],
+    r = run("vibes-quiet", [cc(10, 79, 0), "300 midi 0x90 60 100", "500 midi 0x80 60 0", "3000 dump", cc(3000, 114, 127)],
             6000, flash=flash_file("vibes-quiet"))
     assert r.state(3000)["voices"] == "0" and r.state(3000)["quiet"] == "1", (r.state(3000)["voices"], r.state(3000)["quiet"])
     assert any(5000 <= t <= 5300 for t in r.saves), r.saves
@@ -113,12 +119,13 @@ def test_power_cycle_keeps_everything(eng):
 
 
 def test_save_timing():
-    """the settings are saved 2 s after the last change, and only once it is silent (the erase would stall the
-    audio): a change with nothing playing saves at once after 2 s; a change while a note rings waits for silence; a
+    """the settings are saved 2 s after the last setup change (USB VOL, CC 114), and only once it is silent (the erase
+    would stall the audio): a change with nothing playing saves at once after 2 s; a change while a note rings waits
+    for silence; a
     user preset saved while a note rings, too; the pattern 1.5 s after its change while stopped and silent"""
     fl = flash_file("timing")
-    lines = [cc(1000, 81, 40),                                          # silent: saved 2 s later
-             "4000 midi 0x90 60 100", cc(4100, 81, 60), "8000 midi 0x80 60 0",   # a change under a note
+    lines = [cc(1000, 114, 127),                                        # silent: saved 2 s later
+             "4000 midi 0x90 60 100", cc(4100, 114, 0), "8000 midi 0x80 60 0",   # a change under a note
              "9000 midi 0x90 64 100", "9100 btn 9", "9200 btn 9", "12000 midi 0x80 64 0",   # SAVE while it rings
              cc(14000, 63, 127), "14100 midi 0x90 67 100", "14150 midi 0x80 67 0", cc(14200, 63, 0),   # a step
              cc(19000, 43, 127)]                                                 # CLEAR, silent
@@ -216,15 +223,15 @@ def defaults():
 
 def test_old_settings_records_convert():
     """version 1 (0.1-0.3: 32 parameters, the phaser as CHO/PHA = 2 sharing the chorus' knobs, 12 factory presets):
-    the phaser is split out, the new parameters get their defaults, the preset index moves past F13 / F14, the undo
-    copy is dropped. Version 2 records from before 0.8 / 0.9.3 / VIBES (flags bits 1, 2, 8, 4 clear): LEVEL, the
+    the phaser is split out, the new parameters get their defaults, the preset index moves past F13..F19 (U01 19), the
+    undo copy is dropped. Version 2 records from before 0.8 / 0.9.3 / VIBES (flags bits 1, 2, 8, 4 clear): LEVEL, the
     compressor's ratio and makeup and the filter get their defaults, the index is moved once."""
     dflt = defaults()
     fl = flash_file("v1")
     img = bytearray(b"\xff" * 5 * SECTOR)
     panel = {P["TYPE"]: 2, P["DRIVE"]: 50, P["CP_SW"]: 2, P["CP_DEPTH"]: 70, P["CP_SPEED"]: 33, P["CP_SYNC"]: 4, P["CP_FDBK"]: 21,
              P["RV_DEPTH"]: 60}
-    put_settings(img, v1_record(panel, preset=12, extra={O_OCT: 1}))       # 12 = U01 then
+    put_settings(img, v1_record(panel, preset=27, extra={O_OCT: 1}))       # 27 = U16 then (empty: its sound plays)
     open(fl, "wb").write(img)
     b = boot("v1", fl)
     s = b.state(100)
@@ -233,10 +240,10 @@ def test_old_settings_records_convert():
         assert s[f"p.{P[k]}"] == str(v), (k, s[f"p.{P[k]}"], v)
     for k in ("LEVEL", "CMP_RATIO", "CMP_GAIN", "FL_TYPE", "FL_FREQ", "LFO_RATE"):
         assert s[f"p.{P[k]}"] == str(dflt[P[k]]), k
-    assert s["preset"] == "16" and s["undo"] == "0" and s["oct"] == "1" and s["bpm"] == "100.0", (s["preset"], s["undo"])
+    assert s["preset"] == str(NO_PRESET) and s["undo"] == "0" and s["oct"] == "1" and s["bpm"] == "100.0", (s["preset"], s["undo"])
     # a version 2 record from 0.4-0.7 (flags 0): LEVEL / ratio / makeup / filter were not there
     img2 = bytearray(b"\xff" * 5 * SECTOR)
-    r = v1_record({P["TYPE"]: 1, P["DRIVE"]: 20}, preset=13)
+    r = v1_record({P["TYPE"]: 1, P["DRIVE"]: 20}, preset=27)              # U16 of 12 factory presets (empty)
     r[O_VER] = 2
     for i in range(16):
         r[O_PANEL2 + i] = 99                                # garbage where the new parameters now live
@@ -245,9 +252,27 @@ def test_old_settings_records_convert():
     s = boot("v2old", fl).state(100)
     for k in ("LEVEL", "CMP_RATIO", "CMP_GAIN", "FL_TYPE", "FL_FREQ", "LFO_RATE"):
         assert s[f"p.{P[k]}"] == str(dflt[P[k]]), (k, s[f"p.{P[k]}"])
-    assert (s["p.0"], s["p.1"], s["preset"]) == ("1", "20", "17"), (s["p.0"], s["p.1"], s["preset"])
+    assert (s["p.0"], s["p.1"], s["preset"]) == ("1", "20", str(NO_PRESET)), (s["p.0"], s["p.1"], s["preset"])
     for i in range(48, len(dflt)):                          # records v3: ids 48.. (panel3) at their defaults
         assert s[f"p.{i}"] == str(dflt[i]), (i, s[f"p.{i}"])
+
+
+def test_094_settings_record_preset_index():
+    """a 0.9.4 / 0.9.5-RC settings record (16 factory presets: U01 = 16; flags2 0) on 0.9.5 (19: F17..F19 before the
+    user bank): F01..F16 stay, U01..U16 move by 3, once; the preset it names then plays as stored (an empty one: the
+    record's panel)"""
+    fl = flash_file("v094")
+    for pre, want in ((0, 0), (15, 15), (16, 19), (31, 34)):
+        img = bytearray(b"\xff" * 5 * SECTOR)
+        r = v1_record({P["TYPE"]: 1, P["DRIVE"]: 20}, preset=pre)
+        r[O_VER], r[O_FLAGS] = 2, 255                       # every flag up to 0.9.5's RC, flags2 (0.9.5) clear
+        put_settings(img, r)
+        open(fl, "wb").write(img)
+        b = boot(f"v094-{pre}", fl, check_preset=want != NO_PRESET)
+        s = b.state(100)
+        assert s["preset"] == str(want) and not b.fails, (pre, s["preset"], b.fails)
+        if want == NO_PRESET:
+            assert (s["p.0"], s["p.1"]) == ("1", "20"), (pre, s["p.0"], s["p.1"])
 
 
 def test_old_preset_bank_converts():
@@ -334,7 +359,7 @@ def test_v2_motor_becomes_the_motor_page():
     dflt = defaults()
     fl = flash_file("motv2")
     img = bytearray(b"\xff" * 5 * SECTOR)
-    r = v1_record({}, preset=14)
+    r = v1_record({}, preset=14 + 15)                        # U16 of 14 factory presets: empty, its sound plays
     r[O_VER], r[O_FLAGS] = 2, 1 | 2 | 4 | 8                  # a 0.9.3-draft record (no flags bit 16)
     p = bytearray(dflt[:48])
     motor_v2(p, 4)
@@ -361,11 +386,41 @@ def test_v2_motor_becomes_the_motor_page():
 
 
 def test_motor_off_by_hand_survives_a_power_cycle():
-    """the MOTOR page's ON card switched off is kept (and with it, no motor when the TYPE turns to VIBES again)"""
+    """the MOTOR page's ON card switched off is kept (a setup choice: no motor when the TYPE turns to VIBES again)"""
     fl = flash_file("motoff")
     lines = ["100 turn 1 1", "110 turn 1 1", "120 turn 1 1", "130 turn 1 1", "200 turn 0 1", "250 turn 0 1", "300 turn 0 1",
              "400 turn 0 1", "500 turn 2 -1", "600 turn 1 -1", "700 dump"]
     r1 = run("motoff-1", lines, 4000, flash=fl)
     assert r1.state(700)[f"p.{MOT_ON}"] == "0" and r1.saves             # (a Rhodes TYPE now: no VOICE 3)
-    r2 = boot("motoff-2", fl, ["200 turn 1 1", "300 dump"], 400, check_preset=False)
+    r2 = boot("motoff-2", fl, [cc(200, 79, 0), "300 dump"], 400)          # (F01 plays: VIBES by CC 79)
     assert r2.state(300)["bars"] == "1" and r2.state(300)["vcard.2.0"] == "OFF"
+
+
+O_PANEL3 = 141                                              # settings_t panel3 (records v3: ids 48..63)
+DRV_SW = 50                                                 # params.c P_DRV_SW: 0 OFF, 1 FDRV ("ON" before), 2..5
+
+
+def test_drive_type_survives_and_old_records_read_as_classic():
+    """the drive's TYPE (P_DRV_SW) BHLUE (5, the last) is kept in the settings and in a user preset across a power
+    cycle; a record from before (1 = ON) reads as FDRV, the classic drive; a value above the top (what an older
+    firmware sees in a record with a new TYPE: its top was 1) falls back to the default, FDRV (params.c
+    params_sanitize; presets.c the same per value), so a downgrade plays the classic drive where the TYPE was"""
+    fl = flash_file("drvtype")
+    lines = [cc(20, 84, 105), cc(21, 81, 70), "100 btn 9", "120 turn 2 1", "125 turn 2 1", "140 btn 9",   # U03
+             "4000 dump"]
+    r1 = run("drvtype-1", lines, 4500, flash=fl)
+    assert r1.saves and r1.bank_saves and r1.state(4000)[f"p.{DRV_SW}"] == "5"
+    rec = settings_record(read_img(fl))
+    assert rec[O_PANEL3 + DRV_SW - 48] == 5
+    r2 = boot("drvtype-2", fl, [cc(150, 84, 0), "160 midi 0xC0 18 0", "700 dump"], 900)
+    s, s2 = r2.state(100), r2.state(700)
+    assert (s[f"p.{DRV_SW}"], s["card.19.0"]) == ("5", "BHLUE"), (s[f"p.{DRV_SW}"], s["card.19.0"])
+    assert s2["header"].startswith("U03") and s2[f"p.{DRV_SW}"] == "5" and s2["fxdrv"] == "5", s2["header"]
+    for v, want, card in ((1, "1", "FDRV"), (0, "0", "OFF"), (2, "2", "KHLON"), (6, "1", "FDRV"), (127, "1", "FDRV")):
+        img = read_img(fl)
+        rec[O_PANEL3 + DRV_SW - 48] = v
+        rec[O_PRESET] = NO_PRESET                           # (the record's own sound plays, not U03)
+        put_settings(img, rec)
+        open(fl, "wb").write(img)
+        s = boot(f"drvtype-v{v}", fl, check_preset=False).state(100)
+        assert (s[f"p.{DRV_SW}"], s["card.19.0"], s["fxdrv"]) == (want, card, want), (v, s[f"p.{DRV_SW}"], s["card.19.0"])

@@ -1,0 +1,30 @@
+# A preset save while INFINITE holds its tail (FREEZE, DECAY 127; SUSTAIN 120..126 the same: the sound never falls silent, and flash is written
+# only in silence): the save waits and the footer says "SAVE WAITS: FREEZE ON" (SUSTAIN: "SAVE WAITS: SUSTAIN ON"; presets.c, every 1.5 s); leaving the
+# freeze (DECAY down) lets the tail end, the save goes through ("SAVED") and the settings' autosave catches up.
+100 midi 0xB0 91 90
+100 midi 0xB0 95 127
+100 midi 0xB0 92 110
+300 midi 0x90 60 110
+300 midi 0x90 67 110
+700 midi 0xB0 92 127
+1000 midi 0x80 60 0
+1000 midi 0x80 67 0
+1500 btn 9
+1600 btn 9
+1700 expect state savepend 1
+3500 expect state savepend 1
+3500 expect state msg SAVE_WAITS:_FREEZE_ON
+3500 expect sound
+6000 expect state savepend 1
+6000 expect state dirty 1
+# SUSTAIN (DECAY 120..126): the same wait, its own words
+6100 midi 0xB0 92 122
+8000 expect state msg SAVE_WAITS:_SUSTAIN_ON
+8000 expect state savepend 1
+8100 midi 0xB0 92 0
+22000 expect state savepend 0
+22000 expect state dirty 0
+22100 midi 0xC0 16 0
+22300 expect state p.59 3
+22300 expect state p.51 127
+22400 end

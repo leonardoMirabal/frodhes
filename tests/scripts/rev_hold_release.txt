@@ -1,0 +1,32 @@
+# INFINITE's hold (FREEZE, DECAY 127; SUSTAIN 120..126) is released by OFF and by another TYPE, not only by DECAY:
+# the tail decays to exact silence (fxrv: the TYPE that runs, its tail, the fade), and a preset save that waited
+# ("SAVE WAITS: FREEZE ON") goes through. Before the fix OFF kept the tail held for ever (rev_types.c c.freeze).
+100 midi 0xB0 91 90
+100 midi 0xB0 95 127
+100 midi 0xB0 92 110
+300 midi 0x90 60 110
+300 midi 0x90 67 110
+700 midi 0xB0 92 127
+1000 midi 0x80 60 0
+1000 midi 0x80 67 0
+1500 btn 9
+1600 btn 9
+3500 expect state savepend 1
+3500 expect state msg SAVE_WAITS:_FREEZE_ON
+# OFF: the hold lets go (DECAY stays 127: the tail decays at its longest, T60 about a minute)
+4000 midi 0xB0 95 0
+5600 expect state msg
+210000 expect state fxrv 300
+210000 expect state savepend 0
+# SUSTAIN on INFINITE again, then PLATE: the fade, the plate starts empty, INFINITE's hold is gone
+210100 midi 0xB0 95 127
+210100 midi 0xB0 92 123
+210300 midi 0x90 64 110
+210800 midi 0x80 64 0
+212000 expect state fxrv 310
+212100 midi 0xB0 95 70
+212300 expect state fxrv 210
+# (MIX 0: the plate rings out)
+212400 midi 0xB0 91 0
+230000 expect state fxrv 200
+230100 end

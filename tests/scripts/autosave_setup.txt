@@ -1,0 +1,41 @@
+# Auto save keeps the system setup only (0.9.5; params.c settings_record, frodhes.c settings_poll): a sound change
+# (a knob, a CC, a TYPE) never marks the settings for a write; a setup change (here the MIDI page's CHANNEL) is
+# written 2 s later, once silent; the MIDI clock never marks it. The power cycle (the preset as stored comes back,
+# the setup persists), the write counts and 60 s of clock: tests/py/test_autosave_setup.py.
+100 midi 0xB0 81 90
+200 midi 0xB0 91 40
+300 turn 2 3
+400 turn 3 -2
+500 midi 0xB0 79 0
+600 expect state dirty 0
+3000 expect state dirty 0
+# the clock (CLOCK EXT): it moves the tempo, nothing to save
+3100 midi 0xFA 0 0
+3100 midi 0xF8 0 0
+3125 midi 0xF8 0 0
+3150 midi 0xF8 0 0
+3175 midi 0xF8 0 0
+3200 midi 0xF8 0 0
+3225 midi 0xF8 0 0
+3250 midi 0xF8 0 0
+3275 midi 0xF8 0 0
+3300 midi 0xF8 0 0
+3325 midi 0xF8 0 0
+3350 midi 0xF8 0 0
+3375 midi 0xF8 0 0
+3400 midi 0xF8 0 0
+3425 midi 0xF8 0 0
+3450 midi 0xF8 0 0
+3450 expect state dirty 0
+3600 expect state dirty 0
+# a setup change: GLO three times (TEMPO, SETUP, MIDI), CHANNEL to 1
+4000 btn 7
+4050 btn 7
+4100 btn 7
+4150 expect state page MIDI
+4200 turn 2 1
+4250 expect state card0 1
+4250 expect state dirty 1
+6100 expect state dirty 1
+6300 expect state dirty 0
+6400 end

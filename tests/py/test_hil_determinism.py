@@ -58,7 +58,10 @@ def test_two_runs_same_verdicts_and_numbers():
 def test_without_the_reset_the_runs_differ():
     _, ma = scan(1, False)
     _, mb = scan(2, False)
-    assert max(abs(ma[k] - mb[k]) for k in ma if k.startswith("preset")) > 1.0
+    d = {k: abs(ma[k] - mb[k]) for k in ma}
+    # (the 0.9.5 presets hold their level whatever their LFOs' phase: F06 0.2 LU; the bypass and
+    # effects suites still differ: bypass fx_on 1.4 LU, effects everything 1.0)
+    assert max(d.values()) > 1.0, sorted(d.items(), key=lambda kv: -kv[1])[:6]
 
 
 @pytest.mark.parametrize("notes, lim", [((57, 64, 69), None), (h.CH_NOTES, 0.25), (h.FX_NOTES, 0.25)],

@@ -19,7 +19,8 @@ most once, at least one of them:
 and each section's body is a Markdown list: lines starting "- ", their continuation lines indented by two or more
 spaces, blank lines. Nothing else: no other heading, no text before the first section (an <!-- HTML comment --> is
 allowed and dropped), no DRAFT line, no version number of the coming release (the release names itself; history such
-as "saved by 0.9.3" is fine). The fragments are assembled in file-name order, section by section; the notes' head
+as "saved by 0.9.3" is fine). The fragments are assembled in file-name order, section by section (a number in front,
+01-usb-audio-clicks.md, sets the order by importance; a fragment without one comes after the numbered ones); the notes' head
 (the instrument line from docs/MANUAL.md's first line, the download and install) and foot are written here.
 """
 import os

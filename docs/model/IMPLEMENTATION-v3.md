@@ -683,7 +683,12 @@ RLC: prewarped bilinear low-pass, f = 5 kHz, Q from the TYPE (1.0 STAGE, 1.2 SUI
 ESTIMATE), Q28. TYPE deltas (`rh_type_t`): STAGE '77 (0, 1.0, 0, 1.0); SUITCASE (0, 1.0, 0, 1.0, eq_lo +2 dB at 150
 Hz, eq_hi +3 dB at 4 kHz, from the Peterson tone stack — ESTIMATE); EARLY FELT (−1, 0.9, 0, 0.8); BELL/DYNO (+1, 1.2,
 −0.1 gap, 1.2). Jitter (Phase 3): xorshift32 with seed 0x46524F44, per key: V2 detune ±1.5 c, gain ±0.7 dB, d ±8 %,
-off ±0.05 gap, within the fit residuals. Residuals (Phase 3): per band and 3 layers, the tip displacement of modes
+off ±0.05 gap, within the fit residuals. *As built (0.9.5, gen_rhodes.jit / whirl, params.json `jitter`, `whirl`,
+`v2_drop`):* a sha256 of (seed 958, key, quantity) instead of xorshift32, so a new quantity never moves the others:
+V1 T60 ±8 %, gain ±0.15 dB, off ±0.05 gap, contact rate ±3 %; never V1's pitch. The V2 slot holds a beat partner
+on keys 40-84 (a second vertical mode 0.3-1.5 Hz from V1, weight 0.12, T60 0.8-1.1 × V1's: the polarisations'
+energy exchange as a slow 1.5-2.5 dB level wobble with the pitch within 1 c) and nothing on keys 21-39 and 85-99
+(the tone-bar mode there was ≥ 60 dB under V1); keys 100-108 keep the bar mode. Residuals (Phase 3): per band and 3 layers, the tip displacement of modes
 4..12 for the first 512 samples from the contact simulation, Q15 of 1/8 gap. Emit the header with `GEN_VERSION`
 and sha256 of `params.json` and of every array; `make tables-check` fails on any diff.
 

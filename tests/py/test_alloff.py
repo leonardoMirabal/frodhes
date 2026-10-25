@@ -11,20 +11,18 @@
     the flash saves waiting). Seed rhodes 628 (rhodes.c): an all-off caps a voice's life at 8 s, and a voice's
     life ends through the 1.5 ms fade.
 
-The voice count comes from FR_VOICES (rhodes.c, or HOST_DEFS -DFR_VOICES=N)."""
+The voice count is each engine's own (hostrun.voices: rhodes.c RH_VOICES 10 / BAR_VOICES 10, or HOST_DEFS)."""
 import os
 import re
 
 import numpy as np
 import pytest
 
+import hostrun
 from hostrun import FS, ROOT, cc, run
 
-def voices():
-    m = re.search(r"-DFR_VOICES=(\d+)", os.environ.get("HOST_DEFS", ""))
-    if m:
-        return int(m.group(1))
-    return int(re.search(r"#define FR_VOICES (\d+)u", open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read()).group(1))
+def voices(eng="rhodes"):
+    return hostrun.voices(eng)
 
 
 def engine_lines(eng):
@@ -36,7 +34,7 @@ def engine_lines(eng):
 def test_alloff_during_a_steal(eng, num):
     """every voice busy, one more note (it waits for a steal's fade), the all-off in the same block: nothing is left
     held, and it all goes quiet"""
-    nv = voices()
+    nv = voices(eng)
     ls = engine_lines(eng)
     ls += [f"100 midi 0x90 {48 + 2 * i} 100" for i in range(nv)]
     ls += ["500 midi 0x90 84 100", cc(500, num, 0)]

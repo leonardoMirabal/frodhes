@@ -12,7 +12,12 @@
 #include "frodhes.c"
 #undef main
 
+#ifdef HOST_SAVE_MS     /* (host.c since 0.9.5: settings_save holds the main loop 100 ms, as on the FM-1; the record is
+                         * written here at once, so ~70 saves do not run the host past its end) */
+static void put_settings(void) { host_store_put(&set, sizeof set); }
+#else
 static void put_settings(void) { settings_save(&set, sizeof set); }
+#endif
 
 #ifndef BARS_UI_OLD
 static void show_page(const char *tag, uint32_t pg, uint32_t vp)   /* (VOICE: its page vp; past the engine's last: none) */
@@ -88,7 +93,11 @@ static void cmd_midi(void)
     for (v = 0; v < 40u; v++) {                          /* program change, as app_main does it */
         uint32_t d1 = v;
         set.preset = 200;
+#if PR_NF_SET >= 19                                     /* (0.9.5: F17.. on program change 32..; the 0.9.3 build: before) */
+        preset_load(preset_of_pc(d1));
+#else
         preset_load(d1 < PR_NF ? d1 : d1 >= 16u && d1 < 32u ? PR_NF + d1 - 16u : 255u);
+#endif
         printf("pc.%u %u type=%u\n", v, set.preset, PV(P_TYPE));
     }
     {                                                    /* the factory VIBES presets */
@@ -103,13 +112,17 @@ static void cmd_midi(void)
 }
 static void cmd_conv(void)
 {
-    static const uint8_t PRE[] = {0, 5, 11, 12, 13, 14, 15, 20, 27, 28, 29, 30, 31, 200};
-    static const char *const F[] = {"old", "v093", "new"};   /* before VIBES (12 factory), 0.9.3 (14), today (16) */
+    static const uint8_t PRE[] = {0, 5, 11, 12, 13, 14, 15, 16, 18, 20, 25, 27, 28, 29, 30, 31, 34, 200};
+    static const char *const F[] = {"old", "v093", "v094", "new"};   /* before VIBES (12 factory), 0.9.3 (14), 0.9.4
+                                                                     * and 0.9.5's RC (16), today (19: flags2) */
     uint32_t i, f;
-    for (f = 0; f < 3u; f++)
+    for (f = 0; f < 4u; f++)
         for (i = 0; i < sizeof PRE; i++) {
             params_defaults();
-            set.flags = (uint8_t)(f == 2u ? 1u | 2u | 4u | 8u | 32u : f == 1u ? 1u | 2u | 4u | 8u : 1u | 2u | 8u);
+            set.flags = (uint8_t)(f >= 2u ? 1u | 2u | 4u | 8u | 32u : f == 1u ? 1u | 2u | 4u | 8u : 1u | 2u | 8u);
+#if PR_NF_SET >= 19
+            set.flags2 = (uint8_t)(f == 3u);
+#endif
             set.preset = PRE[i];
             set.undo_preset = (uint8_t)(PRE[i] + 1u);
             put_settings();
@@ -124,7 +137,38 @@ static void cmd_conv(void)
     params_defaults();
     printf("fresh.flags4 %u\n", (set.flags & 4u) != 0);
     printf("fresh.flags32 %u\n", (set.flags & 32u) != 0);
+#if PR_NF_SET >= 19
+    printf("fresh.flags2 %u\n", set.flags2);
+#endif
 }
+#if PR_NF_SET >= 19
+/* 0.9.5's RC: U10..U12 were the starters TAPE ECHO, DREAM, RADIO (a bank never saved); a record naming one comes back
+ * as F17..F19 when that slot is empty, and stays the user slot when the bank holds a preset there */
+static void cmd_rcmap(void)
+{
+    static const uint8_t PRE[] = {24, 25, 26, 27, 28};
+    uint32_t i, saved;
+    for (saved = 0; saved < 2u; saved++)
+        for (i = 0; i < sizeof PRE; i++) {
+            memset(host_bank, 0xFF, sizeof host_bank);
+            if (saved) {
+                presets_load_bank();
+                pr_user[9].used = pr_user[10].used = pr_user[11].used = 1;
+                presets_save_bank();
+            }
+            params_defaults();
+            set.flags = 1u | 2u | 4u | 8u | 32u; set.flags2 = 0;
+            set.preset = PRE[i];
+            set.undo_preset = (uint8_t)(PRE[i] + 1u);
+            put_settings();
+            memset(&set, 0, sizeof set);
+            settings_load(&set, sizeof set);
+            params_sanitize();
+            presets_load_bank();
+            printf("rcmap.%u.%u %u undo=%u\n", saved, PRE[i], set.preset, set.undo_preset);
+        }
+}
+#endif
 #endif
 
 static void cmd_dump(const char *path, int type, int mode, int preset)
@@ -174,6 +218,9 @@ int main(int argc, char **argv)
     else if (argc > 1 && !strcmp(argv[1], "labels")) cmd_labels();
     else if (argc > 1 && !strcmp(argv[1], "midi")) cmd_midi();
     else if (argc > 1 && !strcmp(argv[1], "conv")) cmd_conv();
+#if PR_NF_SET >= 19
+    else if (argc > 1 && !strcmp(argv[1], "rcmap")) cmd_rcmap();
+#endif
 #endif
     else { fprintf(stderr, "usage: bars_ui labels|midi|conv|dump FILE TYPE MODE PRESET|load FILE\n"); return 2; }
     return 0;

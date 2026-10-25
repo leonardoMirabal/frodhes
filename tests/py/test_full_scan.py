@@ -88,7 +88,7 @@ def test_classic_and_cpu_parsers():
            "FAIL  effects       problems: ['wah']  (57 s)\n    drive 20   USB -0.8 LU\n")
     cl = fs.parse_classic(txt)
     assert [(ok, n) for ok, n, _ in cl] == [(True, "silence"), (False, "keyboard"), (False, "effects")]
-    assert fs.classify_classic("effects", "")[0] == "INFO"
+    assert fs.classify_classic("effects", "")[0] == "UNDECIDED"   # (no "known stale" classic suite since 2026-10-24)
     assert fs.classify_classic("keyboard", "")[0] == "UNDECIDED"
     log = ("8-note chord   attack  3600 us (62.0 %)   voices shed 1\n"
            "\nworst 3620 us of 5805 us per block (62 %); shedder at 5000 us\n")
@@ -111,7 +111,7 @@ def test_offline_summary(tmp_path):
     p = subprocess.run([sys.executable, TOOL, "--from", str(d)], capture_output=True, text=True)
     assert p.returncode == 1, p.stdout + p.stderr                         # a JACK FAIL
     s = (d / "SUMMARY.md").read_text()
-    assert "JACK FAIL: 1 UNDECIDED: 0 USB-ONLY: 1 INFO: 1" in s
+    assert "JACK FAIL: 1 UNDECIDED: 1 USB-ONLY: 1 INFO: 0" in s       # (presets' FAIL: a finding, not stale)
     assert "| rhodes | 3600, 3700 | **3700** | +800 | +1100 | +1300 | 0 |" in s
     assert "| vibes | 4600 | **4600** | -100 |" in s
     assert "**73.9**" in s
@@ -122,9 +122,13 @@ def test_device_lock(tmp_path):
     lock = tmp_path / "build" / "hil" / "DEVICE.lockdir"
     with fs.DeviceLock(str(tmp_path), "test", 0):
         assert (lock / "owner").read_text().startswith("test ")
+        with fs.DeviceLock(str(tmp_path), "child", 0) as c:                 # the holder's own tool: goes on
+            assert c.inherited
+        tok = os.environ.pop("FRODHES_LOCK_DEVICE")                         # another session: no token
         with pytest.raises(SystemExit):                                     # held: no wait -> gives up
             with fs.DeviceLock(str(tmp_path), "other", 0):
                 pass
+        os.environ["FRODHES_LOCK_DEVICE"] = tok
         assert lock.exists()                                                # the loser left it alone
     assert not lock.exists()
     try:                                                                    # released after an exception too

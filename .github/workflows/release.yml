@@ -1,6 +1,10 @@
 name: release
 # A version tag (v0.9.1, v0.9.2 ...) builds the firmware and publishes the GitHub release with the .fwsc attached
-# (as frodhes-X.Y.Z.fwsc and frodhes.fwsc). The notes are docs/releases/<tag>.md (tools/release.py assembles them).
+# (as frodhes-X.Y.Z.fwsc and frodhes.fwsc), and the SMK-37 builds next to them, marked experimental (not tested on
+# hardware): frodhes-smk37-experimental.fwsc, frodhes-smk37-elite-experimental.fwsc and
+# frodhes-smk37-mke-experimental.fwsc (./build.sh --board smk37 [--model elite|mke]; identity SMK-37 Pro_470,
+# SMK-37 Elite_470, MKE-P37_470, as tools/build.py sets them). The notes are docs/releases/<tag>.md (tools/release.py
+# assembles them).
 # Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
 on:
   push:
@@ -10,8 +14,9 @@ permissions:
   actions: read                      # ci-gate reads the ci runs
 jobs:
   # ci.yml already runs every host test (host + generators-macos) on each push to main. If ci passed on exactly this
-  # commit (waiting up to 40 min if it is still running), the release skips its own copy of the tests; if ci failed,
-  # never ran or timed out, the fallback jobs below (host, generators-macos) run them here, and a failure stops the
+  # commit (waiting up to 40 min if it is still running), or on a commit with the identical git tree (the PR's head,
+  # when this tag is on GitHub's merge commit of it: the same code), the release skips its own copy of the tests; if
+  # ci failed, never ran or timed out, the fallback jobs below (host, generators-macos) run them here, and a failure stops the
   # release before the build and publish.
   ci-gate:
     runs-on: ubuntu-latest
@@ -67,6 +72,16 @@ jobs:
           ./build.sh --release "$V"
           ls -l "build/frodhes-$V.fwsc"
           sha256sum "build/frodhes-$V.fwsc"
+      - name: build the SMK-37 packages (experimental)
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          ./build.sh --board smk37 --release "$V"
+          ./build.sh --board smk37 --model elite --release "$V"
+          ./build.sh --board smk37 --model mke --release "$V"
+          ls -l "build/frodhes-$V.fwsc" "build/frodhes-$V-smk37.fwsc" "build/frodhes-$V-smk37-elite.fwsc" \
+            "build/frodhes-$V-smk37-mke.fwsc"
+          sha256sum "build/frodhes-$V.fwsc" "build/frodhes-$V-smk37.fwsc" "build/frodhes-$V-smk37-elite.fwsc" \
+            "build/frodhes-$V-smk37-mke.fwsc"
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -78,5 +93,12 @@ jobs:
           # releases/latest/download/frodhes.fwsc (the docs never name a version)
           mkdir -p build/publish
           cp "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc
+          # the SMK-37 packages under fixed names, marked experimental (the SMK-37 is not tested on hardware)
+          cp "build/frodhes-$V-smk37.fwsc" build/publish/frodhes-smk37-experimental.fwsc
+          cp "build/frodhes-$V-smk37-elite.fwsc" build/publish/frodhes-smk37-elite-experimental.fwsc
+          cp "build/frodhes-$V-smk37-mke.fwsc" build/publish/frodhes-smk37-mke-experimental.fwsc
           gh release create "$GITHUB_REF_NAME" "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc \
+            build/publish/frodhes-smk37-experimental.fwsc build/publish/frodhes-smk37-elite-experimental.fwsc \
+            build/publish/frodhes-smk37-mke-experimental.fwsc \
+            "LICENSES/Apache-2.0.txt#Apache-2.0.txt (the licence of the 3 JieLi SDK files in each .fwsc)" \
             --title "Frodhes $V" --notes-file "$NOTES" --latest

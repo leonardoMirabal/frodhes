@@ -1,0 +1,64 @@
+# The effects' slow paths (tools/hil_cpu.py --worst 'slow paths'), so Gate R covers each of their branches: the drive's
+# TONE shelf and MIX (gliding and steady: shelf + all wet, shelf + mix, mix alone, the switch's crossfade), the reverb's
+# pre-delay (its first fill, a steady line, a new tap's crossfade, back to 0), LEVEL off unity, and the FX bypass
+# crossfade (on, bypassed, off, and turned round within one block), with the pedal and 12 notes on the voices.
+50 midi 0xB0 81 100
+55 midi 0xB0 91 100
+60 midi 0xB0 82 110
+65 midi 0xB0 83 64
+70 midi 0xB0 94 127
+75 midi 0xB0 110 20
+80 midi 0xB0 12 127
+85 midi 0xB0 13 90
+400 midi 0xB0 64 127
+400 midi 0x90 28 127
+400 midi 0x90 31 127
+400 midi 0x90 33 127
+400 midi 0x90 35 127
+400 midi 0x90 36 127
+400 midi 0x90 38 127
+400 midi 0x90 40 127
+400 midi 0x90 41 127
+420 midi 0x90 43 127
+420 midi 0x90 45 127
+420 midi 0x90 47 127
+420 midi 0x90 48 127
+900 midi 0xB0 111 127
+1300 midi 0xB0 111 0
+1500 midi 0xB0 82 20
+1500 midi 0xB0 94 40
+1500 midi 0xB0 110 100
+1800 midi 0xB0 83 127
+2100 midi 0xB0 82 64
+2100 midi 0xB0 83 0
+2300 midi 0xB0 83 90
+2400 midi 0xB0 110 64
+2400 midi 0xB0 94 0
+2600 midi 0x90 52 110
+2600 midi 0x90 55 110
+2600 midi 0x90 59 110
+2700 midi 0xB0 111 127
+2702 midi 0xB0 111 0
+2900 midi 0xB0 94 90
+3000 midi 0xB0 84 0
+3300 midi 0xB0 84 127
+3300 midi 0xB0 82 0
+3400 midi 0xB0 110 0
+3600 midi 0xB0 64 0
+3600 midi 0x80 28 0
+3600 midi 0x80 31 0
+3600 midi 0x80 33 0
+3600 midi 0x80 35 0
+3600 midi 0x80 36 0
+3600 midi 0x80 38 0
+3600 midi 0x80 40 0
+3600 midi 0x80 41 0
+3600 midi 0x80 43 0
+3600 midi 0x80 45 0
+3600 midi 0x80 47 0
+3600 midi 0x80 48 0
+3600 midi 0x80 52 0
+3600 midi 0x80 55 0
+3600 midi 0x80 59 0
+3700 expect rms > -60
+6000 end

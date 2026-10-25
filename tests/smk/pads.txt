@@ -1,0 +1,82 @@
+# SMK-37 build only (make test-smk): the 16 pads are Frodhes' own controls (smk_pad_events, no notes). Hardware pads:
+# top row 0..7 (pads 1..8), bottom row 8..15 (9..16). 0..5 TYPE, 6 / 7 the previous / next preset, 8 DRIVE, 9 COMP,
+# 10 FILTER, 11 TREM/WAH (VIBES: MOTOR), 12 PHASER, 13 CHORUS, 14 DELAY, 15 SUSTAIN (tests/smk/pedal.txt).
+# p.0 TYPE, p.50 DRIVE's switch, p.33 / p.34 COMP's switch / THRESH, p.40 the filter's type, p.2 TREM/WAH, p.28 PHASER,
+# p.8 CHORUS, p.13 DELAY, p.54 MOTOR. "pad.N": its light, 0 off, 1 on, 2 on while sounding.
+100 expect state pad.0 1
+100 expect state pad.4 0
+200 pad 4 100
+250 pad 4 0
+300 expect state p.0 4
+300 expect state pitches 0
+300 expect state pad.4 1
+300 expect state pad.0 0
+400 pad 5 100
+450 pad 5 0
+500 expect state p.0 5
+600 pad 0 100
+650 pad 0 0
+700 expect state p.0 0
+# a note: the TYPE's light brightens while it sounds
+800 keys 0x80
+900 expect state pad.0 2
+1000 keys 0
+# NEXT, PREV: the presets as PRESETS turns them (they load 400 ms after)
+1500 pad 7 100
+1550 pad 7 0
+2100 expect state preset 1
+2200 pad 6 100
+2250 pad 6 0
+2800 expect state preset 0
+# DRIVE, COMP, FILTER, TREM/WAH, PHASER, CHORUS, DELAY: on / off (a press counts once: a bounce 50 ms on does nothing)
+2900 expect state p.50 1
+3000 pad 8 100
+3050 pad 8 0
+3060 pad 8 100
+3070 pad 8 0
+3100 expect state p.50 0
+3200 pad 8 100
+3250 pad 8 0
+3300 expect state p.50 1
+# COMP: F01 (0.9.5's bank) boots with it on at THRESH 50; off keeps that THRESH for the way back on
+3400 expect state p.33 1
+3400 expect state p.34 50
+3500 pad 9 100
+3550 pad 9 0
+3600 expect state p.33 0
+3600 expect state p.34 0
+3700 pad 9 100
+3750 pad 9 0
+3800 expect state p.33 1
+3800 expect state p.34 50
+3900 pad 10 100
+3950 pad 10 0
+4100 pad 10 100
+4150 pad 10 0
+4200 expect state p.40 2
+4300 pad 11 100
+4350 pad 11 0
+4400 expect state p.2 1
+4400 expect state pad.11 1
+4500 pad 12 100
+4550 pad 12 0
+4600 expect state p.28 1
+4700 pad 13 100
+4750 pad 13 0
+4800 expect state p.8 1
+4900 pad 14 100
+4950 pad 14 0
+5000 expect state p.13 1
+# VIBES: pad 12 is its MOTOR (on with the TYPE)
+5100 pad 4 100
+5150 pad 4 0
+5200 expect state p.54 1
+5300 pad 11 100
+5350 pad 11 0
+5400 expect state p.54 0
+5400 expect state pad.11 0
+5500 pad 11 100
+5550 pad 11 0
+5600 expect state p.54 1
+5700 shot
+5800 end

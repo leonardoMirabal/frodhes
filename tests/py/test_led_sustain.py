@@ -5,13 +5,13 @@ pedal was down, and a voice still sounds it. A note let go before the pedal (its
 MARIMBA bar ringing on, no damper) does not light when the pedal goes down (the user, FM-1, 2026-10-20: "the key
 lights again although nothing sounds"). The pedal is REC tapped (the latch). Rhodes, VIBES and MARIMBA alike.
 
-And no flicker: with the pedal down and 5-6 notes (fewer than the 9 voices) every key, once lit by its press, stays
+And no flicker: with the pedal down and 5-6 notes (fewer than the voices: 9 on every engine) every key, once lit by its press, stays
 lit to the end; with 12-16 notes (voices stolen) a key may go dark once (its voice taken), and never lights again
 without a new press of it. Sampled every 5 ms from the host dump (led.N: the key's LED as ui_leds sets it; the
 BRIGHTNESS duty is the HAL's table, tests/py/test_led_tables.py), at BRIGHTNESS 10 and 3."""
 import pytest
 
-from hostrun import run
+from hostrun import run, voices
 
 ENGINES = {"rhodes": [], "vibes": ["20 midi 0xB0 79 0"], "marimba": ["20 midi 0xB0 79 127"]}
 PEDAL = "btn 13"                                             # REC: a tap latches the sustain
@@ -95,7 +95,7 @@ def check_key(r, eng, k, at, pressed_all, end):
 @pytest.mark.parametrize("dim_turns", [0, 7])                   # BRIGHTNESS 10 and 3
 @pytest.mark.parametrize("eng", ENGINES)
 def test_few_notes_under_the_pedal_never_blink(eng, dim_turns):
-    """6 keys struck under the pedal (6 of the 9 voices): each lights at its press and stays lit until its own note
+    """6 keys struck under the pedal (fewer than the voices): each lights at its press and stays lit until its own note
     ends (a Rhodes or VIBES note outlasts the 2.3 s here: the Rhodes keys all stay lit; a MARIMBA bar dies sooner)"""
     keys = [0, 4, 7, 11, 14, 19]
     end = 600 + 120 * len(keys) + 1500
@@ -109,14 +109,14 @@ def test_few_notes_under_the_pedal_never_blink(eng, dim_turns):
 @pytest.mark.parametrize("dim_turns", [0, 7])
 @pytest.mark.parametrize("eng", ENGINES)
 def test_many_notes_under_the_pedal_go_dark_once_and_only_at_a_steal(eng, dim_turns):
-    """16 keys struck under the pedal (9 voices: notes stolen): a key lights at its press; it goes dark only when its
+    """16 keys struck under the pedal (8 or 9 voices: notes stolen): a key lights at its press; it goes dark only when its
     voice is taken by a later note or its note ends, then stays dark (it never relights without a press); the
-    Rhodes: the last 9 struck stay lit"""
+    Rhodes: the last 9 struck (its voices, hostrun.voices) stay lit"""
     keys = [0, 2, 4, 5, 7, 9, 11, 12, 14, 16, 17, 19, 21, 23, 24, 26]
     end = 600 + 120 * len(keys) + 1500
     r, at = sampled(eng, "many", keys, dim_turns, end)
     for i, k in enumerate(keys):
         ch = check_key(r, eng, k, at, [p for v in at.values() for p in v], end)
         assert len(ch) <= 3, (eng, k, ch)
-        if eng == "rhodes" and i >= len(keys) - 9:
-            assert [v for _, v in ch] == ["0", "1"], (eng, k, ch, "one of the last 9 went dark")
+        if eng == "rhodes" and i >= len(keys) - voices("rhodes"):
+            assert [v for _, v in ch] == ["0", "1"], (eng, k, ch, "one of the last notes (one per voice) went dark")

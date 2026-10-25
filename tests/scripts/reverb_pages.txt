@@ -1,0 +1,106 @@
+# The REVERB pages (0.9.5). REVERB: K1 TYPE (OFF / HALL / PLATE / INFINITE: on / off and the type in one card, as
+# the drive's), MIX, DECAY, TONE; REVERB 2, right after it: PRE-DELAY (moved from REVERB), SIZE (0 = AUTO: MIX sets
+# it, as before), MOD, LOW CUT (0 = OFF). Encoders: SELECT 0, K1..K4 = 2..5. REVERB is 11 SELECT detents from
+# PERFORM on the Rhodes (ui.c PG_ORDER: two VOICE pages). p.59: the TYPE's value (params.c P_RV_TYPE).
+# An enum card steps once per pass whatever the detents, so the TYPE turns are one detent each.
+# (F01 since 0.9.5: MIX 18, LOW CUT 150 Hz; the pages from MIX 25, LOW CUT OFF as before)
+50 midi 0xB0 91 25
+60 midi 0xB0 69 0
+100 turn 0 1
+110 turn 0 1
+120 turn 0 1
+130 turn 0 1
+140 turn 0 1
+150 turn 0 1
+160 turn 0 1
+170 turn 0 1
+180 turn 0 1
+190 turn 0 1
+200 turn 0 1
+300 expect state page REVERB
+300 expect state label0 TYPE
+300 expect state label1 MIX
+300 expect state label2 DECAY
+300 expect state label3 TONE
+300 expect state card0 HALL
+300 expect state card1 2.0
+300 expect state hint NEXT_PAGE:_SIZE,_MOD,_LOW_CUT
+# K1 left: OFF; MIX keeps its number on its own page (PERFORM's REVERB card reads OFF: below)
+400 turn 2 -1
+450 expect state card0 OFF
+450 expect state p.59 0
+450 expect state card1 2.0
+# K1 right: HALL, PLATE, INFINITE, and there it stops (the last TYPE)
+500 turn 2 1
+550 expect state card0 HALL
+600 turn 2 1
+650 expect state card0 PLATE
+700 turn 2 1
+750 expect state card0 INFINITE
+750 expect state p.59 3
+750 expect state hint DECAY_UP:_SUSTAIN,_TOP:_FREEZE
+800 turn 2 1
+850 expect state card0 INFINITE
+# INFINITE's DECAY: 120..126 holds the tail with the input open (SUSTAIN), 127 closes it (FREEZE); HALL's DECAY at the top is a number
+900 turn 4 60
+950 expect state card2 SUSTAIN
+1000 turn 4 -8
+1050 expect state card2 9.1
+1100 turn 4 4
+1150 expect state card2 SUSTAIN
+1160 turn 4 40
+1190 expect state card2 FREEZE
+1200 turn 2 -1
+1210 turn 2 -1
+1250 expect state card0 HALL
+1250 expect state card2 10.0
+1250 expect state hint NEXT_PAGE:_SIZE,_MOD,_LOW_CUT
+1300 shot
+# a TYPE switched on with MIX at 0 gets a starting MIX (fx_wake: 32 = 2.5); MIX set by the player is kept
+1400 turn 3 -40
+1450 expect state card1 0.0
+1500 turn 2 -1
+1550 expect state card0 OFF
+1600 turn 2 1
+1650 expect state card0 HALL
+1650 expect state card1 2.5
+# REVERB 2: one detent on; the defaults are the sound before 0.9.5
+1700 turn 0 1
+1800 expect state page REVERB_2
+1800 expect state label0 PRE-DELAY
+1800 expect state label1 SIZE
+1800 expect state label2 MOD
+1800 expect state label3 LOW_CUT
+1800 expect state card0 0
+1800 expect state card1 AUTO
+1800 expect state card2 5.0
+1800 expect state card3 OFF
+1800 expect state hint SIZE_AUTO:_MIX_SETS_THE_SIZE
+1900 turn 3 1
+1900 turn 5 1
+1950 expect state card1 0.1
+1950 expect state card3 20
+2000 turn 3 -1
+2000 turn 5 -1
+2050 expect state card1 AUTO
+2050 expect state card3 OFF
+2100 turn 2 20
+2150 expect state card0 13
+2200 shot
+# and on to TEMPO
+2300 turn 0 1
+2400 expect state page TEMPO
+# PERFORM wake: the reverb OFF (HALL the last TYPE on); turning PERFORM's REVERB (K4) up switches it on as HALL
+2500 turn 0 -1
+2510 turn 0 -1
+2600 expect state page REVERB
+2600 turn 2 -1
+2650 expect state card0 OFF
+2700 btn 8
+2750 expect state page PERFORM
+2750 expect state card3 OFF
+2800 turn 5 1
+2850 expect state p.59 1
+2850 expect state card3 2.6
+2850 expect sound
+2900 end

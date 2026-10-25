@@ -59,24 +59,46 @@ HUFF = [("L",)]
 #   VIBES, MAJ7 MIN7 M7B5 DIM7 ADD9 SUS4 AUG, FRODHES, EMPTY;
 #   the choices too since 2026-10-18 (the user: their whole names large, no segments): K Q W X & for KEY, KNOB,
 #   SQR, WAH, SAW, EXT, MIXO, FIXED, S&H, COMP MKUP (+1.4 KB).
-# Not in L: Z, lower case (folded to capitals by aatext.c aa_fold). aatext.c aa_covers(f, s) tells whether L has every
+#   Z (0.9.5): FREEZE, the reverb's INFINITE at the top of DECAY.
+# Not in L: lower case (folded to capitals by aatext.c aa_fold). aatext.c aa_covers(f, s) tells whether L has every
 # character of a string.
-L_CHARS = " #%&*+-./0123456789:ABCDEFGHIJKLMNOPQRSTUVWXY"
+L_CHARS = " #%&*+-./0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+# the font diet (2026-10-24): a face keeps only the characters the firmware can draw (tools/font_chars.py: every
+# literal of the app's sources that reaches the screen, plus what is formatted at run time). S: ASCII 32..126 as its
+# range, the glyphs of the others left out and AF_S_MAP (code - 32 -> glyph, 255 = none: drawn as '?', aatext.c
+# aa_glyph_at); its metrics (line height, the digits' advance) and kerning stay the full face's. L: L_CHARS restricted
+# to the same set (all of them are drawn today). --full: every glyph (the faces before the diet, for comparisons).
+DIET = [True]
+
+
+def diet_s():
+    """the small face's characters (None = all)"""
+    if not DIET[0]:
+        return None
+    import font_chars
+    return {c for c in font_chars.aa_chars()[0] if 32 <= ord(c) <= 126}
+
+
+def diet_l():
+    if not DIET[0]:
+        return L_CHARS
+    import font_chars
+    return font_chars.aa_l_chars(L_CHARS)
 
 
 def preset(name):
     if name == "inter-tight":
         v = str(FONTS.parent / "assets" / "fonts" / "InterTight[wght].ttf")   # SIL OFL 1.1, Google Fonts
-        return [("S", v + "@500", 13, (32, 126), EXTRAS, 0.0, PHASES),
-                ("L", v + "@600", 28, (32, 32), [ord(c) for c in L_CHARS[1:]], 0.0, PHASES_L)]
+        return [("S", v + "@500", 13, (32, 126), EXTRAS, 0.0, PHASES, diet_s()),
+                ("L", v + "@600", 28, (32, 32), [ord(c) for c in diet_l()[1:]], 0.0, PHASES_L)]
     if name == "standin":
         if os.path.exists(LOCAL_INTER):
             reg, med, semi = LOCAL_INTER + "#0", LOCAL_INTER + "#10", LOCAL_INTER + "#12"
         else:                                  # the repo's Inter 3.019 (only Regular + Light)
             reg = med = semi = str(FONTS / "Inter-Regular.ttf")
         t = -0.025                             # Inter Tight is Inter with tighter spacing
-        return [("S", med, 13, (32, 126), EXTRAS, t, PHASES),
-                ("L", semi, 28, (32, 32), [ord(c) for c in L_CHARS[1:]], t, PHASES_L)]
+        return [("S", med, 13, (32, 126), EXTRAS, t, PHASES, diet_s()),
+                ("L", semi, 28, (32, 32), [ord(c) for c in diet_l()[1:]], t, PHASES_L)]
     raise SystemExit(f"unknown preset {name}")
 
 
@@ -177,9 +199,15 @@ def huff_unpack(hc, data, n):
 
 
 def emit(face, tracking, gamma, kern_min):
-    name, font, px, (first, last), extras, ftrack, phases = face
+    name, font, px, (first, last), extras, ftrack, phases = face[:7]
+    keep = face[7] if len(face) > 7 else None          # the font diet: the range's characters stored (None: all)
     chars = [chr(c) for c in range(first, last + 1)] + [chr(c) for c in extras]
     r = ar.raster_font(font, px, chars, tracking if ftrack is None else ftrack, gamma, True, kern_min, phases)
+    full = chars
+    if keep is not None:                               # rasterised whole (the metrics), stored in part
+        chars = [c for c in chars[:last - first + 1] if c in keep] + chars[last - first + 1:]
+        assert "?" in chars and len(chars) < 255
+    gmap = [chars.index(chr(c)) if chr(c) in chars else 255 for c in range(first, last + 1)] if keep is not None else []
     data, table, lines = bytearray(), [], []
     for ch in chars:
         adv16, ph = r["glyphs"][ch]
@@ -208,14 +236,15 @@ def emit(face, tracking, gamma, kern_min):
         table = [(newoff.get(off, 0),) + t[1:] for t in table for off in (t[0],)]
         data += bytes(2)                               # gfx.c cv_alpha_hc reads up to 2 bytes ahead
     assert len(data) < 65536, "glyph data over 64 KiB: split the face"
-    kern = sorted(r["kern"].items())
+    kern = sorted((ab, d) for ab, d in r["kern"].items() if ab[0] in chars and ab[1] in chars)
     keys = [(ord(a) << 8) | ord(b) for (a, b), _ in kern if ord(a) < 256 and ord(b) < 256]
     deltas = [d for (a, b), d in kern if ord(a) < 256 and ord(b) < 256]
     order = sorted(range(len(keys)), key=lambda i: keys[i])
     keys, deltas = [keys[i] for i in order], [deltas[i] for i in order]
     psh = phases.bit_length() - 1
     lines.append(f"/* {name}: {os.path.basename(font.split('#')[0])} {px}px, h {r['h']}, baseline {r['asc']}, "
-                 f"{len(chars)} glyphs x {phases} phases, {len(data)} B data"
+                 + (f"{len(chars)} of {len(full)} glyphs" if gmap else f"{len(chars)} glyphs")
+                 + f" x {phases} phases, {len(data)} B data"
                  + (f" (Huffman; {len(raw)} B as nibbles) */" if hc else " */"))
     lines.append(ar.c_array(f"AF_{name}_DATA", "uint8_t", list(data), 24, "0x{:02x}"))
     if hc:
@@ -229,14 +258,17 @@ def emit(face, tracking, gamma, kern_min):
         lines.append(ar.c_array(f"AF_{name}_KD", "int8_t", deltas, 24))
     ex = ", ".join(str(CODE.get(c, c)) for c in extras) or "0"
     lines.append(f"static const uint8_t AF_{name}_EX[{max(1, len(extras))}] = {{{ex}}};")
+    if gmap:
+        lines.append(ar.c_array(f"AF_{name}_MAP", "uint8_t", gmap, 24))
     lines.append(f"static const aafont_t AF_{name} = {{{r['h']}, {r['asc']}, {first}, {last}, {len(extras)}, {len(keys)}, "
                  f"AF_{name}_G, AF_{name}_DATA, {'AF_%s_KERN' % name if keys else '0'}, "
-                 f"{'AF_%s_KD' % name if keys else '0'}, AF_{name}_EX, {psh}, {'AF_%s_HC' % name if hc else '0'}}};")
+                 f"{'AF_%s_KD' % name if keys else '0'}, AF_{name}_EX, {psh}, {'AF_%s_HC' % name if hc else '0'}"
+                 + (f", AF_{name}_MAP" if gmap else "") + "};")
     if "H" in chars:                                  # the capitals' band (gfx.c CAP_IN: centring text by it)
         cap = table[chars.index("H") * phases]
         lines.append(f"#define AF_{name}_CAP_Y {cap[3]}   /* the ink of H: rows {cap[3]} .. {cap[3] + cap[5] - 1} of the line */")
         lines.append(f"#define AF_{name}_CAP_H {cap[5]}")
-    cost = {"data": len(data) + len(hc), "glyph_table": 8 * len(table), "kern": 3 * len(keys), "extras": len(extras),
+    cost = {"data": len(data) + len(hc), "glyph_table": 8 * len(table), "kern": 3 * len(keys), "extras": len(extras) + len(gmap),
             "glyphs": len(chars), "phases": phases, "pairs": len(keys), "h": r["h"], "asc": r["asc"], "px": px,
             "font": os.path.basename(font.split("#")[0]), "adv_digit": r["glyphs"]["0"][0] / 16}
     cost["total"] = cost["data"] + cost["glyph_table"] + cost["kern"] + cost["extras"]
@@ -253,7 +285,9 @@ def main():
     ap.add_argument("--kern-min", type=int, default=1, help="smallest kerning pair kept, in 1/16 px (0 pairs = no kerning)")
     ap.add_argument("--huff", default=",".join(HUFF[0]), help="faces stored Huffman-coded (comma list, '' = none)")
     ap.add_argument("--value-px", type=int, default=0, help="only the value face V<N> at N px (L's glyphs and weight)")
+    ap.add_argument("--full", action="store_true", help="every glyph (no font diet: the faces before it)")
     a = ap.parse_args()
+    DIET[0] = not a.full
     HUFF[0] = tuple(x for x in a.huff.split(",") if x)
     faces = ([parse_face(s) for s in a.face] if a.face else []) or (preset(a.preset) if a.preset else None)
     if a.value_px:

@@ -1,0 +1,74 @@
+# SMK-37 build only (make test-smk): the SMK's own buttons and lights, by its ids (KNOB BANK 0, FADER BANK 1, < 2,
+# > 3; FX 14, SEQ 15, PLAY 16, REC 17; button LED = its button). ui.c set the button LEDs 0..13 only: FX, SEQ, PLAY
+# and REC (14..17) stayed dark. DISPLAY BRIGHTNESS dims the button LEDs ("leddark": the HAL's dark frames) and the
+# pads; DISPLAY shows no LEDS card, MIDI no TRS IN (neither is on the SMK).
+0 ids smk
+100 expect state page PERFORM
+100 expect led 14 1
+100 expect led 2 0
+100 expect led 3 1
+# > <: the pages, as SELECT
+200 btn 3
+300 expect state page FRODHES
+300 expect led 2 1
+400 btn 2
+500 expect state page PERFORM
+500 expect led 2 0
+# FX (bypass) and REC (sustain): their LEDs, ids 14 and 17
+600 btn 14
+700 expect led 14 0
+800 btn 14
+900 expect led 14 1
+1000 press 17
+1100 expect led 17 1
+1400 release 17
+1500 expect led 17 0
+# PLAY taps the tempo; SEQ: the SEQUENCER page
+1520 btn 15
+1580 expect state page SEQUENCER
+# KNOB BANK held: the panel check owns the screen (its light on), let go: the page again
+1600 press 0
+1700 expect state panel 1
+1700 expect led 0 1
+1750 shot
+1800 release 0
+1900 expect state panel 0
+1900 expect led 0 0
+# GLO (10) x 4: DISPLAY; no LEDS card; BRIGHTNESS (K6) all the way down: the button LEDs a quarter, the pads at 1/16
+2000 btn 10
+2050 btn 10
+2100 btn 10
+2150 btn 10
+2200 expect state page DISPLAY
+2200 expect state hint THE_SCREEN_AND_THE_KEY_LIGHTS
+2300 turn 5 -1
+2310 turn 5 -1
+2320 turn 5 -1
+2330 turn 5 -1
+2340 turn 5 -1
+2350 turn 5 -1
+2360 turn 5 -1
+2370 turn 5 -1
+2380 turn 5 -1
+2400 expect state ledduty 1_2
+2400 expect state leddark 6
+2400 expect state padrgb.0 08030D
+2400 expect state pad.0 1
+2500 turn 5 1
+2510 turn 5 1
+2520 turn 5 1
+2530 turn 5 1
+2600 expect state leddark 2
+2700 turn 5 1
+2710 turn 5 1
+2720 turn 5 1
+2730 turn 5 1
+2740 turn 5 1
+2800 expect state leddark 0
+2800 expect state padrgb.0 7828D2
+# MIDI (GLO back to TEMPO, then SETUP, MIDI): no TRS IN
+2900 btn 10
+3000 btn 10
+3100 btn 10
+3200 expect state page MIDI
+3300 end

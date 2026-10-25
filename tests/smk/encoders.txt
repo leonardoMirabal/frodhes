@@ -1,0 +1,28 @@
+# SMK-37 build only (make test-smk): its eight knobs, by its own ids (K1 MASTER 0, K2 SELECT 1, K3 ALGORITHM 2,
+# K4 PRESETS 3, K5..K8 the cards 4..7). ui.c read seven encoders into d[7]: K8 (7) was read past the array, so card 4
+# lost its turns, and K1 (MASTER, platform.c's) was taken by the UI as well. Now: K8 reaches card 4, K1 is left alone.
+# PERFORM's K4 REVERB p.19, K1 DRIVE p.1, from the boot preset F01 (0.9.5's bank: REVERB 18, DRIVE 0).
+0 ids smk
+100 turn 7 5
+200 expect state page PERFORM
+200 expect state p.19 23
+200 expect state card3 1.8
+300 turn 4 10
+400 expect state p.1 10
+# K1: MASTER's, not the UI's: its detents stay for platform.c (the host has no MASTER reader: they wait there)
+500 turn 0 4
+600 expect state mastq 4
+600 expect state page PERFORM
+600 expect state p.1 10
+600 expect state p.19 23
+# K2 SELECT: the next page (FRODHES); K8 there is KEY VEL (96, a fast turn steps 4)
+700 turn 1 1
+800 expect state page FRODHES
+900 turn 7 -3
+1000 expect state card3 84
+# K6 / K7 on FRODHES: the engine's K2 / K3 (TONE, BELL): a turn moves them, not the cards beside
+1100 turn 5 1
+1100 turn 6 1
+1200 expect state hot 2
+1300 shot
+1400 end

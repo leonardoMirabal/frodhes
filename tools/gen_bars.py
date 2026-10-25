@@ -6,6 +6,11 @@
                                                   (or both into DIR)
     tools/gen_bars.py --repin [--out DIR]      the FE and the pair stage solved afresh and written to bars_fe_pins.json
                                                   and bars_pins.json (or into DIR): a deliberate, reviewed table change
+    tools/gen_bars.py --repin-st77 [--out DIR] the Rhodes reference levels rendered afresh from rhodes_spec.json and
+                                                  written to bars_st77_pins.json (re-levels every bar TYPE: on purpose)
+    tools/gen_bars.py --repin-marimba-pitch [--out DIR]   MARIMBA's output pitch measured on the golden model (v100,
+                                                  mrb_ref_measure's f0) and the low keys' trims updated in
+                                                  marimba_pitch_pins.json; then --repin-marimba-pair re-solves the words
     tools/gen_bars.py --vibes-only             the one-type header (VIBES alone, BAR_NTYPE 1: the 0.9.3 format)
     tools/gen_bars.py --both --out DIR         DIR/bars_tables.h (every type) + DIR/bars_tables_vibes.h (--vibes-only)
     tools/gen_bars.py --marimba-offset-add DB --out DIR   an A/B header for listening (MARIMBA PLAN §12.5): MARIMBA's
@@ -191,6 +196,37 @@ MAR_FE_PINS = os.path.join(ROOT, "docs", "model", "data", "marimba_fe_pins.json"
 FE_RANGE = (53, 89)                    # the geometric (FE) keys of the type being built (its "authentic" range)
 MOT_GRID = (0.15, 0.5, 1.0)            # the stability grid's motor gains (a type without a motor: 1.0 only)
 KC_FALLBACK, KC_FALLBACK_TOL = False, 0.01   # a later type: kc = 1 where the kc fit cannot act (pair_words_safe)
+
+
+ST77_PINS = os.path.join(ROOT, "docs", "model", "data", "bars_st77_pins.json")
+ST77_PINS_DOC = ("gen_bars.py ST77 pins: the Rhodes reference each bar TYPE's level is matched to (calib _doc_st77): per "
+                 "lufs_t window ('t0:t1') and key, the STAGE 77 golden render's v100 loudness (rhodes_model.render_batch "
+                 "on rhodes_spec.json, lufs_k). Pinned so a Rhodes retune (a new rhodes_spec.json) leaves VIBES and "
+                 "MARIMBA byte for byte as approved; made from rhodes_spec.json at 8d913af (the tables of 0.9.4 / the "
+                 "0.9.5 RC). Regenerate only on purpose: tools/gen_bars.py --repin-st77 (re-levels every bar TYPE).")
+BUILD_ST77 = {}                        # the references the last build rendered (--repin-st77 writes them)
+
+
+def st77_ref(keys, l0, l1):
+    """the Rhodes reference loudness per key (LUFS) over [l0, l1]: ST77_PINS, or (--repin-st77, or no pin file) the
+    golden Rhodes rendered from rhodes_spec.json as it is now"""
+    w = "%r:%r" % (float(l0), float(l1))
+    if "--repin-st77" not in sys.argv and os.path.exists(ST77_PINS):
+        d = json.load(open(ST77_PINS))
+        assert d.get("version") == 1, "bars_st77_pins.json: unknown version"
+        return np.array([d["lufs"][w][str(n)] for n in keys])
+    import rhodes_model as rm
+    rs = json.load(open(os.path.join(ROOT, "docs", "model", "data", "rhodes_spec.json")))
+    rk = {k["midi"]: k for k in rs["keys"]}
+    lr = [lufs_k(r, l0, l1) for r in rm.render_batch([rk[n] for n in keys], rs["pickup"], [100] * len(keys), l1,
+                                                      gains=[rk[n]["gain"] for n in keys])]
+    BUILD_ST77.setdefault(w, {}).update({str(n): float(v) for n, v in zip(keys, lr)})
+    return np.array(lr)
+
+
+def write_st77_pins(path):
+    d = {"_doc": ST77_PINS_DOC, "version": 1, "lufs": BUILD_ST77}
+    open(path, "w").write(json.dumps(d, indent=1, sort_keys=True) + "\n")
 
 
 def is_mar(vb):
@@ -474,7 +510,66 @@ def v1_target(vb, k):
     F#3..C4 2-4 c sharp. Both slots scale together, so the split, the decays and the bloom do not move."""
     if not is_mar(vb):
         return k["f0"]
-    return k["bt"].v1()[0] * k["f0"] / radiated_pitch(k["bt"], k["wt"])
+    n = int(round(69 + 12 * math.log2(k["f0"] / 440.0)))
+    trim = 2 ** (pitch_trims().get(n, 0.0) / 1200)   # the output's FFT peak on f0 (MAR_PITCH_PINS; 1 where none)
+    return k["bt"].v1()[0] * k["f0"] / radiated_pitch(k["bt"], k["wt"]) * trim
+
+
+MAR_PITCH_PINS = os.path.join(ROOT, "docs", "model", "data", "marimba_pitch_pins.json")
+MAR_PITCH_PINS_DOC = ("gen_bars.py MARIMBA pitch pins: per low key (below PITCH_TRIM_HI) the cents v1_target moves the pair "
+                      "by so the OUTPUT's f0 (mrb_ref_measure's: the 2^18-point FFT peak of the ring from 20 ms, the golden "
+                      "model at v100, DEFAULT cards) is ET. radiated_pitch (the modes' energy-weighted mean) leaves the "
+                      "strongly coupled pair's FFT peak up to 5 c flat (A0..C#2): the lower normal mode wins. Made by "
+                      "tools/gen_bars.py --repin-marimba-pitch (one measuring step: trim -= measured cents), then "
+                      "--repin-marimba-pair; keys not listed: 0 (their words unchanged).")
+PITCH_TRIM_HI = 60                     # the trims stop under C4 (the pair's two modes carry the note only below it)
+PITCH_TRIM_TOL_C = 0.25                # a key gets (or keeps) a trim when its output is off by more than this
+BUILD_PITCH = {}                       # the trims of the last --repin-marimba-pitch build
+
+
+def pitch_trims():
+    """{midi: cents} of MAR_PITCH_PINS (empty when the file is missing)"""
+    if not os.path.exists(MAR_PITCH_PINS):
+        return {}
+    d = json.load(open(MAR_PITCH_PINS))
+    assert d.get("version") == 1, "marimba_pitch_pins.json: unknown version"
+    return {int(n): float(c) for n, c in d["cents"].items()}
+
+
+def output_f0(x, n):
+    """mrb_ref_measure.measure's f0 (Hz) of one note's output x (from its onset): the FFT peak from 20 ms over the
+    ring (until the 10 ms RMS is 40 dB under its peak, 0.1..1 s)"""
+    import mrb_ref_measure as mrm
+    x = np.asarray(x, float)
+    a = np.abs(x)
+    x = x * 32767.0 if a.max() < 2.0 else x
+    a = np.abs(x)
+    x = x[max(0, int(np.argmax(a > 1e-3 * a.max())) - int(0.001 * FS)):]
+    hop = int(0.01 * FS)
+    env = 20 * np.log10(np.sqrt(np.convolve(x * x, np.ones(hop) / hop, "valid")[::hop]) + 1e-9)
+    pk = int(np.argmax(env))
+    j40 = pk + int(np.argmax(env[pk:] < env[pk] - 40)) if np.any(env[pk:] < env[pk] - 40) else len(env) - 1
+    return mrm.fine_peak(x, midi_hz(n), 0.94, 1.06, 0.02, 0.02 + float(np.clip(j40 * hop / FS, 0.1, 1.0)))
+
+
+def repin_pitch(mspec):
+    """--repin-marimba-pitch: the golden model's v100 output pitch per key below PITCH_TRIM_HI; trim -= cents where
+    the key is off by more than PITCH_TRIM_TOL_C or already has a trim (BUILD_PITCH; main writes it)"""
+    tr = pitch_trims()
+    keys = list(range(KEY_LO, PITCH_TRIM_HI))
+    ys = render_chunks(mspec, keys, [100] * len(keys), 1.5, dict(gm.DEFAULT_KNOBS))
+    for n, y in zip(keys, ys):
+        c = 1200 * math.log2(output_f0(y, n) / midi_hz(n))
+        if n in tr or abs(c) > PITCH_TRIM_TOL_C:
+            tr[n] = round(tr.get(n, 0.0) - c, 3)
+        print("pitch key %d: output %+.2f c, trim %+.3f c" % (n, c, tr.get(n, 0.0)), file=sys.stderr)
+    BUILD_PITCH.clear()
+    BUILD_PITCH.update(tr)
+
+
+def write_pitch_pins(path):
+    d = {"_doc": MAR_PITCH_PINS_DOC, "version": 1, "cents": {str(n): BUILD_PITCH[n] for n in sorted(BUILD_PITCH)}}
+    open(path, "w").write(json.dumps(d, indent=1) + "\n")
 
 
 def pair_words_safe(bt, wt, felt, f0):
@@ -1971,13 +2066,10 @@ def build(vb=None, vspec=None):
     spec = build_spec(vb, phys, fec, ct, st)
     # the Rhodes level per key (calib _doc_st77): each key's v100 loudness (K-weighted, lufs_t) = the STAGE 77 golden
     # render's at the same key (both no effects), the ST77 curve moving-averaged over +-lufs_smooth_keys
-    import rhodes_model as rm
-    rs = json.load(open(os.path.join(ROOT, "docs", "model", "data", "rhodes_spec.json")))
-    rk = {k["midi"]: k for k in rs["keys"]}
+    # (the Rhodes side pinned: ST77_PINS, so a Rhodes retune does not move the bar TYPEs)
     l0, l1 = cal["lufs_t"]
     lb = np.array([lufs_k(r, l0, l1) for r in render_chunks(spec, keys, [100] * len(keys), l1, dict(gm.DEFAULT_KNOBS))])
-    lr = np.array([lufs_k(r, l0, l1) for r in rm.render_batch([rk[n] for n in keys], rs["pickup"], [100] * len(keys), l1,
-                                                               gains=[rk[n]["gain"] for n in keys])])
+    lr = st77_ref(keys, l0, l1)
     sk = int(cal["lufs_smooth_keys"])
     lrs = np.array([np.mean(lr[max(0, i - sk):i + sk + 1]) for i in range(len(keys))])
     corr = lrs - lb + float(cal.get("st77_offset_db", 0.0))    # the user's offset over the Rhodes (calib)
@@ -2472,6 +2564,16 @@ def main():
         if fp:
             write_fe_pins(fp, mspec["vibes"], BUILD_FE_MAR)
         print("marimba pins written: %s, %s (review the table change before committing)" % (pp, fp), file=sys.stderr)
+    if "--repin-marimba-pitch" in sys.argv and mspec is not None:
+        with type_globals(mspec["vibes"]):
+            repin_pitch(mspec)
+        pp = os.path.join(out, "marimba_pitch_pins.json") if out else MAR_PITCH_PINS
+        write_pitch_pins(pp)
+        print("marimba pitch pins written: %s (then --repin-marimba-pair)" % pp, file=sys.stderr)
+    if "--repin-st77" in sys.argv:
+        sp = os.path.join(out, "bars_st77_pins.json") if out else ST77_PINS
+        write_st77_pins(sp)
+        print("ST77 pins written: %s (every bar TYPE re-levelled: review before committing)" % sp, file=sys.stderr)
     if "--repin" in sys.argv:
         pp = os.path.join(out, "bars_pins.json") if out else PINS
         write_pins(pp, BUILD_PINS)

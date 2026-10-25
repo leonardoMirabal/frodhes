@@ -1,0 +1,57 @@
+# SMK-37 build only (make test-smk): the four faders, two banks (FADER BANK, its light: bank B), soft takeover. Bank A:
+# the engine's first VOICE page (the Rhodes: TONE BARK BELL HAMMER = p.20 .. p.23), bank B: the PERFORM knobs (by
+# default DRIVE p.1, FILTER p.41, DELAY p.14, REVERB p.19). A fader takes over once it reaches the value (or passes
+# it); until then it moves nothing and the footer says where to go. "fader.N": the card it drives, its value, OWN / WAIT.
+0 ids smk
+100 expect state fbank A
+400 fader 0 10
+500 expect state fader.0 TONE:+0.0:WAIT
+500 expect state p.20 64
+500 expect state msg TONE_UP_TO_+0.0
+600 fader 0 40
+700 expect state p.20 64
+# past the value: it takes over and follows
+800 fader 0 70
+900 expect state p.20 70
+900 expect state fader.0 TONE:+0.5:OWN
+1000 fader 0 90
+1100 expect state p.20 90
+# a knob moves TONE (VOICE K5): the fader waits again, until it comes back to the new value
+1200 turn 1 1
+1250 turn 1 1
+1300 expect state page VOICE
+1400 turn 4 -30
+1500 expect state p.20 60
+1500 expect state fader.0 TONE:-0.3:WAIT
+1600 fader 0 80
+1700 expect state p.20 60
+1800 fader 0 61
+1900 expect state p.20 61
+1900 expect state fader.0 TONE:-0.2:OWN
+# FADER BANK: bank B, the PERFORM knobs; its light on. Fader 3 (DELAY) far from 0: waits; near 0: takes over and
+# switches the delay on (as a PERFORM knob)
+2000 btn 1
+2100 expect state fbank B
+2100 expect led 1 1
+2200 fader 2 50
+2300 expect state p.14 0
+2300 expect state fader.2 DELAY:0.0:WAIT
+2400 fader 2 2
+2500 expect state p.14 2
+2500 expect state p.13 1
+2600 fader 2 60
+2700 expect state p.14 60
+# a preset load moves everything: every fader waits again
+2800 midi 0xC0 1 0
+2900 expect state fader.2 DELAY:0.0:WAIT
+3000 fader 2 61
+3100 expect state p.14 0
+3100 expect state fader.2 DELAY:0.0:WAIT
+# back to bank A: its light off
+3200 btn 1
+3300 expect state fbank A
+3300 expect led 1 0
+# VIBES: bank A is STRIKE MALLET TUBE WEIGHT
+3400 midi 0xB0 79 0
+3500 expect state fader.2 TUBE:5.0:WAIT
+3600 end

@@ -209,7 +209,7 @@ def matrix(typ, full, smoke=False):
     FX = [("drive", dict(DRIVE=127)), ("comp", dict(CMP_SW=127, CMP_AMT=127, CMP_RAT=127, CMP_GAIN=127)),
           ("filter", dict(FL_TYPE=40, FL_FREQ=60, FL_RESO=127, FL_LFO=127)), ("trem", dict(TW_SW=64, TW_DEPTH=127, TW_MODE=64)),
           ("wah", dict(TW_SW=127, TW_DEPTH=127)), ("phaser", dict(PH_SW=127, PH_DEPTH=127, PH_FDBK=127)),
-          ("chorus", dict(CP_SW=64, CP_DEPTH=127)), ("delay", dict(DL_SW=127, DL_DEPTH=127, DL_FDBK=127)),
+          ("chorus", dict(CP_SW=64, CP_DEPTH=127)), ("delay", dict(DL_SW=80, DL_DEPTH=127, DL_FDBK=127)),
           ("reverb", dict(REV=127))]
     allfx = {}
     for _, d in FX:
@@ -219,7 +219,7 @@ def matrix(typ, full, smoke=False):
         ev = bm.setup_events(typ=typ, raw=False, **d) + sum((bm.note(200, n, 100, 1500) for n in (57, 64, 69, 76)), [])
         C.append(Case(f"fx {name}", "fx", ev, 5000, ["S1c", "S2"]))
     # polyphony and steals (S1 S4)
-    for nn in (8, 9, 12, 16):                                      # 9 = every voice (FR_VOICES)
+    for nn in (8, 9, 12, 16):                                      # 9 = every voice (rhodes.c BAR_VOICES)
         notes = list(range(48, 48 + 3 * nn, 3))[:nn]
         ev = S(noise=None) + [(150, "midi 0xB0 64 127")] + sum((bm.note(200 + 10 * i, n, 100, 400) for i, n in enumerate(notes)), [])
         ev += [(4000, "midi 0xB0 64 0")]

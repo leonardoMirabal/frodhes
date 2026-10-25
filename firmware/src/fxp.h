@@ -18,7 +18,7 @@ static inline int32_t sat28(int64_t v)
     return v > ((1 << 28) - 1) ? ((1 << 28) - 1) : v < -((1 << 28) - 1) ? -((1 << 28) - 1) : (int32_t)v;
 }
 static inline int32_t lerp15(int32_t a, int32_t b, int32_t f) { return a + (((b - a) * f) >> 15); }
-static inline int32_t iabs(int32_t v) { return v < 0 ? -v : v; }
+static inline __attribute__((always_inline)) int32_t iabs(int32_t v) { return v < 0 ? -v : v; }
 /* fm1_ticks() (24 MHz) to samples at 44.1 kHz, no division: 2^32 * 44100 / 24e6 = 7892002.4 */
 static inline uint32_t ticks_to_samples(uint32_t t) { return (uint32_t)(((uint64_t)t * 7892002u) >> 32); }
 #endif

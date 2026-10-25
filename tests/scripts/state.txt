@@ -9,7 +9,7 @@
 1700 expect state header F01_STAGE_77
 1700 expect state page PERFORM
 1700 expect state card0 0.0
-1700 expect state card2 16K
+1700 expect state card1 16K
 1700 expect led 2 1
 1700 expect led 8 1
 1700 expect led 3 0
@@ -20,91 +20,110 @@
 1700 expect led 0 0
 1700 expect led 1 0
 1700 expect state undo 0
-# ---- program change: F06 BRIGHT CHO (chorus + delay: SEL lit), its cards
-1800 midi 0xC0 5 0
+# ---- program change: F09 70S PHASER (the phaser: ENV lit, its analog echo: SEL lit), its cards
+1800 midi 0xC0 8 0
 1900 expect preset
 1900 expect sound
-1900 expect state header F06_BRIGHT_CHO
+1900 expect state header F09_70S_PHASER
 1900 expect led 3 1
-1900 expect led 4 0
+1900 expect led 4 1
 1900 expect led 5 0
-1900 expect state card.2.0 BELL_DYNO
-1900 expect state card.9.0 ON
-1900 expect state card.10.0 DIG
-# ---- PRESETS browse: F07 shows in the footer, but the sound and the header stay F06 until it loads (400 ms)
+1900 expect state card.2.0 STAGE_77
+1900 expect state card.8.0 ON
+1900 expect state card.9.0 OFF
+1900 expect state card.10.0 ANA
+# ---- PRESETS browse: F10 shows in the footer, but the sound and the header stay F09 until it loads (400 ms)
 2000 turn 6 1
-2200 expect state msg F07_FUNK_WAH
-2200 expect state header F06_BRIGHT_CHO
+2200 expect state msg F10_FUNK_WAH
+2200 expect state header F09_70S_PHASER
 2200 expect preset
 2200 expect led 5 0
 2600 expect preset
 2600 expect sound
-2600 expect state header F07_FUNK_WAH
+2600 expect state header F10_FUNK_WAH
 2600 expect led 5 1
-2600 expect led 3 0
+2600 expect led 4 0
 2600 expect state card.7.0 WAH
-2600 expect state card.5.0 -25
-# ---- hold SAVE 0.7 s: undo the load, the header follows the sound (it kept F07's name over F06's sound until 0.9.3)
+2600 expect state card.5.0 -18
+# ---- hold SAVE 0.7 s: undo the load, the header follows the sound (it kept the next preset's name over the sound until 0.9.3)
 2700 press 9
 3500 release 9
 3600 expect state msg UNDO
 3600 expect preset
 3600 expect sound
-3600 expect state header F06_BRIGHT_CHO
-3600 expect led 3 1
+3600 expect state header F09_70S_PHASER
+3600 expect led 4 1
 3600 expect led 5 0
 # hold again: redo
 3700 press 9
 4500 release 9
 4600 expect preset
 4600 expect sound
-4600 expect state header F07_FUNK_WAH
+4600 expect state header F10_FUNK_WAH
 4600 expect led 5 1
-# ---- an edit, then save it to U02: SAVE, K1 one right, SAVE; the save mode blinks SAVE, the footer asks
+# ---- an edit (PERFORM K1: DRIVE), then save it to U14: SAVE, K1 thirteen right, SAVE; the save mode blinks SAVE, the footer asks
+# (a bank never saved opens with the starters in U01..U09, presets.c PR_SDATA: U10..U13 stay empty; 0.9.5's RC had
+# U10..U12 too: now F17..F19)
 4700 turn 2 30
-4800 expect state p.3 119
+4800 expect state p.1 74
 4800 btn 9
 4900 expect state savemode 1
 4900 turn 2 1
+4905 turn 2 1
+4910 turn 2 1
+4915 turn 2 1
+4920 turn 2 1
+4925 turn 2 1
+4930 turn 2 1
+4935 turn 2 1
+4940 turn 2 1
+4945 turn 2 1
+4950 turn 2 1
+4955 turn 2 1
+4960 turn 2 1
 5000 btn 9
 5100 expect state savemode 0
-5100 expect state header U02_ST77_WAH
+5100 expect state header U14_ST77_WAH
 5100 expect preset
 5100 expect sound
-5100 expect state u.2 U02_ST77_WAH
-5100 expect state u.1 U01_----
-# the stored copy plays the same: F01, then program change 17 (U02)
+5100 expect state u.14 U14_ST77_WAH
+5100 expect state u.13 U13_----
+5100 expect state u.12 U12_----
+5100 expect state u.10 U10_----
+5100 expect state u.1 U01_DARK_KEYS
+5100 expect state u.9 U09_VELVET
+# the stored copy plays the same: F01, then program change 29 (U14)
 5200 midi 0xC0 0 0
 5300 expect preset
 5300 expect state header F01_STAGE_77
-5400 midi 0xC0 17 0
+5400 midi 0xC0 29 0
 5500 expect preset
 5500 expect sound
-5500 expect state header U02_ST77_WAH
+5500 expect state header U14_ST77_WAH
 5500 expect led 5 1
-# browsing skips the empty U01: F14 -> F15 -> F16 -> U02, and back from U02 to F14
-5600 midi 0xC0 13 0
+# browsing skips the empty U10..U13: U08 -> U09 -> U14, and back from U14 to U08; then F14
+5600 midi 0xC0 23 0
 5700 turn 6 1
 5720 turn 6 1
-5740 turn 6 1
-6200 expect state header U02_ST77_WAH
+6200 expect state header U14_ST77_WAH
 6200 expect preset
 6300 turn 6 -1
 6320 turn 6 -1
-6340 turn 6 -1
-6800 expect state header F14_VIBES_DRY
-6800 expect preset
-6800 expect sound
-6800 expect state bars 1
-# ---- F13 VIBE MOTOR: the motor is the engine's (the MOTOR page: ON, 3.5 Hz); TREM/WAH stays off (LFO dark)
+6800 expect state header U08_REEDY
+6810 midi 0xC0 13 0
+6880 expect state header F14_VIBES_ECHO
+6880 expect preset
+6880 expect sound
+6880 expect state bars 1
+# ---- F13 VIBES: the motor is the engine's (the MOTOR page: ON, 2.6 Hz); TREM/WAH stays off (LFO dark)
 6900 midi 0xC0 12 0
 7000 expect preset
 7000 expect sound
-7000 expect state header F13_VIBE_MOTOR
+7000 expect state header F13_VIBES
 7000 expect led 5 0
 7000 expect state card.7.0 OFF
 7000 expect state vcard.2.0 ON
-7000 expect state vcard.2.2 3.5HZ
+7000 expect state vcard.2.2 2.6HZ
 7000 expect state label.3.0 STRIKE
 # ---- TYPE swaps: CC 80 (Rhodes SUITCASE), the cards turn back; CC 79 (VIBES) again; ALGORITHM steps it
 7100 midi 0xB0 80 40
@@ -155,6 +174,10 @@
 9200 expect state card1 3.9
 9200 expect sound
 # the compressor's THRESH is its switch: up = on with MAKEUP +2.8 (a 4:1 level-neutral start) (6 pages back from DELAY: DRIVE is between)
+# (the presets have the compressor on since 0.9.5: off, THRESH 0, MAKEUP 0 first)
+9250 midi 0xB0 106 0
+9255 midi 0xB0 107 0
+9260 midi 0xB0 113 0
 9300 turn 0 -1
 9310 turn 0 -1
 9320 turn 0 -1

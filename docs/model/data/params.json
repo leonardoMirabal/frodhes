@@ -135,10 +135,14 @@
   "hi": 0.5
  },
  "pickup": {
-  "_doc": "pole radius / gap per family (R03 code geometry: R = 1 gap); family 0 = 1/16 inch gap, family 1 = 1/32 inch gap. R = 2 gave a non-monotonic velocity response (2026-10-15 test), so both start at 1.0 until the fit.",
+  "_doc": "pole radius / gap per family; family 0 = 1/16 inch gap, family 1 = 1/32 inch gap. Family 1: R = 1 gap (R03 code geometry: a 1 mm pole radius at a ~1 mm gap). Family 0 has the same pole piece at twice the gap (gap_rel 2), so in its own gap units R is half (0.5) and every vertical offset (off_gap, TYPE, TONE, the cap) is halved (geometry, no recording; S8). R = 2 gave a non-monotonic velocity response (2026-10-15 test).",
   "R": [
-   1.0,
+   0.5,
    1.0
+  ],
+  "gap_rel": [
+   2,
+   1
   ],
   "family0_keys": [
    [
@@ -157,7 +161,7 @@
   "_doc": "moved into types[*].rlc"
  },
  "types": {
-  "_doc": "Physical voicing per TYPE, relative to the STAGE 77 priors. off: pickup offset change in gap units (+ = toward the pole axis: H2 up, fundamental down, 'bell'; - = off-axis: round, mellow; W6). bark: tip displacement / gap scale (pickup distance: closer = more bark and output, W3); the gain is compensated by 1/bark. ham: hammer contact-rate scale (felt tips 1970-71 are softer: longer contact, fewer high partials; W2/W9). bell: tine overtone (O1/O2) force scale. rlc: pickup inductance x cable/input capacitance resonance [f_hz, q]. body: up to 2 biquads after the load: [kind, f_hz, q, gain_db], kinds hp2 / peak / lshelf / hshelf; the amp and speaker of the instrument (Suitcase: Peterson preamp into four 12-inch speakers, W5/W6; Dyno-My-Piano: active treble-boost preamp). level_db: output trim so the types play at matched loudness (measured A3 v100 + A4 v70, host).",
+  "_doc": "Physical voicing per TYPE, relative to the STAGE 77 priors. off: pickup offset change in gap units (+ = toward the pole axis: H2 up, fundamental down, 'bell'; - = off-axis: round, mellow; W6). bark: tip displacement / gap scale (pickup distance: closer = more bark and output, W3); the gain is compensated by 1/bark. ham: hammer contact-rate scale (felt tips 1970-71 are softer: longer contact, fewer high partials; W2/W9). bell: tine overtone (O1/O2) force scale. rlc: pickup inductance x cable/input capacitance resonance [f_hz, q]. body: up to 2 biquads after the load: [kind, f_hz, q, gain_db], kinds hp2 / peak / lshelf / hshelf; the amp and speaker of the instrument (Suitcase: Peterson preamp into four 12-inch speakers, W5/W6: the closed cabinet's 250 Hz box bump and the cones' roll-off, a high shelf -5 dB at 5.5 kHz (0.9.5; before, a 50 Hz high-pass, which the load and the master DC blocker already do); Dyno-My-Piano: active treble-boost preamp). level_db: output trim so the types play at matched loudness (measured A3 v100 + A4 v70, host).",
   "STAGE77": {
    "off": 0.0,
    "bark": 1.0,
@@ -182,16 +186,16 @@
    ],
    "body": [
     [
-     "hp2",
-     50.0,
-     0.7,
-     0.0
-    ],
-    [
      "peak",
      250.0,
      0.7,
      3.5
+    ],
+    [
+     "hshelf",
+     5500.0,
+     0.7,
+     -5.0
     ]
    ],
    "drive_row": 1,
@@ -244,13 +248,57 @@
    "level_db": 3.5
   }
  },
+ "tone": {
+  "_doc": "The TONE knob (params.c P_TONE) moves the pickup offset: below the middle (v <= 64) by (v - 64) / 128 gap (down to -0.8 gap total on STAGE 77: round, mellow); above it by up_gap over the upper half, so the top stops short of the pole axis (offset 0), where the pickup's response is even and the fundamental cancels (0.9.4 went to +0.19 gap: the fundamental fell 28 dB at v = 104 and the level 14 dB, then came back past the axis). off_max_gap caps every voice's offset (key + TYPE + TONE; DYNO's +0.1 would reach the axis), checked by tools/types_ab.py.",
+  "up_gap": 0.2,
+  "off_max_gap": -0.1
+ },
  "peak_dbfs": -6.0,
  "_doc_levels": "gain_target_dbfs: RMS (50..300 ms) of one voice at v = 100, every key exactly; set so a 4-note chord at v = 127 peaks near -3 dBFS (host, effects bypassed). peak_dbfs: a global cap on 90 % of the keys single-voice v = 127 peaks (+3 dB); it does not bind at this target.",
  "velocity_trim": {
   "iterations": 3,
   "gain": 0.85,
   "max_db": 6.0,
-  "_doc": "small per-key RH_PAMP trim at the velocity anchors so each key's level curve (re v = 104) follows the median curve of all keys (monotonic). The physics (hammer_contact) is already even to ~3 dB; the trim is bounded to +-max_db and reported in rhodes_spec.json (pulse.pamp vs pulse.pamp_phys). iterations 0 = physics only."
+  "_doc": "small per-key RH_PAMP trim at the velocity anchors so each key's level curve (re v = 104) follows the median curve of all keys (monotonic). The physics (hammer_contact) is already even to ~3 dB; the trim is bounded to +-max_db and reported in rhodes_spec.json (pulse.pamp vs pulse.pamp_phys). iterations 0 = physics only.",
+  "target_db": [
+   [
+    -24.866066799449445,
+    -23.128689422847177,
+    -19.167055414864052,
+    -15.295032286589347,
+    -11.448552920586472,
+    -7.629883917403722,
+    -3.807736732184873,
+    0.0,
+    3.90665822094965,
+    5.78106992541484
+   ],
+   [
+    -24.866066799449445,
+    -23.12867245121868,
+    -19.168149147821325,
+    -15.294767105115607,
+    -11.448328725447647,
+    -7.62992216843494,
+    -3.807727671587802,
+    0.0,
+    3.9029561339272973,
+    5.754578525352105
+   ],
+   [
+    -24.86658858514803,
+    -23.129693986096502,
+    -19.167487017229448,
+    -15.29467700272087,
+    -11.448184761967433,
+    -7.629350486814724,
+    -3.8076317252858907,
+    0.0,
+    3.902801247509718,
+    5.753460497452242
+   ]
+  ],
+  "_doc_target": "the level curve (dB re v = 104 at the V_ANCH velocities) each key's RH_PAMP trim aims at, one row per iteration: frozen at the median curve of the 0.9.5 tables (2026-10-24), so a change to some keys (the top-key fix, the per-key jitter) no longer moves every other key through the median. Remove it to recompute the median of all keys (gen_rhodes prints it)."
  },
  "voicing": {
   "h2_v100_points": [
@@ -280,5 +328,64 @@
    ]
   ],
   "_doc": "pickup voicing: H2/H1 (dB, 30..300 ms) of a v = 100 strike per key; each key's tip scale (b) is set to it (gen_rhodes.voice_pickups). A Rhodes at mf is mostly fundamental (R05 W3: the bass voiced for 'mostly fundamental'; W6 E3: fundamental loudest); the bark grows with the tip swing toward v = 127. Replaces tip_peak_gap_v127 as the b scale (that one only sets the starting point)."
+ },
+ "v2_drop": {
+  "_doc": "O1: keys whose V2 slot (the tone-bar mode, 0.4-0.8 f0, its tip weight 60 dB or more under V1) is left out: a mode loop fewer per voice. Chosen by tools/rh_nulltest.py (the C engine, each key alone, v100 and v127, re the tables with the mode): every listed key's residual <= -60 dB of the note. Keys 100-108 keep it (-60.8 .. -47 dB at v127: the short top notes leave the slower bar mode audible in the tail). On keys 29-39 rhodes.c's gate (RH_V2_GATE_LO/HI) already stopped it. Keys 40-84 hold the beat partner instead (whirl).",
+  "keys": [
+   [
+    21,
+    39
+   ],
+   [
+    85,
+    99
+   ]
+  ]
+ },
+ "whirl": {
+  "_doc": "S1, the beat partner in the V2 slot (gen_rhodes.whirl): keys [lo, hi] (V2 absent outside: O1); w = its weight re V1 (the envelope ripple is about 20 log10((1 + w) / (1 - w)) dB peak to peak, the pitch excursion at the ripple's trough w / (1 - w) x beat Hz), tapered to w / (taper_keys + 1) at the ends; beat_hz_points [midi, Hz] (|f(V2) - f(V1)|, the wobble's rate); t60_ratio [lo, hi]: its T60 re V1's, seeded per key in the range. pitch_cents_max: the beat is lowered where w / (1 - w) x beat would swing the pitch more than this (the bass keys; measured swings run ~15 % over it). The two tuning knobs: w and beat_hz_points. keys 40-84: rhodes.c's V2 gate ends at 39 (RH_V2_GATE_HI) so the slot runs there; the partner on 40-48 costs ~+94 us in the 9-bass-note v127 block (tests/c/rh_cost.c), taken on the FM-1's measured margin (2026-10-24: whole ISR 3516-3640 us at 10 voices).",
+  "keys": [
+   40,
+   84
+  ],
+  "taper_keys": 3,
+  "w": 0.12,
+  "beat_hz_points": [
+   [
+    40,
+    0.3
+   ],
+   [
+    50,
+    0.45
+   ],
+   [
+    57,
+    0.75
+   ],
+   [
+    69,
+    1.0
+   ],
+   [
+    84,
+    1.3
+   ]
+  ],
+  "t60_ratio": [
+   0.8,
+   1.1
+  ],
+  "pitch_cents_max": 0.8
+ },
+ "jitter": {
+  "_doc": "S2, per-key deterministic jitter (gen_rhodes.jit: a hash of seed, key, quantity; uniform in +-1 x the amount): t60_pct V1's T60 (and the overtones'), level_db the key's gain, off_gap the pickup offset (gap units), contact_pct the hammer contact rate (via the tip stiffness K, contact time ~ K^-0.4), beat_pct and w_pct the whirl's beat rate and weight. Never V1's pitch.",
+  "seed": 958,
+  "t60_pct": 8.0,
+  "level_db": 0.15,
+  "off_gap": 0.05,
+  "contact_pct": 3.0,
+  "beat_pct": 25.0,
+  "w_pct": 10.0
  }
 }

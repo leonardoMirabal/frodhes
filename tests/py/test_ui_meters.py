@@ -550,10 +550,10 @@ def test_vibes_has_one_page_more(meters):
 
 @pytest.mark.parametrize("eng,cc_n,v", [("rhodes", 80, 8), ("vibes", 79, 0)])
 def test_hot_frame(meters, eng, cc_n, v):
-    """turn K1..K4 on REVERB (four amounts), one at a time: the turned row alone gets the amber frame and an amber
+    """turn K1..K4 on REVERB 2 (four amounts; REVERB's K1 is the TYPE since 0.9.5), one at a time: the turned row alone gets the amber frame and an amber
     label, still there at 0.8 s, gone by 1.5 s (HOT_MS 1 s)"""
     pages = pages_of("ST77" if eng == "rhodes" else "VIBE", cc_n, v)[0]
-    pos = [title_of(s) for _, _, s in pages].index("REVERB")
+    pos = [title_of(s) for _, _, s in pages].index("REVERB 2")
     L, t = type_lines(cc_n, v), T0
     for _ in range(pos):
         L.append(f"{t} turn 0 1"); t += 100
@@ -572,8 +572,8 @@ def test_hot_frame(meters, eng, cc_n, v):
         im, s = ppm(tag, tt), st.get(tt, {})
         acc = accent_of(im)
         on = dt < 1000
-        if title_of(s) != "REVERB":
-            errs.append(f"K{k + 1} +{dt} ms: on {title_of(s)}, not REVERB")
+        if title_of(s) != "REVERB 2":
+            errs.append(f"K{k + 1} +{dt} ms: on {title_of(s)}, not REVERB 2")
             continue
         if s.get("hot") != (str(k) if on else "-"):
             errs.append(f"K{k + 1} +{dt} ms: hot = {s.get('hot')}")

@@ -1,6 +1,10 @@
 # The compressor switched on from the panel (THRESH up from 0) gets its engine's level-neutral make-up: the Rhodes
 # 15 (+2.8 on the card, as before), VIBES 28 (+5.3: a struck bar is peakier, the same threshold takes ~2.5 dB more;
 # FM-1 vibes_jump read -2.5 LU with the Rhodes value). ui.c ENG_HEAD.cmp_mkup.
+# (F01 has the compressor on since 0.9.5: off and THRESH 0 first)
+50 midi 0xB0 106 0
+60 midi 0xB0 107 0
+70 midi 0xB0 113 0
 100 turn 0 1
 103 turn 0 1
 106 turn 0 1
@@ -11,6 +15,9 @@
 600 turn 2 -40
 700 midi 0xB0 113 0
 800 midi 0xB0 79 0
+850 midi 0xB0 106 0
+860 midi 0xB0 107 0
+870 midi 0xB0 113 0
 900 btn 8
 1000 turn 0 1
 1003 turn 0 1

@@ -4,8 +4,8 @@
  * (a full screen is ~77 ms of SPI: drawn at once it would delay the keys).
  *
  *   SELECT     turns through the pages (the order of the chain):
- *              PERFORM FRODHES (the main page) VOICE DECAY COMP FILTER DRIVE TREM/WAH PHASER CHORUS DELAY REVERB
- *              TEMPO SCALE CHORD ARPEGGIO LFO SEQUENCER ASSIGN SETUP MIDI (PG_ORDER)
+ *              PERFORM FRODHES (the main page) VOICE DECAY COMP DRIVE FILTER TREM/WAH PHASER CHORUS DELAY REVERB
+ *              REVERB 2 TEMPO SCALE CHORD ARPEGGIO LFO SEQUENCER ASSIGN SETUP MIDI (PG_ORDER)
  *   K1..K4     the four cards of the page, always
  *   ALGORITHM  TYPE (on SEQUENCER: a cursor, step by step)   PRESETS  sounds (presets.c; on SEQUENCER: bar by bar)
  *   shortcuts  HOME = PERFORM (again: the main page), EDIT = CHORD (on it: chord mode on / off), LFO / ENV / SEL =
@@ -28,13 +28,56 @@ static void tempo_set10(uint32_t b);
 /* the pages. The ids are the host API's (tests: card.<page>.<k>), so they stay: 4 was DECAY and 21 MOTOR until the
  * engines' pages came from their tables (eng_pages.h): VOICE 1/n .. n/n, one PG_VOICE page with its number ui_vp */
 enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_RETIRED4, PG_COMP, PG_FILTER, PG_TREM, PG_PHA, PG_CHO, PG_DELAY,
-       PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_SETUP, PG_MIDI, PG_DRIVE, PG_REVERB, PG_DISPLAY, PG_N };
+       PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_SETUP, PG_MIDI, PG_DRIVE, PG_REVERB, PG_DISPLAY,
+       PG_REVERB2, PG_N };                              /* REVERB 2 (0.9.5): PRE-DELAY, SIZE, MOD, LOW CUT */
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL = 8, E_N = 9, E_CARDS = 10 };   /* E_CARDS: all four;
                                     * E_METER: COMP's meter / SEQUENCER's cells, E_ROLL: SEQUENCER's NOW / NEXT */
 /* card slots: a parameter id (< P_COUNT) or one of these */
 enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
        S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
-       S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_MCH, S_TRS, S_COLOR, S_BRIGHT, S_LEDS, S_NONE = 0xFF };
+       S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_MCH, S_TRS, S_COLOR, S_BRIGHT, S_LEDS, S_TOUCH, S_NONE = 0xFF };
+#ifndef FM1_NENC                                       /* the HAL's encoders and buttons (the FM-1: 7, 14; the SMK-37:
+                                                         * 8, 18); the host and the emulator stand in for the FM-1 */
+#define FM1_NENC 7u
+#define FM1_NBTN 14u
+#endif
+#if BOARD_SMK37
+/* the SMK-37 (frodhes_smk.h, docs/SMK37.md): no TRS MIDI IN and no key LEDs, so MIDI's TRS IN and DISPLAY's LEDS cards
+ * are empty there; the cards are its knobs K5..K8 (K1 is MASTER); a text that names an FM-1 button or knob names the
+ * SMK's as printed (ui_text) */
+#define UI_TRS S_NONE
+#define UI_TRS_LAB ""
+#define UI_LEDS S_NONE
+#define UI_LEDS_LAB ""
+#define UI_K1 '5'
+static const char *const UI_SMK_TEXT[][2] = {           /* the FM-1's text -> the SMK-37's (tests/host.c too) */
+    {"K1 THRESH: UP = ON, 0 = OFF", "K5 THRESH: UP = ON, 0 = OFF"}, {"LFO BUTTON: ON / OFF", "NOTE REPEAT: ON / OFF"},
+    {"ENV BUTTON: ON / OFF", "CHORD: ON / OFF"}, {"K1: ON / OFF", "K5: ON / OFF"},
+    {"SEL: ON / OFF  K1: DIG / ANA / TAPE", "SCALE: ON/OFF  K5: DIG/ANA/TAPE"}, {"EDIT: CHORDS ON / OFF", "PARA: CHORDS ON / OFF"},
+    {"ARP: ON / OFF   SEL: HOLD", "ARP: ON / OFF  SCALE: HOLD"},
+    {"USB AND TRS: THE SAME CHANNEL", "USB MIDI: ONE CHANNEL OR ALL"},
+    {"THE SCREEN AND THE KEY LIGHTS", "THE SCREEN AND THE LIGHTS"},
+    {"SEL: ARP HOLD  K1: DIG/ANA/TAPE", "SCALE: HOLD  K5: DIG/ANA/TAPE"},
+    {"SAVE: YES   HOME: NO", "BT: YES   PATCH: NO"}, {"K1 THRESH: TURN UP = ON", "K5 THRESH: TURN UP = ON"},
+};
+static const char *ui_text(const char *s)
+{
+    uint32_t i, k;
+    for (i = 0; i < sizeof UI_SMK_TEXT / sizeof UI_SMK_TEXT[0]; i++) {
+        const char *a = UI_SMK_TEXT[i][0];
+        for (k = 0; a[k] && a[k] == s[k]; k++) {}
+        if (a[k] == s[k]) return UI_SMK_TEXT[i][1];
+    }
+    return s;
+}
+#else
+#define UI_TRS S_TRS
+#define UI_TRS_LAB "TRS IN"
+#define UI_LEDS S_LEDS
+#define UI_LEDS_LAB "LEDS"
+#define UI_K1 '1'
+#define ui_text(s) (s)
+#endif
 #include "eng_pages.h"                                /* the engines' controls: VOICE pages, FRODHES K2 / K3, names */
 static const engui_t *eng_ui(void) { return &ENG_UI[PV(P_TYPE) < N_TYPE_N ? TYPE_UI[PV(P_TYPE)] : 0u]; }   /* per TYPE */
 static const ectl_t *eng_ctl(uint32_t id)              /* the TYPE's engine's control for a slot (0: not one of its) */
@@ -63,11 +106,12 @@ static uint32_t sq_delete_step(void);
 static void sq_browse(int32_t d);
 /* the SELECT order (0.9.3, user: the instrument pages next to each other right after PERFORM; ASSIGN, rarely used,
  * next to SETUP); VOICE stands for all the engine's VOICE pages */
-#define PG_NORD 21u
-static const uint8_t PG_ORDER[PG_NORD] = {PG_PERF, PG_PIANO, PG_VOICE, PG_COMP, PG_FILTER, PG_DRIVE, PG_TREM, PG_PHA,
-                                          PG_CHO, PG_DELAY, PG_REVERB, PG_TEMPO, PG_SCALE, PG_CHORD, PG_ARP, PG_LFO,
-                                          PG_SEQ, PG_ASSIGN, PG_SETUP, PG_MIDI, PG_DISPLAY};   /* DRIVE after FILTER, REVERB the
-                                    * last effect, as in the chain; SEQUENCER after LFO (user, TODO 3) */
+#define PG_NORD 22u
+static const uint8_t PG_ORDER[PG_NORD] = {PG_PERF, PG_PIANO, PG_VOICE, PG_COMP, PG_DRIVE, PG_FILTER, PG_TREM, PG_PHA,
+                                          PG_CHO, PG_DELAY, PG_REVERB, PG_REVERB2, PG_TEMPO, PG_SCALE, PG_CHORD, PG_ARP,
+                                          PG_LFO, PG_SEQ, PG_ASSIGN, PG_SETUP, PG_MIDI, PG_DISPLAY};   /* DRIVE before FILTER
+                                    * (0.9.5, the user), REVERB the last effect, as in the chain, its second page right
+                                    * after it (0.9.5); SEQUENCER after LFO (user, TODO 3) */
 static uint8_t ui_vp;                                   /* the VOICE page shown: 0 .. vp_count() - 1 */
 static int ui_bars(void) { return TYPE_IS_BARS(PV(P_TYPE)); }    /* the main loop's TYPE (not the ISR's latch) */
 static void ui_goto(uint32_t pg);
@@ -95,7 +139,8 @@ static uint32_t pg_at(uint32_t k, uint32_t *vp)         /* the k-th page (and it
 }
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "", "COMPRESSOR", "FILTER", "TREM/WAH",
                                              "PHASER", "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
-                                             "ARPEGGIO", "LFO", "SETUP", "MIDI", "DRIVE", "REVERB", "DISPLAY"};
+                                             "ARPEGGIO", "LFO", "SETUP", "MIDI", "DRIVE", "REVERB", "DISPLAY",
+                                             "REVERB 2"};
 static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 / K3: the engine's (slot_at) */
     {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
     {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
@@ -114,11 +159,12 @@ static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 
     {S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT},
     {S_ARPMODE, S_ARPRATE, S_ARPOCT, S_ARPGATE},
     {P_LFO_SHAPE, P_LFO_RATE, P_LFO_SYNC, P_LFO_RETRIG},
-    {P_DL_TONE, P_LEVEL, S_USBVOL, S_NONE},
-    {S_MCH, S_TRS, S_CLOCK, S_NONE},
+    {P_DL_TONE, P_LEVEL, S_USBVOL, S_TOUCH},
+    {S_MCH, UI_TRS, S_CLOCK, S_NONE},
     {P_DRV_SW, P_DRIVE, P_DRV_TONE, P_DRV_MIX},
-    {P_RV_DEPTH, P_RV_DECAY, P_RV_TONE, P_RV_PREDLY},
-    {S_COLOR, S_BRIGHT, S_LEDS, S_NONE},
+    {P_RV_TYPE, P_RV_DEPTH, P_RV_DECAY, P_RV_TONE},     /* REVERB (0.9.5): TYPE = on / off + the type, as DRIVE */
+    {S_COLOR, S_BRIGHT, UI_LEDS, S_NONE},
+    {P_RV_PREDLY, P_RV_SIZE, P_RV_MOD, P_RV_LOCUT},     /* REVERB 2: PRE-DELAY moved here from REVERB */
 };
 static const char *const PAGE_LAB[PG_N][4] = {
     {"", "", "", ""},                                   /* PERFORM: the assigned parameter's name (slot_label) */
@@ -138,23 +184,31 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"BARS", "QUANT", "SWING", "EDIT"},
     {"MODE", "RATE", "OCTAVES", "GATE"},
     {"SHAPE", "RATE", "SYNC", "RETRIG"},
-    {"DLY TONE", "LEVEL", "USB VOL", ""},
-    {"CHANNEL", "TRS IN", "CLOCK", ""},
+    {"DLY TONE", "LEVEL", "USB VOL", "TOUCH"},
+    {"CHANNEL", UI_TRS_LAB, "CLOCK", ""},
     {"EFFECT", "AMOUNT", "TONE", "MIX"},
-    {"MIX", "DECAY", "TONE", "PRE-DELAY"},
-    {"COLOR", "BRIGHTNESS", "LEDS", ""},
+    {"TYPE", "MIX", "DECAY", "TONE"},
+    {"COLOR", "BRIGHTNESS", UI_LEDS_LAB, ""},
+    {"PRE-DELAY", "SIZE", "MOD", "LOW CUT"},
 };
 static const char *const PAGE_HINT[PG_N] = {"THE KNOBS: SET ON ASSIGN", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "", "",
                                             "K1 THRESH: UP = ON, 0 = OFF", "THE LFO: ITS OWN PAGE", "LFO BUTTON: ON / OFF", "ENV BUTTON: ON / OFF",
-                                            "K1: ON / OFF", "SEL: ON / OFF  K1: DIG / ANA", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
+                                            "K1: ON / OFF", "SEL: ON / OFF  K1: DIG / ANA / TAPE", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
                                             "EDIT: CHORDS ON / OFF", "", "ARP: ON / OFF   SEL: HOLD", "MOVES THE FILTER (ITS LFO)", "",
-                                            "USB AND TRS: THE SAME CHANNEL", "K1: ON / OFF", "MIX ALSO SETS THE SIZE", "THE SCREEN AND THE KEY LIGHTS"};
+                                            "USB AND TRS: THE SAME CHANNEL", "K1: THE DRIVE TYPE", "NEXT PAGE: SIZE, MOD, LOW CUT",
+                                            "THE SCREEN AND THE KEY LIGHTS", "SIZE AUTO: MIX SETS THE SIZE"};
+/* the reverb's TYPE card (P_RV_TYPE, as the drive's: 0 OFF, then the types; params.c N_RV / N_RV_LONG) */
+#define RV_INF 3u                                       /* INFINITE: DECAY 120..126 SUSTAIN (the tail holds, the input
+                                                         * open), 127 FREEZE (the input closed): rev_ctl_t.freeze */
+#define RV_SUSTAIN_AT 120
+#define RV_FREEZE_AT 127
 static uint32_t ui_vp_ok(void) { return ui_vp < vp_count() ? ui_vp : vp_count() - 1u; }
 static const char *page_hint(uint32_t pg)
 {
-    if (pg == PG_DELAY && arp_on()) return "SEL: ARP HOLD  K1: DIG / ANA";
-    return pg == PG_VOICE ? eng_ui()->hint[ui_vp_ok()] : PAGE_HINT[pg];
+    if (pg == PG_DELAY && arp_on()) return ui_text("SEL: ARP HOLD  K1: DIG/ANA/TAPE");
+    if (pg == PG_REVERB && PV(P_RV_TYPE) == RV_INF) return "DECAY UP: SUSTAIN, TOP: FREEZE";   /* (slot_text) */
+    return pg == PG_VOICE ? eng_ui()->hint[ui_vp_ok()] : ui_text(PAGE_HINT[pg]);
 }
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
                                            "PENTA", "MPENTA", "BLUES"};
@@ -386,7 +440,8 @@ static void ui_mark(uint32_t e)
     if (e == E_CARDS) ui_dirty |= 0xFu << E_CARD0;
     else ui_dirty |= 1u << e;
 }
-static void ui_mark_param(uint32_t id) { (void)id; ui_mark(E_CARDS); }   /* cheap: the marks coalesce */
+static void ui_mark_param(uint32_t id) { ui_mark(E_CARDS); if (id == P_RV_TYPE) ui_mark(E_FOOTER); }   /* cheap: the
+                                                         * marks coalesce; REVERB's hint follows its TYPE */
 static uint8_t ui_msg_big;                            /* the message in the large face (the TYPE flash) */
 static void ui_say(const char *s)                     /* a message in the footer for MSG_MS, small */
 {
@@ -412,11 +467,11 @@ static int32_t sgn(int32_t d) { return d > 0 ? 1 : -1; }
  * starting depth then; a depth the player set is never touched. The compressor's make-up: the engine's (cmp_mkup) */
 static void fx_wake(uint32_t sw_id)
 {
-    static const uint8_t SW[6] = {P_TW_SW, P_PH_SW, P_CP_SW, P_DL_SW, P_CMP_SW, P_DRV_SW};
-    static const uint8_t DEPTH[6] = {P_TW_DEPTH, P_PH_DEPTH, P_CP_DEPTH, P_DL_DEPTH, P_CMP_AMT, P_DRIVE};
-    static const uint8_t START[6] = {64, 80, 64, 50, 64, 40};
+    static const uint8_t SW[7] = {P_TW_SW, P_PH_SW, P_CP_SW, P_DL_SW, P_CMP_SW, P_DRV_SW, P_RV_TYPE};
+    static const uint8_t DEPTH[7] = {P_TW_DEPTH, P_PH_DEPTH, P_CP_DEPTH, P_DL_DEPTH, P_CMP_AMT, P_DRIVE, P_RV_DEPTH};
+    static const uint8_t START[7] = {64, 80, 64, 50, 64, 40, 32};
     uint32_t i;
-    for (i = 0; i < 6u; i++)
+    for (i = 0; i < 7u; i++)
         if (SW[i] == sw_id && PV(sw_id) && !PV(DEPTH[i])) {
             param_set(DEPTH[i], START[i]);
             if (sw_id == P_CMP_SW && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, eng_ui()->cmp_mkup);
@@ -424,7 +479,8 @@ static void fx_wake(uint32_t sw_id)
         }
 }
 
-/* ---- PERFORM: four knobs that play whatever ASSIGN gives them; by default the effects' dry / wet. The list is
+/* ---- PERFORM: four knobs that play whatever ASSIGN gives them; by default DRIVE, FILTER (the cutoff), DELAY and
+ * REVERB, in the chain's order (after 0.9.4; params.c PERF_DEF, PERF_DEF_OLD). The list is
  * append-only (settings keep an index into it). An engine's parameter shows the engine's name for it (eng_pages.h) */
 typedef struct { uint8_t id; const char *name; } perf_t;
 static const perf_t PERF_T[] = {
@@ -441,9 +497,10 @@ static const perf_t PERF_T[] = {
 static uint32_t perf_idx(uint32_t k)                     /* knob k's entry in PERF_T */
 {
     uint32_t v = set.perf[k];
-    static const uint8_t DEF[4] = {0, 1, 27, 3};         /* default: TREM/WAH, PHASER, FILTER (0.9.3), DELAY */
+    static const uint8_t DEF[4] = {PERF_DEF};            /* default: DRIVE, FILTER, DELAY, REVERB */
     return v && v <= PERF_N ? v - 1u : DEF[k & 3u];
 }
+static uint32_t perf_count(void) { return PERF_N; }     /* (params.c: the PERFORM defaults' update) */
 /* turning an effect's amount up from PERFORM switches the effect on (TREM/WAH: as TREM unless WAH was chosen) */
 static void perf_wake(uint32_t id)
 {
@@ -453,7 +510,8 @@ static void perf_wake(uint32_t id)
     else if (id == P_PH_DEPTH && !PV(P_PH_SW)) param_set(P_PH_SW, 1);
     else if (id == P_CP_DEPTH && !PV(P_CP_SW)) param_set(P_CP_SW, 1);
     else if (id == P_DL_DEPTH && !PV(P_DL_SW)) param_set(P_DL_SW, 1);
-    else if (id == P_DRIVE && !PV(P_DRV_SW)) param_set(P_DRV_SW, 1);
+    else if (id == P_DRIVE && !PV(P_DRV_SW)) param_set(P_DRV_SW, drv_last);   /* the TYPE last on */
+    else if (id == P_RV_DEPTH && !PV(P_RV_TYPE)) param_set(P_RV_TYPE, rv_last);   /* the reverb's too (0.9.5) */
     else if (id == P_CMP_AMT && !PV(P_CMP_SW)) { param_set(P_CMP_SW, 1); if (!PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, eng_ui()->cmp_mkup); }
 }
 /* the control a card shows from the engine's table: VOICE page vp, or FRODHES K2 / K3 (the headlines); 0: none */
@@ -493,7 +551,7 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     switch (s) {
     case S_KVEL: *hi = 127; return set.key_vel;
     case S_TUNE: *hi = 100; return set.tune + 50;
-    case S_BPM: *hi = 2000; return set.bpm10 - 400;
+    case S_BPM: *hi = 2000; return tempo_bpm10() - 400;
     case S_CLOCK: *hi = 1; return set.clock;
     case S_SCMODE: *hi = 2; return set.sc_mode;
     case S_SCALE: *hi = 10; return set.sc_scale;
@@ -511,6 +569,7 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_COLOR: *hi = (int32_t)COLOR_N - 1; return set.palette;
     case S_BRIGHT: *hi = DIM_N - 1; return DIM_N - 1 - (int32_t)set.dim;
     case S_LEDS: *hi = (int32_t)LEDS_N - 1; return (int32_t)leds_disp();
+    case S_TOUCH: *hi = KV_NTOUCH - 1; return (int32_t)kv_touch();   /* keyvel.h: LIGHT .. FIXED */
     case S_CHTYPE: *hi = CH_NTYPE - 1; return CH_TYPE;
     case S_CHINV: *hi = 3; return CH_INV;
     case S_CHVOICE: *hi = 2; return CH_VOICE;
@@ -552,6 +611,14 @@ static void slot_text(uint32_t s, char *v)
     case P_TYPE: p_strcpy(v, N_TYPE_LONG[PV(P_TYPE)], 12); return;
     case P_CMP_AMT: if (!PV(P_CMP_SW)) { p_strcpy(v, "OFF", 3); return; } break;
     case P_DRIVE: if (!PV(P_DRV_SW) && ui_page != PG_DRIVE) { p_strcpy(v, "OFF", 3); return; } break;   /* (its page: K1) */
+    case P_RV_TYPE: p_strcpy(v, N_RV_LONG[PV(P_RV_TYPE) & 3u], 8); return;
+    case P_RV_DEPTH: if (!PV(P_RV_TYPE) && ui_page != PG_REVERB) { p_strcpy(v, "OFF", 3); return; } break;   /* (K1) */
+    case P_RV_DECAY:
+        if (PV(P_RV_TYPE) == RV_INF && PV(s) >= RV_SUSTAIN_AT) {
+            if (PV(s) >= RV_FREEZE_AT) p_strcpy(v, "FREEZE", 6); else p_strcpy(v, "SUSTAIN", 7);
+            return;
+        }
+        break;
     case P_TW_RATE: if (PV(P_TW_SW) == 2) { fmt_r10(v, PV(s)); return; } break;   /* WAH: resonance */
     case P_MOT_RATE:                                                 /* the motor: 0.5 .. 10 Hz ("3.5HZ") */
         {
@@ -565,9 +632,9 @@ static void slot_text(uint32_t s, char *v)
     case S_TUNE: fmt_signed(v, set.tune); return;
     case S_BPM: {
         uint32_t n = 0;
-        p_fmt_int(v, set.bpm10 / 10);
+        p_fmt_int(v, tempo_bpm10() / 10);
         while (v[n]) n++;
-        v[n++] = '.'; v[n++] = (char)('0' + set.bpm10 % 10); v[n] = 0;
+        v[n++] = '.'; v[n++] = (char)('0' + tempo_bpm10() % 10); v[n] = 0;
         return;
     }
     case S_CLOCK: p_strcpy(v, CLOCK_NAME[set.clock], 5); return;
@@ -585,6 +652,7 @@ static void slot_text(uint32_t s, char *v)
     case S_COLOR: color_text(v, set.palette); return;
     case S_BRIGHT: p_fmt_int(v, DIM_N - (int32_t)set.dim); return;
     case S_LEDS: p_strcpy(v, LEDS_NAME[leds_disp()], 6); return;
+    case S_TOUCH: p_strcpy(v, KV_TOUCH_NAME[kv_touch()], 6); return;
     case S_CHTYPE: p_strcpy(v, CH_TYPE_NAME[CH_TYPE], 9); return;
     case S_CHINV: p_strcpy(v, CH_INV_NAME[CH_INV], 4); return;
     case S_CHVOICE: p_strcpy(v, CH_VOICE_NAME[CH_VOICE], 5); return;
@@ -629,8 +697,8 @@ static void slot_turn(uint32_t s, int32_t d)
     switch (s) {
     case S_KVEL: set.key_vel = (uint8_t)clampi(set.key_vel + d * (d > 1 || d < -1 ? 4 : 1), 1, 127); break;
     case S_TUNE: set.tune = (int8_t)clampi(set.tune + d, -50, 50); rh_tune_t = TUNE_T[set.tune + 50]; break;
-    case S_BPM: tempo_set10((uint32_t)clampi((int32_t)set.bpm10 + d * 10, 400, 2400)); break;
-    case S_CLOCK: set.clock = (uint8_t)clampi(set.clock + sgn(d), 0, 1); break;
+    case S_BPM: tempo_set10((uint32_t)clampi((int32_t)tempo_bpm10() + d * 10, 400, 2400)); bpm_hand = set.bpm10; break;   /* (by hand: kept, params.c) */
+    case S_CLOCK: set.clock = (uint8_t)clampi(set.clock + sgn(d), 0, 1); if (!set.clock) tempo_clock_int(); break;
     case S_SCMODE: set.sc_mode = (uint8_t)clampi(set.sc_mode + sgn(d), 0, 2); break;
     case S_SCALE: set.sc_scale = (uint8_t)clampi(set.sc_scale + sgn(d), 0, 10); break;
     case S_ROOT: set.sc_root = (uint8_t)((set.sc_root + (d > 0 ? 1u : 11u)) % 12u); break;
@@ -666,6 +734,10 @@ static void slot_turn(uint32_t s, int32_t d)
         ui_draw_page_change();
         break;
     case S_LEDS: set.leds = LEDS_STORED[clampi((int32_t)leds_disp() + sgn(d), 0, (int32_t)LEDS_N - 1)]; break;
+    case S_TOUCH:                                       /* how the keys' velocity follows the press (keyvel.c) */
+        kv_touch_store((uint32_t)clampi((int32_t)kv_touch() + sgn(d), 0, KV_NTOUCH - 1));
+        kv_apply();
+        break;
     case S_CHTYPE: CH_TYPE = (uint8_t)clampi(CH_TYPE + sgn(d), 0, CH_NTYPE - 1); if (CH_TYPE) CH_LAST = CH_TYPE; break;
     case S_CHINV: CH_INV = (uint8_t)clampi(CH_INV + sgn(d), 0, 3); break;
     case S_CHVOICE: CH_VOICE = (uint8_t)clampi(CH_VOICE + sgn(d), 0, 2); break;
@@ -824,7 +896,7 @@ static const char *slot_unit(uint32_t s, char *v)
     while (v[n]) n++;
     if (!n || !((v[0] >= '0' && v[0] <= '9') || v[0] == '+' || v[0] == '-') || slot_synced(s)) return 0;
     if (s == P_TW_RATE && PV(P_TW_SW) == 2u) return 0;                 /* WAH: RATE is a resonance */
-    if (f == F_HZ || f == F_HZH || f == F_FHZ || s == P_MOT_RATE) {
+    if (f == F_HZ || f == F_HZH || f == F_FHZ || f == F_LCUT || s == P_MOT_RATE) {   /* (LOW CUT: 20 .. 800 Hz) */
         if (n > 2u && v[n - 2u] == 'H' && v[n - 1u] == 'Z') v[n -= 2u] = 0;
         if (v[n - 1u] == 'K') { v[n - 1u] = 0; return "kHz"; }
         return "Hz";
@@ -855,7 +927,7 @@ static void draw_row(uint32_t k)
 {
     uint32_t s = slot_at(ui_page, k);
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
-    char v[16], kk[3] = {'K', (char)('1' + k), 0};
+    char v[16], kk[3] = {'K', (char)(UI_K1 + k), 0};
     if (ui_cards) { draw_row_cards(k); return; }        /* the design pass's variants (developer CC 11) */
     cv_begin(RW_W, RW_H, mt.surf);
     if (mt.hair) cv_rect(0, 0, RW_W, 1, mt.hair);         /* B: the row's top hairline (under the fill) */
@@ -1029,7 +1101,7 @@ static void draw_row_cards(uint32_t k)
 {
     uint32_t s = slot_at(ui_page, k);
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
-    char v[16], kk[3] = {'K', (char)('1' + k), 0};
+    char v[16], kk[3] = {'K', (char)(UI_K1 + k), 0};
     const int32_t ltop = CD_BASE - AF_S.asc, vtop = CD_BASE - AF_L.asc;
     cv_begin(RW_W, RW_H, mt.surf);
     if (mt.hair) cv_rect(0, 0, RW_W, 1, mt.hair);         /* look B: the row's top hairline (under the fill) */
@@ -1135,7 +1207,7 @@ static void draw_row_cards(uint32_t k)
  * run it is in is for this alone (the side effects of the setup slots' turns are not undone). */
 static uint32_t cd_check(uint32_t pg, uint32_t vp, uint32_t k, uint32_t s)
 {
-    char v[16], kk[3] = {'K', (char)('1' + k), 0};
+    char v[16], kk[3] = {'K', (char)(UI_K1 + k), 0};
     const char *lab = slot_label_v(pg, vp, k);
     int32_t kw = aa_text_w(&AF_S, kk), lw = aa_text_w(&AF_S, lab), room, hi, val = slot_val(s, &hi), idx, n;
     uint8_t sf;
@@ -1159,7 +1231,7 @@ static uint32_t ui_fit_scan(void)
     for (pass = 0; pass < 2u; pass++)
         for (t = 0; t < N_TYPE_N; t++) {
             PV(P_TYPE) = (uint8_t)t;
-            if (pass) { PV(P_CMP_SW) = 1; PV(P_DRV_SW) = 1; PV(P_TW_SW) = 2; }
+            if (pass) { PV(P_CMP_SW) = 1; PV(P_DRV_SW) = 1; PV(P_TW_SW) = 2; PV(P_RV_TYPE) = RV_INF; }
             for (pg = 0; pg < PG_N; pg++)
                 for (vp = 0, nv = pg == PG_VOICE ? vp_count() : 1u; vp < nv; vp++) {
                     if (pg == PG_SEQ || !PAGE_TITLE[pg][0]) continue;
@@ -1362,13 +1434,13 @@ static void draw_footer(void)
         preset_name(PR_NF_UI + pr_save_slot, s);
         p_strcpy(t, "SAVE TO ", 8); p_strcpy(t + 8, s, 20);
         ft_c(7, t, FC_VAL);
-        ft_c(22, "SAVE: YES   HOME: NO", UI_ACC);
+        ft_c(22, ui_text("SAVE: YES   HOME: NO"), UI_ACC);
     } else if (ui_msg_t && fm1_ms - ui_msg_t < MSG_MS) {
         if (ui_msg_big && big_ok(ui_msg, 236)) ft_big(15, ui_msg, FC_VAL);
         else ft_c(15, ui_msg, FC_VAL);
     } else if (ui_page == PG_COMP) {                    /* the gain-reduction meter (draw_meter), or how to start it */
         if (PV(P_CMP_SW)) { gr_shown = 0xFFFF; draw_meter(); return; }
-        ft_c(19, "K1 THRESH: TURN UP = ON", FC_DIM);
+        ft_c(19, ui_text("K1 THRESH: TURN UP = ON"), FC_DIM);
     } else if (ui_page == PG_SEQ) {                     /* the state, and what the buttons do */
         char t[32];
         uint32_t n = 0;
@@ -1589,10 +1661,15 @@ static void ui_fx_button(uint32_t pg, uint32_t k)
 
 static void ui_input(uint32_t b, uint32_t rel)
 {
-    int32_t d[7];
+    int32_t d[FM1_NENC];                                /* (the SMK-37: 8; its K1 = ENC_MASTER is platform.c's MASTER,
+                                                         * never read here: it would steal MASTER's detents) */
     uint32_t k, i;
-    for (i = 0; i < 7u; i++) d[i] = fm1_enc_take(i);
-    if (ui_splash_on) for (i = 0; i < 7u; i++) if (d[i] || b) ui_splash_t = fm1_ms - UI_SPLASH_MS;
+#if BOARD_SMK37
+    for (i = 0; i < FM1_NENC; i++) d[i] = i == ENC_MASTER ? 0 : fm1_enc_take(i);
+#else
+    for (i = 0; i < FM1_NENC; i++) d[i] = fm1_enc_take(i);
+#endif
+    if (ui_splash_on) for (i = 0; i < FM1_NENC; i++) if (d[i] || b) ui_splash_t = fm1_ms - UI_SPLASH_MS;
     if (sq_btn_down) {                                  /* SEQ on SEQUENCER: a press toggles REC, a hold clears */
         if (!(fm1_in.buttons >> BTN_SEQ & 1u) || rel >> BTN_SEQ & 1u) {
             sq_btn_down = 0;
@@ -1640,7 +1717,7 @@ static void ui_input(uint32_t b, uint32_t rel)
     if (b >> BTN_PLAY & 1u) {                           /* tap tempo; on SEQUENCER start / stop, but only while the
                                                          * arpeggiator is off (0.9.3: with it on, PLAY taps everywhere) */
         if (play_is_seq()) seq_toggle_play();
-        else tempo_tap();
+        else { uint16_t b0 = set.bpm10; tempo_tap(); if (set.bpm10 != b0) bpm_hand = set.bpm10; }   /* a tap that set it */
     }
     if (b >> BTN_OCT_DOWN & 1u && set.oct > -2) { set.oct--; ui_changed(); ui_mark(E_HEADER); }
     if (b >> BTN_OCT_UP & 1u && set.oct < 2) { set.oct++; ui_changed(); ui_mark(E_HEADER); }
@@ -1675,8 +1752,9 @@ static void ui_input(uint32_t b, uint32_t rel)
         ui_hot_card = (uint8_t)k; ui_hot_t = fm1_ms;
         ui_mark(E_CARD0 + k);
         if (s == P_DL_SW || s == P_CP_SW || s == S_TWKIND || s == P_TW_SYNC || s == P_CP_SYNC || s == P_DL_SYNC ||
-            s == P_PH_SYNC || s == P_CMP_SW || s == P_LFO_SYNC || s == P_FL_TYPE || s == P_DRV_SW)
+            s == P_PH_SYNC || s == P_CMP_SW || s == P_LFO_SYNC || s == P_FL_TYPE || s == P_DRV_SW || s == P_RV_TYPE)
             ui_mark(E_CARDS);                           /* a switch or sync changes what the other cards show */
+        if (s == P_RV_TYPE) ui_mark(E_FOOTER);          /* the hint: INFINITE's freeze */
     }
 }
 
@@ -1701,6 +1779,9 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     BTN(BTN_OCT_DOWN, set.oct < 0);
     BTN(BTN_OCT_UP, set.oct > 0);
     BTN(BTN_REC, rh_hold);
+#if BOARD_SMK37
+    btn |= smk_btn_leds;                                        /* KNOB / FADER BANK, < > (frodhes_smk.h smk_leds) */
+#endif
 #undef BTN
     for (k = 0; k < 27u; k++) if (set.leds == 0u && scale_is_root(k)) glow |= 1u << k;   /* ROOTS: the landmarks' glow */
     if (set.leds == 4u)                                                     /* SCALE: the scale's keys in place of all */
@@ -1713,7 +1794,7 @@ static void ui_leds(uint32_t lit, uint32_t beat_on)
     if (was.done && lit == was.lit && glow == was.glow && btn == was.btn) return;   /* as last pass: nothing to set (each
                                                                              * fm1_led_key walks the key map; then the tables) */
     was.done = 1; was.lit = lit; was.glow = glow; was.btn = btn;
-    for (k = 0; k < 14u; k++) fm1_led_key(k, btn >> k & 1u);           /* the buttons: LED ids 0 .. 13 */
+    for (k = 0; k < FM1_NBTN; k++) fm1_led_key(k, btn >> k & 1u);      /* the buttons: LED ids 0 .. 13 (SMK: 17) */
     for (k = 0; k < 27u; k++) {
         fm1_led_key(KEY_LED(k), lit >> k & 1u);
         fm1_led_key_glow(KEY_LED(k), glow >> k & 1u);

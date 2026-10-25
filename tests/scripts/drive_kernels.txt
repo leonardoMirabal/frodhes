@@ -1,0 +1,34 @@
+# The DRIVE TYPEs TSH8 and BHLUE with sound (firmware/src/drv_tsh8.c, drv_bhlue.c): a chord through each, AMOUNT and
+# TONE turned while it sounds (CC 81, 82), a switch between them (CC 84: 76..87 TSH8, 100..111 BHLUE; the TYPE that
+# runs fades out, then the other fades in), then OFF. The render is in Gate R (tests/baselines/renders.sha256).
+100 midi 0xB0 81 90
+100 midi 0xB0 84 81
+200 expect state fxdrv 3
+300 midi 0x90 48 100
+300 midi 0x90 55 100
+300 midi 0x90 64 100
+300 midi 0x90 67 100
+800 expect rms > -40
+800 expect sound
+900 midi 0xB0 81 127
+1000 midi 0xB0 82 20
+1100 midi 0xB0 81 30
+1200 midi 0xB0 82 110
+1300 expect rms > -45
+1400 midi 0xB0 84 105
+1500 expect state fxdrv 5
+1700 expect rms > -45
+1800 midi 0xB0 81 127
+1900 midi 0xB0 82 0
+2000 midi 0xB0 81 1
+2100 midi 0xB0 82 127
+2200 expect rms > -50
+2200 expect sound
+2300 midi 0xB0 84 0
+2400 expect state fxdrv 0
+2500 midi 0x80 48 0
+2500 midi 0x80 55 0
+2500 midi 0x80 64 0
+2500 midi 0x80 67 0
+4500 expect rms < -60
+4600 end

@@ -24,7 +24,8 @@ FS = 44100
 VIBES = "60 midi 0xB0 79 0\n60 midi 0xB0 47 0\n"   # CC 79: the bar types (VIBES); the motor (on with it) off
 RAW = "50 midi 0xB0 119 127\n"
 F3B = [53, 55, 57, 59, 60, 62, 64, 65]
-F3B9 = F3B + [67]                             # every voice (rhodes.c FR_VOICES 9)
+F3B9 = F3B + [67]                             # nine bar voices (the S12 cases)
+F3BV = F3B + [67, 69, 71, 72]                 # edge_chord: the first BAR_VOICES (fr_voices) of them
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -130,8 +131,9 @@ def test_motor_passes_fx_trem_on_vibes():
 def edge_chord(vel=127, noise=48, end=3000):
     s = RAW + VIBES + ("62 midi 0xB0 28 127\n63 midi 0xB0 29 127\n64 midi 0xB0 30 127\n65 midi 0xB0 31 127\n"
                        f"66 midi 0xB0 104 {noise}\n70 midi 0xB0 64 127\n")
-    s += "".join(f"200 midi 0x90 {n} {vel}\n" for n in F3B9)
-    s += "".join(f"{200 + 400 * r} midi 0x90 {n} {vel}\n" for r in range(1, 4) for n in F3B9)
+    ns = F3BV[:fr_voices()]                       # every bar voice
+    s += "".join(f"200 midi 0x90 {n} {vel}\n" for n in ns)
+    s += "".join(f"{200 + 400 * r} midi 0x90 {n} {vel}\n" for r in range(1, 4) for n in ns)
     return s + f"{end} end\n"
 
 
@@ -144,7 +146,7 @@ def proxy_us(log):
 
 @pytest.mark.parametrize("fxus", [0, FX_ALL_US, 2000])
 def test_cpu_model_holds(fxus):
-    """9 voices (every voice) struck at the edge with everything at maximum, again and again, the budget planned for no effects,
+    """every voice (BAR_VOICES) struck at the edge with everything at maximum, again and again, the budget planned for no effects,
     every effect, and nearly twice that effect load: the cost model's worst block stays under the 4800 us gate
     minus its margin (bars.c BAR_NS_*), by construction; no saturation, no clicks"""
     x, log = render(f"cpu{fxus}", edge_chord(), {"FRODHES_FXUS": str(fxus)})
@@ -156,7 +158,7 @@ def test_cpu_model_holds(fxus):
 def test_cpu_model_with_the_effects_on():
     """The same with the real effects chain running (RAW off): the effects' cost comes from fx.c's table"""
     heavy = [(85, 64), (12, 127), (13, 127), (16, 127), (81, 127), (106, 127), (107, 100), (17, 64), (21, 127),
-             (18, 127), (86, 127), (88, 127), (89, 127), (90, 127), (26, 127), (91, 127), (70, 45), (74, 60), (71, 100),
+             (18, 127), (86, 127), (88, 80), (89, 127), (90, 127), (26, 127), (91, 127), (70, 45), (74, 60), (71, 100),
              (72, 64)]                                # tools/hil_cpu.py's heavy set (CC 85 first), the motor
     s = edge_chord().replace(RAW, "").replace("70 midi 0xB0 64 127\n", "70 midi 0xB0 64 127\n" + "".join(
         f"71 midi 0xB0 {c} {v}\n" for c, v in heavy))
@@ -225,25 +227,23 @@ def test_budget_order_when_it_must_cut(bark, cap, limit):
 
 
 HIL_HEAVY = [(85, 64), (81, 127), (106, 127), (107, 100), (17, 127), (18, 127), (12, 127), (13, 127), (16, 127),
-             (86, 127), (88, 127), (89, 127), (90, 127), (26, 127), (91, 127), (70, 45), (74, 60), (71, 100), (72, 64),
+             (86, 127), (88, 80), (89, 127), (90, 127), (26, 127), (91, 127), (70, 45), (74, 60), (71, 100), (72, 64),
              (28, 127), (29, 127), (30, 127), (31, 127)]   # tools/hil_cpu.py's heavy set + the edge voicing (CC 85 first)
 
 
 def fr_voices():
-    """the host build's voice count: HOST_DEFS -DFR_VOICES=N, else rhodes.c's default"""
-    import re
-    m = re.search(r"FR_VOICES=(\d+)", os.environ.get("HOST_DEFS", ""))
-    if m:
-        return int(m.group(1))
-    return int(re.search(r"#define FR_VOICES (\d+)u", open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read()).group(1))
+    """the host build's bar voice count (hostrun.voices: HOST_DEFS, else rhodes.c BAR_VOICES)"""
+    from hostrun import voices
+    return voices("bars")
 
 
 @pytest.mark.parametrize("case", ["chord", "bass", "repeated"])
 def test_no_trim_in_the_hil_cpu_worst(case):
-    """tools/hil_cpu.py --engine vibes's worst cases with every voice (FR_VOICES): the N-note chord and the N bass
+    """tools/hil_cpu.py --engine vibes's worst cases with every voice (BAR_VOICES): the N-note chord and the N bass
     notes (+ pedal) at v127, edge, every effect + motor, and the repeated N-note chords every 0.4 s (steals): the
     cost model (which reads ~20 % high on the FM-1) never trims an upper mode: the lowest cap answered on CC 112 stays
-    48 (every mode). 9 voices, 2026-10-18: planned 4211 us (chord, bass) and 4551 us (repeated) of the 4650 limit."""
+    48 (every mode). 9 voices, 2026-10-18: planned 4211 us (chord, bass) and 4551 us (repeated) of the 4650 limit;
+    bars-10's cost model (the loops' new counts): 9 voices 3534 / 3739 us, 10 voices 3740 / 3975 us."""
     nv = fr_voices()
     bass = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48][:nv]
     chord = [48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83][:nv]

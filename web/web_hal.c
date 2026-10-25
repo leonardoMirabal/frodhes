@@ -83,6 +83,8 @@ static int settings_save(const void *p, uint32_t n)
     web_store_dirty = 1;
     return 0;
 }
+static int settings_save_start(const void *p, uint32_t n) { return settings_save(p, n); }   /* (at once: 0 done) */
+static int settings_save_poll(void) { return 0; }
 
 /* USB-MIDI in (Web MIDI or the page); MIDI out is dropped */
 static uint8_t mq[64][3];
@@ -140,6 +142,13 @@ EMSCRIPTEN_KEEPALIVE void web_midi(uint32_t st, uint32_t d1, uint32_t d2)
 {
     if (mq_w - mq_r >= 64u) return;
     mq[mq_w % 64u][0] = (uint8_t)st; mq[mq_w % 64u][1] = (uint8_t)d1; mq[mq_w % 64u][2] = (uint8_t)d2;
+    if (st >= 0xF8u) {                          /* its arrival and the pulse count (tempo.c, as usb.c stamps them) */
+        static uint8_t clk_n;
+        uint32_t stamp;
+        if (st == 0xF8u) clk_n++;
+        stamp = (fm1_ms & 0xFFFu) | (clk_n & 15u) << 12;
+        mq[mq_w % 64u][1] = (uint8_t)stamp; mq[mq_w % 64u][2] = (uint8_t)(stamp >> 8);
+    }
     mq_w++;
 }
 EMSCRIPTEN_KEEPALIVE void web_master(int32_t q12) { web_master_q12 = q12 < 0 ? 0 : q12 > 4096 ? 4096 : q12; }

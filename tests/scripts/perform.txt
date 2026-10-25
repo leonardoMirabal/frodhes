@@ -1,22 +1,56 @@
-# PERFORM (the first page): K1..K4 are the effects' dry / wet by default: TREM/WAH, PHASER, CHORUS, DELAY.
-# Buttons: LFO 5, SEL 3, ARP 10, HOME 8 (the phaser and the delay have no light); encoders SELECT 0, K1..K4 = 2..5.
-# Turning an amount up switches its effect on (its LED lights; the delay has none), with the sound changing at once.
-100 expect led 5 0
-200 turn 3 20
-400 turn 2 20
+# PERFORM (the first page): K1..K4 by default DRIVE, FILTER (the cutoff), DELAY, REVERB: the chain's order.
+# (0.9.5: F01 starts at DRIVE 0 and REVERB 18: 20 detents read 1.6 and 3.0)
+# Buttons: SEL 3 (the delay's light), HOME 8; encoders SELECT 0, K1..K4 = 2..5.
+# Turning an amount up switches its effect on (the delay's light comes on), with the sound changing at once; the
+# FILTER card starts fully open (16K) and closes as it is turned down.
+100 expect state label.0.0 DRIVE
+100 expect state label.0.1 FILTER
+100 expect state label.0.2 DELAY
+100 expect state label.0.3 REVERB
+100 expect state card1 16K
+100 expect led 3 0
+200 turn 2 20
+400 turn 3 -20
 400 turn 4 20
 400 turn 5 20
-500 expect led 5 1
+500 expect sound
 500 expect led 3 1
+500 expect state card0 1.6
+500 expect state card1 6.0K
+500 expect state card2 1.6
+500 expect state card3 3.0
 600 keys 0x80
 900 keys 0
 950 shot
-# ASSIGN (SELECT one detent): K1 steps to the next entry, PHASER; back on PERFORM, K1 turns the phaser too
+# ASSIGN (SELECT, 19 detents on (0.9.5: REVERB 2), just before SETUP): K1 steps to the next entry, COMP THR; back on PERFORM, K1 turns the compressor
 1000 turn 0 1
+1002 turn 0 1
+1004 turn 0 1
+1006 turn 0 1
+1008 turn 0 1
+1010 turn 0 1
+1012 turn 0 1
+1014 turn 0 1
+1016 turn 0 1
+1018 turn 0 1
+1020 turn 0 1
+1022 turn 0 1
+1024 turn 0 1
+1026 turn 0 1
+1028 turn 0 1
+1030 turn 0 1
+1032 turn 0 1
+1034 turn 0 1
+1036 turn 0 1
+1050 expect state page ASSIGN
 1100 turn 2 4
+1150 expect state label.0.0 COMP_THR
 1200 shot
-1300 turn 0 -1
+1300 btn 8
+1350 expect state page PERFORM
 1400 turn 2 30
+1450 expect sound
+1450 expect state label0 COMP_THR
 1500 shot
 # HOME flips to the main page; HOME again: PERFORM
 1600 btn 8
