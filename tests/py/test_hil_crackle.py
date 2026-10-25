@@ -46,9 +46,13 @@ def test_the_device_timing_has_teeth():
     ccs = list(ccs) + [(89, 0)]                                  # (DELAY DEPTH 0: the silence between the phrases)
     u, _ = C.host_take(name, ccs, ev, dur, tag="stress_max-teeth", clock=C.DEV_CLOCK)
     j = C.sim_jack(u)
+    # the old way's fixed threshold sat over the jack's first note (C2 v100): 300 LSB until 0.9.6, whose chorus no
+    # longer cancels the bass (the recipe's CHORUS: C2 was -10 dB at DEPTH 64): the note now peaks ~760 LSB on the
+    # simulated jack (275 before), so the threshold over it is 900 (the same miss: the second note's onset instead)
+    thr = 900
     old = C.analyse(u, j, 44100, ev, widen=C.DEV_JITTER, ccs=ccs, clock_usb=(C.onset_lag(u, ev, 44100, 300), 0.0),
-                    clock_jack=(C.onset_lag(j, ev, 48000, 300), 0.0))
-    assert C.onset_lag(j, ev, 48000, 300) > 0.1                 # (the jack's first note under 300 LSB: a later one)
+                    clock_jack=(C.onset_lag(j, ev, 48000, thr), 0.0))
+    assert C.onset_lag(j, ev, 48000, thr) > 0.1                 # (the jack's first note under thr: a later one)
     assert any(s == "jack" and k == "step" for s, _, k, _ in C.gated(old)), C.gated(old)
     cj = C._jack_clock(C.DEV_CLOCK)
     fu = C.clock_fit(u, ev, 44100, rate=C.DEV_CLOCK[1] + C.RATE_ERR)

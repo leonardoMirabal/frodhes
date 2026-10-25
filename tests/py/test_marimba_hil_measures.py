@@ -493,7 +493,12 @@ def test_marimba_chorus_speed_by_the_band(monkeypatch):
         assert r["status"] == "ok" and "re DEPTH 0" in r["setting"], r
     f = h.lfo_hz(50, True)
     t, r0 = got["chorus-speed-50"], got["chorus-depth-0"]
-    c = h.cen_trace(h.cut(t.m("usb"), t.on("usb")[0], 0.2, 5.3))[0]
-    assert h.rate_of(c, h.FS / 240, f) / f - 1 > 0.2                     # (the old measure: 1.31 Hz)
+    # (the old measure, the centroid, read 1.31 Hz here on 0.9.5's chorus; on 0.9.6's, its wet high-passed at ~220 Hz,
+    # it happens to read 0.87; the row keeps the band measure, right on both)
     d, _, fps_ = h.rel_trace(t, r0, "usb", 0.2, 5.3, 300, 3000)
     assert abs(h.lfo_rate(d, fps_, f * 0.4, f * 2.6, pearson=True) / f - 1) <= 0.02
+    f = h.lfo_hz(127, True)                     # SPEED 127: two periods correlated better than one on 0.9.6 (3.00 Hz
+    t = got["chorus-speed-127"]                 # for 6.00, seed 4); the octave check reads the wave's own period
+    d, _, fps_ = h.rel_trace(t, r0, "usb", 0.2, 5.3, 300, 3000)
+    assert abs(h.lfo_rate(d, fps_, f * 0.4, f * 2.6, pearson=True) / f - 0.5) <= 0.02     # (without it: the octave)
+    assert abs(h.lfo_rate(d, fps_, f * 0.4, f * 2.6, pearson=True, octave=True) / f - 1) <= 0.02

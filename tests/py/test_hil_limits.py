@@ -4,7 +4,8 @@ red). Each was decided from the saved FM-1 reports (build/hil, build/marimba/p5,
 build/final) and the host build, which reads the same numbers as the FM-1's USB:
 
 - fx_all: the phaser has no width compensation (the chorus' -2.5 LU target judged 'phaser 127 fb127'); 'drive 127'
-  and 'phaser 32' are judged against the level the effect sets by design (FXALL_EXPECT); 'wah 32' / 'wah 127' failed
+  is judged against the level the effect sets by design (FXALL_EXPECT; 'phaser 32' was too, at -2.5, until the
+  phaser's level was held at every DEPTH in 0.9.6: now 0 +- 1); 'wah 32' / 'wah 127' failed
   (-2.1 / +2.1 LU): fx.c's wah depth law was applied on top of the 0.9.3 make-up gain, a defect fixed 2026-10-24
   (the depth law removed; test_fx_all_wah_level below);
 - vibes_jump: the phaser held on, fx_all's 2 LU (it failed 1.5 LU by 0.05);
@@ -54,14 +55,15 @@ def test_apart_of_spread(d, spread, ok):
 
 # ---- the host build, played as the suites play the FM-1
 def test_fx_all_on_the_host_passes():
-    """every fx_all setting within its limit; 'drive 127' and 'phaser 32' at their FXALL_EXPECT values, 'phaser 127
-    fb127' at 0 +- 2 (no width target)"""
+    """every fx_all setting within its limit; 'drive 127' at its FXALL_EXPECT value, 'phaser 32' at 0 +- 1 (0.9.5 read
+    -2.5: the phaser's level drop, fixed in 0.9.6), 'phaser 127 fb127' at 0 +- 2 (no width target)"""
     r, rep = h.HostRig(1), {}
     ok, msg = h.fx_all(r, rep)
     rows = {q["name"]: q["usb_lu"] for q in rep["fx_all"]["rows"]}
     for name, (target, tol) in h.FXALL_EXPECT.items():
         assert abs(rows[name] - target) <= tol, (name, rows[name])
     assert abs(rows["phaser 127 fb127"]) <= 2.0
+    assert abs(rows["phaser 32"]) <= 1.0, rows["phaser 32"]
     assert ok and "out of tolerance: none" in msg, msg
 
 
