@@ -90,8 +90,10 @@ class Case:
     static values (default 0, 32, 64, 96, 127; an enum: its band centres)"""
 
     def __init__(self, name, cc, setup=(), engine="rhodes", kind="knob", additive=False, mono=False, statics=None,
-                 page="", skip=()):
+                 page="", skip=(), through=False):
         self.name, self.cc, self.setup, self.engine, self.kind = name, cc, list(setup), engine, kind
+        self.through = through                   # trans: the move glides through the values between its ends (a
+        # cutoff): the range is every static from the start to the end value, not the two ends alone
         self.additive, self.mono, self.page = additive, mono, page
         self.skip = set(skip)                    # checks that do not apply to this case (the reasons: _cases)
         self.statics = list(statics) if statics else list(STATICS)
@@ -136,11 +138,14 @@ def _cases():
              skip={"jump"}))                     # (MANUAL: the old type fades out, then the new one in, through dry)
     # FILTER (and its LFO page)
     for t, v in (("LP12", 27), ("LP18", 46), ("HP12", 64), ("HP18", 82), ("BP", 100), ("NOTCH", 118)):
-        add(Case(f"filter {t} FREQ", 74, [(70, v), (71, 30)], page="FILTER",
-                 skip={"jump"}))                 # (a cutoff swept through the chord moves its level by design)
+        add(Case(f"filter {t} FREQ", 74, [(70, v), (71, 30)], page="FILTER", through=True,
+                 skip={"jump"}))                 # (a cutoff swept through the chord moves its level by design; a
+        # band-pass gliding 16 kHz -> 30 Hz passes through the chord, louder than at either end: 'through')
     add(Case("filter RESO", 71, [(70, 46), (74, 80)], page="FILTER"))
     add(Case("filter LFO", 72, [(70, 46), (74, 80), (71, 40)], page="FILTER"))   # (at 0 the filter still filters)
-    add(Case("filter TYPE", 70, [(74, 80), (71, 40)], kind="select", statics=bands(6), page="FILTER"))
+    add(Case("filter TYPE", 70, [(74, 80), (71, 40)], kind="select", statics=bands(6), page="FILTER",
+             skip={"jump"}))                     # (the TYPEs differ by up to ~20 dB on the chord at 1.5 kHz (LP vs HP):
+    # the 46 ms crossfade between them moves the level by design, as drive TYPE; the click and trans checks hold it)
     add(Case("lfo RATE", 76, [(70, 46), (74, 80), (71, 40), (72, 60)], page="LFO"))
     add(Case("lfo SHAPE", 75, [(70, 46), (74, 80), (71, 40), (72, 60)], kind="select", statics=bands(5), page="LFO"))
     # TREM/WAH
@@ -369,11 +374,13 @@ def win20_db(x, t0, n):
                      for k in range(n)])
 
 
-def trans_db(moved, start, end):
+def trans_db(moved, start, end, mid=()):
     """(over, under): how far the moved render's level leaves the held renders' range after the move (windows where
-    the louder held one is above -70 dBFS)"""
+    the louder held one is above -70 dBFS); mid: renders held at values the move glides through (they raise the top)"""
     m, s, e = (win20_db(x, T_FLIP, 15) for x in (moved, start, end))
     hi, lo = np.maximum(s, e), np.minimum(s, e)
+    for x in mid:
+        hi = np.maximum(hi, win20_db(x, T_FLIP, 15))
     keep = hi > -70
     if not keep.any():
         return 0.0, 0.0
@@ -436,7 +443,9 @@ def measure(case, binary=BIN):
             if case.additive:
                 o = off[:n]
                 mv, sa, sb = mv - o, sa - o, sb - o
-            hi, lo = trans_db(mv, sa, sb)
+            mid = [st[v][:n] - (off[:n] if case.additive else 0) for v in case.statics
+                   if case.through and min(a, b) < v < max(a, b)]
+            hi, lo = trans_db(mv, sa, sb, mid)
             r["trans"][f"{a}>{b}"] = (round(hi, 1), round(lo, 1))
         r["noeff"] = float(max(np.abs(x - stl[0]).max() for x in stl[1:])) if len(stl) > 1 else None
         z = st[case.statics[0]] if case.statics[0] == 0 or case.kind == "select" else render(script(case, value=0), binary)
