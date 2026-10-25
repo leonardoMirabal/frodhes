@@ -570,7 +570,7 @@ static void param_text(uint32_t id, char *s)
     case F_DB:                                     /* "+1.5" / "-12" dB: 0.1875 dB a step (FX_LVL) */
         fmt_db10(s, ((v - 64) * 15 + (v >= 64 ? 4 : -4)) / 8, ((v - 64) * 3 + (v >= 64 ? 8 : -8)) / 16);
         break;
-    case F_RSIZE:                                  /* the reverb's SIZE: "AUTO" (from MIX) or 0.1 .. 10.0 */
+    case F_RSIZE:                                  /* the reverb's SIZE: "AUTO" (MIX; INFINITE 64) or 0.1 .. 10.0 */
         if (!v) { s[0] = 'A'; s[1] = 'U'; s[2] = 'T'; s[3] = 'O'; s[4] = 0; } else fmt_r10(s, v);
         break;
     case F_LCUT:                                   /* LOW CUT: "OFF" or "20" .. "800" Hz (rev_types.c rev_locut_a) */

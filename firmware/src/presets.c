@@ -377,6 +377,7 @@ static int preset_boot(void)
     uint32_t i;
     if (preset_values(set.preset, p)) return -1;
     for (i = 0; i < P_COUNT; i++) param_set(i, p[i]);
+    rev_relatch();                                      /* (a sound's own PLATE AUTO size, as before) */
     tempo_sync_publish();
     return 0;
 }
@@ -390,6 +391,7 @@ static void preset_load(uint32_t idx)
     set.undo_valid = 1;
     set.undo_preset = (uint8_t)(set.preset < PR_NF + PR_NU ? set.preset + 1u : 0u);   /* what the undo copy was */
     for (i = 0; i < P_COUNT; i++) param_set(i, p[i]);
+    rev_relatch();                                      /* (a sound's own PLATE AUTO size, as before) */
     set.preset = (uint8_t)idx;
     snd_base_take();                                    /* the sound a power cycle comes back to (params.c) */
     tempo_sync_publish();
@@ -409,6 +411,7 @@ static void preset_undo(void)
     if (!set.undo_valid) return;
     for (i = 0; i < P_COUNT; i++) t[i] = PV(i);
     for (i = 0; i < P_COUNT; i++) param_set(i, UV(i));
+    rev_relatch();                                      /* (a sound's own PLATE AUTO size, as before) */
     for (i = 0; i < P_COUNT; i++) UV(i) = t[i];
     if (set.undo_preset) {                              /* the header names the sound that plays (0.9.3: it kept
                                                          * the loaded preset's name over the sound before it) */

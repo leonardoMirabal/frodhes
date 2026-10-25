@@ -356,7 +356,7 @@ PERFORM knob (REVERB on ASSIGN).
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **TYPE** | **OFF**, **HALL**, **PLATE** or **INFINITE** (below). OFF stops what goes into the reverb and lets the tail ring out. Switching it on with MIX at 0 gives MIX a starting amount. A new type takes over at once: the old tail fades out in a few milliseconds and the new type starts empty |
-| K2 | **MIX** | How much reverb (0 = none, the tail rings out). With SIZE on AUTO (REVERB 2), more MIX also makes the space bigger |
+| K2 | **MIX** | How much reverb (0 = none, the tail rings out). With SIZE on AUTO (REVERB 2), more MIX also makes the space bigger on HALL and PLATE (on PLATE once the tail has died away; on INFINITE MIX is the level only) |
 | K3 | **DECAY** | How long the tail rings. HALL: 5.0 (the default), 0 about half as long, 10.0 about twice. PLATE: from under a second to about 6 s. INFINITE: from about 4 s to a minute; from 120 (**SUSTAIN**) the tail stops fading and what you play piles up on it, and at the very top, 127 (**FREEZE**), the tail holds exactly as it is and what you play stays dry |
 | K4 | **TONE** | The tail's treble: darker (more damping) or brighter (less); +0.0 (the default) in between. On PLATE it also darkens what goes in |
 <!-- the PLATE / INFINITE DECAY ranges: measured on host, tests/py/test_rev_types.py (T60 PLATE 0.8..6 s, INFINITE 4..60 s, within 15 %) -->
@@ -387,7 +387,7 @@ TONE glide when moved; MIX moves in small steps (every 32 samples, too small to 
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **PRE-DELAY** | A gap before the reverb starts, 0–80 ms, so the notes stay clear in front of the reverb (it was K4 on REVERB before) |
-| K2 | **SIZE** | How big the space is. **AUTO** (0, the default) lets MIX set the size, as it always did on HALL; 0.1–10.0 fixes it, small to large (on PLATE the plate's size, on INFINITE the space's) |
+| K2 | **SIZE** | How big the space is. **AUTO** (0, the default) lets MIX set the size, as it always did on HALL. On PLATE the size waits while a tail rings and follows MIX once the plate is silent (a preset sets its size at once), and on INFINITE AUTO is a fixed 5.0, so turning MIX never bends a ringing tail's pitch; 0.1–10.0 fixes it, small to large (on PLATE the plate's size, on INFINITE the space's) |
 | K3 | **MOD** | How much the tail moves: a slow drift that keeps long tails from sounding metallic. 5.0 (the default) is HALL as before; 0 holds still, 10.0 moves twice as much. On INFINITE it is the slow wander of its lines |
 | K4 | **LOW CUT** | Takes the bass out of what goes into the reverb, so long tails do not muddy the low notes: **OFF** (the default) or 20–800 Hz |
 
@@ -969,7 +969,7 @@ MARIMBA ignore it.
 | 81 | DRIVE (AMOUNT) | 91 | REVERB (MIX) |
 | 82 / 83 | DRIVE TONE / MIX | 92 / 93 / 94 | REVERB DECAY / TONE / PRE-DELAY (0–80 ms) |
 | 84 | DRIVE type: 0–63 OFF, 64–75 KHLON, 76–87 TSH8, 88–99 OHCD, 100–111 BHLUE, 112–127 FDRV | | |
-| 95 | REVERB type: 0–31 OFF, 32–63 HALL, 64–95 PLATE, 96–127 INFINITE | 73 | REVERB SIZE (0 = AUTO, from MIX) |
+| 95 | REVERB type: 0–31 OFF, 32–63 HALL, 64–95 PLATE, 96–127 INFINITE | 73 | REVERB SIZE (0 = AUTO: from MIX, on INFINITE 5.0) |
 | 68 / 69 | REVERB MOD (64 = the default) / LOW CUT (0 = off, 20–800 Hz) | | |
 | 17 | TREM/WAH: 0–42 off, 43–85 trem/pan, 86–127 wah | 18 / 19 | TREM DEPTH / RATE |
 | 20 / 21 / 22 | TREM SYNC / MODE (0–63 pan, 64–127 am) / SHAPE | 85 | Chorus / phaser switch: 0–42 both off, 43–85 chorus, 86–127 phaser |
