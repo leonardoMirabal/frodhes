@@ -638,24 +638,45 @@ def _peak_hz(w, f0):
 
 
 @needs_types
-def test_infinite_mix_does_not_bend_the_tail(exe, silent):
-    """MIX is INFINITE's level only (the user, 2026-10-25: turning MIX bent the pitch): a 440 Hz tone held in FREEZE,
-    then MIX 64 -> 120 over a second: the tail's pitch within 5 cents of the same take with MIX held, in every quarter
-    second from the sweep's start to 1.5 s after it (0.9.5's AUTO size from MIX glided the lines: -50 .. -250 cents);
-    AUTO on INFINITE is SIZE 64, sample for sample"""
-    sounding(silent, "INFINITE")
-    n, b0, b1 = 6 * FS, 3 * FS // BLK, 4 * FS // BLK
+@pytest.mark.parametrize("typ", NEW)
+def test_mix_does_not_bend_the_tail(exe, silent, typ):
+    """SIZE on AUTO, MIX turned while a tail rings does not bend it (the user, 2026-10-25: turning MIX bent the pitch;
+    0.9.5's AUTO size from MIX moved the lines under the tail: INFINITE -50 .. -250 cents, PLATE up to -266): a 440 Hz
+    tone, then MIX 64 -> 120 over a second while the tail rings (INFINITE held in FREEZE, PLATE at DECAY 127): the
+    tail's pitch within 5 cents of the same take with MIX held, every quarter second from the sweep's start on
+    (INFINITE's AUTO is a fixed SIZE 64, sample for sample; PLATE's is MIX latched while it rings)"""
+    sounding(silent, typ)
+    t0, t1, tz = (3.0, 4.0, 5.5) if typ == "INFINITE" else (1.25, 2.25, 3.0)
+    n, b0, b1 = int((tz + 0.5) * FS), int(t0 * FS) // BLK, int(t1 * FS) // BLK
     x = np.zeros(n, np.int64)
     x[:FS] = rs.sine(FS, 440.0, 4000)
-    par = dict(RV_TYPE=T["INFINITE"], RV_DEPTH=64, RV_DECAY=127, RV_SIZE=0)
+    par = dict(RV_TYPE=T[typ], RV_DEPTH=64, RV_DECAY=127, RV_SIZE=0)
     sw = [(b, "RV_DEPTH", 64 + 56 * (b - b0) // (b1 - b0)) for b in range(b0, b1 + 1)]
     held, swept = (rs.render(exe, x, par, s)["wet"][:, 0].astype(float) for s in ((), sw))
     q = FS // 4
     d = [1200 * np.log2(_peak_hz(swept[a:a + q], 440.0) / _peak_hz(held[a:a + q], 440.0))
-         for a in range(3 * FS, int(5.5 * FS), q)]
-    assert max(abs(v) for v in d) < 5.0, ["%+.1f" % v for v in d]
-    w64 = rs.render(exe, x[:2 * FS], dict(par, RV_SIZE=64))["wet"]
-    assert np.array_equal(rs.render(exe, x[:2 * FS], par)["wet"], w64)
+         for a in range(int(t0 * FS), int(tz * FS), q)]
+    assert max(abs(v) for v in d) < 5.0, (typ, ["%+.1f" % v for v in d])
+    if typ == "INFINITE":
+        w64 = rs.render(exe, x[:2 * FS], dict(par, RV_SIZE=64))["wet"]
+        assert np.array_equal(rs.render(exe, x[:2 * FS], par)["wet"], w64)
+
+
+@needs_types
+def test_plate_auto_size_follows_mix_from_silence(exe, silent):
+    """PLATE, SIZE on AUTO: MIX changed while the plate is silent sets the size (MIX 40, then 100 at 1 s, the burst
+    at 1.5 s: the wet is SIZE 100's, sample for sample); changed while it rings, the size waits for silence (the same
+    take with MIX 40 -> 100 during the tail is not SIZE 100's until the tail has ended)"""
+    sounding(silent, "PLATE")
+    x = np.zeros(3 * FS, np.int64)
+    x[int(1.5 * FS):int(1.5 * FS) + FS] = rs.burst(FS)
+    par = dict(RV_TYPE=T["PLATE"], RV_DEPTH=40)
+    sw = [(FS // BLK, "RV_DEPTH", 100)]
+    auto = rs.render(exe, x, dict(par, RV_SIZE=0), sw)["wet"]
+    assert np.array_equal(auto, rs.render(exe, x, dict(par, RV_SIZE=100), sw)["wet"])
+    late = [(int(1.7 * FS) // BLK, "RV_DEPTH", 100)]
+    a, f40, f100 = (rs.render(exe, x, dict(par, RV_SIZE=z), late)["wet"] for z in (0, 40, 100))
+    assert np.array_equal(a, f40) and not np.array_equal(a, f100)
 
 
 @needs_types
