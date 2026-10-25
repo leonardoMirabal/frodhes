@@ -1380,8 +1380,8 @@ __attribute__((noinline)) static void fx_spread_dry(const int32_t *mono, int32_t
     for (j = sb; j < sb + LK; j++) { L[j] = mono[j] + rh_side[j]; R[j] = mono[j] - rh_side[j]; }
 }
 
-/* LEVEL moved (0.9.6, the bug hunt: each detent was a 0.19 dB step at a block's edge): this block's gain ramps from the
- * last block's to the new one, applied here, before the bypass / DC / limiter pass, which then runs at unity */
+/* LEVEL moved (0.9.6, the bug hunt: each detent was a 0.19 dB step at a block's edge): the gain glides from the
+ * last block's toward the new one (at most 512 in Q12 a block), applied here, before the bypass / DC / limiter pass, which then runs at unity */
 static int32_t fx_lvk = -1;                              /* the LEVEL gain (Q12) the last block ended on */
 __attribute__((noinline)) static void fx_lvl_ramp(int32_t *L, int32_t *R, uint32_t n, int32_t a, int32_t b)
 {
@@ -1418,7 +1418,10 @@ static inline __attribute__((always_inline)) void fx_process(const int32_t *mono
     fx_delay(fx_L, fx_R, n);                           /* (the chorus, then the delay) */
     fx_reverb(fx_L, fx_R, n);
     if (fx_lvk != lvl) {
-        if (fx_lvk >= 0 && !byp && wet == 32768) { fx_lvl_ramp(fx_L, fx_R, n, fx_lvk, lvl); fx_lvk = lvl; lvl = 4096; }
+        if (fx_lvk >= 0 && !byp && wet == 32768) {    /* (at most 512 a block: a full swing in ~50 ms) */
+            int32_t nx = fx_lvk + clampi(lvl - fx_lvk, -512, 512);
+            fx_lvl_ramp(fx_L, fx_R, n, fx_lvk, nx); fx_lvk = nx; lvl = 4096;
+        }
         else fx_lvk = lvl;                              /* (bypassed or crossfading: the step, as before) */
     }
     for (sb = 0; sb < n; sb += LK) {                   /* the look-ahead limiter, one sub-block late */
