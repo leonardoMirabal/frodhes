@@ -36,8 +36,8 @@ The clicks (clicks): K events of the stream (a CC, a knob, a button, a Program C
 with no note starting near it) are rendered with and without that event (the stream ends at it); the largest second
 difference from 6 ms before to 30 ms after it, against the larger of the run without it and the run with it once
 settled (60-93 ms after), and the same on the difference of the two runs (the change alone: the reverb, the delay
-and the other notes cancel), over 10x is a click (click_ratio). A click is named by what it changed (the parameters that differ in the two runs'
-dumps); the ones private/BUGHUNT-095.md already lists are reported as known, the others fail.
+and the other notes cancel), over 10x is a click (click_ratio). A click is named by what it changed (the parameters
+that differ in the two runs' dumps); the ones private/BUGHUNT-095.md already lists are reported as known, the others fail.
 
 A failure is shrunk (delta debugging over the stream; the panic and the checks regenerated) to a minimal script in
 tests/scripts/ format: build/monkey/fail-<seed>-<check>/repro.txt (and full.txt, info.json)."""
@@ -331,7 +331,8 @@ def run(text, binary=BIN, flash=None, timeout=120):
             p = subprocess.run([binary, base, base + ".txt"], capture_output=True, text=True, env=env,
                                timeout=timeout)
         except subprocess.TimeoutExpired as e:
-            return Res(-999, (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or ""),
+            so = e.stdout or ""
+            return Res(-999, so.decode(errors="replace") if isinstance(so, bytes) else so,
                        np.zeros((0, 2)), timeout=True)
         x = np.zeros((0, 2))
         if os.path.exists(base + ".wav"):
