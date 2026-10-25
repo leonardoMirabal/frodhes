@@ -731,6 +731,14 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "bars")) snprintf(v, n, "%d", eng_is_bars());
     else if (!strcmp(key, "voices")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits));
     else if (!strcmp(key, "held")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_held_bits : rh_held_bits));
+    else if (key[0] == 'v' && key[1] == 'n' && key[2] >= '0' && key[2] <= '9') {   /* vnN: voices sounding note N
+                                                           * (alive, not fading out for a steal; BUGHUNT #21) */
+        uint32_t nn = (uint32_t)atoi(key + 2) & 127u;
+        for (i = c = 0; i < (eng_cur == ENG_BARS ? BAR_NV : RH_NV); i++)
+            c += eng_cur == ENG_BARS ? bv[i].alive && bv[i].note == nn && bv[i].fade == 32768
+                                     : rv[i].alive && rv[i].note == nn && rv[i].fade == 32768;
+        snprintf(v, n, "%u", c);
+    }
     else if (!strcmp(key, "pitches")) { for (i = c = 0; i < 128u; i++) c += out_ref[i] != 0; snprintf(v, n, "%u", c + (arp_playing < 128u)); }   /* held by a source or the arpeggiator */
     else if (!strcmp(key, "srcs")) { for (i = c = 0; i < SRC_N; i++) c += src_active[i]; snprintf(v, n, "%u", c); }
     else if (!strcmp(key, "refs")) { for (i = c = 0; i < 128u; i++) c += out_ref[i]; snprintf(v, n, "%u", c); }

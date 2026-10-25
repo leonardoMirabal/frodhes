@@ -185,10 +185,14 @@ static void eng_render(int32_t *mono, uint32_t n)
     if (!eng_swapping)                                              /* events wait while the old engine fades */
         while (eq_r != eq_w) {
             uint32_t e = eq[eq_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu;
+            if (eng_cur == ENG_BARS ? type == EV_NOTE_ON && !bar_strike(note, val) : ev_w - ev_r >= 32u) break;
+                                                                    /* every voice waits for a note (BUGHUNT #21):
+                                                                    * this one next block, in order; the Rhodes'
+                                                                    * ring full (its note-ons can wait the same way) */
             eq_r = eq_r + 1u;
             if (type == EV_PEDAL) eng_pedal_cc = (uint8_t)val;
             if (eng_cur == ENG_RHODES) rh_post(type, note, val);    /* drained by rh_render below, in order */
-            else if (type == EV_NOTE_ON) bar_strike(note, val);
+            else if (type == EV_NOTE_ON) ;                          /* (struck above) */
             else if (type == EV_NOTE_OFF) bar_note_off(note);
             else if (type == EV_PEDAL) bar_pedal(val);
             else if (type == EV_ALL_OFF) bar_all_off();

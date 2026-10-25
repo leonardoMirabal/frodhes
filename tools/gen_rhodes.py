@@ -625,9 +625,14 @@ def emit(spec, fam_tabs):
         w("  {" + ",".join("{" + ",".join(map(str, sh)) + ",0,0}" for sh in k["pulse"]["shapes"]) + "},")
     w("};")
     w(f"#define RH_NANCH {len(V_ANCH)}")
-    w("static const uint32_t RH_PRATE[RH_NKEY][RH_NANCH] = {")
+    # the pulse rates (up to 69905: over 16 bits) as a 16-bit offset from each key's smallest (every key's span is
+    # under 2^16): RH_PRATE_B[key] + RH_PRATE[key][i], the same numbers in 1.9 KB instead of 3.5 KB (the flash)
+    w("static const uint16_t RH_PRATE_B[RH_NKEY] = {" + ",".join(str(min(k["pulse"]["prate"])) for k in spec["keys"]) + "};")
+    w("static const uint16_t RH_PRATE[RH_NKEY][RH_NANCH] = {")
     for k in spec["keys"]:
-        w("  {" + ",".join(map(str, k["pulse"]["prate"])) + "},")
+        b0 = min(k["pulse"]["prate"])
+        assert b0 < 65536 and max(k["pulse"]["prate"]) - b0 < 65536
+        w("  {" + ",".join(str(x - b0) for x in k["pulse"]["prate"]) + "},")
     w("};")
     w("static const uint16_t RH_PAMP[RH_NKEY][RH_NANCH] = {")
     for k in spec["keys"]:

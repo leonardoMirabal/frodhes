@@ -21,7 +21,7 @@ import monkey as mk  # noqa: E402
 SEEDS = list(range(24))
 SAN_SEEDS = [0, 1]
 # seed -> why it fails on 0.9.5 (fix it, then remove the line)
-KNOWN = {22: "BUGHUNT #21: a steal of a voice that dies in its fade loses the new note (rhodes.c:977)"}
+KNOWN = {}                                       # (22: BUGHUNT #21, fixed in 0.9.6: tests/py/test_steal_race.py)
 
 
 @pytest.fixture(scope="module")

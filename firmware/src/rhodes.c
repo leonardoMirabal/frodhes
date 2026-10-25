@@ -354,7 +354,7 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
 {
     uint32_t key = (uint32_t)(v->k - RH_KEYS), i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
     const uint16_t *pa = RH_PAMP[key];
-    const uint32_t *pr = RH_PRATE[key];
+    const uint16_t *pr = RH_PRATE[key];               /* (+ RH_PRATE_B[key]: the key's base) */
     const int16_t *p1 = RH_PULSE[key][RH_VLAY_I[vel]];
     int32_t w = RH_VLAY_W[vel];
     if (w) {        /* the layer crossfade, once per point (O2): the same integers the force loop computed per sample
@@ -369,7 +369,7 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
     } else
         v->ptab = p1;
     v->pamp = (int32_t)pa[i] + ((((int32_t)pa[i + 1] - (int32_t)pa[i]) * (int32_t)f) >> 8);
-    v->prate = (uint32_t)((int32_t)pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;  /* Q12 -> Q16 */
+    v->prate = (uint32_t)((int32_t)RH_PRATE_B[key] + pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;  /* Q12 -> Q16 */
     {   /* HAMMER knob x TYPE tips scale the contact rate; the force scales with it so the impulse (the hammer's
          * momentum) is kept: a softer tip pushes longer and less hard, it does not give more energy */
         uint32_t h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
@@ -646,7 +646,7 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
     n = note < RH_KEY_LO ? RH_KEY_LO : note > RH_KEY_LO + RH_NKEY - 1u ? RH_KEY_LO + RH_NKEY - 1u : note;
     key = n - RH_KEY_LO; i = RH_VPOS_I[vel]; f = RH_VPOS_F[vel];
     pamp = (int32_t)RH_PAMP[key][i] + ((((int32_t)RH_PAMP[key][i + 1] - (int32_t)RH_PAMP[key][i]) * (int32_t)f) >> 8);
-    prate = (uint32_t)((int32_t)RH_PRATE[key][i] + ((((int32_t)RH_PRATE[key][i + 1] - (int32_t)RH_PRATE[key][i])
+    prate = (uint32_t)((int32_t)RH_PRATE_B[key] + RH_PRATE[key][i] + ((((int32_t)RH_PRATE[key][i + 1] - (int32_t)RH_PRATE[key][i])
                                                        * (int32_t)f) >> 8)) << 4;
     h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
     prate = (uint32_t)(((uint64_t)prate * h) >> 16);
@@ -665,9 +665,19 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
     rh_kn_tab = RH_PULSE[key][l]; rh_kn_rate = prate; rh_kn_pos = 0; rh_kn_note = (uint8_t)n;
 }
 
-static void rh_strike(uint32_t note, uint32_t vel)
+static void rh_start_pend(rh_voice_t *v)                /* a stolen voice is gone: start the note waiting for it */
+{
+    uint32_t rel = v->pend;                             /* 1 held, 2 let go, 3 let go by an all-off */
+    rh_init(v, v->pend_note, v->pend_vel);
+    if (rel >= 2u) { v->held = 0; v->rgain = 32768; rh_set_damper(v, rel == 3u ? 32768 : rh_pedal_w); }
+    if (rel == 3u && v->life > RH_OFF_LIFE) v->life = RH_OFF_LIFE;
+}
+
+static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already waits for a note; try next block */
 {
     uint32_t i, pick = RH_NV, best = 0xFFFFFFFFu;
+    for (i = 0; i < RH_NV && rv[i].pend; i++) ;
+    if (i == RH_NV) return 0;                           /* (more than RH_NV steals in one block: BUGHUNT #21) */
     rh_knock_strike(note, vel);
     for (i = 0; i < RH_NV; i++)                         /* the same note still sounding: re-strike, superpose */
         if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) {
@@ -677,10 +687,10 @@ static void rh_strike(uint32_t note, uint32_t vel)
             v->vel = (uint8_t)vel; v->held = 1; v->age = ++rh_ages; v->life = v->k->life; v->lvl0 = v->lvl;
             rh_set_damper(v, 0);
             rh_load_pulse(v, vel);
-            return;
+            return 1;
         }
     for (i = 0; i < RH_NV; i++)
-        if (!rv[i].alive) { rh_init(&rv[i], note, vel); return; }
+        if (!rv[i].alive) { rh_init(&rv[i], note, vel); return 1; }
     for (i = 0; i < RH_NV; i++) {                       /* steal: the quietest released voice, else the oldest */
         uint32_t m, sum = 0, score;
         if (rv[i].pend) continue;
@@ -688,21 +698,22 @@ static void rh_strike(uint32_t note, uint32_t vel)
         score = rv[i].held ? 0x80000000u + (rv[i].age & 0x7FFFFFFFu) : (sum > 0x7FFFFFFFu ? 0x7FFFFFFFu : sum);
         if (score < best) { best = score; pick = i; }
     }
-    if (pick == RH_NV) pick = 0;
 #ifdef DINGHY_HOST
     rh_h_steals++;
 #endif
     rv[pick].pend = 1; rv[pick].pend_note = (uint8_t)note; rv[pick].pend_vel = (uint8_t)vel;
     if (rv[pick].fade == 32768) rv[pick].fade = 32767;
+    return 1;
 }
 
 static void rh_events(void)
 {
     while (ev_r != ev_w) {
         uint32_t e = ev_q[ev_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu, i;
+        if (type == EV_NOTE_ON && !rh_strike(note, val)) break;   /* (kept: it starts next block, in order) */
         ev_r = ev_r + 1u;
-        if (type == EV_NOTE_ON) rh_strike(note, val);
-        else if (type == EV_NOTE_OFF) {
+        if (type == EV_NOTE_ON) continue;
+        if (type == EV_NOTE_OFF) {
             for (i = 0; i < RH_NV; i++)
                 if (rv[i].alive && rv[i].note == note && rv[i].held) {
                     rh_voice_t *v = &rv[i];
@@ -716,7 +727,7 @@ static void rh_events(void)
                         th = mul15(th > cap ? cap : th, v->rgain);   /* the cap, then the release velocity's x0.6..1.4 */
                         v->ptab = RH_PULSE[key][0];
                         v->pamp = th > 32767 ? 32767 : th;
-                        v->prate = (uint32_t)RH_PRATE[key][1] << 4;
+                        v->prate = (uint32_t)(RH_PRATE_B[key] + RH_PRATE[key][1]) << 4;
                         v->ppos = 0;
                     }
                     if (rh_pedal_w && rh_felt) {             /* 8 ms of felt noise */
@@ -965,16 +976,17 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
     v->Hprev = Hp;
     if (v->fade == 0) {                                   /* a steal finished fading: start the waiting note */
         v->alive = 0;
-        if (v->pend) {
-            uint32_t rel = v->pend;                     /* 1 held, 2 let go, 3 let go by an all-off */
-            rh_init(v, v->pend_note, v->pend_vel);
-            if (rel >= 2u) { v->held = 0; v->rgain = 32768; rh_set_damper(v, rel == 3u ? 32768 : rh_pedal_w); }
-            if (rel == 3u && v->life > RH_OFF_LIFE) v->life = RH_OFF_LIFE;
-        }
+        if (v->pend) rh_start_pend(v);
         return;
     }
     v->lvl = sum; if (sum > v->lvl0) v->lvl0 = sum;
-    if (!v->ptab && !v->felt_n && sum < (k->kill >> 3)) { v->alive = 0; return; }
+    if (!v->ptab && !v->felt_n && sum < (k->kill >> 3)) {   /* died away; a stolen voice dying in its fade still
+                                                           * starts the note waiting for it (it ended, and the note was
+                                                           * lost: BUGHUNT #21) */
+        v->alive = 0;
+        if (v->pend) rh_start_pend(v);
+        return;
+    }
     for (m = 1; m < RH_NM; m++)                           /* sleep overtone modes that have died away */
         if (v->m[m].live && !v->ptab && v->m[m].peak < (k->kill >> 3)) {
             v->m[m].live = 0; v->m[m].x = v->m[m].y = v->m[m].ex = v->m[m].ey = 0;
