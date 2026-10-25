@@ -61,7 +61,8 @@ def test_each_detector_fails_on_its_fault(clean, fault):
     t = mk.ms(5000)
     want = fault
     if fault == "wrap":
-        r.x[t, 0], r.x[t + 1, 0] = 30000, -30000
+        r.out += ("\nfirmware/src/fx.c:964:25: runtime error: implicit conversion from type 'int' of value 35351 "
+                  "(32-bit, signed) to type 'int16_t' (aka 'short') changed the value to -30185 (16-bit, signed)\n")
     elif fault == "rail":
         r.x[t:t + 40, 1] = 32767
         want = "rail"
@@ -106,6 +107,71 @@ def test_the_click_check_finds_a_known_click(binary):
     assert ring > -40 and changed == ["P_FL_TYPE"] and mk.known_click(changed) == "#4"
     if ratio <= 10:
         pytest.xfail(f"FILTER TYPE no longer clicks ({ratio:.1f}x): BUGHUNT #4 fixed; pick another known click")
+
+
+def test_the_wrap_check_finds_an_int16_wrap():
+    """a real fault: the sanitizer build with Rhodes' layer crossfade 4x too hot (rhodes.c: v->pbuf, an int16) wraps
+    on a loud note; the wrap check names it, and the build without the fault is clean"""
+    out = os.path.join(mk.OUTD, "san-wrap-fault")
+    os.makedirs(mk.OUTD, exist_ok=True)
+    old = "v->pbuf[j] = (int16_t)(a + (((p2[j] - a) * w) >> 15));"
+    b = mk.build(True, [("rhodes.c", old, old.replace("(a + ", "(4 * a + "))], out)
+    try:
+        ev = [(100, "midi 0x90 60 64"), (300, "midi 0x90 64 90"), (900, "midi 0x80 60 0")]
+        pl, m = mk.panic(mk.RAND_MS + 50)
+        bad = mk.analyse(mk.run(mk.script_text(ev, pl, m["end"]), b), m)
+        assert [k for k, _ in bad] == ["wrap"] and "rhodes.c:" in bad[0][1] and "'int16_t'" in bad[0][1]
+        assert mk.analyse(mk.run(mk.script_text(ev, pl, m["end"]), mk.build(True)), m) == []
+    finally:
+        os.remove(out)
+
+
+def test_the_click_check_sees_through_a_busy_patch(binary):
+    """the difference of the two renders: 0.9.5's FILTER TYPE click (#4) inside seed 14's busy stream (12227 ms, CC 70
+    to BP, the chorus and reverb on) reads 6x plain, so the old check missed it; the diff sees it (15x) and names it"""
+    ev = mk.gen(14)
+    i = ev.index((12227, "midi 0xB0 70 75"))
+    ratio, changed, ring, plain, diff = mk.click_one(ev, i, binary, detail=True)
+    assert changed == ["P_FL_TYPE"] and ring > -55
+    assert plain < 10
+    if ratio <= 10:
+        pytest.xfail(f"FILTER TYPE no longer clicks here ({ratio:.1f}x): BUGHUNT #4 fixed")
+
+
+def test_the_diff_finds_a_small_step_under_a_loud_sound(binary):
+    """a fault injected into a busy render (seed 14 at 9 s, -19 dBFS with reverb and chorus): a 400 step (-38 dBFS)
+    is lost in plain's reference (1x) and over 10x in the diff; the same render against itself is 0"""
+    t = 9000
+    ev = [e for e in mk.gen(14) if e[0] <= t and not (t - 60 <= e[0] and mk.starts_sound(e[1]))]
+    b = mk.run(mk.script_text(ev, [], t + 150), binary).x
+    a = b.copy()
+    a[mk.ms(t + 5):] += 400
+    ratio, plain, diff = mk.click_ratio(a, b, t)
+    assert plain < 2 and diff > 10
+    assert mk.click_ratio(b, b, t)[2] == 0
+
+
+def test_the_click_stream_ends_at_its_event():
+    """nothing after the event is rendered: 0.9.5 seed 273194754's FX press read 16x because a TYPE turn (#12) landed
+    12 ms later"""
+    ev = [(100, "midi 0x90 60 100"), (500, "btn 2"), (512, "turn 1 -5"), (520, "midi 0xB0 70 50")]
+    assert mk.click_stream(ev, 1) == ev[:2]
+
+
+def test_the_panic_outlasts_a_preset_browse(binary):
+    """0.9.5 seed 273194710 (shrunk): a PRESETS turn 300 ms before the panic loads DREAM PAD (INFINITE reverb, a tape
+    echo) 400 ms after its last detent, after the panic's FX off; the panic sends it again at +700 ms, so the 10 s
+    silence holds (it was a tool mistake, not a ringing tail)"""
+    ev = [(16949, "midi 0xC0 21 0"), (17107, "turn 6 -5"), (19624, "midi 0xB0 19 10"), (19698, "keys 84247440"),
+          (19727, "turn 6 -5")]
+    assert mk.check(ev, binary) == []
+
+
+def test_the_probe_turns_the_motor_off(binary):
+    """0.9.5 seed 273194706 (shrunk): REEDY, a VIBES preset with its motor on: the probe's key-up met the motor's
+    pulse (+2 dB, not a release); the probe now switches the motor off (CC 47 0) as well as FX"""
+    ev = [(15007, "midi 0xC0 12 0"), (15706, "midi 0xC0 23 0"), (19803, "midi 0xB0 79 44")]
+    assert mk.check(ev, binary) == []
 
 
 def test_ddmin_finds_the_minimal_pair():
