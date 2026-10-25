@@ -14,6 +14,12 @@ let M = null, ctx = null, node = null, keysDown = 0, keysHeld = new Set();
 function $(id) { return document.getElementById(id); }
 function status(t) { $("status").textContent = t; }
 
+// ---- the version (web/build.sh writes version.js: the release tag's X.Y.Z, or "dev" for a local build)
+const VERSION = (typeof window.FRODHES_VERSION === "string" && window.FRODHES_VERSION) || "dev";
+$("ver").textContent = VERSION;
+$("ver-foot").textContent = VERSION;
+document.title = `Frodhes ${VERSION} emulator`;
+
 // ---- the module (Emscripten, MODULARIZE off: a global Module)
 var Module = window.Module = {
   onRuntimeInitialized() {
@@ -165,14 +171,25 @@ function knob(name, id, x, y, sub) {
     else { if (!M) return; M._web_enc(id, d); angle += d * 15; }
     show();
   };
-  k.addEventListener("wheel", e => { e.preventDefault(); turn(e.deltaY < 0 ? 1 : -1); }, { passive: false });
+  // the wheel / trackpad: steps from the distance scrolled (a trackpad sends many small events per swipe), and the
+  // steps go out at most a few per frame so the firmware's encoder acceleration only answers a real fast turn
+  let wacc = 0, pend = 0, raf = 0;
+  const flush = () => { raf = 0; const n = Math.max(-2, Math.min(2, pend)); pend -= n; for (let i = 0; i < Math.abs(n); i++) turn(Math.sign(n)); if (pend) raf = requestAnimationFrame(flush); };
+  const queue = n => { pend = Math.max(-12, Math.min(12, pend + n)); if (!raf) raf = requestAnimationFrame(flush); };
+  k.addEventListener("wheel", e => {
+    e.preventDefault();
+    const px = e.deltaMode === 1 ? e.deltaY * 50 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+    wacc -= px;
+    const STEP = 50;
+    if (Math.abs(wacc) >= STEP) { const n = Math.trunc(wacc / STEP); wacc -= n * STEP; queue(n); }
+  }, { passive: false });
   k.addEventListener("pointerdown", e => { e.preventDefault(); lastY = e.clientY; acc = 0; k.setPointerCapture(e.pointerId); });
   k.addEventListener("pointermove", e => {
     if (lastY === null) return;
     acc += lastY - e.clientY; lastY = e.clientY;
-    while (Math.abs(acc) >= 8) { turn(acc > 0 ? 1 : -1); acc -= Math.sign(acc) * 8; }
+    const n = Math.trunc(acc / 10); if (n) { acc -= n * 10; queue(n); }
   });
-  k.addEventListener("pointerup", () => { lastY = null; });
+  k.addEventListener("pointerup", () => { lastY = null; wacc = 0; });
   k.addEventListener("pointercancel", () => { lastY = null; });
   show();
   return k;

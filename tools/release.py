@@ -4,6 +4,7 @@
 
     tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device [--device-done JSON]] [--full] [--no-emulator] [--yes]
     tools/release.py [X.Y.Z] --verify-only      step 9 alone, against a published release (read-only)
+    tools/release.py --web-selftest [DIST [X.Y.Z]]   the emulator selftest alone (ci.yml / release.yml, job web)
 
 The version lives in one place, the GitHub release (its tag, page, notes and assets): README / MANUAL name no version
 (they link releases/latest and releases/latest/download/frodhes.fwsc, every picture's ?v= is its file's hash:
@@ -34,8 +35,11 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
  6 confirm       what will be pushed, then "Publish X.Y.Z? [y/N]" (--yes skips the prompt). --dry-run stops here.
  7 publish       push main, wait for ci on that commit (every job green), tag and push the tag, wait for the
                  release workflow, download the asset and compare its sha256 with the local build
- 8 emulator      (--no-emulator skips it) web/build.sh, the Playwright selftest (Chromium + WebKit, 1280 and 390 px),
-                 web/dist into the gh-pages worktree build/pages, push, compare the live files' sha256
+ 8 emulator      (--no-emulator skips it) release.yml already built web/dist from the tag, ran the Playwright selftest
+                 (Chromium + WebKit, 1280 and 390 px) and deployed it to gh-pages before publishing the release
+                 (tools/deploy_pages.sh): here only the live files' sha256 = gh-pages's, and gh-pages's index.html /
+                 app.js = the tag's web/. Fallback, for a release.yml without that job: web/build.sh, the selftest,
+                 web/dist into the gh-pages worktree build/pages (tools/deploy_pages.sh), push, the live sha256
  9 verify        the release page (not a draft) lists frodhes-X.Y.Z.fwsc, frodhes.fwsc and the SMK-37 packages
                  (SMK_ASSETS, marked experimental);
                  releases/latest/download/frodhes.fwsc redirects to vX.Y.Z and is byte for byte the build (with
@@ -406,31 +410,43 @@ class Release:
 
     # 8
     def s_emulator(self):
-        ev = []
-        sh(["sh", "web/build.sh"], timeout=1800)
+        if workflow_deploys_pages():
+            return self.emulator_verify()
+        return self.emulator_local()
+
+    def emulator_verify(self):
+        """release.yml built, selftested and deployed the emulator from the tag before it published the release
+        (step 7 waited for it): only check that the live files are gh-pages's and gh-pages's page is the tag's"""
+        tag = "v" + self.ver
+        sh(["git", "fetch", "-q", "origin", "gh-pages"])
+        head = out(["git", "log", "-1", "--format=%h %s", "FETCH_HEAD"])
+        ev = [f"release.yml deployed the emulator before publishing (tools/deploy_pages.sh, tools/pages_wait.sh): verify only; gh-pages {head}"]
+        want = {f: blob_sha("FETCH_HEAD", f) for f in WEB_FILES}
+        for f in ("index.html", "app.js"):              # web/build.sh copies these two unchanged
+            if want[f] != blob_sha(tag, "web/" + f):
+                raise Stop(f"gh-pages {f} is not {tag}'s web/{f}: the emulator was not deployed from {tag}")
+        stamp = hashlib.sha256(f'window.FRODHES_VERSION = "{self.ver}";\n'.encode()).hexdigest()
+        if want["version.js"] != stamp:
+            raise Stop(f"gh-pages version.js does not say {self.ver} (web/build.sh --release {self.ver})")
+        ev.append(f"gh-pages index.html, app.js = {tag}'s web/; version.js says {self.ver}")
+        ev.append(wait_live(want, self.log))
+        return "\n".join(ev)
+
+    def emulator_local(self):
+        """the fallback (a release.yml that does not deploy the emulator): build, selftest, deploy from build/pages, verify"""
+        ev = ["release.yml does not deploy the emulator: the local fallback"]
+        sh(["sh", "web/build.sh", "--release", self.ver], timeout=1800)
         dist = os.path.join(ROOT, "web", "dist")
-        ev.append(web_selftest(dist))
+        ev.append(web_selftest(dist, self.ver))
         pages = os.path.join(ROOT, "build", "pages")
         if out(["git", "-C", pages, "rev-parse", "--abbrev-ref", "HEAD"]) != "gh-pages":
             raise Stop(f"{pages} is not the gh-pages worktree")
-        local = {}
-        for f in sorted(os.listdir(dist)):
-            shutil.copy2(os.path.join(dist, f), os.path.join(pages, f))
-            local[f] = sha256(os.path.join(dist, f))
-        sh(["git", "-C", pages, "add", "-A"])
-        if out(["git", "-C", pages, "status", "--porcelain"]):
-            sh(["git", "-C", pages, "commit", "-q", "-F", "-"],
-               input=f"Emulator for Frodhes {self.ver} (main {self.head[:10]})\n\n{TRAILER}\n")
-        sh(["git", "-C", pages, "push", "origin", "gh-pages"])
+        sh(["git", "-C", pages, "pull", "-q", "--ff-only", "origin", "gh-pages"])
+        sh(["sh", os.path.join(ROOT, "tools", "deploy_pages.sh"), dist, pages, self.ver])
+        local = {f: sha256(os.path.join(dist, f)) for f in sorted(os.listdir(dist))}
         ev.append(f"gh-pages {out(['git', '-C', pages, 'rev-parse', '--short', 'HEAD'])} pushed ({len(local)} files)")
-        for i in range(24):                      # Pages deploys in a minute or two
-            bad = [f for f, h in local.items() if fetch_sha(PAGES_URL + f) != h]
-            if not bad:
-                ev.append(f"live {PAGES_URL}: every file's sha256 = the local one ({', '.join(local)})")
-                return "\n".join(ev)
-            self.log(f"live differs ({', '.join(bad)}), retry {i + 1}/24 in 15 s")
-            time.sleep(15)
-        raise Stop(f"the live emulator still differs after 6 minutes: {', '.join(bad)}")
+        ev.append(wait_live(local, self.log))
+        return "\n".join(ev)
 
     # 9
     def s_verify(self):
@@ -752,6 +768,36 @@ def wait_run(workflow, sha, appear_s=300, ok=("success",)):
     return f"{workflow} {v['url']}: success, jobs {', '.join(f'{n} {c}' for n, c in jobs)}"
 
 
+WEB_FILES = ("index.html", "app.js", "version.js", "frodhes.js", "frodhes.wasm")      # web/build.sh's web/dist
+
+
+def workflow_deploys_pages(path=None):
+    """release.yml deploys the emulator itself (a job running tools/deploy_pages.sh) before it publishes"""
+    try:
+        with open(path or os.path.join(ROOT, ".github", "workflows", "release.yml")) as f:
+            return "tools/deploy_pages.sh" in f.read()
+    except OSError:
+        return False
+
+
+def blob_sha(ref, path):
+    """the sha256 of path's bytes at git ref (None if it is not there)"""
+    p = subprocess.run(["git", "show", f"{ref}:{path}"], cwd=ROOT, capture_output=True)
+    return hashlib.sha256(p.stdout).hexdigest() if p.returncode == 0 else None
+
+
+def wait_live(want, log, tries=24, pause=15):
+    """every file of want ({name: sha256}) served by PAGES_URL with that sha256 (Pages deploys in a minute or two)"""
+    bad = list(want)
+    for i in range(tries):
+        bad = [f for f, h in want.items() if fetch_sha(PAGES_URL + f) != h]
+        if not bad:
+            return f"live {PAGES_URL}: every file's sha256 = the expected one ({', '.join(want)})"
+        log(f"live differs ({', '.join(bad)}), retry {i + 1}/{tries} in {pause} s")
+        time.sleep(pause)
+    raise Stop(f"the live emulator still differs after {tries * pause} s: {', '.join(bad)}")
+
+
 def fetch_sha(url):
     try:
         with urllib.request.urlopen(f"{url}?nocache={time.time():.0f}", timeout=30) as r:
@@ -789,15 +835,24 @@ with sync_playwright() as p:
             pg.goto(url + "?selftest")
             pg.wait_for_function("document.title.startsWith('SELFTEST')", timeout=30000)
             sw = pg.evaluate("document.documentElement.scrollWidth")
-            res.append(dict(browser=bname, width=w, title=pg.title(), scroll=sw, errors=errs))
+            ver = pg.evaluate("[document.getElementById('ver').textContent, "
+                              "document.getElementById('ver-foot').textContent]")
+            res.append(dict(browser=bname, width=w, title=pg.title(), scroll=sw, errors=errs, ver=ver))
             pg.close()
         b.close()
 print(json.dumps(res))
 """
 
 
-def web_selftest(dist):
-    """the ?selftest page in Chromium and WebKit at 1280 and 390 px, served from dist; Stop on any failure"""
+def web_selftest(dist, version=None):
+    """the ?selftest page in Chromium and WebKit at 1280 and 390 px, served from dist; Stop on any failure. The page
+    must show dist/version.js's version (web/build.sh --release X.Y.Z, else "dev") in its heading and footer, and
+    that must be version when one is given"""
+    shown = dist_version(dist)
+    if shown is None:
+        raise Stop(f"{dist}/version.js missing or malformed (web/build.sh writes it)")
+    if version is not None and shown != version:
+        raise Stop(f"{dist}/version.js says {shown!r}, not {version!r} (web/build.sh --release {version})")
     import socket
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
@@ -807,8 +862,11 @@ def web_selftest(dist):
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         time.sleep(1)
-        env = dict(os.environ, PLAYWRIGHT_BROWSERS_PATH=os.path.join(ROOT, ".local", "playwright"))
-        p = subprocess.run([os.path.join(ROOT, PY), "-c", SELFTEST_JS, f"http://127.0.0.1:{port}/"], cwd=ROOT,
+        env = dict(os.environ)
+        if "PLAYWRIGHT_BROWSERS_PATH" not in env and os.path.isdir(os.path.join(ROOT, ".local", "playwright")):
+            env["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(ROOT, ".local", "playwright")
+        py = os.path.join(ROOT, PY)                  # the project venv, else (CI) this interpreter
+        p = subprocess.run([py if os.path.exists(py) else sys.executable, "-c", SELFTEST_JS, f"http://127.0.0.1:{port}/"], cwd=ROOT,
                            env=env, text=True, capture_output=True, timeout=300)
         if p.returncode:
             raise Stop("Playwright selftest failed:\n" + tail(p.stdout + p.stderr))
@@ -819,17 +877,37 @@ def web_selftest(dist):
     for r in res:
         m = re.search(r"rms=(-?[\d.]+)dB screen=(\d+)px", r["title"])
         tag = f"{r['browser']} {r['width']}px"
-        if not m or float(m.group(1)) < -60 or int(m.group(2)) == 0 or r["errors"] or r["scroll"] > r["width"]:
-            bad.append(f"{tag}: {r['title']!r} scrollWidth {r['scroll']} errors {r['errors']}")
+        if (not m or float(m.group(1)) < -60 or int(m.group(2)) == 0 or r["errors"] or r["scroll"] > r["width"]
+                or r.get("ver") != [shown, shown]):
+            bad.append(f"{tag}: {r['title']!r} scrollWidth {r['scroll']} errors {r['errors']} version {r.get('ver')}")
         else:
             ok.append(f"{tag} rms {m.group(1)} dB, {m.group(2)} px lit")
     if bad:
         raise Stop("emulator selftest: " + "; ".join(bad))
-    return "selftest " + "; ".join(ok)
+    return f"selftest (Frodhes {shown}) " + "; ".join(ok)
+
+
+def dist_version(dist):
+    """the version web/build.sh stamped into dist/version.js, or None"""
+    try:
+        with open(os.path.join(dist, "version.js")) as f:
+            m = re.fullmatch(r'window\.FRODHES_VERSION = "([0-9A-Za-z.-]+)";\n', f.read())
+    except OSError:
+        return None
+    return m.group(1) if m else None
 
 
 def main(argv=None):
-    a = parse_args(sys.argv[1:] if argv is None else argv)
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["--web-selftest"]:   # ci.yml / release.yml: tools/release.py --web-selftest web/dist [X.Y.Z]
+        try:
+            dist = os.path.abspath(argv[1] if len(argv) > 1 else os.path.join(ROOT, "web", "dist"))
+            print(web_selftest(dist, argv[2] if len(argv) > 2 else None))
+            return 0
+        except Stop as e:
+            print(f"FAIL: {e}", flush=True)
+            return 1
+    a = parse_args(argv)
     return Release(a).run()
 
 
