@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-# TODO (WIP, unfinished): render() cache: the temporary name must be unique per thread (pid + thread id) and
-# np.save appends ".npy" (save to a file object); not yet run end to end; thresholds not calibrated on 0.9.5;
-# tests/py/test_control_sweep.py (xfail inf-size / mix-fix, allow-list with MANUAL quotes) and
-# tests/py/test_manual_claims.py not written yet.
 """Control sweep: every user control on every effect page and engine, turned 0 -> 127 -> 0 at a human rate (one CC
 step every 20 ms) under a held chord whose tail rings, measured against static renders of the same control. Host
 build only (tests/host.c renders the firmware's own code); tests/py/test_control_sweep.py runs it in `make pytest`.
@@ -24,6 +20,17 @@ FLAG. The checks (each against static renders at 0, 32, 64, 96 and 127, or at an
   mix0    MIX / DEPTH-type controls: the control at 0 is the effect off, bit for bit
   mono    where the MANUAL says "how much": the wet level (render minus off) does not fall as the control rises
           (1 dB of tolerance)
+  click   the DIFFERENTIAL click detector: the control moved once (FLIPS: its two ends both ways, one detent at the
+          middle; a selector: every neighbouring pair of options both ways) at T_FLIP while the pedalled chord rings;
+          the largest |second difference| of either channel from 3 ms before to 30 ms after the move, against the
+          larger of the two renders held at the start and at the end value over the same span: over 10x flags. (The
+          absolute detector, d2 > 6 x level + 2000, missed steps of 1700 LSB on a 5000 LSB chord: private BUGHUNT-095)
+  trans   the moved render's level, 20 ms windows over 300 ms after the move, outside the two held renders' range
+          (3 dB over the louder, 6 dB under the quieter) flags: a dropout or a burst after the move (the wet alone
+          for delay and reverb)
+  noeff   every held value renders the same (at most 1 LSB apart): a control that does nothing
+  stuck   after the sweep is back at 0, its last 300 ms against the render held at 0: over 1.5 dB flags (a state the
+          control left behind)
 
 For delay and reverb (additive: the dry passes) pitch and zipper are also measured on the wet alone (render minus
 off), which is where a bent tail shows. Each render is cached by the binary's hash and its script, so a re-run and
@@ -39,10 +46,12 @@ applies platform.c's MASTER law (the knob's smoothing, dead band and square law,
 static render, as a model of that code."""
 import argparse
 import hashlib
+import glob
 import json
 import os
 import subprocess
 import sys
+import threading
 import wave
 from concurrent.futures import ThreadPoolExecutor
 
@@ -58,7 +67,9 @@ T_SW1 = T_SW0 + 254 * STEP
 T_END = T_SW1 + 500
 STATICS = [0, 32, 64, 96, 127]
 PARTIALS = [440.0, 880.0]
-LIMITS = {"pitch": 5.0, "zipper": 2.0, "jump": 1.5, "dropout": 20.0, "mono": 1.0}
+LIMITS = {"pitch": 5.0, "zipper": 2.0, "jump": 1.5, "dropout": 20.0, "mono": 1.0, "click": 10.0, "trans_hi": 3.0,
+          "trans_lo": 6.0, "stuck": 1.5}
+T_FLIP = 2000                                  # the one-move renders: the control moved here (the chord rings)
 
 # every effect off: COMP, its THRESH, DRIVE type, AMOUNT, FILTER, its LFO, TREM, CHO/PHA, PHASER, DELAY, its MIX,
 # REVERB MIX, TYPE, SIZE AUTO, SPREAD, LEVEL 0 dB, STAGE 77
@@ -79,9 +90,10 @@ class Case:
     static values (default 0, 32, 64, 96, 127; an enum: its band centres)"""
 
     def __init__(self, name, cc, setup=(), engine="rhodes", kind="knob", additive=False, mono=False, statics=None,
-                 page=""):
+                 page="", skip=()):
         self.name, self.cc, self.setup, self.engine, self.kind = name, cc, list(setup), engine, kind
         self.additive, self.mono, self.page = additive, mono, page
+        self.skip = set(skip)                    # checks that do not apply to this case (the reasons: _cases)
         self.statics = list(statics) if statics else list(STATICS)
 
     def __repr__(self):
@@ -96,11 +108,18 @@ def _cases():
                         ("vibes", ["STRIKE", "MALLET", "TUBE", "WEIGHT", "RING", "DAMPER", "NOISE"]),
                         ("marimba", ["STRIKE", "MALLET", "TUBE", "WEIGHT", "RING", "MUTE", "NOISE"])):
         for lab, cc in zip(labels, (28, 29, 30, 31, 102, 103, 104)):
-            add(Case(f"{eng} {lab}", cc, engine=eng, page="VOICE"))
+            sk = set()
+            if cc == 103:                        # RELEASE / DAMPER / MUTE act at the key-up: the pedal holds the
+                sk.add("noeff")                  # chord all through (test_every_control lets go)
+            if eng == "marimba":                 # struck again every 800 ms during the sweep, each strike latching the
+                sk |= {"jump", "stuck", "pitch"}  # knob's value then: the sweep's level and pitch follow the strikes
+            add(Case(f"{eng} {lab}", cc, engine=eng, page="VOICE", skip=sk))
     add(Case("rhodes TYPE", 80, kind="select", statics=[16, 48, 80, 112], page="FRODHES"))
     for lab, cc in (("DEPTH", 48), ("SPEED", 49), ("SHAPE", 50)):
-        add(Case(f"vibes MOTOR {lab}", cc, [(47, 127)], engine="vibes", page="MOTOR"))
-    add(Case("vibes MOTOR on/off", 47, engine="vibes", kind="mix", statics=[0, 127], page="MOTOR"))
+        add(Case(f"vibes MOTOR {lab}", cc, [(47, 127)], engine="vibes", kind="pitch" if lab == "SPEED" else "knob",
+                 page="MOTOR"))
+    add(Case("vibes MOTOR on/off", 47, engine="vibes", kind="mix", statics=[0, 127], page="MOTOR",
+             skip={"jump"}))                     # (the window-to-window level of a pulsing note: its phase restarts)
     # COMPRESSOR
     on = [(106, 127), (107, 60), (113, 20)]
     add(Case("comp THRESH", 107, [(106, 127), (113, 20)], page="COMPRESSOR"))
@@ -113,12 +132,14 @@ def _cases():
         add(Case(f"drive {t} AMOUNT", 81, [(84, v)], page="DRIVE"))
         add(Case(f"drive {t} TONE", 82, [(84, v), (81, 80)], page="DRIVE"))
         add(Case(f"drive {t} MIX", 83, [(84, v), (81, 80)], kind="mix", page="DRIVE"))
-    add(Case("drive TYPE", 84, [(81, 80)], kind="select", statics=[0, 70, 80, 92, 104, 120], page="DRIVE"))
+    add(Case("drive TYPE", 84, [(81, 80)], kind="select", statics=[0, 70, 80, 92, 104, 120], page="DRIVE",
+             skip={"jump"}))                     # (MANUAL: the old type fades out, then the new one in, through dry)
     # FILTER (and its LFO page)
     for t, v in (("LP12", 27), ("LP18", 46), ("HP12", 64), ("HP18", 82), ("BP", 100), ("NOTCH", 118)):
-        add(Case(f"filter {t} FREQ", 74, [(70, v), (71, 30)], page="FILTER"))
+        add(Case(f"filter {t} FREQ", 74, [(70, v), (71, 30)], page="FILTER",
+                 skip={"jump"}))                 # (a cutoff swept through the chord moves its level by design)
     add(Case("filter RESO", 71, [(70, 46), (74, 80)], page="FILTER"))
-    add(Case("filter LFO", 72, [(70, 46), (74, 80), (71, 40)], kind="mix", page="FILTER"))
+    add(Case("filter LFO", 72, [(70, 46), (74, 80), (71, 40)], page="FILTER"))   # (at 0 the filter still filters)
     add(Case("filter TYPE", 70, [(74, 80), (71, 40)], kind="select", statics=bands(6), page="FILTER"))
     add(Case("lfo RATE", 76, [(70, 46), (74, 80), (71, 40), (72, 60)], page="LFO"))
     add(Case("lfo SHAPE", 75, [(70, 46), (74, 80), (71, 40), (72, 60)], kind="select", statics=bands(5), page="LFO"))
@@ -142,7 +163,8 @@ def _cases():
     for t, v in (("DIG", 40), ("ANA", 70), ("TAPE", 110)):
         add(Case(f"delay {t} MIX", 89, [(88, v)], kind="mix", additive=True, mono=True, page="DELAY"))
         add(Case(f"delay {t} TIME", 90, [(88, v), (89, 64)], kind="pitch", additive=True, page="DELAY"))
-        add(Case(f"delay {t} FDBK", 26, [(88, v), (89, 64)], additive=True, page="DELAY"))
+        add(Case(f"delay {t} FDBK", 26, [(88, v), (89, 64)], additive=True, page="DELAY",
+                 skip={"jump"} if t != "DIG" else ()))   # (ANA / TAPE from ~115: the drone builds up, MANUAL)
         add(Case(f"delay {t} TONE", 27, [(88, v), (89, 64)], additive=True, page="DELAY"))
     add(Case("delay EFFECT", 88, [(89, 64)], kind="select", statics=[16, 48, 80, 112], additive=True, page="DELAY"))
     # REVERB and REVERB 2: each type, SIZE AUTO and fixed
@@ -157,7 +179,8 @@ def _cases():
         add(Case(f"rev {t} SIZE", 73, s, additive=True, page="REVERB 2"))
         add(Case(f"rev {t} MOD", 68, s, kind="pitch", additive=True, page="REVERB 2"))
         add(Case(f"rev {t} LOW CUT", 69, s, additive=True, page="REVERB 2"))
-    add(Case("rev TYPE", 95, [(91, 64)], kind="select", statics=[16, 48, 80, 112], additive=True, page="REVERB"))
+    add(Case("rev TYPE", 95, [(91, 64)], kind="select", statics=[16, 48, 80, 112], additive=True, page="REVERB",
+             skip={"trans"}))                    # (MANUAL: the old tail fades out, the new TYPE starts empty)
     # SPREAD, LEVEL, MASTER
     add(Case("SPREAD", 105, kind="mix", page="MIDI"))
     add(Case("LEVEL", 110, page="SETUP"))
@@ -169,8 +192,9 @@ CASES = _cases()
 BY_NAME = {c.name: c for c in CASES}
 
 
-def script(case, value=None, sweep=False, off=False):
-    """a render's script: the effect off (off), the control held at value, or swept 0 -> 127 -> 0"""
+def script(case, value=None, sweep=False, off=False, flip=None):
+    """a render's script: the effect off (off), the control held at value, swept 0 -> 127 -> 0, or held at value
+    and moved to flip at T_FLIP (that render ends T_FLIP + 800 ms)"""
     L = [f"50 midi 0xB0 {c} {v}" for c, v in BASE]
     L += [f"100 midi 0xB0 {c} {v}" for c, v in ENGINE[case.engine]]
     if not off:
@@ -189,7 +213,12 @@ def script(case, value=None, sweep=False, off=False):
     if sweep:
         for k, v in enumerate(list(range(1, 128)) + list(range(126, -1, -1))):
             L.append(f"{T_SW0 + k * STEP} midi 0xB0 {case.cc} {v}")
-    L.append(f"{T_END} end")
+    end = T_END
+    if flip is not None:
+        L.append(f"{T_FLIP} midi 0xB0 {case.cc} {flip}")
+        end = T_FLIP + 800
+        L = [x for x in L if int(x.split()[0]) < end]
+    L.append(f"{end} end")
     return "\n".join(sorted(L, key=lambda s: int(s.split()[0]))) + "\n"
 
 
@@ -214,7 +243,7 @@ def render(text, binary=BIN):
             return np.load(npy).astype(np.float64)
         except (ValueError, OSError):
             pass
-    base = os.path.join(CACHE, f"{h}.{os.getpid()}")
+    base = os.path.join(CACHE, f"{h}.{os.getpid()}.{threading.get_ident()}")   # (unique per process and thread)
     with open(base + ".txt", "w") as f:
         f.write(text)
     p = subprocess.run([binary, base, base + ".txt"], capture_output=True, text=True)
@@ -222,12 +251,13 @@ def render(text, binary=BIN):
         raise RuntimeError(f"host render failed ({p.returncode}): {p.stdout[-500:]}{p.stderr[-500:]}")
     with wave.open(base + ".wav") as w:
         a = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").reshape(-1, 2).copy()
-    tmp = base + ".npy"
-    np.save(tmp, a)
+    tmp = base + ".tmp"
+    with open(tmp, "wb") as f:                             # (a file object: np.save adds no ".npy" to it)
+        np.save(f, a)
     os.replace(tmp, npy)                                   # (atomic: a parallel reader never sees half a file)
-    for e in (".txt", ".wav"):
+    for e in glob.glob(glob.escape(base) + "*"):           # the script, the WAV, the screen shots
         try:
-            os.remove(base + e)
+            os.remove(e)
         except OSError:
             pass
     return a.astype(np.float64)
@@ -295,9 +325,11 @@ def zipper_ratio(sweep, statics):
 def jump_db(sweep, statics):
     """the sweep's largest window-to-window level step over the statics' largest step in the same window"""
     a, b = ms(T_SW0) // 1024, ms(T_SW1) // 1024
-    ds = np.abs(np.diff(win_db(sweep)))[a:b]
+    w = win_db(sweep)
+    ds = np.abs(np.diff(w))[a:b]
     D = np.max([np.abs(np.diff(win_db(s)))[a:b] for s in statics], 0)
-    return float((ds - D).max())
+    live = np.minimum(w[a:b], w[a + 1:b + 1]) > -90       # (not across the silence gate: -66 dBFS, then exact 0)
+    return float((ds - D)[live].max()) if live.any() else 0.0
 
 
 def dropout_db(sweep, statics):
@@ -307,6 +339,45 @@ def dropout_db(sweep, statics):
     m = np.min([win_db(s)[a:b] for s in statics], 0)
     keep = m > -80
     return float((m[keep] - w[keep]).max()) if keep.any() else 0.0
+
+
+def flips(case):
+    """the one-move pairs (from, to): a knob its two ends both ways and one detent at the middle; a selector every
+    neighbouring pair of its options both ways"""
+    if case.kind == "select" or len(case.statics) == 2:
+        v = case.statics
+        return [p for a, b in zip(v, v[1:]) for p in ((a, b), (b, a))]
+    return [(0, 127), (127, 0), (64, 65)]
+
+
+def d2c(x):
+    """|second difference| of each channel, the larger of the two per sample"""
+    return np.abs(np.diff(x, 2, axis=0)).max(1)
+
+
+def click_ratio(moved, start, end):
+    """the moved render's largest second difference around the move against the held renders' (start, end)"""
+    a, b = ms(T_FLIP - 3), ms(T_FLIP + 30)
+    ref = max(d2c(start[a:b]).max(), d2c(end[a:b]).max())
+    return float(d2c(moved[a:b]).max() / max(ref, 1.0))
+
+
+def win20_db(x, t0, n):
+    """the level of n 20 ms windows from t0 (ms), dBFS (L / R power mean)"""
+    w = ms(20)
+    return np.array([10 * np.log10(np.mean(x[ms(t0) + k * w:ms(t0) + (k + 1) * w] ** 2) + 1e-3) - 20 * np.log10(32768)
+                     for k in range(n)])
+
+
+def trans_db(moved, start, end):
+    """(over, under): how far the moved render's level leaves the held renders' range after the move (windows where
+    the louder held one is above -70 dBFS)"""
+    m, s, e = (win20_db(x, T_FLIP, 15) for x in (moved, start, end))
+    hi, lo = np.maximum(s, e), np.minimum(s, e)
+    keep = hi > -70
+    if not keep.any():
+        return 0.0, 0.0
+    return float(max((m - hi)[keep].max(), 0.0)), float(max((lo - m)[keep].max(), 0.0))
 
 
 def master_model(x, knob):
@@ -352,6 +423,25 @@ def measure(case, binary=BIN):
         sw = render(script(case, sweep=True), binary)
     stl = list(st.values())
     r = {"pitch": None, "pitch_wet": None}
+    if case.name != "MASTER":                          # the one-move renders (the differential click detector)
+        r["click"], r["trans"] = {}, {}
+        for a, b in flips(case):
+            for v in (a, b):
+                if v not in st:
+                    st[v] = render(script(case, value=v), binary)
+            mv = render(script(case, value=a, flip=b), binary)
+            n = len(mv)
+            sa, sb = st[a][:n], st[b][:n]
+            r["click"][f"{a}>{b}"] = round(click_ratio(mv, sa, sb), 1)
+            if case.additive:
+                o = off[:n]
+                mv, sa, sb = mv - o, sa - o, sb - o
+            hi, lo = trans_db(mv, sa, sb)
+            r["trans"][f"{a}>{b}"] = (round(hi, 1), round(lo, 1))
+        r["noeff"] = float(max(np.abs(x - stl[0]).max() for x in stl[1:])) if len(stl) > 1 else None
+        z = st[case.statics[0]] if case.statics[0] == 0 or case.kind == "select" else render(script(case, value=0), binary)
+        a, b = ms(T_SW1 + 200), ms(T_END)
+        r["stuck"] = round(abs(rms_db(sw[a:b]) - rms_db(z[a:b])), 2)
     if case.kind not in ("pitch",) and case.name != "MASTER":
         ps = [pitch_p90(s, off) for s in stl]
         p = pitch_p90(sw, off)
@@ -378,6 +468,11 @@ def measure(case, binary=BIN):
 def checks(case, r):
     """check -> (value, limit, ok) for the checks that apply to the case"""
     out = {}
+    sk = set(case.skip)
+    if case.kind == "pitch":
+        sk |= {"trans", "stuck", "jump"}         # a rate / time: the LFO's phase, the echoes' times differ after it
+    if case.additive:
+        sk.add("stuck")                          # the lines still hold what the sweep put in them
     if r.get("pitch") is not None:
         out["pitch"] = (r["pitch"], LIMITS["pitch"], r["pitch"] <= LIMITS["pitch"])
     if r.get("pitch_wet") is not None:
@@ -388,12 +483,22 @@ def checks(case, r):
     out["jump"] = (r["jump"], LIMITS["jump"], r["jump"] <= LIMITS["jump"])
     out["dropout"] = (r["dropout"], LIMITS["dropout"], r["dropout"] <= LIMITS["dropout"])
     if "mix0" in r:
-        out["mix0"] = (r["mix0"], 0.0, r["mix0"] == 0.0)
+        out["mix0"] = (r["mix0"], 1.0, r["mix0"] <= 1.0)   # (1 LSB: PAN's equal-power rounding at DEPTH 0)
+    if r.get("click"):
+        k, v = max(r["click"].items(), key=lambda kv: kv[1])
+        out["click"] = (f"{v} ({k})", LIMITS["click"], v <= LIMITS["click"])
+        k, v = max(r["trans"].items(), key=lambda kv: max(kv[1][0] - LIMITS["trans_hi"], kv[1][1] - LIMITS["trans_lo"]))
+        out["trans"] = (f"+{v[0]}/-{v[1]} ({k})", f"+{LIMITS['trans_hi']}/-{LIMITS['trans_lo']}",
+                        v[0] <= LIMITS["trans_hi"] and v[1] <= LIMITS["trans_lo"])
+    if r.get("noeff") is not None:
+        out["noeff"] = (r["noeff"], 1.0, r["noeff"] > 1.0)
+    if r.get("stuck") is not None:
+        out["stuck"] = (r["stuck"], LIMITS["stuck"], r["stuck"] <= LIMITS["stuck"])
     if case.mono and "wet_db" in r:
         w = [r["wet_db"][v] for v in case.statics]
         fall = max([max(w[:i + 1]) - w[i] for i in range(1, len(w))] + [0.0])   # the largest fall from a peak
         out["mono"] = (round(fall, 2), LIMITS["mono"], fall <= LIMITS["mono"])
-    return out
+    return {k: v for k, v in out.items() if k.split("_")[0] not in sk}
 
 
 def main():
