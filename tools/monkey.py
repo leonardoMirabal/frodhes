@@ -27,7 +27,8 @@ The invariants (check), on every run:
   stuck      no voice held, no note source or count left after the panic (the end: every note off on all 16
              channels, pedal up, arp, sequencer, chord mode, delay and reverb off)
   silence    exact silence (the gate's 0) from 10 s after the panic, so no stuck voice, tail or DC
-  probe      a note over MIDI after the panic sounds (the device is alive), and with FX bypassed and VIBES' motor off
+  probe      a note over MIDI after the panic sounds (the device is alive; LEVEL set to 0 dB for it, MARIMBA at -12
+             dB and HAMMER 0 is -43 dBFS), and with FX bypassed and VIBES' motor off
              (its pulse is in the engine, so FX keeps it) it is never louder after its key-up than before it (+1 dB)
   roundtrip  SAVE (into a user slot) then a power cycle (the flash kept: FRODHES_FLASH) gives the same parameters,
              preset, octave, chord and sequencer settings; the saved preset equals the panel (expect preset)
@@ -249,6 +250,7 @@ def panic(t0):
     p0 = gone + 300                                   # the probe: FX bypassed, VIBES' motor off, a MIDI note
     L += [(p0 + c, f"midi 0x{0xB0 | c:02X} 111 127") for c in range(16)]
     L += [(p0 + 20 + c, f"midi 0x{0xB0 | c:02X} 47 0") for c in range(16)]   # (the motor is in the engine)
+    L += [(p0 + 40 + c, f"midi 0x{0xB0 | c:02X} 110 64") for c in range(16)]  # (LEVEL at 0 dB: -12 is legal)
     n0 = p0 + 100
     L += [(n0 + c, f"midi 0x{0x90 | c:02X} 60 100") for c in range(16)]
     rel = n0 + 600
@@ -534,7 +536,9 @@ def click_one(events, i, binary=BIN, detail=False):
 def known_click(changed):
     if len(changed) > 3:
         return "#1 (a preset load / undo: many parameters at once)"
-    ks = [KNOWN_CLICK.get(c) for c in changed]
+    sw = {c[:-3] for c in changed if c.endswith("_SW") and c in KNOWN_CLICK}
+    changed = [c for c in changed if c.endswith("_SW") or c[:c.rfind("_")] not in sw]   # (an effect switched on
+    ks = [KNOWN_CLICK.get(c) for c in changed]                                         # at depth 0 gets a depth)
     return ", ".join(sorted(set(k for k in ks if k))) if all(ks) else None
 
 
@@ -636,7 +640,7 @@ def save_fail(seed, kind, events, minimal, info):
 
 
 # ---- one seed
-def one(seed, binary=BIN, k_clicks=3, shrink=True, strict=False):
+def one(seed, binary=BIN, k_clicks=3, do_shrink=True, strict=False):
     """every check on one seed: a dict (failures, known clicks, repro dirs)"""
     ev = gen(seed)
     res = {"seed": seed, "fail": [], "known": [], "repro": []}
@@ -644,11 +648,11 @@ def one(seed, binary=BIN, k_clicks=3, shrink=True, strict=False):
     seen = set()
     for kind, msg in bad:
         res["fail"].append((kind, msg))
-        if shrink and kind not in seen and kind != "crash":
+        if do_shrink and kind not in seen and kind != "crash":
             seen.add(kind)
             m = shrink_invariant(ev, kind, binary)
             res["repro"].append(save_fail(seed, kind, ev, m, {"msg": msg}))
-        elif shrink and kind == "crash" and kind not in seen:
+        elif do_shrink and kind == "crash" and kind not in seen:
             seen.add(kind)
             m = shrink(list(ev), lambda e: any(b[0] == "crash" for b in check(e, binary)))
             res["repro"].append(save_fail(seed, kind, ev, m, {"msg": msg}))
@@ -658,7 +662,7 @@ def one(seed, binary=BIN, k_clicks=3, shrink=True, strict=False):
             res["known"].append(row)
             continue
         res["fail"].append(("click", f"{e[1]} at {e[0]} ms: {ratio}x, changed {changed}"))
-        if shrink:
+        if do_shrink:
             m = shrink_click(ev, i, changed, binary)
             res["repro"].append(save_fail(seed, "click", ev, m, dict(row, msg=f"{ratio}x {changed}")))
     return res

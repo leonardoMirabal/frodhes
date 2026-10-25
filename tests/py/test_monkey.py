@@ -174,6 +174,24 @@ def test_the_probe_turns_the_motor_off(binary):
     assert mk.check(ev, binary) == []
 
 
+def test_the_probe_sets_level_and_known_clicks_take_the_switch(binary):
+    """0.9.5 seed 427470656 (shrunk): MARIMBA at LEVEL -12 dB with HAMMER 0: the probe read -43 dBFS, 'dead'; the
+    probe now sets LEVEL to 0 dB. An effect switched on at depth 0 gets a depth (PHASER: #2), so the pair is #2"""
+    ev = [(16631, "midi 0xB6 79 115"), (16657, "midi 0xB0 31 0"), (18552, "midi 0xB0 30 0"), (20000, "midi 0xB0 110 0")]
+    assert mk.check(ev, binary) == []
+    assert mk.known_click(["P_PH_SW", "P_PH_DEPTH"]) == "#2" and mk.known_click(["P_PH_DEPTH"]) is None
+
+
+def test_bughunt22_plate_input_overflow():
+    """BUGHUNT #22 (monkey seed 427470704, shrunk): PLATE's input one-pole (rev_plate.c pl_in) multiplies (b - u) by
+    pb in 32 bits; with +24 dB make-up the input passes ~1.2x full scale and it overflows (UBSan; the FM-1 wraps)"""
+    text = open(os.path.join(os.path.dirname(__file__), "monkey", "bughunt22-plate-overflow.txt")).read()
+    r = mk.run(text, mk.build(san=True))
+    if "rev_plate.c" in r.out and "signed integer overflow" in r.out:
+        pytest.xfail("BUGHUNT #22: rev_plate.c pl_in overflows int32 (fix it, then this passes)")
+    assert r.code == 0 and "runtime error" not in r.out
+
+
 def test_ddmin_finds_the_minimal_pair():
     items = list(range(40))
     assert sorted(mk.ddmin(items, lambda xs: 7 in xs and 31 in xs)) == [7, 31]
@@ -182,7 +200,7 @@ def test_ddmin_finds_the_minimal_pair():
 def _seed(seed, binary, request):
     if seed in KNOWN:
         request.applymarker(pytest.mark.xfail(reason=KNOWN[seed], strict=False))
-    r = mk.one(seed, binary, k_clicks=3, shrink=False)
+    r = mk.one(seed, binary, k_clicks=3, do_shrink=False)
     assert not r["fail"], f"seed {seed}: " + "; ".join(f"{k}: {m}" for k, m in r["fail"]) + \
         f"  (replay and shrink: python3 tools/monkey.py --seeds {seed})"
 
