@@ -120,8 +120,6 @@ def test_vibes_motor_switch():
     ("phaser", cc(13, 80, 30) + cc(12, 127, TE), 1.5, "BUGHUNT #2 (the phaser comes on ~2 dB quieter on low chords)"),
     ("chorus", cc(86, 64, 30) + cc(85, 64, TE), 1.5, None),
     ("wah", cc(18, 90, 30) + cc(17, 127, TE), 1.5, None),
-    ("comp-from-off", [f"{40 + 3 * i} turn 0 1" for i in range(4)] + [f"{TE} turn 2 1"], 1.0,
-     "BUGHUNT #6: THRESH up from OFF comes on +2.8 dB louder"),
 ])
 def test_switch_keeps_level(name, setup, tol, known, request):
     """'Every effect is set to keep about the same volume when you switch it on' (section 11); the phaser 'keeps the
@@ -132,6 +130,17 @@ def test_switch_keeps_level(name, setup, tol, known, request):
     a, b = R(setup + chord()), R([l for l in setup if not l.startswith(f"{TE} ")] + chord())
     step = (lvl(a, TE + 60, TE + 300) - lvl(a, TE - 300, TE - 10)) - (lvl(b, TE + 60, TE + 300) - lvl(b, TE - 300, TE - 10))
     assert abs(step) <= tol, f"{name} switched on: {step:+.2f} dB"
+
+
+def test_comp_from_off_keeps_the_playing_level():
+    """COMPRESSOR: THRESH turned up from OFF 'comes on with MAKEUP ... which keeps the volume about the same': a chord
+    played after it within 1 dB of the same chord with the compressor off (BUGHUNT #6: 0.9.5 woke it at THRESH -0.3 dB
+    with +2.8 dB of make-up, the chord +2.8 dB louder). A quiet, dying tail comes up, as under any compressor: the
+    chord's first 300 ms are judged, where it is played (it was switched on there, under the tail, before)"""
+    on = R([f"{40 + 3 * i} turn 0 1" for i in range(4)] + ["150 turn 2 1"] + chord())
+    off = R([f"{40 + 3 * i} turn 0 1" for i in range(4)] + chord())
+    step = lvl(on, 400, 700) - lvl(off, 400, 700)
+    assert abs(step) <= 1.0, f"the chord with the compressor woken from OFF: {step:+.2f} dB"
 
 
 @pytest.mark.parametrize("name,setup", [

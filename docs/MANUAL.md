@@ -213,7 +213,8 @@ controls: see [MARIMBA](#marimba).
 | K4 | **MAKEUP** | Gives back the volume the compression takes: 0 to +24 dB |
 
 **THRESH** is its on / off: turn it up from OFF and the compressor comes on at −16 dB (where the presets set it) with
-MAKEUP at +2.8 dB, which keeps the volume about the same (back to OFF switches it off). Switching it on or off fades
+MAKEUP at +2.8 dB, which keeps the volume of what you play about the same (a quiet, dying tail comes up, as under
+any compressor; back to OFF switches it off). Switching it on or off fades
 over about 46 ms, so it never clicks. The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
 to 30 dB of reduction (scale 3, 6, 10, 20, 30), a bright segment holds the peak for a second, and the number on the
 right is the reduction now in dB. The compressor
