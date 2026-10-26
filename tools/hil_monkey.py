@@ -12,6 +12,8 @@ and are left out, so are SysEx and undefined statuses (mido sends only valid mes
 change the test itself (DEV_CC: the CPU query 116, RAW 119, the key-velocity test 41, USB VOL 114, the reset 10,
 the battery / screen / card-design ones 2, 3, 4, 8, 11, the mode cap 9, 42). USB VOL is held FIXED (CC 114 127), so
 USB is the output before MASTER.
+The stream's channels are moved by FRODHES_MIDI_CH - 1 (tools/fm1_midi.py rotate: its main channel 1 becomes 8 by
+default), so an FM-1 on CHANNEL 8 or ALL hears it as the host does; the panic and the probe still cover all 16.
 
 Each segment, one take (USB recorded at --rate, the device switched to it, as hil_must S1): the stream, then the
 panic (all notes off, all sound off, pedal up, reset controllers, MIDI Stop on all 16 channels), 2 s, then the probe:
@@ -47,6 +49,7 @@ import time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fm1_midi  # noqa: E402
 import monkey  # noqa: E402
 
 ROOT = monkey.ROOT
@@ -321,6 +324,7 @@ def run_take(dev, sd, usb, a, s):
     try:
         time.sleep(0.5)
         M = dev.mido.Message
+        raw = getattr(dev, "raw", dev.out)           # its own channels (notes on any channel), rotated
         with hm.Poller(dev) as acc:
             mark = rec.mark()                   # (the take is cut here: the stream's clock)
             t0 = time.monotonic()
@@ -328,14 +332,14 @@ def run_take(dev, sd, usb, a, s):
                 while time.monotonic() - t0 < t:
                     time.sleep(0.0005)
                 with dev.lock:
-                    dev.out.send(M.from_bytes(b))
+                    raw.send(M.from_bytes(fm1_midi.rotate(b)))   # the stream's channels, moved to FRODHES_MIDI_CH
 
             def at(t, msgs):
                 while time.monotonic() - t0 < t:
                     time.sleep(0.001)
                 with dev.lock:
                     for m in msgs:
-                        dev.out.send(M.from_bytes(m))
+                        raw.send(M.from_bytes(fm1_midi.rotate(m)))
             at(SEG_S + PANIC_S, panic_msgs())
             at(SEG_S + PROBE_AT, probe_msgs(True))
             at(SEG_S + PROBE_AT + 0.05, [[0x90 | c, 60, 100] for c in range(16)])

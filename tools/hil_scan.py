@@ -481,7 +481,10 @@ class Rig(RigBase):
         names = [n for n in mido.get_output_names() if any(k in n.lower() for k in PORT_KEYS)]
         if not names:
             sys.exit("no FM-1 MIDI port")
-        self.out = mido.open_output(names[0])
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import fm1_midi
+        self.out = fm1_midi.ChannelOut(mido.open_output(names[0]))   # every channel message on FRODHES_MIDI_CH (8)
+        print(fm1_midi.say(self.out.ch), flush=True)
         self.mido = mido
         devs = [i for i, d in enumerate(sd.query_devices())
                 if any(k in d["name"].lower() for k in PORT_KEYS[:2]) and d["max_input_channels"] >= 2]

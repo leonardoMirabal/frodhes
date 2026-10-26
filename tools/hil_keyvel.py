@@ -77,7 +77,11 @@ def open_ports():
     ins = [n for n in mido.get_input_names() if any(k in n.lower() for k in PORT_KEYS)]
     if not outs or not ins:
         sys.exit("no FM-1 MIDI port")
-    return mido, mido.open_output(outs[0]), mido.open_input(ins[0])
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import fm1_midi
+    out = fm1_midi.ChannelOut(mido.open_output(outs[0]))              # every channel message on FRODHES_MIDI_CH (8)
+    print(fm1_midi.say(out.ch), flush=True)
+    return mido, out, mido.open_input(ins[0])
 
 
 class Dev:

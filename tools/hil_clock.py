@@ -1469,6 +1469,7 @@ def run_device(a, vias):
     import lock
     with lock.Lock("DEVICE", who="hil_clock", why=f"midi clock {','.join(vias)}", wait_s=a.lock_wait):
         rig = H.Rig()
+        rig.out = getattr(rig.out, "raw", rig.out)   # the port itself: find_channel picks the channels
         cap = rig.capture()
         ring, stream = cap.rings["usb"], cap.streams["usb"]
         fs = ring.sr

@@ -462,7 +462,11 @@ class Dev:
         ins = [n for n in mido.get_input_names() if any(k in n.lower() for k in hs.PORT_KEYS)]
         if not outs or not ins:
             raise NoDevice("no FM-1 MIDI port")
-        self.out, self.inp, self.lock = mido.open_output(outs[0]), mido.open_input(ins[0]), threading.Lock()
+        import fm1_midi
+        self.out = fm1_midi.ChannelOut(mido.open_output(outs[0]))   # every channel message on FRODHES_MIDI_CH (8)
+        self.raw = self.out.raw                                     # the port itself (the monkey's own channels)
+        self.inp, self.lock = mido.open_input(ins[0]), threading.Lock()
+        print(fm1_midi.say(self.out.ch), flush=True)
 
     def send(self, kind, a, b=0):
         M = self.mido.Message

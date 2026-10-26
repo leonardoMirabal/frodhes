@@ -133,7 +133,9 @@ def ports():
         ins = [n for n in mido.get_input_names() if any(k in n.lower() for k in PORT_KEYS)]
         if not outs or not ins:
             sys.exit("no FM-1 MIDI port")
-        _PORTS[:] = [mido, mido.open_output(outs[0]), mido.open_input(ins[0])]
+        import fm1_midi
+        _PORTS[:] = [mido, fm1_midi.ChannelOut(mido.open_output(outs[0])), mido.open_input(ins[0])]   # FRODHES_MIDI_CH
+        print(fm1_midi.say(_PORTS[1].ch), flush=True)
     return tuple(_PORTS)
 
 
