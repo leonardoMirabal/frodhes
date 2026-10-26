@@ -416,6 +416,10 @@ The defaults are the reverb's sound before it had types. Over MIDI: CC 94 PRE-DE
 | K3 | **ROOT** | The scale's key |
 | K4 | **TRANSP** | Transpose ±24 semitones |
 
+MODE and TRANSP act on the FM-1's own keys. Notes from USB-MIDI and the TRS jack play as sent: not moved onto
+the scale, not transposed. One exception: a **DIATONIC** / **DIA 7TH** chord ([CHORD](#chord)) is built on the
+scale from any source, so a MIDI note out of the scale plays the chord of the nearest scale note.
+
 ### CHORD
 
 ![CHORD](manual/img/chord.png?v=bff15419)
@@ -894,7 +898,8 @@ switch off; the one a MIDI clock sets is not, and a clock never causes a save.
 ## 9. Scales
 
 On the SCALE page, **SNAP** lets every key play but moves out-of-scale notes onto the scale, and **DEGREE** turns the
-white keys into the scale's steps (C plays the root) so you can play any scale with white keys only.
+white keys into the scale's steps (C plays the root) so you can play any scale with white keys only. Both act on
+the FM-1's keys; notes from USB-MIDI play as sent (except as the root of a DIATONIC chord).
 While a scale is on, the keys that play its root glow dimly (in DEGREE: the C keys), so you can always find the
 keynote.
 

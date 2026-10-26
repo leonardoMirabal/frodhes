@@ -1,0 +1,43 @@
+# BUGHUNT #11 (0.9.6, the MANUAL made plain): the SCALE page's MODE and TRANSP act on the FM-1's own keys; USB-MIDI
+# notes play as sent. DIATONIC / DIA 7TH chords take their root onto the scale from any source (notes.c chord_build).
+# SCALE: SNAP, MAJ, root C; TRANSP +5. Key 7 (C4) plays F4 (65); MIDI C#4 (61) plays C#4 itself, not snapped, not
+# transposed; then DIATONIC: MIDI C#4 is the chord on C (the tie goes down): C E G.
+40 btn 7
+60 btn 7
+80 btn 7
+100 btn 7
+120 expect state page DISPLAY
+150 turn 0 -1
+200 turn 0 -1
+250 turn 0 -1
+300 turn 0 -1
+350 turn 0 -1
+400 turn 0 -1
+450 turn 0 -1
+475 turn 0 -1
+500 expect state page SCALE
+550 turn 2 1
+600 expect state card0 SNAP
+650 turn 5 5
+700 expect state card3 +5
+750 keys 0x80
+800 expect state vn65 1
+800 expect state vn60 0
+850 keys 0
+900 midi 0x90 61 100
+950 expect state vn61 1
+950 expect state vn62 0
+950 expect state vn66 0
+1000 midi 0x80 61 0
+1100 btn 6
+1200 expect state page CHORD
+1300 turn 2 3
+1400 expect state card0 DIATONIC
+1500 midi 0x90 61 100
+1550 expect state vn60 1
+1550 expect state vn64 1
+1550 expect state vn67 1
+1550 expect state vn62 0
+1550 expect state vn66 0
+1600 midi 0x80 61 0
+1700 end
