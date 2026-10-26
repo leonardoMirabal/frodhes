@@ -130,7 +130,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **PLAY** | Tap tempo, on every page (ARPEGGIO too); on SEQUENCER, start / stop the loop, except while the arpeggiator is on: then it taps the tempo there too |
 | **REC** | Sustain pedal |
 | **SAVE** | Save the sound to a user preset; hold to undo the last preset load |
-| **OCT− / OCT+** | Octave down / up (±2) |
+| **OCT− / OCT+** | Octave down / up (±2); hold one and press the other: back to octave 0 |
 
 The lights tell you what is on: LFO (tremolo / wah), ENV (phaser) and SEL (delay) light up when their effect is on
 (on ARPEGGIO, and on every page while the arpeggiator is on, SEL shows HOLD), ARP while the arpeggiator runs, EDIT while chord mode is on, SEQ while the sequencer
