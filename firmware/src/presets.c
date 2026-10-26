@@ -14,7 +14,11 @@
 #define PR_NU 16u
 _Static_assert(PR_NF == PR_NF_UI && PR_NF + PR_NU == PR_NALL_UI && PR_NF == PR_NF_SET, "ui.c / params.c preset counts");
 _Static_assert(PR_NF >= 16u && PR_NF <= 16u + 96u, "program changes 0..15: F01..F16, 16..31: U01..U16, 32..: F17..");
-/* PR_BANK_A, PR_BANK_B: the bank's two sectors, per board (frodhes_store.h) */
+/* 0.9.6: the user presets are the store's record tail (set_store.c: with the settings, one CRC, two copies). The bank
+ * of the versions before (two sectors, PR_BANK_A / B = frodhes_store.h OLD_PR_A / B) is only read, once: the first
+ * boot's migration (frodhes.c app_main) */
+#define PR_BANK_A OLD_PR_A
+#define PR_BANK_B OLD_PR_B
 #define PR_MAGIC 0x42505246u                    /* "FRPB" */
 
 typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[P_SLOTS]; uint8_t rsv2[16]; } preset_t;   /* v3 */
@@ -26,7 +30,7 @@ _Static_assert(sizeof(preset_v1_t) == 48, "old preset record is 48 B");
 typedef struct { uint32_t magic, seq, len, crc; } bank_hdr_t;
 
 static preset_t pr_user[PR_NU];
-static uint32_t pr_seq;
+_Static_assert(sizeof pr_user == ST_TAIL_N, "the user presets are the store record's tail (frodhes_store.h ST_TAIL_N)");
 
 /* factory presets (0.9.5): (param id, value) pairs over the defaults, 0xFF ends. Two groups per engine (the user): DRY,
  * each instrument as the model plays it (F01..F04 the four Rhodes TYPEs, F13 VIBES, F15 MARIMBA: the compressor and a
@@ -232,28 +236,14 @@ static uint32_t crc32(const uint8_t *p, uint32_t n)
     while (n--) { c ^= *p++; for (k = 0; k < 8u; k++) c = c & 1u ? (c >> 1) ^ 0xEDB88320u : c >> 1; }
     return ~c;
 }
-static uint8_t host_bank[2][4096];
-static int bank_read(uint32_t at, void *p, uint32_t n) { memcpy(p, &host_bank[at == PR_BANK_B][0], n); return 0; }
-static int bank_erase(uint32_t at)
-{
-    if (host_fl_check("erase preset bank", at, 0x1000u)) return -1;   /* (the firmware's allow-list, tests/host.c) */
-    printf("%6u ms  preset bank %c erased\n", fm1_ms, at == PR_BANK_B ? 'B' : 'A');   /* (tests: when it saves) */
-    memset(&host_bank[at == PR_BANK_B][0], 0xFF, 4096);
-    return 0;
-}
-static int bank_write(uint32_t at, uint32_t off, const void *p, uint32_t n)
-{
-    if (host_fl_check("write preset bank", at + off, n)) return -1;
-    memcpy(&host_bank[at == PR_BANK_B][off], p, n);
-    return 0;
-}
+static int bank_read(uint32_t at, void *p, uint32_t n) { return st_read(at, p, n); }   /* (tests/host.c's flash) */
+static uint8_t bank_buf[sizeof(bank_hdr_t) + sizeof pr_user];
 #else
 static int bank_read(uint32_t at, void *p, uint32_t n) { return flash_ok ? st_read(at, p, n) : -1; }
-static int bank_erase(uint32_t at) { uint32_t took; return fl_erase4k(at, &took); }
-static int bank_write(uint32_t at, uint32_t off, const void *p, uint32_t n) { return fl_write(at + off, p, n); }
+#define bank_buf st_rec                         /* (the migration's: the store's record buffer, free until its save) */
+_Static_assert(sizeof st_rec >= sizeof(bank_hdr_t) + sizeof pr_user, "the old bank fits the record buffer");
 #endif
 
-static uint8_t bank_buf[sizeof(bank_hdr_t) + sizeof pr_user];
 _Static_assert(sizeof(bank_hdr_t) + sizeof pr_user <= 4096u, "a bank copy is one 4 KiB sector");
 static int bank_valid(uint32_t at, bank_hdr_t *h)          /* the records: v3 (96 B), 0.4 (64 B) or 0.1 .. 0.3 (48 B) */
 {
@@ -278,12 +268,16 @@ static void presets_load_bank(void)
         set_pr_from_rc = 0;
     }
 }
+static uint8_t pr_old;                          /* the migration found a bank before 0.9.6's (frodhes.c) */
 static void presets_load_bank_in(void)
 {
     bank_hdr_t ha, hb;
-    int va = bank_valid(PR_BANK_A, &ha), vb = bank_valid(PR_BANK_B, &hb);
+    int va, vb;
     uint32_t i;
+    if (st_new) return;                                   /* (the record's: settings_load) */
     for (i = 0; i < PR_NU; i++) pr_user[i].used = 0;
+    if (!st_old_ok) { presets_starters(); return; }     /* (SMK: the stock's data there, not ours) */
+    va = bank_valid(PR_BANK_A, &ha); vb = bank_valid(PR_BANK_B, &hb);
     if (!va && !vb) {                                     /* never saved (no header in either sector): the starters;
                                                            * a damaged bank stays empty (its presets are lost, not
                                                            * replaced) */
@@ -291,6 +285,7 @@ static void presets_load_bank_in(void)
             if (bank_read(PR_BANK_B, &hb, sizeof hb) || hb.magic != PR_MAGIC) presets_starters();
         return;
     }
+    pr_old = 1;
     {
         uint32_t at = va && (!vb || (int32_t)(ha.seq - hb.seq) > 0) ? PR_BANK_A : PR_BANK_B;
         bank_hdr_t h;
@@ -313,23 +308,19 @@ static void presets_load_bank_in(void)
                 u->np = P_COUNT;
             }
         }
-        pr_seq = at == PR_BANK_A ? ha.seq : hb.seq;
     }
 }
 
-static int presets_save_bank(void)                 /* main loop, only when quiet (the erase stalls the audio) */
+static settings_t set_saved;                     /* (frodhes.c: the settings last written) */
+static int presets_save_bank(void)                 /* main loop, only when quiet (the erase stalls the audio): the
+                                                    * record with the settings last written, then read back */
 {
-    static uint8_t buf[sizeof(bank_hdr_t) + sizeof pr_user];
-    bank_hdr_t h, cur;
-    uint32_t at = PR_BANK_A;
-    if (bank_valid(PR_BANK_A, &cur) && (!bank_valid(PR_BANK_B, &h) || (int32_t)(cur.seq - h.seq) > 0)) at = PR_BANK_B;
-    h.magic = PR_MAGIC; h.seq = ++pr_seq; h.len = sizeof pr_user;
-    h.crc = crc32((const uint8_t *)pr_user, sizeof pr_user);
-    if (bank_erase(at)) return -1;
-    if (bank_write(at, sizeof h, pr_user, sizeof pr_user)) return -1;
-    if (bank_write(at, 0, &h, sizeof h)) return -1;       /* the header last */
-    if (bank_read(at, buf, sizeof buf) || memcmp(buf + sizeof h, pr_user, sizeof pr_user)) return -1;
-    return 0;
+    int rc;
+#ifdef DINGHY_HOST
+    printf("%6u ms  preset bank saved\n", fm1_ms);   /* (tests: when it saves) */
+#endif
+    rc = settings_save(&set_saved, sizeof set_saved);
+    return rc ? rc : settings_check();
 }
 
 /* ---- loading, browsing, saving */

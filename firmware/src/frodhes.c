@@ -412,7 +412,15 @@ static void settings_poll(void)
 static void app_main(void)
 {
     uint32_t prev = 0, k;
-    int link = 0, fresh = settings_load(&set, sizeof set) != 0;
+    int link = 0, fresh;
+    st_tail = (uint8_t *)pr_user;                   /* the record: the settings, then the user presets (set_store.c) */
+    st_new = settings_load(&set, sizeof set) == 0;
+#ifdef OLD_OWNER_AT
+    st_old_ok = !st_new && smk_old_ours();          /* (SMK: the places before 0.9.6 only if ours, frodhes_store.h) */
+#else
+    st_old_ok = !st_new;
+#endif
+    fresh = !st_new && (!st_old_ok || settings_load_old(&set, sizeof set) != 0);
     if (!fresh && set.ver != 1u && set.ver != SET_VER) fresh = 1;   /* a record this firmware cannot read (another
                                                                      * version): as a first boot, so it plays F01 too */
     if (fresh) params_defaults();
@@ -453,6 +461,11 @@ static void app_main(void)
     settings_record(&set_saved);                /* nothing to write at boot (a converted record: at the next change) */
     set_pend = set_saved;
     seq_load();
+    if ((st_old_ok && (!fresh || pr_old)) || sq_old)   /* the first boot after 0.9.5 (no record yet, its data there):
+                                                     * the migration. The pattern to its place, then the record (the
+                                                     * commit): a cut before it finds no record and migrates again from
+                                                     * the old places, which nothing writes */
+        if (!sq_old || !seq_save_now()) (void)settings_save(&set_saved, sizeof set_saved);
     ui_goto(PG_PERF);
 #if BOARD_SMK37
     smk_init();

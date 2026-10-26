@@ -29,7 +29,9 @@
 #define SLOT_SECT 4u
 
 #if BOARD_SMK37
+#ifndef SETTINGS_AT                             /* (Frodhes: its own, frodhes_store.h) */
 #define SETTINGS_AT 0x0009D000u
+#endif
 #define BLOBS_AT 0x0009E000u
 #define OWNER_AT 0x000AF000u                    /* (the kit's place for it) */
 #define SLOTS_AT 0x000C2000u
@@ -40,7 +42,9 @@
                              FL_IN(off, n, BLOBS_AT, BLOBS_AT + NBLOB * 0x1000u) || FL_IN(off, n, OWNER_AT, OWNER_AT + 0x1000u) || \
                              FL_IN(off, n, SLOTS_AT, SLOTS_AT + NSLOT * SLOT_SECT * 0x1000u))
 #else
+#ifndef SETTINGS_AT
 #define SETTINGS_AT 0x000FC000u                 /* (Felucca's globals area) */
+#endif
 #define BLOBS_AT 0x000F4000u
 #define SLOTS_AT 0x00097000u                    /* (Felucca's main store, FL_DATA) */
 #define FL_RANGE_OK(off, n) (FL_IN(off, n, FL_OTA_LO, FL_OTA_HI) || FL_IN(off, n, SETTINGS_AT, SETTINGS_AT + 0x1000u) || \
@@ -48,18 +52,17 @@
                              FL_IN(off, n, SLOTS_AT, SLOTS_AT + NSLOT * SLOT_SECT * 0x1000u))
 #endif
 #ifdef APP_FL_RANGE
-/* Frodhes (a platform delta, README): the app's own, tighter allow-list in place of the one above: the update staging,
- * the settings sector and APP_FL_RANGE (frodhes_store.h: the preset bank A / B, the pattern A / B; on the SMK-37 also
- * the owner tag) */
+/* Frodhes (a platform delta, README): the app's own, complete allow-list in place of the one above (frodhes_store.h:
+ * the store's sectors and the update staging, in no region of the stock firmware's table) */
 #undef FL_RANGE_OK
-#define FL_RANGE_OK(off, n) (FL_IN(off, n, FL_OTA_LO, FL_OTA_HI) || FL_IN(off, n, SETTINGS_AT, SETTINGS_AT + 0x1000u) || \
-                             APP_FL_RANGE(off, n))
+#define FL_RANGE_OK(off, n) APP_FL_RANGE(off, n)
 #endif
 #include "../hal/fm1_flash_map.h"           /* (Frodhes: relative, as midi_uart.c's fm1_uart.h: the host builds have no -Ifirmware/hal) */
 #define SECTOR_MAX (4096u - 12u)                /* settings, a blob: the sector minus the header */
 #define SLOT_MAX (SLOT_SECT * 0x1000u - 12u)
 
 #if BOARD_SMK37
+#ifndef APP_FL_RANGE                            /* (Dinghy's layout; Frodhes checks its own, frodhes_store.h) */
 _Static_assert(SETTINGS_AT >= FL_DATA_LO && SETTINGS_AT + 0x1000u <= BLOBS_AT, "SMK store: settings outside FL_DATA");
 _Static_assert(BLOBS_AT + NBLOB * 0x1000u <= OWNER_AT && OWNER_AT + 0x1000u <= FL_DATA_HI, "SMK store: blobs / owner tag");
 #if NSLOT
@@ -67,6 +70,7 @@ _Static_assert(SLOTS_AT >= FL_SMP_LO && SLOTS_AT + NSLOT * SLOT_SECT * 0x1000u <
 _Static_assert(FL_WIN_SAFE(SLOTS_AT, SLOTS_AT + NSLOT * SLOT_SECT * 0x1000u), "SMK store: the slots overlap a protected range");
 #endif
 _Static_assert(FL_WIN_SAFE(SETTINGS_AT, OWNER_AT + 0x1000u), "SMK store: overlaps a protected range");
+#endif
 _Static_assert(sizeof DATA_FAMILY - 1u >= 1u && sizeof DATA_FAMILY - 1u <= 7u, "SMK store: family 1..7 characters");
 
 /* the 16-byte owner tag: "SMK37DATA" + the family, zero padded (a 7-letter family fills it, no NUL) */
