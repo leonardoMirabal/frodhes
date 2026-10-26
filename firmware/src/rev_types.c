@@ -166,6 +166,22 @@ static void rev_reset_state(void)
 }
 
 #define RV_RET(w) ((int32_t)(((int64_t)(w) * rk) >> 30) + (int32_t)((uint32_t)(w) >> 31))
+/* MIX moved while a tail rings (0.9.6, BUGHUNT #18: the return eases off as MIX rises, x1 .. x0.5, so MIX 127 -> 0
+ * doubled the ringing tail, +5..6.6 dB, and the send stepped to 0 in one block: 41-72x a held chord's d2). The return
+ * keeps the MIX the tail started with (rv_vl: latched while the reverb runs; at rest it follows MIX, so a MIX that
+ * has not moved since the reverb went quiet renders exactly as before), and the send carries the rest of the law:
+ * v 258 (254 - v) / (254 - rv_vl), the same wet level for what goes in from now on; the send ramps sample by sample
+ * to its new value over the block (rv_sk: the last block's), only while it moves */
+static int32_t rv_vl = -1, rv_sk;
+__attribute__((noinline)) static void rv_send_ramp(const int32_t *L, const int32_t *R, int32_t s0, int32_t s1)
+{
+    int32_t q = s0 << 5, dq = s1 - s0;                  /* (Q5: 32 steps of dq / 32 add up to s1 exactly) */
+    uint32_t j;
+    for (j = 0; j < CTL; j++) {
+        q += dq;
+        rv_in[j] = clampi((int32_t)(((int64_t)((L[j] + R[j]) >> 1) * (q >> 5)) >> 15), -131071, 131071);
+    }
+}
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t v = fx_p[FXP_RV_DEPTH], tgt = fx_p[FXP_RV_TYPE], zv = fx_p[FXP_RV_SIZE];
@@ -174,9 +190,14 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
     int32_t off = ((dv - 64) * 15) / 32;                /* -30 .. +29 size steps: x0.5 .. x1.96 in T60 */
     int32_t damp = tv >= 64 ? 60 - ((tv - 64) * 60) / 63 : 60 + ((64 - tv) * 90) / 64;   /* 150 .. 60 .. 0 */
     uint32_t sb, i, j, pd = FX_PDLY_SAMPLES(fx_p[FXP_RV_PREDLY]);
-    int32_t rk = (254 - v) * 4227330 + (4 * (254 - v)) / 254 + 1;   /* floor((254 - v) 2^30 / 254) + 1 */
+    int32_t rk, vl, sk;
     int quiet = !rv_running;
     if (tgt >= (int32_t)RV_N) tgt = RV_HALL;
+    if (!rv_running || rv_vl < 0) { rv_vl = v; rv_sk = send; }   /* (at rest: the return follows MIX) */
+    vl = rv_vl;
+    if (v != vl && send) send = (int32_t)(((int64_t)send * (254 - v)) / (254 - vl));
+    rk = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;   /* floor((254 - vl) 2^30 / 254) + 1 */
+    sk = rv_sk; rv_sk = send;
     if (!send && !rv_running && !rv_fade) return;
     rv_running = 1;
     for (sb = 0; sb < n; sb += CTL) {
@@ -187,6 +208,10 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
             else rv_fade = RV_FADE;
         }
         for (j = 0; j < RV_DZ; j++) rv_inb[j] = rv_inb[CTL + j];   /* (rev_down's history) */
+        if (sk != send)                                /* (MIX moved: the send's ramp over the block) */
+            rv_send_ramp(L + sb, R + sb, sk + (int32_t)(((int64_t)(send - sk) * (int32_t)sb) / (int32_t)n),
+                         sk + (int32_t)(((int64_t)(send - sk) * (int32_t)(sb + CTL)) / (int32_t)n));
+        else
         for (j = 0; j < CTL; j++)                      /* 64-bit: the bus can be several times full scale here
                                                         * (feedback effects, many v127 notes: fuzz seed 95) */
             rv_in[j] = clampi((int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15), -131071, 131071);
@@ -215,7 +240,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
          * and a shift (|w| <= 2^19 here, the half-band's overshoot included; every v and w: tests/py/test_rev_hall.py).
          * At MIX 0 or OFF (a tail ringing out) only the tail's end matters (act: the last RV_QZ samples, which the
          * next block's output still reads, all 0) */
-        if (cur && (rv_fade || (v && !send))) {        /* a TYPE change: the TYPE's out x (fade / 8) .. ((fade - 1) / 8),
+        if (cur && (rv_fade || (vl && !send))) {        /* a TYPE change: the TYPE's out x (fade / 8) .. ((fade - 1) / 8),
                                                         * in place; OFF with MIX up: the tail's end watched (act; at
                                                         * MIX 0 the loop below watches it, as it always did) */
             int32_t g = (int32_t)rv_fade << 12;
@@ -226,7 +251,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
             if (rv_fade) act = 1;
         }
         if (!cur) {}
-        else if (v)
+        else if (vl)
             for (i = 0, j = sb; i < HL_NC; i++, j += 2u) {
                 const int32_t *u = rv_m + RV_QZ - 2u + i, *q = rv_s + RV_QZ - 2u + i;
                 int32_t wm0 = RV_RET(RV_UPI(u)), ws0 = RV_RET(RV_UPI(q)), wm1 = RV_RET(u[0]), ws1 = RV_RET(q[0]);

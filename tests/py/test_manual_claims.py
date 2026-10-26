@@ -72,7 +72,7 @@ CLICKS = [
     ("reverb-type", "A new type takes over at once: the old tail fades out in a few milliseconds",
      cc(95, 40, 30) + cc(91, 80, 31), cc(95, 80), None),
     ("reverb-mix-glides", "MIX, DECAY and TONE glide when moved (MIX 90 -> 0)",
-     cc(95, 40, 30) + cc(91, 90, 31), cc(91, 0), "BUGHUNT #18"),
+     cc(95, 40, 30) + cc(91, 90, 31), cc(91, 0), None),
     ("phaser-switch", "Every effect keeps its state while bypassed (switching on never clicks): the phaser off",
      cc(13, 80, 30) + cc(12, 127, 31), cc(12, 0), None),
     ("chorus-switch", "Every effect keeps its state while bypassed (switching on never clicks): the chorus off",
