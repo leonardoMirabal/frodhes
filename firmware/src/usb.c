@@ -1106,6 +1106,17 @@ static FR_RAM __attribute__((noinline)) void uac_tap48(const int32_t *out, uint3
         n -= c;
     }
     rs.ph = ph;
+#if FELUCCA_UAC_TONE
+    {   /* bench (as uac_tap's at 44.1): the resampler's frames replaced by triangles of period 100 frames (L, R in
+         * antiphase), as many as it made, so every recorded frame must follow the one before (BUGHUNT #24) */
+        static uint32_t ph48;
+        for (i = w; i != wk; i++, ph48 = ph48 == 99u ? 0u : ph48 + 1u) {
+            uint32_t q = ph48 < 50u ? ph48 : 100u - ph48, q2 = ph48 < 50u ? 50u - ph48 : ph48 - 50u;
+            ring[i & (UA_N - 1u)] = (uint32_t)(uint16_t)(int16_t)((int32_t)q * 1000 - 25000) |
+                                    (uint32_t)(uint16_t)(int16_t)((int32_t)q2 * 1000 - 25000) << 16;
+        }
+    }
+#endif
     RING_PUBLISH();
     ua_w = wk;
 }
