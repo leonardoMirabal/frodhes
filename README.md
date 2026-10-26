@@ -189,7 +189,8 @@ the MIDI clock and transport packets carry their arrival time (16 bits of `fm1_m
 it builds for the browser (`DINGHY_WEB`), a host-mode fix in `gfx.c`, `FONT_S` in `gen/felucca_font.h` stores only
 the glyphs the firmware draws (`tools/gen_font.py`; the others point at `?`, which `gfx.c` draws for them), and the audio
 interrupt times itself whole and reads the USB ring's low point (`isr_stats` in `platform.c`, for the CC 116 query),
-the audio interrupt's tail is one pass per 32 frames (MASTER, the clip, the USB tap, the codec's shift) and skips the
+the audio interrupt's tail is one pass per 32 frames (MASTER, the clip, the USB tap, the codec's shift; a new MASTER
+ramps over the block, `master_ramp`) and skips the
 clear before `app_audio` (`APP_OUT_WRITTEN`: Frodhes writes every sample), a developer build times the timer tick too (`APP_DEFS=-DFM1_PROF_TICK`: `tick_prof` in `platform.c`, the
 `tools/hil_cpu.py --tick` items; the normal build is unchanged),
 the panel scan has two hooks for key velocity (`FM1_INPUT_ADC_TAKE` / `FM1_INPUT_ADC_START` in `hal/fm1_input.h`),

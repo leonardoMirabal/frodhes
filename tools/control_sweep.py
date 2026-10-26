@@ -206,7 +206,8 @@ def _cases():
     # SPREAD, LEVEL, MASTER
     add(Case("SPREAD", 105, kind="mix", page="MIDI"))
     add(Case("LEVEL", 110, page="SETUP"))
-    add(Case("MASTER", None, page="(the MASTER knob)"))
+    add(Case("MASTER", None, page="(the MASTER knob)",   # (no jump: the knob sweeps the level from 0 by its square
+             skip={"jump"}))                     # law, 2 dB a window at -75 dBFS by design; the zipper is checked)
     return C
 
 
@@ -423,11 +424,14 @@ def trans_db(moved, start, end, mid=()):
 def master_model(x, knob):
     """platform.c's MASTER pass on a render: knob (the ADC reading 0..1023 at each 256-frame block), smoothed as
     platform_poll does (knob_avg += (a * 16 - knob_avg) / 64, polled once per block here), its dead band of 6 and its
-    square law (master_q12 = k10 * k10 >> 8), read once per block, scaled (x * m) >> 12"""
+    square law (master_q12 = k10 * k10 >> 8), read once per block, scaled (x * m) >> 12; a new m ramps from the last
+    block's over the block, frame by frame (0.9.6, BUGHUNT #20: it stepped once per block): the frame i's gain
+    (mp * 256 + (i + 1) * (m - mp)) >> 8"""
     y = np.array(x, dtype=np.int64)
     avg, used = 512 * 16, 512
-    m = (used * used) >> 8
+    m = mp = (used * used) >> 8
     nb = len(y) // 256
+    ramp = np.arange(1, 257, dtype=np.int64).reshape((256,) + (1,) * (y.ndim - 1))
     for k in range(nb):
         a = int(knob[min(k, len(knob) - 1)])
         avg += int((a * 16 - avg) / 64)
@@ -435,7 +439,11 @@ def master_model(x, knob):
         if k10 + 6 < used or k10 > used + 6 or (k10 == 0) != (used == 0) or (k10 >= 1020) != (used >= 1020):
             used = k10
             m = (k10 * k10) >> 8
-        y[k * 256:(k + 1) * 256] = (y[k * 256:(k + 1) * 256] * m) >> 12
+        if m == mp:
+            y[k * 256:(k + 1) * 256] = (y[k * 256:(k + 1) * 256] * m) >> 12
+        else:
+            y[k * 256:(k + 1) * 256] = (y[k * 256:(k + 1) * 256] * ((mp * 256 + ramp * (m - mp)) >> 8)) >> 12
+            mp = m
     return y[:nb * 256].astype(np.float64)
 
 

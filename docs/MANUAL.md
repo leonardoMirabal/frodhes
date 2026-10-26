@@ -117,7 +117,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **K1 K2 K3 K4** | The four cards on the current page |
 | **ALGORITHM** (knob) | The TYPE (the four Rhodes, VIBES and MARIMBA), from any page (on SEQUENCER: the step cursor) |
 | **PRESETS** (knob) | Browse the sounds F01–F19 and your U01–U16 (loads when you stop turning; on SEQUENCER: bar by bar) |
-| **MASTER** (knob) | Volume |
+| **MASTER** (knob) | Volume (it glides as you turn it, without steps) |
 | **HOME** | PERFORM page; press again for the main page (titled FRODHES), and back |
 | **EDIT** | CHORD page; press again there to switch chord mode on / off (it comes back with the last chord type) |
 | **ENV** | PHASER page; press again there to switch the phaser on / off |

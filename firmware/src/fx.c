@@ -1578,7 +1578,7 @@ FR_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
     int32_t lvl = (int32_t)FX_LVL[fx_p[FXP_LEVEL] & 127];   /* the preset's volume trim, Q12 */
     uint32_t j, sb;
     int32_t pk = 0, wet = fx_wet, byp = fx_bypass, dl = dc_l, el = dce_l, dr = dc_r, er = dce_r, lq = 0, ls = 0;
-    lvl = fx_lv_ramp(lvl, byp || wet != 32768, n, &lq, &ls);
+    lvl = fx_lv_ramp(lvl, 0, n, &lq, &ls);             /* (bypassed too: 0.9.6, BUGHUNT #9's rest, it stepped there) */
     for (sb = 0; sb < n; sb += LK) {                   /* the look-ahead limiter, one sub-block late */
         int32_t pn = 0, tgt, g0 = lk_g, i, *po = out + 2u * sb;   /* (po: this sub-block's output, one late) */
         /* first the bypass, then the DC blocker and LEVEL (the limiter's peak scan of this sub-block is the only

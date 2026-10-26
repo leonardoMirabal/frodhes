@@ -78,6 +78,8 @@ CASES = {
     "fx-back-spread": (cc(105, 107, 30) + cc(111, 127, 31), cc(111, 0)),
     # #9 LEVEL in one step (48x)
     "level-64-0": ([], cc(110, 0)),
+    # #9's rest: LEVEL with FX off (bypassed) stepped in one sample (340x in the monkey's stream)
+    "level-bypassed": (cc(111, 127, 30), cc(110, 127)),
 }
 
 
