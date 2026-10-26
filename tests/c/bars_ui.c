@@ -12,11 +12,36 @@
 #include "frodhes.c"
 #undef main
 
+#ifdef HOST_NSEC        /* (host.c since 0.9.6: the store's record, the settings and the user presets, in host_mem; the
+                         * places before 0.9.6 read once by the migration. Written here at once, as below) */
+static void put_settings(void)                  /* the record in A, B erased (set_store.c's format) */
+{
+    uint8_t *a = host_mem + SETTINGS_AT;
+    uint32_t h[3], t[2] = {1u, ~1u};
+    memset(a, 0xFF, 0x1000u); memset(host_mem + SETTINGS_B, 0xFF, 0x1000u);
+    memcpy(a + 12, &set, 256u); memcpy(a + 12 + 256, pr_user, ST_TAIL_N);
+    h[0] = STORE_MAGIC; h[1] = 256u + ST_TAIL_N; h[2] = crc32(a + 12, h[1]);
+    memcpy(a, h, 12u); memcpy(a + 12 + h[1], t, 8u);
+}
+#define save_bank() put_settings()
+static void bank_fresh(void) { uint32_t i; for (i = 0; i < PR_NU; i++) pr_user[i].used = 0; presets_starters(); }
+static int load_settings(void)                  /* as frodhes.c app_main: the record, else the settings before 0.9.6 */
+{
+    st_tail = (uint8_t *)pr_user;
+    st_new = settings_load(&set, sizeof set) == 0;
+    st_old_ok = !st_new;
+    return st_new || !settings_load_old(&set, sizeof set) ? 0 : -1;
+}
+#else
 #ifdef HOST_SAVE_MS     /* (host.c since 0.9.5: settings_save holds the main loop 100 ms, as on the FM-1; the record is
                          * written here at once, so ~70 saves do not run the host past its end) */
 static void put_settings(void) { host_store_put(&set, sizeof set); }
 #else
 static void put_settings(void) { settings_save(&set, sizeof set); }
+#endif
+#define save_bank() presets_save_bank()
+#define bank_fresh() memset(host_bank, 0xFF, sizeof host_bank)
+#define load_settings() settings_load(&set, sizeof set)
 #endif
 
 #ifndef BARS_UI_OLD
@@ -127,7 +152,7 @@ static void cmd_conv(void)
             set.undo_preset = (uint8_t)(PRE[i] + 1u);
             put_settings();
             memset(&set, 0, sizeof set);
-            settings_load(&set, sizeof set);
+            load_settings();
             params_sanitize();
             printf("conv.%s.%u %u flags4=%u flags32=%u undo=%u\n", F[f], PRE[i], set.preset, (set.flags & 4u) != 0,
                    (set.flags & 32u) != 0, set.undo_preset);
@@ -150,11 +175,11 @@ static void cmd_rcmap(void)
     uint32_t i, saved;
     for (saved = 0; saved < 2u; saved++)
         for (i = 0; i < sizeof PRE; i++) {
-            memset(host_bank, 0xFF, sizeof host_bank);
+            bank_fresh();
             if (saved) {
                 presets_load_bank();
                 pr_user[9].used = pr_user[10].used = pr_user[11].used = 1;
-                presets_save_bank();
+                save_bank();
             }
             params_defaults();
             set.flags = 1u | 2u | 4u | 8u | 32u; set.flags2 = 0;
@@ -162,7 +187,7 @@ static void cmd_rcmap(void)
             set.undo_preset = (uint8_t)(PRE[i] + 1u);
             put_settings();
             memset(&set, 0, sizeof set);
-            settings_load(&set, sizeof set);
+            load_settings();
             params_sanitize();
             presets_load_bank();
             printf("rcmap.%u.%u %u undo=%u\n", saved, PRE[i], set.preset, set.undo_preset);
@@ -183,18 +208,43 @@ static void cmd_dump(const char *path, int type, int mode, int preset)
     pr_user[0].ver = 2; pr_user[0].np = P_COUNT; pr_user[0].used = 1;
     memcpy(pr_user[0].name, "VIBE MOT    ", 12);
     for (i = 0; i < P_SLOTS; i++) pr_user[0].p[i] = i < P_COUNT ? PV(i) : 0;
+#ifdef HOST_NSEC                                /* (the file in 0.9.5's layout, which every tree reads: the settings
+                                                 * [1 .. ][256], the bank A / B) */
+    {
+        static uint8_t st[260], bank[2][4096];
+        bank_hdr_t bh = {PR_MAGIC, 1u, sizeof pr_user, crc32((const uint8_t *)pr_user, sizeof pr_user)};
+        st[0] = 1; memcpy(st + 4, &set, 256u);
+        memset(bank, 0xFF, sizeof bank);
+        memcpy(bank[0], &bh, sizeof bh); memcpy(bank[0] + sizeof bh, pr_user, sizeof pr_user);
+        fwrite(st, 1, sizeof st, f);
+        fwrite(bank, 1, sizeof bank, f);
+    }
+#else
     presets_save_bank();
     fwrite(host_store, 1, sizeof host_store, f);
     fwrite(host_bank, 1, sizeof host_bank, f);
+#endif
     fclose(f);
 }
 static void cmd_load(const char *path)
 {
     FILE *f = fopen(path, "rb");
+#ifdef HOST_NSEC                                /* (0.9.5's layout into its places: the first boot's migration reads them) */
+    static uint8_t st[260];
+    uint32_t h[3];
+    memset(host_mem + SETTINGS_AT, 0xFF, 0x1000u); memset(host_mem + SETTINGS_B, 0xFF, 0x1000u);
+    if (!f || fread(st, 1, sizeof st, f) != sizeof st || fread(host_mem + OLD_PR_A, 1, 4096, f) != 4096 ||
+        fread(host_mem + OLD_PR_B, 1, 4096, f) != 4096) { printf("error read\n"); return; }
+    if (st[0] == 1) {
+        h[0] = STORE_MAGIC; h[1] = 256u; h[2] = crc32(st + 4, 256u);
+        memcpy(host_mem + OLD_SET_A, h, 12u); memcpy(host_mem + OLD_SET_A + 12, st + 4, 256u);
+    }
+#else
     if (!f || fread(host_store, 1, sizeof host_store, f) != sizeof host_store ||
         fread(host_bank, 1, sizeof host_bank, f) != sizeof host_bank) { printf("error read\n"); return; }
+#endif
     fclose(f);
-    if (settings_load(&set, sizeof set) != 0) params_defaults();
+    if (load_settings() != 0) params_defaults();
     params_sanitize();
     params_apply_all();
     printf("set.type %u\nset.tw_mode %u\nset.tw_sw %u\nset.rev %u\nset.preset %u\nset.flags %u\n", PV(P_TYPE),
@@ -209,6 +259,9 @@ static void cmd_load(const char *path)
 
 int main(int argc, char **argv)
 {
+#ifdef HOST_NSEC
+    memset(host_mem, 0xFF, sizeof host_mem);   /* (the flash erased: host_main does it, not run here) */
+#endif
     params_defaults();
     params_sanitize();
     params_apply_all();
