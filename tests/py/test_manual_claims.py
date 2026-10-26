@@ -117,7 +117,6 @@ def test_vibes_motor_switch():
 
 
 @pytest.mark.parametrize("name,setup,tol,known", [
-    ("phaser", cc(13, 80, 30) + cc(12, 127, TE), 1.5, "BUGHUNT #2 (the phaser comes on ~2 dB quieter on low chords)"),
     ("chorus", cc(86, 64, 30) + cc(85, 64, TE), 1.5, None),
     ("wah", cc(18, 90, 30) + cc(17, 127, TE), 1.5, None),
 ])
@@ -130,6 +129,20 @@ def test_switch_keeps_level(name, setup, tol, known, request):
     a, b = R(setup + chord()), R([l for l in setup if not l.startswith(f"{TE} ")] + chord())
     step = (lvl(a, TE + 60, TE + 300) - lvl(a, TE - 300, TE - 10)) - (lvl(b, TE + 60, TE + 300) - lvl(b, TE - 300, TE - 10))
     assert abs(step) <= tol, f"{name} switched on: {step:+.2f} dB"
+
+
+@pytest.mark.parametrize("notes", [(36, 48, 52, 55, 60), (60, 64, 67, 72, 76)], ids=["low", "high"])
+@pytest.mark.parametrize("depth", [30, 80, 127])
+def test_phaser_keeps_level_over_its_sweep(notes, depth):
+    """PHASER: 'The phaser keeps the level at every DEPTH (a chord's loudness matches the phaser switched off; its
+    notches sweep through the sound, so a single note still dips and swells as they pass it...)': judged over whole
+    sweeps (4 s at SPEED 40, ~4 cycles), a low and a high chord, within 1.5 dB. (BUGHUNT #2's "2 dB quieter on low
+    chords" was a 240 ms window: wherever the notches stood then, -3 .. +1.5 dB by the chord and the phase)"""
+    setup = cc(13, depth, 30) + cc(14, 40, 30) + cc(12, 127, TE)
+    ch = [hr.cc(295, 64, 127)] + [x for n in notes for x in hr.note(300, n, 110, 6000)]
+    a, b = R(setup + ch, 6500), R([l for l in setup if not l.startswith(f"{TE} ")] + ch, 6500)
+    step = (lvl(a, TE + 100, TE + 4100) - lvl(a, TE - 1000, TE - 10)) - (lvl(b, TE + 100, TE + 4100) - lvl(b, TE - 1000, TE - 10))
+    assert abs(step) <= 1.5, f"phaser DEPTH {depth} switched on: {step:+.2f} dB over its sweep"
 
 
 def test_comp_from_off_keeps_the_playing_level():
