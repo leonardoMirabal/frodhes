@@ -165,6 +165,6 @@ def test_smk_master_no_write_while_turning():
     saves = [int(t) for t in SAVED.findall(r.out)]
     assert len(saves) == 1 and saves[0] >= 5100 + 2000, (saves, r.out[-2000:])
     writes = [at for op, _, at, _ in flash_calls(r.out) if op in ("write", "erase")]
-    assert writes and all(at & ~0xFFF == 0x9D000 for at in writes), writes
+    assert writes and all(0xEB000 <= at < 0xED000 for at in writes), writes    # the record's two copies (#28)
     assert not any(t < 7100 for t in (int(x) for x in re.findall(r"^\s*(\d+) ms  flash", r.out, re.M))), r.out[-2000:]
     run("smk-master-turn-2", ["1 expect state master 988"], 100, flash=fl, binary=b)
