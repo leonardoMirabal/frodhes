@@ -686,6 +686,13 @@ def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * S
     return out
 
 
+# a window under 0.97 whose difference lies all below LF_ONLY_HZ is the jack's analog low end on a bass-heavy moment
+# (its AC coupling's phase on a 41 Hz fundamental), not a gap or a click: those are broadband. 48k-pattern-60ms at
+# 2.800 s, the 0.9.6 final run (2026-10-26, BUGHUNT #36b): ncc 0.955, 0.999 over 100 Hz, nothing on USB; 1, 2 and 3 ms
+# jack gaps put in that window: 0.992, 0.980, 0.965 over 200 Hz
+LF_ONLY_HZ, LF_ONLY_NCC = 100.0, 0.995
+
+
 def _lag(u, j, a, n, lo, hi):
     js = j[a:a + n]
     us = u[a + lo:a + hi + n]
@@ -793,6 +800,15 @@ def track(usb, jack48, fs_usb, win=2400, hop=2400, min_db=-60.0, gtimes=(), lag=
         keep["uw"][:lo_ok] = 0.0
         keep["uw"][hi_ok:] = 0.0
     rows, ev, prev, pend = [], [], 0, None
+    hp = []                                                  # (the jack and USB over LF_ONLY_HZ, made when needed)
+
+    def lf_only(a, lag):
+        if not hp:
+            from scipy.signal import butter, sosfiltfilt
+            sos = butter(2, LF_ONLY_HZ / (FS_JACK / 2), "high", output="sos")
+            hp.extend((sosfiltfilt(sos, j), sosfiltfilt(sos, uw)))
+        return _lag(hp[1], hp[0], a, win, lag - 2, lag + 2)[1] >= LF_ONLY_NCC   # (as near: +-2 of the line; the
+                                                                   # bass pulls near itself off by a sample or two)
     wide = 320                                               # (a lost / repeated packet or block: <= ~1 block at 48 kHz)
 
     def far_lag(a):
@@ -834,9 +850,11 @@ def track(usb, jack48, fs_usb, win=2400, hop=2400, min_db=-60.0, gtimes=(), lag=
             pend = (a, far - near, cn, cf, 0)
             rows.append((a / FS_JACK, far + L0 + r * a, cf))
             continue
-        if cn < 0.97 and calm and pend is None and rj >= floor:   # (the ncc test where the jack itself is over
-                                                                   # -60 dBFS, as before: quieter windows of a hard
-                                                                   # mallet's tail fell to 0.96 on the host's jack)
+        if cn < 0.97 and calm and pend is None and rj >= floor and not lf_only(a, prev):   # (the ncc test where the
+                                                                   # jack itself is over -60 dBFS, as before: quieter
+                                                                   # windows of a hard mallet's tail fell to 0.96 on the
+                                                                   # host's jack; a difference only under LF_ONLY_HZ:
+                                                                   # none, above)
             ev.append((a, f"jack vs USB ncc {cn:.3f} < 0.97"))
         rows.append((a / FS_JACK, near + L0 + r * a, cn))
         # (prev moves only with a confirmed slip: the drift is out, so the right lag stays put; letting it follow the
