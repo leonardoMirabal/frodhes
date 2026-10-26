@@ -550,3 +550,15 @@ def test_the_folded_jack_check_on_the_host():
     j2[s] = np.clip(j2[s], -pk, pk) * np.sqrt((j[s] ** 2).mean() / (np.clip(j[s], -pk, pk) ** 2).mean())
     res2 = C.analyse(u, j2, C.FS_HOST, ev, ccs=ccs, only={"track"})
     assert any(9.95 <= t <= 10.1 and kd == "track" for t, kd, _ in res2["jack"]), res2["jack"][:5]
+
+
+def test_a_repeat_under_the_floor_is_no_event():
+    """under -42 dBFS the music's own plateaus run 4 frames and more (FM-1 seed 5: 4 frames at -65 LSB between +8 and
+    +14, every counter and both USB benches clean): no event there; the same copies on a loud slope are one"""
+    t = np.arange(4410)
+    for amp, want in ((150, 0), (8000, 1)):
+        x = np.round(amp * np.sin(2 * np.pi * 50 * t / 44100))
+        q = np.stack([x, x], 1)
+        i = 1000
+        q2 = np.concatenate([q[:i], np.repeat(q[i - 1:i], 3, axis=0), q[i:]])
+        assert len(C.det_repeat(q2)) == want, amp

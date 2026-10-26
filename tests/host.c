@@ -282,6 +282,8 @@ static void eng_host_report(void);              /* engine.c: the engines' host c
  *                        blocks go on)
  *   T renderload MS      from now on each audio block keeps the main loop from running for MS ms more (the
  *                        FM-1's render preempts it for 2-5 ms a block)
+ *   T shed               the audio ran late: the next block sheds a voice, as the FM-1's ISR asks when two blocks run
+ *                        over 5 ms (frodhes.c app_audio; the host has no CPU clock)
  *   T shot               a screenshot (OUT-T.ppm)
  *   T vkey K RAW         key K's next press lands with the driven reading RAW (firmware/src/keyvel.h kv_host_vkey:
  *                        as the FM-1's converter would measure it; without one a key plays at once at CONTEXT)
@@ -307,7 +309,8 @@ static void eng_host_report(void);              /* engine.c: the engines' host c
  * With FRODHES_FLASH=FILE the flash is kept in FILE across runs (host_flash_load / host_flash_save). */
 enum { EV_KEYS, EV_BTN, EV_PRESS, EV_RELEASE, EV_TURN, EV_MIDI, EV_SHOT, EV_EXP_LED, EV_EXP_RMS, EV_EXP_PRESET,
        EV_EXP_SOUND, EV_EXP_STATE, EV_DUMP, EV_USBREC, EV_USBLINK, EV_VKEY, EV_TRS,
-       EV_VEL, EV_XKEY, EV_PAD, EV_FADER, EV_WHEEL, EV_PEDAL, EV_STALL, EV_RLOAD };
+       EV_VEL, EV_XKEY, EV_PAD, EV_FADER, EV_WHEEL, EV_PEDAL, EV_STALL, EV_RLOAD, EV_SHED };
+static void host_shed(void);                        /* frodhes.c: the overload's voice shed ("T shed") */
 static int host_preset_check(char *msg, unsigned n);   /* frodhes.c: 0 if the panel is the shown preset */
 static int host_sound_check(char *msg, unsigned n);    /* frodhes.c: 0 if the engines run what the panel says */
 static int host_state(const char *key, char *val, unsigned n);   /* frodhes.c: 0 if K is known */
@@ -375,6 +378,7 @@ static void read_script(const char *path)
         else if (!strcmp(what, "midi")) { e.kind = EV_MIDI; sscanf(line, "%*u %*s %i %u %u", (int *)&a, &b, &c); e.st = (uint8_t)a; e.d1 = (uint8_t)b; e.d2 = (uint8_t)c; }
         else if (!strcmp(what, "stall")) { e.kind = EV_STALL; sscanf(line, "%*u %*s %d", &e.a); }
         else if (!strcmp(what, "renderload")) { e.kind = EV_RLOAD; sscanf(line, "%*u %*s %d", &e.a); }
+        else if (!strcmp(what, "shed")) e.kind = EV_SHED;
         else if (!strcmp(what, "shot")) e.kind = EV_SHOT;
         else if (!strcmp(what, "dump")) e.kind = EV_DUMP;
         else if (!strcmp(what, "usblink")) { e.kind = EV_USBLINK; sscanf(line, "%*u %*s %d", &e.a); }
@@ -487,6 +491,7 @@ static void host_ms(void)
             break;
         case EV_STALL: host_stall += (uint32_t)(e->a > 0 ? e->a : 0); break;
         case EV_RLOAD: host_rload = (uint32_t)(e->a > 0 ? e->a : 0); break;
+        case EV_SHED: host_shed(); break;
 #if BOARD_SMK37
         case EV_VEL: { uint32_t k; for (k = 0; k < FM1_NKEY; k++) fm1_in.key_vel[k] = (uint8_t)(e->a < 1 ? 1 : e->a > 127 ? 127 : e->a); break; }
         case EV_XKEY: {

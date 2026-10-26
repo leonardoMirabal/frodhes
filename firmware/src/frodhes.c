@@ -189,6 +189,21 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
     PROF_STAMP(1);
     fx_process(voice_mono, out, n);
     PROF_STAMP(15);
+#if FELUCCA_UAC_TONE == 2
+    {   /* bench (BUGHUNT #24, builds with APP_DEFS=-DFELUCCA_UAC_TONE=2 only): the app's output replaced by triangles of
+         * period 147 frames (300 Hz, L and R in antiphase, -12 dBFS) after the engine and the effects ran (their CPU
+         * load stays), so the platform's tail, the USB tap, the 44.1 -> 48 kHz resampler, the ring and the rate
+         * adjustment carry them as they carry music: 147 frames in are exactly 160 out, so the recording repeats
+         * itself every 160 frames bit for bit (USB VOL fixed: the knob does not scale it); tools/hil_usb_bench.py */
+        static uint32_t tph;
+        uint32_t i;
+        for (i = 0; i < n; i++, tph = tph == 146u ? 0u : tph + 1u) {
+            int32_t v = (int32_t)(tph < 74u ? tph : 147u - tph) * 222 - 8200;
+            out[2u * i] = v;
+            out[2u * i + 1u] = -v;
+        }
+    }
+#endif
     blk_ph[0] = tw_ph; blk_ph[1] = cp_ph; blk_ph[2] = ph_ph; blk_ph[3] = lfo_ph; blk_ph[4] = bar_mot_ph;
     blk_ms = ms0;                                  /* the LFOs at this block's end, for the clock's phase lock (tempo.c) */
     blk_n = blk_n + 1u;
@@ -549,6 +564,8 @@ EMSCRIPTEN_KEEPALIVE const char *web_page(void) { return PAGE_TITLE[ui_page]; }
 #endif
 
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+static void host_shed(void) { eng_shed_req = 1; }   /* tests/host.c "T shed": as app_audio asks it on the FM-1 */
+
 /* tests/host.c "expect preset": the panel equals what the preset the header names sets (presets.c preset_load) */
 static int host_preset_check(char *msg, unsigned n)
 {

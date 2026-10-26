@@ -204,6 +204,15 @@ def test_bughunt9_level_with_fx_off(binary):
     assert ratio <= 10, f"BUGHUNT #9: LEVEL steps with FX off ({ratio:.1f}x)"
 
 
+def test_bughunt27_khlon_trem_saves(binary):
+    """BUGHUNT #27 (monkey seed 155536243, shrunk; 0.9.5 too): F06 (KHLON, COMP) with TREM on: after the notes the
+    output gate shut, but fx_out's idle residue (6..16 LSB) kept fx_quiet from holding, so nothing was written to the
+    flash (a SAVE showed U01, a power cycle brought back F06); fixed in 0.9.6 (fx.c fx_gz; also
+    test_persistence::test_save_behind_the_shut_gate)"""
+    ev = [(19251, "midi 0xC2 5 0"), (19792, "btn 5"), (19822, "turn 2 1"), (20000, "turn 1 1")]
+    assert mk.check(ev, binary) == []
+
+
 def test_ddmin_finds_the_minimal_pair():
     items = list(range(40))
     assert sorted(mk.ddmin(items, lambda xs: 7 in xs and 31 in xs)) == [7, 31]
