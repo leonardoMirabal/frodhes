@@ -60,6 +60,8 @@ LEAD_S = 0.02                                   # the take judged from this long
                                                 # the whole recording, 0.76 s of it before the stream, the last take's
                                                 # tail in it, gave the clock fit a lag of -0.010 s: the guards off)
 CLIP = 32767
+LAG_MAX = 0.1                                   # (s) the clock fit's lag past LEAD_S beyond which its anchor is
+                                                # wrong (25 takes on the FM-1, 2026-10-26: -0.01 .. 0.05; 1012: 0.75)
 LIM_T = 24000                                   # fx.c's limiter threshold (-2.7 dBFS)
 CLAMP_RUN, CLAMP_DENSE, CLAMP_LOUD = 3, 8, 8    # the 48 kHz full-scale gate (clamp_rows)
 
@@ -223,7 +225,8 @@ def rejudge(paths):
     bad = 0
     for p in paths:
         d = np.load(p)
-        rows = judge_audio(d["usb"].astype(np.int64), int(d["fs"]), json.loads(str(d["events"])))
+        rows = judge_audio(d["usb"].astype(np.int64), int(d["fs"]), json.loads(str(d["events"])),
+                           lead=float(d["lead"]) if "lead" in d else LEAD_S)
         fails = [r for r in rows if r[3] == "FAIL"]
         bad += bool(fails)
         print(f"{os.path.basename(p)}: " + ("FAIL" if fails else "ok"))
@@ -232,12 +235,35 @@ def rejudge(paths):
     return 1 if bad else 0
 
 
-def judge_audio(xi, rate, ev, flags=0):
-    """the audio gates of one take: xi (n, 2) int LSB at rate, ev judge_events'; [(check, value, criterion,
-    status)]. The probe is found on the recording's own clock (hil_crackle's clock fit from the onsets)"""
+def first_sound_fit(xi, rate, ev, lead=LEAD_S):
+    """hil_crackle.usb_judge, its clock fit anchored on the first note-on that sounds: (glitches, fit, the note-ons
+    silent before the first sound). The fit takes the first sound for the first note-on's (onset_lag); a first note
+    the FM-1 does not sound puts the whole take's clock off by the gap (2026-10-26, seed 1012 on 2771d0a and 880e780:
+    the first note-on at 0.05 s silent on USB, the first sound the second note's at 0.79 s, the lag 0.746 s for
+    ~0.03 s and the probe window 0.8 s late: -77.5 dBFS on the probe's release tail and silence). A lag more than
+    LAG_MAX past the recording's lead: the note-ons more than 0.1 s before the first sound dropped, fitted again"""
+    import hil_crackle as hc
+    gl, fit = hc.usb_judge(xi, rate, ev)
+    if fit["lag"] - lead <= LAG_MAX:
+        return gl, fit, 0
+    t1 = min(e[0] for e in ev if e[1] == "on") + hc.onset_lag(xi, ev, rate)    # (the first sound, recording time)
+    ev2 = [e for e in ev if not (e[1] == "on" and e[0] + lead < t1 - 0.1)]
+    silent = len(ev) - len(ev2)
+    if not silent or not any(e[1] == "on" for e in ev2):
+        return gl, fit, 0
+    gl2, fit2 = hc.usb_judge(xi, rate, ev2)
+    if fit2["lag"] - lead > LAG_MAX or fit2["lag"] - lead < -0.05:
+        fit2 = dict(fit2, lag=lead, rate=0.0, how="the nominal clock (no plausible fit)")
+    return gl2, dict(fit2, how=f"{fit2.get('how', '')}, from the first note that sounds"), silent
+
+
+def judge_audio(xi, rate, ev, flags=0, lead=LEAD_S):
+    """the audio gates of one take: xi (n, 2) int LSB at rate, from lead s before the first message; ev
+    judge_events'; [(check, value, criterion, status)]. The probe is found on the recording's own clock
+    (first_sound_fit: hil_crackle's clock fit from the onsets)"""
     import hil_crackle as hc
     rows = []
-    gl, fit = hc.usb_judge(xi, rate, ev)
+    gl, fit, silent = first_sound_fit(xi, rate, ev, lead)
     rows.append(("USB repeat / stale (hil_crackle.usb_judge)", len(gl), "0", "ok" if not gl else "FAIL"))
     if gl:
         rows.append(("the first glitches", "; ".join(f"{t:.3f} s {k}: {d}" for t, k, d in gl[:3]), "information",
@@ -258,6 +284,9 @@ def judge_audio(xi, rate, ev, flags=0):
         rows.append(("clicks (hil_crackle det_click)", len(ck), "information (0.9.5's known clicks)", "info"))
     except Exception as e:                          # (information only: never stop the run on it)
         rows.append(("clicks (hil_crackle det_click)", f"not judged: {e!r}"[:120], "information", "info"))
+    if silent:
+        rows.append(("note-ons silent before the first sound", silent, "information (the clock fitted from the "
+                     "first that sounds)", "info"))
     rows.append(("the clock", f"lag {fit['lag']:.3f} s, {1e6 * fit['rate']:.0f} ppm, {fit.get('how', '')}",
                  "information", "info"))
     return rows

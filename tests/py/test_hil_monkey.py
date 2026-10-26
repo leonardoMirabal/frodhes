@@ -35,7 +35,7 @@ def test_the_stream_is_midi_only_without_developer_ccs():
 @pytest.fixture(scope="module")
 def take():
     hm.monkey.build()
-    return hm.host_take(1000)
+    return hm.host_take(1000, lead_ms=int(1000 * hm.LEAD_S))          # (as the device run cuts its takes)
 
 
 def _status(rows, check):
@@ -127,3 +127,32 @@ def test_rejudge_reads_a_saved_take(take, tmp_path, capsys):
     np.savez_compressed(p, usb=xi.astype(np.int16), fs=44100, events=hm.json.dumps(ev), counters="{}", lead=hm.LEAD_S)
     assert hm.main(["--rejudge", str(p)]) == 0
     assert "fail-1000.npz: ok" in capsys.readouterr().out
+
+
+@pytest.fixture(scope="module")
+def take1012():
+    hm.monkey.build()
+    xi, ev = hm.host_take(1012, lead_ms=int(1000 * hm.LEAD_S))
+    x = xi.copy()
+    x[:int((hm.LEAD_S + 0.75) * 44100)] = 0     # the FM-1's take (2026-10-26): the first note-on (0.05 s) silent,
+    return x, ev                                # the first sound the second's (0.756 s)
+
+
+def test_a_silent_first_note_does_not_move_the_probe(take1012):
+    x, ev = take1012
+    rows = hm.judge_audio(x, 44100, ev)
+    assert _status(rows, "the probe note") == "ok", rows
+    assert [r[1] for r in rows if r[0].startswith("note-ons silent")] == [1]
+    assert not [r for r in rows if r[3] == "FAIL"], rows
+
+
+def test_a_dead_probe_after_a_silent_first_note_fails(take1012):
+    x, ev = take1012
+    x = x.copy()
+    x[int((hm.SEG_S + hm.PROBE_AT) * 44100):] = 0
+    assert _status(hm.judge_audio(x, 44100, ev), "the probe note") == "FAIL"
+
+
+def test_a_clean_take_keeps_its_fit(take):
+    xi, ev = take
+    assert not [r for r in hm.judge_audio(xi, 44100, ev) if r[0].startswith("note-ons silent")]
