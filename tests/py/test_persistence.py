@@ -442,3 +442,20 @@ def test_save_behind_the_shut_gate():
     s2 = boot("gated-save-2", fl).state(100)
     assert s2["header"] == s1["header"] and s2["header"].startswith("U"), (s1["header"], s2["header"])
     assert all(s2[k] == s1[k] for k in s1 if k.startswith("p.")), [k for k in s1 if k.startswith("p.") and s2[k] != s1[k]]
+
+
+def test_record_naming_an_empty_slot_runs_its_synced_rates():
+    """BUGHUNT #32: a settings record naming a user slot that is empty (its bank broken, or never saved) boots with
+    the record's own sound; its tempo-synced rates (TREM/WAH SYNC here) run as the panel says. They stayed 0 (free,
+    standing still) until something re-published them: the boot published them only through a preset load"""
+    fl, img = saved_flash("emptyslot", [cc(20, 17, 64), cc(21, 18, 100), cc(22, 20, 64),   # TREM on, DEPTH, SYNC
+                                        "100 btn 9", "140 btn 9", "3000 dump"])          # SAVE to U01
+    rec = settings_record(img)
+    assert rec[O_PRESET] == 19 and rec[O_PANEL + 2] == 1, (rec[O_PRESET], rec[O_PANEL + 2])   # U01, its sound
+    rec[O_PRESET] = NO_PRESET                                       # the record names U16: empty (never a starter)
+    put_settings(img, rec)
+    open(fl, "wb").write(img)
+    b = boot("emptyslot-2", fl, ["300 expect sound", "2000 expect sound"], 2100, check_preset=False)
+    s = b.state(100)
+    assert s["p.5"] != "0" and s["p.2"] == "1", (s["p.5"], s["p.2"])  # the record's sound: TREM on, synced
+    assert not b.fails, b.fails                                     # (0.9.5: "synced rate 0 is 0, the panel says ...")

@@ -441,9 +441,13 @@ static void app_main(void)
     if (fresh) {                                /* a first boot (or a lost record) plays F01, as the header says */
         preset_load(0);
         set.undo_valid = 0;
-    } else
-        (void)preset_boot();                    /* the preset last loaded or saved, as it is stored (params.c: the
+    } else if (preset_boot()) {                 /* the preset last loaded or saved, as it is stored (params.c: the
                                                  * knobs turned after it are not kept, on purpose) */
+        /* not there: the record's sound runs its synced rates and PLATE AUTO size as a load sets them
+         * (0.9.6, BUGHUNT #32: they waited for the next change) */
+        rev_relatch();
+        tempo_sync_publish();
+    }
     snd_base_take();
     set_dirty = 0;
     settings_record(&set_saved);                /* nothing to write at boot (a converted record: at the next change) */
