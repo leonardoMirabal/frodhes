@@ -262,7 +262,7 @@ def _peak(x):
     return a.max(axis=1) if a.ndim == 2 else a
 
 
-def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0):
+def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0, floor=256):
     """frames that repeat the frame before where the wave runs on: [(frame, detail)]; q (n, 2) int. A candidate is a
     run of equal stereo frames between two steps the same way (>= slope LSB, either channel); 4 frames or more are an
     event; 2 or 3 when taking the copies out makes the wave smoother: the AR interpolation residual at it falls >= gain
@@ -274,7 +274,11 @@ def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0):
     under it) and the copies' residual >= gain x (10 dB) over the wave without them. Before, 3 dB on any wave: noise-like
     music through the 44.1 -> 48 kHz resampler (no copy at all) gave ~300 events a minute and an FM-1 take two
     (4 and 5 dB, among plateaus spread from 5 dB down); 0.9.4's real 2-frame copies score 11 and 16 dB (the waves
-    around them 26 and 31 dB predictable), copies injected in a chord 12 .. 23 dB (22 .. 44); noise is under 8 dB"""
+    around them 26 and 31 dB predictable), copies injected in a chord 12 .. 23 dB (22 .. 44); noise is under 8 dB.
+    Under floor LSB (-42 dBFS, the wave's peak within 32 frames) nothing is judged: there the music's own plateaus run
+    to 4 frames and more by the hundred (an FM-1 take: 840 runs of 4 at 40 .. 100 LSB), one of them between two steps
+    the same way now and then (FM-1 seed 5, -65 LSB, +8 / +14, every counter clean and both USB benches clean);
+    0.9.4's real copies sat at ~3000 LSB"""
     q = np.asarray(q, np.int64)
     eq = np.all(q[1:] == q[:-1], axis=1)                  # eq[i]: frame i + 1 == frame i
     s, e = _runs(eq)                                       # run i..j-1 of eq: plateau frames i..j
@@ -285,6 +289,8 @@ def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0):
         d0, d1 = q[p0] - q[p0 - 1], q[p1 + 1] - q[p1]
         ok = (np.sign(d0) == np.sign(d1)) & (np.abs(d0) >= slope) & (np.abs(d1) >= slope)
         if not ok.any():
+            continue
+        if np.abs(q[p0 - 32:p1 + 33]).max() < floor:
             continue
         ch = int(np.argmax(np.abs(d0) + np.abs(d1)))
         if p1 - p0 >= 3:                                   # 4 equal frames or more between two steps the same way: no

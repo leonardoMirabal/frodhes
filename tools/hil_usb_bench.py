@@ -97,6 +97,11 @@ def analyse_app(x, fs):
             slips.append((round(int(s0) / fs, 4), sh))
             s0 = None
     eq = np.flatnonzero(np.all(x[a + 1:b] == x[a:b - 1], axis=1)) + a
+    # (the wave's own: how the 160 frames fall on the triangle depends on where it started against the resampler's
+    # phase, and some starts put two equal frames on each turn, every period: FM-1 2026-10-26, --midi none, 181139 of
+    # them, slip 0, mismatch 0. Only equal neighbours the period before did not have are counted)
+    eq = eq[(eq < a + P) | ~np.all(x[eq + 1 - P] == x[eq - P], axis=1)] if len(eq) else eq
+    eq = eq[eq >= a + P] if len(eq) else eq
     runs = []
     for i in eq:
         if runs and runs[-1][2] == i - 1:
@@ -104,8 +109,13 @@ def analyse_app(x, fs):
             runs[-1][2] = i
         else:
             runs.append([round(int(i) / fs, 4), 2, int(i)])
+    peak = int(np.abs(x[a:b, 0]).max())
+    level_ok = APP_PEAK[0] <= peak <= APP_PEAK[1]
     return dict(frames=int(b - a), start=round(a / fs, 4), repeat=[(t, n) for t, n, _ in runs], slip=slips,
-                mismatch=int(len(bad)), ok=not slips and not runs)
+                mismatch=int(len(bad)), peak=peak, level_ok=level_ok, ok=not slips and not runs and level_ok)
+
+
+APP_PEAK = (7900, 8250)   # the app bench's peak through the resampler, LSB (USB VOL fixed: MASTER does not scale it)
 
 
 def app_wave(n, fs=48000, ph0=0):
@@ -113,7 +123,7 @@ def app_wave(n, fs=48000, ph0=0):
     it against usb.c's own resampler): a stand-in for --self-test"""
     P = 160 if fs == 48000 else 147
     t = (np.arange(n) + ph0) % P
-    L = np.round(8141 * (1 - 2 * np.abs(2 * t / P - 1)) + 37 * np.sin(2 * np.pi * 3 * t / P)).astype(np.int64)
+    L = np.round(8041 * (1 - 2 * np.abs(2 * t / P - 1)) + 37 * np.sin(2 * np.pi * 3 * t / P)).astype(np.int64)
     return np.stack([L, -L], 1)
 
 
@@ -182,7 +192,21 @@ def run(a):
     os.makedirs(a.out, exist_ok=True)
     secs = 60.0 * a.minutes
     ev = midi_events(a.midi, secs)
-    dev.cc(114, 127)
+    for k in range(3):                         # USB VOL fixed (MASTER does not scale the stream), then checked on a
+        dev.cc(114, 127)                       # 3 s take before the real one: the bench's wave at its level
+        time.sleep(0.3)
+        pre = hm.Rec(usb, a.rate, 2, (0, 1), 3.0, switch_rate=True, sd=sd)
+        time.sleep(3.2)
+        xp = np.clip(np.round(np.asarray(pre.stop(), float) * 32768), -32768, 32767).astype(np.int64)
+        rp = (analyse_app if a.kind == "app" else analyse)(xp, a.rate)
+        if rp.get("start") is not None and rp.get("level_ok", True):
+            break
+        print(f"pre-check {k + 1}: " + ("no bench wave" if rp.get("start") is None else f"peak {rp.get('peak')} LSB")
+              + ": USB VOL set again")
+    else:
+        print("the bench wave is not there at its level (the bench build installed? --kind right?): stopped")
+        dev.close()
+        return 2
     rec = hm.Rec(usb, a.rate, 2, (0, 1), secs + 5.0, switch_rate=True, sd=sd)
     try:
         time.sleep(1.0)
@@ -221,7 +245,8 @@ def print_report(js):
     if "slip" in r:
         print(f"app bench, {js.get('rate')} Hz, MIDI {js.get('midi')} ({js.get('midi_messages', 0)} messages), "
               f"{js.get('minutes')} min: {r['frames']} frames judged from {r['start']} s; slips {len(r['slip'])}, "
-              f"equal neighbours {len(r['repeat'])}, frames off the period {r['mismatch']}; "
+              f"equal neighbours {len(r['repeat'])}, frames off the period {r['mismatch']}, peak {r.get('peak')} LSB"
+              f"{'' if r.get('level_ok', True) else ' (NOT the fixed level: USB VOL / MASTER?)'}; "
               f"recorder flags {js.get('recorder_flags')}")
         for t, sh in r["slip"][:20]:
             print(f"  slip at {t:.4f} s: shift {sh} frames" + (" (inserted: a repeat)" if sh and sh > 0 else ""))

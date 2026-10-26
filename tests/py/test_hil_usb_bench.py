@@ -43,3 +43,36 @@ def test_the_app_bench_through_the_resampler():
     z = np.delete(z, [35000], axis=0)                         # a lost frame
     r = B.analyse_app(z, 48000)
     assert [sh for _, sh in r["slip"]] == [1, -1] and [n for _, n in r["repeat"]] == [2], r
+
+
+
+def reference_from(x, taps, ph0):
+    """test_uac_fir.reference with the resampler's phase at ph0 when the stream starts (rs.ph: whatever ran before)"""
+    x = np.clip(x, -32768, 32767).astype(np.int64)
+    hist, out, ph = np.zeros((12, 2), np.int64), [], ph0
+    for f in x:
+        hist = np.vstack([hist[1:], f])
+        while ph < 160:
+            c = taps[ph] if ph < 80 else taps[159 - ph][::-1]
+            out.append(np.clip(((c[:, None] * hist).sum(axis=0) + (1 << 14)) >> 15, -32768, 32767))
+            ph += 147
+        ph -= 160
+    return np.array(out)
+
+
+def test_every_start_of_the_triangle_against_the_resampler_passes():
+    """how the 160 frames fall on the triangle depends on the resampler's phase when it started: phase 4 (and 151)
+    puts two equal frames on every turn, 7405 7603 7815 8011 8011 7815 7603, exactly the FM-1's take of 2026-10-26
+    (--midi none: 181139 of them, slip 0, mismatch 0): the wave's own, so not counted, and the level is checked"""
+    taps = F.fir()
+    w = app_wave_from_the_firmware(147 * 60)
+    flat = 0
+    for ph0 in (0, 4, 37, 80, 151, 159):
+        y = reference_from(w, taps, ph0)
+        flat += int(np.all(y[301:] == y[300:-1], axis=1).sum())
+        r = B.analyse_app(np.concatenate([np.zeros((300, 2), np.int64), y]), 48000)
+        assert r["ok"] and not r["repeat"] and r["level_ok"], (ph0, r["repeat"][:3], r.get("peak"))
+    assert flat > 0                                            # (the flat turns are among them)
+    y = reference_from(w, taps, 4)
+    z = np.insert(np.concatenate([np.zeros((300, 2), np.int64), y]), 3000, y[2699], axis=0)
+    assert [sh for _, sh in B.analyse_app(z, 48000)["slip"]] == [1]   # a copy in that wave is still found
