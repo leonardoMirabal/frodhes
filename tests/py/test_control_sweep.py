@@ -16,7 +16,7 @@ import control_sweep as cs  # noqa: E402
 
 import hostrun  # noqa: E402
 
-# Two checks are bounded differently on purpose (tools/control_sweep.py; 0.9.6):
+# Three checks are bounded differently on purpose (tools/control_sweep.py; 0.9.6):
 # - filter * FREQ, trans: the range takes the renders held at the statics the cutoff glides through, for the
 #   glide's first 60 ms (FREQ 127 -> 0 is 9 octaves at 1/8 octave a sub-block, 52 ms). Physical: a band-pass swept
 #   across the chord is louder at the chord's band than at either end; afterwards the two ends bound it as before.
@@ -26,13 +26,16 @@ import hostrun  # noqa: E402
 #   the sweep's window-step check cannot apply. xjump bounds the speed: the moved render's largest 512-sample window
 #   step (beyond the held renders' own) at most 0.5 of the held renders' level difference. 0.9.5's one-sample
 #   switch: 0.8 (64 > 45); the 46 ms crossfade: 0.37. (0.9.5 also flags click 82.3x and zipper 150x.)
+# - delay EFFECT, no jump / trans: a switch to or from TAPE fades the running type's echoes out (46 ms), then the
+#   new type's in (46 ms; TAPE has its own transport, filters and feedback law: the two cannot share one loop's state),
+#   so the echoes dip ~15 dB on purpose. DIG <-> ANA crossfade in one loop (#17). The click and zipper stay checked:
+#   0.9.5 fails them (14.2x, 36.6x; 0.9.6: 1.5x, 1.2x).
 # case -> why it fails on 0.9.5 (fix it, then remove the line)
 KNOWN = {
     "wah RATE": "BUGHUNT #14: the wah's resonance (RATE) is not smoothed",
     "wah SHAPE": "BUGHUNT #15: SHAPE does nothing on WAH (the card is shown)",
     "delay DIG TIME": "BUGHUNT #3: DIG's time glides at one sample a sample (the read head stops)",
     "delay ANA TIME": "BUGHUNT #3: ANA scrubs at many times speed",
-    "delay EFFECT": "BUGHUNT #17: DIG <-> ANA switches the tone and softclip in one sample",
     "rev INF auto MIX": "INFINITE's level guard holds the tank: the wet falls 1.1 dB from MIX 96 to 127 (by design; a law change moves presets)",
     "rev INF size64 MIX": "the same (INFINITE's level guard; #18's jump and click are fixed)",
     "rev PLATE SIZE": "BUGHUNT #19: SIZE bends a ringing tail's pitch and steps",

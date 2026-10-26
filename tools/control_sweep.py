@@ -183,7 +183,8 @@ def _cases():
         add(Case(f"delay {t} FDBK", 26, [(88, v), (89, 64)], additive=True, page="DELAY",
                  skip={"jump"} if t != "DIG" else ()))   # (ANA / TAPE from ~115: the drone builds up, MANUAL)
         add(Case(f"delay {t} TONE", 27, [(88, v), (89, 64)], additive=True, page="DELAY"))
-    add(Case("delay EFFECT", 88, [(89, 64)], kind="select", statics=[16, 48, 80, 112], additive=True, page="DELAY"))
+    add(Case("delay EFFECT", 88, [(89, 64)], kind="select", statics=[16, 48, 80, 112], additive=True, page="DELAY",
+             skip={"jump", "trans"}))   # (to / from TAPE: the old type fades out, then the new in: tests/py/test_control_sweep.py)
     # REVERB and REVERB 2: each type, SIZE AUTO and fixed
     for t, v in (("HALL", 40), ("PLATE", 70), ("INF", 110)):
         for zs, z in (("auto", 0), ("size64", 64)):

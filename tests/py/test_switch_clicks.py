@@ -67,6 +67,9 @@ CASES = {
     "trem-wah": (cc(18, 127, 30) + cc(21, 127, 31) + cc(17, 64, 32), cc(17, 127)),
     "wah-trem": (cc(18, 127, 30) + cc(21, 127, 31) + cc(17, 127, 32), cc(17, 64)),
     "pan-wah": (cc(18, 127, 30) + cc(21, 0, 31) + cc(17, 64, 32), cc(17, 127)),
+    # #17 DELAY EFFECT DIG <-> ANA under ringing echoes: the tone, the softclip and the wow in one sample (14x)
+    "delay-ana-dig": (cc(89, 100, 30) + cc(26, 90, 31) + cc(90, 30, 32) + cc(88, 80, 33), cc(88, 48)),
+    "delay-dig-ana": (cc(89, 100, 30) + cc(26, 90, 31) + cc(90, 30, 32) + cc(88, 48, 33), cc(88, 80)),
     # #9 LEVEL in one step (48x)
     "level-64-0": ([], cc(110, 0)),
 }

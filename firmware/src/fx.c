@@ -1064,6 +1064,10 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
 static uint32_t dly_clrn = DLY_CLR;            /* the clearing's share a block: DLY_CLR (CC 10), DLY_CLR / 4 (a tail's end) */
 static uint32_t dly_qz;                         /* the send off: samples in a row the line was written within +-1 of 0 */
 static uint8_t dly_lc = 1;                      /* the line is clean (all 0, or being cleared: dly_rst) */
+static uint8_t dly_xo;                          /* DIG <-> ANA with echoes ringing (0.9.6, BUGHUNT #17: the tone, the
+                                                 * softclip and the wow switched in one sample, ANA -> DIG 14x a ringing
+                                                 * echo's d2): dly_fade crossfades the two (tape 2 / 3: what ANA adds
+                                                 * glides in or out over 46 ms); 1 while it runs */
 static uint8_t dly_ana;                         /* the old loops last ran ANA: its tail (OFF) runs ANA's loop (0.9.5: the
                                                  * DIG loop took over at OFF, its tone and the softclip changed at once:
                                                  * a kink in the echo one delay time later, 24x a steady one's) */
@@ -1108,6 +1112,10 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
     if (last) sw = dly_son;                                 /* the old EFFECT once more, its send ramped to 0 (sg16) */
     dly_son = (uint8_t)fx_p[FXP_DL_SW];
     if (sw) dly_qz = 0;
+    if ((sw == 1 || sw == 2) && dly_ana != (sw == 2) && (dly_lp || dly_hp) && dly_cur != 3 && dly_xg == 32768) {
+        if (!dly_xo) dly_xm = dly_ana ? 32768 : 0;      /* (from the type that ran; a turn back mid-way: from where it is) */
+        dly_xo = 1;
+    }
     if (sw == 1 || sw == 2) dly_ana = sw == 2;
     if (sw == 2 || (!sw && dly_ana)) col = (col * 19661) >> 15;   /* tape: darker (ANA's tail too) */
     while (target >= (int32_t)DLY_LEN - 2) target >>= 1;
@@ -1148,6 +1156,13 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
         if (tg == 0 && dly_sg < 4) dly_sg = 0;
     }
     sg16 = last ? 0 : exp2_q16(dly_sg);
+    if (dly_xo) {                                           /* DIG <-> ANA: the crossfade (dly_fade, tape 2 / 3) */
+        dly_fade(L, R, n, dly_ana ? 2 : 3, sw ? -1 : 0, sg16, target, 2000 + fx_p[FXP_DL_TONE] * 240, fb, wet,
+                 sw ? 32768 - depth * depth : 32768, 0);
+        if (dly_xm == (dly_ana ? 32768 : 0)) dly_xo = 0;
+        dly_wk = wet;
+        return;
+    }
     if (sw == 3 || dly_cur == 3 || dly_xg != 32768) {      /* TAPE, or a switch to / from it (dly_tape.c) */
         if (tp_route(L, R, n, sw, target, sg16, fb, wet, depth)) { dly_wk = wet; return; }
     } else dly_last = (uint8_t)sw;                          /* (what a switch to TAPE fades out) */

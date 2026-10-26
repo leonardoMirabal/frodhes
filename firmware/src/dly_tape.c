@@ -182,7 +182,11 @@ static void tp_reset(void)                              /* developer CC 10: the 
 
 /* DIG / ANA (tape = 0 / 1, runtime) fading: dly_loop's arithmetic sample for sample (fx.c), the echo read times g
  * (dly_xg, to gt by gs per sample): heard and fed back. Runs only in the blocks around a switch to / from TAPE, so the
- * old loops keep their code (a block-wise step of the mix was a click: 10x the second difference, host) */
+ * old loops keep their code (a block-wise step of the mix was a click: 10x the second difference, host).
+ * tape = 2 / 3: DIG -> ANA / ANA -> DIG under ringing echoes (0.9.6, BUGHUNT #17): ANA's share a (dly_xm, Q15) moves
+ * TP_FADE a sample and blends what ANA adds: the wow and flutter's depth, the darker tone (col: DIG's), the softclip;
+ * the delay time slews as the type with the larger share. At a = 0 / 32768 the integers are DIG's / ANA's */
+static int32_t dly_xm;
 __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t n, int tape, int32_t msk,
                                                int32_t sg16, int32_t target, int32_t col, int32_t fb, int32_t wet,
                                                int32_t dgt, int32_t gs)
@@ -190,18 +194,22 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
     uint32_t w = dly_w, wow = dly_wow, flt = dly_flt, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;
     int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg, g = dly_xg;
     int32_t kq = dly_sgk << 8, dk = n ? ((sg16 - dly_sgk) << 8) / (int32_t)n : 0;
+    int32_t a = tape == 0 ? 0 : tape == 1 ? 32768 : dly_xm, da = tape == 2 ? TP_FADE : tape == 3 ? -TP_FADE : 0;
+    int32_t cd = tape >= 2 ? ((col * 19661) >> 15) - col : 0, c0 = col;
     for (j = 0; j < n; j++) {
         int32_t d, r, in = ((L[j] + R[j]) >> 1) & msk, f;
         uint32_t i;
         kq += dk;
         in = (int32_t)(((int64_t)in * (kq >> 8)) >> 16);
-        if (tape) {
+        a = PH_CL(a + da, 0, 32768);
+        col = c0 + (int32_t)(((int64_t)cd * a) >> 15);
+        if (a) {
             int32_t sf;
-            dd += (target - dd) >> 12;
+            if (a >= 16384) dd += (target - dd) >> 12; else dd += PH_CL(target - dd, -256, 256);
             wow += 69000u; flt += 690000u;
             sf = osc_sine(flt);
             sf = (sf + (int32_t)((uint32_t)sf >> 31)) >> 1;
-            d = dd + (int32_t)(((int64_t)dd * (osc_sine(wow) * 3 + sf)) >> 25);
+            d = dd + (int32_t)(((((int64_t)dd * (osc_sine(wow) * 3 + sf)) >> 25) * a) >> 15);
         } else {
             dd += PH_CL(target - dd, -256, 256);
             d = dd;
@@ -218,7 +226,8 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
         g = PH_CL(g + gs, 0, 32768);
         r = (int32_t)(((int64_t)r * g) >> 15);
         lp += (int32_t)(((int64_t)(r - lp) * col) >> 15);
-        f = tape ? softclip(lp) : lp;
+        f = lp;
+        if (a) f += (int32_t)(((int64_t)(softclip(lp) - lp) * a) >> 15);
         hp += (f - hp + 64) >> 7;
         f -= hp;
         dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + (int32_t)(((int64_t)f * fb) >> 15), -32768, 32767);
@@ -228,7 +237,7 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
     }
     dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg; dly_sgk = msk ? sg16 : 0;
-    dly_xg = g;
+    dly_xg = g; dly_xm = a;
 }
 
 /* fx_delay_t's router: 1 = this block is done here, 0 = the old loops run it as always. dly_cur: 3 while TAPE owns
