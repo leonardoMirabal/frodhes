@@ -14,6 +14,12 @@ let M = null, ctx = null, node = null, keysDown = 0, keysHeld = new Set();
 function $(id) { return document.getElementById(id); }
 function status(t) { $("status").textContent = t; }
 
+// ---- the version (web/build.sh writes version.js: the release tag's X.Y.Z, or "dev" for a local build)
+const VERSION = (typeof window.FRODHES_VERSION === "string" && window.FRODHES_VERSION) || "dev";
+$("ver").textContent = VERSION;
+$("ver-foot").textContent = VERSION;
+document.title = `Frodhes ${VERSION} emulator`;
+
 // ---- the module (Emscripten, MODULARIZE off: a global Module)
 var Module = window.Module = {
   onRuntimeInitialized() {
@@ -22,7 +28,7 @@ var Module = window.Module = {
       const s = localStorage.getItem(STORE_KEY);
       if (s) {
         const b = Uint8Array.from(atob(s), c => c.charCodeAt(0));
-        M.HEAPU8.set(b.subarray(0, 260), M._web_store());
+        M.HEAPU8.set(b.subarray(0, Math.min(b.length, M._web_store_n())), M._web_store());   // (an older page's: 260 B)
       }
     } catch (e) { /* private window: no storage */ }
     M._web_master(master);
@@ -65,7 +71,7 @@ function frame() {
   captions(led[10] === 1);                           // the ARP light: the arpeggiator on
   if (M._web_store_take_dirty()) {
     try {
-      const b = new Uint8Array(M.HEAPU8.buffer, M._web_store(), 260);
+      const b = new Uint8Array(M.HEAPU8.buffer, M._web_store(), M._web_store_n());
       localStorage.setItem(STORE_KEY, btoa(String.fromCharCode(...b)));
     } catch (e) { }
   }
