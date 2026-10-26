@@ -40,7 +40,14 @@ static void app_main(void) {}
 #include "tail.inc"
 
 static int32_t ref_out[HALF_WORDS], ref_tap[HALF_WORDS];
-static void reference_tail(int32_t mq, int pre)   /* the tail as it was: three passes over the block */
+/* the tail as it was: three passes over the block; a MASTER new since the last block (prev, -1: none) ramps from
+ * prev frame by frame (0.9.6, BUGHUNT #20: platform.c master_ramp, Q8: the frame f's gain (prev 256 + (f + 1)(mq -
+ * prev)) >> 8, mq at the last frame) */
+static int32_t ref_gain(int32_t mq, int32_t prev, uint32_t f)
+{
+    return prev < 0 || prev == mq ? mq : ((prev << 8) + (int32_t)(f + 1u) * (mq - prev)) >> 8;
+}
+static void reference_tail(int32_t mq, int32_t prev, int pre)
 {
     int32_t o[HALF_WORDS];
     uint32_t i, b, k = 0;
@@ -52,10 +59,10 @@ static void reference_tail(int32_t mq, int pre)   /* the tail as it was: three p
         for (b = 0; b < HALF_FRAMES; b += 32u, k += 64u)
             memcpy(ref_tap + k, o + 2u * b, 64u * sizeof o[0]);
         for (i = 0; i < HALF_WORDS; i++)
-            o[i] = (o[i] * mq) >> 12;
+            o[i] = (o[i] * ref_gain(mq, prev, i / 2u)) >> 12;
     } else {
         for (i = 0; i < HALF_WORDS; i++) {
-            int32_t v = (o[i] * mq) >> 12;
+            int32_t v = (o[i] * ref_gain(mq, prev, i / 2u)) >> 12;
             o[i] = v > 32767 ? 32767 : v < -32767 ? -32767 : v;
         }
         for (b = 0; b < HALF_FRAMES; b += 32u, k += 64u)
@@ -70,6 +77,7 @@ int main(void)
 {
     static const int32_t MQ[] = {0, 1, 2, 255, 2048, 4087, 4088};
     uint32_t seed = 1u, t, i, bad_out = 0, bad_tap = 0, runs = 0;
+    int32_t prev = -1;                                    /* (the MASTER of the block before: platform.c keeps it) */
     int pre;
     for (t = 0; t < 400u; t++)
         for (pre = 0; pre < 2; pre++) {
@@ -88,7 +96,8 @@ int main(void)
             for (i = 0; i < 2u * HALF_WORDS; i++) abuf[i] = (int32_t)(0xA5A5A5A5u ^ i);   /* (APP_OUT_WRITTEN) */
             tapped_n = 0;
             fm1_alnk0_irq();
-            reference_tail(mq, pre);
+            reference_tail(mq, prev, pre);
+            prev = mq;
             if (memcmp(abuf + HALF_WORDS, ref_out, sizeof ref_out)) bad_out++;
             if (tapped_n != HALF_WORDS || memcmp(tapped, ref_tap, sizeof ref_tap)) bad_tap++;
             runs++;

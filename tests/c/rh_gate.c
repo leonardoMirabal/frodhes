@@ -18,7 +18,7 @@ static void knobs(int type, int bark, int bell, int tone, int ham, int decay, in
     rh_bark_s = (int32_t)KN_P64[bark]; rh_bark_g = (int32_t)KN_P64I(bark);
     rh_bell = (int32_t)KN_P32(bell);
     rh_tone_off = (tone - 64) * (1 << 18);
-    rh_ham = (int32_t)KN_HAM[ham];
+    rh_ham = (int32_t)KN_HAM(ham);
     rh_k_decay = (int32_t)DECAY_K[decay]; rh_k_rel = (int32_t)DECAY_K[rel];
 }
 

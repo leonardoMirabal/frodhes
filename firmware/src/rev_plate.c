@@ -34,18 +34,19 @@
 
 /* The cost, instructions per control block (16 half-rate samples; compiled pi32v2 -Os, build/frodhes.dis, every
  * instruction outside the loops counted as run once: an upper bound):
- *   pl_in        62 x 16 (+ 25)           1017   the bandwidth one-pole + the 4 input allpasses
+ *   pl_in        67 x 16 (+ 25)           1097   the bandwidth one-pole + the 4 input allpasses (62 before 0.9.6's
+ *                                                 64-bit one-pole, BUGHUNT #22: + 80)
  *   pl_half x 2  (38 + 32) x 16 (+ 43)    2326   the tank's two halves
  *   pl_taps      16 x 16 (+ 10)            266   the 7 left taps
  *   pl_taps_ms   34 x 16 (+ 17)            561   the 7 right taps, mid / side (31 before rev-upsample's mid / side
  *                                                 history ahead of the block: +48, ~2 us, inside REV_US_PLATE)
  *   rev_plate_run: the pointers 25 x 4 + 10 x 22 + 11 x 8, the guard copies 2 x 27, the rest 317     779
- *   = 4901 at rest; at worst + a SIZE step's 3 delays 87 + the decay gain 40 + the warm-up's checked reads (the
- *   first 0.15 s after a start) 132 + a wrapped write's copy 81 = 5241.
+ *   = 4981 at rest; at worst + a SIZE step's 3 delays 87 + the decay gain 40 + the warm-up's checked reads (the
+ *   first 0.15 s after a start) 132 + a wrapped write's copy 81 = 5321.
  * HALL (fx.c rev_hall, its own decimator and DC blocker included), counted the same way: 5644 at rest, 5864 with its
- * gains made anew (DECAY moving); PLATE + the framework's decimator (rev_dec, ~372): 5273 at rest, 5613 at worst,
- * 4-7 % under HALL. In us: HALL's kernel share is REV_US_HALL (210, from the FM-1's measured 260 for the whole
- * reverb); PLATE + rev_dec at 5613 / 5864 of it = 201 -> REV_US_PLATE 191 -> 200 (+ REV_US_DEC 10). (The rule of
+ * gains made anew (DECAY moving); PLATE + the framework's decimator (rev_dec, ~372): 5353 at rest, 5693 at worst,
+ * 3-6 % under HALL. In us: HALL's kernel share is REV_US_HALL (210, from the FM-1's measured 260 for the whole
+ * reverb); PLATE + rev_dec at 5693 / 5864 of it = 204 -> REV_US_PLATE 194 -> 200 (+ REV_US_DEC 10). (The rule of
  * thumb, 0.8 us per instruction per half-rate sample, reads both ~1.3x high against the FM-1: 262 us for 5241.) */
 #ifndef FR_RAM
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */

@@ -47,6 +47,8 @@ def test_every_cc79_selector_is_stable():
         for dp, _, fs in os.walk(os.path.join(ROOT, d)):
             if "node_modules" in dp or "dist" in dp.split(os.sep):
                 continue
+            if dp.endswith(os.path.join("tests", "py", "monkey")):   # (the monkey's shrunk repros: its random
+                continue                                              # streams play any value, on purpose)
             for f in fs:
                 if not f.endswith((".py", ".txt", ".js")) or f == os.path.basename(__file__):
                     continue

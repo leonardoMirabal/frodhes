@@ -476,7 +476,7 @@ static void host_ms(void)
             {
                 static uint8_t clk_n[2];        /* (usb.c / midi_uart.c: the pulses counted, a dropped one too) */
                 uint32_t sv = e->kind == EV_TRS, stamp;
-                if (e->st == 0xF8u) clk_n[sv]++;
+                if (e->st == 0xF8u) clk_n[sv] = (uint8_t)(clk_n[sv] + 1u);   /* (wraps on purpose: 4 bits are stamped) */
                 stamp = (fm1_ms & 0xFFFu) | (clk_n[sv] & 15u) << 12;
                 if (mq_w - mq_r >= 64u) break;  /* (the ring is full: dropped, as usb.c / midi_uart.c do) */
                 mq[mq_w % 64u][0] = e->st; mq[mq_w % 64u][1] = e->d1; mq[mq_w % 64u][2] = e->d2;

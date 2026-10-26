@@ -339,7 +339,9 @@ def run(text, binary=BIN, flash=None, timeout=120):
         base = os.path.join(d, "r")
         with open(base + ".txt", "w") as f:
             f.write(text)
-        env = dict(os.environ, ASAN_OPTIONS="detect_leaks=0", UBSAN_OPTIONS="print_stacktrace=1")
+        # (symbolize=0: the report's file:line is compiled in; macOS' atos, the symbolizer, can hang for good and the
+        # run then reads as a host hang: the sanitized seeds and the wrap self-test timed out on mix-fix2)
+        env = dict(os.environ, ASAN_OPTIONS="detect_leaks=0:symbolize=0", UBSAN_OPTIONS="print_stacktrace=1:symbolize=0")
         env.pop("FRODHES_FLASH", None)
         if flash:
             env["FRODHES_FLASH"] = flash

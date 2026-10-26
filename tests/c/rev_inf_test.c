@@ -16,7 +16,7 @@
 #define HL_NC (CTL / 2u)
 /* fx.c (verbatim) */
 static inline __attribute__((always_inline)) int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
-static inline int32_t osc_sine(uint32_t ph)               /* Q32 phase -> +-32767 */
+static inline __attribute__((always_inline)) int32_t osc_sine(uint32_t ph)   /* Q32 phase -> +-32767 */
 {
     uint32_t i = ph >> 22;
     int32_t f = (int32_t)((ph >> 7) & 0x7FFFu);
