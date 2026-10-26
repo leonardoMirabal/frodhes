@@ -16,6 +16,7 @@ import hil_monkey as hm  # noqa: E402
 
 
 def test_dry_run_plans_and_checks_every_message(capsys):
+    pytest.importorskip("mido")                         # (the dry run checks every message with mido; CI has none)
     assert hm.main(["--dry-run", "--minutes", "1"]) == 0
     out = capsys.readouterr().out
     assert "every message valid" in out and "no MIDI or audio opened" in out
