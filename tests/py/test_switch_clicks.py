@@ -54,8 +54,8 @@ CASES = {
     # #5 DRIVE AMOUNT to 0 and back (were 23-51x)
     "drive-fdrv-1-0": (cc(84, 127) + cc(81, 1, 30) + cc(83, 127, 31), cc(81, 0)),
     "drive-fdrv-20-0": (cc(84, 127) + cc(81, 20, 30), cc(81, 0)),
-    "drive-khlon-20-0": (cc(84, 64) + cc(81, 20, 30), cc(81, 0)),
-    "drive-tsh8-0-30": (cc(84, 76) + cc(81, 0, 30), cc(81, 30)),
+    "drive-khlon-20-0": (cc(84, 69) + cc(81, 20, 30), cc(81, 0)),
+    "drive-tsh8-0-30": (cc(84, 81) + cc(81, 0, 30), cc(81, 30)),
     # #6 the compressor on / off (a gain step: 8-14x, +2.8 dB in 0.36 ms)
     "comp-on": (cc(107, 64, 30) + cc(113, 15, 31), cc(106, 127)),
     "comp-off": (cc(107, 64, 30) + cc(113, 15, 31) + cc(106, 127, 32), cc(106, 0)),

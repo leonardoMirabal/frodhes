@@ -282,6 +282,13 @@ static __attribute__((noinline)) void fx_filter(int32_t *m, uint32_t n)
 #define DR_TA 7700                                      /* the shelf's one-pole: 1 - e^(-2 pi 1.8 kHz / fs), Q15 */
 static const int16_t DR_S[4] = {16, 20, 14, 24}, DR_BIAS[4] = {2400, 2400, 1800, 3200}, DR_MU[4] = {4096, 4096, 4300, 3700};
 static int32_t dr_hp, dr_lp1, dr_lp2;
+static int32_t dr_gl = -1, dr_kl, dr_ml, dr_dl;        /* FDRV's gain, its low-pass and make-up the last block ran with
+                                                        * (-1: none), and its AMOUNT: AMOUNT moved, it glides (at most
+                                                        * DR_DSTEP a block) and they ramp over the block (0.9.6, #5:
+                                                        * they stepped once a block, a zipper of 2.7x the held ones';
+                                                        * the gain and the make-up ramped apart over a big step were
+                                                        * +4.8 dB: the make-up matches the gain per AMOUNT only) */
+#define DR_DSTEP 4
 static int32_t dr_w = 32768, dr_tg = 4096, dr_tlp;      /* the wet share (Q15), the shelf's high gain (Q12), its low-pass */
 static uint8_t dr_ton;                                  /* the shelf runs (its gain is not 1, or on its way) */
 /* TONE and MIX settled (0.9.5): the gliding loop below with its glides at rest, so each sample does what that loop
@@ -317,11 +324,14 @@ static void fx_drive_classic(int32_t *m, uint32_t n, int32_t sw)   /* FDRV; sw: 
     int32_t d = fx_p[FXP_DRIVE], row = fx_p[FXP_DRIVE_ROW] & 3, g, k, mk, bias, b0, tv = fx_p[FXP_DRV_TONE], mv = fx_p[FXP_DRV_MIX];
     int32_t wt = !sw ? 0 : mv >= 127 ? 32768 : mv * 258;          /* the wet share it goes to */
     int32_t tt = tv >= 64 ? 4096 + (((tv - 64) * 4161) >> 6) : tv * 64;         /* the shelf's gain: 0 .. 1 .. 2 (Q12) */
+    int32_t gq = -1, kq = 0, mq = 0, dgq = 0, dkq = 0, dmq = 0;   /* (gq >= 0: the ramp, Q8) */
     uint32_t i;
     if (!d) { wt = 0; d = 1; }                          /* AMOUNT 0: off, faded out at AMOUNT 1's settings (it cut
                                                         * to dry in one sample: AMOUNT 1 is not the dry signal, the
                                                         * high-pass, the bias and the make-up still act; the bug hunt) */
-    if (!wt && !dr_w) { dr_ton = 0; dr_tg = 4096; return; }   /* off, or MIX 0: the dry signal, untouched */
+    if (!wt && !dr_w) { dr_ton = 0; dr_tg = 4096; dr_gl = -1; return; }   /* off, or MIX 0: the dry signal, untouched */
+    if (dr_gl >= 0 && d != dr_dl) d = dr_dl + clampi(d - dr_dl, -DR_DSTEP, DR_DSTEP);
+    dr_dl = d;
     g = 4096 + ((d * d * 2 * DR_S[row]) >> 4);
     if (d > 16) g = 4096 + (int32_t)((((int64_t)(g - 4096)) * (95 + d)) / 111);   /* above 16 the gain rises to ~18x
                                                        * at the top (was ~9x: a single note never reached the knee, TODO #4;
@@ -337,7 +347,12 @@ static void fx_drive_classic(int32_t *m, uint32_t n, int32_t sw)   /* FDRV; sw: 
      * but its result fits 32 bits (<= 5.67e6 + 3200), so softclip's own 32-bit clamp to +-4 is the whole clamp (it was
      * a second, 64-bit one before it: the same value) */
     if (tt > 8192) tt = 8192;
-    if (wt == 32768 && dr_w == 32768 && tt == 4096 && !dr_ton) {   /* the defaults: the loop before the page */
+    if (dr_gl >= 0 && (dr_gl != g || dr_kl != k || dr_ml != mk)) {   /* AMOUNT moved: the ramp, below */
+        gq = dr_gl << 8; kq = dr_kl << 8; mq = dr_ml << 8;
+        dgq = ((g - dr_gl) << 8) / (int32_t)n; dkq = ((k - dr_kl) << 8) / (int32_t)n; dmq = ((mk - dr_ml) << 8) / (int32_t)n;
+    }
+    dr_gl = g; dr_kl = k; dr_ml = mk;
+    if (gq < 0 && wt == 32768 && dr_w == 32768 && tt == 4096 && !dr_ton) {   /* the defaults: the loop before the page */
         int32_t hp = dr_hp, lp1 = dr_lp1, lp2 = dr_lp2, *e = m + n;   /* (0.9.5: the state in locals) */
         for (; m < e; m++) {
             int32_t x = *m, y;
@@ -351,15 +366,18 @@ static void fx_drive_classic(int32_t *m, uint32_t n, int32_t sw)   /* FDRV; sw: 
         dr_hp = hp; dr_lp1 = lp1; dr_lp2 = lp2;
         return;
     }
-    if (dr_tg == tt && dr_w == wt && (dr_ton ? tt != 4096 : tt == 4096)) {   /* settled: the glides at rest, the
+    if (gq < 0 && dr_tg == tt && dr_w == wt && (dr_ton ? tt != 4096 : tt == 4096)) {   /* settled: the glides at rest, the
                                                         * shelf running (and staying on) or resting (dr_tg 4096) */
         if (!dr_ton) dr_settled(m, n, g, k, mk, bias, b0, tt, wt, 0, 0);   /* (MIX alone: all wet is the defaults) */
         else if (wt == 32768) dr_settled(m, n, g, k, mk, bias, b0, tt, wt, 1, 1);
         else dr_settled(m, n, g, k, mk, bias, b0, tt, wt, 1, 0);
         return;
     }
+    if (gq < 0) { gq = g << 8; kq = k << 8; mq = mk << 8; }   /* (no ramp: the steps are 0) */
     for (i = 0; i < n; i++) {
         int32_t x0 = m[i], x, y;
+        gq += dgq; kq += dkq; mq += dmq;
+        g = gq >> 8; k = kq >> 8; mk = mq >> 8;
         dr_hp += (x0 - dr_hp + 64) >> 7;
         x = dr_cl(x0 - dr_hp);
         y = softclip((int32_t)(((int64_t)(x >> 2) * g) >> 10) + bias) - b0;

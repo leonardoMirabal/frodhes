@@ -175,12 +175,18 @@ def test_the_detector_catches_a_mode_change_without_the_dip(scan):
 
 def test_khlon_mode_change_dips_through_dry(scan):
     """AMOUNT 125 -> 126 while the chord sounds: a block fading to the dry signal, a block of dry (the new mode
-    starting from rest under it), a block fading in; the dry block is the input bit for bit"""
+    starting from rest under it), a block fading in; the dry block is the input at the wet's level (0.9.6, #5: x g
+    in Q12, g the wet / dry RMS ratio of the first dip block, 1/4 .. 4; the plain dry was a 3.9 dB level jump),
+    bit for bit"""
     x = chord(80 * 256, 1.5)
     y, _, _ = ds.render(scan, x, p("KHLON", 125, 64), [(40, "DRIVE", 126)])
     i = 40 * 256
     assert not np.array_equal(y[i:i + 256], x[i:i + 256])
-    assert np.array_equal(y[i + 256:i + 512], x[i + 256:i + 512])
+    d, o = x[i + 256:i + 512].astype(np.int64), y[i + 256:i + 512].astype(np.int64)
+    g0 = int(round(4096 * np.sqrt(np.mean(o.astype(float) ** 2) / np.mean(d.astype(float) ** 2))))
+    assert any(np.array_equal(o, (d * g) >> 12) for g in range(max(1024, g0 - 64), min(16384, g0 + 64) + 1))
+    w = y[i - 512:i].astype(float)
+    assert abs(20 * np.log10(np.sqrt(np.mean(o.astype(float) ** 2) / np.mean(w ** 2)))) < 1.5   # (the wet's level)
     assert not np.array_equal(y[i + 768:i + 1024], x[i + 768:i + 1024])
 
 

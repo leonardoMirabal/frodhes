@@ -297,22 +297,45 @@ KH_FN void kh_post_pass(int32_t *u, uint32_t n)
  * (up: fading in) or n - 1..0 (fading out) a sample (a block of DRV_BLK = 256 ends at 0 or 1; a smooth ramp: one
  * stepped every 4 samples is heard as highs by the click test), the product 32-bit (|POST(u) - dry| < 2^23). The
  * same pass whatever the clipper (plain or anti-aliased): a fade block costs POST + the blend, two samples a pass. */
+/* the dip's dry at the wet's level (0.9.6, #5: the wet and the dry differ by a few dB, so the 17 ms dip through the
+ * plain dry was a level jump of 3.9 dB in the control sweep's windows): the dry x kh_dg (Q12, 1/4 .. 4), the RMS
+ * ratio of the wet to the dry over the dip's first block (every 4th sample), taken there (a square root of each, then a
+ * 32-bit divide) */
+static DRV_BSS int32_t kh_dg;
+static uint32_t kh_isqrt(uint64_t v)              /* floor(sqrt(v)), bit by bit (no divide) */
+{
+    uint64_t r = 0, b = (uint64_t)1 << 62;
+    while (b > v) b >>= 2;
+    while (b) { if (v >= r + b) { v -= r + b; r = (r >> 1) + b; } else r >>= 1; b >>= 2; }
+    return (uint32_t)r;
+}
+static void kh_dip_gain(const int32_t *dry, const int32_t *y, uint32_t n)
+{
+    uint64_t ew = 0, ed = 0;
+    uint32_t i, rw, rd;
+    for (i = 0; i < n; i += 4u) { ew += (uint64_t)((int64_t)y[i] * y[i]); ed += (uint64_t)((int64_t)dry[i] * dry[i]); }   /* (every 4th sample: the CPU of a dip block) */
+    rw = kh_isqrt(ew); rd = kh_isqrt(ed);
+    while (rw >= (1u << 18) || rd >= (1u << 18)) { rw >>= 1; rd >>= 1; }
+    kh_dg = !rd ? 4096 : (int32_t)((rw << 12) / rd);
+    kh_dg = kh_dg < 1024 ? 1024 : kh_dg > 16384 ? 16384 : kh_dg;
+}
+static inline int32_t kh_dry(int32_t d) { return (int32_t)(((int64_t)d * kh_dg) >> 12); }
 KH_FN void kh_fade_pass(const int32_t *dry, const int32_t *y, int32_t *out, uint32_t n, int32_t w, int32_t dw)
 {
     const int32_t *e = dry + (n & ~1u);
     while (dry < e) {
-        int32_t d0 = dry[0], d1 = dry[1];
+        int32_t d0 = kh_dry(dry[0]), d1 = kh_dry(dry[1]);
         out[0] = d0 + (((y[0] - d0) * w) >> 8);
         out[1] = d1 + (((y[1] - d1) * (w + dw)) >> 8);
         dry += 2; y += 2; out += 2; w += 2 * dw;
     }
-    if (n & 1u) out[0] = dry[0] + (((y[0] - dry[0]) * w) >> 8);
+    if (n & 1u) out[0] = kh_dry(dry[0]) + (((y[0] - kh_dry(dry[0])) * w) >> 8);
 }
 static void kh_fade(const int32_t *in, int32_t *u, int32_t *out, uint32_t n, uint32_t up)
 {
     kh_post_pass(u, n);
     if (up) kh_fade_pass(in, u, out, n, 1, 1);
-    else kh_fade_pass(in, u, out, n, (int32_t)n - 1, -1);
+    else { kh_dip_gain(in, u, n); kh_fade_pass(in, u, out, n, (int32_t)n - 1, -1); }
 }
 
 /* the wet signal of the block, in -> out (out may be in); n >= 3 */
@@ -378,8 +401,9 @@ static void drv_khlon_run(const int32_t *in, int32_t *out, uint32_t n, const drv
     else {
         if (ph != 2) kh_fade(in, u, out, n, ph == 3);
         else {
+            uint32_t i;
             kh_post_pass(u, n);
-            if (out != in) memcpy(out, in, n * sizeof *in);
+            for (i = 0; i < n; i++) out[i] = kh_dry(in[i]);   /* (the dry at the wet's level) */
         }
         ph = ph < 3u ? ph + 1u : 0u;
     }
