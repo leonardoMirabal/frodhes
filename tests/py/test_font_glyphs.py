@@ -178,3 +178,20 @@ def test_host_draws_no_missing_glyph(board):
     fold = {c.upper() for c in aa}
     assert got["S"] <= aa, f"drawn but not found by tools/font_chars.py: {sorted(got['S'] - aa)}"
     assert got["L"] <= fold, f"drawn large but not found by tools/font_chars.py: {sorted(got['L'] - fold)}"
+
+
+@pytest.mark.parametrize("hdr,args", [("aa_font.h", ["--preset", "inter-tight"]), ("aa_font_v24.h", ["--value-px", "24"]),
+                                      ("aa_font_v25.h", ["--value-px", "25"])])
+def test_aa_headers_as_generated_and_huffman_coded(tmp_path, hdr, args):
+    """0.9.6 (flash): the small face is Huffman-coded like the value faces (1.2 KB less). The committed headers are
+    what gen_aa_font.py writes today, and no face of the image is stored raw (no AA_RAW_FACES: aatext.c's 2 px per
+    byte path stays out of the build); the host screens draw the same as the raw face (checked once, 145 screens)"""
+    import subprocess
+    out = tmp_path / hdr
+    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "gen_aa_font.py"), str(out)] + args, check=True,
+                   capture_output=True)
+    assert out.read_text() == read(hdr), f"firmware/gen/{hdr} is not what gen_aa_font.py writes: regenerate it"
+    text = read(hdr)
+    assert "AA_RAW_FACES" not in text, f"{hdr}: a face stored raw"
+    for m in re.finditer(r"static const aafont_t (AF_\w+) = \{(.*?)\};", text):
+        assert "_HC" in m.group(2), f"{m.group(1)} is not Huffman-coded"
