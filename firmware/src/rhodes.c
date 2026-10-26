@@ -1136,8 +1136,9 @@ typedef struct { int32_t st[3][5], ss[3][5], buf[256], sbuf[256]; uint8_t n, ty,
 static rh_txf_t rh_txf RH_SP_SEC(".bss.rh_txf");
 static int rh_chain_zero(void)
 {
+    const int32_t *a = &rh_st[0][0], *b = &sd_st[0][0];   /* (flat: 15 each) */
     uint32_t i, z = 0;
-    for (i = 0; i < 15u; i++) z |= (uint32_t)(rh_st[0][i] | sd_st[0][i]);
+    for (i = 0; i < 15u; i++) z |= (uint32_t)(a[i] | b[i]);
     return z == 0;
 }
 static uint32_t rh_txf_type(void)                         /* the TYPE the filters run this block */
