@@ -299,25 +299,20 @@ KH_FN void kh_post_pass(int32_t *u, uint32_t n)
  * same pass whatever the clipper (plain or anti-aliased): a fade block costs POST + the blend, two samples a pass. */
 /* the dip's dry at the wet's level (0.9.6, #5: the wet and the dry differ by a few dB, so the 17 ms dip through the
  * plain dry was a level jump of 3.9 dB in the control sweep's windows): the dry x kh_dg (Q12, 1/4 .. 4), the RMS
- * ratio of the wet to the dry over the dip's first block (every 4th sample), taken there (a square root of each, then a
- * 32-bit divide) */
+ * ratio of the wet to the dry over the dip's first block (every 4th sample), taken there (in log2: fx.c log2_q12 /
+ * exp2_q16, no square root or divide) */
 static DRV_BSS int32_t kh_dg;
-static uint32_t kh_isqrt(uint64_t v)              /* floor(sqrt(v)), bit by bit (no divide) */
-{
-    uint64_t r = 0, b = (uint64_t)1 << 62;
-    while (b > v) b >>= 2;
-    while (b) { if (v >= r + b) { v -= r + b; r = (r >> 1) + b; } else r >>= 1; b >>= 2; }
-    return (uint32_t)r;
-}
+static int32_t log2_q12(uint32_t x);
+static int32_t exp2_q16(int32_t g);
 static void kh_dip_gain(const int32_t *dry, const int32_t *y, uint32_t n)
 {
-    uint64_t ew = 0, ed = 0;
-    uint32_t i, rw, rd;
+    uint64_t ew = 1, ed = 1;
+    uint32_t i;
+    int32_t g;
     for (i = 0; i < n; i += 4u) { ew += (uint64_t)((int64_t)y[i] * y[i]); ed += (uint64_t)((int64_t)dry[i] * dry[i]); }   /* (every 4th sample: the CPU of a dip block) */
-    rw = kh_isqrt(ew); rd = kh_isqrt(ed);
-    while (rw >= (1u << 18) || rd >= (1u << 18)) { rw >>= 1; rd >>= 1; }
-    kh_dg = !rd ? 4096 : (int32_t)((rw << 12) / rd);
-    kh_dg = kh_dg < 1024 ? 1024 : kh_dg > 16384 ? 16384 : kh_dg;
+    while ((ew | ed) >> 32) { ew >>= 1; ed >>= 1; }
+    g = (log2_q12((uint32_t)ew) - log2_q12((uint32_t)ed)) >> 1;   /* log2 of the RMS ratio, Q12 */
+    kh_dg = exp2_q16(g < -8192 ? -8192 : g > 8192 ? 8192 : g) >> 4;           /* x 1/4 .. 4, Q12 */
 }
 static inline int32_t kh_dry(int32_t d) { return (int32_t)(((int64_t)d * kh_dg) >> 12); }
 KH_FN void kh_fade_pass(const int32_t *dry, const int32_t *y, int32_t *out, uint32_t n, int32_t w, int32_t dw)

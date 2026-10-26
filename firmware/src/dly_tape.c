@@ -196,6 +196,7 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
     int32_t kq = dly_sgk << 8, dk = n ? ((sg16 - dly_sgk) << 8) / (int32_t)n : 0;
     int32_t a = tape == 0 ? 0 : tape == 1 ? 32768 : dly_xm, da = tape == 2 ? TP_FADE : tape == 3 ? -TP_FADE : 0;
     int32_t cd = tape >= 2 ? ((col * 19661) >> 15) - col : 0, c0 = col;
+    int32_t wq = dly_wk << 8, ws = DLY_WSTEP(dly_wk, wet, n);   /* the echo's gain: a ramp from the last block's */
     for (j = 0; j < n; j++) {
         int32_t d, r, in = ((L[j] + R[j]) >> 1) & msk, f;
         uint32_t i;
@@ -232,7 +233,8 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
         f -= hp;
         dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + (int32_t)(((int64_t)f * fb) >> 15), -32768, 32767);
         w++;
-        r = mulq15(r, wet);
+        wq += ws;
+        r = mulq15(r, wq >> 8);
         dg += (dgt - dg) >> 9;
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
     }
@@ -248,6 +250,11 @@ __attribute__((noinline)) static int tp_route(int32_t *L, int32_t *R, uint32_t n
 {
     int32_t dgt = 32768 - depth * depth, osw = dly_cur == 3 ? sw : dly_last;
     int32_t col = 2000 + fx_p[FXP_DL_TONE] * 240;
+    if (dly_xo) {                                       /* DIG <-> ANA (fx.c dly_xo): the crossfade, tape 2 / 3 */
+        dly_fade(L, R, n, dly_ana ? 2 : 3, sw ? -1 : 0, sg16, target, col, fb, wet, sw ? dgt : 32768, 0);
+        if (dly_xm == (dly_ana ? 32768 : 0)) dly_xo = 0;
+        return 1;
+    }
     if (osw == 2) col = (col * 19661) >> 15;
     if (dly_cur == 3) {
         if (sw == 3 || (sw == 0 && tp_g)) {             /* TAPE (fading in), or its tail after OFF (send off) */

@@ -600,12 +600,10 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
  * and its LFO phase is the tremolo's (the wah's pass does not move it) */
 static int32_t wah_xw;
 static uint8_t tw_o;
-static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
+static void fx_trem_x(const int32_t *m, int32_t *L, int32_t *R, uint32_t n, int32_t sw)
 {
-    int32_t sw = fx_p[FXP_TW_SW], w1, gl = tw_gl, gr = tw_gr;
+    int32_t w1, gl = tw_gl, gr = tw_gr;
     uint32_t ph = tw_ph;
-    if (sw != 2) tw_o = (uint8_t)(sw == 1);
-    if (sw == 2 ? wah_xw == 32768 : !wah_xw) { fx_trem_k(m, L, R, n, sw); return; }   /* at rest: as before */
     if (!wah_xw) {
         wah_env = wah_lp = wah_bp = 0; wah_ein = wah_eout = wah_eslow = 0; wah_pi = wah_po = 0;
         wah_g = wah_g1 = 4096;
@@ -622,6 +620,13 @@ static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
         if (w1 == 32768) tw_gl = tw_gr = 32768;         /* (the wah alone from here: its gains at unity) */
     }
     wah_xw = w1;
+}
+static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
+{
+    int32_t sw = fx_p[FXP_TW_SW];
+    if (sw != 2) tw_o = (uint8_t)(sw == 1);
+    if (sw == 2 ? wah_xw == 32768 : !wah_xw) fx_trem_k(m, L, R, n, sw);   /* at rest: as before */
+    else fx_trem_x(m, L, R, n, sw);                     /* (the blend: out of app_audio) */
 }
 
 /* ---- PHASER: 4 first-order allpasses per side, the right one 30 degrees behind */
@@ -1156,14 +1161,7 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
         if (tg == 0 && dly_sg < 4) dly_sg = 0;
     }
     sg16 = last ? 0 : exp2_q16(dly_sg);
-    if (dly_xo) {                                           /* DIG <-> ANA: the crossfade (dly_fade, tape 2 / 3) */
-        dly_fade(L, R, n, dly_ana ? 2 : 3, sw ? -1 : 0, sg16, target, 2000 + fx_p[FXP_DL_TONE] * 240, fb, wet,
-                 sw ? 32768 - depth * depth : 32768, 0);
-        if (dly_xm == (dly_ana ? 32768 : 0)) dly_xo = 0;
-        dly_wk = wet;
-        return;
-    }
-    if (sw == 3 || dly_cur == 3 || dly_xg != 32768) {      /* TAPE, or a switch to / from it (dly_tape.c) */
+    if (dly_xo || sw == 3 || dly_cur == 3 || dly_xg != 32768) {   /* TAPE, a switch to / from it, DIG <-> ANA (dly_tape.c) */
         if (tp_route(L, R, n, sw, target, sg16, fb, wet, depth)) { dly_wk = wet; return; }
     } else dly_last = (uint8_t)sw;                          /* (what a switch to TAPE fades out) */
     if (sw) FR_FAR(dly_ramp)(dly_m, n, sg16);                       /* (dly_loop sets dly_sgk to sg16) */
@@ -1171,8 +1169,8 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
     if (sw == 2) dly_loop(L, R, n, 1, -1, sg16, target, col, fb, wet, 32768 - depth * depth, rst);
     else if (sw) dly_loop(L, R, n, 0, -1, sg16, target, col, fb, wet, 32768 - depth * depth, rst);   /* (the send's
                                                              * mask a constant: one register fewer in either loop) */
-    else if (dly_ana) dly_loop(L, R, n, 1, 0, sg16, target, col, fb, wet, 32768, rst);   /* (ANA's tail) */
-    else dly_loop(L, R, n, 0, 0, sg16, target, col, fb, wet, 32768, rst);
+    else dly_fade(L, R, n, dly_ana, 0, sg16, target, col, fb, wet, 32768, 0);   /* the tail (OFF): DIG's or ANA's,
+                                                             * dly_fade's loop at g 1 (the same integers as dly_loop's) */
     dly_wk = wet;
     if (!sw && dly_tail_over(n, target)) dly_lp = dly_hp = 0;
 }
