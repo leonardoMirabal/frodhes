@@ -33,7 +33,8 @@ jobs:
       - run: '! python -m pytest -q -rs tests/py/test_gen_bars.py -k deterministic | grep -q SKIPPED'
   # The browser emulator (web/build.sh, Emscripten pinned in tools/get_emsdk.sh) must build and pass its selftest
   # (tools/release.py --web-selftest: Chromium + WebKit at 1280 and 390 px, sound, a lit screen, no page errors, the
-  # version shown), and the knob test (tests/py/test_web_knobs.py) must run and pass. Nothing is deployed here: only a v* tag (release.yml) publishes the emulator.
+  # version shown, the installer through the page on a fake FM-1 in Chromium), the installer's own tests
+  # (tests/web/install_test.js, node: a fake FM-1) and the knob test (tests/py/test_web_knobs.py) must run and pass. Nothing is deployed here: only a v* tag (release.yml) publishes the emulator.
   web:
     runs-on: ubuntu-latest
     steps:
@@ -44,6 +45,8 @@ jobs:
           key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}
       - run: sh tools/get_emsdk.sh .local/emsdk
       - run: sh web/build.sh
+      - name: the installer against a fake FM-1 (node)
+        run: node tests/web/install_test.js
       - run: |
           pip install playwright==1.64.0 pytest
           python3 -m playwright install --with-deps chromium webkit

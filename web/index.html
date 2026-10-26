@@ -82,6 +82,19 @@
               background: #e4e2dd; font: 12px/18px ui-monospace, Menlo, monospace; text-align: center; }
   .foot { text-align: center; color: #222; font-size: 13px; padding: 6px 16px 26px; max-width: 1132px; margin: 0 auto; }
   .foot a { color: #111; }
+  .install { max-width: 720px; margin: 10px auto 16px; padding: 12px 18px 14px; background: #f3f1ec; color: #1b1b1b;
+             border-radius: 16px; box-shadow: 0 6px 18px rgba(0,0,0,.18); -webkit-user-select: text; user-select: text; }
+  .install h2 { font: 18px/1.2 "DotGothic16", system-ui, sans-serif; letter-spacing: .04em; margin: 0 0 8px; }
+  .install dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0 0 10px; }
+  .install dt { font-weight: 800; }
+  .install dd { margin: 0; color: #444; overflow-wrap: anywhere; }
+  .install code { font: 12px ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
+  .install button { background: #111; color: #ffd18a; border: 0; border-radius: 8px; padding: 9px 16px; font-weight: 700; cursor: pointer; }
+  .install button:disabled { opacity: .45; cursor: default; }
+  .install progress { width: 100%; height: 14px; margin: 10px 0 4px; }
+  .install .row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+  #inst-warn { color: #a01e10; font-weight: 800; }
+  #inst-msg.err { color: #a01e10; } #inst-msg.ok { color: #1d6b25; font-weight: 700; }
 </style>
 </head>
 <body>
@@ -128,6 +141,27 @@
 </details></aside>
 </div>
 
+<section class="install" id="install">
+  <h2>INSTALL ON YOUR FM-1</h2>
+  <div id="inst-ui">
+    <dl>
+      <dt>Firmware</dt><dd id="inst-ver">...</dd>
+      <dt>sha256</dt><dd><code id="inst-sha">-</code></dd>
+    </dl>
+    <div class="row">
+      <button id="inst-go" disabled>Find my FM-1</button>
+      <label>or a file: <input type="file" id="inst-file" accept=".fwsc"></label>
+    </div>
+    <progress id="inst-bar" max="100" value="0"></progress>
+    <p id="inst-warn" hidden>Do not unplug the FM-1 or close this page while it writes.</p>
+    <p id="inst-msg">Connect the FM-1 with a USB data cable. The browser asks to allow MIDI with SysEx: allow it.
+      An install that was cut off (the FM-1 shows UPDATE MODE) resumes from here.</p>
+  </div>
+  <p id="inst-none" hidden>This browser has no Web MIDI with SysEx (Safari, Firefox): install from Chrome or Edge, or with
+    <code>python3 tools/fm1_install.py frodhes.fwsc</code> (the package from the
+    <a href="https://github.com/leonardoMirabal/frodhes/releases/latest">latest release</a>; see the manual, section 1).</p>
+</section>
+
 <div class="help">
   Computer keys: <kbd>A</kbd>–<kbd>;</kbd> play · <kbd>Z</kbd> <kbd>X</kbd> octave · <kbd>Space</kbd> sustain ·
   <kbd>←</kbd> <kbd>→</kbd> pages · <kbd>↑</kbd> <kbd>↓</kbd> presets · knobs: drag or wheel ·
@@ -146,5 +180,7 @@
 <script src="version.js"></script>
 <script src="app.js"></script>
 <script src="frodhes.js"></script>
+<script src="fm1install.js"></script>
+<script src="install.js"></script>
 </body>
 </html>

@@ -40,7 +40,8 @@ Every page is in the
 and earlier versions); the firmware file is [`frodhes.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes.fwsc), always the newest
 (package identity `FM-1_958`, the same for every version).
 
-Install it over USB:
+Install it over USB, from the browser (Chrome or Edge: the [emulator page](https://leonardomirabal.github.io/frodhes/#install)'s
+**Install on your FM-1**, which fetches the latest release and checks its sha256) or from a terminal:
 
 ```sh
 pip install mido python-rtmidi

@@ -11,7 +11,8 @@ name: release
 # deploys the tested web/dist to the gh-pages branch (tools/deploy_pages.sh: "Emulator X.Y.Z", the branch's other files
 # kept), waits until Pages has built that commit and serves every file byte for byte (tools/pages_wait.sh), and only
 # then publishes the release and marks it latest. Every step is safe to rerun. Only a v* tag deploys: a merge to main
-# never touches gh-pages (ci.yml builds and tests the emulator, nothing more).
+# never touches gh-pages (ci.yml builds and tests the emulator, nothing more). The FM-1 package goes with the
+# emulator (tools/web_firmware.sh: frodhes.fwsc and firmware.json with its sha256) for the page's installer.
 # Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
 on:
   push:
@@ -70,6 +71,8 @@ jobs:
         run: sh tools/get_emsdk.sh .local/emsdk
       - name: build the emulator
         run: sh web/build.sh --release "${GITHUB_REF_NAME#v}"
+      - name: the installer against a fake FM-1 (node)
+        run: node tests/web/install_test.js
       - name: Playwright (Chromium + WebKit)
         run: |
           pip install playwright==1.64.0
@@ -151,6 +154,8 @@ jobs:
         with:
           ref: gh-pages
           path: build/pages
+      - name: the FM-1 package next to the emulator (its installer; release downloads have no CORS)
+        run: sh tools/web_firmware.sh "build/frodhes-${GITHUB_REF_NAME#v}.fwsc" web/dist "${GITHUB_REF_NAME#v}"
       - name: deploy the emulator
         run: |
           git -C build/pages config user.name "github-actions[bot]"

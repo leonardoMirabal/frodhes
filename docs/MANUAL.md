@@ -40,7 +40,12 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 1. Download [`frodhes.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes.fwsc), the latest release (its notes and
    earlier versions are on the [releases page](https://github.com/leonardoMirabal/frodhes/releases/latest)).
 2. Connect the FM-1 to your computer with USB.
-3. Install it from a terminal with the installer in this repository:
+3. The easiest way: open [the emulator page](https://leonardomirabal.github.io/frodhes/#install) in Chrome or Edge,
+   go to **Install on your FM-1**, press **Find my FM-1** (allow MIDI with SysEx when the browser asks), then
+   **Install**. The page fetches the latest release itself, shows its version and sha256 and checks both before it
+   writes anything; keep the FM-1 plugged in until it says Done. Safari and Firefox cannot send SysEx: use the
+   terminal installer below instead.
+   Or install it from a terminal with the installer in this repository:
    `python3 tools/fm1_install.py frodhes.fwsc` (it needs `pip install mido python-rtmidi`). Once Frodhes is listed
    on [thefirmwarehub.com](https://thefirmwarehub.com), its web installer works too (Chrome or Edge).
 4. The FM-1 restarts into Frodhes. If it does not come back by itself, switch it off and on.
@@ -48,7 +53,7 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 While an install writes, the screen shows FRODHES, **WRITING** (do not switch off) and a bar with the percent. If an
 install was cut off (the cable pulled, the computer asleep), the FM-1 comes back to that screen at every power-on,
 showing **UPDATE MODE** (waiting for the install) or **UPDATE FAILED**: connect it and install again, from
-`fm1_install.py` or the hub.
+`fm1_install.py`, the emulator page (it finds the FM-1 in update mode and offers **Resume the install**) or the hub.
 
 Settings, user presets and the sequencer's pattern saved by earlier versions are read as they are. From a version
 with 14 factory presets (before MARIMBA), the saved preset number is moved past the two MARIMBA presets once, so the
