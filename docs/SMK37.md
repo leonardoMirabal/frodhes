@@ -94,7 +94,7 @@ keys: KEY VEL (FRODHES page) is the velocity of a medium press, a light touch pl
 | 8 | next preset | 11 | FILTER on / off |
 | | | 12 | TREM/WAH on / off (VIBES: the motor) |
 | | | 13 / 14 / 15 | PHASER / CHORUS / DELAY on / off |
-| | | 16 | SUSTAIN: held, or a tap latches (as REC) |
+| | | 16 | SUSTAIN: held, or a tap latches; one latch with REC (a tap on either lets go, a hold on either releases it) |
 
 Pad colours: dark orange off, light blue on, brighter while notes sound. DISPLAY BRIGHTNESS dims the pads and the
 button LEDs too.

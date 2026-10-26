@@ -1082,7 +1082,8 @@ Everything in this manual applies, with these differences:
   the pages; KNOB BANK held shows a panel check (the raw readings).
 - 37 keys, C3..C6 at OCTAVE 0, each at its own velocity: KEY VEL is the velocity of a medium press.
 - The pads: 1..6 TYPE, 7 / 8 the previous / next preset, 9 DRIVE, 10 COMP, 11 FILTER, 12 TREM/WAH (VIBES: the motor),
-  13 PHASER, 14 CHORUS, 15 DELAY (on / off), 16 SUSTAIN (held, or a tap latches).
+  13 PHASER, 14 CHORUS, 15 DELAY (on / off), 16 SUSTAIN (held, or a tap latches; the latch is REC's own, so a tap on either one
+  lets go of it, and holding either one and letting go releases it).
 - The faders: FADER BANK A plays the instrument's first VOICE page, bank B the four PERFORM knobs. A fader takes over
   once it reaches its card's value; until then the footer says where to move it.
 - Pitch wheel: pitch bend, ±2 semitones (the Rhodes types; VIBES and MARIMBA ignore it). Mod wheel: more TREM/WAH

@@ -58,7 +58,7 @@ static struct {
                                                 * the value it was on (1 below, 2 above, 0 not known); the value it set */
 } smk_fad[4];
 static uint32_t smk_pad_t[16];                 /* when each pad last acted (a press counts once) */
-static uint8_t smk_sus_pad, smk_sus_latch, smk_sus_was, smk_pedal;
+static uint8_t smk_sus_pad, smk_sus_was, smk_pedal;   /* (the latch: frodhes.c sus_latched, shared with REC) */
 static uint32_t smk_sus_t;
 static uint8_t smk_mem_cmp = 64, smk_mem_flt = 2;   /* COMP's THRESH, the FILTER's type, to come back on with */
 static int32_t smk_bend16, smk_modw = -1;      /* the wheels: the bend (1/4096 semitone), the mod wheel 0..127 */
@@ -74,7 +74,7 @@ static void smk_init(void)
 
 static void smk_sus_update(void)
 {
-    uint8_t on = (uint8_t)(smk_sus_pad || smk_sus_latch || smk_pedal);
+    uint8_t on = (uint8_t)(smk_sus_pad || smk_pedal);
     if (on != smk_sus) { smk_sus = on; sustain_update(); }
 }
 
@@ -151,13 +151,16 @@ static void smk_pads(void)
     int32_t e;
     while ((e = smk_pad_take()) >= 0) {
         uint32_t p = ((uint32_t)e >> 8) & 15u, vel = (uint32_t)e & 0xFFu;
-        if (p == SP_SUS) {                     /* SUSTAIN: held, or a tap latches (as REC) */
-            if (vel && !smk_sus_pad) { smk_sus_pad = 1; smk_sus_t = fm1_ms; smk_sus_was = smk_sus_latch; }
+        if (p == SP_SUS) {                     /* SUSTAIN: held, or a tap flips the latch; the latch is REC's own
+                                                * (frodhes.c sus_latched: either one's tap flips what sounds, a hold
+                                                * on either is momentary and its release clears it, CC 64 up too) */
+            if (vel && !smk_sus_pad) { smk_sus_pad = 1; smk_sus_t = fm1_ms; smk_sus_was = sus_latched; }
             else if (!vel && smk_sus_pad) {
                 smk_sus_pad = 0;
-                smk_sus_latch = fm1_ms - smk_sus_t < SUS_TAP_MS ? !smk_sus_was : 0;
+                sus_latched = fm1_ms - smk_sus_t < SUS_TAP_MS ? !smk_sus_was : 0;
             }
-            smk_sus_update();
+            smk_sus = (uint8_t)(smk_sus_pad || smk_pedal);
+            sustain_update();
             continue;
         }
         if (!vel || (smk_pad_t[p] && fm1_ms - smk_pad_t[p] < 180u)) continue;   /* a press counts once */
@@ -421,7 +424,8 @@ static int smk_host_state(const char *key, char *v, unsigned n)
     else if (sscanf(key, "padrgb.%u", &a) == 1 && a < 16u) snprintf(v, n, "%06X", padled_rgb[a]);   /* G R B */
     else if (!strcmp(key, "wbend")) snprintf(v, n, "%d", smk_bend16);   /* the wheel's bend, 1/4096 semitone */
     else if (!strcmp(key, "modw")) snprintf(v, n, "%d", smk_modw);
-    else if (!strcmp(key, "smksus")) snprintf(v, n, "%u", smk_sus);
+    else if (!strcmp(key, "smksus")) snprintf(v, n, "%u", smk_sus || sus_latched);   /* (the pad, the jack, the latch) */
+    else if (!strcmp(key, "suslatch")) snprintf(v, n, "%u", sus_latched);
     else if (!strcmp(key, "pedal")) snprintf(v, n, "%u", smk_pedal);
     else if (!strcmp(key, "ext")) { uint32_t i, c = 0; for (i = 0; i < 10u; i++) c += src_active[SRC_EXT + i]; snprintf(v, n, "%u", c); }
     else if (!strcmp(key, "leddark")) snprintf(v, n, "%u", smk_led_dark);
