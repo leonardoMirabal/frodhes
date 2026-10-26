@@ -36,16 +36,38 @@ two reads and check that the calibration record (`trimdat`) is in them. Do this 
 python3 tools/fm1_install.py frodhes-smk37-experimental.fwsc
 ```
 
-The installer knows the SMK-37's names. On the first start Frodhes clears the stock firmware's settings area once (it
-belongs to the stock firmware or to another port) and writes its own owner tag; the calibration, Bluetooth pairing and
-the stock resources are left alone.
+The installer knows the SMK-37's names. From 0.9.6 Frodhes keeps its settings, user presets and pattern, and stages
+its updates, only in 0xEB000-0xF3FFF: flash that no region of the stock firmware's own table uses (between its user
+data, 0xC2000-0xEAFFF, and its resources at 0xF4000). It writes nothing of the stock firmware's settings area
+(0x9D000-0xBFFFF), nor the calibration, the Bluetooth pairing or the stock resources.
+
+## What 0.9.5 overwrote
+
+0.9.5 kept its data inside the stock firmware's settings area (its VM, 0x9D000-0xBFFFF): on the first start it erased
+0x9D000 (the settings) and 0xAF000 (its owner tag), then wrote its presets and pattern at 0x9E000-0xA1FFF and staged
+updates at 0xBB000-0xBFFFF. The stock settings that were in those sectors are gone. 0.9.6 reads 0.9.5's data from
+there once (only when 0.9.5's owner tag is at 0xAF000), copies it to its own place, and never writes that area again.
+
+If you made the flash backup above before installing 0.9.5, you can put the stock settings back: write your backup's
+0x9D000-0xBFFFF over the unit's (with the kit's jl-uboot-tool, as for the backup). Only that
+range: never write the calibration from a backup of another unit. Without a backup, the stock firmware rebuilds its
+settings cannot be put back; the calibration was never touched.
 
 ## The way back to stock
 
 Install your model's stock update package again with the stock updater (or from the
 [Firmware Hub](https://thefirmwarehub.com/smk37/)). Frodhes does not touch the areas the stock firmware needs, so it
-comes back with its calibration. If the keyboard does not start, the backup above and the kit's recovery steps are the
-way back.
+comes back with its calibration (and, after 0.9.5, see above). If the keyboard does not start, the backup above and
+the kit's recovery steps are the way back.
+
+**MKE-P37:** its stock firmware's settings area starts one sector lower, at 0x9C000. Every Frodhes install (0.9.5
+and 0.9.6) writes the whole program area up to 0x9CFFF, so on an MKE-P37 it erases that first sector of the stock
+settings. Back up first; the backup's 0x9C000-0x9CFFF puts it back.
+
+**Not tested on an SMK-37:** from 0.9.6 an update stages in 0xEF000-0xF3FFF instead of 0xBB000-0xBFFFF. The normal
+install hands the chip's boot code the staging place in RAM. Where it looks for that record after a power cut during
+an install is not known for the SMK-37. If the power goes during an install and the keyboard does not start, the
+kit's recovery steps (the mask-ROM bootloader) are the way back.
 
 ## The controls
 

@@ -62,6 +62,10 @@ or as soon as you touch a button or a knob.
 <br clear="right">
 
 To go back to M-VAVE's own firmware, use the hub's "Official firmware" section with the V15 file from m-vave.com.
+From 0.9.6 Frodhes keeps its settings, presets and pattern only in flash that M-VAVE's firmware (V15 and V16) does not
+use, and erases an update's temporary copy at the next start. Up to 0.9.5 it kept its presets and pattern
+(0x97000-0x9AFFF) inside the area where V15 keeps its own settings: if V15 behaves oddly after you go back from 0.9.5
+or earlier, use V15's own System > Reset Patches. (V16 rewrites that area when it is installed.)
 
 ## 2. The idea: one page, four knobs
 
@@ -1022,8 +1026,11 @@ compensation takes care of it when you record.
 - **At power-on** Frodhes comes back as you left it, on the PERFORM page: the sound, octave, tempo, scale, chord mode,
   arpeggiator (HOLD too) and MIDI settings, with the effects on and the sustain off. So if keys play chords or an
   arpeggio right away, check the CHORD and ARPEGGIO pages.
-  The setup is kept in two places in the flash and a save writes the older one, so if the power goes while it is
-  being saved (a fraction of a second, about 2 s after a change), only that last change is lost, never the setup.
+  The setup and your user presets are kept together in two places in the flash and a save writes the older one, so
+  if the power goes while it is being saved (a fraction of a second, about 2 s after a change or at a SAVE), only that
+  last change is lost, never the setup or a preset. The pattern has one place: a power cut while it is saved loses
+  the pattern only. The first start after the update from 0.9.5 copies 0.9.5's setup, presets and pattern once.
+  Going back to 0.9.5 afterwards finds its presets and pattern as they were at the update, and its setup as it was or its defaults (once 0.9.6 has saved twice).
 - **It does not start:** switch the FM-1 off, hold **OCT−** and switch it on. That is the USB rescue: install again
   from the hub or with `fm1_install.py`. Your FM-1 can always be recovered this way.
 - **It shows UPDATE MODE or UPDATE FAILED at power-on:** an install was cut off; install again (section 1).
