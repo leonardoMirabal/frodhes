@@ -3,6 +3,7 @@
 """save_glitch: the worst case played EXACTLY during an auto save (the FM-1 over USB-MIDI + USB audio + the jack).
 
     tools/hil_save_glitch.py [--rate 48000|44100|both] [--offsets 0,30,60] [--kinds setup,pattern] [--engine rhodes]
+                             [--repeat N] [--keep-takes]
                              [--limit 4200] [--inv-restore 0] [--source both|usb] [--jack-dev M6] [--jack-ch 5]
                              [--no-self-test] [--dry-run]
     tools/hil_save_glitch.py --self-test     the proof on the host (also in make pytest: tests/py/test_hil_save_glitch.py)
@@ -439,7 +440,7 @@ def take_list(a):
                     T.append((rate, "setup", off))
                 else:
                     T += [(rate, "pattern", off), (rate, "undo", off)]
-    return T
+    return T * max(1, getattr(a, "repeat", 1))           # (--repeat N: the whole list N times, in turn)
 
 
 def plan(a):
@@ -527,7 +528,7 @@ class Run:
         self.md.cc(C.hil_scan.RESET_CC, 127)
         return ccs
 
-    def take(self, rate, kind, off):
+    def take(self, rate, kind, off, rep=0):
         a, dev, md = self.a, self.dev, self.md
         ccs = self.setup_sound()
         if kind == "setup":                                  # the prime: INVERSION to the value the change will not
@@ -536,7 +537,7 @@ class Run:
         pre = []                                             # equal the flash (48k-setup-0ms, 2026-10-25: no save)
         tz = time.monotonic()
         if not self.calm(lambda: time.monotonic() - tz, pre):
-            return dict(name=f"{rate}-{kind}-{off}", verdict="FAIL", rows=[("calm", "a flash write every few s for "
+            return dict(name=f"{rate}-{kind}-{off}" + (f"-r{rep}" if rep else ""), verdict="FAIL", rows=[("calm", "a flash write every few s for "
                         f"{CALM_MAX_S:g} s", f"{CALM_S:g} s without one", "FAIL")])
         if kind == "pattern":
             md.cc(PLAY_CC, 0); md.cc(REC_CC, 127); time.sleep(0.05)
@@ -607,12 +608,12 @@ class Run:
             if a.source == "both" and j is None:
                 audio.append(("jack", 0.0, "missing", "no jack recording"))
         res = judge(polls, rate, t_change, t_chord, a.limit, audio, rig, a.deadline)
-        res.update(name=f"{rate // 1000}k-{kind}-{off}ms", kind=kind, offset_ms=off, rate=rate, info=info,
+        res.update(name=f"{rate // 1000}k-{kind}-{off}ms" + (f"-r{rep}" if rep else ""), kind=kind, offset_ms=off, rate=rate, info=info,
                    t_change=round(t_change, 3), t_chord=None if t_chord is None else round(t_chord, 3),
                    catch_s=None if t_det is None else round(t_det - t_change, 3),
                    polls=[(round(t, 4), p) for t, p in polls])
-        if audio:
-            os.makedirs(a.out, exist_ok=True)
+        if audio or (a.keep_takes and audio is not None):   # (--keep-takes: every recorded take, not only those
+            os.makedirs(a.out, exist_ok=True)              # with events: a FAIL on a counter keeps its WAV too)
             np.savez_compressed(os.path.join(a.out, f"{res['name']}-take.npz"), fs=rate, events=json.dumps(events),
                                 ccs=json.dumps(ccs), usb=np.clip(np.round(u), -32768, 32767).astype(np.int16),
                                 jack=np.zeros(0, np.int16) if j is None else
@@ -675,6 +676,9 @@ def main(argv=None):
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--no-self-test", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--repeat", type=int, default=1, help="the take list N times (a rate: 1 in 27 needs 27 takes)")
+    ap.add_argument("--keep-takes", action="store_true", help="save every take's recording (.npz), not only those "
+                    "with audio events")
     a = ap.parse_args(argv)
     a.offsets = [int(x) for x in a.offsets.split(",") if x.strip()]
     a.kinds = [k for k in a.kinds.split(",") if k.strip()]
@@ -708,10 +712,13 @@ def main(argv=None):
                 if run is None:
                     run = main._run = Run(a, dev)
                 run.dev, run.md = dev, dev.mdev
+                seen = {}
                 for r_, kind, off in [t for t in take_list(a) if t[0] == rate]:
+                    seen[(kind, off)] = k = seen.get((kind, off), 0) + 1
+                    rep = k if a.repeat > 1 else 0           # (the names: ...-r1, -r2 ... with --repeat)
                     for attempt in (1, 2):
-                        print(f"take {rate // 1000}k-{kind}-{off}ms ...", flush=True)
-                        res = run.take(rate, kind, off)
+                        print(f"take {rate // 1000}k-{kind}-{off}ms{f'-r{rep}' if rep else ''} ...", flush=True)
+                        res = run.take(rate, kind, off, rep)
                         if not res.get("rig_fault") or attempt == 2:
                             break
                         print("  the recorder slipped: again", flush=True)
