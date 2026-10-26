@@ -10,8 +10,8 @@
  *   web_btn / web_keys / web_enc / web_midi / web_master   the panel and USB-MIDI, from the page
  *   web_fb / web_leds / web_store                          the screen (RGB565), the LEDs, the settings record
  *
- * Settings live in web_store (the page keeps it in the browser's localStorage); the user preset bank stays in
- * memory for the session. */
+ * The settings and the user presets live in web_store (the page keeps it in the browser's localStorage); the
+ * pattern stays in memory for the session. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,24 +67,48 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 #define CV_MAX (240u * 64u)
 #include "gfx.c"
 
-/* settings: one record, kept by the page in localStorage */
-static uint8_t web_store_buf[256 + 4];
+/* the store (0.9.6): one record, the settings and the user presets (st_tail: presets.c pr_user), kept by the page
+ * in localStorage. [0] 1 = saved, [1] 2 = 0.9.6's record (an older page's entry: the settings alone, 256 bytes, read
+ * once by the migration, frodhes.c). The rest of the flash (the pattern; the places before 0.9.6, which stay empty
+ * here) is in memory for the session (host_mem: seq.c and presets.c read it through st_read) */
+#define HOST_SAVE_MS 100u                      /* (seq.c: the pattern's erase time, as tests/host.c) */
+static uint8_t host_mem[0x100000];
+static uint8_t flash_ok = 1;
+static int st_read(uint32_t off, void *dst, uint32_t n)
+{
+    if (off >= sizeof host_mem || n > sizeof host_mem - off) return -1;
+    memcpy(dst, host_mem + off, n);
+    return 0;
+}
+static uint8_t *st_tail;
+static uint8_t web_store_buf[4 + 256 + ST_TAIL_N];
 static uint8_t web_store_dirty;
 static int settings_load(void *p, uint32_t n)
 {
-    if (web_store_buf[0] != 1 || n > 256u) return -1;
+    if (web_store_buf[0] != 1 || web_store_buf[1] != 2 || n != 256u) return -1;
+    memcpy(p, web_store_buf + 4, n);
+    memcpy(st_tail, web_store_buf + 4 + 256, ST_TAIL_N);
+    return 0;
+}
+static __attribute__((unused)) int settings_load_old(void *p, uint32_t n)
+{
+    if (web_store_buf[0] != 1 || web_store_buf[1] == 2 || n != 256u) return -1;
     memcpy(p, web_store_buf + 4, n);
     return 0;
 }
+static __attribute__((unused)) int smk_old_ours(void) { return 1; }
 static int settings_save(const void *p, uint32_t n)
 {
-    web_store_buf[0] = 1;
+    if (n != 256u) return -1;
+    web_store_buf[0] = 1; web_store_buf[1] = 2;
     memcpy(web_store_buf + 4, p, n);
+    memcpy(web_store_buf + 4 + 256, st_tail, ST_TAIL_N);
     web_store_dirty = 1;
     return 0;
 }
 static int settings_save_start(const void *p, uint32_t n) { return settings_save(p, n); }   /* (at once: 0 done) */
 static int settings_save_poll(void) { return 0; }
+static __attribute__((unused)) int settings_check(void) { return 0; }
 
 /* USB-MIDI in (Web MIDI or the page); MIDI out is dropped */
 static uint8_t mq[64][3];
@@ -161,10 +185,12 @@ EMSCRIPTEN_KEEPALIVE uint8_t *web_leds(void)              /* per id: 1 lit, 2 th
     return l;
 }
 EMSCRIPTEN_KEEPALIVE uint8_t *web_store(void) { return web_store_buf; }
+EMSCRIPTEN_KEEPALIVE uint32_t web_store_n(void) { return sizeof web_store_buf; }
 EMSCRIPTEN_KEEPALIVE int web_store_take_dirty(void) { int d = web_store_dirty; web_store_dirty = 0; return d; }
 
 int main(void)
 {
+    memset(host_mem, 0xFF, sizeof host_mem);     /* (the flash, erased) */
     app_main();
     return 0;
 }

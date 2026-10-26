@@ -21,7 +21,7 @@ emcc -O2 -DDINGHY_HOST -DDINGHY_WEB -DHOST_SAVE_MS=1u -DAPP_VER="\"$VER\"" -Ifir
   -Wno-unused-function -Wno-unused-variable \
   firmware/src/frodhes.c -o web/dist/frodhes.js \
   -sASYNCIFY -sASYNCIFY_IMPORTS='["emscripten_sleep"]' -sALLOW_MEMORY_GROWTH=0 -sINITIAL_MEMORY=33554432 \
-  -sEXPORTED_FUNCTIONS='["_main","_web_audio","_web_btn","_web_keys","_web_enc","_web_midi","_web_master","_web_fb","_web_leds","_web_store","_web_store_take_dirty","_web_page"]' \
+  -sEXPORTED_FUNCTIONS='["_main","_web_audio","_web_btn","_web_keys","_web_enc","_web_midi","_web_master","_web_fb","_web_leds","_web_store","_web_store_n","_web_store_take_dirty","_web_page"]' \
   -sEXPORTED_RUNTIME_METHODS='["HEAPU8","HEAPF32"]' -sENVIRONMENT=web
 cp web/index.html web/app.js web/dist/
 printf 'window.FRODHES_VERSION = "%s";\n' "$VER" > web/dist/version.js
