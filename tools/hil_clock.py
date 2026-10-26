@@ -63,11 +63,14 @@ Measured on the USB recording laid on the stream clock (the capture's block time
 the sent beats moved by the take's latency:
   LFO items: period = the drift of the feature's phase per beat against the sent beats (every band, each turned by
       its mean phase and weighted by its mean; was: the peak of its windowed DTFT, 0.6..1.6 x the beat rate, summed over
-      the bands) over 8 beats from 2 bars after a Start / 2 beats after a change: within 0.5 % of the sent beat.
+      the bands) over 8 beats from 2 bars after a Start / 2 beats after a change: within 0.5 % of the sent beat plus
+      two standard errors of the fitted drift (a weak modulation's window-to-window scatter: the 0.9.6 chorus).
       Phase per 4-beat window (hop 2) against the sent beats: within 5 % of a beat of the item's reference
       (--phase-ref for trem / motor, else the circular mean of the item's judged windows: one alignment for every
       tempo, the change and both Starts; a free-running LFO keeps its phase across the restart's pause, 0.37 beat off)
-  delay: dry -> 1st and 1st -> 2nd echo spacing (envelope NCC) within 1 ms + 0.5 % of the sent beat
+  delay: dry -> 1st and 1st -> 2nd echo spacing (envelope NCC) within 1 ms + 0.5 % of the sent beat; TAPE against
+      its designed glide to a new time, ANA (0.9.6) against its designed bend (1/16 s a s, then (target - d) / 4096 a
+      sample, dly_tape.c) when its echoes miss the new time, both fitted from about a beat after the change
   seq / arp: every onset from 2 bars after a Start (2 beats after a change) on the 1/16 grid: within 2 ms + half an
       audio block (2.9 ms: the FM-1 starts a note at a block boundary) of the segment's median offset, the median
       within 8 ms (the latency's own block); at least 75 % of the expected notes; seq: the pattern's steps, the first
@@ -665,13 +668,22 @@ def lfo_analyze(x, fs, ev):
             # beat (a restrike's decay, the partials' beating), its period -0.6 % on the host's exact LFO (its phase
             # snapshots: 0.00 %), -0.53 % on the FM-1 (int-final 82c6bed, USB and TRS)
             ph = np.unwrap(-np.angle(np.sum(Z * np.conj(Z.mean(0)), axis=1))) / (2 * np.pi)
-            slope = float(np.polyfit(bs, ph, 1)[0])       # cycles a beat: the period is slope longer
+            fit = np.polyfit(bs, ph, 1)
+            slope = float(fit[0])                         # cycles a beat: the period is slope longer
+            # the slope's standard error from the windows' scatter about the line: a weak modulation (the chorus
+            # from 0.9.6, its wet high-passed at ~220 Hz, mix fixes 0c0be11b: 12-13 -> 4-7 dB in this feature) scatters
+            # a window's phase by up to ~0.1 cycle, the same on USB and TRS (the signal, not the clock), so 7 windows
+            # read a rate within ~1 %. The period passes within PERIOD_TOL plus two standard errors; a rate really off
+            # by that much drifts the phase windows (PHASE_TOL), which are judged too
+            bx = np.asarray(bs, float)
+            res_ = np.asarray(ph) - np.polyval(fit, bx)
+            se = float(np.sqrt(np.sum(res_ ** 2) / max(len(bx) - 2, 1) / max(np.sum((bx - bx.mean()) ** 2), 1e-9)))
             T = float(np.median(Ts))
             dep = float(4 * np.abs(Z[:, k]).mean())
             res["periods"].append(dict(seg=si, kind=sg["kind"], bpm=sg["bpm"], from_beat=a, sent_ms=round(1000 * T, 3),
                                        meas_ms=round(1000 * T * (1 + slope), 3), err_pct=round(100 * slope, 3),
-                                       depth_db=round(dep, 2), windows=len(zs),
-                                       ok=bool(abs(slope) <= PERIOD_TOL and dep >= MIN_DEPTH_DB)))
+                                       depth_db=round(dep, 2), windows=len(zs), se_pct=round(100 * se, 3),
+                                       ok=bool(abs(slope) <= PERIOD_TOL + 2 * se and dep >= MIN_DEPTH_DB)))
         while a + PHASE_WIN <= nb:
             tw, Fw, w, T = window(a, PHASE_WIN)
             if w.sum() > 10:
@@ -760,10 +772,29 @@ def delay_analyze(x, fs, ev):
                    tol_ms=round(1000 * tol, 3), ok=bool(all(abs(s - T) <= tol for s in sp)))
     if ev.get("item") == "delay_tape" and not ev.get("probe_T"):
         tape_judge(res, ev)
+    if ev.get("item") == "delay_ana" and not ev.get("probe_T"):
+        tape_judge(res, ev, ana_time, or_plain=True)
     return res
 
 
 TAPE_TAU_UP, TAPE_TAU_DOWN = 1.89, 1.07   # the TAPE delay's designed glide to a new time (s): longer / shorter
+# ANA's designed bend to a new time with sound in the line (0.9.6, BUGHUNT #3, dly_tape.c dly_fade / dly_routed): the
+# time moves (target - d) / 4096 a sample, capped at 1/16 sample a sample (a semitone) while more than 256 samples off
+ANA_FS = 44100.0
+ANA_TAU, ANA_CAP = 4096 / ANA_FS, 1.0 / 16
+
+
+def ana_time(t, T, d0, t0):
+    """ANA's delay time at t: from d0 towards T from t0, at 1/16 (s a s) while more than ANA_CAP x ANA_TAU off, then
+    exponentially (ANA_TAU)"""
+    if t <= t0 or d0 == T:
+        return d0 if t <= t0 else T
+    s = 1.0 if T > d0 else -1.0
+    t_lin = max(0.0, (abs(T - d0) - ANA_CAP * ANA_TAU) / ANA_CAP)
+    if t - t0 <= t_lin:
+        return d0 + s * ANA_CAP * (t - t0)
+    return T - s * ANA_CAP * ANA_TAU * np.exp(-(t - t0 - t_lin) / ANA_TAU) if t_lin > 0 else \
+        T + (d0 - T) * np.exp(-(t - t0) / ANA_TAU)
 
 
 def tape_time(t, T, d0, t0):
@@ -774,22 +805,26 @@ def tape_time(t, T, d0, t0):
     return T + (d0 - T) * np.exp(-(t - t0) / tau)
 
 
-def tape_echoes(t_in, n, T, d0, t0):
-    """the spacings of n echoes of a note at t_in: each read when t_e - d(t_e) = its input time"""
+def tape_echoes(t_in, n, T, d0, t0, tfn=None):
+    """the spacings of n echoes of a note at t_in: each read when t_e - d(t_e) = its input time (tfn: the time's
+    glide, TAPE's by default; its slope stays under 1, so the iteration converges)"""
+    tfn = tfn or tape_time
     out = []
     for _ in range(n):
-        te = t_in + tape_time(t_in, T, d0, t0)
+        te = t_in + tfn(t_in, T, d0, t0)
         for _ in range(30):
-            te = t_in + tape_time(te, T, d0, t0)
+            te = t_in + tfn(te, T, d0, t0)
         out.append(te - t_in)
         t_in = te
     return out
 
 
-def tape_judge(res, ev):
+def tape_judge(res, ev, tfn=None, or_plain=False):
     """the TAPE echoes against its designed glide: per segment the glide from the previous segment's time (the first
     segment: from a fitted time, the FM-1's tempo before the take) starting between the segment's first beat and a
-    beat after it (the tempo is measured over a beat), fitted; each echo within the usual tolerance of the model"""
+    beat after it (the tempo is measured over a beat), fitted; each echo within the usual tolerance of the model.
+    tfn: another glide (ANA: ana_time); or_plain: a probe that passed the plain check stays passed (ANA bends only
+    with sound in the line: a silent line takes the new time at once)"""
     beats, segs = ev["beats"], ev["segs"]
     rows = [r for r in res["probes"] if r.get("spacing_ms")]
     prevT = None
@@ -805,13 +840,15 @@ def tape_judge(res, ev):
             for d0 in d0s:
                 for t0 in np.arange(b0 - 0.1, b0 + beat + 0.1, 0.01):
                     e = max(abs(m / 1000 - x) for r in mine for m, x in
-                            zip(r["spacing_ms"], tape_echoes(r["t_dry"], len(r["spacing_ms"]), r["T"], d0, t0)))
+                            zip(r["spacing_ms"], tape_echoes(r["t_dry"], len(r["spacing_ms"]), r["T"], d0, t0, tfn)))
                     if best is None or e < best[0]:
                         best = (e, d0, t0)
             _, d0, t0 = best
             for r in mine:
-                exp = tape_echoes(r["t_dry"], len(r["spacing_ms"]), r["T"], d0, t0)
+                exp = tape_echoes(r["t_dry"], len(r["spacing_ms"]), r["T"], d0, t0, tfn)
                 tol = DLY_TOL_S + DLY_TOL_REL * r["T"]
+                if or_plain and r.get("ok"):
+                    continue
                 r["model_ms"] = [round(1000 * x, 3) for x in exp]
                 r["err_ms"] = [round(m - 1000 * x, 3) for m, x in zip(r["spacing_ms"], exp)]
                 r["ok"] = bool(all(abs(e) <= 1000 * tol for e in r["err_ms"]))
@@ -1085,7 +1122,8 @@ def synth(take, mode="good", fs=48000, seed=0, lat=0.0152, ppm=620.0, jitter=0.0
         else:
             x += chord * (1 + 0.3 * s) + hi * (1 - 0.3 * s)
     elif k == "delay":
-        tape = take["item"] == "delay_tape" and not ev.get("probe_T")
+        tape = take["item"] in ("delay_tape", "delay_ana") and not ev.get("probe_T")
+        tfn = ana_time if take["item"] == "delay_ana" else tape_time
         for pi, tp in enumerate(ev["probes"]):
             Tb = expected_echo(ev, pi) / (factor if mode == "wrongrate" else 1.0)
             sp = [Tb] * 4
@@ -1095,7 +1133,7 @@ def synth(take, mode="good", fs=48000, seed=0, lat=0.0152, ppm=620.0, jitter=0.0
                     sg = ev["segs"][si]
                     prev = [expected_echo(ev, j) for j, q in enumerate(ev["probes"]) if q < ev["beats"][sg["i0"]]]
                     t0 = ev["beats"][sg["i0"]] + 60.0 / sg["bpm"]
-                    sp = tape_echoes(tp + lat, 4, Tb, prev[-1] if prev else Tb, t0 + lat)
+                    sp = tape_echoes(tp + lat, 4, Tb, prev[-1] if prev else Tb, t0 + lat, tfn)
             t_ = tp + lat
             for j in range(4):
                 _burst(x, fs, t_, 1046.5, 0.4 * 0.45 ** j, 0.04)
@@ -1173,7 +1211,8 @@ def report_txt(via, results, verdict, per, meta):
                  + (f", clock late max {r['jitter_ms']} ms" if "jitter_ms" in r else ""))
         for p in r.get("periods", []):
             L.append(f"  {'ok  ' if p['ok'] else 'FAIL'} period {p['kind']} {p['bpm']} BPM from beat {p['from_beat']}: "
-                     f"{p['meas_ms']} ms / sent {p['sent_ms']} ms ({p['err_pct']:+.3f} %), depth {p['depth_db']} dB")
+                     f"{p['meas_ms']} ms / sent {p['sent_ms']} ms ({p['err_pct']:+.3f} %, se {p.get('se_pct', 0):.2f} %), "
+                     f"depth {p['depth_db']} dB")
         for p in r.get("phases", []):
             if "phase" in p:
                 L.append(f"  {'ok  ' if p['ok'] else 'FAIL'} phase {p['kind']} {p['bpm']} BPM beats {p['from_beat']}.."

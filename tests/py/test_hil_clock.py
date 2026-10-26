@@ -257,6 +257,54 @@ def test_tape_judged_against_its_designed_glide(tau, ok):
     assert all(r["ok"] for r in rows) == ok, [r["err_ms"] for r in rows]
 
 
+@pytest.mark.parametrize("cap,ok", ((None, True), (1.0 / 32, False), (1.0 / 24, False)))
+def test_ana_judged_against_its_designed_bend(cap, ok):
+    """ANA's change 500 -> 600 ms with echoes in the line (0.9.6, BUGHUNT #3): echoes from the designed bend (1/16 s a
+    s, then (target - d) / 4096 a sample) pass, as on the FM-1 (589.5 / 599.1 ms, rel-096 fbd628b); a bend half as
+    fast, or 2/3 as fast, fails. A probe on the new time at once (a silent line: no cap) passes as before"""
+    beats = list(np.arange(0, 16) * 0.5) + list(8 + np.arange(0, 12) * 0.6)
+    ev = dict(item="delay_ana", beats=beats, segs=[dict(kind="start", i0=0, i1=16, bpm=120, lock=8),
+                                                   dict(kind="change", i0=16, i1=28, bpm=100, lock=2)])
+    saved = C.ANA_CAP
+    rows = []
+    for tp, T in ((4.0, 0.5), (7.0, 0.5), (9.2, 0.6), (12.8, 0.6)):
+        if cap:
+            C.ANA_CAP = cap
+        sp = C.tape_echoes(tp, 2, T, 0.5 if tp > 8 else T, 8.6, C.ana_time)
+        C.ANA_CAP = saved
+        tol = C.DLY_TOL_S + C.DLY_TOL_REL * T
+        rows.append(dict(t_dry=tp, T=T, spacing_ms=[1000 * v for v in sp], ok=all(abs(v - T) <= tol for v in sp)))
+    assert not rows[2]["ok"]                              # (the plain check alone fails the bend)
+    C.tape_judge(dict(probes=rows), ev, C.ana_time, or_plain=True)
+    assert all(r["ok"] for r in rows) == ok, [r.get("err_ms") for r in rows]
+
+
+def test_ana_fm1_take_fits_the_model():
+    """the FM-1's probe 2 (rel-096 fbd628b, USB): the bend from 500.2 ms starting 0.63 beat after the change"""
+    d = C.ana_time
+    sp = C.tape_echoes(8 + 2 * 0.6, 2, 0.6, 0.5, 8 + 0.63 * 0.6, d)
+    assert abs(1000 * sp[0] - 589.5) < 2 and abs(1000 * sp[1] - 599.1) < 2, sp
+
+
+def _period_take(slope, noise, n=8, seed=1):
+    """the period's fit on n one-beat windows: phases drifting by slope (cycles a beat) plus a scatter"""
+    rng = np.random.default_rng(seed)
+    bs = np.arange(n) + 8.5
+    return bs, slope * bs + noise * rng.standard_normal(n)
+
+
+@pytest.mark.parametrize("slope,noise,ok", ((0.0, 0.06, True), (0.0, 0.01, True), (0.012, 0.005, False),
+                                            (-0.012, 0.005, False)))
+def test_period_tolerance_follows_the_fit(slope, noise, ok):
+    """the period passes within PERIOD_TOL + 2 standard errors of the slope: a weak modulation's scatter (the chorus
+    from 0.9.6, ~0.06 cycle a window) is not read as a rate error; a real 1.2 % rate with a clean signal still fails"""
+    bs, ph = _period_take(slope, noise)
+    fit = np.polyfit(bs, ph, 1)
+    res = ph - np.polyval(fit, bs)
+    se = np.sqrt(np.sum(res ** 2) / (len(bs) - 2) / np.sum((bs - bs.mean()) ** 2))
+    assert (abs(fit[0]) <= C.PERIOD_TOL + 2 * se) == ok, (fit[0], se)
+
+
 def _reply(t, vals):
     out = []
     for k, v in vals.items():
