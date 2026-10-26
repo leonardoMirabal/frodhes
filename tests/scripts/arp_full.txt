@@ -1,0 +1,39 @@
+# 0.9.6, BUGHUNT #41: the arpeggiator holds 16 notes; a 17th played takes the oldest one's place (as a voice steal),
+# it was dropped (the FM-1: a played note silent under a sequencer pattern that held 16). The stolen note's own
+# note-off later takes nothing out; the new note's note-off does. Buttons: ARP 10 (opens its page, again: on).
+100 btn 10
+200 btn 10
+250 expect state arp 1
+250 expect state hold 0
+300 midi 0x90 48 90
+310 midi 0x90 49 90
+320 midi 0x90 50 90
+330 midi 0x90 51 90
+340 midi 0x90 52 90
+350 midi 0x90 53 90
+360 midi 0x90 54 90
+370 midi 0x90 55 90
+380 midi 0x90 56 90
+390 midi 0x90 57 90
+400 midi 0x90 58 90
+410 midi 0x90 59 90
+420 midi 0x90 60 90
+430 midi 0x90 61 90
+440 midi 0x90 62 90
+450 midi 0x90 63 90
+510 expect state arpn 16
+510 expect state arpends 48-63
+# the 17th: 48 (the oldest) leaves, 72 comes in last
+700 midi 0x90 72 45
+750 expect state arpn 16
+750 expect state arpends 49-72
+# 48's note-off: nothing left to take out; 72 stays
+800 midi 0x80 48 0
+850 expect state arpends 49-72
+# 72's note-off takes it out; 48 again comes in as a new note; 73 then finds it full: 49, the oldest, leaves
+900 midi 0x80 72 0
+950 expect state arpn 15
+1000 midi 0x90 48 60
+1050 midi 0x90 73 60
+1100 expect state arpends 50-73
+1200 end
