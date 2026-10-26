@@ -183,9 +183,10 @@ alone, read-only).
 
 Frodhes is built on Dinghy 0.4 and changes its platform files in a few small places: the flash allow-list is
 Frodhes' own, tighter than Dinghy's (`APP_FL_RANGE` in `frodhes_store.h` replaces `store.h`'s blobs and slots: only the
-update staging, the settings' two sectors (A 0xFC000, B 0xFD000: `set_store.c`, a save writes the one the load would
-not pick) and the presets' and the pattern's four sectors at 0x97000..0x9AFFF can be erased;
-on the SMK-37 0x9E000..0xA1FFF and the store's owner tag, with `store.h`'s `NBLOB` / `NSLOT` set by the app to 4 / 0),
+update staging and the store: the record (the settings and the user presets) in two sectors, A 0xFC000 and B
+0xFD000 (`set_store.c`, a save writes the one the load would not pick), and the pattern at 0xFE000, in no region of the
+stock firmware's table; on the SMK-37 0xEB000..0xF3FFF, the record, the pattern and the staging; 0.9.5's places are
+read once, by the migration, and never written; `store.h`'s `NBLOB` / `NSLOT` set by the app to 0 / 0),
 `store.h` finds `fm1_flash_map.h` by a relative path (the host builds have no `-Ifirmware/hal`), the app may drive the
 codec to full scale (`APP_OUT_SHIFT`), send the USB audio before the MASTER knob (`usb_pre_master`), the MASTER knob
 reading is smoothed, the TRS MIDI input can be switched off (`uart_midi_on` in `midi_uart.c`, the MIDI page's TRS IN),
