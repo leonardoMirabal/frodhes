@@ -421,10 +421,10 @@ static inline __attribute__((always_inline)) int32_t div10(int32_t v) { return (
  * past the L / R stores) and L / R = x ((x * 32768) >> 15), onto the cleared fx_L / fx_R. Its own function: its
  * registers are its own (inlined into app_audio it spilled more, 86 -> 91 instructions a sample) */
 FR_RAM __attribute__((noinline)) static void fx_wah_unity(const int32_t *mp, const int32_t *me, int32_t *lo, int32_t *ro,
-                                                   int32_t wgq, int32_t wgs, int32_t depth, int32_t rate)
+                                                   int32_t wgq, int32_t wgs, int32_t depth, int32_t q)
 {
     int32_t env = wah_env, lp = wah_lp, bp = wah_bp, ei = wah_ein, eo = wah_eout, es = wah_eslow;
-    int32_t xi = wah_pi, xo = wah_po, q = 9830 - rate * 58, dk = depth + 16;
+    int32_t xi = wah_pi, xo = wah_po, dk = depth + 16;
     int32_t et = (4194304 + dk - 1) / dk;       /* (env x dk) >> 16 reaches row 63 from env >= et: below
                                                  * it the product fits 32 bits */
     while (mp < me) {
@@ -519,13 +519,19 @@ __attribute__((noinline)) static void fx_trem_amp(const int32_t *m, int32_t *L, 
 }
 /* noinline (0.9.5): with the filter out of app_audio and the drive / limiter loops slimmer, the allocator moved the
  * phaser's loop 77 -> 84 instructions a sample; the tremolo in its own function puts it at 78 (and the rest back) */
+/* the wah's damping q (Q14: 9830 - RATE x 58, 0.6 .. 0.15), gliding (0.9.6, BUGHUNT #14: RATE 127 -> 0 under a chord
+ * was a 203x click, the sweep a 2.1x zipper): 32 a sub-block (a detent, 58, in 2 sub-blocks; 0 -> 127 in 167 ms); the
+ * wah silent (off, its blend at 0) or the output quiet for 2 blocks: RATE's own (the wah from off starts there) */
+static int32_t wah_xw;                                   /* (below: the wah's blend) */
+static int32_t wah_q RH_SP_SEC(".data.fx_wahq") = -1;
 static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, int32_t *R, uint32_t n, int32_t sw)
 {
-    int32_t depth = fx_p[FXP_TW_DEPTH], rate = fx_p[FXP_TW_RATE];
+    int32_t depth = fx_p[FXP_TW_DEPTH], rate = fx_p[FXP_TW_RATE], qt = 9830 - rate * 58;
     uint32_t inc = fx_tw_sync_inc ? fx_tw_sync_inc : FX_LFO_INC[rate], sb, j;
+    if (sw == 2 && (wah_q < 0 || !wah_xw || fx_quiet_blocks >= 2u)) wah_q = qt;
     if (sw == 1 && fx_p[FXP_TW_SHAPE] > 64) { fx_trem_amp(m, L, R, n, inc); return; }   /* the amp law */
     for (sb = 0; sb < n; sb += 32u) {
-        int32_t tl = 32768, tr = 32768, dl, dr, gl = tw_gl, gr = tw_gr, wgq = wah_g << 5, wgs = 0;
+        int32_t tl = 32768, tr = 32768, dl, dr, gl = tw_gl, gr = tw_gr, wgq = wah_g << 5, wgs = 0, wq = wah_q;
         if (sw == 1) {                                  /* tremolo: the LFO this sub-block */
             int32_t lfo = osc_sine(tw_ph), shp = fx_p[FXP_TW_SHAPE];
             lfo = clampi((int32_t)(((int64_t)lfo * (32768 + 7 * 258 * shp)) >> 15), -32767, 32767);
@@ -556,10 +562,11 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
             wah_g1 += (tg - wah_g1) >> gs;
             wah_g += (wah_g1 - wah_g) >> gs;
             wgs = wah_g - (wgq >> 5);                    /* the gain ramps over the sub-block: no zipper */
+            if (wq != qt) wah_q = wq += clampi(qt - wq, -32, 32);
         }
         dl = (tl - gl) >> 5; dr = (tr - gr) >> 5;
         if (sw == 2 && gl == 32768 && gr == 32768) {    /* the wah, the tremolo's gains at unity (fx_wah_unity) */
-            FR_FAR(fx_wah_unity)(m + sb, m + (sb + 32u < n ? sb + 32u : n), L + sb, R + sb, wgq, wgs, depth, rate);
+            FR_FAR(fx_wah_unity)(m + sb, m + (sb + 32u < n ? sb + 32u : n), L + sb, R + sb, wgq, wgs, depth, wq);
             continue;                                    /* (tw_gl / tw_gr: 32768 already) */
         }
         if (sw == 0 && gl == 32768 && gr == 32768) {    /* TREM/WAH off, the gains settled: the loop below is
@@ -577,7 +584,7 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
                 if (wah_env < 0) wah_env = 0;
                 row = clampi((int32_t)(((int64_t)wah_env * (depth + 16)) >> 16), 0, 63);
                 f = FX_WAH_F[row];
-                q = 9830 - rate * 58;                    /* Q14 damping: 0.6 .. 0.15 (resonant) */
+                q = wq;                                  /* Q14 damping: 0.6 .. 0.15 (resonant; wah_q) */
                 hi = x - wah_lp - ((q * wah_bp) >> 14);
                 wah_bp += (f * (hi >> 1)) >> 13;
                 wah_lp += (f * (wah_bp >> 1)) >> 13;

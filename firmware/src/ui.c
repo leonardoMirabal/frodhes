@@ -636,6 +636,8 @@ static void slot_text(uint32_t s, char *v)
         }
         break;
     case P_TW_RATE: if (PV(P_TW_SW) == 2) { fmt_r10(v, PV(s)); return; } break;   /* WAH: resonance */
+    case P_TW_SHAPE: if (PV(P_TW_SW) == 2) { p_strcpy(v, "-", 1); return; } break;   /* WAH: no shape (0.9.6, #15; it
+                                                     * keeps its value for TREM / PAN) */
     case P_MOT_RATE:                                                 /* the motor: 0.5 .. 10 Hz ("3.5HZ") */
         {
             uint32_t n = 0;

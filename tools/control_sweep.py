@@ -167,7 +167,8 @@ def _cases():
         add(Case(f"trem {m} SHAPE", 22, s + [(18, 90), (19, 70)], page="TREM/WAH"))
     add(Case("wah DEPTH", 18, [(17, 100), (19, 70)], page="TREM/WAH"))
     add(Case("wah RATE", 19, [(17, 100), (18, 90)], page="TREM/WAH"))
-    add(Case("wah SHAPE", 22, [(17, 100), (18, 90), (19, 70)], page="TREM/WAH"))
+    add(Case("wah SHAPE", 22, [(17, 100), (18, 90), (19, 70)], page="TREM/WAH",   # (SHAPE does nothing on WAH:
+             skip={"noeff"}))                    # its card shows "-" there, tests/scripts/wah_shape.txt)
     add(Case("trem/wah EFFECT", 17, [(18, 90), (19, 70)], kind="select", statics=[21, 64, 107], page="TREM/WAH"))
     # PHASER, CHORUS
     add(Case("phaser DEPTH", 13, [(85, 100)], page="PHASER"))

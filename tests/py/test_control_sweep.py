@@ -32,8 +32,6 @@ import hostrun  # noqa: E402
 #   0.9.5 fails them (14.2x, 36.6x; 0.9.6: 1.5x, 1.2x).
 # case -> why it fails on 0.9.5 (fix it, then remove the line)
 KNOWN = {
-    "wah RATE": "BUGHUNT #14: the wah's resonance (RATE) is not smoothed",
-    "wah SHAPE": "BUGHUNT #15: SHAPE does nothing on WAH (the card is shown)",
     "rev INF auto MIX": "INFINITE's level guard holds the tank: the wet falls 1.1 dB from MIX 96 to 127 (by design; a law change moves presets)",
     "rev INF size64 MIX": "the same (INFINITE's level guard; #18's jump and click are fixed)",
     "rev PLATE SIZE": "BUGHUNT #19: SIZE bends a ringing tail's pitch and steps",
