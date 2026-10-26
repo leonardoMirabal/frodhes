@@ -779,6 +779,10 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "arp")) snprintf(v, n, "%u", arp_on());
     else if (!strcmp(key, "hold")) snprintf(v, n, "%u", ARP_HOLD);
     else if (!strcmp(key, "arpn")) snprintf(v, n, "%u", arp_n);
+    else if (!strcmp(key, "arpv")) snprintf(v, n, "%u", arp_n ? arp_vel[0] : 0u);   /* the velocity its steps play */
+    else if (!strcmp(key, "arpends")) {                      /* the arpeggiator's oldest and newest note */
+        if (arp_n) snprintf(v, n, "%u-%u", arp_note[0], arp_note[arp_n - 1u]); else snprintf(v, n, "-");
+    }
     else if (!strcmp(key, "chord")) snprintf(v, n, "%u", chord_on());
     else if (!strcmp(key, "play")) snprintf(v, n, "%u", seq_play);
     else if (!strcmp(key, "rec")) snprintf(v, n, "%u", seq_rec);
@@ -818,7 +822,7 @@ static int host_state(const char *key, char *v, unsigned n)
 static void host_dump(void)
 {
     static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
-                                    "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
+                                    "arpn", "arpv", "arpends", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "fxdrv", "label0", "card0", "label1", "card1", "label2", "card2",
                                     "label3", "card3", "bpm10", "setbpm", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
     char key[24], v[64];

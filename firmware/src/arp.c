@@ -45,6 +45,7 @@ static void arp_stop_note(void)
     arp_playing = 255;
 }
 
+static void arp_remove(uint32_t i);
 /* a note in / out: the keys (frodhes.c, after the scale) and USB-MIDI */
 static void arp_in_on(uint32_t n, uint32_t vel)
 {
@@ -54,7 +55,12 @@ static void arp_in_on(uint32_t n, uint32_t vel)
     if (!any) { arp_n = 0; arp_step_no = 0xFFFFFFFFu; arp_pos = 0; arp_dir = 0; }   /* a new chord: replaces, from its start */
     for (i = 0; i < arp_n; i++)
         if (arp_note[i] == n) { arp_down[i] = 1; arp_vel[i] = (uint8_t)vel; return; }
-    if (arp_n == ARP_MAX) return;
+    if (arp_n == ARP_MAX) {                     /* full: the new note takes the place of the oldest one let go (HOLD), else
+                                                 * of the oldest held, as a voice steal (0.9.6, BUGHUNT #41: it was
+                                                 * dropped). The stolen note's own note-off then finds nothing here */
+        for (i = 0; i < arp_n && arp_down[i]; i++) ;
+        arp_remove(i < arp_n ? i : 0u);
+    }
     arp_note[arp_n] = (uint8_t)n; arp_vel[arp_n] = (uint8_t)vel; arp_down[arp_n] = 1; arp_n++;
 }
 static void arp_remove(uint32_t i)
