@@ -2,7 +2,8 @@
 """tools/hil_monkey.py without the FM-1: the plan (--dry-run), the stream's filter (MIDI only, no developer CC), and
 the audio gates on host renders of its takes (the stream, the panic, the probe as the FM-1 gets them): clean takes
 pass; injected faults (an underrun's held frames, a block played twice, a dead probe, a short recording, full
-scale) fail their own row. About 15 s."""
+scale) fail their own row; at 48 kHz, the resampler's overshoot (#38's fail-1022) is information and an audible
+clamp (a run, a spike) still fails. About 15 s."""
 import os
 import sys
 
@@ -72,3 +73,57 @@ def test_full_scale_fails(take):
     x = xi.copy()
     x[44100 * 5, 0] = 32767
     assert _status(hm.judge_audio(x, 44100, ev), "USB at full scale") == "FAIL"
+
+
+# fail-1022 (#38): 48 kHz, L at 14.9627 s and its neighbours, a 6-12 kHz burst the limiter kept at 24000 that
+# usb.c's resampler overshot to full scale (the one clamped sample: -32768)
+F1022 = [-24398, -23680, 9181, 20179, 19925, -8837, -32768, -596, 22072, 22175, 10616, -27963, -19568]
+
+
+def _burst(rate, n=4800, at=2400):
+    """a quiet take (-40 dBFS) with fail-1022's burst: 2 ms of a 9 kHz tone at 26000, its peak sample clamped"""
+    t = np.arange(n) / rate
+    x = np.round(100 * np.sin(2 * np.pi * 440 * t)).astype(np.int64)
+    w = slice(at - rate // 1000, at + rate // 1000)
+    x[w] = np.round(26000 * np.sin(2 * np.pi * 9000 * t[w])).astype(np.int64)
+    x[at - 6:at + 7] = F1022
+    return np.stack([x, x], axis=1)
+
+
+def test_the_resamplers_overshoot_is_information_at_48k():
+    rows = hm.clamp_rows(_burst(48000), 48000)
+    assert _status(rows, "USB at full scale") == "info" and not [r for r in rows if r[3] == "FAIL"], rows
+
+
+def test_the_same_clamp_fails_at_44k1():
+    assert _status(hm.clamp_rows(_burst(44100), 44100), "USB at full scale") == "FAIL"
+
+
+def test_a_spike_fails_at_48k():
+    x = _burst(48000)
+    x[4000, 0] = 32767                                    # in the quiet: no loud passage around it
+    rows = hm.clamp_rows(x, 48000)
+    assert _status(rows, "USB isolated clamps") == "FAIL" and _status(rows, "USB clamped run") == "ok"
+
+
+def test_an_overload_fails_at_48k():
+    t = np.arange(4800) / 48000
+    x = np.clip(np.round(60000 * np.sin(2 * np.pi * 1000 * t)), -32768, 32767).astype(np.int64)
+    rows = hm.clamp_rows(np.stack([x, x], axis=1), 48000)
+    assert _status(rows, "USB clamped run") == "FAIL" and _status(rows, "USB clamped frames in 10 ms") == "FAIL"
+
+
+def test_a_clamp_now_and_then_in_a_loud_high_passage_fails_when_dense():
+    t = np.arange(4800) / 48000
+    x = np.round(26000 * np.sin(2 * np.pi * 9000 * t)).astype(np.int64)
+    x[::48] = 32767                                       # 10 per 10 ms, each alone
+    rows = hm.clamp_rows(np.stack([x, x], axis=1), 48000)
+    assert _status(rows, "USB clamped frames in 10 ms") == "FAIL" and _status(rows, "USB clamped run") == "ok"
+
+
+def test_rejudge_reads_a_saved_take(take, tmp_path, capsys):
+    xi, ev = take
+    p = tmp_path / "fail-1000.npz"
+    np.savez_compressed(p, usb=xi.astype(np.int16), fs=44100, events=hm.json.dumps(ev), counters="{}", lead=hm.LEAD_S)
+    assert hm.main(["--rejudge", str(p)]) == 0
+    assert "fail-1000.npz: ok" in capsys.readouterr().out
