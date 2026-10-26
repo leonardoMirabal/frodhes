@@ -203,6 +203,26 @@ def test_bughunt25_fx_with_spread(binary):
         pytest.xfail(f"BUGHUNT #25: FX with SPREAD clicks ({ratio:.0f}x)")
 
 
+def test_bughunt26_wah_overflow():
+    """BUGHUNT #26 (monkey seed 995464060 on mix-fix2, shrunk; 0.9.5 too): the touch WAH's filter (fx.c
+    fx_wah_unity, bp += (f * (hi >> 1)) >> 13) overflows int32 on a hot input (UBSan; the FM-1 wraps)"""
+    text = open(os.path.join(os.path.dirname(__file__), "monkey", "bughunt26-wah-overflow.txt")).read()
+    r = mk.run(text, mk.build(san=True))
+    if "fx.c" in r.out and "signed integer overflow" in r.out:
+        pytest.xfail("BUGHUNT #26: the WAH's filter overflows int32 (fix it, then this passes)")
+    assert r.code == 0 and "runtime error" not in r.out
+
+
+def test_bughunt9_level_with_fx_off(binary):
+    """BUGHUNT #9, the part still open (mix-fix2 and 0.9.5 alike: 340x): with FX off (bypassed) LEVEL is not ramped
+    (fx.c fx_out: fx_lv_ramp's still = byp || wet != 32768), a LEVEL change steps in one sample"""
+    ev = [(14609, "midi 0x90 28 91"), (14793, "midi 0xB0 111 71"), (17379, "midi 0xB0 110 127")]
+    ratio, changed, _ = mk.click_one(ev, 2, binary)
+    assert changed == ["P_LEVEL"]
+    if ratio > 10:
+        pytest.xfail(f"BUGHUNT #9: LEVEL steps with FX off ({ratio:.0f}x)")
+
+
 def test_ddmin_finds_the_minimal_pair():
     items = list(range(40))
     assert sorted(mk.ddmin(items, lambda xs: 7 in xs and 31 in xs)) == [7, 31]
