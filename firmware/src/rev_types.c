@@ -172,7 +172,7 @@ static void rev_reset_state(void)
  * for two blocks, it follows MIX, so a MIX set in silence renders exactly as before), and the send carries the rest of the law:
  * v 258 (254 - v) / (254 - rv_vl), the same wet level for what goes in from now on; the send ramps sample by sample
  * to its new value over the block (rv_sk: the last block's), only while it moves */
-static int32_t rv_vl = -1, rv_sk;
+static int32_t rv_vl RH_SP_SEC(".data.fx_rvvl") = -1, rv_sk RH_SP_SEC(".bss.fx_rvsk");
 __attribute__((noinline)) static void rv_send_ramp(const int32_t *L, const int32_t *R, int32_t s0, int32_t s1)
 {
     int32_t q = s0 << 5, dq = s1 - s0;                  /* (Q5: 32 steps of dq / 32 add up to s1 exactly) */

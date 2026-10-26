@@ -185,15 +185,15 @@ static void tp_reset(void)                              /* developer CC 10: the 
  * old loops keep their code (a block-wise step of the mix was a click: 10x the second difference, host).
  * tape = 2 / 3: DIG -> ANA / ANA -> DIG under ringing echoes (0.9.6, BUGHUNT #17): ANA's share a (dly_xm, Q15) moves
  * TP_FADE a sample and blends what ANA adds: the wow and flutter's depth, the darker tone (col: DIG's), the softclip;
- * the delay time slews as the type with the larger share. At a = 0 / 32768 the integers are DIG's / ANA's */
-static int32_t dly_xm;
+ * the delay time slews as the type with the larger share. At a = 0 / 32768 the integers are DIG's / ANA's (dly_xm:
+ * fx.c) */
 /* DIG's TIME changed (0.9.6, BUGHUNT #3: the time glided one sample a sample, so while it rose the read head stood
  * still, one held sample, and the echoes were lost; falling, they played an octave up): the old tap and the new one
  * (dly_tn) crossfade over 1024 samples (23 ms, dly_tx the new one's share), then the new is the delay time; a time
  * that moves on meanwhile is the next crossfade's. ANA's slew is capped at 1/16 sample a sample (it scrubbed at up to
  * ~5x: a bend stays a bend). fx_delay_t routes those blocks here (tp_route); at rest the old loops */
 #define DLY_TXS 32
-static int32_t dly_tn, dly_tx;
+static int32_t dly_tn RH_SP_SEC(".bss.fx_dlytn"), dly_tx RH_SP_SEC(".bss.fx_dlytx");
 static inline __attribute__((always_inline)) int32_t dly_rd(uint32_t w, int32_t d, uint32_t c)   /* the tap at d (Q8) */
 {
     uint32_t i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
@@ -260,6 +260,13 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
     dly_xg = g; dly_xm = a; dly_tn = tn; dly_tx = tx;
 }
 
+/* the blocks fx_delay_t hands to tp_route: TAPE, a switch to / from it, DIG <-> ANA (#17), a DIG time change, ANA's
+ * big time change with sound in the line (#3) */
+__attribute__((noinline)) static int dly_routed(int32_t sw, int32_t target)
+{
+    return dly_xo || sw == 3 || dly_cur == 3 || dly_xg != 32768 || dly_tx || (sw == 1 && dly_d != target) ||
+           (sw == 2 && (dly_lp || dly_hp || dly_sil < DLY_LEN) && iabs(target - dly_d) > 65536);
+}
 /* fx_delay_t's router: 1 = this block is done here, 0 = the old loops run it as always. dly_cur: 3 while TAPE owns
  * the line (TAPE, its fade-out, its tail after OFF), else the old loops (DIG / ANA / their tail; dly_last the EFFECT
  * they last ran with). A switch to or from TAPE: the running type fades out, then the new one fades in. */
