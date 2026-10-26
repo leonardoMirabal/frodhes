@@ -594,19 +594,33 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
 }
 /* the wah switched on or off (0.9.6, the bug hunt: it switched from the plain signal to the filtered one in one sample,
  * with the filter's stale state): the wah runs while its share glides (xf_next), over the plain signal (the tremolo's
- * gains at unity, its output m); from rest it starts from a clean state and unity make-up */
+ * gains at unity, its output m); from rest it starts from a clean state and unity make-up. TREM <-> WAH (BUGHUNT #7's
+ * other half: the tremolo's dip stepped out at once, 16.5x a held chord's d2): the other side of the blend is the
+ * tremolo itself (tw_o, the last setting that was not the wah), into xf_d; the wah runs at unity gains (fx_wah_unity)
+ * and its LFO phase is the tremolo's (the wah's pass does not move it) */
 static int32_t wah_xw;
+static uint8_t tw_o;
 static void fx_trem(const int32_t *m, int32_t *L, int32_t *R, uint32_t n)
 {
-    int32_t sw = fx_p[FXP_TW_SW], w1;
+    int32_t sw = fx_p[FXP_TW_SW], w1, gl = tw_gl, gr = tw_gr;
+    uint32_t ph = tw_ph;
+    if (sw != 2) tw_o = (uint8_t)(sw == 1);
     if (sw == 2 ? wah_xw == 32768 : !wah_xw) { fx_trem_k(m, L, R, n, sw); return; }   /* at rest: as before */
     if (!wah_xw) {
         wah_env = wah_lp = wah_bp = 0; wah_ein = wah_eout = wah_eslow = 0; wah_pi = wah_po = 0;
         wah_g = wah_g1 = 4096;
     }
     w1 = xf_next(wah_xw, sw == 2, n);   /* (never at rest here: the blend always runs) */
+    if (tw_o) tw_gl = tw_gr = 32768;
     fx_trem_k(m, L, R, n, 2);                           /* (L / R = the wah: fx_process clears them, the wah writes) */
-    xf_post(L, R, m, m, n, wah_xw, w1);
+    if (!tw_o) xf_post(L, R, m, m, n, wah_xw, w1);
+    else {                                              /* the tremolo, from its own gains and phase */
+        memset(xf_d, 0, sizeof xf_d);
+        tw_gl = gl; tw_gr = gr; tw_ph = ph;
+        fx_trem_k(m, xf_d[0], xf_d[1], n, 1);
+        xf_post(L, R, xf_d[0], xf_d[1], n, wah_xw, w1);
+        if (w1 == 32768) tw_gl = tw_gr = 32768;         /* (the wah alone from here: its gains at unity) */
+    }
     wah_xw = w1;
 }
 

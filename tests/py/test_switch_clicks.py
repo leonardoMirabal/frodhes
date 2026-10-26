@@ -63,6 +63,10 @@ CASES = {
     # #7 the WAH on / off (68x on)
     "wah-on": (cc(18, 90, 30), cc(17, 127)),
     "wah-off": (cc(18, 90, 30) + cc(17, 127, 31), cc(17, 0)),
+    # #7's other half: TREM (AM, deep) <-> WAH: the tremolo's dip stepped out in one sample (16.5x; 0.9.5 90x)
+    "trem-wah": (cc(18, 127, 30) + cc(21, 127, 31) + cc(17, 64, 32), cc(17, 127)),
+    "wah-trem": (cc(18, 127, 30) + cc(21, 127, 31) + cc(17, 127, 32), cc(17, 64)),
+    "pan-wah": (cc(18, 127, 30) + cc(21, 0, 31) + cc(17, 64, 32), cc(17, 127)),
     # #9 LEVEL in one step (48x)
     "level-64-0": ([], cc(110, 0)),
 }

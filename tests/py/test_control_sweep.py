@@ -30,7 +30,6 @@ import hostrun  # noqa: E402
 KNOWN = {
     "wah RATE": "BUGHUNT #14: the wah's resonance (RATE) is not smoothed",
     "wah SHAPE": "BUGHUNT #15: SHAPE does nothing on WAH (the card is shown)",
-    "trem/wah EFFECT": "BUGHUNT #7: TREM <-> WAH switches in one sample",
     "delay DIG TIME": "BUGHUNT #3: DIG's time glides at one sample a sample (the read head stops)",
     "delay ANA TIME": "BUGHUNT #3: ANA scrubs at many times speed",
     "delay EFFECT": "BUGHUNT #17: DIG <-> ANA switches the tone and softclip in one sample",
