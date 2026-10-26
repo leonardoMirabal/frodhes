@@ -43,6 +43,9 @@
  *   rev_plate_run: the pointers 25 x 4 + 10 x 22 + 11 x 8, the guard copies 2 x 27, the rest 317     779
  *   = 4981 at rest; at worst + a SIZE step's 3 delays 87 + the decay gain 40 + the warm-up's checked reads (the
  *   first 0.15 s after a start) 132 + a wrapped write's copy 81 = 5321.
+ * A SIZE fade (0.9.6, BUGHUNT #19; 186 ms after a turn under a ringing tail), on top: pl_xsegs ~1785 (8 x pl_xblend,
+ *   11 a sample) + pl_xtaps ~1700 in place of the taps' 827 + the gains anew ~120: ~+2780. All of it in RAM (the
+ *   first version, ~+3190 from flash, measured +210 us on the FM-1 under the VIBES worst case: 4296 us).
  * HALL (fx.c rev_hall, its own decimator and DC blocker included), counted the same way: 5644 at rest, 5864 with its
  * gains made anew (DECAY moving); PLATE + the framework's decimator (rev_dec, ~372): 5353 at rest, 5693 at worst,
  * 3-6 % under HALL. In us: HALL's kernel share is REV_US_HALL (210, from the FM-1's measured 260 for the whole
@@ -208,8 +211,8 @@ static void pl_ctl(rev_plate_t *s, const rev_ctl_t *c)
     }
 }
 /* a SIZE fade: n samples of the old reads (q) x a plus the new (p) x b (Q14, this block's), into t */
-static __attribute__((noinline)) void pl_xblend(int16_t *t, const int16_t *q, const int16_t *p, uint32_t n, int32_t a,
-                                                int32_t b)
+static FR_RAM __attribute__((noinline)) void pl_xblend(int16_t *t, const int16_t *q, const int16_t *p, uint32_t n,
+                                                       int32_t a, int32_t b)
 {
     uint32_t i;
     for (i = 0; i < n; i++)
@@ -219,7 +222,7 @@ static __attribute__((noinline)) void pl_xblend(int16_t *t, const int16_t *q, co
  * old and new reads are alike after a small SIZE step, unrelated after a big one (a plain 1 - w, w sank the tail
  * 6.8 dB in the middle of SIZE 127 -> 0: the dip goes round the loop; +1.5 dB stepped the level of a SIZE sweep's
  * chained fades 2.5 dB; equal power would lift a small step 3 dB) */
-static void pl_xw(int32_t w, int32_t *a, int32_t *b)
+static inline __attribute__((always_inline)) void pl_xw(int32_t w, int32_t *a, int32_t *b)
 {
     int32_t g = 16384 + ((3 * ((w * (16384 - w)) >> 14)) >> 3);
     *a = ((16384 - w) * g) >> 14;
@@ -317,14 +320,14 @@ static FR_RAM __attribute__((noinline)) int32_t pl_half(const int32_t *x, const 
 }
 
 /* the 7 taps of a side (+ + - + - - -), one block: the left into mid[]; then the right, and mid / side */
-static __attribute__((noinline)) void pl_taps(const int16_t *const *t, int32_t *o)
+static FR_RAM __attribute__((noinline)) void pl_taps(const int16_t *const *t, int32_t *o)
 {
     const int16_t *a0 = t[0], *a1 = t[1], *a2 = t[2], *a3 = t[3], *a4 = t[4], *a5 = t[5], *a6 = t[6];
     uint32_t i;
     for (i = 0; i < HL_NC; i++)
         o[i] = a0[i] + a1[i] - a2[i] + a3[i] - a4[i] - a5[i] - a6[i];
 }
-static __attribute__((noinline)) void pl_taps_ms(const int16_t *const *t, int32_t *mid, int32_t *side, int32_t k)
+static FR_RAM __attribute__((noinline)) void pl_taps_ms(const int16_t *const *t, int32_t *mid, int32_t *side, int32_t k)
 {
     const int16_t *a0 = t[0], *a1 = t[1], *a2 = t[2], *a3 = t[3], *a4 = t[4], *a5 = t[5], *a6 = t[6];
     uint32_t i;
@@ -332,6 +335,50 @@ static __attribute__((noinline)) void pl_taps_ms(const int16_t *const *t, int32_
         int32_t r = a0[i] + a1[i] - a2[i] + a3[i] - a4[i] - a5[i] - a6[i], l = mid[i];
         int32_t m = ((l + r) * k) >> 12, d = ((l - r) * k) >> 12;
         m = m > -PL_LIM ? m : -PL_LIM, d = d > -PL_LIM ? d : -PL_LIM;     /* (smax / smin) */
+        mid[i] = m < PL_LIM ? m : PL_LIM;
+        side[i] = d < PL_LIM ? d : PL_LIM;
+    }
+}
+
+/* a SIZE fade (in RAM, with the loops it calls: the fade's code is not fetched from flash every block, 0.9.6): the 8
+ * segments' reads, old (to) and new (t), blended into pl_xt; t points there then (before the halves write: every
+ * delay >= 45 > a block) */
+static FR_RAM __attribute__((noinline)) void pl_xsegs(const rev_plate_t *s, const int16_t **t, uint32_t w, uint32_t dm0,
+                                                      uint32_t dm1)
+{
+    const int16_t *b = s->ring;
+    int32_t xa, xb;
+    uint32_t k;
+    pl_xw(s->xw, &xa, &xb);
+    for (k = 0; k < 8u; k++) {
+        uint32_t dk = (k & 3u) ? 0u : (k ? dm1 : dm0) >> 8, nk = (k & 3u) ? HL_NC : HL_NC + 1u;
+        const int16_t *q = (k & 3u) ? b + ((w + s->to[k]) & PL_M)   /* (0 / 4: the modulated reads, moved by the
+                                                                     * delay's change) */
+            : b + ((w + PL_TOP[k] - dk + s->d[k] - ((PL_TOP[k] + PL_N - s->to[k]) & PL_M)) & PL_M);
+        pl_xblend(pl_xt[k], q, t[k], nk, xa, xb);
+        t[k] = pl_xt[k];
+    }
+}
+/* ... and the taps: each side's 7 taps summed from the old reads and the new, the sums blended, then mid / side as
+ * pl_taps_ms (4 tap sums and one mid / side pass a block, not two of each and a blend of the results) */
+static FR_RAM __attribute__((noinline)) void pl_xtaps(const rev_plate_t *s, const int16_t *const *t, uint32_t w,
+                                                      int32_t *mid, int32_t *side)
+{
+    const int16_t *u[PL_S_N - 8u];
+    int32_t lo[HL_NC], ro[HL_NC], ln[HL_NC], rn[HL_NC], xa, xb, k = s->ko;
+    uint32_t i;
+    for (i = 8; i < PL_S_N; i++)
+        u[i - 8u] = s->ring + ((w + s->to[i]) & PL_M);
+    pl_taps(u, lo);
+    pl_taps(u + 7, ro);
+    pl_taps(t + 8, ln);
+    pl_taps(t + 15, rn);
+    pl_xw(s->xw, &xa, &xb);
+    xa >>= 4, xb >>= 4;                                 /* (Q10: a tap sum |x| <= 7 x 2^15 < 2^18) */
+    for (i = 0; i < HL_NC; i++) {
+        int32_t l = (lo[i] * xa + ln[i] * xb) >> 10, r = (ro[i] * xa + rn[i] * xb) >> 10;
+        int32_t m = ((l + r) * k) >> 12, d = ((l - r) * k) >> 12;
+        m = m > -PL_LIM ? m : -PL_LIM, d = d > -PL_LIM ? d : -PL_LIM;
         mid[i] = m < PL_LIM ? m : PL_LIM;
         side[i] = d < PL_LIM ? d : PL_LIM;
     }
@@ -368,19 +415,7 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
     t[0] = pl_ptr(s, PL_O0, dm0 >> 8, (dm0 >> 8) - 1u);
     t[4] = pl_ptr(s, PL_O4, dm1 >> 8, (dm1 >> 8) - 1u);
     pl_cpy(b + PL_N, b);
-    if (s->xf) {                                        /* a SIZE fade: the segments' reads blended (before the
-                                                         * halves write: every delay >= 45 > a block) */
-        int32_t xa, xb;
-        pl_xw(s->xw, &xa, &xb);
-        for (k = 0; k < 8u; k++) {
-            uint32_t dk = (k & 3u) ? 0u : (k ? dm1 : dm0) >> 8, nk = (k & 3u) ? HL_NC : HL_NC + 1u;
-            const int16_t *q = (k & 3u) ? b + ((w + s->to[k]) & PL_M)   /* (0 / 4: the modulated reads, moved by the
-                                                                         * delay's change) */
-                : b + ((w + PL_TOP[k] - dk + s->d[k] - ((PL_TOP[k] + PL_N - s->to[k]) & PL_M)) & PL_M);
-            pl_xblend(pl_xt[k], q, t[k], nk, xa, xb);
-            t[k] = pl_xt[k];
-        }
-    }
+    if (s->xf) FR_FAR(pl_xsegs)(s, t, w, dm0, dm1);   /* a SIZE fade: the segments' reads blended */
     for (k = 0; k < 8u; k++)
         o[k] = pl_wptr(s, b, PL_N, w + PL_TOP[k], 1u);
     {
@@ -389,24 +424,11 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
         act |= FR_FAR(pl_half)(xv, t[7], t, (int32_t)(dm0 & 255u), o, &s->dl, &s->g);
         act |= FR_FAR(pl_half)(xv, t[3], t + 4, (int32_t)(dm1 & 255u), o + 4, &s->dr, &s->g);
     }
-    if (s->xf) {                                        /* a SIZE fade: the taps from the old reads too, blended */
-        const int16_t *u[PL_S_N - 8u];
-        int32_t mo[HL_NC], so[HL_NC], i, xa, xb;
-        for (k = 8; k < PL_S_N; k++)
-            u[k - 8u] = b + ((w + s->to[k]) & PL_M);
-        pl_taps(u, mo);
-        pl_taps_ms(u + 7, mo, so, s->ko);
-        pl_taps(t + 8, mid);
-        pl_taps_ms(t + 15, mid, side, s->ko);
-        pl_xw(s->xw, &xa, &xb);
-        xa >>= 4, xb >>= 4;                             /* (Q10: |mid|, |side| <= 2^18) */
-        for (i = 0; i < (int32_t)HL_NC; i++) {
-            mid[i] = (mo[i] * xa + mid[i] * xb) >> 10;
-            side[i] = (so[i] * xa + side[i] * xb) >> 10;
-        }
-    } else {
-        pl_taps(t + 8, mid);
-        pl_taps_ms(t + 15, mid, side, s->ko);
+    if (s->xf)                                          /* a SIZE fade: the taps from the old reads too, blended */
+        FR_FAR(pl_xtaps)(s, t, w, mid, side);
+    else {
+        FR_FAR(pl_taps)(t + 8, mid);
+        FR_FAR(pl_taps_ms)(t + 15, mid, side, s->ko);
     }
     if (s->fix & 1u) pl_cpy(b, b + PL_N);            /* (the guard past the wrapped write: the front's own copy) */
     if (s->fix & 2u) pl_cpy(ib, ib + PL_IN);

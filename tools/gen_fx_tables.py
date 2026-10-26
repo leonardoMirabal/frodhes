@@ -184,11 +184,18 @@ def main():
     out.append(arr("FX_WAH_F", "int16_t", wah))
     # knob laws (Q16): 2^((v-64)/64) and its inverse (BARK tip scale and gain compensation), 2^((v-64)/32) (BELL),
     # 2^(-(v-64)/128) (HAMMER: contact-rate multiplier, x2^(-0.5) .. x2^(+0.5))
-    # (0.9.6, the flash: v >= 64 is FX_EXP2F(4 (v - 64)), the same rounded numbers; only v < 64 is stored, in 16 bits)
+    # (0.9.6, the flash: none of it stored. v >= 64 is FX_EXP2F(4 (v - 64)), v < 64 half of FX_EXP2F(4 v), rounded up
+    # where the mask's bit v says: the same rounded numbers)
     p64 = [int(round(65536 * 2 ** ((v - 64) / 64))) for v in range(128)]
-    assert all(p64[64 + j] == int(round(65536 * 2 ** (4 * j / 256))) for j in range(64)) and max(p64[:64]) < 65536
-    out.append(arr("KN_P64_LO", "uint16_t", p64[:64], 8))
-    out.append("#define KN_P64(v) ((uint32_t)(v) >= 64u ? FX_EXP2F(((uint32_t)(v) - 64u) << 2) : (uint32_t)KN_P64_LO[v])\n")
+    e2 = [int(round(65536 * 2 ** (i / 256))) for i in range(256)]
+    assert all(p64[64 + j] == e2[4 * j] for j in range(64))
+    assert all(p64[j] in (e2[4 * j] >> 1, (e2[4 * j] >> 1) + 1) for j in range(64))
+    rb = sum(1 << j for j in range(64) if p64[j] != e2[4 * j] >> 1)
+    out.append("/* KN_P64(v) = 2^((v-64)/64) in Q16 (v 0..127), from FX_EXP2F (below; macros expand where used) */\n"
+               f"#define KN_P64_RB(v) (((uint32_t)(v) < 32u ? 0x{rb & 0xFFFFFFFF:08X}u >> (uint32_t)(v) : "
+               f"0x{rb >> 32:08X}u >> ((uint32_t)(v) - 32u)) & 1u)\n"
+               "#define KN_P64(v) ((uint32_t)(v) >= 64u ? FX_EXP2F(((uint32_t)(v) - 64u) << 2) : "
+               "(FX_EXP2F((uint32_t)(v) << 2) >> 1) + KN_P64_RB(v))\n")
     # (0.9.5, the flash: the inverse and BELL's law are not stored: 2^(-(v-64)/64) = KN_P64(128 - v) and 2^((v-64)/32)
     # = rhodes_tables.h DECAY_K[128 - v] for v >= 1, the same rounded numbers; tests/py/test_fx_tables_derived.py)
     out.append("/* KN_P64I(v) = 2^(-(v-64)/64), KN_P32(v) = 2^((v-64)/32) in Q16 (v 0..127): mirrors of KN_P64 and of DECAY_K\n"
