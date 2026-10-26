@@ -137,7 +137,7 @@ static uint32_t rh_ages;
 static uint32_t rh_h_steals;                   /* host: the steals (engine.c eng_host_report, tools/engine_ab.py) */
 #endif
 static int32_t rh_pedal_w = 32768;             /* ISR copy: damper weight for keys that are up */
-static int32_t rlc_m1, rlc_m2, rlc_o1, rlc_o2, rlc_e;
+static int32_t rh_st[3][5];                    /* the pickup RLC's and the TYPE's body biquads' states (m1 m2 o1 o2 e) */
 /* SPREAD (S13): each voice's stereo position, pan in [-1, 1], as a side signal S = sum pan_k v_k next to the mono
  * mix M = sum v_k (one multiply a sample a voice that has a position); fx.c makes L = M + S, R = M - S, so the
  * centre (and SPREAD 0, no side at all) is the mono sum exactly. S goes through the same pickup load and body
@@ -152,7 +152,6 @@ static volatile int32_t rh_spread RH_SP_SEC(".bss.rh_spread");   /* SPREAD 0..12
 static int32_t rh_side[256] RH_SP_SEC(".bss.rh_side");
 static int32_t sd_st[3][5] RH_SP_SEC(".bss.rh_sd_st");      /* the side's RLC and body biquad states (m1 m2 o1 o2 e) */
 static uint8_t rh_side_on RH_SP_SEC(".bss.rh_side_on"), rh_side_tail RH_SP_SEC(".bss.rh_side_tail");
-static int32_t bd_m[2][2], bd_o[2][2], bd_e[2];          /* the TYPE's body biquads */
 static uint8_t rh_type;
 /* voicing, written by the main loop (params.c), applied at each note-on (IMPLEMENTATION-v3 §4.4, §10.1) */
 static volatile int32_t rh_tone_off;           /* Q25: added to the pickup offset (TONE) */
@@ -1137,9 +1136,8 @@ typedef struct { int32_t st[3][5], ss[3][5], buf[256], sbuf[256]; uint8_t n, ty,
 static rh_txf_t rh_txf RH_SP_SEC(".bss.rh_txf");
 static int rh_chain_zero(void)
 {
-    uint32_t i, z = (uint32_t)(rlc_m1 | rlc_m2 | rlc_o1 | rlc_o2 | rlc_e);
-    for (i = 0; i < 2u; i++) z |= (uint32_t)(bd_m[i][0] | bd_m[i][1] | bd_o[i][0] | bd_o[i][1] | bd_e[i]);
-    for (i = 0; i < 15u; i++) z |= (uint32_t)sd_st[i / 5u][i % 5u];
+    uint32_t i, z = 0;
+    for (i = 0; i < 15u; i++) z |= (uint32_t)(rh_st[0][i] | sd_st[0][i]);
     return z == 0;
 }
 static uint32_t rh_txf_type(void)                         /* the TYPE the filters run this block */
@@ -1151,10 +1149,10 @@ static uint32_t rh_txf_type(void)                         /* the TYPE the filter
     }
     return rh_txf.run;
 }
-/* the new TYPE's chain over x (in place; 1: the side, its last stage rounding to Q15), from st */
-static void rh_txf_chain(int32_t *x, const int32_t *in, uint32_t n, int32_t (*st)[5], int side)
+/* TYPE t's chain: in -> x (the side: x in place, its last stage rounding to Q15), from st (RLC, the body biquads) */
+static __attribute__((noinline)) void rh_chain(int32_t *x, const int32_t *in, uint32_t n, int32_t (*st)[5], int side, uint32_t t)
 {
-    uint32_t t = rh_txf.ty, nb = RH_TYPE[t].nbody, sb;
+    uint32_t nb = RH_TYPE[t].nbody, sb;
     if (!side) rh_df1(in, x, n, RH_RLC[t], st[0]);
     else if (nb) FR_FAR(rh_df1_s)(x, n, RH_RLC[t], st[0]); else FR_FAR(rh_df1_sq)(x, n, RH_RLC[t], st[0]);
     for (sb = 0; sb < nb; sb++)
@@ -1170,12 +1168,7 @@ static void rh_txf_blend(int32_t *x, const int32_t *nw, uint32_t n)   /* x = old
 }
 static void rh_txf_end(void)                              /* the crossfade done: the new chain is the filters' */
 {
-    uint32_t i;
-    rlc_m1 = rh_txf.st[0][0]; rlc_m2 = rh_txf.st[0][1]; rlc_o1 = rh_txf.st[0][2]; rlc_o2 = rh_txf.st[0][3]; rlc_e = rh_txf.st[0][4];
-    for (i = 0; i < 2u; i++) {
-        bd_m[i][0] = rh_txf.st[1u + i][0]; bd_m[i][1] = rh_txf.st[1u + i][1]; bd_o[i][0] = rh_txf.st[1u + i][2];
-        bd_o[i][1] = rh_txf.st[1u + i][3]; bd_e[i] = rh_txf.st[1u + i][4];
-    }
+    memcpy(rh_st, rh_txf.st, sizeof rh_st);
     memcpy(sd_st, rh_txf.ss, sizeof sd_st);
     rh_txf.run = rh_txf.ty; rh_txf.n = 0;
 }
@@ -1184,9 +1177,9 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
 {
     uint32_t i, sb, j, act = 0, held = 0, idle, sd;
     int32_t mx = 0;
-    uint32_t ty, nb;
+    uint32_t ty;
     rh_events();
-    ty = rh_txf_type(); nb = RH_TYPE[ty].nbody;
+    ty = rh_txf_type();
     if (rh_bend_t != rh_bend_used || rh_rt_pend) rh_retune();
     if (rh_shed_req) { rh_shed_req = 0; rh_shed(); }
     for (i = 0; i < RH_NV && !rv[i].alive; i++) ;
@@ -1206,32 +1199,21 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
                                                            * zeroed at the end of the last one: the output is exactly 0 */
         for (j = 0; j < n; j++) mono_out[j] = 0;
     } else {   /* pickup load: RLC low-pass on the mix, then the instrument's amp / speaker (nb biquads); Q20 -> Q15 */
-        int32_t st[5] = {rlc_m1, rlc_m2, rlc_o1, rlc_o2, rlc_e};
-        rh_df1(rh_mono, mono_out, n, RH_RLC[ty], st);
-        rlc_m1 = st[0]; rlc_m2 = st[1]; rlc_o1 = st[2]; rlc_o2 = st[3]; rlc_e = st[4];
-        for (sb = 0; sb < nb; sb++) {
-            st[0] = bd_m[sb][0]; st[1] = bd_m[sb][1]; st[2] = bd_o[sb][0]; st[3] = bd_o[sb][1]; st[4] = bd_e[sb];
-            rh_df1(mono_out, mono_out, n, RH_BODY[ty][sb], st);
-            bd_m[sb][0] = st[0]; bd_m[sb][1] = st[1]; bd_o[sb][0] = st[2]; bd_o[sb][1] = st[3]; bd_e[sb] = st[4];
-        }
-        if (rh_txf.n) { rh_txf_chain(rh_txf.buf, rh_mono, n, rh_txf.st, 0); rh_txf_blend(mono_out, rh_txf.buf, n); }
+        rh_chain(mono_out, rh_mono, n, rh_st, 0, ty);
+        if (rh_txf.n) { rh_chain(rh_txf.buf, rh_mono, n, rh_txf.st, 0, rh_txf.ty); rh_txf_blend(mono_out, rh_txf.buf, n); }
         mx = FR_FAR(rh_q15)(mono_out, n);
     }
     rh_side_on = rh_side_tail != 0;
     if (rh_side_tail) {                                   /* the side: the same RLC and body, its own state */
         if (rh_txf.n) memcpy(rh_txf.sbuf, rh_side, n * sizeof *rh_side);
-        if (nb) FR_FAR(rh_df1_s)(rh_side, n, RH_RLC[ty], sd_st[0]); else FR_FAR(rh_df1_sq)(rh_side, n, RH_RLC[ty], sd_st[0]);
-        for (sb = 0; sb < nb; sb++)
-            if (sb + 1u < nb) FR_FAR(rh_df1_s)(rh_side, n, RH_BODY[ty][sb], sd_st[1u + sb]);
-            else FR_FAR(rh_df1_sq)(rh_side, n, RH_BODY[ty][sb], sd_st[1u + sb]);
-        if (rh_txf.n) { rh_txf_chain(rh_txf.sbuf, rh_txf.sbuf, n, rh_txf.ss, 1); rh_txf_blend(rh_side, rh_txf.sbuf, n); }
+        rh_chain(rh_side, rh_side, n, sd_st, 1, ty);
+        if (rh_txf.n) { rh_chain(rh_txf.sbuf, rh_txf.sbuf, n, rh_txf.ss, 1, rh_txf.ty); rh_txf_blend(rh_side, rh_txf.sbuf, n); }
         if (--rh_side_tail == 0) { memset(sd_st, 0, sizeof sd_st); memset(rh_txf.ss, 0, sizeof rh_txf.ss); }
     }
     for (i = 0; i < RH_NV; i++)
         if (rv[i].alive) { act |= 1u << i; rh_notes[i] = rv[i].note; if (rv[i].held) held |= 1u << i; }
     if (!act && !rh_pn_n && mx < 2) {                     /* exact silence once everything has ended */
-        rlc_m1 = rlc_m2 = rlc_o1 = rlc_o2 = rlc_e = 0;
-        for (sb = 0; sb < 2u; sb++) bd_m[sb][0] = bd_m[sb][1] = bd_o[sb][0] = bd_o[sb][1] = bd_e[sb] = 0;
+        memset(rh_st, 0, sizeof rh_st);
         if (rh_txf.n) { rh_txf.run = rh_txf.ty; rh_txf.n = 0; }   /* (silent: nothing left to fade) */
         if (rh_quiet_blocks < 0xFFFFu) rh_quiet_blocks++;
     } else

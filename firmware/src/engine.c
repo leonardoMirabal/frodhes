@@ -148,10 +148,9 @@ static uint32_t eng_shed_count(void) { return rh_shed_count + bar_shed_count; }
 /* ---- ISR */
 static void eng_rh_kill_all(void)               /* the Rhodes stops at once (after the fade block) */
 {
-    uint32_t i, sb;
+    uint32_t i;
     for (i = 0; i < RH_NV; i++) { rv[i].alive = 0; rv[i].pend = 0; }
-    rlc_m1 = rlc_m2 = rlc_o1 = rlc_o2 = rlc_e = 0;
-    for (sb = 0; sb < 2u; sb++) bd_m[sb][0] = bd_m[sb][1] = bd_o[sb][0] = bd_o[sb][1] = bd_e[sb] = 0;
+    memset(rh_st, 0, sizeof rh_st);
     rh_active_bits = rh_held_bits = 0;
 }
 
