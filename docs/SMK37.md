@@ -50,8 +50,9 @@ there once (only when 0.9.5's owner tag is at 0xAF000), copies it to its own pla
 
 If you made the flash backup above before installing 0.9.5, you can put the stock settings back: write your backup's
 0x9D000-0xBFFFF over the unit's (with the kit's jl-uboot-tool, as for the backup). Only that
-range: never write the calibration from a backup of another unit. Without a backup, the stock firmware rebuilds its
-settings cannot be put back; the calibration was never touched.
+range: never write the calibration from a backup of another unit. Without a backup, the stock settings that 0.9.5
+overwrote cannot be put back (how the stock firmware then starts up is not known to us); the calibration was never
+touched.
 
 ## The way back to stock
 
