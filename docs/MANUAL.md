@@ -1031,6 +1031,8 @@ compensation takes care of it when you record.
   last change is lost, never the setup or a preset. The pattern has one place: a power cut while it is saved loses
   the pattern only. The first start after the update from 0.9.5 copies 0.9.5's setup, presets and pattern once.
   Going back to 0.9.5 afterwards finds its presets and pattern as they were at the update, and its setup as it was or its defaults (once 0.9.6 has saved twice).
+  Whatever 0.9.5 saves after such a way back (its setup, a preset, the pattern) comes over again at the next update
+  to 0.9.6 and replaces 0.9.6's own; what 0.9.5 did not save stays as 0.9.6 had it.
 - **It does not start:** switch the FM-1 off, hold **OCT−** and switch it on. That is the USB rescue: install again
   from the hub or with `fm1_install.py`. Your FM-1 can always be recovered this way.
 - **It shows UPDATE MODE or UPDATE FAILED at power-on:** an install was cut off; install again (section 1).

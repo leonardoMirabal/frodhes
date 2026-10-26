@@ -189,7 +189,9 @@ typedef struct {
     uint8_t dim;                               /* 0.9.4: DISPLAY BRIGHTNESS, steps down from full: 0 (as made) .. 9; the
                                                 * screen and every light. LEDS is in Dinghy's `leds` above (0 in every
                                                 * record so far = ROOTS; 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
-    uint8_t seq_rsv[57];
+    uint8_t old_id[12];                        /* 0.9.6: the ids of 0.9.5's settings, presets, pattern this record
+                                                * has taken in (frodhes.c st_old_scan; 0: none) */
+    uint8_t seq_rsv[45];
     uint8_t flags2;                            /* 0.9.5: 1 = the preset index in the 19-factory layout (U01 = 19) */
 #if BOARD_SMK37
     uint8_t smk_mst[2];                        /* 0.9.6, SMK-37: K1's MASTER + 1, little endian (0, every record

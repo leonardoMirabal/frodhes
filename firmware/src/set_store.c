@@ -66,6 +66,21 @@ static int settings_load_old(void *p, uint32_t n)
     memcpy(p, st_rec + 12u, n);
     return 0;
 }
+/* an id of what is at a place before 0.9.6 (its data's crc and its seq; never 0, 0 is "nothing there"): the record
+ * keeps the ids it has taken in (frodhes.c st_old_scan), so a later 0.9.5 save there is told from what was taken */
+static __attribute__((unused)) uint32_t st_id(uint32_t crc, uint32_t seq)
+{
+    uint32_t v = crc ^ (seq * 0x9E3779B1u);
+    return v ? v : 1u;
+}
+/* the id of those settings (0: none), without taking them: the record's sector and seq stay */
+static __attribute__((unused)) uint32_t settings_old_id(void)
+{
+    uint32_t at = set_at, q = set_seq, id = 0;
+    if (!rec_load(OLD_SET_A, OLD_SET_B, 256u)) id = st_id(crc32(st_rec + 12u, 256u), set_seq);
+    set_at = at; set_seq = q;
+    return id;
+}
 #endif
 /* the save without holding the main loop (fm1_flash.h fl_op_start / fl_op_poll): settings_save_start copies the
  * record (p: the 256-byte settings, and the tail) and erases the other sector; settings_save_poll, once a main-loop

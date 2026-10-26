@@ -47,6 +47,8 @@ data, 0xC2000-0xEAFFF, and its resources at 0xF4000). It writes nothing of the s
 0x9D000 (the settings) and 0xAF000 (its owner tag), then wrote its presets and pattern at 0x9E000-0xA1FFF and staged
 updates at 0xBB000-0xBFFFF. The stock settings that were in those sectors are gone. 0.9.6 reads 0.9.5's data from
 there once (only when 0.9.5's owner tag is at 0xAF000), copies it to its own place, and never writes that area again.
+If you go back to 0.9.5 later, whatever it saves there (its setup, a preset, the pattern) comes over again at the next
+update to 0.9.6.
 
 If you made the flash backup above before installing 0.9.5, you can put the stock settings back: write your backup's
 0x9D000-0xBFFFF over the unit's (with the kit's jl-uboot-tool, as for the backup). Only that

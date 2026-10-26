@@ -424,6 +424,22 @@ static void settings_poll(void)
     }
 }
 
+/* What of the places before 0.9.6 to take (st_mig). No record yet: all of it (the first boot after 0.9.5). A record:
+ * only what 0.9.5 saved after the record took those places in (back to 0.9.5 and up again, BUGHUNT #40): each is
+ * told by its id, which the record keeps (set.old_id); one that is gone is not newer. 0.9.5 ran last, so what it saved
+ * is the newer (the FM-1: its settings share the record's two sectors, so a copy of the record left from before the
+ * way back would else win, the 0.9.5 setup and pattern never read) */
+static void st_old_scan(void)
+{
+    uint32_t i, was[3];
+    st_mig = 0;
+    if (!st_old_ok) return;
+    st_oid[0] = settings_old_id(); st_oid[1] = pr_old_id(); st_oid[2] = sq_old_id();
+    memcpy(was, set.old_id, sizeof was);
+    for (i = 0; i < 3u; i++)
+        if (!st_new || (st_oid[i] && st_oid[i] != was[i])) st_mig |= (uint8_t)(1u << i);
+}
+
 static void app_main(void)
 {
     uint32_t prev = 0, k;
@@ -431,11 +447,20 @@ static void app_main(void)
     st_tail = (uint8_t *)pr_user;                   /* the record: the settings, then the user presets (set_store.c) */
     st_new = settings_load(&set, sizeof set) == 0;
 #ifdef OLD_OWNER_AT
-    st_old_ok = !st_new && smk_old_ours();          /* (SMK: the places before 0.9.6 only if ours, frodhes_store.h) */
+    st_old_ok = smk_old_ours();                     /* (SMK: the places before 0.9.6 only if ours, frodhes_store.h) */
 #else
-    st_old_ok = !st_new;
+    st_old_ok = 1;
 #endif
+    st_old_scan();
     fresh = !st_new && (!st_old_ok || settings_load_old(&set, sizeof set) != 0);
+    if (st_new && (st_mig & 1u)) {                  /* 0.9.5's settings, saved after the record took them in */
+        uint32_t at = set_at, q = set_seq;
+        if (!settings_load_old(&set, sizeof set)) {
+            if (set_at != SETTINGS_AT && set_at != SETTINGS_B) set_at = at;   /* (SMK: the save to the record's older
+                                                     * copy; the FM-1: to the record's, 0.9.5's copy kept till then) */
+            if ((int32_t)(q - set_seq) > 0) set_seq = q;   /* (the save newer than both) */
+        }
+    }
     if (!fresh && set.ver != 1u && set.ver != SET_VER) fresh = 1;   /* a record this firmware cannot read (another
                                                                      * version): as a first boot, so it plays F01 too */
     if (fresh) params_defaults();
@@ -473,10 +498,12 @@ static void app_main(void)
     }
     snd_base_take();
     set_dirty = 0;
+    memcpy(set.old_id, st_oid, sizeof st_oid);  /* (the places before 0.9.6 as this record has them now) */
     settings_record(&set_saved);                /* nothing to write at boot (a converted record: at the next change) */
     set_pend = set_saved;
     seq_load();
-    if ((st_old_ok && (!fresh || pr_old)) || sq_old)   /* the first boot after 0.9.5 (no record yet, its data there):
+    if ((st_old_ok && (st_new ? (st_mig & 1u) != 0u || pr_old : !fresh || pr_old)) || sq_old)   /* the first boot
+                                                     * after 0.9.5 (no record yet, its data there; or newer there):
                                                      * the migration. The pattern to its place, then the record (the
                                                      * commit): a cut before it finds no record and migrates again from
                                                      * the old places, which nothing writes */

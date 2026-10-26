@@ -269,12 +269,20 @@ static void presets_load_bank(void)
     }
 }
 static uint8_t pr_old;                          /* the migration found a bank before 0.9.6's (frodhes.c) */
+static uint32_t pr_old_id(void)                 /* the bank before 0.9.6, the copy the load takes: its id (0: none) */
+{
+    bank_hdr_t ha, hb;
+    int va = bank_valid(PR_BANK_A, &ha), vb = bank_valid(PR_BANK_B, &hb);
+    if (!va && !vb) return 0;
+    if (!va || (vb && (int32_t)(ha.seq - hb.seq) <= 0)) ha = hb;
+    return st_id(ha.crc ^ ha.len, ha.seq);
+}
 static void presets_load_bank_in(void)
 {
     bank_hdr_t ha, hb;
     int va, vb;
     uint32_t i;
-    if (st_new) return;                                   /* (the record's: settings_load) */
+    if (st_new && !(st_mig & 2u)) return;                 /* (the record's: settings_load) */
     for (i = 0; i < PR_NU; i++) pr_user[i].used = 0;
     if (!st_old_ok) { presets_starters(); return; }     /* (SMK: the stock's data there, not ours) */
     va = bank_valid(PR_BANK_A, &ha); vb = bank_valid(PR_BANK_B, &hb);
