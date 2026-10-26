@@ -29,10 +29,14 @@
  *   0xC0000-0xC0FFF  BTIF (BT pairing)              NEVER
  *   0xC1000-0xC1FFF  USRTRIM (key/pad/wheel calibration, "trimdat")   NEVER
  *   0xC2000-0xE9FFF  USRFLASH: (SLOOP: user sample slots; Dinghy: the slots)       FL_SMP
- *   0xEA000-0xF3FFF  free (USRFLASH tail + unlisted), unused
+ *   0xEA000          USRFLASH's last sector (the stock table: USRFLASH 0xC2000 + 0x29000 = 0xEB000)
+ *   0xEB000-0xF3FFF  in no region of the stock table (Pro / Elite v016, MKE-P37 v015): Frodhes' store  FL_FREE
  *   0xF4000-0xFDFFF  USR (stock resources; kept for a rollback)   NEVER
- *   0xFE000-0xFEFFF  free, unused
+ *   0xFE000-0xFEFFF  in no region of the stock table, unused
  *   0xFF000-0xFFFFF  key_mac                        NEVER
+ * The stock table's regions (the packages' app_area_head, decoded): PRCT 0-0x9D000 (MKE-P37: 0x9C000), VM 0x9D000-
+ * 0xC0000 (MKE-P37: 0x9C000-), BTIF 0xC0000, USRTRIM 0xC1000, USRFLASH 0xC2000-0xEB000, USR 0xF4000-0xFE000. The VM
+ * holds the stock firmware's settings and presets: Frodhes 0.9.6 writes none of it (frodhes_store.h).
  * Everything below is an explicit allow-list; the asserts keep each allowed window out of the
  * protected ranges at compile time. */
 #define FL_HEAD_HI      0x00004000u                /* protected: [0, FL_HEAD_HI) */
@@ -52,6 +56,10 @@
 #define FL_OTA_HI       0x000C0000u
 #define FL_SMP_LO       0x000C2000u                /* user sample slots (eng_sample.c) */
 #define FL_SMP_HI       0x000EA000u
+#define FL_FREE_LO      0x000EB000u                /* in no stock region (Frodhes' store and update staging) */
+#define FL_FREE_HI      0x000F4000u
+#define FL_STAGE_LO     0x000EF000u                /* the update staging in it (Frodhes' ota.c, 5 sectors; its record */
+#define FL_STAGE_HI     0x000F4000u                /* at 0xF3F00): the loader may drop that record (FL_LDR_RANGE_OK) */
 /* a window [lo, hi) is allowed: sector aligned, non-empty, and clear of every protected range */
 #define FL_WIN_SAFE(lo, hi) ((lo) % 0x1000u == 0u && (hi) % 0x1000u == 0u && (lo) < (hi) && \
                              (lo) >= FL_HEAD_HI && (hi) <= FL_KEYMAC_LO && \
@@ -60,15 +68,19 @@
 _Static_assert(FL_WIN_SAFE(FL_DATA_LO, FL_DATA_HI), "SMK: FL_DATA overlaps a protected range");
 _Static_assert(FL_WIN_SAFE(FL_OTA_LO, FL_OTA_HI), "SMK: FL_OTA overlaps a protected range");
 _Static_assert(FL_WIN_SAFE(FL_SMP_LO, FL_SMP_HI), "SMK: FL_SMP overlaps a protected range");
+_Static_assert(FL_WIN_SAFE(FL_FREE_LO, FL_FREE_HI) && FL_FREE_LO >= FL_SMP_HI + 0x1000u, "SMK: FL_FREE");
+_Static_assert(FL_STAGE_LO >= FL_FREE_LO && FL_STAGE_HI <= FL_FREE_HI && FL_STAGE_HI - FL_STAGE_LO == 0x5000u, "SMK: FL_STAGE");
 _Static_assert(FL_WIN_SAFE(FL_APP_LO, FL_APP_HI), "SMK: FL_APP overlaps a protected range");
 _Static_assert(FL_WIN_SAFE(FL_REC_LO, FL_REC_HI), "SMK: FL_REC overlaps a protected range");
 _Static_assert(FL_REC_HI == FL_CAL_LO && FL_OTA_HI <= FL_REC_HI && FL_OTA_LO >= FL_REC_LO,
                "SMK: the update record (OTA area) must lie in the loader's record window, below BTIF");
 _Static_assert(FL_DATA_HI <= FL_OTA_LO && FL_APP_HI <= FL_DATA_LO, "SMK: windows overlap");
 /* the update loader (loader.c): the app area, and records only in the VM below BTIF */
-#define FL_LDR_RANGE_OK(off, n) (FL_IN(off, n, FL_APP_LO, FL_APP_HI) || FL_IN(off, n, FL_REC_LO, FL_REC_HI))
+#define FL_LDR_RANGE_OK(off, n) (FL_IN(off, n, FL_APP_LO, FL_APP_HI) || FL_IN(off, n, FL_REC_LO, FL_REC_HI) || \
+                                 FL_IN(off, n, FL_STAGE_LO, FL_STAGE_HI))
 /* the app's own store: FL_DATA and the sample slots (Dinghy's platform.c gives a narrower FL_RANGE_OK) */
-#define FL_STORE_OK(off, n) (FL_IN(off, n, FL_DATA_LO, FL_DATA_HI) || FL_IN(off, n, FL_SMP_LO, FL_SMP_HI))
+#define FL_STORE_OK(off, n) (FL_IN(off, n, FL_DATA_LO, FL_DATA_HI) || FL_IN(off, n, FL_SMP_LO, FL_SMP_HI) || \
+                             FL_IN(off, n, FL_FREE_LO, FL_FREE_HI))
 #ifndef FL_RANGE_OK
 #define FL_RANGE_OK(off, n) (FL_STORE_OK(off, n) || FL_IN(off, n, FL_OTA_LO, FL_OTA_HI))
 #endif
@@ -78,6 +90,11 @@ _Static_assert(FL_DATA_HI <= FL_OTA_LO && FL_APP_HI <= FL_DATA_LO, "SMK: windows
 #define FL_PROTECTED(off, n) (FL_HITS(off, n, 0u, FL_HEAD_HI) || FL_HITS(off, n, FL_CAL_LO, FL_CAL_HI) ||                               FL_HITS(off, n, FL_USRRES_LO, FL_USRRES_HI) || (uint32_t)(off) >= FL_KEYMAC_LO ||                               (uint32_t)(n) > FL_KEYMAC_LO - (uint32_t)(off))
 #define FL_GUARD(off, n) (FL_RANGE_OK(off, n) && !FL_PROTECTED(off, n))
 #else /* FM-1 */
+/* The stock tables (decoded from the packages' app_area_head): V15 (FM-1_015) PRCT 0-0x93000, VM 0x93000-0xE9000
+ * (its settings and patches), BTIF 0xE9000, USR 0xEA000-0xFC000 (the factory voices; no installer rewrites it).
+ * V16 (FM-1_016) PRCT 0-0xA9000, VM 0xBA000-0xDA000, SEQ64 0xDA000-0xEC000, BTIF 0xEC000. In no region of either:
+ * 0xFC000-0xFEFFF, Frodhes' store from 0.9.6 (frodhes_store.h); and in V16's alone 0xA9000-0xB9FFF (the update
+ * staging on a unit that came from V16, ota.c). Felucca's data area below is Felucca's, not Frodhes'. */
 #define FL_PLAIN_LO     0x00093000u                /* plain XIP window from the FM-1 VM start */
 #define FL_DATA_LO      0x00097000u                /* Felucca main store */
 #define FL_DATA_HI      0x000E0000u

@@ -284,29 +284,26 @@ static void seq_poll(void)
 /* ---- the pattern in flash (only when stopped and quiet: an erase stalls the audio) */
 #ifdef DINGHY_HOST
 static uint32_t crc32(const uint8_t *p, uint32_t n);   /* presets.c (host) */
-static uint8_t sq_host_fl[2][4096];
 static uint32_t sq_host_reads;
 static int sq_fl_read(uint32_t at, void *p, uint32_t n)   /* at: a sector and an offset in it (sq_valid reads the
                                                               * events after the header) */
 {
-    uint32_t s = at >= SQ_B, off = at - (s ? SQ_B : SQ_A);
     sq_host_reads++;                                    /* (tests: no reads at save time) */
-    if (off + n > 4096u) return -1;
-    memcpy(p, &sq_host_fl[s][off], n);
-    return 0;
+    if ((at & 0xFFFu) + n > 4096u) return -1;
+    return st_read(at, p, n);                           /* (tests/host.c's flash) */
 }
 static int sq_fl_erase(uint32_t at)
 {
     if (host_fl_check("erase pattern", at, 0x1000u)) return -1;   /* (the firmware's allow-list, tests/host.c) */
     if (getenv("FRODHES_SQ_FAIL")) { printf("%6u ms  pattern erase failed\n", fm1_ms); return -1; }   /* (tests) */
-    printf("%6u ms  pattern %c erased\n", fm1_ms, at == SQ_B ? 'B' : 'A');   /* (tests: when it saves) */
-    memset(sq_host_fl[at == SQ_B], 0xFF, 4096);
+    printf("%6u ms  pattern %c erased\n", fm1_ms, at == SQ_B && SQ_B != SQ_A ? 'B' : 'A');   /* (tests: when it saves) */
+    memset(host_mem + at, 0xFF, 4096);
     return 0;
 }
 static int sq_fl_write(uint32_t at, uint32_t off, const void *p, uint32_t n)
 {
     if (host_fl_check("write pattern", at + off, n)) return -1;
-    memcpy(&sq_host_fl[at == SQ_B][off], p, n);
+    memcpy(host_mem + at + off, p, n);
     return 0;
 }
 #else
@@ -325,8 +322,11 @@ static int sq_op_start(uint32_t at, uint32_t off, const void *p, uint32_t n)
     sq_op_t = fm1_ms; sq_op_ms = p ? 1u : HOST_SAVE_MS;
     return rc < 0 ? rc : 1;
 }
-static int sq_op_poll(void) { return fm1_ms - sq_op_t < sq_op_ms ? 1 : 0; }
+static uint8_t sq_sync;                                 /* (the migration's save at power-on: no time goes by) */
+static int sq_op_poll(void) { return !sq_sync && fm1_ms - sq_op_t < sq_op_ms ? 1 : 0; }
+#define SQ_SYNC(on) (sq_sync = (on))
 #else
+#define SQ_SYNC(on) ((void)0)
 static int sq_op_start(uint32_t at, uint32_t off, const void *p, uint32_t n)
 {
     int rc = flash_ok ? fl_op_start(at + off, (const uint8_t *)p, p ? n : 0u) : -1;
@@ -342,18 +342,23 @@ static int sq_valid(uint32_t at, sq_hdr_t *h)
 }
 static uint32_t sq_sv_tgt = SQ_A;                     /* the sector the next save writes: never the one that holds the
                                                          * last good pattern (no flash reads at save time) */
-static void seq_load(void)
+static uint8_t st_new, st_old_ok, sq_old;               /* the store's record found; the places before 0.9.6 ours (the
+                                                         * record not there); the pattern came from there */
+static void seq_load(void)                              /* the pattern: before the store's migration (no record yet)
+                                                         * from the place before 0.9.6 if one is there, else its own */
 {
     sq_hdr_t a, b;
-    int va = sq_valid(SQ_A, &a), vb = sq_valid(SQ_B, &b);
-    uint32_t n;
+    uint32_t pa = OLD_SQ_A, pb = OLD_SQ_B, n;
+    int va = st_old_ok && sq_valid(pa, &a), vb = st_old_ok && sq_valid(pb, &b);
+    sq_old = (uint8_t)(va || vb);
+    if (!sq_old) { pa = SQ_A; pb = SQ_B; va = sq_valid(pa, &a); vb = sq_valid(pb, &b); }
     for (n = 0; n < 128u; n++) rec_start[n] = 0xFFFFu;
     sq_n = 0;
     if (!va && !vb) return;
     {
-        uint32_t at = va && (!vb || (int32_t)(a.seq - b.seq) > 0) ? SQ_A : SQ_B;
+        uint32_t at = va && (!vb || (int32_t)(a.seq - b.seq) > 0) ? pa : pb;
         sq_hdr_t h;
-        sq_sv_tgt = at == SQ_A ? SQ_B : SQ_A;           /* (the next save: the other sector) */
+        sq_sv_tgt = at == SQ_A ? SQ_B : SQ_A;           /* (the next save: the other sector; an old place: A) */
         if (!sq_valid(at, &h)) { sq_n = 0; return; }   /* (re-reads it into sq_ev) */
         sq_n = h.n; sq_flash_seq = h.seq;
     }
@@ -369,9 +374,9 @@ static void sq_sv_failed(void)                         /* a step failed: again 1
     sq_sv_step = 0;
     if (++sq_sv_fail < 3u) { sq_dirty = 1; sq_change_t = fm1_ms; }
 }
+static void sq_sv_begin(void);
 static void seq_save_poll(void)
 {
-    uint32_t at;
     if (sq_sv_step) {                                   /* a save runs: its next step when the last one is done */
         int rc = sq_op_poll();
         if (rc == 1) return;
@@ -399,6 +404,11 @@ static void seq_save_poll(void)
     if (!sq_dirty || seq_play || fm1_ms - sq_change_t < 1500u || !eng_idle() || !fx_quiet() || !tempo_flash_ok() ||
         set_save_busy()) return;                        /* (one auto save at a time: they share the flash's one
                                                          * operation, and neither waits for the other in the loop) */
+    sq_sv_begin();
+}
+static void sq_sv_begin(void)                           /* a save starts (seq_save_poll runs it; the migration too) */
+{
+    uint32_t at;
     sq_dirty = 0;
     at = sq_sv_tgt;
     sq_sv_h.magic = SQ_MAGIC; sq_sv_h.seq = ++sq_flash_seq; sq_sv_h.n = sq_n;
@@ -407,4 +417,14 @@ static void seq_save_poll(void)
     sq_sv_at = at; sq_sv_off = sizeof(sq_hdr_t); sq_sv_end = sizeof(sq_hdr_t) + sq_n * sizeof(sq_ev_t);
     sq_sv_step = 1;
     if (sq_op_start(at, 0, 0, 0) < 0) sq_sv_failed();   /* the erase first */
+}
+static int seq_save_now(void)                           /* the migration's: the pattern to its place, holding the loop;
+                                                         * 0 = written */
+{
+    uint8_t f = sq_sv_fail;
+    sq_sv_begin();
+    SQ_SYNC(1);
+    while (sq_sv_step) seq_save_poll();
+    SQ_SYNC(0);
+    return sq_sv_fail != f ? -1 : 0;
 }

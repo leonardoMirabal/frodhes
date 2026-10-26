@@ -3,10 +3,11 @@
 is the FM-1 switched on again with exactly what the firmware saved. The settings (the system setup and the preset
 last loaded or saved, which plays again as it is stored: knobs turned after it are not kept, test_autosave_setup.py),
 the user presets and the sequencer's pattern survive; the saves wait 2 s after the last change (1.5 s for the pattern) and for silence; a
-corrupt record falls back (the settings to F01, a preset bank or pattern sector to the other copy); old record
-versions convert. The flash file is the FM-1's five sectors: settings ([magic DNGY][len][crc32] + the 256-byte
-record, platform.c), preset bank A / B ({magic FRPB, seq, len, crc} + 16 records, presets.c), pattern A / B
-({magic FSQ1, seq, n, crc} + 8-byte events, seq.c)."""
+corrupt record falls back (to the other copy; both: F01); old record versions convert; 0.9.5's flash migrates.
+The flash file (tests/host.c HOST_SECS) is the FM-1's sectors: [0] 0xFC000 (0.9.5's settings: [magic DNGY][len][crc32]
++ 256 bytes; 0.9.6's record A: the same header + 256 + 1536 bytes, [seq][~seq]), [1] [2] 0.9.5's preset bank A / B
+({magic FRPB, seq, len, crc} + 16 records, presets.c), [3] [4] 0.9.5's pattern A / B ({magic FSQ1, seq, n, crc} +
+8-byte events, seq.c), [5] 0xFD000 the record B, [6] 0xFE000 the pattern (0.9.6). A five-sector file is 0.9.5's flash."""
 import os
 import struct
 import zlib
@@ -17,7 +18,10 @@ import pytest
 from hostrun import FS, OUT, cc, note, run
 
 SECTOR = 4096
-SET, BANK_A, BANK_B, SEQ_A, SEQ_B = range(5)
+SET, BANK_A, BANK_B, SEQ_A, SEQ_B, REC_B, PAT = range(7)    # (SET: 0.9.5's settings and 0.9.6's record A)
+NSEC = 7
+MAGIC = 0x59474E44
+REC_N = 256 + 16 * 96                                      # the record: the settings, the 16 user presets (v3)
 # settings_t offsets (params.c; append-only, so these never move)
 O_VER, O_FLAGS, O_OCT, O_PRESET, O_BPM, O_TUNE, O_TRANS, O_PANEL, O_UNDO_VALID, O_PANEL2 = 0, 1, 2, 3, 4, 10, 19, 24, 88, 89
 P = dict(TYPE=0, DRIVE=1, TW_SW=2, TW_DEPTH=3, TW_RATE=4, TW_MODE=6, CP_SW=8, CP_DEPTH=9, CP_SPEED=10, CP_SYNC=11,
@@ -40,8 +44,8 @@ def flash_file(tag):
 
 def read_img(path):
     d = bytearray(open(path, "rb").read())
-    assert len(d) == 5 * SECTOR
-    return d
+    assert len(d) in (5 * SECTOR, NSEC * SECTOR), len(d)
+    return d + b"\xff" * (NSEC * SECTOR - len(d))
 
 
 def sector(img, k):
@@ -50,17 +54,54 @@ def sector(img, k):
 
 def put_sector(img, k, data):
     data = bytes(data) + b"\xff" * (SECTOR - len(data))
+    if len(img) < (k + 1) * SECTOR:
+        img += b"\xff" * ((k + 1) * SECTOR - len(img))
     img[k * SECTOR:(k + 1) * SECTOR] = data
 
 
+def record_at(img, k):
+    """the record in sector k (0.9.6's: n = REC_N): (seq, data) or None"""
+    s = sector(img, k)
+    if len(s) < SECTOR:
+        return None
+    magic, n, crc = struct.unpack("<III", s[:12])
+    if magic != MAGIC or n != REC_N or zlib.crc32(bytes(s[12:12 + n])) != crc:
+        return None
+    q, nq = struct.unpack("<II", s[12 + n:20 + n])
+    return (q if q == nq ^ 0xFFFFFFFF else 0), bytearray(s[12:12 + n])
+
+
+def newest_record(img):
+    """the sector of the record the load takes (set_store.c: the newer seq, equal: A) and its data"""
+    a, b = record_at(img, SET), record_at(img, REC_B)
+    if a and (not b or ((b[0] - a[0]) & 0xFFFFFFFF) == 0 or ((b[0] - a[0]) & 0x80000000)):
+        return SET, a[1]
+    assert b, "no record"
+    return REC_B, b[1]
+
+
 def settings_record(img):
-    magic, n, crc = struct.unpack("<III", sector(img, SET)[:12])
-    assert magic == 0x59474E44 and n == 256 and zlib.crc32(bytes(sector(img, SET)[12:12 + n])) == crc
-    return bytearray(sector(img, SET)[12:12 + n])
+    return newest_record(img)[1][:256]
+
+
+def user_presets(img):
+    """the record's 16 user presets (96 bytes each, v3)"""
+    return newest_record(img)[1][256:]
+
+
+def put_record(img, k, data, seq):
+    data = bytes(data)
+    put_sector(img, k, struct.pack("<III", MAGIC, len(data), zlib.crc32(data)) + data +
+               struct.pack("<II", seq, seq ^ 0xFFFFFFFF))
 
 
 def put_settings(img, rec):
-    put_sector(img, SET, struct.pack("<III", 0x59474E44, len(rec), zlib.crc32(bytes(rec))) + bytes(rec))
+    """the settings into the record the load takes (its presets, its seq kept); no record: 0.9.5's settings sector"""
+    if record_at(img, SET) or record_at(img, REC_B):
+        k, data = newest_record(img)
+        put_record(img, k, bytes(rec) + bytes(data[256:]), record_at(img, k)[0])
+    else:
+        put_sector(img, SET, struct.pack("<III", MAGIC, len(rec), zlib.crc32(bytes(rec))) + bytes(rec))
 
 
 def put_bank(img, k, seq, records):
@@ -148,42 +189,62 @@ def saved_flash(tag, lines, end=4000):
 
 
 def test_corrupt_settings_fall_back_to_f01():
-    """a settings record with a bad CRC, a bad magic, another length, or a version this firmware cannot read: the
-    FM-1 starts as new (F01, and it plays F01), the user presets stay"""
+    """0.9.6: the settings and the user presets are one record in two copies. The newer copy with a bad CRC, a bad
+    magic or another length: the other copy loads (the settings and the presets as they were before the last save);
+    both broken: the FM-1 starts as new (F01, and it plays F01; the presets are gone with the record); a version this
+    firmware cannot read: F01, the user presets stay"""
     lines = [cc(20, 81, 90), "100 btn 9", "200 btn 9", "300 midi 0xC0 6 0"]   # U01 saved, then F07 shown
     fl, img = saved_flash("corrupt", lines)
-    good = settings_record(img)
-    assert good[O_PRESET] == 6
-    bad = []
-    a = bytearray(img); a[SECTOR * SET + 12 + 30] ^= 0x40; bad.append(("crc", a))          # a byte flipped
-    a = bytearray(img); a[SECTOR * SET + 0] ^= 1; bad.append(("magic", a))
-    a = bytearray(img); r = good[:255]; put_sector(a, SET, struct.pack("<III", 0x59474E44, 255, zlib.crc32(bytes(r))) + bytes(r))
-    bad.append(("length", a))
-    a = bytearray(img); r = bytearray(good); r[O_VER] = 3; put_settings(a, r); bad.append(("version 3", a))
-    a = bytearray(img); r = bytearray(good); r[O_VER] = 0; put_settings(a, r); bad.append(("version 0", a))
-    for name, a in bad:
+    k, data = newest_record(img)
+    good = data[:256]
+    other = REC_B if k == SET else SET
+    assert good[O_PRESET] == 6 and settings_record(img)[O_PRESET] == 6
+    assert record_at(img, other)[1][O_PRESET] == 0                         # (the preset save's copy: F01, U01 in it)
+
+    def broken(img, k, how):
+        a = bytearray(img)
+        if how == "crc":
+            a[SECTOR * k + 12 + 30] ^= 0x40
+        elif how == "magic":
+            a[SECTOR * k] ^= 1
+        else:
+            r = sector(img, k)[12:12 + 255]
+            put_sector(a, k, struct.pack("<III", MAGIC, 255, zlib.crc32(bytes(r))) + bytes(r))
+        return a
+    for how in ("crc", "magic", "length"):
+        a = broken(img, k, how)
         open(fl, "wb").write(a)
-        b = boot("corrupt-" + name.replace(" ", ""), fl)
+        b = boot("corrupt-" + how, fl)
         s = b.state(100)
-        assert s["header"] == "F01 STAGE 77" and not b.fails, (name, s["header"], b.fails)
-        assert s["u.1"] == "U01 ST77", (name, s["u.1"])
+        assert s["header"] == "F01 STAGE 77" and s["u.1"] == "U01 ST77" and not b.fails, (how, s["header"], s["u.1"])
+        open(fl, "wb").write(broken(a, other, how))
+        b = boot("corrupt-both-" + how, fl)
+        s = b.state(100)
+        assert s["header"] == "F01 STAGE 77" and s["u.1"] != "U01 ST77" and not b.fails, (how, s["header"], s["u.1"])
+    for ver in (3, 0):
+        a = bytearray(img); r = bytearray(good); r[O_VER] = ver; put_settings(a, r)
+        open(fl, "wb").write(a)
+        b = boot(f"corrupt-version{ver}", fl)
+        s = b.state(100)
+        assert s["header"] == "F01 STAGE 77" and s["u.1"] == "U01 ST77" and not b.fails, (ver, s["header"], b.fails)
 
 
 def test_corrupt_bank_and_pattern_use_the_other_copy():
-    """the preset bank and the pattern are written to two sectors in turn, the header last: a broken newer copy
-    loads the older one, both broken: no user presets / no pattern (and nothing else is lost)"""
-    lines = [cc(20, 81, 90), "100 btn 9", "200 btn 9",                 # U01 = DRIVE 90 (bank seq 1)
-             cc(3000, 81, 30), "3100 btn 9", "3200 btn 9",            # U01 = DRIVE 30 (seq 2, the other sector)
+    """0.9.6: the record (the settings and the presets) is written to two sectors in turn, the header last: a broken
+    newer copy loads the older one, both broken: no user presets (the settings' defaults too). The FM-1's pattern
+    has one sector (three free sectors only, frodhes_store.h): broken, no pattern, and nothing else is lost"""
+    lines = [cc(20, 81, 90), "100 btn 9", "200 btn 9",                 # U01 = DRIVE 90
+             cc(3000, 81, 30), "3100 btn 9", "3200 btn 9",            # U01 = DRIVE 30 (the other sector)
              cc(6000, 63, 127), "6100 midi 0x90 60 100", "6150 midi 0x80 60 0", cc(6200, 63, 0),   # pattern: 1 note
              cc(9000, 63, 127), "9100 midi 0x90 64 100", "9150 midi 0x80 64 0", cc(9200, 63, 0),   # 2 notes
              "12000 midi 0xC0 0 0"]
     fl, img = saved_flash("banks", lines, 13000)
-    hdr = lambda k: struct.unpack("<IIII", sector(img, k)[:16])
-    (_, sa, _, _), (_, sb, _, _) = hdr(BANK_A), hdr(BANK_B)
-    newer, older = (BANK_A, BANK_B) if sa > sb else (BANK_B, BANK_A)
-    qa, qb = struct.unpack("<IIII", sector(img, SEQ_A)[:16])[1], struct.unpack("<IIII", sector(img, SEQ_B)[:16])[1]
-    snew, sold = (SEQ_A, SEQ_B) if qa > qb else (SEQ_B, SEQ_A)
-    cases = [("intact", [], "30", "2"), ("newer", [newer, snew], "90", "1"), ("both", [BANK_A, BANK_B, SEQ_A, SEQ_B], None, "0")]
+    newer = newest_record(img)[0]
+    older = REC_B if newer == SET else SET
+    was = record_at(img, older)[1][256 + 16 + P["DRIVE"]]  # U01's DRIVE in the older copy (90, or 30 if a settings
+    assert was in (90, 30)                                   # save came after the second preset save)
+    cases = [("intact", [], "30", "2"), ("newer", [newer], str(was), "2"), ("pattern", [PAT], "30", "0"),
+             ("both", [SET, REC_B], None, "2")]
     for name, broken, drive, notes in cases:
         a = bytearray(img)
         for k in broken:
@@ -193,9 +254,8 @@ def test_corrupt_bank_and_pattern_use_the_other_copy():
                  check_preset=False)
         s = b.state(250)
         assert b.state(100)["notes"] == notes, (name, b.state(100)["notes"])
-        if drive is None:                                   # the bank is gone: U01's name with it ("U01 ----"); the
-            assert b.state(100)["u.1"] == "U01 ----" and s["header"] == "U01 ----", (name, s["header"])   # settings
-            assert s["p.1"] == "30" and not b.fails, (s["p.1"], b.fails)        # still play the last sound, unchanged
+        if drive is None:                                   # the record is gone: U01's name with it
+            assert b.state(100)["u.1"] != "U01 ST77" and s["header"] != "U01 ST77" and not b.fails, (name, s["header"])
         else:
             assert s["header"] == "U01 ST77" and s["p.1"] == drive and not b.fails, (name, s["p.1"], b.fails)
 
@@ -335,8 +395,9 @@ def test_v2_bank_converts_to_v3_and_round_trips():
     for i in range(48, len(dflt)):
         assert s[f"p.{i}"] == str(dflt[i]), (i, s[f"p.{i}"], dflt[i])
     out = read_img(fl)
-    assert a.bank_saves and bank_len(out, BANK_B) == 16 * V3_LEN, (a.bank_saves, bank_len(out, BANK_B))
-    rec = bytes(sector(out, BANK_B)[16:16 + V3_LEN])
+    assert a.bank_saves and len(user_presets(out)) == 16 * V3_LEN, a.bank_saves     # (0.9.6: in the record)
+    assert bank_len(out, BANK_A) == 16 * 64 and bank_len(out, BANK_B) is None         # 0.9.5's bank: as it was
+    rec = bytes(user_presets(out)[:V3_LEN])
     assert rec[0] == 3 and rec[1] == len(dflt) and rec[4:16] == b"SUIT TRM    ", rec[:16]   # (saving names it)
     b = boot("bank2-b", fl, play, end=2000)
     assert not b.fails, b.fails
