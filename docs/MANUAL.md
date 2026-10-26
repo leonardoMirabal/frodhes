@@ -1085,7 +1085,9 @@ Everything in this manual applies, with these differences:
   13 PHASER, 14 CHORUS, 15 DELAY (on / off), 16 SUSTAIN (held, or a tap latches).
 - The faders: FADER BANK A plays the instrument's first VOICE page, bank B the four PERFORM knobs. A fader takes over
   once it reaches its card's value; until then the footer says where to move it.
-- Pitch wheel: pitch bend, ±2 semitones (the Rhodes). Mod wheel: the TREM/WAH depth (VIBES: the motor's depth). The
-  pedal jack takes a sustain pedal of either polarity (plug it in before switching on).
+- Pitch wheel: pitch bend, ±2 semitones (the Rhodes types; VIBES and MARIMBA ignore it). Mod wheel: more TREM/WAH
+  depth on top of the DEPTH you set, up to full at the top (VIBES: more motor depth); at rest the DEPTH as set. Moved
+  up, it switches TREM/WAH (VIBES: the motor) on if it was off, and off again at rest. The pedal jack takes a sustain
+  pedal of either polarity (plug it in before switching on).
 - 7 voices. No TRS MIDI input (no TRS IN card), no key LEDs (no LEDS card on DISPLAY); BRIGHTNESS dims the pads and
   the button LEDs.

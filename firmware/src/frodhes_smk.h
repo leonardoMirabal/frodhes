@@ -249,7 +249,9 @@ static void smk_wheels(void)
         smk_bend16 = b;
         eng_bend_set(8192 + (b > 8191 ? 8191 : b));   /* (the MIDI bend's scale: 8192 = 2 semitones) */
     }
-    /* the mod wheel (up = a lower reading): TREM/WAH's depth, VIBES's motor depth, once it moves */
+    /* the mod wheel (up = a lower reading): more TREM/WAH depth, on VIBES more motor depth, once it moves: on top of
+     * the DEPTH as set (params.c MW_ADD; 0.9.6, #29: it wrote DEPTH, its rest was DEPTH 0); moved up it switches the
+     * effect on, back at rest off again if it did that (and nothing else switched it since) */
     if (!mhi) { mlo = m < MOD_LO ? m : MOD_LO; mhi = m > MOD_HI ? m : MOD_HI; }
     if (m < mlo) mlo = m;
     if (m > mhi) mhi = m;
@@ -257,10 +259,21 @@ static void smk_wheels(void)
     mw = mw < 0 ? 0 : mw > 127 ? 127 : mw;
     if (mw != smk_modw) {
         if (smk_modw >= 0) {
-            uint32_t id = TYPE_HAS_MOTOR(PV(P_TYPE)) ? P_MOT_DEPTH : P_TW_DEPTH;
-            param_set(id, mw);
-            if (id == P_MOT_DEPTH) { if (mw && !PV(P_MOT_ON)) { param_set(P_MOT_ON, 1); set.mot_user_off = 0; } }
-            else perf_wake(id);
+            smk_mw = mw;
+            param_apply(P_TW_DEPTH);
+            param_apply(P_MOT_DEPTH);
+            if (mw && !smk_mw_woke) {
+                if (TYPE_HAS_MOTOR(PV(P_TYPE))) {
+                    if (!PV(P_MOT_ON)) { smk_mw_uoff = set.mot_user_off; param_set(P_MOT_ON, 1); set.mot_user_off = 0; smk_mw_woke = P_MOT_ON; }
+                } else if (!PV(P_TW_SW)) { param_set(P_TW_SW, set.last_on[0]); smk_mw_woke = P_TW_SW; }
+                smk_mw_wv = smk_mw_woke ? PV(smk_mw_woke) : 0;
+            } else if (!mw && smk_mw_woke) {
+                if (PV(smk_mw_woke) == smk_mw_wv) {      /* (still as the wheel left it) */
+                    param_set(smk_mw_woke, 0);
+                    if (smk_mw_woke == P_MOT_ON) set.mot_user_off = smk_mw_uoff;
+                }
+                smk_mw_woke = 0;
+            }
             ui_mark(E_CARDS);
         }
         smk_modw = mw;
@@ -393,6 +406,8 @@ static int smk_host_state(const char *key, char *v, unsigned n)
 {
     unsigned a;
     if (!strcmp(key, "fbank")) snprintf(v, n, "%c", smk_bank ? 'B' : 'A');
+    else if (!strcmp(key, "twdepth")) snprintf(v, n, "%d", (int)fx_p[FXP_TW_DEPTH]);   /* the depth TREM/WAH runs at */
+    else if (!strcmp(key, "motdepth")) snprintf(v, n, "%u", (unsigned)bar_mot_depth);  /* the motor's (engine.c) */
     else if (sscanf(key, "fader.%u", &a) == 1 && a < 4u) {   /* fader a: the card it drives, OWN or WAIT */
         char t[16];
         slot_text(smk_fad_slot(a), t);

@@ -29,10 +29,18 @@
 - A SAVE, and the settings' save, with the drive's KHLON and the tremolo on (as F06 with TREM) waited for ever: the
   output was silent, but a tiny idle residue under the silence gate never counted as quiet. Saves go through now.
 
+- SMK-37: the mod wheel adds TREM/WAH depth (VIBES: motor depth) on top of the DEPTH you set, and gives it back at
+  rest. It used to set DEPTH itself, so at rest the effect was on at depth 0 and the preset's DEPTH was lost. What
+  it switched on, it switches off again at rest.
+- SMK-37: the pitch wheel takes its centre once the reading holds still, and widens its range only to what it holds.
+  A spike on the analog inputs (a jack going in, power-on) could leave a bend on or make a full travel bend only a
+  little, until the next power-on.
+
 ## Tested
 - Host: tests/py/test_steal_race.py, tests/py/test_switch_clicks.py (the cases above; each fails on 0.9.5),
   tests/py/test_control_sweep.py (REVERB SIZE on PLATE and INFINITE: no bend, no click),
   tests/py/test_delay_time_change.py, tests/py/test_overflows.py (under ASan + UBSan), tests/py/test_monkey.py,
   tests/py/test_persistence.py (a save with KHLON + TREM, then a power cycle), tests/scripts/perform_wake.txt,
-  scale_midi.txt, wah_shape.txt, quiet_gated.txt, the control sweep (tools/control_sweep.py) and the manual's claims with their
+  scale_midi.txt, wah_shape.txt, quiet_gated.txt, tests/smk/wheels.txt and wheel_pedal.txt (make test-smk; the pedal
+  plugged in at power-on, a spike as it goes in), tests/smk_wheel_test.c, the control sweep (tools/control_sweep.py) and the manual's claims with their
   expected failures removed, make test, make pytest, Gate R.
