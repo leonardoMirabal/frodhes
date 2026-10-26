@@ -127,10 +127,10 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 #define CV_MAX (240u * 64u)
 #include "gfx.c"
 
-/* Every erase and write the firmware makes (the settings here, the preset bank in presets.c, the pattern in seq.c)
+/* Every erase and write the firmware makes (the record here, the pattern in seq.c)
  * goes through host_fl_check first: the place must pass the firmware's own allow-list (FL_GUARD: store.h with
- * frodhes_store.h's APP_FL_RANGE, hal/fm1_flash_map.h) and lie in the board's store (the SMK-37: FL_DATA, the VM;
- * the FM-1: FL_DATA or the globals sector), else a FAIL line, the call fails as on the device, and the run fails.
+ * frodhes_store.h's APP_FL_RANGE, hal/fm1_flash_map.h) and lie in the board's store (frodhes_store.h: the record
+ * A / B and the pattern, in no stock region), else a FAIL line, the call fails as on the device, and the run fails.
  * So every script checks the flash safety of a board we cannot try (BOARD=smk37); FRODHES_FLASHLOG=1 prints every
  * call. */
 #define HOST_FL_CHECK 1
@@ -138,11 +138,7 @@ static void lcd_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint1
 static uint32_t host_fails, host_fl_calls;
 static int host_fl_check(const char *what, uint32_t at, uint32_t n)
 {
-#if BOARD_SMK37
-    int in_store = FL_IN(at, n, FL_DATA_LO, FL_DATA_HI);
-#else
-    int in_store = FL_IN(at, n, FL_DATA_LO, FL_DATA_HI) || FL_IN(at, n, FL_GLOB_LO, FL_GLOB_HI);
-#endif
+    int in_store = FL_IN(at, n, SETTINGS_AT, SQ_B + 0x1000u);   /* (frodhes_store.h: the record A / B, the pattern) */
     host_fl_calls++;
     if (!FL_GUARD(at, n) || !in_store) {
         printf("%6u ms  FAIL flash %s 0x%05X + %u: %s\n", fm1_ms, what, at, n,
@@ -156,98 +152,83 @@ static int host_fl_check(const char *what, uint32_t at, uint32_t n)
 
 static uint8_t host_usb_link = 1;                /* "T usblink 0": the USB cable out (frodhes.c usb_link) */
 static uint8_t host_usb_rec;                    /* "T usbrec 1": a computer reads the USB audio (nothing reads it since the split flash erase) */
-static uint8_t host_store[256 + 4];             /* the settings record: [0] = 1 when saved, the bytes from [4] */
-static uint32_t host_store_len = 256;           /* its length (platform.c: a record of another size is "nothing") */
-static int settings_load(void *p, uint32_t n)
+/* The flash (1 MiB, erased): the firmware's own store code runs on it (set_store.c: the record, the settings then the
+ * user presets, in two sectors written in turn; seq.c's pattern; presets.c and the migration read the places before
+ * 0.9.6, frodhes_store.h OLD_*). Every erase and program passes host_fl_check. An erase takes HOST_SAVE_MS - 10 ms
+ * of the part's time (the main loop going on), a page program the next pass: a record's save ~100 ms, as on the
+ * FM-1 (a split erase of ~85 ms and its page programs). settings_save (the held one: a preset save, the migration)
+ * lets the milliseconds go by (the audio ISR, the script's MIDI into the queue) without the app's loop, so a note
+ * sent meanwhile is taken late, as on the device. */
+#define HOST_SAVE_MS 100u
+static uint8_t host_mem[0x100000];
+static uint8_t flash_ok = 1;
+static uint8_t host_old_ours = 1;               /* (SMK: the owner tag before 0.9.6 is Frodhes'; FRODHES_SMK_STOCK=1: not) */
+static __attribute__((unused)) int smk_old_ours(void) { return host_old_ours; }
+static void fm1_wdt_feed(void) {}
+static uint32_t crc32(const uint8_t *p, uint32_t n);   /* presets.c (host) */
+static int st_read(uint32_t off, void *dst, uint32_t n)
 {
-    if (host_store[0] != 1 || n > 256u || n != host_store_len) return -1;
-    memcpy(p, host_store + 4, n);
+    if (off >= sizeof host_mem || n > sizeof host_mem - off) return -1;
+    memcpy(dst, host_mem + off, n);
     return 0;
 }
-static void platform_poll(void);
-/* The time a save takes (platform.c, fm1_flash.h): on the FM-1 a settings save is a split erase (~85 ms from start to
- * end for a 20 ms erase) and three page programs, ~100 ms. settings_save (platform.c area_save, fl_split_op) holds
- * the main loop all that time: here the milliseconds go by (the audio ISR, the script's MIDI into the queue) without
- * the app's loop, so a note sent meanwhile is taken late, as on the device. settings_save_start / settings_save_poll
- * (the app's auto save) run while the loop goes on: written HOST_SAVE_MS after the start. */
-#define HOST_SAVE_MS 100u
-static void host_store_put(const void *p, uint32_t n)
-{
-    host_store[0] = 1;
-    host_store_len = n;
-    memcpy(host_store + 4, p, n);
-    printf("%6u ms  settings saved (%u B)\n", fm1_ms, n);
-}
-static __attribute__((unused)) int settings_save(const void *p, uint32_t n)
+static uint32_t host_op_t, host_op_ms;
+static int fl_op_start(uint32_t off, const uint8_t *src, uint32_t n)   /* src: a page program, 0: an erase */
 {
     uint32_t i;
-    if (host_fl_check("erase settings", SETTINGS_AT, 0x1000u) || host_fl_check("write settings", SETTINGS_AT, 12u + n))
-        return -1;
-    for (i = 0; i < HOST_SAVE_MS; i++) platform_poll();   /* (the main loop held) */
-    host_store_put(p, n);
-    return 0;
-}
-static uint8_t host_save_buf[256];
-static uint32_t host_save_n, host_save_t;
-static uint8_t host_save_on;
-static int settings_save_poll(void)
-{
-    if (!host_save_on) return 0;
-    if (fm1_ms - host_save_t < HOST_SAVE_MS) return 1;
-    host_save_on = 0;
-    host_store_put(host_save_buf, host_save_n);
-    return 0;
-}
-static int settings_save_start(const void *p, uint32_t n)
-{
-    if (host_save_on) { host_save_on = 0; host_store_put(host_save_buf, host_save_n); }   /* (finished first) */
-    if (n > sizeof host_save_buf || host_fl_check("erase settings", SETTINGS_AT, 0x1000u) ||
-        host_fl_check("write settings", SETTINGS_AT, 12u + n))
-        return -1;
-    memcpy(host_save_buf, p, n);
-    host_save_n = n;
-    host_save_t = fm1_ms;
-    host_save_on = 1;
+    if (host_fl_check(src ? "write settings" : "erase settings", off, src ? n : 0x1000u)) return -1;
+    if (src) for (i = 0; i < n; i++) host_mem[off + i] &= src[i];   /* (NOR: a program clears bits only) */
+    else memset(host_mem + off, 0xFF, 0x1000u);
+    host_op_t = fm1_ms; host_op_ms = src ? 0u : HOST_SAVE_MS - 10u;
     return 1;
 }
+static int fl_op_poll(void) { return fm1_ms - host_op_t < host_op_ms ? 1 : 0; }
+static void platform_poll(void);
+#define ST_SAVED() printf("%6u ms  settings saved (%u B)\n", fm1_ms, 256u)
+#define ST_WAIT() platform_poll()               /* (a held save: one millisecond a step) */
+static int area_load(uint32_t at, uint32_t max, uint32_t magic, void *p, uint32_t n)   /* (platform.c's) */
+{
+    uint32_t h[3];
+    if (!flash_ok || n > max || st_read(at, h, sizeof h) || h[0] != magic || h[1] != n || st_read(at + sizeof h, p, n))
+        return -1;
+    return crc32(p, n) == h[2] ? 0 : -1;
+}
+#define SET_SS_BSS
+#include "set_store.c"
 
 /* The flash across power cycles: with FRODHES_FLASH=FILE the run starts from FILE's flash (if it exists) and writes
- * the flash back at its end, so a second run is the FM-1 switched on again. Only what the firmware saved is there.
- * FILE is five 4 KiB sectors as on the FM-1: the settings ([magic DNGY][len][crc32] + the record, platform.c's
- * format and checks), the preset bank A / B (presets.c), the pattern A / B (seq.c). */
-static uint8_t host_bank[2][4096];              /* presets.c's and seq.c's sectors (their definitions: there) */
-static uint8_t sq_host_fl[2][4096];
-static uint32_t crc32(const uint8_t *p, uint32_t n);   /* presets.c (host) */
-#define HOST_FLASH_MAGIC 0x59474E44u            /* "DNGY", platform.c SETTINGS_MAGIC */
+ * the flash back at its end, so a second run is the unit switched on again. Only what the firmware saved is there.
+ * FILE is the store's 4 KiB sectors in this order (HOST_SECS; each as the flash holds it, platform.c's formats):
+ *   [0] the settings before 0.9.6 (256 B; on the FM-1 the record's A: the same sector), [1] [2] the preset bank A / B
+ *   before 0.9.6 (presets.c), [3] [4] the pattern A / B before 0.9.6 (seq.c), then the record's B (FM-1; SMK: A, B)
+ *   and the pattern (FM-1: one sector; SMK: A, B).
+ * A shorter file (0.9.5's five sectors) leaves the rest erased: 0.9.5's flash, which the first boot migrates. */
+#if BOARD_SMK37
+static const uint32_t HOST_SECS[] = {OLD_SET_A, OLD_PR_A, OLD_PR_B, OLD_SQ_A, OLD_SQ_B, SETTINGS_AT, SETTINGS_B, SQ_A, SQ_B};
+#else
+static const uint32_t HOST_SECS[] = {OLD_SET_A, OLD_PR_A, OLD_PR_B, OLD_SQ_A, OLD_SQ_B, SETTINGS_B, SQ_A};
+_Static_assert(OLD_SET_A == SETTINGS_AT && OLD_SET_B == SETTINGS_B && SQ_A == SQ_B, "host: the FM-1's flash file");
+#endif
+#define HOST_NSEC (sizeof HOST_SECS / sizeof HOST_SECS[0])
 static void host_flash_load(const char *path)
 {
-    static uint8_t img[5][4096];
-    uint32_t h[3];
+    static uint8_t img[HOST_NSEC][4096];
+    size_t got;
+    uint32_t i;
     FILE *f = fopen(path, "rb");
-    if (!f) return;                             /* no file: a new FM-1 (nothing saved) */
-    if (fread(img, 1, sizeof img, f) != sizeof img) { fprintf(stderr, "%s: short flash image\n", path); exit(2); }
+    if (!f) return;                             /* no file: a new unit (nothing saved) */
+    memset(img, 0xFF, sizeof img);
+    got = fread(img, 1, sizeof img, f);
     fclose(f);
-    memcpy(h, img[0], sizeof h);
-    if (h[0] == HOST_FLASH_MAGIC && h[1] <= 256u && crc32(img[0] + sizeof h, h[1]) == h[2]) {
-        host_store[0] = 1; host_store_len = h[1];
-        memcpy(host_store + 4, img[0] + sizeof h, h[1]);
-    }                                           /* else: a bad magic, length or CRC reads as nothing saved */
-    memcpy(host_bank, img[1], sizeof host_bank);
-    memcpy(sq_host_fl, img[3], sizeof sq_host_fl);
+    if (got % 4096u || got < 5u * 4096u) { fprintf(stderr, "%s: flash image of %u B\n", path, (unsigned)got); exit(2); }
+    for (i = 0; i < HOST_NSEC; i++) memcpy(host_mem + HOST_SECS[i], img[i], 4096);
 }
 static void host_flash_save(const char *path)
 {
-    static uint8_t img[5][4096];
-    uint32_t h[3] = {HOST_FLASH_MAGIC, host_store_len, 0};
+    static uint8_t img[HOST_NSEC][4096];
+    uint32_t i;
     FILE *f;
-    memset(img, 0xFF, sizeof img);
-    if (host_store[0] == 1) {
-        h[2] = crc32(host_store + 4, host_store_len);
-        memcpy(img[0], h, sizeof h);
-        memcpy(img[0] + sizeof h, host_store + 4, host_store_len);
-    }
-    memcpy(img[1], host_bank, sizeof host_bank);
-    memcpy(img[3], sq_host_fl, sizeof sq_host_fl);
+    for (i = 0; i < HOST_NSEC; i++) memcpy(img[i], host_mem + HOST_SECS[i], 4096);
     if (!(f = fopen(path, "wb")) || fwrite(img, 1, sizeof img, f) != sizeof img) { perror(path); exit(2); }
     fclose(f);
 }
@@ -615,6 +596,8 @@ int main(int argc, char **argv)
     memset(fm1_in.key_vel, 43, sizeof fm1_in.key_vel);    /* (a medium press until a "vel" line: KEY VEL at TOUCH
                                                            * MEDIUM, frodhes_smk.h smk_vel; the FM-1 scripts play as there) */
 #endif
+    memset(host_mem, 0xFF, sizeof host_mem);
+    if (getenv("FRODHES_SMK_STOCK")) host_old_ours = 0;   /* (SMK: the stock VM holds the stock's data, not 0.9.5's) */
     if (getenv("FRODHES_FLASH")) host_flash_load(getenv("FRODHES_FLASH"));
     if (getenv("FRODHES_MS0")) fm1_ms = host_t0 = (uint32_t)strtoul(getenv("FRODHES_MS0"), 0, 0);   /* (e.g. near the
                                                            * Q8 wrap at 2^24 ms: 4.66 hours up) */

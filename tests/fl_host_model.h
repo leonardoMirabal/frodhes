@@ -56,6 +56,8 @@ static struct {
     int aud_pend, usb_pend, in_isr;
     uint32_t isrs;
     uint64_t isr_time;                            /* the ISRs' time in all (ticks) */
+    uint32_t w_lo, w_hi, w_bad;                   /* w_hi set: an erase or a program outside w_lo..w_hi is a model
+                                                   * violation (tests/set_ab_test.c: never in a stock region) */
 } M;
 static uint8_t m_mem[0x100000];
 
@@ -107,6 +109,10 @@ static void m_isrs(void)                          /* the pending ISRs, from XIP:
     M.isr_time += M.now - t0;
 }
 static uint32_t m_addr(void) { return (uint32_t)M.cmd[1] << 16 | (uint32_t)M.cmd[2] << 8 | M.cmd[3]; }
+static void m_window(uint32_t a, uint32_t n)      /* an erase or a program of a..a+n: inside the allowed window? */
+{
+    if (M.w_hi && (a < M.w_lo || a + n > M.w_hi)) { M.w_bad++; m_bad("an erase / program outside the allowed window"); }
+}
 static void m_exec(void)                          /* CS# high: the command ends */
 {
     uint8_t c = M.cmd[0];
@@ -119,10 +125,12 @@ static void m_exec(void)                          /* CS# high: the command ends 
     case 0x06: M.wel = 1; break;
     case 0x20:
         if (!M.wel || M.ncmd != 4) { m_bad("an erase without WREN or with a bad address"); break; }
+        m_window(m_addr() & ~0xFFFu, 4096u);
         M.op = 1; M.op_addr = m_addr() & ~0xFFFu; M.busy = 1; M.left = M.erase_ticks; M.resumed = 0; M.resumed_at = M.now;
         break;
     case 0x02:
         if (!M.wel || M.ncmd < 5) { m_bad("a program without WREN or data"); break; }
+        m_window(m_addr(), M.ncmd - 4u);
         M.op = 2; M.op_addr = m_addr(); M.op_n = M.ncmd - 4u; memcpy(M.op_data, M.cmd + 4, M.op_n);
         M.busy = 1; M.left = M.prog_ticks; M.resumed = 0; M.resumed_at = M.now;
         break;

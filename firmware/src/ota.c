@@ -21,19 +21,24 @@
  *   ota_show(step, code)       progress / result for the screen
  *   ota_commit(parm)           write RAM record + reset (never returns on hardware)
  */
+/* OTA_AREA: the app may give its own (Frodhes: frodhes_store.h, in no region of the stock firmware's table) */
 #if BOARD_SMK37
 /* SMK-37 Pro: the last 5 sectors of the stock VM (0xBB000..0xBFFFF, FL_OTA in fm1_flash.h), below BTIF /
  * USRTRIM 0xC0000..0xC1FFF; the update loader may drop records only below 0xC0000 (ldr_core.c) */
+#ifndef OTA_AREA
 #define OTA_AREA 0x000BB000u                     /* staged loader, 5 x 4 KiB */
+_Static_assert(OTA_AREA + 0x5000u <= 0xC0000u && OTA_AREA >= 0x9D000u, "SMK: OTA area outside the VM");
+#endif
 #define OTA_AREA_LEN 0x5000u
 #define OTA_RES (OTA_AREA + OTA_AREA_LEN - 0x100u)  /* 0xBFF00 = 4K boundary - 256: SPL scan */
 #ifndef SMK_MODEL
 #define SMK_MODEL "SMK-37 Pro"                   /* (fm1_cc.h) */
 #endif
 #define OTA_PARM_ID "ota-" SMK_MODEL "_016"       /* the stock app's parm identity (Pro 18 B, Elite 20 B) */
-_Static_assert(OTA_AREA + OTA_AREA_LEN <= 0xC0000u && OTA_AREA >= 0x9D000u, "SMK: OTA area outside the VM");
 #else
+#ifndef OTA_AREA
 #define OTA_AREA 0x000E0000u                     /* staged loader, 5 x 4 KiB */
+#endif
 #define OTA_AREA_LEN 0x5000u
 #define OTA_RES (OTA_AREA + OTA_AREA_LEN - 0x100u)  /* 0xE4F00 = 4K boundary - 256: SPL scan */
 #define OTA_PARM_ID "ota-FM-1_015"
