@@ -520,10 +520,12 @@ static void perf_wake(uint32_t id)
 {
     if (id == P_FL_FREQ) { if (!PV(P_FL_TYPE) && PV(P_FL_FREQ) < 127) param_set(P_FL_TYPE, 2); return; }   /* LP18 */
     if (!PV(id)) return;
-    if (id == P_TW_DEPTH && !PV(P_TW_SW)) param_set(P_TW_SW, 1);
+    if (id == P_TW_DEPTH && !PV(P_TW_SW)) param_set(P_TW_SW, set.last_on[0]);   /* the type last on (0.9.6, #8: it was
+                                                         * always TREM / DIG; set.last_on: the SEL / LFO buttons', checked
+                                                         * at load) */
     else if (id == P_PH_DEPTH && !PV(P_PH_SW)) param_set(P_PH_SW, 1);
     else if (id == P_CP_DEPTH && !PV(P_CP_SW)) param_set(P_CP_SW, 1);
-    else if (id == P_DL_DEPTH && !PV(P_DL_SW)) param_set(P_DL_SW, 1);
+    else if (id == P_DL_DEPTH && !PV(P_DL_SW)) param_set(P_DL_SW, set.last_on[2]);
     else if (id == P_DRIVE && !PV(P_DRV_SW)) param_set(P_DRV_SW, drv_last);   /* the TYPE last on */
     else if (id == P_RV_DEPTH && !PV(P_RV_TYPE)) param_set(P_RV_TYPE, rv_last);   /* the reverb's too (0.9.5) */
     else if (id == P_CMP_AMT && !PV(P_CMP_SW)) cmp_wake(0);
