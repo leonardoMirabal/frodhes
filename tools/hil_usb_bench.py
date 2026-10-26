@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""The USB audio bench (BUGHUNT #24): the FM-1 running a bench build (APP_DEFS=-DFELUCCA_UAC_TONE=1: usb.c puts
-triangles of period 100 frames in the USB ring instead of the music, at 44.1 and at 48 kHz, L = -R, steps of 1000
-LSB), recorded for N minutes. Every recorded frame must follow the one before: a repeated frame, a lost one or a
+"""The USB audio bench (BUGHUNT #24): the FM-1 running a bench build, recorded for N minutes. Two builds:
+--kind ring (APP_DEFS=-DFELUCCA_UAC_TONE=1): usb.c puts triangles of period 100 frames in the USB ring instead of the
+music, at 44.1 and at 48 kHz, L = -R, steps of 1000 LSB: the ring, the rate adjustment, the packets, the EP4 DMA and
+the computer. --kind app (APP_DEFS=-DFELUCCA_UAC_TONE=2): frodhes.c app_audio's output replaced by triangles of period
+147 frames after the engine and the effects ran: the platform's tail, the USB tap and the 44.1 -> 48 kHz resampler as
+well (147 frames in are exactly 160 out: the recording repeats itself every 160 frames bit for bit, and no two
+neighbouring frames are equal; at 44.1 kHz every 147). Every recorded frame must follow the one before: a repeated frame, a lost one or a
 jump anywhere in the recording is counted and placed, with the firmware's own counters polled (CC 116 every
 0.5 s: underruns, missed, overruns, the ring's low point, adjustments; tools/hil_must.py) beside it.
 
-    tools/hil_usb_bench.py [--minutes 5] [--rate 48000|44100] [--midi none|monkey|notes] [--out build/hil/usb_bench]
+    tools/hil_usb_bench.py [--kind ring|app] [--minutes 5] [--rate 48000|44100] [--midi none|monkey|notes] [--out DIR]
     tools/hil_usb_bench.py --analyse FILE.npz        a saved recording judged again (no FM-1)
     tools/hil_usb_bench.py --self-test               the analysis on synthetic triangles with injected faults
 
@@ -15,7 +19,7 @@ as tools/hil_monkey.py sends it, seeds from 1: does MIDI-IN traffic trigger it?)
 traffic, the engine busy). Run each for the same minutes; the bench build plays the triangle whatever the engine
 does, so the voices and effects only load the CPU.
 
-Report: OUT/report-<rate>-<midi>.json + the recording (OUT/rec-<rate>-<midi>.npz, int16 L R).
+Report: OUT/report-<kind>-<rate>-<midi>.json + the recording (OUT/rec-<kind>-<rate>-<midi>.npz, int16 L R).
 """
 import argparse
 import json
@@ -61,6 +65,58 @@ def analyse(x, fs):
                 ok=not runs and not jumps and not lr)
 
 
+def analyse_app(x, fs):
+    """x (n, 2) int LSB: the app-output bench (FELUCCA_UAC_TONE=2), periodic with P = 160 frames at 48 kHz (147 at
+    44.1). Judged from the first stretch of 10 exact periods to the last: every frame must equal the one P before;
+    a slip (frames inserted or lost) breaks that for about a period, then the wave runs on shifted: each slip placed
+    and its shift found against the period before it (+k: k frames too many, a repeat; -k: k lost). Also every pair
+    of equal neighbouring frames (the triangle has none). {'frames', 'start', 'repeat': [(t s, run)], 'slip': [(t s,
+    shift or None)], 'mismatch': frames, 'ok'}"""
+    P = 160 if fs == 48000 else 147
+    x = np.asarray(x, np.int64)
+    eqp = np.all(x[P:] == x[:-P], axis=1)                    # eqp[m]: frame m + P == frame m
+    good = np.convolve(eqp.astype(int), np.ones(10 * P, int), "valid") == 10 * P
+    gi = np.flatnonzero(good)
+    if not len(gi):
+        return dict(frames=len(x), start=None, repeat=[], slip=[], mismatch=0, ok=False, why="no periodic stretch")
+    a, b = int(gi[0]), int(gi[-1]) + 11 * P                 # [a, b): frames whose period before / after is checked
+    bad = np.flatnonzero(~eqp[a:b - P]) + a + P               # frame m + P differs from frame m
+    slips, s0 = [], None
+    for k, m in enumerate(bad):
+        if s0 is None:
+            s0 = m
+        if k + 1 == len(bad) or bad[k + 1] - m > P:
+            T = x[s0 - P:s0]                                  # the period before the slip
+            e = int(m) + 1
+            sh = None
+            for l in range(-8, 9):
+                idx = (np.arange(e, min(e + P, len(x))) - (s0 - P) - l) % P
+                if len(idx) == P and np.all(x[e:e + P] == T[idx]):
+                    sh = l
+                    break
+            slips.append((round(int(s0) / fs, 4), sh))
+            s0 = None
+    eq = np.flatnonzero(np.all(x[a + 1:b] == x[a:b - 1], axis=1)) + a
+    runs = []
+    for i in eq:
+        if runs and runs[-1][2] == i - 1:
+            runs[-1][1] += 1
+            runs[-1][2] = i
+        else:
+            runs.append([round(int(i) / fs, 4), 2, int(i)])
+    return dict(frames=int(b - a), start=round(a / fs, 4), repeat=[(t, n) for t, n, _ in runs], slip=slips,
+                mismatch=int(len(bad)), ok=not slips and not runs)
+
+
+def app_wave(n, fs=48000, ph0=0):
+    """the app bench's recording as the resampler makes it (P frames repeated; tests/py/test_hil_usb_bench.py checks
+    it against usb.c's own resampler): a stand-in for --self-test"""
+    P = 160 if fs == 48000 else 147
+    t = (np.arange(n) + ph0) % P
+    L = np.round(8141 * (1 - 2 * np.abs(2 * t / P - 1)) + 37 * np.sin(2 * np.pi * 3 * t / P)).astype(np.int64)
+    return np.stack([L, -L], 1)
+
+
 def triangle(n, ph0=0):
     ph = (np.arange(n) + ph0) % 100
     q = np.where(ph < 50, ph, 100 - ph)
@@ -82,6 +138,15 @@ def self_test():
     z[70000, 1] += 1
     assert analyse(z, 48000)["lr"] == 1
     print("self-test ok: a clean triangle passes; 1 + 3 copies, a lost frame and an L / R mismatch are found")
+    x = np.concatenate([np.zeros((300, 2), int), app_wave(48000 * 3, 48000, 17)])
+    r = analyse_app(x, 48000)
+    assert r["ok"] and r["start"] == round(300 / 48000, 4), r
+    y = np.insert(x, 50000, x[49999], axis=0)
+    y = np.insert(y, 90000, [y[89999]] * 3, axis=0)
+    y = np.delete(y, [120000], axis=0)
+    r = analyse_app(y, 48000)
+    assert [sh for _, sh in r["slip"]] == [1, 3, -1] and [n for _, n in r["repeat"]] == [2, 4], r
+    print("self-test ok (--kind app): a clean wave passes; 1 + 3 copies and a lost frame are found and their shift")
     return 0
 
 
@@ -139,11 +204,11 @@ def run(a):
         x = rec.stop()
         dev.close()
     xi = np.clip(np.round(np.asarray(x, float) * 32768), -32768, 32767).astype(np.int16)
-    tag = f"{a.rate}-{a.midi}"
-    np.savez_compressed(os.path.join(a.out, f"rec-{tag}.npz"), usb=xi, fs=a.rate, flags=rec.flags)
-    r = analyse(xi.astype(np.int64), a.rate)
+    tag = f"{a.kind}-{a.rate}-{a.midi}"
+    np.savez_compressed(os.path.join(a.out, f"rec-{tag}.npz"), usb=xi, fs=a.rate, flags=rec.flags, kind=a.kind)
+    r = (analyse_app if a.kind == "app" else analyse)(xi.astype(np.int64), a.rate)
     rows = hm.gate_counters(acc, a.rate)
-    js = dict(date=time.strftime("%Y-%m-%d %H:%M"), rate=a.rate, midi=a.midi, minutes=a.minutes,
+    js = dict(date=time.strftime("%Y-%m-%d %H:%M"), kind=a.kind, rate=a.rate, midi=a.midi, minutes=a.minutes,
               midi_messages=len(ev), recorder_flags=rec.flags, bench=r, counters=acc.summary(),
               counter_rows=[list(map(str, x)) for x in rows])
     json.dump(js, open(os.path.join(a.out, f"report-{tag}.json"), "w"), indent=1, default=str)
@@ -153,13 +218,21 @@ def run(a):
 
 def print_report(js):
     r = js["bench"]
-    print(f"{js.get('rate')} Hz, MIDI {js.get('midi')} ({js.get('midi_messages', 0)} messages), "
-          f"{js.get('minutes')} min: {r['frames']} frames judged from {r['start']} s; repeats {len(r['repeat'])}, "
-          f"jumps {len(r['jump'])}, "
-          f"L / R mismatches {r['lr']}; recorder flags {js.get('recorder_flags')}")
+    if "slip" in r:
+        print(f"app bench, {js.get('rate')} Hz, MIDI {js.get('midi')} ({js.get('midi_messages', 0)} messages), "
+              f"{js.get('minutes')} min: {r['frames']} frames judged from {r['start']} s; slips {len(r['slip'])}, "
+              f"equal neighbours {len(r['repeat'])}, frames off the period {r['mismatch']}; "
+              f"recorder flags {js.get('recorder_flags')}")
+        for t, sh in r["slip"][:20]:
+            print(f"  slip at {t:.4f} s: shift {sh} frames" + (" (inserted: a repeat)" if sh and sh > 0 else ""))
+    else:
+        print(f"{js.get('rate')} Hz, MIDI {js.get('midi')} ({js.get('midi_messages', 0)} messages), "
+              f"{js.get('minutes')} min: {r['frames']} frames judged from {r['start']} s; repeats {len(r['repeat'])}, "
+              f"jumps {len(r['jump'])}, "
+              f"L / R mismatches {r['lr']}; recorder flags {js.get('recorder_flags')}")
     for t, n in r["repeat"][:20]:
         print(f"  repeat at {t:.4f} s: {n} equal frames")
-    for t, s in r["jump"][:20]:
+    for t, s in r.get("jump", [])[:20]:
         print(f"  jump at {t:.4f} s: step {s}")
     for row in js.get("counter_rows", []):
         print("  counter: " + " | ".join(row))
@@ -168,6 +241,7 @@ def print_report(js):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--kind", default="ring", choices=("ring", "app"), help="the bench build installed (see above)")
     ap.add_argument("--minutes", type=float, default=5.0)
     ap.add_argument("--rate", type=int, default=48000, choices=(44100, 48000))
     ap.add_argument("--midi", default="none", choices=("none", "monkey", "notes"))
@@ -179,7 +253,9 @@ def main(argv=None):
         return self_test()
     if a.analyse:
         z = np.load(a.analyse)
-        js = dict(rate=int(z["fs"]), bench=analyse(z["usb"].astype(np.int64), int(z["fs"])))
+        kind = str(z["kind"]) if "kind" in z.files else "ring"
+        fn = analyse_app if kind == "app" else analyse
+        js = dict(rate=int(z["fs"]), bench=fn(z["usb"].astype(np.int64), int(z["fs"])))
         print_report(js)
         return 0 if js["bench"]["ok"] else 1
     return run(a)

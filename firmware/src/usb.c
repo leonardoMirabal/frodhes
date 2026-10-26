@@ -1106,7 +1106,7 @@ static FR_RAM __attribute__((noinline)) void uac_tap48(const int32_t *out, uint3
         n -= c;
     }
     rs.ph = ph;
-#if FELUCCA_UAC_TONE
+#if FELUCCA_UAC_TONE == 1
     {   /* bench (as uac_tap's at 44.1): the resampler's frames replaced by triangles of period 100 frames (L, R in
          * antiphase), as many as it made, so every recorded frame must follow the one before (BUGHUNT #24) */
         static uint32_t ph48;
@@ -1137,7 +1137,7 @@ static __attribute__((noinline)) void uac_tap(const int32_t *out, uint32_t n)   
         uac.overruns++;
         return;
     }
-#if FELUCCA_UAC_TONE
+#if FELUCCA_UAC_TONE == 1
     {   /* bench: triangles of period 100 frames instead of the music (L, R in antiphase): every
          * recorded frame must follow the one before, so a lost or repeated frame shows exactly */
         static uint32_t ph;
