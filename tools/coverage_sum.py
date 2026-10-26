@@ -33,13 +33,14 @@ def main(argv):
             print(f"{os.path.basename(fn['filenames'][0])}:{line} {fn['name'].split(':')[-1]}")
             dead.add(fn["name"])
     if "--branches" in argv:
-        print("\n# branches with one side never taken (file:line count-true/count-false), in functions that ran")
+        print("\n# conditions with one side never taken (file:line:column count-true/count-false function), in functions"
+              " that ran: a line with several conditions has a row for each (the column tells them apart)")
         for fn in js["functions"]:
             if fn["count"] == 0:
                 continue
             for b in fn.get("branches", []):
                 if (b[4] == 0) != (b[5] == 0):
-                    print(f"{os.path.basename(fn['filenames'][0])}:{b[0]} {b[4]}/{b[5]} {fn['name'].split(':')[-1]}")
+                    print(f"{os.path.basename(fn['filenames'][0])}:{b[0]}:{b[1]} {b[4]}/{b[5]} {fn['name'].split(':')[-1]}")
     return 0
 
 

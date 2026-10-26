@@ -57,7 +57,7 @@ IGN='(platform|usb|usb_desc|uac|midi_uart|ota|loader|hal/.*|tests/.*|firmware/ge
 "$LLVMCOV" export "$BIN" -instr-profile="$COV/frodhes.profdata" -ignore-filename-regex="$IGN" -format=text \
   -skip-expansions > "$COV/export.json"
 "$PY" "$ROOT/tools/coverage_sum.py" "$COV/export.json" > "$COV/functions.txt"
-"$PY" "$ROOT/tools/coverage_sum.py" "$COV/export.json" --branches | sed -n '/^# branches/,$p' > "$COV/branches.txt"
+"$PY" "$ROOT/tools/coverage_sum.py" "$COV/export.json" --branches | sed -n '/^# conditions/,$p' > "$COV/branches.txt"
 rm -rf "$COV/prof" "$COV/export.json"
 echo "coverage: $COV/report.txt (per file), $COV/functions.txt (never run), $COV/html/index.html"
 cat "$COV/report.txt"
