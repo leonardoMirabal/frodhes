@@ -18,6 +18,7 @@
   .top { max-width: none; margin: 0 auto; padding: 14px 16px 10px; display: flex; flex-wrap: wrap; gap: 10px 16px;
          align-items: center; }
   .top h1 { font: 24px/1 "DotGothic16", system-ui, sans-serif; margin: 0; color: #111; letter-spacing: .06em; }
+  .top h1 .ver { font-size: 14px; letter-spacing: .02em; color: #444; }
   .top button { background: #111; color: #ffd18a; border: 0; border-radius: 8px; padding: 9px 16px; font-weight: 700;
                 cursor: pointer; }
   .top select { background: #eee; border: 1px solid #555; border-radius: 6px; padding: 5px; }
@@ -85,7 +86,7 @@
 </head>
 <body>
 <div class="top">
-  <h1>FRODHES</h1>
+  <h1>FRODHES <span id="ver" class="ver">dev</span></h1>
   <button id="start">Start sound</button>
   <span id="status">Tap "Start sound" (browsers need a tap before they play audio).</span>
   <label>MIDI in <select id="midi"><option value="">none</option></select></label>
@@ -133,6 +134,7 @@
   the keys play at KEY VEL (main page K4; SETUP's TOUCH needs the FM-1's keys), MIDI notes at their own velocity
 </div>
 <div class="foot">
+  Frodhes <span id="ver-foot">dev</span> ·
   A physically modelled electric piano, vibraphone and marimba for the M-VAVE FM-1: the same firmware code, compiled to WebAssembly ·
   <a href="https://github.com/leonardoMirabal/frodhes">Source</a> ·
   <a href="https://github.com/leonardoMirabal/frodhes/blob/main/docs/MANUAL.md">Manual</a> ·
@@ -141,6 +143,7 @@
   <br>An independent open-source project, not affiliated with or endorsed by M-VAVE, the Rhodes or Fender trademark owners or any instrument maker.
   No warranty: install at your own risk; see <a href="https://github.com/leonardoMirabal/frodhes/blob/main/LICENSING.md">LICENSING.md</a>.
 </div>
+<script src="version.js"></script>
 <script src="app.js"></script>
 <script src="frodhes.js"></script>
 </body>

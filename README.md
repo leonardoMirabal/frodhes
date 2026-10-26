@@ -159,7 +159,9 @@ EXT-TRS (`--selftest`, `--dry-run` without the FM-1); `tools/hil_cpu.py` measure
 audio interrupt's worst block and the USB audio's health (`--usb 44100|48000` holds a DAW-like stream open) and
 `tools/cpu_budget.py` predicts it on the computer from the FM-1's measured costs. `tools/manual_shots.py` renders the manual's screenshots and sets each picture link's `?v=` to the file's hash
 (`tools/doc_links.py --fix` after editing a picture by hand; a test fails if a screenshot or a link is stale). `web/build.sh` builds the browser
-emulator (Emscripten; `web/web_hal.c` stands in for the hardware) into `web/dist/`.
+emulator (Emscripten; `web/web_hal.c` stands in for the hardware) into `web/dist/`; the page shows the version it was
+built with (`web/build.sh --release X.Y.Z`, else `dev`). CI builds it and runs its selftest (Chromium and WebKit) on
+every pull request.
 
 Releases are one command: `tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device [--device-done FILE]] [--full] [--no-emulator] [--yes]`
 picks the next version from the latest tag, checks the tree (on `main`, clean, not behind `origin/main`, the notes
@@ -171,7 +173,10 @@ Rhodes, VIBES and MARIMBA (and the MARIMBA sample-back), only when an engine or 
 (`--device-done FILE` records FM-1 runs already made on the same build, checked by its sha256), checks the docs' links (no version in them: they link `releases/latest`), assembles the fragments into
 `docs/releases/vX.Y.Z.md` and commits it with the fragments removed, asks before publishing, then pushes `main`,
 waits for CI to pass on that commit, tags, waits for the release workflow and checks that the published `.fwsc` is
-byte for byte the one tested (as `frodhes-X.Y.Z.fwsc` and as the stable `frodhes.fwsc`), publishes the emulator and checks the live files. It stops at the first failure and
+byte for byte the one tested (as `frodhes-X.Y.Z.fwsc` and as the stable `frodhes.fwsc`), and checks the live emulator.
+The release workflow publishes the emulator itself: it builds it from the tag and runs its selftest before anything
+is published, creates the release as a draft, deploys the emulator to the `gh-pages` branch, waits until GitHub Pages
+serves it, and only then publishes the release, so both appear at the same moment. It stops at the first failure and
 ends with a table of every step (done, skipped and why, failed); `--dry-run` runs the local checks only, shows the
 assembled notes and stops before anything is pushed; `--verify-only [X.Y.Z]` re-checks a published release (step 9
 alone, read-only).

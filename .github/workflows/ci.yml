@@ -31,3 +31,25 @@ jobs:
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
       - run: python -m pytest -q -rs tests/py/test_gen_bars.py tests/py/test_marimba_calib.py
       - run: '! python -m pytest -q -rs tests/py/test_gen_bars.py -k deterministic | grep -q SKIPPED'
+  # The browser emulator (web/build.sh, Emscripten pinned in tools/get_emsdk.sh) must build and pass its selftest
+  # (tools/release.py --web-selftest: Chromium + WebKit at 1280 and 390 px, sound, a lit screen, no page errors, the
+  # version shown), and the knob test (tests/py/test_web_knobs.py) must run and pass. Nothing is deployed here: only a v* tag (release.yml) publishes the emulator.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .local/emsdk
+          key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}
+      - run: sh tools/get_emsdk.sh .local/emsdk
+      - run: sh web/build.sh
+      - run: |
+          pip install playwright==1.64.0 pytest
+          python3 -m playwright install --with-deps chromium webkit
+      - run: python3 tools/release.py --web-selftest web/dist dev
+      - name: the knob test (must run, not skip)
+        run: |
+          python3 -m pytest -q -rs tests/py/test_web_knobs.py > knobs.txt || { cat knobs.txt; exit 1; }
+          cat knobs.txt
+          ! grep -q SKIPPED knobs.txt
