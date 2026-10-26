@@ -123,3 +123,47 @@ def test_smk_packages(model, ident):
         pytest.skip(f"no {pkg.name} (BOARD=smk37 ./build.sh)")
     r = subprocess.run(["python3", "tests/smk_pkg_test.py", str(pkg), ident], cwd=ROOT, capture_output=True, text=True)
     assert r.returncode == 0 and "smk package test passed" in r.stdout, r.stdout + r.stderr
+
+
+SAVED = re.compile(r"^\s*(\d+) ms  settings saved", re.M)
+
+
+IDS = "0 ids smk"                                # (the SMK's own encoder ids: K1 = 0)
+
+
+def test_smk_master_kept_across_power_cycles():
+    """GitHub #14: K1's MASTER in the settings record. Turned (5 detents down: 724 - 5 x 24 = 604), saved by the
+    settings' auto save (2 s after the last change), switched off and on: 604 again, before the first pass reads K1"""
+    b = smk_build()
+    fl = flash_path("smk-master")
+    r = run("smk-master", [IDS, "100 turn 0 -5", "200 expect state master 604"], 3000, flash=fl, binary=b)
+    assert SAVED.search(r.out), r.out[-2000:]
+    run("smk-master-2", [IDS, "1 expect state master 604", "100 turn 0 2", "200 expect state master 652"], 300, flash=fl,
+        binary=b)
+
+
+def test_smk_master_old_record_724():
+    """a record without the value (a first boot; a record from before; MASTER never turned, SWING changed: nothing written for it,
+    the field stays 0) starts at 724, smk_input.h's own start"""
+    b = smk_build()
+    fl = flash_path("smk-master-old")
+    run("smk-master-old", ["1 expect state master 724"], 100, flash=fl, binary=b)
+    r = run("smk-master-old-1", [cc(20, 46, 60), "100 expect state master 724"], 3000, flash=fl, binary=b)
+    assert SAVED.search(r.out), r.out[-2000:]
+    run("smk-master-old-2", ["1 expect state master 724"], 100, flash=fl, binary=b)
+
+
+def test_smk_master_no_write_while_turning():
+    """K1 turned a detent every 500 ms for 5 s: no flash write while it turns (a write per detent never); one save,
+    2 s or more after the last detent, in silence"""
+    b = smk_build()
+    fl = flash_path("smk-master-turn")
+    turns = [f"{100 + 500 * i} turn 0 1" for i in range(11)]          # the last at 5100 ms
+    r = run("smk-master-turn", [IDS] + turns + ["5200 expect state master 988"], 9000, flash=fl,
+            env={"FRODHES_FLASHLOG": "1"}, binary=b)
+    saves = [int(t) for t in SAVED.findall(r.out)]
+    assert len(saves) == 1 and saves[0] >= 5100 + 2000, (saves, r.out[-2000:])
+    writes = [at for op, _, at, _ in flash_calls(r.out) if op in ("write", "erase")]
+    assert writes and all(at & ~0xFFF == 0x9D000 for at in writes), writes
+    assert not any(t < 7100 for t in (int(x) for x in re.findall(r"^\s*(\d+) ms  flash", r.out, re.M))), r.out[-2000:]
+    run("smk-master-turn-2", ["1 expect state master 988"], 100, flash=fl, binary=b)

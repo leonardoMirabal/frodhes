@@ -65,11 +65,28 @@ static int32_t smk_bend16, smk_modw = -1;      /* the wheels: the bend (1/4096 s
 static uint8_t smk_panel_on;
 #define SMK_SETTLE 300u                        /* scan frames (~0.5 s) before the analog readings count */
 
+/* K1's MASTER across power cycles (GitHub #14): in the settings record (set.smk_mst, the value + 1; 0 = none, every
+ * record before: smk_input.h's 724). Restored by smk_init, before the main loop's first pass reads K1; kept in `set`
+ * once a main-loop pass when it moved, so the settings' own auto save writes it (2 s after the last change, in
+ * silence: never from the ISR, never a write per detent) */
+static int32_t smk_master_stored(void)
+{
+    uint32_t v = set.smk_mst[0] | (uint32_t)set.smk_mst[1] << 8;
+    return v >= 1u && v <= 1024u ? (int32_t)v - 1 : 724;
+}
+static void smk_master_keep(void)
+{
+    if (smk_master != smk_master_stored()) {
+        uint32_t v = (uint32_t)smk_master + 1u;
+        set.smk_mst[0] = (uint8_t)v; set.smk_mst[1] = (uint8_t)(v >> 8);
+    }
+}
 static void smk_init(void)
 {
     uint32_t i;
     smk_pad_events = 1;                        /* the pads are Frodhes' own controls (events, no notes) */
     for (i = 0; i < 4u; i++) smk_fad[i].slot = S_NONE;
+    smk_master = smk_master_stored();          /* (MASTER as it was left) */
 }
 
 static void smk_sus_update(void)
@@ -303,6 +320,7 @@ static void smk_poll(void)
     smk_faders();
     smk_wheels();
     smk_pedal_poll();
+    smk_master_keep();
 }
 
 /* ---- the SMK's own buttons, before the FM-1's reach sustain_button / ui_input; their bits are cleared here */
