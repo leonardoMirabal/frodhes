@@ -34,8 +34,6 @@ import hostrun  # noqa: E402
 KNOWN = {
     "rev INF auto MIX": "INFINITE's level guard holds the tank: the wet falls 1.1 dB from MIX 96 to 127 (by design; a law change moves presets)",
     "rev INF size64 MIX": "the same (INFINITE's level guard; #18's jump and click are fixed)",
-    "rev PLATE SIZE": "BUGHUNT #19: SIZE bends a ringing tail's pitch and steps",
-    "rev INF SIZE": "BUGHUNT #19: one SIZE detent clicks on INFINITE",
 }
 
 
@@ -51,6 +49,19 @@ def test_control(case, binary, request):
     r = cs.measure(case, binary)
     bad = {k: v for k, v in cs.checks(case, r).items() if not v[2]}
     assert not bad, f"{case.name}: " + ", ".join(f"{k} {v[0]} (limit {v[1]})" for k, v in bad.items())
+
+
+@pytest.mark.parametrize("name", ["rev PLATE SIZE", "rev INF SIZE"])
+def test_reverb_size_turns_without_bend_or_click(name, binary):
+    """BUGHUNT #19 (0.9.5: PLATE's tail bent 22 cents p90 while SIZE turned, zipper 9x; one INFINITE detent clicked
+    14x): SIZE turned by hand under a ringing tail cross-fades the old reads into the new (0.9.6), so the tail keeps
+    its pitch (the 440 / 880 Hz partials, the wet too, within 5 cents p90 over the statics own), and no move clicks (0 -> 127, 127 -> 0, one detent
+    64 -> 65: 10x at most) or steps (zipper 2x)"""
+    case = next(c for c in cs.CASES if c.name == name)
+    r = cs.measure(case, binary)
+    assert r["pitch_wet"] <= 5.0 and r["pitch"] <= 5.0, (r["pitch"], r["pitch_wet"])   # (over the statics own)
+    assert max(r["click"].values()) <= 10.0, r["click"]
+    assert r["zipper"] <= 2.0, r["zipper"]
 
 
 def test_the_known_list_names_cases():

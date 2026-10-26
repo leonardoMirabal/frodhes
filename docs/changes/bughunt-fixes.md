@@ -12,6 +12,7 @@
   - the Rhodes TYPE (a short crossfade);
   - REVERB MIX turned down (the tail rang up to 6 dB louder at MIX 0);
   - REVERB MOD (HALL, INFINITE);
+  - REVERB SIZE on PLATE and INFINITE (the old size fades into the new one, about 0.2 s; it stepped and bent);
   - DRIVE AMOUNT on FDRV and KHLON;
   - TREM <-> WAH;
   - DELAY EFFECT DIG <-> ANA (a crossfade);
@@ -30,6 +31,7 @@
 
 ## Tested
 - Host: tests/py/test_steal_race.py, tests/py/test_switch_clicks.py (the cases above; each fails on 0.9.5),
+  tests/py/test_control_sweep.py (REVERB SIZE on PLATE and INFINITE: no bend, no click),
   tests/py/test_delay_time_change.py, tests/py/test_overflows.py (under ASan + UBSan), tests/py/test_monkey.py,
   tests/py/test_persistence.py (a save with KHLON + TREM, then a power cycle), tests/scripts/perform_wake.txt,
   scale_midi.txt, wah_shape.txt, quiet_gated.txt, the control sweep (tools/control_sweep.py) and the manual's claims with their
