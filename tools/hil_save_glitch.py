@@ -20,7 +20,8 @@ One take (kind x offset; the takes in that order, per rate):
   change    setup:   CC 57 (chord mode's INVERSION, a setup item; chord mode off, so nothing heard) to the other value
                      than the prime (CC 57 sent before the calm: the change always differs from what the flash holds)
             pattern: (before the recording, in the calm's place) REC on stopped (step recording), one note v20, REC
-                     off, CC 120 + CC 10 (silence): the pattern edited; its save 1.5 s later
+                     off, CC 120 + CC 10 (silence), the recording 0.15 s later (PREP_SETTLE_S: in that silence):
+                     the pattern edited; its save 1.5 s later
             undo:    CC 44 (UNDO) takes that note back: the pattern exactly as it was, saved again (the same events)
   catch     CC 116 every ~4 ms from just before the save is due: the first reply with item 17 > 0 (a flash slice ran)
   attack    OFFSET ms after the catch (default 0, 30, 60): the pedal, a 10-voice SPREAD chord at v127, a pitch bend
@@ -84,6 +85,12 @@ DEADLINE_S = 10.0
 FAST_FROM = dict(setup=1.6, pattern=0.9, undo=1.0)   # s after the change: the catch's fast polls from here
 WINDOW_S = 0.2                               # the save's window after the chord: the first reply there
 STEP_NOTE, STEP_VEL = 60, 20
+PREP_SETTLE_S = 0.15                         # after the pattern's prep (CC 120 + CC 10: its silence) the recording
+                                             # starts only this much later: the reset reaches the device's output
+                                             # ~10-20 ms after it is sent (USB in, the audio blocks), and a recording
+                                             # started at once caught the note before it, then exact zeros up to the
+                                             # chord: "zero 1452 ms" on USB (BUGHUNT #36, 2026-10-26: 0.9.6's mix
+                                             # fixes made that note > 200 LSB, det_zero's "sound on both sides")
 
 
 # ---- the stimulus ----------------------------------------------------------------------------------------------------
@@ -387,6 +394,28 @@ def self_test(eng="rhodes", log=print):
         r = judge(P, 48000, t_change, t_chord, audio=evs)
         say(f"{name} at +{', +'.join(f'{1000 * m:.0f}' for m in marks)} ms after the chord (the save's window): found "
             f"{sum(hit)}/{len(marks)}, the take {r['verdict']}", all(hit) and r["verdict"] == "FAIL")
+    # the pattern's prep (REC on, the note v20, REC off, CC 120 + CC 10: silence) inside the recording, BUGHUNT #36: on
+    # the FM-1 a recording started at once caught ~15 ms of that note (~1000 LSB; the reset reaches the output ~15 ms
+    # after it is sent), then exact zeros up to the chord: det_zero's "sound on both sides", one USB zero run of
+    # 1.45 s, the take FAIL with no fault. That shape, from the host's note and chord: found; the recording started
+    # PREP_SETTLE_S after the prep (in the silence, the note's tail gone): nothing
+    t_rst = 0.2
+    pev = [(0.0, "cc", PLAY_CC, 0), (0.0, "cc", REC_CC, 127), (0.05, "on", STEP_NOTE, STEP_VEL),
+           (0.15, "off", STEP_NOTE, 0), (t_rst, "cc", REC_CC, 0), (t_rst, "cc", 120, 0),
+           (t_rst, "cc", C.hil_scan.RESET_CC, 127)]
+    t_ch = t_rst + 1.2
+    pu = host_render(ccs, pev + attack(C.voices(eng), t_ch), t_ch + 0.6, "save_glitch-prep")
+    a = int(0.06 * fs)
+    note = pu[a:a + int(0.015 * fs)]                     # (the note at its loud part: > 200 LSB, as the FM-1's)
+    gap = int((t_ch - t_rst - PREP_SETTLE_S) * fs)
+    for name, lead, want in (("the recording started at once (the note, then the reset's silence)", note, True),
+                             ("the recording started PREP_SETTLE_S after the prep", note[:0], False)):
+        u2 = np.concatenate([lead, np.zeros((gap, 2)), pu[int(t_ch * fs):]])
+        t0 = (len(lead) + gap) / fs
+        ev2 = [(t - t_ch + t0, k, x, y) for t, k, x, y in attack(C.voices(eng), t_ch)]
+        evs, _ = audio_events(u2, C.sim_jack(u2), fs, ev2, ccs, fit=False)
+        zero = [e for e in evs if e[0] == "usb" and e[2] == "zero"]
+        say(f"{name}: {len(zero)} USB zero run(s)" + (f" ({zero[0][3]})" if zero else ""), bool(zero) == want)
     for name, kw in (("USB missed 1 in the window", dict(missed_at=0)), ("the ISR 4300 us in the window",
                      dict(isr_win=4300)), ("no overlap (the save done before the chord)", dict(off_after=0))):
         r = judge(fake_polls(t_change, t_chord, **kw), 48000, t_change, t_chord, audio=[])
@@ -422,7 +451,7 @@ def plan(a):
          + f" ({len(ccs)} CCs), USB VOL FIXED; " + ("USB + the jack" if a.source == "both" else "USB only"),
          f"  calm: CC 116 every 0.25 s until {CALM_S:g} s without a flash write (at most {CALM_MAX_S:g} s)",
          f"  setup: CC {INV_CC} (INVERSION) to the other value; pattern: REC on stopped, note {STEP_NOTE} v{STEP_VEL}, "
-         f"REC off, CC 120 + CC 10, then the take; undo: CC {UNDO_CC} (UNDO: that note back out, the pattern as it was)",
+         f"REC off, CC 120 + CC 10, the take {PREP_SETTLE_S:g} s later; undo: CC {UNDO_CC} (UNDO: that note back out, the pattern as it was)",
          f"  catch: CC 116 every ~4 ms from {FAST_FROM['setup']:g} / {FAST_FROM['pattern']:g} s after the change: the "
          f"first item 17 > 0 (deadline {a.deadline:g} s)",
          f"  attack OFFSET ms after the catch: the pedal, {C.voices(a.engine)}-note chords every 0.25 s (SPREAD, mid, "
@@ -514,6 +543,7 @@ class Run:
             md.send("on", STEP_NOTE, STEP_VEL); time.sleep(0.1); md.send("off", STEP_NOTE)
             self.pending_undo = True
             time.sleep(0.05); md.cc(REC_CC, 0); md.cc(120, 0); md.cc(C.hil_scan.RESET_CC, 127)
+            time.sleep(PREP_SETTLE_S)                # (the silence in the device's output before the recording)
         keys = list(dev.cap.rings)
         st = dev.cap.now()
         t0 = time.monotonic()
