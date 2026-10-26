@@ -2,6 +2,7 @@
 """tools/hil_store_migration.py's read-back on synthetic playbacks (its self-test: the patterns A / B, SWING, BARS
 told apart at 90, 120 and 160 BPM; a wrong pattern, a second migration, the defaults FAIL), its plan and its guard
 on the 0.9.5 package"""
+import os
 import sys
 from pathlib import Path
 
@@ -48,3 +49,55 @@ def test_old_package_checked(tmp_path):
     new.write_bytes(b"x")
     with pytest.raises(SystemExit, match="not the 0.9.5 release asset"):
         S.main(["--fwsc", str(new), "--old", str(old)])
+
+
+def test_dry_run_says_the_mode(capsys):
+    assert S.main(["--fwsc", "cand.fwsc", "--fresh", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "mode --fresh" in out and "  1f two 0.9.5 settings saves" in out
+    assert S.main(["--fwsc", "cand.fwsc", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "mode as found" in out and "1f" not in out
+
+
+def _run_to_step2(monkeypatch, tmp_path, extra):
+    """the run on a fake FM-1, stopped at step 2's read-back: the log of installs, CCs and waits"""
+    import types
+    log = []
+
+    class Dev:
+        def cc(self, c, v): log.append(("cc", c, v))
+        def send(self, *m): log.append(("send",) + m)
+
+    class Must:
+        not_new = True
+        def __init__(self, a): self.dev = Dev()
+        def info(self): return "fake"
+        def install(self, p): log.append(("install", os.path.basename(p)))
+        def open_usb(self, *a, **k): raise RuntimeError("no audio here")
+
+    monkeypatch.setitem(sys.modules, "hil_must", types.SimpleNamespace(Must=Must))
+    monkeypatch.setattr(S, "OUT", str(tmp_path))
+    monkeypatch.setattr(S, "sha256", lambda p: S.OLD_SHA256)
+    monkeypatch.setattr(S.time, "sleep", lambda t: log.append(("wait", t)))
+    old, new = tmp_path / "old.fwsc", tmp_path / "new.fwsc"
+    old.write_bytes(b"o")
+    new.write_bytes(b"n")
+    assert S.main(["--fwsc", str(new), "--old", str(old)] + extra) == 1     # (stopped: no audio)
+    first = log.index(("install", "old.fwsc"))
+    step2 = log.index(("cc", S.CC_QUANT, S.QUANT_8))
+    return log[first + 1:step2], (tmp_path / "report.txt").read_text()
+
+
+def test_fresh_saves_twice_on_old_before_the_setup(monkeypatch, tmp_path):
+    between, rep = _run_to_step2(monkeypatch, tmp_path, ["--fresh"])
+    sw = [i for i, e in enumerate(between) if e[:2] == ("cc", S.CC_SWING)]
+    assert [between[i][2] for i in sw] == list(S.FRESH_SWING) and len(set(S.FRESH_SWING)) == 2
+    for i in sw:                                       # each change, then a wait past 0.9.5's 2 s save delay
+        assert ("wait", S.SAVE_WAIT_S) in between[i + 1:i + 3]
+    assert "mode --fresh" in rep and "1f two 0.9.5 settings saves" in rep
+
+
+def test_without_fresh_no_extra_saves(monkeypatch, tmp_path):
+    between, rep = _run_to_step2(monkeypatch, tmp_path, [])
+    assert not [e for e in between if e[:2] == ("cc", S.CC_SWING)] and "mode as found" in rep
