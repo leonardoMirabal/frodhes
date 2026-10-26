@@ -26,19 +26,50 @@
 2900 midi 0xE0 0 96
 3000 expect state bend 4096
 3100 midi 0xE0 0 64
-# the mod wheel (up = a lower reading): TREM/WAH's depth, the effect switched on (p.2 / p.3); back: depth 0
+# the mod wheel (up = a lower reading): more TREM/WAH depth on top of DEPTH, never DEPTH itself (0.9.6, #29: its rest
+# was DEPTH 0, the preset's DEPTH lost). The sound here: TREM off, DEPTH 0. Up: TREM on at full depth; back: off again
 3200 wheel 1 485
-3400 expect state p.3 127
+3400 expect state p.3 0
 3400 expect state p.2 1
+3400 expect state twdepth 127
 3400 expect state modw 127
 3500 wheel 1 620
 3700 expect state p.3 0
+3700 expect state p.2 0
+3700 expect state twdepth 0
 3700 expect state modw 0
-# VIBES (CC 79 0): the mod wheel is the motor's depth (p.55)
-3800 midi 0xB0 79 0
-3900 wheel 1 485
-4100 expect state p.55 127
-4100 expect state p.54 1
-4200 wheel 1 620
-4400 expect state p.55 0
-4500 end
+# a DEPTH set (CC 18 64) and TREM on (CC 17 64): the wheel adds to it, half way = half the rest; at rest DEPTH again
+3750 midi 0xB0 18 64
+3760 midi 0xB0 17 64
+3800 expect state twdepth 64
+3850 wheel 1 550
+3950 expect state modw 59
+3950 expect state twdepth 93
+3950 expect state p.3 64
+4000 wheel 1 485
+4100 expect state twdepth 127
+4150 wheel 1 620
+4250 expect state twdepth 64
+4250 expect state p.3 64
+4250 expect state p.2 1
+# switched on by the wheel, then by hand (TREM pad / CC) to something else: the wheel at rest leaves it
+4300 midi 0xB0 17 0
+4350 wheel 1 485
+4450 expect state p.2 1
+4460 midi 0xB0 17 127
+4500 wheel 1 620
+4600 expect state p.2 2
+4610 midi 0xB0 17 0
+# VIBES (CC 79 0): the motor's depth (p.55, 110 in this sound) plus the wheel; the motor switched on and off again
+4700 midi 0xB0 79 0
+4750 midi 0xB0 47 0
+4800 expect state motdepth 110
+4900 wheel 1 485
+5000 expect state p.55 110
+5000 expect state p.54 1
+5000 expect state motdepth 127
+5100 wheel 1 620
+5200 expect state p.55 110
+5200 expect state p.54 0
+5200 expect state motdepth 110
+5300 end

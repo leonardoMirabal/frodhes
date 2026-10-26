@@ -1,0 +1,42 @@
+# SMK-37 build only (make test-smk): the pitch wheel with the pedal jack (0.9.6, #29: "the pitch wheel stops after the
+# pedal", and a restart did not help). Power-on with the pedal in (its reading 100 from the start) and the wheel's
+# reading bouncing as the readings start to count (SMK_SETTLE; ~300 ms on the host): the centre waits for a still reading, no bend stays on.
+# Then a plug at run time with a spike on the wheel's input: the range is not widened, a full travel bends fully.
+0 pedal 100
+290 wheel 0 1023
+310 wheel 0 0
+320 wheel 0 1023
+330 wheel 0 535
+900 expect state bend 0
+900 expect state pedal 0
+1000 keys 0x80
+1100 wheel 0 1000
+1400 expect state bend 8191
+1500 wheel 0 535
+1800 expect state bend 0
+1900 wheel 0 100
+2200 expect state bend -8192
+2300 wheel 0 535
+2600 expect state bend 0
+2700 keys 0
+# the pedal out, in again: a 20 ms spike on the wheel's input as the jack goes in
+2800 pedal 985
+3000 wheel 0 1023
+3010 pedal 100
+3010 wheel 0 0
+3020 wheel 0 535
+3300 expect state bend 0
+3400 wheel 0 1000
+3700 expect state bend 8191
+3800 wheel 0 535
+4100 expect state bend 0
+4200 wheel 0 100
+4500 expect state bend -8192
+4600 wheel 0 535
+4900 expect state bend 0
+# the pedal works as ever (plugged in at power-on: that reading is "up")
+5000 pedal 900
+5100 expect state pedal 1
+5200 pedal 100
+5300 expect state pedal 0
+5400 end

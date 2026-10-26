@@ -74,8 +74,8 @@ FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1. The screen's hints u
 | 37 keys | C3..C6 at OCTAVE 0 (the middle 27 are the FM-1's F3..G5), each at its own velocity |
 | faders, bank A | the instrument's first VOICE page (Rhodes: TONE BARK BELL HAMMER; VIBES / MARIMBA: STRIKE MALLET TUBE WEIGHT) |
 | faders, bank B | the four PERFORM knobs (set them on ASSIGN) |
-| pitch wheel | pitch bend, +-2 semitones (the Rhodes, as MIDI pitch bend) |
-| mod wheel | TREM/WAH depth (VIBES: the motor's depth), switching it on |
+| pitch wheel | pitch bend, +-2 semitones (the Rhodes types, as MIDI pitch bend; VIBES and MARIMBA ignore it) |
+| mod wheel | more TREM/WAH depth on top of DEPTH, full at the top (VIBES: the motor's); switches it on if off, off again at rest |
 | pedal jack | sustain pedal, either polarity (plug it in before switching on) |
 
 **Faders: soft takeover.** A fader takes over only once it reaches the value its card has (after a bank change, a

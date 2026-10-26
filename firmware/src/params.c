@@ -262,7 +262,21 @@ static uint32_t set_t_change;
  * again as it is stored (frodhes.c app_main), the record's sound only when that preset is not there any more */
 static uint8_t snd_base[P_SLOTS];
 static uint16_t bpm_hand = 1200;
-static void snd_base_take(void) { uint32_t i; for (i = 0; i < P_SLOTS; i++) snd_base[i] = PV(i); }
+#if BOARD_SMK37
+/* the SMK's mod wheel (frodhes_smk.h smk_wheels; 0.9.6, #29: it wrote DEPTH, so its rest was DEPTH 0 and it lost the
+ * preset's): 0..127 on top of TREM/WAH's DEPTH and the motor's DEPTH, up to 127 at the top; at rest the DEPTH as set.
+ * What it switched on to get there (smk_mw_woke: P_TW_SW or P_MOT_ON, to smk_mw_wv) it switches off at rest; a sound
+ * loaded or saved meanwhile (snd_base_take) keeps its own */
+static int32_t smk_mw, smk_mw_wv;
+static uint32_t smk_mw_woke;
+static uint8_t smk_mw_uoff;                     /* set.mot_user_off before the wheel switched the motor on */
+#define MW_ADD(v) ((v) + (smk_mw * (127 - (v)) + 63) / 127)
+#define MW_FORGET() (smk_mw_woke = 0u)
+#else
+#define MW_ADD(v) (v)
+#define MW_FORGET() ((void)0)
+#endif
+static void snd_base_take(void) { uint32_t i; for (i = 0; i < P_SLOTS; i++) snd_base[i] = PV(i); MW_FORGET(); }
 static void settings_record(settings_t *r)
 {
     uint32_t i;
@@ -397,7 +411,7 @@ static void param_apply(uint32_t id)
         break;
     case P_DRIVE: fx_set(FXP_DRIVE, v); break;
     case P_TW_SW: tw_apply(); break;
-    case P_TW_DEPTH: fx_set(FXP_TW_DEPTH, v); break;
+    case P_TW_DEPTH: fx_set(FXP_TW_DEPTH, MW_ADD(v)); break;
     case P_TW_RATE: fx_set(FXP_TW_RATE, v); break;
     case P_TW_MODE: tw_apply(); break;
     case P_TW_SHAPE: fx_set(FXP_TW_SHAPE, v); break;
@@ -448,7 +462,7 @@ static void param_apply(uint32_t id)
     case P_RV_MOD: fx_set(FXP_RV_MOD, v); break;
     case P_RV_LOCUT: fx_set(FXP_RV_LOCUT, v); break;
     case P_MOT_ON: eng_bar_knob(BK_MOT_ON, (uint32_t)v); break;        /* the bar engine reads these, the Rhodes not */
-    case P_MOT_DEPTH: eng_bar_knob(BK_MOT_DEPTH, (uint32_t)v); break;
+    case P_MOT_DEPTH: eng_bar_knob(BK_MOT_DEPTH, (uint32_t)MW_ADD(v)); break;
     case P_MOT_RATE: mot_rate_apply(); break;
     case P_MOT_SHAPE: eng_bar_knob(BK_MOT_SHAPE, (uint32_t)v); break;
     default: break;                                                   /* SYNC: tempo.c */
