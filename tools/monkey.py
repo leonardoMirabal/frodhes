@@ -85,7 +85,8 @@ KNOWN_CLICK = {
     "P_CP_SW": "#2", "P_PH_SW": "#2", "P_DL_TIME": "#3", "P_DL_SYNC": "#3", "P_FL_TYPE": "#4", "P_DRIVE": "#5",
     "P_CMP_SW": "#6", "P_CMP_AMT": "#6", "P_CMP_GAIN": "#6", "P_TW_SW": "#7", "P_TW_MODE": "#7", "P_LEVEL": "#9",
     "P_RV_MOD": "#10", "P_TYPE": "#12", "P_FL_FREQ": "#13", "P_TW_RATE": "#14", "P_PH_FDBK": "#16",
-    "P_DL_SW": "#17", "P_RV_DEPTH": "#18", "P_RV_SIZE": "#19", "P_CP_DEPTH": "mix-fix", "P_DL_DEPTH": "mix-fix",
+    "P_DL_SW": "#17", "P_DL_TONE": "#23 (TAPE)", "P_RV_DEPTH": "#18", "P_RV_SIZE": "#19", "P_CP_DEPTH": "mix-fix",
+    "P_DL_DEPTH": "mix-fix", "FX+SPREAD": "#25",
 }
 
 
@@ -528,8 +529,12 @@ def click_one(events, i, binary=BIN, detail=False):
         da, db = a.dumps.get(at, {}), b.dumps.get(at, {})
         changed += [pname(int(k[2:])) for k in da if k.startswith("p.") and da.get(k) != db.get(k)
                     and pname(int(k[2:])) not in changed]
+    w = line.split()
+    fx = w[:2] == ["btn", "2"] or (w[0] == "midi" and int(w[1], 16) >> 4 == 0xB and int(w[2]) == 111)
+    if fx and a.dumps.get(t + 8, {}).get(f"p.{PNAME.index('P_SPREAD')}", "0") != "0":
+        changed = ["FX+SPREAD"] + changed               # (the bypass's crossfade misses SPREAD's side: #25)
     if not changed:
-        changed = [f"({line.split()[0]} {' '.join(line.split()[1:3])}: no parameter)"]
+        changed = [f"({w[0]} {' '.join(w[1:3])}: no parameter)"]
     return (ratio, changed, ring, plain, diff) if detail else (ratio, changed, ring)
 
 
@@ -650,7 +655,7 @@ def one(seed, binary=BIN, k_clicks=3, do_shrink=True, strict=False):
         res["fail"].append((kind, msg))
         if do_shrink and kind not in seen and kind != "crash":
             seen.add(kind)
-            m = shrink_invariant(ev, kind, binary)
+            m = shrink_invariant(ev, kind, binary if kind == "wrap" else BIN)   # (the plain build: ~5x faster)
             res["repro"].append(save_fail(seed, kind, ev, m, {"msg": msg}))
         elif do_shrink and kind == "crash" and kind not in seen:
             seen.add(kind)

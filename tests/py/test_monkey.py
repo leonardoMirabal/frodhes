@@ -192,6 +192,17 @@ def test_bughunt22_plate_input_overflow():
     assert r.code == 0 and "runtime error" not in r.out
 
 
+def test_bughunt25_fx_with_spread(binary):
+    """BUGHUNT #25 (monkey seed 512445757, shrunk): FX with SPREAD on: the bypass crossfade goes to the plain mono,
+    then the bypassed dry adds SPREAD's side in one step (fx.c fx_process / fx_spread_dry); named, xfail until fixed"""
+    path = os.path.join(os.path.dirname(__file__), "monkey", "bughunt25-fx-spread.txt")
+    ev = [(int(ln.split()[0]), ln.split(" ", 1)[1].strip()) for ln in open(path) if ln[0] != "#"]
+    ratio, changed, ring = mk.click_one(ev, len(ev) - 1, binary)
+    assert changed == ["FX+SPREAD"] and mk.known_click(changed) == "#25" and ring > -40
+    if ratio > 10:
+        pytest.xfail(f"BUGHUNT #25: FX with SPREAD clicks ({ratio:.0f}x)")
+
+
 def test_ddmin_finds_the_minimal_pair():
     items = list(range(40))
     assert sorted(mk.ddmin(items, lambda xs: 7 in xs and 31 in xs)) == [7, 31]
