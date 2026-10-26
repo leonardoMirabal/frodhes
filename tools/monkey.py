@@ -70,6 +70,8 @@ SAN_FLAGS = ["-fsanitize=undefined,address,implicit-signed-integer-truncation", 
 # taken out, so a narrowing that changes a sample (an int16 wrap) is a sanitizer report; in range they are no-ops
 WRAP_SRC = ("rhodes.c", "bars.c", "fx.c", "dly_tape.c", "rev_plate.c", "rev_inf.c")
 RAND_MS = 20000                    # the random part
+FOCUS_XF = False                   # --focus-xfade: more of the controls with a crossfade (switches, TYPEs, LEVEL, MIX, presets)
+FOCUS_CC = [80, 79, 17, 85, 88, 12, 106, 107, 110, 70, 84, 95, 91, 111, 27, 89]
 SHED_PER_MIN = 0                   # --shed: voice sheds a minute (the FM-1 sheds when the audio runs late; tests/host.c)
 LIM_T = 24000
 DEV_CC = {119, 41}                 # not sent: RAW skips the limiter by design; key velocity's test modes
@@ -112,6 +114,11 @@ def gen(seed, dur=RAND_MS):
         ev.append((t, f"midi 0x{0x80 | c:02X} {n} {rv}"))
 
     def a_cc(t, num=None, val=None, c=None):
+        if num is None and FOCUS_XF and rng.random() < 0.6:
+            if rng.random() < 0.15:                        # a preset load (a program change)
+                ev.append((t, f"midi 0x{0xC0 | (ch() if c is None else c):02X} {rng.randrange(48)} 0"))
+                return
+            num = rng.choice(FOCUS_CC)
         if num is None:
             num = rng.choice(KNOWN_CC) if rng.random() < 0.8 else rng.randrange(128)
         if num in DEV_CC:
@@ -688,12 +695,14 @@ def main():
                     help="the sanitizer build for every N-th seed (the others: the plain build, about 3x faster)")
     ap.add_argument("--clicks", type=int, default=3)
     ap.add_argument("--no-shrink", action="store_true")
+    ap.add_argument("--focus-xfade", action="store_true", help="more switches, TYPEs, LEVEL, MIX and preset loads")
     ap.add_argument("--shed", type=float, default=0, metavar="N", help="N voice sheds a minute in every stream")
     ap.add_argument("--strict", action="store_true", help="known clicks fail too")
     ap.add_argument("--json")
     a = ap.parse_args()
-    global SHED_PER_MIN
+    global SHED_PER_MIN, FOCUS_XF
     SHED_PER_MIN = a.shed
+    FOCUS_XF = a.focus_xfade
     binary = build(a.san)
     sanb = build(True) if a.san_every else binary
     os.makedirs(OUTD, exist_ok=True)
