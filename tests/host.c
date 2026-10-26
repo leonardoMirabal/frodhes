@@ -437,6 +437,10 @@ static uint32_t host_stall, host_rload;         /* "T stall": milliseconds the n
 static void host_ms(void);
 static void platform_poll(void)                 /* one call = one millisecond (or a stall's) */
 {
+#if BOARD_SMK37
+    smk_master += fm1_enc_take(ENC_MASTER) * 24;   /* (smk_input.h fm1_adc_read: K1 as the MASTER pot, 24 a detent) */
+    smk_master = smk_master < 0 ? 0 : smk_master > 1023 ? 1023 : smk_master;
+#endif
     host_ms();
     while (host_stall) { host_stall--; host_ms(); }
 }

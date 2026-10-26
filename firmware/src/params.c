@@ -191,7 +191,13 @@ typedef struct {
                                                 * record so far = ROOTS; 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
     uint8_t seq_rsv[57];
     uint8_t flags2;                            /* 0.9.5: 1 = the preset index in the 19-factory layout (U01 = 19) */
+#if BOARD_SMK37
+    uint8_t smk_mst[2];                        /* 0.9.6, SMK-37: K1's MASTER + 1, little endian (0, every record
+                                                * before: smk_input.h's 724; frodhes_smk.h smk_master_stored) */
+    uint8_t reserved[19];
+#else
     uint8_t reserved[21];
+#endif
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 
@@ -313,6 +319,9 @@ static void params_sanitize(void)
         for (i = 0; i < P_SLOTS; i++) p[i] = i < 32u ? set.panel[i] : i < P_COUNT ? PARAMS[i].def : 0;
         for (i = 0; i < 16u; i++) set.panel2[i] = set.undo2[i] = 0;
         for (i = 0; i < sizeof set.reserved; i++) set.reserved[i] = 0;
+#if BOARD_SMK37
+        set.smk_mst[0] = set.smk_mst[1] = 0;
+#endif
         set.flags2 = 0;
         for (i = 0; i < 4u; i++) set.perf[i] = 0;
         params_split_phaser(p, P_SLOTS);

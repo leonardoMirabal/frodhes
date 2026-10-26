@@ -88,7 +88,7 @@ FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1 (hold one OCT button 
 
 | Control | Does |
 | --- | --- |
-| K1 | MASTER volume |
+| K1 | MASTER volume; it is kept across power cycles (in the settings, saved 2 s after the last turn, in silence) |
 | K2 / K3 / K4 | SELECT (pages), ALGORITHM (TYPE), PRESETS |
 | K5..K8 | the four cards of the page (the FM-1's K1..K4) |
 | < > | the previous / next page |
@@ -117,7 +117,7 @@ keys: KEY VEL (FRODHES page) is the velocity of a medium press, a light touch pl
 | 8 | next preset | 11 | FILTER on / off |
 | | | 12 | TREM/WAH on / off (VIBES: the motor) |
 | | | 13 / 14 / 15 | PHASER / CHORUS / DELAY on / off |
-| | | 16 | SUSTAIN: held, or a tap latches (as REC) |
+| | | 16 | SUSTAIN: held, or a tap latches; one latch with REC (a tap on either lets go, a hold on either releases it) |
 
 Pad colours: dark orange off, light blue on, brighter while notes sound. DISPLAY BRIGHTNESS dims the pads and the
 button LEDs too.
