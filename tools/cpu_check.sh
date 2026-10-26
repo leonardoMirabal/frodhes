@@ -13,6 +13,11 @@
 #   cpu_vibes               3      --engine vibes; in CPU_HURT: 3 in a row
 #   cpu_rhodes_bend         3      --bend-sweep; the max of the takes <= the limit
 #   cpu_marimba             3      --engine marimba; the max of the takes <= the limit
+# Optional cases, run only when ONLY names them (not in the default 4):
+#   cpu_vibes_size_inf      3      cpu_vibes on INFINITE with --cc-sweep 73:1:127:200: the reverb SIZE turned every
+#                                  200 ms, so its fades (0.9.6, 186 ms) run back to back; the max <= the limit
+#   cpu_vibes_size_plate    3      the same on PLATE
+#   (ONLY=vibes_size: both)
 # (each take ~25-50 s; the same steps, names and rule as tools/final/run_final_rev.sh's cpu_* steps)
 #
 # Environment (all optional):
@@ -49,17 +54,22 @@ ONLY="${ONLY:-}"
 case "$CPU_TAKES$CPU_LIMIT_US" in *[!0-9]*|"") echo "CPU_TAKES / CPU_LIMIT_US: integers" >&2; exit 2 ;; esac
 [ "$CPU_TAKES" -ge 1 ] || { echo "CPU_TAKES >= 1" >&2; exit 2; }
 CASES="cpu_rhodes_spread_bend cpu_vibes cpu_rhodes_bend cpu_marimba"
-# norm LIST: a comma list with each name given its cpu_ prefix (rhodes_spread_bend = cpu_rhodes_spread_bend)
+OPTIONAL="cpu_vibes_size_inf cpu_vibes_size_plate"     # (only when ONLY names them)
+# norm LIST: a comma list with each name given its cpu_ prefix (rhodes_spread_bend = cpu_rhodes_spread_bend);
+# vibes_size = both size cases
 norm() { local out="" x; local IFS=,; for x in $1; do x="${x// /}"; [ -z "$x" ] && continue
-    case "$x" in cpu_*) ;; *) x="cpu_$x" ;; esac; out="$out${out:+,}$x"; done; echo "$out"; }
+    case "$x" in cpu_*) ;; *) x="cpu_$x" ;; esac
+    [ "$x" = "cpu_vibes_size" ] && x="cpu_vibes_size_inf,cpu_vibes_size_plate"
+    out="$out${out:+,}$x"; done; echo "$out"; }
 ONLY="$(norm "$ONLY")"
 CPU_HURT="$(norm "$CPU_HURT")"
 if [ -n "$ONLY" ]; then
     IFS=, read -r -a want <<< "$ONLY"
     for x in "${want[@]}"; do
-        [[ " $CASES " == *" $x "* ]] || { echo "ONLY: unknown case '$x'; the cases: $CASES (or without cpu_)" >&2; exit 2; }
+        [[ " $CASES $OPTIONAL " == *" $x "* ]] || { echo "ONLY: unknown case '$x'; the cases: $CASES $OPTIONAL (or without cpu_; vibes_size: both size cases)" >&2; exit 2; }
     done
 fi
+NOPT=0; for x in $OPTIONAL; do [[ ",$ONLY," == *",$x,"* ]] && NOPT=$((NOPT + 1)); done   # (the optional cases named)
 FX="$TREE/tools/final/hil_cpu_fx.py"
 [ -f "$FX" ] && [ -f "$TREE/tools/hil_cpu.py" ] || { echo "no $FX / tools/hil_cpu.py: run it from a Frodhes tree" >&2; exit 2; }
 FW="${1:-}"
@@ -89,6 +99,7 @@ else
 fi
 BEND=(); (cd "$TREE" && "$PY" tools/hil_cpu.py --help 2>/dev/null | grep -q -- "--bend-sweep") && BEND=(--bend-sweep)
 [ ${#BEND[@]} -eq 0 ] && say "  NOTE: this tree's hil_cpu has no --bend-sweep: the bend cases run without it"
+CCSW=0; (cd "$TREE" && "$PY" tools/hil_cpu.py --help 2>/dev/null | grep -q -- "--cc-sweep") && CCSW=1
 
 FAILS=0
 RAN=0
@@ -96,13 +107,15 @@ RAN=0
 case_run() {
     local name="$1"; shift
     if [ -n "$ONLY" ] && [[ ",$ONLY," != *",$name,"* ]]; then say "  $name: skipped (not in ONLY)"; return 0; fi
+    if [ -z "$ONLY" ] && [[ " $OPTIONAL " == *" $name "* ]]; then return 0; fi   # (optional: only when named)
+    local rt=(); [ -n "${REV_TYPE:-}" ] && [[ " $* " != *" --rev-type "* ]] && rt=(--rev-type "$REV_TYPE")
     local n="$CPU_TAKES" h=()
     if [[ ",$CPU_HURT," == *",$name,"* ]]; then h=(--hurt); [ "$n" -lt 3 ] && n=3; fi
     local d=(); [ "$DRY" = "1" ] && d=(--dry-run)
     local t0=$SECONDS code
     RAN=$((RAN + 1))
     echo "$(date '+%H:%M:%S') $name: $n takes"
-    (cd "$TREE" && "$PY" "$FX" "${d[@]+"${d[@]}"}" ${REV_TYPE:+--rev-type "$REV_TYPE"} --limit "$CPU_LIMIT_US" \
+    (cd "$TREE" && "$PY" "$FX" "${d[@]+"${d[@]}"}" "${rt[@]+"${rt[@]}"}" --limit "$CPU_LIMIT_US" \
         --takes "$n" "${h[@]+"${h[@]}"}" "$@") > "$OUT/$name.log" 2>&1
     code=$?
     local line; line="$(grep -E '^hil_cpu_fx: takes ' "$OUT/$name.log" | tail -1 | sed 's/^hil_cpu_fx: //')"
@@ -116,8 +129,14 @@ case_run cpu_rhodes_spread_bend --spread 127 -- --worst --usb 48000 "${BEND[@]+"
 case_run cpu_vibes -- --engine vibes --worst --usb 48000
 case_run cpu_rhodes_bend -- --worst --usb 48000 "${BEND[@]+"${BEND[@]}"}"
 case_run cpu_marimba -- --engine marimba --worst --usb 48000
+if [ "$CCSW" = "1" ]; then
+    case_run cpu_vibes_size_inf --rev-type INFINITE -- --engine vibes --worst --usb 48000 --cc-sweep 73:1:127:200
+    case_run cpu_vibes_size_plate --rev-type PLATE -- --engine vibes --worst --usb 48000 --cc-sweep 73:1:127:200
+elif [[ ",$ONLY," == *",cpu_vibes_size_"* ]]; then
+    FAILS=$((FAILS + 1)); say "  the size cases: this tree's hil_cpu has no --cc-sweep: FAIL (not judged)"
+fi
 if [ "$RAN" = "0" ]; then say "cpu_check: NOTHING JUDGED: 0 cases ran (ONLY=$ONLY): not a PASS"; exit 2; fi
-if [ "$FAILS" = "0" ]; then say "cpu_check: PASS ($RAN of 4 cases; whole ISR <= $CPU_LIMIT_US us; logs in $OUT)"; exit 0; fi
+if [ "$FAILS" = "0" ]; then say "cpu_check: PASS ($RAN of $((4 + NOPT)) cases; whole ISR <= $CPU_LIMIT_US us; logs in $OUT)"; exit 0; fi
 say "cpu_check: FAIL: $FAILS case(s) over the margin or failed (logs in $OUT)"
 exit 1
 }
