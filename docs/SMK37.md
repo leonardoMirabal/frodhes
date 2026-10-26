@@ -36,8 +36,8 @@ two reads and check that the calibration record (`trimdat`) is in them. Do this 
 python3 tools/fm1_install.py frodhes-smk37-experimental.fwsc
 ```
 
-The installer knows the SMK-37's names. On the first start Frodhes clears the stock firmware's settings area once (it
-belongs to the stock firmware or to another port) and writes its own owner tag; the calibration, Bluetooth pairing and
+The installer knows the SMK-37's names. Frodhes keeps its settings, presets and pattern in a part of the flash that no
+stock firmware region uses: it never writes the stock firmware's settings area (versions before 0.9.6 cleared it and saved there), and the calibration, Bluetooth pairing and
 the stock resources are left alone.
 
 ## The way back to stock
