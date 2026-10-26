@@ -75,7 +75,7 @@ T_FLIP = 2000                                  # the one-move renders: the contr
 # REVERB MIX, TYPE, SIZE AUTO, SPREAD, LEVEL 0 dB, STAGE 77
 BASE = [(106, 0), (107, 0), (84, 0), (81, 0), (70, 0), (72, 0), (17, 0), (85, 0), (12, 0), (88, 0), (89, 0),
         (91, 0), (95, 0), (73, 0), (105, 0), (110, 64), (80, 0)]
-ENGINE = {"rhodes": [], "vibes": [(79, 0), (47, 0)], "marimba": [(79, 100)]}   # (VIBES: the motor off but on MOTOR)
+ENGINE = {"rhodes": [], "vibes": [(79, 0), (47, 0)], "marimba": [(79, 127)]}   # (VIBES: the motor off but on MOTOR)
 
 
 def bands(hi):

@@ -58,7 +58,7 @@ CLICKS = [
     ("fx-bypass", "FX switches all effects off at once and back on ... with a short crossfade",
      cc(84, 76, 30) + cc(81, 60, 31) + cc(91, 70, 32) + cc(13, 80, 33) + cc(12, 127, 34), cc(111, 127), None),
     ("drive-type", "A new type takes over smoothly: the one playing fades out, then the new one fades in",
-     cc(84, 64, 30) + cc(81, 70, 31), cc(84, 92), None),
+     cc(84, 64, 30) + cc(81, 70, 31), cc(84, 93), None),
     ("drive-amount-glides", "Moving any of the knobs glides, so you can turn them while you play (AMOUNT to 0)",
      cc(84, 127, 30) + cc(81, 20, 31), cc(81, 0), "BUGHUNT #5"),
     ("khlon-last-step", "Turning AMOUNT onto its last step (10.0), or back off it, passes ... without a click",

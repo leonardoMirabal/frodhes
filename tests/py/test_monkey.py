@@ -170,7 +170,7 @@ def test_the_panic_outlasts_a_preset_browse(binary):
 def test_the_probe_turns_the_motor_off(binary):
     """0.9.5 seed 273194706 (shrunk): REEDY, a VIBES preset with its motor on: the probe's key-up met the motor's
     pulse (+2 dB, not a release); the probe now switches the motor off (CC 47 0) as well as FX"""
-    ev = [(15007, "midi 0xC0 12 0"), (15706, "midi 0xC0 23 0"), (19803, "midi 0xB0 79 44")]
+    ev = [(15007, "midi 0xC0 12 0"), (15706, "midi 0xC0 23 0"), (19803, "midi 0xB0 79 64")]
     assert mk.check(ev, binary) == []
 
 
