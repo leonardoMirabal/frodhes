@@ -3,7 +3,7 @@
 """The store's migration from 0.9.5 on the FM-1 (BUGHUNT #28, private/STOCK-DATA-096.md section 6): the part MIDI
 reaches. 0.9.5's setup and pattern made over MIDI, the candidate installed over it, then back and forth.
 
-    tools/hil_store_migration.py --fwsc CANDIDATE [--old build/dl095/frodhes-0.9.5.fwsc] [--dry-run]
+    tools/hil_store_migration.py --fwsc CANDIDATE [--old build/dl095/frodhes-0.9.5.fwsc] [--fresh] [--dry-run]
     tools/hil_store_migration.py --self-test       the read-back's proof on synthetic takes (also in make pytest)
 
 THE FM-1'S PATTERN, SEQUENCER SETUP AND BOOT PRESET ARE OVERWRITTEN (and its 0.9.5 data, by the 0.9.5 install).
@@ -22,6 +22,13 @@ The tempo cannot be set over MIDI (PLAY taps it, the panel only): the unit's own
 Every restart is an install (fm1_install.py: the update loader restarts the FM-1; it writes the app area only).
 
   1  install --old (its sha256 must be the 0.9.5 release asset's, OLD_SHA256)
+  1f --fresh: a unit that never ran 0.9.6, updated from 0.9.5 (the user's path; BUGHUNT #40). On the FM-1 0.9.5's
+     settings share the 0.9.6 record's two sectors (0xFC000 / 0xFD000), so a unit that ran 0.9.6 before keeps a
+     0.9.6 copy there. FRESH_SWING: two 0.9.5 settings saves (SWING 61, then 62, SAVE_WAIT_S each), then step 2's
+     own: three in one boot. 0.9.5's save (set_store.c at v0.9.5) writes the sector the load would not pick and
+     then takes it as its own (set_at), so two saves in a row write both sectors whatever the start: no 0.9.6
+     record is left (whichever sector the load took, or none: the first save goes to one, the second to the other).
+     Not provable over MIDI: 0.9.6 takes 0.9.5's setup either way (#40's fix); the code is the proof
   2  the setup (QUANT 1/8, BARS 2, SWING 64, F01, chord / arp off), CLEAR, pattern A; 6 s (both auto saves);
      read back: A, 64, 2 (as set)
   3  restart (--old again): A, 64, 2 (0.9.5 kept them)
@@ -59,6 +66,7 @@ SET_B = dict(swing=58, bars=2)
 QUANT_8 = 2                                    # CC 62: 1/8 (seq.c SQ_GRID 48 ticks; a step-recorded note an eighth)
 CC_PLAY, CC_BARS, CC_QUANT, CC_REC, CC_CLEAR, CC_SWING = 60, 61, 62, 63, 43, 46
 CC_RAW, CC_NOISE, CC_RESET, CC_CHORD, CC_ARP = 119, 104, 10, 56, 52
+FRESH_SWING = (61, 62)                         # --fresh: 0.9.5's two extra saves (each differs from the one before)
 SAVE_WAIT_S = 6.0                              # the pattern's save 1.5 s, the setup's 2 s after the change, silent
 TAKE_S = 14.0                                  # a loop of 2 bars and its first note again down to 70 BPM
 SWING_TOL = 3.0                                # read within 3 % of the set SWING
@@ -267,9 +275,14 @@ def sha256(p):
 
 
 def plan_text(a):
-    out = [f"hil_store_migration: --old {os.path.basename(a.old)}, --fwsc {os.path.basename(a.fwsc)}",
+    out = [f"hil_store_migration: --old {os.path.basename(a.old)}, --fwsc {os.path.basename(a.fwsc)}, mode "
+           + ("--fresh (0.9.5's sectors rewritten first: a unit that never ran 0.9.6)" if a.fresh else
+              "as found (a 0.9.6 record from an earlier run may survive in 0.9.5's sectors)"),
            "OVERWRITES the FM-1's pattern, sequencer setup and boot preset (F01); 6 installs (~80 s each)"]
     out += [f"  {n}  {what}" for n, what, _, _ in STEPS]
+    if a.fresh:
+        out.insert(3, f"  1f two 0.9.5 settings saves (SWING {FRESH_SWING[0]}, {FRESH_SWING[1]}, {SAVE_WAIT_S:g} s "
+                      "each): both settings sectors 0.9.5's")
     out.append("  end  SWING 50, BARS 4, CLEAR, 6 s; the FM-1 left on --fwsc")
     out.append(f"~{6 * 100 // 60 + 6} min")
     return "\n".join(out)
@@ -281,6 +294,8 @@ def main(argv=None):
     ap.add_argument("--old", default=OLD, help="0.9.5's package (its sha256 must be OLD_SHA256)")
     ap.add_argument("--jack-dev", default="M6")
     ap.add_argument("--jack-ch", type=int, default=5)
+    ap.add_argument("--fresh", action="store_true", help="after step 1, two 0.9.5 settings saves: both sectors "
+                    "0.9.5's, no 0.9.6 record left (a unit that never ran 0.9.6)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
@@ -305,7 +320,8 @@ def main(argv=None):
     m = hm.Must(a)
     os.makedirs(OUT, exist_ok=True)
     lines, rows_all = [time.strftime("%Y-%m-%d %H:%M:%S") + f"  old {os.path.basename(a.old)}, fwsc "
-                       f"{os.path.basename(a.fwsc)} (sha256 {sha256(a.fwsc)[:16]}), {m.info()}"], []
+                       f"{os.path.basename(a.fwsc)} (sha256 {sha256(a.fwsc)[:16]}), {m.info()}, mode "
+                       f"{'--fresh' if a.fresh else 'as found'}"], []
 
     def say(t):
         lines.append(t)
@@ -351,6 +367,12 @@ def main(argv=None):
     code = 1
     try:
         say("1  install --old"); m.install(a.old)
+        if a.fresh:
+            say(f"1f two 0.9.5 settings saves (SWING {FRESH_SWING[0]}, {FRESH_SWING[1]}): both sectors 0.9.5's")
+            cc(64, 0); cc(CC_PLAY, 0); cc(120, 0)
+            for v in FRESH_SWING:
+                cc(CC_SWING, v)
+                time.sleep(SAVE_WAIT_S)
         say("2  the setup + pattern A")
         cc(64, 0); cc(CC_CHORD, 0); cc(CC_ARP, 0)
         m.dev.send("pc", 0)

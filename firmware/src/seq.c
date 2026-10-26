@@ -342,26 +342,42 @@ static int sq_valid(uint32_t at, sq_hdr_t *h)
 }
 static uint32_t sq_sv_tgt = SQ_A;                     /* the sector the next save writes: never the one that holds the
                                                          * last good pattern (no flash reads at save time) */
-static uint8_t st_new, st_old_ok, sq_old;               /* the store's record found; the places before 0.9.6 ours (the
-                                                         * record not there); the pattern came from there */
-static void seq_load(void)                              /* the pattern: before the store's migration (no record yet)
-                                                         * from the place before 0.9.6 if one is there, else its own */
+static uint8_t st_new, st_old_ok, sq_old;               /* the store's record found; the places before 0.9.6 ours (SMK:
+                                                         * the owner tag); the pattern came from there */
+static uint8_t st_mig;                                  /* what to take from the places before 0.9.6 (frodhes.c
+                                                         * st_old_scan): 1 the settings, 2 the presets, 4 the pattern */
+static uint32_t st_oid[3];                              /* the ids of what is there now (0: nothing) */
+/* the newest valid pattern of a / b (equal seq: b, as the load picks); 0: none */
+static uint32_t sq_newest(uint32_t pa, uint32_t pb, sq_hdr_t *h)
 {
     sq_hdr_t a, b;
-    uint32_t pa = OLD_SQ_A, pb = OLD_SQ_B, n;
-    int va = st_old_ok && sq_valid(pa, &a), vb = st_old_ok && sq_valid(pb, &b);
-    sq_old = (uint8_t)(va || vb);
-    if (!sq_old) { pa = SQ_A; pb = SQ_B; va = sq_valid(pa, &a); vb = sq_valid(pb, &b); }
+    int va = sq_valid(pa, &a), vb = sq_valid(pb, &b);
+    if (!va && !vb) return 0;
+    if (va && (!vb || (int32_t)(a.seq - b.seq) > 0)) { *h = a; return pa; }
+    *h = b;
+    return pb;
+}
+static uint32_t sq_old_id(void)                         /* the pattern at the place before 0.9.6: its id (0: none) */
+{
+    sq_hdr_t h;
+    return sq_newest(OLD_SQ_A, OLD_SQ_B, &h) ? st_id(h.crc ^ h.n, h.seq) : 0u;
+}
+static void seq_load(void)                              /* the pattern: its own, or the one at the place before 0.9.6
+                                                         * when the migration takes it (st_mig 4) */
+{
+    sq_hdr_t h, o;
+    uint32_t n, q = 0, at = sq_newest(SQ_A, SQ_B, &h), own = at != 0u;
     for (n = 0; n < 128u; n++) rec_start[n] = 0xFFFFu;
     sq_n = 0;
-    if (!va && !vb) return;
-    {
-        uint32_t at = va && (!vb || (int32_t)(a.seq - b.seq) > 0) ? pa : pb;
-        sq_hdr_t h;
-        sq_sv_tgt = at == SQ_A ? SQ_B : SQ_A;           /* (the next save: the other sector; an old place: A) */
-        if (!sq_valid(at, &h)) { sq_n = 0; return; }   /* (re-reads it into sq_ev) */
-        sq_n = h.n; sq_flash_seq = h.seq;
-    }
+    if (own) { q = h.seq; sq_sv_tgt = at == SQ_A ? SQ_B : SQ_A; }   /* (the next save: the other sector than its own
+                                                         * newest; none: A) */
+    sq_old = 0;
+    if ((st_mig & 4u) && (n = sq_newest(OLD_SQ_A, OLD_SQ_B, &o)) != 0u) { at = n; sq_old = 1; }
+    if (!at) return;
+    if (!sq_valid(at, &h)) { sq_n = 0; return; }       /* (re-reads it into sq_ev) */
+    sq_n = h.n;
+    sq_flash_seq = own && (int32_t)(q - h.seq) > 0 ? q : h.seq;   /* (a pattern taken over its own: the next save
+                                                         * newer than both) */
     for (n = 0; n < sq_n; n++) if (sq_ev[n].take > sq_take) sq_take = sq_ev[n].take;
 }
 static int set_save_busy(void);                         /* frodhes.c: the settings' auto save runs */

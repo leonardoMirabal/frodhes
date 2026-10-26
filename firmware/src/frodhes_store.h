@@ -15,7 +15,8 @@
  * one CRC, in two sectors written in turn (a save never erases the copy the load would pick). The FM-1 has three free
  * sectors only: its pattern has one copy (a power cut in a pattern save loses the pattern, not the presets).
  *
- * Before 0.9.6 (read once, by the migration at the first boot; never written again: the allow-list refuses them):
+ * Before 0.9.6 (read by the migration at the first boot, and again for what 0.9.5 saved there after a way back to it,
+ * frodhes.c st_old_scan; never written again: the allow-list refuses them):
  *   FM-1  settings A / B 0xFC000 / 0xFD000 (the same sectors), presets 0x97000 / 0x98000, pattern 0x99000 / 0x9A000:
  *         in stock V15's VM (its settings store; in V16 the end of the firmware image)
  *   SMK   settings 0x9D000, presets 0x9E000 / 0x9F000, pattern 0xA0000 / 0xA1000, owner tag 0xAF000, staging

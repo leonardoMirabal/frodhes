@@ -9,7 +9,8 @@ last: the commit); nothing old is ever written.
 Here: a full 0.9.5 bank (every user slot, in v3, v2 and v1 format) migrates with every field; the settings and the
 pattern come along; 0.9.5's sectors stay byte for byte; no 0.9.5 data: nothing written at boot; a corrupt bank;
 a cut migration (the pattern's save fails; the record's header never written) migrates again at the next boot; the
-SMK-37 reads 0x9D000.. only under Frodhes' owner tag. The power cut inside a save on the flash chip model:
+SMK-37 reads 0x9D000.. only under Frodhes' owner tag; back to 0.9.5 and up again: what 0.9.5 saved meanwhile comes
+over again, and only that (BUGHUNT #40). The power cut inside a save on the flash chip model:
 tests/set_ab_test.c."""
 import os
 import random
@@ -44,11 +45,11 @@ def v3_bank(seed):
     return recs
 
 
-def old_flash(path, bank_recs=None, bank_k=BANK_A, pattern=True):
+def old_flash(path, bank_recs=None, bank_k=BANK_A, pattern=True, notes=(60, 64, 67)):
     """a 0.9.5 flash: its settings (made by a run: U01 shown, OCT +1, a three-note pattern), its preset bank, its
     pattern; then saved as 0.9.5's five sectors (the record and the 0.9.6 pattern removed)"""
     lines = ["30 btn 1", cc(200, 63, 127)]
-    for i, n in enumerate((60, 64, 67)):
+    for i, n in enumerate(notes):
         lines += [f"{300 + 100 * i} midi 0x90 {n} 100", f"{340 + 100 * i} midi 0x80 {n} 0"]
     lines += [cc(700, 63, 0), "800 midi 0xC0 17 0"]
     run(os.path.basename(path) + "-make", lines, 4500, flash=path)
@@ -160,6 +161,64 @@ def test_cut_migration_runs_again():
     assert bytes(img[:5 * SECTOR]) == bytes(old) and same_setup(settings_record(img), rec)
 
 
+def back_and_up(tag, settings=True, bank=True, pattern=True):
+    """0.9.5 migrated; 0.9.6 ran and saved twice (OCT 1 to 2: both record copies are 0.9.6's); back to 0.9.5, which
+    saves what is chosen here: its settings (OCT 0; no 0.9.5 record left, so its first save goes to A with seq 1), a
+    preset (its bank, seq 10) and a five-note pattern (seq + 1, in its other sector); up to 0.9.6 again. Returns
+    the flash, the new bank's records and the boot's run"""
+    fl = flash_file(tag)
+    old, rec = old_flash(fl, v3_bank(5))
+    b = boot(tag + "-1", fl, [], 300, check_preset=False)
+    assert b.saves and b.state(100)["notes"] == "3" and b.state(100)["oct"] == "1"
+    r = run(tag + "-2", ["30 btn 1", "3500 dump"], 3600, flash=fl, check=False)
+    img = read_img(fl)
+    assert r.state(3500)["oct"] == "2" and record_at(img, SET) and record_at(img, REC_B)
+    recs2 = v3_bank(6)
+    if settings:
+        rec2 = bytearray(rec)
+        rec2[O_OCT] = 0
+        put_sector(img, SET, struct.pack("<III", MAGIC, 256, zlib.crc32(bytes(rec2))) + bytes(rec2) +
+                   struct.pack("<II", 1, 1 ^ 0xFFFFFFFF))
+    if bank:
+        put_bank(img, BANK_B, 10, recs2)
+    if pattern:
+        fl5 = flash_file(tag + "-p5")
+        old_flash(fl5, notes=(60, 62, 64, 65, 67))
+        p5 = bytearray(read_img(fl5)[SEQ_A * SECTOR:(SEQ_A + 1) * SECTOR])
+        q = struct.unpack("<I", img[SEQ_A * SECTOR + 4:SEQ_A * SECTOR + 8])[0]
+        p5[4:8] = struct.pack("<I", q + 1)
+        img[SEQ_B * SECTOR:(SEQ_B + 1) * SECTOR] = p5
+    open(fl, "wb").write(img)
+    return fl, recs2, boot(tag + "-3", fl, ["150 dump"], 400, check_preset=False)
+
+
+def test_back_to_095_and_up_again_takes_what_095_saved():
+    """FM-1 #40: 0.9.6 ran (both record copies its own), back to 0.9.5, which saved its setup (one copy: A), a preset
+    and a pattern; up again: 0.9.5 ran last, so what it saved comes over again (the stale 0.9.6 copy in B used to win:
+    the old setup and pattern were never read). Once: the next boot writes nothing and keeps it all"""
+    fl, recs2, b = back_and_up("mig-back")
+    s = b.state(100)
+    assert not b.fails and "FAIL flash" not in b.out, b.fails
+    assert (s["oct"], s["notes"]) == ("0", "5"), (s["oct"], s["notes"])
+    assert bytes(user_presets(read_img(fl))) == b"".join(recs2) and s["u.1"].startswith("U01 MIG00")
+    assert b.saves and b.seq_saves
+    b2 = boot("mig-back-4", fl, ["150 dump"], 400, check_preset=False)
+    assert not b2.saves and not b2.seq_saves, (b2.saves, b2.seq_saves)
+    assert (b2.state(100)["oct"], b2.state(100)["notes"]) == ("0", "5")
+
+
+def test_back_to_095_takes_only_what_095_saved():
+    """back to 0.9.5 and up again, 0.9.5 saving only a pattern: that pattern comes over; 0.9.6's setup (OCT 2) and
+    presets stay. Saving nothing at all: everything stays 0.9.6's, and nothing is written at boot"""
+    fl, _, b = back_and_up("mig-back-sq", settings=False, bank=False)
+    s = b.state(100)
+    assert not b.fails and (s["oct"], s["notes"]) == ("2", "5"), (s["oct"], s["notes"])
+    assert bytes(user_presets(read_img(fl))) == b"".join(v3_bank(5))
+    fl, _, b = back_and_up("mig-back-none", settings=False, bank=False, pattern=False)
+    s = b.state(100)
+    assert not b.fails and (s["oct"], s["notes"]) == ("2", "3") and not b.saves and not b.seq_saves
+
+
 def smk_old_flash(path, recs):
     """0.9.5's SMK-37 flash: the FM-1's 0.9.5 image (its five sectors map to 0x9D000..0xA1FFF there) and the
     owner tag (the host's FRODHES_SMK_STOCK=1: the tag is not Frodhes')"""
@@ -190,3 +249,26 @@ def test_smk_migrates_only_under_its_owner_tag():
             binary=b, check=False)
     assert not FLASH.findall(r.out) and r.state(100)["notes"] == "0", r.out[-500:]
     assert not r.state(100)["u.1"].startswith("U01 MIG"), r.state(100)["u.1"]
+
+
+def test_smk_back_to_095_and_up_again():
+    """the SMK-37 (0.9.5's settings in their own sector, never written by 0.9.6): 0.9.6 saved twice (both record
+    copies its own), 0.9.5 then saved its setup (OCT 0); up again: 0.9.5's setup comes over, saved over the record's
+    older copy with a newer seq, so the boot after keeps it and writes nothing"""
+    b = smk_build()
+    fl = flash_file("mig-smk-back")
+    old, rec = smk_old_flash(fl, v3_bank(7))
+    r = run("mig-smk-back-1", [cc(100, 114, 127), cc(2600, 114, 0), "5200 dump"], 5300, flash=fl, binary=b, check=False)
+    img = bytearray(open(fl, "rb").read())
+    hdr = [struct.unpack("<II", img[k * SECTOR:k * SECTOR + 8]) for k in (5, 6)]
+    assert r.state(5200)["oct"] == "1" and all(h == (MAGIC, 256 + 16 * V3) for h in hdr), (r.saves, hdr)
+    rec2 = bytearray(rec)
+    rec2[O_OCT] = 0
+    put_sector(img, 0, struct.pack("<III", MAGIC, 256, zlib.crc32(bytes(rec2))) + bytes(rec2) +
+               struct.pack("<II", 5, 5 ^ 0xFFFFFFFF))
+    open(fl, "wb").write(img)
+    r = run("mig-smk-back-2", ["100 dump"], 300, flash=fl, binary=b, check=False)
+    assert r.state(100)["oct"] == "0" and r.saves, (r.state(100)["oct"], r.saves)
+    r = run("mig-smk-back-3", ["100 dump"], 300, flash=fl, binary=b, check=False)
+    assert r.state(100)["oct"] == "0" and not r.saves, (r.state(100)["oct"], r.saves)
+    assert bytes(open(fl, "rb").read()[:SECTOR]) == bytes(img[:SECTOR])   # 0.9.5's sector as it was
