@@ -46,7 +46,7 @@ if [ "$QUICK" = 0 ]; then
   [ "$PYT" = 1 ] && step "make pytest" make -s pytest PY="$PY" PYTEST_N="${PYTEST_N:-2}"
   step "control sweep" "$PY" tools/control_sweep.py -j 2 --json "$COV/sweep.json"
 fi
-step "monkey seeds $SEEDS" "$PY" tools/monkey.py --seeds "$SEEDS" -j 2 --no-shrink --clicks 3
+step "monkey seeds $SEEDS" "$PY" tools/monkey.py --seeds "$SEEDS" -j 2 --no-shrink --clicks 3 --shed 3
 
 "$PROFDATA" merge -sparse -o "$COV/frodhes.profdata" "$COV"/prof/*.profraw
 IGN='(platform|usb|usb_desc|uac|midi_uart|ota|loader|hal/.*|tests/.*|firmware/gen/.*)\.[ch]$'

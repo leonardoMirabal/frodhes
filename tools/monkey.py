@@ -70,6 +70,7 @@ SAN_FLAGS = ["-fsanitize=undefined,address,implicit-signed-integer-truncation", 
 # taken out, so a narrowing that changes a sample (an int16 wrap) is a sanitizer report; in range they are no-ops
 WRAP_SRC = ("rhodes.c", "bars.c", "fx.c", "dly_tape.c", "rev_plate.c", "rev_inf.c")
 RAND_MS = 20000                    # the random part
+SHED_PER_MIN = 0                   # --shed: voice sheds a minute (the FM-1 sheds when the audio runs late; tests/host.c)
 LIM_T = 24000
 DEV_CC = {119, 41}                 # not sent: RAW skips the limiter by design; key velocity's test modes
 
@@ -230,6 +231,10 @@ def gen(seed, dur=RAND_MS):
         elif k < 0.94:
             ev.append((t, "shot"))
         t += rng.randint(1, 40)
+    if SHED_PER_MIN:                                       # the overload's voice shed ("T shed", tests/host.c), from
+        r2 = random.Random(seed * 7919 + 1)                # an RNG of its own: the stream above stays as it was
+        for _ in range(max(1, round(SHED_PER_MIN * dur / 60000))):
+            ev.append((r2.randint(50, dur), "shed"))
     return [(min(tt, dur), line) for tt, line in ev]
 
 
@@ -683,9 +688,12 @@ def main():
                     help="the sanitizer build for every N-th seed (the others: the plain build, about 3x faster)")
     ap.add_argument("--clicks", type=int, default=3)
     ap.add_argument("--no-shrink", action="store_true")
+    ap.add_argument("--shed", type=float, default=0, metavar="N", help="N voice sheds a minute in every stream")
     ap.add_argument("--strict", action="store_true", help="known clicks fail too")
     ap.add_argument("--json")
     a = ap.parse_args()
+    global SHED_PER_MIN
+    SHED_PER_MIN = a.shed
     binary = build(a.san)
     sanb = build(True) if a.san_every else binary
     os.makedirs(OUTD, exist_ok=True)
