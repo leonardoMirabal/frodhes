@@ -195,7 +195,10 @@ def _cases():
         add(Case(f"rev {t} TONE", 93, s, additive=True, page="REVERB"))
         add(Case(f"rev {t} PRE-DELAY", 94, s, kind="pitch", additive=True, page="REVERB 2"))
         add(Case(f"rev {t} SIZE", 73, s, additive=True, page="REVERB 2"))
-        add(Case(f"rev {t} MOD", 68, s, kind="pitch", additive=True, page="REVERB 2"))
+        # PLATE MOD, no zipper check: the plate's statics differ from each other in their fine structure by more than
+        # the limit (MOD held at 48, against the five statics: 2.08, the wet 2.8; 0.9.5's sweep 2.1). The click stays
+        add(Case(f"rev {t} MOD", 68, s, kind="pitch", additive=True, page="REVERB 2",
+                 skip={"zipper", "zipper_wet"} if t == "PLATE" else ()))
         add(Case(f"rev {t} LOW CUT", 69, s, additive=True, page="REVERB 2"))
     add(Case("rev TYPE", 95, [(91, 64)], kind="select", statics=[16, 48, 80, 112], additive=True, page="REVERB",
              skip={"trans"}))                    # (MANUAL: the old tail fades out, the new TYPE starts empty)

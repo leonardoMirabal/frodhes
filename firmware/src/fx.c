@@ -1336,7 +1336,8 @@ static void rev_hall(const int32_t *rev_in, int32_t size, int32_t damp, int32_t 
         uint32_t len = HL_LEN[k];
         d = w + HL_N - len;                             /* the row written len samples ago */
         if (!((HL_LPM >> k) & 1u)) {
-            uint32_t r = (uint32_t)(((md + 2) << 8) + ((osc_sine(hl.ph * (1u + (k & 1u)) + k * 0x2C000000u) * md) >> 7));
+            uint32_t r = (uint32_t)(md + 512 + ((osc_sine(hl.ph * (1u + (k & 1u)) + k * 0x2C000000u) * md) >> 15));   /* (md:
+                                                        * Q8; (md + 2) << 8 + sine md >> 7 at a whole md) */
             f = (int32_t)(r & 255u);
             d += r >> 8;
         }

@@ -52,7 +52,7 @@ int main(int argc, char **argv)
     if (argc > 1 && !strcmp(argv[1], "size")) { printf("%u\n", (unsigned)sizeof st); return 0; }
     rev_inf_start(&st);
     while (fread(rec, sizeof rec, 1, stdin) == 1) {
-        c.decay = rec[0], c.damp = rec[1], c.size = rec[2], c.mod = rec[3], c.freeze = rec[4];
+        c.decay = rec[0], c.damp = rec[1], c.size = rec[2], c.mod = rec[3] << 4, c.freeze = rec[4];
         if (rec[5]) rev_inf_start(&st);
         rev_inf_run(&st, rec + 6, out, out + HL_NC, &c);
         out[2 * HL_NC] = rev_inf_active(&st);

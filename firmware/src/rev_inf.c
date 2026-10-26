@@ -407,7 +407,7 @@ static inline void ri_tank(rev_inf_t *s, int32_t *mo, int32_t *so, const rev_ctl
         int32_t g = c->freeze ? 16384 + (s->dq >> 8) : s->g[k];
         int32_t ck = clampi((((16384 - g) * s->c) >> 9) + s->ca, 0, 14000) + RI_CMIN;   /* the damping (Q14) */
         if (!((k ^ s->rr) & RI_RRS) || !s->mI[k]) {       /* the read: every 4th block (LITE: 8th; 2.9 / 5.8 ms) */
-            int32_t dep = (int32_t)((RI_MODQ8 * (uint32_t)c->mod) >> 6);
+            int32_t dep = (int32_t)((RI_MODQ8 * (uint32_t)c->mod) >> 10);   /* (mod: MOD x 16) */
             uint32_t t, r;
             if ((RI_MODM >> k) & 1u) {
                 t = (uint32_t)s->len[k] * 256u                                       /* len .. len + 2 dep */

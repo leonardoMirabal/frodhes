@@ -38,9 +38,6 @@ KNOWN = {
     "rev INF size64 MIX": "the same (INFINITE's level guard; #18's jump and click are fixed)",
     "rev PLATE SIZE": "BUGHUNT #19: SIZE bends a ringing tail's pitch and steps",
     "rev INF SIZE": "BUGHUNT #19: one SIZE detent clicks on INFINITE",
-    "rev HALL MOD": "BUGHUNT #10: MOD jumps the line taps",
-    "rev PLATE MOD": "BUGHUNT #10",
-    "rev INF MOD": "BUGHUNT #10",
     "MASTER": "BUGHUNT #20: MASTER (platform.c) steps once per block (the model of that code)",
 }
 

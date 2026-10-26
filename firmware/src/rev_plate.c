@@ -310,7 +310,7 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
     uint32_t k, w, ex, dm0, dm1;
     int32_t act;
     pl_ctl(s, c);
-    ex = (uint32_t)c->mod * 24u;                       /* MOD 127: 3048 = 11.9 samples (Q8) */
+    ex = ((uint32_t)c->mod * 3u) >> 1;                 /* MOD 127 (x 16): 3048 = 11.9 samples (Q8) */
     s->ph += PL_LFO;
     dm0 = (s->d[0] << 8) + (uint32_t)((osc_sine(s->ph) * (int32_t)ex) >> 15);
     dm1 = (s->d[4] << 8) + (uint32_t)((osc_sine(s->ph + 0x40000000u) * (int32_t)ex) >> 15);
