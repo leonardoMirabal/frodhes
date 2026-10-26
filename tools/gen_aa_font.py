@@ -47,9 +47,10 @@ LOCAL_INTER = os.path.expanduser("~/Library/Fonts/Inter.ttc")   # 4.001: 0 Regul
 EXTRAS = []
 CODE = {0x2026: 0x85}                  # characters outside Latin-1 -> their one-byte code in the firmware
 PHASES, PHASES_L = 4, 2                # horizontal phases per glyph (aa_raster.raster_font): S, L
-# faces stored Huffman-coded (--huff): L. S, the most drawn and the least compressible (-15 %), stays 2 px per
-# byte, so the labels draw at full speed
-HUFF = [("L",)]
+# faces stored Huffman-coded (--huff): L and, since 0.9.6, S too (-17 %, 1.2 KB of flash; the labels decode a run at a
+# time, aatext.c aa_alpha_hc, with a lookup table per face). A face left raw (--huff L) brings back the 2 px per byte
+# path (AA_RAW_FACES)
+HUFF = [("L", "S")]
 # L draws the values and the choices' names (units and messages are S): a sparse face, the space
 # as its range and the rest as extras. The set, from every slot_text value at every value / TYPE / page, the chord
 # names (notes.c chord_name), the TYPE names, the bars' detents and the splash (the scan of private/ui-simplify/P1.md),
@@ -246,6 +247,8 @@ def emit(face, tracking, gamma, kern_min):
                  + (f"{len(chars)} of {len(full)} glyphs" if gmap else f"{len(chars)} glyphs")
                  + f" x {phases} phases, {len(data)} B data"
                  + (f" (Huffman; {len(raw)} B as nibbles) */" if hc else " */"))
+    if not hc:
+        lines.append("#ifndef AA_RAW_FACES\n#define AA_RAW_FACES 1                   /* a face stored 2 px per byte (aatext.c aa_alpha) */\n#endif")
     lines.append(ar.c_array(f"AF_{name}_DATA", "uint8_t", list(data), 24, "0x{:02x}"))
     if hc:
         lines.append(ar.c_array(f"AF_{name}_HC", "uint8_t", hc, 24))
