@@ -50,7 +50,10 @@ static volatile uint32_t prof_us, prof_max_us;   /* ISR (frodhes.c app_audio): i
 static uint32_t prof_over;
 static volatile uint32_t fx_quiet_blocks;
 static void fx_set(uint32_t id, int32_t v) { if (id < FXP_N) fx_p[id] = v < 0 ? 0 : v > 127 ? 127 : v; }
-static int fx_quiet(void) { return fx_quiet_blocks >= 86u; }   /* 500 ms under -66 dBFS */
+static volatile uint32_t fx_gz;                         /* blocks since the silence gate shut the output (0) */
+/* 500 ms under -66 dBFS, or 500 ms with the gate shut (BUGHUNT #27: an idle residue between -66 and -60 dBFS, KHLON's
+ * offset moved by TREM, kept fx_quiet_blocks at 0 behind a shut gate, and nothing was ever saved) */
+static int fx_quiet(void) { return fx_quiet_blocks >= 86u || fx_gz >= 86u; }
 
 /* FX_K32: a local multiplier that is constant over a loop and used in (int64_t)a * v, read from the stack where it is
  * used (volatile: one load, the same value). Kept in a register instead, the compiler widens it to 64 bits once before
@@ -416,6 +419,10 @@ static int32_t wah_ein, wah_eout, wah_g = 4096, wah_pi, wah_po;   /* the wah's m
 static int32_t wah_eslow, wah_g1 = 4096;        /* the input's slow envelope (onsets), the gain's first smoothing pole */
 /* v / 10, truncated as C's division, for every int32 v: a multiply and a shift instead of the core's divide in the wah's
  * sample loops (0.9.5 cpu-trim; checked exhaustively over all 2^32 values) */
+/* the wah's input range (BUGHUNT #26): the SVF's resonant peak (bp, lp up to ~1/q x the input) and its products
+ * (q x bp, f x hi) fit 32 bits up to here; a hot input (COMP's +24 dB make-up, the pedal: 0.9.5 overflowed at ~12x full
+ * scale) is clipped to it, 2x full scale (every render below it: the gates' heaviest ~14000) */
+#define WAH_XM 65535
 static inline __attribute__((always_inline)) int32_t div10(int32_t v) { return (int32_t)(((int64_t)v * 1717986919) >> 34) + (int32_t)((uint32_t)v >> 31); }
 /* the wah, the tremolo's gains settled at unity: fx_trem's loop, bit for bit, with the state in registers (no reload
  * past the L / R stores) and L / R = x ((x * 32768) >> 15), onto the cleared fx_L / fx_R. Its own function: its
@@ -429,6 +436,7 @@ FR_RAM __attribute__((noinline)) static void fx_wah_unity(const int32_t *mp, con
                                                  * it the product fits 32 bits */
     while (mp < me) {
         int32_t xin = *mp++, x, a = xin < 0 ? -xin : xin, f, hi, pi, po, vi, vo;
+        if (a > WAH_XM) { a = WAH_XM; xin = xin < 0 ? -WAH_XM : WAH_XM; }   /* (BUGHUNT #26: the SVF's range) */
         if (a > env) env += (a - env) >> 3; else env -= (env >> 11) + 1;
         if (env < 0) env = 0;
         f = FX_WAH_F[env >= et ? 63 : (env * dk) >> 16];   /* env >= 0, dk > 0 */
@@ -580,6 +588,8 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
             int32_t x = m[j];
             if (sw == 2) {                               /* touch wah: envelope -> SVF cutoff, RATE knob = resonance */
                 int32_t a = x < 0 ? -x : x, row, f, q, hi;
+                if (a > WAH_XM) { a = WAH_XM; x = x < 0 ? -WAH_XM : WAH_XM; }   /* (as fx_wah_unity) */
+                const int32_t xc = x;
                 if (a > wah_env) wah_env += (a - wah_env) >> 3; else wah_env -= (wah_env >> 11) + 1;
                 if (wah_env < 0) wah_env = 0;
                 row = clampi((int32_t)(((int64_t)wah_env * (depth + 16)) >> 16), 0, 63);
@@ -593,9 +603,9 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
                 {   /* envelopes of the input and the filtered output, each pre-emphasised (x - 3/4 x[-1]: +12 dB
                      * from the bass to the treble, roughly the ear's weighting) so a closed wah's rumble does not
                      * count as loudness */
-                    int32_t pi = m[j] - ((3 * wah_pi) >> 2), po = x - ((3 * wah_po) >> 2);
+                    int32_t pi = xc - ((3 * wah_pi) >> 2), po = x - ((3 * wah_po) >> 2);
                     int32_t vi = (pi < 0 ? -pi : pi) << 8, vo = (po < 0 ? -po : po) << 8;   /* x 2^8: a Q15 level's */
-                    wah_pi = m[j]; wah_po = x;                                              /* steps survive the >> */
+                    wah_pi = xc; wah_po = x;                                                /* steps survive the >> */
                     wah_ein += (vi - wah_ein) >> (vi > wah_ein ? 7 : 9);      /* 2.9 ms up, 11.6 ms down */
                     wah_eout += (vo - wah_eout) >> (vo > wah_eout ? 7 : 9);
                     wah_eslow += (vi - wah_eslow) >> 11;
@@ -1525,23 +1535,27 @@ FR_RAM __attribute__((noinline)) static void fx_spread(const int32_t *mono, int3
     }
 }
 
+/* SPREAD's side for the bypass' sub-block (sd[j - sb]): rh_side + sb while it is on, else fx_zs (zeros: the plain
+ * mono, the same integers; one loop each for both, less flash) */
+static int32_t fx_zs[LK] RH_SP_SEC(".bss.fx_zs");
 /* the bypassed dry with SPREAD's side: L = M + S, R = M - S (out of line: fx_process's registers as without it) */
-FR_RAM __attribute__((noinline)) static void fx_spread_dry(const int32_t *mono, int32_t *L, int32_t *R, uint32_t sb)
+FR_RAM __attribute__((noinline)) static void fx_spread_dry(const int32_t *mono, const int32_t *sd, uint32_t sb)
 {
     uint32_t j;
-    for (j = sb; j < sb + LK; j++) { L[j] = mono[j] + rh_side[j]; R[j] = mono[j] - rh_side[j]; }
+    for (j = sb; j < sb + LK; j++) { fx_L[j] = mono[j] + sd[j - sb]; fx_R[j] = mono[j] - sd[j - sb]; }
 }
 
 /* the bypass' crossfade with SPREAD on (0.9.6, BUGHUNT #25: it faded the wet toward the plain mono, but the bypassed
  * dry is M +- S: SPREAD's side stepped in at the fade's end, 18x on three notes): the same fade toward M + S / M - S;
  * the fade's gain (wet) out. Out of line: fx_out's loops as before */
-FR_RAM __attribute__((noinline)) static int32_t fx_xf_side(const int32_t *mono, uint32_t sb, int32_t wet, int byp)
+FR_RAM __attribute__((noinline)) static int32_t fx_xf_side(const int32_t *mono, const int32_t *sd, uint32_t sb, int32_t wet,
+                                                     int byp)
 {
     uint32_t j;
     for (j = sb; j < sb + LK; j++) {
         if (byp ? wet > 0 : wet < 32768) wet += byp ? -128 : 128;
         if (wet != 32768) {
-            int32_t dl = mono[j] + rh_side[j], dr = mono[j] - rh_side[j];
+            int32_t dl = mono[j] + sd[j - sb], dr = mono[j] - sd[j - sb];
             fx_L[j] = (int32_t)(((int64_t)fx_L[j] * wet + (int64_t)dl * (32768 - wet)) >> 15);
             fx_R[j] = (int32_t)(((int64_t)fx_R[j] * wet + (int64_t)dr * (32768 - wet)) >> 15);
         }
@@ -1586,19 +1600,10 @@ FR_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
          * push here put single notes on the limiter: everything squashed; the jack gain is APP_OUT_SHIFT). Each sample
          * goes through them independently, so a pass per stage is the one fused loop sample for sample (0.9.5: that
          * loop spilled, 88 instructions a sample with LEVEL off unity; the bypass pass, then 30 / 36 a sample) */
-        if (byp && wet == 0) {                         /* bypassed: the dry signal ((x 0 + dry x 32768) >> 15) */
-            if (!rh_side_on) for (j = sb; j < sb + LK; j++) fx_L[j] = fx_R[j] = mono[j];
-            else fx_spread_dry(mono, fx_L, fx_R, sb);
-        } else if ((byp || wet != 32768) && rh_side_on) wet = fx_xf_side(mono, sb, wet, byp);   /* (SPREAD: #25) */
-        else if (byp || wet != 32768) {                /* the crossfade (either way) */
-            for (j = sb; j < sb + LK; j++) {
-                if (byp ? wet > 0 : wet < 32768) wet += byp ? -128 : 128;
-                if (wet != 32768) {
-                    fx_L[j] = (int32_t)(((int64_t)fx_L[j] * wet + (int64_t)mono[j] * (32768 - wet)) >> 15);
-                    fx_R[j] = (int32_t)(((int64_t)fx_R[j] * wet + (int64_t)mono[j] * (32768 - wet)) >> 15);
-                }
-            }
-        }
+        if (byp && wet == 0)                           /* bypassed: the dry signal ((x 0 + dry x 32768) >> 15) */
+            fx_spread_dry(mono, rh_side_on ? rh_side + sb : fx_zs, sb);
+        else if (byp || wet != 32768)                  /* the crossfade (either way; toward SPREAD's M +- S: #25) */
+            wet = fx_xf_side(mono, rh_side_on ? rh_side + sb : fx_zs, sb, wet, byp);
         if (lvl == 4096) {                             /* the usual case: LEVEL at unity */
             for (j = sb; j < sb + LK; j++) {
                 int32_t l = dc_block(fx_L[j], &dl, &el), r = dc_block(fx_R[j], &dr, &er), al = iabs(l), ar = iabs(r);
@@ -1669,6 +1674,7 @@ FR_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
         }
     fx_peak = pk;
     if (pk < 16) { if (fx_quiet_blocks < 0xFFFFu) fx_quiet_blocks++; } else fx_quiet_blocks = 0;
+    if (gate_g == 0) { if (fx_gz < 0xFFFFu) fx_gz++; } else fx_gz = 0;
 }
 static inline __attribute__((always_inline)) void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /* (into app_audio, as it always was: the 0.9.3 delay fix took it over the inliner's limit, and the mode loop moved) */
 {

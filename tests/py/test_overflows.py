@@ -20,3 +20,10 @@ def test_bughunt22_plate_input():
     bits; with COMP's +24 dB make-up the plate's input passes ~1.2x full scale and it overflowed (0.9.5: "signed
     integer overflow: -104040 * 26000")"""
     san_run("bughunt22-plate-overflow.txt")
+
+
+def test_bughunt26_wah_filter():
+    """BUGHUNT #26 (monkey seed 995464060, shrunk): touch WAH's filter on a hot input (preset 33's COMP make-up, the
+    pedal, CC 113 120: ~12x full scale): q x bp overflowed (0.9.5 too: "8090 * 274782"); the wah's input is clipped to
+    2x full scale (fx.c WAH_XM)"""
+    san_run("bughunt26-wah-overflow.txt")

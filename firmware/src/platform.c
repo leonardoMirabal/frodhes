@@ -457,19 +457,14 @@ static __attribute__((noinline)) void master_ramp(int32_t *o, int32_t m)
         int32_t *c = o + b, *q = tap_q;
         HAL_KEEP_REG(q);
         for (i = 0; i < 32; i++, c += 2, q += 2) {
-            int32_t g, l, r;
+            int32_t g, k, x;
             mq += dm; g = mq >> 8;
-            if (usb_pre_master) {
-                l = TAIL_PRE(c[0]); r = TAIL_PRE(c[1]);
-                q[0] = l; q[1] = r;
-                c[0] = ((l * g) >> 12) << APP_OUT_SHIFT;
-                c[1] = ((r * g) >> 12) << APP_OUT_SHIFT;
-            } else {
-                l = (c[0] * g) >> 12; r = (c[1] * g) >> 12;
-                l = TAIL_PRE(l); r = TAIL_PRE(r);
-                q[0] = l; q[1] = r;
-                c[0] = l << APP_OUT_SHIFT;
-                c[1] = r << APP_OUT_SHIFT;
+            for (k = 0; k < 2; k++) {           /* (both channels, either order of the gain and the clip below) */
+                x = c[k];
+                if (!usb_pre_master) x = (x * g) >> 12;
+                x = TAIL_PRE(x);
+                q[k] = x;
+                c[k] = (usb_pre_master ? (x * g) >> 12 : x) << APP_OUT_SHIFT;
             }
         }
         UAC_ONLY(uac_tap(q - 64, 32u));

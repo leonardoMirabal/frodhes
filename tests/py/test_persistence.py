@@ -424,3 +424,21 @@ def test_drive_type_survives_and_old_records_read_as_classic():
         open(fl, "wb").write(img)
         s = boot(f"drvtype-v{v}", fl, check_preset=False).state(100)
         assert (s[f"p.{DRV_SW}"], s["card.19.0"], s["fxdrv"]) == (want, card, want), (v, s[f"p.{DRV_SW}"], s["card.19.0"])
+
+
+def test_save_behind_the_shut_gate():
+    """BUGHUNT #27: F06 (KHLON + COMP) with TREM on, a note played and let go: the silence gate shuts the output,
+    but an idle residue under it (KHLON's offset, moved by the tremolo) kept fx_quiet() false, so a SAVE into a user
+    slot showed its name and wrote nothing, and the settings waited forever (0.9.5 too). Now it saves, and the next
+    boot plays the saved preset (tests/scripts/quiet_gated.txt: the same without the power cycle)"""
+    fl = flash_file("gated-save")
+    lines = ["100 midi 0xC2 5 0", "600 btn 5", "630 turn 2 1", "800 turn 1 1",    # F06, the LFO page: TREM
+             "1400 midi 0x90 60 100", "2000 midi 0x80 60 0",
+             "8100 btn 9", "8200 btn 9", "11000 dump"]
+    r1 = run("gated-save-1", lines, 11500, flash=fl)
+    s1 = r1.state(11000)
+    assert s1["quiet"] == "1" and s1["dirty"] == "0", (s1["quiet"], s1["dirty"])
+    assert r1.saves and r1.bank_saves, (r1.saves, r1.bank_saves)
+    s2 = boot("gated-save-2", fl).state(100)
+    assert s2["header"] == s1["header"] and s2["header"].startswith("U"), (s1["header"], s2["header"])
+    assert all(s2[k] == s1[k] for k in s1 if k.startswith("p.")), [k for k in s1 if k.startswith("p.") and s2[k] != s1[k]]

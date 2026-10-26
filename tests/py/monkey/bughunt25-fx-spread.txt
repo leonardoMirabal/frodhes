@@ -1,0 +1,8 @@
+# BUGHUNT #25 (monkey seed 512445757, shrunk): FX (bypass) with SPREAD on clicks: the crossfade fades the wet toward
+# the plain mono (fx.c:1251-1257), then the bypassed dry is mono +- SPREAD's side (fx.c:1249-1250, fx_spread_dry):
+# the side steps in at the crossfade's end (47x diff; without SPREAD 1x). Two MIDI notes, SPREAD 107, then FX
+17138 midi 0xB0 105 107
+18180 midi 0x90 60 100
+18180 midi 0x90 64 100
+18180 midi 0x90 67 100
+18495 btn 2

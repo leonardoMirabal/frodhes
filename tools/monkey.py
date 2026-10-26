@@ -18,21 +18,28 @@ The invariants (check), on every run:
   crash      the host exits 0 within its time limit; no sanitizer report (--san: ASan + UBSan build)
   race       the host's own voice checks (RACE STUCK / RACE LOST: a voice held that no note wants)
   peak       the output never passes the limiter's ceiling (24000)
-  wrap       no full-scale sign flip from one sample to the next (an int overflow wrap)
+  wrap       (--san / --san-every) no int16 narrowing in the audio path out of range: the sanitizer build has the
+             (int16_t) casts of rhodes / bars / fx / the delay and reverbs taken out (a no-op in range) and checks the
+             implicit ones; with signed overflow (UBSan) that is every int wrap. (A sample-step test cannot tell a
+             wrap from loud bright audio under the 24000 limiter: steps up to 48000 are legal; 0.9.5's 5 "wraps" of
+             40-43k were a +22 dB makeup into HP12 and a tape echo near the ceiling, bit-identical in this build)
   rail       no run of 32 equal samples above 20000 (an output stuck on a rail)
   stuck      no voice held, no note source or count left after the panic (the end: every note off on all 16
              channels, pedal up, arp, sequencer, chord mode, delay and reverb off)
   silence    exact silence (the gate's 0) from 10 s after the panic, so no stuck voice, tail or DC
-  probe      a note over MIDI after the panic sounds (the device is alive), and with FX bypassed it is never louder
-             after its key-up than before it (+1 dB)
+  probe      a note over MIDI after the panic sounds (the device is alive; LEVEL set to 0 dB for it, MARIMBA at -12
+             dB and HAMMER 0 is -43 dBFS), and with FX bypassed and VIBES' motor off
+             (its pulse is in the engine, so FX keeps it) it is never louder after its key-up than before it (+1 dB)
   roundtrip  SAVE (into a user slot) then a power cycle (the flash kept: FRODHES_FLASH) gives the same parameters,
              preset, octave, chord and sequencer settings; the saved preset equals the panel (expect preset)
   screen     the screen renders (shots during the run) without a crash
 The clicks (clicks): K events of the stream (a CC, a knob, a button, a Program Change, while the sound rings and
-with no note starting near it) are rendered with and without that event; the largest second difference from 3 ms
-before to 30 ms after it, against the larger of the run without it and the run with it once settled (60-93 ms
-after), over 10x is a click. A click is named by what it changed (the parameters that differ in the two runs'
-dumps); the ones private/BUGHUNT-095.md already lists are reported as known, the others fail.
+with no note starting near it) are rendered with and without that event (the stream ends at it); the largest second
+difference from 6 ms before to 30 ms after it, against the larger of the run without it and the run with it once
+settled (60-93 ms after), and the same on the difference of the two runs (the change alone: the reverb, the delay
+and the other notes cancel), over 10x is a click (click_ratio). A click is named by what it changed (the parameters
+that differ in the two runs' dumps); the ones private/BUGHUNT-095.md already lists are reported as known, the
+others fail.
 
 A failure is shrunk (delta debugging over the stream; the panic and the checks regenerated) to a minimal script in
 tests/scripts/ format: build/monkey/fail-<seed>-<check>/repro.txt (and full.txt, info.json)."""
@@ -56,9 +63,16 @@ BIN = os.path.join(ROOT, "build", "host", "frodhes")
 SAN = os.path.join(ROOT, "build", "host", "frodhes-monkey-san")
 OUTD = os.path.join(ROOT, "build", "monkey")
 FS = 44100
-SAN_FLAGS = ["-fsanitize=undefined,address", "-fno-sanitize=shift-base", "-fno-sanitize-recover=undefined",
+SAN_FLAGS = ["-fsanitize=undefined,address,implicit-signed-integer-truncation", "-fno-sanitize=shift-base",
+             "-fno-sanitize-recover=undefined", "-fsanitize-recover=implicit-signed-integer-truncation",
              "-fno-omit-frame-pointer"]
+# the wrap check: the sanitizer build is compiled from a copy of the source with the audio path's (int16_t) casts
+# taken out, so a narrowing that changes a sample (an int16 wrap) is a sanitizer report; in range they are no-ops
+WRAP_SRC = ("rhodes.c", "bars.c", "fx.c", "dly_tape.c", "rev_plate.c", "rev_inf.c")
 RAND_MS = 20000                    # the random part
+FOCUS_XF = False                   # --focus-xfade: more of the controls with a crossfade (switches, TYPEs, LEVEL, MIX, presets)
+FOCUS_CC = [80, 79, 17, 85, 88, 12, 106, 107, 110, 70, 84, 95, 91, 111, 27, 89]
+SHED_PER_MIN = 0                   # --shed: voice sheds a minute (the FM-1 sheds when the audio runs late; tests/host.c)
 LIM_T = 24000
 DEV_CC = {119, 41}                 # not sent: RAW skips the limiter by design; key velocity's test modes
 
@@ -74,7 +88,8 @@ KNOWN_CLICK = {
     "P_CP_SW": "#2", "P_PH_SW": "#2", "P_DL_TIME": "#3", "P_DL_SYNC": "#3", "P_FL_TYPE": "#4", "P_DRIVE": "#5",
     "P_CMP_SW": "#6", "P_CMP_AMT": "#6", "P_CMP_GAIN": "#6", "P_TW_SW": "#7", "P_TW_MODE": "#7", "P_LEVEL": "#9",
     "P_RV_MOD": "#10", "P_TYPE": "#12", "P_FL_FREQ": "#13", "P_TW_RATE": "#14", "P_PH_FDBK": "#16",
-    "P_DL_SW": "#17", "P_RV_DEPTH": "#18", "P_RV_SIZE": "#19", "P_CP_DEPTH": "mix-fix", "P_DL_DEPTH": "mix-fix",
+    "P_DL_SW": "#17", "P_DL_TONE": "#23 (TAPE)", "P_RV_DEPTH": "#18", "P_RV_SIZE": "#19", "P_CP_DEPTH": "mix-fix",
+    "P_DL_DEPTH": "mix-fix", "FX+SPREAD": "#25",
 }
 
 
@@ -99,6 +114,11 @@ def gen(seed, dur=RAND_MS):
         ev.append((t, f"midi 0x{0x80 | c:02X} {n} {rv}"))
 
     def a_cc(t, num=None, val=None, c=None):
+        if num is None and FOCUS_XF and rng.random() < 0.6:
+            if rng.random() < 0.15:                        # a preset load (a program change)
+                ev.append((t, f"midi 0x{0xC0 | (ch() if c is None else c):02X} {rng.randrange(48)} 0"))
+                return
+            num = rng.choice(FOCUS_CC)
         if num is None:
             num = rng.choice(KNOWN_CC) if rng.random() < 0.8 else rng.randrange(128)
         if num in DEV_CC:
@@ -218,6 +238,10 @@ def gen(seed, dur=RAND_MS):
         elif k < 0.94:
             ev.append((t, "shot"))
         t += rng.randint(1, 40)
+    if SHED_PER_MIN:                                       # the overload's voice shed ("T shed", tests/host.c), from
+        r2 = random.Random(seed * 7919 + 1)                # an RNG of its own: the stream above stays as it was
+        for _ in range(max(1, round(SHED_PER_MIN * dur / 60000))):
+            ev.append((r2.randint(50, dur), "shed"))
     return [(min(tt, dur), line) for tt, line in ev]
 
 
@@ -225,19 +249,21 @@ def panic(t0):
     """the end: every source of sound let go (on all 16 channels), then the checks' probes. (lines, marks)"""
     L = [(t0 - 17, "dump"), (t0 - 7, "dump")]
     L += [(t0, "keys 0")] + [(t0, f"release {b}") for b in range(14)] + [(t0 + 2, "btn 8"), (t0 + 3, "midi 0xFC 0 0")]
-    t = t0 + 5
-    for c in range(16):
-        for num, v in ((64, 0), (60, 0), (63, 0), (45, 0), (52, 0), (56, 0), (111, 0), (123, 0), (121, 0),
-                       (88, 0), (26, 0), (95, 0), (92, 0), (102, 64), (103, 64)):
-            L.append((t, f"midi 0x{0xB0 | c:02X} {num} {v}"))
-        t += 1
+    for t in (t0 + 5, t0 + 700):            # (again after a PRESETS browse's load: 400 ms after its last detent)
+        for c in range(16):
+            for num, v in ((64, 0), (60, 0), (63, 0), (45, 0), (52, 0), (56, 0), (111, 0), (123, 0), (121, 0),
+                           (88, 0), (26, 0), (95, 0), (92, 0), (102, 64), (103, 64)):
+                L.append((t, f"midi 0x{0xB0 | c:02X} {num} {v}"))
+            t += 1
     for c in range(16):
         L.append((t0 + 1000 + c, f"midi 0x{0xB0 | c:02X} 123 0"))      # (a strum still starting notes)
     quiet = (t0 + 10000, t0 + 12000)
     gone = t0 + 12000
     L.append((gone, "dump"))
-    p0 = gone + 300                                                   # the probe: FX bypassed, a MIDI note
+    p0 = gone + 300                                   # the probe: FX bypassed, VIBES' motor off, a MIDI note
     L += [(p0 + c, f"midi 0x{0xB0 | c:02X} 111 127") for c in range(16)]
+    L += [(p0 + 20 + c, f"midi 0x{0xB0 | c:02X} 47 0") for c in range(16)]   # (the motor is in the engine)
+    L += [(p0 + 40 + c, f"midi 0x{0xB0 | c:02X} 110 64") for c in range(16)]  # (LEVEL at 0 dB: -12 is legal)
     n0 = p0 + 100
     L += [(n0 + c, f"midi 0x{0x90 | c:02X} 60 100") for c in range(16)]
     rel = n0 + 600
@@ -269,21 +295,40 @@ class Res:
             self.dumps.setdefault(int(m.group(1)), {})[m.group(2)] = m.group(3)
 
 
-def build(san=False):
-    """the host binary (make's), or the sanitizer build"""
+def build(san=False, inject=None, out=SAN):
+    """the host binary (make's), or the sanitizer build (to out; inject: (file, old, new) edits to its source copy,
+    the self-tests' faults)"""
     if not san:
         subprocess.run(["make", "-s", "-C", ROOT, "build/host/frodhes"], check=True)
         return BIN
     src = os.path.join(ROOT, "firmware", "src")
     newest = max(os.path.getmtime(os.path.join(d, f)) for d in (src, os.path.join(ROOT, "tests"))
                  for f in os.listdir(d) if f.endswith((".c", ".h")))
-    if not os.path.exists(SAN) or os.path.getmtime(SAN) < newest:
-        tmp = f"{SAN}.tmp{os.getpid()}"
-        subprocess.run(["cc", "-O1", "-g", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", '-DAPP_VER="dev"',
-                        *SAN_FLAGS, "-I" + src, "-I" + os.path.join(ROOT, "firmware", "gen"), "-o", tmp,
-                        os.path.join(src, "frodhes.c"), "-lm"], check=True)
-        os.replace(tmp, SAN)
-    return SAN
+    newest = max(newest, os.path.getmtime(__file__))
+    if inject or not os.path.exists(out) or os.path.getmtime(out) < newest:
+        tmp = f"{out}.tmp{os.getpid()}"
+        mirror = tempfile.mkdtemp(dir=os.path.dirname(out), prefix="san-src-")
+        msrc = os.path.join(mirror, "firmware", "src")
+        try:                                    # (the tree's layout kept: platform.c includes ../../tests/host.c)
+            shutil.copytree(src, msrc)
+            shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(mirror, "tests"), ignore=shutil.ignore_patterns(
+                "*.wav", "*.png", "scripts*", "py", "baselines", "smk", "golden*"))
+            edits = list(inject or ()) + [(f, "(int16_t)", "") for f in WRAP_SRC]
+            for f, old, new in edits:
+                fp = os.path.join(msrc, f)
+                with open(fp) as fh:
+                    txt = fh.read()
+                assert old in txt, (f, old)
+                with open(fp, "w") as fh:
+                    fh.write(txt.replace(old, new))
+            subprocess.run(["cc", "-O1", "-g", "-w", "-DDINGHY_HOST", '-DAPP_VER="dev"', *SAN_FLAGS, "-I" + msrc,
+                            "-I" + os.path.join(ROOT, "firmware", "gen"), "-o", tmp, os.path.join(msrc, "frodhes.c"),
+                            "-lm"], check=True)
+        finally:
+            shutil.rmtree(mirror, ignore_errors=True)
+        os.replace(tmp, out)
+        shutil.rmtree(tmp + ".dSYM", ignore_errors=True)
+    return out
 
 
 def run(text, binary=BIN, flash=None, timeout=120):
@@ -302,7 +347,8 @@ def run(text, binary=BIN, flash=None, timeout=120):
             p = subprocess.run([binary, base, base + ".txt"], capture_output=True, text=True, env=env,
                                timeout=timeout)
         except subprocess.TimeoutExpired as e:
-            return Res(-999, (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or ""),
+            so = e.stdout or ""
+            return Res(-999, so.decode(errors="replace") if isinstance(so, bytes) else so,
                        np.zeros((0, 2)), timeout=True)
         x = np.zeros((0, 2))
         if os.path.exists(base + ".wav"):
@@ -326,9 +372,12 @@ def analyse(r, mk):
     """the invariants on one run's output (Res) without the power cycle: a list of (check, message)"""
     if r.timeout:
         return [("crash", "the host hung (timeout)")]
-    if "runtime error" in r.out or "AddressSanitizer" in r.out:
-        m = re.findall(r"\S+:\d+:\d+: runtime error: [^\n]*", r.out)
-        return [("crash", "sanitizer: " + ("; ".join(sorted(set(m))) or "AddressSanitizer")[:500])]
+    errs = re.findall(r"(\S+:\d+):\d+: runtime error: ([^\n]*)", r.out)
+    wraps = sorted(set(f"{os.path.basename(f)}: {m}" for f, m in errs if "implicit conversion" in m
+                       and "'int16_t'" in m))
+    hard = sorted(set(f"{os.path.basename(f)}: {m}" for f, m in errs if "implicit conversion" not in m))
+    if hard or "AddressSanitizer" in r.out:
+        return [("crash", "sanitizer: " + ("; ".join(hard) or "AddressSanitizer")[:500])]
     fails = re.findall(r"^\s*\d+ ms  FAIL (.*)$", r.out, re.M)
     if r.code != 0 and not fails:
         return [("crash", f"exit {r.code}: {r.out[-400:]}")]
@@ -342,9 +391,8 @@ def analyse(r, mk):
     q0 = ms(mk["quiet"][0])
     if a[:q0].max() > LIM_T:
         bad.append(("peak", f"{a[:q0].max()} at {np.argmax(a[:q0]) / FS:.3f} s"))
-    dx = np.abs(np.diff(r.x, axis=0)).max(1)
-    if dx.max() > 40000:
-        bad.append(("wrap", f"a step of {dx.max()} at {np.argmax(dx) / FS:.4f} s"))
+    if wraps:                                   # (the sanitizer build: an int16 narrowing out of range)
+        bad.append(("wrap", "; ".join(wraps)[:400]))
     for c in (0, 1):
         y = r.x[:, c]
         same = np.concatenate([[False], np.diff(y) == 0]) & (np.abs(y) > 20000)
@@ -446,42 +494,68 @@ def eligible(events, i):
 
 
 def click_stream(events, i):
-    """the stream for event i's click check: up to 140 ms after it, without the events that start a note from 60 ms
-    before it (their onsets would hide or fake a click; the notes already ringing stay)"""
+    """the stream for event i's click check: the stream up to it, without the events that start a note from 60 ms
+    before it (their onsets would hide or fake a click; the notes already ringing stay); nothing after it (a change
+    in its window would be read as its click: a TYPE turn 12 ms after FX gave FX 16x, #12's)"""
     t = events[i][0]
-    return [e for j, e in enumerate(events) if e[0] <= t + 140 and (j == i or not (t - 60 <= e[0] and
-                                                                                   starts_sound(e[1])))]
+    return [e for j, e in enumerate(events) if j == i or (e[0] <= t and not (t - 60 <= e[0] and starts_sound(e[1])))]
 
 
-def click_one(events, i, binary=BIN):
-    """(ratio, changed parameters, ringing dB) for event i: the stream up to it + 150 ms with and without it"""
+def _d2(x):
+    return np.abs(np.diff(np.asarray(x, float), 2, axis=0)).max(1)
+
+
+def click_ratio(a, b, t):
+    """the click ratio of one event at t ms, from the renders with it (a) and without it (b), stereo int arrays:
+    (ratio, plain, diff). plain: the largest second difference of a from 6 ms before (the event lands at the start of
+    its 5.8 ms block) to 30 ms after it, against the larger of b there and both once settled (60-93 ms after). diff:
+    the same on a - b, the change itself, against its settled self (and 5 % of plain's reference: a click must be
+    heard over the sound). Everything the event does not touch (the reverb and delay tails, the other notes, the
+    modulations) is equal in a and b and cancels in a - b, so a busy patch no longer masks a click (0.9.5's FILTER
+    TYPE, BUGHUNT #4: 7x plain, 15x diff in seed 14's stream at 12227 ms). ratio: the larger"""
+    i0, i1 = ms(t - 6), ms(t + 30)
+    s0, s1 = ms(t + 60), ms(t + 93)
+    ref = max(_d2(b[i0:i1]).max(), _d2(a[s0:s1]).max(), _d2(b[s0:s1]).max(), 1.0)
+    plain = float(_d2(a[i0:i1]).max() / ref)
+    d = np.asarray(a, float) - b
+    diff = float(_d2(d[i0:i1]).max() / max(_d2(d[s0:s1]).max(), 0.05 * ref, 1.0))
+    return max(plain, diff), plain, diff
+
+
+def click_one(events, i, binary=BIN, detail=False):
+    """(ratio, changed parameters, ringing dB) for event i: the stream up to it + 150 ms with and without it (detail:
+    the plain and diff ratios too). The changed parameters: at 8 and 31 ms (a preset load still pending from a
+    browse can land in between and undo the event's change)"""
     t, line = events[i]
     pre = click_stream(events, i)
     without = [e for e in pre if e is not events[i]]
-    extra = [(t + 31, "dump")]
+    extra = [(t + 8, "dump"), (t + 31, "dump")]
     a = run(script_text(pre, extra, t + 150), binary)
     b = run(script_text(without, extra, t + 150), binary)
     if a.code or b.code or not len(a.x) or not len(b.x):
         return None
     ring = rms_db(b.x[ms(t - 50):ms(t)])
-    i0, i1 = ms(t - 3), ms(t + 30)
-    s0, s1 = ms(t + 60), ms(t + 93)
-
-    def d2(x):
-        return np.abs(np.diff(x.astype(float), 2, axis=0)).max(1)
-    ref = max(d2(b.x[i0:i1]).max(), d2(a.x[s0:s1]).max(), d2(b.x[s0:s1]).max(), 1.0)
-    ratio = float(d2(a.x[i0:i1]).max() / ref)
-    da, db = a.dumps.get(t + 31, {}), b.dumps.get(t + 31, {})
-    changed = [pname(int(k[2:])) for k in da if k.startswith("p.") and da.get(k) != db.get(k)]
+    ratio, plain, diff = click_ratio(a.x, b.x, t)
+    changed = []
+    for at in (t + 8, t + 31):
+        da, db = a.dumps.get(at, {}), b.dumps.get(at, {})
+        changed += [pname(int(k[2:])) for k in da if k.startswith("p.") and da.get(k) != db.get(k)
+                    and pname(int(k[2:])) not in changed]
+    w = line.split()
+    fx = w[:2] == ["btn", "2"] or (w[0] == "midi" and int(w[1], 16) >> 4 == 0xB and int(w[2]) == 111)
+    if fx and a.dumps.get(t + 8, {}).get(f"p.{PNAME.index('P_SPREAD')}", "0") != "0":
+        changed = ["FX+SPREAD"] + changed               # (the bypass's crossfade misses SPREAD's side: #25)
     if not changed:
-        changed = [f"({line.split()[0]} {' '.join(line.split()[1:3])}: no parameter)"]
-    return ratio, changed, ring
+        changed = [f"({w[0]} {' '.join(w[1:3])}: no parameter)"]
+    return (ratio, changed, ring, plain, diff) if detail else (ratio, changed, ring)
 
 
 def known_click(changed):
     if len(changed) > 3:
         return "#1 (a preset load / undo: many parameters at once)"
-    ks = [KNOWN_CLICK.get(c) for c in changed]
+    sw = {c[:-3] for c in changed if c.endswith("_SW") and c in KNOWN_CLICK}
+    changed = [c for c in changed if c.endswith("_SW") or c[:c.rfind("_")] not in sw]   # (an effect switched on
+    ks = [KNOWN_CLICK.get(c) for c in changed]                                         # at depth 0 gets a depth)
     return ", ".join(sorted(set(k for k in ks if k))) if all(ks) else None
 
 
@@ -549,7 +623,7 @@ def shrink_invariant(events, kind, binary):
 
 def shrink_click(events, i, changed, binary):
     target = events[i]
-    others = [e for j, e in enumerate(events) if j != i and e[0] <= target[0] + 140]
+    others = [e for j, e in enumerate(events) if j != i and e[0] <= target[0]]
 
     def fails(ev):
         allv = sorted(ev + [target], key=lambda e: e[0])
@@ -583,7 +657,7 @@ def save_fail(seed, kind, events, minimal, info):
 
 
 # ---- one seed
-def one(seed, binary=BIN, k_clicks=3, shrink=True, strict=False):
+def one(seed, binary=BIN, k_clicks=3, do_shrink=True, strict=False):
     """every check on one seed: a dict (failures, known clicks, repro dirs)"""
     ev = gen(seed)
     res = {"seed": seed, "fail": [], "known": [], "repro": []}
@@ -591,11 +665,11 @@ def one(seed, binary=BIN, k_clicks=3, shrink=True, strict=False):
     seen = set()
     for kind, msg in bad:
         res["fail"].append((kind, msg))
-        if shrink and kind not in seen and kind != "crash":
+        if do_shrink and kind not in seen and kind != "crash":
             seen.add(kind)
-            m = shrink_invariant(ev, kind, binary)
+            m = shrink_invariant(ev, kind, binary if kind == "wrap" else BIN)   # (the plain build: ~5x faster)
             res["repro"].append(save_fail(seed, kind, ev, m, {"msg": msg}))
-        elif shrink and kind == "crash" and kind not in seen:
+        elif do_shrink and kind == "crash" and kind not in seen:
             seen.add(kind)
             m = shrink(list(ev), lambda e: any(b[0] == "crash" for b in check(e, binary)))
             res["repro"].append(save_fail(seed, kind, ev, m, {"msg": msg}))
@@ -605,7 +679,7 @@ def one(seed, binary=BIN, k_clicks=3, shrink=True, strict=False):
             res["known"].append(row)
             continue
         res["fail"].append(("click", f"{e[1]} at {e[0]} ms: {ratio}x, changed {changed}"))
-        if shrink:
+        if do_shrink:
             m = shrink_click(ev, i, changed, binary)
             res["repro"].append(save_fail(seed, "click", ev, m, dict(row, msg=f"{ratio}x {changed}")))
     return res
@@ -616,17 +690,26 @@ def main():
     ap.add_argument("--seeds", default="0-15", help="A-B (inclusive), or a list A,B,C")
     ap.add_argument("--minutes", type=float, help="random seeds until this long")
     ap.add_argument("-j", type=int, default=2)
-    ap.add_argument("--san", action="store_true", help="the ASan + UBSan build")
+    ap.add_argument("--san", action="store_true", help="the ASan + UBSan build (and the wrap check) for every seed")
+    ap.add_argument("--san-every", type=int, default=0, metavar="N",
+                    help="the sanitizer build for every N-th seed (the others: the plain build, about 3x faster)")
     ap.add_argument("--clicks", type=int, default=3)
     ap.add_argument("--no-shrink", action="store_true")
+    ap.add_argument("--focus-xfade", action="store_true", help="more switches, TYPEs, LEVEL, MIX and preset loads")
+    ap.add_argument("--shed", type=float, default=0, metavar="N", help="N voice sheds a minute in every stream")
     ap.add_argument("--strict", action="store_true", help="known clicks fail too")
     ap.add_argument("--json")
     a = ap.parse_args()
+    global SHED_PER_MIN, FOCUS_XF
+    SHED_PER_MIN = a.shed
+    FOCUS_XF = a.focus_xfade
     binary = build(a.san)
+    sanb = build(True) if a.san_every else binary
     os.makedirs(OUTD, exist_ok=True)
 
     def job(s):
-        return one(s, binary, a.clicks, not a.no_shrink, a.strict)
+        b = sanb if a.san_every and s % a.san_every == 0 else binary
+        return one(s, b, a.clicks, not a.no_shrink, a.strict)
     results = []
     if a.minutes:
         t_end = time.time() + 60 * a.minutes
