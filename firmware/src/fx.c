@@ -106,7 +106,7 @@ static inline int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15,
     f = (x + 131072) & 1023;
     return FX_TANH[i] + (((FX_TANH[i + 1] - FX_TANH[i]) * f) >> 10);
 }
-static inline int32_t osc_sine(uint32_t ph)               /* Q32 phase -> +-32767 */
+static inline __attribute__((always_inline)) int32_t osc_sine(uint32_t ph)   /* Q32 phase -> +-32767 */
 {
     uint32_t i = ph >> 22;
     int32_t f = (int32_t)((ph >> 7) & 0x7FFFu);
