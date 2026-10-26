@@ -191,7 +191,11 @@ def main():
                " * (rhodes_tables.h, included first), not stored */\n"
                "#define KN_P64I(v) ((v) ? KN_P64[128u - (uint32_t)(v)] : 131072u)\n"
                "#define KN_P32(v) ((v) ? DECAY_K[128u - (uint32_t)(v)] : 16384u)\n")
-    out.append(arr("KN_HAM", "uint32_t", [int(round(65536 * 2 ** ((v - 64) / 128))) for v in range(128)], 8))
+    # (0.9.6, the flash: stored less 32768 in 16 bits, 46341 .. 92682: the same numbers; KN_HAM(v) adds it back)
+    ham = [int(round(65536 * 2 ** ((v - 64) / 128))) for v in range(128)]
+    assert all(0 <= h - 32768 <= 65535 for h in ham)
+    out.append(arr("KN_HAM_O", "uint16_t", [h - 32768 for h in ham], 8))
+    out.append("#define KN_HAM(v) ((uint32_t)KN_HAM_O[v] + 32768u)\n")
     # NOISE knob: damper-thump force (Q15 re the v = 127 strike) and felt-noise level (Q15 output): -60 + 36 v/127 dB
     out.append(arr("KN_THUMP", "uint16_t", [0] + [int(round(32767 * 10 ** ((-60 + 36 * v / 127 - 6) / 20) * 40)) for v in range(1, 128)], 12))
     out.append(arr("KN_FELT", "uint16_t", [0] + [int(round(32767 * 10 ** ((-60 + 36 * v / 127 - 20) / 20))) for v in range(1, 128)], 12))
