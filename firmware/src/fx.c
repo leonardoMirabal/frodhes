@@ -473,7 +473,7 @@ static uint32_t tw_fq, tw_r1, tw_r2;
 static int32_t tw_exp2n(int32_t y)                       /* 2^(-y / 4096) in Q15, y in 0 .. 5 x 4096 */
 {
     int32_t k = y >> 12, e = 4096 - (y & 4095);          /* 2^(-k - fr) = 2^(1 - fr) / 2^(k + 1) */
-    int32_t mq = e == 4096 ? 131072 : (int32_t)FX_EXP2F[e >> 4];   /* Q16 */
+    int32_t mq = e == 4096 ? 131072 : (int32_t)FX_EXP2F(e >> 4);   /* Q16 */
     return mq >> (k + 2);
 }
 static void tw_amp_block(int32_t shp, int32_t depth)   /* this block's warp and depth */
@@ -924,7 +924,7 @@ static int32_t log2_q12(uint32_t x)
 }
 static int32_t exp2_q16(int32_t g)                       /* 2^(g / 4096) in Q16; g in [-16, 4] octaves */
 {
-    int32_t ip = g >> 12, v = (int32_t)FX_EXP2F[(g & 4095) >> 4];
+    int32_t ip = g >> 12, v = (int32_t)FX_EXP2F((g & 4095) >> 4);
     return ip >= 0 ? v << ip : ip > -16 ? v >> -ip : 0;
 }
 static int32_t cmp_xw;                                   /* the on / off crossfade's wet share (xf_next) */
