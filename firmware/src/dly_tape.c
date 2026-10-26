@@ -149,12 +149,18 @@ __attribute__((noinline)) static void tp_loop(int32_t *L, int32_t *R, int32_t *m
 
 /* one block of TAPE (or its fade-out / tail): the coefficients for this TIME and TONE, the pre-pass, the loop.
  * gt: the fade's target (32768 in, 0 out); msk: the send on / off */
+/* the HF corner h glides (0.9.6, BUGHUNT #23: TONE 0 -> 127 under ringing echoes stepped the loop's filter at once,
+ * 31x a held chord's d2): 256 a block (2.4 TONE steps; the whole range in 54 blocks, 0.31 s); TAPE silent (faded out)
+ * or the output quiet for 2 blocks: TONE's own, so a TONE that has not moved renders as before */
+static int32_t tp_hk RH_SP_SEC(".data.fx_tphk") = -1;
 __attribute__((noinline)) static void tp_block(int32_t *L, int32_t *R, uint32_t n, int32_t target, int32_t msk,
                                                int32_t sg16, int32_t fb, int32_t wet, int32_t dgt, int32_t gt)
 {
     int32_t lv = log2_q12((uint32_t)target >> 8), s = PH_CL(TP_LT_REF - lv, -TP_S_MAX, TP_S_MAX), v = exp2_q16(s), h;
     tp_kf = (int32_t)(((int64_t)TP_KF_REF * v) >> 16);
     h = PH_CL(TP_LH_REF + s + (fx_p[FXP_DL_TONE] - 70) * TP_TONE_K, 0, (128 << 8) - 1);   /* log2 HF corner, Q8 re 250 Hz */
+    if (tp_hk < 0 || !tp_g || fx_quiet_blocks >= 2u) tp_hk = h;
+    else h = tp_hk += PH_CL(h - tp_hk, -256, 256);
     tp_kh = FX_TAPE_HF[h >> 8] + (((FX_TAPE_HF[(h >> 8) + 1] - FX_TAPE_HF[h >> 8]) * (h & 255)) >> 8);
     fb = FX_TAPE_FB[fx_p[FXP_DL_FDBK] & 127];           /* TAPE's regeneration: FDBK alone (DIG / ANA scale it by MIX
                                                          * too); the loop's gain at the bump < 1 up to FDBK 119, then a

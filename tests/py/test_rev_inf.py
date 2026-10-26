@@ -332,9 +332,13 @@ def _hf_bands(w, a0):
     return 10 * np.log10(b / ref + 1e-30), 10 * np.log10(b + 1e-30)
 
 
+# Both at one pinned SIZE (64 and 96; 0.9.6): AUTO is not the same size on the two (INFINITE's AUTO is fixed at 64,
+# HALL's follows MIX: 96 here), and a smaller tank is brighter; at AUTO the sweep compared HALL at 96 with INFINITE at 64
+# (+3.5 dB at 10.5 kHz, since 2bafa55). INFINITE's AUTO is its size 64: test_inf_auto_is_size_64.
+@pytest.mark.parametrize("size", [64, 96])
 @pytest.mark.parametrize("variant", ["lite", "quarter"])
 @pytest.mark.parametrize("stim", ["sweep", "noise", "chord"])
-def test_no_top_band_over_hall(variant, stim):
+def test_no_top_band_over_hall(variant, stim, size):
     import sys
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import rev_scan as rs
@@ -354,7 +358,7 @@ def test_no_top_band_over_hall(variant, stim):
     for d in ds:
         for tone in (20, 64, 127):
             sw = [] if d < 120 else [(int(2 * fs / blk), "RV_DECAY", d)]
-            p = dict(RV_DEPTH=96, RV_DECAY=d if d < 120 else 100, RV_TONE=tone)
+            p = dict(RV_DEPTH=96, RV_DECAY=d if d < 120 else 100, RV_TONE=tone, RV_SIZE=size)
             r = {t: _hf_bands(rs.render(e, x, dict(p, RV_TYPE=t), switches=sw, blocks=int(6 * fs / blk))["wet"],
                               2 * fs if d >= 120 else 0) for t in (1, 3)}
             over = r[3][0] - r[1][0]
@@ -364,3 +368,19 @@ def test_no_top_band_over_hall(variant, stim):
                 bad.append((d, tone, 8 + 0.5 * int(np.argmax(over)), round(float(over.max()), 1)))
     os.remove(e)
     assert not bad, bad
+
+
+def test_inf_auto_is_size_64():
+    """INFINITE's AUTO SIZE is its size 64 (RV_INF_AUTO), whatever MIX is: the same wet, sample for sample"""
+    import sys
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import rev_scan as rs
+    fs = 44100
+    e = rs.build(tag="inf-auto")
+    x = rs.chord(2 * fs, amp=8000)
+    for mix in (40, 96, 127):
+        p = dict(RV_TYPE=3, RV_DEPTH=mix, RV_DECAY=100)
+        a = rs.render(e, x, dict(p, RV_SIZE=0), blocks=int(4 * fs / 256))["wet"]
+        b = rs.render(e, x, dict(p, RV_SIZE=64), blocks=int(4 * fs / 256))["wet"]
+        assert np.abs(a).max() > 100 and np.array_equal(a, b), mix
+    os.remove(e)

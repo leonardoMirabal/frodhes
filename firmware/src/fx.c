@@ -1531,6 +1531,23 @@ __attribute__((noinline)) static void fx_spread_dry(const int32_t *mono, int32_t
     for (j = sb; j < sb + LK; j++) { L[j] = mono[j] + rh_side[j]; R[j] = mono[j] - rh_side[j]; }
 }
 
+/* the bypass' crossfade with SPREAD on (0.9.6, BUGHUNT #25: it faded the wet toward the plain mono, but the bypassed
+ * dry is M +- S: SPREAD's side stepped in at the fade's end, 18x on three notes): the same fade toward M + S / M - S;
+ * the fade's gain (wet) out. Out of line: fx_out's loops as before */
+__attribute__((noinline)) static int32_t fx_xf_side(const int32_t *mono, uint32_t sb, int32_t wet, int byp)
+{
+    uint32_t j;
+    for (j = sb; j < sb + LK; j++) {
+        if (byp ? wet > 0 : wet < 32768) wet += byp ? -128 : 128;
+        if (wet != 32768) {
+            int32_t dl = mono[j] + rh_side[j], dr = mono[j] - rh_side[j];
+            fx_L[j] = (int32_t)(((int64_t)fx_L[j] * wet + (int64_t)dl * (32768 - wet)) >> 15);
+            fx_R[j] = (int32_t)(((int64_t)fx_R[j] * wet + (int64_t)dr * (32768 - wet)) >> 15);
+        }
+    }
+    return wet;
+}
+
 /* LEVEL moved (0.9.6, the bug hunt: each detent was a 0.19 dB step at a block's edge): the gain glides from the
  * last block's toward the new one (at most 512 in Q12 a block), sample by sample in the DC blocker's pass below (after
  * the blocker, as the settled gain: a ramp before it put the blocker's state into the other gain's domain, a step of
@@ -1571,7 +1588,8 @@ __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t *out, 
         if (byp && wet == 0) {                         /* bypassed: the dry signal ((x 0 + dry x 32768) >> 15) */
             if (!rh_side_on) for (j = sb; j < sb + LK; j++) fx_L[j] = fx_R[j] = mono[j];
             else fx_spread_dry(mono, fx_L, fx_R, sb);
-        } else if (byp || wet != 32768) {              /* the crossfade (either way) */
+        } else if ((byp || wet != 32768) && rh_side_on) wet = fx_xf_side(mono, sb, wet, byp);   /* (SPREAD: #25) */
+        else if (byp || wet != 32768) {                /* the crossfade (either way) */
             for (j = sb; j < sb + LK; j++) {
                 if (byp ? wet > 0 : wet < 32768) wet += byp ? -128 : 128;
                 if (wet != 32768) {

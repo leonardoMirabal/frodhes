@@ -233,7 +233,11 @@ static __attribute__((noinline)) int32_t pl_in(const int16_t *const *r, int16_t 
     int32_t b = *bw, act = 0;
     for (i = 0; i < HL_NC; i++) {
         int32_t y, d, v, u = in[i] + (in[i] >> 1);  /* the lines 1.5x hot: 3.5 dB less rounding noise */
-        b = u + sh_tz((b - u) * pb, 15);
+        {   /* (64-bit, 0.9.6, BUGHUNT #22: (b - u) * pb passed 2^31 from |b - u| 82595, an input over ~1.2x full scale
+             * with COMP's make-up; the same integers as sh_tz below that) */
+            int64_t p = (int64_t)(b - u) * pb;
+            b = u + (int32_t)((p + (p < 0 ? 32767 : 0)) >> 15);
+        }
         act |= u;
         y = b;
         PL_AP(0, 24576);

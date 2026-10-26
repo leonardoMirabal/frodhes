@@ -70,6 +70,12 @@ CASES = {
     # #17 DELAY EFFECT DIG <-> ANA under ringing echoes: the tone, the softclip and the wow in one sample (14x)
     "delay-ana-dig": (cc(89, 100, 30) + cc(26, 90, 31) + cc(90, 30, 32) + cc(88, 80, 33), cc(88, 48)),
     "delay-dig-ana": (cc(89, 100, 30) + cc(26, 90, 31) + cc(90, 30, 32) + cc(88, 48, 33), cc(88, 80)),
+    # #23 TAPE TONE 0 <-> 127 under ringing echoes: the loop's HF corner stepped at once (31x)
+    "tape-tone-0-127": (cc(95, 0, 30) + cc(89, 90, 31) + cc(26, 60, 32) + cc(27, 0, 33) + cc(88, 127, 34), cc(27, 127)),
+    "tape-tone-127-0": (cc(95, 0, 30) + cc(89, 90, 31) + cc(26, 60, 32) + cc(27, 127, 33) + cc(88, 127, 34), cc(27, 0)),
+    # #25 FX (the bypass, CC 111) with SPREAD on: the crossfade went to the plain mono, then SPREAD's side stepped in
+    "fx-bypass-spread": (cc(105, 107, 30), cc(111, 127)),
+    "fx-back-spread": (cc(105, 107, 30) + cc(111, 127, 31), cc(111, 0)),
     # #9 LEVEL in one step (48x)
     "level-64-0": ([], cc(110, 0)),
 }
