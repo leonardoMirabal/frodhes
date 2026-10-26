@@ -84,7 +84,7 @@ The FM-1's 14 buttons are on the SMK buttons that mean the same; the ones with a
 | GLOBE | GLO | TEMPO -> SETUP -> MIDI -> DISPLAY |
 | BT | SAVE | save mode |
 
-FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1. The screen's hints use the SMK's names.
+FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1 (hold one OCT button and press the other: octave 0). The screen's hints use the SMK's names.
 
 | Control | Does |
 | --- | --- |

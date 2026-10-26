@@ -1737,8 +1737,16 @@ static void ui_input(uint32_t b, uint32_t rel)
         if (play_is_seq()) seq_toggle_play();
         else { uint16_t b0 = set.bpm10; tempo_tap(); if (set.bpm10 != b0) bpm_hand = set.bpm10; }   /* a tap that set it */
     }
-    if (b >> BTN_OCT_DOWN & 1u && set.oct > -2) { set.oct--; ui_changed(); ui_mark(E_HEADER); }
-    if (b >> BTN_OCT_UP & 1u && set.oct < 2) { set.oct++; ui_changed(); ui_mark(E_HEADER); }
+    {                                                   /* OCT- / OCT+ step; the second pressed while the first is
+                                                         * held: OCTAVE 0 (0.9.6, issue #15; both in one pass, as
+                                                         * held at power-on: the steps as before) */
+        uint32_t ob = 1u << BTN_OCT_DOWN | 1u << BTN_OCT_UP, on = b & ob;
+        if (on && on != ob && (fm1_in.buttons & ob) == ob) { set.oct = 0; ui_say("OCT 0"); ui_changed(); ui_mark(E_HEADER); }
+        else {
+            if (on >> BTN_OCT_DOWN & 1u && set.oct > -2) { set.oct--; ui_changed(); ui_mark(E_HEADER); }
+            if (on >> BTN_OCT_UP & 1u && set.oct < 2) { set.oct++; ui_changed(); ui_mark(E_HEADER); }
+        }
+    }
 
     if (d[ENC_SELECT]) {                                /* the pages: no wrap, so the ends are easy to find */
         int32_t p = clampi((int32_t)pg_pos(ui_page, ui_vp_ok()) + sgn(d[ENC_SELECT]), 0, (int32_t)pg_count() - 1);
