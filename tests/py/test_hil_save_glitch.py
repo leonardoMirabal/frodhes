@@ -18,6 +18,13 @@ def test_self_test_can_fail():
     assert ok, "\n".join(lines)
     assert sum("the take FAIL: ok" in ln for ln in lines) >= 8
     assert any(ln.startswith("self-test: clean render: 0 event(s)") for ln in lines)
+    # BUGHUNT #36: the pattern's prep (its reset's silence) inside the recording reads as a USB zero run; the
+    # recording PREP_SETTLE_S later starts in that silence
+    assert any(ln.startswith("self-test: the recording started at once") and "1 USB zero run" in ln and
+               ln.endswith(": ok") for ln in lines), "\n".join(lines)
+    assert any(ln.startswith("self-test: the recording started PREP_SETTLE_S") and ln.endswith("0 USB zero run(s): ok")
+               for ln in lines), "\n".join(lines)
+    assert G.PREP_SETTLE_S >= 0.1
 
 
 def test_gates():
