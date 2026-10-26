@@ -12,7 +12,7 @@
   - the Rhodes TYPE (a short crossfade);
   - REVERB MIX turned down (the tail rang up to 6 dB louder at MIX 0);
   - REVERB MOD (HALL, INFINITE);
-  - REVERB SIZE on PLATE and INFINITE (the old size fades into the new one, about 0.2 s; it stepped and bent);
+  - REVERB SIZE on PLATE and INFINITE (the old size fades into the new one in 0.13 s on PLATE, 0.19 s on INFINITE; it stepped and bent);
   - DRIVE AMOUNT on FDRV and KHLON;
   - TREM <-> WAH;
   - DELAY EFFECT DIG <-> ANA (a crossfade);

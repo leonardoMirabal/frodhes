@@ -388,7 +388,7 @@ TONE glide when moved; MIX moves in small steps (every 32 samples, too small to 
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **PRE-DELAY** | A gap before the reverb starts, 0–80 ms, so the notes stay clear in front of the reverb (it was K4 on REVERB before) |
-| K2 | **SIZE** | How big the space is. **AUTO** (0, the default) lets MIX set the size, as it always did on HALL. On PLATE the size waits while a tail rings and follows MIX once the plate is silent (a preset sets its size at once), and on INFINITE AUTO is a fixed 5.0, so turning MIX never bends a ringing tail's pitch; 0.1–10.0 fixes it, small to large (on PLATE the plate's size, on INFINITE the space's). Turned under a ringing tail on PLATE or INFINITE, the old size fades into the new one over about 0.2 s, with no bend and no click |
+| K2 | **SIZE** | How big the space is. **AUTO** (0, the default) lets MIX set the size, as it always did on HALL. On PLATE the size waits while a tail rings and follows MIX once the plate is silent (a preset sets its size at once), and on INFINITE AUTO is a fixed 5.0, so turning MIX never bends a ringing tail's pitch; 0.1–10.0 fixes it, small to large (on PLATE the plate's size, on INFINITE the space's). Turned under a ringing tail on PLATE or INFINITE, the old size fades into the new one (in 0.13 s on PLATE, 0.19 s on INFINITE), with no bend and no click |
 | K3 | **MOD** | How much the tail moves: a slow drift that keeps long tails from sounding metallic. 5.0 (the default) is HALL as before; 0 holds still, 10.0 moves twice as much. On INFINITE it is the slow wander of its lines |
 | K4 | **LOW CUT** | Takes the bass out of what goes into the reverb, so long tails do not muddy the low notes: **OFF** (the default) or 20–800 Hz |
 

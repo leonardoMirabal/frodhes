@@ -43,9 +43,9 @@
  *   rev_plate_run: the pointers 25 x 4 + 10 x 22 + 11 x 8, the guard copies 2 x 27, the rest 317     779
  *   = 4981 at rest; at worst + a SIZE step's 3 delays 87 + the decay gain 40 + the warm-up's checked reads (the
  *   first 0.15 s after a start) 132 + a wrapped write's copy 81 = 5321.
- * A SIZE fade (0.9.6, BUGHUNT #19; 186 ms after a turn under a ringing tail), on top: pl_xsegs ~1785 (8 x pl_xblend,
- *   11 a sample) + pl_xtaps ~1700 in place of the taps' 827 + the gains anew ~120: ~+2780. All of it in RAM (the
- *   first version, ~+3190 from flash, measured +210 us on the FM-1 under the VIBES worst case: 4296 us).
+ * A SIZE fade (0.9.6, BUGHUNT #19; 128 ms after a turn under a ringing tail), on top: one site's blend (pl_xblend,
+ *   11 a sample, ~190) + its pointers ~40 + the gains anew ~140: ~+370. (All 22 sites at once cost ~+3190 from flash,
+ *   measured +210 us on the FM-1 under the VIBES worst case, 4296 us; ~+2780 from RAM still 4272 us.)
  * HALL (fx.c rev_hall, its own decimator and DC blocker included), counted the same way: 5644 at rest, 5864 with its
  * gains made anew (DECAY moving); PLATE + the framework's decimator (rev_dec, ~372): 5353 at rest, 5693 at worst,
  * 3-6 % under HALL. In us: HALL's kernel share is REV_US_HALL (210, from the FM-1's measured 260 for the whole
@@ -115,13 +115,13 @@ typedef struct {
                                      * this order (pl_half's k[]) */
     int32_t sz, szo, xw;            /* the size that runs (-1 at the start); a SIZE fade (0.9.6, BUGHUNT #19): the size
                                      * it fades from, the new reads' weight at this block's start (Q14) */
-    uint8_t xf;                     /* a SIZE fade runs */
+    uint8_t xf, xk;                 /* a SIZE fade runs; the read site in its fade (0..21, one after the other) */
     int32_t cdec, cdamp;            /* the settings the gains were made for */
     int32_t ko;                     /* the output gain (Q12) */
     uint32_t fix;                   /* this block: a write ran into the guard (ring 1, input 2) */
     uint16_t d[PL_S_N];             /* the delays at this size */
     uint16_t tk[PL_S_N];            /* the reads: their segment's top - their delay */
-    uint16_t to[PL_S_N];            /* a SIZE fade: the reads it fades from (tk then) */
+    uint16_t to[PL_S_N];            /* a SIZE fade: the reads in use (the old ones, each site's new one once faded) */
     int32_t x[HL_NC];
 } rev_plate_t;
 
@@ -156,10 +156,11 @@ static void rev_plate_start(rev_plate_t *s)
 static int rev_plate_active(const rev_plate_t *s) { return s->quiet < PL_N; }
 
 /* the gains and lengths for these settings. A new SIZE (0.9.6, BUGHUNT #19: it glided one step at a time, 13 samples
- * a delay, a bend and a click per step under a ringing tail): all 22 delays at once, their reads cross-fading from the
- * old ones over 4096 samples (186 ms; one fade at a time: a SIZE turned on during it waits for its end); the decay
- * and output gains follow the sizes between as it fades. From silence, at once */
-#define PL_XS 4                                         /* the fade's step a sample (Q14) */
+ * a delay, a bend and a click per step under a ringing tail): all 22 delays at once, the reads cross-fading from the
+ * old ones one site after the other, 128 samples each (22 x 5.8 ms = 128 ms; one site at a time: the cost of one
+ * blend, not 22; one fade at a time: a SIZE turned on during it waits for its end); the decay and output gains follow
+ * the lengths and the size between as it fades. From silence, at once */
+#define PL_XS 128                                       /* a site's fade's step a sample (Q14): 128 samples a site */
 static void pl_dset(rev_plate_t *s, uint32_t k, int32_t sz)
 {
     uint32_t d = (PL_R(PL_D0[k]) * (uint32_t)(128 + sz)) >> 8;
@@ -175,7 +176,7 @@ static void pl_ctl(rev_plate_t *s, const rev_ctl_t *c)
         if (s->sz >= 0 && rev_plate_active(s) && s->e >= PL_WARM) {   /* ringing: the fade */
             for (k = 0; k < PL_S_N; k++)
                 s->to[k] = s->tk[k];
-            s->szo = s->sz, s->xf = 1, s->xw = 0;
+            s->szo = s->sz, s->xf = 1, s->xk = 0, s->xw = 0;
         }
         s->sz = c->size;                                /* (the start, silence: at once) */
         for (k = 0; k < PL_S_N; k++)
@@ -186,12 +187,16 @@ static void pl_ctl(rev_plate_t *s, const rev_ctl_t *c)
         for (k = 0; k < 8u; k++)
             ls += s->d[k];
         sz = s->sz;
-        if (s->xf) {                                    /* (the fade: the lengths and the size between) */
-            uint32_t lo = 0;
+        if (s->xf) {                                    /* (the fade: the lengths in use, the size between) */
+            uint32_t lo = 0, xk = s->xk;
             for (k = 0; k < 8u; k++)
                 lo += (PL_TOP[k] + PL_N - s->to[k]) & PL_M;
-            ls = (uint32_t)((int32_t)lo + ((((int32_t)ls - (int32_t)lo) * s->xw) >> 14));
-            sz = s->szo + (((s->sz - s->szo) * s->xw) >> 14);
+            if (xk < 8u) {                              /* (the segment in its fade: its length between) */
+                int32_t dk = (int32_t)((PL_TOP[xk] + PL_N - s->to[xk]) & PL_M);
+                lo = (uint32_t)((int32_t)lo + ((((int32_t)s->d[xk] - dk) * s->xw) >> 14));
+            }
+            ls = lo;
+            sz = s->szo + (((s->sz - s->szo) * (int32_t)((xk * 16384u + (uint32_t)s->xw) / PL_S_N)) >> 14);
         }
         /* g^4 per round of ls samples, 60 dB in T60 = 0.8 s x 7.5^(decay / 127): g = 2^-e, e = 9.2566 ls / 2^(2.907
          * decay / 127) (Q16), 2.907 / 127 = 1500 / 65536; + 104 a step (x 1.15 at 127) makes up the damping's,
@@ -228,7 +233,7 @@ static inline __attribute__((always_inline)) void pl_xw(int32_t w, int32_t *a, i
     *a = ((16384 - w) * g) >> 14;
     *b = (w * g) >> 14;
 }
-static int16_t pl_xt[8][HL_NC + 2u];                    /* the segments' blended reads (16 + the interpolation's next) */
+static int16_t pl_xt[HL_NC + 2u];                       /* the fading site's blended reads (16 + the interpolation's next) */
 
 /* a read site in the tank: P[j] (j = 0 .. 16) is the sample of delay hi - j at the block's sample 0 (the block's
  * sample i reads P[i] for delay hi, P[i + 1] for hi - 1). While every read of the block is older than the start: the
@@ -340,50 +345,6 @@ static FR_RAM __attribute__((noinline)) void pl_taps_ms(const int16_t *const *t,
     }
 }
 
-/* a SIZE fade (in RAM, with the loops it calls: the fade's code is not fetched from flash every block, 0.9.6): the 8
- * segments' reads, old (to) and new (t), blended into pl_xt; t points there then (before the halves write: every
- * delay >= 45 > a block) */
-static FR_RAM __attribute__((noinline)) void pl_xsegs(const rev_plate_t *s, const int16_t **t, uint32_t w, uint32_t dm0,
-                                                      uint32_t dm1)
-{
-    const int16_t *b = s->ring;
-    int32_t xa, xb;
-    uint32_t k;
-    pl_xw(s->xw, &xa, &xb);
-    for (k = 0; k < 8u; k++) {
-        uint32_t dk = (k & 3u) ? 0u : (k ? dm1 : dm0) >> 8, nk = (k & 3u) ? HL_NC : HL_NC + 1u;
-        const int16_t *q = (k & 3u) ? b + ((w + s->to[k]) & PL_M)   /* (0 / 4: the modulated reads, moved by the
-                                                                     * delay's change) */
-            : b + ((w + PL_TOP[k] - dk + s->d[k] - ((PL_TOP[k] + PL_N - s->to[k]) & PL_M)) & PL_M);
-        pl_xblend(pl_xt[k], q, t[k], nk, xa, xb);
-        t[k] = pl_xt[k];
-    }
-}
-/* ... and the taps: each side's 7 taps summed from the old reads and the new, the sums blended, then mid / side as
- * pl_taps_ms (4 tap sums and one mid / side pass a block, not two of each and a blend of the results) */
-static FR_RAM __attribute__((noinline)) void pl_xtaps(const rev_plate_t *s, const int16_t *const *t, uint32_t w,
-                                                      int32_t *mid, int32_t *side)
-{
-    const int16_t *u[PL_S_N - 8u];
-    int32_t lo[HL_NC], ro[HL_NC], ln[HL_NC], rn[HL_NC], xa, xb, k = s->ko;
-    uint32_t i;
-    for (i = 8; i < PL_S_N; i++)
-        u[i - 8u] = s->ring + ((w + s->to[i]) & PL_M);
-    pl_taps(u, lo);
-    pl_taps(u + 7, ro);
-    pl_taps(t + 8, ln);
-    pl_taps(t + 15, rn);
-    pl_xw(s->xw, &xa, &xb);
-    xa >>= 4, xb >>= 4;                                 /* (Q10: a tap sum |x| <= 7 x 2^15 < 2^18) */
-    for (i = 0; i < HL_NC; i++) {
-        int32_t l = (lo[i] * xa + ln[i] * xb) >> 10, r = (ro[i] * xa + rn[i] * xb) >> 10;
-        int32_t m = ((l + r) * k) >> 12, d = ((l - r) * k) >> 12;
-        m = m > -PL_LIM ? m : -PL_LIM, d = d > -PL_LIM ? d : -PL_LIM;
-        mid[i] = m < PL_LIM ? m : PL_LIM;
-        side[i] = d < PL_LIM ? d : PL_LIM;
-    }
-}
-
 static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_t *in, int32_t *mid, int32_t *side,
                                                     const rev_ctl_t *c)
 {
@@ -391,11 +352,18 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
     const int16_t *t[PL_S_N];
     uint32_t k, w, ex, dm0, dm1;
     int32_t act;
+    const uint16_t *rk;
+    uint32_t d0, d4;
     pl_ctl(s, c);
+    rk = s->tk, d0 = s->d[0], d4 = s->d[4];
+    if (s->xf) {                                        /* a SIZE fade: the reads in use (to) */
+        rk = s->to;
+        d0 = (PL_TOP[0] + PL_N - s->to[0]) & PL_M, d4 = (PL_TOP[4] + PL_N - s->to[4]) & PL_M;
+    }
     ex = ((uint32_t)c->mod * 3u) >> 1;                 /* MOD 127 (x 16): 3048 = 11.9 samples (Q8) */
     s->ph += PL_LFO;
-    dm0 = (s->d[0] << 8) + (uint32_t)((osc_sine(s->ph) * (int32_t)ex) >> 15);
-    dm1 = (s->d[4] << 8) + (uint32_t)((osc_sine(s->ph + 0x40000000u) * (int32_t)ex) >> 15);
+    dm0 = (d0 << 8) + (uint32_t)((osc_sine(s->ph) * (int32_t)ex) >> 15);
+    dm1 = (d4 << 8) + (uint32_t)((osc_sine(s->ph + 0x40000000u) * (int32_t)ex) >> 15);
     w = s->w;
     s->fix = 0;
     /* the bandwidth one-pole and the input allpasses (their ring: the guard is the front's copy) */
@@ -408,14 +376,27 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
     /* the tank: every read site's pointer (the zeros while it reads before the start), the guard copy, the halves */
     if (s->e >= PL_WARM)
         for (k = 0; k < PL_S_N; k++)
-            t[k] = b + ((w + s->tk[k]) & PL_M);
+            t[k] = b + ((w + rk[k]) & PL_M);
     else
         for (k = 0; k < PL_S_N; k++)
             t[k] = pl_ptr(s, PL_TOP[PL_SEG[k]], s->d[k], s->d[k]);
     t[0] = pl_ptr(s, PL_O0, dm0 >> 8, (dm0 >> 8) - 1u);
     t[4] = pl_ptr(s, PL_O4, dm1 >> 8, (dm1 >> 8) - 1u);
     pl_cpy(b + PL_N, b);
-    if (s->xf) FR_FAR(pl_xsegs)(s, t, w, dm0, dm1);   /* a SIZE fade: the segments' reads blended */
+    if (s->xf) {                                        /* a SIZE fade: the one site in its fade, its old read (t)
+                                                         * and its new blended (a segment before the halves write:
+                                                         * every delay >= 45 > a block) */
+        uint32_t xk = s->xk, n = HL_NC;
+        int32_t xa, xb;
+        const int16_t *p = b + ((w + s->tk[xk]) & PL_M);
+        if (!(xk & 3u) && xk < 8u) {                    /* (0 / 4: modulated, the excursion on the new delay too) */
+            uint32_t dm = xk ? dm1 : dm0, dc = xk ? d4 : d0;
+            p = b + ((w + PL_TOP[xk] - ((dm >> 8) - dc + s->d[xk])) & PL_M), n = HL_NC + 1u;
+        }
+        pl_xw(s->xw, &xa, &xb);
+        FR_FAR(pl_xblend)(pl_xt, t[xk], p, n, xa, xb);
+        t[xk] = pl_xt;
+    }
     for (k = 0; k < 8u; k++)
         o[k] = pl_wptr(s, b, PL_N, w + PL_TOP[k], 1u);
     {
@@ -424,16 +405,15 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
         act |= FR_FAR(pl_half)(xv, t[7], t, (int32_t)(dm0 & 255u), o, &s->dl, &s->g);
         act |= FR_FAR(pl_half)(xv, t[3], t + 4, (int32_t)(dm1 & 255u), o + 4, &s->dr, &s->g);
     }
-    if (s->xf)                                          /* a SIZE fade: the taps from the old reads too, blended */
-        FR_FAR(pl_xtaps)(s, t, w, mid, side);
-    else {
-        FR_FAR(pl_taps)(t + 8, mid);
-        FR_FAR(pl_taps_ms)(t + 15, mid, side, s->ko);
-    }
+    FR_FAR(pl_taps)(t + 8, mid);
+    FR_FAR(pl_taps_ms)(t + 15, mid, side, s->ko);
     if (s->fix & 1u) pl_cpy(b, b + PL_N);            /* (the guard past the wrapped write: the front's own copy) */
     if (s->fix & 2u) pl_cpy(ib, ib + PL_IN);
     s->w = w + HL_NC;
-    if (s->xf && (s->xw += (int32_t)HL_NC * PL_XS) >= 16384) s->xf = 0, s->cdec = -1;   /* (the end: the gains anew) */
+    if (s->xf && (s->xw += (int32_t)HL_NC * PL_XS) >= 16384) {   /* a site faded: the next; the end: the gains anew */
+        s->to[s->xk] = s->tk[s->xk], s->xw = 0;
+        if (++s->xk == PL_S_N) s->xf = 0, s->cdec = -1;
+    }
     if (s->e < PL_WARM) s->e += HL_NC;
     s->quiet = act ? 0u : s->quiet < PL_N ? s->quiet + HL_NC : PL_N;
 }
