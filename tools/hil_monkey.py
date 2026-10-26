@@ -22,14 +22,18 @@ then the bypass off again. The gates, per take:
             >= one packet, the whole ISR <= 4500 us (hil_cpu's CC 116 / 117 and 107 / 108), 0 voices shed
   glitches  hil_crackle.usb_judge on the USB take (stress_max's repeat and stale detectors, the one definition the
             release judges USB audio with): 0 events. Full scale on USB (|x| >= 32767; the limiter keeps 24000):
-            0 samples. Clicks are not gated: a random stream makes the parameter changes 0.9.5 still clicks on
-            (private/BUGHUNT-095.md); hil_crackle's click detector counts them as information
+            0 samples at 44.1 kHz. At 48 kHz the resampler overshoots a loud high passage to full scale (#38):
+            information; it fails on a clamp that could be heard (clamp_rows: a run > 3 samples, > 8 in 10 ms,
+            or an isolated spike). Clicks are not gated: a random stream makes the parameter changes 0.9.5 still
+            clicks on (private/BUGHUNT-095.md); hil_crackle's click detector counts them as information
   alive     the FM-1 answers a CC 116 query after the probe; the probe sounds on USB (> -50 dBFS, judged from the
             recorder's mark); the stream kept running (the frames recorded >= 98 % of the take's length)
 Every take runs (--stop-on-fail: stop after the first failing one; a device that no longer answers stops the run
 too). A failing take is saved: OUT/fail-<seed>.npz (USB from LEAD_S before the first message, the events, the
 counters); the seed's stream on the host: python3 tools/monkey.py --seeds N (from a fresh boot: the FM-1 carries
 the takes before it, so its sound differs).
+
+--rejudge FILE.npz ...: the audio gates again on saved takes, offline (no MIDI, no audio; the counters as saved).
 
 --dry-run: the plan (segments, seeds, messages per kind, the time) and a check of every message (mido builds it,
 no DEV_CC); no MIDI, no audio. The main session runs it on the FM-1 (USB only: the jack is not recorded here).
@@ -56,6 +60,8 @@ LEAD_S = 0.02                                   # the take judged from this long
                                                 # the whole recording, 0.76 s of it before the stream, the last take's
                                                 # tail in it, gave the clock fit a lag of -0.010 s: the guards off)
 CLIP = 32767
+LIM_T = 24000                                   # fx.c's limiter threshold (-2.7 dBFS)
+CLAMP_RUN, CLAMP_DENSE, CLAMP_LOUD = 3, 8, 8    # the 48 kHz full-scale gate (clamp_rows)
 
 
 def midi_of(line):
@@ -163,12 +169,67 @@ def dry_run(a):
           f" (+ ~3 s set-up per take); {sum(tot.values())} messages: "
           + ", ".join(f"{k} {v}" for k, v in sorted(tot.items())))
     print("gates per take: counters (hil_must.gate_counters), USB repeat / stale = 0 (hil_crackle.usb_judge), "
-          "full scale = 0, alive (CC 116 answers, the probe > -50 dBFS, frames >= 98 %)")
+          "full scale = 0 (48 kHz: no audible clamp run or spike), alive (CC 116 answers, the probe > -50 dBFS, "
+          "frames >= 98 %)")
     if bad:
         print(f"BAD messages: {len(bad)}; the first: {bad[:3]}")
         return 1
     print("every message valid; no developer CC; no MIDI or audio opened (--dry-run)")
     return 0
+
+
+def clamp_runs(c):
+    """the lengths of the runs of clamped samples (|x| >= CLIP) in one channel"""
+    m = np.concatenate(([0], (np.abs(c) >= CLIP).astype(np.int8), [0]))
+    d = np.diff(m)
+    return np.flatnonzero(d == -1) - np.flatnonzero(d == 1)
+
+
+def clamp_rows(xi, rate):
+    """the full-scale gate. 44.1 kHz: USB is the limiter's output (<= LIM_T 24000), so 0 samples at full scale.
+    48 kHz: usb.c's 160/147 resampler (12 taps, a per-phase gain up to 1.667) overshoots between the samples of a
+    loud high passage the limiter kept at 24000 and clamps it to int16 (#38: fail-1022, 1 sample, the burst 99 %
+    at 6-12 kHz; 0.9.5 the same). Full scale is information there; the gate is a clamp that could be heard:
+    a run of more than CLAMP_RUN clamped samples in a channel, more than CLAMP_DENSE in any 10 ms, or an isolated
+    one (fewer than CLAMP_LOUD samples >= LIM_T within 1 ms: a spike, not the overshoot of a loud passage)"""
+    x = np.asarray(xi).reshape(len(xi), -1)
+    a = np.abs(x)
+    nclip = int((a >= CLIP).sum())
+    if rate != 48000:
+        return [("USB at full scale (samples)", nclip, "0", "ok" if not nclip else "FAIL")]
+    rows = [("USB at full scale (samples)", nclip, "information at 48 kHz (the resampler's overshoot)", "info")]
+    run = max([int(r.max()) for r in map(clamp_runs, x.T) if len(r)] or [0])
+    rows.append(("USB clamped run (longest, samples)", run, f"<= {CLAMP_RUN}", "ok" if run <= CLAMP_RUN else "FAIL"))
+    w = rate // 100
+    hit = (a >= CLIP).any(axis=1).astype(np.int64)
+    cs = np.concatenate(([0], np.cumsum(hit)))
+    dense = int((cs[w:] - cs[:-w]).max()) if len(hit) >= w else int(hit.sum())
+    rows.append(("USB clamped frames in 10 ms (most)", dense, f"<= {CLAMP_DENSE}",
+                 "ok" if dense <= CLAMP_DENSE else "FAIL"))
+    ms = rate // 1000
+    loud = ((a >= LIM_T) & (a < CLIP)).sum(axis=1)
+    cl = np.concatenate(([0], np.cumsum(loud)))
+    iso = 0
+    for k in np.flatnonzero(hit):
+        lo, hi = max(0, k - ms), min(len(hit), k + ms + 1)
+        iso += int(cl[hi] - cl[lo] < CLAMP_LOUD)
+    rows.append(("USB isolated clamps (spikes)", iso, f"0 (< {CLAMP_LOUD} samples >= {LIM_T} within 1 ms)",
+                 "ok" if not iso else "FAIL"))
+    return rows
+
+
+def rejudge(paths):
+    """the audio gates on saved takes (fail-<seed>.npz): 0 when every take passes them now"""
+    bad = 0
+    for p in paths:
+        d = np.load(p)
+        rows = judge_audio(d["usb"].astype(np.int64), int(d["fs"]), json.loads(str(d["events"])))
+        fails = [r for r in rows if r[3] == "FAIL"]
+        bad += bool(fails)
+        print(f"{os.path.basename(p)}: " + ("FAIL" if fails else "ok"))
+        for r in rows:
+            print(f"  {r[0]}: {r[1]} ({r[2]}) {r[3]}")
+    return 1 if bad else 0
 
 
 def judge_audio(xi, rate, ev, flags=0):
@@ -181,8 +242,7 @@ def judge_audio(xi, rate, ev, flags=0):
     if gl:
         rows.append(("the first glitches", "; ".join(f"{t:.3f} s {k}: {d}" for t, k, d in gl[:3]), "information",
                      "info"))
-    nclip = int((np.abs(xi) >= CLIP).sum())
-    rows.append(("USB at full scale (samples)", nclip, "0", "ok" if not nclip else "FAIL"))
+    rows += clamp_rows(xi, rate)
     p0 = fit["lag"] + (SEG_S + PROBE_AT + 0.05) * (1 + fit["rate"])     # (lag: from the recording's first frame)
     w = xi[max(0, int(p0 * rate)):max(0, int((p0 + PROBE_LEN) * rate))]
     pdb = monkey.rms_db(w) if len(w) else -200.0
@@ -282,7 +342,10 @@ def main(argv=None):
     ap.add_argument("--out", default=OUT)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--stop-on-fail", action="store_true", help="stop after the first failing take")
+    ap.add_argument("--rejudge", nargs="+", metavar="NPZ", help="judge saved takes again (offline)")
     a = ap.parse_args(argv)
+    if a.rejudge:
+        return rejudge(a.rejudge)
     if a.dry_run:
         return dry_run(a)
     import sounddevice as sd
