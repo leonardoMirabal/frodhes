@@ -168,8 +168,8 @@ static void rev_reset_state(void)
 #define RV_RET(w) ((int32_t)(((int64_t)(w) * rk) >> 30) + (int32_t)((uint32_t)(w) >> 31))
 /* MIX moved while a tail rings (0.9.6, BUGHUNT #18: the return eases off as MIX rises, x1 .. x0.5, so MIX 127 -> 0
  * doubled the ringing tail, +5..6.6 dB, and the send stepped to 0 in one block: 41-72x a held chord's d2). The return
- * keeps the MIX the tail started with (rv_vl: latched while the reverb runs; at rest it follows MIX, so a MIX that
- * has not moved since the reverb went quiet renders exactly as before), and the send carries the rest of the law:
+ * keeps the MIX the tail started with (rv_vl: latched while the reverb runs; at rest, or with the out under -66 dBFS
+ * for two blocks, it follows MIX, so a MIX set in silence renders exactly as before), and the send carries the rest of the law:
  * v 258 (254 - v) / (254 - rv_vl), the same wet level for what goes in from now on; the send ramps sample by sample
  * to its new value over the block (rv_sk: the last block's), only while it moves */
 static int32_t rv_vl = -1, rv_sk;
@@ -193,7 +193,9 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
     int32_t rk, vl, sk;
     int quiet = !rv_running;
     if (tgt >= (int32_t)RV_N) tgt = RV_HALL;
-    if (!rv_running || rv_vl < 0) { rv_vl = v; rv_sk = send; }   /* (at rest: the return follows MIX) */
+    if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = send; }   /* (at rest, or the out
+                                                    * under -66 dBFS for 2 blocks, the boot's silence too: the return
+                                                    * follows MIX) */
     vl = rv_vl;
     if (v != vl && send) send = (int32_t)(((int64_t)send * (254 - v)) / (254 - vl));
     rk = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;   /* floor((254 - vl) 2^30 / 254) + 1 */
