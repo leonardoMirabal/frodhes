@@ -245,7 +245,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
                                                         * change releases the hold: the tail decays, silence comes) */
             rev_dec(rv_in);
             if (cur == RV_PLATE) rev_plate_run(&rev_u.p, rv_x, om, os, &c);
-            else rev_inf_run(&rev_u.i, rv_x, om, os, &c);
+            else FR_FAR(rev_inf_run)(&rev_u.i, rv_x, om, os, &c);
         }
         /* the 2x upsample to mid / side (RV_UPI between u[-1] and u[0], then u[0]: 2 half-rate samples late) and the
          * return, which eases off as the send rises: x1 .. x0.5 (0.6): (w * (254 - v)) / 254 exactly, as a multiply

@@ -36,10 +36,10 @@ static int32_t tp_kf, tp_kq = TP_KQ, tp_kh;             /* this block's coeffici
 
 /* the wow / flutter pre-pass: dly_dt[] = this block's delay per sample (Q8); s = log2 speed re the reference (Q12),
  * lv = log2 T (Q12) */
-__attribute__((noinline)) static void tp_mod(uint32_t n, int32_t target, int32_t s, int32_t lv)
+FR_RAM __attribute__((noinline)) static void tp_mod(uint32_t n, int32_t target, int32_t s, int32_t lv)   /* (RAM: 0.9.6) */
 {
-    int32_t dq = tp_dq, d0 = tp_dc, v = exp2_q16(s), iv = exp2_q16(-s), t12 = target << 4;
-    int32_t kw = exp2_q16((5 << 12) - lv);              /* 32 / T in Q16: the transit mean's one-pole per step */
+    int32_t dq = tp_dq, d0 = tp_dc, v = FR_FAR(exp2_q16)(s), iv = FR_FAR(exp2_q16)(-s), t12 = target << 4;
+    int32_t kw = FR_FAR(exp2_q16)((5 << 12) - lv);              /* 32 / T in Q16: the transit mean's one-pole per step */
     uint32_t i1 = (uint32_t)(((uint64_t)TP_INC1 * (uint32_t)v) >> 16);
     int32_t a1 = (int32_t)(((int64_t)(TP_A1 * TP_WOWX >> 8) * iv) >> 16), a2 = (int32_t)(((int64_t)(TP_A2 * TP_WOWX >> 8) * iv) >> 16);
     int32_t a3 = (int32_t)(((int64_t)(TP_A3 * TP_WOWX >> 8) * iv) >> 16);   /* the flutter depths in samples (Q12): ~ T */
@@ -130,11 +130,11 @@ FR_RAM __attribute__((noinline)) static void tp_tape(int32_t *m, const int32_t *
 
 /* the sample loop: the tape pass (tp_tape: m[] in place, the echoes), then the dry easing to dgt plus the echo, x
  * the echo's gain ramped from w0 (the last block's) to wet */
-__attribute__((noinline)) static void tp_loop(int32_t *L, int32_t *R, int32_t *m, const int32_t *dt, uint32_t n,
+FR_RAM __attribute__((noinline)) static void tp_loop(int32_t *L, int32_t *R, int32_t *m, const int32_t *dt, uint32_t n,
                                                           const int32_t msk, int32_t sg16, int32_t fb, int32_t wet,
                                                           int32_t dgt, int32_t w0)
 {
-    int32_t dg = dly_dg, *e = L + n, wq = w0 << 8, ws = DLY_WSTEP(w0, wet, n);
+    int32_t dg = dly_dg, *e = L + n, wq = w0 << 8, ws = FR_FAR(dly_wstep)(w0, wet, n);   /* (RAM: 0.9.6) */
     if (msk) FR_FAR(dly_ramp)(m, n, sg16);                      /* (each fade piece its own ramp, as it was) */
     FR_FAR(tp_tape)(m, dt, n, msk, fb);
     for (; L < e; L++, R++) {
@@ -166,15 +166,15 @@ __attribute__((noinline)) static void tp_block(int32_t *L, int32_t *R, uint32_t 
                                                          * too); the loop's gain at the bump < 1 up to FDBK 119, then a
                                                          * bounded build-up held by the tape's saturation */
     wet = (wet * TP_WET) >> 12;                         /* level-matched to ANA */
-    tp_mod(n, target, s, lv);
-    if (tp_g == gt) tp_loop(L, R, dly_m, dly_dt, n, msk, sg16, fb, wet, dgt, (dly_wk * TP_WET) >> 12);
+    FR_FAR(tp_mod)(n, target, s, lv);
+    if (tp_g == gt) FR_FAR(tp_loop)(L, R, dly_m, dly_dt, n, msk, sg16, fb, wet, dgt, (dly_wk * TP_WET) >> 12);
     else {                                              /* fading: the echo's gain (feedback and heard) steps every 8
                                                          * samples (0.4 % a step), the same loop (no second one: flash) */
         uint32_t j;
         for (j = 0; j < n; j += 8u) {
             tp_g = PH_CL(tp_g + (gt ? 8 * TP_FADE : -8 * TP_FADE), 0, 32768);
             int32_t wg = (wet * tp_g) >> 15;           /* (a fade: the echo's gain steps with it, as it did) */
-            tp_loop(L + j, R + j, dly_m + j, dly_dt + j, 8u, msk, sg16, (fb * tp_g) >> 15, wg, dgt, wg);
+            FR_FAR(tp_loop)(L + j, R + j, dly_m + j, dly_dt + j, 8u, msk, sg16, (fb * tp_g) >> 15, wg, dgt, wg);
         }
     }
 }

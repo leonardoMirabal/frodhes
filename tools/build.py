@@ -312,11 +312,24 @@ def check(img, syms, dis, rt):
         errors.append(f"_start is not at {APP_XIP:#x}")
     if img[:4] != bytes.fromhex("04818000"):
         errors.append(f"image starts with {img[:4].hex()}, not the entry stub")
-    rt_calls = [ln for ln in rt.splitlines() if re.search(r"\bcall\b", ln)]
-    if rt_calls:                    # RAM code runs with the flash off: no calls into XIP
-        errors.append(f".ram_text contains calls: {rt_calls[:3]}")
+    # the flash driver (fl_*_ram, hal/fm1_flash.h) runs with the flash off: no calls into XIP. The app's audio code in
+    # .ram_text (frodhes.c FR_RAM) runs with the flash on (an erase holds interrupts) and may call XIP through FR_FAR
+    # (0.9.6: the effects' block functions moved there too)
+    rt_fn, rt_calls, rt_names = None, [], []
+    for ln in rt.splitlines():
+        mm = re.match(r"^([A-Za-z_][\w.]*):$", ln)
+        if mm:
+            rt_fn = mm.group(1)
+            rt_names.append(rt_fn)
+        elif rt_fn and rt_fn.startswith("fl_") and re.search(r"\bcall\b", ln):
+            rt_calls.append(f"{rt_fn}: {ln.strip()}")
+    if not any(n.startswith("fl_") for n in rt_names):
+        errors.append(".ram_text: the flash driver (fl_*) not found")
+    if rt_calls:
+        errors.append(f".ram_text: the flash driver contains calls: {rt_calls[:3]}")
     else:
-        notes.append(f".ram_text: {len([ln for ln in rt.splitlines() if LINE.match(ln)])} insns, no calls")
+        notes.append(f".ram_text: {len([ln for ln in rt.splitlines() if LINE.match(ln)])} insns, the flash driver "
+                     f"({sum(n.startswith('fl_') for n in rt_names)} functions) without calls")
     for ln in dis.splitlines():     # nothing may call or load an address in the chip ROM
         mm = LINE.match(ln)
         if not mm:

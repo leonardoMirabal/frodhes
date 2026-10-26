@@ -192,7 +192,7 @@ static inline void ri_dif(int16_t *q, int32_t g, int32_t *x, uint32_t n, int z)
         }
 }
 /* LITE's diffusers: g 0.5 as two lifting steps (as ri_lap, x steps 1) */
-static inline void ri_dif2(int16_t *q, int32_t *x, uint32_t n, int z)
+static inline __attribute__((always_inline)) void ri_dif2(int16_t *q, int32_t *x, uint32_t n, int z)
 {
     int16_t *e = q + n;
     if (z)
@@ -206,7 +206,7 @@ static inline void ri_dif2(int16_t *q, int32_t *x, uint32_t n, int z)
 }
 /* the lines' allpass, g 0.5, y steps RI_NL (one row): two lifting steps (v = x + b / 2, y = b - v / 2, each exactly
  * invertible), so it loses nothing however it rounds (the floor's -1/4 is a DC: the loop's DC block takes it) */
-static inline void ri_lap(int16_t *q, int32_t *y, uint32_t n, int z)
+static inline __attribute__((always_inline)) void ri_lap(int16_t *q, int32_t *y, uint32_t n, int z)
 {
     int16_t *e = q + n;
     if (z)
@@ -222,7 +222,7 @@ static inline void ri_lap(int16_t *q, int32_t *y, uint32_t n, int z)
  * (a Q15, rounded: the read itself loses nothing), then o = g (1 - c) v + c o' (b0, a1 Q14: b0 + a1 <= 1 + 2^-8, so
  * |o| <= max |v|). lo (the line quiet): the product truncated toward zero, so it dies to exact zero; else its
  * remainder carried to the next sample (a long T60 at any level loses nothing to the rounding) */
-static inline void ri_end(const int16_t *b, int32_t *y, uint32_t n, int32_t a, int32_t b0, int32_t a1, int32_t *yp,
+static inline __attribute__((always_inline)) void ri_end(const int16_t *b, int32_t *y, uint32_t n, int32_t a, int32_t b0, int32_t a1, int32_t *yp,
                           int32_t *op, int32_t *oe, int lo)
 {
     int32_t p = *b, q, v = *yp, o = *op, e = *oe;
@@ -253,7 +253,7 @@ static inline void ri_end(const int16_t *b, int32_t *y, uint32_t n, int32_t a, i
     *oe = lo ? 0 : e;
 }
 /* a line end that reads whole samples (LITE's unmodulated lines): b = the row read; the rest as ri_end */
-static inline void ri_endp(const int16_t *b, int32_t *y, uint32_t n, int32_t b0, int32_t a1, int32_t *op, int32_t *oe,
+static inline __attribute__((always_inline)) void ri_endp(const int16_t *b, int32_t *y, uint32_t n, int32_t b0, int32_t a1, int32_t *op, int32_t *oe,
                            int lo)
 {
     int32_t o = *op, e = *oe;
@@ -273,13 +273,13 @@ static inline void ri_endp(const int16_t *b, int32_t *y, uint32_t n, int32_t b0,
     }
 
 /* the gains (Q14) for DECAY d (0..119: T60 4 .. 60 s, 4 x 15^(d / 119)) at the lines' lengths now */
-static void ri_gains(rev_inf_t *s, int32_t d)     /* (d down to RI_REL: 131072 + d x 2151 stays > 0) */
+static inline __attribute__((always_inline)) void ri_gains(rev_inf_t *s, int32_t d)     /* (d down to RI_REL: 131072 + d x 2151 stays > 0) */
 {
     /* 32768 / T60, less the loop's own losses measured in the 500 Hz .. 1 kHz octaves (the rounding, the lines'
      * allpasses: ~0.004 / s; tests/py/test_rev_types.py's T60) */
-    uint32_t inv = exp2_neg((uint32_t)(131072 + d * 2151)) - RI_LOSS, k;
+    uint32_t inv = FR_FAR(exp2_neg)((uint32_t)(131072 + d * 2151)) - RI_LOSS, k;
     for (k = 0; k < RI_NL; k++)                                     /* 2^(-9.966 len / (fs T60)) */
-        s->g[k] = (int16_t)(exp2_neg((((uint32_t)s->len[k] * inv) >> 8) * (59u * RI_DIV) >> 8) >> 1);
+        s->g[k] = (int16_t)(FR_FAR(exp2_neg)((((uint32_t)s->len[k] * inv) >> 8) * (59u * RI_DIV) >> 8) >> 1);
 }
 
 /* the input into s->x[o .. o + n): (the quarter tank: 2:1 down), the gain (the freeze fade, the level guard, and a
@@ -354,7 +354,7 @@ __attribute__((noinline)) static int32_t ri_mix(const int32_t *y, const int32_t 
 }
 
 /* one tank block: RI_NB samples of s->x in, the taps into mo / so */
-static inline void ri_tank(rev_inf_t *s, int32_t *mo, int32_t *so, const rev_ctl_t *c, int32_t xi)
+static inline __attribute__((always_inline)) void ri_tank(rev_inf_t *s, int32_t *mo, int32_t *so, const rev_ctl_t *c, int32_t xi)
 {
     uint32_t i, k, d, m, w = s->w;
     int32_t act = 0, ab = 0, closed = c->freeze == 2, dec, ct, ch = 0;
@@ -382,7 +382,7 @@ static inline void ri_tank(rev_inf_t *s, int32_t *mo, int32_t *so, const rev_ctl
     if (ch || s->gdec != dec) { ri_gains(s, dec); s->gdec = dec; }
     ct = c->freeze ? 0 : c->damp * RI_KD;
     s->c = s->c < ct ? (ct - s->c > 64 ? s->c + 64 : ct) : (s->c - ct > 64 ? s->c - 64 : ct);
-    s->ik = (int32_t)(exp2_neg((uint32_t)c->damp * RI_KI) >> 1);
+    s->ik = (int32_t)(FR_FAR(exp2_neg)((uint32_t)c->damp * RI_KI) >> 1);
     s->ik = s->ik < RI_KMAX ? s->ik : RI_KMAX;   /* (TONE glides in the framework) */
     ct = c->freeze || c->damp <= 60 ? 0 : (c->damp - 60) * RI_KA;
     s->ca = s->ca < ct ? (ct - s->ca > 64 ? s->ca + 64 : ct) : (s->ca - ct > 64 ? s->ca - 64 : ct);
@@ -472,7 +472,7 @@ static inline void ri_tank(rev_inf_t *s, int32_t *mo, int32_t *so, const rev_ctl
         s->dh = hp, s->de = he;
     }
     /* ---- the mix (Householder: y_k - S / 4, lossless; line k's into line k - 1) back into the ring, the taps */
-    act = ri_mix(&s->y[0][0], s->x, s->ring + w * RI_NL, mo, so, &s->te, &ab);
+    act = FR_FAR(ri_mix)(&s->y[0][0], s->x, s->ring + w * RI_NL, mo, so, &s->te, &ab);
     if (!w) memcpy(s->ring + RI_N * RI_NL, s->ring, RI_NL * sizeof s->ring[0]);
     w += RI_NB;
     s->rr++;
@@ -516,7 +516,7 @@ static inline void ri_tank(rev_inf_t *s, int32_t *mo, int32_t *so, const rev_ctl
     s->gi = (((s->ilim * s->fin) >> 15) * RI_IN) >> 15;
 }
 
-__attribute__((noinline)) static void rev_inf_run(rev_inf_t *s, const int32_t *in, int32_t *mid, int32_t *side,
+FR_RAM __attribute__((noinline)) static void rev_inf_run(rev_inf_t *s, const int32_t *in, int32_t *mid, int32_t *side,
                                                  const rev_ctl_t *c)
 {
 #if RI_CPT > 1u

@@ -706,7 +706,8 @@ __attribute__((noinline)) static int32_t ph_glide(int32_t ct, int32_t gt, int32_
                                                          * 2026-10-17) */
     return (int32_t)(((int64_t)(22940 << 15) * ph_gq) >> 12);
 }
-__attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)
+FR_RAM __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, uint32_t n)   /* (in RAM, 0.9.6: the
+                                                         * effects' block code out of the XIP cache, cpu_check) */
 {
     int32_t depth = fx_p[FXP_PH_DEPTH], fbk = fx_p[FXP_PH_FDBK] * 180;
     /* the mix: 0.70 x (dry + allpasses): +3 dB at most where they are in phase, the notches cut (0.56, a cut-only
@@ -732,9 +733,9 @@ __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, uint32_t
         memset(&ph_st, 0, sizeof ph_st);
     }
     if (ph_cq < 0) { ph_cq = ct; ph_gq = gt; ph_dq = depth << 8; ph_fq = fbk; }   /* (switched on: at once) */
-    w1 = xf_pre(ph_w, on, L, R, n);
+    w1 = FR_FAR(xf_pre)(ph_w, on, L, R, n);
     for (sb = 0; sb < n; sb += 32u) {
-        int32_t a[2], ksh, pg = ph_glide(ct, gt, depth << 8, fbk, &ksh, a);
+        int32_t a[2], ksh, pg = FR_FAR(ph_glide)(ct, gt, depth << 8, fbk, &ksh, a);
         for (s = 0; s < 2u; s++) {                   /* the sides are independent: one at a time, the state in
                                                         * registers (the same arithmetic as per sample and side) */
             int32_t *io = s ? R : L, *pe, hp = ph_hp[s], g13 = pg >> 16, ls = ph_ls[s];
@@ -772,7 +773,7 @@ __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, uint32_t
         }
         ph_ph += inc * 32u;
     }
-    xf_post(L, R, xf_d[0], xf_d[1], n, ph_w, w1);
+    FR_FAR(xf_post)(L, R, xf_d[0], xf_d[1], n, ph_w, w1);
     ph_w = w1;
 }
 
@@ -1443,8 +1444,8 @@ static int32_t dc_l, dc_r, dce_l, dce_r;
  * clipped, and the gain moves smoothly (big chords of 7-8 notes stay clean); release ~46 ms */
 #define LK 32u
 static int32_t lk_l[LK], lk_r[LK], lk_pk, lk_g = 32768;
-static int32_t lk_need(int32_t pk) { return pk > LIM_T ? (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)pk) : 32768; }
-static inline int32_t dc_block(int32_t x, int32_t *dc, int32_t *err)
+static inline __attribute__((always_inline)) int32_t lk_need(int32_t pk) { return pk > LIM_T ? (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)pk) : 32768; }
+static inline __attribute__((always_inline)) int32_t dc_block(int32_t x, int32_t *dc, int32_t *err)
 {
     int32_t e = (x << 6) - *dc + *err, d = e >> 12;
     *err = e - (d << 12);
@@ -1525,7 +1526,7 @@ FR_RAM __attribute__((noinline)) static void fx_spread(const int32_t *mono, int3
 }
 
 /* the bypassed dry with SPREAD's side: L = M + S, R = M - S (out of line: fx_process's registers as without it) */
-__attribute__((noinline)) static void fx_spread_dry(const int32_t *mono, int32_t *L, int32_t *R, uint32_t sb)
+FR_RAM __attribute__((noinline)) static void fx_spread_dry(const int32_t *mono, int32_t *L, int32_t *R, uint32_t sb)
 {
     uint32_t j;
     for (j = sb; j < sb + LK; j++) { L[j] = mono[j] + rh_side[j]; R[j] = mono[j] - rh_side[j]; }
@@ -1534,7 +1535,7 @@ __attribute__((noinline)) static void fx_spread_dry(const int32_t *mono, int32_t
 /* the bypass' crossfade with SPREAD on (0.9.6, BUGHUNT #25: it faded the wet toward the plain mono, but the bypassed
  * dry is M +- S: SPREAD's side stepped in at the fade's end, 18x on three notes): the same fade toward M + S / M - S;
  * the fade's gain (wet) out. Out of line: fx_out's loops as before */
-__attribute__((noinline)) static int32_t fx_xf_side(const int32_t *mono, uint32_t sb, int32_t wet, int byp)
+FR_RAM __attribute__((noinline)) static int32_t fx_xf_side(const int32_t *mono, uint32_t sb, int32_t wet, int byp)
 {
     uint32_t j;
     for (j = sb; j < sb + LK; j++) {
@@ -1556,7 +1557,7 @@ static int32_t fx_lvk = -1;                              /* the LEVEL gain (Q12)
 /* this block's LEVEL: 4096 = unity (the plain loop), else the gain's ramp from *lq (Q20) by *ls a sample (0: settled
  * off unity, the same integers as a constant gain; one loop for both, less flash). still: bypassed or crossfading,
  * the step as before */
-__attribute__((noinline)) static int32_t fx_lv_ramp(int32_t lvl, int still, uint32_t n, int32_t *lq, int32_t *ls)
+FR_RAM __attribute__((noinline)) static int32_t fx_lv_ramp(int32_t lvl, int still, uint32_t n, int32_t *lq, int32_t *ls)
 {
     *lq = lvl << 8; *ls = 0;
     if (fx_lvk != lvl) {
@@ -1572,7 +1573,7 @@ __attribute__((noinline)) static int32_t fx_lv_ramp(int32_t lvl, int still, uint
 /* the output stage: the bypass, the DC blocker, LEVEL, the look-ahead limiter, the gate (fx_process's end). Its own
  * function (0.9.6): inlined after the effects, their code moved its loops' registers (the limiter's copy 32 -> 36
  * instructions a sample, the DC blocker's a stack load more: cpu_check +36 us on VIBES with every effect) */
-__attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t *out, uint32_t n)
+FR_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t *out, uint32_t n)   /* (RAM: 0.9.6) */
 {
     int32_t lvl = (int32_t)FX_LVL[fx_p[FXP_LEVEL] & 127];   /* the preset's volume trim, Q12 */
     uint32_t j, sb;
@@ -1689,10 +1690,10 @@ static inline __attribute__((always_inline)) void fx_process(const int32_t *mono
     fx_filter(m, n);
     fx_trem(m, fx_L, fx_R, n);
     if (rh_side_on) FR_FAR(fx_spread)(mono, fx_L, fx_R, n);   /* SPREAD: the side (S13) */
-    fx_phaser(fx_L, fx_R, n);
+    FR_FAR(fx_phaser)(fx_L, fx_R, n);
     fx_delay(fx_L, fx_R, n);                           /* (the chorus, then the delay) */
     fx_reverb(fx_L, fx_R, n);
-    fx_out(mono, out, n);
+    FR_FAR(fx_out)(mono, out, n);
 }
 
 /* ---- what the effects that run now cost on the FM-1, us per block: the bar engine's CPU model (bars.c
