@@ -63,6 +63,7 @@ BIN = os.path.join(ROOT, "build", "host", "frodhes")
 SAN = os.path.join(ROOT, "build", "host", "frodhes-monkey-san")
 OUTD = os.path.join(ROOT, "build", "monkey")
 FS = 44100
+SAN_CC = os.environ.get("SAN_CC") or shutil.which("clang") or "cc"   # (the sanitizer flags are clang's: Linux's cc is gcc)
 SAN_FLAGS = ["-fsanitize=undefined,address,implicit-signed-integer-truncation", "-fno-sanitize=shift-base",
              "-fno-sanitize-recover=undefined", "-fsanitize-recover=implicit-signed-integer-truncation",
              "-fno-omit-frame-pointer"]
@@ -307,6 +308,7 @@ def build(san=False, inject=None, out=SAN):
     newest = max(newest, os.path.getmtime(__file__))
     if inject or not os.path.exists(out) or os.path.getmtime(out) < newest:
         tmp = f"{out}.tmp{os.getpid()}"
+        os.makedirs(os.path.dirname(out), exist_ok=True)   # (a fresh checkout has no build/host yet)
         mirror = tempfile.mkdtemp(dir=os.path.dirname(out), prefix="san-src-")
         msrc = os.path.join(mirror, "firmware", "src")
         try:                                    # (the tree's layout kept: platform.c includes ../../tests/host.c)
@@ -321,7 +323,7 @@ def build(san=False, inject=None, out=SAN):
                 assert old in txt, (f, old)
                 with open(fp, "w") as fh:
                     fh.write(txt.replace(old, new))
-            subprocess.run(["cc", "-O1", "-g", "-w", "-DDINGHY_HOST", '-DAPP_VER="dev"', *SAN_FLAGS, "-I" + msrc,
+            subprocess.run([SAN_CC, "-O1", "-g", "-w", "-DDINGHY_HOST", '-DAPP_VER="dev"', *SAN_FLAGS, "-I" + msrc,
                             "-I" + os.path.join(ROOT, "firmware", "gen"), "-o", tmp, os.path.join(msrc, "frodhes.c"),
                             "-lm"], check=True)
         finally:
