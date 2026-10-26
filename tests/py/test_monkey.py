@@ -223,6 +223,17 @@ def test_bughunt9_level_with_fx_off(binary):
         pytest.xfail(f"BUGHUNT #9: LEVEL steps with FX off ({ratio:.0f}x)")
 
 
+def test_bughunt27_khlon_trem_never_quiet(binary):
+    """BUGHUNT #27 (monkey seed 155536243 on mix-fix2, shrunk; 0.9.5 too): F06 (KHLON, COMP) with TREM on: after the
+    notes the output gate shuts, but fx_out's peak stays at 6..16 LSB, so fx_quiet never holds and nothing is written
+    to the flash: the SAVE shows U01 and a power cycle brings back F06"""
+    ev = [(19251, "midi 0xC2 5 0"), (19792, "btn 5"), (19822, "turn 2 1"), (20000, "turn 1 1")]
+    bad = mk.check(ev, binary)
+    if any(k == "roundtrip" for k, _ in bad):
+        pytest.xfail("BUGHUNT #27: never quiet with KHLON + TREM: nothing saved")
+    assert bad == []
+
+
 def test_ddmin_finds_the_minimal_pair():
     items = list(range(40))
     assert sorted(mk.ddmin(items, lambda xs: 7 in xs and 31 in xs)) == [7, 31]
