@@ -5,7 +5,7 @@ firmware for the longest audio block since the last query (frodhes.c midi_cc; re
 The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder starts at 5000 us.
 
     python3 tools/hil_cpu.py [--engine vibes|marimba] [--voices N] [--worst] [--fx-each] [--calib] [--stages] [--tail]
-                             [--bend-sweep]
+                             [--bend-sweep] [--cc-sweep CC[:LO:HI:STEP_MS]]
 
 --voices N (default: the engine's own count, rhodes.c RH_VOICES 10 / BAR_VOICES 10) plays N-note chords and N bass
 notes (for a build with -DRH_VOICES=N, -DBAR_VOICES=N or -DFR_VOICES=N; more notes than the firmware's voices steal). The lists: bass 28 31 33 35 36 38 40 41 43 45 47 48,
@@ -49,6 +49,11 @@ app_audio and uac_service in the render, was never in the numbers before); --no-
 and back (a triangle, 0.5 s each way): each block where the bend changed retunes every sounding Rhodes tine (rhodes.c
 rh_retune), so with --worst this is the bend's CPU gate (VIBES / MARIMBA ignore the bend: their numbers must not move).
 The bend goes back to 0 after each scenario.
+--cc-sweep CC[:LO:HI:STEP_MS] (default LO 0, HI 127, STEP_MS 5): the same for a control change: while every scenario
+plays (and idles), CC moves LO .. HI and back (a triangle, 0.5 s each way), one message every STEP_MS ms (only when its
+value changed). E.g. 73:1:127:200 turns the reverb SIZE every 200 ms, so its fades (0.9.6: 186 ms on PLATE and
+INFINITE) run back to back: tools/cpu_check.sh's vibes_size cases. The CC is not put back after a scenario (the next
+one's reset sets it). Works with --bend-sweep (both every pass of the wait).
 Every scenario also asks 0.4 s after its note-offs and 0.4 s after the pedal is let go, before anything resets (the
 release blocks: a damper on every voice). --worst adds 'slow paths': every effect plus the drive's TONE and MIX off
 their defaults, the reverb's pre-delay, LEVEL off unity, the FX bypass crossfade switched during the chord, and steals
@@ -222,6 +227,23 @@ def close_usb():
     _USB.clear()
 
 
+def cc_sweep_arg(argv):
+    """--cc-sweep CC[:LO:HI:STEP_MS] -> (cc, lo, hi, step in s), or None; exits on a bad value"""
+    if "--cc-sweep" not in argv:
+        return None
+    i = argv.index("--cc-sweep")
+    try:
+        f = [int(x) for x in argv[i + 1].split(":")]
+        if len(f) not in (1, 4):
+            raise ValueError
+    except (IndexError, ValueError):
+        sys.exit("hil_cpu: --cc-sweep CC[:LO:HI:STEP_MS], integers (e.g. 73:1:127:200)")
+    c, lo, hi, ms = f if len(f) == 4 else (f[0], 0, 127, 5)
+    if not (0 <= c <= 127 and 0 <= lo <= 127 and 0 <= hi <= 127 and ms >= 1):
+        sys.exit("hil_cpu: --cc-sweep: CC, LO, HI 0..127, STEP_MS >= 1")
+    return c, lo, hi, ms / 1000.0
+
+
 def main(argv=None):
     """one run (or, --keyadc gate, the gate's runs); returns the run's dict(rows, worst, keyadc, code), the gate's
     dict(gate, code): code is the run's verdict (4500 us, a shed voice, a USB fault), exit_code() adds KEYADC_BAD"""
@@ -336,13 +358,16 @@ def run_cpu(argv):  # noqa: C901
         return (got[116] << 7 | got[117]) * 4, got[118] * 32, got[115]
 
     bend_on = "--bend-sweep" in sys.argv
+    ccs = cc_sweep_arg(sys.argv)                      # (cc, lo, hi, step_s) or None
+    ccs_at = [0.0, None]                              # the last CC sweep message: when, the value
 
     def bend(v14):
         out.send(mido.Message("pitchwheel", pitch=int(v14) - 8192))
 
     def wait(sec):
-        """sleep sec; with --bend-sweep, a pitch bend every 5 ms meanwhile (a 1 s triangle over the whole range)"""
-        if not bend_on:
+        """sleep sec; with --bend-sweep, a pitch bend every 5 ms meanwhile (a 1 s triangle over the whole range);
+        with --cc-sweep, its CC every STEP_MS (the same triangle, LO .. HI)"""
+        if not bend_on and not ccs:
             time.sleep(sec)
             return
         t_end = time.monotonic() + sec
@@ -351,7 +376,15 @@ def run_cpu(argv):  # noqa: C901
             if now >= t_end:
                 break
             ph = (now % 1.0) * 2                          # 0..2: up, then down
-            bend(round((ph if ph < 1 else 2 - ph) * 16383))
+            tri = ph if ph < 1 else 2 - ph
+            if bend_on:
+                bend(round(tri * 16383))
+            if ccs and now - ccs_at[0] >= ccs[3]:
+                v = round(ccs[1] + tri * (ccs[2] - ccs[1]))
+                if v != ccs_at[1]:
+                    cc(ccs[0], v)
+                    ccs_at[1] = v
+                ccs_at[0] = now
             time.sleep(min(0.005, max(0.0, t_end - now)))
 
     def play(notes, vel, hold, pedal=False, bypass=False, release=True):
@@ -520,7 +553,8 @@ def run_cpu(argv):  # noqa: C901
         return dict(rows=[], worst=None, keyadc=keyadc_check(mido, out, inp, kmode), code=0)
     N = str(nv)
     print(f"{nv} voices (--voices {nv}): bass {bass8}, chord {chord8}" +
-          (", a pitch bend sweep every 5 ms (--bend-sweep)" if bend_on else ""))
+          (", a pitch bend sweep every 5 ms (--bend-sweep)" if bend_on else "") +
+          (f", CC {ccs[0]} swept {ccs[1]}..{ccs[2]} every {round(ccs[3] * 1000)} ms (--cc-sweep)" if ccs else ""))
     if vibes:
         edge = dict(TONE=127, BARK=127, BELL=127, HAMMER=127)
         if not worst_only:
