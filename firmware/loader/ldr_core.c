@@ -35,6 +35,10 @@
 #define LDR_APP_HI 0x9D000u
 #define LDR_REC_LO 0x9D000u
 #define LDR_REC_HI 0xC0000u
+#define LDR_REC2_LO FL_STAGE_LO                 /* Frodhes 0.9.6 stages in the free range 0xEF000..0xF3FFF (hal/fm1_flash_map.h,
+                                                 * between USRFLASH and USR): its record there too. 0x9D000..: the
+                                                 * stock's own record, an install from stock */
+#define LDR_REC2_HI FL_STAGE_HI
 _Static_assert(LDR_APP_HI <= LDR_REC_LO && LDR_REC_HI <= 0xC0000u && LDR_APP_LO >= 0x4000u,
                "SMK loader windows must stay below BTIF / USRTRIM and above the head");
 #else
@@ -99,17 +103,24 @@ static int ldr_chip_key(uint32_t *key)
 #define LDR_EFLASH (-14)                        /* another flash chip: nothing written, the records dropped */
 
 /* the update records (RAM, and flash: a 4K boundary - 256) go: the SPL boots the app */
-static void ldr_records_drop(void)
+static void ldr_records_drop_in(uint32_t lo, uint32_t hi)
 {
     uint32_t s;
-    ldr_record_clear();
-    for (s = LDR_REC_HI; s > LDR_REC_LO; s -= 0x1000u) {
+    for (s = hi; s > lo; s -= 0x1000u) {
         uint8_t r[80];
         if (ldr_fread(s - 0x100u, r, 80))
             break;
         if (ota_rd16(r + 6) == 0x5441u && ota_rd16(r) && ota_rd16(r) == ota_crc16(r + 2, 78, 0))
             ldr_erase(s - 0x1000u);
     }
+}
+static void ldr_records_drop(void)
+{
+    ldr_record_clear();
+    ldr_records_drop_in(LDR_REC_LO, LDR_REC_HI);
+#ifdef LDR_REC2_LO
+    ldr_records_drop_in(LDR_REC2_LO, LDR_REC2_HI);
+#endif
 }
 
 static int ldr_pass(void)

@@ -12,6 +12,7 @@
  * prints per block: "block live_modes instructions", then "max N" */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "rhodes.c"
 
 #if defined RH_COST_OLD || defined RH_COST_RC

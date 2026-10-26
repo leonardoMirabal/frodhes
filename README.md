@@ -159,7 +159,9 @@ EXT-TRS (`--selftest`, `--dry-run` without the FM-1); `tools/hil_cpu.py` measure
 audio interrupt's worst block and the USB audio's health (`--usb 44100|48000` holds a DAW-like stream open) and
 `tools/cpu_budget.py` predicts it on the computer from the FM-1's measured costs. `tools/manual_shots.py` renders the manual's screenshots and sets each picture link's `?v=` to the file's hash
 (`tools/doc_links.py --fix` after editing a picture by hand; a test fails if a screenshot or a link is stale). `web/build.sh` builds the browser
-emulator (Emscripten; `web/web_hal.c` stands in for the hardware) into `web/dist/`.
+emulator (Emscripten; `web/web_hal.c` stands in for the hardware) into `web/dist/`; the page shows the version it was
+built with (`web/build.sh --release X.Y.Z`, else `dev`). CI builds it and runs its selftest (Chromium and WebKit) on
+every pull request.
 
 Releases are one command: `tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device [--device-done FILE]] [--full] [--no-emulator] [--yes]`
 picks the next version from the latest tag, checks the tree (on `main`, clean, not behind `origin/main`, the notes
@@ -171,16 +173,20 @@ Rhodes, VIBES and MARIMBA (and the MARIMBA sample-back), only when an engine or 
 (`--device-done FILE` records FM-1 runs already made on the same build, checked by its sha256), checks the docs' links (no version in them: they link `releases/latest`), assembles the fragments into
 `docs/releases/vX.Y.Z.md` and commits it with the fragments removed, asks before publishing, then pushes `main`,
 waits for CI to pass on that commit, tags, waits for the release workflow and checks that the published `.fwsc` is
-byte for byte the one tested (as `frodhes-X.Y.Z.fwsc` and as the stable `frodhes.fwsc`), publishes the emulator and checks the live files. It stops at the first failure and
+byte for byte the one tested (as `frodhes-X.Y.Z.fwsc` and as the stable `frodhes.fwsc`), and checks the live emulator.
+The release workflow publishes the emulator itself: it builds it from the tag and runs its selftest before anything
+is published, creates the release as a draft, deploys the emulator to the `gh-pages` branch, waits until GitHub Pages
+serves it, and only then publishes the release, so both appear at the same moment. It stops at the first failure and
 ends with a table of every step (done, skipped and why, failed); `--dry-run` runs the local checks only, shows the
 assembled notes and stops before anything is pushed; `--verify-only [X.Y.Z]` re-checks a published release (step 9
 alone, read-only).
 
 Frodhes is built on Dinghy 0.4 and changes its platform files in a few small places: the flash allow-list is
 Frodhes' own, tighter than Dinghy's (`APP_FL_RANGE` in `frodhes_store.h` replaces `store.h`'s blobs and slots: only the
-update staging, the settings' two sectors (A 0xFC000, B 0xFD000: `set_store.c`, a save writes the one the load would
-not pick) and the presets' and the pattern's four sectors at 0x97000..0x9AFFF can be erased;
-on the SMK-37 0x9E000..0xA1FFF and the store's owner tag, with `store.h`'s `NBLOB` / `NSLOT` set by the app to 4 / 0),
+update staging and the store: the record (the settings and the user presets) in two sectors, A 0xFC000 and B
+0xFD000 (`set_store.c`, a save writes the one the load would not pick), and the pattern at 0xFE000, in no region of the
+stock firmware's table; on the SMK-37 0xEB000..0xF3FFF, the record, the pattern and the staging; 0.9.5's places are
+read once, by the migration, and never written; `store.h`'s `NBLOB` / `NSLOT` set by the app to 0 / 0),
 `store.h` finds `fm1_flash_map.h` by a relative path (the host builds have no `-Ifirmware/hal`), the app may drive the
 codec to full scale (`APP_OUT_SHIFT`), send the USB audio before the MASTER knob (`usb_pre_master`), the MASTER knob
 reading is smoothed, the TRS MIDI input can be switched off (`uart_midi_on` in `midi_uart.c`, the MIDI page's TRS IN),
@@ -189,7 +195,8 @@ the MIDI clock and transport packets carry their arrival time (16 bits of `fm1_m
 it builds for the browser (`DINGHY_WEB`), a host-mode fix in `gfx.c`, `FONT_S` in `gen/felucca_font.h` stores only
 the glyphs the firmware draws (`tools/gen_font.py`; the others point at `?`, which `gfx.c` draws for them), and the audio
 interrupt times itself whole and reads the USB ring's low point (`isr_stats` in `platform.c`, for the CC 116 query),
-the audio interrupt's tail is one pass per 32 frames (MASTER, the clip, the USB tap, the codec's shift) and skips the
+the audio interrupt's tail is one pass per 32 frames (MASTER, the clip, the USB tap, the codec's shift; a new MASTER
+ramps over the block, `master_ramp`) and skips the
 clear before `app_audio` (`APP_OUT_WRITTEN`: Frodhes writes every sample), a developer build times the timer tick too (`APP_DEFS=-DFM1_PROF_TICK`: `tick_prof` in `platform.c`, the
 `tools/hil_cpu.py --tick` items; the normal build is unchanged),
 the panel scan has two hooks for key velocity (`FM1_INPUT_ADC_TAKE` / `FM1_INPUT_ADC_START` in `hal/fm1_input.h`),

@@ -1,0 +1,47 @@
+# OCT- and OCT+ together: OCTAVE 0 (0.9.6, issue #15). One press each way still steps; the second button pressed
+# while the first is held resets, in either order; letting go steps nothing. (FM-1 ids: OCT- 0, OCT+ 1; the SMK build
+# maps them to its own OCT buttons.)
+100 expect state oct 0
+200 btn 1
+300 expect state oct 1
+400 btn 1
+500 expect state oct 2
+600 btn 0
+700 expect state oct 1
+800 btn 1
+900 expect state oct 2
+# hold OCT+, press OCT-: 0 (OCT+ stepped once on its own press: 2 is the top, no step)
+1000 press 1
+1100 expect state oct 2
+1200 press 0
+1300 expect state oct 0
+1400 release 0
+1500 release 1
+1600 expect state oct 0
+# the other order: down twice, hold OCT-, press OCT+
+1700 btn 0
+1800 btn 0
+1900 expect state oct -2
+2000 press 0
+2100 expect state oct -2
+2200 press 1
+2300 expect state oct 0
+2400 release 1
+2500 release 0
+2600 expect state oct 0
+# from 1: hold OCT- (steps to 0), press OCT+ (0, not 1); released in the other order
+2700 btn 1
+2800 expect state oct 1
+2900 press 0
+3000 expect state oct 0
+3100 press 1
+3200 expect state oct 0
+3300 release 0
+3400 release 1
+3500 expect state oct 0
+# and steps again after
+3600 btn 1
+3700 expect state oct 1
+3800 btn 0
+3900 expect state oct 0
+4000 end

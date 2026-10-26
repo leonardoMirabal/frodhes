@@ -5,13 +5,21 @@ name: release
 # frodhes-smk37-mke-experimental.fwsc (./build.sh --board smk37 [--model elite|mke]; identity SMK-37 Pro_470,
 # SMK-37 Elite_470, MKE-P37_470, as tools/build.py sets them). The notes are docs/releases/<tag>.md (tools/release.py
 # assembles them).
+# The emulator (web/) goes live at the same moment as the release: the job web builds it from the tag
+# (web/build.sh --release X.Y.Z: the page shows that version) and runs its selftest (Chromium + WebKit) before
+# anything is published, and a failure stops the release; the job release then creates the release as a draft,
+# deploys the tested web/dist to the gh-pages branch (tools/deploy_pages.sh: "Emulator X.Y.Z", the branch's other files
+# kept), waits until Pages has built that commit and serves every file byte for byte (tools/pages_wait.sh), and only
+# then publishes the release and marks it latest. Every step is safe to rerun. Only a v* tag deploys: a merge to main
+# never touches gh-pages (ci.yml builds and tests the emulator, nothing more).
 # Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
 on:
   push:
     tags: ['v*']
 permissions:
-  contents: write
+  contents: write                    # the release, and the push to gh-pages
   actions: read                      # ci-gate reads the ci runs
+  pages: write                       # tools/pages_wait.sh reads the Pages builds (and asks for one if none started)
 jobs:
   # ci.yml already runs every host test (host + generators-macos) on each push to main. If ci passed on exactly this
   # commit (waiting up to 40 min if it is still running), or on a commit with the identical git tree (the PR's head,
@@ -50,15 +58,41 @@ jobs:
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest pytest-xdist==3.8.0
       - name: host tests (fallback only, when ci did not pass on this commit)
         run: make test && make host && make pytest PY=python3
+  web:                               # the emulator from the tag, built and selftested before anything is published
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .local/emsdk
+          key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}
+      - name: Emscripten (the version pinned in tools/get_emsdk.sh)
+        run: sh tools/get_emsdk.sh .local/emsdk
+      - name: build the emulator
+        run: sh web/build.sh --release "${GITHUB_REF_NAME#v}"
+      - name: Playwright (Chromium + WebKit)
+        run: |
+          pip install playwright==1.64.0
+          python3 -m playwright install --with-deps chromium webkit
+      - name: selftest
+        run: python3 tools/release.py --web-selftest web/dist "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+          if-no-files-found: error
   release:
-    needs: [ci-gate, generators-macos, host]
-    # runs when ci passed on this commit (the fallback jobs skipped) or when both fallback jobs passed. x86_64: the
-    # JieLi toolchain (tools/get_toolchain.sh) runs on nothing else
+    needs: [ci-gate, generators-macos, host, web]
+    # runs when ci passed on this commit (the fallback jobs skipped) or when both fallback jobs passed, and the
+    # emulator built and passed its selftest. x86_64: the JieLi toolchain (tools/get_toolchain.sh) runs on nothing else
     if: >-
-      !cancelled() && needs.ci-gate.result == 'success' &&
+      !cancelled() && needs.ci-gate.result == 'success' && needs.web.result == 'success' &&
       (needs.ci-gate.outputs.passed == 'true' ||
        (needs.generators-macos.result == 'success' && needs.host.result == 'success'))
     runs-on: ubuntu-latest
+    concurrency:
+      group: gh-pages-deploy
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1
@@ -82,7 +116,7 @@ jobs:
             "build/frodhes-$V-smk37-mke.fwsc"
           sha256sum "build/frodhes-$V.fwsc" "build/frodhes-$V-smk37.fwsc" "build/frodhes-$V-smk37-elite.fwsc" \
             "build/frodhes-$V-smk37-mke.fwsc"
-      - name: publish
+      - name: draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -97,8 +131,39 @@ jobs:
           cp "build/frodhes-$V-smk37.fwsc" build/publish/frodhes-smk37-experimental.fwsc
           cp "build/frodhes-$V-smk37-elite.fwsc" build/publish/frodhes-smk37-elite-experimental.fwsc
           cp "build/frodhes-$V-smk37-mke.fwsc" build/publish/frodhes-smk37-mke-experimental.fwsc
-          gh release create "$GITHUB_REF_NAME" "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc \
+          set -- "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc \
             build/publish/frodhes-smk37-experimental.fwsc build/publish/frodhes-smk37-elite-experimental.fwsc \
             build/publish/frodhes-smk37-mke-experimental.fwsc \
-            "LICENSES/Apache-2.0.txt#Apache-2.0.txt (the licence of the 3 JieLi SDK files in each .fwsc)" \
-            --title "Frodhes $V" --notes-file "$NOTES" --latest
+            "LICENSES/Apache-2.0.txt#Apache-2.0.txt (the licence of the 3 JieLi SDK files in each .fwsc)"
+          # a draft: nobody sees it until the emulator of this tag is live ("publish the release" below)
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            # a rerun: the release exists already (a draft left by a failed run, or published): its assets replaced
+            gh release upload "$GITHUB_REF_NAME" "$@" --clobber
+            gh release edit "$GITHUB_REF_NAME" --title "Frodhes $V" --notes-file "$NOTES"
+          else
+            gh release create "$GITHUB_REF_NAME" "$@" --title "Frodhes $V" --notes-file "$NOTES" --draft
+          fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web/dist
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: build/pages
+      - name: deploy the emulator
+        run: |
+          git -C build/pages config user.name "github-actions[bot]"
+          git -C build/pages config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          sh tools/deploy_pages.sh web/dist build/pages "${GITHUB_REF_NAME#v}"
+      - name: wait for Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          OWNER=$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          sh tools/pages_wait.sh "$(git -C build/pages rev-parse HEAD)" web/dist \
+            "https://$OWNER.github.io/${GITHUB_REPOSITORY#*/}/"
+      - name: publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest

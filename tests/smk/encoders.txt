@@ -9,9 +9,11 @@
 200 expect state card3 1.8
 300 turn 4 10
 400 expect state p.1 10
-# K1: MASTER's, not the UI's: its detents stay for platform.c (the host has no MASTER reader: they wait there)
+# K1: MASTER's, not the UI's: its detents go to MASTER (smk_input.h: 24 a detent, from 724; the host reads them as
+# platform_poll does)
 500 turn 0 4
-600 expect state mastq 4
+600 expect state mastq 0
+600 expect state master 820
 600 expect state page PERFORM
 600 expect state p.1 10
 600 expect state p.19 23

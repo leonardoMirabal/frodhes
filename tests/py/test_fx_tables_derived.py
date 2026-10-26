@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The tables the firmware derives instead of storing (0.9.5, the flash): KN_P64I(v) and KN_P32(v) (fx_tables.h
-macros, mirrors of KN_P64 and rhodes_tables.h DECAY_K) give the numbers the stored tables had; the compressor's
+macros, mirrors of KN_P64 and rhodes_tables.h DECAY_K; KN_P64(v) and FX_EXP2F(i), 0.9.6) give the numbers the stored tables had; the compressor's
 narrowed FX_CMP_ATK / FX_CMP_REL hold the same values as before."""
 import math
 import os
@@ -17,14 +17,26 @@ def tab(name, f):
 
 
 def test_kn_mirrors():
-    p64, dk = tab("KN_P64", "fx_tables.h"), tab("DECAY_K", "rhodes_tables.h")
+    e2, dk = tab("FX_EXP2F_O", "fx_tables.h"), tab("DECAY_K", "rhodes_tables.h")
+    h = open(os.path.join(ROOT, "firmware", "gen", "fx_tables.h")).read()
+    m = re.search(r"#define KN_P64_RB\(v\) \(\(\(uint32_t\)\(v\) < 32u \? 0x([0-9A-F]{8})u >> \(uint32_t\)\(v\) : "
+                  r"0x([0-9A-F]{8})u >> \(\(uint32_t\)\(v\) - 32u\)\) & 1u\)", h)
+    assert m, "KN_P64_RB"
+    rb = int(m.group(2), 16) << 32 | int(m.group(1), 16)
+    p64 = [((65536 + e2[v << 2]) >> 1) + (rb >> v & 1) if v < 64 else 65536 + e2[(v - 64) << 2]
+           for v in range(128)]                                                  # KN_P64(v) (0.9.6: from FX_EXP2F)
+    assert p64 == [int(round(65536 * 2 ** ((v - 64) / 64))) for v in range(128)]
+    assert [65536 + x for x in e2] == [int(round(65536 * 2 ** (i / 256))) for i in range(256)]   # FX_EXP2F(i)
     for v in range(128):
         p64i = p64[128 - v] if v else 131072
         p32 = dk[128 - v] if v else 16384
         assert p64i == int(round(65536 / 2 ** ((v - 64) / 64))), v
         assert p32 == int(round(65536 * 2 ** ((v - 64) / 32))), v
     h = open(os.path.join(ROOT, "firmware", "gen", "fx_tables.h")).read()
-    assert "#define KN_P64I(v) ((v) ? KN_P64[128u - (uint32_t)(v)] : 131072u)" in h
+    assert ("#define KN_P64(v) ((uint32_t)(v) >= 64u ? FX_EXP2F(((uint32_t)(v) - 64u) << 2) : "
+            "(FX_EXP2F((uint32_t)(v) << 2) >> 1) + KN_P64_RB(v))") in h
+    assert "#define FX_EXP2F(i) ((uint32_t)FX_EXP2F_O[i] + 65536u)" in h
+    assert "#define KN_P64I(v) ((v) ? KN_P64(128u - (uint32_t)(v)) : 131072u)" in h
     assert "#define KN_P32(v) ((v) ? DECAY_K[128u - (uint32_t)(v)] : 16384u)" in h
 
 

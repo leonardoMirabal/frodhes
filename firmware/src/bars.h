@@ -149,7 +149,7 @@ static uint32_t fx_cost_us(void);                   /* fx.c: the effects that ru
 
 /* the engine's functions (bars.c, compiled after every other file so the Rhodes and the effects keep their code
  * layout and their inlining: the FM-1 runs code from flash through a cache) */
-static void bar_strike(uint32_t note, uint32_t vel);
+static int bar_strike(uint32_t note, uint32_t vel);
 static void bar_note_off(uint32_t note);
 static void bar_pedal(uint32_t cc);
 static void bar_all_off(void);

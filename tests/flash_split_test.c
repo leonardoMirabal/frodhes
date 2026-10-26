@@ -139,19 +139,19 @@ int main(void)
         /* a blocking save (a preset, the pattern) while an erase is suspended: that one finishes first */
         fresh(0x856014u, 1, 20000u, 1500u, 400u);
         memset(m_mem + SETTINGS_AT, 0x5A, 4096u);
-        memset(m_mem + PR_BANK_A, 0x5A, 4096u);
+        memset(m_mem + SQ_A, 0x5A, 4096u);
         rc = fl_op_start(SETTINGS_AT, 0, 0);
         check("async: the erase suspended after its first slice", rc == 1 && M.suspended);
-        rc = fl_erase4k(PR_BANK_A, &took);
+        rc = fl_erase4k(SQ_A, &took);
         check("a blocking erase meanwhile: both erased, no violation", rc == 0 && !fl_aop.busy && erased(SETTINGS_AT) &&
-              erased(PR_BANK_A) && M.bad == 0);
+              erased(SQ_A) && M.bad == 0);
         /* an async erase that fails (a part that never finishes: -4 at the blocking end) is finished by another's
          * start: its result is kept for its owner's next poll, once (it does not look done) */
         fresh(0x856014u, 1, 2000000u, 1500u, 400u);
         memset(m_mem + SETTINGS_AT, 0x5A, 4096u);
         rc = fl_op_start(SETTINGS_AT, 0, 0);
         {
-            int rp = fl_op_start(PR_BANK_A, rec, 16u), r1, r2;   /* (finishes the erase first) */
+            int rp = fl_op_start(SQ_A, rec, 16u), r1, r2;   /* (finishes the erase first) */
             while (rp == 1) rp = fl_op_poll();
             r1 = fl_op_poll(); r2 = fl_op_poll();
             check("a failed async erase finished by another's start: its error for the owner, once",

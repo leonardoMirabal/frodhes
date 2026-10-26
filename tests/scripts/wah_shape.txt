@@ -1,0 +1,15 @@
+# BUGHUNT #15 (0.9.6): SHAPE does nothing on WAH, so its card (TREM/WAH K4) shows "-" there; it keeps its value for
+# TREM and PAN (ui.c slot_text).
+100 btn 5
+200 expect state page TREM/WAH
+250 turn 2 1
+300 turn 2 1
+350 turn 2 1
+400 expect state card0 WAH
+400 expect state card3 -
+500 turn 5 10
+600 expect state card3 -
+700 turn 2 -1
+800 expect state card0 TREM
+800 expect state card3 0.8
+900 end

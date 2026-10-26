@@ -91,7 +91,7 @@ class Run:
         self.midi_out = [(int(t), int(s, 16), int(a), int(b))
                          for t, s, a, b in re.findall(r"^\s*(\d+) ms  MIDI out ([0-9A-F]+) (\d+) (\d+)$", out, re.M)]
         self.saves = [int(t) for t in re.findall(r"^\s*(\d+) ms  settings saved", out, re.M)]
-        self.bank_saves = [int(t) for t in re.findall(r"^\s*(\d+) ms  preset bank . erased", out, re.M)]
+        self.bank_saves = [int(t) for t in re.findall(r"^\s*(\d+) ms  preset bank saved", out, re.M)]
         self.seq_saves = [int(t) for t in re.findall(r"^\s*(\d+) ms  pattern . erased", out, re.M)]
         m = re.search(r"cpu-proxy max (\d+) us", out)
         self.cpu_proxy = int(m.group(1)) if m else None

@@ -36,16 +36,41 @@ two reads and check that the calibration record (`trimdat`) is in them. Do this 
 python3 tools/fm1_install.py frodhes-smk37-experimental.fwsc
 ```
 
-The installer knows the SMK-37's names. On the first start Frodhes clears the stock firmware's settings area once (it
-belongs to the stock firmware or to another port) and writes its own owner tag; the calibration, Bluetooth pairing and
-the stock resources are left alone.
+The installer knows the SMK-37's names. From 0.9.6 Frodhes keeps its settings, user presets and pattern, and stages
+its updates, only in 0xEB000-0xF3FFF: flash that no region of the stock firmware's own table uses (between its user
+data, 0xC2000-0xEAFFF, and its resources at 0xF4000). It writes nothing of the stock firmware's settings area
+(0x9D000-0xBFFFF), nor the calibration, the Bluetooth pairing or the stock resources.
+
+## What 0.9.5 overwrote
+
+0.9.5 kept its data inside the stock firmware's settings area (its VM, 0x9D000-0xBFFFF): on the first start it erased
+0x9D000 (the settings) and 0xAF000 (its owner tag), then wrote its presets and pattern at 0x9E000-0xA1FFF and staged
+updates at 0xBB000-0xBFFFF. The stock settings that were in those sectors are gone. 0.9.6 reads 0.9.5's data from
+there once (only when 0.9.5's owner tag is at 0xAF000), copies it to its own place, and never writes that area again.
+If you go back to 0.9.5 later, whatever it saves there (its setup, a preset, the pattern) comes over again at the next
+update to 0.9.6.
+
+If you made the flash backup above before installing 0.9.5, you can put the stock settings back: write your backup's
+0x9D000-0xBFFFF over the unit's (with the kit's jl-uboot-tool, as for the backup). Only that
+range: never write the calibration from a backup of another unit. Without a backup, the stock settings that 0.9.5
+overwrote cannot be put back (how the stock firmware then starts up is not known to us); the calibration was never
+touched.
 
 ## The way back to stock
 
 Install your model's stock update package again with the stock updater (or from the
 [Firmware Hub](https://thefirmwarehub.com/smk37/)). Frodhes does not touch the areas the stock firmware needs, so it
-comes back with its calibration. If the keyboard does not start, the backup above and the kit's recovery steps are the
-way back.
+comes back with its calibration (and, after 0.9.5, see above). If the keyboard does not start, the backup above and
+the kit's recovery steps are the way back.
+
+**MKE-P37:** its stock firmware's settings area starts one sector lower, at 0x9C000. Every Frodhes install (0.9.5
+and 0.9.6) writes the whole program area up to 0x9CFFF, so on an MKE-P37 it erases that first sector of the stock
+settings. Back up first; the backup's 0x9C000-0x9CFFF puts it back.
+
+**Not tested on an SMK-37:** from 0.9.6 an update stages in 0xEF000-0xF3FFF instead of 0xBB000-0xBFFFF. The normal
+install hands the chip's boot code the staging place in RAM. Where it looks for that record after a power cut during
+an install is not known for the SMK-37. If the power goes during an install and the keyboard does not start, the
+kit's recovery steps (the mask-ROM bootloader) are the way back.
 
 ## The controls
 
@@ -61,11 +86,11 @@ The FM-1's 14 buttons are on the SMK buttons that mean the same; the ones with a
 | GLOBE | GLO | TEMPO -> SETUP -> MIDI -> DISPLAY |
 | BT | SAVE | save mode |
 
-FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1. The screen's hints use the SMK's names.
+FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1 (hold one OCT button and press the other: octave 0). The screen's hints use the SMK's names.
 
 | Control | Does |
 | --- | --- |
-| K1 | MASTER volume |
+| K1 | MASTER volume; it is kept across power cycles (in the settings, saved 2 s after the last turn, in silence) |
 | K2 / K3 / K4 | SELECT (pages), ALGORITHM (TYPE), PRESETS |
 | K5..K8 | the four cards of the page (the FM-1's K1..K4) |
 | < > | the previous / next page |
@@ -74,8 +99,8 @@ FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1. The screen's hints u
 | 37 keys | C3..C6 at OCTAVE 0 (the middle 27 are the FM-1's F3..G5), each at its own velocity |
 | faders, bank A | the instrument's first VOICE page (Rhodes: TONE BARK BELL HAMMER; VIBES / MARIMBA: STRIKE MALLET TUBE WEIGHT) |
 | faders, bank B | the four PERFORM knobs (set them on ASSIGN) |
-| pitch wheel | pitch bend, +-2 semitones (the Rhodes, as MIDI pitch bend) |
-| mod wheel | TREM/WAH depth (VIBES: the motor's depth), switching it on |
+| pitch wheel | pitch bend, +-2 semitones (the Rhodes types, as MIDI pitch bend; VIBES and MARIMBA ignore it) |
+| mod wheel | more TREM/WAH depth on top of DEPTH, full at the top (VIBES: the motor's); switches it on if off, off again at rest |
 | pedal jack | sustain pedal, either polarity (plug it in before switching on) |
 
 **Faders: soft takeover.** A fader takes over only once it reaches the value its card has (after a bank change, a
@@ -94,7 +119,7 @@ keys: KEY VEL (FRODHES page) is the velocity of a medium press, a light touch pl
 | 8 | next preset | 11 | FILTER on / off |
 | | | 12 | TREM/WAH on / off (VIBES: the motor) |
 | | | 13 / 14 / 15 | PHASER / CHORUS / DELAY on / off |
-| | | 16 | SUSTAIN: held, or a tap latches (as REC) |
+| | | 16 | SUSTAIN: held, or a tap latches; one latch with REC (a tap on either lets go, a hold on either releases it) |
 
 Pad colours: dark orange off, light blue on, brighter while notes sound. DISPLAY BRIGHTNESS dims the pads and the
 button LEDs too.

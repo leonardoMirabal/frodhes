@@ -309,9 +309,11 @@ static uint32_t bar_level_sum(const bar_voice_t *v)
     return sum;
 }
 
-static void bar_strike(uint32_t note, uint32_t vel)
+static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already waits for a note; try next block */
 {
     uint32_t i, pick = BAR_NV, best = 0xFFFFFFFFu;
+    for (i = 0; i < BAR_NV && bv[i].pend; i++) ;
+    if (i == BAR_NV) return 0;                      /* (more than BAR_NV steals in one block: BUGHUNT #21) */
     for (i = 0; i < BAR_NV; i++)                    /* the same note still ringing: strike it again, superposed */
         if (bv[i].alive && !bv[i].pend && bv[i].note == note && bv[i].fade == 32768) {
             bar_voice_t *v = &bv[i];
@@ -325,10 +327,10 @@ static void bar_strike(uint32_t note, uint32_t vel)
             bar_set_damper(v, 0);
             bar_load_pulse(v, vel);
             bar_nz_e += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * vel) >> 22);
-            return;
+            return 1;
         }
     for (i = 0; i < BAR_NV; i++)
-        if (!bv[i].alive) { bar_init(&bv[i], note, vel); return; }
+        if (!bv[i].alive) { bar_init(&bv[i], note, vel); return 1; }
     for (i = 0; i < BAR_NV; i++) {                  /* steal: the quietest released voice, else the oldest */
         uint32_t sum, score;
         if (bv[i].pend) continue;
@@ -336,9 +338,9 @@ static void bar_strike(uint32_t note, uint32_t vel)
         score = bv[i].held ? 0x80000000u + (bv[i].age & 0x7FFFFFFFu) : (sum > 0x7FFFFFFFu ? 0x7FFFFFFFu : sum);
         if (score < best) { best = score; pick = i; }
     }
-    if (pick == BAR_NV) pick = 0;
     bv[pick].pend = 1; bv[pick].pend_note = (uint8_t)note; bv[pick].pend_vel = (uint8_t)vel;
     if (bv[pick].fade == 32768) bv[pick].fade = 32767;
+    return 1;
 }
 
 /* the damper weight a key-up gives at this pedal weight w: a type with a damper (VIBES) w itself; a type without one
@@ -347,6 +349,12 @@ static int bar_has_damper(void) { return (BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub
 static int32_t bar_mute_w(int32_t w)
 {
     return bar_has_damper() ? w : (int32_t)(((int64_t)w * bar_mute) >> 15);
+}
+static void bar_start_pend(bar_voice_t *v)          /* a stolen voice is gone: start the note waiting for it */
+{
+    uint32_t rel = v->pend;                         /* 1 held, 2 let go, 3 let go by an all-off (bar_all_off) */
+    bar_init(v, v->pend_note, v->pend_vel);
+    if (rel >= 2u) { v->held = 0; bar_set_damper(v, rel == 3u ? 32768 : bar_mute_w(bar_pedal_w)); }
 }
 
 /* the key-up never louder than the note it ends (as rhodes.c RH_THUMP_CAP / RH_FELT_FULL, 2026-10-25): the felt's
@@ -979,15 +987,16 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
     v->struck = 0;
     if (v->fade == 0) {                             /* a steal finished fading: start the waiting note */
         v->alive = 0;
-        if (v->pend) {
-            uint32_t rel = v->pend;                 /* 1 held, 2 let go, 3 let go by an all-off (bar_all_off) */
-            bar_init(v, v->pend_note, v->pend_vel);
-            if (rel >= 2u) { v->held = 0; bar_set_damper(v, rel == 3u ? 32768 : bar_mute_w(bar_pedal_w)); }
-        }
+        if (v->pend) bar_start_pend(v);
         return;
     }
     v->lvl = sum; if (sum > v->lvl0) v->lvl0 = sum;
-    if (!v->ptab && !v->felt_n && sum < v->kill1) { v->alive = 0; return; }   /* under 1 LSB out: the voice ends */
+    if (!v->ptab && !v->felt_n && sum < v->kill1) { /* under 1 LSB out: the voice ends; a stolen one dying in its
+                                                     * fade still starts the note waiting for it (BUGHUNT #21) */
+        v->alive = 0;
+        if (v->pend) bar_start_pend(v);
+        return;
+    }
     if (!v->ptab BAR_SLEEP_ON) {                    /* upper modes: absolute and relative sleep, faded out over the
                                                      * next sub-block (live = 2); they never wake on their own */
         ref = v->m[0].amp + (int32_t)(((int64_t)v->m[1].amp * iabs(v->wt)) >> 28);
@@ -1014,7 +1023,8 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
         if (!v->alive) continue;
         bar_voice_block(v, bar_mono, first);        /* the first voice writes bar_mono, the others add */
         first = 0;
-        if (v->alive && v->life && --v->life == 0) v->alive = 0;
+        if (v->alive && v->life && --v->life == 0 && !v->pend) v->alive = 0;   /* (a stolen voice: its fade ends it,
+                                                     * then starts the waiting note: BUGHUNT #21) */
     }
     if (first) for (i = 0; i < BAR_N; i++) bar_mono[i] = 0;   /* no voice: silence (+ the contact noise's tail) */
     if (bar_nz_e) {                                 /* contact noise: LFSR -> two biquads (Q14, transposed DF2) x the

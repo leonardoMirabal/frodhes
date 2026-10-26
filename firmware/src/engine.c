@@ -148,10 +148,9 @@ static uint32_t eng_shed_count(void) { return rh_shed_count + bar_shed_count; }
 /* ---- ISR */
 static void eng_rh_kill_all(void)               /* the Rhodes stops at once (after the fade block) */
 {
-    uint32_t i, sb;
+    uint32_t i;
     for (i = 0; i < RH_NV; i++) { rv[i].alive = 0; rv[i].pend = 0; }
-    rlc_m1 = rlc_m2 = rlc_o1 = rlc_o2 = rlc_e = 0;
-    for (sb = 0; sb < 2u; sb++) bd_m[sb][0] = bd_m[sb][1] = bd_o[sb][0] = bd_o[sb][1] = bd_e[sb] = 0;
+    memset(rh_st, 0, sizeof rh_st);
     rh_active_bits = rh_held_bits = 0;
 }
 
@@ -185,10 +184,14 @@ static void eng_render(int32_t *mono, uint32_t n)
     if (!eng_swapping)                                              /* events wait while the old engine fades */
         while (eq_r != eq_w) {
             uint32_t e = eq[eq_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu;
+            if (eng_cur == ENG_BARS ? type == EV_NOTE_ON && !bar_strike(note, val) : ev_w - ev_r >= 32u) break;
+                                                                    /* every voice waits for a note (BUGHUNT #21):
+                                                                    * this one next block, in order; the Rhodes'
+                                                                    * ring full (its note-ons can wait the same way) */
             eq_r = eq_r + 1u;
             if (type == EV_PEDAL) eng_pedal_cc = (uint8_t)val;
             if (eng_cur == ENG_RHODES) rh_post(type, note, val);    /* drained by rh_render below, in order */
-            else if (type == EV_NOTE_ON) bar_strike(note, val);
+            else if (type == EV_NOTE_ON) ;                          /* (struck above) */
             else if (type == EV_NOTE_OFF) bar_note_off(note);
             else if (type == EV_PEDAL) bar_pedal(val);
             else if (type == EV_ALL_OFF) bar_all_off();

@@ -18,6 +18,13 @@ def test_self_test_can_fail():
     assert ok, "\n".join(lines)
     assert sum("the take FAIL: ok" in ln for ln in lines) >= 8
     assert any(ln.startswith("self-test: clean render: 0 event(s)") for ln in lines)
+    # BUGHUNT #36: the pattern's prep (its reset's silence) inside the recording reads as a USB zero run; the
+    # recording PREP_SETTLE_S later starts in that silence
+    assert any(ln.startswith("self-test: the recording started at once") and "1 USB zero run" in ln and
+               ln.endswith(": ok") for ln in lines), "\n".join(lines)
+    assert any(ln.startswith("self-test: the recording started PREP_SETTLE_S") and ln.endswith("0 USB zero run(s): ok")
+               for ln in lines), "\n".join(lines)
+    assert G.PREP_SETTLE_S >= 0.1
 
 
 def test_gates():
@@ -99,3 +106,21 @@ def test_jack_line_and_a_wrong_drift_fit():
     j2[a:a + 144] = 0.0
     evs, _ = G.audio_events(u, j2, C.FS_HOST, ev, ccs, fit=False)
     assert any(s == "jack" for s, _, _, _ in evs), evs
+
+
+def test_repeat_and_keep_takes():
+    """BUGHUNT #37's repeat: setup-only takes at 0/30/60 ms, 9 times (27 takes, the rate 1 in 27 needs that many),
+    every take's recording kept (--keep-takes: a FAIL on a counter alone kept no WAV before)"""
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "hil_save_glitch.py"), "--dry-run", "--kinds",
+                        "setup", "--offsets", "0,30,60", "--repeat", "9", "--keep-takes"],
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert "27 takes" in r.stdout and "pattern" not in r.stdout.split("\n")[0]
+    import argparse
+    a = argparse.Namespace(rate="48000", kinds=["setup"], offsets=[0, 30, 60], repeat=9)
+    T = G.take_list(a)
+    assert len(T) == 27 and T[:3] == [(48000, "setup", 0), (48000, "setup", 30), (48000, "setup", 60)] and T[3] == T[0]
+    a.repeat = 1
+    assert len(G.take_list(a)) == 3
+    src = open(os.path.join(ROOT, "tools", "hil_save_glitch.py")).read()
+    assert "if audio or (a.keep_takes and audio is not None)" in src

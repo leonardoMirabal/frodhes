@@ -189,9 +189,17 @@ typedef struct {
     uint8_t dim;                               /* 0.9.4: DISPLAY BRIGHTNESS, steps down from full: 0 (as made) .. 9; the
                                                 * screen and every light. LEDS is in Dinghy's `leds` above (0 in every
                                                 * record so far = ROOTS; 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
-    uint8_t seq_rsv[57];
+    uint8_t old_id[12];                        /* 0.9.6: the ids of 0.9.5's settings, presets, pattern this record
+                                                * has taken in (frodhes.c st_old_scan; 0: none) */
+    uint8_t seq_rsv[45];
     uint8_t flags2;                            /* 0.9.5: 1 = the preset index in the 19-factory layout (U01 = 19) */
+#if BOARD_SMK37
+    uint8_t smk_mst[2];                        /* 0.9.6, SMK-37: K1's MASTER + 1, little endian (0, every record
+                                                * before: smk_input.h's 724; frodhes_smk.h smk_master_stored) */
+    uint8_t reserved[19];
+#else
     uint8_t reserved[21];
+#endif
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 
@@ -262,7 +270,21 @@ static uint32_t set_t_change;
  * again as it is stored (frodhes.c app_main), the record's sound only when that preset is not there any more */
 static uint8_t snd_base[P_SLOTS];
 static uint16_t bpm_hand = 1200;
-static void snd_base_take(void) { uint32_t i; for (i = 0; i < P_SLOTS; i++) snd_base[i] = PV(i); }
+#if BOARD_SMK37
+/* the SMK's mod wheel (frodhes_smk.h smk_wheels; 0.9.6, #29: it wrote DEPTH, so its rest was DEPTH 0 and it lost the
+ * preset's): 0..127 on top of TREM/WAH's DEPTH and the motor's DEPTH, up to 127 at the top; at rest the DEPTH as set.
+ * What it switched on to get there (smk_mw_woke: P_TW_SW or P_MOT_ON, to smk_mw_wv) it switches off at rest; a sound
+ * loaded or saved meanwhile (snd_base_take) keeps its own */
+static int32_t smk_mw, smk_mw_wv;
+static uint32_t smk_mw_woke;
+static uint8_t smk_mw_uoff;                     /* set.mot_user_off before the wheel switched the motor on */
+#define MW_ADD(v) ((v) + (smk_mw * (127 - (v)) + 63) / 127)
+#define MW_FORGET() (smk_mw_woke = 0u)
+#else
+#define MW_ADD(v) (v)
+#define MW_FORGET() ((void)0)
+#endif
+static void snd_base_take(void) { uint32_t i; for (i = 0; i < P_SLOTS; i++) snd_base[i] = PV(i); MW_FORGET(); }
 static void settings_record(settings_t *r)
 {
     uint32_t i;
@@ -299,6 +321,9 @@ static void params_sanitize(void)
         for (i = 0; i < P_SLOTS; i++) p[i] = i < 32u ? set.panel[i] : i < P_COUNT ? PARAMS[i].def : 0;
         for (i = 0; i < 16u; i++) set.panel2[i] = set.undo2[i] = 0;
         for (i = 0; i < sizeof set.reserved; i++) set.reserved[i] = 0;
+#if BOARD_SMK37
+        set.smk_mst[0] = set.smk_mst[1] = 0;
+#endif
         set.flags2 = 0;
         for (i = 0; i < 4u; i++) set.perf[i] = 0;
         params_split_phaser(p, P_SLOTS);
@@ -397,7 +422,7 @@ static void param_apply(uint32_t id)
         break;
     case P_DRIVE: fx_set(FXP_DRIVE, v); break;
     case P_TW_SW: tw_apply(); break;
-    case P_TW_DEPTH: fx_set(FXP_TW_DEPTH, v); break;
+    case P_TW_DEPTH: fx_set(FXP_TW_DEPTH, MW_ADD(v)); break;
     case P_TW_RATE: fx_set(FXP_TW_RATE, v); break;
     case P_TW_MODE: tw_apply(); break;
     case P_TW_SHAPE: fx_set(FXP_TW_SHAPE, v); break;
@@ -412,9 +437,9 @@ static void param_apply(uint32_t id)
     case P_RV_DEPTH: fx_set(FXP_RV_DEPTH, v); break;
     case P_TONE:     /* -0.5 gap .. 0 below the middle; above it RH_TONE_UP per step (params.json "tone": short of the axis) */
         rh_tone_off = v <= 64 ? (v - 64) * (1 << 18) : (v - 64) * RH_TONE_UP; eng_bar_knob(BK_STRIKE, (uint32_t)v); break;
-    case P_BARK: rh_bark_s = (int32_t)KN_P64[v]; rh_bark_g = (int32_t)KN_P64I(v); eng_bar_knob(BK_MALLET, (uint32_t)v); break;
+    case P_BARK: rh_bark_s = (int32_t)KN_P64(v); rh_bark_g = (int32_t)KN_P64I(v); eng_bar_knob(BK_MALLET, (uint32_t)v); break;
     case P_BELL: rh_bell = (int32_t)KN_P32(v); eng_bar_knob(BK_TUBE, (uint32_t)v); break;
-    case P_HAMMER: rh_ham = (int32_t)KN_HAM[v]; eng_bar_knob(BK_WEIGHT, (uint32_t)v); break;
+    case P_HAMMER: rh_ham = (int32_t)KN_HAM(v); eng_bar_knob(BK_WEIGHT, (uint32_t)v); break;
     case P_DECAY: rh_k_decay = (int32_t)DECAY_K[v]; eng_bar_knob(BK_RING, (uint32_t)v); break;   /* k = 1/S, S = 2^((v-64)/32): higher = longer */
     case P_RELEASE: rh_k_rel = (int32_t)DECAY_K[v]; eng_bar_knob(BK_DAMPER, (uint32_t)v); break;
     case P_NOISE: rh_thump = KN_THUMP[v]; rh_felt = KN_FELT[v]; rh_knock = KN_KNOCK[v]; rh_pnz = KN_PEDAL[v]; eng_bar_knob(BK_NOISE, (uint32_t)v); break;
@@ -448,7 +473,7 @@ static void param_apply(uint32_t id)
     case P_RV_MOD: fx_set(FXP_RV_MOD, v); break;
     case P_RV_LOCUT: fx_set(FXP_RV_LOCUT, v); break;
     case P_MOT_ON: eng_bar_knob(BK_MOT_ON, (uint32_t)v); break;        /* the bar engine reads these, the Rhodes not */
-    case P_MOT_DEPTH: eng_bar_knob(BK_MOT_DEPTH, (uint32_t)v); break;
+    case P_MOT_DEPTH: eng_bar_knob(BK_MOT_DEPTH, (uint32_t)MW_ADD(v)); break;
     case P_MOT_RATE: mot_rate_apply(); break;
     case P_MOT_SHAPE: eng_bar_knob(BK_MOT_SHAPE, (uint32_t)v); break;
     default: break;                                                   /* SYNC: tempo.c */
@@ -570,7 +595,7 @@ static void param_text(uint32_t id, char *s)
     case F_DB:                                     /* "+1.5" / "-12" dB: 0.1875 dB a step (FX_LVL) */
         fmt_db10(s, ((v - 64) * 15 + (v >= 64 ? 4 : -4)) / 8, ((v - 64) * 3 + (v >= 64 ? 8 : -8)) / 16);
         break;
-    case F_RSIZE:                                  /* the reverb's SIZE: "AUTO" (from MIX) or 0.1 .. 10.0 */
+    case F_RSIZE:                                  /* the reverb's SIZE: "AUTO" (MIX; INFINITE 64) or 0.1 .. 10.0 */
         if (!v) { s[0] = 'A'; s[1] = 'U'; s[2] = 'T'; s[3] = 'O'; s[4] = 0; } else fmt_r10(s, v);
         break;
     case F_LCUT:                                   /* LOW CUT: "OFF" or "20" .. "800" Hz (rev_types.c rev_locut_a) */

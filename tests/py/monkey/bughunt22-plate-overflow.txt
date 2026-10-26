@@ -1,0 +1,12 @@
+# BUGHUNT #22 (monkey seed 427470704 under the sanitizer, shrunk): rev_plate.c:236 pl_in's bandwidth one-pole,
+# b = u + sh_tz((b - u) * pb, 15), overflows int32 when the plate's input passes ~1.2x full scale (|b - u| > 82595
+# with pb 26000): F14 VIBES ECHO (PLATE), make-up +24 dB (CC 113 127), REVERB 119, HAMMER 127, RV TONE 0, a TYPE
+# turn, one note v114. UBSan: "signed integer overflow: -104040 * 26000"; the FM-1 wraps (the one-pole's state flips)
+5219 midi 0xC0 13 0
+5222 midi 0xB0 113 127
+6602 midi 0xB0 91 119
+6702 midi 0xB0 31 127
+6706 midi 0xB0 93 0
+6709 turn 1 -2
+6781 midi 0x94 79 114
+7000 end

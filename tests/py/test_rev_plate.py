@@ -142,7 +142,7 @@ def test_cost_within_hall():
 
 
 # the loops REV_US_PLATE's table counts: function -> the most instructions each of its inner loops may take
-LOOPS = {"pl_in": [62], "pl_half": [38, 32], "pl_taps": [16], "pl_taps_ms": [34]}
+LOOPS = {"pl_in": [67], "pl_half": [38, 32], "pl_taps": [16], "pl_taps_ms": [34]}
 
 
 def test_loop_counts_as_the_table():

@@ -100,6 +100,7 @@ static const uint16_t *aa_ramp(uint16_t fg, uint16_t bg)
     return v;
 }
 
+#ifdef AA_RAW_FACES                     /* (gen_aa_font.py: only when a face is stored 2 px per byte) */
 static void aa_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d, const uint16_t *rv)
 {
     uint32_t k = 0, gx, gy;
@@ -116,10 +117,12 @@ static void aa_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t
         }
     }
 }
+#endif
 
 /* the same from a glyph's Huffman-coded bit stream (gen_aa_font.py huff_pack); a 256-entry table per font in RAM
- * (one: only L is Huffman-coded; another coded face would share the slot, rebuilt when the face changes) */
-#define AA_HC_FONTS 1
+ * (two: S and the large face, both Huffman-coded since 0.9.6; a third coded face would share the last slot, rebuilt
+ * when the face changes) */
+#define AA_HC_FONTS 2
 static struct { const uint8_t *hc; uint16_t lut[256]; } aa_hc_tab[AA_HC_FONTS] POOL;
 static const uint16_t *aa_hc_lut(const uint8_t *hc)
 {
@@ -275,8 +278,10 @@ static int32_t aa_text(int32_t x, int32_t y, const aafont_t *f, const char *s, u
         err = pos - pen;
         if (g->bw) {
             int32_t gx = x + (pos >> 4) + g->bx, gy = y + g->by;
-            if (f->hc) aa_alpha_hc(gx, gy, g->bw, g->bh, f->data + g->off, f->hc, rv);
-            else aa_alpha(gx, gy, g->bw, g->bh, f->data + g->off, rv);
+#ifdef AA_RAW_FACES
+            if (!f->hc) aa_alpha(gx, gy, g->bw, g->bh, f->data + g->off, rv); else
+#endif
+            aa_alpha_hc(gx, gy, g->bw, g->bh, f->data + g->off, f->hc, rv);
         }
         pen += g->adv;
         prev = c;

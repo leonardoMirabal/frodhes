@@ -184,14 +184,29 @@ def main():
     out.append(arr("FX_WAH_F", "int16_t", wah))
     # knob laws (Q16): 2^((v-64)/64) and its inverse (BARK tip scale and gain compensation), 2^((v-64)/32) (BELL),
     # 2^(-(v-64)/128) (HAMMER: contact-rate multiplier, x2^(-0.5) .. x2^(+0.5))
-    out.append(arr("KN_P64", "uint32_t", [int(round(65536 * 2 ** ((v - 64) / 64))) for v in range(128)], 8))
-    # (0.9.5, the flash: the inverse and BELL's law are not stored: 2^(-(v-64)/64) = KN_P64[128 - v] and 2^((v-64)/32)
+    # (0.9.6, the flash: none of it stored. v >= 64 is FX_EXP2F(4 (v - 64)), v < 64 half of FX_EXP2F(4 v), rounded up
+    # where the mask's bit v says: the same rounded numbers)
+    p64 = [int(round(65536 * 2 ** ((v - 64) / 64))) for v in range(128)]
+    e2 = [int(round(65536 * 2 ** (i / 256))) for i in range(256)]
+    assert all(p64[64 + j] == e2[4 * j] for j in range(64))
+    assert all(p64[j] in (e2[4 * j] >> 1, (e2[4 * j] >> 1) + 1) for j in range(64))
+    rb = sum(1 << j for j in range(64) if p64[j] != e2[4 * j] >> 1)
+    out.append("/* KN_P64(v) = 2^((v-64)/64) in Q16 (v 0..127), from FX_EXP2F (below; macros expand where used) */\n"
+               f"#define KN_P64_RB(v) (((uint32_t)(v) < 32u ? 0x{rb & 0xFFFFFFFF:08X}u >> (uint32_t)(v) : "
+               f"0x{rb >> 32:08X}u >> ((uint32_t)(v) - 32u)) & 1u)\n"
+               "#define KN_P64(v) ((uint32_t)(v) >= 64u ? FX_EXP2F(((uint32_t)(v) - 64u) << 2) : "
+               "(FX_EXP2F((uint32_t)(v) << 2) >> 1) + KN_P64_RB(v))\n")
+    # (0.9.5, the flash: the inverse and BELL's law are not stored: 2^(-(v-64)/64) = KN_P64(128 - v) and 2^((v-64)/32)
     # = rhodes_tables.h DECAY_K[128 - v] for v >= 1, the same rounded numbers; tests/py/test_fx_tables_derived.py)
     out.append("/* KN_P64I(v) = 2^(-(v-64)/64), KN_P32(v) = 2^((v-64)/32) in Q16 (v 0..127): mirrors of KN_P64 and of DECAY_K\n"
                " * (rhodes_tables.h, included first), not stored */\n"
-               "#define KN_P64I(v) ((v) ? KN_P64[128u - (uint32_t)(v)] : 131072u)\n"
+               "#define KN_P64I(v) ((v) ? KN_P64(128u - (uint32_t)(v)) : 131072u)\n"
                "#define KN_P32(v) ((v) ? DECAY_K[128u - (uint32_t)(v)] : 16384u)\n")
-    out.append(arr("KN_HAM", "uint32_t", [int(round(65536 * 2 ** ((v - 64) / 128))) for v in range(128)], 8))
+    # (0.9.6, the flash: stored less 32768 in 16 bits, 46341 .. 92682: the same numbers; KN_HAM(v) adds it back)
+    ham = [int(round(65536 * 2 ** ((v - 64) / 128))) for v in range(128)]
+    assert all(0 <= h - 32768 <= 65535 for h in ham)
+    out.append(arr("KN_HAM_O", "uint16_t", [h - 32768 for h in ham], 8))
+    out.append("#define KN_HAM(v) ((uint32_t)KN_HAM_O[v] + 32768u)\n")
     # NOISE knob: damper-thump force (Q15 re the v = 127 strike) and felt-noise level (Q15 output): -60 + 36 v/127 dB
     out.append(arr("KN_THUMP", "uint16_t", [0] + [int(round(32767 * 10 ** ((-60 + 36 * v / 127 - 6) / 20) * 40)) for v in range(1, 128)], 12))
     out.append(arr("KN_FELT", "uint16_t", [0] + [int(round(32767 * 10 ** ((-60 + 36 * v / 127 - 20) / 20))) for v in range(1, 128)], 12))
@@ -206,7 +221,9 @@ def main():
     out.append(arr("FX_CMP_ATK", "uint16_t", [max(1, int(round(65536 * (1 - math.exp(-1 / (0.0001 * 500 ** (v / 127) * FS)))))) for v in range(128)], 8))
     out.append(arr("FX_CMP_REL", "uint8_t", [max(1, int(round(65536 * (1 - math.exp(-1 / (0.020 * 75 ** (v / 127) * FS)))))) for v in range(128)], 8))
     out.append(arr("FX_LOG2F", "uint16_t", [int(round(4096 * math.log2(1 + i / 256))) for i in range(256)], 16))
-    out.append(arr("FX_EXP2F", "uint32_t", [int(round(65536 * 2 ** (i / 256))) for i in range(256)], 8))
+    # (0.9.6, the flash: stored less 65536 in 16 bits, the same numbers; FX_EXP2F(i) adds it back)
+    out.append(arr("FX_EXP2F_O", "uint16_t", [int(round(65536 * 2 ** (i / 256))) - 65536 for i in range(256)], 8))
+    out.append("#define FX_EXP2F(i) ((uint32_t)FX_EXP2F_O[i] + 65536u)\n")
     # drive make-up trim (Q15): the measured +0.09 dB per DRIVE step taken back, so DRIVE is level-neutral; and (0.9.3,
     # the drive's gain up to ~40x: it did nothing audible, TODO #4) the loudness its saturation adds, measured on the
     # host (A3 v80 / v110, A2, A4, a chord v110 / v70, LUFS, the mean) at these AMOUNT anchors, taken back too

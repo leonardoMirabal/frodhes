@@ -189,6 +189,21 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
     PROF_STAMP(1);
     fx_process(voice_mono, out, n);
     PROF_STAMP(15);
+#if FELUCCA_UAC_TONE == 2
+    {   /* bench (BUGHUNT #24, builds with APP_DEFS=-DFELUCCA_UAC_TONE=2 only): the app's output replaced by triangles of
+         * period 147 frames (300 Hz, L and R in antiphase, -12 dBFS) after the engine and the effects ran (their CPU
+         * load stays), so the platform's tail, the USB tap, the 44.1 -> 48 kHz resampler, the ring and the rate
+         * adjustment carry them as they carry music: 147 frames in are exactly 160 out, so the recording repeats
+         * itself every 160 frames bit for bit (USB VOL fixed: the knob does not scale it); tools/hil_usb_bench.py */
+        static uint32_t tph;
+        uint32_t i;
+        for (i = 0; i < n; i++, tph = tph == 146u ? 0u : tph + 1u) {
+            int32_t v = (int32_t)(tph < 74u ? tph : 147u - tph) * 222 - 8200;
+            out[2u * i] = v;
+            out[2u * i + 1u] = -v;
+        }
+    }
+#endif
     blk_ph[0] = tw_ph; blk_ph[1] = cp_ph; blk_ph[2] = ph_ph; blk_ph[3] = lfo_ph; blk_ph[4] = bar_mot_ph;
     blk_ms = ms0;                                  /* the LFOs at this block's end, for the clock's phase lock (tempo.c) */
     blk_n = blk_n + 1u;
@@ -356,7 +371,8 @@ static void midi_cc(uint32_t cc, uint32_t v)
             else if (PARAMS[id].hi == 2u) x = v < 43u ? 0 : v < 86u ? 1 : 2;
             else if (id == P_TYPE) x = (int32_t)(v >> 5);   /* the Rhodes types, as before; bar types: CC 79 */
             else if (PARAMS[id].hi < 127u) x = (int32_t)(v * (PARAMS[id].hi + 1u) >> 7);
-            param_set(id, x);
+            if (id == P_CMP_SW && x && !PV(P_CMP_SW)) cmp_wake(1);   /* CC 106 on: as the panel (ui.c cmp_wake) */
+            else param_set(id, x);
             if (id == P_DL_SYNC || id == P_TW_SYNC || id == P_CP_SYNC || id == P_PH_SYNC || id == P_MOT_SYNC ||
                 id == P_LFO_SYNC) tempo_sync_publish();   /* (LFO SYNC by CC 77 kept its free rate: the audit) */
             ui_mark_param(id);
@@ -408,10 +424,43 @@ static void settings_poll(void)
     }
 }
 
+/* What of the places before 0.9.6 to take (st_mig). No record yet: all of it (the first boot after 0.9.5). A record:
+ * only what 0.9.5 saved after the record took those places in (back to 0.9.5 and up again, BUGHUNT #40): each is
+ * told by its id, which the record keeps (set.old_id); one that is gone is not newer. 0.9.5 ran last, so what it saved
+ * is the newer (the FM-1: its settings share the record's two sectors, so a copy of the record left from before the
+ * way back would else win, the 0.9.5 setup and pattern never read) */
+static void st_old_scan(void)
+{
+    uint32_t i, was[3];
+    st_mig = 0;
+    if (!st_old_ok) return;
+    st_oid[0] = settings_old_id(); st_oid[1] = pr_old_id(); st_oid[2] = sq_old_id();
+    memcpy(was, set.old_id, sizeof was);
+    for (i = 0; i < 3u; i++)
+        if (!st_new || (st_oid[i] && st_oid[i] != was[i])) st_mig |= (uint8_t)(1u << i);
+}
+
 static void app_main(void)
 {
     uint32_t prev = 0, k;
-    int link = 0, fresh = settings_load(&set, sizeof set) != 0;
+    int link = 0, fresh;
+    st_tail = (uint8_t *)pr_user;                   /* the record: the settings, then the user presets (set_store.c) */
+    st_new = settings_load(&set, sizeof set) == 0;
+#ifdef OLD_OWNER_AT
+    st_old_ok = smk_old_ours();                     /* (SMK: the places before 0.9.6 only if ours, frodhes_store.h) */
+#else
+    st_old_ok = 1;
+#endif
+    st_old_scan();
+    fresh = !st_new && (!st_old_ok || settings_load_old(&set, sizeof set) != 0);
+    if (st_new && (st_mig & 1u)) {                  /* 0.9.5's settings, saved after the record took them in */
+        uint32_t at = set_at, q = set_seq;
+        if (!settings_load_old(&set, sizeof set)) {
+            if (set_at != SETTINGS_AT && set_at != SETTINGS_B) set_at = at;   /* (SMK: the save to the record's older
+                                                     * copy; the FM-1: to the record's, 0.9.5's copy kept till then) */
+            if ((int32_t)(q - set_seq) > 0) set_seq = q;   /* (the save newer than both) */
+        }
+    }
     if (!fresh && set.ver != 1u && set.ver != SET_VER) fresh = 1;   /* a record this firmware cannot read (another
                                                                      * version): as a first boot, so it plays F01 too */
     if (fresh) params_defaults();
@@ -440,14 +489,25 @@ static void app_main(void)
     if (fresh) {                                /* a first boot (or a lost record) plays F01, as the header says */
         preset_load(0);
         set.undo_valid = 0;
-    } else
-        (void)preset_boot();                    /* the preset last loaded or saved, as it is stored (params.c: the
+    } else if (preset_boot()) {                 /* the preset last loaded or saved, as it is stored (params.c: the
                                                  * knobs turned after it are not kept, on purpose) */
+        /* not there: the record's sound runs its synced rates and PLATE AUTO size as a load sets them
+         * (0.9.6, BUGHUNT #32: they waited for the next change) */
+        rev_relatch();
+        tempo_sync_publish();
+    }
     snd_base_take();
     set_dirty = 0;
+    memcpy(set.old_id, st_oid, sizeof st_oid);  /* (the places before 0.9.6 as this record has them now) */
     settings_record(&set_saved);                /* nothing to write at boot (a converted record: at the next change) */
     set_pend = set_saved;
     seq_load();
+    if ((st_old_ok && (st_new ? (st_mig & 1u) != 0u || pr_old : !fresh || pr_old)) || sq_old)   /* the first boot
+                                                     * after 0.9.5 (no record yet, its data there; or newer there):
+                                                     * the migration. The pattern to its place, then the record (the
+                                                     * commit): a cut before it finds no record and migrates again from
+                                                     * the old places, which nothing writes */
+        if (!sq_old || !seq_save_now()) (void)settings_save(&set_saved, sizeof set_saved);
     ui_goto(PG_PERF);
 #if BOARD_SMK37
     smk_init();
@@ -548,6 +608,8 @@ EMSCRIPTEN_KEEPALIVE const char *web_page(void) { return PAGE_TITLE[ui_page]; }
 #endif
 
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+static void host_shed(void) { eng_shed_req = 1; }   /* tests/host.c "T shed": as app_audio asks it on the FM-1 */
+
 /* tests/host.c "expect preset": the panel equals what the preset the header names sets (presets.c preset_load) */
 static int host_preset_check(char *msg, unsigned n)
 {
@@ -717,6 +779,10 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "arp")) snprintf(v, n, "%u", arp_on());
     else if (!strcmp(key, "hold")) snprintf(v, n, "%u", ARP_HOLD);
     else if (!strcmp(key, "arpn")) snprintf(v, n, "%u", arp_n);
+    else if (!strcmp(key, "arpv")) snprintf(v, n, "%u", arp_n ? arp_vel[0] : 0u);   /* the velocity its steps play */
+    else if (!strcmp(key, "arpends")) {                      /* the arpeggiator's oldest and newest note */
+        if (arp_n) snprintf(v, n, "%u-%u", arp_note[0], arp_note[arp_n - 1u]); else snprintf(v, n, "-");
+    }
     else if (!strcmp(key, "chord")) snprintf(v, n, "%u", chord_on());
     else if (!strcmp(key, "play")) snprintf(v, n, "%u", seq_play);
     else if (!strcmp(key, "rec")) snprintf(v, n, "%u", seq_rec);
@@ -730,6 +796,14 @@ static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "bars")) snprintf(v, n, "%d", eng_is_bars());
     else if (!strcmp(key, "voices")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits));
     else if (!strcmp(key, "held")) snprintf(v, n, "%u", host_bits(eng_cur == ENG_BARS ? bar_held_bits : rh_held_bits));
+    else if (key[0] == 'v' && key[1] == 'n' && key[2] >= '0' && key[2] <= '9') {   /* vnN: voices sounding note N
+                                                           * (alive, not fading out for a steal; BUGHUNT #21) */
+        uint32_t nn = (uint32_t)atoi(key + 2) & 127u;
+        for (i = c = 0; i < (eng_cur == ENG_BARS ? BAR_NV : RH_NV); i++)
+            c += eng_cur == ENG_BARS ? bv[i].alive && bv[i].note == nn && bv[i].fade == 32768
+                                     : rv[i].alive && rv[i].note == nn && rv[i].fade == 32768;
+        snprintf(v, n, "%u", c);
+    }
     else if (!strcmp(key, "pitches")) { for (i = c = 0; i < 128u; i++) c += out_ref[i] != 0; snprintf(v, n, "%u", c + (arp_playing < 128u)); }   /* held by a source or the arpeggiator */
     else if (!strcmp(key, "srcs")) { for (i = c = 0; i < SRC_N; i++) c += src_active[i]; snprintf(v, n, "%u", c); }
     else if (!strcmp(key, "refs")) { for (i = c = 0; i < 128u; i++) c += out_ref[i]; snprintf(v, n, "%u", c); }
@@ -748,7 +822,7 @@ static int host_state(const char *key, char *v, unsigned n)
 static void host_dump(void)
 {
     static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
-                                    "arpn", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
+                                    "arpn", "arpv", "arpends", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "fxdrv", "label0", "card0", "label1", "card1", "label2", "card2",
                                     "label3", "card3", "bpm10", "setbpm", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
     char key[24], v[64];

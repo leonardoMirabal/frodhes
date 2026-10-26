@@ -1,0 +1,58 @@
+# SMK-37 build only (make test-smk): GitHub #13, the SUSTAIN pad (hardware pad 15) and REC (button 17) share one
+# latch (frodhes.c sus_latched). A tap on either flips the sustain that sounds; a hold on either is momentary and its
+# release clears the latch; MIDI CC 64 up clears it too. "suslatch": the latch, "smksus": the SMK's sustain (the pad
+# held, the jack, the latch), "sus": the Rhodes' damper hold. (Before: each kept its own latch, ORed: REC could not
+# let go of what the pad latched, nor the pad of REC's.)
+# 1. the pad latches, a REC tap lets go
+100 pad 15 100
+150 pad 15 0
+200 expect state suslatch 1
+200 expect state sus 1
+300 btn 17
+350 expect state suslatch 0
+350 expect state smksus 0
+350 expect state sus 0
+# 2. REC latches, a pad tap lets go
+400 btn 17
+450 expect state suslatch 1
+450 expect state sus 1
+500 pad 15 100
+550 pad 15 0
+600 expect state suslatch 0
+600 expect state sus 0
+# 3. the pad latches, REC held (momentary) then let go: the latch is cleared, the dampers down
+700 pad 15 100
+750 pad 15 0
+800 expect state suslatch 1
+900 press 17
+1300 expect state sus 1
+1400 release 17
+1450 expect state suslatch 0
+1450 expect state sus 0
+# 4. REC latches, the pad held then let go: cleared
+1500 btn 17
+1550 expect state suslatch 1
+1600 pad 15 100
+2000 expect state sus 1
+2100 pad 15 0
+2150 expect state suslatch 0
+2150 expect state smksus 0
+2150 expect state sus 0
+# 5. the pad latches, CC 64 up (a MIDI pedal let up) clears it; CC 64 down leaves it
+2200 pad 15 100
+2250 pad 15 0
+2300 midi 0xB0 64 127
+2350 expect state suslatch 1
+2400 midi 0xB0 64 0
+2450 expect state suslatch 0
+2450 expect state sus 0
+# 6. and it sounds so: a note under the pad's latch rings, a REC tap lets it die
+2500 pad 15 100
+2550 pad 15 0
+2600 keys 0x80
+2800 keys 0
+3300 expect rms > -40
+3400 btn 17
+4000 expect rms < -60
+4000 expect state smksus 0
+4100 end

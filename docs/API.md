@@ -246,8 +246,11 @@ simply finds its own magic missing and starts fresh. To store elsewhere, change 
 calibration, the pairing data, the stock resources and key_mac on its own as well, whatever `FL_RANGE_OK` says.
 
 **Frodhes** keeps a tighter allow-list than Dinghy's (a delta in store.h): `APP_FL_RANGE` in frodhes_store.h replaces
-the blobs and slots, so on the FM-1 only the update staging, the settings sector (0xFC000) and Frodhes' own four
-sectors at 0x97000..0x9AFFF (the user presets A / B, the sequencer pattern A / B) can be erased or written.
+the blobs and slots, and keeps everything in flash that no region of the stock firmware's table covers (0.9.6): on
+the FM-1 only the update staging, the record A / B (0xFC000, 0xFD000: the settings and the user presets, set_store.c)
+and the pattern (0xFE000) can be erased or written; on the SMK-37 only 0xEB000..0xF3FFF (the record, the pattern,
+the staging). The places 0.9.5 used (FM-1 0x97000..0x9AFFF, SMK-37 0x9D000..0xA1FFF) are read once, by the migration
+at the first start, and refused for writing.
 
 ## Build options
 

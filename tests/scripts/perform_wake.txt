@@ -1,0 +1,13 @@
+# PERFORM's DELAY knob (K3) turned up with the delay off switches on the delay TYPE last used (0.9.6, BUGHUNT #8: it
+# was always DIG; the SEL button's own toggle always brought back the last one). F17 TAPE ECHO: SEL to the DELAY page,
+# SEL again (off: TAPE remembered), HOME (PERFORM), K3 one detent up: TAPE again. p.13 = DELAY's TYPE (3 TAPE).
+100 midi 0xC0 32 0
+300 expect state p.13 3
+400 btn 3
+500 btn 3
+600 expect state p.13 0
+700 btn 8
+800 expect state page PERFORM
+900 turn 4 1
+1000 expect state p.13 3
+1100 end

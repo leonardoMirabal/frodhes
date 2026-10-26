@@ -505,3 +505,110 @@ def test_different_tree_waits_for_a_run_on_the_sha(monkeypatch):
 def test_same_tree_needs_everything_green(monkeypatch, runs, views, trees):
     monkeypatch.setattr(rel, "sh", gh_shell(trees, runs, views, []))
     assert rel.same_tree_run("ci.yml", M) is None
+
+
+# ---- step 8: the emulator ----
+
+def test_release_yml_deploys_the_emulator(tmp_path):
+    assert rel.workflow_deploys_pages()                      # this repo's release.yml has the pages deploy
+    (tmp_path / "old.yml").write_text("jobs: {release: {steps: [{run: gh release create}]}}\n")
+    assert not rel.workflow_deploys_pages(str(tmp_path / "old.yml"))
+    assert not rel.workflow_deploys_pages(str(tmp_path / "missing.yml"))
+
+
+def test_emulator_step_picks_verify_or_the_local_fallback(monkeypatch):
+    r = rel.Release(rel.parse_args(["0.9.9"]))
+    monkeypatch.setattr(r, "emulator_verify", lambda: "verified")
+    monkeypatch.setattr(r, "emulator_local", lambda: "local")
+    monkeypatch.setattr(rel, "workflow_deploys_pages", lambda: True)
+    assert r.s_emulator() == "verified"
+    monkeypatch.setattr(rel, "workflow_deploys_pages", lambda: False)
+    assert r.s_emulator() == "local"
+
+
+def g(cwd, *a):
+    import subprocess
+    return subprocess.run(["git", "-C", str(cwd), "-c", "user.name=t", "-c", "user.email=t@t", *a], check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+@pytest.fixture
+def pages_origin(tmp_path, monkeypatch):
+    """ROOT: a clone whose origin has the tag v0.9.9 (web/index.html, web/app.js) and gh-pages (that emulator)"""
+    import subprocess
+    src = tmp_path / "src"
+    (src / "web").mkdir(parents=True)
+    g(src, "init", "-q", "-b", "main")
+    for f in ("index.html", "app.js"):
+        (src / "web" / f).write_text("page " + f)
+    g(src, "add", "-A")
+    g(src, "commit", "-q", "-m", "main")
+    g(src, "tag", "v0.9.9")
+    g(src, "checkout", "-q", "--orphan", "gh-pages")
+    g(src, "rm", "-r", "-q", "-f", ".")
+    pages = {"index.html": "page index.html", "app.js": "page app.js", "frodhes.js": "js", "frodhes.wasm": "wasm",
+             "version.js": 'window.FRODHES_VERSION = "0.9.9";\n', ".nojekyll": ""}
+    for f, t in pages.items():
+        (src / f).write_text(t)
+    g(src, "add", "-A")
+    g(src, "commit", "-q", "-m", "Emulator 0.9.9")
+    g(src, "checkout", "-q", "main")
+    subprocess.run(["git", "clone", "-q", str(src), str(tmp_path / "root")], check=True)
+    g(tmp_path / "root", "fetch", "-q", "--tags")
+    monkeypatch.setattr(rel, "ROOT", str(tmp_path / "root"))
+    monkeypatch.setattr(rel.time, "sleep", lambda s: None)
+    live = {f: __import__("hashlib").sha256(t.encode()).hexdigest() for f, t in pages.items()}
+    monkeypatch.setattr(rel, "fetch_sha", lambda url: live.get(url.rsplit("/", 1)[1]))
+    return src, live
+
+
+def test_emulator_verify_checks_gh_pages_and_the_live_files(pages_origin, monkeypatch):
+    src, live = pages_origin
+    r = rel.Release(rel.parse_args(["0.9.9"]))
+    r.ver = "0.9.9"
+    ev = r.emulator_verify()
+    assert "verify only" in ev and "Emulator 0.9.9" in ev and "version.js says 0.9.9" in ev
+    assert "every file's sha256 = the expected one" in ev
+    live["frodhes.wasm"] = "0" * 64                                  # the CDN serves something else
+    with pytest.raises(rel.Stop, match="still differs.*frodhes.wasm"):
+        r.emulator_verify()
+    r.ver = "0.9.10"                                                 # gh-pages has another version's page
+    with pytest.raises(rel.Stop):
+        r.emulator_verify()
+
+
+def test_emulator_verify_refuses_a_page_not_from_the_tag(pages_origin):
+    src, _ = pages_origin
+    g(src, "checkout", "-q", "gh-pages")
+    (src / "app.js").write_text("something else")
+    g(src, "commit", "-qam", "Emulator 0.9.9")
+    g(src, "checkout", "-q", "main")
+    r = rel.Release(rel.parse_args(["0.9.9"]))
+    r.ver = "0.9.9"
+    with pytest.raises(rel.Stop, match="app.js is not v0.9.9's web/app.js"):
+        r.emulator_verify()
+
+
+def test_dist_version_and_the_selftest_version_gate(tmp_path, monkeypatch):
+    assert rel.dist_version(str(tmp_path)) is None
+    (tmp_path / "version.js").write_text('window.FRODHES_VERSION = "0.9.9";\n')
+    assert rel.dist_version(str(tmp_path)) == "0.9.9"
+    (tmp_path / "version.js").write_text('window.FRODHES_VERSION = "dev";\n')
+    assert rel.dist_version(str(tmp_path)) == "dev"
+    with pytest.raises(rel.Stop, match="says 'dev', not '0.9.9'"):            # before any browser starts
+        rel.web_selftest(str(tmp_path), "0.9.9")
+    (tmp_path / "version.js").write_text("window.FRODHES_VERSION = 0;\n")
+    with pytest.raises(rel.Stop, match="malformed"):
+        rel.web_selftest(str(tmp_path))
+
+
+def test_main_web_selftest(monkeypatch, capsys):
+    seen = []
+    monkeypatch.setattr(rel, "web_selftest", lambda d, v=None: seen.append((d, v)) or "selftest ok")
+    assert rel.main(["--web-selftest", "web/dist", "0.9.9"]) == 0
+    assert seen == [(os.path.abspath("web/dist"), "0.9.9")] and "selftest ok" in capsys.readouterr().out
+
+    def bad(d, v=None):
+        raise rel.Stop("no sound")
+    monkeypatch.setattr(rel, "web_selftest", bad)
+    assert rel.main(["--web-selftest", "web/dist"]) == 1 and "FAIL: no sound" in capsys.readouterr().out

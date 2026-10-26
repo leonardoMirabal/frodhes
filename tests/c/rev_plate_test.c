@@ -50,7 +50,7 @@ int main(int argc, char **argv)
         FILE *o = fopen(argv[8], "wb");
         uint32_t nb = (uint32_t)atoi(argv[7]);
         int32_t lv = atoi(argv[6]);
-        c.decay = atoi(argv[2]), c.damp = atoi(argv[3]), c.size = atoi(argv[4]), c.mod = atoi(argv[5]);
+        c.decay = atoi(argv[2]), c.damp = atoi(argv[3]), c.size = atoi(argv[4]), c.mod = atoi(argv[5]) << 4;
         rev_plate_start(&pa);
         for (blk = 0; blk < nb; blk++) {
             burst(f, blk, lv);
@@ -77,7 +77,7 @@ int main(int argc, char **argv)
     }
     if (!strcmp(argv[1], "tail") && argc >= 6) {
         uint32_t off = 0, last = 0, after = 0;
-        c.decay = atoi(argv[2]), c.damp = atoi(argv[3]), c.size = atoi(argv[4]), c.mod = atoi(argv[5]);
+        c.decay = atoi(argv[2]), c.damp = atoi(argv[3]), c.size = atoi(argv[4]), c.mod = atoi(argv[5]) << 4;
         rev_plate_start(&pa);
         for (blk = 0; blk < 200000u; blk++) {
             int32_t a = 0;
@@ -101,7 +101,7 @@ int main(int argc, char **argv)
         rev_plate_start(&pb);
         for (blk = 0; blk < 4000u; blk++) {
             if (blk % 97u == 0) { c.decay = (int32_t)(rnd() % 128u); c.size = (int32_t)(rnd() % 128u);
-                                  c.mod = (int32_t)(rnd() % 128u); c.damp = (int32_t)(rnd() % 151u); }
+                                  c.mod = (int32_t)(rnd() % 128u) << 4; c.damp = (int32_t)(rnd() % 151u); }
             burst(f, blk % 600u, 20000);
             front(f, x);
             rev_plate_run(&pa, x, m, sd, &c);
@@ -123,7 +123,7 @@ int main(int argc, char **argv)
             if (!span) {
                 uint32_t r = rnd() % 6u;
                 c.decay = (int32_t)(rnd() % 128u), c.size = (int32_t)(rnd() % 128u);
-                c.mod = (int32_t)(rnd() % 128u), c.damp = (int32_t)(rnd() % 151u);
+                c.mod = (int32_t)(rnd() % 128u) << 4, c.damp = (int32_t)(rnd() % 151u);
                 if (rnd() & 1u) c.decay = 127;
                 amp = r == 0 ? 0 : r == 1 ? 200 : r == 2 ? 8000 : r == 3 ? 32767 : r == 4 ? 200000 : 3000000;
                 span = 8u + rnd() % 400u;

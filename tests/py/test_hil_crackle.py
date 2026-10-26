@@ -46,9 +46,13 @@ def test_the_device_timing_has_teeth():
     ccs = list(ccs) + [(89, 0)]                                  # (DELAY DEPTH 0: the silence between the phrases)
     u, _ = C.host_take(name, ccs, ev, dur, tag="stress_max-teeth", clock=C.DEV_CLOCK)
     j = C.sim_jack(u)
+    # the old way's fixed threshold sat over the jack's first note (C2 v100): 300 LSB until 0.9.6, whose chorus no
+    # longer cancels the bass (the recipe's CHORUS: C2 was -10 dB at DEPTH 64): the note now peaks ~760 LSB on the
+    # simulated jack (275 before), so the threshold over it is 900 (the same miss: the second note's onset instead)
+    thr = 900
     old = C.analyse(u, j, 44100, ev, widen=C.DEV_JITTER, ccs=ccs, clock_usb=(C.onset_lag(u, ev, 44100, 300), 0.0),
-                    clock_jack=(C.onset_lag(j, ev, 48000, 300), 0.0))
-    assert C.onset_lag(j, ev, 48000, 300) > 0.1                 # (the jack's first note under 300 LSB: a later one)
+                    clock_jack=(C.onset_lag(j, ev, 48000, thr), 0.0))
+    assert C.onset_lag(j, ev, 48000, thr) > 0.1                 # (the jack's first note under thr: a later one)
     assert any(s == "jack" and k == "step" for s, _, k, _ in C.gated(old)), C.gated(old)
     cj = C._jack_clock(C.DEV_CLOCK)
     fu = C.clock_fit(u, ev, 44100, rate=C.DEV_CLOCK[1] + C.RATE_ERR)
@@ -546,3 +550,40 @@ def test_the_folded_jack_check_on_the_host():
     j2[s] = np.clip(j2[s], -pk, pk) * np.sqrt((j[s] ** 2).mean() / (np.clip(j[s], -pk, pk) ** 2).mean())
     res2 = C.analyse(u, j2, C.FS_HOST, ev, ccs=ccs, only={"track"})
     assert any(9.95 <= t <= 10.1 and kd == "track" for t, kd, _ in res2["jack"]), res2["jack"][:5]
+
+
+def test_a_repeat_under_the_floor_is_no_event():
+    """under -42 dBFS the music's own plateaus run 4 frames and more (FM-1 seed 5: 4 frames at -65 LSB between +8 and
+    +14, every counter and both USB benches clean): no event there; the same copies on a loud slope are one"""
+    t = np.arange(4410)
+    for amp, want in ((150, 0), (8000, 1)):
+        x = np.round(amp * np.sin(2 * np.pi * 50 * t / 44100))
+        q = np.stack([x, x], 1)
+        i = 1000
+        q2 = np.concatenate([q[:i], np.repeat(q[i - 1:i], 3, axis=0), q[i:]])
+        assert len(C.det_repeat(q2)) == want, amp
+
+
+def test_track_a_difference_only_in_the_bass_is_no_event():
+    """BUGHUNT #36b: the FM-1's jack against USB in a bass-heavy window (the last chord's E1, SPREAD) differed only
+    under 100 Hz (the jack's analog low end) and track called it "ncc 0.955 < 0.97" with nothing wrong there. A
+    difference only under LF_ONLY_HZ is no event; a 2 ms gap or a short click in the same sound still is"""
+    fs = 48000
+    t = np.arange(int(3.0 * fs)) / fs
+    env = 0.4 + 0.6 * (0.5 + 0.5 * np.sin(2 * np.pi * 1.3 * t))
+    from scipy.signal import butter, sosfiltfilt
+    hi = 2500 * sosfiltfilt(butter(2, (300 / (fs / 2), 3000 / (fs / 2)), "band", output="sos"),
+                            np.random.default_rng(1).normal(0, 1, len(t)))   # (no period: one lag fits)
+    u = env * (9000 * np.sin(2 * np.pi * 41.2 * t) + hi)
+    usb = np.stack([u, u], 1)
+    j0 = 0.25 * env * (9000 * np.sin(2 * np.pi * 41.2 * t + 0.3) + hi)   # (the bass 17 degrees off, as a coupling)
+    rows, ev = C.track(usb, j0, fs)
+    assert rows and min(c for _, _, c in rows) < 0.97, "the test's bass difference must take the plain ncc under 0.97"
+    assert not [d for _, d in ev if "ncc" in d], ev
+    a = int(1.51 * fs)
+    j1 = j0.copy()
+    j1[a:a + 96] = 0.0                                                   # 2 ms gap
+    assert [d for _, d in C.track(usb, j1, fs)[1] if "ncc" in d]
+    j2 = j0.copy()
+    j2[a:a + 24] += 300.0                                                # 0.5 ms, +300 LSB
+    assert [d for _, d in C.track(usb, j2, fs)[1] if "ncc" in d]

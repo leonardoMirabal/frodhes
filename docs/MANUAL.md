@@ -62,6 +62,10 @@ or as soon as you touch a button or a knob.
 <br clear="right">
 
 To go back to M-VAVE's own firmware, use the hub's "Official firmware" section with the V15 file from m-vave.com.
+From 0.9.6 Frodhes keeps its settings, presets and pattern only in flash that M-VAVE's firmware (V15 and V16) does not
+use, and erases an update's temporary copy at the next start. Up to 0.9.5 it kept its presets and pattern
+(0x97000-0x9AFFF) inside the area where V15 keeps its own settings: if V15 behaves oddly after you go back from 0.9.5
+or earlier, use V15's own System > Reset Patches. (V16 rewrites that area when it is installed.)
 
 ## 2. The idea: one page, four knobs
 
@@ -117,7 +121,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **K1 K2 K3 K4** | The four cards on the current page |
 | **ALGORITHM** (knob) | The TYPE (the four Rhodes, VIBES and MARIMBA), from any page (on SEQUENCER: the step cursor) |
 | **PRESETS** (knob) | Browse the sounds F01–F19 and your U01–U16 (loads when you stop turning; on SEQUENCER: bar by bar) |
-| **MASTER** (knob) | Volume |
+| **MASTER** (knob) | Volume (it glides as you turn it, without steps) |
 | **HOME** | PERFORM page; press again for the main page (titled FRODHES), and back |
 | **EDIT** | CHORD page; press again there to switch chord mode on / off (it comes back with the last chord type) |
 | **ENV** | PHASER page; press again there to switch the phaser on / off |
@@ -130,7 +134,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **PLAY** | Tap tempo, on every page (ARPEGGIO too); on SEQUENCER, start / stop the loop, except while the arpeggiator is on: then it taps the tempo there too |
 | **REC** | Sustain pedal |
 | **SAVE** | Save the sound to a user preset; hold to undo the last preset load |
-| **OCT− / OCT+** | Octave down / up (±2) |
+| **OCT− / OCT+** | Octave down / up (±2); hold one and press the other: back to octave 0 |
 
 The lights tell you what is on: LFO (tremolo / wah), ENV (phaser) and SEL (delay) light up when their effect is on
 (on ARPEGGIO, and on every page while the arpeggiator is on, SEL shows HOLD), ARP while the arpeggiator runs, EDIT while chord mode is on, SEQ while the sequencer
@@ -212,8 +216,10 @@ controls: see [MARIMBA](#marimba).
 | K3 | **ATTACK** | How fast it grabs a note: low (0.1 ms) catches the hammer's attack, high (50 ms) lets it through |
 | K4 | **MAKEUP** | Gives back the volume the compression takes: 0 to +24 dB |
 
-**THRESH** is its on / off: turn it up from OFF and the compressor comes on with MAKEUP at +2.8 dB, which keeps the
-volume about the same (back to OFF switches it off). The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
+**THRESH** is its on / off: turn it up from OFF and the compressor comes on at −16 dB (where the presets set it) with
+MAKEUP at +2.8 dB, which keeps the volume of what you play about the same (a quiet, dying tail comes up, as under
+any compressor; back to OFF switches it off). Switching it on or off fades
+over about 46 ms, so it never clicks. The bottom of the page is a gain-reduction meter, as on a hardware compressor: its segments light from 1 dB
 to 30 dB of reduction (scale 3, 6, 10, 20, 30), a bright segment holds the peak for a second, and the number on the
 right is the reduction now in dB. The compressor
 comes first in the chain, right after the piano.
@@ -244,8 +250,12 @@ The types:
 | **OHCD** | A MOSFET overdrive: a firmer edge (a sharper clipping knee) and a mid-focused sound. AMOUNT covers the circuit's own drive knob over its whole range | Low: nearly clean with a little bite; the middle: a crunchy but still open overdrive; the top: a thick, saturated drive | A treble cut: darker counter-clockwise, brightest at the top |
 | **BHLUE** | A two-stage soft overdrive, transparent and amp-like: soft diodes that never clip hard, the low end driven much less than the mids | Low: almost clean, a little warmer; the middle: a light crunch; the top: a thick, round overdrive | A treble cut: at 0 the highs are gone above about 400 Hz, the middle rolls off from about 500 Hz, the top is the brightest (open to about 2 kHz) |
 
-Each type is set to about the loudness of the drive switched off, so switching types, or switching the drive on,
-changes the character of the sound, not its volume.
+Each type is set to about the loudness of the drive switched off on played phrases (chords, a bass line, a melody), so
+switching types, or switching the drive on, changes the character of the sound, not its volume. Like any overdrive
+they also even the level out: a long note's attack is held down and its fading tail held up, so a held chord's tail
+rings a few dB louder than with the drive off. The four circuit types lean to the middle: a single note in the middle
+of the keyboard comes out louder than with the drive off (about 4–9 dB at AMOUNT 80); KHLON, TSH8 and OHCD also make
+the lowest notes softer (C2 about 3–6 dB).
 
 When the drive is off, a DRIVE knob on PERFORM shows **OFF**; turning it up there switches
 the drive on with the type you used last (after the FM-1 is switched off and on: the preset's type, or FDRV if the
@@ -280,8 +290,8 @@ sound the FM-1 was left on. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 L
 | --- | --- | --- |
 | K1 | **EFFECT** | **OFF**, **PAN** (the Suitcase stereo vibrato), **TREM** (volume tremolo), **WAH** (touch wah: harder playing opens it; it keeps the sound's level at every DEPTH and RATE, so a closed wah on a high chord or a soft high note is not quieter and a low one not louder; MARIMBA's top octave, whose notes are very short, still comes out a little quieter) |
 | K2 | **DEPTH** | How deep |
-| K3 | **RATE** | How fast; on WAH, the resonance. When synced it shows a note value |
-| K4 | **SHAPE** | Two halves. Up to the middle (0–64): from a smooth sine to a square, choppy pulse. Above it (65–127): an amp's tremolo, the square easing back into a sine: the level falls more slowly than it comes back (at the top the dip takes about two thirds of each cycle), it moves evenly in loudness so a deep setting breathes rather than chopping to silence (the deepest dip stays at −30 dB), and loud playing makes it a little shallower (up to a quarter less depth at full level). On PAN the upper half gives the same slower swing |
+| K3 | **RATE** | How fast; on WAH, the resonance (it glides as you turn it, without a click). When synced it shows a note value |
+| K4 | **SHAPE** | Two halves. Up to the middle (0–64): from a smooth sine to a square, choppy pulse. Above it (65–127): an amp's tremolo, the square easing back into a sine: the level falls more slowly than it comes back (at the top the dip takes about two thirds of each cycle), it moves evenly in loudness so a deep setting breathes rather than chopping to silence (the deepest dip stays at −30 dB), and loud playing makes it a little shallower (up to a quarter less depth at full level). On PAN the upper half gives the same slower swing. On WAH the card shows **-**: SHAPE does nothing there and keeps its value for TREM and PAN |
 
 
 On **VIBES** the vibraphone's motor is not here but on its last VOICE page, VOICE 3/3 (see [the motor: on and off](#the-motor-on-and-off)); TREM/WAH can run on top of it.
@@ -292,7 +302,7 @@ On **VIBES** the vibraphone's motor is not here but on its last VOICE page, VOIC
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **EFFECT** | Off / on |
-| K2 | **DEPTH** | How far it sweeps |
+| K2 | **DEPTH** | How far it sweeps. Below the middle the sweep also moves up as it narrows, to the top of its range at 0: a small DEPTH is a gentle movement in the treble, not a fixed notch in the middle of the sound |
 | K3 | **SPEED** | How fast: 0.25–6 Hz (a note value when synced) |
 | K4 | **FEEDBK** | Resonance: more pronounced, vocal sweeps (it never builds up on the bass) |
 
@@ -307,10 +317,12 @@ On **VIBES** the vibraphone's motor is not here but on its last VOICE page, VOIC
 | K3 | **SPEED** | How fast: 0.25–6 Hz (a note value when synced) |
 | K4 | **SYNC** | Free, or locked to the tempo as a note value |
 
-Phaser and chorus are two separate effects and can run together (the phaser feeds the chorus). Switched on at the
-panel's depth the phaser keeps the level (its notches sweep through the sound; the bass is no longer lifted) and keeps
-the sound close to the middle (its two sides 30° apart). The chorus makes the sound wider in stereo, which on headphones
-sounds bigger; its level is set so that it does not also sound louder.
+Phaser and chorus are two separate effects and can run together (the phaser feeds the chorus). The phaser keeps the
+level at every DEPTH (a chord's loudness matches the phaser switched off; its notches sweep through the sound, so a
+single note still dips and swells as they pass it; the bass is not lifted) and keeps the sound close to the middle
+(its two sides 30° apart). The chorus makes the sound wider in stereo, which on headphones sounds bigger; its level is
+set so that it does not also sound louder, and it leaves the bass (below about 200 Hz) as it is, so low notes keep
+their weight.
 
 ### DELAY
 
@@ -319,7 +331,7 @@ sounds bigger; its level is set so that it does not also sound louder.
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **EFFECT** | **OFF**, **DIG** (clean digital), **ANA** (darker, with a little wow and flutter), **TAPE** (a tape echo: one playback head, warm saturating repeats, playback-head EQ, wow and flutter) |
-| K2 | **MIX** | How loud the echoes are: at the middle (64) the first echo is as loud as the dry sound, at the top a little louder |
+| K2 | **MIX** | How loud the echoes are: at the middle (64) the first echo is as loud as the dry sound, at the top a little louder. Turning it up also lowers the dry sound a little (−1 dB at the middle, −6 dB at the top), so a full mix is not louder overall |
 | K3 | **TIME** | Echo time, free in milliseconds; when DLY SYNC is set on TEMPO it shows and steps note values |
 | K4 | **FEEDBK** | How many echoes, the same at any MIX. On ANA and TAPE the top of the knob (from about 115) lets the echoes build up on their own (below) |
 
@@ -349,7 +361,7 @@ PERFORM knob (REVERB on ASSIGN).
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **TYPE** | **OFF**, **HALL**, **PLATE** or **INFINITE** (below). OFF stops what goes into the reverb and lets the tail ring out. Switching it on with MIX at 0 gives MIX a starting amount. A new type takes over at once: the old tail fades out in a few milliseconds and the new type starts empty |
-| K2 | **MIX** | How much reverb (0 = none, the tail rings out). With SIZE on AUTO (REVERB 2), more MIX also makes the space bigger |
+| K2 | **MIX** | How much reverb (0 = none, the tail rings out). With SIZE on AUTO (REVERB 2), more MIX also makes the space bigger on HALL and PLATE (on PLATE once the tail has died away; on INFINITE MIX is the level only) |
 | K3 | **DECAY** | How long the tail rings. HALL: 5.0 (the default), 0 about half as long, 10.0 about twice. PLATE: from under a second to about 6 s. INFINITE: from about 4 s to a minute; from 120 (**SUSTAIN**) the tail stops fading and what you play piles up on it, and at the very top, 127 (**FREEZE**), the tail holds exactly as it is and what you play stays dry |
 | K4 | **TONE** | The tail's treble: darker (more damping) or brighter (less); +0.0 (the default) in between. On PLATE it also darkens what goes in |
 <!-- the PLATE / INFINITE DECAY ranges: measured on host, tests/py/test_rev_types.py (T60 PLATE 0.8..6 s, INFINITE 4..60 s, within 15 %) -->
@@ -370,8 +382,8 @@ half-band filters, so bright notes and cymbal-like overtones no longer fold back
 tones (a 15 kHz overtone used to come back at 7 kHz only 10 dB down; now 37 dB and more). The tail's top octave is
 cleaner on every type; its level and length are unchanged.
 
-Over MIDI: CC 95 TYPE (0–31 OFF, 32–63 HALL, 64–95 PLATE, 96–127 INFINITE), 91 MIX, 92 DECAY, 93 TONE. MIX, DECAY
-and TONE glide when moved.
+Over MIDI: CC 95 TYPE (0–31 OFF, 32–63 HALL, 64–95 PLATE, 96–127 INFINITE), 91 MIX, 92 DECAY, 93 TONE. DECAY and
+TONE glide when moved; MIX moves in small steps (every 32 samples, too small to hear).
 
 ### REVERB 2
 
@@ -380,7 +392,7 @@ and TONE glide when moved.
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **PRE-DELAY** | A gap before the reverb starts, 0–80 ms, so the notes stay clear in front of the reverb (it was K4 on REVERB before) |
-| K2 | **SIZE** | How big the space is. **AUTO** (0, the default) lets MIX set the size, as it always did on HALL; 0.1–10.0 fixes it, small to large (on PLATE the plate's size, on INFINITE the space's) |
+| K2 | **SIZE** | How big the space is. **AUTO** (0, the default) lets MIX set the size, as it always did on HALL. On PLATE the size waits while a tail rings and follows MIX once the plate is silent (a preset sets its size at once), and on INFINITE AUTO is a fixed 5.0, so turning MIX never bends a ringing tail's pitch; 0.1–10.0 fixes it, small to large (on PLATE the plate's size, on INFINITE the space's). Turned under a ringing tail on PLATE or INFINITE, the old size fades into the new one (in 0.13 s on PLATE, 0.19 s on INFINITE), with no bend and no click |
 | K3 | **MOD** | How much the tail moves: a slow drift that keeps long tails from sounding metallic. 5.0 (the default) is HALL as before; 0 holds still, 10.0 moves twice as much. On INFINITE it is the slow wander of its lines |
 | K4 | **LOW CUT** | Takes the bass out of what goes into the reverb, so long tails do not muddy the low notes: **OFF** (the default) or 20–800 Hz |
 
@@ -408,6 +420,10 @@ The defaults are the reverb's sound before it had types. Over MIDI: CC 94 PRE-DE
 | K2 | **SCALE** | Major, minor, dorian, mixolydian, lydian, phrygian, harmonic and melodic minor, pentatonic, minor pentatonic, blues |
 | K3 | **ROOT** | The scale's key |
 | K4 | **TRANSP** | Transpose ±24 semitones |
+
+MODE and TRANSP act on the FM-1's own keys. Notes from USB-MIDI and the TRS jack play as sent: not moved onto
+the scale, not transposed. One exception: a **DIATONIC** / **DIA 7TH** chord ([CHORD](#chord)) is built on the
+scale from any source, so a MIDI note out of the scale plays the chord of the nearest scale note.
 
 ### CHORD
 
@@ -887,7 +903,8 @@ switch off; the one a MIDI clock sets is not, and a clock never causes a save.
 ## 9. Scales
 
 On the SCALE page, **SNAP** lets every key play but moves out-of-scale notes onto the scale, and **DEGREE** turns the
-white keys into the scale's steps (C plays the root) so you can play any scale with white keys only.
+white keys into the scale's steps (C plays the root) so you can play any scale with white keys only. Both act on
+the FM-1's keys; notes from USB-MIDI play as sent (except as the root of a DIATONIC chord).
 While a scale is on, the keys that play its root glow dimly (in DEGREE: the C keys), so you can always find the
 keynote.
 
@@ -962,14 +979,14 @@ MARIMBA ignore it.
 | 81 | DRIVE (AMOUNT) | 91 | REVERB (MIX) |
 | 82 / 83 | DRIVE TONE / MIX | 92 / 93 / 94 | REVERB DECAY / TONE / PRE-DELAY (0–80 ms) |
 | 84 | DRIVE type: 0–63 OFF, 64–75 KHLON, 76–87 TSH8, 88–99 OHCD, 100–111 BHLUE, 112–127 FDRV | | |
-| 95 | REVERB type: 0–31 OFF, 32–63 HALL, 64–95 PLATE, 96–127 INFINITE | 73 | REVERB SIZE (0 = AUTO, from MIX) |
+| 95 | REVERB type: 0–31 OFF, 32–63 HALL, 64–95 PLATE, 96–127 INFINITE | 73 | REVERB SIZE (0 = AUTO: from MIX, on INFINITE 5.0) |
 | 68 / 69 | REVERB MOD (64 = the default) / LOW CUT (0 = off, 20–800 Hz) | | |
 | 17 | TREM/WAH: 0–42 off, 43–85 trem/pan, 86–127 wah | 18 / 19 | TREM DEPTH / RATE |
 | 20 / 21 / 22 | TREM SYNC / MODE (0–63 pan, 64–127 am) / SHAPE | 85 | Chorus / phaser switch: 0–42 both off, 43–85 chorus, 86–127 phaser |
 | 86 / 87 | CHORUS DEPTH / SPEED (the phaser's, when only the phaser is on) | 23 | CHORUS SYNC |
 | 12 / 13 / 14 | PHASER on / DEPTH / SPEED | 15 / 16 | PHASER SYNC / FEEDBACK |
 | 88 / 89 / 90 | DELAY type (0–31 off, 32–63 DIG, 64–95 ANA, 96–127 TAPE) / MIX / TIME | 25 / 26 / 27 | DELAY SYNC / FEEDBACK / TONE |
-| 106 / 107 | COMP on (≥ 64) / THRESHOLD (0 to −40 dB; switch it on with 106) | 112 / 113 | COMP RATIO / MAKEUP |
+| 106 / 107 | COMP on (≥ 64; with THRESHOLD at 0 it starts at −16 dB with the make-up, as the panel) / THRESHOLD (0 to −40 dB; switch it on with 106) | 112 / 113 | COMP RATIO / MAKEUP |
 | 108 / 109 | COMP ATTACK / RELEASE | 110 | LEVEL (64 = 0 dB) |
 | 111 | All effects off (≥ 64) / on | 28–31 | TONE / BARK / BELL / HAMMER |
 | 114 | USB VOL: knob (< 64) / fixed | 24 | Reserved (accepted and saved, no effect yet) |
@@ -1009,8 +1026,13 @@ compensation takes care of it when you record.
 - **At power-on** Frodhes comes back as you left it, on the PERFORM page: the sound, octave, tempo, scale, chord mode,
   arpeggiator (HOLD too) and MIDI settings, with the effects on and the sustain off. So if keys play chords or an
   arpeggio right away, check the CHORD and ARPEGGIO pages.
-  The setup is kept in two places in the flash and a save writes the older one, so if the power goes while it is
-  being saved (a fraction of a second, about 2 s after a change), only that last change is lost, never the setup.
+  The setup and your user presets are kept together in two places in the flash and a save writes the older one, so
+  if the power goes while it is being saved (a fraction of a second, about 2 s after a change or at a SAVE), only that
+  last change is lost, never the setup or a preset. The pattern has one place: a power cut while it is saved loses
+  the pattern only. The first start after the update from 0.9.5 copies 0.9.5's setup, presets and pattern once.
+  Going back to 0.9.5 afterwards finds its presets and pattern as they were at the update, and its setup as it was or its defaults (once 0.9.6 has saved twice).
+  Whatever 0.9.5 saves after such a way back (its setup, a preset, the pattern) comes over again at the next update
+  to 0.9.6 and replaces 0.9.6's own; what 0.9.5 did not save stays as 0.9.6 had it.
 - **It does not start:** switch the FM-1 off, hold **OCT−** and switch it on. That is the USB rescue: install again
   from the hub or with `fm1_install.py`. Your FM-1 can always be recovered this way.
 - **It shows UPDATE MODE or UPDATE FAILED at power-on:** an install was cut off; install again (section 1).
@@ -1065,14 +1087,17 @@ Everything in this manual applies, with these differences:
 - The FM-1's buttons are on the SMK buttons of the same meaning: PATCH = HOME, PARA = EDIT, CHORD = ENV,
   NOTE REPEAT = LFO, SCALE = SEL, GLOBE = GLO, BT = SAVE; the others keep their names. The screen's hints use these
   names.
-- K1 is MASTER; K2 SELECT, K3 ALGORITHM, K4 PRESETS; K5..K8 are the four cards (the FM-1's K1..K4). < > step through
-  the pages; KNOB BANK held shows a panel check (the raw readings).
+- K1 is MASTER (kept when you switch off: it comes back at the level you left); K2 SELECT, K3 ALGORITHM,
+  K4 PRESETS; K5..K8 are the four cards (the FM-1's K1..K4). < > step through the pages; KNOB BANK held shows a panel check (the raw readings).
 - 37 keys, C3..C6 at OCTAVE 0, each at its own velocity: KEY VEL is the velocity of a medium press.
 - The pads: 1..6 TYPE, 7 / 8 the previous / next preset, 9 DRIVE, 10 COMP, 11 FILTER, 12 TREM/WAH (VIBES: the motor),
-  13 PHASER, 14 CHORUS, 15 DELAY (on / off), 16 SUSTAIN (held, or a tap latches).
+  13 PHASER, 14 CHORUS, 15 DELAY (on / off), 16 SUSTAIN (held, or a tap latches; the latch is REC's own, so a tap on either one
+  lets go of it, and holding either one and letting go releases it).
 - The faders: FADER BANK A plays the instrument's first VOICE page, bank B the four PERFORM knobs. A fader takes over
   once it reaches its card's value; until then the footer says where to move it.
-- Pitch wheel: pitch bend, ±2 semitones (the Rhodes). Mod wheel: the TREM/WAH depth (VIBES: the motor's depth). The
-  pedal jack takes a sustain pedal of either polarity (plug it in before switching on).
+- Pitch wheel: pitch bend, ±2 semitones (the Rhodes types; VIBES and MARIMBA ignore it). Mod wheel: more TREM/WAH
+  depth on top of the DEPTH you set, up to full at the top (VIBES: more motor depth); at rest the DEPTH as set. Moved
+  up, it switches TREM/WAH (VIBES: the motor) on if it was off, and off again at rest. The pedal jack takes a sustain
+  pedal of either polarity (plug it in before switching on).
 - 7 voices. No TRS MIDI input (no TRS IN card), no key LEDs (no LEDS card on DISPLAY); BRIGHTNESS dims the pads and
   the button LEDs.

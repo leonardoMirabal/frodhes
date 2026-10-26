@@ -469,7 +469,7 @@ static void fx_wake(uint32_t sw_id)
 {
     static const uint8_t SW[7] = {P_TW_SW, P_PH_SW, P_CP_SW, P_DL_SW, P_CMP_SW, P_DRV_SW, P_RV_TYPE};
     static const uint8_t DEPTH[7] = {P_TW_DEPTH, P_PH_DEPTH, P_CP_DEPTH, P_DL_DEPTH, P_CMP_AMT, P_DRIVE, P_RV_DEPTH};
-    static const uint8_t START[7] = {64, 80, 64, 50, 64, 40, 32};
+    static const uint8_t START[7] = {64, 80, 64, 50, 50, 40, 32};   /* (COMP: -16 dB, as cmp_wake) */
     uint32_t i;
     for (i = 0; i < 7u; i++)
         if (SW[i] == sw_id && PV(sw_id) && !PV(DEPTH[i])) {
@@ -477,6 +477,20 @@ static void fx_wake(uint32_t sw_id)
             if (sw_id == P_CMP_SW && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, eng_ui()->cmp_mkup);
             ui_mark(E_CARDS);
         }
+}
+
+/* the compressor switched on from OFF (THRESH turned up on its page or on PERFORM, CC 106 over MIDI): THRESH starts
+ * at -16 dB (5.0, where every preset sets it) at least, with the engine's make-up when none is set, so it comes on at
+ * about the same volume (0.9.5 started it at THRESH 1, -0.3 dB, with +2.8 dB of make-up: 2.8 dB louder; CC 106 came on
+ * without the make-up: quieter; the bug hunt, 2026-10-25) */
+#define CMP_WAKE_THR 50
+static void cmp_wake(int midi)                         /* midi: a THRESH already set over MIDI (CC 107) is kept, and
+                                                        * so is its make-up (none unless CC 113 set one) */
+{
+    if (midi && PV(P_CMP_AMT)) { param_set(P_CMP_SW, 1); return; }
+    if (PV(P_CMP_AMT) < CMP_WAKE_THR) param_set(P_CMP_AMT, CMP_WAKE_THR);
+    if (!PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, eng_ui()->cmp_mkup);
+    param_set(P_CMP_SW, 1);
 }
 
 /* ---- PERFORM: four knobs that play whatever ASSIGN gives them; by default DRIVE, FILTER (the cutoff), DELAY and
@@ -506,13 +520,15 @@ static void perf_wake(uint32_t id)
 {
     if (id == P_FL_FREQ) { if (!PV(P_FL_TYPE) && PV(P_FL_FREQ) < 127) param_set(P_FL_TYPE, 2); return; }   /* LP18 */
     if (!PV(id)) return;
-    if (id == P_TW_DEPTH && !PV(P_TW_SW)) param_set(P_TW_SW, 1);
+    if (id == P_TW_DEPTH && !PV(P_TW_SW)) param_set(P_TW_SW, set.last_on[0]);   /* the type last on (0.9.6, #8: it was
+                                                         * always TREM / DIG; set.last_on: the SEL / LFO buttons', checked
+                                                         * at load) */
     else if (id == P_PH_DEPTH && !PV(P_PH_SW)) param_set(P_PH_SW, 1);
     else if (id == P_CP_DEPTH && !PV(P_CP_SW)) param_set(P_CP_SW, 1);
-    else if (id == P_DL_DEPTH && !PV(P_DL_SW)) param_set(P_DL_SW, 1);
+    else if (id == P_DL_DEPTH && !PV(P_DL_SW)) param_set(P_DL_SW, set.last_on[2]);
     else if (id == P_DRIVE && !PV(P_DRV_SW)) param_set(P_DRV_SW, drv_last);   /* the TYPE last on */
     else if (id == P_RV_DEPTH && !PV(P_RV_TYPE)) param_set(P_RV_TYPE, rv_last);   /* the reverb's too (0.9.5) */
-    else if (id == P_CMP_AMT && !PV(P_CMP_SW)) { param_set(P_CMP_SW, 1); if (!PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, eng_ui()->cmp_mkup); }
+    else if (id == P_CMP_AMT && !PV(P_CMP_SW)) cmp_wake(0);
 }
 /* the control a card shows from the engine's table: VOICE page vp, or FRODHES K2 / K3 (the headlines); 0: none */
 static const ectl_t *page_ctl(uint32_t pg, uint32_t vp, uint32_t k)
@@ -620,6 +636,8 @@ static void slot_text(uint32_t s, char *v)
         }
         break;
     case P_TW_RATE: if (PV(P_TW_SW) == 2) { fmt_r10(v, PV(s)); return; } break;   /* WAH: resonance */
+    case P_TW_SHAPE: if (PV(P_TW_SW) == 2) { p_strcpy(v, "-", 1); return; } break;   /* WAH: no shape (0.9.6, #15; it
+                                                     * keeps its value for TREM / PAN) */
     case P_MOT_RATE:                                                 /* the motor: 0.5 .. 10 Hz ("3.5HZ") */
         {
             uint32_t n = 0;
@@ -686,8 +704,8 @@ static void slot_turn(uint32_t s, int32_t d)
         if (id == P_MOT_ON) set.mot_user_off = !PV(P_MOT_ON);        /* off by hand: no auto-on at TYPE VIBES */
         fx_wake(id);
         if (id == P_CMP_AMT) {                          /* THRESH is the compressor's switch: 0 = OFF, up = on */
-            if (PV(P_CMP_AMT) && !PV(P_CMP_SW) && !PV(P_CMP_GAIN)) param_set(P_CMP_GAIN, eng_ui()->cmp_mkup);   /* level-neutral */
-            param_set(P_CMP_SW, PV(P_CMP_AMT) != 0);
+            if (PV(P_CMP_AMT) && !PV(P_CMP_SW)) cmp_wake(0);   /* level-neutral */
+            else param_set(P_CMP_SW, PV(P_CMP_AMT) != 0);
             ui_mark(E_CARDS); ui_mark(E_FOOTER);
         }
         if (id == P_TW_SYNC || id == P_CP_SYNC || id == P_DL_SYNC || id == P_PH_SYNC || id == P_LFO_SYNC || id == P_MOT_SYNC)
@@ -1719,8 +1737,16 @@ static void ui_input(uint32_t b, uint32_t rel)
         if (play_is_seq()) seq_toggle_play();
         else { uint16_t b0 = set.bpm10; tempo_tap(); if (set.bpm10 != b0) bpm_hand = set.bpm10; }   /* a tap that set it */
     }
-    if (b >> BTN_OCT_DOWN & 1u && set.oct > -2) { set.oct--; ui_changed(); ui_mark(E_HEADER); }
-    if (b >> BTN_OCT_UP & 1u && set.oct < 2) { set.oct++; ui_changed(); ui_mark(E_HEADER); }
+    {                                                   /* OCT- / OCT+ step; the second pressed while the first is
+                                                         * held: OCTAVE 0 (0.9.6, issue #15; both in one pass, as
+                                                         * held at power-on: the steps as before) */
+        uint32_t ob = 1u << BTN_OCT_DOWN | 1u << BTN_OCT_UP, on = b & ob;
+        if (on && on != ob && (fm1_in.buttons & ob) == ob) { set.oct = 0; ui_say("OCT 0"); ui_changed(); ui_mark(E_HEADER); }
+        else {
+            if (on >> BTN_OCT_DOWN & 1u && set.oct > -2) { set.oct--; ui_changed(); ui_mark(E_HEADER); }
+            if (on >> BTN_OCT_UP & 1u && set.oct < 2) { set.oct++; ui_changed(); ui_mark(E_HEADER); }
+        }
+    }
 
     if (d[ENC_SELECT]) {                                /* the pages: no wrap, so the ends are easy to find */
         int32_t p = clampi((int32_t)pg_pos(ui_page, ui_vp_ok()) + sgn(d[ENC_SELECT]), 0, (int32_t)pg_count() - 1);

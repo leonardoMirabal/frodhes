@@ -1,0 +1,18 @@
+# BUGHUNT #27: F06 (KHLON + COMP) with TREM on: after a note dies away, the silence gate shuts the output, but an idle
+# residue under it (KHLON's offset, moved by the tremolo: 6..31 LSB) kept fx_quiet() false, so flash was never written:
+# a SAVE into a user slot showed its name and wrote nothing, and the settings' autosave waited forever (0.9.5 too).
+# Now 500 ms with the gate shut counts as quiet too (fx.c fx_gz). The save goes through, the settings too.
+100 midi 0xC2 5 0
+600 btn 5
+630 turn 2 1
+800 turn 1 1
+1400 midi 0x90 60 100
+2000 midi 0x80 60 0
+8000 expect state quiet 1
+8000 expect state dirty 0
+8100 btn 9
+8200 btn 9
+12000 expect state savepend 0
+12000 expect state dirty 0
+12000 expect state quiet 1
+12100 end

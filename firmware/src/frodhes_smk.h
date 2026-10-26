@@ -58,23 +58,40 @@ static struct {
                                                 * the value it was on (1 below, 2 above, 0 not known); the value it set */
 } smk_fad[4];
 static uint32_t smk_pad_t[16];                 /* when each pad last acted (a press counts once) */
-static uint8_t smk_sus_pad, smk_sus_latch, smk_sus_was, smk_pedal;
+static uint8_t smk_sus_pad, smk_sus_was, smk_pedal;   /* (the latch: frodhes.c sus_latched, shared with REC) */
 static uint32_t smk_sus_t;
 static uint8_t smk_mem_cmp = 64, smk_mem_flt = 2;   /* COMP's THRESH, the FILTER's type, to come back on with */
 static int32_t smk_bend16, smk_modw = -1;      /* the wheels: the bend (1/4096 semitone), the mod wheel 0..127 */
 static uint8_t smk_panel_on;
 #define SMK_SETTLE 300u                        /* scan frames (~0.5 s) before the analog readings count */
 
+/* K1's MASTER across power cycles (GitHub #14): in the settings record (set.smk_mst, the value + 1; 0 = none, every
+ * record before: smk_input.h's 724). Restored by smk_init, before the main loop's first pass reads K1; kept in `set`
+ * once a main-loop pass when it moved, so the settings' own auto save writes it (2 s after the last change, in
+ * silence: never from the ISR, never a write per detent) */
+static int32_t smk_master_stored(void)
+{
+    uint32_t v = set.smk_mst[0] | (uint32_t)set.smk_mst[1] << 8;
+    return v >= 1u && v <= 1024u ? (int32_t)v - 1 : 724;
+}
+static void smk_master_keep(void)
+{
+    if (smk_master != smk_master_stored()) {
+        uint32_t v = (uint32_t)smk_master + 1u;
+        set.smk_mst[0] = (uint8_t)v; set.smk_mst[1] = (uint8_t)(v >> 8);
+    }
+}
 static void smk_init(void)
 {
     uint32_t i;
     smk_pad_events = 1;                        /* the pads are Frodhes' own controls (events, no notes) */
     for (i = 0; i < 4u; i++) smk_fad[i].slot = S_NONE;
+    smk_master = smk_master_stored();          /* (MASTER as it was left) */
 }
 
 static void smk_sus_update(void)
 {
-    uint8_t on = (uint8_t)(smk_sus_pad || smk_sus_latch || smk_pedal);
+    uint8_t on = (uint8_t)(smk_sus_pad || smk_pedal);
     if (on != smk_sus) { smk_sus = on; sustain_update(); }
 }
 
@@ -151,13 +168,16 @@ static void smk_pads(void)
     int32_t e;
     while ((e = smk_pad_take()) >= 0) {
         uint32_t p = ((uint32_t)e >> 8) & 15u, vel = (uint32_t)e & 0xFFu;
-        if (p == SP_SUS) {                     /* SUSTAIN: held, or a tap latches (as REC) */
-            if (vel && !smk_sus_pad) { smk_sus_pad = 1; smk_sus_t = fm1_ms; smk_sus_was = smk_sus_latch; }
+        if (p == SP_SUS) {                     /* SUSTAIN: held, or a tap flips the latch; the latch is REC's own
+                                                * (frodhes.c sus_latched: either one's tap flips what sounds, a hold
+                                                * on either is momentary and its release clears it, CC 64 up too) */
+            if (vel && !smk_sus_pad) { smk_sus_pad = 1; smk_sus_t = fm1_ms; smk_sus_was = sus_latched; }
             else if (!vel && smk_sus_pad) {
                 smk_sus_pad = 0;
-                smk_sus_latch = fm1_ms - smk_sus_t < SUS_TAP_MS ? !smk_sus_was : 0;
+                sus_latched = fm1_ms - smk_sus_t < SUS_TAP_MS ? !smk_sus_was : 0;
             }
-            smk_sus_update();
+            smk_sus = (uint8_t)(smk_sus_pad || smk_pedal);
+            sustain_update();
             continue;
         }
         if (!vel || (smk_pad_t[p] && fm1_ms - smk_pad_t[p] < 180u)) continue;   /* a press counts once */
@@ -249,7 +269,9 @@ static void smk_wheels(void)
         smk_bend16 = b;
         eng_bend_set(8192 + (b > 8191 ? 8191 : b));   /* (the MIDI bend's scale: 8192 = 2 semitones) */
     }
-    /* the mod wheel (up = a lower reading): TREM/WAH's depth, VIBES's motor depth, once it moves */
+    /* the mod wheel (up = a lower reading): more TREM/WAH depth, on VIBES more motor depth, once it moves: on top of
+     * the DEPTH as set (params.c MW_ADD; 0.9.6, #29: it wrote DEPTH, its rest was DEPTH 0); moved up it switches the
+     * effect on, back at rest off again if it did that (and nothing else switched it since) */
     if (!mhi) { mlo = m < MOD_LO ? m : MOD_LO; mhi = m > MOD_HI ? m : MOD_HI; }
     if (m < mlo) mlo = m;
     if (m > mhi) mhi = m;
@@ -257,10 +279,21 @@ static void smk_wheels(void)
     mw = mw < 0 ? 0 : mw > 127 ? 127 : mw;
     if (mw != smk_modw) {
         if (smk_modw >= 0) {
-            uint32_t id = TYPE_HAS_MOTOR(PV(P_TYPE)) ? P_MOT_DEPTH : P_TW_DEPTH;
-            param_set(id, mw);
-            if (id == P_MOT_DEPTH) { if (mw && !PV(P_MOT_ON)) { param_set(P_MOT_ON, 1); set.mot_user_off = 0; } }
-            else perf_wake(id);
+            smk_mw = mw;
+            param_apply(P_TW_DEPTH);
+            param_apply(P_MOT_DEPTH);
+            if (mw && !smk_mw_woke) {
+                if (TYPE_HAS_MOTOR(PV(P_TYPE))) {
+                    if (!PV(P_MOT_ON)) { smk_mw_uoff = set.mot_user_off; param_set(P_MOT_ON, 1); set.mot_user_off = 0; smk_mw_woke = P_MOT_ON; }
+                } else if (!PV(P_TW_SW)) { param_set(P_TW_SW, set.last_on[0]); smk_mw_woke = P_TW_SW; }
+                smk_mw_wv = smk_mw_woke ? PV(smk_mw_woke) : 0;
+            } else if (!mw && smk_mw_woke) {
+                if (PV(smk_mw_woke) == smk_mw_wv) {      /* (still as the wheel left it) */
+                    param_set(smk_mw_woke, 0);
+                    if (smk_mw_woke == P_MOT_ON) set.mot_user_off = smk_mw_uoff;
+                }
+                smk_mw_woke = 0;
+            }
             ui_mark(E_CARDS);
         }
         smk_modw = mw;
@@ -287,6 +320,7 @@ static void smk_poll(void)
     smk_faders();
     smk_wheels();
     smk_pedal_poll();
+    smk_master_keep();
 }
 
 /* ---- the SMK's own buttons, before the FM-1's reach sustain_button / ui_input; their bits are cleared here */
@@ -393,6 +427,8 @@ static int smk_host_state(const char *key, char *v, unsigned n)
 {
     unsigned a;
     if (!strcmp(key, "fbank")) snprintf(v, n, "%c", smk_bank ? 'B' : 'A');
+    else if (!strcmp(key, "twdepth")) snprintf(v, n, "%d", (int)fx_p[FXP_TW_DEPTH]);   /* the depth TREM/WAH runs at */
+    else if (!strcmp(key, "motdepth")) snprintf(v, n, "%u", (unsigned)bar_mot_depth);  /* the motor's (engine.c) */
     else if (sscanf(key, "fader.%u", &a) == 1 && a < 4u) {   /* fader a: the card it drives, OWN or WAIT */
         char t[16];
         slot_text(smk_fad_slot(a), t);
@@ -406,7 +442,8 @@ static int smk_host_state(const char *key, char *v, unsigned n)
     else if (sscanf(key, "padrgb.%u", &a) == 1 && a < 16u) snprintf(v, n, "%06X", padled_rgb[a]);   /* G R B */
     else if (!strcmp(key, "wbend")) snprintf(v, n, "%d", smk_bend16);   /* the wheel's bend, 1/4096 semitone */
     else if (!strcmp(key, "modw")) snprintf(v, n, "%d", smk_modw);
-    else if (!strcmp(key, "smksus")) snprintf(v, n, "%u", smk_sus);
+    else if (!strcmp(key, "smksus")) snprintf(v, n, "%u", smk_sus || sus_latched);   /* (the pad, the jack, the latch) */
+    else if (!strcmp(key, "suslatch")) snprintf(v, n, "%u", sus_latched);
     else if (!strcmp(key, "pedal")) snprintf(v, n, "%u", smk_pedal);
     else if (!strcmp(key, "ext")) { uint32_t i, c = 0; for (i = 0; i < 10u; i++) c += src_active[SRC_EXT + i]; snprintf(v, n, "%u", c); }
     else if (!strcmp(key, "leddark")) snprintf(v, n, "%u", smk_led_dark);

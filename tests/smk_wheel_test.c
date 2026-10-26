@@ -110,6 +110,49 @@ int main(void)
     move(REST + 20, REST + 20, 5000);
     check(nb == 0 && nw.pc >= REST + 15, "fixed: a slow drift of the rest is followed (no bend)");
 
+    /* 0.9.6 (#29, "the pitch wheel stops after the pedal"): spikes on the analog inputs (a jack going in) */
+    reset();                                    /* the full travel learnt: REST +- 400 */
+    move(REST, REST + 400, 60); move(REST + 400, REST + 400, 200); move(REST + 400, REST, 40);
+    move(REST, REST - 400, 60); move(REST - 400, REST - 400, 200); move(REST - 400, REST, 40);
+    move(REST, REST, 500);
+    check(nw.phi >= REST + 390 && nw.plo <= REST - 390, "a held full travel widens the range");
+    move(REST, 1023, 1); move(1023, 1023, 10); move(1023, 0, 1); move(0, 0, 10);   /* a 20 ms spike, both ends */
+    move(0, REST, 1); move(REST, REST, 500);
+    check(nb == 0 && nw.pc >= REST - 2 && nw.pc <= REST + 2, "a 20 ms spike: the centre stays, no bend at rest");
+    check(nw.phi < 1000 && nw.plo > 50, "a 20 ms spike does not widen the range");
+    move(REST, REST + 400, 60); move(REST + 400, REST + 400, 200);
+    check(nb == SMK_PW_ST * 4096, "after the spike: the full travel up still bends fully");
+    snprintf(b, sizeof b, "before 0.9.6 (the range only grew): after the spike, up bends %d/4096 st", (int)ob);
+    check(ob < SMK_PW_ST * 4096, b);            /* (shows the fault: less than the full bend) */
+    move(REST + 400, REST, 40); move(REST, REST - 400, 60); move(REST - 400, REST - 400, 200);
+    check(nb == -SMK_PW_ST * 4096, "after the spike: the full travel down still bends fully");
+    move(REST - 400, REST, 40); move(REST, REST, 1000);
+    check(nb == 0, "... and back to 0");
+    move(REST, 0, 60); move(0, 0, 200);         /* the true end of the travel (reading 0) held: taken */
+    check(nw.plo <= 2, "a held reading of 0 widens the range to it");
+
+    {                                           /* power-on during a spike: the centre waits for a still reading */
+        smk_pw_t z = {0};
+        old_t zo = {0};
+        int32_t i;
+        nw = z, ow = zo, now = 1000;
+        for (i = 0; i < 6; i++) { move(i & 1 ? 0 : 1023, i & 1 ? 0 : 1023, 5); }   /* 30 ms of bounce */
+        move(REST, REST, 500);
+        check(nb == 0 && nw.pc >= REST - 2 && nw.pc <= REST + 2, "power-on in a spike: the centre is the rest");
+        snprintf(b, sizeof b, "before 0.9.6: the centre from the spike (pc %d): a bend at rest (%d/4096 st)", (int)ow.pc, (int)ob);
+        check(ob != 0, b);                      /* (shows the fault) */
+        move(REST, REST + 400, 60); move(REST + 400, REST + 400, 200);
+        check(nb == SMK_PW_ST * 4096, "power-on in a spike: then a full bend up");
+    }
+
+    {                                           /* a noisy input that never holds still: calibrated after 1 s */
+        smk_pw_t z = {0};
+        int32_t i;
+        nw = z, now = 1000;
+        for (i = 0; i < 300; i++) { move(REST + (i & 1 ? 6 : -6), REST + (i & 1 ? 6 : -6), 5); }
+        check(nw.pc != 0 && nw.pc >= REST - 6 && nw.pc <= REST + 6, "a noisy input: still calibrated (after 1 s)");
+    }
+
     printf("smk_wheel: %s\n", fails ? "FAILED" : "all ok");
     return fails != 0;
 }

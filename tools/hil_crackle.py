@@ -262,14 +262,23 @@ def _peak(x):
     return a.max(axis=1) if a.ndim == 2 else a
 
 
-def det_repeat(q, slope=8, gain=2.0, ctx=256, half=4):
+def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0, floor=256):
     """frames that repeat the frame before where the wave runs on: [(frame, detail)]; q (n, 2) int. A candidate is a
     run of equal stereo frames between two steps the same way (>= slope LSB, either channel); 4 frames or more are an
     event; 2 or 3 when taking the copies out makes the wave smoother: the AR interpolation residual at it falls >= gain
     x (3 dB) where the steps either side are alike (0.4..1/0.4: a copy keeps the wave's slope), >= 20 dB where they are
     less so (down to 0.15). An underrun
     inserts its copies (the stream comes later by as many frames), so the wave without them runs on; a flat spot of the
-    music's own leaves a jump when taken out"""
+    music's own leaves a jump when taken out.
+    2026-10-26 (BUGHUNT #24): 2 or 3 frames need the wave around them predictable (its AR interpolation >= pred dB
+    under it) and the copies' residual >= gain x (10 dB) over the wave without them. Before, 3 dB on any wave: noise-like
+    music through the 44.1 -> 48 kHz resampler (no copy at all) gave ~300 events a minute and an FM-1 take two
+    (4 and 5 dB, among plateaus spread from 5 dB down); 0.9.4's real 2-frame copies score 11 and 16 dB (the waves
+    around them 26 and 31 dB predictable), copies injected in a chord 12 .. 23 dB (22 .. 44); noise is under 8 dB.
+    Under floor LSB (-42 dBFS, the wave's peak within 32 frames) nothing is judged: there the music's own plateaus run
+    to 4 frames and more by the hundred (an FM-1 take: 840 runs of 4 at 40 .. 100 LSB), one of them between two steps
+    the same way now and then (FM-1 seed 5, -65 LSB, +8 / +14, every counter clean and both USB benches clean);
+    0.9.4's real copies sat at ~3000 LSB"""
     q = np.asarray(q, np.int64)
     eq = np.all(q[1:] == q[:-1], axis=1)                  # eq[i]: frame i + 1 == frame i
     s, e = _runs(eq)                                       # run i..j-1 of eq: plateau frames i..j
@@ -280,6 +289,8 @@ def det_repeat(q, slope=8, gain=2.0, ctx=256, half=4):
         d0, d1 = q[p0] - q[p0 - 1], q[p1 + 1] - q[p1]
         ok = (np.sign(d0) == np.sign(d1)) & (np.abs(d0) >= slope) & (np.abs(d1) >= slope)
         if not ok.any():
+            continue
+        if np.abs(q[p0 - 32:p1 + 33]).max() < floor:
             continue
         ch = int(np.argmax(np.abs(d0) + np.abs(d1)))
         if p1 - p0 >= 3:                                   # 4 equal frames or more between two steps the same way: no
@@ -293,6 +304,8 @@ def det_repeat(q, slope=8, gain=2.0, ctx=256, half=4):
         cut = np.delete(seg, np.arange(ctx + 1, ctx + 1 + (p1 - p0)))
         ea = interp_residual(seg, order=16, block=len(seg))
         eb = interp_residual(cut, order=16, block=len(cut))
+        if np.mean(cut ** 2) < 10 ** (pred / 10) * max(float(np.mean(eb ** 2)), 1e-9):
+            continue                                       # (noise-like: its own neighbours meet by chance)
         Ea = float((ea[ctx - half:ctx + (p1 - p0) + half] ** 2).sum())   # (the whole run and its edges)
         Eb = float((eb[ctx - half:ctx + half] ** 2).sum())
         if Ea > need * Eb and Ea > 4 * slope ** 2:
@@ -673,6 +686,13 @@ def det_step(x, fs, ons, offs, lag=0.0, widen=0.0, step_db=12.0, win_ms=1000 * S
     return out
 
 
+# a window under 0.97 whose difference lies all below LF_ONLY_HZ is the jack's analog low end on a bass-heavy moment
+# (its AC coupling's phase on a 41 Hz fundamental), not a gap or a click: those are broadband. 48k-pattern-60ms at
+# 2.800 s, the 0.9.6 final run (2026-10-26, BUGHUNT #36b): ncc 0.955, 0.999 over 100 Hz, nothing on USB; 1, 2 and 3 ms
+# jack gaps put in that window: 0.992, 0.980, 0.965 over 200 Hz
+LF_ONLY_HZ, LF_ONLY_NCC = 100.0, 0.995
+
+
 def _lag(u, j, a, n, lo, hi):
     js = j[a:a + n]
     us = u[a + lo:a + hi + n]
@@ -780,6 +800,15 @@ def track(usb, jack48, fs_usb, win=2400, hop=2400, min_db=-60.0, gtimes=(), lag=
         keep["uw"][:lo_ok] = 0.0
         keep["uw"][hi_ok:] = 0.0
     rows, ev, prev, pend = [], [], 0, None
+    hp = []                                                  # (the jack and USB over LF_ONLY_HZ, made when needed)
+
+    def lf_only(a, lag):
+        if not hp:
+            from scipy.signal import butter, sosfiltfilt
+            sos = butter(2, LF_ONLY_HZ / (FS_JACK / 2), "high", output="sos")
+            hp.extend((sosfiltfilt(sos, j), sosfiltfilt(sos, uw)))
+        return _lag(hp[1], hp[0], a, win, lag - 2, lag + 2)[1] >= LF_ONLY_NCC   # (as near: +-2 of the line; the
+                                                                   # bass pulls near itself off by a sample or two)
     wide = 320                                               # (a lost / repeated packet or block: <= ~1 block at 48 kHz)
 
     def far_lag(a):
@@ -821,9 +850,11 @@ def track(usb, jack48, fs_usb, win=2400, hop=2400, min_db=-60.0, gtimes=(), lag=
             pend = (a, far - near, cn, cf, 0)
             rows.append((a / FS_JACK, far + L0 + r * a, cf))
             continue
-        if cn < 0.97 and calm and pend is None and rj >= floor:   # (the ncc test where the jack itself is over
-                                                                   # -60 dBFS, as before: quieter windows of a hard
-                                                                   # mallet's tail fell to 0.96 on the host's jack)
+        if cn < 0.97 and calm and pend is None and rj >= floor and not lf_only(a, prev):   # (the ncc test where the
+                                                                   # jack itself is over -60 dBFS, as before: quieter
+                                                                   # windows of a hard mallet's tail fell to 0.96 on the
+                                                                   # host's jack; a difference only under LF_ONLY_HZ:
+                                                                   # none, above)
             ev.append((a, f"jack vs USB ncc {cn:.3f} < 0.97"))
         rows.append((a / FS_JACK, near + L0 + r * a, cn))
         # (prev moves only with a confirmed slip: the drift is out, so the right lag stays put; letting it follow the

@@ -941,8 +941,8 @@ FXALL = [  # (name, settings, expected: LU re clean within +-tol)
 #  - drive 127: -2.2 .. -2.4 LU. The drive's level trim (tools/gen_fx_tables.py DRV_RISE, d868d8a) is the mean of
 #    single notes and chords: at AMOUNT 127 a single note +2.4, a chord -4.3 LU (an amp's compression on big chords);
 #    this 3-note chord sits between them;
-#  - phaser 32: -2.4 .. -2.5 LU. 0.70 x (dry + allpasses) cuts where the notches sit, and at DEPTH 32 they sweep a
-#    narrow range in the chord's middle; at 80 (the panel's start) -1.1, at 127 with feedback +1.6.
+#  - (phaser 32 was -2.4 .. -2.5 LU until 0.9.6: 0.70 x (dry + allpasses) cut where the notches sat. The phaser's
+#    level is now held at every DEPTH (mix-fix 0c0be11): the host reads +0.7 LU, judged at 0 +- 2 as every setting.)
 # Not here: 'wah 32' (-2.1) and 'wah 127' (+2.1) failed until 2026-10-24: fx.c's depth law (wg, x0.80 .. x1.26,
 # fitted on the FM-1 in dba3831 to cancel the wah's level swing) was still applied after the 0.9.3 make-up gain
 # (ce5ccfb0) that already holds the level: 20 log10(0.80) = -1.9, 20 log10(1.26) = +2.0. The law is gone; the host
@@ -950,7 +950,7 @@ FXALL = [  # (name, settings, expected: LU re clean within +-tol)
 # (Agent E's reading of the same reports, 2026-10-24, proposed all five measured values as targets +- 1 LU; taken for
 # drive 127 and phaser 32, not for the wah rows (the defect above) nor phaser 127 fb127 (its fault was the width
 # target: at 0 +- 2 it passes without a target of its own).)
-FXALL_EXPECT = {"drive 127": (-2.3, 1.0), "phaser 32": (-2.5, 1.0)}
+FXALL_EXPECT = {"drive 127": (-2.3, 1.0)}
 
 
 def lufs(x):
@@ -2056,7 +2056,7 @@ def rate_of(tr, fps, guess, lo=0.4, hi=2.6):
     return float(hr().rate_of(np.asarray(tr, float), fps, guess, lo=lo, hi=hi))
 
 
-def lfo_rate(tr, fps, lo_hz, hi_hz, H=6, pearson=False):
+def lfo_rate(tr, fps, lo_hz, hi_hz, H=6, pearson=False, octave=False):
     """the repetition rate (Hz) of a periodic trace whose harmonics may outweigh its fundamental (a band's level as a
     triangle LFO sweeps notches up and down: the jack's 1/4 at 69 BPM had harmonics 3 and 4 at 2.5x the fundamental's
     amplitude, and rate_of's harmonic sum picked the 3rd: PHASER SYNC read 1.72 Hz for 1.15). The period is the
@@ -2067,7 +2067,9 @@ def lfo_rate(tr, fps, lo_hz, hi_hz, H=6, pearson=False):
     pearson: each lag's correlation over its own overlap (lags up to 0.6 of the trace), not over the whole trace's
     energy, which shrinks a long lag's peak by its overlap: MARIMBA's PHASER SPEED 0 (a 4 s period, 3 dips a cycle
     on the roll) correlates 0.63 at 2 s and 0.99 at 4 s, but 0.50 / 0.58 by energy, and the 2 s peak passed the 0.85
-    rule: 0.50 Hz on the host and the FM-1"""
+    rule: 0.50 Hz on the host and the FM-1.
+    octave: the octave check: a rate f whose fit (2H harmonics of f) holds under 10 % of its even harmonics' power in
+    its odd ones is a wave at 2f read at two periods; then 2f (refined the same way) when 2f <= hi_hz"""
     d = detrend2(np.asarray(tr, float))
     n = len(d)
     lmin = max(2, int(fps / hi_hz))
@@ -2088,7 +2090,15 @@ def lfo_rate(tr, fps, lo_hz, hi_hz, H=6, pearson=False):
         A = np.column_stack(trend + [g(2 * np.pi * h * f * t) for h in range(1, H + 1) for g in (np.cos, np.sin)])
         return np.sum((d - A @ np.linalg.lstsq(A, d, rcond=None)[0]) ** 2)
     fine = fps / l0 * np.linspace(0.92, 1.08, 161)
-    return float(fine[int(np.argmin([resid(f) for f in fine]))])
+    f0 = float(fine[int(np.argmin([resid(f) for f in fine]))])
+    if octave and 2 * f0 <= hi_hz:
+        A = np.column_stack(trend + [g(2 * np.pi * h * f0 * t) for h in range(1, 2 * H + 1) for g in (np.cos, np.sin)])
+        c = np.linalg.lstsq(A, d, rcond=None)[0][3:]
+        p = c[0::2] ** 2 + c[1::2] ** 2                 # (the power of harmonics 1 .. 2H)
+        if p[0::2].sum() < 0.1 * p[1::2].sum():
+            fine = 2 * f0 * np.linspace(0.96, 1.04, 81)
+            f0 = float(fine[int(np.argmin([resid(f) for f in fine]))])
+    return f0
 
 
 def stft(x, n=1024, hop=240):
@@ -3117,7 +3127,7 @@ def vibes_fx(V, S, stim=None, extra=()):
     pb127 = with_(pb, ("PH_DEPTH", 127))
     pref = T[0]                                       # DEPTH 0: the notches stand still
 
-    def phrate(t, q, ex, lo=0.4, hi=2.6, ref=None, b=5.3, pearson=False):
+    def phrate(t, q, ex, lo=0.4, hi=2.6, ref=None, b=5.3, pearson=False, octave=False):
         """the LFO's rate from the 300-3000 Hz band re DEPTH 0 (round 2's new phaser: the centroid read 0.50 Hz for
         SPEED 0's 0.25 and 2.06 for SYNC 1/4's 0.69), searched in ex * lo .. ex * hi. The band's level repeats once
         an LFO cycle (the sweep up and the sweep down are mirror images, not repeats), with strong harmonics. It
@@ -3125,7 +3135,7 @@ def vibes_fx(V, S, stim=None, extra=()):
         for SYNC 1/4 at the FM-1's 69 BPM (1.72 Hz for 1.15: a firmware 'fault' that was the measure; the host shows
         it at 69 BPM, tests/py/test_phaser_measures.py). lfo_rate() takes the period instead"""
         d, _, f_ = rel_trace(t, pref if ref is None else ref, q, 0.2, b, 300, 3000)
-        return lfo_rate(d, f_, ex * lo, ex * hi, pearson=pearson)
+        return lfo_rate(d, f_, ex * lo, ex * hi, pearson=pearson, octave=octave)
     psp, ph0_at = {}, None
     pd0 = P["PH_SPEED"]["de"]
 
@@ -3209,7 +3219,10 @@ def vibes_fx(V, S, stim=None, extra=()):
             # CS_BAND (MARIMBA): the roll's centroid by the harmonic sum (rate_of) read SPEED 50 1.31 Hz for 0.87 on
             # host seeds 4 and 13 (1.5x: the jitter alone). The 300-3000 Hz band re the CHORUS DEPTH 0 take of the
             # same roll, by its period (lfo_rate pearson), as SPEED 0 and the phaser: no take added
-            sp[x] = S.per(lambda q: phrate(t, q, ex, ref=cref, pearson=True))
+            # (octave: 0.9.6's chorus, its wet high-passed at ~220 Hz, moves the band less at the LFO's own rate than
+            # at twice it; seed 4's SPEED 127 then correlated better at two periods than at one, 0.62 / 0.50, and read
+            # 3.00 Hz for 6.00: the 3 Hz fit's odd harmonics held 2 % of its even ones, i.e. a 6 Hz wave)
+            sp[x] = S.per(lambda q: phrate(t, q, ex, ref=cref, pearson=True, octave=True))
         else:
             sp[x] = S.per(lambda q: rate_of(ctr(t, q), fps, ex))
         if x:

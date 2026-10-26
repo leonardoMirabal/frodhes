@@ -212,6 +212,38 @@ def test_cpu_check_only_names(tmp_path):
     assert r.returncode == 0 and "PASS (4 of 4 cases" in r.stdout, r.stdout + r.stderr
 
 
+def test_cpu_check_size_cases_only_when_named(tmp_path):
+    """the optional size cases (0.9.6, BUGHUNT #19's fades): not in the default run; ONLY=vibes_size runs both, VIBES
+    worst on INFINITE and on PLATE with the reverb SIZE (CC 73) swept every 200 ms"""
+    sh = os.path.join(ROOT, "tools", "cpu_check.sh")
+
+    def run(only, out):
+        e = dict(os.environ, DRY_RUN="1", OUT=str(tmp_path / out), PY=sys.executable, ONLY=only)
+        return subprocess.run(["bash", sh], capture_output=True, text=True, env=e, cwd=ROOT, timeout=120)
+    r = run("", "all")
+    assert r.returncode == 0 and "PASS (4 of 4 cases" in r.stdout and "  cpu_vibes_size" not in r.stdout, r.stdout + r.stderr
+    r = run("vibes_size", "size")
+    assert r.returncode == 0 and "PASS (2 of 6 cases" in r.stdout, r.stdout + r.stderr
+    for name, rev in (("cpu_vibes_size_inf", "INF"), ("cpu_vibes_size_plate", "PLATE")):
+        assert f"{name}: PASS" in r.stdout
+        log = open(tmp_path / "size" / f"{name}.log").read()
+        assert f"reverb TYPE: {rev} (" in log and "--rev-type)" in log, log
+        assert "hil_cpu --engine vibes --worst --usb 48000 --cc-sweep 73:1:127:200 (not run)" in log, log
+    r = run("cpu_vibes_size_plate", "plate")
+    assert r.returncode == 0 and "cpu_vibes_size_plate: PASS" in r.stdout and "cpu_vibes_size_inf: skipped" in r.stdout, r.stdout
+
+
+def test_hil_cpu_cc_sweep_option():
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import hil_cpu
+    assert hil_cpu.cc_sweep_arg(["x", "--cc-sweep", "73:1:127:200"]) == (73, 1, 127, 0.2)
+    assert hil_cpu.cc_sweep_arg(["x", "--cc-sweep", "73"]) == (73, 0, 127, 0.005)
+    assert hil_cpu.cc_sweep_arg(["x"]) is None
+    for bad in ("73:1", "x", "200:0:127:5", "73:0:127:0"):
+        with pytest.raises(SystemExit):
+            hil_cpu.cc_sweep_arg(["x", "--cc-sweep", bad])
+
+
 def test_cpu_check_zero_cases_is_not_a_pass(tmp_path):
     """the guard itself: with every case skipped (a case list edited out from under ONLY), exit 2, no PASS line"""
     src = open(os.path.join(ROOT, "tools", "cpu_check.sh")).read()

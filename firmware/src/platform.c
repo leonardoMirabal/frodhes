@@ -161,6 +161,9 @@ static uint8_t recovery_active;
 #else
 #define OTA_IDENTITY (recovery_active ? "FM-1_000" : FELUCCA_ID)
 #endif
+#ifdef FR_OTA_V15
+static uint32_t fr_ota_area = FR_OTA_V16;      /* (frodhes_store.h OTA_AREA: fr_ota_pick at power-on) */
+#endif
 #include "ota.c"
 static void recovery_poll(void);
 static uint32_t ota_now_ms(void) { return fm1_ms; }
@@ -262,10 +265,11 @@ static int blob_save(uint32_t i, const void *p, uint32_t n) { return i < NBLOB ?
 static int slot_load(uint32_t i, void *p, uint32_t n) { return i < NSLOT ? area_load(SLOTS_AT + i * SLOT_SECT * 0x1000u, SLOT_MAX, SLOT_MAGIC ^ STORE_MAGIC, p, n) : -1; }
 static int slot_save(uint32_t i, const void *p, uint32_t n) { return i < NSLOT ? area_save(SLOTS_AT + i * SLOT_SECT * 0x1000u, SLOT_SECT, SLOT_MAGIC ^ STORE_MAGIC, p, n) : -1; }
 #if BOARD_SMK37
-/* the store's owner (the kit's convention, store.h): our tag, load as ever; anything else (the stock settings,
- * another port's data) is cleared once and the tag written, before the audio starts */
 static uint8_t smk_store_cleared, smk_trim_ok;   /* (the panel check shows them) */
 static uint32_t smk_jedec;
+#ifndef OLD_OWNER_AT                            /* (Frodhes 0.9.6: no owner clear, nothing of the stock VM written) */
+/* the store's owner (the kit's convention, store.h): our tag, load as ever; anything else (the stock settings,
+ * another port's data) is cleared once and the tag written, before the audio starts */
 static void smk_owner_check(void)
 {
     uint8_t tag[16], want[16];
@@ -292,6 +296,15 @@ static void smk_owner_check(void)
     fl_write(OWNER_AT, want, 16);
     smk_store_cleared = 1;
 }
+#else
+static int smk_old_ours(void)                   /* the data before 0.9.6 in the stock VM is ours (its owner tag): the
+                                                 * migration reads it (frodhes.c); else it is the stock's, never read */
+{
+    uint8_t tag[16], want[16];
+    smk_owner_tag(want);
+    return flash_ok && !st_read(OLD_OWNER_AT, tag, 16) && !memcmp(tag, want, 16);
+}
+#endif
 /* the factory key / pad velocity curves (USRTRIM 0xC1000, read only; smk_input.h checks them, else its defaults) */
 static void smk_trim_read(void)
 {
@@ -447,6 +460,31 @@ static __attribute__((noinline)) void isr_stats(uint32_t t0, uint32_t t1, uint32
     if (fill && (!isr_st.fill_low || fill < isr_st.fill_low)) isr_st.fill_low = fill;   /* fill + 1; 0 = no stream */
 }
 
+/* Frodhes: the block's MASTER pass with the gain ramping from master_prev to m (the loops below, a gain a frame) */
+static int32_t master_prev = -1;
+#define TAIL_PRE(x) ((x) > 32767 ? 32767 : (x) < -32767 ? -32767 : (x))
+static __attribute__((noinline)) void master_ramp(int32_t *o, int32_t m)
+{
+    int32_t mq = (master_prev < 0 ? m : master_prev) << 8, dm = master_prev < 0 ? 0 : m - master_prev, b, i;
+    for (b = 0; b < (int32_t)HALF_WORDS; b += 64) {
+        int32_t *c = o + b, *q = tap_q;
+        HAL_KEEP_REG(q);
+        for (i = 0; i < 32; i++, c += 2, q += 2) {
+            int32_t g, k, x;
+            mq += dm; g = mq >> 8;
+            for (k = 0; k < 2; k++) {           /* (both channels, either order of the gain and the clip below) */
+                x = c[k];
+                if (!usb_pre_master) x = (x * g) >> 12;
+                x = TAIL_PRE(x);
+                q[k] = x;
+                c[k] = (usb_pre_master ? (x * g) >> 12 : x) << APP_OUT_SHIFT;
+            }
+        }
+        UAC_ONLY(uac_tap(q - 64, 32u));
+    }
+    master_prev = m;
+}
+#undef TAIL_PRE
 void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) */
 {
     uint8_t p;
@@ -471,7 +509,13 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
          * of three over the block; the same samples. MASTER read once: only the main loop writes it */
         m = master_q12;
 #define TAIL_PRE(x) ((x) > 32767 ? 32767 : (x) < -32767 ? -32767 : (x))
-        for (b = 0; b < HALF_WORDS; b += 64u) {
+        if (m != master_prev) {                 /* Frodhes (0.9.6, BUGHUNT #20: a new MASTER stepped once a block, a
+                                                 * 2.4x zipper while the knob turns): the gain ramps from the last
+                                                 * block's, frame by frame (Q8: (m - prev) a frame reaches m exactly) */
+            master_ramp(o, m);
+            b = HALF_WORDS;
+        } else b = 0;
+        for (; b < HALF_WORDS; b += 64u) {
             int32_t *c = o + b, *q = tap_q;
             HAL_KEEP_REG(q);                    /* (an opaque pointer: else the compiler specialises uac_tap48 on
                                                  * tap_q and its per-frame loop gets 7 instructions longer) */
@@ -591,14 +635,35 @@ void fm1_cstart(void)
 #else
     flash_ok = FL_JEDEC_OK(FL_FAR(fl_jedec_ram)());
 #endif
+#ifdef FR_OTA_V15
+    {                                           /* Frodhes, the FM-1: the update staging where the stock firmware this
+                                                 * unit came from has no data. V15's VM (its settings store) starts
+                                                 * 55 AA AA 55 at 0x93000: stage at its end, 0xE0000 (as Felucca and
+                                                 * 0.9.5), and erase only a record left there, never the stock data the
+                                                 * sectors may hold; else (V16: its image's end at 0x93000) in the gap
+                                                 * 0xA9000..0xADFFF, which no region of V16's covers */
+        uint8_t m[8];
+        uint32_t i, rec = 0;
+        if (flash_ok && !st_read(0x93000u, m, 4) && m[0] == 0x55u && m[1] == 0xAAu && m[2] == 0xAAu && m[3] == 0x55u) {
+            fr_ota_area = FR_OTA_V15;
+            if (!st_read(OTA_RES, m, 8))
+                for (i = 0; i < 8u; i++) rec |= m[i] != 0xFFu;
+            if (rec) ota_unstage();
+        } else
+            ota_boot_cleanup();
+    }
+#else
     ota_boot_cleanup();
+#endif
     lcd_init();
     lcd_fill(0, 0, 240, 240, C_BLACK);
     fm1_input_init();
     fm1_adc_init();
 #if BOARD_SMK37
     smk_trim_read();                            /* (after fm1_input_init: it sets the defaults first) */
+#ifndef OLD_OWNER_AT
     smk_owner_check();
+#endif
 #endif
     fm1_audio_init(abuf, HALF_WORDS, isr_alnk0, 3);   /* (abuf is zero: .bss) */
     usb_start();
