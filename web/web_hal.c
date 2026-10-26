@@ -97,6 +97,15 @@ static __attribute__((unused)) int settings_load_old(void *p, uint32_t n)
     return 0;
 }
 static __attribute__((unused)) int smk_old_ours(void) { return 1; }
+/* the ids of what is at the places before 0.9.6 (frodhes.c st_old_scan, set_store.c): the page has none there, so
+ * every id is 0 and a record never takes anything again; set_at / set_seq only for the boot's re-take (never here) */
+static __attribute__((unused)) uint32_t set_at, set_seq;
+static __attribute__((unused)) uint32_t st_id(uint32_t crc, uint32_t seq)
+{
+    uint32_t v = crc ^ (seq * 0x9E3779B1u);
+    return v ? v : 1u;
+}
+static __attribute__((unused)) uint32_t settings_old_id(void) { return 0; }
 static int settings_save(const void *p, uint32_t n)
 {
     if (n != 256u) return -1;
