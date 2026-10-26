@@ -187,6 +187,24 @@ static void tp_reset(void)                              /* developer CC 10: the 
  * TP_FADE a sample and blends what ANA adds: the wow and flutter's depth, the darker tone (col: DIG's), the softclip;
  * the delay time slews as the type with the larger share. At a = 0 / 32768 the integers are DIG's / ANA's */
 static int32_t dly_xm;
+/* DIG's TIME changed (0.9.6, BUGHUNT #3: the time glided one sample a sample, so while it rose the read head stood
+ * still, one held sample, and the echoes were lost; falling, they played an octave up): the old tap and the new one
+ * (dly_tn) crossfade over 1024 samples (23 ms, dly_tx the new one's share), then the new is the delay time; a time
+ * that moves on meanwhile is the next crossfade's. ANA's slew is capped at 1/16 sample a sample (it scrubbed at up to
+ * ~5x: a bend stays a bend). fx_delay_t routes those blocks here (tp_route); at rest the old loops */
+#define DLY_TXS 32
+static int32_t dly_tn, dly_tx;
+static inline __attribute__((always_inline)) int32_t dly_rd(uint32_t w, int32_t d, uint32_t c)   /* the tap at d (Q8) */
+{
+    uint32_t i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
+    if (c <= DLY_LEN) {
+        uint32_t lb = (w - i) & (DLY_LEN - 1u);
+        int32_t a0 = ((lb - 1u) & (DLY_LEN - 1u)) < c ? dly_buf[i] : 0;
+        int32_t a1 = (lb & (DLY_LEN - 1u)) < c ? dly_buf[(i - 1u) & (DLY_LEN - 1u)] : 0;
+        return (a0 + (((a1 - a0) * (d & 255)) >> 8)) << 1;
+    }
+    return (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
+}
 __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t n, int tape, int32_t msk,
                                                int32_t sg16, int32_t target, int32_t col, int32_t fb, int32_t wet,
                                                int32_t dgt, int32_t gs)
@@ -197,33 +215,33 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
     int32_t a = tape == 0 ? 0 : tape == 1 ? 32768 : dly_xm, da = tape == 2 ? TP_FADE : tape == 3 ? -TP_FADE : 0;
     int32_t cd = tape >= 2 ? ((col * 19661) >> 15) - col : 0, c0 = col;
     int32_t wq = dly_wk << 8, ws = DLY_WSTEP(dly_wk, wet, n);   /* the echo's gain: a ramp from the last block's */
+    int32_t tn = dly_tn, tx = dly_tx;
     for (j = 0; j < n; j++) {
         int32_t d, r, in = ((L[j] + R[j]) >> 1) & msk, f;
-        uint32_t i;
         kq += dk;
         in = (int32_t)(((int64_t)in * (kq >> 8)) >> 16);
         a = PH_CL(a + da, 0, 32768);
         col = c0 + (int32_t)(((int64_t)cd * a) >> 15);
         if (a) {
             int32_t sf;
-            if (a >= 16384) dd += (target - dd) >> 12; else dd += PH_CL(target - dd, -256, 256);
+            if (a >= 16384) dd += PH_CL((target - dd) >> 12, -16, 16); else dd += PH_CL(target - dd, -256, 256);
+            tx = 0;
             wow += 69000u; flt += 690000u;
             sf = osc_sine(flt);
             sf = (sf + (int32_t)((uint32_t)sf >> 31)) >> 1;
             d = dd + (int32_t)(((((int64_t)dd * (osc_sine(wow) * 3 + sf)) >> 25) * a) >> 15);
         } else {
-            dd += PH_CL(target - dd, -256, 256);
+            if (!tx && dd != target) { tn = target; tx = 1; }   /* (a new time: the crossfade starts) */
             d = dd;
         }
-        i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
-        if (c <= DLY_LEN) {
-            uint32_t lb = (w - i) & (DLY_LEN - 1u);
-            int32_t a0 = ((lb - 1u) & (DLY_LEN - 1u)) < c ? dly_buf[i] : 0;
-            int32_t a1 = (lb & (DLY_LEN - 1u)) < c ? dly_buf[(i - 1u) & (DLY_LEN - 1u)] : 0;
-            r = (a0 + (((a1 - a0) * (d & 255)) >> 8)) << 1;
-            c++;
-        } else
-            r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
+        r = dly_rd(w, d, c);
+        if (tx) {                                       /* DIG's two taps */
+            int32_t r1 = dly_rd(w, tn, c);
+            tx = tx + DLY_TXS > 32768 ? 32768 : tx + DLY_TXS;
+            r += (int32_t)(((int64_t)(r1 - r) * tx) >> 15);
+            if (tx == 32768) { dd = tn; tx = 0; }
+        }
+        if (c <= DLY_LEN) c++;
         g = PH_CL(g + gs, 0, 32768);
         r = (int32_t)(((int64_t)r * g) >> 15);
         lp += (int32_t)(((int64_t)(r - lp) * col) >> 15);
@@ -239,7 +257,7 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
     }
     dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg; dly_sgk = msk ? sg16 : 0;
-    dly_xg = g; dly_xm = a;
+    dly_xg = g; dly_xm = a; dly_tn = tn; dly_tx = tx;
 }
 
 /* fx_delay_t's router: 1 = this block is done here, 0 = the old loops run it as always. dly_cur: 3 while TAPE owns
@@ -268,7 +286,8 @@ __attribute__((noinline)) static int tp_route(int32_t *L, int32_t *R, uint32_t n
             tp_block(L, R, n, target, -1, sg16, fb, wet, dgt, 0);
             return 1;
         }
-        tp_zero(); dly_cur = 0; dly_xg = 0; dly_lp = dly_hp = 0;   /* then they fade in */
+        tp_zero(); dly_cur = 0; dly_xg = 0; dly_lp = dly_hp = 0;   /* then they fade in (at the time: no bend) */
+        dly_d = target; dly_tx = 0;
         dly_last = (uint8_t)sw;
     }
     if (sw == 3) {
@@ -282,7 +301,12 @@ __attribute__((noinline)) static int tp_route(int32_t *L, int32_t *R, uint32_t n
         return 1;
     }
     dly_last = (uint8_t)sw;
-    if (dly_xg == 32768) return 0;
+    if (dly_xg == 32768) {
+        if (!sw) return 0;
+        dly_fade(L, R, n, sw == 2, -1, sg16, target, col, fb, wet, dgt, 0);   /* (a time change: DIG's crossfade, ANA's
+                                                         * capped slew) */
+        return 1;
+    }
     dly_fade(L, R, n, sw == 2, sw ? -1 : 0, sg16, target, col, fb, wet, sw ? dgt : 32768, TP_FADE);   /* fading in */
     return 1;
 }

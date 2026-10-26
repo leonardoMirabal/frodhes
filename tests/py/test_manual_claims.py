@@ -90,18 +90,21 @@ def test_no_click(cid, quote, setup, change, known, request):
     assert x <= 10, f"{quote}: a click {x:.1f}x the unchanged renders"
 
 
-@pytest.mark.xfail(reason="BUGHUNT #3: the DIG read head stands still while the time glides", strict=False)
 def test_synced_delay_follows_tempo():
     """DELAY: 'A synced delay's time glides to a new tempo without clicks' (DIG, 1/4, MIX 127, FDBK 100; one staccato
-    chord, BPM 120 -> 90 on TEMPO): the echoes keep coming. The 350 ms after the change hold at least the echo energy
-    of the quieter of the two held tempos (an echo lost is about 10 dB less)"""
+    chord, BPM 120 -> 90 on TEMPO): the echoes keep coming. The time crossfades to the new one (0.9.6, #3), so the
+    echo due 500 ms after the last one comes 667 ms after it (the tap moved back): over one new delay time (750 ms)
+    the echoes hold the energy of the quieter held tempo (within 3 dB), and the first 350 ms are no dropout (within
+    8 dB; 0.9.5: -23 dB, the read head standing still on one sample)"""
     s = CLEAN + cc(88, 40, 30) + cc(89, 127, 31) + cc(25, 83, 32) + cc(26, 100, 33) + \
         [f"{40 + 3 * i} turn 0 1" for i in range(13)] + [l for n in (60, 64, 67) for l in hr.note(300, n, 110, 80)]
     a = hr.run("claim-sync-a", s + [f"{TE} turn 2 -30"], 2600)
     b = hr.run("claim-sync-b", s, 2600)
     c = hr.run("claim-sync-c", s + ["200 turn 2 -30"], 2600)
     la, lb, lc = (lvl(r, TE + 50, TE + 400) for r in (a, b, c))
-    assert la >= min(lb, lc) - 3, f"echoes after the tempo change {la:.1f} dBFS (held tempos {lb:.1f} / {lc:.1f})"
+    assert la >= min(lb, lc) - 8, f"echoes after the tempo change {la:.1f} dBFS (held tempos {lb:.1f} / {lc:.1f})"
+    la, lb, lc = (lvl(r, TE + 50, TE + 800) for r in (a, b, c))
+    assert la >= min(lb, lc) - 3, f"echoes over one new delay time {la:.1f} dBFS (held tempos {lb:.1f} / {lc:.1f})"
 
 
 def test_vibes_motor_switch():

@@ -1073,6 +1073,8 @@ static uint8_t dly_xo;                          /* DIG <-> ANA with echoes ringi
                                                  * softclip and the wow switched in one sample, ANA -> DIG 14x a ringing
                                                  * echo's d2): dly_fade crossfades the two (tape 2 / 3: what ANA adds
                                                  * glides in or out over 46 ms); 1 while it runs */
+static uint32_t dly_sil = DLY_LEN;              /* samples since the send last carried sound (up to DLY_LEN: the line
+                                                 * holds none of it): ANA's capped slew while the line holds sound */
 static uint8_t dly_ana;                         /* the old loops last ran ANA: its tail (OFF) runs ANA's loop (0.9.5: the
                                                  * DIG loop took over at OFF, its tone and the softclip changed at once:
                                                  * a kink in the echo one delay time later, 24x a steady one's) */
@@ -1157,11 +1159,13 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
             while (e >= ((int64_t)1 << 31)) { e >>= 1; m >>= 1; }
             if (m > 0) tg = clampi((ilog2_q12((uint32_t)e) - 4096 - ilog2_q12((uint32_t)m)) >> 1, 0, 4096);
         }
+        if (m > 0) dly_sil = 0; else if (dly_sil < DLY_LEN) dly_sil += n;   /* (the line's newest sound: #3's ANA) */
         dly_sg += (tg - dly_sg) >> 2;
         if (tg == 0 && dly_sg < 4) dly_sg = 0;
     }
     sg16 = last ? 0 : exp2_q16(dly_sg);
-    if (dly_xo || sw == 3 || dly_cur == 3 || dly_xg != 32768) {   /* TAPE, a switch to / from it, DIG <-> ANA (dly_tape.c) */
+    if (dly_xo || sw == 3 || dly_cur == 3 || dly_xg != 32768 || dly_tx || (sw == 1 && dly_d != target) ||
+        (sw == 2 && (dly_lp || dly_hp || dly_sil < DLY_LEN) && iabs(target - dly_d) > 65536)) {   /* TAPE, a switch to / from it, DIG <-> ANA (dly_tape.c) */
         if (tp_route(L, R, n, sw, target, sg16, fb, wet, depth)) { dly_wk = wet; return; }
     } else dly_last = (uint8_t)sw;                          /* (what a switch to TAPE fades out) */
     if (sw) FR_FAR(dly_ramp)(dly_m, n, sg16);                       /* (dly_loop sets dly_sgk to sg16) */
