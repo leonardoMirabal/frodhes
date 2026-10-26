@@ -562,3 +562,28 @@ def test_a_repeat_under_the_floor_is_no_event():
         i = 1000
         q2 = np.concatenate([q[:i], np.repeat(q[i - 1:i], 3, axis=0), q[i:]])
         assert len(C.det_repeat(q2)) == want, amp
+
+
+def test_track_a_difference_only_in_the_bass_is_no_event():
+    """BUGHUNT #36b: the FM-1's jack against USB in a bass-heavy window (the last chord's E1, SPREAD) differed only
+    under 100 Hz (the jack's analog low end) and track called it "ncc 0.955 < 0.97" with nothing wrong there. A
+    difference only under LF_ONLY_HZ is no event; a 2 ms gap or a short click in the same sound still is"""
+    fs = 48000
+    t = np.arange(int(3.0 * fs)) / fs
+    env = 0.4 + 0.6 * (0.5 + 0.5 * np.sin(2 * np.pi * 1.3 * t))
+    from scipy.signal import butter, sosfiltfilt
+    hi = 2500 * sosfiltfilt(butter(2, (300 / (fs / 2), 3000 / (fs / 2)), "band", output="sos"),
+                            np.random.default_rng(1).normal(0, 1, len(t)))   # (no period: one lag fits)
+    u = env * (9000 * np.sin(2 * np.pi * 41.2 * t) + hi)
+    usb = np.stack([u, u], 1)
+    j0 = 0.25 * env * (9000 * np.sin(2 * np.pi * 41.2 * t + 0.3) + hi)   # (the bass 17 degrees off, as a coupling)
+    rows, ev = C.track(usb, j0, fs)
+    assert rows and min(c for _, _, c in rows) < 0.97, "the test's bass difference must take the plain ncc under 0.97"
+    assert not [d for _, d in ev if "ncc" in d], ev
+    a = int(1.51 * fs)
+    j1 = j0.copy()
+    j1[a:a + 96] = 0.0                                                   # 2 ms gap
+    assert [d for _, d in C.track(usb, j1, fs)[1] if "ncc" in d]
+    j2 = j0.copy()
+    j2[a:a + 24] += 300.0                                                # 0.5 ms, +300 LSB
+    assert [d for _, d in C.track(usb, j2, fs)[1] if "ncc" in d]
