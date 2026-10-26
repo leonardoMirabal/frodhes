@@ -15,7 +15,8 @@ if [ "$1" = "--release" ]; then
   VER="$2"
   echo "$VER" | grep -Eq '^[0-9]+\.[0-9]+(\.[0-9]+)?(-[A-Za-z0-9.]+)?$' || { echo "--release $VER: use X.Y.Z" >&2; exit 2; }
 fi
-if [ -f .local/emsdk/emsdk_env.sh ]; then . .local/emsdk/emsdk_env.sh >/dev/null 2>&1; fi
+# (sourced from its own folder: under dash, the CI's sh, emsdk_env.sh cannot find where it is and sets nothing)
+if [ -f .local/emsdk/emsdk_env.sh ]; then cd .local/emsdk && . ./emsdk_env.sh >/dev/null 2>&1; cd ../..; fi
 mkdir -p web/dist
 emcc -O2 -DDINGHY_HOST -DDINGHY_WEB -DHOST_SAVE_MS=1u -DAPP_VER="\"$VER\"" -Ifirmware/src -Ifirmware/gen \
   -Wno-unused-function -Wno-unused-variable \

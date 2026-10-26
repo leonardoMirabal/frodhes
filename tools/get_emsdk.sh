@@ -14,5 +14,5 @@ else
   "$DEST/emsdk" install "$EMSDK_VERSION"
 fi
 "$DEST/emsdk" activate "$EMSDK_VERSION" >/dev/null
-. "$DEST/emsdk_env.sh" >/dev/null 2>&1
+cd "$DEST" && . ./emsdk_env.sh >/dev/null 2>&1; cd - >/dev/null   # (from its own folder: under dash it cannot find itself)
 emcc --version | head -1
