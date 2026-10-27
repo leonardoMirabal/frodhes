@@ -2,8 +2,9 @@
 /* Frodhes on the Move: a sound generator for the Schwung host (plugin API v2), one compilation unit.
  * The app is firmware/src/frodhes.c unchanged, through the browser HAL (web/web_hal.c: DINGHY_HOST + DINGHY_WEB);
  * this file adds the Move glue after it: move/move_bridge.h (the coroutine, the audio and clock bridge, MIDI,
- * parameters, state) and the Schwung v2 entry points. Persistence (the user presets, the pattern: M1-08) is still
- * to come; until then they live for the session. Exports one symbol (-fvisibility=hidden, -Wl,-z,defs). */
+ * parameters, state) and the Schwung v2 entry points. Persistence (M1-08, move/move_store.h and the worker in
+ * move_bridge.h): store.bin (settings + user presets) and pattern.bin, written off the audio core. Exports one symbol (-fvisibility=hidden, -Wl,-z,defs). */
+#define _GNU_SOURCE 1                    /* (sched_setaffinity for the persistence worker) */
 #define DINGHY_HOST 1
 #define DINGHY_WEB 1
 #define DINGHY_MOVE 1
@@ -41,15 +42,15 @@ static void *mv_create(const char *module_dir, const char *json_defaults)
 {
     move_inst_t *in;
     int expect = 0;
-    (void)module_dir; (void)json_defaults;
+    (void)json_defaults;
     if (!atomic_compare_exchange_strong(&mb.live, &expect, 1)) return 0;   /* one instance a process (plan 9.2 Q7) */
     in = calloc(1, sizeof *in);
     if (!in) { atomic_store(&mb.live, 0); return 0; }
     if (mb.booted) (void)mb_put(MB_EV_MIDI, 0xB0u, 123u, 0u, 0u, 0u, 0);   /* the app ran on: all notes off */
-    else if (mb_boot()) { free(in); atomic_store(&mb.live, 0); return 0; }
+    if (mb_start(module_dir)) { free(in); atomic_store(&mb.live, 0); return 0; }   /* the worker loads and boots */
     return in;
 }
-static void mv_destroy(void *inst) { if (inst) { free(inst); atomic_store(&mb.live, 0); } }
+static void mv_destroy(void *inst) { if (inst) { mb_stop(); free(inst); atomic_store(&mb.live, 0); } }
 static void mv_on_midi(void *inst, const uint8_t *msg, int len, int source) { if (inst) mb_midi_in(msg, len, source); }
 static void mv_set_param(void *inst, const char *key, const char *val) { if (inst) mb_set(key, val); }
 static int mv_get_param(void *inst, const char *key, char *buf, int buf_len) { return inst ? mb_get(key, buf, buf_len) : -1; }

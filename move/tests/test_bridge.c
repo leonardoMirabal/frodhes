@@ -9,20 +9,28 @@
  *   test_bridge presets DSP              every preset: "preset <i> <preset> <name>"; every TYPE: "type <t> <ui_engine>"
  *   test_bridge gatep DSP [N]            Gate P (M1-11): N (10^4) random blocks of MIDI, key writes, state reads and
  *                                        loads; no syscall (seccomp) and no allocation inside any callback (unless
- *                                        built -DNO_GUARDS, for ASan / UBSan), no sample stuck at full scale */
+ *                                        built -DNO_GUARDS, for ASan / UBSan), no sample stuck at full scale
+ *   test_bridge persist DSP DIR save|check   M1-08: "save" sets keys, records a pattern and saves a user preset, waits
+ *                                        for the worker's files; "check" (a new process) finds them all back
+ * Every mode but persist runs in a fresh empty data folder (build/move/t/run.XXXXXX), so no file of an earlier run
+ * changes the sound; create waits for the worker's boot (dev_ready) as the host's audio would play silence. */
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <unistd.h>
 #include "../vendor/plugin_api_v1.h"
 #ifndef NO_GUARDS
 #include "seccomp_guard.h"
 /* the allocation guard: any malloc family call while in_cb is set is counted */
 extern void *__libc_malloc(size_t), *__libc_calloc(size_t, size_t), *__libc_realloc(void *, size_t);
 extern void __libc_free(void *);
-static int in_cb, bad_alloc;
+static _Thread_local int in_cb;   /* (per thread: the persistence worker's own calls are not callbacks) */
+static int bad_alloc;
 void *malloc(size_t n) { if (in_cb) bad_alloc++; return __libc_malloc(n); }
 void *calloc(size_t a, size_t b) { if (in_cb) bad_alloc++; return __libc_calloc(a, b); }
 void *realloc(void *p, size_t n) { if (in_cb) bad_alloc++; return __libc_realloc(p, n); }
@@ -66,6 +74,28 @@ static unsigned stat_of(void *in, const char *name)
     return v;
 }
 static int16_t blk[256];
+/* create in DIR (NULL: a fresh empty folder), then wait for the worker's boot (silence until then) */
+static void *create(const char *dir)
+{
+    static char tmpl[64];
+    void *in;
+    if (!dir) {
+        mkdir("build", 0755); mkdir("build/move", 0755); mkdir("build/move/t", 0755);
+        snprintf(tmpl, sizeof tmpl, "build/move/t/run.XXXXXX");
+        dir = mkdtemp(tmpl);
+        if (!dir) { printf("FAIL mkdtemp\n"); exit(1); }
+    }
+    in = api->create_instance(dir, NULL);
+    for (int i = 0; in && i < 5000; i++) {
+        char r[8] = "";
+        api->get_param(in, "dev_ready", r, sizeof r);
+        if (r[0] == '1') return in;
+        { int16_t z[256]; api->render_block(in, z, 128); for (int k = 0; k < 256; k++) if (z[k]) { printf("FAIL sound before the boot\n"); exit(1); } }
+        usleep(1000);
+    }
+    if (in) { printf("FAIL the worker did not boot\n"); exit(1); }
+    return in;
+}
 static void render(void *in, int n) { while (n-- > 0) api->render_block(in, blk, 128); }
 
 /* ---- eq */
@@ -79,7 +109,7 @@ static int eq(const char *so, const char *script, const char *wav)
     void *in;
     if (!f) { printf("FAIL no script %s\n", script); return 1; }
     load(so);
-    in = api->create_instance("build/move/frodhes", NULL);
+    in = create(NULL);
     CHECK(in != NULL, "create");
     while (fgets(line, sizeof line, f)) {
         unsigned t, st, d1, d2; char what[16];
@@ -117,9 +147,9 @@ static int api_tests(const char *so)
     void *in, *in2;
     unsigned n0, i;
     load(so);
-    in = api->create_instance("build/move/frodhes", NULL);
+    in = create(NULL);
     CHECK(in != NULL, "create");
-    in2 = api->create_instance("build/move/frodhes", NULL);
+    in2 = api->create_instance("build/move/t", NULL);
     CHECK(in2 == NULL, "a second live instance is refused (one app a process)");
     render(in, 400);                                          /* boot, the splash */
 
@@ -298,7 +328,7 @@ static int api_tests(const char *so)
     }
 
     api->destroy_instance(in);
-    in = api->create_instance("build/move/frodhes", NULL);
+    in = create(NULL);
     CHECK(in != NULL, "create again after destroy");
     render(in, 10);
     api->destroy_instance(in);
@@ -311,7 +341,7 @@ static int keys(const char *so)
     char line[256], k[64], v[64];
     void *in;
     load(so);
-    in = api->create_instance("build/move/frodhes", NULL);
+    in = create(NULL);
     if (!in) { printf("FAIL create\n"); return 1; }
     render(in, 400);
     while (fgets(line, sizeof line, stdin)) {
@@ -328,7 +358,7 @@ static int presets(const char *so)
     void *in;
     int i;
     load(so);
-    in = api->create_instance("build/move/frodhes", NULL);
+    in = create(NULL);
     if (!in) { printf("FAIL create\n"); return 1; }
     render(in, 400);
     printf("count %s\n", get(in, "preset_count"));
@@ -352,7 +382,7 @@ static int gatep(const char *so, unsigned nblk)
     void *in;
     unsigned b, full = 0, peak = 0, i;
     load(so);
-    in = api->create_instance("build/move/frodhes", NULL);
+    in = create(NULL);
     if (!in) { printf("FAIL create\n"); return 1; }
     render(in, 400);
     api->get_param(in, "state", st, sizeof st);
@@ -388,8 +418,76 @@ static int gatep(const char *so, unsigned nblk)
     return fails != 0;
 }
 
+/* ---- persist (M1-08): run as two processes on one folder: save, then check */
+static int persist(const char *so, const char *dir, int save)
+{
+    static const char *K[][2] = { { "s_mch", "5" }, { "s_bpm", "97.0" }, { "s_sqswing", "61" }, { "s_scale", "2" },
+                                  { "s_root", "3" } };   /* (settings: the sound itself comes back through the host's
+                                                          * state, not store.bin) */
+    char want[64], ms[64];
+    void *in;
+    unsigned i, t;
+    load(so);
+    in = create(dir);
+    if (!in) { printf("FAIL create\n"); return 1; }
+    render(in, 400);
+    if (save) {
+        char crc0[16];
+        snprintf(crc0, sizeof crc0, "%s", get(in, "dev_pattern_crc"));
+        api->set_param(in, "s_sqrec", "1"); render(in, 3);                  /* record a few notes into the pattern */
+        api->set_param(in, "s_sqplay", "1"); render(in, 3);
+        for (t = 0; t < 16; t++) {
+            uint8_t on[3] = { 0x90, (uint8_t)(48 + t * 3 % 24), 100 }, off[3] = { 0x80, on[1], 0 };
+            api->on_midi(in, on, 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 40);
+            api->on_midi(in, off, 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 40);
+        }
+        api->set_param(in, "s_sqrec", "0"); render(in, 3);
+        api->set_param(in, "s_sqplay", "0"); render(in, 3);
+        for (i = 0; i < sizeof K / sizeof K[0]; i++) { api->set_param(in, K[i][0], K[i][1]); render(in, 3); }   /* (after:
+                                                               * s_mch moves the MIDI channel off the notes') */
+        for (t = 0; t < 6000; t++) {                          /* (the app saves the pattern after its own quiet wait;
+                                                               * the worker writes within 100 ms of the next staging) */
+            struct stat a, b; char f1[600], f2[600];
+            render(in, 30); usleep(2000);
+            snprintf(f1, sizeof f1, "%s/store.bin", dir); snprintf(f2, sizeof f2, "%s/pattern.bin", dir);
+            if (!stat(f1, &a) && !stat(f2, &b) && strcmp(get(in, "dev_pattern_crc"), crc0)) break;
+        }
+        CHECK(strcmp(get(in, "dev_pattern_crc"), crc0) != 0, "a pattern was recorded and saved (crc %s), after %u ms: %s", crc0, t * 2, get(in, "dev:seq"));
+        render(in, 700);                                      /* (the settings' own save wait, then the staging) */
+        snprintf(want, sizeof want, "%s", get(in, "dev_pattern_crc"));
+        {                                                     /* the timer ring to <module dir>/cpu-ring.log */
+            char p[600], l[64]; FILE *f; unsigned lines = 0, idx, us, fr, last = 0; int ok = 1;
+            api->set_param(in, "dev_cpu_log", "1"); render(in, 200); usleep(300000); render(in, 200); usleep(300000);
+            api->set_param(in, "dev_cpu_log", "0"); usleep(300000);
+            snprintf(p, sizeof p, "%s/cpu-ring.log", dir);
+            f = fopen(p, "r");
+            while (f && fgets(l, sizeof l, f)) { if (sscanf(l, "%u %u %u", &idx, &us, &fr) != 3 || fr != 128u || (lines && idx != last + 1u)) ok = 0; last = idx; lines++; }
+            if (f) fclose(f);
+            CHECK(ok && lines >= 400u, "cpu-ring.log: %u lines \"idx us frames\", in order (%d)", lines, ok);
+            if (ok && lines >= 400u) printf("ok    cpu-ring.log: %u lines, consecutive indices\n", lines);
+        }
+        snprintf(ms, sizeof ms, "%s", want);
+        printf("persist save: %s, pattern %s\n", get(in, "dev_store"), want);
+        api->destroy_instance(in);                            /* (the last staged write) */
+        { FILE *f; char p[600]; snprintf(p, sizeof p, "%s/expect.txt", dir); f = fopen(p, "w"); if (f) { fprintf(f, "%s\n", ms); fclose(f); } }
+        return fails != 0;
+    }
+    {
+        FILE *f; char p[600]; snprintf(p, sizeof p, "%s/expect.txt", dir); f = fopen(p, "r");
+        want[0] = 0; if (f) { if (!fgets(want, sizeof want, f)) want[0] = 0; fclose(f); }
+        want[strcspn(want, "\n")] = 0;
+    }
+    CHECK(strstr(get(in, "dev_store"), "loaded=3") != NULL, "both files loaded: %s", gbuf);
+    for (i = 0; i < sizeof K / sizeof K[0]; i++) { const char *v = get(in, K[i][0]); CHECK(!strcmp(v, K[i][1]), "%s restored: %s (want %s)", K[i][0], v, K[i][1]); }
+    CHECK(want[0] && !strcmp(get(in, "dev_pattern_crc"), want), "the pattern restored: %s (want %s)", gbuf, want);
+    printf("%s    persist: settings and the pattern back in a new process (%s)\n", fails ? "FAIL" : "ok", get(in, "dev_store"));
+    api->destroy_instance(in);
+    return fails != 0;
+}
+
 int main(int argc, char **argv)
 {
+    if (argc >= 5 && !strcmp(argv[1], "persist")) return persist(argv[2], argv[3], !strcmp(argv[4], "save"));
     if (argc >= 3 && !strcmp(argv[1], "keys")) return keys(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "presets")) return presets(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "gatep")) return gatep(argv[2], argc > 3 ? (unsigned)atoi(argv[3]) : 10000u);

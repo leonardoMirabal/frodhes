@@ -104,14 +104,14 @@ move-native:
 	tar -C build/move -czf build/move/frodhes-module.tar.gz $$(cd build/move && ls frodhes/dsp.so frodhes/module.json frodhes/help.json frodhes/LICENSE 2>/dev/null)
 	@ls -l $(MOVE_OUT)/dsp.so build/move/frodhes-module.tar.gz
 
-test-move:                 ## the Move checks (M1-01 stubs): one exported symbol, no undefined symbol, dlopen smoke
+test-move:                 ## the Move checks: exports/imports, the coroutine, the bridge (api, Gate P, eq), persistence (M1-08)
 	$(MOVE_RUN) make -s test-move-native
 
 test-move-native: move-native
 	@syms=$$(nm -D --defined-only $(MOVE_OUT)/dsp.so | awk '{print $$3}'); \
 	  [ "$$syms" = move_plugin_init_v2 ] || { echo "FAIL exports: $$syms"; exit 1; }; echo "ok    exports: $$syms"
 	@bad=$$(nm -D --undefined-only $(MOVE_OUT)/dsp.so | awk '{print $$2}' | grep -vE '^(_ITM_|__cxa_finalize|__gmon_start__)' | \
-	  grep -vE '^(calloc|free|malloc|aligned_alloc|memcmp|memcpy|memmove|memset|strlen|strcmp|strncmp|strchr|strstr|snprintf|sprintf|__isoc99_sscanf|atoi|strtol|clock_gettime|abort|__getauxval)@' || true); \
+	  grep -vE '^(calloc|free|malloc|aligned_alloc|memcmp|memcpy|memmove|memset|strlen|strcmp|strncmp|strchr|strstr|snprintf|sprintf|__isoc99_sscanf|atoi|strtol|clock_gettime|abort|__getauxval|pthread_create|pthread_join|pthread_self|pthread_setschedparam|sched_setaffinity|nanosleep|open|open64|close|read|write|fsync|rename|unlink|mkdir|stat|stat64|__errno_location|fopen|fopen64|fclose|fwrite)@' || true); \
 	  [ -z "$$bad" ] || { echo "FAIL imports beyond the allow-list: $$bad"; exit 1; }; echo "ok    imports"
 	@mkdir -p build/move/t
 	@$(MOVE_CC) -O2 -Wall -Wextra -o build/move/t/coro move/tests/test_coro.c move/coro/coro_aarch64.S
@@ -122,6 +122,13 @@ test-move-native: move-native
 	@$(MOVE_CC) -O1 -g -std=gnu11 -Wall -Wextra -o build/move/t/test_bridge move/tests/test_bridge.c -ldl
 	build/move/t/test_bridge api $(MOVE_OUT)/dsp.so
 	build/move/t/test_bridge gatep $(MOVE_OUT)/dsp.so 10000
+	@$(MOVE_CC) -O1 -std=gnu11 -Wall -Wextra -o build/move/t/test_store move/tests/test_store.c
+	@rm -rf build/move/t/store build/move/t/persist build/move/t/run.*
+	build/move/t/test_store build/move/t/store 40
+	@mkdir -p build/move/t/persist
+	build/move/t/test_bridge persist $(MOVE_OUT)/dsp.so build/move/t/persist save
+	build/move/t/test_bridge persist $(MOVE_OUT)/dsp.so build/move/t/persist check
+	@rm -rf build/move/t/store build/move/t/persist build/move/t/run.*
 	MOVE_DEFS='$(MOVE_DEFS)' move/tests/run_eq.sh
 
 move-tools-native: move-native   ## (the plugin and build/move/t/test_bridge only: tests/py/test_move_params.py)
@@ -139,6 +146,10 @@ gate-p-native: test-move-native
 	$(MOVE_CC) $(MOVE_SAN) -DNO_GUARDS -std=gnu11 -o build/move/san/test_bridge move/tests/test_bridge.c -ldl
 	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge api build/move/san/dsp.so
 	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge gatep build/move/san/dsp.so 10000
+	@rm -rf build/move/san/persist; mkdir -p build/move/san/persist
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge persist build/move/san/dsp.so build/move/san/persist save
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge persist build/move/san/dsp.so build/move/san/persist check
+	@rm -rf build/move/san/persist build/move/t/run.*
 	@for s in move/tests/scripts/*.txt; do n=$$(basename $$s .txt); \
 	  build/move/t/host build/move/san/$$n $$s > /dev/null 2>&1 && \
 	  ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge eq build/move/san/dsp.so $$s build/move/san/$$n.wav || exit 1; \

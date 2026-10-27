@@ -22,14 +22,20 @@
  *
  * Things the device session may change (each one place here): the clock source (MB_CLOCK_*), the state layout
  * (mb_state_get / mb_state_set), enum values by index or by label (mb_parse_wire), which MIDI sources play. */
+#include <pthread.h>
+#include <sched.h>
 #include <stdatomic.h>
 #include <time.h>
+#include "move_store.h"
 #include "coro/coro.h"
 
 #define MB_STACK (256u * 1024u)          /* the coroutine's stack (app_main and what it calls; ui_draw is the deepest) */
 #define MB_FIFO 1024u                    /* frames (power of two) */
 #define MB_Q 1024u                       /* the pre-queue: MIDI and parameter writes (power of two) */
 #define MB_HOST_RING 64u                 /* web_hal.c's mq[] */
+#define MB_PAT_LO (SQ_A < SQ_B ? SQ_A : SQ_B) /* the pattern's sectors in host_mem (frodhes_store.h) */
+#define MB_PAT_N ((SQ_A < SQ_B ? SQ_B : SQ_A) + 0x1000u - MB_PAT_LO)
+#define MB_STAGE_BLOCKS 345u             /* look for something to save about once a second */
 #define MB_CPU_N 4096u                   /* the per-callback timer ring (power of two): ~12 s of callbacks */
 
 enum { MB_EV_MIDI = 1, MB_EV_KEY, MB_EV_PRESET };
@@ -72,7 +78,20 @@ static struct {
     uint32_t rev;                        /* bumps on every applied change (state's "rev") */
     /* the per-callback timer (M1-18): render_block's own time, CLOCK_MONOTONIC (the vDSO: no syscall) */
     uint32_t cpu_us[MB_CPU_N]; uint16_t cpu_fr[MB_CPU_N];
-    uint32_t cpu_n, cpu_rd, cpu_max;
+    _Atomic uint32_t cpu_n;
+    uint32_t cpu_rd, cpu_max;
+    /* persistence (M1-08): the audio side stages what the app saved (the store record: settings + user presets;
+     * the pattern's sectors) under a sequence counter (odd: being copied); the worker writes the files */
+    _Atomic uint32_t stg_seq;
+    uint8_t stg_store[sizeof web_store_buf];
+    uint8_t stg_pat[MB_PAT_N];
+    uint32_t stg_blk;
+    int stg_have;
+    pthread_t wk; int wk_on; _Atomic int wk_stop, booting;
+    _Atomic int ready;                   /* the app has booted (the worker booted it): render plays */
+    char dir[512], mod_dir[512];
+    _Atomic int cpu_log;                 /* dev: the worker appends the timer ring to <module dir>/cpu-ring.log */
+    uint32_t saves, save_fail, loaded;
 } mb = { .first_now = 1, .clock_mode = MB_CLOCK_AUTO };
 
 /* ---- the coroutine (M1-02) */
@@ -88,20 +107,135 @@ static void mb_entry(void *arg)
 {
     (void)arg;
     coro_entered(&mb.co);
-    frodhes_web_main();                  /* web_hal.c main(): the store erased, then app_main() (never returns) */
+    app_main();                          /* (not web_hal.c's main(): it erases host_mem, which holds the loaded pattern) */
     for (;;) coro_yield(&mb.co);
 }
-static int mb_boot(void)                 /* create_instance (the loader thread): app_main up to its first poll */
+static int mb_boot(void)                 /* the worker: app_main up to its first poll (not on the callback) */
 {
     if (mb.booted) return 0;
     mb.stack = aligned_alloc(16, MB_STACK);
     if (!mb.stack) return -1;
     memset(mb.stack, 0, MB_STACK);       /* (touch every page now, not on the callback) */
     coro_init(&mb.co, mb.stack, MB_STACK, mb_entry, 0);
-    for (uint32_t i = 0; i < MB_Q; i++) atomic_store_explicit(&mb.q[i].seq, i, memory_order_relaxed);
     coro_resume(&mb.co);
     mb.booted = 1;
     return 0;
+}
+
+/* ---- persistence (M1-08), the worker: SCHED_OTHER on cores 0-2 (off the audio core 3) as its first action; loads
+ * the files and boots the app, then writes what the audio side staged (store.bin, pattern.bin) and, when asked,
+ * the timer ring (cpu-ring.log). The data folder: under Schwung's user data when there (it survives a module
+ * update: to confirm in D1, plan 9.2 Q3), else the module's folder */
+static void mb_pick_dir(const char *module_dir)
+{
+    struct stat st;
+    snprintf(mb.mod_dir, sizeof mb.mod_dir, "%s", module_dir && *module_dir ? module_dir : ".");
+    if (strstr(mb.mod_dir, "/modules/") && stat("/data/UserData/schwung", &st) == 0 && S_ISDIR(st.st_mode))
+        snprintf(mb.dir, sizeof mb.dir, "/data/UserData/schwung/module_data/frodhes");
+    else
+        snprintf(mb.dir, sizeof mb.dir, "%s", mb.mod_dir);
+}
+static void mb_load_files(void)          /* before the boot: what settings_load and seq_load will read */
+{
+    static uint8_t pat[MB_PAT_N];
+    (void)ms_mkdirs(mb.dir);
+    memset(host_mem, 0xFF, sizeof host_mem);
+    if (ms_load(mb.dir, "store.bin", web_store_buf, sizeof web_store_buf) > 0) mb.loaded |= 1u;
+    else memset(web_store_buf, 0, sizeof web_store_buf);
+    if (ms_load(mb.dir, "pattern.bin", pat, MB_PAT_N) > 0) { memcpy(host_mem + MB_PAT_LO, pat, MB_PAT_N); mb.loaded |= 2u; }
+    memcpy(mb.stg_store, web_store_buf, sizeof web_store_buf);   /* (what is on disk: nothing to write yet) */
+    memcpy(mb.stg_pat, host_mem + MB_PAT_LO, MB_PAT_N);
+}
+static void mb_stage(void);
+static uint32_t mb_wr_seq, mb_cpu_wr;
+static void mb_write_staged(void)
+{
+    static uint8_t st[sizeof web_store_buf], pat[MB_PAT_N], last_st[sizeof web_store_buf], last_pat[MB_PAT_N];
+    static int have_last;
+    uint32_t q1 = atomic_load_explicit(&mb.stg_seq, memory_order_acquire), q2;
+    if (q1 == mb_wr_seq || (q1 & 1u)) return;
+    memcpy(st, mb.stg_store, sizeof st);
+    memcpy(pat, mb.stg_pat, sizeof pat);
+    atomic_thread_fence(memory_order_acquire);
+    q2 = atomic_load_explicit(&mb.stg_seq, memory_order_relaxed);
+    if (q1 != q2) return;                                     /* (copied over meanwhile: next time) */
+    if (st[0] == 1 && (!have_last || memcmp(st, last_st, sizeof st))) {
+        if (ms_save(mb.dir, "store.bin", st, sizeof st)) mb.save_fail++; else { mb.saves++; memcpy(last_st, st, sizeof st); }
+    }
+    if (!have_last || memcmp(pat, last_pat, sizeof pat)) {
+        int erased = 1;
+        for (uint32_t i = 0; i < sizeof pat && erased; i++) erased = pat[i] == 0xFFu;
+        if (!erased || have_last) {
+            if (ms_save(mb.dir, "pattern.bin", pat, sizeof pat)) mb.save_fail++; else { mb.saves++; memcpy(last_pat, pat, sizeof pat); }
+        } else memcpy(last_pat, pat, sizeof pat);
+    }
+    have_last = 1;
+    mb_wr_seq = q1;
+}
+static void mb_write_cpu(void)
+{
+    static char line[64];
+    char path[600];
+    FILE *f;
+    uint32_t cn = atomic_load_explicit(&mb.cpu_n, memory_order_acquire);
+    if (!atomic_load(&mb.cpu_log)) { mb_cpu_wr = cn; return; }
+    if (cn == mb_cpu_wr) return;
+    snprintf(path, sizeof path, "%s/cpu-ring.log", mb.mod_dir);
+    f = fopen(path, "a");
+    if (!f) return;
+    if (cn - mb_cpu_wr > MB_CPU_N) mb_cpu_wr = cn - MB_CPU_N;   /* (overran: the gap shows in the indices) */
+    while (mb_cpu_wr != cn) {
+        uint32_t i = mb_cpu_wr & (MB_CPU_N - 1u);
+        int k = snprintf(line, sizeof line, "%u %u %u\n", mb_cpu_wr, mb.cpu_us[i], (unsigned)mb.cpu_fr[i]);
+        fwrite(line, 1, (size_t)k, f);
+        mb_cpu_wr++;
+    }
+    fclose(f);
+}
+static void *mb_worker(void *arg)
+{
+    struct sched_param sp = { .sched_priority = 0 };
+    (void)arg;
+    pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);
+#ifdef __linux__
+    { cpu_set_t c; CPU_ZERO(&c); CPU_SET(0, &c); CPU_SET(1, &c); CPU_SET(2, &c); sched_setaffinity(0, sizeof c, &c); }
+#endif
+    if (!mb.booted) {
+        mb_load_files();
+        if (mb_boot()) { atomic_store(&mb.booting, 0); return 0; }
+    }
+    mb_cpu_wr = atomic_load(&mb.cpu_n);
+    atomic_store_explicit(&mb.ready, 1, memory_order_release);
+    atomic_store(&mb.booting, 0);
+    while (!atomic_load(&mb.wk_stop)) {
+        struct timespec t = { 0, 100 * 1000000L };
+        mb_write_staged();
+        mb_write_cpu();
+        nanosleep(&t, 0);
+    }
+    mb_write_staged();                                        /* (a last staged save before the module goes) */
+    mb_write_cpu();
+    return 0;
+}
+static int mb_start(const char *module_dir)  /* create_instance */
+{
+    if (!mb.booted) mb_pick_dir(module_dir);
+    for (uint32_t i = 0; !mb.booted && i < MB_Q; i++) atomic_store_explicit(&mb.q[i].seq, i, memory_order_relaxed);
+    atomic_store(&mb.wk_stop, 0);
+    atomic_store(&mb.booting, 1);
+    if (pthread_create(&mb.wk, 0, mb_worker, 0)) { atomic_store(&mb.booting, 0); return -1; }
+    mb.wk_on = 1;
+    return 0;
+}
+static void mb_stop(void)                /* destroy_instance: the worker writes what is staged and ends (the host
+                                          * may dlclose next: none of our code may still run) */
+{
+    if (!mb.wk_on) return;
+    if (atomic_load(&mb.ready)) mb_stage();                   /* (render is not running now: the callbacks are ours) */
+    atomic_store(&mb.wk_stop, 1);
+    pthread_join(mb.wk, 0);
+    mb.wk_on = 0;
+    atomic_store(&mb.ready, 0);
 }
 
 /* ---- the pre-queue: many producers (on_midi, set_param from the callback or the loader), one consumer (step) */
@@ -378,6 +512,24 @@ static void mb_step(void)
     coro_resume(&mb.co);
 }
 
+/* ---- persistence (M1-08), the audio side: once a second, between two main-loop passes, when the app saved (its
+ * store record dirty, or the pattern's sectors changed) and the sound is quiet (the app saves only then anyway),
+ * copy both into the staging buffers: ~6 KB of memcpy, no syscall */
+static void mb_stage(void)
+{
+    uint32_t q;
+    int dirty = web_store_dirty != 0, pat = memcmp(mb.stg_pat, host_mem + MB_PAT_LO, MB_PAT_N) != 0;
+    if (!(dirty || pat || !mb.stg_have) || !eng_quiet() || !fx_quiet()) return;
+    q = atomic_load_explicit(&mb.stg_seq, memory_order_relaxed);
+    atomic_store_explicit(&mb.stg_seq, q + 1u, memory_order_relaxed);   /* odd: copying */
+    atomic_thread_fence(memory_order_release);
+    memcpy(mb.stg_store, web_store_buf, sizeof web_store_buf);
+    memcpy(mb.stg_pat, host_mem + MB_PAT_LO, MB_PAT_N);
+    atomic_store_explicit(&mb.stg_seq, q + 2u, memory_order_release);
+    web_store_dirty = 0;
+    mb.stg_have = 1;
+}
+
 static uint64_t mb_now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (uint64_t)t.tv_sec * 1000000000u + (uint64_t)t.tv_nsec; }
 static void mb_render_in(int16_t *out, int frames);
 static void mb_render(int16_t *out, int frames)
@@ -387,9 +539,12 @@ static void mb_render(int16_t *out, int frames)
     mb_render_in(out, frames);
     d = (mb_now_ns() - t0 + 500u) / 1000u;
     us = d > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t)d;
-    mb.cpu_us[mb.cpu_n & (MB_CPU_N - 1u)] = us;
-    mb.cpu_fr[mb.cpu_n & (MB_CPU_N - 1u)] = (uint16_t)(frames < 0 ? 0 : frames);
-    mb.cpu_n++;
+    {
+        uint32_t c = atomic_load_explicit(&mb.cpu_n, memory_order_relaxed);
+        mb.cpu_us[c & (MB_CPU_N - 1u)] = us;
+        mb.cpu_fr[c & (MB_CPU_N - 1u)] = (uint16_t)(frames < 0 ? 0 : frames);
+        atomic_store_explicit(&mb.cpu_n, c + 1u, memory_order_release);
+    }
     if (us > mb.cpu_max) mb.cpu_max = us;
 }
 /* dev_cpu_ring: the callbacks since the last read, one line each: "<callback index> <us> <frames>" (index from 0
@@ -397,8 +552,9 @@ static void mb_render(int16_t *out, int frames)
 static int mb_cpu_ring(char *buf, int n)
 {
     int o = 0;
-    if (mb.cpu_n - mb.cpu_rd > MB_CPU_N) mb.cpu_rd = mb.cpu_n - MB_CPU_N;
-    while (mb.cpu_rd != mb.cpu_n && n - o > 32) {
+    uint32_t cn = atomic_load_explicit(&mb.cpu_n, memory_order_acquire);
+    if (cn - mb.cpu_rd > MB_CPU_N) mb.cpu_rd = cn - MB_CPU_N;
+    while (mb.cpu_rd != cn && n - o > 32) {
         uint32_t i = mb.cpu_rd & (MB_CPU_N - 1u);
         o += snprintf(buf + o, (size_t)(n - o), "%u %u %u\n", mb.cpu_rd, mb.cpu_us[i], (unsigned)mb.cpu_fr[i]);
         mb.cpu_rd++;
@@ -410,7 +566,7 @@ static void mb_render_in(int16_t *out, int frames)
 {
     uint32_t i, n = frames < 0 ? 0u : (uint32_t)frames;
     if (n > MB_FIFO - HALF_FRAMES) n = MB_FIFO - HALF_FRAMES;
-    if (!mb.booted) { memset(out, 0, (size_t)frames * 4u); return; }
+    if (!atomic_load_explicit(&mb.ready, memory_order_acquire)) { memset(out, 0, (size_t)frames * 4u); return; }
     mb_clock_block(frames);
     while (mb.fw - mb.fr < n) mb_step();
     for (i = 0; i < n; i++) {
@@ -420,6 +576,7 @@ static void mb_render_in(int16_t *out, int frames)
     for (; i < (uint32_t)frames; i++) out[2u * i] = out[2u * i + 1u] = 0;
     mb.fr += n;
     mb.blocks++;
+    if (++mb.stg_blk >= MB_STAGE_BLOCKS) { mb.stg_blk = 0; mb_stage(); }
 }
 
 /* ---- MIDI in (M1-04): everything a sound generator gets goes to the app as it came (notes, release velocity, CC,
@@ -442,6 +599,9 @@ static int mb_get(const char *key, char *buf, int n)
 {
     int i;
     if (!key || !buf || n <= 0) return -1;
+    if (!strcmp(key, "dev_ready")) return snprintf(buf, (size_t)n, "%d", atomic_load(&mb.ready));
+    if (!atomic_load_explicit(&mb.ready, memory_order_acquire) && strcmp(key, "chain_params") && strcmp(key, "ui_hierarchy"))
+        return -1;                       /* (the worker still boots the app: nothing of it to read yet) */
     if (!strcmp(key, "state")) return mb_state_get(buf, n);
     if ((i = mb_key_find(key)) >= 0) return mb_wire_text(&MOVE_KEYS[i], buf, n);
     if (!strcmp(key, MOVE_GATE_KEY)) return snprintf(buf, (size_t)n, "%u", (unsigned)TYPE_UI[PV(P_TYPE) < N_TYPE_N ? PV(P_TYPE) : 0u]);
@@ -452,7 +612,9 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, "chain_params")) { if ((int)sizeof MOVE_CHAIN_PARAMS > n) return -1; memcpy(buf, MOVE_CHAIN_PARAMS, sizeof MOVE_CHAIN_PARAMS); return (int)sizeof MOVE_CHAIN_PARAMS - 1; }
     if (!strcmp(key, "rev")) return snprintf(buf, (size_t)n, "%u", mb.rev);
     if (!strcmp(key, "dev_cpu_ring")) return mb_cpu_ring(buf, n);
-    if (!strcmp(key, "dev_cpu")) return snprintf(buf, (size_t)n, "callbacks=%u max_us=%u", mb.cpu_n, mb.cpu_max);
+    if (!strcmp(key, "dev_store")) return snprintf(buf, (size_t)n, "dir=%s loaded=%u saves=%u fail=%u", mb.dir, mb.loaded, mb.saves, mb.save_fail);
+    if (!strcmp(key, "dev_pattern_crc")) return snprintf(buf, (size_t)n, "%08x", ms_crc32(host_mem + MB_PAT_LO, MB_PAT_N));
+    if (!strcmp(key, "dev_cpu")) return snprintf(buf, (size_t)n, "callbacks=%u max_us=%u", atomic_load(&mb.cpu_n), mb.cpu_max);
     /* development reads (tests, the device session) */
     if (!strcmp(key, "dev_stats"))
         return snprintf(buf, (size_t)n, "ms=%u steps=%u blocks=%u midi_in=%u midi_out=%u q_full=%u f8_synth=%u keys=%u keys_bad=%u "
@@ -463,6 +625,9 @@ static int mb_get(const char *key, char *buf, int n)
         if (!strcmp(k, "bpm10")) return snprintf(buf, (size_t)n, "%u", tempo_bpm10());
         if (!strcmp(k, "clklock")) return snprintf(buf, (size_t)n, "%u", (unsigned)clk_follows());
         if (!strcmp(k, "seqplay")) return snprintf(buf, (size_t)n, "%u", (unsigned)seq_play);
+        if (!strcmp(k, "seq")) return snprintf(buf, (size_t)n, "rec=%u n=%u dirty=%u step=%u quiet=%d/%d/%d",
+                                               (unsigned)seq_rec, (unsigned)sq_n, (unsigned)sq_dirty, (unsigned)sq_sv_step,
+                                               eng_idle(), fx_quiet(), tempo_flash_ok());
         if (!strcmp(k, "fm1_ms")) return snprintf(buf, (size_t)n, "%u", fm1_ms);
         if (!strncmp(k, "pv", 2)) { int id = atoi(k + 2); return id >= 0 && id < (int)P_COUNT ? snprintf(buf, (size_t)n, "%u", PV(id)) : -1; }
     }
@@ -489,5 +654,6 @@ static void mb_set(const char *key, const char *val)
             (void)mb_put(MB_EV_MIDI, (uint8_t)st, (uint8_t)(d1 & 127u), (uint8_t)(d2 & 127u), t ? t : 1u, 0, 0);
         return;
     }
+    if (!strcmp(key, "dev_cpu_log")) { atomic_store(&mb.cpu_log, atoi(val) != 0); return; }
     if (!strcmp(key, "dev_clock")) { int m = atoi(val); if (m >= MB_CLOCK_AUTO && m <= MB_CLOCK_HOST) mb.clock_mode = m; return; }
 }

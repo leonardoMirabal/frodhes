@@ -32,7 +32,11 @@ The agent runs every command. What you do is in **bold**.
    2. turn each of the 8 knobs a little, then touch each knob without turning it, then touch the jog wheel;
    3. press once each: Play, Record, Loop, Capture, Undo, Copy, Delete, Mute, the arrows, the 16 step buttons, a
       track button, Shift (the log shows which of them reach a sound generator: the sustain control, M1-13b);
-   4. on the "Probe" page: turn **State** to each size, from 1K to 64K, and after each one save a module preset of
+   4. pad layout (plan 9.2 Q13: does the Move pass its own pad notes, or the raw pads?): in the Move's note
+      settings, with **In Key on**, play the bottom row left to right; then **In Key off** (chromatic), the same
+      row; then change the **row interval** (4th, 3rd, octave, sequential) and play two rows; then another
+      **scale and root** and play the bottom row again;
+   5. on the "Probe" page: turn **State** to each size, from 1K to 64K, and after each one save a module preset of
       slot 1 (this finds the largest `state` that saves and loads back).
 5. **Clock: press Play on the Move, wait 4 bars, Stop, Play again** (the agent reads whether F8/FA/FB/FC reach the
    slot, or only the host's transport calls). Optional: **a USB-A keyboard on the Move: a few notes, the mod wheel,
