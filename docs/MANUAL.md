@@ -42,7 +42,9 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 2. Connect the FM-1 to your computer with USB.
 3. Install it from a terminal with the installer in this repository:
    `python3 tools/fm1_install.py frodhes.fwsc` (it needs `pip install mido python-rtmidi`). Once Frodhes is listed
-   on [thefirmwarehub.com](https://thefirmwarehub.com), its web installer works too (Chrome or Edge).
+   on [thefirmwarehub.com](https://thefirmwarehub.com), its web installer works too (Chrome or Edge). Updating an
+   FM-1 that already runs Frodhes: use the installer from this repository as it is now; an older copy (0.9.4 and
+   before) does not know the FM-1's port name "Frodhes" and says "FM-1 not found" (`--port Frodhes` works there).
 4. The FM-1 restarts into Frodhes. If it does not come back by itself, switch it off and on.
 
 While an install writes, the screen shows FRODHES, **WRITING** (do not switch off) and a bar with the percent. If an
@@ -1009,7 +1011,8 @@ On the computer the FM-1 is called **Frodhes**, its MIDI port and its audio inpu
 earlier firmware gave it sets it up as a new device, named Frodhes, by itself: in a DAW, switch the Frodhes port on
 once (in its MIDI preferences) where the old one was. A Mac keeps the old entry in Audio MIDI Setup's MIDI Studio
 window, greyed out (offline): nothing needs deleting, but you can remove it. It appears as a USB audio input (class-compliant, stereo, 16-bit, 44.1 or 48 kHz): you can record exactly
-what it plays, digitally, without the headphone jack's hiss. It does not play audio from the computer. Saving the
+what it plays, digitally, without the headphone jack's hiss (at 48 kHz the converted stream keeps the same
+headroom: a loud, bright passage is softened just under full scale instead of clipping). It does not play audio from the computer. Saving the
 settings while it is recorded does not disturb the recording (section 6, "What is kept, and when"). The USB audio holds one block (5.8 ms) more
 than the jack in hand, so that no render, however long, can run it dry (that was a click now and then at full
 polyphony): a frame leaves the FM-1 about 6-11 ms after its block is computed, at either rate; a DAW's latency
