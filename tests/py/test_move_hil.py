@@ -140,3 +140,19 @@ def test_usb_cli_fake(tmp_path):
     r = run("usb-note", "--fake", "--out", str(tmp_path))
     assert r.returncode == 0 and "PASS" in r.stdout, r.stdout + r.stderr
     assert os.path.exists(tmp_path / "report.json")
+
+
+def test_idle_verdict():
+    """the preflight's three cases: digital silence, the microphone (broadband noise with LF rumble, L == R), a
+    sound playing (a tone, stereo)"""
+    rng = np.random.default_rng(1)
+    n = 44100
+    assert mh.idle_verdict(np.zeros((n, 2)), 44100)["kind"] == "digital"
+    assert mh.idle_verdict(rng.integers(-1, 2, (n, 2)).astype(float), 44100)["kind"] == "digital"   # (dither)
+    t = np.arange(n) / 44100
+    room = rng.normal(0, 60, n) + 2000 * np.sin(2 * np.pi * 4 * t) + 800 * np.sin(2 * np.pi * 11 * t)
+    room = np.round(room)
+    v = mh.idle_verdict(np.stack([room, room], 1), 44100)
+    assert v["kind"] == "mic", v
+    tone = 3000 * np.sin(2 * np.pi * 262 * t)
+    assert mh.idle_verdict(np.stack([tone, 0.7 * tone], 1), 44100)["kind"] == "playing"

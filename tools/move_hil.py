@@ -712,24 +712,51 @@ def usb_devices(midi=None, audio=None, out=print):
 IDLE_FLOOR_DB = -80.0                       # the digital Main Out with nothing playing: under this (silence, or dither)
 
 
+def idle_verdict(x, sr):
+    """what an idle USB-C stream is: {"kind": "digital" (under IDLE_FLOOR_DB) | "mic" (the room: broadband noise
+    with rumble under 20 Hz, the two channels one microphone) | "playing" (sound, not the room's signature),
+    floor_db, peak, lf_db (under 20 Hz against 200 Hz-4 kHz, per Hz), same_lr (share of frames with L == R)}"""
+    x = np.asarray(x, float)
+    floor = hs.db(x)
+    peak = float(np.abs(x).max()) if len(x) else 0.0
+    m = x.mean(axis=1) if x.ndim == 2 else x
+    sp = np.abs(np.fft.rfft(m * np.hanning(len(m)))) ** 2 if len(m) else np.zeros(1)
+    f = np.fft.rfftfreq(len(m), 1 / sr) if len(m) else np.zeros(1)
+
+    def per_hz(lo, hi):
+        k = (f >= lo) & (f < hi)
+        return 10 * np.log10(sp[k].mean() + 1e-12) if k.any() else -240.0
+    lf = per_hz(1, 20) - per_hz(200, 4000)
+    same = float(np.mean(x[:, 0] == x[:, 1])) if x.ndim == 2 and len(x) else 0.0
+    if floor < IDLE_FLOOR_DB:
+        kind = "digital"
+    elif lf > 10 and same > 0.3:
+        kind = "mic"
+    else:
+        kind = "playing"
+    return {"kind": kind, "floor_db": round(floor, 1), "peak": peak, "lf_db": round(float(lf), 1),
+            "same_lr": round(same, 2)}
+
+
+SAY = {"digital": "the digital Main Out",
+       "mic": "the MICROPHONE (the room: rumble under 20 Hz, one channel on both sides). On the Move: Settings > "
+              "USB-C audio out, pick Mic and then Main Out again (the Move resets it at boot, and its sampling page "
+              "puts it back on the mic while the screen still says Main Out); then rerun",
+       "playing": "NOT silent, and not the room's signature: something plays (a clip, another slot); stop it, rerun"}
+
+
 def preflight(r, out=print, secs=1.0):
-    """the Move's USB-C stream must be its digital Main Out: with nothing playing it is (near) silent. The Move puts
-    USB-C back on the microphone at every boot, and its sampling page does too while the setting still shows Main Out
-    (Schwung docs/SPI_PROTOCOL.md): then the takes hold the room (broadband noise about -53 dBFS, LF rumble, other
-    instruments) and nothing judged on them means anything. (ok, {floor_db, peak, lf_db})"""
+    """the Move's USB-C stream must be its digital Main Out: with nothing playing it is (near) silent (idle_verdict).
+    Nothing reads the setting itself: Schwung's master_fx:usbc_out_source sees only the 37 14 half, not the
+    monitoring bit whose loss is the silent revert to the mic (docs/SPI_PROTOCOL.md). (ok, verdict)"""
     r._send("cc", 123, 0)
     r._send("cc", 64, 0)
     time.sleep(0.5)
     tk = r.rec(secs, [])
-    x = tk["x"]
-    floor = hs.db(x)
-    peak = float(np.abs(x).max()) if len(x) else 0.0
-    rep = {"floor_db": round(floor, 1), "peak": peak}
-    ok = floor < IDLE_FLOOR_DB
-    out("preflight: idle %.1f dBFS, peak %d LSB: %s" % (floor, peak, "the digital Main Out" if ok else
-        "NOT silent: USB-C carries the microphone (or something plays). On the Move: Settings > USB-C audio out, "
-        "pick Mic and then Main Out again; stop any clip; then rerun"))
-    return ok, rep
+    v = idle_verdict(tk["x"], tk["sr"])
+    out("preflight: idle %.1f dBFS, peak %d LSB, rumble %+.1f dB, L == R %.0f %%: %s" % (
+        v["floor_db"], v["peak"], v["lf_db"], 100 * v["same_lr"], SAY[v["kind"]]))
+    return v["kind"] == "digital", v
 
 
 USB_CMDS = ("usb-devices", "usb-note", "usb-vel", "usb-sus", "usb-clock", "usb-stress")
