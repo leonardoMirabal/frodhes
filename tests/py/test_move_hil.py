@@ -172,3 +172,17 @@ def test_usb_host_same_sound(tmp_path):
     assert all(abs(w["lag_ms"] - 6.8) < 0.1 for w in rep["rows"]), rep["rows"]
     ok, rep = mh.usb_host(mh.FakeRig(), str(tmp_path), out=lambda s: None)
     assert not ok
+
+    class HostPlusOther(HostEcho):               # (the first device run: a short odd-harmonic tone on every key)
+        def rec(self, dur, events):
+            out = HostEcho.rec(self, dur, events)
+            x, t = out["x"], np.arange(int(0.3 * 44100)) / 44100
+            for tt, k, n, v in events:
+                if k == "on":
+                    f = mh.note_hz(n)
+                    tone = 3000 * np.exp(-t / 0.08) * (np.sin(2 * np.pi * f * t) + np.sin(6 * np.pi * f * t) / 3)
+                    i = int(tt * 44100) + 300
+                    x[i:i + len(t)] += tone[:, None]
+            return out
+    ok, rep = mh.usb_host(HostPlusOther(), str(tmp_path), out=lambda s: None)
+    assert not ok and "ANOTHER SOUND" in rep["verdict"] and abs(rep["gain_db"] + 6.02) < 0.1, rep["verdict"]

@@ -781,44 +781,92 @@ def usb_host(r, d, program=0, out=print):
     mv, sr = tk["x"], tk["sr"]
     h = host_phrase(ev, dur, program)
     _save(d, "host-phrase", {"x": h, "sr": 44100})
-    segs = []
-    pad = 2400
+    rows, segs = [], []
+    maxlag = int(0.08 * sr)
     for name, t, n in marks:
-        a, b = int((t - 0.05) * sr), int((t + NOTE_S + 0.6) * sr)
+        # the alignment, the gain and the residual on the held note's second half (0.5-1.0 s: a short foreign sound
+        # on the same keys, a Move instrument on the track, has died there; the first device run, 2026-10-28); the
+        # "extra" is what the Move has on top of the host's note over the whole held second
+        a, b = int(t * sr), int((t + NOTE_S) * sr)
+        ta, tb = a + int(0.5 * sr), b
+        hm_t = _mono(h[ta:tb])
+        best = (-2.0, 0)
+        for lag in range(-int(0.01 * sr), maxlag):
+            if ta + lag < 0 or tb + lag > len(mv):
+                continue
+            mt = _mono(mv[ta + lag:tb + lag])
+            c = float(np.dot(mt, hm_t) / (np.linalg.norm(mt) * np.linalg.norm(hm_t) + 1e-9))
+            if c > best[0]:
+                best = (c, lag)
+        corr, lag = best
+        mm = _mono(mv[a + lag:b + lag])
         hm = _mono(h[a:b])
-        lag = _lag(_mono(mv[a:b]), hm, pad)
-        mm = _mono(mv[a + lag:b + lag]) if a + lag >= 0 and b + lag <= len(mv) else _mono(mv[a:b])
-        segs.append((name, n, mm, hm, lag))
-    num = sum(float(np.dot(m, hh)) for _, _, m, hh, _ in segs)
-    den = sum(float(np.dot(hh, hh)) for _, _, _, hh, _ in segs)
-    g = num / den if den else 0.0
-    rows = []
-    for name, n, mm, hm, lag in segs:
+        segs.append((name, n, mm, hm, lag, corr))
+    nt = int(0.5 * sr)
+    gs = [float(np.dot(m[-nt:], hh[-nt:]) / (np.dot(hh[-nt:], hh[-nt:]) + 1e-9)) for _, _, m, hh, _, _ in segs]
+    g = float(np.median(gs)) if gs else 0.0          # (one gain: the notes' median, so one spoilt note cannot move it)
+    for name, n, mm, hm, lag, corr in segs:
         res = mm - g * hm
-        rd = 20 * np.log10((np.sqrt(np.mean(res ** 2)) + 1e-9) / (np.sqrt(np.mean(mm ** 2)) + 1e-9))
+        rd = 20 * np.log10((np.sqrt(np.mean(res[-nt:] ** 2)) + 1e-9) / (np.sqrt(np.mean(mm[-nt:] ** 2)) + 1e-9))
+        held = slice(0, int(NOTE_S * sr))
+        ex = res[held]
+        ex_db = 20 * np.log10((np.sqrt(np.mean(ex ** 2)) + 1e-9) / (np.sqrt(np.mean((g * hm[held]) ** 2)) + 1e-9))
+        sp = np.abs(np.fft.rfft(ex * np.hanning(len(ex))))
+        fr = np.fft.rfftfreq(len(ex), 1 / sr)
+        peaks = []
+        for k in np.argsort(sp)[::-1]:
+            if fr[k] > 20 and all(abs(fr[k] - q) > 15 for q in peaks):
+                peaks.append(round(float(fr[k])))
+            if len(peaks) == 4:
+                break
         st = slice(int(0.25 * sr), int(0.75 * sr))
         fm, fh = _f0(mm[st], sr, note_hz(n)), _f0(hm[st], sr, note_hz(n))
-        bm, bh = _bands(mm[st], sr), _bands(g * hm[st], sr)
-        live = bh > bh.max() - 50
-        rows.append({"note": name, "lag_ms": round(1000 * lag / sr, 2), "residual_db": round(float(rd), 1),
+        rows.append({"note": name, "lag_ms": round(1000 * lag / sr, 2), "tail_corr": round(corr, 4),
+                     "residual_db": round(float(rd), 1), "extra_db": round(float(ex_db), 1), "extra_hz": peaks,
                      "f0_move_c": round(1200 * np.log2(fm / note_hz(n)), 2) if fm else None,
                      "f0_host_c": round(1200 * np.log2(fh / note_hz(n)), 2) if fh else None,
                      "decay_move_s": _decay_s(mm, sr), "decay_host_s": _decay_s(hm, sr),
-                     "centroid_move": round(_centroid(mm[st], sr)), "centroid_host": round(_centroid(hm[st], sr)),
-                     "bands_max_db": round(float(np.abs(bm - bh)[live].max()), 2) if live.any() else None})
+                     "centroid_move": round(_centroid(mm[st], sr)), "centroid_host": round(_centroid(hm[st], sr))})
     rep = {"program": program, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
            "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max())}
     bad = [w["note"] for w in rows if w["residual_db"] > -40]
-    rep["verdict"] = ("PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad else
-                      "DIFFERS at %s (residual over -40 dB after one gain)" % bad)
+    extra = [w["note"] for w in rows if w["extra_db"] > -30]
+    rep["verdict"] = ("PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad and not extra else
+                      "DIFFERS at %s (residual over -40 dB after one gain, 0.5-1.0 s into the note)" % bad if bad else
+                      "FRODHES = the host (tails), but ANOTHER SOUND plays with the keys at %s (a Move instrument "
+                      "on the track, or another slot): silence it and rerun" % extra)
     out("gain Move/host %.2f dB (peak Move %d, host %d LSB)" % (rep["gain_db"], rep["peak_move"], rep["peak_host"]))
     for w in rows:
-        out("%-8s lag %6.2f ms  residual %6.1f dB  f0 %+6.2f / %+6.2f c  decay %s / %s s  centroid %d / %d Hz  "
-            "bands %s dB" % (w["note"], w["lag_ms"], w["residual_db"], w["f0_move_c"] or 0, w["f0_host_c"] or 0,
-                             w["decay_move_s"], w["decay_host_s"], w["centroid_move"], w["centroid_host"],
-                             w["bands_max_db"]))
+        out("%-8s lag %6.2f ms (tail corr %.4f)  tail residual %6.1f dB  extra %6.1f dB %s  f0 %+6.2f / %+6.2f c  "
+            "decay %s / %s s  centroid %d / %d Hz" % (
+                w["note"], w["lag_ms"], w["tail_corr"], w["residual_db"], w["extra_db"], w["extra_hz"],
+                w["f0_move_c"] or 0, w["f0_host_c"] or 0, w["decay_move_s"], w["decay_host_s"],
+                w["centroid_move"], w["centroid_host"]))
     out(rep["verdict"])
-    return not bad, rep
+    return not bad and not extra, rep
+
+
+def usb_host_file(d, out=print):
+    """usb-host's analysis again on a saved run (move-phrase.wav, host-phrase.wav in d)"""
+    import wave
+
+    def rd(p):
+        w = wave.open(p)
+        return np.frombuffer(w.readframes(w.getnframes()), "<i2").reshape(-1, 2).astype(float), w.getframerate()
+
+    m, sr = rd(os.path.join(d, "move-phrase.wav"))
+    h, _ = rd(os.path.join(d, "host-phrase.wav"))
+
+    class Saved(FakeRig):
+        def rec(self, dur, events):
+            return {"x": m, "sr": sr, "xruns": []}
+    global host_phrase
+    keep = host_phrase
+    host_phrase = lambda ev, dur, program=0: h            # noqa: E731
+    try:
+        return usb_host(Saved(), os.path.join(d, "reanalysis"), out=out)
+    finally:
+        host_phrase = keep
 
 
 IDLE_FLOOR_DB = -80.0                       # the digital Main Out with nothing playing: under this (silence, or dither)
@@ -876,6 +924,9 @@ USB_CMDS = ("usb-devices", "usb-host", "usb-note", "usb-vel", "usb-sus", "usb-cl
 
 def usb_main(a):
     import json
+    if a.cmd == "usb-host" and a.analyze:            # (a saved run, offline: no device)
+        ok, _ = usb_host_file(a.analyze)
+        return 0 if ok else 1
     if a.cmd == "usb-devices" and not a.fake:
         return usb_devices(a.midi, a.audio)
     if a.fake:
