@@ -37,6 +37,12 @@ SRC = os.path.join(ROOT, "firmware", "src")
 OUT = os.path.join(ROOT, "move", "module")
 FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h")
 LABEL_MAX = 5                      # the knob grid's cell: about five capitals
+VALUE_MAX = 5                      # an enum option on the Move: the same five
+# The Move's abbreviations of the firmware's option names longer than VALUE_MAX, one scheme everywhere (the pages, the
+# screen, the docs, the mock-ups): four letters, the word's first syllable and the consonant after it (DORIAN DORN,
+# DEGREE DEGR), a digit kept (DIA 7TH DIA7). A new long name fails the generator until it is named here.
+VALUE_SHORT = {"DEGREE": "DEGR", "DORIAN": "DORN", "LYDIAN": "LYDN", "HARMON": "HARM", "MELODIC": "MELO",
+               "MPENTA": "MPNT", "DIATONIC": "DIAT", "DIA 7TH": "DIA7", "RANDOM": "RAND"}
 HELP_MAX = 20                      # a help line: about 20 characters on the 128 px screen
 
 # the FM-1's pages that have no meaning on the Move (its knobs are direct, it has no screen or key lights of ours)
@@ -224,6 +230,12 @@ def short(label, fallback):
     return fallback
 
 
+def short_value(o):
+    v = VALUE_SHORT.get(o, o)
+    assert len(v) <= VALUE_MAX, f"the option {o!r} is longer than {VALUE_MAX}: name it in VALUE_SHORT"
+    return v
+
+
 def key_def(m, slot, label, key=None, bip=True):
     """a key's entry: (key, its JSON item, its C row) for a parameter id or a ui.c slot; key: another name for the
     same parameter (an engine's card), bip: a bipolar parameter reads -64..63 (not on a card with named detents)"""
@@ -235,7 +247,7 @@ def key_def(m, slot, label, key=None, bip=True):
         if p["fmt"] in ("F_ENUM", "F_DIV"):
             opts = m["names"][p["names"]][:p["hi"] + 1]
             assert len(opts) == p["hi"] + 1, (slot, opts)
-            item.update({"type": "enum", "options": opts, "default": p["def"]})
+            item.update({"type": "enum", "options": [short_value(o) for o in opts], "default": p["def"]})
         else:
             item.update({"type": "int", "min": -off, "max": p["hi"] - off, "default": p["def"] - off})
         return item, {"key": key, "slot": slot, "cc": p["cc"], "off": off, "scale": 1, "kind": "MK_PARAM"}
@@ -246,7 +258,7 @@ def key_def(m, slot, label, key=None, bip=True):
     if "names" in sd or "options" in sd:
         opts = sd["options"] if "options" in sd else m["names"][sd["names"]]
         assert len(opts) == hi + 1, (slot, hi, opts)
-        item.update({"type": "enum", "options": opts})
+        item.update({"type": "enum", "options": [short_value(o) for o in opts]})
     elif scale != 1:
         item.update({"type": "float", "min": (0 - off) / scale, "max": (hi - off) / scale, "step": 1.0 / scale})
     else:

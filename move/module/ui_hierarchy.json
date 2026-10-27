@@ -933,7 +933,7 @@
           "options": [
             "OFF",
             "SNAP",
-            "DEGREE"
+            "DEGR"
           ]
         },
         {
@@ -943,14 +943,14 @@
           "options": [
             "MAJOR",
             "MINOR",
-            "DORIAN",
+            "DORN",
             "MIXO",
-            "LYDIAN",
+            "LYDN",
             "PHRYG",
-            "HARMON",
-            "MELODIC",
+            "HARM",
+            "MELO",
             "PENTA",
-            "MPENTA",
+            "MPNT",
             "BLUES"
           ]
         },
@@ -1002,8 +1002,8 @@
           "type": "enum",
           "options": [
             "OFF",
-            "DIATONIC",
-            "DIA 7TH",
+            "DIAT",
+            "DIA7",
             "MAJ",
             "MIN",
             "7",
@@ -1056,7 +1056,7 @@
             "DOWN",
             "UP-DN",
             "ORDER",
-            "RANDOM"
+            "RAND"
           ]
         },
         {

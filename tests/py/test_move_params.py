@@ -124,7 +124,7 @@ def test_settings_options_match_the_cards():
     for tt, slot, o in want:
         pg, k = card_of(slot)
         got = r.state(tt)[f"card.{pg}.{k}"]
-        if got != o:
+        if gen.short_value(got) != o:                   # (the FM-1's name, the Move's abbreviation of it)
             bad.append((slot, o, got))
     assert not bad, bad
 

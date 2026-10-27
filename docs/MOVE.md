@@ -48,7 +48,9 @@ controls. The VOICE pages follow the engine of the TYPE: only the pages of the e
 | **LFO/SETUP** | SHAPE · RATE · SYNC · TRIG · DLTON · LEVEL · CHAN · CLOCK |
 
 The controls are the FM-1's, with the same ranges, under shorter names (the Move's screen fits about five
-characters). The manual (`docs/MANUAL.md`) describes what each one does. Each page has a help text in `help.json`.
+characters). An option name longer than five letters is shortened the same way everywhere, to four letters: the
+word's first syllable and the consonant after it (DORIAN shows as DORN, DEGREE as DEGR, LYDIAN as LYDN, HARMON as
+HARM, MELODIC as MELO, MPENTA as MPNT, DIATONIC as DIAT, DIA 7TH as DIA7, RANDOM as RAND). The manual (`docs/MANUAL.md`) describes what each one does. Each page has a help text in `help.json`.
 The pages are generated from the FM-1's own parameter tables (`tools/gen_move_module.py`), so the two stay alike.
 How the pages look and respond on the Move's screen and knobs is *(not yet verified on a device)*.
 

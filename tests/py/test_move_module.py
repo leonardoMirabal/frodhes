@@ -55,6 +55,8 @@ def test_levels_keep_the_hosts_limits():
             assert len(p["name"]) <= gen.LABEL_MAX and p["name"].isascii() and p["name"].strip(), (name, p)
             if p["type"] == "enum":
                 assert p["options"] and all(o.isascii() and o for o in p["options"]), (name, p)
+                assert all(len(o) <= gen.VALUE_MAX for o in p["options"]), (name, p)
+                assert len(set(p["options"])) == len(p["options"]), (name, p)
             else:
                 assert p["min"] < p["max"], (name, p)
         for link in lvl["params"]:
@@ -75,7 +77,7 @@ def test_ranges_and_options_are_the_parameters():
             p = M["params"][slot]
             assert int(cc) == p["cc"] and kind == "MK_PARAM"
             if c["type"] == "enum":
-                assert c["options"] == M["names"][p["names"]][:p["hi"] + 1]
+                assert c["options"] == [gen.short_value(o) for o in M["names"][p["names"]][:p["hi"] + 1]]
             else:
                 assert (c["min"], c["max"]) == (-int(off), p["hi"] - int(off)) and c["default"] == p["def"] - int(off)
         elif slot.startswith("S_") and slot != "S_NONE":
