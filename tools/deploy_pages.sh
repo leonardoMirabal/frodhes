@@ -8,7 +8,7 @@
 set -e
 DIST="$1"; PAGES="$2"; VER="$3"
 [ -n "$DIST" ] && [ -n "$PAGES" ] && [ -n "$VER" ] || { echo "usage: deploy_pages.sh DIST PAGES X.Y.Z" >&2; exit 2; }
-for f in index.html app.js version.js frodhes.js frodhes.wasm; do
+for f in index.html app.js fm1install.js install.js version.js frodhes.js frodhes.wasm; do
   [ -s "$DIST/$f" ] || { echo "deploy_pages.sh: $DIST/$f missing (run web/build.sh)" >&2; exit 1; }
 done
 # the page shows the version it was built with: it must be this one (web/build.sh --release X.Y.Z)

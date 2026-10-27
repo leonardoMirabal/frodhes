@@ -61,7 +61,8 @@ jobs:
           grep -q 'test_gen_bars.py::test_deterministic_and_up_to_date PASSED' gen.txt
   # The browser emulator (web/build.sh, Emscripten pinned in tools/get_emsdk.sh) must build and pass its selftest
   # (tools/release.py --web-selftest: Chromium + WebKit at 1280 and 390 px, sound, a lit screen, no page errors, the
-  # version shown), and the knob test (tests/py/test_web_knobs.py) must run and pass. Nothing is deployed here: only a v* tag (release.yml) publishes the emulator.
+  # version shown, the installer through the page on a fake FM-1 in Chromium), the installer's own tests
+  # (tests/web/install_test.js, node: a fake FM-1) and the knob test (tests/py/test_web_knobs.py) must run and pass. Nothing is deployed here: only a v* tag (release.yml) publishes the emulator.
   # In Playwright's own image (Chromium and WebKit with their system libraries installed): the apt download of
   # WebKit's libraries (`playwright install --with-deps`) took 19 of this job's 20 minutes.
   web:
@@ -75,6 +76,11 @@ jobs:
           key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}-playwright-image
       - run: sh tools/get_emsdk.sh .local/emsdk
       - run: sh web/build.sh
+      - uses: actions/setup-node@v4   # (Playwright's Python image has no node)
+        with:
+          node-version: 20
+      - name: the installer against a fake FM-1 (node)
+        run: node tests/web/install_test.js
       - run: |
           pip install playwright==1.64.0 pytest
           python3 -m playwright install chromium webkit

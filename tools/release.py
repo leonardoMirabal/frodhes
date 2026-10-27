@@ -497,13 +497,16 @@ class Release:
         head = out(["git", "log", "-1", "--format=%h %s", "FETCH_HEAD"])
         ev = [f"release.yml deployed the emulator before publishing (tools/deploy_pages.sh, tools/pages_wait.sh): verify only; gh-pages {head}"]
         want = {f: blob_sha("FETCH_HEAD", f) for f in WEB_FILES}
-        for f in ("index.html", "app.js"):              # web/build.sh copies these two unchanged
+        for f in ("index.html", "app.js", "fm1install.js", "install.js"):   # web/build.sh copies these unchanged
             if want[f] != blob_sha(tag, "web/" + f):
                 raise Stop(f"gh-pages {f} is not {tag}'s web/{f}: the emulator was not deployed from {tag}")
         stamp = hashlib.sha256(f'window.FRODHES_VERSION = "{self.ver}";\n'.encode()).hexdigest()
         if want["version.js"] != stamp:
             raise Stop(f"gh-pages version.js does not say {self.ver} (web/build.sh --release {self.ver})")
         ev.append(f"gh-pages index.html, app.js = {tag}'s web/; version.js says {self.ver}")
+        if self.sha and want["frodhes.fwsc"] != self.sha:
+            raise Stop(f"gh-pages frodhes.fwsc {want['frodhes.fwsc']} is not the release's package {self.sha}")
+        ev.append(f"gh-pages frodhes.fwsc = the release's package (the page's installer)")
         ev.append(wait_live(want, self.log))
         return "\n".join(ev)
 
@@ -517,6 +520,8 @@ class Release:
         if out(["git", "-C", pages, "rev-parse", "--abbrev-ref", "HEAD"]) != "gh-pages":
             raise Stop(f"{pages} is not the gh-pages worktree")
         sh(["git", "-C", pages, "pull", "-q", "--ff-only", "origin", "gh-pages"])
+        sh(["sh", os.path.join(ROOT, "tools", "web_firmware.sh"), os.path.join(ROOT, "build", f"frodhes-{self.ver}.fwsc"),
+            dist, self.ver])
         sh(["sh", os.path.join(ROOT, "tools", "deploy_pages.sh"), dist, pages, self.ver])
         local = {f: sha256(os.path.join(dist, f)) for f in sorted(os.listdir(dist))}
         ev.append(f"gh-pages {out(['git', '-C', pages, 'rev-parse', '--short', 'HEAD'])} pushed ({len(local)} files)")
@@ -859,7 +864,8 @@ def wait_run(workflow, sha, appear_s=300, ok=("success",)):
     return f"{workflow} {v['url']}: success, jobs {', '.join(f'{n} {c}' for n, c in jobs)}"
 
 
-WEB_FILES = ("index.html", "app.js", "version.js", "frodhes.js", "frodhes.wasm")      # web/build.sh's web/dist
+WEB_FILES = ("index.html", "app.js", "fm1install.js", "install.js", "version.js", "frodhes.js", "frodhes.wasm",
+             "frodhes.fwsc", "firmware.json")   # web/build.sh's web/dist, and the package (tools/web_firmware.sh)
 
 
 def workflow_deploys_pages(path=None):
@@ -928,7 +934,18 @@ with sync_playwright() as p:
             sw = pg.evaluate("document.documentElement.scrollWidth")
             ver = pg.evaluate("[document.getElementById('ver').textContent, "
                               "document.getElementById('ver-foot').textContent]")
-            res.append(dict(browser=bname, width=w, title=pg.title(), scroll=sw, errors=errs, ver=ver))
+            inst = pg.evaluate("[!!document.getElementById('install'), document.getElementById('inst-ui').hidden, "
+                               "document.getElementById('inst-none').hidden, !!navigator.requestMIDIAccess]")
+            res.append(dict(browser=bname, width=w, title=pg.title(), scroll=sw, errors=errs, ver=ver, inst=inst))
+            pg.close()
+        if bname == "chromium":                     # the installer, through the page, on a fake FM-1
+            pg = b.new_page(viewport={"width": 1280, "height": 900})
+            errs = []
+            pg.on("pageerror", lambda e: errs.append(str(e)))
+            pg.add_init_script(path="tests/web/fake_fm1.js")
+            pg.goto(url + "?installtest")
+            pg.wait_for_function("document.title.startsWith('INSTALLTEST')", timeout=60000)
+            res.append(dict(browser=bname, installtest=pg.title(), errors=errs))
             pg.close()
         b.close()
 print(json.dumps(res))
@@ -966,6 +983,16 @@ def web_selftest(dist, version=None):
         srv.terminate()
     bad, ok = [], []
     for r in res:
+        if "installtest" in r:                      # Chromium: a full install through the page on the fake FM-1
+            if not r["installtest"].startswith("INSTALLTEST ok") or r["errors"]:
+                bad.append(f"{r['browser']} install: {r['installtest']!r} errors {r['errors']}")
+            else:
+                ok.append(f"{r['browser']} install on a fake FM-1 ok")
+            continue
+        # the install section: there; with Web MIDI its controls, without it (WebKit) the command line instead
+        present, ui_hidden, none_hidden, has_midi = r["inst"]
+        if not present or ui_hidden == has_midi or none_hidden != has_midi:
+            bad.append(f"{r['browser']} {r['width']}px: the install section {r['inst']}")
         m = re.search(r"rms=(-?[\d.]+)dB screen=(\d+)px", r["title"])
         tag = f"{r['browser']} {r['width']}px"
         if (not m or float(m.group(1)) < -60 or int(m.group(2)) == 0 or r["errors"] or r["scroll"] > r["width"]
