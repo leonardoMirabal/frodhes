@@ -156,3 +156,19 @@ def test_idle_verdict():
     assert v["kind"] == "mic", v
     tone = 3000 * np.sin(2 * np.pi * 262 * t)
     assert mh.idle_verdict(np.stack([tone, 0.7 * tone], 1), 44100)["kind"] == "playing"
+
+
+def test_usb_host_same_sound(tmp_path):
+    """usb-host passes a device that plays the host's own render (here: the render itself, 6 dB down and 7 ms late:
+    the Move's volume and its latency) and fails one that plays another sound (the fake's model)"""
+    class HostEcho(mh.FakeRig):
+        def rec(self, dur, events):
+            h = mh.host_phrase(events, dur, 0)
+            x = np.zeros_like(h)
+            x[300:] = 0.5 * h[:-300]
+            return {"x": np.round(x), "sr": 44100, "xruns": []}
+    ok, rep = mh.usb_host(HostEcho(), str(tmp_path), out=lambda s: None)
+    assert ok and abs(rep["gain_db"] + 6.02) < 0.1, rep
+    assert all(abs(w["lag_ms"] - 6.8) < 0.1 for w in rep["rows"]), rep["rows"]
+    ok, rep = mh.usb_host(mh.FakeRig(), str(tmp_path), out=lambda s: None)
+    assert not ok

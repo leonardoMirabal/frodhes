@@ -478,7 +478,7 @@ def usb_note(r, d, note=60, vel=100, out=print):
         out(rep["verdict"])
         return False, rep
     body = _mono(_seg(x, sr, on + 0.05, on + 0.45))
-    f = _f0(body, sr, note_hz(note))
+    f = _f0(_mono(_seg(x, sr, on + 0.2, on + 0.7)), sr, note_hz(note))   # (the steady part: the attack's pitch moves)
     cents = 1200 * np.log2(f / note_hz(note)) if f else None
     pre_off = hs.db(_seg(x, sr, 1.5 + (on - 0.2), 1.6 + (on - 0.2)))
     tail = hs.db(_seg(x, sr, 2.6 + (on - 0.2), 3.0 + (on - 0.2)))
@@ -709,6 +709,118 @@ def usb_devices(midi=None, audio=None, out=print):
     return 0 if pm and pa else 2
 
 
+PHRASE = [(36, 40), (36, 127), (60, 40), (60, 100), (60, 127), (84, 40), (84, 127)]   # (note, velocity), one by one
+CHORD = [(48, 90), (60, 100), (64, 100), (67, 100), (72, 110)]
+NOTE_S, GAP_S = 1.0, 1.0                    # held, then the release's silence before the next
+
+
+def phrase_events(t0=0.4):
+    ev, marks, t = [(0.05, "cc", 10, 127)], [], t0    # (CC 10: the effects' and LFOs' state to boot, both sides)
+    for n, v in PHRASE:
+        ev += [(t, "on", n, v), (t + NOTE_S, "off", n, 0)]
+        marks.append(("%d v%d" % (n, v), t, n))
+        t += NOTE_S + GAP_S
+    ev += [(t, "on", n, v) for n, v in CHORD] + [(t + 1.5, "off", n, 0) for n, _ in CHORD]
+    marks.append(("chord", t, CHORD[1][0]))
+    return ev, marks, t + 1.5 + GAP_S + 0.5
+
+
+def host_phrase(ev, dur, program=0):
+    """the host build (tests/host.c) playing the events after program change program (F01 = 0): (n, 2) LSB at 44.1"""
+    sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
+    import hostrun
+    pre = 500
+    lines = ["5 midi 0xC0 %d" % program]
+    for t, k, a, b in ev:
+        ms = pre + int(round(1000 * t))
+        lines.append("%d midi 0x%02X %d %d" % (ms, {"on": 0x90, "off": 0x80, "cc": 0xB0}[k], a, b))
+    run = hostrun.run("move-same-as-host", lines, pre + int(1000 * dur) + 20)
+    i0 = int(pre * hostrun.FS / 1000)
+    return np.stack([np.asarray(run.L[i0:], float), np.asarray(run.R[i0:], float)], 1)
+
+
+def _lag(a, b, maxlag):
+    """the lag (frames) of a against b (a[i + lag] ~ b[i]) by cross-correlation (FFT)"""
+    n = len(a) + len(b)
+    c = np.fft.irfft(np.fft.rfft(a, n) * np.conj(np.fft.rfft(b, n)), n)
+    lags = np.r_[np.arange(0, maxlag + 1), np.arange(-maxlag, 0)]
+    vals = np.r_[c[:maxlag + 1], c[-maxlag:]]
+    return int(lags[int(np.argmax(vals))])
+
+
+def _decay_s(x, sr, db=20.0):
+    """time from the 10 ms envelope's peak to db under it"""
+    hop = int(0.01 * sr)
+    e = np.array([np.sqrt(np.mean(x[i:i + hop] ** 2)) for i in range(0, len(x) - hop, hop)])
+    if not len(e) or e.max() <= 0:
+        return None
+    k = int(np.argmax(e))
+    below = np.flatnonzero(e[k:] < e[k] * 10 ** (-db / 20))
+    return round(float(below[0] * hop / sr), 3) if len(below) else None
+
+
+def _bands(x, sr):
+    sp = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
+    f = np.fft.rfftfreq(len(x), 1 / sr)
+    c = 50 * 2 ** (np.arange(0, 25) / 3)                   # third octaves 50 Hz .. 12.8 kHz
+    return np.array([10 * np.log10(sp[(f >= fc / 2 ** (1 / 6)) & (f < fc * 2 ** (1 / 6))].sum() + 1e-12) for fc in c])
+
+
+def usb_host(r, d, program=0, out=print):
+    """the same phrase on the Move and on the host build (program change program, CC 10): one gain for the whole
+    take, each note aligned on its own (MIDI over USB lands up to a ms or two apart), then per note: the residual
+    after the gain (dB under the note), f0 (cents, the steady part), the time to -20 dB, the centroid, the third-
+    octave bands' largest difference. Classic is the host's code: the residual should be at the floor, the gain
+    the Move's volume"""
+    ev, marks, dur = phrase_events()
+    r._send("cc", 123, 0)
+    r._send("pc", program, 0)
+    time.sleep(0.5)
+    tk = r.rec(dur, ev)
+    _save(d, "move-phrase", tk)
+    mv, sr = tk["x"], tk["sr"]
+    h = host_phrase(ev, dur, program)
+    _save(d, "host-phrase", {"x": h, "sr": 44100})
+    segs = []
+    pad = 2400
+    for name, t, n in marks:
+        a, b = int((t - 0.05) * sr), int((t + NOTE_S + 0.6) * sr)
+        hm = _mono(h[a:b])
+        lag = _lag(_mono(mv[a:b]), hm, pad)
+        mm = _mono(mv[a + lag:b + lag]) if a + lag >= 0 and b + lag <= len(mv) else _mono(mv[a:b])
+        segs.append((name, n, mm, hm, lag))
+    num = sum(float(np.dot(m, hh)) for _, _, m, hh, _ in segs)
+    den = sum(float(np.dot(hh, hh)) for _, _, _, hh, _ in segs)
+    g = num / den if den else 0.0
+    rows = []
+    for name, n, mm, hm, lag in segs:
+        res = mm - g * hm
+        rd = 20 * np.log10((np.sqrt(np.mean(res ** 2)) + 1e-9) / (np.sqrt(np.mean(mm ** 2)) + 1e-9))
+        st = slice(int(0.25 * sr), int(0.75 * sr))
+        fm, fh = _f0(mm[st], sr, note_hz(n)), _f0(hm[st], sr, note_hz(n))
+        bm, bh = _bands(mm[st], sr), _bands(g * hm[st], sr)
+        live = bh > bh.max() - 50
+        rows.append({"note": name, "lag_ms": round(1000 * lag / sr, 2), "residual_db": round(float(rd), 1),
+                     "f0_move_c": round(1200 * np.log2(fm / note_hz(n)), 2) if fm else None,
+                     "f0_host_c": round(1200 * np.log2(fh / note_hz(n)), 2) if fh else None,
+                     "decay_move_s": _decay_s(mm, sr), "decay_host_s": _decay_s(hm, sr),
+                     "centroid_move": round(_centroid(mm[st], sr)), "centroid_host": round(_centroid(hm[st], sr)),
+                     "bands_max_db": round(float(np.abs(bm - bh)[live].max()), 2) if live.any() else None})
+    rep = {"program": program, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
+           "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max())}
+    bad = [w["note"] for w in rows if w["residual_db"] > -40]
+    rep["verdict"] = ("PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad else
+                      "DIFFERS at %s (residual over -40 dB after one gain)" % bad)
+    out("gain Move/host %.2f dB (peak Move %d, host %d LSB)" % (rep["gain_db"], rep["peak_move"], rep["peak_host"]))
+    for w in rows:
+        out("%-8s lag %6.2f ms  residual %6.1f dB  f0 %+6.2f / %+6.2f c  decay %s / %s s  centroid %d / %d Hz  "
+            "bands %s dB" % (w["note"], w["lag_ms"], w["residual_db"], w["f0_move_c"] or 0, w["f0_host_c"] or 0,
+                             w["decay_move_s"], w["decay_host_s"], w["centroid_move"], w["centroid_host"],
+                             w["bands_max_db"]))
+    out(rep["verdict"])
+    return not bad, rep
+
+
 IDLE_FLOOR_DB = -80.0                       # the digital Main Out with nothing playing: under this (silence, or dither)
 
 
@@ -759,7 +871,7 @@ def preflight(r, out=print, secs=1.0):
     return v["kind"] == "digital", v
 
 
-USB_CMDS = ("usb-devices", "usb-note", "usb-vel", "usb-sus", "usb-clock", "usb-stress")
+USB_CMDS = ("usb-devices", "usb-host", "usb-note", "usb-vel", "usb-sus", "usb-clock", "usb-stress")
 
 
 def usb_main(a):
@@ -783,7 +895,8 @@ def usb_main(a):
             return 2
     d = a.out or os.path.join(OUT, stamp() + "-" + a.cmd)
     print("MIDI %s (channel %d), audio %s; takes -> %s" % (r.port_name, r.ch, r.audio_name, d), flush=True)
-    fn = {"usb-note": lambda: usb_note(r, d, a.note, a.vel), "usb-vel": lambda: usb_vel(r, d, a.note),
+    fn = {"usb-host": lambda: usb_host(r, d, a.program), "usb-note": lambda: usb_note(r, d, a.note, a.vel),
+          "usb-vel": lambda: usb_vel(r, d, a.note),
           "usb-sus": lambda: usb_sus(r, d, a.note), "usb-clock": lambda: usb_clock(r, d, a.bpm or 120.0),
           "usb-stress": lambda: usb_stress(r, d, a.engine if a.engine != "all" else "rhodes", a.secs, a.nv, a.bpm)}
     ok, rep = fn[a.cmd]()
@@ -809,6 +922,7 @@ def main(argv=None):
     ap.add_argument("--audio", help="usb-*: the audio input (a substring; default the Move's)")
     ap.add_argument("--ch", type=int, default=USB_CH, help="usb-*: the MIDI channel, 1-based (default 1)")
     ap.add_argument("--note", type=int, default=60)
+    ap.add_argument("--program", type=int, default=0, help="usb-host: the program change first (0 = F01)")
     ap.add_argument("--vel", type=int, default=100)
     ap.add_argument("--bpm", type=float, default=0.0, help="usb-clock (default 120), usb-stress (0: no clock)")
     ap.add_argument("--secs", type=float, default=60.0, help="usb-stress: the take's length")
