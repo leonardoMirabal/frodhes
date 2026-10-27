@@ -47,8 +47,10 @@ jobs:
         with:
           python-version: '3.14'
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
-      - run: python -m pytest -q -rs tests/py/test_gen_bars.py tests/py/test_marimba_calib.py
-      - run: '! python -m pytest -q -rs tests/py/test_gen_bars.py -k deterministic | grep -q SKIPPED'
+      - shell: bash                  # (one run; its -v lines show the deterministic test PASSED, not SKIPPED)
+        run: |
+          python -m pytest -v -rs tests/py/test_gen_bars.py tests/py/test_marimba_calib.py | tee gen.txt
+          grep -q 'test_gen_bars.py::test_deterministic_and_up_to_date PASSED' gen.txt
   host:                              # fallback only: every host test (ci.yml's host job, on the same arm64 runner)
     needs: ci-gate
     if: needs.ci-gate.outputs.passed != 'true'
@@ -60,12 +62,13 @@ jobs:
         run: make test && make host && make pytest PY=python3
   web:                               # the emulator from the tag, built and selftested before anything is published
     runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright/python:v1.64.0-noble   # (the browsers' libraries in the image: no apt)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
           path: .local/emsdk
-          key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}
+          key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}-playwright-image
       - name: Emscripten (the version pinned in tools/get_emsdk.sh)
         run: sh tools/get_emsdk.sh .local/emsdk
       - name: build the emulator
@@ -73,7 +76,7 @@ jobs:
       - name: Playwright (Chromium + WebKit)
         run: |
           pip install playwright==1.64.0
-          python3 -m playwright install --with-deps chromium webkit
+          python3 -m playwright install chromium webkit
       - name: selftest
         run: python3 tools/release.py --web-selftest web/dist "${GITHUB_REF_NAME#v}"
       - uses: actions/upload-artifact@v4

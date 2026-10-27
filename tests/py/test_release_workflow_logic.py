@@ -192,7 +192,18 @@ def test_release_workflow_wiring():
     assert sum(b.count("./build.sh") for b in builds) == 4        # the FM-1 once, each SMK-37 model once
     assert './build.sh --release "$V"' in " ".join(j["release"]["steps"][names.index("build")]["run"].split())
     ci = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))["jobs"]
-    assert ci["host"]["runs-on"] == "ubuntu-24.04-arm" and set(ci) >= {"host", "generators-macos"}   # ci_gate.sh's jobs
+    assert set(ci) >= {"host", "generators-macos"}                                     # ci_gate.sh's jobs
+    # the host tests on arm64 in 5 jobs (the scripts, 4 pytest shards); `host` green only when all are
+    assert ci["host-scripts"]["runs-on"] == ci["host-pytest"]["runs-on"] == "ubuntu-24.04-arm"
+    assert ci["host-pytest"]["strategy"]["matrix"]["shard"] == [1, 2, 3, 4]
+    assert ci["host"]["needs"] == ["host-scripts", "host-pytest"] and ci["host"]["if"] == "always()"
+    agg = " ".join(s.get("run", "") for s in ci["host"]["steps"])
+    assert 'test "${{ needs.host-scripts.result }}" = success' in agg
+    assert 'test "${{ needs.host-pytest.result }}" = success' in agg
+    shard = " ".join(s.get("run", "") for s in ci["host-pytest"]["steps"])
+    assert "make pytest PY=python3 SHARD=${{ matrix.shard }}/4" in shard and "pytest_shard.py --check 4" in shard
+    scripts = " ".join(s.get("run", "") for s in ci["host-scripts"]["steps"])
+    assert "make test" in scripts and "make host" in scripts
 
 
 def test_release_publish_step_uploads_both_names(tmp_path):
@@ -268,6 +279,7 @@ def test_the_emulator_is_live_when_the_release_is():
     assert runs[t].endswith('"${GITHUB_REF_NAME#v}"') and "chromium webkit" in " ".join(runs)
     assert next(i for i, r in enumerate(runs) if "tools/get_emsdk.sh" in r) < b < t < u
     assert web["steps"][u]["with"]["name"] == "web-dist" and web["steps"][u]["with"]["path"] == "web/dist"
+    assert web["container"] == "mcr.microsoft.com/playwright/python:v1.64.0-noble" and "--with-deps" not in " ".join(runs)
     rel = wf["jobs"]["release"]
     st = rel["steps"]
     names = [s.get("name") or s.get("uses") for s in st]
@@ -292,7 +304,9 @@ def test_ci_builds_the_emulator_and_never_deploys():
     assert "tags" not in ci[True]["push"]
     runs = " ".join(" ".join(s.get("run", "").split()) for s in ci["jobs"]["web"]["steps"])
     assert "sh tools/get_emsdk.sh" in runs and "sh web/build.sh" in runs
-    assert "playwright install --with-deps chromium webkit" in runs
+    assert "playwright install chromium webkit" in runs and "--with-deps" not in runs     # the image has the libraries
+    assert ci["jobs"]["web"]["container"] == "mcr.microsoft.com/playwright/python:v1.64.0-noble"
+    assert "playwright==1.64.0" in runs                                             # the image's version
     assert "tools/release.py --web-selftest web/dist dev" in runs                 # a local build says dev
     assert "pytest -q -rs tests/py/test_web_knobs.py > knobs.txt" in runs and "! grep -q SKIPPED knobs.txt" in runs
     text = open(os.path.join(ROOT, ".github", "workflows", "ci.yml")).read()
