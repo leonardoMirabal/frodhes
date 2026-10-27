@@ -106,6 +106,11 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
   every boot). `d2` runs them all for each engine and writes one table (`summary.md`). First it checks over
   Schwung's WebSocket (`tools/move_ws.py`) that slot 1 holds Frodhes, and it loads the engine's preset there.
   A failed preflight stops the run.
+- `--path tap` (the `usb-*` tests and `d2`) skips USB-C entirely. Each take goes over Schwung's WebSocket to the
+  plugin's own player (`dev_play` and `dev_play_add`), so no Move track hears it. The plugin writes its own output
+  to `module_data/frodhes/tap/<take>.wav`, and the tool fetches the file over ssh. The take starts on the host
+  build's block grid (every 2560 ms), so `usb-host` compares it sample for sample. The Move's mix, its volumes and
+  its USB-C setting play no part.
 - MIDI into the Standalone port also plays the Move's own instrument on the track. Schwung passes the notes to
   the Move's firmware and to the slot alike. For a clean comparison, give that Move track a silent instrument.
   Muting the track or turning it down also silences the slot, because the slot follows the track's mute and

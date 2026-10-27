@@ -198,6 +198,210 @@ static void mb_write_cpu(void)
     }
     fclose(f);
 }
+/* ---- the dev player and tap (tests over Schwung's WebSocket, without the Move's mix): set_param writes a
+ * schedule of MIDI messages that the bridge plays itself (never through the Move: no cable 2, so no Move track
+ * hears it), and the frames this plugin hands out from the schedule's start are written to
+ * <data dir>/tap/<id>.wav by the worker. The WebSocket's set ring takes values under 256 B, so the schedule comes
+ * in pieces:
+ *
+ *   dev_play      "begin ID DUR_MS"   a new take (only when none is playing): ID [A-Za-z0-9_-]{1,32}, DUR_MS the tap
+ *   dev_play_add  "T ST D1 D2;..."    messages at T ms after the start (decimal or 0x hex; T never decreasing)
+ *   dev_play      "go [LEAD_MS]"      the start B: the first ms at least LEAD_MS (100) ahead with B % 2560 == 0,
+ *                                     where the 256-frame blocks fall on the host build's ms grid as at its ms 0
+ *                                     (44100 x 2560 / 1000 = 441 blocks): the take is the host build's render of the
+ *                                     same messages shifted by B, sample for sample
+ *   dev_play      "stop"              ends the take now (the rest of the schedule dropped, the file padded)
+ *   get dev_play                      "state=idle|load|armed|done id= base= frames= events= late= dropped= ..."
+ *
+ * The worker writes the WAV (44.1 kHz stereo 16 bit; its length fixed at DUR_MS, a frame lost to an overrun is a
+ * zero and counted) and <id>.json (base ms, frame0, frames, events, late, dropped, aborted), then the state is done.
+ * The audio side only copies: one test of the state per 256 frames when no take runs; no syscall, no allocation */
+#define MB_PLAY_N 16384u
+static int mb_put(int kind, uint8_t st, uint8_t d1, uint8_t d2, uint32_t at, uint16_t key, int32_t v);
+#define MB_TAP_N (1u << 17)              /* frames (3 s): the worker drains it every 100 ms */
+#define MB_GRID_MS 2560u
+enum { MP_IDLE, MP_LOAD, MP_ARMED, MP_DONE };
+typedef struct { uint32_t t; uint8_t st, d1, d2, pad; } mb_pev_t;
+static struct {
+    _Atomic int state;                   /* IDLE / DONE: set_param may begin; LOAD: adds; ARMED: the audio side plays */
+    _Atomic uint32_t seq;                /* bumps at each go: the worker starts a new file */
+    char id[36];
+    uint32_t dur_ms, n, r, base, f0w, nfr, late, bad, last_t;
+    _Atomic uint32_t tw;                 /* frames captured (the audio side) */
+    _Atomic uint32_t dropped;
+    _Atomic int file_done, abort;
+    int16_t ring[2u * MB_TAP_N];
+    mb_pev_t ev[MB_PLAY_N];
+} mp;
+static uint32_t mp_wseq, mp_tr;          /* the worker's: the take it writes, frames written */
+static int mp_fd = -1, mp_open;         /* mp_open: a take is being written */
+static char mp_tmp[680], mp_path[680];
+static void mp_put32(uint8_t *b, uint32_t v) { b[0] = (uint8_t)v; b[1] = (uint8_t)(v >> 8); b[2] = (uint8_t)(v >> 16); b[3] = (uint8_t)(v >> 24); }
+static void mp_finish(void)
+{
+    char js[512], jp[680], jt[700];
+    int k, fd;
+    uint32_t dr = atomic_load(&mp.dropped);
+    if (mp_fd >= 0) { (void)fsync(mp_fd); close(mp_fd); mp_fd = -1; (void)rename(mp_tmp, mp_path); }
+    k = snprintf(js, sizeof js, "{\"id\":\"%s\",\"sr\":44100,\"base_ms\":%u,\"grid_ms\":%u,\"frame0\":%u,\"frames\":%u,"
+                 "\"events\":%u,\"played\":%u,\"late\":%u,\"bad\":%u,\"dropped\":%u,\"aborted\":%d}\n", mp.id, mp.base,
+                 MB_GRID_MS, mp.f0w, mp.nfr, mp.n, mp.r, mp.late, mp.bad, dr, atomic_load(&mp.abort));
+    snprintf(jp, sizeof jp, "%s/tap/%s.json", mb.dir, mp.id);
+    snprintf(jt, sizeof jt, "%s/tap/.%s.json.tmp", mb.dir, mp.id);
+    fd = open(jt, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd >= 0) { if (ms_write_all(fd, js, (size_t)k) == 0) (void)fsync(fd); close(fd); (void)rename(jt, jp); }
+    mp_open = 0;
+    atomic_store_explicit(&mp.file_done, 1, memory_order_release);
+}
+static void mb_write_tap(void)           /* the worker */
+{
+    static int16_t buf[2u * 4096u];
+    uint32_t q = atomic_load_explicit(&mp.seq, memory_order_acquire), tw;
+    if (q != mp_wseq) {                  /* a new take: its file, the header for DUR_MS */
+        char dir[600];
+        uint8_t h[44];
+        if (mp_fd >= 0) { close(mp_fd); mp_fd = -1; }
+        mp_wseq = q; mp_tr = 0; mp_open = 1;
+        snprintf(dir, sizeof dir, "%s/tap", mb.dir);
+        (void)ms_mkdirs(dir);
+        snprintf(mp_path, sizeof mp_path, "%s/%s.wav", dir, mp.id);
+        snprintf(mp_tmp, sizeof mp_tmp, "%s/.%s.wav.tmp", dir, mp.id);
+        mp_fd = open(mp_tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+        memcpy(h, "RIFF\0\0\0\0WAVEfmt \x10\0\0\0\x01\0\x02\0\x44\xac\0\0\x10\xb1\x02\0\x04\0\x10\0data\0\0\0\0", 44);
+        mp_put32(h + 4, 36u + 4u * mp.nfr);
+        mp_put32(h + 40, 4u * mp.nfr);
+        if (mp_fd >= 0 && ms_write_all(mp_fd, h, sizeof h)) { close(mp_fd); mp_fd = -1; }
+    }
+    if (!mp_open) return;
+    tw = atomic_load_explicit(&mp.tw, memory_order_acquire);
+    if (tw - mp_tr > MB_TAP_N - 4096u) {  /* (overrun: what was written over is lost; zeros keep the time) */
+        uint32_t lost = tw - mp_tr - (MB_TAP_N - 4096u);
+        memset(buf, 0, sizeof buf);
+        atomic_fetch_add(&mp.dropped, lost);
+        while (lost) { uint32_t c = lost < 4096u ? lost : 4096u; if (mp_fd >= 0) (void)ms_write_all(mp_fd, buf, 4u * c); lost -= c; mp_tr += c; }
+    }
+    while (mp_tr != tw) {
+        uint32_t c = tw - mp_tr, i;
+        if (c > 4096u) c = 4096u;
+        for (i = 0; i < c; i++) { uint32_t k = (mp_tr + i) & (MB_TAP_N - 1u); buf[2u * i] = mp.ring[2u * k]; buf[2u * i + 1u] = mp.ring[2u * k + 1u]; }
+        if (mp_fd >= 0) (void)ms_write_all(mp_fd, buf, 4u * c);
+        mp_tr += c;
+    }
+    if (atomic_load_explicit(&mp.abort, memory_order_acquire) && mp_tr == atomic_load(&mp.tw)) {   /* padded to DUR_MS */
+        memset(buf, 0, sizeof buf);
+        while (mp_tr < mp.nfr) { uint32_t c = mp.nfr - mp_tr < 4096u ? mp.nfr - mp_tr : 4096u; if (mp_fd >= 0) (void)ms_write_all(mp_fd, buf, 4u * c); mp_tr += c; }
+    }
+    if (mp_tr >= mp.nfr) mp_finish();
+}
+/* the audio side: the block just written to the FIFO at index w0 */
+static void mb_tap_take(uint32_t w0)
+{
+    uint32_t tw = atomic_load_explicit(&mp.tw, memory_order_relaxed), i;
+    if (atomic_load_explicit(&mp.abort, memory_order_relaxed)) return;
+    for (i = 0; i < HALF_FRAMES && tw < mp.nfr; i++) {
+        uint32_t idx = w0 + i, k;
+        if ((int32_t)(idx - mp.f0w - tw) != 0) continue;     /* (before the start) */
+        k = tw & (MB_TAP_N - 1u);
+        mp.ring[2u * k] = mb.fifo[2u * (idx & (MB_FIFO - 1u))];
+        mp.ring[2u * k + 1u] = mb.fifo[2u * (idx & (MB_FIFO - 1u)) + 1u];
+        tw++;
+    }
+    atomic_store_explicit(&mp.tw, tw, memory_order_release);
+}
+static void mb_play_due(void)            /* the audio side, each ms: the schedule's messages due by now */
+{
+    while (mp.r < mp.n && (int32_t)(mp.base + mp.ev[mp.r].t - mb.ms) <= 0) {
+        const mb_pev_t *e = &mp.ev[mp.r];
+        if (mq_w - mq_r >= MB_HOST_RING) return;              /* (the app's ring is full: the rest a ms later) */
+        if (mp.base + e->t != mb.ms) mp.late++;
+        web_midi(e->st, e->d1, e->d2);
+        mp.r++;
+    }
+    if (mp.r == mp.n && (atomic_load_explicit(&mp.tw, memory_order_relaxed) >= mp.nfr || atomic_load(&mp.abort)) &&
+        atomic_load_explicit(&mp.file_done, memory_order_acquire))
+        atomic_store_explicit(&mp.state, MP_DONE, memory_order_release);
+}
+static int mp_num(const char **p, uint32_t *out)   /* a decimal or 0x hex number; spaces / commas before it */
+{
+    const char *s = *p;
+    uint32_t v = 0; int any = 0;
+    while (*s == ' ' || *s == ',' || *s == '\t') s++;
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+        s += 2;
+        for (;; s++) {
+            int d = *s >= '0' && *s <= '9' ? *s - '0' : *s >= 'a' && *s <= 'f' ? *s - 'a' + 10 : *s >= 'A' && *s <= 'F' ? *s - 'A' + 10 : -1;
+            if (d < 0) break;
+            if (v > 0x0FFFFFFFu) return -1;
+            v = v * 16u + (uint32_t)d; any = 1;
+        }
+    } else for (; *s >= '0' && *s <= '9'; s++) { if (v > 429496728u) return -1; v = v * 10u + (uint32_t)(*s - '0'); any = 1; }
+    if (!any) return -1;
+    *p = s; *out = v;
+    return 0;
+}
+static void mp_set(const char *key, const char *val)
+{
+    int st = atomic_load_explicit(&mp.state, memory_order_acquire);
+    const char *p = val;
+    if (!strcmp(key, "dev_play_add")) {  /* "T ST D1 D2;T ST D1 D2;..." */
+        if (st != MP_LOAD) { mp.bad++; return; }
+        while (*p) {
+            uint32_t t, a, b, c;
+            while (*p == ';' || *p == ' ' || *p == '\n') p++;
+            if (!*p) break;
+            if (mp_num(&p, &t) || mp_num(&p, &a) || mp_num(&p, &b) || mp_num(&p, &c) || a < 0x80u || a > 0xFFu ||
+                a == 0xF0u || a == 0xF7u || t < mp.last_t || mp.n >= MB_PLAY_N) {
+                mp.bad++;
+                while (*p && *p != ';') p++;
+                continue;
+            }
+            mp.ev[mp.n].t = t; mp.ev[mp.n].st = (uint8_t)a; mp.ev[mp.n].d1 = (uint8_t)(b & 127u); mp.ev[mp.n].d2 = (uint8_t)(c & 127u);
+            mp.n++; mp.last_t = t;
+        }
+        return;
+    }
+    if (!strncmp(val, "begin ", 6)) {
+        uint32_t i = 0, dur;
+        if (st == MP_LOAD || st == MP_ARMED) { mp.bad++; return; }
+        p = val + 6;
+        while (*p == ' ') p++;
+        while (i < 32u && ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_' || *p == '-')) mp.id[i++] = *p++;
+        mp.id[i] = 0;
+        if (!i || (*p != ' ' && *p != ',') || mp_num(&p, &dur) || !dur || dur > 3600000u) { mp.bad++; mp.id[0] = 0; return; }
+        mp.dur_ms = dur; mp.n = mp.r = mp.late = mp.bad = mp.last_t = 0;
+        atomic_store_explicit(&mp.state, MP_LOAD, memory_order_release);
+        return;
+    }
+    if (!strncmp(val, "go", 2) && (val[2] == 0 || val[2] == ' ')) {
+        uint32_t lead = 100u;
+        if (st != MP_LOAD) { mp.bad++; return; }
+        p = val + 2;
+        if (*p) (void)mp_num(&p, &lead);
+        if (lead > 60000u) lead = 60000u;
+        mp.base = ((mb.ms + lead) / MB_GRID_MS + 1u) * MB_GRID_MS;
+        mp.f0w = (uint32_t)((uint64_t)mp.base * 441u / 10u);  /* (the FIFO's frame index at the start: a block edge) */
+        mp.nfr = (uint32_t)((uint64_t)mp.dur_ms * 441u / 10u);
+        atomic_store(&mp.tw, 0); atomic_store(&mp.dropped, 0); atomic_store(&mp.file_done, 0); atomic_store(&mp.abort, 0);
+        atomic_fetch_add_explicit(&mp.seq, 1u, memory_order_release);
+        atomic_store_explicit(&mp.state, MP_ARMED, memory_order_release);
+        return;
+    }
+    if (!strcmp(val, "stop")) {
+        if (st == MP_ARMED) { mp.r = mp.n; atomic_store_explicit(&mp.abort, 1, memory_order_release); (void)mb_put(MB_EV_MIDI, 0xB0u, 123u, 0u, 0u, 0u, 0); }
+        else if (st == MP_LOAD) atomic_store(&mp.state, MP_IDLE);
+        return;
+    }
+    mp.bad++;
+}
+static int mp_get(char *buf, int n)
+{
+    static const char *const NM[] = { "idle", "load", "armed", "done" };
+    int st = atomic_load_explicit(&mp.state, memory_order_acquire);
+    return snprintf(buf, (size_t)n, "state=%s id=%s base=%u ms=%u frames=%u/%u events=%u/%u late=%u bad=%u dropped=%u",
+                    NM[st & 3], mp.id, mp.base, mb.ms, atomic_load(&mp.tw), mp.nfr, mp.r, mp.n, mp.late, mp.bad,
+                    atomic_load(&mp.dropped));
+}
+
 static void *mb_worker(void *arg)
 {
     struct sched_param sp = { .sched_priority = 0 };
@@ -217,10 +421,12 @@ static void *mb_worker(void *arg)
         struct timespec t = { 0, 100 * 1000000L };
         mb_write_staged();
         mb_write_cpu();
+        mb_write_tap();
         nanosleep(&t, 0);
     }
     mb_write_staged();                                        /* (a last staged save before the module goes) */
     mb_write_cpu();
+    mb_write_tap();
     return 0;
 }
 static int mb_start(const char *module_dir)  /* create_instance */
@@ -495,8 +701,10 @@ static void mb_clock_block(int frames)
 static void mb_step(void)
 {
     mb_ev_t *e;
+    int play = atomic_load_explicit(&mp.state, memory_order_acquire) == MP_ARMED;
     mb.ms++;
     mb.steps++;
+    if (play) mb_play_due();
     while ((e = mb_peek()) != 0 && (e->at == 0 || (int32_t)(e->at - mb.ms) <= 0)) {
         if (e->kind == MB_EV_MIDI) {
             if (mq_w - mq_r >= MB_HOST_RING) break;          /* the app's ring is full: the rest wait a millisecond */
@@ -520,6 +728,7 @@ static void mb_step(void)
             mb.fifo[2u * w] = (int16_t)(l > 32767 ? 32767 : l < -32767 ? -32767 : l);
             mb.fifo[2u * w + 1u] = (int16_t)(r > 32767 ? 32767 : r < -32767 ? -32767 : r);
         }
+        if (play) mb_tap_take(mb.fw);
         mb.fw += HALF_FRAMES;
     }
     coro_resume(&mb.co);
@@ -638,6 +847,7 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, "dev_sus")) return snprintf(buf, (size_t)n, "held=%u latched=%u midi=%u down=%u up=%u touch=%d",
                                                  (unsigned)sus_held, (unsigned)sus_latched, (unsigned)sus_midi,
                                                  mb.sus_down, mb.sus_up, atomic_load(&mb.sus_touch));
+    if (!strcmp(key, "dev_play")) return mp_get(buf, n);
     if (!strcmp(key, "dev_cpu")) return snprintf(buf, (size_t)n, "callbacks=%u max_us=%u", atomic_load(&mb.cpu_n), mb.cpu_max);
     /* development reads (tests, the device session) */
     if (!strcmp(key, "dev_stats"))
@@ -678,6 +888,7 @@ static void mb_set(const char *key, const char *val)
             (void)mb_put(MB_EV_MIDI, (uint8_t)st, (uint8_t)(d1 & 127u), (uint8_t)(d2 & 127u), t ? t : 1u, 0, 0);
         return;
     }
+    if (!strcmp(key, "dev_play") || !strcmp(key, "dev_play_add")) { mp_set(key, val); return; }
     if (!strcmp(key, "dev_cpu_log")) { atomic_store(&mb.cpu_log, atoi(val) != 0); return; }
     if (!strcmp(key, "dev_sus_touch")) { int t = atoi(val); atomic_store(&mb.sus_touch, t >= 0 && t <= 9 && t != 8 ? t : -1); return; }
     if (!strcmp(key, "dev_clock")) { int m = atoi(val); if (m >= MB_CLOCK_AUTO && m <= MB_CLOCK_HOST) mb.clock_mode = m; return; }

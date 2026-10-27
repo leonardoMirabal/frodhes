@@ -34,6 +34,10 @@ audio in (Core Audio), the FM-1's analysis (onsets, levels, FFT, the crackle det
                                              (tools/move_ws.py; F01 / F13 / F15), preflight (a failure stops the
                                              run), usb-host, usb-note on 3 keys, usb-vel, usb-sus, usb-clock,
                                              usb-stress; the table in build/move/hil/<time>-d2/summary.md
+  --path tap (usb-*, d2): no USB-C at all: each take goes to the plugin's own player over Schwung's WebSocket
+  (dev_play, move/move_bridge.h: never on cable 2, so no Move track plays along) and comes back as the plugin's own
+  output (the tap file, fetched over ssh): free of the Move's mix, volumes and USB-C setting; usb-host then compares
+  sample for sample (the take starts on the host build's block grid).
   --midi NAME, --audio NAME (substrings, else the Move's), --ch N (default 1: the slot on track 1), --fake: an
   offline model of the device in place of the Move (tests/py/test_move_hil.py), --inject KIND@S (fake only).
   On the Move first: Settings > USB-C audio out = Main Out (the Move resets it to Mic at every boot; Main Out mutes
@@ -387,6 +391,96 @@ class FakeRig(UsbRig):
         return {"x": np.clip(q, -32768, 32767), "sr": sr, "xruns": []}
 
 
+TAP_PRE_MS = 500                            # the tap path: the messages sent before a take (the panel) at 1 ms and a
+                                            # program change at 5 ms, the take's own from 500 ms (host_phrase's layout)
+TAP_DIR = "/data/UserData/schwung/module_data/" + mi.MODULE_ID + "/tap"
+TAP_GRID_S = 2.56                           # the plugin starts a take on its 2560 ms grid (move_bridge.h MB_GRID_MS)
+
+
+def to_status(kind, a, b, ch):
+    c = (ch - 1) & 15
+    if kind == "rt":
+        return (int(a), 0, 0)
+    return {"on": (0x90 | c, a, b), "off": (0x80 | c, a, b), "cc": (0xB0 | c, a, b), "pc": (0xC0 | c, a, 0)}[kind]
+
+
+def scp_fetch(host, local_dir):
+    """the tap's files from the Move (ssh / scp; the main session's): fetch(take) -> (wav path, json dict) or None"""
+    import json
+    import subprocess
+
+    def fetch(take):
+        os.makedirs(local_dir, exist_ok=True)
+        js = os.path.join(local_dir, take + ".json")
+        r = subprocess.run(["scp", *mi.SSH_OPTS, "-q", "%s:%s/%s.json" % (host, TAP_DIR, take), js], capture_output=True)
+        if r.returncode:
+            return None
+        wav = os.path.join(local_dir, take + ".wav")
+        r = subprocess.run(["scp", *mi.SSH_OPTS, "-q", "%s:%s/%s.wav" % (host, TAP_DIR, take), wav], capture_output=True)
+        if r.returncode:
+            return None
+        subprocess.run(["ssh", *mi.SSH_OPTS, host, "rm -f %s/%s.wav %s/%s.json" % (TAP_DIR, take, TAP_DIR, take)],
+                       capture_output=True)
+        return wav, json.load(open(js))
+    return fetch
+
+
+class TapRig(UsbRig):
+    """the Move without its mix: every take goes to the plugin's own player over Schwung's WebSocket (dev_play: no
+    MIDI on cable 2, so no Move track plays along) and comes back as the plugin's own output (the tap file: before
+    the slot's volume, the Move's mix, its master and its USB-C setting). What the tests send before a take (the
+    panel's CCs, a program change) leads the take, as host_phrase's do; rec() returns the take from TAP_PRE_MS on.
+    fetch(take) -> (wav, json) | None (scp_fetch; a test passes its own)"""
+    fake = False
+
+    def __init__(self, url, fetch, ch=USB_CH, slot=0, wait=10.0):
+        import move_ws
+        self.remote, self.fetch, self.ch, self.slot, self.wait = move_ws.Remote(url), fetch, int(ch), slot, wait
+        self.port_name, self.audio_name, self.sr = "Schwung %s, slot %d, dev_play" % (url, slot + 1), "the plugin's tap", FS
+        self.pending, self.n, self.mido = [], 0, hs._Mido
+        self.stamp = time.strftime("%H%M%S")
+
+    def _send(self, kind, a, b=0):
+        self.pending.append((kind, int(a), int(b)))
+
+    def level_now(self, secs=0.3):
+        return -240.0
+
+    def wait_silence(self, limit=10.0, floor_db=-80.0):
+        return True
+
+    def rec(self, dur, events):
+        import wave
+        self.n += 1
+        take = "d%s-%03d" % (self.stamp, self.n)
+        ev, i = [], 0                            # (48 a ms: the app's MIDI ring holds 64; a program change at 5 ms)
+        for k, a, b in self.pending:
+            if k == "pc":
+                ev.append((max(5, 2 + i // 48), *to_status(k, a, b, self.ch)))
+            else:
+                ev.append((1 + i // 48, *to_status(k, a, b, self.ch)))
+                i += 1
+        ev += [(TAP_PRE_MS + int(round(1000 * t)), *to_status(k, a, b, self.ch)) for t, k, a, b in events]
+        self.pending = []
+        dur_ms = TAP_PRE_MS + int(round(1000 * dur)) + 1
+        self.remote.play(self.slot, take, dur_ms, ev)
+        time.sleep(dur_ms / 1000 + TAP_GRID_S + 0.3)
+        got, t0 = None, time.monotonic()
+        while got is None and time.monotonic() - t0 < self.wait:
+            got = self.fetch(take)
+            if got is None:
+                time.sleep(0.5)
+        if got is None:
+            raise RuntimeError("the tap %s did not arrive (is the dsp.so a build with dev_play? slot %d?)" %
+                               (take, self.slot + 1))
+        path, js = got
+        w = wave.open(path)
+        x = np.frombuffer(w.readframes(w.getnframes()), "<i2").reshape(-1, 2).astype(float)
+        i0 = int(TAP_PRE_MS * FS / 1000)
+        bad = ["%s %s" % (k, js[k]) for k in ("dropped", "late", "bad", "aborted") if js.get(k)]
+        return {"x": x[i0:i0 + int(round(dur * FS))], "sr": FS, "xruns": bad}
+
+
 # ---- the analysis (hil_scan's and hil_crackle's functions; the recording at its own rate, LSB)
 def _mono(x):
     return x.mean(axis=1) if x.ndim == 2 else x
@@ -504,7 +598,7 @@ def usb_note(r, d, note=60, vel=100, engine=None, name="note", out=print):
     bad = []
     if cents is None or abs(cents) > 10:
         bad.append("pitch %s cents" % rep["cents"])
-    if tail > pre_off - 30:
+    if tail > pre_off - 30 and tail > -90:      # (a bar note that has died before key-up: silent at both)
         bad.append("the note does not die after key-up (%.1f dB under)" % (pre_off - tail))
     if g:
         bad.append("%d glitch(es)" % len(g))
@@ -953,22 +1047,24 @@ def usb_main(a):
         return 0 if ok else 1
     if a.cmd == "usb-devices" and not a.fake:
         return usb_devices(a.midi, a.audio)
+    d = a.out or os.path.join(OUT, stamp() + "-" + a.cmd)
     if a.fake:
         inj = []
         for s in a.inject or ():
             k, _, t = s.partition("@")
             inj.append((k, float(t or 0)))
         r = FakeRig(inject=inj)
+    elif a.path == "tap":
+        r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)
     else:
         r = UsbRig(a.midi, a.audio, a.ch)
     if a.cmd == "usb-devices":
         print("picked: MIDI %s, audio %s" % (r.port_name, r.audio_name))
         return 0
-    if not r.fake and not a.no_preflight:
+    if not r.fake and not a.no_preflight and a.path == "usb":
         ok, pre = preflight(r)
         if not ok:
             return 2
-    d = a.out or os.path.join(OUT, stamp() + "-" + a.cmd)
     print("MIDI %s (channel %d), audio %s; takes -> %s" % (r.port_name, r.ch, r.audio_name, d), flush=True)
     e = a.engine if a.engine in ENGINE_CCS else None
     fn = {"usb-host": lambda: usb_host(r, d, a.program), "usb-note": lambda: usb_note(r, d, a.note, a.vel, e),
@@ -1086,12 +1182,13 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, out=print
             if not ok:
                 stopped = "%s: %s" % (e, rep["verdict"])
                 break
-        ok, pre = preflight(r, out=quiet)
-        pre["verdict"] = "PASS" if ok else "FAIL: " + SAY[pre["kind"]]
-        note(e, "preflight", ok, pre)
-        if not ok:
-            stopped = "%s: the preflight failed (%s)" % (e, pre["kind"])
-            break
+        if not isinstance(r, TapRig):           # (the tap is the plugin's own output: no stream to check)
+            ok, pre = preflight(r, out=quiet)
+            pre["verdict"] = "PASS" if ok else "FAIL: " + SAY[pre["kind"]]
+            note(e, "preflight", ok, pre)
+            if not ok:
+                stopped = "%s: the preflight failed (%s)" % (e, pre["kind"])
+                break
         sub = lambda t: os.path.join(d, e, t)          # noqa: E731
         r._send("cc", 120, 0)                          # (the host's state: every parameter at its default, the
         if not hasattr(r, "defaults"):                 # preset then loads over it, as on the host build)
@@ -1163,6 +1260,10 @@ def main(argv=None):
     ap.add_argument("--fake", action="store_true", help="usb-*: the offline model of the Move (no device)")
     ap.add_argument("--inject", action="append", help="usb-* --fake: KIND@SECONDS (zero, click, stale, loud, nosus)")
     ap.add_argument("--engines", default=",".join(D2_ENGINES), help="d2: the engines, comma-separated")
+    ap.add_argument("--path", choices=("usb", "tap"), default="usb",
+                    help="usb-*, d2: usb = MIDI to the Standalone port, the USB-C audio recorded (the Move's mix); "
+                         "tap = the plugin's own player and output over Schwung's WebSocket (--ws), the takes "
+                         "fetched over ssh (--host): no Move track, volume or USB-C setting in the way")
     ap.add_argument("--ws", default=os.environ.get("MOVE_WS", "ws://move.local:7700/ws/remote-ui"),
                     help="d2: Schwung's WebSocket (slot 1's module and preset); 'none' to skip")
     a = ap.parse_args(argv)
@@ -1171,12 +1272,14 @@ def main(argv=None):
         bad = [x for x in engines if x not in D2_ENGINES]
         if bad:
             ap.error("--engines: %s" % bad)
+        d = a.out or os.path.join(OUT, stamp() + "-d2")
         if a.fake:
             inj = [(k, float(t or 0)) for k, _, t in (s.partition("@") for s in a.inject or ())]
             r = FakeEchoRig(inject=inj)
+        elif a.path == "tap":
+            r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)
         else:
             r = UsbRig(a.midi, a.audio, a.ch)
-        d = a.out or os.path.join(OUT, stamp() + "-d2")
         return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 120.0)
     if a.cmd in USB_CMDS:
         return usb_main(a)

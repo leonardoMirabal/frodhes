@@ -22,6 +22,7 @@ import time
 
 URL = os.environ.get("MOVE_WS", "ws://move.local:7700/ws/remote-ui")
 COMP = "synth"
+PIECE = 250                                     # a set_param value through the web set ring: under 256 B (shmwebring.go)
 
 
 class SchwungError(RuntimeError):
@@ -103,6 +104,32 @@ class Remote:
 
     def set_param(self, slot, key, value):
         self.send("set_param", slot, key, value)
+
+    def pump(self, secs):
+        """read whatever comes for secs (an error message raises SchwungError)"""
+        try:
+            self.until(lambda r: False, secs)
+        except TimeoutError:
+            pass
+
+    def play(self, slot, take, dur_ms, events, lead_ms=100, pace=0.003):
+        """the plugin's dev player (move/move_bridge.h dev_play): events [(t_ms, status, d1, d2)] from the take's
+        start, in pieces under the set ring's 256 B; the plugin starts on its 2560 ms grid and writes the tap
+        <data dir>/tap/<take>.wav (dur_ms long) and <take>.json"""
+        key = COMP + ":dev_play"
+        self.set_param(slot, key, "begin %s %d" % (take, int(dur_ms)))
+        chunk = ""
+        for t, st, d1, d2 in sorted(events, key=lambda e: e[0]):
+            ev = "%d %d %d %d;" % (int(t), int(st), int(d1) & 127, int(d2) & 127)
+            if len(chunk) + len(ev) > PIECE:
+                self.set_param(slot, key + "_add", chunk)
+                time.sleep(pace)                  # (the shim drains the ring once a 2.9 ms frame)
+                chunk = ""
+            chunk += ev
+        if chunk:
+            self.set_param(slot, key + "_add", chunk)
+        self.set_param(slot, key, "go %d" % int(lead_ms))
+        self.pump(0.2)
 
     def set_preset(self, slot, n, timeout=None):
         """load preset n and wait until the server reports it"""

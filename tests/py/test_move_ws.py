@@ -9,6 +9,8 @@ import subprocess
 import sys
 import threading
 
+import numpy as np
+
 import pytest
 
 pytest.importorskip("websockets")
@@ -26,7 +28,7 @@ class FakeSchwung:
 
     def __init__(self, module="frodhes", mute=False, refuse=False):
         self.module, self.mute, self.refuse = module, mute, refuse
-        self.preset, self.log = 0, []
+        self.preset, self.log, self.takes, self.cur = 0, [], {}, None
         self.server = serve(self.handle, "127.0.0.1", 0)
         self.url = "ws://127.0.0.1:%d/ws/remote-ui" % self.server.socket.getsockname()[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -54,6 +56,19 @@ class FakeSchwung:
                 if self.refuse:
                     ws.send(json.dumps({"type": "error", "message": "set_param failed: busy"}))
                     continue
+                if m["key"] == "synth:dev_play":         # (the plugin's player, as move_bridge.h parses it)
+                    v = m["value"].split()
+                    if v[0] == "begin":
+                        self.cur = v[1]
+                        self.takes[self.cur] = {"dur": int(v[2]), "ev": [], "go": False, "max_piece": 0}
+                    elif v[0] == "go":
+                        self.takes[self.cur]["go"] = True
+                elif m["key"] == "synth:dev_play_add":
+                    t = self.takes[self.cur]
+                    t["max_piece"] = max(t["max_piece"], len(m["value"]))
+                    for e in m["value"].split(";"):
+                        if e.strip():
+                            t["ev"].append(tuple(int(x, 0) for x in e.split()))
                 if m["key"] == "synth:preset":
                     self.preset = int(m["value"])
                     ws.send(json.dumps({"type": "param_update", "slot": s, "params": {"synth:tone": "64"}}))
@@ -130,3 +145,51 @@ def test_d2_sets_the_presets(fake, tmp_path):
     finally:
         bad.close()
     assert code == 2 and "braids" in open(tmp_path / "b" / "summary.md").read()
+
+
+def host_fetch(fake, d):
+    """the tap a plugin would write, from the host build: the schedule the fake server received, rendered from boot
+    (the plugin's take starts on its grid with the same block phase, so the host's ms 0 is the take's start)"""
+    sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
+    import hostrun
+    import wave
+
+    def fetch(take):
+        t = fake.takes.get(take)
+        if not t or not t["go"]:
+            return None
+        lines = ["%d midi 0x%02X %d %d" % e for e in t["ev"]]
+        run = hostrun.run("tap-" + take, lines, t["dur"] + 20)
+        n = t["dur"] * 441 // 10
+        x = np.stack([run.L[:n], run.R[:n]], 1)
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, take + ".wav")
+        w = wave.open(path, "wb")
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(44100)
+        w.writeframes(np.asarray(x, "<i2").tobytes())
+        w.close()
+        return path, {"id": take, "frames": n, "dropped": 0, "late": 0, "bad": 0, "aborted": 0}
+    return fetch
+
+
+def test_tap_path_is_the_host(fake, tmp_path):
+    """usb-host over the tap path: the schedule's pieces stay under 256 B, the panel and the program change lead the
+    take as in host_phrase, so the 'device' (the host build on the received schedule) equals the host's own render"""
+    import move_hil as mh
+    r = mh.TapRig(fake.url, host_fetch(fake, str(tmp_path / "tap")), wait=2.0)
+    mh.TAP_GRID_S, keep = 0.0, mh.TAP_GRID_S
+    sleep, mh.time.sleep = mh.time.sleep, lambda s: None
+    try:
+        ok, rep = mh.usb_host(r, str(tmp_path), program=12, out=lambda s: None)
+        assert ok and abs(rep["gain_db"]) < 0.01, rep
+        assert all(w["lag_ms"] == 0 and w["residual_db"] < -150 for w in rep["rows"] if w["judged"]), rep["rows"]
+        take = fake.takes[sorted(fake.takes)[-1]]
+        assert take["max_piece"] < 256 and (5, 0xC0, 12, 0) in take["ev"], take["ev"][:4]
+        code = mh.d2(r, str(tmp_path / "d2"), ("rhodes",), ws=fake.url, stress_secs=4.0, out=lambda s: None)
+        rows = json.load(open(tmp_path / "d2" / "report.json"))["rows"]
+        assert code == 0 and "preflight" not in [w["test"] for w in rows], [(w["test"], w["verdict"]) for w in rows]
+    finally:
+        mh.time.sleep, mh.TAP_GRID_S = sleep, keep
+        r.remote.close()
