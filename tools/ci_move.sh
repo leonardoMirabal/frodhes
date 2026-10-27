@@ -33,7 +33,7 @@ else
     skip "build + test-move" "no move/move_plugin.c or Makefile move targets in this tree"
 fi
 if [ -f tools/gate_m.py ]; then step "gate M" "$PY" tools/gate_m.py; else skip "gate M" "tools/gate_m.py: M1-10"; fi
-TESTS=$(ls tests/py/test_move_*.py tests/py/test_target_closure.py tests/py/test_float_check.py 2>/dev/null)
+TESTS=$(ls tests/py/test_move_*.py tests/py/test_target_closure.py tests/py/test_float_check.py tests/py/test_gate_s.py tests/py/test_test_map_targets.py 2>/dev/null)
 if "$PY" -c "import xdist" 2>/dev/null && [ "$N" != 0 ]; then
     step "pytest (Move)" "$PY" -m pytest -q -p no:cacheprovider -n "$N" $TESTS
 else

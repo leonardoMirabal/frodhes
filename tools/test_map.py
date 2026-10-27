@@ -25,6 +25,14 @@ The map (first match wins; a firmware file no rule names -> T1 all + T2, so noth
  ui.c, params.c, presets.c, eng_pages.h -> T1 3/4/5 + the screenshots / docs tests (no audio scans)
  notes.c, arp.c, seq.c, tempo.c         -> T1 1/3 + the sequencer / arp scripts
  docs / tools / tests only              -> T0 only
+
+Per target (tools/target_closure.py, the preprocessor's own file lists): which of the changed files each target
+builds from, and that target's tests. A change that reaches the Move or HQ and neither firmware needs Gate S
+(tools/gate_s.py: the FM-1 and SMK packages byte-identical to the parent commit's) in place of the FM-1 tiers.
+ fm1    the tiers above, from the files the FM-1 builds from
+ smk    make test-smk, the SMK packages build (no unit to test on: experimental)
+ move   tools/ci_move.sh (Gate U, the Move tests), make test-move, Gate M; on the Move: CPU, crackle, the null test
+ hq     the same with FR_HQ=1; on the Move: the HQ CPU and a listening round
 """
 import argparse
 import fnmatch
@@ -118,6 +126,59 @@ def analyze(files):
     return dict(tiers=sorted(tiers), t1=sorted(t1), t2=t2, extras=extras, groups=groups, files=list(files))
 
 
+PER_TARGET = ("fm1", "smk", "move", "hq")
+TARGET_TESTS = {
+    "smk": (["make test-smk (the host build, 7 voices)", "the SMK packages build (./build.sh --board smk37)"],
+            "none (experimental: no SMK-37 to test on)"),
+    "move": (["tools/ci_move.sh (Gate U, the Move tests)", "make test-move", "Gate M (the host render nulls the Move build)"],
+             "tools/move_hil.py cpu + crackle, tools/device_null.py (Classic)"),
+    "hq": (["tools/ci_move.sh", "make test-move (FR_HQ=1)"],
+           "tools/move_hil.py cpu (HQ), a listening round (HQ against Classic)"),
+}
+GATE_S = "Gate S: tools/gate_s.py (the FM-1 and SMK packages byte-identical to the parent commit's)"
+
+
+def per_target(files, c=None):
+    """files -> {target: {'files', 'host', 'device'}} for fm1 / smk / move / hq, plus 'gate_s' (bool) and 'shared'
+    (files in a firmware closure and a Move one). c: target_closure.closures(), computed when None."""
+    if c is None:
+        import target_closure
+        c = target_closure.closures()
+    norm = [os.path.normpath(f).replace(os.sep, "/") for f in files]
+    out = {}
+    for t in PER_TARGET:
+        fs = [f for f in norm if f in c.get(t, ())]
+        if t == "fm1":
+            r = analyze(fs) if fs else None
+            host = [] if not r else ["tiers " + " + ".join(r["tiers"])]
+            dev = "none" if not r or r["tiers"] == ["T0"] else (
+                f"T1 scenarios {t1_text(r['t1'])}; T2 suites {', '.join(r['t2']) or 'none'}")
+        else:
+            host, dev = (TARGET_TESTS[t] if fs else ([], "none"))
+            host = list(host)
+        out[t] = dict(files=fs, host=host, device=dev)
+    fw = {f for t in ("fm1", "smk") for f in out[t]["files"]}
+    mv = {f for t in ("move", "hq") for f in out[t]["files"]}
+    out["gate_s"] = bool(mv) and not fw
+    out["shared"] = sorted(fw & mv)
+    return out
+
+
+def target_lines(pt):
+    lines = ["per target:"]
+    for t in PER_TARGET:
+        d = pt[t]
+        if not d["files"]:
+            lines.append(f"  {t:5s} not affected" + ("; " + GATE_S if pt["gate_s"] and t in ("fm1", "smk") else ""))
+            continue
+        fs = d["files"]
+        lines.append(f"  {t:5s} {len(fs)} file(s): " + ", ".join(fs[:4]) + (f" (+{len(fs) - 4} more)" if len(fs) > 4 else ""))
+        lines.append(f"        host: {'; '.join(d['host']) or 'T0'}; on the device: {d['device']}")
+    if pt["shared"]:
+        lines.append("  shared code (plan 3.5), both targets' tests: " + ", ".join(pt["shared"][:6]))
+    return lines
+
+
 def t1_text(t1):
     if not t1:
         return "none"
@@ -157,6 +218,7 @@ def main(argv=None):
     ap.add_argument("files", nargs="*", help="the changed files (default: git diff --name-only TAG..HEAD)")
     ap.add_argument("--since", metavar="TAG", help="the tag to diff from (default: the latest v* tag)")
     ap.add_argument("--json", action="store_true", help="print the result as JSON")
+    ap.add_argument("--no-targets", action="store_true", help="skip the per-target part (no cc -M)")
     a = ap.parse_args(argv)
     if a.files:
         files, src = a.files, "the files given"
@@ -167,11 +229,21 @@ def main(argv=None):
         files, src = changed_since(tag), f"git diff {tag}..HEAD ({{}} file(s))"
         src = src.format(len(files))
     res = analyze(files)
+    pt = None
+    if not a.no_targets:
+        try:
+            pt = per_target(files)
+        except SystemExit as e:                 # (no cc: the tiers above still hold)
+            print(f"per target: unavailable ({str(e).splitlines()[0]})", file=sys.stderr)
     if a.json:
+        if pt is not None:
+            res["targets"] = pt
         print(json.dumps(res, indent=1))
     else:
         print(src + ":")
         print("\n".join(reason(res)))
+        if pt is not None:
+            print("\n".join(target_lines(pt)))
     return 0
 
 
