@@ -186,3 +186,28 @@ def test_usb_host_same_sound(tmp_path):
             return out
     ok, rep = mh.usb_host(HostPlusOther(), str(tmp_path), out=lambda s: None)
     assert not ok and "ANOTHER SOUND" in rep["verdict"] and abs(rep["gain_db"] + 6.02) < 0.1, rep["verdict"]
+
+
+def test_d2_fake(tmp_path):
+    """d2 on the fake Move: every engine's tests in order (usb-host on the engine's preset, three keys), one table;
+    a sound at idle stops the run at the first preflight (exit 2) and says why"""
+    code = mh.d2(mh.FakeEchoRig(), str(tmp_path), ("rhodes", "marimba"), stress_secs=8.0, out=lambda s: None)
+    md = open(tmp_path / "summary.md").read()
+    rep = __import__("json").load(open(tmp_path / "report.json"))
+    tests = [(w["engine"], w["test"]) for w in rep["rows"]]
+    assert tests[:10] == [("rhodes", t) for t in ("preflight", "usb-host", "usb-note-36", "usb-note-60", "usb-note-84",
+                                                   "usb-vel", "usb-sus", "usb-clock", "usb-stress")] + [("marimba", "preflight")]
+    assert len(tests) == 18 and code == 0, [(w["test"], w["verdict"]) for w in rep["rows"] if not w["ok"]]
+    assert "| rhodes | usb-host | PASS | gain -6.02 dB" in md and "# Move D2 over USB-C: PASS" in md, md
+    host = next(w for w in rep["rows"] if w["engine"] == "marimba" and w["test"] == "usb-host")["report"]
+    assert any(not w["judged"] for w in host["rows"])           # (84 v40 has died 0.5 s in: not judged on its tail)
+    assert os.path.exists(tmp_path / "marimba" / "usb-note-60" / "note.wav")
+    code = mh.d2(mh.FakeEchoRig(inject=[("playing", 0.0)]), str(tmp_path / "p"), out=lambda s: None)
+    md = open(tmp_path / "p" / "summary.md").read()
+    assert code == 2 and "STOPPED" in md and "| rhodes | preflight | FAIL" in md and "usb-host" not in md, md
+
+
+def test_d2_cli_fake(tmp_path):
+    r = run("d2", "--fake", "--ws", "none", "--engines", "vibes", "--secs", "8", "--out", str(tmp_path))
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr
+    assert "| vibes | usb-note-53 | PASS" in open(tmp_path / "summary.md").read()

@@ -103,7 +103,13 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
   Over USB-C, as the FM-1 is tested: `usb-devices`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`
   (MIDI to the Move's Standalone port, its USB audio recorded, the FM-1's analysis; `--fake` runs them against a
   model of the device). On the Move first: Settings, USB-C audio out = Main Out (the Move sets it back to Mic at
-  every boot).
+  every boot). `d2` runs them all for each engine and writes one table (`summary.md`). First it checks over
+  Schwung's WebSocket (`tools/move_ws.py`) that slot 1 holds Frodhes, and it loads the engine's preset there.
+  A failed preflight stops the run.
+- MIDI into the Standalone port also plays the Move's own instrument on the track. Schwung passes the notes to
+  the Move's firmware and to the slot alike. For a clean comparison, give that Move track a silent instrument.
+  Muting the track or turning it down also silences the slot, because the slot follows the track's mute and
+  volume. *(not yet verified on a device)*
 - The sustain control: `module.json` claims the Capture button (`capabilities.claims_ccs`, `SUS_BTN_CC` in
   `tools/gen_move_module.py`); Schwung gives a claimed button only to the module's screen script, so `sustain.js`
   passes its press and release to the plugin (`s_susbtn` 1 / 0), which runs the FM-1's REC code. The direct route,
