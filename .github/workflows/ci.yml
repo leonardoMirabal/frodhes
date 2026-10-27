@@ -74,6 +74,7 @@ jobs:
         with:
           path: .local/emsdk
           key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}-playwright-image
+      - run: apt-get update -qq && apt-get install -y -qq xz-utils   # (emsdk unpacks node from a .tar.xz; the image has no xz)
       - run: sh tools/get_emsdk.sh .local/emsdk
       - run: sh web/build.sh
       - uses: actions/setup-node@v4   # (Playwright's Python image has no node)
