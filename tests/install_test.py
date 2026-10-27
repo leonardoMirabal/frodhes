@@ -222,8 +222,15 @@ def installs():
        "install: an FM-1 running Frodhes (port 'Frodhes', no --port) -> found, installed, back as 'Frodhes'")
     rc, out, err = cli(["--info"], FakeFM1(image, identity="FM-1_958", name="Frodhes"))
     ok(rc == 0 and "FM-1_958" in out and "port: Frodhes" in out, "--info: an FM-1 running Frodhes, no --port")
-    ok(all(I.PORT_RE.search(n) for n in ("Frodhes", "FRODHES", "Frodhes MIDI 1", "FM-1", "Felucca", "Felucca Update")),
-       "port names: Frodhes (since 0.9.5) and the FM-1's other names probed")
+    # 0.9.7: the port carries the model ("Frodhes FM-1"), the old name after the install back as the new one
+    dev = FakeFM1(image, identity="FM-1_958", name="Frodhes", after_name="Frodhes FM-1")
+    rc, out, err = cli([p, "--yes"], dev)
+    ok(rc == 0 and dev.bad == 0 and "done: the FM-1 runs FM-1_900" in out,
+       "install: an FM-1 on 'Frodhes' -> installed, back as 'Frodhes FM-1' (no --port)")
+    rc, out, err = cli(["--info"], FakeFM1(image, identity="FM-1_958", name="Frodhes FM-1"))
+    ok(rc == 0 and "FM-1_958" in out and "port: Frodhes FM-1" in out, "--info: an FM-1 on 'Frodhes FM-1', no --port")
+    ok(all(I.PORT_RE.search(n) for n in ("Frodhes", "FRODHES", "Frodhes MIDI 1", "Frodhes FM-1", "Frodhes SMK-37 Pro", "FM-1", "Felucca", "Felucca Update")),
+       "port names: Frodhes (0.9.5), Frodhes FM-1 / Frodhes SMK-37 Pro (0.9.7) and the FM-1's other names probed")
 
     dev = FakeFM1(image, identity="ota-FM-1_900", name="Felucca Update")
     rc, out, err = cli([p, "--yes"], dev)

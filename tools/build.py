@@ -66,6 +66,8 @@ BOARD_PREFIX = {"smk37": "SMK-37 Pro_47"}   # Frodhes' SMK-37 identity: prefix +
 BOARD_DEFS = {"fm1": [], "smk37": ["-DBOARD_SMK37=1"]}
 BOARD_APP_DEFS = {"fm1": [], "smk37": ["-DFR_VOICES=7u"]}   # the app only (not the loader): the SMK at 7 voices
 MODELS = {"pro": "SMK-37 Pro", "elite": "SMK-37 Elite", "mke": "MKE-P37"}   # smk37: one keyboard, three names
+MODEL_PID = {"pro": 0x0007, "elite": 0x0008, "mke": 0x0009}   # the app's USB product id per model (usb.c: the FM-1
+                                    # 0x0006, the SMK-37 Pro 0x0007 by default; the name "Frodhes <model>", GitHub #21)
 DATA_FAMILY = "FRODHES"             # the SMK store's owner tag (store.h): 1..7 of A-Z 0-9
 SCREEN_NAME = "FRODHES"             # the update loader's screen (FM-1, ldr_screen.c): the name and its colour (RGB565)
 SCREEN_COLOUR = 0xE3C1              # AMBER, the screen's default accent (ui.c COLOR step 0)
@@ -469,6 +471,7 @@ def main():
     APP_SLOT = fm1pkg_make.APP_SLOT
     if model != "pro":              # another model name: identity, loader and update record (fm1_cc.h SMK_MODEL)
         BOARD_DEFS[BOARD] = [*BOARD_DEFS[BOARD], f'-DSMK_MODEL="{MODELS[model]}"']
+        BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], f"-DFELUCCA_USB_PID=0x{MODEL_PID[model]:04X}"]   # (the app's)
     if a.release:
         if not re.fullmatch(r"\d{1,2}\.\d{1,2}(\.\d{1,3})?(-[A-Za-z0-9]+)?", a.release):
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z or X.Y.Z-suffix")

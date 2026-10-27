@@ -205,11 +205,18 @@ static const uint8_t CFG_DESC[] = {
     8, 0x0B, 0, 2 + FELUCCA_UAC, 1, 1, 0, 0,            /* IAD: audio + MIDI (IF 0-1, 0-2) */
 #else
 #ifndef FELUCCA_USB_PID
-#define FELUCCA_USB_PID 0x0005   /* the update loader is 0x0002. Frodhes (0.9.5): 0x0005, a pid.codes test PID like
-                                  * 0x0001 (Felucca's, Frodhes to 0.9.4): macOS keeps a MIDI device per vendor / product id
+#if defined(BOARD_SMK37) && BOARD_SMK37
+#define FELUCCA_USB_PID 0x0007   /* the SMK-37 Pro (Elite 0x0008, MKE-P37 0x0009: tools/build.py MODEL_PID) */
+#else
+#define FELUCCA_USB_PID 0x0006   /* the FM-1. The update loader is 0x0002. Frodhes 0.9.5-0.9.6: 0x0005 "Frodhes", 0.9.7:
+                                  * the model in the name ("Frodhes FM-1", GitHub #21: tools that find a unit by its
+                                  * MIDI port's model name) and a new pid.codes test PID per model, the next free ones
+                                  * (0x0004 was Dinghy 0.1's): macOS keeps a MIDI device per vendor / product id
                                   * (Apple's USB-MIDI driver matches an entry by VID:PID, then serial, location or the
-                                  * first one offline) with the name it had first, so a Mac that saw "Felucca" kept it;
-                                  * a new PID makes a new entry, named "Frodhes" (tests/usb_desc_test.c) */
+                                  * first one offline) with the name it had first, so a Mac that saw "Felucca" (0x0001)
+                                  * or "Frodhes" (0x0005) kept it; a new PID makes a new entry, named as now
+                                  * (tests/usb_desc_test.c) */
+#endif
 #endif
 static const uint8_t DEV_DESC[18] = {18, 1, 0x10, 0x01, 0, 0, 0, 64, 0x09, 0x12, FELUCCA_USB_PID & 0xFF,
                                      FELUCCA_USB_PID >> 8, 0x00 + 0x10 * (FELUCCA_UAC + FELUCCA_UAC_48K), 0x03,
@@ -296,8 +303,24 @@ static const uint8_t STR1[] = {42, 3, 'H', 0, 0xFC, 0, 'g', 0, 'e', 0, 'l', 0, '
 static const uint8_t STR2[] = {30, 3, 'F', 0, 'e', 0, 'l', 0, 'u', 0, 'c', 0, 'c', 0, 'a', 0, ' ', 0, 'U', 0, 'p', 0,
                                'd', 0, 'a', 0, 't', 0, 'e', 0};
 #else
-static const uint8_t STR2[] = {16, 3, 'F', 0, 'r', 0, 'o', 0, 'd', 0, 'h', 0, 'e', 0, 's', 0};   /* Frodhes: the
-                                                                 * product, so the MIDI port and the audio input */
+#if defined(BOARD_SMK37) && BOARD_SMK37
+#ifndef SMK_MODEL
+#define SMK_MODEL "SMK-37 Pro"                                  /* (fm1_cc.h) */
+#endif
+#define USB_PRODUCT "Frodhes " SMK_MODEL
+#else
+#define USB_PRODUCT "Frodhes FM-1"
+#endif
+/* the product, so the MIDI port and the audio input: "Frodhes" and the model (0.9.7, GitHub #21), UTF-16LE, written
+ * from USB_PRODUCT at the first request (a string literal cannot be spread into an initializer) */
+static uint8_t STR2[2u + 2u * (sizeof USB_PRODUCT - 1u)];
+static void str2_fill(void)
+{
+    uint32_t i;
+    for (i = 0; i + 1u < sizeof USB_PRODUCT; i++) STR2[2u + 2u * i] = (uint8_t)USB_PRODUCT[i];
+    STR2[1] = 3;
+    STR2[0] = (uint8_t)sizeof STR2;
+}
 #endif
 
 static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)
@@ -332,6 +355,9 @@ static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)
             *l = sizeof STR1;
             return 1;
         case 2:
+#ifndef FELUCCA_LOADER
+            if (!STR2[0]) str2_fill();
+#endif
             *d = STR2;
             *l = sizeof STR2;
             return 1;

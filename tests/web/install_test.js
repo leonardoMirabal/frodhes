@@ -72,6 +72,9 @@ print(json.dumps({"resp": list(I.response(0x12345, bytes([1, 2, 3]), 5)), "pack"
   dev = new FakeFM1(image, { identity: "FM-1_958", name: "Frodhes" });
   r = await run(dev, pkg);
   ok(r.id === "FM-1_958" && dev.bad === 0, "install over Frodhes itself");
+  dev = new FakeFM1(image, { identity: "FM-1_958", name: "Frodhes FM-1" });
+  r = await run(dev, pkg);
+  ok(r.id === "FM-1_958" && dev.bad === 0, "install over Frodhes on the 0.9.7 port name 'Frodhes FM-1'");
 
   // wrong identities: an SMK-37 device; a package for another model; another firmware's loader
   dev = new FakeFM1(image, { identity: "SMK-37 Pro_470", name: "USB-MIDI" });
