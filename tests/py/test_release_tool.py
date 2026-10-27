@@ -2,6 +2,7 @@
 """tools/release.py without network or device: the version logic, the argument parsing, the HIL checks, the notes
 assembled from docs/changes/ (nothing bumped in README / MANUAL), the verify step, and a whole --dry-run with git /
 gh / make replaced by a fake shell (it must stop before any push)."""
+import hashlib
 import json
 import os
 import sys
@@ -612,3 +613,80 @@ def test_main_web_selftest(monkeypatch, capsys):
         raise rel.Stop("no sound")
     monkeypatch.setattr(rel, "web_selftest", bad)
     assert rel.main(["--web-selftest", "web/dist"]) == 1 and "FAIL: no sound" in capsys.readouterr().out
+
+
+# ---- main is protected (enforce_admins): the release goes in through a PR, release.py never pushes main ----
+
+def test_real_run_hands_off_the_pr_and_pushes_nothing(tree, monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(rel, "sh", fake_shell(str(tree), calls))
+    assert rel.main(["patch", "--no-device", "--no-emulator", "--yes"]) == 3          # 3: handed off
+    o = capsys.readouterr().out
+    assert any(c.startswith("git commit") for c in calls)                           # the release commit, local
+    assert not [c for c in calls if " push" in c or "tag -a" in c or "gh pr" in c or "gh release" in c], calls
+    assert "git push origin HEAD:refs/heads/release-0.9.3" in o and "--after-merge" in o
+    assert "gh pr create --base main --head release-0.9.3" in o
+    assert " 7  publish        handoff" in o and " 8  emulator       not run" in o and " 9  verify         not run" in o
+
+
+def merged_shell(root, calls, tree_rc="T1", tree_head="T1", ahead="0", recorded=None):
+    base = fake_shell(root, calls)
+    recorded = recorded or hashlib.sha256(b"fw").hexdigest()              # (fake_shell's build writes b"fw")
+
+    def sh(cmd, check=True, input=None, timeout=None, quiet=False):
+        s = cmd if isinstance(cmd, str) else " ".join(cmd)
+        replies = {"git log -1 --format=%H --diff-filter=A -- docs/releases/v0.9.3.md": "rc0123456789\n",
+                   "git rev-parse rc0123456789^{tree}": tree_rc + "\n", "git rev-parse HEAD^{tree}": tree_head + "\n",
+                   "git log -1 --format=%B rc0123456789": f"Release 0.9.3 ... the release build sha256 {recorded}); x\n",
+                   "git rev-list --count origin/main..HEAD": ahead + "\n", "git tag --list v0.9.3": ""}
+        if s in replies:
+            calls.append(s)
+            return 0, replies[s]
+        if s.startswith("gh release download"):
+            calls.append(s)
+            d = cmd[cmd.index("-D") + 1]
+            open(os.path.join(d, "frodhes-0.9.3.fwsc"), "wb").write(b"fw")
+            return 0, ""
+        return base(cmd, check, input, timeout, quiet)
+    return sh
+
+
+def after_merge_tree(tree):
+    for f in os.listdir(tree / "docs" / "changes"):
+        (tree / "docs" / "changes" / f).unlink()
+    (tree / "docs" / "releases" / "v0.9.3.md").write_text("**Frodhes 0.9.3**\n")
+
+
+def test_after_merge_tags_main_without_pushing_it(tree, monkeypatch, capsys):
+    after_merge_tree(tree)
+    calls = []
+    monkeypatch.setattr(rel, "sh", merged_shell(str(tree), calls))
+    monkeypatch.setattr(rel, "same_tree_run", lambda wf, sha: "ci.yml: the PR's green run on the same tree, reused")
+    monkeypatch.setattr(rel, "wait_run", lambda wf, sha, **kw: f"{wf} green")
+    rel.main(["0.9.3", "--after-merge", "--no-emulator", "--yes"])
+    o = capsys.readouterr().out
+    assert "git tag -a v0.9.3 -m Frodhes 0.9.3" in calls and "git push origin v0.9.3" in calls
+    assert not [c for c in calls if "HEAD:main" in c or "push origin main" in c]
+    assert not [c for c in calls if c in ("make test",) or c.startswith("make pytest")]   # tested before the PR
+    assert "./build.sh --release 0.9.3" in calls
+    assert " 7  publish        done" in o and " 4  FM-1           skipped  --after-merge" in o
+    assert "release asset sha256" in o
+
+
+@pytest.mark.parametrize("kw,why", [(dict(tree_head="T2"), "is not the release commit"),
+                                    (dict(ahead="1"), "not on origin/main"),
+                                    (dict(recorded="e" * 64), "not the one the release commit records")])
+def test_after_merge_refuses_another_tree_or_build(tree, monkeypatch, capsys, kw, why):
+    after_merge_tree(tree)
+    calls = []
+    monkeypatch.setattr(rel, "sh", merged_shell(str(tree), calls, **kw))
+    assert rel.main(["0.9.3", "--after-merge", "--no-emulator", "--yes"]) == 1
+    assert why in capsys.readouterr().out
+    assert not [c for c in calls if "tag -a" in c or " push" in c]
+
+
+def test_after_merge_needs_a_version():
+    with pytest.raises(SystemExit):
+        rel.parse_args(["patch", "--after-merge"])
+    with pytest.raises(SystemExit):
+        rel.parse_args(["0.9.3", "--after-merge", "--dry-run"])

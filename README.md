@@ -171,8 +171,10 @@ runs the host tests and the release build, installs it on the FM-1 and runs the 
 real-use scenarios judged by the firmware's own CC 116 counters and the audio; the full sound scan, the CPU, scan and jack tests on the
 Rhodes, VIBES and MARIMBA (and the MARIMBA sample-back), only when an engine or the DSP changed or with `--full`
 (`--device-done FILE` records FM-1 runs already made on the same build, checked by its sha256), checks the docs' links (no version in them: they link `releases/latest`), assembles the fragments into
-`docs/releases/vX.Y.Z.md` and commits it with the fragments removed, asks before publishing, then pushes `main`,
-waits for CI to pass on that commit, tags, waits for the release workflow and checks that the published `.fwsc` is
+`docs/releases/vX.Y.Z.md` and commits it with the fragments removed, asks before publishing, then stops with the
+commands for the release pull request (`main` is protected: the tool pushes nothing to it). After the merge,
+`tools/release.py X.Y.Z --after-merge` checks that `main` is that commit's tree and its build the one tested, waits for
+CI, tags, waits for the release workflow and checks that the published `.fwsc` is
 byte for byte the one tested (as `frodhes-X.Y.Z.fwsc` and as the stable `frodhes.fwsc`), and checks the live emulator.
 The release workflow publishes the emulator itself: it builds it from the tag and runs its selftest before anything
 is published, creates the release as a draft, deploys the emulator to the `gh-pages` branch, waits until GitHub Pages
