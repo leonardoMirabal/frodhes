@@ -58,6 +58,10 @@ def residual_db(c, g):
     return 10 * np.log10(errs[i] / np.sum(g[:L] ** 2)), float(np.sqrt(errs[i] / L))
 
 
+RMS_LSB = 0.75   # a quiet note's residual within the 16-bit cut's own error: the TPDF dither (rhodes.c RH_DITH, #16)
+                 # is 0.5 LSB RMS by itself (rounding alone was 0.29; the bound was 0.5 before the dither)
+
+
 def off_rel(off_ms, start_ms=100.0):
     """the key-up reaches the engine at the first block after its time; relative to the note's own start"""
     return (np.ceil(off_ms / BLK) * BLK - np.ceil(start_ms / BLK) * BLK) / 1000.0
@@ -69,7 +73,7 @@ def test_c_matches_golden_held(note, vel):
     c = c_render(note, vel, 2200)
     g = gm.render_batch(SPEC, [note], [vel], 1.8)[0]
     r, rms = residual_db(c, g)
-    assert r <= -60.0 or rms <= 0.5, (note, vel, r, rms)
+    assert r <= -60.0 or rms <= RMS_LSB, (note, vel, r, rms)
 
 
 @pytest.mark.parametrize("note", [53, 72])
@@ -77,7 +81,7 @@ def test_c_matches_golden_with_damper(note):
     c = c_render(note, 100, 1600, off_ms=700, tag="vbd")
     g = gm.render_batch(SPEC, [note], [100], 1.2, off_at=off_rel(700))[0]
     r, rms = residual_db(c, g)
-    assert r <= -60.0 or rms <= 0.5, (note, r, rms)
+    assert r <= -60.0 or rms <= RMS_LSB, (note, r, rms)
 
 
 @pytest.mark.parametrize("note", [53, 77])
@@ -85,7 +89,7 @@ def test_c_matches_golden_no_tube(note):
     c = c_render(note, 100, 2200, tag="vbt", bell=0)
     g = gm.render_batch(SPEC, [note], [100], 1.8, knobs=dict(bell=0))[0]
     r, rms = residual_db(c, g)
-    assert r <= -60.0 or rms <= 0.5, (note, r, rms)
+    assert r <= -60.0 or rms <= RMS_LSB, (note, r, rms)
 
 
 @pytest.mark.parametrize("note,tone,bark", [(60, 127, 127), (72, 100, 0)])
@@ -93,7 +97,7 @@ def test_c_matches_golden_edge_strikes(note, tone, bark):
     c = c_render(note, 127, 2200, tag="vbe", tone=tone, bark=bark, hammer=127)
     g = gm.render_batch(SPEC, [note], [127], 1.8, knobs=dict(tone=tone, bark=bark, hammer=127))[0]
     r, rms = residual_db(c, g)
-    assert r <= -60.0 or rms <= 0.5, (note, r, rms)
+    assert r <= -60.0 or rms <= RMS_LSB, (note, r, rms)
 
 
 def c_render_motor(note, mot):
@@ -120,4 +124,4 @@ def test_c_matches_golden_with_motor(note, mot):
     c = c_render_motor(note, mot)
     best = min(residual_db(c, gm.render_batch(SPEC, [note], [100], 1.8, motor=dict(
         mot, ph0=(k * 256 * bt.mot_inc(mot["rate"])) & 0xFFFFFFFF))[0]) for k in range(12))
-    assert best[0] <= -50.0 or best[1] <= 0.5, (note, best)
+    assert best[0] <= -50.0 or best[1] <= RMS_LSB, (note, best)

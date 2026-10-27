@@ -1009,7 +1009,8 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
     }
 }
 
-static uint32_t bar_dith = 0x6A09E667u;            /* the cut to Q15's TPDF dither (its own generator) */
+#define BAR_DITH0 0x6A09E667u
+static uint32_t bar_dith = BAR_DITH0;              /* the cut to Q15's TPDF dither (its own generator) */
 __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n)   /* kept out of app_audio */
 {
     uint32_t i, sb, j, act = 0, held = 0, ty = bar_sub < BAR_NTYPE ? bar_sub : 0u, nb = BAR_TYPE[ty].nbody, r;
@@ -1027,8 +1028,9 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
         if (v->alive && v->life && --v->life == 0 && !v->pend) v->alive = 0;   /* (a stolen voice: its fade ends it,
                                                      * then starts the waiting note: BUGHUNT #21) */
     }
-    dm = first && !bar_nz_e && bar_quiet_blocks ? 0 : -1;   /* (silent: no voice, no noise, the EQ's state zeroed:
-                                                     * no dither, the output stays exact 0) */
+    for (sb = 0, a = 0; sb < 2u; sb++) a |= bar_bd_m[sb][0] | bar_bd_m[sb][1] | bar_bd_o[sb][0] | bar_bd_o[sb][1] | bar_bd_e[sb];
+    dm = first && !bar_nz_e && !a ? 0 : -1;         /* (silent: no voice, no noise, the EQ at rest: no dither, the
+                                                     * output stays exact 0, at boot too) */
     if (first) for (i = 0; i < BAR_N; i++) bar_mono[i] = 0;   /* no voice: silence (+ the contact noise's tail) */
     if (bar_nz_e) {                                 /* contact noise: LFSR -> two biquads (Q14, transposed DF2) x the
                                                      * envelope (tau ~ 23 ms); off, and exactly silent, under 1/2 LSB */
@@ -1055,7 +1057,8 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
         bar_h_blk_mul += 11u * n;
 #endif
     }
-    r = bar_dith;
+    r = dm ? bar_dith : BAR_DITH0;                  /* (silent: the dither starts over, a take from silence is
+                                                     * the same integers every time) */
     for (j = 0; j < n; j++) {                       /* the type's room / mic EQ (Q28 DF1, 0..2 biquads); Q20 -> Q15,
                                                      * TPDF dithered (rhodes.c RH_DITH, GitHub #16) */
         int32_t o = bar_mono[j];
@@ -1072,7 +1075,7 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
         if (o < lo) lo = o;
         { int32_t d = RH_DITH(r); mono_out[j] = (o + 16 + ((d - 16) & dm)) >> 5; }
     }
-    bar_dith = r;
+    bar_dith = dm ? r : BAR_DITH0;
     a = (hi + 16) >> 5; b = (15 - lo) >> 5;         /* max |round(x)|, undithered: the silence test as before */
     mx = a > b ? a : b;
     for (i = 0; i < BAR_NV; i++)

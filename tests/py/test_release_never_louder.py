@@ -80,8 +80,9 @@ def check_at(x, t_ms, span_ms=600):
     pre, post = x[i - 5 * W:i], x[i:i + span_ms // 10 * W + W]
     rp, ra = rms10(pre), rms10(post)
     lb_r, lb_p = db(rp.max()), db(np.abs(pre).max())
-    if lb_r < -100:                             # (the note under the rounding or ended: nothing to be louder than;
-                                                # the pedal's thud into silence is S12's own)
+    if lb_r < -90:                              # (the note under 1 LSB RMS, in the cut's dither noise (rhodes.c
+                                                # RH_DITH: ~-96 dBFS) or ended: nothing to be louder than; the pedal's
+                                                # thud into silence is S12's own. Before the dither: -100)
         return 0.0, 0.0, 0.0
     rise_r = db(ra.max()) - lb_r
     rise_p = db(np.abs(post).max()) - lb_p

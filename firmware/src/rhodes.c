@@ -1086,7 +1086,10 @@ static FR_RAM void __attribute__((noinline)) rh_noise(int32_t *mix, uint32_t n)
  * generator (uncorrelated); none while the engine is silent (rh_render's idle branch writes exact 0; the side only
  * with rh_dith_on), so the silence is still exact digital zero. Integers only, deterministic (the host renders) */
 #define RH_DITH(r) ((r) = (r) * 1664525u + 1013904223u, (int32_t)((r) >> 27) + (int32_t)(((r) >> 22) & 31u) - 15)
-static uint32_t rh_dith_m = 0x2545F491u, rh_dith_s = 0x9E3779B9u;   /* the mid's, the side's */
+#define RH_DITH_M0 0x2545F491u
+#define RH_DITH_S0 0x9E3779B9u
+static uint32_t rh_dith_m = RH_DITH_M0, rh_dith_s = RH_DITH_S0;   /* the mid's, the side's (seeded again whenever
+                                                           * the engine is silent: rh_render's idle branch) */
 static int32_t rh_dith_on;                                /* -1: the side dithers this block; 0: +16 (silent) */
 
 /* one Q28 DF1 biquad with error feedback over a block, in -> out (may be the same buffer); st = m1, m2, o1, o2, e.
@@ -1206,6 +1209,10 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
     if (rh_shed_req) { rh_shed_req = 0; rh_shed(); }
     for (i = 0; i < RH_NV && !rv[i].alive; i++) ;
     idle = i == RH_NV && rh_quiet_blocks && !rh_pn_n;    /* (the pedal's thud plays into a silent engine) */
+    if (i == RH_NV && !idle && !rh_pn_n && !rh_kn_tab && !rh_txf.n && rh_chain_zero())
+        idle = 1;                                         /* (no voice, no noise, every filter at rest: its output is
+                                                           * 0 already; the dither must not make it 1 LSB of noise:
+                                                           * at boot and after a reset, before rh_quiet_blocks counts) */
     for (i = 0; i < n; i++) rh_mono[i] = 0;
     for (i = 0, sd = 0; i < RH_NV; i++) sd |= rv[i].alive && rv[i].pan;
     if (sd) rh_side_tail = 4;                             /* the side's filters ring out 3 blocks after its last voice */
@@ -1220,6 +1227,8 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
     if (idle) {                                           /* silent: no voice in this block and the filters' state
                                                            * zeroed at the end of the last one: the output is exactly 0 */
         for (j = 0; j < n; j++) mono_out[j] = 0;
+        rh_dith_m = RH_DITH_M0; rh_dith_s = RH_DITH_S0;   /* (the dither starts over: a take from silence is the
+                                                           * same integers every time) */
     } else {   /* pickup load: RLC low-pass on the mix, then the instrument's amp / speaker (nb biquads); Q20 -> Q15 */
         rh_chain(mono_out, rh_mono, n, rh_st, 0, ty);
         if (rh_txf.n) { rh_chain(rh_txf.buf, rh_mono, n, rh_txf.st, 0, rh_txf.ty); rh_txf_blend(mono_out, rh_txf.buf, n); }
