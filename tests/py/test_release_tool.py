@@ -420,7 +420,8 @@ def test_device_done_is_checked_at_step_4(tree, monkeypatch, capsys):
 
 
 def test_no_session_links_in_the_repo():
-    """the repo is public: no Claude session links or 'Generated with' footers in any tracked file (the user, 2026-10-20)"""
+    """the repo is public: no Claude session links, 'Generated with' footers or Co-Authored-By trailers in any tracked
+    file (the user, 2026-10-20)"""
     import subprocess
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     files = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True).stdout.split("\n")
@@ -432,7 +433,7 @@ def test_no_session_links_in_the_repo():
             t = open(os.path.join(root, f), encoding="utf-8").read()
         except (UnicodeDecodeError, IsADirectoryError, FileNotFoundError):
             continue
-        if "claude.ai/" + "code/session" in t or "Generated with [" + "Claude" in t:
+        if "claude.ai/" + "code/session" in t or "Generated with [" + "Claude" in t or "Co-Authored-By: " + "Claude" in t:
             bad.append(f)
     assert not bad, bad
 

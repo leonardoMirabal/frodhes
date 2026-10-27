@@ -86,7 +86,6 @@ LATEST_DL = f"https://github.com/{REPO}/releases/latest/download/{STABLE}"
 PY = os.path.join(".local", "venv", "bin", "python")
 CPU_LIMIT_US = 4500
 JACK_PEAK_MIN_DB = -27.0          # the loud chord peaks near -15 dBFS on the jack; far below = not connected
-TRAILER = "Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"   # (no session links: a public repo)
 STEPS = ["version", "preconditions", "host", "FM-1", "docs", "confirm", "publish", "emulator", "verify"]
 SCAN_SET = "silence,latency,keyboard,velocity,sustain,held_tail,stress,presets"
 ENGINES = ("rhodes", "vibes", "marimba")
@@ -425,7 +424,7 @@ class Release:
             dev = self.device_done() or "FM-1: NOT tested (--no-device)"
         msg = (f"Release {self.ver}: the notes {notes}, assembled from {changes.DIR}/ (the fragments removed)"
                f"\n\nTested by tools/release.py: host (make test, make pytest, gate_r, the release build sha256 "
-               f"{self.sha}); {dev}.\n{body}\n\n{TRAILER}\n")
+               f"{self.sha}); {dev}.\n{body}\n")
         if out(["git", "diff", "--cached", "--name-only"]):
             sh(["git", "commit", "-q", "-F", "-"], input=msg)
         self.head = out(["git", "rev-parse", "HEAD"])
