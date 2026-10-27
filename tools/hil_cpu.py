@@ -71,9 +71,10 @@ from hil_scan import CC, DRY, param_defaults  # noqa: E402
 PORT_KEYS = ("frodhes", "felucca", "fm-1")                       # the FM-1's MIDI port / audio device names
 USB_BAD_RUNS = []                                     # scenarios with a USB underrun, missed packet or overrun
 USB_ITEMS = {1: "underruns", 2: "missed", 3: "overruns", 4: "adj_up", 5: "adj_down", 6: "fill_lo", 7: "fill_hi",
-             8: "fill_low", 9: "per_min", 10: "per_max", 11: "stalls", 12: "state"}
+             8: "fill_low", 9: "per_min", 10: "per_max", 11: "stalls", 12: "state",
+             21: "sie_to"}                    # (21, 0.9.7: EP4 polls whose SIE access timed out, left queued)
 TICK_ITEMS = {13: "tick_max", 14: "blk_max", 15: "blk_mean", 16: "tick_mean"}   # (--tick: FM1_PROF_TICK builds)
-USB_SUM = ("underruns", "missed", "overruns", "adj_up", "adj_down", "stalls")    # deltas: summed over a scenario
+USB_SUM = ("underruns", "missed", "overruns", "adj_up", "adj_down", "stalls", "sie_to")   # deltas: summed
 USB_MIN = ("fill_lo", "fill_low", "per_min")
 USB_BAD = ("underruns", "missed", "overruns")
 

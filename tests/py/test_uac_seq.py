@@ -9,8 +9,9 @@ in a row (stalls, overruns), and landing inside uac_service's own SIE accesses. 
   (or a stall re-primed the ring), packets of 43..46 frames, in every case.
 - The check is not blind: usb.c with a planted bug (ua_r one short once per 100000 packets: one frame sent twice,
   no counter) fails it, as seed 3024's copy would.
-- A TXCSR1 read that times out (sie_rd returns 0: the queue looks free) re-arms over the queued packet: its frames
-  are lost, never repeated (information: what that path would look like)."""
+- An SIE access that times out (the INDEX write, the TXCSR1 read: sie_rd returns 0): this tree takes it as "still
+  queued" and counts uac.sie_to (CC 116 item 21), so nothing is lost; v0.9.6 (git archive; skipped where the tag is
+  missing) took the 0 for "free" and queued a new packet over the waiting one: its frames lost, no counter."""
 import os
 import shutil
 import subprocess
@@ -22,9 +23,9 @@ OUT = os.path.join(ROOT, "build", "uac_test")
 HOURS = os.environ.get("UAC_SEQ_HOURS", "0.25")
 
 
-def build(src, exe):
+def build(src, exe, *defs):
     os.makedirs(OUT, exist_ok=True)
-    subprocess.run(["cc", "-O1", "-w", "-I" + src, "-o", exe, os.path.join(ROOT, "tests", "uac_seq_test.c")],
+    subprocess.run(["cc", "-O1", "-w", *defs, "-I" + src, "-o", exe, os.path.join(ROOT, "tests", "uac_seq_test.c")],
                    check=True)
     return exe
 
@@ -73,7 +74,24 @@ def test_a_planted_copy_is_caught():
     assert rc != 0 and all(r["dup_uncounted"] > 0 for r in rows), rows[:1]
 
 
-def test_sie_timeout_loses_a_packet_never_repeats():
+def test_sie_timeout_waits_and_is_counted():
     exe = build(os.path.join(ROOT, "firmware", "src"), os.path.join(OUT, "uac_seq_sie"))   # (its own: xdist)
-    rows, _ = cases(exe, "--hours", "0.05", "--sie-fault", "0.0005")
-    assert all(r["overwritten"] > 0 and r["drop_uncounted"] > 0 and r["dup_uncounted"] == 0 for r in rows), rows[:1]
+    rows, rc = cases(exe, "--hours", "0.1", "--sie-fault", "0.0005")
+    assert rc == 0 and all(r["sie_to"] > 0 and r["overwritten"] == 0 and r["drop_uncounted"] == 0
+                           and r["dup_uncounted"] == 0 for r in rows), rows[:1]
+
+
+def test_sie_timeout_lost_a_packet_in_096():
+    tree = os.path.join(OUT, "v096")
+    tar = os.path.join(OUT, "v096.tar")
+    os.makedirs(OUT, exist_ok=True)
+    if subprocess.run(["git", "-C", ROOT, "archive", "--format=tar", "-o", tar, "v0.9.6", "firmware"],
+                      capture_output=True).returncode:
+        pytest.skip("no v0.9.6 in this checkout")
+    shutil.rmtree(tree, ignore_errors=True)
+    os.makedirs(tree)
+    subprocess.run(["tar", "-xf", tar, "-C", tree], check=True)
+    exe = build(os.path.join(tree, "firmware", "src"), os.path.join(OUT, "uac_seq_v096"), "-DUAC_OLD")
+    rows, rc = cases(exe, "--hours", "0.05", "--sie-fault", "0.0005")
+    assert rc != 0 and all(r["overwritten"] > 0 and r["drop_uncounted"] > 0 and r["dup_uncounted"] == 0
+                           for r in rows), rows[:1]

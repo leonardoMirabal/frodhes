@@ -287,6 +287,8 @@ def gate_counters(acc, stream_rate):
                 not flowing)
         for k in ("underruns", "missed", "overruns"):
             row(f"USB {k}", u.get(k, 0), "0", u.get(k, 0) == 0)
+        if "sie_to" in u:                       # (0.9.7 on: a timed-out SIE access in the EP4 poll, CC 116 item 21)
+            row("USB SIE timeouts (EP4 polls)", u["sie_to"], "0", u["sie_to"] == 0)
         if stream_rate:
             lo = u.get("fill_low")
             row("USB ring low point (frames)", lo, f">= {packet(stream_rate)} (one packet)",

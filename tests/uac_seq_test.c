@@ -19,11 +19,13 @@
  * The checks, per received packet: a frame equal to the one before is allowed only in a packet whose build counted
  * an underrun (uac.underruns: the copies), a gap only after a counted event (overruns, stalls: the ring re-primed),
  * and silence only while the ring is not primed. Anything else is a frame sent twice or dropped with every counter
- * clean: `dup_uncounted` / `drop_uncounted`, both must be 0. `--sie-fault P` makes a TXCSR1 read time out with
- * probability P (sie_rd then returns 0: the queue looks free), to show what that path would do.
+ * clean: `dup_uncounted` / `drop_uncounted`, both must be 0. `--sie-fault P` makes the INDEX write and the TXCSR1
+ * read each time out with probability P (sie_rd then returns 0): before 0.9.7 uac_service took that 0 for "free" and
+ * queued a new packet over the waiting one (its frames lost, no counter: `overwritten`); now a timed-out access counts
+ * uac.sie_to and the packet waits, so the check is the same: no frame lost or repeated uncounted.
  *
  *   cc -O1 -w -Ifirmware/src -o build/uac_test/uac_seq_test tests/uac_seq_test.c && build/uac_test/uac_seq_test
- *   build/uac_test/uac_seq_test --hours H [--sie-fault P] [--seed S]
+ *   build/uac_test/uac_seq_test --hours H [--sie-fault P] [--seed S]     (-DUAC_OLD: a tree before 0.9.7)
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -50,6 +52,11 @@ static void sim_ep4_send(void *p, uint32_t n);
 #define fm1_usb_ep4_send sim_ep4_send
 #include "usb.c"
 
+#ifdef UAC_OLD                                         /* (a tree before 0.9.7: no uac.sie_to) */
+#define UAC_SIE_TO 0u
+#else
+#define UAC_SIE_TO uac.sie_to
+#endif
 static uint64_t rng = 88172645463325252ull;
 static double urand(void)                              /* 0..1 */
 {
@@ -76,6 +83,9 @@ static uint32_t sim_sie_on(void) { return 1; }
 static void sim_sie_wr_start(uint32_t r, uint32_t v)
 {
     sie_token();                                       /* the host does not wait for our SIE accesses */
+    sie_fail = sie_fault > 0 && r == S_INDEX && urand() < sie_fault;
+    if (sie_fail)
+        return;                                        /* (timed out: not written) */
     if (r == S_INDEX)
         sie_index = v;
     else if (r == S_TXCSR1 && sie_index == 4u) {
@@ -293,13 +303,13 @@ int main(int argc, char **argv)
             run(&c);
             printf("case ppm %.0f rend %.0f hours %.2f pkts %llu taken %llu frames %llu nmin %u nmax %u n_bad %llu "
                    "underruns %u dup_counted %llu missed %u stalls %u overruns %u overwritten %u gaps_counted %llu "
-                   "adj_up %u adj_down %u silence %llu dup_uncounted %llu drop_uncounted %llu\n",
+                   "adj_up %u adj_down %u silence %llu sie_to %u dup_uncounted %llu drop_uncounted %llu\n",
                    c.ppm, c.rend_us, c.hours, (unsigned long long)R.pkts, (unsigned long long)R.taken,
                    (unsigned long long)R.frames, R.nmin, R.nmax, (unsigned long long)R.n_bad, uac.underruns,
                    (unsigned long long)R.dup_counted, uac.missed, uac.stalls, uac.overruns, q_overwritten,
                    (unsigned long long)R.gaps_counted, uac.adj_up, uac.adj_down, (unsigned long long)R.silence,
-                   (unsigned long long)R.dup_uncounted, (unsigned long long)R.drop_uncounted);
-            if (R.dup_uncounted || R.drop_uncounted || R.n_bad)
+                   UAC_SIE_TO, (unsigned long long)R.dup_uncounted, (unsigned long long)R.drop_uncounted);
+            if (R.dup_uncounted || R.drop_uncounted || R.n_bad || q_overwritten)
                 bad++;
         }
     printf("%s\n", bad ? "FAIL" : "ok");

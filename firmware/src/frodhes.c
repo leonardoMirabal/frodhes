@@ -85,8 +85,8 @@ static uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof_st"))); 
  * longer / shorter (the rate adaptation), 6 / 7 the lowest / highest fill at a render's start (frames), 8 the
  * lowest fill just before a block is tapped in (the true low point; 16383 = no stream), 9 / 10 the shortest /
  * longest spacing of the audio ISR's entries (us; 5805 nominal), 11 stalls, 12 the stream: 1 alt set + 2 flowing
- * + 4 at 48 kHz + 8 primed, 17 the longest stretch a flash write held the interrupts off (us, fm1_flash.h; 0 = no
- * write), and (not in an FM1_PROF_TICK build: the MIDI out ring holds 64) 18 the SR2 suspend bits the part set
+ * + 4 at 48 kHz + 8 primed, 21 EP4 polls whose SIE access timed out (0.9.7: taken as still queued), 17 the
+ * longest stretch a flash write held the interrupts off (us, fm1_flash.h; 0 = no write), and (not in an FM1_PROF_TICK build: the MIDI out ring holds 64) 18 the SR2 suspend bits the part set
  * (0x80 / 0x04; 0 = none), 19 the longest erase's own time (x 10 us, the part busy: the slices summed), 20 the longest
  * the main loop was held by a flash write (x 10 us: a preset's or the pattern's erase or page program from start to
  * end; the settings' auto save one slice, fm1_flash.h fl_op_poll, the ISRs meanwhile included). The counters are deltas since the last query; the ranges restart at each query. */
@@ -97,10 +97,11 @@ static void usb_health_send(uint32_t id, uint32_t v)
 }
 static void usb_health_reply(void)
 {
-    static uint32_t seen[6] __attribute__((section(".bss.usb_seen")));   /* own section: out of the global merge */
-    uint32_t now[6], i, v;
+    static uint32_t seen[7] __attribute__((section(".bss.usb_seen")));   /* own section: out of the global merge */
+    uint32_t now[7], i, v;
     now[0] = uac.underruns; now[1] = uac.missed; now[2] = uac.overruns;
     now[3] = uac.adj_up; now[4] = uac.adj_down; now[5] = uac.stalls;
+    now[6] = uac.sie_to;
     v = isr_st.max_us >> 2; if (v > 16383u) v = 16383u;
     midi_send(0xB0, 108, v >> 7); midi_send(0xB0, 107, v & 127u);
     v = isr_st.tail_us >> 2; if (v > 16383u) v = 16383u;
@@ -115,6 +116,7 @@ static void usb_health_reply(void)
     usb_health_send(9, isr_st.per_min);
     usb_health_send(10, isr_st.per_max);
     usb_health_send(11, now[5] - seen[5]);
+    usb_health_send(21, now[6] - seen[6]);
     usb_health_send(12, (uint32_t)(uac.alt != 0) | (uint32_t)(uac.flowing != 0) << 1 | (uint32_t)(uac.r48 != 0) << 2 |
                         (uint32_t)(uac.go != 0) << 3);
     usb_health_send(17, fl_off_max_us);
@@ -127,7 +129,7 @@ static void usb_health_reply(void)
 #ifdef FM1_PROF_TICK
     tick_prof_reply();                                 /* (developer build: the timer tick's time, platform.c) */
 #endif
-    for (i = 0; i < 6u; i++)
+    for (i = 0; i < 7u; i++)
         seen[i] = now[i];
     /* the ranges restart (single stores: an ISR between the read and the store only loses that one sample) */
     uac.fill_lo = 0xFFFFFFFFu; uac.fill_hi = 0;

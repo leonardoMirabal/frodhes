@@ -120,6 +120,12 @@ def test_counters_gate():
         a = acc_of(reply(usb=GOOD), reply(usb=dict(GOOD, **{k: v})))
         assert fails(m.gate_counters(a, 48000)) == [name], k
     assert fails(m.gate_counters(acc_of(reply(usb=GOOD), reply(isr=4600, usb=GOOD)), 48000)) == ["whole ISR max (us)"]
+    # 0.9.7: item 21, the EP4 polls whose SIE access timed out (summed; absent in older firmware: no row)
+    to = acc_of(reply(usb=dict(GOOD, sie_to=0)), reply(usb=dict(GOOD, sie_to=2)), reply(usb=dict(GOOD, sie_to=1)))
+    assert to.summary()["usb"]["sie_to"] == 3
+    assert fails(m.gate_counters(to, 48000)) == ["USB SIE timeouts (EP4 polls)"]
+    assert "USB SIE timeouts (EP4 polls)" not in [r[0] for r in m.gate_counters(good, 48000)]
+    assert fails(m.gate_counters(acc_of(reply(usb=dict(GOOD, sie_to=0))), 48000)) == []
     assert fails(m.gate_counters(acc_of(reply(usb=GOOD, shed=5), reply(usb=GOOD, shed=6)), 48000)) == ["voices shed"]
     # the shed counter wraps mod 128
     assert acc_of(reply(usb=GOOD, shed=127), reply(usb=GOOD, shed=1)).shed == 2

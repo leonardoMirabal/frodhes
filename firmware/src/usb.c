@@ -120,6 +120,7 @@ static struct {
     uint32_t starts, pkts, frames;               /* frames in packets sent from the ring */
     uint32_t underruns, overruns, missed;        /* glitches: ring empty (repeat), ring full (drop), no packet ready */
     uint32_t stalls;                             /* the host stopped reading for > 20 ms (alt still 1) */
+    uint32_t sie_to;                             /* EP4 polls an SIE access timed out in (taken as "still queued") */
     uint32_t adj_up, adj_down;                   /* packets one frame longer / shorter than the pattern */
     uint32_t fill_lo, fill_hi;                   /* range of fill_min since the stream started */
     uint32_t rate_sets;                          /* SET_CUR sampling frequency requests */
@@ -1254,7 +1255,13 @@ static void uac_service(void)
     if (!usb.up || !usb.config || !uac.alt)
         return;
     sie_wr(S_INDEX, 4);
-    csr = sie_rd(S_TXCSR1);
+    csr = usb.timeouts ? 0x01u : sie_rd(S_TXCSR1);
+    if (usb.timeouts) {                                 /* (0.9.7) the INDEX write or the TXCSR1 read timed out: sie_rd's
+                                                         * 0 is not "free" (a new packet over the queued one lost its
+                                                         * frames); as still queued, counted */
+        csr = 0x01u;
+        uac.sie_to++;
+    }
     if (csr & 0x01u) {                                  /* still queued */
         if (uac.wait < 255u && ++uac.wait == 40u && uac.flowing) {
             uac.flowing = 0;
