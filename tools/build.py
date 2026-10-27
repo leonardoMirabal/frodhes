@@ -303,6 +303,7 @@ BAR_LOOPS = [("bar_run_lo", 32, "upper slot Q32, 4 samples"), ("bar_run_hi", 32,
              ("bar_pair_0h", 70, "pair, the tube in Q30, 2 samples"),
              ("bar_pair_1h", 72, "pair + force, the tube in Q30, 2 samples"),
              ("bar_out_rad", 11, "output + radiation"), ("bar_out", 7, "output"),
+             ("bar_outm", 11, "output + the motor's radiation"),
              ("bar_fade_rad", 21, "output + radiation, steal fade"), ("bar_fade", 17, "output, steal fade"),
              ("bar_felt_pass", 15, "felt noise"), ("bar_force", 16, "the pulse")]
 

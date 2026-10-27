@@ -263,8 +263,8 @@ static void pl_cpy(int16_t *d, const int16_t *q)     /* PL_G + 1 int16 (both 4-b
  * v = x - g d into its write, y = d + g v (plain shifts: with g > 0 and no input the stored value changes sign every
  * pass and never grows, so it dies out). Returns the OR of the input */
 #define PL_AP(k, g) d = r##k[i], v = hl_c16(y - ((d * (g)) >> 15)), o##k[i] = (int16_t)v, y = d + ((v * (g)) >> 15)
-static __attribute__((noinline)) int32_t pl_in(const int16_t *const *r, int16_t *const *o, const int32_t *in,
-                                               int32_t *x, int32_t *bw, int32_t pb)
+static FR_RAM __attribute__((noinline)) int32_t pl_in(const int16_t *const *r, int16_t *const *o, const int32_t *in,
+                                                      int32_t *x, int32_t *bw, int32_t pb)   /* (RAM: 0.9.7) */
 {
     const int16_t *r0 = r[0], *r1 = r[1], *r2 = r[2], *r3 = r[3];
     int16_t *o0 = o[0], *o1 = o[1], *o2 = o[2], *o3 = o[3];
@@ -372,7 +372,7 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
         t[k] = s->e + HL_NC <= PL_IL[k] ? s->zero : ib + ((w + PL_ITOP[k] - PL_IL[k]) & (PL_IN - 1u));
         o[k] = pl_wptr(s, ib, PL_IN, w + PL_ITOP[k], 2u);
     }
-    act = pl_in(t, o, in, s->x, &s->bw, s->pbw);
+    act = FR_FAR(pl_in)(t, o, in, s->x, &s->bw, s->pbw);
     /* the tank: every read site's pointer (the zeros while it reads before the start), the guard copy, the halves */
     if (s->e >= PL_WARM)
         for (k = 0; k < PL_S_N; k++)
