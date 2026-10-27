@@ -49,7 +49,8 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
    `python3 tools/fm1_install.py frodhes.fwsc` (it needs `pip install mido python-rtmidi`). Once Frodhes is listed
    on [thefirmwarehub.com](https://thefirmwarehub.com), its web installer works too (Chrome or Edge). Updating an
    FM-1 that already runs Frodhes: use the installer from this repository as it is now; an older copy (0.9.4 and
-   before) does not know the FM-1's port name "Frodhes" and says "FM-1 not found" (`--port Frodhes` works there).
+   before) does not know the FM-1's port name ("Frodhes FM-1", "Frodhes" in 0.9.5 and 0.9.6) and says "FM-1 not
+   found" (`--port Frodhes` works there).
 4. The FM-1 restarts into Frodhes. If it does not come back by itself, switch it off and on.
 
 While an install writes, the screen shows FRODHES, **WRITING** (do not switch off) and a bar with the percent. If an
@@ -1011,11 +1012,16 @@ MARIMBA ignore it.
 | 41 / 42 | Developer: key velocity (not saved): 41 sets the key converter's test mode (0 normal, 1 off, 2 stress, 4 self-test; 8 / 9 every press's reading out on CC 33–36, on / off), 42 asks for its counters (replies on CC 38–40); `tools/hil_keyvel.py` and `tools/hil_cpu.py --keyadc` use them | | |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
-On the computer the FM-1 is called **Frodhes**, its MIDI port and its audio input alike (the update mode is called
-"Felucca Update", after the platform). It has its own USB product id, so a computer that knew the FM-1 under the name
-earlier firmware gave it sets it up as a new device, named Frodhes, by itself: in a DAW, switch the Frodhes port on
-once (in its MIDI preferences) where the old one was. A Mac keeps the old entry in Audio MIDI Setup's MIDI Studio
-window, greyed out (offline): nothing needs deleting, but you can remove it. It appears as a USB audio input (class-compliant, stereo, 16-bit, 44.1 or 48 kHz): you can record exactly
+On the computer the FM-1 is called **Frodhes FM-1** (an SMK-37 running Frodhes: **Frodhes SMK-37 Pro**, Frodhes
+SMK-37 Elite or Frodhes MKE-P37). The name is the same everywhere the computer shows the unit: its MIDI port (a
+DAW's MIDI preferences, Audio MIDI Setup's MIDI Studio window on a Mac), its audio input (the system's sound
+settings, a DAW's audio input list) and the USB device list. The update mode is called "Felucca Update", after the
+platform. Since the name carries the model, the community firmware flasher finds the unit for its DOWNLOAD MODE by
+itself (0.9.5 and 0.9.6 called it only "Frodhes", and the flasher did not find it). Each model has its own USB
+product id, new in 0.9.7, so a computer that knew the unit under an earlier name sets it up as a new device, under
+the new name, by itself: in a DAW, switch the Frodhes FM-1 port on once (in its MIDI preferences) where the old one
+was. A Mac keeps the old entry in Audio MIDI Setup's MIDI Studio window, greyed out (offline): nothing needs
+deleting, but you can remove it. It appears as a USB audio input (class-compliant, stereo, 16-bit, 44.1 or 48 kHz): you can record exactly
 what it plays, digitally, without the headphone jack's hiss (at 48 kHz the converted stream keeps the same
 headroom: a loud, bright passage is softened just under full scale instead of clipping). It does not play audio from the computer. Saving the
 settings while it is recorded does not disturb the recording (section 6, "What is kept, and when"). The USB audio holds one block (5.8 ms) more

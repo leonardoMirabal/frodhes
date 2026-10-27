@@ -1,6 +1,6 @@
 ## Tools
 - `tools/fm1_install.py`: "FM-1 not found" now suggests naming the port (`--port NAME`). An FM-1 running Frodhes
-  (its port is called "Frodhes" since 0.9.5) is found without `--port`; the installer of 0.9.4 and before does not
+  (its port is called "Frodhes" since 0.9.5, "Frodhes FM-1" from 0.9.7) is found without `--port`; the installer of 0.9.4 and before does not
   know that name, so update with this one.
 - The device tools send on MIDI channel 8 by default (`FRODHES_MIDI_CH=1..16` to change it), so they work with the
   FM-1's MIDI CHANNEL on 8 or on ALL.

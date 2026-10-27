@@ -221,11 +221,14 @@ host model of the part; the update loader keeps the blocking driver), and the sa
 `fl_op_poll`, `settings_save_start` / `settings_save_poll` in `platform.c`: the settings' auto save one slice a
 main-loop pass, so MIDI is never held up by it),
 and the USB audio ring keeps one more block in hand (`UA_HOLD`, `UA_N` 1024 in `usb.c`: a render of up to a whole
-block can no longer run it dry and repeat a frame; 5.8 ms more USB latency), and the USB product string is
-"Frodhes" (`STR2` in `usb.c`: the MIDI port and the audio input; the update mode keeps "Felucca Update"), the MIDI
-jacks carry that name (`MS_IJACK`) and the app's USB product id is 0x0005 (`FELUCCA_USB_PID`; Dinghy's 0x0001, the
-update loader's 0x0002 unchanged): a Mac keeps a MIDI device per vendor / product id with the name it saw first, so a
-new id is what makes one that saw "Felucca" show "Frodhes". The package
+block can no longer run it dry and repeat a frame; 5.8 ms more USB latency), and the USB product string
+names the model, "Frodhes FM-1" or "Frodhes " `SMK_MODEL` on the SMK-37 (`USB_PRODUCT`, written into `STR2` in
+RAM at the first request, in `usb.c`: the MIDI port and the audio input; the update mode keeps "Felucca Update"), the
+MIDI jacks carry that name (`MS_IJACK`) and each model has its own USB product id (`FELUCCA_USB_PID`): FM-1 0x0006,
+SMK-37 Pro 0x0007, Elite 0x0008, MKE-P37 0x0009 (`tools/build.py MODEL_PID`), the next free test ids after
+Dinghy's 0x0001, the update loader's 0x0002 (unchanged) and 0x0005, which named the app "Frodhes" in 0.9.5 and
+0.9.6. A Mac keeps a MIDI device per vendor / product id with the name it saw first, so a new id is what makes a
+new name show; a port name with the model in it is what the community flasher looks for. The package
 identity stays `FM-1_958` (`tools/build.py PRODUCT`) and the update loader's screen says FRODHES (`SCREEN_NAME`) and draws no site name at its foot (`LDR_FOOT`, a define in
 `ldr_screen.c`: Dinghy's screen shows its hub's address there). Dinghy stays the
 `upstream` remote: `git fetch upstream && git merge upstream/main`.
