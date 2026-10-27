@@ -88,3 +88,101 @@ def test_device_null_proof():
     res = device_null.self_test(out=lambda s: None)
     assert res and all(want == got for _, want, got, _ in res), res
     assert any(not w for _, w, _, _ in res)                       # (fail cases exist)
+
+
+# ---- over USB-C: the tests against the offline model of the Move (FakeRig); the device runs are the main session's
+def _fake(tmp_path, fn, *inject, **kw):
+    r = mh.FakeRig(inject=inject)
+    return fn(r, str(tmp_path), out=lambda s: None, **kw)
+
+
+def test_usb_ports_picked():
+    names = ["IAC Driver Bus 1", "MIDISPORT 2x4 Port 1", "M6", "Frodhes FM-1", "Ableton Move Live Port",
+             "Ableton Move Standalone Port"]
+    assert mh._pick(names, mh.MIDI_KEYS, "MIDI") == "Ableton Move Standalone Port"
+    assert mh._pick(names[:5], mh.MIDI_KEYS, "MIDI") is None          # (the Live port never reaches a slot)
+    assert mh._pick(names, mh.MIDI_KEYS, "MIDI", want="midisport") is None
+    assert mh._pick(["M6", "Ableton Move"], mh.AUDIO_KEYS, "audio") == "Ableton Move"
+
+
+def test_usb_note_vel_sus_clock_pass_on_a_good_device(tmp_path):
+    ok, rep = _fake(tmp_path, mh.usb_note)
+    assert ok and abs(rep["cents"]) < 1 and rep["glitches"] == [], rep
+    assert os.path.exists(tmp_path / "note.wav")
+    ok, rep = _fake(tmp_path, mh.usb_vel)
+    assert ok and rep["range_db"] > 20, rep
+    ok, rep = _fake(tmp_path, mh.usb_sus)
+    assert ok, rep
+    ok, rep = _fake(tmp_path, mh.usb_clock, bpm=120.0)
+    assert ok and abs(rep["bpm_seen"] - 120) < 1.5, rep
+
+
+def test_usb_failures_found(tmp_path):
+    ok, rep = _fake(tmp_path, mh.usb_note, ("click", 1.0))
+    assert not ok and rep["glitches"], rep
+    ok, rep = _fake(tmp_path, mh.usb_sus, ("nosus", 0.0))
+    assert not ok and "pedal does not hold" in rep["verdict"], rep
+    ok, rep = _fake(tmp_path, mh.usb_sus, ("loud", 5.0))
+    assert not ok and "louder after key-up" in rep["verdict"], rep
+    ok, rep = mh.usb_clock(mh.FakeRig(), str(tmp_path), bpm=120.0, secs=0.8, out=lambda s: None)
+    assert not ok and "did not run" in rep["verdict"]
+
+
+def test_usb_stress_detectors(tmp_path):
+    ok, rep = _fake(tmp_path, mh.usb_stress, secs=8.0)
+    assert ok, [t["events"] for t in rep["takes"]]
+    ok, rep = _fake(tmp_path, mh.usb_stress, ("click", 2.37), ("stale", 3.3), ("zero", 6.13), secs=16.0)
+    low = {k for _, k, _ in rep["takes"][0]["events"]}
+    assert not ok and {"click", "stale", "zero"} <= low, low
+
+
+def test_usb_cli_fake(tmp_path):
+    r = run("usb-note", "--fake", "--out", str(tmp_path))
+    assert r.returncode == 0 and "PASS" in r.stdout, r.stdout + r.stderr
+    assert os.path.exists(tmp_path / "report.json")
+
+
+def test_idle_verdict():
+    """the preflight's three cases: digital silence, the microphone (broadband noise with LF rumble, L == R), a
+    sound playing (a tone, stereo)"""
+    rng = np.random.default_rng(1)
+    n = 44100
+    assert mh.idle_verdict(np.zeros((n, 2)), 44100)["kind"] == "digital"
+    assert mh.idle_verdict(rng.integers(-1, 2, (n, 2)).astype(float), 44100)["kind"] == "digital"   # (dither)
+    t = np.arange(n) / 44100
+    room = rng.normal(0, 60, n) + 2000 * np.sin(2 * np.pi * 4 * t) + 800 * np.sin(2 * np.pi * 11 * t)
+    room = np.round(room)
+    v = mh.idle_verdict(np.stack([room, room], 1), 44100)
+    assert v["kind"] == "mic", v
+    tone = 3000 * np.sin(2 * np.pi * 262 * t)
+    assert mh.idle_verdict(np.stack([tone, 0.7 * tone], 1), 44100)["kind"] == "playing"
+
+
+def test_usb_host_same_sound(tmp_path):
+    """usb-host passes a device that plays the host's own render (here: the render itself, 6 dB down and 7 ms late:
+    the Move's volume and its latency) and fails one that plays another sound (the fake's model)"""
+    class HostEcho(mh.FakeRig):
+        def rec(self, dur, events):
+            h = mh.host_phrase(events, dur, 0)
+            x = np.zeros_like(h)
+            x[300:] = 0.5 * h[:-300]
+            return {"x": np.round(x), "sr": 44100, "xruns": []}
+    ok, rep = mh.usb_host(HostEcho(), str(tmp_path), out=lambda s: None)
+    assert ok and abs(rep["gain_db"] + 6.02) < 0.1, rep
+    assert all(abs(w["lag_ms"] - 6.8) < 0.1 for w in rep["rows"]), rep["rows"]
+    ok, rep = mh.usb_host(mh.FakeRig(), str(tmp_path), out=lambda s: None)
+    assert not ok
+
+    class HostPlusOther(HostEcho):               # (the first device run: a short odd-harmonic tone on every key)
+        def rec(self, dur, events):
+            out = HostEcho.rec(self, dur, events)
+            x, t = out["x"], np.arange(int(0.3 * 44100)) / 44100
+            for tt, k, n, v in events:
+                if k == "on":
+                    f = mh.note_hz(n)
+                    tone = 3000 * np.exp(-t / 0.08) * (np.sin(2 * np.pi * f * t) + np.sin(6 * np.pi * f * t) / 3)
+                    i = int(tt * 44100) + 300
+                    x[i:i + len(t)] += tone[:, None]
+            return out
+    ok, rep = mh.usb_host(HostPlusOther(), str(tmp_path), out=lambda s: None)
+    assert not ok and "ANOTHER SOUND" in rep["verdict"] and abs(rep["gain_db"] + 6.02) < 0.1, rep["verdict"]

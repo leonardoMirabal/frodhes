@@ -31,6 +31,15 @@
     ]
   },
   {
+    "key": "s_susbtn",
+    "name": "PEDAL",
+    "type": "enum",
+    "options": [
+      "UP",
+      "DOWN"
+    ]
+  },
+  {
     "key": "p_tone",
     "name": "TONE",
     "type": "int",

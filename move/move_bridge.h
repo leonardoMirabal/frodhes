@@ -91,7 +91,11 @@ static struct {
     char dir[512], mod_dir[512];
     _Atomic int cpu_log;                 /* dev: the worker appends the timer ring to <module dir>/cpu-ring.log */
     uint32_t saves, save_fail, loaded;
-} mb = { .first_now = 1, .clock_mode = MB_CLOCK_AUTO };
+    /* the sustain control (M1-13b): presses / releases seen; the touch note that is the control (-1: none) */
+    uint32_t sus_down, sus_up;
+    _Atomic int sus_touch;
+} mb = { .first_now = 1, .clock_mode = MB_CLOCK_AUTO, .sus_touch = -1 };
+static int mb_sus_key = -1;              /* MOVE_KEYS' s_susbtn row (looked up at the first touch) */
 
 /* ---- the coroutine (M1-02) */
 static double move_now_ms(void)          /* web_hal.c platform_poll: fm1_ms = now - (the first reading) */
@@ -324,8 +328,9 @@ static int mb_wire_text(const move_key_t *k, char *buf, int n)
     switch (k->kind) {
     case MK_PARAM: case MK_SLOT: v = mb_slot_get(k->slot) - k->off; break;
     case MK_LATCH:
-        v = k->cc == 64u ? sus_latched : k->cc == 60u ? seq_play != 0 : k->cc == 63u ? seq_rec != 0 : 0;
+        v = k->cc == 64u ? (sus_latched || sus_held) : k->cc == 60u ? seq_play != 0 : k->cc == 63u ? seq_rec != 0 : 0;
         break;
+    case MK_BTN: v = sus_held; break;        /* the sustain control is down */
     default: v = 0; break;
     }
     if (k->scale > 1u) {
@@ -341,6 +346,12 @@ static void mb_key_apply(uint32_t i, int32_t x)
     if (k->kind == MK_PARAM || k->kind == MK_SLOT) mb_slot_abs(k->slot, x);
     else if (k->cc == 64u) {                   /* SUSTAIN: the FM-1's REC latch (a MIDI pedal let up also frees it) */
         sus_latched = x != 0; sustain_update();
+    } else if (k->kind == MK_BTN) {           /* the sustain control (M1-13b): the FM-1's REC button itself, so the
+                                                 * FM-1's own code times it (frodhes.c sustain_button: held = the
+                                                 * pedal, a tap under SUS_TAP_MS flips the latch), as the web
+                                                 * emulator's REC does */
+        if (x) mb.sus_down++; else mb.sus_up++;
+        web_btn(BTN_SUSTAIN, x != 0);
     } else if (k->kind == MK_LATCH) midi_cc(k->cc, x ? 127u : 0u);
     else if (k->kind == MK_TRIG) { if (x) midi_cc(k->cc, 127u); }
     mb.keys_set++; mb.rev++;
@@ -587,7 +598,15 @@ static void mb_render_in(int16_t *out, int frames)
 static void mb_midi_in(const uint8_t *m, int len, int source)
 {
     uint8_t st;
-    if (!m || len < 1 || source == MOVE_MIDI_SOURCE_TOUCH || source == MOVE_MIDI_SOURCE_FX_BROADCAST) return;
+    if (!m || len < 1) return;
+    if (source == MOVE_MIDI_SOURCE_TOUCH) {   /* the direct route (M1-13b): a touch edge on the chosen control
+                                               * (dev_sus_touch: 0-7 a knob, 9 the jog wheel; -1 off, the default)
+                                               * is the sustain control; every other touch is dropped */
+        int n = len > 1 ? m[1] & 127 : -1, on = (m[0] & 0xF0u) == 0x90u && len > 2 && m[2] != 0;
+        if (n == atomic_load(&mb.sus_touch) && n >= 0 && (mb_sus_key >= 0 || (mb_sus_key = mb_key_find("s_susbtn")) >= 0)) (void)mb_put(MB_EV_KEY, 0, 0, 0, 0, (uint16_t)mb_sus_key, on);
+        return;
+    }
+    if (source == MOVE_MIDI_SOURCE_FX_BROADCAST) return;
     st = m[0];
     if (st < 0x80u || st == 0xF0u || st == 0xF7u) return;
     if (st == 0xF8u) { mb.real_f8 = 1; mb.real_f8_blk = mb.blocks; }
@@ -616,6 +635,9 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, "dev_cpu_ring")) return mb_cpu_ring(buf, n);
     if (!strcmp(key, "dev_store")) return snprintf(buf, (size_t)n, "dir=%s loaded=%u saves=%u fail=%u", mb.dir, mb.loaded, mb.saves, mb.save_fail);
     if (!strcmp(key, "dev_pattern_crc")) return snprintf(buf, (size_t)n, "%08x", ms_crc32(host_mem + MB_PAT_LO, MB_PAT_N));
+    if (!strcmp(key, "dev_sus")) return snprintf(buf, (size_t)n, "held=%u latched=%u midi=%u down=%u up=%u touch=%d",
+                                                 (unsigned)sus_held, (unsigned)sus_latched, (unsigned)sus_midi,
+                                                 mb.sus_down, mb.sus_up, atomic_load(&mb.sus_touch));
     if (!strcmp(key, "dev_cpu")) return snprintf(buf, (size_t)n, "callbacks=%u max_us=%u", atomic_load(&mb.cpu_n), mb.cpu_max);
     /* development reads (tests, the device session) */
     if (!strcmp(key, "dev_stats"))
@@ -657,5 +679,6 @@ static void mb_set(const char *key, const char *val)
         return;
     }
     if (!strcmp(key, "dev_cpu_log")) { atomic_store(&mb.cpu_log, atoi(val) != 0); return; }
+    if (!strcmp(key, "dev_sus_touch")) { int t = atoi(val); atomic_store(&mb.sus_touch, t >= 0 && t <= 9 && t != 8 ? t : -1); return; }
     if (!strcmp(key, "dev_clock")) { int m = atoi(val); if (m >= MB_CLOCK_AUTO && m <= MB_CLOCK_HOST) mb.clock_mode = m; return; }
 }

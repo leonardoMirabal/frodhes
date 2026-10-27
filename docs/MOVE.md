@@ -9,7 +9,7 @@ checked on a Move yet:** every part below was checked on the host build only (th
 ## Install
 
 You need a Move with Schwung installed. The module is a folder, `frodhes/`, with `dsp.so`, `module.json`,
-`help.json` and `LICENSE` in it, and it goes in Schwung's sound generator folder.
+`help.json`, `sustain.js` (the PEDAL screen) and `LICENSE` in it, and it goes in Schwung's sound generator folder.
 
 ```sh
 python3 tools/move_install.py install            # prints what it would do (dry run)
@@ -26,13 +26,14 @@ In Schwung, load **Frodhes** as the sound generator of a track. Its abbreviation
 
 ## The pages
 
-The first page, **FRODHES**, has the sound type, the stereo spread and the sustain latch, and the preset browser:
+The first page, **FRODHES**, has the sound type, the stereo spread, the sustain latch, the PEDAL screen and the preset
+browser:
 the 19 factory sounds (F01-F19) and 16 user sounds (U01-U16), as on the FM-1. Each page below holds up to eight
 controls. The VOICE pages follow the engine of the TYPE: only the pages of the engine that plays are shown.
 
 | Page | Controls |
 | --- | --- |
-| **FRODHES** | TYPE · SPRD · SUS |
+| **FRODHES** | TYPE · SPRD · SUS · PEDAL |
 | **PIANO VOICE** | TONE · BARK · BELL · HAMMR · DECAY · REL · NOISE · TUNE |
 | **VIBES VOICE** | STRK · MALLT · TUBE · WGHT · RING · DAMPR · NOISE · TUNE |
 | **VIBES MOTOR** | MOTOR · DEPTH · SPEED · SHAPE · SYNC |
@@ -56,9 +57,19 @@ How the pages look and respond on the Move's screen and knobs is *(not yet verif
 
 ## Sustain
 
-The Move has no pedal jack. **SUS** on the first page latches the sustain: ON holds the notes as a held pedal does,
-OFF lets them go. A sustain pedal or controller on CC 64 works too, with half pedalling as on the FM-1.
-*(not yet verified on a device)*
+The Move has no pedal jack. There are three ways to sustain, and they work together as on the FM-1:
+
+- **A Move button as the pedal**, as REC on the FM-1: open **PEDAL** on the first page, then the **Capture** button
+  is the sustain pedal. Hold it like a pedal; tap it to latch the sustain on, tap it again to let go. The screen
+  shows SUS while the notes are held. While the PEDAL screen is open, Capture does not do its usual job on the
+  Move. *(not yet verified on a device: which button, and whether it also works on the other pages)*
+- **SUS** on the first page is the latch on its own: ON holds the notes as a held pedal does, OFF lets them go. It
+  shows ON while the button holds the notes too.
+- **A sustain pedal or keyboard on CC 64** (on the Move's USB-A port, or MIDI from a computer): half pedalling as
+  on the FM-1. Letting the pedal up also releases the latch.
+
+The arpeggiator's HOLD, the sequencer and the scales react to the sustain as on the FM-1. *(not yet verified on a
+device)*
 
 ## MIDI
 
@@ -88,5 +99,13 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
   `--check` fails when the files are out of date with the FM-1's tables.
 - `tools/ci_move.sh` runs the Move's checks on the host.
 - `tools/target_closure.py` lists the sources of each target (FM-1, SMK-37, host, web, Move).
-- `tools/move_hil.py` and `tools/device_null.py` are the device tests (CPU, crackle, the null test against the host);
-  only their offline parts run so far.
+- `tools/move_hil.py` and `tools/device_null.py` are the device tests (CPU, crackle, the null test against the host).
+  Over USB-C, as the FM-1 is tested: `usb-devices`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`
+  (MIDI to the Move's Standalone port, its USB audio recorded, the FM-1's analysis; `--fake` runs them against a
+  model of the device). On the Move first: Settings, USB-C audio out = Main Out (the Move sets it back to Mic at
+  every boot).
+- The sustain control: `module.json` claims the Capture button (`capabilities.claims_ccs`, `SUS_BTN_CC` in
+  `tools/gen_move_module.py`); Schwung gives a claimed button only to the module's screen script, so `sustain.js`
+  passes its press and release to the plugin (`s_susbtn` 1 / 0), which runs the FM-1's REC code. The direct route,
+  a knob or jog-wheel touch (`capabilities.touch_observe`), is off unless `dev_sus_touch` names the control
+  (0-7 a knob, 9 the jog wheel).

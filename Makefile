@@ -81,7 +81,7 @@ MOVE_IMG  ?= frodhes-move:bookworm
 MOVE_RUN  ?= $(if $(filter Darwin,$(shell uname -s)),docker run --rm --cpus=2 --platform linux/arm64 -v "$(CURDIR)":/src -w /src $(MOVE_IMG),)
 MOVE_CC   ?= gcc
 MOVE_VER  ?= 0.0.0-dev
-MOVE_DEFS ?= -DFR_VOICES=16u
+MOVE_DEFS ?= -DFR_VOICES=16u -DFR_HQ=1
 MOVE_CFLAGS := -O2 -fPIC -ffp-contract=off -std=gnu11 -Wall -Wno-unused-function -Wno-unused-variable \
   -fvisibility=hidden -ffile-prefix-map=$(CURDIR)=. -DAPP_VER='"$(MOVE_VER)"' $(MOVE_DEFS) \
   -Imove/compat -Ifirmware/src -Ifirmware/gen
@@ -100,8 +100,9 @@ move-native:
 	@if [ -f move/module/module.json ]; then cp move/module/module.json $(MOVE_OUT)/; else \
 	  printf '{"id":"frodhes","name":"Frodhes","version":"%s","dsp":"dsp.so","api_version":2,"capabilities":{"audio_out":true,"midi_in":true,"component_type":"sound_generator"}}\n' "$(MOVE_VER)" > $(MOVE_OUT)/module.json; fi
 	@if [ -f move/module/help.json ]; then cp move/module/help.json $(MOVE_OUT)/; fi
+	@if [ -f move/module/sustain.js ]; then cp move/module/sustain.js $(MOVE_OUT)/; fi
 	@cp LICENSE $(MOVE_OUT)/LICENSE
-	tar -C build/move -czf build/move/frodhes-module.tar.gz $$(cd build/move && ls frodhes/dsp.so frodhes/module.json frodhes/help.json frodhes/LICENSE 2>/dev/null)
+	tar -C build/move -czf build/move/frodhes-module.tar.gz $$(cd build/move && ls frodhes/dsp.so frodhes/module.json frodhes/help.json frodhes/sustain.js frodhes/LICENSE 2>/dev/null)
 	@ls -l $(MOVE_OUT)/dsp.so build/move/frodhes-module.tar.gz
 
 test-move:                 ## the Move checks: exports/imports, the coroutine, the bridge (api, Gate P, eq), persistence (M1-08)

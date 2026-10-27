@@ -6,6 +6,9 @@
  *                                        not played, the parameter keys, presets, the state round trip (1000
  *                                        random records), the clock fallback at 60..200 BPM
  *   test_bridge keys DSP < LINES         "key value" lines: set, render, print "key<TAB>value<TAB>read back"
+ *   test_bridge script DSP < LINES       a timed session: "render N" (N blocks of 128), "set KEY VALUE", "midi SRC ST D1
+ *                                        D2" (on_midi from source SRC), "get KEY" -> "KEY<TAB>value", "rms N" (N blocks
+ *                                        rendered) -> "rms<TAB>mean square (LSB^2)" (M1-13b's sustain tests)
  *   test_bridge presets DSP              every preset: "preset <i> <preset> <name>"; every TYPE: "type <t> <ui_engine>"
  *   test_bridge gatep DSP [N]            Gate P (M1-11): N (10^4) random blocks of MIDI, key writes, state reads and
  *                                        loads; no syscall (seccomp) and no allocation inside any callback (unless
@@ -382,6 +385,33 @@ static int keys(const char *so)
     api->destroy_instance(in);
     return 0;
 }
+static int script(const char *so)
+{
+    char line[256], k[64], v[64];
+    unsigned a, b, c, d;
+    int n;
+    void *in;
+    load(so);
+    in = create(NULL);
+    if (!in) { printf("FAIL create\n"); return 1; }
+    render(in, 400);
+    while (fgets(line, sizeof line, stdin)) {
+        if (sscanf(line, "render %d", &n) == 1) render(in, n);
+        else if (sscanf(line, "set %63s %63s", k, v) == 2) api->set_param(in, k, v);
+        else if (sscanf(line, "midi %u %i %i %i", &a, &b, &c, &d) == 4) {
+            uint8_t m[3] = { (uint8_t)b, (uint8_t)c, (uint8_t)d };
+            api->on_midi(in, m, 3, (int)a);
+        } else if (sscanf(line, "get %63s", k) == 1) printf("%s\t%s\n", k, get(in, k));
+        else if (sscanf(line, "rms %d", &n) == 1) {
+            double e = 0.0; long cnt = 0;
+            while (n-- > 0) { api->render_block(in, blk, 128); for (int i = 0; i < 256; i++) { e += (double)blk[i] * blk[i]; cnt++; } }
+            printf("rms\t%.3f\n", cnt ? e / (double)cnt : 0.0);   /* (the mean square, LSB^2: dB in the caller) */
+        }
+        fflush(stdout);
+    }
+    api->destroy_instance(in);
+    return 0;
+}
 static int presets(const char *so)
 {
     char b[32];
@@ -594,6 +624,7 @@ int main(int argc, char **argv)
     if (argc >= 5 && !strcmp(argv[1], "persist")) return persist(argv[2], argv[3], !strcmp(argv[4], "save"));
     if (argc >= 3 && !strcmp(argv[1], "keys")) return keys(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "presets")) return presets(argv[2]);
+    if (argc >= 3 && !strcmp(argv[1], "script")) return script(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "gatep")) return gatep(argv[2], argc > 3 ? (unsigned)atoi(argv[3]) : 10000u);
     if (argc >= 5 && !strcmp(argv[1], "eq")) return eq(argv[2], argv[3], argv[4]);
     if (argc >= 5 && !strcmp(argv[1], "run")) return run_script(argv[2], argv[3], argv[4]);

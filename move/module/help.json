@@ -18,7 +18,12 @@
         "SUS holds the notes",
         "as the sustain pedal",
         "does; a pedal on CC",
-        "64 works too."
+        "64 works too. On the",
+        "PEDAL screen the",
+        "Capture button is",
+        "the pedal: hold it,",
+        "or tap to latch and",
+        "tap again to let go."
       ]
     },
     {
@@ -29,7 +34,8 @@
           "lines": [
             "K1 TYPE",
             "K2 SPRD",
-            "K3 SUS"
+            "K3 SUS",
+            "K4 PEDAL"
           ]
         },
         {
