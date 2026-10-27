@@ -68,8 +68,8 @@ class FakeFM1:
     """a MIDI backend with one FM-1 on it"""
 
     def __init__(self, image, identity="FM-1_015", name="FM-1", unplug_after=None, after_write="FM-1_900",
-                 stall_after=None, bad_addr=None, loader=("ota-FM-1_900", "Felucca Update")):
-        self.image, self.unplug_after, self.after_write = image, unplug_after, after_write
+                 stall_after=None, bad_addr=None, loader=("ota-FM-1_900", "Felucca Update"), after_name="Felucca"):
+        self.image, self.unplug_after, self.after_write, self.after_name = image, unplug_after, after_write, after_name
         self.loader = loader
         self.stall_after, self.bad_addr = stall_after, bad_addr
         self.served = self.bad = self.upgrades = 0
@@ -127,7 +127,7 @@ class FakeFM1:
             if addr == I.FINISH_CHECK:
                 threading.Timer(0.05, self.boot, self.loader).start()
             elif addr == I.FINISH_WRITE:
-                threading.Timer(0.05, self.boot, (self.after_write, "Felucca")).start()
+                threading.Timer(0.05, self.boot, (self.after_write, self.after_name)).start()
             else:
                 self.next()
 
@@ -214,6 +214,16 @@ def installs():
     rc, out, err = cli([p, "--yes"], dev)
     ok(rc == 0 and dev.bad == 0 and "done: the FM-1 runs FM-1_900" in out,
        "install: an FM-1 under CLIPPER (port 'Clipper') -> found, SLOOP installed")
+
+    # an FM-1 running Frodhes (0.9.5's USB PID: the port is "Frodhes"): found without --port, installed, found again
+    dev = FakeFM1(image, identity="FM-1_958", name="Frodhes", after_name="Frodhes")
+    rc, out, err = cli([p, "--yes"], dev)
+    ok(rc == 0 and dev.bad == 0 and dev.upgrades == 2 and "done: the FM-1 runs FM-1_900" in out and "(Frodhes)" in out,
+       "install: an FM-1 running Frodhes (port 'Frodhes', no --port) -> found, installed, back as 'Frodhes'")
+    rc, out, err = cli(["--info"], FakeFM1(image, identity="FM-1_958", name="Frodhes"))
+    ok(rc == 0 and "FM-1_958" in out and "port: Frodhes" in out, "--info: an FM-1 running Frodhes, no --port")
+    ok(all(I.PORT_RE.search(n) for n in ("Frodhes", "FRODHES", "Frodhes MIDI 1", "FM-1", "Felucca", "Felucca Update")),
+       "port names: Frodhes (since 0.9.5) and the FM-1's other names probed")
 
     dev = FakeFM1(image, identity="ota-FM-1_900", name="Felucca Update")
     rc, out, err = cli([p, "--yes"], dev)

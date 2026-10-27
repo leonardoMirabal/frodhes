@@ -495,8 +495,9 @@ def package_damage(image):
 def not_found(up):
     names = up.backend.input_names()
     where = f"no MIDI port matching {up.port!r} answered" if up.port else "FM-1 not found"
+    hint = "" if up.port else "\n  the FM-1's port among them? name it: --port NAME"
     return InstallError("notfound", f"{where} (USB data cable? another app using it?)"
-                        f"\n  MIDI inputs: {', '.join(names) if names else '(none)'}")
+                        f"\n  MIDI inputs: {', '.join(names) if names else '(none)'}{hint}")
 
 
 class Progress:
