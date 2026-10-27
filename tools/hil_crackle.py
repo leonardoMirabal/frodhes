@@ -293,9 +293,11 @@ def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0, floor=256):
         if np.abs(q[p0 - 32:p1 + 33]).max() < floor:
             continue
         ch = int(np.argmax(np.abs(d0) + np.abs(d1)))
-        if p1 - p0 >= 3:                                   # 4 equal frames or more between two steps the same way: no
-            out.append((int(p0), f"{p1 - p0 + 1} equal frames on a slope ({int(d0[ch]):+d} / {int(d1[ch]):+d})"))
-            continue                                       # wave of the music's own holds still that long on a slope
+        if p1 - p0 >= 3:                                   # 4 equal frames or more between two steps the same way: an
+            if not _own_plateau(q, p0, p1, ch, ctx, pred, gain):   # event unless the wave is predictable there and
+                out.append((int(p0), f"{p1 - p0 + 1} equal frames on a slope ({int(d0[ch]):+d} / {int(d1[ch]):+d})"))
+            continue                                       # taking them out leaves a jump (0.9.7: at 44.1 kHz the
+                                                           # music's own turning points do hold 4-5 frames)
         like = min(abs(d0[ch]), abs(d1[ch])) / max(abs(d0[ch]), abs(d1[ch]))
         if like < 0.15:
             continue                                       # (a copy keeps the slope: the frames either side of it are
@@ -312,6 +314,24 @@ def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0, floor=256):
             out.append((int(p0), f"{p1 - p0 + 1} equal frames on a slope ({int(d0[ch]):+d} / {int(d1[ch]):+d}); "
                                  f"the wave without the copies {10 * np.log10(Ea / max(Eb, 1e-9)):.0f} dB smoother"))
     return out
+
+
+def _own_plateau(q, p0, p1, ch, ctx, pred, gain):
+    """the run p0..p1 (4 frames or more) is the music's own: the wave around it predictable (its AR interpolation
+    >= pred dB under it) and the wave without the copies NOT gain x smoother (an underrun inserts its copies and the
+    wave runs on without them; the music's own flat spot leaves a jump when taken out). 0.9.7 (2026-10-27): 44.1 kHz
+    USB has no resampler to smooth the music's turning points: the host render (no USB) held 4 equal frames between
+    steps of -8 / -8 (seed 3006, 4008 LSB) and +8 / +8 (seed 3025), and the FM-1 0.9.6 seed 3003 5 at -4915 (-11 /
+    -11): a smooth fit runs through them within 2.5 LSB; the ring and app USB benches at 44.1 kHz: 0 copies"""
+    seg = q[p0 - ctx:p1 + ctx + 1, ch].astype(float)
+    cut = np.delete(seg, np.arange(ctx + 1, ctx + 1 + (p1 - p0)))
+    ea = interp_residual(seg, order=16, block=len(seg))
+    eb = interp_residual(cut, order=16, block=len(cut))
+    if np.mean(cut ** 2) < 10 ** (pred / 10) * max(float(np.mean(eb ** 2)), 1e-9):
+        return False                                       # (not predictable: judged as before, an event)
+    Ea = float((ea[ctx - 4:ctx + (p1 - p0) + 4] ** 2).sum())
+    Eb = float((eb[ctx - 4:ctx + 4] ** 2).sum())
+    return not Ea > gain * Eb
 
 
 def _exact_run(q, b, lag, w, step=256):
@@ -351,7 +371,9 @@ def _own_period(q, b, lag, w, ctx=8, rel=0.03, run=None):
     s, e = run or _exact_run(q, b, lag, w)
     if s - ctx - lag < 0 or e + ctx > len(q):
         return False
-    tol = max(4.0, rel * float(np.abs(q[s - ctx:e + ctx]).max()))
+    tol = max(12.0, rel * float(np.abs(q[s - ctx:e + ctx]).max()))   # (12 LSB, -69 dBFS: 0.9.7, 44.1 kHz USB, a
+    # quiet tone in 4-LSB steps (peak 133) matched itself at lag 50 for 16 frames, the difference 4, 4, 0 .. 0, 4, 7, 8
+    # either side: seamless, and the same at lag 170 on 0.9.6; the ring and app USB benches at 44.1 kHz: 0 copies)
     d0 = np.abs(q[s - ctx:s] - q[s - ctx - lag:s - lag]).max()
     d1 = np.abs(q[e:e + ctx] - q[e - lag:e + ctx - lag]).max()
     return bool(d0 <= tol and d1 <= tol)
