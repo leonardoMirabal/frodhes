@@ -9,6 +9,7 @@
   - each detector on a synthetic chord, clean and with its glitch;
   - the dry-run plan, the CC 116 reply parsing, the periodicity check, hil_scan's stress_max entry."""
 import os
+import re
 import sys
 
 import numpy as np
@@ -606,8 +607,9 @@ def test_no_repeat_on_the_host_builds_own_plateaus(seed, lead):
 def test_no_repeat_on_the_fm1_seed_3024_plateau():
     """the FM-1's monkey seed 3024 (every counter clean, ring low point 222): ch1 179, 179 on a slope (-15 / -20, 15 dB
     smoother without the copy), ch0 -351, -351 at its turn (3.6 dB): one channel's evidence, under mono_db"""
-    z = np.load(os.path.join(ROOT, "tests", "py", "data", "fm1-seed3024-57757.npz"))
-    q, at = z["usb"].astype(np.int64), int(z["at"])
+    path = os.path.join(ROOT, "tests", "py", "data", "fm1-seed3024-57757.txt")     # text: no binary in the tree
+    at = int(re.search(r"^# at (\d+)$", open(path).read(), re.M).group(1))
+    q = np.loadtxt(path, dtype=np.int64, comments="#")
     assert (q[at] == q[at + 1]).all()
     assert C.det_repeat(q) == []
 
