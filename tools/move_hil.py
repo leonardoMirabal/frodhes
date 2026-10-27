@@ -439,6 +439,11 @@ class TapRig(UsbRig):
         self.port_name, self.audio_name, self.sr = "Schwung %s, slot %d, dev_play" % (url, slot + 1), "the plugin's tap", FS
         self.pending, self.n, self.mido = [], 0, hs._Mido
         self.stamp = time.strftime("%H%M%S")
+        self.stop()                              # (a take left armed by an earlier run would refuse the next)
+
+    def stop(self):
+        self.remote.set_param(self.slot, "synth:dev_play", "stop")
+        self.remote.pump(0.5)
 
     def _send(self, kind, a, b=0):
         self.pending.append((kind, int(a), int(b)))
@@ -471,7 +476,10 @@ class TapRig(UsbRig):
             if got is None:
                 time.sleep(0.5)
         if got is None:
-            raise RuntimeError("the tap %s did not arrive (is the dsp.so a build with dev_play? slot %d?)" %
+            self.stop()
+            raise RuntimeError("the tap %s did not arrive: is the installed dsp.so a build with dev_play (its "
+                               "module_data/frodhes/boot.txt says dev_play=1), Frodhes in slot %d, and does the host "
+                               "keep calling render_block (module.json requires_continuous_processing)?" %
                                (take, self.slot + 1))
         path, js = got
         w = wave.open(path)

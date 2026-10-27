@@ -212,6 +212,10 @@ static int play(const char *so, const char *script, const char *wav)
     in = create(NULL);
     dir = strdup(get(in, "dev_store") + 4);
     if (strchr(dir, ' ')) *strchr(dir, ' ') = 0;
+    CHECK(strstr(get(in, "dev_build"), "dev_play=1") && strstr(gbuf, "dsp_crc32="), "dev_build: %s", gbuf);
+    snprintf(path, sizeof path, "%s/boot.txt", dir);
+    { FILE *j = fopen(path, "r"); char bt[200] = ""; if (j) { if (!fgets(bt, sizeof bt, j)) bt[0] = 0; fclose(j); }
+      CHECK(strstr(bt, "dev_play=1"), "boot.txt: %s", bt); }
     hs = read_wav(wav, &hn);
     if (!hs || hn <= f0) { printf("FAIL no host wav %s (or shorter than 2560 ms)\n", wav); return 1; }
     cb_set(in, "dev_play_add", "0 0x90 60 100");                       /* refused: no take begun */

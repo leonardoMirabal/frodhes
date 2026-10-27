@@ -402,6 +402,37 @@ static int mp_get(char *buf, int n)
                     atomic_load(&mp.dropped));
 }
 
+/* which build runs (the device tools): the features of this bridge, the app's version, and the CRC-32 of the
+ * dsp.so file in the module folder as the worker found it when this instance started (zlib.crc32 of the local
+ * build compares); written to <data dir>/boot.txt and answered by get dev_build */
+#define MB_FEATURES "bridge=2 dev_play=1"
+static char mb_build[160];
+static uint32_t mb_starts;
+static void mb_note_build(void)
+{
+    static uint8_t b[65536];
+    char path[600], line[200];
+    uint32_t c = 0xFFFFFFFFu, total = 0;
+    int fd, k;
+    ssize_t r;
+    snprintf(path, sizeof path, "%s/dsp.so", mb.mod_dir);
+    fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd >= 0) {
+        while ((r = read(fd, b, sizeof b)) > 0) {
+            for (ssize_t i = 0; i < r; i++) { c ^= b[i]; for (int j = 0; j < 8; j++) c = c >> 1 ^ (0xEDB88320u & (0u - (c & 1u))); }
+            total += (uint32_t)r;
+        }
+        close(fd);
+    }
+    mb_starts++;
+    snprintf(mb_build, sizeof mb_build, "%s ver=%s dsp_crc32=%08x dsp_bytes=%u starts=%u", MB_FEATURES, APP_VER,
+             fd >= 0 ? ~c : 0u, total, mb_starts);
+    k = snprintf(line, sizeof line, "%s\n", mb_build);
+    snprintf(path, sizeof path, "%s/boot.txt", mb.dir);
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd >= 0) { (void)ms_write_all(fd, line, (size_t)k); close(fd); }
+}
+
 static void *mb_worker(void *arg)
 {
     struct sched_param sp = { .sched_priority = 0 };
@@ -415,6 +446,7 @@ static void *mb_worker(void *arg)
         if (mb_boot()) { atomic_store(&mb.booting, 0); return 0; }
     }
     mb_cpu_wr = atomic_load(&mb.cpu_n);
+    mb_note_build();
     atomic_store_explicit(&mb.ready, 1, memory_order_release);
     atomic_store(&mb.booting, 0);
     while (!atomic_load(&mb.wk_stop)) {
@@ -830,6 +862,7 @@ static int mb_get(const char *key, char *buf, int n)
     int i;
     if (!key || !buf || n <= 0) return -1;
     if (!strcmp(key, "dev_ready")) return snprintf(buf, (size_t)n, "%d", atomic_load(&mb.ready));
+    if (!strcmp(key, "dev_build")) return snprintf(buf, (size_t)n, "%s", mb_build[0] ? mb_build : MB_FEATURES);
     if (!atomic_load_explicit(&mb.ready, memory_order_acquire) && strcmp(key, "chain_params") && strcmp(key, "ui_hierarchy"))
         return -1;                       /* (the worker still boots the app: nothing of it to read yet) */
     if (!strcmp(key, "state")) return mb_state_get(buf, n);
