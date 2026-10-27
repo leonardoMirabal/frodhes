@@ -53,7 +53,9 @@ def test_levels_keep_the_hosts_limits():
         assert lvl["knobs"] == keys, name                      # every item on a knob, in order
         for p in items(lvl):
             assert len(p["name"]) <= gen.LABEL_MAX and p["name"].isascii() and p["name"].strip(), (name, p)
-            if p["type"] == "enum":
+            if p["type"] == "canvas":                          # (a screen the module draws: its script ships)
+                assert p["canvas_script"] in gen.FILES, (name, p)
+            elif p["type"] == "enum":
                 assert p["options"] and all(o.isascii() and o for o in p["options"]), (name, p)
                 assert all(len(o) <= gen.VALUE_MAX for o in p["options"]), (name, p)
                 assert len(set(p["options"])) == len(p["options"]), (name, p)
@@ -64,6 +66,20 @@ def test_levels_keep_the_hosts_limits():
                 assert link["level"] in HIER, link
     assert "root" in HIER and HIER["root"]["list_param"] == "preset"
     assert "s_sustain" in HIER["root"]["knobs"], "SUSTAIN (CC 64) on the first page"
+    assert "s_susbtn" in HIER["root"]["knobs"], "the PEDAL screen (the sustain button, M1-13b) on the first page"
+
+
+def test_sustain_button_claimed():
+    """M1-13b: module.json claims the sustain button (a CC the host lets a module claim) and asks for the touch edges
+    (the direct route); sustain.js turns that CC's press / release into s_susbtn 1 / 0"""
+    mod = json.loads(OUT["module.json"])
+    caps = mod["capabilities"]
+    assert caps["claims_ccs"] == [gen.SUS_BTN_CC] and caps["touch_observe"] is True
+    host_owned = {49, 50, 51, 14, 3, 71, 72, 73, 74, 75, 76, 77, 78, 79, 88, 40, 41, 42, 43, 114, 115}
+    assert gen.SUS_BTN_CC not in host_owned                   # (Schwung shadow_ui.js CC_CLAIM_DENIED)
+    js = OUT["sustain.js"]
+    assert "const SUS_CC = %d;" % gen.SUS_BTN_CC in js and 'ctx.setParam("s_susbtn", down ? "1" : "0")' in js
+    assert "globalThis.canvas_overlay" in js and "onMidi(ctx, msg)" in js and "onClose(ctx)" in js
 
 
 def test_ranges_and_options_are_the_parameters():

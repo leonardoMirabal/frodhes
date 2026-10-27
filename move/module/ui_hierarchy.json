@@ -35,6 +35,18 @@
           ]
         },
         {
+          "key": "s_susbtn",
+          "name": "PEDAL",
+          "type": "canvas",
+          "canvas_script": "sustain.js",
+          "show_value": false,
+          "extra_keys": [
+            "s_sustain",
+            "s_susbtn"
+          ],
+          "fullscreen_live_ms": 100
+        },
+        {
           "level": "voice_0",
           "label": "PIANO VOICE"
         },
@@ -90,7 +102,8 @@
       "knobs": [
         "p_type",
         "p_spread",
-        "s_sustain"
+        "s_sustain",
+        "s_susbtn"
       ],
       "list_param": "preset",
       "count_param": "preset_count",

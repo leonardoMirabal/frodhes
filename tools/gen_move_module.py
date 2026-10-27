@@ -35,7 +35,13 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "firmware", "src")
 OUT = os.path.join(ROOT, "move", "module")
-FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h")
+FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h", "sustain.js")
+# The sustain control (M1-13b): a Move button the module claims (capabilities.claims_ccs: while Frodhes' screen is up
+# the button reaches the module's UI script and not the Move; Schwung delivers claimed buttons to UI scripts only).
+# sustain.js, the SUS screen (a canvas), turns its press / release into set_param("s_susbtn", "1" / "0"), which the
+# plugin hands to the FM-1's REC button code (hold = the pedal, tap = latch). The direct route, a knob or jog-wheel
+# touch (capabilities.touch_observe, the plugin's on_midi), is off until dev_sus_touch picks one (the device session).
+SUS_BTN_CC = 52                    # the Capture button (Schwung shadow_midi.h CC_CAPTURE): D1 confirms or picks another
 LABEL_MAX = 5                      # the knob grid's cell: about five capitals
 VALUE_MAX = 5                      # an enum option on the Move: the same five
 # The Move's abbreviations of the firmware's option names longer than VALUE_MAX, one scheme everywhere (the pages, the
@@ -82,6 +88,8 @@ SLOTS = {
 EXTRA = {
     "s_sustain": {"name": "SUS", "cc": 64, "options": ["OFF", "ON"], "kind": "MK_LATCH",
                   "help": "the sustain pedal (CC 64), latched"},
+    "s_susbtn": {"name": "PEDAL", "cc": 0, "options": ["UP", "DOWN"], "kind": "MK_BTN",
+                 "help": "the sustain control: held = the pedal, a tap latches, a tap again releases"},
     "s_sqplay": {"name": "PLAY", "cc": 60, "options": ["STOP", "PLAY"], "kind": "MK_LATCH",
                  "help": "the sequencer plays"},
     "s_sqrec": {"name": "REC", "cc": 63, "options": ["OFF", "REC"], "kind": "MK_LATCH",
@@ -94,7 +102,7 @@ EXTRA = {
 # the Move's levels: (key, title, the FM-1 pages it holds (their cards in order), extra keys after them). "VOICE"
 # stands for an engine's VOICE pages: one level per engine, VOICE 1 + 2, and VOICE 3 (VIBES' MOTOR) its own level.
 MOVE_LEVELS = [
-    ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain"]),
+    ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_susbtn"]),
     ("voice", "VOICE", ["VOICE"], []),
     ("comp", "COMPRESSOR", ["COMPRESSOR"], ["p_cmp_sw", "p_cmp_rel"]),
     ("drv_flt", "DRIVE/FILTER", ["DRIVE", "FILTER"], []),
@@ -274,6 +282,9 @@ def extra_def(k):
     item = {"key": k, "name": e["name"], "type": "enum", "options": e["options"]}
     if e["kind"] == "MK_TRIG":
         item["access"] = "write"
+    if e["kind"] == "MK_BTN":                  # the SUS screen: a canvas the hierarchy opens (sustain.js), no knob
+        item = {"key": k, "name": e["name"], "type": "canvas", "canvas_script": "sustain.js", "show_value": False,
+                "extra_keys": ["s_sustain", "s_susbtn"], "fullscreen_live_ms": 100}
     return item, {"key": k, "slot": "S_NONE", "cc": e["cc"], "off": 0, "scale": 1, "kind": e["kind"]}
 
 
@@ -309,6 +320,8 @@ def build(m):
         if row["key"] not in seen:
             seen[row["key"]] = 1
             c = {k: v for k, v in item.items()}
+            if c.get("type") == "canvas":          # (chain_params: the key's values, not the screen)
+                c = {"key": c["key"], "name": c["name"], "type": "enum", "options": EXTRA[c["key"]]["options"]}
             chain.append(c)
             crow.append(row)
         if row["slot"].startswith("P_"):
@@ -390,7 +403,8 @@ def help_json(m, levels, reach):
     kids = [{"title": "Overview", "lines": help_lines(
         "Physical models of an electric piano (four types), a vibraphone and a marimba. No samples. TYPE on the "
         "first page picks the instrument; its VOICE pages follow it.") + [""] + help_lines(
-        "SUS holds the notes as the sustain pedal does; a pedal on CC 64 works too.")}]
+        "SUS holds the notes as the sustain pedal does; a pedal on CC 64 works too. On the PEDAL screen the Capture "
+        "button is the pedal: hold it, or tap to latch and tap again to let go.")}]
     pages = []
     for k, lvl in levels.items():
         lines = []
@@ -422,7 +436,8 @@ def c_header(hier, chain, crow):
              " * the plugin after frodhes.c (P_* / S_* in scope). */",
              "#ifndef MOVE_UI_H", "#define MOVE_UI_H",
              "#define MOVE_GATE_KEY \"ui_engine\"   /* get_param: TYPE_UI[PV(P_TYPE)] (eng_pages.h), the VOICE levels' gate */",
-             "enum { MK_PARAM, MK_SLOT, MK_LATCH, MK_TRIG };   /* PV(id) / ui.c slot_val / a CC 0 or 127 / a CC 127 */",
+             "enum { MK_PARAM, MK_SLOT, MK_LATCH, MK_TRIG, MK_BTN };   /* PV(id) / ui.c slot_val / a CC 0 or 127 / a CC 127 /",
+             "                                                   * the sustain control (the FM-1's REC button) */",
              "typedef struct { const char *key; uint8_t slot, cc, kind, scale; int16_t off; } move_key_t;",
              "static const move_key_t MOVE_KEYS[] = {"]
     for r in crow:
@@ -447,9 +462,47 @@ def outputs():
               "description": "Physical-model electric piano, vibraphone and marimba",
               "author": "Frodhes", "dsp": "dsp.so", "api_version": 2, "component_type": "sound_generator",
               "capabilities": {"audio_out": True, "midi_in": True, "chainable": True,
-                               "component_type": "sound_generator"}}
+                               "component_type": "sound_generator", "claims_ccs": [SUS_BTN_CC],
+                               "touch_observe": True}}
     return {"module.json": dumps(module), "ui_hierarchy.json": dumps(hier), "chain_params.json": dumps(chain),
-            "help.json": dumps(help_json(m, levels, reach)), "move_ui.h": c_header(hier, chain, crow)}, m, reach
+            "help.json": dumps(help_json(m, levels, reach)), "move_ui.h": c_header(hier, chain, crow),
+            "sustain.js": sustain_js()}, m, reach
+
+
+def sustain_js():
+    """the SUS screen: Schwung's canvas overlay (docs/MODULES.md "canvas"): the claimed button's press / release ->
+    set_param("s_susbtn"); the screen shows SUS while the notes are held (the button, the latch or CC 64)"""
+    return """// SPDX-License-Identifier: GPL-3.0-only
+// GENERATED by tools/gen_move_module.py - do not edit.
+// Frodhes' PEDAL screen (M1-13b): the claimed button (CC %d) is the sustain pedal, as REC on the FM-1: hold it like
+// a pedal, tap to latch, tap again to release. Its press and release go to the plugin as s_susbtn 1 / 0; the
+// plugin's own code (the FM-1's) times hold against tap. A MIDI pedal on CC 64 works with it as on the FM-1.
+const SUS_CC = %d;
+function suspedal(ctx, down) {
+    ctx.state.down = down;
+    ctx.setParam("s_susbtn", down ? "1" : "0");
+}
+globalThis.canvas_overlay = {
+    onOpen(ctx) { ctx.state.down = false; ctx.state.on = false; },
+    onMidi(ctx, msg) {
+        const d = (msg && msg.data) || [];
+        if (((d[0] | 0) & 0xF0) === 0xB0 && (d[1] | 0) === SUS_CC) { suspedal(ctx, (d[2] | 0) > 0); return true; }
+        return false;
+    },
+    onValues(ctx, p) {
+        const v = (p && p.values) || {};
+        ctx.state.on = v.s_sustain === "ON" || v.s_sustain === "1";
+    },
+    onClose(ctx) { if (ctx.state.down) suspedal(ctx, false); },
+    draw(ctx) {
+        ctx.clear();
+        const on = ctx.state.on || ctx.state.down;
+        if (on) ctx.fillRect(24, 14, 80, 28, 1);
+        ctx.print(52, 24, "SUS", on ? 0 : 1);
+        ctx.print(4, 50, "HOLD: PEDAL  TAP: LATCH", 1);
+    },
+};
+""" % (SUS_BTN_CC, SUS_BTN_CC)
 
 
 def main():

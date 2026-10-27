@@ -201,7 +201,7 @@ def test_plugin_every_key_set_get():
     value of its range (enums: each index; amounts: the ends, the middle, one in from each end)"""
     lines = []
     for p in CHAIN:
-        if KINDS.get(p["key"]) in (None, "MK_TRIG"):
+        if KINDS.get(p["key"]) in (None, "MK_TRIG", "MK_BTN"):     # (MK_BTN, a momentary control: test_move_sustain)
             continue
         lines += ["%s %s" % (p["key"], v) for v in _wire_values(p)]
         lines.append("%s %s" % (p["key"], _wire_values(p)[0]))      # (back to the low end: the next key starts clean)
