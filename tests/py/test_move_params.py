@@ -163,26 +163,88 @@ def test_saved_setup_survives_a_power_cycle():
     assert r2.state(100)[f"card.{pg}.{k}"] == r1.state(4000)[f"card.{pg}.{k}"] == "2"
 
 
-NO_GLUE = pytest.mark.skipif(not os.path.exists(PLUGIN), reason="needs agent A's move/move_plugin.c and the replay "
-                             "harness (M1-06 / M1-09)")
+def _bridge(*args, stdin=None):
+    """run build/move/t/test_bridge (agent A's bridge tests on dsp.so): natively on Linux arm64, else in the Move
+    image (Docker, 2 CPUs); None when neither is there"""
+    import platform
+    import shutil
+    import subprocess
+    inner = "make -s move-tools-native >/dev/null 2>&1 && build/move/t/test_bridge " + " ".join(args)
+    if platform.system() == "Linux" and platform.machine() in ("aarch64", "arm64"):
+        cmd = ["sh", "-c", inner]
+    elif shutil.which("docker") and subprocess.run(["docker", "image", "inspect", "frodhes-move:bookworm"],
+                                                    capture_output=True).returncode == 0:
+        cmd = ["docker", "run", "--rm", "-i", "--cpus=2", "--platform", "linux/arm64", "-v", ROOT + ":/src", "-w", "/src",
+               "frodhes-move:bookworm", "sh", "-c", inner]
+    else:
+        return None
+    return subprocess.run(cmd, input=stdin, capture_output=True, text=True, cwd=ROOT, timeout=1800)
+
+
+NO_GLUE = pytest.mark.skipif(not os.path.exists(PLUGIN), reason="needs move/move_plugin.c")
+CHAIN = __import__("json").load(open(os.path.join(gen.OUT, "chain_params.json")))
+KINDS = {k: kind for k, _, _, kind, _, _ in ROWS}
+
+
+def _wire_values(p):
+    if p["type"] == "enum":
+        return [str(i) for i in range(len(p["options"]))]
+    lo, hi = p["min"], p["max"]
+    if p["type"] == "float":
+        return ["%.1f" % v for v in (lo, hi, (lo + hi) / 2, 97.5)]
+    return [str(v) for v in sorted({lo, hi, (lo + hi) // 2, lo + 1, hi - 1})]
 
 
 @NO_GLUE
 def test_plugin_every_key_set_get():
-    """set_param(key, wire) then get_param(key) == wire for every MOVE_KEYS row and every value; get_param of
-    ui_engine follows TYPE"""
-    pytest.fail("to write when the plugin harness exists")
+    """set_param(key, wire) then get_param(key) == wire for every MOVE_KEYS row (MK_TRIG: one shot, read 0) and every
+    value of its range (enums: each index; amounts: the ends, the middle, one in from each end)"""
+    lines = []
+    for p in CHAIN:
+        if KINDS.get(p["key"]) in (None, "MK_TRIG"):
+            continue
+        lines += ["%s %s" % (p["key"], v) for v in _wire_values(p)]
+        lines.append("%s %s" % (p["key"], _wire_values(p)[0]))      # (back to the low end: the next key starts clean)
+    r = _bridge("keys", "build/move/frodhes/dsp.so", stdin="\n".join(lines) + "\n")
+    if r is None:
+        pytest.skip("no Linux arm64 and no frodhes-move:bookworm image (make move-image)")
+    rows = [ln.split("\t") for ln in r.stdout.splitlines() if ln.count("\t") == 2]
+    assert len(rows) == len(lines), r.stdout[-2000:] + r.stderr[-2000:]
+    bad = [(k, v, got) for k, v, got in rows if v != got]
+    assert not bad, "keys that do not read back: %s" % bad[:20]
 
 
 @NO_GLUE
 def test_plugin_state_round_trip():
-    """1000 random settings records (sanitized as the FM-1 sanitizes): state -> set_param("state") -> state is
-    byte-identical; the current sound (PV) is part of the state (a slot's state is the sound, not only the setup)"""
-    pytest.fail("to write when the plugin harness exists")
+    """test_bridge api: 1000 random settings records through state -> set_param("state") -> state stable (sanitized
+    as the FM-1 sanitizes); the current sound (TONE, SPREAD) and the tempo come back with a state load"""
+    r = _bridge("api", "build/move/frodhes/dsp.so")
+    if r is None:
+        pytest.skip("no Linux arm64 and no frodhes-move:bookworm image (make move-image)")
+    assert "ok    bridge api (0 failures)" in r.stdout, r.stdout[-3000:] + r.stderr[-2000:]
 
 
 @NO_GLUE
 def test_plugin_presets_and_hierarchy_per_type():
     """preset / preset_count (35) / preset_name for every preset; get_param("ui_hierarchy") is move_ui.h's text and
-    the VOICE level shown follows each TYPE"""
-    pytest.fail("to write when the plugin harness exists")
+    ui_engine (the VOICE levels' gate) follows each TYPE (eng_pages.h TYPE_UI)"""
+    r = _bridge("presets", "build/move/frodhes/dsp.so")
+    if r is None:
+        pytest.skip("no Linux arm64 and no frodhes-move:bookworm image (make move-image)")
+    out = r.stdout.splitlines()
+    assert "count 35" in out, r.stdout[-2000:]
+    pr = [ln.split(" ", 3) for ln in out if ln.startswith("preset ")]
+    assert len(pr) == 35
+    prev = None
+    for i, (_, idx, cur, name) in enumerate(pr):
+        if cur == str(i):                                          # loaded: its own name
+            assert re.match(r"[FU]%02d" % (i + 1 if i < 19 else i - 19 + 1), name), name
+        else:                                                      # an empty user slot: nothing loads
+            assert i >= 19 and cur == prev, (i, cur, prev)
+        prev = cur
+    assert all(cur == idx for _, idx, cur, _ in pr[:19]), "every factory preset loads"
+    ty = {int(ln.split()[1]): ln.split()[2] for ln in out if ln.startswith("type ")}
+    assert [ty[t] for t in range(6)] == ["0", "0", "0", "0", "1", "2"]
+    hl = [int(ln.split()[1]) for ln in out if ln.startswith("hierarchy ")]
+    lit = open(os.path.join(gen.OUT, "move_ui.h")).read()
+    assert hl and hl[0] > 1000 and 'levels' in lit

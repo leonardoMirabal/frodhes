@@ -87,7 +87,7 @@ MOVE_CFLAGS := -O2 -fPIC -ffp-contract=off -std=gnu11 -Wall -Wno-unused-function
   -Imove/compat -Ifirmware/src -Ifirmware/gen
 MOVE_OUT  := build/move/frodhes
 
-.PHONY: move-image move move-native test-move test-move-native gate-p gate-p-native move-probe test-move-probe
+.PHONY: move-image move move-native move-tools-native test-move test-move-native gate-p gate-p-native move-probe test-move-probe
 move-image:                ## the Move build image (Debian bookworm arm64, about 250 MB)
 	docker build --platform linux/arm64 -t $(MOVE_IMG) move/docker
 
@@ -123,6 +123,10 @@ test-move-native: move-native
 	build/move/t/test_bridge api $(MOVE_OUT)/dsp.so
 	build/move/t/test_bridge gatep $(MOVE_OUT)/dsp.so 10000
 	MOVE_DEFS='$(MOVE_DEFS)' move/tests/run_eq.sh
+
+move-tools-native: move-native   ## (the plugin and build/move/t/test_bridge only: tests/py/test_move_params.py)
+	@mkdir -p build/move/t
+	@$(MOVE_CC) -O1 -g -std=gnu11 -Wall -Wextra -o build/move/t/test_bridge move/tests/test_bridge.c -ldl
 
 gate-p:                    ## Gate P (M1-11): test-move's guards, then ASan + UBSan builds through every bridge test
 	$(MOVE_RUN) make -s gate-p-native

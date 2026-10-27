@@ -146,6 +146,7 @@ static void mb_slot_abs(uint32_t s, int32_t x)
         if (s == P_CMP_SW) { if (x && !PV(P_CMP_SW)) cmp_wake(1); else param_set(P_CMP_SW, x); ui_mark_param(s); return; }
         if (slot_synced(s)) { param_set(s, x); ui_mark_param(s); return; }   /* (the panel would step its SYNC) */
     } else if (s == S_BPM) { tempo_set10((uint32_t)(x + 400)); bpm_hand = set.bpm10; ui_mark(E_CARDS); return; }
+    else if (s == S_ARPGATE) { ARP_GATE = (uint8_t)(x + 10); ui_mark(E_CARDS); return; }   /* (the panel steps 5 %; CC 55 any) */
     else if (s == S_SQEDIT) { if ((x != 0) != (sq_erase != 0)) slot_turn(s, 1); ui_mark(E_CARDS); return; }   /* (left: UNDO) */
     for (n = 0; n < 512 && cur != x; n++) {                   /* an enum steps one a turn; an amount moves by d */
         slot_turn(s, x - cur);

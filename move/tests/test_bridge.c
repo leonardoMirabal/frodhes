@@ -207,6 +207,8 @@ static int api_tests(const char *so)
     {
         static char s1[4096], s2[4096];
         int n1 = api->get_param(in, "state", s1, sizeof s1), n2;
+        char tone[16], spread[16];
+        snprintf(tone, sizeof tone, "%s", get(in, "p_tone")); snprintf(spread, sizeof spread, "%s", get(in, "p_spread"));
         CHECK(n1 > 600 && n1 < 1200, "state size %d", n1);
         CHECK(api->get_param(in, "state", s2, 100) == -1, "a small buffer is refused");
         api->set_param(in, "p_tone", "40"); api->set_param(in, "s_bpm", "150"); render(in, 3);
@@ -215,6 +217,7 @@ static int api_tests(const char *so)
         { char *r1 = strstr(s1, "\",\"rev\""), *r2 = strstr(s2, "\",\"rev\""); if (r1) *r1 = 0; if (r2) *r2 = 0; }
         CHECK(n2 > 0 && !strcmp(s1, s2), "state load gives the state back");
         CHECK(!strcmp(get(in, "s_bpm"), "97.5"), "the tempo comes back (%s)", gbuf);
+        CHECK(!strcmp(get(in, "p_tone"), tone) && !strcmp(get(in, "p_spread"), spread), "the sound comes back: TONE %s (%s)", tone, gbuf);
         /* 1000 random records: load, read (= the record sanitized as the FM-1 does), load that, read: the same */
         srand(12345);
         for (i = 0; i < 1000 && fails < 20; i++) {
