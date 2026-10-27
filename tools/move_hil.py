@@ -425,7 +425,10 @@ def glitches(x, sr, events, ccs=()):
     try:
         fit = hc.clock_fit(q, events, sr)
         res = hc.analyse(q, None, sr, events, ccs=ccs, only=kinds, clock_usb=(fit["lag"], fit["rate"]))
-        return [e for e in res["usb"] if e[1] in kinds]
+        return [(t, k, "%s [frame %d: mod 128 = %d, mod 256 = %d]" % (d, int(round(t * sr)), int(round(t * sr)) % 128,
+                                                                       int(round(t * sr)) % 256))
+                for t, k, d in res["usb"] if k in kinds]   # (the phase: the recording's frames, not the Move's blocks;
+                                                           # a constant phase over many events still points at a block)
     except Exception as e:                   # (nothing to fit the clock on: the detectors that need no guards)
         out = [(f / sr, "stale", d) for f, d in hc.det_stale(q)]
         out += [(f / sr, "zero", d) for f, d in hc.det_zero(q.astype(float), sr, exact=True)]
@@ -706,6 +709,29 @@ def usb_devices(midi=None, audio=None, out=print):
     return 0 if pm and pa else 2
 
 
+IDLE_FLOOR_DB = -80.0                       # the digital Main Out with nothing playing: under this (silence, or dither)
+
+
+def preflight(r, out=print, secs=1.0):
+    """the Move's USB-C stream must be its digital Main Out: with nothing playing it is (near) silent. The Move puts
+    USB-C back on the microphone at every boot, and its sampling page does too while the setting still shows Main Out
+    (Schwung docs/SPI_PROTOCOL.md): then the takes hold the room (broadband noise about -53 dBFS, LF rumble, other
+    instruments) and nothing judged on them means anything. (ok, {floor_db, peak, lf_db})"""
+    r._send("cc", 123, 0)
+    r._send("cc", 64, 0)
+    time.sleep(0.5)
+    tk = r.rec(secs, [])
+    x = tk["x"]
+    floor = hs.db(x)
+    peak = float(np.abs(x).max()) if len(x) else 0.0
+    rep = {"floor_db": round(floor, 1), "peak": peak}
+    ok = floor < IDLE_FLOOR_DB
+    out("preflight: idle %.1f dBFS, peak %d LSB: %s" % (floor, peak, "the digital Main Out" if ok else
+        "NOT silent: USB-C carries the microphone (or something plays). On the Move: Settings > USB-C audio out, "
+        "pick Mic and then Main Out again; stop any clip; then rerun"))
+    return ok, rep
+
+
 USB_CMDS = ("usb-devices", "usb-note", "usb-vel", "usb-sus", "usb-clock", "usb-stress")
 
 
@@ -724,6 +750,10 @@ def usb_main(a):
     if a.cmd == "usb-devices":
         print("picked: MIDI %s, audio %s" % (r.port_name, r.audio_name))
         return 0
+    if not r.fake and not a.no_preflight:
+        ok, pre = preflight(r)
+        if not ok:
+            return 2
     d = a.out or os.path.join(OUT, stamp() + "-" + a.cmd)
     print("MIDI %s (channel %d), audio %s; takes -> %s" % (r.port_name, r.ch, r.audio_name, d), flush=True)
     fn = {"usb-note": lambda: usb_note(r, d, a.note, a.vel), "usb-vel": lambda: usb_vel(r, d, a.note),
@@ -757,6 +787,7 @@ def main(argv=None):
     ap.add_argument("--secs", type=float, default=60.0, help="usb-stress: the take's length")
     ap.add_argument("--nv", type=int, default=MOVE_VOICES, help="usb-stress: voices per chord")
     ap.add_argument("--out", help="usb-*: the folder for the takes and report.json")
+    ap.add_argument("--no-preflight", action="store_true", help="usb-*: skip the idle check of the USB-C stream")
     ap.add_argument("--fake", action="store_true", help="usb-*: the offline model of the Move (no device)")
     ap.add_argument("--inject", action="append", help="usb-* --fake: KIND@SECONDS (zero, click, stale, loud, nosus)")
     a = ap.parse_args(argv)
