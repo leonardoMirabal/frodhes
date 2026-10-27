@@ -191,12 +191,13 @@ read once, by the migration, and never written; `store.h`'s `NBLOB` / `NSLOT` se
 codec to full scale (`APP_OUT_SHIFT`), send the USB audio before the MASTER knob (`usb_pre_master`), the MASTER knob
 reading is smoothed, the TRS MIDI input can be switched off (`uart_midi_on` in `midi_uart.c`, the MIDI page's TRS IN),
 the MIDI clock and transport packets carry their arrival time (16 bits of `fm1_ms` in their free data bytes, in
-`usb.c` and `midi_uart.c`, for the tempo) and `usb.c` also takes them with the code index 5 that some hosts send,
+`usb.c` and `midi_uart.c`, for the tempo) and `usb.c` also takes them with the code index 5 that some hosts send
+(and softens the 48 kHz resampler's overshoot above 24576 before its clamp, `UAC_KNEE`),
 it builds for the browser (`DINGHY_WEB`), a host-mode fix in `gfx.c`, `FONT_S` in `gen/felucca_font.h` stores only
 the glyphs the firmware draws (`tools/gen_font.py`; the others point at `?`, which `gfx.c` draws for them), and the audio
 interrupt times itself whole and reads the USB ring's low point (`isr_stats` in `platform.c`, for the CC 116 query),
 the audio interrupt's tail is one pass per 32 frames (MASTER, the clip, the USB tap, the codec's shift; a new MASTER
-ramps over the block, `master_ramp`) and skips the
+ramps over the block, `master_ramp`; the headphone jack keeps MASTER's product at 24 bits, `MASTER_JACK_SH`) and skips the
 clear before `app_audio` (`APP_OUT_WRITTEN`: Frodhes writes every sample), a developer build times the timer tick too (`APP_DEFS=-DFM1_PROF_TICK`: `tick_prof` in `platform.c`, the
 `tools/hil_cpu.py --tick` items; the normal build is unchanged),
 the panel scan has two hooks for key velocity (`FM1_INPUT_ADC_TAKE` / `FM1_INPUT_ADC_START` in `hal/fm1_input.h`),

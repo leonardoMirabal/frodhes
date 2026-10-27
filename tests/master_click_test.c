@@ -8,7 +8,8 @@
  *     block), mode 0 = 0.9.5 (one gain a block, the step);
  *   - usb_pre_master 0 / 1 (the jack is post-MASTER either way).
  * Usage: master_click_test IN.raw OUT.raw MODE PRE PASS_US K0 [T_MS:DETENTS ...]
- *   IN: int16 stereo frames (the app's output, Q15); OUT: int32 stereo, the jack's samples back at Q15 (>> the shift);
+ *   IN: int16 stereo frames (the app's output, Q15); OUT: int32 stereo, the jack's samples back at Q15 (>> the shift;
+ *   MODE | 2: the jack's 24-bit samples as they go to the codec);
  *   PASS_US: the main loop's pass (platform_poll) interval; K0: K1's value at the start (the knob settled there);
  *   T_MS:D: D detents (+ up, - down) at T ms. */
 #include <stdint.h>
@@ -30,6 +31,14 @@ static uint32_t k_used = 512;
 /* platform.c begin */
 /* Frodhes: the block's MASTER pass with the gain ramping from master_prev to m (the loops below, a gain a frame) */
 static int32_t master_prev = -1;
+/* Frodhes (0.9.7, #8): the jack after MASTER keeps the product's low bits (x * g >> (12 - APP_OUT_SHIFT)) instead of
+ * cutting it to 16 bits first ((x * g >> 12) << APP_OUT_SHIFT: a -95 dBFS error with a DC part under the codec's
+ * floor); the clamp at the same ceiling, 32767 << APP_OUT_SHIFT. No overflow: |x| <= 32767 (or the app's sample, as
+ * before), g <= 4096. The USB tap's samples are the 16-bit ones, unchanged */
+#define MASTER_JACK_SH (12 - (int32_t)APP_OUT_SHIFT)
+#define TAIL_JACK(x) ((x) > (32767 << APP_OUT_SHIFT) ? (32767 << APP_OUT_SHIFT) : \
+                      (x) < -(32767 << APP_OUT_SHIFT) ? -(32767 << APP_OUT_SHIFT) : (x))
+_Static_assert(APP_OUT_SHIFT <= 12u, "the jack: MASTER's Q12 product shifted right by 12 - APP_OUT_SHIFT");
 #define TAIL_PRE(x) ((x) > 32767 ? 32767 : (x) < -32767 ? -32767 : (x))
 /* platform.c end */
 static void master_ramp(int32_t *o, int32_t m)
@@ -43,11 +52,18 @@ static void master_ramp(int32_t *o, int32_t m)
             int32_t g, k, x;
             mq += dm; g = mq >> 8;
             for (k = 0; k < 2; k++) {           /* (both channels, either order of the gain and the clip below) */
+                int32_t p;
                 x = c[k];
-                if (!usb_pre_master) x = (x * g) >> 12;
-                x = TAIL_PRE(x);
-                q[k] = x;
-                c[k] = (usb_pre_master ? (x * g) >> 12 : x) << APP_OUT_SHIFT;
+                if (usb_pre_master) {
+                    x = TAIL_PRE(x);
+                    q[k] = x;
+                    c[k] = (x * g) >> MASTER_JACK_SH;
+                } else {
+                    p = x * g;
+                    x = p >> 12;
+                    q[k] = TAIL_PRE(x);
+                    c[k] = TAIL_JACK(p >> MASTER_JACK_SH);
+                }
             }
         }
         UAC_ONLY(uac_tap(q - 64, 32u));
@@ -65,9 +81,9 @@ static void block_const(int32_t *o, int32_t m)   /* the ISR's pass at one gain (
             int32_t k;
             for (k = 0; k < 2; k++) {
                 int32_t x = c[k];
-                if (usb_pre_master) x = (TAIL_PRE(x) * m) >> 12;
-                else { x = (x * m) >> 12; x = TAIL_PRE(x); }
-                c[k] = x << APP_OUT_SHIFT;
+                if (usb_pre_master) x = (TAIL_PRE(x) * m) >> MASTER_JACK_SH;
+                else { x = (x * m) >> MASTER_JACK_SH; x = TAIL_JACK(x); }
+                c[k] = x;                       /* (0.9.7, #8: the jack's 24 bits) */
             }
         }
     }
@@ -115,9 +131,10 @@ int main(int argc, char **argv)
         }
         for (i = 0; i < (int)HALF_WORDS; i++) o[i] = in[i];
         m = master_q12;
-        if (mode == 1 && m != master_prev) master_ramp(o, m);
+        if ((mode & 1) && m != master_prev) master_ramp(o, m);
         else { block_const(o, m); master_prev = m; }
-        for (i = 0; i < (int)HALF_WORDS; i++) o[i] >>= APP_OUT_SHIFT;
+        if (!(mode & 2))                                           /* (mode | 2: the jack's 24-bit samples) */
+            for (i = 0; i < (int)HALF_WORDS; i++) o[i] >>= APP_OUT_SHIFT;
         fwrite(o, sizeof o[0], HALF_WORDS, fo);
         nb++;
     }

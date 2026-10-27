@@ -86,12 +86,12 @@ def test_known_over_is_current():
 
 def test_predictions():
     """the numbers the release plan quotes (tools/cpu_budget.py prints the whole table)"""
-    want = {("rhodes", 8, False): 3385, ("rhodes", 8, True): 3415, ("rhodes", 9, False): 3608,
-            ("rhodes", 9, True): 3638, ("rhodes", 10, False): 3831, ("rhodes", 10, True): 3861,
-            ("vibes", 9, False): 4003, ("vibes", 9, True): 4033, ("vibes", 10, False): 4270, ("vibes", 10, True): 4300,
-            ("marimba", 9, False): 3967, ("marimba", 9, True): 3997, ("marimba", 10, False): 4230,
-            ("marimba", 10, True): 4260}
+    want = {("rhodes", 8, False): 3390, ("rhodes", 8, True): 3420, ("rhodes", 9, False): 3613,
+            ("rhodes", 9, True): 3643, ("rhodes", 10, False): 3836, ("rhodes", 10, True): 3866,
+            ("vibes", 9, False): 4008, ("vibes", 9, True): 4038, ("vibes", 10, False): 4275, ("vibes", 10, True): 4305,
+            ("marimba", 9, False): 3972, ("marimba", 9, True): 4002, ("marimba", 10, False): 4235,
+            ("marimba", 10, True): 4265}
     got = {k: cb.predict(T, k[0], k[1], bend=k[2])["whole"] for k in want}
     # (a device run that updates tools/cpu_costs.json moves these: update them with it; bending: the spread retune;
-    # est_costs_us: + 51, the reverb's half-bands, rev-upsample; + 12, the 48 kHz knee, uac_knee)
+    # est_costs_us: + 51, the reverb's half-bands, rev-upsample; + 12, the 48 kHz knee, uac_knee; + 5, the jack's 24 bits, master24)
     assert got == want, got
