@@ -87,7 +87,7 @@ MOVE_CFLAGS := -O2 -fPIC -ffp-contract=off -std=gnu11 -Wall -Wno-unused-function
   -Imove/compat -Ifirmware/src -Ifirmware/gen
 MOVE_OUT  := build/move/frodhes
 
-.PHONY: move-image move move-native move-tools-native test-move test-move-native gate-p gate-p-native move-probe test-move-probe
+.PHONY: move-image move move-native move-tools-native test-move test-move-native gate-p gate-p-native gate-m move-probe test-move-probe
 move-image:                ## the Move build image (Debian bookworm arm64, about 250 MB)
 	docker build --platform linux/arm64 -t $(MOVE_IMG) move/docker
 
@@ -155,6 +155,9 @@ gate-p-native: test-move-native
 	  ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge eq build/move/san/dsp.so $$s build/move/san/$$n.wav || exit 1; \
 	  rm -f build/move/san/$$n.wav build/move/san/$$n-*.ppm; done
 	@echo "ok    gate P"
+
+gate-m: move               ## Gate M (M1-10): the shipping dsp.so replays every MIDI-driven Gate R render byte-identical
+	python3 tools/gate_m.py
 
 move-probe:                ## the device-session probe (move/probe/README.md)
 	$(MOVE_RUN) make -s -C move/probe -j2

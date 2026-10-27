@@ -1,0 +1,86 @@
+# Gate M (tools/gate_m.py --save): the MIDI-driven renders the Move's 16 voices change against
+# renders.sha256 (the host build at the Move's voice count), then the entries that stay host-only.
+209e404135d1c7be431fce986bdbc415e91e3ca7281352b9848658e90403380f  fx/cho
+f010d39a25680c4c1596d2a99c276ee2bff4c63a3a4d49cb1359acd53802fd31  fx/comp
+fc6277a8e1b152dadca273c7031c3f37c3a1c9d56be2bb376cff8560666096e3  fx/dl_ana
+b3ffa1b876eb21ca77fff641269dbe8790ffd3baba880599783f141da9d1debd  fx/filt110
+c86d5e0a09b6f24d3ee5190ad20a1cbe2ce63b981bbcb9c1bf1771cb3595ac4f  fx/filt14
+314481e6918d881fa14854a9f284b69968b3e7449b385245207eb9b6c8a01c4a  fx/filt30
+f9264674108f2dbc2dc01fccd3a530f3669b63601d49a0b42c267b80328b85fb  fx/filt45
+6677a685b1cf9b17a13ed3e1f91fe07d42c05d168c74cd062e36884920ca3335  fx/filt60
+9f54ffd85abe7715322a778c651b075811bd0c7b562c7c18c238367920054927  fx/filt75
+a4823dcfdbd20597de18938aded87c88cd9ff66e63deb31144a5c4d3c5abe1f4  fx/filt90
+ddd6f55e2972ad562cbc2d09f4b2f21ee6ecf66d4e92dec99bf1f804cc12d43a  fx/heavy
+df271aec917d37a6dd128e760c20c5aa5b34b9d9d3020368b750d7396919e73c  fx/heavy_cho
+ae56f3a43aa0cbd600e2fdcd0e63a4f183ace5e4609327907094241c5a2c1fb6  fx/ph_32
+995c2627b44bd85795d2a28207da36d6eee83d17fbdfa1b7a3668d076e3495cf  fx/ph_fb
+0849ffda63ce7ff0bed714ec1f1b4cceac83c01d22d1f975ccc82460fa28c0c4  fx/rev127
+f61a7c99d8f87ec2724d76d7ef22f419f51085273cc66d164338882201e7f77a  fx/rev32
+f590302ac6d8adb62407637d396c309fcd026f2a2abc52f57c2a554e2cc8fc6e  fx/trem_am
+5d7db291a970d736d7e13a323d61133264cfe6a3d921f02f3ca072d43371d998  fx/trem_pan
+38f8ebc526c2ac9f81ca14e453f97504a25ed73b1eaade5a455ac39ddb0bdebd  fx/v_cho
+a9210806cfa4e546b3a773391c243991cf093c324161feadf66e24ac1abf7e00  fx/v_comp
+39afff35404c1d1485ee807f3b1e4cde29f91e9076215659dc7fb25326be3335  fx/v_dl_ana
+7c33e707b6b12d52d2dc1b107590d934eba009276ffee4c6710da75b537b8595  fx/v_filt110
+837010d0ba97088f45c2d971f359fd4a3e2cb55b1e54e5e6ec9d8de8f19b09d0  fx/v_filt14
+8a3df83e6449a3a1547c3b495c376e46dddef28b9fccf6ea9b1e098bc73432d3  fx/v_filt30
+bed65ae2e071e09a068905fcfd12b91da42b5e287de7c28e7cbd14e78fd98657  fx/v_filt45
+96a900dfe46178292b997b22ed3521e3b08909dc657a27921977144b31d521ee  fx/v_filt60
+42ce51e9f7d1e4a4a1f4d286aee6f0da7ec23d55f4183f1c71a50808669923f6  fx/v_filt75
+74ab6d7b169ddb106907592d0d77bb76c82ba6ccb0b6afd1e80a6352733ffa23  fx/v_filt90
+2e925328c5e52166f40485f1da1402b05f1bf9aaaa04bddf3081016c967bc688  fx/v_heavy
+8aa55c16df2fe8233c4856b4f79feed21f205cc9b95118656a328680a1825d78  fx/v_heavy_cho
+79f5e0236bc5961442c798045401f0c55c7ce5732dfcb7607b660b27d18f3080  fx/v_ph_32
+ff0a1abe4cb4bc12c5f3d224c84f78d0e3aca807dedbe8cbac4b8299dbe5172c  fx/v_ph_fb
+79888e1b8dc89821a81b552e95aa0c2f8467fbfe60c044d6b3c930c205d90796  fx/v_rev127
+705727df9a3f57ec0173578a71bcc7f5ce5d552c09824bd1ad119211e456b2e3  fx/v_rev32
+fa2a2d73f1d68902baf298eba50cd681c3cb0062b9bee9c31d22bcd5451a11e5  fx/v_trem_am
+90d98158c7862cdb46712d3dd831af4b62b3db7a5b1c31d95fb2121ac7029ef5  fx/v_trem_pan
+04a16881f9ab6184ed8af6df8c7206db0e1f8f9d92c2d25d15c437ae9715152c  scripts/fx_slow_paths
+1014510d4c91c69429b10a3c8367673eccefd4799fbc3008ede4dabc043cf08f  scripts/marimba
+23362a9ee258ec604c9c3cc1983c3e6b8f8c718c4f1cf9d244556780c3a81b34  scripts/rhodes_paths
+21652b9d5d24bd7836f526773c7d63299ae935908ef2cecd170d4c3fefd121b6  scripts/rhodes_steal_release
+58a9e20cea94b4452fca352488c43925170ae1b7bcaf2a5b0d36b77554a06f70  scripts/vibes
+1665701d3fb2f716d08fddf4c7c161f346a4c9c50318549b2f8b8428dfcd11f6  scripts/vibes_steal_release
+# host-only host/frodhes: the default run (no script: the built-in demo)
+# host-only scripts/arp: FM-1 input lines: btn, keys
+# host-only scripts/arp_buttons: FM-1 input lines: btn, keys
+# host-only scripts/arp_full: FM-1 input lines: btn
+# host-only scripts/autosave_setup: FM-1 input lines: btn, turn
+# host-only scripts/battery: FM-1 input lines: btn
+# host-only scripts/bend: FM-1 input lines: btn, turn, usblink
+# host-only scripts/burst: FM-1 input lines: keys
+# host-only scripts/buttons: FM-1 input lines: btn, turn
+# host-only scripts/cmp_mkup_engine: FM-1 input lines: btn, turn
+# host-only scripts/display: FM-1 input lines: btn, keys, turn
+# host-only scripts/drive_select: FM-1 input lines: turn
+# host-only scripts/fx_panel: FM-1 input lines: btn, keys, turn
+# host-only scripts/keyvel: FM-1 input lines: keys, vkey
+# host-only scripts/leds_scale: FM-1 input lines: btn, keys, turn
+# host-only scripts/midi: FM-1 input lines: btn, turn
+# host-only scripts/oct_reset: FM-1 input lines: btn, press, release
+# host-only scripts/panic: FM-1 input lines: btn, keys
+# host-only scripts/pc_stall: FM-1 input lines: btn, turn
+# host-only scripts/pc_stall_trs: FM-1 input lines: trs
+# host-only scripts/perform: FM-1 input lines: btn, keys, turn
+# host-only scripts/perform_wake: FM-1 input lines: btn, turn
+# host-only scripts/quiet_gated: FM-1 input lines: btn, turn
+# host-only scripts/release_vel: FM-1 input lines: keys
+# host-only scripts/rev_freeze_save: FM-1 input lines: btn
+# host-only scripts/rev_hold_release: FM-1 input lines: btn
+# host-only scripts/reverb_pages: FM-1 input lines: btn, turn
+# host-only scripts/scale_midi: FM-1 input lines: btn, keys, turn
+# host-only scripts/seq: FM-1 input lines: btn, keys, turn
+# host-only scripts/state: FM-1 input lines: btn, press, release, turn
+# host-only scripts/state_marimba: FM-1 input lines: btn, keys, turn
+# host-only scripts/state_vibes: FM-1 input lines: btn, keys, press, release, turn
+# host-only scripts/sustain: FM-1 input lines: btn, keys, press, release
+# host-only scripts/touch: FM-1 input lines: btn, keys, turn
+# host-only scripts/trs: FM-1 input lines: btn, trs, turn
+# host-only scripts/type_held_repress: FM-1 input lines: keys, turn
+# host-only scripts/ui_panel: FM-1 input lines: btn, turn
+# host-only scripts/ui_presets: FM-1 input lines: btn, press, release, turn
+# host-only scripts/usb_rec_save: FM-1 input lines: usbrec
+# host-only scripts/vibes_head: FM-1 input lines: turn
+# host-only scripts/vibes_motor_page: FM-1 input lines: btn, keys, turn
+# host-only scripts/wah_shape: FM-1 input lines: btn, turn
