@@ -327,7 +327,6 @@ def build(m):
                 groups = [ctls[i:i + 8] for i in range(0, len(ctls), 8)]
                 for g, grp in enumerate(groups):
                     lk = "%s_%d%s" % (key, e, "" if g == 0 else "_%d" % (g + 1))
-                    lt = title if g == 0 else short(grp[0]["name"], grp[0]["name"][:LABEL_MAX])
                     lt = ENGINE_TITLE[e] + (" " + ("VOICE" if g == 0 else grp[0]["name"]))
                     lvl = {"name": lt, "params": [], "knobs": [], "visible_if": {"param": "ui_engine", "equals": e}}
                     for c in grp:
