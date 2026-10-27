@@ -2,8 +2,8 @@
 """tools/hil_monkey.py without the FM-1: the plan (--dry-run), the stream's filter (MIDI only, no developer CC), and
 the audio gates on host renders of its takes (the stream, the panic, the probe as the FM-1 gets them): clean takes
 pass; injected faults (an underrun's held frames, a block played twice, a dead probe, a short recording, full
-scale) fail their own row; at 48 kHz, the resampler's overshoot (#38's fail-1022) is information and an audible
-clamp (a run, a spike) still fails. About 15 s."""
+scale) fail their own row; at 48 kHz full scale fails from 0.9.7 (usb.c's knee); before it (--old-48k) the resampler's overshoot (#38's
+fail-1022) is information and an audible clamp (a run, a spike) still fails. About 15 s."""
 import os
 import sys
 
@@ -91,9 +91,18 @@ def _burst(rate, n=4800, at=2400):
     return np.stack([x, x], axis=1)
 
 
-def test_the_resamplers_overshoot_is_information_at_48k():
-    rows = hm.clamp_rows(_burst(48000), 48000)
+def test_the_resamplers_overshoot_is_information_at_48k_before_097():
+    rows = hm.clamp_rows(_burst(48000), 48000, strict48=False)
     assert _status(rows, "USB at full scale") == "info" and not [r for r in rows if r[3] == "FAIL"], rows
+
+
+def test_full_scale_fails_at_48k_from_097():
+    """usb.c's knee (#38b): fail-1022's clamped sample is a FAIL now (the default, STRICT48)"""
+    rows = hm.clamp_rows(_burst(48000), 48000)
+    assert hm.STRICT48 and _status(rows, "USB at full scale") == "FAIL"
+    x = _burst(48000)
+    x[x == -32768] = -32000
+    assert _status(hm.clamp_rows(x, 48000), "USB at full scale") == "ok"
 
 
 def test_the_same_clamp_fails_at_44k1():

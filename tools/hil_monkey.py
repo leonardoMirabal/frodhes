@@ -24,9 +24,10 @@ then the bypass off again. The gates, per take:
             >= one packet, the whole ISR <= 4500 us (hil_cpu's CC 116 / 117 and 107 / 108), 0 voices shed
   glitches  hil_crackle.usb_judge on the USB take (stress_max's repeat and stale detectors, the one definition the
             release judges USB audio with): 0 events. Full scale on USB (|x| >= 32767; the limiter keeps 24000):
-            0 samples at 44.1 kHz. At 48 kHz the resampler overshoots a loud high passage to full scale (#38):
-            information; it fails on a clamp that could be heard (clamp_rows: a run > 3 samples, > 8 in 10 ms,
-            or an isolated spike). Clicks are not gated: a random stream makes the parameter changes 0.9.5 still
+            0 samples at 44.1 kHz, and at 48 kHz from 0.9.7 (usb.c's knee before the resampler's clamp, #38b);
+            with --old-48k (a firmware before it: the resampler overshoots a loud high passage to full scale, #38)
+            full scale is information at 48 kHz and it fails on a clamp that could be heard (clamp_rows: a run > 3
+            samples, > 8 in 10 ms, or an isolated spike). Clicks are not gated: a random stream makes the parameter changes 0.9.5 still
             clicks on (private/BUGHUNT-095.md); hil_crackle's click detector counts them as information
   alive     the FM-1 answers a CC 116 query after the probe; the probe sounds on USB (> -50 dBFS, judged from the
             recorder's mark); the stream kept running (the frames recorded >= 98 % of the take's length)
@@ -67,6 +68,7 @@ LAG_MAX = 0.1                                   # (s) the clock fit's lag past L
                                                 # wrong (25 takes on the FM-1, 2026-10-26: -0.01 .. 0.05; 1012: 0.75)
 LIM_T = 24000                                   # fx.c's limiter threshold (-2.7 dBFS)
 CLAMP_RUN, CLAMP_DENSE, CLAMP_LOUD = 3, 8, 8    # the 48 kHz full-scale gate (clamp_rows)
+STRICT48 = True                                 # 0.9.7 (usb.c's knee, #38b): 0 at full scale at 48 kHz too (--old-48k: before)
 
 
 def midi_of(line):
@@ -190,19 +192,26 @@ def clamp_runs(c):
     return np.flatnonzero(d == -1) - np.flatnonzero(d == 1)
 
 
-def clamp_rows(xi, rate):
+def clamp_rows(xi, rate, strict48=None):
     """the full-scale gate. 44.1 kHz: USB is the limiter's output (<= LIM_T 24000), so 0 samples at full scale.
     48 kHz: usb.c's 160/147 resampler (12 taps, a per-phase gain up to 1.667) overshoots between the samples of a
     loud high passage the limiter kept at 24000 and clamps it to int16 (#38: fail-1022, 1 sample, the burst 99 %
     at 6-12 kHz; 0.9.5 the same). Full scale is information there; the gate is a clamp that could be heard:
     a run of more than CLAMP_RUN clamped samples in a channel, more than CLAMP_DENSE in any 10 ms, or an isolated
-    one (fewer than CLAMP_LOUD samples >= LIM_T within 1 ms: a spike, not the overshoot of a loud passage)"""
+    one (fewer than CLAMP_LOUD samples >= LIM_T within 1 ms: a spike, not the overshoot of a loud passage).
+    From 0.9.7 (#38b) usb.c has a knee before the clamp (above 24576 the excess halved): a passage the limiter kept
+    at 24000 can no longer reach full scale, so 0 samples at full scale is the gate at 48 kHz too (strict48,
+    STRICT48; --old-48k judges a firmware before 0.9.7 as before: full scale information, the audible rows gate)"""
     x = np.asarray(xi).reshape(len(xi), -1)
     a = np.abs(x)
     nclip = int((a >= CLIP).sum())
     if rate != 48000:
         return [("USB at full scale (samples)", nclip, "0", "ok" if not nclip else "FAIL")]
-    rows = [("USB at full scale (samples)", nclip, "information at 48 kHz (the resampler's overshoot)", "info")]
+    if strict48 is None:
+        strict48 = STRICT48
+    rows = [("USB at full scale (samples)", nclip, "0 (48 kHz: usb.c's knee, 0.9.7)", "ok" if not nclip else "FAIL")
+            if strict48 else
+            ("USB at full scale (samples)", nclip, "information at 48 kHz (the resampler's overshoot)", "info")]
     run = max([int(r.max()) for r in map(clamp_runs, x.T) if len(r)] or [0])
     rows.append(("USB clamped run (longest, samples)", run, f"<= {CLAMP_RUN}", "ok" if run <= CLAMP_RUN else "FAIL"))
     w = rate // 100
@@ -376,7 +385,11 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--stop-on-fail", action="store_true", help="stop after the first failing take")
     ap.add_argument("--rejudge", nargs="+", metavar="NPZ", help="judge saved takes again (offline)")
+    ap.add_argument("--old-48k", action="store_true", help="a firmware before 0.9.7 (no knee in usb.c): full scale "
+                    "at 48 kHz is information, only an audible clamp fails")
     a = ap.parse_args(argv)
+    global STRICT48
+    STRICT48 = not a.old_48k
     if a.rejudge:
         return rejudge(a.rejudge)
     if a.dry_run:
