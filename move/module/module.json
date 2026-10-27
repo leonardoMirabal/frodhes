@@ -12,6 +12,7 @@
     "audio_out": true,
     "midi_in": true,
     "chainable": true,
+    "requires_continuous_processing": true,
     "component_type": "sound_generator"
   }
 }

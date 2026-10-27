@@ -54,12 +54,15 @@ static host_api_v1_t host = { .api_version = 1, .sample_rate = 44100, .frames_pe
                               .get_clock_status = h_clock, .get_bpm = h_bpm, .get_beat_position = h_beat };
 
 static plugin_api_v2_t *api;
+static move_plugin_init_v2_fn init_fn;
+static plugin_api_v2_t *move_plugin_init_v2_again(const host_api_v1_t *h) { return init_fn(h); }
 static void *load(const char *so)
 {
     void *h = dlopen(so, RTLD_NOW | RTLD_LOCAL);
     if (!h) { printf("FAIL dlopen %s: %s\n", so, dlerror()); exit(1); }
     move_plugin_init_v2_fn init = (move_plugin_init_v2_fn)dlsym(h, MOVE_PLUGIN_INIT_V2_SYMBOL);
     if (!init) { printf("FAIL no entry\n"); exit(1); }
+    init_fn = init;
     api = init(&host);
     return h;
 }
@@ -149,9 +152,31 @@ static int api_tests(const char *so)
     load(so);
     in = create(NULL);
     CHECK(in != NULL, "create");
-    in2 = api->create_instance("build/move/t", NULL);
-    CHECK(in2 == NULL, "a second live instance is refused (one app a process)");
     render(in, 400);                                          /* boot, the splash */
+
+    /* plan 9.2 Q7 (Schwung's re-pick creates the new instance before it destroys the old; two slots share one
+     * copy): the newest instance owns the app, the older renders silence and is not played; when the newest goes,
+     * the older owns it again */
+    {
+        static host_api_v1_t host2;
+        unsigned pk;
+        host2 = host;
+        if (api != move_plugin_init_v2_again(&host2)) { fails++; printf("FAIL init again\n"); }
+        in2 = api->create_instance("build/move/t", NULL);
+        CHECK(in2 != NULL && in2 != in, "a second instance");
+        {   uint8_t on[3] = { 0x90, 60, 110 }; api->on_midi(in, on, 3, MOVE_MIDI_SOURCE_EXTERNAL); }
+        pk = 0; for (i = 0; i < 60; i++) { api->render_block(in, blk, 128); for (unsigned k = 0; k < 256; k++) pk |= (unsigned)abs(blk[k]); }
+        CHECK(pk == 0, "the older instance renders silence and is not played (%u)", pk);
+        {   uint8_t on[3] = { 0x90, 64, 110 }; api->on_midi(in2, on, 3, MOVE_MIDI_SOURCE_EXTERNAL); }
+        pk = 0; for (i = 0; i < 60; i++) { api->render_block(in2, blk, 128); for (unsigned k = 0; k < 256; k++) if ((unsigned)abs(blk[k]) > pk) pk = (unsigned)abs(blk[k]); }
+        CHECK(pk > 1000, "the newest instance plays (peak %u)", pk);
+        api->destroy_instance(in2);
+        {   uint8_t off[3] = { 0x80, 64, 0 }; api->on_midi(in, off, 3, MOVE_MIDI_SOURCE_EXTERNAL); }
+        pk = 0; for (i = 0; i < 60; i++) { api->render_block(in, blk, 128); for (unsigned k = 0; k < 256; k++) if ((unsigned)abs(blk[k]) > pk) pk = (unsigned)abs(blk[k]); }
+        CHECK(pk > 1000, "after the newest goes, the older plays again (its release tail: peak %u)", pk);
+        CHECK(stat_of(in, "midi_out") > 0, "stats from the owner");
+        render(in, 400);
+    }
 
     /* M1-04: a 200-message burst in one block plays complete; touch edges and the FX broadcast are not played */
     n0 = stat_of(in, "midi_out");

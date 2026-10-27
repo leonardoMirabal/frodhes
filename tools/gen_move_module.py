@@ -446,8 +446,11 @@ def outputs():
     module = {"id": "frodhes", "name": "Frodhes", "abbrev": "FRDH", "version": "0.0.0-dev",
               "description": "Physical-model electric piano, vibraphone and marimba",
               "author": "Frodhes", "dsp": "dsp.so", "api_version": 2, "component_type": "sound_generator",
+              # requires_continuous_processing (Schwung 1.8.1 chain_synth_load.c): the host otherwise stops calling
+              # render_block after ~1 s of silence, and the app's clock (the arp, the sequencer, the tempo's beat,
+              # the settings' save) runs on render_block
               "capabilities": {"audio_out": True, "midi_in": True, "chainable": True,
-                               "component_type": "sound_generator"}}
+                               "requires_continuous_processing": True, "component_type": "sound_generator"}}
     return {"module.json": dumps(module), "ui_hierarchy.json": dumps(hier), "chain_params.json": dumps(chain),
             "help.json": dumps(help_json(m, levels, reach)), "move_ui.h": c_header(hier, chain, crow)}, m, reach
 

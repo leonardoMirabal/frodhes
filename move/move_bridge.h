@@ -15,10 +15,10 @@
  *              5. resume app_main() for one main-loop pass, up to its next platform_poll() (web_hal.c)
  *   render_block(128): steps until the FIFO holds 128 frames, then hands them out (latency <= 256 frames).
  *
- * The app is one set of globals, so the plugin is a singleton: one live instance per process (a second
- * create_instance gets NULL until the device session shows what two slots need, plan 9.2 Q7). The app keeps running
- * after destroy_instance (a later create continues it, with all notes off), because its static data cannot be
- * initialised a second time.
+ * The app is one set of globals: one app per process. Several instances may exist (a re-pick creates the new one
+ * before it destroys the old; two slots share the dlopen'd copy): the newest owns the app (move_plugin.c). The
+ * app keeps running after the last destroy_instance (a later create continues it, with all notes off), because
+ * its static data cannot be initialised a second time.
  *
  * Things the device session may change (each one place here): the clock source (MB_CLOCK_*), the state layout
  * (mb_state_get / mb_state_set), enum values by index or by label (mb_parse_wire), which MIDI sources play. */
@@ -54,7 +54,6 @@ static struct {
     coro_t co;
     void *stack;
     int booted;
-    _Atomic int live;
     uint32_t ms;                         /* host milliseconds stepped (tests/host.c fm1_ms) */
     uint32_t owed;
     int first_now;                       /* web_hal.c's first clock reading (mb_now) */
@@ -124,8 +123,11 @@ static int mb_boot(void)                 /* the worker: app_main up to its first
 
 /* ---- persistence (M1-08), the worker: SCHED_OTHER on cores 0-2 (off the audio core 3) as its first action; loads
  * the files and boots the app, then writes what the audio side staged (store.bin, pattern.bin) and, when asked,
- * the timer ring (cpu-ring.log). The data folder: under Schwung's user data when there (it survives a module
- * update: to confirm in D1, plan 9.2 Q3), else the module's folder */
+ * the timer ring (cpu-ring.log). The data folder: /data/UserData/schwung/module_data/frodhes when Schwung's user
+ * data is there, else the module's folder. From Schwung 1.8.1's source (plan 9.2 Q3): a module install or update
+ * and a Schwung update both merge files by rename into /data/UserData/schwung (nothing there is deleted, except
+ * modules/store), and a module uninstall deletes only the module's own folder. So this folder survives all three.
+ * (presets/<id>/ would too, but the host's preset browser lists every .json file there.) */
 static void mb_pick_dir(const char *module_dir)
 {
     struct stat st;
@@ -443,7 +445,7 @@ static void mb_state_apply(void)         /* the boot's sanitize and apply steps 
 static void mb_midi_due(uint8_t st, uint32_t at) { if (!mb_put(MB_EV_MIDI, st, 0, 0, at, 0, 0)) mb.f8_synth += st == 0xF8u; }
 static void mb_clock_block(int frames)
 {
-    const host_api_v1_t *h = g_host;
+    const host_api_v1_t *h = atomic_load_explicit(&g_host, memory_order_acquire);
     double b = -1.0, ms_per = (double)frames * 1000.0 / 44100.0;
     int running;
     uint32_t n = 0;
