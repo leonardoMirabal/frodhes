@@ -21,6 +21,7 @@ import pytest
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "build", "uac_test")
 HOURS = os.environ.get("UAC_SEQ_HOURS", "0.25")
+WORKER = os.environ.get("PYTEST_XDIST_WORKER", "main")  # (the module fixture runs once per xdist worker: its own binary)
 
 
 def build(src, exe, *defs):
@@ -43,7 +44,7 @@ def cases(exe, *args):
 
 @pytest.fixture(scope="module")
 def new():
-    return cases(build(os.path.join(ROOT, "firmware", "src"), os.path.join(OUT, "uac_seq_test")), "--hours", HOURS)
+    return cases(build(os.path.join(ROOT, "firmware", "src"), os.path.join(OUT, f"uac_seq_test-{WORKER}")), "--hours", HOURS)
 
 
 def test_no_frame_twice_or_lost_uncounted(new):
