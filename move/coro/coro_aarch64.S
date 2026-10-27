@@ -3,6 +3,7 @@
 // *from, loads them from *to, and returns into the other context. No syscall, no signal mask, no allocation.
 //   void frodhes_coro_switch(coro_ctx_t *from, const coro_ctx_t *to)    (move/coro/coro.h: 21 words)
 // A new context starts in frodhes_coro_boot with x19 = the entry function and x20 = its argument.
+    .file "coro_aarch64.S"      // a fixed name in the symbol table (else the temporary object's: no reproducible build)
     .text
     .p2align 2
     .global frodhes_coro_switch

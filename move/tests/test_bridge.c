@@ -10,6 +10,11 @@
  *   test_bridge gatep DSP [N]            Gate P (M1-11): N (10^4) random blocks of MIDI, key writes, state reads and
  *                                        loads; no syscall (seccomp) and no allocation inside any callback (unless
  *                                        built -DNO_GUARDS, for ASan / UBSan), no sample stuck at full scale
+ *   test_bridge run DSP SCRIPT OUT.wav   M1-12 (the plugin monkey, tests/py/test_move_monkey.py): a timed script
+ *                                        through the plugin's own entry points, under the Gate P guards: "T midi
+ *                                        ST D1 D2" (on_midi, source EXTERNAL), "T key NAME VALUE" (set_param),
+ *                                        "T preset N", "T getstate" / "T setstate" (the state read back in later),
+ *                                        "T end"; each line when the rendered time reaches T; OUT.wav as host.c's
  *   test_bridge persist DSP DIR save|check   M1-08: "save" sets keys, records a pattern and saves a user preset, waits
  *                                        for the worker's files; "check" (a new process) finds them all back
  * Every mode but persist runs in a fresh empty data folder (build/move/t/run.XXXXXX), so no file of an earlier run
@@ -443,6 +448,80 @@ static int gatep(const char *so, unsigned nblk)
     return fails != 0;
 }
 
+/* ---- run (M1-12): a timed script through the plugin path; the guards from the first line on */
+typedef struct { unsigned t; char kind; uint8_t m[3]; int len; char a[40], b[24]; } run_ev_t;
+static int run_script(const char *so, const char *script, const char *wav)
+{
+    static run_ev_t ev[200000];
+    static char st[8192], line[256];
+    unsigned nev = 0, end = 0, i, peak = 0;
+    uint32_t frames, done = 0;
+    int16_t *pcm;
+    FILE *f = fopen(script, "r"), *w;
+    void *in;
+    if (!f) { printf("FAIL no script %s\n", script); return 1; }
+    while (fgets(line, sizeof line, f) && nev < sizeof ev / sizeof ev[0]) {
+        run_ev_t *e = &ev[nev];
+        char what[16];
+        unsigned a, b, c;
+        memset(e, 0, sizeof *e);
+        if (line[0] == '#' || sscanf(line, "%u %15s", &e->t, what) != 2) continue;
+        if (!strcmp(what, "end")) { end = e->t; continue; }
+        if (!strcmp(what, "midi") && sscanf(line, "%*u %*s %i %u %u", &a, &b, &c) == 3) {
+            e->kind = 'm'; e->m[0] = (uint8_t)a; e->m[1] = (uint8_t)b; e->m[2] = (uint8_t)c;
+            e->len = a >= 0xF8u ? 1 : (a & 0xF0u) == 0xC0u || (a & 0xF0u) == 0xD0u || a == 0xF3u ? 2 : 3;
+        } else if (!strcmp(what, "key") && sscanf(line, "%*u %*s %39s %23s", e->a, e->b) == 2) e->kind = 'k';
+        else if (!strcmp(what, "preset") && sscanf(line, "%*u %*s %23s", e->b) == 1) e->kind = 'p';
+        else if (!strcmp(what, "getstate")) e->kind = 'g';
+        else if (!strcmp(what, "setstate")) e->kind = 's';
+        else { printf("FAIL run: unknown line: %s", line); fclose(f); return 1; }
+        nev++;
+    }
+    fclose(f);
+    if (!end) { printf("FAIL run: no end line\n"); return 1; }
+    frames = (uint32_t)((uint64_t)end * 44100u / 1000u) / 128u * 128u;
+    pcm = malloc(((size_t)frames + 128u) * 4u);
+    w = fopen(wav, "wb");
+    if (!pcm || !w) { printf("FAIL run: buffers\n"); return 1; }
+    load(so);
+    in = create(NULL);
+    if (!in) { printf("FAIL create\n"); return 1; }
+    api->get_param(in, "state", st, sizeof st);              /* (a state to load before the first getstate) */
+    printf("run %s: %u events, %u ms\n", script, nev, end);  /* (stdio's buffer set up before the guard) */
+    fflush(stdout);
+#ifndef NO_GUARDS
+    if (guard_no_syscalls() != 0) { printf("FAIL seccomp\n"); return 1; }
+#endif
+    i = 0;
+    while (done < frames) {
+        unsigned now = (unsigned)((uint64_t)done * 1000u / 44100u);
+        in_cb = 1;
+        for (; i < nev && ev[i].t <= now; i++) {
+            run_ev_t *e = &ev[i];
+            if (e->kind == 'm') api->on_midi(in, e->m, e->len, MOVE_MIDI_SOURCE_EXTERNAL);
+            else if (e->kind == 'k') api->set_param(in, e->a, e->b);
+            else if (e->kind == 'p') api->set_param(in, "preset", e->b);
+            else if (e->kind == 'g') api->get_param(in, "state", st, sizeof st);
+            else if (e->kind == 's') api->set_param(in, "state", st);
+        }
+        api->render_block(in, pcm + 2u * done, 128);
+        in_cb = 0;
+        done += 128u;
+    }
+    for (i = 0; i < 2u * frames; i++) { unsigned a = (unsigned)abs(pcm[i]); if (a > peak) peak = a; }
+    {   /* (write is the one syscall the guard lets through) */
+        uint32_t hdr[11] = { 0x46464952u, frames * 4u + 36u, 0x45564157u, 0x20746d66u, 16u, 0x00020001u, 44100u,
+                             44100u * 4u, 0x00100004u, 0x61746164u, frames * 4u };
+        if (write(fileno(w), hdr, sizeof hdr) != (ssize_t)sizeof hdr ||
+            write(fileno(w), pcm, (size_t)frames * 4u) != (ssize_t)((size_t)frames * 4u)) { printf("FAIL run: write\n"); return 1; }
+    }
+    CHECK(bad_alloc == 0, "%d allocations inside callbacks", bad_alloc);
+    printf("%s    run %s: %u events, %u frames, peak %u, q_full %u\n", fails ? "FAIL" : "ok", script, nev, frames, peak,
+           stat_of(in, "q_full"));
+    fflush(stdout);
+    _exit(fails != 0);                                       /* (no close: the guard allows write and exit only) */
+}
+
 /* ---- persist (M1-08): run as two processes on one folder: save, then check */
 static int persist(const char *so, const char *dir, int save)
 {
@@ -517,6 +596,7 @@ int main(int argc, char **argv)
     if (argc >= 3 && !strcmp(argv[1], "presets")) return presets(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "gatep")) return gatep(argv[2], argc > 3 ? (unsigned)atoi(argv[3]) : 10000u);
     if (argc >= 5 && !strcmp(argv[1], "eq")) return eq(argv[2], argv[3], argv[4]);
+    if (argc >= 5 && !strcmp(argv[1], "run")) return run_script(argv[2], argv[3], argv[4]);
     if (argc >= 3 && !strcmp(argv[1], "api")) return api_tests(argv[2]);
     printf("usage: test_bridge eq DSP SCRIPT HOST.wav | api DSP | keys DSP | presets DSP | gatep DSP [N]\n");
     return 2;
