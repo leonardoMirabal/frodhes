@@ -432,6 +432,59 @@ def mmio_check():
     return errors
 
 
+FLOAT_TOK = re.compile(r"\b(?:float|double|_Complex|_Imaginary)\b")
+C_LIT = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'')
+LINE_MARK = re.compile(r'^#\s*(?:line\s+)?\d+\s+"([^"]*)"')
+FLOAT_BANNED_DEFS = ("DINGHY_HOST", "DINGHY_WEB", "DINGHY_MOVE", "FR_HQ")   # (host / Move / HQ only)
+
+
+def float_check(cpp=None, board=None, root=SRC, extra=()):
+    """the FM-1 / SMK app as the compiler sees it (frodhes.c preprocessed with the build's defines) has no float or
+    double, includes nothing of firmware/src/hq/ or move/, and defines none of the host / Move / HQ switches. The link
+    failing on a soft-float call was the only guard before (and it misses dead code and a float the compiler folds);
+    this names the rule. Float literals folded into an integer constant at compile time stay allowed (fx.c's,
+    rev_*.c's LFO increments: (uint32_t)(0.37 * 32u / 44100u * 4294967296.0)): the rule is about types. Only text the
+    project owns counts (firmware/, by the preprocessor's line markers: the
+    system headers' own declarations are not ours). cpp(args, cwd) -> the preprocessor's stdout (default: the host
+    cc; main() passes the JieLi clang); extra: more flags (tests). Reads only: no output of the build changes."""
+    board = board or BOARD
+    if cpp is None:
+        def cpp(args, cwd):
+            r = subprocess.run([os.environ.get("CC", "cc"), *args], cwd=cwd, capture_output=True, text=True)
+            if r.returncode:
+                raise SystemExit("float_check: the preprocessor failed:\n" + r.stderr[-2000:])
+            return r.stdout
+    flags = [*BOARD_DEFS[board], *BOARD_APP_DEFS[board], "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen",
+             f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or "0.0"}"']   # (as build_app)
+    if board == "smk37":
+        flags.append(f'-DDATA_FAMILY="{DATA_FAMILY}"')
+    flags += os.environ.get("APP_DEFS", "").split() + os.environ.get("DINGHY_DEFS", "").split() + list(extra)
+    text = cpp(["-E", *flags, "firmware/src/frodhes.c"], root)
+    macros = cpp(["-E", "-dM", *flags, "firmware/src/frodhes.c"], root)
+    errors, cur, ours = [], "", True
+    for ln in text.splitlines():
+        m = LINE_MARK.match(ln)
+        if m:
+            cur = os.path.normpath(m.group(1)).replace(os.sep, "/")
+            if os.path.isabs(cur):
+                try:
+                    cur = Path(cur).resolve().relative_to(Path(root).resolve()).as_posix()
+                except ValueError:
+                    pass
+            ours = cur.startswith("firmware/")
+            if cur.startswith(("firmware/src/hq/", "firmware/gen/hq/", "move/")) or "/move/" in cur:
+                errors.append(f"float_check: {cur} is in the {board} build (HQ / Move code only)")
+            continue
+        if ours and ln.strip():
+            hit = FLOAT_TOK.search(C_LIT.sub('""', ln))
+            if hit:
+                errors.append(f"float_check: '{hit.group(0)}' in the {board} build, from {cur}: {ln.strip()[:120]}")
+    for d in FLOAT_BANNED_DEFS:
+        if re.search(r"^#define " + d + r"\b", macros, re.M):
+            errors.append(f"float_check: {d} is defined in the {board} build")
+    return sorted(set(errors))
+
+
 def package(board="fm1", model="pro", release=None):
     """(identity, file name) of a build. The FM-1's identity is PRODUCT for every version and dev build (the version
     is only text); a board's model name (SMK-37) changes its identity and the file name"""
@@ -490,6 +543,10 @@ def main():
     errors += hal_err
     if not hal_err:
         notes.append("register access: hal/ only (src/, loader/ clean)")
+    fl_err = float_check(lambda args, cwd: tc("cc", *args))   # (the JieLi clang's preprocessor; reads only)
+    errors += fl_err
+    if not fl_err:
+        notes.append("integers only: no float / double, no HQ / Move code (frodhes.c preprocessed)")
     if APP_OPT:
         notes.append("app built with " + " ".join(APP_OPT) + " (--o2 probe)")
     for n in notes:
