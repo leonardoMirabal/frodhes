@@ -52,8 +52,8 @@ enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, 
 #define UI_K1 '5'
 static const char *const UI_SMK_TEXT[][2] = {           /* the FM-1's text -> the SMK-37's (tests/host.c too) */
     {"K1 THRESH: UP = ON, 0 = OFF", "K5 THRESH: UP = ON, 0 = OFF"}, {"LFO BUTTON: ON / OFF", "NOTE REPEAT: ON / OFF"},
-    {"ENV BUTTON: ON / OFF", "CHORD: ON / OFF"}, {"K1: ON / OFF", "K5: ON / OFF"},
-    {"SEL: ON / OFF  K1: DIG / ANA / TAPE", "SCALE: ON/OFF  K5: DIG/ANA/TAPE"}, {"EDIT: CHORDS ON / OFF", "PARA: CHORDS ON / OFF"},
+    {"ENV BUTTON: ON / OFF", "PARA: ON / OFF"}, {"K1: ON / OFF", "K5: ON / OFF"},
+    {"SEL: ON / OFF  K1: DIG / ANA / TAPE", "SCALE: ON/OFF  K5: DIG/ANA/TAPE"}, {"EDIT: CHORDS ON / OFF", "CHORD: CHORDS ON / OFF"},
     {"ARP: ON / OFF   SEL: HOLD", "ARP: ON / OFF  SCALE: HOLD"},
     {"USB AND TRS: THE SAME CHANNEL", "USB MIDI: ONE CHANNEL OR ALL"},
     {"THE SCREEN AND THE KEY LIGHTS", "THE SCREEN AND THE LIGHTS"},

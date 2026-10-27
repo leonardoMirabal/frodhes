@@ -1084,7 +1084,7 @@ package through the stock updater.
 
 Everything in this manual applies, with these differences:
 
-- The FM-1's buttons are on the SMK buttons of the same meaning: PATCH = HOME, PARA = EDIT, CHORD = ENV,
+- The FM-1's buttons are on the SMK buttons of the same meaning: PATCH = HOME, CHORD = EDIT, PARA = ENV,
   NOTE REPEAT = LFO, SCALE = SEL, GLOBE = GLO, BT = SAVE; the others keep their names. The screen's hints use these
   names.
 - K1 is MASTER (kept when you switch off: it comes back at the level you left); K2 SELECT, K3 ALGORITHM,

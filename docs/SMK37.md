@@ -79,8 +79,8 @@ The FM-1's 14 buttons are on the SMK buttons that mean the same; the ones with a
 | SMK-37 | FM-1 | Does |
 | --- | --- | --- |
 | PATCH | HOME | PERFORM <-> the main page |
-| PARA | EDIT | CHORD page; again: chord mode on / off |
-| CHORD | ENV | PHASER page; again: on / off |
+| CHORD | EDIT | CHORD page; again: chord mode on / off |
+| PARA | ENV | PHASER page; again: on / off |
 | NOTE REPEAT | LFO | TREM/WAH page; again: on / off |
 | SCALE | SEL | DELAY page; again: on / off (arp HOLD) |
 | GLOBE | GLO | TEMPO -> SETUP -> MIDI -> DISPLAY |
