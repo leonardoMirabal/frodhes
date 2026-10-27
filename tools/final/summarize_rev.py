@@ -276,6 +276,10 @@ def main():
     for i, (n, r, k, sec) in enumerate(rows):
         if r == "COVERED?":
             by = k[len("covered by step "):].split(":")[0].split(",")
+            if all(any(x[0] == b and x[1] == "SKIPPED" for x in rows) for b in by):
+                # an ONLY= run that left out the covering step: this row is left out with it, not FAILed
+                rows[i] = (n, "SKIPPED", k + f"; {', '.join(by)} not in this run (ONLY=)", sec)
+                continue
             ok = all(any(x[0] == b and x[1] in ("PASS", "DRY OK") for x in rows) for b in by)
             rows[i] = (n, "COVERED" if ok else "FAIL", k + ("" if ok else f"; {', '.join(by)} did not PASS"), sec)
             if not ok:

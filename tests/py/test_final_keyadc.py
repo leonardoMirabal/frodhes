@@ -73,3 +73,25 @@ def test_a_failed_five_keeps_the_gate_failed(tmp_path):
 def test_an_engine_without_its_five_keeps_the_gate_failed(tmp_path):
     r, _ = summary(tmp_path, [line("rhodes", 40, 20), line("vibes", 30, 20)], {"rhodes": "PASS"})
     assert r["keyadc_gate"] == "FAIL"
+
+
+def test_an_only_run_skips_the_rows_its_left_out_step_covers(tmp_path):
+    """ONLY=keyadc_*: the rows folded into stress_48000 ('covered by step stress_48000') are left out with it
+    (SKIPPED), not FAILed as if stress_48000 had run and failed (0.9.7, the key-ADC rerun's SUMMARY.md said FAIL)"""
+    def run(stress_code, stress_note):
+        out = tmp_path / f"o{stress_code}"
+        out.mkdir()
+        (out / "run.txt").write_text("fwsc=x.fwsc\nsha256=ab\nsha256_end=ab\ntree_sha=cd\nstart=s\nend=e\n")
+        (out / "keyadc_gate.log").write_text(gate_log("PASS", [line("rhodes", 0, 20)]) + "\n")
+        (out / "stress_48000.log").write_text("# stress_48000: x\nFAIL: a click\n")
+        (out / "steps.tsv").write_text(f"stress_48000\t{stress_code}\t0\tstress\t{stress_note}\n"
+                                       "keyadc_gate\t0\t400\tkeyadc\t\n"
+                                       "silence\tnotrun\t0\tjack\tcovered by step stress_48000: folded (x)\n")
+        subprocess.run([sys.executable, os.path.join(ROOT, "tools", "final", "summarize_rev.py"), str(out)],
+                       capture_output=True)
+        md = (out / "SUMMARY.md").read_text().splitlines()
+        return md[0], [ln for ln in md if ln.startswith("| silence ")][0].split("|")[2].strip().strip("*")
+    head, silence = run("notrun", "not in ONLY=keyadc_gate")
+    assert silence == "SKIPPED" and head.endswith(": PARTIAL (ONLY: some steps not run)"), (head, silence)
+    head, silence = run("1", "")                       # the covering step ran and FAILed: the row FAILs with it
+    assert silence == "FAIL" and head.endswith(": FAIL"), (head, silence)
