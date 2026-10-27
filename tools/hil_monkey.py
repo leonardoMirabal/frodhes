@@ -69,7 +69,7 @@ LAG_MAX = 0.1                                   # (s) the clock fit's lag past L
                                                 # wrong (25 takes on the FM-1, 2026-10-26: -0.01 .. 0.05; 1012: 0.75)
 LIM_T = 24000                                   # fx.c's limiter threshold (-2.7 dBFS)
 CLAMP_RUN, CLAMP_DENSE, CLAMP_LOUD = 3, 8, 8    # the 48 kHz full-scale gate (clamp_rows)
-STRICT48 = True                                 # 0.9.7 (usb.c's knee, #38b): 0 at full scale at 48 kHz too (--old-48k: before)
+STRICT48 = True                                 # 0.9.7 (usb.c's knee, #38b): 0 at full scale at 48 kHz too
 
 
 def midi_of(line):
@@ -177,8 +177,8 @@ def dry_run(a):
           f" (+ ~3 s set-up per take); {sum(tot.values())} messages: "
           + ", ".join(f"{k} {v}" for k, v in sorted(tot.items())))
     print("gates per take: counters (hil_must.gate_counters), USB repeat / stale = 0 (hil_crackle.usb_judge), "
-          "full scale = 0 (48 kHz: no audible clamp run or spike), alive (CC 116 answers, the probe > -50 dBFS, "
-          "frames >= 98 %)")
+          "full scale = 0 (both rates; --old-48k: at 48 kHz no audible clamp run or spike), alive (CC 116 answers, "
+          "the probe > -50 dBFS, frames >= 98 %)")
     if bad:
         print(f"BAD messages: {len(bad)}; the first: {bad[:3]}")
         return 1
@@ -231,6 +231,16 @@ def clamp_rows(xi, rate, strict48=None):
     rows.append(("USB isolated clamps (spikes)", iso, f"0 (< {CLAMP_LOUD} samples >= {LIM_T} within 1 ms)",
                  "ok" if not iso else "FAIL"))
     return rows
+
+
+def saved_name(seed, rows, bad):
+    """the file a take is kept in: fail-<seed>.npz when a row failed, silent-<seed>.npz when it passed with note-ons
+    silent before its first sound (judge_audio's row: the audio is needed to classify them), else None"""
+    if bad:
+        return f"fail-{seed}.npz"
+    if any(r[0].startswith("note-ons silent") for r in rows):
+        return f"silent-{seed}.npz"
+    return None
 
 
 def rejudge(paths):
@@ -414,9 +424,9 @@ def main(argv=None):
             report.append(dict(seed=s, rows=[list(map(str, r)) for r in rows], counters=cnt))
             print(f"{time.strftime('%H:%M:%S')} seed {s}: " + ("FAIL " + "; ".join(f"{r[0]} {r[1]}" for r in bad)
                                                                 if bad else "ok"), flush=True)
-            silent = any(r[0].startswith("note-ons silent") for r in rows)
-            if bad or silent:                   # (a take with silent note-ons too: kept to classify them)
-                np.savez_compressed(os.path.join(a.out, f"{'fail' if bad else 'silent'}-{s}.npz"),
+            keep = saved_name(s, rows, bad)
+            if keep:                            # (a take with silent note-ons too: kept to classify them)
+                np.savez_compressed(os.path.join(a.out, keep),
                                     usb=np.clip(xi, -32768, 32767).astype(np.int16), fs=a.rate, events=json.dumps(ev),
                                     counters=json.dumps(cnt, default=str), lead=LEAD_S)
             if bad:

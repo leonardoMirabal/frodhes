@@ -166,3 +166,14 @@ def test_a_dead_probe_after_a_silent_first_note_fails(take1012):
 def test_a_clean_take_keeps_its_fit(take):
     xi, ev = take
     assert not [r for r in hm.judge_audio(xi, 44100, ev) if r[0].startswith("note-ons silent")]
+
+
+def test_a_take_with_silent_note_ons_is_kept():
+    """s1024 (fm096g-monkey: seed 1024 passed with 6 note-ons silent and its audio was gone): such a take is saved as
+    silent-<seed>.npz, a failing one as fail-<seed>.npz, a clean one not at all"""
+    ok = [("USB underruns", 0, "0", "ok")]
+    silent = ok + [("note-ons silent before the first sound", 6, "information", "info")]
+    fail = [("USB underruns", 3, "0", "FAIL")]
+    assert hm.saved_name(1024, silent, []) == "silent-1024.npz"
+    assert hm.saved_name(1022, fail + silent, fail) == "fail-1022.npz"
+    assert hm.saved_name(1000, ok, []) is None
