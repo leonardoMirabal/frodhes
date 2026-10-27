@@ -33,3 +33,14 @@ def test_the_summary_row(tmp_path):
     row = [ln for ln in (out / "SUMMARY.md").read_text().splitlines() if ln.startswith("| usb_onset_44100 ")]
     assert row and "| PASS |" in row[0]
     assert "44100 Hz: USB median 14.1 ms (13.1-15.2), jack 10.7 ms, USB - jack 3.4 ms, 2 notes" in row[0]
+
+
+def test_every_step_line_carries_the_host_load():
+    """run_final_rev.sh: each step's start / exit lines and its log carry the 1-minute load (a busy host starves the
+    recorder: the rig's problem, not the FM-1's)"""
+    s = open(SH, encoding="utf-8").read()
+    fn = [ln for ln in s.splitlines() if ln.startswith("load1() {")]
+    assert fn
+    r = subprocess.run(["bash", "-c", fn[0] + "\nload1"], capture_output=True, text=True, check=True)
+    assert float(r.stdout.strip()) >= 0
+    assert 'host load ${l0:-?}): $*"' in s and '# host load before / after: ${l0:-?} / $(load1)' in s

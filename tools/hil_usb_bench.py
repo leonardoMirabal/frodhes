@@ -207,6 +207,7 @@ def run(a):
         print("the bench wave is not there at its level (the bench build installed? --kind right?): stopped")
         dev.close()
         return 2
+    load0 = host_load()
     rec = hm.Rec(usb, a.rate, 2, (0, 1), secs + 5.0, switch_rate=True, sd=sd)
     try:
         time.sleep(1.0)
@@ -227,6 +228,7 @@ def run(a):
     finally:
         x = rec.stop()
         dev.close()
+    load1 = host_load()
     xi = np.clip(np.round(np.asarray(x, float) * 32768), -32768, 32767).astype(np.int16)
     tag = f"{a.kind}-{a.rate}-{a.midi}"
     np.savez_compressed(os.path.join(a.out, f"rec-{tag}.npz"), usb=xi, fs=a.rate, flags=rec.flags, kind=a.kind)
@@ -234,10 +236,18 @@ def run(a):
     rows = hm.gate_counters(acc, a.rate)
     js = dict(date=time.strftime("%Y-%m-%d %H:%M"), kind=a.kind, rate=a.rate, midi=a.midi, minutes=a.minutes,
               midi_messages=len(ev), recorder_flags=rec.flags, bench=r, counters=acc.summary(),
-              counter_rows=[list(map(str, x)) for x in rows])
+              counter_rows=[list(map(str, x)) for x in rows], load=[load0, load1])
     json.dump(js, open(os.path.join(a.out, f"report-{tag}.json"), "w"), indent=1, default=str)
     print_report(js)
     return 0 if r["ok"] and not [x for x in rows if x[3] == "FAIL"] else 1
+
+
+def host_load():
+    """the computer's 1-minute load average (a starved recorder is the rig's problem, not the FM-1's)"""
+    try:
+        return round(os.getloadavg()[0], 2)
+    except OSError:
+        return None
 
 
 def print_report(js):
@@ -261,6 +271,8 @@ def print_report(js):
         print(f"  jump at {t:.4f} s: step {s}")
     for row in js.get("counter_rows", []):
         print("  counter: " + " | ".join(row))
+    if js.get("load"):
+        print(f"host load (1 min) before / after: {js['load'][0]} / {js['load'][1]}")
     print("BENCH " + ("PASS" if r["ok"] else "FAIL"))
 
 

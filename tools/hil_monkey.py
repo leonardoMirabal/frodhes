@@ -36,6 +36,10 @@ too). A failing take is saved: OUT/fail-<seed>.npz (USB from LEAD_S before the f
 counters); a passing take with note-ons silent before its first sound as OUT/silent-<seed>.npz (to classify
 them); the seed's stream on the host: python3 tools/monkey.py --seeds N (from a fresh boot: the FM-1 carries
 the takes before it, so its sound differs).
+A take that fails an audio check is triaged in the same run (triage, ~10 s): the host build plays the same seed and is
+judged the same way, then one line in the report: HOST TOO (the host fails the same check: the test or the music),
+COUNTED (a device counter explains it) or DEVICE ONLY (the event: mono / stereo, its dB evidence, the counters); the
+host render is kept as OUT/host-<seed>.npz. Every take records the computer's 1-minute load before and after it.
 
 --rejudge FILE.npz ...: the audio gates again on saved takes, offline (no MIDI, no audio; the counters as saved).
 
@@ -243,6 +247,86 @@ def saved_name(seed, rows, bad):
     return None
 
 
+AUDIO_CHECKS = ("USB repeat / stale", "USB at full scale", "USB clamped", "USB isolated clamps", "the probe note",
+                "frames recorded")
+TRIAGE_COUNTERS = ("underruns", "missed", "overruns", "stalls", "sie_to")
+
+
+def host_load():
+    """the computer's 1-minute load average (a recorder starved by a busy host is the rig's problem, not the FM-1's)"""
+    try:
+        return round(os.getloadavg()[0], 2)
+    except OSError:
+        return None
+
+
+def event_detail(xi, rate, t, kind):
+    """one glitch at t s (recording time) described: for a repeat the run of equal frames, mono or stereo (L == R over
+    256 frames either side), and per channel how much smoother the wave is without the copies (hil_crackle's
+    evidence, dB)"""
+    import hil_crackle as hc
+    q = np.asarray(xi, np.int64)
+    f = int(round(t * rate))
+    if kind != "repeat" or not 260 <= f < len(q) - 300:
+        return f"{t:.3f} s {kind}"
+    eq = np.all(q[1:] == q[:-1], axis=1)
+    near = [i for i in range(f - 30, f + 31) if eq[i]]   # (t printed to 1 ms: +-22 frames)
+    if not near:
+        return f"{t:.3f} s repeat"
+    p0 = min(near, key=lambda i: abs(i - f))
+    while p0 > 0 and eq[p0 - 1]:
+        p0 -= 1
+    p1 = p0
+    while eq[p1]:
+        p1 += 1
+    w = q[p0 - 256:p1 + 257]
+    mono = bool((w[:, 0] == w[:, 1]).all())
+    dbs = []
+    for c in ([0] if mono else range(q.shape[1])):
+        ea, eb, _ = hc._copy_evidence(q, p0, p1, c, 256, 4)
+        dbs.append(f"ch{c} {10 * np.log10(max(ea, 1e-9) / max(eb, 1e-9)):.1f} dB")
+    return (f"{t:.3f} s repeat, {p1 - p0 + 1} equal frames, {'mono' if mono else 'stereo'}, smoother without the "
+            f"copies: {' / '.join(dbs)}")
+
+
+def triage(seed, rows, xi, rate, ev, cnt, out=None, render=None, load=None):
+    """a take that failed an audio check, classified in the same run: the host build plays the same seed (host_take,
+    the device's lead) and is judged the same way (judge_audio, at the host's 44.1 kHz). Returns the report row or None
+    (no audio check failed). The class:
+      HOST TOO     the host fails the same check: the test or the music, not the device
+      COUNTED      the host is clean and a device counter (underruns, missed, overruns, stalls, sie_to) explains it
+      DEVICE ONLY  the host is clean, every counter 0: the event (mono / stereo, its dB evidence) and the counters
+    out: the host render saved there as host-<seed>.npz (next to fail-<seed>.npz). render: host_take (tests)"""
+    import re
+    t0 = time.monotonic()
+    bad = [r[0] for r in rows if r[3] == "FAIL" and r[0].startswith(AUDIO_CHECKS)]
+    if not bad:
+        return None
+    if render is None:
+        monkey.build()
+    xh, evh = (render or host_take)(seed, lead_ms=int(1000 * LEAD_S))
+    hrows = judge_audio(xh, 44100, evh)
+    hbad = [r[0] for r in hrows if r[3] == "FAIL" and r[0].startswith(AUDIO_CHECKS)]
+    if out:
+        np.savez_compressed(os.path.join(out, f"host-{seed}.npz"), usb=np.clip(xh, -32768, 32767).astype(np.int16),
+                            fs=44100, events=json.dumps(evh), lead=LEAD_S)
+    u = (cnt or {}).get("usb") or {}
+    ctr = ", ".join(f"{k} {u.get(k, 0)}" for k in TRIAGE_COUNTERS)
+    same = [b for b in bad if b in hbad]
+    if same:
+        cls = f"HOST TOO -> test/music, not the device ({'; '.join(same)}: the host build fails it too)"
+    elif any(u.get(k, 0) for k in TRIAGE_COUNTERS):
+        cls = f"COUNTED ({'; '.join(bad)}; {ctr})"
+    else:
+        info = [r[1] for r in rows if r[0] == "the first glitches"]
+        ev1 = re.match(r"([\d.]+) s (\w+)", str(info[0])) if info else None
+        what = event_detail(xi, rate, float(ev1.group(1)), ev1.group(2)) if ev1 else "no glitch event"
+        cls = f"DEVICE ONLY ({'; '.join(bad)}; {what}; {ctr})"
+    if load is not None:
+        cls += f"; host load {load}"
+    return ("triage (the host build, the same seed)", f"{cls} [{time.monotonic() - t0:.0f} s]", "information", "info")
+
+
 def rejudge(paths):
     """the audio gates on saved takes (fail-<seed>.npz): 0 when every take passes them now"""
     bad = 0
@@ -419,9 +503,20 @@ def main(argv=None):
     report, verdict = [], "PASS"
     try:
         for s in plan(a.minutes, a.seed):
+            load0 = host_load()
             rows, xi, ev, cnt = run_take(dev, sd, usb, a, s)
+            load1 = host_load()
+            rows.append(("host load (1 min) before / after", f"{load0} / {load1}", "information", "info"))
             bad = [r for r in rows if r[3] == "FAIL"]
-            report.append(dict(seed=s, rows=[list(map(str, r)) for r in rows], counters=cnt))
+            if bad:
+                try:
+                    tri = triage(s, rows, xi, a.rate, ev, cnt, a.out, load=f"{load0} / {load1}")
+                except Exception as e:                  # (information: never stop the run on it)
+                    tri = ("triage (the host build, the same seed)", f"not run: {e!r}"[:160], "information", "info")
+                if tri:
+                    rows.append(tri)
+                    print(f"  {tri[1]}", flush=True)
+            report.append(dict(seed=s, rows=[list(map(str, r)) for r in rows], counters=cnt, load=[load0, load1]))
             print(f"{time.strftime('%H:%M:%S')} seed {s}: " + ("FAIL " + "; ".join(f"{r[0]} {r[1]}" for r in bad)
                                                                 if bad else "ok"), flush=True)
             keep = saved_name(s, rows, bad)

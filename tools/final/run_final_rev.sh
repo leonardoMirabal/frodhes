@@ -308,6 +308,9 @@ STRANDED=0
 want() { [ -z "$ONLY" ] || [[ ",$ONLY," == *",$1,"* ]]; }
 
 # step NAME KIND CMD...: runs CMD in the tree, its output to $OUT/NAME.log, a row in steps.tsv
+# load1: the computer's 1-minute load average (macOS sysctl, else /proc): in each step's lines (a busy host starves
+# the recorder: the rig's problem, not the FM-1's)
+load1() { { sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}'; awk '{print $1}' /proc/loadavg 2>/dev/null; } | head -1; }
 step() {
     local name="$1" kind="$2"; shift 2
     if ! want "$name"; then
@@ -329,8 +332,9 @@ step() {
     fi
     local t0=$SECONDS code tmo
     tmo=$(( ($(est_s "$name" "$kind") * 2 + 120) * TIMEOUT_SCALE ))
-    echo "$(date '+%H:%M:%S') $name (timeout ${tmo} s): $*"
-    { echo "# $name: $*"; echo "# $(date); timeout $tmo s"; } > "$OUT/$name.log"
+    local l0; l0="$(load1)"
+    echo "$(date '+%H:%M:%S') $name (timeout ${tmo} s, host load ${l0:-?}): $*"
+    { echo "# $name: $*"; echo "# $(date); timeout $tmo s; host load ${l0:-?}"; } > "$OUT/$name.log"
     (cd "$TREE" && exec perl -e '$t = shift; alarm $t; exec @ARGV or die "exec: $!"' "$tmo" "$@") >> "$OUT/$name.log" 2>&1
     code=$?
     local note=""
@@ -340,7 +344,8 @@ step() {
         [ "$DRY" != "1" ] && (cd "$TREE" && perl -e 'alarm 60; exec @ARGV' "$PY" tools/fm1_install.py --info) >> "$OUT/$name.log" 2>&1
     fi
     printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$code" "$((SECONDS - t0))" "$kind" "$note" >> "$OUT/steps.tsv"
-    echo "$(date '+%H:%M:%S') $name: exit $code in $((SECONDS - t0)) s${note:+ ($note)}"
+    echo "# host load before / after: ${l0:-?} / $(load1)" >> "$OUT/$name.log"
+    echo "$(date '+%H:%M:%S') $name: exit $code in $((SECONDS - t0)) s${note:+ ($note)}, host load ${l0:-?} / $(load1)"
     return 0
 }
 # est_s NAME KIND: the step's estimated seconds (its timeout: x 2 + 120, x TIMEOUT_SCALE)

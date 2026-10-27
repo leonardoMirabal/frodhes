@@ -177,3 +177,52 @@ def test_a_take_with_silent_note_ons_is_kept():
     assert hm.saved_name(1024, silent, []) == "silent-1024.npz"
     assert hm.saved_name(1022, fail + silent, fail) == "fail-1022.npz"
     assert hm.saved_name(1000, ok, []) is None
+
+
+# ---- the triage of a failing take (0.9.7): the host build on the same seed, in the same run -----------------------
+def _planted(take):
+    xi, ev = take
+    u, _, marks = hc.inject("hold", xi, None, ev, np.random.default_rng(3), k=3)
+    u = np.round(u).astype(np.int64)
+    rows = hm.judge_audio(u, 44100, ev)
+    assert _status(rows, "USB repeat / stale") == "FAIL"
+    return u, ev, rows
+
+
+ZERO = {"usb": dict(underruns=0, missed=0, overruns=0, stalls=0, sie_to=0)}
+
+
+def test_triage_a_device_only_copy(take, tmp_path):
+    u, ev, rows = _planted(take)
+    r = hm.triage(1000, rows, u, 44100, ev, ZERO, out=str(tmp_path), render=lambda s, lead_ms: take, load="1.5 / 1.7")
+    assert r[0].startswith("triage") and r[3] == "info"
+    assert r[1].startswith("DEVICE ONLY (USB repeat / stale"), r[1]
+    assert "repeat" in r[1] and "equal frames" in r[1] and "dB" in r[1] and "underruns 0" in r[1], r[1]
+    assert "stereo" in r[1] or "mono" in r[1]
+    assert "host load 1.5 / 1.7" in r[1]
+    z = np.load(tmp_path / "host-1000.npz")
+    assert len(z["usb"]) == len(take[0]) and int(z["fs"]) == 44100
+
+
+def test_triage_host_too(take):
+    u, ev, rows = _planted(take)
+    r = hm.triage(1000, rows, u, 44100, ev, ZERO, render=lambda s, lead_ms: (u, ev))
+    assert r[1].startswith("HOST TOO -> test/music, not the device"), r[1]
+
+
+def test_triage_counted(take):
+    u, ev, rows = _planted(take)
+    cnt = {"usb": dict(ZERO["usb"], underruns=2)}
+    r = hm.triage(1000, rows, u, 44100, ev, cnt, render=lambda s, lead_ms: take)
+    assert r[1].startswith("COUNTED (USB repeat / stale") and "underruns 2" in r[1], r[1]
+
+
+def test_no_triage_without_an_audio_failure(take):
+    xi, ev = take
+    rows = [("USB underruns", 3, "0", "FAIL")] + hm.judge_audio(xi, 44100, ev)
+    assert hm.triage(1000, rows, xi, 44100, ev, ZERO, render=lambda s, lead_ms: take) is None
+
+
+def test_host_load_is_a_number():
+    v = hm.host_load()
+    assert v is None or v >= 0
