@@ -797,15 +797,15 @@ BAR_PAIR(bar_pair_0h, BAR_PSTEP_H, 0)
 BAR_PAIR(bar_pair_1h, BAR_PSTEP_H, 1)
 
 static bar_ms_t bar_notube;                         /* BELL 0: a silent tube (the same work, so the same cost) */
-static void bar_pair(bar_voice_t *v, uint32_t o, uint32_t o1, uint32_t nf)   /* the sub-blocks from sample o to o1
-                                                     * (the force in those before nf), the coefficients fixed over them */
-{
+FR_RAM __attribute__((noinline)) static void bar_pair(bar_voice_t *v, uint32_t o, uint32_t o1, uint32_t nf)
+{                                                   /* the sub-blocks from sample o to o1 (the force in those before
+                                                     * nf), the coefficients fixed over them (RAM: 0.9.7) */
     bar_ms_t *s0 = &v->m[0], *s1 = v->m[1].live ? &v->m[1] : &bar_notube;
     int32_t ktbe = 0, kbte = 0, hi = 0;
     if (v->m[1].live) {
-        ktbe = bar_sat31((int64_t)v->ktb * s0->e >> 16);
+        ktbe = FR_FAR(bar_sat31)((int64_t)v->ktb * s0->e >> 16);
         hi = !s1->lo;                               /* the tube in Q30 (MARIMBA key 108; never VIBES): its own path */
-        kbte = hi ? bar_sat31((int64_t)v->kbt * s1->e >> 30) : bar_sat31((int64_t)v->kbt * s1->e >> 28);
+        kbte = FR_FAR(bar_sat31)(hi ? (int64_t)v->kbt * s1->e >> 30 : (int64_t)v->kbt * s1->e >> 28);
     }
     for (; o < o1; o += BAR_SUB) {
         int32_t *p = BAR_XT(o);
@@ -895,6 +895,30 @@ BAR_OUT(bar_out, +=, 0)
 BAR_OUT(bar_out_rad, +=, 1)
 BAR_FADE(bar_fade, +=, 0)
 BAR_FADE(bar_fade_rad, +=, 1)
+/* the output with the motor's radiation fused in (0.9.7, the discs turning: was its own pass over bar_xt, x0 += w x1
+ * >> 27, then bar_out): wd = each sub-block's w and its step, the same integers as the two passes */
+#ifdef HAL_KEEP_REG
+#define BAR_KEEP(p) HAL_KEEP_REG(p)                 /* (hal/fm1_keep.h: no instruction; the pointer kept as it steps,
+                                                     * so the loop does not index from a counter: 11, not 13) */
+#else
+#define BAR_KEEP(p) ((void)0)
+#endif
+#define BAR_OUTM(NAME, OP) \
+FR_RAM __attribute__((noinline)) static void NAME(int32_t *mix, const int32_t *x, const int32_t *wd, int32_t gain) \
+{ \
+    int32_t *e = mix + BAR_N; \
+    while (mix < e) { \
+        int32_t w = *wd++, dw = *wd++, *se = mix + BAR_SUB; \
+        while (mix < se) { \
+            int32_t y = x[0] + (int32_t)(((int64_t)w * x[1]) >> 27); \
+            w += dw; x += 3; BAR_KEEP(x); \
+            *mix OP (int32_t)(((int64_t)y * gain) >> 24); \
+            mix++; BAR_KEEP(mix); \
+        } \
+    } \
+}
+BAR_OUTM(bar_outm_w, =)
+BAR_OUTM(bar_outm, +=)
 
 /* the felt noise after a key-up (LFSR, one-pole ~2 kHz, as the Rhodes), added over its first felt_n samples */
 FR_RAM __attribute__((noinline)) static void bar_felt_pass(bar_voice_t *v, int32_t *mix)
@@ -922,7 +946,7 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
             uint32_t o = sb * BAR_SUB;
             int frc = o < nf;
             if (v->ramp) bar_damper_step(v);
-            bar_pair(v, o, o + BAR_SUB, nf);
+            FR_FAR(bar_pair)(v, o, o + BAR_SUB, nf);
             for (m = BAR_UP0; m < BAR_NM; m++) {
                 bar_ms_t *s = &v->m[m];
                 if (!s->live) continue;
@@ -931,7 +955,7 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
             }
         }
     } else {
-        bar_pair(v, 0, BAR_N, nf);
+        FR_FAR(bar_pair)(v, 0, BAR_N, nf);
         for (m = BAR_UP0; m < BAR_NM; m++) {        /* the upper modes: the whole block at once */
             bar_ms_t *s = &v->m[m];
             uint32_t o = 0;
@@ -942,18 +966,21 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
         }
     }
     {   /* + the tube's radiation, the gain into the mix (the steal fade's own loop; the felt noise a pass of its own) */
-        int32_t wt = 0, rad = v->m[1].live && bar_mot_park;   /* the discs parked open: the radiation in the output loop */
-        if (rad) wt = v->wt;
-        else if (v->m[1].live)
+        int32_t wt = 0, rad = v->m[1].live && bar_mot_park, mot = v->m[1].live && !bar_mot_park, wd[2u * BAR_NSUB];
+        if (rad) wt = v->wt;                        /* the discs parked open: the radiation in the output loop */
+        else if (mot)
             for (sb = 0; sb < BAR_NSUB; sb++) {     /* ... its weight ramped by the motor (x its make-up: up to x 2.4,
                                                      * so Q27: |wt| <= 5.8 x 2.4 / 2 < 2^31 / 2^28) */
                 int32_t w = bar_sat31(((int64_t)v->wt * bar_mot_g[sb]) >> 16);
                 int32_t dw = (bar_sat31(((int64_t)v->wt * bar_mot_g[sb + 1u]) >> 16) - w) >> 5;
                 int32_t *x = BAR_XT(sb * BAR_SUB);
-                for (j = 0; j < BAR_SUB; j++) { x[3u * j] += (int32_t)(((int64_t)w * x[3u * j + 1u]) >> 27); w += dw; }
+                wd[2u * sb] = w; wd[2u * sb + 1u] = dw;
+                if (v->fade != 32768)               /* (the steal fade: its own pass first, as before) */
+                    for (j = 0; j < BAR_SUB; j++) { x[3u * j] += (int32_t)(((int64_t)w * x[3u * j + 1u]) >> 27); w += dw; }
             }
         if (v->fade == 32768) {
             if (rad) { if (first) bar_out_rad_w(mix, bar_xt, wt, gain); else bar_out_rad(mix, bar_xt, wt, gain); }
+            else if (mot) { if (first) FR_FAR(bar_outm_w)(mix, bar_xt, wd, gain); else FR_FAR(bar_outm)(mix, bar_xt, wd, gain); }
             else { if (first) bar_out_w(mix, bar_xt, 0, gain); else bar_out(mix, bar_xt, 0, gain); }
         } else if (rad) v->fade = first ? bar_fade_rad_w(mix, bar_xt, wt, gain, v->fade) : bar_fade_rad(mix, bar_xt, wt, gain, v->fade);
         else v->fade = first ? bar_fade_w(mix, bar_xt, 0, gain, v->fade) : bar_fade(mix, bar_xt, 0, gain, v->fade);
@@ -1009,10 +1036,12 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
     }
 }
 
+#define BAR_DITH0 0x6A09E667u
+static uint32_t bar_dith = BAR_DITH0;              /* the cut to Q15's TPDF dither (its own generator) */
 __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n)   /* kept out of app_audio */
 {
-    uint32_t i, sb, j, act = 0, held = 0, ty = bar_sub < BAR_NTYPE ? bar_sub : 0u, nb = BAR_TYPE[ty].nbody;
-    int32_t mx = 0, first = 1;
+    uint32_t i, sb, j, act = 0, held = 0, ty = bar_sub < BAR_NTYPE ? bar_sub : 0u, nb = BAR_TYPE[ty].nbody, r;
+    int32_t mx = 0, first = 1, hi = 0, lo = 0, dm, a, b;
     bar_motor_block();
     bar_budget();
 #ifdef DINGHY_HOST
@@ -1026,6 +1055,9 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
         if (v->alive && v->life && --v->life == 0 && !v->pend) v->alive = 0;   /* (a stolen voice: its fade ends it,
                                                      * then starts the waiting note: BUGHUNT #21) */
     }
+    for (sb = 0, a = 0; sb < 2u; sb++) a |= bar_bd_m[sb][0] | bar_bd_m[sb][1] | bar_bd_o[sb][0] | bar_bd_o[sb][1] | bar_bd_e[sb];
+    dm = first && !bar_nz_e && !a ? 0 : -1;         /* (silent: no voice, no noise, the EQ at rest: no dither, the
+                                                     * output stays exact 0, at boot too) */
     if (first) for (i = 0; i < BAR_N; i++) bar_mono[i] = 0;   /* no voice: silence (+ the contact noise's tail) */
     if (bar_nz_e) {                                 /* contact noise: LFSR -> two biquads (Q14, transposed DF2) x the
                                                      * envelope (tau ~ 23 ms); off, and exactly silent, under 1/2 LSB */
@@ -1052,7 +1084,10 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
         bar_h_blk_mul += 11u * n;
 #endif
     }
-    for (j = 0; j < n; j++) {                       /* the type's room / mic EQ (Q28 DF1, 0..2 biquads); Q20 -> Q15 */
+    r = dm ? bar_dith : BAR_DITH0;                  /* (silent: the dither starts over, a take from silence is
+                                                     * the same integers every time) */
+    for (j = 0; j < n; j++) {                       /* the type's room / mic EQ (Q28 DF1, 0..2 biquads); Q20 -> Q15,
+                                                     * TPDF dithered (rhodes.c RH_DITH, GitHub #16) */
         int32_t o = bar_mono[j];
         for (sb = 0; sb < nb; sb++) {
             const int32_t *b = BAR_BODY[ty][sb];
@@ -1063,10 +1098,13 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
             bar_bd_m[sb][1] = bar_bd_m[sb][0]; bar_bd_m[sb][0] = o; bar_bd_o[sb][1] = bar_bd_o[sb][0]; bar_bd_o[sb][0] = y;
             o = y;
         }
-        o = (o + 16) >> 5;
-        if (iabs(o) > mx) mx = iabs(o);
-        mono_out[j] = o;
+        if (o > hi) hi = o;
+        if (o < lo) lo = o;
+        { int32_t d = RH_DITH(r); mono_out[j] = (o + 16 + ((d - 16) & dm)) >> 5; }
     }
+    bar_dith = dm ? r : BAR_DITH0;
+    a = (hi + 16) >> 5; b = (15 - lo) >> 5;         /* max |round(x)|, undithered: the silence test as before */
+    mx = a > b ? a : b;
     for (i = 0; i < BAR_NV; i++)
         if (bv[i].alive) { act |= 1u << i; bar_notes[i] = bv[i].note; if (bv[i].held) held |= 1u << i; }
     if (!act && mx < 2) {

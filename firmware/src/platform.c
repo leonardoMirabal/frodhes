@@ -462,6 +462,14 @@ static __attribute__((noinline)) void isr_stats(uint32_t t0, uint32_t t1, uint32
 
 /* Frodhes: the block's MASTER pass with the gain ramping from master_prev to m (the loops below, a gain a frame) */
 static int32_t master_prev = -1;
+/* Frodhes (0.9.7, #8): the jack after MASTER keeps the product's low bits (x * g >> (12 - APP_OUT_SHIFT)) instead of
+ * cutting it to 16 bits first ((x * g >> 12) << APP_OUT_SHIFT: a -95 dBFS error with a DC part under the codec's
+ * floor); the clamp at the same ceiling, 32767 << APP_OUT_SHIFT. No overflow: |x| <= 32767 (or the app's sample, as
+ * before), g <= 4096. The USB tap's samples are the 16-bit ones, unchanged */
+#define MASTER_JACK_SH (12 - (int32_t)APP_OUT_SHIFT)
+#define TAIL_JACK(x) ((x) > (32767 << APP_OUT_SHIFT) ? (32767 << APP_OUT_SHIFT) : \
+                      (x) < -(32767 << APP_OUT_SHIFT) ? -(32767 << APP_OUT_SHIFT) : (x))
+_Static_assert(APP_OUT_SHIFT <= 12u, "the jack: MASTER's Q12 product shifted right by 12 - APP_OUT_SHIFT");
 #define TAIL_PRE(x) ((x) > 32767 ? 32767 : (x) < -32767 ? -32767 : (x))
 static __attribute__((noinline)) void master_ramp(int32_t *o, int32_t m)
 {
@@ -473,11 +481,18 @@ static __attribute__((noinline)) void master_ramp(int32_t *o, int32_t m)
             int32_t g, k, x;
             mq += dm; g = mq >> 8;
             for (k = 0; k < 2; k++) {           /* (both channels, either order of the gain and the clip below) */
+                int32_t p;
                 x = c[k];
-                if (!usb_pre_master) x = (x * g) >> 12;
-                x = TAIL_PRE(x);
-                q[k] = x;
-                c[k] = (usb_pre_master ? (x * g) >> 12 : x) << APP_OUT_SHIFT;
+                if (usb_pre_master) {
+                    x = TAIL_PRE(x);
+                    q[k] = x;
+                    c[k] = (x * g) >> MASTER_JACK_SH;
+                } else {
+                    p = x * g;
+                    x = p >> 12;
+                    q[k] = TAIL_PRE(x);
+                    c[k] = TAIL_JACK(p >> MASTER_JACK_SH);
+                }
             }
         }
         UAC_ONLY(uac_tap(q - 64, 32u));
@@ -523,16 +538,19 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
                 for (i = 0; i < 32u; i++, c += 2, q += 2) {
                     int32_t l = TAIL_PRE(c[0]), r = TAIL_PRE(c[1]);
                     q[0] = l; q[1] = r;
-                    c[0] = ((l * m) >> 12) << APP_OUT_SHIFT;
-                    c[1] = ((r * m) >> 12) << APP_OUT_SHIFT;
+                    c[0] = (l * m) >> MASTER_JACK_SH;   /* (0.9.7, #8: 24 bits on the jack) */
+                    c[1] = (r * m) >> MASTER_JACK_SH;
                 }
             } else {                            /* the computer records what the speaker plays */
                 for (i = 0; i < 32u; i++, c += 2, q += 2) {
-                    int32_t l = (c[0] * m) >> 12, r = (c[1] * m) >> 12;
+                    int32_t pl = c[0] * m, pr = c[1] * m, l = pl >> 12, r = pr >> 12;
                     l = TAIL_PRE(l); r = TAIL_PRE(r);
                     q[0] = l; q[1] = r;
-                    c[0] = l << APP_OUT_SHIFT;  /* Q15 -> 24 bit: 7 = a -6 dBFS ceiling (Dinghy), 8 = full scale */
-                    c[1] = r << APP_OUT_SHIFT;
+                    /* Q15 x Q12 -> 24 bit: APP_OUT_SHIFT 7 = a -6 dBFS ceiling (Dinghy), 8 = full scale; 0.9.7 (#8):
+                     * the product's low bits kept on the jack, clamped at the same ceiling */
+                    pl >>= MASTER_JACK_SH; pr >>= MASTER_JACK_SH;
+                    c[0] = TAIL_JACK(pl);
+                    c[1] = TAIL_JACK(pr);
                 }
             }
             UAC_ONLY(uac_tap(q - 64, 32u));

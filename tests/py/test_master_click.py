@@ -94,3 +94,26 @@ def test_master_does_not_click(chord_raw, case, level, pre, pass_us):
     print(f"#12 {case:6s} {level:4s} pre {pre} pass {pass_us:4d} us: 0.9.5 {old:6.2f}  0.9.6 {new:6.2f}")
     assert new <= LIMIT, (case, level, pre, pass_us, old, new)
     assert old > 2 * LIMIT, ("the check sees 0.9.5's step", case, level, old)
+
+
+@pytest.mark.parametrize("pre", [0, 1])
+@pytest.mark.parametrize("k0", [60, 150, 500, 1023])
+def test_jack_keeps_24_bits_after_master(chord_raw, pre, k0):
+    """#8 (0.9.7): the jack after MASTER is x * m >> 4 (24 bits), no longer (x * m >> 12) << 8 (16 bits: an error up
+    to one 16-bit step, -0.5 of it as DC, ~-95 dBFS). The platform.c code (mode 3: the ramp, the jack's 24 bits),
+    against the exact product: under one 24-bit step, no DC; 0.9.6's cut has the 16-bit error. With the shift back to
+    Q15 (mode 1) the samples are the same as before (the old >> 12 exactly)"""
+    tmp, raw, exe = chord_raw
+    x = np.fromfile(raw, dtype=np.int16).reshape(-1, 2).astype(np.int64)
+    m = (k0 * k0) >> 8
+    y = jack(chord_raw, 3, pre, 200, k0, []).astype(np.int64)
+    exact = x * m * 256 / 4096.0                       # the product at 24 bits, unrounded
+    err = y - exact
+    assert (err <= 0).all() and (err > -1).all()      # floor: under one 24-bit step
+    old = ((x * m) >> 12) << 8                         # 0.9.6: cut to 16 bits first
+    eo = old - exact
+    loud = np.abs(x).max(axis=1) > 64
+    assert eo[loud].mean() < -64 and eo.min() <= -200, (eo.mean(), eo.min())    # its DC and its 16-bit steps
+    assert abs(err.mean()) < 1
+    q15 = jack(chord_raw, 1, pre, 200, k0, []).astype(np.int64)
+    assert (q15 == ((x * m) >> 12)).all()             # the old Q15 view: unchanged

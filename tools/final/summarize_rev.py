@@ -276,19 +276,29 @@ def main():
     for i, (n, r, k, sec) in enumerate(rows):
         if r == "COVERED?":
             by = k[len("covered by step "):].split(":")[0].split(",")
+            if all(any(x[0] == b and x[1] == "SKIPPED" for x in rows) for b in by):
+                # an ONLY= run that left out the covering step: this row is left out with it, not FAILed
+                rows[i] = (n, "SKIPPED", k + f"; {', '.join(by)} not in this run (ONLY=)", sec)
+                continue
             ok = all(any(x[0] == b and x[1] in ("PASS", "DRY OK") for x in rows) for b in by)
             rows[i] = (n, "COVERED" if ok else "FAIL", k + ("" if ok else f"; {', '.join(by)} did not PASS"), sec)
             if not ok:
                 t1_ok = False
-    if "keyadc_gate" in names and "keyadc_rhodes5" in names:      # TEST-PLAN 3b: 5 Rhodes runs before a FAIL counts
-        g, r5 = rows[names.index("keyadc_gate")], rows[names.index("keyadc_rhodes5")]
+    five = [n for n in names if re.fullmatch(r"keyadc_(\w+)5", n) and n != "keyadc_gate"]
+    if "keyadc_gate" in names and five:     # TEST-PLAN 3b: an engine's 5 runs before its FAIL counts (0.9.7: every engine)
+        g = rows[names.index("keyadc_gate")]
         glog = read(os.path.join(OUT, "keyadc_gate.log"))
         bad = set(re.findall(r"^  (\w+)\s+OFF.*FAIL", glog, re.M))
         own = "a run's own verdict FAILED" in glog
-        if g[1] == "FAIL" and bad == {"rhodes"} and not own and r5[1] == "PASS":
-            rows[names.index("keyadc_gate")] = (g[0], "PASS", g[2] + "; the Rhodes FAILed on 3 runs, PASSed on 5 "
-                                                "(keyadc_rhodes5; TEST-PLAN 3b)", g[3])
-        rows[names.index("keyadc_rhodes5")] = (r5[0], "INFO" if r5[1] == "PASS" else r5[1], r5[2], r5[3])
+        passed5 = {n[len("keyadc_"):-1] for n in five if rows[names.index(n)][1] == "PASS"}
+        if g[1] == "FAIL" and bad and bad <= passed5 and not own:
+            who = ", ".join(e.capitalize() if e == "rhodes" else e.upper() for e in sorted(bad))
+            rows[names.index("keyadc_gate")] = (g[0], "PASS", g[2] + f"; {who} FAILed on 3 runs, PASSed on 5 ("
+                                                + ", ".join(f"keyadc_{e}5" for e in sorted(bad)) + "; TEST-PLAN 3b)",
+                                                g[3])
+        for n in five:
+            r5 = rows[names.index(n)]
+            rows[names.index(n)] = (r5[0], "INFO" if r5[1] == "PASS" else r5[1], r5[2], r5[3])
     for k, v in cpu_r.items():
         if len(v) > 1:
             notes.insert(0, f"{k}: {len(v)} runs, worst {rng([a for a, _ in v])} us, whole ISR {rng([b for _, b in v])}"

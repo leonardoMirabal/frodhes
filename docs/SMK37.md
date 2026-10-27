@@ -36,7 +36,10 @@ two reads and check that the calibration record (`trimdat`) is in them. Do this 
 python3 tools/fm1_install.py frodhes-smk37-experimental.fwsc
 ```
 
-The installer knows the SMK-37's names. From 0.9.6 Frodhes keeps its settings, user presets and pattern, and stages
+The installer knows the SMK-37's names. On the computer the unit is called **Frodhes SMK-37 Pro** (Frodhes SMK-37
+Elite, Frodhes MKE-P37), its MIDI port and its audio input alike, with a USB product id of its own for each model:
+a computer that knew it under the stock name sets it up as a new device by itself. The community firmware flasher
+finds it under that name for its DOWNLOAD MODE. From 0.9.6 Frodhes keeps its settings, user presets and pattern, and stages
 its updates, only in 0xEB000-0xF3FFF: flash that no region of the stock firmware's own table uses (between its user
 data, 0xC2000-0xEAFFF, and its resources at 0xF4000). It writes nothing of the stock firmware's settings area
 (0x9D000-0xBFFFF), nor the calibration, the Bluetooth pairing or the stock resources.
@@ -79,8 +82,8 @@ The FM-1's 14 buttons are on the SMK buttons that mean the same; the ones with a
 | SMK-37 | FM-1 | Does |
 | --- | --- | --- |
 | PATCH | HOME | PERFORM <-> the main page |
-| PARA | EDIT | CHORD page; again: chord mode on / off |
-| CHORD | ENV | PHASER page; again: on / off |
+| CHORD | EDIT | CHORD page; again: chord mode on / off |
+| PARA | ENV | PHASER page; again: on / off |
 | NOTE REPEAT | LFO | TREM/WAH page; again: on / off |
 | SCALE | SEL | DELAY page; again: on / off (arp HOLD) |
 | GLOBE | GLO | TEMPO -> SETUP -> MIDI -> DISPLAY |

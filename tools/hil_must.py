@@ -287,6 +287,8 @@ def gate_counters(acc, stream_rate):
                 not flowing)
         for k in ("underruns", "missed", "overruns"):
             row(f"USB {k}", u.get(k, 0), "0", u.get(k, 0) == 0)
+        if "sie_to" in u:                       # (0.9.7 on: a timed-out SIE access in the EP4 poll, CC 116 item 21)
+            row("USB SIE timeouts (EP4 polls)", u["sie_to"], "0", u["sie_to"] == 0)
         if stream_rate:
             lo = u.get("fill_low")
             row("USB ring low point (frames)", lo, f">= {packet(stream_rate)} (one packet)",
@@ -462,7 +464,11 @@ class Dev:
         ins = [n for n in mido.get_input_names() if any(k in n.lower() for k in hs.PORT_KEYS)]
         if not outs or not ins:
             raise NoDevice("no FM-1 MIDI port")
-        self.out, self.inp, self.lock = mido.open_output(outs[0]), mido.open_input(ins[0]), threading.Lock()
+        import fm1_midi
+        self.out = fm1_midi.ChannelOut(mido.open_output(outs[0]))   # every channel message on FRODHES_MIDI_CH (8)
+        self.raw = self.out.raw                                     # the port itself (the monkey's own channels)
+        self.inp, self.lock = mido.open_input(ins[0]), threading.Lock()
+        print(fm1_midi.say(self.out.ch), flush=True)
 
     def send(self, kind, a, b=0):
         M = self.mido.Message

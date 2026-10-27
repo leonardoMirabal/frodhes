@@ -360,6 +360,7 @@ def run_device(a):
     ev, marks, dur = script()
     with lock.Lock("DEVICE", who="hil_midi_parity", why="USB vs TRS MIDI", wait_s=a.lock_wait):
         rig = H.Rig()
+        rig.out = getattr(rig.out, "raw", rig.out)   # the port itself: find_channel picks the channels
         cap = rig.capture()
         ring, stream = cap.rings["usb"], cap.streams["usb"]
         fs = ring.sr

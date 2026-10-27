@@ -135,3 +135,21 @@ def test_smk_texts_no_longer_than_the_fm1s():
     for fm1, smk in pairs:
         assert len(smk) <= max(len(fm1), 29), (fm1, smk)
         assert fm1 in src.replace(tab, ""), fm1  # (the FM-1 text is one the UI really shows)
+
+
+def test_chord_and_para_buttons():
+    """GitHub #17: the printed CHORD button (matrix 0x45) is the FM-1's EDIT (id 13: the CHORD page), PARA (0x55) its
+    ENV (id 9: the PHASER page); each button's LED goes with it (CHORD 0x08, PARA 0x19), and the hints name them so"""
+    h = open(os.path.join(ROOT, "firmware", "hal", "smk_input.h")).read()
+
+    def table(name):
+        body = re.search(name + r"\[[A-Z0-9_]+\] = \{([^}]*)\}", h).group(1)
+        return [int(v, 16) for v in re.findall(r"0x[0-9a-fA-F]+", body)]
+    btn, led = table("SMK_BTNC"), table("SMK_LEDC")
+    assert len(btn) == 18 and len(led) == 19
+    assert btn[13] == 0x45 and btn[9] == 0x55, "CHORD (0x45) must be id 13 (EDIT), PARA (0x55) id 9 (ENV)"
+    assert led[13] == 0x08 and led[9] == 0x19
+    assert len(set(btn)) == 18 and len(set(led)) == 19
+    src = open(os.path.join(ROOT, "firmware", "src", "ui.c")).read()
+    tab = dict(re.findall(r'\{"([^"]*)", "([^"]*)"\}', re.search(r"UI_SMK_TEXT\[\]\[2\] = \{(.*?)\n\};", src, re.S).group(1)))
+    assert tab["EDIT: CHORDS ON / OFF"].startswith("CHORD:") and tab["ENV BUTTON: ON / OFF"].startswith("PARA:")

@@ -174,7 +174,7 @@ def main():
         set_chord(OFF)
         fp0 = fp_take()
         say(f"the start sound: {fp0['level_db']:.1f} dB (its fingerprint, for the restore)")
-        m.dev.send("pc", 0)                            # F01: a clean sound (CHANNEL ALL: channel 1 is heard)
+        m.dev.send("pc", 0)                            # F01: a clean sound (on FRODHES_MIDI_CH, tools/fm1_midi.py)
         time.sleep(0.4)
         m.dev.cc(CC_NOISE, 0)
         time.sleep(SAVE_WAIT_S)                        # (the setup's save: F01 the sound last loaded)

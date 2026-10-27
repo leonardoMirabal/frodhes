@@ -3,6 +3,7 @@
 """One command for a whole Frodhes release (AGENTS.md section 9), stopping at the first failure.
 
     tools/release.py [patch|minor|X.Y.Z] [--dry-run] [--no-device [--device-done JSON]] [--full] [--no-emulator] [--yes]
+    tools/release.py X.Y.Z --after-merge [--no-emulator] [--yes]   after the release PR's merge: tag and publish
     tools/release.py [X.Y.Z] --verify-only      step 9 alone, against a published release (read-only)
     tools/release.py --web-selftest [DIST [X.Y.Z]]   the emulator selftest alone (ci.yml / release.yml, job web)
 
@@ -33,8 +34,13 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
                  (the screenshots = what the code draws); the fragments assembled into docs/releases/vX.Y.Z.md (shown in
                  full), then the release commit: the notes added, the fragments removed
  6 confirm       what will be pushed, then "Publish X.Y.Z? [y/N]" (--yes skips the prompt). --dry-run stops here.
- 7 publish       push main, wait for ci on that commit (every job green), tag and push the tag, wait for the
-                 release workflow, download the asset and compare its sha256 with the local build
+ 7 publish       main is protected (enforce_admins: nobody pushes to it, an admin neither), so the release commit
+                 goes in through a pull request: a normal run pushes nothing and stops here with the commands (push
+                 the branch release-X.Y.Z, open the PR, merge it once every CI job is green; exit 3, "handed off").
+                 --after-merge, on main = origin/main with the release commit merged (its git tree, so nothing else
+                 came in): steps 3-5 are the release build alone, its sha256 = the one the release commit records;
+                 then wait for ci on main (or reuse the PR's green run on the same tree), tag and push the tag, wait
+                 for the release workflow, download the asset and compare its sha256 with the local build
  8 emulator      (--no-emulator skips it) release.yml already built web/dist from the tag, ran the Playwright selftest
                  (Chromium + WebKit, 1280 and 390 px) and deployed it to gh-pages before publishing the release
                  (tools/deploy_pages.sh): here only the live files' sha256 = gh-pages's, and gh-pages's index.html /
@@ -80,7 +86,6 @@ LATEST_DL = f"https://github.com/{REPO}/releases/latest/download/{STABLE}"
 PY = os.path.join(".local", "venv", "bin", "python")
 CPU_LIMIT_US = 4500
 JACK_PEAK_MIN_DB = -27.0          # the loud chord peaks near -15 dBFS on the jack; far below = not connected
-TRAILER = "Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"   # (no session links: a public repo)
 STEPS = ["version", "preconditions", "host", "FM-1", "docs", "confirm", "publish", "emulator", "verify"]
 SCAN_SET = "silence,latency,keyboard,velocity,sustain,held_tail,stress,presets"
 ENGINES = ("rhodes", "vibes", "marimba")
@@ -100,6 +105,22 @@ MARIMBA_INFO = {("marimba_vel", "keys C2..C7: level span"):
 
 class Stop(Exception):
     pass
+
+
+class Handoff(Exception):
+    """step 7 without --after-merge: the release commit is ready, the PR is the user's (nothing pushed)"""
+
+
+def pr_steps(ver, head):
+    """what the user does between the two runs (main is protected: the release goes in through a PR)"""
+    return (f"the release commit {head[:10]} is local and nothing was pushed: main is protected (enforce_admins), so it "
+            f"goes in through a pull request. Next (the user, or the session with the user's OK):\n"
+            f"  git push origin HEAD:refs/heads/release-{ver}\n"
+            f"  gh pr create --base main --head release-{ver} --title \"Frodhes {ver}\" --body-file docs/releases/v{ver}.md\n"
+            f"  every CI job green, then merge it (a merge commit or a fast-forward, not a squash: main's tree must be "
+            f"this commit's)\n"
+            f"  git fetch origin && git merge --ff-only origin/main\n"
+            f"  tools/release.py {ver} --after-merge [--yes]      (tags main, waits for release.yml, verifies)")
 
 
 # ---- the shell (tests replace sh) ----
@@ -166,9 +187,15 @@ def parse_args(argv):
                          "equals the release build's and the tiers cover the ones this release needs")
     ap.add_argument("--no-emulator", action="store_true", help="skip publishing the web emulator")
     ap.add_argument("--yes", action="store_true", help="publish without the prompt")
+    ap.add_argument("--after-merge", action="store_true",
+                    help="the release PR is merged: on main = origin/main, the release build's sha256 against the one "
+                         "the release commit records, then tag, release.yml, verify (steps 4 and 5 were done before "
+                         "the PR)")
     ap.add_argument("--verify-only", action="store_true",
                     help="only step 9 against a published release (X.Y.Z, or the latest tag); read-only")
     a = ap.parse_args(argv)
+    if a.after_merge and (a.dry_run or a.verify_only or a.version in ("patch", "minor")):
+        ap.error("--after-merge needs the version X.Y.Z (the release commit's), without --dry-run / --verify-only")
     if a.version not in ("patch", "minor"):
         try:
             parse_version(a.version)
@@ -183,7 +210,7 @@ class Release:
     def __init__(self, a):
         self.a = a
         self.results = {}           # step number -> (status, evidence)
-        self.ver = self.prev = self.sha = self.head = None
+        self.ver = self.prev = self.sha = self.head = self.recorded_sha = None
         self.frags = []             # docs/changes/ (step 2)
         self.tmap = None            # the tiers this release needs (tiers(), from step 4)
 
@@ -245,6 +272,8 @@ class Release:
                                 f"{changes.DIR}/<topic>.md; see CONTRIBUTING.md)")
             else:
                 ev.append(f"{changes.DIR}/: {len(self.frags)} fragment(s), well formed ({names})")
+        if self.a.after_merge:
+            problems += self.merged_problems(notes, ahead, behind, ev)
         if problems:
             msg = "\n".join(ev + ["PROBLEM: " + p for p in problems])
             if self.a.dry_run:
@@ -252,9 +281,48 @@ class Release:
             raise Stop(msg)
         return "\n".join(ev)
 
+    def release_commit(self, notes):
+        """the commit that added docs/releases/vX.Y.Z.md (the release commit of the first run), or None"""
+        return out(["git", "log", "-1", "--format=%H", "--diff-filter=A", "--", notes]) or None
+
+    def merged_problems(self, notes, ahead, behind, ev):
+        """--after-merge: main = origin/main, the notes committed (no fragments), main's tree = the release commit's"""
+        p = []
+        if ahead != "0":
+            p.append(f"{ahead} local commit(s) not on origin/main: --after-merge tags what the PR put on main")
+        if not os.path.exists(os.path.join(ROOT, notes)) or self.frags:
+            p.append(f"{notes} is not committed with the fragments removed: run the release without --after-merge "
+                     f"first (it makes the release commit), then the PR")
+            return p
+        rc = self.release_commit(notes)
+        if not rc:
+            p.append(f"no commit added {notes}")
+            return p
+        t_rc, t_head = out(["git", "rev-parse", rc + "^{tree}"]), out(["git", "rev-parse", "HEAD^{tree}"])
+        if t_rc != t_head:
+            p.append(f"main's tree {t_head[:10]} is not the release commit {rc[:10]}'s ({t_rc[:10]}): something else "
+                     f"was merged after it, so main is not what was tested")
+        m = re.search(r"release build sha256 ([0-9a-f]{64})", out(["git", "log", "-1", "--format=%B", rc]))
+        if not m:
+            p.append(f"the release commit {rc[:10]} records no release build sha256")
+        else:
+            self.recorded_sha = m.group(1)
+            ev.append(f"--after-merge: the release commit {rc[:10]} merged, main's tree = its tree; it records the "
+                      f"release build sha256 {self.recorded_sha[:16]}...")
+        return p
+
     # 3
     def s_host(self):
         ev = []
+        if self.a.after_merge:              # (the tests ran before the PR, on this tree: the build alone)
+            sh(["./build.sh", "--release", self.ver], timeout=3600)
+            fw = os.path.join(ROOT, "build", f"frodhes-{self.ver}.fwsc")
+            self.sha = sha256(fw)
+            if self.sha != self.recorded_sha:
+                raise Stop(f"the release build's sha256 {self.sha} is not the one the release commit records "
+                           f"({self.recorded_sha}): not the build that was tested")
+            return (f"--after-merge: ./build.sh --release {self.ver}: sha256 {self.sha} = the release commit's (the "
+                    f"host tests and the FM-1 tiers ran on this build before the PR)")
         for cmd in (["make", "test"], ["make", "pytest", "PY=" + PY], [PY, "tools/gate_r.py"],
                     ["./build.sh", "--release", self.ver]):
             t0 = time.time()
@@ -356,7 +424,7 @@ class Release:
             dev = self.device_done() or "FM-1: NOT tested (--no-device)"
         msg = (f"Release {self.ver}: the notes {notes}, assembled from {changes.DIR}/ (the fragments removed)"
                f"\n\nTested by tools/release.py: host (make test, make pytest, gate_r, the release build sha256 "
-               f"{self.sha}); {dev}.\n{body}\n\n{TRAILER}\n")
+               f"{self.sha}); {dev}.\n{body}\n")
         if out(["git", "diff", "--cached", "--name-only"]):
             sh(["git", "commit", "-q", "-F", "-"], input=msg)
         self.head = out(["git", "rev-parse", "HEAD"])
@@ -367,10 +435,15 @@ class Release:
     def s_confirm(self):
         commits = out(["git", "log", "--oneline", "origin/main..HEAD"]) or "(none)"
         files = out(["git", "diff", "--stat", "origin/main..HEAD"]) or "(none)"
-        self.log(f"to push to origin main:\n{commits}\n{files}\nthen the tag v{self.ver} at {self.head[:10]}")
+        if self.a.after_merge:
+            self.log(f"main {self.head[:10]} (= origin/main, the release PR merged): the tag v{self.ver} goes there")
+        else:
+            self.log(f"for the release PR into main (step 7 pushes nothing: it prints the commands):\n{commits}\n"
+                     f"{files}\nthen, after the merge, the tag v{self.ver}")
         if self.a.dry_run:
-            return "DRY-RUN: stopped before any push. A real run would now ask \"Publish %s? [y/N]\", then 7 push " \
-                   "main + wait for ci (or reuse a green run on the same git tree), tag v%s + wait for the " \
+            return "DRY-RUN: stopped before any push. A real run would now ask \"Publish %s? [y/N]\", then 7 print " \
+                   "the release PR's commands (nothing pushed: main is protected); after the merge, --after-merge: " \
+                   "wait for ci (or reuse the PR's green run on the same git tree), tag v%s + wait for the " \
                    "release workflow, compare the asset's sha256; " \
                    "8 the emulator%s; 9 verify on GitHub." % (self.ver, self.ver,
                                                              " (skipped: --no-emulator)" if self.a.no_emulator else "")
@@ -385,8 +458,9 @@ class Release:
     def s_publish(self):
         tag = "v" + self.ver
         ev = []
-        sh(["git", "push", "origin", "HEAD:main"])
-        ev.append(f"pushed main {self.head[:10]}")
+        if not self.a.after_merge:          # main is protected: never pushed here (the PR is the user's)
+            raise Handoff(pr_steps(self.ver, self.head))
+        ev.append(f"main {self.head[:10]} = origin/main (the release PR merged; nothing pushed to main)")
         # a green ci.yml run on a commit with the identical git tree (the PR's head, when main is GitHub's merge
         # commit of it) is the same code: reuse it instead of waiting ~38 min for a second run on main's new sha
         ev.append(same_tree_run("ci.yml", self.head) or wait_run("ci.yml", self.head))
@@ -422,13 +496,16 @@ class Release:
         head = out(["git", "log", "-1", "--format=%h %s", "FETCH_HEAD"])
         ev = [f"release.yml deployed the emulator before publishing (tools/deploy_pages.sh, tools/pages_wait.sh): verify only; gh-pages {head}"]
         want = {f: blob_sha("FETCH_HEAD", f) for f in WEB_FILES}
-        for f in ("index.html", "app.js"):              # web/build.sh copies these two unchanged
+        for f in ("index.html", "app.js", "fm1install.js", "install.js"):   # web/build.sh copies these unchanged
             if want[f] != blob_sha(tag, "web/" + f):
                 raise Stop(f"gh-pages {f} is not {tag}'s web/{f}: the emulator was not deployed from {tag}")
         stamp = hashlib.sha256(f'window.FRODHES_VERSION = "{self.ver}";\n'.encode()).hexdigest()
         if want["version.js"] != stamp:
             raise Stop(f"gh-pages version.js does not say {self.ver} (web/build.sh --release {self.ver})")
         ev.append(f"gh-pages index.html, app.js = {tag}'s web/; version.js says {self.ver}")
+        if self.sha and want["frodhes.fwsc"] != self.sha:
+            raise Stop(f"gh-pages frodhes.fwsc {want['frodhes.fwsc']} is not the release's package {self.sha}")
+        ev.append(f"gh-pages frodhes.fwsc = the release's package (the page's installer)")
         ev.append(wait_live(want, self.log))
         return "\n".join(ev)
 
@@ -442,6 +519,8 @@ class Release:
         if out(["git", "-C", pages, "rev-parse", "--abbrev-ref", "HEAD"]) != "gh-pages":
             raise Stop(f"{pages} is not the gh-pages worktree")
         sh(["git", "-C", pages, "pull", "-q", "--ff-only", "origin", "gh-pages"])
+        sh(["sh", os.path.join(ROOT, "tools", "web_firmware.sh"), os.path.join(ROOT, "build", f"frodhes-{self.ver}.fwsc"),
+            dist, self.ver])
         sh(["sh", os.path.join(ROOT, "tools", "deploy_pages.sh"), dist, pages, self.ver])
         local = {f: sha256(os.path.join(dist, f)) for f in sorted(os.listdir(dist))}
         ev.append(f"gh-pages {out(['git', '-C', pages, 'rev-parse', '--short', 'HEAD'])} pushed ({len(local)} files)")
@@ -529,7 +608,7 @@ class Release:
         if self.a.no_device and not self.a.verify_only:
             print("\n" + "!" * 78 + "\n!!  --no-device: the FM-1 is NOT tested in this run (step 4 skipped)\n"
                   + "!" * 78, flush=True)
-        failed = False
+        failed = handed = False
         if self.a.verify_only:
             tags = out(["git", "tag", "--sort=-v:refname", "--list", "v*"]).split()
             self.ver = ("%d.%d.%d" % parse_version(self.a.version) if self.a.version not in ("patch", "minor")
@@ -537,10 +616,15 @@ class Release:
         for i, fn in enumerate(plan, 1):
             name = STEPS[i - 1]
             skip = ("--verify-only" if self.a.verify_only and i != 9 else
+                    "--after-merge: done before the PR (the release commit records it)" if i in (4, 5) and
+                    self.a.after_merge else
                     "--no-device" if i == 4 and self.a.no_device and not self.a.device_done else "--no-emulator" if i == 8 and self.a.no_emulator
                     else "--dry-run" if i > 6 and self.a.dry_run and not self.a.verify_only else None)
             if failed:
                 self.results[i] = ("not run", "an earlier step failed")
+                continue
+            if handed:
+                self.results[i] = ("not run", f"after the PR's merge: tools/release.py {self.ver} --after-merge")
                 continue
             if skip:
                 self.results[i] = ("skipped", skip)
@@ -561,13 +645,18 @@ class Release:
                 self.results[i] = (st, ev)
                 self.log(ev)
                 print(f"[{i}/9] {name}: {'PASS' if st == 'done' else 'WARN (dry-run)'}", flush=True)
+            except Handoff as e:
+                self.results[i] = ("handoff", str(e))
+                self.log(str(e))
+                print(f"[{i}/9] {name}: HANDED OFF (the release PR)", flush=True)
+                handed = True
             except (Stop, subprocess.TimeoutExpired, OSError, ValueError, KeyError) as e:
                 self.results[i] = ("FAILED", str(e))
                 self.log(str(e))
                 print(f"[{i}/9] {name}: FAIL", flush=True)
                 failed = True
         self.summary()
-        return 1 if failed else 0
+        return 1 if failed else 3 if handed else 0
 
     def summary(self):
         mode = ' (VERIFY-ONLY)' if self.a.verify_only else ' (DRY-RUN)' if self.a.dry_run else ''
@@ -575,6 +664,12 @@ class Release:
         for i, name in enumerate(STEPS, 1):
             st, ev = self.results.get(i, ("not run", ""))
             lines = ev.splitlines() or [""]
+            if st == "handoff":
+                lines = [l for l in ev.splitlines() if l.startswith("  ")] or lines
+                print(f" {i}  {name:14s} {st:8s} the release PR (nothing pushed); then:")
+                for l in lines:
+                    print(f"    {l.strip()[:130]}")
+                continue
             if st in ("warn", "FAILED"):              # the problems, not the banner
                 lines = [l for l in lines if l.startswith("PROBLEM") or l.startswith("`")] or lines
             print(f" {i}  {name:14s} {st:8s} {lines[0][:120]}")
@@ -768,7 +863,8 @@ def wait_run(workflow, sha, appear_s=300, ok=("success",)):
     return f"{workflow} {v['url']}: success, jobs {', '.join(f'{n} {c}' for n, c in jobs)}"
 
 
-WEB_FILES = ("index.html", "app.js", "version.js", "frodhes.js", "frodhes.wasm")      # web/build.sh's web/dist
+WEB_FILES = ("index.html", "app.js", "fm1install.js", "install.js", "version.js", "frodhes.js", "frodhes.wasm",
+             "frodhes.fwsc", "firmware.json")   # web/build.sh's web/dist, and the package (tools/web_firmware.sh)
 
 
 def workflow_deploys_pages(path=None):
@@ -837,7 +933,18 @@ with sync_playwright() as p:
             sw = pg.evaluate("document.documentElement.scrollWidth")
             ver = pg.evaluate("[document.getElementById('ver').textContent, "
                               "document.getElementById('ver-foot').textContent]")
-            res.append(dict(browser=bname, width=w, title=pg.title(), scroll=sw, errors=errs, ver=ver))
+            inst = pg.evaluate("[!!document.getElementById('install'), document.getElementById('inst-ui').hidden, "
+                               "document.getElementById('inst-none').hidden, !!navigator.requestMIDIAccess]")
+            res.append(dict(browser=bname, width=w, title=pg.title(), scroll=sw, errors=errs, ver=ver, inst=inst))
+            pg.close()
+        if bname == "chromium":                     # the installer, through the page, on a fake FM-1
+            pg = b.new_page(viewport={"width": 1280, "height": 900})
+            errs = []
+            pg.on("pageerror", lambda e: errs.append(str(e)))
+            pg.add_init_script(path="tests/web/fake_fm1.js")
+            pg.goto(url + "?installtest")
+            pg.wait_for_function("document.title.startsWith('INSTALLTEST')", timeout=60000)
+            res.append(dict(browser=bname, installtest=pg.title(), errors=errs))
             pg.close()
         b.close()
 print(json.dumps(res))
@@ -875,6 +982,16 @@ def web_selftest(dist, version=None):
         srv.terminate()
     bad, ok = [], []
     for r in res:
+        if "installtest" in r:                      # Chromium: a full install through the page on the fake FM-1
+            if not r["installtest"].startswith("INSTALLTEST ok") or r["errors"]:
+                bad.append(f"{r['browser']} install: {r['installtest']!r} errors {r['errors']}")
+            else:
+                ok.append(f"{r['browser']} install on a fake FM-1 ok")
+            continue
+        # the install section: there; with Web MIDI its controls, without it (WebKit) the command line instead
+        present, ui_hidden, none_hidden, has_midi = r["inst"]
+        if not present or ui_hidden == has_midi or none_hidden != has_midi:
+            bad.append(f"{r['browser']} {r['width']}px: the install section {r['inst']}")
         m = re.search(r"rms=(-?[\d.]+)dB screen=(\d+)px", r["title"])
         tag = f"{r['browser']} {r['width']}px"
         if (not m or float(m.group(1)) < -60 or int(m.group(2)) == 0 or r["errors"] or r["scroll"] > r["width"]

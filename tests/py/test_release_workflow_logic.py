@@ -192,7 +192,18 @@ def test_release_workflow_wiring():
     assert sum(b.count("./build.sh") for b in builds) == 4        # the FM-1 once, each SMK-37 model once
     assert './build.sh --release "$V"' in " ".join(j["release"]["steps"][names.index("build")]["run"].split())
     ci = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))["jobs"]
-    assert ci["host"]["runs-on"] == "ubuntu-24.04-arm" and set(ci) >= {"host", "generators-macos"}   # ci_gate.sh's jobs
+    assert set(ci) >= {"host", "generators-macos"}                                     # ci_gate.sh's jobs
+    # the host tests on arm64 in 5 jobs (the scripts, 4 pytest shards); `host` green only when all are
+    assert ci["host-scripts"]["runs-on"] == ci["host-pytest"]["runs-on"] == "ubuntu-24.04-arm"
+    assert ci["host-pytest"]["strategy"]["matrix"]["shard"] == [1, 2, 3, 4]
+    assert ci["host"]["needs"] == ["host-scripts", "host-pytest"] and ci["host"]["if"] == "always()"
+    agg = " ".join(s.get("run", "") for s in ci["host"]["steps"])
+    assert 'test "${{ needs.host-scripts.result }}" = success' in agg
+    assert 'test "${{ needs.host-pytest.result }}" = success' in agg
+    shard = " ".join(s.get("run", "") for s in ci["host-pytest"]["steps"])
+    assert "make pytest PY=python3 SHARD=${{ matrix.shard }}/4" in shard and "pytest_shard.py --check 4" in shard
+    scripts = " ".join(s.get("run", "") for s in ci["host-scripts"]["steps"])
+    assert "make test" in scripts and "make host" in scripts
 
 
 def test_release_publish_step_uploads_both_names(tmp_path):
@@ -268,6 +279,7 @@ def test_the_emulator_is_live_when_the_release_is():
     assert runs[t].endswith('"${GITHUB_REF_NAME#v}"') and "chromium webkit" in " ".join(runs)
     assert next(i for i, r in enumerate(runs) if "tools/get_emsdk.sh" in r) < b < t < u
     assert web["steps"][u]["with"]["name"] == "web-dist" and web["steps"][u]["with"]["path"] == "web/dist"
+    assert web["container"] == "mcr.microsoft.com/playwright/python:v1.64.0-noble" and "--with-deps" not in " ".join(runs)
     rel = wf["jobs"]["release"]
     st = rel["steps"]
     names = [s.get("name") or s.get("uses") for s in st]
@@ -292,7 +304,9 @@ def test_ci_builds_the_emulator_and_never_deploys():
     assert "tags" not in ci[True]["push"]
     runs = " ".join(" ".join(s.get("run", "").split()) for s in ci["jobs"]["web"]["steps"])
     assert "sh tools/get_emsdk.sh" in runs and "sh web/build.sh" in runs
-    assert "playwright install --with-deps chromium webkit" in runs
+    assert "playwright install chromium webkit" in runs and "--with-deps" not in runs     # the image has the libraries
+    assert ci["jobs"]["web"]["container"] == "mcr.microsoft.com/playwright/python:v1.64.0-noble"
+    assert "playwright==1.64.0" in runs                                             # the image's version
     assert "tools/release.py --web-selftest web/dist dev" in runs                 # a local build says dev
     assert "pytest -q -rs tests/py/test_web_knobs.py > knobs.txt" in runs and "! grep -q SKIPPED knobs.txt" in runs
     text = open(os.path.join(ROOT, ".github", "workflows", "ci.yml")).read()
@@ -315,7 +329,7 @@ def git(cwd, *a):
     return subprocess.run(["git", "-C", str(cwd), *a], check=True, capture_output=True, text=True).stdout.strip()
 
 
-WEB = ("index.html", "app.js", "frodhes.js", "frodhes.wasm")
+WEB = ("index.html", "app.js", "fm1install.js", "install.js", "frodhes.js", "frodhes.wasm")
 
 
 def pages_repo(tmp_path):
@@ -433,3 +447,62 @@ def test_pages_wait_asks_for_a_build_once_then_fails_on_errors_and_timeouts(tmp_
     (tmp_path / "d").mkdir()
     p, _ = pages_wait(tmp_path / "d", ["built " + SHA], live_same=False, wait=60)          # the CDN never serves it
     assert p.returncode == 1 and "still differs" in p.stderr
+
+
+def fm1_package(product):
+    """a valid synthetic package (tests/web/fake_fm1.js makePackage, tests/install_test.py package): the identity in the
+    interleave markers, a header, a file list and flash.bin with its CRC, the loader mark"""
+    import struct
+    import sys
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import fm1_install as I
+    img = bytearray((i * 7) & 0xFF for i in range(0x2000))
+    img[0x1800:0x1810] = I.LOADER_MARK
+    data = bytes(img[0x400:])
+    e = bytearray(0x50)
+    e[4:6] = struct.pack("<H", I._crc16(data))
+    e[8:16] = struct.pack("<II", 0x400, len(data))
+    e[0x40:0x49] = b"flash.bin"
+    lst = I._dec(bytes(e))
+    hdr = bytearray(0x40)
+    hdr[4:10] = struct.pack("<IH", len(img), 1)
+    hdr[2:4] = struct.pack("<H", I._crc16(lst))
+    hdr[0:2] = struct.pack("<H", I._crc16(bytes(hdr[2:])))
+    img[0:0x40] = I._dec(bytes(hdr))
+    img[0x40:0x90] = lst
+    raw = bytearray()
+    for i in range(20):
+        raw += img[i * 0x2F:(i + 1) * 0x2F] + bytes([(ord(product[i]) + i + 1) & 0xFF if i < len(product) else 0x7D])
+    return bytes(raw + img[20 * 0x2F:])
+
+
+def test_web_firmware_publishes_the_package_with_its_sha256(tmp_path):
+    """tools/web_firmware.sh: the FM-1 package next to the emulator (frodhes.fwsc, firmware.json with the version, the
+    identity, the size, the sha256) for the page's installer; another identity or a damaged package is refused"""
+    import hashlib
+    import json
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    raw = fm1_package("FM-1_958")
+    (tmp_path / "f.fwsc").write_bytes(raw)
+    p = subprocess.run(["sh", os.path.join(ROOT, "tools", "web_firmware.sh"), str(tmp_path / "f.fwsc"), str(dist), "0.9.9"],
+                       capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    meta = json.loads((dist / "firmware.json").read_text())
+    assert (dist / "frodhes.fwsc").read_bytes() == raw
+    assert meta == {"version": "0.9.9", "identity": "FM-1_958", "size": len(raw),
+                    "sha256": hashlib.sha256(raw).hexdigest(), "file": "frodhes.fwsc"}
+    for name, data in (("smk.fwsc", fm1_package("SMK-37 Pro_470")), ("bad.fwsc", raw[:0x1000] + bytes([raw[0x1000] ^ 1]) + raw[0x1001:])):
+        (tmp_path / name).write_bytes(data)
+        d2 = tmp_path / ("d-" + name)
+        d2.mkdir()
+        p = subprocess.run(["sh", os.path.join(ROOT, "tools", "web_firmware.sh"), str(tmp_path / name), str(d2), "0.9.9"],
+                           capture_output=True, text=True, timeout=60)
+        assert p.returncode != 0 and not (d2 / "frodhes.fwsc").exists(), (name, p.stdout, p.stderr)
+
+
+def test_release_publishes_the_package_with_the_emulator():
+    """release.yml runs tools/web_firmware.sh on the tag's FM-1 package before tools/deploy_pages.sh"""
+    wf = open(os.path.join(ROOT, ".github", "workflows", "release.yml")).read()
+    a = wf.index('sh tools/web_firmware.sh "build/frodhes-${GITHUB_REF_NAME#v}.fwsc" web/dist')
+    assert a < wf.index("sh tools/deploy_pages.sh web/dist build/pages")

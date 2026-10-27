@@ -263,9 +263,9 @@ def marimba(J, a, out):
     # idle: everything off, 3 s; USB exact zero, the jack at the codec-muted floor
     J.r.dry()
     u, j = J.both(3.0, [])
-    rep["idle"] = dict(usb_nonzero=int(np.count_nonzero(u)), jack_db=db(j), jack_hf_db=band_db(j, 8000, 20000),
-                       jack_re_muted_db=db(j) - rep["marimba"]["silence"]["jack_db"])
-    rep["idle_ok"] = bool(rep["idle"]["usb_nonzero"] == 0 and abs(rep["idle"]["jack_re_muted_db"]) <= 1.0)
+    rep["idle"] = idle_judge(int(np.count_nonzero(u)), db(j), band_db(j, 8000, 20000),
+                             [rep[k]["silence"] for k in ("st77", "st77_again", "marimba")])
+    rep["idle_ok"] = rep["idle"]["ok"]
     J.r.dry = dry0
     J.r.dry()
     os.makedirs(os.path.dirname(out), exist_ok=True)
@@ -287,6 +287,19 @@ def marimba(J, a, out):
     print(f"  idle         USB nonzero samples {rep['idle']['usb_nonzero']}; jack {rep['idle']['jack_db']:.1f} dB "
           f"({rep['idle']['jack_re_muted_db']:+.1f} re the muted floor) -> {'ok' if rep['idle_ok'] else 'FAIL'}")
     return rep
+
+
+def idle_judge(usb_nonzero, jack_db, jack_hf_db, silences):
+    """the idle gate (TEST-PLAN A5): USB exact zero and the jack at the session's muted floor. The reference is the
+    median of the session's silent takes (all exact zero on USB): one 3 s take of the interface's analog floor
+    wanders by ~2 dB (0.9.7 T2: -91.3 / -90.9 / -93.2 dB, the same digital zero), so a single take as the reference
+    failed a silent FM-1. Noise from the FM-1 (a dither left on, hiss) raises the 8-20 kHz band too: gated as well."""
+    ref = float(np.median([q["jack_db"] for q in silences]))
+    ref_hf = float(np.median([q["jack_hf_db"] for q in silences]))
+    d = dict(usb_nonzero=usb_nonzero, jack_db=jack_db, jack_hf_db=jack_hf_db, ref_db=ref, ref_hf_db=ref_hf,
+             jack_re_muted_db=jack_db - ref, jack_hf_re_muted_db=jack_hf_db - ref_hf)
+    d["ok"] = bool(usb_nonzero == 0 and abs(d["jack_re_muted_db"]) <= 1.0 and d["jack_hf_re_muted_db"] <= 1.0)
+    return d
 
 
 def main():

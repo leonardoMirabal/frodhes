@@ -39,7 +39,7 @@ The musicality gate (PLAN §10.3), host part (D = the FM-1 part: tools/hil_scan.
                      T60 x1.3 or more on C2 / C3; C6-C7: TUBE 0 vs 127 V1 T60 within 10 %, level +1..+3 LU
   M8 listening       the packs (the user): not a host check
 The stress cases (PLAN §10.1 'stress', §10.2): A1 clicks 0 (tools/bar_scan.py click_count), H1 sat28 0, A3 exact zero
-by tail_bound_s 3 s after the last event (RAW), A5 the gate's fade at <= -70 dBFS, S4 the last non-zero sample <= 1 LSB.
+by tail_bound_s 3 s after the last event (RAW), A5 the gate's fade at <= -70 dBFS, S4 the last non-zero sample <= 2 LSB (1 + the cut's dither).
 """
 import argparse
 import json
@@ -549,7 +549,7 @@ def steal_rows(name, m, log, evs, end_ms):
     tail = m[-int(0.1 * FS):]
     return [("A1", name, a + b == 0, a + b, f"clicks {a}, HF bursts {b}", False),
             ("H1", name, not s28, s28 or 0, f"sat28 hits {'n/a' if s28 is None else s28}", False),
-            ("S4", name, last <= 1 and not np.any(tail), last, f"last non-zero |x| {last:.0f} LSB, exact zero at the end", False)]
+            ("S4", name, last <= 2 and not np.any(tail), last, f"last non-zero |x| {last:.0f} LSB, exact zero at the end", False)]
 
 
 def mute_roll_case():

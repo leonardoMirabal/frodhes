@@ -19,6 +19,7 @@ import pytest
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "build", "uac_test")
 OLD_REF = os.environ.get("UAC_OLD_REF", "v0.9.4")      # the last release with the render-start band
+WORKER = os.environ.get("PYTEST_XDIST_WORKER", "main")  # (each xdist worker builds its own: no shared tree or binary)
 
 
 def build(src_root, exe):
@@ -41,13 +42,13 @@ def cases(exe, *args):
 @pytest.fixture(scope="module")
 def new():
     os.makedirs(OUT, exist_ok=True)
-    return cases(build(ROOT, os.path.join(OUT, "uac_test")))
+    return cases(build(ROOT, os.path.join(OUT, f"uac_test-{WORKER}")))
 
 
 @pytest.fixture(scope="module")
 def old():
-    tree = os.path.join(OUT, "old")
-    tar = os.path.join(OUT, "old.tar")
+    tree = os.path.join(OUT, f"old-{WORKER}")
+    tar = os.path.join(OUT, f"old-{WORKER}.tar")
     os.makedirs(OUT, exist_ok=True)
     r = subprocess.run(["git", "-C", ROOT, "archive", "--format=tar", "-o", tar, OLD_REF, "firmware"],
                        capture_output=True)
@@ -56,7 +57,7 @@ def old():
     shutil.rmtree(tree, ignore_errors=True)          # (a stale tree from another UAC_OLD_REF)
     os.makedirs(tree)
     subprocess.run(["tar", "-xf", tar, "-C", tree], check=True)
-    return cases(build(tree, os.path.join(OUT, "uac_test_old")), "--quick")
+    return cases(build(tree, os.path.join(OUT, f"uac_test_old-{WORKER}")), "--quick")
 
 
 def test_ring_never_runs_dry(new):

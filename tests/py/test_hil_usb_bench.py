@@ -76,3 +76,13 @@ def test_every_start_of_the_triangle_against_the_resampler_passes():
     y = reference_from(w, taps, 4)
     z = np.insert(np.concatenate([np.zeros((300, 2), np.int64), y]), 3000, y[2699], axis=0)
     assert [sh for _, sh in B.analyse_app(z, 48000)["slip"]] == [1]   # a copy in that wave is still found
+
+
+def test_the_report_carries_the_host_load(capsys):
+    """the computer's 1-minute load before / after the recording, in the JSON and the printed report"""
+    v = B.host_load()
+    assert v is None or v >= 0
+    js = dict(rate=44100, midi="none", minutes=1, bench=dict(frames=10, start=0.1, repeat=[], jump=[], lr=0, ok=True),
+              load=[1.25, 2.5])
+    B.print_report(js)
+    assert "host load (1 min) before / after: 1.25 / 2.5" in capsys.readouterr().out

@@ -5,6 +5,7 @@
  * computes the same frames from uac_fir.h with a plain reference and compares them bit for bit.
  *
  *   cc -O1 -w -Ifirmware/src -o build/uac_test/uac_fir_test tests/uac_fir_test.c && build/uac_test/uac_fir_test SECS SEED
+ *   build/uac_test/uac_fir_test - < frames.txt       (the frames "L R" from stdin instead)
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -25,6 +26,24 @@ int main(int argc, char **argv)
     double secs = argc > 1 ? atof(argv[1]) : 2.0;
     uint32_t blocks = (uint32_t)(secs * 44100.0 / HALF_FRAMES), b, i, p;
     int32_t blk[2u * HALF_FRAMES];
+    if (argc > 1 && !strcmp(argv[1], "-")) {            /* "-": "L R" frames from stdin, in pieces of 32 */
+        int l, r;
+        memset(&uac, 0, sizeof uac);
+        uac.feed = 1; uac.ring48 = 1;
+        ua_w = ua_r = 0;
+        for (;;) {
+            for (i = 0; i < 32u && scanf("%d %d", &l, &r) == 2; i++) {
+                blk[2u * i] = l; blk[2u * i + 1u] = r;
+            }
+            if (i) uac_tap(blk, i);
+            while (ua_r != ua_w) {
+                uint32_t f = ua_ring[ua_r & (UA_N - 1u)];
+                printf("%d %d\n", (int16_t)(f & 0xFFFFu), (int16_t)(f >> 16));
+                ua_r++;
+            }
+            if (i < 32u) return 0;
+        }
+    }
     rng = argc > 2 ? (uint32_t)strtoul(argv[2], 0, 0) : 1u;
     if (!rng) rng = 1u;
     memset(&uac, 0, sizeof uac);

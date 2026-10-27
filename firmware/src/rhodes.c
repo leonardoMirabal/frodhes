@@ -1078,6 +1078,20 @@ static FR_RAM void __attribute__((noinline)) rh_noise(int32_t *mix, uint32_t n)
     }
 }
 
+/* TPDF dither where the engine's Q20 mix is cut to Q15 (0.9.7, GitHub #16): plain rounding left a decaying held note's
+ * cut error tied to the note itself, its odd harmonics (H3, H5) standing at a fixed ~-113 dBFS while H1 fell from -42
+ * to -76 dBFS. A triangular dither of +-1 LSB (Q15) before the cut turns that error into a steady noise floor:
+ * x + d - 15 >> 5 with d the sum of two uniform 0..31 (one LCG step, its top bits: 27..31 and 22..26), so d - 15 is
+ * +16 on average, the rounding of before. The mid's (rh_q15) and the side's (SPREAD, its last stage) have their own
+ * generator (uncorrelated); none while the engine is silent (rh_render's idle branch writes exact 0; the side only
+ * with rh_dith_on), so the silence is still exact digital zero. Integers only, deterministic (the host renders) */
+#define RH_DITH(r) ((r) = (r) * 1664525u + 1013904223u, (int32_t)((r) >> 27) + (int32_t)(((r) >> 22) & 31u) - 15)
+#define RH_DITH_M0 0x2545F491u
+#define RH_DITH_S0 0x9E3779B9u
+static uint32_t rh_dith_m = RH_DITH_M0, rh_dith_s = RH_DITH_S0;   /* the mid's, the side's (seeded again whenever
+                                                           * the engine is silent: rh_render's idle branch) */
+static int32_t rh_dith_on;                                /* -1: the side dithers this block; 0: +16 (silent) */
+
 /* one Q28 DF1 biquad with error feedback over a block, in -> out (may be the same buffer); st = m1, m2, o1, o2, e.
  * The pickup load (RLC) and the TYPE's amp / speaker biquads are this same form; a cascade run stage by stage gives
  * the same integers as sample by sample. Its own function: the state and coefficients stay in registers */
@@ -1087,6 +1101,8 @@ static inline __attribute__((always_inline)) void rh_df1_t(const int32_t *in, in
     int32_t c0 = c[0], c1 = c[1], c2 = c[2], c3 = -c[3], c4 = -c[4];   /* - c3 o1 = (-c3) o1: 5 MACs */
     int32_t m1 = st[0], m2 = st[1], o1 = st[2], o2 = st[3], e = st[4];
     const int32_t *ie = in + n;
+    uint32_t r = rh_dith_s;
+    int32_t dm = rh_dith_on;
     while (in < ie) {
         int32_t m = *in++, o;
         int64_t acc;
@@ -1094,8 +1110,11 @@ static inline __attribute__((always_inline)) void rh_df1_t(const int32_t *in, in
         acc = (int64_t)c0 * m + (int64_t)c1 * m1 + (int64_t)c2 * m2 + (int64_t)c3 * o1 + (int64_t)c4 * o2 + e;
         o = (int32_t)(acc >> 28); e = (int32_t)(acc & 0xFFFFFFF);
         m2 = m1; m1 = m; o2 = o1; o1 = o;
-        *out++ = q15 ? (o + 16) >> 5 : o;               /* (q15: the last stage rounds to Q15, as rh_q15) */
+        if (q15) { int32_t d = RH_DITH(r); *out++ = (o + 16 + ((d - 16) & dm)) >> 5; }   /* (the last stage: Q15,
+                                                           * dithered as rh_q15) */
+        else *out++ = o;
     }
+    if (q15) rh_dith_s = r;
     st[0] = m1; st[1] = m2; st[2] = o1; st[3] = o2; st[4] = e;
 }
 static __attribute__((noinline)) void rh_df1(const int32_t *in, int32_t *out, uint32_t n, const int32_t *c, int32_t *st)
@@ -1113,16 +1132,21 @@ static FR_RAM __attribute__((noinline)) void rh_df1_sq(int32_t *p, uint32_t n, c
     rh_df1_t(p, p, n, c, st, 1);
 }
 
-/* Q20 -> Q15 in place (round, no DC bias); returns max |out| */
+/* Q20 -> Q15 in place, TPDF dithered (RH_DITH); returns max |round(x)| of the undithered Q20 (as before the dither:
+ * the silence test mx < 2 ends a tail at the same block) */
 static FR_RAM __attribute__((noinline)) int32_t rh_q15(int32_t *p, uint32_t n)
 {
-    int32_t mx = 0, *pe = p + n;
+    int32_t hi = 0, lo = 0, *pe = p + n, a, b;
+    uint32_t r = rh_dith_m;
     while (p < pe) {
-        int32_t o = (*p + 16) >> 5;
-        if (iabs(o) > mx) mx = iabs(o);
-        *p++ = o;
+        int32_t x = *p;
+        if (x > hi) hi = x;
+        if (x < lo) lo = x;
+        *p++ = (x + RH_DITH(r)) >> 5;
     }
-    return mx;
+    rh_dith_m = r;
+    a = (hi + 16) >> 5; b = (15 - lo) >> 5;               /* (|(x + 16) >> 5| at the extremes) */
+    return a > b ? a : b;
 }
 
 /* a TYPE change under sound (0.9.6, BUGHUNT #12: the pickup RLC and the body biquads switched under the ringing
@@ -1185,6 +1209,10 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
     if (rh_shed_req) { rh_shed_req = 0; rh_shed(); }
     for (i = 0; i < RH_NV && !rv[i].alive; i++) ;
     idle = i == RH_NV && rh_quiet_blocks && !rh_pn_n;    /* (the pedal's thud plays into a silent engine) */
+    if (i == RH_NV && !idle && !rh_pn_n && !rh_kn_tab && !rh_txf.n && rh_chain_zero())
+        idle = 1;                                         /* (no voice, no noise, every filter at rest: its output is
+                                                           * 0 already; the dither must not make it 1 LSB of noise:
+                                                           * at boot and after a reset, before rh_quiet_blocks counts) */
     for (i = 0; i < n; i++) rh_mono[i] = 0;
     for (i = 0, sd = 0; i < RH_NV; i++) sd |= rv[i].alive && rv[i].pan;
     if (sd) rh_side_tail = 4;                             /* the side's filters ring out 3 blocks after its last voice */
@@ -1199,12 +1227,15 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
     if (idle) {                                           /* silent: no voice in this block and the filters' state
                                                            * zeroed at the end of the last one: the output is exactly 0 */
         for (j = 0; j < n; j++) mono_out[j] = 0;
+        rh_dith_m = RH_DITH_M0; rh_dith_s = RH_DITH_S0;   /* (the dither starts over: a take from silence is the
+                                                           * same integers every time) */
     } else {   /* pickup load: RLC low-pass on the mix, then the instrument's amp / speaker (nb biquads); Q20 -> Q15 */
         rh_chain(mono_out, rh_mono, n, rh_st, 0, ty);
         if (rh_txf.n) { rh_chain(rh_txf.buf, rh_mono, n, rh_txf.st, 0, rh_txf.ty); rh_txf_blend(mono_out, rh_txf.buf, n); }
         mx = FR_FAR(rh_q15)(mono_out, n);
     }
     rh_side_on = rh_side_tail != 0;
+    rh_dith_on = idle ? 0 : -1;                           /* (the side dithers with the mid: not while silent) */
     if (rh_side_tail) {                                   /* the side: the same RLC and body, its own state */
         if (rh_txf.n) memcpy(rh_txf.sbuf, rh_side, n * sizeof *rh_side);
         rh_chain(rh_side, rh_side, n, sd_st, 1, ty);

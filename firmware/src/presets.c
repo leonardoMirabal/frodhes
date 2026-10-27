@@ -104,7 +104,7 @@ static const uint8_t PR_FDATA[PR_NF][PR_FDN] = {
     {P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
      P_DRIVE, 53, P_DRV_SW, 4, P_DRV_TONE, 60, P_FL_TYPE, 1, P_FL_FREQ, 76, P_FL_RESO, 88, P_FL_LFO, 64,
      P_LFO_SHAPE, 1, P_LFO_SYNC, 13, P_DL_SW, 1, P_DL_DEPTH, 14, P_DL_SYNC, 9, P_DL_FDBK, 40, P_DL_TONE, 60,
-     P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 10, 0xFF},
+     P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 18, 0xFF},
     /* F12 AUTO WAH: the wah: a resonant band-pass swept deep by the LFO, a sine at 1/4 on the tempo, restarted by every
      * note (the compressor's make-up carries the level LEVEL 127 cannot) */
     {P_TYPE, 0, P_BARK, 80, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,

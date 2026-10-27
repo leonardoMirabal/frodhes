@@ -1,33 +1,45 @@
 # Frodhes
 
-Rhodes physical-model firmware for the M-VAVE FM-1 (JieLi AC791N, pi32v2, no FPU). Built on Dinghy; `upstream` remote = zvenson/dinghy.
+Rhodes physical-model firmware for the M-VAVE FM-1 (JieLi AC791N, pi32v2, no FPU). Built on Dinghy; `upstream`
+remote = zvenson/dinghy. **`AGENTS.md` is the full operating manual (rules, procedures, checklists, gotchas);
+`docs/ARCHITECTURE.md` explains the code.** Read both before changing anything. The key constraints:
 
-- The app is `firmware/src/frodhes.c` and the engine is `firmware/src/rhodes.c`. It's a single compilation unit: frodhes.c includes platform.c, then rhodes.c.
-- Don't edit `platform.c`, `hal/`, `loader/`, or the other platform files unless you have to, so upstream merges stay clean.
-- Integers only: no float or double, and no 64-bit `/` or `%`. 64-bit multiply is fine. Use Q15 levels and 32-bit phases.
-- The audio ISR (`rh_render`) gets 256 frames at 44.1 kHz. Aim for well under 2.9 ms. No flash, screen, or poll calls from it.
-- Hardware register access belongs in `hal/` only. `tools/build.py` enforces this, plus bans ROM addresses 0xFFC00000–0xFFCFFFFF, including as constants.
-- To test on the host, run `tests/run_host.sh`. It writes `build/host/frodhes.wav` and screen PNGs and works on macOS without Docker.
-- To build firmware, run `./build.sh` to get `build/frodhes.fwsc`. It needs the JieLi toolchain, the AC79 SDK, and Docker on macOS.
-- Package identity is `FM-1_958` for every version and dev build; the version is text only (`./build.sh --release X.Y.Z`).
+- The app is `firmware/src/frodhes.c` (includes `platform.c`, then `rhodes.c`, `fx.c`, `params.c`, `tempo.c`,
+  `arp.c`, `notes.c`, `seq.c`, `ui.c`, `presets.c`: one compilation unit).
+- Don't edit `platform.c`, `hal/`, `loader/`, `usb.c` or the other platform files unless you have to, so upstream
+  merges stay clean.
+- Integers only: no float or double, and no 64-bit `/` or `%` (the link fails). 64-bit multiply is fine. Q15 levels,
+  32-bit phases.
+- The audio ISR (`app_audio` = `rh_render` + `fx_process`) gets 256 frames at 44.1 kHz = 5805 us. The voice
+  shedder acts above 5000 us; the measured worst case is ~4.9 ms with every effect on. No flash, screen or poll
+  calls from it. Measure anything new with `tools/hil_cpu.py`.
+- Hardware register access belongs in `hal/` only. `tools/build.py` enforces this and bans ROM addresses
+  0xFFC00000–0xFFCFFFFF, including as constants.
+- No samples: never download, fit or use Rhodes sample libraries. GPL-3.0-only; keep upstream copyright headers.
+- Flash writes (settings, presets, the pattern) only when silent (`rh_quiet() && fx_quiet()`).
+- Settings record 256 B (`SET_VER 2`, append-only); presets 64 B with 48 slots, and `P_COUNT` is already 48.
+- Package identity is `FM-1_958` for every version and dev build; the version is text only
+  (`./build.sh --release X.Y.Z`).
+
+## Build and test
+
+- Host: `make test` (tests/scripts through tests/host.c), `make pytest`, `make host` (build/host/frodhes.wav and
+  screen PNGs; no Docker needed).
+- Firmware: `./build.sh` -> `build/frodhes.fwsc` (JieLi toolchain + 3 AC79 SDK files in `.local/`, Docker on macOS).
+- Device: `echo y | python3 tools/fm1_install.py build/frodhes.fwsc`, then `tools/hil_scan.py`, `tools/hil_cpu.py`,
+  `tools/hil_seq.py`, `tools/hil_jack.py` (sandbox off for CoreAudio). Test the FM-1 yourself over MIDI + USB audio;
+  say what could not be tested.
 
 ## Every change: test and document (a standing rule)
 
-No change is finished until both are done, and the commit says what was tested:
+No change is finished until both are done, and the commit says what was tested: host tests (add or update a
+script), the FM-1 over MIDI + USB audio, then `docs/MANUAL.md`, `README.md`, the screenshots
+(`tools/manual_shots.py`, `overview.png`) and the web emulator (`web/build.sh`, then the `gh-pages` worktree in
+`build/pages`). Commit and push often. The full checklist is AGENTS.md section 4.
 
-1. **Test.** `make test` (host scripts; add or update one for new behaviour) and `make pytest`. Then on the FM-1:
-   build, install (`tools/fm1_install.py`), and check over MIDI + USB audio (`tools/hil_scan.py`, `tools/hil_cpu.py`,
-   `tools/hil_seq.py`, or a script for the new feature). Say plainly what could not be tested (e.g. no TRS source,
-   the screen itself) and ask the user to check that part.
-2. **Document.** Update `docs/MANUAL.md` (the page, buttons, MIDI CCs, contents), `README.md` (the page table and the
-   description), regenerate the screenshots (`tools/manual_shots.py`, and `overview.png`), and rebuild and publish the
-   web emulator (`web/build.sh`, then the `gh-pages` worktree in `build/pages`).
+## Releases
 
-## Releases (automatic from a tag)
-
-Version numbers are patch bumps (0.9.1, 0.9.2 ...); the package identity stays `FM-1_958`. To release: run the
-tests above (host + FM-1, with `./build.sh --release X.Y.Z` installed and checked on the device), point README.md /
-MANUAL.md at the new file name, write `docs/releases/vX.Y.Z.md`, commit, then `git tag -a vX.Y.Z -m "Frodhes X.Y.Z"`
-and `git push origin vX.Y.Z`. `.github/workflows/release.yml` builds the firmware from the tag and publishes the
-GitHub release with the `.fwsc` and those notes.
-
+Patch bumps (0.9.1, 0.9.2 ...), only when the user asks: full retest with the release build installed, point
+README / MANUAL at the new file, write `docs/releases/vX.Y.Z.md`, commit, `git tag -a vX.Y.Z -m "Frodhes X.Y.Z"`,
+`git push origin vX.Y.Z`; `.github/workflows/release.yml` builds and publishes. Confirm with the user before any
+outward-facing action (release, publishing the emulator). Details: AGENTS.md section 9.

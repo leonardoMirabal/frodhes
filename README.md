@@ -40,7 +40,8 @@ Every page is in the
 and earlier versions); the firmware file is [`frodhes.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes.fwsc), always the newest
 (package identity `FM-1_958`, the same for every version).
 
-Install it over USB:
+Install it over USB, from the browser (Chrome or Edge: the [emulator page](https://leonardomirabal.github.io/frodhes/#install)'s
+**Install on your FM-1**, which fetches the latest release and checks its sha256) or from a terminal:
 
 ```sh
 pip install mido python-rtmidi
@@ -171,8 +172,10 @@ runs the host tests and the release build, installs it on the FM-1 and runs the 
 real-use scenarios judged by the firmware's own CC 116 counters and the audio; the full sound scan, the CPU, scan and jack tests on the
 Rhodes, VIBES and MARIMBA (and the MARIMBA sample-back), only when an engine or the DSP changed or with `--full`
 (`--device-done FILE` records FM-1 runs already made on the same build, checked by its sha256), checks the docs' links (no version in them: they link `releases/latest`), assembles the fragments into
-`docs/releases/vX.Y.Z.md` and commits it with the fragments removed, asks before publishing, then pushes `main`,
-waits for CI to pass on that commit, tags, waits for the release workflow and checks that the published `.fwsc` is
+`docs/releases/vX.Y.Z.md` and commits it with the fragments removed, asks before publishing, then stops with the
+commands for the release pull request (`main` is protected: the tool pushes nothing to it). After the merge,
+`tools/release.py X.Y.Z --after-merge` checks that `main` is that commit's tree and its build the one tested, waits for
+CI, tags, waits for the release workflow and checks that the published `.fwsc` is
 byte for byte the one tested (as `frodhes-X.Y.Z.fwsc` and as the stable `frodhes.fwsc`), and checks the live emulator.
 The release workflow publishes the emulator itself: it builds it from the tag and runs its selftest before anything
 is published, creates the release as a draft, deploys the emulator to the `gh-pages` branch, waits until GitHub Pages
@@ -191,12 +194,13 @@ read once, by the migration, and never written; `store.h`'s `NBLOB` / `NSLOT` se
 codec to full scale (`APP_OUT_SHIFT`), send the USB audio before the MASTER knob (`usb_pre_master`), the MASTER knob
 reading is smoothed, the TRS MIDI input can be switched off (`uart_midi_on` in `midi_uart.c`, the MIDI page's TRS IN),
 the MIDI clock and transport packets carry their arrival time (16 bits of `fm1_ms` in their free data bytes, in
-`usb.c` and `midi_uart.c`, for the tempo) and `usb.c` also takes them with the code index 5 that some hosts send,
+`usb.c` and `midi_uart.c`, for the tempo) and `usb.c` also takes them with the code index 5 that some hosts send
+(and softens the 48 kHz resampler's overshoot above 24576 before its clamp, `UAC_KNEE`),
 it builds for the browser (`DINGHY_WEB`), a host-mode fix in `gfx.c`, `FONT_S` in `gen/felucca_font.h` stores only
 the glyphs the firmware draws (`tools/gen_font.py`; the others point at `?`, which `gfx.c` draws for them), and the audio
 interrupt times itself whole and reads the USB ring's low point (`isr_stats` in `platform.c`, for the CC 116 query),
 the audio interrupt's tail is one pass per 32 frames (MASTER, the clip, the USB tap, the codec's shift; a new MASTER
-ramps over the block, `master_ramp`) and skips the
+ramps over the block, `master_ramp`; the headphone jack keeps MASTER's product at 24 bits, `MASTER_JACK_SH`) and skips the
 clear before `app_audio` (`APP_OUT_WRITTEN`: Frodhes writes every sample), a developer build times the timer tick too (`APP_DEFS=-DFM1_PROF_TICK`: `tick_prof` in `platform.c`, the
 `tools/hil_cpu.py --tick` items; the normal build is unchanged),
 the panel scan has two hooks for key velocity (`FM1_INPUT_ADC_TAKE` / `FM1_INPUT_ADC_START` in `hal/fm1_input.h`),
@@ -217,11 +221,14 @@ host model of the part; the update loader keeps the blocking driver), and the sa
 `fl_op_poll`, `settings_save_start` / `settings_save_poll` in `platform.c`: the settings' auto save one slice a
 main-loop pass, so MIDI is never held up by it),
 and the USB audio ring keeps one more block in hand (`UA_HOLD`, `UA_N` 1024 in `usb.c`: a render of up to a whole
-block can no longer run it dry and repeat a frame; 5.8 ms more USB latency), and the USB product string is
-"Frodhes" (`STR2` in `usb.c`: the MIDI port and the audio input; the update mode keeps "Felucca Update"), the MIDI
-jacks carry that name (`MS_IJACK`) and the app's USB product id is 0x0005 (`FELUCCA_USB_PID`; Dinghy's 0x0001, the
-update loader's 0x0002 unchanged): a Mac keeps a MIDI device per vendor / product id with the name it saw first, so a
-new id is what makes one that saw "Felucca" show "Frodhes". The package
+block can no longer run it dry and repeat a frame; 5.8 ms more USB latency), and the USB product string
+names the model, "Frodhes FM-1" or "Frodhes " `SMK_MODEL` on the SMK-37 (`USB_PRODUCT`, written into `STR2` in
+RAM at the first request, in `usb.c`: the MIDI port and the audio input; the update mode keeps "Felucca Update"), the
+MIDI jacks carry that name (`MS_IJACK`) and each model has its own USB product id (`FELUCCA_USB_PID`): FM-1 0x0006,
+SMK-37 Pro 0x0007, Elite 0x0008, MKE-P37 0x0009 (`tools/build.py MODEL_PID`), the next free test ids after
+Dinghy's 0x0001, the update loader's 0x0002 (unchanged) and 0x0005, which named the app "Frodhes" in 0.9.5 and
+0.9.6. A Mac keeps a MIDI device per vendor / product id with the name it saw first, so a new id is what makes a
+new name show; a port name with the model in it is what the community flasher looks for. The package
 identity stays `FM-1_958` (`tools/build.py PRODUCT`) and the update loader's screen says FRODHES (`SCREEN_NAME`) and draws no site name at its foot (`LDR_FOOT`, a define in
 `ldr_screen.c`: Dinghy's screen shows its hub's address there). Dinghy stays the
 `upstream` remote: `git fetch upstream && git merge upstream/main`.

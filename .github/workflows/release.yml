@@ -11,7 +11,8 @@ name: release
 # deploys the tested web/dist to the gh-pages branch (tools/deploy_pages.sh: "Emulator X.Y.Z", the branch's other files
 # kept), waits until Pages has built that commit and serves every file byte for byte (tools/pages_wait.sh), and only
 # then publishes the release and marks it latest. Every step is safe to rerun. Only a v* tag deploys: a merge to main
-# never touches gh-pages (ci.yml builds and tests the emulator, nothing more).
+# never touches gh-pages (ci.yml builds and tests the emulator, nothing more). The FM-1 package goes with the
+# emulator (tools/web_firmware.sh: frodhes.fwsc and firmware.json with its sha256) for the page's installer.
 # Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
 on:
   push:
@@ -47,8 +48,10 @@ jobs:
         with:
           python-version: '3.14'
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
-      - run: python -m pytest -q -rs tests/py/test_gen_bars.py tests/py/test_marimba_calib.py
-      - run: '! python -m pytest -q -rs tests/py/test_gen_bars.py -k deterministic | grep -q SKIPPED'
+      - shell: bash                  # (one run; its -v lines show the deterministic test PASSED, not SKIPPED)
+        run: |
+          python -m pytest -v -rs tests/py/test_gen_bars.py tests/py/test_marimba_calib.py | tee gen.txt
+          grep -q 'test_gen_bars.py::test_deterministic_and_up_to_date PASSED' gen.txt
   host:                              # fallback only: every host test (ci.yml's host job, on the same arm64 runner)
     needs: ci-gate
     if: needs.ci-gate.outputs.passed != 'true'
@@ -60,20 +63,28 @@ jobs:
         run: make test && make host && make pytest PY=python3
   web:                               # the emulator from the tag, built and selftested before anything is published
     runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright/python:v1.64.0-noble   # (the browsers' libraries in the image; apt only for xz)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
           path: .local/emsdk
-          key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}
+          key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}-playwright-image
+      - name: xz (emsdk unpacks node from a .tar.xz; the image has no xz)
+        run: apt-get update -qq && apt-get install -y -qq xz-utils
       - name: Emscripten (the version pinned in tools/get_emsdk.sh)
         run: sh tools/get_emsdk.sh .local/emsdk
       - name: build the emulator
         run: sh web/build.sh --release "${GITHUB_REF_NAME#v}"
+      - uses: actions/setup-node@v4   # (Playwright's Python image has no node)
+        with:
+          node-version: 20
+      - name: the installer against a fake FM-1 (node)
+        run: node tests/web/install_test.js
       - name: Playwright (Chromium + WebKit)
         run: |
           pip install playwright==1.64.0
-          python3 -m playwright install --with-deps chromium webkit
+          python3 -m playwright install chromium webkit
       - name: selftest
         run: python3 tools/release.py --web-selftest web/dist "${GITHUB_REF_NAME#v}"
       - uses: actions/upload-artifact@v4
@@ -151,6 +162,8 @@ jobs:
         with:
           ref: gh-pages
           path: build/pages
+      - name: the FM-1 package next to the emulator (its installer; release downloads have no CORS)
+        run: sh tools/web_firmware.sh "build/frodhes-${GITHUB_REF_NAME#v}.fwsc" web/dist "${GITHUB_REF_NAME#v}"
       - name: deploy the emulator
         run: |
           git -C build/pages config user.name "github-actions[bot]"

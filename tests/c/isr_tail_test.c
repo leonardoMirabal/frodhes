@@ -48,9 +48,11 @@ static int32_t ref_gain(int32_t mq, int32_t prev, uint32_t f)
     return prev < 0 || prev == mq ? mq : ((prev << 8) + (int32_t)(f + 1u) * (mq - prev)) >> 8;
 }
 static void reference_tail(int32_t mq, int32_t prev, int pre)
-{
-    int32_t o[HALF_WORDS];
+{   /* 0.9.7 (#8): the jack keeps MASTER's product at 24 bits (x * g >> (12 - APP_OUT_SHIFT), clamped at 32767 <<
+     * APP_OUT_SHIFT when USB follows MASTER); the USB tap is the 16-bit sample as before */
+    int32_t o[HALF_WORDS], jack[HALF_WORDS];
     uint32_t i, b, k = 0;
+    const int32_t top = 32767 << APP_OUT_SHIFT, sh = 12 - (int32_t)APP_OUT_SHIFT;
     memset(o, 0, sizeof o);
     memcpy(o, app_in, sizeof o);
     if (pre) {
@@ -59,18 +61,17 @@ static void reference_tail(int32_t mq, int32_t prev, int pre)
         for (b = 0; b < HALF_FRAMES; b += 32u, k += 64u)
             memcpy(ref_tap + k, o + 2u * b, 64u * sizeof o[0]);
         for (i = 0; i < HALF_WORDS; i++)
-            o[i] = (o[i] * ref_gain(mq, prev, i / 2u)) >> 12;
+            jack[i] = (o[i] * ref_gain(mq, prev, i / 2u)) >> sh;
     } else {
         for (i = 0; i < HALF_WORDS; i++) {
-            int32_t v = (o[i] * ref_gain(mq, prev, i / 2u)) >> 12;
+            int32_t p = o[i] * ref_gain(mq, prev, i / 2u), v = p >> 12, j = p >> sh;
             o[i] = v > 32767 ? 32767 : v < -32767 ? -32767 : v;
+            jack[i] = j > top ? top : j < -top ? -top : j;
         }
         for (b = 0; b < HALF_FRAMES; b += 32u, k += 64u)
             memcpy(ref_tap + k, o + 2u * b, 64u * sizeof o[0]);
     }
-    for (i = 0; i < HALF_WORDS; i++)
-        o[i] <<= APP_OUT_SHIFT;
-    memcpy(ref_out, o, sizeof o);
+    memcpy(ref_out, jack, sizeof jack);
 }
 
 int main(void)

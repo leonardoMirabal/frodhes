@@ -120,6 +120,7 @@ static struct {
     uint32_t starts, pkts, frames;               /* frames in packets sent from the ring */
     uint32_t underruns, overruns, missed;        /* glitches: ring empty (repeat), ring full (drop), no packet ready */
     uint32_t stalls;                             /* the host stopped reading for > 20 ms (alt still 1) */
+    uint32_t sie_to;                             /* EP4 polls an SIE access timed out in (taken as "still queued") */
     uint32_t adj_up, adj_down;                   /* packets one frame longer / shorter than the pattern */
     uint32_t fill_lo, fill_hi;                   /* range of fill_min since the stream started */
     uint32_t rate_sets;                          /* SET_CUR sampling frequency requests */
@@ -205,11 +206,18 @@ static const uint8_t CFG_DESC[] = {
     8, 0x0B, 0, 2 + FELUCCA_UAC, 1, 1, 0, 0,            /* IAD: audio + MIDI (IF 0-1, 0-2) */
 #else
 #ifndef FELUCCA_USB_PID
-#define FELUCCA_USB_PID 0x0005   /* the update loader is 0x0002. Frodhes (0.9.5): 0x0005, a pid.codes test PID like
-                                  * 0x0001 (Felucca's, Frodhes to 0.9.4): macOS keeps a MIDI device per vendor / product id
+#if defined(BOARD_SMK37) && BOARD_SMK37
+#define FELUCCA_USB_PID 0x0007   /* the SMK-37 Pro (Elite 0x0008, MKE-P37 0x0009: tools/build.py MODEL_PID) */
+#else
+#define FELUCCA_USB_PID 0x0006   /* the FM-1. The update loader is 0x0002. Frodhes 0.9.5-0.9.6: 0x0005 "Frodhes", 0.9.7:
+                                  * the model in the name ("Frodhes FM-1", GitHub #21: tools that find a unit by its
+                                  * MIDI port's model name) and a new pid.codes test PID per model, the next free ones
+                                  * (0x0004 was Dinghy 0.1's): macOS keeps a MIDI device per vendor / product id
                                   * (Apple's USB-MIDI driver matches an entry by VID:PID, then serial, location or the
-                                  * first one offline) with the name it had first, so a Mac that saw "Felucca" kept it;
-                                  * a new PID makes a new entry, named "Frodhes" (tests/usb_desc_test.c) */
+                                  * first one offline) with the name it had first, so a Mac that saw "Felucca" (0x0001)
+                                  * or "Frodhes" (0x0005) kept it; a new PID makes a new entry, named as now
+                                  * (tests/usb_desc_test.c) */
+#endif
 #endif
 static const uint8_t DEV_DESC[18] = {18, 1, 0x10, 0x01, 0, 0, 0, 64, 0x09, 0x12, FELUCCA_USB_PID & 0xFF,
                                      FELUCCA_USB_PID >> 8, 0x00 + 0x10 * (FELUCCA_UAC + FELUCCA_UAC_48K), 0x03,
@@ -296,8 +304,24 @@ static const uint8_t STR1[] = {42, 3, 'H', 0, 0xFC, 0, 'g', 0, 'e', 0, 'l', 0, '
 static const uint8_t STR2[] = {30, 3, 'F', 0, 'e', 0, 'l', 0, 'u', 0, 'c', 0, 'c', 0, 'a', 0, ' ', 0, 'U', 0, 'p', 0,
                                'd', 0, 'a', 0, 't', 0, 'e', 0};
 #else
-static const uint8_t STR2[] = {16, 3, 'F', 0, 'r', 0, 'o', 0, 'd', 0, 'h', 0, 'e', 0, 's', 0};   /* Frodhes: the
-                                                                 * product, so the MIDI port and the audio input */
+#if defined(BOARD_SMK37) && BOARD_SMK37
+#ifndef SMK_MODEL
+#define SMK_MODEL "SMK-37 Pro"                                  /* (fm1_cc.h) */
+#endif
+#define USB_PRODUCT "Frodhes " SMK_MODEL
+#else
+#define USB_PRODUCT "Frodhes FM-1"
+#endif
+/* the product, so the MIDI port and the audio input: "Frodhes" and the model (0.9.7, GitHub #21), UTF-16LE, written
+ * from USB_PRODUCT at the first request (a string literal cannot be spread into an initializer) */
+static uint8_t STR2[2u + 2u * (sizeof USB_PRODUCT - 1u)];
+static void str2_fill(void)
+{
+    uint32_t i;
+    for (i = 0; i + 1u < sizeof USB_PRODUCT; i++) STR2[2u + 2u * i] = (uint8_t)USB_PRODUCT[i];
+    STR2[1] = 3;
+    STR2[0] = (uint8_t)sizeof STR2;
+}
 #endif
 
 static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)
@@ -332,6 +356,9 @@ static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)
             *l = sizeof STR1;
             return 1;
         case 2:
+#ifndef FELUCCA_LOADER
+            if (!STR2[0]) str2_fill();
+#endif
             *d = STR2;
             *l = sizeof STR2;
             return 1;
@@ -1052,6 +1079,7 @@ static inline __attribute__((always_inline)) int32_t uac_s16(int32_t v)
  * ph (or of 159 - ph backwards: the prototype is symmetric), Q15 into 32-bit sums (the taps' absolute sum
  * stays under 2.0: no overflow). Frodhes (0.9.5 cpu-trim): in passes of up to RS_C frames, the pass's frames into
  * the history first, then its outputs (the same frames, the same order: tests/py/test_uac_fir.py, bit for bit) */
+#define UAC_KNEE 24576                                  /* Frodhes: the 48 kHz knee (0.75 of full scale) */
 static FR_RAM __attribute__((noinline)) void uac_tap48(const int32_t *out, uint32_t n)
 {
     uint32_t w = ua_w, i, wk = w, ph = rs.ph;
@@ -1090,6 +1118,15 @@ static FR_RAM __attribute__((noinline)) void uac_tap48(const int32_t *out, uint3
 #undef RS_TAP
                 {   /* (the clamp as max, then min: the same value; the ring through a local pointer) */
                     int32_t vl = (int32_t)(al >> UAC_FIR_Q), vr = (int32_t)(ar >> UAC_FIR_Q);
+                    /* Frodhes (0.9.7, BUGHUNT #38b): a knee before the clamp. The FIR's phases gain up to 1.67 on a
+                     * loud high passage, so a signal the limiter kept at 24000 could overshoot full scale and be
+                     * clamped (+2.7 dB measured on the FM-1). Above UAC_KNEE the excess is halved: 24576 .. 40958
+                     * maps to 24576 .. 32767 (symmetric: -x gives -y); below it nothing changes (one unsigned
+                     * test a channel; tests/py/test_uac_fir.py) */
+                    if ((uint32_t)(vl + UAC_KNEE) > 2u * UAC_KNEE)
+                        vl = vl > 0 ? UAC_KNEE + ((vl - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vl - UAC_KNEE) >> 1);
+                    if ((uint32_t)(vr + UAC_KNEE) > 2u * UAC_KNEE)
+                        vr = vr > 0 ? UAC_KNEE + ((vr - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vr - UAC_KNEE) >> 1);
                     vl = vl < -32768 ? -32768 : vl; vl = vl > 32767 ? 32767 : vl;
                     vr = vr < -32768 ? -32768 : vr; vr = vr > 32767 ? 32767 : vr;
                     ring[wk++ & (UA_N - 1u)] = (uint32_t)(uint16_t)vl | (uint32_t)vr << 16;
@@ -1218,7 +1255,13 @@ static void uac_service(void)
     if (!usb.up || !usb.config || !uac.alt)
         return;
     sie_wr(S_INDEX, 4);
-    csr = sie_rd(S_TXCSR1);
+    csr = usb.timeouts ? 0x01u : sie_rd(S_TXCSR1);
+    if (usb.timeouts) {                                 /* (0.9.7) the INDEX write or the TXCSR1 read timed out: sie_rd's
+                                                         * 0 is not "free" (a new packet over the queued one lost its
+                                                         * frames); as still queued, counted */
+        csr = 0x01u;
+        uac.sie_to++;
+    }
     if (csr & 0x01u) {                                  /* still queued */
         if (uac.wait < 255u && ++uac.wait == 40u && uac.flowing) {
             uac.flowing = 0;

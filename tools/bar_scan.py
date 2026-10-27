@@ -23,7 +23,7 @@ The checks (numbers from PLAN §9.2):
       cases (8..16 voices at once) judge the clipping through the master (their "fx" copy: the limiter), RAW only sat28
   S3  linearity: a 3-note chord vs the sum of its notes alone (RAW, NOISE 0): residual <= -60 dB; no spectral line
       off the spec's partials (+-3 %) above -80 dB re V1, 0.2..2 s after the strike (s3_lines: why lines)
-  S4  steals / ends: S1 in the polyphony and steal cases; the last non-zero sample before the end <= 1 LSB
+  S4  steals / ends: S1 in the polyphony and steal cases; the last non-zero sample before the end <= 2 LSB (1 + the dither)
       (-90 dBFS); exact zeros at the end (RAW: no limit cycles)
   S5  instability: after the fundamental's peak, its band never rises > 0.5 dB over its running maximum outside
       50 ms after an event (motor off); every render finite; exact zero once all notes end
@@ -497,7 +497,7 @@ def run_checks(case, spec, typ, all_cases):
             tail_zero = len(nz) == 0 or nz[-1] < len(m) - int(0.3 * bm.FS)
             last = float(m[nz[-1]]) if len(nz) else 0.0
             a, b = click_count(x, evs)
-            R["S4"] = (tail_zero and last <= 1.0 and a + b == 0, a + b + (0 if tail_zero else 1),
+            R["S4"] = (tail_zero and last <= 2.0 and a + b == 0,   # (2: 1 LSB + the cut's TPDF dither, #16) a + b + (0 if tail_zero else 1),
                        f"clicks {a}, bursts {b}, last non-zero {last:.0f} LSB at {nz[-1] / bm.FS if len(nz) else 0:.2f} s, "
                        f"{'exact zero at the end' if tail_zero else 'NOT silent at the end'}")
         elif ck == "S5":

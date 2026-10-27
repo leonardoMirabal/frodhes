@@ -2,11 +2,13 @@
 /* The USB descriptors as the host reads them: usb.c compiled here unchanged, its get_desc() asked for the device,
  * the configuration and every string, the way a host enumerates.
  *
- * Checks: the device descriptor (VID 1209, the PID: the app 0x0005, the update loader 0x0002, its string indexes), the
+ * Checks: the device descriptor (VID 1209, the PID: the FM-1 app 0x0006, the SMK-37 Pro / Elite / MKE-P37 apps 0x0007 /
+ * 0x0008 / 0x0009, the update loader 0x0002, its string indexes), the
  * configuration walked descriptor by descriptor (each bLength, the sum = wTotalLength = sizeof = CFG_LEN, the
  * interface count), the MIDI streaming jacks (four, the embedded pair tied to the bulk endpoints, iJack the product
  * string in the app and 0 in the loader), every string (bLength = its size, type 3, UTF-16LE, the language 0x0409) and
- * every index the descriptors name resolves. The app: "Hügelton Instruments" / "Frodhes"; the loader: "Felucca
+ * every index the descriptors name resolves. The app: "Hügelton Instruments" / "Frodhes FM-1" ("Frodhes SMK-37 Pro"
+ * ...: the model in the name since 0.9.7, GitHub #21; "Frodhes" 0x0005 in 0.9.5-0.9.6); the loader: "Felucca
  * Update", its descriptors as before the PID change (iJack 0, PID 0x0002).
  *
  *   cc -o build/usb_desc_test tests/usb_desc_test.c -Ifirmware/src && build/usb_desc_test          (the app)
@@ -57,9 +59,12 @@ int main(void)
 #ifdef FELUCCA_LOADER
     const unsigned want_pid = 0x0002, want_ijack = 0;
     const char *want_prod = "Felucca Update";
+#elif defined(WANT_PID)
+    const unsigned want_pid = WANT_PID, want_ijack = 2;   /* (an SMK model: -DBOARD_SMK37=1 [-DSMK_MODEL=...]) */
+    const char *want_prod = WANT_PROD;
 #else
-    const unsigned want_pid = 0x0005, want_ijack = 2;
-    const char *want_prod = "Frodhes";
+    const unsigned want_pid = 0x0006, want_ijack = 2;     /* the FM-1 */
+    const char *want_prod = "Frodhes FM-1";
 #endif
 
     CHECK(get_desc(0x0100, &dd, &dl), "no device descriptor");

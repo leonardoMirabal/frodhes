@@ -96,7 +96,7 @@ def off_rel(off_ms, start_ms=100.0):
 def check(c, g, what):
     r, rms = residual_db(c, g)
     print(what, f"residual {r:.1f} dB, rms {rms:.2f} LSB")
-    assert r <= -60.0 or rms <= 0.5, (what, r, rms)
+    assert r <= -60.0 or rms <= 0.75, (what, r, rms)   # (0.75: the TPDF dither is 0.5 LSB RMS by itself, #16)
 
 
 @pytest.mark.parametrize("note,vel", [(36, 100), (48, 127), (54, 40), (60, 100), (72, 127), (84, 64), (96, 100),

@@ -78,7 +78,8 @@ def test_soft_mallets_are_soft_at_any_velocity(n, vel):
             assert m["v3"] <= r["v3"] - 20, (n, vel, fam, m["v3"], r["v3"])
         assert m["v3"] <= -25 and m["v2"] <= r["v2"] + 0.5, (n, vel, fam, m["v2"], m["v3"], r["v2"])
     s, y = meas("BARK", SOFT, vs)[(n, vel)], meas("BARK", YARN, vs)[(n, vel)]
-    assert s["v2"] <= max(y["v2"], -90) + 0.5 and s["v3"] <= max(y["v3"], -90) + 0.5, (n, vel)   # (-90: the floor)
+    # (-85: the floor; the output's dither (#16) puts a partial that has died out at about -87 re the fundamental on F6)
+    assert s["v2"] <= max(y["v2"], -85) + 0.5 and s["v3"] <= max(y["v3"], -85) + 0.5, (n, vel)
     assert s["cen_a"] <= y["cen_a"] * 1.02, (n, vel)
 
 

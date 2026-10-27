@@ -60,11 +60,13 @@ test-smk: $(SMKBIN)        ## the SMK-37 build on the host (7 voices): every scr
 	  else echo "FAIL  $$n (build/host-smk/$$n.log)"; fail=1; fi; done; exit $$fail
 
 PYTEST_N ?= auto           # make pytest PYTEST_N=4 (or 0: serial); serial anyway without pytest-xdist
+SHARD ?=                   # make pytest SHARD=2/4: only shard 2 of 4 (tools/pytest_shard.py; ci.yml's host jobs)
+PYTEST_FILES = $(if $(strip $(SHARD)),$$($(PY) tools/pytest_shard.py $(subst /, ,$(strip $(SHARD)))),tests/py)
 pytest:                    ## Python tools' unit tests (analysis, generators), in parallel with pytest-xdist
 	@if [ "$(strip $(PYTEST_N))" != 0 ] && $(PY) -c "import xdist" 2>/dev/null; then \
-	  echo "$(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup tests/py"; \
-	  $(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup tests/py; \
-	else echo "$(PY) -m pytest -q tests/py  (serial: no pytest-xdist)"; $(PY) -m pytest -q tests/py; fi
+	  echo "$(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup $(PYTEST_FILES)"; \
+	  $(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup $(PYTEST_FILES); \
+	else echo "$(PY) -m pytest -q $(PYTEST_FILES)  (serial: no pytest-xdist)"; $(PY) -m pytest -q $(PYTEST_FILES); fi
 
 firmware:                  ## build/frodhes.fwsc (Docker on macOS)
 	PYTHON=$(PY) ./build.sh

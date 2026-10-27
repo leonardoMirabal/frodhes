@@ -141,7 +141,8 @@ def test_presets_on_the_host_every_preset_on_target():
     F17..F19 0 +- 1.0: the starters U10..U12 until 0.9.5's RC).
     Before 2026-10-24: F07 -1.9, F08 -1.7, F10 -3.9, F09 +1.47, F13 +3.4, F14 +2.9; the 0.9.5 presets: F02..F12
     -0.7..+0.8, F13 +2.6, F14 +2.0, F15 -0.2, F16 +2.0. 2026-10-25: F11 LEVEL 18 -> 10 (the FM-1 read +1.8, the
-    host -0.1; now the host -1.6, judged at HOST_SHIFT's -1.9). The drive-type merge: F03 +1.1, F07 +1.3, F08 +1.1 (driven:
+    host -0.1; now the host -1.6, judged at HOST_SHIFT's -1.9). 0.9.7: the FM-1 read -1.7 at LEVEL 10 (0.9.5 -1.8, 0.9.6
+    -1.7 / -2.0), so LEVEL 18: the host +0.0 (HOST_SHIFT +0.2, the FM-1 ~0.2 under the host). The drive-type merge: F03 +1.1, F07 +1.3, F08 +1.1 (driven:
     MANUAL 'Factory presets', within 1.5 LU; the 1 LU is the chord-matched ones', not a limit for every Rhodes preset).
     0.9.5: the user bank's starters U01..U09 follow (presets 20..28 in the rows), each within 1 LU of F01"""
     r, rep = h.HostRig(1), {}
@@ -150,8 +151,9 @@ def test_presets_on_the_host_every_preset_on_target():
     assert h.PR_COUNT == 19 and [q["preset"] for q in rep["presets"]] == every
     lv = [q["level"] for q in rep["presets"]]
     for p, v in zip(every, lv):
-        target, tol = h.preset_target(p, host=True)   # (F11: the host reads it 1.9 LU under the FM-1, HOST_SHIFT)
+        target, tol = h.preset_target(p, host=True)   # (F11: the host reads it 0.2 LU over the FM-1, HOST_SHIFT)
         assert abs(v - lv[0] - target) <= tol, (p, round(v - lv[0], 2))   # (the Rhodes F01..F11: 1.5 LU, the spec; F12 2.0)
+    assert abs(lv[10] - lv[0]) <= 0.5, round(lv[10] - lv[0], 2)   # F11 RESO SWEEP at F01's level (0.9.7: LEVEL 18)
     assert ok and "off target: none" in msg, msg
 
 

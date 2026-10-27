@@ -281,7 +281,7 @@ static inline __attribute__((always_inline)) void ri_endp(const int16_t *b, int3
  * do not wrap (9 instructions a row, not 19) */
 #define RI_XS 4
 static int16_t ri_xt[(RI_NB + 1u) * RI_NL];
-__attribute__((noinline)) static void ri_xrows(int16_t *t, const int16_t *r, uint32_t dn, uint32_t dol, int32_t w)
+FR_RAM __attribute__((noinline)) static void ri_xrows(int16_t *t, const int16_t *r, uint32_t dn, uint32_t dol, int32_t w)
 {
     uint32_t n = RI_NB + 1u, m;
     while (n) {
@@ -352,7 +352,7 @@ FR_RAM __attribute__((noinline)) static int32_t ri_input(rev_inf_t *s, const int
 /* the mix (Householder: y_k - S / 4, lossless; line k's into line k - 1) back into the ring's rows o, the taps
  * (mid, side); its own function, pointers stepping (the registers it needs: a spill fewer each sample). Returns the
  * taps ORed (activity); *ab += the sum of |mid| */
-__attribute__((noinline)) static int32_t ri_mix(const int32_t *y, const int32_t *xp, int16_t *o, int32_t *mo,
+FR_RAM __attribute__((noinline)) static int32_t ri_mix(const int32_t *y, const int32_t *xp, int16_t *o, int32_t *mo,
                                                 int32_t *so, int32_t *tep, int32_t *abp)
 {
     const int32_t *e = y + RI_NB * RI_NL;

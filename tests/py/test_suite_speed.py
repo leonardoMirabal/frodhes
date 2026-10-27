@@ -31,7 +31,8 @@ def dry(tmp_path, tag, **env):
     for f in sorted(os.listdir(d)):
         if f.endswith(".log") and f != "summarize.log":
             # the commands, the plans and the gate texts; not the clock lines
-            logs[f[:-4]] = [ln for ln in (d / f).read_text().splitlines() if not re.match(r"# \w{3} \w{3} ", ln)]
+            logs[f[:-4]] = [ln for ln in (d / f).read_text().splitlines()
+                            if not re.match(r"# \w{3} \w{3} |# host load ", ln)]   # (the load: the machine's)
     return rows, logs, (d / "SUMMARY.md").read_text()
 
 

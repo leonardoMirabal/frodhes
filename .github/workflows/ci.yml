@@ -8,15 +8,39 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
-  host:
-    # arm64 Linux: the same machine as a local `docker run python:3.14` on an Apple-silicon Mac (a replica of this job)
+  # arm64 Linux: the same machine as a local `docker run python:3.14` on an Apple-silicon Mac (a replica of these jobs).
+  # The host tests in 5 jobs at once: the scripts (make test, make host) and tests/py in 4 shards (tools/pytest_shard.py:
+  # whole files, balanced by tests/py/shard_weights.json; together exactly `make pytest`). The required check is the
+  # job `host` below: green only when every one of them is.
+  host-scripts:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest pytest-xdist==3.8.0
       - run: make test
       - run: make host
-      - run: make pytest PY=python3
+  host-pytest:
+    name: host-pytest ${{ matrix.shard }}/4
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest pytest-xdist==3.8.0
+      - run: python3 tools/pytest_shard.py --check 4
+      - run: make pytest PY=python3 SHARD=${{ matrix.shard }}/4
+  host:
+    # the branch protection's context `host` (the same meaning as before the split: every host test passed): a failed,
+    # cancelled or skipped job above fails it (a skipped required job would count as passed)
+    needs: [host-scripts, host-pytest]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "host-scripts: ${{ needs.host-scripts.result }}, host-pytest (4 shards): ${{ needs.host-pytest.result }}"
+          test "${{ needs.host-scripts.result }}" = success && test "${{ needs.host-pytest.result }}" = success
   # The engines' tables are generated on macOS (Accelerate); their regeneration must give the committed headers byte
   # for byte on every machine (the solver-sensitive stages are pinned: rhodes_pins.json, bars_fe_pins.json,
   # bars_pins.json). The host job checks it on Linux arm64; this one on macOS, with the same numpy / scipy as the
@@ -29,24 +53,38 @@ jobs:
         with:
           python-version: '3.14'
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
-      - run: python -m pytest -q -rs tests/py/test_gen_bars.py tests/py/test_marimba_calib.py
-      - run: '! python -m pytest -q -rs tests/py/test_gen_bars.py -k deterministic | grep -q SKIPPED'
+      # one run: its -v lines show the deterministic test PASSED (not SKIPPED: the committed header is the full
+      # form), instead of a second run of test_gen_bars.py for it
+      - shell: bash
+        run: |
+          python -m pytest -v -rs tests/py/test_gen_bars.py tests/py/test_marimba_calib.py | tee gen.txt
+          grep -q 'test_gen_bars.py::test_deterministic_and_up_to_date PASSED' gen.txt
   # The browser emulator (web/build.sh, Emscripten pinned in tools/get_emsdk.sh) must build and pass its selftest
   # (tools/release.py --web-selftest: Chromium + WebKit at 1280 and 390 px, sound, a lit screen, no page errors, the
-  # version shown), and the knob test (tests/py/test_web_knobs.py) must run and pass. Nothing is deployed here: only a v* tag (release.yml) publishes the emulator.
+  # version shown, the installer through the page on a fake FM-1 in Chromium), the installer's own tests
+  # (tests/web/install_test.js, node: a fake FM-1) and the knob test (tests/py/test_web_knobs.py) must run and pass. Nothing is deployed here: only a v* tag (release.yml) publishes the emulator.
+  # In Playwright's own image (Chromium and WebKit with their system libraries installed): the apt download of
+  # WebKit's libraries (`playwright install --with-deps`) took 19 of this job's 20 minutes.
   web:
     runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright/python:v1.64.0-noble
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
           path: .local/emsdk
-          key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}
+          key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}-playwright-image
+      - run: apt-get update -qq && apt-get install -y -qq xz-utils   # (emsdk unpacks node from a .tar.xz; the image has no xz)
       - run: sh tools/get_emsdk.sh .local/emsdk
       - run: sh web/build.sh
+      - uses: actions/setup-node@v4   # (Playwright's Python image has no node)
+        with:
+          node-version: 20
+      - name: the installer against a fake FM-1 (node)
+        run: node tests/web/install_test.js
       - run: |
           pip install playwright==1.64.0 pytest
-          python3 -m playwright install --with-deps chromium webkit
+          python3 -m playwright install chromium webkit
       - run: python3 tools/release.py --web-selftest web/dist dev
       - name: the knob test (must run, not skip)
         run: |
