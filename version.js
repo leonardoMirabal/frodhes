@@ -1,1 +1,1 @@
-window.FRODHES_VERSION = "0.9.6";
+window.FRODHES_VERSION = "0.9.7";
