@@ -87,7 +87,7 @@ MOVE_CFLAGS := -O2 -fPIC -ffp-contract=off -std=gnu11 -Wall -Wno-unused-function
   -Imove/compat -Ifirmware/src -Ifirmware/gen
 MOVE_OUT  := build/move/frodhes
 
-.PHONY: move-image move move-native test-move test-move-native move-probe test-move-probe
+.PHONY: move-image move move-native test-move test-move-native gate-p gate-p-native move-probe test-move-probe
 move-image:                ## the Move build image (Debian bookworm arm64, about 250 MB)
 	docker build --platform linux/arm64 -t $(MOVE_IMG) move/docker
 
@@ -96,11 +96,12 @@ move:                      ## build/move/frodhes/{dsp.so,module.json} + build/mo
 
 move-native:
 	@mkdir -p $(MOVE_OUT)
-	$(MOVE_CC) $(MOVE_CFLAGS) -shared -Wl,-z,defs -o $(MOVE_OUT)/dsp.so move/move_plugin.c -lm
+	$(MOVE_CC) $(MOVE_CFLAGS) -shared -Wl,-z,defs -o $(MOVE_OUT)/dsp.so move/move_plugin.c move/coro/coro_aarch64.S -lm
 	@if [ -f move/module/module.json ]; then cp move/module/module.json $(MOVE_OUT)/; else \
 	  printf '{"id":"frodhes","name":"Frodhes","version":"%s","dsp":"dsp.so","api_version":2,"capabilities":{"audio_out":true,"midi_in":true,"component_type":"sound_generator"}}\n' "$(MOVE_VER)" > $(MOVE_OUT)/module.json; fi
+	@if [ -f move/module/help.json ]; then cp move/module/help.json $(MOVE_OUT)/; fi
 	@cp LICENSE $(MOVE_OUT)/LICENSE
-	tar -C build/move -czf build/move/frodhes-module.tar.gz frodhes/dsp.so frodhes/module.json frodhes/LICENSE
+	tar -C build/move -czf build/move/frodhes-module.tar.gz $$(cd build/move && ls frodhes/dsp.so frodhes/module.json frodhes/help.json frodhes/LICENSE 2>/dev/null)
 	@ls -l $(MOVE_OUT)/dsp.so build/move/frodhes-module.tar.gz
 
 test-move:                 ## the Move checks (M1-01 stubs): one exported symbol, no undefined symbol, dlopen smoke
@@ -110,10 +111,35 @@ test-move-native: move-native
 	@syms=$$(nm -D --defined-only $(MOVE_OUT)/dsp.so | awk '{print $$3}'); \
 	  [ "$$syms" = move_plugin_init_v2 ] || { echo "FAIL exports: $$syms"; exit 1; }; echo "ok    exports: $$syms"
 	@bad=$$(nm -D --undefined-only $(MOVE_OUT)/dsp.so | awk '{print $$2}' | grep -vE '^(_ITM_|__cxa_finalize|__gmon_start__)' | \
-	  grep -vE '^(calloc|free|memcmp|memcpy|memmove|memset|strlen|strcmp|strncmp)@' || true); \
+	  grep -vE '^(calloc|free|malloc|aligned_alloc|memcmp|memcpy|memmove|memset|strlen|strcmp|strncmp|strchr|strstr|snprintf|sprintf|__isoc99_sscanf|atoi|strtol|clock_gettime|abort|__getauxval)@' || true); \
 	  [ -z "$$bad" ] || { echo "FAIL imports beyond the allow-list: $$bad"; exit 1; }; echo "ok    imports"
-	$(MOVE_CC) -O1 -std=gnu11 -Wall -o build/move/smoke move/tests/smoke.c -ldl
+	@mkdir -p build/move/t
+	@$(MOVE_CC) -O2 -Wall -Wextra -o build/move/t/coro move/tests/test_coro.c move/coro/coro_aarch64.S
+	build/move/t/coro
+	@build/move/t/coro selftest >/dev/null 2>&1; [ $$? -ne 0 ] && echo "ok    seccomp guard kills a syscall" || { echo "FAIL seccomp guard"; exit 1; }
+	@$(MOVE_CC) -O1 -std=gnu11 -Wall -o build/move/smoke move/tests/smoke.c -ldl
 	build/move/smoke $(MOVE_OUT)/dsp.so
+	@$(MOVE_CC) -O1 -g -std=gnu11 -Wall -Wextra -o build/move/t/test_bridge move/tests/test_bridge.c -ldl
+	build/move/t/test_bridge api $(MOVE_OUT)/dsp.so
+	build/move/t/test_bridge gatep $(MOVE_OUT)/dsp.so 10000
+	MOVE_DEFS='$(MOVE_DEFS)' move/tests/run_eq.sh
+
+gate-p:                    ## Gate P (M1-11): test-move's guards, then ASan + UBSan builds through every bridge test
+	$(MOVE_RUN) make -s gate-p-native
+
+# (-fno-sanitize=shift-base: shared DSP shifts negative values left at 16 places, gcc defines it; fixed after 0.9.7)
+MOVE_SAN := -O1 -g -fsanitize=address,undefined -fno-sanitize=shift-base -fno-sanitize-recover=undefined -fno-omit-frame-pointer
+gate-p-native: test-move-native
+	@mkdir -p build/move/san
+	$(MOVE_CC) $(filter-out -O2,$(MOVE_CFLAGS)) $(MOVE_SAN) -shared -o build/move/san/dsp.so move/move_plugin.c move/coro/coro_aarch64.S -lm 2>/dev/null
+	$(MOVE_CC) $(MOVE_SAN) -DNO_GUARDS -std=gnu11 -o build/move/san/test_bridge move/tests/test_bridge.c -ldl
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge api build/move/san/dsp.so
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge gatep build/move/san/dsp.so 10000
+	@for s in move/tests/scripts/*.txt; do n=$$(basename $$s .txt); \
+	  build/move/t/host build/move/san/$$n $$s > /dev/null 2>&1 && \
+	  ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge eq build/move/san/dsp.so $$s build/move/san/$$n.wav || exit 1; \
+	  rm -f build/move/san/$$n.wav build/move/san/$$n-*.ppm; done
+	@echo "ok    gate P"
 
 move-probe:                ## the device-session probe (move/probe/README.md)
 	$(MOVE_RUN) make -s -C move/probe -j2
