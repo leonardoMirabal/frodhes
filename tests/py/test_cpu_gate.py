@@ -21,6 +21,10 @@ def main(argv):
     f = os.environ["FAKE_COUNT"]
     k = int(open(f).read()) if os.path.exists(f) else 0
     open(f, "w").write(str(k + 1))
+    if os.environ["FAKE_TAKES"].split(";")[k] == "ca":     # CoreAudio busy right after an install: nothing measured
+        print("USB audio: PortAudioError: Error starting stream: Internal PortAudio error [PaErrorCode -9986] "
+              "('cannot do in current context' -10863)")
+        return dict(code=1)
     worst, whole, ok = os.environ["FAKE_TAKES"].split(";")[k].split(",")
     print("8 bass notes v127 + pedal, every effect on   attack 3900 us   voices shed 0")
     print(f"\\nworst {worst} us with 10 voices (67 %); design target 4500 us")
@@ -121,6 +125,27 @@ def test_hurt_runs_three_takes_whatever_takes_says(fake_tree):
 def test_a_take_own_fail_fails(fake_tree):
     r = run_fx(fake_tree, ["3900,4100,1", "4600,4700,0"], "--takes", "2", "--limit", "5000")
     assert r.returncode == 1 and "take 2:" in r.stdout and "hil_cpu FAIL" in r.stdout, r.stdout
+
+
+def test_coreaudio_busy_take_is_retried_once(fake_tree):
+    """-10863 before any ISR number (the first take after an install): that take runs once more, with its own line;
+    the failed attempt never counts, the retry is judged like any take, and a second -10863 is not retried"""
+    retry = "CoreAudio -10863 (cannot do in current context) before any ISR number: retried once"
+    r = run_fx(fake_tree, ["ca", "3900,4100,1"])
+    assert r.returncode == 0 and r.stdout.count(retry) == 1, r.stdout + r.stderr
+    assert "verdict: PASS (limit 4200 us, 1 takes)" in r.stdout
+    r = run_fx(fake_tree, ["ca", "3900,4100,1", "3950,4150,1"], "--takes", "2")
+    assert r.returncode == 0 and r.stdout.count(retry) == 1 and "2 takes)" in r.stdout, r.stdout
+    r = run_fx(fake_tree, ["ca", "ca", "3900,4100,1"])                  # busy twice: FAIL, no third attempt
+    assert r.returncode == 1 and r.stdout.count(retry) == 1 and "whole ISR not reported" in r.stdout, r.stdout
+    assert (fake_tree / "count").read_text() == "2"
+    r = run_fx(fake_tree, ["ca", "3900,4260,1"])                        # the retry over the limit: FAIL
+    assert r.returncode == 1 and "take 1: whole ISR 4260 us > 4200 us" in r.stdout, r.stdout
+    r = run_fx(fake_tree, ["3900,4100,1", "ca", "3900,4120,1", "3900,4130,1"], "--hurt")   # the row unbroken
+    assert r.returncode == 0 and r.stdout.count(retry) == 1 and "3 good takes in a row needed, 3 in a row" in r.stdout
+    assert F.ca_retry("Error -10863", dict(worst=None, whole=None))
+    assert not F.ca_retry("Error -10863", dict(worst=3900, whole=4100))  # measured: judged, never retried
+    assert not F.ca_retry("some other USB error", dict(worst=None, whole=None))
 
 
 def summarize(tmp_path, logs, env=None):

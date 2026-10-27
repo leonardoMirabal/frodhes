@@ -31,8 +31,10 @@ each take a process of its own (its MIDI, its USB stream, its counters), every t
 of the takes: any take with its whole ISR over --limit US (default $CPU_LIMIT_US, else 4200), or not reported, or
 with hil_cpu's own verdict FAIL (4500 us, a shed voice, a USB fault) is a FAIL, exit 1. --hurt: a worst case that has
 been over the margin before (run_final_rev.sh CPU_HURT): it must give 3 good takes IN A ROW (at least 3 takes
-whatever N, each whole ISR <= the limit; one take over = FAIL, no retry). The lines run_final_rev.sh / cpu_check.sh /
-summarize_rev.py read:
+whatever N, each whole ISR <= the limit; one take over = FAIL, no retry). One exception, not a measurement: a take that
+fails on CoreAudio's -10863 ("cannot do in current context", the first take right after an install) before any ISR
+number runs once more, with its own line (take K/N: CoreAudio -10863 ... retried once); the retry is judged like any
+take, the failed attempt never counts. The lines run_final_rev.sh / cpu_check.sh / summarize_rev.py read:
     hil_cpu_fx: take K/N: worst W us, whole ISR H us, hil_cpu ok|FAIL, exit C
     hil_cpu_fx: takes N: worst A-B us, whole ISR C-D us (max D) vs the limit L us ...: PASS|FAIL
     hil_cpu_fx: verdict: PASS|FAIL (limit L us, N takes[, hurt: 3 in a row])"""
@@ -362,32 +364,56 @@ class Tee:
         return getattr(self.f, k)
 
 
+# CoreAudio's -10863 (kAudioUnitErr_CannotDoInCurrentContext): the first take right after an install can fail with it
+# opening the USB stream, before hil_cpu has measured anything. Such a take is run again, once; the retry is judged
+# like any take (the failed attempt never counts, a pass or a fail)
+CA_BUSY = re.compile(r"-10863|cannot do in current context", re.I)
+
+
+def ca_retry(text, t):
+    """the take failed on -10863 before any ISR number (no worst, no whole ISR): run it again"""
+    return bool(CA_BUSY.search(text)) and t.get("worst") is None and t.get("whole") is None
+
+
+def one_take(cmd, k, n):
+    """one take (cmd, this script with --takes 1), its output streamed through: (its take dict, its output)"""
+    import subprocess
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    text = []
+    for ln in p.stdout:
+        sys.stdout.write(ln)
+        sys.stdout.flush()
+        text.append(ln)
+    code = p.wait()
+    text = "".join(text)
+    got = parse_takes(text)
+    if got:
+        t = got[-1]
+        t["code"] = code if code else t["code"]
+    else:
+        w, wh, v = parse_take(text)
+        t = dict(worst=w, whole=wh, verdict=v, code=code)
+        print(take_line(k, n, w, wh, v, code), flush=True)
+    return t, text
+
+
 def run_takes(own, rest, n, limit, hurt):
     """n takes, each this script again with --takes 1 (its own process: hil_cpu's counters start fresh), its output
-    streamed through and its take line collected; then the judgement; the exit code"""
-    import subprocess
+    streamed through and its take line collected (a take lost to -10863 before measuring: once more, ca_retry); then
+    the judgement; the exit code"""
     val = ("--takes", "--take-of", "--limit")
     base = [a for i, a in enumerate(own) if a not in val + ("--hurt",) and not (i and own[i - 1] in val)]
     takes = []
     for k in range(1, n + 1):
         print(f"hil_cpu_fx: ---- take {k}/{n} ----", flush=True)
-        p = subprocess.Popen([sys.executable, os.path.abspath(__file__)] + base +
-                             ["--takes", "1", "--take-of", f"{k}/{n}", "--limit", str(limit), "--"] + rest,
-                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-        text = []
-        for ln in p.stdout:
-            sys.stdout.write(ln)
-            sys.stdout.flush()
-            text.append(ln)
-        code = p.wait()
-        got = parse_takes("".join(text))
-        if got:
-            t = got[-1]
-            t["code"] = code if code else t["code"]
-        else:
-            w, wh, v = parse_take("".join(text))
-            t = dict(worst=w, whole=wh, verdict=v, code=code)
-            print(take_line(k, n, w, wh, v, code), flush=True)
+        cmd = [sys.executable, os.path.abspath(__file__)] + base + \
+              ["--takes", "1", "--take-of", f"{k}/{n}", "--limit", str(limit), "--"] + rest
+        t, text = one_take(cmd, k, n)
+        if ca_retry(text, t):
+            print(f"hil_cpu_fx: take {k}/{n}: CoreAudio -10863 (cannot do in current context) before any ISR number: "
+                  f"retried once (the failed attempt is not counted)", flush=True)
+            t, text = one_take(cmd, k, n)
+            t["retried"] = True
         takes.append(t)
     ok, lines = judge(takes, limit, hurt)
     for s in lines:
@@ -452,8 +478,8 @@ def main():
         val = {"--spread", "--drive-type", "--rev-type", "--takes", "--limit", "--take-of"}
         rest = [a for i, a in enumerate(own) if a not in skip | val and not (i and own[i - 1] in val)]
         own = [a for i, a in enumerate(own) if a in skip | val or (i and own[i - 1] in val)]
-    if n > 1 and not dry:
-        return run_takes(own, rest, n, limit, hurt)
+    if not dry and not take_of and "--help" not in rest and "-h" not in rest:
+        return run_takes(own, rest, n, limit, hurt)   # (one take too: its own process, so -10863 can be retried)
     rw, after, notes = {}, {}, []
     types = drive_types()
     if types:
