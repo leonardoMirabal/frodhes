@@ -11,7 +11,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 CC = ["cc", "-O1", "-Wall", "-Wno-unused-function"]
 SDK = Path(os.environ.get("AC79_SDK", ROOT / ".local" / "fw-AC79_AIoT_SDK"))
-if not (SDK / "cpu").exists() and (ROOT.parents[2] / ".local" / "fw-AC79_AIoT_SDK" / "cpu").exists():
+if not (SDK / "cpu").exists() and len(ROOT.parents) > 2 \
+        and (ROOT.parents[2] / ".local" / "fw-AC79_AIoT_SDK" / "cpu").exists():   # (a checkout near / has no parents[2])
     SDK = ROOT.parents[2] / ".local" / "fw-AC79_AIoT_SDK"    # (a worktree under .claude/worktrees: the main checkout's)
 
 
