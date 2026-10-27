@@ -1181,7 +1181,7 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # 0 +- 1.5 (AGENTS.md); VIBES 2.5 dB above the Rhodes types (MANUAL), so F13 / F14 +2.5 +- 1.0; MARIMBA is set 2.5 dB
 # above too, but its strikes are held under -0.5 dBFS (the user's level decision "A", 2026-10-20): F16 WOOD ECHO (echo,
 # chorus, reverb) reads +2.0, F15 -0.2 (on this chord; the MANUAL's A3-E4-A4 reads -1.5 on the FM-1), judged at +-1.0.
-# The 0.9.5 presets (host): F02..F12 -0.7..+0.8 (F11 -1.6 since its LEVEL 10: HOST_SHIFT), F13 +2.6, F14 +2.0
+# The 0.9.5 presets (host): F02..F12 -0.7..+0.8 (F11 -1.6 at LEVEL 10; 0.9.7 LEVEL 18: +0.0), F13 +2.6, F14 +2.0
 # F12 AUTO WAH (B, the user's pick): its deep 1/4 band-pass sweep reads +1.6 LU on the chord and -2.3 on a phrase at
 # LEVEL 127 (the maximum): a documented exception, 0 +- 2.0
 # F17..F19 (TAPE ECHO, DREAM, RADIO: the starters U10..U12 until 0.9.5's RC) keep the starters' 1 LU
@@ -1199,9 +1199,10 @@ def preset_pc(p):
 
 
 # a preset the host reads at another level than the FM-1 (re F01, LU), its host target shifted by that much: F11 RESO
-# SWEEP's OHCD drive into the resonant LP12 reads 1.9 LU louder on the FM-1 (2026-10-25, LEVEL 18: the FM-1 +1.8 on
-# USB and the jack, the host -0.1); at LEVEL 10 the FM-1 ~+0.3, the host -1.6
-HOST_SHIFT = {11: -1.9}
+# SWEEP (OHCD into the resonant LP12). At LEVEL 10 the FM-1 read -1.8 (0.9.5), -1.7 / -2.0 (0.9.6), -1.7 (0.9.7's T2),
+# the host -1.5: the FM-1 ~0.2 LU under the host (the 2026-10-25 reading, +1.8 at LEVEL 18 on a build before OHCD's
+# full range, no longer holds). 0.9.7: LEVEL 18, the host +0.0
+HOST_SHIFT = {11: 0.2}
 
 
 def preset_target(p, host=False):
