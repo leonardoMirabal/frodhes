@@ -88,3 +88,55 @@ def test_device_null_proof():
     res = device_null.self_test(out=lambda s: None)
     assert res and all(want == got for _, want, got, _ in res), res
     assert any(not w for _, w, _, _ in res)                       # (fail cases exist)
+
+
+# ---- over USB-C: the tests against the offline model of the Move (FakeRig); the device runs are the main session's
+def _fake(tmp_path, fn, *inject, **kw):
+    r = mh.FakeRig(inject=inject)
+    return fn(r, str(tmp_path), out=lambda s: None, **kw)
+
+
+def test_usb_ports_picked():
+    names = ["IAC Driver Bus 1", "MIDISPORT 2x4 Port 1", "M6", "Frodhes FM-1", "Ableton Move Live Port",
+             "Ableton Move Standalone Port"]
+    assert mh._pick(names, mh.MIDI_KEYS, "MIDI") == "Ableton Move Standalone Port"
+    assert mh._pick(names[:5], mh.MIDI_KEYS, "MIDI") is None          # (the Live port never reaches a slot)
+    assert mh._pick(names, mh.MIDI_KEYS, "MIDI", want="midisport") is None
+    assert mh._pick(["M6", "Ableton Move"], mh.AUDIO_KEYS, "audio") == "Ableton Move"
+
+
+def test_usb_note_vel_sus_clock_pass_on_a_good_device(tmp_path):
+    ok, rep = _fake(tmp_path, mh.usb_note)
+    assert ok and abs(rep["cents"]) < 1 and rep["glitches"] == [], rep
+    assert os.path.exists(tmp_path / "note.wav")
+    ok, rep = _fake(tmp_path, mh.usb_vel)
+    assert ok and rep["range_db"] > 20, rep
+    ok, rep = _fake(tmp_path, mh.usb_sus)
+    assert ok, rep
+    ok, rep = _fake(tmp_path, mh.usb_clock, bpm=120.0)
+    assert ok and abs(rep["bpm_seen"] - 120) < 1.5, rep
+
+
+def test_usb_failures_found(tmp_path):
+    ok, rep = _fake(tmp_path, mh.usb_note, ("click", 1.0))
+    assert not ok and rep["glitches"], rep
+    ok, rep = _fake(tmp_path, mh.usb_sus, ("nosus", 0.0))
+    assert not ok and "pedal does not hold" in rep["verdict"], rep
+    ok, rep = _fake(tmp_path, mh.usb_sus, ("loud", 5.0))
+    assert not ok and "louder after key-up" in rep["verdict"], rep
+    ok, rep = mh.usb_clock(mh.FakeRig(), str(tmp_path), bpm=120.0, secs=0.8, out=lambda s: None)
+    assert not ok and "did not run" in rep["verdict"]
+
+
+def test_usb_stress_detectors(tmp_path):
+    ok, rep = _fake(tmp_path, mh.usb_stress, secs=8.0)
+    assert ok, [t["events"] for t in rep["takes"]]
+    ok, rep = _fake(tmp_path, mh.usb_stress, ("click", 2.37), ("stale", 3.3), ("zero", 6.13), secs=16.0)
+    low = {k for _, k, _ in rep["takes"][0]["events"]}
+    assert not ok and {"click", "stale", "zero"} <= low, low
+
+
+def test_usb_cli_fake(tmp_path):
+    r = run("usb-note", "--fake", "--out", str(tmp_path))
+    assert r.returncode == 0 and "PASS" in r.stdout, r.stdout + r.stderr
+    assert os.path.exists(tmp_path / "report.json")
