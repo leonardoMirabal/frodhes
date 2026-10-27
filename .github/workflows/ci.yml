@@ -90,3 +90,16 @@ jobs:
           python3 -m pytest -q -rs tests/py/test_web_knobs.py > knobs.txt || { cat knobs.txt; exit 1; }
           cat knobs.txt
           ! grep -q SKIPPED knobs.txt
+  # DRAFT (private plan 05 M1-16; not required, not yet run in CI): the Move's checks, MT0, in the Move's userland
+  # (Debian bookworm arm64: its glibc), natively on GitHub's arm64 runner. The same script runs locally
+  # (tools/ci_move.sh; on macOS its build step uses the arm64 bookworm image).
+  move:
+    runs-on: ubuntu-24.04-arm
+    container: debian:bookworm
+    steps:
+      - run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates make gcc libc6-dev python3 python3-pip python3-venv
+      - uses: actions/checkout@v4
+      - run: |
+          python3 -m venv /opt/venv
+          /opt/venv/bin/pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest pytest-xdist==3.8.0
+      - run: PY=/opt/venv/bin/python MOVE_RUN= PYTEST_N=auto NICE= sh tools/ci_move.sh
