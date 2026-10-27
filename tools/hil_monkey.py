@@ -33,7 +33,8 @@ then the bypass off again. The gates, per take:
             recorder's mark); the stream kept running (the frames recorded >= 98 % of the take's length)
 Every take runs (--stop-on-fail: stop after the first failing one; a device that no longer answers stops the run
 too). A failing take is saved: OUT/fail-<seed>.npz (USB from LEAD_S before the first message, the events, the
-counters); the seed's stream on the host: python3 tools/monkey.py --seeds N (from a fresh boot: the FM-1 carries
+counters); a passing take with note-ons silent before its first sound as OUT/silent-<seed>.npz (to classify
+them); the seed's stream on the host: python3 tools/monkey.py --seeds N (from a fresh boot: the FM-1 carries
 the takes before it, so its sound differs).
 
 --rejudge FILE.npz ...: the audio gates again on saved takes, offline (no MIDI, no audio; the counters as saved).
@@ -413,11 +414,13 @@ def main(argv=None):
             report.append(dict(seed=s, rows=[list(map(str, r)) for r in rows], counters=cnt))
             print(f"{time.strftime('%H:%M:%S')} seed {s}: " + ("FAIL " + "; ".join(f"{r[0]} {r[1]}" for r in bad)
                                                                 if bad else "ok"), flush=True)
+            silent = any(r[0].startswith("note-ons silent") for r in rows)
+            if bad or silent:                   # (a take with silent note-ons too: kept to classify them)
+                np.savez_compressed(os.path.join(a.out, f"{'fail' if bad else 'silent'}-{s}.npz"),
+                                    usb=np.clip(xi, -32768, 32767).astype(np.int16), fs=a.rate, events=json.dumps(ev),
+                                    counters=json.dumps(cnt, default=str), lead=LEAD_S)
             if bad:
                 verdict = "FAIL"
-                np.savez_compressed(os.path.join(a.out, f"fail-{s}.npz"), usb=np.clip(xi, -32768, 32767).astype(
-                    np.int16), fs=a.rate, events=json.dumps(ev), counters=json.dumps(cnt, default=str),
-                    lead=LEAD_S)
                 if a.stop_on_fail or any(r[0].startswith(("CC 116 answers", "frames recorded", "the probe"))
                                          for r in bad) and not alive_ok(dev):
                     break
