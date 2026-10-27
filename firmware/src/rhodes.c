@@ -124,6 +124,9 @@ typedef struct {
 } rh_voice_t;
 
 static rh_voice_t rv[RH_NV];
+#ifdef FR_HQ
+#include "hq/rhodes_hq.h"                      /* the HQ Rhodes (the Move only; never in the FM-1 / SMK builds) */
+#endif
 #ifdef DINGHY_HOST
 static int32_t rh_mono[256], rh_x[SUB], rh_F[SUB];
 #else                                          /* the mode / pickup loops' buffers in one section of their own (firmware
@@ -369,6 +372,9 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
         v->ptab = p1;
     v->pamp = (int32_t)pa[i] + ((((int32_t)pa[i + 1] - (int32_t)pa[i]) * (int32_t)f) >> 8);
     v->prate = (uint32_t)((int32_t)RH_PRATE_B[key] + pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;  /* Q12 -> Q16 */
+#ifdef FR_HQ
+    hq_pulse(v, vel);
+#endif
     {   /* HAMMER knob x TYPE tips scale the contact rate; the force scales with it so the impulse (the hammer's
          * momentum) is kept: a softer tip pushes longer and less hard, it does not give more energy */
         uint32_t h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
@@ -574,6 +580,9 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
     v->age = ++rh_ages;
     v->life = k->life;
     v->m[RH_V1].kap = 0;
+#ifdef FR_HQ
+    hq_voice_init(v);
+#endif
 #ifndef RH_NO_S4                                          /* -DRH_NO_S4: without it (the A/B reference) */
     if (n < RH_KAP_HI) {                                  /* S4: kap / (BARK x the TYPE's bark)^2 */
         uint32_t g = (uint32_t)(((uint64_t)(uint32_t)rh_bark_s * (uint32_t)ty->bark) >> 16), ig;
@@ -932,6 +941,9 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
         for (m++; m < RH_NM; m++)
             if (v->m[m].live) sum += fnz ? FR_FAR(rh_mode_f)(&v->m[m]) : FR_FAR(rh_mode_p)(&v->m[m]);
     }
+#ifdef FR_HQ
+    if (hq_v[v - rv].os) Hp = hq_pickup(v, mix, side, Hp); else
+#endif
     if (v->fade == 32768) {                               /* pickup, then the per-key gain into the mix: no steal fade
                                                            * (only this loop changes it in a render: the test below would
                                                            * never fire); with a stereo position (SPREAD) also into side */
@@ -1254,3 +1266,6 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
     rh_held_bits = held;
     rh_active_bits = act;
 }
+#ifdef FR_HQ
+#include "hq/rhodes_hq.c"
+#endif

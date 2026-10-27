@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* M2-01: the Classic plugin's own cost per 128-frame callback, the base the HQ budget sits on (private plan 06).
- *   classic_bench DSP [seconds]
+ *   classic_bench DSP [seconds] [top]
  * dlopens the shipping dsp.so through its plugin entry points, and per engine (STAGE 77, VIBES, MARIMBA) plays the
  * heavy case: every effect on (Gate R's fx/heavy CCs), the pedal down, a 16-note chord at v127 struck again every
  * 400 ms (each strike takes 16 voices: steals, the attack's cost), for N seconds (default 10). Prints per engine the
  * callback time: max, p99.9, p99, the mean, and the mean of the render callbacks (every other one renders 256
- * frames). Run it on the Move off the audio core: taskset -c 1 ./classic_bench dsp.so */
+ * frames). top: the chord on the 16 keys 85..108 instead (the HQ Rhodes' 2x pickup on every voice: its worst case;
+ * a dsp.so built with -DHQ_DEFAULT=1). Run it on the Move off the audio core: taskset -c 1 ./classic_bench dsp.so */
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <stdint.h>
@@ -38,6 +39,7 @@ int main(int argc, char **argv)
     static double t[20000];
     char tmpl[] = "/tmp/classic_bench.XXXXXX", r[8];
     double secs = argc > 2 ? atof(argv[2]) : 10.0;
+    int top = argc > 3 && !strcmp(argv[3], "top");
     void *h;
     move_plugin_init_v2_fn init;
     if (argc < 2) { fprintf(stderr, "usage: classic_bench DSP [seconds]\n"); return 2; }
@@ -56,7 +58,10 @@ int main(int argc, char **argv)
         for (int i = 0; i < 400; i++) api->render_block(in, buf, 128);
         for (int b = 0; b < nb; b++) {
             if (b % 138 == 0) {                 /* every ~400 ms: 16 notes at v127 (28..103, spread) */
-                for (int n = 0; n < 16; n++) { uint8_t m[3] = { 0x90, (uint8_t)(28 + n * 5 + (b / 138) % 5), 127 }; api->on_midi(in, m, 3, MOVE_MIDI_SOURCE_EXTERNAL); }
+                for (int n = 0; n < 16; n++) {
+                    uint8_t m[3] = { 0x90, (uint8_t)(top ? 85 + (n * 3 + (b / 138)) % 24 : 28 + n * 5 + (b / 138) % 5), 127 };
+                    api->on_midi(in, m, 3, MOVE_MIDI_SOURCE_EXTERNAL);
+                }
             }
             double t0 = now_us();
             api->render_block(in, buf, 128);
