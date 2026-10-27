@@ -73,3 +73,50 @@ firmware:                  ## build/frodhes.fwsc (Docker on macOS)
 
 clean:
 	rm -rf build
+
+# ---- the Move (a Schwung sound generator, aarch64 Linux): move/, private plan 05 ----
+# On macOS everything runs in the arm64 bookworm image (move/docker; light: 2 CPUs); on Linux arm64 (CI) natively:
+# make move MOVE_RUN=
+MOVE_IMG  ?= frodhes-move:bookworm
+MOVE_RUN  ?= $(if $(filter Darwin,$(shell uname -s)),docker run --rm --cpus=2 --platform linux/arm64 -v "$(CURDIR)":/src -w /src $(MOVE_IMG),)
+MOVE_CC   ?= gcc
+MOVE_VER  ?= 0.0.0-dev
+MOVE_DEFS ?= -DFR_VOICES=16u
+MOVE_CFLAGS := -O2 -fPIC -ffp-contract=off -std=gnu11 -Wall -Wno-unused-function -Wno-unused-variable \
+  -fvisibility=hidden -ffile-prefix-map=$(CURDIR)=. -DAPP_VER='"$(MOVE_VER)"' $(MOVE_DEFS) \
+  -Imove/compat -Ifirmware/src -Ifirmware/gen
+MOVE_OUT  := build/move/frodhes
+
+.PHONY: move-image move move-native test-move test-move-native move-probe test-move-probe
+move-image:                ## the Move build image (Debian bookworm arm64, about 250 MB)
+	docker build --platform linux/arm64 -t $(MOVE_IMG) move/docker
+
+move:                      ## build/move/frodhes/{dsp.so,module.json} + build/move/frodhes-module.tar.gz
+	$(MOVE_RUN) make -s move-native
+
+move-native:
+	@mkdir -p $(MOVE_OUT)
+	$(MOVE_CC) $(MOVE_CFLAGS) -shared -Wl,-z,defs -o $(MOVE_OUT)/dsp.so move/move_plugin.c -lm
+	@if [ -f move/module/module.json ]; then cp move/module/module.json $(MOVE_OUT)/; else \
+	  printf '{"id":"frodhes","name":"Frodhes","version":"%s","dsp":"dsp.so","api_version":2,"capabilities":{"audio_out":true,"midi_in":true,"component_type":"sound_generator"}}\n' "$(MOVE_VER)" > $(MOVE_OUT)/module.json; fi
+	@cp LICENSE $(MOVE_OUT)/LICENSE
+	tar -C build/move -czf build/move/frodhes-module.tar.gz frodhes/dsp.so frodhes/module.json frodhes/LICENSE
+	@ls -l $(MOVE_OUT)/dsp.so build/move/frodhes-module.tar.gz
+
+test-move:                 ## the Move checks (M1-01 stubs): one exported symbol, no undefined symbol, dlopen smoke
+	$(MOVE_RUN) make -s test-move-native
+
+test-move-native: move-native
+	@syms=$$(nm -D --defined-only $(MOVE_OUT)/dsp.so | awk '{print $$3}'); \
+	  [ "$$syms" = move_plugin_init_v2 ] || { echo "FAIL exports: $$syms"; exit 1; }; echo "ok    exports: $$syms"
+	@bad=$$(nm -D --undefined-only $(MOVE_OUT)/dsp.so | awk '{print $$2}' | grep -vE '^(_ITM_|__cxa_finalize|__gmon_start__)' | \
+	  grep -vE '^(calloc|free|memcmp|memcpy|memmove|memset|strlen|strcmp|strncmp)@' || true); \
+	  [ -z "$$bad" ] || { echo "FAIL imports beyond the allow-list: $$bad"; exit 1; }; echo "ok    imports"
+	$(MOVE_CC) -O1 -std=gnu11 -Wall -o build/move/smoke move/tests/smoke.c -ldl
+	build/move/smoke $(MOVE_OUT)/dsp.so
+
+move-probe:                ## the device-session probe (move/probe/README.md)
+	$(MOVE_RUN) make -s -C move/probe -j2
+
+test-move-probe:           ## the probe's dlopen host test
+	$(MOVE_RUN) make -s -C move/probe -j2 test
