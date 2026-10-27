@@ -34,9 +34,10 @@ The agent runs every command. What you do is in **bold**.
       track button, Shift (the log shows which of them reach a sound generator: the sustain control, M1-13b);
    4. on the "Probe" page: turn **State** to each size, from 1K to 64K, and after each one save a module preset of
       slot 1 (this finds the largest `state` that saves and loads back).
-5. **In the DAW on the Mac: send MIDI to the Move over USB on channel 1** (notes, a CC, pitch bend, channel
-   pressure), **then turn on MIDI clock to the Move and press Play, Stop, Play in the DAW.** Then **press Play
-   on the Move itself** (its own transport). The agent reads whether F8/FA/FB/FC reach the slot.
+5. **Clock: press Play on the Move, wait 4 bars, Stop, Play again** (the agent reads whether F8/FA/FB/FC reach the
+   slot, or only the host's transport calls). Optional: **a USB-A keyboard on the Move: a few notes, the mod wheel,
+   bend, the sustain pedal.** (Over Wi-Fi there is no DAW-over-USB part; it comes when a USB port is free: MIDI from
+   the Mac on channel 1 and the DAW's clock.)
 6. **On slot 1's "Probe" page, turn Burn (knob 2) up slowly while you hold a few pads** (0 to 2500 us of extra
    work per block). **Stop and turn it back to 0 at the first crackle**; the log shows where it was.
 7. **Reboot the Move** (or power it off and on) and load the two slots again if the set does not restore them;

@@ -347,12 +347,16 @@ static void probe_dirs(inst_t *s) {
 static void *worker(void *arg) {
     inst_t *s = arg;
     struct sched_param sp = { .sched_priority = 0 };
-    int rs = sched_setscheduler(0, SCHED_OTHER, &sp);
+    int rs = pthread_setschedparam(pthread_self(), SCHED_OTHER, &sp);   /* (this thread: SCHED_OTHER, priority 0) */
+#ifdef __linux__                         /* (the Move is Linux; elsewhere only an editor's view of this file) */
     cpu_set_t set; CPU_ZERO(&set); CPU_SET(0, &set); CPU_SET(1, &set); CPU_SET(2, &set);
     int ra = sched_setaffinity(0, sizeof set, &set);
+#else
+    int ra = -1;
+#endif
     s->log = fopen(s->log_path, "a");
     if (!s->log) { snprintf(s->log_path, sizeof s->log_path, "/tmp/%s-%d.log", PROBE_ID, s->id); s->log = fopen(s->log_path, "a"); }
-    lprintf(s, "==== %s instance %d start pid=%d time=%ld worker sched_setscheduler=%d sched_setaffinity=%d\n", PROBE_ID,
+    lprintf(s, "==== %s instance %d start pid=%d time=%ld worker setschedparam=%d sched_setaffinity=%d\n", PROBE_ID,
             s->id, (int)getpid(), (long)time(NULL), rs, ra);
     lprintf(s, "module_dir=%s defaults=%s &g_marker=%p\n", s->module_dir, s->defaults, (void *)&g_marker);
     probe_dirs(s);
@@ -452,7 +456,13 @@ static void p_render(void *inst, int16_t *out, int frames) {
     if (s->blocks == 0) {
         struct sched_param sp = { .sched_priority = -1 }; int pol = -1;
         pthread_getschedparam(pthread_self(), &pol, &sp);
-        rec_t *e = rec_begin(s, R_THREAD); if (e) { e->b = sp.sched_priority; e->d = sched_getcpu(); rec_end(e, pol); }
+        rec_t *e = rec_begin(s, R_THREAD); if (e) { e->b = sp.sched_priority; e->d =
+#ifdef __linux__
+            sched_getcpu();
+#else
+            -1;
+#endif
+ rec_end(e, pol); }
     } else {
         uint64_t d = (t0 - s->t_prev) / 1000;
         uint32_t iv = d > UINT32_MAX ? UINT32_MAX : (uint32_t)d;
