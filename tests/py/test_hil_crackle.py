@@ -587,3 +587,74 @@ def test_track_a_difference_only_in_the_bass_is_no_event():
     j2 = j0.copy()
     j2[a:a + 24] += 300.0                                                # 0.5 ms, +300 LSB
     assert [d for _, d in C.track(usb, j2, fs)[1] if "ncc" in d]
+
+
+# ---- 0.9.7 (T19): the repeat detector against the music's own plateaus ------------------------------------------
+HOST_PLATEAUS = ((3049, 501), (3049, 502), (3049, 503), (3061, 501), (3061, 503))
+
+
+@pytest.mark.parametrize("seed,lead", HOST_PLATEAUS)
+def test_no_repeat_on_the_host_builds_own_plateaus(seed, lead):
+    """the host build has no USB: a repeat there is the music's own. These takes failed the gate before 0.9.7's rule
+    (3049: 4 .. 18 equal frames at 8 .. 15 LSB, coarse and unpredictable; 3061: mono, 2 frames, 10 and 13 dB)"""
+    import hil_monkey as hm
+    x, ev = hm.host_take(seed, lead_ms=lead)
+    assert C.det_repeat(x) == []
+    assert C.usb_judge(x, C.FS_HOST, ev)[0] == []
+
+
+def test_no_repeat_on_the_fm1_seed_3024_plateau():
+    """the FM-1's monkey seed 3024 (every counter clean, ring low point 222): ch1 179, 179 on a slope (-15 / -20, 15 dB
+    smoother without the copy), ch0 -351, -351 at its turn (3.6 dB): one channel's evidence, under mono_db"""
+    z = np.load(os.path.join(ROOT, "tests", "py", "data", "fm1-seed3024-57757.npz"))
+    q, at = z["usb"].astype(np.int64), int(z["at"])
+    assert (q[at] == q[at + 1]).all()
+    assert C.det_repeat(q) == []
+
+
+def test_a_copy_with_the_other_channel_at_its_turn_is_found():
+    """the self-test's copies (rhodes, vibes): one channel on a slope 27 .. 30 dB, the other flat at its turn (3 dB)"""
+    t = np.arange(8820)
+    L = np.round(8000 * np.sin(2 * np.pi * 50 * t / 44100))
+    R = np.round(300 * np.cos(2 * np.pi * 50 * t / 44100) ** 9)          # (a flat turn in R where L climbs)
+    q = np.stack([L, R], 1)
+    i = 882                                              # one period on: L on its steepest slope, R flat at its peak
+    q2 = np.concatenate([q[:i], q[i - 1:i], q[i:]])
+    assert C.det_repeat(q) == []
+    assert [p for p, _ in C.det_repeat(q2)] == [i - 1]
+
+
+def _inject_copies(x, rng, k=20):
+    """k whole-frame copies of 1-5 frames (inserted: the rest comes later) at random places where the wave's peak
+    within 32 frames is >= 256 LSB; (x', [run start])"""
+    from numpy.lib.stride_tricks import sliding_window_view
+    lv = np.abs(x).max(axis=1)
+    ok = np.zeros(len(x), bool)
+    w = sliding_window_view(lv, 65).max(axis=1)
+    ok[32:32 + len(w)] = w >= 256
+    ok[:2000] = ok[-2000:] = False
+    pl = np.sort(rng.choice(np.flatnonzero(ok), k, replace=False))
+    pl = [p for i, p in enumerate(pl) if i == 0 or p - pl[i - 1] > 3000]
+    out, marks, shift, last = [], [], 0, 0
+    for p in pl:
+        m = int(rng.integers(1, 6))
+        out += [x[last:p], np.repeat(x[p - 1:p], m, 0)]
+        marks.append(p - 1 + shift)
+        shift += m
+        last = p
+    out.append(x[last:])
+    return np.concatenate(out)[:len(x)], marks
+
+
+def test_injected_whole_frame_copies_are_found_as_before():
+    """1-5-frame copies at random audible places in ten host takes: 0.9.7's rule finds 153 of 189, the rule before it
+    152 (on 200 takes: 1498 of 1880 against 1492, and 1530 of 1878 against 1524 on 100 takes not used to tune it)"""
+    import hil_monkey as hm
+    found = placed = 0
+    for s in range(3000, 3010):
+        x, _ = hm.host_take(s, lead_ms=500)
+        y, marks = _inject_copies(np.asarray(x, np.int64), np.random.default_rng(s))
+        ev = [p for p, _ in C.det_repeat(y)]
+        found += sum(any(abs(e - p) <= 2 for e in ev) for p in marks)
+        placed += len(marks)
+    assert placed == 189 and found >= 152, (found, placed)

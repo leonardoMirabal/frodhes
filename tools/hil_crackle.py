@@ -262,23 +262,34 @@ def _peak(x):
     return a.max(axis=1) if a.ndim == 2 else a
 
 
-def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0, floor=256):
+def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0, floor=256, agree=4.0, mono_db=18.0, long_db=8.0,
+               long_mono_db=10.0, turn_db=26.0, like_db=20.0):
     """frames that repeat the frame before where the wave runs on: [(frame, detail)]; q (n, 2) int. A candidate is a
-    run of equal stereo frames between two steps the same way (>= slope LSB, either channel); 4 frames or more are an
-    event; 2 or 3 when taking the copies out makes the wave smoother: the AR interpolation residual at it falls >= gain
-    x (3 dB) where the steps either side are alike (0.4..1/0.4: a copy keeps the wave's slope), >= 20 dB where they are
-    less so (down to 0.15). An underrun
-    inserts its copies (the stream comes later by as many frames), so the wave without them runs on; a flat spot of the
-    music's own leaves a jump when taken out.
-    2026-10-26 (BUGHUNT #24): 2 or 3 frames need the wave around them predictable (its AR interpolation >= pred dB
-    under it) and the copies' residual >= gain x (10 dB) over the wave without them. Before, 3 dB on any wave: noise-like
-    music through the 44.1 -> 48 kHz resampler (no copy at all) gave ~300 events a minute and an FM-1 take two
-    (4 and 5 dB, among plateaus spread from 5 dB down); 0.9.4's real 2-frame copies score 11 and 16 dB (the waves
-    around them 26 and 31 dB predictable), copies injected in a chord 12 .. 23 dB (22 .. 44); noise is under 8 dB.
-    Under floor LSB (-42 dBFS, the wave's peak within 32 frames) nothing is judged: there the music's own plateaus run
-    to 4 frames and more by the hundred (an FM-1 take: 840 runs of 4 at 40 .. 100 LSB), one of them between two steps
-    the same way now and then (FM-1 seed 5, -65 LSB, +8 / +14, every counter clean and both USB benches clean);
-    0.9.4's real copies sat at ~3000 LSB"""
+    run of equal stereo frames (a USB copy repeats the whole frame) where the wave is above floor LSB (-42 dBFS, its
+    peak within 32 frames). The evidence, per channel: the AR interpolation residual over the run with the copies and
+    without them (an underrun inserts its copies: the stream comes later by as many frames, so the wave without them
+    runs on; a flat spot of the music's own leaves a jump when taken out), in dB ("smoother"), and how predictable the
+    wave is there (its AR interpolation >= pred dB under it).
+    - The channels must agree (>= agree dB smoother; 2 or 3 frames on a slope: every channel on a slope, a channel at
+      its turn shows little either way): a copy shifts both. A mono passage (L == R over the context) is one channel:
+      the second gives no evidence.
+    - 4 frames or more between two steps the same way (>= slope LSB, either channel): an event when the wave without
+      them is >= long_db smoother (mono: long_mono_db).
+    - 2 or 3 frames between two steps the same way: the wave predictable there, and >= gain x (10 dB) smoother where
+      the steps either side are alike (0.4..1/0.4: a copy keeps the wave's slope), >= 20 dB where they are less so
+      (down to 0.15; under 0.15 when every channel is >= like_db smoother); one channel's evidence alone (mono, or
+      the other channel at its turn) >= mono_db.
+    - 2 or 3 frames at a turn (no channel on a slope; stereo only): every channel predictable and >= turn_db smoother.
+    History: 2026-10-26 (BUGHUNT #24): 2 or 3 frames need the wave predictable and 10 dB (before: 3 dB on any wave: noise-
+    like music through the 44.1 -> 48 kHz resampler gave ~300 events a minute; 0.9.4's real 2-frame copies score 11 and
+    16 dB, copies injected in a chord 12 .. 23 dB, noise under 8 dB). 2026-10-27 (0.9.7, T19): the host build, which has
+    no USB, failed this gate on its own music: seeds 3049 (4 .. 18 equal frames at 8 .. 15 LSB, the wave coarse there:
+    0 .. 3 dB smoother, but not predictable, which was an event by itself) and 3061 (mono, 2 frames, 10 and 13 dB), and
+    the FM-1's seed 3024 (2 frames, ch1 on a slope 15 dB, ch0 at its turn 3.6 dB; the self-test's real copies with
+    the other channel at its turn: 27 and 30 dB). Hence the agreement, the one-channel rule and the evidence on 4
+    frames and more. Measured on host takes (seeds 3000-3199 x lead 500-503 ms: 0 events, 7 takes before) and 1-5-frame
+    whole-frame copies injected at random audible places (seeds 3000-3099: 1498 of 1880 found, 1492 before; 3100-3199,
+    not used to tune: 1530 of 1878, 1524 before; tests/py/test_hil_crackle.py)"""
     q = np.asarray(q, np.int64)
     eq = np.all(q[1:] == q[:-1], axis=1)                  # eq[i]: frame i + 1 == frame i
     s, e = _runs(eq)                                       # run i..j-1 of eq: plateau frames i..j
@@ -286,52 +297,59 @@ def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0, floor=256):
     for p0, p1 in zip(s, e):
         if p0 < ctx or p1 + ctx >= len(q):
             continue
-        d0, d1 = q[p0] - q[p0 - 1], q[p1 + 1] - q[p1]
-        ok = (np.sign(d0) == np.sign(d1)) & (np.abs(d0) >= slope) & (np.abs(d1) >= slope)
-        if not ok.any():
-            continue
         if np.abs(q[p0 - 32:p1 + 33]).max() < floor:
             continue
+        d0, d1 = q[p0] - q[p0 - 1], q[p1 + 1] - q[p1]
+        ok = (np.sign(d0) == np.sign(d1)) & (np.abs(d0) >= slope) & (np.abs(d1) >= slope)
+        n = p1 - p0 + 1
+        if not ok.any() and n > 3:
+            continue
+        w = q[p0 - ctx:p1 + ctx + 1]
+        mono = q.shape[1] > 1 and bool((w[:, 0] == w[:, 1]).all())
+        if not ok.any() and mono:
+            continue
+        ev = {c: _copy_evidence(q, p0, p1, c, ctx, half) for c in ([0] if mono else range(q.shape[1]))}
+        db = {c: 10 * np.log10(max(v[0], 1e-9) / max(v[1], 1e-9)) for c, v in ev.items()}
+        moving = [c for c in ev if ok[c]]                  # the channels on a slope (mono: the one)
+        if not mono and min(db[c] for c in (moving if ok.any() and n <= 3 else ev)) < agree:
+            continue                                       # (a copy shifts every channel; 2 or 3 frames: every one on a
+        if not ok.any():                                   #  slope, a channel at its turn shows little either way)                                   # 2 or 3 frames at a turn
+            if all(v[2] >= pred and db[c] >= turn_db and v[0] > 4 * slope ** 2 for c, v in ev.items()):
+                out.append((int(p0), f"{n} equal frames at a turn; the wave without the copies "
+                                     f"{min(db.values()):.0f} dB smoother"))
+            continue
         ch = int(np.argmax(np.abs(d0) + np.abs(d1)))
-        if p1 - p0 >= 3:                                   # 4 equal frames or more between two steps the same way: an
-            if not _own_plateau(q, p0, p1, ch, ctx, pred, gain):   # event unless the wave is predictable there and
-                out.append((int(p0), f"{p1 - p0 + 1} equal frames on a slope ({int(d0[ch]):+d} / {int(d1[ch]):+d})"))
-            continue                                       # taking them out leaves a jump (0.9.7: at 44.1 kHz the
-                                                           # music's own turning points do hold 4-5 frames)
+        Ea, Eb, pr = ev[0 if mono else ch]
+        if n > 3:
+            if max(db.values()) >= (long_mono_db if mono else long_db):
+                out.append((int(p0), f"{n} equal frames on a slope ({int(d0[ch]):+d} / {int(d1[ch]):+d})"))
+            continue
         like = min(abs(d0[ch]), abs(d1[ch])) / max(abs(d0[ch]), abs(d1[ch]))
-        if like < 0.15:
+        if like < 0.15 and (mono or min(db.values()) < like_db):
             continue                                       # (a copy keeps the slope: the frames either side of it are
         need = gain if like >= 0.4 else 100.0              # the wave's own consecutive steps; -48 / -8 is a turn: steps
-        seg = q[p0 - ctx:p1 + ctx + 1, ch].astype(float)   # less alike need 20 dB, a copy in a hammer's turn gives 58)
-        cut = np.delete(seg, np.arange(ctx + 1, ctx + 1 + (p1 - p0)))
-        ea = interp_residual(seg, order=16, block=len(seg))
-        eb = interp_residual(cut, order=16, block=len(cut))
-        if np.mean(cut ** 2) < 10 ** (pred / 10) * max(float(np.mean(eb ** 2)), 1e-9):
+        if mono or len(moving) < 2:                        # less alike need 20 dB, a copy in a hammer's turn gives 58;
+            need = max(need, 10 ** (mono_db / 10))         # one channel's evidence alone (mono, or the other at a turn):
+                                                           # mono_db
+        if pr < pred:
             continue                                       # (noise-like: its own neighbours meet by chance)
-        Ea = float((ea[ctx - half:ctx + (p1 - p0) + half] ** 2).sum())   # (the whole run and its edges)
-        Eb = float((eb[ctx - half:ctx + half] ** 2).sum())
         if Ea > need * Eb and Ea > 4 * slope ** 2:
-            out.append((int(p0), f"{p1 - p0 + 1} equal frames on a slope ({int(d0[ch]):+d} / {int(d1[ch]):+d}); "
+            out.append((int(p0), f"{n} equal frames on a slope ({int(d0[ch]):+d} / {int(d1[ch]):+d}); "
                                  f"the wave without the copies {10 * np.log10(Ea / max(Eb, 1e-9)):.0f} dB smoother"))
     return out
 
 
-def _own_plateau(q, p0, p1, ch, ctx, pred, gain):
-    """the run p0..p1 (4 frames or more) is the music's own: the wave around it predictable (its AR interpolation
-    >= pred dB under it) and the wave without the copies NOT gain x smoother (an underrun inserts its copies and the
-    wave runs on without them; the music's own flat spot leaves a jump when taken out). 0.9.7 (2026-10-27): 44.1 kHz
-    USB has no resampler to smooth the music's turning points: the host render (no USB) held 4 equal frames between
-    steps of -8 / -8 (seed 3006, 4008 LSB) and +8 / +8 (seed 3025), and the FM-1 0.9.6 seed 3003 5 at -4915 (-11 /
-    -11): a smooth fit runs through them within 2.5 LSB; the ring and app USB benches at 44.1 kHz: 0 copies"""
+def _copy_evidence(q, p0, p1, ch, ctx, half):
+    """(Ea, Eb, pred dB): channel ch's AR interpolation residual energy over the run p0..p1 and its edges with the
+    copies (Ea) and without them (Eb), and how predictable the wave without them is (its power over the residual's)"""
     seg = q[p0 - ctx:p1 + ctx + 1, ch].astype(float)
     cut = np.delete(seg, np.arange(ctx + 1, ctx + 1 + (p1 - p0)))
     ea = interp_residual(seg, order=16, block=len(seg))
     eb = interp_residual(cut, order=16, block=len(cut))
-    if np.mean(cut ** 2) < 10 ** (pred / 10) * max(float(np.mean(eb ** 2)), 1e-9):
-        return False                                       # (not predictable: judged as before, an event)
-    Ea = float((ea[ctx - 4:ctx + (p1 - p0) + 4] ** 2).sum())
-    Eb = float((eb[ctx - 4:ctx + 4] ** 2).sum())
-    return not Ea > gain * Eb
+    pr = 10 * np.log10(max(float(np.mean(cut ** 2)), 1e-9) / max(float(np.mean(eb ** 2)), 1e-9))
+    Ea = float((ea[ctx - half:ctx + (p1 - p0) + half] ** 2).sum())
+    Eb = float((eb[ctx - half:ctx + half] ** 2).sum())
+    return Ea, Eb, pr
 
 
 def _exact_run(q, b, lag, w, step=256):
