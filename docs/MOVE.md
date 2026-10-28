@@ -61,8 +61,8 @@ instrument and, within about half a second, the VOICE pages are that instrument'
 **Frodhes plays in every slot.** Load it on as many tracks as Schwung has slots (four today): each one is its own
 instrument, with its own sound and its own knobs. Up to three play with no dropouts. A fourth works, but very heavy
 playing with every effect on in all four can drop audio, and so can loading a set that holds several of them.
-*(measured on a device: two, three and four at once, 16 voices and every effect heavy in each; Main Out clean with
-three, two dropouts in 30 s with four)*
+*(measured on a device: two, three and four at once, 16 voices and every effect heavy in each for 30 s; Main Out
+clean with three; with four one run was clean and one had two dropouts)*
 
 | Page | Controls |
 | --- | --- |
@@ -250,10 +250,11 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
   `node move/ui/test_grid.mjs` runs the pages through Schwung's own controller (`SCHWUNG_SRC`).
 - Instances: the app is one set of globals a loaded file, and Schwung loads `dsp.so` once for every slot. So
   `dsp.so` is a thin loader (`move/move_loader.c`) and the plugin ships beside it as `engine.so`. Each create (on
-  Schwung's loader thread) copies `engine.so` to `module_data/frodhes/inst/<k>/dsp.so`, again when its size or
+  Schwung's loader thread) copies `engine.so` to `module_data/frodhes/inst/<k>/dsp-<crc>.so`, again when its size or
   CRC-32 changed (an update), and dlopens that copy: its own globals. Destroy dlcloses it and frees index k (on
   the host the copy is unloaded; inside Schwung 1.8.1 it stays mapped, so the next create of k continues that app,
-  as one file always did). A
+  as one file always did; glibc finds a loaded object by its name, so each copy's name carries its CRC and an
+  updated `engine.so` really loads). A
   re-pick creates before it destroys, so it takes the next index for a moment. Each instance writes its own
   `boot.txt` (its copy's CRC, `at=` its start), `tap/`, `cpu-ring.log` and `stats.log` in `inst/<k>`; `dev_inst`
   reads k. `store.bin` stays one file in the data folder: a write merges under `flock` (the presets on disk win

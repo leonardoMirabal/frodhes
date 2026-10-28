@@ -20,7 +20,7 @@ process crashes; the probe's install.sh found the same rule):
      mapping of the old file (the inode lives on in the kept folder); the next load takes the new one;
   4. kept folders beyond --keep (default 2) are deleted, oldest first.
 dsp.so is the loader and engine.so the plugin (move/move_loader.c): each slot's instance runs its own copy of
-engine.so, DATA/inst/<k>/dsp.so, made at the instance's create and made again when engine.so changes (size, CRC). A
+engine.so, DATA/inst/<k>/dsp-<crc>.so, made at the instance's create and made again when engine.so changes (size, CRC). A
 running instance keeps its copy; the next load copies the new engine.so. The data folder (DATA: store.bin, the copies)
 is outside the module folder, so an install never touches it.
 A rollback is the same two renames the other way: frodhes -> .frodhes.rolledback-<time>, the newest kept -> frodhes.

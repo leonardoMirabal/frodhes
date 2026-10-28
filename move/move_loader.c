@@ -4,19 +4,20 @@
  * The app is one set of globals a loaded file (move/move_plugin.c, move/move_bridge.h). Schwung dlopen()s
  * <module>/dsp.so with RTLD_NOW | RTLD_LOCAL, and glibc hands every slot the same loaded copy, so one file can play in
  * one slot only. The real plugin ships beside this loader as engine.so, and each instance gets a private copy of it,
- * <inst>/<k>/dsp.so, loaded with dlopen: a real copy (another inode: another link map and other globals; a hard link
+ * <inst>/<k>/dsp-<crc>.so, loaded with dlopen: a real copy (another inode: another link map and other globals; a hard link
  * or a symlink returns the copy already loaded, move/multi/probe). <inst> is
  * /data/UserData/schwung/module_data/frodhes/inst on the Move (a module install never deletes it), else
  * <module_dir>/inst (the host tests). The engine's module_dir is <inst>/<k>: its own files (boot.txt, tap/,
  * cpu-ring.log, stats.log) go there, the shared ones (store.bin: the settings and the user presets U01-U16) one level
  * up, in the data folder (move_bridge.h mb_pick_dir).
  *
- * create_instance takes the lowest free index k, brings <inst>/<k>/dsp.so up to date with engine.so (size and CRC-32:
- * a changed engine.so, an update, is copied again; a temporary file then a rename, never a mapped file written in
- * place), dlopens it and creates the engine's instance. destroy_instance destroys it (its worker writes what is
+ * create_instance takes the lowest free index k, brings <inst>/<k>/dsp-<crc>.so up to date with engine.so (size and
+ * CRC-32: a changed engine.so, an update, is copied again under its new name; a temporary file then a rename, never a
+ * mapped file written in place; the older copies in the folder are deleted), dlopens it and creates the engine's instance. destroy_instance destroys it (its worker writes what is
  * staged and ends), then dlclose()s the copy: its memory is freed (move_plugin.c mv_fini), its index free again
  * (inside Schwung 1.8.1 the copy stays mapped after dlclose: boot.txt's starts count on, the next create of k
- * continues that app, as one file always did). A
+ * continues that app, as one file always did. glibc finds an object already loaded by its name, so the copy's name
+ * carries its CRC: an updated engine.so gets a new name and really loads). A
  * re-pick creates the new instance before it destroys the old, so a slot holds two copies for a moment. No cap but
  * the table (ML_MAX, above Schwung's slots and a re-pick). A copy that cannot load gives an instance that renders
  * silence and names itself ML_FAIL_NAME (preset_name), so Schwung still gets an instance.
@@ -25,6 +26,7 @@
  * the audio path (Gate P). The callbacks only forward through a pointer. Extra read-only key: dev_inst (the index k).
  * Exports one symbol (-fvisibility=hidden, -Wl,-z,defs). */
 #define _GNU_SOURCE 1
+#include <dirent.h>
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -83,26 +85,40 @@ static int ml_crc_file(const char *path, uint32_t *crc, off_t *size)   /* zlib's
     return 0;
 }
 
-/* dir/dsp.so = src (size and CRC-32), copied when it is missing or differs: 0 ok */
-static int ml_copy(const char *src, const char *dir)
+/* dir/dsp-<crc>.so = src (size and CRC-32), copied when it is missing or differs; the other copies in dir deleted
+ * (a mapped one lives on until it is unmapped). so: the copy's path. 0 ok */
+static int ml_copy(const char *src, const char *dir, char *so, size_t son)
 {
     static char buf[1 << 16];
-    char dst[700], tmp[720];
+    char tmp[720], nm[32], old[900];
     uint32_t cs, cd;
     off_t ns, nd;
     int i, o;
     ssize_t n = 0;
+    DIR *d;
+    struct dirent *de;
     if (ml_crc_file(src, &cs, &ns)) return -1;
-    snprintf(dst, sizeof dst, "%s/dsp.so", dir);
-    if (!ml_crc_file(dst, &cd, &nd) && nd == ns && cd == cs) return 0;
-    snprintf(tmp, sizeof tmp, "%s/.dsp.so.%ld.tmp", dir, (long)getpid());   /* (two processes on one folder: the tests) */
-    i = open(src, O_RDONLY | O_CLOEXEC);
-    o = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0755);
-    if (i < 0 || o < 0) { if (i >= 0) close(i); if (o >= 0) { close(o); unlink(tmp); } return -1; }
-    while ((n = read(i, buf, sizeof buf)) > 0) if (write(o, buf, (size_t)n) != n) { n = -1; break; }
-    close(i);
-    if (close(o) || n < 0) { unlink(tmp); return -1; }
-    if (rename(tmp, dst)) { unlink(tmp); return -1; }
+    snprintf(nm, sizeof nm, "dsp-%08x.so", cs);
+    snprintf(so, son, "%s/%s", dir, nm);
+    if (!(!ml_crc_file(so, &cd, &nd) && nd == ns && cd == cs)) {
+        snprintf(tmp, sizeof tmp, "%s/.dsp.so.%ld.tmp", dir, (long)getpid());   /* (two processes on one folder: tests) */
+        i = open(src, O_RDONLY | O_CLOEXEC);
+        o = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0755);
+        if (i < 0 || o < 0) { if (i >= 0) close(i); if (o >= 0) { close(o); unlink(tmp); } return -1; }
+        while ((n = read(i, buf, sizeof buf)) > 0) if (write(o, buf, (size_t)n) != n) { n = -1; break; }
+        close(i);
+        if (close(o) || n < 0) { unlink(tmp); return -1; }
+        if (rename(tmp, so)) { unlink(tmp); return -1; }
+    }
+    if ((d = opendir(dir))) {
+        while ((de = readdir(d)))
+            if (!strncmp(de->d_name, "dsp", 3) && strstr(de->d_name, ".so") && strcmp(de->d_name, nm) &&
+                (strlen(de->d_name) == 15 || !strcmp(de->d_name, "dsp.so"))) {
+                snprintf(old, sizeof old, "%s/%s", dir, de->d_name);
+                (void)unlink(old);
+            }
+        closedir(d);
+    }
     return 0;
 }
 
@@ -144,8 +160,7 @@ static ml_eng_t *ml_load(const char *module_dir, int *kout)   /* (under ml_mx) t
         snprintf(e->dir, sizeof e->dir, "%s/%d", ML_BASE, k);
     else
         snprintf(e->dir, sizeof e->dir, "%s/inst/%d", module_dir && *module_dir ? module_dir : ".", k);
-    if (ml_mkdirs(e->dir) || ml_copy(src, e->dir)) return 0;
-    snprintf(so, sizeof so, "%s/dsp.so", e->dir);
+    if (ml_mkdirs(e->dir) || ml_copy(src, e->dir, so, sizeof so)) return 0;
     e->h = dlopen(so, RTLD_NOW | RTLD_LOCAL);
     if (!e->h) return 0;
     init = (plugin_api_v2_t *(*)(const host_api_v1_t *))dlsym(e->h, MOVE_PLUGIN_INIT_V2_SYMBOL);

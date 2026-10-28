@@ -122,10 +122,10 @@ test-move-native: move-native
 	@for f in dsp.so engine.so; do syms=$$(nm -D --defined-only $(MOVE_OUT)/$$f | awk '{print $$3}'); \
 	  [ "$$syms" = move_plugin_init_v2 ] || { echo "FAIL exports $$f: $$syms"; exit 1; }; echo "ok    exports $$f: $$syms"; done
 	@bad=$$(nm -D --undefined-only $(MOVE_OUT)/dsp.so | awk '{print $$2}' | grep -vE '^(_ITM_|__cxa_finalize|__gmon_start__)' | \
-	  grep -vE '^(calloc|free|memset|strlen|strcmp|strncmp|strstr|strrchr|snprintf|clock_gettime|getpid|open|open64|close|read|write|rename|unlink|mkdir|stat|stat64|__errno_location|dlopen|dlsym|dlclose|dladdr|pthread_mutex_lock|pthread_mutex_unlock)@' || true); \
+	  grep -vE '^(calloc|free|memset|strlen|strcmp|strncmp|strstr|strrchr|snprintf|clock_gettime|getpid|open|open64|close|read|write|rename|unlink|mkdir|stat|stat64|__errno_location|dlopen|dlsym|dlclose|dladdr|opendir|readdir|readdir64|closedir|strncmp|pthread_mutex_lock|pthread_mutex_unlock)@' || true); \
 	  [ -z "$$bad" ] || { echo "FAIL loader imports beyond the allow-list: $$bad"; exit 1; }; echo "ok    loader imports"
 	@bad=$$(nm -D --undefined-only $(MOVE_OUT)/engine.so | awk '{print $$2}' | grep -vE '^(_ITM_|__cxa_finalize|__gmon_start__)' | \
-	  grep -vE '^(calloc|free|malloc|aligned_alloc|memcmp|memcpy|memmove|memset|strlen|strcmp|strncmp|strchr|strstr|snprintf|sprintf|__isoc99_sscanf|atoi|strtol|clock_gettime|abort|__getauxval|pthread_create|pthread_join|pthread_self|pthread_setschedparam|sched_setaffinity|nanosleep|open|open64|close|read|write|fsync|flock|rename|unlink|mkdir|stat|stat64|__errno_location|fopen|fopen64|fclose|fwrite)@' || true); \
+	  grep -vE '^(calloc|free|malloc|aligned_alloc|memcmp|memcpy|memmove|memset|strlen|strcmp|strncmp|strchr|strstr|snprintf|sprintf|__isoc99_sscanf|atoi|strtol|clock_gettime|abort|__getauxval|pthread_create|pthread_join|pthread_self|pthread_setschedparam|sched_setaffinity|nanosleep|open|open64|close|read|write|fsync|flock|dladdr|rename|unlink|mkdir|stat|stat64|__errno_location|fopen|fopen64|fclose|fwrite)@' || true); \
 	  [ -z "$$bad" ] || { echo "FAIL engine imports beyond the allow-list: $$bad"; exit 1; }; echo "ok    engine imports"
 	@mkdir -p build/move/t
 	@$(MOVE_CC) -O2 -Wall -Wextra -o build/move/t/coro move/tests/test_coro.c move/coro/coro_aarch64.S

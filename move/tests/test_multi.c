@@ -11,7 +11,8 @@
  *     worker reads them, the app takes them when quiet), and a settings save of that instance keeps them;
  *   - a re-pick (create before destroy) takes a third copy; the destroyed copy is unloaded (dlclose: no longer in
  *     /proc/self/maps) and its index taken again by the next create; a new instance boots with the shared presets;
- *   - an update: engine.so changes (size and CRC), and the next create copies it again;
+ *   - an update: engine.so changes (size and CRC), and the next create copies it again under a new name (dsp-<crc>.so:
+ *     Schwung keeps a closed copy mapped, and glibc would hand back the old one by its name) and runs it;
  *   - a copy that cannot load (engine.so missing) still gives an instance: silent, named NO ENGINE. */
 #define _GNU_SOURCE 1
 #include <dlfcn.h>
@@ -179,9 +180,9 @@ int main(int argc, char **argv)
     /* the re-pick: create before destroy; dlclose; the index taken again; the new instance boots with the presets */
     void *c = create(mod);
     CHECK(c && inst_k(c) == 2, "re-pick copy %d", c ? inst_k(c) : -1);
-    CHECK(mapped("/inst/0/dsp.so") > 0, "copy 0 loaded");
+    CHECK(mapped("/inst/0/dsp-") > 0, "copy 0 loaded");
     destroy(a);
-    CHECK(mapped("/inst/0/dsp.so") == 0, "copy 0 unloaded after its destroy (dlclose)");
+    CHECK(mapped("/inst/0/dsp-") == 0, "copy 0 unloaded after its destroy (dlclose)");
     eb = energy_all(b, 10);
     api->on_midi(c, on, 3, MOVE_MIDI_SOURCE_EXTERNAL);
     CHECK(energy_all(c, 100) > 1e6, "the re-picked slot plays");
@@ -194,19 +195,33 @@ int main(int argc, char **argv)
     destroy(b); destroy(c); destroy(d);
     CHECK(mapped("/inst/") == 0, "every copy unloaded (%d mapped)", mapped("/inst/"));
 
-    /* an update: engine.so changes, the next create copies it again */
+    /* an update: engine.so changes, the next create copies it again under its new name and runs it */
     {
         FILE *f = fopen(eng, "ab");
         static const uint8_t pad[4096];
+        char was[64];
+        void *e0 = create(mod);
+        snprintf(was, sizeof was, "%s", strstr(get(e0, "dev_build"), "dsp_crc32="));
+        destroy(e0);
         if (f) { fwrite(pad, 1, sizeof pad, f); fclose(f); }
-        snprintf(p, sizeof p, "%s/inst/0/dsp.so", mod);
-        long was = fsize(p);
         void *e = create(mod);
-        CHECK(e && inst_k(e) == 0 && fsize(p) == fsize(eng) && fsize(p) == was + 4096, "the changed engine.so copied again: %ld, engine %ld (was %ld)", fsize(p), fsize(eng), was);
+        char want[64];
+        snprintf(want, sizeof want, "dsp_bytes=%ld ", fsize(eng));
+        CHECK(e && inst_k(e) == 0 && strstr(get(e, "dev_build"), want) && !strstr(gb, was),
+              "the changed engine.so copied again and loaded: %s (want %s, not %s)", gb, want, was);
+        {
+            char dir[700], l[300];
+            int n = 0;
+            snprintf(dir, sizeof dir, "ls %s/inst/0 | grep -c '^dsp'", mod);
+            FILE *ls = popen(dir, "r");
+            if (ls && fgets(l, sizeof l, ls)) n = atoi(l);
+            if (ls) pclose(ls);
+            CHECK(n == 1, "one copy left in inst/0 (%d)", n);
+        }
         api->on_midi(e, on, 3, MOVE_MIDI_SOURCE_EXTERNAL);
         CHECK(energy_all(e, 100) > 1e6, "the updated copy plays");
         destroy(e);
-        if (!fails) printf("ok    update: a changed engine.so (size, CRC) is copied again at the next create\n");
+        if (!fails) printf("ok    update: a changed engine.so (size, CRC) is copied again under its new name and runs\n");
     }
 
     /* no engine: a silent instance, NO ENGINE */

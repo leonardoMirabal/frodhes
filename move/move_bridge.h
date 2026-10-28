@@ -25,6 +25,7 @@
 #include <pthread.h>
 #include <sched.h>
 #include <sys/file.h>
+#include <dlfcn.h>
 #include <stdatomic.h>
 #include <time.h>
 #include "move_store.h"
@@ -557,7 +558,7 @@ static int mp_get(char *buf, int n)
 
 /* which build runs (the device tools): the features of this bridge, the app's version, and the CRC-32 of the
  * dsp.so file in the module folder as the worker found it when this instance started (zlib.crc32 of the local
- * build compares: under the loader that file is this instance's copy of engine.so); written to this instance's
+ * build compares: the file this code was loaded from, dladdr; under the loader this instance's copy of engine.so); written to this instance's
  * folder (<data dir>/inst/<k>/boot.txt under the loader) and answered by get dev_build */
 #define MB_FEATURES "bridge=2 dev_play=1"
 static char mb_build[160];
@@ -569,7 +570,13 @@ static void mb_note_build(void)
     uint32_t c = 0xFFFFFFFFu, total = 0;
     int fd, k;
     ssize_t r;
-    snprintf(path, sizeof path, "%s/dsp.so", mb.mod_dir);
+    {   /* this file itself (dladdr): a copy the loader made, or the plugin loaded on its own */
+        Dl_info di;
+        if (dladdr((void *)mb_note_build, &di) && di.dli_fname && di.dli_fname[0])
+            snprintf(path, sizeof path, "%s", di.dli_fname);
+        else
+            snprintf(path, sizeof path, "%s/dsp.so", mb.mod_dir);
+    }
     fd = open(path, O_RDONLY | O_CLOEXEC);
     if (fd >= 0) {
         while ((r = read(fd, b, sizeof b)) > 0) {
