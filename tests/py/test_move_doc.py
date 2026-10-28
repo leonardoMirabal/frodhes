@@ -74,7 +74,7 @@ def test_voices_and_hq():
     v = int(re.search(r"-DFR_VOICES=(\d+)u", defs).group(1))
     assert "-DFR_HQ=1" in defs
     assert f"**{v} voices** on every engine" in DOC
-    sec = MANUAL[MANUAL.index("## 16. Appendix: the Move"):]
+    sec = MANUAL[MANUAL.index("## 16. Appendix: the Ableton Move"):]
     assert f"{v} voices on every instrument" in sec and f"{v} voices on every" in README
     assert "hq_mode = 1;" in _src("move", "move_bridge.h")     # HQ at every load: the Move's one version
 
@@ -96,8 +96,8 @@ def test_sustain_button_is_claimed():
 
 
 def test_manual_and_readme_point_here():
-    assert "[MOVE.md](MOVE.md)" in MANUAL[MANUAL.index("## 16. Appendix: the Move"):]
-    assert "16. [Appendix: the Move (in development)](#16-appendix-the-move-in-development)" in MANUAL
+    assert "[MOVE.md](MOVE.md)" in MANUAL[MANUAL.index("## 16. Appendix: the Ableton Move"):]
+    assert "16. [Appendix: the Ableton Move (in development)](#16-appendix-the-ableton-move-in-development)" in MANUAL
     assert "[docs/MOVE.md](docs/MOVE.md)" in README
 
 

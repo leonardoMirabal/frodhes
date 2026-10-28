@@ -1,13 +1,19 @@
 # Frodhes
 
-**A physically modelled electric piano, vibraphone and marimba for the M-VAVE FM-1.**
+**A physically modelled electric piano, vibraphone and marimba for the M-VAVE FM-1 and the Ableton Move.**
 
-Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE, the Rhodes or Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk (M-VAVE's own firmware can always be put back); see [LICENSING.md](LICENSING.md).
+Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE, Ableton, the Rhodes or Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk (M-VAVE's own firmware can always be put back); see [LICENSING.md](LICENSING.md).
 
 <p align="center">
   <img src="docs/manual/img/thumbnail.png?v=23c51997" width="380" alt="Frodhes: the start screen (FRODHES, ELECTRIC PIANO + VIBES + MARIMBA)">
   <img src="docs/manual/img/piano.png?v=904c35f2" width="380" alt="Frodhes on the FM-1: the FRODHES page (TYPE, TONE, BELL, KEY VEL)">
 </p>
+
+| Device | What Frodhes is on it | File |
+| --- | --- | --- |
+| **M-VAVE FM-1** | the whole firmware: the instruments, the effects, the pattern recorder, the arpeggiator, chords and scales, 10 voices | `frodhes.fwsc` |
+| **Ableton Move** (in development) | a sound generator in Schwung: the same instruments and effects in their HQ version, 16 voices; the Move's own sequencer, arpeggiator, scales and tempo lead | `frodhes-module.tar.gz` |
+
 
 Frodhes turns the FM-1 into an electric piano, a vibraphone and a marimba. Every note is computed live from the mechanics of the
 instrument: on a Rhodes a hammer strikes a tine, the tine rings against its tonebar and a magnetic pickup turns the
@@ -34,7 +40,7 @@ code compiled to WebAssembly, with the FM-1's screen, knobs, buttons and keys (c
 Every page is in the
 [manual](docs/MANUAL.md), with its screenshot.
 
-## Download
+## The M-VAVE FM-1: download and install
 
 **Latest release: [the release page](https://github.com/leonardoMirabal/frodhes/releases/latest)** (its version, notes
 and earlier versions); the firmware file is [`frodhes.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes.fwsc), always the newest
@@ -53,12 +59,19 @@ If anything goes wrong, switch the FM-1 off, hold **OCT−** and switch it on: t
 can always install again. To return to M-VAVE's firmware, use the "Official firmware" section of
 [thefirmwarehub.com](https://thefirmwarehub.com) with V15 from m-vave.com.
 
-## Other devices
+## The Ableton Move (in development)
 
-The same instruments and effects also run on the SMK-37 keyboards and on the Move. Each device has its own file
-(table below).
+Frodhes runs on the Ableton Move as a sound generator of Schwung, the community module host on it: 16 voices on every
+instrument, the HQ version of the three engines, Schwung's knob pages and a screen of its own. **In development:
+not released yet.** A release carries the module only once it has passed the tests on a Move. Install, the pages
+and what differs from the FM-1: [docs/MOVE.md](docs/MOVE.md).
 
-### The SMK-37 (experimental)
+<p align="center">
+  <img src="docs/manual/img/move/move-knobs-compressor.png?v=18ceee97" width="384" alt="Schwung's COMPRESSOR page on the Move: six knobs, and the gain-reduction meter in the place of knobs 7 and 8">
+  <img src="docs/manual/img/move/move-pages.png?v=e463578b" width="384" alt="Frodhes' own screen on the Move (PAGES)">
+</p>
+
+## Other keyboards: the SMK-37 (experimental)
 
 Frodhes also builds for the SMK-37, the FM-1's bigger relative (37 keys with velocity, pads, faders, wheels, a
 pedal jack). **Experimental: not tested on hardware by us.** Back up your flash first; the way back is your model's
@@ -66,20 +79,13 @@ stock package. The three SMK files are on the
 [release page](https://github.com/leonardoMirabal/frodhes/releases/latest) (table below). Everything is in
 [docs/SMK37.md](docs/SMK37.md) and the manual's appendix.
 
-### The Move (in development)
-
-Frodhes runs on the Move as a sound generator of Schwung, the community module host on it: 16 voices on every
-instrument, the HQ version of the three engines, Schwung's knob pages and a screen of its own. **In development:
-not released yet.** A release carries the module only once it has passed the tests on a Move. Install, the pages
-and what differs from the FM-1: [docs/MOVE.md](docs/MOVE.md).
-
 | Model | File | Package identity |
 | --- | --- | --- |
 | FM-1 | `frodhes.fwsc` | `FM-1_958` |
 | SMK-37 Pro (experimental) | `frodhes-smk37-experimental.fwsc` | `SMK-37 Pro_470` |
 | SMK-37 Elite (experimental) | `frodhes-smk37-elite-experimental.fwsc` | `SMK-37 Elite_470` |
 | MKE-P37 (experimental) | `frodhes-smk37-mke-experimental.fwsc` | `MKE-P37_470` |
-| Move (in development) | `frodhes-module.tar.gz` | Schwung module `frodhes` |
+| Ableton Move (in development) | `frodhes-module.tar.gz` | Schwung module `frodhes` |
 
 ## Manual
 

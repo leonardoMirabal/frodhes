@@ -1,6 +1,6 @@
-# Frodhes on the Move
+# Frodhes on the Ableton Move
 
-Frodhes also runs on the Move, a standalone groove box, as a sound generator of Schwung, the community module host
+Frodhes also runs on the Ableton Move, a standalone groove box, as a sound generator of Schwung, the community module host
 that runs on it. The instruments (the electric piano types, VIBES, MARIMBA) and the effects are the FM-1's own code,
 built for the Move's processor, with 16 voices on every instrument and the HQ version of the three engines.
 

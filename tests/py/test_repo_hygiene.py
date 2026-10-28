@@ -28,8 +28,9 @@ THIRD_PARTY_OK = {"move/vendor/": "move/vendor/LICENSE.schwung"}   # "path/prefi
 # names replaced by generic wording in 0.9.5 (comments, tools, tests, public text)
 BRANDS = re.compile(r"reface|yamaha|ableton|arturia|pigments|kontakt|orchestral mallets|jrhodes|fender", re.I)
 FENDER_OK = re.compile(r"trademark", re.I)      # the non-affiliation / trademark lines may name the owners
-# identifiers the Move itself reports, not our wording: its login (ssh) and the USB port names macOS lists for it
-DEVICE_IDS = re.compile(r"ableton@move\.local|Ableton Move(?: Live| Standalone)?(?: Port)?")
+# the Move as a target (the user, 2026-10-28: "Ableton Move" is the product Frodhes runs on, as M-VAVE FM-1): the
+# product name, a manual anchor made from it, and what the Move itself reports (its login, the USB port names)
+DEVICE_IDS = re.compile(r"ableton@move\.local|Ableton Move(?: Live| Standalone)?(?: Port)?|ableton-move")
 BRAND_EXEMPT = [
     "tests/py/test_repo_hygiene.py",            # this list
     "docs/model/*",                             # the historical design record (plans, reviews, the data's _doc
@@ -75,7 +76,7 @@ def problems(files, root=ROOT):
         for n, line in enumerate(open(p, encoding="utf-8", errors="replace"), 1):
             line = DEVICE_IDS.sub("", line)
             for m in BRANDS.finditer(line):
-                if m.group(0).lower() == "fender" and FENDER_OK.search(line):
+                if m.group(0).lower() in ("fender", "ableton") and FENDER_OK.search(line):
                     continue
                 bad.append(f"{f}:{n}: brand name {m.group(0)!r} (use generic wording)")
     return bad

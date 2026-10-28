@@ -1,6 +1,6 @@
 # Frodhes: user manual
 
-**A physically modelled electric piano, vibraphone and marimba for the M-VAVE FM-1.**
+**A physically modelled electric piano, vibraphone and marimba for the M-VAVE FM-1 and the Ableton Move.**
 
 Frodhes turns the FM-1 into an electric piano. Every note is computed from the physics of a real Rhodes: the hammer
 strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound. As on a real
@@ -34,7 +34,7 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 13. [If something goes wrong](#13-if-something-goes-wrong)
 14. [Specifications](#14-specifications)
 15. [Appendix: the SMK-37 (experimental)](#15-appendix-the-smk-37-experimental)
-16. [Appendix: the Move (in development)](#16-appendix-the-move-in-development)
+16. [Appendix: the Ableton Move (in development)](#16-appendix-the-ableton-move-in-development)
 
 ## 1. Install
 
@@ -1121,7 +1121,7 @@ Everything in this manual applies, with these differences:
 - 7 voices. No TRS MIDI input (no TRS IN card), no key LEDs (no LEDS card on DISPLAY); BRIGHTNESS dims the pads and
   the button LEDs.
 
-## 16. Appendix: the Move (in development)
+## 16. Appendix: the Ableton Move (in development)
 
 Frodhes also runs on the Move, a standalone groove box, as a sound generator of Schwung, the community module host
 on it: the same instruments and effects as on the FM-1, with 16 voices on every instrument. **In development: not
