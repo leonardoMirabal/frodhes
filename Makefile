@@ -92,17 +92,22 @@ move-image:                ## the Move build image (Debian bookworm arm64, about
 	docker build --platform linux/arm64 -t $(MOVE_IMG) move/docker
 
 move:                      ## build/move/frodhes/{dsp.so,module.json} + build/move/frodhes-module.tar.gz
-	$(MOVE_RUN) make -s move-native
+	$(MOVE_RUN) make -s move-native MOVE_VER=$(MOVE_VER)
 
 move-native:
 	@mkdir -p $(MOVE_OUT)
 	$(MOVE_CC) $(MOVE_CFLAGS) -shared -Wl,-z,defs -o $(MOVE_OUT)/dsp.so move/move_plugin.c move/coro/coro_aarch64.S -lm
-	@if [ -f move/module/module.json ]; then cp move/module/module.json $(MOVE_OUT)/; else \
+	@# (module.json's version: MOVE_VER, the release's X.Y.Z; the committed file says 0.0.0-dev, the default)
+	@if [ -f move/module/module.json ]; then sed 's/"version": "0.0.0-dev"/"version": "$(MOVE_VER)"/' move/module/module.json > $(MOVE_OUT)/module.json; else \
 	  printf '{"id":"frodhes","name":"Frodhes","version":"%s","dsp":"dsp.so","api_version":2,"capabilities":{"audio_out":true,"midi_in":true,"component_type":"sound_generator"}}\n' "$(MOVE_VER)" > $(MOVE_OUT)/module.json; fi
 	@if [ -f move/module/help.json ]; then cp move/module/help.json $(MOVE_OUT)/; fi
 	@if [ -f move/module/sustain.js ]; then cp move/module/sustain.js $(MOVE_OUT)/; fi
 	@cp LICENSE $(MOVE_OUT)/LICENSE
-	tar -C build/move -czf build/move/frodhes-module.tar.gz $$(cd build/move && ls frodhes/dsp.so frodhes/module.json frodhes/help.json frodhes/sustain.js frodhes/LICENSE 2>/dev/null)
+	@# reproducible (M7-02: the release compares the tarball's sha256 with the one tested on the Move): sorted
+	@# names, no times, owners or umask in it, gzip without its name and time
+	tar -C build/move --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w -cf - \
+	  $$(cd build/move && ls frodhes/dsp.so frodhes/module.json frodhes/help.json frodhes/sustain.js frodhes/LICENSE 2>/dev/null) \
+	  | gzip -9n > build/move/frodhes-module.tar.gz
 	@ls -l $(MOVE_OUT)/dsp.so build/move/frodhes-module.tar.gz
 
 test-move:                 ## the Move checks: exports/imports, the coroutine, the bridge (api, Gate P, eq), persistence (M1-08)

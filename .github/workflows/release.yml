@@ -13,6 +13,10 @@ name: release
 # then publishes the release and marks it latest. Every step is safe to rerun. Only a v* tag deploys: a merge to main
 # never touches gh-pages (ci.yml builds and tests the emulator, nothing more). The FM-1 package goes with the
 # emulator (tools/web_firmware.sh: frodhes.fwsc and firmware.json with its sha256) for the page's installer.
+# The Move package (private plan 05 M7-02): the job move builds it from the tag (make move, reproducible) on arm64 in
+# Debian bookworm (the Move's userland, as ci.yml's move job); the release attaches it, as frodhes-X.Y.Z-move.tar.gz
+# and frodhes-module.tar.gz, only when the release commit records that exact tarball's sha256 as tested on the Move
+# (tools/move_asset.sh: no record, no Move asset; a different sha256 stops the release).
 # Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
 on:
   push:
@@ -92,12 +96,28 @@ jobs:
           name: web-dist
           path: web/dist
           if-no-files-found: error
+  move:                              # the Move package from the tag (tools/move_asset.sh decides whether it ships)
+    runs-on: ubuntu-24.04-arm
+    container: debian:bookworm
+    steps:
+      - run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates make gcc libc6-dev
+      - uses: actions/checkout@v4
+      - name: build the Move package
+        run: |
+          make move MOVE_RUN= MOVE_VER="${GITHUB_REF_NAME#v}"
+          sha256sum build/move/frodhes-module.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: move-package
+          path: build/move/frodhes-module.tar.gz
+          if-no-files-found: error
   release:
-    needs: [ci-gate, generators-macos, host, web]
+    needs: [ci-gate, generators-macos, host, web, move]
     # runs when ci passed on this commit (the fallback jobs skipped) or when both fallback jobs passed, and the
     # emulator built and passed its selftest. x86_64: the JieLi toolchain (tools/get_toolchain.sh) runs on nothing else
     if: >-
       !cancelled() && needs.ci-gate.result == 'success' && needs.web.result == 'success' &&
+      needs.move.result == 'success' &&
       (needs.ci-gate.outputs.passed == 'true' ||
        (needs.generators-macos.result == 'success' && needs.host.result == 'success'))
     runs-on: ubuntu-latest
@@ -106,6 +126,8 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0             # (tools/move_asset.sh reads the release commit)
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1
       - name: the JieLi toolchain and the 3 AC79 SDK files (checked by sha256 in the build)
         run: |
@@ -127,6 +149,13 @@ jobs:
             "build/frodhes-$V-smk37-mke.fwsc"
           sha256sum "build/frodhes-$V.fwsc" "build/frodhes-$V-smk37.fwsc" "build/frodhes-$V-smk37-elite.fwsc" \
             "build/frodhes-$V-smk37-mke.fwsc"
+      - name: the Move package built by the job move
+        uses: actions/download-artifact@v4
+        with:
+          name: move-package
+          path: build/move-ci
+      - name: the Move package, if tested
+        run: sh tools/move_asset.sh "${GITHUB_REF_NAME#v}" build/move-ci/frodhes-module.tar.gz build/publish/move
       - name: draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -146,6 +175,10 @@ jobs:
             build/publish/frodhes-smk37-experimental.fwsc build/publish/frodhes-smk37-elite-experimental.fwsc \
             build/publish/frodhes-smk37-mke-experimental.fwsc \
             "LICENSES/Apache-2.0.txt#Apache-2.0.txt (the licence of the 3 JieLi SDK files in each .fwsc)"
+          # the Move package, when tools/move_asset.sh found it tested (frodhes-X.Y.Z-move.tar.gz, frodhes-module.tar.gz)
+          for f in "build/publish/move/frodhes-$V-move.tar.gz" build/publish/move/frodhes-module.tar.gz; do
+            if [ -f "$f" ]; then set -- "$@" "$f"; fi
+          done
           # a draft: nobody sees it until the emulator of this tag is live ("publish the release" below)
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             # a rerun: the release exists already (a draft left by a failed run, or published): its assets replaced

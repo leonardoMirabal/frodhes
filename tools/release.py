@@ -17,7 +17,9 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
  2 preconditions on main, no tracked changes, not behind origin/main (after a fetch), the fragments in docs/changes/
                  well formed (at least one) and no docs/releases/vX.Y.Z.md written by hand (one already committed with
                  no fragments left: a re-run after step 5, accepted)
- 3 host          make test, make pytest, tools/gate_r.py, ./build.sh --release X.Y.Z (its sha256)
+ 3 host          make test, make pytest, tools/gate_r.py, ./build.sh --release X.Y.Z (its sha256); with move/ in the
+                 tree also the Move's MT0 (tools/ci_move.sh) and its package, make move MOVE_VER=X.Y.Z (reproducible:
+                 build/frodhes-X.Y.Z-move.tar.gz, its sha256)
  4 FM-1          (--no-device skips it and lists its commands) the tiers this release needs, from
                  `git diff <previous tag>..HEAD` through tools/test_map.py (printed with the reason): T1 on every
                  release, T2 when an engine / the DSP changed (or --full). The device lock, install, then
@@ -28,7 +30,11 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
                                 (SNR; the jack must be connected; MARIMBA: the A5 tails and the idle floor too),
                                 vib_sampleback --engine marimba (Gate VD-M, every key C2..C7)
                  --no-device --device-done JSON: those runs were made on this exact build; its "tiers" must cover the
-                 needed ones (checked here, as soon as the build's sha256 is known)
+                 needed ones (checked here, as soon as the build's sha256 is known). A section per target:
+                 {"fm1": {...}, "move": {"sha256": the tested tarball's, "tiers": [...], "runs": [...]}} (the old
+                 flat form is the FM-1's). The Move's tiers (move_tiers): MIN (private plan 05 section 6.6, the
+                 release minimum) on every release, MT1 too when Move-only code changed. No "move" section: the
+                 Move is not tested and the release ships no Move package; a wrong sha256 or tiers short stop it
  5 docs          tools/doc_links.py's check (each picture's ?v= = its file's hash, no version named in README /
                  MANUAL), tests/py/test_docs_vs_code.py, test_doc_links.py, test_changes.py, test_manual_shots.py
                  (the screenshots = what the code draws); the fragments assembled into docs/releases/vX.Y.Z.md (shown in
@@ -47,7 +53,7 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
                  app.js = the tag's web/. Fallback, for a release.yml without that job: web/build.sh, the selftest,
                  web/dist into the gh-pages worktree build/pages (tools/deploy_pages.sh), push, the live sha256
  9 verify        the release page (not a draft) lists frodhes-X.Y.Z.fwsc, frodhes.fwsc and the SMK-37 packages
-                 (SMK_ASSETS, marked experimental);
+                 (SMK_ASSETS, marked experimental), and the Move package (MOVE_ASSETS) when it was tested;
                  releases/latest/download/frodhes.fwsc redirects to vX.Y.Z and is byte for byte the build (with
                  --verify-only: the versioned asset); README on GitHub at the tag names no version and links it
 
@@ -80,6 +86,14 @@ STABLE = "frodhes.fwsc"                       # release.yml uploads the package 
 SMK_ASSETS = {"frodhes-smk37-experimental.fwsc": "frodhes-{v}-smk37.fwsc",
               "frodhes-smk37-elite-experimental.fwsc": "frodhes-{v}-smk37-elite.fwsc",
               "frodhes-smk37-mke-experimental.fwsc": "frodhes-{v}-smk37-mke.fwsc"}
+# the Move package (make move: build/move/frodhes-module.tar.gz), attached by release.yml (tools/move_asset.sh) only
+# when the release commit records its sha256 as tested on the Move: the versioned name and the stable one
+MOVE_BUILT = os.path.join("build", "move", "frodhes-module.tar.gz")
+MOVE_VERSIONED = "frodhes-{v}-move.tar.gz"
+MOVE_STABLE = "frodhes-module.tar.gz"
+MOVE_RECORD = "Move package sha256"            # the release commit's line (tools/move_asset.sh reads it)
+# the Move's device tiers (private plan 05 section 6.6): MIN on every release, MT1 when Move-only code changed
+MOVE_ONLY = ("move/", "firmware/src/hq/")
 # and the Apache-2.0 text that goes with the 3 JieLi SDK files inside every .fwsc (Apache-2.0 section 4)
 LICENCE_ASSET = "Apache-2.0.txt"
 LATEST_DL = f"https://github.com/{REPO}/releases/latest/download/{STABLE}"
@@ -213,6 +227,10 @@ class Release:
         self.ver = self.prev = self.sha = self.head = self.recorded_sha = None
         self.frags = []             # docs/changes/ (step 2)
         self.tmap = None            # the tiers this release needs (tiers(), from step 4)
+        self.move_sha = None        # the Move package's sha256 (step 3), None without move/ in the tree
+        self.move_ok = None         # the Move tiers passed on that tarball (--device-done "move"), step 4
+        self.move_recorded = None   # --after-merge: the Move package sha256 the release commit records
+        self.move_line = ""
 
     def log(self, msg):
         print("   " + msg.replace("\n", "\n   "), flush=True)
@@ -309,6 +327,9 @@ class Release:
             self.recorded_sha = m.group(1)
             ev.append(f"--after-merge: the release commit {rc[:10]} merged, main's tree = its tree; it records the "
                       f"release build sha256 {self.recorded_sha[:16]}...")
+        mm = re.search(MOVE_RECORD + r" ([0-9a-f]{64})", out(["git", "log", "-1", "--format=%B", rc]))
+        self.move_recorded = mm.group(1) if mm else None
+        ev.append(f"the Move package: {'sha256 ' + self.move_recorded[:16] + '... recorded (tested)' if mm else 'none recorded (not tested: no Move asset)'}")
         return p
 
     # 3
@@ -321,8 +342,15 @@ class Release:
             if self.sha != self.recorded_sha:
                 raise Stop(f"the release build's sha256 {self.sha} is not the one the release commit records "
                            f"({self.recorded_sha}): not the build that was tested")
-            return (f"--after-merge: ./build.sh --release {self.ver}: sha256 {self.sha} = the release commit's (the "
-                    f"host tests and the FM-1 tiers ran on this build before the PR)")
+            ev.append(f"--after-merge: ./build.sh --release {self.ver}: sha256 {self.sha} = the release commit's (the "
+                      f"host tests and the FM-1 tiers ran on this build before the PR)")
+            if self.has_move() and self.move_recorded:
+                self.move_build()
+                if self.move_sha != self.move_recorded:
+                    raise Stop(f"the Move package's sha256 {self.move_sha} is not the one the release commit records "
+                               f"({self.move_recorded}): not the tarball that was tested")
+                ev.append(f"make move: sha256 {self.move_sha} = the release commit's (tested on the Move)")
+            return "\n".join(ev)
         for cmd in (["make", "test"], ["make", "pytest", "PY=" + PY], [PY, "tools/gate_r.py"],
                     ["./build.sh", "--release", self.ver]):
             t0 = time.time()
@@ -334,7 +362,29 @@ class Release:
             raise Stop(f"{fw} was not built")
         self.sha = sha256(fw)
         ev.append(f"build/frodhes-{self.ver}.fwsc {os.path.getsize(fw)} B sha256 {self.sha}")
+        if self.has_move():
+            t0 = time.time()
+            _, o = sh(["env", "PY=" + PY, "sh", "tools/ci_move.sh"], timeout=3600)
+            ev.append(f"tools/ci_move.sh (the Move's MT0): exit 0 in {time.time() - t0:.0f} s ({tail(o, 1)[:100]})")
+            ev.append(self.move_build())
+        else:
+            ev.append("the Move: no move/ in this tree (no Move package)")
         return "\n".join(ev)
+
+    def has_move(self):
+        return os.path.isfile(os.path.join(ROOT, "move", "move_plugin.c"))
+
+    def move_build(self):
+        """make move MOVE_VER=X.Y.Z (reproducible) -> build/frodhes-X.Y.Z-move.tar.gz and its sha256"""
+        sh(["make", "-s", "move", "MOVE_VER=" + self.ver], timeout=3600)
+        src = os.path.join(ROOT, MOVE_BUILT)
+        if not os.path.exists(src):
+            raise Stop(f"{MOVE_BUILT} was not built")
+        dst = os.path.join(ROOT, "build", MOVE_VERSIONED.format(v=self.ver))
+        shutil.copyfile(src, dst)
+        self.move_sha = sha256(dst)
+        return (f"make move MOVE_VER={self.ver}: build/{os.path.basename(dst)} {os.path.getsize(dst)} B sha256 "
+                f"{self.move_sha}")
 
     # 4
     def s_device(self):
@@ -347,6 +397,10 @@ class Release:
         try:
             tm = self.tiers()
             ev += tm["lines"]
+            if self.has_move():
+                self.move_ok = False
+                ev.append("the Move: not run by this step (its record goes in with --no-device --device-done, "
+                          "\"move\" section): this release ships no Move package")
             fw = f"build/frodhes-{self.ver}.fwsc"
             _, o = sh(f"echo y | {PY} tools/fm1_install.py {fw}", timeout=600)
             ev.append(f"installed {fw}: {tail(o, 1)}")
@@ -422,6 +476,9 @@ class Release:
                    + (", then hil_cpu, hil_scan, hil_jack, vib_sampleback)" if "T2" in need else "; T2 not needed)"))
         else:
             dev = self.device_done() or "FM-1: NOT tested (--no-device)"
+        if self.has_move():
+            dev += "; " + (f"the Move: {MOVE_RECORD} {self.move_sha} ({self.move_line})" if self.move_ok else
+                           "the Move: NOT tested (no Move package in this release)")
         msg = (f"Release {self.ver}: the notes {notes}, assembled from {changes.DIR}/ (the fragments removed)"
                f"\n\nTested by tools/release.py: host (make test, make pytest, gate_r, the release build sha256 "
                f"{self.sha}); {dev}.\n{body}\n")
@@ -480,6 +537,17 @@ class Release:
         if got != self.sha:
             raise Stop(f"the published asset's sha256 {got} differs from the local build's {self.sha}")
         ev.append(f"release asset sha256 {got} = the local build")
+        if self.move_recorded:
+            mv = MOVE_VERSIONED.format(v=self.ver)
+            d = tempfile.mkdtemp(prefix="frodhes-rel-", dir=os.path.join(ROOT, "build"))
+            try:
+                sh(["gh", "release", "download", tag, "-R", REPO, "-p", mv, "-D", d])
+                got = sha256(os.path.join(d, mv))
+            finally:
+                shutil.rmtree(d, ignore_errors=True)
+            if got != self.move_recorded:
+                raise Stop(f"the published {mv} sha256 {got} is not the tested Move package's {self.move_recorded}")
+            ev.append(f"{mv} sha256 {got} = the tested Move package")
         return "\n".join(ev)
 
     # 8
@@ -533,10 +601,20 @@ class Release:
         versioned = f"frodhes-{self.ver}.fwsc"
         r = json.loads(out(["gh", "release", "view", tag, "-R", REPO, "--json", "assets,url,isDraft"]))
         names = [x["name"] for x in r["assets"]]
-        missing = [n for n in (versioned, STABLE, *SMK_ASSETS, LICENCE_ASSET) if n not in names]
+        move_names = (MOVE_VERSIONED.format(v=self.ver), MOVE_STABLE)
+        # the Move package: expected when the release commit records it (or this run tested it); with --verify-only,
+        # when either name is there both must be
+        want_move = bool(self.move_recorded or self.move_ok or (self.a.verify_only and set(move_names) & set(names)))
+        missing = [n for n in (versioned, STABLE, *SMK_ASSETS, LICENCE_ASSET, *(move_names if want_move else ()))
+                   if n not in names]
         if missing or r.get("isDraft"):
             raise Stop(f"{r['url']}: assets {names} (missing {missing}), draft {r.get('isDraft')}")
         ev = [f"{r['url']} lists {', '.join(names)}"]
+        if not want_move:
+            ev.append("the Move package: not in this release (not tested)" if not set(move_names) & set(names) else
+                      f"the Move package attached although not recorded as tested: {sorted(set(move_names) & set(names))}")
+            if set(move_names) & set(names):
+                raise Stop(ev[-1])
         want = self.sha
         if want is None:                               # --verify-only: the versioned asset is the reference
             want = resolve(f"https://github.com/{REPO}/releases/download/{tag}/{versioned}")[1]
@@ -582,14 +660,18 @@ class Release:
 
     def s_device_done(self):
         """step 4 with --no-device --device-done: the runs made on this exact build, checked against the tiers"""
-        return "\n".join(self.tiers()["lines"] + [self.device_done()])
+        fm = self.device_done()
+        return "\n".join(self.tiers()["lines"] + [fm] + self.move_lines())
 
     def device_done(self):
         """--device-done: the FM-1 runs made before the release on this very build (its sha256 checked, its tiers
         covering the needed ones), or None"""
         if not self.a.device_done:
             return None
-        d = json.load(open(self.a.device_done))
+        rec = json.load(open(self.a.device_done))
+        d = rec.get("fm1", rec)                        # (a section per target; the old flat form is the FM-1's)
+        if self.has_move():
+            self.move_device_done(rec.get("move"))
         if d.get("sha256") != self.sha:
             raise Stop(f"--device-done {self.a.device_done}: sha256 {d.get('sha256')} is not the release build's {self.sha}")
         need = [t for t in self.tiers()["need"] if t != "T0"]       # (T0: step 3, in this run)
@@ -600,6 +682,49 @@ class Release:
                        f"{need} (missing {', '.join(missing)}); " + self.tiers()["lines"][0])
         return (f"FM-1: tested before the release on this exact build (sha256 equal), tiers {'+'.join(done)} "
                 f"(needed {'+'.join(need)}): " + "; ".join(d.get("runs", [])))
+
+    def move_tiers(self):
+        """the Move's tiers this release needs: MIN every release, MT1 too when Move-only code changed since the
+        last tag (MOVE_ONLY); (need, why)"""
+        files = []
+        if self.prev:
+            code, o = sh(["git", "diff", "--name-only", f"{self.prev}..HEAD"], check=False, quiet=True)
+            files = [l.strip() for l in o.splitlines() if l.strip()] if not code else ["(the diff failed)"]
+        own = [f for f in files if f.startswith(MOVE_ONLY)] if self.prev else ["(no previous tag)"]
+        if own:
+            return ["MIN", "MT1"], f"MT1: Move-only code changed ({', '.join(own[:4])}{' ...' if len(own) > 4 else ''})"
+        return ["MIN"], "MT1: no Move-only code changed"
+
+    def move_device_done(self, m):
+        """the --device-done record's "move" section against the Move package built in step 3; sets move_ok and
+        move_line. None: the Move not tested (no Move package); a wrong sha256 or tiers short: Stop"""
+        need, why = self.move_tiers()
+        if m is None:
+            self.move_ok, self.move_line = False, "no \"move\" section in --device-done"
+            return
+        if m.get("sha256") != self.move_sha:
+            raise Stop(f"--device-done {self.a.device_done}: the Move's sha256 {m.get('sha256')} is not the release's "
+                       f"Move package's {self.move_sha}")
+        done = m.get("tiers") or []
+        missing = [t for t in need if t not in done]
+        if missing:
+            raise Stop(f"--device-done {self.a.device_done}: the Move's tiers {done or '(none recorded)'} do not cover "
+                       f"the needed {need} (missing {', '.join(missing)}; {why})")
+        self.move_ok = True
+        self.move_line = (f"tested on this exact tarball (sha256 equal), tiers {'+'.join(done)} (needed "
+                          f"{'+'.join(need)}): " + "; ".join(m.get("runs", [])))
+
+    def move_lines(self):
+        """step 4: the Move's tiers and its record, for the log"""
+        if not self.has_move():
+            return []
+        need, why = self.move_tiers()
+        lines = [f"the Move: tiers needed {' + '.join(need)} (MIN on every release; {why})"]
+        if self.move_ok:
+            lines.append("the Move: " + self.move_line)
+        elif self.move_ok is False:
+            lines.append(f"the Move: NOT tested ({self.move_line}): this release ships no Move package")
+        return lines
 
     # ---- the driver ----
     def run(self):
@@ -637,6 +762,11 @@ class Release:
                     self.log("\n".join(tm["lines"]))
                     self.log("with the FM-1 this step runs, in order:\n"
                              + "\n".join(device_plan(self.ver or "X.Y.Z", tm["need"])))
+                    if self.has_move() and not self.a.verify_only:
+                        self.move_ok, self.move_line = False, "--no-device without --device-done"
+                        self.log("\n".join(self.move_lines() + [
+                            "the Move's record: tools/release_devices.py (M7-04), then --no-device --device-done "
+                            "JSON with a \"move\" section {sha256, tiers, runs}"]))
                 continue
             print(f"\n[{i}/9] {name}", flush=True)
             try:
