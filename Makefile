@@ -88,7 +88,7 @@ MOVE_CFLAGS := -O2 -fPIC -ffp-contract=off -std=gnu11 -Wall -Wno-unused-function
   -Imove/compat -Ifirmware/src -Ifirmware/gen
 MOVE_OUT  := build/move/frodhes
 
-.PHONY: move-image move move-native move-tools-native test-move test-move-native gate-p gate-p-native gate-m gate-h move-probe test-move-probe
+.PHONY: move-image move move-multi move-multi-native move-native move-tools-native test-move test-move-native gate-p gate-p-native gate-m gate-h move-probe test-move-probe
 move-image:                ## the Move build image (Debian bookworm arm64, about 250 MB)
 	docker build --platform linux/arm64 -t $(MOVE_IMG) move/docker
 
@@ -111,6 +111,17 @@ move-native:
 	  $$(cd build/move && ls frodhes/dsp.so frodhes/module.json frodhes/help.json frodhes/screen.js frodhes/canvas.js frodhes/LICENSE 2>/dev/null) \
 	  | gzip -9n > build/move/frodhes-module.tar.gz
 	@ls -l $(MOVE_OUT)/dsp.so build/move/frodhes-module.tar.gz
+
+# PROTOTYPE (move-multi cost gate): build/move-multi/frodhes/ = the module with dsp.so the thin loader
+# (move/multi/move_loader.c) and engine.so the plugin as `make move` builds it (one private copy an instance)
+move-multi:
+	$(MOVE_RUN) make -s move-multi-native MOVE_VER=$(MOVE_VER)
+move-multi-native: move-native
+	@mkdir -p build/move-multi/frodhes
+	cp $(MOVE_OUT)/module.json $(MOVE_OUT)/help.json $(MOVE_OUT)/sustain.js $(MOVE_OUT)/screen.js $(MOVE_OUT)/canvas.js $(MOVE_OUT)/LICENSE build/move-multi/frodhes/
+	cp $(MOVE_OUT)/dsp.so build/move-multi/frodhes/engine.so
+	$(MOVE_CC) -O2 -fPIC -std=gnu11 -Wall -fvisibility=hidden -shared -Wl,-z,defs -o build/move-multi/frodhes/dsp.so move/multi/move_loader.c -ldl -lpthread
+	@ls -l build/move-multi/frodhes/dsp.so build/move-multi/frodhes/engine.so
 
 test-move:                 ## the Move checks: exports/imports, the coroutine, the bridge (api, Gate P, eq), persistence (M1-08)
 	$(MOVE_RUN) make -s test-move-native

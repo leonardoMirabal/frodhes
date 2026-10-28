@@ -44,7 +44,7 @@ def move_lock(why=""):
                      say=lambda m: print(m, file=sys.stderr, flush=True))
 MODS = "/data/UserData/schwung/modules/sound_generators"
 MODULE_ID = "frodhes"
-PACKAGE = ("dsp.so", "module.json", "help.json", "screen.js", "canvas.js")
+PACKAGE = ("dsp.so", "engine.so", "module.json", "help.json", "screen.js", "canvas.js")
 RETIRED = ("sustain.js",)     # files an older package had: not carried over (0.9.8: the PEDAL screen is gone)
 REQUIRED = ("dsp.so", "module.json")
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
