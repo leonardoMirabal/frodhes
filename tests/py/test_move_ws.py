@@ -209,11 +209,23 @@ def host_fetch(fake, d):
     return fetch
 
 
+def fake_cpu(fake):
+    """the timer ring a plugin would log: 2000 callbacks of 300..349 us when dev_cpu_log went to 1 since the last
+    read, else none"""
+    seen = [0]
+
+    def cpu():
+        new, seen[0] = fake.log[seen[0]:], len(fake.log)
+        on = any(m.get("key") == "synth:dev_cpu_log" and m.get("value") == "1" for m in new)
+        return "".join("%d %d 128\n" % (i, 300 + i % 50) for i in range(2000)) if on else ""
+    return cpu
+
+
 def test_tap_path_is_the_host(fake, tmp_path):
     """usb-host over the tap path: the schedule's pieces stay under 256 B, the panel and the program change lead the
     take as in host_phrase, so the 'device' (the host build on the received schedule) equals the host's own render"""
     import move_hil as mh
-    r = mh.TapRig(fake.url, host_fetch(fake, str(tmp_path / "tap")), wait=2.0)
+    r = mh.TapRig(fake.url, host_fetch(fake, str(tmp_path / "tap")), wait=2.0, cpu=fake_cpu(fake))
     mh.TAP_GRID_S, keep = 0.0, mh.TAP_GRID_S
     sleep, mh.time.sleep = mh.time.sleep, lambda s: None
     try:
@@ -222,9 +234,15 @@ def test_tap_path_is_the_host(fake, tmp_path):
         assert all(w["lag_ms"] == 0 and w["residual_db"] < -150 for w in rep["rows"] if w["judged"]), rep["rows"]
         take = fake.takes[sorted(fake.takes)[-1]]
         assert take["max_piece"] < 256 and (5, 0xC0, 12, 0) in take["ev"], take["ev"][:4]
-        code = mh.d2(r, str(tmp_path / "d2"), ("rhodes",), ws=fake.url, stress_secs=4.0, out=lambda s: None)
+        code = mh.d2(r, str(tmp_path / "d2"), ("rhodes",), ws=fake.url, stress_secs=4.0, hq=1, out=lambda s: None)
         rows = json.load(open(tmp_path / "d2" / "report.json"))["rows"]
         assert code == 0 and "preflight" not in [w["test"] for w in rows], [(w["test"], w["verdict"]) for w in rows]
+        assert {"type": "set_param", "slot": 0, "key": "synth:p_hq", "value": "1"} in fake.log
+        cpu = [w for w in rows if w["test"] == "cpu"]
+        assert len(cpu) == 1 and cpu[0]["report"]["worst"] == 349 and cpu[0]["report"]["n"] == 2000, cpu
+        assert "2000 callbacks while usb-stress played, worst 349 us" in cpu[0]["numbers"] and "HQ on" in cpu[0]["numbers"]
+        logs = [m["value"] for m in fake.log if m.get("key") == "synth:dev_cpu_log"]
+        assert logs == ["1", "0"], logs
     finally:
         mh.time.sleep, mh.TAP_GRID_S = sleep, keep
         r.remote.close()

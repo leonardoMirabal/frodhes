@@ -426,17 +426,32 @@ def scp_fetch(host, local_dir):
     return fetch
 
 
+def scp_cpu(host):
+    """the plugin's timer ring (cpu-ring.log in its module folder, written while dev_cpu_log is 1) from the Move:
+    cpu() -> its text ("" when there is none), the file deleted there"""
+    import subprocess
+    path = "%s/%s/cpu-ring.log" % (mi.MODS, mi.MODULE_ID)
+
+    def cpu():
+        r = subprocess.run(["ssh", *mi.SSH_OPTS, host, "cat %s 2>/dev/null; rm -f %s" % (path, path)],
+                           capture_output=True, text=True)
+        return r.stdout if r.returncode == 0 else ""
+    return cpu
+
+
 class TapRig(UsbRig):
     """the Move without its mix: every take goes to the plugin's own player over Schwung's WebSocket (dev_play: no
     MIDI on cable 2, so no Move track plays along) and comes back as the plugin's own output (the tap file: before
     the slot's volume, the Move's mix, its master and its USB-C setting). What the tests send before a take (the
     panel's CCs, a program change) leads the take, as host_phrase's do; rec() returns the take from TAP_PRE_MS on.
-    fetch(take) -> (wav, json) | None (scp_fetch; a test passes its own)"""
+    fetch(take) -> (wav, json) | None (scp_fetch; a test passes its own). cpu() -> the timer ring's text, the
+    file then deleted (scp_cpu; None: no CPU read)"""
     fake = False
 
-    def __init__(self, url, fetch, ch=USB_CH, slot=0, wait=10.0):
+    def __init__(self, url, fetch, ch=USB_CH, slot=0, wait=10.0, cpu=None):
         import move_ws
         self.remote, self.fetch, self.ch, self.slot, self.wait = move_ws.Remote(url), fetch, int(ch), slot, wait
+        self.cpu_fetch = cpu
         self.port_name, self.audio_name, self.sr = "Schwung %s, slot %d, dev_play" % (url, slot + 1), "the plugin's tap", FS
         self.pending, self.n, self.mido = [], 0, hs._Mido
         self.stamp = time.strftime("%H%M%S")
@@ -448,6 +463,23 @@ class TapRig(UsbRig):
 
     def _send(self, kind, a, b=0):
         self.pending.append((kind, int(a), int(b)))
+
+    def set_hq(self, on):
+        """the HQ Rhodes (the bridge's p_hq): new notes play HQ (1) or Classic (0)"""
+        self.remote.set_param(self.slot, "synth:p_hq", 1 if on else 0)
+        self.remote.pump(0.2)
+
+    def cpu_start(self):
+        """the plugin logs every callback's time from now (dev_cpu_log 1); an older log is dropped first"""
+        self.cpu_fetch()
+        self.remote.set_param(self.slot, "synth:dev_cpu_log", 1)
+        self.remote.pump(0.2)
+
+    def cpu_stop(self):
+        """dev_cpu_log 0, then the ring since cpu_start: [(callback, us, frames)]"""
+        self.remote.set_param(self.slot, "synth:dev_cpu_log", 0)
+        self.remote.pump(0.5)                    # (the worker writes the log every 100 ms)
+        return parse_ring(self.cpu_fetch() or "")
 
     def level_now(self, secs=0.3):
         return -240.0
@@ -1179,6 +1211,12 @@ def _num(rep, test):
             return "damped %s dB after key-up, pedal held %s dB / up %s dB, louder after key-up %s / %s dB" % (
                 rep["damped"]["after_1s_db"], rep["pedal"]["held_1s_db"], rep["pedal"]["after_up_db"],
                 rep["damped"]["louder_after_keyup_db"], rep["pedal"]["louder_after_keyup_db"])
+        if test == "cpu":
+            if not rep.get("n"):
+                return "no data"
+            return "%d callbacks while usb-stress played, worst %d us, p99 %d us, %d over %d us, %d missing%s" % (
+                rep["n"], rep["worst"], rep["p99"], rep["over"], rep["limit"], rep["missing"],
+                "" if rep.get("hq") is None else ", HQ %s" % ("on" if rep["hq"] else "off"))
         if test == "usb-clock":
             return "%s steps, %s BPM seen, jitter %s ms, %s late" % (rep["steps"], rep.get("bpm_seen"), rep.get("jitter_ms"),
                                                                       rep.get("late"))
@@ -1211,11 +1249,13 @@ def _ws_prepare(url, engine, slot=0, out=print):
     return True, st
 
 
-def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, out=print):
+def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, out=print):
     """per engine: the slot's module and preset over Schwung's WebSocket (ws: its URL, None: skipped), the preflight
     (a failure stops the whole run: the stream is not the Move's Main Out), usb-host on the engine's preset, usb-note
     on three keys, usb-vel, usb-sus, usb-clock, usb-stress; each test's takes and report.json in d/<engine>/<test>/,
-    the table in d/summary.md, everything in d/report.json. Returns (exit code: 0 all PASS, 1 a FAIL, 2 stopped)"""
+    the table in d/summary.md, everything in d/report.json. Over the tap with a CPU read (TapRig cpu): the cpu row,
+    every callback's time while usb-stress plays (the worst case), against U12. hq 0 / 1 (the tap): the HQ switch
+    set first (p_hq; None: as the plugin has it). Returns (exit code: 0 all PASS, 1 a FAIL, 2 stopped)"""
     import json
     rows, code = [], 0
     os.makedirs(d, exist_ok=True)
@@ -1231,6 +1271,9 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, out=print
     def quiet(s):
         out("  " + s)
     stopped = None
+    tap_cpu = isinstance(r, TapRig) and r.cpu_fetch is not None
+    if hq is not None and isinstance(r, TapRig):
+        r.set_hq(hq)
     for e in engines:
         out("== %s" % e)
         if ws:
@@ -1259,13 +1302,26 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, out=print
                   ("usb-sus", lambda: usb_sus(r, sub("usb-sus"), engine=e, out=quiet)),
                   ("usb-clock", lambda: usb_clock(r, sub("usb-clock"), bpm, engine=e, out=quiet)),
                   ("usb-stress", lambda: usb_stress(r, sub("usb-stress"), e, stress_secs, out=quiet))]
+        cpu_rows = []
         for name, fn in tests:
             out("-- %s %s" % (e, name))
             try:
-                ok, rep = fn()
+                if tap_cpu and name == "usb-stress":
+                    r.cpu_start()
+                    try:
+                        ok, rep = fn()
+                    finally:
+                        cpu_rows = r.cpu_stop()
+                else:
+                    ok, rep = fn()
             except Exception as x:                     # (one test's crash is its FAIL; the run goes on)
                 ok, rep = False, {"verdict": "FAIL: %s: %s" % (type(x).__name__, x)}
             note(e, name, ok, rep)
+        if tap_cpu:
+            s = cpu_summary(cpu_rows)
+            s["engine"], s["hq"] = e, hq
+            s["verdict"] = s["verdict"] if s["n"] else "FAIL: no callback times (dev_cpu_log reached the plugin?)"
+            note(e, "cpu", s["verdict"].startswith("PASS"), s)
     if stopped:
         code = 2
     elif not all(w["ok"] for w in rows):
@@ -1318,6 +1374,8 @@ def main(argv=None):
     ap.add_argument("--fake", action="store_true", help="usb-*: the offline model of the Move (no device)")
     ap.add_argument("--inject", action="append", help="usb-* --fake: KIND@SECONDS (zero, click, stale, loud, nosus)")
     ap.add_argument("--engines", default=",".join(D2_ENGINES), help="d2: the engines, comma-separated")
+    ap.add_argument("--hq", type=int, choices=(0, 1), default=None,
+                    help="d2 --path tap: the HQ Rhodes off (0) or on (1) for the run (default: as the plugin has it)")
     ap.add_argument("--path", choices=("usb", "tap"), default="usb",
                     help="usb-*, d2: usb = MIDI to the Standalone port, the USB-C audio recorded (the Move's mix); "
                          "tap = the plugin's own player and output over Schwung's WebSocket (--ws), the takes "
@@ -1335,10 +1393,10 @@ def main(argv=None):
             inj = [(k, float(t or 0)) for k, _, t in (s.partition("@") for s in a.inject or ())]
             r = FakeEchoRig(inject=inj)
         elif a.path == "tap":
-            r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)
+            r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch, cpu=scp_cpu(a.host))
         else:
             r = UsbRig(a.midi, a.audio, a.ch)
-        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 120.0)
+        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 120.0, a.hq)
     if a.cmd in USB_CMDS:
         return usb_main(a)
     t = mi.Target(host=None if a.target_dir else a.host, local_dir=a.target_dir, go=a.go or a.cmd == "info")

@@ -740,6 +740,43 @@ static int persist(const char *so, const char *dir, int save)
     return fails != 0;
 }
 
+/* ---- hq: the HQ switch (p_hq, FR_HQ builds). Off at boot; 1 plays new notes HQ (C7 at v100 is not the Classic
+ * note: the exact pulse and the 2x pickup), 0 back to Classic; the reads follow the writes */
+static void hq_note(void *in, int16_t *x, int blocks)
+{
+    uint8_t on[3] = { 0x90, 96, 100 }, off[3] = { 0x80, 96, 0 }, cut[3] = { 0xB0, 120, 0 };
+    api->on_midi(in, on, 3, MOVE_MIDI_SOURCE_EXTERNAL);
+    for (int b = 0; b < blocks; b++) api->render_block(in, x + 256 * b, 128);
+    api->on_midi(in, off, 3, MOVE_MIDI_SOURCE_EXTERNAL);
+    api->on_midi(in, cut, 3, MOVE_MIDI_SOURCE_EXTERNAL);
+    render(in, 400);
+}
+static int hq(const char *so)
+{
+    static int16_t a[256 * 200], b[256 * 200], c[256 * 200];
+    long da = 0, dc = 0, loud = 0;
+    void *in;
+    load(so);
+    in = create(NULL);
+    CHECK(!strcmp(get(in, "p_hq"), "0"), "p_hq at boot: %s", gbuf);
+    render(in, 20);
+    hq_note(in, a, 200);
+    cb_set(in, "p_hq", "7");                             /* (any non-zero: on) */
+    render(in, 2);
+    CHECK(!strcmp(get(in, "p_hq"), "1"), "p_hq after 1: %s", gbuf);
+    hq_note(in, b, 200);
+    cb_set(in, "p_hq", "0");
+    render(in, 2);
+    CHECK(!strcmp(get(in, "p_hq"), "0"), "p_hq after 0: %s", gbuf);
+    hq_note(in, c, 200);
+    for (long i = 0; i < 256L * 200; i++) { da += a[i] != b[i]; dc += b[i] != c[i]; loud += abs(a[i]) > 1000; }
+    CHECK(loud > 1000, "the Classic note is silent (%ld loud samples)", loud);
+    CHECK(da > 10000 && dc > 10000, "the HQ note is the Classic note: %ld / %ld samples differ", da, dc);
+    api->destroy_instance(in);
+    if (!fails) printf("OK hq: p_hq 0 / 1 / 0, the HQ note differs from Classic in %ld of %ld samples\n", da, 256L * 200);
+    return fails != 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc >= 5 && !strcmp(argv[1], "persist")) return persist(argv[2], argv[3], !strcmp(argv[4], "save"));
@@ -751,6 +788,7 @@ int main(int argc, char **argv)
     if (argc >= 5 && !strcmp(argv[1], "run")) return run_script(argv[2], argv[3], argv[4]);
     if (argc >= 5 && !strcmp(argv[1], "play")) return play(argv[2], argv[3], argv[4]);
     if (argc >= 3 && !strcmp(argv[1], "api")) return api_tests(argv[2]);
-    printf("usage: test_bridge eq DSP SCRIPT HOST.wav | api DSP | keys DSP | presets DSP | gatep DSP [N]\n");
+    if (argc >= 3 && !strcmp(argv[1], "hq")) return hq(argv[2]);
+    printf("usage: test_bridge eq DSP SCRIPT HOST.wav | api DSP | hq DSP | keys DSP | presets DSP | gatep DSP [N]\n");
     return 2;
 }

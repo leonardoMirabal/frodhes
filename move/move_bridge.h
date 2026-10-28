@@ -38,7 +38,7 @@
 #define MB_STAGE_BLOCKS 345u             /* look for something to save about once a second */
 #define MB_CPU_N 4096u                   /* the per-callback timer ring (power of two): ~12 s of callbacks */
 
-enum { MB_EV_MIDI = 1, MB_EV_KEY, MB_EV_PRESET };
+enum { MB_EV_MIDI = 1, MB_EV_KEY, MB_EV_PRESET, MB_EV_HQ };   /* (MB_EV_HQ: p_hq, applied in order with the rest) */
 enum { MB_CLOCK_AUTO, MB_CLOCK_MIDI, MB_CLOCK_HOST };   /* AUTO: synthesise from the host only while no F8 arrives */
 #define MB_CLOCK_REAL_BLOCKS 690u        /* ~2 s: an F8 seen this recently means the slot gets a real clock */
 
@@ -802,6 +802,9 @@ static void mb_step(void)
             if ((e->st & 0xF0u) == 0xD0u || (e->st & 0xF0u) == 0xA0u || (e->st & 0xE0u) == 0x80u) mb_map(e->st, e->d1, e->d2);
         } else if (e->kind == MB_EV_KEY && e->key < MOVE_NKEYS) mb_key_apply(e->key, e->v);
         else if (e->kind == MB_EV_PRESET) { uint8_t p[P_COUNT]; if (preset_values((uint32_t)e->v, p) == 0) { preset_load((uint32_t)e->v); mb.rev++; } }
+#ifdef FR_HQ
+        else if (e->kind == MB_EV_HQ) hq_mode = (uint8_t)(e->v != 0);   /* (new notes; a sounding note keeps its path) */
+#endif
         mb_pop(e);
     }
     mb_state_apply();
@@ -941,6 +944,9 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, "dev_play")) return mp_get(buf, n);
     if (!strcmp(key, "dev_map")) return snprintf(buf, (size_t)n, "out=%u drop=%u last=%d,%d", mb.map_out, mb.map_drop,
                                                  mb.map_last[0], mb.map_last[1]);
+#ifdef FR_HQ
+    if (!strcmp(key, "p_hq")) return snprintf(buf, (size_t)n, "%u", (unsigned)hq_mode);
+#endif
     if (!strcmp(key, "dev_cpu")) return snprintf(buf, (size_t)n, "callbacks=%u max_us=%u", atomic_load(&mb.cpu_n), mb.cpu_max);
     /* development reads (tests, the device session) */
     if (!strcmp(key, "dev_stats"))
@@ -975,6 +981,9 @@ static void mb_set(const char *key, const char *val)
         return;
     }
     if (!strcmp(key, "preset")) { int p = atoi(val); if (p >= 0 && p < (int)(PR_NF + PR_NU)) (void)mb_put(MB_EV_PRESET, 0, 0, 0, 0, 0, p); return; }
+#ifdef FR_HQ
+    if (!strcmp(key, "p_hq")) { (void)mb_put(MB_EV_HQ, 0, 0, 0, 0, 0, atoi(val) != 0); return; }   /* the HQ Rhodes: 1 on, 0 Classic */
+#endif
     if (!strcmp(key, "dev_midi")) {                       /* "T ST D1 D2": a message due at host ms T (the harness) */
         unsigned t, st, d1, d2;
         if (sscanf(val, "%u %i %i %i", &t, &st, &d1, &d2) == 4 && st >= 0x80u && st <= 0xFFu)

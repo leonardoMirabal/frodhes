@@ -170,6 +170,10 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
   to `module_data/frodhes/tap/<take>.wav`, and the tool fetches the file over ssh. The take starts on the host
   build's block grid (every 2560 ms), so `usb-host` compares it sample for sample. The Move's mix, its volumes and
   its USB-C setting play no part.
+- `d2 --path tap` also reads the plugin's callback times while `usb-stress` plays, which is the worst case. The
+  plugin logs them while `dev_cpu_log` is 1, and the tool fetches `cpu-ring.log` over ssh. The `cpu` row checks
+  them against the working limit. `--hq 1` or `--hq 0` sets the HQ Rhodes on or off for the run, through the
+  plugin's `p_hq` parameter. HQ applies to new notes only: a sounding note keeps the path it started with.
 - The criteria follow each engine's manual behaviour. VIBES plays with its motor off (CC 47 0), because the
   motor's pulse moves every level the tests read. Its velocity is checked as the FM-1 scan checks it: no drop from
   v24 on, and at least +10 dB from v40 to v117. MARIMBA's velocity must rise 26 to 32 dB from v8 to v127. A
