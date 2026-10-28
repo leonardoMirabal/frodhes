@@ -18,7 +18,9 @@ Three studies, per type, on the FE bar of each geometric key (the pinned profile
            blend the anchors' results; per strike is exact): each mode's amplitude error; (b) a re-strike while the
            bar rings (the tables add a fresh at-rest strike to the ringing state; per strike the mallet meets the
            moving bar): the difference's energy re the note, over re-strike delays and phases.
-  all      both.
+  fast     the per-strike contact the Rhodes HQ's way (fast_contact: implicit, exact per mode under a linear force)
+           against hammer.py's RK4, every family x velocity, at rest and on a re-strike: its error and steps.
+  all      every study.
 
     python3 tools/bars_hq_study.py modes|contact|all [--type vibes|marimba|both] [--keys ...] [--v 40,100,127]
 """
@@ -241,9 +243,146 @@ def study_contact(vb, keys, delays=(0.03, 0.06, 0.12, 0.25, 0.5)):
     return out
 
 
+# ---------------------------------------------------------------- the per-strike contact, the Rhodes HQ's method
+def step_mats(w, sg, dt):
+    """per mode the exact step under a force linear across it: [q, qd](dt) = A [q, qd] + phi (g0 F0 + g1 F1);
+    returns (A [nm, 2, 2], g0 [nm, 2], g1 [nm, 2]) from the augmented system's exponential"""
+    from scipy.linalg import expm
+    A, G0, G1 = [], [], []
+    for wm, sm in zip(w, sg):
+        M = np.zeros((4, 4))                       # state q, qd, F (= F0 + (F1 - F0) t / dt), dF/dt
+        M[0, 1] = 1.0
+        M[1, 0], M[1, 1], M[1, 2] = -wm * wm, -2.0 * sm, 1.0
+        M[2, 3] = 1.0
+        X = expm(M * dt)
+        A.append(X[:2, :2])
+        # F(t) = F0 + (F1 - F0) t / dt: initial F = F0, dF = (F1 - F0) / dt
+        G0.append(X[:2, 2] - X[:2, 3] / dt)
+        G1.append(X[:2, 3] / dt)
+    return np.array(A), np.array(G0), np.array(G1)
+
+
+def fast_contact(c, spc=24, tc_rest=None, maxstep=4096, ow=None, ppf=3, fcut=None):
+    """the mallet contact as hq_contact.c solves the Rhodes': each step exact for the modes and the mallet under a
+    force linear across it, the end force solved (p 2: the quadratic; p 1.5: Newton in r = sqrt(e)); a mode with
+    omega dt > 2 static (q = phi F / omega^2); the step from the contact's own length (spc steps across tc_rest,
+    the at-rest contact: the tables know it) and at least ppf a period of the top audible mode; the exact early
+    stop. The defaults (24, 3) are plan 07's: <= -33 dB against RK4, <= 424 steps. ow / fcut: the one-way variants
+    plan 07 dropped (the faster modes driven by the force, not seen by the compression: -3 to -20 dB). Returns
+    dict(q, qd, t_end, steps, F)"""
+    w = np.array([2 * math.pi * m[0] for m in c["modes"]])
+    sg = np.array([m[1] for m in c["modes"]])
+    ph = np.array([m[2] for m in c["modes"]])
+    K, p, mh = c["K"], c["p"], c["m_h"]
+    if tc_rest is None:
+        rest = {k: v for k, v in c.items() if k not in ("q0", "qd0", "xh0")}      # the at-rest contact's length
+        tc_rest = hm.contact_batch([rest], fs=FS, t_max=0.012)[0]["Tc"]
+    dt = tc_rest / spc
+    if ppf:                                    # and at least ppf steps a period of the top coupled audible mode
+        fa_ = [m[0] for m in c["modes"] if m[0] < (fcut or 20000.0)]
+        dt = min(dt, 1.0 / (ppf * max(fa_)))
+    stat = (w * dt > 2.0) & (w > 2 * math.pi * 20000.0)   # (only inaudible modes: a ringing mode the step
+                                                               # cannot follow keeps its exact step)
+    A, G0, G1 = step_mats(np.where(stat, 0.0, w), sg, dt)
+    cp = ph * (~stat) if ow is None else ph * (~stat) * (w * dt <= ow)
+    if fcut:                                   # the modes over fcut: driven one way (the contact does not see them)
+        cp = cp * (w < 2 * math.pi * fcut)   # the modes the compression sees (ow: the
+                                                               # faster ones are driven one way, the force linear)
+    q = np.array(c.get("q0", np.zeros(len(w))), float).copy()
+    qd = np.array(c.get("qd0", np.zeros(len(w))), float).copy()
+    q[stat] = 0.0
+    qd[stat] = 0.0
+    xh, vh = float(np.sum(cp * q)), c["v"]
+    Cm = np.where(stat, 0.0, G1[:, 0])
+    Dm = np.where(stat, 0.0, G1[:, 1])
+    sq = np.where(stat, ph / np.maximum(w * w, 1e-30), 0.0)
+    C = dt * dt / (6 * mh) + float(np.sum(cp * ph * Cm))
+    F0, touched, Fs, n = 0.0, False, [], 0
+    for n in range(maxstep):
+        u = A[:, 0, 0] * q + A[:, 0, 1] * qd + ph * G0[:, 0] * F0
+        v_ = A[:, 1, 0] * q + A[:, 1, 1] * qd + ph * G0[:, 1] * F0
+        u = np.where(stat, 0.0, u)
+        v_ = np.where(stat, 0.0, v_)
+        Xh = xh + dt * vh - dt * dt * 2 * F0 / (6 * mh)
+        Vh = vh - dt * F0 / (2 * mh)
+        E = Xh - float(np.sum(cp * u))
+        F1 = 0.0
+        if E > 0:
+            kc = K * C
+            if p == 2.0:
+                e1 = 2.0 * E / (1.0 + math.sqrt(1.0 + 4.0 * kc * E))     # (the stable root)
+            else:                                   # p 1.5: E - r^2 - kc r^3 = 0, Newton from sqrt(E)
+                r = math.sqrt(E)
+                for _ in range(12):
+                    H = E - r * r - kc * r ** 3
+                    rn = r + H / (2 * r + 3 * kc * r * r)
+                    if abs(rn - r) <= 1e-9 * r:
+                        r = rn
+                        break
+                    r = rn
+                e1 = r * r
+            F1 = max(0.0, (E - e1) / C)
+        q = u + ph * Cm * F1 + sq * F1
+        qd = v_ + ph * Dm * F1 + np.where(stat, sq * (F1 - F0) / dt, 0.0)
+        xh = Xh - dt * dt * F1 / (6 * mh)
+        vh = Vh - dt * F1 / (2 * mh)
+        Fs.append(F1)
+        F0 = F1
+        if F1 > 0:
+            touched = True
+        elif touched and vh < 0:
+            amp = float(np.sum(np.abs(cp) * np.sqrt(q * q + qd * qd / (w * w))))
+            if xh + amp < 0:
+                break
+    q = np.where(stat, 0.0, q)
+    qd = np.where(stat, 0.0, qd)
+    return dict(q=q, qd=qd, t_end=(n + 1) * dt, steps=n + 1, F=np.array(Fs), dt=dt)
+
+
+def study_fast(vb, keys):
+    """the per-strike contact (fast_contact) against tools/hammer.py's RK4 (the tables' own), every family x
+    velocity, at rest and on a re-strike: the output phasors' difference re the note (dB, both at one time after the
+    contact), the steps"""
+    fec = gb.fe_all(vb)
+    fams = vb["T7c"]["families"]
+    print(f"{vb.get('type', 'VIBES')}: the per-strike contact vs RK4: worst difference (dB) at rest / on a re-strike, "
+          "the most steps")
+    out = []
+    for n in keys:
+        md = key_modes(vb, fec, n, 64)
+        md = md[:7] + md[7:9]                       # V1..V7, T1, T2 (11 modes with T3 T4 at TONE > 64)
+        modes = [(f, s_, w_) for _, f, s_, w_ in md]
+        w = np.array([2 * math.pi * m[0] for m in modes])
+        sg = np.array([m[1] for m in modes])
+        ph = np.array([m[2] for m in modes])
+        rw = (w / w[0]) ** vb["R1"]["exp"] / np.sqrt(4 * sg) * (w < 2 * math.pi * 20000)
+        worst = [-200.0, -200.0]
+        steps = 0
+        for q in range(len(fams)):
+            law = gb.fam_laws(fams[q])[0]
+            for v in (1, 40, 100, 127):
+                c = dict(v=gb.speed(vb, v), modes=modes, m_h=gb.mass_kg(vb, 64), K=gb.law_K(vb, law), p=law["p"])
+                ref = hm.contact_batch([c], fs=FS, t_max=0.012)[0]
+                cs = [c]
+                q0, qd0 = free(ref["q"], ref["qd"], w, sg, 0.1)
+                cs.append(dict(c, q0=q0, qd0=qd0, xh0=float(np.sum(ph * q0))))
+                for j, cc in enumerate(cs):
+                    r = ref if j == 0 else hm.contact_batch([cc], fs=FS, t_max=0.012)[0]
+                    fa = fast_contact(cc, tc_rest=ref["Tc"])
+                    steps = max(steps, fa["steps"])
+                    T = max(r["t_end"], fa["t_end"])
+                    a = rw * ph * (lambda z: z[0] + 1j * z[1] / w)(free(r["q"], r["qd"], w, sg, T - r["t_end"]))
+                    b = rw * ph * (lambda z: z[0] + 1j * z[1] / w)(free(fa["q"], fa["qd"], w, sg, T - fa["t_end"]))
+                    d = 10 * math.log10(np.sum(np.abs(a - b) ** 2) / np.sum(np.abs(a) ** 2) + 1e-30)
+                    worst[j] = max(worst[j], d)
+        out.append(dict(key=n, rest=worst[0], restrike=worst[1], steps=steps))
+        print(f"  key {n:3}: at rest {worst[0]:6.1f} dB, re-strike {worst[1]:6.1f} dB, steps <= {steps}")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("what", choices=("modes", "contact", "all"))
+    ap.add_argument("what", choices=("modes", "contact", "fast", "all"))
     ap.add_argument("--type", default="both", choices=("vibes", "marimba", "both"))
     ap.add_argument("--keys", default=None)
     ap.add_argument("--v", default="40,100,127")
@@ -259,6 +398,8 @@ def main():
                 rows[t + "_modes"] = study_modes(vb, keys, [int(x) for x in a.v.split(",")], list(range(lo, hi + 1)))
             if a.what in ("contact", "all"):
                 rows[t + "_contact"] = study_contact(vb, keys)
+            if a.what in ("fast", "all"):
+                rows[t + "_fast"] = study_fast(vb, keys)
     if a.json:
         json.dump(rows, open(a.json, "w"), indent=1)
 

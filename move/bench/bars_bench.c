@@ -12,6 +12,8 @@
  *   contact M   one mallet contact computed at a strike, float: the mallet against M modes (F = K e^p, p 1.5 / 2 /
  *               any), at 16 x 44.1 kHz, semi-implicit Euler (each mode a symplectic step) or RK4 (tools/hammer.py's
  *               method), for contact lengths 0.5 / 1.5 / 4 ms (hard .. soft mallets): us per contact
+ *   fast M      the per-strike contact the Rhodes HQ's way (implicit, exact per mode under a linear force: tools/
+ *               bars_hq_study.py fast_contact), 11 modes, p 2 / 1.5, 150 / 300 / 600 steps: us per contact
  *
  *   bars_bench [reps]   one line per case: "name  min us  median us"
  * Build (the bookworm image, aarch64): cc -O2 -ffp-contract=off -o bars_bench bars_bench.c -lm; on the Move:
@@ -144,6 +146,87 @@ static void contact(void)
     sink += q[0] + xh;
 }
 
+
+/* ---- the per-strike contact, the Rhodes HQ's method (tools/bars_hq_study.py fast_contact): each step exact for the
+ * modes and the mallet under a force linear across it, the end force solved (p 2: the quadratic's root; p 1.5:
+ * Newton in r = sqrt(e)), 12 mode lanes in 3 vectors; a fixed step count (the study: <= 566 steps at 32 steps a
+ * contact and 4 a period of the top audible mode) */
+#define FM 12
+static float fa00[FM], fa01[FM], fa10[FM], fa11[FM], fg00[FM], fg01[FM], fg10[FM], fg11[FM], fph[FM];
+static int FSTEPS, FP15, FON;                 /* FON: steps in contact, the last run (printed) */
+static void fast_init(void)
+{
+    const double dt = 1.0 / (44100.0 * 4.0 * 4.0);
+    for (int m = 0; m < FM; m++) {
+        double w = 2 * 3.14159265 * 400.0 * (1 + 1.9 * m), sg = 2.0 + m, X[4][4];
+        /* the augmented system's exponential by fine RK4 (init only): state q, qd, F, dF/dt from each unit vector */
+        for (int c = 0; c < 4; c++) {
+            double y[4] = {0, 0, 0, 0}, h = dt / 4096;
+            y[c] = 1.0;
+            for (int i = 0; i < 4096; i++) {
+                double k[4][4], t[4];
+                for (int st = 0; st < 4; st++) {
+                    const double *z = st ? t : y;
+                    k[st][0] = z[1]; k[st][1] = -w * w * z[0] - 2 * sg * z[1] + z[2]; k[st][2] = z[3]; k[st][3] = 0;
+                    if (st < 3) for (int j = 0; j < 4; j++) t[j] = y[j] + (st < 2 ? 0.5 : 1.0) * h * k[st][j];
+                }
+                for (int j = 0; j < 4; j++) y[j] += h / 6 * (k[0][j] + 2 * k[1][j] + 2 * k[2][j] + k[3][j]);
+            }
+            for (int j = 0; j < 4; j++) X[j][c] = y[j];
+        }
+        fa00[m] = (float)X[0][0]; fa01[m] = (float)X[0][1]; fa10[m] = (float)X[1][0]; fa11[m] = (float)X[1][1];
+        fg00[m] = (float)(X[0][2] - X[0][3] / dt); fg10[m] = (float)(X[1][2] - X[1][3] / dt);
+        fg01[m] = (float)(X[0][3] / dt); fg11[m] = (float)(X[1][3] / dt);
+        fph[m] = m < 11 ? 3.0f / (1 + m) : 0.0f;
+    }
+}
+static inline v4 ld4(const float *p) { v4 r; memcpy(&r, p, 16); return r; }
+static void fast_contact(void)
+{
+    const float dt = 1.0f / (44100.0f * 16.0f), imh = 1.0f / 0.03f, K = FP15 ? 2.5e8f : 4.5e7f;   /* (CORD, SOFT) */
+    v4 q[3] = {{0}}, qd[3] = {{0}};
+    float xh = 0.0f, vh = 2.0f, F0 = 0.0f, C = dt * dt * imh / 6.0f;
+    for (int h = 0; h < 3; h++) { v4 p = ld4(fph + 4 * h), g = ld4(fg01 + 4 * h), t = p * p * g; C += (t[0] + t[1]) + (t[2] + t[3]); }
+    const float kc = K * C, iC = 1.0f / C, k4 = 4.0f * kc;
+    FON = 0;
+    for (int i = 0; i < FSTEPS; i++) {
+        v4 u[3], w[3], f0 = {F0, F0, F0, F0}, acc = {0};
+        for (int h = 0; h < 3; h++) {
+            const int o = 4 * h;
+            u[h] = ld4(fa00 + o) * q[h] + ld4(fa01 + o) * qd[h] + ld4(fph + o) * ld4(fg00 + o) * f0;
+            w[h] = ld4(fa10 + o) * q[h] + ld4(fa11 + o) * qd[h] + ld4(fph + o) * ld4(fg10 + o) * f0;
+            acc += ld4(fph + o) * u[h];
+        }
+        float Xh = xh + dt * vh - dt * dt * 2.0f * F0 * imh / 6.0f, Vh = vh - dt * F0 * imh * 0.5f;
+        float E = Xh - ((acc[0] + acc[1]) + (acc[2] + acc[3])), F1 = 0.0f;
+        if (E > 0.0f) {
+            float e1;
+            FON++;
+            if (!FP15) e1 = 2.0f * E / (1.0f + sqrtf(1.0f + k4 * E));   /* (the stable root: no cancellation) */
+            else {
+                float r = sqrtf(E);
+                for (int it = 0; it < 6; it++) {
+                    float r2 = r * r, H = E - r2 - kc * r2 * r, rn = r + H / (2.0f * r + 3.0f * kc * r2);
+                    if (rn - r <= 1e-5f * r && r - rn <= 1e-5f * r) { r = rn; break; }
+                    r = rn;
+                }
+                e1 = r * r;
+            }
+            F1 = (E - e1) * iC;
+            if (F1 < 0.0f) F1 = 0.0f;
+        }
+        v4 f1 = {F1, F1, F1, F1};
+        for (int h = 0; h < 3; h++) {
+            const int o = 4 * h;
+            q[h] = u[h] + ld4(fph + o) * ld4(fg01 + o) * f1;
+            qd[h] = w[h] + ld4(fph + o) * ld4(fg11 + o) * f1;
+        }
+        xh = Xh - dt * dt * F1 * imh / 6.0f; vh = Vh - dt * F1 * imh * 0.5f;
+        F0 = F1;
+    }
+    sink += q[0][0] + xh;
+}
+
 static void bench(const char *name, void (*k)(void), int reps)
 {
     enum { RUNS = 15 };
@@ -187,6 +270,15 @@ int main(int argc, char **argv)
                 snprintf(nm, sizeof nm, "contact %d p%s %.1fms", CM, p == 0 ? "1.5" : p == 1 ? "2" : "any", CT * 1e3);
                 bench(nm, contact, reps / 10 + 1);
             }
+    fast_init();
+    int fst[] = {150, 300, 600};
+    for (int p = 0; p < 2; p++)
+        for (int j = 0; j < 3; j++) {
+            FP15 = p; FSTEPS = fst[j];
+            snprintf(nm, sizeof nm, "fast 11 p%s %d steps", p ? "1.5" : "2", FSTEPS);
+            bench(nm, fast_contact, reps);
+            printf("    (%d of the %d steps in contact)\n", FON, FSTEPS);
+        }
     CRK = 1; CM = 11; CP = 2; CT = 1.5e-3;
     bench("contact 11 pany 1.5ms RK4", contact, reps / 20 + 1);
     return 0;
