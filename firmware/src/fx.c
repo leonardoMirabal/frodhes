@@ -352,7 +352,7 @@ __attribute__((noinline)) static void dr_general(int32_t *m, uint32_t n, int32_t
         m[i] = dr_w == 32768 ? y : x0 + (int32_t)(((int64_t)(y - x0) * dr_w) >> 15);
     }
 }
-__attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, int32_t sw)   /* FDRV; sw: FXP_DRV_SW
+__attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t sw)   /* FDRV; sw: FXP_DRV_SW
                                                         * (0 while it fades out for another TYPE: drive.c fx_drive) */
 {
     int32_t d = fx_p[FXP_DRIVE], row = fx_p[FXP_DRIVE_ROW] & 3, g, k, mk, bias, b0, tv = fx_p[FXP_DRV_TONE], mv = fx_p[FXP_DRV_MIX];
@@ -408,6 +408,18 @@ __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, i
     }
     if (gq < 0) { gq = g << 8; kq = k << 8; mq = mk << 8; }   /* (no ramp: the steps are 0) */
     dr_general(m, n, gq, kq, mq, dgq, dkq, dmq, bias, b0, tt, wt);
+}
+/* FDRV, and its silence (0.9.8, the residual after a panic): on zero input the rounding leaves fixed points that are
+ * not 0 (the high-pass's hp += (x - hp + 64) >> 7 stops anywhere in -63 .. 64, the shaper turns -hp into a constant
+ * and the low-passes hold it): a DC of ~30 LSB out, for ever, kept open by the silence gate. A block that starts and
+ * ends on 0 in with every state where it started is that fixed point: to rest (exact 0 from the next block). Once a
+ * block, no per-sample work (dr_classic's loops as they were); music never leaves the states unmoved */
+__attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, int32_t sw)
+{
+    int32_t hp = dr_hp, l1 = dr_lp1, l2 = dr_lp2, tl = dr_tlp, z = !(m[0] | m[n >> 1] | m[n - 1]);
+    dr_classic(m, n, sw);
+    if (z && hp == dr_hp && l1 == dr_lp1 && l2 == dr_lp2 && tl == dr_tlp && (hp | l1 | l2 | tl))
+        dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0;
 }
 #include "drive.c"                                      /* the drive's TYPEs and fx_drive */
 
