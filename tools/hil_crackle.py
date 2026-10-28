@@ -1134,7 +1134,9 @@ def _places(x, fs, events, rng, k, kind, avoid_lim=None, ccs=(), widen=0.0, cloc
             ref = np.concatenate([np.full(sh, -200.0), db[:-sh]])
             g |= np.abs(db - ref) > 3.0
     ok = (lv > 32767 * 0.01) & ~g
-    ok[:int(0.5 * fs)] = False
+    ok[:int((0.6 if kind == "drop1ms" else 0.5) * fs)] = False   # (a slip: against the jack's steady windows, which
+                                                            # need the take's first ~0.56 s: a slip at 0.30 - 0.55 s
+                                                            # is not judged on any build, from 0.56 s it is: 2026-10-28)
     ok[-int((2.0 if kind == "drop1ms" else 0.5) * fs):] = False   # (a slip is judged over the next second)
     if avoid_lim is not None:
         ok &= ~avoid_lim[:len(ok)]

@@ -153,6 +153,11 @@ static FILE *bar_h_pred;                            /* FRODHES_PREDLOG: predicte
 #else
 #define BAR_SLEEP_ON
 #endif
+#ifdef FR_HQ
+#define BAR_STUCK_ON(v) && !(v)->hq                 /* (bars.c: the stuck-slot sleep, the classic voice's only) */
+#else
+#define BAR_STUCK_ON(v)
+#endif
 static uint32_t fx_cost_us(void);                   /* fx.c: the effects that run now, us per block */
 
 /* the engine's functions (bars.c, compiled after every other file so the Rhodes and the effects keep their code
