@@ -216,7 +216,7 @@ KH_FN void kh_clipvadd_pass(int32_t *u, uint32_t n)
 KH_FN void kh_clipaa_pass(uint32_t n)
 {
     const int32_t *gf = KH_GF;
-    const uint16_t *rc = KH_RCP - (1 << 10);
+    const uint16_t *rc = KH_RCP;
     int32_t sc = kh_sc, kc4 = kh_kc4, L = kh_rail, nL = -kh_rail, e1 = kh_e1, F1 = kh_F1;
     uint32_t i;
     for (i = 0; i < n; i++) {
@@ -230,7 +230,7 @@ KH_FN void kh_clipaa_pass(uint32_t n)
         ad = (uint32_t)(d < 0 ? -d : d);
         if (__builtin_expect(ad >= (1u << KH_AA_SF), 1)) {
             int nz = __builtin_clz(ad);
-            uint32_t r = rc[(ad << nz) >> (32 - 11)];
+            uint32_t r = rc[((ad << nz) >> (32 - 11)) - (1u << 10)];   /* the top bit is set: 1024..2047 */
             int32_t q = (int32_t)(KH_M64(F - F1, r) >> (47 - KH_AA_SF - nz));
             v = d < 0 ? -q : q;
         } else {
