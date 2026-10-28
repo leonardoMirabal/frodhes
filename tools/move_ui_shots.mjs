@@ -9,7 +9,7 @@
 //   DIR/pages.png             the page list
 //   DIR/*-<K>x.png            the same K times larger (default 4; nearest neighbour)
 //   DIR/sheet.png             every page in one picture: a row per page, the overview then the cards (2x)
-// Default DIR: build/move/ui-shots. --docs also copies the pictures docs/MOVE.md shows (4x) to docs/manual/img/move-*.png and
+// Default DIR: build/move/ui-shots. --docs also copies the pictures docs/MOVE.md shows (4x) to docs/manual/img/move/move-*.png and
 // sets their links' ?v= to the pictures' hashes (as tools/doc_links.py does for the manual).
 import fs from "node:fs";
 import path from "node:path";
@@ -77,7 +77,8 @@ rows.forEach(([, frames], r) => frames.forEach((f, c) => {
 }));
 fs.writeFileSync(path.join(OUT, "sheet.png"), png(sheet, SW, SH));
 if (args.includes("--docs")) {
-    const DOCS = path.join(ROOT, "docs", "manual", "img");
+    // (a folder of their own: docs/manual/img/ is tools/manual_shots.py's, test_manual_shots.py checks it whole)
+    const DOCS = path.join(ROOT, "docs", "manual", "img", "move");
     fs.mkdirSync(DOCS, { recursive: true });
     for (const n of ["frodhes", "drive-filter", "drive-filter-k2", "tempo-scale-k6", "pages"]) {
         const src = path.join(OUT, K === 4 ? `${n}-4x.png` : `${n}.png`);
@@ -85,7 +86,7 @@ if (args.includes("--docs")) {
     }
     // the links' ?v= = the picture's sha256, first 8 hex digits (tools/doc_links.py's rule, for docs/MOVE.md)
     const md = path.join(ROOT, "docs", "MOVE.md");
-    const text = fs.readFileSync(md, "utf8").replace(/\((manual\/img\/move-[\w-]+\.png)(?:\?v=[0-9a-f]*)?\)/g, (m, rel) =>
+    const text = fs.readFileSync(md, "utf8").replace(/\((manual\/img\/move\/move-[\w-]+\.png)(?:\?v=[0-9a-f]*)?\)/g, (m, rel) =>
         `(${rel}?v=${crypto.createHash("sha256").update(fs.readFileSync(path.join(ROOT, "docs", rel))).digest("hex").slice(0, 8)})`);
     fs.writeFileSync(md, text);
 }

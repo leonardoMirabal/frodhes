@@ -74,7 +74,7 @@ settings are kept with the track's state. *(not yet verified on a device)*
 The pages above are on the Move's own knob screen. **PAGES** on the first page opens a screen of Frodhes' own with the
 same pages, drawn as on the FM-1: one page is the eight knobs.
 
-![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move-drive-filter.png?v=0e8d6fd0)
+![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=0e8d6fd0)
 
 - **The overview**: eight cards, knobs 1-4 on the top row and 5-8 below, each with its name, its value and a bar.
   The header names the page and its number (`4/12`); an `S` before the number shows that the sustain holds.
@@ -90,10 +90,10 @@ same pages, drawn as on the FM-1: one page is the eight knobs.
 - The first page shows the sound that plays in full, and its fifth knob (PRSET) picks the sound.
 - Fine steps: hold Shift while turning BPM for steps of 0.1. A fast turn of a wide range moves four steps a detent.
 
-![Knob 2 touched: AMT as a large card](manual/img/move-drive-filter-k2.png?v=3da25fcf)
-![Knob 6 on TEMPO/SCALE: the scale, one block per option](manual/img/move-tempo-scale-k6.png?v=e2fb0eb3)
-![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move-frodhes.png?v=2352bd88)
-![The list of pages](manual/img/move-pages.png?v=a7bf9f81)
+![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=3da25fcf)
+![Knob 6 on TEMPO/SCALE: the scale, one block per option](manual/img/move/move-tempo-scale-k6.png?v=e2fb0eb3)
+![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=2352bd88)
+![The list of pages](manual/img/move/move-pages.png?v=a7bf9f81)
 
 The pictures are drawn by the screen's own code on a computer (`tools/move_ui_shots.mjs`), in the screen's two
 colours. Everything in this section is *(not yet verified on a device)*: the knobs' feel, the time the card stays,

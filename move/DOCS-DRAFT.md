@@ -20,7 +20,7 @@ Every claim here is the host build's; the device checks (D5) come first.
 > - **Frodhes' own screen** (PAGES on the first page): the eight knobs as eight cards, each with its name, value
 >   and bar; touch or turn a knob and its card fills the screen, as the FM-1 shows one card large; the overview
 >   comes back about a second after you let go. The jog wheel turns the pages; a click lists them.
->   ![The DRIVE/FILTER page on the Move](manual/img/move-drive-filter.png?v=22df2253)
+>   ![The DRIVE/FILTER page on the Move](manual/img/move/move-drive-filter.png?v=22df2253)
 > - **Sustain**: the Move has no pedal jack. The Capture button is the pedal on the PEDAL screen and on Frodhes'
 >   screen (hold it, or tap to latch, as REC on the FM-1); SUS on the first page latches; a pedal on CC 64 (USB)
 >   works with half pedalling.

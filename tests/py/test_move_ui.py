@@ -133,7 +133,7 @@ def test_move_doc_pictures():
     import hashlib
     import re
     doc = open(os.path.join(ROOT, "docs", "MOVE.md")).read()
-    links = re.findall(r"\]\((manual/img/move-[\w-]+\.png)\?v=([0-9a-f]+)\)", doc)
+    links = re.findall(r"\]\((manual/img/move/move-[\w-]+\.png)\?v=([0-9a-f]+)\)", doc)
     assert len(links) >= 5
     for rel, v in links:
         with open(os.path.join(ROOT, "docs", rel), "rb") as f:
