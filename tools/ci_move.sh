@@ -33,11 +33,12 @@ else
     skip "build + test-move" "no move/move_plugin.c or Makefile move targets in this tree"
 fi
 if [ -f tools/gate_m.py ]; then step "gate M" "$PY" tools/gate_m.py; else skip "gate M" "tools/gate_m.py: M1-10"; fi
-TESTS=$(ls tests/py/test_move_*.py tests/py/test_target_closure.py tests/py/test_float_check.py tests/py/test_gate_s.py tests/py/test_test_map_targets.py 2>/dev/null)
+# (the named files reach tools/pytest_run.py as named: a missing one fails the step, never drops out of the list)
+TESTS="$(ls tests/py/test_move_*.py) tests/py/test_target_closure.py tests/py/test_float_check.py tests/py/test_gate_s.py tests/py/test_test_map_targets.py"
 if "$PY" -c "import xdist" 2>/dev/null && [ "$N" != 0 ]; then
-    step "pytest (Move)" "$PY" -m pytest -q -p no:cacheprovider -n "$N" $TESTS
+    step "pytest (Move)" "$PY" tools/pytest_run.py -q -p no:cacheprovider -n "$N" -- $TESTS
 else
-    step "pytest (Move)" "$PY" -m pytest -q -p no:cacheprovider $TESTS
+    step "pytest (Move)" "$PY" tools/pytest_run.py -q -p no:cacheprovider -- $TESTS
 fi
 [ $DRY = 1 ] && { echo "(dry run)"; exit 0; }
 [ $fail = 0 ] && echo "ci_move: PASS" || echo "ci_move: FAIL"

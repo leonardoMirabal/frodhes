@@ -64,9 +64,10 @@ SHARD ?=                   # make pytest SHARD=2/4: only shard 2 of 4 (tools/pyt
 PYTEST_FILES = $(if $(strip $(SHARD)),$$($(PY) tools/pytest_shard.py $(subst /, ,$(strip $(SHARD)))),tests/py)
 pytest:                    ## Python tools' unit tests (analysis, generators), in parallel with pytest-xdist
 	@if [ "$(strip $(PYTEST_N))" != 0 ] && $(PY) -c "import xdist" 2>/dev/null; then \
-	  echo "$(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup $(PYTEST_FILES)"; \
-	  $(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup $(PYTEST_FILES); \
-	else echo "$(PY) -m pytest -q $(PYTEST_FILES)  (serial: no pytest-xdist)"; $(PY) -m pytest -q $(PYTEST_FILES); fi
+	  echo "$(PY) tools/pytest_run.py -q -n $(strip $(PYTEST_N)) --dist loadgroup -- $(PYTEST_FILES)"; \
+	  $(PY) tools/pytest_run.py -q -n $(strip $(PYTEST_N)) --dist loadgroup -- $(PYTEST_FILES); \
+	else echo "$(PY) tools/pytest_run.py -q -- $(PYTEST_FILES)  (serial: no pytest-xdist)"; \
+	  $(PY) tools/pytest_run.py -q -- $(PYTEST_FILES); fi
 
 firmware:                  ## build/frodhes.fwsc (Docker on macOS)
 	PYTHON=$(PY) ./build.sh

@@ -54,7 +54,7 @@ jobs:
       - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 websockets==16.1.1 pytest
       - shell: bash                  # (one run; its -v lines show the deterministic test PASSED, not SKIPPED)
         run: |
-          python -m pytest -v -rs tests/py/test_gen_bars.py tests/py/test_marimba_calib.py | tee gen.txt
+          python tools/pytest_run.py -v -rs -- tests/py/test_gen_bars.py tests/py/test_marimba_calib.py | tee gen.txt
           grep -q 'test_gen_bars.py::test_deterministic_and_up_to_date PASSED' gen.txt
   host:                              # fallback only: every host test (ci.yml's host job, on the same arm64 runner)
     needs: ci-gate

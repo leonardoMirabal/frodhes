@@ -57,7 +57,7 @@ jobs:
       # form), instead of a second run of test_gen_bars.py for it
       - shell: bash
         run: |
-          python -m pytest -v -rs tests/py/test_gen_bars.py tests/py/test_marimba_calib.py | tee gen.txt
+          python tools/pytest_run.py -v -rs -- tests/py/test_gen_bars.py tests/py/test_marimba_calib.py | tee gen.txt
           grep -q 'test_gen_bars.py::test_deterministic_and_up_to_date PASSED' gen.txt
   # The browser emulator (web/build.sh, Emscripten pinned in tools/get_emsdk.sh) must build and pass its selftest
   # (tools/release.py --web-selftest: Chromium + WebKit at 1280 and 390 px, sound, a lit screen, no page errors, the
@@ -88,7 +88,7 @@ jobs:
       - run: python3 tools/release.py --web-selftest web/dist dev
       - name: the knob test (must run, not skip)
         run: |
-          python3 -m pytest -q -rs tests/py/test_web_knobs.py > knobs.txt || { cat knobs.txt; exit 1; }
+          python3 tools/pytest_run.py -q -rs -- tests/py/test_web_knobs.py > knobs.txt || { cat knobs.txt; exit 1; }
           cat knobs.txt
           ! grep -q SKIPPED knobs.txt
   # DRAFT (private plan 05 M1-16; not required, not yet run in CI): the Move's checks, MT0, in the Move's userland
