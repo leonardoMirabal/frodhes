@@ -158,7 +158,7 @@ def test_same_tree_needs_success_every_job_and_a_known_tree(tmp_path):
 
 
 def test_release_workflow_wiring():
-    yaml = __import__("pytest").importorskip("yaml")
+    import yaml                          # (PyYAML, installed in CI: a missing module fails, never skips)
     wf = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "release.yml")))
     j = wf["jobs"]
     assert wf["permissions"] == {"contents": "write", "actions": "read", "pages": "write"}
@@ -206,10 +206,34 @@ def test_release_workflow_wiring():
     assert "make test" in scripts and "make host" in scripts
 
 
+def test_the_pytest_jobs_install_every_module_the_tests_import():
+    """mido and PyYAML pinned on the pip line of every job that runs tests/py (ci.yml's 4 shards, release.yml's
+    fallback host job), the same line in both: the tests import them outright, so a missing module fails, and no
+    test in tests/py skips on a module CI could install (only real tools: playwright's browsers, node)"""
+    import glob
+    import re
+    import yaml
+    ci = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))["jobs"]
+    rel = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "release.yml")))["jobs"]
+    lines = []
+    for job in (ci["host-pytest"], rel["host"]):
+        runs = [s.get("run", "") for s in job["steps"]]
+        assert any("make pytest" in r for r in runs)
+        lines += [r.strip() for r in runs if r.strip().startswith("pip install")]
+    assert len(lines) == 2 and lines[0] == lines[1], lines
+    for pin in ("mido==1.3.3", "PyYAML==6.0.3", "numpy==2.5.4", "scipy==1.18.1", "pytest-xdist==3.8.0"):
+        assert pin in lines[0].split(), (pin, lines[0])
+    assert "rtmidi" not in lines[0]                    # (the tests build mido messages only: no MIDI backend)
+    skips = set()
+    for f in glob.glob(os.path.join(ROOT, "tests", "py", "*.py")):
+        skips |= set(re.findall(r"importorskip\(\s*[\"']([\w.]+)", open(f).read()))
+    assert skips <= {"playwright.sync_api"}, skips
+
+
 def test_release_publish_step_uploads_both_names(tmp_path):
     """release.yml's publish step, run with a fake gh: frodhes-X.Y.Z.fwsc and frodhes.fwsc (the same bytes) attached,
     then the three SMK-37 packages under their experimental names (tools/release.py SMK_ASSETS, checked by step 9)"""
-    yaml = __import__("pytest").importorskip("yaml")
+    import yaml                          # (PyYAML, installed in CI: a missing module fails, never skips)
     steps = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "release.yml")))["jobs"]["release"]["steps"]
     run = [s for s in steps if s.get("name") == "draft release"][0]["run"]
     (tmp_path / "bin").mkdir()
@@ -245,7 +269,7 @@ def test_release_publish_step_uploads_both_names(tmp_path):
 def test_release_publish_step_rerun_replaces_the_assets(tmp_path):
     """a rerun (the release exists: a draft left by a failed run): the assets uploaded again with --clobber and the
     notes updated, never a second `release create`"""
-    yaml = __import__("pytest").importorskip("yaml")
+    import yaml                          # (PyYAML, installed in CI: a missing module fails, never skips)
     steps = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "release.yml")))["jobs"]["release"]["steps"]
     run = [s for s in steps if s.get("name") == "draft release"][0]["run"]
     (tmp_path / "bin").mkdir()
@@ -267,7 +291,7 @@ def test_release_publish_step_rerun_replaces_the_assets(tmp_path):
 def test_the_emulator_is_live_when_the_release_is():
     """release.yml: the emulator is built from the tag and selftested before anything is published (a failure stops
     the release); the release is a draft until gh-pages is deployed and Pages serves it; only then published + latest"""
-    yaml = __import__("pytest").importorskip("yaml")
+    import yaml                          # (PyYAML, installed in CI: a missing module fails, never skips)
     wf = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "release.yml")))
     assert list(wf[True]) == ["push"] and wf[True]["push"] == {"tags": ["v*"]}     # (yaml reads `on:` as True)
     web = wf["jobs"]["web"]
@@ -299,7 +323,7 @@ def test_the_emulator_is_live_when_the_release_is():
 
 
 def test_ci_builds_the_emulator_and_never_deploys():
-    yaml = __import__("pytest").importorskip("yaml")
+    import yaml                          # (PyYAML, installed in CI: a missing module fails, never skips)
     ci = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "ci.yml")))
     assert "tags" not in ci[True]["push"]
     runs = " ".join(" ".join(s.get("run", "").split()) for s in ci["jobs"]["web"]["steps"])
