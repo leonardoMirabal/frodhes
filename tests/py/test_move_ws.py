@@ -337,13 +337,13 @@ def test_boot_settings_only_what_differs():
     """the settings Schwung reports at their boot values are not written again; one left on is"""
     import move_hil as mh
     st = dict(mh.boot_keys())
-    st["s_chtype"], st["s_bpm"] = "1", "120"
+    st["s_tune"] = "7"
     f = FakeSchwung(settings=st)
     try:
         r = mh.TapRig(f.url, lambda take: None, wait=0.1)
-        assert r.boot_settings() == ["s_chtype"]
+        assert r.boot_settings() == ["s_tune"]
         assert [m for m in f.log if m.get("key", "").startswith("synth:s_")] == \
-            [{"type": "set_param", "slot": 0, "key": "synth:s_chtype", "value": "0"}]
+            [{"type": "set_param", "slot": 0, "key": "synth:s_tune", "value": "0"}]
         r.remote.close()
     finally:
         f.close()

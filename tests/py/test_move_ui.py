@@ -112,7 +112,7 @@ def test_fx_pages_hold_every_effect():
         if not p.startswith(FX_PARAMS):
             continue
         where = REACH.get(p, "")
-        ok = where in FX_PAGES or (p.endswith("_SYNC") and where == "TEMPO/SCALE")   # (the syncs: with the tempo)
+        ok = where in FX_PAGES or (p.endswith("_SYNC") and where == "TEMPO")   # (the syncs: with the tempo)
         assert ok or where.startswith("via ") or p in gen.MIDI_ONLY, (p, where)
 
 

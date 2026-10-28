@@ -50,12 +50,13 @@ typedef struct {
     uint16_t key;
 } mb_ev_t;
 
-/* No FM-1 sequencer and no arpeggiator on the Move (the user, 2026-10-28: the Move has its own). The FM-1 code stays
- * as it is (Gate S); here both are inert: their CCs never reach the app (MB_CC_DROP: 43-46 the sequencer's edits,
- * 52-55 the arpeggiator, 60-63 PLAY, BARS, QUANT, REC; 56-59, the chords, pass), the pattern file is not loaded
- * (an older pattern.bin stays on disk, unused), and mb_inert stops what a transport Start or an older state would
- * turn on (the sequencer playing or recording, the arpeggiator's mode or HOLD). The chords and scales stay. */
-#define MB_CC_DROP(cc) (((cc) >= 43u && (cc) <= 46u) || ((cc) >= 52u && (cc) <= 55u) || ((cc) >= 60u && (cc) <= 63u))
+/* No FM-1 sequencer, arpeggiator, chords or scales on the Move (the user, 2026-10-28: the Move has its own), and
+ * the Move's tempo. The FM-1 code stays as it is (Gate S); here they are inert: their CCs never reach the app
+ * (MB_CC_DROP: 43-46 the sequencer's edits, 52-55 the arpeggiator, 56-59 the chords, 60-63 PLAY, BARS, QUANT,
+ * REC; the scales, BPM and CLOCK have no CC), the pattern file is not loaded (an older pattern.bin stays on disk,
+ * unused), and mb_inert stops what a transport Start or an older state would turn on (the sequencer playing or
+ * recording, the arpeggiator's mode or HOLD, a chord type, a scale mode, a transpose, CLOCK INT). */
+#define MB_CC_DROP(cc) (((cc) >= 43u && (cc) <= 46u) || ((cc) >= 52u && (cc) <= 63u))
 #define MB_NMAP 6                        /* the mappings' settings: 2 sources x (CC, LO, HI) */
 #define MB_MAP_DEFAULT {0, 0, 127, 0, 0, 127}   /* every mapping off (CC 0), LO 0, HI 127 */
 static struct {
@@ -109,7 +110,7 @@ static struct {
     uint8_t pa[128];
     int16_t map_last[MB_NMAP / 3];
     uint32_t map_out, map_drop;
-    uint32_t cc_drop, inert_n;            /* MB_CC_DROP's messages dropped; mb_inert's stops */
+    uint32_t cc_drop, inert_n, bpm_host;            /* MB_CC_DROP's messages dropped; mb_inert's stops; tempo takes */
     /* the compressor's gain-reduction meter (r_cmp_gr), as ui.c meter_poll shows it on the FM-1's COMP page: dB x 10
      * (rises at once, falls 0.5 dB a 33 ms tick = 15 dB/s), the peak's segment (GR_DB10) held a second; written by
      * the audio thread (mb_gr_tick), read by get_param without a lock: bits 0-9 dB x 10, 10-19 the peak, 20 on */
@@ -815,9 +816,28 @@ static void mb_map(uint8_t st, uint8_t d1, uint8_t d2)
 static void mb_gr_tick(void);
 /* the sequencer and the arpeggiator kept off (see MB_CC_DROP), after each main-loop pass: a Start / Continue from the
  * Move's transport starts the FM-1 sequencer (frodhes.c), which plays nothing (no pattern) and is stopped here; an
- * older state's or store's arpeggiator mode or HOLD is cleared (the settings then save it off) */
+ * older state's or store's arpeggiator mode or HOLD is cleared (the settings then save it off). The same for what
+ * else the Move owns (the user, 2026-10-28 12:10): the chords (CC 56-59 dropped), the scales and the transpose (off
+ * and 0), and the tempo: the clock source stays EXT (the Move's transport reaches every slot as F8 / FA / FB / FC,
+ * or mb_clock_block makes it from the host's transport), and with no clock leading, the tempo is the Move's
+ * (host get_bpm, 20-400 BPM, else 120; the FM-1's tempo_set10 keeps it in 40-240) */
+#define MB_BPM_FALLBACK10 1200u
+static uint32_t mb_host_bpm10(void)
+{
+    const host_api_v1_t *h = atomic_load_explicit(&g_host, memory_order_acquire);
+    double b = h && h->get_bpm ? h->get_bpm() : 0.0;
+    return b >= 20.0 && b <= 400.0 ? (uint32_t)(b * 10.0 + 0.5) : MB_BPM_FALLBACK10;
+}
 static void mb_inert(void)
 {
+    uint32_t b10 = mb_host_bpm10(), t10 = b10 < 400u ? 400u : b10 > 2400u ? 2400u : b10;
+    if (!clk_follows() && (clk_owns || set.bpm10 != t10)) { tempo_set10(b10); bpm_hand = set.bpm10; mb.bpm_host++; }
+    if (CH_TYPE || set.sc_mode || set.sc_trans || set.clock != 1u) {
+        mb.inert_n++;
+        if (CH_TYPE) CH_TYPE = 0;
+        set.sc_mode = 0; set.sc_trans = 0; set.clock = 1;
+        set_dirty = 1;
+    }
     if (!(seq_play | seq_rec | sq_erase | ARP_MODE | ARP_HOLD)) return;
     mb.inert_n++;
     if (seq_rec) seq_toggle_rec();
@@ -1004,9 +1024,11 @@ static int mb_get(const char *key, char *buf, int n)
         uint32_t w = atomic_load_explicit(&mb.gr_word, memory_order_relaxed);
         return w >> 20 & 1u ? snprintf(buf, (size_t)n, "%u %u", w & 1023u, w >> 10 & 1023u) : snprintf(buf, (size_t)n, "OFF");
     }
-    if (!strcmp(key, "dev_inert")) return snprintf(buf, (size_t)n, "cc_drop=%u stops=%u seq=%u rec=%u arp=%u hold=%u",
+    if (!strcmp(key, "dev_inert")) return snprintf(buf, (size_t)n, "cc_drop=%u stops=%u seq=%u rec=%u arp=%u hold=%u chord=%u scale=%u trans=%d clock=%u bpm10=%u host_bpm=%u",
                                                    mb.cc_drop, mb.inert_n, (unsigned)seq_play, (unsigned)seq_rec,
-                                                   (unsigned)ARP_MODE, (unsigned)ARP_HOLD);
+                                                   (unsigned)ARP_MODE, (unsigned)ARP_HOLD, (unsigned)CH_TYPE,
+                                                   (unsigned)set.sc_mode, (int)set.sc_trans, (unsigned)set.clock,
+                                                   (unsigned)tempo_bpm10(), mb.bpm_host);
     if (!strcmp(key, "dev_map")) return snprintf(buf, (size_t)n, "out=%u drop=%u last=%d,%d", mb.map_out, mb.map_drop,
                                                  mb.map_last[0], mb.map_last[1]);
 #ifdef FR_HQ

@@ -1,7 +1,7 @@
 # Frodhes on the Move (draft, in development)
 
 Frodhes also builds as a sound generator for the Move, a standalone groove box, through Schwung, the community module
-host that runs on it. The engines (PIANO, VIBES, MARIMBA), the effects, the chords and the scales
+host that runs on it. The engines (PIANO, VIBES, MARIMBA) and the effects
 are the FM-1's own code, built for the Move's processor. **This port is in development. Nothing on this page has been
 checked on a Move yet:** every part below was checked on the host build only (the same code run on a computer,
 `tools/ci_move.sh`). The parts marked *(not yet verified on a device)* are the ones a Move must still confirm.
@@ -43,9 +43,8 @@ controls. The VOICE pages follow the engine of the TYPE: only the pages of the e
 | **TREM/PHASER** | TREM · DEPTH · RATE · SHAPE · PHASE · DEPTH · SPEED · FDBK |
 | **CHORUS/DELAY** | CHOR · DEPTH · SPEED · SYNC · DELAY · MIX · TIME · FDBK |
 | **REVERB** | RVB · MIX · DECAY · TONE · PDLY · SIZE · MOD · LCUT |
-| **TEMPO/SCALE** | BPM · TRSYN · PHSYN · DLSYN · MODE · SCALE · ROOT · TRNSP |
-| **CHORD** | CHORD · INV · VOICE · STRUM |
-| **LFO/SETUP** | SHAPE · RATE · SYNC · TRIG · DLTON · LEVEL · CHAN · CLOCK |
+| **TEMPO** | TRSYN · PHSYN · DLSYN |
+| **LFO/SETUP** | SHAPE · RATE · SYNC · TRIG · DLTON · LEVEL · CHAN |
 | **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI |
 
 The controls are the FM-1's, with the same ranges, under shorter names (the Move's screen fits about five
@@ -73,7 +72,7 @@ settings are kept with the track's state. *(not yet verified on a device)*
 The pages above are on the Move's own knob screen. **PAGES** on the first page opens a screen of Frodhes' own with the
 same pages, drawn as on the FM-1: one page is the eight knobs.
 
-![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=0e8d6fd0)
+![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=7fb7a2cc)
 
 - **The overview**: eight cards, knobs 1-4 on the top row and 5-8 below, each with its name, its value and a bar.
   The header names the page and its number (`4/12`); an `S` before the number shows that the sustain holds.
@@ -90,12 +89,12 @@ same pages, drawn as on the FM-1: one page is the eight knobs.
 - **COMPRESSOR** shows the gain reduction as the FM-1's COMP page does: GR and the reading in dB, a bar that fills
   from the right on the FM-1's scale (up to 30 dB), and the peak held for a second. COMP OFF shows when the compressor
   is off. *(not yet verified on a device)*
-- Fine steps: hold Shift while turning BPM for steps of 0.1. A fast turn of a wide range moves four steps a detent.
+- A fast turn of a wide range moves four steps a detent.
 
 ![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=3da25fcf)
-![Knob 6 on TEMPO/SCALE: the scale, one block per option](manual/img/move/move-tempo-scale-k6.png?v=e2fb0eb3)
-![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=2352bd88)
-![The list of pages](manual/img/move/move-pages.png?v=a7bf9f81)
+![Knob 1 on REVERB: the type, one block per option](manual/img/move/move-reverb-k1.png?v=c1dc8a5f)
+![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=d424b3d8)
+![The list of pages](manual/img/move/move-pages.png?v=e463578b)
 
 The pictures are drawn by the screen's own code on a computer (`tools/move_ui_shots.mjs`), in the screen's two
 colours. Everything in this section is *(not yet verified on a device)*: the knobs' feel, the time the card stays,
@@ -126,26 +125,29 @@ The Move has no pedal jack. There are three ways to sustain, and they work toget
 - **A sustain pedal or keyboard on CC 64** (on the Move's USB-A port, or MIDI from a computer): half pedalling as
   on the FM-1. Letting the pedal up also releases the latch.
 
-The scales react to the sustain as on the FM-1. *(not yet verified on a
-device)*
-
 ## MIDI
 
 The MIDI of Schwung's track reaches Frodhes as on the FM-1 (`docs/MANUAL.md`, section 12): notes with velocity and
 release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 F01-F16, 16-31 U01-U16,
 32-34 F17-F19). *(not yet verified on a device)*
 
-The sequencer's and the arpeggiator's CCs (43-46, 52-55, 60-63) do nothing on the Move. MIDI Start and Stop
-still sync the tempo, the LFO and the synced effects.
+The sequencer's, the arpeggiator's and the chords' CCs (43-46, 52-63) do nothing on the Move.
+
+**The tempo is the Move's.** Frodhes follows the Move's transport: the Move's clock reaches it as MIDI clock and
+Start / Stop, or, when no clock comes, from the Move's transport and beat position. The synced rates (TRSYN,
+PHSYN, DLSYN, the chorus SYNC) and the LFO's SYNC lock to it. While the Move is stopped, they use the Move's
+tempo setting (120 BPM if the Move reports none). Frodhes has no BPM or CLOCK setting on the Move, and its
+tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a device)*
 
 ## What differs from the FM-1
 
 - **16 voices** on every engine (the FM-1 plays 10).
 - No PERFORM, ASSIGN or DISPLAY pages: the Move has its own pads, knobs and screen. The FM-1's KEY VEL, TOUCH,
   USB VOL, TRS, COLOR, BRIGHT and LEDS settings are not on the Move.
-- No sequencer and no arpeggiator: the Move has its own. Their pages are not on the Move, and their CCs do
-  nothing. A setup saved with the arpeggiator on still loads, with the arpeggiator off. A pattern saved by an
-  older build is not loaded.
+- No sequencer, arpeggiator, chords or scales (MODE, SCALE, ROOT, TRANSPOSE): the Move has its own. Their pages
+  are not on the Move, and their CCs do nothing. A setup saved with any of them on still loads, with them off.
+  A pattern saved by an older build is not loaded.
+- No BPM or CLOCK setting: the Move's tempo leads (see MIDI).
 - SPREAD and the compressor's RELEASE, set on the FM-1 by MIDI or a page of their own, are on the pages here.
 - The sound is part of the Move's set: Schwung saves and restores it with the track. *(not yet verified on a device)*
 - Audio runs in blocks of 128 frames at 44.1 kHz (the FM-1 uses 256), with a working limit of 725 us of processing
@@ -155,7 +157,7 @@ still sync the tempo, the LFO and the synced effects.
 
 - **HQ**: a higher-quality mode that uses the Move's faster processor (more detail in the engines and the effects).
   Not in this build.
-- A screen of Frodhes's own and the pads laid out as a keyboard (chromatic, or in the SCALE page's scale).
+- A screen of Frodhes's own.
 
 ## For developers
 

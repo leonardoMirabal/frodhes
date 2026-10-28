@@ -74,6 +74,12 @@ FM1_ONLY_PAGES = {"PERFORM": "the Move's knobs are direct: no assignable perform
 FM1_ONLY_SLOTS = {"S_KVEL": "the FM-1's own keys' velocity", "S_TOUCH": "the FM-1's own keys' touch",
                   "S_USBVOL": "the FM-1's USB audio", "S_TRS": "the FM-1's TRS MIDI jack",
                   "S_COLOR": "the FM-1's screen", "S_BRIGHT": "the FM-1's screen", "S_LEDS": "the FM-1's key lights"}
+# the settings cards the Move owns (the user, 2026-10-28 12:10): the Move's tempo and transport lead (move_bridge.h
+# mb_inert: CLOCK stays EXT, the tempo is the host's), its own pads play the scales; no card, no key
+MOVE_OWNS_SLOTS = {"S_BPM": "the Move's tempo leads (host get_bpm while no clock runs)",
+                   "S_CLOCK": "always EXT: the Move's transport is the clock",
+                   "S_SCMODE": "the Move's own scales", "S_SCALE": "the Move's own scales",
+                   "S_ROOT": "the Move's own scales", "S_TRANS": "the Move's own transpose"}
 # the settings cards on the Move: their options (a names array of the firmware's), or a number range as shown:
 # wire = slot_val - off; unit as the host shows it. hi always comes from ui.c slot_val (checked).
 SLOTS = {
@@ -133,10 +139,10 @@ MOVE_LEVELS = [
     ("trm_pha", "TREM/PHASER", ["TREM/WAH", "PHASER"], []),
     ("cho_dly", "CHORUS/DELAY", ["CHORUS", "DELAY"], []),
     ("reverb", "REVERB", ["REVERB", "REVERB 2"], []),
-    ("tmp_scl", "TEMPO/SCALE", ["TEMPO", "SCALE"], []),
-    # (the user, 2026-10-28: no FM-1 sequencer and no arpeggiator on the Move, which has its own: no SEQUENCER and no
-    # ARPEGGIO cards, no keys; move/move_bridge.h keeps both inert, MB_CC_DROP)
-    ("chd", "CHORD", ["CHORD"], []),
+    # (the user, 2026-10-28: no FM-1 sequencer, arpeggiator, chords or scales on the Move, which has its own, and no
+    # BPM or CLOCK: the Move's tempo leads (MOVE_OWNS_SLOTS); no SEQUENCER, ARPEGGIO, CHORD or SCALE cards, no keys;
+    # move/move_bridge.h keeps them inert, MB_CC_DROP and mb_inert)
+    ("tmp", "TEMPO", ["TEMPO"], []),
     ("lfo_set", "LFO/SETUP", ["LFO", "SETUP", "MIDI"], []),
     ("maps", "MAPPINGS", [], MAP_KEYS),
 ]
@@ -359,7 +365,7 @@ def build(m):
     def page_cards(lvl, title):
         pg = page_of[title]
         for k, slot in enumerate(m["pages"][pg]["cards"]):
-            if slot == "S_NONE" or slot in FM1_ONLY_SLOTS:
+            if slot == "S_NONE" or slot in FM1_ONLY_SLOTS or slot in MOVE_OWNS_SLOTS:
                 continue
             item, row = key_def(m, slot, card_label(m, pg, k))
             add(lvl, item, row, lvl["name"])

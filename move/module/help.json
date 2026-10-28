@@ -165,25 +165,11 @@
           ]
         },
         {
-          "title": "TEMPO/SCALE",
+          "title": "TEMPO",
           "lines": [
-            "K1 BPM",
-            "K2 TRSYN",
-            "K3 PHSYN",
-            "K4 DLSYN",
-            "K5 MODE",
-            "K6 SCALE",
-            "K7 ROOT",
-            "K8 TRNSP"
-          ]
-        },
-        {
-          "title": "CHORD",
-          "lines": [
-            "K1 CHORD",
-            "K2 INV",
-            "K3 VOICE",
-            "K4 STRUM"
+            "K1 TRSYN",
+            "K2 PHSYN",
+            "K3 DLSYN"
           ]
         },
         {
@@ -195,8 +181,7 @@
             "K4 TRIG",
             "K5 DLTON",
             "K6 LEVEL",
-            "K7 CHAN",
-            "K8 CLOCK"
+            "K7 CHAN"
           ]
         },
         {

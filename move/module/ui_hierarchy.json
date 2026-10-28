@@ -108,12 +108,8 @@
           "label": "REVERB"
         },
         {
-          "level": "tmp_scl",
-          "label": "TEMPO/SCALE"
-        },
-        {
-          "level": "chd",
-          "label": "CHORD"
+          "level": "tmp",
+          "label": "TEMPO"
         },
         {
           "level": "lfo_set",
@@ -887,18 +883,9 @@
         "p_rv_locut"
       ]
     },
-    "tmp_scl": {
-      "name": "TEMPO/SCALE",
+    "tmp": {
+      "name": "TEMPO",
       "params": [
-        {
-          "key": "s_bpm",
-          "name": "BPM",
-          "type": "float",
-          "min": 40.0,
-          "max": 240.0,
-          "step": 0.1,
-          "unit": "BPM"
-        },
         {
           "key": "p_tw_sync",
           "name": "TRSYN",
@@ -965,133 +952,12 @@
             "2BAR"
           ],
           "default": 0
-        },
-        {
-          "key": "s_scmode",
-          "name": "MODE",
-          "type": "enum",
-          "options": [
-            "OFF",
-            "SNAP",
-            "DEGR"
-          ]
-        },
-        {
-          "key": "s_scale",
-          "name": "SCALE",
-          "type": "enum",
-          "options": [
-            "MAJOR",
-            "MINOR",
-            "DORN",
-            "MIXO",
-            "LYDN",
-            "PHRYG",
-            "HARM",
-            "MELO",
-            "PENTA",
-            "MPNT",
-            "BLUES"
-          ]
-        },
-        {
-          "key": "s_root",
-          "name": "ROOT",
-          "type": "enum",
-          "options": [
-            "C",
-            "C#",
-            "D",
-            "D#",
-            "E",
-            "F",
-            "F#",
-            "G",
-            "G#",
-            "A",
-            "A#",
-            "B"
-          ]
-        },
-        {
-          "key": "s_trans",
-          "name": "TRNSP",
-          "type": "int",
-          "min": -24,
-          "max": 24,
-          "unit": "st"
         }
       ],
       "knobs": [
-        "s_bpm",
         "p_tw_sync",
         "p_ph_sync",
-        "p_dl_sync",
-        "s_scmode",
-        "s_scale",
-        "s_root",
-        "s_trans"
-      ]
-    },
-    "chd": {
-      "name": "CHORD",
-      "params": [
-        {
-          "key": "s_chtype",
-          "name": "CHORD",
-          "type": "enum",
-          "options": [
-            "OFF",
-            "DIAT",
-            "DIA7",
-            "MAJ",
-            "MIN",
-            "7",
-            "MAJ7",
-            "MIN7",
-            "SUS2",
-            "SUS4",
-            "ADD9",
-            "DIM",
-            "AUG",
-            "6",
-            "MIN6"
-          ]
-        },
-        {
-          "key": "s_chinv",
-          "name": "INV",
-          "type": "enum",
-          "options": [
-            "ROOT",
-            "1ST",
-            "2ND",
-            "3RD"
-          ]
-        },
-        {
-          "key": "s_chvoice",
-          "name": "VOICE",
-          "type": "enum",
-          "options": [
-            "CLOSE",
-            "OPEN",
-            "+BASS"
-          ]
-        },
-        {
-          "key": "s_chstrum",
-          "name": "STRUM",
-          "type": "int",
-          "min": 0,
-          "max": 12
-        }
-      ],
-      "knobs": [
-        "s_chtype",
-        "s_chinv",
-        "s_chvoice",
-        "s_chstrum"
+        "p_dl_sync"
       ]
     },
     "lfo_set": {
@@ -1191,15 +1057,6 @@
             "15",
             "16"
           ]
-        },
-        {
-          "key": "s_clock",
-          "name": "CLOCK",
-          "type": "enum",
-          "options": [
-            "INT",
-            "EXT"
-          ]
         }
       ],
       "knobs": [
@@ -1209,8 +1066,7 @@
         "p_lfo_retrig",
         "p_dl_tone",
         "p_level",
-        "s_mch",
-        "s_clock"
+        "s_mch"
       ]
     },
     "maps": {

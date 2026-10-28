@@ -103,7 +103,7 @@ def card_of(slot):
 
 
 def test_settings_options_match_the_cards():
-    """the settings cards that have a CC (arpeggiator, chord, sequencer): the CC's index shows on the FM-1's card as
+    """the settings cards that have a CC (arpeggiator, chord, sequencer; none on the Move today): the CC's index shows on the FM-1's card as
     the key's option of that index (so the options lists are in the firmware's order)"""
     chain = {c["key"]: c for c in __import__("json").load(open(os.path.join(gen.OUT, "chain_params.json")))}
     lines, want, t = [], [], 100
@@ -118,7 +118,11 @@ def test_settings_options_match_the_cards():
             t += 6
         lines.append(cc(t, int(kcc), 0))
         t += 6
-    assert want
+    if not want:
+        # (the user, 2026-10-28: the arpeggiator, the chords and the sequencer, the settings cards with a CC, are not
+        # on the Move; their CCs are dropped by the bridge, so no key is left to check)
+        assert not any(int(kcc) for key, slot, kcc, kind, _, _ in ROWS if kind == "MK_SLOT")
+        return
     r = run("move-slots", lines, t + 50)
     bad = []
     for tt, slot, o in want:

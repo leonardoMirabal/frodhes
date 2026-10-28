@@ -9,7 +9,7 @@ Every claim here is the host build's; the device checks (D5) come first.
 > ## 16. Appendix: the Move
 >
 > Frodhes also runs on the Move, a standalone groove box, as a sound generator of Schwung, the community module
-> host on it: the same instruments, effects, chords and scales as on the FM-1, with
+> host on it: the same instruments and effects as on the FM-1, with
 > 16 voices on every instrument. Install and the details: [MOVE.md](MOVE.md).
 >
 > Everything in this manual applies, with these differences:
@@ -20,14 +20,15 @@ Every claim here is the host build's; the device checks (D5) come first.
 > - **Frodhes' own screen** (PAGES on the first page): the eight knobs as eight cards, each with its name, value
 >   and bar; touch or turn a knob and its card fills the screen, as the FM-1 shows one card large; the overview
 >   comes back about a second after you let go. The jog wheel turns the pages; a click lists them.
->   ![The DRIVE/FILTER page on the Move](manual/img/move/move-drive-filter.png?v=22df2253)
+>   ![The DRIVE/FILTER page on the Move](manual/img/move/move-drive-filter.png?v=7fb7a2cc)
 > - **Sustain**: the Move has no pedal jack. The Capture button is the pedal on the PEDAL screen and on Frodhes'
 >   screen (hold it, or tap to latch, as REC on the FM-1); SUS on the first page latches; a pedal on CC 64 (USB)
 >   works with half pedalling.
 > - **FX** on the first page is the FX button: all effects off or on (CC 111).
-> - **Not on the Move**: PERFORM, ASSIGN and DISPLAY (the Move has its own knobs and screen), the sequencer and
->   the arpeggiator (the Move has its own; their CCs do nothing), KEY VEL, TOUCH, USB VOL, TRS, COLOR, BRIGHT and
->   LEDS.
+> - **Not on the Move**: PERFORM, ASSIGN and DISPLAY (the Move has its own knobs and screen), the sequencer, the
+>   arpeggiator, the chords and the scales (the Move has its own; their CCs do nothing), BPM and CLOCK (the
+>   Move's tempo leads), KEY VEL, TOUCH, USB VOL, TRS, COLOR,
+>   BRIGHT and LEDS.
 > - The sound is saved with the Move's set.
 
 ## MANUAL.md section 12 (MIDI), a note under the CC table

@@ -80,7 +80,7 @@ if (args.includes("--docs")) {
     // (a folder of their own: docs/manual/img/ is tools/manual_shots.py's, test_manual_shots.py checks it whole)
     const DOCS = path.join(ROOT, "docs", "manual", "img", "move");
     fs.mkdirSync(DOCS, { recursive: true });
-    for (const n of ["frodhes", "drive-filter", "drive-filter-k2", "tempo-scale-k6", "pages"]) {
+    for (const n of ["frodhes", "drive-filter", "drive-filter-k2", "reverb-k1", "pages"]) {
         const src = path.join(OUT, K === 4 ? `${n}-4x.png` : `${n}.png`);
         fs.copyFileSync(src, path.join(DOCS, `move-${n}.png`));
     }

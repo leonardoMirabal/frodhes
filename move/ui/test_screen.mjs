@@ -57,7 +57,7 @@ test("a turn without a touch shows the card until hold_ms after the last detent"
 
 test("another knob switches the card at once; two held: the card follows the last", () => {
     const s = new Screen().open();
-    goto(s, "TEMPO/SCALE");
+    goto(s, "DRIVE/FILTER");
     s.touch(0); s.touch(5);
     assert.equal(s.st().focus, 5);
     s.touch(5, false);
@@ -84,26 +84,17 @@ test("turning writes the wire value: numbers step and clamp, enums by index, a f
     assert.match(lastWrite(s)[1], /^\d+$/);
 });
 
-test("the tempo: 1 BPM a detent, 0.1 with Shift, one decimal on the wire", () => {
-    const s = new Screen().open();
-    goto(s, "TEMPO/SCALE");
-    s.knob(0, 1); s.wait(200);
-    assert.deepEqual(lastWrite(s), ["s_bpm", "121.0"]);
-    s.shift = true; s.knob(0, 1); s.wait(200);
-    assert.deepEqual(lastWrite(s), ["s_bpm", "121.1"]);
-    s.shift = false;
-    s.draw();
-    assert.equal(s.api.valueText(s.st(), s.api.pages[s.st().page].knobs[0]), "121.1");
-});
-
-test("no sequencer and no arpeggiator on the Move (the Move has its own): CHORD keeps the chords only", () => {
+test("what the Move owns is not on the Move: no sequencer, arpeggiator, chords, scales, BPM or CLOCK", () => {
     const s = new Screen().open();
     const titles = s.api.pages.map((p) => p.title);
-    assert.ok(!titles.includes("SEQUENCER") && !titles.includes("CHORD/ARP"), titles.join(","));
+    for (const t of ["SEQUENCER", "CHORD/ARP", "CHORD", "TEMPO/SCALE"]) assert.ok(!titles.includes(t), titles.join(","));
     const keys = s.api.pages.flatMap((p) => p.knobs.map((k) => k.key));
-    assert.ok(!keys.some((k) => k.startsWith("s_sq") || k.startsWith("s_arp")), keys.join(","));
-    goto(s, "CHORD");
-    assert.equal(s.api.pages[s.st().page].knobs.map((k) => k.name).join(" "), "CHORD INV VOICE STRUM");
+    const gone = ["s_sq", "s_arp", "s_ch", "s_bpm", "s_clock", "s_scmode", "s_scale", "s_root", "s_trans"];
+    assert.ok(!keys.some((k) => gone.some((g) => k.startsWith(g))), keys.join(","));
+    goto(s, "TEMPO");
+    assert.equal(s.api.pages[s.st().page].knobs.map((k) => k.name).join(" "), "TRSYN PHSYN DLSYN");
+    goto(s, "LFO/SETUP");
+    assert.ok(!s.api.pages[s.st().page].knobs.some((k) => k.name === "CLOCK"));
 });
 
 test("the jog pages through the pages and stops at the ends", () => {
@@ -118,9 +109,9 @@ test("the jog pages through the pages and stops at the ends", () => {
 
 test("the VOICE pages follow TYPE (a knob here, or elsewhere)", () => {
     const s = new Screen().open();
-    assert.equal(s.api.visiblePages(0).length, 11);
-    assert.equal(s.api.visiblePages(1).length, 12);
-    assert.equal(s.api.visiblePages(2).length, 11);
+    assert.equal(s.api.visiblePages(0).length, 10);
+    assert.equal(s.api.visiblePages(1).length, 11);
+    assert.equal(s.api.visiblePages(2).length, 10);
     for (let i = 0; i < 4; i++) { s.knob(0, 1); s.wait(200); }        // TYPE ST77 -> VIBE
     s.live();
     assert.equal(s.st().engine, 1);

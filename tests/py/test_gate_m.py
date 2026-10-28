@@ -15,7 +15,7 @@ def test_classify(tmp_path):
     assert gate_m.classify(s) == "FM-1 input lines: btn, turn"
     assert gate_m.classify(None).startswith("the default run")
     s.write_text("10 midi 0x90 60 100\n20 midi 0xB0 63 127\n30 midi 0xB0 52 1\n40 midi 0xB0 56 2\n50 end\n")
-    assert gate_m.classify(s).startswith("the FM-1 sequencer / arpeggiator (CC 52, 63)")   # (CC 56: the chords stay)
+    assert gate_m.classify(s).startswith("the FM-1 sequencer / arpeggiator / chords (CC 52, 56, 63)")
 
 
 def test_move16_matches_the_list():
