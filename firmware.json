@@ -1,7 +1,33 @@
 {
  "version": "0.9.7",
  "identity": "FM-1_958",
+ "file": "frodhes.fwsc",
  "size": 612196,
  "sha256": "ecf62e5420e1e5da5a01078ceb2c54d765c940d93070b90afc064c669297eaf3",
- "file": "frodhes.fwsc"
+ "packages": [
+  {
+   "identity": "FM-1_958",
+   "file": "frodhes.fwsc",
+   "size": 612196,
+   "sha256": "ecf62e5420e1e5da5a01078ceb2c54d765c940d93070b90afc064c669297eaf3"
+  },
+  {
+   "identity": "SMK-37 Pro_470",
+   "file": "frodhes-smk37-experimental.fwsc",
+   "size": 651363,
+   "sha256": "d73c6dbc9436c19cd4135fa1cb69de0bbcb32a2996660daac3f7c5c89f5a9707"
+  },
+  {
+   "identity": "SMK-37 Elite_470",
+   "file": "frodhes-smk37-elite-experimental.fwsc",
+   "size": 651367,
+   "sha256": "278203c6373a9ee234433c626bbfb5c0b524e191b680f7d4ae66cc31f0defee6"
+  },
+  {
+   "identity": "MKE-P37_470",
+   "file": "frodhes-smk37-mke-experimental.fwsc",
+   "size": 651359,
+   "sha256": "6b6415d6f91ed84e5d0bfd1aca9750de27d3ccd1af8e6cdcdfdf00218d037281"
+  }
+ ]
 }
