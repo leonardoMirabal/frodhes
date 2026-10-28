@@ -73,7 +73,8 @@ SCREEN_CONF = {"hold_ms": 1000,    # the large card stays this long after the kn
                "fast_ms": 40,      # two detents closer than this: a fast turn ...
                "fast_mul": 4,      # ... moves a wide range (> 24 steps) this many steps a detent
                "settle_ms": 600,   # a value written this recently is not re-read (the write may still be queued)
-               "sus_cc": None}     # the claimed sustain button (SUS_BTN_CC)
+               "sus_cc": None,     # the claimed sustain button (SUS_BTN_CC)
+               "fx_cc": None}      # the claimed effects button (FX_BTN_CC)
 # The sustain (the user, 2026-10-28 18:25: "we just need a toggle option, sustain pedal on or off"): SUS on the first
 # page is the toggle (ON holds the notes as a pedal down, OFF lets everything go and always wins), and a Move button
 # the module claims (capabilities.claims_ccs; Schwung hands a claimed button to the module's screen script only, so it
@@ -81,7 +82,11 @@ SCREEN_CONF = {"hold_ms": 1000,    # the large card stays this long after the kn
 # plugin turns into SUS's other state (a release, "0", does nothing). s_susbtn is no page's knob (HIDDEN: a C row,
 # not in the hierarchy or chain_params). The direct route, a knob or jog-wheel touch (capabilities.touch_observe, the
 # plugin's on_midi), is off until dev_sus_touch picks one (the device session); it flips SUS on the touch too.
-SUS_BTN_CC = 52                    # the Capture button (Schwung shadow_midi.h CC_CAPTURE): D1 confirms or picks another
+# The buttons (the user, 2026-10-28 23:50): Right flips SUS, Left flips the effects (FX, the compressor kept on the
+# Move: FR_BYP_KEEP_CMP). Schwung hands a claimed button to the module's screen script only, so both work on Frodhes'
+# own screen (PAGES), not on Schwung's knob grid (a device test, 2026-10-28: a press there never reaches the plugin)
+SUS_BTN_CC = 63                    # the Right arrow (Schwung constants.mjs MoveRight)
+FX_BTN_CC = 62                     # the Left arrow (MoveLeft); Up / Down stay the Move's octave
 LABEL_MAX = 6                      # the knob grid's cell label: six of Schwung's capitals fit a cell (its own cap: a
                                    # declared "Sustain" draws SUSTAI, render_page_movy.mjs; move/ui/test_cell.mjs
                                    # renders every page through Schwung's renderer and checks no two labels touch)
@@ -137,8 +142,10 @@ SLOTS = {
 EXTRA = {
     "s_sustain": {"name": "SUS", "cc": 64, "options": ["OFF", "ON"], "kind": "MK_LATCH",
                   "help": "the sustain pedal (CC 64), latched"},
-    "s_susbtn": {"name": "CAPTR", "cc": 0, "options": ["UP", "DOWN"], "kind": "MK_BTN",
-                 "help": "the Capture button (screen.js): a press flips SUS"},
+    "s_susbtn": {"name": "SUSBT", "cc": 0, "options": ["UP", "DOWN"], "kind": "MK_BTN",
+                 "help": "the Right arrow (screen.js): a press flips SUS"},
+    "s_fxbtn": {"name": "FXBTN", "cc": 111, "options": ["UP", "DOWN"], "kind": "MK_BTN",
+                "help": "the Left arrow (screen.js): a press flips FX (every effect but the compressor)"},
     # M5-01: the FM-1's FX button (CC 111, the bypass): every effect off with its settings kept; ON (not bypassed) by
     # default, as on the FM-1. OFF / ON in this order (the wire value is "effects on", move_bridge.h inverts the
     # bypass): Schwung draws a two-option OFF / ON enum as a switch that is on at index 1 (viz_draw.mjs drawSwitch),
@@ -161,7 +168,7 @@ for _i, (_k, _src) in enumerate((("m_at", "channel pressure"), ("m_pa", "poly pr
 MAP_KEYS = ["m_at_cc", "m_at_lo", "m_at_hi", "m_pa_cc", "m_pa_lo", "m_pa_hi"]
 # keys the plugin takes that no page shows: a C row only (not in the hierarchy, not in chain_params, so no knob, no
 # list row, no modulation target and no state read-back can write them)
-HIDDEN = ["s_susbtn"]
+HIDDEN = ["s_susbtn", "s_fxbtn"]
 # the Move's levels: (key, title, the FM-1 pages it holds (their cards in order), extra keys after them). "VOICE"
 # stands for an engine's VOICE pages: one level per engine, VOICE 1 + 2, and VOICE 3 (VIBES' MOTOR) its own level.
 MOVE_LEVELS = [
@@ -584,7 +591,7 @@ def outputs():
               # the settings' save) runs on render_block
               "capabilities": {"audio_out": True, "midi_in": True, "chainable": True,
                                "requires_continuous_processing": True, "component_type": "sound_generator",
-                               "claims_ccs": [SUS_BTN_CC], "touch_observe": True,
+                               "claims_ccs": [SUS_BTN_CC, FX_BTN_CC], "touch_observe": True,
                                # the knob grid's custom widget (the GR meter): Schwung loads <module>/canvas.js
                                "canvas_script": "canvas.js"}}
     return {"module.json": dumps(module), "ui_hierarchy.json": dumps(hier), "chain_params.json": dumps(chain),
@@ -643,7 +650,7 @@ def canvas_js():
 
 
 def screen_js(levels):
-    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, gr_db10=gr_db10())
+    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10())
     with open(UI_CORE) as f:
         core = f.read()
     head = ("// SPDX-License-Identifier: GPL-3.0-only\n"

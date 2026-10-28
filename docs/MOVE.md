@@ -114,8 +114,8 @@ and click the jog wheel (a click with no knob touched opens Schwung's list of pa
 - **Pages**: turn the jog wheel for the next or the previous page. Click the jog wheel for the list of pages, turn
   to one, click to open it; Back closes the list. Back on a page leaves Frodhes' screen (Shift + jog wheel too).
   As on the other screen, the VOICE pages are the ones of the instrument that plays.
-- **The sustain**: on this screen the **Capture** button turns SUS on or off on every page (each press, as the SUS
-  knob on the first page).
+- **The buttons**: on this screen the **Right arrow** turns SUS on or off and the **Left arrow** turns the effects
+  off or on (FX, the compressor kept), on every page; Up and Down stay the Move's octave.
 - The first page shows the sound that plays in full, and its fifth knob (PRESET) picks the sound.
 - **COMPRESSOR** shows the gain reduction as the knob screen does, larger: GR and the reading in dB, a thick bar of
   15 segments lit from the right on the FM-1's scale (up to 30 dB), and the peak held for a second as a taller
@@ -139,9 +139,10 @@ The Move has no pedal jack. **SUS** on the first page is the sustain, on or off:
 down does, OFF lets them go, and OFF always wins (over a MIDI pedal held down too). The ways to set it:
 
 - **SUS** on the first page: turn it or click it.
-- **The Capture button**, while Frodhes' own screen (PAGES) is open: each press turns SUS on or off. While that
-  screen is open, Capture does not do its usual job on the Move; on Schwung's knob screen it does nothing for
-  Frodhes (Schwung gives a module's button to its own screen only). *(not yet verified on a device)*
+- **The Right arrow**, while Frodhes' own screen (PAGES) is open: each press turns SUS on or off. While that
+  screen is open, the arrow does not do its usual job on the Move; on Schwung's knob screen it does nothing for
+  Frodhes (Schwung gives a module's button to its own screen only: a device test, a press there never reaches the
+  plugin).
 - **A sustain pedal or keyboard on CC 64** (on the Move's USB-A port, or MIDI from a computer): a pedal as on the
   FM-1, half pedalling included. Letting the pedal up also turns SUS off, as on the FM-1 (its let-up releases the
   REC latch).
@@ -150,8 +151,10 @@ down does, OFF lets them go, and OFF always wins (over a MIDI pedal held down to
 
 Frodhes' effects (the compressor, the drive, the filter, the tremolo / wah, the phaser, the chorus, the delay, the
 reverb and the LFO) are inside the module, on the pages above, with the FM-1's ranges and defaults. **FX** on the
-first page is the FM-1's FX button: OFF turns every effect off at once and keeps their settings; it is ON when the
-module starts, as on the FM-1 (also by MIDI, CC 111).
+first page is the FM-1's FX button: OFF turns every effect off at once and keeps their settings, except that on the
+Move the compressor stays (the FM-1 bypasses it too); it is ON when the module starts, as on the FM-1 (also by MIDI,
+CC 111). **The Left arrow**, while Frodhes' own screen (PAGES) is open, does the same: each press turns the effects
+off or on, and the compressor stays.
 
 On the Move, Frodhes is the sound generator of a Schwung track. Its sound, effects included, then goes through the
 audio effects you put after it on that track, and then the Master FX, like any other sound generator. To use one of
@@ -380,7 +383,10 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
   the Move's firmware and to the slot alike. For a clean comparison, give that Move track a silent instrument.
   Muting the track or turning it down also silences the slot, because the slot follows the track's mute and
   volume. *(not yet verified on a device)*
-- The sustain control: `module.json` claims the Capture button (`capabilities.claims_ccs`, `SUS_BTN_CC` in
+- The buttons: `module.json` claims the Right and Left arrows (`capabilities.claims_ccs`, `SUS_BTN_CC` 63 and
+  `FX_BTN_CC` 62 in `tools/gen_move_module.py`; the Left arrow's press is `s_fxbtn` 1, which flips FX, and the Move's
+  bypass keeps the compressor: `FR_BYP_KEEP_CMP` in `MOVE_DEFS`, fx.c's dry taken after the compressor). The sustain
+  control: the Right arrow (`SUS_BTN_CC` in
   `tools/gen_move_module.py`); Schwung gives a claimed button only to the module's screen script, so `screen.js`
   passes its press to the plugin (`s_susbtn` 1), which flips SUS (`s_sustain`). `s_susbtn` is no page's knob and has
   no `chain_params` entry: Schwung's metadata merge lets a `chain_params` entry win over a hierarchy item, and the

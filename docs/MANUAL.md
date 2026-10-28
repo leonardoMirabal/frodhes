@@ -1149,9 +1149,10 @@ Everything in this manual applies, with these differences:
   hammer strike at every velocity and a truer re-strike; VIBES and MARIMBA with more bar and tube modes and the
   mallet's contact computed live on a re-strike.
 - **Sustain**: the Move has no pedal jack. SUS on the first page is the sustain, on or off (OFF always lets the
-  notes go); on Frodhes' screen each press of the Capture button turns it on or off. A pedal on CC 64 (USB) works
+  notes go); on Frodhes' screen each press of the Right arrow turns it on or off. A pedal on CC 64 (USB) works
   as on the FM-1, half pedalling included, and letting it up turns SUS off.
-- **FX** on the first page is the FX button: all effects off or on (CC 111).
+- **FX** on the first page is the FX button: all effects off or on (CC 111), except the compressor, which stays on
+  the Move. On Frodhes' screen the Left arrow does the same.
 - **Presets**: F01–F19 and U01–U16 in the preset browser and by program change, as on the FM-1. There is no SAVE
   page: the sound is saved with the Move's set.
 - **Only on the Move**: MAPPINGS turns the pads' pressure (aftertouch, poly pressure) into one of the CCs above; off by default.
