@@ -61,8 +61,8 @@ instrument and, within about half a second, the VOICE pages are that instrument'
 **Frodhes plays in every slot.** Load it on as many tracks as Schwung has slots (four today): each one is its own
 instrument, with its own sound and its own knobs. Up to three play with no dropouts. A fourth works, but very heavy
 playing with every effect on in all four can drop audio, and so can loading a set that holds several of them.
-*(measured on a device: two, three and four at once, 16 voices and every effect heavy in each for 30 s; Main Out
-clean with three; with four one run was clean and one had two dropouts)*
+*(measured on a device: two, three and four at once, 16 voices and every effect heavy in each for 30 s; no glitch on
+the taps or on Main Out in any of them; with four the margin is small, so the warning stands)*
 
 | Page | Controls |
 | --- | --- |
