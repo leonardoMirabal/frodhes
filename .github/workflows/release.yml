@@ -63,13 +63,15 @@ jobs:
         run: make test && make host && make pytest PY=python3
   web:                               # the emulator from the tag, built and selftested before anything is published
     runs-on: ubuntu-latest
-    container: mcr.microsoft.com/playwright/python:v1.64.0-noble   # (the browsers' libraries in the image: no apt)
+    container: mcr.microsoft.com/playwright/python:v1.64.0-noble   # (the browsers' libraries in the image; apt only for xz)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
           path: .local/emsdk
           key: emsdk-${{ hashFiles('tools/get_emsdk.sh') }}-${{ runner.os }}-${{ runner.arch }}-playwright-image
+      - name: xz (emsdk unpacks node from a .tar.xz; the image has no xz)
+        run: apt-get update -qq && apt-get install -y -qq xz-utils
       - name: Emscripten (the version pinned in tools/get_emsdk.sh)
         run: sh tools/get_emsdk.sh .local/emsdk
       - name: build the emulator
