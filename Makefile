@@ -87,17 +87,20 @@ MOVE_CFLAGS := -O2 -fPIC -ffp-contract=off -std=gnu11 -Wall -Wno-unused-function
   -fvisibility=hidden -ffile-prefix-map=$(CURDIR)=. -DAPP_VER='"$(MOVE_VER)"' $(MOVE_DEFS) \
   -Imove/compat -Ifirmware/src -Ifirmware/gen
 MOVE_OUT  := build/move/frodhes
+MOVE_LOADER_CFLAGS := -O2 -fPIC -std=gnu11 -Wall -Wextra -fvisibility=hidden -ffile-prefix-map=$(CURDIR)=. -Imove
 
-.PHONY: move-image move move-multi move-multi-native move-native move-tools-native test-move test-move-native gate-p gate-p-native gate-m gate-h move-probe test-move-probe
+.PHONY: move-image move move-native move-tools-native test-move test-move-native gate-p gate-p-native gate-m gate-h move-probe test-move-probe
 move-image:                ## the Move build image (Debian bookworm arm64, about 250 MB)
 	docker build --platform linux/arm64 -t $(MOVE_IMG) move/docker
 
-move:                      ## build/move/frodhes/{dsp.so,module.json} + build/move/frodhes-module.tar.gz
+move:                      ## build/move/frodhes/{dsp.so,engine.so,module.json} + build/move/frodhes-module.tar.gz
 	$(MOVE_RUN) make -s move-native MOVE_VER=$(MOVE_VER)
 
 move-native:
 	@mkdir -p $(MOVE_OUT)
-	$(MOVE_CC) $(MOVE_CFLAGS) -shared -Wl,-z,defs -o $(MOVE_OUT)/dsp.so move/move_plugin.c move/coro/coro_aarch64.S -lm
+	@# engine.so the plugin; dsp.so the loader that gives each slot its own copy of it (move/move_loader.c)
+	$(MOVE_CC) $(MOVE_CFLAGS) -shared -Wl,-z,defs -o $(MOVE_OUT)/engine.so move/move_plugin.c move/coro/coro_aarch64.S -lm
+	$(MOVE_CC) $(MOVE_LOADER_CFLAGS) -shared -Wl,-z,defs -o $(MOVE_OUT)/dsp.so move/move_loader.c -ldl -lpthread
 	@# (module.json's version: MOVE_VER, the release's X.Y.Z; the committed file says 0.0.0-dev, the default)
 	@if [ -f move/module/module.json ]; then sed 's/"version": "0.0.0-dev"/"version": "$(MOVE_VER)"/' move/module/module.json > $(MOVE_OUT)/module.json; else \
 	  printf '{"id":"frodhes","name":"Frodhes","version":"%s","dsp":"dsp.so","api_version":2,"capabilities":{"audio_out":true,"midi_in":true,"component_type":"sound_generator"}}\n' "$(MOVE_VER)" > $(MOVE_OUT)/module.json; fi
@@ -108,30 +111,22 @@ move-native:
 	@# reproducible (M7-02: the release compares the tarball's sha256 with the one tested on the Move): sorted
 	@# names, no times, owners or umask in it, gzip without its name and time
 	tar -C build/move --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w -cf - \
-	  $$(cd build/move && ls frodhes/dsp.so frodhes/module.json frodhes/help.json frodhes/screen.js frodhes/canvas.js frodhes/LICENSE 2>/dev/null) \
+	  $$(cd build/move && ls frodhes/dsp.so frodhes/engine.so frodhes/module.json frodhes/help.json frodhes/screen.js frodhes/canvas.js frodhes/LICENSE 2>/dev/null) \
 	  | gzip -9n > build/move/frodhes-module.tar.gz
-	@ls -l $(MOVE_OUT)/dsp.so build/move/frodhes-module.tar.gz
-
-# PROTOTYPE (move-multi cost gate): build/move-multi/frodhes/ = the module with dsp.so the thin loader
-# (move/multi/move_loader.c) and engine.so the plugin as `make move` builds it (one private copy an instance)
-move-multi:
-	$(MOVE_RUN) make -s move-multi-native MOVE_VER=$(MOVE_VER)
-move-multi-native: move-native
-	@mkdir -p build/move-multi/frodhes
-	cp $(MOVE_OUT)/module.json $(MOVE_OUT)/help.json $(MOVE_OUT)/sustain.js $(MOVE_OUT)/screen.js $(MOVE_OUT)/canvas.js $(MOVE_OUT)/LICENSE build/move-multi/frodhes/
-	cp $(MOVE_OUT)/dsp.so build/move-multi/frodhes/engine.so
-	$(MOVE_CC) -O2 -fPIC -std=gnu11 -Wall -fvisibility=hidden -shared -Wl,-z,defs -o build/move-multi/frodhes/dsp.so move/multi/move_loader.c -ldl -lpthread
-	@ls -l build/move-multi/frodhes/dsp.so build/move-multi/frodhes/engine.so
+	@ls -l $(MOVE_OUT)/dsp.so $(MOVE_OUT)/engine.so build/move/frodhes-module.tar.gz
 
 test-move:                 ## the Move checks: exports/imports, the coroutine, the bridge (api, Gate P, eq), persistence (M1-08)
 	$(MOVE_RUN) make -s test-move-native
 
 test-move-native: move-native
-	@syms=$$(nm -D --defined-only $(MOVE_OUT)/dsp.so | awk '{print $$3}'); \
-	  [ "$$syms" = move_plugin_init_v2 ] || { echo "FAIL exports: $$syms"; exit 1; }; echo "ok    exports: $$syms"
+	@for f in dsp.so engine.so; do syms=$$(nm -D --defined-only $(MOVE_OUT)/$$f | awk '{print $$3}'); \
+	  [ "$$syms" = move_plugin_init_v2 ] || { echo "FAIL exports $$f: $$syms"; exit 1; }; echo "ok    exports $$f: $$syms"; done
 	@bad=$$(nm -D --undefined-only $(MOVE_OUT)/dsp.so | awk '{print $$2}' | grep -vE '^(_ITM_|__cxa_finalize|__gmon_start__)' | \
-	  grep -vE '^(calloc|free|malloc|aligned_alloc|memcmp|memcpy|memmove|memset|strlen|strcmp|strncmp|strchr|strstr|snprintf|sprintf|__isoc99_sscanf|atoi|strtol|clock_gettime|abort|__getauxval|pthread_create|pthread_join|pthread_self|pthread_setschedparam|sched_setaffinity|nanosleep|open|open64|close|read|write|fsync|rename|unlink|mkdir|stat|stat64|__errno_location|fopen|fopen64|fclose|fwrite)@' || true); \
-	  [ -z "$$bad" ] || { echo "FAIL imports beyond the allow-list: $$bad"; exit 1; }; echo "ok    imports"
+	  grep -vE '^(calloc|free|memset|strlen|strcmp|strncmp|strstr|strrchr|snprintf|clock_gettime|getpid|open|open64|close|read|write|rename|unlink|mkdir|stat|stat64|__errno_location|dlopen|dlsym|dlclose|dladdr|pthread_mutex_lock|pthread_mutex_unlock)@' || true); \
+	  [ -z "$$bad" ] || { echo "FAIL loader imports beyond the allow-list: $$bad"; exit 1; }; echo "ok    loader imports"
+	@bad=$$(nm -D --undefined-only $(MOVE_OUT)/engine.so | awk '{print $$2}' | grep -vE '^(_ITM_|__cxa_finalize|__gmon_start__)' | \
+	  grep -vE '^(calloc|free|malloc|aligned_alloc|memcmp|memcpy|memmove|memset|strlen|strcmp|strncmp|strchr|strstr|snprintf|sprintf|__isoc99_sscanf|atoi|strtol|clock_gettime|abort|__getauxval|pthread_create|pthread_join|pthread_self|pthread_setschedparam|sched_setaffinity|nanosleep|open|open64|close|read|write|fsync|flock|rename|unlink|mkdir|stat|stat64|__errno_location|fopen|fopen64|fclose|fwrite)@' || true); \
+	  [ -z "$$bad" ] || { echo "FAIL engine imports beyond the allow-list: $$bad"; exit 1; }; echo "ok    engine imports"
 	@mkdir -p build/move/t
 	@$(MOVE_CC) -O2 -Wall -Wextra -o build/move/t/coro move/tests/test_coro.c move/coro/coro_aarch64.S
 	build/move/t/coro
@@ -139,16 +134,22 @@ test-move-native: move-native
 	@$(MOVE_CC) -O1 -std=gnu11 -Wall -o build/move/smoke move/tests/smoke.c -ldl
 	build/move/smoke $(MOVE_OUT)/dsp.so
 	@$(MOVE_CC) -O1 -g -std=gnu11 -Wall -Wextra -o build/move/t/test_bridge move/tests/test_bridge.c -ldl
-	build/move/t/test_bridge api $(MOVE_OUT)/dsp.so
+	@# (the engine on its own: one app a file; then the loader, the shipping dsp.so: a copy a slot)
+	build/move/t/test_bridge api $(MOVE_OUT)/engine.so
 	build/move/t/test_bridge hq $(MOVE_OUT)/dsp.so
 	build/move/t/test_bridge boot $(MOVE_OUT)/dsp.so move/tests/boot_keys.txt
+	build/move/t/test_bridge gatep $(MOVE_OUT)/engine.so 10000
 	build/move/t/test_bridge gatep $(MOVE_OUT)/dsp.so 10000
+	@$(MOVE_CC) -O1 -g -std=gnu11 -Wall -Wextra -o build/move/t/test_multi move/tests/test_multi.c -ldl
+	@rm -rf build/move/t/multi
+	build/move/t/test_multi $(MOVE_OUT)/dsp.so build/move/t/multi
+	@rm -rf build/move/t/multi
 	@$(MOVE_CC) -O1 -std=gnu11 -Wall -Wextra -o build/move/t/test_store move/tests/test_store.c
 	@rm -rf build/move/t/store build/move/t/persist build/move/t/run.*
 	build/move/t/test_store build/move/t/store 40
 	@mkdir -p build/move/t/persist
-	build/move/t/test_bridge persist $(MOVE_OUT)/dsp.so build/move/t/persist save
-	build/move/t/test_bridge persist $(MOVE_OUT)/dsp.so build/move/t/persist check
+	build/move/t/test_bridge persist $(MOVE_OUT)/engine.so build/move/t/persist save
+	build/move/t/test_bridge persist $(MOVE_OUT)/engine.so build/move/t/persist check
 	@rm -rf build/move/t/store build/move/t/persist build/move/t/run.*
 	MOVE_DEFS='$(MOVE_DEFS)' move/tests/run_eq.sh
 
@@ -163,13 +164,18 @@ gate-p:                    ## Gate P (M1-11): test-move's guards, then ASan + UB
 MOVE_SAN := -O1 -g -fsanitize=address,undefined -fno-sanitize=shift-base -fno-sanitize-recover=undefined -fno-omit-frame-pointer
 gate-p-native: test-move-native
 	@mkdir -p build/move/san
-	$(MOVE_CC) $(filter-out -O2,$(MOVE_CFLAGS)) $(MOVE_SAN) -shared -o build/move/san/dsp.so move/move_plugin.c move/coro/coro_aarch64.S -lm 2>/dev/null
+	$(MOVE_CC) $(filter-out -O2,$(MOVE_CFLAGS)) $(MOVE_SAN) -shared -o build/move/san/engine.so move/move_plugin.c move/coro/coro_aarch64.S -lm 2>/dev/null
+	$(MOVE_CC) $(filter-out -O2,$(MOVE_LOADER_CFLAGS)) $(MOVE_SAN) -shared -o build/move/san/dsp.so move/move_loader.c -ldl -lpthread
 	$(MOVE_CC) $(MOVE_SAN) -DNO_GUARDS -std=gnu11 -o build/move/san/test_bridge move/tests/test_bridge.c -ldl
-	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge api build/move/san/dsp.so
+	$(MOVE_CC) $(MOVE_SAN) -std=gnu11 -o build/move/san/test_multi move/tests/test_multi.c -ldl
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge api build/move/san/engine.so
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge gatep build/move/san/engine.so 10000
 	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge gatep build/move/san/dsp.so 10000
-	@rm -rf build/move/san/persist; mkdir -p build/move/san/persist
-	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge persist build/move/san/dsp.so build/move/san/persist save
-	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge persist build/move/san/dsp.so build/move/san/persist check
+	@rm -rf build/move/san/multi
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_multi build/move/san/dsp.so build/move/san/multi
+	@rm -rf build/move/san/persist build/move/san/multi; mkdir -p build/move/san/persist
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge persist build/move/san/engine.so build/move/san/persist save
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge persist build/move/san/engine.so build/move/san/persist check
 	@rm -rf build/move/san/persist build/move/t/run.*
 	@for s in move/tests/scripts/*.txt; do n=$$(basename $$s .txt); \
 	  build/move/t/host build/move/san/$$n $$s > /dev/null 2>&1 && \

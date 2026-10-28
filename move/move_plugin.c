@@ -36,7 +36,10 @@ int frodhes_web_main(void);              /* web_hal.c main(), renamed (hidden: n
 #include "module/move_ui.h"
 #include "move_bridge.h"
 
-/* Instances (Schwung 1.8.1, plan 9.2 Q7): one app a process (its globals), but the host may hold several
+/* Instances (Schwung 1.8.1, plan 9.2 Q7). On the Move this file is engine.so, and the module's dsp.so is the loader
+ * (move/move_loader.c): every slot's instance gets its own copy of this file, so each copy holds one instance and the
+ * rules below never come into play there. They hold for this file loaded on its own (the tests, an older package):
+ * one app a process (its globals), but the host may hold several
  * instances of it. Re-picking Frodhes in a slot creates the new instance before it destroys the old one
  * (chain_synth_load.c: stage, commit, retire), and two slots with Frodhes share this one dlopen'd copy. The
  * newest live instance owns the app: only it renders and plays; the others render silence and ignore MIDI and
@@ -111,6 +114,15 @@ static void mv_render(void *inst, int16_t *out, int frames)
 {
     if (!mv_owns(inst)) { memset(out, 0, (size_t)frames * 2u * sizeof *out); return; }
     mb_render(out, frames);
+}
+
+/* the loader (move/move_loader.c) dlclose()s a copy after its last destroy: the app's heap goes with it (the worker
+ * has ended in mb_stop). At a process exit with an instance alive, nothing (the worker may still run) */
+__attribute__((destructor)) static void mv_fini(void)
+{
+    if (mb.wk_on) return;
+    free(mb.stack);
+    mb.stack = 0;
 }
 
 static plugin_api_v2_t g_api = {

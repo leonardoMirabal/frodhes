@@ -22,8 +22,8 @@ The checks, per seed (tests/py/test_move_monkey.analyse, the host monkey's own):
 alive), the limiter's ceiling, no rail, exact silence 10-12 s after the panic (no stuck note, tail or DC), the
 probe note sounds and is never louder after its key-up than held (+1 dB). Also: the dev player's own counters
 (dropped frames, refused pieces, aborted: fail; late events: information), Schwung's errors on the WebSocket (a
-"web param set ring full" fails: a write was lost), and the plugin was not loaded again during the run (boot.txt's
-starts). The click detector (tools/move_hil.py glitches, hil_crackle's) runs on every take: repeat and stale (a
+"web param set ring full" fails: a write was lost), and the plugin was not loaded again during the run (every
+instance's boot.txt unchanged). The click detector (tools/move_hil.py glitches, hil_crackle's) runs on every take: repeat and stale (a
 block played twice, a stale buffer) fail; zero, clip and click are information, because a random stream makes the
 parameter jumps the FM-1's monkey also only counts (tools/hil_monkey.py). A failing seed keeps its WAV, script and
 report under OUT/fail-<seed>/; every seed's line goes to OUT/report.json.
@@ -163,12 +163,13 @@ def judge(x, seg, info, ws_errors, late_resets, clicks):
 
 
 def _starts(host):
+    """every instance's boot.txt (inst/<k>/, then the data folder's own), joined: a change means the plugin was
+    loaded again (a copy the loader loads again starts its count at 1, its at= is new); None when there is none"""
+    import move_install as mi
     r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host,
-                        "cat /data/UserData/schwung/module_data/frodhes/boot.txt"], capture_output=True, text=True)
-    for f in r.stdout.split():
-        if f.startswith("starts="):
-            return int(f[7:])
-    return None
+                        'for f in %s; do [ -f "$f" ] && echo "$f $(cat "$f")"; done; true' % mi.inst_glob("boot.txt")],
+                       capture_output=True, text=True)
+    return r.stdout.strip() or None
 
 
 def run_seed(remote, fetch, seed, out_dir, stamp, say=print):
@@ -303,8 +304,9 @@ def main(argv=None):
             "player_late": sum((r.get("player") or {}).get("late") or 0 for r in reps)}
     json.dump({"summary": summ, "seeds": reps}, open(os.path.join(out, "report.json"), "w"), indent=1, default=str)
     ok = not fails and not reload and ks.report["verdict"] == "PASS"
-    print("move monkey: %d seeds (%s), %d failing %s, plugin starts %s -> %s, clicks %s, state %s: %s" % (
-        len(reps), a.seeds or "%d-%d" % (a.seed, a.seed + len(reps) - 1), len(fails), summ["failing"][:10], s0, s1, clicks or "none",
+    print("move monkey: %d seeds (%s), %d failing %s, plugin %s, clicks %s, state %s: %s" % (
+        len(reps), a.seeds or "%d-%d" % (a.seed, a.seed + len(reps) - 1), len(fails), summ["failing"][:10],
+        "loaded again (boot.txt %r -> %r)" % (s0, s1) if reload else "not loaded again", clicks or "none",
         ks.report["verdict"], "PASS" if ok else "FAIL"))
     return 0 if ok else 1
 

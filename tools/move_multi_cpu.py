@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""PROTOTYPE (move-multi cost gate): N Frodhes instances (the loader build, build/move-multi/frodhes) in slots 1..N,
-each playing usb-stress's worst take (16 voices, every effect heavy, the pedal) at the same time over the tap.
-Reads per instance: the plugin's own callback ring (inst/<k>/cpu-ring.log); for the whole frame: Schwung's
-/dev/shm/schwung-perf (per-slot synth render avg / max, the frame's pre-ioctl total, the overrun counter), sampled
-once a second; the process RSS before and after the loads; the click detector on every tap.
+"""Several Frodhes on the Move at once (the loader build: dsp.so + engine.so, move/move_loader.c, as installed by
+tools/move_install.py): N instances in slots 1..N, each playing usb-stress's worst take (16 voices, every effect
+heavy, the pedal) at the same time over the tap. Reads per instance: the plugin's own callback ring
+(inst/<k>/cpu-ring.log); for the whole frame: Schwung's /dev/shm/schwung-perf (per-slot synth render avg / max, the
+frame's pre-ioctl total, the overrun counter), sampled once a second; the process RSS before and after the loads; the
+click detector on every tap (and on the USB-C audio with --usb).
 
-    tools/move_multi_cpu.py --n 1 2 3 4 [--secs 20]     (takes the MOVE lock; slots 1..4 must be free or Frodhes)
+    tools/move_multi_cpu.py --n 2 3 [--secs 30] [--usb]   (takes the MOVE lock; slots 1..4 must be free or Frodhes)
 
 Slots above N are emptied for a run (synth:module ""), slots 1..N get "frodhes". The caller restores the set."""
 import argparse
@@ -27,7 +28,7 @@ import move_ws  # noqa: E402
 
 HOST = os.environ.get("MOVE_HOST", "ableton@move.local")
 URL = move_ws.URL
-INST = "/data/UserData/schwung/module_data/frodhes/inst"
+INST = mi.INST
 # /schwung-perf offsets (schwung-manager perf_shm.go, version 1)
 P_PERIOD, P_TOT_AVG, P_TOT_MAX, P_PRE_AVG, P_PRE_MAX = 24, 32, 40, 48, 56
 P_SYN_AVG, P_SYN_MAX, P_RND_MAX, P_OVR = 544, 576, 512, 844
@@ -270,7 +271,7 @@ def main():
     ap.add_argument("--n", type=int, nargs="+", default=[1, 2, 3, 4])
     ap.add_argument("--secs", type=float, default=20.0)
     ap.add_argument("--usb", action="store_true", help="also record the Move's USB-C audio (Main Out) and check it")
-    ap.add_argument("--out", default=os.path.join(mh.ROOT if hasattr(mh, "ROOT") else ".", "build", "move-multi", "hil"))
+    ap.add_argument("--out", default=os.path.join(mh.ROOT if hasattr(mh, "ROOT") else ".", "build", "move", "hil", "multi"))
     a = ap.parse_args()
     global USB
     USB = a.usb

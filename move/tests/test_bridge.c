@@ -223,7 +223,7 @@ static int play(const char *so, const char *script, const char *wav)
     load(so);
     in = create(NULL);
     classic(in);
-    dir = strdup(get(in, "dev_store") + 4);
+    dir = strdup(strstr(get(in, "dev_store"), " inst=") + 6);   /* (this instance's own folder: boot.txt, tap/) */
     if (strchr(dir, ' ')) *strchr(dir, ' ') = 0;
     CHECK(strstr(get(in, "dev_build"), "dev_play=1") && strstr(gbuf, "dsp_crc32="), "dev_build: %s", gbuf);
     snprintf(path, sizeof path, "%s/boot.txt", dir);

@@ -200,6 +200,14 @@ def test_move_tarball_check(tmp_path):
     assert rd.move_tar_matches(str(tar), str(src))[0]
     (src / "dsp.so").write_bytes(b"so two")
     assert not rd.move_tar_matches(str(tar), str(src))[0]
+    (src / "engine.so").write_bytes(b"engine")             # (the loader's plugin: compared too)
+    with tarfile.open(tar, "w:gz") as t:
+        t.add(src / "dsp.so", "frodhes/dsp.so")
+    assert not rd.move_tar_matches(str(tar), str(src))[0]
+    with tarfile.open(tar, "w:gz") as t:
+        t.add(src / "dsp.so", "frodhes/dsp.so")
+        t.add(src / "engine.so", "frodhes/engine.so")
+    assert rd.move_tar_matches(str(tar), str(src))[0]
 
 
 def test_cli_dry_run_and_fake(pkgs, tmp_path):
