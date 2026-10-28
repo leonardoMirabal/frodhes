@@ -458,27 +458,65 @@ class TapRig(UsbRig):
         self.stop()                              # (a take left armed by an earlier run would refuse the next)
 
     def stop(self):
-        self.remote.set_param(self.slot, "synth:dev_play", "stop")
-        self.remote.pump(0.5)
+        self._set("synth:dev_play", "stop")
+        self._pump(0.5)
+
+    def reconnect(self):
+        """a new connection after the manager dropped this one (the plugin keeps playing: nothing lost but the
+        socket)"""
+        import move_ws
+        try:
+            self.remote.close()
+        except Exception:
+            pass
+        self.remote = move_ws.Remote(self.remote.url)
+
+    def _pump(self, secs):
+        import move_ws
+        try:
+            self.remote.pump(secs)
+        except move_ws.ConnectionClosed:
+            self.reconnect()
+
+    def _set(self, key, value):
+        import move_ws
+        try:
+            self.remote.set_param(self.slot, key, value)
+        except move_ws.ConnectionClosed:
+            self.reconnect()
+            self.remote.set_param(self.slot, key, value)
 
     def _send(self, kind, a, b=0):
         self.pending.append((kind, int(a), int(b)))
 
     def set_hq(self, on):
         """the HQ Rhodes (the bridge's p_hq): new notes play HQ (1) or Classic (0)"""
-        self.remote.set_param(self.slot, "synth:p_hq", 1 if on else 0)
+        self._set("synth:p_hq", 1 if on else 0)
         self.hq = 1 if on else 0
-        self.remote.pump(0.2)
+        self._pump(0.2)
 
     def boot_settings(self):
         """the app's settings as the host build boots (boot_keys): a setup the Move saved cannot play along. Only the
         keys whose value Schwung reports otherwise (or not at all) are written: a write is not always nothing (the
-        pedal's, see host_phrase), and the host build gets none. Returns the keys written"""
+        pedal's, see host_phrase), and the host build gets none. The read and the writes go over a connection of
+        their own, kept open until the manager's re-read has gone out: the rig's own never subscribes (a
+        subscriber gets every write's re-read, 94 params, and the manager then reads its socket late). Returns the
+        keys written"""
+        import move_ws
+        w = move_ws.Remote(self.remote.url)
         try:
-            self.remote.subscribe(self.slot)
-        except (OSError, TimeoutError):
-            pass
-        have, sent = self.remote.params.get(self.slot, {}), []
+            try:
+                w.subscribe(self.slot)
+            except (OSError, TimeoutError):
+                pass
+            sent = self._boot_write(w)
+            w.pump(1.5)
+        finally:
+            w.close()
+        return sent
+
+    def _boot_write(self, w):
+        have, sent = w.params.get(self.slot, {}), []
 
         def same(a, b):
             try:
@@ -487,22 +525,21 @@ class TapRig(UsbRig):
                 return a == b
         for k, v in boot_keys():
             if not same(have.get("synth:" + k), v):
-                self.remote.set_param(self.slot, "synth:" + k, v)
+                w.set_param(self.slot, "synth:" + k, v)
                 sent.append(k)
                 time.sleep(0.003)
-        self.remote.pump(0.2)
         return sent
 
     def cpu_start(self):
         """the plugin logs every callback's time from now (dev_cpu_log 1); an older log is dropped first"""
         self.cpu_fetch()
-        self.remote.set_param(self.slot, "synth:dev_cpu_log", 1)
-        self.remote.pump(0.2)
+        self._set("synth:dev_cpu_log", 1)
+        self._pump(0.2)
 
     def cpu_stop(self):
         """dev_cpu_log 0, then the ring since cpu_start: [(callback, us, frames)]"""
-        self.remote.set_param(self.slot, "synth:dev_cpu_log", 0)
-        self.remote.pump(0.5)                    # (the worker writes the log every 100 ms)
+        self._set("synth:dev_cpu_log", 0)
+        self._pump(0.5)                    # (the worker writes the log every 100 ms)
         return parse_ring(self.cpu_fetch() or "")
 
     def level_now(self, secs=0.3):
@@ -525,7 +562,14 @@ class TapRig(UsbRig):
         ev += [(TAP_PRE_MS + int(round(1000 * t)), *to_status(k, a, b, self.ch)) for t, k, a, b in events]
         self.pending = []
         dur_ms = TAP_PRE_MS + int(round(1000 * dur)) + 1
-        self.remote.play(self.slot, take, dur_ms, ev)
+        import move_ws
+        try:
+            self.remote.play(self.slot, take, dur_ms, ev)
+        except move_ws.ConnectionClosed:          # (dropped while idle: again on a new connection, a new id)
+            self.reconnect()
+            self.stop()
+            take += "r"
+            self.remote.play(self.slot, take, dur_ms, ev)
         time.sleep(dur_ms / 1000 + TAP_GRID_S + 0.3)
         got, t0 = None, time.monotonic()
         while got is None and time.monotonic() - t0 < self.wait:
@@ -1334,7 +1378,7 @@ def _ws_prepare(url, engine, slot=0, out=print, remote=None):
             before = st["preset"]
             st = w.set_preset(slot, want)
             w.pump(1.5)                          # (the re-read: 94 params in ~0.6 s)
-    except (OSError, TimeoutError, move_ws.SchwungError) as e:
+    except (OSError, TimeoutError, move_ws.SchwungError, move_ws.ConnectionClosed) as e:
         return False, {"verdict": "FAIL: Schwung's WebSocket %s: %s" % (url, e)}
     st.update(before=before, verdict="PASS",
               note="slot %d %s, preset %s -> %s %s" % (slot + 1, st["module"], before, st["preset"],
@@ -1371,7 +1415,7 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, 
     for e in engines:
         out("== %s" % e)
         if ws:
-            ok, rep = _ws_prepare(ws, e, out=quiet, remote=r.remote if isinstance(r, TapRig) else None)
+            ok, rep = _ws_prepare(ws, e, out=quiet)    # (its own connection: the rig's never subscribes)
             note(e, "ws", ok, rep)
             if not ok:
                 stopped = "%s: %s" % (e, rep["verdict"])

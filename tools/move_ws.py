@@ -25,6 +25,13 @@ COMP = "synth"
 PIECE = 250                                     # a set_param value through the web set ring: under 256 B (shmwebring.go)
 
 
+try:
+    from websockets.exceptions import ConnectionClosed
+except ImportError:                              # (the CLI's help without websockets installed)
+    class ConnectionClosed(Exception):
+        pass
+
+
 class SchwungError(RuntimeError):
     pass
 
@@ -35,7 +42,8 @@ class Remote:
     def __init__(self, url=URL, timeout=5.0):
         from websockets.sync.client import connect
         self.url, self.timeout, self.last = url, timeout, {}
-        self._cm = connect(url, open_timeout=timeout, max_size=None)
+        self._cm = connect(url, open_timeout=timeout, max_size=None, ping_interval=20, ping_timeout=90)
+        # (the manager answers a ping only between two messages it handles, and a set_param waits on the shim)
         self.ws = self._cm.__enter__()
         self.params = {}                         # slot -> {key: value}, everything seen
         self.info = {}                           # slot -> the last slot_info

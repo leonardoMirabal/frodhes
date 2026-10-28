@@ -31,7 +31,7 @@ class FakeSchwung:
         self.module, self.mute, self.refuse, self.noname = module, mute, refuse, noname
         self.settings = dict(settings or {})            # ("s_..." -> value: the settings keys the server reports)
         self.preset, self.log, self.takes, self.cur = 0, [], {}, None
-        self.hist = []                                   # (the order of preset switches and takes: host_fetch's state)
+        self.hist, self.conns = [], []                                   # (the order of preset switches and takes: host_fetch's state)
         self.server = serve(self.handle, "127.0.0.1", 0)
         self.url = "ws://127.0.0.1:%d/ws/remote-ui" % self.server.socket.getsockname()[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -40,7 +40,13 @@ class FakeSchwung:
         return dict({"synth:preset": str(self.preset), "synth:preset_count": str(len(NAMES)),
                      "synth:preset_name": NAMES[self.preset]}, **{"synth:" + k: v for k, v in self.settings.items()})
 
+    def drop_all(self):
+        """every connection cut without a close frame (as the manager did, 2026-10-28)"""
+        for ws in self.conns:
+            ws.socket.close()
+
     def handle(self, ws):
+        self.conns.append(ws)
         for raw in ws:
             m = json.loads(raw)
             self.log.append(m)
@@ -322,3 +328,18 @@ def test_boot_settings_only_what_differs():
         r.remote.close()
     finally:
         f.close()
+
+
+def test_tap_rig_reconnects(fake, tmp_path, monkeypatch):
+    """the manager drops the rig's connection between two takes: the next take goes on a new one"""
+    mh, r = _tap(fake, tmp_path)
+    monkeypatch.setattr(mh, "TAP_GRID_S", 0.0)
+    try:
+        r.rec(0.1, [(0.02, "on", 60, 100), (0.05, "off", 60, 0)])
+        fake.drop_all()
+        time.sleep(0.2)
+        tk = r.rec(0.1, [(0.02, "on", 60, 100), (0.05, "off", 60, 0)])
+        assert len(tk["x"]) == 4410 and np.abs(tk["x"]).max() > 0
+        assert sorted(fake.takes)[-1].endswith("r"), sorted(fake.takes)
+    finally:
+        r.remote.close()
