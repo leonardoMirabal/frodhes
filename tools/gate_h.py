@@ -23,10 +23,11 @@ OUT = ROOT / "build/gate_h"
 DEFS = ["-DFR_VOICES=16u", "-DFR_HQ=1"]
 
 
-def build(hq, path):
+def build(hq, path, extra=()):
+    """the host build at the Move's settings, HQ on for every note (hq) or Classic; extra: more -D flags"""
     path.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run([os.environ.get("CC", "cc"), "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST",
-                    '-DAPP_VER="dev"', *DEFS, f"-DHQ_DEFAULT={1 if hq else 0}", "-Ifirmware/src", "-Ifirmware/gen",
+                    '-DAPP_VER="dev"', *DEFS, f"-DHQ_DEFAULT={1 if hq else 0}", *extra, "-Ifirmware/src", "-Ifirmware/gen",
                     "-o", str(path), "firmware/src/frodhes.c", "-lm"], cwd=ROOT, check=True)
     return path
 

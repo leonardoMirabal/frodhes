@@ -101,7 +101,8 @@ def contact_batch(cases, fs=44100, t_max=0.03, os_=32):
     """Many contacts at once (numpy over cases), RK4 at os_ x fs. cases: list of dicts with v, m_h, K, p, Rd and
     modes [(f_hz, sigma, phi_at_strike), ...] (the same number of modes for every case). Returns per case the
     force on the 16x fs grid (area-preserving average of the os_ grid), Tc, the contact count, v_out, and the
-    final modal state (q, qd) for diagnostics."""
+    final modal state (q, qd) for diagnostics. Optional per case: q0, qd0 (the tine's modal state at the start) and
+    xh0 (the hammer's start position; default 0, the tine at rest: the tables' case)."""
     N = len(cases)
     nm = len(cases[0]["modes"])
     v0 = np.array([c["v"] for c in cases], float)
@@ -125,7 +126,10 @@ def contact_batch(cases, fs=44100, t_max=0.03, os_=32):
         F = np.where(e > 0, np.maximum(F, 0.0), 0.0)
         return vh, -F / M, qd, ph * F[:, None] - 2 * s * qd - w2 * q, F
 
-    xh = np.zeros(N); vh = v0.copy(); q = np.zeros((N, nm)); qd = np.zeros((N, nm))
+    xh = np.array([c.get("xh0", 0.0) for c in cases], float)      # (a re-strike: the hammer starts at the moving
+    vh = v0.copy()                                                  # tine's contact point, the tine in its state)
+    q = np.array([c["q0"] if "q0" in c else np.zeros(nm) for c in cases], float).reshape(N, nm)
+    qd = np.array([c["qd0"] if "qd0" in c else np.zeros(nm) for c in cases], float).reshape(N, nm)
     step = os_ // OS
     Fout = np.zeros((N, n // step + 1))
     acc = np.zeros(N)

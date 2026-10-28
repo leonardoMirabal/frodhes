@@ -79,14 +79,67 @@ static void hq_voice_init(rh_voice_t *v)       /* rhodes.c rh_init, before rh_lo
     memset(h->xb, 0, sizeof h->xb); memset(h->eb, 0, sizeof h->eb); memset(h->ob, 0, sizeof h->ob);
 }
 
+#include "hq/hq_contact.c"
+
+/* a re-strike's live contact (hq/hq_contact.c): the tine's state from Classic's modes, in metres and m/s of the
+ * FE modes' coordinates (V1 and V2 the 1st FE mode, O1 the 2nd, O2 the 3rd; the tip in gaps of the key's family, the
+ * BARK / BELL / TYPE force scales taken out: they voice the pickup and the overtones, not the tine's motion; the
+ * speed from the coupled form's quadrature, dx = e y a sample), then the contact; 1: the voice's pulse replaced */
+static int hq_live(rh_voice_t *v, uint32_t key, uint32_t vel)
+{
+    HQ_FP_STRICT
+    static const uint8_t fe_of[4] = {0, 0, 1, 2};
+    const hq_ck_t *c = &HQ_CK[key];
+    const float gap = HQ_CK_GAP[v->k->fam & 1u] * (1.0f / 33554432.0f);
+    float q[HQ_CK_NFE] = {0}, qd[HQ_CK_NFE] = {0}, xc = 0.0f, vc = 0.0f, vh = HQ_CK_VH[vel - 1u];
+    hq_live_t o;
+    uint32_t m;
+    for (m = 0; m < 4u; m++) {
+        const rh_ms_t *s = &v->m[m];
+        int32_t b0 = v->k->m[m].b;
+        float r, f;
+        if (!s->live || !b0 || !s->b) continue;
+        r = (float)s->b / (float)b0;
+        f = gap / (r * c->pt[fe_of[m]]);
+        q[fe_of[m]] += (float)s->x * f;
+        qd[fe_of[m]] += (float)s->y * ((float)s->e * (1.0f / 1073741824.0f)) * HQ_FS * f;
+    }
+    for (m = 0; m < HQ_CK_NFE; m++) { xc += c->pc[m] * q[m]; vc += c->pc[m] * qd[m]; }
+    if (vc * vc + c->w2[0] * xc * xc < HQ_LIVE_THR * HQ_LIVE_THR * vh * vh) return 0;   /* (as good as at rest) */
+    if (!hq_contact_run(key, vel, hq_prate_ram[key][vel - 1u], q, qd, &o)) return 0;
+    memcpy(v->pbuf, o.shape, sizeof v->pbuf);
+    v->ptab = v->pbuf;
+    v->prate = o.prate << 4;                                /* Q12 -> Q16 */
+    hq_v[v - rv].lg = o.fpk / HQ_CK_FPK[key][vel - 1u];
+    return 1;
+}
+
 /* rhodes.c rh_load_pulse, before the HAMMER scaling: the exact contact's shape and rate at vel (the peak stays
- * Classic's, the velocity law the calibration set) */
+ * Classic's, the velocity law the calibration set); on a re-strike of a ringing tine (keys >= HQ_LIVE_LO, at most
+ * HQ_LIVE_MAX a block), the live contact */
 static void hq_pulse(rh_voice_t *v, uint32_t vel)
 {
     uint32_t key = (uint32_t)(v->k - RH_KEYS);
-    if (!hq_v[v - rv].on || vel < 1u || vel > 127u) return;
+    hq_voice_t *h = &hq_v[v - rv];
+    h->lg = 0.0f;
+    if (!h->on || vel < 1u || vel > 127u) return;
     v->ptab = hq_pulse_ram[key][vel - 1u];
     v->prate = hq_prate_ram[key][vel - 1u] << 4;          /* Q12 -> Q16 */
+    if (v->note >= HQ_LIVE_LO && hq_live_n < HQ_LIVE_MAX && hq_live(v, key, vel)) hq_live_n++;
+}
+
+/* rhodes.c rh_load_pulse, after the HAMMER scaling and its cap: the live pulse's force re the table's. The force
+ * loop's product takes a pulse amplitude up to 65535 (mul15s: 32767 x 65535 < 2^31), so a re-strike may push up
+ * to twice the at-rest force of v127 */
+static void hq_pulse_gain(rh_voice_t *v)
+{
+    HQ_FP_STRICT
+    hq_voice_t *h = &hq_v[v - rv];
+    float p;
+    if (h->lg <= 0.0f) return;
+    p = (float)v->pamp * h->lg + 0.5f;
+    v->pamp = p > 65535.0f ? 65535 : (int32_t)p;
+    h->lg = 0.0f;
 }
 
 /* the half-band's symmetric sum for the 32 outputs of a sub-block: y[n] = sum_k 2 g_k (x[n-P+1+k] + x[n-P-k]), x the

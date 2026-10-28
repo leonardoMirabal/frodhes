@@ -382,6 +382,9 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
         v->pamp = (int32_t)(((int64_t)v->pamp * h) >> 16);
         if (v->pamp > 32767) v->pamp = 32767;                                 /* mul15s range */
     }
+#ifdef FR_HQ
+    hq_pulse_gain(v);
+#endif
     v->ppos = 0;
 }
 
@@ -1215,6 +1218,9 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
     uint32_t i, sb, j, act = 0, held = 0, idle, sd;
     int32_t mx = 0;
     uint32_t ty;
+#ifdef FR_HQ
+    hq_block();
+#endif
     rh_events();
     ty = rh_txf_type();
     if (rh_bend_t != rh_bend_used || rh_rt_pend) rh_retune();
