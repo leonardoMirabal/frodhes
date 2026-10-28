@@ -1261,6 +1261,7 @@ def usb_host(r, d, program=0, out=print):
                      "f0_host_c": round(1200 * np.log2(fh / note_hz(n)), 2) if fh else None,
                      "decay_move_s": _decay_s(mm, sr), "decay_host_s": _decay_s(hm, sr),
                      "centroid_move": round(_centroid(mm[st], sr)), "centroid_host": round(_centroid(hm[st], sr))})
+    classic_db = None
     if hq:                                       # (HQ asked: the take must not be Classic where only HQ differs)
         c = host_phrase(ev, dur, program, None, GLOBAL_CCS)
         for name, t, n in marks:
@@ -1268,7 +1269,9 @@ def usb_host(r, d, program=0, out=print):
                 a, b = int(t * sr), int((t + NOTE_S) * sr)
                 dm, dc = _mono(mv[a:b]) - g * _mono(h[a:b]), _mono(mv[a:b]) - g * _mono(c[a:b])
                 vs = 20 * np.log10((np.sqrt(np.mean(dc ** 2)) + 1e-9) / (np.sqrt(np.mean(dm ** 2)) + 1e-9))
-                classic_db = round(float(vs), 1)
+                hc = _mono(h[a:b]) - _mono(c[a:b])
+                # (only where HQ changes the sound: the Rhodes; the bars have no HQ path, both hosts the same)
+                classic_db = round(float(vs), 1) if np.abs(hc).max() > 0 else None
     rep = {"program": program, "hq": hq, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
            "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max())}
     bad = [w["note"] for w in rows if w["residual_db"] > -40 and w["judged"]]
@@ -1277,7 +1280,7 @@ def usb_host(r, d, program=0, out=print):
     classic = False
     if hq:
         rep["hq_vs_classic_db"] = classic_db     # (the take's residual against Classic over the one against HQ)
-        classic = classic_db < 20.0
+        classic = classic_db is not None and classic_db < 20.0
     rep["verdict"] = ("CLASSIC: HQ was asked (p_hq 1) but %s plays as Classic (%.1f dB nearer the HQ host than the "
                       "Classic one: p_hq did not reach the plugin?)" % (HQ_PROBE, rep["hq_vs_classic_db"])
                       if classic else
