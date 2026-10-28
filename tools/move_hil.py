@@ -1271,7 +1271,8 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, out=print
     elif not all(w["ok"] for w in rows):
         code = 1
     rig = {"midi": r.port_name, "audio": r.audio_name, "ch": r.ch, "fake": r.fake}
-    md = ["# Move D2 over USB-C: %s" % ("PASS" if code == 0 else "FAIL" if code == 1 else "STOPPED"), "",
+    md = ["# Move D2 over %s: %s" % ("the tap" if isinstance(r, TapRig) else "USB-C",
+                                     "PASS" if code == 0 else "FAIL" if code == 1 else "STOPPED"), "",
           "%s; MIDI %s (channel %d), audio %s%s; Schwung WebSocket %s" % (
               time.strftime("%Y-%m-%d %H:%M:%S"), rig["midi"], rig["ch"], rig["audio"], " (FAKE)" if r.fake else "",
               ws or "not used"), ""]
