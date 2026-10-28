@@ -47,6 +47,31 @@
           "fullscreen_live_ms": 100
         },
         {
+          "key": "s_fx",
+          "name": "FX",
+          "type": "enum",
+          "options": [
+            "ON",
+            "OFF"
+          ]
+        },
+        {
+          "key": "s_screen",
+          "name": "PAGES",
+          "type": "canvas",
+          "canvas_script": "screen.js",
+          "enterable": true,
+          "show_footer": false,
+          "show_value": false,
+          "fullscreen_live_ms": 250,
+          "extra_keys": [
+            "rev",
+            "ui_engine",
+            "s_sustain",
+            "preset_name"
+          ]
+        },
+        {
           "level": "voice_0",
           "label": "PIANO VOICE"
         },
@@ -103,7 +128,9 @@
         "p_type",
         "p_spread",
         "s_sustain",
-        "s_susbtn"
+        "s_susbtn",
+        "s_fx",
+        "s_screen"
       ],
       "list_param": "preset",
       "count_param": "preset_count",

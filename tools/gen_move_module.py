@@ -35,7 +35,20 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "firmware", "src")
 OUT = os.path.join(ROOT, "move", "module")
-FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h", "sustain.js")
+FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h", "sustain.js", "screen.js")
+UI_CORE = os.path.join(ROOT, "move", "ui", "screen_core.js")   # Frodhes' own screen: the hand-written part
+# Frodhes' own screen (M6-02, private plan 05 M6-01 option F): a fullscreen canvas the first page's PAGES cell
+# opens. screen.js = the pages (FR_PAGES, the levels below as the screen shows them) + FR_CONF + move/ui/screen_core.js.
+# The live keys the host reads for it (at most four, one a tick): rev (a change the screen did not make: re-read),
+# ui_engine (the VOICE pages follow TYPE), s_sustain (the SUS mark), preset_name (the first page).
+SCREEN = {"key": "s_screen", "name": "PAGES", "type": "canvas", "canvas_script": "screen.js", "enterable": True,
+          "show_footer": False, "show_value": False, "fullscreen_live_ms": 250,
+          "extra_keys": ["rev", "ui_engine", "s_sustain", "preset_name"]}
+SCREEN_CONF = {"hold_ms": 1000,    # the large card stays this long after the knob is let go (tune on the device)
+               "fast_ms": 40,      # two detents closer than this: a fast turn ...
+               "fast_mul": 4,      # ... moves a wide range (> 24 steps) this many steps a detent
+               "settle_ms": 600,   # a value written this recently is not re-read (the write may still be queued)
+               "sus_cc": None}     # the claimed sustain button (SUS_BTN_CC)
 # The sustain control (M1-13b): a Move button the module claims (capabilities.claims_ccs: while Frodhes' screen is up
 # the button reaches the module's UI script and not the Move; Schwung delivers claimed buttons to UI scripts only).
 # sustain.js, the SUS screen (a canvas), turns its press / release into set_param("s_susbtn", "1" / "0"), which the
@@ -98,11 +111,15 @@ EXTRA = {
                   "help": "the pattern cleared"},
     "s_squndo": {"name": "UNDO", "cc": 44, "options": ["-", "UNDO"], "kind": "MK_TRIG",
                  "help": "the last take undone"},
+    # M5-01: the FM-1's FX button (CC 111, the bypass): every effect off with its settings kept; ON (not bypassed) by
+    # default, as on the FM-1
+    "s_fx": {"name": "FX", "cc": 111, "options": ["ON", "OFF"], "kind": "MK_LATCH",
+             "help": "the effects on, or all off with their settings kept (the FM-1's FX button)"},
 }
 # the Move's levels: (key, title, the FM-1 pages it holds (their cards in order), extra keys after them). "VOICE"
 # stands for an engine's VOICE pages: one level per engine, VOICE 1 + 2, and VOICE 3 (VIBES' MOTOR) its own level.
 MOVE_LEVELS = [
-    ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_susbtn"]),
+    ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_susbtn", "s_fx", "s_screen"]),
     ("voice", "VOICE", ["VOICE"], []),
     ("comp", "COMPRESSOR", ["COMPRESSOR"], ["p_cmp_sw", "p_cmp_rel"]),
     ("drv_flt", "DRIVE/FILTER", ["DRIVE", "FILTER"], []),
@@ -337,6 +354,10 @@ def build(m):
 
     def extras(lvl, keys):
         for k in keys:
+            if k == SCREEN["key"]:                 # a screen of ours: a hierarchy item only (no value, no C row)
+                lvl["params"].append(dict(SCREEN))
+                lvl["knobs"].append(k)
+                continue
             if k in EXTRA:
                 item, row = extra_def(k)
             else:
@@ -404,7 +425,9 @@ def help_json(m, levels, reach):
         "Physical models of an electric piano (four types), a vibraphone and a marimba. No samples. TYPE on the "
         "first page picks the instrument; its VOICE pages follow it.") + [""] + help_lines(
         "SUS holds the notes as the sustain pedal does; a pedal on CC 64 works too. On the PEDAL screen the Capture "
-        "button is the pedal: hold it, or tap to latch and tap again to let go.")}]
+        "button is the pedal: hold it, or tap to latch and tap again to let go.") + [""] + help_lines(
+        "PAGES opens Frodhes' own screen: eight cards a page, a touched knob shown large. The jog wheel turns the "
+        "pages; a click lists them. Capture is the pedal there too. FX turns all effects off or on.")}]
     pages = []
     for k, lvl in levels.items():
         lines = []
@@ -469,7 +492,50 @@ def outputs():
                                "claims_ccs": [SUS_BTN_CC], "touch_observe": True}}
     return {"module.json": dumps(module), "ui_hierarchy.json": dumps(hier), "chain_params.json": dumps(chain),
             "help.json": dumps(help_json(m, levels, reach)), "move_ui.h": c_header(hier, chain, crow),
-            "sustain.js": sustain_js()}, m, reach
+            "sustain.js": sustain_js(), "screen.js": screen_js(levels)}, m, reach
+
+
+def screen_pages(levels):
+    """the levels as Frodhes' own screen shows them: [{title, gate (ui_engine, -1 always shown), part (an engine's
+    VOICE page 0, its next page 1, -1 not an engine page), root, knobs}], each knob {key, name, type, min, max, step,
+    options, write}; a canvas cell (PEDAL, PAGES) is no knob there (the screen does both itself), and the first page
+    gets the preset as a knob (PRSET)"""
+    out = []
+    for lk, lvl in levels.items():
+        gate = lvl.get("visible_if", {}).get("equals", -1)
+        part = (1 if lk.count("_") == 2 else 0) if gate >= 0 else -1
+        ks = []
+        for key in lvl["knobs"]:
+            it = next(p for p in lvl["params"] if p.get("key") == key)
+            if it["type"] == "canvas":
+                continue
+            k = {"key": key, "name": it["name"], "type": it["type"]}
+            for f in ("min", "max", "step", "options"):
+                if f in it:
+                    k[f] = it[f]
+            if it.get("access") == "write":
+                k["write"] = True
+            ks.append(k)
+        if lk == "root":
+            ks.append({"key": "preset", "name": "PRSET", "type": "preset"})
+        assert len(ks) <= 8, (lk, ks)
+        out.append({"title": lvl["name"], "gate": gate, "part": part, "root": lk == "root", "knobs": ks})
+    return out
+
+
+def screen_js(levels):
+    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC)
+    with open(UI_CORE) as f:
+        core = f.read()
+    head = ("// SPDX-License-Identifier: GPL-3.0-only\n"
+            "// GENERATED by tools/gen_move_module.py from params.c, eng_pages.h, ui.c and move/ui/screen_core.js - do "
+            "not edit.\n"
+            "// Frodhes' own screen (option F): the pages and the settings, then the screen's code.\n")
+    # one closure: nothing of the screen's lands in the host's globals but globalThis.canvas_overlay (and the tests'
+    # globalThis.frodhes_screen)
+    return (head + "(function () {\n\"use strict\";\nconst FR_PAGES = "
+            + json.dumps(screen_pages(levels), separators=(",", ":")) + ";\n"
+            + "const FR_CONF = " + json.dumps(conf, separators=(",", ":")) + ";\n" + core + "})();\n")
 
 
 def sustain_js():

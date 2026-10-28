@@ -40,6 +40,15 @@
     ]
   },
   {
+    "key": "s_fx",
+    "name": "FX",
+    "type": "enum",
+    "options": [
+      "ON",
+      "OFF"
+    ]
+  },
+  {
     "key": "p_tone",
     "name": "TONE",
     "type": "int",

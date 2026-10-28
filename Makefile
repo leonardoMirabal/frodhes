@@ -101,8 +101,9 @@ move-native:
 	  printf '{"id":"frodhes","name":"Frodhes","version":"%s","dsp":"dsp.so","api_version":2,"capabilities":{"audio_out":true,"midi_in":true,"component_type":"sound_generator"}}\n' "$(MOVE_VER)" > $(MOVE_OUT)/module.json; fi
 	@if [ -f move/module/help.json ]; then cp move/module/help.json $(MOVE_OUT)/; fi
 	@if [ -f move/module/sustain.js ]; then cp move/module/sustain.js $(MOVE_OUT)/; fi
+	@if [ -f move/module/screen.js ]; then cp move/module/screen.js $(MOVE_OUT)/; fi
 	@cp LICENSE $(MOVE_OUT)/LICENSE
-	tar -C build/move -czf build/move/frodhes-module.tar.gz $$(cd build/move && ls frodhes/dsp.so frodhes/module.json frodhes/help.json frodhes/sustain.js frodhes/LICENSE 2>/dev/null)
+	tar -C build/move -czf build/move/frodhes-module.tar.gz $$(cd build/move && ls frodhes/dsp.so frodhes/module.json frodhes/help.json frodhes/sustain.js frodhes/screen.js frodhes/LICENSE 2>/dev/null)
 	@ls -l $(MOVE_OUT)/dsp.so build/move/frodhes-module.tar.gz
 
 test-move:                 ## the Move checks: exports/imports, the coroutine, the bridge (api, Gate P, eq), persistence (M1-08)
