@@ -742,7 +742,8 @@ static int mb_wire_text(const move_key_t *k, char *buf, int n)
         v = k->cc == 64u ? (sus_latched || sus_held) : k->cc == 60u ? seq_play != 0 : k->cc == 63u ? seq_rec != 0 :
             k->cc == 111u ? fx_bypass == 0 : 0;   /* 111: FX (s_fx, M5-01) OFF / ON: 1 = the effects on, not bypassed */
         break;
-    case MK_BTN: v = sus_latched || sus_held; break;   /* the Capture button's key reads SUS's state */
+    case MK_BTN: v = k->cc == 111u ? fx_bypass == 0 : sus_latched || sus_held; break;   /* a button's key reads what it
+                                                       * flips: FX (the Left arrow) or SUS (the Right arrow) */
     case MK_MAP: v = k->slot < MB_NMAP ? mb.map[k->slot] : 0; break;
     default: v = 0; break;
     }
@@ -766,7 +767,9 @@ static void mb_key_apply(uint32_t i, int32_t x)
                                                  * REC button). A MIDI pedal let up still frees the latch (midi_cc). */
         if (x) sus_latched = 1; else mb_sus_off();
         sustain_update();
-    } else if (k->kind == MK_BTN) {           /* the Capture button (screen.js) or the chosen touch (dev_sus_touch): a
+    } else if (k->kind == MK_BTN && k->cc == 111u) {   /* the Left arrow (screen.js): a press flips FX */
+        if (x) midi_cc(111u, fx_bypass ? 0u : 127u);
+    } else if (k->kind == MK_BTN) {           /* the Right arrow (screen.js) or the chosen touch (dev_sus_touch): a
                                                  * press flips SUS, a release does nothing */
         if (x) { mb.sus_down++; if (sus_latched || sus_held) mb_sus_off(); else sus_latched = 1; sustain_update(); }
         else mb.sus_up++;
@@ -1042,7 +1045,8 @@ static void mb_gr_tick(void)
     uint32_t segs = 0, on = PV(P_CMP_SW) != 0;
     if (mb.ms - mb.gr_t < 33u) return;
     mb.gr_t = mb.ms;
-    g = on && !fx_bypass ? fx_cmp_gr * 301 / 20480 : 0;          /* log2 Q12 -> dB x 10 (as meter_poll) */
+    g = on ? fx_cmp_gr * 301 / 20480 : 0;                        /* log2 Q12 -> dB x 10 (as meter_poll); FX off keeps
+                                                                  * the compressor on the Move (FR_BYP_KEEP_CMP) */
     if (g > 300) g = 300;
     mb.gr_db10 = g > mb.gr_db10 ? g : mb.gr_db10 > g + 5 ? mb.gr_db10 - 5 : g;
     while (segs < GR_SEGS && mb.gr_db10 >= GR_DB10[segs]) segs++;

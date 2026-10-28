@@ -92,6 +92,7 @@ static const move_key_t MOVE_KEYS[] = {
     {"m_pa_lo", 4, 0, MK_MAP, 1, 0},
     {"m_pa_hi", 5, 0, MK_MAP, 1, 0},
     {"s_susbtn", S_NONE, 0, MK_BTN, 1, 0},
+    {"s_fxbtn", S_NONE, 111, MK_BTN, 1, 0},
 };
 #define MOVE_NKEYS (sizeof MOVE_KEYS / sizeof MOVE_KEYS[0])
 static const char MOVE_UI_HIERARCHY_E0[] =

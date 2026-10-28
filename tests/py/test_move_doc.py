@@ -90,9 +90,11 @@ def test_dropped_ccs():
 def test_sustain_button_is_claimed():
     gen = _src("tools", "gen_move_module.py")
     cc = int(re.search(r"^SUS_BTN_CC = (\d+)", gen, re.M).group(1))
+    fx = int(re.search(r"^FX_BTN_CC = (\d+)", gen, re.M).group(1))
     mod = json.loads((ROOT / "move" / "module" / "module.json").read_text())
-    assert mod["capabilities"]["claims_ccs"] == [cc]
-    assert "**The Capture button**" in DOC and "each press turns SUS on or off" in DOC
+    assert mod["capabilities"]["claims_ccs"] == [cc, fx]
+    assert "**The Right arrow**" in DOC and "each press turns SUS on or off" in DOC
+    assert "**The Left arrow**" in DOC and "the compressor stays" in DOC
 
 
 def test_manual_and_readme_point_here():

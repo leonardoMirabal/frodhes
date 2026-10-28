@@ -1322,7 +1322,7 @@ def phrase_events(t0=0.4):
 
 
 MOVE_HOST = os.path.join(ROOT, "build", "host", "frodhes-move-hq%d")
-MOVE_HOST_DEFS = ["-O2", "-DFR_VOICES=16u", "-DFR_HQ=1"]   # (the Makefile's MOVE_DEFS: the Move's build)
+MOVE_HOST_DEFS = ["-O2", "-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1"]   # (the Makefile's MOVE_DEFS: the Move's build)
 
 
 def host_binary(hq=None):

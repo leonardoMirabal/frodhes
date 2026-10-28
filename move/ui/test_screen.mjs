@@ -137,6 +137,18 @@ test("the page list: a click opens it, the jog picks, a click opens the page, Ba
     assert.equal(s.back(), false, "Back on a page: the host closes the screen");
 });
 
+test("the Left arrow flips FX: a press writes s_fxbtn, a release nothing; Right is SUS (63), Left FX (62)", () => {
+    const s = new Screen().open();
+    assert.equal(s.api.conf.sus_cc, 63);
+    assert.equal(s.api.conf.fx_cc, 62);
+    goto(s, "REVERB");
+    const n0 = s.plugin.writes.length;
+    assert.equal(s.midi(0xB0, s.api.conf.fx_cc, 127), true);
+    assert.deepEqual(lastWrite(s), ["s_fxbtn", "1"]);
+    assert.equal(s.midi(0xB0, s.api.conf.fx_cc, 0), true);
+    assert.equal(s.plugin.writes.length, n0 + 1, "the release writes nothing");
+});
+
 test("the claimed button turns SUS on or off on every page: a press flips it, a release sends nothing", () => {
     const s = new Screen().open();
     goto(s, "REVERB");

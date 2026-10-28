@@ -11,7 +11,7 @@
 //   pages      the jog wheel browses the pages (the VOICE pages of the engine that plays only); a jog click opens
 //              the page list (the jog picks, a click opens the page, Back closes the list); Back on a page closes
 //              the screen (the host's own way out; Shift + jog too)
-//   sustain    the claimed button (FR_CONF.sus_cc, Capture) turns SUS on or off on every page: a press flips it (the
+//   sustain    the claimed button (FR_CONF.sus_cc, the Right arrow) turns SUS on or off on every page: a press flips it (the
 //              plugin flips it, s_susbtn 1; a release sends nothing), the header's S shows it
 //   meter      COMPRESSOR: the gain reduction in the free cards' place (knobs 7-8), as the FM-1's COMP page shows it:
 //              the bar filled from the right on ui.c's segment scale (FR_CONF.gr_db10), the held peak, the reading;
@@ -436,6 +436,7 @@ globalThis.canvas_overlay = {
         const d = (msg && msg.data) || [];
         const type = (d[0] | 0) & 0xF0, d1 = d[1] | 0, d2 = d[2] | 0;
         if (type === 0xB0 && d1 === FR_CONF.sus_cc) { if (d2 > 0) sustainBtn(ctx, st); return true; }
+        if (type === 0xB0 && d1 === FR_CONF.fx_cc) { if (d2 > 0) { ctx.setParam("s_fxbtn", "1"); st.expectRev++; } return true; }
         if (type === 0x90 && d1 < 8) {                               // a knob's touch (velocity >= 64: down)
             if (st.list) return true;
             if (d2 >= 64) { st.touch[d1] = true; focus(ctx, st, d1, true); } else release(ctx, st, d1);

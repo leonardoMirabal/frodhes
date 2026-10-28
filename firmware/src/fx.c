@@ -1726,6 +1726,12 @@ static inline __attribute__((always_inline)) void fx_process(const int32_t *mono
     }
     for (j = 0; j < n; j++) { m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }   /* (mono is the dry signal for the bypass) */
     fx_comp(m, n);
+#ifdef FR_BYP_KEEP_CMP
+    /* the Move (FR_BYP_KEEP_CMP, the user 2026-10-28): FX bypasses every effect but the compressor, so its dry is the
+     * compressor's output; the FM-1 (no define) bypasses the compressor too */
+    static int32_t dry_c[256];
+    for (j = 0; j < n; j++) dry_c[j] = m[j];
+#endif
     fx_drive(m, n);                                    /* (0.9.5, the user: DRIVE before the FILTER; both mono, on m
                                                         * in place) */
     fx_filter(m, n);
@@ -1734,7 +1740,11 @@ static inline __attribute__((always_inline)) void fx_process(const int32_t *mono
     FR_FAR(fx_phaser)(fx_L, fx_R, n);
     fx_delay(fx_L, fx_R, n);                           /* (the chorus, then the delay) */
     fx_reverb(fx_L, fx_R, n);
+#ifdef FR_BYP_KEEP_CMP
+    FR_FAR(fx_out)(dry_c, out, n);
+#else
     FR_FAR(fx_out)(mono, out, n);
+#endif
 }
 
 /* ---- what the effects that run now cost on the FM-1, us per block: the bar engine's CPU model (bars.c

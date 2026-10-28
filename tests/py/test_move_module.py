@@ -76,9 +76,10 @@ def test_sustain_button_claimed():
     (the direct route); Frodhes' own screen (screen.js) turns that CC's press into s_susbtn 1, which flips SUS"""
     mod = json.loads(OUT["module.json"])
     caps = mod["capabilities"]
-    assert caps["claims_ccs"] == [gen.SUS_BTN_CC] and caps["touch_observe"] is True
+    assert caps["claims_ccs"] == [gen.SUS_BTN_CC, gen.FX_BTN_CC] and caps["touch_observe"] is True
+    assert (gen.SUS_BTN_CC, gen.FX_BTN_CC) == (63, 62)          # Right SUS, Left FX; Up / Down (55 / 54) stay the Move's
     host_owned = {49, 50, 51, 14, 3, 71, 72, 73, 74, 75, 76, 77, 78, 79, 88, 40, 41, 42, 43, 114, 115}
-    assert gen.SUS_BTN_CC not in host_owned                   # (Schwung shadow_ui.js CC_CLAIM_DENIED)
+    assert gen.SUS_BTN_CC not in host_owned and gen.FX_BTN_CC not in host_owned   # (Schwung shadow_ui.js CC_CLAIM_DENIED)
     assert "sustain.js" not in OUT and "sustain.js" not in gen.FILES, "the PEDAL screen is gone (a toggle now)"
     js = OUT["screen.js"]
     assert 'ctx.setParam("s_susbtn", "1")' in js and 'ctx.setParam("s_susbtn", "0")' not in js
