@@ -213,6 +213,15 @@ class RigBase:
     def pc(self, p):
         self._send("pc", int(p), 0)
 
+    def clock(self, bpm=120):
+        """the tempo pinned for a with-block (a synced LFO or delay reads at the FM-1's saved BPM otherwise): the host
+        plays at its boot 120 BPM, nothing to send"""
+        import contextlib
+        return contextlib.nullcontext()
+
+    def clock_align(self, pulses, at=0):
+        """inside clock(): wait for pulse at of the next lap of pulses of the sent clock (the host: nothing to wait)"""
+
     def note_off(self, n):
         self._send("off", int(n), 0)
 
@@ -492,6 +501,50 @@ class Rig(RigBase):
             sys.exit("no FM-1 audio input")
         self.dev = devs[0]
         self.cap, self.xruns = None, []
+
+    def clock(self, bpm=120):
+        """a MIDI clock at bpm (24 PPQN) for a with-block, from a thread: CLOCK EXT (the default) follows it, so the
+        synced LFOs and delays run at the host's tempo and not at the BPM the FM-1 saved (2026-10-28: F11 RESO SWEEP
+        read +2.1 LU re F01 at the unit's own BPM, -1.9 at LEVEL 10 with this clock, the host -1.5). Start then Stop
+        at once first (tempo.c: Start makes the next pulse pulse 0; the sequencer's Start is stopped before any pulse
+        plays a step): the FM-1 counts the pulses from there, clock_align() from the same pulse"""
+        import contextlib
+        import threading
+
+        @contextlib.contextmanager
+        def run():
+            stop, msg, per = threading.Event(), self.mido.Message("clock"), 60.0 / (bpm * 24)
+            self.out.raw.send(self.mido.Message("start"))
+            self.out.raw.send(self.mido.Message("stop"))
+            self._clk = (time.monotonic() + 0.05, per)          # pulse 0 50 ms after them
+
+            def tick():
+                t = self._clk[0]
+                while not stop.is_set():
+                    self.out.raw.send(msg)
+                    t += per
+                    stop.wait(max(0.0, t - time.monotonic()))
+            th = threading.Thread(target=tick, daemon=True)
+            th.start()
+            time.sleep(1.0)                                # two beats: the tempo locked before the first take
+            try:
+                yield
+            finally:
+                stop.set()
+                th.join()
+                self._clk = None
+        return run()
+
+    def clock_align(self, pulses, at=0):
+        """inside clock(): sleep to pulse at of the next lap of pulses of the sent clock, so a take starts at a known
+        phase of every synced LFO (the FM-1 locks each one to the pulses it counts: a 2BAR LFO without a note
+        retrigger, F11's, read 2.1 LU apart over 3 takes at a free start, and -4.5 / -5.4 at one phase of two runs
+        before the Start pinned the count)"""
+        t0, per = getattr(self, "_clk", None) or (None, None)
+        if t0 is None:
+            return
+        span = pulses * per
+        time.sleep((t0 + at * per - time.monotonic()) % span)
 
     def capture(self):
         """the persistent recorder, opened at the first use (the FM-1's USB, stereo)"""
@@ -1201,7 +1254,9 @@ def preset_pc(p):
 # a preset the host reads at another level than the FM-1 (re F01, LU), its host target shifted by that much: F11 RESO
 # SWEEP (OHCD into the resonant LP12). At LEVEL 10 the FM-1 read -1.8 (0.9.5), -1.7 / -2.0 (0.9.6), -1.7 (0.9.7's T2),
 # the host -1.5: the FM-1 ~0.2 LU under the host (the 2026-10-25 reading, +1.8 at LEVEL 18 on a build before OHCD's
-# full range, no longer holds). 0.9.7: LEVEL 18, the host +0.0
+# full range, no longer holds). 0.9.7: LEVEL 18, the host +0.0. 2026-10-28: the FM-1's readings moved with its saved
+# BPM (F11's LFO and echo are synced: +2.1 at LEVEL 18 at the unit's own tempo); with presets()' 120 BPM clock and
+# every take on bar 1 of the sweep the FM-1 reads -0.4 (4 runs, spread <= 0.21 LU)
 HOST_SHIFT = {11: 0.2}
 
 
@@ -1227,40 +1282,42 @@ def presets(r, rep):
     def level(x, thr, t=0.05):
         i = max(onset(x, thr, t), 0)
         return lufs(x[i:i + int(1.1 * FS)]), i
-    for p in range(PR_COUNT + (PR_STARTERS if isinstance(r, HostRig) else 0)):
-        r.cc_raw(120, 0)
-        r.pc(preset_pc(p))
-        ks = []
-        for k in range(reps("presets")):
-            quiet = r.settle()                         # (False: no exact silence in 10 s, a note still sounds)
+    with r.clock(120):                                 # the synced LFOs and echoes at the host's tempo
+        for p in range(PR_COUNT + (PR_STARTERS if isinstance(r, HostRig) else 0)):
+            r.cc_raw(120, 0)
+            r.pc(preset_pc(p))
+            ks = []
+            for k in range(reps("presets")):
+                quiet = r.settle()                         # (False: no exact silence in 10 s, a note still sounds)
+                r.clock_align(192)                         # bar 1 of 2: F11 swings 5 LU over its 2BAR sweep (0, 1/3, 2/3: -0.4, -5.6, -4.4 re F01); its phase 0 is the host's
+                if jk:
+                    dd = r.both(2.0, with_reset(CHORD), jack=True)
+                    x, j = dd["usb"] * 32768, dd["jack"][:, 0]
+                else:
+                    x, j = r.take(2.0, CHORD), None
+                lv, i = level(x / 32768.0, 200 / 32768)
+                q = dict(level=lv, onset_ms=1000 * i / FS, rms_db=db(x[i:i + int(1.1 * FS)]),
+                         peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
+                         clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x), quiet=bool(quiet),
+                         gaps=[str(g) for g in getattr(r, "xruns", []) if "gap" in str(g)])
+                if j is not None:
+                    floor = float(np.abs(j[:int(0.04 * FS)]).max()) if len(j) else 0.0
+                    q["jack"], ij = level(j, max(4 * floor, 0.01 * float(np.abs(j).max())))
+                    q["jack_onset_ms"] = 1000 * ij / FS
+                ks.append(q)
+                np.savez_compressed(os.path.join(d, f"{preset_label(p + 1)}-{k + 1}.npz"), usb=(x / 32768).astype(np.float32),
+                                    jack=(j if j is not None else np.zeros(0)).astype(np.float32))
+            lv = [q["level"] for q in ks]
+            row = dict(preset=p + 1, level=float(np.median(lv)), spread_lu=float(max(lv) - min(lv)),
+                       rms_db=float(np.median([q["rms_db"] for q in ks])), peak_db=max(q["peak_db"] for q in ks),
+                       clipped=max(q["clipped"] for q in ks), clicks=max(q["clicks"] for q in ks),
+                       onset_ms=[round(q["onset_ms"], 1) for q in ks], not_quiet=sum(not q["quiet"] for q in ks),
+                       gaps=sum(len(q["gaps"]) for q in ks))
             if jk:
-                dd = r.both(2.0, with_reset(CHORD), jack=True)
-                x, j = dd["usb"] * 32768, dd["jack"][:, 0]
-            else:
-                x, j = r.take(2.0, CHORD), None
-            lv, i = level(x / 32768.0, 200 / 32768)
-            q = dict(level=lv, onset_ms=1000 * i / FS, rms_db=db(x[i:i + int(1.1 * FS)]),
-                     peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
-                     clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x), quiet=bool(quiet),
-                     gaps=[str(g) for g in getattr(r, "xruns", []) if "gap" in str(g)])
-            if j is not None:
-                floor = float(np.abs(j[:int(0.04 * FS)]).max()) if len(j) else 0.0
-                q["jack"], ij = level(j, max(4 * floor, 0.01 * float(np.abs(j).max())))
-                q["jack_onset_ms"] = 1000 * ij / FS
-            ks.append(q)
-            np.savez_compressed(os.path.join(d, f"{preset_label(p + 1)}-{k + 1}.npz"), usb=(x / 32768).astype(np.float32),
-                                jack=(j if j is not None else np.zeros(0)).astype(np.float32))
-        lv = [q["level"] for q in ks]
-        row = dict(preset=p + 1, level=float(np.median(lv)), spread_lu=float(max(lv) - min(lv)),
-                   rms_db=float(np.median([q["rms_db"] for q in ks])), peak_db=max(q["peak_db"] for q in ks),
-                   clipped=max(q["clipped"] for q in ks), clicks=max(q["clicks"] for q in ks),
-                   onset_ms=[round(q["onset_ms"], 1) for q in ks], not_quiet=sum(not q["quiet"] for q in ks),
-                   gaps=sum(len(q["gaps"]) for q in ks))
-        if jk:
-            jl = [q["jack"] for q in ks]
-            row.update(jack=float(np.median(jl)), jack_spread_lu=float(max(jl) - min(jl)),
-                       jack_onset_ms=[round(q["jack_onset_ms"], 1) for q in ks])
-        rows.append(row)
+                jl = [q["jack"] for q in ks]
+                row.update(jack=float(np.median(jl)), jack_spread_lu=float(max(jl) - min(jl)),
+                           jack_onset_ms=[round(q["jack_onset_ms"], 1) for q in ks])
+            rows.append(row)
     rep["presets"] = rows
     lv = [q["level"] for q in rows]
     bad = [q["preset"] for q in rows if q["clipped"] or q["clicks"]]
