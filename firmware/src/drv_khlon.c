@@ -52,7 +52,11 @@ static DRV_BSS int32_t kh_sc;                                     /* the couplin
 static DRV_BSS int32_t kh_tmp[DRV_BLK], kh_u[DRV_BLK];             /* the driven path; the sum while it dips */
 static DRV_BSS const int32_t *kh_gf;                              /* the plain clipper's node at 0 V (KH_GF) */
 static DRV_BSS int32_t kh_e1, kh_F1, kh_v1;                       /* the AA clipper: the last e, F(e1), the last v */
+#if KH_AA
 static DRV_BSS uint8_t kh_aa;                                     /* the AA clipper runs (AMOUNT index >= KH_AA_A) */
+#else                    /* (0.9.8, flash: KH_AA_FROM is past the last row, so the AA passes and KH_RCP are left out) */
+#define kh_aa 0
+#endif
 static DRV_BSS int32_t kh_kc4, kh_rail;                           /* (in RAM: loaded into registers, as the reference) */
 static DRV_DATA uint8_t kh_ra = 0xFFu, kh_rt, kh_pre, kh_dip, kh_held;      /* rows (AMOUNT 0..126, TONE 0..128); 0xFF: none yet */
 /* each section's last two inputs and outputs (x1 x2 y1 y2), kept at the end of a block: when a row changes, the
@@ -99,8 +103,10 @@ static void kh_load(void)                        /* the rows -> the coefficients
         kh_po[i] = i < 3 ? (int32_t)((KH_M64(v, s) + (1 << 23)) >> 24) : v;
     }
     kh_pre = (uint8_t)(gr >= KH_PRE_ROW);
+#if KH_AA
     if (kh_ra >= KH_AA_FROM && !kh_aa) kh_F1 = kh_F(kh_e1);   /* (the AA rows start: F1 from the carried e1) */
     kh_aa = kh_ra >= KH_AA_FROM;
+#endif
     kh_gf = KH_GF; kh_kc4 = KH_KC4; kh_rail = KH_RAIL;
 }
 static void kh_rest(void)                        /* every state to rest */
