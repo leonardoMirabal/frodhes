@@ -156,7 +156,14 @@ module starts, as on the FM-1 (also by MIDI, CC 111).
 On the Move, Frodhes is the sound generator of a Schwung track. Its sound, effects included, then goes through the
 audio effects you put after it on that track, and then the Master FX, like any other sound generator. To use one of
 Schwung's reverbs or delays instead of Frodhes' own, turn Frodhes' one off on its page (REVERB, CHORUS/DELAY), or all
-of them with FX. *(not yet verified on a device: the levels against the Move's own instruments)*
+of them with FX.
+
+**Output level.** On the Move, Frodhes plays 2.2 dB louder than on the FM-1, the most it can without a clip: its
+limiter keeps every sample at or under -2.7 dBFS, and the Move's trim lifts that ceiling to -0.5 dBFS (a plain gain,
+so no distortion and no added hiss). Keep Schwung's slot volume at 100%: above it, Schwung's own gain can clip.
+*(measured on a device over USB-C, slot volume 100%: 16 voices and every effect heavy at v127 for 30 s peak at
+-0.5 dBFS with no glitch; F01 at v127 is within 0.6 dB of the Move's stock electric piano by critical-band
+loudness, which barely changes with velocity, so Frodhes is quieter at softer playing)*
 
 ## Presets
 

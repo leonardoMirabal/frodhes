@@ -85,6 +85,7 @@ int main(int argc, char **argv)
         const char *e = getenv("MOVE_REPLAY_HQ");
         if (!(e && !strcmp(e, "boot"))) api->set_param(in, "p_hq", "0");
     }
+    api->set_param(in, "dev_trim", "0");   /* the app's own samples (move_bridge.h MB_TRIM_Q12) */
     /* pass 2: queue the MIDI. host.c plays its events in file order, each when the clock reaches its time and
      * every event before it has played: an event listed after a later one (an "expect" at 4000 before a MIDI line
      * at 3990) plays at the later time. So a message is due at the latest time of the events up to it */

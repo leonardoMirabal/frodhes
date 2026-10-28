@@ -1138,6 +1138,8 @@ Everything in this manual applies, with these differences:
 - **Several at once**: load Frodhes on every track you like (Schwung has four slots); each is its own instrument
   with its own sound and knobs, and all share the user presets. Up to three play with no dropouts; a fourth works,
   but very heavy playing with every effect on in all four, or loading a set with several of them, can drop audio.
+- **Level**: Frodhes plays 2.2 dB louder on the Move than on the FM-1, its loudest peak at -0.5 dBFS, never a clip.
+  Keep Schwung's slot volume at 100%: above it, Schwung's own gain can clip.
 - **Frodhes' own screen** (PAGES on the first page: touch its knob and click the jog wheel): the eight knobs as eight cards, each with its name, value
   and bar; touch or turn a knob and its card fills the screen, as the FM-1 shows one card large; the overview
   comes back about a second after you let go. The jog wheel turns the pages; a click lists them.

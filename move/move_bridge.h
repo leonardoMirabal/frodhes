@@ -1114,6 +1114,17 @@ static int mb_cpu_ring(char *buf, int n)
     if (o < n) buf[o] = 0;
     return o;
 }
+/* the Move's output trim (Move only): fx.c's look-ahead limiter keeps every sample at or under LIM_T 24000
+ * (-2.7 dBFS), so +2.2 dB (Q12 5279) puts that ceiling at 30934 (-0.5 dBFS): louder, a plain linear gain, never a
+ * clip. It acts on what Schwung gets, after the FIFO: the tap (dev_play) stays the app's own output. dev_trim 0 (a
+ * dev / test key, no page) plays at unity, so the byte-identity tests (Gate M, test_bridge eq) see the app's samples */
+#define MB_TRIM_Q12 5279
+static uint16_t mb_trim = MB_TRIM_Q12;
+static inline int16_t mb_trimmed(int16_t x)
+{
+    int32_t y = (int32_t)x * mb_trim >> 12;
+    return (int16_t)(y > 32767 ? 32767 : y < -32767 ? -32767 : y);
+}
 static void mb_render_in(int16_t *out, int frames)
 {
     uint32_t i, n = frames < 0 ? 0u : (uint32_t)frames;
@@ -1123,7 +1134,7 @@ static void mb_render_in(int16_t *out, int frames)
     while (mb.fw - mb.fr < n) mb_step();
     for (i = 0; i < n; i++) {
         uint32_t r = (mb.fr + i) & (MB_FIFO - 1u);
-        out[2u * i] = mb.fifo[2u * r]; out[2u * i + 1u] = mb.fifo[2u * r + 1u];
+        out[2u * i] = mb_trimmed(mb.fifo[2u * r]); out[2u * i + 1u] = mb_trimmed(mb.fifo[2u * r + 1u]);
     }
     for (; i < (uint32_t)frames; i++) out[2u * i] = out[2u * i + 1u] = 0;
     mb.fr += n;
@@ -1237,6 +1248,7 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, "p_hq")) return snprintf(buf, (size_t)n, "%u", (unsigned)hq_mode);
 #endif
     if (!strcmp(key, "dev_cpu")) return snprintf(buf, (size_t)n, "callbacks=%u max_us=%u", atomic_load(&mb.cpu_n), mb.cpu_max);
+    if (!strcmp(key, "dev_trim")) return snprintf(buf, (size_t)n, "%u", (unsigned)mb_trim);
     /* development reads (tests, the device session) */
     if (!strcmp(key, "dev_stats")) return mb_stats(buf, n);
     if (!strncmp(key, "dev:", 4)) {
@@ -1271,6 +1283,7 @@ static void mb_set(const char *key, const char *val)
     if (!strcmp(key, "p_hq")) { (void)mb_put(MB_EV_HQ, 0, 0, 0, 0, 0, atoi(val) != 0); return; }   /* dev / test only (no page):
                                                           * 1 the HQ Rhodes (the load's), 0 Classic until the next load */
 #endif
+    if (!strcmp(key, "dev_trim")) { mb_trim = atoi(val) ? MB_TRIM_Q12 : 4096; return; }   /* dev / test only: 0 unity */
     if (!strcmp(key, "dev_midi")) {                       /* "T ST D1 D2": a message due at host ms T (the harness) */
         unsigned t, st, d1, d2;
         if (sscanf(val, "%u %i %i %i", &t, &st, &d1, &d2) == 4 && st >= 0x80u && st <= 0xFFu)

@@ -120,6 +120,7 @@ static void classic(void *in)
 {
     const char *e = getenv("MOVE_EQ_HQ");
     if (!(e && !strcmp(e, "boot"))) api->set_param(in, "p_hq", "0");
+    api->set_param(in, "dev_trim", "0");   /* the app's own samples (move_bridge.h MB_TRIM_Q12) */
 }
 
 /* ---- eq */
@@ -368,6 +369,11 @@ static int api_tests(const char *so)
     bpm_v = 97.5; render(in, 3);
     api->set_param(in, "s_tune", "-12"); render(in, 3);
     CHECK(!strcmp(get(in, "s_tune"), "-12"), "TUNE -12 (%s)", gbuf);
+    CHECK(!strcmp(get(in, "dev_trim"), "5279"), "the output trim at load: +2.2 dB, Q12 5279 (%s)", gbuf);
+    api->set_param(in, "dev_trim", "0");
+    CHECK(!strcmp(get(in, "dev_trim"), "4096"), "dev_trim 0: unity (%s)", gbuf);
+    api->set_param(in, "dev_trim", "1");
+    CHECK(!strcmp(get(in, "dev_trim"), "5279"), "dev_trim 1: the trim again (%s)", gbuf);
     {   /* what the Move owns has no key: the sequencer, the arpeggiator, the chords, the scales, BPM, CLOCK */
         const char *gone[] = { "s_arpgate", "s_sqbars", "s_chtype", "s_chstrum", "s_scmode", "s_scale", "s_root", "s_trans",
                                "s_bpm", "s_clock" };
