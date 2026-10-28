@@ -142,24 +142,26 @@
 </div>
 
 <section class="install" id="install">
-  <h2>INSTALL ON YOUR FM-1</h2>
+  <h2>INSTALL ON YOUR FM-1 OR SMK-37</h2>
   <div id="inst-ui">
     <dl>
       <dt>Firmware</dt><dd id="inst-ver">...</dd>
       <dt>sha256</dt><dd><code id="inst-sha">-</code></dd>
     </dl>
     <div class="row">
-      <button id="inst-go" disabled>Find my FM-1</button>
+      <button id="inst-go" disabled>Find my FM-1 or SMK-37</button>
       <label>or a file: <input type="file" id="inst-file" accept=".fwsc"></label>
     </div>
     <progress id="inst-bar" max="100" value="0"></progress>
-    <p id="inst-warn" hidden>Do not unplug the FM-1 or close this page while it writes.</p>
-    <p id="inst-msg">Connect the FM-1 with a USB data cable. The browser asks to allow MIDI with SysEx: allow it.
-      An install that was cut off (the FM-1 shows UPDATE MODE) resumes from here.</p>
+    <p id="inst-warn" hidden>Do not unplug the device or close this page while it writes.</p>
+    <p id="inst-msg">Connect the FM-1, or an SMK-37 Pro, SMK-37 Elite or MKE-P37 (experimental), with a USB data cable.
+      The page finds it and picks the package for its model. The browser asks to allow MIDI with SysEx: allow it.
+      An install that was cut off (UPDATE MODE on the screen) resumes from here.</p>
   </div>
   <p id="inst-none" hidden>This browser has no Web MIDI with SysEx (Safari, Firefox): install from Chrome or Edge, or with
     <code>python3 tools/fm1_install.py frodhes.fwsc</code> (the package from the
-    <a href="https://github.com/leonardoMirabal/frodhes/releases/latest">latest release</a>; see the manual, section 1).</p>
+    <a href="https://github.com/leonardoMirabal/frodhes/releases/latest">latest release</a>; see the manual, section 1;
+    an SMK-37: the file for its model, see <a href="https://github.com/leonardoMirabal/frodhes/blob/main/docs/SMK37.md">docs/SMK37.md</a>).</p>
 </section>
 
 <div class="help">

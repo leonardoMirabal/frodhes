@@ -41,7 +41,8 @@ and earlier versions); the firmware file is [`frodhes.fwsc`](https://github.com/
 (package identity `FM-1_958`, the same for every version).
 
 Install it over USB, from the browser (Chrome or Edge: the [emulator page](https://leonardomirabal.github.io/frodhes/#install)'s
-**Install on your FM-1**, which fetches the latest release and checks its sha256) or from a terminal:
+**Install on your FM-1 or SMK-37**, which finds the unit, fetches the latest release's package for its model and
+checks its sha256) or from a terminal:
 
 ```sh
 pip install mido python-rtmidi

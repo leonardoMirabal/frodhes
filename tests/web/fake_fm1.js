@@ -22,10 +22,11 @@
 
   class FakeFM1 {
     // opts: identity ("FM-1_015"), name ("FM-1"), loader (["ota-FM-1_958", "Felucca Update"]), afterWrite ("FM-1_958"),
+    // afterName (the port name after the install: "FM-1"),
     // unplugAfter / stallAfter (answers), others (other MIDI ports, never answering)
     constructor(image, opts = {}) {
       this.image = image;
-      this.o = Object.assign({ identity: "FM-1_015", name: "FM-1", loader: ["ota-FM-1_958", "Felucca Update"], afterWrite: "FM-1_958", others: [] }, opts);
+      this.o = Object.assign({ identity: "FM-1_015", name: "FM-1", loader: ["ota-FM-1_958", "Felucca Update"], afterWrite: "FM-1_958", afterName: "FM-1", others: [] }, opts);
       this.inputs = new Map(); this.outputs = new Map();
       this.served = 0; this.bad = 0; this.upgrades = 0; this.written = new Uint8Array(image.length); this.writes = 0;
       for (const n of this.o.others) { this.inputs.set(n, new Port(this, n, "input")); this.outputs.set(n + " out", new Port({ rx() {} }, n, "output")); }
@@ -70,7 +71,7 @@
         if (this.o.unplugAfter && this.served >= this.o.unplugAfter) { this.o.unplugAfter = 0; this.unplug(); return; }
         if (this.o.stallAfter && this.served >= this.o.stallAfter) { this.o.stallAfter = 0; return; }
         if (addr === X.FINISH_CHECK) setTimeout(() => this.boot(...this.o.loader), 20);
-        else if (addr === X.FINISH_WRITE) setTimeout(() => { this.wrote = false; this.boot(this.o.afterWrite, "FM-1"); }, 20);
+        else if (addr === X.FINISH_WRITE) setTimeout(() => { this.wrote = false; this.boot(this.o.afterWrite, this.o.afterName); }, 20);
         else this.next();
       }
     }

@@ -12,7 +12,7 @@ name: release
 # kept), waits until Pages has built that commit and serves every file byte for byte (tools/pages_wait.sh), and only
 # then publishes the release and marks it latest. Every step is safe to rerun. Only a v* tag deploys: a merge to main
 # never touches gh-pages (ci.yml builds and tests the emulator, nothing more). The FM-1 package goes with the
-# emulator (tools/web_firmware.sh: frodhes.fwsc and firmware.json with its sha256) for the page's installer.
+# emulator (tools/web_firmware.sh: frodhes.fwsc, the SMK-37 builds and firmware.json with their sha256) for the page's installer.
 # Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
 on:
   push:
@@ -162,8 +162,11 @@ jobs:
         with:
           ref: gh-pages
           path: build/pages
-      - name: the FM-1 package next to the emulator (its installer; release downloads have no CORS)
-        run: sh tools/web_firmware.sh "build/frodhes-${GITHUB_REF_NAME#v}.fwsc" web/dist "${GITHUB_REF_NAME#v}"
+      - name: the packages next to the emulator, the FM-1's and the SMK-37 builds (its installer; release downloads have no CORS)
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          sh tools/web_firmware.sh "build/frodhes-$V.fwsc" web/dist "$V" \
+            "build/frodhes-$V-smk37.fwsc" "build/frodhes-$V-smk37-elite.fwsc" "build/frodhes-$V-smk37-mke.fwsc"
       - name: deploy the emulator
         run: |
           git -C build/pages config user.name "github-actions[bot]"

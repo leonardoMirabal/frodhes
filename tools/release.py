@@ -520,7 +520,7 @@ class Release:
             raise Stop(f"{pages} is not the gh-pages worktree")
         sh(["git", "-C", pages, "pull", "-q", "--ff-only", "origin", "gh-pages"])
         sh(["sh", os.path.join(ROOT, "tools", "web_firmware.sh"), os.path.join(ROOT, "build", f"frodhes-{self.ver}.fwsc"),
-            dist, self.ver])
+            dist, self.ver] + [os.path.join(ROOT, "build", f.format(v=self.ver)) for f in SMK_ASSETS.values()])
         sh(["sh", os.path.join(ROOT, "tools", "deploy_pages.sh"), dist, pages, self.ver])
         local = {f: sha256(os.path.join(dist, f)) for f in sorted(os.listdir(dist))}
         ev.append(f"gh-pages {out(['git', '-C', pages, 'rev-parse', '--short', 'HEAD'])} pushed ({len(local)} files)")
@@ -864,7 +864,7 @@ def wait_run(workflow, sha, appear_s=300, ok=("success",)):
 
 
 WEB_FILES = ("index.html", "app.js", "fm1install.js", "install.js", "version.js", "frodhes.js", "frodhes.wasm",
-             "frodhes.fwsc", "firmware.json")   # web/build.sh's web/dist, and the package (tools/web_firmware.sh)
+             "frodhes.fwsc", *SMK_ASSETS, "firmware.json")   # web/build.sh's web/dist, the packages (tools/web_firmware.sh)
 
 
 def workflow_deploys_pages(path=None):

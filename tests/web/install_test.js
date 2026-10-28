@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // web/fm1install.js (the page's installer) against a fake FM-1 behind a fake Web MIDI (tests/web/fake_fm1.js), in
-// node: a full install, a device of another model and a package of another identity refused, a cut in the write and
+// node: a full install on the FM-1 and on each SMK-37 model (Frodhes or the stock firmware running, the package for
+// the model), a device of another model and a package of another identity refused, a cut in the write and
 // the resume from update mode, a stall, a corrupt package, a wrong sha256 and a package without the loader refused,
 // another firmware's update loader refused, the wire format against tools/fm1_install.py's (when python3 is there).
 //   node tests/web/install_test.js
@@ -76,23 +77,45 @@ print(json.dumps({"resp": list(I.response(0x12345, bytes([1, 2, 3]), 5)), "pack"
   r = await run(dev, pkg);
   ok(r.id === "FM-1_958" && dev.bad === 0, "install over Frodhes on the 0.9.7 port name 'Frodhes FM-1'");
 
-  // wrong identities: an SMK-37 device; a package for another model; another firmware's loader
+  // the SMK-37 family: each model's package on its own model, over Frodhes (the 0.9.7 port names) or the stock firmware
+  for (const [model, port, stock] of [["SMK-37 Pro", "Frodhes SMK-37 Pro", "SMK-37 Pro"], ["SMK-37 Elite", "Frodhes SMK-37 Elite", "SMK-37 Elite"],
+                                      ["MKE-P37", "Frodhes MKE-P37", "MKE-P37"]]) {
+    const want = X.productFor(model + "_470");
+    ok(want && want.product === model + "_470" && want.experimental, `productFor: ${model} -> ${want && want.product}, experimental`);
+    const sp = await X.loadPackage(makePackage(model + "_470"));
+    for (const [what, identity, name] of [["over Frodhes", model + "_470", port], ["over the stock firmware", model + "_016", stock]]) {
+      dev = new FakeFM1(sp.image, { identity, name, loader: [`ota-${model}_900`, "Felucca Update"], afterWrite: model + "_470", afterName: port });
+      r = await run(dev, sp);
+      ok(r.id === model + "_470" && dev.bad === 0 && dev.upgrades === 2 && same(Array.from(dev.written), Array.from(sp.image)),
+         `${model} ${what} ('${name}'): installed, the image written whole`);
+    }
+    dev = new FakeFM1(sp.image, { identity: `ota-${model}_900`, name: "Felucca Update", afterWrite: model + "_470", afterName: port });
+    r = await run(dev, sp);
+    ok(r.id === model + "_470" && dev.upgrades === 1, `${model}: an install cut off resumes from its update loader`);
+    dev = new FakeFM1(image, { identity: model + "_470", name: port });
+    r = await run(dev, pkg);
+    ok(r.err === "model" && dev.upgrades === 0, `the FM-1 package on the ${model} ('${port}') refused, nothing sent but the handshake`);
+  }
+  ok(X.productFor("FM-1_015").product === "FM-1_958" && X.productFor("ota-FM-1_900").product === "FM-1_958" && X.productFor("SLOOP_1") === null,
+     "productFor: the FM-1 (running or its loader); an unknown model none");
+
+  // wrong identities: an SMK-37 behind a generic port name; a package for another model; another firmware's loader
   dev = new FakeFM1(image, { identity: "SMK-37 Pro_470", name: "USB-MIDI" });
   r = await run(dev, pkg);
-  ok(r.err === "model" && dev.upgrades === 0, "an SMK-37 (behind a generic port name) refused, nothing sent but the handshake");
-  dev = new FakeFM1(image, { identity: "SMK-37 Pro_470", name: "SMK-37 Pro" });
-  r = await run(dev, pkg);
-  ok(r.err === "notfound" && dev.upgrades === 0, "an SMK-37 port is not even asked (its name)");
+  ok(r.err === "model" && dev.upgrades === 0, "an SMK-37 (behind a generic port name) and the FM-1 package refused, nothing sent");
   dev = new FakeFM1(image, { identity: "FM-1_015", name: "FM-1" });
   const smk = { product: "SMK-37 Pro_470", image, sha256: "" };
   r = await run(dev, smk);
-  ok(r.err === "model" && dev.upgrades === 0, "a package for another model refused before anything is sent");
+  ok(r.err === "model" && dev.upgrades === 0, "an SMK-37 package on the FM-1 refused before anything is sent");
   dev = new FakeFM1(image, { identity: "ota-FM-1_015", name: "FM-1 Update" });
   r = await run(dev, pkg);
   ok(r.err === "foreign" && dev.upgrades === 0, "another firmware's update loader refused");
   let e = null;
-  try { await X.loadPackage(makePackage("SMK-37 Pro_470")); } catch (x) { e = x; }
-  ok(e && e.code === "badpkg" && /FM-1_958 only/.test(e.message), "loadPackage: a package of another identity refused");
+  try { await X.loadPackage(makePackage("SLOOP-1_001")); } catch (x) { e = x; }
+  ok(e && e.code === "badpkg" && /MKE-P37_470 only/.test(e.message), "loadPackage: a package of another identity refused");
+  e = null;
+  try { await X.loadPackage(makePackage("SMK-37 Pro_016")); } catch (x) { e = x; }
+  ok(e && e.code === "badpkg", "loadPackage: a stock SMK-37 package (not Frodhes) refused");
 
   // a cut in the write, then the resume from update mode
   dev = new FakeFM1(image, { unplugAfter: 4 + 6 });
