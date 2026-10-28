@@ -198,7 +198,7 @@ def test_sender_keeps_absolute_time_and_skips_the_virtual_grid():
 
 
 def test_channel_port():
-    mido = pytest.importorskip("mido")   # (the CI host job installs no mido: test_hil_rev does the same)
+    import mido                          # (installed in CI: a missing module fails, never skips)
     got = []
 
     class P:

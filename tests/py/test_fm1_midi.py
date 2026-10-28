@@ -11,8 +11,7 @@ import pytest
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import fm1_midi  # noqa: E402
-
-mido = pytest.importorskip("mido")
+import mido  # noqa: E402  (installed in CI: a missing module fails, never skips)
 
 
 class Port:
