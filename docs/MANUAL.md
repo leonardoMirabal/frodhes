@@ -1135,8 +1135,9 @@ Everything in this manual applies, with these differences:
   screen and shorter where they do not (MAKEUP is MKUP); the values and ranges are the FM-1's. The VOICE pages are
   the instrument's that plays and change with TYPE, a preset or a program change. COMPRESSOR shows the
   gain-reduction meter on knobs 7 and 8: a thick bar of segments lit from the right, the peak as a taller segment.
-- **One slot at a time**: Frodhes is one instrument; load it on two tracks and only the one loaded last plays (the
-  other is silent and its name reads ONE SLOT ONLY). Remove either and the one left plays.
+- **Several at once**: load Frodhes on every track you like (Schwung has four slots); each is its own instrument
+  with its own sound and knobs, and all share the user presets. Up to three play with no dropouts; a fourth works,
+  but very heavy playing with every effect on in all four, or loading a set with several of them, can drop audio.
 - **Frodhes' own screen** (PAGES on the first page: touch its knob and click the jog wheel): the eight knobs as eight cards, each with its name, value
   and bar; touch or turn a knob and its card fills the screen, as the FM-1 shows one card large; the overview
   comes back about a second after you let go. The jog wheel turns the pages; a click lists them.

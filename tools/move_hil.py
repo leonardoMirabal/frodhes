@@ -104,6 +104,11 @@ def logs(t, st=None):
     else:
         t._exec(["scp", *mi.SSH_OPTS, "-q", "%s:%s/*.log" % (t.host, src), d + "/"])
         t._exec(["scp", *mi.SSH_OPTS, "-q", "%s:/tmp/frodhes*.log" % t.host, d + "/"])
+        # each instance's own (move_loader.c: inst/<k>/*.log, boot.txt, load.txt), one file: d/inst-logs.txt
+        code, out = t._exec(["ssh", *mi.SSH_OPTS, t.host, 'cd %s 2>/dev/null && for f in */*.log */*.txt; do '
+                             '[ -f "$f" ] && echo "== $f" && cat "$f"; done; true' % mi.INST])
+        if t.go and not code and out:
+            open(os.path.join(d, "inst-logs.txt"), "w").write(out)
     return d
 
 
@@ -136,11 +141,17 @@ def cpu_summary(rows, limit=U12_LIMIT_US):
     return s
 
 
+def newest_cmd(words):
+    """a shell command: the newest of the files (a word list, globs allowed) to stdout. Each instance writes its own
+    files in its folder (move_loader.c: inst/<k>); the tools turn the timer ring on in one slot"""
+    return 'f=$(ls -t %s 2>/dev/null | head -n 1); [ -n "$f" ] && cat "$f"' % words
+
+
 def cpu(t, path=None):
     if path:
         s = cpu_summary(parse_ring(open(path).read()))
     else:
-        code, out = t.run("cat %s/%s/cpu-ring.log" % (t.mods, mi.MODULE_ID))
+        code, out = t.run(newest_cmd("%s %s/%s/cpu-ring.log" % (mi.inst_glob("cpu-ring.log"), t.mods, mi.MODULE_ID)))
         if not t.go:
             return None
         s = cpu_summary(parse_ring(out))
@@ -393,7 +404,8 @@ FAKE_SYNC = {1: 3, 2: 4, 3: 6, 4: 8, 5: 9, 6: 12, 7: 16, 8: 18, 9: 24, 10: 36, 1
 # tremolo's SYNC: CC 20 * 14 // 127, F8 a cycle at 24 PPQN: 1/32 .. 1/1; 0 FREE)
 TAP_PRE_MS = 500                            # the tap path: the messages sent before a take (the panel) at 1 ms and a
                                             # program change at 5 ms, the take's own from 500 ms (host_phrase's layout)
-TAP_DIR = "/data/UserData/schwung/module_data/" + mi.MODULE_ID + "/tap"
+TAP_DIR = mi.DATA + "/tap"                  # (a build before the loader; now each instance's inst/<k>/tap)
+TAP_DIRS = "%s/*/tap %s" % (mi.INST, TAP_DIR)
 TAP_GRID_S = 2.56                           # the plugin starts a take on its 2560 ms grid (move_bridge.h MB_GRID_MS)
 
 
@@ -411,15 +423,20 @@ def scp_fetch(host, local_dir):
 
     def fetch(take):
         os.makedirs(local_dir, exist_ok=True)
+        r = subprocess.run(["ssh", *mi.SSH_OPTS, host, 'for d in %s; do [ -f "$d/%s.json" ] && { echo "$d"; break; }; '
+                            'done; true' % (TAP_DIRS, take)], capture_output=True, text=True)
+        d = r.stdout.strip()
+        if r.returncode or not d:
+            return None
         js = os.path.join(local_dir, take + ".json")
-        r = subprocess.run(["scp", *mi.SSH_OPTS, "-q", "%s:%s/%s.json" % (host, TAP_DIR, take), js], capture_output=True)
+        r = subprocess.run(["scp", *mi.SSH_OPTS, "-q", "%s:%s/%s.json" % (host, d, take), js], capture_output=True)
         if r.returncode:
             return None
         wav = os.path.join(local_dir, take + ".wav")
-        r = subprocess.run(["scp", *mi.SSH_OPTS, "-q", "%s:%s/%s.wav" % (host, TAP_DIR, take), wav], capture_output=True)
+        r = subprocess.run(["scp", *mi.SSH_OPTS, "-q", "%s:%s/%s.wav" % (host, d, take), wav], capture_output=True)
         if r.returncode:
             return None
-        subprocess.run(["ssh", *mi.SSH_OPTS, host, "rm -f %s/%s.wav %s/%s.json" % (TAP_DIR, take, TAP_DIR, take)],
+        subprocess.run(["ssh", *mi.SSH_OPTS, host, "rm -f %s/%s.wav %s/%s.json" % (d, take, d, take)],
                        capture_output=True)
         return wav, json.load(open(js))
     return fetch
@@ -429,10 +446,10 @@ def scp_cpu(host):
     """the plugin's timer ring (cpu-ring.log in its module folder, written while dev_cpu_log is 1) from the Move:
     cpu() -> its text ("" when there is none), the file deleted there"""
     import subprocess
-    path = "%s/%s/cpu-ring.log" % (mi.MODS, mi.MODULE_ID)
+    words = "%s %s/%s/cpu-ring.log" % (mi.inst_glob("cpu-ring.log"), mi.MODS, mi.MODULE_ID)
 
     def cpu():
-        r = subprocess.run(["ssh", *mi.SSH_OPTS, host, "cat %s 2>/dev/null; rm -f %s" % (path, path)],
+        r = subprocess.run(["ssh", *mi.SSH_OPTS, host, "%s; rm -f %s" % (newest_cmd(words), words)],
                            capture_output=True, text=True)
         return r.stdout if r.returncode == 0 else ""
     return cpu
@@ -587,7 +604,7 @@ class TapRig(UsbRig):
         if got is None:
             self.stop()
             raise RuntimeError("the tap %s did not arrive: is the installed dsp.so a build with dev_play (its "
-                               "module_data/frodhes/boot.txt says dev_play=1), Frodhes in slot %d, and does the host "
+                               "module_data/frodhes/inst/<k>/boot.txt says dev_play=1), Frodhes in slot %d, and does the host "
                                "keep calling render_block (module.json requires_continuous_processing)?" %
                                (take, self.slot + 1))
         path, js = got

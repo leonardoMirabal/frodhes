@@ -222,7 +222,7 @@ def test_plugin_every_key_set_get():
 def test_plugin_state_round_trip():
     """test_bridge api: 1000 random settings records through state -> set_param("state") -> state stable (sanitized
     as the FM-1 sanitizes); the current sound (TONE, SPREAD) and the tempo come back with a state load"""
-    r = _bridge("api", "build/move/frodhes/dsp.so")
+    r = _bridge("api", "build/move/frodhes/engine.so")    # (the plugin on its own: api also checks its one-app rule)
     if r is None:
         pytest.skip("no Linux arm64 and no frodhes-move:bookworm image (make move-image)")
     assert "ok    bridge api (0 failures)" in r.stdout, r.stdout[-3000:] + r.stderr[-2000:]

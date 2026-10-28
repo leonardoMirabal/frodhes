@@ -24,6 +24,8 @@
  * (mb_state_get / mb_state_set), enum values by index or by label (mb_parse_wire), which MIDI sources play. */
 #include <pthread.h>
 #include <sched.h>
+#include <sys/file.h>
+#include <dlfcn.h>
 #include <stdatomic.h>
 #include <time.h>
 #include "move_store.h"
@@ -100,9 +102,16 @@ static struct {
     uint8_t stg_pat[MB_PAT_N];
     uint32_t stg_blk;
     int stg_have;
+    uint32_t stg_imp;                    /* the import (below) the staged record holds: imp_done at the staging */
+    /* the shared store (several instances, move_loader.c): the user presets another instance wrote to store.bin, read
+     * by the worker and applied by the audio side when quiet (mb_stage): imp_seq odd while the worker copies, even =
+     * that import's id; imp_done the last id applied */
+    uint8_t imp[ST_TAIL_N];
+    _Atomic uint32_t imp_seq;
+    uint32_t imp_done;
     pthread_t wk; int wk_on; _Atomic int wk_stop, booting;
     _Atomic int ready;                   /* the app has booted (the worker booted it): render plays */
-    char dir[512], mod_dir[512];
+    char dir[512], mod_dir[512], idir[512];   /* the data folder (shared), the module's, this instance's own */
     _Atomic int cpu_log;                 /* dev: the worker appends the timer ring to <module dir>/cpu-ring.log */
     _Atomic int stats_log;               /* dev: the worker appends dev_stats to <module dir>/stats.log, 10 a second */
     uint32_t saves, save_fail, loaded;
@@ -158,19 +167,99 @@ static int mb_boot(void)                 /* the worker: app_main up to its first
 /* ---- persistence (M1-08), the worker: SCHED_OTHER on cores 0-2 (off the audio core 3) as its first action; loads
  * the files and boots the app, then writes what the audio side staged (store.bin, pattern.bin) and, when asked,
  * the timer ring (cpu-ring.log) and dev_stats (stats.log), both in the module's folder. The data folder: /data/UserData/schwung/module_data/frodhes when Schwung's user
- * data is there, else the module's folder. From Schwung 1.8.1's source (plan 9.2 Q3): a module install or update
+ * data is there, else the module's folder; for a copy the loader made (move_loader.c: <data>/inst/<k>) the folder
+ * above inst/, with this instance's own files (boot.txt, tap/, cpu-ring.log, stats.log) in <k>. From Schwung 1.8.1's source (plan 9.2 Q3): a module install or update
  * and a Schwung update both merge files by rename into /data/UserData/schwung (nothing there is deleted, except
  * modules/store), and a module uninstall deletes only the module's own folder. So this folder survives all three.
  * (presets/<id>/ would too, but the host's preset browser lists every .json file there.) */
 static void mb_pick_dir(const char *module_dir)
 {
     struct stat st;
+    size_t n;
+    const char *k;
     snprintf(mb.mod_dir, sizeof mb.mod_dir, "%s", module_dir && *module_dir ? module_dir : ".");
+    n = strlen(mb.mod_dir);
+    k = n ? mb.mod_dir + n : mb.mod_dir;
+    while (k > mb.mod_dir && k[-1] >= '0' && k[-1] <= '9') k--;
+    if (*k && k - mb.mod_dir >= 6 && !strncmp(k - 6, "/inst/", 6)) {   /* a copy of the loader (move_loader.c):
+                                                                     * <data>/inst/<k>, the data folder above it */
+        snprintf(mb.dir, sizeof mb.dir, "%.*s", (int)(k - 6 - mb.mod_dir), mb.mod_dir);
+        if (!mb.dir[0]) snprintf(mb.dir, sizeof mb.dir, "/");
+        snprintf(mb.idir, sizeof mb.idir, "%s", mb.mod_dir);
+        return;
+    }
     if (strstr(mb.mod_dir, "/modules/") && stat("/data/UserData/schwung", &st) == 0 && S_ISDIR(st.st_mode))
         snprintf(mb.dir, sizeof mb.dir, "/data/UserData/schwung/module_data/frodhes");
     else
         snprintf(mb.dir, sizeof mb.dir, "%s", mb.mod_dir);
+    snprintf(mb.idir, sizeof mb.idir, "%s", mb.dir);
 }
+/* ---- the shared store: one store.bin in the data folder for every instance (move_loader.c gives each slot its own
+ * copy of the plugin; they share the data folder). The settings are the last writer's; the user presets (the tail,
+ * U01-U16) are one set: a write keeps the presets on disk unless this instance changed its own (one writer at a
+ * time: flock on .store.lock, read, merge, write), and a store.bin another instance wrote is read here (the worker:
+ * a stat every 100 ms) and its presets handed to the app (mb_stage applies them when quiet). Store.bin keeps its
+ * place, name and format: nothing to migrate. Worker only. */
+#define MB_TAIL_AT (4u + 256u)
+static uint8_t mb_base_tail[ST_TAIL_N];  /* the presets this instance and the file last agreed on */
+static struct { dev_t dev; ino_t ino; off_t size; long sec, nsec; int have; } mb_sig;
+static void mb_store_base(const uint8_t *rec)
+{
+    if (rec[0] == 1 && rec[1] == 2) memcpy(mb_base_tail, rec + MB_TAIL_AT, ST_TAIL_N);
+    else memset(mb_base_tail, 0, ST_TAIL_N);
+}
+static int mb_store_sig(int set)         /* 1: store.bin is not as last seen (set: remember it as it is now) */
+{
+    char path[600];
+    struct stat a;
+    int moved;
+    snprintf(path, sizeof path, "%s/store.bin", mb.dir);
+    if (stat(path, &a)) return 0;
+    moved = !mb_sig.have || a.st_dev != mb_sig.dev || a.st_ino != mb_sig.ino || a.st_size != mb_sig.size ||
+            (long)a.st_mtim.tv_sec != mb_sig.sec || (long)a.st_mtim.tv_nsec != mb_sig.nsec;
+    if (set || moved) {
+        mb_sig.dev = a.st_dev; mb_sig.ino = a.st_ino; mb_sig.size = a.st_size;
+        mb_sig.sec = (long)a.st_mtim.tv_sec; mb_sig.nsec = (long)a.st_mtim.tv_nsec; mb_sig.have = 1;
+    }
+    return moved;
+}
+static void mb_import_post(const uint8_t *tail)   /* the presets for the app (mb_stage) */
+{
+    uint32_t q = atomic_load_explicit(&mb.imp_seq, memory_order_relaxed);
+    atomic_store_explicit(&mb.imp_seq, q + 1u, memory_order_relaxed);
+    atomic_thread_fence(memory_order_release);
+    memcpy(mb.imp, tail, ST_TAIL_N);
+    atomic_store_explicit(&mb.imp_seq, q + 2u, memory_order_release);
+}
+static void mb_store_poll(void)          /* another instance wrote store.bin: its presets */
+{
+    static uint8_t cur[sizeof web_store_buf];
+    if (!mb_store_sig(0)) return;
+    if (ms_load(mb.dir, "store.bin", cur, sizeof cur) > 0 && cur[0] == 1 && cur[1] == 2 &&
+        memcmp(cur + MB_TAIL_AT, mb_base_tail, ST_TAIL_N)) {
+        memcpy(mb_base_tail, cur + MB_TAIL_AT, ST_TAIL_N);
+        mb_import_post(mb_base_tail);
+    }
+}
+/* store.bin = st's settings with the presets merged (st is changed to what was written): 0 written */
+static int mb_store_write(uint8_t *st, int stale)
+{
+    static uint8_t cur[sizeof web_store_buf];
+    char lp[600];
+    int lk, rc;
+    snprintf(lp, sizeof lp, "%s/.store.lock", mb.dir);
+    lk = open(lp, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+    if (lk >= 0) (void)flock(lk, LOCK_EX);
+    /* this instance's presets win only when it changed them itself (and the record has the last import) */
+    if ((stale || !memcmp(st + MB_TAIL_AT, mb_base_tail, ST_TAIL_N)) &&
+        ms_load(mb.dir, "store.bin", cur, sizeof cur) > 0 && cur[0] == 1 && cur[1] == 2)
+        memcpy(st + MB_TAIL_AT, cur + MB_TAIL_AT, ST_TAIL_N);
+    rc = ms_save(mb.dir, "store.bin", st, sizeof cur);
+    if (!rc) { memcpy(mb_base_tail, st + MB_TAIL_AT, ST_TAIL_N); (void)mb_store_sig(1); }
+    if (lk >= 0) { (void)flock(lk, LOCK_UN); close(lk); }
+    return rc;
+}
+
 static void mb_load_files(void)          /* before the boot: what settings_load and seq_load will read */
 {
     (void)ms_mkdirs(mb.dir);
@@ -180,22 +269,31 @@ static void mb_load_files(void)          /* before the boot: what settings_load 
     /* (no sequencer on the Move: pattern.bin is not loaded, MB_CC_DROP) */
     memcpy(mb.stg_store, web_store_buf, sizeof web_store_buf);   /* (what is on disk: nothing to write yet) */
     memcpy(mb.stg_pat, host_mem + MB_PAT_LO, MB_PAT_N);
+    mb_store_base(web_store_buf);
+    (void)mb_store_sig(1);
 }
 static void mb_stage(void);
 static uint32_t mb_wr_seq, mb_cpu_wr;
 static void mb_write_staged(void)
 {
     static uint8_t st[sizeof web_store_buf], pat[MB_PAT_N], last_st[sizeof web_store_buf], last_pat[MB_PAT_N];
+    static uint8_t raw[sizeof web_store_buf];
     static int have_last;
-    uint32_t q1 = atomic_load_explicit(&mb.stg_seq, memory_order_acquire), q2;
+    uint32_t q1 = atomic_load_explicit(&mb.stg_seq, memory_order_acquire), q2, imp;
     if (q1 == mb_wr_seq || (q1 & 1u)) return;
     memcpy(st, mb.stg_store, sizeof st);
     memcpy(pat, mb.stg_pat, sizeof pat);
+    imp = mb.stg_imp;
     atomic_thread_fence(memory_order_acquire);
     q2 = atomic_load_explicit(&mb.stg_seq, memory_order_relaxed);
     if (q1 != q2) return;                                     /* (copied over meanwhile: next time) */
-    if (st[0] == 1 && (!have_last || memcmp(st, last_st, sizeof st))) {
-        if (ms_save(mb.dir, "store.bin", st, sizeof st)) mb.save_fail++; else { mb.saves++; memcpy(last_st, st, sizeof st); }
+    if (st[0] == 1 && (!have_last || memcmp(st, last_st, sizeof st))) {   /* (last_st: the record as staged) */
+        memcpy(raw, st, sizeof st);
+        if (mb_store_write(st, imp != atomic_load_explicit(&mb.imp_seq, memory_order_relaxed))) mb.save_fail++;
+        else {
+            mb.saves++; memcpy(last_st, raw, sizeof st);
+            if (memcmp(st + MB_TAIL_AT, raw + MB_TAIL_AT, ST_TAIL_N)) mb_import_post(st + MB_TAIL_AT);
+        }
     }
     if (!have_last || memcmp(pat, last_pat, sizeof pat)) {
         int erased = 1;
@@ -292,8 +390,8 @@ static void mp_finish(void)
     k = snprintf(js, sizeof js, "{\"id\":\"%s\",\"sr\":44100,\"base_ms\":%u,\"grid_ms\":%u,\"frame0\":%u,\"frames\":%u,"
                  "\"events\":%u,\"played\":%u,\"pieces\":%u,\"late\":%u,\"bad\":%u,\"dropped\":%u,\"aborted\":%d}\n", mp.id,
                  mp.base, MB_GRID_MS, mp.f0w, mp.nfr, mp.n, mp.r, mp.pieces, mp.late, mp.bad, dr, atomic_load(&mp.abort));
-    snprintf(jp, sizeof jp, "%s/tap/%s.json", mb.dir, mp.id);
-    snprintf(jt, sizeof jt, "%s/tap/.%s.json.tmp", mb.dir, mp.id);
+    snprintf(jp, sizeof jp, "%s/tap/%s.json", mb.idir, mp.id);
+    snprintf(jt, sizeof jt, "%s/tap/.%s.json.tmp", mb.idir, mp.id);
     fd = open(jt, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (fd >= 0) { if (ms_write_all(fd, js, (size_t)k) == 0) (void)fsync(fd); close(fd); (void)rename(jt, jp); }
     mp_open = 0;
@@ -308,7 +406,7 @@ static void mb_write_tap(void)           /* the worker */
         uint8_t h[44];
         if (mp_fd >= 0) { close(mp_fd); mp_fd = -1; }
         mp_wseq = q; mp_tr = 0; mp_open = 1;
-        snprintf(dir, sizeof dir, "%s/tap", mb.dir);
+        snprintf(dir, sizeof dir, "%s/tap", mb.idir);
         (void)ms_mkdirs(dir);
         snprintf(mp_path, sizeof mp_path, "%s/%s.wav", dir, mp.id);
         snprintf(mp_tmp, sizeof mp_tmp, "%s/.%s.wav.tmp", dir, mp.id);
@@ -460,7 +558,8 @@ static int mp_get(char *buf, int n)
 
 /* which build runs (the device tools): the features of this bridge, the app's version, and the CRC-32 of the
  * dsp.so file in the module folder as the worker found it when this instance started (zlib.crc32 of the local
- * build compares); written to <data dir>/boot.txt and answered by get dev_build */
+ * build compares: the file this code was loaded from, dladdr; under the loader this instance's copy of engine.so); written to this instance's
+ * folder (<data dir>/inst/<k>/boot.txt under the loader) and answered by get dev_build */
 #define MB_FEATURES "bridge=2 dev_play=1"
 static char mb_build[160];
 static uint32_t mb_starts;
@@ -471,7 +570,13 @@ static void mb_note_build(void)
     uint32_t c = 0xFFFFFFFFu, total = 0;
     int fd, k;
     ssize_t r;
-    snprintf(path, sizeof path, "%s/dsp.so", mb.mod_dir);
+    {   /* this file itself (dladdr): a copy the loader made, or the plugin loaded on its own */
+        Dl_info di;
+        if (dladdr((void *)mb_note_build, &di) && di.dli_fname && di.dli_fname[0])
+            snprintf(path, sizeof path, "%s", di.dli_fname);
+        else
+            snprintf(path, sizeof path, "%s/dsp.so", mb.mod_dir);
+    }
     fd = open(path, O_RDONLY | O_CLOEXEC);
     if (fd >= 0) {
         while ((r = read(fd, b, sizeof b)) > 0) {
@@ -481,10 +586,14 @@ static void mb_note_build(void)
         close(fd);
     }
     mb_starts++;
-    snprintf(mb_build, sizeof mb_build, "%s ver=%s dsp_crc32=%08x dsp_bytes=%u starts=%u", MB_FEATURES, APP_VER,
-             fd >= 0 ? ~c : 0u, total, mb_starts);
+    {   /* at: CLOCK_MONOTONIC ms of this start (a copy the loader loads again counts starts from 1: at tells) */
+        struct timespec t;
+        clock_gettime(CLOCK_MONOTONIC, &t);
+        snprintf(mb_build, sizeof mb_build, "%s ver=%s dsp_crc32=%08x dsp_bytes=%u starts=%u at=%lld", MB_FEATURES,
+                 APP_VER, fd >= 0 ? ~c : 0u, total, mb_starts, (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000);
+    }
     k = snprintf(line, sizeof line, "%s\n", mb_build);
-    snprintf(path, sizeof path, "%s/boot.txt", mb.dir);
+    snprintf(path, sizeof path, "%s/boot.txt", mb.idir);
     fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (fd >= 0) { (void)ms_write_all(fd, line, (size_t)k); close(fd); }
 }
@@ -508,6 +617,7 @@ static void *mb_worker(void *arg)
     while (!atomic_load(&mb.wk_stop)) {
         struct timespec t = { 0, 100 * 1000000L };
         mb_write_staged();
+        mb_store_poll();
         mb_write_cpu();
         mb_write_stats();
         mb_write_tap();
@@ -947,13 +1057,26 @@ static void mb_gr_tick(void)
 static void mb_stage(void)
 {
     uint32_t q;
+    static uint8_t tail[ST_TAIL_N];
+    uint32_t iq = atomic_load_explicit(&mb.imp_seq, memory_order_acquire);
     int dirty = web_store_dirty != 0, pat = memcmp(mb.stg_pat, host_mem + MB_PAT_LO, MB_PAT_N) != 0;
-    if (!(dirty || pat || !mb.stg_have) || !eng_quiet() || !fx_quiet()) return;
+    int imp = !(iq & 1u) && iq != mb.imp_done;
+    if (!(dirty || pat || imp || !mb.stg_have) || !eng_quiet() || !fx_quiet()) return;
+    if (imp) {                           /* another instance's presets (the worker read them): ~1.5 KB of memcpy */
+        memcpy(tail, mb.imp, sizeof tail);
+        atomic_thread_fence(memory_order_acquire);
+        if (atomic_load_explicit(&mb.imp_seq, memory_order_relaxed) == iq) {
+            memcpy(st_tail, tail, ST_TAIL_N);
+            memcpy(web_store_buf + MB_TAIL_AT, tail, ST_TAIL_N);
+            mb.imp_done = iq;
+        }
+    }
     q = atomic_load_explicit(&mb.stg_seq, memory_order_relaxed);
     atomic_store_explicit(&mb.stg_seq, q + 1u, memory_order_relaxed);   /* odd: copying */
     atomic_thread_fence(memory_order_release);
     memcpy(mb.stg_store, web_store_buf, sizeof web_store_buf);
     memcpy(mb.stg_pat, host_mem + MB_PAT_LO, MB_PAT_N);
+    mb.stg_imp = mb.imp_done;
     atomic_store_explicit(&mb.stg_seq, q + 2u, memory_order_release);
     web_store_dirty = 0;
     mb.stg_have = 1;
@@ -1087,7 +1210,7 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, "chain_params")) { if ((int)sizeof MOVE_CHAIN_PARAMS > n) return -1; memcpy(buf, MOVE_CHAIN_PARAMS, sizeof MOVE_CHAIN_PARAMS); return (int)sizeof MOVE_CHAIN_PARAMS - 1; }
     if (!strcmp(key, "rev")) return snprintf(buf, (size_t)n, "%u", mb.rev);
     if (!strcmp(key, "dev_cpu_ring")) return mb_cpu_ring(buf, n);
-    if (!strcmp(key, "dev_store")) return snprintf(buf, (size_t)n, "dir=%s loaded=%u saves=%u fail=%u", mb.dir, mb.loaded, mb.saves, mb.save_fail);
+    if (!strcmp(key, "dev_store")) return snprintf(buf, (size_t)n, "dir=%s inst=%s loaded=%u saves=%u fail=%u imports=%u", mb.dir, mb.idir, mb.loaded, mb.saves, mb.save_fail, mb.imp_done / 2u);
     if (!strcmp(key, "dev_pattern_crc")) return snprintf(buf, (size_t)n, "%08x", ms_crc32(host_mem + MB_PAT_LO, MB_PAT_N));
     if (!strcmp(key, "dev_sus")) return snprintf(buf, (size_t)n, "held=%u latched=%u midi=%u down=%u up=%u touch=%d",
                                                  (unsigned)sus_held, (unsigned)sus_latched, (unsigned)sus_midi,

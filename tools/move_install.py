@@ -3,9 +3,10 @@
 """Install the Frodhes module on the Move (M1-19), with the previous one kept and a rollback. DRY RUN by default:
 it prints every command; --go runs them.
 
-    tools/move_install.py [--go] install [--src DIR]    build/move/frodhes/ (dsp.so, module.json, help.json, screen.js, canvas.js) -> the Move
+    tools/move_install.py [--go] install [--src DIR]    build/move/frodhes/ (dsp.so, engine.so, module.json, help.json, screen.js, canvas.js) -> the Move
     tools/move_install.py [--go] rollback               the previous module back (the current one kept aside)
-    tools/move_install.py info                          the installed version, dsp.so's sha256, the kept modules
+    tools/move_install.py info                          the installed version, dsp.so's and engine.so's sha256, the kept
+                                                        modules, each instance's boot.txt (inst/<k>)
     --host USER@HOST (default $MOVE_HOST, else ableton@move.local); --target-dir DIR: a local folder stands in for
     the Move's sound generator folder (the tests; nothing goes over the network)
 
@@ -18,6 +19,10 @@ process crashes; the probe's install.sh found the same rule):
   3. two renames: frodhes -> .frodhes.prev-<time>, the staging folder -> frodhes. A running instance keeps its
      mapping of the old file (the inode lives on in the kept folder); the next load takes the new one;
   4. kept folders beyond --keep (default 2) are deleted, oldest first.
+dsp.so is the loader and engine.so the plugin (move/move_loader.c): each slot's instance runs its own copy of
+engine.so, DATA/inst/<k>/dsp-<crc>.so, made at the instance's create and made again when engine.so changes (size, CRC). A
+running instance keeps its copy; the next load copies the new engine.so. The data folder (DATA: store.bin, the copies)
+is outside the module folder, so an install never touches it.
 A rollback is the same two renames the other way: frodhes -> .frodhes.rolledback-<time>, the newest kept -> frodhes.
 Unload Frodhes from every slot before an install or a rollback (the device checklist says so too)."""
 import argparse
@@ -44,9 +49,17 @@ def move_lock(why=""):
                      say=lambda m: print(m, file=sys.stderr, flush=True))
 MODS = "/data/UserData/schwung/modules/sound_generators"
 MODULE_ID = "frodhes"
-PACKAGE = ("dsp.so", "module.json", "help.json", "screen.js", "canvas.js")
+PACKAGE = ("dsp.so", "engine.so", "module.json", "help.json", "screen.js", "canvas.js")
 RETIRED = ("sustain.js",)     # files an older package had: not carried over (0.9.8: the PEDAL screen is gone)
-REQUIRED = ("dsp.so", "module.json")
+REQUIRED = ("dsp.so", "engine.so", "module.json")
+DATA = "/data/UserData/schwung/module_data/" + MODULE_ID      # the data folder: store.bin, inst/<k>/ per instance
+INST = DATA + "/inst"
+
+
+def inst_glob(name):
+    """a shell word list: name in every instance's folder (inst/<k>/name), then the data folder's own (a build before
+    the loader wrote there)"""
+    return "%s/*/%s %s/%s" % (INST, name, DATA, name)
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
 
 
@@ -147,9 +160,11 @@ def rollback(t, stamp=None):
 
 def info(t):
     m, cur = t.mods, t.mods + "/" + MODULE_ID
+    data = t.local + "/.data" if t.local else DATA
     code, out = t.run("cd %s 2>/dev/null && { cat %s/module.json 2>/dev/null | grep '\"version\"'; "
-                      "sha256sum %s/dsp.so 2>/dev/null; ls -1d .%s.* 2>/dev/null; } || echo 'not installed'"
-                      % (q(m), MODULE_ID, MODULE_ID, MODULE_ID))
+                      "sha256sum %s/dsp.so %s/engine.so 2>/dev/null; ls -1d .%s.* 2>/dev/null; "
+                      "for f in %s/inst/*/boot.txt; do [ -f \"$f\" ] && echo \"$f: $(cat \"$f\")\"; done; true; } "
+                      "|| echo 'not installed'" % (q(m), MODULE_ID, MODULE_ID, MODULE_ID, MODULE_ID, q(data)))
     if out:
         t.out(out.rstrip())
     return out

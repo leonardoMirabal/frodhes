@@ -93,16 +93,26 @@ def move_package(ver):
 
 
 def move_tar_matches(tar, src):
-    """the tarball's dsp.so = the one move_install.py installs (build/move/frodhes/dsp.so): (ok, why)"""
-    try:
-        with tarfile.open(tar) as t:
-            m = t.extractfile("frodhes/dsp.so")
-            a = hashlib.sha256(m.read()).hexdigest() if m else None
-    except (OSError, KeyError, tarfile.TarError) as e:
-        return False, f"{tar}: {e}"
-    so = os.path.join(src, "dsp.so")
-    b = sha256(so) if os.path.exists(so) else None
-    return (a is not None and a == b), f"the tarball's dsp.so {str(a)[:12]}, {so} {str(b)[:12]}"
+    """the tarball's dsp.so (the loader) and engine.so (the plugin) = the ones move_install.py installs
+    (build/move/frodhes/): (ok, why). engine.so is compared when either side has it"""
+    why, ok = [], True
+    for name in ("dsp.so", "engine.so"):
+        try:
+            with tarfile.open(tar) as t:
+                try:
+                    m = t.extractfile("frodhes/" + name)
+                except KeyError:
+                    m = None
+                a = hashlib.sha256(m.read()).hexdigest() if m else None
+        except (OSError, tarfile.TarError) as e:
+            return False, f"{tar}: {e}"
+        so = os.path.join(src, name)
+        b = sha256(so) if os.path.exists(so) else None
+        if name == "engine.so" and a is None and b is None:
+            continue
+        ok = ok and a is not None and a == b
+        why.append(f"the tarball's {name} {str(a)[:12]}, {so} {str(b)[:12]}")
+    return ok, "; ".join(why)
 
 
 # ---------------------------------------------------------------- the plan

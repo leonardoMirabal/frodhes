@@ -23,6 +23,8 @@ def pkg(d, ver, so=None, mid="frodhes"):
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "dsp.so"), "wb") as f:
         f.write(so or ("ELF " + ver).encode() * 100)
+    with open(os.path.join(d, "engine.so"), "wb") as f:      # (the plugin; dsp.so is the loader)
+        f.write(("ENGINE " + ver).encode() * 100)
     json.dump({"id": mid, "version": ver}, open(os.path.join(d, "module.json"), "w"))
     json.dump({"children": []}, open(os.path.join(d, "help.json"), "w"))
     return d
@@ -53,6 +55,7 @@ def test_install_switch_keep_rollback(tmp_path):
     mods.mkdir()
     mi.install(tgt(mods), pkg(str(tmp_path / "v1"), "1"), stamp="20260101-000001")
     assert cur(mods) == b"ELF 1" * 100 and kept(mods) == [] and not kept(mods, "staging")
+    assert cur(mods, "engine.so") == b"ENGINE 1" * 100
     (mods / "frodhes" / "settings.bin").write_bytes(b"\x01\x02")          # the module's own data file
     held = open(mods / "frodhes" / "dsp.so", "rb")                         # a loaded instance's mapping
     mi.install(tgt(mods), pkg(str(tmp_path / "v2"), "2"), stamp="20260101-000002")
@@ -82,6 +85,9 @@ def test_bad_package_stops_before_copying(tmp_path):
     os.remove(os.path.join(pkg(str(tmp_path / "y"), "1"), "dsp.so"))
     with pytest.raises(SystemExit, match="missing"):
         mi.install(tgt(mods), str(tmp_path / "y"))
+    os.remove(os.path.join(pkg(str(tmp_path / "z"), "1"), "engine.so"))   # (the loader without its engine)
+    with pytest.raises(SystemExit, match="engine.so missing"):
+        mi.install(tgt(mods), str(tmp_path / "z"))
     assert os.listdir(mods) == []
 
 
@@ -107,6 +113,12 @@ def test_info_and_cli(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     r = subprocess.run([sys.executable, tool, "info", "--target-dir", str(mods)], capture_output=True, text=True)
     assert '"version": "7.0"' in r.stdout and mi.sha256(os.path.join(src, "dsp.so")) in r.stdout, r.stdout
+    assert mi.sha256(os.path.join(src, "engine.so")) in r.stdout, r.stdout
+    inst = mods / ".data" / "inst" / "0"                      # (an instance's boot.txt, as the plugin writes it)
+    inst.mkdir(parents=True)
+    (inst / "boot.txt").write_text("bridge=2 dev_play=1 dsp_crc32=0badc0de starts=1\n")
+    r = subprocess.run([sys.executable, tool, "info", "--target-dir", str(mods)], capture_output=True, text=True)
+    assert "inst/0/boot.txt: bridge=2 dev_play=1 dsp_crc32=0badc0de" in r.stdout, r.stdout
 
 
 def test_dry_run_over_ssh_names_the_moves_folder(tmp_path):

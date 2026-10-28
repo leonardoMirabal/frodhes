@@ -65,7 +65,7 @@ def test_install_paths():
     mods = re.search(r'^MODS = "([^"]+)"', inst, re.M).group(1)
     assert f"-C {mods}'" in DOC and f"{mods}/frodhes" in DOC
     assert "ableton@move.local" in inst and "ableton@move.local" in DOC
-    data = re.search(r'snprintf\(mb\.dir, sizeof mb\.dir, "([^"]+)"\)', _src("move", "move_bridge.h")).group(1)
+    data = re.search(r'snprintf\(mb\.dir, sizeof mb\.dir, "(/data[^"]+)"\)', _src("move", "move_bridge.h")).group(1)
     assert f"`{data}`" in DOC
 
 
