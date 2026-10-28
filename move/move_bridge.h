@@ -78,6 +78,8 @@ static struct {
     uint32_t tick; double acc, beat_prev;
     /* counters (dev_stats) */
     uint32_t q_full, midi_in, midi_out, f8_synth, keys_set, keys_bad, state_ok, state_bad, steps;
+    uint32_t rt_f8, rt_fa, rt_fb, rt_fc;  /* realtime bytes that came in (on_midi, any clock mode): the real clock */
+    int h_run, h_bpm10;                   /* the host's transport (get_clock_status RUNNING) and tempo, each block */
     /* the state mailbox (M1-07): 0 free, 1 being written, 2 ready, 3 being applied */
     _Atomic int st_flag;
     settings_t st_set;
@@ -99,6 +101,7 @@ static struct {
     _Atomic int ready;                   /* the app has booted (the worker booted it): render plays */
     char dir[512], mod_dir[512];
     _Atomic int cpu_log;                 /* dev: the worker appends the timer ring to <module dir>/cpu-ring.log */
+    _Atomic int stats_log;               /* dev: the worker appends dev_stats to <module dir>/stats.log, 10 a second */
     uint32_t saves, save_fail, loaded;
     /* the sustain control (M1-13b): presses / releases seen; the touch note that is the control (-1: none) */
     uint32_t sus_down, sus_up;
@@ -151,7 +154,7 @@ static int mb_boot(void)                 /* the worker: app_main up to its first
 
 /* ---- persistence (M1-08), the worker: SCHED_OTHER on cores 0-2 (off the audio core 3) as its first action; loads
  * the files and boots the app, then writes what the audio side staged (store.bin, pattern.bin) and, when asked,
- * the timer ring (cpu-ring.log). The data folder: /data/UserData/schwung/module_data/frodhes when Schwung's user
+ * the timer ring (cpu-ring.log) and dev_stats (stats.log), both in the module's folder. The data folder: /data/UserData/schwung/module_data/frodhes when Schwung's user
  * data is there, else the module's folder. From Schwung 1.8.1's source (plan 9.2 Q3): a module install or update
  * and a Schwung update both merge files by rename into /data/UserData/schwung (nothing there is deleted, except
  * modules/store), and a module uninstall deletes only the module's own folder. So this folder survives all three.
@@ -200,6 +203,21 @@ static void mb_write_staged(void)
     }
     have_last = 1;
     mb_wr_seq = q1;
+}
+static int mb_stats(char *buf, int n);
+static void mb_write_stats(void)          /* (dev_stats_log: the clock probe reads where the clock comes from) */
+{
+    static char line[512];
+    char path[600];
+    FILE *f;
+    int k;
+    if (!atomic_load(&mb.stats_log)) return;
+    snprintf(path, sizeof path, "%s/stats.log", mb.mod_dir);
+    f = fopen(path, "a");
+    if (!f) return;
+    k = mb_stats(line, (int)sizeof line - 1);
+    if (k > 0 && k < (int)sizeof line - 1) { line[k] = '\n'; fwrite(line, 1, (size_t)k + 1u, f); }
+    fclose(f);
 }
 static void mb_write_cpu(void)
 {
@@ -488,6 +506,7 @@ static void *mb_worker(void *arg)
         struct timespec t = { 0, 100 * 1000000L };
         mb_write_staged();
         mb_write_cpu();
+        mb_write_stats();
         mb_write_tap();
         nanosleep(&t, 0);
     }
@@ -753,6 +772,8 @@ static void mb_clock_block(int frames)
     double b = -1.0, ms_per = (double)frames * 1000.0 / 44100.0;
     int running;
     uint32_t n = 0;
+    if (h && h->get_clock_status) mb.h_run = h->get_clock_status() == MOVE_CLOCK_STATUS_RUNNING;
+    if (h && h->get_bpm) mb.h_bpm10 = (int)(h->get_bpm() * 10.0f + 0.5f);
     if (!h || !h->get_clock_status || mb.clock_mode == MB_CLOCK_MIDI) return;
     if (mb.clock_mode == MB_CLOCK_AUTO && mb.real_f8 && mb.blocks - mb.real_f8_blk < MB_CLOCK_REAL_BLOCKS) { mb.clk_run = 0; return; }
     running = h->get_clock_status() == MOVE_CLOCK_STATUS_RUNNING;
@@ -989,13 +1010,24 @@ static void mb_midi_in(const uint8_t *m, int len, int source)
     if (source == MOVE_MIDI_SOURCE_FX_BROADCAST) return;
     st = m[0];
     if (st < 0x80u || st == 0xF0u || st == 0xF7u) return;
-    if (st == 0xF8u) { mb.real_f8 = 1; mb.real_f8_blk = mb.blocks; }
+    if (st == 0xF8u) { mb.real_f8 = 1; mb.real_f8_blk = mb.blocks; mb.rt_f8++; }
+    else if (st == 0xFAu) mb.rt_fa++;
+    else if (st == 0xFBu) mb.rt_fb++;
+    else if (st == 0xFCu) mb.rt_fc++;
     if (mb.clock_mode == MB_CLOCK_HOST && (st == 0xF8u || st == 0xFAu || st == 0xFBu || st == 0xFCu)) return;
     mb.midi_in++;
     (void)mb_put(MB_EV_MIDI, st, len > 1 ? m[1] & 127u : 0u, len > 2 ? m[2] & 127u : 0u, 0, 0, 0);
 }
 
 /* ---- get_param / set_param */
+static int mb_stats(char *buf, int n)
+{
+    return snprintf(buf, (size_t)n, "ms=%u steps=%u blocks=%u midi_in=%u midi_out=%u q_full=%u f8_synth=%u keys=%u keys_bad=%u "
+                    "state_ok=%u state_bad=%u clock_mode=%d rt_f8=%u rt_fa=%u rt_fb=%u rt_fc=%u host_run=%d host_bpm10=%d "
+                    "bpm10=%u clklock=%u", mb.ms, mb.steps, mb.blocks, mb.midi_in, mb.midi_out, mb.q_full, mb.f8_synth,
+                    mb.keys_set, mb.keys_bad, mb.state_ok, mb.state_bad, mb.clock_mode, mb.rt_f8, mb.rt_fa, mb.rt_fb,
+                    mb.rt_fc, mb.h_run, mb.h_bpm10, tempo_bpm10(), (unsigned)clk_follows());
+}
 static int mb_get(const char *key, char *buf, int n)
 {
     int i;
@@ -1036,10 +1068,7 @@ static int mb_get(const char *key, char *buf, int n)
 #endif
     if (!strcmp(key, "dev_cpu")) return snprintf(buf, (size_t)n, "callbacks=%u max_us=%u", atomic_load(&mb.cpu_n), mb.cpu_max);
     /* development reads (tests, the device session) */
-    if (!strcmp(key, "dev_stats"))
-        return snprintf(buf, (size_t)n, "ms=%u steps=%u blocks=%u midi_in=%u midi_out=%u q_full=%u f8_synth=%u keys=%u keys_bad=%u "
-                        "state_ok=%u state_bad=%u clock_mode=%d", mb.ms, mb.steps, mb.blocks, mb.midi_in, mb.midi_out,
-                        mb.q_full, mb.f8_synth, mb.keys_set, mb.keys_bad, mb.state_ok, mb.state_bad, mb.clock_mode);
+    if (!strcmp(key, "dev_stats")) return mb_stats(buf, n);
     if (!strncmp(key, "dev:", 4)) {
         const char *k = key + 4;
         if (!strcmp(k, "bpm10")) return snprintf(buf, (size_t)n, "%u", tempo_bpm10());
@@ -1079,6 +1108,7 @@ static void mb_set(const char *key, const char *val)
     }
     if (!strcmp(key, "dev_play") || !strcmp(key, "dev_play_add")) { mp_set(key, val); return; }
     if (!strcmp(key, "dev_cpu_log")) { atomic_store(&mb.cpu_log, atoi(val) != 0); return; }
+    if (!strcmp(key, "dev_stats_log")) { atomic_store(&mb.stats_log, atoi(val) != 0); return; }
     if (!strcmp(key, "dev_sus_touch")) { int t = atoi(val); atomic_store(&mb.sus_touch, t >= 0 && t <= 9 && t != 8 ? t : -1); return; }
     if (!strcmp(key, "dev_clock")) { int m = atoi(val); if (m >= MB_CLOCK_AUTO && m <= MB_CLOCK_HOST) mb.clock_mode = m; return; }
 }

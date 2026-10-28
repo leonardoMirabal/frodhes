@@ -24,14 +24,35 @@ import move_ws  # noqa: E402
 NAMES = ["F%02d" % (i + 1) for i in range(19)] + ["U%02d" % (i + 1) for i in range(16)]
 
 
+def plugin_params():
+    """the plugin's params at their defaults (chain_params.json) and the CC each panel key follows (move_ui.h)"""
+    import re
+    ps = json.load(open(os.path.join(ROOT, "move", "module", "chain_params.json")))
+    dflt = {p["key"]: str(p.get("default", 0)) for p in ps}
+    ui = open(os.path.join(ROOT, "move", "module", "move_ui.h")).read()
+    cc = {}
+    for k, c in re.findall(r'\{"(\w+)", \w+, (\d+), MK_(?:PARAM|LATCH)', ui):
+        if int(c):
+            cc.setdefault(int(c), []).append(k)
+    return dflt, cc
+
+
 class FakeSchwung:
     """slot 0 holds `module` at preset 0; every message received is logged; mute: answer nothing"""
 
-    def __init__(self, module="frodhes", mute=False, refuse=False, noname=False, settings=None, cut_on=None):
+    def __init__(self, module="frodhes", mute=False, refuse=False, noname=False, settings=None, cut_on=None,
+                 full=False):
         self.module, self.mute, self.refuse, self.noname = module, mute, refuse, noname
         self.cut_on = cut_on                             # ("go" / "add": cut the connection once, after the first)
         self.settings = dict(settings or {})            # ("s_..." -> value: the settings keys the server reports)
+        self.full, self.ccmap, self.dflt = full, {}, {}  # (full: every param, set_param and a take's CCs change them,
+        if full:                                         # CC 120 resets the panel, as the plugin does)
+            self.dflt, self.ccmap = plugin_params()
+            self.settings = dict(self.dflt, **self.settings)
         self.preset, self.log, self.takes, self.cur = 0, [], {}, None
+        self.cc_drop = True                              # (the bridge drops the sequencer's and the arpeggiator's
+                                                         # and the chords' CCs, move_bridge.h MB_CC_DROP; False:
+                                                         # a build before)
         self.hist, self.conns = [], []                                   # (the order of preset switches and takes: host_fetch's state)
         self.server = serve(self.handle, "127.0.0.1", 0)
         self.url = "ws://127.0.0.1:%d/ws/remote-ui" % self.server.socket.getsockname()[1]
@@ -39,7 +60,9 @@ class FakeSchwung:
 
     def params(self):
         return dict({"synth:preset": str(self.preset), "synth:preset_count": str(len(NAMES)),
-                     "synth:preset_name": NAMES[self.preset]}, **{"synth:" + k: v for k, v in self.settings.items()})
+                     "synth:preset_name": NAMES[self.preset]},
+                    **{"synth:" + k: self.settings[k] for k in sorted(self.settings)})   # (by name, as the Move's
+        #                                     order is not the panel's: p_dl_depth comes before p_dl_sw)
 
     def drop_all(self):
         """every connection cut without a close frame (as the manager did, 2026-10-28)"""
@@ -73,6 +96,13 @@ class FakeSchwung:
                         self.takes[self.cur] = {"dur": int(v[2]), "ev": [], "go": False, "max_piece": 0}
                     elif v[0] == "go":
                         self.takes[self.cur]["go"] = True
+                        if self.full:
+                            for _, st, d1, d2 in sorted(self.takes[self.cur]["ev"]):
+                                if st & 0xF0 == 0xB0 and d1 == 120:
+                                    self.settings.update({k: v for k, v in self.dflt.items() if k.startswith("p_")})
+                                elif st & 0xF0 == 0xB0:
+                                    for k in self.ccmap.get(d1, ()):
+                                        self.settings[k] = str(d2)
                         self.hist.append(("take", self.cur))
                         if self.cut_on == "go":
                             self.cut_on = None
@@ -95,6 +125,12 @@ class FakeSchwung:
                         return
                 if m["key"] == "synth:p_hq":
                     self.hist.append(("hq", int(m["value"]) != 0))
+                k = m["key"][6:] if m["key"].startswith("synth:") else None
+                if self.full and k in self.settings:
+                    if (k == "p_dl_sw" and self.settings["p_dl_depth"] == "0"
+                            and str(m["value"]) != self.settings[k]):
+                        self.settings["p_dl_depth"] = "50"   # (as the panel: a switch gives MIX at 0 a start)
+                    self.settings[k] = str(m["value"])
                 if m["key"] == "synth:preset":
                     self.preset = int(m["value"])
                     self.hist.append(("pc", self.preset))
@@ -203,6 +239,9 @@ def host_fetch(fake, d):
     import wave
     import move_hil as mh
 
+    def keep(e):                                         # (MB_CC_DROP: CC 43-46, 52-63 never reach the app)
+        return not (fake.cc_drop and e[-3] & 0xF0 == 0xB0 and (43 <= e[-2] <= 46 or 52 <= e[-2] <= 63))
+
     def fetch(take):
         t = fake.takes.get(take)
         if not t or not t["go"]:
@@ -216,10 +255,10 @@ def host_fetch(fake, d):
             elif v == take:
                 break
             else:
-                lead += [e[1:] for e in sorted(fake.takes[v]["ev"]) if e[1] & 0xF0 in (0xB0, 0xC0)]
+                lead += [e[1:] for e in sorted(fake.takes[v]["ev"]) if e[1] & 0xF0 in (0xB0, 0xC0) and keep(e)]
         pre = 2560 if lead else 0
         lines = ["%d midi 0x%02X %d %d" % ((1 + i // 48,) + e) for i, e in enumerate(lead)]
-        lines += ["%d midi 0x%02X %d %d" % ((e[0] + pre,) + e[1:]) for e in t["ev"]]
+        lines += ["%d midi 0x%02X %d %d" % ((e[0] + pre,) + e[1:]) for e in t["ev"] if keep(e)]
         run = hostrun.run("tap-" + take, lines, t["dur"] + pre + 20,
                           binary=mh.host_binary(hq))   # (the Move's host build; p_hq: HQ)
         n, f0 = t["dur"] * 441 // 10, pre * 441 // 10
@@ -269,7 +308,8 @@ def test_tap_path_is_the_host(fake, tmp_path):
         assert len(cpu) == 1 and cpu[0]["report"]["worst"] == 349 and cpu[0]["report"]["n"] == 2000, cpu
         assert "2000 callbacks while usb-stress played, worst 349 us" in cpu[0]["numbers"] and "HQ on" in cpu[0]["numbers"]
         logs = [m["value"] for m in fake.log if m.get("key") == "synth:dev_cpu_log"]
-        assert logs == ["1", "0", "1", "0"], logs                 # (usb-stress, then usb-restrike: Rhodes, HQ on)
+        assert logs == ["1", "0", "1", "0", "0"], logs            # (usb-stress, then usb-restrike: Rhodes, HQ on;
+        #                                                             the restore's own 0 at the end)
         rs = [w for w in rows if w["test"] == "usb-restrike"]
         assert len(rs) == 1 and rs[0]["ok"] and "re-strikes" in rs[0]["numbers"], rs
     finally:
@@ -283,22 +323,29 @@ def _tap(fake, tmp_path):
 
 
 def test_leftover_arp_struck_again(fake, tmp_path, monkeypatch):
-    """the 2026-10-28 01:42 run: the arpeggiator left on in the plugin (CC 52 1, 1/8: a saved setup) struck every
-    held note of usb-host's phrase again on its steps. usb-host now names it (STRUCK AGAIN), and turns the modes off
-    first (GLOBAL_CCS, boot_keys) so the take is the host's"""
+    """the 2026-10-28 01:42 run (a build before MB_CC_DROP): the arpeggiator left on in the plugin (CC 52 1, 1/8: a
+    saved setup) struck every held note of usb-host's phrase again on its steps; usb-host names it (STRUCK AGAIN).
+    The Move's build drops the arpeggiator's CCs, so the same CCs leave the take as the host's, with no reset of them
+    in GLOBAL_CCS; usb-host's own reset (GLOBAL_CCS, boot_keys) goes out too"""
     mh, r = _tap(fake, tmp_path)
     monkeypatch.setattr(mh, "TAP_GRID_S", 0.0)
     monkeypatch.setattr(mh.time, "sleep", lambda s: None)
+    assert not any(43 <= c <= 46 or 52 <= c <= 63 for c, _ in mh.GLOBAL_CCS)
     try:
+        fake.cc_drop = False
         r._send("cc", 52, 1)
         r._send("cc", 53, 1)
-        r.rec(0.2, [])                                   # (a take that leaves the arpeggiator on, as usb-clock's)
+        r.rec(0.2, [])                                   # (a take that leaves the arpeggiator on)
         with monkeypatch.context() as m:
-            m.setattr(mh, "GLOBAL_CCS", ())
             m.setattr(r, "boot_settings", lambda: None)
             ok, rep = mh.usb_host(r, str(tmp_path / "left"), out=lambda s: None)
         assert not ok and rep["verdict"].startswith("STRUCK AGAIN"), rep["verdict"]
         assert sum(1 for w in rep["rows"] if w["again_ms"]) >= 5, [w["again_ms"] for w in rep["rows"]]
+        fake.cc_drop = True
+        with monkeypatch.context() as m:
+            m.setattr(r, "boot_settings", lambda: None)
+            ok, rep = mh.usb_host(r, str(tmp_path / "dropped"), out=lambda s: None)
+        assert ok and not any(w["again_ms"] for w in rep["rows"]), rep["verdict"]
         ok, rep = mh.usb_host(r, str(tmp_path / "reset"), out=lambda s: None)
         assert ok and not any(w["again_ms"] for w in rep["rows"]), rep["verdict"]
         assert [m["key"] for m in fake.log if m.get("key", "").startswith("synth:s_")] == \
@@ -414,5 +461,83 @@ def test_tap_retry_never_plays_twice(tmp_path, monkeypatch, cut):
                 r.rec(1.0, ev)
             assert sum(1 for t in f.takes.values() if t["go"]) == 1
         r.remote.close()
+    finally:
+        f.close()
+
+
+def test_stress_leaves_the_effects_on_then_d2_restores(tmp_path, monkeypatch):
+    """the user's report of 2026-10-28: after a d2 run the plugin loaded with every effect on and the feedbacks at
+    127 (usb-stress's HEAVY CCs, kept in the plugin's saved state). The repro: usb-stress alone leaves them; d2 reads
+    the state first and writes it back, and its summary checks the readback"""
+    import move_hil as mh
+    f = FakeSchwung(full=True)
+    try:
+        before = dict(f.settings)
+        r = mh.TapRig(f.url, host_fetch(f, str(tmp_path / "tap")), wait=2.0, cpu=fake_cpu(f))
+        monkeypatch.setattr(mh, "TAP_GRID_S", 0.0)
+        monkeypatch.setattr(mh.time, "sleep", lambda s: None)
+        mh.usb_stress(r, str(tmp_path / "s"), "rhodes", 2.0, out=lambda s: None)
+        left = {k for k in before if f.settings[k] != before[k]}
+        assert {"p_dl_fdbk", "p_ph_fdbk", "p_dl_sw", "p_ph_sw"} <= left, left       # (the repro: HEAVY stays)
+        f.settings = dict(before)
+        code = mh.d2(r, str(tmp_path / "d2"), ("rhodes",), ws=f.url, stress_secs=2.0, hq=1, out=lambda s: None)
+        rows = json.load(open(tmp_path / "d2" / "report.json"))["rows"]
+        st = [w for w in rows if w["test"] == "state"]
+        assert code == 0 and len(st) == 1 and st[0]["ok"], [(w["test"], w["verdict"]) for w in rows]
+        assert {k: v for k, v in f.settings.items() if before.get(k) != v} == {}
+        assert "| all | state | PASS |" in open(tmp_path / "d2" / "summary.md").read()
+        assert {"type": "set_param", "slot": 0, "key": "synth:p_hq", "value": "0"} == \
+            [m for m in f.log if m.get("key") == "synth:p_hq"][-1]               # (HQ back to its boot value)
+        r.remote.close()
+    finally:
+        f.close()
+
+
+@pytest.mark.parametrize("how", ["exception", "ctrl-c"])
+def test_state_restored_on_failure(how):
+    import move_hil as mh
+    f = FakeSchwung(full=True)
+    try:
+        before = dict(f.settings)
+        exc = RuntimeError("a test crashed") if how == "exception" else KeyboardInterrupt()
+        with pytest.raises(type(exc)):
+            with mh.KeptState(f.url, 0, out=lambda s: None) as ks:
+                with move_ws.Remote(f.url) as w:
+                    for k, v in (("p_dl_fdbk", 127), ("s_arpmode", 2), ("preset", 3)):
+                        w.set_param(0, "synth:" + k, v)
+                    w.pump(0.3)
+                assert f.settings["p_dl_fdbk"] == "127"
+                raise exc
+        assert ks.report["verdict"] == "PASS" and f.settings == before and f.preset == 0, ks.report
+        assert ks.report["written"][0] == "preset"                  # (the preset first: it loads its own values)
+    finally:
+        f.close()
+
+
+def test_state_check_fails_when_a_write_does_not_take():
+    """a param the plugin will not take back (here: the fake ignores it) fails the check, named"""
+    import move_hil as mh
+    f = FakeSchwung(full=True)
+    try:
+        with mh.KeptState(f.url, 0, out=lambda s: None) as ks:
+            f.settings["p_rv_decay"] = "127"
+            f.full = False                                  # (writes no longer change the fake's params)
+        assert ks.report["verdict"].startswith("FAIL") and "p_rv_decay" in ks.report["verdict"], ks.report
+    finally:
+        f.close()
+
+
+def test_state_restore_writes_the_switches_first():
+    """the Move, 2026-10-28: MIX written 0 before its switch came back 50 (a switch gives MIX at 0 a starting
+    amount). The switches and types go first, and what still differs is written again"""
+    import move_hil as mh
+    f = FakeSchwung(full=True)
+    try:
+        before = dict(f.settings)
+        with mh.KeptState(f.url, 0, out=lambda s: None) as ks:
+            f.settings.update(p_dl_sw="80", p_dl_depth="127", p_dl_fdbk="127")
+        assert ks.report["verdict"] == "PASS" and f.settings == before, ks.report
+        w = ks.report["written"]
+        assert w.index("p_dl_sw") < w.index("p_dl_depth"), w
     finally:
         f.close()

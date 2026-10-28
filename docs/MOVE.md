@@ -180,7 +180,8 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
   Over USB-C, as the FM-1 is tested: `usb-devices`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`
   (MIDI to the Move's Standalone port, its USB audio recorded, the FM-1's analysis; `--fake` runs them against a
   model of the device). On the Move first: Settings, USB-C audio out = Main Out (the Move sets it back to Mic at
-  every boot). `d2` runs them all for each engine and writes one table (`summary.md`). First it checks over
+  every boot). `d2` runs them all for each engine (`usb-clock` once, with the Rhodes) and writes one table
+  (`summary.md`). First it checks over
   Schwung's WebSocket (`tools/move_ws.py`) that slot 1 holds Frodhes, and it loads the engine's preset there.
   A failed preflight stops the run.
 - `--path tap` (the `usb-*` tests and `d2`) skips USB-C entirely. Each take goes over Schwung's WebSocket to the
@@ -202,10 +203,17 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
   glitches, and the sound is not louder after the pedal comes up. The test also writes the first 8 s with HQ
   on and with HQ off (`restrike-listen-hq1.wav`, `restrike-listen-hq0.wav`) for listening.
 - The plugin keeps its saved setup, but the host build boots clean. So before its take, `usb-host` turns off
-  the arpeggiator, chord mode, the sequencer, the pedal, FX bypass and RAW by CC. Over the tap it also writes
-  each setting that differs from a fresh instance (`move/tests/boot_keys.txt`, checked by `test_bridge boot`).
-  A note that the host strikes once but the Move strikes again while it is held fails as STRUCK AGAIN. That
-  happened in one run, when an arpeggiator left on re-struck every note.
+  the pedal, FX bypass and RAW by CC. Over the tap it also writes each setting that differs from a fresh
+  instance (`move/tests/boot_keys.txt`, checked by `test_bridge boot`). The Move has no arpeggiator, sequencer
+  or chords, and the bridge drops their CCs, so the tests do not send them. A note that the host strikes once
+  but the Move strikes again while it is held fails as STRUCK AGAIN. That happened in one run, before the
+  arpeggiator was removed, when an arpeggiator left on re-struck every note.
+- The tests leave the plugin as they found it. The plugin saves its settings and its panel, so a test's CCs
+  came back at the next load: once the arpeggiator (before it was removed), once every effect with the
+  feedbacks at 127 (`usb-stress`). So `d2`, every `usb-*` run and `usb-levels` first read all of the slot's params
+  over Schwung's WebSocket. At the end they write back each one that differs, the preset first. This also
+  happens after a failure, ctrl-C or SIGTERM. HQ goes back to Classic, its value at boot, and the dev player and the CPU log are stopped. Then the
+  tool reads the params again: `d2`'s summary has a `state` row, which fails when any param differs from before.
 - A take plays once: the plugin refuses a `begin` with the id of the take that went last. Each `dev_play_add`
   piece carries its number (`#K`), and the plugin refuses a piece that comes out of turn. If the WebSocket
   drops while a take is being sent, the tool stops the take. It sends the take again, under a new id, only
@@ -214,9 +222,19 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
   motor's pulse moves every level the tests read. Its velocity is checked as the FM-1 scan checks it: no drop from
   v24 on, and at least +10 dB from v40 to v117. MARIMBA's velocity must rise 26 to 32 dB from v8 to v127. A
   MARIMBA bar rings for less than a second, so `usb-sus` reads it within 0.2 s of key-up, with MUTE on (CC 103
-  127). The pedal holds the bar, and letting the pedal up mutes it as fast as a key-up does. In `usb-clock`, an
-  attack that the detector finds 5 ms or more late is counted, not taken as timing: a bar's ring can hide the
-  next step's attack. A few such attacks are allowed; the jitter of the other attacks must stay under 4 ms.
+  127). The pedal holds the bar, and letting the pedal up mutes it as fast as a key-up does.
+- `clock-probe` shows where the clock comes from when the Move's own transport plays. The tool asks for Play
+  on the Move, waits until the transport runs, records 10 s, then asks for Stop. Meanwhile the plugin logs its
+  counters to `stats.log` in its folder, 10 times a second, while `dev_stats_log` is 1. The counters are the
+  F8, FA and FC that came in, the pulses the bridge made itself, the host's transport and tempo, and the app's
+  tempo. It passes when the Move's own F8 arrive at the host's tempo and the bridge makes no pulses after the
+  first 3 s. It fails when only the bridge's fallback runs, or when the transport never ran.
+- `usb-clock` sends MIDI clock (Start, then F8) at 100 BPM, or `--bpm`. The tremolo is on (AM, full depth,
+  SYNC 1/8) and one Rhodes note is held. Its level then dips every half beat. The test finds the dips from 3 s on
+  and fits a straight line through them. The period must be within 1% of the clock's, and the jitter must stay
+  under 4 ms. The synced LFO catches up with a new clock gradually, which takes about 2 s from 120 to 100 BPM,
+  so the first 3 s are not judged. The default is 100 BPM, not the internal 120, so a tremolo that ignores the
+  clock fails. The tremolo is the effects' code, the same for every engine, so `d2` runs the test once.
 - `usb-levels` compares how loud Frodhes's F01 is with the Move's own instrument on the selected track. Both
   play through the Move's mix, at the track's volume, and the tool records them over USB-C. The pattern is C2 to
   C6, one note at a time, then a held chord, at v100, v64 and v127. First the stock instrument plays it over

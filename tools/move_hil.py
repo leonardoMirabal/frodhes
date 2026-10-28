@@ -25,14 +25,18 @@ audio in (Core Audio), the FM-1's analysis (onsets, levels, FFT, the crackle det
     tools/move_hil.py usb-vel [--note 60]    velocity sweep 1..127: levels rise, brightness, the range in dB
     tools/move_hil.py usb-sus [--note 60]    CC 64: a damped note dies, a pedalled one rings, the pedal let up damps
                                              it, never louder after key-up (the FM-1's sustain preflight)
-    tools/move_hil.py usb-clock [--bpm 120]  MIDI clock (Start + F8) with the arpeggiator at 1/8: the steps' period
+    tools/move_hil.py usb-clock [--bpm 100]  MIDI clock (Start + F8) with the tremolo synced at 1/8 on a held Rhodes
+                                             note: its period against the clock's, the jitter
+    tools/move_hil.py clock-probe            the user presses Play on the Move, then Stop (the tool says when): do the
+                                             Move's own F8 / FA / FC reach the slot, or only the bridge's fallback
+                                             (mb_clock_block)? The plugin's dev_stats, logged while dev_stats_log is 1
     tools/move_hil.py usb-stress [--engine rhodes --secs 60 --nv 16 --bpm 0]   the worst case: every voice, every
                                              effect heavy, the pedal (hil_crackle's worst take); stale / repeat /
                                              zero / clip / click; then read the CPU ring with `--go cpu`
     tools/move_hil.py d2 [--engines rhodes,vibes,marimba --secs 60 --ws URL|none]   the whole run, per engine: slot
                                              1's module checked and its preset set over Schwung's WebSocket
                                              (tools/move_ws.py; F01 / F13 / F15), preflight (a failure stops the
-                                             run), usb-host, usb-note on 3 keys, usb-vel, usb-sus, usb-clock,
+                                             run), usb-host, usb-note on 3 keys, usb-vel, usb-sus, usb-clock (once),
                                              usb-stress; the table in build/move/hil/<time>-d2/summary.md
   --path tap (usb-*, d2): no USB-C at all: each take goes to the plugin's own player over Schwung's WebSocket
   (dev_play, move/move_bridge.h: never on cable 2, so no Move track plays along) and comes back as the plugin's own
@@ -286,9 +290,10 @@ class UsbRig(hs.RigBase):
 class FakeRig(UsbRig):
     """an offline model of the Move for the tests: every message logged; rec() renders a decaying two-partial tone per
     note (level by velocity, the dampers when neither key nor pedal (CC 64 >= 64) holds it), FAKE_LAT late; the
-    arpeggiator (CC 52 > 0) retriggers the held notes every CC 53 step of MIDI clock while Start ran. inject:
-    [(kind, t s)], kind zero (2 ms of zeros), click (one sample), stale (one 128-frame callback twice), loud (the
-    note gets louder after key-up), nosus (the pedal ignored), playing (a tone at idle: the preflight fails)"""
+    tremolo (CC 17 43-85, CC 21 >= 64: AM, CC 18 its depth) synced (CC 20, FAKE_SYNC) to the MIDI clock's F8 while
+    Start ran, else free at 120 BPM. inject: [(kind, t s)], kind zero (2 ms of zeros), click (one sample), stale (one
+    128-frame callback twice), loud (the note gets louder after key-up), nosus (the pedal ignored), playing (a tone at
+    idle: the preflight fails), noclock (the clock ignored)"""
     fake = True
 
     def __init__(self, inject=(), sr=FAKE_SR, seed=0):
@@ -318,14 +323,10 @@ class FakeRig(UsbRig):
         ped = [(0.0, self.state.get(64, 0) >= 64)] + [(t, b >= 64) for t, k, a, b in ev if k == "cc" and a == 64]
         if nosus:
             ped = [(0.0, False)]
-        arp = self.state.get(52, 0) or next((b for t, k, a, b in ev if k == "cc" and a == 52), 0)
-        rate = self.state.get(53, 3)
-        units = (96, 48, 32, 24, 16, 12)[min(5, rate)] // 4          # F8 per arp step (24 PPQN)
         for t, k, a, b in ev:
             if k == "cc":
                 self.state[a] = b
-        # each note: (t_on, t_off, note, vel); the arp splits a held note into steps on the clock
-        notes, held = [], {}
+        notes, held = [], {}                     # each note: (t_on, t_off, note, vel)
         for t, k, a, b in ev:
             if k == "on" and b:
                 held[a] = (t, b)
@@ -333,22 +334,6 @@ class FakeRig(UsbRig):
                 t1, v = held.pop(a)
                 notes.append((t1, t, a, v))
         notes += [(t1, dur, a, v) for a, (t1, v) in held.items()]
-        if arp:
-            f8, run, c = [], False, 0
-            for t, k, a, b in ev:
-                if k == "rt" and a == 0xFA:
-                    run, c = True, 0
-                elif k == "rt" and a == 0xFC:
-                    run = False
-                elif k == "rt" and a == 0xF8 and run:
-                    if c % units == 0:
-                        f8.append(t)
-                    c += 1
-            split = []
-            for t1, t2, a, v in notes:
-                st = [s for s in f8 if t1 <= s < t2]
-                split += [(s, min(s + 0.6 * units / 24 * 0.5, t2), a, v) for s in st]
-            notes = split
 
         def pedal_at(t):
             return [p for s, p in ped if s <= t][-1]
@@ -378,6 +363,18 @@ class FakeRig(UsbRig):
             att = np.minimum(1.0, (ts - t1) / 0.002)
             f = note_hz(a)
             x[i0:] += amp * env * att * (np.sin(2 * np.pi * f * (ts - t1)) + 0.3 * np.sin(4 * np.pi * f * (ts - t1)))
+        st = self.state
+        if 43 <= st.get(17, 0) <= 85 and st.get(21, 0) >= 64:           # the tremolo, AM
+            f8 = [] if any(k == "noclock" for k, _ in self.inject) else [
+                t for t, k, a, b in ev if k == "rt" and a == 0xF8]
+            per = FAKE_SYNC.get(st.get(20, 0) * 14 // 127)                 # (F8 per cycle; None: FREE)
+            if per and len(f8) > 1:                                        # (the phase: the F8 count, between them
+                ph = np.interp(tt, f8, np.arange(len(f8)) / per)           # at the clock's rate; before the first
+                ph[tt < f8[0]] = (tt[tt < f8[0]] - f8[0]) / 0.25          # and after the last, free at 120 BPM)
+                ph[tt > f8[-1]] = ph[tt <= f8[-1]][-1] + (tt[tt > f8[-1]] - f8[-1]) / 0.25
+            else:
+                ph = tt / 0.25
+            x *= 1 - st.get(18, 0) / 127 * (0.5 + 0.5 * np.cos(2 * np.pi * ph))
         x *= 0.25 if self.state.get(110, 64) == 0 else 1.0                # LEVEL (CC 110 0: -12 dB)
         x = 24000 * np.tanh(x / 24000) + self.rng.normal(0, 2.0, n)   # (the app's limiter, softly)
         q = np.round(np.stack([x, 0.9 * x], 1))
@@ -392,6 +389,8 @@ class FakeRig(UsbRig):
         return {"x": np.clip(q, -32768, 32767), "sr": sr, "xruns": []}
 
 
+FAKE_SYNC = {1: 3, 2: 4, 3: 6, 4: 8, 5: 9, 6: 12, 7: 16, 8: 18, 9: 24, 10: 36, 11: 48, 12: 96}   # (the fake
+# tremolo's SYNC: CC 20 * 14 // 127, F8 a cycle at 24 PPQN: 1/32 .. 1/1; 0 FREE)
 TAP_PRE_MS = 500                            # the tap path: the messages sent before a take (the panel) at 1 ms and a
                                             # program change at 5 ms, the take's own from 500 ms (host_phrase's layout)
 TAP_DIR = "/data/UserData/schwung/module_data/" + mi.MODULE_ID + "/tap"
@@ -678,9 +677,9 @@ def _save(d, name, take):
     w.close()
 
 
-GLOBAL_CCS = ((52, 0), (56, 0), (60, 0), (63, 0), (64, 0), (111, 0), (119, 0))
-# (the modes param_defaults does not reach, off as the host boots: the arpeggiator, chord mode, the sequencer's play
-# and recording, the pedal, the FX bypass, RAW)
+GLOBAL_CCS = ((64, 0), (111, 0), (119, 0))
+# (the modes param_defaults does not reach, off as the host boots: the pedal, the FX bypass, RAW. The Move has no
+# arpeggiator, sequencer or chords: the bridge drops their CCs, MB_CC_DROP)
 BOOT_KEYS = os.path.join(ROOT, "move", "tests", "boot_keys.txt")
 
 
@@ -894,49 +893,249 @@ def clock_events(bpm, t0, t1):
     return ev + [(t1, "rt", 0xFC, 0)]
 
 
-def usb_clock(r, d, bpm=120.0, secs=8.0, note=60, engine=None, out=print):
-    """the arpeggiator (CC 52 1: UP, CC 53 1: 1/8) on one held note, MIDI clock at bpm: a step every half beat"""
-    _prep(r, engine, c52=1, c53=1)
-    ev = clock_events(bpm, 0.3, secs - 0.5) + [(0.25, "on", note, 100), (secs - 0.6, "off", note, 0)]
+CLOCK_CCS = ((17, 64), (21, 127), (18, 127), (20, 59))
+# (usb-clock's tremolo: TREM (CC 17 43-85), MODE AM (CC 21 64-127), DEPTH full, SYNC 1/8 (CC 20 59: index 6 of FREE
+# 1/32 16T 1/16 8T 16D 1/8 ...); the rest at the defaults)
+CLOCK_T0 = 3.0          # (the synced LFO catches up with the clock gradually, at most 1/8 faster or slower a step:
+                        # from the internal 120 BPM to 100 it takes ~2 s; the troughs are judged from here)
+
+
+def usb_clock(r, d, bpm=100.0, secs=12.0, note=60, engine=None, out=print):
+    """MIDI clock at bpm from the take's start; the tremolo (AM, full depth) synced at 1/8 on one Rhodes note held
+    from 2.8 s: a trough of its level every half beat. The troughs from CLOCK_T0 against a straight line: the period
+    (within 1 % of the clock's) and the jitter (4 ms at most). The tremolo's LFO is the effects' code, the same for
+    every engine, so the take is the Rhodes' (it holds a note longest; engine is not used). The default 100 BPM is
+    not the internal 120: a tremolo that ignores the clock fails on the period and the jitter"""
+    _prep(r, None, **{"c%d" % c: v for c, v in CLOCK_CCS})
+    ev = clock_events(bpm, 0.1, secs - 0.4) + [(2.8, "on", note, 100), (secs - 0.6, "off", note, 0)]
     tk = r.rec(secs, ev)
     _save(d, "clock", tk)
     x, sr = tk["x"], tk["sr"]
-    env = np.abs(_mono(x))
-    hop = int(0.002 * sr)
-    e = np.array([env[i:i + hop].max() for i in range(0, len(env) - hop, hop)])
-    ons, last = [], -1.0
-    for i in range(5, len(e)):                   # (an attack: the 2 ms envelope 6 dB over its value 10 ms before)
-        t = i * hop / sr
-        if e[i] > 200 and e[i] > 2 * e[i - 5] + 50 and t - last > 0.06:
-            ons.append(t)
-            last = t
+    from scipy.signal import find_peaks
+    m = _mono(x)
+    hop, w = max(1, int(round(0.001 * sr))), int(round(0.010 * sr))
+    e = np.sqrt(np.convolve(m * m, np.ones(w) / w, "same"))[::hop]          # (the level: 10 ms RMS, a value a ms)
+    ed = 20 * np.log10(e + 1)
     want = 30.0 / bpm
-    o = np.array(ons[1:])
-    rep = {"bpm": bpm, "steps": len(ons), "want_ms": round(1000 * want, 2)}
+    pk, _ = find_peaks(-ed, distance=max(1, int(0.6 * want * sr / hop)), prominence=3)
+    t = pk * hop / sr
+    t = t[(t > CLOCK_T0) & (t < secs - 0.7)]
+    rep = {"bpm": bpm, "troughs": int(len(t)), "want_ms": round(1000 * want, 2)}
     bad = []
-    if len(o) < 5:
-        bad.append("%d steps: the clock or the arpeggiator did not run (does the slot get F8 / Start?)" % len(ons))
+    if len(t) < 8:
+        bad.append("%d troughs: no tremolo on the held note (does the slot get the CCs?)" % len(t))
     else:
-        # (each attack against a straight line through them: an attack the detector catches 5 ms or more late, under
-        # the ring of the step before (the bars), is counted, not taken as timing; jitter is the spread of the others)
-        k = np.round((o - o[0]) / float(np.median(np.diff(o))))
-        inl = np.ones(len(o), bool)
-        for _ in range(2):
-            a, b = np.polyfit(k[inl], o[inl], 1)
-            res = o - (a * k + b)
-            inl = np.abs(res) < 0.005
-        med, sd, late = float(a), float(np.std(res[inl])), int((~inl).sum())
-        rep.update(median_ms=round(1000 * med, 2), jitter_ms=round(1000 * sd, 2), bpm_seen=round(30.0 / med, 2),
-                   late=late)
+        k = np.round((t - t[0]) / want)
+        a, b = np.polyfit(k, t, 1)
+        res = t - (a * k + b)
+        med, sd = float(a), float(np.std(res))
+        rep.update(period_ms=round(1000 * med, 2), jitter_ms=round(1000 * sd, 2), bpm_seen=round(30.0 / med, 2),
+                   worst_ms=round(1000 * float(np.abs(res).max()), 1))
         if abs(med / want - 1) > 0.01:
-            bad.append("step %.1f ms against %.1f ms (%.2f BPM seen)" % (1000 * med, 1000 * want, 30.0 / med))
+            bad.append("period %.1f ms against %.1f ms (%.2f BPM seen)" % (1000 * med, 1000 * want, 30.0 / med))
         if sd > 0.004:
-            bad.append("jitter %.1f ms" % (1000 * sd))
-        if late > max(2, len(o) // 10):
-            bad.append("%d of %d attacks off the beat by 5 ms or more" % (late, len(o)))
+            bad.append("jitter %.1f ms (the tremolo does not follow the clock: does the slot get F8 / Start?)"
+                       % (1000 * sd))
     rep["verdict"] = "FAIL: " + "; ".join(bad) if bad else "PASS"
     out("clock %.1f BPM: %s: %s" % (bpm, {k: v for k, v in rep.items() if k != "verdict"}, rep["verdict"]))
     return not bad, rep
+
+
+# ---- clock-probe: where the slot's clock comes from when the Move's own transport plays (the user presses Play,
+# then Stop). Schwung broadcasts the Move's cable-0 realtime bytes (F8, FA, FC) to every slot (schwung_shim.c, "Broadcast
+# Move's internal transport clock (cable 0)"), as MOVE_MIDI_SOURCE_EXTERNAL; without them the bridge makes the pulses
+# from the host's transport and beat position (mb_clock_block, AUTO). The plugin's dev_stats, logged 10 a second to
+# stats.log while dev_stats_log is 1, count both: rt_f8 / rt_fa / rt_fc (the bytes that came in), f8_synth (the
+# pulses made), host_run / host_bpm10 (get_clock_status, get_bpm), bpm10 / clklock (the app's tempo, the clock followed)
+STATS_LOG = "stats.log"
+
+
+def parse_stats(text):
+    """stats.log's lines -> [{name: int}] (a line that does not parse is skipped)"""
+    rows = []
+    for ln in text.splitlines():
+        try:
+            rows.append({k: int(v) for k, v in (w.split("=", 1) for w in ln.split())})
+        except ValueError:
+            continue
+    return [r for r in rows if "ms" in r and "rt_f8" in r]
+
+
+class StatsLink:
+    """the plugin's dev_stats over Schwung's WebSocket (dev_stats_log) and ssh (stats.log in the module folder)"""
+
+    def __init__(self, url, host, slot=0):
+        import move_ws
+        self.remote, self.host, self.slot = move_ws.Remote(url), host, slot
+        self.path = "%s/%s/%s" % (mi.MODS, mi.MODULE_ID, STATS_LOG)
+
+    def _ssh(self, cmd):
+        import subprocess
+        r = subprocess.run(["ssh", *mi.SSH_OPTS, self.host, cmd], capture_output=True, text=True)
+        return r.stdout if r.returncode == 0 else ""
+
+    def start(self):
+        self._ssh("rm -f %s" % self.path)
+        self.remote.set_param(self.slot, "synth:dev_stats_log", 1)
+        self.remote.pump(0.3)
+
+    def read(self):
+        return parse_stats(self._ssh("cat %s 2>/dev/null" % self.path))
+
+    def stop(self):
+        try:
+            self.remote.set_param(self.slot, "synth:dev_stats_log", 0)
+            self.remote.pump(0.3)
+        finally:
+            self._ssh("rm -f %s" % self.path)
+            self.remote.close()
+
+
+class FakeStatsLink:
+    """the probe's tests: a plugin whose transport starts after `play_at` reads and stops `play_for` reads later (a
+    read is 1 s: 10 lines); source "real" (the F8 come in, none made), "fallback" (none come in: the bridge makes
+    them), "none" (the transport never runs), "late" (the real F8 start 2 s after Play: the fallback first)"""
+
+    def __init__(self, source="real", bpm=120.0, play_at=3, play_for=12):
+        self.source, self.bpm, self.play_at, self.play_for = source, bpm, play_at, play_for
+        self.rows, self.reads, self.started, self.stopped = [], 0, False, False
+        self.c = dict(ms=0, rt_f8=0, rt_fa=0, rt_fb=0, rt_fc=0, f8_synth=0, host_run=0, host_bpm10=int(bpm * 10),
+                      bpm10=1200, clklock=0)
+        self.acc = 0.0
+
+    def start(self):
+        self.started = True
+
+    def read(self):
+        self.reads += 1
+        c = self.c
+        for _ in range(10):
+            c["ms"] += 100
+            sec = c["ms"] / 1000.0
+            run = self.source != "none" and self.play_at < sec <= self.play_at + self.play_for
+            if run and not c["host_run"]:
+                c["rt_fa"] += self.source in ("real", "late")
+            if not run and c["host_run"]:
+                c["rt_fc"] += self.source in ("real", "late")
+            c["host_run"] = int(run)
+            if run:
+                self.acc += self.bpm * 24 / 60 / 10
+                k, self.acc = int(self.acc), self.acc - int(self.acc)
+                real = self.source == "real" or (self.source == "late" and sec > self.play_at + 2)
+                c["rt_f8" if real else "f8_synth"] += k
+                c["bpm10"], c["clklock"] = int(self.bpm * 10), 1
+            self.rows.append(dict(c))
+        return [dict(r) for r in self.rows]
+
+    def stop(self):
+        self.stopped = True
+
+
+def clock_verdict(rows):
+    """from stats.log's rows: the playing span (host_run 1, or pulses counted), the real F8 a second there (from 3 s
+    into it) against the host's tempo x 24 / 60, the pulses made, FA / FC seen. (ok, report): PASS when the real clock arrives (the
+    bridge then makes none, after the first ~2 s of AUTO's wait at most)"""
+    rep = {"rows": len(rows)}
+    if len(rows) < 2:
+        rep["verdict"] = "FAIL: no dev_stats read (stats.log empty: an older build without dev_stats_log?)"
+        return False, rep
+    play = [i for i in range(1, len(rows)) if rows[i].get("host_run") or rows[i]["rt_f8"] > rows[i - 1]["rt_f8"]
+            or rows[i]["f8_synth"] > rows[i - 1]["f8_synth"]]
+    d = lambda k: rows[-1].get(k, 0) - rows[0].get(k, 0)   # noqa: E731
+    rep.update(rt_fa=d("rt_fa"), rt_fb=d("rt_fb"), rt_fc=d("rt_fc"), rt_f8=d("rt_f8"), f8_synth=d("f8_synth"))
+    if not play:
+        rep["verdict"] = "FAIL: the transport never ran (host_run stayed 0, no F8 came or was made: Play not pressed?)"
+        return False, rep
+    i0, i1 = play[0], play[-1]
+    secs = max(0.1, (rows[i1]["ms"] - rows[i0 - 1]["ms"]) / 1000.0)
+    bpm10 = max(r.get("host_bpm10", 0) for r in rows[i0:i1 + 1])
+    want = bpm10 / 10.0 * 24 / 60
+    tail = [r for r in rows[i0:i1 + 1] if r["ms"] - rows[i0]["ms"] >= 3000]   # (after AUTO's 2 s wait: the rates)
+    if len(tail) < 2:
+        tail = rows[i0 - 1:i1 + 1]
+    ts = max(0.1, (tail[-1]["ms"] - tail[0]["ms"]) / 1000.0)
+    real = (tail[-1]["rt_f8"] - tail[0]["rt_f8"]) / ts
+    made = (tail[-1]["f8_synth"] - tail[0]["f8_synth"]) / ts
+    made_late = tail[-1]["f8_synth"] - tail[0]["f8_synth"]
+    rep.update(play_secs=round(secs, 1), host_bpm=bpm10 / 10.0, want_per_s=round(want, 2),
+               real_per_s=round(real, 2), made_per_s=round(made, 2), made_after_3s=made_late,
+               app_bpm=max(r.get("bpm10", 0) for r in rows[i0:i1 + 1]) / 10.0,
+               clklock=max(r.get("clklock", 0) for r in rows[i0:i1 + 1]),
+               host_run_seen=any(r.get("host_run") for r in rows))
+    if real > 0.9 * want and not made_late:
+        rep["source"] = "real"
+        rep["verdict"] = "PASS: the Move's own F8 arrive (%.1f a second, want %.1f; FA %d, FC %d); the bridge made " \
+                         "%d pulses (its fallback, before the first F8 at most)" % (real, want, rep["rt_fa"],
+                                                                                    rep["rt_fc"], rep["f8_synth"])
+        return True, rep
+    if real < 0.05 * want and made > 0.9 * want:
+        rep["source"] = "fallback"
+        rep["verdict"] = "FAIL: no F8 from the Move's transport; only the bridge's fallback (mb_clock_block) runs " \
+                         "(%.1f pulses made a second, want %.1f; FA %d, FC %d came in)" % (made, want, rep["rt_fa"],
+                                                                                          rep["rt_fc"])
+        return False, rep
+    rep["source"] = "mixed"
+    rep["verdict"] = "FAIL: %.1f real F8 and %.1f made a second, want %.1f (%d made after 3 s)" % (
+        real, made, want, made_late or 0)
+    return False, rep
+
+
+def clock_probe(link, d, play_wait=180.0, play_secs=10.0, stop_wait=180.0, poll=1.0, sleep=time.sleep, out=print):
+    """dev_stats_log on; "PRESS PLAY NOW" until the transport runs (play_wait s at most), play_secs of it, "PRESS STOP
+    NOW" until it stops (stop_wait s); the log off and read; clock_verdict. (ok, report); stats.log kept in d"""
+    import json
+
+    def say(s):
+        out(s)
+        sys.stdout.flush()
+
+    def running(rows):
+        return bool(rows) and len(rows) > 1 and (rows[-1].get("host_run") or rows[-1]["rt_f8"] > rows[-2]["rt_f8"]
+                                                 or rows[-1]["f8_synth"] > rows[-2]["f8_synth"])
+    os.makedirs(d, exist_ok=True)
+    link.start()
+    rows, phase = [], "play"
+    try:
+        sleep(2 * poll)
+        rows = link.read()
+        say(">>> PRESS PLAY NOW on the Move (the transport; let it play, the tool says when to stop)")
+        waited = 0.0
+        while not running(rows) and waited < play_wait:
+            sleep(poll)
+            waited += poll
+            rows = link.read()
+        if running(rows):
+            say("    playing (seen after %.0f s); recording %.0f s" % (waited, play_secs))
+            t = 0.0
+            while t < play_secs:
+                sleep(poll)
+                t += poll
+                rows = link.read()
+            phase = "stop"
+            say(">>> PRESS STOP NOW on the Move")
+            waited = 0.0
+            while running(rows) and waited < stop_wait:
+                sleep(poll)
+                waited += poll
+                rows = link.read()
+            sleep(poll)
+            rows = link.read()
+            say("    stopped" if not running(rows) else "    still running after %.0f s" % stop_wait)
+            phase = "done"
+        else:
+            say("    the transport did not start within %.0f s" % play_wait)
+    finally:
+        link.stop()
+    ok, rep = clock_verdict(rows)
+    if phase == "stop":
+        ok, rep["verdict"] = False, "FAIL: the transport did not stop; " + rep["verdict"]
+    with open(os.path.join(d, STATS_LOG), "w") as f:
+        for r in rows:
+            f.write(" ".join("%s=%d" % kv for kv in r.items()) + "\n")
+    json.dump(rep, open(os.path.join(d, "report.json"), "w"), indent=1)
+    say("clock-probe: %s" % {k: v for k, v in rep.items() if k != "verdict"})
+    say(rep["verdict"])
+    return ok, rep
 
 
 RESTRIKE_KEYS = (60, 67, 74, 81, 88, 95, 102, 108)    # (spread over the HQ live contact's range, keys >= 60)
@@ -1285,8 +1484,8 @@ def usb_host(r, d, program=0, out=print):
     rep["verdict"] = ("CLASSIC: HQ was asked (p_hq 1) but %s plays as Classic (%.1f dB nearer the HQ host than the "
                       "Classic one: p_hq did not reach the plugin?)" % (HQ_PROBE, rep["hq_vs_classic_db"])
                       if classic else
-                      "STRUCK AGAIN: %s (a note the host strikes once comes again while it is held: the arpeggiator, "
-                      "chord mode or the sequencer on in the plugin, or the schedule played twice)" % ", ".join(again)
+                      "STRUCK AGAIN: %s (a note the host strikes once comes again while it is held: the "
+                      "arpeggiator or chord mode on (a build without MB_CC_DROP), or the schedule played twice)" % ", ".join(again)
                       if again else
                       "PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad and not extra else
                       "DIFFERS at %s (residual over -40 dB after one gain, 0.5-1.0 s into the note)" % bad if bad else
@@ -1408,13 +1607,135 @@ def usb_main(a):
     e = a.engine if a.engine in ENGINE_CCS else None
     fn = {"usb-host": lambda: usb_host(r, d, a.program), "usb-note": lambda: usb_note(r, d, a.note, a.vel, e),
           "usb-vel": lambda: usb_vel(r, d, a.note, engine=e),
-          "usb-sus": lambda: usb_sus(r, d, a.note, engine=e), "usb-clock": lambda: usb_clock(r, d, a.bpm or 120.0, engine=e),
+          "usb-sus": lambda: usb_sus(r, d, a.note, engine=e), "usb-clock": lambda: usb_clock(r, d, a.bpm or 100.0, engine=e),
           "usb-stress": lambda: usb_stress(r, d, a.engine if a.engine != "all" else "rhodes", a.secs, a.nv, a.bpm)}
-    ok, rep = fn[a.cmd]()
+    ks = KeptState(a.ws, 0) if not r.fake and a.ws != "none" else None
+    if ks is None:
+        ok, rep = fn[a.cmd]()
+    else:
+        with ks:                               # (the plugin's state as it was, also on a failure or ctrl-C)
+            ok, rep = fn[a.cmd]()
+        rep["state"] = ks.report
+        ok = ok and ks.report["verdict"] == "PASS"
     rep["rig"] = {"midi": r.port_name, "audio": r.audio_name, "ch": r.ch, "fake": r.fake}
     os.makedirs(d, exist_ok=True)
     json.dump(_plain(rep), open(os.path.join(d, "report.json"), "w"), indent=1, default=str)
     return 0 if ok else 1
+
+
+# ---- the plugin's state, kept: every test that plays into the plugin (its CCs, the preset, boot_settings, CHANNEL,
+# p_hq) leaves it as it found it. The plugin saves its settings and the panel, so a test's leftovers came back at the
+# next load: the arpeggiator on (2026-10-28 01:42), every effect on with the feedbacks at 127 (usb-stress's HEAVY,
+# the user's report of 2026-10-28)
+STATE_SKIP = ("preset_count", "preset_name", "s_susbtn")   # (meta; momentary: a write is a press)
+
+
+def _same(a, b):
+    try:
+        return a is not None and b is not None and float(a) == float(b)
+    except (TypeError, ValueError):
+        return a == b
+
+
+def state_read(url, slot=0, secs=0.8):
+    """the slot's params as Schwung reports them (its own connection): {key: value} without the synth: prefix, the
+    meta and momentary keys left out"""
+    import move_ws
+    with move_ws.Remote(url) as w:
+        w.subscribe(slot)
+        w.pump(secs)
+        p = dict(w.params.get(slot, {}))
+    return {k[6:]: v for k, v in p.items() if k.startswith("synth:") and k[6:] not in STATE_SKIP
+            and not k.startswith("synth:dev_")}
+
+
+def state_restore(url, slot, before, hq_default=0):
+    """writes back every key that differs from before (the preset first: it loads its own values), HQ to the boot
+    value (p_hq is not saved and Schwung does not report it), the dev player stopped, the CPU and stats logs off; then reads
+    the state back. (keys written, {key: (before, after)} still different)"""
+    import move_ws
+    with move_ws.Remote(url) as w:
+        w.subscribe(slot)
+        w.pump(0.8)
+        for k, v in (("dev_play", "stop"), ("dev_cpu_log", 0), ("dev_stats_log", 0), ("p_hq", hq_default)):
+            w.set_param(slot, "synth:" + k, v)
+        now = lambda: {k[6:]: v for k, v in w.params.get(slot, {}).items() if k.startswith("synth:")}  # noqa: E731
+        written = []
+        if "preset" in before and not _same(now().get("preset"), before["preset"]):
+            w.set_param(slot, "synth:preset", before["preset"])
+            written.append("preset")
+            w.pump(1.5)                                  # (the re-read of every param, the preset's values in it)
+        # (the switches and types first: switching an effect gives its MIX a starting amount, so a MIX written
+        # before its switch came back changed, p_dl_depth 0 -> 50 on the Move, 2026-10-28; then every key that still
+        # differs is written again, up to 3 passes, each after the manager's re-read)
+        first = lambda k: (0 if k.endswith(("_sw", "_type", "_on")) or k == "p_type" else 1, k)   # noqa: E731
+        for _ in range(3):
+            cur = now()
+            todo = sorted((k for k, v in before.items() if k != "preset" and not _same(cur.get(k), v)), key=first)
+            if not todo:
+                break
+            for k in todo:
+                w.set_param(slot, "synth:" + k, before[k])
+                written.append(k)
+                time.sleep(0.003)
+            w.pump(1.5)                                  # (the manager's re-read goes out under this connection)
+    after = state_read(url, slot)
+    bad = {k: (v, after.get(k)) for k, v in before.items() if not _same(after.get(k), v)}
+    return written, bad
+
+
+class KeptState:
+    """with KeptState(url, slot, out) as ks: ...: the state read first, written back at the end, also on an
+    exception, ctrl-C (KeyboardInterrupt) or SIGTERM (raised as SystemExit), and at interpreter exit (atexit) if the
+    block never ended. ks.report: {'verdict', 'params', 'written', 'bad'} once restored"""
+
+    def __init__(self, url, slot=0, out=print):
+        self.url, self.slot, self.out, self.report, self.before = url, slot, out, None, None
+
+    def __enter__(self):
+        import atexit
+        import signal
+        self.before = state_read(self.url, self.slot)
+        atexit.register(self.restore)
+        self._sig = None
+        try:
+            self._sig = signal.signal(signal.SIGTERM, self._term)
+        except ValueError:                               # (not the main thread: atexit and finally still hold)
+            pass
+        return self
+
+    @staticmethod
+    def _term(signum, frame):
+        raise SystemExit(128 + signum)
+
+    def restore(self):
+        if self.report is not None or self.before is None:
+            return self.report
+        try:
+            written, bad = state_restore(self.url, self.slot, self.before)
+            self.report = {"verdict": "PASS" if not bad else "FAIL: after the run %d param(s) differ from before: %s"
+                           % (len(bad), ", ".join("%s %s -> %s" % (k, a, b) for k, (a, b) in sorted(bad.items())[:8])),
+                           "params": len(self.before), "written": written, "bad": bad}
+        except Exception as e:                           # (the WebSocket gone: say so loudly, never pass)
+            self.report = {"verdict": "FAIL: the state was not restored: %s: %s" % (type(e).__name__, e),
+                           "params": len(self.before), "written": [], "bad": {"(restore)": (None, str(e))}}
+        self.out("state: " + self.report["verdict"] + (" (%d param(s) as before, %d written back)" % (
+            self.report["params"], len(self.report["written"])) if self.report["verdict"] == "PASS" else ""))
+        return self.report
+
+    def __exit__(self, *exc):
+        import atexit
+        import signal
+        try:
+            self.restore()
+        finally:
+            atexit.unregister(self.restore)
+            if self._sig is not None:
+                try:
+                    signal.signal(signal.SIGTERM, self._sig)
+                except ValueError:
+                    pass
+        return False
 
 
 # --------------------------------------------------------------------------- d2: the whole USB-C run, three engines
@@ -1447,6 +1768,9 @@ def _num(rep, test):
             return "idle %s dBFS (%s)" % (rep["floor_db"], rep["kind"])
         if test == "ws":
             return rep.get("note", "")
+        if test == "state":
+            return "%s param(s) read before, %d written back, %d differ after" % (
+                rep.get("params", "-"), len(rep.get("written", [])), len(rep.get("bad", {})))
         if test == "usb-host":
             w = rep["rows"]
             j = [x["residual_db"] for x in w if x.get("judged", True)]
@@ -1474,8 +1798,7 @@ def _num(rep, test):
                 rep["n"], rep["worst"], rep["p99"], rep["over"], rep["limit"], rep["missing"],
                 "" if rep.get("hq") is None else ", HQ %s" % ("on" if rep["hq"] else "off"))
         if test == "usb-clock":
-            return "%s steps, %s BPM seen, jitter %s ms, %s late" % (rep["steps"], rep.get("bpm_seen"), rep.get("jitter_ms"),
-                                                                      rep.get("late"))
+            return "%s troughs, %s BPM seen, jitter %s ms" % (rep["troughs"], rep.get("bpm_seen"), rep.get("jitter_ms"))
         if test == "usb-stress":
             return "; ".join("%s: %s notes, peak %s dBFS, %d gated" % (t["take"], t["notes"], t["peak_dbfs"], t["gated"])
                              for t in rep["takes"])
@@ -1510,11 +1833,15 @@ def _ws_prepare(url, engine, slot=0, out=print, remote=None):
     return True, st
 
 
-def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, only=None, out=print):
+class _Stop(Exception):
+    pass
+
+
+def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, only=None, out=print):
     """per engine: the slot's module and preset over Schwung's WebSocket (ws: its URL, None: skipped), the preflight
     (a failure stops the whole run: the stream is not the Move's Main Out), usb-host on the engine's preset, usb-note
-    on three keys, usb-vel, usb-sus, usb-clock, usb-stress; each test's takes and report.json in d/<engine>/<test>/,
-    the table in d/summary.md, everything in d/report.json. Over the tap with a CPU read (TapRig cpu): the cpu row,
+    on three keys, usb-vel, usb-sus, usb-clock (once a run: with the Rhodes engine, else the first), usb-stress; each
+    test's takes and report.json in d/<engine>/<test>/, the table in d/summary.md, everything in d/report.json. Over the tap with a CPU read (TapRig cpu): the cpu row,
     every callback's time while usb-stress plays (the worst case), against U12. hq 0 / 1 (the tap): the HQ switch
     set first (p_hq; None: as the plugin has it). only: the test names to run (a name or its prefix, "usb-note" for all
     three; None: all; the cpu row comes with usb-stress). Returns (exit code: 0 all PASS, 1 a FAIL, 2 stopped)"""
@@ -1536,59 +1863,79 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, 
     tap_cpu = isinstance(r, TapRig) and r.cpu_fetch is not None
     if hq is not None and isinstance(r, TapRig):
         r.set_hq(hq)
-    for e in engines:
-        out("== %s" % e)
-        if ws:
-            ok, rep = _ws_prepare(ws, e, out=quiet)    # (its own connection: the rig's never subscribes)
-            note(e, "ws", ok, rep)
-            if not ok:
-                stopped = "%s: %s" % (e, rep["verdict"])
-                break
-        if not isinstance(r, TapRig):           # (the tap is the plugin's own output: no stream to check)
-            ok, pre = preflight(r, out=quiet)
-            pre["verdict"] = "PASS" if ok else "FAIL: " + SAY[pre["kind"]]
-            note(e, "preflight", ok, pre)
-            if not ok:
-                stopped = "%s: the preflight failed (%s)" % (e, pre["kind"])
-                break
-        sub = lambda t: os.path.join(d, e, t)          # noqa: E731
-        r._send("cc", 120, 0)                          # (the host's state: every parameter at its default, the
-        if not hasattr(r, "defaults"):                 # preset then loads over it, as on the host build)
-            r.defaults = hs.param_defaults()
-        for c, v in r.defaults:
-            r._send("cc", c, v)
-        tests = [("usb-host", lambda: usb_host(r, sub("usb-host"), D2_PRESET[e], out=quiet))]
-        for n in D2_NOTES[e]:
-            tests.append(("usb-note-%d" % n, lambda n=n: usb_note(r, sub("usb-note-%d" % n), n, 100, e, out=quiet)))
-        tests += [("usb-vel", lambda: usb_vel(r, sub("usb-vel"), engine=e, out=quiet)),
-                  ("usb-sus", lambda: usb_sus(r, sub("usb-sus"), engine=e, out=quiet)),
-                  ("usb-clock", lambda: usb_clock(r, sub("usb-clock"), bpm, engine=e, out=quiet)),
-                  ("usb-stress", lambda: usb_stress(r, sub("usb-stress"), e, stress_secs, out=quiet))]
-        if e == "rhodes" and hq == 1 and tap_cpu:
-            tests.append(("usb-restrike", lambda: usb_restrike(r, sub("usb-restrike"), stress_secs / 2,
-                                                               out=quiet)))
-        if only:
-            tests = [(n, f) for n, f in tests if any(n == o or n.startswith(o + "-") for o in only)]
-        cpu_rows = []
-        for name, fn in tests:
-            out("-- %s %s" % (e, name))
-            try:
-                if tap_cpu and name == "usb-stress":
-                    r.cpu_start()
-                    try:
+    ks = None
+    if ws:                                             # (the plugin's state read first, written back at the end)
+        try:
+            ks = KeptState(ws, 0, out=quiet).__enter__()
+        except Exception as x:                         # (OSError, a timeout, the manager's error, a cut socket)
+            note("all", "state", False, {"verdict": "FAIL: the state could not be read first: %s: %s" % (
+                type(x).__name__, x)})
+            stopped = "the plugin's state could not be read over %s" % ws
+    try:
+        if stopped:
+            raise _Stop()
+        for e in engines:
+            out("== %s" % e)
+            if ws:
+                ok, rep = _ws_prepare(ws, e, out=quiet)    # (its own connection: the rig's never subscribes)
+                note(e, "ws", ok, rep)
+                if not ok:
+                    stopped = "%s: %s" % (e, rep["verdict"])
+                    break
+            if not isinstance(r, TapRig):           # (the tap is the plugin's own output: no stream to check)
+                ok, pre = preflight(r, out=quiet)
+                pre["verdict"] = "PASS" if ok else "FAIL: " + SAY[pre["kind"]]
+                note(e, "preflight", ok, pre)
+                if not ok:
+                    stopped = "%s: the preflight failed (%s)" % (e, pre["kind"])
+                    break
+            sub = lambda t: os.path.join(d, e, t)          # noqa: E731
+            r._send("cc", 120, 0)                          # (the host's state: every parameter at its default, the
+            if not hasattr(r, "defaults"):                 # preset then loads over it, as on the host build)
+                r.defaults = hs.param_defaults()
+            for c, v in r.defaults:
+                r._send("cc", c, v)
+            tests = [("usb-host", lambda: usb_host(r, sub("usb-host"), D2_PRESET[e], out=quiet))]
+            for n in D2_NOTES[e]:
+                tests.append(("usb-note-%d" % n, lambda n=n: usb_note(r, sub("usb-note-%d" % n), n, 100, e, out=quiet)))
+            tests += [("usb-vel", lambda: usb_vel(r, sub("usb-vel"), engine=e, out=quiet)),
+                      ("usb-sus", lambda: usb_sus(r, sub("usb-sus"), engine=e, out=quiet)),
+                      ("usb-stress", lambda: usb_stress(r, sub("usb-stress"), e, stress_secs, out=quiet))]
+            if e == (engines[0] if "rhodes" not in engines else "rhodes"):    # (the effects' clock: once a run)
+                tests.insert(-1, ("usb-clock", lambda: usb_clock(r, sub("usb-clock"), bpm, out=quiet)))
+            if e == "rhodes" and hq == 1 and tap_cpu:
+                tests.append(("usb-restrike", lambda: usb_restrike(r, sub("usb-restrike"), stress_secs / 2,
+                                                                   out=quiet)))
+            if only:
+                tests = [(n, f) for n, f in tests if any(n == o or n.startswith(o + "-") for o in only)]
+            cpu_rows = []
+            for name, fn in tests:
+                out("-- %s %s" % (e, name))
+                try:
+                    if tap_cpu and name == "usb-stress":
+                        r.cpu_start()
+                        try:
+                            ok, rep = fn()
+                        finally:
+                            cpu_rows = r.cpu_stop()
+                    else:
                         ok, rep = fn()
-                    finally:
-                        cpu_rows = r.cpu_stop()
-                else:
-                    ok, rep = fn()
-            except Exception as x:                     # (one test's crash is its FAIL; the run goes on)
-                ok, rep = False, {"verdict": "FAIL: %s: %s" % (type(x).__name__, x)}
-            note(e, name, ok, rep)
-        if tap_cpu and any(n == "usb-stress" for n, _ in tests):
-            s = cpu_summary(cpu_rows)
-            s["engine"], s["hq"] = e, hq
-            s["verdict"] = s["verdict"] if s["n"] else "FAIL: no callback times (dev_cpu_log reached the plugin?)"
-            note(e, "cpu", s["verdict"].startswith("PASS"), s)
+                except Exception as x:                     # (one test's crash is its FAIL; the run goes on)
+                    ok, rep = False, {"verdict": "FAIL: %s: %s" % (type(x).__name__, x)}
+                note(e, name, ok, rep)
+            if tap_cpu and any(n == "usb-stress" for n, _ in tests):
+                s = cpu_summary(cpu_rows)
+                s["engine"], s["hq"] = e, hq
+                s["verdict"] = s["verdict"] if s["n"] else "FAIL: no callback times (dev_cpu_log reached the plugin?)"
+                note(e, "cpu", s["verdict"].startswith("PASS"), s)
+    except _Stop:
+        pass
+    finally:
+        if ks is not None:
+            ks.__exit__(None, None, None)
+            note("all", "state", ks.report["verdict"] == "PASS",
+                 dict(ks.report, verdict=ks.report["verdict"] + (" (%d param(s) as before, %d written back)" % (
+                     ks.report["params"], len(ks.report["written"])) if ks.report["verdict"] == "PASS" else "")))
     if stopped:
         code = 2
     elif not all(w["ok"] for w in rows):
@@ -1797,7 +2144,8 @@ def usb_levels(u, t, d, url, vels=LEVEL_VELS, out=print):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("cmd", choices=("facts", "install", "rollback", "info", "logs", "cpu", "crackle", "must", "null", "d2", "usb-levels")
+    ap.add_argument("cmd", choices=("facts", "install", "rollback", "info", "logs", "cpu", "crackle", "must", "null", "d2", "usb-levels",
+                                    "clock-probe")
                     + USB_CMDS)
     ap.add_argument("--go", action="store_true")
     ap.add_argument("--host", default=os.environ.get("MOVE_HOST", "ableton@move.local"))
@@ -1813,13 +2161,13 @@ def main(argv=None):
     ap.add_argument("--note", type=int, default=60)
     ap.add_argument("--program", type=int, default=0, help="usb-host: the program change first (0 = F01)")
     ap.add_argument("--vel", type=int, default=100)
-    ap.add_argument("--bpm", type=float, default=0.0, help="usb-clock (default 120), usb-stress (0: no clock)")
+    ap.add_argument("--bpm", type=float, default=0.0, help="usb-clock (default 100), usb-stress (0: no clock)")
     ap.add_argument("--secs", type=float, default=60.0, help="usb-stress: the take's length")
     ap.add_argument("--nv", type=int, default=MOVE_VOICES, help="usb-stress: voices per chord")
     ap.add_argument("--out", help="usb-*: the folder for the takes and report.json")
     ap.add_argument("--no-preflight", action="store_true", help="usb-*: skip the idle check of the USB-C stream")
     ap.add_argument("--fake", action="store_true", help="usb-*: the offline model of the Move (no device)")
-    ap.add_argument("--inject", action="append", help="usb-* --fake: KIND@SECONDS (zero, click, stale, loud, nosus)")
+    ap.add_argument("--inject", action="append", help="usb-* --fake: KIND@SECONDS (zero, click, stale, loud, nosus); clock-probe --fake: real, fallback, none, late")
     ap.add_argument("--engines", default=",".join(D2_ENGINES), help="d2: the engines, comma-separated")
     ap.add_argument("--tests", help="d2: only these tests, comma-separated (a name or its prefix: usb-host,usb-stress; "
                                     "the cpu row comes with usb-stress)")
@@ -1840,8 +2188,8 @@ def main(argv=None):
 def drives_the_move(a):
     """does this command send to the Move or read it (the MOVE lock), or is it offline (a fake, a saved file, a dry
     run, a local folder)?"""
-    if a.cmd == "usb-levels":
-        return True
+    if a.cmd in ("usb-levels", "clock-probe"):
+        return not a.fake
     if a.cmd == "d2":
         return not a.fake
     if a.cmd in USB_CMDS:
@@ -1866,11 +2214,22 @@ def _main(a):
         else:
             r = UsbRig(a.midi, a.audio, a.ch)
         only = [x for x in (a.tests or "").split(",") if x] or None
-        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 120.0, a.hq, only)
+        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 100.0, a.hq, only)
+    if a.cmd == "clock-probe":
+        d = a.out or os.path.join(OUT, stamp() + "-clock-probe")
+        if a.fake:
+            src = (a.inject or ["real"])[0]
+            ok, _ = clock_probe(FakeStatsLink(src), d, sleep=lambda s: None)
+        else:
+            ok, _ = clock_probe(StatsLink(a.ws, a.host), d)
+        return 0 if ok else 1
     if a.cmd == "usb-levels":
         d = a.out or os.path.join(OUT, stamp() + "-usb-levels")
         t = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)
-        ok, rep = usb_levels(UsbRig(a.midi, a.audio, a.ch), t, d, a.ws)
+        with KeptState(a.ws, 0) as ks:          # (the preset, CHANNEL, boot_settings: as they were)
+            ok, rep = usb_levels(UsbRig(a.midi, a.audio, a.ch), t, d, a.ws)
+        rep["state"] = ks.report
+        ok = ok and ks.report["verdict"] == "PASS"
         print(rep["verdict"])
         return 0 if ok else 1
     if a.cmd in USB_CMDS:
