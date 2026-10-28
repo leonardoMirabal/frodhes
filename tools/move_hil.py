@@ -1410,11 +1410,127 @@ def usb_main(a):
           "usb-vel": lambda: usb_vel(r, d, a.note, engine=e),
           "usb-sus": lambda: usb_sus(r, d, a.note, engine=e), "usb-clock": lambda: usb_clock(r, d, a.bpm or 120.0, engine=e),
           "usb-stress": lambda: usb_stress(r, d, a.engine if a.engine != "all" else "rhodes", a.secs, a.nv, a.bpm)}
-    ok, rep = fn[a.cmd]()
+    ks = KeptState(a.ws, 0) if not r.fake and a.ws != "none" else None
+    if ks is None:
+        ok, rep = fn[a.cmd]()
+    else:
+        with ks:                               # (the plugin's state as it was, also on a failure or ctrl-C)
+            ok, rep = fn[a.cmd]()
+        rep["state"] = ks.report
+        ok = ok and ks.report["verdict"] == "PASS"
     rep["rig"] = {"midi": r.port_name, "audio": r.audio_name, "ch": r.ch, "fake": r.fake}
     os.makedirs(d, exist_ok=True)
     json.dump(_plain(rep), open(os.path.join(d, "report.json"), "w"), indent=1, default=str)
     return 0 if ok else 1
+
+
+# ---- the plugin's state, kept: every test that plays into the plugin (its CCs, the preset, boot_settings, CHANNEL,
+# p_hq) leaves it as it found it. The plugin saves its settings and the panel, so a test's leftovers came back at the
+# next load: the arpeggiator on (2026-10-28 01:42), every effect on with the feedbacks at 127 (usb-stress's HEAVY,
+# the user's report of 2026-10-28)
+STATE_SKIP = ("preset_count", "preset_name", "s_sqclear", "s_squndo", "s_susbtn")   # (meta; momentary: a write is
+                                                                                     # a press)
+
+
+def _same(a, b):
+    try:
+        return a is not None and b is not None and float(a) == float(b)
+    except (TypeError, ValueError):
+        return a == b
+
+
+def state_read(url, slot=0, secs=0.8):
+    """the slot's params as Schwung reports them (its own connection): {key: value} without the synth: prefix, the
+    meta and momentary keys left out"""
+    import move_ws
+    with move_ws.Remote(url) as w:
+        w.subscribe(slot)
+        w.pump(secs)
+        p = dict(w.params.get(slot, {}))
+    return {k[6:]: v for k, v in p.items() if k.startswith("synth:") and k[6:] not in STATE_SKIP
+            and not k.startswith("synth:dev_")}
+
+
+def state_restore(url, slot, before, hq_default=0):
+    """writes back every key that differs from before (the preset first: it loads its own values), HQ to the boot
+    value (p_hq is not saved and Schwung does not report it), the dev player stopped and the CPU log off; then reads
+    the state back. (keys written, {key: (before, after)} still different)"""
+    import move_ws
+    with move_ws.Remote(url) as w:
+        w.subscribe(slot)
+        w.pump(0.8)
+        for k, v in (("dev_play", "stop"), ("dev_cpu_log", 0), ("p_hq", hq_default)):
+            w.set_param(slot, "synth:" + k, v)
+        now = lambda: {k[6:]: v for k, v in w.params.get(slot, {}).items() if k.startswith("synth:")}  # noqa: E731
+        written = []
+        if "preset" in before and not _same(now().get("preset"), before["preset"]):
+            w.set_param(slot, "synth:preset", before["preset"])
+            written.append("preset")
+            w.pump(1.5)                                  # (the re-read of every param, the preset's values in it)
+        cur = now()
+        for k, v in before.items():
+            if k != "preset" and not _same(cur.get(k), v):
+                w.set_param(slot, "synth:" + k, v)
+                written.append(k)
+                time.sleep(0.003)
+        w.pump(1.5)                                      # (the manager's re-read goes out under this connection)
+    after = state_read(url, slot)
+    bad = {k: (v, after.get(k)) for k, v in before.items() if not _same(after.get(k), v)}
+    return written, bad
+
+
+class KeptState:
+    """with KeptState(url, slot, out) as ks: ...: the state read first, written back at the end, also on an
+    exception, ctrl-C (KeyboardInterrupt) or SIGTERM (raised as SystemExit), and at interpreter exit (atexit) if the
+    block never ended. ks.report: {'verdict', 'params', 'written', 'bad'} once restored"""
+
+    def __init__(self, url, slot=0, out=print):
+        self.url, self.slot, self.out, self.report, self.before = url, slot, out, None, None
+
+    def __enter__(self):
+        import atexit
+        import signal
+        self.before = state_read(self.url, self.slot)
+        atexit.register(self.restore)
+        self._sig = None
+        try:
+            self._sig = signal.signal(signal.SIGTERM, self._term)
+        except ValueError:                               # (not the main thread: atexit and finally still hold)
+            pass
+        return self
+
+    @staticmethod
+    def _term(signum, frame):
+        raise SystemExit(128 + signum)
+
+    def restore(self):
+        if self.report is not None or self.before is None:
+            return self.report
+        try:
+            written, bad = state_restore(self.url, self.slot, self.before)
+            self.report = {"verdict": "PASS" if not bad else "FAIL: after the run %d param(s) differ from before: %s"
+                           % (len(bad), ", ".join("%s %s -> %s" % (k, a, b) for k, (a, b) in sorted(bad.items())[:8])),
+                           "params": len(self.before), "written": written, "bad": bad}
+        except Exception as e:                           # (the WebSocket gone: say so loudly, never pass)
+            self.report = {"verdict": "FAIL: the state was not restored: %s: %s" % (type(e).__name__, e),
+                           "params": len(self.before), "written": [], "bad": {"(restore)": (None, str(e))}}
+        self.out("state: " + self.report["verdict"] + (" (%d param(s) as before, %d written back)" % (
+            self.report["params"], len(self.report["written"])) if self.report["verdict"] == "PASS" else ""))
+        return self.report
+
+    def __exit__(self, *exc):
+        import atexit
+        import signal
+        try:
+            self.restore()
+        finally:
+            atexit.unregister(self.restore)
+            if self._sig is not None:
+                try:
+                    signal.signal(signal.SIGTERM, self._sig)
+                except ValueError:
+                    pass
+        return False
 
 
 # --------------------------------------------------------------------------- d2: the whole USB-C run, three engines
@@ -1447,6 +1563,9 @@ def _num(rep, test):
             return "idle %s dBFS (%s)" % (rep["floor_db"], rep["kind"])
         if test == "ws":
             return rep.get("note", "")
+        if test == "state":
+            return "%s param(s) read before, %d written back, %d differ after" % (
+                rep.get("params", "-"), len(rep.get("written", [])), len(rep.get("bad", {})))
         if test == "usb-host":
             w = rep["rows"]
             j = [x["residual_db"] for x in w if x.get("judged", True)]
@@ -1510,6 +1629,10 @@ def _ws_prepare(url, engine, slot=0, out=print, remote=None):
     return True, st
 
 
+class _Stop(Exception):
+    pass
+
+
 def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, only=None, out=print):
     """per engine: the slot's module and preset over Schwung's WebSocket (ws: its URL, None: skipped), the preflight
     (a failure stops the whole run: the stream is not the Move's Main Out), usb-host on the engine's preset, usb-note
@@ -1536,59 +1659,78 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, 
     tap_cpu = isinstance(r, TapRig) and r.cpu_fetch is not None
     if hq is not None and isinstance(r, TapRig):
         r.set_hq(hq)
-    for e in engines:
-        out("== %s" % e)
-        if ws:
-            ok, rep = _ws_prepare(ws, e, out=quiet)    # (its own connection: the rig's never subscribes)
-            note(e, "ws", ok, rep)
-            if not ok:
-                stopped = "%s: %s" % (e, rep["verdict"])
-                break
-        if not isinstance(r, TapRig):           # (the tap is the plugin's own output: no stream to check)
-            ok, pre = preflight(r, out=quiet)
-            pre["verdict"] = "PASS" if ok else "FAIL: " + SAY[pre["kind"]]
-            note(e, "preflight", ok, pre)
-            if not ok:
-                stopped = "%s: the preflight failed (%s)" % (e, pre["kind"])
-                break
-        sub = lambda t: os.path.join(d, e, t)          # noqa: E731
-        r._send("cc", 120, 0)                          # (the host's state: every parameter at its default, the
-        if not hasattr(r, "defaults"):                 # preset then loads over it, as on the host build)
-            r.defaults = hs.param_defaults()
-        for c, v in r.defaults:
-            r._send("cc", c, v)
-        tests = [("usb-host", lambda: usb_host(r, sub("usb-host"), D2_PRESET[e], out=quiet))]
-        for n in D2_NOTES[e]:
-            tests.append(("usb-note-%d" % n, lambda n=n: usb_note(r, sub("usb-note-%d" % n), n, 100, e, out=quiet)))
-        tests += [("usb-vel", lambda: usb_vel(r, sub("usb-vel"), engine=e, out=quiet)),
-                  ("usb-sus", lambda: usb_sus(r, sub("usb-sus"), engine=e, out=quiet)),
-                  ("usb-clock", lambda: usb_clock(r, sub("usb-clock"), bpm, engine=e, out=quiet)),
-                  ("usb-stress", lambda: usb_stress(r, sub("usb-stress"), e, stress_secs, out=quiet))]
-        if e == "rhodes" and hq == 1 and tap_cpu:
-            tests.append(("usb-restrike", lambda: usb_restrike(r, sub("usb-restrike"), stress_secs / 2,
-                                                               out=quiet)))
-        if only:
-            tests = [(n, f) for n, f in tests if any(n == o or n.startswith(o + "-") for o in only)]
-        cpu_rows = []
-        for name, fn in tests:
-            out("-- %s %s" % (e, name))
-            try:
-                if tap_cpu and name == "usb-stress":
-                    r.cpu_start()
-                    try:
+    ks = None
+    if ws:                                             # (the plugin's state read first, written back at the end)
+        try:
+            ks = KeptState(ws, 0, out=quiet).__enter__()
+        except Exception as x:                         # (OSError, a timeout, the manager's error, a cut socket)
+            note("all", "state", False, {"verdict": "FAIL: the state could not be read first: %s: %s" % (
+                type(x).__name__, x)})
+            stopped = "the plugin's state could not be read over %s" % ws
+    try:
+        if stopped:
+            raise _Stop()
+        for e in engines:
+            out("== %s" % e)
+            if ws:
+                ok, rep = _ws_prepare(ws, e, out=quiet)    # (its own connection: the rig's never subscribes)
+                note(e, "ws", ok, rep)
+                if not ok:
+                    stopped = "%s: %s" % (e, rep["verdict"])
+                    break
+            if not isinstance(r, TapRig):           # (the tap is the plugin's own output: no stream to check)
+                ok, pre = preflight(r, out=quiet)
+                pre["verdict"] = "PASS" if ok else "FAIL: " + SAY[pre["kind"]]
+                note(e, "preflight", ok, pre)
+                if not ok:
+                    stopped = "%s: the preflight failed (%s)" % (e, pre["kind"])
+                    break
+            sub = lambda t: os.path.join(d, e, t)          # noqa: E731
+            r._send("cc", 120, 0)                          # (the host's state: every parameter at its default, the
+            if not hasattr(r, "defaults"):                 # preset then loads over it, as on the host build)
+                r.defaults = hs.param_defaults()
+            for c, v in r.defaults:
+                r._send("cc", c, v)
+            tests = [("usb-host", lambda: usb_host(r, sub("usb-host"), D2_PRESET[e], out=quiet))]
+            for n in D2_NOTES[e]:
+                tests.append(("usb-note-%d" % n, lambda n=n: usb_note(r, sub("usb-note-%d" % n), n, 100, e, out=quiet)))
+            tests += [("usb-vel", lambda: usb_vel(r, sub("usb-vel"), engine=e, out=quiet)),
+                      ("usb-sus", lambda: usb_sus(r, sub("usb-sus"), engine=e, out=quiet)),
+                      ("usb-clock", lambda: usb_clock(r, sub("usb-clock"), bpm, engine=e, out=quiet)),
+                      ("usb-stress", lambda: usb_stress(r, sub("usb-stress"), e, stress_secs, out=quiet))]
+            if e == "rhodes" and hq == 1 and tap_cpu:
+                tests.append(("usb-restrike", lambda: usb_restrike(r, sub("usb-restrike"), stress_secs / 2,
+                                                                   out=quiet)))
+            if only:
+                tests = [(n, f) for n, f in tests if any(n == o or n.startswith(o + "-") for o in only)]
+            cpu_rows = []
+            for name, fn in tests:
+                out("-- %s %s" % (e, name))
+                try:
+                    if tap_cpu and name == "usb-stress":
+                        r.cpu_start()
+                        try:
+                            ok, rep = fn()
+                        finally:
+                            cpu_rows = r.cpu_stop()
+                    else:
                         ok, rep = fn()
-                    finally:
-                        cpu_rows = r.cpu_stop()
-                else:
-                    ok, rep = fn()
-            except Exception as x:                     # (one test's crash is its FAIL; the run goes on)
-                ok, rep = False, {"verdict": "FAIL: %s: %s" % (type(x).__name__, x)}
-            note(e, name, ok, rep)
-        if tap_cpu and any(n == "usb-stress" for n, _ in tests):
-            s = cpu_summary(cpu_rows)
-            s["engine"], s["hq"] = e, hq
-            s["verdict"] = s["verdict"] if s["n"] else "FAIL: no callback times (dev_cpu_log reached the plugin?)"
-            note(e, "cpu", s["verdict"].startswith("PASS"), s)
+                except Exception as x:                     # (one test's crash is its FAIL; the run goes on)
+                    ok, rep = False, {"verdict": "FAIL: %s: %s" % (type(x).__name__, x)}
+                note(e, name, ok, rep)
+            if tap_cpu and any(n == "usb-stress" for n, _ in tests):
+                s = cpu_summary(cpu_rows)
+                s["engine"], s["hq"] = e, hq
+                s["verdict"] = s["verdict"] if s["n"] else "FAIL: no callback times (dev_cpu_log reached the plugin?)"
+                note(e, "cpu", s["verdict"].startswith("PASS"), s)
+    except _Stop:
+        pass
+    finally:
+        if ks is not None:
+            ks.__exit__(None, None, None)
+            note("all", "state", ks.report["verdict"] == "PASS",
+                 dict(ks.report, verdict=ks.report["verdict"] + (" (%d param(s) as before, %d written back)" % (
+                     ks.report["params"], len(ks.report["written"])) if ks.report["verdict"] == "PASS" else "")))
     if stopped:
         code = 2
     elif not all(w["ok"] for w in rows):
@@ -1870,7 +2012,10 @@ def _main(a):
     if a.cmd == "usb-levels":
         d = a.out or os.path.join(OUT, stamp() + "-usb-levels")
         t = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)
-        ok, rep = usb_levels(UsbRig(a.midi, a.audio, a.ch), t, d, a.ws)
+        with KeptState(a.ws, 0) as ks:          # (the preset, CHANNEL, boot_settings: as they were)
+            ok, rep = usb_levels(UsbRig(a.midi, a.audio, a.ch), t, d, a.ws)
+        rep["state"] = ks.report
+        ok = ok and ks.report["verdict"] == "PASS"
         print(rep["verdict"])
         return 0 if ok else 1
     if a.cmd in USB_CMDS:

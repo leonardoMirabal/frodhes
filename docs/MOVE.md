@@ -206,6 +206,12 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
   each setting that differs from a fresh instance (`move/tests/boot_keys.txt`, checked by `test_bridge boot`).
   A note that the host strikes once but the Move strikes again while it is held fails as STRUCK AGAIN. That
   happened in one run, when an arpeggiator left on re-struck every note.
+- The tests leave the plugin as they found it. The plugin saves its settings and its panel, so a test's CCs
+  came back at the next load: once the arpeggiator, once every effect with the feedbacks at 127 (`usb-stress`).
+  So `d2`, every `usb-*` run and `usb-levels` first read all of the slot's params over Schwung's WebSocket. At the
+  end they write back each one that differs, the preset first. This also happens after a failure, ctrl-C or
+  SIGTERM. HQ goes back to Classic, its value at boot, and the dev player and the CPU log are stopped. Then the
+  tool reads the params again: `d2`'s summary has a `state` row, which fails when any param differs from before.
 - A take plays once: the plugin refuses a `begin` with the id of the take that went last. Each `dev_play_add`
   piece carries its number (`#K`), and the plugin refuses a piece that comes out of turn. If the WebSocket
   drops while a take is being sent, the tool stops the take. It sends the take again, under a new id, only
