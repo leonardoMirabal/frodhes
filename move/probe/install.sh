@@ -28,6 +28,12 @@ run() { echo "+ $*"; if [ $GO = 1 ]; then sh -c "$*" || echo "  (exit $?)"; fi; 
 need() { echo "+ $*"; if [ $GO = 1 ]; then sh -c "$*" || { echo "  failed: stop"; exit 1; }; fi; }
 
 [ $GO = 1 ] || echo "(dry run: add --go to execute; host $HOST)"
+# --go drives the Move: under the MOVE lock (tools/lock.py run: never waited for; a caller that holds it, its
+# FRODHES_LOCK_MOVE token, goes on)
+if [ $GO = 1 ] && [ -z "${FRODHES_PROBE_LOCKED:-}" ]; then
+  FRODHES_PROBE_LOCKED=1 exec python3 "$ROOT/tools/lock.py" run MOVE --wait 0 --who "move/probe/install.sh $CMD" \
+    -- sh "$0" --go "$CMD"
+fi
 case $CMD in
 install|update)
     for id in $IDS; do

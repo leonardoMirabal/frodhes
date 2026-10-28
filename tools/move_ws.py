@@ -171,8 +171,10 @@ def main(argv=None):
     ap.add_argument("--timeout", type=float, default=5.0)
     a = ap.parse_args(argv)
     s = a.slot - 1
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import move_install
     try:
-        with Remote(a.url, a.timeout) as r:
+        with move_install.move_lock("move_ws " + a.cmd), Remote(a.url, a.timeout) as r:
             st = r.subscribe(s)
             if a.cmd == "preset":
                 if a.n is None:

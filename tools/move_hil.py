@@ -1832,11 +1832,31 @@ def main(argv=None):
     ap.add_argument("--ws", default=os.environ.get("MOVE_WS", "ws://move.local:7700/ws/remote-ui"),
                     help="d2: Schwung's WebSocket (slot 1's module and preset); 'none' to skip")
     a = ap.parse_args(argv)
+    import contextlib
+    with (mi.move_lock("move_hil " + a.cmd) if drives_the_move(a) else contextlib.nullcontext()):
+        return _main(a)
+
+
+def drives_the_move(a):
+    """does this command send to the Move or read it (the MOVE lock), or is it offline (a fake, a saved file, a dry
+    run, a local folder)?"""
+    if a.cmd == "usb-levels":
+        return True
+    if a.cmd == "d2":
+        return not a.fake
+    if a.cmd in USB_CMDS:
+        return not a.fake and a.cmd != "usb-devices" and not (a.cmd == "usb-host" and a.analyze)
+    if a.cmd in ("facts", "install", "rollback", "info", "logs", "cpu"):
+        return not a.target_dir and not a.file and (a.go or a.cmd == "info")
+    return False
+
+
+def _main(a):
     if a.cmd == "d2":
         engines = tuple(x for x in a.engines.split(",") if x)
         bad = [x for x in engines if x not in D2_ENGINES]
         if bad:
-            ap.error("--engines: %s" % bad)
+            raise SystemExit("--engines: %s" % bad)
         d = a.out or os.path.join(OUT, stamp() + "-d2")
         if a.fake:
             inj = [(k, float(t or 0)) for k, _, t in (s.partition("@") for s in a.inject or ())]
