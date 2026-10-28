@@ -11,9 +11,10 @@ const GR_CONF = {"kind":"custom:frodhes_gr","gr":"r_cmp_gr","gr_db10":[10,20,30,
 // Schwung (v1.8.1, docs/MODULES.md "Custom widgets (drawCell)") draws a cell whose chain_params viz kind is
 // GR_CONF.kind with drawCell below. On Frodhes' COMPRESSOR level the kind sits on a group of two read-only keys,
 // r_cmp_gr (GR) and r_cmp_pk (PEAK), knobs 7-8, so one picture spans both cells (64 x 15 px on the Move's grid).
-// It draws what the FM-1's COMP page shows (ui.c draw_meter): a track filled from the right on the FM-1's segment
-// scale (1 .. 30 dB, the 15 steps evenly apart), the fill's edge, the peak held for a second as a 2 px mark, and the
-// reading in dB. COMP off: an empty dotted track and COMP OFF.
+// It is the FM-1's COMP meter (ui.c draw_meter: ui.c's 15 segments, 1 .. 30 dB, lit from the right, the peak held a
+// second), drawn for the Move's one-bit screen as a meter you read at arm's length (the user, 2026-10-28: the thin
+// track read as "just numbers"): a thick bar of separate segments, the peak a taller block, the dB reading small
+// under it. COMP off: an empty dotted outline and COMP OFF.
 //
 // The value is r_cmp_gr as the plugin serves it (move_bridge.h): "OFF", or "<dB x 10> <held peak dB x 10>". The key
 // is "live", so the grid re-reads it every tick and hands the fresh value in `values`. No value yet (a read that did
@@ -26,12 +27,12 @@ const GR_GLYPHS = {
     "4": "#.##.####..#..#", "5": "####..###..####", "6": "####..####.####", "7": "###..#..#..#..#",
     "8": "####.#####.####", "9": "####.####..####", "-": "......###......", ".": ".............#.",
     " ": "...............", "B": "##.#.###.#.###.", "C": "####..#..#..###", "D": "##.#.##.##.###.",
-    "F": "####..###.#..#.", "M": "#.####.##.##.##", "O": "####.##.##.####", "P": "####.####..#..#",
+    "F": "####..###.#..#.", "G": "####..#.##.####", "M": "#.####.##.##.##", "O": "####.##.##.####", "P": "####.####..#..#", "R": "##.#.###.#.##.#",
 };
 function grTextW(s) { return s.length ? s.length * 4 - 1 : 0; }
-// the first of the texts that fits w, right-aligned at the frame's right edge, on the frame's last 5 rows
-function grTextFit(ctx, w, h, texts) {
-    const s = texts.find((t) => grTextW(t) <= w);
+// the first of the texts that fits room (default w), right-aligned at the frame's right edge, on its last 5 rows
+function grTextFit(ctx, w, h, texts, room) {
+    const s = texts.find((t) => grTextW(t) <= (room === undefined ? w : room));
     if (s) grText(ctx, w - grTextW(s), h - 5, s, 1);
 }
 function grText(ctx, x, y, s, color) {
@@ -64,38 +65,58 @@ function grPx(db10, w) {
     }
     return w;
 }
+// the segments a reduction lights (ui.c's GR_DB10 scale: segment i spans GR_DB10[i-1] .. GR_DB10[i]); a segment lights
+// as soon as the reduction enters it, so 0.1 dB lights one and 0 dB none
+function grSegs(db10) {
+    const sc = GR_CONF.gr_db10;
+    if (!(db10 > 0)) return 0;
+    for (let i = 0; i < sc.length; i++) if (db10 <= sc[i]) return i + 1;
+    return sc.length;
+}
 function grReading(db10) { return db10 ? "-" + Math.floor(db10 / 10) + "." + (db10 % 10) + " DB" : "0.0 DB"; }
+// the bar's geometry in a frame w wide: n segments (ui.c's), each segw wide, pitch apart, right-aligned
+function grBar(w) {
+    const n = GR_CONF.gr_db10.length;
+    const pitch = Math.max(2, Math.floor((w + 1) / n));
+    return { n, pitch, segw: pitch - 1, x0: w - (n * pitch - 1) };
+}
+// segment i (0 = the rightmost, the first to light) starts at this x
+function grSegX(bar, w, i) { return w - (i + 1) * bar.pitch + 1; }
 
-// the cell: the track on top (1 px outline), the reading under it, right-aligned; a frame too low for text (under
-// 9 px) is the track alone
+// the cell: a thick bar of ui.c's segments across the frame, lit from the right as the reduction grows (a lit
+// segment a solid block, an unlit one its floor line), the held peak a full-height block above the rest, and under it
+// GR on the left and the reading on the right, small; COMP off: the bar's outline dotted and COMP OFF. A frame too
+// low for text (under 12 px) is the bar alone.
 function grDraw(ctx, values, group) {
     const w = ctx.width | 0, h = ctx.height | 0;
     if (w < 8 || h < 3) return;
     const roles = (group && group.roles) || {};
     const key = roles.gr || GR_CONF.gr;
     const gr = grParse(values ? values[key] : null);
-    const withText = h >= 9;
-    const th = withText ? Math.min(9, h - 6) : h;               // the track's height (the FM-1's: 9 px)
-    const iw = w - 2, ih = th - 2;                               // inside the outline
-    if (gr && gr.off) {                                          // COMP off: a dotted track, nothing in it
-        for (let x = 0; x < w; x += 2) { ctx.fillRect(x, 0, 1, 1, 1); ctx.fillRect(x, th - 1, 1, 1, 1); }
-        for (let y = 2; y < th - 1; y += 2) { ctx.fillRect(0, y, 1, 1, 1); ctx.fillRect(w - 1, y, 1, 1, 1); }
+    const withText = h >= 12;
+    const bh = withText ? h - 6 : h;                             // the bar's height (9 px in a 15 px cell)
+    const bar = grBar(w);
+    if (gr && gr.off) {                                          // COMP off: an empty dotted outline
+        const x0 = Math.max(0, bar.x0);
+        for (let x = x0; x < w; x += 2) { ctx.fillRect(x, 0, 1, 1, 1); ctx.fillRect(x, bh - 1, 1, 1, 1); }
+        for (let y = 2; y < bh - 1; y += 2) { ctx.fillRect(x0, y, 1, 1, 1); ctx.fillRect(w - 1, y, 1, 1, 1); }
         if (withText) grTextFit(ctx, w, h, ["COMP OFF", "OFF"]);
         return;
     }
-    ctx.fillRect(0, 0, w, 1, 1);                                 // the track
-    ctx.fillRect(0, th - 1, w, 1, 1);
-    ctx.fillRect(0, 0, 1, th, 1);
-    ctx.fillRect(w - 1, 0, 1, th, 1);
-    if (!gr) return;                                             // no answer yet: the track only
-    const fw = grPx(gr.db10, iw), pk = gr.pk ? grPx(gr.pk, iw) : 0;
-    if (ih > 0) {
-        if (fw) ctx.fillRect(1 + iw - fw, 1, fw, ih, 1);         // the fill, from the right
-        if (pk > fw) ctx.fillRect(1 + iw - pk, 1, 2, ih, 1);     // the peak, held a second (ui.c: 2 px)
+    const lit = gr ? grSegs(gr.db10) : 0, pk = gr && gr.pk ? grSegs(gr.pk) : 0;
+    for (let i = 0; i < bar.n; i++) {
+        const x = grSegX(bar, w, i);
+        if (x < 0) break;                                                    // a frame too narrow: what fits
+        if (i < lit) ctx.fillRect(x, 1, bar.segw, Math.max(1, bh - 1), 1);   // lit: a solid block on the floor
+        else if (i === pk - 1) ctx.fillRect(x, 0, bar.segw, bh, 1);          // the held peak: taller, alone
+        else ctx.fillRect(x, bh - 1, bar.segw, 1, 1);                         // unlit: the floor line
     }
     if (withText) {
-        const s = grReading(gr.db10);
-        grTextFit(ctx, w, h, [s, s.replace(" DB", "")]);
+        grText(ctx, 0, h - 5, "GR", 1);
+        if (gr) {
+            const s = grReading(gr.db10);
+            grTextFit(ctx, w, h, [s, s.replace(" DB", "")], w - 9);
+        }
     }
 }
 
@@ -104,5 +125,6 @@ globalThis.canvas_overlay = {
     drawCell(ctx, o) { grDraw(ctx, (o && o.values) || {}, o && o.group); },
 };
 // for the host tests (move/ui/test_cell.mjs): the parts, under a name of ours
-globalThis.frodhes_gr_cell = { parse: grParse, px: grPx, reading: grReading, draw: grDraw, conf: GR_CONF };
+globalThis.frodhes_gr_cell = { parse: grParse, px: grPx, segs: grSegs, bar: grBar, segX: grSegX, reading: grReading,
+                                draw: grDraw, conf: GR_CONF };
 })();

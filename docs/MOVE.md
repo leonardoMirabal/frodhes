@@ -16,8 +16,7 @@ the end.
 You need a Move with Schwung installed (built and tested against Schwung 1.8.1).
 
 The module is one file, **`frodhes-module.tar.gz`**: a folder `frodhes/` with `dsp.so`, `module.json`, `help.json`,
-`sustain.js` (the PEDAL screen), `screen.js` (Frodhes' own screen), `canvas.js` (the gain-reduction meter on the
-COMPRESSOR page) and `LICENSE`. A release carries it, under that name and as `frodhes-X.Y.Z-move.tar.gz`, only when
+`screen.js` (Frodhes' own screen), `canvas.js` (the gain-reduction meter on the COMPRESSOR page) and `LICENSE`. A release carries it, under that name and as `frodhes-X.Y.Z-move.tar.gz`, only when
 that exact file passed the tests on a Move; until a release has it, build it yourself (`make move`, see
 [For developers](#for-developers)). Frodhes is not in Schwung's module catalog: how it will be offered there is not
 decided yet, so install it by hand.
@@ -51,46 +50,55 @@ module next to the old one, checks it, then switches by renaming, and keeps the 
 
 ## The pages
 
-The first page, **FRODHES**, has the sound type, the stereo spread, the sustain latch, the PEDAL screen, the effects
-switch (FX), Frodhes' own screen (PAGES) and the preset browser: the 19 factory sounds (F01-F19) and 16 user sounds
+The first page, **FRODHES**, has the sound type, the stereo spread, the sustain (SUS, on or off), the effects switch
+(FX), Frodhes' own screen (PAGES) and the preset browser: the 19 factory sounds (F01-F19) and 16 user sounds
 (U01-U16), as on the FM-1. Each page below holds up to eight
 controls, one for each of the Move's eight knobs. The VOICE pages follow the engine of the TYPE: only the pages of the
-engine that plays are shown.
+engine that plays are shown, and they change with it: turn TYPE, load a preset or send a program change of another
+instrument and, within about half a second, the VOICE pages are that instrument's.
+
+**Frodhes plays in one slot at a time.** It is one instrument with one sound: load it on two tracks and only the one
+loaded last plays. The other is silent, does not follow its knobs, and its name reads ONE SLOT ONLY. Remove either
+one and the one left plays, with its knobs.
 
 | Page | Controls |
 | --- | --- |
-| **FRODHES** | TYPE · SPRD · SUS · PEDAL · FX · PAGES |
+| **FRODHES** | TYPE · SPREAD · SUS · FX · PAGES |
 | **PIANO VOICE** | TONE · BARK · BELL · HAMMR · DECAY · REL · NOISE · TUNE |
-| **VIBES VOICE** | STRK · MALLT · TUBE · WGHT · RING · DAMPR · NOISE · TUNE |
+| **VIBES VOICE** | STRIKE · MALLET · TUBE · WEIGHT · RING · DAMPR · NOISE · TUNE |
 | **VIBES MOTOR** | MOTOR · DEPTH · SPEED · SHAPE · SYNC |
-| **MARIMBA VOICE** | STRK · MALLT · TUBE · WGHT · RING · MUTE · NOISE · TUNE |
-| **COMPRESSOR** | THRSH · RATIO · ATK · MKUP · COMP · REL · GR · PEAK |
-| **DRIVE/FILTER** | DRIVE · AMT · TONE · MIX · FILT · FREQ · RESO · LFO |
-| **TREM/PHASER** | TREM · DEPTH · RATE · SHAPE · PHASE · DEPTH · SPEED · FDBK |
-| **CHORUS/DELAY** | CHOR · DEPTH · SPEED · SYNC · DELAY · MIX · TIME · FDBK |
-| **REVERB** | RVB · MIX · DECAY · TONE · PDLY · SIZE · MOD · LCUT |
-| **TEMPO** | TRSYN · PHSYN · DLSYN |
-| **LFO/SETUP** | SHAPE · RATE · SYNC · TRIG · DLTON · LEVEL · CHAN |
+| **MARIMBA VOICE** | STRIKE · MALLET · TUBE · WEIGHT · RING · MUTE · NOISE · TUNE |
+| **COMPRESSOR** | THRESH · RATIO · ATTACK · MKUP · COMP · REL · GAIN · REDUCT |
+| **DRIVE/FILTER** | DRIVE · AMOUNT · TONE · MIX · FILTER · FREQ · RESO · LFO |
+| **TREM/PHASER** | TREM · DEPTH · RATE · SHAPE · PHASER · DEPTH · SPEED · FEEDBK |
+| **CHORUS/DELAY** | CHORUS · DEPTH · SPEED · SYNC · DELAY · MIX · TIME · FEEDBK |
+| **REVERB** | REVERB · MIX · DECAY · TONE · PREDLY · SIZE · MOD · LOWCUT |
+| **TEMPO** | TRSYNC · PHSYNC · DLSYNC |
+| **LFO/SETUP** | SHAPE · RATE · SYNC · RETRIG · DLTONE · LEVEL · CHAN |
 | **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI |
 
-The controls are the FM-1's, with the same ranges, under shorter names (the Move's screen fits about five
-characters; an option name is shortened the same way everywhere, so the reverb's INFINITE shows as INF). The manual
+The controls are the FM-1's, with the same ranges, under the FM-1's names where they fit a cell of Schwung's grid
+and shorter ones where they do not (HAMMR, DAMPR, MKUP; an option name is shortened the same way everywhere, so the
+reverb's INFINITE shows as INF). Schwung writes a few words its own way on its grid: FREQ as FRQ, RESO as RES,
+REVERB as REV and RETRIG as RTG. The manual
 (`docs/MANUAL.md`) describes what each one does; CHAN is the FM-1's MIDI CHANNEL. Each page has a help text in
 `help.json`. The pages are generated from the FM-1's own parameter tables (`tools/gen_move_module.py`), so the two
 stay alike. How the pages look and respond on the Move's screen and knobs is *(not yet verified on a device)*.
 
-![Schwung's COMPRESSOR page: six knobs, and the gain-reduction meter in the place of knobs 7 and 8](manual/img/move/move-knobs-compressor.png?v=18ceee97)
+![Schwung's COMPRESSOR page: six knobs, and the gain-reduction meter in the place of knobs 7 and 8](manual/img/move/move-knobs-compressor.png?v=8f0e4550)
 
-**COMPRESSOR** shows the gain reduction in the place of knobs 7 and 8 (GR and PEAK), as the FM-1's COMP page does:
-one meter across both cells, a bar that fills from the right on the FM-1's scale (up to 30 dB), the peak held for a
-second as a mark, and the reading in dB under it. It moves while you play. When the compressor is off the bar is
-dotted and reads COMP OFF. Knobs 7 and 8 change nothing there. *(not yet verified on a device: how it looks on the
+**COMPRESSOR** shows the gain reduction in the place of knobs 7 and 8 (GAIN REDUCT), as the FM-1's COMP page does:
+one meter across both cells, a thick bar of 15 separate segments on the FM-1's scale (up to 30 dB) that light from
+the right as the reduction grows, the peak held for a second as a taller segment of its own, and GR and the reading
+in dB small under it. It moves while you play. When the compressor is off the bar is an empty dotted outline and
+reads COMP OFF. Knobs 7 and 8 change nothing there. *(not yet verified on a device: how it looks on the
 Move's screen)*
 
 ## Frodhes' own screen (PAGES)
 
-The pages above are on Schwung's own knob screen. **PAGES** on the first page opens a screen of Frodhes' own with the
-same pages, drawn as on the FM-1: one page is the eight knobs.
+The pages above are on Schwung's own knob screen. **PAGES** on the first page (its cell reads OPEN) opens a screen of
+Frodhes' own with the same pages, drawn as on the FM-1: one page is the eight knobs. To open it, touch the PAGES knob
+and click the jog wheel (a click with no knob touched opens Schwung's list of pages instead).
 
 ![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=7fb7a2cc)
 
@@ -103,18 +111,18 @@ same pages, drawn as on the FM-1: one page is the eight knobs.
 - **Pages**: turn the jog wheel for the next or the previous page. Click the jog wheel for the list of pages, turn
   to one, click to open it; Back closes the list. Back on a page leaves Frodhes' screen (Shift + jog wheel too).
   As on the other screen, the VOICE pages are the ones of the instrument that plays.
-- **The sustain pedal**: on this screen the Capture button is the sustain pedal on every page, as on the PEDAL
-  screen (hold it, or tap to latch and tap again to let go).
-- The first page shows the sound that plays in full, and its fifth knob (PRSET) picks the sound.
-- **COMPRESSOR** shows the gain reduction as the FM-1's COMP page does: GR and the reading in dB, a bar that fills
-  from the right on the FM-1's scale (up to 30 dB), and the peak held for a second. COMP OFF shows when the compressor
-  is off. *(not yet verified on a device)*
+- **The sustain**: on this screen the **Capture** button turns SUS on or off on every page (each press, as the SUS
+  knob on the first page).
+- The first page shows the sound that plays in full, and its fifth knob (PRESET) picks the sound.
+- **COMPRESSOR** shows the gain reduction as the knob screen does, larger: GR and the reading in dB, a thick bar of
+  15 segments lit from the right on the FM-1's scale (up to 30 dB), and the peak held for a second as a taller
+  segment. When the compressor is off the bar is a dotted outline and reads COMP OFF. *(not yet verified on a device)*
 - A fast turn of a wide range moves four steps a detent.
 
-![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=3da25fcf)
-![Knob 1 on REVERB: the type, one block per option](manual/img/move/move-reverb-k1.png?v=c1dc8a5f)
-![COMPRESSOR with the compressor on: the meter at 12 dB of gain reduction](manual/img/move/move-compressor-gr.png?v=1e8174f8)
-![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=d424b3d8)
+![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=f6f0cb74)
+![Knob 1 on REVERB: the type, one block per option](manual/img/move/move-reverb-k1.png?v=e5958986)
+![COMPRESSOR with the compressor on: the meter at 12 dB of gain reduction](manual/img/move/move-compressor-gr.png?v=b3d9ab94)
+![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=a40253a7)
 ![The list of pages](manual/img/move/move-pages.png?v=e463578b)
 
 The pictures are drawn by the screens' own code on a computer, in the screen's two colours: Frodhes' screen by
@@ -124,16 +132,16 @@ wheel and the button on the Move itself.
 
 ## Sustain
 
-The Move has no pedal jack. There are three ways to sustain, and they work together as on the FM-1:
+The Move has no pedal jack. **SUS** on the first page is the sustain, on or off: ON holds the notes as a pedal held
+down does, OFF lets them go, and OFF always wins (over a MIDI pedal held down too). The ways to set it:
 
-- **A Move button as the pedal**, as REC on the FM-1: open **PEDAL** on the first page (or Frodhes' own screen),
-  then the **Capture** button is the sustain pedal. Hold it like a pedal; tap it to latch the sustain on, tap it
-  again to let go. The screen shows SUS while the notes are held. While one of these screens is open, Capture does
-  not do its usual job on the Move. *(not yet verified on a device)*
-- **SUS** on the first page is the latch on its own: ON holds the notes as a held pedal does, OFF lets them go. It
-  shows ON while the button holds the notes too.
-- **A sustain pedal or keyboard on CC 64** (on the Move's USB-A port, or MIDI from a computer): half pedalling as
-  on the FM-1. Letting the pedal up also releases the latch.
+- **SUS** on the first page: turn it or click it.
+- **The Capture button**, while Frodhes' own screen (PAGES) is open: each press turns SUS on or off. While that
+  screen is open, Capture does not do its usual job on the Move; on Schwung's knob screen it does nothing for
+  Frodhes (Schwung gives a module's button to its own screen only). *(not yet verified on a device)*
+- **A sustain pedal or keyboard on CC 64** (on the Move's USB-A port, or MIDI from a computer): a pedal as on the
+  FM-1, half pedalling included. Letting the pedal up also turns SUS off, as on the FM-1 (its let-up releases the
+  REC latch).
 
 ## The effects
 
@@ -149,7 +157,7 @@ of them with FX. *(not yet verified on a device: the levels against the Move's o
 
 ## Presets
 
-The preset browser on the first page (and PRSET on Frodhes' own screen) loads the 19 factory sounds (F01-F19) and
+The preset browser on the first page (and PRESET on Frodhes' own screen) loads the 19 factory sounds (F01-F19) and
 the 16 user slots (U01-U16), and program change loads them as on the FM-1 (0-15 F01-F16, 16-31 U01-U16, 32-34
 F17-F19). The Move has no SAVE page: the sound you set is saved with the Move's set instead (Schwung keeps it with
 the track). The user slots keep what the module's data folder holds (empty on a new install). *(not yet verified on
@@ -196,7 +204,8 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
   are not on the Move, and their CCs do nothing. A setup saved with any of them on still loads, with them off.
   A pattern saved by an older build is not loaded.
 - No BPM or CLOCK setting: the Move's tempo leads (see [MIDI and tempo](#midi-and-tempo)).
-- Only on the Move: the pressure [mappings](#mappings), the PEDAL screen and Frodhes' own screen.
+- Only on the Move: the pressure [mappings](#mappings) and Frodhes' own screen. SUS is a switch, on or off, in
+  place of the FM-1's REC hold and tap.
 - SPREAD and the compressor's RELEASE, set on the FM-1 by MIDI or a page of their own, are on the pages here.
 - The sound is part of the Move's set: Schwung saves and restores it with the track. *(not yet verified on a device)*
 - Audio runs in blocks of 128 frames at 44.1 kHz (the FM-1 uses 256), with a working limit of 725 us of processing
@@ -218,7 +227,7 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
   seccomp and no-allocation guards), `make gate-h` (the HQ renders) and `tools/gate_s.py` (the FM-1 and SMK binaries
   unchanged by the Move work) complete it. `tools/test_map.py` names the gates and device tiers a change needs, per
   target.
-- `tools/gen_move_module.py` writes `move/module/` (module.json, the pages, help.json, `move_ui.h`, `sustain.js`,
+- `tools/gen_move_module.py` writes `move/module/` (module.json, the pages, help.json, `move_ui.h`,
   `screen.js`: the pages from the FM-1's tables + the screen's code, `move/ui/screen_core.js`, and `canvas.js`: the
   COMPRESSOR page's meter, `move/ui/gr_cell.js`);
   `--check` fails when the files are out of date with the FM-1's tables. Never edit `move/module/` by hand.
@@ -230,6 +239,15 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
 - The meter on the COMPRESSOR page is a Schwung custom widget (Schwung's docs/MODULES.md, "Custom widgets"). Two
   read-only keys, `r_cmp_gr` (GR) and `r_cmp_pk` (PEAK), form one picture group with the kind `custom:frodhes_gr`.
   Schwung draws it with `drawCell` from `canvas.js`, which `module.json` names (`capabilities.canvas_script`).
+- The VOICE pages: `get_param("ui_hierarchy")` answers the sounding engine's pages only (one text per engine in
+  `move_ui.h`, `hier_for_engine` in the generator; `move/module/ui_hierarchy.json` is all of them, gated on
+  `ui_engine`). Schwung 1.8.1 re-plans a `visible_if` only when its grid writes the gate key or a pad press marks the
+  gates due, so a gate that moves with TYPE was never re-read. The plugin answers `is_loading` 1 for 600 ms after the
+  engine changes; Schwung re-reads the contract on the 1 to 0 edge (and after a preset pick) and re-plans.
+  `node move/ui/test_grid.mjs` runs the pages through Schwung's own controller (`SCHWUNG_SRC`).
+- Instances: one app a process. The newest instance owns it (`move/move_plugin.c`); the others render silence,
+  ignore MIDI and writes, and answer `preset_name` with ONE SLOT ONLY. When the owner goes, the newest one left owns
+  it. `tests/py/test_move_instances.py` runs both orders and the re-pick.
   `r_cmp_gr` is `"live"`, so the grid reads `r_cmp_gr:effective` every tick. It reads `OFF`, or the reduction and the
   held peak in tenths of a dB (`120 200`). The plugin keeps the FM-1's meter timing (ui.c `meter_poll`) in
   `render_block`, which the host keeps calling through silence (`requires_continuous_processing`). A host without
@@ -341,7 +359,10 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
   Muting the track or turning it down also silences the slot, because the slot follows the track's mute and
   volume. *(not yet verified on a device)*
 - The sustain control: `module.json` claims the Capture button (`capabilities.claims_ccs`, `SUS_BTN_CC` in
-  `tools/gen_move_module.py`); Schwung gives a claimed button only to the module's screen script, so `sustain.js`
-  passes its press and release to the plugin (`s_susbtn` 1 / 0), which runs the FM-1's REC code. The direct route,
+  `tools/gen_move_module.py`); Schwung gives a claimed button only to the module's screen script, so `screen.js`
+  passes its press to the plugin (`s_susbtn` 1), which flips SUS (`s_sustain`). `s_susbtn` is no page's knob and has
+  no `chain_params` entry: Schwung's metadata merge lets a `chain_params` entry win over a hierarchy item, and the
+  0.9.8 candidate's PEDAL cell became an UP / DOWN enum whose click left the button held (SUS could not be
+  turned off). The direct route,
   a knob or jog-wheel touch (`capabilities.touch_observe`), is off unless `dev_sus_touch` names the control
   (0-7 a knob, 9 the jog wheel).

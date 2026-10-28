@@ -17,7 +17,7 @@ What it writes:
                       two FM-1 pages of 4 cards (MOVE_LEVELS); the engine's VOICE levels carry visible_if on the
                       read-only key ui_engine (0 the Rhodes types, 1 VIBES, 2 MARIMBA: eng_pages.h TYPE_UI), so the
                       pages follow TYPE; the root level holds the preset browser (preset / preset_count /
-                      preset_name) and SUSTAIN, a latch on CC 64 (the Move has no pedal jack)
+                      preset_name) and SUS, the sustain toggle (the Move has no pedal jack)
   chain_params.json   every key once, with its range or options (get_param("chain_params"))
   canvas.js           the knob grid's gain-reduction cell (COMPRESSOR knobs 7-8, METER): Schwung's custom widget,
                       move/ui/gr_cell.js with the FM-1's GR scale
@@ -37,30 +37,36 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "firmware", "src")
 OUT = os.path.join(ROOT, "move", "module")
-FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h", "sustain.js", "screen.js",
-         "canvas.js")
+FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h", "screen.js", "canvas.js")
 UI_CORE = os.path.join(ROOT, "move", "ui", "screen_core.js")   # Frodhes' own screen: the hand-written part
 GR_CELL = os.path.join(ROOT, "move", "ui", "gr_cell.js")       # the knob grid's gain-reduction cell: the hand-written part
 # Frodhes' own screen (M6-02, private plan 05 M6-01 option F): a fullscreen canvas the first page's PAGES cell
 # opens. screen.js = the pages (FR_PAGES, the levels below as the screen shows them) + FR_CONF + move/ui/screen_core.js.
 # The live keys the host reads for it (at most four, one a tick): rev (a change the screen did not make: re-read),
 # ui_engine (the VOICE pages follow TYPE), s_sustain (the SUS mark), preset_name (the first page). The COMPRESSOR
-# page's gain-reduction meter reads r_cmp_gr itself each tick (getParam in onValues); fullscreen_live_ms 100 (the
-# PEDAL screen's) so it moves at 10 Hz (the FM-1's meter: 30 Hz).
+# page's gain-reduction meter reads r_cmp_gr itself each tick (getParam in onValues); fullscreen_live_ms 100 so it
+# moves at 10 Hz (the FM-1's meter: 30 Hz). Schwung's knob grid opens a canvas cell on a knob touch + the jog click
+# (shared/param_pages/page_input.mjs: a click with no knob held opens the section list) and draws its value line
+# (the plugin answers s_screen with "OPEN", move_bridge.h mb_get; with no answer the grid drew NONE).
+# s_screen must stay out of chain_params: Schwung merges a key's chain_params entry OVER its hierarchy item
+# (param_meta.mjs buildMetaIndex, shadow_ui.js getParamMetadata), so a chain_params type would turn the canvas into
+# that type (the PEDAL cell's bug, 0.9.8 candidate: an enum UP / DOWN that a click left DOWN).
 SCREEN = {"key": "s_screen", "name": "PAGES", "type": "canvas", "canvas_script": "screen.js", "enterable": True,
-          "show_footer": False, "show_value": False, "fullscreen_live_ms": 100,
+          "show_footer": False, "show_value": True, "fullscreen_live_ms": 100,
           "extra_keys": ["rev", "ui_engine", "s_sustain", "preset_name"]}
+SCREEN_VALUE = "OPEN"              # what the plugin answers for s_screen: the cell's value line
 # The gain-reduction meter on Schwung's own knob grid (the COMPRESSOR level, knobs 7-8): two read-only cells, one
 # picture. Schwung (v1.8.1, docs/MODULES.md "Custom widgets") draws a chain_params viz kind "custom:..." with the
 # module's canvas.js drawCell; the two keys are one viz group (roles gr + pk, adjacent on one row), so the picture
-# spans both cells, 64 x 15 px. r_cmp_gr is "live": the grid reads r_cmp_gr:effective every tick (the plugin keeps
+# spans both cells, 64 x 15 px; their labels read GAIN REDUCT under it (the FM-1's GAIN REDUCTION).
+# r_cmp_gr is "live": the grid reads r_cmp_gr:effective every tick (the plugin keeps
 # the FM-1's ballistics, 33 ms ticks, in render_block, which the host never skips: requires_continuous_processing).
 # access "read": no knob, no write, no list. Not a C row (MOVE_KEYS): move_bridge.h mb_get serves both keys itself.
 GR_KIND = "custom:frodhes_gr"
 METER = {
-    "r_cmp_gr": {"key": "r_cmp_gr", "name": "GR", "type": "string", "access": "read", "live": True,
+    "r_cmp_gr": {"key": "r_cmp_gr", "name": "GAIN", "type": "string", "access": "read", "live": True,
                  "viz": {"group": "gr", "role": "gr", "kind": GR_KIND}},
-    "r_cmp_pk": {"key": "r_cmp_pk", "name": "PEAK", "type": "string", "access": "read",
+    "r_cmp_pk": {"key": "r_cmp_pk", "name": "REDUCT", "type": "string", "access": "read",
                  "viz": {"group": "gr", "role": "pk"}},
 }
 SCREEN_CONF = {"hold_ms": 1000,    # the large card stays this long after the knob is let go (tune on the device)
@@ -68,13 +74,18 @@ SCREEN_CONF = {"hold_ms": 1000,    # the large card stays this long after the kn
                "fast_mul": 4,      # ... moves a wide range (> 24 steps) this many steps a detent
                "settle_ms": 600,   # a value written this recently is not re-read (the write may still be queued)
                "sus_cc": None}     # the claimed sustain button (SUS_BTN_CC)
-# The sustain control (M1-13b): a Move button the module claims (capabilities.claims_ccs: while Frodhes' screen is up
-# the button reaches the module's UI script and not the Move; Schwung delivers claimed buttons to UI scripts only).
-# sustain.js, the SUS screen (a canvas), turns its press / release into set_param("s_susbtn", "1" / "0"), which the
-# plugin hands to the FM-1's REC button code (hold = the pedal, tap = latch). The direct route, a knob or jog-wheel
-# touch (capabilities.touch_observe, the plugin's on_midi), is off until dev_sus_touch picks one (the device session).
+# The sustain (the user, 2026-10-28 18:25: "we just need a toggle option, sustain pedal on or off"): SUS on the first
+# page is the toggle (ON holds the notes as a pedal down, OFF lets everything go and always wins), and a Move button
+# the module claims (capabilities.claims_ccs; Schwung hands a claimed button to the module's screen script only, so it
+# works on Frodhes' own screen, PAGES) flips it: screen.js turns a press into set_param("s_susbtn", "1"), which the
+# plugin turns into SUS's other state (a release, "0", does nothing). s_susbtn is no page's knob (HIDDEN: a C row,
+# not in the hierarchy or chain_params). The direct route, a knob or jog-wheel touch (capabilities.touch_observe, the
+# plugin's on_midi), is off until dev_sus_touch picks one (the device session); it flips SUS on the touch too.
 SUS_BTN_CC = 52                    # the Capture button (Schwung shadow_midi.h CC_CAPTURE): D1 confirms or picks another
-LABEL_MAX = 5                      # the knob grid's cell: about five capitals
+LABEL_MAX = 6                      # the knob grid's cell label: six of Schwung's capitals fit a cell (its own cap: a
+                                   # declared "Sustain" draws SUSTAI, render_page_movy.mjs; move/ui/test_cell.mjs
+                                   # renders every page through Schwung's renderer and checks no two labels touch)
+SCREEN_LABEL_MAX = 5               # Frodhes' own screen's overview card: five of its 6 px glyphs (screen_core.js)
 VALUE_MAX = 5                      # an enum option on the Move: the same five
 # The Move's abbreviations of the firmware's option names longer than VALUE_MAX, one scheme everywhere (the pages, the
 # screen, the docs, the mock-ups): four letters, the word's first syllable and the consonant after it (DORIAN DORN,
@@ -126,11 +137,13 @@ SLOTS = {
 EXTRA = {
     "s_sustain": {"name": "SUS", "cc": 64, "options": ["OFF", "ON"], "kind": "MK_LATCH",
                   "help": "the sustain pedal (CC 64), latched"},
-    "s_susbtn": {"name": "PEDAL", "cc": 0, "options": ["UP", "DOWN"], "kind": "MK_BTN",
-                 "help": "the sustain control: held = the pedal, a tap latches, a tap again releases"},
+    "s_susbtn": {"name": "CAPTR", "cc": 0, "options": ["UP", "DOWN"], "kind": "MK_BTN",
+                 "help": "the Capture button (screen.js): a press flips SUS"},
     # M5-01: the FM-1's FX button (CC 111, the bypass): every effect off with its settings kept; ON (not bypassed) by
-    # default, as on the FM-1
-    "s_fx": {"name": "FX", "cc": 111, "options": ["ON", "OFF"], "kind": "MK_LATCH",
+    # default, as on the FM-1. OFF / ON in this order (the wire value is "effects on", move_bridge.h inverts the
+    # bypass): Schwung draws a two-option OFF / ON enum as a switch that is on at index 1 (viz_draw.mjs drawSwitch),
+    # so ON / OFF drew the switch off while the effects played (0.9.8 candidate)
+    "s_fx": {"name": "FX", "cc": 111, "options": ["OFF", "ON"], "kind": "MK_LATCH", "default": 1,
              "help": "the effects on, or all off with their settings kept (the FM-1's FX button)"},
 }
 # the Move-only mappings (plan 05 M6-03, U9): a source the FM-1 has no use for (channel pressure, poly pressure: the
@@ -146,10 +159,13 @@ for _i, (_k, _src) in enumerate((("m_at", "channel pressure"), ("m_pa", "poly pr
     EXTRA[_k + "_hi"] = {"name": _k[2:].upper() + " HI", "cc": 0, "kind": "MK_MAP", "map": 3 * _i + 2, "min": 0,
                          "max": 127, "default": 127, "help": "the CC's value at full " + _src.split(" (")[0]}
 MAP_KEYS = ["m_at_cc", "m_at_lo", "m_at_hi", "m_pa_cc", "m_pa_lo", "m_pa_hi"]
+# keys the plugin takes that no page shows: a C row only (not in the hierarchy, not in chain_params, so no knob, no
+# list row, no modulation target and no state read-back can write them)
+HIDDEN = ["s_susbtn"]
 # the Move's levels: (key, title, the FM-1 pages it holds (their cards in order), extra keys after them). "VOICE"
 # stands for an engine's VOICE pages: one level per engine, VOICE 1 + 2, and VOICE 3 (VIBES' MOTOR) its own level.
 MOVE_LEVELS = [
-    ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_susbtn", "s_fx", "s_screen"]),
+    ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_fx", "s_screen"]),
     ("voice", "VOICE", ["VOICE"], []),
     ("comp", "COMPRESSOR", ["COMPRESSOR"], ["p_cmp_sw", "p_cmp_rel", "r_cmp_gr", "r_cmp_pk"]),
     ("drv_flt", "DRIVE/FILTER", ["DRIVE", "FILTER"], []),
@@ -170,15 +186,25 @@ VIA = {"P_TW_SW": ("s_twkind", "TREM/WAH's EFFECT card: OFF / PAN / TREM / WAH s
        "P_TW_MODE": ("s_twkind", "TREM/WAH's EFFECT card: OFF / PAN / TREM / WAH sets the switch and the mode")}
 # parameters left MIDI-only on the Move, with the reason (none today: tests/py/test_move_module.py lists the rule)
 MIDI_ONLY = {"P_CP_FDBK": "reserved: the chorus has no feedback yet (CC 24 is accepted and saved, no effect)"}
-# the card's label on the FM-1 -> the Move's cell (<= 5 characters); labels that fit are kept as they are
-SHORT = {"THRESH": "THRSH", "ATTACK": "ATK", "MAKEUP": "MKUP", "EFFECT": None, "FEEDBK": "FDBK",
-         "TREM SYNC": "TRSYN", "PHA SYNC": "PHSYN", "DLY SYNC": "DLSYN", "TRANSP": "TRNSP", "INVERSION": "INV",
-         "VOICING": "VOICE", "OCTAVES": "OCT", "RETRIG": "TRIG", "DLY TONE": "DLTON", "CHANNEL": "CHAN",
-         "PRE-DELAY": "PDLY", "LOW CUT": "LCUT", "STRIKE": "STRK", "MALLET": "MALLT", "HAMMER": "HAMMR",
-         "RELEASE": "REL", "WEIGHT": "WGHT", "DAMPER": "DAMPR", "MOTOR": "MOTOR", "AMOUNT": "AMT"}
+# the card's label on the FM-1 -> the Move's cell (<= LABEL_MAX characters); labels that fit are kept as they are
+SHORT = {"EFFECT": None, "TREM SYNC": "TRSYNC", "PHA SYNC": "PHSYNC", "DLY SYNC": "DLSYNC", "INVERSION": "INV",
+         "VOICING": "VOICE", "OCTAVES": "OCT", "DLY TONE": "DLTONE", "CHANNEL": "CHAN", "PRE-DELAY": "PREDLY",
+         "LOW CUT": "LOWCUT", "RELEASE": "REL", "MOTOR": "MOTOR",
+         # (Schwung sets grid labels in a proportional font, 29 px wide: these three are cut there, HAMME DAMPE MAKEU)
+         "HAMMER": "HAMMR", "DAMPER": "DAMPR", "MAKEUP": "MKUP"}
+# parameters with no FM-1 card whose params.c label is a cryptic short form: their name on the Move (the FM-1's
+# manual's name)
+PARAM_NAME = {"P_SPREAD": "SPREAD"}
+# Frodhes' own screen's overview cards fit SCREEN_LABEL_MAX: a longer label is shown so there (its large card, a
+# knob touched, shows the whole label); a new long label fails the generator until it is named here
+SCREEN_SHORT = {"SPREAD": "SPRD", "THRESH": "THRSH", "ATTACK": "ATK", "MAKEUP": "MKUP", "FEEDBK": "FDBK",
+                "STRIKE": "STRK", "MALLET": "MALLT", "HAMMER": "HAMMR", "WEIGHT": "WGHT", "DAMPER": "DAMPR",
+                "AMOUNT": "AMT", "TRSYNC": "TRSYN", "PHSYNC": "PHSYN", "DLSYNC": "DLSYN", "DLTONE": "DLTON",
+                "PREDLY": "PDLY", "LOWCUT": "LCUT", "RETRIG": "TRIG", "CHORUS": "CHOR", "PHASER": "PHASE",
+                "FILTER": "FILT", "REVERB": "RVB"}
 # EFFECT (each effect page's K1: its switch or TYPE) is named after the effect, so two on one level differ
-EFFECT_NAME = {"DRIVE": "DRIVE", "TREM/WAH": "TREM", "PHASER": "PHASE", "CHORUS": "CHOR", "DELAY": "DELAY"}
-TYPE_NAME = {"FILTER": "FILT", "REVERB": "RVB", "CHORD": "CHORD"}
+EFFECT_NAME = {"DRIVE": "DRIVE", "TREM/WAH": "TREM", "PHASER": "PHASER", "CHORUS": "CHORUS", "DELAY": "DELAY"}
+TYPE_NAME = {"FILTER": "FILTER", "REVERB": "REVERB", "CHORD": "CHORD"}
 ENGINE_TITLE = ["PIANO", "VIBES", "MARIMBA"]   # eng_pages.h ENG_UI rows (generic names: the help's)
 
 
@@ -332,11 +358,10 @@ def extra_def(k):
         return ({"key": k, "name": e["name"], "type": "int", "min": e["min"], "max": e["max"], "default": e["default"]},
                 {"key": k, "slot": str(e["map"]), "cc": 0, "off": 0, "scale": 1, "kind": "MK_MAP"})
     item = {"key": k, "name": e["name"], "type": "enum", "options": e["options"]}
+    if "default" in e:
+        item["default"] = e["default"]
     if e["kind"] == "MK_TRIG":
         item["access"] = "write"
-    if e["kind"] == "MK_BTN":                  # the SUS screen: a canvas the hierarchy opens (sustain.js), no knob
-        item = {"key": k, "name": e["name"], "type": "canvas", "canvas_script": "sustain.js", "show_value": False,
-                "extra_keys": ["s_sustain", "s_susbtn"], "fullscreen_live_ms": 100}
     return item, {"key": k, "slot": "S_NONE", "cc": e["cc"], "off": 0, "scale": 1, "kind": e["kind"]}
 
 
@@ -372,8 +397,6 @@ def build(m):
         if row["key"] not in seen:
             seen[row["key"]] = 1
             c = {k: v for k, v in item.items()}
-            if c.get("type") == "canvas":          # (chain_params: the key's values, not the screen)
-                c = {"key": c["key"], "name": c["name"], "type": "enum", "options": EXTRA[c["key"]]["options"]}
             chain.append(c)
             crow.append(row)
         if row["slot"].startswith("P_"):
@@ -403,7 +426,7 @@ def build(m):
             else:
                 slot = "P_" + k[2:].upper()
                 p = m["params"][slot]
-                item, row = key_def(m, slot, short(p["lab"], p["lab"]))
+                item, row = key_def(m, slot, PARAM_NAME.get(slot) or short(p["lab"], p["lab"]))
             add(lvl, item, row, lvl["name"])
 
     root_links = []
@@ -433,6 +456,8 @@ def build(m):
         levels[key] = lvl
         if key != "root":
             root_links.append({"level": key, "label": title})
+    for k in HIDDEN:                               # (a C row only)
+        crow.append(extra_def(k)[1])
     root = levels["root"]
     root["list_param"], root["count_param"], root["name_param"] = "preset", "preset_count", "preset_name"
     root["params"] += root_links
@@ -464,10 +489,12 @@ def help_json(m, levels, reach):
     kids = [{"title": "Overview", "lines": help_lines(
         "Physical models of an electric piano (four types), a vibraphone and a marimba. No samples. TYPE on the "
         "first page picks the instrument; its VOICE pages follow it.") + [""] + help_lines(
-        "SUS holds the notes as the sustain pedal does; a pedal on CC 64 works too. On the PEDAL screen the Capture "
-        "button is the pedal: hold it, or tap to latch and tap again to let go.") + [""] + help_lines(
-        "PAGES opens Frodhes' own screen: eight cards a page, a touched knob shown large. The jog wheel turns the "
-        "pages; a click lists them. Capture is the pedal there too. FX turns all effects off or on.")}]
+        "SUS is the sustain pedal, on or off: ON holds the notes, OFF lets them go. A pedal on CC 64 works too.") + [""]
+        + help_lines(
+        "PAGES opens Frodhes' own screen: touch its knob and click the jog wheel. Eight cards a page, a touched knob "
+        "shown large. The jog wheel turns the pages; a click lists them. Capture turns SUS on or off there. FX "
+        "turns all effects off or on.") + [""] + help_lines(
+        "Frodhes plays in one slot at a time.")}]
     pages = []
     for k, lvl in levels.items():
         lines = []
@@ -491,6 +518,25 @@ def c_str(s):
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def hier_for_engine(hier, e):
+    """the hierarchy the plugin serves while engine e sounds: the levels of every engine but e left out (with the links
+    to them), no visible_if left. Schwung v1.8.1 re-plans the knob pages on a visible_if only when the grid itself
+    writes the gate key or a pad press / focus change marks the gates due (page_controller.mjs, the gate lane); a gate
+    that moves because TYPE moved (ui_engine) is never re-read, so after a TYPE change the grid kept the old engine's
+    VOICE pages. A contract whose bytes change is re-planned on the is_loading edge (shadow_ui_param_pages.mjs
+    tickParamPages -> reloadIfChanged) and after a preset pick (armContractSettle): move_bridge.h serves this text
+    and answers is_loading 1 for a moment after the engine changes."""
+    gone = {k for k, lv in hier["levels"].items() if lv.get("visible_if", {}).get("equals", e) != e}
+    levels = {}
+    for k, lv in hier["levels"].items():
+        if k in gone:
+            continue
+        lv = {f: v for f, v in lv.items() if f != "visible_if"}
+        lv["params"] = [x for x in lv["params"] if not (isinstance(x, dict) and x.get("level") in gone)]
+        levels[k] = lv
+    return {"levels": levels}
+
+
 def c_header(hier, chain, crow):
     lines = ["/* SPDX-License-Identifier: GPL-3.0-only */",
              "/* GENERATED by tools/gen_move_module.py from params.c, eng_pages.h and ui.c - do not edit. */",
@@ -499,6 +545,8 @@ def c_header(hier, chain, crow):
              " * the plugin after frodhes.c (P_* / S_* in scope). */",
              "#ifndef MOVE_UI_H", "#define MOVE_UI_H",
              "#define MOVE_GATE_KEY \"ui_engine\"   /* get_param: TYPE_UI[PV(P_TYPE)] (eng_pages.h), the VOICE levels' gate */",
+             "#define MOVE_SCREEN_KEY %s   /* get_param: the PAGES cell's value line */" % c_str(SCREEN["key"]),
+             "#define MOVE_SCREEN_VALUE %s" % c_str(SCREEN_VALUE),
              "enum { MK_PARAM, MK_SLOT, MK_LATCH, MK_TRIG, MK_BTN, MK_MAP };   /* PV(id) / ui.c slot_val / a CC 0 or 127 /",
              "                                                   * a CC 127 / the sustain control (the FM-1's REC button) /",
              "                                                   * a Move-only mapping's setting (slot: its index) */",
@@ -509,11 +557,17 @@ def c_header(hier, chain, crow):
                                                        r["off"]))
     lines.append("};")
     lines.append("#define MOVE_NKEYS (sizeof MOVE_KEYS / sizeof MOVE_KEYS[0])")
-    for name, obj in (("MOVE_UI_HIERARCHY", hier), ("MOVE_CHAIN_PARAMS", chain)):
+    n_eng = 1 + max(lv["visible_if"]["equals"] for lv in hier["levels"].values() if "visible_if" in lv)
+    texts = [("MOVE_UI_HIERARCHY_E%d" % e, hier_for_engine(hier, e)) for e in range(n_eng)]
+    for name, obj in texts + [("MOVE_CHAIN_PARAMS", chain)]:
         txt = json.dumps(obj, separators=(",", ":"), ensure_ascii=True)
         lines.append("static const char %s[] =" % name)
         for i in range(0, len(txt), 100):
             lines.append("    " + c_str(txt[i:i + 100]) + ("" if i + 100 < len(txt) else ";"))
+    lines.append("/* get_param(\"ui_hierarchy\"): the sounding engine's text (TYPE_UI[PV(P_TYPE)]), its VOICE levels only */")
+    lines.append("static const char *const MOVE_UI_HIERARCHY[] = {%s};" % ", ".join(n for n, _ in texts))
+    lines.append("static const uint16_t MOVE_UI_HIERARCHY_N[] = {%s};" % ", ".join("sizeof %s - 1" % n for n, _ in texts))
+    lines.append("#define MOVE_N_ENG %du" % n_eng)
     lines.append("#endif")
     return "\n".join(lines) + "\n"
 
@@ -535,14 +589,14 @@ def outputs():
                                "canvas_script": "canvas.js"}}
     return {"module.json": dumps(module), "ui_hierarchy.json": dumps(hier), "chain_params.json": dumps(chain),
             "help.json": dumps(help_json(m, levels, reach)), "move_ui.h": c_header(hier, chain, crow),
-            "sustain.js": sustain_js(), "screen.js": screen_js(levels), "canvas.js": canvas_js()}, m, reach
+            "screen.js": screen_js(levels), "canvas.js": canvas_js()}, m, reach
 
 
 def screen_pages(levels):
     """the levels as Frodhes' own screen shows them: [{title, gate (ui_engine, -1 always shown), part (an engine's
     VOICE page 0, its next page 1, -1 not an engine page), root, knobs}], each knob {key, name, type, min, max, step,
-    options, write}; a canvas cell (PEDAL, PAGES) is no knob there (the screen does both itself), and the first page
-    gets the preset as a knob (PRSET)"""
+    options, write, short (the overview card's label, <= SCREEN_LABEL_MAX)}; a canvas cell (PAGES) is no knob there,
+    and the first page gets the preset as a knob (PRSET)"""
     out = []
     for lk, lvl in levels.items():
         gate = lvl.get("visible_if", {}).get("equals", -1)
@@ -553,6 +607,10 @@ def screen_pages(levels):
             if it["type"] == "canvas" or it.get("access") == "read":   # (the GR cells: the screen draws its own meter)
                 continue
             k = {"key": key, "name": it["name"], "type": it["type"]}
+            if len(it["name"]) > SCREEN_LABEL_MAX:
+                assert it["name"] in SCREEN_SHORT, f"the label {it['name']!r} is longer than {SCREEN_LABEL_MAX}: " \
+                                                   "name its overview form in SCREEN_SHORT"
+                k["short"] = SCREEN_SHORT[it["name"]]
             for f in ("min", "max", "step", "options"):
                 if f in it:
                     k[f] = it[f]
@@ -560,7 +618,7 @@ def screen_pages(levels):
                 k["write"] = True
             ks.append(k)
         if lk == "root":
-            ks.append({"key": "preset", "name": "PRSET", "type": "preset"})
+            ks.append({"key": "preset", "name": "PRESET", "type": "preset"})
         assert len(ks) <= 8, (lk, ks)
         out.append({"title": lvl["name"], "gate": gate, "part": part, "root": lk == "root", "knobs": ks})
     return out
@@ -597,42 +655,6 @@ def screen_js(levels):
     return (head + "(function () {\n\"use strict\";\nconst FR_PAGES = "
             + json.dumps(screen_pages(levels), separators=(",", ":")) + ";\n"
             + "const FR_CONF = " + json.dumps(conf, separators=(",", ":")) + ";\n" + core + "})();\n")
-
-
-def sustain_js():
-    """the SUS screen: Schwung's canvas overlay (docs/MODULES.md "canvas"): the claimed button's press / release ->
-    set_param("s_susbtn"); the screen shows SUS while the notes are held (the button, the latch or CC 64)"""
-    return """// SPDX-License-Identifier: GPL-3.0-only
-// GENERATED by tools/gen_move_module.py - do not edit.
-// Frodhes' PEDAL screen (M1-13b): the claimed button (CC %d) is the sustain pedal, as REC on the FM-1: hold it like
-// a pedal, tap to latch, tap again to release. Its press and release go to the plugin as s_susbtn 1 / 0; the
-// plugin's own code (the FM-1's) times hold against tap. A MIDI pedal on CC 64 works with it as on the FM-1.
-const SUS_CC = %d;
-function suspedal(ctx, down) {
-    ctx.state.down = down;
-    ctx.setParam("s_susbtn", down ? "1" : "0");
-}
-globalThis.canvas_overlay = {
-    onOpen(ctx) { ctx.state.down = false; ctx.state.on = false; },
-    onMidi(ctx, msg) {
-        const d = (msg && msg.data) || [];
-        if (((d[0] | 0) & 0xF0) === 0xB0 && (d[1] | 0) === SUS_CC) { suspedal(ctx, (d[2] | 0) > 0); return true; }
-        return false;
-    },
-    onValues(ctx, p) {
-        const v = (p && p.values) || {};
-        ctx.state.on = v.s_sustain === "ON" || v.s_sustain === "1";
-    },
-    onClose(ctx) { if (ctx.state.down) suspedal(ctx, false); },
-    draw(ctx) {
-        ctx.clear();
-        const on = ctx.state.on || ctx.state.down;
-        if (on) ctx.fillRect(24, 14, 80, 28, 1);
-        ctx.print(52, 24, "SUS", on ? 0 : 1);
-        ctx.print(4, 50, "HOLD: PEDAL  TAP: LATCH", 1);
-    },
-};
-""" % (SUS_BTN_CC, SUS_BTN_CC)
 
 
 def main():

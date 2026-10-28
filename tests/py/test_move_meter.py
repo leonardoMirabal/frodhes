@@ -40,8 +40,8 @@ def test_meter_reads_the_fm1_ballistics():
               "render 40", "get r_cmp_gr"]
              + on + ["render 120", "get r_cmp_gr"] + off
              + sum((["render %d" % tick, "get r_cmp_gr"] for _ in range(60)), [])
-             + on + ["render 120", "get r_cmp_gr", "set s_fx 1", "render 200", "get r_cmp_gr",
-                     "set s_fx 0", "set p_cmp_sw 0", "render 20", "get r_cmp_gr"])
+             + on + ["render 120", "get r_cmp_gr", "set s_fx 0", "render 200", "get r_cmp_gr",
+                     "set s_fx 1", "set p_cmp_sw 0", "render 20", "get r_cmp_gr"])
     v = run(lines)
     assert v[0] == "OFF" and v[-1] == "OFF", (v[0], v[-1])
     assert gr(v[1]) == (0, 0), v[1]                         # on, silent: no reduction

@@ -92,7 +92,7 @@ test("what the Move owns is not on the Move: no sequencer, arpeggiator, chords, 
     const gone = ["s_sq", "s_arp", "s_ch", "s_bpm", "s_clock", "s_scmode", "s_scale", "s_root", "s_trans"];
     assert.ok(!keys.some((k) => gone.some((g) => k.startsWith(g))), keys.join(","));
     goto(s, "TEMPO");
-    assert.equal(s.api.pages[s.st().page].knobs.map((k) => k.name).join(" "), "TRSYN PHSYN DLSYN");
+    assert.equal(s.api.pages[s.st().page].knobs.map((k) => k.name).join(" "), "TRSYNC PHSYNC DLSYNC");
     goto(s, "LFO/SETUP");
     assert.ok(!s.api.pages[s.st().page].knobs.some((k) => k.name === "CLOCK"));
 });
@@ -137,18 +137,26 @@ test("the page list: a click opens it, the jog picks, a click opens the page, Ba
     assert.equal(s.back(), false, "Back on a page: the host closes the screen");
 });
 
-test("the claimed button is the sustain pedal on every page; the screen let go releases it", () => {
+test("the claimed button turns SUS on or off on every page: a press flips it, a release sends nothing", () => {
     const s = new Screen().open();
     goto(s, "REVERB");
+    const n0 = s.plugin.writes.length;
     assert.equal(s.midi(0xB0, s.api.conf.sus_cc, 127), true);
     assert.deepEqual(lastWrite(s), ["s_susbtn", "1"]);
-    s.midi(0xB0, s.api.conf.sus_cc, 0);
-    assert.deepEqual(lastWrite(s), ["s_susbtn", "0"]);
-    s.midi(0xB0, s.api.conf.sus_cc, 127);
-    s.ov.onClose(s.ctx(false), {});
-    assert.deepEqual(lastWrite(s), ["s_susbtn", "0"]);
-    s.plugin.v.s_sustain = 1;
-    s.live();
+    assert.equal(s.st().susOn, true, "the S mark at once");
+    assert.equal(s.midi(0xB0, s.api.conf.sus_cc, 0), true);
+    assert.equal(s.plugin.writes.length, n0 + 1, "the release writes nothing");
+    s.plugin.apply();
+    assert.equal(s.plugin.v.s_sustain, 1);
+    s.midi(0xB0, s.api.conf.sus_cc, 127); s.midi(0xB0, s.api.conf.sus_cc, 0);
+    assert.equal(s.st().susOn, false);
+    s.plugin.apply();
+    assert.equal(s.plugin.v.s_sustain, 0);
+    assert.equal(s.plugin.writes.filter((w) => w[0] === "s_susbtn" && w[1] !== "1").length, 0);
+    assert.equal(typeof s.ov.onClose, "undefined", "nothing to let go when the screen closes");
+    s.wait(1000);
+    s.plugin.v.s_sustain = 1;                        // SUS turned on elsewhere (the knob grid's SUS)
+    for (let i = 0; i < 4; i++) s.live();
     assert.equal(s.st().susOn, true);
 });
 
@@ -182,14 +190,14 @@ test("a value being turned is not overwritten by a late read", () => {
     assert.equal(s.st().vals.p_fl_freq, want);
 });
 
-test("every page, label and option fits: cards 5 characters, the large card 124 px", () => {
+test("every page, label and option fits: cards 5 characters (a longer label: its short form), the large card 124 px", () => {
     const s = new Screen().open();
     const w = s.api.textW;
     for (const p of s.api.pages) {
         assert.ok(p.knobs.length >= 1 && p.knobs.length <= 8, p.title);
         assert.ok(w(p.title + " S 12/12") <= 126, p.title);
         p.knobs.forEach((k) => {
-            assert.ok(w(k.name) <= 31, `${p.title} ${k.name}`);
+            if (k.type !== "preset") assert.ok(w(k.short || k.name) <= 31, `${p.title} ${k.short || k.name}`);
             assert.ok(w(k.name, 2) <= 124, k.name);
             const vals = k.type === "enum" ? k.options
                 : k.type === "preset" ? [] : [String(k.min), String(k.max), k.step ? k.max.toFixed(1) : ""];
@@ -230,29 +238,36 @@ test("COMPRESSOR: the gain-reduction meter (a fake r_cmp_gr), as the FM-1's COMP
     for (const d of [0, 5, 10, 35, 60, 99, 150, 299, 300, 400]) assert.equal(s.api.grPx(d, 228), cpx(d, 228), `gr_px(${d})`);
     assert.equal(s.api.grText(0), "0.0");
     assert.equal(s.api.grText(35), "-3.5");
-    // COMP off: the hint, no bar
+    // the bar: 15 segments 3 px wide, 4 apart, right-aligned (x 69..127), rows 48..62; segment i (0 = the rightmost)
+    const segX = (i) => 125 - 4 * i, seg = (fb, i, y) => lit(fb, segX(i), segX(i) + 2, y, y);
+    const segs = (d) => { if (!(d > 0)) return 0; for (let i = 0; i < sc.length; i++) if (d <= sc[i]) return i + 1; return sc.length; };
+    // COMP off: an empty dotted outline and COMP OFF, nothing lit
     goto(s, "COMPRESSOR");
     assert.equal(JSON.stringify(s.st().gr), '{"off":true,"db10":0,"pk":0}');
     let fb = s.draw();
-    assert.equal(lit(fb, 64, 127, 57, 62), 0, "COMP off: no bar");
-    assert.ok(lit(fb, 64, 127, 48, 54) > 20, "COMP off: the hint");
-    // on, 6.0 dB, the peak held at 10.0 dB: the bar filled from the right, the peak mark beyond it
+    for (let i = 0; i < 15; i++) assert.ok(seg(fb, i, 55) <= 1, `COMP off: segment ${i} not lit`);
+    assert.ok(lit(fb, 69, 127, 48, 48) > 20 && lit(fb, 69, 127, 48, 48) < 40, "COMP off: the dotted outline");
+    assert.ok(lit(fb, 80, 127, 39, 45) > 20, "COMP off: the hint");
+    // on, 6.0 dB, the peak held at 10.0 dB: lit from the right, the peak a taller block beyond
     s.plugin.gr = "60 100";
     s.live();
     assert.equal(JSON.stringify(s.st().gr), '{"off":false,"db10":60,"pk":100}');
     fb = s.draw();
-    const fw = s.api.grPx(60, 62), pk = s.api.grPx(100, 62);
-    assert.ok(fw > 0 && pk > fw + 2);
-    for (let x = 127 - fw; x < 127; x++) assert.ok(px(fb, x, 59), `filled at x ${x}`);
-    assert.ok(!px(fb, 127 - fw - 1, 59), "the fill ends");
-    assert.ok(px(fb, 127 - pk, 59) && px(fb, 127 - pk + 1, 59), "the peak");
-    assert.ok(!px(fb, 127 - pk - 1, 59), "nothing left of the peak");
-    // it follows each live tick; 0 dB: an empty bar inside its frame
+    const n = segs(60), pk = segs(100);
+    assert.ok(n > 0 && pk > n + 1);
+    for (let i = 0; i < 15; i++) {
+        assert.equal(seg(fb, i, 55), i < n || i === pk - 1 ? 3 : 0, `segment ${i}`);
+        assert.equal(seg(fb, i, 48), i === pk - 1 ? 3 : 0, `segment ${i}: the top row, the peak only`);
+        assert.equal(seg(fb, i, 62), 3, `segment ${i}: the floor`);
+        if (i < 14) assert.equal(px(fb, segX(i) - 1, 55), 0, "a gap between segments");
+    }
+    assert.ok(lit(fb, 80, 127, 39, 45) > 20, "the reading");
+    // it follows each live tick; 0 dB: the floor only
     s.plugin.gr = "0 0";
     s.live();
     fb = s.draw();
-    assert.equal(lit(fb, 65, 126, 58, 61), 0);
-    assert.ok(lit(fb, 64, 127, 57, 62) > 100, "the frame");
+    assert.equal(lit(fb, 69, 127, 48, 61), 0);
+    assert.equal(lit(fb, 69, 127, 62, 62), 45, "the floor: 15 x 3 px");
     // on another page nothing of it is drawn, and r_cmp_gr is not read
     goto(s, "REVERB");
     const before = s.plugin.reads;

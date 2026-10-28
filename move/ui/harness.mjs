@@ -57,7 +57,7 @@ export class Plugin {
         if (key === "preset") return String(this.preset);
         if (key === "preset_count") return String(this.names.length);
         if (key === "preset_name") return this.names[this.preset];
-        if (key === "s_sustain") return String(this.v.s_sustain || this.sus ? 1 : 0);
+        if (key === "s_sustain") return String(this.v.s_sustain ? 1 : 0);
         if (key === "r_cmp_gr") return this.gr !== undefined ? this.gr : this.v.p_cmp_sw ? "0 0" : "OFF";
         if (!(key in this.v)) return null;
         const m = this.meta[key];
@@ -69,7 +69,10 @@ export class Plugin {
     apply() {                                        // the bridge's step: the queued writes land
         for (const [key, val] of this.queue) {
             if (key === "preset") { this.preset = Number(val); this.rev++; continue; }
-            if (key === "s_susbtn") { this.sus = Number(val); this.rev++; continue; }
+            if (key === "s_susbtn") {               // the Capture button: a press flips SUS (move_bridge.h MK_BTN)
+                if (Number(val)) this.v.s_sustain = this.v.s_sustain ? 0 : 1;
+                this.rev++; continue;
+            }
             if (!(key in this.v)) continue;
             const m = this.meta[key];
             if (m && m.access === "write") { this.rev++; continue; }

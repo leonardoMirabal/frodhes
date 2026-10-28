@@ -15,27 +15,29 @@
         "VOICE pages follow",
         "it.",
         "",
-        "SUS holds the notes",
-        "as the sustain pedal",
-        "does; a pedal on CC",
-        "64 works too. On the",
-        "PEDAL screen the",
-        "Capture button is",
-        "the pedal: hold it,",
-        "or tap to latch and",
-        "tap again to let go.",
+        "SUS is the sustain",
+        "pedal, on or off: ON",
+        "holds the notes, OFF",
+        "lets them go. A",
+        "pedal on CC 64 works",
+        "too.",
         "",
         "PAGES opens Frodhes'",
-        "own screen: eight",
+        "own screen: touch",
+        "its knob and click",
+        "the jog wheel. Eight",
         "cards a page, a",
         "touched knob shown",
         "large. The jog wheel",
         "turns the pages; a",
         "click lists them.",
-        "Capture is the pedal",
-        "there too. FX turns",
-        "all effects off or",
-        "on."
+        "Capture turns SUS on",
+        "or off there. FX",
+        "turns all effects",
+        "off or on.",
+        "",
+        "Frodhes plays in one",
+        "slot at a time."
       ]
     },
     {
@@ -45,11 +47,10 @@
           "title": "FRODHES",
           "lines": [
             "K1 TYPE",
-            "K2 SPRD",
+            "K2 SPREAD",
             "K3 SUS",
-            "K4 PEDAL",
-            "K5 FX",
-            "K6 PAGES"
+            "K4 FX",
+            "K5 PAGES"
           ]
         },
         {
@@ -68,10 +69,10 @@
         {
           "title": "VIBES VOICE",
           "lines": [
-            "K1 STRK",
-            "K2 MALLT",
+            "K1 STRIKE",
+            "K2 MALLET",
             "K3 TUBE",
-            "K4 WGHT",
+            "K4 WEIGHT",
             "K5 RING",
             "K6 DAMPR",
             "K7 NOISE",
@@ -91,10 +92,10 @@
         {
           "title": "MARIMBA VOICE",
           "lines": [
-            "K1 STRK",
-            "K2 MALLT",
+            "K1 STRIKE",
+            "K2 MALLET",
             "K3 TUBE",
-            "K4 WGHT",
+            "K4 WEIGHT",
             "K5 RING",
             "K6 MUTE",
             "K7 NOISE",
@@ -104,24 +105,24 @@
         {
           "title": "COMPRESSOR",
           "lines": [
-            "K1 THRSH",
+            "K1 THRESH",
             "K2 RATIO",
-            "K3 ATK",
+            "K3 ATTACK",
             "K4 MKUP",
             "K5 COMP",
             "K6 REL",
-            "K7 GR",
-            "K8 PEAK"
+            "K7 GAIN",
+            "K8 REDUCT"
           ]
         },
         {
           "title": "DRIVE/FILTER",
           "lines": [
             "K1 DRIVE",
-            "K2 AMT",
+            "K2 AMOUNT",
             "K3 TONE",
             "K4 MIX",
-            "K5 FILT",
+            "K5 FILTER",
             "K6 FREQ",
             "K7 RESO",
             "K8 LFO"
@@ -134,44 +135,44 @@
             "K2 DEPTH",
             "K3 RATE",
             "K4 SHAPE",
-            "K5 PHASE",
+            "K5 PHASER",
             "K6 DEPTH",
             "K7 SPEED",
-            "K8 FDBK"
+            "K8 FEEDBK"
           ]
         },
         {
           "title": "CHORUS/DELAY",
           "lines": [
-            "K1 CHOR",
+            "K1 CHORUS",
             "K2 DEPTH",
             "K3 SPEED",
             "K4 SYNC",
             "K5 DELAY",
             "K6 MIX",
             "K7 TIME",
-            "K8 FDBK"
+            "K8 FEEDBK"
           ]
         },
         {
           "title": "REVERB",
           "lines": [
-            "K1 RVB",
+            "K1 REVERB",
             "K2 MIX",
             "K3 DECAY",
             "K4 TONE",
-            "K5 PDLY",
+            "K5 PREDLY",
             "K6 SIZE",
             "K7 MOD",
-            "K8 LCUT"
+            "K8 LOWCUT"
           ]
         },
         {
           "title": "TEMPO",
           "lines": [
-            "K1 TRSYN",
-            "K2 PHSYN",
-            "K3 DLSYN"
+            "K1 TRSYNC",
+            "K2 PHSYNC",
+            "K3 DLSYNC"
           ]
         },
         {
@@ -180,8 +181,8 @@
             "K1 SHAPE",
             "K2 RATE",
             "K3 SYNC",
-            "K4 TRIG",
-            "K5 DLTON",
+            "K4 RETRIG",
+            "K5 DLTONE",
             "K6 LEVEL",
             "K7 CHAN"
           ]

@@ -15,7 +15,7 @@
   },
   {
     "key": "p_spread",
-    "name": "SPRD",
+    "name": "SPREAD",
     "type": "int",
     "min": 0,
     "max": 127,
@@ -31,22 +31,14 @@
     ]
   },
   {
-    "key": "s_susbtn",
-    "name": "PEDAL",
-    "type": "enum",
-    "options": [
-      "UP",
-      "DOWN"
-    ]
-  },
-  {
     "key": "s_fx",
     "name": "FX",
     "type": "enum",
     "options": [
-      "ON",
-      "OFF"
-    ]
+      "OFF",
+      "ON"
+    ],
+    "default": 1
   },
   {
     "key": "p_tone",
@@ -114,7 +106,7 @@
   },
   {
     "key": "p_strike",
-    "name": "STRK",
+    "name": "STRIKE",
     "type": "int",
     "min": 0,
     "max": 127,
@@ -122,7 +114,7 @@
   },
   {
     "key": "p_mallet",
-    "name": "MALLT",
+    "name": "MALLET",
     "type": "int",
     "min": 0,
     "max": 127,
@@ -138,7 +130,7 @@
   },
   {
     "key": "p_weight",
-    "name": "WGHT",
+    "name": "WEIGHT",
     "type": "int",
     "min": 0,
     "max": 127,
@@ -226,7 +218,7 @@
   },
   {
     "key": "p_cmp_amt",
-    "name": "THRSH",
+    "name": "THRESH",
     "type": "int",
     "min": 0,
     "max": 127,
@@ -250,7 +242,7 @@
   },
   {
     "key": "p_cmp_atk",
-    "name": "ATK",
+    "name": "ATTACK",
     "type": "int",
     "min": 0,
     "max": 127,
@@ -284,7 +276,7 @@
   },
   {
     "key": "r_cmp_gr",
-    "name": "GR",
+    "name": "GAIN",
     "type": "string",
     "access": "read",
     "live": true,
@@ -296,7 +288,7 @@
   },
   {
     "key": "r_cmp_pk",
-    "name": "PEAK",
+    "name": "REDUCT",
     "type": "string",
     "access": "read",
     "viz": {
@@ -320,7 +312,7 @@
   },
   {
     "key": "p_drive",
-    "name": "AMT",
+    "name": "AMOUNT",
     "type": "int",
     "min": 0,
     "max": 127,
@@ -344,7 +336,7 @@
   },
   {
     "key": "p_fl_type",
-    "name": "FILT",
+    "name": "FILTER",
     "type": "enum",
     "options": [
       "OFF",
@@ -418,7 +410,7 @@
   },
   {
     "key": "p_ph_sw",
-    "name": "PHASE",
+    "name": "PHASER",
     "type": "enum",
     "options": [
       "OFF",
@@ -444,7 +436,7 @@
   },
   {
     "key": "p_ph_fdbk",
-    "name": "FDBK",
+    "name": "FEEDBK",
     "type": "int",
     "min": 0,
     "max": 127,
@@ -452,7 +444,7 @@
   },
   {
     "key": "p_cp_sw",
-    "name": "CHOR",
+    "name": "CHORUS",
     "type": "enum",
     "options": [
       "OFF",
@@ -529,7 +521,7 @@
   },
   {
     "key": "p_dl_fdbk",
-    "name": "FDBK",
+    "name": "FEEDBK",
     "type": "int",
     "min": 0,
     "max": 127,
@@ -537,7 +529,7 @@
   },
   {
     "key": "p_rv_type",
-    "name": "RVB",
+    "name": "REVERB",
     "type": "enum",
     "options": [
       "OFF",
@@ -573,7 +565,7 @@
   },
   {
     "key": "p_rv_predly",
-    "name": "PDLY",
+    "name": "PREDLY",
     "type": "int",
     "min": 0,
     "max": 127,
@@ -597,7 +589,7 @@
   },
   {
     "key": "p_rv_locut",
-    "name": "LCUT",
+    "name": "LOWCUT",
     "type": "int",
     "min": 0,
     "max": 127,
@@ -605,7 +597,7 @@
   },
   {
     "key": "p_tw_sync",
-    "name": "TRSYN",
+    "name": "TRSYNC",
     "type": "enum",
     "options": [
       "FREE",
@@ -627,7 +619,7 @@
   },
   {
     "key": "p_ph_sync",
-    "name": "PHSYN",
+    "name": "PHSYNC",
     "type": "enum",
     "options": [
       "FREE",
@@ -650,7 +642,7 @@
   },
   {
     "key": "p_dl_sync",
-    "name": "DLSYN",
+    "name": "DLSYNC",
     "type": "enum",
     "options": [
       "FREE",
@@ -717,7 +709,7 @@
   },
   {
     "key": "p_lfo_retrig",
-    "name": "TRIG",
+    "name": "RETRIG",
     "type": "enum",
     "options": [
       "FREE",
@@ -727,7 +719,7 @@
   },
   {
     "key": "p_dl_tone",
-    "name": "DLTON",
+    "name": "DLTONE",
     "type": "int",
     "min": 0,
     "max": 127,
