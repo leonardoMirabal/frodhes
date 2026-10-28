@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Gate M (M1-10): the shipping Move plugin renders every MIDI-driven Gate R entry byte-identical.
 
+The plugin loads with the HQ Rhodes on (its one piano engine); the replay (move/tests/move_replay.c) sets p_hq 0, the
+dev / test key, first, so Gate M proves the Classic path equal to the host renders. The HQ path is Gate H's, and
+make test-move compares the plugin as it loads with the host build with HQ on (move/tests/run_eq.sh).
+
   tools/gate_m.py            replay each MIDI-driven entry through build/move/frodhes/dsp.so (make move first),
                              compare its sha256 with tests/baselines/renders.sha256, or with
                              tests/baselines/move16.sha256 for the renders the Move's 16 voices change (steals)

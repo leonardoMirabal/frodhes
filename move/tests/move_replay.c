@@ -7,7 +7,8 @@
  * due at host ms T (set_param "dev_midi", the bridge's harness key), renders 128-frame blocks and writes the same WAV
  * as tests/host.c: 44.1 kHz stereo int16, the same header, 256 * floor(end * 44100 / 256000) frames (host.c renders
  * one 256-frame block each time a millisecond tick owes 256 frames, and stops at the tick "end"). The sha256 of OUT
- * then equals the host render's when the plugin path is exact (Gate M, tools/gate_m.py).
+ * then equals the host render's when the plugin path is exact (Gate M, tools/gate_m.py). The replay plays Classic
+ * (p_hq 0, the dev key; the Move's load default is HQ), as the host build does.
  * Lines that do not move the sound ("expect", "shot", "dump", comments) are skipped. Any other line (a panel button,
  * a knob, the FM-1's keys, a stall) is not MIDI-driven: exit 3 with its name, nothing written (that render stays
  * host-only, covered by Gate R).
@@ -77,6 +78,12 @@ int main(int argc, char **argv)
         if (i >= 5000) { printf("FAIL the worker did not boot\n"); return 1; }
         api->render_block(in, z, 128);
         usleep(1000);
+    }
+    /* the Move loads with the HQ Rhodes on (move_bridge.h mb_start); Gate M proves the Classic path, so p_hq 0 (the
+     * dev / test key) first, queued ahead of every message. MOVE_REPLAY_HQ=boot keeps the load's HQ */
+    {
+        const char *e = getenv("MOVE_REPLAY_HQ");
+        if (!(e && !strcmp(e, "boot"))) api->set_param(in, "p_hq", "0");
     }
     /* pass 2: queue the MIDI. host.c plays its events in file order, each when the clock reaches its time and
      * every event before it has played: an event listed after a later one (an "expect" at 4000 before a MIDI line

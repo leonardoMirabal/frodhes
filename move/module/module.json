@@ -17,6 +17,7 @@
     "claims_ccs": [
       52
     ],
-    "touch_observe": true
+    "touch_observe": true,
+    "canvas_script": "canvas.js"
   }
 }

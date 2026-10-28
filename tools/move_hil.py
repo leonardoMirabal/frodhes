@@ -1310,16 +1310,17 @@ MOVE_HOST_DEFS = ["-O2", "-DFR_VOICES=16u", "-DFR_HQ=1"]   # (the Makefile's MOV
 
 def host_binary(hq=None):
     """the host build to compare with: the Move's (16 voices, FR_HQ: the bars without the FM-1's budget, d6cd6bfe),
-    new notes HQ (hq) or Classic"""
+    new notes HQ or Classic: hq 0 Classic (p_hq 0, the dev key), else HQ (1, or None: the plugin as it loads, whose
+    one engine is the HQ Rhodes)"""
     sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
     import hostrun
-    h = 1 if hq else 0
+    h = 0 if hq == 0 else 1
     return hostrun.build(MOVE_HOST % h, extra=MOVE_HOST_DEFS + ["-DHQ_DEFAULT=%d" % h])
 
 
 def host_phrase(ev, dur, program=0, hq=None, lead=()):
     """the host build (tests/host.c) playing the events after program change program (F01 = 0): (n, 2) LSB at 44.1;
-    hq: the HQ Rhodes' build (host_binary); lead: [(cc, value)] at 1 ms, before the program change, as the take
+    hq: 0 Classic, else (1, None: as the plugin loads) the HQ Rhodes' build (host_binary); lead: [(cc, value)] at 1 ms, before the program change, as the take
     has them (a pedal let up at boot is not nothing: CC 64 0 moves a later note by a few LSB)"""
     sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
     import hostrun
@@ -1328,7 +1329,7 @@ def host_phrase(ev, dur, program=0, hq=None, lead=()):
     for t, k, a, b in ev:
         ms = pre + int(round(1000 * t))
         lines.append("%d midi 0x%02X %d %d" % (ms, {"on": 0x90, "off": 0x80, "cc": 0xB0}[k], a, b))
-    run = hostrun.run("move-same-as-host" + ("-hq" if hq else ""), lines, pre + int(1000 * dur) + 20,
+    run = hostrun.run("move-same-as-host" + ("" if hq == 0 else "-hq"), lines, pre + int(1000 * dur) + 20,
                       binary=host_binary(hq))
     i0 = int(pre * hostrun.FS / 1000)
     return np.stack([np.asarray(run.L[i0:], float), np.asarray(run.R[i0:], float)], 1)
@@ -1461,28 +1462,50 @@ def usb_host(r, d, program=0, out=print):
                      "f0_host_c": round(1200 * np.log2(fh / note_hz(n)), 2) if fh else None,
                      "decay_move_s": _decay_s(mm, sr), "decay_host_s": _decay_s(hm, sr),
                      "centroid_move": round(_centroid(mm[st], sr)), "centroid_host": round(_centroid(hm[st], sr))})
-    classic_db = None
-    if hq:                                       # (HQ asked: the take must not be Classic where only HQ differs)
-        c = host_phrase(ev, dur, program, None, GLOBAL_CCS)
+    classic_db, classic_res_db = None, None
+    if hq != 0:                                  # (HQ, the load's or asked: the take must not be Classic where only HQ
+        c = host_phrase(ev, dur, program, 0, GLOBAL_CCS)    # differs)
         for name, t, n in marks:
             if name == HQ_PROBE:
                 a, b = int(t * sr), int((t + NOTE_S) * sr)
-                dm, dc = _mono(mv[a:b]) - g * _mono(h[a:b]), _mono(mv[a:b]) - g * _mono(c[a:b])
+                ta = a + int(0.5 * sr)
+
+                def fit(ref):                        # (the take against one host: its own best lag, as the rows')
+                    r_t = _mono(ref[ta:b])
+                    best = (-2.0, 0)
+                    for lag in range(-int(0.01 * sr), maxlag):
+                        if ta + lag < 0 or b + lag > len(mv):
+                            continue
+                        mt = _mono(mv[ta + lag:b + lag])
+                        cc = float(np.dot(mt, r_t) / (np.linalg.norm(mt) * np.linalg.norm(r_t) + 1e-9))
+                        if cc > best[0]:
+                            best = (cc, lag)
+                    m_ = _mono(mv[a + best[1]:b + best[1]])
+                    return m_, m_ - g * _mono(ref[a:b])
+                m_, dm = fit(h)
+                mc, dc = fit(c)
                 vs = 20 * np.log10((np.sqrt(np.mean(dc ** 2)) + 1e-9) / (np.sqrt(np.mean(dm ** 2)) + 1e-9))
+                rc = 20 * np.log10((np.sqrt(np.mean(dc ** 2)) + 1e-9) / (np.sqrt(np.mean(mc ** 2)) + 1e-9))
                 hc = _mono(h[a:b]) - _mono(c[a:b])
                 # (only where HQ changes the sound: the Rhodes; the bars have no HQ path, both hosts the same)
                 classic_db = round(float(vs), 1) if np.abs(hc).max() > 0 else None
+                classic_res_db = round(float(rc), 1)
     rep = {"program": program, "hq": hq, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
            "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max())}
     bad = [w["note"] for w in rows if w["residual_db"] > -40 and w["judged"]]
     extra = [w["note"] for w in rows if w["extra_db"] > -30]
     again = ["%s +%s ms" % (w["note"], "/".join(str(t) for t in w["again_ms"])) for w in rows if w["again_ms"]]
     classic = False
-    if hq:
+    if hq != 0:
         rep["hq_vs_classic_db"] = classic_db     # (the take's residual against Classic over the one against HQ)
-        classic = classic_db is not None and classic_db < 20.0
-    rep["verdict"] = ("CLASSIC: HQ was asked (p_hq 1) but %s plays as Classic (%.1f dB nearer the HQ host than the "
-                      "Classic one: p_hq did not reach the plugin?)" % (HQ_PROBE, rep["hq_vs_classic_db"])
+        # (Classic: nearer the Classic host than the HQ one, and the Classic host's sound itself (under -30 dB). The
+        # two hosts differ by ~-35 dB at the probe, so an exact HQ take is ~+100 dB nearer HQ and a take through the
+        # Move's volume and latency ~+13 dB; a take that is neither, another sound or a note struck again, gets its
+        # own verdict below)
+        classic = classic_db is not None and classic_db < 0.0 and classic_res_db < -30.0
+    rep["verdict"] = ("CLASSIC: the HQ Rhodes was due (the load's, or p_hq 1) but %s plays as Classic (the Classic host %.1f dB "
+                      "nearer than the HQ one: an old dsp.so, or p_hq 0 left on?)"
+                      % (HQ_PROBE, -rep["hq_vs_classic_db"])
                       if classic else
                       "STRUCK AGAIN: %s (a note the host strikes once comes again while it is held: the "
                       "arpeggiator or chord mode on (a build without MB_CC_DROP), or the schedule played twice)" % ", ".join(again)
@@ -1627,7 +1650,8 @@ def usb_main(a):
 # p_hq) leaves it as it found it. The plugin saves its settings and the panel, so a test's leftovers came back at the
 # next load: the arpeggiator on (2026-10-28 01:42), every effect on with the feedbacks at 127 (usb-stress's HEAVY,
 # the user's report of 2026-10-28)
-STATE_SKIP = ("preset_count", "preset_name", "s_susbtn")   # (meta; momentary: a write is a press)
+STATE_SKIP = ("preset_count", "preset_name", "s_susbtn", "r_cmp_gr", "r_cmp_pk")   # (meta; momentary: a write is a
+#   press; the GR meter's read-only cells move with the sound)
 
 
 def _same(a, b):
@@ -1649,9 +1673,9 @@ def state_read(url, slot=0, secs=0.8):
             and not k.startswith("synth:dev_")}
 
 
-def state_restore(url, slot, before, hq_default=0):
+def state_restore(url, slot, before, hq_default=1):
     """writes back every key that differs from before (the preset first: it loads its own values), HQ to the boot
-    value (p_hq is not saved and Schwung does not report it), the dev player stopped, the CPU and stats logs off; then reads
+    value (HQ: p_hq, the dev key, is not saved and Schwung does not report it), the dev player stopped, the CPU and stats logs off; then reads
     the state back. (keys written, {key: (before, after)} still different)"""
     import move_ws
     with move_ws.Remote(url) as w:
@@ -2172,7 +2196,8 @@ def main(argv=None):
     ap.add_argument("--tests", help="d2: only these tests, comma-separated (a name or its prefix: usb-host,usb-stress; "
                                     "the cpu row comes with usb-stress)")
     ap.add_argument("--hq", type=int, choices=(0, 1), default=None,
-                    help="d2 --path tap: the HQ Rhodes off (0) or on (1) for the run (default: as the plugin has it)")
+                    help="d2 --path tap: the HQ Rhodes off (0, Classic: a test only, through the dev key p_hq) or "
+                         "on (1) for the run (default: as the plugin loads, HQ)")
     ap.add_argument("--path", choices=("usb", "tap"), default="usb",
                     help="usb-*, d2: usb = MIDI to the Standalone port, the USB-C audio recorded (the Move's mix); "
                          "tap = the plugin's own player and output over Schwung's WebSocket (--ws), the takes "

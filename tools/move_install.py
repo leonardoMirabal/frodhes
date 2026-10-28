@@ -3,7 +3,7 @@
 """Install the Frodhes module on the Move (M1-19), with the previous one kept and a rollback. DRY RUN by default:
 it prints every command; --go runs them.
 
-    tools/move_install.py [--go] install [--src DIR]    build/move/frodhes/ (dsp.so, module.json, help.json, sustain.js, screen.js) -> the Move
+    tools/move_install.py [--go] install [--src DIR]    build/move/frodhes/ (dsp.so, module.json, help.json, sustain.js, screen.js, canvas.js) -> the Move
     tools/move_install.py [--go] rollback               the previous module back (the current one kept aside)
     tools/move_install.py info                          the installed version, dsp.so's sha256, the kept modules
     --host USER@HOST (default $MOVE_HOST, else ableton@move.local); --target-dir DIR: a local folder stands in for
@@ -44,7 +44,7 @@ def move_lock(why=""):
                      say=lambda m: print(m, file=sys.stderr, flush=True))
 MODS = "/data/UserData/schwung/modules/sound_generators"
 MODULE_ID = "frodhes"
-PACKAGE = ("dsp.so", "module.json", "help.json", "sustain.js", "screen.js")
+PACKAGE = ("dsp.so", "module.json", "help.json", "sustain.js", "screen.js", "canvas.js")
 REQUIRED = ("dsp.so", "module.json")
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
 

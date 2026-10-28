@@ -283,6 +283,28 @@
     "default": 50
   },
   {
+    "key": "r_cmp_gr",
+    "name": "GR",
+    "type": "string",
+    "access": "read",
+    "live": true,
+    "viz": {
+      "group": "gr",
+      "role": "gr",
+      "kind": "custom:frodhes_gr"
+    }
+  },
+  {
+    "key": "r_cmp_pk",
+    "name": "PEAK",
+    "type": "string",
+    "access": "read",
+    "viz": {
+      "group": "gr",
+      "role": "pk"
+    }
+  },
+  {
     "key": "p_drv_sw",
     "name": "DRIVE",
     "type": "enum",

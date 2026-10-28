@@ -50,10 +50,40 @@ def test_meter_reads_the_fm1_ballistics():
     assert pk in GR_DB10 and pk <= db, v[2]                 # the peak: the segment the reading reached
     fall = [gr(x) for x in v[3:63]]
     for (d0, _), (d1, _) in zip([(db, pk)] + fall, fall):
-        assert d1 <= d0 and (d0 - d1) % 5 == 0 and d0 - d1 <= 10, (d0, d1)   # 0.5 dB a tick (a read 0-2 ticks on)
+        assert d1 <= d0 and d0 - d1 <= 10, (d0, d1)     # at most 0.5 dB a tick (a read 0-2 ticks on; less when the
+        #                                                 reduction itself is falling slower, as the HQ chord's at 30 dB)
     assert fall[-1][0] < db, fall[-1]
     held = [p for (_, p), i in zip(fall, range(len(fall))) if i * tick * BLK_MS < 900]
     assert all(p == pk for p in held), held                 # the peak holds about a second
     assert fall[-1][1] < pk or fall[-1][1] == 0, fall[-1]   # ... then follows the reading down
     assert gr(v[63])[0] > 0, v[63]
     assert gr(v[64]) == (0, 0) or gr(v[64])[0] < gr(v[63])[0], v[64]   # the FX button: the reduction reads 0
+
+
+def run_all(lines):
+    r = tmp._bridge("script", "build/move/frodhes/dsp.so", stdin="\n".join(lines) + "\n")
+    if r is None:
+        pytest.skip("no Linux arm64 and no frodhes-move:bookworm image (make move-image)")
+    out = [ln.split("\t") for ln in r.stdout.splitlines() if "\t" in ln]
+    assert out, r.stdout[-2000:] + r.stderr[-2000:]
+    return out
+
+
+def test_grid_cells_read_the_meter():
+    """Schwung's knob grid (COMPRESSOR knobs 7-8, move/module/canvas.js): r_cmp_gr is "live", so the grid reads
+    r_cmp_gr:effective every tick; it is r_cmp_gr itself. r_cmp_pk, the cell beside it: the held peak alone, or OFF"""
+    on = [f"midi {EXT} {0x90} {n} 127" for n in CHORD]
+    off = [f"midi {EXT} {0x80} {n} 0" for n in CHORD]
+    probe = ["get r_cmp_gr", "get r_cmp_gr:effective", "get r_cmp_pk"]
+    lines = (["set p_cmp_sw 0", "render 20"] + probe + ["set p_cmp_sw 1", "set p_cmp_amt 127", "set p_cmp_ratio 7",
+             "render 40"] + probe + on + ["render 120"] + probe + off
+             + sum((["render 12"] + probe for _ in range(10)), []) + ["set p_cmp_sw 0", "render 20"] + probe)
+    out = run_all(lines)
+    trip = [out[i:i + 3] for i in range(0, len(out), 3)]
+    assert len(trip) == 14, out
+    for (k0, g), (k1, e), (k2, p) in trip:
+        assert (k0, k1, k2) == ("r_cmp_gr", "r_cmp_gr:effective", "r_cmp_pk"), (k0, k1, k2)
+        assert e == g, (g, e)
+        assert p == ("OFF" if g == "OFF" else g.split()[1]), (g, p)
+    assert trip[0][0][1] == "OFF" and trip[-1][0][1] == "OFF"
+    assert gr(trip[2][0][1])[0] >= 30, trip[2]

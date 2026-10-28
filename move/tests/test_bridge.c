@@ -113,6 +113,14 @@ static void *create(const char *dir)
     return in;
 }
 static void render(void *in, int n) { while (n-- > 0) api->render_block(in, blk, 128); }
+/* the Move loads with the HQ Rhodes on (move_bridge.h mb_start); eq and play compare with the host build, which
+ * renders Classic (HQ_DEFAULT 0): p_hq 0 first, the dev / test key, queued ahead of every message. MOVE_EQ_HQ=boot
+ * keeps the load's HQ (run_eq.sh: against the host build with -DHQ_DEFAULT=1) */
+static void classic(void *in)
+{
+    const char *e = getenv("MOVE_EQ_HQ");
+    if (!(e && !strcmp(e, "boot"))) api->set_param(in, "p_hq", "0");
+}
 
 /* ---- eq */
 static int eq(const char *so, const char *script, const char *wav)
@@ -127,6 +135,7 @@ static int eq(const char *so, const char *script, const char *wav)
     load(so);
     in = create(NULL);
     CHECK(in != NULL, "create");
+    classic(in);
     while (fgets(line, sizeof line, f)) {
         unsigned t, st, d1, d2; char what[16];
         if (line[0] == '#' || sscanf(line, "%u %15s", &t, what) != 2) continue;
@@ -213,6 +222,7 @@ static int play(const char *so, const char *script, const char *wav)
     void *in;
     load(so);
     in = create(NULL);
+    classic(in);
     dir = strdup(get(in, "dev_store") + 4);
     if (strchr(dir, ' ')) *strchr(dir, ' ') = 0;
     CHECK(strstr(get(in, "dev_build"), "dev_play=1") && strstr(gbuf, "dsp_crc32="), "dev_build: %s", gbuf);
@@ -813,8 +823,9 @@ static int boot(const char *so, const char *file)
     return fails != 0;
 }
 
-/* ---- hq: the HQ switch (p_hq, FR_HQ builds). Off at boot; 1 plays new notes HQ (C7 at v100 is not the Classic
- * note: the exact pulse and the 2x pickup), 0 back to Classic; the reads follow the writes */
+/* ---- hq: the Move's one engine is the HQ Rhodes (FR_HQ builds): on at every load, kept by a preset load and a state
+ * load; p_hq (dev / test only) 0 plays Classic until the next load, 1 HQ again; the reads follow the writes. C7 at
+ * v100 is not the Classic note (the exact pulse and the 2x pickup) */
 static void hq_note(void *in, int16_t *x, int blocks)
 {
     uint8_t on[3] = { 0x90, 96, 100 }, off[3] = { 0x80, 96, 0 }, cut[3] = { 0xB0, 120, 0 };
@@ -827,26 +838,44 @@ static void hq_note(void *in, int16_t *x, int blocks)
 static int hq(const char *so)
 {
     static int16_t a[256 * 200], b[256 * 200], c[256 * 200];
+    static char st[70000];
     long da = 0, dc = 0, loud = 0;
     void *in;
     load(so);
     in = create(NULL);
-    CHECK(!strcmp(get(in, "p_hq"), "0"), "p_hq at boot: %s", gbuf);
+    CHECK(!strcmp(get(in, "p_hq"), "1"), "p_hq at the load: %s (HQ is the Move's engine)", gbuf);
     render(in, 20);
     hq_note(in, a, 200);
-    cb_set(in, "p_hq", "7");                             /* (any non-zero: on) */
-    render(in, 2);
-    CHECK(!strcmp(get(in, "p_hq"), "1"), "p_hq after 1: %s", gbuf);
-    hq_note(in, b, 200);
     cb_set(in, "p_hq", "0");
     render(in, 2);
     CHECK(!strcmp(get(in, "p_hq"), "0"), "p_hq after 0: %s", gbuf);
     hq_note(in, c, 200);
-    for (long i = 0; i < 256L * 200; i++) { da += a[i] != b[i]; dc += b[i] != c[i]; loud += abs(a[i]) > 1000; }
+    cb_set(in, "p_hq", "7");                             /* (any non-zero: on) */
+    render(in, 2);
+    CHECK(!strcmp(get(in, "p_hq"), "1"), "p_hq after 1: %s", gbuf);
+    hq_note(in, b, 200);
+    /* (a later note is not the first note's samples: the noise and the LFOs run on; each HQ note against Classic) */
+    for (long i = 0; i < 256L * 200; i++) { da += b[i] != c[i]; dc += a[i] != c[i]; loud += abs(c[i]) > 1000; }
     CHECK(loud > 1000, "the Classic note is silent (%ld loud samples)", loud);
-    CHECK(da > 10000 && dc > 10000, "the HQ note is the Classic note: %ld / %ld samples differ", da, dc);
+    CHECK(dc > 10000 && da > 10000, "the HQ note is the Classic note: %ld (at the load) / %ld (p_hq 1) samples differ",
+          dc, da);
+    /* a preset load and a state load (a state saved while Classic played too) keep HQ */
+    cb_set(in, "preset", "3");
+    render(in, 40);
+    CHECK(!strcmp(get(in, "p_hq"), "1"), "p_hq after a preset load: %s", gbuf);
+    cb_set(in, "p_hq", "0");
+    render(in, 2);
+    snprintf(st, sizeof st, "%s", get(in, "state"));
+    CHECK(!strstr(st, "hq"), "the state carries no HQ setting: %s", st);
     api->destroy_instance(in);
-    if (!fails) printf("OK hq: p_hq 0 / 1 / 0, the HQ note differs from Classic in %ld of %ld samples\n", da, 256L * 200);
+    in = create(NULL);                                   /* a new load: HQ, whatever p_hq was */
+    CHECK(!strcmp(get(in, "p_hq"), "1"), "p_hq at the next load: %s", gbuf);
+    cb_set(in, "state", st);
+    render(in, 40);
+    CHECK(!strcmp(get(in, "p_hq"), "1"), "p_hq after a state load (saved while Classic): %s", gbuf);
+    api->destroy_instance(in);
+    if (!fails) printf("OK hq: HQ at the load, after a preset and a state load; p_hq 0 Classic (%ld of %ld samples differ), "
+                       "1 HQ\n", dc, 256L * 200);
     return fails != 0;
 }
 
