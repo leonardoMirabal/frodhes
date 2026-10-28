@@ -575,7 +575,8 @@ static int mb_wire_text(const move_key_t *k, char *buf, int n)
     switch (k->kind) {
     case MK_PARAM: case MK_SLOT: v = mb_slot_get(k->slot) - k->off; break;
     case MK_LATCH:
-        v = k->cc == 64u ? (sus_latched || sus_held) : k->cc == 60u ? seq_play != 0 : k->cc == 63u ? seq_rec != 0 : 0;
+        v = k->cc == 64u ? (sus_latched || sus_held) : k->cc == 60u ? seq_play != 0 : k->cc == 63u ? seq_rec != 0 :
+            k->cc == 111u ? fx_bypass != 0 : 0;   /* 111: the FX button's bypass (s_fx, M5-01) */
         break;
     case MK_BTN: v = sus_held; break;        /* the sustain control is down */
     case MK_MAP: v = k->slot < MB_NMAP ? mb.map[k->slot] : 0; break;

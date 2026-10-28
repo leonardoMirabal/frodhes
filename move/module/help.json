@@ -23,7 +23,19 @@
         "Capture button is",
         "the pedal: hold it,",
         "or tap to latch and",
-        "tap again to let go."
+        "tap again to let go.",
+        "",
+        "PAGES opens Frodhes'",
+        "own screen: eight",
+        "cards a page, a",
+        "touched knob shown",
+        "large. The jog wheel",
+        "turns the pages; a",
+        "click lists them.",
+        "Capture is the pedal",
+        "there too. FX turns",
+        "all effects off or",
+        "on."
       ]
     },
     {
@@ -35,7 +47,9 @@
             "K1 TYPE",
             "K2 SPRD",
             "K3 SUS",
-            "K4 PEDAL"
+            "K4 PEDAL",
+            "K5 FX",
+            "K6 PAGES"
           ]
         },
         {

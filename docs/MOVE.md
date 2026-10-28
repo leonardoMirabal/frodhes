@@ -9,7 +9,7 @@ checked on a Move yet:** every part below was checked on the host build only (th
 ## Install
 
 You need a Move with Schwung installed. The module is a folder, `frodhes/`, with `dsp.so`, `module.json`,
-`help.json`, `sustain.js` (the PEDAL screen) and `LICENSE` in it, and it goes in Schwung's sound generator folder.
+`help.json`, `sustain.js` (the PEDAL screen), `screen.js` (Frodhes' own screen) and `LICENSE` in it, and it goes in Schwung's sound generator folder.
 
 ```sh
 python3 tools/move_install.py install            # prints what it would do (dry run)
@@ -26,14 +26,14 @@ In Schwung, load **Frodhes** as the sound generator of a track. Its abbreviation
 
 ## The pages
 
-The first page, **FRODHES**, has the sound type, the stereo spread, the sustain latch, the PEDAL screen and the preset
-browser:
-the 19 factory sounds (F01-F19) and 16 user sounds (U01-U16), as on the FM-1. Each page below holds up to eight
+The first page, **FRODHES**, has the sound type, the stereo spread, the sustain latch, the PEDAL screen, the effects
+switch (FX), Frodhes' own screen (PAGES) and the preset browser: the 19 factory sounds (F01-F19) and 16 user sounds
+(U01-U16), as on the FM-1. Each page below holds up to eight
 controls. The VOICE pages follow the engine of the TYPE: only the pages of the engine that plays are shown.
 
 | Page | Controls |
 | --- | --- |
-| **FRODHES** | TYPE · SPRD · SUS · PEDAL |
+| **FRODHES** | TYPE · SPRD · SUS · PEDAL · FX · PAGES |
 | **PIANO VOICE** | TONE · BARK · BELL · HAMMR · DECAY · REL · NOISE · TUNE |
 | **VIBES VOICE** | STRK · MALLT · TUBE · WGHT · RING · DAMPR · NOISE · TUNE |
 | **VIBES MOTOR** | MOTOR · DEPTH · SPEED · SHAPE · SYNC |
@@ -68,6 +68,48 @@ The FM-1 has no pressure. On the Move, **MAPPINGS** turns the pads' pressure int
 An HI under LO turns the direction round. A CC of 0 is off, and both are off by default: then pressure changes
 nothing. The control moves as if a controller sent that CC (the CC numbers are the FM-1's, in `docs/MANUAL.md`). The
 settings are kept with the track's state. *(not yet verified on a device)*
+
+## Frodhes' own screen (PAGES)
+
+The pages above are on the Move's own knob screen. **PAGES** on the first page opens a screen of Frodhes' own with the
+same pages, drawn as on the FM-1: one page is the eight knobs.
+
+![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move-drive-filter.png?v=0e8d6fd0)
+
+- **The overview**: eight cards, knobs 1-4 on the top row and 5-8 below, each with its name, its value and a bar.
+  The header names the page and its number (`4/12`); an `S` before the number shows that the sustain holds.
+- **One large card**: touch a knob, or turn it, and its card fills the screen: the name, the value in large
+  letters, a wide bar (a selector shows one block per option) and a row of eight marks for the knob it is. Turning
+  changes the value as you watch. About a second after you let go the overview comes back. Touch another knob and
+  its card shows at once.
+- **Pages**: turn the jog wheel for the next or the previous page. Click the jog wheel for the list of pages, turn
+  to one, click to open it; Back closes the list. Back on a page leaves Frodhes' screen (Shift + jog wheel too).
+  As on the other screen, the VOICE pages are the ones of the instrument that plays.
+- **The sustain pedal**: on this screen the Capture button is the sustain pedal on every page, as on the PEDAL
+  screen (hold it, or tap to latch and tap again to let go).
+- The first page shows the sound that plays in full, and its fifth knob (PRSET) picks the sound.
+- Fine steps: hold Shift while turning BPM for steps of 0.1. A fast turn of a wide range moves four steps a detent.
+
+![Knob 2 touched: AMT as a large card](manual/img/move-drive-filter-k2.png?v=3da25fcf)
+![Knob 6 on TEMPO/SCALE: the scale, one block per option](manual/img/move-tempo-scale-k6.png?v=e2fb0eb3)
+![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move-frodhes.png?v=2352bd88)
+![The list of pages](manual/img/move-pages.png?v=a7bf9f81)
+
+The pictures are drawn by the screen's own code on a computer (`tools/move_ui_shots.mjs`), in the screen's two
+colours. Everything in this section is *(not yet verified on a device)*: the knobs' feel, the time the card stays,
+the jog wheel and the button on the Move itself.
+
+## The effects on the Move
+
+Frodhes' effects (the compressor, the drive, the filter, the tremolo / wah, the phaser, the chorus, the delay, the
+reverb and the LFO) are inside the module, on the pages above, with the FM-1's ranges and defaults. **FX** on the
+first page is the FM-1's FX button: OFF turns every effect off at once and keeps their settings; it is ON when the
+module starts, as on the FM-1 (also by MIDI, CC 111).
+
+On the Move, Frodhes is the sound generator of a Schwung track. Its sound, effects included, then goes through the
+audio effects you put after it on that track, and then the Master FX, like any other sound generator. To use one of
+Schwung's reverbs or delays instead of Frodhes' own, turn Frodhes' one off on its page (REVERB, CHORUS/DELAY), or all
+of them with FX. *(not yet verified on a device: the levels against the Move's own instruments)*
 
 ## Sustain
 
@@ -109,9 +151,12 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
 
 ## For developers
 
-- `tools/gen_move_module.py` writes `move/module/` (module.json, the pages, help.json, `move_ui.h`);
+- `tools/gen_move_module.py` writes `move/module/` (module.json, the pages, help.json, `move_ui.h`, `sustain.js`
+  and `screen.js`: the pages from the FM-1's tables + the screen's code, `move/ui/screen_core.js`);
   `--check` fails when the files are out of date with the FM-1's tables.
-- `tools/ci_move.sh` runs the Move's checks on the host.
+- `tools/ci_move.sh` runs the Move's checks on the host. `node move/ui/test_screen.mjs` checks Frodhes' screen
+  (`move/ui/harness.mjs` runs it on a model of the Move's screen and the plugin); `node tools/move_ui_shots.mjs`
+  draws every page into `build/move/ui-shots/` (`--docs`: the pictures on this page).
 - `tools/target_closure.py` lists the sources of each target (FM-1, SMK-37, host, web, Move).
 - `tools/move_hil.py` and `tools/device_null.py` are the device tests (CPU, crackle, the null test against the host).
   Over USB-C, as the FM-1 is tested: `usb-devices`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`
