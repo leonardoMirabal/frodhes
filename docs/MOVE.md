@@ -174,6 +174,14 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
   plugin logs them while `dev_cpu_log` is 1, and the tool fetches `cpu-ring.log` over ssh. The `cpu` row checks
   them against the working limit. `--hq 1` or `--hq 0` sets the HQ Rhodes on or off for the run, through the
   plugin's `p_hq` parameter. HQ applies to new notes only: a sounding note keeps the path it started with.
+  With `--hq 1`, `usb-host` compares against the host build with HQ on.
+- The plugin keeps its saved setup, but the host build boots clean. So before its take, `usb-host` turns off
+  the arpeggiator, chord mode, the sequencer, the pedal, FX bypass and RAW by CC. Over the tap it also writes
+  each setting that differs from a fresh instance (`move/tests/boot_keys.txt`, checked by `test_bridge boot`).
+  A note that the host strikes once but the Move strikes again while it is held fails as STRUCK AGAIN. That
+  happened in one run, when an arpeggiator left on re-struck every note.
+- A take plays once: the plugin refuses a `begin` with the id of the take that went last. Each `dev_play_add`
+  piece carries its number (`#K`), and the plugin refuses a piece that comes out of turn.
 - The criteria follow each engine's manual behaviour. VIBES plays with its motor off (CC 47 0), because the
   motor's pulse moves every level the tests read. Its velocity is checked as the FM-1 scan checks it: no drop from
   v24 on, and at least +10 dB from v40 to v117. MARIMBA's velocity must rise 26 to 32 dB from v8 to v127. A

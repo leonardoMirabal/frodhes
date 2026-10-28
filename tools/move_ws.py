@@ -122,15 +122,16 @@ class Remote:
         <data dir>/tap/<take>.wav (dur_ms long) and <take>.json"""
         key = COMP + ":dev_play"
         self.set_param(slot, key, "begin %s %d" % (take, int(dur_ms)))
-        chunk = ""
+        k, chunk = 0, "#0 "                       # (each piece numbered: the plugin refuses one out of turn)
         for t, st, d1, d2 in sorted(events, key=lambda e: e[0]):
             ev = "%d %d %d %d;" % (int(t), int(st), int(d1) & 127, int(d2) & 127)
             if len(chunk) + len(ev) > PIECE:
                 self.set_param(slot, key + "_add", chunk)
                 time.sleep(pace)                  # (the shim drains the ring once a 2.9 ms frame)
-                chunk = ""
+                k += 1
+                chunk = "#%d " % k
             chunk += ev
-        if chunk:
+        if chunk.strip() != "#%d" % k:
             self.set_param(slot, key + "_add", chunk)
         self.set_param(slot, key, "go %d" % int(lead_ms))
         self.pump(0.2)

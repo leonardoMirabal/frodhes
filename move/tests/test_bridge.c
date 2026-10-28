@@ -193,7 +193,10 @@ static unsigned load_take(void *in, const char *script, const char *begin, unsig
         if (line[0] == '#' || sscanf(line, "%u %15s", &t, what) != 2 || strcmp(what, "midi")) continue;
         if (sscanf(line, "%*u %*s %i %u %u", &st, &d1, &d2) != 3) continue;
         snprintf(ev, sizeof ev, nev & 1 ? "%u 0x%02x %u %u;" : "%u %u %u %u;", t, st, d1, d2);   /* (both notations) */
-        if (strlen(chunk) + strlen(ev) >= 255) { cb_set(in, "dev_play_add", chunk); (*pieces)++; chunk[0] = 0; }
+        if (strlen(chunk) + strlen(ev) >= 255) {        /* (every other piece numbered: both forms) */
+            cb_set(in, "dev_play_add", chunk); (*pieces)++;
+            if (*pieces & 1u) snprintf(chunk, sizeof chunk, "#%u ", *pieces); else chunk[0] = 0;
+        }
         strcat(chunk, ev);
         nev++;
     }
@@ -252,6 +255,16 @@ static int play(const char *so, const char *script, const char *wav)
     snprintf(path, sizeof path, "%s/tap/cut.json", dir);
     { FILE *j = fopen(path, "r"); char js[512] = ""; if (j) { if (!fgets(js, sizeof js, j)) js[0] = 0; fclose(j); }
       CHECK(strstr(js, "\"aborted\":1"), "json: %s", js); }
+    /* a take plays once: its id again is refused; a piece again (its number out of turn) is refused whole */
+    cb_set(in, "dev_play", "begin cut 3000");
+    CHECK(strstr(get(in, "dev_play"), "state=done") && strstr(gbuf, "bad=1"), "the same id again: %s", gbuf);
+    cb_set(in, "dev_play", "begin dup 1000");
+    cb_set(in, "dev_play_add", "#0 0 0x90 50 100");
+    cb_set(in, "dev_play_add", "#0 0 0x90 50 100");
+    cb_set(in, "dev_play_add", "#1 10 0x80 50 0");
+    CHECK(strstr(get(in, "dev_play"), "state=load") && strstr(gbuf, "events=0/2") && strstr(gbuf, "bad=1") &&
+          strstr(gbuf, "pieces=2"), "a piece twice: %s", gbuf);
+    cb_set(in, "dev_play", "stop");
     CHECK(bad_alloc == 0, "%d allocations inside callbacks", bad_alloc);
     printf("%s    play: %u messages in %u pieces under 256 B; the tap %s the host build shifted by 2560 ms (%ld frames); "
            "stop keeps the length\n", fails ? "FAIL" : "ok", nev, pieces, ndiff ? "DIFFERS from" : "equals", tn);
@@ -740,6 +753,27 @@ static int persist(const char *so, const char *dir, int save)
     return fails != 0;
 }
 
+/* ---- boot: a new instance's settings are move/tests/boot_keys.txt's (what move_hil.py writes before usb-host) */
+static int boot(const char *so, const char *file)
+{
+    char line[256], k[64], v[64];
+    FILE *f = fopen(file, "r");
+    int n = 0;
+    void *in;
+    if (!f) { printf("FAIL boot: no %s\n", file); return 1; }
+    load(so);
+    in = create(NULL);
+    while (fgets(line, sizeof line, f)) {
+        if (line[0] == '#' || sscanf(line, "%63s %63s", k, v) != 2) continue;
+        CHECK(!strcmp(get(in, k), v), "boot: %s is %s, %s says %s", k, gbuf, file, v);
+        n++;
+    }
+    fclose(f);
+    api->destroy_instance(in);
+    if (!fails) printf("ok    boot: %d settings as %s\n", n, file);
+    return fails != 0;
+}
+
 /* ---- hq: the HQ switch (p_hq, FR_HQ builds). Off at boot; 1 plays new notes HQ (C7 at v100 is not the Classic
  * note: the exact pulse and the 2x pickup), 0 back to Classic; the reads follow the writes */
 static void hq_note(void *in, int16_t *x, int blocks)
@@ -789,6 +823,7 @@ int main(int argc, char **argv)
     if (argc >= 5 && !strcmp(argv[1], "play")) return play(argv[2], argv[3], argv[4]);
     if (argc >= 3 && !strcmp(argv[1], "api")) return api_tests(argv[2]);
     if (argc >= 3 && !strcmp(argv[1], "hq")) return hq(argv[2]);
-    printf("usage: test_bridge eq DSP SCRIPT HOST.wav | api DSP | hq DSP | keys DSP | presets DSP | gatep DSP [N]\n");
+    if (argc >= 4 && !strcmp(argv[1], "boot")) return boot(argv[2], argv[3]);
+    printf("usage: test_bridge eq DSP SCRIPT HOST.wav | api DSP | hq DSP | boot DSP FILE | keys DSP | presets DSP | gatep DSP [N]\n");
     return 2;
 }

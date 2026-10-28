@@ -27,8 +27,9 @@ NAMES = ["F%02d" % (i + 1) for i in range(19)] + ["U%02d" % (i + 1) for i in ran
 class FakeSchwung:
     """slot 0 holds `module` at preset 0; every message received is logged; mute: answer nothing"""
 
-    def __init__(self, module="frodhes", mute=False, refuse=False, noname=False):
+    def __init__(self, module="frodhes", mute=False, refuse=False, noname=False, settings=None):
         self.module, self.mute, self.refuse, self.noname = module, mute, refuse, noname
+        self.settings = dict(settings or {})            # ("s_..." -> value: the settings keys the server reports)
         self.preset, self.log, self.takes, self.cur = 0, [], {}, None
         self.hist = []                                   # (the order of preset switches and takes: host_fetch's state)
         self.server = serve(self.handle, "127.0.0.1", 0)
@@ -36,8 +37,8 @@ class FakeSchwung:
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def params(self):
-        return {"synth:preset": str(self.preset), "synth:preset_count": str(len(NAMES)),
-                "synth:preset_name": NAMES[self.preset]}
+        return dict({"synth:preset": str(self.preset), "synth:preset_count": str(len(NAMES)),
+                     "synth:preset_name": NAMES[self.preset]}, **{"synth:" + k: v for k, v in self.settings.items()})
 
     def handle(self, ws):
         for raw in ws:
@@ -69,9 +70,16 @@ class FakeSchwung:
                 elif m["key"] == "synth:dev_play_add":
                     t = self.takes[self.cur]
                     t["max_piece"] = max(t["max_piece"], len(m["value"]))
-                    for e in m["value"].split(";"):
+                    v = m["value"]
+                    if v.startswith("#"):                # (the piece's number, as the plugin checks it)
+                        k, v = v[1:].split(" ", 1)
+                        assert int(k) == t.setdefault("pieces", 0), (k, t["pieces"])
+                        t["pieces"] += 1
+                    for e in v.split(";"):
                         if e.strip():
                             t["ev"].append(tuple(int(x, 0) for x in e.split()))
+                if m["key"] == "synth:p_hq":
+                    self.hist.append(("hq", int(m["value"]) != 0))
                 if m["key"] == "synth:preset":
                     self.preset = int(m["value"])
                     self.hist.append(("pc", self.preset))
@@ -178,14 +186,17 @@ def host_fetch(fake, d):
     sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
     import hostrun
     import wave
+    import move_hil as mh
 
     def fetch(take):
         t = fake.takes.get(take)
         if not t or not t["go"]:
             return None
-        lead = []
+        lead, hq = [], 0
         for kind, v in fake.hist:
-            if kind == "pc":
+            if kind == "hq":
+                hq = v
+            elif kind == "pc":
                 lead.append((0xC0, v, 0))
             elif v == take:
                 break
@@ -194,7 +205,8 @@ def host_fetch(fake, d):
         pre = 2560 if lead else 0
         lines = ["%d midi 0x%02X %d %d" % ((1 + i // 48,) + e) for i, e in enumerate(lead)]
         lines += ["%d midi 0x%02X %d %d" % ((e[0] + pre,) + e[1:]) for e in t["ev"]]
-        run = hostrun.run("tap-" + take, lines, t["dur"] + pre + 20)
+        run = hostrun.run("tap-" + take, lines, t["dur"] + pre + 20,
+                          binary=mh.host_binary(1) if hq else hostrun.BIN)   # (p_hq: the HQ build)
         n, f0 = t["dur"] * 441 // 10, pre * 441 // 10
         x = np.stack([run.L[f0:f0 + n], run.R[f0:f0 + n]], 1)
         os.makedirs(d, exist_ok=True)
@@ -246,3 +258,67 @@ def test_tap_path_is_the_host(fake, tmp_path):
     finally:
         mh.time.sleep, mh.TAP_GRID_S = sleep, keep
         r.remote.close()
+
+
+def _tap(fake, tmp_path):
+    import move_hil as mh
+    return mh, mh.TapRig(fake.url, host_fetch(fake, str(tmp_path / "tap")), wait=2.0)
+
+
+def test_leftover_arp_struck_again(fake, tmp_path, monkeypatch):
+    """the 2026-10-28 01:42 run: the arpeggiator left on in the plugin (CC 52 1, 1/8: a saved setup) struck every
+    held note of usb-host's phrase again on its steps. usb-host now names it (STRUCK AGAIN), and turns the modes off
+    first (GLOBAL_CCS, boot_keys) so the take is the host's"""
+    mh, r = _tap(fake, tmp_path)
+    monkeypatch.setattr(mh, "TAP_GRID_S", 0.0)
+    monkeypatch.setattr(mh.time, "sleep", lambda s: None)
+    try:
+        r._send("cc", 52, 1)
+        r._send("cc", 53, 1)
+        r.rec(0.2, [])                                   # (a take that leaves the arpeggiator on, as usb-clock's)
+        with monkeypatch.context() as m:
+            m.setattr(mh, "GLOBAL_CCS", ())
+            m.setattr(r, "boot_settings", lambda: None)
+            ok, rep = mh.usb_host(r, str(tmp_path / "left"), out=lambda s: None)
+        assert not ok and rep["verdict"].startswith("STRUCK AGAIN"), rep["verdict"]
+        assert sum(1 for w in rep["rows"] if w["again_ms"]) >= 5, [w["again_ms"] for w in rep["rows"]]
+        ok, rep = mh.usb_host(r, str(tmp_path / "reset"), out=lambda s: None)
+        assert ok and not any(w["again_ms"] for w in rep["rows"]), rep["verdict"]
+        assert [m["key"] for m in fake.log if m.get("key", "").startswith("synth:s_")] == \
+            ["synth:" + k for k, _ in mh.boot_keys()]
+    finally:
+        r.remote.close()
+
+
+def test_hq_compares_hq(fake, tmp_path, monkeypatch):
+    """--hq 1: the fake plugin renders HQ (host_fetch follows p_hq), and usb-host compares with the HQ host build;
+    against Classic the same take differs"""
+    mh, r = _tap(fake, tmp_path)
+    monkeypatch.setattr(mh, "TAP_GRID_S", 0.0)
+    monkeypatch.setattr(mh.time, "sleep", lambda s: None)
+    try:
+        r.set_hq(1)
+        ok, rep = mh.usb_host(r, str(tmp_path / "hq"), out=lambda s: None)
+        assert ok and rep["hq"] == 1 and abs(rep["gain_db"]) < 0.01, rep["verdict"]
+        assert all(w["residual_db"] < -150 for w in rep["rows"] if w["judged"]), [w["residual_db"] for w in rep["rows"]]
+        r.hq = None                                      # (the reference as before: Classic)
+        ok, rep = mh.usb_host(r, str(tmp_path / "classic"), out=lambda s: None)
+        assert not ok, rep["verdict"]
+    finally:
+        r.remote.close()
+
+
+def test_boot_settings_only_what_differs():
+    """the settings Schwung reports at their boot values are not written again; one left on is"""
+    import move_hil as mh
+    st = dict(mh.boot_keys())
+    st["s_arpmode"], st["s_bpm"] = "1", "120"
+    f = FakeSchwung(settings=st)
+    try:
+        r = mh.TapRig(f.url, lambda take: None, wait=0.1)
+        assert r.boot_settings() == ["s_arpmode"]
+        assert [m for m in f.log if m.get("key", "").startswith("synth:s_")] == \
+            [{"type": "set_param", "slot": 0, "key": "synth:s_arpmode", "value": "0"}]
+        r.remote.close()
+    finally:
+        f.close()

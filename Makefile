@@ -129,6 +129,7 @@ test-move-native: move-native
 	@$(MOVE_CC) -O1 -g -std=gnu11 -Wall -Wextra -o build/move/t/test_bridge move/tests/test_bridge.c -ldl
 	build/move/t/test_bridge api $(MOVE_OUT)/dsp.so
 	build/move/t/test_bridge hq $(MOVE_OUT)/dsp.so
+	build/move/t/test_bridge boot $(MOVE_OUT)/dsp.so move/tests/boot_keys.txt
 	build/move/t/test_bridge gatep $(MOVE_OUT)/dsp.so 10000
 	@$(MOVE_CC) -O1 -std=gnu11 -Wall -Wextra -o build/move/t/test_store move/tests/test_store.c
 	@rm -rf build/move/t/store build/move/t/persist build/move/t/run.*

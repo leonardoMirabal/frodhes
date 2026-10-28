@@ -451,7 +451,7 @@ class TapRig(UsbRig):
     def __init__(self, url, fetch, ch=USB_CH, slot=0, wait=10.0, cpu=None):
         import move_ws
         self.remote, self.fetch, self.ch, self.slot, self.wait = move_ws.Remote(url), fetch, int(ch), slot, wait
-        self.cpu_fetch = cpu
+        self.cpu_fetch, self.hq = cpu, None
         self.port_name, self.audio_name, self.sr = "Schwung %s, slot %d, dev_play" % (url, slot + 1), "the plugin's tap", FS
         self.pending, self.n, self.mido = [], 0, hs._Mido
         self.stamp = time.strftime("%H%M%S")
@@ -467,7 +467,31 @@ class TapRig(UsbRig):
     def set_hq(self, on):
         """the HQ Rhodes (the bridge's p_hq): new notes play HQ (1) or Classic (0)"""
         self.remote.set_param(self.slot, "synth:p_hq", 1 if on else 0)
+        self.hq = 1 if on else 0
         self.remote.pump(0.2)
+
+    def boot_settings(self):
+        """the app's settings as the host build boots (boot_keys): a setup the Move saved cannot play along. Only the
+        keys whose value Schwung reports otherwise (or not at all) are written: a write is not always nothing (the
+        pedal's, see host_phrase), and the host build gets none. Returns the keys written"""
+        try:
+            self.remote.subscribe(self.slot)
+        except (OSError, TimeoutError):
+            pass
+        have, sent = self.remote.params.get(self.slot, {}), []
+
+        def same(a, b):
+            try:
+                return a is not None and float(a) == float(b)
+            except ValueError:
+                return a == b
+        for k, v in boot_keys():
+            if not same(have.get("synth:" + k), v):
+                self.remote.set_param(self.slot, "synth:" + k, v)
+                sent.append(k)
+                time.sleep(0.003)
+        self.remote.pump(0.2)
+        return sent
 
     def cpu_start(self):
         """the plugin logs every callback's time from now (dev_cpu_log 1); an older log is dropped first"""
@@ -599,6 +623,22 @@ def _save(d, name, take):
     w.setframerate(int(take["sr"]))
     w.writeframes(np.clip(np.round(take["x"]), -32768, 32767).astype("<i2").tobytes())
     w.close()
+
+
+GLOBAL_CCS = ((52, 0), (56, 0), (60, 0), (63, 0), (64, 0), (111, 0), (119, 0))
+# (the modes param_defaults does not reach, off as the host boots: the arpeggiator, chord mode, the sequencer's play
+# and recording, the pedal, the FX bypass, RAW)
+BOOT_KEYS = os.path.join(ROOT, "move", "tests", "boot_keys.txt")
+
+
+def boot_keys():
+    """[(key, value)]: the app's settings as a new instance has them (move/tests/boot_keys.txt)"""
+    out = []
+    for ln in open(BOOT_KEYS):
+        if ln.strip() and not ln.startswith("#"):
+            k, v = ln.split()
+            out.append((k, v))
+    return out
 
 
 ENGINE_CCS = {"rhodes": (), "vibes": ((79, 0), (47, 0)), "marimba": ((79, 127),)}   # (hil_crackle.engine_ccs: CC 79
@@ -921,16 +961,31 @@ def phrase_events(t0=0.4):
     return ev, marks, t + 1.5 + GAP_S + 0.5
 
 
-def host_phrase(ev, dur, program=0):
-    """the host build (tests/host.c) playing the events after program change program (F01 = 0): (n, 2) LSB at 44.1"""
+HQ_HOST = os.path.join(ROOT, "build", "host", "frodhes-move-hq")
+HQ_DEFS = ["-O2", "-DFR_VOICES=16u", "-DFR_HQ=1", "-DHQ_DEFAULT=1"]   # (the Move's build, every new note HQ)
+
+
+def host_binary(hq=None):
+    """the host build to compare with: the HQ Rhodes' (the Move's voices, HQ on) when hq, else the default one
+    (Classic: the Move's HQ-off notes are its integers, Gate M)"""
+    sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
+    import hostrun
+    return hostrun.build(HQ_HOST, extra=HQ_DEFS) if hq else hostrun.build()
+
+
+def host_phrase(ev, dur, program=0, hq=None, lead=()):
+    """the host build (tests/host.c) playing the events after program change program (F01 = 0): (n, 2) LSB at 44.1;
+    hq: the HQ Rhodes' build (host_binary); lead: [(cc, value)] at 1 ms, before the program change, as the take
+    has them (a pedal let up at boot is not nothing: CC 64 0 moves a later note by a few LSB)"""
     sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
     import hostrun
     pre = 500
-    lines = ["5 midi 0xC0 %d" % program]
+    lines = ["1 midi 0xB0 %d %d" % cv for cv in lead] + ["5 midi 0xC0 %d" % program]
     for t, k, a, b in ev:
         ms = pre + int(round(1000 * t))
         lines.append("%d midi 0x%02X %d %d" % (ms, {"on": 0x90, "off": 0x80, "cc": 0xB0}[k], a, b))
-    run = hostrun.run("move-same-as-host", lines, pre + int(1000 * dur) + 20)
+    run = hostrun.run("move-same-as-host" + ("-hq" if hq else ""), lines, pre + int(1000 * dur) + 20,
+                      binary=host_binary(hq) if hq else hostrun.BIN)
     i0 = int(pre * hostrun.FS / 1000)
     return np.stack([np.asarray(run.L[i0:], float), np.asarray(run.R[i0:], float)], 1)
 
@@ -942,6 +997,28 @@ def _lag(a, b, maxlag):
     lags = np.r_[np.arange(0, maxlag + 1), np.arange(-maxlag, 0)]
     vals = np.r_[c[:maxlag + 1], c[-maxlag:]]
     return int(lags[int(np.argmax(vals))])
+
+
+def _strikes(x, sr, thr=0.2, k=2.5):
+    """the times (ms from the note's start) of the strikes after the first in a held note x: a sharp step in the
+    sample-to-sample difference (2 ms peaks) over thr of the note's own attack and k times the 10 ms before it, with
+    the level rising (the next 10 ms 3 dB over the 20 ms before: a sound that stops is no strike)"""
+    x = np.asarray(x, float)
+    d = np.abs(np.diff(x))
+    hop = int(0.002 * sr)
+    e = np.array([d[i:i + hop].max() for i in range(0, len(d) - hop, hop)])
+    if len(e) < 11:
+        return []
+    p0, out, last = e[:10].max(), [], 0.0
+    for i in range(10, len(e)):
+        t = i * hop / sr
+        if e[i] > thr * p0 and e[i] > k * e[max(0, i - 5):i].max() and t - last > 0.05:
+            j, w = i * hop, int(0.01 * sr)
+            after, before = np.sqrt(np.mean(x[j:j + w] ** 2)), np.sqrt(np.mean(x[max(0, j - 2 * w):j] ** 2))
+            if after > 1.41 * before:
+                out.append(round(1000 * t))
+                last = t
+    return out
 
 
 def _decay_s(x, sr, db=20.0):
@@ -975,12 +1052,17 @@ def usb_host(r, d, program=0, out=print):
     the Move's volume"""
     ev, marks, dur = phrase_events()
     r._send("cc", 123, 0)
+    for c, v in GLOBAL_CCS:                     # (the host boots with these off; the Move keeps what was saved)
+        r._send("cc", c, v)
+    if hasattr(r, "boot_settings"):
+        r.boot_settings()
     r._send("pc", program, 0)
     time.sleep(0.5)
     tk = r.rec(dur, ev)
     _save(d, "move-phrase", tk)
     mv, sr = tk["x"], tk["sr"]
-    h = host_phrase(ev, dur, program)
+    hq = getattr(r, "hq", None)
+    h = host_phrase(ev, dur, program, hq, GLOBAL_CCS)
     _save(d, "host-phrase", {"x": h, "sr": 44100})
     rows, segs = [], []
     maxlag = int(0.08 * sr)
@@ -1026,18 +1108,24 @@ def usb_host(r, d, program=0, out=print):
         st = slice(int(0.25 * sr), int(0.75 * sr))
         fm, fh = _f0(mm[st], sr, note_hz(n)), _f0(hm[st], sr, note_hz(n))
         tail = 20 * np.log10((np.sqrt(np.mean((g * hm[-nt:]) ** 2)) + 1e-9) / 32768)
-        rows.append({"note": name, "lag_ms": round(1000 * lag / sr, 2), "tail_corr": round(corr, 4),
+        hs_ = _strikes(hm[held], sr)
+        again = [t for t in _strikes(mm[held], sr) if all(abs(t - u) > 15 for u in hs_)]
+        rows.append({"note": name, "lag_ms": round(1000 * lag / sr, 2), "tail_corr": round(corr, 4), "again_ms": again,
                      "residual_db": round(float(rd), 1), "tail_dbfs": round(float(tail), 1),
                      "judged": bool(tail >= TAIL_JUDGED_DBFS), "extra_db": round(float(ex_db), 1), "extra_hz": peaks,
                      "f0_move_c": round(1200 * np.log2(fm / note_hz(n)), 2) if fm else None,
                      "f0_host_c": round(1200 * np.log2(fh / note_hz(n)), 2) if fh else None,
                      "decay_move_s": _decay_s(mm, sr), "decay_host_s": _decay_s(hm, sr),
                      "centroid_move": round(_centroid(mm[st], sr)), "centroid_host": round(_centroid(hm[st], sr))})
-    rep = {"program": program, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
+    rep = {"program": program, "hq": hq, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
            "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max())}
     bad = [w["note"] for w in rows if w["residual_db"] > -40 and w["judged"]]
     extra = [w["note"] for w in rows if w["extra_db"] > -30]
-    rep["verdict"] = ("PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad and not extra else
+    again = ["%s +%s ms" % (w["note"], "/".join(str(t) for t in w["again_ms"])) for w in rows if w["again_ms"]]
+    rep["verdict"] = ("STRUCK AGAIN: %s (a note the host strikes once comes again while it is held: the arpeggiator, "
+                      "chord mode or the sequencer on in the plugin, or the schedule played twice)" % ", ".join(again)
+                      if again else
+                      "PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad and not extra else
                       "DIFFERS at %s (residual over -40 dB after one gain, 0.5-1.0 s into the note)" % bad if bad else
                       "FRODHES = the host (tails), but ANOTHER SOUND plays with the keys at %s (a Move instrument "
                       "on the track, or another slot): silence it and rerun" % extra)
@@ -1049,7 +1137,7 @@ def usb_host(r, d, program=0, out=print):
                 w["f0_move_c"] or 0, w["f0_host_c"] or 0, w["decay_move_s"], w["decay_host_s"],
                 w["centroid_move"], w["centroid_host"]))
     out(rep["verdict"])
-    return not bad and not extra, rep
+    return not bad and not extra and not again, rep
 
 
 def usb_host_file(d, out=print):
@@ -1068,7 +1156,7 @@ def usb_host_file(d, out=print):
             return {"x": m, "sr": sr, "xruns": []}
     global host_phrase
     keep = host_phrase
-    host_phrase = lambda ev, dur, program=0: h            # noqa: E731
+    host_phrase = lambda ev, dur, program=0, hq=None, lead=(): h   # noqa: E731
     try:
         return usb_host(Saved(), os.path.join(d, "reanalysis"), out=out)
     finally:
@@ -1199,8 +1287,9 @@ def _num(rep, test):
         if test == "usb-host":
             w = rep["rows"]
             j = [x["residual_db"] for x in w if x.get("judged", True)]
-            return "gain %.2f dB, residual max %s dB (%d of %d notes judged), extra max %.1f dB" % (
-                rep["gain_db"], "%.1f" % max(j) if j else "-", len(j), len(w), max(x["extra_db"] for x in w))
+            return "gain %.2f dB, residual max %s dB (%d of %d notes judged), extra max %.1f dB, %d struck again%s" % (
+                rep["gain_db"], "%.1f" % max(j) if j else "-", len(j), len(w), max(x["extra_db"] for x in w),
+                sum(1 for x in w if x.get("again_ms")), {None: "", 0: ", HQ off", 1: ", HQ on"}[rep.get("hq")])
         if test.startswith("usb-note"):
             return "%d v%d: %s c, RMS %s dBFS, onset %s ms, %d glitch(es)" % (
                 rep["note"], rep["vel"], rep.get("cents"), rep.get("rms_db"), rep.get("onset_ms"),
