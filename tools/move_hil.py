@@ -1105,16 +1105,17 @@ def phrase_events(t0=0.4):
     return ev, marks, t + 1.5 + GAP_S + 0.5
 
 
-HQ_HOST = os.path.join(ROOT, "build", "host", "frodhes-move-hq")
-HQ_DEFS = ["-O2", "-DFR_VOICES=16u", "-DFR_HQ=1", "-DHQ_DEFAULT=1"]   # (the Move's build, every new note HQ)
+MOVE_HOST = os.path.join(ROOT, "build", "host", "frodhes-move-hq%d")
+MOVE_HOST_DEFS = ["-O2", "-DFR_VOICES=16u", "-DFR_HQ=1"]   # (the Makefile's MOVE_DEFS: the Move's build)
 
 
 def host_binary(hq=None):
-    """the host build to compare with: the HQ Rhodes' (the Move's voices, HQ on) when hq, else the default one
-    (Classic: the Move's HQ-off notes are its integers, Gate M)"""
+    """the host build to compare with: the Move's (16 voices, FR_HQ: the bars without the FM-1's budget, d6cd6bfe),
+    new notes HQ (hq) or Classic"""
     sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
     import hostrun
-    return hostrun.build(HQ_HOST, extra=HQ_DEFS) if hq else hostrun.build()
+    h = 1 if hq else 0
+    return hostrun.build(MOVE_HOST % h, extra=MOVE_HOST_DEFS + ["-DHQ_DEFAULT=%d" % h])
 
 
 def host_phrase(ev, dur, program=0, hq=None, lead=()):
@@ -1129,7 +1130,7 @@ def host_phrase(ev, dur, program=0, hq=None, lead=()):
         ms = pre + int(round(1000 * t))
         lines.append("%d midi 0x%02X %d %d" % (ms, {"on": 0x90, "off": 0x80, "cc": 0xB0}[k], a, b))
     run = hostrun.run("move-same-as-host" + ("-hq" if hq else ""), lines, pre + int(1000 * dur) + 20,
-                      binary=host_binary(hq) if hq else hostrun.BIN)
+                      binary=host_binary(hq))
     i0 = int(pre * hostrun.FS / 1000)
     return np.stack([np.asarray(run.L[i0:], float), np.asarray(run.R[i0:], float)], 1)
 

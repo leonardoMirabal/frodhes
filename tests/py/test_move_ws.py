@@ -221,7 +221,7 @@ def host_fetch(fake, d):
         lines = ["%d midi 0x%02X %d %d" % ((1 + i // 48,) + e) for i, e in enumerate(lead)]
         lines += ["%d midi 0x%02X %d %d" % ((e[0] + pre,) + e[1:]) for e in t["ev"]]
         run = hostrun.run("tap-" + take, lines, t["dur"] + pre + 20,
-                          binary=mh.host_binary(1) if hq else hostrun.BIN)   # (p_hq: the HQ build)
+                          binary=mh.host_binary(hq))   # (the Move's host build; p_hq: HQ)
         n, f0 = t["dur"] * 441 // 10, pre * 441 // 10
         x = np.stack([run.L[f0:f0 + n], run.R[f0:f0 + n]], 1)
         os.makedirs(d, exist_ok=True)
