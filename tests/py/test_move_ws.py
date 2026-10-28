@@ -246,7 +246,7 @@ def host_fetch(fake, d):
         t = fake.takes.get(take)
         if not t or not t["go"]:
             return None
-        lead, hq = [], 0
+        lead, hq = [], 1                                 # (the plugin loads with the HQ Rhodes on)
         for kind, v in fake.hist:
             if kind == "hq":
                 hq = v
@@ -366,9 +366,12 @@ def test_hq_compares_hq(fake, tmp_path, monkeypatch):
         assert ok and rep["hq"] == 1 and abs(rep["gain_db"]) < 0.01, rep["verdict"]
         assert all(w["residual_db"] < -150 for w in rep["rows"] if w["judged"]), [w["residual_db"] for w in rep["rows"]]
         assert rep["hq_vs_classic_db"] > 20, rep["hq_vs_classic_db"]
-        r.hq = None                                      # (the reference as before: Classic)
+        r.hq = 0                                         # (the reference Classic: the HQ take differs)
         ok, rep = mh.usb_host(r, str(tmp_path / "classic"), out=lambda s: None)
         assert not ok, rep["verdict"]
+        r.hq = None                                      # (as the plugin loads: HQ, checked as HQ)
+        ok, rep = mh.usb_host(r, str(tmp_path / "load"), out=lambda s: None)
+        assert ok and rep["hq_vs_classic_db"] > 20, rep["verdict"]
         fake.hist.append(("hq", False))                  # (p_hq lost on the way: the plugin plays Classic)
         r.hq = 1
         ok, rep = mh.usb_host(r, str(tmp_path / "lost"), out=lambda s: None)
@@ -486,8 +489,8 @@ def test_stress_leaves_the_effects_on_then_d2_restores(tmp_path, monkeypatch):
         assert code == 0 and len(st) == 1 and st[0]["ok"], [(w["test"], w["verdict"]) for w in rows]
         assert {k: v for k, v in f.settings.items() if before.get(k) != v} == {}
         assert "| all | state | PASS |" in open(tmp_path / "d2" / "summary.md").read()
-        assert {"type": "set_param", "slot": 0, "key": "synth:p_hq", "value": "0"} == \
-            [m for m in f.log if m.get("key") == "synth:p_hq"][-1]               # (HQ back to its boot value)
+        assert {"type": "set_param", "slot": 0, "key": "synth:p_hq", "value": "1"} == \
+            [m for m in f.log if m.get("key") == "synth:p_hq"][-1]               # (HQ back to its load value)
         r.remote.close()
     finally:
         f.close()

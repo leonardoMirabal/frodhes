@@ -517,6 +517,12 @@ static void *mb_worker(void *arg)
 }
 static int mb_start(const char *module_dir)  /* create_instance */
 {
+#ifdef FR_HQ
+    /* the Move ships one engine: the HQ Rhodes, on at every load (the user, 2026-10-28; the FM-1 plays Classic).
+     * Not saved, not on a page: a preset or a state load leaves it on. p_hq 0 (a dev / test key only) plays Classic
+     * until the next load, for Gate M (Classic = the host renders) and d2 --hq 0 */
+    hq_mode = 1;
+#endif
     if (!mb.booted) mb_pick_dir(module_dir);
     for (uint32_t i = 0; !mb.booted && i < MB_Q; i++) atomic_store_explicit(&mb.q[i].seq, i, memory_order_relaxed);
     atomic_store(&mb.wk_stop, 0);
@@ -1104,7 +1110,8 @@ static void mb_set(const char *key, const char *val)
     }
     if (!strcmp(key, "preset")) { int p = atoi(val); if (p >= 0 && p < (int)(PR_NF + PR_NU)) (void)mb_put(MB_EV_PRESET, 0, 0, 0, 0, 0, p); return; }
 #ifdef FR_HQ
-    if (!strcmp(key, "p_hq")) { (void)mb_put(MB_EV_HQ, 0, 0, 0, 0, 0, atoi(val) != 0); return; }   /* the HQ Rhodes: 1 on, 0 Classic */
+    if (!strcmp(key, "p_hq")) { (void)mb_put(MB_EV_HQ, 0, 0, 0, 0, 0, atoi(val) != 0); return; }   /* dev / test only (no page):
+                                                          * 1 the HQ Rhodes (the load's), 0 Classic until the next load */
 #endif
     if (!strcmp(key, "dev_midi")) {                       /* "T ST D1 D2": a message due at host ms T (the harness) */
         unsigned t, st, d1, d2;

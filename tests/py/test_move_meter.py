@@ -50,7 +50,8 @@ def test_meter_reads_the_fm1_ballistics():
     assert pk in GR_DB10 and pk <= db, v[2]                 # the peak: the segment the reading reached
     fall = [gr(x) for x in v[3:63]]
     for (d0, _), (d1, _) in zip([(db, pk)] + fall, fall):
-        assert d1 <= d0 and (d0 - d1) % 5 == 0 and d0 - d1 <= 10, (d0, d1)   # 0.5 dB a tick (a read 0-2 ticks on)
+        assert d1 <= d0 and d0 - d1 <= 10, (d0, d1)     # at most 0.5 dB a tick (a read 0-2 ticks on; less when the
+        #                                                 reduction itself is falling slower, as the HQ chord's at 30 dB)
     assert fall[-1][0] < db, fall[-1]
     held = [p for (_, p), i in zip(fall, range(len(fall))) if i * tick * BLK_MS < 900]
     assert all(p == pk for p in held), held                 # the peak holds about a second

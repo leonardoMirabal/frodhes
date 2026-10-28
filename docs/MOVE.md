@@ -149,6 +149,10 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
 ## What differs from the FM-1
 
 - **16 voices** on every engine (the FM-1 plays 10).
+- **The HQ Rhodes.** The electric piano types (ST77, SUIT, FELT, DYNO) play the Move's one piano engine, HQ. It has
+  the exact hammer strike at every velocity, a cleaner top octave, and a truer re-strike of a key that still rings.
+  The FM-1 plays the Classic engine. HQ is always on, with no setting: a preset or a saved set loads with it too.
+  VIBES and MARIMBA are the FM-1's. *(not yet verified on a device)*
 - No PERFORM, ASSIGN or DISPLAY pages: the Move has its own pads, knobs and screen. The FM-1's KEY VEL, TOUCH,
   USB VOL, TRS, COLOR, BRIGHT and LEDS settings are not on the Move.
 - No sequencer, arpeggiator, chords or scales (MODE, SCALE, ROOT, TRANSPOSE): the Move has its own. Their pages
@@ -162,8 +166,6 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
 
 ## Coming
 
-- **HQ**: a higher-quality mode that uses the Move's faster processor (more detail in the engines and the effects).
-  Not in this build.
 - A screen of Frodhes's own.
 
 ## For developers
@@ -208,10 +210,13 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
   its USB-C setting play no part.
 - `d2 --path tap` also reads the plugin's callback times while `usb-stress` plays, which is the worst case. The
   plugin logs them while `dev_cpu_log` is 1, and the tool fetches `cpu-ring.log` over ssh. The `cpu` row checks
-  them against the working limit. `--hq 1` or `--hq 0` sets the HQ Rhodes on or off for the run, through the
-  plugin's `p_hq` parameter. HQ applies to new notes only: a sounding note keeps the path it started with.
-  With `--hq 1`, `usb-host` compares against the host build with HQ on. The phrase has a note that only HQ
-  changes (96 at v90). If that note plays as Classic while HQ is asked for, the test fails as CLASSIC.
+  them against the working limit. The plugin loads with the HQ Rhodes on. `--hq 0` plays Classic for the run, for
+  a test only, through the plugin's `p_hq` key (no page has it; the next load is HQ again), and `--hq 1` sets HQ.
+  HQ applies to new notes only: a sounding note keeps the path it started with. Unless `--hq 0` is given,
+  `usb-host` compares against the host build with HQ on. The phrase has a note that only HQ changes (96 at v90).
+  If that note plays as Classic while HQ is due, the test fails as CLASSIC. Gate M and the bridge's `eq` tests
+  set `p_hq` 0 first, so they compare the Classic path with the host renders; `make test-move` also compares the
+  plugin as it loads with the host build with HQ on.
 - `d2 --path tap --hq 1` also runs `usb-restrike` on the Rhodes. The pedal is down and a chord of 8 notes is
   held on keys 28 to 59. Every 30 to 50 ms, one of 8 keys from 60 to 108 is struck again while it still rings,
   at velocities 127, 64 and 30 in turn. The key goes up 20 ms before each new strike. One time in six, 3 or 4
@@ -229,7 +234,7 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
   came back at the next load: once the arpeggiator (before it was removed), once every effect with the
   feedbacks at 127 (`usb-stress`). So `d2`, every `usb-*` run and `usb-levels` first read all of the slot's params
   over Schwung's WebSocket. At the end they write back each one that differs, the preset first. This also
-  happens after a failure, ctrl-C or SIGTERM. HQ goes back to Classic, its value at boot, and the dev player and the CPU log are stopped. Then the
+  happens after a failure, ctrl-C or SIGTERM. HQ goes back on, its value at a load, and the dev player and the CPU log are stopped. Then the
   tool reads the params again: `d2`'s summary has a `state` row, which fails when any param differs from before.
 - A take plays once: the plugin refuses a `begin` with the id of the take that went last. Each `dev_play_add`
   piece carries its number (`#K`), and the plugin refuses a piece that comes out of turn. If the WebSocket
