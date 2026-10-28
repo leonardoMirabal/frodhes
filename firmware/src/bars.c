@@ -974,7 +974,7 @@ FR_RAM __attribute__((noinline)) static void bar_felt_pass(bar_voice_t *v, int32
 static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
 {
     const bar_type_t *ty = &BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u];
-    uint32_t j, m, sb, nf = FR_FAR(bar_force)(v), nf4 = (nf + 3u) & ~3u, nlive = 0, fade0 = 0;
+    uint32_t j, m, sb, nf = FR_FAR(bar_force)(v), nf4 = (nf + 3u) & ~3u, nlive = 0, fade0 = 0, stuck = 0;
 #ifdef FR_HQ
     int32_t gain = v->gain, ref, sum, la[BAR_NM + HQB_NX];
 #else
@@ -1044,7 +1044,11 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
         if (!s->live) continue;
         s->x1 = bar_sat(s->x1); s->x2 = bar_sat(s->x2);
         la[m] = bar_lamp(s);
+        ref = s->amp;                               /* (the last block's) */
         s->amp = bar_exp2(la[m]);
+        if (v->w_tgt && s->amp >= ref && s->amp < (v->kill1 << 1)) stuck |= 1u << m;   /* damped, not falling,
+                                                     * under 2 LSB out: an upper slot here is in its rounding's limit
+                                                     * cycle (below) */
 #ifdef DINGHY_HOST
         if (getenv("BAR_DBG")) fprintf(stderr, "m%u la %d amp %d x1 %d x2 %d lsin %d live %u\n", (unsigned)m, (int)la[m], (int)s->amp, (int)s->x1, (int)s->x2, (int)s->lsin, (unsigned)s->live);
 #endif
@@ -1068,6 +1072,17 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
         return;
     }
     v->lvl = sum; if (sum > v->lvl0) v->lvl0 = sum;
+#ifdef BAR_LVL_LOG
+    {   /* (tests/py/test_bar_kill.py: each live voice's level once a block) */
+        static uint32_t blk, lastv = 99u;
+        if ((uint32_t)(v - bv) <= lastv) blk++;
+        lastv = (uint32_t)(v - bv);
+        fprintf(stderr, "bl %u %u %u %u %d %d %u", (unsigned)blk, (unsigned)(v - bv), (unsigned)v->note, (unsigned)v->held,
+                (int)sum, (int)v->kill1, (unsigned)v->life);
+        for (m = 0; m < BAR_NM; m++) fprintf(stderr, " %d", v->m[m].live ? (int)v->m[m].amp : -1);
+        fprintf(stderr, "\n");
+    }
+#endif
     if (!v->ptab && !v->felt_n && sum < v->kill1) { /* under 1 LSB out: the voice ends; a stolen one dying in its
                                                      * fade still starts the note waiting for it (BUGHUNT #21) */
         v->alive = 0;
@@ -1075,7 +1090,15 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
         return;
     }
     if (!v->ptab BAR_SLEEP_ON) {                    /* upper modes: absolute and relative sleep, faded out over the
-                                                     * next sub-block (live = 2); they never wake on their own */
+                                                     * next sub-block (live = 2); they never wake on their own. And
+                                                     * the stuck ones: with no force and the damper on, a free
+                                                     * mode's level falls every block; at a few hundred LSB of x the
+                                                     * integer recursion's rounding can hold it in a limit cycle
+                                                     * instead (a V4 at ~1 LSB out for 15 s: the voice never fell
+                                                     * under kill1, kept its slot and changed the stealing). Damped,
+                                                     * under 2 LSB out and not falling: asleep. (Undamped, under the
+                                                     * pedal, a slow decay reads flat for blocks: not touched. The HQ
+                                                     * voice's upper slots are float: not theirs.) */
         ref = v->m[0].amp + (int32_t)(((int64_t)v->m[1].amp * iabs(v->wt)) >> 28);
         ref >>= ty->sleep_rel;
         if (ref < (v->kill1 >> 4)) ref = v->kill1 >> 4;
@@ -1085,7 +1108,7 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
         for (m = BAR_UP0; m < BAR_NM; m++) {
 #endif
             bar_ms_t *s = &v->m[m];
-            if (s->live == 1u && s->amp < ref) s->live = 2;
+            if (s->live == 1u && (s->amp < ref || (stuck >> m & 1u BAR_STUCK_ON(v)))) s->live = 2;
         }
     }
 }
