@@ -369,6 +369,13 @@ static int api_tests(const char *so)
     bpm_v = 97.5; render(in, 3);
     api->set_param(in, "s_tune", "-12"); render(in, 3);
     CHECK(!strcmp(get(in, "s_tune"), "-12"), "TUNE -12 (%s)", gbuf);
+    api->set_param(in, "s_fx", "1"); render(in, 3);
+    api->set_param(in, "s_fxbtn", "1"); render(in, 3);
+    CHECK(!strcmp(get(in, "s_fx"), "0"), "the Left arrow (s_fxbtn): FX on -> off (%s)", gbuf);
+    api->set_param(in, "s_fxbtn", "0"); render(in, 3);
+    CHECK(!strcmp(get(in, "s_fx"), "0"), "its release does nothing (%s)", gbuf);
+    api->set_param(in, "s_fxbtn", "1"); render(in, 3);
+    CHECK(!strcmp(get(in, "s_fx"), "1"), "a second press: FX on again (%s)", gbuf);
     CHECK(!strcmp(get(in, "dev_trim"), "5279"), "the output trim at load: +2.2 dB, Q12 5279 (%s)", gbuf);
     api->set_param(in, "dev_trim", "0");
     CHECK(!strcmp(get(in, "dev_trim"), "4096"), "dev_trim 0: unity (%s)", gbuf);

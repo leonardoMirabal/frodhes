@@ -15,7 +15,8 @@
     "requires_continuous_processing": true,
     "component_type": "sound_generator",
     "claims_ccs": [
-      52
+      63,
+      62
     ],
     "touch_observe": true,
     "canvas_script": "canvas.js"

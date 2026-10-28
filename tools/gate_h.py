@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BASE = ROOT / "tests/baselines/renders-hq.sha256"
 OUT = ROOT / "build/gate_h"
-DEFS = ["-DFR_VOICES=16u", "-DFR_HQ=1"]
+DEFS = ["-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1"]
 
 
 def build(hq, path, extra=()):

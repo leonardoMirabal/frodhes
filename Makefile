@@ -82,7 +82,7 @@ MOVE_IMG  ?= frodhes-move:bookworm
 MOVE_RUN  ?= $(if $(filter Darwin,$(shell uname -s)),docker run --rm --cpus=2 --platform linux/arm64 -v "$(CURDIR)":/src -w /src $(MOVE_IMG),)
 MOVE_CC   ?= gcc
 MOVE_VER  ?= 0.0.0-dev
-MOVE_DEFS ?= -DFR_VOICES=16u -DFR_HQ=1
+MOVE_DEFS ?= -DFR_VOICES=16u -DFR_HQ=1 -DFR_BYP_KEEP_CMP=1
 MOVE_CFLAGS := -O2 -fPIC -ffp-contract=off -std=gnu11 -Wall -Wno-unused-function -Wno-unused-variable \
   -fvisibility=hidden -ffile-prefix-map=$(CURDIR)=. -DAPP_VER='"$(MOVE_VER)"' $(MOVE_DEFS) \
   -Imove/compat -Ifirmware/src -Ifirmware/gen
