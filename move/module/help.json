@@ -201,6 +201,17 @@
             "K7 CHAN",
             "K8 CLOCK"
           ]
+        },
+        {
+          "title": "MAPPINGS",
+          "lines": [
+            "K1 AT CC",
+            "K2 AT LO",
+            "K3 AT HI",
+            "K4 PA CC",
+            "K5 PA LO",
+            "K6 PA HI"
+          ]
         }
       ]
     },

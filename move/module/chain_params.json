@@ -972,5 +972,53 @@
       "INT",
       "EXT"
     ]
+  },
+  {
+    "key": "m_at_cc",
+    "name": "AT CC",
+    "type": "int",
+    "min": 0,
+    "max": 119,
+    "default": 0
+  },
+  {
+    "key": "m_at_lo",
+    "name": "AT LO",
+    "type": "int",
+    "min": 0,
+    "max": 127,
+    "default": 0
+  },
+  {
+    "key": "m_at_hi",
+    "name": "AT HI",
+    "type": "int",
+    "min": 0,
+    "max": 127,
+    "default": 127
+  },
+  {
+    "key": "m_pa_cc",
+    "name": "PA CC",
+    "type": "int",
+    "min": 0,
+    "max": 119,
+    "default": 0
+  },
+  {
+    "key": "m_pa_lo",
+    "name": "PA LO",
+    "type": "int",
+    "min": 0,
+    "max": 127,
+    "default": 0
+  },
+  {
+    "key": "m_pa_hi",
+    "name": "PA HI",
+    "type": "int",
+    "min": 0,
+    "max": 127,
+    "default": 127
   }
 ]

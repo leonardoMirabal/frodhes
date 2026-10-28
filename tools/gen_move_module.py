@@ -99,6 +99,19 @@ EXTRA = {
     "s_squndo": {"name": "UNDO", "cc": 44, "options": ["-", "UNDO"], "kind": "MK_TRIG",
                  "help": "the last take undone"},
 }
+# the Move-only mappings (plan 05 M6-03, U9): a source the FM-1 has no use for (channel pressure, poly pressure: the
+# Move's pads) turned into one of the app's own CCs, out = LO + (HI - LO) x pressure / 127 (HI < LO inverts), sent
+# only when it changes; poly pressure follows the most pressed note. Every mapping is off (CC 0) by default, so
+# nothing changes until one is set (Gate M); which ones ship on is the user's pick (U9). The bridge keeps them in
+# its state (move_bridge.h MB_NMAP, "map" in the state JSON); the key's slot field is the mapping's index
+for _i, (_k, _src) in enumerate((("m_at", "channel pressure"), ("m_pa", "poly pressure (the most pressed note)"))):
+    EXTRA[_k + "_cc"] = {"name": _k[2:].upper() + " CC", "cc": 0, "kind": "MK_MAP", "map": 3 * _i, "min": 0,
+                         "max": 119, "default": 0, "help": _src + " to this CC (0 off)"}
+    EXTRA[_k + "_lo"] = {"name": _k[2:].upper() + " LO", "cc": 0, "kind": "MK_MAP", "map": 3 * _i + 1, "min": 0,
+                         "max": 127, "default": 0, "help": "the CC's value at no " + _src.split(" (")[0]}
+    EXTRA[_k + "_hi"] = {"name": _k[2:].upper() + " HI", "cc": 0, "kind": "MK_MAP", "map": 3 * _i + 2, "min": 0,
+                         "max": 127, "default": 127, "help": "the CC's value at full " + _src.split(" (")[0]}
+MAP_KEYS = ["m_at_cc", "m_at_lo", "m_at_hi", "m_pa_cc", "m_pa_lo", "m_pa_hi"]
 # the Move's levels: (key, title, the FM-1 pages it holds (their cards in order), extra keys after them). "VOICE"
 # stands for an engine's VOICE pages: one level per engine, VOICE 1 + 2, and VOICE 3 (VIBES' MOTOR) its own level.
 MOVE_LEVELS = [
@@ -113,6 +126,7 @@ MOVE_LEVELS = [
     ("chd_arp", "CHORD/ARP", ["CHORD", "ARPEGGIO"], []),
     ("seq", "SEQUENCER", ["SEQUENCER"], ["s_sqplay", "s_sqrec", "s_sqclear", "s_squndo"]),
     ("lfo_set", "LFO/SETUP", ["LFO", "SETUP", "MIDI"], []),
+    ("maps", "MAPPINGS", [], MAP_KEYS),
 ]
 # extra keys that are parameters with no FM-1 card (they keep their CC on the FM-1)
 MOTOR_EXTRA = ["p_mot_sync"]       # VIBES' MOTOR level: the motor's sync (CC 51, no card on the FM-1)
@@ -279,6 +293,9 @@ def key_def(m, slot, label, key=None, bip=True):
 
 def extra_def(k):
     e = EXTRA[k]
+    if e["kind"] == "MK_MAP":                  # a number, the bridge's own (the slot field: the mapping's index)
+        return ({"key": k, "name": e["name"], "type": "int", "min": e["min"], "max": e["max"], "default": e["default"]},
+                {"key": k, "slot": str(e["map"]), "cc": 0, "off": 0, "scale": 1, "kind": "MK_MAP"})
     item = {"key": k, "name": e["name"], "type": "enum", "options": e["options"]}
     if e["kind"] == "MK_TRIG":
         item["access"] = "write"
@@ -436,8 +453,9 @@ def c_header(hier, chain, crow):
              " * the plugin after frodhes.c (P_* / S_* in scope). */",
              "#ifndef MOVE_UI_H", "#define MOVE_UI_H",
              "#define MOVE_GATE_KEY \"ui_engine\"   /* get_param: TYPE_UI[PV(P_TYPE)] (eng_pages.h), the VOICE levels' gate */",
-             "enum { MK_PARAM, MK_SLOT, MK_LATCH, MK_TRIG, MK_BTN };   /* PV(id) / ui.c slot_val / a CC 0 or 127 / a CC 127 /",
-             "                                                   * the sustain control (the FM-1's REC button) */",
+             "enum { MK_PARAM, MK_SLOT, MK_LATCH, MK_TRIG, MK_BTN, MK_MAP };   /* PV(id) / ui.c slot_val / a CC 0 or 127 /",
+             "                                                   * a CC 127 / the sustain control (the FM-1's REC button) /",
+             "                                                   * a Move-only mapping's setting (slot: its index) */",
              "typedef struct { const char *key; uint8_t slot, cc, kind, scale; int16_t off; } move_key_t;",
              "static const move_key_t MOVE_KEYS[] = {"]
     for r in crow:

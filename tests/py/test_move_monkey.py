@@ -100,8 +100,8 @@ def runner():
     """the command prefix for a shell line: natively on Linux arm64, else in the Move image; None if neither"""
     if platform.system() == "Linux" and platform.machine() in ("aarch64", "arm64"):
         return ["sh", "-c"]
-    if shutil.which("docker") and subprocess.run(["docker", "image", "inspect", "frodhes-move:bookworm"],
-                                                 capture_output=True).returncode == 0:
+    if shutil.which("docker") and subprocess.run(["docker", "image", "ls", "-q", "frodhes-move:bookworm"],
+                                                 capture_output=True, text=True).stdout.strip():
         return ["docker", "run", "--rm", "--cpus=2", "--platform", "linux/arm64", "-v", ROOT + ":/src", "-w", "/src",
                 "frodhes-move:bookworm", "sh", "-c"]
     return None

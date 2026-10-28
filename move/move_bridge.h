@@ -50,6 +50,8 @@ typedef struct {
     uint16_t key;
 } mb_ev_t;
 
+#define MB_NMAP 6                        /* the mappings' settings: 2 sources x (CC, LO, HI) */
+#define MB_MAP_DEFAULT {0, 0, 127, 0, 0, 127}   /* every mapping off (CC 0), LO 0, HI 127 */
 static struct {
     coro_t co;
     void *stack;
@@ -94,7 +96,14 @@ static struct {
     /* the sustain control (M1-13b): presses / releases seen; the touch note that is the control (-1: none) */
     uint32_t sus_down, sus_up;
     _Atomic int sus_touch;
-} mb = { .first_now = 1, .clock_mode = MB_CLOCK_AUTO, .sus_touch = -1 };
+    /* the Move-only mappings (M6-03, U9; tools/gen_move_module.py MAP_KEYS): per source (0 channel pressure, 1 poly
+     * pressure) its CC (0: off), LO, HI; the state's copy; poly pressure per note; the last value sent per source */
+    uint8_t map[MB_NMAP], st_map[MB_NMAP];
+    int st_map_have;
+    uint8_t pa[128];
+    int16_t map_last[MB_NMAP / 3];
+    uint32_t map_out, map_drop;
+} mb = { .first_now = 1, .clock_mode = MB_CLOCK_AUTO, .sus_touch = -1, .map = MB_MAP_DEFAULT, .map_last = {-1, -1} };
 static int mb_sus_key = -1;              /* MOVE_KEYS' s_susbtn row (looked up at the first touch) */
 
 /* ---- the coroutine (M1-02) */
@@ -569,6 +578,7 @@ static int mb_wire_text(const move_key_t *k, char *buf, int n)
         v = k->cc == 64u ? (sus_latched || sus_held) : k->cc == 60u ? seq_play != 0 : k->cc == 63u ? seq_rec != 0 : 0;
         break;
     case MK_BTN: v = sus_held; break;        /* the sustain control is down */
+    case MK_MAP: v = k->slot < MB_NMAP ? mb.map[k->slot] : 0; break;
     default: v = 0; break;
     }
     if (k->scale > 1u) {
@@ -592,6 +602,11 @@ static void mb_key_apply(uint32_t i, int32_t x)
         web_btn(BTN_SUSTAIN, x != 0);
     } else if (k->kind == MK_LATCH) midi_cc(k->cc, x ? 127u : 0u);
     else if (k->kind == MK_TRIG) { if (x) midi_cc(k->cc, 127u); }
+    else if (k->kind == MK_MAP && k->slot < MB_NMAP) {   /* a mapping's setting: the CC 0..119, LO / HI 0..127 */
+        int32_t hi = k->slot % 3u ? 127 : 119;
+        mb.map[k->slot] = (uint8_t)(x < 0 ? 0 : x > hi ? hi : x);
+        mb.map_last[k->slot / 3u] = -1;           /* (the next pressure is sent whatever it is) */
+    }
     mb.keys_set++; mb.rev++;
 }
 
@@ -615,7 +630,7 @@ static int mb_hex_get(const char *s, void *p, uint32_t n)
     }
     return 0;
 }
-#define MB_STATE_N (40 + 2 * 256 + 12 + 2 * P_SLOTS + 24 + 24)
+#define MB_STATE_N (40 + 2 * 256 + 12 + 2 * P_SLOTS + 24 + 24 + 10 + 2 * MB_NMAP)
 static int mb_state_get(char *buf, int n)
 {
     char *o = buf;
@@ -624,6 +639,8 @@ static int mb_state_get(char *buf, int n)
     o += mb_hex_put(o, &set, sizeof set);
     o += sprintf(o, "\",\"base\":\"");
     o += mb_hex_put(o, snd_base, P_SLOTS);
+    o += sprintf(o, "\",\"map\":\"");
+    o += mb_hex_put(o, mb.map, MB_NMAP);
     o += sprintf(o, "\",\"hand\":\"%u\",\"rev\":\"%u\"}", (unsigned)bpm_hand, (unsigned)mb.rev);
     return (int)(o - buf);
 }
@@ -655,6 +672,11 @@ static int mb_state_set(const char *j)   /* parse into the mailbox; step() appli
     if (!b || lb != 2u * P_SLOTS || mb_hex_get(b, mb.st_base, P_SLOTS))
         for (uint32_t i = 0; i < P_SLOTS; i++) mb.st_base[i] = i < 32u ? mb.st_set.panel[i] : i < 48u ? mb.st_set.panel2[i - 32u] : mb.st_set.panel3[i - 48u];
     mb.st_hand = mb.st_set.bpm10;
+    {   /* the mappings (M6-03): a state without them (before M6-03) loads them off */
+        uint32_t lm = 0;
+        const char *mp = mb_json_str(j, "map", &lm);
+        mb.st_map_have = mp && lm == 2u * MB_NMAP && !mb_hex_get(mp, mb.st_map, MB_NMAP);
+    }
     if (h && lh > 0 && lh < 6) { uint32_t x = 0; for (uint32_t i = 0; i < lh; i++) x = x * 10u + (uint32_t)(h[i] - '0'); mb.st_hand = (uint16_t)x; }
     atomic_store(&mb.st_flag, 2);
     return 0;
@@ -681,6 +703,12 @@ static void mb_state_apply(void)         /* the boot's sanitize and apply steps 
     tempo_set10(set.bpm10);
     bpm_hand = mb.st_hand >= 400u && mb.st_hand <= 2400u ? mb.st_hand : set.bpm10;
     for (uint32_t i = 0; i < P_SLOTS; i++) snd_base[i] = i < P_COUNT && mb.st_base[i] <= PARAMS[i].hi ? mb.st_base[i] : PV(i);
+    {
+        static const uint8_t def[MB_NMAP] = MB_MAP_DEFAULT;
+        memcpy(mb.map, mb.st_map_have ? mb.st_map : def, MB_NMAP);
+        for (uint32_t i = 0; i < MB_NMAP; i += 3u) if (mb.map[i] > 119u) mb.map[i] = 0;
+        mb.map_last[0] = mb.map_last[1] = -1;
+    }
     rev_relatch();
     tempo_sync_publish();
     set_dirty = 1;
@@ -729,6 +757,34 @@ static void mb_clock_block(int frames)
     }
 }
 
+/* ---- the Move-only mappings (M6-03, U9): channel pressure (source 0) or the most pressed note's poly pressure
+ * (source 1) -> its CC on the message's channel, LO + (HI - LO) x pressure / 127, sent only when it changes, after
+ * the pressure itself (which the app passes over). A CC is a CC: the app takes it as from a controller (its CHANNEL
+ * filter, the settings saved when silent). Off (CC 0) by default: nothing is sent (Gate M) */
+static void mb_map_out(uint32_t src, uint8_t ch, int32_t p)
+{
+    uint8_t cc = mb.map[3u * src];
+    int32_t lo = mb.map[3u * src + 1u], hi = mb.map[3u * src + 2u], v;
+    if (!cc) return;
+    v = lo + (hi - lo) * p / 127;
+    if (v == mb.map_last[src]) return;
+    if (mq_w - mq_r >= MB_HOST_RING) { mb.map_drop++; return; }   /* (the app's ring is full: the next one) */
+    mb.map_last[src] = (int16_t)v;
+    web_midi((uint8_t)(0xB0u | ch), cc, (uint8_t)v);
+    mb.map_out++;
+}
+static void mb_map(uint8_t st, uint8_t d1, uint8_t d2)
+{
+    uint8_t t = st & 0xF0u, ch = st & 15u, m = 0;
+    if (t == 0xD0u) { mb_map_out(0, ch, d1); return; }
+    if (t == 0x90u && d2) return;                    /* (a note-on: its pressure comes later) */
+    if (t == 0xA0u) mb.pa[d1] = d2;
+    else if (mb.pa[d1]) mb.pa[d1] = 0;                /* the note let go: its pressure ends */
+    else return;
+    for (uint32_t i = 0; i < 128u; i++) if (mb.pa[i] > m) m = mb.pa[i];
+    mb_map_out(1, ch, m);
+}
+
 /* ---- one host millisecond (see the top) */
 static void mb_step(void)
 {
@@ -742,6 +798,7 @@ static void mb_step(void)
             if (mq_w - mq_r >= MB_HOST_RING) break;          /* the app's ring is full: the rest wait a millisecond */
             web_midi(e->st, e->d1, e->d2);
             mb.midi_out++;
+            if ((e->st & 0xF0u) == 0xD0u || (e->st & 0xF0u) == 0xA0u || (e->st & 0xE0u) == 0x80u) mb_map(e->st, e->d1, e->d2);
         } else if (e->kind == MB_EV_KEY && e->key < MOVE_NKEYS) mb_key_apply(e->key, e->v);
         else if (e->kind == MB_EV_PRESET) { uint8_t p[P_COUNT]; if (preset_values((uint32_t)e->v, p) == 0) { preset_load((uint32_t)e->v); mb.rev++; } }
         mb_pop(e);
@@ -881,6 +938,8 @@ static int mb_get(const char *key, char *buf, int n)
                                                  (unsigned)sus_held, (unsigned)sus_latched, (unsigned)sus_midi,
                                                  mb.sus_down, mb.sus_up, atomic_load(&mb.sus_touch));
     if (!strcmp(key, "dev_play")) return mp_get(buf, n);
+    if (!strcmp(key, "dev_map")) return snprintf(buf, (size_t)n, "out=%u drop=%u last=%d,%d", mb.map_out, mb.map_drop,
+                                                 mb.map_last[0], mb.map_last[1]);
     if (!strcmp(key, "dev_cpu")) return snprintf(buf, (size_t)n, "callbacks=%u max_us=%u", atomic_load(&mb.cpu_n), mb.cpu_max);
     /* development reads (tests, the device session) */
     if (!strcmp(key, "dev_stats"))

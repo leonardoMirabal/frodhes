@@ -47,6 +47,7 @@ controls. The VOICE pages follow the engine of the TYPE: only the pages of the e
 | **CHORD/ARP** | CHORD · INV · VOICE · STRUM · MODE · RATE · OCT · GATE |
 | **SEQUENCER** | BARS · QUANT · SWING · EDIT · PLAY · REC · CLEAR · UNDO |
 | **LFO/SETUP** | SHAPE · RATE · SYNC · TRIG · DLTON · LEVEL · CHAN · CLOCK |
+| **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI |
 
 The controls are the FM-1's, with the same ranges, under shorter names (the Move's screen fits about five
 characters). An option name longer than five letters is shortened the same way everywhere, to four letters: the
@@ -54,6 +55,19 @@ word's first syllable and the consonant after it (DORIAN shows as DORN, DEGREE a
 HARM, MELODIC as MELO, MPENTA as MPNT, DIATONIC as DIAT, DIA 7TH as DIA7, RANDOM as RAND). The manual (`docs/MANUAL.md`) describes what each one does. Each page has a help text in `help.json`.
 The pages are generated from the FM-1's own parameter tables (`tools/gen_move_module.py`), so the two stay alike.
 How the pages look and respond on the Move's screen and knobs is *(not yet verified on a device)*.
+
+## Mappings
+
+The FM-1 has no pressure. On the Move, **MAPPINGS** turns the pads' pressure into one of the FM-1's controls:
+
+- **AT CC / AT LO / AT HI**: channel pressure (aftertouch) drives the control on that MIDI CC number, from LO (no
+  pressure) to HI (full pressure).
+- **PA CC / PA LO / PA HI**: the same for poly pressure, from the most pressed held pad. Letting a pad go ends its
+  pressure.
+
+An HI under LO turns the direction round. A CC of 0 is off, and both are off by default: then pressure changes
+nothing. The control moves as if a controller sent that CC (the CC numbers are the FM-1's, in `docs/MANUAL.md`). The
+settings are kept with the track's state. *(not yet verified on a device)*
 
 ## Sustain
 

@@ -172,8 +172,8 @@ def _bridge(*args, stdin=None):
     inner = "make -s move-tools-native >/dev/null 2>&1 && build/move/t/test_bridge " + " ".join(args)
     if platform.system() == "Linux" and platform.machine() in ("aarch64", "arm64"):
         cmd = ["sh", "-c", inner]
-    elif shutil.which("docker") and subprocess.run(["docker", "image", "inspect", "frodhes-move:bookworm"],
-                                                    capture_output=True).returncode == 0:
+    elif shutil.which("docker") and subprocess.run(["docker", "image", "ls", "-q", "frodhes-move:bookworm"],
+                                                    capture_output=True, text=True).stdout.strip():
         cmd = ["docker", "run", "--rm", "-i", "--cpus=2", "--platform", "linux/arm64", "-v", ROOT + ":/src", "-w", "/src",
                "frodhes-move:bookworm", "sh", "-c", inner]
     else:

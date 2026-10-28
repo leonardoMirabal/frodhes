@@ -495,6 +495,7 @@ static int keys(const char *so)
 }
 static int script(const char *so)
 {
+    static char st[8192];                        /* state_save / state_load */
     char line[256], k[64], v[64];
     unsigned a, b, c, d;
     int n;
@@ -509,6 +510,11 @@ static int script(const char *so)
         else if (sscanf(line, "midi %u %i %i %i", &a, &b, &c, &d) == 4) {
             uint8_t m[3] = { (uint8_t)b, (uint8_t)c, (uint8_t)d };
             api->on_midi(in, m, 3, (int)a);
+        } else if (!strncmp(line, "state_save", 10)) api->get_param(in, "state", st, sizeof st);
+        else if (!strncmp(line, "state_load", 10)) {        /* "state_load nomap": the state without its "map" */
+            char *m = strstr(st, ",\"map\":\"");
+            if (strstr(line, "nomap") && m) { char *e = strchr(m + 8, '"'); if (e) memmove(m, e + 1, strlen(e + 1) + 1); }
+            api->set_param(in, "state", st);
         } else if (sscanf(line, "get %63s", k) == 1) printf("%s\t%s\n", k, get(in, k));
         else if (sscanf(line, "rms %d", &n) == 1) {
             double e = 0.0; long cnt = 0;
