@@ -32,16 +32,18 @@ def build(hq, path, extra=()):
     return path
 
 
-def render(binary, script, tag):
-    out = OUT / tag
+def render(binary, script, tag, d=OUT):
+    """one render into d (created: a clean tree has no build/gate_h)"""
+    d.mkdir(parents=True, exist_ok=True)
+    out = d / tag
     p = subprocess.run([str(binary), str(out), str(script)], cwd=ROOT, capture_output=True, text=True)
     if p.returncode:
         raise SystemExit(f"Gate H: {script.name} failed ({p.returncode}): {p.stderr[-800:]}")
     return Path(str(out) + ".wav")
 
 
-def sums(binary):
-    return {s.stem: hashlib.sha256(render(binary, s, "hq-" + s.stem).read_bytes()).hexdigest()
+def sums(binary, d=OUT):
+    return {s.stem: hashlib.sha256(render(binary, s, "hq-" + s.stem, d).read_bytes()).hexdigest()
             for s in sorted((ROOT / "tests/hq").glob("*.txt"))}
 
 

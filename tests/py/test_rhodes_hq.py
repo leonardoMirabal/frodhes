@@ -42,7 +42,7 @@ def test_parity_below_the_2x_keys_at_the_layers():
 
 
 def test_gate_h():
-    got = gate_h.sums(binary(True))
+    got = gate_h.sums(binary(True), pathlib.Path(D))   # (the test's own folder, not build/gate_h)
     want = {ln.split()[1]: ln.split()[0] for ln in gate_h.BASE.read_text().splitlines()
             if ln and not ln.startswith("#")}
     assert got == want, "Gate H differs: a change to the HQ sound needs tools/gate_h.py --save (and its reasons)"
