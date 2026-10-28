@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 
 import numpy as np
 
@@ -26,9 +27,10 @@ NAMES = ["F%02d" % (i + 1) for i in range(19)] + ["U%02d" % (i + 1) for i in ran
 class FakeSchwung:
     """slot 0 holds `module` at preset 0; every message received is logged; mute: answer nothing"""
 
-    def __init__(self, module="frodhes", mute=False, refuse=False):
-        self.module, self.mute, self.refuse = module, mute, refuse
+    def __init__(self, module="frodhes", mute=False, refuse=False, noname=False):
+        self.module, self.mute, self.refuse, self.noname = module, mute, refuse, noname
         self.preset, self.log, self.takes, self.cur = 0, [], {}, None
+        self.hist = []                                   # (the order of preset switches and takes: host_fetch's state)
         self.server = serve(self.handle, "127.0.0.1", 0)
         self.url = "ws://127.0.0.1:%d/ws/remote-ui" % self.server.socket.getsockname()[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -63,6 +65,7 @@ class FakeSchwung:
                         self.takes[self.cur] = {"dur": int(v[2]), "ev": [], "go": False, "max_piece": 0}
                     elif v[0] == "go":
                         self.takes[self.cur]["go"] = True
+                        self.hist.append(("take", self.cur))
                 elif m["key"] == "synth:dev_play_add":
                     t = self.takes[self.cur]
                     t["max_piece"] = max(t["max_piece"], len(m["value"]))
@@ -71,8 +74,14 @@ class FakeSchwung:
                             t["ev"].append(tuple(int(x, 0) for x in e.split()))
                 if m["key"] == "synth:preset":
                     self.preset = int(m["value"])
-                    ws.send(json.dumps({"type": "param_update", "slot": s, "params": {"synth:tone": "64"}}))
-                    ws.send(json.dumps({"type": "param_update", "slot": s, "params": self.params()}))
+                    self.hist.append(("pc", self.preset))
+                    # (as the Move: the notify ring's index first, the manager's full re-read 50 ms later;
+                    # noname: the re-read never comes)
+                    ws.send(json.dumps({"type": "param_update", "slot": s, "params": {"synth:preset": str(self.preset)}}))
+                    if not self.noname:
+                        time.sleep(0.05)
+                        ws.send(json.dumps({"type": "param_update", "slot": s, "params": {"synth:tone": "64"}}))
+                        ws.send(json.dumps({"type": "param_update", "slot": s, "params": self.params()}))
 
     def close(self):
         self.server.shutdown()
@@ -95,6 +104,19 @@ def test_subscribe_and_preset(fake):
         assert r.params[0]["synth:tone"] == "64"
     assert fake.log[0] == {"type": "subscribe", "slot": 0}
     assert fake.log[1] == {"type": "set_param", "slot": 0, "key": "synth:preset", "value": "12"}
+
+
+def test_preset_name_comes_late():
+    """the index alone, no re-read with the name: the name is not the old preset's; a second subscribe brings it"""
+    f = FakeSchwung(noname=True)
+    try:
+        with move_ws.Remote(f.url, timeout=3) as r:
+            assert r.subscribe(0)["preset_name"] == "F01"
+            st = r.set_preset(0, 14)
+            assert st["preset"] == 14 and st["preset_name"] == "F15", st
+            assert [m["type"] for m in f.log] == ["subscribe", "set_param", "subscribe"], f.log
+    finally:
+        f.close()
 
 
 def test_empty_slot_and_errors():
@@ -149,7 +171,10 @@ def test_d2_sets_the_presets(fake, tmp_path):
 
 def host_fetch(fake, d):
     """the tap a plugin would write, from the host build: the schedule the fake server received, rendered from boot
-    (the plugin's take starts on its grid with the same block phase, so the host's ms 0 is the take's start)"""
+    (the plugin's take starts on its grid with the same block phase, so the host's ms 0 is the take's start). The
+    plugin keeps its state between takes: the preset switches and the CCs and program changes of the earlier takes
+    play first, in their order and 48 a ms as the plugin's queue takes them, one grid (2560 ms: the same block
+    phase) before the take, which is cut from there"""
     sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
     import hostrun
     import wave
@@ -158,10 +183,20 @@ def host_fetch(fake, d):
         t = fake.takes.get(take)
         if not t or not t["go"]:
             return None
-        lines = ["%d midi 0x%02X %d %d" % e for e in t["ev"]]
-        run = hostrun.run("tap-" + take, lines, t["dur"] + 20)
-        n = t["dur"] * 441 // 10
-        x = np.stack([run.L[:n], run.R[:n]], 1)
+        lead = []
+        for kind, v in fake.hist:
+            if kind == "pc":
+                lead.append((0xC0, v, 0))
+            elif v == take:
+                break
+            else:
+                lead += [e[1:] for e in sorted(fake.takes[v]["ev"]) if e[1] & 0xF0 in (0xB0, 0xC0)]
+        pre = 2560 if lead else 0
+        lines = ["%d midi 0x%02X %d %d" % ((1 + i // 48,) + e) for i, e in enumerate(lead)]
+        lines += ["%d midi 0x%02X %d %d" % ((e[0] + pre,) + e[1:]) for e in t["ev"]]
+        run = hostrun.run("tap-" + take, lines, t["dur"] + pre + 20)
+        n, f0 = t["dur"] * 441 // 10, pre * 441 // 10
+        x = np.stack([run.L[f0:f0 + n], run.R[f0:f0 + n]], 1)
         os.makedirs(d, exist_ok=True)
         path = os.path.join(d, take + ".wav")
         w = wave.open(path, "wb")

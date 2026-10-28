@@ -170,6 +170,13 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
   to `module_data/frodhes/tap/<take>.wav`, and the tool fetches the file over ssh. The take starts on the host
   build's block grid (every 2560 ms), so `usb-host` compares it sample for sample. The Move's mix, its volumes and
   its USB-C setting play no part.
+- The criteria follow each engine's manual behaviour. VIBES plays with its motor off (CC 47 0), because the
+  motor's pulse moves every level the tests read. Its velocity is checked as the FM-1 scan checks it: no drop from
+  v24 on, and at least +10 dB from v40 to v117. MARIMBA's velocity must rise 26 to 32 dB from v8 to v127. A
+  MARIMBA bar rings for less than a second, so `usb-sus` reads it within 0.2 s of key-up, with MUTE on (CC 103
+  127). The pedal holds the bar, and letting the pedal up mutes it as fast as a key-up does. In `usb-clock`, an
+  attack that the detector finds 5 ms or more late is counted, not taken as timing: a bar's ring can hide the
+  next step's attack. A few such attacks are allowed; the jitter of the other attacks must stay under 4 ms.
 - MIDI into the Standalone port also plays the Move's own instrument on the track. Schwung passes the notes to
   the Move's firmware and to the slot alike. For a clean comparison, give that Move track a silent instrument.
   Muting the track or turning it down also silences the slot, because the slot follows the track's mute and

@@ -360,14 +360,15 @@ class FakeRig(UsbRig):
             if i0 >= n:
                 continue
             amp = 300 + 9000 * (v / 127) ** 2
-            # the envelope piecewise: tau 2 s while the key or the pedal holds it, 0.05 s when damped
+            # the envelope piecewise: tau 2 s while the key or the pedal holds it, 0.05 s when damped (MARIMBA, CC 79
+            # over 63: 0.01 s, the hand's mute)
             cuts = sorted({t2} | {s for s, _ in ped if s > t2})
             env = np.ones(n - i0)
             ts = tt[i0:] - FAKE_LAT
             lvl, last = 1.0, t1
             seg_ts = [t1] + [c for c in cuts if c < dur] + [dur + 1]
             for s0, s1 in zip(seg_ts, seg_ts[1:]):
-                tau = 2.0 if (s0 < t2 or pedal_at(s0)) else 0.05
+                tau = 2.0 if (s0 < t2 or pedal_at(s0)) else (0.01 if self.state.get(79, 0) >= 64 else 0.05)
                 m = (ts >= s0) & (ts < s1)
                 env[m] = lvl * np.exp(-(ts[m] - s0) / tau)
                 lvl = lvl * np.exp(-(s1 - s0) / tau)
@@ -568,7 +569,9 @@ def _save(d, name, take):
     w.close()
 
 
-ENGINE_CCS = {"rhodes": (), "vibes": ((79, 0),), "marimba": ((79, 127),)}   # (hil_crackle.engine_ccs: CC 79 bar TYPE)
+ENGINE_CCS = {"rhodes": (), "vibes": ((79, 0), (47, 0)), "marimba": ((79, 127),)}   # (hil_crackle.engine_ccs: CC 79
+# the bar TYPE; VIBES with its motor off, CC 47: the TYPE's turn switches it on, and its pulse would move every level
+# the tests read; usb-host plays the presets, F13 with its motor)
 
 
 def _prep(r, engine=None, **cc):
@@ -623,7 +626,17 @@ def usb_note(r, d, note=60, vel=100, engine=None, name="note", out=print):
 VELS = (1, 8, 16, 24, 32, 48, 64, 80, 96, 112, 127)
 
 
-def usb_vel(r, d, note=60, vels=VELS, engine=None, out=print):
+# usb-vel per engine, as the FM-1's scans judge it (tools/hil_scan.py vibes_vel / marimba_vel): the velocities, the
+# first one from which no step may fall more than 0.5 dB, and the rise (dB) from lo to hi. VIBES with the motor off
+# (its pulse moves a 100 ms level by a few dB, by where the strike falls on it)
+VEL = {"rhodes": dict(vels=VELS, mono_from=1, rise=(1, 127, 20.0, None)),
+       "vibes": dict(vels=(1, 8, 24, 40, 64, 80, 96, 117, 127), mono_from=24, rise=(40, 117, 10.0, None)),
+       "marimba": dict(vels=VELS, mono_from=8, rise=(8, 127, 26.0, 32.0))}
+
+
+def usb_vel(r, d, note=60, vels=None, engine=None, out=print):
+    c = VEL[engine or "rhodes"]
+    vels = vels or c["vels"]
     _prep(r, engine)
     step, ev = 1.2, []
     for i, v in enumerate(vels):
@@ -646,11 +659,16 @@ def usb_vel(r, d, note=60, vels=VELS, engine=None, out=print):
     if any(v is None for v in lv):
         bad.append("silent at v%s" % [w["vel"] for w in rows if w["db"] is None])
     else:
-        drops = [(rows[i]["vel"], rows[i + 1]["vel"]) for i in range(len(lv) - 1) if lv[i + 1] < lv[i] - 0.5]
+        drops = [(rows[i]["vel"], rows[i + 1]["vel"]) for i in range(len(lv) - 1)
+                 if rows[i]["vel"] >= c["mono_from"] and lv[i + 1] < lv[i] - 0.5]
         if drops:
             bad.append("level falls between %s" % drops)
-        if lv[-1] - lv[0] < 20:
-            bad.append("range %.1f dB (< 20)" % (lv[-1] - lv[0]))
+        lo, hi, need, most = c["rise"]
+        if lo in vels and hi in vels:
+            rise = lv[vels.index(hi)] - lv[vels.index(lo)]
+            if rise < need or (most is not None and rise > most):
+                bad.append("v%d -> v%d: %.1f dB (want %s)" % (lo, hi, rise, ">= %g" % need if most is None else
+                                                             "%g..%g" % (need, most)))
     g = glitches(x, sr, ev)
     if g:
         bad.append("%d glitch(es)" % len(g))
@@ -670,48 +688,67 @@ def _after_keyup(x, sr, t_off, span, win=0.05):
     return max(w) - ref if w else -240.0
 
 
+# usb-sus per engine (times in s from the take's start): the key-up, the windows the levels are read in, the pedal's
+# let-up and the catch's press. A Rhodes note and a vibraphone bar ring for seconds: the FM-1's sustain preflight
+# (1 s after key-up). A marimba bar's own ring is short (C4 is ~35 dB down 0.4 s in, MANUAL section 5: "MUTE 0 rings
+# out"), so the pedal is judged while the bar still rings: MUTE at 10.0 (CC 103 127: the hand stops it 60 dB down
+# within 0.1 s), the key let go at 0.35 s, the levels 0.1-0.2 s after; held, the hand never lands (MANUAL: "the
+# pedal keeps its meaning")
+SUS = {"rhodes": dict(off=0.8, win=(0.9, 1.15), up=2.0, gone=(0.9, 1.3), dur=(2.2, 3.4), catch=0.5, hold_db=15.0,
+                      cc=()),
+       "marimba": dict(off=0.35, win=(0.1, 0.2), up=0.55, gone=(0.1, 0.2), dur=(1.2, 1.4), catch=0.25, hold_db=None,
+                       cc=((103, 127),))}
+SUS["vibes"] = SUS["rhodes"]
+
+
 def usb_sus(r, d, note=60, vel=100, engine=None, out=print):
     """three takes: (a) no pedal: the note dies after key-up; (b) the pedal down before the note, key-up: it rings,
-    then the pedal up damps it; (c) the pedal pressed after the note (it catches the held note)"""
-    rep, bad = {}, []
-    _prep(r, engine)
-    ev = [(0.2, "on", note, vel), (0.8, "off", note, 0)]
-    a = r.rec(2.2, ev)
+    then the pedal up damps it; (c) the pedal pressed after the note (it catches the held note). The pedal holds when
+    (b) at the window after key-up is >= 20 dB over (a) there (and, where notes ring for seconds, within hold_db of
+    its level before key-up); SUS[engine] gives the times"""
+    c = SUS[engine or "rhodes"]
+    off, (w0, w1), up, (g0, g1) = c["off"], c["win"], c["up"], c["gone"]
+    rep, bad = {"engine": engine or "rhodes"}, []
+    _prep(r, engine, **{"c%d" % k: v for k, v in c["cc"]})
+    ev = [(0.2, "on", note, vel), (off, "off", note, 0)]
+    a = r.rec(c["dur"][0], ev)
     _save(d, "sus-a-damped", a)
     lat = (_onset(a["x"], a["sr"], 0.2) or 0.2) - 0.2
     x, sr = a["x"], a["sr"]
-    ref = hs.db(_seg(x, sr, 0.7 + lat, 0.8 + lat))
-    dead = hs.db(_seg(x, sr, 1.7 + lat, 2.0 + lat))
+    ref = hs.db(_seg(x, sr, off - 0.1 + lat, off + lat))
+    dead = hs.db(_seg(x, sr, off + w0 + lat, off + w1 + lat))
     rep["damped"] = {"before_off_db": round(ref, 1), "after_1s_db": round(dead, 1),
-                     "louder_after_keyup_db": round(_after_keyup(x, sr, 0.8 + lat, 1.0), 2)}
+                     "louder_after_keyup_db": round(_after_keyup(x, sr, off + lat, 1.0), 2)}
     if dead > ref - 40:
-        bad.append("(a) a damped note does not die: %.1f dB down 1 s after key-up" % (ref - dead))
-    ev = [(0.1, "cc", 64, 127), (0.2, "on", note, vel), (0.8, "off", note, 0), (2.0, "cc", 64, 0)]
-    b = r.rec(3.4, ev)
+        bad.append("(a) a damped note does not die: %.1f dB down %.2f s after key-up" % (ref - dead, w0))
+    ev = [(0.1, "cc", 64, 127), (0.2, "on", note, vel), (off, "off", note, 0), (up, "cc", 64, 0)]
+    b = r.rec(c["dur"][1], ev)
     _save(d, "sus-b-pedal", b)
     x, sr = b["x"], b["sr"]
-    ref = hs.db(_seg(x, sr, 0.7 + lat, 0.8 + lat))
-    ring = hs.db(_seg(x, sr, 1.7 + lat, 1.95 + lat))
-    gone = hs.db(_seg(x, sr, 2.9 + lat, 3.3 + lat))
+    ref = hs.db(_seg(x, sr, off - 0.1 + lat, off + lat))
+    ring = hs.db(_seg(x, sr, off + w0 + lat, off + w1 + lat))
+    gone = hs.db(_seg(x, sr, up + g0 + lat, up + g1 + lat))
     rep["pedal"] = {"before_off_db": round(ref, 1), "held_1s_db": round(ring, 1), "after_up_db": round(gone, 1),
-                    "louder_after_keyup_db": round(_after_keyup(x, sr, 0.8 + lat, 1.1), 2)}
-    if ring < ref - 15:
-        bad.append("(b) the pedal does not hold: %.1f dB down 1 s after key-up (CC 64 reached the slot?)" % (ref - ring))
+                    "over_damped_db": round(ring - dead, 1),
+                    "louder_after_keyup_db": round(_after_keyup(x, sr, off + lat, 1.1), 2)}
+    if ring < dead + 20 or (c["hold_db"] is not None and ring < ref - c["hold_db"]):
+        bad.append("(b) the pedal does not hold: %.1f dB down %.2f s after key-up, %.1f dB over the damped note (CC 64 "
+                   "reached the slot?)" % (ref - ring, w0, ring - dead))
     if gone > ring - 30:
         bad.append("(b) the pedal let up does not damp: %.1f dB down" % (ring - gone))
-    ev = [(0.2, "on", note, vel), (0.5, "cc", 64, 127), (0.8, "off", note, 0), (2.0, "cc", 64, 0)]
-    c = r.rec(3.4, ev)
-    _save(d, "sus-c-catch", c)
-    x, sr = c["x"], c["sr"]
-    ref = hs.db(_seg(x, sr, 0.7 + lat, 0.8 + lat))
-    ring = hs.db(_seg(x, sr, 1.7 + lat, 1.95 + lat))
+    ev = [(0.2, "on", note, vel), (c["catch"], "cc", 64, 127), (off, "off", note, 0), (up, "cc", 64, 0)]
+    cc_ = r.rec(c["dur"][1], ev)
+    _save(d, "sus-c-catch", cc_)
+    x, sr = cc_["x"], cc_["sr"]
+    ref = hs.db(_seg(x, sr, off - 0.1 + lat, off + lat))
+    ring = hs.db(_seg(x, sr, off + w0 + lat, off + w1 + lat))
     rep["catch"] = {"held_1s_db": round(ring, 1), "before_off_db": round(ref, 1)}
-    if ring < ref - 15:
+    if ring < dead + 20 or (c["hold_db"] is not None and ring < ref - c["hold_db"]):
         bad.append("(c) the pedal pressed under a held key does not catch it")
     for k in ("damped", "pedal"):
         if rep[k]["louder_after_keyup_db"] > 1.0:
             bad.append("(%s) louder after key-up by %.1f dB" % (k, rep[k]["louder_after_keyup_db"]))
-    g = glitches(a["x"], a["sr"], [(0.2, "on", note, vel), (0.8, "off", note, 0)])
+    g = glitches(a["x"], a["sr"], [(0.2, "on", note, vel), (off, "off", note, 0)])
     rep["glitches"] = g
     if g:
         bad.append("%d glitch(es) in (a)" % len(g))
@@ -749,18 +786,29 @@ def usb_clock(r, d, bpm=120.0, secs=8.0, note=60, engine=None, out=print):
             ons.append(t)
             last = t
     want = 30.0 / bpm
-    iv = np.diff(ons[1:]) if len(ons) > 3 else np.array([])
+    o = np.array(ons[1:])
     rep = {"bpm": bpm, "steps": len(ons), "want_ms": round(1000 * want, 2)}
     bad = []
-    if len(iv) < 4:
+    if len(o) < 5:
         bad.append("%d steps: the clock or the arpeggiator did not run (does the slot get F8 / Start?)" % len(ons))
     else:
-        med, sd = float(np.median(iv)), float(np.std(iv))
-        rep.update(median_ms=round(1000 * med, 2), jitter_ms=round(1000 * sd, 2), bpm_seen=round(30.0 / med, 2))
+        # (each attack against a straight line through them: an attack the detector catches 5 ms or more late, under
+        # the ring of the step before (the bars), is counted, not taken as timing; jitter is the spread of the others)
+        k = np.round((o - o[0]) / float(np.median(np.diff(o))))
+        inl = np.ones(len(o), bool)
+        for _ in range(2):
+            a, b = np.polyfit(k[inl], o[inl], 1)
+            res = o - (a * k + b)
+            inl = np.abs(res) < 0.005
+        med, sd, late = float(a), float(np.std(res[inl])), int((~inl).sum())
+        rep.update(median_ms=round(1000 * med, 2), jitter_ms=round(1000 * sd, 2), bpm_seen=round(30.0 / med, 2),
+                   late=late)
         if abs(med / want - 1) > 0.01:
             bad.append("step %.1f ms against %.1f ms (%.2f BPM seen)" % (1000 * med, 1000 * want, 30.0 / med))
         if sd > 0.004:
             bad.append("jitter %.1f ms" % (1000 * sd))
+        if late > max(2, len(o) // 10):
+            bad.append("%d of %d attacks off the beat by 5 ms or more" % (late, len(o)))
     rep["verdict"] = "FAIL: " + "; ".join(bad) if bad else "PASS"
     out("clock %.1f BPM: %s: %s" % (bpm, {k: v for k, v in rep.items() if k != "verdict"}, rep["verdict"]))
     return not bad, rep
@@ -1128,11 +1176,12 @@ def _num(rep, test):
         if test == "usb-vel":
             return "range %s dB, %d glitch(es)" % (rep["range_db"], len(rep["glitches"]))
         if test == "usb-sus":
-            return "damped %s dB 1 s after, pedal held %s dB / up %s dB, louder after key-up %s / %s dB" % (
+            return "damped %s dB after key-up, pedal held %s dB / up %s dB, louder after key-up %s / %s dB" % (
                 rep["damped"]["after_1s_db"], rep["pedal"]["held_1s_db"], rep["pedal"]["after_up_db"],
                 rep["damped"]["louder_after_keyup_db"], rep["pedal"]["louder_after_keyup_db"])
         if test == "usb-clock":
-            return "%s steps, %s BPM seen, jitter %s ms" % (rep["steps"], rep.get("bpm_seen"), rep.get("jitter_ms"))
+            return "%s steps, %s BPM seen, jitter %s ms, %s late" % (rep["steps"], rep.get("bpm_seen"), rep.get("jitter_ms"),
+                                                                      rep.get("late"))
         if test == "usb-stress":
             return "; ".join("%s: %s notes, peak %s dBFS, %d gated" % (t["take"], t["notes"], t["peak_dbfs"], t["gated"])
                              for t in rep["takes"])

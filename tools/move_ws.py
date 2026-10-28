@@ -34,7 +34,7 @@ class Remote:
 
     def __init__(self, url=URL, timeout=5.0):
         from websockets.sync.client import connect
-        self.url, self.timeout = url, timeout
+        self.url, self.timeout, self.last = url, timeout, {}
         self._cm = connect(url, open_timeout=timeout, max_size=None)
         self.ws = self._cm.__enter__()
         self.params = {}                         # slot -> {key: value}, everything seen
@@ -67,6 +67,7 @@ class Remote:
             self.info[s] = m
         elif t == "param_update":
             self.params.setdefault(s, {}).update(m.get("params") or {})
+        self.last = m
         return m
 
     def until(self, done, timeout=None):
@@ -83,7 +84,10 @@ class Remote:
             self._take(json.loads(raw))
 
     def subscribe(self, slot=0, timeout=None):
-        """slot_info and the preset keys of the slot (when its synth has a preset browser)"""
+        """slot_info and the preset keys of the slot (when its synth has a preset browser), as the server sends them
+        now"""
+        self.info.pop(slot, None)
+        self.params.get(slot, {}).pop(COMP + ":preset", None)
         self.send("subscribe", slot)
 
         def got(r):
@@ -132,10 +136,20 @@ class Remote:
         self.pump(0.2)
 
     def set_preset(self, slot, n, timeout=None):
-        """load preset n and wait until the server reports it"""
-        self.params.setdefault(slot, {}).pop(COMP + ":preset", None)
+        """load preset n and wait until the server reports it with its name. (The shim's notify ring carries the
+        index alone, so the first update can come with the old name still cached; the manager's full re-read
+        (remote_ui.go: 50 ms after a preset write) brings both, read together. No name after it: subscribe again)"""
+        p = self.params.setdefault(slot, {})
+        p.pop(COMP + ":preset", None)
+        p.pop(COMP + ":preset_name", None)
         self.set_param(slot, COMP + ":preset", int(n))
         self.until(lambda r: r.params.get(slot, {}).get(COMP + ":preset") == str(int(n)), timeout)
+        if COMP + ":preset_name" not in (self.last.get("params") or {}):
+            p.pop(COMP + ":preset_name", None)               # (a name that came before the index: the old one)
+        try:
+            self.until(lambda r: COMP + ":preset_name" in r.params.get(slot, {}), 1.0)
+        except TimeoutError:
+            self.subscribe(slot, timeout)
         return self.state(slot)
 
 
