@@ -167,9 +167,9 @@ def test_release_workflow_wiring():
     assert j["generators-macos"]["if"] == "needs.ci-gate.outputs.passed != 'true'"
     cond = " ".join(j["release"]["if"].split())
     assert cond == ("!cancelled() && needs.ci-gate.result == 'success' && needs.web.result == 'success' && "
-                    "(needs.ci-gate.outputs.passed == 'true' "
+                    "needs.move.result == 'success' && (needs.ci-gate.outputs.passed == 'true' "
                     "|| (needs.generators-macos.result == 'success' && needs.host.result == 'success'))")
-    assert j["release"]["needs"] == ["ci-gate", "generators-macos", "host", "web"]
+    assert j["release"]["needs"] == ["ci-gate", "generators-macos", "host", "web", "move"]
     # the fallback host tests: their own job on ci.yml's arm64 runner; the build stays on x86_64 (the JieLi toolchain)
     assert j["host"]["if"] == "needs.ci-gate.outputs.passed != 'true'" and j["host"]["needs"] == "ci-gate"
     assert j["host"]["runs-on"] == "ubuntu-24.04-arm" and j["release"]["runs-on"] == "ubuntu-latest"
@@ -308,7 +308,7 @@ def test_ci_builds_the_emulator_and_never_deploys():
     assert ci["jobs"]["web"]["container"] == "mcr.microsoft.com/playwright/python:v1.64.0-noble"
     assert "playwright==1.64.0" in runs                                             # the image's version
     assert "tools/release.py --web-selftest web/dist dev" in runs                 # a local build says dev
-    assert "pytest -q -rs tests/py/test_web_knobs.py > knobs.txt" in runs and "! grep -q SKIPPED knobs.txt" in runs
+    assert "tools/pytest_run.py -q -rs -- tests/py/test_web_knobs.py > knobs.txt" in runs and "! grep -q SKIPPED knobs.txt" in runs
     text = open(os.path.join(ROOT, ".github", "workflows", "ci.yml")).read()
     body = text.split("\njobs:", 1)[1]
     assert not any(w in body for w in ("deploy_pages", "pages_wait", "git push", "gh release", "contents: write"))

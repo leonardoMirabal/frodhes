@@ -1,0 +1,4 @@
+# Gate H (tools/gate_h.py --save): the HQ Rhodes' renders of tests/hq/*.txt
+73f68a3fad445adfe4e9e981ced30896b3ba6cb6de4c2b75552961c10fa82abb  hq_parity
+34856b2656213682aa410f2142cdd1a0b49c3e31b5e513ec3c37466fb128a4af  hq_restrike
+8c393245f2d7819a85ca4cda7e30883a9e315613dd11dd50085a5d0cdf48754c  hq_top

@@ -1,0 +1,44 @@
+# FR_VOICES=16 build (make testv V=16, the Move's count): tests/scripts/vibes_steal_release.txt with sixteen voices.
+# Sixteen notes held fill the voices; a seventeenth is struck and let go at once: it steals the oldest voice and
+# starts let go; when every key is let go, no voice is still held.
+50 midi 0xB0 79 0
+51 midi 0xB0 47 0
+100 midi 0x90 41 100
+100 midi 0x90 45 100
+100 midi 0x90 48 100
+100 midi 0x90 50 100
+100 midi 0x90 53 100
+100 midi 0x90 57 100
+100 midi 0x90 60 100
+100 midi 0x90 62 100
+100 midi 0x90 64 100
+100 midi 0x90 65 100
+100 midi 0x90 67 100
+100 midi 0x90 69 100
+100 midi 0x90 72 100
+100 midi 0x90 76 100
+100 midi 0x90 79 100
+100 midi 0x90 83 100
+500 midi 0x90 86 100
+500 midi 0x80 86 0
+700 expect state held 15
+1000 midi 0x80 41 0
+1000 midi 0x80 45 0
+1000 midi 0x80 48 0
+1000 midi 0x80 50 0
+1000 midi 0x80 53 0
+1000 midi 0x80 57 0
+1000 midi 0x80 60 0
+1000 midi 0x80 62 0
+1000 midi 0x80 64 0
+1000 midi 0x80 65 0
+1000 midi 0x80 67 0
+1000 midi 0x80 69 0
+1000 midi 0x80 72 0
+1000 midi 0x80 76 0
+1000 midi 0x80 79 0
+1000 midi 0x80 83 0
+1100 expect state held 0
+1100 expect state pitches 0
+6000 expect rms < -60
+6000 end

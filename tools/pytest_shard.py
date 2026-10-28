@@ -67,7 +67,11 @@ def main(argv):
     if not 1 <= k <= n:
         print(f"shard {k} of {n}: 1..{n}", file=sys.stderr)
         return 2
-    print("\n".join(split(test_files(), n)[k - 1]))
+    s = split(test_files(), n)[k - 1]
+    if not s:                                  # (an empty shard: make pytest would run nothing; pytest_run fails it)
+        print(f"shard {k} of {n} is empty ({len(test_files())} test files)", file=sys.stderr)
+        return 1
+    print("\n".join(s))
     return 0
 
 

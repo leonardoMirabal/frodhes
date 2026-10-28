@@ -4,6 +4,10 @@
 
   tools/gate_r.py            render the list, compare, exit 1 on any difference (prints the first ones)
   tools/gate_r.py --save     render the list and write the baseline (only from committed code, on purpose)
+  tools/gate_r.py --image IMG [--platform P] [--cflags "..."]
+                             build and render inside a Docker image (gcc there: M0-03, the same sha256 on another
+                             architecture / compiler; e.g. frodhes-move:bookworm arm64 with the Move's flags, or
+                             frodhes-move:bookworm-amd64 for x86_64); the renders in build/gate_r_<tag>/
 
 The list: every tests/scripts/*.txt WAV (as `make test` renders them), the default run (`make host`), 36 effect
 combinations (Rhodes and VIBES: every effect, the filter types, 8 bass notes v127, a chord, the pedal) and
@@ -112,18 +116,52 @@ def render(binary, name, script):
     return name, hashlib.sha256(w.read_bytes()).hexdigest() if w.exists() else 'MISSING'
 
 
+def render_image(a, j):
+    """the list rendered in Docker: gcc builds the host binary with CFLAGS (+ --cflags) there, xargs runs the
+    scripts; the sha256 are taken here"""
+    tag = a.platform.split('/')[-1] + ('-' + '_'.join(f.lstrip('-').replace('=', '') for f in a.cflags.split())
+                                       if a.cflags else '')
+    out = ROOT / 'build' / f'gate_r_{tag}'
+    out.mkdir(parents=True, exist_ok=True)
+    lst = out / 'list'
+    lst.write_text(''.join(f'{n} {Path(s).relative_to(ROOT) if s else "-"}\n' for n, s in j.items()))
+    rel = out.relative_to(ROOT)
+    flags = ' '.join("'" + f + "'" for f in CFLAGS + a.cflags.split())
+    sh = (f"gcc {flags} -o {rel}/frodhes firmware/src/frodhes.c -lm && "
+          f"xargs -P {a.jobs} -L 1 sh -c 'mkdir -p \"$(dirname {rel}/r/$0)\"; "
+          f"if [ \"$1\" = - ]; then {rel}/frodhes {rel}/r/$0; else {rel}/frodhes {rel}/r/$0 $1; fi "
+          f">/dev/null 2>&1 || true' < {rel}/list")
+    r = subprocess.run(['docker', 'run', '--rm', '--cpus', str(a.jobs), '--platform', a.platform, '-v', f'{ROOT}:/src',
+                        '-w', '/src', a.image, 'sh', '-c', sh], cwd=ROOT, capture_output=True, text=True)
+    if r.returncode:
+        raise SystemExit(f'Gate R: the {a.image} renders failed: {r.stderr[-2000:]}')
+    got = {}
+    for n in j:
+        w = out / 'r' / (n + '.wav')
+        got[n] = hashlib.sha256(w.read_bytes()).hexdigest() if w.exists() else 'MISSING'
+    return got
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--save', action='store_true', help='write tests/baselines/renders.sha256')
     ap.add_argument('--jobs', type=int, default=os.cpu_count() or 4)
+    ap.add_argument('--image', help='build and render in this Docker image (its gcc)')
+    ap.add_argument('--platform', default='linux/arm64')
+    ap.add_argument('--cflags', default='', help='flags added to CFLAGS (with --image), e.g. "-O3 -mcpu=cortex-a72"')
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
-    binary = OUT / 'frodhes'
-    cc = os.environ.get('CC', 'cc')
-    subprocess.run([cc] + CFLAGS + ['-o', str(binary), 'firmware/src/frodhes.c', '-lm'], cwd=ROOT, check=True)
     j = jobs()
-    with ThreadPoolExecutor(a.jobs) as ex:
-        got = dict(ex.map(lambda kv: render(binary, *kv), j.items()))
+    if a.image:
+        got = render_image(a, j)
+        if a.save:
+            raise SystemExit('Gate R: --save only from the host build')
+    else:
+        binary = OUT / 'frodhes'
+        cc = os.environ.get('CC', 'cc')
+        subprocess.run([cc] + CFLAGS + ['-o', str(binary), 'firmware/src/frodhes.c', '-lm'], cwd=ROOT, check=True)
+        with ThreadPoolExecutor(a.jobs) as ex:
+            got = dict(ex.map(lambda kv: render(binary, *kv), j.items()))
     if a.save:
         BASE.parent.mkdir(parents=True, exist_ok=True)
         BASE.write_text(''.join(f'{got[n]}  {n}\n' for n in sorted(got)))
