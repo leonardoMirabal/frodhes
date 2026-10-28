@@ -55,6 +55,9 @@ def test_load_and_assemble_in_file_name_order(tmp_path):
                                   "### Fixed\n- A fix\n- Z fix", "Full manual:")]
     assert order == sorted(order) and "### Tools" not in n and "### Tested" not in n
     assert ch.assemble("1.2.3", ch.load(r), r) == n                      # stable
+    (tmp_path / "docs" / "MANUAL.md").write_text("**A physically modelled thing for the M-VAVE FM-1 and the Ableton Move.** More.\n")
+    assert ch.assemble("1.2.3", ch.load(r), r).startswith(
+        "**Frodhes 1.2.3**: a physically modelled thing for the M-VAVE FM-1 and the Ableton Move. Every note")   # two devices
 
 
 def test_refusals(tmp_path):

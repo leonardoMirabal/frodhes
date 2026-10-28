@@ -98,8 +98,8 @@ def load(root=ROOT):
 
 
 def tagline(root=ROOT):
-    """'a physically modelled ... for the M-VAVE FM-1' from docs/MANUAL.md's first bold line"""
-    m = re.search(r"^\*\*A (physically modelled .+? for the M-VAVE FM-1)\.\*\*",
+    """'a physically modelled ... for the M-VAVE FM-1' (and the devices after it) from docs/MANUAL.md's first bold line"""
+    m = re.search(r"^\*\*A (physically modelled .+? for the M-VAVE FM-1(?: and [^*.]+)?)\.\*\*",
                   open(os.path.join(root, "docs", "MANUAL.md"), encoding="utf-8").read(), re.M)
     if not m:
         raise Bad("docs/MANUAL.md: no '**A physically modelled ... for the M-VAVE FM-1.**' line for the notes' head")

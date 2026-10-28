@@ -1,6 +1,6 @@
-## Fixed (the Move)
+## Fixed
 
-- SUS could not be turned off: set OFF, it went back to ON. The PEDAL cell on the first page became, in Schwung's
+- On the Move, SUS could not be turned off: set OFF, it went back to ON. The PEDAL cell on the first page became, in Schwung's
   knob grid, a two-option switch whose click left the sustain button held down. SUS is now a plain switch, on or
   off (OFF always lets the notes go, over a MIDI pedal held down too); PEDAL is gone; on Frodhes' own screen each
   press of the Capture button turns SUS on or off. A pedal on CC 64 works as on the FM-1, and its let-up turns SUS
