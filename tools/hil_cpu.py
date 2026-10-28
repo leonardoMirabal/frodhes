@@ -62,6 +62,7 @@ voice was shed, or a USB counter that must stay 0 moved (any scenario), or (--ke
 failed.
 """
 import os
+import statistics
 import sys
 import time
 
@@ -162,16 +163,19 @@ def keyadc_check(mido, out, inp, kmode):
 
 
 def keyadc_gate(argv):
-    """--keyadc gate: each engine (--engines, default rhodes,vibes,marimba) x --runs (default 3) x OFF / idle / STRESS
+    """--keyadc gate: each engine (--engines, default rhodes,vibes,marimba) x --runs (default 5) x OFF / idle / STRESS
     (the order rotated per run, so a drift spreads over the modes), every measurement a whole hil_cpu run with the
     other options as given (--worst: its scenarios only; the USB stream, open by default, stays open for all of them;
-    --voices: by default each engine's own count). Per engine and mode the worst block over the runs; the gates:
-    idle <= OFF + 10 us, STRESS <= OFF + 60 us. Each scenario's own difference (its worst over the runs) is printed
-    too. Returns (True when every engine passes, the worst exit code of the runs' own verdicts)"""
+    --voices: by default each engine's own count). Per engine and mode the median over the runs of each run's worst
+    block; the gates: idle <= OFF + 10 us, STRESS <= OFF + 60 us. The worst over 3 runs (until 0.9.8) read +-80 us
+    run to run on one build, over both limits: 0.9.6's and 0.9.7's first gates failed, their reruns passed (the user's
+    pick, 2026-10-28: the median of 5, the limits kept). Each scenario's own difference (the medians) is printed too.
+    Every run's own verdict (4500 us, a shed voice, a USB fault) still counts. Returns (True when every engine
+    passes, the worst exit code of the runs' own verdicts)"""
     i = argv.index("--keyadc")
     base = argv[:i] + argv[i + 2:]
     engines = ["rhodes", "vibes", "marimba"]
-    runs = 3
+    runs = 5
     for flag in ("--engines", "--runs", "--engine"):
         if flag in base:
             j = base.index(flag)
@@ -193,11 +197,11 @@ def keyadc_gate(argv):
                 finally:
                     sys.argv = argv0
     ok = True
-    print(f"\nkey ADC gate ({runs} runs per engine and mode; worst block over the runs; gates idle <= OFF + "
+    print(f"\nkey ADC gate ({runs} runs per engine and mode; the median of the runs' worst blocks; gates idle <= OFF + "
           f"{KEYADC_GATE['idle']} us, STRESS <= OFF + {KEYADC_GATE['stress']} us)")
     summary = {}
     for e in engines:
-        w = {m: max(x["worst"] for x in res[(e, m)]) for m in modes}
+        w = {m: int(statistics.median_low([x["worst"] for x in res[(e, m)]])) for m in modes}
         d = {m: w[m] - w["off"] for m in ("idle", "stress")}
         good = {m: d[m] <= KEYADC_GATE[m] for m in d}
         ok &= all(good.values())
@@ -206,7 +210,8 @@ def keyadc_gate(argv):
             for x in res[(e, m)]:
                 for name, us in x["rows"]:
                     sc.setdefault(name, {}).setdefault(m, []).append(us)
-        per = {n: {m: max(v[m]) - max(v["off"]) for m in ("idle", "stress") if m in v and "off" in v}
+        per = {n: {m: statistics.median_low(v[m]) - statistics.median_low(v["off"]) for m in ("idle", "stress")
+                   if m in v and "off" in v}
                for n, v in sc.items()}
         summary[e] = dict(worst=w, delta=d, ok=good, per_scenario=per)
         print(f"  {e:8s} OFF {w['off']:5d} us   idle {w['idle']:5d} ({d['idle']:+d}: "

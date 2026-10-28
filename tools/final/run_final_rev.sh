@@ -104,9 +104,9 @@ its jack takes); -4 when INFINITE is the heaviest TYPE; CROSSCHECK=0 -2; QUICK=1
                                   the design target 4500 stays hil_cpu's own gate); CPU_HURT's steps (default
                                   cpu_rhodes_spread_bend, cpu_vibes: over the margin before): 3 good takes in a row;
                                   SUMMARY.md: min-max per step. ~22 min of CPU steps (CPU_TAKES=1: ~8)
-  keyadc_gate              6      hil_cpu --keyadc gate --worst --runs 3 --scenario pedal: each engine's worst
-                                  scenarios only (PLAN 3.4); the whole gate (18m) when the tree's hil_cpu has no
-                                  --scenario; keyadc_<engine>5 (5 runs) on that engine's FAIL
+  keyadc_gate              10     hil_cpu --keyadc gate --worst --runs 5 --scenario pedal: each engine's worst
+                                  scenarios only (PLAN 3.4), the median of 5 runs per mode (0.9.8); the whole gate
+                                  (30m) when the tree's hil_cpu has no --scenario
   stress_rev_48000         4      stress_max with INFINITE in every take (frozen in the worst), every engine; a
                                   COVERED row when stress_48000's heaviest TYPE is INFINITE already
   stress_44100             10.5   stress_max at 44.1 kHz: 2 worst x 60 s + the recipes at 30 s per engine (--short;
@@ -362,7 +362,7 @@ est_s() {
         midi_parity) echo 200 ;;
         usb_onset_44100) echo 90 ;;
         stress_rev_48000) echo 240 ;;  early_stress_*) echo 150 ;;
-        keyadc_gate) [ ${#SC[@]} -gt 0 ] && echo 400 || echo 1100 ;;  keyadc_*5) echo 600 ;;
+        keyadc_gate) [ ${#SC[@]} -gt 0 ] && echo 650 || echo 1800 ;;
         t1_s3s4) echo 160 ;;  s5_install) echo 200 ;;  jack_*) echo 150 ;;  rev_jack) echo 300 ;;
         *) case "$2" in cpu) echo $((60 * ${CUR_TAKES:-1})) ;; *) echo 300 ;; esac ;;
     esac
@@ -594,7 +594,7 @@ for t in $OTHER_REVS; do
 done
 
 # 4. the key velocity converter's CPU gate (TEST-PLAN 3b; PLAN 3.4): each engine's worst scenarios only (the pedal
-# ones: hil_cpu --scenario pedal) x OFF / idle / STRESS x 3 runs; the whole gate when the tree's hil_cpu has no
+# ones: hil_cpu --scenario pedal) x OFF / idle / STRESS x 5 runs, each mode's median; the whole gate when the tree's hil_cpu has no
 # --scenario yet (feature/rev-run adds it)
 SC=(); (cd "$TREE" && "$PY" tools/hil_cpu.py --help 2>/dev/null | grep -q -- "--scenario") && SC=(--scenario pedal)
 if [ "$SKIP_COVERED" = "1" ]; then
@@ -602,16 +602,10 @@ if [ "$SKIP_COVERED" = "1" ]; then
 elif [ "$DRY" = "1" ]; then
     step keyadc_gate keyadc "$PY" tools/hil_cpu.py --help
 else
-    step keyadc_gate keyadc "$PY" tools/hil_cpu.py --keyadc gate --worst --runs 3 "${SC[@]+"${SC[@]}"}"
+    step keyadc_gate keyadc "$PY" tools/hil_cpu.py --keyadc gate --worst --runs 5 "${SC[@]+"${SC[@]}"}"
     [ ${#SC[@]} -eq 0 ] && echo "keyadc_gate: this tree's hil_cpu has no --scenario: the whole gate ran (~18 min)" >> "$OUT/keyadc_gate.log"
-    # TEST-PLAN 3b: an engine that FAILed on 3 runs gets 5 (its run-to-run spread, ~+-100 us, is wider than the
-    # limits); the 5 decide its verdict (summarize_rev.py). 0.9.7: VIBES and MARIMBA too, the same rule as the Rhodes
-    for eng in rhodes vibes marimba; do
-        if [ "$(last_code keyadc_gate)" != "0" ] && want keyadc_gate && [ "$STRANDED" = "0" ] \
-            && grep -q -E "^  $eng .*FAIL" "$OUT/keyadc_gate.log"; then
-            step "keyadc_${eng}5" keyadc "$PY" tools/hil_cpu.py --keyadc gate --worst --runs 5 --engines "$eng" "${SC[@]+"${SC[@]}"}"
-        fi
-    done
+    # (until 0.9.8 an engine that FAILed on 3 runs got 5 more, keyadc_<engine>5, and those decided: the worst over 3
+    # read +-100 us run to run. Now the gate's own median of 5 is the verdict, one try: the user's pick, 2026-10-28)
 fi
 
 # 5. the reverb's own stress (unless stress_48000 had INFINITE already), then stress_max at 44.1 kHz: 2 worst takes

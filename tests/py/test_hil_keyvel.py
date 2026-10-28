@@ -386,9 +386,9 @@ def test_hil_cpu_keyadc_gate(monkeypatch, clock, capsys):
     assert not hc.KEYADC_BAD and "key ADC gate: PASS" in out
     s = hc.keyadc_gate.summary
     assert set(s) == {"rhodes", "vibes", "marimba"} and all(all(e["ok"].values()) for e in s.values())
-    assert out.count("=== key ADC gate: run") == 27                     # 3 engines x 3 runs x 3 modes
+    assert out.count("=== key ADC gate: run") == 45                     # 3 engines x 5 runs x 3 modes
     assert all(abs(e["delta"]["stress"] - 40) <= 4 for e in s.values())
-    runs = [l.split("--keyadc ")[1] for l in out.splitlines() if l.startswith("=== key ADC gate: run 2/3, rhodes")]
+    runs = [l.split("--keyadc ")[1] for l in out.splitlines() if l.startswith("=== key ADC gate: run 2/5, rhodes")]
     assert runs == ["idle", "stress", "off"]                             # rotated per run
     r, fm = cpu_run(monkeypatch, clock, ["--worst", "--keyadc", "gate", "--engines", "rhodes", "--runs", "2"],
                     cpu={1: 0, 0: 20, 2: 80})
@@ -397,6 +397,28 @@ def test_hil_cpu_keyadc_gate(monkeypatch, clock, capsys):
     assert out.count("=== key ADC gate: run") == 6
     e = hc.keyadc_gate.summary["rhodes"]
     assert e["ok"] == dict(idle=False, stress=False)
+
+
+def test_keyadc_gate_takes_the_median_of_the_runs(monkeypatch, capsys):
+    """the gate compares each mode's median over the runs (0.9.8, the user's pick): one run 80 us high in idle (the
+    +-80 us run-to-run spread the worst over 3 runs failed on) passes; the same 80 us in 3 of 5 runs fails"""
+    def gate(spikes):
+        n = {"k": 0}
+
+        def fake(argv):
+            m = argv[argv.index("--keyadc") + 1]
+            n["k"] += m == "idle"
+            us = 3000 + (80 if m == "idle" and n["k"] in spikes else 0) + (40 if m == "stress" else 0)
+            return dict(worst=us, rows=[("chord", us)], code=0)
+        monkeypatch.setattr(hc, "run_cpu", fake)
+        del hc.KEYADC_BAD[:]
+        ok, code = hc.keyadc_gate(["--keyadc", "gate", "--engines", "rhodes"])
+        capsys.readouterr()
+        return ok, hc.keyadc_gate.summary["rhodes"]
+    ok, e = gate({3})
+    assert ok and e["delta"] == dict(idle=0, stress=40)
+    ok, e = gate({1, 3, 5})
+    assert not ok and e["delta"]["idle"] == 80 and not e["ok"]["idle"]
 
 
 def test_jack_check_dry_run_on_the_host(tmp_path):
