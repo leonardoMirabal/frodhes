@@ -38,7 +38,7 @@
 #define MB_STAGE_BLOCKS 345u             /* look for something to save about once a second */
 #define MB_CPU_N 4096u                   /* the per-callback timer ring (power of two): ~12 s of callbacks */
 
-enum { MB_EV_MIDI = 1, MB_EV_KEY, MB_EV_PRESET };
+enum { MB_EV_MIDI = 1, MB_EV_KEY, MB_EV_PRESET, MB_EV_HQ };   /* (MB_EV_HQ: p_hq, applied in order with the rest) */
 enum { MB_CLOCK_AUTO, MB_CLOCK_MIDI, MB_CLOCK_HOST };   /* AUTO: synthesise from the host only while no F8 arrives */
 #define MB_CLOCK_REAL_BLOCKS 690u        /* ~2 s: an F8 seen this recently means the slot gets a real clock */
 
@@ -213,8 +213,10 @@ static void mb_write_cpu(void)
  * <data dir>/tap/<id>.wav by the worker. The WebSocket's set ring takes values under 256 B, so the schedule comes
  * in pieces:
  *
- *   dev_play      "begin ID DUR_MS"   a new take (only when none is playing): ID [A-Za-z0-9_-]{1,32}, DUR_MS the tap
- *   dev_play_add  "T ST D1 D2;..."    messages at T ms after the start (decimal or 0x hex; T never decreasing)
+ *   dev_play      "begin ID DUR_MS"   a new take (only when none is playing): ID [A-Za-z0-9_-]{1,32}, DUR_MS the tap;
+ *                                     the ID of the take that went last is refused (a take plays once)
+ *   dev_play_add  "[#K ]T ST D1 D2;..."   messages at T ms after the start (decimal or 0x hex; T never decreasing);
+ *                                     #K: the piece's number from 0, a piece out of turn (a repeat) is refused whole
  *   dev_play      "go [LEAD_MS]"      the start B: the first ms at least LEAD_MS (100) ahead with B % 2560 == 0,
  *                                     where the 256-frame blocks fall on the host build's ms grid as at its ms 0
  *                                     (44100 x 2560 / 1000 = 441 blocks): the take is the host build's render of the
@@ -234,8 +236,8 @@ typedef struct { uint32_t t; uint8_t st, d1, d2, pad; } mb_pev_t;
 static struct {
     _Atomic int state;                   /* IDLE / DONE: set_param may begin; LOAD: adds; ARMED: the audio side plays */
     _Atomic uint32_t seq;                /* bumps at each go: the worker starts a new file */
-    char id[36];
-    uint32_t dur_ms, n, r, base, f0w, nfr, late, bad, last_t;
+    char id[36], went[36];               /* went: the take that last went (its id is refused at begin) */
+    uint32_t dur_ms, n, r, base, f0w, nfr, late, bad, last_t, pieces;
     _Atomic uint32_t tw;                 /* frames captured (the audio side) */
     _Atomic uint32_t dropped;
     _Atomic int file_done, abort;
@@ -253,8 +255,8 @@ static void mp_finish(void)
     uint32_t dr = atomic_load(&mp.dropped);
     if (mp_fd >= 0) { (void)fsync(mp_fd); close(mp_fd); mp_fd = -1; (void)rename(mp_tmp, mp_path); }
     k = snprintf(js, sizeof js, "{\"id\":\"%s\",\"sr\":44100,\"base_ms\":%u,\"grid_ms\":%u,\"frame0\":%u,\"frames\":%u,"
-                 "\"events\":%u,\"played\":%u,\"late\":%u,\"bad\":%u,\"dropped\":%u,\"aborted\":%d}\n", mp.id, mp.base,
-                 MB_GRID_MS, mp.f0w, mp.nfr, mp.n, mp.r, mp.late, mp.bad, dr, atomic_load(&mp.abort));
+                 "\"events\":%u,\"played\":%u,\"pieces\":%u,\"late\":%u,\"bad\":%u,\"dropped\":%u,\"aborted\":%d}\n", mp.id,
+                 mp.base, MB_GRID_MS, mp.f0w, mp.nfr, mp.n, mp.r, mp.pieces, mp.late, mp.bad, dr, atomic_load(&mp.abort));
     snprintf(jp, sizeof jp, "%s/tap/%s.json", mb.dir, mp.id);
     snprintf(jt, sizeof jt, "%s/tap/.%s.json.tmp", mb.dir, mp.id);
     fd = open(jt, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
@@ -354,6 +356,13 @@ static void mp_set(const char *key, const char *val)
     const char *p = val;
     if (!strcmp(key, "dev_play_add")) {  /* "T ST D1 D2;T ST D1 D2;..." */
         if (st != MP_LOAD) { mp.bad++; return; }
+        while (*p == ' ') p++;
+        if (*p == '#') {                 /* the piece's number: out of turn (a repeat, a gap) refused whole */
+            uint32_t k;
+            p++;
+            if (mp_num(&p, &k) || k != mp.pieces) { mp.bad++; return; }
+        }
+        mp.pieces++;
         while (*p) {
             uint32_t t, a, b, c;
             while (*p == ';' || *p == ' ' || *p == '\n') p++;
@@ -376,8 +385,10 @@ static void mp_set(const char *key, const char *val)
         while (*p == ' ') p++;
         while (i < 32u && ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_' || *p == '-')) mp.id[i++] = *p++;
         mp.id[i] = 0;
-        if (!i || (*p != ' ' && *p != ',') || mp_num(&p, &dur) || !dur || dur > 3600000u) { mp.bad++; mp.id[0] = 0; return; }
-        mp.dur_ms = dur; mp.n = mp.r = mp.late = mp.bad = mp.last_t = 0;
+        if (!i || (*p != ' ' && *p != ',') || mp_num(&p, &dur) || !dur || dur > 3600000u || !strcmp(mp.id, mp.went)) {
+            mp.bad++; mp.id[0] = 0; return;
+        }
+        mp.dur_ms = dur; mp.n = mp.r = mp.late = mp.bad = mp.last_t = mp.pieces = 0;
         atomic_store_explicit(&mp.state, MP_LOAD, memory_order_release);
         return;
     }
@@ -390,6 +401,7 @@ static void mp_set(const char *key, const char *val)
         mp.base = ((mb.ms + lead) / MB_GRID_MS + 1u) * MB_GRID_MS;
         mp.f0w = (uint32_t)((uint64_t)mp.base * 441u / 10u);  /* (the FIFO's frame index at the start: a block edge) */
         mp.nfr = (uint32_t)((uint64_t)mp.dur_ms * 441u / 10u);
+        memcpy(mp.went, mp.id, sizeof mp.went);
         atomic_store(&mp.tw, 0); atomic_store(&mp.dropped, 0); atomic_store(&mp.file_done, 0); atomic_store(&mp.abort, 0);
         atomic_fetch_add_explicit(&mp.seq, 1u, memory_order_release);
         atomic_store_explicit(&mp.state, MP_ARMED, memory_order_release);
@@ -406,9 +418,9 @@ static int mp_get(char *buf, int n)
 {
     static const char *const NM[] = { "idle", "load", "armed", "done" };
     int st = atomic_load_explicit(&mp.state, memory_order_acquire);
-    return snprintf(buf, (size_t)n, "state=%s id=%s base=%u ms=%u frames=%u/%u events=%u/%u late=%u bad=%u dropped=%u",
-                    NM[st & 3], mp.id, mp.base, mb.ms, atomic_load(&mp.tw), mp.nfr, mp.r, mp.n, mp.late, mp.bad,
-                    atomic_load(&mp.dropped));
+    return snprintf(buf, (size_t)n, "state=%s id=%s base=%u ms=%u frames=%u/%u events=%u/%u late=%u bad=%u dropped=%u "
+                    "pieces=%u", NM[st & 3], mp.id, mp.base, mb.ms, atomic_load(&mp.tw), mp.nfr, mp.r, mp.n, mp.late,
+                    mp.bad, atomic_load(&mp.dropped), mp.pieces);
 }
 
 /* which build runs (the device tools): the features of this bridge, the app's version, and the CRC-32 of the
@@ -802,6 +814,9 @@ static void mb_step(void)
             if ((e->st & 0xF0u) == 0xD0u || (e->st & 0xF0u) == 0xA0u || (e->st & 0xE0u) == 0x80u) mb_map(e->st, e->d1, e->d2);
         } else if (e->kind == MB_EV_KEY && e->key < MOVE_NKEYS) mb_key_apply(e->key, e->v);
         else if (e->kind == MB_EV_PRESET) { uint8_t p[P_COUNT]; if (preset_values((uint32_t)e->v, p) == 0) { preset_load((uint32_t)e->v); mb.rev++; } }
+#ifdef FR_HQ
+        else if (e->kind == MB_EV_HQ) hq_mode = (uint8_t)(e->v != 0);   /* (new notes; a sounding note keeps its path) */
+#endif
         mb_pop(e);
     }
     mb_state_apply();
@@ -941,6 +956,9 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, "dev_play")) return mp_get(buf, n);
     if (!strcmp(key, "dev_map")) return snprintf(buf, (size_t)n, "out=%u drop=%u last=%d,%d", mb.map_out, mb.map_drop,
                                                  mb.map_last[0], mb.map_last[1]);
+#ifdef FR_HQ
+    if (!strcmp(key, "p_hq")) return snprintf(buf, (size_t)n, "%u", (unsigned)hq_mode);
+#endif
     if (!strcmp(key, "dev_cpu")) return snprintf(buf, (size_t)n, "callbacks=%u max_us=%u", atomic_load(&mb.cpu_n), mb.cpu_max);
     /* development reads (tests, the device session) */
     if (!strcmp(key, "dev_stats"))
@@ -975,6 +993,9 @@ static void mb_set(const char *key, const char *val)
         return;
     }
     if (!strcmp(key, "preset")) { int p = atoi(val); if (p >= 0 && p < (int)(PR_NF + PR_NU)) (void)mb_put(MB_EV_PRESET, 0, 0, 0, 0, 0, p); return; }
+#ifdef FR_HQ
+    if (!strcmp(key, "p_hq")) { (void)mb_put(MB_EV_HQ, 0, 0, 0, 0, 0, atoi(val) != 0); return; }   /* the HQ Rhodes: 1 on, 0 Classic */
+#endif
     if (!strcmp(key, "dev_midi")) {                       /* "T ST D1 D2": a message due at host ms T (the harness) */
         unsigned t, st, d1, d2;
         if (sscanf(val, "%u %i %i %i", &t, &st, &d1, &d2) == 4 && st >= 0x80u && st <= 0xFFu)

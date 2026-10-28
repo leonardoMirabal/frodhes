@@ -30,6 +30,18 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def move_lock(why=""):
+    """the MOVE lock (tools/lock.py, build/locks/MOVE.lockdir in the main checkout): one owner drives the Move at a
+    time, as DEVICE for the FM-1. Never waited for: held by another session, the tool stops at once (SystemExit,
+    naming the holder); held by our caller (its FRODHES_LOCK_MOVE token, e.g. tools/release_devices.py), it goes on.
+    Every tool that sends something to the Move or reads it while a test may run takes it: move_install, move_hil
+    (the usb-* / d2 / usb-levels runs off the fake, facts / install / rollback / logs / cpu), move_ws, the probe"""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import lock
+    return lock.Lock("MOVE", who=os.path.basename(sys.argv[0] or "python"), why=why, wait_s=0, poll_s=0,
+                     say=lambda m: print(m, file=sys.stderr, flush=True))
 MODS = "/data/UserData/schwung/modules/sound_generators"
 MODULE_ID = "frodhes"
 PACKAGE = ("dsp.so", "module.json", "help.json", "sustain.js", "screen.js")
@@ -155,12 +167,14 @@ def main(argv=None):
     t = Target(host=None if a.target_dir else a.host, local_dir=a.target_dir, go=go)
     if not go:
         print("(dry run: add --go to execute; %s)" % (a.target_dir or a.host))
-    if a.cmd == "install":
-        install(t, a.src, a.keep)
-    elif a.cmd == "rollback":
-        rollback(t)
-    else:
-        info(t)
+    import contextlib
+    with (move_lock("move_install " + a.cmd) if go and not a.target_dir else contextlib.nullcontext()):
+        if a.cmd == "install":
+            install(t, a.src, a.keep)
+        elif a.cmd == "rollback":
+            rollback(t)
+        else:
+            info(t)
     return 0
 
 

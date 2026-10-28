@@ -158,6 +158,14 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
   (`move/ui/harness.mjs` runs it on a model of the Move's screen and the plugin); `node tools/move_ui_shots.mjs`
   draws every page into `build/move/ui-shots/` (`--docs`: the pictures on this page).
 - `tools/target_closure.py` lists the sources of each target (FM-1, SMK-37, host, web, Move).
+- `tools/release_devices.py X.Y.Z` runs a release's device tests on the FM-1 and the Move at the same time,
+  unattended. `--dry-run` prints the plan and its minutes. The plan follows the changes since the last tag
+  (`tools/test_map.py`, per target). The FM-1 gets an install and T1, plus T2 when an engine or the DSP changed.
+  The Move gets an install and the release minimum. That minimum is `d2` over the tap, HQ on and off, with only
+  `usb-host`, `usb-stress` (the crackle and the CPU) and `usb-restrike` (`d2 --tests`). When the Move's own code
+  changed, the Move gets the whole `d2` instead. A target whose package sha256 already passed those tiers runs
+  nothing; its record is reused. The tool takes the FM-1's and the Move's locks (DEVICE, MOVE) before it starts.
+  It writes one record with a section per target. `--fake` runs the plan with stand-ins, for tests.
 - `tools/move_hil.py` and `tools/device_null.py` are the device tests (CPU, crackle, the null test against the host).
   Over USB-C, as the FM-1 is tested: `usb-devices`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`
   (MIDI to the Move's Standalone port, its USB audio recorded, the FM-1's analysis; `--fake` runs them against a
@@ -170,6 +178,42 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
   to `module_data/frodhes/tap/<take>.wav`, and the tool fetches the file over ssh. The take starts on the host
   build's block grid (every 2560 ms), so `usb-host` compares it sample for sample. The Move's mix, its volumes and
   its USB-C setting play no part.
+- `d2 --path tap` also reads the plugin's callback times while `usb-stress` plays, which is the worst case. The
+  plugin logs them while `dev_cpu_log` is 1, and the tool fetches `cpu-ring.log` over ssh. The `cpu` row checks
+  them against the working limit. `--hq 1` or `--hq 0` sets the HQ Rhodes on or off for the run, through the
+  plugin's `p_hq` parameter. HQ applies to new notes only: a sounding note keeps the path it started with.
+  With `--hq 1`, `usb-host` compares against the host build with HQ on. The phrase has a note that only HQ
+  changes (96 at v90). If that note plays as Classic while HQ is asked for, the test fails as CLASSIC.
+- `d2 --path tap --hq 1` also runs `usb-restrike` on the Rhodes. The pedal is down and a chord of 8 notes is
+  held on keys 28 to 59. Every 30 to 50 ms, one of 8 keys from 60 to 108 is struck again while it still rings,
+  at velocities 127, 64 and 30 in turn. The key goes up 20 ms before each new strike. One time in six, 3 or 4
+  keys are struck at once. That is more than the HQ live contact's 2 per block, so the rest use the table. The
+  take lasts half of `--secs` (30 s by default). It passes when the worst callback is 600 us or less, nothing
+  glitches, and the sound is not louder after the pedal comes up. The test also writes the first 8 s with HQ
+  on and with HQ off (`restrike-listen-hq1.wav`, `restrike-listen-hq0.wav`) for listening.
+- The plugin keeps its saved setup, but the host build boots clean. So before its take, `usb-host` turns off
+  the arpeggiator, chord mode, the sequencer, the pedal, FX bypass and RAW by CC. Over the tap it also writes
+  each setting that differs from a fresh instance (`move/tests/boot_keys.txt`, checked by `test_bridge boot`).
+  A note that the host strikes once but the Move strikes again while it is held fails as STRUCK AGAIN. That
+  happened in one run, when an arpeggiator left on re-struck every note.
+- A take plays once: the plugin refuses a `begin` with the id of the take that went last. Each `dev_play_add`
+  piece carries its number (`#K`), and the plugin refuses a piece that comes out of turn. If the WebSocket
+  drops while a take is being sent, the tool stops the take. It sends the take again, under a new id, only
+  when the plugin never started it. A take that started is never sent again; the test fails instead.
+- The criteria follow each engine's manual behaviour. VIBES plays with its motor off (CC 47 0), because the
+  motor's pulse moves every level the tests read. Its velocity is checked as the FM-1 scan checks it: no drop from
+  v24 on, and at least +10 dB from v40 to v117. MARIMBA's velocity must rise 26 to 32 dB from v8 to v127. A
+  MARIMBA bar rings for less than a second, so `usb-sus` reads it within 0.2 s of key-up, with MUTE on (CC 103
+  127). The pedal holds the bar, and letting the pedal up mutes it as fast as a key-up does. In `usb-clock`, an
+  attack that the detector finds 5 ms or more late is counted, not taken as timing: a bar's ring can hide the
+  next step's attack. A few such attacks are allowed; the jitter of the other attacks must stay under 4 ms.
+- `usb-levels` compares how loud Frodhes's F01 is with the Move's own instrument on the selected track. Both
+  play through the Move's mix, at the track's volume, and the tool records them over USB-C. The pattern is C2 to
+  C6, one note at a time, then a held chord, at v100, v64 and v127. First the stock instrument plays it over
+  MIDI. Frodhes's CHANNEL is moved off the notes for that take, and its tap must stay silent the whole time.
+  Then Frodhes plays the same pattern on its own player, which no Move track hears. The report gives the gain
+  that would match the two, by LUFS and by critical-band loudness. It changes nothing. A USB-C stream that is
+  the microphone stops it.
 - MIDI into the Standalone port also plays the Move's own instrument on the track. Schwung passes the notes to
   the Move's firmware and to the slot alike. For a clean comparison, give that Move track a silent instrument.
   Muting the track or turning it down also silences the slot, because the slot follows the track's mute and

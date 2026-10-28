@@ -360,14 +360,15 @@ class FakeRig(UsbRig):
             if i0 >= n:
                 continue
             amp = 300 + 9000 * (v / 127) ** 2
-            # the envelope piecewise: tau 2 s while the key or the pedal holds it, 0.05 s when damped
+            # the envelope piecewise: tau 2 s while the key or the pedal holds it, 0.05 s when damped (MARIMBA, CC 79
+            # over 63: 0.01 s, the hand's mute)
             cuts = sorted({t2} | {s for s, _ in ped if s > t2})
             env = np.ones(n - i0)
             ts = tt[i0:] - FAKE_LAT
             lvl, last = 1.0, t1
             seg_ts = [t1] + [c for c in cuts if c < dur] + [dur + 1]
             for s0, s1 in zip(seg_ts, seg_ts[1:]):
-                tau = 2.0 if (s0 < t2 or pedal_at(s0)) else 0.05
+                tau = 2.0 if (s0 < t2 or pedal_at(s0)) else (0.01 if self.state.get(79, 0) >= 64 else 0.05)
                 m = (ts >= s0) & (ts < s1)
                 env[m] = lvl * np.exp(-(ts[m] - s0) / tau)
                 lvl = lvl * np.exp(-(s1 - s0) / tau)
@@ -425,28 +426,121 @@ def scp_fetch(host, local_dir):
     return fetch
 
 
+def scp_cpu(host):
+    """the plugin's timer ring (cpu-ring.log in its module folder, written while dev_cpu_log is 1) from the Move:
+    cpu() -> its text ("" when there is none), the file deleted there"""
+    import subprocess
+    path = "%s/%s/cpu-ring.log" % (mi.MODS, mi.MODULE_ID)
+
+    def cpu():
+        r = subprocess.run(["ssh", *mi.SSH_OPTS, host, "cat %s 2>/dev/null; rm -f %s" % (path, path)],
+                           capture_output=True, text=True)
+        return r.stdout if r.returncode == 0 else ""
+    return cpu
+
+
 class TapRig(UsbRig):
     """the Move without its mix: every take goes to the plugin's own player over Schwung's WebSocket (dev_play: no
     MIDI on cable 2, so no Move track plays along) and comes back as the plugin's own output (the tap file: before
     the slot's volume, the Move's mix, its master and its USB-C setting). What the tests send before a take (the
     panel's CCs, a program change) leads the take, as host_phrase's do; rec() returns the take from TAP_PRE_MS on.
-    fetch(take) -> (wav, json) | None (scp_fetch; a test passes its own)"""
+    fetch(take) -> (wav, json) | None (scp_fetch; a test passes its own). cpu() -> the timer ring's text, the
+    file then deleted (scp_cpu; None: no CPU read)"""
     fake = False
 
-    def __init__(self, url, fetch, ch=USB_CH, slot=0, wait=10.0):
+    def __init__(self, url, fetch, ch=USB_CH, slot=0, wait=10.0, cpu=None):
         import move_ws
         self.remote, self.fetch, self.ch, self.slot, self.wait = move_ws.Remote(url), fetch, int(ch), slot, wait
+        self.cpu_fetch, self.hq = cpu, None
         self.port_name, self.audio_name, self.sr = "Schwung %s, slot %d, dev_play" % (url, slot + 1), "the plugin's tap", FS
         self.pending, self.n, self.mido = [], 0, hs._Mido
         self.stamp = time.strftime("%H%M%S")
         self.stop()                              # (a take left armed by an earlier run would refuse the next)
 
     def stop(self):
-        self.remote.set_param(self.slot, "synth:dev_play", "stop")
-        self.remote.pump(0.5)
+        self._set("synth:dev_play", "stop")
+        self._pump(0.5)
+
+    def reconnect(self):
+        """a new connection after the manager dropped this one (the plugin keeps playing: nothing lost but the
+        socket)"""
+        import move_ws
+        try:
+            self.remote.close()
+        except Exception:
+            pass
+        self.remote = move_ws.Remote(self.remote.url)
+
+    def _pump(self, secs):
+        import move_ws
+        try:
+            self.remote.pump(secs)
+        except move_ws.ConnectionClosed:
+            self.reconnect()
+
+    def _set(self, key, value):
+        import move_ws
+        try:
+            self.remote.set_param(self.slot, key, value)
+        except move_ws.ConnectionClosed:
+            self.reconnect()
+            self.remote.set_param(self.slot, key, value)
 
     def _send(self, kind, a, b=0):
         self.pending.append((kind, int(a), int(b)))
+
+    def set_hq(self, on):
+        """the HQ Rhodes (the bridge's p_hq): new notes play HQ (1) or Classic (0)"""
+        self._set("synth:p_hq", 1 if on else 0)
+        self.hq = 1 if on else 0
+        self._pump(0.2)
+
+    def boot_settings(self):
+        """the app's settings as the host build boots (boot_keys): a setup the Move saved cannot play along. Only the
+        keys whose value Schwung reports otherwise (or not at all) are written: a write is not always nothing (the
+        pedal's, see host_phrase), and the host build gets none. The read and the writes go over a connection of
+        their own, kept open until the manager's re-read has gone out: the rig's own never subscribes (a
+        subscriber gets every write's re-read, 94 params, and the manager then reads its socket late). Returns the
+        keys written"""
+        import move_ws
+        w = move_ws.Remote(self.remote.url)
+        try:
+            try:
+                w.subscribe(self.slot)
+            except (OSError, TimeoutError):
+                pass
+            sent = self._boot_write(w)
+            w.pump(1.5)
+        finally:
+            w.close()
+        return sent
+
+    def _boot_write(self, w):
+        have, sent = w.params.get(self.slot, {}), []
+
+        def same(a, b):
+            try:
+                return a is not None and float(a) == float(b)
+            except ValueError:
+                return a == b
+        for k, v in boot_keys():
+            if not same(have.get("synth:" + k), v):
+                w.set_param(self.slot, "synth:" + k, v)
+                sent.append(k)
+                time.sleep(0.003)
+        return sent
+
+    def cpu_start(self):
+        """the plugin logs every callback's time from now (dev_cpu_log 1); an older log is dropped first"""
+        self.cpu_fetch()
+        self._set("synth:dev_cpu_log", 1)
+        self._pump(0.2)
+
+    def cpu_stop(self):
+        """dev_cpu_log 0, then the ring since cpu_start: [(callback, us, frames)]"""
+        self._set("synth:dev_cpu_log", 0)
+        self._pump(0.5)                    # (the worker writes the log every 100 ms)
+        return parse_ring(self.cpu_fetch() or "")
 
     def level_now(self, secs=0.3):
         return -240.0
@@ -468,7 +562,23 @@ class TapRig(UsbRig):
         ev += [(TAP_PRE_MS + int(round(1000 * t)), *to_status(k, a, b, self.ch)) for t, k, a, b in events]
         self.pending = []
         dur_ms = TAP_PRE_MS + int(round(1000 * dur)) + 1
-        self.remote.play(self.slot, take, dur_ms, ev)
+        import move_ws
+        try:
+            self.remote.play(self.slot, take, dur_ms, ev)
+        except move_ws.ConnectionClosed:
+            # (the connection dropped while the take went up: stop it, and play it again under a new id only when
+            # the plugin shows it never started: no tap file, or one that played nothing. A take that started is
+            # never sent again: its notes would sound twice)
+            self.reconnect()
+            self.stop()
+            time.sleep(1.0)
+            got = self.fetch(take)
+            if got is not None and got[1].get("played", 1):
+                raise RuntimeError("the WebSocket dropped while take %s went up, and the plugin had started it "
+                                   "(played %s of %s): not sent again" % (take, got[1].get("played"),
+                                                                         got[1].get("events")))
+            take += "r"
+            self.remote.play(self.slot, take, dur_ms, ev)
         time.sleep(dur_ms / 1000 + TAP_GRID_S + 0.3)
         got, t0 = None, time.monotonic()
         while got is None and time.monotonic() - t0 < self.wait:
@@ -568,7 +678,25 @@ def _save(d, name, take):
     w.close()
 
 
-ENGINE_CCS = {"rhodes": (), "vibes": ((79, 0),), "marimba": ((79, 127),)}   # (hil_crackle.engine_ccs: CC 79 bar TYPE)
+GLOBAL_CCS = ((52, 0), (56, 0), (60, 0), (63, 0), (64, 0), (111, 0), (119, 0))
+# (the modes param_defaults does not reach, off as the host boots: the arpeggiator, chord mode, the sequencer's play
+# and recording, the pedal, the FX bypass, RAW)
+BOOT_KEYS = os.path.join(ROOT, "move", "tests", "boot_keys.txt")
+
+
+def boot_keys():
+    """[(key, value)]: the app's settings as a new instance has them (move/tests/boot_keys.txt)"""
+    out = []
+    for ln in open(BOOT_KEYS):
+        if ln.strip() and not ln.startswith("#"):
+            k, v = ln.split()
+            out.append((k, v))
+    return out
+
+
+ENGINE_CCS = {"rhodes": (), "vibes": ((79, 0), (47, 0)), "marimba": ((79, 127),)}   # (hil_crackle.engine_ccs: CC 79
+# the bar TYPE; VIBES with its motor off, CC 47: the TYPE's turn switches it on, and its pulse would move every level
+# the tests read; usb-host plays the presets, F13 with its motor)
 
 
 def _prep(r, engine=None, **cc):
@@ -623,7 +751,17 @@ def usb_note(r, d, note=60, vel=100, engine=None, name="note", out=print):
 VELS = (1, 8, 16, 24, 32, 48, 64, 80, 96, 112, 127)
 
 
-def usb_vel(r, d, note=60, vels=VELS, engine=None, out=print):
+# usb-vel per engine, as the FM-1's scans judge it (tools/hil_scan.py vibes_vel / marimba_vel): the velocities, the
+# first one from which no step may fall more than 0.5 dB, and the rise (dB) from lo to hi. VIBES with the motor off
+# (its pulse moves a 100 ms level by a few dB, by where the strike falls on it)
+VEL = {"rhodes": dict(vels=VELS, mono_from=1, rise=(1, 127, 20.0, None)),
+       "vibes": dict(vels=(1, 8, 24, 40, 64, 80, 96, 117, 127), mono_from=24, rise=(40, 117, 10.0, None)),
+       "marimba": dict(vels=VELS, mono_from=8, rise=(8, 127, 26.0, 32.0))}
+
+
+def usb_vel(r, d, note=60, vels=None, engine=None, out=print):
+    c = VEL[engine or "rhodes"]
+    vels = vels or c["vels"]
     _prep(r, engine)
     step, ev = 1.2, []
     for i, v in enumerate(vels):
@@ -646,11 +784,16 @@ def usb_vel(r, d, note=60, vels=VELS, engine=None, out=print):
     if any(v is None for v in lv):
         bad.append("silent at v%s" % [w["vel"] for w in rows if w["db"] is None])
     else:
-        drops = [(rows[i]["vel"], rows[i + 1]["vel"]) for i in range(len(lv) - 1) if lv[i + 1] < lv[i] - 0.5]
+        drops = [(rows[i]["vel"], rows[i + 1]["vel"]) for i in range(len(lv) - 1)
+                 if rows[i]["vel"] >= c["mono_from"] and lv[i + 1] < lv[i] - 0.5]
         if drops:
             bad.append("level falls between %s" % drops)
-        if lv[-1] - lv[0] < 20:
-            bad.append("range %.1f dB (< 20)" % (lv[-1] - lv[0]))
+        lo, hi, need, most = c["rise"]
+        if lo in vels and hi in vels:
+            rise = lv[vels.index(hi)] - lv[vels.index(lo)]
+            if rise < need or (most is not None and rise > most):
+                bad.append("v%d -> v%d: %.1f dB (want %s)" % (lo, hi, rise, ">= %g" % need if most is None else
+                                                             "%g..%g" % (need, most)))
     g = glitches(x, sr, ev)
     if g:
         bad.append("%d glitch(es)" % len(g))
@@ -670,48 +813,67 @@ def _after_keyup(x, sr, t_off, span, win=0.05):
     return max(w) - ref if w else -240.0
 
 
+# usb-sus per engine (times in s from the take's start): the key-up, the windows the levels are read in, the pedal's
+# let-up and the catch's press. A Rhodes note and a vibraphone bar ring for seconds: the FM-1's sustain preflight
+# (1 s after key-up). A marimba bar's own ring is short (C4 is ~35 dB down 0.4 s in, MANUAL section 5: "MUTE 0 rings
+# out"), so the pedal is judged while the bar still rings: MUTE at 10.0 (CC 103 127: the hand stops it 60 dB down
+# within 0.1 s), the key let go at 0.35 s, the levels 0.1-0.2 s after; held, the hand never lands (MANUAL: "the
+# pedal keeps its meaning")
+SUS = {"rhodes": dict(off=0.8, win=(0.9, 1.15), up=2.0, gone=(0.9, 1.3), dur=(2.2, 3.4), catch=0.5, hold_db=15.0,
+                      cc=()),
+       "marimba": dict(off=0.35, win=(0.1, 0.2), up=0.55, gone=(0.1, 0.2), dur=(1.2, 1.4), catch=0.25, hold_db=None,
+                       cc=((103, 127),))}
+SUS["vibes"] = SUS["rhodes"]
+
+
 def usb_sus(r, d, note=60, vel=100, engine=None, out=print):
     """three takes: (a) no pedal: the note dies after key-up; (b) the pedal down before the note, key-up: it rings,
-    then the pedal up damps it; (c) the pedal pressed after the note (it catches the held note)"""
-    rep, bad = {}, []
-    _prep(r, engine)
-    ev = [(0.2, "on", note, vel), (0.8, "off", note, 0)]
-    a = r.rec(2.2, ev)
+    then the pedal up damps it; (c) the pedal pressed after the note (it catches the held note). The pedal holds when
+    (b) at the window after key-up is >= 20 dB over (a) there (and, where notes ring for seconds, within hold_db of
+    its level before key-up); SUS[engine] gives the times"""
+    c = SUS[engine or "rhodes"]
+    off, (w0, w1), up, (g0, g1) = c["off"], c["win"], c["up"], c["gone"]
+    rep, bad = {"engine": engine or "rhodes"}, []
+    _prep(r, engine, **{"c%d" % k: v for k, v in c["cc"]})
+    ev = [(0.2, "on", note, vel), (off, "off", note, 0)]
+    a = r.rec(c["dur"][0], ev)
     _save(d, "sus-a-damped", a)
     lat = (_onset(a["x"], a["sr"], 0.2) or 0.2) - 0.2
     x, sr = a["x"], a["sr"]
-    ref = hs.db(_seg(x, sr, 0.7 + lat, 0.8 + lat))
-    dead = hs.db(_seg(x, sr, 1.7 + lat, 2.0 + lat))
+    ref = hs.db(_seg(x, sr, off - 0.1 + lat, off + lat))
+    dead = hs.db(_seg(x, sr, off + w0 + lat, off + w1 + lat))
     rep["damped"] = {"before_off_db": round(ref, 1), "after_1s_db": round(dead, 1),
-                     "louder_after_keyup_db": round(_after_keyup(x, sr, 0.8 + lat, 1.0), 2)}
+                     "louder_after_keyup_db": round(_after_keyup(x, sr, off + lat, 1.0), 2)}
     if dead > ref - 40:
-        bad.append("(a) a damped note does not die: %.1f dB down 1 s after key-up" % (ref - dead))
-    ev = [(0.1, "cc", 64, 127), (0.2, "on", note, vel), (0.8, "off", note, 0), (2.0, "cc", 64, 0)]
-    b = r.rec(3.4, ev)
+        bad.append("(a) a damped note does not die: %.1f dB down %.2f s after key-up" % (ref - dead, w0))
+    ev = [(0.1, "cc", 64, 127), (0.2, "on", note, vel), (off, "off", note, 0), (up, "cc", 64, 0)]
+    b = r.rec(c["dur"][1], ev)
     _save(d, "sus-b-pedal", b)
     x, sr = b["x"], b["sr"]
-    ref = hs.db(_seg(x, sr, 0.7 + lat, 0.8 + lat))
-    ring = hs.db(_seg(x, sr, 1.7 + lat, 1.95 + lat))
-    gone = hs.db(_seg(x, sr, 2.9 + lat, 3.3 + lat))
+    ref = hs.db(_seg(x, sr, off - 0.1 + lat, off + lat))
+    ring = hs.db(_seg(x, sr, off + w0 + lat, off + w1 + lat))
+    gone = hs.db(_seg(x, sr, up + g0 + lat, up + g1 + lat))
     rep["pedal"] = {"before_off_db": round(ref, 1), "held_1s_db": round(ring, 1), "after_up_db": round(gone, 1),
-                    "louder_after_keyup_db": round(_after_keyup(x, sr, 0.8 + lat, 1.1), 2)}
-    if ring < ref - 15:
-        bad.append("(b) the pedal does not hold: %.1f dB down 1 s after key-up (CC 64 reached the slot?)" % (ref - ring))
+                    "over_damped_db": round(ring - dead, 1),
+                    "louder_after_keyup_db": round(_after_keyup(x, sr, off + lat, 1.1), 2)}
+    if ring < dead + 20 or (c["hold_db"] is not None and ring < ref - c["hold_db"]):
+        bad.append("(b) the pedal does not hold: %.1f dB down %.2f s after key-up, %.1f dB over the damped note (CC 64 "
+                   "reached the slot?)" % (ref - ring, w0, ring - dead))
     if gone > ring - 30:
         bad.append("(b) the pedal let up does not damp: %.1f dB down" % (ring - gone))
-    ev = [(0.2, "on", note, vel), (0.5, "cc", 64, 127), (0.8, "off", note, 0), (2.0, "cc", 64, 0)]
-    c = r.rec(3.4, ev)
-    _save(d, "sus-c-catch", c)
-    x, sr = c["x"], c["sr"]
-    ref = hs.db(_seg(x, sr, 0.7 + lat, 0.8 + lat))
-    ring = hs.db(_seg(x, sr, 1.7 + lat, 1.95 + lat))
+    ev = [(0.2, "on", note, vel), (c["catch"], "cc", 64, 127), (off, "off", note, 0), (up, "cc", 64, 0)]
+    cc_ = r.rec(c["dur"][1], ev)
+    _save(d, "sus-c-catch", cc_)
+    x, sr = cc_["x"], cc_["sr"]
+    ref = hs.db(_seg(x, sr, off - 0.1 + lat, off + lat))
+    ring = hs.db(_seg(x, sr, off + w0 + lat, off + w1 + lat))
     rep["catch"] = {"held_1s_db": round(ring, 1), "before_off_db": round(ref, 1)}
-    if ring < ref - 15:
+    if ring < dead + 20 or (c["hold_db"] is not None and ring < ref - c["hold_db"]):
         bad.append("(c) the pedal pressed under a held key does not catch it")
     for k in ("damped", "pedal"):
         if rep[k]["louder_after_keyup_db"] > 1.0:
             bad.append("(%s) louder after key-up by %.1f dB" % (k, rep[k]["louder_after_keyup_db"]))
-    g = glitches(a["x"], a["sr"], [(0.2, "on", note, vel), (0.8, "off", note, 0)])
+    g = glitches(a["x"], a["sr"], [(0.2, "on", note, vel), (off, "off", note, 0)])
     rep["glitches"] = g
     if g:
         bad.append("%d glitch(es) in (a)" % len(g))
@@ -749,20 +911,120 @@ def usb_clock(r, d, bpm=120.0, secs=8.0, note=60, engine=None, out=print):
             ons.append(t)
             last = t
     want = 30.0 / bpm
-    iv = np.diff(ons[1:]) if len(ons) > 3 else np.array([])
+    o = np.array(ons[1:])
     rep = {"bpm": bpm, "steps": len(ons), "want_ms": round(1000 * want, 2)}
     bad = []
-    if len(iv) < 4:
+    if len(o) < 5:
         bad.append("%d steps: the clock or the arpeggiator did not run (does the slot get F8 / Start?)" % len(ons))
     else:
-        med, sd = float(np.median(iv)), float(np.std(iv))
-        rep.update(median_ms=round(1000 * med, 2), jitter_ms=round(1000 * sd, 2), bpm_seen=round(30.0 / med, 2))
+        # (each attack against a straight line through them: an attack the detector catches 5 ms or more late, under
+        # the ring of the step before (the bars), is counted, not taken as timing; jitter is the spread of the others)
+        k = np.round((o - o[0]) / float(np.median(np.diff(o))))
+        inl = np.ones(len(o), bool)
+        for _ in range(2):
+            a, b = np.polyfit(k[inl], o[inl], 1)
+            res = o - (a * k + b)
+            inl = np.abs(res) < 0.005
+        med, sd, late = float(a), float(np.std(res[inl])), int((~inl).sum())
+        rep.update(median_ms=round(1000 * med, 2), jitter_ms=round(1000 * sd, 2), bpm_seen=round(30.0 / med, 2),
+                   late=late)
         if abs(med / want - 1) > 0.01:
             bad.append("step %.1f ms against %.1f ms (%.2f BPM seen)" % (1000 * med, 1000 * want, 30.0 / med))
         if sd > 0.004:
             bad.append("jitter %.1f ms" % (1000 * sd))
+        if late > max(2, len(o) // 10):
+            bad.append("%d of %d attacks off the beat by 5 ms or more" % (late, len(o)))
     rep["verdict"] = "FAIL: " + "; ".join(bad) if bad else "PASS"
     out("clock %.1f BPM: %s: %s" % (bpm, {k: v for k, v in rep.items() if k != "verdict"}, rep["verdict"]))
+    return not bad, rep
+
+
+RESTRIKE_KEYS = (60, 67, 74, 81, 88, 95, 102, 108)    # (spread over the HQ live contact's range, keys >= 60)
+RESTRIKE_CHORD = (28, 33, 38, 43, 47, 52, 55, 59)      # (8 held under the pedal: with the 8 above, 16 voices)
+RESTRIKE_VELS = (127, 64, 30)
+RESTRIKE_LIMIT_US = 600                                # (A's spec: the worst callback with the live contacts)
+
+
+def restrike_events(secs=30.0, seed=0):
+    """the HQ re-strike stress (A's spec, HQ item 4): the pedal down, a chord of 8 held on keys 28-59; the 8 keys
+    of RESTRIKE_KEYS struck once, then every 30-50 ms one of them (in turn) struck again while it rings: key up
+    20 ms before (a note-on of a held key is no re-strike), velocities 127 / 64 / 30 in turn; one time in six 3 or
+    4 keys at once (more than the 2 live contacts a block: the rest take the table). Then every key up, the pedal
+    up. (events, the pedal's let-up time, duration)"""
+    rng = np.random.default_rng(seed)
+    ev = [(0.1, "cc", 64, 127)] + [(0.2, "on", n, 100) for n in RESTRIKE_CHORD]
+    ev += [(0.3 + 0.03 * i, "on", n, 100) for i, n in enumerate(RESTRIKE_KEYS)]
+    t, k, v, end = 0.8, 0, 0, 0.8 + secs
+    last = {n: 0.3 + 0.03 * i for i, n in enumerate(RESTRIKE_KEYS)}
+    while t < end:
+        m = int(rng.choice((3, 4))) if rng.random() < 1 / 6 else 1
+        for _ in range(m):
+            n = RESTRIKE_KEYS[k % len(RESTRIKE_KEYS)]
+            k += 1
+            if t - last[n] < 0.045:              # (its own last strike too close: the next key)
+                continue
+            ev += [(t - 0.020, "off", n, 0), (t, "on", n, RESTRIKE_VELS[v % 3])]
+            v += 1
+            last[n] = t
+        t += float(rng.uniform(0.030, 0.050))
+    ev += [(end + 0.2, "off", n, 0) for n in RESTRIKE_CHORD + RESTRIKE_KEYS]
+    ev += [(end + 0.5, "cc", 64, 0)]
+    return sorted(ev, key=lambda e: e[0]), end + 0.5, end + 2.5
+
+
+def usb_restrike(r, d, secs=30.0, listen_secs=8.0, seed=0, out=print):
+    """the HQ re-strike stress on the Rhodes (F01, HQ on; over the tap with the CPU read: every callback's time,
+    against RESTRIKE_LIMIT_US): no glitch, never louder after the pedal's let-up. Then the listening pair: the
+    phrase's first listen_secs with HQ on and with HQ off (restrike-listen-hq1.wav / -hq0.wav, for an A/B); the HQ
+    switch is left on"""
+    rep, bad = {"secs": secs}, []
+    ev, up, dur = restrike_events(secs, seed)
+    r._send("cc", 123, 0)
+    for c, v in GLOBAL_CCS:
+        r._send("cc", c, v)
+    r._send("pc", 0, 0)
+    if hasattr(r, "set_hq"):
+        r.set_hq(1)
+    cpu = hasattr(r, "cpu_start") and getattr(r, "cpu_fetch", None) is not None
+    if cpu:
+        r.cpu_start()
+    try:
+        tk = r.rec(dur, ev)
+    finally:
+        rows = r.cpu_stop() if cpu else []
+    _save(d, "restrike-hq1", tk)
+    x, sr = tk["x"], tk["sr"]
+    g = glitches(x, sr, ev)
+    louder = _after_keyup(x, sr, up, 1.0)
+    rep.update(notes=sum(1 for e in ev if e[1] == "on"), restrikes=sum(1 for e in ev if e[1] == "on") - 16,
+               peak_dbfs=round(20 * np.log10(np.abs(x).max() / 32767 + 1e-12), 1), glitches=g,
+               louder_after_up_db=round(float(louder), 2), xruns=tk["xruns"])
+    if cpu:
+        c = cpu_summary(rows, RESTRIKE_LIMIT_US)
+        rep["cpu"] = c
+        if not c["n"]:
+            bad.append("no callback times (dev_cpu_log reached the plugin?)")
+        elif c["over"] or c["missing"]:
+            bad.append("worst callback %d us (%d over %d us, %d missing)" % (c["worst"], c["over"], RESTRIKE_LIMIT_US,
+                                                                            c["missing"]))
+    if g:
+        bad.append("%d glitch(es): %s" % (len(g), g[:3]))
+    if louder > 1.0:
+        bad.append("louder after the pedal's let-up by %.1f dB" % louder)
+    if tk["xruns"]:
+        bad.append("the take: %s" % tk["xruns"])
+    lev = [e for e in ev if e[0] < listen_secs] + [(listen_secs, "off", n, 0) for n in RESTRIKE_CHORD + RESTRIKE_KEYS]
+    lev += [(listen_secs + 0.3, "cc", 64, 0)]
+    for hq in ((0, 1) if hasattr(r, "set_hq") else ()):
+        r.set_hq(hq)
+        r._send("cc", 123, 0)
+        _save(d, "restrike-listen-hq%d" % hq, r.rec(listen_secs + 2.0, lev))
+    if hasattr(r, "set_hq"):
+        r.set_hq(1)
+    rep["verdict"] = "FAIL: " + "; ".join(bad) if bad else "PASS"
+    out("restrike: %d re-strikes in %.0f s, peak %s dBFS, %s, %d glitch(es), after the let-up %+.1f dB: %s" % (
+        rep["restrikes"], secs, rep["peak_dbfs"], "worst %s us" % rep["cpu"].get("worst") if cpu else "no CPU read",
+        len(g), louder, rep["verdict"]))
     return not bad, rep
 
 
@@ -825,7 +1087,9 @@ def usb_devices(midi=None, audio=None, out=print):
     return 0 if pm and pa else 2
 
 
-PHRASE = [(36, 40), (36, 127), (60, 40), (60, 100), (60, 127), (84, 40), (84, 127)]   # (note, velocity), one by one
+PHRASE = [(36, 40), (36, 127), (60, 40), (60, 100), (60, 127), (84, 40), (84, 127), (96, 90)]   # (note, velocity)
+# (one by one; 96 v90: a key over HQ_OS_LO at a velocity between the Classic layers, so HQ on and off differ there)
+HQ_PROBE = "96 v90"
 CHORD = [(48, 90), (60, 100), (64, 100), (67, 100), (72, 110)]
 NOTE_S, GAP_S = 1.0, 1.0                    # held, then the release's silence before the next
 
@@ -841,16 +1105,32 @@ def phrase_events(t0=0.4):
     return ev, marks, t + 1.5 + GAP_S + 0.5
 
 
-def host_phrase(ev, dur, program=0):
-    """the host build (tests/host.c) playing the events after program change program (F01 = 0): (n, 2) LSB at 44.1"""
+MOVE_HOST = os.path.join(ROOT, "build", "host", "frodhes-move-hq%d")
+MOVE_HOST_DEFS = ["-O2", "-DFR_VOICES=16u", "-DFR_HQ=1"]   # (the Makefile's MOVE_DEFS: the Move's build)
+
+
+def host_binary(hq=None):
+    """the host build to compare with: the Move's (16 voices, FR_HQ: the bars without the FM-1's budget, d6cd6bfe),
+    new notes HQ (hq) or Classic"""
+    sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
+    import hostrun
+    h = 1 if hq else 0
+    return hostrun.build(MOVE_HOST % h, extra=MOVE_HOST_DEFS + ["-DHQ_DEFAULT=%d" % h])
+
+
+def host_phrase(ev, dur, program=0, hq=None, lead=()):
+    """the host build (tests/host.c) playing the events after program change program (F01 = 0): (n, 2) LSB at 44.1;
+    hq: the HQ Rhodes' build (host_binary); lead: [(cc, value)] at 1 ms, before the program change, as the take
+    has them (a pedal let up at boot is not nothing: CC 64 0 moves a later note by a few LSB)"""
     sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
     import hostrun
     pre = 500
-    lines = ["5 midi 0xC0 %d" % program]
+    lines = ["1 midi 0xB0 %d %d" % cv for cv in lead] + ["5 midi 0xC0 %d" % program]
     for t, k, a, b in ev:
         ms = pre + int(round(1000 * t))
         lines.append("%d midi 0x%02X %d %d" % (ms, {"on": 0x90, "off": 0x80, "cc": 0xB0}[k], a, b))
-    run = hostrun.run("move-same-as-host", lines, pre + int(1000 * dur) + 20)
+    run = hostrun.run("move-same-as-host" + ("-hq" if hq else ""), lines, pre + int(1000 * dur) + 20,
+                      binary=host_binary(hq))
     i0 = int(pre * hostrun.FS / 1000)
     return np.stack([np.asarray(run.L[i0:], float), np.asarray(run.R[i0:], float)], 1)
 
@@ -862,6 +1142,28 @@ def _lag(a, b, maxlag):
     lags = np.r_[np.arange(0, maxlag + 1), np.arange(-maxlag, 0)]
     vals = np.r_[c[:maxlag + 1], c[-maxlag:]]
     return int(lags[int(np.argmax(vals))])
+
+
+def _strikes(x, sr, thr=0.2, k=2.5):
+    """the times (ms from the note's start) of the strikes after the first in a held note x: a sharp step in the
+    sample-to-sample difference (2 ms peaks) over thr of the note's own attack and k times the 10 ms before it, with
+    the level rising (the next 10 ms 3 dB over the 20 ms before: a sound that stops is no strike)"""
+    x = np.asarray(x, float)
+    d = np.abs(np.diff(x))
+    hop = int(0.002 * sr)
+    e = np.array([d[i:i + hop].max() for i in range(0, len(d) - hop, hop)])
+    if len(e) < 11:
+        return []
+    p0, out, last = e[:10].max(), [], 0.0
+    for i in range(10, len(e)):
+        t = i * hop / sr
+        if e[i] > thr * p0 and e[i] > k * e[max(0, i - 5):i].max() and t - last > 0.05:
+            j, w = i * hop, int(0.01 * sr)
+            after, before = np.sqrt(np.mean(x[j:j + w] ** 2)), np.sqrt(np.mean(x[max(0, j - 2 * w):j] ** 2))
+            if after > 1.41 * before:
+                out.append(round(1000 * t))
+                last = t
+    return out
 
 
 def _decay_s(x, sr, db=20.0):
@@ -895,12 +1197,17 @@ def usb_host(r, d, program=0, out=print):
     the Move's volume"""
     ev, marks, dur = phrase_events()
     r._send("cc", 123, 0)
+    for c, v in GLOBAL_CCS:                     # (the host boots with these off; the Move keeps what was saved)
+        r._send("cc", c, v)
+    if hasattr(r, "boot_settings"):
+        r.boot_settings()
     r._send("pc", program, 0)
     time.sleep(0.5)
     tk = r.rec(dur, ev)
     _save(d, "move-phrase", tk)
     mv, sr = tk["x"], tk["sr"]
-    h = host_phrase(ev, dur, program)
+    hq = getattr(r, "hq", None)
+    h = host_phrase(ev, dur, program, hq, GLOBAL_CCS)
     _save(d, "host-phrase", {"x": h, "sr": 44100})
     rows, segs = [], []
     maxlag = int(0.08 * sr)
@@ -946,18 +1253,42 @@ def usb_host(r, d, program=0, out=print):
         st = slice(int(0.25 * sr), int(0.75 * sr))
         fm, fh = _f0(mm[st], sr, note_hz(n)), _f0(hm[st], sr, note_hz(n))
         tail = 20 * np.log10((np.sqrt(np.mean((g * hm[-nt:]) ** 2)) + 1e-9) / 32768)
-        rows.append({"note": name, "lag_ms": round(1000 * lag / sr, 2), "tail_corr": round(corr, 4),
+        hs_ = _strikes(hm[held], sr)
+        again = [t for t in _strikes(mm[held], sr) if all(abs(t - u) > 15 for u in hs_)]
+        rows.append({"note": name, "lag_ms": round(1000 * lag / sr, 2), "tail_corr": round(corr, 4), "again_ms": again,
                      "residual_db": round(float(rd), 1), "tail_dbfs": round(float(tail), 1),
                      "judged": bool(tail >= TAIL_JUDGED_DBFS), "extra_db": round(float(ex_db), 1), "extra_hz": peaks,
                      "f0_move_c": round(1200 * np.log2(fm / note_hz(n)), 2) if fm else None,
                      "f0_host_c": round(1200 * np.log2(fh / note_hz(n)), 2) if fh else None,
                      "decay_move_s": _decay_s(mm, sr), "decay_host_s": _decay_s(hm, sr),
                      "centroid_move": round(_centroid(mm[st], sr)), "centroid_host": round(_centroid(hm[st], sr))})
-    rep = {"program": program, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
+    classic_db = None
+    if hq:                                       # (HQ asked: the take must not be Classic where only HQ differs)
+        c = host_phrase(ev, dur, program, None, GLOBAL_CCS)
+        for name, t, n in marks:
+            if name == HQ_PROBE:
+                a, b = int(t * sr), int((t + NOTE_S) * sr)
+                dm, dc = _mono(mv[a:b]) - g * _mono(h[a:b]), _mono(mv[a:b]) - g * _mono(c[a:b])
+                vs = 20 * np.log10((np.sqrt(np.mean(dc ** 2)) + 1e-9) / (np.sqrt(np.mean(dm ** 2)) + 1e-9))
+                hc = _mono(h[a:b]) - _mono(c[a:b])
+                # (only where HQ changes the sound: the Rhodes; the bars have no HQ path, both hosts the same)
+                classic_db = round(float(vs), 1) if np.abs(hc).max() > 0 else None
+    rep = {"program": program, "hq": hq, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
            "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max())}
     bad = [w["note"] for w in rows if w["residual_db"] > -40 and w["judged"]]
     extra = [w["note"] for w in rows if w["extra_db"] > -30]
-    rep["verdict"] = ("PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad and not extra else
+    again = ["%s +%s ms" % (w["note"], "/".join(str(t) for t in w["again_ms"])) for w in rows if w["again_ms"]]
+    classic = False
+    if hq:
+        rep["hq_vs_classic_db"] = classic_db     # (the take's residual against Classic over the one against HQ)
+        classic = classic_db is not None and classic_db < 20.0
+    rep["verdict"] = ("CLASSIC: HQ was asked (p_hq 1) but %s plays as Classic (%.1f dB nearer the HQ host than the "
+                      "Classic one: p_hq did not reach the plugin?)" % (HQ_PROBE, rep["hq_vs_classic_db"])
+                      if classic else
+                      "STRUCK AGAIN: %s (a note the host strikes once comes again while it is held: the arpeggiator, "
+                      "chord mode or the sequencer on in the plugin, or the schedule played twice)" % ", ".join(again)
+                      if again else
+                      "PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad and not extra else
                       "DIFFERS at %s (residual over -40 dB after one gain, 0.5-1.0 s into the note)" % bad if bad else
                       "FRODHES = the host (tails), but ANOTHER SOUND plays with the keys at %s (a Move instrument "
                       "on the track, or another slot): silence it and rerun" % extra)
@@ -969,7 +1300,7 @@ def usb_host(r, d, program=0, out=print):
                 w["f0_move_c"] or 0, w["f0_host_c"] or 0, w["decay_move_s"], w["decay_host_s"],
                 w["centroid_move"], w["centroid_host"]))
     out(rep["verdict"])
-    return not bad and not extra, rep
+    return not bad and not extra and not again and not classic, rep
 
 
 def usb_host_file(d, out=print):
@@ -988,7 +1319,7 @@ def usb_host_file(d, out=print):
             return {"x": m, "sr": sr, "xruns": []}
     global host_phrase
     keep = host_phrase
-    host_phrase = lambda ev, dur, program=0: h            # noqa: E731
+    host_phrase = lambda ev, dur, program=0, hq=None, lead=(): h   # noqa: E731
     try:
         return usb_host(Saved(), os.path.join(d, "reanalysis"), out=out)
     finally:
@@ -1119,8 +1450,9 @@ def _num(rep, test):
         if test == "usb-host":
             w = rep["rows"]
             j = [x["residual_db"] for x in w if x.get("judged", True)]
-            return "gain %.2f dB, residual max %s dB (%d of %d notes judged), extra max %.1f dB" % (
-                rep["gain_db"], "%.1f" % max(j) if j else "-", len(j), len(w), max(x["extra_db"] for x in w))
+            return "gain %.2f dB, residual max %s dB (%d of %d notes judged), extra max %.1f dB, %d struck again%s" % (
+                rep["gain_db"], "%.1f" % max(j) if j else "-", len(j), len(w), max(x["extra_db"] for x in w),
+                sum(1 for x in w if x.get("again_ms")), {None: "", 0: ", HQ off", 1: ", HQ on"}[rep.get("hq")])
         if test.startswith("usb-note"):
             return "%d v%d: %s c, RMS %s dBFS, onset %s ms, %d glitch(es)" % (
                 rep["note"], rep["vel"], rep.get("cents"), rep.get("rms_db"), rep.get("onset_ms"),
@@ -1128,11 +1460,22 @@ def _num(rep, test):
         if test == "usb-vel":
             return "range %s dB, %d glitch(es)" % (rep["range_db"], len(rep["glitches"]))
         if test == "usb-sus":
-            return "damped %s dB 1 s after, pedal held %s dB / up %s dB, louder after key-up %s / %s dB" % (
+            return "damped %s dB after key-up, pedal held %s dB / up %s dB, louder after key-up %s / %s dB" % (
                 rep["damped"]["after_1s_db"], rep["pedal"]["held_1s_db"], rep["pedal"]["after_up_db"],
                 rep["damped"]["louder_after_keyup_db"], rep["pedal"]["louder_after_keyup_db"])
+        if test == "usb-restrike":
+            c = rep.get("cpu") or {}
+            return "%d re-strikes, worst callback %s us, p99 %s us, %d glitch(es), after the let-up %+.1f dB" % (
+                rep["restrikes"], c.get("worst", "-"), c.get("p99", "-"), len(rep["glitches"]), rep["louder_after_up_db"])
+        if test == "cpu":
+            if not rep.get("n"):
+                return "no data"
+            return "%d callbacks while usb-stress played, worst %d us, p99 %d us, %d over %d us, %d missing%s" % (
+                rep["n"], rep["worst"], rep["p99"], rep["over"], rep["limit"], rep["missing"],
+                "" if rep.get("hq") is None else ", HQ %s" % ("on" if rep["hq"] else "off"))
         if test == "usb-clock":
-            return "%s steps, %s BPM seen, jitter %s ms" % (rep["steps"], rep.get("bpm_seen"), rep.get("jitter_ms"))
+            return "%s steps, %s BPM seen, jitter %s ms, %s late" % (rep["steps"], rep.get("bpm_seen"), rep.get("jitter_ms"),
+                                                                      rep.get("late"))
         if test == "usb-stress":
             return "; ".join("%s: %s notes, peak %s dBFS, %d gated" % (t["take"], t["notes"], t["peak_dbfs"], t["gated"])
                              for t in rep["takes"])
@@ -1141,19 +1484,24 @@ def _num(rep, test):
     return ""
 
 
-def _ws_prepare(url, engine, slot=0, out=print):
-    """slot 1 must hold Frodhes; its preset is set to the engine's (D2_PRESET). (ok, report)"""
+def _ws_prepare(url, engine, slot=0, out=print, remote=None):
+    """slot 1 must hold Frodhes; its preset is set to the engine's (D2_PRESET). (ok, report). remote: an open
+    connection to use (the tap rig's), else one of its own, kept open until the manager's re-read has gone out: the
+    manager writes that re-read to every subscriber under the connection of the client that switched the preset,
+    and a connection closed in the middle of it cuts the others off (no close frame; the tap rig's, 2026-10-28)"""
+    import contextlib
     import move_ws
     want = D2_PRESET[engine]
     try:
-        with move_ws.Remote(url) as w:
+        with (contextlib.nullcontext(remote) if remote else move_ws.Remote(url)) as w:
             st = w.subscribe(slot)
             if st["module"] != mi.MODULE_ID:
                 return False, dict(st, verdict="FAIL: slot %d holds %r, not %s" % (slot + 1, st["module"],
                                                                                     mi.MODULE_ID))
             before = st["preset"]
             st = w.set_preset(slot, want)
-    except (OSError, TimeoutError, move_ws.SchwungError) as e:
+            w.pump(1.5)                          # (the re-read: 94 params in ~0.6 s)
+    except (OSError, TimeoutError, move_ws.SchwungError, move_ws.ConnectionClosed) as e:
         return False, {"verdict": "FAIL: Schwung's WebSocket %s: %s" % (url, e)}
     st.update(before=before, verdict="PASS",
               note="slot %d %s, preset %s -> %s %s" % (slot + 1, st["module"], before, st["preset"],
@@ -1162,11 +1510,14 @@ def _ws_prepare(url, engine, slot=0, out=print):
     return True, st
 
 
-def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, out=print):
+def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, only=None, out=print):
     """per engine: the slot's module and preset over Schwung's WebSocket (ws: its URL, None: skipped), the preflight
     (a failure stops the whole run: the stream is not the Move's Main Out), usb-host on the engine's preset, usb-note
     on three keys, usb-vel, usb-sus, usb-clock, usb-stress; each test's takes and report.json in d/<engine>/<test>/,
-    the table in d/summary.md, everything in d/report.json. Returns (exit code: 0 all PASS, 1 a FAIL, 2 stopped)"""
+    the table in d/summary.md, everything in d/report.json. Over the tap with a CPU read (TapRig cpu): the cpu row,
+    every callback's time while usb-stress plays (the worst case), against U12. hq 0 / 1 (the tap): the HQ switch
+    set first (p_hq; None: as the plugin has it). only: the test names to run (a name or its prefix, "usb-note" for all
+    three; None: all; the cpu row comes with usb-stress). Returns (exit code: 0 all PASS, 1 a FAIL, 2 stopped)"""
     import json
     rows, code = [], 0
     os.makedirs(d, exist_ok=True)
@@ -1182,10 +1533,13 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, out=print
     def quiet(s):
         out("  " + s)
     stopped = None
+    tap_cpu = isinstance(r, TapRig) and r.cpu_fetch is not None
+    if hq is not None and isinstance(r, TapRig):
+        r.set_hq(hq)
     for e in engines:
         out("== %s" % e)
         if ws:
-            ok, rep = _ws_prepare(ws, e, out=quiet)
+            ok, rep = _ws_prepare(ws, e, out=quiet)    # (its own connection: the rig's never subscribes)
             note(e, "ws", ok, rep)
             if not ok:
                 stopped = "%s: %s" % (e, rep["verdict"])
@@ -1210,19 +1564,38 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, out=print
                   ("usb-sus", lambda: usb_sus(r, sub("usb-sus"), engine=e, out=quiet)),
                   ("usb-clock", lambda: usb_clock(r, sub("usb-clock"), bpm, engine=e, out=quiet)),
                   ("usb-stress", lambda: usb_stress(r, sub("usb-stress"), e, stress_secs, out=quiet))]
+        if e == "rhodes" and hq == 1 and tap_cpu:
+            tests.append(("usb-restrike", lambda: usb_restrike(r, sub("usb-restrike"), stress_secs / 2,
+                                                               out=quiet)))
+        if only:
+            tests = [(n, f) for n, f in tests if any(n == o or n.startswith(o + "-") for o in only)]
+        cpu_rows = []
         for name, fn in tests:
             out("-- %s %s" % (e, name))
             try:
-                ok, rep = fn()
+                if tap_cpu and name == "usb-stress":
+                    r.cpu_start()
+                    try:
+                        ok, rep = fn()
+                    finally:
+                        cpu_rows = r.cpu_stop()
+                else:
+                    ok, rep = fn()
             except Exception as x:                     # (one test's crash is its FAIL; the run goes on)
                 ok, rep = False, {"verdict": "FAIL: %s: %s" % (type(x).__name__, x)}
             note(e, name, ok, rep)
+        if tap_cpu and any(n == "usb-stress" for n, _ in tests):
+            s = cpu_summary(cpu_rows)
+            s["engine"], s["hq"] = e, hq
+            s["verdict"] = s["verdict"] if s["n"] else "FAIL: no callback times (dev_cpu_log reached the plugin?)"
+            note(e, "cpu", s["verdict"].startswith("PASS"), s)
     if stopped:
         code = 2
     elif not all(w["ok"] for w in rows):
         code = 1
     rig = {"midi": r.port_name, "audio": r.audio_name, "ch": r.ch, "fake": r.fake}
-    md = ["# Move D2 over USB-C: %s" % ("PASS" if code == 0 else "FAIL" if code == 1 else "STOPPED"), "",
+    md = ["# Move D2 over %s: %s" % ("the tap" if isinstance(r, TapRig) else "USB-C",
+                                     "PASS" if code == 0 else "FAIL" if code == 1 else "STOPPED"), "",
           "%s; MIDI %s (channel %d), audio %s%s; Schwung WebSocket %s" % (
               time.strftime("%Y-%m-%d %H:%M:%S"), rig["midi"], rig["ch"], rig["audio"], " (FAKE)" if r.fake else "",
               ws or "not used"), ""]
@@ -1242,9 +1615,189 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, out=print
     return code
 
 
+# --------------------------------------------------------------------------- usb-levels: Frodhes against the Move's own
+LEVEL_NOTES = tuple(range(36, 85, 4))     # C2 .. C6 a major third apart, one at a time (tools/move_levels.py's)
+LEVEL_CHORD = (48, 52, 55, 60, 64)        # C3 E3 G3 C4 E4, held by the keys (no pedal: a stock instrument may not
+                                          # take CC 64 as Frodhes does)
+LEVEL_VELS = (100, 64, 127)               # v100 sets the gain; v64 and v127 show the two velocity curves' ends
+LEVEL_OFF_CH = 16                         # Frodhes's CHANNEL while the stock instrument plays: off the notes' channel
+BARK_EDGES = (20, 100, 200, 300, 400, 510, 630, 770, 920, 1080, 1270, 1480, 1720, 2000, 2320, 2700, 3150, 3700,
+              4400, 5300, 6400, 7700, 9500, 12000, 15500, 20000)
+N_EXP = 0.23                              # specific loudness ~ band power ^ 0.23 (Zwicker's exponent, above threshold)
+
+
+def level_events(vel=100, t0=0.3):
+    """the fixed pattern: (events [(t s, kind, a, b)], dur s)"""
+    ev, t = [], t0
+    for k in LEVEL_NOTES:
+        ev += [(t, "on", k, vel), (t + 0.45, "off", k, 0)]
+        t += 0.5
+    t += 0.2
+    ev += [(t, "on", k, vel) for k in LEVEL_CHORD] + [(t + 2.0, "off", k, 0) for k in LEVEL_CHORD]
+    return ev, t + 3.5
+
+
+def lufs_gated(x, sr):
+    """BS.1770-4 integrated loudness: K-weighted, 400 ms blocks (75 % overlap), the -70 LUFS and the -10 LU gates;
+    x (n, 2) in LSB. None when no block passes"""
+    import bar_measure as bm
+    from scipy.signal import sosfilt
+    y = sosfilt(bm.k_weight_sos(sr), np.asarray(x, float) / 32768.0, axis=0)
+    n, hop = int(0.4 * sr), int(0.1 * sr)
+    if len(y) < n:
+        return None
+    z = np.array([np.sum(np.mean(y[i:i + n] ** 2, axis=0)) for i in range(0, len(y) - n + 1, hop)])
+    l = -0.691 + 10 * np.log10(z + 1e-30)
+    z = z[l > -70]
+    if not len(z):
+        return None
+    rel = -0.691 + 10 * np.log10(z.mean()) - 10
+    z = z[-0.691 + 10 * np.log10(z) > rel]
+    return float(-0.691 + 10 * np.log10(z.mean()))
+
+
+def bark_frames(x, sr, ms=100):
+    """the power (re full scale) per critical band (BARK_EDGES) and frame of ms: (frames, 25)"""
+    m = (x.mean(axis=1) if x.ndim == 2 else x) / 32768.0
+    n = int(sr * ms / 1000)
+    k = len(m) // n
+    if not k:
+        return np.zeros((0, len(BARK_EDGES) - 1))
+    w = np.hanning(n)
+    sp = np.abs(np.fft.rfft(m[:k * n].reshape(k, n) * w, axis=1)) ** 2 * 4 / (w.sum() ** 2)
+    f = np.fft.rfftfreq(n, 1 / sr)
+    return np.stack([sp[:, (f >= lo) & (f < hi)].sum(axis=1) for lo, hi in zip(BARK_EDGES[:-1], BARK_EDGES[1:])], 1)
+
+
+def level_of(x, sr):
+    """one take's level: LUFS (gated), the peak (dBFS), the critical-band levels over the whole take (dBFS per band),
+    and the critical-band loudness (the mean over the frames of the sum over the bands of power ^ N_EXP: a gain g dB
+    scales it by 10 ^ (N_EXP g / 10))"""
+    x = np.asarray(x, float)
+    E = bark_frames(x, sr)
+    act = E.sum(axis=1) > 1e-7                      # (frames over -70 dBFS: the silences between the notes out)
+    return {"lufs": lufs_gated(x, sr), "peak_dbfs": float(20 * np.log10(np.abs(x).max() / 32768.0 + 1e-12)),
+            "bands_db": [float(10 * np.log10(v + 1e-20)) for v in E.mean(axis=0)] if len(E) else [],
+            "cb_loudness": float((E[act] ** N_EXP).sum(axis=1).mean()) if act.any() else 0.0}
+
+
+def level_match(ref, frod):
+    """the gain (dB) on Frodhes that matches the reference: by LUFS, and by the critical-band loudness"""
+    g_lufs = ref["lufs"] - frod["lufs"] if ref["lufs"] is not None and frod["lufs"] is not None else None
+    g_cb = (10 / N_EXP * np.log10(ref["cb_loudness"] / frod["cb_loudness"])
+            if ref["cb_loudness"] > 0 and frod["cb_loudness"] > 0 else None)
+    return {"gain_lufs_db": None if g_lufs is None else round(float(g_lufs), 2),
+            "gain_cb_db": None if g_cb is None else round(float(g_cb), 2)}
+
+
+def _ws_params(url, slot=0):
+    """the slot's params as Schwung reports them now (a connection of its own, kept open past the re-read)"""
+    import move_ws
+    with move_ws.Remote(url) as w:
+        w.subscribe(slot)
+        w.pump(0.5)
+        return dict(w.params.get(slot, {}))
+
+
+def usb_levels(u, t, d, url, vels=LEVEL_VELS, out=print):
+    """how loud Frodhes F01 is against the Move's own instrument on the selected track, both through the Move's mix
+    (the track's volume, the master, USB-C Main Out). u: the UsbRig (MIDI to the Standalone port, USB-C recorded);
+    t: the TapRig (Schwung's WebSocket, slot 1). Per velocity:
+      stock    the pattern over USB MIDI, Frodhes's CHANNEL moved off the notes (LEVEL_OFF_CH), and a tap take that
+               runs the whole time: Frodhes's own output must be silent there, so the recording is the stock
+               instrument alone
+      frodhes  the same pattern on Frodhes's dev player (no Move track hears it, CHANNEL back as it was), recorded
+               on USB-C: Frodhes alone, through the same track volume and master; the tap is its output before them
+    The gain that matches them, by LUFS and by critical-band loudness, is reported only; nothing is set. (ok, rep)"""
+    import json
+    os.makedirs(d, exist_ok=True)
+    ok, pre = preflight(u, out)
+    if not ok:
+        return False, {"verdict": "STOP: the USB-C stream is not the Move's digital Main Out", "preflight": pre}
+    ok, ws = _ws_prepare(url, "rhodes", t.slot, out)          # (F01)
+    if not ok:
+        return False, {"verdict": "STOP: " + ws["verdict"], "ws": ws}
+    t.boot_settings()
+    p0 = _ws_params(url, t.slot)
+    ch0 = p0.get("synth:s_mch", "0")
+    rep = {"preset": ws.get("preset_name"), "ch_before": ch0, "p_hq": p0.get("synth:p_hq"), "rows": [], "ws": ws, "preflight": pre}
+    good = True
+    try:
+        for vel in vels:
+            ev, dur = level_events(vel)
+            # stock: Frodhes off the channel, its tap running across the whole take
+            t._set("synth:s_mch", str(LEVEL_OFF_CH))
+            t._pump(0.5)
+            u.wait_silence(5.0)
+            t.n += 1
+            take = "lv%s-%03d" % (t.stamp, t.n)
+            t.remote.play(t.slot, take, int((TAP_GRID_S + 0.3 + dur + 0.5) * 1000), [])
+            time.sleep(TAP_GRID_S + 0.3)                     # (the tap starts on the plugin's 2560 ms grid)
+            u._send("cc", 123, 0)
+            sk = u.rec(dur, ev)
+            time.sleep(1.0)
+            got, t0 = None, time.monotonic()
+            while got is None and time.monotonic() - t0 < 10:
+                got = t.fetch(take)
+                time.sleep(0.5) if got is None else None
+            import wave
+            fx = None
+            if got:
+                w = wave.open(got[0])
+                fx = np.frombuffer(w.readframes(w.getnframes()), "<i2").reshape(-1, 2).astype(float)
+            frod_quiet = fx is not None and np.abs(fx).max() == 0
+            # frodhes: the dev player, recorded on USB-C as it plays
+            t._set("synth:s_mch", ch0)
+            t._pump(0.5)
+            u.wait_silence(5.0)
+            cap = u.capture()
+            st = cap.now()["usb"]
+            t.pending = [("cc", c, v) for c, v in GLOBAL_CCS] + [("cc", 123, 0)]
+            ft = t.rec(dur, ev)
+            span = cap.now()["usb"] - st
+            ux = cap.cut("usb", st, span).astype(float) * 32768
+            ref_m, got_m = _mono(ft["x"]), _mono(ux)
+            lag = _lag(got_m, ref_m, len(got_m) - 1) if len(got_m) > len(ref_m) else 0
+            lag = max(0, min(lag, len(ux) - len(ft["x"])))
+            fu = ux[lag:lag + len(ft["x"])]
+            path_db = float(hs.db(fu) - hs.db(ft["x"])) if np.abs(ft["x"]).max() > 0 else None
+            for name, x in (("stock", sk["x"]), ("frodhes", fu), ("frodhes-tap", ft["x"])):
+                _save(d, "v%d-%s" % (vel, name), {"x": x, "sr": u.sr})
+            ls, lf = level_of(sk["x"], u.sr), level_of(fu, u.sr)
+            m = level_match(ls, lf)
+            row = {"vel": vel, "stock": ls, "frodhes": lf, "tap": level_of(ft["x"], FS), "match": m,
+                   "frodhes_silent_in_stock": bool(frod_quiet), "path_db": path_db, "lag": lag,
+                   "xruns": sk["xruns"] + ft["xruns"]}
+            if not frod_quiet:
+                row["note"] = ("Frodhes's tap was not silent during the stock take (peak %s LSB): the stock take is "
+                               "not the stock instrument alone" % (None if fx is None else int(np.abs(fx).max())))
+                good = False
+            if ls["lufs"] is None:
+                row["note"] = "the stock take is silent: the selected track's instrument did not play"
+                good = False
+            rep["rows"].append(row)
+            out("v%-3d stock %s LUFS (peak %.1f dBFS), Frodhes %s LUFS (peak %.1f); the gain to match: %s dB by "
+                "LUFS, %s dB by critical-band loudness; Frodhes silent in the stock take: %s; track+master %s dB" % (
+                    vel, "%.1f" % ls["lufs"] if ls["lufs"] is not None else "-", ls["peak_dbfs"],
+                    "%.1f" % lf["lufs"] if lf["lufs"] is not None else "-", lf["peak_dbfs"], m["gain_lufs_db"],
+                    m["gain_cb_db"], frod_quiet, "%.1f" % path_db if path_db is not None else "-"))
+    finally:
+        t._set("synth:s_mch", ch0)
+        t._pump(0.5)
+    rep["ch_after"] = _ws_params(url, t.slot).get("synth:s_mch")
+    rep["verdict"] = "PASS" if good else "FAIL: see the rows' notes"
+    json.dump(_plain(rep), open(os.path.join(d, "report.json"), "w"), indent=1, default=str)
+    if rep["rows"]:
+        r0 = rep["rows"][0]
+        out("critical bands (Hz: stock / Frodhes dBFS, v%d):" % r0["vel"])
+        out("  " + "  ".join("%d:%.0f/%.0f" % (lo, a, b) for lo, a, b in zip(BARK_EDGES, r0["stock"]["bands_db"],
+                                                                            r0["frodhes"]["bands_db"])))
+    return good, rep
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("cmd", choices=("facts", "install", "rollback", "info", "logs", "cpu", "crackle", "must", "null", "d2")
+    ap.add_argument("cmd", choices=("facts", "install", "rollback", "info", "logs", "cpu", "crackle", "must", "null", "d2", "usb-levels")
                     + USB_CMDS)
     ap.add_argument("--go", action="store_true")
     ap.add_argument("--host", default=os.environ.get("MOVE_HOST", "ableton@move.local"))
@@ -1268,6 +1821,10 @@ def main(argv=None):
     ap.add_argument("--fake", action="store_true", help="usb-*: the offline model of the Move (no device)")
     ap.add_argument("--inject", action="append", help="usb-* --fake: KIND@SECONDS (zero, click, stale, loud, nosus)")
     ap.add_argument("--engines", default=",".join(D2_ENGINES), help="d2: the engines, comma-separated")
+    ap.add_argument("--tests", help="d2: only these tests, comma-separated (a name or its prefix: usb-host,usb-stress; "
+                                    "the cpu row comes with usb-stress)")
+    ap.add_argument("--hq", type=int, choices=(0, 1), default=None,
+                    help="d2 --path tap: the HQ Rhodes off (0) or on (1) for the run (default: as the plugin has it)")
     ap.add_argument("--path", choices=("usb", "tap"), default="usb",
                     help="usb-*, d2: usb = MIDI to the Standalone port, the USB-C audio recorded (the Move's mix); "
                          "tap = the plugin's own player and output over Schwung's WebSocket (--ws), the takes "
@@ -1275,20 +1832,47 @@ def main(argv=None):
     ap.add_argument("--ws", default=os.environ.get("MOVE_WS", "ws://move.local:7700/ws/remote-ui"),
                     help="d2: Schwung's WebSocket (slot 1's module and preset); 'none' to skip")
     a = ap.parse_args(argv)
+    import contextlib
+    with (mi.move_lock("move_hil " + a.cmd) if drives_the_move(a) else contextlib.nullcontext()):
+        return _main(a)
+
+
+def drives_the_move(a):
+    """does this command send to the Move or read it (the MOVE lock), or is it offline (a fake, a saved file, a dry
+    run, a local folder)?"""
+    if a.cmd == "usb-levels":
+        return True
+    if a.cmd == "d2":
+        return not a.fake
+    if a.cmd in USB_CMDS:
+        return not a.fake and a.cmd != "usb-devices" and not (a.cmd == "usb-host" and a.analyze)
+    if a.cmd in ("facts", "install", "rollback", "info", "logs", "cpu"):
+        return not a.target_dir and not a.file and (a.go or a.cmd == "info")
+    return False
+
+
+def _main(a):
     if a.cmd == "d2":
         engines = tuple(x for x in a.engines.split(",") if x)
         bad = [x for x in engines if x not in D2_ENGINES]
         if bad:
-            ap.error("--engines: %s" % bad)
+            raise SystemExit("--engines: %s" % bad)
         d = a.out or os.path.join(OUT, stamp() + "-d2")
         if a.fake:
             inj = [(k, float(t or 0)) for k, _, t in (s.partition("@") for s in a.inject or ())]
             r = FakeEchoRig(inject=inj)
         elif a.path == "tap":
-            r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)
+            r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch, cpu=scp_cpu(a.host))
         else:
             r = UsbRig(a.midi, a.audio, a.ch)
-        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 120.0)
+        only = [x for x in (a.tests or "").split(",") if x] or None
+        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 120.0, a.hq, only)
+    if a.cmd == "usb-levels":
+        d = a.out or os.path.join(OUT, stamp() + "-usb-levels")
+        t = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)
+        ok, rep = usb_levels(UsbRig(a.midi, a.audio, a.ch), t, d, a.ws)
+        print(rep["verdict"])
+        return 0 if ok else 1
     if a.cmd in USB_CMDS:
         return usb_main(a)
     t = mi.Target(host=None if a.target_dir else a.host, local_dir=a.target_dir, go=a.go or a.cmd == "info")

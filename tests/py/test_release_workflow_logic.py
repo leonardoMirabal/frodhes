@@ -308,7 +308,7 @@ def test_ci_builds_the_emulator_and_never_deploys():
     assert ci["jobs"]["web"]["container"] == "mcr.microsoft.com/playwright/python:v1.64.0-noble"
     assert "playwright==1.64.0" in runs                                             # the image's version
     assert "tools/release.py --web-selftest web/dist dev" in runs                 # a local build says dev
-    assert "pytest -q -rs tests/py/test_web_knobs.py > knobs.txt" in runs and "! grep -q SKIPPED knobs.txt" in runs
+    assert "tools/pytest_run.py -q -rs -- tests/py/test_web_knobs.py > knobs.txt" in runs and "! grep -q SKIPPED knobs.txt" in runs
     text = open(os.path.join(ROOT, ".github", "workflows", "ci.yml")).read()
     body = text.split("\njobs:", 1)[1]
     assert not any(w in body for w in ("deploy_pages", "pages_wait", "git push", "gh release", "contents: write"))

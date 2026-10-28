@@ -64,9 +64,10 @@ SHARD ?=                   # make pytest SHARD=2/4: only shard 2 of 4 (tools/pyt
 PYTEST_FILES = $(if $(strip $(SHARD)),$$($(PY) tools/pytest_shard.py $(subst /, ,$(strip $(SHARD)))),tests/py)
 pytest:                    ## Python tools' unit tests (analysis, generators), in parallel with pytest-xdist
 	@if [ "$(strip $(PYTEST_N))" != 0 ] && $(PY) -c "import xdist" 2>/dev/null; then \
-	  echo "$(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup $(PYTEST_FILES)"; \
-	  $(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup $(PYTEST_FILES); \
-	else echo "$(PY) -m pytest -q $(PYTEST_FILES)  (serial: no pytest-xdist)"; $(PY) -m pytest -q $(PYTEST_FILES); fi
+	  echo "$(PY) tools/pytest_run.py -q -n $(strip $(PYTEST_N)) --dist loadgroup -- $(PYTEST_FILES)"; \
+	  $(PY) tools/pytest_run.py -q -n $(strip $(PYTEST_N)) --dist loadgroup -- $(PYTEST_FILES); \
+	else echo "$(PY) tools/pytest_run.py -q -- $(PYTEST_FILES)  (serial: no pytest-xdist)"; \
+	  $(PY) tools/pytest_run.py -q -- $(PYTEST_FILES); fi
 
 firmware:                  ## build/frodhes.fwsc (Docker on macOS)
 	PYTHON=$(PY) ./build.sh
@@ -128,6 +129,8 @@ test-move-native: move-native
 	build/move/smoke $(MOVE_OUT)/dsp.so
 	@$(MOVE_CC) -O1 -g -std=gnu11 -Wall -Wextra -o build/move/t/test_bridge move/tests/test_bridge.c -ldl
 	build/move/t/test_bridge api $(MOVE_OUT)/dsp.so
+	build/move/t/test_bridge hq $(MOVE_OUT)/dsp.so
+	build/move/t/test_bridge boot $(MOVE_OUT)/dsp.so move/tests/boot_keys.txt
 	build/move/t/test_bridge gatep $(MOVE_OUT)/dsp.so 10000
 	@$(MOVE_CC) -O1 -std=gnu11 -Wall -Wextra -o build/move/t/test_store move/tests/test_store.c
 	@rm -rf build/move/t/store build/move/t/persist build/move/t/run.*

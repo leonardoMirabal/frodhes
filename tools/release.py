@@ -438,7 +438,7 @@ class Release:
         ev.append(f"doc_links: README.md / docs/MANUAL.md, {len(problems)} problem(s) (every picture's ?v= its "
                   "file's hash, no version named)")
         problems = [f"{p} (tools/doc_links.py --fix, or tools/manual_shots.py)" for p in problems]
-        _, o = sh([PY, "-m", "pytest", "-q", "tests/py/test_docs_vs_code.py", "tests/py/test_doc_links.py",
+        _, o = sh([PY, "tools/pytest_run.py", "-q", "--", "tests/py/test_docs_vs_code.py", "tests/py/test_doc_links.py",
                    "tests/py/test_changes.py", "tests/py/test_manual_shots.py"])
         ev.append(f"test_docs_vs_code, test_doc_links, test_changes, test_manual_shots: {tail(o, 1)}")
         notes = f"docs/releases/v{self.ver}.md"

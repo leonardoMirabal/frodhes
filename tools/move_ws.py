@@ -25,6 +25,13 @@ COMP = "synth"
 PIECE = 250                                     # a set_param value through the web set ring: under 256 B (shmwebring.go)
 
 
+try:
+    from websockets.exceptions import ConnectionClosed
+except ImportError:                              # (the CLI's help without websockets installed)
+    class ConnectionClosed(Exception):
+        pass
+
+
 class SchwungError(RuntimeError):
     pass
 
@@ -34,8 +41,9 @@ class Remote:
 
     def __init__(self, url=URL, timeout=5.0):
         from websockets.sync.client import connect
-        self.url, self.timeout = url, timeout
-        self._cm = connect(url, open_timeout=timeout, max_size=None)
+        self.url, self.timeout, self.last = url, timeout, {}
+        self._cm = connect(url, open_timeout=timeout, max_size=None, ping_interval=20, ping_timeout=90)
+        # (the manager answers a ping only between two messages it handles, and a set_param waits on the shim)
         self.ws = self._cm.__enter__()
         self.params = {}                         # slot -> {key: value}, everything seen
         self.info = {}                           # slot -> the last slot_info
@@ -67,6 +75,7 @@ class Remote:
             self.info[s] = m
         elif t == "param_update":
             self.params.setdefault(s, {}).update(m.get("params") or {})
+        self.last = m
         return m
 
     def until(self, done, timeout=None):
@@ -83,7 +92,10 @@ class Remote:
             self._take(json.loads(raw))
 
     def subscribe(self, slot=0, timeout=None):
-        """slot_info and the preset keys of the slot (when its synth has a preset browser)"""
+        """slot_info and the preset keys of the slot (when its synth has a preset browser), as the server sends them
+        now"""
+        self.info.pop(slot, None)
+        self.params.get(slot, {}).pop(COMP + ":preset", None)
         self.send("subscribe", slot)
 
         def got(r):
@@ -118,24 +130,35 @@ class Remote:
         <data dir>/tap/<take>.wav (dur_ms long) and <take>.json"""
         key = COMP + ":dev_play"
         self.set_param(slot, key, "begin %s %d" % (take, int(dur_ms)))
-        chunk = ""
+        k, chunk = 0, "#0 "                       # (each piece numbered: the plugin refuses one out of turn)
         for t, st, d1, d2 in sorted(events, key=lambda e: e[0]):
             ev = "%d %d %d %d;" % (int(t), int(st), int(d1) & 127, int(d2) & 127)
             if len(chunk) + len(ev) > PIECE:
                 self.set_param(slot, key + "_add", chunk)
                 time.sleep(pace)                  # (the shim drains the ring once a 2.9 ms frame)
-                chunk = ""
+                k += 1
+                chunk = "#%d " % k
             chunk += ev
-        if chunk:
+        if chunk.strip() != "#%d" % k:
             self.set_param(slot, key + "_add", chunk)
         self.set_param(slot, key, "go %d" % int(lead_ms))
         self.pump(0.2)
 
     def set_preset(self, slot, n, timeout=None):
-        """load preset n and wait until the server reports it"""
-        self.params.setdefault(slot, {}).pop(COMP + ":preset", None)
+        """load preset n and wait until the server reports it with its name. (The shim's notify ring carries the
+        index alone, so the first update can come with the old name still cached; the manager's full re-read
+        (remote_ui.go: 50 ms after a preset write) brings both, read together. No name after it: subscribe again)"""
+        p = self.params.setdefault(slot, {})
+        p.pop(COMP + ":preset", None)
+        p.pop(COMP + ":preset_name", None)
         self.set_param(slot, COMP + ":preset", int(n))
         self.until(lambda r: r.params.get(slot, {}).get(COMP + ":preset") == str(int(n)), timeout)
+        if COMP + ":preset_name" not in (self.last.get("params") or {}):
+            p.pop(COMP + ":preset_name", None)               # (a name that came before the index: the old one)
+        try:
+            self.until(lambda r: COMP + ":preset_name" in r.params.get(slot, {}), 1.0)
+        except TimeoutError:
+            self.subscribe(slot, timeout)
         return self.state(slot)
 
 
@@ -148,13 +171,17 @@ def main(argv=None):
     ap.add_argument("--timeout", type=float, default=5.0)
     a = ap.parse_args(argv)
     s = a.slot - 1
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import move_install
     try:
-        with Remote(a.url, a.timeout) as r:
+        with move_install.move_lock("move_ws " + a.cmd), Remote(a.url, a.timeout) as r:
             st = r.subscribe(s)
             if a.cmd == "preset":
                 if a.n is None:
                     ap.error("preset needs N")
                 st = r.set_preset(s, a.n)
+                r.pump(1.5)                       # (the manager's re-read to every subscriber runs under this
+                #                                   connection: closing it in the middle cuts the others off)
     except (OSError, TimeoutError, SchwungError) as e:
         print("schwung %s: %s" % (a.url, e))
         return 2

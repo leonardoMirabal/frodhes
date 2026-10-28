@@ -211,3 +211,27 @@ def test_d2_cli_fake(tmp_path):
     r = run("d2", "--fake", "--ws", "none", "--engines", "vibes", "--secs", "8", "--out", str(tmp_path))
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr
     assert "| vibes | usb-note-53 | PASS" in open(tmp_path / "summary.md").read()
+
+
+def test_usb_levels_gain_match():
+    """usb-levels' two measures find a known gain: Frodhes 6 dB under the stock take, every band alike"""
+    sr = 44100
+    ev, dur = mh.level_events(100)
+    x = np.zeros(int(dur * sr))
+    for t, k, a, b in ev:
+        if k == "on":
+            tt = np.arange(int(0.4 * sr)) / sr
+            i = int(t * sr)
+            x[i:i + len(tt)] += 4000 * np.sin(2 * np.pi * mh.note_hz(a) * tt) * np.exp(-4 * tt)
+    st = np.stack([x, x], 1)
+    m = mh.level_match(mh.level_of(st, sr), mh.level_of(st * 10 ** (-6 / 20), sr))
+    assert abs(m["gain_lufs_db"] - 6.0) < 0.05 and abs(m["gain_cb_db"] - 6.0) < 0.05
+
+
+def test_d2_only(tmp_path):
+    """d2 --tests: only the named tests (a prefix takes all three usb-note keys); the others are not run at all"""
+    r = run("d2", "--fake", "--ws", "none", "--engines", "rhodes", "--secs", "4", "--tests", "usb-note,usb-stress",
+            "--out", str(tmp_path))
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr
+    rep = __import__("json").load(open(tmp_path / "report.json"))
+    assert [w["test"] for w in rep["rows"]] == ["preflight", "usb-note-36", "usb-note-60", "usb-note-84", "usb-stress"]
