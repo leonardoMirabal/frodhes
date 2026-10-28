@@ -58,6 +58,7 @@ export class Plugin {
         if (key === "preset_count") return String(this.names.length);
         if (key === "preset_name") return this.names[this.preset];
         if (key === "s_sustain") return String(this.v.s_sustain || this.sus ? 1 : 0);
+        if (key === "r_cmp_gr") return this.gr !== undefined ? this.gr : this.v.p_cmp_sw ? "0 0" : "OFF";
         if (!(key in this.v)) return null;
         const m = this.meta[key];
         if (m && m.type === "float") return Number(this.v[key]).toFixed(1);

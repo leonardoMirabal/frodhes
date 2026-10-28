@@ -230,6 +230,49 @@ test("every page draws in both views without throwing, on every engine", () => {
 });
 
 let fail = 0;
+test("COMPRESSOR: the gain-reduction meter (a fake r_cmp_gr), as the FM-1's COMP page shows it", () => {
+    const s = new Screen().open();
+    const W = 128, px = (fb, x, y) => fb.px[y * W + x];
+    const lit = (fb, x0, x1, y0, y1) => { let n = 0; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) n += px(fb, x, y) ? 1 : 0; return n; };
+    // ui.c gr_px's arithmetic (GR_W 228), the same scale
+    const sc = s.api.conf.gr_db10;
+    assert.equal(JSON.stringify(sc), "[10,20,30,40,50,60,80,100,120,150,180,200,240,270,300]");
+    const cpx = (d, w) => { let lo = 0; for (let i = 0; i < sc.length; i++) { if (d <= sc[i]) return Math.trunc((i * w + Math.trunc(w * (d - lo) / (sc[i] - lo))) / sc.length); lo = sc[i]; } return w; };
+    for (const d of [0, 5, 10, 35, 60, 99, 150, 299, 300, 400]) assert.equal(s.api.grPx(d, 228), cpx(d, 228), `gr_px(${d})`);
+    assert.equal(s.api.grText(0), "0.0");
+    assert.equal(s.api.grText(35), "-3.5");
+    // COMP off: the hint, no bar
+    goto(s, "COMPRESSOR");
+    assert.equal(JSON.stringify(s.st().gr), '{"off":true,"db10":0,"pk":0}');
+    let fb = s.draw();
+    assert.equal(lit(fb, 64, 127, 57, 62), 0, "COMP off: no bar");
+    assert.ok(lit(fb, 64, 127, 48, 54) > 20, "COMP off: the hint");
+    // on, 6.0 dB, the peak held at 10.0 dB: the bar filled from the right, the peak mark beyond it
+    s.plugin.gr = "60 100";
+    s.live();
+    assert.equal(JSON.stringify(s.st().gr), '{"off":false,"db10":60,"pk":100}');
+    fb = s.draw();
+    const fw = s.api.grPx(60, 62), pk = s.api.grPx(100, 62);
+    assert.ok(fw > 0 && pk > fw + 2);
+    for (let x = 127 - fw; x < 127; x++) assert.ok(px(fb, x, 59), `filled at x ${x}`);
+    assert.ok(!px(fb, 127 - fw - 1, 59), "the fill ends");
+    assert.ok(px(fb, 127 - pk, 59) && px(fb, 127 - pk + 1, 59), "the peak");
+    assert.ok(!px(fb, 127 - pk - 1, 59), "nothing left of the peak");
+    // it follows each live tick; 0 dB: an empty bar inside its frame
+    s.plugin.gr = "0 0";
+    s.live();
+    fb = s.draw();
+    assert.equal(lit(fb, 65, 126, 58, 61), 0);
+    assert.ok(lit(fb, 64, 127, 57, 62) > 100, "the frame");
+    // on another page nothing of it is drawn, and r_cmp_gr is not read
+    goto(s, "REVERB");
+    const before = s.plugin.reads;
+    s.plugin.gr = "80 80";
+    s.live();
+    assert.ok(s.plugin.reads - before <= 5);
+    assert.equal(s.st().gr.db10, 0, "not read off the COMPRESSOR page");
+});
+
 for (const [name, fn] of tests) {
     try { fn(); console.log("ok   " + name); } catch (e) { fail++; console.log("FAIL " + name + "\n     " + e.message); }
 }

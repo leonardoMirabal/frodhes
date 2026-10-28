@@ -63,7 +63,7 @@
           "enterable": true,
           "show_footer": false,
           "show_value": false,
-          "fullscreen_live_ms": 250,
+          "fullscreen_live_ms": 100,
           "extra_keys": [
             "rev",
             "ui_engine",

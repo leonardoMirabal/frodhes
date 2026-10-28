@@ -103,6 +103,13 @@ static struct {
     uint8_t pa[128];
     int16_t map_last[MB_NMAP / 3];
     uint32_t map_out, map_drop;
+    /* the compressor's gain-reduction meter (r_cmp_gr), as ui.c meter_poll shows it on the FM-1's COMP page: dB x 10
+     * (rises at once, falls 0.5 dB a 33 ms tick = 15 dB/s), the peak's segment (GR_DB10) held a second; written by
+     * the audio thread (mb_gr_tick), read by get_param without a lock: bits 0-9 dB x 10, 10-19 the peak, 20 on */
+    int32_t gr_db10;
+    uint32_t gr_t, gr_peak_t;
+    uint8_t gr_peak;
+    _Atomic uint32_t gr_word;
 } mb = { .first_now = 1, .clock_mode = MB_CLOCK_AUTO, .sus_touch = -1, .map = MB_MAP_DEFAULT, .map_last = {-1, -1} };
 static int mb_sus_key = -1;              /* MOVE_KEYS' s_susbtn row (looked up at the first touch) */
 
@@ -799,6 +806,7 @@ static void mb_map(uint8_t st, uint8_t d1, uint8_t d2)
 }
 
 /* ---- one host millisecond (see the top) */
+static void mb_gr_tick(void);
 static void mb_step(void)
 {
     mb_ev_t *e;
@@ -836,7 +844,25 @@ static void mb_step(void)
         if (play) mb_tap_take(mb.fw);
         mb.fw += HALF_FRAMES;
     }
+    mb_gr_tick();
     coro_resume(&mb.co);
+}
+
+/* ---- the gain-reduction meter (r_cmp_gr): ui.c meter_poll's ballistics on the bridge's own millisecond clock, every
+ * page (the FM-1 runs it on its COMP page only), from fx.c's fx_cmp_gr; arithmetic only (Gate P) */
+static void mb_gr_tick(void)
+{
+    int32_t g;
+    uint32_t segs = 0, on = PV(P_CMP_SW) != 0;
+    if (mb.ms - mb.gr_t < 33u) return;
+    mb.gr_t = mb.ms;
+    g = on && !fx_bypass ? fx_cmp_gr * 301 / 20480 : 0;          /* log2 Q12 -> dB x 10 (as meter_poll) */
+    if (g > 300) g = 300;
+    mb.gr_db10 = g > mb.gr_db10 ? g : mb.gr_db10 > g + 5 ? mb.gr_db10 - 5 : g;
+    while (segs < GR_SEGS && mb.gr_db10 >= GR_DB10[segs]) segs++;
+    if (segs >= mb.gr_peak || mb.ms - mb.gr_peak_t > 1000u) { mb.gr_peak = (uint8_t)segs; mb.gr_peak_t = mb.ms; }
+    atomic_store_explicit(&mb.gr_word, (uint32_t)mb.gr_db10 | (uint32_t)(mb.gr_peak ? GR_DB10[mb.gr_peak - 1u] : 0) << 10
+                          | on << 20, memory_order_relaxed);
 }
 
 /* ---- persistence (M1-08), the audio side: once a second, between two main-loop passes, when the app saved (its
@@ -954,6 +980,10 @@ static int mb_get(const char *key, char *buf, int n)
                                                  (unsigned)sus_held, (unsigned)sus_latched, (unsigned)sus_midi,
                                                  mb.sus_down, mb.sus_up, atomic_load(&mb.sus_touch));
     if (!strcmp(key, "dev_play")) return mp_get(buf, n);
+    if (!strcmp(key, "r_cmp_gr")) {   /* the meter: "OFF" (COMP off), else "<dB x 10> <the held peak, dB x 10>" */
+        uint32_t w = atomic_load_explicit(&mb.gr_word, memory_order_relaxed);
+        return w >> 20 & 1u ? snprintf(buf, (size_t)n, "%u %u", w & 1023u, w >> 10 & 1023u) : snprintf(buf, (size_t)n, "OFF");
+    }
     if (!strcmp(key, "dev_map")) return snprintf(buf, (size_t)n, "out=%u drop=%u last=%d,%d", mb.map_out, mb.map_drop,
                                                  mb.map_last[0], mb.map_last[1]);
 #ifdef FR_HQ

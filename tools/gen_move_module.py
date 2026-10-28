@@ -40,9 +40,11 @@ UI_CORE = os.path.join(ROOT, "move", "ui", "screen_core.js")   # Frodhes' own sc
 # Frodhes' own screen (M6-02, private plan 05 M6-01 option F): a fullscreen canvas the first page's PAGES cell
 # opens. screen.js = the pages (FR_PAGES, the levels below as the screen shows them) + FR_CONF + move/ui/screen_core.js.
 # The live keys the host reads for it (at most four, one a tick): rev (a change the screen did not make: re-read),
-# ui_engine (the VOICE pages follow TYPE), s_sustain (the SUS mark), preset_name (the first page).
+# ui_engine (the VOICE pages follow TYPE), s_sustain (the SUS mark), preset_name (the first page). The COMPRESSOR
+# page's gain-reduction meter reads r_cmp_gr itself each tick (getParam in onValues); fullscreen_live_ms 100 (the
+# PEDAL screen's) so it moves at 10 Hz (the FM-1's meter: 30 Hz).
 SCREEN = {"key": "s_screen", "name": "PAGES", "type": "canvas", "canvas_script": "screen.js", "enterable": True,
-          "show_footer": False, "show_value": False, "fullscreen_live_ms": 250,
+          "show_footer": False, "show_value": False, "fullscreen_live_ms": 100,
           "extra_keys": ["rev", "ui_engine", "s_sustain", "preset_name"]}
 SCREEN_CONF = {"hold_ms": 1000,    # the large card stays this long after the knob is let go (tune on the device)
                "fast_ms": 40,      # two detents closer than this: a fast turn ...
@@ -542,7 +544,9 @@ def screen_pages(levels):
 
 
 def screen_js(levels):
-    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC)
+    # the gain-reduction meter's scale (COMPRESSOR): ui.c's GR_DB10, dB x 10 at each of its evenly spaced segments
+    m = re.search(r"GR_DB10\[GR_SEGS\] = \{([^}]*)\}", read("ui.c"))
+    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, gr_db10=[int(x) for x in m.group(1).split(",")])
     with open(UI_CORE) as f:
         core = f.read()
     head = ("// SPDX-License-Identifier: GPL-3.0-only\n"

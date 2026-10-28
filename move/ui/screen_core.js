@@ -12,6 +12,9 @@
 //              the page list (the jog picks, a click opens the page, Back closes the list); Back on a page closes
 //              the screen (the host's own way out; Shift + jog too)
 //   sustain    the claimed button (FR_CONF.sus_cc) is the sustain pedal on every page, as on the PEDAL screen
+//   meter      COMPRESSOR: the gain reduction in the free cards' place (knobs 7-8), as the FM-1's COMP page shows it:
+//              the bar filled from the right on ui.c's segment scale (FR_CONF.gr_db10), the held peak, the reading;
+//              the plugin keeps the FM-1's ballistics (r_cmp_gr), the screen reads it once a live tick
 // Everything is drawn with fillRect and the font below (the device's print font is not used), so the host renderer
 // (tools/move_ui_shots.mjs) draws exactly what the Move draws. Reads (getParam, ~3 ms each) happen in the event
 // hooks only, never in draw: a page's values on open and on a page change (cached until something else changes
@@ -163,7 +166,29 @@ function readKey(ctx, st, k) {
     st.vals[k.key] = v;
 }
 
+// the gain-reduction meter (COMPRESSOR): r_cmp_gr = "OFF", or "<dB x 10> <the held peak, dB x 10>"
+function isComp(st) { return FR_PAGES[st.page].title === "COMPRESSOR"; }
+function readGr(ctx, st) {
+    const v = ctx.getParam("r_cmp_gr");
+    if (v === null || v === undefined) { st.gr = null; return; }
+    if (String(v) === "OFF") { st.gr = { off: true, db10: 0, pk: 0 }; return; }
+    const [a, b] = String(v).split(" ").map(Number);
+    st.gr = isFinite(a) ? { off: false, db10: a | 0, pk: isFinite(b) ? b | 0 : 0 } : null;
+}
+// a reduction's place on a bar w wide, from its right end: ui.c gr_px, its segments evenly apart
+function grPx(db10, w) {
+    const sc = FR_CONF.gr_db10;
+    let lo = 0;
+    for (let i = 0; i < sc.length; i++) {
+        if (db10 <= sc[i]) return Math.floor((i * w + Math.floor(w * (db10 - lo) / (sc[i] - lo))) / sc.length);
+        lo = sc[i];
+    }
+    return w;
+}
+function grText(db10) { return db10 ? "-" + Math.floor(db10 / 10) + "." + (db10 % 10) : "0.0"; }
+
 function readPage(ctx, st) {
+    if (isComp(st)) readGr(ctx, st);
     for (const k of knobs(st)) if (!(k.key in st.vals) || st.vals[k.key] === null || k.type === "preset") readKey(ctx, st, k);
 }
 
@@ -294,6 +319,22 @@ function drawOverview(ctx, st) {
         if (f !== null) ctx.fillRect(x, y + 22, Math.round(wide * f) + 1, 3, 1);
     });
     if (p.knobs.length > 4) hdots(ctx, 0, 127, 36);
+    if (isComp(st)) drawGr(ctx, st);
+}
+
+// the meter in knobs 7-8's place (x 64..127, y 37..63): "GR" and the reading, the bar (a frame filled from the right),
+// the peak a 2 px mark; COMP off: the FM-1's hint
+function drawGr(ctx, st) {
+    const x0 = 64, x1 = 127, y = 37;
+    text(ctx, x0, y + 1, "GR");
+    if (!st.gr) return;
+    if (st.gr.off) { textR(ctx, x1, y + 11, "COMP OFF"); return; }
+    textR(ctx, x1, y + 1, "DB");
+    textR(ctx, x1, y + 11, grText(st.gr.db10));
+    const bw = x1 - x0 - 1, fw = grPx(st.gr.db10, bw), pk = st.gr.pk ? grPx(st.gr.pk, bw) : 0;
+    frame(ctx, x0, y + 20, x1, y + 25);
+    if (fw) ctx.fillRect(x1 - fw, y + 21, fw, 4, 1);
+    if (pk > fw) ctx.fillRect(x1 - pk, y + 21, 2, 4, 1);
 }
 
 function drawFocus(ctx, st) {
@@ -355,7 +396,7 @@ function newState() {
     return { page: 0, engine: 0, vals: {}, written: {}, lastTurn: {}, focus: -1, until: 0,
              touch: [false, false, false, false, false, false, false, false], list: false, cursor: 0,
              preset: null, presetName: null, presetCount: 0, presetDirty: false, rev: null, expectRev: 0,
-             susOn: false, susDown: false, flash: null, rr: 0 };
+             susOn: false, susDown: false, flash: null, rr: 0, gr: null };
 }
 
 globalThis.canvas_overlay = {
@@ -436,6 +477,7 @@ globalThis.canvas_overlay = {
                 return;
             }
         }
+        if (isComp(st)) readGr(ctx, st);                       // the meter: every tick
         // one value a tick, round the page, so a change by MIDI CC (no rev) shows too; never one being turned
         const ks = knobs(st);
         if (!ks.length) return;
@@ -460,4 +502,4 @@ globalThis.canvas_overlay = {
     },
 };
 // (for the host tests: the font's width and the view, not used on the device)
-globalThis.frodhes_screen = { textW, view, visiblePages, valueText, pages: FR_PAGES, conf: FR_CONF };
+globalThis.frodhes_screen = { textW, view, visiblePages, valueText, grPx, grText, pages: FR_PAGES, conf: FR_CONF };

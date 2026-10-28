@@ -121,7 +121,7 @@ static const char MOVE_UI_HIERARCHY[] =
     "]},{\"key\":\"s_susbtn\",\"name\":\"PEDAL\",\"type\":\"canvas\",\"canvas_script\":\"sustain.js\",\"show_value\":false,"
     "\"extra_keys\":[\"s_sustain\",\"s_susbtn\"],\"fullscreen_live_ms\":100},{\"key\":\"s_fx\",\"name\":\"FX\",\"type\":\"en"
     "um\",\"options\":[\"ON\",\"OFF\"]},{\"key\":\"s_screen\",\"name\":\"PAGES\",\"type\":\"canvas\",\"canvas_script\":\"screen"
-    ".js\",\"enterable\":true,\"show_footer\":false,\"show_value\":false,\"fullscreen_live_ms\":250,\"extra_keys\":["
+    ".js\",\"enterable\":true,\"show_footer\":false,\"show_value\":false,\"fullscreen_live_ms\":100,\"extra_keys\":["
     "\"rev\",\"ui_engine\",\"s_sustain\",\"preset_name\"]},{\"level\":\"voice_0\",\"label\":\"PIANO VOICE\"},{\"level\":\"vo"
     "ice_1\",\"label\":\"VIBES VOICE\"},{\"level\":\"voice_1_2\",\"label\":\"VIBES MOTOR\"},{\"level\":\"voice_2\",\"label\""
     ":\"MARIMBA VOICE\"},{\"level\":\"comp\",\"label\":\"COMPRESSOR\"},{\"level\":\"drv_flt\",\"label\":\"DRIVE/FILTER\"},{"
