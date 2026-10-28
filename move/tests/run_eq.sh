@@ -3,7 +3,7 @@
 # make test-move: the bridge equals the host build on move/tests/scripts/*.txt (MIDI-only scripts). Runs in the
 # Move image (arm64): the host build with the Move's voice count, then each script on both paths.
 set -e
-DEFS=${MOVE_DEFS:--DFR_VOICES=16u}
+DEFS=${MOVE_DEFS:--DFR_VOICES=16u -DFR_BYP_KEEP_CMP=1}
 mkdir -p build/move/t
 cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST $DEFS -DAPP_VER='"0.0.0-dev"' -Ifirmware/src -Ifirmware/gen \
   -o build/move/t/host firmware/src/frodhes.c -lm 2> build/move/t/host.build.log
