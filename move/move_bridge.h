@@ -1250,7 +1250,6 @@ static int mb_get(const char *key, char *buf, int n)
 #endif
     if (!strcmp(key, "dev_cpu")) return snprintf(buf, (size_t)n, "callbacks=%u max_us=%u", atomic_load(&mb.cpu_n), mb.cpu_max);
     if (!strcmp(key, "dev_trim")) return snprintf(buf, (size_t)n, "%u", (unsigned)mb_trim);
-    if (!strcmp(key, "dev_gate")) return snprintf(buf, (size_t)n, "%u", (unsigned)fx_gate_soft);
     /* development reads (tests, the device session) */
     if (!strcmp(key, "dev_stats")) return mb_stats(buf, n);
     if (!strncmp(key, "dev:", 4)) {
@@ -1286,8 +1285,6 @@ static void mb_set(const char *key, const char *val)
                                                           * 1 the HQ Rhodes (the load's), 0 Classic until the next load */
 #endif
     if (!strcmp(key, "dev_trim")) { mb_trim = atoi(val) ? MB_TRIM_Q12 : 4096; return; }   /* dev / test only: 0 unity */
-    if (!strcmp(key, "dev_gate")) { fx_gate_soft = atoi(val) != 0; return; }   /* dev / test only: 0 the FM-1's silence
-                                                          * gate fall (fx.c GATE_FALL), for Gate M's replay */
     if (!strcmp(key, "dev_midi")) {                       /* "T ST D1 D2": a message due at host ms T (the harness) */
         unsigned t, st, d1, d2;
         if (sscanf(val, "%u %i %i %i", &t, &st, &d1, &d2) == 4 && st >= 0x80u && st <= 0xFFu)
