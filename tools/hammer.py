@@ -101,7 +101,7 @@ def contact_batch(cases, fs=44100, t_max=0.03, os_=32):
     """Many contacts at once (numpy over cases), RK4 at os_ x fs. cases: list of dicts with v, m_h, K, p, Rd and
     modes [(f_hz, sigma, phi_at_strike), ...] (the same number of modes for every case). Returns per case the
     force on the 16x fs grid (area-preserving average of the os_ grid), Tc, the contact count, v_out, and the
-    final modal state (q, qd) for diagnostics. Optional per case: q0, qd0 (the tine's modal state at the start) and
+    final modal state (q, qd) at t_end (s: when the case's contact ended and its state froze). Optional per case: q0, qd0 (the tine's modal state at the start) and
     xh0 (the hammer's start position; default 0, the tine at rest: the tables' case)."""
     N = len(cases)
     nm = len(cases[0]["modes"])
@@ -139,6 +139,7 @@ def contact_batch(cases, fs=44100, t_max=0.03, os_=32):
     ncont = np.zeros(N, int)
     prev_on = np.zeros(N, bool)
     vout = np.zeros(N)
+    tend = np.full(N, n * dt)                                       # when each case's state froze (done)
     for i in range(n):
         a1 = deriv(xh, vh, q, qd)
         a2 = deriv(xh + 0.5 * dt * a1[0], vh + 0.5 * dt * a1[1], q + 0.5 * dt * a1[2], qd + 0.5 * dt * a1[3])
@@ -163,6 +164,7 @@ def contact_batch(cases, fs=44100, t_max=0.03, os_=32):
         clear = touched & ~on & (vh < 0) & (np.sum(ph * q, axis=1) - xh > 2e-4)
         newly = clear & ~done
         vout = np.where(newly, vh, vout)
+        tend = np.where(newly, (i + 1) * dt, tend)
         done |= clear
         if done.all():
             break
@@ -172,5 +174,5 @@ def contact_batch(cases, fs=44100, t_max=0.03, os_=32):
         nlast = last[c] // step + 1
         out.append(dict(F=Fout[c, :nlast + 1], dt=dt * step, Tc=(last[c] + 1) * dt, ncont=int(ncont[c]),
                         v_out=float(vout[c]), impulse=float(np.sum(Fout[c, :nlast + 1]) * dt * step),
-                        q=q[c].copy(), qd=qd[c].copy()))
+                        q=q[c].copy(), qd=qd[c].copy(), t_end=float(tend[c])))
     return out
