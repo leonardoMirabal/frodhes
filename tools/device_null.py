@@ -3,7 +3,7 @@
 """The device null test, its offline part (M1-25): a device's recording of a script against the host's render of the
 same events. Both start with a marker click; the recording is aligned on it and then judged:
 
-  digital   (the FM-1's USB at 44.1 kHz with USB VOL FIXED; the Move's dsp.so output from the dev ring): sample-exact
+  digital   (the FM-1's USB at 44.1 kHz with USB VOL FIXED; the Move's dsp.so output, the dev tap: move_hil.py --path tap): sample-exact
             after the integer alignment, or the first differing frame
   analog    (the FM-1's jack, the Move's line out, through the MOTU): the recording against the stored transfer model
             of that path (tests/baselines/device-golden.json, recorded in D2: gain in dB, delay in samples, the
@@ -35,7 +35,7 @@ WIN_MARGIN_DB = 10.0
 # the null-test script set: (take, seconds) per engine; the same MIDI on every device and the host
 TAKES = {e: [(e + "-marker-scale", 20), (e + "-chords-pedal", 30), (e + "-velocity-ramp", 25), (e + "-fx", 30)]
          for e in ("rhodes", "vibes", "marimba")}
-DEVICES = {"fm1": ("usb", "jack"), "move": ("ring", "line")}
+DEVICES = {"fm1": ("usb", "jack"), "move": ("tap", "line")}
 
 
 def read_wav(path, channel=0):

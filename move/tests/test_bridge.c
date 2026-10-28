@@ -20,6 +20,11 @@
  *                                        "T end"; each line when the rendered time reaches T; OUT.wav as host.c's
  *   test_bridge persist DSP DIR save|check   M1-08: "save" sets keys, records a pattern and saves a user preset, waits
  *                                        for the worker's files; "check" (a new process) finds them all back
+ *   test_bridge play DSP SCRIPT HOST.wav the dev player and tap: the script's MIDI as a dev_play schedule (pieces
+ *                                        under 256 B, as Schwung's WebSocket set ring takes them), started on the
+ *                                        2560 ms grid; the tap file (<dir>/tap/<id>.wav) equals HOST.wav (the host
+ *                                        build on the same script shifted by 2560 ms) from 2560 ms on, sample for
+ *                                        sample; <id>.json, stop, the refusals
  * Every mode but persist runs in a fresh empty data folder (build/move/t/run.XXXXXX), so no file of an earlier run
  * changes the sound; create waits for the worker's boot (dev_ready) as the host's audio would play silence. */
 #define _GNU_SOURCE
@@ -149,6 +154,109 @@ static int eq(const char *so, const char *script, const char *wav)
                nev, peak, ndiff ? "differ from" : "equal to");
     }
     api->destroy_instance(in);
+    return fails != 0;
+}
+
+/* ---- play: the dev player and tap */
+static int16_t *read_wav(const char *path, long *frames)
+{
+    FILE *w = fopen(path, "rb");
+    int16_t *x;
+    long n;
+    if (!w) return 0;
+    fseek(w, 0, SEEK_END); n = (ftell(w) - 44) / 4; fseek(w, 44, SEEK_SET);
+    x = malloc((size_t)(n > 0 ? n : 1) * 4);
+    if (n < 0 || fread(x, 4, (size_t)n, w) != (size_t)n) { fclose(w); free(x); return 0; }
+    fclose(w);
+    *frames = n;
+    return x;
+}
+static int wait_state(void *in, const char *want, int blocks)
+{
+    while (blocks-- > 0) {
+        in_cb = 1; api->render_block(in, blk, 128); in_cb = 0;
+        if (strstr(get(in, "dev_play"), want)) return 1;
+        if (blocks % 8 == 0) usleep(2000);   /* (a pace the worker keeps up with: ~10x real time) */
+    }
+    return 0;
+}
+static void cb_set(void *in, const char *k, const char *v) { in_cb = 1; api->set_param(in, k, v); in_cb = 0; }
+static unsigned load_take(void *in, const char *script, const char *begin, unsigned *pieces)   /* the messages */
+{
+    FILE *f = fopen(script, "r");
+    char line[256], chunk[256] = "", ev[48];
+    unsigned nev = 0;
+    *pieces = 0;
+    cb_set(in, "dev_play", begin);
+    while (f && fgets(line, sizeof line, f)) {
+        unsigned t, st, d1, d2; char what[16];
+        if (line[0] == '#' || sscanf(line, "%u %15s", &t, what) != 2 || strcmp(what, "midi")) continue;
+        if (sscanf(line, "%*u %*s %i %u %u", &st, &d1, &d2) != 3) continue;
+        snprintf(ev, sizeof ev, nev & 1 ? "%u 0x%02x %u %u;" : "%u %u %u %u;", t, st, d1, d2);   /* (both notations) */
+        if (strlen(chunk) + strlen(ev) >= 255) { cb_set(in, "dev_play_add", chunk); (*pieces)++; chunk[0] = 0; }
+        strcat(chunk, ev);
+        nev++;
+    }
+    if (f) fclose(f);
+    if (chunk[0]) { cb_set(in, "dev_play_add", chunk); (*pieces)++; }
+    return nev;
+}
+static int play(const char *so, const char *script, const char *wav)
+{
+    char path[700], begin[64], *dir;
+    unsigned nev, pieces;
+    long hn = 0, tn = 0, i, n, ndiff = 0, first = -1, f0 = 2560L * 441L / 10L;
+    int16_t *hs, *ts;
+    void *in;
+    load(so);
+    in = create(NULL);
+    dir = strdup(get(in, "dev_store") + 4);
+    if (strchr(dir, ' ')) *strchr(dir, ' ') = 0;
+    CHECK(strstr(get(in, "dev_build"), "dev_play=1") && strstr(gbuf, "dsp_crc32="), "dev_build: %s", gbuf);
+    snprintf(path, sizeof path, "%s/boot.txt", dir);
+    { FILE *j = fopen(path, "r"); char bt[200] = ""; if (j) { if (!fgets(bt, sizeof bt, j)) bt[0] = 0; fclose(j); }
+      CHECK(strstr(bt, "dev_play=1"), "boot.txt: %s", bt); }
+    hs = read_wav(wav, &hn);
+    if (!hs || hn <= f0) { printf("FAIL no host wav %s (or shorter than 2560 ms)\n", wav); return 1; }
+    cb_set(in, "dev_play_add", "0 0x90 60 100");                       /* refused: no take begun */
+    cb_set(in, "dev_play", "begin bad! 100");                          /* refused: the id */
+    CHECK(strstr(get(in, "dev_play"), "state=idle") && strstr(gbuf, "bad=2"), "the refusals: %s", gbuf);
+    snprintf(begin, sizeof begin, "begin bridge-eq %ld", (hn - f0) * 10 / 441);
+    load_take(in, script, begin, &pieces);
+    cb_set(in, "dev_play", "stop");                                    /* a loaded take dropped */
+    CHECK(strstr(get(in, "dev_play"), "state=idle"), "stop while loading: %s", gbuf);
+    nev = load_take(in, script, begin, &pieces);
+    CHECK(strstr(get(in, "dev_play"), "state=load") && strstr(gbuf, "bad=0"), "loaded: %s", gbuf);
+    cb_set(in, "dev_play", "go");
+    CHECK(strstr(get(in, "dev_play"), "state=armed") && strstr(gbuf, "base=2560"), "go: %s", gbuf);
+    CHECK(wait_state(in, "state=done", 40000), "the take did not finish: %s", get(in, "dev_play"));
+    CHECK(strstr(get(in, "dev_play"), "late=0 bad=0 dropped=0"), "late / bad / dropped: %s", gbuf);
+    snprintf(path, sizeof path, "%s/tap/bridge-eq.wav", dir);
+    ts = read_wav(path, &tn);
+    n = (hn - f0) * 10 / 441 * 441 / 10;
+    CHECK(ts != 0 && tn == n, "the tap file %s: %ld frames, want %ld", path, tn, n);
+    if (ts) for (i = 0; i < 2 * (tn < n ? tn : n); i++) if (ts[i] != hs[2 * f0 + i]) { if (first < 0) first = i / 2; ndiff++; }
+    CHECK(ndiff == 0, "%ld samples differ from the host render shifted by 2560 ms, the first at frame %ld", ndiff, first);
+    snprintf(path, sizeof path, "%s/tap/bridge-eq.json", dir);
+    { FILE *j = fopen(path, "r"); char js[512] = ""; if (j) { if (!fgets(js, sizeof js, j)) js[0] = 0; fclose(j); }
+      CHECK(strstr(js, "\"base_ms\":2560") && strstr(js, "\"dropped\":0") && strstr(js, "\"aborted\":0"), "json: %s", js); }
+    /* stop in the middle: the file keeps its length (zeros after the stop), aborted */
+    cb_set(in, "dev_play", "begin cut 3000");
+    cb_set(in, "dev_play_add", "0 0x90 48 110;2000 0x80 48 0");
+    cb_set(in, "dev_play", "go 0");
+    CHECK(wait_state(in, "frames=4", 5000), "the second take does not capture: %s", get(in, "dev_play"));
+    cb_set(in, "dev_play", "stop");
+    CHECK(wait_state(in, "state=done", 20000), "stop: %s", get(in, "dev_play"));
+    snprintf(path, sizeof path, "%s/tap/cut.wav", dir);
+    { long cn = 0; int16_t *c = read_wav(path, &cn); CHECK(c && cn == 132300, "the stopped take: %ld frames", cn); free(c); }
+    snprintf(path, sizeof path, "%s/tap/cut.json", dir);
+    { FILE *j = fopen(path, "r"); char js[512] = ""; if (j) { if (!fgets(js, sizeof js, j)) js[0] = 0; fclose(j); }
+      CHECK(strstr(js, "\"aborted\":1"), "json: %s", js); }
+    CHECK(bad_alloc == 0, "%d allocations inside callbacks", bad_alloc);
+    printf("%s    play: %u messages in %u pieces under 256 B; the tap %s the host build shifted by 2560 ms (%ld frames); "
+           "stop keeps the length\n", fails ? "FAIL" : "ok", nev, pieces, ndiff ? "DIFFERS from" : "equals", tn);
+    api->destroy_instance(in);
+    free(hs); free(ts); free(dir);
     return fails != 0;
 }
 
@@ -462,6 +570,13 @@ static int gatep(const char *so, unsigned nblk)
         else if (r == 10 && rnd() % 64 == 0) api->get_param(in, "state", st, sizeof st);
         else if (r == 11 && rnd() % 256 == 0) api->set_param(in, "state", st);
         else if (r == 12 && rnd() % 128 == 0) { uint8_t m[3] = { 0xB0, 123, 0 }; api->on_midi(in, m, 3, MOVE_MIDI_SOURCE_EXTERNAL); }
+        else if (r == 13 && rnd() % 64 == 0) {   /* the dev player: a take begun, loaded, started, stopped, read */
+            static const char *P[] = { "begin g 40", "go 0", "stop", "go", "begin x", "bad" };
+            char g[160];
+            api->set_param(in, "dev_play", P[rnd() % 6]);
+            api->set_param(in, "dev_play_add", rnd() & 1 ? "0 0x90 60 100;10 128 60 0;5 0x90 1 1" : "x;0x7f 1 2 3;20 0xF8 0 0");
+            api->get_param(in, "dev_play", g, sizeof g);
+        }
         api->render_block(in, blk, 128);
         in_cb = 0;
         for (i = 0; i < 256; i++) { unsigned a = (unsigned)abs(blk[i]); if (a >= 32767u) full++; if (a > peak) peak = a; }
@@ -628,6 +743,7 @@ int main(int argc, char **argv)
     if (argc >= 3 && !strcmp(argv[1], "gatep")) return gatep(argv[2], argc > 3 ? (unsigned)atoi(argv[3]) : 10000u);
     if (argc >= 5 && !strcmp(argv[1], "eq")) return eq(argv[2], argv[3], argv[4]);
     if (argc >= 5 && !strcmp(argv[1], "run")) return run_script(argv[2], argv[3], argv[4]);
+    if (argc >= 5 && !strcmp(argv[1], "play")) return play(argv[2], argv[3], argv[4]);
     if (argc >= 3 && !strcmp(argv[1], "api")) return api_tests(argv[2]);
     printf("usage: test_bridge eq DSP SCRIPT HOST.wav | api DSP | keys DSP | presets DSP | gatep DSP [N]\n");
     return 2;
