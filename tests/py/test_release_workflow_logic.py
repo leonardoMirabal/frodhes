@@ -490,8 +490,8 @@ def test_web_firmware_publishes_the_package_with_its_sha256(tmp_path):
     assert p.returncode == 0, p.stderr
     meta = json.loads((dist / "firmware.json").read_text())
     assert (dist / "frodhes.fwsc").read_bytes() == raw
-    assert meta == {"version": "0.9.9", "identity": "FM-1_958", "size": len(raw),
-                    "sha256": hashlib.sha256(raw).hexdigest(), "file": "frodhes.fwsc"}
+    fm1 = {"identity": "FM-1_958", "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest(), "file": "frodhes.fwsc"}
+    assert meta == {"version": "0.9.9", **fm1, "packages": [fm1]}
     for name, data in (("smk.fwsc", fm1_package("SMK-37 Pro_470")), ("bad.fwsc", raw[:0x1000] + bytes([raw[0x1000] ^ 1]) + raw[0x1001:])):
         (tmp_path / name).write_bytes(data)
         d2 = tmp_path / ("d-" + name)
@@ -501,8 +501,47 @@ def test_web_firmware_publishes_the_package_with_its_sha256(tmp_path):
         assert p.returncode != 0 and not (d2 / "frodhes.fwsc").exists(), (name, p.stdout, p.stderr)
 
 
+def test_web_firmware_publishes_the_smk37_packages_too(tmp_path):
+    """tools/web_firmware.sh FM1 DIST V SMK...: each SMK-37 build under its release name, listed in firmware.json's
+    packages after the FM-1's (web/install.js picks the one for the device's model); an FM-1 package among the SMK
+    ones, a stock identity or the same model twice is refused, nothing copied"""
+    import hashlib
+    import json
+    names = {"SMK-37 Pro_470": "frodhes-smk37-experimental.fwsc", "SMK-37 Elite_470": "frodhes-smk37-elite-experimental.fwsc",
+             "MKE-P37_470": "frodhes-smk37-mke-experimental.fwsc"}
+    files = {}
+    for ident in ["FM-1_958", *names, "SMK-37 Pro_016"]:
+        files[ident] = tmp_path / (ident.replace(" ", "_") + ".fwsc")
+        files[ident].write_bytes(fm1_package(ident))
+    run = lambda dist, *pk: subprocess.run(["sh", os.path.join(ROOT, "tools", "web_firmware.sh"), str(files[pk[0]]), str(dist), "0.9.9",
+                                            *[str(files[k]) for k in pk[1:]]], capture_output=True, text=True, timeout=60)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    p = run(dist, "FM-1_958", *names)
+    assert p.returncode == 0, p.stderr
+    meta = json.loads((dist / "firmware.json").read_text())
+    assert [q["identity"] for q in meta["packages"]] == ["FM-1_958", *names] and meta["identity"] == "FM-1_958"
+    for q in meta["packages"][1:]:
+        raw = files[q["identity"]].read_bytes()
+        assert q["file"] == names[q["identity"]] and (dist / q["file"]).read_bytes() == raw
+        assert q["sha256"] == hashlib.sha256(raw).hexdigest() and q["size"] == len(raw)
+    # the names match the page's PRODUCTS and the release's fixed asset names
+    js = open(os.path.join(ROOT, "web", "fm1install.js")).read()
+    assert all(f'product: "{k}", file: "{v}"' in js for k, v in names.items())
+    import sys
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import release
+    assert set(release.SMK_ASSETS) == set(names.values())
+    for bad in (["FM-1_958", "FM-1_958"], ["FM-1_958", "SMK-37 Pro_016"], ["FM-1_958", "SMK-37 Pro_470", "SMK-37 Pro_470"]):
+        d2 = tmp_path / ("d-" + "-".join(bad).replace(" ", "_"))
+        d2.mkdir()
+        p = run(d2, *bad)
+        assert p.returncode != 0 and not any(d2.iterdir()), (bad, p.stdout, p.stderr)
+
+
 def test_release_publishes_the_package_with_the_emulator():
     """release.yml runs tools/web_firmware.sh on the tag's FM-1 package before tools/deploy_pages.sh"""
     wf = open(os.path.join(ROOT, ".github", "workflows", "release.yml")).read()
-    a = wf.index('sh tools/web_firmware.sh "build/frodhes-${GITHUB_REF_NAME#v}.fwsc" web/dist')
+    a = wf.index('sh tools/web_firmware.sh "build/frodhes-$V.fwsc" web/dist "$V"')
+    assert all(f'"build/frodhes-$V-{b}.fwsc"' in wf[a:a + 400] for b in ("smk37", "smk37-elite", "smk37-mke"))
     assert a < wf.index("sh tools/deploy_pages.sh web/dist build/pages")

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Frodhes: the FM-1 install over USB-MIDI, in the browser (web/install.js) and in node (tests/web/install_test.js).
+// Frodhes: the install on an FM-1 or an SMK-37 (Pro, Elite, MKE-P37) over USB-MIDI, in the browser (web/install.js)
+// and in node (tests/web/install_test.js).
 // The same update as tools/fm1_install.py, written again in JS: the package checks (its identity, the loader mark,
 // the CRCs), then step 1 (the running firmware reads parts of the package and restarts as the update loader) and
 // step 2 (the loader reads the whole package, writes it and restarts), the device asking and this answering; then
@@ -16,9 +17,17 @@
   const FINISH_CHECK = 0xE0000000, FINISH_WRITE = 0xF0000000;
   const MAXDATA = 512, BLOCKS = 20, BLK = 0x30, KEEP = 0x2F, MAX_BLOCKS = 64;
   const LOADER_MARK = "FELUCCA-LOADER-1";
-  const PRODUCT = "FM-1_958";                         // the package this page installs (SMK-37: later)
-  const PORT_RE = /fm-1|frodhes|felucca|sloop|ota|usb-midi/i;   // never ask other gear
-  const OWN_LOADER_RE = /^ota-FM-1_9\d\d$/i;          // our update loader (an install not finished)
+  const PRODUCT = "FM-1_958";                         // the FM-1's package
+  // the packages this page installs, by the device's model (the identity before the "_"); the SMK-37 builds are
+  // experimental, as on the release page. file: the fixed name next to the page (tools/web_firmware.sh)
+  const PRODUCTS = [
+    { model: "FM-1", product: "FM-1_958", file: "frodhes.fwsc" },
+    { model: "SMK-37 Pro", product: "SMK-37 Pro_470", file: "frodhes-smk37-experimental.fwsc", experimental: true },
+    { model: "SMK-37 Elite", product: "SMK-37 Elite_470", file: "frodhes-smk37-elite-experimental.fwsc", experimental: true },
+    { model: "MKE-P37", product: "MKE-P37_470", file: "frodhes-smk37-mke-experimental.fwsc", experimental: true },
+  ];
+  const PORT_RE = /fm-1|frodhes|smk|elite|mke-p37|felucca|sloop|ota|usb-midi/i;   // never ask other gear
+  const OWN_LOADER_RE = /^ota-(FM-1|SMK-37 Pro|SMK-37 Elite|MKE-P37)_9\d\d$/i;   // our update loader (an install not finished)
   // ms; the tests shorten them
   const DELAY = { start: 2000, reply: 10, loader: 3000, reboot: 3000, retry: 1000, poll: 1000, hs: 1000,
                   idleCheck: 8000, idleWrite: 180000, waitLoader: 30000, waitReboot: 40000 };
@@ -76,6 +85,7 @@
     return m ? { text, model: m[1], version: +m[2], loader: m[1].toLowerCase().startsWith("ota-") } : null;
   }
   const modelOf = (text) => text.split("_")[0].replace(/^ota-/i, "");
+  const productFor = (text) => PRODUCTS.find((p) => p.model.toLowerCase() === modelOf(text).toLowerCase()) || null;
 
   // ---- the package: 20 interleave blocks (the identity in their marker bytes), then the update image
   function idChar(m, i) { const c = (m - i - 1) & 0xFF; return c >= 0x20 && c < 0x7F; }
@@ -106,7 +116,7 @@
     return [image, n];
   }
   function productOf(raw) {
-    if (raw.length < BLOCKS * BLK) throw new InstallError("badpkg", "not an FM-1 package (too short)");
+    if (raw.length < BLOCKS * BLK) throw new InstallError("badpkg", "not a Frodhes package (too short)");
     const ib = identityBlocks(raw), n = ib === BLOCKS ? BLOCKS : Math.min(ib, deinterleave(raw)[1]);
     let s = "";
     for (let i = 0; i < n; i++) { const m = raw[i * BLK + KEEP]; if (m !== 0x7D) s += String.fromCharCode((m - i - 1) & 0xFF); }
@@ -167,8 +177,8 @@
     if (wantSha && sha !== wantSha.toLowerCase())
       throw new InstallError("badpkg", `the package's sha256 is ${sha}, not the published ${wantSha}: download it again`);
     const product = productOf(raw);
-    if (product !== PRODUCT)
-      throw new InstallError("badpkg", `this package is ${product || "not an FM-1 package"}; this page installs ${PRODUCT} only`);
+    if (!PRODUCTS.some((p) => p.product === product))
+      throw new InstallError("badpkg", `this package is ${product || "not a Frodhes package"}; this page installs ${PRODUCTS.map((p) => p.product).join(", ")} only`);
     if (!hasMark(raw)) throw new InstallError("badpkg", "no Felucca update loader in this package");
     const [image] = deinterleave(raw);
     const bad = packageDamage(image);
@@ -198,7 +208,7 @@
     }
     return null;
   }
-  async function find(backend, want) {      // the first FM-1-looking port that answers (and want(identity))
+  async function find(backend, want) {      // the first FM-1- or SMK-37-looking port that answers (and want(identity))
     const outs = backend.outputNames();
     for (const name of backend.inputNames().filter((n) => PORT_RE.test(n))) {
       const out = pairOutput(name, outs);
@@ -239,7 +249,7 @@
         continue;
       }
       if (r.n > MAXDATA || r.addr + r.n > image.length)
-        throw new InstallError("badreq", `the FM-1 asked for 0x${r.addr.toString(16)}+${r.n}, outside the package`);
+        throw new InstallError("badreq", `the device asked for 0x${r.addr.toString(16)}+${r.n}, outside the package`);
       if (DELAY.reply) await sleep(DELAY.reply);
       if (!link.send(response(r.addr, image.subarray(r.addr, r.addr + r.n), r.fl))) return { served, finished: false, lost: true };
       served++;
@@ -250,13 +260,14 @@
   // "start" id, "check" reads, "loader", "write" percent, "reboot", "done" id
   async function install(backend, dev, pkg, step = () => {}) {
     const close = () => { try { dev.link.close(); } catch (e) { /* gone */ } };
+    const unit = `the ${modelOf(dev.id.text)}`;
     if (modelOf(dev.id.text) !== modelOf(pkg.product)) {
       close();
       throw new InstallError("model", `the device is ${dev.id.text}; this package is for the ${modelOf(pkg.product)} (${pkg.product})`);
     }
     if (dev.id.loader && !OWN_LOADER_RE.test(dev.id.text)) {
       close();
-      throw new InstallError("foreign", `the FM-1 is in the update mode of another firmware (${dev.id.text}): finish that update with its own updater, then install again`);
+      throw new InstallError("foreign", `${unit} is in the update mode of another firmware (${dev.id.text}): finish that update with its own updater, then install again`);
     }
     let ota = dev;
     if (!dev.id.loader) {
@@ -266,11 +277,11 @@
       const r = await serve(dev.link, pkg.image, FINISH_CHECK, DELAY.idleCheck, (k) => step("check", k));
       close();
       if (!r.finished)
-        throw new InstallError(r.lost ? "lost" : "stopped", `the FM-1 ${r.lost ? "was disconnected" : "stopped answering"} after ${r.served} requests; nothing was written`);
+        throw new InstallError(r.lost ? "lost" : "stopped", `${unit} ${r.lost ? "was disconnected" : "stopped answering"} after ${r.served} requests; nothing was written`);
       step("loader");
       await sleep(DELAY.loader);
       ota = await waitFor(backend, (i) => i.loader, DELAY.waitLoader);
-      if (!ota) throw new InstallError("noloader", "the update loader did not appear. Replug the USB cable and press Install again: the FM-1 stays in update mode until it is done");
+      if (!ota) throw new InstallError("noloader", `the update loader did not appear. Replug the USB cable and press Install again: ${unit} stays in update mode until it is done`);
     }
     step("write", 0);
     ota.link.send(UPGRADE);
@@ -284,9 +295,9 @@
     step("reboot");
     await sleep(DELAY.reboot);
     const back = await waitFor(backend, (i) => !i.loader, DELAY.waitReboot);
-    if (!back) throw new InstallError("noreturn", "the FM-1 did not come back: switch it off and on");
+    if (!back) throw new InstallError("noreturn", `${unit} did not come back: switch it off and on`);
     back.link.close();
-    if (back.id.text !== pkg.product) throw new InstallError("mismatch", `written, but the FM-1 reports ${back.id.text} (expected ${pkg.product})`);
+    if (back.id.text !== pkg.product) throw new InstallError("mismatch", `written, but ${unit} reports ${back.id.text} (expected ${pkg.product})`);
     step("done", back.id.text);
     return back.id.text;
   }
@@ -331,7 +342,7 @@
     };
   }
 
-  const api = { webMidiBackend, HS_QUERY, UPGRADE, FINISH_CHECK, FINISH_WRITE, LOADER_MARK, PRODUCT, DELAY, InstallError, pack7, unpack7,
+  const api = { webMidiBackend, HS_QUERY, UPGRADE, FINISH_CHECK, FINISH_WRITE, LOADER_MARK, PRODUCT, PRODUCTS, modelOf, productFor, DELAY, InstallError, pack7, unpack7,
                 response, parseRequest, parseIdentity, productOf, logicalImage, deinterleave, packageDamage, crc16, dec,
                 sha256hex, loadPackage, handshake, find, waitFor, install };
   if (typeof module !== "undefined" && module.exports) module.exports = api;

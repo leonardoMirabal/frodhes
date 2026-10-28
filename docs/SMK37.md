@@ -32,6 +32,12 @@ two reads and check that the calibration record (`trimdat`) is in them. Do this 
 
 ## Install
 
+From the browser (Chrome or Edge): open the [emulator page](https://leonardomirabal.github.io/frodhes/#install),
+**Install on your FM-1 or SMK-37**, press **Find my FM-1 or SMK-37** (allow MIDI with SysEx), then **Install**. The
+page reads the unit's identity and picks the package for its model (SMK-37 Pro, SMK-37 Elite or MKE-P37, marked
+experimental), checks its sha256, and refuses a package for another model before it sends anything. It works over
+the stock firmware or over Frodhes, and resumes an install that was cut off. Or from a terminal:
+
 ```sh
 python3 tools/fm1_install.py frodhes-smk37-experimental.fwsc
 ```

@@ -41,9 +41,10 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
    earlier versions are on the [releases page](https://github.com/leonardoMirabal/frodhes/releases/latest)).
 2. Connect the FM-1 to your computer with USB.
 3. The easiest way: open [the emulator page](https://leonardomirabal.github.io/frodhes/#install) in Chrome or Edge,
-   go to **Install on your FM-1**, press **Find my FM-1** (allow MIDI with SysEx when the browser asks), then
-   **Install**. The page fetches the latest release itself, shows its version and sha256 and checks both before it
-   writes anything; keep the FM-1 plugged in until it says Done. Safari and Firefox cannot send SysEx: use the
+   go to **Install on your FM-1 or SMK-37**, press **Find my FM-1 or SMK-37** (allow MIDI with SysEx when the browser
+   asks), then **Install**. The page finds the unit, fetches the latest release's package for its model itself, shows
+   its version and sha256 and checks both before it writes anything; keep the FM-1 plugged in until it says Done.
+   (An SMK-37: see [SMK37.md](SMK37.md).) Safari and Firefox cannot send SysEx: use the
    terminal installer below instead.
    Or install it from a terminal with the installer in this repository:
    `python3 tools/fm1_install.py frodhes.fwsc` (it needs `pip install mido python-rtmidi`). Once Frodhes is listed
