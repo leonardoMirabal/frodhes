@@ -565,9 +565,18 @@ class TapRig(UsbRig):
         import move_ws
         try:
             self.remote.play(self.slot, take, dur_ms, ev)
-        except move_ws.ConnectionClosed:          # (dropped while idle: again on a new connection, a new id)
+        except move_ws.ConnectionClosed:
+            # (the connection dropped while the take went up: stop it, and play it again under a new id only when
+            # the plugin shows it never started: no tap file, or one that played nothing. A take that started is
+            # never sent again: its notes would sound twice)
             self.reconnect()
             self.stop()
+            time.sleep(1.0)
+            got = self.fetch(take)
+            if got is not None and got[1].get("played", 1):
+                raise RuntimeError("the WebSocket dropped while take %s went up, and the plugin had started it "
+                                   "(played %s of %s): not sent again" % (take, got[1].get("played"),
+                                                                         got[1].get("events")))
             take += "r"
             self.remote.play(self.slot, take, dur_ms, ev)
         time.sleep(dur_ms / 1000 + TAP_GRID_S + 0.3)
@@ -930,6 +939,95 @@ def usb_clock(r, d, bpm=120.0, secs=8.0, note=60, engine=None, out=print):
     return not bad, rep
 
 
+RESTRIKE_KEYS = (60, 67, 74, 81, 88, 95, 102, 108)    # (spread over the HQ live contact's range, keys >= 60)
+RESTRIKE_CHORD = (28, 33, 38, 43, 47, 52, 55, 59)      # (8 held under the pedal: with the 8 above, 16 voices)
+RESTRIKE_VELS = (127, 64, 30)
+RESTRIKE_LIMIT_US = 600                                # (A's spec: the worst callback with the live contacts)
+
+
+def restrike_events(secs=30.0, seed=0):
+    """the HQ re-strike stress (A's spec, HQ item 4): the pedal down, a chord of 8 held on keys 28-59; the 8 keys
+    of RESTRIKE_KEYS struck once, then every 30-50 ms one of them (in turn) struck again while it rings: key up
+    20 ms before (a note-on of a held key is no re-strike), velocities 127 / 64 / 30 in turn; one time in six 3 or
+    4 keys at once (more than the 2 live contacts a block: the rest take the table). Then every key up, the pedal
+    up. (events, the pedal's let-up time, duration)"""
+    rng = np.random.default_rng(seed)
+    ev = [(0.1, "cc", 64, 127)] + [(0.2, "on", n, 100) for n in RESTRIKE_CHORD]
+    ev += [(0.3 + 0.03 * i, "on", n, 100) for i, n in enumerate(RESTRIKE_KEYS)]
+    t, k, v, end = 0.8, 0, 0, 0.8 + secs
+    last = {n: 0.3 + 0.03 * i for i, n in enumerate(RESTRIKE_KEYS)}
+    while t < end:
+        m = int(rng.choice((3, 4))) if rng.random() < 1 / 6 else 1
+        for _ in range(m):
+            n = RESTRIKE_KEYS[k % len(RESTRIKE_KEYS)]
+            k += 1
+            if t - last[n] < 0.045:              # (its own last strike too close: the next key)
+                continue
+            ev += [(t - 0.020, "off", n, 0), (t, "on", n, RESTRIKE_VELS[v % 3])]
+            v += 1
+            last[n] = t
+        t += float(rng.uniform(0.030, 0.050))
+    ev += [(end + 0.2, "off", n, 0) for n in RESTRIKE_CHORD + RESTRIKE_KEYS]
+    ev += [(end + 0.5, "cc", 64, 0)]
+    return sorted(ev, key=lambda e: e[0]), end + 0.5, end + 2.5
+
+
+def usb_restrike(r, d, secs=30.0, listen_secs=8.0, seed=0, out=print):
+    """the HQ re-strike stress on the Rhodes (F01, HQ on; over the tap with the CPU read: every callback's time,
+    against RESTRIKE_LIMIT_US): no glitch, never louder after the pedal's let-up. Then the listening pair: the
+    phrase's first listen_secs with HQ on and with HQ off (restrike-listen-hq1.wav / -hq0.wav, for an A/B); the HQ
+    switch is left on"""
+    rep, bad = {"secs": secs}, []
+    ev, up, dur = restrike_events(secs, seed)
+    r._send("cc", 123, 0)
+    for c, v in GLOBAL_CCS:
+        r._send("cc", c, v)
+    r._send("pc", 0, 0)
+    if hasattr(r, "set_hq"):
+        r.set_hq(1)
+    cpu = hasattr(r, "cpu_start") and getattr(r, "cpu_fetch", None) is not None
+    if cpu:
+        r.cpu_start()
+    try:
+        tk = r.rec(dur, ev)
+    finally:
+        rows = r.cpu_stop() if cpu else []
+    _save(d, "restrike-hq1", tk)
+    x, sr = tk["x"], tk["sr"]
+    g = glitches(x, sr, ev)
+    louder = _after_keyup(x, sr, up, 1.0)
+    rep.update(notes=sum(1 for e in ev if e[1] == "on"), restrikes=sum(1 for e in ev if e[1] == "on") - 16,
+               peak_dbfs=round(20 * np.log10(np.abs(x).max() / 32767 + 1e-12), 1), glitches=g,
+               louder_after_up_db=round(float(louder), 2), xruns=tk["xruns"])
+    if cpu:
+        c = cpu_summary(rows, RESTRIKE_LIMIT_US)
+        rep["cpu"] = c
+        if not c["n"]:
+            bad.append("no callback times (dev_cpu_log reached the plugin?)")
+        elif c["over"] or c["missing"]:
+            bad.append("worst callback %d us (%d over %d us, %d missing)" % (c["worst"], c["over"], RESTRIKE_LIMIT_US,
+                                                                            c["missing"]))
+    if g:
+        bad.append("%d glitch(es): %s" % (len(g), g[:3]))
+    if louder > 1.0:
+        bad.append("louder after the pedal's let-up by %.1f dB" % louder)
+    if tk["xruns"]:
+        bad.append("the take: %s" % tk["xruns"])
+    lev = [e for e in ev if e[0] < listen_secs] + [(listen_secs, "off", n, 0) for n in RESTRIKE_CHORD + RESTRIKE_KEYS]
+    lev += [(listen_secs + 0.3, "cc", 64, 0)]
+    for hq in ((0, 1) if hasattr(r, "set_hq") else ()):
+        r.set_hq(hq)
+        r._send("cc", 123, 0)
+        _save(d, "restrike-listen-hq%d" % hq, r.rec(listen_secs + 2.0, lev))
+    if hasattr(r, "set_hq"):
+        r.set_hq(1)
+    rep["verdict"] = "FAIL: " + "; ".join(bad) if bad else "PASS"
+    out("restrike: %d re-strikes in %.0f s, peak %s dBFS, %s, %d glitch(es), after the let-up %+.1f dB: %s" % (
+        rep["restrikes"], secs, rep["peak_dbfs"], "worst %s us" % rep["cpu"].get("worst") if cpu else "no CPU read",
+        len(g), louder, rep["verdict"]))
+    return not bad, rep
+
+
 def usb_stress(r, d, engine="rhodes", secs=60.0, nv=MOVE_VOICES, bpm=0.0, seed=0, out=print):
     """hil_crackle's worst takes on the Move, two of secs / 2: every effect heavy, the pedal down, chords every
     0.15-0.4 s across the registers at v100 / v127 (up to 12 notes each; under the pedal every voice sounds), the pedal
@@ -989,7 +1087,9 @@ def usb_devices(midi=None, audio=None, out=print):
     return 0 if pm and pa else 2
 
 
-PHRASE = [(36, 40), (36, 127), (60, 40), (60, 100), (60, 127), (84, 40), (84, 127)]   # (note, velocity), one by one
+PHRASE = [(36, 40), (36, 127), (60, 40), (60, 100), (60, 127), (84, 40), (84, 127), (96, 90)]   # (note, velocity)
+# (one by one; 96 v90: a key over HQ_OS_LO at a velocity between the Classic layers, so HQ on and off differ there)
+HQ_PROBE = "96 v90"
 CHORD = [(48, 90), (60, 100), (64, 100), (67, 100), (72, 110)]
 NOTE_S, GAP_S = 1.0, 1.0                    # held, then the release's silence before the next
 
@@ -1161,12 +1261,27 @@ def usb_host(r, d, program=0, out=print):
                      "f0_host_c": round(1200 * np.log2(fh / note_hz(n)), 2) if fh else None,
                      "decay_move_s": _decay_s(mm, sr), "decay_host_s": _decay_s(hm, sr),
                      "centroid_move": round(_centroid(mm[st], sr)), "centroid_host": round(_centroid(hm[st], sr))})
+    if hq:                                       # (HQ asked: the take must not be Classic where only HQ differs)
+        c = host_phrase(ev, dur, program, None, GLOBAL_CCS)
+        for name, t, n in marks:
+            if name == HQ_PROBE:
+                a, b = int(t * sr), int((t + NOTE_S) * sr)
+                dm, dc = _mono(mv[a:b]) - g * _mono(h[a:b]), _mono(mv[a:b]) - g * _mono(c[a:b])
+                vs = 20 * np.log10((np.sqrt(np.mean(dc ** 2)) + 1e-9) / (np.sqrt(np.mean(dm ** 2)) + 1e-9))
+                classic_db = round(float(vs), 1)
     rep = {"program": program, "hq": hq, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
            "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max())}
     bad = [w["note"] for w in rows if w["residual_db"] > -40 and w["judged"]]
     extra = [w["note"] for w in rows if w["extra_db"] > -30]
     again = ["%s +%s ms" % (w["note"], "/".join(str(t) for t in w["again_ms"])) for w in rows if w["again_ms"]]
-    rep["verdict"] = ("STRUCK AGAIN: %s (a note the host strikes once comes again while it is held: the arpeggiator, "
+    classic = False
+    if hq:
+        rep["hq_vs_classic_db"] = classic_db     # (the take's residual against Classic over the one against HQ)
+        classic = classic_db < 20.0
+    rep["verdict"] = ("CLASSIC: HQ was asked (p_hq 1) but %s plays as Classic (%.1f dB nearer the HQ host than the "
+                      "Classic one: p_hq did not reach the plugin?)" % (HQ_PROBE, rep["hq_vs_classic_db"])
+                      if classic else
+                      "STRUCK AGAIN: %s (a note the host strikes once comes again while it is held: the arpeggiator, "
                       "chord mode or the sequencer on in the plugin, or the schedule played twice)" % ", ".join(again)
                       if again else
                       "PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad and not extra else
@@ -1181,7 +1296,7 @@ def usb_host(r, d, program=0, out=print):
                 w["f0_move_c"] or 0, w["f0_host_c"] or 0, w["decay_move_s"], w["decay_host_s"],
                 w["centroid_move"], w["centroid_host"]))
     out(rep["verdict"])
-    return not bad and not extra and not again, rep
+    return not bad and not extra and not again and not classic, rep
 
 
 def usb_host_file(d, out=print):
@@ -1344,6 +1459,10 @@ def _num(rep, test):
             return "damped %s dB after key-up, pedal held %s dB / up %s dB, louder after key-up %s / %s dB" % (
                 rep["damped"]["after_1s_db"], rep["pedal"]["held_1s_db"], rep["pedal"]["after_up_db"],
                 rep["damped"]["louder_after_keyup_db"], rep["pedal"]["louder_after_keyup_db"])
+        if test == "usb-restrike":
+            c = rep.get("cpu") or {}
+            return "%d re-strikes, worst callback %s us, p99 %s us, %d glitch(es), after the let-up %+.1f dB" % (
+                rep["restrikes"], c.get("worst", "-"), c.get("p99", "-"), len(rep["glitches"]), rep["louder_after_up_db"])
         if test == "cpu":
             if not rep.get("n"):
                 return "no data"
@@ -1440,6 +1559,9 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, 
                   ("usb-sus", lambda: usb_sus(r, sub("usb-sus"), engine=e, out=quiet)),
                   ("usb-clock", lambda: usb_clock(r, sub("usb-clock"), bpm, engine=e, out=quiet)),
                   ("usb-stress", lambda: usb_stress(r, sub("usb-stress"), e, stress_secs, out=quiet))]
+        if e == "rhodes" and hq == 1 and tap_cpu:
+            tests.append(("usb-restrike", lambda: usb_restrike(r, sub("usb-restrike"), stress_secs / 2,
+                                                               out=quiet)))
         cpu_rows = []
         for name, fn in tests:
             out("-- %s %s" % (e, name))

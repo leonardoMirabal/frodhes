@@ -174,14 +174,24 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
   plugin logs them while `dev_cpu_log` is 1, and the tool fetches `cpu-ring.log` over ssh. The `cpu` row checks
   them against the working limit. `--hq 1` or `--hq 0` sets the HQ Rhodes on or off for the run, through the
   plugin's `p_hq` parameter. HQ applies to new notes only: a sounding note keeps the path it started with.
-  With `--hq 1`, `usb-host` compares against the host build with HQ on.
+  With `--hq 1`, `usb-host` compares against the host build with HQ on. The phrase has a note that only HQ
+  changes (96 at v90). If that note plays as Classic while HQ is asked for, the test fails as CLASSIC.
+- `d2 --path tap --hq 1` also runs `usb-restrike` on the Rhodes. The pedal is down and a chord of 8 notes is
+  held on keys 28 to 59. Every 30 to 50 ms, one of 8 keys from 60 to 108 is struck again while it still rings,
+  at velocities 127, 64 and 30 in turn. The key goes up 20 ms before each new strike. One time in six, 3 or 4
+  keys are struck at once. That is more than the HQ live contact's 2 per block, so the rest use the table. The
+  take lasts half of `--secs` (30 s by default). It passes when the worst callback is 600 us or less, nothing
+  glitches, and the sound is not louder after the pedal comes up. The test also writes the first 8 s with HQ
+  on and with HQ off (`restrike-listen-hq1.wav`, `restrike-listen-hq0.wav`) for listening.
 - The plugin keeps its saved setup, but the host build boots clean. So before its take, `usb-host` turns off
   the arpeggiator, chord mode, the sequencer, the pedal, FX bypass and RAW by CC. Over the tap it also writes
   each setting that differs from a fresh instance (`move/tests/boot_keys.txt`, checked by `test_bridge boot`).
   A note that the host strikes once but the Move strikes again while it is held fails as STRUCK AGAIN. That
   happened in one run, when an arpeggiator left on re-struck every note.
 - A take plays once: the plugin refuses a `begin` with the id of the take that went last. Each `dev_play_add`
-  piece carries its number (`#K`), and the plugin refuses a piece that comes out of turn.
+  piece carries its number (`#K`), and the plugin refuses a piece that comes out of turn. If the WebSocket
+  drops while a take is being sent, the tool stops the take. It sends the take again, under a new id, only
+  when the plugin never started it. A take that started is never sent again; the test fails instead.
 - The criteria follow each engine's manual behaviour. VIBES plays with its motor off (CC 47 0), because the
   motor's pulse moves every level the tests read. Its velocity is checked as the FM-1 scan checks it: no drop from
   v24 on, and at least +10 dB from v40 to v117. MARIMBA's velocity must rise 26 to 32 dB from v8 to v127. A

@@ -27,8 +27,9 @@ NAMES = ["F%02d" % (i + 1) for i in range(19)] + ["U%02d" % (i + 1) for i in ran
 class FakeSchwung:
     """slot 0 holds `module` at preset 0; every message received is logged; mute: answer nothing"""
 
-    def __init__(self, module="frodhes", mute=False, refuse=False, noname=False, settings=None):
+    def __init__(self, module="frodhes", mute=False, refuse=False, noname=False, settings=None, cut_on=None):
         self.module, self.mute, self.refuse, self.noname = module, mute, refuse, noname
+        self.cut_on = cut_on                             # ("go" / "add": cut the connection once, after the first)
         self.settings = dict(settings or {})            # ("s_..." -> value: the settings keys the server reports)
         self.preset, self.log, self.takes, self.cur = 0, [], {}, None
         self.hist, self.conns = [], []                                   # (the order of preset switches and takes: host_fetch's state)
@@ -73,6 +74,10 @@ class FakeSchwung:
                     elif v[0] == "go":
                         self.takes[self.cur]["go"] = True
                         self.hist.append(("take", self.cur))
+                        if self.cut_on == "go":
+                            self.cut_on = None
+                            ws.socket.close()
+                            return
                 elif m["key"] == "synth:dev_play_add":
                     t = self.takes[self.cur]
                     t["max_piece"] = max(t["max_piece"], len(m["value"]))
@@ -84,6 +89,10 @@ class FakeSchwung:
                     for e in v.split(";"):
                         if e.strip():
                             t["ev"].append(tuple(int(x, 0) for x in e.split()))
+                    if self.cut_on == "add":
+                        self.cut_on = None
+                        ws.socket.close()
+                        return
                 if m["key"] == "synth:p_hq":
                     self.hist.append(("hq", int(m["value"]) != 0))
                 if m["key"] == "synth:preset":
@@ -260,7 +269,9 @@ def test_tap_path_is_the_host(fake, tmp_path):
         assert len(cpu) == 1 and cpu[0]["report"]["worst"] == 349 and cpu[0]["report"]["n"] == 2000, cpu
         assert "2000 callbacks while usb-stress played, worst 349 us" in cpu[0]["numbers"] and "HQ on" in cpu[0]["numbers"]
         logs = [m["value"] for m in fake.log if m.get("key") == "synth:dev_cpu_log"]
-        assert logs == ["1", "0"], logs
+        assert logs == ["1", "0", "1", "0"], logs                 # (usb-stress, then usb-restrike: Rhodes, HQ on)
+        rs = [w for w in rows if w["test"] == "usb-restrike"]
+        assert len(rs) == 1 and rs[0]["ok"] and "re-strikes" in rs[0]["numbers"], rs
     finally:
         mh.time.sleep, mh.TAP_GRID_S = sleep, keep
         r.remote.close()
@@ -307,9 +318,14 @@ def test_hq_compares_hq(fake, tmp_path, monkeypatch):
         ok, rep = mh.usb_host(r, str(tmp_path / "hq"), out=lambda s: None)
         assert ok and rep["hq"] == 1 and abs(rep["gain_db"]) < 0.01, rep["verdict"]
         assert all(w["residual_db"] < -150 for w in rep["rows"] if w["judged"]), [w["residual_db"] for w in rep["rows"]]
+        assert rep["hq_vs_classic_db"] > 20, rep["hq_vs_classic_db"]
         r.hq = None                                      # (the reference as before: Classic)
         ok, rep = mh.usb_host(r, str(tmp_path / "classic"), out=lambda s: None)
         assert not ok, rep["verdict"]
+        fake.hist.append(("hq", False))                  # (p_hq lost on the way: the plugin plays Classic)
+        r.hq = 1
+        ok, rep = mh.usb_host(r, str(tmp_path / "lost"), out=lambda s: None)
+        assert not ok and rep["verdict"].startswith("CLASSIC"), rep["verdict"]
     finally:
         r.remote.close()
 
@@ -343,3 +359,57 @@ def test_tap_rig_reconnects(fake, tmp_path, monkeypatch):
         assert sorted(fake.takes)[-1].endswith("r"), sorted(fake.takes)
     finally:
         r.remote.close()
+
+
+def test_restrike_fake(fake, tmp_path, monkeypatch):
+    """usb-restrike over the fake tap (the HQ host build with the live contact): every re-strike sounds, no glitch,
+    not louder after the let-up; the CPU ring read; the listening pair written, HQ left on"""
+    import wave
+    mh, r = _tap(fake, tmp_path)
+    r.cpu_fetch = fake_cpu(fake)
+    monkeypatch.setattr(mh, "TAP_GRID_S", 0.0)
+    monkeypatch.setattr(mh.time, "sleep", lambda s: None)
+    try:
+        ev, up, dur = mh.restrike_events(3.0)
+        ons = [e for e in ev if e[1] == "on"]
+        assert len(ons) > 16 + 3 / 0.05 and all(e[2] >= 60 for e in ons[16:])
+        offs = {}
+        for t, k, n, v in ev:                              # (each re-strike: its key up 20 ms before)
+            if k == "off":
+                offs[n] = t
+            elif k == "on" and n in mh.RESTRIKE_KEYS and t > 0.6:
+                assert abs(t - offs[n] - 0.020) < 1e-9, (n, t)
+        ok, rep = mh.usb_restrike(r, str(tmp_path / "rs"), secs=3.0, listen_secs=1.5, out=lambda s: None)
+        assert ok, rep["verdict"]
+        assert rep["cpu"]["n"] == 2000 and not rep["glitches"] and rep["louder_after_up_db"] < 1.0, rep
+        for hq in (0, 1):
+            w = wave.open(str(tmp_path / "rs" / ("restrike-listen-hq%d.wav" % hq)))
+            assert w.getnframes() == int(round(3.5 * 44100))
+        assert r.hq == 1
+        a = [m["value"] for m in fake.log if m.get("key") == "synth:p_hq"]
+        assert a == ["1", "0", "1", "1"], a
+    finally:
+        r.remote.close()
+
+
+@pytest.mark.parametrize("cut", ["add", "go"])
+def test_tap_retry_never_plays_twice(tmp_path, monkeypatch, cut):
+    """the connection cut while a take goes up: cut before go (the plugin never started it) -> the take again
+    under a new id; cut after go (it started) -> a clear failure, never the notes a second time"""
+    import move_hil as mh
+    f = FakeSchwung(cut_on=cut)
+    monkeypatch.setattr(mh, "TAP_GRID_S", 0.0)
+    try:
+        r = mh.TapRig(f.url, host_fetch(f, str(tmp_path / "tap")), wait=2.0)
+        ev = [(0.02 * i, "on" if i % 2 == 0 else "off", 60 + i // 2, 100) for i in range(40)]
+        if cut == "add":
+            tk = r.rec(1.0, ev)
+            assert np.abs(tk["x"]).max() > 0 and sorted(f.takes)[-1].endswith("r")
+            assert sum(1 for t in f.takes.values() if t["go"]) == 1
+        else:
+            with pytest.raises(RuntimeError, match="had started it"):
+                r.rec(1.0, ev)
+            assert sum(1 for t in f.takes.values() if t["go"]) == 1
+        r.remote.close()
+    finally:
+        f.close()
