@@ -90,12 +90,14 @@ def hb_down(y, g):
     return 0.5 * (a + op[n - P])
 
 
-def path_hb(dx, off, fam, P, beta):
-    """the HQ voice's 2x pickup (half-band up, the flux, half-band down, then diff), its delay taken out (2P - 1)"""
+def path_hb(dx, off, fam, P, beta, Pd=None, bd=None):
+    """the HQ voice's 2x pickup (half-band up, the flux, half-band down, then diff), its delay taken out (2P - 1, or
+    P + Pd - 1 with a down filter of its own: Pd pairs, Kaiser bd)"""
     g = hb_taps(P, beta)
+    gd = g if Pd is None else hb_taps(Pd, bd)
     p0 = flux(np.array([off]), fam)[0]
-    p = hb_down(flux(hb_up(dx, g) + off, fam) - p0, g)
-    d = 2 * P - 1
+    p = hb_down(flux(hb_up(dx, g) + off, fam) - p0, gd)
+    d = P + len(gd) - 1
     p = np.concatenate([p[d:], np.zeros(d)])
     return np.diff(p, prepend=0.0)
 
@@ -118,7 +120,11 @@ def hf_share(e):
     return 10 * np.log10((band_energy(e, 5000.0) + 1e-30) / (band_energy(e) + 1e-30))
 
 
-HB = []                                     # (P, beta) of the half-band 2x paths to measure (--hb)
+HB = []                                     # (P, beta[, Pd, bd]) of the half-band 2x paths to measure (--hb)
+
+
+def hb_name(hb):
+    return "hb" + "_".join(f"{q:g}" for q in hb)
 
 
 def study(keys, dur, vels, factors):
@@ -142,9 +148,9 @@ def study(keys, dur, vels, factors):
                     r[f"x{f}_att"] = round(db(e[:att], ref[:att]), 1)
                     if f == 1:
                         r["x1_hf"] = round(hf_share(e), 1)
-                for P, beta in HB:
-                    e = path_hb(dx, off, k["fam"], P, beta)[:-cut] - ref
-                    r[f"hb{P}_{beta:g}"] = round(db(e, ref), 1)
+                for hb in HB:
+                    e = path_hb(dx, off, k["fam"], *hb)[:-cut] - ref
+                    r[hb_name(hb)] = round(db(e, ref), 1)
                 rows.append(r)
     return rows
 
@@ -154,9 +160,11 @@ def main():
     ap.add_argument("--keys", default="21-108:3")
     ap.add_argument("--dur", type=float, default=0.4)
     ap.add_argument("--json")
-    ap.add_argument("--hb", default="", help="half-band 2x paths to measure: P:beta,P:beta (P pairs, 4P - 1 taps)")
+    ap.add_argument("--hb", default="", help="half-band 2x paths to measure: P:beta,P:beta (P pairs, 4P - 1 taps); "
+                    "P:beta:Pd:bd for a down filter of its own")
     a = ap.parse_args()
-    HB.extend((int(q.split(":")[0]), float(q.split(":")[1])) for q in a.hb.split(",") if q)
+    HB.extend(tuple(int(x) if i % 2 == 0 else float(x) for i, x in enumerate(q.split(":"))) for q in a.hb.split(",")
+              if q)
     span, _, step = a.keys.partition(":")
     lo, _, hi = span.partition("-")
     want = set(range(int(lo), int(hi or lo) + 1, int(step or 1)))
@@ -170,8 +178,8 @@ def main():
         with open(a.json, "w") as f:
             json.dump(rows, f, indent=1)
     worst = {f: max(r[f"x{f}"] for r in rows) for f in (1, 2, 4)}
-    for P, beta in HB:
-        worst[f"hb{P}_{beta:g}"] = max(r[f"hb{P}_{beta:g}"] for r in rows)
+    for hb in HB:
+        worst[hb_name(hb)] = max(r[hb_name(hb)] for r in rows)
     print("worst over keys / types / velocities:", worst)
 
 

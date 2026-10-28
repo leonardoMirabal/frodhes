@@ -10,7 +10,9 @@
 #define HQ_FP_STRICT
 #if defined(__GNUC__)
 #pragma GCC push_options
-#pragma GCC optimize("fp-contract=off", "tree-vectorize")   /* (lane-wise: the same sums, in the same order) */
+#pragma GCC optimize("fp-contract=off", "tree-vectorize", "no-predictive-commoning")
+/* (vectorised lane-wise: the same sums, in the same order. Predictive commoning (gcc 12 at -O2 here) reuses the
+ * FIR's overlapping loads across taps and spills 16 registers a tap: hq_fir 3x the loads) */
 #endif
 #endif
 
@@ -46,14 +48,19 @@ static const float HQ_PU_K[2] = {335544320.0f, 268435456.0f};
 #define HQ_GAP (1.0f / 33554432.0f)            /* Q25 gap -> gap */
 
 /* Phi(o + d) - Phi(o) without the cancellation of two near values: T(a) - T(b) = (a - b)(1 - ab) / ((a^2 + 1)(b^2 + 1)),
- * a - b = d; b1 = o + R, b2 = o - R and c = 1 / (b^2 + 1) per voice (hq_voice_init) */
-static inline float hq_dphi(const hq_voice_t *h, float d)
+ * a - b = d; b1 = o + R, b2 = o - R and c = 1 / (b^2 + 1) per voice (hq_voice_init). The value is d (n1 d2 - n2 d1)
+ * / (d1 d2): hq_dphi2 gives it for two points d, e (the 2x path's two phases) with one division, 1 / (D_d D_e)
+ * (a vector divide is the A72's slowest instruction: about 20 cycles for 4 lanes) */
+static inline void hq_dphi2(const hq_voice_t *h, float d, float e, float *pd, float *pe)
 {
     HQ_FP_STRICT
-    float a1 = h->b1 + d, a2 = h->b2 + d;
+    float a1 = h->b1 + d, a2 = h->b2 + d, b1 = h->b1 + e, b2 = h->b2 + e;
     float n1 = (1.0f - a1 * h->b1) * h->c1, n2 = (1.0f - a2 * h->b2) * h->c2;
-    float d1 = a1 * a1 + 1.0f, d2 = a2 * a2 + 1.0f;
-    return d * (n1 * d2 - n2 * d1) / (d1 * d2);
+    float m1 = (1.0f - b1 * h->b1) * h->c1, m2 = (1.0f - b2 * h->b2) * h->c2;
+    float d1 = a1 * a1 + 1.0f, d2 = a2 * a2 + 1.0f, e1 = b1 * b1 + 1.0f, e2 = b2 * b2 + 1.0f;
+    float D = d1 * d2, E = e1 * e2, r = 1.0f / (D * E);
+    *pd = d * (n1 * d2 - n2 * d1) * E * r;
+    *pe = e * (m1 * e2 - m2 * e1) * D * r;
 }
 
 static void hq_voice_init(rh_voice_t *v)       /* rhodes.c rh_init, before rh_load_pulse */
@@ -82,6 +89,36 @@ static void hq_pulse(rh_voice_t *v, uint32_t vel)
     v->prate = hq_prate_ram[key][vel - 1u] << 4;          /* Q12 -> Q16 */
 }
 
+/* the half-band's symmetric sum for the 32 outputs of a sub-block: y[n] = sum_k 2 g_k (x[n-P+1+k] + x[n-P-k]), x the
+ * history buffer (HQ_HIS samples of history, then the sub-block). Each output sums in tap order, from 0 (the same
+ * result as one output at a time, on every host: lane-wise IEEE, no fused multiply-add); the 32 sums stay in 8
+ * 4-lane registers across the taps, so a tap costs 16 loads and no store (the taps-outer loop over an array cost
+ * 3 loads and a store per 4 outputs, the A72's load port the limit) */
+typedef float hq_f4 __attribute__((vector_size(16)));
+typedef float hq_f4u __attribute__((vector_size(16), aligned(4), may_alias));     /* (an unaligned load / store) */
+static inline hq_f4 hq_ld4(const float *p) { return *(const hq_f4u *)p; }
+static inline void hq_fir(float *y, const float *xb)
+{
+    HQ_FP_STRICT
+    hq_f4 s0 = {0}, s1 = {0}, s2 = {0}, s3 = {0}, s4 = {0}, s5 = {0}, s6 = {0}, s7 = {0};
+    int k;
+    for (k = 0; k < (int)HQ_HBP; k++) {
+        const float *c1 = xb + HQ_HIS + k + 1 - (int)HQ_HBP, *c2 = xb + HQ_HIS - (int)HQ_HBP - k;
+        const hq_f4 g = {HQ_G2[k], HQ_G2[k], HQ_G2[k], HQ_G2[k]};
+        s0 += g * (hq_ld4(c1) + hq_ld4(c2));
+        s1 += g * (hq_ld4(c1 + 4) + hq_ld4(c2 + 4));
+        s2 += g * (hq_ld4(c1 + 8) + hq_ld4(c2 + 8));
+        s3 += g * (hq_ld4(c1 + 12) + hq_ld4(c2 + 12));
+        s4 += g * (hq_ld4(c1 + 16) + hq_ld4(c2 + 16));
+        s5 += g * (hq_ld4(c1 + 20) + hq_ld4(c2 + 20));
+        s6 += g * (hq_ld4(c1 + 24) + hq_ld4(c2 + 24));
+        s7 += g * (hq_ld4(c1 + 28) + hq_ld4(c2 + 28));
+    }
+    *(hq_f4u *)y = s0; *(hq_f4u *)(y + 4) = s1; *(hq_f4u *)(y + 8) = s2; *(hq_f4u *)(y + 12) = s3;
+    *(hq_f4u *)(y + 16) = s4; *(hq_f4u *)(y + 20) = s5; *(hq_f4u *)(y + 24) = s6; *(hq_f4u *)(y + 28) = s7;
+}
+_Static_assert(SUB == 32u, "hq_fir: 8 x 4 outputs");
+
 static inline int32_t hq_round(float x) { HQ_FP_STRICT return (int32_t)(x >= 0.0f ? x + 0.5f : x - 0.5f); }
 
 /* the pickup at 2x for one 32-sample sub-block: rh_x (the tip, in gaps) up, through the flux (hq_dphi), down, the
@@ -96,24 +133,11 @@ static int32_t hq_pickup(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t Hp)
     int32_t pan = v->pan;
     float a[SUB], p[SUB], *xb = h->xb, *eb = h->eb, *ob = h->ob, pp = h->pprev;
     uint32_t n;
-    int k;
     for (n = 0; n < SUB; n++) xb[HQ_HIS + n] = (float)rh_x[n] * HQ_GAP;
-    for (n = 0; n < SUB; n++) a[n] = 0.0f;      /* up: the half-sample point between the two middle inputs, the
-                                                * taps outer (each a[n] sums in tap order: the same result as one
-                                                * output at a time; the inner loop runs across the outputs: SIMD) */
-    for (k = 0; k < (int)HQ_HBP; k++) {
-        const float g = HQ_G2[k], *c1 = xb + HQ_HIS + k + 1 - (int)HQ_HBP, *c2 = xb + HQ_HIS - (int)HQ_HBP - k;
-        for (n = 0; n < SUB; n++) a[n] += g * (c1[n] + c2[n]);
-    }
-    for (n = 0; n < SUB; n++) {                /* the flux at both phases (the odd phase: the input, delayed) */
-        eb[HQ_HIS + n] = hq_dphi(h, a[n]);
-        ob[HQ_HIS + n] = hq_dphi(h, xb[HQ_HIS + n + 1u - HQ_HBP]);
-    }
-    for (n = 0; n < SUB; n++) p[n] = 0.0f;      /* down (the same order) */
-    for (k = 0; k < (int)HQ_HBP; k++) {
-        const float g = HQ_G2[k], *c1 = eb + HQ_HIS + k + 1 - (int)HQ_HBP, *c2 = eb + HQ_HIS - (int)HQ_HBP - k;
-        for (n = 0; n < SUB; n++) p[n] += g * (c1[n] + c2[n]);
-    }
+    hq_fir(a, xb);                             /* up: the half-sample point between the two middle inputs */
+    for (n = 0; n < SUB; n++)                  /* the flux at both phases (the odd phase: the input, delayed) */
+        hq_dphi2(h, a[n], xb[HQ_HIS + n + 1u - HQ_HBP], &eb[HQ_HIS + n], &ob[HQ_HIS + n]);
+    hq_fir(p, eb);                             /* down */
     for (n = 0; n < SUB; n++) p[n] = 0.5f * (p[n] + ob[HQ_HIS + n - HQ_HBP]);
     for (n = 0; n < SUB; n++) {                /* the difference into the mix */
         int32_t o = hq_round((p[n] - pp) * gs);
