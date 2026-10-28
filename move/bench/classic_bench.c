@@ -1,14 +1,20 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* M2-01: the Classic plugin's own cost per 128-frame callback, the base the HQ budget sits on (private plan 06).
- *   classic_bench DSP [seconds] [top]
- * dlopens the shipping dsp.so through its plugin entry points, and per engine (STAGE 77, VIBES, MARIMBA) plays the
- * heavy case: every effect on (Gate R's fx/heavy CCs), the pedal down, a 16-note chord at v127 struck again every
- * 400 ms (each strike takes 16 voices: steals, the attack's cost), for N seconds (default 10). Prints per engine the
- * callback time: max, p99.9, p99, the mean, and the mean of the render callbacks (every other one renders 256
- * frames). top: the chord on the 16 keys 85..108 instead (the HQ Rhodes' 2x pickup on every voice: its worst case;
- * a dsp.so built with -DHQ_DEFAULT=1). Run it on the Move off the audio core: taskset -c 1 ./classic_bench dsp.so */
+/* M2-01: the plugin's own cost per 128-frame callback, the base the HQ budget sits on (private plan 06).
+ *   classic_bench [-r ROUNDS] [-s SECONDS] [-e ENGINES] CASE...      CASE = DSP or DSP:top
+ * dlopens each case's dsp.so through its plugin entry points (each case its own file, its own instance) and, per
+ * engine (ENGINES: a subset of the digits 012 = STAGE 77, VIBES, MARIMBA; default all), plays the heavy case: every
+ * effect on (Gate R's fx/heavy CCs), the pedal down, a 16-note chord at v127 struck again every 400 ms (each strike
+ * takes 16 voices: steals, the attack's cost), for SECONDS (default 5). top: the chord on the 16 keys 85..108
+ * instead (the HQ Rhodes' 2x pickup on every voice: its worst case; a dsp.so built with -DHQ_DEFAULT=1).
+ * The cases run interleaved, ROUNDS times (default 5), in ABBA order (A B C, C B A, A B C ...), so the device's drift
+ * and the other cores' load fall on every case alike. Prints one line per run, then per case and engine the summary:
+ * the median of p99.9, the min of the max, the median of p99 and of the mean (us per callback).
+ * Each case's copy of its file and its state directory are made in the current directory and removed at the end (never /tmp: on the
+ * Move it is the small root file system). Run it on the Move off the audio core, from /data/UserData/...:
+ *   taskset -c 1 ./classic_bench -r 5 c_o2.so c_o3.so c_o2.so:top c_o3.so:top */
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <ftw.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +22,10 @@
 #include <time.h>
 #include <unistd.h>
 #include "../vendor/plugin_api_v1.h"
+
+#define MAXC 16
+#define MAXR 64
+#define MAXB 20000
 
 static double now_us(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e6 + t.tv_nsec * 1e-3; }
 static void h_log(const char *m) { (void)m; }
@@ -25,63 +35,118 @@ static double h_beat(void) { return -1.0; }
 static host_api_v1_t host = { .api_version = 1, .sample_rate = 44100, .frames_per_block = 128, .log = h_log,
                               .get_clock_status = h_clock, .get_bpm = h_bpm, .get_beat_position = h_beat };
 static int cmp(const void *a, const void *b) { double x = *(const double *)a, y = *(const double *)b; return x < y ? -1 : x > y; }
-static plugin_api_v2_t *api;
-static void *in;
-static void cc(int n, int v) { uint8_t m[3] = { 0xB0, (uint8_t)n, (uint8_t)v }; api->on_midi(in, m, 3, MOVE_MIDI_SOURCE_EXTERNAL); }
+static int rm1(const char *p, const struct stat *s, int f, struct FTW *w) { (void)s; (void)f; (void)w; return remove(p); }
 
-int main(int argc, char **argv)
+typedef struct { const char *name; int top; plugin_api_v2_t *api; void *in; char dir[64]; } bcase_t;
+static bcase_t cs[MAXC];
+static double st[MAXC][3][MAXR][4];     /* per case, engine, round: max, p99.9, p99, mean */
+
+static void cc(bcase_t *c, int n, int v) { uint8_t m[3] = { 0xB0, (uint8_t)n, (uint8_t)v }; c->api->on_midi(c->in, m, 3, MOVE_MIDI_SOURCE_EXTERNAL); }
+static int copy(const char *from, const char *to)
+{
+    char b[65536];
+    size_t n;
+    FILE *f = fopen(from, "rb"), *g = f ? fopen(to, "wb") : NULL;
+    int bad = !f || !g;
+    while (!bad && (n = fread(b, 1, sizeof b, f)) > 0) bad = fwrite(b, 1, n, g) != n;
+    if (f) fclose(f);
+    if (g && fclose(g)) bad = 1;
+    return bad;
+}
+static double med(double *x, int n) { double s[MAXR]; memcpy(s, x, sizeof(double) * (size_t)n); qsort(s, (size_t)n, sizeof *s, cmp); return n & 1 ? s[n / 2] : 0.5 * (s[n / 2 - 1] + s[n / 2]); }
+
+static void run(bcase_t *c, int e, double secs, double *out)
 {
     static const int heavy[][2] = { {81, 127}, {106, 127}, {107, 100}, {17, 127}, {18, 127}, {12, 127}, {13, 127},
                                     {16, 127}, {88, 80}, {89, 127}, {90, 127}, {26, 127}, {91, 127}, {70, 45},
                                     {74, 60}, {71, 100}, {72, 64} };
+    static int16_t buf[256];
+    static double t[MAXB];
+    int nb = (int)(secs * 44100.0 / 128.0), k = 0;
+    double mean = 0;
+    if (nb > MAXB) nb = MAXB;
+    if (e == 0) cc(c, 80, 0); else cc(c, 79, e == 1 ? 0 : 127);
+    cc(c, 85, 0);
+    for (unsigned i = 0; i < sizeof heavy / sizeof heavy[0]; i++) cc(c, heavy[i][0], heavy[i][1]);
+    cc(c, 64, 127);
+    for (int i = 0; i < 400; i++) c->api->render_block(c->in, buf, 128);
+    for (int b = 0; b < nb; b++) {
+        if (b % 138 == 0) {                 /* every ~400 ms: 16 notes at v127 (28..103 spread, or 85..108) */
+            for (int n = 0; n < 16; n++) {
+                uint8_t m[3] = { 0x90, (uint8_t)(c->top ? 85 + (n * 3 + (b / 138)) % 24 : 28 + n * 5 + (b / 138) % 5), 127 };
+                c->api->on_midi(c->in, m, 3, MOVE_MIDI_SOURCE_EXTERNAL);
+            }
+        }
+        double t0 = now_us();
+        c->api->render_block(c->in, buf, 128);
+        t[k++] = now_us() - t0;
+    }
+    for (int i = 0; i < k; i++) mean += t[i];
+    qsort(t, (size_t)k, sizeof *t, cmp);
+    out[0] = t[k - 1]; out[1] = t[(int)(k * 0.999)]; out[2] = t[(int)(k * 0.99)]; out[3] = mean / k;
+    cc(c, 64, 0); cc(c, 123, 0);
+    for (int i = 0; i < 2000; i++) c->api->render_block(c->in, buf, 128);
+}
+
+int main(int argc, char **argv)
+{
     static const char *eng[] = { "STAGE77", "VIBES", "MARIMBA" };
     static int16_t buf[256];
-    static double t[20000];
-    char tmpl[] = "/tmp/classic_bench.XXXXXX", r[8];
-    double secs = argc > 2 ? atof(argv[2]) : 10.0;
-    int top = argc > 3 && !strcmp(argv[3], "top");
-    void *h;
-    move_plugin_init_v2_fn init;
-    if (argc < 2) { fprintf(stderr, "usage: classic_bench DSP [seconds]\n"); return 2; }
-    if (!(h = dlopen(argv[1], RTLD_NOW | RTLD_LOCAL)) || !(init = (move_plugin_init_v2_fn)dlsym(h, MOVE_PLUGIN_INIT_V2_SYMBOL))) {
-        fprintf(stderr, "dlopen %s: %s\n", argv[1], dlerror()); return 1; }
-    api = init(&host);
-    if (!mkdtemp(tmpl) || !(in = api->create_instance(tmpl, NULL))) { fprintf(stderr, "create\n"); return 1; }
-    for (int i = 0; i < 5000; i++) { r[0] = 0; api->get_param(in, "dev_ready", r, sizeof r); if (r[0] == '1') break; api->render_block(in, buf, 128); usleep(1000); }
-    for (int e = 0; e < 3; e++) {
-        int nb = (int)(secs * 44100.0 / 128.0), k = 0;
-        if (nb > 20000) nb = 20000;
-        if (e == 0) cc(80, 0); else cc(79, e == 1 ? 0 : 127);
-        cc(85, 0);
-        for (unsigned i = 0; i < sizeof heavy / sizeof heavy[0]; i++) cc(heavy[i][0], heavy[i][1]);
-        cc(64, 127);
-        for (int i = 0; i < 400; i++) api->render_block(in, buf, 128);
-        for (int b = 0; b < nb; b++) {
-            if (b % 138 == 0) {                 /* every ~400 ms: 16 notes at v127 (28..103, spread) */
-                for (int n = 0; n < 16; n++) {
-                    uint8_t m[3] = { 0x90, (uint8_t)(top ? 85 + (n * 3 + (b / 138)) % 24 : 28 + n * 5 + (b / 138) % 5), 127 };
-                    api->on_midi(in, m, 3, MOVE_MIDI_SOURCE_EXTERNAL);
-                }
-            }
-            double t0 = now_us();
-            api->render_block(in, buf, 128);
-            t[k++] = now_us() - t0;
-        }
-        {
-            double mean = 0, rmean = 0, rn = 0;
-            for (int i = 0; i < k; i++) { mean += t[i]; if (t[i] > 0) { } }
-            mean /= k;
-            double *s = malloc(sizeof(double) * (size_t)k);
-            memcpy(s, t, sizeof(double) * (size_t)k);
-            qsort(s, (size_t)k, sizeof *s, cmp);
-            for (int i = k / 2; i < k; i++) { rmean += s[i]; rn++; }   /* (the upper half: the render callbacks) */
-            printf("%-8s callbacks %d  max %7.1f us  p99.9 %7.1f  p99 %7.1f  mean %6.1f  render-callback mean %6.1f\n",
-                   eng[e], k, s[k - 1], s[(int)(k * 0.999)], s[(int)(k * 0.99)], mean, rmean / rn);
-            free(s);
-        }
-        cc(64, 0); cc(123, 0);
-        for (int i = 0; i < 2000; i++) api->render_block(in, buf, 128);
+    const char *engs = "012";
+    double secs = 5.0;
+    int rounds = 5, nc = 0, o;
+    while ((o = getopt(argc, argv, "r:s:e:")) != -1) {
+        if (o == 'r') rounds = atoi(optarg);
+        else if (o == 's') secs = atof(optarg);
+        else if (o == 'e') engs = optarg;
+        else { fprintf(stderr, "usage: classic_bench [-r ROUNDS] [-s SECONDS] [-e 012] DSP[:top]...\n"); return 2; }
     }
-    api->destroy_instance(in);
+    if (rounds < 1 || rounds > MAXR || optind >= argc || argc - optind > MAXC) {
+        fprintf(stderr, "usage: classic_bench [-r ROUNDS(1-%d)] [-s SECONDS] [-e 012] DSP[:top]... (at most %d)\n", MAXR, MAXC);
+        return 2;
+    }
+    for (int a = optind; a < argc; a++, nc++) {
+        bcase_t *c = &cs[nc];
+        char *p = strdup(argv[a]), *colon = strrchr(p, ':'), r[8], so[96];
+        void *h;
+        move_plugin_init_v2_fn init;
+        c->name = argv[a];
+        if (colon && !strcmp(colon, ":top")) { *colon = 0; c->top = 1; }
+        /* each case loads its own copy of the file, so the same dsp.so can be two cases (normal and top) with
+         * separate module state */
+        snprintf(c->dir, sizeof c->dir, "./classic_bench.XXXXXX");
+        if (!mkdtemp(c->dir)) { perror("mkdtemp"); return 1; }
+        snprintf(so, sizeof so, "%s/dsp.so", c->dir);
+        if (copy(p, so)) { fprintf(stderr, "copy %s: failed\n", p); return 1; }
+        if (!(h = dlopen(so, RTLD_NOW | RTLD_LOCAL)) || !(init = (move_plugin_init_v2_fn)dlsym(h, MOVE_PLUGIN_INIT_V2_SYMBOL))) {
+            fprintf(stderr, "dlopen %s: %s\n", p, dlerror()); return 1; }
+        c->api = init(&host);
+        if (!(c->in = c->api->create_instance(c->dir, NULL))) { fprintf(stderr, "create %s\n", p); return 1; }
+        for (int i = 0; i < 5000; i++) { r[0] = 0; c->api->get_param(c->in, "dev_ready", r, sizeof r); if (r[0] == '1') break; c->api->render_block(c->in, buf, 128); usleep(1000); }
+    }
+    for (int r = 0; r < rounds; r++)
+        for (int i = 0; i < nc; i++) {
+            int ci = r & 1 ? nc - 1 - i : i;
+            for (const char *e = engs; *e; e++) {
+                int en = *e - '0';
+                if (en < 0 || en > 2) continue;
+                run(&cs[ci], en, secs, st[ci][en][r]);
+                printf("round %d  %-24s %-8s max %7.1f  p99.9 %7.1f  p99 %7.1f  mean %6.1f\n", r + 1, cs[ci].name, eng[en],
+                       st[ci][en][r][0], st[ci][en][r][1], st[ci][en][r][2], st[ci][en][r][3]);
+                fflush(stdout);
+            }
+        }
+    printf("\nsummary over %d rounds of %.1f s (us per 128-frame callback)\n", rounds, secs);
+    printf("%-24s %-8s %10s %10s %10s %10s\n", "case", "engine", "med p99.9", "min max", "med p99", "med mean");
+    for (int i = 0; i < nc; i++)
+        for (const char *e = engs; *e; e++) {
+            int en = *e - '0';
+            double col[4][MAXR], mn = 1e18;
+            if (en < 0 || en > 2) continue;
+            for (int r = 0; r < rounds; r++) { for (int q = 0; q < 4; q++) col[q][r] = st[i][en][r][q]; if (col[0][r] < mn) mn = col[0][r]; }
+            printf("%-24s %-8s %10.1f %10.1f %10.1f %10.1f\n", cs[i].name, eng[en], med(col[1], rounds), mn,
+                   med(col[2], rounds), med(col[3], rounds));
+        }
+    for (int i = 0; i < nc; i++) { cs[i].api->destroy_instance(cs[i].in); nftw(cs[i].dir, rm1, 8, FTW_DEPTH | FTW_PHYS); }
     return 0;
 }
