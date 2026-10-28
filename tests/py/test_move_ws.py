@@ -50,6 +50,8 @@ class FakeSchwung:
             self.dflt, self.ccmap = plugin_params()
             self.settings = dict(self.dflt, **self.settings)
         self.preset, self.log, self.takes, self.cur = 0, [], {}, None
+        self.cc_drop = True                              # (the bridge drops the sequencer's and the arpeggiator's
+                                                         # CCs, move_bridge.h MB_CC_DROP; False: a build before)
         self.hist, self.conns = [], []                                   # (the order of preset switches and takes: host_fetch's state)
         self.server = serve(self.handle, "127.0.0.1", 0)
         self.url = "ws://127.0.0.1:%d/ws/remote-ui" % self.server.socket.getsockname()[1]
@@ -236,6 +238,10 @@ def host_fetch(fake, d):
     import wave
     import move_hil as mh
 
+    def keep(e):                                         # (MB_CC_DROP: CC 43-46, 52-55, 60-63 never reach the app)
+        return not (fake.cc_drop and e[-3] & 0xF0 == 0xB0 and (43 <= e[-2] <= 46 or 52 <= e[-2] <= 55
+                                                               or 60 <= e[-2] <= 63))
+
     def fetch(take):
         t = fake.takes.get(take)
         if not t or not t["go"]:
@@ -249,10 +255,10 @@ def host_fetch(fake, d):
             elif v == take:
                 break
             else:
-                lead += [e[1:] for e in sorted(fake.takes[v]["ev"]) if e[1] & 0xF0 in (0xB0, 0xC0)]
+                lead += [e[1:] for e in sorted(fake.takes[v]["ev"]) if e[1] & 0xF0 in (0xB0, 0xC0) and keep(e)]
         pre = 2560 if lead else 0
         lines = ["%d midi 0x%02X %d %d" % ((1 + i // 48,) + e) for i, e in enumerate(lead)]
-        lines += ["%d midi 0x%02X %d %d" % ((e[0] + pre,) + e[1:]) for e in t["ev"]]
+        lines += ["%d midi 0x%02X %d %d" % ((e[0] + pre,) + e[1:]) for e in t["ev"] if keep(e)]
         run = hostrun.run("tap-" + take, lines, t["dur"] + pre + 20,
                           binary=mh.host_binary(hq))   # (the Move's host build; p_hq: HQ)
         n, f0 = t["dur"] * 441 // 10, pre * 441 // 10
@@ -317,22 +323,29 @@ def _tap(fake, tmp_path):
 
 
 def test_leftover_arp_struck_again(fake, tmp_path, monkeypatch):
-    """the 2026-10-28 01:42 run: the arpeggiator left on in the plugin (CC 52 1, 1/8: a saved setup) struck every
-    held note of usb-host's phrase again on its steps. usb-host now names it (STRUCK AGAIN), and turns the modes off
-    first (GLOBAL_CCS, boot_keys) so the take is the host's"""
+    """the 2026-10-28 01:42 run (a build before MB_CC_DROP): the arpeggiator left on in the plugin (CC 52 1, 1/8: a
+    saved setup) struck every held note of usb-host's phrase again on its steps; usb-host names it (STRUCK AGAIN).
+    The Move's build drops the arpeggiator's CCs, so the same CCs leave the take as the host's, with no reset of them
+    in GLOBAL_CCS; usb-host's own reset (GLOBAL_CCS, boot_keys) goes out too"""
     mh, r = _tap(fake, tmp_path)
     monkeypatch.setattr(mh, "TAP_GRID_S", 0.0)
     monkeypatch.setattr(mh.time, "sleep", lambda s: None)
+    assert not any(c in (52, 53, 60, 63) for c, _ in mh.GLOBAL_CCS)
     try:
+        fake.cc_drop = False
         r._send("cc", 52, 1)
         r._send("cc", 53, 1)
-        r.rec(0.2, [])                                   # (a take that leaves the arpeggiator on, as usb-clock's)
+        r.rec(0.2, [])                                   # (a take that leaves the arpeggiator on)
         with monkeypatch.context() as m:
-            m.setattr(mh, "GLOBAL_CCS", ())
             m.setattr(r, "boot_settings", lambda: None)
             ok, rep = mh.usb_host(r, str(tmp_path / "left"), out=lambda s: None)
         assert not ok and rep["verdict"].startswith("STRUCK AGAIN"), rep["verdict"]
         assert sum(1 for w in rep["rows"] if w["again_ms"]) >= 5, [w["again_ms"] for w in rep["rows"]]
+        fake.cc_drop = True
+        with monkeypatch.context() as m:
+            m.setattr(r, "boot_settings", lambda: None)
+            ok, rep = mh.usb_host(r, str(tmp_path / "dropped"), out=lambda s: None)
+        assert ok and not any(w["again_ms"] for w in rep["rows"]), rep["verdict"]
         ok, rep = mh.usb_host(r, str(tmp_path / "reset"), out=lambda s: None)
         assert ok and not any(w["again_ms"] for w in rep["rows"]), rep["verdict"]
         assert [m["key"] for m in fake.log if m.get("key", "").startswith("synth:s_")] == \

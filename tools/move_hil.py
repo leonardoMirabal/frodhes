@@ -25,14 +25,15 @@ audio in (Core Audio), the FM-1's analysis (onsets, levels, FFT, the crackle det
     tools/move_hil.py usb-vel [--note 60]    velocity sweep 1..127: levels rise, brightness, the range in dB
     tools/move_hil.py usb-sus [--note 60]    CC 64: a damped note dies, a pedalled one rings, the pedal let up damps
                                              it, never louder after key-up (the FM-1's sustain preflight)
-    tools/move_hil.py usb-clock [--bpm 120]  MIDI clock (Start + F8) with the arpeggiator at 1/8: the steps' period
+    tools/move_hil.py usb-clock [--bpm 100]  MIDI clock (Start + F8) with the tremolo synced at 1/8 on a held Rhodes
+                                             note: its period against the clock's, the jitter
     tools/move_hil.py usb-stress [--engine rhodes --secs 60 --nv 16 --bpm 0]   the worst case: every voice, every
                                              effect heavy, the pedal (hil_crackle's worst take); stale / repeat /
                                              zero / clip / click; then read the CPU ring with `--go cpu`
     tools/move_hil.py d2 [--engines rhodes,vibes,marimba --secs 60 --ws URL|none]   the whole run, per engine: slot
                                              1's module checked and its preset set over Schwung's WebSocket
                                              (tools/move_ws.py; F01 / F13 / F15), preflight (a failure stops the
-                                             run), usb-host, usb-note on 3 keys, usb-vel, usb-sus, usb-clock,
+                                             run), usb-host, usb-note on 3 keys, usb-vel, usb-sus, usb-clock (once),
                                              usb-stress; the table in build/move/hil/<time>-d2/summary.md
   --path tap (usb-*, d2): no USB-C at all: each take goes to the plugin's own player over Schwung's WebSocket
   (dev_play, move/move_bridge.h: never on cable 2, so no Move track plays along) and comes back as the plugin's own
@@ -286,9 +287,10 @@ class UsbRig(hs.RigBase):
 class FakeRig(UsbRig):
     """an offline model of the Move for the tests: every message logged; rec() renders a decaying two-partial tone per
     note (level by velocity, the dampers when neither key nor pedal (CC 64 >= 64) holds it), FAKE_LAT late; the
-    arpeggiator (CC 52 > 0) retriggers the held notes every CC 53 step of MIDI clock while Start ran. inject:
-    [(kind, t s)], kind zero (2 ms of zeros), click (one sample), stale (one 128-frame callback twice), loud (the
-    note gets louder after key-up), nosus (the pedal ignored), playing (a tone at idle: the preflight fails)"""
+    tremolo (CC 17 43-85, CC 21 >= 64: AM, CC 18 its depth) synced (CC 20, FAKE_SYNC) to the MIDI clock's F8 while
+    Start ran, else free at 120 BPM. inject: [(kind, t s)], kind zero (2 ms of zeros), click (one sample), stale (one
+    128-frame callback twice), loud (the note gets louder after key-up), nosus (the pedal ignored), playing (a tone at
+    idle: the preflight fails), noclock (the clock ignored)"""
     fake = True
 
     def __init__(self, inject=(), sr=FAKE_SR, seed=0):
@@ -318,14 +320,10 @@ class FakeRig(UsbRig):
         ped = [(0.0, self.state.get(64, 0) >= 64)] + [(t, b >= 64) for t, k, a, b in ev if k == "cc" and a == 64]
         if nosus:
             ped = [(0.0, False)]
-        arp = self.state.get(52, 0) or next((b for t, k, a, b in ev if k == "cc" and a == 52), 0)
-        rate = self.state.get(53, 3)
-        units = (96, 48, 32, 24, 16, 12)[min(5, rate)] // 4          # F8 per arp step (24 PPQN)
         for t, k, a, b in ev:
             if k == "cc":
                 self.state[a] = b
-        # each note: (t_on, t_off, note, vel); the arp splits a held note into steps on the clock
-        notes, held = [], {}
+        notes, held = [], {}                     # each note: (t_on, t_off, note, vel)
         for t, k, a, b in ev:
             if k == "on" and b:
                 held[a] = (t, b)
@@ -333,22 +331,6 @@ class FakeRig(UsbRig):
                 t1, v = held.pop(a)
                 notes.append((t1, t, a, v))
         notes += [(t1, dur, a, v) for a, (t1, v) in held.items()]
-        if arp:
-            f8, run, c = [], False, 0
-            for t, k, a, b in ev:
-                if k == "rt" and a == 0xFA:
-                    run, c = True, 0
-                elif k == "rt" and a == 0xFC:
-                    run = False
-                elif k == "rt" and a == 0xF8 and run:
-                    if c % units == 0:
-                        f8.append(t)
-                    c += 1
-            split = []
-            for t1, t2, a, v in notes:
-                st = [s for s in f8 if t1 <= s < t2]
-                split += [(s, min(s + 0.6 * units / 24 * 0.5, t2), a, v) for s in st]
-            notes = split
 
         def pedal_at(t):
             return [p for s, p in ped if s <= t][-1]
@@ -378,6 +360,18 @@ class FakeRig(UsbRig):
             att = np.minimum(1.0, (ts - t1) / 0.002)
             f = note_hz(a)
             x[i0:] += amp * env * att * (np.sin(2 * np.pi * f * (ts - t1)) + 0.3 * np.sin(4 * np.pi * f * (ts - t1)))
+        st = self.state
+        if 43 <= st.get(17, 0) <= 85 and st.get(21, 0) >= 64:           # the tremolo, AM
+            f8 = [] if any(k == "noclock" for k, _ in self.inject) else [
+                t for t, k, a, b in ev if k == "rt" and a == 0xF8]
+            per = FAKE_SYNC.get(st.get(20, 0) * 14 // 127)                 # (F8 per cycle; None: FREE)
+            if per and len(f8) > 1:                                        # (the phase: the F8 count, between them
+                ph = np.interp(tt, f8, np.arange(len(f8)) / per)           # at the clock's rate; before the first
+                ph[tt < f8[0]] = (tt[tt < f8[0]] - f8[0]) / 0.25          # and after the last, free at 120 BPM)
+                ph[tt > f8[-1]] = ph[tt <= f8[-1]][-1] + (tt[tt > f8[-1]] - f8[-1]) / 0.25
+            else:
+                ph = tt / 0.25
+            x *= 1 - st.get(18, 0) / 127 * (0.5 + 0.5 * np.cos(2 * np.pi * ph))
         x *= 0.25 if self.state.get(110, 64) == 0 else 1.0                # LEVEL (CC 110 0: -12 dB)
         x = 24000 * np.tanh(x / 24000) + self.rng.normal(0, 2.0, n)   # (the app's limiter, softly)
         q = np.round(np.stack([x, 0.9 * x], 1))
@@ -392,6 +386,8 @@ class FakeRig(UsbRig):
         return {"x": np.clip(q, -32768, 32767), "sr": sr, "xruns": []}
 
 
+FAKE_SYNC = {1: 3, 2: 4, 3: 6, 4: 8, 5: 9, 6: 12, 7: 16, 8: 18, 9: 24, 10: 36, 11: 48, 12: 96}   # (the fake
+# tremolo's SYNC: CC 20 * 14 // 127, F8 a cycle at 24 PPQN: 1/32 .. 1/1; 0 FREE)
 TAP_PRE_MS = 500                            # the tap path: the messages sent before a take (the panel) at 1 ms and a
                                             # program change at 5 ms, the take's own from 500 ms (host_phrase's layout)
 TAP_DIR = "/data/UserData/schwung/module_data/" + mi.MODULE_ID + "/tap"
@@ -678,9 +674,9 @@ def _save(d, name, take):
     w.close()
 
 
-GLOBAL_CCS = ((52, 0), (56, 0), (60, 0), (63, 0), (64, 0), (111, 0), (119, 0))
-# (the modes param_defaults does not reach, off as the host boots: the arpeggiator, chord mode, the sequencer's play
-# and recording, the pedal, the FX bypass, RAW)
+GLOBAL_CCS = ((56, 0), (64, 0), (111, 0), (119, 0))
+# (the modes param_defaults does not reach, off as the host boots: chord mode, the pedal, the FX bypass, RAW. The
+# Move has no arpeggiator and no sequencer: the bridge drops their CCs, MB_CC_DROP)
 BOOT_KEYS = os.path.join(ROOT, "move", "tests", "boot_keys.txt")
 
 
@@ -894,46 +890,49 @@ def clock_events(bpm, t0, t1):
     return ev + [(t1, "rt", 0xFC, 0)]
 
 
-def usb_clock(r, d, bpm=120.0, secs=8.0, note=60, engine=None, out=print):
-    """the arpeggiator (CC 52 1: UP, CC 53 1: 1/8) on one held note, MIDI clock at bpm: a step every half beat"""
-    _prep(r, engine, c52=1, c53=1)
-    ev = clock_events(bpm, 0.3, secs - 0.5) + [(0.25, "on", note, 100), (secs - 0.6, "off", note, 0)]
+CLOCK_CCS = ((17, 64), (21, 127), (18, 127), (20, 59))
+# (usb-clock's tremolo: TREM (CC 17 43-85), MODE AM (CC 21 64-127), DEPTH full, SYNC 1/8 (CC 20 59: index 6 of FREE
+# 1/32 16T 1/16 8T 16D 1/8 ...); the rest at the defaults)
+CLOCK_T0 = 3.0          # (the synced LFO catches up with the clock gradually, at most 1/8 faster or slower a step:
+                        # from the internal 120 BPM to 100 it takes ~2 s; the troughs are judged from here)
+
+
+def usb_clock(r, d, bpm=100.0, secs=12.0, note=60, engine=None, out=print):
+    """MIDI clock at bpm from the take's start; the tremolo (AM, full depth) synced at 1/8 on one Rhodes note held
+    from 2.8 s: a trough of its level every half beat. The troughs from CLOCK_T0 against a straight line: the period
+    (within 1 % of the clock's) and the jitter (4 ms at most). The tremolo's LFO is the effects' code, the same for
+    every engine, so the take is the Rhodes' (it holds a note longest; engine is not used). The default 100 BPM is
+    not the internal 120: a tremolo that ignores the clock fails on the period and the jitter"""
+    _prep(r, None, **{"c%d" % c: v for c, v in CLOCK_CCS})
+    ev = clock_events(bpm, 0.1, secs - 0.4) + [(2.8, "on", note, 100), (secs - 0.6, "off", note, 0)]
     tk = r.rec(secs, ev)
     _save(d, "clock", tk)
     x, sr = tk["x"], tk["sr"]
-    env = np.abs(_mono(x))
-    hop = int(0.002 * sr)
-    e = np.array([env[i:i + hop].max() for i in range(0, len(env) - hop, hop)])
-    ons, last = [], -1.0
-    for i in range(5, len(e)):                   # (an attack: the 2 ms envelope 6 dB over its value 10 ms before)
-        t = i * hop / sr
-        if e[i] > 200 and e[i] > 2 * e[i - 5] + 50 and t - last > 0.06:
-            ons.append(t)
-            last = t
+    from scipy.signal import find_peaks
+    m = _mono(x)
+    hop, w = max(1, int(round(0.001 * sr))), int(round(0.010 * sr))
+    e = np.sqrt(np.convolve(m * m, np.ones(w) / w, "same"))[::hop]          # (the level: 10 ms RMS, a value a ms)
+    ed = 20 * np.log10(e + 1)
     want = 30.0 / bpm
-    o = np.array(ons[1:])
-    rep = {"bpm": bpm, "steps": len(ons), "want_ms": round(1000 * want, 2)}
+    pk, _ = find_peaks(-ed, distance=max(1, int(0.6 * want * sr / hop)), prominence=3)
+    t = pk * hop / sr
+    t = t[(t > CLOCK_T0) & (t < secs - 0.7)]
+    rep = {"bpm": bpm, "troughs": int(len(t)), "want_ms": round(1000 * want, 2)}
     bad = []
-    if len(o) < 5:
-        bad.append("%d steps: the clock or the arpeggiator did not run (does the slot get F8 / Start?)" % len(ons))
+    if len(t) < 8:
+        bad.append("%d troughs: no tremolo on the held note (does the slot get the CCs?)" % len(t))
     else:
-        # (each attack against a straight line through them: an attack the detector catches 5 ms or more late, under
-        # the ring of the step before (the bars), is counted, not taken as timing; jitter is the spread of the others)
-        k = np.round((o - o[0]) / float(np.median(np.diff(o))))
-        inl = np.ones(len(o), bool)
-        for _ in range(2):
-            a, b = np.polyfit(k[inl], o[inl], 1)
-            res = o - (a * k + b)
-            inl = np.abs(res) < 0.005
-        med, sd, late = float(a), float(np.std(res[inl])), int((~inl).sum())
-        rep.update(median_ms=round(1000 * med, 2), jitter_ms=round(1000 * sd, 2), bpm_seen=round(30.0 / med, 2),
-                   late=late)
+        k = np.round((t - t[0]) / want)
+        a, b = np.polyfit(k, t, 1)
+        res = t - (a * k + b)
+        med, sd = float(a), float(np.std(res))
+        rep.update(period_ms=round(1000 * med, 2), jitter_ms=round(1000 * sd, 2), bpm_seen=round(30.0 / med, 2),
+                   worst_ms=round(1000 * float(np.abs(res).max()), 1))
         if abs(med / want - 1) > 0.01:
-            bad.append("step %.1f ms against %.1f ms (%.2f BPM seen)" % (1000 * med, 1000 * want, 30.0 / med))
+            bad.append("period %.1f ms against %.1f ms (%.2f BPM seen)" % (1000 * med, 1000 * want, 30.0 / med))
         if sd > 0.004:
-            bad.append("jitter %.1f ms" % (1000 * sd))
-        if late > max(2, len(o) // 10):
-            bad.append("%d of %d attacks off the beat by 5 ms or more" % (late, len(o)))
+            bad.append("jitter %.1f ms (the tremolo does not follow the clock: does the slot get F8 / Start?)"
+                       % (1000 * sd))
     rep["verdict"] = "FAIL: " + "; ".join(bad) if bad else "PASS"
     out("clock %.1f BPM: %s: %s" % (bpm, {k: v for k, v in rep.items() if k != "verdict"}, rep["verdict"]))
     return not bad, rep
@@ -1285,8 +1284,8 @@ def usb_host(r, d, program=0, out=print):
     rep["verdict"] = ("CLASSIC: HQ was asked (p_hq 1) but %s plays as Classic (%.1f dB nearer the HQ host than the "
                       "Classic one: p_hq did not reach the plugin?)" % (HQ_PROBE, rep["hq_vs_classic_db"])
                       if classic else
-                      "STRUCK AGAIN: %s (a note the host strikes once comes again while it is held: the arpeggiator, "
-                      "chord mode or the sequencer on in the plugin, or the schedule played twice)" % ", ".join(again)
+                      "STRUCK AGAIN: %s (a note the host strikes once comes again while it is held: chord mode on "
+                      "in the plugin, an arpeggiator (a build without MB_CC_DROP), or the schedule played twice)" % ", ".join(again)
                       if again else
                       "PASS: the host's sound (one gain %.2f dB)" % rep["gain_db"] if not bad and not extra else
                       "DIFFERS at %s (residual over -40 dB after one gain, 0.5-1.0 s into the note)" % bad if bad else
@@ -1408,7 +1407,7 @@ def usb_main(a):
     e = a.engine if a.engine in ENGINE_CCS else None
     fn = {"usb-host": lambda: usb_host(r, d, a.program), "usb-note": lambda: usb_note(r, d, a.note, a.vel, e),
           "usb-vel": lambda: usb_vel(r, d, a.note, engine=e),
-          "usb-sus": lambda: usb_sus(r, d, a.note, engine=e), "usb-clock": lambda: usb_clock(r, d, a.bpm or 120.0, engine=e),
+          "usb-sus": lambda: usb_sus(r, d, a.note, engine=e), "usb-clock": lambda: usb_clock(r, d, a.bpm or 100.0, engine=e),
           "usb-stress": lambda: usb_stress(r, d, a.engine if a.engine != "all" else "rhodes", a.secs, a.nv, a.bpm)}
     ks = KeptState(a.ws, 0) if not r.fake and a.ws != "none" else None
     if ks is None:
@@ -1428,8 +1427,7 @@ def usb_main(a):
 # p_hq) leaves it as it found it. The plugin saves its settings and the panel, so a test's leftovers came back at the
 # next load: the arpeggiator on (2026-10-28 01:42), every effect on with the feedbacks at 127 (usb-stress's HEAVY,
 # the user's report of 2026-10-28)
-STATE_SKIP = ("preset_count", "preset_name", "s_sqclear", "s_squndo", "s_susbtn")   # (meta; momentary: a write is
-                                                                                     # a press)
+STATE_SKIP = ("preset_count", "preset_name", "s_susbtn")   # (meta; momentary: a write is a press)
 
 
 def _same(a, b):
@@ -1600,8 +1598,7 @@ def _num(rep, test):
                 rep["n"], rep["worst"], rep["p99"], rep["over"], rep["limit"], rep["missing"],
                 "" if rep.get("hq") is None else ", HQ %s" % ("on" if rep["hq"] else "off"))
         if test == "usb-clock":
-            return "%s steps, %s BPM seen, jitter %s ms, %s late" % (rep["steps"], rep.get("bpm_seen"), rep.get("jitter_ms"),
-                                                                      rep.get("late"))
+            return "%s troughs, %s BPM seen, jitter %s ms" % (rep["troughs"], rep.get("bpm_seen"), rep.get("jitter_ms"))
         if test == "usb-stress":
             return "; ".join("%s: %s notes, peak %s dBFS, %d gated" % (t["take"], t["notes"], t["peak_dbfs"], t["gated"])
                              for t in rep["takes"])
@@ -1640,11 +1637,11 @@ class _Stop(Exception):
     pass
 
 
-def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, only=None, out=print):
+def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, only=None, out=print):
     """per engine: the slot's module and preset over Schwung's WebSocket (ws: its URL, None: skipped), the preflight
     (a failure stops the whole run: the stream is not the Move's Main Out), usb-host on the engine's preset, usb-note
-    on three keys, usb-vel, usb-sus, usb-clock, usb-stress; each test's takes and report.json in d/<engine>/<test>/,
-    the table in d/summary.md, everything in d/report.json. Over the tap with a CPU read (TapRig cpu): the cpu row,
+    on three keys, usb-vel, usb-sus, usb-clock (once a run: with the Rhodes engine, else the first), usb-stress; each
+    test's takes and report.json in d/<engine>/<test>/, the table in d/summary.md, everything in d/report.json. Over the tap with a CPU read (TapRig cpu): the cpu row,
     every callback's time while usb-stress plays (the worst case), against U12. hq 0 / 1 (the tap): the HQ switch
     set first (p_hq; None: as the plugin has it). only: the test names to run (a name or its prefix, "usb-note" for all
     three; None: all; the cpu row comes with usb-stress). Returns (exit code: 0 all PASS, 1 a FAIL, 2 stopped)"""
@@ -1703,8 +1700,9 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, 
                 tests.append(("usb-note-%d" % n, lambda n=n: usb_note(r, sub("usb-note-%d" % n), n, 100, e, out=quiet)))
             tests += [("usb-vel", lambda: usb_vel(r, sub("usb-vel"), engine=e, out=quiet)),
                       ("usb-sus", lambda: usb_sus(r, sub("usb-sus"), engine=e, out=quiet)),
-                      ("usb-clock", lambda: usb_clock(r, sub("usb-clock"), bpm, engine=e, out=quiet)),
                       ("usb-stress", lambda: usb_stress(r, sub("usb-stress"), e, stress_secs, out=quiet))]
+            if e == (engines[0] if "rhodes" not in engines else "rhodes"):    # (the effects' clock: once a run)
+                tests.insert(-1, ("usb-clock", lambda: usb_clock(r, sub("usb-clock"), bpm, out=quiet)))
             if e == "rhodes" and hq == 1 and tap_cpu:
                 tests.append(("usb-restrike", lambda: usb_restrike(r, sub("usb-restrike"), stress_secs / 2,
                                                                    out=quiet)))
@@ -1962,7 +1960,7 @@ def main(argv=None):
     ap.add_argument("--note", type=int, default=60)
     ap.add_argument("--program", type=int, default=0, help="usb-host: the program change first (0 = F01)")
     ap.add_argument("--vel", type=int, default=100)
-    ap.add_argument("--bpm", type=float, default=0.0, help="usb-clock (default 120), usb-stress (0: no clock)")
+    ap.add_argument("--bpm", type=float, default=0.0, help="usb-clock (default 100), usb-stress (0: no clock)")
     ap.add_argument("--secs", type=float, default=60.0, help="usb-stress: the take's length")
     ap.add_argument("--nv", type=int, default=MOVE_VOICES, help="usb-stress: voices per chord")
     ap.add_argument("--out", help="usb-*: the folder for the takes and report.json")
@@ -2015,7 +2013,7 @@ def _main(a):
         else:
             r = UsbRig(a.midi, a.audio, a.ch)
         only = [x for x in (a.tests or "").split(",") if x] or None
-        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 120.0, a.hq, only)
+        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 100.0, a.hq, only)
     if a.cmd == "usb-levels":
         d = a.out or os.path.join(OUT, stamp() + "-usb-levels")
         t = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)

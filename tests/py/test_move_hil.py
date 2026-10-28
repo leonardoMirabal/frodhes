@@ -113,8 +113,8 @@ def test_usb_note_vel_sus_clock_pass_on_a_good_device(tmp_path):
     assert ok and rep["range_db"] > 20, rep
     ok, rep = _fake(tmp_path, mh.usb_sus)
     assert ok, rep
-    ok, rep = _fake(tmp_path, mh.usb_clock, bpm=120.0)
-    assert ok and abs(rep["bpm_seen"] - 120) < 1.5, rep
+    ok, rep = _fake(tmp_path, mh.usb_clock, bpm=100.0)
+    assert ok and abs(rep["bpm_seen"] - 100) < 1 and rep["troughs"] >= 25, rep
 
 
 def test_usb_failures_found(tmp_path):
@@ -124,8 +124,17 @@ def test_usb_failures_found(tmp_path):
     assert not ok and "pedal does not hold" in rep["verdict"], rep
     ok, rep = _fake(tmp_path, mh.usb_sus, ("loud", 5.0))
     assert not ok and "louder after key-up" in rep["verdict"], rep
-    ok, rep = mh.usb_clock(mh.FakeRig(), str(tmp_path), bpm=120.0, secs=0.8, out=lambda s: None)
-    assert not ok and "did not run" in rep["verdict"]
+    ok, rep = mh.usb_clock(mh.FakeRig(), str(tmp_path), bpm=100.0, secs=4.0, out=lambda s: None)
+    assert not ok and "no tremolo" in rep["verdict"], rep
+
+
+def test_usb_clock_without_the_clock_fails(tmp_path):
+    """a tremolo that ignores the clock runs at the internal 120 BPM: against the clock's 100 it fails (the reason the
+    default is 100), and with the clock it passes at another tempo too"""
+    ok, rep = _fake(tmp_path, mh.usb_clock, ("noclock", 0.0), bpm=100.0)
+    assert not ok and "jitter" in rep["verdict"], rep
+    ok, rep = _fake(tmp_path, mh.usb_clock, bpm=137.0)
+    assert ok and abs(rep["bpm_seen"] - 137) < 1.4, rep
 
 
 def test_usb_stress_detectors(tmp_path):
@@ -189,7 +198,8 @@ def test_usb_host_same_sound(tmp_path):
 
 
 def test_d2_fake(tmp_path):
-    """d2 on the fake Move: every engine's tests in order (usb-host on the engine's preset, three keys), one table;
+    """d2 on the fake Move: every engine's tests in order (usb-host on the engine's preset, three keys; usb-clock once,
+    with the Rhodes), one table;
     a sound at idle stops the run at the first preflight (exit 2) and says why"""
     code = mh.d2(mh.FakeEchoRig(), str(tmp_path), ("rhodes", "marimba"), stress_secs=8.0, out=lambda s: None)
     md = open(tmp_path / "summary.md").read()
@@ -197,7 +207,7 @@ def test_d2_fake(tmp_path):
     tests = [(w["engine"], w["test"]) for w in rep["rows"]]
     assert tests[:10] == [("rhodes", t) for t in ("preflight", "usb-host", "usb-note-36", "usb-note-60", "usb-note-84",
                                                    "usb-vel", "usb-sus", "usb-clock", "usb-stress")] + [("marimba", "preflight")]
-    assert len(tests) == 18 and code == 0, [(w["test"], w["verdict"]) for w in rep["rows"] if not w["ok"]]
+    assert len(tests) == 17 and code == 0, [(w["test"], w["verdict"]) for w in rep["rows"] if not w["ok"]]
     assert "| rhodes | usb-host | PASS | gain -6.02 dB" in md and "# Move D2 over USB-C: PASS" in md, md
     host = next(w for w in rep["rows"] if w["engine"] == "marimba" and w["test"] == "usb-host")["report"]
     assert any(not w["judged"] for w in host["rows"])           # (84 v40 has died 0.5 s in: not judged on its tail)
