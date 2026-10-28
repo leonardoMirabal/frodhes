@@ -26,9 +26,10 @@
                    whose output goes to <out dir>/<target>-<step>.log; a failed step ends its target (the other goes on).
                    The locks: DEVICE (the FM-1 and the MOTU) and MOVE, both taken before anything runs, never waited
                    for (held by another session: stop at once)
-6 the record       one JSON (--out, default <records>/device-done-X.Y.Z.json): a section per target (sha256, tiers,
-                   runs, verdict, minutes; reused: where from), and at the top the FM-1's sha256 / tiers / runs as
-                   tools/release.py --device-done reads them today
+6 the record       one JSON (--out, default <records>/device-done-X.Y.Z.json), tools/release.py --device-done's schema: a
+                   section per target at the top, {"fm1": {sha256, tiers, runs, ...}, "move": {...}} (plus the
+                   verdict, the minutes, the package; reused: where from). A section that did not pass records no
+                   tiers, so release.py refuses it. The Move's tiers: MIN, MT1 (what release.py checks), MHQ, MT2
 
 --dry-run prints the plan, its minutes per target and the wall time, and runs nothing (no lock, no device). --fake runs
 the plan with every step replaced by a stand-in that only prints (tests; --fake-fail STEP makes that one fail): it
@@ -66,7 +67,7 @@ MIN = {"fm1-install": 3, "fm1-t1": 20, "fm1-t2": 70, "fm1-null": 7,
        "move-install": 3, "move-min-hq1": 6, "move-min-hq0": 4, "move-mt1-hq1": 14, "move-mt1-hq0": 12,
        "move-hq-stress": 5, "move-mt2-lite": 15}
 MOVE_MIN_TESTS = "usb-host,usb-stress,usb-restrike"   # the release minimum: the tap's null test, the crackle + CPU
-MOVE_TIERS = ("MMIN", "MT1", "MHQ", "MT2")
+MOVE_TIERS = ("MIN", "MT1", "MHQ", "MT2")     # (release.py reads MIN and MT1)
 
 
 def rel(p):
@@ -81,6 +82,14 @@ def sha256(path):
         for b in iter(lambda: f.read(1 << 20), b""):
             h.update(b)
     return h.hexdigest()
+
+
+def move_package(ver):
+    """the Move package release.py builds (build/frodhes-X.Y.Z-move.tar.gz, a copy of make move's tarball), else the
+    tarball itself"""
+    import release as rl
+    p = os.path.join(ROOT, "build", rl.MOVE_VERSIONED.format(v=ver))
+    return p if os.path.exists(p) else os.path.join(ROOT, MOVE_TARBALL)
 
 
 def move_tar_matches(tar, src):
@@ -108,20 +117,23 @@ class Step:
 
 
 def need_of(pt, files, full=False, null_proven=False):
-    """the tiers each target needs from test_map.per_target: {'fm1': {'tiers', 't2', 'why'}, 'move': {...}}"""
-    fm = test_map.analyze(pt["fm1"]["files"]) if pt["fm1"]["files"] else None
-    t2 = bool(fm and "T2" in fm["tiers"])
-    fm1 = {"tiers": ["T1"] + (["T2"] if (t2 and not null_proven) or full else []),
-           "null": bool(t2 and null_proven and not full),
+    """the tiers each target needs, by tools/release.py's own rules (so its --device-done reader accepts the record):
+    the FM-1 T1 on every release, T2 when test_map's analysis of the whole diff has it or --full; the Move MIN on
+    every release, MT1 when a file under release.MOVE_ONLY changed (or the Move's own code by the closure, or --full);
+    the plan's extras MHQ (HQ changed) and MT2 (--full). pt (test_map.per_target) names the files per target.
+    {'fm1': {'tiers', 'null', 'why'}, 'move': {'tiers', 'why'}}"""
+    import release as rl
+    t2 = "T2" in test_map.analyze(files)["tiers"]
+    tiers = ["T1"] + (["T2"] if (t2 and not null_proven) or full else [])
+    fm1 = {"tiers": tiers, "null": bool(t2 and null_proven and not full),
            "why": ("the FM-1 builds from %d changed file(s)" % len(pt["fm1"]["files"]) if pt["fm1"]["files"]
-                   else "no FM-1 file changed") + ("; T2: " + ("--full" if full else "an engine / the DSP changed")
-                                                   if "T2" in (["T2"] if (t2 and not null_proven) or full else [])
-                                                   else "; the null test replaces T2 (--null-proven)" if t2 else "")}
+                   else "no FM-1 file changed") + ("; T2: --full" if full else "; T2: an engine / the DSP changed"
+                                                   if "T2" in tiers else "; the null test replaces T2 (--null-proven)"
+                                                   if t2 else "")}
     mv_files = set(pt["move"]["files"]) | set(pt["hq"]["files"])
-    shared = set(pt["shared"])
-    own = sorted(mv_files - shared)
-    hq = any(f.startswith("firmware/src/hq/") or f.startswith("firmware/gen/hq/") for f in mv_files)
-    tiers = ["MMIN"] + (["MT1"] if own or full else []) + (["MHQ"] if hq else []) + (["MT2"] if full else [])
+    own = sorted((mv_files - set(pt["shared"])) | {f for f in files if f.startswith(rl.MOVE_ONLY)})
+    hq = any(f.startswith(("firmware/src/hq/", "firmware/gen/hq/")) for f in set(files) | mv_files)
+    tiers = ["MIN"] + (["MT1"] if own or full else []) + (["MHQ"] if hq else []) + (["MT2"] if full else [])
     move = {"tiers": tiers, "why": (f"the Move's own code: {len(own)} file(s)" if own else
                                     "shared code only" if mv_files else "no Move file changed")
             + ("; HQ changed" if hq else "") + ("; --full" if full else "")}
@@ -160,12 +172,12 @@ def fm1_steps(ver, fw, need, py):
 def move_steps(need, py, out_dir):
     d2 = lambda hq, *x: [py, "tools/move_hil.py", "d2", "--path", "tap", "--hq", str(hq), "--go",  # noqa: E731
                          "--out", os.path.join(out_dir, f"move-d2-hq{hq}" + ("-" + x[0] if x else "")), *x[1:]]
-    s = [Step("install", [py, "tools/move_install.py", "install", "--go"], MIN["move-install"], "MMIN")]
+    s = [Step("install", [py, "tools/move_install.py", "install", "--go"], MIN["move-install"], "MIN")]
     if "MT1" in need["tiers"]:
         s += [Step("mt1-hq1", d2(1), MIN["move-mt1-hq1"], "MT1"), Step("mt1-hq0", d2(0), MIN["move-mt1-hq0"], "MT1")]
     else:
-        s += [Step("min-hq1", d2(1, "min", "--tests", MOVE_MIN_TESTS), MIN["move-min-hq1"], "MMIN"),
-              Step("min-hq0", d2(0, "min", "--tests", MOVE_MIN_TESTS), MIN["move-min-hq0"], "MMIN")]
+        s += [Step("min-hq1", d2(1, "min", "--tests", MOVE_MIN_TESTS), MIN["move-min-hq1"], "MIN"),
+              Step("min-hq0", d2(0, "min", "--tests", MOVE_MIN_TESTS), MIN["move-min-hq0"], "MIN")]
     if "MHQ" in need["tiers"]:
         s.append(Step("hq-stress", d2(1, "hq", "--engines", "rhodes", "--tests", "usb-stress,usb-restrike",
                                       "--secs", "120"), MIN["move-hq-stress"], "MHQ"))
@@ -189,12 +201,11 @@ def find_record(target, sha, tiers, dirs):
                 continue
             if r.get("fake"):
                 continue                                   # (a --fake run proves nothing about a device)
-            sec = (r.get("targets") or {}).get(target)
-            if sec is None and target == "fm1" and "targets" not in r and r.get("sha256"):
-                sec = {"sha256": r["sha256"], "tiers": r.get("tiers", []), "runs": r.get("runs", []),
-                       "verdict": "PASS"}                          # (an older record: the FM-1's alone)
-            if (sec and sec.get("sha256") == sha and sec.get("verdict") in ("PASS", "REUSED")
-                    and all(t in sec.get("tiers", []) for t in tiers)):
+            sec = r.get(target)
+            if sec is None and target == "fm1" and r.get("sha256") and "move" not in r:
+                sec = r                                    # (an older record: the FM-1's alone, flat)
+            if (isinstance(sec, dict) and sec.get("sha256") == sha and sec.get("verdict", "PASS") in ("PASS", "REUSED")
+                    and all(t in (sec.get("tiers") or []) for t in tiers)):
                 return p, sec
     return None, None
 
@@ -262,6 +273,7 @@ def fake_runner(fail=()):
         open(log, "w").write(o)
         time.sleep(0.01)
         return (1 if step.name in fail else 0), o
+    run.fake = True                                       # (its output is no device's: the output checks are skipped)
     return run
 
 
@@ -281,7 +293,7 @@ def run_target(t, v, out_dir, runner, say):
         ts = time.time()
         try:
             code, o = runner(s, log)
-            if code == 0 and s.check:
+            if code == 0 and s.check and not getattr(runner, "fake", False):
                 s.check(o)
             res = "exit 0" if code == 0 else f"exit {code}"
         except Exception as e:                       # (a check's Stop, a timeout: the step's FAIL)
@@ -301,11 +313,12 @@ def run_target(t, v, out_dir, runner, say):
 def run(pl, out_dir, runner, say=print, lock_root=None):
     """both targets at once, the locks held throughout: the combined record"""
     os.makedirs(out_dir, exist_ok=True)
-    rec = {"version": pl["version"], "when": time.strftime("%Y-%m-%d %H:%M:%S"), "targets": {}}
+    rec = {"version": pl["version"], "when": time.strftime("%Y-%m-%d %H:%M:%S")}
+    secs = {}
     todo = [t for t, v in pl["targets"].items() if not v["reuse"]]
     for t, v in pl["targets"].items():
         if v["reuse"]:
-            rec["targets"][t] = dict(v["reused"], verdict="REUSED", reused_from=v["reuse"])
+            secs[t] = dict(v["reused"], verdict="REUSED", reused_from=v["reuse"])
     held = []
     try:
         for t in todo:
@@ -324,18 +337,18 @@ def run(pl, out_dir, runner, say=print, lock_root=None):
             ths.append(th)
         for th in ths:
             th.join()
-        rec["targets"].update(res)
+        secs.update(res)
     finally:
         for lk in held:
             lk.release()
-    f = rec["targets"].get("fm1", {})
-    rec.update(sha256=f.get("sha256"), tiers=f.get("tiers", []) if f.get("verdict") in ("PASS", "REUSED") else [],
-               runs=f.get("runs", []))
+    for t in TARGETS:                             # (A's schema, release.py --device-done: {"fm1": {sha256, tiers,
+        if t in secs:                             # runs}, "move": {...}}; a section that did not pass has no tiers)
+            rec[t] = secs[t]
     return rec
 
 
 def code_of(rec):
-    v = [s["verdict"] for s in rec["targets"].values()]
+    v = [rec[t]["verdict"] for t in TARGETS if t in rec]
     return 0 if all(x in ("PASS", "REUSED") for x in v) else 1 if "FAIL" in v else 2
 
 
@@ -365,7 +378,7 @@ def main(argv=None):
     recs = a.records or os.path.join(main_root, "build", "device-done")
     dirs = [recs] + ([os.path.join(main_root, "build")] if not a.records else [])
     pkgs = {"fm1": a.fm1 or os.path.join(ROOT, "build", f"frodhes-{a.version}.fwsc"),
-            "move": a.move or os.path.join(ROOT, MOVE_TARBALL)}
+            "move": a.move or move_package(a.version)}
     out_dir = os.path.join(main_root, "build", "release-devices", a.version + "-" + time.strftime("%Y%m%d-%H%M%S"))
     try:
         pl = plan(a.version, files, pkgs, dirs, a.full, a.null_proven, out_dir=out_dir)
@@ -391,7 +404,7 @@ def main(argv=None):
     os.makedirs(recs, exist_ok=True)
     path = a.out or os.path.join(recs, f"device-done-{a.version}" + ("-fake" if a.fake else "") + ".json")
     json.dump(rec, open(path, "w"), indent=1)
-    for t, s in rec["targets"].items():
+    for t, s in ((t, rec[t]) for t in TARGETS if t in rec):
         print(f"{NAMES[t]}: {s['verdict']}" + (f" (from {s['reused_from']})" if s.get("reused_from") else
                                                f" in {s['minutes']} min"))
     print(f"record: {path}")

@@ -32,7 +32,7 @@ def pkgs(tmp_path):
 
 def record(d, name, **targets):
     os.makedirs(d, exist_ok=True)
-    json.dump({"targets": targets}, open(os.path.join(d, name), "w"))
+    json.dump(targets, open(os.path.join(d, name), "w"))
 
 
 def mk(files, pkgs, clos, records=(), **kw):
@@ -73,7 +73,7 @@ def test_drift_guard_and_t2(pkgs, clos):
     pl = mk(["README.md"], pkgs, clos, full=True)
     f, m = pl["targets"]["fm1"], pl["targets"]["move"]
     assert abs(f["minutes"] - 95) <= 5 and abs(m["minutes"] - 45) <= 5 and f["tiers"] == ["T1", "T2"]
-    assert m["tiers"] == ["MMIN", "MT1", "MT2"]
+    assert m["tiers"] == ["MIN", "MT1", "MT2"]
     names = [s.name for s in f["steps"]]
     assert names[:2] == ["install", "t1"] and "t2-marimba" in names and "t2-jack-marimba" in names
     pl = mk(["firmware/src/rhodes.c"], pkgs, clos)
@@ -106,7 +106,7 @@ def test_reuse_rules(pkgs, clos, tmp_path):
     assert not mk(files, pkgs, clos, [recs])["targets"]["fm1"]["reuse"]  # (another sha256)
     record(recs, "device-done-c.json", fm1=dict(sha256=sha, tiers=["T1", "T2"], verdict="FAIL"))
     assert not mk(files, pkgs, clos, [recs])["targets"]["fm1"]["reuse"]
-    json.dump({"fake": True, "targets": {"fm1": dict(sha256=sha, tiers=["T1", "T2"], verdict="PASS")}},
+    json.dump({"fake": True, "fm1": dict(sha256=sha, tiers=["T1", "T2"], verdict="PASS")},
               open(os.path.join(recs, "device-done-d.json"), "w"))
     assert not mk(files, pkgs, clos, [recs])["targets"]["fm1"]["reuse"]
     json.dump({"sha256": sha, "tiers": ["T1", "T2"], "runs": ["T1 ok"]}, open(os.path.join(recs, "device-done-e.json"), "w"))
@@ -140,9 +140,9 @@ def test_run_parallel_locks_record(pkgs, clos, tmp_path, monkeypatch):
     assert dt < 0.3 * n - 0.25, dt                                       # (in parallel: under the sum)
     assert lk["held"] == [True, True]
     assert not os.path.isdir(rd.lock.lock_dir("DEVICE")) and not os.path.isdir(rd.lock.lock_dir("MOVE"))
-    assert rec["targets"]["fm1"]["verdict"] == rec["targets"]["move"]["verdict"] == "PASS"
-    assert rec["sha256"] == rd.sha256(pkgs["fm1"]) and rec["tiers"] == ["T1"]
-    assert rec["targets"]["move"]["tiers"] == ["MMIN"] and len(rec["targets"]["move"]["runs"]) == 3
+    assert rec["fm1"]["verdict"] == rec["move"]["verdict"] == "PASS"
+    assert rec["fm1"]["sha256"] == rd.sha256(pkgs["fm1"]) and rec["fm1"]["tiers"] == ["T1"]
+    assert rec["move"]["tiers"] == ["MIN"] and len(rec["move"]["runs"]) == 3
     assert rd.code_of(rec) == 0
 
 
@@ -150,9 +150,9 @@ def test_a_failure_ends_its_target_only(pkgs, clos, tmp_path, monkeypatch):
     monkeypatch.setenv("FRODHES_LOCK_ROOT", str(tmp_path / "locks"))
     pl = mk(["firmware/src/notes.c"], pkgs, clos)
     rec = rd.run(pl, str(tmp_path / "out"), rd.fake_runner({"min-hq1"}), say=lambda m: None)
-    m = rec["targets"]["move"]
+    m = rec["move"]
     assert m["verdict"] == "FAIL" and m["tiers"] == [] and len(m["runs"]) == 2       # (min-hq0 never ran)
-    assert rec["targets"]["fm1"]["verdict"] == "PASS" and rd.code_of(rec) == 1
+    assert rec["fm1"]["verdict"] == "PASS" and rd.code_of(rec) == 1
 
 
 def test_a_check_failing_fails_the_step(pkgs, clos, tmp_path, monkeypatch):
@@ -161,7 +161,7 @@ def test_a_check_failing_fails_the_step(pkgs, clos, tmp_path, monkeypatch):
     monkeypatch.setenv("FRODHES_LOCK_ROOT", str(tmp_path / "locks"))
     pl = mk(["firmware/src/rhodes.c"], pkgs, clos)
     rec = rd.run(pl, str(tmp_path / "out"), lambda s, log: (0, "no numbers here"), say=lambda m: None)
-    f = rec["targets"]["fm1"]
+    f = rec["fm1"]
     assert f["verdict"] == "FAIL" and "t2-cpu-rhodes" in f["runs"][-1] and "exit 0" not in f["runs"][-1], f["runs"]
 
 
@@ -169,7 +169,7 @@ def test_unavailable_step_is_incomplete(pkgs, clos, tmp_path, monkeypatch):
     monkeypatch.setenv("FRODHES_LOCK_ROOT", str(tmp_path / "locks"))
     pl = mk(["firmware/src/rhodes.c"], pkgs, clos, null_proven=True)
     rec = rd.run(pl, str(tmp_path / "out"), rd.fake_runner(), say=lambda m: None)
-    assert rec["targets"]["fm1"]["verdict"] == "INCOMPLETE" and rd.code_of(rec) == 2 and rec["tiers"] == []
+    assert rec["fm1"]["verdict"] == "INCOMPLETE" and rd.code_of(rec) == 2 and rec["fm1"]["tiers"] == []
 
 
 def test_a_held_lock_stops_before_anything(pkgs, clos, tmp_path, monkeypatch):
@@ -212,6 +212,35 @@ def test_cli_dry_run_and_fake(pkgs, tmp_path):
     r = subprocess.run(base + ["--fake"], capture_output=True, text=True, env=env, cwd=ROOT)
     assert r.returncode == 0, r.stdout + r.stderr
     rec = json.load(open(tmp_path / "rec" / "device-done-9.9.9-fake.json"))
-    assert rec["fake"] and set(rec["targets"]) == {"fm1", "move"}
+    assert rec["fake"] and rec["fm1"]["verdict"] == rec["move"]["verdict"] == "PASS"
     r = subprocess.run(base + ["--dry-run"], capture_output=True, text=True, env=env, cwd=ROOT)
     assert "REUSE" not in r.stdout                                       # (a fake record is never reused)
+
+
+@pytest.mark.parametrize("files", [["firmware/src/notes.c"], ["firmware/src/rhodes.c", "move/move_bridge.h"],
+                                   ["firmware/src/hq/rhodes_hq.c"]], ids=["shared", "dsp+move", "hq"])
+def test_release_py_reads_the_record(files, pkgs, clos, tmp_path, monkeypatch):
+    """release.py --device-done reads release_devices' record as it is (A's schema, M7-02): the FM-1 and the Move
+    sections accepted on the same sha256s with the tiers the same diff needs; a failed Move section is refused"""
+    import release as rel
+    monkeypatch.setenv("FRODHES_LOCK_ROOT", str(tmp_path / "locks"))
+    pl = mk(files, pkgs, clos)
+    rec = rd.run(pl, str(tmp_path / "out"), rd.fake_runner(), say=lambda m: None)
+    j = tmp_path / "done.json"
+    j.write_text(json.dumps(rec))
+    monkeypatch.setattr(rel, "sh", lambda cmd, **kw: (0, "".join(f + "\n" for f in files)))
+
+    def release():
+        r = rel.Release(rel.parse_args(["0.9.9", "--no-device", "--device-done", str(j)]))
+        r.sha, r.move_sha, r.prev = rec["fm1"]["sha256"], rec["move"]["sha256"], "v0.9.8"
+        return r
+    r = release()
+    line = r.device_done()
+    assert line.startswith("FM-1: tested before the release on this exact build"), line
+    assert r.move_ok, r.move_line
+    need, _ = r.move_tiers()
+    assert set(need) <= set(rec["move"]["tiers"])
+    rec2 = rd.run(pl, str(tmp_path / "out2"), rd.fake_runner({"min-hq0", "mt1-hq0"}), say=lambda m: None)
+    j.write_text(json.dumps(rec2))
+    with pytest.raises(rel.Stop, match="the Move's tiers"):
+        release().device_done()
