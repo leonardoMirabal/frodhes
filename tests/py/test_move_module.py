@@ -55,6 +55,8 @@ def test_levels_keep_the_hosts_limits():
             assert len(p["name"]) <= gen.LABEL_MAX and p["name"].isascii() and p["name"].strip(), (name, p)
             if p["type"] == "canvas":                          # (a screen the module draws: its script ships)
                 assert p["canvas_script"] in gen.FILES, (name, p)
+            elif p.get("access") == "read":                    # (the GR meter's cells: the module's widget)
+                assert p["key"] in gen.METER and name == "comp", (name, p)
             elif p["type"] == "enum":
                 assert p["options"] and all(o.isascii() and o for o in p["options"]), (name, p)
                 assert all(len(o) <= gen.VALUE_MAX for o in p["options"]), (name, p)
@@ -86,7 +88,7 @@ def test_ranges_and_options_are_the_parameters():
     by_key = {c["key"]: c for c in CHAIN}
     assert len(by_key) == len(CHAIN), "a key twice in chain_params"
     rows = re.findall(r'\{"(\w+)", (\w+), (\d+), (MK_\w+), (\d+), (-?\d+)\}', OUT["move_ui.h"])
-    assert [r[0] for r in rows] == [c["key"] for c in CHAIN]
+    assert [r[0] for r in rows] == [c["key"] for c in CHAIN if c["key"] not in gen.METER]   # (the GR cells: no row)
     for key, slot, cc, kind, scale, off in rows:
         c = by_key[key]
         if slot.startswith("P_"):

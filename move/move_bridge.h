@@ -1052,9 +1052,15 @@ static int mb_get(const char *key, char *buf, int n)
                                                  (unsigned)sus_held, (unsigned)sus_latched, (unsigned)sus_midi,
                                                  mb.sus_down, mb.sus_up, atomic_load(&mb.sus_touch));
     if (!strcmp(key, "dev_play")) return mp_get(buf, n);
-    if (!strcmp(key, "r_cmp_gr")) {   /* the meter: "OFF" (COMP off), else "<dB x 10> <the held peak, dB x 10>" */
+    if (!strcmp(key, "r_cmp_gr") || !strcmp(key, "r_cmp_gr:effective")) {
+        /* the meter: "OFF" (COMP off), else "<dB x 10> <the held peak, dB x 10>"; :effective the same (the knob grid's
+         * GR cell is "live": Schwung reads <key>:effective every tick) */
         uint32_t w = atomic_load_explicit(&mb.gr_word, memory_order_relaxed);
         return w >> 20 & 1u ? snprintf(buf, (size_t)n, "%u %u", w & 1023u, w >> 10 & 1023u) : snprintf(buf, (size_t)n, "OFF");
+    }
+    if (!strcmp(key, "r_cmp_pk")) {   /* the GR cell's second half: "OFF", else the held peak (dB x 10) */
+        uint32_t w = atomic_load_explicit(&mb.gr_word, memory_order_relaxed);
+        return w >> 20 & 1u ? snprintf(buf, (size_t)n, "%u", w >> 10 & 1023u) : snprintf(buf, (size_t)n, "OFF");
     }
     if (!strcmp(key, "dev_inert")) return snprintf(buf, (size_t)n, "cc_drop=%u stops=%u seq=%u rec=%u arp=%u hold=%u chord=%u scale=%u trans=%d clock=%u bpm10=%u host_bpm=%u",
                                                    mb.cc_drop, mb.inert_n, (unsigned)seq_play, (unsigned)seq_rec,

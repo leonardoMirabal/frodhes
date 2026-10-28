@@ -19,6 +19,8 @@ What it writes:
                       pages follow TYPE; the root level holds the preset browser (preset / preset_count /
                       preset_name) and SUSTAIN, a latch on CC 64 (the Move has no pedal jack)
   chain_params.json   every key once, with its range or options (get_param("chain_params"))
+  canvas.js           the knob grid's gain-reduction cell (COMPRESSOR knobs 7-8, METER): Schwung's custom widget,
+                      move/ui/gr_cell.js with the FM-1's GR scale
   help.json           the on-device help (lines <= 20 characters, ASCII)
   move_ui.h           the same for the plugin's C side: MOVE_KEYS[] (key -> parameter id or ui.c slot, its CC, the
                       offset between the wire value and the slot's 0..hi value) and the two JSON texts as literals,
@@ -35,8 +37,10 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "firmware", "src")
 OUT = os.path.join(ROOT, "move", "module")
-FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h", "sustain.js", "screen.js")
+FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h", "sustain.js", "screen.js",
+         "canvas.js")
 UI_CORE = os.path.join(ROOT, "move", "ui", "screen_core.js")   # Frodhes' own screen: the hand-written part
+GR_CELL = os.path.join(ROOT, "move", "ui", "gr_cell.js")       # the knob grid's gain-reduction cell: the hand-written part
 # Frodhes' own screen (M6-02, private plan 05 M6-01 option F): a fullscreen canvas the first page's PAGES cell
 # opens. screen.js = the pages (FR_PAGES, the levels below as the screen shows them) + FR_CONF + move/ui/screen_core.js.
 # The live keys the host reads for it (at most four, one a tick): rev (a change the screen did not make: re-read),
@@ -46,6 +50,19 @@ UI_CORE = os.path.join(ROOT, "move", "ui", "screen_core.js")   # Frodhes' own sc
 SCREEN = {"key": "s_screen", "name": "PAGES", "type": "canvas", "canvas_script": "screen.js", "enterable": True,
           "show_footer": False, "show_value": False, "fullscreen_live_ms": 100,
           "extra_keys": ["rev", "ui_engine", "s_sustain", "preset_name"]}
+# The gain-reduction meter on Schwung's own knob grid (the COMPRESSOR level, knobs 7-8): two read-only cells, one
+# picture. Schwung (v1.8.1, docs/MODULES.md "Custom widgets") draws a chain_params viz kind "custom:..." with the
+# module's canvas.js drawCell; the two keys are one viz group (roles gr + pk, adjacent on one row), so the picture
+# spans both cells, 64 x 15 px. r_cmp_gr is "live": the grid reads r_cmp_gr:effective every tick (the plugin keeps
+# the FM-1's ballistics, 33 ms ticks, in render_block, which the host never skips: requires_continuous_processing).
+# access "read": no knob, no write, no list. Not a C row (MOVE_KEYS): move_bridge.h mb_get serves both keys itself.
+GR_KIND = "custom:frodhes_gr"
+METER = {
+    "r_cmp_gr": {"key": "r_cmp_gr", "name": "GR", "type": "string", "access": "read", "live": True,
+                 "viz": {"group": "gr", "role": "gr", "kind": GR_KIND}},
+    "r_cmp_pk": {"key": "r_cmp_pk", "name": "PEAK", "type": "string", "access": "read",
+                 "viz": {"group": "gr", "role": "pk"}},
+}
 SCREEN_CONF = {"hold_ms": 1000,    # the large card stays this long after the knob is let go (tune on the device)
                "fast_ms": 40,      # two detents closer than this: a fast turn ...
                "fast_mul": 4,      # ... moves a wide range (> 24 steps) this many steps a detent
@@ -134,7 +151,7 @@ MAP_KEYS = ["m_at_cc", "m_at_lo", "m_at_hi", "m_pa_cc", "m_pa_lo", "m_pa_hi"]
 MOVE_LEVELS = [
     ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_susbtn", "s_fx", "s_screen"]),
     ("voice", "VOICE", ["VOICE"], []),
-    ("comp", "COMPRESSOR", ["COMPRESSOR"], ["p_cmp_sw", "p_cmp_rel"]),
+    ("comp", "COMPRESSOR", ["COMPRESSOR"], ["p_cmp_sw", "p_cmp_rel", "r_cmp_gr", "r_cmp_pk"]),
     ("drv_flt", "DRIVE/FILTER", ["DRIVE", "FILTER"], []),
     ("trm_pha", "TREM/PHASER", ["TREM/WAH", "PHASER"], []),
     ("cho_dly", "CHORUS/DELAY", ["CHORUS", "DELAY"], []),
@@ -376,6 +393,11 @@ def build(m):
                 lvl["params"].append(dict(SCREEN))
                 lvl["knobs"].append(k)
                 continue
+            if k in METER:                         # the GR meter's cells: a hierarchy item + chain_params (no C row)
+                lvl["params"].append(dict(METER[k]))
+                lvl["knobs"].append(k)
+                chain.append(dict(METER[k]))
+                continue
             if k in EXTRA:
                 item, row = extra_def(k)
             else:
@@ -508,10 +530,12 @@ def outputs():
               # the settings' save) runs on render_block
               "capabilities": {"audio_out": True, "midi_in": True, "chainable": True,
                                "requires_continuous_processing": True, "component_type": "sound_generator",
-                               "claims_ccs": [SUS_BTN_CC], "touch_observe": True}}
+                               "claims_ccs": [SUS_BTN_CC], "touch_observe": True,
+                               # the knob grid's custom widget (the GR meter): Schwung loads <module>/canvas.js
+                               "canvas_script": "canvas.js"}}
     return {"module.json": dumps(module), "ui_hierarchy.json": dumps(hier), "chain_params.json": dumps(chain),
             "help.json": dumps(help_json(m, levels, reach)), "move_ui.h": c_header(hier, chain, crow),
-            "sustain.js": sustain_js(), "screen.js": screen_js(levels)}, m, reach
+            "sustain.js": sustain_js(), "screen.js": screen_js(levels), "canvas.js": canvas_js()}, m, reach
 
 
 def screen_pages(levels):
@@ -526,7 +550,7 @@ def screen_pages(levels):
         ks = []
         for key in lvl["knobs"]:
             it = next(p for p in lvl["params"] if p.get("key") == key)
-            if it["type"] == "canvas":
+            if it["type"] == "canvas" or it.get("access") == "read":   # (the GR cells: the screen draws its own meter)
                 continue
             k = {"key": key, "name": it["name"], "type": it["type"]}
             for f in ("min", "max", "step", "options"):
@@ -542,10 +566,26 @@ def screen_pages(levels):
     return out
 
 
-def screen_js(levels):
-    # the gain-reduction meter's scale (COMPRESSOR): ui.c's GR_DB10, dB x 10 at each of its evenly spaced segments
+def gr_db10():
+    """the gain-reduction meter's scale (COMPRESSOR): ui.c's GR_DB10, dB x 10 at each of its evenly spaced segments"""
     m = re.search(r"GR_DB10\[GR_SEGS\] = \{([^}]*)\}", read("ui.c"))
-    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, gr_db10=[int(x) for x in m.group(1).split(",")])
+    return [int(x) for x in m.group(1).split(",")]
+
+
+def canvas_js():
+    """the knob grid's GR cell (Schwung's custom widget, METER): GR_CONF + move/ui/gr_cell.js, in one closure"""
+    conf = {"kind": GR_KIND, "gr": "r_cmp_gr", "gr_db10": gr_db10()}
+    with open(GR_CELL) as f:
+        core = f.read()
+    head = ("// SPDX-License-Identifier: GPL-3.0-only\n"
+            "// GENERATED by tools/gen_move_module.py from ui.c and move/ui/gr_cell.js - do not edit.\n"
+            "// The gain-reduction meter on Schwung's knob grid (COMPRESSOR, knobs 7-8): a custom widget (drawCell).\n")
+    return (head + "(function () {\n\"use strict\";\nconst GR_CONF = " + json.dumps(conf, separators=(",", ":"))
+            + ";\n" + core + "})();\n")
+
+
+def screen_js(levels):
+    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, gr_db10=gr_db10())
     with open(UI_CORE) as f:
         core = f.read()
     head = ("// SPDX-License-Identifier: GPL-3.0-only\n"

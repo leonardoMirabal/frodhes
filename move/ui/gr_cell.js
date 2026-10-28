@@ -1,0 +1,101 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The gain-reduction meter on Schwung's own knob grid, the hand-written part of move/module/canvas.js:
+// tools/gen_move_module.py writes GR_CONF above this text (the widget's kind, the key, ui.c's GR_DB10 scale).
+//
+// Schwung (v1.8.1, docs/MODULES.md "Custom widgets (drawCell)") draws a cell whose chain_params viz kind is
+// GR_CONF.kind with drawCell below. On Frodhes' COMPRESSOR level the kind sits on a group of two read-only keys,
+// r_cmp_gr (GR) and r_cmp_pk (PEAK), knobs 7-8, so one picture spans both cells (64 x 15 px on the Move's grid).
+// It draws what the FM-1's COMP page shows (ui.c draw_meter): a track filled from the right on the FM-1's segment
+// scale (1 .. 30 dB, the 15 steps evenly apart), the fill's edge, the peak held for a second as a 2 px mark, and the
+// reading in dB. COMP off: an empty dotted track and COMP OFF.
+//
+// The value is r_cmp_gr as the plugin serves it (move_bridge.h): "OFF", or "<dB x 10> <held peak dB x 10>". The key
+// is "live", so the grid re-reads it every tick and hands the fresh value in `values`. No value yet (a read that did
+// not answer): the track only, never a made-up zero. drawCell reads nothing (Schwung's ctx has no read) and
+// draws with fillRect only, in its own frame (0,0 = the cell's top left), so any frame size works.
+
+// a 3 x 5 font, 4 px advance: what the meter writes (digits, - . and the letters of DB / COMP OFF)
+const GR_GLYPHS = {
+    "0": "####.##.##.####", "1": ".#.##..#..#.###", "2": "###..#####..###", "3": "###..####..####",
+    "4": "#.##.####..#..#", "5": "####..###..####", "6": "####..####.####", "7": "###..#..#..#..#",
+    "8": "####.#####.####", "9": "####.####..####", "-": "......###......", ".": ".............#.",
+    " ": "...............", "B": "##.#.###.#.###.", "C": "####..#..#..###", "D": "##.#.##.##.###.",
+    "F": "####..###.#..#.", "M": "#.####.##.##.##", "O": "####.##.##.####", "P": "####.####..#..#",
+};
+function grTextW(s) { return s.length ? s.length * 4 - 1 : 0; }
+// the first of the texts that fits w, right-aligned at the frame's right edge, on the frame's last 5 rows
+function grTextFit(ctx, w, h, texts) {
+    const s = texts.find((t) => grTextW(t) <= w);
+    if (s) grText(ctx, w - grTextW(s), h - 5, s, 1);
+}
+function grText(ctx, x, y, s, color) {
+    for (let i = 0; i < s.length; i++) {
+        const g = GR_GLYPHS[s[i]] || GR_GLYPHS[" "];
+        for (let r = 0; r < 5; r++)
+            for (let c = 0; c < 3; c++)
+                if (g[r * 3 + c] === "#") ctx.fillRect(x + i * 4 + c, y + r, 1, 1, color);
+    }
+}
+
+// "OFF" -> {off}, "<db10> <pk10>" -> {db10, pk}, anything else (no answer) -> null
+function grParse(v) {
+    if (v === null || v === undefined || v === "") return null;
+    const t = String(v).trim();
+    if (t === "OFF") return { off: true, db10: 0, pk: 0 };
+    const [a, b] = t.split(/\s+/).map(Number);
+    if (!Number.isFinite(a)) return null;
+    const clamp = (x) => Math.max(0, Math.min(300, x | 0));
+    return { off: false, db10: clamp(a), pk: Number.isFinite(b) ? clamp(b) : 0 };
+}
+
+// a reduction's place on a bar w wide, from its right end (ui.c gr_px: the segments evenly apart)
+function grPx(db10, w) {
+    const sc = GR_CONF.gr_db10;
+    let lo = 0;
+    for (let i = 0; i < sc.length; i++) {
+        if (db10 <= sc[i]) return Math.floor((i * w + Math.floor(w * (db10 - lo) / (sc[i] - lo))) / sc.length);
+        lo = sc[i];
+    }
+    return w;
+}
+function grReading(db10) { return db10 ? "-" + Math.floor(db10 / 10) + "." + (db10 % 10) + " DB" : "0.0 DB"; }
+
+// the cell: the track on top (1 px outline), the reading under it, right-aligned; a frame too low for text (under
+// 9 px) is the track alone
+function grDraw(ctx, values, group) {
+    const w = ctx.width | 0, h = ctx.height | 0;
+    if (w < 8 || h < 3) return;
+    const roles = (group && group.roles) || {};
+    const key = roles.gr || GR_CONF.gr;
+    const gr = grParse(values ? values[key] : null);
+    const withText = h >= 9;
+    const th = withText ? Math.min(9, h - 6) : h;               // the track's height (the FM-1's: 9 px)
+    const iw = w - 2, ih = th - 2;                               // inside the outline
+    if (gr && gr.off) {                                          // COMP off: a dotted track, nothing in it
+        for (let x = 0; x < w; x += 2) { ctx.fillRect(x, 0, 1, 1, 1); ctx.fillRect(x, th - 1, 1, 1, 1); }
+        for (let y = 2; y < th - 1; y += 2) { ctx.fillRect(0, y, 1, 1, 1); ctx.fillRect(w - 1, y, 1, 1, 1); }
+        if (withText) grTextFit(ctx, w, h, ["COMP OFF", "OFF"]);
+        return;
+    }
+    ctx.fillRect(0, 0, w, 1, 1);                                 // the track
+    ctx.fillRect(0, th - 1, w, 1, 1);
+    ctx.fillRect(0, 0, 1, th, 1);
+    ctx.fillRect(w - 1, 0, 1, th, 1);
+    if (!gr) return;                                             // no answer yet: the track only
+    const fw = grPx(gr.db10, iw), pk = gr.pk ? grPx(gr.pk, iw) : 0;
+    if (ih > 0) {
+        if (fw) ctx.fillRect(1 + iw - fw, 1, fw, ih, 1);         // the fill, from the right
+        if (pk > fw) ctx.fillRect(1 + iw - pk, 1, 2, ih, 1);     // the peak, held a second (ui.c: 2 px)
+    }
+    if (withText) {
+        const s = grReading(gr.db10);
+        grTextFit(ctx, w, h, [s, s.replace(" DB", "")]);
+    }
+}
+
+globalThis.canvas_overlay = {
+    widgetKind: GR_CONF.kind,
+    drawCell(ctx, o) { grDraw(ctx, (o && o.values) || {}, o && o.group); },
+};
+// for the host tests (move/ui/test_cell.mjs): the parts, under a name of ours
+globalThis.frodhes_gr_cell = { parse: grParse, px: grPx, reading: grReading, draw: grDraw, conf: GR_CONF };

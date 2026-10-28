@@ -513,6 +513,28 @@
           "min": 0,
           "max": 127,
           "default": 50
+        },
+        {
+          "key": "r_cmp_gr",
+          "name": "GR",
+          "type": "string",
+          "access": "read",
+          "live": true,
+          "viz": {
+            "group": "gr",
+            "role": "gr",
+            "kind": "custom:frodhes_gr"
+          }
+        },
+        {
+          "key": "r_cmp_pk",
+          "name": "PEAK",
+          "type": "string",
+          "access": "read",
+          "viz": {
+            "group": "gr",
+            "role": "pk"
+          }
         }
       ],
       "knobs": [
@@ -521,7 +543,9 @@
         "p_cmp_atk",
         "p_cmp_gain",
         "p_cmp_sw",
-        "p_cmp_rel"
+        "p_cmp_rel",
+        "r_cmp_gr",
+        "r_cmp_pk"
       ]
     },
     "drv_flt": {

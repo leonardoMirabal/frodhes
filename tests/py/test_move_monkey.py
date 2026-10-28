@@ -37,7 +37,8 @@ SO = "build/move/monkey/so"                 # its own plugin build: never the sh
 DSP = SO + "/dsp.so"                        # install may be reading that one)
 BRIDGE = "build/move/monkey/test_bridge"
 _built = []
-CHAIN = json.load(open(os.path.join(ROOT, "move", "module", "chain_params.json")))
+CHAIN = [p for p in json.load(open(os.path.join(ROOT, "move", "module", "chain_params.json")))
+         if p.get("access") != "read"]          # (the GR meter's cells: nothing to set)
 RESETS = [("s_sustain", "0"), ("s_mch", "0")]
 
 

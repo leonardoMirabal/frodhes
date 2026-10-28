@@ -1627,7 +1627,8 @@ def usb_main(a):
 # p_hq) leaves it as it found it. The plugin saves its settings and the panel, so a test's leftovers came back at the
 # next load: the arpeggiator on (2026-10-28 01:42), every effect on with the feedbacks at 127 (usb-stress's HEAVY,
 # the user's report of 2026-10-28)
-STATE_SKIP = ("preset_count", "preset_name", "s_susbtn")   # (meta; momentary: a write is a press)
+STATE_SKIP = ("preset_count", "preset_name", "s_susbtn", "r_cmp_gr", "r_cmp_pk")   # (meta; momentary: a write is a
+#   press; the GR meter's read-only cells move with the sound)
 
 
 def _same(a, b):

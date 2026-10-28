@@ -9,7 +9,8 @@ checked on a Move yet:** every part below was checked on the host build only (th
 ## Install
 
 You need a Move with Schwung installed. The module is a folder, `frodhes/`, with `dsp.so`, `module.json`,
-`help.json`, `sustain.js` (the PEDAL screen), `screen.js` (Frodhes' own screen) and `LICENSE` in it, and it goes in Schwung's sound generator folder.
+`help.json`, `sustain.js` (the PEDAL screen), `screen.js` (Frodhes' own screen), `canvas.js` (the gain-reduction meter
+on the COMPRESSOR page) and `LICENSE` in it, and it goes in Schwung's sound generator folder.
 
 ```sh
 python3 tools/move_install.py install            # prints what it would do (dry run)
@@ -38,7 +39,7 @@ controls. The VOICE pages follow the engine of the TYPE: only the pages of the e
 | **VIBES VOICE** | STRK · MALLT · TUBE · WGHT · RING · DAMPR · NOISE · TUNE |
 | **VIBES MOTOR** | MOTOR · DEPTH · SPEED · SHAPE · SYNC |
 | **MARIMBA VOICE** | STRK · MALLT · TUBE · WGHT · RING · MUTE · NOISE · TUNE |
-| **COMPRESSOR** | THRSH · RATIO · ATK · MKUP · COMP · REL |
+| **COMPRESSOR** | THRSH · RATIO · ATK · MKUP · COMP · REL · GR · PEAK |
 | **DRIVE/FILTER** | DRIVE · AMT · TONE · MIX · FILT · FREQ · RESO · LFO |
 | **TREM/PHASER** | TREM · DEPTH · RATE · SHAPE · PHASE · DEPTH · SPEED · FDBK |
 | **CHORUS/DELAY** | CHOR · DEPTH · SPEED · SYNC · DELAY · MIX · TIME · FDBK |
@@ -53,6 +54,12 @@ word's first syllable and the consonant after it (DORIAN shows as DORN, DEGREE a
 HARM, MELODIC as MELO, MPENTA as MPNT, DIATONIC as DIAT, DIA 7TH as DIA7, RANDOM as RAND). The manual (`docs/MANUAL.md`) describes what each one does. Each page has a help text in `help.json`.
 The pages are generated from the FM-1's own parameter tables (`tools/gen_move_module.py`), so the two stay alike.
 How the pages look and respond on the Move's screen and knobs is *(not yet verified on a device)*.
+
+**COMPRESSOR** shows the gain reduction in the place of knobs 7 and 8 (GR and PEAK), as the FM-1's COMP page does:
+one meter across both cells, a bar that fills from the right on the FM-1's scale (up to 30 dB), the peak held for a
+second as a mark, and the reading in dB under it. It moves while you play. When the compressor is off the bar is
+dotted and reads COMP OFF. Knobs 7 and 8 change nothing there. *(not yet verified on a device: how it looks on the
+Move's screen)*
 
 ## Mappings
 
@@ -161,12 +168,22 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
 
 ## For developers
 
-- `tools/gen_move_module.py` writes `move/module/` (module.json, the pages, help.json, `move_ui.h`, `sustain.js`
-  and `screen.js`: the pages from the FM-1's tables + the screen's code, `move/ui/screen_core.js`);
+- `tools/gen_move_module.py` writes `move/module/` (module.json, the pages, help.json, `move_ui.h`, `sustain.js`,
+  `screen.js`: the pages from the FM-1's tables + the screen's code, `move/ui/screen_core.js`, and `canvas.js`: the
+  COMPRESSOR page's meter, `move/ui/gr_cell.js`);
   `--check` fails when the files are out of date with the FM-1's tables.
 - `tools/ci_move.sh` runs the Move's checks on the host. `node move/ui/test_screen.mjs` checks Frodhes' screen
   (`move/ui/harness.mjs` runs it on a model of the Move's screen and the plugin); `node tools/move_ui_shots.mjs`
   draws every page into `build/move/ui-shots/` (`--docs`: the pictures on this page).
+- The meter on the COMPRESSOR page is a Schwung custom widget (Schwung's docs/MODULES.md, "Custom widgets"). Two
+  read-only keys, `r_cmp_gr` (GR) and `r_cmp_pk` (PEAK), form one picture group with the kind `custom:frodhes_gr`.
+  Schwung draws it with `drawCell` from `canvas.js`, which `module.json` names (`capabilities.canvas_script`).
+  `r_cmp_gr` is `"live"`, so the grid reads `r_cmp_gr:effective` every tick. It reads `OFF`, or the reduction and the
+  held peak in tenths of a dB (`120 200`). The plugin keeps the FM-1's meter timing (ui.c `meter_poll`) in
+  `render_block`, which the host keeps calling through silence (`requires_continuous_processing`). A host without
+  the widget shows the two keys as plain read-only cells. `node move/ui/test_cell.mjs` checks the drawing. With
+  Schwung's source next to the repo (or `SCHWUNG_SRC`), it also runs the page through Schwung's own planner and
+  renderer (`--png FILE` writes the page).
 - `tools/target_closure.py` lists the sources of each target (FM-1, SMK-37, host, web, Move).
 - `tools/release_devices.py X.Y.Z` runs a release's device tests on the FM-1 and the Move at the same time,
   unattended. `--dry-run` prints the plan and its minutes. The plan follows the changes since the last tag

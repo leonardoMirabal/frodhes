@@ -38,6 +38,15 @@ def test_screen_behaviour():
     assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
 
 
+@needs_node
+def test_grid_gr_cell():
+    """the GR meter on Schwung's own knob grid (move/module/canvas.js, a custom widget on COMPRESSOR knobs 7-8):
+    move/ui/test_cell.mjs, through Schwung's planner and Movy renderer too when its source is at hand"""
+    r = subprocess.run([NODE, os.path.join(ROOT, "move", "ui", "test_cell.mjs")], capture_output=True, text=True,
+                       timeout=120)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
+
+
 def read_png(path):
     with open(path, "rb") as f:
         b = f.read()
@@ -73,7 +82,9 @@ def test_screen_pages_are_the_levels():
     pages = screen_pages()
     assert [p["title"] for p in pages] == [lvl["name"] for lvl in HIER.values()]
     for p, (lk, lvl) in zip(pages, HIER.items()):
-        knobs = [k for k in lvl["knobs"] if next(i for i in lvl["params"] if i.get("key") == k)["type"] != "canvas"]
+        it = lambda k: next(i for i in lvl["params"] if i.get("key") == k)    # noqa: E731
+        # (a canvas cell is no knob on the screen; nor the GR meter's read-only cells: the screen draws its own meter)
+        knobs = [k for k in lvl["knobs"] if it(k)["type"] != "canvas" and it(k).get("access") != "read"]
         got = [k["key"] for k in p["knobs"] if k["type"] != "preset"]
         assert got == knobs, lk
         assert p["gate"] == lvl.get("visible_if", {}).get("equals", -1)
