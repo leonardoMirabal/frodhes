@@ -8,7 +8,7 @@ HEAD are byte-identical (sha256) to the ones built at the parent commit (or --re
 
 Exit 0: every package equal. Exit 1: a package differs or is missing (the names and both sha256 printed).
 
-The base side is built in a detached worktree of REF under build/gate_s/base (removed after), with the toolchain
+The base side is built in a detached worktree of REF under build/gate_s_tree (removed after), with the toolchain
 and the SDK of the main checkout's .local/ (JIELI_TOOLCHAIN / AC79_SDK win when set). Dev builds carry APP_VER "0.0"
 and no date, so equal sources give equal packages. A build takes the HEAVY lock (tools/lock.py; a gate queue holding
 it passes its token down) and runs under nice -n 19, one package at a time (the Docker lock is build.py's own).
@@ -99,7 +99,8 @@ def build_tree(tree, out, run=subprocess.run, env=None):
 def build_both(ref, out, run=subprocess.run, take_lock=True, cur_tree=ROOT, base_tree=None):
     """HEAD in this checkout (cur_tree), ref in a detached worktree (base_tree); -> (cur dir, base dir)"""
     out = Path(out)
-    base_tree = Path(base_tree or ROOT / "build" / "gate_s" / "base")
+    base_tree = Path(base_tree or ROOT / "build" / "gate_s_tree")   # (not under out: out / "base" holds the base's
+                                                # packages, and removing the worktree took them with it)
     env = toolchain_env()
     sha = git("rev-parse", "--verify", ref + "^{commit}")
     lk = None

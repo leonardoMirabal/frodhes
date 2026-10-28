@@ -37,13 +37,37 @@ static __attribute__((constructor)) void hq_page_in(void)
     memcpy(hq_prate_ram, RH_HQ_PRATE, sizeof hq_prate_ram);
 }
 
+/* the flux in closed form (tools/pickup.py: Phi(u) = T(u + R) - T(u - R), T(w) = w / (w^2 + 1), u in the family's
+ * gaps; even in u, so Phi~(s) = Phi(sqrt s)), per family its R and the Classic table's scale Q28 / A
+ * (tools/gen_rhodes.py pickup_tables; tests/py/test_rhodes_hq.py checks both). The HQ path evaluates it exactly,
+ * not through the table: the same flux to the table's own error, and NEON-friendly (no table gather) */
+static const float HQ_PU_R[2] = {0.5f, 1.0f};
+static const float HQ_PU_K[2] = {335544320.0f, 268435456.0f};
+#define HQ_GAP (1.0f / 33554432.0f)            /* Q25 gap -> gap */
+
+/* Phi(o + d) - Phi(o) without the cancellation of two near values: T(a) - T(b) = (a - b)(1 - ab) / ((a^2 + 1)(b^2 + 1)),
+ * a - b = d; b1 = o + R, b2 = o - R and c = 1 / (b^2 + 1) per voice (hq_voice_init) */
+static inline float hq_dphi(const hq_voice_t *h, float d)
+{
+    HQ_FP_STRICT
+    float a1 = h->b1 + d, a2 = h->b2 + d;
+    float n1 = (1.0f - a1 * h->b1) * h->c1, n2 = (1.0f - a2 * h->b2) * h->c2;
+    float d1 = a1 * a1 + 1.0f, d2 = a2 * a2 + 1.0f;
+    return d * (n1 * d2 - n2 * d1) / (d1 * d2);
+}
+
 static void hq_voice_init(rh_voice_t *v)       /* rhodes.c rh_init, before rh_load_pulse */
 {
+    HQ_FP_STRICT
     hq_voice_t *h = &hq_v[v - rv];
     h->on = hq_mode != 0;
     h->os = (uint8_t)(h->on && v->note >= HQ_OS_LO);
     if (!h->os) return;
-    h->h0 = v->Hprev;                          /* (rh_init: Phi~ at the offset, the voice at rest) */
+    {
+        float o = (float)v->off * HQ_GAP, R = HQ_PU_R[v->k->fam & 1u];
+        h->b1 = o + R; h->b2 = o - R;
+        h->c1 = 1.0f / (h->b1 * h->b1 + 1.0f); h->c2 = 1.0f / (h->b2 * h->b2 + 1.0f);
+    }
     h->pprev = 0.0f;
     memset(h->xb, 0, sizeof h->xb); memset(h->eb, 0, sizeof h->eb); memset(h->ob, 0, sizeof h->ob);
 }
@@ -60,20 +84,20 @@ static void hq_pulse(rh_voice_t *v, uint32_t vel)
 
 static inline int32_t hq_round(float x) { HQ_FP_STRICT return (int32_t)(x >= 0.0f ? x + 0.5f : x - 0.5f); }
 
-/* the pickup at 2x for one 32-sample sub-block: rh_x (the tip) up, through the flux table (rh_hermite_u, the
- * Classic flux exactly), down, the difference times the key's gain into mix; the steal fade and the stereo position
- * as rhodes.c's pickup loops. Hp (the Classic loop's last flux) is passed through: this path keeps its own */
+/* the pickup at 2x for one 32-sample sub-block: rh_x (the tip, in gaps) up, through the flux (hq_dphi), down, the
+ * difference times the key's gain into mix; the steal fade and the stereo position as rhodes.c's pickup loops. Hp
+ * (the Classic loop's last flux) is passed through: this path keeps its own */
 static int32_t hq_pickup(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t Hp)
 {
     HQ_FP_STRICT
     hq_voice_t *h = &hq_v[v - rv];
-    const int32_t *T = RH_PU_PHIM(v->k->fam);
-    const float gs = (float)v->gain * (1.0f / 16777216.0f);   /* (Classic: (dH gain) >> 24) */
-    int32_t off = v->off, h0 = h->h0, pan = v->pan;
+    const float gs = (float)v->gain * (1.0f / 16777216.0f) * HQ_PU_K[v->k->fam & 1u];   /* (Classic: (dH gain) >> 24,
+                                                * H in the table's Q28 / A) */
+    int32_t pan = v->pan;
     float a[SUB], p[SUB], *xb = h->xb, *eb = h->eb, *ob = h->ob, pp = h->pprev;
     uint32_t n;
     int k;
-    for (n = 0; n < SUB; n++) xb[HQ_HIS + n] = (float)rh_x[n];
+    for (n = 0; n < SUB; n++) xb[HQ_HIS + n] = (float)rh_x[n] * HQ_GAP;
     for (n = 0; n < SUB; n++) a[n] = 0.0f;      /* up: the half-sample point between the two middle inputs, the
                                                 * taps outer (each a[n] sums in tap order: the same result as one
                                                 * output at a time; the inner loop runs across the outputs: SIMD) */
@@ -82,8 +106,8 @@ static int32_t hq_pickup(rh_voice_t *v, int32_t *mix, int32_t *side, int32_t Hp)
         for (n = 0; n < SUB; n++) a[n] += g * (c1[n] + c2[n]);
     }
     for (n = 0; n < SUB; n++) {                /* the flux at both phases (the odd phase: the input, delayed) */
-        eb[HQ_HIS + n] = (float)(rh_hermite_u(T, hq_round(a[n]) + off, 1) - h0);
-        ob[HQ_HIS + n] = (float)(rh_hermite_u(T, hq_round(xb[HQ_HIS + n + 1u - HQ_HBP]) + off, 1) - h0);
+        eb[HQ_HIS + n] = hq_dphi(h, a[n]);
+        ob[HQ_HIS + n] = hq_dphi(h, xb[HQ_HIS + n + 1u - HQ_HBP]);
     }
     for (n = 0; n < SUB; n++) p[n] = 0.0f;      /* down (the same order) */
     for (k = 0; k < (int)HQ_HBP; k++) {

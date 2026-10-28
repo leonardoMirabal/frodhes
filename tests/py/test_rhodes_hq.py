@@ -100,3 +100,17 @@ int main(void) {
     subprocess.run(["cc", "-O0", "-w", "-I" + os.path.join(ROOT, "firmware/gen"), "-o", str(exe), str(c)], check=True)
     r = subprocess.run([str(exe)], capture_output=True, text=True)
     assert r.returncode == 0 and r.stdout.strip() == "0", r.stdout
+
+
+def test_flux_constants_are_the_tables():
+    """rhodes_hq.c's closed-form flux uses each family's R and the Classic table's scale Q28 / A"""
+    import re
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import gen_rhodes as gr
+    src = open(os.path.join(ROOT, "firmware/src/hq/rhodes_hq.c")).read()
+    R = [float(x.rstrip("f")) for x in re.search(r"HQ_PU_R\[2\] = \{([^}]*)\}", src).group(1).split(",")]
+    K = [float(x.rstrip("f")) for x in re.search(r"HQ_PU_K\[2\] = \{([^}]*)\}", src).group(1).split(",")]
+    p = gr.load_params()
+    assert R == list(p["pickup"]["R"])
+    for r, k in zip(R, K):
+        assert k == (1 << 28) / gr.pickup_tables(r)[2]

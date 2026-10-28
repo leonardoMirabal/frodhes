@@ -23,8 +23,8 @@
 static volatile uint8_t hq_mode = HQ_DEFAULT;  /* main loop: 1 = new notes play HQ */
 typedef struct {
     uint8_t on, os;                            /* latched at the note-on: HQ, and the 2x pickup */
-    int32_t h0;                                /* the rest flux (Phi~ at the offset): the filters run on H - h0 */
-    float pprev;                               /* the last decimated flux (the difference's) */
+    float b1, b2, c1, c2;                      /* the offset +- R and 1 / (b^2 + 1): hq_dphi's constants */
+    float pprev;                               /* the last decimated flux (the difference's), re the rest flux */
     float xb[HQ_HIS + SUB], eb[HQ_HIS + SUB], ob[HQ_HIS + SUB];   /* tip in; the flux's even / odd phases */
 } hq_voice_t;
 static hq_voice_t hq_v[RH_NV];
