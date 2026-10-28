@@ -67,7 +67,7 @@ not released yet.** A release carries the module only once it has passed the tes
 and what differs from the FM-1: [docs/MOVE.md](docs/MOVE.md).
 
 <p align="center">
-  <img src="docs/manual/img/move/move-knobs-compressor.png?v=18ceee97" width="384" alt="Schwung's COMPRESSOR page on the Move: six knobs, and the gain-reduction meter in the place of knobs 7 and 8">
+  <img src="docs/manual/img/move/move-knobs-compressor.png?v=8f0e4550" width="384" alt="Schwung's COMPRESSOR page on the Move: six knobs, and the gain-reduction meter in the place of knobs 7 and 8">
   <img src="docs/manual/img/move/move-pages.png?v=e463578b" width="384" alt="Frodhes' own screen on the Move (PAGES)">
 </p>
 
