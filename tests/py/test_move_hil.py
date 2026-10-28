@@ -226,3 +226,12 @@ def test_usb_levels_gain_match():
     st = np.stack([x, x], 1)
     m = mh.level_match(mh.level_of(st, sr), mh.level_of(st * 10 ** (-6 / 20), sr))
     assert abs(m["gain_lufs_db"] - 6.0) < 0.05 and abs(m["gain_cb_db"] - 6.0) < 0.05
+
+
+def test_d2_only(tmp_path):
+    """d2 --tests: only the named tests (a prefix takes all three usb-note keys); the others are not run at all"""
+    r = run("d2", "--fake", "--ws", "none", "--engines", "rhodes", "--secs", "4", "--tests", "usb-note,usb-stress",
+            "--out", str(tmp_path))
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr
+    rep = __import__("json").load(open(tmp_path / "report.json"))
+    assert [w["test"] for w in rep["rows"]] == ["preflight", "usb-note-36", "usb-note-60", "usb-note-84", "usb-stress"]

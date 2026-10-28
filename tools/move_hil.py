@@ -1510,13 +1510,14 @@ def _ws_prepare(url, engine, slot=0, out=print, remote=None):
     return True, st
 
 
-def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, out=print):
+def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, only=None, out=print):
     """per engine: the slot's module and preset over Schwung's WebSocket (ws: its URL, None: skipped), the preflight
     (a failure stops the whole run: the stream is not the Move's Main Out), usb-host on the engine's preset, usb-note
     on three keys, usb-vel, usb-sus, usb-clock, usb-stress; each test's takes and report.json in d/<engine>/<test>/,
     the table in d/summary.md, everything in d/report.json. Over the tap with a CPU read (TapRig cpu): the cpu row,
     every callback's time while usb-stress plays (the worst case), against U12. hq 0 / 1 (the tap): the HQ switch
-    set first (p_hq; None: as the plugin has it). Returns (exit code: 0 all PASS, 1 a FAIL, 2 stopped)"""
+    set first (p_hq; None: as the plugin has it). only: the test names to run (a name or its prefix, "usb-note" for all
+    three; None: all; the cpu row comes with usb-stress). Returns (exit code: 0 all PASS, 1 a FAIL, 2 stopped)"""
     import json
     rows, code = [], 0
     os.makedirs(d, exist_ok=True)
@@ -1566,6 +1567,8 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, 
         if e == "rhodes" and hq == 1 and tap_cpu:
             tests.append(("usb-restrike", lambda: usb_restrike(r, sub("usb-restrike"), stress_secs / 2,
                                                                out=quiet)))
+        if only:
+            tests = [(n, f) for n, f in tests if any(n == o or n.startswith(o + "-") for o in only)]
         cpu_rows = []
         for name, fn in tests:
             out("-- %s %s" % (e, name))
@@ -1581,7 +1584,7 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, 
             except Exception as x:                     # (one test's crash is its FAIL; the run goes on)
                 ok, rep = False, {"verdict": "FAIL: %s: %s" % (type(x).__name__, x)}
             note(e, name, ok, rep)
-        if tap_cpu:
+        if tap_cpu and any(n == "usb-stress" for n, _ in tests):
             s = cpu_summary(cpu_rows)
             s["engine"], s["hq"] = e, hq
             s["verdict"] = s["verdict"] if s["n"] else "FAIL: no callback times (dev_cpu_log reached the plugin?)"
@@ -1818,6 +1821,8 @@ def main(argv=None):
     ap.add_argument("--fake", action="store_true", help="usb-*: the offline model of the Move (no device)")
     ap.add_argument("--inject", action="append", help="usb-* --fake: KIND@SECONDS (zero, click, stale, loud, nosus)")
     ap.add_argument("--engines", default=",".join(D2_ENGINES), help="d2: the engines, comma-separated")
+    ap.add_argument("--tests", help="d2: only these tests, comma-separated (a name or its prefix: usb-host,usb-stress; "
+                                    "the cpu row comes with usb-stress)")
     ap.add_argument("--hq", type=int, choices=(0, 1), default=None,
                     help="d2 --path tap: the HQ Rhodes off (0) or on (1) for the run (default: as the plugin has it)")
     ap.add_argument("--path", choices=("usb", "tap"), default="usb",
@@ -1840,7 +1845,8 @@ def main(argv=None):
             r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch, cpu=scp_cpu(a.host))
         else:
             r = UsbRig(a.midi, a.audio, a.ch)
-        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 120.0, a.hq)
+        only = [x for x in (a.tests or "").split(",") if x] or None
+        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 120.0, a.hq, only)
     if a.cmd == "usb-levels":
         d = a.out or os.path.join(OUT, stamp() + "-usb-levels")
         t = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)

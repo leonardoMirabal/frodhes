@@ -158,6 +158,14 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
   (`move/ui/harness.mjs` runs it on a model of the Move's screen and the plugin); `node tools/move_ui_shots.mjs`
   draws every page into `build/move/ui-shots/` (`--docs`: the pictures on this page).
 - `tools/target_closure.py` lists the sources of each target (FM-1, SMK-37, host, web, Move).
+- `tools/release_devices.py X.Y.Z` runs a release's device tests on the FM-1 and the Move at the same time,
+  unattended. `--dry-run` prints the plan and its minutes. The plan follows the changes since the last tag
+  (`tools/test_map.py`, per target). The FM-1 gets an install and T1, plus T2 when an engine or the DSP changed.
+  The Move gets an install and the release minimum. That minimum is `d2` over the tap, HQ on and off, with only
+  `usb-host`, `usb-stress` (the crackle and the CPU) and `usb-restrike` (`d2 --tests`). When the Move's own code
+  changed, the Move gets the whole `d2` instead. A target whose package sha256 already passed those tiers runs
+  nothing; its record is reused. The tool takes the FM-1's and the Move's locks (DEVICE, MOVE) before it starts.
+  It writes one record with a section per target. `--fake` runs the plan with stand-ins, for tests.
 - `tools/move_hil.py` and `tools/device_null.py` are the device tests (CPU, crackle, the null test against the host).
   Over USB-C, as the FM-1 is tested: `usb-devices`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`
   (MIDI to the Move's Standalone port, its USB audio recorded, the FM-1's analysis; `--fake` runs them against a
