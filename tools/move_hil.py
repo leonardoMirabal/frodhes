@@ -1708,6 +1708,9 @@ def state_restore(url, slot, before, hq_default=1):
     return written, bad
 
 
+RESTORE_RETRY_S = 2.0                           # KeptState: the wait before the restore's one new connection
+
+
 class KeptState:
     """with KeptState(url, slot, out) as ks: ...: the state read first, written back at the end, also on an
     exception, ctrl-C (KeyboardInterrupt) or SIGTERM (raised as SystemExit), and at interpreter exit (atexit) if the
@@ -1735,16 +1738,31 @@ class KeptState:
     def restore(self):
         if self.report is not None or self.before is None:
             return self.report
+        import move_ws
+        dropped = []
         try:
-            written, bad = state_restore(self.url, self.slot, self.before)
+            for attempt in (0, 1):
+                # (the manager once dropped the restore's own socket, "no close frame", 2026-10-28, after
+                # usb-restrike: the write-back is idempotent and the read after it decides, so a dropped socket gets
+                # one new connection, named in the report; any other error, or a second drop, fails)
+                try:
+                    written, bad = state_restore(self.url, self.slot, self.before)
+                    break
+                except (move_ws.ConnectionClosed, ConnectionError) as e:
+                    if attempt:
+                        raise
+                    dropped.append("%s: %s" % (type(e).__name__, e))
+                    time.sleep(RESTORE_RETRY_S)
             self.report = {"verdict": "PASS" if not bad else "FAIL: after the run %d param(s) differ from before: %s"
                            % (len(bad), ", ".join("%s %s -> %s" % (k, a, b) for k, (a, b) in sorted(bad.items())[:8])),
-                           "params": len(self.before), "written": written, "bad": bad}
+                           "params": len(self.before), "written": written, "bad": bad, "dropped": dropped}
         except Exception as e:                           # (the WebSocket gone: say so loudly, never pass)
             self.report = {"verdict": "FAIL: the state was not restored: %s: %s" % (type(e).__name__, e),
                            "params": len(self.before), "written": [], "bad": {"(restore)": (None, str(e))}}
-        self.out("state: " + self.report["verdict"] + (" (%d param(s) as before, %d written back)" % (
-            self.report["params"], len(self.report["written"])) if self.report["verdict"] == "PASS" else ""))
+        self.out("state: " + self.report["verdict"] + (" (%d param(s) as before, %d written back%s)" % (
+            self.report["params"], len(self.report["written"]),
+            ", after a dropped socket: %s" % self.report["dropped"][0] if self.report.get("dropped") else "")
+            if self.report["verdict"] == "PASS" else ""))
         return self.report
 
     def __exit__(self, *exc):

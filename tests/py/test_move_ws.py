@@ -53,6 +53,8 @@ class FakeSchwung:
         self.cc_drop = True                              # (the bridge drops the sequencer's and the arpeggiator's
                                                          # and the chords' CCs, move_bridge.h MB_CC_DROP; False:
                                                          # a build before)
+        self.cut_sets = []                               # ([n, ...]: after n more set_params, the socket cut without a
+        #                                                  close frame, once per entry: a drop in the middle of a restore)
         self.hist, self.conns = [], []                                   # (the order of preset switches and takes: host_fetch's state)
         self.server = serve(self.handle, "127.0.0.1", 0)
         self.url = "ws://127.0.0.1:%d/ws/remote-ui" % self.server.socket.getsockname()[1]
@@ -86,6 +88,12 @@ class FakeSchwung:
                     ws.send(json.dumps({"type": "hierarchy", "slot": 0, "component": "synth", "data": {}}))
                     ws.send(json.dumps({"type": "param_update", "slot": 0, "params": self.params()}))
             elif m["type"] == "set_param":
+                if self.cut_sets:
+                    self.cut_sets[0] -= 1
+                    if self.cut_sets[0] <= 0:
+                        self.cut_sets.pop(0)
+                        ws.socket.close()
+                        return
                 if self.refuse:
                     ws.send(json.dumps({"type": "error", "message": "set_param failed: busy"}))
                     continue
@@ -542,5 +550,27 @@ def test_state_restore_writes_the_switches_first():
         assert ks.report["verdict"] == "PASS" and f.settings == before, ks.report
         w = ks.report["written"]
         assert w.index("p_dl_sw") < w.index("p_dl_depth"), w
+    finally:
+        f.close()
+
+
+@pytest.mark.parametrize("drops", [1, 2])
+def test_state_restore_after_a_dropped_socket(monkeypatch, drops):
+    """the Move, 2026-10-28 (after usb-restrike): the manager dropped the restore's own socket ("no close frame").
+    The fake cuts it in the middle of the write-back. One drop: a new connection, the write-back finished, PASS only
+    by the read after it, the drop named; a second drop: FAIL"""
+    import move_hil as mh
+    monkeypatch.setattr(mh, "RESTORE_RETRY_S", 0.0)
+    f = FakeSchwung(full=True)
+    try:
+        before = dict(f.settings)
+        with mh.KeptState(f.url, 0, out=lambda s: None) as ks:
+            f.settings.update(p_dl_fdbk="127", p_ph_fdbk="127", p_rv_decay="127")
+            f.cut_sets = [6] * drops                      # (after the 4 dev / HQ keys and 2 of the 3 params)
+        if drops == 1:
+            assert ks.report["verdict"] == "PASS" and f.settings == before, ks.report
+            assert len(ks.report["dropped"]) == 1 and not f.cut_sets
+        else:
+            assert ks.report["verdict"].startswith("FAIL: the state was not restored"), ks.report
     finally:
         f.close()
