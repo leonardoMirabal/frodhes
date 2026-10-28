@@ -631,6 +631,12 @@ static uint32_t bar_budget_run(void)                /* returns the ranking's own
         uint32_t tcap = (uint32_t)BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u].budget * BAR_NSUB;
         if (tcap < cap) cap = tcap;
     }
+#ifdef FR_HQ
+    cap = 0xFFFFu; rank = 0;                        /* the Move (FR_HQ builds): no FM-1-time cost model and no type
+                                                     * cap (48 upper modes in all, both TYPEs: under 16 voices x 6).
+                                                     * 16 voices with every upper mode fit its callback (private plan
+                                                     * 05 M3-03). CC 9 still applies */
+#endif
     if (bar_budget_force) cap = bar_budget_force >= 50u ? 0xFFFFu : (uint32_t)(bar_budget_force - 1u) * BAR_NSUB;
 #ifdef DINGHY_HOST
     if (bar_h_nobudget) cap = 0xFFFFu;
