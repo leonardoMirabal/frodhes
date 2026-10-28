@@ -9,7 +9,8 @@
  * Every round runs each case x engine once, in an order shuffled per round (SEED, default 1), so the device's drift
  * and the other cores' load fall on every case alike: the Move has system-wide stretches of +300-400 us that last a
  * few runs. Prints one line per run, then per case and engine the summary: the median of p99.9, the min of the max,
- * the median of p99 and of the mean (us per callback), and the median of p99.9 over the quiet rounds only. A round's
+ * the median of p99 and of the mean (us per callback), and the medians of p99.9 and of the mean over the quiet
+ * rounds only. A round's
  * noise index is the median, over its runs, of each run's p99.9 / the median p99.9 of the same case and engine;
  * a round is quiet when its index is <= 1.10. Many short rounds are better than few long ones (-r 15 -s 2).
  * Each case's copy of its file and its state directory are made in the current directory and removed at the end
@@ -171,20 +172,20 @@ int main(int argc, char **argv)
         printf("\n");
     }
     printf("\nsummary over %d rounds of %.1f s (us per 128-frame callback)\n", rounds, secs);
-    printf("%-24s %-8s %10s %10s %10s %10s %12s\n", "case", "engine", "med p99.9", "min max", "med p99", "med mean",
-           "quiet p99.9");
+    printf("%-24s %-8s %10s %10s %10s %10s %12s %11s\n", "case", "engine", "med p99.9", "min max", "med p99", "med mean",
+           "quiet p99.9", "quiet mean");
     for (int i = 0; i < nc; i++)
         for (int j = 0; j < ne; j++) {
             int en = en_of[j], nq = 0;
-            double col[4][MAXR], qc[MAXR], mn = 1e18;
+            double col[4][MAXR], qc[MAXR], qm[MAXR], mn = 1e18;
             for (int r = 0; r < rounds; r++) {
                 for (int q = 0; q < 4; q++) col[q][r] = st[i][en][r][q];
                 if (col[0][r] < mn) mn = col[0][r];
-                if (quiet[r]) qc[nq++] = st[i][en][r][1];
+                if (quiet[r]) { qc[nq] = st[i][en][r][1]; qm[nq++] = st[i][en][r][3]; }
             }
             printf("%-24s %-8s %10.1f %10.1f %10.1f %10.1f", cs[i].name, eng[en], med(col[1], rounds), mn,
                    med(col[2], rounds), med(col[3], rounds));
-            if (nq) printf(" %8.1f (%d)\n", med(qc, nq), nq); else printf("        - (0)\n");
+            if (nq) printf(" %8.1f (%d) %10.1f\n", med(qc, nq), nq, med(qm, nq)); else printf("        - (0)          -\n");
         }
     for (int i = 0; i < nc; i++) { cs[i].api->destroy_instance(cs[i].in); nftw(cs[i].dir, rm1, 8, FTW_DEPTH | FTW_PHYS); }
     return 0;

@@ -10,9 +10,14 @@
 #define HQ_FP_STRICT
 #if defined(__GNUC__)
 #pragma GCC push_options
-#pragma GCC optimize("fp-contract=off", "tree-vectorize", "no-predictive-commoning")
+#pragma GCC optimize("O3", "fp-contract=off", "tree-vectorize", "no-predictive-commoning")
+#if defined(__aarch64__)
+#pragma GCC target("tune=cortex-a72")
+#endif
 /* (vectorised lane-wise: the same sums, in the same order. Predictive commoning (gcc 12 at -O2 here) reuses the
- * FIR's overlapping loads across taps and spills 16 registers a tap: hq_fir 3x the loads) */
+ * FIR's overlapping loads across taps and spills 16 registers a tap: hq_fir 3x the loads. -O3 and the A72's
+ * scheduling for this file only: on the Move the HQ top case's mean -9 us a callback, and Classic's code is not
+ * touched) */
 #endif
 #endif
 
