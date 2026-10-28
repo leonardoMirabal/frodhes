@@ -375,7 +375,7 @@ def test_hq_compares_hq(fake, tmp_path, monkeypatch):
         assert not ok and rep["verdict"].startswith("CLASSIC"), rep["verdict"]
         fake.hist.append(("hq", True))
         ok, rep = mh.usb_host(r, str(tmp_path / "vibes"), program=12, out=lambda s: None)
-        assert ok and rep["hq_vs_classic_db"] is None, rep["verdict"]     # (VIBES: no HQ path, no probe)
+        assert ok and rep["hq_vs_classic_db"] > 20, rep["verdict"]       # (VIBES: the HQ bars, probed the same way)
     finally:
         r.remote.close()
 

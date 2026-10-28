@@ -1470,7 +1470,7 @@ def usb_host(r, d, program=0, out=print):
                 dm, dc = _mono(mv[a:b]) - g * _mono(h[a:b]), _mono(mv[a:b]) - g * _mono(c[a:b])
                 vs = 20 * np.log10((np.sqrt(np.mean(dc ** 2)) + 1e-9) / (np.sqrt(np.mean(dm ** 2)) + 1e-9))
                 hc = _mono(h[a:b]) - _mono(c[a:b])
-                # (only where HQ changes the sound: the Rhodes; the bars have no HQ path, both hosts the same)
+                # (only where HQ changes the sound at the probe: the Rhodes and the HQ bars; else both hosts the same)
                 classic_db = round(float(vs), 1) if np.abs(hc).max() > 0 else None
     rep = {"program": program, "hq": hq, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
            "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max())}

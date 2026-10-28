@@ -74,8 +74,16 @@ typedef struct {
                                                      * always), else the Q30 form */
 } bar_ms_t;
 
+#ifdef FR_HQ
+#define HQB_NX 5u                                   /* the HQ bars' extra slots (the Move only: hq/bars_hq.h): V5 V6 V7
+                                                     * T3 T4 at m[8 ..12] */
+typedef struct {
+    bar_ms_t m[BAR_NM + HQB_NX];
+    uint8_t hq;                                     /* latched at the note-on: the HQ bar voice (hq/bars_hq.c) */
+#else
 typedef struct {
     bar_ms_t m[BAR_NM];
+#endif
     const bar_key_t *k;
     uint8_t note, vel, alive, held, ramp, pend, pend_note, pend_vel, struck, pred;
     int32_t w_tgt, fade;
@@ -158,3 +166,6 @@ static void bar_kill_all(void);
 static int bar_quiet(void);
 static uint32_t bar_cost_fixed(uint32_t *unit);
 static void bar_render(int32_t *mono_out, uint32_t n);
+#ifdef FR_HQ
+#include "hq/bars_hq.h"                            /* the HQ bars (the Move only; never in the FM-1 / SMK builds) */
+#endif

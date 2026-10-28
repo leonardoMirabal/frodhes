@@ -195,6 +195,15 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
   plugin's `p_hq` parameter. HQ applies to new notes only: a sounding note keeps the path it started with.
   With `--hq 1`, `usb-host` compares against the host build with HQ on. The phrase has a note that only HQ
   changes (96 at v90). If that note plays as Classic while HQ is asked for, the test fails as CLASSIC.
+- The HQ bars (VIBES and MARIMBA, `firmware/src/hq/bars_hq.c`, `FR_HQ` only) follow the same rule: HQ on is the
+  sound every Move user hears, HQ off is the FM-1's integers. HQ runs the bar's upper modes in float, adds three
+  more bar modes and two more tube modes (their levels from `docs/model/data/bars_hq.json`, under the top mode's
+  ceiling), and computes the mallet's contact live when a key is struck while its bar rings (at most 2 a block; the
+  rest use the tables). MARIMBA's top keys (C6 up) always strike through the live contact. With the extra modes and
+  the contact off, the HQ bars are Classic within 2 LSB. `tests/py/test_bars_hq.py` checks that, the levels against
+  Classic and the tables, never louder after key-up and the velocity range; Gate H holds their renders.
+  `tools/gen_bars_hq.py` and `tools/gen_bars_hq_contact.py` write the two headers in `firmware/gen/hq/`
+  (`--check` compares).
 - `d2 --path tap --hq 1` also runs `usb-restrike` on the Rhodes. The pedal is down and a chord of 8 notes is
   held on keys 28 to 59. Every 30 to 50 ms, one of 8 keys from 60 to 108 is struck again while it still rings,
   at velocities 127, 64 and 30 in turn. The key goes up 20 ms before each new strike. One time in six, 3 or 4
