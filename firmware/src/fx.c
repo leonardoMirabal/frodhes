@@ -312,7 +312,7 @@ static inline __attribute__((always_inline)) void dr_settled(int32_t *m, uint32_
         int32_t x0 = m[i], x, y;
         hp += (x0 - hp + 64) >> 7;
         x = dr_cl(x0 - hp);
-        y = softclip((int32_t)(((int64_t)(x >> 2) * g) >> 10) + bias) - b0;
+        y = softclip((int32_t)(((int64_t)x * g) >> 12) + bias) - b0;
         lp1 += mulq15(y - lp1, k);
         lp2 += mulq15(lp1 - lp2, k);
         y = mulq15(lp2, mk);
@@ -337,7 +337,7 @@ __attribute__((noinline)) static void dr_general(int32_t *m, uint32_t n, int32_t
         g = gq >> 8; k = kq >> 8; mk = mq >> 8;
         dr_hp += (x0 - dr_hp + 64) >> 7;
         x = dr_cl(x0 - dr_hp);
-        y = softclip((int32_t)(((int64_t)(x >> 2) * g) >> 10) + bias) - b0;
+        y = softclip((int32_t)(((int64_t)x * g) >> 12) + bias) - b0;
         dr_lp1 += mulq15(y - dr_lp1, k);
         dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
         y = mulq15(dr_lp2, mk);
@@ -376,9 +376,11 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
     mk = (mk * 39000) >> 15;                           /* +1.5 dB: measured on the FM-1, LUFS (0.8) */
     bias = DR_BIAS[row];
     b0 = softclip(bias);
-    /* the shaper's input (x >> 2) g >> 10 + bias needs a 64-bit product (|x >> 2| <= 57500, g <= 100870 at AMOUNT 127),
-     * but its result fits 32 bits (<= 5.67e6 + 3200), so softclip's own 32-bit clamp to +-4 is the whole clamp (it was
-     * a second, 64-bit one before it: the same value) */
+    /* the shaper's input x g >> 12 + bias needs a 64-bit product (|x| <= 230000, g <= 100870 at AMOUNT 127), but its
+     * result fits 32 bits (<= 5.67e6 + 3200), so softclip's own 32-bit clamp to +-4 is the whole clamp (it was a
+     * second, 64-bit one before it: the same value). 0.9.8: it was (x >> 2) g >> 10, the 2 bits dropped before the
+     * gain: a held note's quiet tail (under ~40 LSB) came out as a staircase of ~3 LSB steps, a buzz on the Move's
+     * clean output (tests/py/test_drive_tail.py) */
     if (tt > 8192) tt = 8192;
     if (dr_gl >= 0 && (dr_gl != g || dr_kl != k || dr_ml != mk)) {   /* AMOUNT moved: the ramp, below */
         gq = dr_gl << 8; kq = dr_kl << 8; mq = dr_ml << 8;
@@ -391,7 +393,7 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
             int32_t x = *m, y;
             hp += (x - hp + 64) >> 7;
             x = dr_cl(x - hp);
-            y = softclip((int32_t)(((int64_t)(x >> 2) * g) >> 10) + bias) - b0;
+            y = softclip((int32_t)(((int64_t)x * g) >> 12) + bias) - b0;
             lp1 += mulq15(y - lp1, k);
             lp2 += mulq15(lp1 - lp2, k);
             *m = mulq15(lp2, mk);
