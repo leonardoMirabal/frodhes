@@ -1612,9 +1612,189 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, 
     return code
 
 
+# --------------------------------------------------------------------------- usb-levels: Frodhes against the Move's own
+LEVEL_NOTES = tuple(range(36, 85, 4))     # C2 .. C6 a major third apart, one at a time (tools/move_levels.py's)
+LEVEL_CHORD = (48, 52, 55, 60, 64)        # C3 E3 G3 C4 E4, held by the keys (no pedal: a stock instrument may not
+                                          # take CC 64 as Frodhes does)
+LEVEL_VELS = (100, 64, 127)               # v100 sets the gain; v64 and v127 show the two velocity curves' ends
+LEVEL_OFF_CH = 16                         # Frodhes's CHANNEL while the stock instrument plays: off the notes' channel
+BARK_EDGES = (20, 100, 200, 300, 400, 510, 630, 770, 920, 1080, 1270, 1480, 1720, 2000, 2320, 2700, 3150, 3700,
+              4400, 5300, 6400, 7700, 9500, 12000, 15500, 20000)
+N_EXP = 0.23                              # specific loudness ~ band power ^ 0.23 (Zwicker's exponent, above threshold)
+
+
+def level_events(vel=100, t0=0.3):
+    """the fixed pattern: (events [(t s, kind, a, b)], dur s)"""
+    ev, t = [], t0
+    for k in LEVEL_NOTES:
+        ev += [(t, "on", k, vel), (t + 0.45, "off", k, 0)]
+        t += 0.5
+    t += 0.2
+    ev += [(t, "on", k, vel) for k in LEVEL_CHORD] + [(t + 2.0, "off", k, 0) for k in LEVEL_CHORD]
+    return ev, t + 3.5
+
+
+def lufs_gated(x, sr):
+    """BS.1770-4 integrated loudness: K-weighted, 400 ms blocks (75 % overlap), the -70 LUFS and the -10 LU gates;
+    x (n, 2) in LSB. None when no block passes"""
+    import bar_measure as bm
+    from scipy.signal import sosfilt
+    y = sosfilt(bm.k_weight_sos(sr), np.asarray(x, float) / 32768.0, axis=0)
+    n, hop = int(0.4 * sr), int(0.1 * sr)
+    if len(y) < n:
+        return None
+    z = np.array([np.sum(np.mean(y[i:i + n] ** 2, axis=0)) for i in range(0, len(y) - n + 1, hop)])
+    l = -0.691 + 10 * np.log10(z + 1e-30)
+    z = z[l > -70]
+    if not len(z):
+        return None
+    rel = -0.691 + 10 * np.log10(z.mean()) - 10
+    z = z[-0.691 + 10 * np.log10(z) > rel]
+    return float(-0.691 + 10 * np.log10(z.mean()))
+
+
+def bark_frames(x, sr, ms=100):
+    """the power (re full scale) per critical band (BARK_EDGES) and frame of ms: (frames, 25)"""
+    m = (x.mean(axis=1) if x.ndim == 2 else x) / 32768.0
+    n = int(sr * ms / 1000)
+    k = len(m) // n
+    if not k:
+        return np.zeros((0, len(BARK_EDGES) - 1))
+    w = np.hanning(n)
+    sp = np.abs(np.fft.rfft(m[:k * n].reshape(k, n) * w, axis=1)) ** 2 * 4 / (w.sum() ** 2)
+    f = np.fft.rfftfreq(n, 1 / sr)
+    return np.stack([sp[:, (f >= lo) & (f < hi)].sum(axis=1) for lo, hi in zip(BARK_EDGES[:-1], BARK_EDGES[1:])], 1)
+
+
+def level_of(x, sr):
+    """one take's level: LUFS (gated), the peak (dBFS), the critical-band levels over the whole take (dBFS per band),
+    and the critical-band loudness (the mean over the frames of the sum over the bands of power ^ N_EXP: a gain g dB
+    scales it by 10 ^ (N_EXP g / 10))"""
+    x = np.asarray(x, float)
+    E = bark_frames(x, sr)
+    act = E.sum(axis=1) > 1e-7                      # (frames over -70 dBFS: the silences between the notes out)
+    return {"lufs": lufs_gated(x, sr), "peak_dbfs": float(20 * np.log10(np.abs(x).max() / 32768.0 + 1e-12)),
+            "bands_db": [float(10 * np.log10(v + 1e-20)) for v in E.mean(axis=0)] if len(E) else [],
+            "cb_loudness": float((E[act] ** N_EXP).sum(axis=1).mean()) if act.any() else 0.0}
+
+
+def level_match(ref, frod):
+    """the gain (dB) on Frodhes that matches the reference: by LUFS, and by the critical-band loudness"""
+    g_lufs = ref["lufs"] - frod["lufs"] if ref["lufs"] is not None and frod["lufs"] is not None else None
+    g_cb = (10 / N_EXP * np.log10(ref["cb_loudness"] / frod["cb_loudness"])
+            if ref["cb_loudness"] > 0 and frod["cb_loudness"] > 0 else None)
+    return {"gain_lufs_db": None if g_lufs is None else round(float(g_lufs), 2),
+            "gain_cb_db": None if g_cb is None else round(float(g_cb), 2)}
+
+
+def _ws_params(url, slot=0):
+    """the slot's params as Schwung reports them now (a connection of its own, kept open past the re-read)"""
+    import move_ws
+    with move_ws.Remote(url) as w:
+        w.subscribe(slot)
+        w.pump(0.5)
+        return dict(w.params.get(slot, {}))
+
+
+def usb_levels(u, t, d, url, vels=LEVEL_VELS, out=print):
+    """how loud Frodhes F01 is against the Move's own instrument on the selected track, both through the Move's mix
+    (the track's volume, the master, USB-C Main Out). u: the UsbRig (MIDI to the Standalone port, USB-C recorded);
+    t: the TapRig (Schwung's WebSocket, slot 1). Per velocity:
+      stock    the pattern over USB MIDI, Frodhes's CHANNEL moved off the notes (LEVEL_OFF_CH), and a tap take that
+               runs the whole time: Frodhes's own output must be silent there, so the recording is the stock
+               instrument alone
+      frodhes  the same pattern on Frodhes's dev player (no Move track hears it, CHANNEL back as it was), recorded
+               on USB-C: Frodhes alone, through the same track volume and master; the tap is its output before them
+    The gain that matches them, by LUFS and by critical-band loudness, is reported only; nothing is set. (ok, rep)"""
+    import json
+    os.makedirs(d, exist_ok=True)
+    ok, pre = preflight(u, out)
+    if not ok:
+        return False, {"verdict": "STOP: the USB-C stream is not the Move's digital Main Out", "preflight": pre}
+    ok, ws = _ws_prepare(url, "rhodes", t.slot, out)          # (F01)
+    if not ok:
+        return False, {"verdict": "STOP: " + ws["verdict"], "ws": ws}
+    t.boot_settings()
+    p0 = _ws_params(url, t.slot)
+    ch0 = p0.get("synth:s_mch", "0")
+    rep = {"preset": ws.get("preset_name"), "ch_before": ch0, "p_hq": p0.get("synth:p_hq"), "rows": [], "ws": ws, "preflight": pre}
+    good = True
+    try:
+        for vel in vels:
+            ev, dur = level_events(vel)
+            # stock: Frodhes off the channel, its tap running across the whole take
+            t._set("synth:s_mch", str(LEVEL_OFF_CH))
+            t._pump(0.5)
+            u.wait_silence(5.0)
+            t.n += 1
+            take = "lv%s-%03d" % (t.stamp, t.n)
+            t.remote.play(t.slot, take, int((TAP_GRID_S + 0.3 + dur + 0.5) * 1000), [])
+            time.sleep(TAP_GRID_S + 0.3)                     # (the tap starts on the plugin's 2560 ms grid)
+            u._send("cc", 123, 0)
+            sk = u.rec(dur, ev)
+            time.sleep(1.0)
+            got, t0 = None, time.monotonic()
+            while got is None and time.monotonic() - t0 < 10:
+                got = t.fetch(take)
+                time.sleep(0.5) if got is None else None
+            import wave
+            fx = None
+            if got:
+                w = wave.open(got[0])
+                fx = np.frombuffer(w.readframes(w.getnframes()), "<i2").reshape(-1, 2).astype(float)
+            frod_quiet = fx is not None and np.abs(fx).max() == 0
+            # frodhes: the dev player, recorded on USB-C as it plays
+            t._set("synth:s_mch", ch0)
+            t._pump(0.5)
+            u.wait_silence(5.0)
+            cap = u.capture()
+            st = cap.now()["usb"]
+            t.pending = [("cc", c, v) for c, v in GLOBAL_CCS] + [("cc", 123, 0)]
+            ft = t.rec(dur, ev)
+            span = cap.now()["usb"] - st
+            ux = cap.cut("usb", st, span).astype(float) * 32768
+            ref_m, got_m = _mono(ft["x"]), _mono(ux)
+            lag = _lag(got_m, ref_m, len(got_m) - 1) if len(got_m) > len(ref_m) else 0
+            lag = max(0, min(lag, len(ux) - len(ft["x"])))
+            fu = ux[lag:lag + len(ft["x"])]
+            path_db = float(hs.db(fu) - hs.db(ft["x"])) if np.abs(ft["x"]).max() > 0 else None
+            for name, x in (("stock", sk["x"]), ("frodhes", fu), ("frodhes-tap", ft["x"])):
+                _save(d, "v%d-%s" % (vel, name), {"x": x, "sr": u.sr})
+            ls, lf = level_of(sk["x"], u.sr), level_of(fu, u.sr)
+            m = level_match(ls, lf)
+            row = {"vel": vel, "stock": ls, "frodhes": lf, "tap": level_of(ft["x"], FS), "match": m,
+                   "frodhes_silent_in_stock": bool(frod_quiet), "path_db": path_db, "lag": lag,
+                   "xruns": sk["xruns"] + ft["xruns"]}
+            if not frod_quiet:
+                row["note"] = ("Frodhes's tap was not silent during the stock take (peak %s LSB): the stock take is "
+                               "not the stock instrument alone" % (None if fx is None else int(np.abs(fx).max())))
+                good = False
+            if ls["lufs"] is None:
+                row["note"] = "the stock take is silent: the selected track's instrument did not play"
+                good = False
+            rep["rows"].append(row)
+            out("v%-3d stock %s LUFS (peak %.1f dBFS), Frodhes %s LUFS (peak %.1f); the gain to match: %s dB by "
+                "LUFS, %s dB by critical-band loudness; Frodhes silent in the stock take: %s; track+master %s dB" % (
+                    vel, "%.1f" % ls["lufs"] if ls["lufs"] is not None else "-", ls["peak_dbfs"],
+                    "%.1f" % lf["lufs"] if lf["lufs"] is not None else "-", lf["peak_dbfs"], m["gain_lufs_db"],
+                    m["gain_cb_db"], frod_quiet, "%.1f" % path_db if path_db is not None else "-"))
+    finally:
+        t._set("synth:s_mch", ch0)
+        t._pump(0.5)
+    rep["ch_after"] = _ws_params(url, t.slot).get("synth:s_mch")
+    rep["verdict"] = "PASS" if good else "FAIL: see the rows' notes"
+    json.dump(_plain(rep), open(os.path.join(d, "report.json"), "w"), indent=1, default=str)
+    if rep["rows"]:
+        r0 = rep["rows"][0]
+        out("critical bands (Hz: stock / Frodhes dBFS, v%d):" % r0["vel"])
+        out("  " + "  ".join("%d:%.0f/%.0f" % (lo, a, b) for lo, a, b in zip(BARK_EDGES, r0["stock"]["bands_db"],
+                                                                            r0["frodhes"]["bands_db"])))
+    return good, rep
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("cmd", choices=("facts", "install", "rollback", "info", "logs", "cpu", "crackle", "must", "null", "d2")
+    ap.add_argument("cmd", choices=("facts", "install", "rollback", "info", "logs", "cpu", "crackle", "must", "null", "d2", "usb-levels")
                     + USB_CMDS)
     ap.add_argument("--go", action="store_true")
     ap.add_argument("--host", default=os.environ.get("MOVE_HOST", "ableton@move.local"))
@@ -1661,6 +1841,12 @@ def main(argv=None):
         else:
             r = UsbRig(a.midi, a.audio, a.ch)
         return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 120.0, a.hq)
+    if a.cmd == "usb-levels":
+        d = a.out or os.path.join(OUT, stamp() + "-usb-levels")
+        t = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)
+        ok, rep = usb_levels(UsbRig(a.midi, a.audio, a.ch), t, d, a.ws)
+        print(rep["verdict"])
+        return 0 if ok else 1
     if a.cmd in USB_CMDS:
         return usb_main(a)
     t = mi.Target(host=None if a.target_dir else a.host, local_dir=a.target_dir, go=a.go or a.cmd == "info")

@@ -199,6 +199,13 @@ release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 
   127). The pedal holds the bar, and letting the pedal up mutes it as fast as a key-up does. In `usb-clock`, an
   attack that the detector finds 5 ms or more late is counted, not taken as timing: a bar's ring can hide the
   next step's attack. A few such attacks are allowed; the jitter of the other attacks must stay under 4 ms.
+- `usb-levels` compares how loud Frodhes's F01 is with the Move's own instrument on the selected track. Both
+  play through the Move's mix, at the track's volume, and the tool records them over USB-C. The pattern is C2 to
+  C6, one note at a time, then a held chord, at v100, v64 and v127. First the stock instrument plays it over
+  MIDI. Frodhes's CHANNEL is moved off the notes for that take, and its tap must stay silent the whole time.
+  Then Frodhes plays the same pattern on its own player, which no Move track hears. The report gives the gain
+  that would match the two, by LUFS and by critical-band loudness. It changes nothing. A USB-C stream that is
+  the microphone stops it.
 - MIDI into the Standalone port also plays the Move's own instrument on the track. Schwung passes the notes to
   the Move's firmware and to the slot alike. For a clean comparison, give that Move track a silent instrument.
   Muting the track or turning it down also silences the slot, because the slot follows the track's mute and

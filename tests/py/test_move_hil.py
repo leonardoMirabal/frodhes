@@ -211,3 +211,18 @@ def test_d2_cli_fake(tmp_path):
     r = run("d2", "--fake", "--ws", "none", "--engines", "vibes", "--secs", "8", "--out", str(tmp_path))
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr
     assert "| vibes | usb-note-53 | PASS" in open(tmp_path / "summary.md").read()
+
+
+def test_usb_levels_gain_match():
+    """usb-levels' two measures find a known gain: Frodhes 6 dB under the stock take, every band alike"""
+    sr = 44100
+    ev, dur = mh.level_events(100)
+    x = np.zeros(int(dur * sr))
+    for t, k, a, b in ev:
+        if k == "on":
+            tt = np.arange(int(0.4 * sr)) / sr
+            i = int(t * sr)
+            x[i:i + len(tt)] += 4000 * np.sin(2 * np.pi * mh.note_hz(a) * tt) * np.exp(-4 * tt)
+    st = np.stack([x, x], 1)
+    m = mh.level_match(mh.level_of(st, sr), mh.level_of(st * 10 ** (-6 / 20), sr))
+    assert abs(m["gain_lufs_db"] - 6.0) < 0.05 and abs(m["gain_cb_db"] - 6.0) < 0.05
