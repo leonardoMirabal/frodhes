@@ -152,8 +152,9 @@ static void contact(void)
  * Newton in r = sqrt(e)), 12 mode lanes in 3 vectors; a fixed step count (the study: <= 566 steps at 32 steps a
  * contact and 4 a period of the top audible mode) */
 #define FM 12
-static float fa00[FM], fa01[FM], fa10[FM], fa11[FM], fg00[FM], fg01[FM], fg10[FM], fg11[FM], fph[FM];
-static int FSTEPS, FP15, FON;                 /* FON: steps in contact, the last run (printed) */
+static float fa00[FM], fa01[FM], fa10[FM], fa11[FM], fg00[FM], fg01[FM], fg10[FM], fg11[FM], fph[FM], fiw2[FM];
+static int FSTEPS, FP15, FON, FRUN;           /* FON: steps in contact, FRUN: steps run (the early stop), the last
+                                               * run (printed) */
 static void fast_init(void)
 {
     const double dt = 1.0 / (44100.0 * 4.0 * 4.0);
@@ -178,6 +179,7 @@ static void fast_init(void)
         fg00[m] = (float)(X[0][2] - X[0][3] / dt); fg10[m] = (float)(X[1][2] - X[1][3] / dt);
         fg01[m] = (float)(X[0][3] / dt); fg11[m] = (float)(X[1][3] / dt);
         fph[m] = m < 11 ? 3.0f / (1 + m) : 0.0f;
+        fiw2[m] = (float)(1.0 / (w * w));
     }
 }
 static inline v4 ld4(const float *p) { v4 r; memcpy(&r, p, 16); return r; }
@@ -188,8 +190,10 @@ static void fast_contact(void)
     float xh = 0.0f, vh = 2.0f, F0 = 0.0f, C = dt * dt * imh / 6.0f;
     for (int h = 0; h < 3; h++) { v4 p = ld4(fph + 4 * h), g = ld4(fg01 + 4 * h), t = p * p * g; C += (t[0] + t[1]) + (t[2] + t[3]); }
     const float kc = K * C, iC = 1.0f / C, k4 = 4.0f * kc;
+    int touched = 0;
     FON = 0;
     for (int i = 0; i < FSTEPS; i++) {
+        FRUN = i + 1;
         v4 u[3], w[3], f0 = {F0, F0, F0, F0}, acc = {0};
         for (int h = 0; h < 3; h++) {
             const int o = 4 * h;
@@ -223,6 +227,19 @@ static void fast_contact(void)
         }
         xh = Xh - dt * dt * F1 * imh / 6.0f; vh = Vh - dt * F1 * imh * 0.5f;
         F0 = F1;
+        /* the exact early stop (bars_hq_study.py fast_contact): touched, the mallet moving away and below the bar's
+         * largest reach (sum |phi| x each mode's amplitude): no later step can touch again */
+        if (F1 > 0.0f) touched = 1;
+        else if (touched && vh < 0.0f) {
+            v4 a = {0};
+            for (int h = 0; h < 3; h++) {
+                const int o = 4 * h;
+                v4 r = q[h] * q[h] + qd[h] * qd[h] * ld4(fiw2 + o), sr;
+                for (int j = 0; j < 4; j++) sr[j] = sqrtf(r[j]);
+                a += ld4(fph + o) * sr;           /* (fph >= 0 here) */
+            }
+            if (xh + (a[0] + a[1]) + (a[2] + a[3]) < 0.0f) break;
+        }
     }
     sink += q[0][0] + xh;
 }
@@ -277,7 +294,7 @@ int main(int argc, char **argv)
             FP15 = p; FSTEPS = fst[j];
             snprintf(nm, sizeof nm, "fast 11 p%s %d steps", p ? "1.5" : "2", FSTEPS);
             bench(nm, fast_contact, reps);
-            printf("    (%d of the %d steps in contact)\n", FON, FSTEPS);
+            printf("    (%d of the %d steps in contact, %d run: the early stop)\n", FON, FSTEPS, FRUN);
         }
     CRK = 1; CM = 11; CP = 2; CT = 1.5e-3;
     bench("contact 11 pany 1.5ms RK4", contact, reps / 20 + 1);
