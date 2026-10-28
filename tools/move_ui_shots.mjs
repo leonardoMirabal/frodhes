@@ -59,6 +59,16 @@ for (const type of [0, 4, 5]) {                      // ST77 (the piano's pages)
         rows.push([title, frames]);
     }
 }
+{   // COMPRESSOR with the compressor on and the meter reading (12.0 dB, the peak held at 20.0 dB)
+    const s = new Screen();
+    s.plugin.v.p_cmp_sw = 1;
+    s.plugin.gr = "120 200";
+    s.open();
+    const page = s.api.pages.findIndex((p) => p.title === "COMPRESSOR");
+    while (s.st().page !== page) s.jog(s.st().page < page ? 1 : -1);
+    s.live(); s.wait(5000); s.live();
+    save("compressor-gr", s.draw()); written.push("compressor-gr");
+}
 {   // the page list: opened on the first page, the cursor moved three pages on
     const s = new Screen().open();
     s.click(); s.jog(1); s.jog(1); s.jog(1);
@@ -80,7 +90,7 @@ if (args.includes("--docs")) {
     // (a folder of their own: docs/manual/img/ is tools/manual_shots.py's, test_manual_shots.py checks it whole)
     const DOCS = path.join(ROOT, "docs", "manual", "img", "move");
     fs.mkdirSync(DOCS, { recursive: true });
-    for (const n of ["frodhes", "drive-filter", "drive-filter-k2", "reverb-k1", "pages"]) {
+    for (const n of ["frodhes", "drive-filter", "drive-filter-k2", "reverb-k1", "pages", "compressor-gr"]) {
         const src = path.join(OUT, K === 4 ? `${n}-4x.png` : `${n}.png`);
         fs.copyFileSync(src, path.join(DOCS, `move-${n}.png`));
     }

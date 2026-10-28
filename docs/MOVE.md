@@ -1,16 +1,42 @@
-# Frodhes on the Move (draft, in development)
+# Frodhes on the Move
 
-Frodhes also builds as a sound generator for the Move, a standalone groove box, through Schwung, the community module
-host that runs on it. The engines (PIANO, VIBES, MARIMBA) and the effects
-are the FM-1's own code, built for the Move's processor. **This port is in development. Nothing on this page has been
-checked on a Move yet:** every part below was checked on the host build only (the same code run on a computer,
-`tools/ci_move.sh`). The parts marked *(not yet verified on a device)* are the ones a Move must still confirm.
+Frodhes also runs on the Move, a standalone groove box, as a sound generator of Schwung, the community module host
+that runs on it. The instruments (the electric piano types, VIBES, MARIMBA) and the effects are the FM-1's own code,
+built for the Move's processor, with 16 voices on every instrument and the HQ version of the three engines.
+
+**This port is in development and not released yet.** Every part of this page is checked on the host build (the
+same code run on a computer, `tools/ci_move.sh`). The parts marked *(not yet verified on a device)* still wait for
+their check on a Move: the screen, the knobs and buttons, the levels against the Move's own instruments.
+
+The user part comes first (install, the pages, what differs from the FM-1); [For developers](#for-developers) is at
+the end.
 
 ## Install
 
-You need a Move with Schwung installed. The module is a folder, `frodhes/`, with `dsp.so`, `module.json`,
-`help.json`, `sustain.js` (the PEDAL screen), `screen.js` (Frodhes' own screen), `canvas.js` (the gain-reduction meter
-on the COMPRESSOR page) and `LICENSE` in it, and it goes in Schwung's sound generator folder.
+You need a Move with Schwung installed (built and tested against Schwung 1.8.1).
+
+The module is one file, **`frodhes-module.tar.gz`**: a folder `frodhes/` with `dsp.so`, `module.json`, `help.json`,
+`sustain.js` (the PEDAL screen), `screen.js` (Frodhes' own screen), `canvas.js` (the gain-reduction meter on the
+COMPRESSOR page) and `LICENSE`. A release carries it, under that name and as `frodhes-X.Y.Z-move.tar.gz`, only when
+that exact file passed the tests on a Move; until a release has it, build it yourself (`make move`, see
+[For developers](#for-developers)). Frodhes is not in Schwung's module catalog: how it will be offered there is not
+decided yet, so install it by hand.
+
+1. Unload Frodhes from every track (a module that plays must not be replaced under it).
+2. Copy the folder into Schwung's sound generator folder, over the network (the Move answers as `move.local`):
+
+   ```sh
+   ssh ableton@move.local 'tar -xzf - -C /data/UserData/schwung/modules/sound_generators' < frodhes-module.tar.gz
+   ```
+
+3. In Schwung, load **Frodhes** as the sound generator of a track. Its abbreviation on the screen is `FRDH`.
+
+An update is the same steps with the new file. Frodhes keeps its settings and user presets in Schwung's data folder
+(`/data/UserData/schwung/module_data/frodhes`), not in the module's folder, so an update keeps them. To remove
+Frodhes, unload it and delete `/data/UserData/schwung/modules/sound_generators/frodhes`. *(not yet verified on a
+device: the plain `tar` route; the installer below is the tested one)*
+
+With this repository at hand, `tools/move_install.py` does the same with a check and a way back:
 
 ```sh
 python3 tools/move_install.py install            # prints what it would do (dry run)
@@ -19,18 +45,17 @@ python3 tools/move_install.py info --go          # the installed version and the
 python3 tools/move_install.py rollback --go      # back to the module installed before
 ```
 
-The installer copies the new module next to the old one, checks it, then switches by renaming. It keeps the two
-modules installed before it (`--keep`). The Move's address (`--host`) and the sound generator folder
-(`/data/UserData/schwung/modules/sound_generators`) are *(not yet verified on a device)*.
-
-In Schwung, load **Frodhes** as the sound generator of a track. Its abbreviation on the screen is `FRDH`.
+It installs `build/move/frodhes/` (`--src DIR` for another folder, such as the unpacked download). It copies the new
+module next to the old one, checks it, then switches by renaming, and keeps the two modules installed before it
+(`--keep`). `--host` names the Move (default `ableton@move.local`).
 
 ## The pages
 
 The first page, **FRODHES**, has the sound type, the stereo spread, the sustain latch, the PEDAL screen, the effects
 switch (FX), Frodhes' own screen (PAGES) and the preset browser: the 19 factory sounds (F01-F19) and 16 user sounds
 (U01-U16), as on the FM-1. Each page below holds up to eight
-controls. The VOICE pages follow the engine of the TYPE: only the pages of the engine that plays are shown.
+controls, one for each of the Move's eight knobs. The VOICE pages follow the engine of the TYPE: only the pages of the
+engine that plays are shown.
 
 | Page | Controls |
 | --- | --- |
@@ -49,11 +74,12 @@ controls. The VOICE pages follow the engine of the TYPE: only the pages of the e
 | **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI |
 
 The controls are the FM-1's, with the same ranges, under shorter names (the Move's screen fits about five
-characters). An option name longer than five letters is shortened the same way everywhere, to four letters: the
-word's first syllable and the consonant after it (DORIAN shows as DORN, DEGREE as DEGR, LYDIAN as LYDN, HARMON as
-HARM, MELODIC as MELO, MPENTA as MPNT, DIATONIC as DIAT, DIA 7TH as DIA7, RANDOM as RAND). The manual (`docs/MANUAL.md`) describes what each one does. Each page has a help text in `help.json`.
-The pages are generated from the FM-1's own parameter tables (`tools/gen_move_module.py`), so the two stay alike.
-How the pages look and respond on the Move's screen and knobs is *(not yet verified on a device)*.
+characters; an option name is shortened the same way everywhere, so the reverb's INFINITE shows as INF). The manual
+(`docs/MANUAL.md`) describes what each one does; CHAN is the FM-1's MIDI CHANNEL. Each page has a help text in
+`help.json`. The pages are generated from the FM-1's own parameter tables (`tools/gen_move_module.py`), so the two
+stay alike. How the pages look and respond on the Move's screen and knobs is *(not yet verified on a device)*.
+
+![Schwung's COMPRESSOR page: six knobs, and the gain-reduction meter in the place of knobs 7 and 8](manual/img/move/move-knobs-compressor.png?v=18ceee97)
 
 **COMPRESSOR** shows the gain reduction in the place of knobs 7 and 8 (GR and PEAK), as the FM-1's COMP page does:
 one meter across both cells, a bar that fills from the right on the FM-1's scale (up to 30 dB), the peak held for a
@@ -61,28 +87,15 @@ second as a mark, and the reading in dB under it. It moves while you play. When 
 dotted and reads COMP OFF. Knobs 7 and 8 change nothing there. *(not yet verified on a device: how it looks on the
 Move's screen)*
 
-## Mappings
-
-The FM-1 has no pressure. On the Move, **MAPPINGS** turns the pads' pressure into one of the FM-1's controls:
-
-- **AT CC / AT LO / AT HI**: channel pressure (aftertouch) drives the control on that MIDI CC number, from LO (no
-  pressure) to HI (full pressure).
-- **PA CC / PA LO / PA HI**: the same for poly pressure, from the most pressed held pad. Letting a pad go ends its
-  pressure.
-
-An HI under LO turns the direction round. A CC of 0 is off, and both are off by default: then pressure changes
-nothing. The control moves as if a controller sent that CC (the CC numbers are the FM-1's, in `docs/MANUAL.md`). The
-settings are kept with the track's state. *(not yet verified on a device)*
-
 ## Frodhes' own screen (PAGES)
 
-The pages above are on the Move's own knob screen. **PAGES** on the first page opens a screen of Frodhes' own with the
+The pages above are on Schwung's own knob screen. **PAGES** on the first page opens a screen of Frodhes' own with the
 same pages, drawn as on the FM-1: one page is the eight knobs.
 
 ![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=7fb7a2cc)
 
 - **The overview**: eight cards, knobs 1-4 on the top row and 5-8 below, each with its name, its value and a bar.
-  The header names the page and its number (`4/12`); an `S` before the number shows that the sustain holds.
+  The header names the page and its number (`4/10`); an `S` before the number shows that the sustain holds.
 - **One large card**: touch a knob, or turn it, and its card fills the screen: the name, the value in large
   letters, a wide bar (a selector shows one block per option) and a row of eight marks for the knob it is. Turning
   changes the value as you watch. About a second after you let go the overview comes back. Touch another knob and
@@ -100,14 +113,29 @@ same pages, drawn as on the FM-1: one page is the eight knobs.
 
 ![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=3da25fcf)
 ![Knob 1 on REVERB: the type, one block per option](manual/img/move/move-reverb-k1.png?v=c1dc8a5f)
+![COMPRESSOR with the compressor on: the meter at 12 dB of gain reduction](manual/img/move/move-compressor-gr.png?v=1e8174f8)
 ![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=d424b3d8)
 ![The list of pages](manual/img/move/move-pages.png?v=e463578b)
 
-The pictures are drawn by the screen's own code on a computer (`tools/move_ui_shots.mjs`), in the screen's two
-colours. Everything in this section is *(not yet verified on a device)*: the knobs' feel, the time the card stays,
-the jog wheel and the button on the Move itself.
+The pictures are drawn by the screens' own code on a computer, in the screen's two colours: Frodhes' screen by
+`tools/move_ui_shots.mjs`, Schwung's COMPRESSOR page by Schwung's own renderer (`move/ui/test_cell.mjs --png`).
+Everything in this section is *(not yet verified on a device)*: the knobs' feel, the time the card stays, the jog
+wheel and the button on the Move itself.
 
-## The effects on the Move
+## Sustain
+
+The Move has no pedal jack. There are three ways to sustain, and they work together as on the FM-1:
+
+- **A Move button as the pedal**, as REC on the FM-1: open **PEDAL** on the first page (or Frodhes' own screen),
+  then the **Capture** button is the sustain pedal. Hold it like a pedal; tap it to latch the sustain on, tap it
+  again to let go. The screen shows SUS while the notes are held. While one of these screens is open, Capture does
+  not do its usual job on the Move. *(not yet verified on a device)*
+- **SUS** on the first page is the latch on its own: ON holds the notes as a held pedal does, OFF lets them go. It
+  shows ON while the button holds the notes too.
+- **A sustain pedal or keyboard on CC 64** (on the Move's USB-A port, or MIDI from a computer): half pedalling as
+  on the FM-1. Letting the pedal up also releases the latch.
+
+## The effects
 
 Frodhes' effects (the compressor, the drive, the filter, the tremolo / wah, the phaser, the chorus, the delay, the
 reverb and the LFO) are inside the module, on the pages above, with the FM-1's ranges and defaults. **FX** on the
@@ -119,64 +147,86 @@ audio effects you put after it on that track, and then the Master FX, like any o
 Schwung's reverbs or delays instead of Frodhes' own, turn Frodhes' one off on its page (REVERB, CHORUS/DELAY), or all
 of them with FX. *(not yet verified on a device: the levels against the Move's own instruments)*
 
-## Sustain
+## Presets
 
-The Move has no pedal jack. There are three ways to sustain, and they work together as on the FM-1:
+The preset browser on the first page (and PRSET on Frodhes' own screen) loads the 19 factory sounds (F01-F19) and
+the 16 user slots (U01-U16), and program change loads them as on the FM-1 (0-15 F01-F16, 16-31 U01-U16, 32-34
+F17-F19). The Move has no SAVE page: the sound you set is saved with the Move's set instead (Schwung keeps it with
+the track). The user slots keep what the module's data folder holds (empty on a new install). *(not yet verified on
+a device)*
 
-- **A Move button as the pedal**, as REC on the FM-1: open **PEDAL** on the first page, then the **Capture** button
-  is the sustain pedal. Hold it like a pedal; tap it to latch the sustain on, tap it again to let go. The screen
-  shows SUS while the notes are held. While the PEDAL screen is open, Capture does not do its usual job on the
-  Move. *(not yet verified on a device: which button, and whether it also works on the other pages)*
-- **SUS** on the first page is the latch on its own: ON holds the notes as a held pedal does, OFF lets them go. It
-  shows ON while the button holds the notes too.
-- **A sustain pedal or keyboard on CC 64** (on the Move's USB-A port, or MIDI from a computer): half pedalling as
-  on the FM-1. Letting the pedal up also releases the latch.
+## Mappings
 
-## MIDI
+The FM-1 has no pressure. On the Move, **MAPPINGS** turns the pads' pressure into one of the FM-1's controls:
+
+- **AT CC / AT LO / AT HI**: channel pressure (aftertouch) drives the control on that MIDI CC number, from LO (no
+  pressure) to HI (full pressure).
+- **PA CC / PA LO / PA HI**: the same for poly pressure, from the most pressed held pad. Letting a pad go ends its
+  pressure.
+
+An HI under LO turns the direction round. A CC of 0 is off, and both are off by default: then pressure changes
+nothing. The control moves as if a controller sent that CC (the CC numbers are the FM-1's, in `docs/MANUAL.md`). The
+settings are kept with the track's state. *(not yet verified on a device)*
+
+## MIDI and tempo
 
 The MIDI of Schwung's track reaches Frodhes as on the FM-1 (`docs/MANUAL.md`, section 12): notes with velocity and
-release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 F01-F16, 16-31 U01-U16,
-32-34 F17-F19). *(not yet verified on a device)*
+release velocity, pitch bend, CC 64, the parameter CCs and program change. CHAN on LFO/SETUP picks the channel it
+listens to (ALL by default). *(not yet verified on a device)*
 
 The sequencer's, the arpeggiator's and the chords' CCs (43-46, 52-63) do nothing on the Move.
 
 **The tempo is the Move's.** Frodhes follows the Move's transport: the Move's clock reaches it as MIDI clock and
 Start / Stop, or, when no clock comes, from the Move's transport and beat position. The synced rates (TRSYN,
-PHSYN, DLSYN, the chorus SYNC) and the LFO's SYNC lock to it. While the Move is stopped, they use the Move's
-tempo setting (120 BPM if the Move reports none). Frodhes has no BPM or CLOCK setting on the Move, and its
-tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a device)*
+PHSYN, DLSYN, the chorus SYNC, the VIBES motor's SYNC) and the LFO's SYNC lock to it. While the Move is stopped,
+they use the Move's tempo setting (120 BPM if the Move reports none). Frodhes has no BPM or CLOCK setting on the
+Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a device)*
 
 ## What differs from the FM-1
 
 - **16 voices** on every engine (the FM-1 plays 10).
-- **The HQ Rhodes.** The electric piano types (ST77, SUIT, FELT, DYNO) play the Move's one piano engine, HQ. It has
+- **HQ, the Move's one version.** The FM-1 and the SMK-37 play the Classic engine (integer only); the Move plays HQ,
+  with no setting: a preset or a saved set loads with it too. The electric piano types (ST77, SUIT, FELT, DYNO) have
   the exact hammer strike at every velocity, a cleaner top octave, and a truer re-strike of a key that still rings.
-  The FM-1 plays the Classic engine. HQ is always on, with no setting: a preset or a saved set loads with it too.
-  VIBES and MARIMBA are the FM-1's. *(not yet verified on a device)*
+  VIBES and MARIMBA have more of the bar's and the tube's modes, and the mallet's contact computed live when a bar
+  that still rings is struck again (MARIMBA's top keys, C6 up, always). *(not yet verified on a device)*
 - No PERFORM, ASSIGN or DISPLAY pages: the Move has its own pads, knobs and screen. The FM-1's KEY VEL, TOUCH,
   USB VOL, TRS, COLOR, BRIGHT and LEDS settings are not on the Move.
 - No sequencer, arpeggiator, chords or scales (MODE, SCALE, ROOT, TRANSPOSE): the Move has its own. Their pages
   are not on the Move, and their CCs do nothing. A setup saved with any of them on still loads, with them off.
   A pattern saved by an older build is not loaded.
-- No BPM or CLOCK setting: the Move's tempo leads (see MIDI).
+- No BPM or CLOCK setting: the Move's tempo leads (see [MIDI and tempo](#midi-and-tempo)).
+- Only on the Move: the pressure [mappings](#mappings), the PEDAL screen and Frodhes' own screen.
 - SPREAD and the compressor's RELEASE, set on the FM-1 by MIDI or a page of their own, are on the pages here.
 - The sound is part of the Move's set: Schwung saves and restores it with the track. *(not yet verified on a device)*
 - Audio runs in blocks of 128 frames at 44.1 kHz (the FM-1 uses 256), with a working limit of 725 us of processing
   per block. *(not yet verified on a device)*
 
-## Coming
-
-- A screen of Frodhes's own.
-
 ## For developers
 
+- **The build**: `make move` builds `build/move/frodhes/` (dsp.so, module.json with the version, the screen scripts,
+  LICENSE) and `build/move/frodhes-module.tar.gz` in the arm64 Debian bookworm image (`make move-image`, Docker on
+  macOS; natively with `MOVE_RUN=` on Linux arm64). `MOVE_VER=X.Y.Z` sets the version. The tarball is reproducible
+  (sorted names, no times or owners, `gzip -n`): the release compares its sha256 with the one tested on the Move.
+  The build defines `FR_VOICES=16u` and `FR_HQ=1`.
+- **The release**: `tools/release.py` builds the package in step 3. `release.yml`'s job `move` rebuilds it from the
+  tag, and `tools/move_asset.sh` attaches it (`frodhes-X.Y.Z-move.tar.gz` and `frodhes-module.tar.gz`) only when the
+  release commit records that exact sha256 as tested on the Move (`Move package sha256 <sha>`). Without the record
+  the release ships no Move package; a different sha256 stops the release.
+- **The gates**: `tools/ci_move.sh` is the Move's MT0 (Gate U: the generated module is current, `make test-move`,
+  Gate M: the plugin replays the host renders, and the Move pytest suites). `make gate-p` (ASan + UBSan, the
+  seccomp and no-allocation guards), `make gate-h` (the HQ renders) and `tools/gate_s.py` (the FM-1 and SMK binaries
+  unchanged by the Move work) complete it. `tools/test_map.py` names the gates and device tiers a change needs, per
+  target.
 - `tools/gen_move_module.py` writes `move/module/` (module.json, the pages, help.json, `move_ui.h`, `sustain.js`,
   `screen.js`: the pages from the FM-1's tables + the screen's code, `move/ui/screen_core.js`, and `canvas.js`: the
   COMPRESSOR page's meter, `move/ui/gr_cell.js`);
-  `--check` fails when the files are out of date with the FM-1's tables.
+  `--check` fails when the files are out of date with the FM-1's tables. Never edit `move/module/` by hand.
 - `tools/ci_move.sh` runs the Move's checks on the host. `node move/ui/test_screen.mjs` checks Frodhes' screen
   (`move/ui/harness.mjs` runs it on a model of the Move's screen and the plugin); `node tools/move_ui_shots.mjs`
-  draws every page into `build/move/ui-shots/` (`--docs`: the pictures on this page).
+  draws every page into `build/move/ui-shots/` (`--docs`: the pictures on this page, and every `?v=` here).
+  `SCHWUNG_SRC=<Schwung's source> node move/ui/test_cell.mjs --png docs/manual/img/move/move-knobs-compressor.png`
+  draws Schwung's COMPRESSOR page; run `--docs` after it for its `?v=`.
 - The meter on the COMPRESSOR page is a Schwung custom widget (Schwung's docs/MODULES.md, "Custom widgets"). Two
   read-only keys, `r_cmp_gr` (GR) and `r_cmp_pk` (PEAK), form one picture group with the kind `custom:frodhes_gr`.
   Schwung draws it with `drawCell` from `canvas.js`, which `module.json` names (`capabilities.canvas_script`).

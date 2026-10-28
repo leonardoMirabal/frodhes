@@ -53,7 +53,12 @@ If anything goes wrong, switch the FM-1 off, hold **OCT−** and switch it on: t
 can always install again. To return to M-VAVE's firmware, use the "Official firmware" section of
 [thefirmwarehub.com](https://thefirmwarehub.com) with V15 from m-vave.com.
 
-## Other keyboards: the SMK-37 (experimental)
+## Other devices
+
+The same instruments and effects also run on the SMK-37 keyboards and on the Move. Each device has its own file
+(table below).
+
+### The SMK-37 (experimental)
 
 Frodhes also builds for the SMK-37, the FM-1's bigger relative (37 keys with velocity, pads, faders, wheels, a
 pedal jack). **Experimental: not tested on hardware by us.** Back up your flash first; the way back is your model's
@@ -61,12 +66,20 @@ stock package. The three SMK files are on the
 [release page](https://github.com/leonardoMirabal/frodhes/releases/latest) (table below). Everything is in
 [docs/SMK37.md](docs/SMK37.md) and the manual's appendix.
 
+### The Move (in development)
+
+Frodhes runs on the Move as a sound generator of Schwung, the community module host on it: 16 voices on every
+instrument, the HQ version of the three engines, Schwung's knob pages and a screen of its own. **In development:
+not released yet.** A release carries the module only once it has passed the tests on a Move. Install, the pages
+and what differs from the FM-1: [docs/MOVE.md](docs/MOVE.md).
+
 | Model | File | Package identity |
 | --- | --- | --- |
 | FM-1 | `frodhes.fwsc` | `FM-1_958` |
 | SMK-37 Pro (experimental) | `frodhes-smk37-experimental.fwsc` | `SMK-37 Pro_470` |
 | SMK-37 Elite (experimental) | `frodhes-smk37-elite-experimental.fwsc` | `SMK-37 Elite_470` |
 | MKE-P37 (experimental) | `frodhes-smk37-mke-experimental.fwsc` | `MKE-P37_470` |
+| Move (in development) | `frodhes-module.tar.gz` | Schwung module `frodhes` |
 
 ## Manual
 

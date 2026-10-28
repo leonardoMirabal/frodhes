@@ -34,6 +34,7 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 13. [If something goes wrong](#13-if-something-goes-wrong)
 14. [Specifications](#14-specifications)
 15. [Appendix: the SMK-37 (experimental)](#15-appendix-the-smk-37-experimental)
+16. [Appendix: the Move (in development)](#16-appendix-the-move-in-development)
 
 ## 1. Install
 
@@ -1013,6 +1014,9 @@ MARIMBA ignore it.
 | 41 / 42 | Developer: key velocity (not saved): 41 sets the key converter's test mode (0 normal, 1 off, 2 stress, 4 self-test; 8 / 9 every press's reading out on CC 33–36, on / off), 42 asks for its counters (replies on CC 38–40); `tools/hil_keyvel.py` and `tools/hil_cpu.py --keyadc` use them | | |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
+On the Move the same CCs reach Frodhes through Schwung's track, except the sequencer's, the arpeggiator's and the
+chords' (43–46, 52–63), which do nothing there ([MOVE.md](MOVE.md), "MIDI and tempo").
+
 On the computer the FM-1 is called **Frodhes FM-1** (an SMK-37 running Frodhes: **Frodhes SMK-37 Pro**, Frodhes
 SMK-37 Elite or Frodhes MKE-P37). The name is the same everywhere the computer shows the unit: its MIDI port (a
 DAW's MIDI preferences, Audio MIDI Setup's MIDI Studio window on a Mac), its audio input (the system's sound
@@ -1116,3 +1120,34 @@ Everything in this manual applies, with these differences:
   pedal of either polarity (plug it in before switching on).
 - 7 voices. No TRS MIDI input (no TRS IN card), no key LEDs (no LEDS card on DISPLAY); BRIGHTNESS dims the pads and
   the button LEDs.
+
+## 16. Appendix: the Move (in development)
+
+Frodhes also runs on the Move, a standalone groove box, as a sound generator of Schwung, the community module host
+on it: the same instruments and effects as on the FM-1, with 16 voices on every instrument. **In development: not
+released yet.** Install and the details: [MOVE.md](MOVE.md).
+
+Everything in this manual applies, with these differences:
+
+- **The pages**: one page holds eight controls, one for each of the Move's eight knobs, two of the FM-1's pages
+  side by side (DRIVE/FILTER, TREM/PHASER, CHORUS/DELAY, ...). The names are shortened to five letters (THRESH is
+  THRSH); the values and ranges are the FM-1's. COMPRESSOR shows the gain-reduction meter on knobs 7 and 8.
+- **Frodhes' own screen** (PAGES on the first page): the eight knobs as eight cards, each with its name, value
+  and bar; touch or turn a knob and its card fills the screen, as the FM-1 shows one card large; the overview
+  comes back about a second after you let go. The jog wheel turns the pages; a click lists them.
+
+  ![The DRIVE/FILTER page on the Move](manual/img/move/move-drive-filter.png?v=7fb7a2cc)
+- **The sound**: HQ, the Move's one version of the three engines (the FM-1 plays Classic): the piano types' exact
+  hammer strike at every velocity and a truer re-strike; VIBES and MARIMBA with more bar and tube modes and the
+  mallet's contact computed live on a re-strike.
+- **Sustain**: the Move has no pedal jack. The Capture button is the pedal on the PEDAL screen and on Frodhes'
+  screen (hold it, or tap to latch, as REC on the FM-1); SUS on the first page latches; a pedal on CC 64 (USB)
+  works with half pedalling.
+- **FX** on the first page is the FX button: all effects off or on (CC 111).
+- **Presets**: F01–F19 and U01–U16 in the preset browser and by program change, as on the FM-1. There is no SAVE
+  page: the sound is saved with the Move's set.
+- **Only on the Move**: MAPPINGS turns the pads' pressure (aftertouch, poly pressure) into one of the CCs above; off by default.
+- **The tempo is the Move's**: the synced effects follow its clock; there is no BPM or CLOCK setting.
+- **Not on the Move**: PERFORM, ASSIGN and DISPLAY (the Move has its own knobs and screen), the sequencer, the
+  arpeggiator, the chords and the scales (the Move has its own; their CCs do nothing), KEY VEL, TOUCH, USB VOL,
+  TRS, COLOR, BRIGHT and LEDS.
