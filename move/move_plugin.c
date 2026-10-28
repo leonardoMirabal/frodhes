@@ -40,7 +40,7 @@ int frodhes_web_main(void);              /* web_hal.c main(), renamed (hidden: n
  * instances of it. Re-picking Frodhes in a slot creates the new instance before it destroys the old one
  * (chain_synth_load.c: stage, commit, retire), and two slots with Frodhes share this one dlopen'd copy. The
  * newest live instance owns the app: only it renders and plays; the others render silence and ignore MIDI and
- * writes (their reads are answered). When the owner goes, the newest remaining one takes over. The app (its
+ * writes (their reads are answered, their preset_name says ONE SLOT ONLY). When the owner goes, the newest remaining one takes over. The app (its
  * worker) stops only with the last instance. Each slot's chain passes its own host table to the init call just
  * before its create, so an instance keeps that table and the owner's is the one the bridge reads (g_host).
  * create / destroy run on the host's loader thread, the callbacks on the audio thread: the list is under a
@@ -96,7 +96,16 @@ static void mv_destroy(void *inst)
 static int mv_owns(void *inst) { return inst && inst == (void *)atomic_load_explicit(&mv_owner, memory_order_acquire); }
 static void mv_on_midi(void *inst, const uint8_t *msg, int len, int source) { if (mv_owns(inst)) mb_midi_in(msg, len, source); }
 static void mv_set_param(void *inst, const char *key, const char *val) { if (mv_owns(inst)) mb_set(key, val); }
-static int mv_get_param(void *inst, const char *key, char *buf, int buf_len) { return inst ? mb_get(key, buf, buf_len) : -1; }
+/* a slot that does not own the app says so where the Move shows a sound's name (the header, the slot list): Frodhes
+ * plays in one slot at a time (the user, 2026-10-28: "i load 2 frodhes and lost sound") */
+#define MV_NOT_OWNER_NAME "ONE SLOT ONLY"
+static int mv_get_param(void *inst, const char *key, char *buf, int buf_len)
+{
+    if (!inst) return -1;
+    if (!mv_owns(inst) && key && !strcmp(key, "preset_name") && buf && buf_len > 0)
+        return snprintf(buf, (size_t)buf_len, "%s", MV_NOT_OWNER_NAME);
+    return mb_get(key, buf, buf_len);
+}
 static int mv_get_error(void *inst, char *buf, int buf_len) { (void)inst; (void)buf; (void)buf_len; return 0; }
 static void mv_render(void *inst, int16_t *out, int frames)
 {

@@ -68,28 +68,33 @@ def test_levels_keep_the_hosts_limits():
                 assert link["level"] in HIER, link
     assert "root" in HIER and HIER["root"]["list_param"] == "preset"
     assert "s_sustain" in HIER["root"]["knobs"], "SUSTAIN (CC 64) on the first page"
-    assert "s_susbtn" in HIER["root"]["knobs"], "the PEDAL screen (the sustain button, M1-13b) on the first page"
+    assert not any("s_susbtn" in lvl["knobs"] for lvl in HIER.values()), "the Capture button's key is on no page"
 
 
 def test_sustain_button_claimed():
     """M1-13b: module.json claims the sustain button (a CC the host lets a module claim) and asks for the touch edges
-    (the direct route); sustain.js turns that CC's press / release into s_susbtn 1 / 0"""
+    (the direct route); Frodhes' own screen (screen.js) turns that CC's press into s_susbtn 1, which flips SUS"""
     mod = json.loads(OUT["module.json"])
     caps = mod["capabilities"]
     assert caps["claims_ccs"] == [gen.SUS_BTN_CC] and caps["touch_observe"] is True
     host_owned = {49, 50, 51, 14, 3, 71, 72, 73, 74, 75, 76, 77, 78, 79, 88, 40, 41, 42, 43, 114, 115}
     assert gen.SUS_BTN_CC not in host_owned                   # (Schwung shadow_ui.js CC_CLAIM_DENIED)
-    js = OUT["sustain.js"]
-    assert "const SUS_CC = %d;" % gen.SUS_BTN_CC in js and 'ctx.setParam("s_susbtn", down ? "1" : "0")' in js
-    assert "globalThis.canvas_overlay" in js and "onMidi(ctx, msg)" in js and "onClose(ctx)" in js
+    assert "sustain.js" not in OUT and "sustain.js" not in gen.FILES, "the PEDAL screen is gone (a toggle now)"
+    js = OUT["screen.js"]
+    assert 'ctx.setParam("s_susbtn", "1")' in js and 'ctx.setParam("s_susbtn", "0")' not in js
 
 
 def test_ranges_and_options_are_the_parameters():
     by_key = {c["key"]: c for c in CHAIN}
     assert len(by_key) == len(CHAIN), "a key twice in chain_params"
     rows = re.findall(r'\{"(\w+)", (\w+), (\d+), (MK_\w+), (\d+), (-?\d+)\}', OUT["move_ui.h"])
-    assert [r[0] for r in rows] == [c["key"] for c in CHAIN if c["key"] not in gen.METER]   # (the GR cells: no row)
+    # (the GR cells: no row; the Capture button's key: a row, no chain_params entry, which Schwung's merge would
+    # turn into a knob of its own)
+    assert [r[0] for r in rows] == [c["key"] for c in CHAIN if c["key"] not in gen.METER] + gen.HIDDEN
     for key, slot, cc, kind, scale, off in rows:
+        if key in gen.HIDDEN:
+            assert kind == "MK_BTN" and key not in by_key
+            continue
         c = by_key[key]
         if slot.startswith("P_"):
             p = M["params"][slot]

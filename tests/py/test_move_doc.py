@@ -92,7 +92,7 @@ def test_sustain_button_is_claimed():
     cc = int(re.search(r"^SUS_BTN_CC = (\d+)", gen, re.M).group(1))
     mod = json.loads((ROOT / "move" / "module" / "module.json").read_text())
     assert mod["capabilities"]["claims_ccs"] == [cc]
-    assert "the **Capture** button is the sustain pedal" in DOC
+    assert "**The Capture button**" in DOC and "each press turns SUS on or off" in DOC
 
 
 def test_manual_and_readme_point_here():

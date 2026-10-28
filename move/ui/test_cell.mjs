@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // node move/ui/test_cell.mjs: the gain-reduction cell on Schwung's knob grid (move/module/canvas.js, a custom widget)
-// on the host: the value's three states (OFF, a reading, no answer), the bar on ui.c's segment scale, the peak, the
-// reading, every frame size inside its frame, no reads. With Schwung's source at hand (SCHWUNG_SRC, default
+// on the host: the value's three states (OFF, a reading, no answer), the segmented bar on ui.c's scale, the peak,
+// the reading, every frame size inside its frame, no reads. With Schwung's source at hand (SCHWUNG_SRC, default
 // ../frodhes-move/research/schwung next to the repo) it also runs Frodhes' COMPRESSOR level through Schwung's own
 // planner, viz resolver and Movy renderer (the device's), and writes the page as a PNG (--png FILE). Exit 0 when
 // every check passes; run by tests/py/test_move_ui.py.
@@ -80,67 +80,90 @@ test("the plugin's value: OFF, a reading, a reading without a peak, no answer", 
     for (const v of [null, undefined, "", "--", "x y"]) assert.equal(CELL.parse(v), null, String(v));
 });
 
-test("the scale is ui.c's: 15 segments evenly apart, 30 dB at the end, monotonic", () => {
+test("the scale is ui.c's: 15 segments, 30 dB at the end; a segment lights once the reduction enters it", () => {
     const sc = CELL.conf.gr_db10;
     assert.equal(sc.length, 15);
     assert.equal(sc[sc.length - 1], 300);
-    const w = 62;
-    assert.equal(CELL.px(0, w), 0);
-    assert.equal(CELL.px(300, w), w);
-    for (let i = 0; i < sc.length; i++) assert.equal(CELL.px(sc[i], w), Math.floor((i + 1) * w / sc.length), `segment ${i}`);
+    assert.equal(CELL.segs(0), 0);
+    assert.equal(CELL.segs(1), 1);
+    for (let i = 0; i < sc.length; i++) {
+        assert.equal(CELL.segs(sc[i]), i + 1, `segment ${i}`);
+        assert.equal(CELL.segs(sc[i] + 1), Math.min(sc.length, i + 2));
+    }
     let last = 0;
-    for (let d = 0; d <= 300; d++) { const x = CELL.px(d, w); assert.ok(x >= last); last = x; }
+    for (let d = 0; d <= 300; d++) { const n = CELL.segs(d); assert.ok(n >= last); last = n; }
     assert.equal(CELL.reading(0), "0.0 DB");
     assert.equal(CELL.reading(125), "-12.5 DB");
     assert.equal(CELL.reading(300), "-30.0 DB");
 });
 
-test("a reading: the track, the fill from the right, the peak mark, the text right-aligned under it", () => {
+// the 64 x 15 frame: 15 segments 3 px wide, 4 apart, right-aligned (x 5..63); the bar 9 px (rows 0..8), text 10..14
+const BAR = CELL.bar(64);
+const segX = (i) => CELL.segX(BAR, 64, i);
+const segAt = (f, i, y) => { let n = 0; for (let x = segX(i); x < segX(i) + BAR.segw; x++) n += f.at(x, y); return n; };
+
+test("the bar: 15 separate segments, 3 px wide with a 1 px gap, right-aligned in the frame", () => {
+    assert.deepEqual([BAR.n, BAR.pitch, BAR.segw], [15, 4, 3]);
+    assert.equal(segX(0) + BAR.segw, 64, "the first segment ends at the right edge");
+    assert.ok(segX(14) >= 0);
+    const f = draw("300 300");
+    for (let i = 0; i < 15; i++) {
+        assert.equal(segAt(f, i, 4), 3, `segment ${i} lit`);
+        if (i < 14) assert.equal(f.at(segX(i) - 1, 4), 0, `the gap left of segment ${i}`);
+    }
+});
+
+test("a reading: lit from the right, a thick block per segment; the held peak a taller block on its own", () => {
     const f = draw("60 150");
     assert.equal(f.out, 0);
-    const iw = 62, fw = CELL.px(60, iw), pk = CELL.px(150, iw);
-    assert.ok(fw > 0 && pk > fw + 2);
-    for (let x = 0; x < 64; x++) { assert.equal(f.at(x, 0), 1); assert.equal(f.at(x, 8), 1); }   // the track
-    for (let x = 1; x <= 62; x++) {
-        const filled = x >= 1 + iw - fw, peak = x >= 1 + iw - pk && x < 1 + iw - pk + 2;
-        assert.equal(f.at(x, 4), filled || peak ? 1 : 0, `x ${x}`);
+    const lit = CELL.segs(60), pk = CELL.segs(150);
+    assert.ok(lit > 0 && pk > lit + 1);
+    for (let i = 0; i < 15; i++) {
+        assert.equal(segAt(f, i, 4), i < lit || i === pk - 1 ? 3 : 0, `segment ${i}, the bar's middle`);
+        assert.equal(segAt(f, i, 0), i === pk - 1 ? 3 : 0, `segment ${i}, the top row: the peak only`);
+        assert.equal(segAt(f, i, 8), 3, `segment ${i}, the floor`);
     }
+    let h = 0;                                               // the lit blocks: 8 px tall (rows 1..8)
+    for (let y = 0; y < 9; y++) h += f.at(segX(0), y);
+    assert.equal(h, 8);
     let right = 0;
     for (let y = 10; y < 15; y++) right = Math.max(right, f.row(y).replace(/\.+$/, "").length);
     assert.equal(right, 64, "the reading ends at the right edge");
-    assert.ok(f.row(9).indexOf("#") < 0, "a blank row between the track and the text");
+    assert.ok(f.row(10).startsWith("###"), "GR on the left");
+    assert.ok(f.row(9).indexOf("#") < 0, "a blank row between the bar and the text");
 });
 
-test("more reduction fills more; 0 dB fills nothing; 30 dB fills the track", () => {
-    const fill = (v) => { const f = draw(v); let n = 0; for (let x = 1; x < 63; x++) n += f.at(x, 4); return n; };
-    assert.equal(fill("0 0"), 0);
-    assert.equal(fill("300 300"), 62);
+test("more reduction lights more segments; 0 dB lights none; 30 dB lights all", () => {
+    const n = (v) => { const f = draw(v); let c = 0; for (let i = 0; i < 15; i++) c += segAt(f, i, 4) ? 1 : 0; return c; };
+    assert.equal(n("0 0"), 0);
+    assert.equal(n("300 300"), 15);
     let last = -1;
-    for (const d of [10, 30, 60, 100, 150, 200, 270]) { const n = fill(d + " 0"); assert.ok(n > last, d); last = n; }
+    for (const d of [10, 30, 60, 100, 150, 200, 270]) { const c = n(d + " 0"); assert.ok(c > last, d); last = c; }
 });
 
-test("the peak mark shows only above the fill", () => {
+test("the peak shows only above the lit segments", () => {
     const a = draw("150 150"), b = draw("150 0");
     assert.deepEqual([...a.px], [...b.px]);
     const c = draw("10 300");
-    assert.equal(c.at(1, 4), 1, "the peak at 30 dB: the left end");
-    assert.equal(c.at(2, 4), 1);
-    assert.equal(c.at(10, 4), 0);
+    assert.equal(segAt(c, 14, 0), 3, "the peak at 30 dB: the leftmost segment, full height");
+    assert.equal(segAt(c, 13, 0), 0);
+    assert.equal(segAt(c, 0, 4), 3);
 });
 
-test("COMP off: a dotted track, no fill, COMP OFF", () => {
+test("COMP off: an empty dotted outline, nothing lit, COMP OFF", () => {
     const f = draw("OFF");
     assert.equal(f.out, 0);
-    assert.equal(f.row(0), "#.".repeat(32));
-    for (let x = 1; x < 63; x++) assert.equal(f.at(x, 4), 0);
+    assert.equal(f.row(0).slice(BAR.x0), "#.".repeat(32).slice(0, 64 - BAR.x0));
+    for (let i = 0; i < 15; i++) assert.ok(segAt(f, i, 4) <= 1, `segment ${i} not lit`);
     assert.ok(f.row(10).indexOf("#") >= 0);
     assert.notDeepEqual([...f.px], [...draw("0 0").px], "OFF is not 0 dB");
 });
 
-test("no answer yet: the track only, no reading (never a made-up 0 dB)", () => {
+test("no answer yet: the floor and GR only, no reading (never a made-up 0 dB)", () => {
     const f = draw(null), z = draw("0 0");
-    for (let y = 10; y < 15; y++) assert.ok(f.row(y).indexOf("#") < 0);
-    assert.ok(z.row(10).indexOf("#") >= 0);
+    for (let y = 10; y < 15; y++) assert.ok(f.row(y).slice(9).indexOf("#") < 0, "no reading");
+    assert.ok(z.row(10).slice(9).indexOf("#") >= 0);
+    for (let i = 0; i < 15; i++) assert.equal(segAt(f, i, 4), 0);
     const n = draw(undefined);
     assert.deepEqual([...n.px], [...f.px]);
     const nothing = frame(64, 15);
@@ -155,7 +178,7 @@ test("every frame size Schwung may hand it: inside the frame, no throw", () => {
                 assert.equal(f.out, 0, `${w}x${h} ${v}`);
             }
     const one = draw("60 150", 32, 15);                       // one cell (an older or narrower grid)
-    assert.ok(one.lit() > 40);
+    assert.ok(one.lit() > 20);
 });
 
 test("no reads and no device font: the ctx it gets has fillRect only", () => {

@@ -39,6 +39,15 @@ def test_screen_behaviour():
 
 
 @needs_node
+def test_grid_through_schwungs_controller():
+    """Frodhes' pages through Schwung's own knob-grid controller (move/ui/test_grid.mjs): the VOICE pages follow TYPE
+    (a knob, a preset, a program change), no PEDAL cell, PAGES opens, the FX switch, the labels fit"""
+    r = subprocess.run([NODE, os.path.join(ROOT, "move", "ui", "test_grid.mjs")], capture_output=True, text=True,
+                       timeout=120)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
+
+
+@needs_node
 def test_grid_gr_cell():
     """the GR meter on Schwung's own knob grid (move/module/canvas.js, a custom widget on COMPRESSOR knobs 7-8):
     move/ui/test_cell.mjs, through Schwung's planner and Movy renderer too when its source is at hand"""
@@ -129,14 +138,15 @@ def test_fx_pages_hold_every_effect():
 
 def test_fx_button_default_on():
     """M5-01: the FM-1's FX button (CC 111, the bypass) on the first page; its default, as on the FM-1, is the
-    effects on (index 0, not bypassed)"""
+    effects on (not bypassed). OFF / ON, so 1 = on: Schwung's Movy draws a two-option switch on at option 1 (0.9.8
+    candidate: ON / OFF drew the switch off while the effects played)"""
     c = CHAIN["s_fx"]
-    assert c["options"] == ["ON", "OFF"] and gen.EXTRA["s_fx"]["cc"] == 111
+    assert c["options"] == ["OFF", "ON"] and gen.EXTRA["s_fx"]["cc"] == 111
     assert "s_fx" in HIER["root"]["knobs"]
     fx = open(os.path.join(ROOT, "firmware", "src", "fx.c")).read()
     assert "static volatile uint8_t fx_bypass;" in fx, "the bypass starts off (a zeroed static)"
     br = open(os.path.join(ROOT, "move", "move_bridge.h")).read()
-    assert "k->cc == 111u ? fx_bypass != 0" in br, "s_fx reads the bypass back"
+    assert "k->cc == 111u ? fx_bypass == 0" in br, "s_fx reads the bypass back (1: the effects on)"
 
 
 def test_move_doc_pictures():
@@ -154,13 +164,14 @@ def test_move_doc_pictures():
 
 
 def test_fx_button_through_the_plugin():
-    """M5-01 on dsp.so: s_fx reads 0 (the effects on) at the start, 1 after a write or MIDI CC 111 >= 64, 0 again"""
+    """M5-01 on dsp.so: s_fx reads 1 (the effects on) at the start, 0 (bypassed) after a write of 0 or MIDI CC 111 >= 64
+    (the FM-1's bypass CC), 1 again"""
     sys.path.insert(0, os.path.dirname(__file__))
     import test_move_params as tmp
     r = tmp._bridge("script", "build/move/frodhes/dsp.so", stdin="\n".join([
-        "render 20", "get s_fx", "set s_fx 1", "render 5", "get s_fx", "set s_fx 0", "render 5", "get s_fx",
+        "render 20", "get s_fx", "set s_fx 0", "render 5", "get s_fx", "set s_fx 1", "render 5", "get s_fx",
         "midi 2 176 111 127", "render 5", "get s_fx", "midi 2 176 111 0", "render 5", "get s_fx"]) + "\n")
     if r is None:
         pytest.skip("no Linux arm64 and no frodhes-move:bookworm image (make move-image)")
     got = [ln.split("\t")[1] for ln in r.stdout.splitlines() if ln.startswith("s_fx\t")]
-    assert got == ["0", "1", "0", "1", "0"], r.stdout[-2000:] + r.stderr[-2000:]
+    assert got == ["1", "0", "1", "0", "1"], r.stdout[-2000:] + r.stderr[-2000:]

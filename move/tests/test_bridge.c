@@ -545,13 +545,31 @@ static int script(const char *so)
     char line[256], k[64], v[64];
     unsigned a, b, c, d;
     int n;
-    void *in;
+    void *in, *all[8] = {0};                     /* instances (Schwung's slots): "new", "use I", "destroy I" */
+    int nall = 1;
+    static host_api_v1_t hosts[8];
     load(so);
     in = create(NULL);
     if (!in) { printf("FAIL create\n"); return 1; }
+    all[0] = in;
     render(in, 400);
     while (fgets(line, sizeof line, stdin)) {
-        if (sscanf(line, "render %d", &n) == 1) render(in, n);
+        if (!strncmp(line, "new", 3) && nall < 8) {        /* another slot picks Frodhes: its init, its create */
+            hosts[nall] = host;
+            move_plugin_init_v2_again(&hosts[nall]);
+            all[nall] = api->create_instance("build/move/t", NULL);
+            in = all[nall++];
+            printf("new\t%d\n", in ? nall - 1 : -1);
+        } else if (sscanf(line, "use %d", &n) == 1 && n >= 0 && n < nall && all[n]) in = all[n];
+        else if (sscanf(line, "destroy %d", &n) == 1 && n >= 0 && n < nall && all[n]) {
+            api->destroy_instance(all[n]);
+            if (in == all[n]) in = 0;
+            all[n] = 0;
+            for (int i = 0; i < nall && !in; i++) in = all[i];
+        } else if (sscanf(line, "renderall %d", &n) == 1) {   /* the host renders every slot every block */
+            while (n-- > 0) for (int i = 0; i < nall; i++) if (all[i]) api->render_block(all[i], blk, 128);
+        } else if (sscanf(line, "render %d", &n) == 1) render(in, n);
+        else if (sscanf(line, "sleep %d", &n) == 1) usleep((useconds_t)n * 1000u);   /* wall clock, ms */
         else if (sscanf(line, "set %63s %63s", k, v) == 2) api->set_param(in, k, v);
         else if (sscanf(line, "midi %u %i %i %i", &a, &b, &c, &d) == 4) {
             uint8_t m[3] = { (uint8_t)b, (uint8_t)c, (uint8_t)d };
@@ -569,7 +587,7 @@ static int script(const char *so)
         }
         fflush(stdout);
     }
-    api->destroy_instance(in);
+    for (int i = 0; i < nall; i++) if (all[i]) api->destroy_instance(all[i]);
     return 0;
 }
 static int presets(const char *so)

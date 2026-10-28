@@ -3,7 +3,7 @@
 """Install the Frodhes module on the Move (M1-19), with the previous one kept and a rollback. DRY RUN by default:
 it prints every command; --go runs them.
 
-    tools/move_install.py [--go] install [--src DIR]    build/move/frodhes/ (dsp.so, module.json, help.json, sustain.js, screen.js, canvas.js) -> the Move
+    tools/move_install.py [--go] install [--src DIR]    build/move/frodhes/ (dsp.so, module.json, help.json, screen.js, canvas.js) -> the Move
     tools/move_install.py [--go] rollback               the previous module back (the current one kept aside)
     tools/move_install.py info                          the installed version, dsp.so's sha256, the kept modules
     --host USER@HOST (default $MOVE_HOST, else ableton@move.local); --target-dir DIR: a local folder stands in for
@@ -44,7 +44,8 @@ def move_lock(why=""):
                      say=lambda m: print(m, file=sys.stderr, flush=True))
 MODS = "/data/UserData/schwung/modules/sound_generators"
 MODULE_ID = "frodhes"
-PACKAGE = ("dsp.so", "module.json", "help.json", "sustain.js", "screen.js", "canvas.js")
+PACKAGE = ("dsp.so", "module.json", "help.json", "screen.js", "canvas.js")
+RETIRED = ("sustain.js",)     # files an older package had: not carried over (0.9.8: the PEDAL screen is gone)
 REQUIRED = ("dsp.so", "module.json")
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
 
@@ -123,7 +124,7 @@ def install(t, src, keep=2, stamp=None):
     if t.run(check)[0]:
         t.run("rm -rf %s" % q(stage))
         raise SystemExit("move_install: the staged files' sha256 differ: stop (staging removed, nothing switched)")
-    pkg = " ".join(q(f) for f in files)
+    pkg = " ".join(q(f) for f in tuple(files) + RETIRED)
     t.need("if [ -d %s ]; then cd %s && for f in * .[!.]*; do [ -e \"$f\" ] || continue; case \" %s \" in "
            "*\" $f \"*) ;; *) cp -pR \"$f\" %s/ ;; esac; done; fi" % (q(cur), q(cur), pkg, q(stage)),
            "carrying the module folder's own files over")

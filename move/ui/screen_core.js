@@ -11,7 +11,8 @@
 //   pages      the jog wheel browses the pages (the VOICE pages of the engine that plays only); a jog click opens
 //              the page list (the jog picks, a click opens the page, Back closes the list); Back on a page closes
 //              the screen (the host's own way out; Shift + jog too)
-//   sustain    the claimed button (FR_CONF.sus_cc) is the sustain pedal on every page, as on the PEDAL screen
+//   sustain    the claimed button (FR_CONF.sus_cc, Capture) turns SUS on or off on every page: a press flips it (the
+//              plugin flips it, s_susbtn 1; a release sends nothing), the header's S shows it
 //   meter      COMPRESSOR: the gain reduction in the free cards' place (knobs 7-8), as the FM-1's COMP page shows it:
 //              the bar filled from the right on ui.c's segment scale (FR_CONF.gr_db10), the held peak, the reading;
 //              the plugin keeps the FM-1's ballistics (r_cmp_gr), the screen reads it once a live tick
@@ -284,9 +285,10 @@ function engineChanged(ctx, st, e) {
 
 function rel(v) { return v === 0 ? 0 : v < 64 ? v : v - 128; }
 
-function sustainBtn(ctx, st, down) {
-    st.susDown = down;
-    ctx.setParam("s_susbtn", down ? "1" : "0");
+function sustainBtn(ctx, st) {
+    st.susOn = !st.susOn;                 // (shown at once; the next live read of s_sustain confirms it)
+    st.written.s_sustain = nowOf(ctx);
+    ctx.setParam("s_susbtn", "1");
     st.expectRev++;
 }
 
@@ -303,7 +305,7 @@ function pageNum(st) {
     return (vis.indexOf(st.page) + 1) + "/" + vis.length;
 }
 
-function susMark(st) { return st.susOn || st.susDown ? "S " : ""; }
+function susMark(st) { return st.susOn ? "S " : ""; }
 
 function drawOverview(ctx, st) {
     const p = FR_PAGES[st.page];
@@ -312,7 +314,7 @@ function drawOverview(ctx, st) {
         const x = (i % 4) * 32, y = 9 + Math.floor(i / 4) * 28;
         // the preset's card (the first page) takes the rest of its row: the sound's full name
         const wide = k.type === "preset" ? 127 - x - 1 : 28;
-        text(ctx, x, y + 1, k.name);
+        text(ctx, x, y + 1, k.short || k.name);
         text(ctx, x, y + 11, k.type === "preset" ? (st.presetName ? String(st.presetName) : "--") : valueText(st, k));
         hdots(ctx, x, x + wide, y + 23);
         const f = fraction(st, k);
@@ -322,19 +324,36 @@ function drawOverview(ctx, st) {
     if (isComp(st)) drawGr(ctx, st);
 }
 
-// the meter in knobs 7-8's place (x 64..127, y 37..63): "GR" and the reading, the bar (a frame filled from the right),
-// the peak a 2 px mark; COMP off: the FM-1's hint
+// the meter in knobs 7-8's place (x 64..127, y 37..63), the knob grid's meter drawn large (gr_cell.js): GR and the
+// reading small on the top line, then a thick bar of ui.c's segments (GR_DB10), lit from the right as the reduction
+// grows (a lit segment a solid block, an unlit one its floor line), the held peak a taller block on its own; COMP off:
+// the bar's outline dotted and COMP OFF
+function grSegs(db10) {
+    const sc = FR_CONF.gr_db10;
+    if (!(db10 > 0)) return 0;
+    for (let i = 0; i < sc.length; i++) if (db10 <= sc[i]) return i + 1;
+    return sc.length;
+}
 function drawGr(ctx, st) {
     const x0 = 64, x1 = 127, y = 37;
-    text(ctx, x0, y + 1, "GR");
+    const n = FR_CONF.gr_db10.length, pitch = Math.floor((x1 - x0 + 2) / n), segw = pitch - 1;
+    const bx0 = x1 + 1 - (n * pitch - 1), by0 = y + 11, by1 = y + 25;     // the bar: 15 px tall
+    text(ctx, x0, y + 2, "GR");
     if (!st.gr) return;
-    if (st.gr.off) { textR(ctx, x1, y + 11, "COMP OFF"); return; }
-    textR(ctx, x1, y + 1, "DB");
-    textR(ctx, x1, y + 11, grText(st.gr.db10));
-    const bw = x1 - x0 - 1, fw = grPx(st.gr.db10, bw), pk = st.gr.pk ? grPx(st.gr.pk, bw) : 0;
-    frame(ctx, x0, y + 20, x1, y + 25);
-    if (fw) ctx.fillRect(x1 - fw, y + 21, fw, 4, 1);
-    if (pk > fw) ctx.fillRect(x1 - pk, y + 21, 2, 4, 1);
+    if (st.gr.off) {
+        for (let x = bx0; x <= x1; x += 2) { ctx.fillRect(x, by0, 1, 1, 1); ctx.fillRect(x, by1, 1, 1, 1); }
+        for (let yy = by0 + 2; yy < by1; yy += 2) { ctx.fillRect(bx0, yy, 1, 1, 1); ctx.fillRect(x1, yy, 1, 1, 1); }
+        textR(ctx, x1, y + 2, "COMP OFF");
+        return;
+    }
+    textR(ctx, x1, y + 2, grText(st.gr.db10) + " DB");
+    const lit = grSegs(st.gr.db10), pk = st.gr.pk ? grSegs(st.gr.pk) : 0;
+    for (let i = 0; i < n; i++) {
+        const x = x1 + 1 - (i + 1) * pitch + 1;
+        if (i < lit) ctx.fillRect(x, by0 + 2, segw, by1 - by0 - 1, 1);       // lit: a solid block on the floor
+        else if (i === pk - 1) ctx.fillRect(x, by0, segw, by1 - by0 + 1, 1); // the held peak: taller, alone
+        else ctx.fillRect(x, by1, segw, 1, 1);                               // unlit: the floor line
+    }
 }
 
 function drawFocus(ctx, st) {
@@ -396,7 +415,7 @@ function newState() {
     return { page: 0, engine: 0, vals: {}, written: {}, lastTurn: {}, focus: -1, until: 0,
              touch: [false, false, false, false, false, false, false, false], list: false, cursor: 0,
              preset: null, presetName: null, presetCount: 0, presetDirty: false, rev: null, expectRev: 0,
-             susOn: false, susDown: false, flash: null, rr: 0, gr: null };
+             susOn: false, flash: null, rr: 0, gr: null };
 }
 
 globalThis.canvas_overlay = {
@@ -416,7 +435,7 @@ globalThis.canvas_overlay = {
         if (!st) return false;
         const d = (msg && msg.data) || [];
         const type = (d[0] | 0) & 0xF0, d1 = d[1] | 0, d2 = d[2] | 0;
-        if (type === 0xB0 && d1 === FR_CONF.sus_cc) { sustainBtn(ctx, st, d2 > 0); return true; }
+        if (type === 0xB0 && d1 === FR_CONF.sus_cc) { if (d2 > 0) sustainBtn(ctx, st); return true; }
         if (type === 0x90 && d1 < 8) {                               // a knob's touch (velocity >= 64: down)
             if (st.list) return true;
             if (d2 >= 64) { st.touch[d1] = true; focus(ctx, st, d1, true); } else release(ctx, st, d1);
@@ -463,7 +482,8 @@ globalThis.canvas_overlay = {
         const st = ctx.state.fr;
         if (!st) return;
         const v = (p && p.values) || {};
-        if (v.s_sustain !== undefined && v.s_sustain !== null) st.susOn = v.s_sustain === "1" || v.s_sustain === "ON";
+        if (v.s_sustain !== undefined && v.s_sustain !== null && nowOf(ctx) - (st.written.s_sustain || 0) >= FR_CONF.settle_ms)
+            st.susOn = v.s_sustain === "1" || v.s_sustain === "ON";
         if (v.preset_name !== undefined && v.preset_name !== null) st.presetName = v.preset_name;
         const e = asNum(v.ui_engine);
         if (e !== null && (e | 0) !== st.engine) engineChanged(ctx, st, e | 0);
@@ -486,10 +506,6 @@ globalThis.canvas_overlay = {
         if (k.type === "preset" || k.write) return;
         if (nowOf(ctx) - (st.written[k.key] || 0) < FR_CONF.settle_ms) return;
         readKey(ctx, st, k);
-    },
-    onClose(ctx) {
-        const st = ctx.state.fr;
-        if (st && st.susDown) sustainBtn(ctx, st, false);
     },
     draw(ctx) {
         ctx.clear();

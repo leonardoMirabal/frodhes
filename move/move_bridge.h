@@ -86,6 +86,9 @@ static struct {
     uint8_t st_base[P_SLOTS];
     uint16_t st_hand;
     uint32_t rev;                        /* bumps on every applied change (state's "rev") */
+    unsigned eng_seen, eng_init;         /* is_loading: the engine the last read saw (mb_engine_moved) */
+    uint32_t eng_moves;
+    uint64_t eng_moved_ms;
     /* the per-callback timer (M1-18): render_block's own time, CLOCK_MONOTONIC (the vDSO: no syscall) */
     uint32_t cpu_us[MB_CPU_N]; uint16_t cpu_fr[MB_CPU_N];
     _Atomic uint32_t cpu_n;
@@ -627,9 +630,9 @@ static int mb_wire_text(const move_key_t *k, char *buf, int n)
     case MK_PARAM: case MK_SLOT: v = mb_slot_get(k->slot) - k->off; break;
     case MK_LATCH:
         v = k->cc == 64u ? (sus_latched || sus_held) : k->cc == 60u ? seq_play != 0 : k->cc == 63u ? seq_rec != 0 :
-            k->cc == 111u ? fx_bypass != 0 : 0;   /* 111: the FX button's bypass (s_fx, M5-01) */
+            k->cc == 111u ? fx_bypass == 0 : 0;   /* 111: FX (s_fx, M5-01) OFF / ON: 1 = the effects on, not bypassed */
         break;
-    case MK_BTN: v = sus_held; break;        /* the sustain control is down */
+    case MK_BTN: v = sus_latched || sus_held; break;   /* the Capture button's key reads SUS's state */
     case MK_MAP: v = k->slot < MB_NMAP ? mb.map[k->slot] : 0; break;
     default: v = 0; break;
     }
@@ -640,19 +643,25 @@ static int mb_wire_text(const move_key_t *k, char *buf, int n)
     }
     return snprintf(buf, (size_t)n, "%d", v);
 }
+/* SUS OFF: the latch, a hold of the FM-1's REC code and a MIDI pedal held down all let go (the pedal's next CC 64
+ * counts again); the caller sends the pedal (sustain_update) */
+static void mb_sus_off(void) { sus_latched = 0; sus_held = 0; sus_midi = 0; }
 static void mb_key_apply(uint32_t i, int32_t x)
 {
     const move_key_t *k = &MOVE_KEYS[i];
     if (k->kind == MK_PARAM || k->kind == MK_SLOT) mb_slot_abs(k->slot, x);
-    else if (k->cc == 64u) {                   /* SUSTAIN: the FM-1's REC latch (a MIDI pedal let up also frees it) */
-        sus_latched = x != 0; sustain_update();
-    } else if (k->kind == MK_BTN) {           /* the sustain control (M1-13b): the FM-1's REC button itself, so the
-                                                 * FM-1's own code times it (frodhes.c sustain_button: held = the
-                                                 * pedal, a tap under SUS_TAP_MS flips the latch), as the web
-                                                 * emulator's REC does */
-        if (x) mb.sus_down++; else mb.sus_up++;
-        web_btn(BTN_SUSTAIN, x != 0);
-    } else if (k->kind == MK_LATCH) midi_cc(k->cc, x ? 127u : 0u);
+    else if (k->cc == 64u) {                   /* SUS, the sustain toggle (the user, 2026-10-28): ON holds the notes as
+                                                 * the FM-1's REC latch does; OFF lets everything go and always wins
+                                                 * (0.9.8 candidate: OFF went back to ON while the PEDAL cell held the
+                                                 * REC button). A MIDI pedal let up still frees the latch (midi_cc). */
+        if (x) sus_latched = 1; else mb_sus_off();
+        sustain_update();
+    } else if (k->kind == MK_BTN) {           /* the Capture button (screen.js) or the chosen touch (dev_sus_touch): a
+                                                 * press flips SUS, a release does nothing */
+        if (x) { mb.sus_down++; if (sus_latched || sus_held) mb_sus_off(); else sus_latched = 1; sustain_update(); }
+        else mb.sus_up++;
+    } else if (k->cc == 111u) midi_cc(111u, x ? 0u : 127u);   /* FX: 1 = the effects on (CC 111 is the bypass) */
+    else if (k->kind == MK_LATCH) midi_cc(k->cc, x ? 127u : 0u);
     else if (k->kind == MK_TRIG) { if (x) midi_cc(k->cc, 127u); }
     else if (k->kind == MK_MAP && k->slot < MB_NMAP) {   /* a mapping's setting: the CC 0..119, LO / HI 0..127 */
         int32_t hi = k->slot % 3u ? 127 : 119;
@@ -1034,6 +1043,25 @@ static int mb_stats(char *buf, int n)
                     mb.keys_set, mb.keys_bad, mb.state_ok, mb.state_bad, mb.clock_mode, mb.rt_f8, mb.rt_fa, mb.rt_fb,
                     mb.rt_fc, mb.h_run, mb.h_bpm10, tempo_bpm10(), (unsigned)clk_follows());
 }
+/* the engine that sounds: TYPE_UI[TYPE] (eng_pages.h), 0 before the app runs (the pages of the default TYPE) */
+static unsigned mb_engine(void)
+{
+    unsigned e = atomic_load_explicit(&mb.ready, memory_order_acquire) && PV(P_TYPE) < N_TYPE_N ? TYPE_UI[PV(P_TYPE)] : 0u;
+    return e < MOVE_N_ENG ? e : 0u;
+}
+/* is_loading: 1 for MB_ENG_MOVED_MS after a read first sees the engine changed, else 0. Schwung re-reads ui_hierarchy
+ * on the 1 -> 0 edge (its knob grid polls about every 190 ms, the list editor every frame), and only then re-plans
+ * the VOICE pages for the new TYPE (a knob turn, a preset, a program change). Long enough for every poller to see a
+ * 1, short enough not to hold anything. */
+#define MB_ENG_MOVED_MS 600u
+static int mb_engine_moved(void)
+{
+    unsigned e = mb_engine();
+    uint64_t t = mb_now_ns() / 1000000u;
+    if (!mb.eng_init) { mb.eng_init = 1; mb.eng_seen = e; }   /* the first look is not a change */
+    if (e != mb.eng_seen) { mb.eng_seen = e; mb.eng_moved_ms = t; mb.eng_moves++; }
+    return mb.eng_moves && t - mb.eng_moved_ms < MB_ENG_MOVED_MS;
+}
 static int mb_get(const char *key, char *buf, int n)
 {
     int i;
@@ -1044,11 +1072,18 @@ static int mb_get(const char *key, char *buf, int n)
         return -1;                       /* (the worker still boots the app: nothing of it to read yet) */
     if (!strcmp(key, "state")) return mb_state_get(buf, n);
     if ((i = mb_key_find(key)) >= 0) return mb_wire_text(&MOVE_KEYS[i], buf, n);
-    if (!strcmp(key, MOVE_GATE_KEY)) return snprintf(buf, (size_t)n, "%u", (unsigned)TYPE_UI[PV(P_TYPE) < N_TYPE_N ? PV(P_TYPE) : 0u]);
+    if (!strcmp(key, MOVE_SCREEN_KEY)) return snprintf(buf, (size_t)n, "%s", MOVE_SCREEN_VALUE);   /* PAGES' value line */
+    if (!strcmp(key, MOVE_GATE_KEY)) return snprintf(buf, (size_t)n, "%u", mb_engine());
     if (!strcmp(key, "preset")) return snprintf(buf, (size_t)n, "%u", (unsigned)set.preset);
     if (!strcmp(key, "preset_count")) return snprintf(buf, (size_t)n, "%u", (unsigned)(PR_NF + PR_NU));
     if (!strcmp(key, "preset_name")) { char s[20]; preset_name(set.preset < PR_NF + PR_NU ? set.preset : 0u, s); return snprintf(buf, (size_t)n, "%s", s); }
-    if (!strcmp(key, "ui_hierarchy")) { if ((int)sizeof MOVE_UI_HIERARCHY > n) return -1; memcpy(buf, MOVE_UI_HIERARCHY, sizeof MOVE_UI_HIERARCHY); return (int)sizeof MOVE_UI_HIERARCHY - 1; }
+    if (!strcmp(key, "ui_hierarchy")) {   /* the sounding engine's pages (gen_move_module.py hier_for_engine) */
+        unsigned e = mb_engine();
+        if ((int)MOVE_UI_HIERARCHY_N[e] >= n) return -1;
+        memcpy(buf, MOVE_UI_HIERARCHY[e], (size_t)MOVE_UI_HIERARCHY_N[e] + 1u);
+        return (int)MOVE_UI_HIERARCHY_N[e];
+    }
+    if (!strcmp(key, "is_loading")) return snprintf(buf, (size_t)n, "%d", mb_engine_moved());
     if (!strcmp(key, "chain_params")) { if ((int)sizeof MOVE_CHAIN_PARAMS > n) return -1; memcpy(buf, MOVE_CHAIN_PARAMS, sizeof MOVE_CHAIN_PARAMS); return (int)sizeof MOVE_CHAIN_PARAMS - 1; }
     if (!strcmp(key, "rev")) return snprintf(buf, (size_t)n, "%u", mb.rev);
     if (!strcmp(key, "dev_cpu_ring")) return mb_cpu_ring(buf, n);

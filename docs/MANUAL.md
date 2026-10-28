@@ -1130,9 +1130,13 @@ released yet.** Install and the details: [MOVE.md](MOVE.md).
 Everything in this manual applies, with these differences:
 
 - **The pages**: one page holds eight controls, one for each of the Move's eight knobs, two of the FM-1's pages
-  side by side (DRIVE/FILTER, TREM/PHASER, CHORUS/DELAY, ...). The names are shortened to five letters (THRESH is
-  THRSH); the values and ranges are the FM-1's. COMPRESSOR shows the gain-reduction meter on knobs 7 and 8.
-- **Frodhes' own screen** (PAGES on the first page): the eight knobs as eight cards, each with its name, value
+  side by side (DRIVE/FILTER, TREM/PHASER, CHORUS/DELAY, ...). The names are the FM-1's where they fit the Move's
+  screen and shorter where they do not (MAKEUP is MKUP); the values and ranges are the FM-1's. The VOICE pages are
+  the instrument's that plays and change with TYPE, a preset or a program change. COMPRESSOR shows the
+  gain-reduction meter on knobs 7 and 8: a thick bar of segments lit from the right, the peak as a taller segment.
+- **One slot at a time**: Frodhes is one instrument; load it on two tracks and only the one loaded last plays (the
+  other is silent and its name reads ONE SLOT ONLY). Remove either and the one left plays.
+- **Frodhes' own screen** (PAGES on the first page: touch its knob and click the jog wheel): the eight knobs as eight cards, each with its name, value
   and bar; touch or turn a knob and its card fills the screen, as the FM-1 shows one card large; the overview
   comes back about a second after you let go. The jog wheel turns the pages; a click lists them.
 
@@ -1140,9 +1144,9 @@ Everything in this manual applies, with these differences:
 - **The sound**: HQ, the Move's one version of the three engines (the FM-1 plays Classic): the piano types' exact
   hammer strike at every velocity and a truer re-strike; VIBES and MARIMBA with more bar and tube modes and the
   mallet's contact computed live on a re-strike.
-- **Sustain**: the Move has no pedal jack. The Capture button is the pedal on the PEDAL screen and on Frodhes'
-  screen (hold it, or tap to latch, as REC on the FM-1); SUS on the first page latches; a pedal on CC 64 (USB)
-  works with half pedalling.
+- **Sustain**: the Move has no pedal jack. SUS on the first page is the sustain, on or off (OFF always lets the
+  notes go); on Frodhes' screen each press of the Capture button turns it on or off. A pedal on CC 64 (USB) works
+  as on the FM-1, half pedalling included, and letting it up turns SUS off.
 - **FX** on the first page is the FX button: all effects off or on (CC 111).
 - **Presets**: F01–F19 and U01–U16 in the preset browser and by program change, as on the FM-1. There is no SAVE
   page: the sound is saved with the Move's set.
