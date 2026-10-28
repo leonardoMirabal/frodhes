@@ -68,3 +68,21 @@ def test_fdrv_tail_is_smooth(target, amount):
     big0, res0 = tail_stats(take(target, amount, drive=False))
     assert big < 3.0, f"{target} AMOUNT {amount}: {big:.1f} % steps >= 3 LSB in the tail (dry {big0:.1f} %): a staircase"
     assert res < res0 + 0.25, f"{target} AMOUNT {amount}: {res:.2f} LSB above 2 kHz in the tail (dry {res0:.2f})"
+
+
+def test_move_tail_fades_to_silence():
+    """the Move (FR_HQ): the silence gate's fall after the tail is slow and symmetric (fx.c GATE_FALL / GATE_RND). Full
+    F05, C4 v100, the pedal down: from the last 50 ms frame at 16 LSB or more to exact zero takes >= 300 ms (it was a
+    46 ms linear cut, 228 ms after the last such frame), and the last 10 ms are not a run of -1 (the truncated
+    product held every negative sample at -1 to the end: 97 % of the last nonzero samples were negative on R)"""
+    ls = ["0 midi 0xC0 4 0", hostrun.cc(400, 64, 127), *hostrun.note(500, 60, 100, 500)]
+    r = hostrun.run("drive_tail_move_gate", ls, end_ms=14000, binary=binary("move"))
+    x = np.stack([r.L, r.R], 1)
+    end = int(np.nonzero(np.abs(x).max(1))[0][-1])
+    w = int(0.05 * FS)
+    pk = np.abs(x[:end // w * w]).max(1).reshape(-1, w).max(1)
+    fade_ms = (end - int(np.nonzero(pk >= 16)[0][-1]) * w) * 1000 / FS
+    assert fade_ms >= 300, f"the tail stops {fade_ms:.0f} ms after its last frame at 16 LSB: a cut, not a fade"
+    last = x[end - 441:end + 1].ravel()
+    nz = last[last != 0]
+    assert len(nz) and np.mean(nz < 0) <= 0.85, f"the last 10 ms: {np.mean(nz < 0) * 100:.0f} % of the samples negative"

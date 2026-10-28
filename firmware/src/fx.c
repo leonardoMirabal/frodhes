@@ -1485,6 +1485,19 @@ static inline __attribute__((always_inline)) int32_t dc_block(int32_t x, int32_t
 static int32_t fx_L[256], fx_R[256];
 #define GATE_LO 16                                      /* -66 dBFS (Q15) */
 #define GATE_HI 32
+/* the gate's fall and its product's rounding. The FM-1: 16 a sample (46 ms, linear) truncated, under the codec's hiss.
+ * The Move (FR_HQ, 0.9.8, the tail report): its output is clean, so the fall is heard: g -= (g >> 13) + 1 a sample, an
+ * exponential of ~190 ms that ends linear (~0.45 s in all: the note's own decay steepening, not a cut), and the
+ * product rounded (+16384): truncated, every negative sample stayed at -1 to the end, a half-wave buzz of 1 LSB */
+#ifdef FR_HQ
+static uint8_t fx_gate_soft = 1;                        /* 0: the FM-1's fall (move_bridge.h dev_gate 0, a dev / test key:
+                                                         * Gate M's replay against the FM-1's renders) */
+#define GATE_FALL(g) (fx_gate_soft ? ((g) >> 13) + 1 : 16)
+#define GATE_RND (fx_gate_soft ? 16384 : 0)
+#else
+#define GATE_FALL(g) 16
+#define GATE_RND 0
+#endif
 static int32_t gate_g = 32768, gate_tgt = 32768, fx_wet = 32768;
 static uint32_t gate_quiet;
 /* developer CC 10 (>= 64): every free-running part back to its boot state, for before / after recordings that must
@@ -1677,7 +1690,7 @@ FR_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
     fx_wet = wet; dc_l = dl; dce_l = el; dc_r = dr; dce_r = er;
     /* silence gate: the codec mutes itself on digital zero, but while anything at all comes out its analog hiss
      * is there; a held note's last -66 dBFS lie under that hiss anyway. So after 200 ms under GATE_LO the output
-     * fades (46 ms) to exact zero, and it opens within 1.5 ms of the first block above GATE_HI (0.4) */
+     * fades (46 ms; the Move ~0.45 s: GATE_FALL) to exact zero, and it opens within 1.5 ms of the first block above GATE_HI (0.4) */
     if (pk >= GATE_HI) { gate_quiet = 0; gate_tgt = 32768; }
     else if (pk < GATE_LO && ++gate_quiet >= 35u) { gate_quiet = 35u; gate_tgt = 0; }
     /* (every sample of out written with "=" by the limiter above: platform.c does not clear it, APP_OUT_WRITTEN in
@@ -1686,10 +1699,10 @@ FR_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
     if (gate_g != 32768 || gate_tgt != 32768)
         for (j = 0; j < n; j++) {
             if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
-            else if (gate_g > gate_tgt) gate_g = gate_g - 16 < gate_tgt ? gate_tgt : gate_g - 16;
+            else if (gate_g > gate_tgt) gate_g = gate_g - GATE_FALL(gate_g) < gate_tgt ? gate_tgt : gate_g - GATE_FALL(gate_g);
             if (gate_g != 32768) {
-                out[2u * j] = (out[2u * j] * gate_g) >> 15;
-                out[2u * j + 1u] = (out[2u * j + 1u] * gate_g) >> 15;
+                out[2u * j] = (out[2u * j] * gate_g + GATE_RND) >> 15;
+                out[2u * j + 1u] = (out[2u * j + 1u] * gate_g + GATE_RND) >> 15;
             }
         }
     fx_peak = pk;
