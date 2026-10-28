@@ -44,7 +44,22 @@ def perf_decode(b):
             "pre_avg": u64(P_PRE_AVG), "pre_max": u64(P_PRE_MAX),
             "syn_avg": [u64(P_SYN_AVG + 8 * i) for i in range(4)], "syn_max": [u64(P_SYN_MAX + 8 * i) for i in range(4)],
             "rnd_max": [u64(P_RND_MAX + 8 * i) for i in range(4)],
-            "overruns": struct.unpack_from("<I", b, P_OVR)[0]}
+            "overruns": struct.unpack_from("<I", b, P_OVR)[0],
+            "sec_max": [u64(96 + 16 * i + 8) for i in range(24)], "sec_avg": [u64(96 + 16 * i) for i in range(24)],
+            "post_max": u64(88)}
+
+
+SECTIONS = ["MIDI monitor", "Forward MIDI", "Mix audio", "UI requests", "Param requests", "Forward CC",
+            "Process MIDI", "JACK stash", "Drain DSP", "JACK wake", "Mix buffer", "TTS", "Display", "Clear LEDs",
+            "JACK MIDI out", "UI MIDI out", "Flush LEDs", "Screen reader", "JACK pre", "JACK display", "CPU pin",
+            "Post MIDI scan", "Post drain DSP", "Post render"]
+
+
+def top_sections(rows, thr=150):
+    if not rows:
+        return {}
+    return {SECTIONS[i]: max(p["sec_max"][i] for p in rows) for i in range(24)
+            if max(p["sec_max"][i] for p in rows) >= thr}
 
 
 class Perf(threading.Thread):
@@ -85,6 +100,11 @@ def set_module(w, s, mod, wait=5.0):
     w.pump(wait)
 
 
+JS = {}
+USB = False
+LOW = True                                       # (LEVEL -12 dB: four slots at unity clip the Move's mix)
+
+
 def fetch_any(local):
     """fetch(take) for the TapRig: the tap file in whichever inst/<k>/tap holds it"""
     def fetch(take):
@@ -97,7 +117,8 @@ def fetch_any(local):
             if subprocess.run(["scp", *mi.SSH_OPTS, "-q", "%s:%s/%s" % (HOST, d, f), l]).returncode:
                 return None
         ssh("rm -f %s/%s.wav %s/%s.json" % (d, take, d, take))
-        return wav, json.load(open(js))
+        JS[take] = dict(json.load(open(js)), inst_dir=d)
+        return wav, JS[take]
     return fetch
 
 
@@ -114,7 +135,9 @@ def run_n(n, secs, outdir, seed=1):
         res["inst"] = ssh("ls -d %s/*/ 2>/dev/null; cat %s/*/load.txt 2>/dev/null" % (INST, INST)).decode()
     ssh("rm -f %s/*/cpu-ring.log" % INST)
     rigs = [mh.TapRig(URL, fetch_any(os.path.join(outdir, "n%d" % n)), slot=s) for s in range(n)]
-    ccs = hc.engine_ccs("rhodes", hc.HEAVY)
+    for s, r in enumerate(rigs):
+        r.stamp = "%s%d" % (r.stamp, s)              # (one take id an instance)
+    ccs = hc.engine_ccs("rhodes", dict(hc.HEAVY, LEVEL=0) if LOW else hc.HEAVY)
     takes, evs = [None] * n, [None] * n
     for s, r in enumerate(rigs):
         r._send("cc", 120, 0)
@@ -125,14 +148,59 @@ def run_n(n, secs, outdir, seed=1):
         evs[s] = (sorted(ev, key=lambda e: e[0]), dur)
     perf = Perf()
     perf.start()
-    time.sleep(3)
+    ssh("touch /data/UserData/schwung/spi_tally_on")
+    time.sleep(12)                                  # (the idle baseline: loaded, nothing playing)
     base = list(perf.rows)
+    idle = [p for t, p in base[2:]]
+    if idle:
+        res["idle"] = {"pre_max": max(p["pre_max"] for p in idle), "tot_max": max(p["tot_max"] for p in idle),
+                       "overruns_per_s": round((idle[-1]["overruns"] - idle[0]["overruns"]) / max(1, len(idle) - 1), 1),
+                       "syn_max": [max(p["syn_max"][i] for p in idle) for i in range(4)],
+                       "sections": top_sections(idle),
+                       "series_pre_max": [p["pre_max"] for p in idle]}
+    log0 = int(ssh("wc -c < /data/UserData/schwung/debug.log").decode().strip() or 0)
+
+    up = threading.Lock()
+    bar = threading.Barrier(n)
+
+    def two_phase(remote):
+        """Remote.play with the uploads one at a time (the manager's set ring) and every "go" together"""
+        orig_set = remote.set_param
+
+        def play(slot, take, dur_ms, events, lead_ms=100, pace=0.012):
+            with up:
+                def no_go(sl, key, value):
+                    if key.endswith(":dev_play") and str(value).startswith("go"):
+                        return
+                    orig_set(sl, key, value)
+                remote.set_param = no_go
+                try:
+                    move_ws.Remote.play(remote, slot, take, dur_ms, events, lead_ms, pace)
+                finally:
+                    remote.set_param = orig_set
+                remote.pump(0.5)
+            bar.wait()
+            orig_set(slot, "synth:dev_play", "go %d" % int(lead_ms))
+            remote.pump(0.2)
+        remote.play = play
+    for r in rigs:
+        two_phase(r.remote)
 
     def play(s):
         try:
             takes[s] = rigs[s].rec(evs[s][1], evs[s][0])
         except Exception as e:     # noqa: BLE001
             takes[s] = {"error": str(e)}
+    usb = {}
+
+    def usb_rec(secs):
+        import sounddevice as sd
+        dev = [i for i, d in enumerate(sd.query_devices()) if "Move" in d["name"] and d["max_input_channels"] > 0]
+        if dev:
+            usb["x"] = sd.rec(int(secs * 44100), samplerate=44100, channels=2, dtype="int16", device=dev[0], blocking=True)
+    ut = threading.Thread(target=usb_rec, args=(max(e[1] for e in evs) + 8.0,))
+    if USB:
+        ut.start()
     th = [threading.Thread(target=play, args=(s,)) for s in range(n)]
     tp0 = time.time()
     for t in th:
@@ -140,6 +208,22 @@ def run_n(n, secs, outdir, seed=1):
     for t in th:
         t.join()
     perf.end()
+    if USB:
+        ut.join()
+        if "x" in usb:
+            import wave
+            x = usb["x"]
+            wf = wave.open(os.path.join(outdir, "usb-n%d.wav" % n), "wb")
+            wf.setnchannels(2); wf.setsampwidth(2); wf.setframerate(44100); wf.writeframes(x.tobytes()); wf.close()
+            xf = x.astype(float)
+            g = mh.glitches(xf, 44100, [], ccs=ccs)
+            res["usb"] = {"peak_dbfs": round(20 * np.log10(np.abs(xf).max() / 32767 + 1e-12), 1),
+                          "gated": len([e for e in g if e[1] in hc.GATED]), "events": [list(e) for e in g[:20]]}
+    log = ssh("tail -c +%d /data/UserData/schwung/debug.log | grep -E 'spi-tally|spi_timing\\] Frame'" % (log0 + 1)).decode()
+    res["tally"] = [ln for ln in log.splitlines() if "spi-tally" in ln][-40:]
+    res["late_lines"] = sum(1 for ln in log.splitlines() if "LATE" in ln)
+    res["frame_lines"] = [ln.split("Frame(us): ")[-1][:80] for ln in log.splitlines() if "Frame(us)" in ln][-12:]
+    ssh("rm -f /data/UserData/schwung/spi_tally_on")
     for r in rigs:
         r._set("synth:dev_cpu_log", 0)
     time.sleep(0.6)
@@ -155,16 +239,25 @@ def run_n(n, secs, outdir, seed=1):
                        "pre_avg": max(p["pre_avg"] for p in during), "period": during[-1]["period"],
                        "syn_max": [max(p["syn_max"][i] for p in during) for i in range(4)],
                        "syn_avg": [max(p["syn_avg"][i] for p in during) for i in range(4)],
-                       "overruns": during[-1]["overruns"] - (base[-1][1]["overruns"] if base else during[0]["overruns"])}
+                       "overruns": during[-1]["overruns"] - (base[-1][1]["overruns"] if base else during[0]["overruns"]),
+                       "overruns_per_s": round((during[-1]["overruns"] - during[0]["overruns"]) / max(1, len(during) - 1), 1),
+                       "sections": top_sections(during),
+                       "series_pre_max": [p["pre_max"] for p in during],
+                       "series_syn_sum_max": [sum(p["syn_max"]) for p in during],
+                       "series_post_render_max": [p["sec_max"][23] for p in during],
+                       "post_render_avg": max(p["sec_avg"][23] for p in during),
+                       "series_tot_max": [p["tot_max"] for p in during]}
     res["takes"] = []
     for s in range(n):
         tk = takes[s]
         if not tk or "error" in tk:
-            res["takes"].append({"slot": s + 1, "error": (tk or {}).get("error", "none")})
+            res["takes"].append({"slot": s + 1, "tap": {k: v for k, v in JS.get("d%s-%03d" % (rigs[s].stamp, rigs[s].n), {}).items()
+                                     if k in ("played", "events", "dropped", "late", "bad", "aborted", "inst_dir")}, "error": (tk or {}).get("error", "none")})
             continue
         g = mh.glitches(tk["x"], tk["sr"], evs[s][0], ccs=ccs)
         gated = [e for e in g if e[1] in hc.GATED]
-        res["takes"].append({"slot": s + 1, "secs": round(evs[s][1], 1), "gated": len(gated), "events": len(g),
+        res["takes"].append({"slot": s + 1, "tap": {k: v for k, v in JS.get("d%s-%03d" % (rigs[s].stamp, rigs[s].n), {}).items()
+                                     if k in ("played", "events", "dropped", "late", "bad", "aborted", "inst_dir")}, "secs": round(evs[s][1], 1), "gated": len(gated), "events": len(g),
                              "first": [list(e) for e in gated[:5]], "xruns": tk["xruns"],
                              "peak_dbfs": round(20 * np.log10(np.abs(tk["x"]).max() / 32767 + 1e-12), 1)})
     for r in rigs:
@@ -176,8 +269,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, nargs="+", default=[1, 2, 3, 4])
     ap.add_argument("--secs", type=float, default=20.0)
+    ap.add_argument("--usb", action="store_true", help="also record the Move's USB-C audio (Main Out) and check it")
     ap.add_argument("--out", default=os.path.join(mh.ROOT if hasattr(mh, "ROOT") else ".", "build", "move-multi", "hil"))
     a = ap.parse_args()
+    global USB
+    USB = a.usb
     out = os.path.join(a.out, time.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(out, exist_ok=True)
     allr = []

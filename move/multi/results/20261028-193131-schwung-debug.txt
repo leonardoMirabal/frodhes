@@ -1,0 +1,64 @@
+18:31:35.073 [INFO ] [shim] slot-load: slot 0 synth:module took 17.8 ms off the SPI callback (queued 52.1 ms, slot parked)
+18:31:35.248 [DEBUG] [spi_timing] Frame(us): total avg=2708 max=2913 | pre avg=203 max=297 | ioctl avg=2098 max=2243 | post avg=405 max=534 | overruns=6464402
+18:31:35.248 [DEBUG] [spi_timing] Slot synth max(us): s0=266 s1=203 s2=205 s3=212 | Slot fx max(us): s0=6 s1=0 s2=0 s3=0
+18:31:40.248 [DEBUG] [spi_timing] Frame(us): total avg=2711 max=3204 | pre avg=202 max=297 | ioctl avg=2103 max=2410 | post avg=404 max=694 | overruns=6465263
+18:31:40.248 [DEBUG] [spi_timing] Slot synth max(us): s0=275 s1=198 s2=212 s3=244 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:31:41.162 [INFO ] [shim] slot-load: slot 1 synth:module took 98.8 ms off the SPI callback (queued 52.0 ms, slot parked)
+18:31:45.248 [DEBUG] [spi_timing] Frame(us): total avg=2710 max=3548 | pre avg=201 max=285 | ioctl avg=2105 max=2575 | post avg=402 max=826 | overruns=6466124
+18:31:45.248 [DEBUG] [spi_timing] Slot synth max(us): s0=269 s1=210 s2=226 s3=218 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:31:47.073 [INFO ] [shim] slot-load: slot 2 synth:module took 3.8 ms off the SPI callback (queued 52.3 ms, slot parked)
+18:31:50.249 [DEBUG] [spi_timing] Frame(us): total avg=2710 max=3389 | pre avg=201 max=297 | ioctl avg=2106 max=2524 | post avg=401 max=781 | overruns=6466985
+18:31:50.249 [DEBUG] [spi_timing] Slot synth max(us): s0=263 s1=202 s2=237 s3=214 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:31:53.111 [INFO ] [shim] slot-load: slot 3 synth:module took 24.9 ms off the SPI callback (queued 52.1 ms, slot parked)
+18:31:55.249 [DEBUG] [spi_timing] Frame(us): total avg=2711 max=3226 | pre avg=201 max=287 | ioctl avg=2105 max=2394 | post avg=403 max=686 | overruns=6467485
+18:31:55.249 [DEBUG] [spi_timing] Slot synth max(us): s0=283 s1=212 s2=221 s3=219 | Slot fx max(us): s0=0 s1=0 s2=0 s3=3
+18:32:00.249 [DEBUG] [spi_timing] Frame(us): total avg=2709 max=2882 | pre avg=201 max=278 | ioctl avg=2103 max=2242 | post avg=404 max=533 | overruns=6467492
+18:32:00.250 [DEBUG] [spi_timing] Slot synth max(us): s0=269 s1=239 s2=199 s3=217 | Slot fx max(us): s0=0 s1=19 s2=0 s3=0
+18:32:05.250 [DEBUG] [spi_timing] Frame(us): total avg=2706 max=2878 | pre avg=205 max=1959 | ioctl avg=2092 max=2278 | post avg=407 max=542 | overruns=6467499
+18:32:05.251 [DEBUG] [spi_timing] Slot synth max(us): s0=269 s1=205 s2=222 s3=215 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:32:10.252 [DEBUG] [spi_timing] Frame(us): total avg=2707 max=2847 | pre avg=202 max=291 | ioctl avg=2095 max=2239 | post avg=407 max=519 | overruns=6467507
+18:32:10.252 [DEBUG] [spi_timing] Slot synth max(us): s0=268 s1=209 s2=205 s3=222 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:32:15.252 [DEBUG] [spi_timing] Frame(us): total avg=2708 max=2898 | pre avg=202 max=298 | ioctl avg=2099 max=2245 | post avg=405 max=529 | overruns=6467518
+18:32:15.252 [DEBUG] [spi_timing] Slot synth max(us): s0=268 s1=218 s2=208 s3=203 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:32:20.252 [DEBUG] [spi_timing] Frame(us): total avg=2708 max=2896 | pre avg=203 max=286 | ioctl avg=2097 max=2261 | post avg=406 max=534 | overruns=6467520
+18:32:20.252 [DEBUG] [spi_timing] Slot synth max(us): s0=270 s1=203 s2=212 s3=207 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:32:25.253 [DEBUG] [spi_timing] Frame(us): total avg=2703 max=3168 | pre avg=232 max=2151 | ioctl avg=2060 max=2270 | post avg=410 max=553 | overruns=6467536
+18:32:25.253 [DEBUG] [spi_timing] Slot synth max(us): s0=265 s1=204 s2=211 s3=227 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:32:30.253 [DEBUG] [spi_timing] Frame(us): total avg=2703 max=3086 | pre avg=229 max=2141 | ioctl avg=2063 max=2242 | post avg=409 max=531 | overruns=6467559
+18:32:30.253 [DEBUG] [spi_timing] Slot synth max(us): s0=263 s1=200 s2=224 s3=212 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:32:35.253 [DEBUG] [spi_timing] Frame(us): total avg=2704 max=2964 | pre avg=228 max=2063 | ioctl avg=2066 max=2282 | post avg=409 max=568 | overruns=6467581
+18:32:35.253 [DEBUG] [spi_timing] Slot synth max(us): s0=272 s1=220 s2=229 s3=222 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:32:35.534 [INFO ] [move-shim] 2026-10-28T18:32:35.534538: warning: audio-dropouts:1
+18:32:35.694 [WARN ] [shim] spi-tally: LATE 1 irq(s) arrived while busy — frames queued, not dropped (backlog 1, worst window 1)
+18:32:40.253 [DEBUG] [spi_timing] Frame(us): total avg=2705 max=3109 | pre avg=203 max=295 | ioctl avg=1926 max=2279 | post avg=574 max=959 | overruns=6467731
+18:32:40.253 [DEBUG] [spi_timing] Slot synth max(us): s0=487 s1=483 s2=474 s3=499 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:32:45.254 [DEBUG] [spi_timing] Frame(us): total avg=2700 max=2962 | pre avg=205 max=288 | ioctl avg=1671 max=1851 | post avg=822 max=1008 | overruns=6467776
+18:32:45.254 [DEBUG] [spi_timing] Slot synth max(us): s0=508 s1=513 s2=564 s3=508 | Slot fx max(us): s0=1 s1=0 s2=0 s3=0
+18:32:50.254 [DEBUG] [spi_timing] Frame(us): total avg=2703 max=2949 | pre avg=206 max=293 | ioctl avg=1676 max=1844 | post avg=819 max=1029 | overruns=6467809
+18:32:50.254 [DEBUG] [spi_timing] Slot synth max(us): s0=491 s1=502 s2=506 s3=503 | Slot fx max(us): s0=0 s1=6 s2=0 s3=1
+18:32:55.255 [DEBUG] [spi_timing] Frame(us): total avg=2703 max=2909 | pre avg=206 max=302 | ioctl avg=1673 max=1836 | post avg=823 max=1065 | overruns=6467848
+18:32:55.255 [DEBUG] [spi_timing] Slot synth max(us): s0=523 s1=480 s2=513 s3=513 | Slot fx max(us): s0=0 s1=5 s2=0 s3=0
+18:33:00.255 [DEBUG] [spi_timing] Frame(us): total avg=2704 max=2970 | pre avg=205 max=314 | ioctl avg=1684 max=1840 | post avg=813 max=1020 | overruns=6467892
+18:33:00.255 [DEBUG] [spi_timing] Slot synth max(us): s0=518 s1=492 s2=514 s3=490 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:33:02.732 [WARN ] [shim] spi-tally: LATE 1 irq(s) arrived while busy — frames queued, not dropped (backlog 2, worst window 1)
+18:33:05.256 [DEBUG] [spi_timing] Frame(us): total avg=2702 max=3035 | pre avg=204 max=303 | ioctl avg=1673 max=1846 | post avg=823 max=1000 | overruns=6467923
+18:33:05.256 [DEBUG] [spi_timing] Slot synth max(us): s0=523 s1=523 s2=494 s3=491 | Slot fx max(us): s0=0 s1=5 s2=3 s3=0
+18:33:10.257 [DEBUG] [spi_timing] Frame(us): total avg=2704 max=3079 | pre avg=203 max=277 | ioctl avg=1908 max=2250 | post avg=591 max=1006 | overruns=6468043
+18:33:10.257 [DEBUG] [spi_timing] Slot synth max(us): s0=509 s1=463 s2=479 s3=444 | Slot fx max(us): s0=0 s1=11 s2=0 s3=0
+18:33:15.259 [DEBUG] [spi_timing] Frame(us): total avg=2699 max=3053 | pre avg=205 max=297 | ioctl avg=2078 max=2269 | post avg=414 max=783 | overruns=6468078
+18:33:15.259 [DEBUG] [spi_timing] Slot synth max(us): s0=310 s1=236 s2=265 s3=321 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:33:20.259 [DEBUG] [spi_timing] Frame(us): total avg=2709 max=2924 | pre avg=202 max=308 | ioctl avg=2102 max=2264 | post avg=403 max=526 | overruns=6468101
+18:33:20.259 [DEBUG] [spi_timing] Slot synth max(us): s0=246 s1=208 s2=204 s3=212 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:33:21.005 [INFO ] [move-shim] 2026-10-28T18:33:21.005228: warning: audio-dropouts:1
+18:33:25.259 [DEBUG] [spi_timing] Frame(us): total avg=2710 max=8034 | pre avg=210 max=7102 | ioctl avg=2093 max=2550 | post avg=405 max=610 | overruns=6468108
+18:33:25.259 [DEBUG] [spi_timing] Slot synth max(us): s0=280 s1=220 s2=226 s3=215 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:33:30.260 [DEBUG] [spi_timing] Frame(us): total avg=2706 max=2894 | pre avg=203 max=275 | ioctl avg=2096 max=2242 | post avg=406 max=557 | overruns=6468120
+18:33:30.261 [DEBUG] [spi_timing] Slot synth max(us): s0=267 s1=220 s2=219 s3=224 | Slot fx max(us): s0=17 s1=0 s2=0 s3=0
+18:33:35.261 [DEBUG] [spi_timing] Frame(us): total avg=2709 max=2889 | pre avg=201 max=282 | ioctl avg=2104 max=2236 | post avg=402 max=523 | overruns=6468132
+18:33:35.261 [DEBUG] [spi_timing] Slot synth max(us): s0=253 s1=218 s2=215 s3=239 | Slot fx max(us): s0=3 s1=0 s2=0 s3=0
+18:33:40.262 [DEBUG] [spi_timing] Frame(us): total avg=2708 max=2869 | pre avg=202 max=295 | ioctl avg=2100 max=2247 | post avg=404 max=595 | overruns=6468135
+18:33:40.262 [DEBUG] [spi_timing] Slot synth max(us): s0=279 s1=213 s2=203 s3=205 | Slot fx max(us): s0=0 s1=0 s2=0 s3=0
+18:33:45.262 [DEBUG] [spi_timing] Frame(us): total avg=2710 max=2904 | pre avg=202 max=295 | ioctl avg=2104 max=2242 | post avg=402 max=537 | overruns=6468146
+18:33:45.262 [DEBUG] [spi_timing] Slot synth max(us): s0=266 s1=202 s2=228 s3=201 | Slot fx max(us): s0=0 s1=0 s2=1 s3=0
+18:33:50.262 [DEBUG] [spi_timing] Frame(us): total avg=2709 max=2871 | pre avg=201 max=303 | ioctl avg=2103 max=2257 | post avg=403 max=537 | overruns=6468152
+18:33:50.263 [DEBUG] [spi_timing] Slot synth max(us): s0=271 s1=209 s2=197 s3=205 | Slot fx max(us): s0=0 s1=0 s2=0 s3=1
