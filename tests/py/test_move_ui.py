@@ -68,7 +68,7 @@ def test_shots_every_page_in_true_colours(tmp_path):
                         "1"], capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
     pages = screen_pages()
-    want = len(pages) + sum(len(p["knobs"]) for p in pages) + 1        # the overviews, the cards, the list
+    want = len(pages) + sum(len(p["knobs"]) for p in pages) + 2        # the overviews, the cards, the list, the meter
     shots = [f for f in os.listdir(tmp_path) if f.endswith(".png") and f != "sheet.png"]
     assert len(shots) == want, (len(shots), want)
     for f in shots:
