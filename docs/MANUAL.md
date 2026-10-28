@@ -353,7 +353,8 @@ the highs fall off. TONE moves the high-frequency roll-off (70 = as the tape pla
 **FEEDBK** alone sets how many echoes, on every type and at any MIX (turning MIX changes how loud the echoes are, not
 how many). On ANA and TAPE, up to about 113 the echoes always die away; from about 115 to 127 they build up on their
 own into a held drone, kept in bounds by the echo's own saturation, as an analog or tape echo does when its
-regeneration is turned up. DIG's echoes always die away. Turn FEEDBK down (the drone then dies away) or switch the
+regeneration is turned up. With the PHASER's feedback and a long REVERB on as well, ANA's drone can grow up to the
+output limiter, which then holds its peaks. DIG's echoes always die away. Turn FEEDBK down (the drone then dies away) or switch the
 delay off (its tail always ends) to stop it.
 
 Switching the delay off or on while echoes ring does not click: the echoes already on their way ring out in their own sound. Switching to or from TAPE while echoes ring fades the old type out, then the new one in. **SEL** switches the delay off and
