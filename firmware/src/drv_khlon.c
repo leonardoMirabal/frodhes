@@ -52,7 +52,11 @@ static DRV_BSS int32_t kh_sc;                                     /* the couplin
 static DRV_BSS int32_t kh_tmp[DRV_BLK], kh_u[DRV_BLK];             /* the driven path; the sum while it dips */
 static DRV_BSS const int32_t *kh_gf;                              /* the plain clipper's node at 0 V (KH_GF) */
 static DRV_BSS int32_t kh_e1, kh_F1, kh_v1;                       /* the AA clipper: the last e, F(e1), the last v */
+#if KH_AA
 static DRV_BSS uint8_t kh_aa;                                     /* the AA clipper runs (AMOUNT index >= KH_AA_A) */
+#else                    /* (0.9.8, flash: KH_AA_FROM is past the last row, so the AA passes and KH_RCP are left out) */
+#define kh_aa 0
+#endif
 static DRV_BSS int32_t kh_kc4, kh_rail;                           /* (in RAM: loaded into registers, as the reference) */
 static DRV_DATA uint8_t kh_ra = 0xFFu, kh_rt, kh_pre, kh_dip, kh_held;      /* rows (AMOUNT 0..126, TONE 0..128); 0xFF: none yet */
 /* each section's last two inputs and outputs (x1 x2 y1 y2), kept at the end of a block: when a row changes, the
@@ -99,8 +103,10 @@ static void kh_load(void)                        /* the rows -> the coefficients
         kh_po[i] = i < 3 ? (int32_t)((KH_M64(v, s) + (1 << 23)) >> 24) : v;
     }
     kh_pre = (uint8_t)(gr >= KH_PRE_ROW);
+#if KH_AA
     if (kh_ra >= KH_AA_FROM && !kh_aa) kh_F1 = kh_F(kh_e1);   /* (the AA rows start: F1 from the carried e1) */
     kh_aa = kh_ra >= KH_AA_FROM;
+#endif
     kh_gf = KH_GF; kh_kc4 = KH_KC4; kh_rail = KH_RAIL;
 }
 static void kh_rest(void)                        /* every state to rest */
@@ -339,6 +345,8 @@ static void drv_khlon_run(const int32_t *in, int32_t *out, uint32_t n, const drv
     uint32_t ta = (uint32_t)(c->amount - 1), tt = (uint32_t)(c->tone + ((c->tone + 1) >> 7));   /* 0..126, 0..128 */
     uint32_t tpre = kh_mode_of(ta), ph = kh_dip;
     int32_t *u = out, cl1, cl2, x1, x2;
+    int64_t q0[7];                               /* (the states at a silent block's start) */
+    uint32_t q;
     if (kh_ra == 0xFFu) { kh_ra = (uint8_t)ta; kh_rt = (uint8_t)tt; kh_load(); ph = 0; }
     else {
         uint32_t ra = kh_ra, rt = kh_rt;
@@ -371,6 +379,16 @@ static void drv_khlon_run(const int32_t *in, int32_t *out, uint32_t n, const drv
 #endif
     if (ph) u = kh_u;                            /* (the dry signal stays in in) */
     x1 = in[n - 1] << 5; x2 = in[n - 2] << 5;      /* (in may be u: overwritten) */
+    /* silence (0.9.8, the residual after a panic): on zero input the rounding (every >> floors) leaves fixed points
+     * that are not 0, the coupling capacitor's update ((e - v) kc4 >> 32 is 0 for a small positive e - v: its state
+     * stops at a few hundred LSB below 0, so the diodes see a constant e and give a constant v) and the sections' own
+     * (y = s >> 24 stays at -1 or a few LSB): a DC of ~44 LSB out, for ever, kept open by the silence gate. A block
+     * that starts and ends on 0 in, outside a dip, with every state where it started is that fixed point: to rest
+     * (exact 0 from the next block). Once a block, no per-sample work; music never leaves the states unmoved */
+    if (!(x1 | x2 | in[0]) && !ph && !kh_held) {
+        q0[0] = kh_so1[0]; q0[1] = kh_so1[1]; q0[2] = kh_spo[0]; q0[3] = kh_spo[1];
+        q0[4] = kh_scl; q0[5] = kh_ssl; q0[6] = kh_sc; q = 1;
+    } else q = 0;
     kh_o1cl_pass(in, u, n);
     kh_hist(kh_ho1, x1, x2, kh_tmp[n - 1], kh_tmp[n - 2]);
     kh_hist(kh_hcl, x1, x2, cl1 = u[n - 1], cl2 = u[n - 2]);
@@ -405,4 +423,8 @@ static void drv_khlon_run(const int32_t *in, int32_t *out, uint32_t n, const drv
     kh_hpo[2] = u[n - 1]; kh_hpo[3] = u[n - 2];  /* POST's output (in a dip block: not; the rows hold the block after) */
     kh_held = u != out;
     kh_dip = (uint8_t)ph;
+    if (q && q0[0] == kh_so1[0] && q0[1] == kh_so1[1] && q0[2] == kh_spo[0] && q0[3] == kh_spo[1] &&
+        q0[4] == kh_scl && q0[5] == kh_ssl && q0[6] == kh_sc && (kh_sc | kh_scl | kh_ssl | kh_so1[0] |
+        kh_so1[1] | kh_spo[0] | kh_spo[1]))
+        kh_rest();                               /* (the stuck fixed point: silence, a block from now) */
 }

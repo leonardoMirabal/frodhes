@@ -25,7 +25,7 @@ US_PER_INSN = 1.6
 FLAGS = ["-target", "pi32v2", "-Os", "-ffunction-sections", "-fno-builtin", "-Wall", "-Wno-unused-function",
          "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen", '-DFELUCCA_ID="FM-1_958"', '-DAPP_VER="0.0"']
 KERNELS = ["k_curve", "k_adaa", "k_adaa_eps", "k_adaa_div64", "k_bq", "k_tpt", "drv_blend", "fx_drive_types", "drv_switch",
-           "fx_drive_classic", "k_khlon", "k_tsh8", "k_ohcd", "k_bhlue", "drv_khlon_run", "drv_tsh8_run",
+           "fx_drive_classic", "dr_classic", "k_khlon", "k_tsh8", "k_ohcd", "k_bhlue", "drv_khlon_run", "drv_tsh8_run",
            "drv_ohcd_run", "drv_bhlue_run"]
 
 

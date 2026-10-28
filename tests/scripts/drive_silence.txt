@@ -1,0 +1,25 @@
+# The drive's silence (0.9.8, the residual after a panic): on zero input the drive's integer rounding left fixed
+# points that are not 0 (FDRV: the high-pass's state stops anywhere in -63 .. 64; KHLON: the coupling capacitor's
+# update rounds to 0 for a small positive step, and the sections' y = s >> 24 hold -1 or a few LSB), a constant
+# offset of 30..44 LSB at the drive's output, for ever, and over the silence gate's threshold (-66 dBFS) after the
+# make-up, so the gate stayed open: -60 .. -70 dBFS of 2-6 Hz (the tremolo moving it) out of a silent FM-1. A block
+# that starts and ends on 0 in, with every state where it started, now sends the drive to rest: exact 0 out.
+# (Found by the Move session's monkey, shrunk: build/move/shrink repro-5275 and repro-4152.)
+# FDRV: program 22 (U07 SLOW PAN) with DRIVE 79 and LEVEL +11.8 dB, a note, then all notes off: 12 s later the
+# output is exact 0
+100 midi 0x9D 48 100
+260 midi 0x90 59 104
+390 midi 0xC0 22 0
+430 midi 0xB0 81 79
+430 midi 0xB5 110 127
+485 midi 0xB0 123 0
+12500 expect rms < -130
+12500 expect state fxdrv 1
+# KHLON (CC 84 72): program 21 (U06 HARD TREM), then the pedal down: its thud alone excites the drive; 12 s later
+# exact 0
+13000 midi 0xC6 21 0
+13140 midi 0xBE 84 72
+13200 midi 0xB6 64 127
+25200 expect state fxdrv 2
+25200 expect rms < -130
+25210 end

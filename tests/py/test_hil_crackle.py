@@ -649,8 +649,12 @@ def _inject_copies(x, rng, k=20):
 
 
 def test_injected_whole_frame_copies_are_found_as_before():
-    """1-5-frame copies at random audible places in ten host takes: 0.9.7's rule finds 153 of 189, the rule before it
-    152 (on 200 takes: 1498 of 1880 against 1492, and 1530 of 1878 against 1524 on 100 takes not used to tune it)"""
+    """1-5-frame copies at random audible places in ten host takes: 0.9.7's rule finds 151 of 189, the rule before it
+    152 (on 200 takes: 1491 of 1880 against 1485, and 1504 of 1878 against 1505 on 100 takes not used to tune it; 1473
+    of 1868 against 1475 on 3200-3299, held out too). 0.9.8's drive silence (the drives rest from their stuck offset
+    between notes) moved the takes' tails, so the random places moved with them in ~40 of every 100 takes: before it
+    153 / 152 here, 1498 / 1492, 1530 / 1524 and 1475 / 1474. Of 5626 copies a build, at the places both inject 6
+    flip, 3 each way, all on loud audio (RMS 450 .. 10783 LSB): the detector is the same, the sample moved"""
     import hil_monkey as hm
     found = placed = 0
     for s in range(3000, 3010):
@@ -659,4 +663,4 @@ def test_injected_whole_frame_copies_are_found_as_before():
         ev = [p for p, _ in C.det_repeat(y)]
         found += sum(any(abs(e - p) <= 2 for e in ev) for p in marks)
         placed += len(marks)
-    assert placed == 189 and found >= 152, (found, placed)
+    assert placed == 189 and found >= 150, (found, placed)
