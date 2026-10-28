@@ -1467,13 +1467,20 @@ def state_restore(url, slot, before, hq_default=0):
             w.set_param(slot, "synth:preset", before["preset"])
             written.append("preset")
             w.pump(1.5)                                  # (the re-read of every param, the preset's values in it)
-        cur = now()
-        for k, v in before.items():
-            if k != "preset" and not _same(cur.get(k), v):
-                w.set_param(slot, "synth:" + k, v)
+        # (the switches and types first: switching an effect gives its MIX a starting amount, so a MIX written
+        # before its switch came back changed, p_dl_depth 0 -> 50 on the Move, 2026-10-28; then every key that still
+        # differs is written again, up to 3 passes, each after the manager's re-read)
+        first = lambda k: (0 if k.endswith(("_sw", "_type", "_on")) or k == "p_type" else 1, k)   # noqa: E731
+        for _ in range(3):
+            cur = now()
+            todo = sorted((k for k, v in before.items() if k != "preset" and not _same(cur.get(k), v)), key=first)
+            if not todo:
+                break
+            for k in todo:
+                w.set_param(slot, "synth:" + k, before[k])
                 written.append(k)
                 time.sleep(0.003)
-        w.pump(1.5)                                      # (the manager's re-read goes out under this connection)
+            w.pump(1.5)                                  # (the manager's re-read goes out under this connection)
     after = state_read(url, slot)
     bad = {k: (v, after.get(k)) for k, v in before.items() if not _same(after.get(k), v)}
     return written, bad

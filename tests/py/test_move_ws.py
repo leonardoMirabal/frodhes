@@ -57,7 +57,9 @@ class FakeSchwung:
 
     def params(self):
         return dict({"synth:preset": str(self.preset), "synth:preset_count": str(len(NAMES)),
-                     "synth:preset_name": NAMES[self.preset]}, **{"synth:" + k: v for k, v in self.settings.items()})
+                     "synth:preset_name": NAMES[self.preset]},
+                    **{"synth:" + k: self.settings[k] for k in sorted(self.settings)})   # (by name, as the Move's
+        #                                     order is not the panel's: p_dl_depth comes before p_dl_sw)
 
     def drop_all(self):
         """every connection cut without a close frame (as the manager did, 2026-10-28)"""
@@ -122,6 +124,9 @@ class FakeSchwung:
                     self.hist.append(("hq", int(m["value"]) != 0))
                 k = m["key"][6:] if m["key"].startswith("synth:") else None
                 if self.full and k in self.settings:
+                    if (k == "p_dl_sw" and self.settings["p_dl_depth"] == "0"
+                            and str(m["value"]) != self.settings[k]):
+                        self.settings["p_dl_depth"] = "50"   # (as the panel: a switch gives MIX at 0 a start)
                     self.settings[k] = str(m["value"])
                 if m["key"] == "synth:preset":
                     self.preset = int(m["value"])
@@ -505,5 +510,21 @@ def test_state_check_fails_when_a_write_does_not_take():
             f.settings["p_rv_decay"] = "127"
             f.full = False                                  # (writes no longer change the fake's params)
         assert ks.report["verdict"].startswith("FAIL") and "p_rv_decay" in ks.report["verdict"], ks.report
+    finally:
+        f.close()
+
+
+def test_state_restore_writes_the_switches_first():
+    """the Move, 2026-10-28: MIX written 0 before its switch came back 50 (a switch gives MIX at 0 a starting
+    amount). The switches and types go first, and what still differs is written again"""
+    import move_hil as mh
+    f = FakeSchwung(full=True)
+    try:
+        before = dict(f.settings)
+        with mh.KeptState(f.url, 0, out=lambda s: None) as ks:
+            f.settings.update(p_dl_sw="80", p_dl_depth="127", p_dl_fdbk="127")
+        assert ks.report["verdict"] == "PASS" and f.settings == before, ks.report
+        w = ks.report["written"]
+        assert w.index("p_dl_sw") < w.index("p_dl_depth"), w
     finally:
         f.close()
