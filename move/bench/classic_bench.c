@@ -1,11 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* M2-01: the plugin's own cost per 128-frame callback, the base the HQ budget sits on (private plan 06).
- *   classic_bench [-r ROUNDS] [-s SECONDS] [-e ENGINES] [-x SEED] CASE...      CASE = DSP or DSP:top
+ *   classic_bench [-r ROUNDS] [-s SECONDS] [-e ENGINES] [-x SEED] CASE...      CASE = DSP[:top][:classic][:dV]
  * dlopens each case's dsp.so through its plugin entry points (each case its own file, its own instance) and, per
  * engine (ENGINES: a subset of the digits 012 = STAGE 77, VIBES, MARIMBA; default all), plays the heavy case: every
  * effect on (Gate R's fx/heavy CCs), the pedal down, a 16-note chord at v127 struck again every 400 ms (each strike
  * takes 16 voices: steals, the attack's cost), for SECONDS (default 5). top: the chord on the 16 keys 85..108
  * instead (the HQ Rhodes' 2x pickup on every voice: its worst case; a dsp.so built with -DHQ_DEFAULT=1).
+ * classic (a suffix too, with or without top: DSP:classic, DSP:top:classic): the dev key p_hq 0 after the load, so
+ * the same file plays Classic (the drift reference in an HQ-only build). dV (a suffix: DSP:d64): CC 84 V before the
+ * effects, the drive's TYPE (params.c DRV_CC84: 64 KHLON, 76 TSH8, 88 OHCD, 100 BHLUE, 112 FDRV); without it the
+ * drive is the one DRIVE 127 wakes (FDRV after a load).
  * Every round runs each case x engine once, in an order shuffled per round (SEED, default 1), so the device's drift
  * and the other cores' load fall on every case alike: the Move has system-wide stretches of +300-400 us that last a
  * few runs. Prints one line per run, then per case and engine the summary: the median of p99.9, the min of the max,
@@ -41,7 +45,7 @@ static host_api_v1_t host = { .api_version = 1, .sample_rate = 44100, .frames_pe
 static int cmp(const void *a, const void *b) { double x = *(const double *)a, y = *(const double *)b; return x < y ? -1 : x > y; }
 static int rm1(const char *p, const struct stat *s, int f, struct FTW *w) { (void)s; (void)f; (void)w; return remove(p); }
 
-typedef struct { const char *name; int top; plugin_api_v2_t *api; void *in; char dir[64]; } bcase_t;
+typedef struct { const char *name; int top, classic, drv84; plugin_api_v2_t *api; void *in; char dir[64]; } bcase_t;
 static bcase_t cs[MAXC];
 static double st[MAXC][3][MAXR][4];     /* per case, engine, round: max, p99.9, p99, mean */
 
@@ -72,6 +76,7 @@ static void run(bcase_t *c, int e, double secs, double *out)
     if (nb > MAXB) nb = MAXB;
     if (e == 0) cc(c, 80, 0); else cc(c, 79, e == 1 ? 0 : 127);
     cc(c, 85, 0);
+    if (c->drv84 >= 0) cc(c, 84, c->drv84);
     for (unsigned i = 0; i < sizeof heavy / sizeof heavy[0]; i++) cc(c, heavy[i][0], heavy[i][1]);
     cc(c, 64, 127);
     for (int i = 0; i < 400; i++) c->api->render_block(c->in, buf, 128);
@@ -108,7 +113,7 @@ int main(int argc, char **argv)
         else if (o == 's') secs = atof(optarg);
         else if (o == 'e') engs = optarg;
         else if (o == 'x') seed = (uint32_t)strtoul(optarg, NULL, 0);
-        else { fprintf(stderr, "usage: classic_bench [-r ROUNDS] [-s SECONDS] [-e 012] [-x SEED] DSP[:top]...\n"); return 2; }
+        else { fprintf(stderr, "usage: classic_bench [-r ROUNDS] [-s SECONDS] [-e 012] [-x SEED] DSP[:top][:classic][:dV]...\n"); return 2; }
     }
     if (rounds < 1 || rounds > MAXR || optind >= argc || argc - optind > MAXC) {
         fprintf(stderr, "usage: classic_bench [-r ROUNDS(1-%d)] [-s SECONDS] [-e 012] DSP[:top]... (at most %d)\n", MAXR, MAXC);
@@ -120,7 +125,12 @@ int main(int argc, char **argv)
         void *h;
         move_plugin_init_v2_fn init;
         c->name = argv[a];
-        if (colon && !strcmp(colon, ":top")) { *colon = 0; c->top = 1; }
+        c->drv84 = -1;
+        while (colon && (!strcmp(colon, ":top") || !strcmp(colon, ":classic") || (colon[1] == 'd' && colon[2] >= '0' && colon[2] <= '9'))) {
+            if (colon[1] == 't') c->top = 1; else if (colon[1] == 'c') c->classic = 1; else c->drv84 = atoi(colon + 2) & 127;
+            *colon = 0;
+            colon = strrchr(p, ':');
+        }
         /* each case loads its own copy of the file, so the same dsp.so can be two cases (normal and top) with
          * separate module state */
         snprintf(c->dir, sizeof c->dir, "./classic_bench.XXXXXX");
@@ -132,6 +142,12 @@ int main(int argc, char **argv)
         c->api = init(&host);
         if (!(c->in = c->api->create_instance(c->dir, NULL))) { fprintf(stderr, "create %s\n", p); return 1; }
         for (int i = 0; i < 5000; i++) { r[0] = 0; c->api->get_param(c->in, "dev_ready", r, sizeof r); if (r[0] == '1') break; c->api->render_block(c->in, buf, 128); usleep(1000); }
+        if (c->classic) {                   /* the dev key: new notes Classic (the event runs at the next render) */
+            c->api->set_param(c->in, "p_hq", "0");
+            for (int i = 0; i < 8; i++) c->api->render_block(c->in, buf, 128);
+            r[0] = 0; c->api->get_param(c->in, "p_hq", r, sizeof r);
+            if (r[0] != '0') { fprintf(stderr, "%s: p_hq stays %s\n", c->name, r); return 1; }
+        }
     }
     for (const char *e = engs; *e; e++) if (*e >= '0' && *e <= '2' && ne < 3) en_of[ne++] = *e - '0';
     if (!ne) { fprintf(stderr, "no engine in -e %s\n", engs); return 2; }

@@ -304,6 +304,19 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
   v24 on, and at least +10 dB from v40 to v117. MARIMBA's velocity must rise 26 to 32 dB from v8 to v127. A
   MARIMBA bar rings for less than a second, so `usb-sus` reads it within 0.2 s of key-up, with MUTE on (CC 103
   127). The pedal holds the bar, and letting the pedal up mutes it as fast as a key-up does.
+- `tools/move_monkey.py` runs the plugin monkey on the Move for `--minutes` (30 by default). Each seed is one take of
+  about 34 s: `tests/py/test_move_monkey.py`'s stream, as the host's plugin monkey plays it. Its MIDI goes to the
+  plugin's own player over the tap. Its parameter writes and preset loads go over Schwung's WebSocket at their time
+  in the take, at most 8 in any 250 ms, so the manager's set ring (32 entries) never fills. The state reads and
+  loads have no WebSocket path, so only the host runs them. The checks are the host monkey's: no crash, no stuck
+  note, exact silence after the panic, the probe never louder after its key-up. Also checked: the player's
+  counters, Schwung's errors, and the plugin's `starts` in `boot.txt` (a reload fails the run). The click detector
+  runs on every take: a repeated or stale block fails; zero, clip and click are counted, as on the FM-1's monkey.
+  `--dry-run` prints the plan. `tests/py/test_move_monkey_device.py` checks the tool offline.
+- `move/bench/classic_bench.c` times the plugin's callbacks on the Move, off the audio core. Each case is a
+  `dsp.so` with suffixes: `:top` plays the chord on keys 85 to 108, `:classic` sets `p_hq` 0 after the load, and
+  `:dV` sends CC 84 V first (the drive's TYPE). The callbacks run back to back on a core the Move shares, so the
+  bench's tail is higher than the plugin's own ring in `d2`. Use it to compare cases within one run.
 - `clock-probe` shows where the clock comes from when the Move's own transport plays. The tool asks for Play
   on the Move, waits until the transport runs, records 10 s, then asks for Stop. Meanwhile the plugin logs its
   counters to `stats.log` in its folder, 10 times a second, while `dev_stats_log` is 1. The counters are the
