@@ -51,7 +51,8 @@ class FakeSchwung:
             self.settings = dict(self.dflt, **self.settings)
         self.preset, self.log, self.takes, self.cur = 0, [], {}, None
         self.cc_drop = True                              # (the bridge drops the sequencer's and the arpeggiator's
-                                                         # CCs, move_bridge.h MB_CC_DROP; False: a build before)
+                                                         # and the chords' CCs, move_bridge.h MB_CC_DROP; False:
+                                                         # a build before)
         self.hist, self.conns = [], []                                   # (the order of preset switches and takes: host_fetch's state)
         self.server = serve(self.handle, "127.0.0.1", 0)
         self.url = "ws://127.0.0.1:%d/ws/remote-ui" % self.server.socket.getsockname()[1]
@@ -238,9 +239,8 @@ def host_fetch(fake, d):
     import wave
     import move_hil as mh
 
-    def keep(e):                                         # (MB_CC_DROP: CC 43-46, 52-55, 60-63 never reach the app)
-        return not (fake.cc_drop and e[-3] & 0xF0 == 0xB0 and (43 <= e[-2] <= 46 or 52 <= e[-2] <= 55
-                                                               or 60 <= e[-2] <= 63))
+    def keep(e):                                         # (MB_CC_DROP: CC 43-46, 52-63 never reach the app)
+        return not (fake.cc_drop and e[-3] & 0xF0 == 0xB0 and (43 <= e[-2] <= 46 or 52 <= e[-2] <= 63))
 
     def fetch(take):
         t = fake.takes.get(take)
@@ -330,7 +330,7 @@ def test_leftover_arp_struck_again(fake, tmp_path, monkeypatch):
     mh, r = _tap(fake, tmp_path)
     monkeypatch.setattr(mh, "TAP_GRID_S", 0.0)
     monkeypatch.setattr(mh.time, "sleep", lambda s: None)
-    assert not any(c in (52, 53, 60, 63) for c, _ in mh.GLOBAL_CCS)
+    assert not any(43 <= c <= 46 or 52 <= c <= 63 for c, _ in mh.GLOBAL_CCS)
     try:
         fake.cc_drop = False
         r._send("cc", 52, 1)

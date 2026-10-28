@@ -487,6 +487,21 @@ static int api_tests(const char *so)
             CHECK(stat_of(in, "f8_synth") - f0 <= 1, "a real clock: no pulses made (%u)", stat_of(in, "f8_synth") - f0);
             clk_status = MOVE_CLOCK_STATUS_STOPPED; render(in, 20);
         }
+        /* the clock probe's counters (dev_stats): the realtime bytes that came in, the host's transport and tempo */
+        {
+            unsigned r8 = stat_of(in, "rt_f8"), ra = stat_of(in, "rt_fa"), rc = stat_of(in, "rt_fc"), b;
+            uint8_t fa[1] = { 0xFA }, f8[1] = { 0xF8 }, fc[1] = { 0xFC };
+            clk_status = MOVE_CLOCK_STATUS_RUNNING; bpm_v = 97.0; beat = 0.0;
+            api->on_midi(in, fa, 1, MOVE_MIDI_SOURCE_EXTERNAL);
+            for (b = 0; b < 30; b++) { api->on_midi(in, f8, 1, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 1); }
+            CHECK(stat_of(in, "host_run") == 1 && stat_of(in, "host_bpm10") == 970u, "host_run %u host_bpm10 %u (want 1, 970)",
+                  stat_of(in, "host_run"), stat_of(in, "host_bpm10"));
+            api->on_midi(in, fc, 1, MOVE_MIDI_SOURCE_EXTERNAL);
+            clk_status = MOVE_CLOCK_STATUS_STOPPED; bpm_v = 120.0; render(in, 20);
+            CHECK(stat_of(in, "rt_f8") - r8 == 30u && stat_of(in, "rt_fa") - ra == 1u && stat_of(in, "rt_fc") - rc == 1u &&
+                  stat_of(in, "host_run") == 0, "rt_f8 +%u rt_fa +%u rt_fc +%u host_run %u (want 30 1 1 0)",
+                  stat_of(in, "rt_f8") - r8, stat_of(in, "rt_fa") - ra, stat_of(in, "rt_fc") - rc, stat_of(in, "host_run"));
+        }
     }
 
     api->destroy_instance(in);
@@ -744,6 +759,17 @@ static int persist(const char *so, const char *dir, int save)
             if (f) fclose(f);
             CHECK(ok && lines >= 400u, "cpu-ring.log: %u lines \"idx us frames\", in order (%d)", lines, ok);
             if (ok && lines >= 400u) printf("ok    cpu-ring.log: %u lines, consecutive indices\n", lines);
+        }
+        {                                                     /* dev_stats to <module dir>/stats.log (the clock probe) */
+            char p[600], l[600]; FILE *f; unsigned lines = 0, good = 0;
+            api->set_param(in, "dev_stats_log", "1"); render(in, 100); usleep(350000);
+            api->set_param(in, "dev_stats_log", "0"); usleep(250000);
+            snprintf(p, sizeof p, "%s/stats.log", dir);
+            f = fopen(p, "r");
+            while (f && fgets(l, sizeof l, f)) { lines++; good += strstr(l, "ms=") == l && strstr(l, " rt_f8=") && strstr(l, " host_run=") && strstr(l, " bpm10=") && l[strlen(l) - 1] == '\n'; }
+            if (f) fclose(f);
+            CHECK(lines >= 2u && good == lines, "stats.log: %u lines, %u of them dev_stats", lines, good);
+            if (lines >= 2u && good == lines) printf("ok    stats.log: %u lines of dev_stats\n", lines);
         }
         snprintf(ms, sizeof ms, "%s", want);
         printf("persist save: %s, pattern %s\n", get(in, "dev_store"), want);

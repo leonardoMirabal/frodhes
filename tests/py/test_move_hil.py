@@ -245,3 +245,39 @@ def test_d2_only(tmp_path):
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr
     rep = __import__("json").load(open(tmp_path / "report.json"))
     assert [w["test"] for w in rep["rows"]] == ["preflight", "usb-note-36", "usb-note-60", "usb-note-84", "usb-stress"]
+
+
+def test_clock_probe_fake(tmp_path):
+    """clock-probe on a fake plugin: the Move's own F8 PASS (also when they come 2 s after Play: the fallback first);
+    only the bridge's fallback, or no transport at all, FAIL and say which; the prompts come in order"""
+    said = []
+    ok, rep = mh.clock_probe(mh.FakeStatsLink("real"), str(tmp_path / "r"), sleep=lambda s: None, out=said.append)
+    assert ok and rep["source"] == "real" and abs(rep["real_per_s"] - 48) < 2 and rep["rt_fa"] == 1 and \
+        rep["rt_fc"] == 1, rep
+    play = next(i for i, s in enumerate(said) if "PRESS PLAY NOW" in s)
+    stop = next(i for i, s in enumerate(said) if "PRESS STOP NOW" in s)
+    assert play < stop and "stopped" in said[stop + 1], said
+    assert (tmp_path / "r" / "stats.log").exists() and (tmp_path / "r" / "report.json").exists()
+    ok, rep = mh.clock_probe(mh.FakeStatsLink("late"), str(tmp_path / "l"), sleep=lambda s: None, out=lambda s: None)
+    assert ok and rep["f8_synth"] > 0 and rep["made_after_3s"] == 0, rep
+    ok, rep = mh.clock_probe(mh.FakeStatsLink("fallback", bpm=97.0), str(tmp_path / "f"), sleep=lambda s: None,
+                             out=lambda s: None)
+    assert not ok and rep["source"] == "fallback" and "mb_clock_block" in rep["verdict"], rep
+    assert abs(rep["made_per_s"] - 97 * 24 / 60) < 1, rep
+    link = mh.FakeStatsLink("none")
+    ok, rep = mh.clock_probe(link, str(tmp_path / "n"), play_wait=20, sleep=lambda s: None, out=lambda s: None)
+    assert not ok and "never ran" in rep["verdict"] and link.started and link.stopped, rep
+    ok, rep = mh.clock_verdict([])
+    assert not ok and "older build" in rep["verdict"]
+
+
+def test_parse_stats():
+    rows = mh.parse_stats("ms=5 rt_f8=3 host_bpm10=1200 bpm10=1200\ngarbage\nms=6 rt_f8=x\n")
+    assert rows == [{"ms": 5, "rt_f8": 3, "host_bpm10": 1200, "bpm10": 1200}]
+
+
+def test_clock_probe_cli_fake(tmp_path):
+    r = run("clock-probe", "--fake", "--inject", "fallback", "--out", str(tmp_path))
+    assert r.returncode == 1 and "PRESS PLAY NOW" in r.stdout and "mb_clock_block" in r.stdout, r.stdout[-2000:]
+    r = run("clock-probe", "--fake", "--out", str(tmp_path / "ok"))
+    assert r.returncode == 0 and "PASS" in r.stdout, r.stdout[-2000:]

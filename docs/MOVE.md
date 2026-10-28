@@ -203,9 +203,9 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
   glitches, and the sound is not louder after the pedal comes up. The test also writes the first 8 s with HQ
   on and with HQ off (`restrike-listen-hq1.wav`, `restrike-listen-hq0.wav`) for listening.
 - The plugin keeps its saved setup, but the host build boots clean. So before its take, `usb-host` turns off
-  chord mode, the pedal, FX bypass and RAW by CC. Over the tap it also writes each setting that differs from a
-  fresh instance (`move/tests/boot_keys.txt`, checked by `test_bridge boot`). The Move has no arpeggiator and
-  no sequencer, and the bridge drops their CCs, so the tests do not send them. A note that the host strikes once
+  the pedal, FX bypass and RAW by CC. Over the tap it also writes each setting that differs from a fresh
+  instance (`move/tests/boot_keys.txt`, checked by `test_bridge boot`). The Move has no arpeggiator, sequencer
+  or chords, and the bridge drops their CCs, so the tests do not send them. A note that the host strikes once
   but the Move strikes again while it is held fails as STRUCK AGAIN. That happened in one run, before the
   arpeggiator was removed, when an arpeggiator left on re-struck every note.
 - The tests leave the plugin as they found it. The plugin saves its settings and its panel, so a test's CCs
@@ -223,6 +223,12 @@ tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a 
   v24 on, and at least +10 dB from v40 to v117. MARIMBA's velocity must rise 26 to 32 dB from v8 to v127. A
   MARIMBA bar rings for less than a second, so `usb-sus` reads it within 0.2 s of key-up, with MUTE on (CC 103
   127). The pedal holds the bar, and letting the pedal up mutes it as fast as a key-up does.
+- `clock-probe` shows where the clock comes from when the Move's own transport plays. The tool asks for Play
+  on the Move, waits until the transport runs, records 10 s, then asks for Stop. Meanwhile the plugin logs its
+  counters to `stats.log` in its folder, 10 times a second, while `dev_stats_log` is 1. The counters are the
+  F8, FA and FC that came in, the pulses the bridge made itself, the host's transport and tempo, and the app's
+  tempo. It passes when the Move's own F8 arrive at the host's tempo and the bridge makes no pulses after the
+  first 3 s. It fails when only the bridge's fallback runs, or when the transport never ran.
 - `usb-clock` sends MIDI clock (Start, then F8) at 100 BPM, or `--bpm`. The tremolo is on (AM, full depth,
   SYNC 1/8) and one Rhodes note is held. Its level then dips every half beat. The test finds the dips from 3 s on
   and fits a straight line through them. The period must be within 1% of the clock's, and the jitter must stay
