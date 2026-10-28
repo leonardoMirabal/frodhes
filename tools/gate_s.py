@@ -22,12 +22,13 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-# (name, build.py arguments): the files ./build.sh writes in build/
+# (name, build.py arguments): the files ./build.sh writes in build/. The FM-1 last: each build rewrites the shared
+# build/frodhes.bin / .elf, so the checkout is left as ./build.sh leaves it (tests/py/test_identity.py reads them)
 PACKAGES = [
-    ("frodhes.fwsc", []),
     ("frodhes-smk37.fwsc", ["--board", "smk37", "--model", "pro"]),
     ("frodhes-smk37-elite.fwsc", ["--board", "smk37", "--model", "elite"]),
     ("frodhes-smk37-mke.fwsc", ["--board", "smk37", "--model", "mke"]),
+    ("frodhes.fwsc", []),
 ]
 
 

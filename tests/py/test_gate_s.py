@@ -81,7 +81,7 @@ def test_failed_build_stops(tmp_path):
     try:
         gate_s.build_tree(tmp_path, tmp_path / "out", run=run, env={})
     except SystemExit as e:
-        assert "frodhes.fwsc" in str(e)
+        assert gate_s.PACKAGES[0][0] in str(e)        # (the first build named)
     else:
         raise AssertionError("a failed build must stop Gate S")
 
@@ -91,3 +91,8 @@ def test_no_args_is_an_error(capsys):
         gate_s.main([])
     except SystemExit as e:
         assert e.code == 2
+
+
+def test_the_fm1_builds_last():
+    """each ./build.sh rewrites build/frodhes.bin: the FM-1's last, so the checkout ends as ./build.sh leaves it"""
+    assert gate_s.PACKAGES[-1] == ("frodhes.fwsc", [])
