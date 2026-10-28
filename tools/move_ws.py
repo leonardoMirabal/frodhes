@@ -170,6 +170,8 @@ def main(argv=None):
                 if a.n is None:
                     ap.error("preset needs N")
                 st = r.set_preset(s, a.n)
+                r.pump(1.5)                       # (the manager's re-read to every subscriber runs under this
+                #                                   connection: closing it in the middle cuts the others off)
     except (OSError, TimeoutError, SchwungError) as e:
         print("schwung %s: %s" % (a.url, e))
         return 2

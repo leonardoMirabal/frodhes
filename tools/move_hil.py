@@ -1317,18 +1317,23 @@ def _num(rep, test):
     return ""
 
 
-def _ws_prepare(url, engine, slot=0, out=print):
-    """slot 1 must hold Frodhes; its preset is set to the engine's (D2_PRESET). (ok, report)"""
+def _ws_prepare(url, engine, slot=0, out=print, remote=None):
+    """slot 1 must hold Frodhes; its preset is set to the engine's (D2_PRESET). (ok, report). remote: an open
+    connection to use (the tap rig's), else one of its own, kept open until the manager's re-read has gone out: the
+    manager writes that re-read to every subscriber under the connection of the client that switched the preset,
+    and a connection closed in the middle of it cuts the others off (no close frame; the tap rig's, 2026-10-28)"""
+    import contextlib
     import move_ws
     want = D2_PRESET[engine]
     try:
-        with move_ws.Remote(url) as w:
+        with (contextlib.nullcontext(remote) if remote else move_ws.Remote(url)) as w:
             st = w.subscribe(slot)
             if st["module"] != mi.MODULE_ID:
                 return False, dict(st, verdict="FAIL: slot %d holds %r, not %s" % (slot + 1, st["module"],
                                                                                     mi.MODULE_ID))
             before = st["preset"]
             st = w.set_preset(slot, want)
+            w.pump(1.5)                          # (the re-read: 94 params in ~0.6 s)
     except (OSError, TimeoutError, move_ws.SchwungError) as e:
         return False, {"verdict": "FAIL: Schwung's WebSocket %s: %s" % (url, e)}
     st.update(before=before, verdict="PASS",
@@ -1366,7 +1371,7 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=120.0, hq=None, 
     for e in engines:
         out("== %s" % e)
         if ws:
-            ok, rep = _ws_prepare(ws, e, out=quiet)
+            ok, rep = _ws_prepare(ws, e, out=quiet, remote=r.remote if isinstance(r, TapRig) else None)
             note(e, "ws", ok, rep)
             if not ok:
                 stopped = "%s: %s" % (e, rep["verdict"])
