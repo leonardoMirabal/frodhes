@@ -188,7 +188,7 @@ def test_move_asset_sh(tmp_path, recorded, built, code, attached):
 
 
 def test_release_yml_builds_the_move_package():
-    yaml = pytest.importorskip("yaml")
+    import yaml                          # (PyYAML, installed in CI: a missing module fails, never skips)
     j = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "release.yml")))["jobs"]
     mv = j["move"]
     assert mv["runs-on"] == "ubuntu-24.04-arm" and mv["container"] == "debian:bookworm"      # (ci.yml's move job)
@@ -207,7 +207,7 @@ def test_release_yml_builds_the_move_package():
 
 
 def test_release_publish_step_attaches_the_move_when_there(tmp_path):
-    yaml = pytest.importorskip("yaml")
+    import yaml                          # (PyYAML, installed in CI: a missing module fails, never skips)
     steps = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "release.yml")))["jobs"]["release"]["steps"]
     run = [s for s in steps if s.get("name") == "draft release"][0]["run"]
     (tmp_path / "bin").mkdir()

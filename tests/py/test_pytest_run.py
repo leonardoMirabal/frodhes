@@ -34,7 +34,6 @@ def test_good_and_failing_lists_keep_pytests_result(suite):
 
 @pytest.mark.parametrize("xdist", [False, True], ids=["serial", "n2"])
 def test_a_missing_path_fails_loudly(suite, xdist):
-    pytest.importorskip("xdist") if xdist else None
     opts = ["-n", "2"] if xdist else []
     code, out = run(suite, *opts, "--", "test_ok.py", "test_misspelt.py")
     assert code == 4 and "no such test path(s): test_misspelt.py" in out, out
@@ -44,7 +43,6 @@ def test_a_missing_path_fails_loudly(suite, xdist):
 
 @pytest.mark.parametrize("xdist", [False, True], ids=["serial", "n2"])
 def test_nothing_collected_fails(suite, xdist):
-    pytest.importorskip("xdist") if xdist else None
     opts = ["-n", "2"] if xdist else []
     code, out = run(suite, *opts, "--", "test_none.py")
     assert code == 1 and "no tests collected" in out, out
