@@ -1,0 +1,16 @@
+{
+ "_doc": "The HQ bars' own data rows (the Move only, FR_HQ; tools/gen_bars_hq.py, private plan 07 item B2): what the HQ voice needs beyond the Classic types' vibes.json / marimba.json, which it reads as they are",
+ "marimba": {
+  "R1b_hq": {
+   "_doc": "MARIMBA's R1b lines (marimba.json R1b) extended to the extra bending modes V5 V6 V7, each 10 dB under the one below it (R1b's own step from V2 to V3 to V4), on the same keys; the same rule as R1b: the bare R1 law, attenuated only (at most R1b's trim_db floor), to put the slot's onset peak (the DEFAULT mallet, v100, at its loudest strike point) on the line. Then the ceiling (never over V4 at any voicing) and the prune",
+   "level_db": {
+    "V5": {"36": -42.0, "48": -45.0, "72": -52.0, "96": -58.0},
+    "V6": {"36": -52.0, "48": -55.0, "72": -62.0, "96": -68.0},
+    "V7": {"36": -62.0, "48": -65.0, "72": -72.0, "96": -78.0}
+   },
+   "src": "marimba.json R1b (its V2..V4 lines and step, extrapolated)",
+   "status": "ESTIMATE",
+   "settle": "listening (the HQ A/B against Classic)"
+  }
+ }
+}
