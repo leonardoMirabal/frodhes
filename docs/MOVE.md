@@ -88,6 +88,9 @@ same pages, drawn as on the FM-1: one page is the eight knobs.
 - **The sustain pedal**: on this screen the Capture button is the sustain pedal on every page, as on the PEDAL
   screen (hold it, or tap to latch and tap again to let go).
 - The first page shows the sound that plays in full, and its fifth knob (PRSET) picks the sound.
+- **COMPRESSOR** shows the gain reduction as the FM-1's COMP page does: GR and the reading in dB, a bar that fills
+  from the right on the FM-1's scale (up to 30 dB), and the peak held for a second. COMP OFF shows when the compressor
+  is off. *(not yet verified on a device)*
 - Fine steps: hold Shift while turning BPM for steps of 0.1. A fast turn of a wide range moves four steps a detent.
 
 ![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=3da25fcf)
