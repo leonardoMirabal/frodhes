@@ -352,8 +352,10 @@ static int api_tests(const char *so)
     CHECK(!strcmp(get(in, "s_tune"), "-12"), "TUNE -12 (%s)", gbuf);
     api->set_param(in, "s_root", "9"); render(in, 3);
     CHECK(!strcmp(get(in, "s_root"), "9"), "ROOT 9 (%s)", gbuf);
-    api->set_param(in, "s_arpgate", "55"); render(in, 3);
-    CHECK(!strcmp(get(in, "s_arpgate"), "55"), "ARP GATE 55 (%s)", gbuf);
+    api->set_param(in, "s_chstrum", "5"); render(in, 3);
+    CHECK(!strcmp(get(in, "s_chstrum"), "5"), "STRUM 5 (%s)", gbuf);
+    CHECK(!strcmp(get(in, "s_arpgate"), "(none)") && !strcmp(get(in, "s_sqbars"), "(none)"),
+          "no arpeggiator, no sequencer keys on the Move (%s)", gbuf);
     api->set_param(in, "s_mch", "3"); render(in, 3);
     CHECK(!strcmp(get(in, "s_mch"), "3"), "CHANNEL 3 (%s)", gbuf);
     api->set_param(in, "s_mch", "0"); render(in, 3);
@@ -368,8 +370,8 @@ static int api_tests(const char *so)
     {   /* every MK_PARAM / MK_SLOT key: set its value back and forth, read it back */
         const char *ks[] = { "p_spread", "p_decay", "p_cmp_amt", "p_cmp_ratio", "p_drv_sw", "p_fl_type", "p_fl_freq",
                              "p_rv_type", "p_rv_size", "p_dl_sw", "p_dl_time", "p_lfo_shape", "s_scale", "s_trans", "s_chtype",
-                             "s_arpmode", "s_sqbars", "s_sqswing", "s_clock", "s_twkind" };
-        const char *vs[] = { "90", "10", "60", "6", "3", "4", "70", "2", "33", "2", "40", "3", "5", "-7", "4", "2", "8", "61", "0", "3" };
+                             "s_chinv", "s_chvoice", "s_chstrum", "s_clock", "s_twkind" };
+        const char *vs[] = { "90", "10", "60", "6", "3", "4", "70", "2", "33", "2", "40", "3", "5", "-7", "4", "2", "1", "6", "0", "3" };
         for (i = 0; i < sizeof ks / sizeof ks[0]; i++) {
             api->set_param(in, ks[i], vs[i]); render(in, 3);
             CHECK(!strcmp(get(in, ks[i]), vs[i]), "%s = %s (is %s)", ks[i], vs[i], gbuf);
@@ -564,7 +566,7 @@ static int gatep(const char *so, unsigned nblk)
 {
     static const char *K[] = { "p_type", "p_tone", "p_drive", "p_drv_sw", "p_rv_type", "p_rv_depth", "p_dl_sw", "p_dl_depth",
                                "p_cp_sw", "p_ph_sw", "p_tw_depth", "p_fl_type", "p_fl_freq", "p_cmp_sw", "p_level", "s_bpm",
-                               "s_arpmode", "s_chtype", "s_sustain", "p_mot_on", "p_spread", "s_trans" };
+                               "s_chinv", "s_chtype", "s_sustain", "p_mot_on", "p_spread", "s_trans" };
     static char st[4096], val[16];
     void *in;
     unsigned b, full = 0, peak = 0, i;
@@ -689,7 +691,7 @@ static int run_script(const char *so, const char *script, const char *wav)
 /* ---- persist (M1-08): run as two processes on one folder: save, then check */
 static int persist(const char *so, const char *dir, int save)
 {
-    static const char *K[][2] = { { "s_mch", "5" }, { "s_bpm", "97.0" }, { "s_sqswing", "61" }, { "s_scale", "2" },
+    static const char *K[][2] = { { "s_mch", "5" }, { "s_bpm", "97.0" }, { "s_chstrum", "4" }, { "s_scale", "2" },
                                   { "s_root", "3" } };   /* (settings: the sound itself comes back through the host's
                                                           * state, not store.bin) */
     char want[64], ms[64];
@@ -702,25 +704,28 @@ static int persist(const char *so, const char *dir, int save)
     if (save) {
         char crc0[16];
         snprintf(crc0, sizeof crc0, "%s", get(in, "dev_pattern_crc"));
-        api->set_param(in, "s_sqrec", "1"); render(in, 3);                  /* record a few notes into the pattern */
-        api->set_param(in, "s_sqplay", "1"); render(in, 3);
-        for (t = 0; t < 16; t++) {
-            uint8_t on[3] = { 0x90, (uint8_t)(48 + t * 3 % 24), 100 }, off[3] = { 0x80, on[1], 0 };
-            api->on_midi(in, on, 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 40);
-            api->on_midi(in, off, 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 40);
+        {   /* no sequencer and no arpeggiator on the Move: their CCs, a transport Start and notes record nothing */
+            static const uint8_t tries[][3] = { { 0xB0, 63, 127 }, { 0xB0, 60, 127 }, { 0xB0, 52, 3 }, { 0xB0, 45, 127 },
+                                                { 0xFA, 0, 0 } };
+            for (i = 0; i < sizeof tries / sizeof tries[0]; i++) { api->on_midi(in, tries[i], tries[i][0] == 0xFA ? 1 : 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3); }
+            for (t = 0; t < 16; t++) {
+                uint8_t on[3] = { 0x90, (uint8_t)(48 + t * 3 % 24), 100 }, off[3] = { 0x80, on[1], 0 };
+                api->on_midi(in, on, 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 40);
+                api->on_midi(in, off, 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 40);
+            }
+            CHECK(strstr(get(in, "dev_inert"), "seq=0 rec=0 arp=0 hold=0") != NULL, "the sequencer and the arpeggiator stay off: %s", gbuf);
+            { unsigned cd = 0; sscanf(gbuf, "cc_drop=%u", &cd); CHECK(cd >= 4u, "their CCs dropped: %s", gbuf); }
+            if (!fails) printf("ok    no sequencer, no arpeggiator: %s\n", gbuf);
         }
-        api->set_param(in, "s_sqrec", "0"); render(in, 3);
-        api->set_param(in, "s_sqplay", "0"); render(in, 3);
         for (i = 0; i < sizeof K / sizeof K[0]; i++) { api->set_param(in, K[i][0], K[i][1]); render(in, 3); }   /* (after:
                                                                * s_mch moves the MIDI channel off the notes') */
-        for (t = 0; t < 6000; t++) {                          /* (the app saves the pattern after its own quiet wait;
-                                                               * the worker writes within 100 ms of the next staging) */
-            struct stat a, b; char f1[600], f2[600];
+        for (t = 0; t < 6000; t++) {                          /* (the worker writes within 100 ms of the next staging) */
+            struct stat a; char f1[600];
             render(in, 30); usleep(2000);
-            snprintf(f1, sizeof f1, "%s/store.bin", dir); snprintf(f2, sizeof f2, "%s/pattern.bin", dir);
-            if (!stat(f1, &a) && !stat(f2, &b) && strcmp(get(in, "dev_pattern_crc"), crc0)) break;
+            snprintf(f1, sizeof f1, "%s/store.bin", dir);
+            if (!stat(f1, &a)) break;
         }
-        CHECK(strcmp(get(in, "dev_pattern_crc"), crc0) != 0, "a pattern was recorded and saved (crc %s), after %u ms: %s", crc0, t * 2, get(in, "dev:seq"));
+        CHECK(!strcmp(get(in, "dev_pattern_crc"), crc0), "no pattern recorded (crc %s, was %s)", gbuf, crc0);
         render(in, 700);                                      /* (the settings' own save wait, then the staging) */
         snprintf(want, sizeof want, "%s", get(in, "dev_pattern_crc"));
         {                                                     /* the timer ring to <module dir>/cpu-ring.log */
@@ -745,10 +750,12 @@ static int persist(const char *so, const char *dir, int save)
         want[0] = 0; if (f) { if (!fgets(want, sizeof want, f)) want[0] = 0; fclose(f); }
         want[strcspn(want, "\n")] = 0;
     }
-    CHECK(strstr(get(in, "dev_store"), "loaded=3") != NULL, "both files loaded: %s", gbuf);
+    CHECK(strstr(get(in, "dev_store"), "loaded=1") != NULL, "store.bin loaded (no pattern.bin): %s", gbuf);
+    {   char f2[600]; struct stat b; snprintf(f2, sizeof f2, "%s/pattern.bin", dir);
+        CHECK(stat(f2, &b) != 0, "no pattern.bin written"); }
     for (i = 0; i < sizeof K / sizeof K[0]; i++) { const char *v = get(in, K[i][0]); CHECK(!strcmp(v, K[i][1]), "%s restored: %s (want %s)", K[i][0], v, K[i][1]); }
-    CHECK(want[0] && !strcmp(get(in, "dev_pattern_crc"), want), "the pattern restored: %s (want %s)", gbuf, want);
-    printf("%s    persist: settings and the pattern back in a new process (%s)\n", fails ? "FAIL" : "ok", get(in, "dev_store"));
+    CHECK(want[0] && !strcmp(get(in, "dev_pattern_crc"), want), "the pattern still empty: %s (want %s)", gbuf, want);
+    printf("%s    persist: the settings back in a new process, no pattern (%s)\n", fails ? "FAIL" : "ok", get(in, "dev_store"));
     api->destroy_instance(in);
     return fails != 0;
 }

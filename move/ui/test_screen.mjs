@@ -96,16 +96,14 @@ test("the tempo: 1 BPM a detent, 0.1 with Shift, one decimal on the wire", () =>
     assert.equal(s.api.valueText(s.st(), s.api.pages[s.st().page].knobs[0]), "121.1");
 });
 
-test("a trigger (CLEAR, UNDO) fires on a turn to the right only, and reads back as -", () => {
+test("no sequencer and no arpeggiator on the Move (the Move has its own): CHORD keeps the chords only", () => {
     const s = new Screen().open();
-    goto(s, "SEQUENCER");
-    const before = s.plugin.writes.length;
-    s.knob(6, -1);
-    assert.equal(s.plugin.writes.length, before);
-    s.knob(6, 1);
-    assert.deepEqual(lastWrite(s), ["s_sqclear", "1"]);
-    s.wait(HOLD + 50);
-    assert.equal(s.api.valueText(s.st(), s.api.pages[s.st().page].knobs[6]), "-");
+    const titles = s.api.pages.map((p) => p.title);
+    assert.ok(!titles.includes("SEQUENCER") && !titles.includes("CHORD/ARP"), titles.join(","));
+    const keys = s.api.pages.flatMap((p) => p.knobs.map((k) => k.key));
+    assert.ok(!keys.some((k) => k.startsWith("s_sq") || k.startsWith("s_arp")), keys.join(","));
+    goto(s, "CHORD");
+    assert.equal(s.api.pages[s.st().page].knobs.map((k) => k.name).join(" "), "CHORD INV VOICE STRUM");
 });
 
 test("the jog pages through the pages and stops at the ends", () => {
@@ -120,9 +118,9 @@ test("the jog pages through the pages and stops at the ends", () => {
 
 test("the VOICE pages follow TYPE (a knob here, or elsewhere)", () => {
     const s = new Screen().open();
-    assert.equal(s.api.visiblePages(0).length, 12);
-    assert.equal(s.api.visiblePages(1).length, 13);
-    assert.equal(s.api.visiblePages(2).length, 12);
+    assert.equal(s.api.visiblePages(0).length, 11);
+    assert.equal(s.api.visiblePages(1).length, 12);
+    assert.equal(s.api.visiblePages(2).length, 11);
     for (let i = 0; i < 4; i++) { s.knob(0, 1); s.wait(200); }        // TYPE ST77 -> VIBE
     s.live();
     assert.equal(s.st().engine, 1);

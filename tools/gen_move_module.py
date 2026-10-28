@@ -105,14 +105,6 @@ EXTRA = {
                   "help": "the sustain pedal (CC 64), latched"},
     "s_susbtn": {"name": "PEDAL", "cc": 0, "options": ["UP", "DOWN"], "kind": "MK_BTN",
                  "help": "the sustain control: held = the pedal, a tap latches, a tap again releases"},
-    "s_sqplay": {"name": "PLAY", "cc": 60, "options": ["STOP", "PLAY"], "kind": "MK_LATCH",
-                 "help": "the sequencer plays"},
-    "s_sqrec": {"name": "REC", "cc": 63, "options": ["OFF", "REC"], "kind": "MK_LATCH",
-                "help": "the sequencer records"},
-    "s_sqclear": {"name": "CLEAR", "cc": 43, "options": ["-", "CLEAR"], "kind": "MK_TRIG",
-                  "help": "the pattern cleared"},
-    "s_squndo": {"name": "UNDO", "cc": 44, "options": ["-", "UNDO"], "kind": "MK_TRIG",
-                 "help": "the last take undone"},
     # M5-01: the FM-1's FX button (CC 111, the bypass): every effect off with its settings kept; ON (not bypassed) by
     # default, as on the FM-1
     "s_fx": {"name": "FX", "cc": 111, "options": ["ON", "OFF"], "kind": "MK_LATCH",
@@ -142,8 +134,9 @@ MOVE_LEVELS = [
     ("cho_dly", "CHORUS/DELAY", ["CHORUS", "DELAY"], []),
     ("reverb", "REVERB", ["REVERB", "REVERB 2"], []),
     ("tmp_scl", "TEMPO/SCALE", ["TEMPO", "SCALE"], []),
-    ("chd_arp", "CHORD/ARP", ["CHORD", "ARPEGGIO"], []),
-    ("seq", "SEQUENCER", ["SEQUENCER"], ["s_sqplay", "s_sqrec", "s_sqclear", "s_squndo"]),
+    # (the user, 2026-10-28: no FM-1 sequencer and no arpeggiator on the Move, which has its own: no SEQUENCER and no
+    # ARPEGGIO cards, no keys; move/move_bridge.h keeps both inert, MB_CC_DROP)
+    ("chd", "CHORD", ["CHORD"], []),
     ("lfo_set", "LFO/SETUP", ["LFO", "SETUP", "MIDI"], []),
     ("maps", "MAPPINGS", [], MAP_KEYS),
 ]

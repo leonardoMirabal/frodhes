@@ -112,12 +112,8 @@
           "label": "TEMPO/SCALE"
         },
         {
-          "level": "chd_arp",
-          "label": "CHORD/ARP"
-        },
-        {
-          "level": "seq",
-          "label": "SEQUENCER"
+          "level": "chd",
+          "label": "CHORD"
         },
         {
           "level": "lfo_set",
@@ -1037,8 +1033,8 @@
         "s_trans"
       ]
     },
-    "chd_arp": {
-      "name": "CHORD/ARP",
+    "chd": {
+      "name": "CHORD",
       "params": [
         {
           "key": "s_chtype",
@@ -1089,148 +1085,13 @@
           "type": "int",
           "min": 0,
           "max": 12
-        },
-        {
-          "key": "s_arpmode",
-          "name": "MODE",
-          "type": "enum",
-          "options": [
-            "OFF",
-            "UP",
-            "DOWN",
-            "UP-DN",
-            "ORDER",
-            "RAND"
-          ]
-        },
-        {
-          "key": "s_arprate",
-          "name": "RATE",
-          "type": "enum",
-          "options": [
-            "1/4",
-            "1/8",
-            "1/8T",
-            "1/16",
-            "1/16T",
-            "1/32"
-          ]
-        },
-        {
-          "key": "s_arpoct",
-          "name": "OCT",
-          "type": "int",
-          "min": 1,
-          "max": 4
-        },
-        {
-          "key": "s_arpgate",
-          "name": "GATE",
-          "type": "int",
-          "min": 10,
-          "max": 100,
-          "unit": "%"
         }
       ],
       "knobs": [
         "s_chtype",
         "s_chinv",
         "s_chvoice",
-        "s_chstrum",
-        "s_arpmode",
-        "s_arprate",
-        "s_arpoct",
-        "s_arpgate"
-      ]
-    },
-    "seq": {
-      "name": "SEQUENCER",
-      "params": [
-        {
-          "key": "s_sqbars",
-          "name": "BARS",
-          "type": "int",
-          "min": 1,
-          "max": 16
-        },
-        {
-          "key": "s_sqquant",
-          "name": "QUANT",
-          "type": "enum",
-          "options": [
-            "OFF",
-            "1/4",
-            "1/8",
-            "1/16",
-            "1/8T",
-            "1/16T"
-          ]
-        },
-        {
-          "key": "s_sqswing",
-          "name": "SWING",
-          "type": "int",
-          "min": 50,
-          "max": 75,
-          "unit": "%"
-        },
-        {
-          "key": "s_sqedit",
-          "name": "EDIT",
-          "type": "enum",
-          "options": [
-            "UNDO",
-            "ERASE"
-          ]
-        },
-        {
-          "key": "s_sqplay",
-          "name": "PLAY",
-          "type": "enum",
-          "options": [
-            "STOP",
-            "PLAY"
-          ]
-        },
-        {
-          "key": "s_sqrec",
-          "name": "REC",
-          "type": "enum",
-          "options": [
-            "OFF",
-            "REC"
-          ]
-        },
-        {
-          "key": "s_sqclear",
-          "name": "CLEAR",
-          "type": "enum",
-          "options": [
-            "-",
-            "CLEAR"
-          ],
-          "access": "write"
-        },
-        {
-          "key": "s_squndo",
-          "name": "UNDO",
-          "type": "enum",
-          "options": [
-            "-",
-            "UNDO"
-          ],
-          "access": "write"
-        }
-      ],
-      "knobs": [
-        "s_sqbars",
-        "s_sqquant",
-        "s_sqswing",
-        "s_sqedit",
-        "s_sqplay",
-        "s_sqrec",
-        "s_sqclear",
-        "s_squndo"
+        "s_chstrum"
       ]
     },
     "lfo_set": {

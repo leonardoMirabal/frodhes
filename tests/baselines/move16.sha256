@@ -51,6 +51,7 @@ fa2a2d73f1d68902baf298eba50cd681c3cb0062b9bee9c31d22bcd5451a11e5  fx/v_trem_am
 # host-only scripts/bend: FM-1 input lines: btn, turn, usblink
 # host-only scripts/burst: FM-1 input lines: keys
 # host-only scripts/buttons: FM-1 input lines: btn, turn
+# host-only scripts/clock: the FM-1 sequencer / arpeggiator (CC 43, 60, 61, 63): not on the Move, which has its own (the user, 2026-10-28; move/move_bridge.h MB_CC_DROP)
 # host-only scripts/cmp_mkup_engine: FM-1 input lines: btn, turn
 # host-only scripts/display: FM-1 input lines: btn, keys, turn
 # host-only scripts/drive_select: FM-1 input lines: turn

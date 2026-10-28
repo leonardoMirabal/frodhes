@@ -1,6 +1,6 @@
 # The app's settings as a fresh instance has them (the host build's boot): "key value" as get_param reads them.
 # test_bridge boot checks a new instance against this file; tools/move_hil.py (usb-host over the tap) writes them
-# before the take, so a saved setup on the Move (an arpeggiator left on, a scale, a transpose) cannot play along.
+# before the take, so a saved setup on the Move (a chord mode left on, a scale, a transpose) cannot play along.
 s_tune 0
 s_trans 0
 s_scmode 0
@@ -10,17 +10,7 @@ s_bpm 120.0
 s_clock 1
 s_twkind 0
 s_sustain 0
-s_arpmode 0
-s_arprate 3
-s_arpoct 1
-s_arpgate 60
 s_chtype 0
 s_chinv 0
 s_chvoice 0
 s_chstrum 0
-s_sqplay 0
-s_sqrec 0
-s_sqbars 4
-s_sqquant 0
-s_sqswing 50
-s_sqedit 0

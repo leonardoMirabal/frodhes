@@ -33,6 +33,8 @@ OUT = ROOT / "build" / "gate_m"
 BASE = ROOT / "tests" / "baselines" / "renders.sha256"
 BASE16 = ROOT / "tests" / "baselines" / "move16.sha256"
 SOUNDLESS = {"midi", "end", "expect", "shot", "dump"}
+MOVE_DROP = set(range(43, 47)) | set(range(52, 56)) | set(range(60, 64))   # (move/move_bridge.h MB_CC_DROP: the
+# sequencer's CLEAR / UNDO / ERASE / SWING, the arpeggiator, the sequencer's PLAY / BARS / QUANT / REC)
 IMG = os.environ.get("MOVE_IMG", "frodhes-move:bookworm")
 
 
@@ -56,7 +58,14 @@ def classify(script):
         if len(p) >= 2 and not ln.startswith("#") and p[0].isdigit():
             kinds.add(p[1])
     other = sorted(kinds - SOUNDLESS)
-    return f"FM-1 input lines: {', '.join(other)}" if other else None
+    if other:
+        return f"FM-1 input lines: {', '.join(other)}"
+    drop = sorted({int(p[3]) for p in (ln.split() for ln in Path(script).read_text().splitlines())
+                   if len(p) >= 4 and p[1] == "midi" and int(p[2], 0) & 0xF0 == 0xB0 and int(p[3], 0) in MOVE_DROP})
+    if drop:
+        return (f"the FM-1 sequencer / arpeggiator (CC {', '.join(map(str, drop))}): not on the Move, which has its "
+                f"own (the user, 2026-10-28; move/move_bridge.h MB_CC_DROP)")
+    return None
 
 
 def entries():

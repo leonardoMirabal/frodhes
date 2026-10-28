@@ -178,29 +178,12 @@
           ]
         },
         {
-          "title": "CHORD/ARP",
+          "title": "CHORD",
           "lines": [
             "K1 CHORD",
             "K2 INV",
             "K3 VOICE",
-            "K4 STRUM",
-            "K5 MODE",
-            "K6 RATE",
-            "K7 OCT",
-            "K8 GATE"
-          ]
-        },
-        {
-          "title": "SEQUENCER",
-          "lines": [
-            "K1 BARS",
-            "K2 QUANT",
-            "K3 SWING",
-            "K4 EDIT",
-            "K5 PLAY",
-            "K6 REC",
-            "K7 CLEAR",
-            "K8 UNDO"
+            "K4 STRUM"
           ]
         },
         {

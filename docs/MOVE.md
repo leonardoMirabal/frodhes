@@ -1,7 +1,7 @@
 # Frodhes on the Move (draft, in development)
 
 Frodhes also builds as a sound generator for the Move, a standalone groove box, through Schwung, the community module
-host that runs on it. The engines (PIANO, VIBES, MARIMBA), the effects, the arpeggiator, the chords and the sequencer
+host that runs on it. The engines (PIANO, VIBES, MARIMBA), the effects, the chords and the scales
 are the FM-1's own code, built for the Move's processor. **This port is in development. Nothing on this page has been
 checked on a Move yet:** every part below was checked on the host build only (the same code run on a computer,
 `tools/ci_move.sh`). The parts marked *(not yet verified on a device)* are the ones a Move must still confirm.
@@ -44,8 +44,7 @@ controls. The VOICE pages follow the engine of the TYPE: only the pages of the e
 | **CHORUS/DELAY** | CHOR · DEPTH · SPEED · SYNC · DELAY · MIX · TIME · FDBK |
 | **REVERB** | RVB · MIX · DECAY · TONE · PDLY · SIZE · MOD · LCUT |
 | **TEMPO/SCALE** | BPM · TRSYN · PHSYN · DLSYN · MODE · SCALE · ROOT · TRNSP |
-| **CHORD/ARP** | CHORD · INV · VOICE · STRUM · MODE · RATE · OCT · GATE |
-| **SEQUENCER** | BARS · QUANT · SWING · EDIT · PLAY · REC · CLEAR · UNDO |
+| **CHORD** | CHORD · INV · VOICE · STRUM |
 | **LFO/SETUP** | SHAPE · RATE · SYNC · TRIG · DLTON · LEVEL · CHAN · CLOCK |
 | **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI |
 
@@ -127,7 +126,7 @@ The Move has no pedal jack. There are three ways to sustain, and they work toget
 - **A sustain pedal or keyboard on CC 64** (on the Move's USB-A port, or MIDI from a computer): half pedalling as
   on the FM-1. Letting the pedal up also releases the latch.
 
-The arpeggiator's HOLD, the sequencer and the scales react to the sustain as on the FM-1. *(not yet verified on a
+The scales react to the sustain as on the FM-1. *(not yet verified on a
 device)*
 
 ## MIDI
@@ -136,11 +135,17 @@ The MIDI of Schwung's track reaches Frodhes as on the FM-1 (`docs/MANUAL.md`, se
 release velocity, pitch bend, CC 64, the parameter CCs and program change (0-15 F01-F16, 16-31 U01-U16,
 32-34 F17-F19). *(not yet verified on a device)*
 
+The sequencer's and the arpeggiator's CCs (43-46, 52-55, 60-63) do nothing on the Move. MIDI Start and Stop
+still sync the tempo, the LFO and the synced effects.
+
 ## What differs from the FM-1
 
 - **16 voices** on every engine (the FM-1 plays 10).
 - No PERFORM, ASSIGN or DISPLAY pages: the Move has its own pads, knobs and screen. The FM-1's KEY VEL, TOUCH,
   USB VOL, TRS, COLOR, BRIGHT and LEDS settings are not on the Move.
+- No sequencer and no arpeggiator: the Move has its own. Their pages are not on the Move, and their CCs do
+  nothing. A setup saved with the arpeggiator on still loads, with the arpeggiator off. A pattern saved by an
+  older build is not loaded.
 - SPREAD and the compressor's RELEASE, set on the FM-1 by MIDI or a page of their own, are on the pages here.
 - The sound is part of the Move's set: Schwung saves and restores it with the track. *(not yet verified on a device)*
 - Audio runs in blocks of 128 frames at 44.1 kHz (the FM-1 uses 256), with a working limit of 725 us of processing

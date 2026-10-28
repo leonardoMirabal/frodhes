@@ -38,8 +38,7 @@ DSP = SO + "/dsp.so"                        # install may be reading that one)
 BRIDGE = "build/move/monkey/test_bridge"
 _built = []
 CHAIN = json.load(open(os.path.join(ROOT, "move", "module", "chain_params.json")))
-RESETS = [("s_sustain", "0"), ("s_mch", "0"), ("s_sqplay", "0"), ("s_sqrec", "0"), ("s_arpmode", "0"),
-          ("s_chtype", "0"), ("s_clock", "0")]
+RESETS = [("s_sustain", "0"), ("s_mch", "0"), ("s_chtype", "0"), ("s_clock", "0")]
 
 
 def wire(rng, p):

@@ -50,6 +50,12 @@ typedef struct {
     uint16_t key;
 } mb_ev_t;
 
+/* No FM-1 sequencer and no arpeggiator on the Move (the user, 2026-10-28: the Move has its own). The FM-1 code stays
+ * as it is (Gate S); here both are inert: their CCs never reach the app (MB_CC_DROP: 43-46 the sequencer's edits,
+ * 52-55 the arpeggiator, 60-63 PLAY, BARS, QUANT, REC; 56-59, the chords, pass), the pattern file is not loaded
+ * (an older pattern.bin stays on disk, unused), and mb_inert stops what a transport Start or an older state would
+ * turn on (the sequencer playing or recording, the arpeggiator's mode or HOLD). The chords and scales stay. */
+#define MB_CC_DROP(cc) (((cc) >= 43u && (cc) <= 46u) || ((cc) >= 52u && (cc) <= 55u) || ((cc) >= 60u && (cc) <= 63u))
 #define MB_NMAP 6                        /* the mappings' settings: 2 sources x (CC, LO, HI) */
 #define MB_MAP_DEFAULT {0, 0, 127, 0, 0, 127}   /* every mapping off (CC 0), LO 0, HI 127 */
 static struct {
@@ -103,6 +109,7 @@ static struct {
     uint8_t pa[128];
     int16_t map_last[MB_NMAP / 3];
     uint32_t map_out, map_drop;
+    uint32_t cc_drop, inert_n;            /* MB_CC_DROP's messages dropped; mb_inert's stops */
     /* the compressor's gain-reduction meter (r_cmp_gr), as ui.c meter_poll shows it on the FM-1's COMP page: dB x 10
      * (rises at once, falls 0.5 dB a 33 ms tick = 15 dB/s), the peak's segment (GR_DB10) held a second; written by
      * the audio thread (mb_gr_tick), read by get_param without a lock: bits 0-9 dB x 10, 10-19 the peak, 20 on */
@@ -159,12 +166,11 @@ static void mb_pick_dir(const char *module_dir)
 }
 static void mb_load_files(void)          /* before the boot: what settings_load and seq_load will read */
 {
-    static uint8_t pat[MB_PAT_N];
     (void)ms_mkdirs(mb.dir);
     memset(host_mem, 0xFF, sizeof host_mem);
     if (ms_load(mb.dir, "store.bin", web_store_buf, sizeof web_store_buf) > 0) mb.loaded |= 1u;
     else memset(web_store_buf, 0, sizeof web_store_buf);
-    if (ms_load(mb.dir, "pattern.bin", pat, MB_PAT_N) > 0) { memcpy(host_mem + MB_PAT_LO, pat, MB_PAT_N); mb.loaded |= 2u; }
+    /* (no sequencer on the Move: pattern.bin is not loaded, MB_CC_DROP) */
     memcpy(mb.stg_store, web_store_buf, sizeof web_store_buf);   /* (what is on disk: nothing to write yet) */
     memcpy(mb.stg_pat, host_mem + MB_PAT_LO, MB_PAT_N);
 }
@@ -785,7 +791,7 @@ static void mb_map_out(uint32_t src, uint8_t ch, int32_t p)
 {
     uint8_t cc = mb.map[3u * src];
     int32_t lo = mb.map[3u * src + 1u], hi = mb.map[3u * src + 2u], v;
-    if (!cc) return;
+    if (!cc || MB_CC_DROP(cc)) return;
     v = lo + (hi - lo) * p / 127;
     if (v == mb.map_last[src]) return;
     if (mq_w - mq_r >= MB_HOST_RING) { mb.map_drop++; return; }   /* (the app's ring is full: the next one) */
@@ -807,6 +813,18 @@ static void mb_map(uint8_t st, uint8_t d1, uint8_t d2)
 
 /* ---- one host millisecond (see the top) */
 static void mb_gr_tick(void);
+/* the sequencer and the arpeggiator kept off (see MB_CC_DROP), after each main-loop pass: a Start / Continue from the
+ * Move's transport starts the FM-1 sequencer (frodhes.c), which plays nothing (no pattern) and is stopped here; an
+ * older state's or store's arpeggiator mode or HOLD is cleared (the settings then save it off) */
+static void mb_inert(void)
+{
+    if (!(seq_play | seq_rec | sq_erase | ARP_MODE | ARP_HOLD)) return;
+    mb.inert_n++;
+    if (seq_rec) seq_toggle_rec();
+    if (seq_play) seq_stop();
+    sq_erase = 0;
+    if (ARP_MODE != ARP_OFF || ARP_HOLD) { ARP_MODE = ARP_OFF; ARP_HOLD = 0; arp_clear(); }
+}
 static void mb_step(void)
 {
     mb_ev_t *e;
@@ -817,6 +835,7 @@ static void mb_step(void)
     while ((e = mb_peek()) != 0 && (e->at == 0 || (int32_t)(e->at - mb.ms) <= 0)) {
         if (e->kind == MB_EV_MIDI) {
             if (mq_w - mq_r >= MB_HOST_RING) break;          /* the app's ring is full: the rest wait a millisecond */
+            if ((e->st & 0xF0u) == 0xB0u && MB_CC_DROP(e->d1)) { mb.cc_drop++; mb_pop(e); continue; }
             web_midi(e->st, e->d1, e->d2);
             mb.midi_out++;
             if ((e->st & 0xF0u) == 0xD0u || (e->st & 0xF0u) == 0xA0u || (e->st & 0xE0u) == 0x80u) mb_map(e->st, e->d1, e->d2);
@@ -846,6 +865,7 @@ static void mb_step(void)
     }
     mb_gr_tick();
     coro_resume(&mb.co);
+    mb_inert();
 }
 
 /* ---- the gain-reduction meter (r_cmp_gr): ui.c meter_poll's ballistics on the bridge's own millisecond clock, every
@@ -984,6 +1004,9 @@ static int mb_get(const char *key, char *buf, int n)
         uint32_t w = atomic_load_explicit(&mb.gr_word, memory_order_relaxed);
         return w >> 20 & 1u ? snprintf(buf, (size_t)n, "%u %u", w & 1023u, w >> 10 & 1023u) : snprintf(buf, (size_t)n, "OFF");
     }
+    if (!strcmp(key, "dev_inert")) return snprintf(buf, (size_t)n, "cc_drop=%u stops=%u seq=%u rec=%u arp=%u hold=%u",
+                                                   mb.cc_drop, mb.inert_n, (unsigned)seq_play, (unsigned)seq_rec,
+                                                   (unsigned)ARP_MODE, (unsigned)ARP_HOLD);
     if (!strcmp(key, "dev_map")) return snprintf(buf, (size_t)n, "out=%u drop=%u last=%d,%d", mb.map_out, mb.map_drop,
                                                  mb.map_last[0], mb.map_last[1]);
 #ifdef FR_HQ
