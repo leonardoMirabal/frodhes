@@ -14,7 +14,9 @@
  * create_instance takes the lowest free index k, brings <inst>/<k>/dsp.so up to date with engine.so (size and CRC-32:
  * a changed engine.so, an update, is copied again; a temporary file then a rename, never a mapped file written in
  * place), dlopens it and creates the engine's instance. destroy_instance destroys it (its worker writes what is
- * staged and ends), then dlclose()s the copy: its memory is freed (move_plugin.c mv_fini), its index free again. A
+ * staged and ends), then dlclose()s the copy: its memory is freed (move_plugin.c mv_fini), its index free again
+ * (inside Schwung 1.8.1 the copy stays mapped after dlclose: boot.txt's starts count on, the next create of k
+ * continues that app, as one file always did). A
  * re-pick creates the new instance before it destroys the old, so a slot holds two copies for a moment. No cap but
  * the table (ML_MAX, above Schwung's slots and a re-pick). A copy that cannot load gives an instance that renders
  * silence and names itself ML_FAIL_NAME (preset_name), so Schwung still gets an instance.

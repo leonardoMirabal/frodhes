@@ -15,7 +15,7 @@ the end.
 
 You need a Move with Schwung installed (built and tested against Schwung 1.8.1).
 
-The module is one file, **`frodhes-module.tar.gz`**: a folder `frodhes/` with `dsp.so`, `module.json`, `help.json`,
+The module is one file, **`frodhes-module.tar.gz`**: a folder `frodhes/` with `dsp.so`, `engine.so`, `module.json`, `help.json`,
 `screen.js` (Frodhes' own screen), `canvas.js` (the gain-reduction meter on the COMPRESSOR page) and `LICENSE`. A release carries it, under that name and as `frodhes-X.Y.Z-move.tar.gz`, only when
 that exact file passed the tests on a Move; until a release has it, build it yourself (`make move`, see
 [For developers](#for-developers)). Frodhes is not in Schwung's module catalog: how it will be offered there is not
@@ -31,7 +31,8 @@ decided yet, so install it by hand.
 3. In Schwung, load **Frodhes** as the sound generator of a track. Its abbreviation on the screen is `FRDH`.
 
 An update is the same steps with the new file. Frodhes keeps its settings and user presets in Schwung's data folder
-(`/data/UserData/schwung/module_data/frodhes`), not in the module's folder, so an update keeps them. To remove
+(`/data/UserData/schwung/module_data/frodhes`), not in the module's folder, so an update keeps them. Every
+Frodhes on the Move shares them: one set of user presets for all slots. To remove
 Frodhes, unload it and delete `/data/UserData/schwung/modules/sound_generators/frodhes`. *(not yet verified on a
 device: the plain `tar` route; the installer below is the tested one)*
 
@@ -40,7 +41,7 @@ With this repository at hand, `tools/move_install.py` does the same with a check
 ```sh
 python3 tools/move_install.py install            # prints what it would do (dry run)
 python3 tools/move_install.py install --go       # copies the module over ssh and switches to it
-python3 tools/move_install.py info --go          # the installed version and the sha256 of dsp.so
+python3 tools/move_install.py info --go          # the installed version, the sha256 of dsp.so and engine.so
 python3 tools/move_install.py rollback --go      # back to the module installed before
 ```
 
@@ -57,9 +58,11 @@ controls, one for each of the Move's eight knobs. The VOICE pages follow the eng
 engine that plays are shown, and they change with it: turn TYPE, load a preset or send a program change of another
 instrument and, within about half a second, the VOICE pages are that instrument's.
 
-**Frodhes plays in one slot at a time.** It is one instrument with one sound: load it on two tracks and only the one
-loaded last plays. The other is silent, does not follow its knobs, and its name reads ONE SLOT ONLY. Remove either
-one and the one left plays, with its knobs.
+**Frodhes plays in every slot.** Load it on as many tracks as Schwung has slots (four today): each one is its own
+instrument, with its own sound and its own knobs. Up to three play with no dropouts. A fourth works, but very heavy
+playing with every effect on in all four can drop audio, and so can loading a set that holds several of them.
+*(measured on a device: two, three and four at once, 16 voices and every effect heavy in each; Main Out clean with
+three, two dropouts in 30 s with four)*
 
 | Page | Controls |
 | --- | --- |
@@ -213,7 +216,7 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
 
 ## For developers
 
-- **The build**: `make move` builds `build/move/frodhes/` (dsp.so, module.json with the version, the screen scripts,
+- **The build**: `make move` builds `build/move/frodhes/` (dsp.so, engine.so, module.json with the version, the screen scripts,
   LICENSE) and `build/move/frodhes-module.tar.gz` in the arm64 Debian bookworm image (`make move-image`, Docker on
   macOS; natively with `MOVE_RUN=` on Linux arm64). `MOVE_VER=X.Y.Z` sets the version. The tarball is reproducible
   (sorted names, no times or owners, `gzip -n`): the release compares its sha256 with the one tested on the Move.
@@ -245,9 +248,20 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
   gates due, so a gate that moves with TYPE was never re-read. The plugin answers `is_loading` 1 for 600 ms after the
   engine changes; Schwung re-reads the contract on the 1 to 0 edge (and after a preset pick) and re-plans.
   `node move/ui/test_grid.mjs` runs the pages through Schwung's own controller (`SCHWUNG_SRC`).
-- Instances: one app a process. The newest instance owns it (`move/move_plugin.c`); the others render silence,
-  ignore MIDI and writes, and answer `preset_name` with ONE SLOT ONLY. When the owner goes, the newest one left owns
-  it. `tests/py/test_move_instances.py` runs both orders and the re-pick.
+- Instances: the app is one set of globals a loaded file, and Schwung loads `dsp.so` once for every slot. So
+  `dsp.so` is a thin loader (`move/move_loader.c`) and the plugin ships beside it as `engine.so`. Each create (on
+  Schwung's loader thread) copies `engine.so` to `module_data/frodhes/inst/<k>/dsp.so`, again when its size or
+  CRC-32 changed (an update), and dlopens that copy: its own globals. Destroy dlcloses it and frees index k (on
+  the host the copy is unloaded; inside Schwung 1.8.1 it stays mapped, so the next create of k continues that app,
+  as one file always did). A
+  re-pick creates before it destroys, so it takes the next index for a moment. Each instance writes its own
+  `boot.txt` (its copy's CRC, `at=` its start), `tap/`, `cpu-ring.log` and `stats.log` in `inst/<k>`; `dev_inst`
+  reads k. `store.bin` stays one file in the data folder: a write merges under `flock` (the presets on disk win
+  unless this instance changed its own), and each worker reads a store.bin another instance wrote and hands its
+  presets to the app when quiet. A copy that cannot load gives a silent instance named NO ENGINE. Without the
+  loader (`engine.so` on its own, the tests) the newest instance owns the app, the others are silent and say ONE
+  SLOT ONLY. `move/tests/test_multi.c` (in `make test-move` and Gate P) and `tests/py/test_move_instances.py` test
+  it; `tools/move_multi_cpu.py --n 2 3` plays the worst take in N slots at once on the Move.
   `r_cmp_gr` is `"live"`, so the grid reads `r_cmp_gr:effective` every tick. It reads `OFF`, or the reduction and the
   held peak in tenths of a dB (`120 200`). The plugin keeps the FM-1's meter timing (ui.c `meter_poll`) in
   `render_block`, which the host keeps calling through silence (`requires_continuous_processing`). A host without
@@ -273,11 +287,11 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
   A failed preflight stops the run.
 - `--path tap` (the `usb-*` tests and `d2`) skips USB-C entirely. Each take goes over Schwung's WebSocket to the
   plugin's own player (`dev_play` and `dev_play_add`), so no Move track hears it. The plugin writes its own output
-  to `module_data/frodhes/tap/<take>.wav`, and the tool fetches the file over ssh. The take starts on the host
+  to `module_data/frodhes/inst/<k>/tap/<take>.wav`, and the tool fetches the file over ssh. The take starts on the host
   build's block grid (every 2560 ms), so `usb-host` compares it sample for sample. The Move's mix, its volumes and
   its USB-C setting play no part.
 - `d2 --path tap` also reads the plugin's callback times while `usb-stress` plays, which is the worst case. The
-  plugin logs them while `dev_cpu_log` is 1, and the tool fetches `cpu-ring.log` over ssh. The `cpu` row checks
+  plugin logs them while `dev_cpu_log` is 1, and the tool fetches the newest `inst/<k>/cpu-ring.log` over ssh. The `cpu` row checks
   them against the working limit. The plugin loads with the HQ Rhodes on. `--hq 0` plays Classic for the run, for
   a test only, through the plugin's `p_hq` key (no page has it; the next load is HQ again), and `--hq 1` sets HQ.
   HQ applies to new notes only: a sounding note keeps the path it started with. Unless `--hq 0` is given,
@@ -328,7 +342,7 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
   in the take, at most 8 in any 250 ms, so the manager's set ring (32 entries) never fills. The state reads and
   loads have no WebSocket path, so only the host runs them. The checks are the host monkey's: no crash, no stuck
   note, exact silence after the panic, the probe never louder after its key-up. Also checked: the player's
-  counters, Schwung's errors, and the plugin's `starts` in `boot.txt` (a reload fails the run). The click detector
+  counters, Schwung's errors, and every instance's `boot.txt` (a reload fails the run). The click detector
   runs on every take: a repeated or stale block fails; zero, clip and click are counted, as on the FM-1's monkey.
   `--dry-run` prints the plan. `tests/py/test_move_monkey_device.py` checks the tool offline.
 - `move/bench/classic_bench.c` times the plugin's callbacks on the Move, off the audio core. Each case is a

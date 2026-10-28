@@ -145,6 +145,7 @@ def run_n(n, secs, outdir, seed=1):
         for c, v in ccs:
             r._send("cc", c, v)
         r._set("synth:dev_cpu_log", 1)
+        r.remote.pump(1.5)                           # (the manager's set ring drains: 32 entries, one a frame)
         ev, dur = hc.worst_events(16, secs, np.random.default_rng(seed + s))
         evs[s] = (sorted(ev, key=lambda e: e[0]), dur)
     perf = Perf()
@@ -162,13 +163,13 @@ def run_n(n, secs, outdir, seed=1):
     log0 = int(ssh("wc -c < /data/UserData/schwung/debug.log").decode().strip() or 0)
 
     up = threading.Lock()
-    bar = threading.Barrier(n)
+    bar = threading.Barrier(n, timeout=120)          # (a slot whose upload failed never hangs the others)
 
     def two_phase(remote):
         """Remote.play with the uploads one at a time (the manager's set ring) and every "go" together"""
         orig_set = remote.set_param
 
-        def play(slot, take, dur_ms, events, lead_ms=100, pace=0.012):
+        def play(slot, take, dur_ms, events, lead_ms=100, pace=0.025):
             with up:
                 def no_go(sl, key, value):
                     if key.endswith(":dev_play") and str(value).startswith("go"):
@@ -191,7 +192,9 @@ def run_n(n, secs, outdir, seed=1):
         try:
             takes[s] = rigs[s].rec(evs[s][1], evs[s][0])
         except Exception as e:     # noqa: BLE001
-            takes[s] = {"error": str(e)}
+            takes[s] = {"error": "%s: %s" % (type(e).__name__, e)}
+            print("slot %d: %s" % (s + 1, takes[s]["error"]), flush=True)
+            bar.abort()
     usb = {}
 
     def usb_rec(secs):
