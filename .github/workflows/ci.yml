@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
-      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest pytest-xdist==3.8.0
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 websockets==16.1.1 pytest pytest-xdist==3.8.0
       - run: make test
       - run: make host
   host-pytest:
@@ -28,7 +28,7 @@ jobs:
         shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
-      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest pytest-xdist==3.8.0
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 websockets==16.1.1 pytest pytest-xdist==3.8.0
       - run: python3 tools/pytest_shard.py --check 4
       - run: make pytest PY=python3 SHARD=${{ matrix.shard }}/4
   host:
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
-      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest
+      - run: pip install Pillow numpy==2.5.4 scipy==1.18.1 websockets==16.1.1 pytest
       # one run: its -v lines show the deterministic test PASSED (not SKIPPED: the committed header is the full
       # form), instead of a second run of test_gen_bars.py for it
       - shell: bash
@@ -102,5 +102,5 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           python3 -m venv /opt/venv
-          /opt/venv/bin/pip install Pillow numpy==2.5.4 scipy==1.18.1 pytest pytest-xdist==3.8.0
+          /opt/venv/bin/pip install Pillow numpy==2.5.4 scipy==1.18.1 websockets==16.1.1 pytest pytest-xdist==3.8.0
       - run: PY=/opt/venv/bin/python MOVE_RUN= PYTEST_N=auto NICE= sh tools/ci_move.sh

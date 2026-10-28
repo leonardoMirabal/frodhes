@@ -14,7 +14,7 @@ import numpy as np
 
 import pytest
 
-pytest.importorskip("websockets")
+import websockets  # noqa: E402,F401  (a hard import: a runner without it fails here, never skips the tap tests)
 from websockets.sync.server import serve  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
