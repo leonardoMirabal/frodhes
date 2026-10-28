@@ -1204,13 +1204,19 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
             e += (int64_t)a * a + (int64_t)b * b;
             m += (int64_t)c * c;
         }
-        if (m > 0 && (e >> 1) != m) {
+        if (m > ((int64_t)n << 8) && (e >> 1) != m) {     /* (over -66 dBFS RMS: under it the measure is noise or
+                                                             * a resting offset, e.g. L 8 / R 9 held: no make-up) */
             while (e >= ((int64_t)1 << 31)) { e >>= 1; m >>= 1; }
-            if (m > 0) tg = clampi((ilog2_q12((uint32_t)e) - 4096 - ilog2_q12((uint32_t)m)) >> 1, 0, 4096);
+            if (m > 0) tg = clampi((log2_q12((uint32_t)e) - 4096 - log2_q12((uint32_t)m)) >> 1, 0, 4096);   /* (the
+                                                     * fractional log2: 0.9.3 - 0.9.7 took the whole-number one, and
+                                                     * the target switched 0 <-> +3 dB from block to block) */
         }
         if (m > 0) dly_sil = 0; else if (dly_sil < DLY_LEN) dly_sil += n;   /* (the line's newest sound: #3's ANA) */
         dly_sg += (tg - dly_sg) >> 2;
         if (tg == 0 && dly_sg < 4) dly_sg = 0;
+#ifdef FX_DLY_SG_LOG
+        if (sw) fprintf(stderr, "dly_sg %d %d\n", (int)tg, (int)dly_sg);   /* (tests/py/test_dly_send.py) */
+#endif
     }
     sg16 = last ? 0 : exp2_q16(dly_sg);
     if (dly_routed(sw, target)) {                           /* TAPE, a switch to / from it, DIG <-> ANA, a time change */
