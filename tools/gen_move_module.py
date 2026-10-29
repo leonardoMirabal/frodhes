@@ -71,7 +71,7 @@ METER = {
     "r_cmp_pk": {"key": "r_cmp_pk", "name": "REDUCT", "type": "string", "access": "read",
                  "viz": {"group": "gr", "role": "pk"}},
 }
-SCREEN_CONF = {"hold_ms": 1000,    # the large card stays this long after the knob is let go (tune on the device)
+SCREEN_CONF = {"hold_ms": 500,     # the large card stays this long after the knob is let go (tune on the device)
                "fast_ms": 40,      # two detents closer than this: a fast turn ...
                "fast_mul": 4,      # ... moves a wide range (> 24 steps) this many steps a detent
                "settle_ms": 600,   # a value written this recently is not re-read (the write may still be queued)

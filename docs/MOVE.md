@@ -109,7 +109,7 @@ and click the jog wheel (a click with no knob touched opens Schwung's list of pa
   The header names the page and its number (`4/10`); an `S` before the number shows that the sustain holds.
 - **One large card**: touch a knob, or turn it, and its card fills the screen: the name, the value in large
   letters, a wide bar (a selector shows one block per option) and a row of eight marks for the knob it is. Turning
-  changes the value as you watch. About a second after you let go the overview comes back. Touch another knob and
+  changes the value as you watch. Half a second after you let go the overview comes back. Touch another knob and
   its card shows at once.
 - **Pages**: turn the jog wheel for the next or the previous page. Click the jog wheel for the list of pages, turn
   to one, click to open it; Back closes the list. Back on a page leaves Frodhes' screen (Shift + jog wheel too).
