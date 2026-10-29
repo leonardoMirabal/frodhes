@@ -292,6 +292,16 @@ function sustainBtn(ctx, st) {
     st.expectRev++;
 }
 
+// the Left arrow: FX off / on (every effect but the compressor). Shown at once in the header (X) on every page, as
+// the S of the sustain, since a press on any page bypasses the effects; the live read of s_fx confirms it
+function fxBtn(ctx, st) {
+    if (st.fxOn !== null) st.fxOn = !st.fxOn;
+    st.written.s_fx = nowOf(ctx);
+    delete st.vals.s_fx;                  // (the first page's FX card reads it again)
+    ctx.setParam("s_fxbtn", "1");
+    st.expectRev++;
+}
+
 // ---- the views
 
 function header(ctx, title, right) {
@@ -305,7 +315,7 @@ function pageNum(st) {
     return (vis.indexOf(st.page) + 1) + "/" + vis.length;
 }
 
-function susMark(st) { return st.susOn ? "S " : ""; }
+function susMark(st) { return (st.fxOn === false ? "X " : "") + (st.susOn ? "S " : ""); }
 
 function drawOverview(ctx, st) {
     const p = FR_PAGES[st.page];
@@ -316,9 +326,10 @@ function drawOverview(ctx, st) {
         const wide = k.type === "preset" ? 127 - x - 1 : 28;
         text(ctx, x, y + 1, k.short || k.name);
         text(ctx, x, y + 11, k.type === "preset" ? (st.presetName ? String(st.presetName) : "--") : valueText(st, k));
-        hdots(ctx, x, x + wide, y + 23);
+        // the bar: 6 px (rows y+19..y+24, a row clear of the value), on a dotted track through its middle
+        hdots(ctx, x, x + wide, y + 22);
         const f = fraction(st, k);
-        if (f !== null) ctx.fillRect(x, y + 22, Math.round(wide * f) + 1, 3, 1);
+        if (f !== null) ctx.fillRect(x, y + 19, Math.round(wide * f) + 1, 6, 1);
     });
     if (p.knobs.length > 4) hdots(ctx, 0, 127, 36);
     if (isComp(st)) drawGr(ctx, st);
@@ -371,17 +382,18 @@ function drawFocus(ctx, st) {
     const val = flash ? k.options[1] : valueText(st, k);
     if (textW(val, 3) <= 124) textR(ctx, 125, 26, val, 3);
     else textR(ctx, 125, 30, val, 2);
-    frame(ctx, 0, 49, 127, 54);
+    // the bar: 7 px inside its frame (rows 48..56; a row clear of the value above and of the knob marks below)
+    frame(ctx, 0, 48, 127, 56);
     const f = fraction(st, k), det = detents(st, k);
     if (f !== null) {
         if (det) {
             const idx = Math.round(f * (det - 1)), segw = 126 / det;
-            ctx.fillRect(1, 50, Math.round(segw * (idx + 1)), 4, 1);
+            ctx.fillRect(1, 49, Math.round(segw * (idx + 1)), 7, 1);
             for (let i = 1; i < det; i++) {
                 const x = 1 + Math.round(segw * i);
-                ctx.fillRect(x, 53, 1, 1, x <= Math.round(segw * (idx + 1)) ? 0 : 1);
+                ctx.fillRect(x, 55, 1, 1, x <= Math.round(segw * (idx + 1)) ? 0 : 1);
             }
-        } else ctx.fillRect(1, 50, 1 + Math.round(125 * f), 4, 1);
+        } else ctx.fillRect(1, 49, 1 + Math.round(125 * f), 7, 1);
     }
     for (let i = 0; i < p.knobs.length; i++) {
         const x = 2 + i * 16;
@@ -415,7 +427,7 @@ function newState() {
     return { page: 0, engine: 0, vals: {}, written: {}, lastTurn: {}, focus: -1, until: 0,
              touch: [false, false, false, false, false, false, false, false], list: false, cursor: 0,
              preset: null, presetName: null, presetCount: 0, presetDirty: false, rev: null, expectRev: 0,
-             susOn: false, flash: null, rr: 0, gr: null };
+             susOn: false, fxOn: null, flash: null, rr: 0, gr: null };
 }
 
 globalThis.canvas_overlay = {
@@ -427,6 +439,8 @@ globalThis.canvas_overlay = {
         st.preset = asNum(ctx.getParam("preset"));
         st.rev = asNum(ctx.getParam("rev"));
         st.expectRev = st.rev === null ? 0 : st.rev;
+        const fx = ctx.getParam("s_fx");
+        st.fxOn = fx === null || fx === undefined ? null : fx === "1" || fx === "ON";
         st.page = visiblePages(st.engine)[0];
         readPage(ctx, st);
     },
@@ -436,7 +450,7 @@ globalThis.canvas_overlay = {
         const d = (msg && msg.data) || [];
         const type = (d[0] | 0) & 0xF0, d1 = d[1] | 0, d2 = d[2] | 0;
         if (type === 0xB0 && d1 === FR_CONF.sus_cc) { if (d2 > 0) sustainBtn(ctx, st); return true; }
-        if (type === 0xB0 && d1 === FR_CONF.fx_cc) { if (d2 > 0) { ctx.setParam("s_fxbtn", "1"); st.expectRev++; } return true; }
+        if (type === 0xB0 && d1 === FR_CONF.fx_cc) { if (d2 > 0) fxBtn(ctx, st); return true; }
         if (type === 0x90 && d1 < 8) {                               // a knob's touch (velocity >= 64: down)
             if (st.list) return true;
             if (d2 >= 64) { st.touch[d1] = true; focus(ctx, st, d1, true); } else release(ctx, st, d1);
@@ -485,6 +499,8 @@ globalThis.canvas_overlay = {
         const v = (p && p.values) || {};
         if (v.s_sustain !== undefined && v.s_sustain !== null && nowOf(ctx) - (st.written.s_sustain || 0) >= FR_CONF.settle_ms)
             st.susOn = v.s_sustain === "1" || v.s_sustain === "ON";
+        if (v.s_fx !== undefined && v.s_fx !== null && nowOf(ctx) - (st.written.s_fx || 0) >= FR_CONF.settle_ms)
+            st.fxOn = v.s_fx === "1" || v.s_fx === "ON";
         if (v.preset_name !== undefined && v.preset_name !== null) st.presetName = v.preset_name;
         const e = asNum(v.ui_engine);
         if (e !== null && (e | 0) !== st.engine) engineChanged(ctx, st, e | 0);

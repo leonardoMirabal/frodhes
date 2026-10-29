@@ -103,10 +103,10 @@ The pages above are on Schwung's own knob screen. **PAGES** on the first page (i
 Frodhes' own with the same pages, drawn as on the FM-1: one page is the eight knobs. To open it, touch the PAGES knob
 and click the jog wheel (a click with no knob touched opens Schwung's list of pages instead).
 
-![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=7fb7a2cc)
+![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=afb30281)
 
 - **The overview**: eight cards, knobs 1-4 on the top row and 5-8 below, each with its name, its value and a bar.
-  The header names the page and its number (`4/10`); an `S` before the number shows that the sustain holds.
+  The header names the page and its number (`4/10`); an `S` before the number shows that the sustain holds, and an `X` that the effects are off (FX OFF).
 - **One large card**: touch a knob, or turn it, and its card fills the screen: the name, the value in large
   letters, a wide bar (a selector shows one block per option) and a row of eight marks for the knob it is. Turning
   changes the value as you watch. Half a second after you let go the overview comes back. Touch another knob and
@@ -122,10 +122,10 @@ and click the jog wheel (a click with no knob touched opens Schwung's list of pa
   segment. When the compressor is off the bar is a dotted outline and reads COMP OFF. *(not yet verified on a device)*
 - A fast turn of a wide range moves four steps a detent.
 
-![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=f6f0cb74)
-![Knob 1 on REVERB: the type, one block per option](manual/img/move/move-reverb-k1.png?v=e5958986)
-![COMPRESSOR with the compressor on: the meter at 12 dB of gain reduction](manual/img/move/move-compressor-gr.png?v=b3d9ab94)
-![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=a40253a7)
+![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=ad58e204)
+![Knob 1 on REVERB: the type, one block per option](manual/img/move/move-reverb-k1.png?v=bea193fe)
+![COMPRESSOR with the compressor on: the meter at 12 dB of gain reduction](manual/img/move/move-compressor-gr.png?v=3264d0d5)
+![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=c7bc0bd8)
 ![The list of pages](manual/img/move/move-pages.png?v=e463578b)
 
 The pictures are drawn by the screens' own code on a computer, in the screen's two colours: Frodhes' screen by

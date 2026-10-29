@@ -96,6 +96,11 @@ elif cmd == "seq":
         return r.decode(errors="replace").strip()
     for w in args:
         if w.startswith("sleep:"): time.sleep(int(w[6:]) / 1000.0)
+        elif w.startswith("set:"):
+            slot, rest = w[4:].split(":", 1)
+            key, _, val = rest.rpartition(":")
+            ask("SLOT " + slot)
+            print("SET %%s:%%s=%%s %%s" %% (slot, key, val, ask("SET_PARAM %%s %%s" %% (key, val)))); sys.stdout.flush()
         elif w.startswith("get:"):
             slot, key = w[4:].split(":", 1)
             ask("SLOT " + slot)
@@ -161,7 +166,7 @@ def expand(op):
         return ["sleep:" + p[1]]
     if k == "shot":
         return ["sleep:120", "shot"]
-    if k == "get":                                 # get:SLOT:KEY (0-based slot; the synth's keys are synth:<key>)
+    if k in ("get", "set"):                        # get:SLOT:KEY, set:SLOT:KEY:VALUE (0-based slot; synth:<key>)
         return [op]
     raise SystemExit("move_ui_drive: unknown op %r" % op)
 
@@ -214,7 +219,7 @@ def main(argv=None):
         out = ssh_py(["seq"] + words)
         shots = [l[5:] for l in out.splitlines() if l.startswith("SHOT ")]
         for l in out.splitlines():
-            if l.startswith("DROP") or l.startswith("GOT"):
+            if l.startswith(("DROP", "GOT", "SET")):
                 print(l)
         os.makedirs(a.out, exist_ok=True)
         for name, hx in zip(names, shots):
