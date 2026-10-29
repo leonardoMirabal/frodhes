@@ -15,7 +15,8 @@ mirror (/dev/shm/schwung-display-live, 1024 B, 8 pages x 128 columns, bit = row;
     tools/move_ui_drive.py disarm               the two bytes back, schwung-testd stopped
 
 OPs: tap:CC (press 127, 90 ms, release 0) · cc:CC:V · knob:K:D (K 0-7, D detents, + clockwise, one CC a detent) ·
-touch:K:1|0 (note K, 127 / 0) · jog:D · click · back · shift:1|0 · sleep:MS · shot:NAME (--out DIR, default
+touch:K:1|0 (note K, 127 / 0) · jog:D · click · back · shift:1|0 · sleep:MS · watch:MS (the large card -> overview
+edges, ms after the last packet sent, from the mirror) · shot:NAME (--out DIR, default
 build/move/ui-device). Takes the MOVE lock. Writes nothing on the Move but the two shm bytes and the daemon's log in
 /data/UserData/frodhes-bench."""
 import argparse
@@ -70,7 +71,7 @@ elif cmd == "state":
           (m[0], m[6], m[20], m[108], m[33], testd_up()))
     m.close()
 elif cmd == "seq":
-    s = None
+    s = None; last_sent = time.time()
     def inject(pkt):
         global s
         for _ in range(6):
@@ -109,7 +110,21 @@ elif cmd == "seq":
             sys.stdout.flush()
         elif w == "shot":
             print("SHOT " + open(LIVE, "rb").read(1024).hex()); sys.stdout.flush()
-        else: inject(w)
+        elif w.startswith("watch:"):
+            # from the last packet sent: when the large card goes (its bar frame = a row lit across all 128 columns,
+            # rows 44..56; the overview has none), polled every 2 ms from the live mirror
+            t0, until, card, seen = last_sent, time.time() + int(w[6:]) / 1000.0, None, []
+            while time.time() < until:
+                fb = open(LIVE, "rb").read(1024)
+                c = any(all(fb[(r >> 3) * 128 + x] >> (r & 7) & 1 for x in range(128)) for r in range(44, 57))
+                if c != card:
+                    seen.append("%%s@%%d" %% ("card" if c else "overview", round((time.time() - t0) * 1000)))
+                    card = c
+                time.sleep(0.002)
+            print("WATCH " + " ".join(seen)); sys.stdout.flush()
+        else:
+            inject(w)
+            last_sent = time.time()
     if s is not None: s.close()
 '''
 
@@ -166,6 +181,8 @@ def expand(op):
         return ["sleep:" + p[1]]
     if k == "shot":
         return ["sleep:120", "shot"]
+    if k == "watch":                               # watch:MS: the card -> overview edges, ms after the last packet
+        return [op]
     if k in ("get", "set"):                        # get:SLOT:KEY, set:SLOT:KEY:VALUE (0-based slot; synth:<key>)
         return [op]
     raise SystemExit("move_ui_drive: unknown op %r" % op)
@@ -219,7 +236,7 @@ def main(argv=None):
         out = ssh_py(["seq"] + words)
         shots = [l[5:] for l in out.splitlines() if l.startswith("SHOT ")]
         for l in out.splitlines():
-            if l.startswith(("DROP", "GOT", "SET")):
+            if l.startswith(("DROP", "GOT", "SET", "WATCH")):
                 print(l)
         os.makedirs(a.out, exist_ok=True)
         for name, hx in zip(names, shots):

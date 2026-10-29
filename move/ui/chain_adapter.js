@@ -14,10 +14,10 @@ if (PREV_FS === undefined) delete globalThis.frodhes_screen; else globalThis.fro
 const LIVE_MS = FR_CONF.live_ms || 100;
 const LIVE_KEYS = ["rev", "ui_engine", "s_sustain", "preset_name", "s_fx"];   // (s_fx: the header's X, FX off)
 const SHIFT_CC = 49;
-// a diagnostic (the device's debug.log): every button event the screen gets and each s_* write, while this file exists
-const LOG_FLAG = "/data/UserData/frodhes-bench/ui_log_on";
-let LOG = false;
-try { LOG = typeof host_file_exists === "function" && !!host_file_exists(LOG_FLAG); } catch (e) {}
+// the arrows' own LEDs (white, CC-addressed: constants.mjs MoveWhiteLeds): Left lit while FX is on, Right while
+// the sustain holds; WhiteLedBright / WhiteLedOff
+const ARROW_ON = 0x7c, ARROW_OFF = 0;
+const arrowLast = {};
 let shift = false, lastLive = 0;
 const state = {};
 
@@ -31,11 +31,7 @@ const ctx = {
         const v = host_module_get_param(k);
         return v === undefined ? null : v;
     },
-    setParam(k, v) {
-        const r = has("host_module_set_param") ? host_module_set_param(k, String(v)) : false;
-        if (LOG && k.startsWith("s_")) console.log("frodhes ui: set " + k + "=" + v + " -> " + r);
-        return r;
-    },
+    setParam(k, v) { return has("host_module_set_param") ? host_module_set_param(k, String(v)) : false; },
     clear() { clear_screen(); },
     fillRect(x, y, w, h, c) { if (w > 0 && h > 0) fill_rect(x | 0, y | 0, w | 0, h | 0, c ? 1 : 0); },
     now: () => Date.now(),
@@ -59,9 +55,34 @@ function knobLeds() {
 function ledsOn() {
     if (typeof KNOB_LEDS !== "undefined" && KNOB_LEDS) try { KNOB_LEDS.updateKnobLEDs(knobLeds()); } catch (e) {}
 }
+// the arrows: the screen's own FX / SUS state (the live s_fx / s_sustain, and a press at once); an unread FX is dark.
+// Sent with force and diffed here, as knob_leds.mjs does (the shared cache can outlive a hardware clear).
+function arrowSet(cc, c) {
+    if (arrowLast[cc] === c) return;
+    arrowLast[cc] = c;
+    FR_SET_BUTTON_LED(cc, c, true);
+}
+function arrowsOn() {
+    const st = state.fr;
+    if (typeof FR_SET_BUTTON_LED !== "function" || !st) return;
+    try {
+        arrowSet(FR_CONF.fx_cc, st.fxOn === true ? ARROW_ON : ARROW_OFF);
+        arrowSet(FR_CONF.sus_cc, st.susOn ? ARROW_ON : ARROW_OFF);
+    } catch (e) {}
+}
+function arrowsOff() {
+    if (typeof FR_SET_BUTTON_LED !== "function") return;
+    try {
+        FR_SET_BUTTON_LED(FR_CONF.fx_cc, ARROW_OFF, true);
+        FR_SET_BUTTON_LED(FR_CONF.sus_cc, ARROW_OFF, true);
+    } catch (e) {}
+    for (const k of Object.keys(arrowLast)) delete arrowLast[k];
+}
+
 // leaving: give the rings back as Schwung's grid does (shadow_ui_param_pages.mjs exitParamPages): the shim replays
 // Move's own last ring values (shadow_restore_knob_leds); an older shim without it gets them dark
 function ledsOff() {
+    arrowsOff();                              // (dark first: the shim's replay below repaints what Move had lit)
     if (typeof KNOB_LEDS === "undefined" || !KNOB_LEDS) return;
     try {
         if (has("shadow_restore_knob_leds")) shadow_restore_knob_leds();
@@ -78,23 +99,23 @@ function live() {
 
 globalThis.chain_ui = {
     init() {
-        if (LOG) console.log("frodhes ui: init");
         for (const k of Object.keys(state)) delete state[k];
         OV.onOpen(ctx, {});
         lastLive = Date.now();
         if (typeof KNOB_LEDS !== "undefined" && KNOB_LEDS && KNOB_LEDS.resetKnobLedCache) KNOB_LEDS.resetKnobLedCache();
+        for (const k of Object.keys(arrowLast)) delete arrowLast[k];
         ledsOn();
+        arrowsOn();
     },
     tick() {
         const t = Date.now();
         if (t - lastLive >= LIVE_MS) { lastLive = t; live(); }
         OV.draw(ctx);
         ledsOn();
+        arrowsOn();
     },
     onMidiMessageInternal(data) {
         const d = data || [];
-        if (LOG && !(((d[0] | 0) & 0xF0) === 0xB0 && (((d[1] | 0) >= 71 && (d[1] | 0) <= 78) || (d[1] | 0) === 14)))
-            console.log("frodhes ui: in " + [d[0] | 0, d[1] | 0, d[2] | 0].join(" "));
         if (((d[0] | 0) & 0xF0) === 0xB0 && (d[1] | 0) === SHIFT_CC) { shift = (d[2] | 0) > 0; return; }
         OV.onMidi(ctx, { source: 0, data: [d[0] | 0, d[1] | 0, d[2] | 0] });
     },

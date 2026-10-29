@@ -103,12 +103,14 @@ The pages above are on Schwung's own knob screen. **PAGES** on the first page (i
 Frodhes' own with the same pages, drawn as on the FM-1: one page is the eight knobs. To open it, touch the PAGES knob
 and click the jog wheel (a click with no knob touched opens Schwung's list of pages instead).
 
-![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=afb30281)
+![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=4893b45d)
 
 - **The overview**: eight cards, knobs 1-4 on the top row and 5-8 below, each with its name, its value and a bar.
+  Every bar is an outlined box filled from the left up to the value, the same height along its length; a selector of
+  three or more options shows notches between its steps, and a value with a centre (TONE, TUNE) a notch at 0.
   The header names the page and its number (`4/10`); an `S` before the number shows that the sustain holds, and an `X` that the effects are off (FX OFF).
 - **One large card**: touch a knob, or turn it, and its card fills the screen: the name, the value in large
-  letters, a wide bar (a selector shows one block per option) and a row of eight marks for the knob it is. Turning
+  letters, a wide bar of the same kind and a row of eight marks for the knob it is. Turning
   changes the value as you watch. Half a second after you let go the overview comes back. Touch another knob and
   its card shows at once.
 - **Pages**: turn the jog wheel for the next or the previous page. Click the jog wheel for the list of pages, turn
@@ -116,16 +118,18 @@ and click the jog wheel (a click with no knob touched opens Schwung's list of pa
   As on the other screen, the VOICE pages are the ones of the instrument that plays.
 - **The buttons**: on this screen the **Right arrow** turns SUS on or off and the **Left arrow** turns the effects
   off or on (FX, the compressor kept), on every page; Up and Down stay the Move's octave.
+  Each arrow's light shows its state: the Left arrow is lit while the effects are on, the Right arrow while SUS
+  holds. Back gives the lights back to the Move.
 - The first page shows the sound that plays in full, and its fifth knob (PRESET) picks the sound.
 - **COMPRESSOR** shows the gain reduction as the knob screen does, larger: GR and the reading in dB, a thick bar of
   15 segments lit from the right on the FM-1's scale (up to 30 dB), and the peak held for a second as a taller
   segment. When the compressor is off the bar is a dotted outline and reads COMP OFF. *(not yet verified on a device)*
 - A fast turn of a wide range moves four steps a detent.
 
-![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=ad58e204)
-![Knob 1 on REVERB: the type, one block per option](manual/img/move/move-reverb-k1.png?v=bea193fe)
-![COMPRESSOR with the compressor on: the meter at 12 dB of gain reduction](manual/img/move/move-compressor-gr.png?v=3264d0d5)
-![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=c7bc0bd8)
+![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=cd6baa2d)
+![Knob 1 on REVERB: the type, one block per option](manual/img/move/move-reverb-k1.png?v=21b3c723)
+![COMPRESSOR with the compressor on: the meter at 12 dB of gain reduction](manual/img/move/move-compressor-gr.png?v=3f4b7255)
+![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=36cde34c)
 ![The list of pages](manual/img/move/move-pages.png?v=e463578b)
 
 The pictures are drawn by the screens' own code on a computer, in the screen's two colours: Frodhes' screen by

@@ -117,6 +117,27 @@ function frame(ctx, x0, y0, x1, y1) {
     ctx.fillRect(x1, y0, 1, y1 - y0 + 1, 1);
 }
 
+// a fader, one height along its whole length (x0..x1, rows y0..y1): a 1 px outline, solid from the left up to the
+// value. An enum's steps (3 or more) are notches in the inside rows (cut out of the fill, drawn into the empty part), where a
+// step is 4 px or wider; a number whose range spans 0 (bipolar) has its centre marked the same way. f null: the
+// outline alone (the value not read yet).
+function bar(ctx, st, k, x0, y0, x1, y1) {
+    frame(ctx, x0, y0, x1, y1);
+    const f = fraction(st, k);
+    if (f === null) return;
+    const w = x1 - x0 + 1, h = y1 - y0 + 1, det = detents(st, k);
+    let fill;
+    if (det) fill = Math.round(w * (Math.round(f * (det - 1)) + 1) / det);
+    else fill = Math.max(1, Math.round((w - 1) * f) + 1);
+    ctx.fillRect(x0, y0, Math.min(w, fill), h, 1);
+    const mark = (x) => {
+        if (x <= x0 || x >= x1) return;
+        ctx.fillRect(x, y0 + 1, 1, h - 2, x < x0 + fill ? 0 : 1);
+    };
+    if (det > 2 && w / det >= 4) for (let i = 1; i < det; i++) mark(x0 + Math.round(w * i / det));
+    if (!det && k.type !== "preset" && k.min < 0 && k.max > 0) mark(x0 + Math.round((w - 1) * (-k.min) / (k.max - k.min)));
+}
+
 // ---- the model: pages, values, the knob arithmetic
 
 function nowOf(ctx) { return ctx && typeof ctx.now === "function" ? ctx.now() : Date.now(); }
@@ -333,10 +354,8 @@ function drawOverview(ctx, st) {
         const wide = k.type === "preset" ? 127 - x - 1 : 28;
         text(ctx, x, y + 1, k.short || k.name);
         text(ctx, x, y + 11, k.type === "preset" ? (st.presetName ? String(st.presetName) : "--") : valueText(st, k));
-        // the bar: 6 px (rows y+19..y+24, a row clear of the value), on a dotted track through its middle
-        hdots(ctx, x, x + wide, y + 22);
-        const f = fraction(st, k);
-        if (f !== null) ctx.fillRect(x, y + 19, Math.round(wide * f) + 1, 6, 1);
+        // the bar: 5 px (rows y+19..y+23, a row clear of the value)
+        bar(ctx, st, k, x, y + 19, x + wide, y + 23);
     });
     if (p.knobs.length > 4) hdots(ctx, 0, 127, 36);
     if (isComp(st)) drawGr(ctx, st);
@@ -389,19 +408,8 @@ function drawFocus(ctx, st) {
     const val = flash ? k.options[1] : valueText(st, k);
     if (textW(val, 3) <= 124) textR(ctx, 125, 26, val, 3);
     else textR(ctx, 125, 30, val, 2);
-    // the bar: 7 px inside its frame (rows 48..56; a row clear of the value above and of the knob marks below)
-    frame(ctx, 0, 48, 127, 56);
-    const f = fraction(st, k), det = detents(st, k);
-    if (f !== null) {
-        if (det) {
-            const idx = Math.round(f * (det - 1)), segw = 126 / det;
-            ctx.fillRect(1, 49, Math.round(segw * (idx + 1)), 7, 1);
-            for (let i = 1; i < det; i++) {
-                const x = 1 + Math.round(segw * i);
-                ctx.fillRect(x, 55, 1, 1, x <= Math.round(segw * (idx + 1)) ? 0 : 1);
-            }
-        } else ctx.fillRect(1, 49, 1 + Math.round(125 * f), 7, 1);
-    }
+    // the bar: 6 px (rows 49..54; two rows clear of the value above, three of the knob marks below)
+    bar(ctx, st, k, 0, 49, 127, 54);
     for (let i = 0; i < p.knobs.length; i++) {
         const x = 2 + i * 16;
         if (i === st.focus) ctx.fillRect(x, 58, 12, 6, 1);

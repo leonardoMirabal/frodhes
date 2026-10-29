@@ -667,6 +667,7 @@ def screen_js(levels):
 
 
 KNOB_LEDS_MJS = "/data/UserData/schwung/shared/param_pages/knob_leds.mjs"   # Schwung's knob rings (the grid's)
+INPUT_FILTER_MJS = "/data/UserData/schwung/shared/input_filter.mjs"          # its setButtonLED (the arrows' LEDs)
 
 
 def ui_chain_js(levels):
@@ -682,8 +683,10 @@ def ui_chain_js(levels):
             "move/ui/chain_adapter.js - do not edit.\n"
             "// Frodhes' own screen as Schwung's chain_ui: the pages and the settings, the screen's code, the adapter.\n")
     # Schwung loads ui_chain.js as an ES module (shadow_ui.c shadow_load_ui_module), so the grid's own knob-LED code
-    # comes in by import (MODULES.md: as page_controller.mjs does); the host tests replace this one line
-    imp = "import * as KNOB_LEDS from '%s';\n" % KNOB_LEDS_MJS
+    # and the shared button-LED helper come in by import (MODULES.md: as page_controller.mjs does); the host tests
+    # replace these two lines
+    imp = ("import * as KNOB_LEDS from '%s';\n" % KNOB_LEDS_MJS
+           + "import { setButtonLED as FR_SET_BUTTON_LED } from '%s';\n" % INPUT_FILTER_MJS)
     return (head + imp + "(function () {\n\"use strict\";\nconst PREV_OV = globalThis.canvas_overlay, "
             "PREV_FS = globalThis.frodhes_screen;\nconst FR_PAGES = "
             + json.dumps(screen_pages(levels), separators=(",", ":")) + ";\n"

@@ -29,11 +29,17 @@ g.__KNOB_LEDS = {
     resetKnobLedCache() { leds.resets++; },
 };
 g.shadow_restore_knob_leds = () => { leds.restores++; };
+// the arrows' LEDs (input_filter.mjs setButtonLED, imported on the device): every send, and what each CC shows
+const btn = { sends: [], now: {} };
+g.__SET_BUTTON_LED = (cc, c, force) => { btn.sends.push([cc, c, force]); btn.now[cc] = c; };
 vm.createContext(g);
 let src = fs.readFileSync(path.join(ROOT, "move", "module", "ui_chain.js"), "utf8");
 const IMP = /^import \* as KNOB_LEDS from '\/data\/UserData\/schwung\/shared\/param_pages\/knob_leds\.mjs';$/m;
 check(IMP.test(src), "ui_chain.js imports Schwung's knob_leds.mjs");
 src = src.replace(IMP, "const KNOB_LEDS = globalThis.__KNOB_LEDS;");
+const IMP2 = /^import \{ setButtonLED as FR_SET_BUTTON_LED \} from '\/data\/UserData\/schwung\/shared\/input_filter\.mjs';$/m;
+check(IMP2.test(src), "ui_chain.js imports Schwung's setButtonLED");
+src = src.replace(IMP2, "const FR_SET_BUTTON_LED = globalThis.__SET_BUTTON_LED;");
 vm.runInContext(src, g);
 const ui = g.chain_ui;
 check(ui && ["init", "tick", "onMidiMessageInternal", "onMidiMessageExternal", "handleBack"]
@@ -59,6 +65,12 @@ ui.init();
 ui.tick();
 check(fb.lit() > 200, "the first page drawn (" + fb.lit() + " px)");
 check(leds.resets === 1 && leds.updates >= 1, "LEDs: the cache reset on open, then lit");
+// the bars: one height along their whole length (outline top and bottom lit in every column, 5 rows, y+19..y+23),
+// nothing below the last row of the screen cut off (the second row's bars end at 60)
+const at = (x, y) => fb.px[y * 128 + x];
+const even = (x0, x1, y0) => { for (let x = x0; x <= x1; x++) if (!at(x, y0) || !at(x, y0 + 4)) return false; return true; };
+check([0, 1, 2, 3].every((i) => even(i * 32, i * 32 + 28, 28)), "bars: the first row's bars are even, end to end");
+check([0, 1, 2, 3].every((i) => !at(i * 32 + 14, 27) && !at(i * 32 + 14, 33)), "bars: 5 px tall, a clear row each side");
 // the first page: TYPE SPREAD SUS FX PRESET, knobs 6-8 dark
 const root = pages[0];
 check(JSON.stringify(bound(leds.last)) === JSON.stringify([0, 1, 2, 3, 4, 5, 6, 7].map((i) => i < root.knobs.length)),
@@ -75,10 +87,26 @@ ui.tick();
 check(near(leds.last[0], 1 / (root.knobs[0].options.length - 1)), "LEDs: a knob turn moves its LED (TYPE 1 of " +
       (root.knobs[0].options.length - 1) + ": " + leds.last[0] + ")");
 midi(0x90, 0, 0);
+// the arrows' LEDs: FX on (s_fx 1) lights Left, SUS off leaves Right dark; sent with force, once
+check(btn.now[62] === 0x7c && btn.now[63] === 0, "arrow LEDs: Left lit (FX on), Right dark (SUS off) " +
+      JSON.stringify(btn.now));
+check(btn.sends.every(([, , f]) => f === true), "arrow LEDs: sent with force (the shared cache bypassed)");
+let n = btn.sends.length;
+ui.tick(); ui.tick();
+check(btn.sends.length === n, "arrow LEDs: nothing sent while nothing changes (" + (btn.sends.length - n) + ")");
 midi(0xB0, 63, 127);           // the Right arrow: SUS
 check(p.writes.some(([k, v]) => k === "s_susbtn" && v === "1"), "the Right arrow presses s_susbtn");
+ui.tick();
+check(btn.now[63] === 0x7c, "arrow LEDs: SUS on lights Right at once");
 midi(0xB0, 62, 127);           // the Left arrow: FX
 check(p.writes.some(([k, v]) => k === "s_fxbtn" && v === "1"), "the Left arrow presses s_fxbtn");
+ui.tick();
+check(btn.now[62] === 0, "arrow LEDs: FX off darkens Left at once");
+// the live keys win once settled: the plugin says FX on, SUS off
+p.external("s_fx", 1); p.external("s_sustain", 0);
+t += 2000; ui.tick();
+check(btn.now[62] === 0x7c && btn.now[63] === 0, "arrow LEDs: follow the live s_fx / s_sustain " +
+      JSON.stringify(btn.now));
 const before = fb.px.slice();
 midi(0xB0, 14, 1);             // the jog: the next page (PIANO VOICE, 8 knobs)
 t += 2000;
@@ -103,6 +131,11 @@ check(ui.handleBack() === true, "Back closes the page list");
 const rs = leds.restores;
 check(ui.handleBack() === false, "Back on a page leaves (the host's)");
 check(leds.restores === rs + 1 && leds.resets >= 2, "LEDs: Back out gives the rings back to Move (restore + reset)");
+check(btn.now[62] === 0 && btn.now[63] === 0, "arrow LEDs: Back out darkens both arrows");
+n = btn.sends.length;
+ui.init();
+check(btn.now[62] === 0x7c && btn.sends.length > n, "arrow LEDs: reopening re-sends them (the cache reset)");
+ui.handleBack();
 delete g.shadow_restore_knob_leds;
 ui.init(); ui.tick();
 check(ui.handleBack() === false && leds.clears === 1, "LEDs: without the shim's restore, Back out darkens them");
