@@ -1201,13 +1201,25 @@ static int mb_engine_moved(void)
     if (e != mb.eng_seen) { mb.eng_seen = e; mb.eng_moved_ms = t; mb.eng_moves++; }
     return mb.eng_moves && t - mb.eng_moved_ms < MB_ENG_MOVED_MS;
 }
+/* Frodhes' own screen as the whole Move UI (MB_OWN_UI 1): the plugin answers no ui_hierarchy, so Schwung's component
+ * editor loads the module's ui_chain.js (shadow_ui.js enterComponentEdit -> enterComponentEditFallback) in place of its
+ * knob grid; the same pages go out as ui_pages, which external surfaces (E16, EC4) read when ui_hierarchy fails.
+ * MB_OWN_UI 0: Schwung's knob grid (ui_hierarchy), as before. */
+#ifndef MB_OWN_UI
+#define MB_OWN_UI 1
+#endif
+#if MB_OWN_UI
+#define MB_PAGES_KEY "ui_pages"
+#else
+#define MB_PAGES_KEY "ui_hierarchy"
+#endif
 static int mb_get(const char *key, char *buf, int n)
 {
     int i;
     if (!key || !buf || n <= 0) return -1;
     if (!strcmp(key, "dev_ready")) return snprintf(buf, (size_t)n, "%d", atomic_load(&mb.ready));
     if (!strcmp(key, "dev_build")) return snprintf(buf, (size_t)n, "%s", mb_build[0] ? mb_build : MB_FEATURES);
-    if (!atomic_load_explicit(&mb.ready, memory_order_acquire) && strcmp(key, "chain_params") && strcmp(key, "ui_hierarchy"))
+    if (!atomic_load_explicit(&mb.ready, memory_order_acquire) && strcmp(key, "chain_params") && strcmp(key, MB_PAGES_KEY))
         return -1;                       /* (the worker still boots the app: nothing of it to read yet) */
     if (!strcmp(key, "state")) return mb_state_get(buf, n);
     if ((i = mb_key_find(key)) >= 0) return mb_wire_text(&MOVE_KEYS[i], buf, n);
@@ -1216,7 +1228,7 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, "preset")) return snprintf(buf, (size_t)n, "%u", (unsigned)set.preset);
     if (!strcmp(key, "preset_count")) return snprintf(buf, (size_t)n, "%u", (unsigned)(PR_NF + PR_NU));
     if (!strcmp(key, "preset_name")) { char s[20]; preset_name(set.preset < PR_NF + PR_NU ? set.preset : 0u, s); return snprintf(buf, (size_t)n, "%s", s); }
-    if (!strcmp(key, "ui_hierarchy")) {   /* the sounding engine's pages (gen_move_module.py hier_for_engine) */
+    if (!strcmp(key, MB_PAGES_KEY)) {   /* the sounding engine's pages (gen_move_module.py hier_for_engine) */
         unsigned e = mb_engine();
         if ((int)MOVE_UI_HIERARCHY_N[e] >= n) return -1;
         memcpy(buf, MOVE_UI_HIERARCHY[e], (size_t)MOVE_UI_HIERARCHY_N[e] + 1u);

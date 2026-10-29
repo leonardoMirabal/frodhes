@@ -107,11 +107,12 @@ move-native:
 	@if [ -f move/module/help.json ]; then cp move/module/help.json $(MOVE_OUT)/; fi
 	@if [ -f move/module/screen.js ]; then cp move/module/screen.js $(MOVE_OUT)/; fi
 	@if [ -f move/module/canvas.js ]; then cp move/module/canvas.js $(MOVE_OUT)/; fi
+	@if [ -f move/module/ui_chain.js ]; then cp move/module/ui_chain.js $(MOVE_OUT)/; fi
 	@cp LICENSE $(MOVE_OUT)/LICENSE
 	@# reproducible (M7-02: the release compares the tarball's sha256 with the one tested on the Move): sorted
 	@# names, no times, owners or umask in it, gzip without its name and time
 	tar -C build/move --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w -cf - \
-	  $$(cd build/move && ls frodhes/dsp.so frodhes/engine.so frodhes/module.json frodhes/help.json frodhes/screen.js frodhes/canvas.js frodhes/LICENSE 2>/dev/null) \
+	  $$(cd build/move && ls frodhes/dsp.so frodhes/engine.so frodhes/module.json frodhes/help.json frodhes/screen.js frodhes/canvas.js frodhes/ui_chain.js frodhes/LICENSE 2>/dev/null) \
 	  | gzip -9n > build/move/frodhes-module.tar.gz
 	@ls -l $(MOVE_OUT)/dsp.so $(MOVE_OUT)/engine.so build/move/frodhes-module.tar.gz
 

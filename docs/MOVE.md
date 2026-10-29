@@ -16,7 +16,7 @@ the end.
 You need a Move with Schwung installed (built and tested against Schwung 1.8.1).
 
 The module is one file, **`frodhes-module.tar.gz`**: a folder `frodhes/` with `dsp.so`, `engine.so`, `module.json`, `help.json`,
-`screen.js` (Frodhes' own screen), `canvas.js` (the gain-reduction meter on the COMPRESSOR page) and `LICENSE`. A release carries it, under that name and as `frodhes-X.Y.Z-move.tar.gz`, only when
+`screen.js` (Frodhes' own screen), `canvas.js` (the gain-reduction meter on the COMPRESSOR page), `ui_chain.js` (Frodhes' own screen as the whole Move UI, in development) and `LICENSE`. A release carries it, under that name and as `frodhes-X.Y.Z-move.tar.gz`, only when
 that exact file passed the tests on a Move; until a release has it, build it yourself (`make move`, see
 [For developers](#for-developers)). Frodhes is not in Schwung's module catalog: how it will be offered there is not
 decided yet, so install it by hand.

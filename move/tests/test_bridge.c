@@ -340,7 +340,13 @@ static int api_tests(const char *so)
     }
 
     /* M1-06: keys */
-    CHECK(strstr(get(in, "ui_hierarchy"), "\"levels\"") != NULL, "ui_hierarchy served");
+    {   /* the pages: ui_pages when Frodhes' own screen is the Move UI (MB_OWN_UI, ui_hierarchy refused so that Schwung
+         * loads ui_chain.js), else ui_hierarchy */
+        const char *pk = api->get_param(in, "ui_pages", gbuf, sizeof gbuf) >= 0 ? "ui_pages" : "ui_hierarchy";
+        CHECK(strstr(get(in, pk), "\"levels\"") != NULL, "%s served", pk);
+        if (!strcmp(pk, "ui_pages"))
+            CHECK(api->get_param(in, "ui_hierarchy", gbuf, sizeof gbuf) < 0, "ui_hierarchy refused (own screen)");
+    }
     CHECK(strstr(get(in, "chain_params"), "p_type") != NULL, "chain_params served");
     CHECK(!strcmp(get(in, "preset_count"), "35"), "35 presets (%s)", gbuf);
     CHECK(!strncmp(get(in, "preset_name"), "F01", 3), "preset name (%s)", gbuf);
@@ -618,7 +624,8 @@ static int presets(const char *so)
         printf("preset %d %s", i, get(in, "preset")); printf(" %s\n", get(in, "preset_name"));
     }
     for (i = 0; i < 6; i++) { snprintf(b, sizeof b, "%d", i); api->set_param(in, "p_type", b); render(in, 3); printf("type %d %s\n", i, get(in, "ui_engine")); }
-    printf("hierarchy %d\n", (int)strlen(get(in, "ui_hierarchy")));
+    printf("hierarchy %d\n", (int)strlen(get(in, api->get_param(in, "ui_pages", gbuf, sizeof gbuf) >= 0 ? "ui_pages"
+                                                                                                   : "ui_hierarchy")));
     api->destroy_instance(in);
     return 0;
 }
