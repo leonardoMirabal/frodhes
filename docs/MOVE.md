@@ -293,10 +293,43 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
   (MIDI to the Move's Standalone port, its USB audio recorded, the FM-1's analysis; `--fake` runs them against a
   model of the device). On the Move first: Settings, USB-C audio out = Main Out (the Move sets it back to Mic at
   every boot). `d2` runs them all for each engine (`usb-clock` once, with the Rhodes) and writes one table
-  (`summary.md`). First it checks over
-  Schwung's WebSocket (`tools/move_ws.py`) that slot 1 holds Frodhes, and it loads the engine's preset there.
-  A failed preflight stops the run.
-- `--path tap` (the `usb-*` tests and `d2`) skips USB-C entirely. Each take goes over Schwung's WebSocket to the
+  (`summary.md`). First it runs the preflight (below), then for each engine it checks over Schwung's WebSocket
+  (`tools/move_ws.py`) that slot 1 holds Frodhes and loads the engine's preset there. A failed preflight stops
+  the run.
+- **The preflight** (`tools/move_hil.py preflight`) runs before every command that gives a sound or level verdict:
+  `usb-host`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`, `d2` (over USB-C and over the tap) and
+  `usb-levels`. `--no-preflight` skips it. A failure stops the command (exit 2). It needs USB-C audio and MIDI,
+  Schwung's WebSocket and ssh, also for `--path tap`. The 2026-10-29 case it catches: a Move sampler on Frodhes'
+  track whose sample held recorded noise played with every note, and the tap tests passed because the tap was
+  exact zero. Its checks:
+  1. **Main Out idle.** It waits for silence, then records Main Out for 1 s with no note. The RMS must stay under
+     -80 dBFS and the peak under 128 LSB. Clean, the Move's Main Out at idle is exact zero (0 LSB, measured
+     2026-10-29); the bad case was -54.6 dBFS RMS. The microphone has its own signature: rumble under 20 Hz, the
+     two channels mostly equal, about -55 dBFS RMS from the room. It stops with "USB-C audio is the microphone:
+     set Settings > USB-C audio out > Main Out (the Move resets it at boot)". Any other sound stops it with "Main
+     Out not silent with no note: something else is playing on the Move (another instrument on the track, a clip,
+     input monitoring)".
+  2. **Main Out against the tap.** The tool arms a tap take with no events (`dev_play`: the plugin writes what it
+     plays), then plays C4 at v100 over the Move's MIDI path and records Main Out. It aligns the two by cross-
+     correlation and fits one gain a channel by least squares: the trim (`MB_TRIM_Q12`, +2.2 dB) times the slot's
+     and the track's volume. Then it judges the residual, Main Out minus the gain times the tap. Over -40 dB
+     against the note, or over -66 dBFS RMS, is "sound on Main Out that is not Frodhes", with the residual's
+     strongest frequencies and the third-octave bands where it comes within 20 dB of the note. Clean on the Move:
+     correlation 1.00000, residual -70.4 dB against the note, -100.3 dBFS, at most 1 LSB. Noise added to that
+     take fails from -70 dBFS RMS up. A correlation under 0.9 is the microphone again (0.71 measured), and a tap
+     that stays silent means the note never reached Frodhes.
+  3. **What the slot holds.** Over the WebSocket: the slot's chain (synth, audio FX, MIDI FX), its receive and
+     forward channel, volume and mute, and Frodhes' CHAN. Over ssh: Schwung's `shadow_chain_config.json`, and
+     the Move's saved set (`active_set.txt`, then its `Song.abl`) for track 1's MIDI input and instruments,
+     including whether a sampler has a sample loaded. The saved set can differ from the live one. A source that
+     cannot be read is named.
+- **The channel.** The tools send on the slot's own receive channel: Schwung's WebSocket (`slot:receive_channel`),
+  else `shadow_chain_config.json`. If neither can be read, they stop, name channel 1 as the one they would have
+  assumed, and tell you to pass `--ch N`. If `--ch` names a channel the slot does not receive, they stop. If
+  Frodhes' CHAN is not the channel the slot hands it (the forward channel), they stop too. When the Move's track
+  takes MIDI in on another channel than the slot, both are reported. `--path tap` sends its messages on the
+  channel Frodhes sees.
+- `--path tap` (the `usb-*` tests and `d2`) uses USB-C only for the preflight. Each take goes over Schwung's WebSocket to the
   plugin's own player (`dev_play` and `dev_play_add`), so no Move track hears it. The plugin writes its own output
   to `module_data/frodhes/inst/<k>/tap/<take>.wav`, and the tool fetches the file over ssh. The take starts on the host
   build's block grid (every 2560 ms), so `usb-host` compares it sample for sample. The Move's mix, its volumes and
