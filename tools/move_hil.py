@@ -42,7 +42,17 @@ audio in (Core Audio), the FM-1's analysis (onsets, levels, FFT, the crackle det
   (dev_play, move/move_bridge.h: never on cable 2, so no Move track plays along) and comes back as the plugin's own
   output (the tap file, fetched over ssh): free of the Move's mix, volumes and USB-C setting; usb-host then compares
   sample for sample (the take starts on the host build's block grid).
-  --midi NAME, --audio NAME (substrings, else the Move's), --ch N (default 1: the slot on track 1), --fake: an
+    tools/move_hil.py preflight              before every sound or level verdict (usb-host, usb-note, usb-vel, usb-sus,
+                                             usb-clock, usb-stress, d2 on either path, usb-levels; --no-preflight skips
+                                             it): (1) Main Out idle under IDLE_FLOOR_DB RMS and IDLE_PEAK_LSB peak (the
+                                             microphone named apart), (2) one note over the Move's MIDI path, Main Out
+                                             against Frodhes' tap of the same moment (a passive dev_play take): one gain
+                                             a channel by least squares, the residual under PF_RESID_DB re the note and
+                                             PF_RESID_DBFS, else "sound on Main Out that is not Frodhes", (3) what
+                                             Schwung shows of slot 1 (chain, channels, CHAN) and the Move's saved set of
+                                             track 1 (MIDI in, instruments). A failure stops the command (exit 2)
+  --midi NAME, --audio NAME (substrings, else the Move's), --ch N (default: slot 1's receive channel, read over
+  Schwung's WebSocket or shadow_chain_config.json; unread, the tools stop and name the channel 1 they assumed), --fake: an
   offline model of the device in place of the Move (tests/py/test_move_hil.py), --inject KIND@S (fake only).
   On the Move first: Settings > USB-C audio out = Main Out (the Move resets it to Mic at every boot; Main Out mutes
   its speakers), Frodhes in slot 1, the Move's volume where it stays for the run.
@@ -203,6 +213,9 @@ USB_CH = 1                                  # the slot on track 1 (Schwung's slo
 MOVE_VOICES = 16                            # Makefile MOVE_DEFS -DFR_VOICES=16u
 FAKE_SR = 44100
 FAKE_LAT = 0.012                            # (s) the fake device's MIDI + USB latency
+FAKE_TAP_LEAD = 2.46                        # (s) the fake tap's start ahead of the take (the device's, 2026-10-29)
+FAKE_MIX = 5279 / 4096.0 * 0.9              # the fake Main Out over its tap: the trim and a mix of -0.9 dB
+FAKE_HISS_DBFS = -54.6                      # the fake's steady floor (inject hiss): the bad case of 2026-10-29
 
 
 NEVER_PORTS = ("midisport", "af16rig", "iac")   # the rig's other MIDI ports: never driven by the device tools
@@ -304,7 +317,10 @@ class FakeRig(UsbRig):
     tremolo (CC 17 43-85, CC 21 >= 64: AM, CC 18 its depth) synced (CC 20, FAKE_SYNC) to the MIDI clock's F8 while
     Start ran, else free at 120 BPM. inject: [(kind, t s)], kind zero (2 ms of zeros), click (one sample), stale (one
     128-frame callback twice), loud (the note gets louder after key-up), nosus (the pedal ignored), playing (a tone at
-    idle: the preflight fails), noclock (the clock ignored)"""
+    idle: the preflight fails), noclock (the clock ignored), hiss (a steady -54.6 dBFS floor on Main Out, idle too),
+    foreign (a noise burst with every note-on on Main Out, not in the tap: a sampler on the track), mic (the room at
+    idle). The tap (begin / collect, the preflight's): the take before the trim and the mix (FAKE_MIX), FAKE_TAP_LEAD
+    s ahead"""
     fake = True
 
     def __init__(self, inject=(), sr=FAKE_SR, seed=0):
@@ -321,6 +337,12 @@ class FakeRig(UsbRig):
     def level_now(self, secs=0.3):
         return -240.0
 
+    def begin(self, secs):                       # (the preflight's passive tap: the next rec's)
+        self.tap = None
+
+    def collect(self):
+        return self.tap
+
     def rec(self, dur, events):
         sr, n = self.sr, int(dur * self.sr)
         ev = sorted(events, key=lambda e: e[0])
@@ -331,6 +353,13 @@ class FakeRig(UsbRig):
             t = np.arange(n) / sr
             x = 3000 * np.sin(2 * np.pi * 262 * t)
             return {"x": np.round(np.stack([x, 0.7 * x], 1)), "sr": sr, "xruns": []}
+        if not events and any(k == "mic" for k, _ in self.inject):         # (USB-C audio out left on the mic: the room)
+            t = np.arange(n) / sr
+            room = np.round(self.rng.normal(0, 60, n) + 2000 * np.sin(2 * np.pi * 4 * t) + 800 * np.sin(2 * np.pi * 11 * t))
+            return {"x": np.stack([room, room], 1), "sr": sr, "xruns": []}
+        if not events and any(k == "hiss" for k, _ in self.inject):        # (the preflight's idle: a steady floor)
+            return {"x": np.round(self.rng.normal(0, 32768 * 10 ** (FAKE_HISS_DBFS / 20), (n, 2))), "sr": sr,
+                    "xruns": []}
         ped = [(0.0, self.state.get(64, 0) >= 64)] + [(t, b >= 64) for t, k, a, b in ev if k == "cc" and a == 64]
         if nosus:
             ped = [(0.0, False)]
@@ -387,8 +416,23 @@ class FakeRig(UsbRig):
                 ph = tt / 0.25
             x *= 1 - st.get(18, 0) / 127 * (0.5 + 0.5 * np.cos(2 * np.pi * ph))
         x *= 0.25 if self.state.get(110, 64) == 0 else 1.0                # LEVEL (CC 110 0: -12 dB)
-        x = 24000 * np.tanh(x / 24000) + self.rng.normal(0, 2.0, n)   # (the app's limiter, softly)
+        x = 24000 * np.tanh(x / 24000)                                    # (the app's limiter, softly)
+        clean = np.stack([x, 0.9 * x], 1)
+        # (the tap: the plugin's own output, before the Move's trim and mix, FAKE_TAP_LEAD s ahead of the take)
+        self.tap = np.concatenate([np.zeros((int(FAKE_TAP_LEAD * FS), 2)), np.round(clean / FAKE_MIX),
+                                   np.zeros((int(0.5 * FS), 2))])
+        x = x + self.rng.normal(0, 2.0, n)
         q = np.round(np.stack([x, 0.9 * x], 1))
+        for k, _ in self.inject:
+            if k == "hiss":                                 # (a steady floor on Main Out, not in the tap: -54.6 dBFS)
+                q += np.round(self.rng.normal(0, 32768 * 10 ** (FAKE_HISS_DBFS / 20), (n, 2)))
+            elif k == "foreign":                            # (a sampler on the track: noise with every note-on)
+                for t1, _, _, v in notes:
+                    i0 = int((t1 + FAKE_LAT) * sr)
+                    m = n - i0
+                    if m > 0:
+                        env = np.exp(-np.arange(m) / (0.3 * sr))
+                        q[i0:] += np.round(self.rng.normal(0, 600, (m, 2)) * env[:, None])
         for k, t in self.inject:
             i = int(t * sr)
             if k == "zero":
@@ -1565,7 +1609,8 @@ def usb_host_file(d, out=print):
         host_phrase = keep
 
 
-IDLE_FLOOR_DB = -80.0                       # the digital Main Out with nothing playing: under this (silence, or dither)
+IDLE_FLOOR_DB = -80.0                       # the digital Main Out with nothing playing: RMS under this (silence, dither)
+IDLE_PEAK_LSB = 128                         # ... and its peak under this (the clean floor: 0-30 LSB)
 
 
 def idle_verdict(x, sr):
@@ -1584,7 +1629,7 @@ def idle_verdict(x, sr):
         return 10 * np.log10(sp[k].mean() + 1e-12) if k.any() else -240.0
     lf = per_hz(1, 20) - per_hz(200, 4000)
     same = float(np.mean(x[:, 0] == x[:, 1])) if x.ndim == 2 and len(x) else 0.0
-    if floor < IDLE_FLOOR_DB:
+    if floor < IDLE_FLOOR_DB and peak < IDLE_PEAK_LSB:
         kind = "digital"
     elif lf > 10 and same > 0.3:
         kind = "mic"
@@ -1601,20 +1646,418 @@ SAY = {"digital": "the digital Main Out",
        "playing": "NOT silent, and not the room's signature: something plays (a clip, another slot); stop it, rerun"}
 
 
-def preflight(r, out=print, secs=1.0):
-    """the Move's USB-C stream must be its digital Main Out: with nothing playing it is (near) silent (idle_verdict).
-    Nothing reads the setting itself: Schwung's master_fx:usbc_out_source sees only the 37 14 half, not the
-    monitoring bit whose loss is the silent revert to the mic (docs/SPI_PROTOCOL.md). (ok, verdict)"""
+def idle_check(r, out=print, secs=1.0):
+    """the Move's USB-C stream must be its digital Main Out: with nothing playing it is (near) silent (idle_verdict:
+    RMS under IDLE_FLOOR_DB and the peak under IDLE_PEAK_LSB). Nothing reads the setting itself: Schwung's
+    master_fx:usbc_out_source sees only the 37 14 half, not the monitoring bit whose loss is the silent revert to the
+    mic (docs/SPI_PROTOCOL.md). Waits for silence first (up to 5 s). (ok, verdict)"""
     r._send("cc", 123, 0)
     r._send("cc", 64, 0)
     time.sleep(0.5)
+    r.wait_silence(5.0, IDLE_FLOOR_DB)
     tk = r.rec(secs, [])
     v = idle_verdict(tk["x"], tk["sr"])
-    out("preflight: idle %.1f dBFS, peak %d LSB, rumble %+.1f dB, L == R %.0f %%: %s" % (
+    out("idle: %.1f dBFS RMS, peak %d LSB, rumble %+.1f dB, L == R %.0f %%: %s" % (
         v["floor_db"], v["peak"], v["lf_db"], 100 * v["same_lr"], SAY[v["kind"]]))
     return v["kind"] == "digital", v
 
 
+# ---- the preflight (2026-10-29): a Move sampler on Frodhes' track, its sample recorded noise, played with every note
+# that came over the Move's MIDI path; the tap (Frodhes' own output) was exact zero and the tools passed. So before a
+# sound or level verdict: (1) Main Out idle, (2) one note over the Move's MIDI path, Main Out against the tap of the
+# same moment (a passive take: dev_play with no events, which writes whatever the plugin plays), (3) what the slot
+# and the Move's track hold. The slot's receive channel is read first: the notes go out on it
+PF_NOTE, PF_VEL = 60, 100
+PF_ON, PF_OFF, PF_DUR = 0.2, 1.2, 2.5         # (s, from the Main Out take's start)
+PF_RESID_DB = -40.0                           # the residual after the gain, re the note's level: over it, another sound
+PF_RESID_DBFS = -66.0                         # the residual's own level (dBFS RMS): over it, another sound
+PF_CORR_MIC = 0.9                             # Main Out against the tap under this: not the digital Main Out
+PF_GAIN_DB_MIN = -40.0                        # Main Out's gain on the tap under this: Frodhes is not on Main Out
+MIC_SAY = ("USB-C audio is the microphone: set Settings > USB-C audio out > Main Out (the Move resets it at boot)")
+PLAY_SAY = ("Main Out not silent with no note: something else is playing on the Move (another instrument on the "
+            "track, a clip, input monitoring)")
+FOREIGN_SAY = "sound on Main Out that is not Frodhes"
+TRIM = 5279 / 4096.0                          # move/move_bridge.h MB_TRIM_Q12: Main Out = the tap x TRIM x the mix
+
+
+def parse_chain_config(text, slot=0):
+    """Schwung's shadow_chain_config.json: the slot's receive channel (0 All, 1-16), its forward channel (-2 THRU,
+    -1 auto, 0-15) and volume, or {} when the file does not say"""
+    import json
+    try:
+        j = json.loads(text)
+    except ValueError:
+        return {}
+    out = {}
+    chs, fw, vol = j.get("slot_channels"), j.get("slot_forward_channels"), j.get("slot_volumes")
+    if isinstance(chs, list) and slot < len(chs):
+        c = int(chs[slot])                    # (internal: -1 All, 0-15)
+        out["receive_channel"] = 0 if c < 0 else c + 1
+    if isinstance(fw, list) and slot < len(fw):
+        out["forward_channel"] = int(fw[slot])
+    if isinstance(vol, list) and slot < len(vol):
+        out["volume"] = float(vol[slot])
+    return out
+
+
+def parse_song(text, track=0):
+    """the Move's saved set (Song.abl, JSON): track's MIDI input ("auto", or the channels 1-16), its instruments
+    (kind, name, the sample loaded or none) and its mixer volume; {} when it does not parse. The file is the set as
+    last saved: the live state can differ"""
+    import json
+    try:
+        t = json.loads(text)["tracks"][track]
+    except (ValueError, KeyError, IndexError, TypeError):
+        return {}
+    devs = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            if "kind" in o and ("parameters" in o or "devices" in o or "chains" in o):
+                dd = o.get("deviceData") or {}
+                devs.append({"kind": o["kind"], "name": o.get("name") or "",
+                             **({"sample": dd.get("sampleUri")} if "sampleUri" in dd else {})})
+            for k in ("devices", "chains"):
+                walk(o.get(k))
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(t.get("devices"))
+    mode = t.get("midiInputMode")
+    return {"midi_in": mode if isinstance(mode, str) else [int(c) + 1 for c in (mode or [])],
+            "devices": devs, "volume_db": (t.get("mixer") or {}).get("volume")}
+
+
+def slot_report(url, host, slot=0, ssh=None, out=print):
+    """what Schwung and the Move show of the slot and its track: over the WebSocket the chain (synth, audio FX, MIDI
+    FX: module ids), the slot's receive / forward channel, volume, mute and Frodhes' CHAN (s_mch); over ssh Schwung's
+    shadow_chain_config.json (the channels again, when the WebSocket gave none) and the Move's saved set (the
+    track's MIDI input and instruments). Each source that cannot be read says so in "errors". {"ws", "config",
+    "track", "errors"}"""
+    import move_ws
+    rep = {"ws": {}, "config": {}, "track": {}, "errors": []}
+    if url and url != "none":
+        try:
+            with move_ws.Remote(url) as w:
+                w.subscribe(slot)
+                try:                              # (the slot's own keys can come in a later update than the preset)
+                    w.until(lambda r: "slot:receive_channel" in r.params.get(slot, {}), 2.0)
+                except TimeoutError:
+                    pass
+                w.pump(0.5)
+                i, p = w.info.get(slot, {}), w.params.get(slot, {})
+            rep["ws"] = {"synth": i.get("synth", ""), "fx": i.get("fx") or [x for x in (i.get("fx1"), i.get("fx2")) if x],
+                         "midi_fx": i.get("midi_fx") or [x for x in (i.get("midi_fx1"),) if x],
+                         **{k[5:]: p[k] for k in ("slot:receive_channel", "slot:forward_channel", "slot:volume",
+                                                  "slot:muted", "slot:soloed") if k in p}}
+            if "synth:s_mch" in p:
+                rep["ws"]["s_mch"] = p["synth:s_mch"]
+        except (OSError, TimeoutError, move_ws.SchwungError, move_ws.ConnectionClosed) as e:
+            rep["errors"].append("Schwung's WebSocket %s: %s" % (url, e))
+    else:
+        rep["errors"].append("Schwung's WebSocket: not used (--ws none)")
+    if ssh is None and host:
+        import subprocess
+
+        def ssh(cmd):
+            r = subprocess.run(["ssh", *mi.SSH_OPTS, host, cmd], capture_output=True, text=True, timeout=20)
+            return r.stdout if r.returncode == 0 else None
+    if ssh is None:
+        rep["errors"].append("ssh: no host")
+        return rep
+    txt = ssh("cat /data/UserData/schwung/shadow_chain_config.json")
+    rep["config"] = parse_chain_config(txt or "", slot)
+    if not rep["config"]:
+        rep["errors"].append("shadow_chain_config.json: not read")
+    uid = (ssh("head -n 1 /data/UserData/schwung/active_set.txt") or "").strip()
+    song = ssh('cat /data/UserData/UserLibrary/Sets/%s/*/Song.abl' % uid) if re.match(r"^[0-9a-f-]{8,}$", uid) else None
+    rep["track"] = parse_song(song or "", slot)
+    if not rep["track"]:
+        rep["errors"].append("the Move's set (active_set.txt -> Song.abl): not read")
+    return rep
+
+
+def resolve_channel(rep, ch=None, slot=0):
+    """from slot_report: the channel to send the Move's MIDI path on, and the one Frodhes sees. ch: --ch (None: the
+    slot's own receive channel). {"send", "plugin", "recv", "notes", "stop"}: stop is a message when the notes would
+    not reach Frodhes, or nothing says where they go"""
+    def num(v):
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return None
+    w, c = rep.get("ws", {}), rep.get("config", {})
+    recv = num(w.get("receive_channel"))
+    src = "Schwung's WebSocket"
+    if recv is None:
+        recv, src = num(c.get("receive_channel")), "shadow_chain_config.json"
+    fwd = num(w.get("forward_channel"))
+    if fwd is None:
+        fwd = num(c.get("forward_channel"))
+    mch = num(w.get("s_mch"))
+    res = {"recv": recv, "recv_from": src if recv is not None else None, "forward": fwd, "s_mch": mch, "notes": [],
+           "stop": None}
+    if recv is None:
+        if ch is None:
+            res["stop"] = ("slot %d's receive channel could not be read (%s); the tools would assume channel %d: "
+                           "pass --ch N to send on channel N" % (slot + 1, "; ".join(rep.get("errors") or ["no source"]),
+                                                                 USB_CH))
+            return res
+        res["notes"].append("slot %d's receive channel not read: --ch %d as given" % (slot + 1, ch))
+        send = ch
+    elif ch is not None and recv not in (0, ch):
+        res["stop"] = ("--ch %d, but slot %d receives on channel %d (%s): its notes would not reach Frodhes; pass "
+                       "--ch %d or none" % (ch, slot + 1, recv, src, recv))
+        return res
+    else:
+        send = ch if ch is not None else (recv or USB_CH)
+        if recv == 0:
+            res["notes"].append("slot %d receives every channel (All): sending on %d" % (slot + 1, send))
+    # (Schwung's shadow_chain_remap_channel: -2 THRU keeps the channel, -1 auto the receive channel (Frodhes declares no
+    # default_forward_channel; All + auto keeps it), 0-15 that one)
+    plugin = send if fwd in (None, -2) or (fwd == -1 and not recv) else (recv if fwd == -1 else fwd + 1)
+    res.update(send=send, plugin=plugin)
+    if mch and mch != plugin:
+        res["stop"] = ("Frodhes' CHAN is %d, but slot %d hands it channel %d (receive %s, forward %s): its notes would "
+                       "not play" % (mch, slot + 1, plugin, recv, fwd))
+    mi_in = rep.get("track", {}).get("midi_in")
+    if isinstance(mi_in, list) and mi_in and send not in mi_in:
+        res["notes"].append("the Move's track %d takes MIDI in on channel(s) %s, the slot on %s: they differ (the "
+                            "saved set)" % (slot + 1, mi_in, recv))
+    elif mi_in is not None:
+        res["notes"].append("the Move's track %d MIDI in: %s (the saved set); the slot: %s" % (
+            slot + 1, mi_in, "All" if recv == 0 else recv))
+    return res
+
+
+def report_lines(rep, chan):
+    """slot_report and resolve_channel as lines for the user"""
+    w, t, L = rep.get("ws", {}), rep.get("track", {}), []
+    if w:
+        L.append("slot: synth %r, audio FX %s, MIDI FX %s, receive %s, forward %s, volume %s, muted %s, Frodhes CHAN %s"
+                 % (w.get("synth"), w.get("fx") or "none", w.get("midi_fx") or "none", w.get("receive_channel", "?"),
+                    w.get("forward_channel", "?"), w.get("volume", "?"), w.get("muted", "?"), w.get("s_mch", "?")))
+    elif rep.get("config"):
+        L.append("slot (shadow_chain_config.json): %s" % rep["config"])
+    if t:
+        devs = ", ".join("%s%s%s" % (d["kind"], " %r" % d["name"] if d["name"] else "",
+                                     " (sample %s)" % (d["sample"] or "none") if "sample" in d else "")
+                         for d in t.get("devices", [])) or "none"
+        L.append("the Move's track (the saved set; the live one can differ): MIDI in %s, volume %s dB, devices: %s"
+                 % (t.get("midi_in"), t.get("volume_db"), devs))
+    for e in rep.get("errors", []):
+        L.append("cannot read: " + e)
+    if chan.get("send"):
+        L.append("channel: send %s, Frodhes sees %s (receive %s from %s, forward %s)" % (
+            chan["send"], chan.get("plugin"), chan.get("recv"), chan.get("recv_from"), chan.get("forward")))
+    L += chan.get("notes", [])
+    return L
+
+
+def _bands3(x, sr):
+    """third-octave band powers (dB), 50 Hz .. 12.8 kHz, of x (mono)"""
+    return _bands(x, sr)
+
+
+def tap_vs_main(main, sr, tap, t_on=PF_ON, t_off=PF_OFF):
+    """Main Out (n, 2, at sr) against the tap (m, 2, at 44.1 kHz) that covers it: the lag by cross-correlation, then
+    the gain per channel by least squares (the Move's trim and its mix, the slot's and the track's volume), the
+    residual Main Out - gain x tap from just before the note to the take's end: its level re the note and in dBFS,
+    its spectrum's peaks and the third-octave bands where it is within 20 dB of the note. {...}"""
+    from scipy.signal import resample_poly
+    tap = np.asarray(tap, float)
+    main = np.asarray(main, float)
+    if sr != FS:
+        from math import gcd
+        g = gcd(int(sr), FS)
+        tap = resample_poly(tap, int(sr) // g, FS // g, axis=0)
+    rep = {"sr": sr}
+    if not len(tap) or np.abs(tap).max() == 0:
+        rep["kind"] = "tap-silent"
+        return rep
+    a, b = int(max(0.0, t_on - 0.05) * sr), len(main)
+    m = main[a:b]
+    mm, tm = _mono(m), _mono(tap)
+    if len(tm) < len(mm):
+        rep["kind"] = "tap-short"
+        return rep
+    n = len(mm) + len(tm)
+    c = np.fft.irfft(np.fft.rfft(tm, n) * np.conj(np.fft.rfft(mm, n)), n)[:len(tm) - len(mm) + 1]
+    best = None
+    k0 = int(np.argmax(c))
+    for k in range(max(0, k0 - 2), min(len(tm) - len(mm), k0 + 2) + 1):   # (the residual's own best near the peak)
+        seg = tap[k:k + len(m)]
+        gains = [float(np.dot(m[:, j], seg[:, j]) / (np.dot(seg[:, j], seg[:, j]) + 1e-9)) for j in (0, 1)]
+        res = m - seg * np.array(gains)
+        e = float(np.sum(res ** 2))
+        if best is None or e < best[0]:
+            best = (e, k, gains, res, seg)
+    _, k, gains, res, seg = best
+    corr = float(np.dot(mm, _mono(seg)) / (np.linalg.norm(mm) * np.linalg.norm(_mono(seg)) + 1e-9))
+    note = m - res                               # (Frodhes on Main Out: the tap through the gain)
+    rel = 10 * np.log10((np.sum(res ** 2) + 1e-9) / (np.sum(note ** 2) + 1e-9))
+    rm, nm = _mono(res), _mono(note)
+    sp = np.abs(np.fft.rfft(rm * np.hanning(len(rm))))
+    fr = np.fft.rfftfreq(len(rm), 1 / sr)
+    peaks = []
+    for i in np.argsort(sp)[::-1]:
+        if fr[i] > 20 and all(abs(fr[i] - q) > 15 for q in peaks):
+            peaks.append(round(float(fr[i])))
+        if len(peaks) == 4:
+            break
+    br, bn = _bands3(rm, sr), _bands3(nm, sr)
+    fc = 50 * 2 ** (np.arange(0, 25) / 3)
+    near = [int(round(f)) for f, x, y in zip(fc, br, bn) if x > y - 20 and x > bn.max() - 60]   # (judged: the level)
+    g = float(np.mean(np.abs(gains)))
+    rep.update(kind="ok", tap_offset_s=round((k - a) / sr, 4), corr=round(corr, 5), gain=[round(x, 4) for x in gains],
+               gain_db=round(20 * np.log10(g + 1e-12), 2), mix_db=round(20 * np.log10(g / TRIM + 1e-12), 2),
+               resid_db=round(float(rel), 1), resid_dbfs=round(float(hs.db(res)), 1),
+               note_dbfs=round(float(hs.db(note)), 1), main_peak=float(np.abs(m).max()),
+               resid_peak=round(float(np.abs(res).max()), 1), resid_hz=peaks, resid_bands_hz=near)
+    return rep
+
+
+def tap_verdict(v, idle=None):
+    """(ok, text) of tap_vs_main"""
+    if v["kind"] == "tap-silent":
+        return False, ("the note did not reach Frodhes: its tap stayed silent (the channel? the slot muted? another "
+                       "module in the slot?)")
+    if v["kind"] != "ok":
+        return False, "the tap did not cover the take (%s)" % v["kind"]
+    if v["gain_db"] < PF_GAIN_DB_MIN:
+        return False, "Frodhes is not on Main Out (gain %.1f dB: the slot or the track muted, its volume at 0?)" % (
+            v["gain_db"])
+    if v["corr"] < PF_CORR_MIC and (idle or {}).get("kind") in ("mic", None):
+        return False, MIC_SAY + " (Main Out against the tap: correlation %.3f)" % v["corr"]
+    if v["resid_db"] > PF_RESID_DB or v["resid_dbfs"] > PF_RESID_DBFS:
+        return False, ("%s: %.1f dB under the note (%.1f dBFS RMS; limits %g dB, %g dBFS), its peaks at %s Hz%s" % (
+            FOREIGN_SAY, -v["resid_db"], v["resid_dbfs"], -PF_RESID_DB, PF_RESID_DBFS, v["resid_hz"],
+            ", within 20 dB of the note in the bands at %s Hz" % v["resid_bands_hz"] if v["resid_bands_hz"] else ""))
+    return True, "Main Out is Frodhes: residual %.1f dB under the note (%.1f dBFS), gain %.2f dB (trim %+.2f, the mix " \
+                 "%+.2f dB)" % (-v["resid_db"], v["resid_dbfs"], v["gain_db"], 20 * np.log10(TRIM), v["mix_db"])
+
+
+class PassiveTap:
+    """the tap of whatever the plugin plays (dev_play with no events): begin(secs) arms a take that covers the next
+    secs from now on (it starts on the plugin's 2560 ms grid: begin waits for it), collect() -> (m, 2) at 44.1 kHz or
+    None. The same as usb_levels' stock take"""
+
+    def __init__(self, t):
+        self.t, self.take = t, None
+
+    def begin(self, secs):
+        t = self.t
+        t.n += 1
+        self.take = "pf%s-%03d" % (t.stamp, t.n)
+        t.remote.play(t.slot, self.take, int((TAP_GRID_S + 0.3 + secs + 0.5) * 1000), [])
+        time.sleep(TAP_GRID_S + 0.3)
+
+    def collect(self):
+        import wave
+        time.sleep(1.0)
+        got, t0 = None, time.monotonic()
+        while got is None and time.monotonic() - t0 < 10:
+            got = self.t.fetch(self.take)
+            if got is None:
+                time.sleep(0.5)
+        if not got:
+            return None
+        w = wave.open(got[0])
+        return np.frombuffer(w.readframes(w.getnframes()), "<i2").reshape(-1, 2).astype(float)
+
+
+def preflight_run(u, tap, rep, chan, d=None, out=print):
+    """the preflight: rep / chan from slot_report / resolve_channel (printed first), (1) idle_check, (2) one note
+    over the Move's MIDI path (u: UsbRig on chan["send"]) recorded on Main Out, with the tap of the same moment
+    (tap: PassiveTap, or the fake's), tap_vs_main. Stops at the first failure. (ok, report)"""
+    import json
+    res = {"slot": rep, "channel": chan}
+    for ln in report_lines(rep, chan):
+        out("preflight: " + ln)
+    if chan.get("stop"):
+        res["verdict"] = "FAIL: " + chan["stop"]
+        out("preflight: " + res["verdict"])
+        return False, res
+    ok, idle = idle_check(u, out=lambda s: out("preflight: " + s))
+    res["idle"] = idle
+    if not ok:
+        res["verdict"] = "FAIL: " + (MIC_SAY if idle["kind"] == "mic" else PLAY_SAY) + \
+            " (%.1f dBFS RMS, peak %d LSB; limits %g dBFS, %d LSB)" % (idle["floor_db"], idle["peak"], IDLE_FLOOR_DB,
+                                                                       IDLE_PEAK_LSB)
+        out("preflight: " + res["verdict"])
+        return False, res
+    tap.begin(PF_DUR)
+    tk = u.rec(PF_DUR, [(PF_ON, "on", PF_NOTE, PF_VEL), (PF_OFF, "off", PF_NOTE, 0)])
+    tx = tap.collect()
+    if d:
+        _save(d, "preflight-main", tk)
+        if tx is not None:
+            _save(d, "preflight-tap", {"x": tx, "sr": FS})
+    if tx is None:
+        res["verdict"] = "FAIL: the tap did not arrive (dev_play: an installed build with it, Frodhes in the slot?)"
+        out("preflight: " + res["verdict"])
+        return False, res
+    v = tap_vs_main(tk["x"], tk["sr"], tx)
+    res["tap"] = v
+    ok, txt = tap_verdict(v, idle)
+    if v.get("kind") == "ok":
+        out("preflight: note %d v%d over the Move's MIDI path (channel %s): the tap %.3f s ahead, correlation %.5f, "
+            "gain %s (%.2f dB), residual %.1f dB re the note, %.1f dBFS RMS, peak %.0f LSB" % (
+                PF_NOTE, PF_VEL, chan.get("send"), v["tap_offset_s"], v["corr"], v["gain"], v["gain_db"],
+                v["resid_db"], v["resid_dbfs"], v["resid_peak"]))
+    res["verdict"] = ("PASS: " if ok else "FAIL: ") + txt
+    out("preflight: " + res["verdict"])
+    if d:
+        os.makedirs(d, exist_ok=True)
+        json.dump(_plain(res), open(os.path.join(d, "preflight.json"), "w"), indent=1, default=str)
+    return ok, res
+
+
+def fake_slot_report(recv=1, fwd=-1, mch=0, midi_in="auto"):
+    """slot_report as a fake Move answers it (the tests)"""
+    return {"ws": {"synth": mi.MODULE_ID, "fx": [], "midi_fx": [], "receive_channel": str(recv),
+                   "forward_channel": str(fwd), "volume": "1.0000", "muted": "0", "s_mch": str(mch)},
+            "config": {"receive_channel": recv, "forward_channel": fwd, "volume": 1.0},
+            "track": {"midi_in": midi_in, "devices": [{"kind": "instrumentRack", "name": "Sampler"},
+                                                      {"kind": "melodicSampler", "name": "", "sample": None}],
+                      "volume_db": 0.0}, "errors": []}
+
+
+def channel_for(a, out=print):
+    """the device commands' channel: the slot's receive channel read over Schwung (slot_report), --ch when given.
+    (chan, rep); a chan with "stop" set ends the command (exit 2)"""
+    if a.fake:
+        rep = fake_slot_report()
+    else:
+        rep = slot_report(a.ws, a.host, 0, out=out)
+    return resolve_channel(rep, a.ch), rep
+
+
+def preflight_cmd(a, d, chan, rep, out=print, u=None):
+    """the preflight before a device command (and the preflight subcommand): (ok, report). The fake: FakeRig, its own
+    tap"""
+    if a.fake:
+        inj = [(k, float(t or 0)) for k, _, t in (s.partition("@") for s in a.inject or ())]
+        u = u if isinstance(u, FakeRig) else FakeRig(inject=inj)
+        tap = u
+    else:
+        u = u or UsbRig(a.midi, a.audio, chan["send"])
+        if a.ws == "none":
+            return False, {"verdict": "FAIL: the preflight needs Schwung's WebSocket for the tap (--ws), or "
+                                      "--no-preflight"}
+        tap = PassiveTap(TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), chan["plugin"]))
+    try:
+        return preflight_run(u, tap, rep, chan, d, out=out)
+    finally:
+        if isinstance(tap, PassiveTap):
+            try:
+                tap.t.remote.close()
+            except Exception:
+                pass
+
+
+
+SAY["mic"], SAY["playing"] = MIC_SAY, PLAY_SAY
 USB_CMDS = ("usb-devices", "usb-host", "usb-note", "usb-vel", "usb-sus", "usb-clock", "usb-stress")
 
 
@@ -1625,7 +2068,15 @@ def usb_main(a):
         return 0 if ok else 1
     if a.cmd == "usb-devices" and not a.fake:
         return usb_devices(a.midi, a.audio)
+    if a.cmd == "usb-devices":
+        r = FakeRig()
+        print("picked: MIDI %s, audio %s" % (r.port_name, r.audio_name))
+        return 0
     d = a.out or os.path.join(OUT, stamp() + "-" + a.cmd)
+    chan, srep = channel_for(a)
+    if chan.get("stop"):
+        print("STOP: " + chan["stop"])
+        return 2
     if a.fake:
         inj = []
         for s in a.inject or ():
@@ -1633,33 +2084,36 @@ def usb_main(a):
             inj.append((k, float(t or 0)))
         r = FakeRig(inject=inj)
     elif a.path == "tap":
-        r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)
+        r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), chan["plugin"])
     else:
-        r = UsbRig(a.midi, a.audio, a.ch)
-    if a.cmd == "usb-devices":
-        print("picked: MIDI %s, audio %s" % (r.port_name, r.audio_name))
-        return 0
-    if not r.fake and not a.no_preflight and a.path == "usb":
-        ok, pre = preflight(r)
-        if not ok:
-            return 2
+        r = UsbRig(a.midi, a.audio, chan["send"])
     print("MIDI %s (channel %d), audio %s; takes -> %s" % (r.port_name, r.ch, r.audio_name, d), flush=True)
     e = a.engine if a.engine in ENGINE_CCS else None
     fn = {"usb-host": lambda: usb_host(r, d, a.program), "usb-note": lambda: usb_note(r, d, a.note, a.vel, e),
           "usb-vel": lambda: usb_vel(r, d, a.note, engine=e),
           "usb-sus": lambda: usb_sus(r, d, a.note, engine=e), "usb-clock": lambda: usb_clock(r, d, a.bpm or 100.0, engine=e),
           "usb-stress": lambda: usb_stress(r, d, a.engine if a.engine != "all" else "rhodes", a.secs, a.nv, a.bpm)}
+
+    def run():
+        if not a.no_preflight:                 # (a sound verdict: the preflight first; a failure stops the command)
+            ok, pre = preflight_cmd(a, os.path.join(d, "preflight"), chan, srep,
+                                    u=r if not isinstance(r, TapRig) else None)
+            if not ok:
+                return None, {"verdict": "STOP: the preflight failed", "preflight": pre}
+        return fn[a.cmd]()
     ks = KeptState(a.ws, 0) if not r.fake and a.ws != "none" else None
     if ks is None:
-        ok, rep = fn[a.cmd]()
+        ok, rep = run()
     else:
         with ks:                               # (the plugin's state as it was, also on a failure or ctrl-C)
-            ok, rep = fn[a.cmd]()
+            ok, rep = run()
         rep["state"] = ks.report
-        ok = ok and ks.report["verdict"] == "PASS"
-    rep["rig"] = {"midi": r.port_name, "audio": r.audio_name, "ch": r.ch, "fake": r.fake}
+        ok = ok if ok is None else ok and ks.report["verdict"] == "PASS"
+    rep["rig"] = {"midi": r.port_name, "audio": r.audio_name, "ch": r.ch, "fake": r.fake, "channel": chan}
     os.makedirs(d, exist_ok=True)
     json.dump(_plain(rep), open(os.path.join(d, "report.json"), "w"), indent=1, default=str)
+    if ok is None:
+        return 2
     return 0 if ok else 1
 
 
@@ -1700,6 +2154,8 @@ def state_restore(url, slot, before, hq_default=1):
         w.pump(0.8)
         for k, v in (("dev_play", "stop"), ("dev_cpu_log", 0), ("dev_stats_log", 0), ("p_hq", hq_default)):
             w.set_param(slot, "synth:" + k, v)
+        w.pump(1.5)              # (the manager's re-read after these writes goes out under this connection: closed in
+        #                          the middle of it, the next connection is cut, "no close frame", 2026-10-29)
         now = lambda: {k[6:]: v for k, v in w.params.get(slot, {}).items() if k.startswith("synth:")}  # noqa: E731
         written = []
         if "preset" in before and not _same(now().get("preset"), before["preset"]):
@@ -1823,8 +2279,13 @@ class FakeEchoRig(FakeRig):
 def _num(rep, test):
     """the key numbers of one test's report, one short line"""
     try:
-        if test == "preflight":
+        if test == "idle":
             return "idle %s dBFS (%s)" % (rep["floor_db"], rep["kind"])
+        if test == "preflight":
+            i, t = rep.get("idle") or {}, rep.get("tap") or {}
+            return "idle %s dBFS RMS, peak %s LSB; residual %s dB re the note, %s dBFS; gain %s dB; channel %s" % (
+                i.get("floor_db", "-"), i.get("peak", "-"), t.get("resid_db", "-"), t.get("resid_dbfs", "-"),
+                t.get("gain_db", "-"), (rep.get("channel") or {}).get("send", "-"))
         if test == "ws":
             return rep.get("note", "")
         if test == "state":
@@ -1896,14 +2357,15 @@ class _Stop(Exception):
     pass
 
 
-def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, only=None, out=print):
+def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, only=None, out=print, pre=None):
     """per engine: the slot's module and preset over Schwung's WebSocket (ws: its URL, None: skipped), the preflight
     (a failure stops the whole run: the stream is not the Move's Main Out), usb-host on the engine's preset, usb-note
     on three keys, usb-vel, usb-sus, usb-clock (once a run: with the Rhodes engine, else the first), usb-stress; each
     test's takes and report.json in d/<engine>/<test>/, the table in d/summary.md, everything in d/report.json. Over the tap with a CPU read (TapRig cpu): the cpu row,
     every callback's time while usb-stress plays (the worst case), against U12. hq 0 / 1 (the tap): the HQ switch
     set first (p_hq; None: as the plugin has it). only: the test names to run (a name or its prefix, "usb-note" for all
-    three; None: all; the cpu row comes with usb-stress). Returns (exit code: 0 all PASS, 1 a FAIL, 2 stopped)"""
+    three; None: all; the cpu row comes with usb-stress). pre: the preflight (preflight_cmd, called once before the
+    engines; its failure stops the run). Returns (exit code: 0 all PASS, 1 a FAIL, 2 stopped)"""
     import json
     rows, code = [], 0
     os.makedirs(d, exist_ok=True)
@@ -1933,6 +2395,12 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, 
     try:
         if stopped:
             raise _Stop()
+        if pre is not None:
+            ok, rep = pre()
+            note("all", "preflight", ok, rep)
+            if not ok:
+                stopped = "the preflight failed: %s" % rep.get("verdict", "")
+                raise _Stop()
         for e in engines:
             out("== %s" % e)
             if ws:
@@ -1942,11 +2410,11 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, 
                     stopped = "%s: %s" % (e, rep["verdict"])
                     break
             if not isinstance(r, TapRig):           # (the tap is the plugin's own output: no stream to check)
-                ok, pre = preflight(r, out=quiet)
-                pre["verdict"] = "PASS" if ok else "FAIL: " + SAY[pre["kind"]]
-                note(e, "preflight", ok, pre)
+                ok, idl = idle_check(r, out=quiet)
+                idl["verdict"] = "PASS" if ok else "FAIL: " + SAY[idl["kind"]]
+                note(e, "idle", ok, idl)
                 if not ok:
-                    stopped = "%s: the preflight failed (%s)" % (e, pre["kind"])
+                    stopped = "%s: the idle check failed (%s)" % (e, idl["kind"])
                     break
             sub = lambda t: os.path.join(d, e, t)          # noqa: E731
             r._send("cc", 120, 0)                          # (the host's state: every parameter at its default, the
@@ -2117,7 +2585,7 @@ def usb_levels(u, t, d, url, vels=LEVEL_VELS, out=print):
     The gain that matches them, by LUFS and by critical-band loudness, is reported only; nothing is set. (ok, rep)"""
     import json
     os.makedirs(d, exist_ok=True)
-    ok, pre = preflight(u, out)
+    ok, pre = idle_check(u, out)
     if not ok:
         return False, {"verdict": "STOP: the USB-C stream is not the Move's digital Main Out", "preflight": pre}
     ok, ws = _ws_prepare(url, "rhodes", t.slot, out)          # (F01)
@@ -2204,7 +2672,7 @@ def usb_levels(u, t, d, url, vels=LEVEL_VELS, out=print):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("cmd", choices=("facts", "install", "rollback", "info", "logs", "cpu", "crackle", "must", "null", "d2", "usb-levels",
-                                    "clock-probe")
+                                    "clock-probe", "preflight")
                     + USB_CMDS)
     ap.add_argument("--go", action="store_true")
     ap.add_argument("--host", default=os.environ.get("MOVE_HOST", "ableton@move.local"))
@@ -2216,7 +2684,8 @@ def main(argv=None):
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--midi", help="usb-*: the MIDI output (a substring of its name; default the Move's Standalone port)")
     ap.add_argument("--audio", help="usb-*: the audio input (a substring; default the Move's)")
-    ap.add_argument("--ch", type=int, default=USB_CH, help="usb-*: the MIDI channel, 1-based (default 1)")
+    ap.add_argument("--ch", type=int, default=None, help="usb-*, d2, usb-levels, preflight: the MIDI channel, "
+                    "1-16 (default: slot 1's receive channel, read over Schwung)")
     ap.add_argument("--note", type=int, default=60)
     ap.add_argument("--program", type=int, default=0, help="usb-host: the program change first (0 = F01)")
     ap.add_argument("--vel", type=int, default=100)
@@ -2224,9 +2693,10 @@ def main(argv=None):
     ap.add_argument("--secs", type=float, default=60.0, help="usb-stress: the take's length")
     ap.add_argument("--nv", type=int, default=MOVE_VOICES, help="usb-stress: voices per chord")
     ap.add_argument("--out", help="usb-*: the folder for the takes and report.json")
-    ap.add_argument("--no-preflight", action="store_true", help="usb-*: skip the idle check of the USB-C stream")
+    ap.add_argument("--no-preflight", action="store_true",
+                    help="usb-*, d2, usb-levels: skip the preflight (Main Out idle, Main Out against the tap)")
     ap.add_argument("--fake", action="store_true", help="usb-*: the offline model of the Move (no device)")
-    ap.add_argument("--inject", action="append", help="usb-* --fake: KIND@SECONDS (zero, click, stale, loud, nosus); clock-probe --fake: real, fallback, none, late")
+    ap.add_argument("--inject", action="append", help="usb-* --fake: KIND@SECONDS (zero, click, stale, loud, nosus, playing, hiss, foreign, mic); clock-probe --fake: real, fallback, none, late")
     ap.add_argument("--engines", default=",".join(D2_ENGINES), help="d2: the engines, comma-separated")
     ap.add_argument("--tests", help="d2: only these tests, comma-separated (a name or its prefix: usb-host,usb-stress; "
                                     "the cpu row comes with usb-stress)")
@@ -2248,7 +2718,7 @@ def main(argv=None):
 def drives_the_move(a):
     """does this command send to the Move or read it (the MOVE lock), or is it offline (a fake, a saved file, a dry
     run, a local folder)?"""
-    if a.cmd in ("usb-levels", "clock-probe"):
+    if a.cmd in ("usb-levels", "clock-probe", "preflight"):
         return not a.fake
     if a.cmd == "d2":
         return not a.fake
@@ -2266,15 +2736,21 @@ def _main(a):
         if bad:
             raise SystemExit("--engines: %s" % bad)
         d = a.out or os.path.join(OUT, stamp() + "-d2")
+        chan, srep = channel_for(a)
+        if chan.get("stop"):
+            print("STOP: " + chan["stop"])
+            return 2
         if a.fake:
             inj = [(k, float(t or 0)) for k, _, t in (s.partition("@") for s in a.inject or ())]
             r = FakeEchoRig(inject=inj)
         elif a.path == "tap":
-            r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch, cpu=scp_cpu(a.host))
+            r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), chan["plugin"], cpu=scp_cpu(a.host))
         else:
-            r = UsbRig(a.midi, a.audio, a.ch)
+            r = UsbRig(a.midi, a.audio, chan["send"])
         only = [x for x in (a.tests or "").split(",") if x] or None
-        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 100.0, a.hq, only)
+        pre = None if a.no_preflight else (lambda: preflight_cmd(a, os.path.join(d, "preflight"), chan, srep,
+                                                                 u=r if not isinstance(r, TapRig) else None))
+        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 100.0, a.hq, only, pre=pre)
     if a.cmd == "clock-probe":
         d = a.out or os.path.join(OUT, stamp() + "-clock-probe")
         if a.fake:
@@ -2283,11 +2759,31 @@ def _main(a):
         else:
             ok, _ = clock_probe(StatsLink(a.ws, a.host), d)
         return 0 if ok else 1
+    if a.cmd == "preflight":
+        d = a.out or os.path.join(OUT, stamp() + "-preflight")
+        chan, srep = channel_for(a)
+        if a.fake or a.ws == "none":
+            ok, rep = preflight_cmd(a, d, chan, srep)
+        else:
+            with KeptState(a.ws, 0) as ks:      # (CC 123 / CC 64 0 and the note: the state as it was)
+                ok, rep = preflight_cmd(a, d, chan, srep)
+            ok = ok and ks.report["verdict"] == "PASS"
+        return 0 if ok else 1
     if a.cmd == "usb-levels":
         d = a.out or os.path.join(OUT, stamp() + "-usb-levels")
-        t = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), a.ch)
+        chan, srep = channel_for(a)
+        if chan.get("stop"):
+            print("STOP: " + chan["stop"])
+            return 2
+        t = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), chan["plugin"])
+        u = UsbRig(a.midi, a.audio, chan["send"])
         with KeptState(a.ws, 0) as ks:          # (the preset, CHANNEL, boot_settings: as they were)
-            ok, rep = usb_levels(UsbRig(a.midi, a.audio, a.ch), t, d, a.ws)
+            if not a.no_preflight:
+                ok, pre = preflight_cmd(a, os.path.join(d, "preflight"), chan, srep, u=u)
+                if not ok:
+                    print("STOP: the preflight failed")
+                    return 2
+            ok, rep = usb_levels(u, t, d, a.ws)
         rep["state"] = ks.report
         ok = ok and ks.report["verdict"] == "PASS"
         print(rep["verdict"])

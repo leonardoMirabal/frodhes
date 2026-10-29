@@ -205,8 +205,8 @@ def test_d2_fake(tmp_path):
     md = open(tmp_path / "summary.md").read()
     rep = __import__("json").load(open(tmp_path / "report.json"))
     tests = [(w["engine"], w["test"]) for w in rep["rows"]]
-    assert tests[:10] == [("rhodes", t) for t in ("preflight", "usb-host", "usb-note-36", "usb-note-60", "usb-note-84",
-                                                   "usb-vel", "usb-sus", "usb-clock", "usb-stress")] + [("marimba", "preflight")]
+    assert tests[:10] == [("rhodes", t) for t in ("idle", "usb-host", "usb-note-36", "usb-note-60", "usb-note-84",
+                                                   "usb-vel", "usb-sus", "usb-clock", "usb-stress")] + [("marimba", "idle")]
     assert len(tests) == 17 and code == 0, [(w["test"], w["verdict"]) for w in rep["rows"] if not w["ok"]]
     assert "| rhodes | usb-host | PASS | gain -6.02 dB" in md and "# Move D2 over USB-C: PASS" in md, md
     host = next(w for w in rep["rows"] if w["engine"] == "marimba" and w["test"] == "usb-host")["report"]
@@ -214,7 +214,7 @@ def test_d2_fake(tmp_path):
     assert os.path.exists(tmp_path / "marimba" / "usb-note-60" / "note.wav")
     code = mh.d2(mh.FakeEchoRig(inject=[("playing", 0.0)]), str(tmp_path / "p"), out=lambda s: None)
     md = open(tmp_path / "p" / "summary.md").read()
-    assert code == 2 and "STOPPED" in md and "| rhodes | preflight | FAIL" in md and "usb-host" not in md, md
+    assert code == 2 and "STOPPED" in md and "| rhodes | idle | FAIL" in md and "usb-host" not in md, md
 
 
 def test_d2_cli_fake(tmp_path):
@@ -244,7 +244,7 @@ def test_d2_only(tmp_path):
             "--out", str(tmp_path))
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr
     rep = __import__("json").load(open(tmp_path / "report.json"))
-    assert [w["test"] for w in rep["rows"]] == ["preflight", "usb-note-36", "usb-note-60", "usb-note-84", "usb-stress"]
+    assert [w["test"] for w in rep["rows"]] == ["preflight", "idle", "usb-note-36", "usb-note-60", "usb-note-84", "usb-stress"]
 
 
 def test_clock_probe_fake(tmp_path):
