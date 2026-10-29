@@ -1072,7 +1072,7 @@ issues: [github.com/leonardoMirabal/frodhes](https://github.com/leonardoMirabal/
 | **Polyphony** | 10 voices (the Rhodes, VIBES and MARIMBA); an 11th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
 | **Range** | 88 notes, A0–C8 over MIDI (notes outside play the nearest end); the 27 keys play F3–G5, OCT ±2 octaves, TRANSP ±24 semitones, TUNE ±50 cents |
 | **Velocity** | MIDI 1–127. The FM-1's keys: F3–C5 sense how firmly they land (TOUCH LIGHT / MEDIUM / HEAVY, KEY VEL the velocity of a medium press, default 96), C#5–G5 play the recent average; TOUCH FIXED: every key at KEY VEL (1–127) |
-| **Audio** | 44.1 kHz, integer processing, 256-frame blocks (5.8 ms); output limiter; exact digital silence 200 ms after the sound falls below −66 dBFS |
+| **Audio** | 44.1 kHz, integer processing, 256-frame blocks (5.8 ms); output limiter; exact digital silence after the sound stays below −60 dBFS for 0.4 s (a smooth fade of about 0.45 s) |
 | **Latency** | About 14 ms from a MIDI note to the USB audio, including the computer's buffers (measured median 13.7 ms at 44.1 kHz, 12.9 ms at 48 kHz); the headphone jack about 10 ms |<!-- FM-1, 57e0025, tools/hil_usb_onset.py, 9 notes: 44.1 kHz USB median 13.7 ms (11.2-15.8), jack 10.0; 48 kHz USB 12.9 (10.7-14.6), jack 10.3 (build/final2/usb_onset.log) -->
 | **Outputs** | Stereo headphone jack (MASTER); USB audio to the computer, stereo 16-bit, 44.1 or 48 kHz, following MASTER or fixed (USB VOL) |
 | **MIDI in** | USB-MIDI and the TRS jack (on / off); CHANNEL ALL or 1–16 |

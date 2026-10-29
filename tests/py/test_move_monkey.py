@@ -25,6 +25,8 @@ import sys
 import time
 import wave
 
+import re
+
 import numpy as np
 import pytest
 
@@ -33,6 +35,10 @@ sys.path.insert(0, os.path.join(ROOT, "tools"))
 import monkey  # noqa: E402
 
 OUT = os.path.join(ROOT, "build", "move", "monkey")
+# the limiter's ceiling as the Move plays it: the plugin's output carries the bridge's trim (move_bridge.h MB_TRIM_Q12,
+# +2.2 dB, rounded as mb_trimmed rounds), so LIM_T 24000 comes out at 30932 (-0.5 dBFS) and the check is against that
+TRIM_Q12 = int(re.search(r"#define MB_TRIM_Q12 (\d+)", open(os.path.join(ROOT, "move", "move_bridge.h")).read()).group(1))
+LIM_OUT = (monkey.LIM_T * TRIM_Q12 + 2048) >> 12
 SO = "build/move/monkey/so"                 # its own plugin build: never the shipping build/move/frodhes/ (a device
 DSP = SO + "/dsp.so"                        # install may be reading that one)
 BRIDGE = "build/move/monkey/test_bridge"
@@ -151,7 +157,7 @@ def analyse(code, out, x, mk):
     bad, ms = [], monkey.ms
     q0, q1 = ms(mk["quiet"][0]), ms(mk["quiet"][1])
     a = np.abs(x).max(1)
-    if a[:q0].max() > monkey.LIM_T:
+    if a[:q0].max() > LIM_OUT:
         bad.append(("peak", f"{a[:q0].max()} at {np.argmax(a[:q0]) / monkey.FS:.3f} s"))
     for c in (0, 1):
         y = x[:, c]

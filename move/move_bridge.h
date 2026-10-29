@@ -1126,7 +1126,8 @@ static int mb_cpu_ring(char *buf, int n)
 static uint16_t mb_trim = MB_TRIM_Q12;
 static inline int16_t mb_trimmed(int16_t x)
 {
-    int32_t y = (int32_t)x * mb_trim >> 12;
+    int32_t y = ((int32_t)x * mb_trim + 2048) >> 12;   /* rounded (0.9.8, the tail report): truncated, -1 became -2
+                                                         * and 1 stayed 1, an asymmetry in the last bits of a tail */
     return (int16_t)(y > 32767 ? 32767 : y < -32767 ? -32767 : y);
 }
 static void mb_render_in(int16_t *out, int frames)

@@ -36,7 +36,8 @@ FLAG. The checks (each against static renders at 0, 32, 64, 96 and 127, or at an
           the held renders' own, over the held renders' level difference: over 0.5 flags (a 46 ms crossfade spreads
           the difference over ~4 windows; a one-sample switch puts most of it into one)
   noeff   every held value renders the same (at most 1 LSB apart): a control that does nothing
-  stuck   after the sweep is back at 0, its last 300 ms against the render held at 0: over 1.5 dB flags (a state the
+  stuck   after the sweep is back at 0, its last 300 ms against the render held at 0 (both floored at -60 dBFS, the
+          silence gate's level): over 1.5 dB flags (a state the
           control left behind)
 
 For delay and reverb (additive: the dry passes) pitch and zipper are also measured on the wet alone (render minus
@@ -72,6 +73,7 @@ CHORD = [48, 64, 67, 69, 72]
 T_NOTE, T_SW0, STEP = 500, 1000, 20            # the sweep 0..127..0: a CC step every 20 ms, 1.0 .. 6.08 s
 T_SW1 = T_SW0 + 254 * STEP
 T_END = T_SW1 + 500
+STUCK_FLOOR = -60.0                            # dBFS: the "stuck" levels' floor, the silence gate's level
 STATICS = [0, 32, 64, 96, 127]
 PARTIALS = [440.0, 880.0]
 LIMITS = {"pitch": 5.0, "zipper": 2.0, "jump": 1.5, "dropout": 20.0, "mono": 1.0, "click": 10.0, "trans_hi": 3.0,
@@ -493,7 +495,10 @@ def measure(case, binary=BIN):
         r["noeff"] = float(max(np.abs(x - stl[0]).max() for x in stl[1:])) if len(stl) > 1 else None
         z = st[case.statics[0]] if case.statics[0] == 0 or case.kind == "select" else render(script(case, value=0), binary)
         a, b = ms(T_SW1 + 200), ms(T_END)
-        r["stuck"] = round(abs(rms_db(sw[a:b]) - rms_db(z[a:b])), 2)
+        # both floored at the silence gate's level (fx.c GATE_LO 32 LSB, -60 dBFS): under it the gate's own 406 ms
+        # hold decides, not the control (a chord filtered to -73 dBFS still sounds in the sweep's hold, the held
+        # render's gate has long closed: 0.9.8's gate, FREQ 0 on LP12 / BP)
+        r["stuck"] = round(abs(max(rms_db(sw[a:b]), STUCK_FLOOR) - max(rms_db(z[a:b]), STUCK_FLOOR)), 2)
     if case.kind not in ("pitch",) and case.name != "MASTER":
         ps = [pitch_p90(s, off) for s in stl]
         p = pitch_p90(sw, off)

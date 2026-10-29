@@ -312,7 +312,7 @@ static inline __attribute__((always_inline)) void dr_settled(int32_t *m, uint32_
         int32_t x0 = m[i], x, y;
         hp += (x0 - hp + 64) >> 7;
         x = dr_cl(x0 - hp);
-        y = softclip((int32_t)(((int64_t)(x >> 2) * g) >> 10) + bias) - b0;
+        y = softclip((int32_t)(((int64_t)x * g) >> 12) + bias) - b0;
         lp1 += mulq15(y - lp1, k);
         lp2 += mulq15(lp1 - lp2, k);
         y = mulq15(lp2, mk);
@@ -337,7 +337,7 @@ __attribute__((noinline)) static void dr_general(int32_t *m, uint32_t n, int32_t
         g = gq >> 8; k = kq >> 8; mk = mq >> 8;
         dr_hp += (x0 - dr_hp + 64) >> 7;
         x = dr_cl(x0 - dr_hp);
-        y = softclip((int32_t)(((int64_t)(x >> 2) * g) >> 10) + bias) - b0;
+        y = softclip((int32_t)(((int64_t)x * g) >> 12) + bias) - b0;
         dr_lp1 += mulq15(y - dr_lp1, k);
         dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
         y = mulq15(dr_lp2, mk);
@@ -376,9 +376,11 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
     mk = (mk * 39000) >> 15;                           /* +1.5 dB: measured on the FM-1, LUFS (0.8) */
     bias = DR_BIAS[row];
     b0 = softclip(bias);
-    /* the shaper's input (x >> 2) g >> 10 + bias needs a 64-bit product (|x >> 2| <= 57500, g <= 100870 at AMOUNT 127),
-     * but its result fits 32 bits (<= 5.67e6 + 3200), so softclip's own 32-bit clamp to +-4 is the whole clamp (it was
-     * a second, 64-bit one before it: the same value) */
+    /* the shaper's input x g >> 12 + bias needs a 64-bit product (|x| <= 230000, g <= 100870 at AMOUNT 127), but its
+     * result fits 32 bits (<= 5.67e6 + 3200), so softclip's own 32-bit clamp to +-4 is the whole clamp (it was a
+     * second, 64-bit one before it: the same value). 0.9.8: it was (x >> 2) g >> 10, the 2 bits dropped before the
+     * gain: a held note's quiet tail (under ~40 LSB) came out as a staircase of ~3 LSB steps, a buzz on the Move's
+     * clean output (tests/py/test_drive_tail.py) */
     if (tt > 8192) tt = 8192;
     if (dr_gl >= 0 && (dr_gl != g || dr_kl != k || dr_ml != mk)) {   /* AMOUNT moved: the ramp, below */
         gq = dr_gl << 8; kq = dr_kl << 8; mq = dr_ml << 8;
@@ -391,7 +393,7 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
             int32_t x = *m, y;
             hp += (x - hp + 64) >> 7;
             x = dr_cl(x - hp);
-            y = softclip((int32_t)(((int64_t)(x >> 2) * g) >> 10) + bias) - b0;
+            y = softclip((int32_t)(((int64_t)x * g) >> 12) + bias) - b0;
             lp1 += mulq15(y - lp1, k);
             lp2 += mulq15(lp1 - lp2, k);
             *m = mulq15(lp2, mk);
@@ -1481,8 +1483,21 @@ static inline __attribute__((always_inline)) int32_t dc_block(int32_t x, int32_t
     return x - ((*dc + 32) >> 6);
 }
 static int32_t fx_L[256], fx_R[256];
-#define GATE_LO 16                                      /* -66 dBFS (Q15) */
+#define GATE_LO 32                                      /* -60 dBFS (Q15; 16 before 0.9.8): under it the integers'
+                                                         * grain (the reverbs' int16 tanks, the 16-bit floor) is the larger
+                                                         * part of a tail's highs (the tail report) */
 #define GATE_HI 32
+#ifndef GATE_HOLD
+#define GATE_HOLD 70u                                    /* blocks under GATE_LO before the fall: 406 ms (200 ms before
+                                                         * 0.9.8: at 32 LSB VIBES' motor dipped under it for longer and the
+                                                         * gate fell and opened again) */
+#endif
+/* the gate's fall and its product's rounding (0.9.8, the tail report; the user: on the FM-1 and the Move alike):
+ * g -= (g >> 13) + 1 a sample, an exponential of ~190 ms that ends linear (~0.45 s in all: the note's own decay
+ * steepening, not the 46 ms cut of before), and the product rounded (+16384): truncated, every negative sample stayed
+ * at -1 to the end, a half-wave buzz of 1 LSB */
+#define GATE_FALL(g) (((g) >> 13) + 1)
+#define GATE_RND 16384
 static int32_t gate_g = 32768, gate_tgt = 32768, fx_wet = 32768;
 static uint32_t gate_quiet;
 /* developer CC 10 (>= 64): every free-running part back to its boot state, for before / after recordings that must
@@ -1506,7 +1521,7 @@ static void fx_reset_state(void)
                                                          * state: rev_types.c) */
     rh_lfsr = 0xACE1u; bar_lfsr = 0x1D872u; bar_mot_ph = 0;
     /* every voice ends and the shared pickup RLC / body states go to 0 (as at an engine change), and this block's
-     * voice output is dropped (fx_process): the tails a take left under the gate's -66 dBFS rang on and the next take
+     * voice output is dropped (fx_process): the tails a take left under the gate's -60 dBFS rang on and the next take
      * met them (its level moved up to 5 LU with what was played before, on the FM-1: the presets suite) */
     eng_rh_kill_all(); bar_kill_all();
     lfo_sh = 0; fl_ic[0] = fl_ic[1] = 0; fl_op = 0;                 /* the filters, the smoothers, the master */
@@ -1674,22 +1689,24 @@ FR_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
     }
     fx_wet = wet; dc_l = dl; dce_l = el; dc_r = dr; dce_r = er;
     /* silence gate: the codec mutes itself on digital zero, but while anything at all comes out its analog hiss
-     * is there; a held note's last -66 dBFS lie under that hiss anyway. So after 200 ms under GATE_LO the output
-     * fades (46 ms) to exact zero, and it opens within 1.5 ms of the first block above GATE_HI (0.4) */
+     * is there; a held note's last -60 dBFS lie under that hiss anyway. So after 406 ms under GATE_LO the output
+     * fades (~0.45 s: GATE_FALL) to exact zero, and it opens within 1.5 ms of the first block above GATE_HI (0.4) */
     if (pk >= GATE_HI) { gate_quiet = 0; gate_tgt = 32768; }
-    else if (pk < GATE_LO && ++gate_quiet >= 35u) { gate_quiet = 35u; gate_tgt = 0; }
+    else if (pk < GATE_LO && ++gate_quiet >= GATE_HOLD) { gate_quiet = GATE_HOLD; gate_tgt = 0; }
     /* (every sample of out written with "=" by the limiter above: platform.c does not clear it, APP_OUT_WRITTEN in
      * frodhes.c); 0.9.5: open and staying open this block, there is nothing left to do; it was a copy from fx_L /
      * fx_R, 7 instructions a sample */
-    if (gate_g != 32768 || gate_tgt != 32768)
+    if (gate_g != 32768 || gate_tgt != 32768) {
+        const int32_t rnd = gate_tgt ? 0 : GATE_RND;   /* (rounded while it falls; opening, truncated as it always was) */
         for (j = 0; j < n; j++) {
             if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
-            else if (gate_g > gate_tgt) gate_g = gate_g - 16 < gate_tgt ? gate_tgt : gate_g - 16;
+            else if (gate_g > gate_tgt) gate_g = gate_g - GATE_FALL(gate_g) < gate_tgt ? gate_tgt : gate_g - GATE_FALL(gate_g);
             if (gate_g != 32768) {
-                out[2u * j] = (out[2u * j] * gate_g) >> 15;
-                out[2u * j + 1u] = (out[2u * j + 1u] * gate_g) >> 15;
+                out[2u * j] = (out[2u * j] * gate_g + rnd) >> 15;
+                out[2u * j + 1u] = (out[2u * j + 1u] * gate_g + rnd) >> 15;
             }
         }
+    }
     fx_peak = pk;
     if (pk < 16) { if (fx_quiet_blocks < 0xFFFFu) fx_quiet_blocks++; } else fx_quiet_blocks = 0;
     if (gate_g == 0) { if (fx_gz < 0xFFFFu) fx_gz++; } else fx_gz = 0;
