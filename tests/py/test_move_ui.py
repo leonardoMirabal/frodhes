@@ -39,6 +39,16 @@ def test_screen_behaviour():
 
 
 @needs_node
+def test_chain_ui_behaviour():
+    """Frodhes' screen as the whole Move UI (move/module/ui_chain.js, move/ui/test_chain.mjs): the hooks, the knobs,
+    the arrows and their LEDs, Back, the menu, SAVE TO USER, the double tap; the pads and steps never touched (no
+    note claimed, no LED, no param, in every mode: the 2026-10-30 pad LED report)"""
+    r = subprocess.run([NODE, os.path.join(ROOT, "move", "ui", "test_chain.mjs")], capture_output=True, text=True,
+                       timeout=120)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
+
+
+@needs_node
 def test_grid_through_schwungs_controller():
     """Frodhes' pages through Schwung's own knob-grid controller (move/ui/test_grid.mjs): the VOICE pages follow TYPE
     (a knob, a preset, a program change), no PEDAL cell, PAGES opens, the FX switch, the labels fit"""

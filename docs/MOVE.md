@@ -129,6 +129,14 @@ external surfaces).
   off or on (FX, the compressor kept), on every page; Up and Down stay the Move's octave.
   Each arrow's light shows its state: the Left arrow is lit while the effects are on, the Right arrow while SUS
   holds. Back gives the lights back to the Move.
+- **The pads' lights are the Move's.** Frodhes never lights a pad or a step button: the screen's only lights are
+  the knobs' rings and the two arrows. A pad you play lights white and, when you let it go, the Move keeps it white
+  until you play another note. That is how the Move marks the last note you played, on every track and with its own
+  instruments too. It is easy to miss on most pads, but a root pad (in the track's colour) shows it clearly.
+  *(measured on a device, 2026-10-30, with presses sent through Schwung's test bus, not with a finger: the Move
+  writes the pad white (126) at the press and off-white (122) at the release, and the root's colour comes back
+  only when another pad is played. This happens on Frodhes' track with its screen open or closed, and on the Move's
+  track 4 with its own electric piano and no Schwung screen. Schwung passes the Move's writes through unchanged.)*
 - **Reset**: tap a knob twice quickly (two touches within 0.4 s, no turn between) and it goes back to its default,
   as on Schwung's knob screen; the screen says `<NAME> RESET`. SUS, FX and PRESET have no reset.
 - The first page shows the sound that plays in full, and its fifth knob (PRESET) picks the sound.

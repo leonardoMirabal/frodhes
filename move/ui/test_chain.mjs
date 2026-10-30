@@ -239,5 +239,37 @@ t += 1000; tap(0); t += 500; tap(0);
 check(!p.writes.slice(nw).some(([k, v]) => k === "p_tone" && v === "0"), "reset: not when the touches are slower than tap_ms");
 ui.handleBack();
 
+// ---- the pads and the steps: never ours. The Move lights them itself (2026-10-30, the pad LED report: a root pad
+// stays white after its release until another pad is played; the Move's own output does that, on its stock tracks
+// too). The screen must never write a note LED, never take a pad's note-on or note-off (velocity 0 too) in any mode
+// (a page, the list, the save card), and its button LEDs are the arrows only.
+const padCase = (what) => {
+    const s0 = JSON.stringify({ page: st().page, list: st().list, save: !!st().save, cursor: st().cursor });
+    const nb = btn.sends.length, nw2 = p.writes.length, l0 = JSON.stringify(leds.last);
+    let claimed = false;
+    for (const n of [16, 31, 68, 75, 80, 99]) {
+        for (const d of [[0x90, n, 100], [0xA0, n, 40], [0x80, n, 0], [0x90, n, 90], [0x90, n, 0]])
+            if (ui.onMidiMessageInternal(d) !== undefined) claimed = true;
+        p.apply();
+    }
+    ui.tick();
+    check(!claimed, "pads: " + what + ": no pad or step note claimed");
+    check(btn.sends.length === nb, "pads: " + what + ": no LED sent for a pad (" + JSON.stringify(btn.sends.slice(nb)) + ")");
+    check(JSON.stringify(leds.last) === l0, "pads: " + what + ": the knob LEDs unchanged");
+    check(p.writes.length === nw2, "pads: " + what + ": no param written (" + JSON.stringify(p.writes.slice(nw2)) + ")");
+    check(JSON.stringify({ page: st().page, list: st().list, save: !!st().save, cursor: st().cursor }) === s0,
+          "pads: " + what + ": the screen's state unchanged");
+};
+ui.init(); t += 2000; ui.tick();
+padCase("a page");
+midi(0x90, 0, 127); padCase("a knob held (the large card)"); midi(0x90, 0, 0);
+midi(0xB0, 63, 127); t += 2000; ui.tick(); padCase("SUS on");
+midi(0xB0, 3, 127); padCase("the list");
+check(go("SAVE TO USER"), "pads: the jog reaches SAVE TO USER"); midi(0xB0, 3, 127); padCase("the save card");
+ui.handleBack(); ui.handleBack();
+check(btn.sends.every(([cc]) => cc === 62 || cc === 63), "LEDs: the only button LEDs written are the arrows (" +
+      [...new Set(btn.sends.map(([cc]) => cc))].join(",") + ")");
+check(!/move_midi_internal_send|setLED\b/.test(src), "LEDs: the screen has no path to a note LED (no setLED, no raw send)");
+
 if (fails) { console.log(fails + " failed"); process.exit(1); }
 console.log("test_chain: ok");
