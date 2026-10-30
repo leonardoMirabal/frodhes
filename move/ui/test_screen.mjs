@@ -41,7 +41,7 @@ test("a touch shows the large card; it stays while held and hold_ms after the re
     assert.equal(s.api.view(s.ctx(true), s.st()), "focus");
     s.wait(100);
     assert.equal(s.api.view(s.ctx(true), s.st()), "overview");
-    assert.ok(HOLD >= 700 && HOLD <= 1500, "about 1 s");
+    assert.ok(HOLD >= 300 && HOLD <= 1500, "about half a second (the user, 2026-10-29: 1 s stayed too long)");
 });
 
 test("a turn without a touch shows the card until hold_ms after the last detent", () => {

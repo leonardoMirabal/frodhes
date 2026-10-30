@@ -37,8 +37,10 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "firmware", "src")
 OUT = os.path.join(ROOT, "move", "module")
-FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h", "screen.js", "canvas.js")
+FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h", "screen.js", "canvas.js",
+         "ui_chain.js")
 UI_CORE = os.path.join(ROOT, "move", "ui", "screen_core.js")   # Frodhes' own screen: the hand-written part
+CHAIN_ADAPTER = os.path.join(ROOT, "move", "ui", "chain_adapter.js")   # the same screen as Schwung's chain_ui (ui_chain.js)
 GR_CELL = os.path.join(ROOT, "move", "ui", "gr_cell.js")       # the knob grid's gain-reduction cell: the hand-written part
 # Frodhes' own screen (M6-02, private plan 05 M6-01 option F): a fullscreen canvas the first page's PAGES cell
 # opens. screen.js = the pages (FR_PAGES, the levels below as the screen shows them) + FR_CONF + move/ui/screen_core.js.
@@ -54,7 +56,8 @@ GR_CELL = os.path.join(ROOT, "move", "ui", "gr_cell.js")       # the knob grid's
 SCREEN = {"key": "s_screen", "name": "PAGES", "type": "canvas", "canvas_script": "screen.js", "enterable": True,
           "show_footer": False, "show_value": True, "fullscreen_live_ms": 100,
           "extra_keys": ["rev", "ui_engine", "s_sustain", "preset_name"]}
-SCREEN_VALUE = "OPEN"              # what the plugin answers for s_screen: the cell's value line
+CHAIN_EXTRA_KEYS = ["preset", "preset_name", "preset_count"]   # (on chain_params' first entry: outputs())
+SCREEN_VALUE = "OPEN"             # what the plugin answers for s_screen: the cell's value line
 # The gain-reduction meter on Schwung's own knob grid (the COMPRESSOR level, knobs 7-8): two read-only cells, one
 # picture. Schwung (v1.8.1, docs/MODULES.md "Custom widgets") draws a chain_params viz kind "custom:..." with the
 # module's canvas.js drawCell; the two keys are one viz group (roles gr + pk, adjacent on one row), so the picture
@@ -69,10 +72,11 @@ METER = {
     "r_cmp_pk": {"key": "r_cmp_pk", "name": "REDUCT", "type": "string", "access": "read",
                  "viz": {"group": "gr", "role": "pk"}},
 }
-SCREEN_CONF = {"hold_ms": 1000,    # the large card stays this long after the knob is let go (tune on the device)
+SCREEN_CONF = {"hold_ms": 500,     # the large card stays this long after the knob is let go (tune on the device)
                "fast_ms": 40,      # two detents closer than this: a fast turn ...
                "fast_mul": 4,      # ... moves a wide range (> 24 steps) this many steps a detent
                "settle_ms": 600,   # a value written this recently is not re-read (the write may still be queued)
+               "tap_ms": 400,      # two touches of a knob closer than this: a double tap, the knob back to its default
                "sus_cc": None,     # the claimed sustain button (SUS_BTN_CC)
                "fx_cc": None}      # the claimed effects button (FX_BTN_CC)
 # The sustain (the user, 2026-10-28 18:25: "we just need a toggle option, sustain pedal on or off"): SUS on the first
@@ -582,6 +586,11 @@ def c_header(hier, chain, crow):
 def outputs():
     m = model()
     levels, chain, crow, reach = build(m)
+    # The preset keys for Schwung's web remote (schwung-manager remote_ui.go): it reads a preset browser's keys from
+    # ui_hierarchy only, and the plugin serves none (Frodhes' own screen, MB_OWN_UI); the keys a chain_params entry
+    # names as extra_keys it reads and pushes too (fetchExtraKeysFrom), so the remote, tools/move_ws.py and the
+    # preflight see the preset, its name and the count again
+    chain[0] = dict(chain[0], extra_keys=CHAIN_EXTRA_KEYS)
     hier = {"levels": levels}
     module = {"id": "frodhes", "name": "Frodhes", "abbrev": "FRDH", "version": "0.0.0-dev",
               "description": "Physical-model electric piano, vibraphone and marimba",
@@ -596,7 +605,7 @@ def outputs():
                                "canvas_script": "canvas.js"}}
     return {"module.json": dumps(module), "ui_hierarchy.json": dumps(hier), "chain_params.json": dumps(chain),
             "help.json": dumps(help_json(m, levels, reach)), "move_ui.h": c_header(hier, chain, crow),
-            "screen.js": screen_js(levels), "canvas.js": canvas_js()}, m, reach
+            "screen.js": screen_js(levels), "canvas.js": canvas_js(), "ui_chain.js": ui_chain_js(levels)}, m, reach
 
 
 def screen_pages(levels):
@@ -621,6 +630,8 @@ def screen_pages(levels):
             for f in ("min", "max", "step", "options"):
                 if f in it:
                     k[f] = it[f]
+            if "default" in it:                      # (a double tap on the knob's touch resets it: the screen's reset)
+                k["def"] = it["default"]
             if it.get("access") == "write":
                 k["write"] = True
             ks.append(k)
@@ -662,6 +673,33 @@ def screen_js(levels):
     return (head + "(function () {\n\"use strict\";\nconst FR_PAGES = "
             + json.dumps(screen_pages(levels), separators=(",", ":")) + ";\n"
             + "const FR_CONF = " + json.dumps(conf, separators=(",", ":")) + ";\n" + core + "})();\n")
+
+
+KNOB_LEDS_MJS = "/data/UserData/schwung/shared/param_pages/knob_leds.mjs"   # Schwung's knob rings (the grid's)
+INPUT_FILTER_MJS = "/data/UserData/schwung/shared/input_filter.mjs"          # its setButtonLED (the arrows' LEDs)
+
+
+def ui_chain_js(levels):
+    """Frodhes' own screen as the whole Move UI (Schwung's own-screen path, COMPONENT_EDIT): screen.js's closure with
+    move/ui/chain_adapter.js inside it, which maps the canvas overlay onto globalThis.chain_ui"""
+    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10(), live_ms=SCREEN["fullscreen_live_ms"])
+    with open(UI_CORE) as f:
+        core = f.read()
+    with open(CHAIN_ADAPTER) as f:
+        adapter = f.read()
+    head = ("// SPDX-License-Identifier: GPL-3.0-only\n"
+            "// GENERATED by tools/gen_move_module.py from params.c, eng_pages.h, ui.c, move/ui/screen_core.js and "
+            "move/ui/chain_adapter.js - do not edit.\n"
+            "// Frodhes' own screen as Schwung's chain_ui: the pages and the settings, the screen's code, the adapter.\n")
+    # Schwung loads ui_chain.js as an ES module (shadow_ui.c shadow_load_ui_module), so the grid's own knob-LED code
+    # and the shared button-LED helper come in by import (MODULES.md: as page_controller.mjs does); the host tests
+    # replace these two lines
+    imp = ("import * as KNOB_LEDS from '%s';\n" % KNOB_LEDS_MJS
+           + "import { setButtonLED as FR_SET_BUTTON_LED } from '%s';\n" % INPUT_FILTER_MJS)
+    return (head + imp + "(function () {\n\"use strict\";\nconst PREV_OV = globalThis.canvas_overlay, "
+            "PREV_FS = globalThis.frodhes_screen;\nconst FR_PAGES = "
+            + json.dumps(screen_pages(levels), separators=(",", ":")) + ";\n"
+            + "const FR_CONF = " + json.dumps(conf, separators=(",", ":")) + ";\n" + core + adapter + "})();\n")
 
 
 def main():

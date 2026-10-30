@@ -10,7 +10,8 @@ before a run.
 The protocol (remote_ui.go wsMessage / wsSlotInfo / wsParamUpdate): JSON {"type", "slot", "key", "value"}, the slot
 0-based (slot 1 on the Move's screen = 0). "subscribe" answers with slot_info ({"synth": module id, ...}), then
 param_update messages ({"params": {"<comp>:<key>": value}}: the slot settings, the preset browser's keys from
-ui_hierarchy, the parameters); "set_param" of "synth:preset" makes the server re-read and push the component's
+ui_hierarchy, or, for Frodhes with its own screen and no ui_hierarchy, the keys chain_params names as extra_keys:
+preset, preset_name, preset_count; the parameters); "set_param" of "synth:preset" makes the server re-read and push the component's
 values. An "error" message is raised. --url (default $MOVE_WS, else ws://move.local:7700/ws/remote-ui).
 
 Never run from a test or a gate without the user's OK to use the Move (the device rules)."""

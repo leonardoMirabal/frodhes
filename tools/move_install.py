@@ -49,7 +49,7 @@ def move_lock(why=""):
                      say=lambda m: print(m, file=sys.stderr, flush=True))
 MODS = "/data/UserData/schwung/modules/sound_generators"
 MODULE_ID = "frodhes"
-PACKAGE = ("dsp.so", "engine.so", "module.json", "help.json", "screen.js", "canvas.js")
+PACKAGE = ("dsp.so", "engine.so", "module.json", "help.json", "screen.js", "canvas.js", "ui_chain.js")
 RETIRED = ("sustain.js",)     # files an older package had: not carried over (0.9.8: the PEDAL screen is gone)
 REQUIRED = ("dsp.so", "engine.so", "module.json")
 DATA = "/data/UserData/schwung/module_data/" + MODULE_ID      # the data folder: store.bin, inst/<k>/ per instance

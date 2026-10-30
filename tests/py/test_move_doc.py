@@ -107,5 +107,5 @@ def test_screen_hold_and_fast_step():
     gen = _src("tools", "gen_move_module.py")
     hold = int(re.search(r'"hold_ms": (\d+)', gen).group(1))
     mul = int(re.search(r'"fast_mul": (\d+)', gen).group(1))
-    assert hold == 1000 and "About a second after you let go" in DOC
+    assert hold == 500 and "Half a second after you let go" in DOC
     assert {4: "four"}[mul] + " steps a detent" in DOC

@@ -23,13 +23,18 @@ OWN = {0: {"PIANO VOICE"}, 1: {"VIBES VOICE", "VIBES MOTOR"}, 2: {"MARIMBA VOICE
 TYPE_ENG = {0: 0, 1: 0, 4: 1, 5: 2}       # eng_pages.h TYPE_UI (ST77, SUIT ... VIBE, MRMB)
 
 
+# Frodhes' own screen is the Move UI (move_bridge.h MB_OWN_UI): the plugin serves its pages as ui_pages and refuses
+# ui_hierarchy, so that Schwung loads ui_chain.js; external surfaces read ui_pages
+PAGES_KEY = "ui_pages"
+
+
 def titles(h):
     return {lv["name"] for lv in json.loads(h)["levels"].values()}
 
 
 def window(change):
     """a change, then is_loading twice and the pages, then is_loading after the window"""
-    return change + ["render 4", "get is_loading", "get ui_engine", "get ui_hierarchy", "get is_loading", "sleep 700",
+    return change + ["render 4", "get is_loading", "get ui_engine", "get " + PAGES_KEY, "get is_loading", "sleep 700",
                      "get is_loading"]
 
 
@@ -56,7 +61,7 @@ def presets():
 
 def test_the_served_pages_follow_the_engine(presets):
     other = next(i for i, e in enumerate(presets) if e != presets[0])
-    script = ["get is_loading", "get ui_hierarchy"]
+    script = ["get is_loading", "get " + PAGES_KEY]
     for t in (4, 5, 1, 0):                  # TYPE on its knob: VIBES, MARIMBA, another piano type, the first again
         script += window(["set p_type %d" % t])
     script += window(["set preset %d" % other])            # a preset of another engine (the preset page)

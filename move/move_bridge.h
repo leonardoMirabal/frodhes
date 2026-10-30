@@ -40,7 +40,8 @@
 #define MB_STAGE_BLOCKS 345u             /* look for something to save about once a second */
 #define MB_CPU_N 4096u                   /* the per-callback timer ring (power of two): ~12 s of callbacks */
 
-enum { MB_EV_MIDI = 1, MB_EV_KEY, MB_EV_PRESET, MB_EV_HQ };   /* (MB_EV_HQ: p_hq, applied in order with the rest) */
+enum { MB_EV_MIDI = 1, MB_EV_KEY, MB_EV_PRESET, MB_EV_HQ, MB_EV_USAVE };   /* (MB_EV_HQ: p_hq, applied in order with the
+                                                          * rest; MB_EV_USAVE: u_save, the sound into a user slot) */
 enum { MB_CLOCK_AUTO, MB_CLOCK_MIDI, MB_CLOCK_HOST };   /* AUTO: synthesise from the host only while no F8 arrives */
 #define MB_CLOCK_REAL_BLOCKS 690u        /* ~2 s: an F8 seen this recently means the slot gets a real clock */
 
@@ -114,7 +115,7 @@ static struct {
     char dir[512], mod_dir[512], idir[512];   /* the data folder (shared), the module's, this instance's own */
     _Atomic int cpu_log;                 /* dev: the worker appends the timer ring to <module dir>/cpu-ring.log */
     _Atomic int stats_log;               /* dev: the worker appends dev_stats to <module dir>/stats.log, 10 a second */
-    uint32_t saves, save_fail, loaded;
+    uint32_t saves, save_fail, loaded, usaves;
     /* the sustain control (M1-13b): presses / releases seen; the touch note that is the control (-1: none) */
     uint32_t sus_down, sus_up;
     _Atomic int sus_touch;
@@ -994,6 +995,27 @@ static void mb_inert(void)
     sq_erase = 0;
     if (ARP_MODE != ARP_OFF || ARP_HOLD) { ARP_MODE = ARP_OFF; ARP_HOLD = 0; arp_clear(); }
 }
+/* u_save (Frodhes' own screen, SAVE TO USER): the sound as it is into user slot u (0..15), as the FM-1's SAVE does
+ * (presets.c presets_poll: the parameters, the autoname, the slot loaded), then saved when quiet (presets_save_poll in
+ * the app's loop; on the Move into store.bin, merged with what other instances wrote) */
+static void mb_user_save(uint32_t u)
+{
+    preset_t *pu;
+    uint32_t i;
+    if (u >= PR_NU) return;
+    pu = &pr_user[u];
+    pu->ver = 3; pu->np = P_COUNT; pu->used = 1; pu->rsv = 0;
+    preset_autoname(pu->name);
+    for (i = 0; i < P_SLOTS; i++) pu->p[i] = i < P_COUNT ? PV(i) : 0;
+    for (i = 0; i < sizeof pu->rsv2; i++) pu->rsv2[i] = 0;
+    set.preset = (uint8_t)(PR_NF + u);
+    snd_base_take();
+    set_dirty = 1; set_t_change = fm1_ms;
+    pr_save_mode = 0;
+    pr_save_pending = 1;
+    mb.usaves++;
+}
+
 static void mb_step(void)
 {
     mb_ev_t *e;
@@ -1010,6 +1032,7 @@ static void mb_step(void)
             if ((e->st & 0xF0u) == 0xD0u || (e->st & 0xF0u) == 0xA0u || (e->st & 0xE0u) == 0x80u) mb_map(e->st, e->d1, e->d2);
         } else if (e->kind == MB_EV_KEY && e->key < MOVE_NKEYS) mb_key_apply(e->key, e->v);
         else if (e->kind == MB_EV_PRESET) { uint8_t p[P_COUNT]; if (preset_values((uint32_t)e->v, p) == 0) { preset_load((uint32_t)e->v); mb.rev++; } }
+        else if (e->kind == MB_EV_USAVE) { mb_user_save((uint32_t)e->v); mb.rev++; }
 #ifdef FR_HQ
         else if (e->kind == MB_EV_HQ) hq_mode = (uint8_t)(e->v != 0);   /* (new notes; a sounding note keeps its path) */
 #endif
@@ -1201,13 +1224,25 @@ static int mb_engine_moved(void)
     if (e != mb.eng_seen) { mb.eng_seen = e; mb.eng_moved_ms = t; mb.eng_moves++; }
     return mb.eng_moves && t - mb.eng_moved_ms < MB_ENG_MOVED_MS;
 }
+/* Frodhes' own screen as the whole Move UI (MB_OWN_UI 1): the plugin answers no ui_hierarchy, so Schwung's component
+ * editor loads the module's ui_chain.js (shadow_ui.js enterComponentEdit -> enterComponentEditFallback) in place of its
+ * knob grid; the same pages go out as ui_pages, which external surfaces (E16, EC4) read when ui_hierarchy fails.
+ * MB_OWN_UI 0: Schwung's knob grid (ui_hierarchy), as before. */
+#ifndef MB_OWN_UI
+#define MB_OWN_UI 1
+#endif
+#if MB_OWN_UI
+#define MB_PAGES_KEY "ui_pages"
+#else
+#define MB_PAGES_KEY "ui_hierarchy"
+#endif
 static int mb_get(const char *key, char *buf, int n)
 {
     int i;
     if (!key || !buf || n <= 0) return -1;
     if (!strcmp(key, "dev_ready")) return snprintf(buf, (size_t)n, "%d", atomic_load(&mb.ready));
     if (!strcmp(key, "dev_build")) return snprintf(buf, (size_t)n, "%s", mb_build[0] ? mb_build : MB_FEATURES);
-    if (!atomic_load_explicit(&mb.ready, memory_order_acquire) && strcmp(key, "chain_params") && strcmp(key, "ui_hierarchy"))
+    if (!atomic_load_explicit(&mb.ready, memory_order_acquire) && strcmp(key, "chain_params") && strcmp(key, MB_PAGES_KEY))
         return -1;                       /* (the worker still boots the app: nothing of it to read yet) */
     if (!strcmp(key, "state")) return mb_state_get(buf, n);
     if ((i = mb_key_find(key)) >= 0) return mb_wire_text(&MOVE_KEYS[i], buf, n);
@@ -1216,7 +1251,7 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, "preset")) return snprintf(buf, (size_t)n, "%u", (unsigned)set.preset);
     if (!strcmp(key, "preset_count")) return snprintf(buf, (size_t)n, "%u", (unsigned)(PR_NF + PR_NU));
     if (!strcmp(key, "preset_name")) { char s[20]; preset_name(set.preset < PR_NF + PR_NU ? set.preset : 0u, s); return snprintf(buf, (size_t)n, "%s", s); }
-    if (!strcmp(key, "ui_hierarchy")) {   /* the sounding engine's pages (gen_move_module.py hier_for_engine) */
+    if (!strcmp(key, MB_PAGES_KEY)) {   /* the sounding engine's pages (gen_move_module.py hier_for_engine) */
         unsigned e = mb_engine();
         if ((int)MOVE_UI_HIERARCHY_N[e] >= n) return -1;
         memcpy(buf, MOVE_UI_HIERARCHY[e], (size_t)MOVE_UI_HIERARCHY_N[e] + 1u);
@@ -1225,8 +1260,20 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, "is_loading")) return snprintf(buf, (size_t)n, "%d", mb_engine_moved());
     if (!strcmp(key, "chain_params")) { if ((int)sizeof MOVE_CHAIN_PARAMS > n) return -1; memcpy(buf, MOVE_CHAIN_PARAMS, sizeof MOVE_CHAIN_PARAMS); return (int)sizeof MOVE_CHAIN_PARAMS - 1; }
     if (!strcmp(key, "rev")) return snprintf(buf, (size_t)n, "%u", mb.rev);
+    if (!strcmp(key, "u_names")) {      /* the 16 user slots, "|" between: "U05 ST77 TRM", empty for an unused slot */
+        int w = 0;
+        for (uint32_t u = 0; u < PR_NU; u++) {
+            char s[20];
+            s[0] = 0;
+            if (pr_user[u].used) preset_name(PR_NF + u, s);
+            w += snprintf(buf + w, (size_t)(n - w), "%s%s", u ? "|" : "", s);
+            if (w >= n) return -1;
+        }
+        return w;
+    }
+    if (!strcmp(key, "u_savepend")) return snprintf(buf, (size_t)n, "%u", (unsigned)pr_save_pending);   /* 1: waits for quiet */
     if (!strcmp(key, "dev_cpu_ring")) return mb_cpu_ring(buf, n);
-    if (!strcmp(key, "dev_store")) return snprintf(buf, (size_t)n, "dir=%s inst=%s loaded=%u saves=%u fail=%u imports=%u", mb.dir, mb.idir, mb.loaded, mb.saves, mb.save_fail, mb.imp_done / 2u);
+    if (!strcmp(key, "dev_store")) return snprintf(buf, (size_t)n, "dir=%s inst=%s loaded=%u saves=%u fail=%u imports=%u usave_n=%u", mb.dir, mb.idir, mb.loaded, mb.saves, mb.save_fail, mb.imp_done / 2u, mb.usaves);
     if (!strcmp(key, "dev_pattern_crc")) return snprintf(buf, (size_t)n, "%08x", ms_crc32(host_mem + MB_PAT_LO, MB_PAT_N));
     if (!strcmp(key, "dev_sus")) return snprintf(buf, (size_t)n, "held=%u latched=%u midi=%u down=%u up=%u touch=%d",
                                                  (unsigned)sus_held, (unsigned)sus_latched, (unsigned)sus_midi,
@@ -1284,6 +1331,7 @@ static void mb_set(const char *key, const char *val)
         return;
     }
     if (!strcmp(key, "preset")) { int p = atoi(val); if (p >= 0 && p < (int)(PR_NF + PR_NU)) (void)mb_put(MB_EV_PRESET, 0, 0, 0, 0, 0, p); return; }
+    if (!strcmp(key, "u_save")) { int u = atoi(val); if (u >= 1 && u <= (int)PR_NU) (void)mb_put(MB_EV_USAVE, 0, 0, 0, 0, 0, u - 1); return; }
 #ifdef FR_HQ
     if (!strcmp(key, "p_hq")) { (void)mb_put(MB_EV_HQ, 0, 0, 0, 0, 0, atoi(val) != 0); return; }   /* dev / test only (no page):
                                                           * 1 the HQ Rhodes (the load's), 0 Classic until the next load */

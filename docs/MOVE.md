@@ -16,7 +16,7 @@ the end.
 You need a Move with Schwung installed (built and tested against Schwung 1.8.1).
 
 The module is one file, **`frodhes-module.tar.gz`**: a folder `frodhes/` with `dsp.so`, `engine.so`, `module.json`, `help.json`,
-`screen.js` (Frodhes' own screen), `canvas.js` (the gain-reduction meter on the COMPRESSOR page) and `LICENSE`. A release carries it, under that name and as `frodhes-X.Y.Z-move.tar.gz`, only when
+`screen.js` (Frodhes' own screen), `canvas.js` (the gain-reduction meter on the COMPRESSOR page), `ui_chain.js` (Frodhes' own screen as the whole Move UI, in development) and `LICENSE`. A release carries it, under that name and as `frodhes-X.Y.Z-move.tar.gz`, only when
 that exact file passed the tests on a Move; until a release has it, build it yourself (`make move`, see
 [For developers](#for-developers)). Frodhes is not in Schwung's module catalog: how it will be offered there is not
 decided yet, so install it by hand.
@@ -99,39 +99,71 @@ Move's screen)*
 
 ## Frodhes' own screen (PAGES)
 
-The pages above are on Schwung's own knob screen. **PAGES** on the first page (its cell reads OPEN) opens a screen of
-Frodhes' own with the same pages, drawn as on the FM-1: one page is the eight knobs. To open it, touch the PAGES knob
-and click the jog wheel (a click with no knob touched opens Schwung's list of pages instead).
+On the Move, Frodhes draws its whole screen itself, with the pages above drawn as on the FM-1: one page is the
+eight knobs. Schwung's own knob screen is not used for Frodhes (the plugin gives Schwung no pages for it, only to
+external surfaces).
 
-![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=7fb7a2cc)
+- **To open it**: hold Shift, touch the volume knob and press the Track button of Frodhes' track (Schwung's chain
+  editor for that slot), then click the jog wheel on the synth. **Back** on a page leaves the screen for the chain
+  editor. Schwung's own shortcuts (Shift + volume touch + a Track button or Menu) work as everywhere and leave the
+  screen too.
+- **The scene badge**: while one of Schwung's snapshots is armed for editing (Shift + the - or + button), Schwung
+  draws its badge (`EDIT A1`, `EDIT B1` ...) over the top right corner of every screen, Frodhes' too: our header is
+  then cut there. It is not part of Frodhes' screen. While it shows, every knob turn is recorded into that snapshot;
+  Shift and the same button again leave the edit and the header is whole again.
+
+![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=4893b45d)
 
 - **The overview**: eight cards, knobs 1-4 on the top row and 5-8 below, each with its name, its value and a bar.
-  The header names the page and its number (`4/10`); an `S` before the number shows that the sustain holds.
+  Every bar is an outlined box filled from the left up to the value, the same height along its length; a selector of
+  three or more options shows notches between its steps, and a value with a centre (TONE, TUNE) a notch at 0.
+  The header names the page and its number (`4/10`); an `S` before the number shows that the sustain holds, and an `X` that the effects are off (FX OFF).
 - **One large card**: touch a knob, or turn it, and its card fills the screen: the name, the value in large
-  letters, a wide bar (a selector shows one block per option) and a row of eight marks for the knob it is. Turning
-  changes the value as you watch. About a second after you let go the overview comes back. Touch another knob and
+  letters, a wide bar of the same kind and a row of eight marks for the knob it is. Turning
+  changes the value as you watch. Half a second after you let go the overview comes back. Touch another knob and
   its card shows at once.
 - **Pages**: turn the jog wheel for the next or the previous page. Click the jog wheel for the list of pages, turn
   to one, click to open it; Back closes the list. Back on a page leaves Frodhes' screen (Shift + jog wheel too).
   As on the other screen, the VOICE pages are the ones of the instrument that plays.
 - **The buttons**: on this screen the **Right arrow** turns SUS on or off and the **Left arrow** turns the effects
   off or on (FX, the compressor kept), on every page; Up and Down stay the Move's octave.
+  Each arrow's light shows its state: the Left arrow is lit while the effects are on, the Right arrow while SUS
+  holds. Back gives the lights back to the Move.
+- **Reset**: tap a knob twice quickly (two touches within 0.4 s, no turn between) and it goes back to its default,
+  as on Schwung's knob screen; the screen says `<NAME> RESET`. SUS, FX and PRESET have no reset.
 - The first page shows the sound that plays in full, and its fifth knob (PRESET) picks the sound.
+- **The menu**: the list of pages (click the jog wheel) goes on below the pages with the module's rows, each section
+  under its name:
+  - **USER PRESETS**, **SAVE TO USER**: a card picks one of Frodhes' 16 user slots (U01-U16) with the jog wheel or
+    any knob, shows what it holds (EMPTY or its name), and a click saves the sound there (Back: not saved). The slot
+    then plays, and its name is made from the TYPE and the effects that are on, as on the FM-1. It is saved when
+    Frodhes is quiet, into the same file as the FM-1 port's user presets (`store.bin` in the data folder), so every
+    Frodhes on the Move sees it; PRESET and program change load it.
+  - **MY PRESETS** and **MODULE**: Schwung's own rows for a module, run by Schwung: the preset you are on (a click
+    opens Schwung's preset browser), Save, Save As (Schwung's keyboard), Delete, Module Help (`help.json`), Add to
+    List, Clear Automation, Swap Module and Remove Module. These are Schwung's presets of the whole module state,
+    kept by Schwung, apart from U01-U16. After Help, Load, Delete or a picker you left, Back brings you to this list.
 - **COMPRESSOR** shows the gain reduction as the knob screen does, larger: GR and the reading in dB, a thick bar of
   15 segments lit from the right on the FM-1's scale (up to 30 dB), and the peak held for a second as a taller
   segment. When the compressor is off the bar is a dotted outline and reads COMP OFF. *(not yet verified on a device)*
 - A fast turn of a wide range moves four steps a detent.
 
-![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=f6f0cb74)
-![Knob 1 on REVERB: the type, one block per option](manual/img/move/move-reverb-k1.png?v=e5958986)
-![COMPRESSOR with the compressor on: the meter at 12 dB of gain reduction](manual/img/move/move-compressor-gr.png?v=b3d9ab94)
-![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=a40253a7)
+![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=cd6baa2d)
+![Knob 1 on REVERB: the type, one block per option](manual/img/move/move-reverb-k1.png?v=21b3c723)
+![COMPRESSOR with the compressor on: the meter at 12 dB of gain reduction](manual/img/move/move-compressor-gr.png?v=3f4b7255)
+![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=36cde34c)
 ![The list of pages](manual/img/move/move-pages.png?v=e463578b)
+![The menu below the pages: MY PRESETS and MODULE, Schwung's rows](manual/img/move/move-menu.png?v=b02cddae)
+![SAVE TO USER: U03 picked, empty](manual/img/move/move-save.png?v=909188a5)
 
 The pictures are drawn by the screens' own code on a computer, in the screen's two colours: Frodhes' screen by
 `tools/move_ui_shots.mjs`, Schwung's COMPRESSOR page by Schwung's own renderer (`move/ui/test_cell.mjs --png`).
-Everything in this section is *(not yet verified on a device)*: the knobs' feel, the time the card stays, the jog
-wheel and the button on the Move itself.
+On a device (the screen read back from Schwung's display mirror, the controls sent through Schwung's test bus): the
+pages, the cards and the bars draw as in the pictures, the large card goes 0.52-0.56 s after the knob is let go,
+both arrows turn SUS and FX on and off, and the menu's MODULE rows (Module Help, the module picker) open Schwung's
+screens and Back comes back to the list. SAVE TO USER saved into U16 when quiet, and a second Frodhes loaded
+afterwards listed it; a save from the second listed in the first within seconds. A double tap on SPREAD set it
+back to 0.
 
 ## Sustain
 
@@ -172,9 +204,10 @@ loudness, which barely changes with velocity, so Frodhes is quieter at softer pl
 
 The preset browser on the first page (and PRESET on Frodhes' own screen) loads the 19 factory sounds (F01-F19) and
 the 16 user slots (U01-U16), and program change loads them as on the FM-1 (0-15 F01-F16, 16-31 U01-U16, 32-34
-F17-F19). The Move has no SAVE page: the sound you set is saved with the Move's set instead (Schwung keeps it with
-the track). The user slots keep what the module's data folder holds (empty on a new install). *(not yet verified on
-a device)*
+F17-F19). **SAVE TO USER** in the menu of Frodhes' own screen saves the sound into a user slot (see
+[Frodhes' own screen](#frodhes-own-screen-pages)). The sound you set is also saved with the Move's set (Schwung keeps
+it with the track). The user slots keep what the module's data folder holds (empty on a new install), one set for
+every Frodhes on the Move. *(not yet verified on a device)*
 
 ## Mappings
 

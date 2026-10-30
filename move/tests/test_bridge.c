@@ -340,7 +340,13 @@ static int api_tests(const char *so)
     }
 
     /* M1-06: keys */
-    CHECK(strstr(get(in, "ui_hierarchy"), "\"levels\"") != NULL, "ui_hierarchy served");
+    {   /* the pages: ui_pages when Frodhes' own screen is the Move UI (MB_OWN_UI, ui_hierarchy refused so that Schwung
+         * loads ui_chain.js), else ui_hierarchy */
+        const char *pk = api->get_param(in, "ui_pages", gbuf, sizeof gbuf) >= 0 ? "ui_pages" : "ui_hierarchy";
+        CHECK(strstr(get(in, pk), "\"levels\"") != NULL, "%s served", pk);
+        if (!strcmp(pk, "ui_pages"))
+            CHECK(api->get_param(in, "ui_hierarchy", gbuf, sizeof gbuf) < 0, "ui_hierarchy refused (own screen)");
+    }
     CHECK(strstr(get(in, "chain_params"), "p_type") != NULL, "chain_params served");
     CHECK(!strcmp(get(in, "preset_count"), "35"), "35 presets (%s)", gbuf);
     CHECK(!strncmp(get(in, "preset_name"), "F01", 3), "preset name (%s)", gbuf);
@@ -618,7 +624,8 @@ static int presets(const char *so)
         printf("preset %d %s", i, get(in, "preset")); printf(" %s\n", get(in, "preset_name"));
     }
     for (i = 0; i < 6; i++) { snprintf(b, sizeof b, "%d", i); api->set_param(in, "p_type", b); render(in, 3); printf("type %d %s\n", i, get(in, "ui_engine")); }
-    printf("hierarchy %d\n", (int)strlen(get(in, "ui_hierarchy")));
+    printf("hierarchy %d\n", (int)strlen(get(in, api->get_param(in, "ui_pages", gbuf, sizeof gbuf) >= 0 ? "ui_pages"
+                                                                                                   : "ui_hierarchy")));
     api->destroy_instance(in);
     return 0;
 }
@@ -781,6 +788,21 @@ static int persist(const char *so, const char *dir, int save)
         }
         for (i = 0; i < sizeof K / sizeof K[0]; i++) { api->set_param(in, K[i][0], K[i][1]); render(in, 3); }   /* (after:
                                                                * s_mch moves the MIDI channel off the notes') */
+        {                                                     /* u_save (Frodhes' own screen, SAVE TO USER): U05 */
+            const char *u5;
+            api->set_param(in, "u_save", "5"); render(in, 5);
+            api->set_param(in, "u_save", "0"); api->set_param(in, "u_save", "17"); render(in, 5);   /* (out of range: none) */
+            for (t = 0; t < 3000 && strcmp(get(in, "u_savepend"), "0"); t++) render(in, 10);
+            CHECK(!strcmp(get(in, "u_savepend"), "0"), "u_save: the save done when quiet (%s)", gbuf);
+            CHECK(!strcmp(get(in, "preset"), "23"), "u_save 5: U05 is the preset now (%s)", gbuf);
+            get(in, "u_names");
+            u5 = gbuf;
+            for (t = 0; t < 4 && u5; t++) { u5 = strchr(u5, '|'); if (u5) u5++; }
+            CHECK(u5 && !strncmp(u5, "U05 ", 4), "u_names: slot 5 named (%s)", gbuf);
+            { int bars = 0; for (const char *c = gbuf; *c; c++) bars += *c == '|'; CHECK(bars == 15, "u_names: 16 slots (%d |)", bars); }
+            CHECK(strstr(get(in, "dev_store"), "usave_n=1") != NULL, "u_save: one save, the bad slots none (%s)", gbuf);
+            if (!fails) printf("ok    u_save 5: U05 saved and loaded, u_names lists it\n");
+        }
         for (t = 0; t < 6000; t++) {                          /* (the worker writes within 100 ms of the next staging) */
             struct stat a; char f1[600];
             render(in, 30); usleep(2000);
@@ -827,6 +849,10 @@ static int persist(const char *so, const char *dir, int save)
     {   char f2[600]; struct stat b; snprintf(f2, sizeof f2, "%s/pattern.bin", dir);
         CHECK(stat(f2, &b) != 0, "no pattern.bin written"); }
     for (i = 0; i < sizeof K / sizeof K[0]; i++) { const char *v = get(in, K[i][0]); CHECK(!strcmp(v, K[i][1]), "%s restored: %s (want %s)", K[i][0], v, K[i][1]); }
+    {   const char *u5 = get(in, "u_names"); int t;
+        for (t = 0; t < 4 && u5; t++) { u5 = strchr(u5, '|'); if (u5) u5++; }
+        CHECK(u5 && !strncmp(u5, "U05 ", 4), "u_save: U05 back in a new process (%s)", gbuf);
+        CHECK(!strcmp(get(in, "preset"), "23"), "u_save: the preset U05 kept (%s)", gbuf); }
     CHECK(want[0] && !strcmp(get(in, "dev_pattern_crc"), want), "the pattern still empty: %s (want %s)", gbuf, want);
     printf("%s    persist: the settings back in a new process, no pattern (%s)\n", fails ? "FAIL" : "ok", get(in, "dev_store"));
     api->destroy_instance(in);

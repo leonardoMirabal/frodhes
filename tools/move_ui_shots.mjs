@@ -74,6 +74,18 @@ for (const type of [0, 4, 5]) {                      // ST77 (the piano's pages)
     s.click(); s.jog(1); s.jog(1); s.jog(1);
     save("pages", s.draw()); written.push("pages");
 }
+{   // the whole-screen path's list: the module rows below the pages (SAVE TO USER, Schwung's My Presets and Module)
+    const s = new Screen({ chain: true }).open();
+    s.click();
+    const r = s.st().rows, at = r.findIndex((x) => x.label === "SAVE TO USER");
+    while (s.st().cursor < at) s.jog(1);
+    s.jog(1); s.jog(1);
+    save("menu", s.draw()); written.push("menu");
+    // SAVE TO USER: U03 picked (empty)
+    while (s.st().rows[s.st().cursor].label !== "SAVE TO USER") s.jog(-1);
+    s.click(); s.jog(1); s.jog(1);
+    save("save", s.draw()); written.push("save");
+}
 
 // the sheet: 2x, a 4 px grey gap between the screens (the gap is not part of any screen)
 const SK = 2, GAP = 4, cols = 1 + Math.max(...rows.map((r) => r[1].length - 1));
@@ -90,7 +102,7 @@ if (args.includes("--docs")) {
     // (a folder of their own: docs/manual/img/ is tools/manual_shots.py's, test_manual_shots.py checks it whole)
     const DOCS = path.join(ROOT, "docs", "manual", "img", "move");
     fs.mkdirSync(DOCS, { recursive: true });
-    for (const n of ["frodhes", "drive-filter", "drive-filter-k2", "reverb-k1", "pages", "compressor-gr"]) {
+    for (const n of ["frodhes", "drive-filter", "drive-filter-k2", "reverb-k1", "pages", "compressor-gr", "menu", "save"]) {
         const src = path.join(OUT, K === 4 ? `${n}-4x.png` : `${n}.png`);
         fs.copyFileSync(src, path.join(DOCS, `move-${n}.png`));
     }
