@@ -161,7 +161,9 @@ The pictures are drawn by the screens' own code on a computer, in the screen's t
 On a device (the screen read back from Schwung's display mirror, the controls sent through Schwung's test bus): the
 pages, the cards and the bars draw as in the pictures, the large card goes 0.52-0.56 s after the knob is let go,
 both arrows turn SUS and FX on and off, and the menu's MODULE rows (Module Help, the module picker) open Schwung's
-screens and Back comes back to the list. SAVE TO USER and the reset are *(not yet verified on a device)*.
+screens and Back comes back to the list. SAVE TO USER saved into U16 when quiet, and a second Frodhes loaded
+afterwards listed it; a save from the second listed in the first within seconds. A double tap on SPREAD set it
+back to 0.
 
 ## Sustain
 

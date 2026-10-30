@@ -25,6 +25,14 @@
   cards and the bars as the host renders them; the card goes 0.52-0.56 s after the knob is let go; the arrows
   (by the user); the menu's MODULE rows with the real host (Module Help opens and Back comes back to the list; the
   module picker opens and Back comes back to the list).
+- On the Move with the new engine (slot 1 reloaded through Schwung's picker): SAVE TO USER from the screen into
+  U16 (saved when quiet, store.bin rewritten, the slot plays U16); a second Frodhes in slot 2 lists U16, and its
+  u_save 15 shows in slot 1 within 4 s; the double tap on SPREAD (50 to 0, the toast); Remove Module from the menu
+  empties slot 2. The state blob saved before the reload and set after it reads back the same (rev aside); FX and
+  SUS are not in it (FX is ON at a load, as on the FM-1). tools/move_ws.py info gets the preset and its name
+  again; tools/move_hil.py preflight PASS; d2 rhodes 10 of 12 PASS: usb-host passes with TUNE 0 (the user's TUNE
+  -8 failed it), usb-clock fails (jitter 82 ms) on a clean F01 too. That one is not in this change (no clock code
+  touched) and passed on 2026-10-28.
 - Gates: Gate S against main (the FM-1 and three SMK-37 packages byte-identical), tools/ci_move.sh (Gate U, build +
   test-move, Gate M, 179 Move pytests), make test (no failure), the Move pytests (198 passed; 2 need yaml, absent
   on this host).
