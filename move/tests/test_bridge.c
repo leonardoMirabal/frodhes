@@ -425,7 +425,8 @@ static int api_tests(const char *so)
     api->set_param(in, "preset", "2"); render(in, 3);
     CHECK(!strcmp(get(in, "preset"), "2") && !strncmp(get(in, "preset_name"), "F03", 3), "preset F03 (%s)", gbuf);
 
-    /* M1-07: state round trip */
+    /* M1-07: state round trip (SPREAD off its default: the Move's FRODHES page knob, 2026-10-30) */
+    api->set_param(in, "p_spread", "45"); render(in, 3);
     {
         static char s1[4096], s2[4096];
         int n1 = api->get_param(in, "state", s1, sizeof s1), n2;
@@ -433,13 +434,14 @@ static int api_tests(const char *so)
         snprintf(tone, sizeof tone, "%s", get(in, "p_tone")); snprintf(spread, sizeof spread, "%s", get(in, "p_spread"));
         CHECK(n1 > 600 && n1 < 1200, "state size %d", n1);
         CHECK(api->get_param(in, "state", s2, 100) == -1, "a small buffer is refused");
-        api->set_param(in, "p_tone", "40"); api->set_param(in, "s_tune", "20"); render(in, 3);
+        api->set_param(in, "p_tone", "40"); api->set_param(in, "s_tune", "20"); api->set_param(in, "p_spread", "0"); render(in, 3);
         api->set_param(in, "state", s1); render(in, 3);
         n2 = api->get_param(in, "state", s2, sizeof s2);
         { char *r1 = strstr(s1, "\",\"rev\""), *r2 = strstr(s2, "\",\"rev\""); if (r1) *r1 = 0; if (r2) *r2 = 0; }
         CHECK(n2 > 0 && !strcmp(s1, s2), "state load gives the state back");
         CHECK(!strcmp(get(in, "dev:bpm10"), "975"), "the tempo stays the host's (%s)", gbuf);
         CHECK(!strcmp(get(in, "p_tone"), tone) && !strcmp(get(in, "p_spread"), spread), "the sound comes back: TONE %s (%s)", tone, gbuf);
+        CHECK(!strcmp(spread, "45"), "SPREAD in the state: 45 (%s)", spread);
         /* 1000 random records: load, read (= the record sanitized as the FM-1 does), load that, read: the same */
         srand(12345);
         for (i = 0; i < 1000 && fails < 20; i++) {
@@ -790,6 +792,7 @@ static int persist(const char *so, const char *dir, int save)
                                                                * s_mch moves the MIDI channel off the notes') */
         {                                                     /* u_save (Frodhes' own screen, SAVE TO USER): U05 */
             const char *u5;
+            api->set_param(in, "p_spread", "77"); render(in, 3);          /* (SPREAD goes with the preset) */
             api->set_param(in, "u_save", "5"); render(in, 5);
             api->set_param(in, "u_save", "0"); api->set_param(in, "u_save", "17"); render(in, 5);   /* (out of range: none) */
             for (t = 0; t < 3000 && strcmp(get(in, "u_savepend"), "0"); t++) render(in, 10);
@@ -801,6 +804,10 @@ static int persist(const char *so, const char *dir, int save)
             CHECK(u5 && !strncmp(u5, "U05 ", 4), "u_names: slot 5 named (%s)", gbuf);
             { int bars = 0; for (const char *c = gbuf; *c; c++) bars += *c == '|'; CHECK(bars == 15, "u_names: 16 slots (%d |)", bars); }
             CHECK(strstr(get(in, "dev_store"), "usave_n=1") != NULL, "u_save: one save, the bad slots none (%s)", gbuf);
+            api->set_param(in, "preset", "0"); render(in, 5);
+            CHECK(!strcmp(get(in, "p_spread"), "0"), "F01: SPREAD 0 (%s)", gbuf);
+            api->set_param(in, "preset", "23"); render(in, 5);
+            CHECK(!strcmp(get(in, "p_spread"), "77"), "U05: its SPREAD 77 back (%s)", gbuf);
             if (!fails) printf("ok    u_save 5: U05 saved and loaded, u_names lists it\n");
         }
         for (t = 0; t < 6000; t++) {                          /* (the worker writes within 100 ms of the next staging) */

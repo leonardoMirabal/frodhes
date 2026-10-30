@@ -1454,14 +1454,16 @@ def host_binary(hq=None):
     return hostrun.build(MOVE_HOST % h, extra=MOVE_HOST_DEFS + ["-DHQ_DEFAULT=%d" % h])
 
 
-def host_phrase(ev, dur, program=0, hq=None, lead=()):
+def host_phrase(ev, dur, program=0, hq=None, lead=(), after=()):
     """the host build (tests/host.c) playing the events after program change program (F01 = 0): (n, 2) LSB at 44.1;
     hq: 0 Classic, else (1, None: as the plugin loads) the HQ Rhodes' build (host_binary); lead: [(cc, value)] at 1 ms, before the program change, as the take
-    has them (a pedal let up at boot is not nothing: CC 64 0 moves a later note by a few LSB)"""
+    has them (a pedal let up at boot is not nothing: CC 64 0 moves a later note by a few LSB); after: [(cc, value)] at
+    6 ms, after the program change (the values Schwung's scene locks hold on the Move: held_reader)"""
     sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
     import hostrun
     pre = 500
-    lines = ["1 midi 0xB0 %d %d" % cv for cv in lead] + ["5 midi 0xC0 %d" % program]
+    lines = (["1 midi 0xB0 %d %d" % cv for cv in lead] + ["5 midi 0xC0 %d" % program] +
+             ["6 midi 0xB0 %d %d" % cv for cv in after])
     for t, k, a, b in ev:
         ms = pre + int(round(1000 * t))
         lines.append("%d midi 0x%02X %d %d" % (ms, {"on": 0x90, "off": 0x80, "cc": 0xB0}[k], a, b))
@@ -1520,6 +1522,56 @@ def _bands(x, sr):
     return np.array([10 * np.log10(sp[(f >= fc / 2 ** (1 / 6)) & (f < fc * 2 ** (1 / 6))].sum() + 1e-12) for fc in c])
 
 
+ALIGN_TIE = (1e-7, 4.0, 0.002)   # usb-host: tail correlations within 4 x (1 - the best), at most 0.002, of the best
+                                 # are one tie (the 2026-10-30 take: the best 0.9998 one period off, the true lag
+                                 # 0.9995). An exact tail (the tap, a take with a foreign sound on the attack only)
+                                 # has no tie: its best is the lag
+ALIGN_ENV_S = (0.001, 0.3)       # the tie broken on the note's level envelope (1 ms RMS) over its first 0.3 s
+
+
+def _env(x, sr):
+    w = max(1, int(ALIGN_ENV_S[0] * sr))
+    return np.sqrt(np.convolve(np.asarray(x, float) ** 2, np.ones(w) / w, "same"))
+
+
+def _align(mv, ref, a, b, ta, tb, lo, hi):
+    """the lag of the take mv against the host's ref for one note (a..b, its held second; ta..tb, the window judged:
+    the tail): (tail correlation, lag). The lag is picked on the tail, where a short foreign sound at the attack
+    has died. A tail that is a steady tone correlates almost as well one period off as on time (the 2026-10-30
+    USB-C run: 96 v90 at 2093 Hz came 14 periods late, 6.7 ms, and its attack left -29.7 dB of "another sound"; 36
+    v127 one period late). So every lag within the tie (ALIGN_TIE) of the best tail correlation is a candidate,
+    and the one whose level envelope matches the host's onset best wins: the onset is where the note starts, and
+    a foreign sound struck with the key starts there too (its waveform, at the note's own pitch, would pull a
+    waveform match off by whole periods)"""
+    rt = _mono(ref[ta:tb])
+    ne = min(b - a, int(ALIGN_ENV_S[1] * FS))
+    re_ = _env(_mono(ref[a:a + ne]), FS)
+    cs = []
+    for lag in range(lo, hi):
+        if ta + lag < 0 or tb + lag > len(mv) or a + lag < 0 or b + lag > len(mv):
+            continue
+        mt = _mono(mv[ta + lag:tb + lag])
+        cs.append((float(np.dot(mt, rt) / (np.linalg.norm(mt) * np.linalg.norm(rt) + 1e-9)), lag))
+    if not cs:
+        return -2.0, 0
+    top = max(c for c, _ in cs)
+    tie = min(ALIGN_TIE[2], max(ALIGN_TIE[0], ALIGN_TIE[1] * (1.0 - top)))
+    tied = [(c, lag) for c, lag in cs if c >= top - tie]
+    if len(tied) == 1:
+        return tied[0]
+    best = (-3.0, 0)
+    for c, lag in tied:
+        me = _env(_mono(mv[a + lag:a + lag + ne]), FS)
+        w = float(np.dot(me, re_) / (np.linalg.norm(me) * np.linalg.norm(re_) + 1e-9))
+        if w > best[0]:
+            best = (w, lag)
+    # (the envelope finds the onset to within its 1 ms, not a high note's period: the tail decides within that)
+    near = int(ALIGN_ENV_S[0] * FS)
+    return max((c, lag) for c, lag in tied if abs(lag - best[1]) <= near)
+
+
+HQ_RESOLVE_DB = 3.0        # usb-host: the HQ probe judges Classic only when the take's floor is this far under the
+                           # HQ / Classic difference at the probe
 TAIL_JUDGED_DBFS = -60.0   # usb-host: a note whose tail (0.5-1.0 s, the host's, after the gain) is quieter is not
                            # judged on its residual: a short bar note (MARIMBA 84 v40) has died there, the floor
                            # and the rounding are all that is left
@@ -1539,11 +1591,18 @@ def usb_host(r, d, program=0, out=print):
         r.boot_settings()
     r._send("pc", program, 0)
     time.sleep(0.5)
+    # (Schwung's scene locks (the set's scenes.json) put their parameters back after the program change: the take
+    # plays the held values, so the host gets them too. F13's BARK 52 played as the held 64: DIFFERS, 2026-10-30)
+    locked = r.held() if callable(getattr(r, "held", None)) else {}
+    after = [(cc, v) for _, (cc, v) in sorted(locked.items()) if cc]
     tk = r.rec(dur, ev)
     _save(d, "move-phrase", tk)
+    if locked:
+        import json
+        json.dump({k: list(v) for k, v in locked.items()}, open(os.path.join(d, "held.json"), "w"))
     mv, sr = tk["x"], tk["sr"]
     hq = getattr(r, "hq", None)
-    h = host_phrase(ev, dur, program, hq, GLOBAL_CCS)
+    h = host_phrase(ev, dur, program, hq, GLOBAL_CCS, after)
     _save(d, "host-phrase", {"x": h, "sr": 44100})
     rows, segs = [], []
     maxlag = int(0.08 * sr)
@@ -1556,16 +1615,7 @@ def usb_host(r, d, program=0, out=print):
         hm_t = _mono(h[ta:tb])
         if np.sqrt(np.mean(hm_t ** 2)) < 32768 * 10 ** (TAIL_JUDGED_DBFS / 20):   # (died by then: the whole note)
             ta = a
-            hm_t = _mono(h[ta:tb])
-        best = (-2.0, 0)
-        for lag in range(-int(0.01 * sr), maxlag):
-            if ta + lag < 0 or tb + lag > len(mv):
-                continue
-            mt = _mono(mv[ta + lag:tb + lag])
-            c = float(np.dot(mt, hm_t) / (np.linalg.norm(mt) * np.linalg.norm(hm_t) + 1e-9))
-            if c > best[0]:
-                best = (c, lag)
-        corr, lag = best
+        corr, lag = _align(mv, h, a, b, ta, tb, -int(0.01 * sr), maxlag)
         mm = _mono(mv[a + lag:b + lag])
         hm = _mono(h[a:b])
         segs.append((name, n, mm, hm, lag, corr))
@@ -1600,23 +1650,15 @@ def usb_host(r, d, program=0, out=print):
                      "centroid_move": round(_centroid(mm[st], sr)), "centroid_host": round(_centroid(hm[st], sr))})
     classic_db, classic_res_db = None, None
     if hq != 0:                                  # (HQ, the load's or asked: the take must not be Classic where only HQ
-        c = host_phrase(ev, dur, program, 0, GLOBAL_CCS)    # differs)
+        c = host_phrase(ev, dur, program, 0, GLOBAL_CCS, after)    # differs)
         for name, t, n in marks:
             if name == HQ_PROBE:
                 a, b = int(t * sr), int((t + NOTE_S) * sr)
                 ta = a + int(0.5 * sr)
 
                 def fit(ref):                        # (the take against one host: its own best lag, as the rows')
-                    r_t = _mono(ref[ta:b])
-                    best = (-2.0, 0)
-                    for lag in range(-int(0.01 * sr), maxlag):
-                        if ta + lag < 0 or b + lag > len(mv):
-                            continue
-                        mt = _mono(mv[ta + lag:b + lag])
-                        cc = float(np.dot(mt, r_t) / (np.linalg.norm(mt) * np.linalg.norm(r_t) + 1e-9))
-                        if cc > best[0]:
-                            best = (cc, lag)
-                    m_ = _mono(mv[a + best[1]:b + best[1]])
+                    _, lag_ = _align(mv, ref, a, b, ta, b, -int(0.01 * sr), maxlag)
+                    m_ = _mono(mv[a + lag_:b + lag_])
                     return m_, m_ - g * _mono(ref[a:b])
                 m_, dm = fit(h)
                 mc, dc = fit(c)
@@ -1626,8 +1668,23 @@ def usb_host(r, d, program=0, out=print):
                 # (only where HQ changes the sound at the probe: the Rhodes and the HQ bars; else both hosts the same)
                 classic_db = round(float(vs), 1) if np.abs(hc).max() > 0 else None
                 classic_res_db = round(float(rc), 1)
+                # (what the take can tell apart: its own floor, the nearer of its two residuals under the note, must
+                # be HQ_RESOLVE_DB under the two hosts' difference there, each aligned on its own as fit() aligns
+                # the take: Classic's 96 v90 is HQ's 31 frames later within -50 dB. A take whose floor is -39 dB
+                # (the 2026-10-30 one: Main Out 17 dB down, the note on another block phase than the host's)
+                # cannot: it read 1.1 dB nearer Classic)
+                hh_ = _mono(h[a:b])
+                hc_db = min(20 * np.log10((np.sqrt(np.mean((hh_ - _mono(c[a + k:b + k])) ** 2)) + 1e-9) /
+                                          (np.sqrt(np.mean(hh_ ** 2)) + 1e-9))
+                            for k in range(-64, 65) if a + k >= 0 and b + k <= len(c))
+                fl_db = 20 * np.log10((min(np.sqrt(np.mean(dm ** 2)) / (np.sqrt(np.mean(m_ ** 2)) + 1e-9),
+                                           np.sqrt(np.mean(dc ** 2)) / (np.sqrt(np.mean(mc ** 2)) + 1e-9))) + 1e-12)
+                probe = {"hq_classic_db": round(float(hc_db), 1), "floor_db": round(float(fl_db), 1),
+                         "resolved": bool(fl_db < hc_db - HQ_RESOLVE_DB)}
     rep = {"program": program, "hq": hq, "gain": round(g, 5), "gain_db": round(20 * np.log10(abs(g) + 1e-12), 2),
            "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max())}
+    if locked:
+        rep["held"] = {k: v for k, (_, v) in locked.items()}
     bad = [w["note"] for w in rows if w["residual_db"] > -40 and w["judged"]]
     extra = [w["note"] for w in rows if w["extra_db"] > -30]
     again = ["%s +%s ms" % (w["note"], "/".join(str(t) for t in w["again_ms"])) for w in rows if w["again_ms"]]
@@ -1639,6 +1696,9 @@ def usb_host(r, d, program=0, out=print):
         # Move's volume and latency ~+13 dB; a take that is neither, another sound or a note struck again, gets its
         # own verdict below)
         classic = classic_db is not None and classic_db < 0.0 and classic_res_db < -30.0
+        if classic_db is not None:
+            rep["hq_probe"] = probe
+            classic = classic and probe["resolved"]
     rep["verdict"] = ("CLASSIC: the HQ Rhodes was due (the load's, or p_hq 1) but %s plays as Classic (the Classic host %.1f dB "
                       "nearer than the HQ one: an old dsp.so, or p_hq 0 left on?)"
                       % (HQ_PROBE, -rep["hq_vs_classic_db"])
@@ -1650,6 +1710,14 @@ def usb_host(r, d, program=0, out=print):
                       "DIFFERS at %s (residual over -40 dB after one gain, 0.5-1.0 s into the note)" % bad if bad else
                       "FRODHES = the host (tails), but ANOTHER SOUND plays with the keys at %s (a Move instrument "
                       "on the track, or another slot): silence it and rerun" % extra)
+    if "hq_probe" in rep and not rep["hq_probe"]["resolved"] and rep["verdict"].startswith("PASS"):
+        rep["verdict"] += ("; HQ against Classic not resolved at this level (the take's floor %.1f dB, HQ and Classic "
+                           "%.1f dB apart at %s): the tap path checks it" % (rep["hq_probe"]["floor_db"],
+                                                                         rep["hq_probe"]["hq_classic_db"], HQ_PROBE))
+    if locked:
+        rep["verdict"] += ("; Schwung's scene locks hold %s over the program change: the host plays the held values"
+                           % ", ".join("%s (CC %d %d)" % (k, cc, v) if cc else "%s (no CC: not in the host)" % k
+                                       for k, (cc, v) in sorted(locked.items())))
     out("gain Move/host %.2f dB (peak Move %d, host %d LSB)" % (rep["gain_db"], rep["peak_move"], rep["peak_host"]))
     for w in rows:
         out("%-8s lag %6.2f ms (tail corr %.4f)  tail residual %6.1f dB  extra %6.1f dB %s  f0 %+6.2f / %+6.2f c  "
@@ -1672,12 +1740,23 @@ def usb_host_file(d, out=print):
     m, sr = rd(os.path.join(d, "move-phrase.wav"))
     h, _ = rd(os.path.join(d, "host-phrase.wav"))
 
+    import json
+    try:
+        kept = {k: tuple(v) for k, v in json.load(open(os.path.join(d, "held.json"))).items()}
+    except OSError:
+        kept = {}
+
     class Saved(FakeRig):
         def rec(self, dur, events):
             return {"x": m, "sr": sr, "xruns": []}
+
+        def held(self):
+            return kept
     global host_phrase
     keep = host_phrase
-    host_phrase = lambda ev, dur, program=0, hq=None, lead=(): h   # noqa: E731
+    # (the saved host is the one the take was compared with; the HQ probe's Classic host is rendered again)
+    host_phrase = lambda ev, dur, program=0, hq=None, lead=(), after=(): (   # noqa: E731
+        keep(ev, dur, program, 0, lead, after) if hq == 0 else h)
     try:
         return usb_host(Saved(), os.path.join(d, "reanalysis"), out=out)
     finally:
@@ -1803,6 +1882,60 @@ def parse_song(text, track=0):
             "devices": devs, "volume_db": (t.get("mixer") or {}).get("volume")}
 
 
+def scene_locks(text, slot=0):
+    """Schwung's scene locks (set_state/<set>/scenes.json) on slot's Frodhes: the keys, sorted. Schwung puts a locked
+    parameter back after any change, a program change's too (2026-10-30: F13's BARK 52 read 64 a second later, the
+    locks the user's own); [] when the file does not parse or locks nothing there"""
+    import json
+    try:
+        j = json.loads(text)
+    except ValueError:
+        return []
+    keys = set()
+    for h in (j.get("halves") or []) if isinstance(j, dict) else []:
+        for k in (h.get("locks") or []) if isinstance(h, dict) else []:
+            if (isinstance(k, dict) and k.get("scope") == "slot%d" % slot and k.get("target") == "synth"
+                    and k.get("module") in (None, "frodhes") and isinstance(k.get("param"), str)):
+                keys.add(k["param"])
+    return sorted(keys)
+
+
+def move_keys():
+    """the plugin's keys (move/module/move_ui.h MOVE_KEYS, generated): {key: (cc, kind, scale, off)}; a parameter's
+    CC value is wire * scale + off"""
+    txt = open(os.path.join(ROOT, "move", "module", "move_ui.h")).read()
+    return {m.group(1): (int(m.group(2)), m.group(3), int(m.group(4)), int(m.group(5)))
+            for m in re.finditer(r'\{"(\w+)", \w+, (\d+), MK_(\w+), (\d+), (-?\d+)\}', txt)}
+
+
+def held_cc(key, wire, keys=None):
+    """a held key's value as its CC (cc, value), (0, wire) when it has none the host takes (a latch, a slot)"""
+    k = (keys or move_keys()).get(key)
+    try:
+        w = int(float(wire))
+    except (TypeError, ValueError):
+        return 0, wire
+    if not k or k[1] != "PARAM" or not k[0]:
+        return 0, w
+    return k[0], max(0, min(127, w * k[2] + k[3]))
+
+
+def held_reader(url, slot, locks):
+    """usb_host's r.held: the locked keys' live values over Schwung's WebSocket, {key: (cc, value)}"""
+    def held():
+        import move_ws
+        with move_ws.Remote(url) as w:
+            w.subscribe(slot)
+            w.pump(0.5)
+            p = w.params.get(slot, {})
+        keys = move_keys()
+        return {k: held_cc(k, p.get(COMP_KEY + k), keys) for k in locks if COMP_KEY + k in p}
+    return held
+
+
+COMP_KEY = "synth:"
+
+
 def slot_report(url, host, slot=0, ssh=None, out=print):
     """what Schwung and the Move show of the slot and its track: over the WebSocket the chain (synth, audio FX, MIDI
     FX: module ids), the slot's receive / forward channel, volume, mute and Frodhes' CHAN (s_mch); over ssh Schwung's
@@ -1849,6 +1982,8 @@ def slot_report(url, host, slot=0, ssh=None, out=print):
     rep["track"] = parse_song(song or "", slot)
     if not rep["track"]:
         rep["errors"].append("the Move's set (active_set.txt -> Song.abl): not read")
+    sc = ssh("cat /data/UserData/schwung/set_state/%s/scenes.json" % uid) if re.match(r"^[0-9a-f-]{8,}$", uid) else None
+    rep["locks"] = scene_locks(sc or "", slot)
     return rep
 
 
@@ -1920,6 +2055,9 @@ def report_lines(rep, chan):
                          for d in t.get("devices", [])) or "none"
         L.append("the Move's track (the saved set; the live one can differ): MIDI in %s, volume %s dB, devices: %s"
                  % (t.get("midi_in"), t.get("volume_db"), devs))
+    if rep.get("locks"):
+        L.append("Schwung's scene locks hold %s on this slot (the set's scenes.json): a preset or a CC does not "
+                 "move them" % ", ".join(rep["locks"]))
     for e in rep.get("errors", []):
         L.append("cannot read: " + e)
     if chan.get("send"):
@@ -2174,6 +2312,8 @@ def usb_main(a):
         r = TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), chan["plugin"])
     else:
         r = UsbRig(a.midi, a.audio, chan["send"])
+    if not r.fake and a.ws != "none" and srep.get("locks"):
+        r.held = held_reader(a.ws, 0, srep["locks"])
     print("MIDI %s (channel %d), audio %s; takes -> %s" % (r.port_name, r.ch, r.audio_name, d), flush=True)
     e = a.engine if a.engine in ENGINE_CCS else None
     cr = clock_rig(a, r, d, chan) if a.cmd == "usb-clock" else r

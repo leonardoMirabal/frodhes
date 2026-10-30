@@ -173,6 +173,58 @@ def test_subscribe_and_preset(fake):
     assert fake.log[1] == {"type": "set_param", "slot": 0, "key": "synth:preset", "value": "12"}
 
 
+def test_open_skips_a_hanging_ipv6_address(fake, monkeypatch):
+    """the VIBES usb-host of 2026-10-28 (d2 over the tap): "TimeoutError: timed out", no take sent, 6 s after the
+    preset load, and the rerun passed. move.local resolves to the Move's IPv6 link-local address first, then its
+    USB-C network's IPv4 one; websockets connected in that order, and an IPv6 connect that hangs used up the whole
+    open timeout before the IPv4 one answered. Here the IPv6 address hangs for the timeout: the connection opens
+    over IPv4 at once (the old open raised "timed out")"""
+    import socket
+    port = int(fake.url.split(":")[2].split("/")[0])
+    real_gai, real_cc = socket.getaddrinfo, socket.create_connection
+    v6 = (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("fe80::cf:67ff:fe72:e89a", port, 0, 27))
+    v4 = (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))
+
+    def gai(host, p, *a, **k):
+        return [v6, v4] if host == "move.test" else real_gai(host, p, *a, **k)
+
+    def hanging_cc(addr, timeout=None, **k):              # (the IPv6 try as websockets made it: the timeout gone)
+        if addr[0] == "move.test":
+            time.sleep(timeout or 0)
+            return real_cc(("127.0.0.1", addr[1]), timeout=timeout)
+        return real_cc(addr, timeout=timeout, **k)
+    monkeypatch.setattr(socket, "getaddrinfo", gai)
+    monkeypatch.setattr(socket, "create_connection", hanging_cc)
+    url = "ws://move.test:%d/ws/remote-ui" % port
+    t0 = time.monotonic()
+    with move_ws.Remote(url, timeout=1.0) as r:
+        assert r.subscribe(0)["module"] == "frodhes"
+    assert time.monotonic() - t0 < 1.0
+    assert move_ws._ANSWERED[("move.test", port)] == ("127.0.0.1", port)
+
+
+def test_open_tried_again(fake, monkeypatch):
+    """a connection that does not open (a timeout, a refusal) is tried again, OPEN_TRIES times in all"""
+    calls, real = [], move_ws._sock
+
+    def flaky(url, timeout):
+        calls.append(url)
+        if len(calls) < move_ws.OPEN_TRIES:
+            raise TimeoutError("timed out")
+        return real(url, timeout)
+    monkeypatch.setattr(move_ws, "_sock", flaky)
+    monkeypatch.setattr(move_ws, "OPEN_PAUSE", 0.0)
+    with move_ws.Remote(fake.url, timeout=1.0) as r:
+        assert r.subscribe(0)["module"] == "frodhes"
+    assert len(calls) == move_ws.OPEN_TRIES
+    calls.clear()
+    monkeypatch.setattr(move_ws, "_sock", lambda url, timeout: calls.append(url) or (_ for _ in ()).throw(
+        TimeoutError("timed out")))
+    with pytest.raises(TimeoutError):
+        move_ws.Remote(fake.url, timeout=1.0)
+    assert len(calls) == move_ws.OPEN_TRIES
+
+
 def test_preset_name_comes_late():
     """the index alone, no re-read with the name: the name is not the old preset's; a second subscribe brings it"""
     f = FakeSchwung(noname=True)

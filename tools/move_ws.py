@@ -37,15 +37,59 @@ class SchwungError(RuntimeError):
     pass
 
 
+OPEN_TRIES = 3                                  # a connection that does not open is tried again, after OPEN_PAUSE s
+OPEN_PAUSE = 0.5
+_ANSWERED = {}                                  # (host, port) -> the address that last answered
+
+
+def _sock(url, timeout):
+    """a TCP connection to the url's host, its IPv4 addresses first (the one that answered last before them). The
+    Move answers move.local on an IPv6 link-local address and on its USB-C network's IPv4 one; websockets tried the
+    IPv6 one first, and a connect that hung there for the whole open timeout ended a d2 take with "timed out"
+    before any message (the VIBES usb-host, 2026-10-28)"""
+    import socket
+    from urllib.parse import urlsplit
+    u = urlsplit(url)
+    host, port = u.hostname, u.port or (443 if u.scheme == "wss" else 80)
+    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    known = _ANSWERED.get((host, port))
+    infos.sort(key=lambda i: (i[4] != known, i[0] != socket.AF_INET))
+    end, err = time.monotonic() + timeout, None
+    for fam, typ, proto, _, sa in infos:
+        left = end - time.monotonic()
+        if left <= 0:
+            break
+        s = socket.socket(fam, typ, proto)
+        s.settimeout(left)
+        try:
+            s.connect(sa)
+        except OSError as e:                    # (TimeoutError included)
+            err = e
+            s.close()
+            continue
+        s.settimeout(None)
+        _ANSWERED[(host, port)] = sa
+        return s
+    raise err if err is not None else TimeoutError("no address of %s answered in %.1f s" % (host, timeout))
+
+
 class Remote:
-    """one connection; slots 0-based"""
+    """one connection; slots 0-based. The connection is opened up to OPEN_TRIES times"""
 
     def __init__(self, url=URL, timeout=5.0):
         from websockets.sync.client import connect
         self.url, self.timeout, self.last = url, timeout, {}
-        self._cm = connect(url, open_timeout=timeout, max_size=None, ping_interval=20, ping_timeout=90)
-        # (the manager answers a ping only between two messages it handles, and a set_param waits on the shim)
-        self.ws = self._cm.__enter__()
+        for k in range(OPEN_TRIES):
+            try:
+                self._cm = connect(url, sock=_sock(url, timeout), open_timeout=timeout, max_size=None,
+                                   ping_interval=20, ping_timeout=90)
+                # (the manager answers a ping only between two messages it handles, and a set_param waits on the shim)
+                self.ws = self._cm.__enter__()
+                break
+            except (OSError, TimeoutError):
+                if k == OPEN_TRIES - 1:
+                    raise
+                time.sleep(OPEN_PAUSE)
         self.params = {}                         # slot -> {key: value}, everything seen
         self.info = {}                           # slot -> the last slot_info
 

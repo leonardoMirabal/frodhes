@@ -226,6 +226,146 @@ def test_usb_host_same_sound(tmp_path):
     assert not ok and "ANOTHER SOUND" in rep["verdict"] and abs(rep["gain_db"] + 6.02) < 0.1, rep["verdict"]
 
 
+def test_usb_host_quiet_mix_aligns_on_time(tmp_path):
+    """a take as the 2026-10-30 USB-C run had it: Main Out 17.1 dB under the tap (the track's volume), 14.92 ms late,
+    in whole LSB. Every note aligns on the take's one latency and the take passes"""
+    g, lag = 10 ** (-17.11 / 20), 658
+
+    class QuietMix(mh.FakeRig):
+        def rec(self, dur, events):
+            h = mh.host_phrase(events, dur, 0)
+            x = np.zeros_like(h)
+            x[lag:] = g * h[:-lag]
+            rng = np.random.default_rng(7)               # (the mix's rounding: TPDF, 1 LSB)
+            x += rng.uniform(-0.5, 0.5, x.shape) + rng.uniform(-0.5, 0.5, x.shape)
+            return {"x": np.round(x), "sr": 44100, "xruns": []}
+    ok, rep = mh.usb_host(QuietMix(), str(tmp_path), out=lambda s: None)
+    assert all(abs(w["lag_ms"] - 1000 * lag / 44100) < 0.05 for w in rep["rows"]), [
+        (w["note"], w["lag_ms"]) for w in rep["rows"]]
+    assert ok, rep["verdict"]
+
+
+def test_usb_host_hq_probe_only_where_the_take_resolves_it(tmp_path):
+    """HQ against Classic at 96 v90: the two hosts, each aligned, are ~50 dB apart. A Classic take through a clean
+    mix is CLASSIC; an HQ take with a floor of ~-38 dB under the note at the probe (the 2026-10-30 USB-C take, aligned,
+    read 1.1 dB nearer Classic within that floor and failed as CLASSIC) cannot tell them apart: PASS, the probe named
+    as not resolved"""
+    lag = 300
+
+    class Classic(mh.FakeRig):
+        hq = None
+        floor = 0.0
+        played = 0                                   # (the host the take plays: 0 Classic, None HQ)
+
+        def rec(self, dur, events):
+            h = mh.host_phrase(events, dur, 0, self.played)
+            x = np.zeros_like(h)
+            x[lag:] = 0.5 * h[:-lag]
+            if self.floor:
+                ev, marks, _ = mh.phrase_events()
+                t = next(t for name, t, n in marks if name == mh.HQ_PROBE)
+                a, b = int(t * 44100) + lag, int((t + mh.NOTE_S) * 44100) + lag
+                x[a:b] *= 1 + np.random.default_rng(3).normal(0, 10 ** (self.floor / 20), x[a:b].shape)   # (the
+                #                                                       floor under the note all along it)
+            return {"x": np.round(x), "sr": 44100, "xruns": []}
+    ok, rep = mh.usb_host(Classic(), str(tmp_path), out=lambda s: None)
+    assert not ok and rep["verdict"].startswith("CLASSIC") and rep["hq_probe"]["resolved"], rep["verdict"]
+    noisy = Classic()
+    noisy.floor, noisy.played = -38.0, None
+    ok, rep = mh.usb_host(noisy, str(tmp_path), out=lambda s: None)
+    assert ok and "not resolved" in rep["verdict"] and not rep["hq_probe"]["resolved"], (rep["verdict"],
+                                                                                         rep["hq_probe"])
+
+
+SCENES_2026_10_30 = ('{"v":3,"active":0,"pairs":[[0,0],[1,1]],"halves":[{"n":16,"locks":['
+                     '{"scope":"slot0","target":"synth","param":"s_fx","module":"frodhes","value":1},'
+                     '{"scope":"slot0","target":"synth","param":"p_tone","module":"frodhes","value":32},'
+                     '{"scope":"slot0","target":"synth","param":"p_bark","module":"frodhes","value":0}]}]}')
+
+
+def test_scene_locks_and_their_ccs():
+    """the set's scenes.json as the Move had it on 2026-10-30: slot 1's locks, none on slot 2; the held values as the
+    host's CCs (TONE's wire -64..63 on CC 28 at +64; a latch has none the host takes)"""
+    assert mh.scene_locks(SCENES_2026_10_30, 0) == ["p_bark", "p_tone", "s_fx"]
+    assert mh.scene_locks(SCENES_2026_10_30, 1) == []
+    assert mh.scene_locks("", 0) == [] and mh.scene_locks("[]", 0) == []
+    k = mh.move_keys()
+    assert mh.held_cc("p_tone", "10", k) == (28, 74) and mh.held_cc("p_bark", "64", k) == (29, 64)
+    assert mh.held_cc("s_fx", "1", k) == (0, 1)
+    rep = {"ws": {"synth": "frodhes"}, "locks": mh.scene_locks(SCENES_2026_10_30, 0)}
+    assert any("scene locks hold p_bark, p_tone, s_fx" in ln for ln in mh.report_lines(rep, {}))
+
+
+def test_usb_host_plays_the_held_values(tmp_path):
+    """the device's VIBES DIFFERS of 2026-10-30: Schwung's scene locks put BARK back to 64 after F13's program change
+    (52). A take with the held value differs from the preset's host; with the rig's held() the host gets the held
+    values after the program change, and the verdict names them"""
+    class Held(mh.FakeRig):
+        def rec(self, dur, events):
+            h = mh.host_phrase(events, dur, 12, after=[(29, 64)])
+            x = np.zeros_like(h)
+            x[300:] = 0.5 * h[:-300]
+            return {"x": np.round(x), "sr": 44100, "xruns": []}
+
+        def held(self):
+            return {"p_bark": (29, 64), "s_fx": (0, 1)}
+
+    class Unaware(Held):
+        held = None
+    ok, rep = mh.usb_host(Unaware(), str(tmp_path / "a"), 12, out=lambda s: None)
+    assert not ok and "DIFFERS" in rep["verdict"], rep["verdict"]
+    ok, rep = mh.usb_host(Held(), str(tmp_path / "b"), 12, out=lambda s: None)
+    assert ok and rep["verdict"].startswith("PASS"), rep["verdict"]
+    assert rep["held"] == {"p_bark": 64, "s_fx": 1} and "p_bark (CC 29 64)" in rep["verdict"], rep
+    ok2, rep2 = mh.usb_host_file(str(tmp_path / "b"), out=lambda s: None)   # (the saved run keeps them: held.json)
+    assert ok2 and rep2["held"] == rep["held"], rep2["verdict"]
+
+
+def test_usb_host_96v90_of_the_2026_10_30_take():
+    """the 2026-10-30 USB-C run's 96 v90 (tests/py/data/move_usb_host_96v90.npz: the Move's Main Out, 17.1 dB under
+    the tap, its tail ~20 LSB): the tail matches the host's at every whole period of lag within the mix's rounding,
+    and the tail's best is 14 periods late (21.61 ms against the take's 14.92). The old alignment took it, and the
+    note's attack, 6.7 ms off, read as -29.7 dB of ANOTHER SOUND. _align takes the take's lag (658 frames), and the
+    note's extra stays far under the -30 dB limit"""
+    z = np.load(os.path.join(ROOT, "tests", "py", "data", "move_usb_host_96v90.npz"))
+    sr, i0 = int(z["sr"]), int(z["i0"])
+    ev, marks, dur = mh.phrase_events()
+    h = mh.host_phrase(ev, dur, 0, None, mh.GLOBAL_CCS)
+    t = next(t for name, t, n in marks if name == mh.HQ_PROBE)
+    a, b = int(t * sr), int((t + mh.NOTE_S) * sr)
+    mv = np.zeros_like(h)
+    mv[i0:i0 + len(z["move"])] = z["move"]
+    lo, hi = -int(0.01 * sr), int(0.08 * sr)
+    ta = a + sr // 2
+    rt = mh._mono(h[ta:b])
+    tail = max((float(np.dot(mh._mono(mv[ta + k:b + k]), rt) / (np.linalg.norm(mh._mono(mv[ta + k:b + k])) *
+                                                                 np.linalg.norm(rt) + 1e-9)), k) for k in range(lo, hi))
+    assert tail[1] == 953, tail                          # (the trap: the tail's best is 14 periods late)
+    corr, lag = mh._align(mv, h, a, b, ta, b, lo, hi)
+    assert lag == 658 and corr > 0.999, (lag, corr)
+    g = 10 ** (-17.11 / 20)
+    res = mh._mono(mv[a + lag:b + lag]) - g * mh._mono(h[a:b])
+    extra = 20 * np.log10(np.sqrt(np.mean(res ** 2)) / np.sqrt(np.mean((g * mh._mono(h[a:b])) ** 2)))
+    assert extra < -35, extra
+
+
+def test_align_breaks_a_steady_tail_tie_on_the_attack():
+    """_align: a decaying 2093 Hz tone with a sharp attack, the take 300 samples late; the tail alone has a peak every
+    period (21 samples), the whole note one: the lag is 300"""
+    sr, n = 44100, 44100
+    t = np.arange(n) / sr
+    x = 8000 * np.minimum(1, t / 0.002) * np.exp(-t / 0.6) * np.sin(2 * np.pi * 2093 * t)
+    x[:200] += np.linspace(4000, 0, 200)                 # (the hammer's knock)
+    ref = np.zeros((n + 4000, 2))
+    ref[:n, 0] = ref[:n, 1] = x
+    mv = np.zeros_like(ref)
+    mv[300:] = 0.25 * ref[:-300]
+    mv = np.round(mv)
+    a, b = 0, n
+    corr, lag = mh._align(mv, ref, a, b, a + sr // 2, b, -441, 3528)
+    assert lag == 300 and corr > 0.99, (lag, corr)
+
+
 def test_d2_fake(tmp_path):
     """d2 on the fake Move: every engine's tests in order (usb-host on the engine's preset, three keys; usb-clock once,
     with the Rhodes), one table;
