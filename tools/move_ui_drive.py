@@ -116,6 +116,8 @@ elif cmd == "seq":
             print("%%s %%s:%%s %%s" %% ("GOT" if cmd[0] == "D" else "SET", slot, key,
                                     ask("%%s %%s %%s/%%s" %% (cmd, key, BENCH, name)))); sys.stdout.flush()
         elif w == "shot":
+            m = ctrl(); live = m[33]; m.close()
+            if not live: print("STALE")
             print("SHOT " + open(LIVE, "rb").read(1024).hex()); sys.stdout.flush()
         elif w.startswith("watch:"):
             # from the last packet sent: when the large card goes (its bar frame = a row lit across all 128 columns,
@@ -243,19 +245,37 @@ def main(argv=None):
                 names.append(op[5:])
             words += expand(op)
         out = ssh_py(["seq"] + words)
-        shots = [l[5:] for l in out.splitlines() if l.startswith("SHOT ")]
         for l in out.splitlines():
             if l.startswith(("DROP", "GOT", "SET", "WATCH")):
                 print(l)
-        os.makedirs(a.out, exist_ok=True)
-        for name, hx in zip(names, shots):
-            fb = bytes.fromhex(hx)
-            p = os.path.join(a.out, name + ".png")
-            png(p, fb)
-            print("shot %s (%d px lit)" % (p, sum(bin(b).count("1") for b in fb)))
-            if a.ascii:
-                print(ascii_art(fb))
+        for ln in save_shots(out, names, a.out, a.ascii):
+            print(ln)
     return 0
+
+
+def save_shots(out, names, outdir, show_ascii=False):
+    """the seq's SHOT lines as NAME.png in outdir; the lines to print. A shot taken while display_mirror is 0 (the
+    device printed STALE before it) is the last frame the shim wrote, maybe long ago: 2026-10-30 one showed F01's page
+    count with F13 loaded. It is saved, and says so"""
+    shots, stale = [], False
+    for ln in out.splitlines():
+        if ln == "STALE":
+            stale = True
+        elif ln.startswith("SHOT "):
+            shots.append((ln[5:], stale))
+            stale = False
+    os.makedirs(outdir, exist_ok=True)
+    lines = []
+    for name, (hx, old) in zip(names, shots):
+        fb = bytes.fromhex(hx)
+        p = os.path.join(outdir, name + ".png")
+        png(p, fb)
+        lines.append("shot %s (%d px lit)%s" % (p, sum(bin(b).count("1") for b in fb),
+                                                "  STALE: display_mirror is 0, the mirror's last frame, not the "
+                                                "screen now (arm first)" if old else ""))
+        if show_ascii:
+            lines.append(ascii_art(fb))
+    return lines
 
 
 if __name__ == "__main__":

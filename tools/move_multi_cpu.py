@@ -39,6 +39,23 @@ def ssh(cmd, timeout=30):
     return r.stdout
 
 
+# Schwung writes debug.log (its spi_timing and spi-tally lines, read below) only while this file is there, and never
+# trims the log: on since 2026-10-28 it had grown to 43 MB by 10-30. The run makes it and takes it away again; a flag
+# the user had set before stays
+LOG_FLAG = "/data/UserData/schwung/debug_log_on"
+
+
+def log_on(sh=None):
+    """debug_log_on there for the run: True when this run made it (log_off takes it away)"""
+    out = (sh or ssh)('[ -f %s ] && echo kept || { touch %s && echo made; }' % (LOG_FLAG, LOG_FLAG))
+    return b"made" in (out or b"")
+
+
+def log_off(made, sh=None):
+    if made:
+        (sh or ssh)("rm -f %s" % LOG_FLAG)
+
+
 def perf_decode(b):
     u64 = lambda o: struct.unpack_from("<Q", b, o)[0]   # noqa: E731
     return {"period": u64(P_PERIOD), "tot_avg": u64(P_TOT_AVG), "tot_max": u64(P_TOT_MAX),
@@ -151,6 +168,7 @@ def run_n(n, secs, outdir, seed=1):
     perf = Perf()
     perf.start()
     ssh("touch /data/UserData/schwung/spi_tally_on")
+    made_log = log_on()
     time.sleep(12)                                  # (the idle baseline: loaded, nothing playing)
     base = list(perf.rows)
     idle = [p for t, p in base[2:]]
@@ -228,6 +246,7 @@ def run_n(n, secs, outdir, seed=1):
     res["late_lines"] = sum(1 for ln in log.splitlines() if "LATE" in ln)
     res["frame_lines"] = [ln.split("Frame(us): ")[-1][:80] for ln in log.splitlines() if "Frame(us)" in ln][-12:]
     ssh("rm -f /data/UserData/schwung/spi_tally_on")
+    log_off(made_log)
     for r in rigs:
         r._set("synth:dev_cpu_log", 0)
     time.sleep(0.6)

@@ -207,7 +207,10 @@ the 16 user slots (U01-U16), and program change loads them as on the FM-1 (0-15 
 F17-F19). **SAVE TO USER** in the menu of Frodhes' own screen saves the sound into a user slot (see
 [Frodhes' own screen](#frodhes-own-screen-pages)). The sound you set is also saved with the Move's set (Schwung keeps
 it with the track). The user slots keep what the module's data folder holds (empty on a new install), one set for
-every Frodhes on the Move. *(not yet verified on a device)*
+every Frodhes on the Move. SUS is not saved with the set: a set that loads again starts with SUS off and FX on, as
+the FM-1 does at power-on. *(measured on a device, 2026-10-30: Frodhes in slots 1 and 2, the set saved by Schwung,
+each slot's sound changed, then both slots loaded again from the saved set (Schwung's set restore): the preset,
+SPREAD, TUNE and the delay came back on both; a slot emptied stays empty in the saved set)*
 
 ## Mappings
 
@@ -316,7 +319,10 @@ USB-C never arrived: the plugin counted 0 pulses.
   presets to the app when quiet. A copy that cannot load gives a silent instance named NO ENGINE. Without the
   loader (`engine.so` on its own, the tests) the newest instance owns the app, the others are silent and say ONE
   SLOT ONLY. `move/tests/test_multi.c` (in `make test-move` and Gate P) and `tests/py/test_move_instances.py` test
-  it; `tools/move_multi_cpu.py --n 2 3` plays the worst take in N slots at once on the Move.
+  it; `tools/move_multi_cpu.py --n 2 3` plays the worst take in N slots at once on the Move. It reads
+  Schwung's `spi_timing` lines from `debug.log`, which Schwung writes only while
+  `/data/UserData/schwung/debug_log_on` exists and never trims (43 MB after two days on). So the tool makes that
+  file for its run and removes it after, unless it was there before.
   `r_cmp_gr` is `"live"`, so the grid reads `r_cmp_gr:effective` every tick. It reads `OFF`, or the reduction and the
   held peak in tenths of a dB (`120 200`). The plugin keeps the FM-1's meter timing (ui.c `meter_poll`) in
   `render_block`, which the host keeps calling through silence (`requires_continuous_processing`). A host without
@@ -340,7 +346,9 @@ USB-C never arrived: the plugin counted 0 pulses.
   every boot). `d2` runs them all for each engine (`usb-clock` once, with the Rhodes) and writes one table
   (`summary.md`). First it runs the preflight (below), then for each engine it checks over Schwung's WebSocket
   (`tools/move_ws.py`) that slot 1 holds Frodhes and loads the engine's preset there. A failed preflight stops
-  the run.
+  the run. `move_ws.py` connects to the Move's IPv4 address first (and then to the one that answered last time):
+  `move.local` also resolves to an IPv6 link-local address, and a connect to it that hangs used up the whole open
+  timeout, so the VIBES `usb-host` of 2026-10-28 timed out. It tries the open 3 times.
 - **The preflight** (`tools/move_hil.py preflight`) runs before every command that gives a sound or level verdict:
   `usb-host`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`, `d2` (over USB-C and over the tap) and
   `usb-levels`. `--no-preflight` skips it. A failure stops the command (exit 2). It needs USB-C audio and MIDI,
@@ -367,7 +375,8 @@ USB-C never arrived: the plugin counted 0 pulses.
      forward channel, volume and mute, and Frodhes' CHAN. Over ssh: Schwung's `shadow_chain_config.json`, and
      the Move's saved set (`active_set.txt`, then its `Song.abl`) for track 1's MIDI input and instruments,
      including whether a sampler has a sample loaded. The saved set can differ from the live one. A source that
-     cannot be read is named.
+     cannot be read is named. Also over ssh: the set's scene locks on the slot (`set_state/<set>/scenes.json`),
+     listed as "Schwung's scene locks hold ... on this slot".
 - **The channel.** The tools send on the slot's own receive channel: Schwung's WebSocket (`slot:receive_channel`),
   else `shadow_chain_config.json`. If neither can be read, they stop, name channel 1 as the one they would have
   assumed, and tell you to pass `--ch N`. If `--ch` names a channel the slot does not receive, they stop. If
@@ -388,6 +397,20 @@ USB-C never arrived: the plugin counted 0 pulses.
   If that note plays as Classic while HQ is due, the test fails as CLASSIC. Gate M and the bridge's `eq` tests
   set `p_hq` 0 first, so they compare the Classic path with the host renders; `make test-move` also compares the
   plugin as it loads with the host build with HQ on.
+- **How `usb-host` lines a note up.** Each note of the take is aligned on the host's by the cross-correlation of
+  its held second half. A steady tone correlates almost as well a whole period later, so candidates within a tie
+  (`ALIGN_TIE`) are told apart by the attack: the 1 ms RMS envelope of the note's first 0.3 s, then the best lag
+  within 1 ms of it. Without that, the Move's 96 v90 of 2026-10-30 lined up 953 frames late, not 658, and read as
+  ANOTHER SOUND (-29.7 dB extra); aligned, it is -36 dB under the note, at the take's floor
+  (`tests/py/data/move_usb_host_96v90.npz`). The HQ probe (96 v90 against the Classic host) gives CLASSIC only
+  where the take can tell the two apart: its own floor, the nearer of its two residuals, must be
+  `HQ_RESOLVE_DB` (3 dB) under the two hosts' difference there. A USB-C take through the Move's volume (Main Out
+  17 dB under the tap) cannot: it passes and says so, and the tap path checks HQ.
+- **Scene locks.** A Schwung scene that locks a Frodhes parameter puts it back after every program change and
+  preset load: on the Move of 2026-10-30, BARK and TONE (and FX) were locked on slot 1, so F13's BARK 52 played as
+  the held 64 and VIBES read DIFFERS. `usb-host` reads the locked keys' live values after its program change
+  (`held_reader`) and gives them to the host as CCs after its program change too (a latch such as FX has no CC
+  the host takes), and its verdict names them. The tools never change the locks.
 - The HQ bars (VIBES and MARIMBA, `firmware/src/hq/bars_hq.c`, `FR_HQ` only) follow the same rule: HQ on is the
   sound every Move user hears, HQ off is the FM-1's integers. HQ runs the bar's upper modes in float, adds three
   more bar modes and two more tube modes (their levels from `docs/model/data/bars_hq.json`, under the top mode's
@@ -441,6 +464,8 @@ USB-C never arrived: the plugin counted 0 pulses.
 - `clock-probe` shows where the clock comes from when the Move's own transport plays. The tool asks for Play
   on the Move, waits until the transport runs, records 10 s, then asks for Stop. With `--auto` the tool presses
   Play and Stop itself, through Schwung's test bus (`tools/move_ui_drive.py`), and sets the bus back afterwards.
+  `move_ui_drive.py`'s `shot:NAME` reads Schwung's display mirror: before `arm` (display_mirror 0) the mirror holds
+  its last frame, maybe long gone, so such a shot is saved and marked STALE.
   Meanwhile the plugin logs its counters to `stats.log` in its instance's folder (`inst/<k>/`), 10 times a second,
   while `dev_stats_log` is 1. The counters are the
   F8, FA and FC that came in, the pulses the bridge made itself, the host's transport and tempo, and the app's
@@ -465,7 +490,10 @@ USB-C never arrived: the plugin counted 0 pulses.
 - MIDI into the Standalone port also plays the Move's own instrument on the track. Schwung passes the notes to
   the Move's firmware and to the slot alike. For a clean comparison, give that Move track a silent instrument.
   Muting the track or turning it down also silences the slot, because the slot follows the track's mute and
-  volume. *(not yet verified on a device)*
+  volume. *(not yet verified on a device)* Several Frodhes and a Move track play together: on 2026-10-30 a chord
+  on channel 1 (slot 1, F01), channel 2 (slot 2, F14) and channel 4 (the Move's track 4, its electric piano), alone
+  and all at once, all three on Main Out, the levels adding as independent sounds, no USB-C gap, the two slots'
+  render at most 355 us and 217 us a block (Schwung's `spi_timing`).
 - The buttons: `module.json` claims the Right and Left arrows (`capabilities.claims_ccs`, `SUS_BTN_CC` 63 and
   `FX_BTN_CC` 62 in `tools/gen_move_module.py`; the Left arrow's press is `s_fxbtn` 1, which flips FX, and the Move's
   bypass keeps the compressor: `FR_BYP_KEEP_CMP` in `MOVE_DEFS`, fx.c's dry taken after the compressor). The sustain
