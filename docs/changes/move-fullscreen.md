@@ -25,3 +25,6 @@
   cards and the bars as the host renders them; the card goes 0.52-0.56 s after the knob is let go; the arrows
   (by the user); the menu's MODULE rows with the real host (Module Help opens and Back comes back to the list; the
   module picker opens and Back comes back to the list).
+- Gates: Gate S against main (the FM-1 and three SMK-37 packages byte-identical), tools/ci_move.sh (Gate U, build +
+  test-move, Gate M, 179 Move pytests), make test (no failure), the Move pytests (198 passed; 2 need yaml, absent
+  on this host).
