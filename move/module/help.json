@@ -50,7 +50,8 @@
             "K2 SPREAD",
             "K3 SUS",
             "K4 FX",
-            "K5 PAGES"
+            "K5 PAGES",
+            "K8 DELAY"
           ]
         },
         {
@@ -142,16 +143,21 @@
           ]
         },
         {
-          "title": "CHORUS/DELAY",
+          "title": "CHORUS",
           "lines": [
             "K1 CHORUS",
             "K2 DEPTH",
             "K3 SPEED",
-            "K4 SYNC",
-            "K5 DELAY",
-            "K6 MIX",
-            "K7 TIME",
-            "K8 FEEDBK"
+            "K4 SYNC"
+          ]
+        },
+        {
+          "title": "DELAY",
+          "lines": [
+            "K1 DELAY",
+            "K2 MIX",
+            "K3 TIME",
+            "K4 FEEDBK"
           ]
         },
         {
@@ -173,6 +179,15 @@
             "K1 TRSYNC",
             "K2 PHSYNC",
             "K3 DLSYNC"
+          ]
+        },
+        {
+          "title": "ARPEGGIO",
+          "lines": [
+            "K1 MODE",
+            "K2 RATE",
+            "K3 OCT",
+            "K4 GATE"
           ]
         },
         {

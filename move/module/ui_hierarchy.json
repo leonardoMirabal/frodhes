@@ -61,6 +61,14 @@
           ]
         },
         {
+          "key": "p_delay",
+          "name": "DELAY",
+          "type": "int",
+          "min": 0,
+          "max": 127,
+          "default": 0
+        },
+        {
           "level": "voice_0",
           "label": "PIANO VOICE"
         },
@@ -89,8 +97,12 @@
           "label": "TREM/PHASER"
         },
         {
-          "level": "cho_dly",
-          "label": "CHORUS/DELAY"
+          "level": "chorus",
+          "label": "CHORUS"
+        },
+        {
+          "level": "delay",
+          "label": "DELAY"
         },
         {
           "level": "reverb",
@@ -99,6 +111,10 @@
         {
           "level": "tmp",
           "label": "TEMPO"
+        },
+        {
+          "level": "arp",
+          "label": "ARPEGGIO"
         },
         {
           "level": "lfo_set",
@@ -114,7 +130,10 @@
         "p_spread",
         "s_sustain",
         "s_fx",
-        "s_screen"
+        "s_screen",
+        null,
+        null,
+        "p_delay"
       ],
       "list_param": "preset",
       "count_param": "preset_count",
@@ -712,8 +731,8 @@
         "p_ph_fdbk"
       ]
     },
-    "cho_dly": {
-      "name": "CHORUS/DELAY",
+    "chorus": {
+      "name": "CHORUS",
       "params": [
         {
           "key": "p_cp_sw",
@@ -763,7 +782,18 @@
             "4BAR"
           ],
           "default": 0
-        },
+        }
+      ],
+      "knobs": [
+        "p_cp_sw",
+        "p_cp_depth",
+        "p_cp_speed",
+        "p_cp_sync"
+      ]
+    },
+    "delay": {
+      "name": "DELAY",
+      "params": [
         {
           "key": "p_dl_sw",
           "name": "DELAY",
@@ -802,10 +832,6 @@
         }
       ],
       "knobs": [
-        "p_cp_sw",
-        "p_cp_depth",
-        "p_cp_speed",
-        "p_cp_sync",
         "p_dl_sw",
         "p_dl_depth",
         "p_dl_time",
@@ -970,6 +996,58 @@
         "p_tw_sync",
         "p_ph_sync",
         "p_dl_sync"
+      ]
+    },
+    "arp": {
+      "name": "ARPEGGIO",
+      "params": [
+        {
+          "key": "s_arpmode",
+          "name": "MODE",
+          "type": "enum",
+          "options": [
+            "OFF",
+            "UP",
+            "DOWN",
+            "UP-DN",
+            "ORDER",
+            "RAND"
+          ]
+        },
+        {
+          "key": "s_arprate",
+          "name": "RATE",
+          "type": "enum",
+          "options": [
+            "1/4",
+            "1/8",
+            "1/8T",
+            "1/16",
+            "1/16T",
+            "1/32"
+          ]
+        },
+        {
+          "key": "s_arpoct",
+          "name": "OCT",
+          "type": "int",
+          "min": 1,
+          "max": 4
+        },
+        {
+          "key": "s_arpgate",
+          "name": "GATE",
+          "type": "int",
+          "min": 10,
+          "max": 100,
+          "unit": "%"
+        }
+      ],
+      "knobs": [
+        "s_arpmode",
+        "s_arprate",
+        "s_arpoct",
+        "s_arpgate"
       ]
     },
     "lfo_set": {

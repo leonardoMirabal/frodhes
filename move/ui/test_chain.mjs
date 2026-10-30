@@ -84,10 +84,10 @@ const at = (x, y) => fb.px[y * 128 + x];
 const even = (x0, x1, y0) => { for (let x = x0; x <= x1; x++) if (!at(x, y0) || !at(x, y0 + 4)) return false; return true; };
 check([0, 1, 2, 3].every((i) => even(i * 32, i * 32 + 28, 28)), "bars: the first row's bars are even, end to end");
 check([0, 1, 2, 3].every((i) => !at(i * 32 + 14, 27) && !at(i * 32 + 14, 33)), "bars: 5 px tall, a clear row each side");
-// the first page: TYPE SPREAD SUS FX PRESET, knobs 6-8 dark
+// the first page: TYPE SPREAD SUS FX PRESET, knobs 6-7 dark (the holes under the PRESET card's name), DELAY on 8
 const root = pages[0];
-check(JSON.stringify(bound(leds.last)) === JSON.stringify([0, 1, 2, 3, 4, 5, 6, 7].map((i) => i < root.knobs.length)),
-      "LEDs: the first page's " + root.knobs.length + " knobs lit, the rest dark (" + JSON.stringify(leds.last) + ")");
+check(JSON.stringify(bound(leds.last)) === JSON.stringify([0, 1, 2, 3, 4, 5, 6, 7].map((i) => !!root.knobs[i])),
+      "LEDs: the first page's knobs lit, the holes and the rest dark (" + JSON.stringify(leds.last) + ")");
 check(near(leds.last[0], 0) && near(leds.last[3], 1), "LEDs: TYPE ST77 = 0 (enum index / (n-1)), FX ON = 1");
 check(near(leds.last[4], 0), "LEDs: PRESET F01 = 0");
 const spread = root.knobs[1];
@@ -112,7 +112,8 @@ check(p.writes.some(([k, v]) => k === "s_susbtn" && v === "1"), "the Right arrow
 ui.tick();
 check(btn.now[63] === 0x7c, "arrow LEDs: SUS on lights Right at once");
 midi(0xB0, 62, 127);           // the Left arrow: FX
-check(p.writes.some(([k, v]) => k === "s_fxbtn" && v === "1"), "the Left arrow presses s_fxbtn");
+check(p.writes.some(([k, v]) => k === "s_fx" && v === "0") && !p.writes.some(([k]) => k === "s_fxbtn"),
+      "the Left arrow writes FX off (s_fx 0), not a flip");
 ui.tick();
 check(btn.now[62] === 0, "arrow LEDs: FX off darkens Left at once");
 // the live keys win once settled: the plugin says FX on, SUS off

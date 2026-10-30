@@ -238,6 +238,7 @@ test("labels: no knob's name is cut on Schwung's grid (its proportional font, 29
     const cut = [];
     for (const l of Object.values(FULL.levels))
         for (const k of l.knobs) {
+            if (k === null) continue;                    // (a hole: the root's knobs 6-7, no label)
             const name = mi.getOrGuess(k).name || k;
             if (R.labelSqueezed(name)) cut.push(`${l.name}: ${name} -> ${R.labelForCell(name)}`);
         }

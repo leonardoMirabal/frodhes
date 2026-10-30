@@ -100,7 +100,8 @@ VALUE_MAX = 5                      # an enum option on the Move: the same five
 # screen, the docs, the mock-ups): four letters, the word's first syllable and the consonant after it (DORIAN DORN,
 # DEGREE DEGR), a digit kept (DIA 7TH DIA7). A new long name fails the generator until it is named here.
 VALUE_SHORT = {"DEGREE": "DEGR", "DORIAN": "DORN", "LYDIAN": "LYDN", "HARMON": "HARM", "MELODIC": "MELO",
-               "MPENTA": "MPNT", "DIATONIC": "DIAT", "DIA 7TH": "DIA7", "RANDOM": "RAND"}
+               "MPENTA": "MPNT", "DIATONIC": "DIAT", "DIA 7TH": "DIA7", "RANDOM": "RAND",
+               "SUSTAIN": "SUST", "FREEZE": "FREZ"}   # (the reverb's DECAY under INFINITE: rv_conf)
 HELP_MAX = 20                      # a help line: about 20 characters on the 128 px screen
 
 # the FM-1's pages that have no meaning on the Move (its knobs are direct, it has no screen or key lights of ours)
@@ -175,18 +176,30 @@ MAP_KEYS = ["m_at_cc", "m_at_lo", "m_at_hi", "m_pa_cc", "m_pa_lo", "m_pa_hi"]
 HIDDEN = ["s_susbtn", "s_fxbtn"]
 # the Move's levels: (key, title, the FM-1 pages it holds (their cards in order), extra keys after them). "VOICE"
 # stands for an engine's VOICE pages: one level per engine, VOICE 1 + 2, and VOICE 3 (VIBES' MOTOR) its own level.
+#
+# The first page (the user, 2026-10-30: a delay control there, the delay's MIX): knobs 1-5 as they were (TYPE SPREAD
+# SUS FX, then PAGES on Schwung's grid, PRESET in its place on Frodhes' own screen), DELAY on knob 8. Knobs 6 and 7
+# stay without a control (HOLE) because the overview's PRESET card draws the sound's whole name across them (up to
+# 16 characters, 95 px: it ends before knob 8's card at x 96)
+HOLE = None
 MOVE_LEVELS = [
-    ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_fx", "s_screen"]),
+    ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_fx", "s_screen", HOLE, HOLE, "p_delay"]),
     ("voice", "VOICE", ["VOICE"], []),
     ("comp", "COMPRESSOR", ["COMPRESSOR"], ["p_cmp_sw", "p_cmp_rel", "r_cmp_gr", "r_cmp_pk"]),
     ("drv_flt", "DRIVE/FILTER", ["DRIVE", "FILTER"], []),
     ("trm_pha", "TREM/PHASER", ["TREM/WAH", "PHASER"], []),
-    ("cho_dly", "CHORUS/DELAY", ["CHORUS", "DELAY"], []),
+    # (the user, 2026-10-30: DELAY has its own page, as on the FM-1; CHORUS/DELAY was one level of eight before)
+    ("chorus", "CHORUS", ["CHORUS"], []),
+    ("delay", "DELAY", ["DELAY"], []),
     ("reverb", "REVERB", ["REVERB", "REVERB 2"], []),
     # (the user, 2026-10-28: no FM-1 sequencer, arpeggiator, chords or scales on the Move, which has its own, and no
-    # BPM or CLOCK: the Move's tempo leads (MOVE_OWNS_SLOTS); no SEQUENCER, ARPEGGIO, CHORD or SCALE cards, no keys;
-    # move/move_bridge.h keeps them inert, MB_CC_DROP and mb_inert)
+    # BPM or CLOCK: the Move's tempo leads (MOVE_OWNS_SLOTS); no SEQUENCER, CHORD or SCALE cards, no keys;
+    # move/move_bridge.h keeps them inert, MB_CC_DROP and mb_inert. The user, 2026-10-30, reverses it for the
+    # arpeggiator ("also i miss to add the arpegiator, lets also added to move"): the ARPEGGIO level with the FM-1
+    # page's cards, its CCs 52-55 reach the app, and it steps on the Move's clock (F8 / FA / FC on cable 0) or, with
+    # no clock, on the Move's tempo. The sequencer, the chords, the scales, BPM and CLOCK stay off)
     ("tmp", "TEMPO", ["TEMPO"], []),
+    ("arp", "ARPEGGIO", ["ARPEGGIO"], []),
     ("lfo_set", "LFO/SETUP", ["LFO", "SETUP", "MIDI"], []),
     ("maps", "MAPPINGS", [], MAP_KEYS),
 ]
@@ -206,6 +219,12 @@ SHORT = {"EFFECT": None, "TREM SYNC": "TRSYNC", "PHA SYNC": "PHSYNC", "DLY SYNC"
 # parameters with no FM-1 card whose params.c label is a cryptic short form: their name on the Move (the FM-1's
 # manual's name)
 PARAM_NAME = {"P_SPREAD": "SPREAD"}
+# a second key for a parameter that another level shows under another name (key: (parameter, its name there)):
+# Schwung keeps one name a key (param_meta.mjs buildMetaIndex: the chain_params entry wins, and two levels that name
+# one key differently are a contract warning), so the first page's delay mix has a key of its own. p_delay: the
+# delay's MIX (P_DL_DEPTH) on the first page, named DELAY as on the FM-1's PERFORM list (ui.c PERF_T); the DELAY
+# level keeps p_dl_depth as MIX (the user, 2026-10-30)
+ALIAS = {"p_delay": ("P_DL_DEPTH", "DELAY")}
 # Frodhes' own screen's overview cards fit SCREEN_LABEL_MAX: a longer label is shown so there (its large card, a
 # knob touched, shows the whole label); a new long label fails the generator until it is named here
 SCREEN_SHORT = {"SPREAD": "SPRD", "THRESH": "THRSH", "ATTACK": "ATK", "MAKEUP": "MKUP", "FEEDBK": "FDBK",
@@ -410,7 +429,7 @@ def build(m):
             c = {k: v for k, v in item.items()}
             chain.append(c)
             crow.append(row)
-        if row["slot"].startswith("P_"):
+        if row["slot"].startswith("P_") and row["key"] not in ALIAS:   # (an alias is a second way in, not its home)
             reach.setdefault(row["slot"], where)
 
     def page_cards(lvl, title):
@@ -423,6 +442,9 @@ def build(m):
 
     def extras(lvl, keys):
         for k in keys:
+            if k is HOLE:                          # a knob left without a control (Schwung: an authored hole)
+                lvl["knobs"].append(None)
+                continue
             if k == SCREEN["key"]:                 # a screen of ours: a hierarchy item only (no value, no C row)
                 lvl["params"].append(dict(SCREEN))
                 lvl["knobs"].append(k)
@@ -434,6 +456,8 @@ def build(m):
                 continue
             if k in EXTRA:
                 item, row = extra_def(k)
+            elif k in ALIAS:
+                item, row = key_def(m, ALIAS[k][0], ALIAS[k][1], k)
             else:
                 slot = "P_" + k[2:].upper()
                 p = m["params"][slot]
@@ -510,6 +534,8 @@ def help_json(m, levels, reach):
     for k, lvl in levels.items():
         lines = []
         for i, key in enumerate(lvl["knobs"]):
+            if key is None:
+                continue
             item = next(p for p in lvl["params"] if p.get("key") == key)
             lines.append("K%d %s" % (i + 1, item["name"]))
         pages.append({"title": lvl["name"][:HELP_MAX], "lines": lines})
@@ -612,14 +638,20 @@ def screen_pages(levels):
     """the levels as Frodhes' own screen shows them: [{title, gate (ui_engine, -1 always shown), part (an engine's
     VOICE page 0, its next page 1, -1 not an engine page), root, knobs}], each knob {key, name, type, min, max, step,
     options, write, short (the overview card's label, <= SCREEN_LABEL_MAX)}; a canvas cell (PAGES) is no knob there,
-    and the first page gets the preset as a knob (PRSET)"""
+    and the first page gets the preset as a knob in the screen cell's place (PRESET, its name over the holes 6-7)"""
     out = []
     for lk, lvl in levels.items():
         gate = lvl.get("visible_if", {}).get("equals", -1)
         part = (1 if lk.count("_") == 2 else 0) if gate >= 0 else -1
         ks = []
         for key in lvl["knobs"]:
+            if key is None:                          # a knob with no control (HOLE): none on the screen either
+                ks.append(None)
+                continue
             it = next(p for p in lvl["params"] if p.get("key") == key)
+            if it["type"] == "canvas" and lk == "root":   # (the preset in the PAGES cell's place: knob 5 on both)
+                ks.append({"key": "preset", "name": "PRESET", "type": "preset"})
+                continue
             if it["type"] == "canvas" or it.get("access") == "read":   # (the GR cells: the screen draws its own meter)
                 continue
             k = {"key": key, "name": it["name"], "type": it["type"]}
@@ -635,9 +667,7 @@ def screen_pages(levels):
             if it.get("access") == "write":
                 k["write"] = True
             ks.append(k)
-        if lk == "root":
-            ks.append({"key": "preset", "name": "PRESET", "type": "preset"})
-        assert len(ks) <= 8, (lk, ks)
+        assert len(ks) <= 8 and ks[-1] is not None, (lk, ks)
         out.append({"title": lvl["name"], "gate": gate, "part": part, "root": lk == "root", "knobs": ks})
     return out
 
@@ -646,6 +676,20 @@ def gr_db10():
     """the gain-reduction meter's scale (COMPRESSOR): ui.c's GR_DB10, dB x 10 at each of its evenly spaced segments"""
     m = re.search(r"GR_DB10\[GR_SEGS\] = \{([^}]*)\}", read("ui.c"))
     return [int(x) for x in m.group(1).split(",")]
+
+
+def rv_conf():
+    """the reverb's DECAY under TYPE INFINITE (ui.c slot_text): SUSTAIN from RV_SUSTAIN_AT, FREEZE from RV_FREEZE_AT
+    (the input to the reverb closed: new notes play dry), the FM-1's words and their card forms (VALUE_SHORT); the
+    thresholds and the words from ui.c, never typed in here"""
+    ui = read("ui.c")
+    defs = {m.group(1): int(m.group(2)) for m in re.finditer(r"^\s*#define\s+(RV_\w+)\s+(\d+)u?\s*$", ui, re.M)}
+    case = re.search(r"case P_RV_DECAY:(.*?)break;", ui, re.S).group(1)
+    assert "RV_INF" in case and "RV_SUSTAIN_AT" in case and "RV_FREEZE_AT" in case, "ui.c's P_RV_DECAY text moved"
+    freeze, sustain = re.findall(r'p_strcpy\(v, "(\w+)"', case)
+    return {"type": "p_rv_type", "decay": "p_rv_decay", "inf": defs["RV_INF"], "sustain_at": defs["RV_SUSTAIN_AT"],
+            "freeze_at": defs["RV_FREEZE_AT"], "words": [sustain, freeze],
+            "short": [short_value(sustain), short_value(freeze)]}
 
 
 def canvas_js():
@@ -661,7 +705,7 @@ def canvas_js():
 
 
 def screen_js(levels):
-    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10())
+    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10(), rv=rv_conf())
     with open(UI_CORE) as f:
         core = f.read()
     head = ("// SPDX-License-Identifier: GPL-3.0-only\n"
@@ -682,7 +726,8 @@ INPUT_FILTER_MJS = "/data/UserData/schwung/shared/input_filter.mjs"          # i
 def ui_chain_js(levels):
     """Frodhes' own screen as the whole Move UI (Schwung's own-screen path, COMPONENT_EDIT): screen.js's closure with
     move/ui/chain_adapter.js inside it, which maps the canvas overlay onto globalThis.chain_ui"""
-    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10(), live_ms=SCREEN["fullscreen_live_ms"])
+    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10(), rv=rv_conf(),
+                live_ms=SCREEN["fullscreen_live_ms"])
     with open(UI_CORE) as f:
         core = f.read()
     with open(CHAIN_ADAPTER) as f:

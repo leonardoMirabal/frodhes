@@ -104,17 +104,19 @@ def test_screen_pages_are_the_levels():
     for p, (lk, lvl) in zip(pages, HIER.items()):
         it = lambda k: next(i for i in lvl["params"] if i.get("key") == k)    # noqa: E731
         # (a canvas cell is no knob on the screen; nor the GR meter's read-only cells: the screen draws its own meter)
-        knobs = [k for k in lvl["knobs"] if it(k)["type"] != "canvas" and it(k).get("access") != "read"]
-        got = [k["key"] for k in p["knobs"] if k["type"] != "preset"]
+        knobs = [k for k in lvl["knobs"] if k is not None and it(k)["type"] != "canvas" and it(k).get("access") != "read"]
+        got = [k["key"] for k in p["knobs"] if k is not None and k["type"] != "preset"]
         assert got == knobs, lk
         assert p["gate"] == lvl.get("visible_if", {}).get("equals", -1)
         for k in p["knobs"]:
-            if k["type"] == "preset":
+            if k is None or k["type"] == "preset":
                 continue
             c = CHAIN[k["key"]]
             assert k["name"] == c["name"] and k["type"] == c["type"]
             assert k.get("options") == c.get("options") and k.get("min") == c.get("min")
-    assert pages[0]["root"] and pages[0]["knobs"][-1]["type"] == "preset"
+    # (the PRESET card in the screen cell's place, its name over the holes 6-7, DELAY's mix on knob 8: 2026-10-30)
+    assert pages[0]["root"] and [k and k["type"] for k in pages[0]["knobs"][4:]] == ["preset", None, None, "int"]
+    assert pages[0]["knobs"][7]["key"] == "p_delay" and pages[0]["knobs"][7]["name"] == "DELAY"
 
 
 def test_screen_cell_on_the_first_page():
@@ -129,7 +131,7 @@ def test_screen_cell_on_the_first_page():
     assert '"sus_cc":%d' % gen.SUS_BTN_CC in js
 
 
-FX_PAGES = ("COMPRESSOR", "DRIVE/FILTER", "TREM/PHASER", "CHORUS/DELAY", "REVERB", "LFO/SETUP")
+FX_PAGES = ("COMPRESSOR", "DRIVE/FILTER", "TREM/PHASER", "CHORUS", "DELAY", "REVERB", "LFO/SETUP")
 FX_PARAMS = ("P_CMP_", "P_DRV_", "P_DRIVE", "P_FL_", "P_TW_", "P_PH_", "P_CP_", "P_DL_", "P_RV_", "P_LFO_")
 
 
