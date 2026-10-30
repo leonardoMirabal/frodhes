@@ -223,7 +223,8 @@ def test_cli(fake):
 def test_d2_sets_the_presets(fake, tmp_path):
     import move_hil as mh
     r = mh.FakeEchoRig()
-    code = mh.d2(r, str(tmp_path), ("rhodes",), ws=fake.url, stress_secs=8.0, out=lambda s: None)
+    code = mh.d2(r, str(tmp_path), ("rhodes",), ws=fake.url, stress_secs=8.0, out=lambda s: None,
+                 clock=mh.FakeRig(tap=True))           # (usb-clock over the tap: none comes over USB-C)
     assert fake.preset == mh.D2_PRESET["rhodes"]
     rows = json.load(open(tmp_path / "report.json"))["rows"]
     assert rows[0]["test"] == "ws" and rows[0]["ok"] and "frodhes" in rows[0]["numbers"], rows[0]

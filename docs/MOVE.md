@@ -234,7 +234,18 @@ The sequencer's, the arpeggiator's and the chords' CCs (43-46, 52-63) do nothing
 Start / Stop, or, when no clock comes, from the Move's transport and beat position. The synced rates (TRSYN,
 PHSYN, DLSYN, the chorus SYNC, the VIBES motor's SYNC) and the LFO's SYNC lock to it. While the Move is stopped,
 they use the Move's tempo setting (120 BPM if the Move reports none). Frodhes has no BPM or CLOCK setting on the
-Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet verified on a device)*
+Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. When the Move starts, a synced LFO takes
+about 2 s to come into phase with the beat (it moves at most 1/8 faster or slower, so there is no jump).
+
+**MIDI clock sent to the Move over USB-C does not reach Frodhes.** Schwung passes only the channel messages
+(notes, CCs, pitch bend, pressure, program change) from USB-C to a slot. The clock bytes (F8, Start, Continue,
+Stop) that a slot gets come from the Move's own transport. To play Frodhes in time with a computer or another
+device, sync the Move to it: Frodhes then follows the Move.
+
+Tested on a device, 2026-10-30: with the Move playing at 82 BPM, the Move's clock reached Frodhes at 32.8 pulses a
+second (82 x 24 / 60), with one Start and one Stop. The bridge made no pulses of its own, and the tremolo's dips
+came every 366 ms (1/8 at 82 BPM). Two Frodhes, in slots 1 and 2, both got every pulse. The clock sent over
+USB-C never arrived: the plugin counted 0 pulses.
 
 ## What differs from the FM-1
 
@@ -324,7 +335,8 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
 - `tools/move_hil.py` and `tools/device_null.py` are the device tests (CPU, crackle, the null test against the host).
   Over USB-C, as the FM-1 is tested: `usb-devices`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`
   (MIDI to the Move's Standalone port, its USB audio recorded, the FM-1's analysis; `--fake` runs them against a
-  model of the device). On the Move first: Settings, USB-C audio out = Main Out (the Move sets it back to Mic at
+  model of the device). `usb-clock` always plays over the tap: no MIDI clock reaches a slot from USB-C (see
+  [MIDI and tempo](#midi-and-tempo)). On the Move first: Settings, USB-C audio out = Main Out (the Move sets it back to Mic at
   every boot). `d2` runs them all for each engine (`usb-clock` once, with the Rhodes) and writes one table
   (`summary.md`). First it runs the preflight (below), then for each engine it checks over Schwung's WebSocket
   (`tools/move_ws.py`) that slot 1 holds Frodhes and loads the engine's preset there. A failed preflight stops
@@ -427,12 +439,17 @@ Move, and its tempo is kept within the FM-1's range of 40 to 240 BPM. *(not yet 
   `:dV` sends CC 84 V first (the drive's TYPE). The callbacks run back to back on a core the Move shares, so the
   bench's tail is higher than the plugin's own ring in `d2`. Use it to compare cases within one run.
 - `clock-probe` shows where the clock comes from when the Move's own transport plays. The tool asks for Play
-  on the Move, waits until the transport runs, records 10 s, then asks for Stop. Meanwhile the plugin logs its
-  counters to `stats.log` in its folder, 10 times a second, while `dev_stats_log` is 1. The counters are the
+  on the Move, waits until the transport runs, records 10 s, then asks for Stop. With `--auto` the tool presses
+  Play and Stop itself, through Schwung's test bus (`tools/move_ui_drive.py`), and sets the bus back afterwards.
+  Meanwhile the plugin logs its counters to `stats.log` in its instance's folder (`inst/<k>/`), 10 times a second,
+  while `dev_stats_log` is 1. The counters are the
   F8, FA and FC that came in, the pulses the bridge made itself, the host's transport and tempo, and the app's
   tempo. It passes when the Move's own F8 arrive at the host's tempo and the bridge makes no pulses after the
   first 3 s. It fails when only the bridge's fallback runs, or when the transport never ran.
-- `usb-clock` sends MIDI clock (Start, then F8) at 100 BPM, or `--bpm`. The tremolo is on (AM, full depth,
+- `usb-clock` sends MIDI clock (Start, then F8) at 100 BPM, or `--bpm`, through the plugin's own player (the
+  tap), on either path. Schwung gives a slot no clock from USB-C, so the same clock sent there was never seen:
+  that take read a jitter of 82 ms and failed (2026-10-30). A rig whose clock cannot reach the slot is refused
+  before any take, and the fake Move drops the clock over USB-C too. The tremolo is on (AM, full depth,
   SYNC 1/8) and one Rhodes note is held. Its level then dips every half beat. The test finds the dips from 3 s on
   and fits a straight line through them. The period must be within 1% of the clock's, and the jitter must stay
   under 4 ms. The synced LFO catches up with a new clock gradually, which takes about 2 s from 120 to 100 BPM,
