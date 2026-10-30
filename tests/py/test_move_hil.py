@@ -92,7 +92,7 @@ def test_device_null_proof():
 
 # ---- over USB-C: the tests against the offline model of the Move (FakeRig); the device runs are the main session's
 def _fake(tmp_path, fn, *inject, **kw):
-    r = mh.FakeRig(inject=inject)
+    r = mh.FakeRig(inject=inject, tap=fn is mh.usb_clock)     # (the clock: over the tap, as on the device)
     return fn(r, str(tmp_path), out=lambda s: None, **kw)
 
 
@@ -124,7 +124,7 @@ def test_usb_failures_found(tmp_path):
     assert not ok and "pedal does not hold" in rep["verdict"], rep
     ok, rep = _fake(tmp_path, mh.usb_sus, ("loud", 5.0))
     assert not ok and "louder after key-up" in rep["verdict"], rep
-    ok, rep = mh.usb_clock(mh.FakeRig(), str(tmp_path), bpm=100.0, secs=4.0, out=lambda s: None)
+    ok, rep = mh.usb_clock(mh.FakeRig(tap=True), str(tmp_path), bpm=100.0, secs=4.0, out=lambda s: None)
     assert not ok and "no tremolo" in rep["verdict"], rep
 
 
@@ -135,6 +135,35 @@ def test_usb_clock_without_the_clock_fails(tmp_path):
     assert not ok and "jitter" in rep["verdict"], rep
     ok, rep = _fake(tmp_path, mh.usb_clock, bpm=137.0)
     assert ok and abs(rep["bpm_seen"] - 137) < 1.4, rep
+
+
+def test_usb_clock_never_over_usb_c(tmp_path):
+    """Schwung gives a slot no realtime byte from USB-C (cable 2: channel messages only; the Move's own transport, cable
+    0, is broadcast), so the clock sent there never reaches Frodhes: the device's usb-clock over USB-C read jitter 82
+    ms and the plugin rt_f8 0 (2026-10-30). The fake models it (its tremolo then runs free), usb_clock refuses a
+    USB-C rig before any take, and the command, d2 and the fake d2 run it over the tap"""
+    r = mh.FakeRig()
+    assert not r.CLOCK_IN and not mh.UsbRig.CLOCK_IN and mh.TapRig.CLOCK_IN
+    ok, rep = mh.usb_clock(r, str(tmp_path / "u"), bpm=100.0, out=lambda s: None)
+    assert not ok and "not over USB-C" in rep["verdict"] and r.log == [], rep
+    # (the model itself: the realtime bytes sent over USB-C are dropped, the tremolo stays free at 120 BPM)
+    mh._prep(r, None, **{"c%d" % c: v for c, v in mh.CLOCK_CCS})
+    ev = mh.clock_events(100.0, 0.1, 11.6) + [(2.8, "on", 60, 100), (11.4, "off", 60, 0)]
+    a = mh.FakeRig(tap=True)
+    a.state = dict(r.state)
+    x_usb, x_tap = r.rec(12.0, ev)["x"], a.rec(12.0, ev)["x"]
+    assert np.abs(x_usb - x_tap).max() > 1000                    # (the same take: only the clock differs)
+    a2 = mh.clock_rig(None, r, str(tmp_path), {})
+    assert isinstance(a2, mh.FakeRig) and a2.CLOCK_IN
+    tap = mh.FakeRig(tap=True)
+    assert mh.clock_rig(None, tap, str(tmp_path), {}) is tap
+    code = mh.d2(mh.FakeEchoRig(), str(tmp_path / "d"), ("rhodes",), stress_secs=4.0, out=lambda s: None,
+                 only=["usb-clock"])
+    rep = __import__("json").load(open(tmp_path / "d" / "report.json"))
+    row = next(w for w in rep["rows"] if w["test"] == "usb-clock")
+    assert code == 1 and "not over USB-C" in row["verdict"], row
+    r = run("usb-clock", "--fake", "--out", str(tmp_path / "c"))
+    assert r.returncode == 0 and "usb-clock over" in r.stdout and "PASS" in r.stdout, r.stdout[-2000:]
 
 
 def test_usb_stress_detectors(tmp_path):
@@ -201,7 +230,8 @@ def test_d2_fake(tmp_path):
     """d2 on the fake Move: every engine's tests in order (usb-host on the engine's preset, three keys; usb-clock once,
     with the Rhodes), one table;
     a sound at idle stops the run at the first preflight (exit 2) and says why"""
-    code = mh.d2(mh.FakeEchoRig(), str(tmp_path), ("rhodes", "marimba"), stress_secs=8.0, out=lambda s: None)
+    code = mh.d2(mh.FakeEchoRig(), str(tmp_path), ("rhodes", "marimba"), stress_secs=8.0, out=lambda s: None,
+                 clock=mh.FakeRig(tap=True))
     md = open(tmp_path / "summary.md").read()
     rep = __import__("json").load(open(tmp_path / "report.json"))
     tests = [(w["engine"], w["test"]) for w in rep["rows"]]
@@ -274,6 +304,33 @@ def test_clock_probe_fake(tmp_path):
 def test_parse_stats():
     rows = mh.parse_stats("ms=5 rt_f8=3 host_bpm10=1200 bpm10=1200\ngarbage\nms=6 rt_f8=x\n")
     assert rows == [{"ms": 5, "rt_f8": 3, "host_bpm10": 1200, "bpm10": 1200}]
+
+
+def test_stats_link_reads_the_instance_folder():
+    """under the loader the plugin writes stats.log in its instance's folder (inst/<k>/): the probe reads and removes
+    every instance's (and the module folder's, an older build's) and keeps the longest; it read the module folder's
+    only, and found nothing (2026-10-30)"""
+    link = object.__new__(mh.StatsLink)
+    cmds = []
+    files = {mi.INST + "/0/stats.log": "ms=5 rt_f8=1\n", mi.INST + "/1/stats.log": "ms=5 rt_f8=1\nms=6 rt_f8=2\n"}
+
+    def ssh(cmd):
+        cmds.append(cmd)
+        return "".join("== %s\n%s" % kv for kv in files.items()) if cmd.startswith("for f in") else ""
+    link._ssh = ssh
+    rows = link.read()
+    assert rows == [{"ms": 5, "rt_f8": 1}, {"ms": 6, "rt_f8": 2}], rows
+    assert mi.INST + "/*/stats.log" in cmds[0] and link.path == mh.STATS_PATHS
+    assert mh.pick_stats("") == [] and mh.pick_stats("== a\ngarbage\n") == []
+
+
+def test_clock_probe_auto_presses(tmp_path):
+    """--auto: the tool presses Play, then Stop, itself (once each, at the prompts)"""
+    link = mh.FakeStatsLink("real")
+    ok, rep = mh.clock_probe(link, str(tmp_path), sleep=lambda s: None, out=lambda s: None, press=link.press)
+    assert ok and link.pressed == ["play", "stop"], (link.pressed, rep)
+    r = run("clock-probe", "--fake", "--auto", "--out", str(tmp_path / "cli"))
+    assert r.returncode == 0 and "PASS" in r.stdout, r.stdout[-2000:]
 
 
 def test_clock_probe_cli_fake(tmp_path):

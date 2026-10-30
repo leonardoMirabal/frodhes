@@ -26,8 +26,11 @@ audio in (Core Audio), the FM-1's analysis (onsets, levels, FFT, the crackle det
     tools/move_hil.py usb-sus [--note 60]    CC 64: a damped note dies, a pedalled one rings, the pedal let up damps
                                              it, never louder after key-up (the FM-1's sustain preflight)
     tools/move_hil.py usb-clock [--bpm 100]  MIDI clock (Start + F8) with the tremolo synced at 1/8 on a held Rhodes
-                                             note: its period against the clock's, the jitter
-    tools/move_hil.py clock-probe            the user presses Play on the Move, then Stop (the tool says when): do the
+                                             note: its period against the clock's, the jitter. Always over the tap
+                                             (dev_play): Schwung gives a slot no MIDI clock from USB-C, only the
+                                             Move's own transport (UsbRig.CLOCK_IN)
+    tools/move_hil.py clock-probe [--auto]   the user presses Play on the Move, then Stop (the tool says when; --auto:
+                                             the tool presses them, Schwung's test bus): do the
                                              Move's own F8 / FA / FC reach the slot, or only the bridge's fallback
                                              (mb_clock_block)? The plugin's dev_stats, logged while dev_stats_log is 1
     tools/move_hil.py usb-stress [--engine rhodes --secs 60 --nv 16 --bpm 0]   the worst case: every voice, every
@@ -239,8 +242,14 @@ def note_hz(n, a4=440.0):
 class UsbRig(hs.RigBase):
     """the Move over USB-C: a mido output on ch (1-based) and the Move's USB audio input (hil_scan's persistent
     recorder, Capture). rec(dur, events) plays the events on time while recording: {"x": (n, 2) LSB float at "sr"
-    (the device's own rate), "sr", "xruns"}. Kinds: on / off / cc / pc, rt (a realtime byte: 0xF8, 0xFA, 0xFC)"""
+    (the device's own rate), "sr", "xruns"}. Kinds: on / off / cc / pc, rt (a realtime byte: 0xF8, 0xFA, 0xFC).
+    CLOCK_IN False: Schwung (1.8) hands a slot only the channel messages of USB-C's cable 2 (host/shadow_midi.c
+    shadow_dispatch_*: CIN 0x08-0x0E); the realtime bytes a slot gets are the Move's own transport, cable 0
+    (schwung_shim.c "Broadcast Move's internal transport clock"). The F8 / FA / FC sent here reach the Move, never
+    Frodhes (the plugin's rt_f8 stays 0, 2026-10-30): the clock is tested over the tap (TapRig) or by the Move's
+    own transport (clock-probe)"""
     fake = False
+    CLOCK_IN = False
 
     def __init__(self, midi=None, audio=None, ch=USB_CH):
         import mido
@@ -320,10 +329,12 @@ class FakeRig(UsbRig):
     idle: the preflight fails), noclock (the clock ignored), hiss (a steady -54.6 dBFS floor on Main Out, idle too),
     foreign (a noise burst with every note-on on Main Out, not in the tap: a sampler on the track), mic (the room at
     idle). The tap (begin / collect, the preflight's): the take before the trim and the mix (FAKE_MIX), FAKE_TAP_LEAD
-    s ahead"""
+    s ahead. As Schwung does, the realtime bytes sent over USB-C never reach the slot (UsbRig.CLOCK_IN); tap=True
+    models the tap path instead (TapRig: they do)"""
     fake = True
 
-    def __init__(self, inject=(), sr=FAKE_SR, seed=0):
+    def __init__(self, inject=(), sr=FAKE_SR, seed=0, tap=False):
+        self.CLOCK_IN = bool(tap)
         self.ch, self.sr, self.inject, self.log = USB_CH, sr, list(inject), []
         self.rng = np.random.default_rng(seed)
         self.mido, self.port_name, self.audio_name = hs._Mido, "Fake Move Standalone Port", "Fake Move"
@@ -405,8 +416,8 @@ class FakeRig(UsbRig):
             x[i0:] += amp * env * att * (np.sin(2 * np.pi * f * (ts - t1)) + 0.3 * np.sin(4 * np.pi * f * (ts - t1)))
         st = self.state
         if 43 <= st.get(17, 0) <= 85 and st.get(21, 0) >= 64:           # the tremolo, AM
-            f8 = [] if any(k == "noclock" for k, _ in self.inject) else [
-                t for t, k, a, b in ev if k == "rt" and a == 0xF8]
+            f8 = [] if any(k == "noclock" for k, _ in self.inject) or not self.CLOCK_IN else [
+                t for t, k, a, b in ev if k == "rt" and a == 0xF8]          # (over USB-C, as Schwung: none arrive)
             per = FAKE_SYNC.get(st.get(20, 0) * 14 // 127)                 # (F8 per cycle; None: FREE)
             if per and len(f8) > 1:                                        # (the phase: the F8 count, between them
                 ph = np.interp(tt, f8, np.arange(len(f8)) / per)           # at the clock's rate; before the first
@@ -505,8 +516,10 @@ class TapRig(UsbRig):
     the slot's volume, the Move's mix, its master and its USB-C setting). What the tests send before a take (the
     panel's CCs, a program change) leads the take, as host_phrase's do; rec() returns the take from TAP_PRE_MS on.
     fetch(take) -> (wav, json) | None (scp_fetch; a test passes its own). cpu() -> the timer ring's text, the
-    file then deleted (scp_cpu; None: no CPU read)"""
+    file then deleted (scp_cpu; None: no CPU read). CLOCK_IN: the schedule's F8 / FA / FC reach the app (the
+    bridge plays them itself)"""
     fake = False
+    CLOCK_IN = True
 
     def __init__(self, url, fetch, ch=USB_CH, slot=0, wait=10.0, cpu=None):
         import move_ws
@@ -966,7 +979,14 @@ def usb_clock(r, d, bpm=100.0, secs=12.0, note=60, engine=None, out=print):
     from 2.8 s: a trough of its level every half beat. The troughs from CLOCK_T0 against a straight line: the period
     (within 1 % of the clock's) and the jitter (4 ms at most). The tremolo's LFO is the effects' code, the same for
     every engine, so the take is the Rhodes' (it holds a note longest; engine is not used). The default 100 BPM is
-    not the internal 120: a tremolo that ignores the clock fails on the period and the jitter"""
+    not the internal 120: a tremolo that ignores the clock fails on the period and the jitter. A rig whose clock
+    never reaches the slot (UsbRig.CLOCK_IN: Schwung's USB-C input) is refused before any take; d2 and the command
+    then run the test over the tap (clock_rig)"""
+    if not getattr(r, "CLOCK_IN", True):
+        rep = {"bpm": bpm, "verdict": "FAIL: not over USB-C: Schwung gives a slot no MIDI clock from USB-C (only the "
+                                      "Move's own transport); run usb-clock over the tap (--path tap)"}
+        out("clock %.1f BPM: %s" % (bpm, rep["verdict"]))
+        return False, rep
     _prep(r, None, **{"c%d" % c: v for c, v in CLOCK_CCS})
     ev = clock_events(bpm, 0.1, secs - 0.4) + [(2.8, "on", note, 100), (secs - 0.6, "off", note, 0)]
     tk = r.rec(secs, ev)
@@ -1022,13 +1042,32 @@ def parse_stats(text):
     return [r for r in rows if "ms" in r and "rt_f8" in r]
 
 
+STATS_PATHS = "%s/*/%s %s/%s/%s" % (mi.INST, STATS_LOG, mi.MODS, mi.MODULE_ID, STATS_LOG)
+# (the plugin writes stats.log in its own folder: under the loader each instance's inst/<k>/, before it the module
+# folder; the probe read only the module folder's, so it found nothing under the loader, 2026-10-30)
+
+
+def pick_stats(text):
+    """the read of every stats.log ("== PATH" before each file's lines) -> the rows of the longest (the slot's
+    instance: the one logging, dev_stats_log is set on its slot only)"""
+    best, cur = [], []
+    for ln in text.splitlines() + ["== end"]:
+        if ln.startswith("== "):
+            rows = parse_stats("\n".join(cur))
+            best, cur = (rows if len(rows) > len(best) else best), []
+        else:
+            cur.append(ln)
+    return best
+
+
 class StatsLink:
-    """the plugin's dev_stats over Schwung's WebSocket (dev_stats_log) and ssh (stats.log in the module folder)"""
+    """the plugin's dev_stats over Schwung's WebSocket (dev_stats_log) and ssh (stats.log in the instance's folder,
+    STATS_PATHS)"""
+    path = STATS_PATHS
 
     def __init__(self, url, host, slot=0):
         import move_ws
         self.remote, self.host, self.slot = move_ws.Remote(url), host, slot
-        self.path = "%s/%s/%s" % (mi.MODS, mi.MODULE_ID, STATS_LOG)
 
     def _ssh(self, cmd):
         import subprocess
@@ -1041,7 +1080,8 @@ class StatsLink:
         self.remote.pump(0.3)
 
     def read(self):
-        return parse_stats(self._ssh("cat %s 2>/dev/null" % self.path))
+        return pick_stats(self._ssh('for f in %s; do [ -f "$f" ] && { echo "== $f"; cat "$f"; }; done; true'
+                                    % self.path))
 
     def stop(self):
         try:
@@ -1063,9 +1103,13 @@ class FakeStatsLink:
         self.c = dict(ms=0, rt_f8=0, rt_fa=0, rt_fb=0, rt_fc=0, f8_synth=0, host_run=0, host_bpm10=int(bpm * 10),
                       bpm10=1200, clklock=0)
         self.acc = 0.0
+        self.pressed = []
 
     def start(self):
         self.started = True
+
+    def press(self, what):                       # (--auto: the tool's own Play / Stop)
+        self.pressed.append(what)
 
     def read(self):
         self.reads += 1
@@ -1141,14 +1185,45 @@ def clock_verdict(rows):
     return False, rep
 
 
-def clock_probe(link, d, play_wait=180.0, play_secs=10.0, stop_wait=180.0, poll=1.0, sleep=time.sleep, out=print):
+class PlayButton:
+    """--auto: the Move's Play button pressed for the user, through Schwung's test bus (tools/move_ui_drive.py: arm
+    sets inject_as_hardware and starts schwung-testd, the previous values kept; disarm puts them back). Play (CC 85)
+    toggles the transport: press("play") and press("stop") are the same tap"""
+
+    def _drive(self, *words):
+        import subprocess
+        r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "move_ui_drive.py"), *words],
+                           capture_output=True, text=True)
+        if r.returncode:
+            raise RuntimeError("move_ui_drive %s: %s" % (" ".join(words), (r.stderr or r.stdout).strip()))
+        return r.stdout
+
+    def __enter__(self):
+        self._drive("arm")
+        return self
+
+    def press(self, what):
+        self._drive("seq", "tap:85")
+
+    def __exit__(self, *exc):
+        self._drive("disarm")
+        return False
+
+
+def clock_probe(link, d, play_wait=180.0, play_secs=10.0, stop_wait=180.0, poll=1.0, sleep=time.sleep, out=print,
+                press=None):
     """dev_stats_log on; "PRESS PLAY NOW" until the transport runs (play_wait s at most), play_secs of it, "PRESS STOP
-    NOW" until it stops (stop_wait s); the log off and read; clock_verdict. (ok, report); stats.log kept in d"""
+    NOW" until it stops (stop_wait s); the log off and read; clock_verdict. (ok, report); stats.log kept in d.
+    press(what): the tool presses Play / Stop itself (--auto: PlayButton), once each"""
     import json
 
     def say(s):
         out(s)
         sys.stdout.flush()
+        if press and s.startswith(">>> PRESS PLAY"):
+            press("play")
+        elif press and s.startswith(">>> PRESS STOP"):
+            press("stop")
 
     def running(rows):
         return bool(rows) and len(rows) > 1 and (rows[-1].get("host_run") or rows[-1]["rt_f8"] > rows[-2]["rt_f8"]
@@ -2061,6 +2136,18 @@ SAY["mic"], SAY["playing"] = MIC_SAY, PLAY_SAY
 USB_CMDS = ("usb-devices", "usb-host", "usb-note", "usb-vel", "usb-sus", "usb-clock", "usb-stress")
 
 
+def clock_rig(a, r, d, chan):
+    """the rig usb-clock plays on: r itself when its clock reaches the slot (the tap), else the tap over Schwung's
+    WebSocket (a fake: FakeRig(tap=True)); None when there is none (--ws none): usb_clock then refuses r"""
+    if getattr(r, "CLOCK_IN", True):
+        return r
+    if r.fake:
+        return FakeRig(inject=getattr(r, "inject", ()), tap=True)
+    if a.ws == "none":
+        return None
+    return TapRig(a.ws, scp_fetch(a.host, os.path.join(d, "tap")), chan["plugin"])
+
+
 def usb_main(a):
     import json
     if a.cmd == "usb-host" and a.analyze:            # (a saved run, offline: no device)
@@ -2089,9 +2176,12 @@ def usb_main(a):
         r = UsbRig(a.midi, a.audio, chan["send"])
     print("MIDI %s (channel %d), audio %s; takes -> %s" % (r.port_name, r.ch, r.audio_name, d), flush=True)
     e = a.engine if a.engine in ENGINE_CCS else None
+    cr = clock_rig(a, r, d, chan) if a.cmd == "usb-clock" else r
+    if cr is not r and cr is not None:
+        print("usb-clock over %s: Schwung gives a slot no MIDI clock from USB-C" % cr.port_name, flush=True)
     fn = {"usb-host": lambda: usb_host(r, d, a.program), "usb-note": lambda: usb_note(r, d, a.note, a.vel, e),
           "usb-vel": lambda: usb_vel(r, d, a.note, engine=e),
-          "usb-sus": lambda: usb_sus(r, d, a.note, engine=e), "usb-clock": lambda: usb_clock(r, d, a.bpm or 100.0, engine=e),
+          "usb-sus": lambda: usb_sus(r, d, a.note, engine=e), "usb-clock": lambda: usb_clock(cr or r, d, a.bpm or 100.0, engine=e),
           "usb-stress": lambda: usb_stress(r, d, a.engine if a.engine != "all" else "rhodes", a.secs, a.nv, a.bpm)}
 
     def run():
@@ -2357,10 +2447,12 @@ class _Stop(Exception):
     pass
 
 
-def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, only=None, out=print, pre=None):
+def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, only=None, out=print, pre=None,
+       clock=None):
     """per engine: the slot's module and preset over Schwung's WebSocket (ws: its URL, None: skipped), the preflight
     (a failure stops the whole run: the stream is not the Move's Main Out), usb-host on the engine's preset, usb-note
-    on three keys, usb-vel, usb-sus, usb-clock (once a run: with the Rhodes engine, else the first), usb-stress; each
+    on three keys, usb-vel, usb-sus, usb-clock (once a run: with the Rhodes engine, else the first; on the rig clock,
+    default r: over USB-C it is the tap, clock_rig, as no MIDI clock reaches a slot from USB-C), usb-stress; each
     test's takes and report.json in d/<engine>/<test>/, the table in d/summary.md, everything in d/report.json. Over the tap with a CPU read (TapRig cpu): the cpu row,
     every callback's time while usb-stress plays (the worst case), against U12. hq 0 / 1 (the tap): the HQ switch
     set first (p_hq; None: as the plugin has it). only: the test names to run (a name or its prefix, "usb-note" for all
@@ -2429,7 +2521,7 @@ def d2(r, d, engines=D2_ENGINES, ws=None, stress_secs=60.0, bpm=100.0, hq=None, 
                       ("usb-sus", lambda: usb_sus(r, sub("usb-sus"), engine=e, out=quiet)),
                       ("usb-stress", lambda: usb_stress(r, sub("usb-stress"), e, stress_secs, out=quiet))]
             if e == (engines[0] if "rhodes" not in engines else "rhodes"):    # (the effects' clock: once a run)
-                tests.insert(-1, ("usb-clock", lambda: usb_clock(r, sub("usb-clock"), bpm, out=quiet)))
+                tests.insert(-1, ("usb-clock", lambda: usb_clock(clock or r, sub("usb-clock"), bpm, out=quiet)))
             if e == "rhodes" and hq == 1 and tap_cpu:
                 tests.append(("usb-restrike", lambda: usb_restrike(r, sub("usb-restrike"), stress_secs / 2,
                                                                    out=quiet)))
@@ -2693,6 +2785,8 @@ def main(argv=None):
     ap.add_argument("--secs", type=float, default=60.0, help="usb-stress: the take's length")
     ap.add_argument("--nv", type=int, default=MOVE_VOICES, help="usb-stress: voices per chord")
     ap.add_argument("--out", help="usb-*: the folder for the takes and report.json")
+    ap.add_argument("--auto", action="store_true",
+                    help="clock-probe: press Play and Stop on the Move itself (Schwung's test bus, move_ui_drive.py)")
     ap.add_argument("--no-preflight", action="store_true",
                     help="usb-*, d2, usb-levels: skip the preflight (Main Out idle, Main Out against the tap)")
     ap.add_argument("--fake", action="store_true", help="usb-*: the offline model of the Move (no device)")
@@ -2750,12 +2844,17 @@ def _main(a):
         only = [x for x in (a.tests or "").split(",") if x] or None
         pre = None if a.no_preflight else (lambda: preflight_cmd(a, os.path.join(d, "preflight"), chan, srep,
                                                                  u=r if not isinstance(r, TapRig) else None))
-        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 100.0, a.hq, only, pre=pre)
+        return d2(r, d, engines, None if a.ws == "none" else a.ws, a.secs, a.bpm or 100.0, a.hq, only, pre=pre,
+                  clock=clock_rig(a, r, d, chan))
     if a.cmd == "clock-probe":
         d = a.out or os.path.join(OUT, stamp() + "-clock-probe")
         if a.fake:
             src = (a.inject or ["real"])[0]
-            ok, _ = clock_probe(FakeStatsLink(src), d, sleep=lambda s: None)
+            link = FakeStatsLink(src)
+            ok, _ = clock_probe(link, d, sleep=lambda s: None, press=link.press if a.auto else None)
+        elif a.auto:
+            with PlayButton() as pb:
+                ok, _ = clock_probe(StatsLink(a.ws, a.host), d, press=pb.press)
         else:
             ok, _ = clock_probe(StatsLink(a.ws, a.host), d)
         return 0 if ok else 1
