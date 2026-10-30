@@ -68,7 +68,7 @@ and what differs from the FM-1: [docs/MOVE.md](docs/MOVE.md).
 
 <p align="center">
   <img src="docs/manual/img/move/move-knobs-compressor.png?v=8f0e4550" width="384" alt="Schwung's COMPRESSOR page on the Move: six knobs, and the gain-reduction meter in the place of knobs 7 and 8">
-  <img src="docs/manual/img/move/move-pages.png?v=e463578b" width="384" alt="Frodhes' own screen on the Move (PAGES)">
+  <img src="docs/manual/img/move/move-pages.png?v=00207b5b" width="384" alt="Frodhes' own screen on the Move (PAGES)">
 </p>
 
 ## Other keyboards: the SMK-37 (experimental)
