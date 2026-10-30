@@ -110,7 +110,8 @@ elif cmd == "seq":
             sys.stdout.flush()
         elif w.startswith(("dump:", "load:")):
             # dump:SLOT:KEY:NAME / load:SLOT:KEY:NAME: a value too long for a line (the state) to / from BENCH/NAME
-            slot, key, name = w[5:].split(":", 2)
+            slot, rest = w[5:].split(":", 1)
+            key, name = rest.rsplit(":", 1)          # (the key may hold a colon: synth:state)
             ask("SLOT " + slot)
             cmd = "DUMP_PARAM_FILE" if w.startswith("dump:") else "SET_PARAM_FILE"
             print("%%s %%s:%%s %%s" %% ("GOT" if cmd[0] == "D" else "SET", slot, key,
@@ -174,6 +175,11 @@ def expand(op):
         return out
     if k == "touch":
         return [pkt(0x90, int(p[1]), 127 if int(p[2]) else 0), "sleep:40"]
+    if k == "note":                                # note:N:V: a pad (68-99) pressed at V as the hardware sends it; V 0
+        n, v = int(p[1]), int(p[2])                # its release (0x80)
+        return [pkt(0x90, n, v) if v else pkt(0x80, n, 0)]
+    if k == "pa":                                  # pa:N:V: the pad's pressure (poly aftertouch), as the pads send it
+        return [pkt(0xA0, int(p[1]), int(p[2]))]
     if k == "jog":
         d = int(p[1])
         out = []

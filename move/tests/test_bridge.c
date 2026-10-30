@@ -338,6 +338,25 @@ static int api_tests(const char *so)
         render(in, 4);
         CHECK(stat_of(in, "midi_out") - n0 == 3, "pressure and bend passed on (%u)", stat_of(in, "midi_out") - n0);
     }
+    {   /* the Move's Full Velocity echo (device 2026-10-30: "90 60 20" then "90 60 127" in the same ms): the 127 copy
+         * is dropped, the played velocity stays; a 127 after a block gap, a 127 played as such, and a re-strike after
+         * a note-off all still play */
+        uint8_t on[3] = { 0x90, 72, 20 }, echo[3] = { 0x90, 72, 127 }, off[3] = { 0x80, 72, 0 };
+        unsigned d0 = stat_of(in, "echo_drop");
+        n0 = stat_of(in, "midi_out");
+        api->on_midi(in, on, 3, MOVE_MIDI_SOURCE_EXTERNAL); api->on_midi(in, echo, 3, MOVE_MIDI_SOURCE_EXTERNAL);
+        render(in, 4);
+        CHECK(stat_of(in, "midi_out") - n0 == 1 && stat_of(in, "echo_drop") - d0 == 1, "the 127 echo of a v20 note dropped (%u delivered, %u dropped)",
+              stat_of(in, "midi_out") - n0, stat_of(in, "echo_drop") - d0);
+        api->on_midi(in, off, 3, MOVE_MIDI_SOURCE_EXTERNAL);
+        api->on_midi(in, echo, 3, MOVE_MIDI_SOURCE_EXTERNAL); api->on_midi(in, echo, 3, MOVE_MIDI_SOURCE_EXTERNAL);
+        api->on_midi(in, off, 3, MOVE_MIDI_SOURCE_EXTERNAL); api->on_midi(in, on, 3, MOVE_MIDI_SOURCE_EXTERNAL);
+        render(in, 3);
+        api->on_midi(in, echo, 3, MOVE_MIDI_SOURCE_EXTERNAL); api->on_midi(in, off, 3, MOVE_MIDI_SOURCE_EXTERNAL);
+        render(in, 4);
+        CHECK(stat_of(in, "midi_out") - n0 == 8 && stat_of(in, "echo_drop") - d0 == 1, "a played 127, a re-strike and a late 127 pass (%u delivered, %u dropped)",
+              stat_of(in, "midi_out") - n0, stat_of(in, "echo_drop") - d0);
+    }
 
     /* M1-06: keys */
     {   /* the pages: ui_pages when Frodhes' own screen is the Move UI (MB_OWN_UI, ui_hierarchy refused so that Schwung
@@ -387,8 +406,17 @@ static int api_tests(const char *so)
     CHECK(!strcmp(get(in, "dev_trim"), "4096"), "dev_trim 0: unity (%s)", gbuf);
     api->set_param(in, "dev_trim", "1");
     CHECK(!strcmp(get(in, "dev_trim"), "5279"), "dev_trim 1: the trim again (%s)", gbuf);
-    {   /* what the Move owns has no key: the sequencer, the arpeggiator, the chords, the scales, BPM, CLOCK */
-        const char *gone[] = { "s_arpgate", "s_sqbars", "s_chtype", "s_chstrum", "s_scmode", "s_scale", "s_root", "s_trans",
+    {   /* the arpeggiator's cards are keys (2026-10-30): MODE, RATE, OCT, GATE through the FM-1's own steps */
+        static const char *ak[][2] = { { "s_arpmode", "2" }, { "s_arprate", "5" }, { "s_arpoct", "3" }, { "s_arpgate", "90" },
+                                       { "s_arpgate", "10" }, { "s_arpgate", "100" }, { "s_arpmode", "0" } };
+        for (i = 0; i < sizeof ak / sizeof ak[0]; i++) {
+            api->set_param(in, ak[i][0], ak[i][1]); render(in, 3);
+            CHECK(!strcmp(get(in, ak[i][0]), ak[i][1]), "%s = %s (is %s)", ak[i][0], ak[i][1], gbuf);
+        }
+        CHECK(strstr(get(in, "dev_inert"), " arp=0 ") != NULL, "MODE OFF: the arpeggiator off (%s)", gbuf);
+    }
+    {   /* what the Move owns has no key: the sequencer, the chords, the scales, BPM, CLOCK */
+        const char *gone[] = { "s_sqbars", "s_chtype", "s_chstrum", "s_scmode", "s_scale", "s_root", "s_trans",
                                "s_bpm", "s_clock" };
         for (i = 0; i < sizeof gone / sizeof gone[0]; i++)
             CHECK(!strcmp(get(in, gone[i]), "(none)"), "no %s on the Move (%s)", gone[i], gbuf);
@@ -416,6 +444,39 @@ static int api_tests(const char *so)
     api->set_param(in, "p_mot_rate", "127"); render(in, 3);
     CHECK(!strcmp(get(in, "p_mot_rate"), "127"), "MOTOR RATE past the panel's 120 (%s)", gbuf);
     api->set_param(in, "p_mot_rate", "78"); render(in, 3);
+    {   /* the top of every key (the user, 2026-10-30: "when hit 127 ... become 0"): each chain_params int and enum set
+         * to its max, then one past it, then one under its min, reads back its max / its max / its min; never a wrap */
+        static char cp[65536], st0[4096], want[24];
+        const char *p;
+        unsigned nk = 0, bad = 0;
+        CHECK(api->get_param(in, "state", st0, sizeof st0) > 0, "state before the sweep");
+        CHECK(api->get_param(in, "chain_params", cp, sizeof cp) > 0, "chain_params for the sweep");
+        for (p = strstr(cp, "{\"key\":\""); p; p = strstr(p + 1, "{\"key\":\"")) {
+            char key[40], ty[12], v[24];
+            const char *e = strchr(p, '}'), *q;
+            int lo = 0, hi = -1, j;
+            if (!e || sscanf(p, "{\"key\":\"%39[^\"]", key) != 1) break;
+            q = strstr(p, "\"type\":\""); if (!q || q > e || sscanf(q, "\"type\":\"%11[^\"]", ty) != 1) continue;
+            q = strstr(p, "\"access\""); if (q && q < e) continue;           /* a read-only or write-only key */
+            if (!strcmp(ty, "int")) {
+                q = strstr(p, "\"min\":"); if (!q || q > e) continue; lo = atoi(q + 6);
+                q = strstr(p, "\"max\":"); if (!q || q > e) continue; hi = atoi(q + 6);
+            } else if (!strcmp(ty, "enum")) {
+                q = strstr(p, "\"options\":["); if (!q || q > e) continue;
+                for (hi = 0, q += 11; *q && *q != ']'; q++) if (*q == ',') hi++;
+            } else continue;
+            if (!strcmp(key, "preset") || !strcmp(key, "s_mch") || hi < lo) continue;   /* (CHANNEL: the sweep's notes) */
+            for (j = 0; j < 3; j++) {
+                int x = j == 0 ? hi : j == 1 ? hi + 1 : lo - 1, r = j == 2 ? lo : hi;
+                snprintf(v, sizeof v, "%d", x); api->set_param(in, key, v); render(in, 3);
+                snprintf(want, sizeof want, "%d", r);
+                if (strcmp(get(in, key), want)) { bad++; if (bad < 12) printf("FAIL %s set %d reads %s, not %d\n", key, x, gbuf, r); }
+            }
+            nk++;
+        }
+        CHECK(nk > 60 && bad == 0, "the top of every key: %u keys, %u wraps or misses", nk, bad);
+        api->set_param(in, "state", st0); api->set_param(in, "s_fx", "1"); api->set_param(in, "s_sustain", "0"); render(in, 3);
+    }
     {   /* the timer ring: "<index> <us> <frames>" lines, the indices running on */
         unsigned a, us, fr, prev = 0, lines = 0; const char *p = get(in, "dev_cpu_ring");
         while (sscanf(p, "%u %u %u", &a, &us, &fr) == 3) { CHECK(fr == 128 && (lines == 0 || a == prev + 1), "ring line %u", a); prev = a; lines++; p = strchr(p, '\n'); if (!p) break; p++; }
@@ -774,7 +835,8 @@ static int persist(const char *so, const char *dir, int save)
     if (save) {
         char crc0[16];
         snprintf(crc0, sizeof crc0, "%s", get(in, "dev_pattern_crc"));
-        {   /* no sequencer and no arpeggiator on the Move: their CCs, a transport Start and notes record nothing */
+        {   /* no sequencer on the Move: its CCs, a transport Start and notes record nothing; the arpeggiator plays
+             * (2026-10-30): CC 52 3 is UP-DN, and it is left on so that store.bin holds it for the check below */
             static const uint8_t tries[][3] = { { 0xB0, 63, 127 }, { 0xB0, 60, 127 }, { 0xB0, 52, 3 }, { 0xB0, 45, 127 },
                                                 { 0xB0, 56, 4 }, { 0xFA, 0, 0 } };
             for (i = 0; i < sizeof tries / sizeof tries[0]; i++) { api->on_midi(in, tries[i], tries[i][0] == 0xFA ? 1 : 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3); }
@@ -783,10 +845,10 @@ static int persist(const char *so, const char *dir, int save)
                 api->on_midi(in, on, 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 40);
                 api->on_midi(in, off, 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 40);
             }
-            CHECK(strstr(get(in, "dev_inert"), "seq=0 rec=0 arp=0 hold=0 chord=0 scale=0 trans=0 clock=1") != NULL,
-                  "the sequencer, the arpeggiator, the chords and the scales stay off: %s", gbuf);
-            { unsigned cd = 0; sscanf(gbuf, "cc_drop=%u", &cd); CHECK(cd >= 5u, "their CCs dropped: %s", gbuf); }
-            if (!fails) printf("ok    no sequencer, arpeggiator, chords or scales: %s\n", gbuf);
+            CHECK(strstr(get(in, "dev_inert"), "seq=0 rec=0 arp=3 hold=0 chord=0 scale=0 trans=0 clock=1") != NULL,
+                  "the sequencer, the chords and the scales stay off, the arpeggiator is on (UP-DN): %s", gbuf);
+            { unsigned cd = 0; sscanf(gbuf, "cc_drop=%u", &cd); CHECK(cd == 4u, "the sequencer's and the chords' CCs dropped, not the ARP's: %s", gbuf); }
+            if (!fails) printf("ok    no sequencer, chords or scales; the arpeggiator plays: %s\n", gbuf);
         }
         for (i = 0; i < sizeof K / sizeof K[0]; i++) { api->set_param(in, K[i][0], K[i][1]); render(in, 3); }   /* (after:
                                                                * s_mch moves the MIDI channel off the notes') */
@@ -861,6 +923,7 @@ static int persist(const char *so, const char *dir, int save)
         CHECK(u5 && !strncmp(u5, "U05 ", 4), "u_save: U05 back in a new process (%s)", gbuf);
         CHECK(!strcmp(get(in, "preset"), "23"), "u_save: the preset U05 kept (%s)", gbuf); }
     CHECK(want[0] && !strcmp(get(in, "dev_pattern_crc"), want), "the pattern still empty: %s (want %s)", gbuf, want);
+    CHECK(strstr(get(in, "dev_inert"), " arp=0 hold=0 ") != NULL, "a new instance's arpeggiator is OFF, not store.bin's UP-DN: %s", gbuf);
     printf("%s    persist: the settings back in a new process, no pattern (%s)\n", fails ? "FAIL" : "ok", get(in, "dev_store"));
     api->destroy_instance(in);
     return fails != 0;

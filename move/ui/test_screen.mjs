@@ -22,7 +22,7 @@ test("opens on the first page, the overview, with the page's values read", () =>
     const s = new Screen().open();
     assert.equal(title(s), "FRODHES");
     assert.equal(s.api.view(s.ctx(true), s.st()), "overview");
-    assert.ok(s.plugin.reads <= 12, `reads on open: ${s.plugin.reads}`);
+    assert.ok(s.plugin.reads <= 13, `reads on open: ${s.plugin.reads}`);   // (13: the first page's DELAY, 2026-10-30)
     const fb = s.draw();
     assert.equal(fb.prints, 0, "the device font is not used: our font only");
     assert.ok(fb.lit() > 300);
@@ -84,12 +84,12 @@ test("turning writes the wire value: numbers step and clamp, enums by index, a f
     assert.match(lastWrite(s)[1], /^\d+$/);
 });
 
-test("what the Move owns is not on the Move: no sequencer, arpeggiator, chords, scales, BPM or CLOCK", () => {
+test("what the Move owns is not on the Move: no sequencer, chords, scales, BPM or CLOCK (the arpeggiator is)", () => {
     const s = new Screen().open();
     const titles = s.api.pages.map((p) => p.title);
     for (const t of ["SEQUENCER", "CHORD/ARP", "CHORD", "TEMPO/SCALE"]) assert.ok(!titles.includes(t), titles.join(","));
-    const keys = s.api.pages.flatMap((p) => p.knobs.map((k) => k.key));
-    const gone = ["s_sq", "s_arp", "s_ch", "s_bpm", "s_clock", "s_scmode", "s_scale", "s_root", "s_trans"];
+    const keys = s.api.pages.flatMap((p) => p.knobs.filter((k) => k).map((k) => k.key));
+    const gone = ["s_sq", "s_ch", "s_bpm", "s_clock", "s_scmode", "s_scale", "s_root", "s_trans"];
     assert.ok(!keys.some((k) => gone.some((g) => k.startsWith(g))), keys.join(","));
     goto(s, "TEMPO");
     assert.equal(s.api.pages[s.st().page].knobs.map((k) => k.name).join(" "), "TRSYNC PHSYNC DLSYNC");
@@ -109,9 +109,9 @@ test("the jog pages through the pages and stops at the ends", () => {
 
 test("the VOICE pages follow TYPE (a knob here, or elsewhere)", () => {
     const s = new Screen().open();
-    assert.equal(s.api.visiblePages(0).length, 10);
-    assert.equal(s.api.visiblePages(1).length, 11);
-    assert.equal(s.api.visiblePages(2).length, 10);
+    assert.equal(s.api.visiblePages(0).length, 12);                  // (CHORUS and DELAY apart, ARPEGGIO: 2026-10-30)
+    assert.equal(s.api.visiblePages(1).length, 13);
+    assert.equal(s.api.visiblePages(2).length, 12);
     for (let i = 0; i < 4; i++) { s.knob(0, 1); s.wait(200); }        // TYPE ST77 -> VIBE
     s.live();
     assert.equal(s.st().engine, 1);
@@ -137,31 +137,59 @@ test("the page list: a click opens it, the jog picks, a click opens the page, Ba
     assert.equal(s.back(), false, "Back on a page: the host closes the screen");
 });
 
-test("the Left arrow flips FX: a press writes s_fxbtn, a release nothing; Right is SUS (63), Left FX (62)", () => {
+test("the Left arrow turns FX off / on: a press writes the other state (s_fx), a release nothing; Right is SUS (63), Left FX (62)", () => {
     const s = new Screen().open();
     assert.equal(s.api.conf.sus_cc, 63);
     assert.equal(s.api.conf.fx_cc, 62);
     goto(s, "REVERB");
     const n0 = s.plugin.writes.length;
+    assert.equal(s.st().fxOn, true, "FX read on open");
     assert.equal(s.midi(0xB0, s.api.conf.fx_cc, 127), true);
-    assert.deepEqual(lastWrite(s), ["s_fxbtn", "1"]);
+    assert.deepEqual(lastWrite(s), ["s_fx", "0"]);
     assert.equal(s.midi(0xB0, s.api.conf.fx_cc, 0), true);
     assert.equal(s.plugin.writes.length, n0 + 1, "the release writes nothing");
+    s.plugin.apply();
+    assert.equal(s.plugin.v.s_fx, 0);
+    s.midi(0xB0, s.api.conf.fx_cc, 127); s.midi(0xB0, s.api.conf.fx_cc, 0);
+    assert.deepEqual(lastWrite(s), ["s_fx", "1"]);
+    s.plugin.apply();
+    assert.equal(s.plugin.v.s_fx, 1);
+    assert.equal(s.plugin.writes.filter((w) => w[0] === "s_fxbtn").length, 0, "no flip once FX is known");
 });
 
-test("the claimed button turns SUS on or off on every page: a press flips it, a release sends nothing", () => {
+test("an arrow's write delivered twice or replayed lands on the same state (the user, 2026-10-30: FX came back on by itself)", () => {
+    const s = new Screen().open();
+    goto(s, "REVERB");
+    s.wait(1000); s.live();                          // the first live read: SUS known
+    s.midi(0xB0, s.api.conf.fx_cc, 127); s.midi(0xB0, s.api.conf.fx_cc, 0);
+    s.midi(0xB0, s.api.conf.sus_cc, 127); s.midi(0xB0, s.api.conf.sus_cc, 0);
+    const fx = s.plugin.writes.filter((w) => w[0] === "s_fx").pop(), sus = s.plugin.writes.filter((w) => w[0] === "s_sustain").pop();
+    assert.deepEqual([fx, sus], [["s_fx", "0"], ["s_sustain", "1"]]);
+    s.plugin.apply();
+    for (let i = 0; i < 3; i++) { s.plugin.queue.push(fx, sus); s.plugin.apply(); }   // the host sends them again
+    assert.equal(s.plugin.v.s_fx, 0, "FX stays off");
+    assert.equal(s.plugin.v.s_sustain, 1, "SUS stays on");
+    for (let i = 0; i < 8; i++) { s.wait(300); s.live(); }
+    assert.equal(s.st().fxOn, false);
+    assert.equal(s.st().susOn, true);
+});
+
+test("the claimed button turns SUS on or off on every page: a press writes the other state, a release sends nothing", () => {
     const s = new Screen().open();
     goto(s, "REVERB");
     const n0 = s.plugin.writes.length;
     assert.equal(s.midi(0xB0, s.api.conf.sus_cc, 127), true);
-    assert.deepEqual(lastWrite(s), ["s_susbtn", "1"]);
+    assert.deepEqual(lastWrite(s), ["s_susbtn", "1"], "before the first read of SUS: the plugin's flip");
     assert.equal(s.st().susOn, true, "the S mark at once");
     assert.equal(s.midi(0xB0, s.api.conf.sus_cc, 0), true);
     assert.equal(s.plugin.writes.length, n0 + 1, "the release writes nothing");
     s.plugin.apply();
     assert.equal(s.plugin.v.s_sustain, 1);
+    s.wait(1000); s.live();
+    assert.equal(s.st().susKnown, true);
     s.midi(0xB0, s.api.conf.sus_cc, 127); s.midi(0xB0, s.api.conf.sus_cc, 0);
     assert.equal(s.st().susOn, false);
+    assert.deepEqual(lastWrite(s), ["s_sustain", "0"]);
     s.plugin.apply();
     assert.equal(s.plugin.v.s_sustain, 0);
     assert.equal(s.plugin.writes.filter((w) => w[0] === "s_susbtn" && w[1] !== "1").length, 0);
@@ -209,6 +237,7 @@ test("every page, label and option fits: cards 5 characters (a longer label: its
         assert.ok(p.knobs.length >= 1 && p.knobs.length <= 8, p.title);
         assert.ok(w(p.title + " S 12/12") <= 126, p.title);
         p.knobs.forEach((k) => {
+            if (!k) return;                                            // (a knob with no control)
             if (k.type !== "preset") assert.ok(w(k.short || k.name) <= 31, `${p.title} ${k.short || k.name}`);
             assert.ok(w(k.name, 2) <= 124, k.name);
             const vals = k.type === "enum" ? k.options
@@ -232,10 +261,103 @@ test("every page draws in both views without throwing, on every engine", () => {
             goto(s, s.api.pages[i].title);
             assert.ok(s.draw().lit() > 200);
             for (let k = 0; k < s.api.pages[i].knobs.length; k++) {
+                if (!s.api.pages[i].knobs[k]) {                        // a knob with no control: no card
+                    s.touch(k); assert.equal(s.api.view(s.ctx(true), s.st()), "overview"); s.touch(k, false);
+                    s.knob(k, 1); assert.equal(s.api.view(s.ctx(true), s.st()), "overview"); continue;
+                }
                 s.touch(k); assert.ok(s.draw().lit() > 200); s.touch(k, false); s.wait(HOLD + 10);
             }
         }
     }
+});
+
+test("the first page's DELAY (the delay's MIX) on knob 8; knobs 6 and 7 free under the PRESET card's name (2026-10-30)", () => {
+    const s = new Screen().open();
+    const root = s.api.pages[s.st().page];
+    assert.equal(JSON.stringify(root.knobs.map((k) => k && k.key)),
+                 JSON.stringify(["p_type", "p_spread", "s_sustain", "s_fx", "preset", null, null, "p_delay"]));
+    const d = root.knobs[7];
+    assert.equal(d.name, "DELAY");
+    assert.equal(d.type, "int"); assert.equal(d.min, 0); assert.equal(d.max, 127);
+    assert.ok(!d.options, "a plain bar (no notches: not bipolar, not an enum)");
+    s.plugin.external("p_delay", 40); s.plugin.v.p_dl_depth = 40; s.live();
+    s.knob(7, 1); s.wait(200);
+    assert.deepEqual(lastWrite(s), ["p_delay", "41"]);
+    assert.equal(s.st().focus, 7);
+    const fb = s.draw();
+    assert.ok(fb.lit() > 200);
+    s.wait(HOLD + 10);
+    // the overview: the PRESET card's bar ends before knob 8's card; knob 8's card has its label
+    const ov = s.draw(), px = (x, y) => ov.px[y * 128 + x];
+    let barEnd = -1;
+    for (let x = 0; x < 128; x++) if (px(x, 37 + 19)) barEnd = x;   // (the second row's bar outline, y 9 + 28 + 19)
+    assert.ok(barEnd >= 96 && barEnd <= 124, `knob 8's bar on the right (${barEnd})`);
+    let gap = 0;
+    for (let x = 93; x <= 95; x++) gap += px(x, 37 + 19) ? 1 : 0;
+    assert.equal(gap, 0, "the PRESET card's bar ends at x 92, before knob 8's card at x 96");
+    // a knob with no control: no card, no write
+    const n = s.plugin.writes.length;
+    s.touch(5); assert.equal(s.api.view(s.ctx(true), s.st()), "overview"); s.touch(5, false);
+    s.knob(6, 1); s.wait(200);
+    assert.equal(s.plugin.writes.length, n, "knobs 6 and 7 write nothing");
+    // the longest names fit before knob 8's card: a user slot's 16 characters
+    assert.ok(s.api.textW("U16 ABCDEFGHIJKL") <= 95);
+});
+
+test("CHORUS and DELAY are two pages, each with the FM-1 page's cards in the FM-1's order (2026-10-30)", () => {
+    const s = new Screen().open();
+    goto(s, "CHORUS");
+    assert.equal(s.api.pages[s.st().page].knobs.map((k) => k.key).join(" "), "p_cp_sw p_cp_depth p_cp_speed p_cp_sync");
+    assert.equal(s.api.pages[s.st().page].knobs.map((k) => k.name).join(" "), "CHORUS DEPTH SPEED SYNC");
+    goto(s, "DELAY");
+    assert.equal(s.api.pages[s.st().page].knobs.map((k) => k.key).join(" "), "p_dl_sw p_dl_depth p_dl_time p_dl_fdbk");
+    assert.equal(s.api.pages[s.st().page].knobs.map((k) => k.name).join(" "), "DELAY MIX TIME FEEDBK");
+    assert.equal(s.api.pages[s.st().page].knobs[0].options.join(" "), "OFF DIG ANA TAPE");
+    s.knob(1, 1); s.wait(200);
+    assert.equal(lastWrite(s)[0], "p_dl_depth");
+    const titles = s.api.pages.map((p) => p.title);
+    assert.ok(!titles.includes("CHORUS/DELAY"));
+    assert.ok(titles.indexOf("CHORUS") + 1 === titles.indexOf("DELAY") && titles.indexOf("DELAY") + 1 === titles.indexOf("REVERB"),
+              titles.join(","));
+});
+
+test("ARPEGGIO: the FM-1 page's cards (MODE RATE OCT GATE), after TEMPO; writes go by index / as shown (2026-10-30)", () => {
+    const s = new Screen().open();
+    goto(s, "ARPEGGIO");
+    const p = s.api.pages[s.st().page];
+    assert.equal(p.knobs.map((k) => k.key).join(" "), "s_arpmode s_arprate s_arpoct s_arpgate");
+    assert.equal(p.knobs.map((k) => k.name).join(" "), "MODE RATE OCT GATE");
+    assert.equal(p.knobs[0].options.join(" "), "OFF UP DOWN UP-DN ORDER RAND");
+    assert.equal(p.knobs[1].options.join(" "), "1/4 1/8 1/8T 1/16 1/16T 1/32");
+    assert.equal(p.knobs[2].min, 1); assert.equal(p.knobs[2].max, 4);
+    assert.equal(p.knobs[3].min, 10); assert.equal(p.knobs[3].max, 100);
+    s.knob(0, 1); s.wait(200);
+    assert.deepEqual(lastWrite(s), ["s_arpmode", "1"]);
+    const titles = s.api.pages.map((x) => x.title);
+    assert.equal(titles.indexOf("ARPEGGIO"), titles.indexOf("TEMPO") + 1, titles.join(","));
+});
+
+test("REVERB INF: DECAY reads SUSTAIN from 120 and FREEZE at 127, as the FM-1's card (ui.c); a number otherwise", () => {
+    const s = new Screen().open();
+    goto(s, "REVERB");
+    const p = s.api.pages[s.st().page], dk = p.knobs.find((k) => k.key === "p_rv_decay");
+    const r = s.api.conf.rv;
+    assert.equal(JSON.stringify([r.inf, r.sustain_at, r.freeze_at, r.words]), JSON.stringify([3, 120, 127, ["SUSTAIN", "FREEZE"]]),
+                 "ui.c RV_INF, RV_SUSTAIN_AT, RV_FREEZE_AT and its words");
+    assert.equal(p.knobs[0].options[r.inf], "INF");
+    const st = s.st(), vt = (v, card) => { st.vals.p_rv_decay = v; return s.api.valueText(st, dk, card); };
+    st.vals.p_rv_type = r.inf;
+    assert.equal(vt(119), "119");
+    assert.equal(vt(120), "SUSTAIN"); assert.equal(vt(126), "SUSTAIN"); assert.equal(vt(127), "FREEZE");
+    assert.equal(vt(120, true), "SUST"); assert.equal(vt(127, true), "FREZ");
+    for (const w of ["SUST", "FREZ"]) assert.ok(s.api.textW(w) <= 31, w);
+    st.vals.p_rv_type = 1;                                                    // HALL: the number
+    assert.equal(vt(127), "127");
+    // drawn: the overview's card and the large card
+    s.plugin.external("p_rv_type", r.inf); s.plugin.external("p_rv_decay", 127); s.live();
+    for (let i = 0; i < 20; i++) s.live();
+    assert.ok(s.draw().lit() > 200);
+    s.touch(2); assert.equal(s.st().focus, 2); assert.ok(s.draw().lit() > 200); s.touch(2, false);
 });
 
 let fail = 0;

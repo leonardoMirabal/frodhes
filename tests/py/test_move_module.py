@@ -50,7 +50,8 @@ def test_levels_keep_the_hosts_limits():
     for name, lvl in HIER.items():
         assert 1 <= len(lvl["knobs"]) <= 8, (name, lvl["knobs"])
         keys = [p["key"] for p in items(lvl)]
-        assert lvl["knobs"] == keys, name                      # every item on a knob, in order
+        assert [k for k in lvl["knobs"] if k is not None] == keys, name   # every item on a knob, in order (None: a hole)
+        assert lvl["knobs"][-1] is not None, name
         for p in items(lvl):
             assert len(p["name"]) <= gen.LABEL_MAX and p["name"].isascii() and p["name"].strip(), (name, p)
             if p["type"] == "canvas":                          # (a screen the module draws: its script ships)
@@ -83,6 +84,8 @@ def test_sustain_button_claimed():
     assert "sustain.js" not in OUT and "sustain.js" not in gen.FILES, "the PEDAL screen is gone (a toggle now)"
     js = OUT["screen.js"]
     assert 'ctx.setParam("s_susbtn", "1")' in js and 'ctx.setParam("s_susbtn", "0")' not in js
+    # (once SUS / FX are read, an arrow writes the state it shows next: a repeated write cannot flip it back)
+    assert 'ctx.setParam("s_sustain", st.susOn ? "1" : "0")' in js and 'ctx.setParam("s_fx", st.fxOn ? "1" : "0")' in js
 
 
 def test_ranges_and_options_are_the_parameters():

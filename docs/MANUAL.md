@@ -1015,8 +1015,8 @@ MARIMBA ignore it.
 | 41 / 42 | Developer: key velocity (not saved): 41 sets the key converter's test mode (0 normal, 1 off, 2 stress, 4 self-test; 8 / 9 every press's reading out on CC 33–36, on / off), 42 asks for its counters (replies on CC 38–40); `tools/hil_keyvel.py` and `tools/hil_cpu.py --keyadc` use them | | |
 | 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 
-On the Move the same CCs reach Frodhes through Schwung's track, except the sequencer's, the arpeggiator's and the
-chords' (43–46, 52–63), which do nothing there ([MOVE.md](MOVE.md), "MIDI and tempo").
+On the Move the same CCs reach Frodhes through Schwung's track, except the sequencer's and the chords'
+(43–46, 56–63), which do nothing there ([MOVE.md](MOVE.md), "MIDI and tempo").
 
 On the computer the FM-1 is called **Frodhes FM-1** (an SMK-37 running Frodhes: **Frodhes SMK-37 Pro**, Frodhes
 SMK-37 Elite or Frodhes MKE-P37). The name is the same everywhere the computer shows the unit: its MIDI port (a
@@ -1131,7 +1131,8 @@ released yet.** Install and the details: [MOVE.md](MOVE.md).
 Everything in this manual applies, with these differences:
 
 - **The pages**: one page holds eight controls, one for each of the Move's eight knobs, two of the FM-1's pages
-  side by side (DRIVE/FILTER, TREM/PHASER, CHORUS/DELAY, ...). The names are the FM-1's where they fit the Move's
+  side by side (DRIVE/FILTER, TREM/PHASER, ...); CHORUS and DELAY are a page each, with the FM-1's cards. The first
+  page has the delay's mix (DELAY) on knob 8. The names are the FM-1's where they fit the Move's
   screen and shorter where they do not (MAKEUP is MKUP); the values and ranges are the FM-1's. The VOICE pages are
   the instrument's that plays and change with TYPE, a preset or a program change. COMPRESSOR shows the
   gain-reduction meter on knobs 7 and 8: a thick bar of segments lit from the right, the peak as a taller segment.
@@ -1147,12 +1148,13 @@ Everything in this manual applies, with these differences:
   below the pages the menu: SAVE TO USER (U01–U16) and Schwung's own rows (its presets, Module Help, Swap Module).
   The arrows' lights show FX (Left) and SUS (Right).
 
-  ![The DRIVE/FILTER page on the Move](manual/img/move/move-drive-filter.png?v=7fb7a2cc)
+  ![The DRIVE/FILTER page on the Move](manual/img/move/move-drive-filter.png?v=5e9df1ba)
 - **The sound**: HQ, the Move's one version of the three engines (the FM-1 plays Classic): the piano types' exact
   hammer strike at every velocity and a truer re-strike; VIBES and MARIMBA with more bar and tube modes and the
   mallet's contact computed live on a re-strike.
 - **Sustain**: the Move has no pedal jack. SUS on the first page is the sustain, on or off (OFF always lets the
-  notes go); on Frodhes' screen each press of the Right arrow turns it on or off. A pedal on CC 64 (USB) works
+  notes go); on Frodhes' screen each press of the Right arrow turns it on or off (a press sets the other state, so a press
+  delivered twice cannot turn it back). A pedal on CC 64 (USB) works
   as on the FM-1, half pedalling included, and letting it up turns SUS off.
 - **FX** on the first page is the FX button: all effects off or on (CC 111), except the compressor, which stays on
   the Move. On Frodhes' screen the Left arrow does the same.
@@ -1160,7 +1162,15 @@ Everything in this manual applies, with these differences:
   Frodhes' screen saves the sound into a user slot, shared by every Frodhes on the Move; the sound is also saved
   with the Move's set.
 - **Only on the Move**: MAPPINGS turns the pads' pressure (aftertouch, poly pressure) into one of the CCs above; off by default.
-- **The tempo is the Move's**: the synced effects follow its clock; there is no BPM or CLOCK setting.
+- **The tempo is the Move's**: the synced effects and the arpeggiator follow its clock; there is no BPM or CLOCK
+  setting.
+- **ARPEGGIO**: the FM-1's arpeggiator (MODE, RATE, OCT, GATE, CC 52–55), on the Move's clock; each Frodhes has its
+  own, OFF when it is loaded new. No HOLD (the FM-1's SEL button): SUS sustains the notes it plays but does not hold
+  the pattern. Use it or Schwung's own arpeggiator (a MIDI FX), not both: with both, every note is arpeggiated twice.
+- **Velocity**: the pads play with the velocity the Move gives them. With the Move's Full Velocity setting on, every
+  pad plays at 127: turn it off in the Move's settings to play soft and loud.
+- **REVERB INF**: DECAY shows SUSTAIN from 120 and FREEZE at 127, as on the FM-1; FREEZE keeps the tail and plays
+  new notes dry.
 - **Not on the Move**: PERFORM, ASSIGN and DISPLAY (the Move has its own knobs and screen), the sequencer, the
-  arpeggiator, the chords and the scales (the Move has its own; their CCs do nothing), KEY VEL, TOUCH, USB VOL,
+  chords and the scales (the Move has its own; their CCs do nothing), KEY VEL, TOUCH, USB VOL,
   TRS, COLOR, BRIGHT and LEDS.

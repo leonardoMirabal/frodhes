@@ -52,8 +52,9 @@ module next to the old one, checks it, then switches by renaming, and keeps the 
 ## The pages
 
 The first page, **FRODHES**, has the sound type, the stereo spread, the sustain (SUS, on or off), the effects switch
-(FX), Frodhes' own screen (PAGES) and the preset browser: the 19 factory sounds (F01-F19) and 16 user sounds
-(U01-U16), as on the FM-1. Each page below holds up to eight
+(FX), Frodhes' own screen (PAGES), the preset browser (the 19 factory sounds F01-F19 and 16 user sounds U01-U16, as
+on the FM-1) and, on knob 8, the delay's mix (DELAY, the FM-1's PERFORM name for it). Knobs 6 and 7 have no control
+on the first page: the preset's name is drawn across them on Frodhes' own screen. Each page below holds up to eight
 controls, one for each of the Move's eight knobs. The VOICE pages follow the engine of the TYPE: only the pages of the
 engine that plays are shown, and they change with it: turn TYPE, load a preset or send a program change of another
 instrument and, within about half a second, the VOICE pages are that instrument's.
@@ -66,7 +67,7 @@ the taps or on Main Out in any of them; with four the margin is small, so the wa
 
 | Page | Controls |
 | --- | --- |
-| **FRODHES** | TYPE · SPREAD · SUS · FX · PAGES |
+| **FRODHES** | TYPE · SPREAD · SUS · FX · PAGES · DELAY |
 | **PIANO VOICE** | TONE · BARK · BELL · HAMMR · DECAY · REL · NOISE · TUNE |
 | **VIBES VOICE** | STRIKE · MALLET · TUBE · WEIGHT · RING · DAMPR · NOISE · TUNE |
 | **VIBES MOTOR** | MOTOR · DEPTH · SPEED · SHAPE · SYNC |
@@ -74,9 +75,11 @@ the taps or on Main Out in any of them; with four the margin is small, so the wa
 | **COMPRESSOR** | THRESH · RATIO · ATTACK · MKUP · COMP · REL · GAIN · REDUCT |
 | **DRIVE/FILTER** | DRIVE · AMOUNT · TONE · MIX · FILTER · FREQ · RESO · LFO |
 | **TREM/PHASER** | TREM · DEPTH · RATE · SHAPE · PHASER · DEPTH · SPEED · FEEDBK |
-| **CHORUS/DELAY** | CHORUS · DEPTH · SPEED · SYNC · DELAY · MIX · TIME · FEEDBK |
+| **CHORUS** | CHORUS · DEPTH · SPEED · SYNC |
+| **DELAY** | DELAY · MIX · TIME · FEEDBK |
 | **REVERB** | REVERB · MIX · DECAY · TONE · PREDLY · SIZE · MOD · LOWCUT |
 | **TEMPO** | TRSYNC · PHSYNC · DLSYNC |
+| **ARPEGGIO** | MODE · RATE · OCT · GATE |
 | **LFO/SETUP** | SHAPE · RATE · SYNC · RETRIG · DLTONE · LEVEL · CHAN |
 | **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI |
 
@@ -112,7 +115,7 @@ external surfaces).
   then cut there. It is not part of Frodhes' screen. While it shows, every knob turn is recorded into that snapshot;
   Shift and the same button again leave the edit and the header is whole again.
 
-![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=4893b45d)
+![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=5e9df1ba)
 
 - **The overview**: eight cards, knobs 1-4 on the top row and 5-8 below, each with its name, its value and a bar.
   Every bar is an outlined box filled from the left up to the value, the same height along its length; a selector of
@@ -126,7 +129,10 @@ external surfaces).
   to one, click to open it; Back closes the list. Back on a page leaves Frodhes' screen (Shift + jog wheel too).
   As on the other screen, the VOICE pages are the ones of the instrument that plays.
 - **The buttons**: on this screen the **Right arrow** turns SUS on or off and the **Left arrow** turns the effects
-  off or on (FX, the compressor kept), on every page; Up and Down stay the Move's octave.
+  off or on (FX, the compressor kept), on every page; Up and Down stay the Move's octave. A press sets the state the
+  screen shows next (FX OFF, say), not a toggle, so a press that Schwung delivers twice, or plays back later from an
+  automation lane, cannot turn it back. Only before the screen has read SUS or FX for the first time does a press
+  toggle it.
   Each arrow's light shows its state: the Left arrow is lit while the effects are on, the Right arrow while SUS
   holds. Back gives the lights back to the Move.
 - **The pads' lights are the Move's.** Frodhes never lights a pad or a step button: the screen's only lights are
@@ -155,13 +161,17 @@ external surfaces).
   15 segments lit from the right on the FM-1's scale (up to 30 dB), and the peak held for a second as a taller
   segment. When the compressor is off the bar is a dotted outline and reads COMP OFF. *(not yet verified on a device)*
 - A fast turn of a wide range moves four steps a detent.
+- **REVERB with TYPE INF**: DECAY shows SUSTAIN from 120 to 126 and FREEZE at 127 (SUST and FREZ on the overview),
+  as the FM-1's card does. FREEZE closes the reverb's input, so the held tail stays as it is and new notes play dry
+  only; to get the tail moving again, turn DECAY under 120. *(measured on a device, 2026-10-30: at FREEZE the frozen
+  tail alone was -37.0 dB RMS on Main Out, and with a v100 note -34.8 dB: the note played dry at its usual level)*
 
 ![Knob 2 touched: AMT as a large card](manual/img/move/move-drive-filter-k2.png?v=cd6baa2d)
 ![Knob 1 on REVERB: the type, one block per option](manual/img/move/move-reverb-k1.png?v=21b3c723)
-![COMPRESSOR with the compressor on: the meter at 12 dB of gain reduction](manual/img/move/move-compressor-gr.png?v=3f4b7255)
-![The first page: the sound, its type, the spread, the sustain and the effects](manual/img/move/move-frodhes.png?v=36cde34c)
-![The list of pages](manual/img/move/move-pages.png?v=e463578b)
-![The menu below the pages: MY PRESETS and MODULE, Schwung's rows](manual/img/move/move-menu.png?v=b02cddae)
+![COMPRESSOR with the compressor on: the meter at 12 dB of gain reduction](manual/img/move/move-compressor-gr.png?v=189a0f30)
+![The first page: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=139bf055)
+![The list of pages](manual/img/move/move-pages.png?v=00207b5b)
+![The menu below the pages: MY PRESETS and MODULE, Schwung's rows](manual/img/move/move-menu.png?v=28a92692)
 ![SAVE TO USER: U03 picked, empty](manual/img/move/move-save.png?v=909188a5)
 
 The pictures are drawn by the screens' own code on a computer, in the screen's two colours: Frodhes' screen by
@@ -198,7 +208,7 @@ off or on, and the compressor stays.
 
 On the Move, Frodhes is the sound generator of a Schwung track. Its sound, effects included, then goes through the
 audio effects you put after it on that track, and then the Master FX, like any other sound generator. To use one of
-Schwung's reverbs or delays instead of Frodhes' own, turn Frodhes' one off on its page (REVERB, CHORUS/DELAY), or all
+Schwung's reverbs or delays instead of Frodhes' own, turn Frodhes' one off on its page (REVERB, DELAY), or all
 of them with FX.
 
 **Output level.** On the Move, Frodhes plays 2.2 dB louder than on the FM-1, the most it can without a clip: its
@@ -239,7 +249,18 @@ The MIDI of Schwung's track reaches Frodhes as on the FM-1 (`docs/MANUAL.md`, se
 release velocity, pitch bend, CC 64, the parameter CCs and program change. CHAN on LFO/SETUP picks the channel it
 listens to (ALL by default). *(not yet verified on a device)*
 
-The sequencer's, the arpeggiator's and the chords' CCs (43-46, 52-63) do nothing on the Move.
+The sequencer's and the chords' CCs (43-46, 56-63) do nothing on the Move. The arpeggiator's (52-55) work, as on
+the FM-1 (see [The arpeggiator](#the-arpeggiator)).
+
+**Velocity from the pads is the Move's.** Schwung gives a slot the pads' notes as the Move's track plays them, with
+the velocity the Move gives them. With the Move's **Full Velocity** setting on, every pad plays at 127, on every
+track and with the Move's own instruments too, so Frodhes cannot play soft. Turn Full Velocity off in the Move's
+settings to play with velocity. Notes from a keyboard on USB-A or from a computer keep their velocity either way:
+with Full Velocity on, the Move also sends each such note to the slot a second time at 127, and Frodhes drops that
+copy (a note-on at 127 within one block of the same note's first note-on, `echo_drop` in `dev_stats`). *(measured
+on a device, 2026-10-30: with Full Velocity on, every pad hit and every repeat arrived at 127, and each note from
+the Standalone port arrived twice, as played and at 127; with the copy dropped, notes at v20, 40, 64, 100 and 127
+played at -49, -45, -39, -30 and -24 dBFS on Main Out; with Full Velocity off, the pads' hits arrived at 1 to 127)*
 
 **The tempo is the Move's.** Frodhes follows the Move's transport: the Move's clock reaches it as MIDI clock and
 Start / Stop, or, when no clock comes, from the Move's transport and beat position. The synced rates (TRSYN,
@@ -258,6 +279,20 @@ second (82 x 24 / 60), with one Start and one Stop. The bridge made no pulses of
 came every 366 ms (1/8 at 82 BPM). Two Frodhes, in slots 1 and 2, both got every pulse. The clock sent over
 USB-C never arrived: the plugin counted 0 pulses.
 
+## The arpeggiator
+
+**ARPEGGIO** is the FM-1's arpeggiator page: MODE (OFF, UP, DOWN, UP-DN, ORDER, RAND), RATE (1/4 to 1/32, triplets
+included), OCT (1 to 4 octaves) and GATE (10 to 100 %), and its CCs 52-55. It plays the notes you hold. It steps on
+the Move's transport clock while the Move plays, and on the Move's tempo setting while it is stopped. SUS sustains
+the notes it plays, as a pedal does, but does not hold the pattern: letting the pads go stops it (the FM-1's HOLD,
+on its SEL button, is not on the Move). Each Frodhes has its own: its settings are
+kept with the track (the set), and a Frodhes loaded new starts with it OFF.
+
+Schwung has its own arpeggiator, a MIDI FX before the sound generator in the track's chain. Use one or the other:
+with both on, Schwung's plays its pattern into Frodhes' and every note is arpeggiated twice. Schwung's has its own
+modes and can run on its own clock; when it is set to sync to the clock, it takes the clock messages, so Frodhes
+then runs on the Move's tempo from the transport instead.
+
 ## What differs from the FM-1
 
 - **16 voices** on every engine (the FM-1 plays 10).
@@ -268,8 +303,9 @@ USB-C never arrived: the plugin counted 0 pulses.
   that still rings is struck again (MARIMBA's top keys, C6 up, always). *(not yet verified on a device)*
 - No PERFORM, ASSIGN or DISPLAY pages: the Move has its own pads, knobs and screen. The FM-1's KEY VEL, TOUCH,
   USB VOL, TRS, COLOR, BRIGHT and LEDS settings are not on the Move.
-- No sequencer, arpeggiator, chords or scales (MODE, SCALE, ROOT, TRANSPOSE): the Move has its own. Their pages
-  are not on the Move, and their CCs do nothing. A setup saved with any of them on still loads, with them off.
+- No sequencer, chords or scales (MODE, SCALE, ROOT, TRANSPOSE): the Move has its own. Their pages are not on the
+  Move, and their CCs do nothing. A setup saved with any of them on still loads, with them off. The arpeggiator is
+  on the Move (ARPEGGIO), without HOLD (the FM-1's SEL button): SUS holds its notes instead.
   A pattern saved by an older build is not loaded.
 - No BPM or CLOCK setting: the Move's tempo leads (see [MIDI and tempo](#midi-and-tempo)).
 - Only on the Move: the pressure [mappings](#mappings) and Frodhes' own screen. SUS is a switch, on or off, in
@@ -437,8 +473,8 @@ USB-C never arrived: the plugin counted 0 pulses.
   on and with HQ off (`restrike-listen-hq1.wav`, `restrike-listen-hq0.wav`) for listening.
 - The plugin keeps its saved setup, but the host build boots clean. So before its take, `usb-host` turns off
   the pedal, FX bypass and RAW by CC. Over the tap it also writes each setting that differs from a fresh
-  instance (`move/tests/boot_keys.txt`, checked by `test_bridge boot`). The Move has no arpeggiator, sequencer
-  or chords, and the bridge drops their CCs, so the tests do not send them. A note that the host strikes once
+  instance (`move/tests/boot_keys.txt`, checked by `test_bridge boot`). The Move has no sequencer or chords,
+  and the bridge drops their CCs, so the tests do not send them; a new instance starts with the arpeggiator off. A note that the host strikes once
   but the Move strikes again while it is held fails as STRUCK AGAIN. That happened in one run, before the
   arpeggiator was removed, when an arpeggiator left on re-struck every note.
 - The tests leave the plugin as they found it. The plugin saves its settings and its panel, so a test's CCs

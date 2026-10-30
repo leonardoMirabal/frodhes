@@ -46,6 +46,14 @@
     "default": 1
   },
   {
+    "key": "p_delay",
+    "name": "DELAY",
+    "type": "int",
+    "min": 0,
+    "max": 127,
+    "default": 0
+  },
+  {
     "key": "p_tone",
     "name": "TONE",
     "type": "int",
@@ -666,6 +674,47 @@
       "2BAR"
     ],
     "default": 0
+  },
+  {
+    "key": "s_arpmode",
+    "name": "MODE",
+    "type": "enum",
+    "options": [
+      "OFF",
+      "UP",
+      "DOWN",
+      "UP-DN",
+      "ORDER",
+      "RAND"
+    ]
+  },
+  {
+    "key": "s_arprate",
+    "name": "RATE",
+    "type": "enum",
+    "options": [
+      "1/4",
+      "1/8",
+      "1/8T",
+      "1/16",
+      "1/16T",
+      "1/32"
+    ]
+  },
+  {
+    "key": "s_arpoct",
+    "name": "OCT",
+    "type": "int",
+    "min": 1,
+    "max": 4
+  },
+  {
+    "key": "s_arpgate",
+    "name": "GATE",
+    "type": "int",
+    "min": 10,
+    "max": 100,
+    "unit": "%"
   },
   {
     "key": "p_lfo_shape",
