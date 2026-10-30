@@ -53,13 +53,15 @@ typedef struct {
     uint16_t key;
 } mb_ev_t;
 
-/* No FM-1 sequencer, arpeggiator, chords or scales on the Move (the user, 2026-10-28: the Move has its own), and
- * the Move's tempo. The FM-1 code stays as it is (Gate S); here they are inert: their CCs never reach the app
- * (MB_CC_DROP: 43-46 the sequencer's edits, 52-55 the arpeggiator, 56-59 the chords, 60-63 PLAY, BARS, QUANT,
- * REC; the scales, BPM and CLOCK have no CC), the pattern file is not loaded (an older pattern.bin stays on disk,
- * unused), and mb_inert stops what a transport Start or an older state would turn on (the sequencer playing or
- * recording, the arpeggiator's mode or HOLD, a chord type, a scale mode, a transpose, CLOCK INT). */
-#define MB_CC_DROP(cc) (((cc) >= 43u && (cc) <= 46u) || ((cc) >= 52u && (cc) <= 63u))
+/* No FM-1 sequencer, chords or scales on the Move (the user, 2026-10-28: the Move has its own), and the Move's
+ * tempo. The FM-1 code stays as it is (Gate S); here they are inert: their CCs never reach the app (MB_CC_DROP:
+ * 43-46 the sequencer's edits, 56-59 the chords, 60-63 PLAY, BARS, QUANT, REC; the scales, BPM and CLOCK have no
+ * CC), the pattern file is not loaded (an older pattern.bin stays on disk, unused), and mb_inert stops what a
+ * transport Start or an older state would turn on (the sequencer playing or recording, a chord type, a scale mode,
+ * a transpose, CLOCK INT). The arpeggiator plays (the user, 2026-10-30, reversing 2026-10-28): its CCs 52-55 reach
+ * the app, its state is the slot's (the state's set.arp; a new instance starts with it OFF, not with what another
+ * instance left in store.bin), and it steps on the Move's clock (CLOCK EXT: F8 / FA / FC, else the host's tempo). */
+#define MB_CC_DROP(cc) (((cc) >= 43u && (cc) <= 46u) || ((cc) >= 56u && (cc) <= 63u))
 #define MB_NMAP 6                        /* the mappings' settings: 2 sources x (CC, LO, HI) */
 #define MB_MAP_DEFAULT {0, 0, 127, 0, 0, 127}   /* every mapping off (CC 0), LO 0, HI 127 */
 static struct {
@@ -136,6 +138,25 @@ static struct {
     _Atomic uint32_t gr_word;
 } mb = { .first_now = 1, .clock_mode = MB_CLOCK_AUTO, .sus_touch = -1, .map = MB_MAP_DEFAULT, .map_last = {-1, -1} };
 static int mb_sus_key = -1;              /* MOVE_KEYS' s_susbtn row (looked up at the first touch) */
+/* dev: what reached the plugin (dev_rx: the last MB_RX_N messages but the clock, with their source and the host ms)
+ * and every change of FX (dev_fxlog: the ms, the new state, what made it: a key's row or a MIDI CC 111), for the pad
+ * velocity and the FX arrow reports of 2026-10-30. Written on the callback, read by get_param without a lock (dev) */
+#define MB_RX_N 1024u
+static struct { uint32_t ms[MB_RX_N]; uint8_t st[MB_RX_N], d1[MB_RX_N], d2[MB_RX_N], src[MB_RX_N]; _Atomic uint32_t n; } mb_rx;
+#define MB_FXLOG_N 32u
+static struct { uint32_t ms[MB_FXLOG_N]; uint8_t on[MB_FXLOG_N]; char why[MB_FXLOG_N][12]; _Atomic uint32_t n; int last; } mb_fxlog = { .last = -1 };
+static int mb_fxlog_cc;
+static void mb_fx_note(const char *why)  /* after an event: FX changed? */
+{
+    int on = fx_bypass == 0;
+    uint32_t i;
+    if (on == mb_fxlog.last) return;
+    mb_fxlog.last = on;
+    i = atomic_load_explicit(&mb_fxlog.n, memory_order_relaxed) % MB_FXLOG_N;
+    mb_fxlog.ms[i] = mb.ms; mb_fxlog.on[i] = (uint8_t)on;
+    snprintf(mb_fxlog.why[i], sizeof mb_fxlog.why[i], "%s", why);
+    atomic_fetch_add_explicit(&mb_fxlog.n, 1u, memory_order_release);
+}
 
 /* ---- the coroutine (M1-02) */
 static double move_now_ms(void)          /* web_hal.c platform_poll: fm1_ms = now - (the first reading) */
@@ -319,6 +340,39 @@ static void mb_write_stats(void)          /* (dev_stats_log: the clock probe rea
     if (!f) return;
     k = mb_stats(line, (int)sizeof line - 1);
     if (k > 0 && k < (int)sizeof line - 1) { line[k] = '\n'; fwrite(line, 1, (size_t)k + 1u, f); }
+    fclose(f);
+}
+/* dev_rx_log 1: the worker appends what dev_rx and dev_fxlog gained to <instance dir>/rx.log ("rx ms st d1 d2 src",
+ * "fx ms on why"), so a session with the user playing the pads keeps every message (the rings hold the last few) */
+static _Atomic int mb_rx_log;
+static uint32_t mb_rx_wr, mb_fx_wr;
+static void mb_write_rx(void)
+{
+    char path[600];
+    FILE *f;
+    uint32_t rn = atomic_load_explicit(&mb_rx.n, memory_order_acquire), fn = atomic_load_explicit(&mb_fxlog.n, memory_order_acquire);
+    if (!atomic_load(&mb_rx_log)) { mb_rx_wr = rn; mb_fx_wr = fn; return; }
+    if (rn == mb_rx_wr && fn == mb_fx_wr) return;
+    snprintf(path, sizeof path, "%s/rx.log", mb.mod_dir);
+    f = fopen(path, "a");
+    if (!f) return;
+    char ln[64];
+    int k;
+    if (rn - mb_rx_wr > MB_RX_N) {
+        k = snprintf(ln, sizeof ln, "rx-lost %u\n", rn - mb_rx_wr - MB_RX_N); fwrite(ln, 1, (size_t)k, f);
+        mb_rx_wr = rn - MB_RX_N;
+    }
+    for (; mb_rx_wr != rn; mb_rx_wr++) {
+        uint32_t i = mb_rx_wr % MB_RX_N;
+        k = snprintf(ln, sizeof ln, "rx %u %02x %u %u %u\n", mb_rx.ms[i], mb_rx.st[i], mb_rx.d1[i], mb_rx.d2[i], mb_rx.src[i]);
+        fwrite(ln, 1, (size_t)k, f);
+    }
+    if (fn - mb_fx_wr > MB_FXLOG_N) mb_fx_wr = fn - MB_FXLOG_N;
+    for (; mb_fx_wr != fn; mb_fx_wr++) {
+        uint32_t i = mb_fx_wr % MB_FXLOG_N;
+        k = snprintf(ln, sizeof ln, "fx %u %u %s\n", mb_fxlog.ms[i], mb_fxlog.on[i], mb_fxlog.why[i]);
+        fwrite(ln, 1, (size_t)k, f);
+    }
     fclose(f);
 }
 static void mb_write_cpu(void)
@@ -610,6 +664,7 @@ static void *mb_worker(void *arg)
     if (!mb.booted) {
         mb_load_files();
         if (mb_boot()) { atomic_store(&mb.booting, 0); return 0; }
+        arp_defaults();                                       /* (the slot's own: OFF until its state or a key) */
     }
     mb_cpu_wr = atomic_load(&mb.cpu_n);
     mb_note_build();
@@ -621,6 +676,7 @@ static void *mb_worker(void *arg)
         mb_store_poll();
         mb_write_cpu();
         mb_write_stats();
+        mb_write_rx();
         mb_write_tap();
         nanosleep(&t, 0);
     }
@@ -761,6 +817,8 @@ static void mb_sus_off(void) { sus_latched = 0; sus_held = 0; sus_midi = 0; }
 static void mb_key_apply(uint32_t i, int32_t x)
 {
     const move_key_t *k = &MOVE_KEYS[i];
+    if ((k->kind == MK_LATCH || k->kind == MK_BTN) && x < 0) x = 0;   /* a switch under its OFF is OFF (the sweep:
+                                                                         * s_fx / s_sustain -1 read ON) */
     if (k->kind == MK_PARAM || k->kind == MK_SLOT) mb_slot_abs(k->slot, x);
     else if (k->cc == 64u) {                   /* SUS, the sustain toggle (the user, 2026-10-28): ON holds the notes as
                                                  * the FM-1's REC latch does; OFF lets everything go and always wins
@@ -964,9 +1022,9 @@ static void mb_map(uint8_t st, uint8_t d1, uint8_t d2)
 
 /* ---- one host millisecond (see the top) */
 static void mb_gr_tick(void);
-/* the sequencer and the arpeggiator kept off (see MB_CC_DROP), after each main-loop pass: a Start / Continue from the
- * Move's transport starts the FM-1 sequencer (frodhes.c), which plays nothing (no pattern) and is stopped here; an
- * older state's or store's arpeggiator mode or HOLD is cleared (the settings then save it off). The same for what
+/* the sequencer kept off (see MB_CC_DROP), after each main-loop pass: a Start / Continue from the Move's transport
+ * starts the FM-1 sequencer (frodhes.c), which plays nothing (no pattern) and is stopped here (the arpeggiator is
+ * left alone since 2026-10-30: it plays on the Move). The same for what
  * else the Move owns (the user, 2026-10-28 12:10): the chords (CC 56-59 dropped), the scales and the transpose (off
  * and 0), and the tempo: the clock source stays EXT (the Move's transport reaches every slot as F8 / FA / FB / FC,
  * or mb_clock_block makes it from the host's transport), and with no clock leading, the tempo is the Move's
@@ -988,12 +1046,11 @@ static void mb_inert(void)
         set.sc_mode = 0; set.sc_trans = 0; set.clock = 1;
         set_dirty = 1;
     }
-    if (!(seq_play | seq_rec | sq_erase | ARP_MODE | ARP_HOLD)) return;
+    if (!(seq_play | seq_rec | sq_erase)) return;
     mb.inert_n++;
     if (seq_rec) seq_toggle_rec();
     if (seq_play) seq_stop();
     sq_erase = 0;
-    if (ARP_MODE != ARP_OFF || ARP_HOLD) { ARP_MODE = ARP_OFF; ARP_HOLD = 0; arp_clear(); }
 }
 /* u_save (Frodhes' own screen, SAVE TO USER): the sound as it is into user slot u (0..15), as the FM-1's SAVE does
  * (presets.c presets_poll: the parameters, the autoname, the slot loaded), then saved when quiet (presets_save_poll in
@@ -1028,6 +1085,7 @@ static void mb_step(void)
             if (mq_w - mq_r >= MB_HOST_RING) break;          /* the app's ring is full: the rest wait a millisecond */
             if ((e->st & 0xF0u) == 0xB0u && MB_CC_DROP(e->d1)) { mb.cc_drop++; mb_pop(e); continue; }
             web_midi(e->st, e->d1, e->d2);
+            if ((e->st & 0xF0u) == 0xB0u && e->d1 == 111u) mb_fxlog_cc = 1;   /* (dev_fxlog: the app takes it next) */
             mb.midi_out++;
             if ((e->st & 0xF0u) == 0xD0u || (e->st & 0xF0u) == 0xA0u || (e->st & 0xE0u) == 0x80u) mb_map(e->st, e->d1, e->d2);
         } else if (e->kind == MB_EV_KEY && e->key < MOVE_NKEYS) mb_key_apply(e->key, e->v);
@@ -1036,9 +1094,12 @@ static void mb_step(void)
 #ifdef FR_HQ
         else if (e->kind == MB_EV_HQ) hq_mode = (uint8_t)(e->v != 0);   /* (new notes; a sounding note keeps its path) */
 #endif
+        mb_fx_note(e->kind == MB_EV_KEY && e->key < MOVE_NKEYS ? MOVE_KEYS[e->key].key : e->kind == MB_EV_PRESET ? "preset"
+                   : e->kind == MB_EV_MIDI ? "midi" : "other");
         mb_pop(e);
     }
     mb_state_apply();
+    mb_fx_note("state");
     mb.owed += FS;
     while (mb.owed >= 1000u * HALF_FRAMES) {
         static int32_t blk[2u * HALF_FRAMES];
@@ -1057,6 +1118,8 @@ static void mb_step(void)
     }
     mb_gr_tick();
     coro_resume(&mb.co);
+    mb_fx_note(mb_fxlog_cc ? "midi cc111" : "app");   /* (the app's loop: the MIDI it took this pass) */
+    mb_fxlog_cc = 0;
     mb_inert();
 }
 
@@ -1173,6 +1236,23 @@ static void mb_render_in(int16_t *out, int frames)
 /* ---- MIDI in (M1-04): everything a sound generator gets goes to the app as it came (notes, release velocity, CC,
  * pressure, bend, program change, clock), except the knob / jog touch edges (source 5, notes 0-9: never played) and
  * the audio-FX-only broadcast. The app's CHANNEL setting filters, as on the FM-1. SysEx is dropped */
+/* The Move's Full Velocity echo (2026-10-30, the Move's Settings.json "isFullVelocityOn": true): a note from the
+ * Standalone port or a USB-A keyboard reaches the slot twice, as played and again as the Move's track echoes it at
+ * 127; Schwung's echo filter (shadow_midi.c shadow_external_dispatch_was_recent) compares the velocity too, so with
+ * Full Velocity on the echo passes. The app would strike the held note again at 127 and the played velocity is lost.
+ * A note-on at 127 for a note whose note-on (not 127) came in this block or the one before, with no note-off between,
+ * is that echo and is dropped (dev_stats echo_drop). The pads themselves are only the echo: with Full Velocity on
+ * they arrive at 127, which is the Move's setting, not the plugin's. */
+static uint32_t mb_on_blk[16][128];      /* 1 + the block of a held note's note-on (not 127), 0 none */
+static uint32_t mb_echo_drops;
+static int mb_echo_drop(uint8_t st, uint8_t n, uint8_t v)
+{
+    uint32_t *b = &mb_on_blk[st & 15u][n];
+    if ((st & 0xF0u) == 0x80u || v == 0) { *b = 0; return 0; }
+    if (v == 127u && *b && mb.blocks + 1u - *b <= 1u) { *b = 0; mb_echo_drops++; return 1; }
+    *b = v == 127u ? 0 : mb.blocks + 1u;
+    return 0;
+}
 static void mb_midi_in(const uint8_t *m, int len, int source)
 {
     uint8_t st;
@@ -1191,7 +1271,14 @@ static void mb_midi_in(const uint8_t *m, int len, int source)
     else if (st == 0xFAu) mb.rt_fa++;
     else if (st == 0xFBu) mb.rt_fb++;
     else if (st == 0xFCu) mb.rt_fc++;
+    if (st != 0xF8u && st != 0xFEu) {        /* (dev_rx) */
+        uint32_t i = atomic_load_explicit(&mb_rx.n, memory_order_relaxed) % MB_RX_N;
+        mb_rx.ms[i] = mb.ms; mb_rx.st[i] = st; mb_rx.d1[i] = len > 1 ? m[1] : 0; mb_rx.d2[i] = len > 2 ? m[2] : 0;
+        mb_rx.src[i] = (uint8_t)source;
+        atomic_fetch_add_explicit(&mb_rx.n, 1u, memory_order_release);
+    }
     if (mb.clock_mode == MB_CLOCK_HOST && (st == 0xF8u || st == 0xFAu || st == 0xFBu || st == 0xFCu)) return;
+    if ((st & 0xE0u) == 0x80u && len > 2 && mb_echo_drop(st, m[1] & 127u, m[2] & 127u)) return;
     mb.midi_in++;
     (void)mb_put(MB_EV_MIDI, st, len > 1 ? m[1] & 127u : 0u, len > 2 ? m[2] & 127u : 0u, 0, 0, 0);
 }
@@ -1201,9 +1288,9 @@ static int mb_stats(char *buf, int n)
 {
     return snprintf(buf, (size_t)n, "ms=%u steps=%u blocks=%u midi_in=%u midi_out=%u q_full=%u f8_synth=%u keys=%u keys_bad=%u "
                     "state_ok=%u state_bad=%u clock_mode=%d rt_f8=%u rt_fa=%u rt_fb=%u rt_fc=%u host_run=%d host_bpm10=%d "
-                    "bpm10=%u clklock=%u", mb.ms, mb.steps, mb.blocks, mb.midi_in, mb.midi_out, mb.q_full, mb.f8_synth,
+                    "bpm10=%u clklock=%u echo_drop=%u", mb.ms, mb.steps, mb.blocks, mb.midi_in, mb.midi_out, mb.q_full, mb.f8_synth,
                     mb.keys_set, mb.keys_bad, mb.state_ok, mb.state_bad, mb.clock_mode, mb.rt_f8, mb.rt_fa, mb.rt_fb,
-                    mb.rt_fc, mb.h_run, mb.h_bpm10, tempo_bpm10(), (unsigned)clk_follows());
+                    mb.rt_fc, mb.h_run, mb.h_bpm10, tempo_bpm10(), (unsigned)clk_follows(), mb_echo_drops);
 }
 /* the engine that sounds: TYPE_UI[TYPE] (eng_pages.h), 0 before the app runs (the pages of the default TYPE) */
 static unsigned mb_engine(void)
@@ -1303,6 +1390,18 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, "dev_trim")) return snprintf(buf, (size_t)n, "%u", (unsigned)mb_trim);
     /* development reads (tests, the device session) */
     if (!strcmp(key, "dev_stats")) return mb_stats(buf, n);
+    if (!strcmp(key, "dev_rx") || !strcmp(key, "dev_fxlog")) {   /* oldest first: "n=<total>;ms st d1 d2 src;..." */
+        int rx = key[4] == 'r';
+        uint32_t tot = rx ? atomic_load_explicit(&mb_rx.n, memory_order_acquire) : atomic_load_explicit(&mb_fxlog.n, memory_order_acquire);
+        uint32_t cap = rx ? MB_RX_N : MB_FXLOG_N, k = tot > cap ? tot - cap : 0u;
+        int o = snprintf(buf, (size_t)n, "n=%u fx=%d;", tot, fx_bypass == 0);
+        for (; k < tot && o > 0 && o < n - 40; k++) {
+            uint32_t i = k % cap;
+            if (rx) o += snprintf(buf + o, (size_t)(n - o), "%u %02x %u %u %u;", mb_rx.ms[i], mb_rx.st[i], mb_rx.d1[i], mb_rx.d2[i], mb_rx.src[i]);
+            else o += snprintf(buf + o, (size_t)(n - o), "%u %u %s;", mb_fxlog.ms[i], mb_fxlog.on[i], mb_fxlog.why[i]);
+        }
+        return o;
+    }
     if (!strncmp(key, "dev:", 4)) {
         const char *k = key + 4;
         if (!strcmp(k, "bpm10")) return snprintf(buf, (size_t)n, "%u", tempo_bpm10());
@@ -1346,6 +1445,7 @@ static void mb_set(const char *key, const char *val)
     if (!strcmp(key, "dev_play") || !strcmp(key, "dev_play_add")) { mp_set(key, val); return; }
     if (!strcmp(key, "dev_cpu_log")) { atomic_store(&mb.cpu_log, atoi(val) != 0); return; }
     if (!strcmp(key, "dev_stats_log")) { atomic_store(&mb.stats_log, atoi(val) != 0); return; }
+    if (!strcmp(key, "dev_rx_log")) { atomic_store(&mb_rx_log, atoi(val) != 0); return; }
     if (!strcmp(key, "dev_sus_touch")) { int t = atoi(val); atomic_store(&mb.sus_touch, t >= 0 && t <= 9 && t != 8 ? t : -1); return; }
     if (!strcmp(key, "dev_clock")) { int m = atoi(val); if (m >= MB_CLOCK_AUTO && m <= MB_CLOCK_HOST) mb.clock_mode = m; return; }
 }

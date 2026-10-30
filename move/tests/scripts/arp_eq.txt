@@ -1,0 +1,26 @@
+# 2026-10-30: the arpeggiator on the Move (no clock running: the app's tempo, the host build's): the plugin path equals
+# the host build sample for sample. UP at 1/16 over a held chord, RATE 1/8T, OCT 2 and GATE 30 %, a chord change while
+# it plays, MODE RANDOM, the pedal, MODE OFF with notes held (they stop), then UP-DN again and every note let go
+300 midi 0xB0 52 1
+310 midi 0xB0 53 3
+400 midi 0x90 60 100
+410 midi 0x90 64 60
+420 midi 0x90 67 30
+1400 midi 0xB0 53 2
+1410 midi 0xB0 54 1
+1420 midi 0xB0 55 30
+2400 midi 0x80 64 0
+2410 midi 0x90 65 110
+3000 midi 0xB0 52 5
+3600 midi 0xB0 64 127
+3700 midi 0x80 60 0
+3710 midi 0x80 65 0
+3720 midi 0x80 67 0
+4400 midi 0xB0 64 0
+4500 midi 0x90 48 90
+4600 midi 0x90 55 90
+5000 midi 0xB0 52 0
+5400 midi 0xB0 52 3
+6200 midi 0x80 48 0
+6210 midi 0x80 55 0
+7500 end
