@@ -56,7 +56,8 @@ GR_CELL = os.path.join(ROOT, "move", "ui", "gr_cell.js")       # the knob grid's
 SCREEN = {"key": "s_screen", "name": "PAGES", "type": "canvas", "canvas_script": "screen.js", "enterable": True,
           "show_footer": False, "show_value": True, "fullscreen_live_ms": 100,
           "extra_keys": ["rev", "ui_engine", "s_sustain", "preset_name"]}
-SCREEN_VALUE = "OPEN"              # what the plugin answers for s_screen: the cell's value line
+CHAIN_EXTRA_KEYS = ["preset", "preset_name", "preset_count"]   # (on chain_params' first entry: outputs())
+SCREEN_VALUE = "OPEN"             # what the plugin answers for s_screen: the cell's value line
 # The gain-reduction meter on Schwung's own knob grid (the COMPRESSOR level, knobs 7-8): two read-only cells, one
 # picture. Schwung (v1.8.1, docs/MODULES.md "Custom widgets") draws a chain_params viz kind "custom:..." with the
 # module's canvas.js drawCell; the two keys are one viz group (roles gr + pk, adjacent on one row), so the picture
@@ -75,6 +76,7 @@ SCREEN_CONF = {"hold_ms": 500,     # the large card stays this long after the kn
                "fast_ms": 40,      # two detents closer than this: a fast turn ...
                "fast_mul": 4,      # ... moves a wide range (> 24 steps) this many steps a detent
                "settle_ms": 600,   # a value written this recently is not re-read (the write may still be queued)
+               "tap_ms": 400,      # two touches of a knob closer than this: a double tap, the knob back to its default
                "sus_cc": None,     # the claimed sustain button (SUS_BTN_CC)
                "fx_cc": None}      # the claimed effects button (FX_BTN_CC)
 # The sustain (the user, 2026-10-28 18:25: "we just need a toggle option, sustain pedal on or off"): SUS on the first
@@ -584,6 +586,11 @@ def c_header(hier, chain, crow):
 def outputs():
     m = model()
     levels, chain, crow, reach = build(m)
+    # The preset keys for Schwung's web remote (schwung-manager remote_ui.go): it reads a preset browser's keys from
+    # ui_hierarchy only, and the plugin serves none (Frodhes' own screen, MB_OWN_UI); the keys a chain_params entry
+    # names as extra_keys it reads and pushes too (fetchExtraKeysFrom), so the remote, tools/move_ws.py and the
+    # preflight see the preset, its name and the count again
+    chain[0] = dict(chain[0], extra_keys=CHAIN_EXTRA_KEYS)
     hier = {"levels": levels}
     module = {"id": "frodhes", "name": "Frodhes", "abbrev": "FRDH", "version": "0.0.0-dev",
               "description": "Physical-model electric piano, vibraphone and marimba",
@@ -623,6 +630,8 @@ def screen_pages(levels):
             for f in ("min", "max", "step", "options"):
                 if f in it:
                     k[f] = it[f]
+            if "default" in it:                      # (a double tap on the knob's touch resets it: the screen's reset)
+                k["def"] = it["default"]
             if it.get("access") == "write":
                 k["write"] = True
             ks.append(k)

@@ -108,6 +108,13 @@ elif cmd == "seq":
             r = ask("GET_PARAM " + key)
             print("GOT %%s:%%s %%s" %% (slot, key, r[:160] + (" ... (%%d B)" %% len(r) if len(r) > 160 else "")))
             sys.stdout.flush()
+        elif w.startswith(("dump:", "load:")):
+            # dump:SLOT:KEY:NAME / load:SLOT:KEY:NAME: a value too long for a line (the state) to / from BENCH/NAME
+            slot, key, name = w[5:].split(":", 2)
+            ask("SLOT " + slot)
+            cmd = "DUMP_PARAM_FILE" if w.startswith("dump:") else "SET_PARAM_FILE"
+            print("%%s %%s:%%s %%s" %% ("GOT" if cmd[0] == "D" else "SET", slot, key,
+                                    ask("%%s %%s %%s/%%s" %% (cmd, key, BENCH, name)))); sys.stdout.flush()
         elif w == "shot":
             print("SHOT " + open(LIVE, "rb").read(1024).hex()); sys.stdout.flush()
         elif w.startswith("watch:"):
@@ -182,6 +189,8 @@ def expand(op):
     if k == "shot":
         return ["sleep:120", "shot"]
     if k == "watch":                               # watch:MS: the card -> overview edges, ms after the last packet
+        return [op]
+    if k in ("dump", "load"):                      # dump:SLOT:KEY:NAME, load:SLOT:KEY:NAME (a file in BENCH)
         return [op]
     if k in ("get", "set"):                        # get:SLOT:KEY, set:SLOT:KEY:VALUE (0-based slot; synth:<key>)
         return [op]

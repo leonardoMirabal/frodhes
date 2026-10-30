@@ -45,6 +45,8 @@ export class Plugin {
         const nm = (c, i, n) => (c + String(i + 1).padStart(2, "0") + " " + n).slice(0, 16).replace(/ +$/, "");
         this.names = fn.map((n, i) => nm("F", i, n));
         for (let i = 0; i < 16; i++) this.names.push(nm("U", i, "----"));
+        this.nf = fn.length;
+        this.used = new Array(16).fill(false);        // (u_names: the used user slots by name, the rest empty)
         this.queue = [];
         this.reads = 0;
         this.writes = [];
@@ -57,6 +59,7 @@ export class Plugin {
         if (key === "preset") return String(this.preset);
         if (key === "preset_count") return String(this.names.length);
         if (key === "preset_name") return this.names[this.preset];
+        if (key === "u_names") return this.used.map((u, i) => u ? this.names[this.nf + i] : "").join("|");
         if (key === "s_sustain") return String(this.v.s_sustain ? 1 : 0);
         if (key === "r_cmp_gr") return this.gr !== undefined ? this.gr : this.v.p_cmp_sw ? "0 0" : "OFF";
         if (!(key in this.v)) return null;
@@ -69,6 +72,16 @@ export class Plugin {
     apply() {                                        // the bridge's step: the queued writes land
         for (const [key, val] of this.queue) {
             if (key === "preset") { this.preset = Number(val); this.rev++; continue; }
+            if (key === "u_save") {                 // the sound into user slot val (1-16): named, loaded (move_bridge.h)
+                const u = Number(val) - 1;
+                if (u >= 0 && u < 16) {
+                    this.used[u] = true;
+                    this.names[this.nf + u] = "U" + String(u + 1).padStart(2, "0") + " SAVED";
+                    this.preset = this.nf + u;
+                    this.rev++;
+                }
+                continue;
+            }
             if (key === "s_susbtn") {               // the Capture button: a press flips SUS (move_bridge.h MK_BTN)
                 if (Number(val)) this.v.s_sustain = this.v.s_sustain ? 0 : 1;
                 this.rev++; continue;
@@ -95,6 +108,16 @@ export class Frame {
     lit() { let n = 0; for (const p of this.px) n += p; return n; }
 }
 
+// Schwung's trailing pages for a module-drawn grid, as shadow_ui.js componentTrailingMenus builds them (nothing saved)
+export const CHAIN_MENUS = [
+    { name: "My Presets", entries: [{ label: "Preset", value: "(none)", action: "up_load" },
+                                    { label: "Save As", action: "up_save_as" }] },
+    { name: "Module", entries: [{ label: "Module Help", action: "module_help" },
+                                { label: "Add to List", value: "", action: "module_lists" },
+                                { label: "Clear Automation", value: "", action: "clear_component_lanes" },
+                                { label: "Swap Module", action: "swap_module" },
+                                { label: "Remove Module", action: "remove_module" }] }];
+
 // one screen: the overlay, its state, the clock, the plugin
 export class Screen {
     constructor(opts = {}) {
@@ -106,6 +129,7 @@ export class Screen {
         this.shift = false;
         this.state = {};
         this.fb = new Frame();
+        this.chain = !!opts.chain;                    // the whole-screen path's ctx: the module rows, SAVE TO USER
     }
     ctx(draw) {
         const fb = this.fb, self = this;
@@ -122,6 +146,11 @@ export class Screen {
         if (!draw) {
             c.getParam = (k) => self.plugin.get(k);
             c.setParam = (k, v) => { self.plugin.set(k, String(v)); return true; };
+            if (self.chain) {                         // (Schwung's trailing pages as a 1.8 host offers them)
+                c.menus = () => CHAIN_MENUS;
+                c.runAction = () => true;
+                c.userSave = (u) => c.setParam("u_save", String(u));
+            }
         }
         return c;
     }

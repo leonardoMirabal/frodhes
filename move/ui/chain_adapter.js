@@ -36,6 +36,12 @@ const ctx = {
     fillRect(x, y, w, h, c) { if (w > 0 && h > 0) fill_rect(x | 0, y | 0, w | 0, h | 0, c ? 1 : 0); },
     now: () => Date.now(),
     shiftHeld,
+    // the list's module rows: Schwung's own trailing pages for a module-drawn grid (API.md "Trailing pages": My
+    // Presets, Module), absent on an older host; a row's action is Schwung's (true: one of its screens took over)
+    menus() { return has("shadow_component_trailing_menus") ? shadow_component_trailing_menus() : []; },
+    runAction(a) { return has("shadow_component_run_action") ? !!shadow_component_run_action(a) : false; },
+    // SAVE TO USER: the sound into Frodhes' own user slot u (1-16, the plugin's u_save; store.bin, shared)
+    userSave(u) { return ctx.setParam("u_save", String(u)); },
 };
 
 // The knob LEDs, as Schwung's grid lights them (shared/param_pages/knob_leds.mjs, imported at the top of ui_chain.js
@@ -120,6 +126,11 @@ globalThis.chain_ui = {
         OV.onMidi(ctx, { source: 0, data: [d[0] | 0, d[1] | 0, d[2] | 0] });
     },
     onMidiMessageExternal() {},
+    // Save / Save As (Schwung's keyboard over our screen) changed what My Presets offers
+    onPresetsChanged() { OV.presetsChanged(ctx); },
+    // the host reloaded us after Load / Delete / Swap / Help: land on the list at that section
+    restorePage(name) { OV.restore(ctx, name); },
+    _state() { return state.fr; },                // (the host tests: the screen's state)
     handleBack() {
         if (OV.handleBack(ctx)) return true;      // up a level (the page list closes): still ours
         ledsOff();                                // the host unloads the screen: the knobs go dark

@@ -29,6 +29,18 @@ g.__KNOB_LEDS = {
     resetKnobLedCache() { leds.resets++; },
 };
 g.shadow_restore_knob_leds = () => { leds.restores++; };
+// Schwung's trailing pages for a module-drawn grid (shadow_ui.js componentTrailingMenus / runComponentActionFromGrid)
+const host = { menuReads: 0, actions: [] };
+g.shadow_component_trailing_menus = () => {
+    host.menuReads++;
+    return [{ name: "My Presets", entries: [{ label: "Preset", value: "(none)", action: "up_load" },
+                                            { label: "Save As", action: "up_save_as" }] },
+            { name: "Module", entries: [{ label: "Module Help", action: "module_help" },
+                                        { label: "Add to List", value: "", action: "module_lists" },
+                                        { label: "Swap Module", action: "swap_module" },
+                                        { label: "Remove Module", action: "remove_module" }] }];
+};
+g.shadow_component_run_action = (a) => { host.actions.push(a); return a !== "up_save_as"; };
 // the arrows' LEDs (input_filter.mjs setButtonLED, imported on the device): every send, and what each CC shows
 const btn = { sends: [], now: {} };
 g.__SET_BUTTON_LED = (cc, c, force) => { btn.sends.push([cc, c, force]); btn.now[cc] = c; };
@@ -51,6 +63,7 @@ const pages = (() => {     // FR_PAGES as the generator wrote them (the same JSO
     return JSON.parse(m[1]);
 })();
 const bound = (v) => v.map((x) => x !== null);
+const FR = (i) => pages[i];
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 // what each knob of a page should show: the plugin model's value, an enum by index / (n - 1), a number over its range
 const expect = (pg) => [0, 1, 2, 3, 4, 5, 6, 7].map((i) => {
@@ -142,6 +155,89 @@ check(ui.handleBack() === false && leds.clears === 1, "LEDs: without the shim's 
 const reads = p.reads;
 t += 100; ui.tick();
 check(p.reads > reads, "the live keys read once LIVE_MS has passed");
+
+// ---- the list's module rows, SAVE TO USER, Schwung's rows, the double-tap reset
+ui.init(); ui.tick();
+const st = () => ui._state();
+const go = (label) => {                       // the jog to the row of that label (from the top)
+    for (let i = 0; i < 40; i++) midi(0xB0, 14, 127);
+    for (let i = 0; i < 40 && st().rows[st().cursor].label !== label; i++) midi(0xB0, 14, 1);
+    return st().rows[st().cursor].label === label;
+};
+const mr0 = host.menuReads;
+midi(0xB0, 3, 127);                            // a click: the list
+const labels = st().rows.map((r) => (r.kind === "sep" ? "-" : "") + r.label);
+check(st().list && host.menuReads === mr0 + 1, "menu: the list reads Schwung's trailing pages once on opening (" + (host.menuReads - mr0) + ")");
+for (const want of ["-USER PRESETS", "SAVE TO USER", "-MY PRESETS", "PRESET", "SAVE AS", "-MODULE",
+                    "MODULE HELP", "ADD TO LIST", "SWAP MODULE", "REMOVE MODULE"])
+    check(labels.includes(want), "menu: the list has " + want + " (" + labels.join(", ") + ")");
+check(labels.indexOf("SAVE TO USER") > labels.indexOf("REVERB"), "menu: the module rows follow the pages");
+ui.tick(); ui.tick();
+check(host.menuReads === mr0 + 1, "menu: no read per frame (" + (host.menuReads - mr0) + ")");
+for (let i = 0; i < 40; i++) midi(0xB0, 14, 1);
+check(st().rows[st().cursor].kind !== "sep", "menu: the cursor never rests on a divider");
+for (let i = 0; i < 40; i++) {
+    midi(0xB0, 14, 127);
+    if (st().rows[st().cursor].kind === "sep") { check(false, "menu: the jog stopped on a divider"); break; }
+}
+// SAVE TO USER: the card, the jog picks the slot, a click saves (u_save), Back leaves unsaved
+check(go("SAVE TO USER"), "menu: the jog reaches SAVE TO USER");
+midi(0xB0, 3, 127);
+check(st().save && !st().list && st().save.slot === 0, "save: the card opens on the first empty slot (U01)");
+ui.tick();
+midi(0xB0, 14, 1); midi(0xB0, 14, 1);
+check(st().save.slot === 2, "save: the jog picks U03 (" + st().save.slot + ")");
+let nw = p.writes.length;
+check(ui.handleBack() === true && !st().save, "save: Back closes the card");
+check(!p.writes.slice(nw).some(([k]) => k === "u_save"), "save: Back saves nothing");
+midi(0xB0, 3, 127); check(go("SAVE TO USER"), "save: back to SAVE TO USER"); midi(0xB0, 3, 127);
+midi(0xB0, 71, 1); midi(0xB0, 72, 1); midi(0xB0, 73, 1);     // any knob picks too: U04
+nw = p.writes.length;
+midi(0xB0, 3, 127);
+check(p.writes.slice(nw).some(([k, v]) => k === "u_save" && v === "4"), "save: a click writes u_save 4 (" +
+      JSON.stringify(p.writes.slice(nw)) + ")");
+check(!st().save && st().toast && st().toast.text === "SAVED U04", "save: SAVED U04 shown");
+check(p.preset === p.nf + 3, "save: U04 is the preset now");
+ui.tick();
+check(fb.lit() > 300, "save: the screen drawn with the toast (" + fb.lit() + " px)");
+midi(0xB0, 3, 127); check(go("SAVE TO USER"), "save: again"); midi(0xB0, 3, 127);
+check(st().save.slot === 3 && st().save.names[3] === "U04 SAVED", "save: the card opens on the loaded U04, named");
+ui.handleBack();
+// Schwung's rows: the action is Schwung's; one that opened a screen draws nothing over it, one done in place says so
+t += 2000; ui.tick();
+midi(0xB0, 3, 127); check(go("MODULE HELP"), "menu: the jog reaches MODULE HELP");
+midi(0xB0, 3, 127);
+check(host.actions[host.actions.length - 1] === "module_help" && !st().list && !st().toast,
+      "menu: MODULE HELP runs Schwung's module_help (" + host.actions.join(",") + ")");
+midi(0xB0, 3, 127); go("SWAP MODULE"); midi(0xB0, 3, 127);
+check(host.actions[host.actions.length - 1] === "swap_module", "menu: SWAP MODULE runs Schwung's swap_module");
+midi(0xB0, 3, 127); go("SAVE AS"); midi(0xB0, 3, 127);
+check(host.actions[host.actions.length - 1] === "up_save_as" && st().toast, "menu: SAVE AS runs up_save_as (in place)");
+// the host reloads the screen after Load / Help: restorePage lands on the list at that section
+ui.init(); ui.restorePage("My Presets");
+check(st().list && st().rows[st().cursor].label === "PRESET" && st().rows[st().cursor].value === "(NONE)", "menu: restorePage(My Presets) lands on its first row (" +
+      (st().rows[st().cursor] || {}).label + ")");
+const r0 = host.menuReads;
+ui.onPresetsChanged();
+check(host.menuReads === r0 + 1, "menu: onPresetsChanged reads the rows again");
+ui.handleBack();
+// the double tap: a knob back to its default; not with a turn between, not slower than tap_ms, never SUS / PRESET
+ui.init(); midi(0xB0, 14, 1); t += 2000; ui.tick();          // PIANO VOICE
+check(FR(st().page).title === "PIANO VOICE", "reset: on PIANO VOICE");
+p.external("p_tone", 20); t += 2000; ui.tick(); for (let i = 0; i < 10; i++) { t += 120; ui.tick(); }
+const tap = (k) => { midi(0x90, k, 127); t += 60; midi(0x90, k, 0); t += 100; };
+nw = p.writes.length;
+tap(0); tap(0);
+check(p.writes.slice(nw).some(([k, v]) => k === "p_tone" && v === "0") && p.v.p_tone === 0,
+      "reset: a double tap sets TONE to its default 0 (" + JSON.stringify(p.writes.slice(nw)) + ")");
+p.external("p_tone", 20); t += 2000; ui.tick();
+nw = p.writes.length;
+midi(0x90, 0, 127); midi(0xB0, 71, 1); midi(0x90, 0, 0); t += 100; tap(0);
+check(!p.writes.slice(nw).some(([k, v]) => k === "p_tone" && v === "0"), "reset: not with a turn between the touches");
+nw = p.writes.length;
+t += 1000; tap(0); t += 500; tap(0);
+check(!p.writes.slice(nw).some(([k, v]) => k === "p_tone" && v === "0"), "reset: not when the touches are slower than tap_ms");
+ui.handleBack();
 
 if (fails) { console.log(fails + " failed"); process.exit(1); }
 console.log("test_chain: ok");

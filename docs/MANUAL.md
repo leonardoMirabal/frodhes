@@ -1140,9 +1140,12 @@ Everything in this manual applies, with these differences:
   but very heavy playing with every effect on in all four, or loading a set with several of them, can drop audio.
 - **Level**: Frodhes plays 2.2 dB louder on the Move than on the FM-1, its loudest peak at -0.5 dBFS, never a clip.
   Keep Schwung's slot volume at 100%: above it, Schwung's own gain can clip.
-- **Frodhes' own screen** (PAGES on the first page: touch its knob and click the jog wheel): the eight knobs as eight cards, each with its name, value
-  and bar; touch or turn a knob and its card fills the screen, as the FM-1 shows one card large; the overview
-  comes back about a second after you let go. The jog wheel turns the pages; a click lists them.
+- **Frodhes' own screen** is the whole Move UI for Frodhes (Shift + volume touch + its Track button, then click
+  the jog wheel on the synth): the eight knobs as eight cards, each with its name, value and bar; touch or turn a
+  knob and its card fills the screen, as the FM-1 shows one card large; the overview comes back half a second
+  after you let go. Tap a knob twice quickly to reset it. The jog wheel turns the pages; a click lists them, and
+  below the pages the menu: SAVE TO USER (U01–U16) and Schwung's own rows (its presets, Module Help, Swap Module).
+  The arrows' lights show FX (Left) and SUS (Right).
 
   ![The DRIVE/FILTER page on the Move](manual/img/move/move-drive-filter.png?v=7fb7a2cc)
 - **The sound**: HQ, the Move's one version of the three engines (the FM-1 plays Classic): the piano types' exact
@@ -1153,8 +1156,9 @@ Everything in this manual applies, with these differences:
   as on the FM-1, half pedalling included, and letting it up turns SUS off.
 - **FX** on the first page is the FX button: all effects off or on (CC 111), except the compressor, which stays on
   the Move. On Frodhes' screen the Left arrow does the same.
-- **Presets**: F01–F19 and U01–U16 in the preset browser and by program change, as on the FM-1. There is no SAVE
-  page: the sound is saved with the Move's set.
+- **Presets**: F01–F19 and U01–U16 with PRESET and by program change, as on the FM-1. SAVE TO USER in the menu of
+  Frodhes' screen saves the sound into a user slot, shared by every Frodhes on the Move; the sound is also saved
+  with the Move's set.
 - **Only on the Move**: MAPPINGS turns the pads' pressure (aftertouch, poly pressure) into one of the CCs above; off by default.
 - **The tempo is the Move's**: the synced effects follow its clock; there is no BPM or CLOCK setting.
 - **Not on the Move**: PERFORM, ASSIGN and DISPLAY (the Move has its own knobs and screen), the sequencer, the

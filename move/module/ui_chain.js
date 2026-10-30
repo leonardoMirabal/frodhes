@@ -6,8 +6,8 @@ import { setButtonLED as FR_SET_BUTTON_LED } from '/data/UserData/schwung/shared
 (function () {
 "use strict";
 const PREV_OV = globalThis.canvas_overlay, PREV_FS = globalThis.frodhes_screen;
-const FR_PAGES = [{"title":"FRODHES","gate":-1,"part":-1,"root":true,"knobs":[{"key":"p_type","name":"TYPE","type":"enum","options":["ST77","SUIT","FELT","DYNO","VIBE","MRMB"]},{"key":"p_spread","name":"SPREAD","type":"int","short":"SPRD","min":0,"max":127},{"key":"s_sustain","name":"SUS","type":"enum","options":["OFF","ON"]},{"key":"s_fx","name":"FX","type":"enum","options":["OFF","ON"]},{"key":"preset","name":"PRESET","type":"preset"}]},{"title":"PIANO VOICE","gate":0,"part":0,"root":false,"knobs":[{"key":"p_tone","name":"TONE","type":"int","min":-64,"max":63},{"key":"p_bark","name":"BARK","type":"int","min":0,"max":127},{"key":"p_bell","name":"BELL","type":"int","min":0,"max":127},{"key":"p_hammer","name":"HAMMR","type":"int","min":0,"max":127},{"key":"p_decay","name":"DECAY","type":"int","min":0,"max":127},{"key":"p_release","name":"REL","type":"int","min":0,"max":127},{"key":"p_noise","name":"NOISE","type":"int","min":0,"max":127},{"key":"s_tune","name":"TUNE","type":"int","min":-50,"max":50}]},{"title":"VIBES VOICE","gate":1,"part":0,"root":false,"knobs":[{"key":"p_strike","name":"STRIKE","type":"int","short":"STRK","min":0,"max":127},{"key":"p_mallet","name":"MALLET","type":"int","short":"MALLT","min":0,"max":127},{"key":"p_tube","name":"TUBE","type":"int","min":0,"max":127},{"key":"p_weight","name":"WEIGHT","type":"int","short":"WGHT","min":0,"max":127},{"key":"p_ring","name":"RING","type":"int","min":0,"max":127},{"key":"p_damper","name":"DAMPR","type":"int","min":0,"max":127},{"key":"p_noise","name":"NOISE","type":"int","min":0,"max":127},{"key":"s_tune","name":"TUNE","type":"int","min":-50,"max":50}]},{"title":"VIBES MOTOR","gate":1,"part":1,"root":false,"knobs":[{"key":"p_mot_on","name":"MOTOR","type":"enum","options":["OFF","ON"]},{"key":"p_mot_depth","name":"DEPTH","type":"int","min":0,"max":127},{"key":"p_mot_rate","name":"SPEED","type":"int","min":0,"max":127},{"key":"p_mot_shape","name":"SHAPE","type":"int","min":0,"max":127},{"key":"p_mot_sync","name":"SYNC","type":"enum","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR"]}]},{"title":"MARIMBA VOICE","gate":2,"part":0,"root":false,"knobs":[{"key":"p_strike","name":"STRIKE","type":"int","short":"STRK","min":0,"max":127},{"key":"p_mallet","name":"MALLET","type":"int","short":"MALLT","min":0,"max":127},{"key":"p_tube","name":"TUBE","type":"int","min":0,"max":127},{"key":"p_weight","name":"WEIGHT","type":"int","short":"WGHT","min":0,"max":127},{"key":"p_ring","name":"RING","type":"int","min":0,"max":127},{"key":"p_mute","name":"MUTE","type":"int","min":0,"max":127},{"key":"p_noise","name":"NOISE","type":"int","min":0,"max":127},{"key":"s_tune","name":"TUNE","type":"int","min":-50,"max":50}]},{"title":"COMPRESSOR","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_cmp_amt","name":"THRESH","type":"int","short":"THRSH","min":0,"max":127},{"key":"p_cmp_ratio","name":"RATIO","type":"enum","options":["1.5:1","2:1","3:1","4:1","6:1","8:1","10:1","20:1"]},{"key":"p_cmp_atk","name":"ATTACK","type":"int","short":"ATK","min":0,"max":127},{"key":"p_cmp_gain","name":"MKUP","type":"int","min":0,"max":127},{"key":"p_cmp_sw","name":"COMP","type":"enum","options":["OFF","ON"]},{"key":"p_cmp_rel","name":"REL","type":"int","min":0,"max":127}]},{"title":"DRIVE/FILTER","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_drv_sw","name":"DRIVE","type":"enum","options":["OFF","FDRV","KHLON","TSH8","OHCD","BHLUE"]},{"key":"p_drive","name":"AMOUNT","type":"int","short":"AMT","min":0,"max":127},{"key":"p_drv_tone","name":"TONE","type":"int","min":-64,"max":63},{"key":"p_drv_mix","name":"MIX","type":"int","min":0,"max":127},{"key":"p_fl_type","name":"FILTER","type":"enum","short":"FILT","options":["OFF","LP12","LP18","HP12","HP18","BP","NOTCH"]},{"key":"p_fl_freq","name":"FREQ","type":"int","min":0,"max":127},{"key":"p_fl_reso","name":"RESO","type":"int","min":0,"max":127},{"key":"p_fl_lfo","name":"LFO","type":"int","min":0,"max":127}]},{"title":"TREM/PHASER","gate":-1,"part":-1,"root":false,"knobs":[{"key":"s_twkind","name":"TREM","type":"enum","options":["OFF","PAN","TREM","WAH"]},{"key":"p_tw_depth","name":"DEPTH","type":"int","min":0,"max":127},{"key":"p_tw_rate","name":"RATE","type":"int","min":0,"max":127},{"key":"p_tw_shape","name":"SHAPE","type":"int","min":0,"max":127},{"key":"p_ph_sw","name":"PHASER","type":"enum","short":"PHASE","options":["OFF","ON"]},{"key":"p_ph_depth","name":"DEPTH","type":"int","min":0,"max":127},{"key":"p_ph_speed","name":"SPEED","type":"int","min":0,"max":127},{"key":"p_ph_fdbk","name":"FEEDBK","type":"int","short":"FDBK","min":0,"max":127}]},{"title":"CHORUS/DELAY","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_cp_sw","name":"CHORUS","type":"enum","short":"CHOR","options":["OFF","ON"]},{"key":"p_cp_depth","name":"DEPTH","type":"int","min":0,"max":127},{"key":"p_cp_speed","name":"SPEED","type":"int","min":0,"max":127},{"key":"p_cp_sync","name":"SYNC","type":"enum","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR","4BAR"]},{"key":"p_dl_sw","name":"DELAY","type":"enum","options":["OFF","DIG","ANA","TAPE"]},{"key":"p_dl_depth","name":"MIX","type":"int","min":0,"max":127},{"key":"p_dl_time","name":"TIME","type":"int","min":0,"max":127},{"key":"p_dl_fdbk","name":"FEEDBK","type":"int","short":"FDBK","min":0,"max":127}]},{"title":"REVERB","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_rv_type","name":"REVERB","type":"enum","short":"RVB","options":["OFF","HALL","PLATE","INF"]},{"key":"p_rv_depth","name":"MIX","type":"int","min":0,"max":127},{"key":"p_rv_decay","name":"DECAY","type":"int","min":0,"max":127},{"key":"p_rv_tone","name":"TONE","type":"int","min":-64,"max":63},{"key":"p_rv_predly","name":"PREDLY","type":"int","short":"PDLY","min":0,"max":127},{"key":"p_rv_size","name":"SIZE","type":"int","min":0,"max":127},{"key":"p_rv_mod","name":"MOD","type":"int","min":0,"max":127},{"key":"p_rv_locut","name":"LOWCUT","type":"int","short":"LCUT","min":0,"max":127}]},{"title":"TEMPO","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_tw_sync","name":"TRSYNC","type":"enum","short":"TRSYN","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR"]},{"key":"p_ph_sync","name":"PHSYNC","type":"enum","short":"PHSYN","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR","4BAR"]},{"key":"p_dl_sync","name":"DLSYNC","type":"enum","short":"DLSYN","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR"]}]},{"title":"LFO/SETUP","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_lfo_shape","name":"SHAPE","type":"enum","options":["SINE","TRI","SAW","RAMP","SQR","S&H"]},{"key":"p_lfo_rate","name":"RATE","type":"int","min":0,"max":127},{"key":"p_lfo_sync","name":"SYNC","type":"enum","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR","4BAR"]},{"key":"p_lfo_retrig","name":"RETRIG","type":"enum","short":"TRIG","options":["FREE","KEY"]},{"key":"p_dl_tone","name":"DLTONE","type":"int","short":"DLTON","min":0,"max":127},{"key":"p_level","name":"LEVEL","type":"int","min":0,"max":127},{"key":"s_mch","name":"CHAN","type":"enum","options":["ALL","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"]}]},{"title":"MAPPINGS","gate":-1,"part":-1,"root":false,"knobs":[{"key":"m_at_cc","name":"AT CC","type":"int","min":0,"max":119},{"key":"m_at_lo","name":"AT LO","type":"int","min":0,"max":127},{"key":"m_at_hi","name":"AT HI","type":"int","min":0,"max":127},{"key":"m_pa_cc","name":"PA CC","type":"int","min":0,"max":119},{"key":"m_pa_lo","name":"PA LO","type":"int","min":0,"max":127},{"key":"m_pa_hi","name":"PA HI","type":"int","min":0,"max":127}]}];
-const FR_CONF = {"hold_ms":500,"fast_ms":40,"fast_mul":4,"settle_ms":600,"sus_cc":63,"fx_cc":62,"gr_db10":[10,20,30,40,50,60,80,100,120,150,180,200,240,270,300],"live_ms":100};
+const FR_PAGES = [{"title":"FRODHES","gate":-1,"part":-1,"root":true,"knobs":[{"key":"p_type","name":"TYPE","type":"enum","options":["ST77","SUIT","FELT","DYNO","VIBE","MRMB"],"def":0},{"key":"p_spread","name":"SPREAD","type":"int","short":"SPRD","min":0,"max":127,"def":0},{"key":"s_sustain","name":"SUS","type":"enum","options":["OFF","ON"]},{"key":"s_fx","name":"FX","type":"enum","options":["OFF","ON"],"def":1},{"key":"preset","name":"PRESET","type":"preset"}]},{"title":"PIANO VOICE","gate":0,"part":0,"root":false,"knobs":[{"key":"p_tone","name":"TONE","type":"int","min":-64,"max":63,"def":0},{"key":"p_bark","name":"BARK","type":"int","min":0,"max":127,"def":64},{"key":"p_bell","name":"BELL","type":"int","min":0,"max":127,"def":64},{"key":"p_hammer","name":"HAMMR","type":"int","min":0,"max":127,"def":64},{"key":"p_decay","name":"DECAY","type":"int","min":0,"max":127,"def":64},{"key":"p_release","name":"REL","type":"int","min":0,"max":127,"def":64},{"key":"p_noise","name":"NOISE","type":"int","min":0,"max":127,"def":48},{"key":"s_tune","name":"TUNE","type":"int","min":-50,"max":50}]},{"title":"VIBES VOICE","gate":1,"part":0,"root":false,"knobs":[{"key":"p_strike","name":"STRIKE","type":"int","short":"STRK","min":0,"max":127,"def":64},{"key":"p_mallet","name":"MALLET","type":"int","short":"MALLT","min":0,"max":127,"def":64},{"key":"p_tube","name":"TUBE","type":"int","min":0,"max":127,"def":64},{"key":"p_weight","name":"WEIGHT","type":"int","short":"WGHT","min":0,"max":127,"def":64},{"key":"p_ring","name":"RING","type":"int","min":0,"max":127,"def":64},{"key":"p_damper","name":"DAMPR","type":"int","min":0,"max":127,"def":64},{"key":"p_noise","name":"NOISE","type":"int","min":0,"max":127,"def":48},{"key":"s_tune","name":"TUNE","type":"int","min":-50,"max":50}]},{"title":"VIBES MOTOR","gate":1,"part":1,"root":false,"knobs":[{"key":"p_mot_on","name":"MOTOR","type":"enum","options":["OFF","ON"],"def":0},{"key":"p_mot_depth","name":"DEPTH","type":"int","min":0,"max":127,"def":110},{"key":"p_mot_rate","name":"SPEED","type":"int","min":0,"max":127,"def":78},{"key":"p_mot_shape","name":"SHAPE","type":"int","min":0,"max":127,"def":0},{"key":"p_mot_sync","name":"SYNC","type":"enum","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR"],"def":0}]},{"title":"MARIMBA VOICE","gate":2,"part":0,"root":false,"knobs":[{"key":"p_strike","name":"STRIKE","type":"int","short":"STRK","min":0,"max":127,"def":64},{"key":"p_mallet","name":"MALLET","type":"int","short":"MALLT","min":0,"max":127,"def":64},{"key":"p_tube","name":"TUBE","type":"int","min":0,"max":127,"def":64},{"key":"p_weight","name":"WEIGHT","type":"int","short":"WGHT","min":0,"max":127,"def":64},{"key":"p_ring","name":"RING","type":"int","min":0,"max":127,"def":64},{"key":"p_mute","name":"MUTE","type":"int","min":0,"max":127,"def":64},{"key":"p_noise","name":"NOISE","type":"int","min":0,"max":127,"def":48},{"key":"s_tune","name":"TUNE","type":"int","min":-50,"max":50}]},{"title":"COMPRESSOR","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_cmp_amt","name":"THRESH","type":"int","short":"THRSH","min":0,"max":127,"def":0},{"key":"p_cmp_ratio","name":"RATIO","type":"enum","options":["1.5:1","2:1","3:1","4:1","6:1","8:1","10:1","20:1"],"def":3},{"key":"p_cmp_atk","name":"ATTACK","type":"int","short":"ATK","min":0,"max":127,"def":40},{"key":"p_cmp_gain","name":"MKUP","type":"int","min":0,"max":127,"def":0},{"key":"p_cmp_sw","name":"COMP","type":"enum","options":["OFF","ON"],"def":0},{"key":"p_cmp_rel","name":"REL","type":"int","min":0,"max":127,"def":50}]},{"title":"DRIVE/FILTER","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_drv_sw","name":"DRIVE","type":"enum","options":["OFF","FDRV","KHLON","TSH8","OHCD","BHLUE"],"def":1},{"key":"p_drive","name":"AMOUNT","type":"int","short":"AMT","min":0,"max":127,"def":0},{"key":"p_drv_tone","name":"TONE","type":"int","min":-64,"max":63,"def":0},{"key":"p_drv_mix","name":"MIX","type":"int","min":0,"max":127,"def":127},{"key":"p_fl_type","name":"FILTER","type":"enum","short":"FILT","options":["OFF","LP12","LP18","HP12","HP18","BP","NOTCH"],"def":2},{"key":"p_fl_freq","name":"FREQ","type":"int","min":0,"max":127,"def":127},{"key":"p_fl_reso","name":"RESO","type":"int","min":0,"max":127,"def":0},{"key":"p_fl_lfo","name":"LFO","type":"int","min":0,"max":127,"def":0}]},{"title":"TREM/PHASER","gate":-1,"part":-1,"root":false,"knobs":[{"key":"s_twkind","name":"TREM","type":"enum","options":["OFF","PAN","TREM","WAH"]},{"key":"p_tw_depth","name":"DEPTH","type":"int","min":0,"max":127,"def":0},{"key":"p_tw_rate","name":"RATE","type":"int","min":0,"max":127,"def":90},{"key":"p_tw_shape","name":"SHAPE","type":"int","min":0,"max":127,"def":0},{"key":"p_ph_sw","name":"PHASER","type":"enum","short":"PHASE","options":["OFF","ON"],"def":0},{"key":"p_ph_depth","name":"DEPTH","type":"int","min":0,"max":127,"def":0},{"key":"p_ph_speed","name":"SPEED","type":"int","min":0,"max":127,"def":40},{"key":"p_ph_fdbk","name":"FEEDBK","type":"int","short":"FDBK","min":0,"max":127,"def":50}]},{"title":"CHORUS/DELAY","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_cp_sw","name":"CHORUS","type":"enum","short":"CHOR","options":["OFF","ON"],"def":0},{"key":"p_cp_depth","name":"DEPTH","type":"int","min":0,"max":127,"def":0},{"key":"p_cp_speed","name":"SPEED","type":"int","min":0,"max":127,"def":50},{"key":"p_cp_sync","name":"SYNC","type":"enum","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR","4BAR"],"def":0},{"key":"p_dl_sw","name":"DELAY","type":"enum","options":["OFF","DIG","ANA","TAPE"],"def":0},{"key":"p_dl_depth","name":"MIX","type":"int","min":0,"max":127,"def":0},{"key":"p_dl_time","name":"TIME","type":"int","min":0,"max":127,"def":85},{"key":"p_dl_fdbk","name":"FEEDBK","type":"int","short":"FDBK","min":0,"max":127,"def":90}]},{"title":"REVERB","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_rv_type","name":"REVERB","type":"enum","short":"RVB","options":["OFF","HALL","PLATE","INF"],"def":1},{"key":"p_rv_depth","name":"MIX","type":"int","min":0,"max":127,"def":0},{"key":"p_rv_decay","name":"DECAY","type":"int","min":0,"max":127,"def":64},{"key":"p_rv_tone","name":"TONE","type":"int","min":-64,"max":63,"def":0},{"key":"p_rv_predly","name":"PREDLY","type":"int","short":"PDLY","min":0,"max":127,"def":0},{"key":"p_rv_size","name":"SIZE","type":"int","min":0,"max":127,"def":0},{"key":"p_rv_mod","name":"MOD","type":"int","min":0,"max":127,"def":64},{"key":"p_rv_locut","name":"LOWCUT","type":"int","short":"LCUT","min":0,"max":127,"def":0}]},{"title":"TEMPO","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_tw_sync","name":"TRSYNC","type":"enum","short":"TRSYN","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR"],"def":0},{"key":"p_ph_sync","name":"PHSYNC","type":"enum","short":"PHSYN","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR","4BAR"],"def":0},{"key":"p_dl_sync","name":"DLSYNC","type":"enum","short":"DLSYN","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR"],"def":0}]},{"title":"LFO/SETUP","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_lfo_shape","name":"SHAPE","type":"enum","options":["SINE","TRI","SAW","RAMP","SQR","S&H"],"def":0},{"key":"p_lfo_rate","name":"RATE","type":"int","min":0,"max":127,"def":40},{"key":"p_lfo_sync","name":"SYNC","type":"enum","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR","4BAR"],"def":0},{"key":"p_lfo_retrig","name":"RETRIG","type":"enum","short":"TRIG","options":["FREE","KEY"],"def":0},{"key":"p_dl_tone","name":"DLTONE","type":"int","short":"DLTON","min":0,"max":127,"def":70},{"key":"p_level","name":"LEVEL","type":"int","min":0,"max":127,"def":64},{"key":"s_mch","name":"CHAN","type":"enum","options":["ALL","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"]}]},{"title":"MAPPINGS","gate":-1,"part":-1,"root":false,"knobs":[{"key":"m_at_cc","name":"AT CC","type":"int","min":0,"max":119,"def":0},{"key":"m_at_lo","name":"AT LO","type":"int","min":0,"max":127,"def":0},{"key":"m_at_hi","name":"AT HI","type":"int","min":0,"max":127,"def":127},{"key":"m_pa_cc","name":"PA CC","type":"int","min":0,"max":119,"def":0},{"key":"m_pa_lo","name":"PA LO","type":"int","min":0,"max":127,"def":0},{"key":"m_pa_hi","name":"PA HI","type":"int","min":0,"max":127,"def":127}]}];
+const FR_CONF = {"hold_ms":500,"fast_ms":40,"fast_mul":4,"settle_ms":600,"tap_ms":400,"sus_cc":63,"fx_cc":62,"gr_db10":[10,20,30,40,50,60,80,100,120,150,180,200,240,270,300],"live_ms":100};
 // SPDX-License-Identifier: GPL-3.0-only
 // Frodhes' own screen on the Move (M6-02, private plan 05 M6-01 option F), the hand-written part of
 // move/module/screen.js: tools/gen_move_module.py writes FR_PAGES (the pages, from params.c / eng_pages.h / ui.c,
@@ -21,6 +21,12 @@ const FR_CONF = {"hold_ms":500,"fast_ms":40,"fast_mul":4,"settle_ms":600,"sus_cc
 //   pages      the jog wheel browses the pages (the VOICE pages of the engine that plays only); a jog click opens
 //              the page list (the jog picks, a click opens the page, Back closes the list); Back on a page closes
 //              the screen (the host's own way out; Shift + jog too)
+//   menu       below the pages the list has the module's rows when the ctx offers them (the whole-screen path,
+//              chain_adapter.js): SAVE TO USER (Frodhes' own U01-U16, u_save; a card picks the slot) and Schwung's
+//              own trailing pages for a module-drawn grid (MY PRESETS: load / save / save as / delete; MODULE: help,
+//              swap, remove ...), each row run by Schwung (ctx.runAction); a section's name is a divider row
+//   reset      a double tap on a knob's touch (two touches within FR_CONF.tap_ms, no turn between) sets it to its
+//              default, as Schwung's grid does
 //   sustain    the claimed button (FR_CONF.sus_cc, the Right arrow) turns SUS on or off on every page: a press flips it (the
 //              plugin flips it, s_susbtn 1; a release sends nothing), the header's S shows it
 //   meter      COMPRESSOR: the gain reduction in the free cards' place (knobs 7-8), as the FM-1's COMP page shows it:
@@ -271,6 +277,14 @@ function turn(ctx, st, slot, d) {
     if (v !== cur) write(ctx, st, k, v);
 }
 
+// a knob back to its default (FR_PAGES' def; a trigger, the preset and a key without one are left alone)
+function reset(ctx, st, slot) {
+    const k = knobs(st)[slot];
+    if (!k || k.write || k.type === "preset" || k.def === undefined) return;
+    write(ctx, st, k, k.def);
+    toast(ctx, st, (k.short || k.name) + " RESET");
+}
+
 function focus(ctx, st, slot, touched) {
     if (slot >= knobs(st).length) return;
     st.focus = slot;
@@ -420,20 +434,138 @@ function drawFocus(ctx, st) {
     }
 }
 
-function drawList(ctx, st) {
-    const vis = visiblePages(st.engine);
-    header(ctx, "PAGES", (st.cursor + 1) + "/" + vis.length);
-    const rows = 6, top = Math.max(0, Math.min(st.cursor - 2, vis.length - rows));
-    for (let r = 0; r < rows && top + r < vis.length; r++) {
-        const i = vis[top + r], y = 10 + r * 9;
-        const on = top + r === st.cursor;
-        if (on) ctx.fillRect(0, y - 1, W, 9, 1);
-        text(ctx, 2, y, FR_PAGES[i].title, 1, on ? 0 : 1);
-        if (i === st.page) textR(ctx, 125, y, "*", 1, on ? 0 : 1);
+// the list's rows: the pages, then (when the ctx has them) SAVE TO USER and Schwung's trailing pages. A row:
+// {kind: "page", idx} | {kind: "sep", label} (a divider, the cursor skips it) | {kind: "save"} | {kind: "act", label,
+// action}. Schwung's menus are read once when the list opens (an IPC read, never per frame) and again after
+// onPresetsChanged.
+function listRows(ctx, st) {
+    const rows = visiblePages(st.engine).map((idx) => ({ kind: "page", idx, label: FR_PAGES[idx].title }));
+    if (typeof ctx.userSave === "function") {
+        rows.push({ kind: "sep", label: "USER PRESETS" });
+        rows.push({ kind: "save", label: "SAVE TO USER" });
+    }
+    if (st.menus === null && typeof ctx.menus === "function") {
+        let m = [];
+        try { m = ctx.menus() || []; } catch (e) { m = []; }
+        st.menus = Array.isArray(m) ? m : [];
+    }
+    for (const pg of st.menus || []) {
+        const es = (pg && pg.entries || []).filter((e) => e && e.action);
+        if (!es.length) continue;
+        rows.push({ kind: "sep", label: String(pg.name || "").toUpperCase() });
+        for (const e of es) {
+            const v = e.value !== undefined && e.value !== null ? String(e.value).toUpperCase() : "";
+            rows.push({ kind: "act", label: String(e.label || "").toUpperCase(), value: v, action: e.action });
+        }
+    }
+    return rows;
+}
+function rowStep(rows, i, d) {
+    let j = i;
+    for (;;) {
+        const n = j + d;
+        if (n < 0 || n >= rows.length) return i;
+        j = n;
+        if (rows[j].kind !== "sep") return j;
+    }
+}
+function openList(ctx, st, at) {
+    st.list = true;
+    st.menus = null;
+    st.rows = listRows(ctx, st);
+    st.cursor = Math.max(0, st.rows.findIndex((r) => r.kind === "page" && r.idx === st.page));
+    if (at) {
+        const i = st.rows.findIndex((r) => r.kind === "sep" && r.label === at.toUpperCase());
+        if (i >= 0) st.cursor = rowStep(st.rows, i, 1);
+    }
+}
+function clickRow(ctx, st) {
+    const r = st.rows[st.cursor];
+    st.list = false;
+    if (!r) return;
+    if (r.kind === "page") { setPage(ctx, st, r.idx); return; }
+    if (r.kind === "save") { openSave(ctx, st); return; }
+    if (r.kind === "act" && typeof ctx.runAction === "function") {
+        let opened = false;
+        try { opened = !!ctx.runAction(r.action); } catch (e) { opened = false; }
+        st.menus = null;                       // (Save / Save As change what the rows say)
+        if (!opened) toast(ctx, st, r.label);
     }
 }
 
+function drawList(ctx, st) {
+    const rows = st.rows || [];
+    const sel = rows.filter((r) => r.kind !== "sep");
+    header(ctx, "PAGES", (sel.indexOf(rows[st.cursor]) + 1) + "/" + sel.length);
+    const n = 6, top = Math.max(0, Math.min(st.cursor - 2, rows.length - n));
+    for (let r = 0; r < n && top + r < rows.length; r++) {
+        const row = rows[top + r], y = 10 + r * 9;
+        if (row.kind === "sep") {                       // a divider: the section's name between dotted rules
+            const w = textW(row.label, 1);
+            hdots(ctx, 0, 62 - (w >> 1) - 3, y + 3);
+            text(ctx, 64 - (w >> 1), y, row.label);
+            hdots(ctx, 64 + (w >> 1) + 3, 127, y + 3);
+            continue;
+        }
+        const on = top + r === st.cursor;
+        if (on) ctx.fillRect(0, y - 1, W, 9, 1);
+        // a row's value (Schwung's: the loaded preset, the clip) on the right; the label cut to the room it leaves
+        let lab = row.label;
+        const val = row.value || "", room = 124 - (val ? textW(val, 1) + 6 : 0);
+        while (lab.length > 1 && textW(lab, 1) > room) lab = lab.slice(0, -1);
+        text(ctx, 2, y, lab, 1, on ? 0 : 1);
+        if (val) textR(ctx, 125, y, val, 1, on ? 0 : 1);
+        if (row.kind === "page" && row.idx === st.page) textR(ctx, 125, y, "*", 1, on ? 0 : 1);
+    }
+}
+
+// ---- SAVE TO USER: a card picks U01-U16 (the jog or any knob), a click saves the sound there, Back leaves unsaved
+function userNames(ctx) {
+    const v = ctx.getParam("u_names");
+    const out = v === null || v === undefined ? [] : String(v).split("|");
+    while (out.length < 16) out.push("");
+    return out.slice(0, 16);
+}
+function openSave(ctx, st) {
+    const names = userNames(ctx);
+    const nf = (st.presetCount || 35) - 16;               // (F01-F19, then U01-U16)
+    let slot = st.preset !== null && st.preset >= nf ? st.preset - nf : names.indexOf("");
+    st.save = { slot: Math.max(0, Math.min(15, slot)), names };
+}
+function saveStep(st, d) { st.save.slot = Math.max(0, Math.min(15, st.save.slot + Math.sign(d))); }
+function saveNow(ctx, st) {
+    const u = st.save.slot + 1;
+    st.save = null;
+    ctx.userSave(u);
+    st.expectRev++;
+    st.preset = (st.presetCount || 35) - 16 + u - 1;        // (the plugin loads the slot it saved)
+    st.presetName = null;
+    st.presetDirty = true;
+    toast(ctx, st, "SAVED U" + (u < 10 ? "0" : "") + u);
+}
+function drawSave(ctx, st) {
+    const u = st.save.slot + 1, nm = st.save.names[st.save.slot];
+    header(ctx, "SAVE TO USER", u + "/16");
+    text(ctx, 2, 13, "U" + (u < 10 ? "0" : "") + u, 3);
+    const rest = nm ? nm.slice(nm.indexOf(" ") + 1) : "EMPTY";
+    if (textW(rest, 2) <= 124) text(ctx, 2, 37, rest, 2); else text(ctx, 2, 40, rest, 1);
+    hdots(ctx, 0, 127, 54);
+    text(ctx, 2, 57, nm ? "CLICK: REPLACE" : "CLICK: SAVE");
+    textR(ctx, 125, 57, "BACK: NO");
+}
+
+// a word in a box over the screen for a second (SAVED U05; a Schwung row that did its work in place)
+function toast(ctx, st, msg) { st.toast = { text: String(msg), until: nowOf(ctx) + 1200 }; }
+function drawToast(ctx, st) {
+    if (!st.toast || nowOf(ctx) >= st.toast.until) { st.toast = null; return; }
+    const w = Math.min(124, textW(st.toast.text, 1) + 8), x = (W - w) >> 1;
+    ctx.fillRect(x - 1, 22, w + 2, 15, 0);
+    frame(ctx, x, 23, x + w - 1, 35);
+    text(ctx, x + 4, 26, st.toast.text);
+}
+
 function view(ctx, st) {
+    if (st.save) return "save";
     if (st.list) return "list";
     if (st.focus >= 0 && (st.until === 0 || nowOf(ctx) < st.until)) return "focus";
     return "overview";
@@ -445,7 +577,8 @@ function newState() {
     return { page: 0, engine: 0, vals: {}, written: {}, lastTurn: {}, focus: -1, until: 0,
              touch: [false, false, false, false, false, false, false, false], list: false, cursor: 0,
              preset: null, presetName: null, presetCount: 0, presetDirty: false, rev: null, expectRev: 0,
-             susOn: false, fxOn: null, flash: null, rr: 0, gr: null };
+             susOn: false, fxOn: null, flash: null, rr: 0, gr: null, rows: [], menus: null, save: null,
+             toast: null, tapAt: [] };
 }
 
 globalThis.canvas_overlay = {
@@ -467,11 +600,22 @@ globalThis.canvas_overlay = {
         if (!st) return false;
         const d = (msg && msg.data) || [];
         const type = (d[0] | 0) & 0xF0, d1 = d[1] | 0, d2 = d[2] | 0;
+        if (st.save) {                                              // the save card owns the controls
+            if (type === 0xB0 && (d1 === JOG_CC || (d1 >= KNOB_CC && d1 < KNOB_CC + 8))) { saveStep(st, rel(d2)); return true; }
+            if (type === 0xB0 && d1 === CLICK_CC && d2 > 0) { saveNow(ctx, st); return true; }
+            if (type === 0xB0 || type === 0x90 || type === 0x80) return true;
+        }
         if (type === 0xB0 && d1 === FR_CONF.sus_cc) { if (d2 > 0) sustainBtn(ctx, st); return true; }
         if (type === 0xB0 && d1 === FR_CONF.fx_cc) { if (d2 > 0) fxBtn(ctx, st); return true; }
         if (type === 0x90 && d1 < 8) {                               // a knob's touch (velocity >= 64: down)
             if (st.list) return true;
-            if (d2 >= 64) { st.touch[d1] = true; focus(ctx, st, d1, true); } else release(ctx, st, d1);
+            if (d2 >= 64) {
+                st.touch[d1] = true;
+                const t = nowOf(ctx), was = st.tapAt[d1];
+                st.tapAt[d1] = t;
+                if (was !== undefined && t - was < FR_CONF.tap_ms) { st.tapAt[d1] = undefined; reset(ctx, st, d1); }
+                focus(ctx, st, d1, true);
+            } else release(ctx, st, d1);
             return true;
         }
         if (type === 0x80 && d1 < 8) { release(ctx, st, d1); return true; }
@@ -479,6 +623,7 @@ globalThis.canvas_overlay = {
         if (d1 >= KNOB_CC && d1 < KNOB_CC + 8) {
             if (st.list) return true;
             const slot = d1 - KNOB_CC;
+            st.tapAt[slot] = undefined;                           // (a turn between two touches is no double tap)
             turn(ctx, st, slot, rel(d2));
             if (st.presetDirty) { st.presetName = ctx.getParam("preset_name"); st.presetDirty = st.presetName === null; }
             focus(ctx, st, slot, st.touch[slot]);
@@ -486,18 +631,12 @@ globalThis.canvas_overlay = {
         }
         if (d1 === JOG_CC) {
             const r = rel(d2);
-            if (st.list) {
-                const n = visiblePages(st.engine).length;
-                st.cursor = Math.max(0, Math.min(n - 1, st.cursor + Math.sign(r)));
-            } else pageStep(ctx, st, Math.sign(r));
+            if (st.list) st.cursor = rowStep(st.rows, st.cursor, Math.sign(r));
+            else pageStep(ctx, st, Math.sign(r));
             return true;
         }
         if (d1 === CLICK_CC && d2 > 0) {
-            const vis = visiblePages(st.engine);
-            if (st.list) { st.list = false; setPage(ctx, st, vis[st.cursor]); } else {
-                st.list = true;
-                st.cursor = Math.max(0, vis.indexOf(st.page));
-            }
+            if (st.list) clickRow(ctx, st); else openList(ctx, st);
             return true;
         }
         if ((d1 === LEFT_CC || d1 === RIGHT_CC) && d2 > 0 && !st.list) {
@@ -508,9 +647,13 @@ globalThis.canvas_overlay = {
     },
     handleBack(ctx) {
         const st = ctx.state.fr;
+        if (st && st.save) { st.save = null; toast(ctx, st, "NOT SAVED"); return true; }   // the save card: unsaved
         if (st && st.list) { st.list = false; return true; }     // up: the list closes, the page stays
         return false;                                             // the top: the host closes the screen
     },
+    // the host reloaded the screen after one of its own screens (Load, Delete, Swap, Help): back on the list there
+    restore(ctx, name) { const st = ctx.state.fr; if (st) openList(ctx, st, name); },
+    presetsChanged(ctx) { const st = ctx.state.fr; if (st && st.list) { st.menus = null; st.rows = listRows(ctx, st); } },
     onValues(ctx, p) {
         const st = ctx.state.fr;
         if (!st) return;
@@ -547,9 +690,11 @@ globalThis.canvas_overlay = {
         const st = ctx.state.fr;
         if (!st) return;
         const v = view(ctx, st);
-        if (v === "list") drawList(ctx, st);
+        if (v === "save") drawSave(ctx, st);
+        else if (v === "list") drawList(ctx, st);
         else if (v === "focus") drawFocus(ctx, st);
         else { st.focus = -1; drawOverview(ctx, st); }
+        drawToast(ctx, st);
     },
 };
 // (for the host tests: the font's width and the view, not used on the device)
@@ -592,6 +737,12 @@ const ctx = {
     fillRect(x, y, w, h, c) { if (w > 0 && h > 0) fill_rect(x | 0, y | 0, w | 0, h | 0, c ? 1 : 0); },
     now: () => Date.now(),
     shiftHeld,
+    // the list's module rows: Schwung's own trailing pages for a module-drawn grid (API.md "Trailing pages": My
+    // Presets, Module), absent on an older host; a row's action is Schwung's (true: one of its screens took over)
+    menus() { return has("shadow_component_trailing_menus") ? shadow_component_trailing_menus() : []; },
+    runAction(a) { return has("shadow_component_run_action") ? !!shadow_component_run_action(a) : false; },
+    // SAVE TO USER: the sound into Frodhes' own user slot u (1-16, the plugin's u_save; store.bin, shared)
+    userSave(u) { return ctx.setParam("u_save", String(u)); },
 };
 
 // The knob LEDs, as Schwung's grid lights them (shared/param_pages/knob_leds.mjs, imported at the top of ui_chain.js
@@ -676,6 +827,11 @@ globalThis.chain_ui = {
         OV.onMidi(ctx, { source: 0, data: [d[0] | 0, d[1] | 0, d[2] | 0] });
     },
     onMidiMessageExternal() {},
+    // Save / Save As (Schwung's keyboard over our screen) changed what My Presets offers
+    onPresetsChanged() { OV.presetsChanged(ctx); },
+    // the host reloaded us after Load / Delete / Swap / Help: land on the list at that section
+    restorePage(name) { OV.restore(ctx, name); },
+    _state() { return state.fr; },                // (the host tests: the screen's state)
     handleBack() {
         if (OV.handleBack(ctx)) return true;      // up a level (the page list closes): still ours
         ledsOff();                                // the host unloads the screen: the knobs go dark

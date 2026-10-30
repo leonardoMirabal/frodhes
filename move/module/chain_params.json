@@ -11,7 +11,12 @@
       "VIBE",
       "MRMB"
     ],
-    "default": 0
+    "default": 0,
+    "extra_keys": [
+      "preset",
+      "preset_name",
+      "preset_count"
+    ]
   },
   {
     "key": "p_spread",
