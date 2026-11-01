@@ -1677,6 +1677,28 @@ static void ui_fx_button(uint32_t pg, uint32_t k)
     ui_mark(E_CARDS);
 }
 
+/* knob acceleration (issue #25): a fast turn moves an amount more per detent, so 0 .. 127 takes about one turn; a
+ * slow turn keeps single steps. The time per detent since that knob's last one: under 40 ms x2, 20 ms x4, 10 ms x8; a
+ * turn's first detents (after 150 ms at rest) are single steps, however many arrive at once. Only amounts with 32
+ * steps or more, BPM and TUNE; choices, note values and short ranges keep one step a detent */
+static uint32_t ui_acc_t[4];
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+static int ui_accel_on_ = -1;                            /* the host's scripts turn exact detents: off unless
+                                                         * FRODHES_KNOB_ACCEL is set (test_knob_accel.py) */
+#define ui_accel_on (ui_accel_on_ >= 0 ? ui_accel_on_ : (ui_accel_on_ = getenv("FRODHES_KNOB_ACCEL") != NULL))
+#else
+#define ui_accel_on 1
+#endif
+static int32_t ui_accel(uint32_t k, uint32_t s, int32_t d)
+{
+    uint32_t a = (uint32_t)(d < 0 ? -d : d), gap = fm1_ms - ui_acc_t[k], dt = gap / a;
+    ui_acc_t[k] = fm1_ms;
+    if (!ui_accel_on || gap > 150u || (s < P_COUNT ? PARAMS[s].fmt == F_ENUM || PARAMS[s].fmt == F_DIV || PARAMS[s].hi < 32u || slot_synced(s)
+                                   : s != S_BPM && s != S_TUNE))
+        return d;
+    return d * (dt < 10u ? 8 : dt < 20u ? 4 : dt < 40u ? 2 : 1);
+}
+
 static void ui_input(uint32_t b, uint32_t rel)
 {
     int32_t d[FM1_NENC];                                /* (the SMK-37: 8; its K1 = ENC_MASTER is platform.c's MASTER,
@@ -1771,7 +1793,7 @@ static void ui_input(uint32_t b, uint32_t rel)
     for (k = 0; k < 4u; k++) {
         uint32_t s = slot_at(ui_page, k);
         if (!d[ENC_KNOB1 + k] || s == S_NONE) continue;
-        slot_turn(s, d[ENC_KNOB1 + k]);
+        slot_turn(s, ui_accel(k, s, d[ENC_KNOB1 + k]));
         if ((ui_page == PG_PERF || (ui_page == PG_PIANO && s == P_DRIVE)) && s < P_COUNT) perf_wake(s);
         if (ui_msg_t) { ui_msg_t = 0; ui_mark(E_FOOTER); }   /* an old message would contradict the card */
         if (ui_hot_card != k && ui_hot_card < 4u) ui_mark(E_CARD0 + ui_hot_card);
