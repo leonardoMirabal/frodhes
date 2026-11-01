@@ -9,7 +9,9 @@ click detector on every tap (and on the USB-C audio with --usb).
 
     tools/move_multi_cpu.py --n 2 3 [--secs 30] [--usb]   (takes the MOVE lock; slots 1..4 must be free or Frodhes)
 
-Slots above N are emptied for a run (synth:module ""), slots 1..N get "frodhes". The caller restores the set."""
+Slots above N are emptied for a run (synth:module ""), slots 1..N get "frodhes". Another module in any slot stops the
+run before anything changes (emptying it loses its sound: a re-pick starts on the module's defaults and Schwung saves
+that over the set), unless --take-slots; use a test set."""
 import argparse
 import json
 import os
@@ -293,6 +295,7 @@ def main():
     ap.add_argument("--n", type=int, nargs="+", default=[1, 2, 3, 4])
     ap.add_argument("--secs", type=float, default=20.0)
     ap.add_argument("--usb", action="store_true", help="also record the Move's USB-C audio (Main Out) and check it")
+    ap.add_argument("--take-slots", action="store_true", help="run even if a slot holds another module (it is emptied)")
     ap.add_argument("--out", default=os.path.join(mh.ROOT if hasattr(mh, "ROOT") else ".", "build", "move", "hil", "multi"))
     a = ap.parse_args()
     global USB
@@ -301,6 +304,11 @@ def main():
     os.makedirs(out, exist_ok=True)
     allr = []
     with mi.move_lock("move_multi_cpu"):
+        with move_ws.Remote(URL) as w:
+            other = {s + 1: m for s, m in slot_modules(w).items() if m not in ("", "frodhes")}
+        if other and not a.take_slots:
+            sys.exit("move_multi_cpu: slots %s hold %s; the run would empty them. Load a test set, or --take-slots"
+                     % (", ".join(map(str, other)), ", ".join(sorted(set(other.values())))))
         for n in a.n:
             r = run_n(n, a.secs, out)
             print(json.dumps(r, indent=1, default=str), flush=True)
