@@ -98,7 +98,7 @@ _Static_assert(PL_IO3 + PL_GAP <= PL_IN && PL_IL1 >= RQ_NC, "the input allpasses
 /* the output: the taps' 0.6 / 2 x 1.9 (Q12; / 1.5 for the lines' 1.5x level, pl_in) at SIZE <= 40, rising 0.067 dB a
  * SIZE step to +5 dB at 115 (pl_ctl): HALL's level at the same MIX (HALL grows with MIX's size, a plate thins out as its
  * tank grows) */
-#define PL_OUT 1959                                    /* (rev_hq_plate.c: 2340 x 0.837, the half-rate plate's Bark loudness) */
+#define PL_OUT 2302                                    /* (rev_hq_plate.c: the half-rate plate's Bark loudness, Rhodes + VIBES phrases) */
 #define PL_LIM 262143                                  /* |mid|, |side| <= 2^18 (the framework's exact return) */
 _Static_assert(14 * 32768 * 2 * PL_OUT <= 2147483647, "the output product");
 /* the read sites: 0..7 the segments' own delays (0 / 4: the modulated ones, without the excursion), 8..21 the taps */

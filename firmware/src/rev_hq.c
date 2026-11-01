@@ -27,6 +27,10 @@ static union { rev_hqh_t h; rev_plate_t p; rev_inf_t i; } rev_u POOL;
  * their #defines (instruction counts of the compiled loops, rev_hq_*.c) */
 #define REV_US_FRONT 70u
 #define REV_US_LOCUT 16u
+#define REV_US_HQ_MAX 1000u                            /* a full-rate TYPE's budget (the core-1 plan: the reverb before
+                                                         * the voices; ~1000-2000 us a block freed on core 0) */
+_Static_assert(REV_US_HQH <= REV_US_HQ_MAX && REV_US_PLATE <= REV_US_HQ_MAX && REV_US_INF <= REV_US_HQ_MAX,
+               "a full-rate REVERB TYPE over its CPU budget");
 static const uint16_t REV_US[RV_N] = {0, REV_US_HQH, REV_US_PLATE, REV_US_INF};
 
 #define RV_INF_AUTO 64                                  /* (rev_types.c: INFINITE's AUTO SIZE, fixed) */

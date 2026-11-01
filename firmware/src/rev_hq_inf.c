@@ -66,10 +66,10 @@
 #define RI_N 6368u   /* ring rows: a multiple of RI_NB, >= the longest line + 2 x
                                      * the widest swing + 2 */
 #define RI_MODQ8 (48u * 256u)  /* the swing at MOD 64, Q8 samples (+-24 at 22.05 kHz); MOD 127 about twice */
-#define RI_OG 3604                  /* (rev_hq_inf.c: the output, Q12: the half-rate tank's Bark loudness) */
-#define RI_GK 69u                   /* (rev_hq_inf.c: 59 at 44.1 kHz less the loop's own losses there: the half-rate
+#define RI_OG 3215                  /* (rev_hq_inf.c: the output, Q12: the half-rate tank's Bark loudness, Rhodes + VIBES phrases) */
+#define RI_GK 56u                   /* (rev_hq_inf.c: 59 at 44.1 kHz less the loop's own losses there: the half-rate
                                      * T60 in the 500 Hz .. 1 kHz octaves) */
-#define RI_KD 48                    /* (rev_hq_inf.c: 48, the half-rate tank's T60 at 2 .. 8 kHz) TONE's damping ratio R = damp x RI_KD / 256 (bright: damp 60 -> 2.1, 150
+#define RI_KD 9                     /* TONE's damping ratio R = damp x RI_KD / 256 (bright: damp 60 -> 2.1, 150
                                      * -> 5.3; the quarter tank a quarter of it: its 1 kHz is 4x nearer its top): a
                                      * line's one-pole c = R (1 - g) / 2, so the top's T60 is the T60 / (1 + R) at any
                                      * DECAY (an absolute damping would cut a 60 s tail's middle to 20 s) */
@@ -84,6 +84,8 @@
                                      * 0.03 (RI_LOSS gives it back to the T60).
                                      * Without it the lossless loop kept the rounding's noise, which its remainders
                                      * shape upwards, at 10..11 kHz for ever: +30 dB there in a FREEZE */
+#define RI_CMINF 1966                 /* (rev_hq_inf.c: the least damping at 44.1 kHz, c 0.12: -0.8 dB a pass at 8 kHz, the
+                                     * half rate's 7.7 dB a second there) */
 #define RI_KMAX 16384   /* the input one-pole's brightest (TONE 127): 0.75 at 22.05 kHz
                                      * (-4.5 dB at 10.5 kHz, ~HALL's top), open on the quarter tank */
 #define RI_HOT 2u                   /* the tank runs 4x hotter than its input (12 dB less rounding in a quiet freeze) */
@@ -147,6 +149,7 @@ typedef struct {
     uint32_t hw;                        /* FREEZE: half-rate samples since the input closed */
     int32_t rd;                         /* a release's DECAY (119 .. RI_REL) */
     int32_t lv, tgt, dq, dqi;           /* the mid's level (mean |mid|), the held level, the gains' 1 + dq (Q8 of Q14) */
+    int32_t ckh[RI_NL], ckf[RI_NL];     /* (rev_hq_inf.c: the damping, at the half rate's law and at 44.1 kHz) */
     uint8_t mlo, rr, fm, full;          /* quiet lines (bit k), the read's round robin, the held mode (0, 1 SUSTAIN,
                                          * 2 FREEZE), the ring written all through */
     int32_t yp[RI_NL], op[RI_NL], oe[RI_NL];   /* the interpolators' and the damping's last outputs, its remainder */
@@ -450,7 +453,15 @@ static inline __attribute__((always_inline)) void ri_tank(rev_inf_t *s, int32_t 
     for (k = 0; k < RI_NL; k++) {
         uint32_t I, s0, f = 0;
         int32_t g = c->freeze ? 16384 + (s->dq >> 8) : s->g[k];
-        int32_t ck = clampi((((16384 - g) * s->c) >> 9) + s->ca, 0, 14000) + RI_CMIN;   /* the damping (Q14) */
+        int32_t ck = clampi((((16384 - g) * s->c) >> 9) + s->ca, 0, 14000);   /* the damping (Q14) */
+        if (ck != s->ckh[k]) {                          /* (rev_hq_inf.c: the half rate's pole, its square root at 44.1
+                                                         * kHz: the same time constant; made anew only as it moves; the
+                                                         * least damping RI_CMINF on top: the half rate's RI_CMIN loss
+                                                         * at 8 kHz) */
+            s->ckh[k] = ck;
+            s->ckf[k] = (rq_sqrt15(ck << 1) >> 1) + RI_CMINF;
+        }
+        ck = s->ckf[k];
         if (!((k ^ s->rr) & RI_RRS) || !s->mI[k]) {       /* the read: every 4th block (LITE: 8th; 2.9 / 5.8 ms) */
             int32_t dep = (int32_t)((RI_MODQ8 * (uint32_t)c->mod) >> 10);   /* (mod: MOD x 16) */
             uint32_t t, r;

@@ -51,7 +51,7 @@ _Static_assert(29012 <= RQH_N - RQ_NC && RQH_SW == 66u && RQ_NC == 32u, "rev_hq_
 #define RQH_WARM (2683u + RQH_SW + 1u)                 /* samples since the start: no read older than it */
 /* the input into the lines (x, sign k), the output (Q12: the half-rate HALL's level at its defaults) */
 #define RQH_SGN 0x6996u                                 /* (bit k: - for line k) */
-#define RQH_OUT 2033                                     /* (Q13: the half-rate HALL's Bark loudness at MIX 100) */
+#define RQH_OUT 2379                                     /* (Q13: the half-rate HALL's Bark loudness, Rhodes + VIBES phrases) */
 #define RQH_LOUD 256                                    /* a tank this quiet (the last block's largest write) truncates: it
                                                          * then dies to exact zero; louder, the products round (no bias) */
 
@@ -65,6 +65,7 @@ typedef struct {
     uint16_t ad[RQH_AN];            /* the allpasses' indices */
     uint8_t afull;                  /* an allpass written through (bit k) */
     int32_t x[RQ_NC];
+    int16_t t[RQ_NC + 2u];          /* a read or write across the ring's end, contiguous */
     int32_t y[RQ_NC][RQH_NL];       /* the line ends of this block */
     int16_t ap[RQH_ASUM];
     int16_t ring[RQH_N];
@@ -109,60 +110,55 @@ static FR_RAM __attribute__((noinline)) void rqh_dif(rev_hqh_t *s, int32_t *x)
         a += L;
     }
 }
-/* one line's end over the block: r the ring index of sample 0's read, its one-pole (pole p, toward the read: it ends
- * at 0) and gain g; f: the fraction (Q8) toward the next older sample (modulated lines), into y[i][0] (stride 16) */
-static FR_RAM __attribute__((noinline)) void rqh_end(const int16_t *b, uint32_t r, int32_t f, int32_t *y, int32_t *lp,
-                                                     int32_t p, int32_t g, int lo)
+/* one line's end over the block: q[i] the read of sample i (q[i - 1] the next older: the interpolation's), its
+ * one-pole (pole p, toward the read: it ends at 0) and gain g; f: the fraction (Q8) toward the older sample
+ * (modulated lines), into y[i][0] (stride 16). lo (the tank quiet): truncated toward zero (it dies to exact zero);
+ * loud: rounded (no bias: the T60 holds at any level) */
+#define RQH_END(RD, SH)                                                                                         \
+    for (i = 0; i < RQ_NC; i++, y += RQH_NL) {                                                                  \
+        int32_t u = RD;                                                                                         \
+        l = u + SH((l - u) * p, 15);                                                                            \
+        *y = SH(l * g, 15);                                                                                     \
+    }
+#define RQH_RND(m, sh) (((m) + (1 << ((sh) - 1))) >> (sh))
+#define RQH_TZ(m, sh) sh_tz(m, sh)
+static FR_RAM __attribute__((noinline)) void rqh_end(const int16_t *q, int32_t f, int32_t *y, int32_t *lp, int32_t p,
+                                                     int32_t g, int lo)
 {
     int32_t l = *lp;
     uint32_t i;
-    if (!lo)                                            /* (loud: rounded) */
-        for (i = 0; i < RQ_NC; i++, r++, y += RQH_NL) {
-            int32_t u0 = b[r & RQH_M], u1 = b[(r - 1u) & RQH_M], u = u0 + (((u1 - u0) * f + 128) >> 8);
-            l = u + (((l - u) * p + 16384) >> 15);
-            *y = (l * g + 16384) >> 15;
-        }
-    else if (f)
-        for (i = 0; i < RQ_NC; i++, r++, y += RQH_NL) {
-            int32_t u0 = b[r & RQH_M], u1 = b[(r - 1u) & RQH_M], u = u0 + (((u1 - u0) * f) >> 8);
-            l = u + sh_tz((l - u) * p, 15);
-            *y = sh_tz(l * g, 15);
-        }
-    else
-        for (i = 0; i < RQ_NC; i++, r++, y += RQH_NL) {
-            int32_t u = b[r & RQH_M];
-            l = u + sh_tz((l - u) * p, 15);
-            *y = sh_tz(l * g, 15);
-        }
+    if (f) {
+        if (lo) RQH_END(q[i] + (((q[(int32_t)i - 1] - q[i]) * f) >> 8), RQH_TZ)
+        else RQH_END(q[i] + (((q[(int32_t)i - 1] - q[i]) * f + 128) >> 8), RQH_RND)
+    } else {
+        if (lo) RQH_END(q[i], RQH_TZ)
+        else RQH_END(q[i], RQH_RND)
+    }
     *lp = l;
 }
 /* the warm-up's line end: reads older than the start (age a + i < the delay) read 0 */
-static __attribute__((noinline)) void rqh_end_w(const int16_t *b, uint32_t r, int32_t f, int32_t *y, int32_t *lp,
-                                                int32_t p, int32_t g, uint32_t a, uint32_t D)
+static __attribute__((noinline)) void rqh_end_w(const int16_t *q, int32_t f, int32_t *y, int32_t *lp, int32_t p,
+                                                int32_t g, uint32_t a, uint32_t D)
 {
     int32_t l = *lp;
     uint32_t i;
-    for (i = 0; i < RQ_NC; i++, r++, y += RQH_NL) {
-        int32_t u0 = a + i >= D ? b[r & RQH_M] : 0, u1 = a + i >= D + 1u ? b[(r - 1u) & RQH_M] : 0;
+    for (i = 0; i < RQ_NC; i++, y += RQH_NL) {
+        int32_t u0 = a + i >= D ? q[i] : 0, u1 = a + i >= D + 1u ? q[(int32_t)i - 1] : 0;
         int32_t u = u0 + (((u1 - u0) * f) >> 8);
         l = u + sh_tz((l - u) * p, 15);
         *y = sh_tz(l * g, 15);
     }
     *lp = l;
 }
-/* the mix: 16-point Hadamard / 4 of the line ends, + the input, into the lines; row 0 the mid, row 1 the side.
- * Returns the OR of the writes */
+/* the mix: 16-point Hadamard of the line ends, in place (y), row 0 the mid, row 1 the side. Returns their OR */
 #define RQH_BF(a, b) { int32_t t_ = a; a = t_ + b; b = t_ - b; }
-static FR_RAM __attribute__((noinline)) int32_t rqh_mix(rev_hqh_t *s, int32_t *mid, int32_t *side)
+static FR_RAM __attribute__((noinline)) int32_t rqh_mix(int32_t *y, int32_t *mid, int32_t *side)
 {
-    int16_t *b = s->ring;
-    const int32_t *y = &s->y[0][0];
-    uint32_t i, w = s->w;
-    int32_t act = 0, am = 0, lo = s->amax < RQH_LOUD;
-    for (i = 0; i < RQ_NC; i++, y += RQH_NL, w++) {
+    uint32_t i;
+    int32_t act = 0;
+    for (i = 0; i < RQ_NC; i++, y += RQH_NL) {
         int32_t h0 = y[0], h1 = y[1], h2 = y[2], h3 = y[3], h4 = y[4], h5 = y[5], h6 = y[6], h7 = y[7];
         int32_t h8 = y[8], h9 = y[9], h10 = y[10], h11 = y[11], h12 = y[12], h13 = y[13], h14 = y[14], h15 = y[15];
-        int32_t x = s->x[i];
         RQH_BF(h0, h1) RQH_BF(h2, h3) RQH_BF(h4, h5) RQH_BF(h6, h7)
         RQH_BF(h8, h9) RQH_BF(h10, h11) RQH_BF(h12, h13) RQH_BF(h14, h15)
         RQH_BF(h0, h2) RQH_BF(h1, h3) RQH_BF(h4, h6) RQH_BF(h5, h7)
@@ -174,39 +170,69 @@ static FR_RAM __attribute__((noinline)) int32_t rqh_mix(rev_hqh_t *s, int32_t *m
         mid[i] = (h0 * RQH_OUT) >> 13;                 /* (|h| <= 16 x 32767: the product < 2^31) */
         side[i] = (h1 * RQH_OUT) >> 13;
         act |= mid[i] | side[i];
-#define RQH_W(k) { int32_t v_ = hl_c16((lo ? sh_tz(h##k, 2) : (h##k + 2) >> 2) + (((RQH_SGN >> k) & 1u) ? -x : x)); \
-                   b[(w + RQH_TOP[k]) & RQH_M] = (int16_t)v_; am |= v_ ^ (v_ >> 31); }
-        RQH_W(0) RQH_W(1) RQH_W(2) RQH_W(3) RQH_W(4) RQH_W(5) RQH_W(6) RQH_W(7)
-        RQH_W(8) RQH_W(9) RQH_W(10) RQH_W(11) RQH_W(12) RQH_W(13) RQH_W(14) RQH_W(15)
-#undef RQH_W
+        y[0] = h0, y[1] = h1, y[2] = h2, y[3] = h3, y[4] = h4, y[5] = h5, y[6] = h6, y[7] = h7;
+        y[8] = h8, y[9] = h9, y[10] = h10, y[11] = h11, y[12] = h12, y[13] = h13, y[14] = h14, y[15] = h15;
     }
-    s->amax = am;
-    return act | am;
+    return act;
+}
+/* one line's writes: the mix's row / 4 (lo: truncated; loud: rounded) +- the input, clamped, into d[0 .. 31];
+ * returns the |v| ORed */
+#define RQH_PUT(SH, OP)                                                                                         \
+    for (i = 0; i < RQ_NC; i++, h += RQH_NL) {                                                                  \
+        int32_t v = hl_c16(SH(*h, 2) OP x[i]);                                                                  \
+        d[i] = (int16_t)v;                                                                                      \
+        am |= v ^ (v >> 31);                                                                                    \
+    }
+static FR_RAM __attribute__((noinline)) int32_t rqh_put(int16_t *d, const int32_t *h, const int32_t *x, int neg, int lo)
+{
+    uint32_t i;
+    int32_t am = 0;
+    if (lo) { if (neg) RQH_PUT(RQH_TZ, -) else RQH_PUT(RQH_TZ, +) }
+    else { if (neg) RQH_PUT(RQH_RND, -) else RQH_PUT(RQH_RND, +) }
+    return am;
 }
 
 static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *in, int32_t *mid, int32_t *side,
                                                   const rev_ctl_t *c)
 {
     uint32_t k, i;
-    int32_t act = 0, sw = c->mod << 2;                  /* the swing, Q8 samples (MOD 64: 4096 = 16) */
+    int32_t act = 0, am, lo, sw = c->mod << 2;                 /* the swing, Q8 samples (MOD 64: 4096 = 16) */
     if (c->size != s->gsz) rqh_gains(s, c->size);
-    if (c->damp != s->gdmp) { s->p = clampi(c->damp * 246, 0, 31500); s->gdmp = c->damp; }
+    if (c->damp != s->gdmp) { s->p = clampi(c->damp * 272, 0, 31500); s->gdmp = c->damp; }
     for (i = 0; i < RQ_NC; i++) { s->x[i] = in[i]; act |= in[i]; }
     FR_FAR(rqh_dif)(s, s->x);
+    lo = s->amax < RQH_LOUD;
     for (k = 0; k < RQH_NL; k++) {
         uint32_t D = RQH_LEN[k], f = 0, r;
+        const int16_t *q;
         if ((RQH_MODM >> k) & 1u) {
             uint32_t j = k >> 1, d8;
             s->ph[j] += RQH_INC[j];
             d8 = (D << 8) + (uint32_t)(sw + ((osc_sine(s->ph[j]) * sw) >> 15));
             D = d8 >> 8, f = d8 & 255u;
         }
-        r = s->w + RQH_TOP[k] - D;
-        if (s->e >= RQH_WARM)
-            FR_FAR(rqh_end)(s->ring, r, (int32_t)f, &s->y[0][k], &s->lp[k], s->p, s->g[k], s->amax < RQH_LOUD);
-        else rqh_end_w(s->ring, r, (int32_t)f, &s->y[0][k], &s->lp[k], s->p, s->g[k], s->e, D);
+        r = (s->w + RQH_TOP[k] - D - 1u) & RQH_M;      /* (the older sample of sample 0's read) */
+        if (r + RQ_NC + 1u <= RQH_N) q = s->ring + r + 1u;
+        else {                                          /* (the ring's end inside: a contiguous copy, rarely) */
+            for (i = 0; i < RQ_NC + 1u; i++) s->t[i] = s->ring[(r + i) & RQH_M];
+            q = s->t + 1;
+        }
+        if (s->e >= RQH_WARM) FR_FAR(rqh_end)(q, (int32_t)f, &s->y[0][k], &s->lp[k], s->p, s->g[k], lo);
+        else rqh_end_w(q, (int32_t)f, &s->y[0][k], &s->lp[k], s->p, s->g[k], s->e, D);
     }
-    act |= FR_FAR(rqh_mix)(s, mid, side);
+    act |= FR_FAR(rqh_mix)(&s->y[0][0], mid, side);
+    am = 0;
+    for (k = 0; k < RQH_NL; k++) {
+        uint32_t o = (s->w + RQH_TOP[k]) & RQH_M;
+        int neg = (RQH_SGN >> k) & 1u;
+        if (o + RQ_NC <= RQH_N) am |= FR_FAR(rqh_put)(s->ring + o, &s->y[0][k], s->x, neg, lo);
+        else {
+            am |= FR_FAR(rqh_put)(s->t, &s->y[0][k], s->x, neg, lo);
+            for (i = 0; i < RQ_NC; i++) s->ring[(o + i) & RQH_M] = s->t[i];
+        }
+    }
+    s->amax = am;
+    act |= am;
     s->w = (s->w + RQ_NC) & RQH_M;
     if (s->e < RQH_WARM) s->e += RQ_NC;
     s->quiet = act ? 0u : s->quiet < RQH_WARM + RQ_NC ? s->quiet + RQ_NC : s->quiet;
