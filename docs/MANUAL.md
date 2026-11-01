@@ -1128,51 +1128,22 @@ Everything in this manual applies, with these differences:
 
 Frodhes also runs on the Move, a standalone groove box, as a sound generator of Schwung, the community module host
 on it: the same instruments and effects as on the FM-1, with 16 voices on every instrument. **In development: not
-released yet.** Install and the details: [MOVE.md](MOVE.md).
+released yet.** The Move has its own manual, with the install, a picture of every page and the troubleshooting:
+**[MOVE.md](MOVE.md)**.
 
-Everything in this manual applies, with these differences:
+![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=5e9df1ba)
 
-- **The pages**: one page holds eight controls, one for each of the Move's eight knobs, two of the FM-1's pages
-  side by side (DRIVE/FILTER, TREM/PHASER, ...); CHORUS and DELAY are a page each, with the FM-1's cards. The first
-  page has the delay's mix (DELAY) on knob 8. The names are the FM-1's where they fit the Move's
-  screen and shorter where they do not (MAKEUP is MKUP); the values and ranges are the FM-1's. The VOICE pages are
-  the instrument's that plays and change with TYPE, a preset or a program change. COMPRESSOR shows the
-  gain-reduction meter on knobs 7 and 8: a thick bar of segments lit from the right, the peak as a taller segment.
-- **Several at once**: load Frodhes on every track you like (Schwung has four slots); each is its own instrument
-  with its own sound and knobs, and all share the user presets. Up to three play with no dropouts; a fourth works,
-  but very heavy playing with every effect on in all four, or loading a set with several of them, can drop audio.
-- **Level**: Frodhes plays 2.2 dB louder on the Move than on the FM-1, its loudest peak at -0.5 dBFS, never a clip.
-  Keep Schwung's slot volume at 100%: above it, Schwung's own gain can clip.
-- **Frodhes' own screen** is the whole Move UI for Frodhes (Shift + volume touch + its Track button, then click
-  the jog wheel on the synth): the eight knobs as eight cards, each with its name, value and bar; touch or turn a
-  knob and its card fills the screen, as the FM-1 shows one card large; the overview comes back half a second
-  after you let go. Tap a knob twice quickly to reset it. The jog wheel turns the pages; a click lists them, and
-  below the pages the menu: SAVE TO USER (U01–U16) and Schwung's own rows (its presets, Module Help, Swap Module).
-  The arrows' lights show FX (Left) and SUS (Right).
+Everything in this manual applies to the sound. In short, what is different:
 
-  ![The DRIVE/FILTER page on the Move](manual/img/move/move-drive-filter.png?v=5e9df1ba)
-- **The sound**: HQ, the Move's one version of the three engines (the FM-1 plays Classic): the piano types' exact
-  hammer strike at every velocity and a truer re-strike; VIBES and MARIMBA with more bar and tube modes and the
-  mallet's contact computed live on a re-strike.
-- **Sustain**: the Move has no pedal jack. SUS on the first page is the sustain, on or off (OFF always lets the
-  notes go); on Frodhes' screen each press of the Right arrow turns it on or off (a press sets the other state, so a press
-  delivered twice cannot turn it back). A pedal on CC 64 (USB) works
-  as on the FM-1, half pedalling included, and letting it up turns SUS off.
-- **FX** on the first page is the FX button: all effects off or on (CC 111), except the compressor, which stays on
-  the Move. On Frodhes' screen the Left arrow does the same.
-- **Presets**: F01–F19 and U01–U16 with PRESET and by program change, as on the FM-1. SAVE TO USER in the menu of
-  Frodhes' screen saves the sound into a user slot, shared by every Frodhes on the Move; the sound is also saved
-  with the Move's set.
-- **Only on the Move**: MAPPINGS turns the pads' pressure (aftertouch, poly pressure) into one of the CCs above; off by default.
-- **The tempo is the Move's**: the synced effects and the arpeggiator follow its clock; there is no BPM or CLOCK
-  setting.
-- **ARPEGGIO**: the FM-1's arpeggiator (MODE, RATE, OCT, GATE, CC 52–55), on the Move's clock; each Frodhes has its
-  own, OFF when it is loaded new. No HOLD (the FM-1's SEL button): SUS sustains the notes it plays but does not hold
-  the pattern. Use it or Schwung's own arpeggiator (a MIDI FX), not both: with both, every note is arpeggiated twice.
-- **Velocity**: the pads play with the velocity the Move gives them. With the Move's Full Velocity setting on, every
-  pad plays at 127: turn it off in the Move's settings to play soft and loud.
-- **REVERB INF**: DECAY shows SUSTAIN from 120 and FREEZE at 127, as on the FM-1; FREEZE keeps the tail and plays
-  new notes dry.
-- **Not on the Move**: PERFORM, ASSIGN and DISPLAY (the Move has its own knobs and screen), the sequencer, the
-  chords and the scales (the Move has its own; their CCs do nothing), KEY VEL, TOUCH, USB VOL,
-  TRS, COLOR, BRIGHT and LEDS.
+- **The screen**: Frodhes draws its own (Shift + volume touch + the track's Track button, then click the synth). One
+  page is the Move's eight knobs as eight cards; touch or turn a knob and its card fills the screen. The jog wheel
+  turns the pages; a click lists them, with the menu below: SAVE TO USER (U01–U16) and Schwung's own rows.
+- **The buttons**: the Left arrow turns the effects off or on (FX; the compressor stays), the Right arrow the
+  sustain (SUS), on every page. A double tap on a knob resets it.
+- **The sound**: HQ, the Move's one version of the three engines (the FM-1 plays Classic), 16 voices, 2.2 dB louder.
+- **Sustain**: no pedal jack; SUS on the first page or the Right arrow, or a pedal on CC 64 over USB.
+- **Velocity**: turn the Move's Full Velocity setting off, or every pad plays at 127.
+- **The tempo is the Move's**: no BPM or CLOCK setting; the synced effects and the arpeggiator follow its clock.
+- **Only on the Move**: the pressure mappings, several Frodhes at once (one per track).
+- **Not on the Move**: PERFORM, ASSIGN and DISPLAY, the sequencer, the chords and the scales (the Move has its own),
+  the arpeggiator's HOLD, KEY VEL, TOUCH, USB VOL, TRS, COLOR, BRIGHT and LEDS.

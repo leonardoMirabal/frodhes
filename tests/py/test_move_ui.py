@@ -6,6 +6,7 @@ page in the framebuffer's two colours; the screen's pages are the hierarchy's le
 eight knobs at most, and the FX button (the bypass) is off by default as on the FM-1."""
 import json
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -87,15 +88,29 @@ def test_shots_every_page_in_true_colours(tmp_path):
                         "1"], capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stdout + r.stderr
     pages = screen_pages()
-    want = len(pages) + sum(len(p["knobs"]) for p in pages) + 4        # the overviews, the cards, the list, the meter,
-    #                                                                   the menu rows, the save card
-    shots = [f for f in os.listdir(tmp_path) if f.endswith(".png") and f != "sheet.png"]
-    assert len(shots) == want, (len(shots), want)
+    slug = lambda t: re.sub(r"^-|-$", "", re.sub(r"[^a-z0-9]+", "-", t.lower()))    # noqa: E731
+    shots = {f[:-4] for f in os.listdir(tmp_path) if f.endswith(".png") and f != "sheet.png"}
+    for p in pages:                     # every page's overview, and the large card of each knob with a control
+        assert slug(p["title"]) in shots, p["title"]
+        for i, k in enumerate(p["knobs"]):
+            assert (f"{slug(p['title'])}-k{i + 1}" in shots) == (k is not None), (p["title"], i)
+    docs = {f[len("move-"):-4] for f in os.listdir(os.path.join(ROOT, "docs", "manual", "img", "move"))}
+    assert docs <= shots, docs - shots  # the docs' pictures are drawn too (the same names)
     for f in shots:
-        w, h, depth, ctype, vals = read_png(os.path.join(tmp_path, f))
+        w, h, depth, ctype, vals = read_png(os.path.join(tmp_path, f + ".png"))
         assert (w, h, depth, ctype) == (128, 64, 8, 0), f
         assert vals <= {0, 255} and 255 in vals, f                   # the two colours of the screen, nothing else
     assert os.path.exists(os.path.join(tmp_path, "sheet.png"))
+
+
+@needs_node
+def test_move_doc_shots_current():
+    """every picture in docs/manual/img/move/ is what tools/move_ui_shots.mjs draws from today's ui_chain.js (the
+    file the Move runs), none missing or left over, and every link to one in docs/MOVE.md, docs/MOVE-DEV.md,
+    README.md and docs/MANUAL.md carries its hash: a change to the screen without `--docs` fails here"""
+    r = subprocess.run([NODE, os.path.join(ROOT, "tools", "move_ui_shots.mjs"), "--check"], capture_output=True,
+                       text=True, timeout=120)
+    assert r.returncode == 0, r.stdout[-4000:] + r.stderr[-2000:]
 
 
 def test_screen_pages_are_the_levels():

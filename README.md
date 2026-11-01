@@ -12,7 +12,7 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 | Device | What Frodhes is on it | File |
 | --- | --- | --- |
 | **M-VAVE FM-1** | the whole firmware: the instruments, the effects, the pattern recorder, the arpeggiator, chords and scales, 10 voices | `frodhes.fwsc` |
-| **Ableton Move** (in development) | a sound generator in Schwung: the same instruments and effects in their HQ version, 16 voices; the Move's own sequencer, arpeggiator, scales and tempo lead | `frodhes-module.tar.gz` |
+| **Ableton Move** (in development) | a sound generator in Schwung: the same instruments and effects in their HQ version, 16 voices, the arpeggiator, Frodhes' own screen; the Move's own sequencer, scales and tempo lead | `frodhes-module.tar.gz` |
 
 
 Frodhes turns the FM-1 into an electric piano, a vibraphone and a marimba. Every note is computed live from the mechanics of the
@@ -62,13 +62,14 @@ can always install again. To return to M-VAVE's firmware, use the "Official firm
 ## The Ableton Move (in development)
 
 Frodhes runs on the Ableton Move as a sound generator of Schwung, the community module host on it: 16 voices on every
-instrument, the HQ version of the three engines, Schwung's knob pages and a screen of its own. **In development:
-not released yet.** A release carries the module only once it has passed the tests on a Move. Install, the pages
-and what differs from the FM-1: [docs/MOVE.md](docs/MOVE.md).
+instrument, the HQ version of the three engines, and a screen of its own: the eight knobs as eight cards, a page at a
+time, the arrows for FX and the sustain. **In development: not released yet.** A release carries the module only
+once it has passed the tests on a Move. The Move's manual (install, every page, what differs from the FM-1,
+troubleshooting): [docs/MOVE.md](docs/MOVE.md).
 
 <p align="center">
-  <img src="docs/manual/img/move/move-knobs-compressor.png?v=8f0e4550" width="384" alt="Schwung's COMPRESSOR page on the Move: six knobs, and the gain-reduction meter in the place of knobs 7 and 8">
-  <img src="docs/manual/img/move/move-pages.png?v=00207b5b" width="384" alt="Frodhes' own screen on the Move (PAGES)">
+  <img src="docs/manual/img/move/move-frodhes.png?v=fa3f01dd" width="384" alt="Frodhes' first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix">
+  <img src="docs/manual/img/move/move-compressor-gr.png?v=189a0f30" width="384" alt="The COMPRESSOR page on the Move, the gain-reduction meter in the place of knobs 7 and 8">
 </p>
 
 ## Other keyboards: the SMK-37 (experimental)
