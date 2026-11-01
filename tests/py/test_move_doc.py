@@ -9,18 +9,43 @@ LEVELS = json.loads((ROOT / "move" / "module" / "ui_hierarchy.json").read_text()
 
 
 def doc_pages():
-    rows = re.findall(r"^\| \*\*(.+?)\*\* \| (.+?) \|$", DOC, re.M)
+    sec = DOC[DOC.index("## The pages"):]
+    sec = sec[:sec.index("\n## ", 1)]
+    rows = re.findall(r"^\| \*\*(.+?)\*\* \| (.+?) \|$", sec, re.M)
     return {name: ctl.split(" · ") for name, ctl in rows}
 
 
+def screen_pages():
+    """the pages of Frodhes' screen as the Move runs it (move/module/ui_chain.js FR_PAGES): the user's pages"""
+    js = (ROOT / "move" / "module" / "ui_chain.js").read_text()
+    return json.loads(re.search(r"const FR_PAGES = (\[.*?\]);\n", js).group(1))
+
+
 def test_pages_match_module():
-    want = {l["name"]: [p["name"] for p in l["params"] if "key" in p] for l in LEVELS.values()}
-    assert doc_pages() == want
+    """the page table is the screen's pages, in order, each knob's full name (the large card's)"""
+    pages = screen_pages()
+    assert list(doc_pages()) == [p["title"] for p in pages]
+    assert doc_pages() == {p["title"]: [k["name"] for k in p["knobs"] if k] for p in pages}
+    assert [p["title"] for p in pages] == [l["name"] for l in LEVELS.values()]   # (the same pages as the levels)
+
+
+def test_every_page_has_a_shot():
+    """the user manual shows every page of the screen (tools/move_ui_shots.mjs names them after the title)"""
+    for p in screen_pages():
+        name = re.sub(r"^-|-$", "", re.sub(r"[^a-z0-9]+", "-", p["title"].lower()))
+        assert f"manual/img/move/move-{name}.png?v=" in DOC, p["title"]
+
+
+def test_dev_part_apart():
+    """the developer and test material is in docs/MOVE-DEV.md, linked both ways"""
+    dev = (ROOT / "docs" / "MOVE-DEV.md").read_text()
+    assert "[MOVE-DEV.md](MOVE-DEV.md)" in DOC and "[MOVE.md](MOVE.md)" in dev
+    assert "## For developers" not in DOC and "tools/gen_move_module.py" in dev and "tools/move_ui_shots.mjs" in dev
 
 
 def test_unverified_marked():
     assert "This port is in development and not released yet." in DOC
-    assert DOC.count("*(not yet verified on a device)*") >= 5
+    assert DOC.count("*(not yet verified on a device") >= 5
 
 
 def test_module_name_generic():
