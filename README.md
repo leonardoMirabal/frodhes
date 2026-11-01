@@ -68,8 +68,8 @@ once it has passed the tests on a Move. The Move's manual (install, every page, 
 troubleshooting): [docs/MOVE.md](docs/MOVE.md).
 
 <p align="center">
-  <img src="docs/manual/img/move/move-frodhes.png?v=fa3f01dd" width="384" alt="Frodhes' first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix">
-  <img src="docs/manual/img/move/move-compressor-gr.png?v=189a0f30" width="384" alt="The COMPRESSOR page on the Move, the gain-reduction meter in the place of knobs 7 and 8">
+  <img src="docs/manual/img/move/move-frodhes.png?v=a6c53d5f" width="384" alt="Frodhes' first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix">
+  <img src="docs/manual/img/move/move-compressor-gr.png?v=af2373a6" width="384" alt="The COMPRESSOR page on the Move, the gain-reduction meter in the place of knobs 7 and 8">
 </p>
 
 ## Other keyboards: the SMK-37 (experimental)

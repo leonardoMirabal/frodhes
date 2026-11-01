@@ -13,7 +13,7 @@ This is the user manual for the Move. What the controls do to the sound is the F
 [FM-1 manual](MANUAL.md); this page says how to reach them on the Move and what is different. The build, the tests and
 the device measurements are in [MOVE-DEV.md](MOVE-DEV.md).
 
-![The first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=fa3f01dd)
+![The first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=a6c53d5f)
 
 ## Contents
 
@@ -93,18 +93,18 @@ stay the Move's.
 The Move's screen is 128 x 64 pixels in one colour. Every picture on this page is that screen, drawn by the file the
 Move runs and shown 4 times larger.
 
-![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=5e9df1ba)
+![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=afb6680e)
 
 - **The overview** is one page: eight cards, knobs 1-4 on the top row and 5-8 below, each with its name, its value
   and a bar. A knob with no control on that page has no card.
 - **The bar** is an outlined box filled from the left up to the value. A choice of three or more options shows a
-  notch between its steps; a value with a centre (TONE, TUNE) shows a notch at 0. A two-way switch (SUS, FX, COMP)
-  fills half the box at OFF and all of it at ON.
+  notch between its steps; a value with a centre (TONE, TUNE) shows a notch at 0. A two-way switch (SUS, FX, COMP,
+  MOTOR, PHASER, CHORUS, RETRIG) is an empty box at OFF (FREE for RETRIG) and a full one at ON (KEY).
 - **The header** names the page and its number among the pages you can reach (`4/12`). An **`X`** before the number
   shows that the effects are off (FX OFF, the Left arrow), and an **`S`** that the sustain holds (SUS ON, the Right
   arrow).
 
-![The header with the effects off (X) and the sustain on (S); the FX and SUS cards agree](manual/img/move/move-header-fx-sus.png?v=fa577b6c)
+![The header with the effects off (X) and the sustain on (S); the FX and SUS cards agree](manual/img/move/move-header-fx-sus.png?v=9b4fcc6e)
 
 - **The large card**: touch a knob, or turn it, and its card fills the screen: the name, the value in large letters,
   a wide bar of the same kind and, along the bottom, a mark for each of the page's knobs, the one you hold filled.
@@ -117,7 +117,7 @@ Move runs and shown 4 times larger.
 - **A message** shows in a box for about a second: `SPRD RESET` after a double tap, `SAVED U05` after a save,
   `NOT SAVED` when you leave the save card with Back.
 
-![A double tap on SPREAD: back to 0, SPRD RESET](manual/img/move/move-reset.png?v=08f5d4fb)
+![A double tap on SPREAD: back to 0, SPRD RESET](manual/img/move/move-reset.png?v=ae0bd720)
 
 - **The knob lights** show each knob's value, as on Schwung's own screens: knobs 1-4 white and 5-8 amber, brighter
   as the value grows, dark where the page has no control. **The Left arrow** is lit while the effects are on, **the
@@ -142,8 +142,9 @@ Move runs and shown 4 times larger.
 | Pads, Up / Down, Play ... | the Move's: notes, octave, transport |
 
 - A fast turn of a wide range (more than 24 steps) moves four steps a detent.
-- The double tap works on every knob that has a default: not on SUS and PRESET, and, today, not on TUNE, the TREM
-  switch (TREM/PHASER knob 1), the four ARPEGGIO knobs and CHAN. A double tap on FX turns the effects on.
+- The double tap works on every knob but PRESET. The defaults are the FM-1's: a parameter's as on a fresh FM-1, and
+  the settings as a new FM-1 boots (TUNE 0, the TREM switch OFF, the arpeggiator OFF at RATE 1/16, OCT 1 and GATE 60 %,
+  CHAN ALL, SUS OFF). A double tap on FX turns the effects on.
 - An arrow press sets the state the screen shows next (FX OFF, say); it does not toggle. A press that Schwung
   delivers twice, or plays back later from an automation lane, cannot turn it back. Only before the screen has read
   SUS or FX for the first time does a press toggle it.
@@ -154,8 +155,8 @@ Move runs and shown 4 times larger.
 ## The pages
 
 Each page holds up to eight controls, one for each knob, in the FM-1's order and with the FM-1's ranges and
-defaults. The overview shows a short name where the full one does not fit a card (SPRD for SPREAD); the large card
-shows the full name. The VOICE pages are the instrument's that plays: PIANO VOICE for ST77, SUIT, FELT and DYNO,
+defaults. The overview shows a name of at most four letters on each card, so a card's name ends clear of the next
+(SPRD for SPREAD, DPTH for DEPTH, ATCC for AT CC); the large card shows the full name. The VOICE pages are the instrument's that plays: PIANO VOICE for ST77, SUIT, FELT and DYNO,
 VIBES VOICE and VIBES MOTOR for VIBE, MARIMBA VOICE for MRMB. They change with TYPE, a preset or a program change,
 within about half a second; that is why the page count is 12 or 13.
 
@@ -187,17 +188,17 @@ The sound: TYPE (the instrument: ST77, SUIT, FELT, DYNO, VIBE, MRMB), SPREAD (th
 SUS (the sustain), FX (every effect off or on), PRESET (knob 5: the sound, its full name across knobs 5-7) and the
 delay's mix (DELAY, knob 8, the FM-1's PERFORM name for it). Knobs 6 and 7 have no control here.
 
-![FRODHES](manual/img/move/move-frodhes.png?v=fa3f01dd)
+![FRODHES](manual/img/move/move-frodhes.png?v=a6c53d5f)
 ![Knob 5 touched: the preset, its name above and its number large](manual/img/move/move-frodhes-k5.png?v=caea2c9e)
 
 ### PIANO VOICE, VIBES VOICE, VIBES MOTOR, MARIMBA VOICE
 
 The instrument's own controls, as on the FM-1's VOICE pages (MANUAL.md sections 4 and 5).
 
-![PIANO VOICE, with ST77](manual/img/move/move-piano-voice.png?v=c8fbab0e)
-![VIBES VOICE, with VIBE](manual/img/move/move-vibes-voice.png?v=98cc8a35)
-![VIBES MOTOR, with VIBE](manual/img/move/move-vibes-motor.png?v=0df8d690)
-![MARIMBA VOICE, with MRMB](manual/img/move/move-marimba-voice.png?v=953c4236)
+![PIANO VOICE, with ST77](manual/img/move/move-piano-voice.png?v=301bdb0e)
+![VIBES VOICE, with VIBE](manual/img/move/move-vibes-voice.png?v=b77ff6fa)
+![VIBES MOTOR, with VIBE](manual/img/move/move-vibes-motor.png?v=7f62f232)
+![MARIMBA VOICE, with MRMB](manual/img/move/move-marimba-voice.png?v=40d4dfc8)
 
 ### COMPRESSOR
 
@@ -207,22 +208,22 @@ the FM-1's scale (up to 30 dB), and the peak held for a second as a taller segme
 compressor is off the bar is a dotted outline and reads COMP OFF. *(not yet verified on a device: the meter moving
 while you play)*
 
-![COMPRESSOR, the compressor off: COMP OFF](manual/img/move/move-compressor.png?v=fe9c517f)
-![COMPRESSOR on: the meter at 12 dB of gain reduction, the peak held at 20 dB](manual/img/move/move-compressor-gr.png?v=189a0f30)
+![COMPRESSOR, the compressor off: COMP OFF](manual/img/move/move-compressor.png?v=57f2cac0)
+![COMPRESSOR on: the meter at 12 dB of gain reduction, the peak held at 20 dB](manual/img/move/move-compressor-gr.png?v=af2373a6)
 
 ### DRIVE/FILTER, TREM/PHASER
 
 Two of the FM-1's pages side by side: the drive and the filter, the tremolo / pan / wah and the phaser.
 
-![DRIVE/FILTER](manual/img/move/move-drive-filter.png?v=5e9df1ba)
-![TREM/PHASER](manual/img/move/move-trem-phaser.png?v=8eea9768)
+![DRIVE/FILTER](manual/img/move/move-drive-filter.png?v=afb6680e)
+![TREM/PHASER](manual/img/move/move-trem-phaser.png?v=f6b87239)
 
 ### CHORUS, DELAY
 
 A page each, with the FM-1's cards. The delay's mix is also on the first page (DELAY, knob 8).
 
-![CHORUS](manual/img/move/move-chorus.png?v=493854fe)
-![DELAY](manual/img/move/move-delay.png?v=a1a9aeb1)
+![CHORUS](manual/img/move/move-chorus.png?v=c4ac474b)
+![DELAY](manual/img/move/move-delay.png?v=2d0c449e)
 
 ### REVERB
 
@@ -230,8 +231,8 @@ A page each, with the FM-1's cards. The delay's mix is also on the first page (D
 FM-1's card does. FREEZE closes the reverb's input: the held tail stays as it is and new notes play dry. To get the
 tail moving again, turn DECAY under 120.
 
-![REVERB](manual/img/move/move-reverb.png?v=c84e7c56)
-![REVERB at INF, DECAY at 127: FREZ on the overview](manual/img/move/move-reverb-freeze.png?v=f3e412df)
+![REVERB](manual/img/move/move-reverb.png?v=2fbfbe5a)
+![REVERB at INF, DECAY at 127: FREZ on the overview](manual/img/move/move-reverb-freeze.png?v=83417b6d)
 ![The DECAY card at 127: FREEZE](manual/img/move/move-reverb-freeze-k3.png?v=ecf3a9f3)
 
 ### TEMPO, ARPEGGIO
@@ -239,7 +240,7 @@ tail moving again, turn DECAY under 120.
 The synced rates of the tremolo, the phaser and the delay, and the arpeggiator ([The arpeggiator](#the-arpeggiator)).
 They follow the Move's tempo ([MIDI and tempo](#midi-and-tempo)).
 
-![TEMPO](manual/img/move/move-tempo.png?v=23e09f69)
+![TEMPO](manual/img/move/move-tempo.png?v=f53c923e)
 ![ARPEGGIO, as a new Frodhes starts: OFF, 1/16, 1 octave, 60 %](manual/img/move/move-arpeggio.png?v=6647d24f)
 
 ### LFO/SETUP, MAPPINGS
@@ -255,8 +256,8 @@ The LFO, the delay's tone, the output LEVEL and the MIDI channel (CHAN, ALL by d
 An HI under LO turns the direction round. A CC of 0 is off, and both are off by default. The control moves as if a
 controller sent that CC (the CC numbers are the FM-1's, MANUAL.md section 12). *(not yet verified on a device)*
 
-![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=a4ff63e0)
-![MAPPINGS](manual/img/move/move-mappings.png?v=1d95da65)
+![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=9855f40d)
+![MAPPINGS](manual/img/move/move-mappings.png?v=1a4cf615)
 
 ## The menu
 

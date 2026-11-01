@@ -33,8 +33,9 @@ node tools/move_ui_shots.mjs --check      # exit 1 on a stale, missing or orphan
 - `tests/py/test_move_ui.py` runs `--check` (`test_move_doc_shots_current`), so a change to the screen's code or
   the pages without `--docs` fails `tools/ci_move.sh`. `tools/doc_links.py` checks the README's and the manual's
   `?v=` too.
-- The values are the defaults (the FM-1's). The arpeggiator's settings have no default in `chain_params.json`, so the
-  tool takes a new instance's from `arp.c` (`arp_defaults`). There is no picture after SAVE TO USER's click: the
+- The values are the defaults (the FM-1's): `chain_params.json`'s, which `tools/gen_move_module.py` takes from
+  `params.c` for a parameter and, for a setting, from the FM-1's first boot (`ui.c` `slot_val` on `params_defaults`'
+  record, `arp.c` `arp_defaults`; `test_bridge boot` checks them against a new instance). There is no picture after SAVE TO USER's click: the
   plugin names the slot (`preset_autoname`), which the model does not compute.
 - Schwung's own knob grid is not shown to users any more (the plugin answers no `ui_hierarchy`, `MB_OWN_UI` 1), so
   the docs have no picture of it. `SCHWUNG_SRC=<Schwung's source> node move/ui/test_cell.mjs --png FILE` still draws
@@ -171,8 +172,9 @@ node tools/move_ui_shots.mjs --check      # exit 1 on a stale, missing or orphan
   its held second half. A steady tone correlates almost as well a whole period later, so candidates within a tie
   (`ALIGN_TIE`) are told apart by the attack: the 1 ms RMS envelope of the note's first 0.3 s, then the best lag
   within 1 ms of it. Without that, the Move's 96 v90 of 2026-10-30 lined up 953 frames late, not 658, and read as
-  ANOTHER SOUND (-29.7 dB extra); aligned, it is -36 dB under the note, at the take's floor
-  (`tests/py/data/move_usb_host_96v90.npz`). The HQ probe (96 v90 against the Classic host) gives CLASSIC only
+  ANOTHER SOUND (-29.7 dB extra); aligned, it is -36 dB under the note, at the take's floor. The test rebuilds that
+  case from the host build (`test_usb_host_96v90_of_the_2026_10_30_take`: the render 17.1 dB down and 658 frames
+  late, rounded, its tail mostly 14 periods later, so the tail alone peaks at 953). The HQ probe (96 v90 against the Classic host) gives CLASSIC only
   where the take can tell the two apart: its own floor, the nearer of its two residuals, must be
   `HQ_RESOLVE_DB` (3 dB) under the two hosts' difference there. A USB-C take through the Move's volume (Main Out
   17 dB under the tap) cannot: it passes and says so, and the tap path checks HQ.

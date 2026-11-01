@@ -172,3 +172,46 @@ def test_c_table_compiles_against_the_firmware():
                             "-I" + os.path.join(ROOT, "firmware", "gen"), "-Wall", "-Wno-unused-function", probe],
                            capture_output=True, text=True, timeout=120)
         assert r.returncode == 0, r.stderr[-3000:]
+
+
+def test_every_knob_resets_to_the_firmware_default():
+    """a double tap on Frodhes' screen sets a knob to its FR_PAGES def: every knob but PRESET has one (TUNE, the TREM
+    switch, the ARPEGGIO knobs and CHAN had none: the tap did nothing). A parameter's is params.c's default (on the
+    wire: less its offset); a setting's is the FM-1's first boot, read here from the firmware's text: params_defaults
+    zeroes the record (TUNE 0, CHANNEL ALL), arp.c arp_defaults, ui.c tw_kind on TREM/WAH's switch and mode defaults,
+    fx.c's zeroed bypass (FX on), SUS up, move_bridge.h MB_MAP_DEFAULT (move/tests/test_bridge.c boot checks the
+    same values against a new plugin instance)"""
+    src = lambda n: open(os.path.join(ROOT, "firmware", "src", n)).read()   # noqa: E731
+    pages = json.loads(re.search(r"const FR_PAGES = (.*?);\n", OUT["screen.js"]).group(1))
+    rows = {r["key"]: r for r in gen.build(M)[2]}
+    arp = dict(re.findall(r"(ARP_\w+) = (\w+);", re.search(r"static void arp_defaults\(void\) \{([^}]*)\}",
+                                                             src("arp.c")).group(1)))
+    assert arp["ARP_MODE"] == "ARP_OFF"
+    pdef = re.search(r"static void params_defaults\(void\)\n\{(.*?)\n\}", src("params.c"), re.S).group(1)
+    assert "for (i = 0; i < sizeof set; i++) ((uint8_t *)&set)[i] = 0;" in pdef
+    assert not re.search(r"set\.(tune|midi_ch|arp)\b", pdef)               # (zeroed: 0)
+    assert re.search(r"static volatile uint8_t fx_bypass;", src("fx.c"))    # (zero: the effects on)
+    tw = re.search(r"static uint32_t tw_kind\(void\)[^{]*\{(.*?)\n\}", src("ui.c"), re.S).group(1)
+    assert "return sw == 2u ? 3u : sw != 1u ? 0u : m ? 2u : 1u;" in tw
+    sw, mode = M["params"]["P_TW_SW"]["def"], M["params"]["P_TW_MODE"]["def"]
+    firm = {"s_tune": 0, "s_mch": 0, "s_twkind": 3 if sw == 2 else 0 if sw != 1 else 2 if mode else 1,
+            "s_arpmode": 0, "s_arprate": int(arp["ARP_RATE"]), "s_arpoct": int(arp["ARP_OCT"]) + 1,
+            "s_arpgate": int(arp["ARP_GATE"]), "s_sustain": 0, "s_fx": 1}
+    mapd = [int(x) for x in re.search(r"#define MB_MAP_DEFAULT \{([^}]*)\}",
+                                      open(os.path.join(ROOT, "move", "move_bridge.h")).read()).group(1).split(",")]
+    firm.update({k: mapd[int(rows[k]["slot"])] for k in gen.MAP_KEYS})
+    seen = set()
+    for pg in pages:
+        for k in pg["knobs"]:
+            if not k or k["type"] == "preset":
+                continue
+            assert "def" in k, f"{pg['title']} {k['name']} ({k['key']}): no default, a double tap does nothing"
+            r = rows[k["key"]]
+            if r["kind"] == "MK_PARAM":
+                want = M["params"][r["slot"]]["def"] - r["off"]
+            else:
+                assert k["key"] in firm, f"{k['key']}: its firmware default is not listed here"
+                want = firm[k["key"]]
+            assert k["def"] == want, (pg["title"], k["key"], k["def"], want)
+            seen.add(k["key"])
+    assert {"s_tune", "s_twkind", "s_arpmode", "s_arprate", "s_arpoct", "s_arpgate", "s_mch", "s_sustain"} <= seen

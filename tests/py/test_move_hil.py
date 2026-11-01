@@ -322,31 +322,37 @@ def test_usb_host_plays_the_held_values(tmp_path):
 
 
 def test_usb_host_96v90_of_the_2026_10_30_take():
-    """the 2026-10-30 USB-C run's 96 v90 (tests/py/data/move_usb_host_96v90.npz: the Move's Main Out, 17.1 dB under
-    the tap, its tail ~20 LSB): the tail matches the host's at every whole period of lag within the mix's rounding,
-    and the tail's best is 14 periods late (21.61 ms against the take's 14.92). The old alignment took it, and the
-    note's attack, 6.7 ms off, read as -29.7 dB of ANOTHER SOUND. _align takes the take's lag (658 frames), and the
-    note's extra stays far under the -30 dB limit"""
-    z = np.load(os.path.join(ROOT, "tests", "py", "data", "move_usb_host_96v90.npz"))
-    sr, i0 = int(z["sr"]), int(z["i0"])
+    """the 2026-10-30 USB-C run's 96 v90, rebuilt from the Move host build (no recording): the Move's Main Out 17.1 dB
+    under the tap and 658 frames (14.92 ms) late, in whole LSB with the mix's TPDF rounding, its tail ~20 LSB; in the
+    tail 70 % of the note comes 14 periods later (953 frames), so the tail correlates best there (0.9998) and on time
+    a little less (0.9995), as the take did. The old alignment (the best tail correlation) took 953, and the note's
+    attack, 6.7 ms off, read as ~-30 dB of ANOTHER SOUND. _align takes the take's lag (658), and the note's extra stays
+    far under the -30 dB limit"""
+    sr, lag, late, g = 44100, 658, 953, 10 ** (-17.11 / 20)
     ev, marks, dur = mh.phrase_events()
     h = mh.host_phrase(ev, dur, 0, None, mh.GLOBAL_CCS)
     t = next(t for name, t, n in marks if name == mh.HQ_PROBE)
     a, b = int(t * sr), int((t + mh.NOTE_S) * sr)
-    mv = np.zeros_like(h)
-    mv[i0:i0 + len(z["move"])] = z["move"]
-    lo, hi = -int(0.01 * sr), int(0.08 * sr)
     ta = a + sr // 2
+    x = np.zeros_like(h)
+    x[lag:] = g * h[:-lag]
+    s = ta + lag                                         # (the tail: 30 % on time, 70 % 14 periods late)
+    x[s:] = g * (0.3 * h[s - lag:len(h) - lag] + 0.7 * h[s - late:len(h) - late])
+    rng = np.random.default_rng(7)
+    mv = np.round(x + rng.uniform(-0.5, 0.5, x.shape) + rng.uniform(-0.5, 0.5, x.shape))
+    lo, hi = -int(0.01 * sr), int(0.08 * sr)
     rt = mh._mono(h[ta:b])
     tail = max((float(np.dot(mh._mono(mv[ta + k:b + k]), rt) / (np.linalg.norm(mh._mono(mv[ta + k:b + k])) *
                                                                  np.linalg.norm(rt) + 1e-9)), k) for k in range(lo, hi))
-    assert tail[1] == 953, tail                          # (the trap: the tail's best is 14 periods late)
-    corr, lag = mh._align(mv, h, a, b, ta, b, lo, hi)
-    assert lag == 658 and corr > 0.999, (lag, corr)
-    g = 10 ** (-17.11 / 20)
-    res = mh._mono(mv[a + lag:b + lag]) - g * mh._mono(h[a:b])
-    extra = 20 * np.log10(np.sqrt(np.mean(res ** 2)) / np.sqrt(np.mean((g * mh._mono(h[a:b])) ** 2)))
-    assert extra < -35, extra
+    assert tail[1] == late, tail                         # (the trap: the tail's best is 14 periods late)
+
+    def extra(k):
+        res = mh._mono(mv[a + k:b + k]) - g * mh._mono(h[a:b])
+        return 20 * np.log10(np.sqrt(np.mean(res ** 2)) / np.sqrt(np.mean((g * mh._mono(h[a:b])) ** 2)))
+    assert extra(late) > -32, extra(late)                # (the old pick: the attack off, "another sound")
+    corr, got = mh._align(mv, h, a, b, ta, b, lo, hi)
+    assert got == lag and corr > 0.999, (got, corr)
+    assert extra(got) < -35, extra(got)
 
 
 def test_align_breaks_a_steady_tail_tie_on_the_attack():

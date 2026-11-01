@@ -94,8 +94,9 @@ FX_BTN_CC = 62                     # the Left arrow (MoveLeft); Up / Down stay t
 LABEL_MAX = 6                      # the knob grid's cell label: six of Schwung's capitals fit a cell (its own cap: a
                                    # declared "Sustain" draws SUSTAI, render_page_movy.mjs; move/ui/test_cell.mjs
                                    # renders every page through Schwung's renderer and checks no two labels touch)
-SCREEN_LABEL_MAX = 5               # Frodhes' own screen's overview card: five of its 6 px glyphs (screen_core.js)
-VALUE_MAX = 5                      # an enum option on the Move: the same five
+SCREEN_LABEL_MAX = 4               # Frodhes' own screen's overview card: four of its 6 px glyphs, 23 px in the 29 px
+                                   # card with a clear gap to the next (five, 29 px, ran into it: AT CCAT LO)
+VALUE_MAX = 5                      # an enum option on the Move: five of the 6 px glyphs (29 px, the card's width)
 # The Move's abbreviations of the firmware's option names longer than VALUE_MAX, one scheme everywhere (the pages, the
 # screen, the docs, the mock-ups): four letters, the word's first syllable and the consonant after it (DORIAN DORN,
 # DEGREE DEGR), a digit kept (DIA 7TH DIA7). A new long name fails the generator until it is named here.
@@ -145,7 +146,7 @@ SLOTS = {
 }
 # keys of the Move's own, with no FM-1 card: a CC sent as is (latch: 0 / 127; trigger: 127 on a write)
 EXTRA = {
-    "s_sustain": {"name": "SUS", "cc": 64, "options": ["OFF", "ON"], "kind": "MK_LATCH",
+    "s_sustain": {"name": "SUS", "cc": 64, "options": ["OFF", "ON"], "kind": "MK_LATCH", "default": 0,
                   "help": "the sustain pedal (CC 64), latched"},
     "s_susbtn": {"name": "SUSBT", "cc": 0, "options": ["UP", "DOWN"], "kind": "MK_BTN",
                  "help": "the Right arrow (screen.js): a press flips SUS"},
@@ -227,11 +228,14 @@ PARAM_NAME = {"P_SPREAD": "SPREAD"}
 ALIAS = {"p_delay": ("P_DL_DEPTH", "DELAY")}
 # Frodhes' own screen's overview cards fit SCREEN_LABEL_MAX: a longer label is shown so there (its large card, a
 # knob touched, shows the whole label); a new long label fails the generator until it is named here
-SCREEN_SHORT = {"SPREAD": "SPRD", "THRESH": "THRSH", "ATTACK": "ATK", "MAKEUP": "MKUP", "FEEDBK": "FDBK",
-                "STRIKE": "STRK", "MALLET": "MALLT", "HAMMER": "HAMMR", "WEIGHT": "WGHT", "DAMPER": "DAMPR",
-                "AMOUNT": "AMT", "TRSYNC": "TRSYN", "PHSYNC": "PHSYN", "DLSYNC": "DLSYN", "DLTONE": "DLTON",
-                "PREDLY": "PDLY", "LOWCUT": "LCUT", "RETRIG": "TRIG", "CHORUS": "CHOR", "PHASER": "PHASE",
-                "FILTER": "FILT", "REVERB": "RVB"}
+SCREEN_SHORT = {"SPREAD": "SPRD", "THRESH": "THR", "ATTACK": "ATK", "MAKEUP": "MKUP", "FEEDBK": "FDBK",
+                "STRIKE": "STRK", "MALLET": "MLLT", "HAMMER": "HAMR", "HAMMR": "HAMR", "WEIGHT": "WGHT",
+                "DAMPER": "DAMP", "DAMPR": "DAMP", "AMOUNT": "AMT", "TRSYNC": "TSYN", "PHSYNC": "PSYN",
+                "DLSYNC": "DSYN", "DLTONE": "DTON", "PREDLY": "PDLY", "LOWCUT": "LCUT", "RETRIG": "TRIG",
+                "CHORUS": "CHOR", "PHASER": "PHAS", "FILTER": "FILT", "REVERB": "RVB", "DELAY": "DLY",
+                "DECAY": "DCAY", "NOISE": "NOIS", "MOTOR": "MOTR", "DEPTH": "DPTH", "SPEED": "SPD", "SHAPE": "SHPE",
+                "RATIO": "RTIO", "DRIVE": "DRV", "LEVEL": "LVL", "AT CC": "ATCC", "AT LO": "ATLO", "AT HI": "ATHI",
+                "PA CC": "PACC", "PA LO": "PALO", "PA HI": "PAHI"}
 # EFFECT (each effect page's K1: its switch or TYPE) is named after the effect, so two on one level differ
 EFFECT_NAME = {"DRIVE": "DRIVE", "TREM/WAH": "TREM", "PHASER": "PHASER", "CHORUS": "CHORUS", "DELAY": "DELAY"}
 TYPE_NAME = {"FILTER": "FILTER", "REVERB": "REVERB", "CHORD": "CHORD"}
@@ -323,8 +327,67 @@ def model():
             ctls.append(c)
         engines.append(ctls)
     type_ui = [int(x) for x in re.search(r"TYPE_UI\[N_TYPE_N\] = \{([^}]*)\}", ep).group(1).split(",")]
+    slot_def = slot_defaults(src, params, defs, sv)
     return {"params": params, "pids": pids, "names": names, "pages": pages, "order": order, "slot_hi": slot_hi,
-            "engines": engines, "type_ui": type_ui, "defs": defs}
+            "slot_def": slot_def, "engines": engines, "type_ui": type_ui, "defs": defs}
+
+
+def c_eval(expr, env):
+    """a C expression of ints, names in env, == != + - and ?: (casts and u suffixes dropped) -> int"""
+    e = re.sub(r"\((?:u?int\d+_t)\)", "", re.sub(r"\b(\d+)u\b", r"\1", expr)).strip()
+    depth, q = 0, -1
+    for i, ch in enumerate(e):                     # (the first ? at depth 0, its : the matching one: right-assoc)
+        depth += ch == "(" or -(ch == ")")
+        if ch == "?" and depth == 0:
+            q = i
+            break
+    if q >= 0:
+        depth, n = 0, 0
+        for j in range(q + 1, len(e)):
+            depth += e[j] == "(" or -(e[j] == ")")
+            if depth == 0 and e[j] == "?":
+                n += 1
+            elif depth == 0 and e[j] == ":":
+                if n == 0:
+                    return c_eval(e[q + 1:j], env) if c_eval(e[:q], env) else c_eval(e[j + 1:], env)
+                n -= 1
+        raise ValueError(expr)
+    names = re.findall(r"[A-Za-z_][\w.]*", e)
+    assert all(n in env for n in names), (expr, [n for n in names if n not in env])
+    return int(eval(re.sub(r"[A-Za-z_][\w.]*", lambda mm: "(%d)" % env[mm.group(0)], e), {"__builtins__": {}}))
+
+
+def slot_defaults(src, params, defs, sv):
+    """every ui.c slot's value at the FM-1's first boot (S_* -> slot_val's value): params_defaults zeroes the
+    settings record and sets some fields (set.X = N), arp_sanitize then puts arp.c's arp_defaults in (the zeroed GATE
+    is out of range), the parameters are PARAMS[].def; slot_val's return expression evaluated on those, tw_kind() on
+    the TREM/WAH switch's and mode's defaults. None where an expression reads anything else"""
+    pc, ac, ui = src["params.c"], src["arp.c"], src["ui.c"]
+    env = dict(defs)
+    body = re.search(r"static void params_defaults\(void\)\n\{(.*?)\n\}", pc, re.S).group(1)
+    for f in re.findall(r"set\.(\w+)", "\n".join(src.values())):
+        env["set." + f] = 0
+    for m in re.finditer(r"set\.(\w+) = (\d+)u?;", body):
+        env["set." + m.group(1)] = int(m.group(2))
+    for m in re.finditer(r"#define (ARP_\w+) \(set\.arp\[(\d)\]\)", ac):
+        env[m.group(1)] = 0
+    ad = re.search(r"static void arp_defaults\(void\) \{([^}]*)\}", ac).group(1)
+    for m in re.finditer(r"(ARP_\w+) = (\w+);", ad):
+        env[m.group(1)] = c_eval(m.group(2), env)
+    pv = {p: v["def"] for p, v in params.items()}
+    tw = re.search(r"static uint32_t tw_kind\(void\)[^{]*\{(.*?)\n\}", ui, re.S).group(1)
+    tenv = dict(env)
+    for m in re.finditer(r"(\w+) = PV\((P_\w+)\)", tw):
+        tenv[m.group(1)] = pv[m.group(2)]
+    env["tw_kind()"] = c_eval(re.search(r"return ([^;]+);", tw).group(1), tenv)
+    out = {}
+    for m in re.finditer(r"case (S_\w+): \*hi = [^;]+; return ([^;]+);", sv):
+        e = m.group(2).replace("tw_kind()", "tw_kind__")
+        try:
+            out[m.group(1)] = c_eval(e, dict(env, tw_kind__=env["tw_kind()"]))
+        except (AssertionError, SyntaxError):     # (another kind of expression: no default from here)
+            out[m.group(1)] = None
+    return out
 
 
 def pkey(p):
@@ -376,6 +439,9 @@ def key_def(m, slot, label, key=None, bip=True):
         item.update({"type": "float", "min": (0 - off) / scale, "max": (hi - off) / scale, "step": 1.0 / scale})
     else:
         item.update({"type": "int", "min": max(sd.get("min", 0), 0) - off, "max": hi - off})
+    d = m["slot_def"].get(slot)                 # (the FM-1's first-boot value: a double tap resets to it)
+    if d is not None:                           # (None: slot_val reads something else, S_SQEDIT's action, say)
+        item["default"] = (d - off) / scale if scale != 1 else d - off
     if sd.get("unit"):
         item["unit"] = sd["unit"]
     return item, {"key": skey(slot), "slot": slot, "cc": sd.get("cc", 0), "off": off, "scale": scale,

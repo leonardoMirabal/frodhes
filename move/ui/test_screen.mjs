@@ -230,7 +230,7 @@ test("a value being turned is not overwritten by a late read", () => {
     assert.equal(s.st().vals.p_fl_freq, want);
 });
 
-test("every page, label and option fits: cards 5 characters (a longer label: its short form), the large card 124 px", () => {
+test("every page, label and option fits: card labels 4 characters (a longer label: its short form), the large card 124 px", () => {
     const s = new Screen().open();
     const w = s.api.textW;
     for (const p of s.api.pages) {
@@ -409,6 +409,82 @@ test("COMPRESSOR: the gain-reduction meter (a fake r_cmp_gr), as the FM-1's COMP
     s.live();
     assert.ok(s.plugin.reads - before <= 5);
     assert.equal(s.st().gr.db10, 0, "not read off the COMPRESSOR page");
+});
+
+// the overview card's bar of knob i, its middle row inside the outline: lit pixels as a string of # and .
+const barRow = (s, i) => {
+    const fb = s.draw(), x0 = (i % 4) * 32, y = 9 + Math.floor(i / 4) * 28 + 21;
+    let r = "";
+    for (let x = x0 + 1; x < x0 + 28; x++) r += fb.px[y * 128 + x] ? "#" : ".";
+    return r;
+};
+
+test("a switch (an enum of two options) is an empty outline at its first option and full at its second", () => {
+    const sw = [];
+    for (const type of [0, 4]) {
+        for (const v of [0, 1]) {
+            const s = new Screen();
+            s.plugin.v.p_type = type;
+            for (const p of s.api.pages) for (const k of p.knobs) if (k && k.type === "enum" && k.options.length === 2) {
+                s.plugin.v[k.key] = v;
+            }
+            s.open();
+            for (const i of s.api.visiblePages(s.st().engine)) {
+                goto(s, s.api.pages[i].title);
+                s.api.pages[i].knobs.forEach((k, j) => {
+                    if (!k || k.type !== "enum" || k.options.length !== 2) return;
+                    if (s.api.pages[i].title === "COMPRESSOR" && j >= 6) return;
+                    sw.push(k.key);
+                    assert.equal(barRow(s, j), (v ? "#" : ".").repeat(27), `${s.api.pages[i].title} ${k.name} at ${k.options[v]}`);
+                });
+            }
+        }
+    }
+    for (const key of ["s_sustain", "s_fx", "p_cmp_sw", "p_mot_on", "p_ph_sw", "p_cp_sw", "p_lfo_retrig"]) assert.ok(sw.includes(key), key);
+});
+
+test("an enum of three or more options and a bipolar number keep their bars (the step's share, the centre mark)", () => {
+    const s = new Screen();
+    s.plugin.v.p_type = 2;                                             // (TYPE: option 3 of its list)
+    s.open();
+    const t = s.api.pages[s.st().page].knobs[0], det = t.options.length, w = 29;
+    assert.ok(det > 2);
+    const fill = Math.round(w * 3 / det);
+    let want = "";
+    for (let x = 1; x < 28; x++) {
+        const notch = det > 2 && w / det >= 4 && [...Array(det - 1).keys()].some((i) => Math.round(w * (i + 1) / det) === x);
+        want += (x < fill) !== notch ? "#" : ".";
+    }
+    assert.equal(barRow(s, 0), want, "TYPE at its third option");
+    const b = new Screen();
+    b.plugin.v.p_tone = 20;
+    b.open();
+    goto(b, "PIANO VOICE");
+    const k = b.api.pages[b.st().page].knobs[0];
+    assert.ok(k.key === "p_tone" && k.min < 0 && k.max > 0, k.key);
+    const f = Math.round(28 * (20 - k.min) / (k.max - k.min)) + 1, c = Math.round(28 * (-k.min) / (k.max - k.min));
+    let wb = "";
+    for (let x = 1; x < 28; x++) wb += (x < f) !== (x === c) ? "#" : ".";
+    assert.equal(barRow(b, 0), wb, "TONE at +20, its centre marked");
+});
+
+test("every overview label fits its card with a gap: its width at most the card's less 1 px, every page and engine", () => {
+    const s = new Screen().open();
+    const w = s.api.textW;
+    for (const p of s.api.pages) {                                     // (every engine's VOICE pages: all of them)
+        p.knobs.forEach((k, i) => {
+            if (!k) return;
+            let cell = 29;                                             // (x .. x + 28, the bar's width; 32 px apart)
+            if (k.type === "preset") {
+                let j = i + 1;
+                while (j % 4 && !p.knobs[j]) j++;
+                cell = (j % 4 ? (j % 4) * 32 - 4 : 127) - (i % 4) * 32 - (j % 4 ? 0 : 1) + 1;
+            }
+            const lab = k.short || k.name;
+            assert.ok(w(lab) <= cell - 1, `${p.title} ${lab}: ${w(lab)} px in a ${cell} px card`);
+            assert.ok(!k.short || k.short.length >= 2, `${p.title} ${k.short}`);
+        });
+    }
 });
 
 for (const [name, fn] of tests) {

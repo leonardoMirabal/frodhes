@@ -76,15 +76,8 @@ class Chain {
     }
     draw() { this.ui.tick(); return this.fb; }
 }
-// the arpeggiator's settings have no default in chain_params.json (the plugin model would show their minimum): a new
-// instance's values, from arp.c arp_defaults (RATE an option index, OCT 0..3 = 1..4, GATE in %)
-const ARP = (() => {
-    const src = fs.readFileSync(path.join(ROOT, "firmware", "src", "arp.c"), "utf8");
-    const d = src.match(/static void arp_defaults\(void\) \{([^}]*)\}/)[1];
-    const v = (n) => Number(d.match(new RegExp(n + " = (\\d+)"))[1]);
-    return { s_arprate: v("ARP_RATE"), s_arpoct: v("ARP_OCT") + 1, s_arpgate: v("ARP_GATE") };
-})();
-const engine = (type) => (p) => { Object.assign(p.v, ARP); p.v.p_type = type; p.preset = PRESET_OF[type]; };
+// (every setting starts at its chain_params default, the FM-1's first boot: the arpeggiator's from arp.c arp_defaults)
+const engine = (type) => (p) => { p.v.p_type = type; p.preset = PRESET_OF[type]; };
 // the list (a jog click) with the cursor on the row labelled `label`
 const listAt = (label) => {
     const c = new Chain(engine(0)).click();
