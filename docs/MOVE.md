@@ -5,9 +5,9 @@ host that runs on it. The instruments (the electric piano types, VIBES, MARIMBA)
 code, built for the Move's processor, with 16 voices on every instrument and the HQ version of the three engines.
 Frodhes draws its own screen on the Move: the eight knobs as eight cards, a page at a time.
 
-**This port is in development and not released yet.** Everything on this page is checked on the host build (the same
-code run on a computer), and the screen, the knobs, the buttons, the presets, the levels and the clock on a Move.
-What still waits for its check on a Move is marked *(not yet verified on a device)*.
+Everything on this page is checked on the host build (the same code run on a computer), and the screen, the knobs,
+the buttons, the presets, the levels and the clock on a Move. What still waits for its check on a Move is marked
+*(not yet verified on a device)*.
 
 This is the user manual for the Move. What the controls do to the sound is described once, for every device, in the
 [manual](MANUAL.md) (sections 2-14, the [pages](MANUAL.md#4-the-pages) in section 4); this page says only how to reach
@@ -38,45 +38,47 @@ the device measurements are in [MOVE-DEV.md](MOVE-DEV.md).
 ## What you need
 
 - An Ableton Move with Schwung installed (Frodhes is built and tested against Schwung 1.8).
-- The Move on your network (it answers as `move.local`) and a computer with `ssh`, to copy the module once.
+- The Move on your network, and a computer or phone on the same network with a web browser, for Schwung Manager.
 - The Move's **Full Velocity** setting **off**, so the pads play soft and loud (see [Velocity](#velocity)).
 
 ## Install
 
+Frodhes is installed, updated and removed in **Schwung Manager**, the web page Schwung serves on the Move. On the
+Move, **Global Settings > System > Web Manager** shows the Move's IP address (and a QR code for it). Open
+`http://<move-ip>:7700` in a browser on the same network (`http://move.local:7700` often works too).
+
 The module is one file, **`frodhes-module.tar.gz`**: a folder `frodhes/` with `dsp.so` and `engine.so` (the
 instrument), `module.json` and `help.json` (its description and help text), `ui_chain.js` (Frodhes' screen),
 `screen.js` and `canvas.js` (the same screen and meter for Schwung's other screens) and `LICENSE`. A release carries it, under that name and as `frodhes-X.Y.Z-move.tar.gz`, only when that exact file passed the tests on a
-Move; until a release has it, build it yourself ([MOVE-DEV.md](MOVE-DEV.md)). Frodhes is not in Schwung's module
-catalog: install it by hand.
+Move. Schwung Manager finds it through this repository's `release.json`, which each such release updates.
 
-1. Unload Frodhes from every track, if an older one is loaded (a module that plays must not be replaced under it).
-2. Copy the folder into Schwung's sound generator folder, over the network:
+Install it in one of three ways:
 
-   ```sh
-   ssh ableton@move.local 'tar -xzf - -C /data/UserData/schwung/modules/sound_generators' < frodhes-module.tar.gz
-   ```
+- **From the module catalog**, once Frodhes is listed there: in Schwung Manager's module list, find **Frodhes**
+  among the sound generators and press **Install**.
+- **From the GitHub URL**: open **Install Custom Module**, enter `https://github.com/leonardoMirabal/frodhes` (or
+  `leonardoMirabal/frodhes`) under **From GitHub URL** and install. The manager installs the latest release's
+  `frodhes-module.tar.gz`.
+- **From the file**: under **Install Custom Module > From Tarball**, upload a `frodhes-module.tar.gz` downloaded from
+  the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest).
 
-3. In Schwung's chain editor for a track (see [Open Frodhes' screen](#open-frodhes-screen)), pick **Frodhes** as
-   the track's sound generator (the synth). Its short name on Schwung's screens is `FRDH`.
+Then, in Schwung's chain editor for a track (see [Open Frodhes' screen](#open-frodhes-screen)), pick **Frodhes** as
+the track's sound generator (the synth). Its short name on Schwung's screens is `FRDH`.
 
-*(not yet verified on a device: this plain `tar` route; the installer below is the tested one)*
+*(not yet verified on a device: the install, the update and the removal through Schwung Manager)*
 
-An update is the same steps with the new file. Frodhes keeps its settings and user presets in Schwung's data folder
-(`/data/UserData/schwung/module_data/frodhes`), not in the module's folder, so an update keeps them. To remove
-Frodhes, unload it from every track and delete `/data/UserData/schwung/modules/sound_generators/frodhes`.
+**Updating.** Unload Frodhes from every track first: a module that plays must not be replaced under it. With Frodhes
+installed from the catalog, Schwung Manager shows the new version next to it (**Update**, or **Update All**);
+otherwise install the new version the same way as the first. If the manager asks for a restart, restart. Frodhes
+keeps its settings and user presets in Schwung's data folder (`/data/UserData/schwung/module_data/frodhes`), not in
+the module's folder, so an update keeps them.
 
-With this repository at hand, `tools/move_install.py` does the same with a check and a way back:
+**Removing.** Unload Frodhes from every track, open Frodhes in Schwung Manager and press **Uninstall**. That removes
+the module's folder; the settings and user presets in `/data/UserData/schwung/module_data/frodhes` stay (delete that
+folder too to remove them).
 
-```sh
-python3 tools/move_install.py install            # prints what it would do (dry run)
-python3 tools/move_install.py install --go       # copies the module over ssh and switches to it
-python3 tools/move_install.py info --go          # the installed version, the sha256 of dsp.so and engine.so
-python3 tools/move_install.py rollback --go      # back to the module installed before
-```
-
-It installs `build/move/frodhes/` (`--src DIR` for another folder, such as the unpacked download), checks the new
-module next to the old one before it switches, and keeps the two modules installed before it (`--keep`). `--host`
-names the Move (default `ableton@move.local`).
+Installing over ssh, and `tools/move_install.py` (a check and a way back), are in
+[MOVE-DEV.md](MOVE-DEV.md#install-over-ssh).
 
 ## Open Frodhes' screen
 
