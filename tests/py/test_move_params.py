@@ -230,23 +230,39 @@ def test_plugin_state_round_trip():
 
 @NO_GLUE
 def test_plugin_presets_and_hierarchy_per_type():
-    """preset / preset_count (35) / preset_name for every preset; get_param("ui_hierarchy") is move_ui.h's text and
-    ui_engine (the VOICE levels' gate) follows each TYPE (eng_pages.h TYPE_UI)"""
+    """preset / preset_count (73) / preset_name for every preset: F01-F19 (0-18), U01-U16 (19-34, empty in a new data
+    folder: nothing loads), the Move-only F20-F57 (35-72, move/move_presets.h); after each load the panel holds the
+    preset's full parameter list exactly as the review read it back (move/presets/proposed_records.txt: A for F01-F19,
+    so the Move's F01-F19 are the FM-1's presets.c records; B / C for F20-F57); get_param("ui_hierarchy") is
+    move_ui.h's text and ui_engine (the VOICE levels' gate) follows each TYPE (eng_pages.h TYPE_UI)"""
+    import gen_move_presets as gp
     r = _bridge("presets", "build/move/frodhes/dsp.so")
     if r is None:
         pytest.skip("no Linux arm64 and no frodhes-move:bookworm image (make move-image)")
     out = r.stdout.splitlines()
-    assert "count 35" in out, r.stdout[-2000:]
+    assert "count 73" in out, r.stdout[-2000:]
     pr = [ln.split(" ", 3) for ln in out if ln.startswith("preset ")]
-    assert len(pr) == 35
+    pv = {int(ln.split()[1]): [int(x) for x in ln.split()[2:]] for ln in out if ln.startswith("pv ")}
+    assert len(pr) == 73 and len(pv) == 73
+    rec = gp.records()
+    want = {i: rec[("F%02d" % (i + 1), "A")][1] for i in range(19)}
+    for num, name, _, base, v, pairs in gp.table():
+        want[35 + num - gp.FIRST] = pairs
     prev = None
     for i, (_, idx, cur, name) in enumerate(pr):
         if cur == str(i):                                          # loaded: its own name
-            assert re.match(r"[FU]%02d" % (i + 1 if i < 19 else i - 19 + 1), name), name
+            n = i + 1 if i < 19 else i - 19 + 1 if i < 35 else i - 35 + gp.FIRST
+            assert re.match(r"[FU]%02d " % n, name) and name[0] == ("U" if 19 <= i < 35 else "F"), (i, name)
         else:                                                      # an empty user slot: nothing loads
-            assert i >= 19 and cur == prev, (i, cur, prev)
+            assert 19 <= i < 35 and cur == prev, (i, cur, prev)
         prev = cur
-    assert all(cur == idx for _, idx, cur, _ in pr[:19]), "every factory preset loads"
+        if i in want:
+            assert cur == str(i), (i, cur)
+            got = pv[i]
+            bad = [(n, x, got[pid] if pid < len(got) else None) for n, pid, x in want[i] if pid >= len(got) or got[pid] != x]
+            assert not bad, (i, name, bad)                         # (parameter, want, got)
+    names = {i: name for i, (_, _, _, name) in enumerate(pr)}
+    assert names[35] == "F20 STAGE77 ECHO" and names[72] == "F57 RADIO LOW", (names[35], names[72])
     ty = {int(ln.split()[1]): ln.split()[2] for ln in out if ln.startswith("type ")}
     assert [ty[t] for t in range(6)] == ["0", "0", "0", "0", "1", "2"]
     hl = [int(ln.split()[1]) for ln in out if ln.startswith("hierarchy ")]

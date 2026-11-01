@@ -8,9 +8,10 @@
 #define MOVE_GATE_KEY "ui_engine"   /* get_param: TYPE_UI[PV(P_TYPE)] (eng_pages.h), the VOICE levels' gate */
 #define MOVE_SCREEN_KEY "s_screen"   /* get_param: the PAGES cell's value line */
 #define MOVE_SCREEN_VALUE "OPEN"
-enum { MK_PARAM, MK_SLOT, MK_LATCH, MK_TRIG, MK_BTN, MK_MAP };   /* PV(id) / ui.c slot_val / a CC 0 or 127 /
-                                                   * a CC 127 / the sustain control (the FM-1's REC button) /
-                                                   * a Move-only mapping's setting (slot: its index) */
+enum { MK_PARAM, MK_SLOT, MK_LATCH, MK_TRIG, MK_BTN, MK_MAP, MK_HOLD };   /* PV(id) / ui.c slot_val / a CC 0
+                                                   * or 127 / a CC 127 / the sustain control (the FM-1's REC
+                                                   * button) / a Move-only mapping's setting (slot: its
+                                                   * index) / the arpeggiator's HOLD (arp.c ARP_HOLD) */
 typedef struct { const char *key; uint8_t slot, cc, kind, scale; int16_t off; } move_key_t;
 static const move_key_t MOVE_KEYS[] = {
     {"p_type", P_TYPE, 80, MK_PARAM, 1, 0},
@@ -83,6 +84,7 @@ static const move_key_t MOVE_KEYS[] = {
     {"s_arprate", S_ARPRATE, 53, MK_SLOT, 1, 0},
     {"s_arpoct", S_ARPOCT, 54, MK_SLOT, 1, -1},
     {"s_arpgate", S_ARPGATE, 55, MK_SLOT, 1, -10},
+    {"s_arphold", S_NONE, 0, MK_HOLD, 1, 0},
     {"p_lfo_shape", P_LFO_SHAPE, 75, MK_PARAM, 1, 0},
     {"p_lfo_rate", P_LFO_RATE, 76, MK_PARAM, 1, 0},
     {"p_lfo_sync", P_LFO_SYNC, 77, MK_PARAM, 1, 0},
@@ -173,22 +175,23 @@ static const char MOVE_UI_HIERARCHY_E0[] =
     "s_arpmode\",\"name\":\"MODE\",\"type\":\"enum\",\"options\":[\"OFF\",\"UP\",\"DOWN\",\"UP-DN\",\"ORDER\",\"RAND\"],\"default"
     "\":0},{\"key\":\"s_arprate\",\"name\":\"RATE\",\"type\":\"enum\",\"options\":[\"1/4\",\"1/8\",\"1/8T\",\"1/16\",\"1/16T\",\"1/"
     "32\"],\"default\":3},{\"key\":\"s_arpoct\",\"name\":\"OCT\",\"type\":\"int\",\"min\":1,\"max\":4,\"default\":1},{\"key\":\"s"
-    "_arpgate\",\"name\":\"GATE\",\"type\":\"int\",\"min\":10,\"max\":100,\"default\":60,\"unit\":\"%\"}],\"knobs\":[\"s_arpmod"
-    "e\",\"s_arprate\",\"s_arpoct\",\"s_arpgate\"]},\"lfo_set\":{\"name\":\"LFO/SETUP\",\"params\":[{\"key\":\"p_lfo_shape\""
-    ",\"name\":\"SHAPE\",\"type\":\"enum\",\"options\":[\"SINE\",\"TRI\",\"SAW\",\"RAMP\",\"SQR\",\"S&H\"],\"default\":0},{\"key\":"
-    "\"p_lfo_rate\",\"name\":\"RATE\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":40},{\"key\":\"p_lfo_sync\",\"name\":\""
-    "SYNC\",\"type\":\"enum\",\"options\":[\"FREE\",\"1/32\",\"16T\",\"1/16\",\"8T\",\"16D\",\"1/8\",\"4T\",\"8D\",\"1/4\",\"4D\",\"1/2"
-    "\",\"1/1\",\"2BAR\",\"4BAR\"],\"default\":0},{\"key\":\"p_lfo_retrig\",\"name\":\"RETRIG\",\"type\":\"enum\",\"options\":[\""
-    "FREE\",\"KEY\"],\"default\":0},{\"key\":\"p_dl_tone\",\"name\":\"DLTONE\",\"type\":\"int\",\"min\":0,\"max\":127,\"default"
-    "\":70},{\"key\":\"p_level\",\"name\":\"LEVEL\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":64},{\"key\":\"s_mch\",\"n"
-    "ame\":\"CHAN\",\"type\":\"enum\",\"options\":[\"ALL\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\",\"11\",\"12\",\"13\",\""
-    "14\",\"15\",\"16\"],\"default\":0}],\"knobs\":[\"p_lfo_shape\",\"p_lfo_rate\",\"p_lfo_sync\",\"p_lfo_retrig\",\"p_dl_t"
-    "one\",\"p_level\",\"s_mch\"]},\"maps\":{\"name\":\"MAPPINGS\",\"params\":[{\"key\":\"m_at_cc\",\"name\":\"AT CC\",\"type\":"
-    "\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_at_lo\",\"name\":\"AT LO\",\"type\":\"int\",\"min\":0,\"max\":127,"
-    "\"default\":0},{\"key\":\"m_at_hi\",\"name\":\"AT HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"m"
-    "_pa_cc\",\"name\":\"PA CC\",\"type\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_pa_lo\",\"name\":\"PA LO\",\""
-    "type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max"
-    "\":127,\"default\":127}],\"knobs\":[\"m_at_cc\",\"m_at_lo\",\"m_at_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\"]}}}";
+    "_arpgate\",\"name\":\"GATE\",\"type\":\"int\",\"min\":10,\"max\":100,\"default\":60,\"unit\":\"%\"},{\"key\":\"s_arphold\","
+    "\"name\":\"HOLD\",\"type\":\"enum\",\"options\":[\"OFF\",\"ON\"],\"default\":0}],\"knobs\":[\"s_arpmode\",\"s_arprate\",\"s"
+    "_arpoct\",\"s_arpgate\",\"s_arphold\"]},\"lfo_set\":{\"name\":\"LFO/SETUP\",\"params\":[{\"key\":\"p_lfo_shape\",\"nam"
+    "e\":\"SHAPE\",\"type\":\"enum\",\"options\":[\"SINE\",\"TRI\",\"SAW\",\"RAMP\",\"SQR\",\"S&H\"],\"default\":0},{\"key\":\"p_lf"
+    "o_rate\",\"name\":\"RATE\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":40},{\"key\":\"p_lfo_sync\",\"name\":\"SYNC\""
+    ",\"type\":\"enum\",\"options\":[\"FREE\",\"1/32\",\"16T\",\"1/16\",\"8T\",\"16D\",\"1/8\",\"4T\",\"8D\",\"1/4\",\"4D\",\"1/2\",\"1/"
+    "1\",\"2BAR\",\"4BAR\"],\"default\":0},{\"key\":\"p_lfo_retrig\",\"name\":\"RETRIG\",\"type\":\"enum\",\"options\":[\"FREE\""
+    ",\"KEY\"],\"default\":0},{\"key\":\"p_dl_tone\",\"name\":\"DLTONE\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":70}"
+    ",{\"key\":\"p_level\",\"name\":\"LEVEL\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":64},{\"key\":\"s_mch\",\"name\":"
+    "\"CHAN\",\"type\":\"enum\",\"options\":[\"ALL\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\",\"11\",\"12\",\"13\",\"14\",\""
+    "15\",\"16\"],\"default\":0}],\"knobs\":[\"p_lfo_shape\",\"p_lfo_rate\",\"p_lfo_sync\",\"p_lfo_retrig\",\"p_dl_tone\","
+    "\"p_level\",\"s_mch\"]},\"maps\":{\"name\":\"MAPPINGS\",\"params\":[{\"key\":\"m_at_cc\",\"name\":\"AT CC\",\"type\":\"int\""
+    ",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_at_lo\",\"name\":\"AT LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"defa"
+    "ult\":0},{\"key\":\"m_at_hi\",\"name\":\"AT HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"m_pa_c"
+    "c\",\"name\":\"PA CC\",\"type\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_pa_lo\",\"name\":\"PA LO\",\"type\""
+    ":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max\":127"
+    ",\"default\":127}],\"knobs\":[\"m_at_cc\",\"m_at_lo\",\"m_at_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\"]}}}";
 static const char MOVE_UI_HIERARCHY_E1[] =
     "{\"levels\":{\"root\":{\"name\":\"FRODHES\",\"params\":[{\"key\":\"p_type\",\"name\":\"TYPE\",\"type\":\"enum\",\"options\":"
     "[\"ST77\",\"SUIT\",\"FELT\",\"DYNO\",\"VIBE\",\"MRMB\"],\"default\":0},{\"key\":\"p_spread\",\"name\":\"SPREAD\",\"type\":\"i"
@@ -269,22 +272,23 @@ static const char MOVE_UI_HIERARCHY_E1[] =
     "ions\":[\"OFF\",\"UP\",\"DOWN\",\"UP-DN\",\"ORDER\",\"RAND\"],\"default\":0},{\"key\":\"s_arprate\",\"name\":\"RATE\",\"type"
     "\":\"enum\",\"options\":[\"1/4\",\"1/8\",\"1/8T\",\"1/16\",\"1/16T\",\"1/32\"],\"default\":3},{\"key\":\"s_arpoct\",\"name\":"
     "\"OCT\",\"type\":\"int\",\"min\":1,\"max\":4,\"default\":1},{\"key\":\"s_arpgate\",\"name\":\"GATE\",\"type\":\"int\",\"min\":"
-    "10,\"max\":100,\"default\":60,\"unit\":\"%\"}],\"knobs\":[\"s_arpmode\",\"s_arprate\",\"s_arpoct\",\"s_arpgate\"]},\"lf"
-    "o_set\":{\"name\":\"LFO/SETUP\",\"params\":[{\"key\":\"p_lfo_shape\",\"name\":\"SHAPE\",\"type\":\"enum\",\"options\":[\"S"
-    "INE\",\"TRI\",\"SAW\",\"RAMP\",\"SQR\",\"S&H\"],\"default\":0},{\"key\":\"p_lfo_rate\",\"name\":\"RATE\",\"type\":\"int\",\"mi"
-    "n\":0,\"max\":127,\"default\":40},{\"key\":\"p_lfo_sync\",\"name\":\"SYNC\",\"type\":\"enum\",\"options\":[\"FREE\",\"1/32"
-    "\",\"16T\",\"1/16\",\"8T\",\"16D\",\"1/8\",\"4T\",\"8D\",\"1/4\",\"4D\",\"1/2\",\"1/1\",\"2BAR\",\"4BAR\"],\"default\":0},{\"key\":"
-    "\"p_lfo_retrig\",\"name\":\"RETRIG\",\"type\":\"enum\",\"options\":[\"FREE\",\"KEY\"],\"default\":0},{\"key\":\"p_dl_tone"
-    "\",\"name\":\"DLTONE\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":70},{\"key\":\"p_level\",\"name\":\"LEVEL\",\"type"
-    "\":\"int\",\"min\":0,\"max\":127,\"default\":64},{\"key\":\"s_mch\",\"name\":\"CHAN\",\"type\":\"enum\",\"options\":[\"ALL\","
-    "\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\",\"11\",\"12\",\"13\",\"14\",\"15\",\"16\"],\"default\":0}],\"knobs\":[\"p_lf"
-    "o_shape\",\"p_lfo_rate\",\"p_lfo_sync\",\"p_lfo_retrig\",\"p_dl_tone\",\"p_level\",\"s_mch\"]},\"maps\":{\"name\":\"MA"
-    "PPINGS\",\"params\":[{\"key\":\"m_at_cc\",\"name\":\"AT CC\",\"type\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\""
-    ":\"m_at_lo\",\"name\":\"AT LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_at_hi\",\"name\":\"AT HI"
-    "\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"m_pa_cc\",\"name\":\"PA CC\",\"type\":\"int\",\"min\":0"
-    ",\"max\":119,\"default\":0},{\"key\":\"m_pa_lo\",\"name\":\"PA LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},"
-    "{\"key\":\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127}],\"knobs\":[\"m_at_cc\",\"m"
-    "_at_lo\",\"m_at_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\"]}}}";
+    "10,\"max\":100,\"default\":60,\"unit\":\"%\"},{\"key\":\"s_arphold\",\"name\":\"HOLD\",\"type\":\"enum\",\"options\":[\"OFF"
+    "\",\"ON\"],\"default\":0}],\"knobs\":[\"s_arpmode\",\"s_arprate\",\"s_arpoct\",\"s_arpgate\",\"s_arphold\"]},\"lfo_set"
+    "\":{\"name\":\"LFO/SETUP\",\"params\":[{\"key\":\"p_lfo_shape\",\"name\":\"SHAPE\",\"type\":\"enum\",\"options\":[\"SINE\","
+    "\"TRI\",\"SAW\",\"RAMP\",\"SQR\",\"S&H\"],\"default\":0},{\"key\":\"p_lfo_rate\",\"name\":\"RATE\",\"type\":\"int\",\"min\":0,"
+    "\"max\":127,\"default\":40},{\"key\":\"p_lfo_sync\",\"name\":\"SYNC\",\"type\":\"enum\",\"options\":[\"FREE\",\"1/32\",\"16"
+    "T\",\"1/16\",\"8T\",\"16D\",\"1/8\",\"4T\",\"8D\",\"1/4\",\"4D\",\"1/2\",\"1/1\",\"2BAR\",\"4BAR\"],\"default\":0},{\"key\":\"p_lf"
+    "o_retrig\",\"name\":\"RETRIG\",\"type\":\"enum\",\"options\":[\"FREE\",\"KEY\"],\"default\":0},{\"key\":\"p_dl_tone\",\"na"
+    "me\":\"DLTONE\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":70},{\"key\":\"p_level\",\"name\":\"LEVEL\",\"type\":\"in"
+    "t\",\"min\":0,\"max\":127,\"default\":64},{\"key\":\"s_mch\",\"name\":\"CHAN\",\"type\":\"enum\",\"options\":[\"ALL\",\"1\",\""
+    "2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\",\"11\",\"12\",\"13\",\"14\",\"15\",\"16\"],\"default\":0}],\"knobs\":[\"p_lfo_sha"
+    "pe\",\"p_lfo_rate\",\"p_lfo_sync\",\"p_lfo_retrig\",\"p_dl_tone\",\"p_level\",\"s_mch\"]},\"maps\":{\"name\":\"MAPPING"
+    "S\",\"params\":[{\"key\":\"m_at_cc\",\"name\":\"AT CC\",\"type\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_a"
+    "t_lo\",\"name\":\"AT LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_at_hi\",\"name\":\"AT HI\",\"ty"
+    "pe\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"m_pa_cc\",\"name\":\"PA CC\",\"type\":\"int\",\"min\":0,\"max"
+    "\":119,\"default\":0},{\"key\":\"m_pa_lo\",\"name\":\"PA LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key"
+    "\":\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127}],\"knobs\":[\"m_at_cc\",\"m_at_l"
+    "o\",\"m_at_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\"]}}}";
 static const char MOVE_UI_HIERARCHY_E2[] =
     "{\"levels\":{\"root\":{\"name\":\"FRODHES\",\"params\":[{\"key\":\"p_type\",\"name\":\"TYPE\",\"type\":\"enum\",\"options\":"
     "[\"ST77\",\"SUIT\",\"FELT\",\"DYNO\",\"VIBE\",\"MRMB\"],\"default\":0},{\"key\":\"p_spread\",\"name\":\"SPREAD\",\"type\":\"i"
@@ -358,23 +362,23 @@ static const char MOVE_UI_HIERARCHY_E2[] =
     "[{\"key\":\"s_arpmode\",\"name\":\"MODE\",\"type\":\"enum\",\"options\":[\"OFF\",\"UP\",\"DOWN\",\"UP-DN\",\"ORDER\",\"RAND\"]"
     ",\"default\":0},{\"key\":\"s_arprate\",\"name\":\"RATE\",\"type\":\"enum\",\"options\":[\"1/4\",\"1/8\",\"1/8T\",\"1/16\",\"1"
     "/16T\",\"1/32\"],\"default\":3},{\"key\":\"s_arpoct\",\"name\":\"OCT\",\"type\":\"int\",\"min\":1,\"max\":4,\"default\":1},"
-    "{\"key\":\"s_arpgate\",\"name\":\"GATE\",\"type\":\"int\",\"min\":10,\"max\":100,\"default\":60,\"unit\":\"%\"}],\"knobs\":["
-    "\"s_arpmode\",\"s_arprate\",\"s_arpoct\",\"s_arpgate\"]},\"lfo_set\":{\"name\":\"LFO/SETUP\",\"params\":[{\"key\":\"p_l"
-    "fo_shape\",\"name\":\"SHAPE\",\"type\":\"enum\",\"options\":[\"SINE\",\"TRI\",\"SAW\",\"RAMP\",\"SQR\",\"S&H\"],\"default\":0"
-    "},{\"key\":\"p_lfo_rate\",\"name\":\"RATE\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":40},{\"key\":\"p_lfo_sync\""
-    ",\"name\":\"SYNC\",\"type\":\"enum\",\"options\":[\"FREE\",\"1/32\",\"16T\",\"1/16\",\"8T\",\"16D\",\"1/8\",\"4T\",\"8D\",\"1/4\","
-    "\"4D\",\"1/2\",\"1/1\",\"2BAR\",\"4BAR\"],\"default\":0},{\"key\":\"p_lfo_retrig\",\"name\":\"RETRIG\",\"type\":\"enum\",\"op"
-    "tions\":[\"FREE\",\"KEY\"],\"default\":0},{\"key\":\"p_dl_tone\",\"name\":\"DLTONE\",\"type\":\"int\",\"min\":0,\"max\":127"
-    ",\"default\":70},{\"key\":\"p_level\",\"name\":\"LEVEL\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":64},{\"key\":\""
-    "s_mch\",\"name\":\"CHAN\",\"type\":\"enum\",\"options\":[\"ALL\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\",\"11\",\"1"
-    "2\",\"13\",\"14\",\"15\",\"16\"],\"default\":0}],\"knobs\":[\"p_lfo_shape\",\"p_lfo_rate\",\"p_lfo_sync\",\"p_lfo_retrig"
-    "\",\"p_dl_tone\",\"p_level\",\"s_mch\"]},\"maps\":{\"name\":\"MAPPINGS\",\"params\":[{\"key\":\"m_at_cc\",\"name\":\"AT CC"
-    "\",\"type\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_at_lo\",\"name\":\"AT LO\",\"type\":\"int\",\"min\":0,\""
-    "max\":127,\"default\":0},{\"key\":\"m_at_hi\",\"name\":\"AT HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127},"
-    "{\"key\":\"m_pa_cc\",\"name\":\"PA CC\",\"type\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_pa_lo\",\"name\":"
-    "\"PA LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"mi"
-    "n\":0,\"max\":127,\"default\":127}],\"knobs\":[\"m_at_cc\",\"m_at_lo\",\"m_at_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\"]"
-    "}}}";
+    "{\"key\":\"s_arpgate\",\"name\":\"GATE\",\"type\":\"int\",\"min\":10,\"max\":100,\"default\":60,\"unit\":\"%\"},{\"key\":\"s_"
+    "arphold\",\"name\":\"HOLD\",\"type\":\"enum\",\"options\":[\"OFF\",\"ON\"],\"default\":0}],\"knobs\":[\"s_arpmode\",\"s_ar"
+    "prate\",\"s_arpoct\",\"s_arpgate\",\"s_arphold\"]},\"lfo_set\":{\"name\":\"LFO/SETUP\",\"params\":[{\"key\":\"p_lfo_sh"
+    "ape\",\"name\":\"SHAPE\",\"type\":\"enum\",\"options\":[\"SINE\",\"TRI\",\"SAW\",\"RAMP\",\"SQR\",\"S&H\"],\"default\":0},{\"k"
+    "ey\":\"p_lfo_rate\",\"name\":\"RATE\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":40},{\"key\":\"p_lfo_sync\",\"nam"
+    "e\":\"SYNC\",\"type\":\"enum\",\"options\":[\"FREE\",\"1/32\",\"16T\",\"1/16\",\"8T\",\"16D\",\"1/8\",\"4T\",\"8D\",\"1/4\",\"4D\","
+    "\"1/2\",\"1/1\",\"2BAR\",\"4BAR\"],\"default\":0},{\"key\":\"p_lfo_retrig\",\"name\":\"RETRIG\",\"type\":\"enum\",\"options"
+    "\":[\"FREE\",\"KEY\"],\"default\":0},{\"key\":\"p_dl_tone\",\"name\":\"DLTONE\",\"type\":\"int\",\"min\":0,\"max\":127,\"def"
+    "ault\":70},{\"key\":\"p_level\",\"name\":\"LEVEL\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":64},{\"key\":\"s_mch"
+    "\",\"name\":\"CHAN\",\"type\":\"enum\",\"options\":[\"ALL\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\",\"11\",\"12\",\"1"
+    "3\",\"14\",\"15\",\"16\"],\"default\":0}],\"knobs\":[\"p_lfo_shape\",\"p_lfo_rate\",\"p_lfo_sync\",\"p_lfo_retrig\",\"p_"
+    "dl_tone\",\"p_level\",\"s_mch\"]},\"maps\":{\"name\":\"MAPPINGS\",\"params\":[{\"key\":\"m_at_cc\",\"name\":\"AT CC\",\"ty"
+    "pe\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_at_lo\",\"name\":\"AT LO\",\"type\":\"int\",\"min\":0,\"max\":"
+    "127,\"default\":0},{\"key\":\"m_at_hi\",\"name\":\"AT HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key"
+    "\":\"m_pa_cc\",\"name\":\"PA CC\",\"type\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_pa_lo\",\"name\":\"PA L"
+    "O\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,"
+    "\"max\":127,\"default\":127}],\"knobs\":[\"m_at_cc\",\"m_at_lo\",\"m_at_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\"]}}}";
 static const char MOVE_CHAIN_PARAMS[] =
     "[{\"key\":\"p_type\",\"name\":\"TYPE\",\"type\":\"enum\",\"options\":[\"ST77\",\"SUIT\",\"FELT\",\"DYNO\",\"VIBE\",\"MRMB\"],\""
     "default\":0,\"extra_keys\":[\"preset\",\"preset_name\",\"preset_count\"]},{\"key\":\"p_spread\",\"name\":\"SPREAD\",\""
@@ -440,19 +444,20 @@ static const char MOVE_CHAIN_PARAMS[] =
     ",{\"key\":\"s_arpmode\",\"name\":\"MODE\",\"type\":\"enum\",\"options\":[\"OFF\",\"UP\",\"DOWN\",\"UP-DN\",\"ORDER\",\"RAND\"]"
     ",\"default\":0},{\"key\":\"s_arprate\",\"name\":\"RATE\",\"type\":\"enum\",\"options\":[\"1/4\",\"1/8\",\"1/8T\",\"1/16\",\"1"
     "/16T\",\"1/32\"],\"default\":3},{\"key\":\"s_arpoct\",\"name\":\"OCT\",\"type\":\"int\",\"min\":1,\"max\":4,\"default\":1},"
-    "{\"key\":\"s_arpgate\",\"name\":\"GATE\",\"type\":\"int\",\"min\":10,\"max\":100,\"default\":60,\"unit\":\"%\"},{\"key\":\"p_"
-    "lfo_shape\",\"name\":\"SHAPE\",\"type\":\"enum\",\"options\":[\"SINE\",\"TRI\",\"SAW\",\"RAMP\",\"SQR\",\"S&H\"],\"default\":"
-    "0},{\"key\":\"p_lfo_rate\",\"name\":\"RATE\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":40},{\"key\":\"p_lfo_sync"
-    "\",\"name\":\"SYNC\",\"type\":\"enum\",\"options\":[\"FREE\",\"1/32\",\"16T\",\"1/16\",\"8T\",\"16D\",\"1/8\",\"4T\",\"8D\",\"1/4\""
-    ",\"4D\",\"1/2\",\"1/1\",\"2BAR\",\"4BAR\"],\"default\":0},{\"key\":\"p_lfo_retrig\",\"name\":\"RETRIG\",\"type\":\"enum\",\"o"
-    "ptions\":[\"FREE\",\"KEY\"],\"default\":0},{\"key\":\"p_dl_tone\",\"name\":\"DLTONE\",\"type\":\"int\",\"min\":0,\"max\":12"
-    "7,\"default\":70},{\"key\":\"p_level\",\"name\":\"LEVEL\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":64},{\"key\":"
-    "\"s_mch\",\"name\":\"CHAN\",\"type\":\"enum\",\"options\":[\"ALL\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\",\"11\",\""
-    "12\",\"13\",\"14\",\"15\",\"16\"],\"default\":0},{\"key\":\"m_at_cc\",\"name\":\"AT CC\",\"type\":\"int\",\"min\":0,\"max\":119"
-    ",\"default\":0},{\"key\":\"m_at_lo\",\"name\":\"AT LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_"
-    "at_hi\",\"name\":\"AT HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"m_pa_cc\",\"name\":\"PA CC\","
-    "\"type\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_pa_lo\",\"name\":\"PA LO\",\"type\":\"int\",\"min\":0,\"ma"
-    "x\":127,\"default\":0},{\"key\":\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127}]";
+    "{\"key\":\"s_arpgate\",\"name\":\"GATE\",\"type\":\"int\",\"min\":10,\"max\":100,\"default\":60,\"unit\":\"%\"},{\"key\":\"s_"
+    "arphold\",\"name\":\"HOLD\",\"type\":\"enum\",\"options\":[\"OFF\",\"ON\"],\"default\":0},{\"key\":\"p_lfo_shape\",\"name\""
+    ":\"SHAPE\",\"type\":\"enum\",\"options\":[\"SINE\",\"TRI\",\"SAW\",\"RAMP\",\"SQR\",\"S&H\"],\"default\":0},{\"key\":\"p_lfo_"
+    "rate\",\"name\":\"RATE\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":40},{\"key\":\"p_lfo_sync\",\"name\":\"SYNC\",\""
+    "type\":\"enum\",\"options\":[\"FREE\",\"1/32\",\"16T\",\"1/16\",\"8T\",\"16D\",\"1/8\",\"4T\",\"8D\",\"1/4\",\"4D\",\"1/2\",\"1/1\""
+    ",\"2BAR\",\"4BAR\"],\"default\":0},{\"key\":\"p_lfo_retrig\",\"name\":\"RETRIG\",\"type\":\"enum\",\"options\":[\"FREE\",\""
+    "KEY\"],\"default\":0},{\"key\":\"p_dl_tone\",\"name\":\"DLTONE\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":70},{"
+    "\"key\":\"p_level\",\"name\":\"LEVEL\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":64},{\"key\":\"s_mch\",\"name\":\"C"
+    "HAN\",\"type\":\"enum\",\"options\":[\"ALL\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\",\"10\",\"11\",\"12\",\"13\",\"14\",\"15"
+    "\",\"16\"],\"default\":0},{\"key\":\"m_at_cc\",\"name\":\"AT CC\",\"type\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"k"
+    "ey\":\"m_at_lo\",\"name\":\"AT LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_at_hi\",\"name\":\"AT"
+    " HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"m_pa_cc\",\"name\":\"PA CC\",\"type\":\"int\",\"min"
+    "\":0,\"max\":119,\"default\":0},{\"key\":\"m_pa_lo\",\"name\":\"PA LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":"
+    "0},{\"key\":\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127}]";
 /* get_param("ui_hierarchy"): the sounding engine's text (TYPE_UI[PV(P_TYPE)]), its VOICE levels only */
 static const char *const MOVE_UI_HIERARCHY[] = {MOVE_UI_HIERARCHY_E0, MOVE_UI_HIERARCHY_E1, MOVE_UI_HIERARCHY_E2};
 static const uint16_t MOVE_UI_HIERARCHY_N[] = {sizeof MOVE_UI_HIERARCHY_E0 - 1, sizeof MOVE_UI_HIERARCHY_E1 - 1, sizeof MOVE_UI_HIERARCHY_E2 - 1};

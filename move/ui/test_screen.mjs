@@ -22,7 +22,8 @@ test("opens on the first page, the overview, with the page's values read", () =>
     const s = new Screen().open();
     assert.equal(title(s), "FRODHES");
     assert.equal(s.api.view(s.ctx(true), s.st()), "overview");
-    assert.ok(s.plugin.reads <= 13, `reads on open: ${s.plugin.reads}`);   // (13: the first page's DELAY, 2026-10-30)
+    assert.ok(s.plugin.reads <= 14, `reads on open: ${s.plugin.reads}`);   // (13: the first page's DELAY, 2026-10-30;
+                                                                            // 14: u_first, the Move-only presets)
     const fb = s.draw();
     assert.equal(fb.prints, 0, "the device font is not used: our font only");
     assert.ok(fb.lit() > 300);
@@ -321,20 +322,42 @@ test("CHORUS and DELAY are two pages, each with the FM-1 page's cards in the FM-
               titles.join(","));
 });
 
-test("ARPEGGIO: the FM-1 page's cards (MODE RATE OCT GATE), after TEMPO; writes go by index / as shown (2026-10-30)", () => {
+test("ARPEGGIO: the FM-1 page's cards (MODE RATE OCT GATE) and HOLD, after TEMPO; writes go by index / as shown (2026-10-30)", () => {
     const s = new Screen().open();
     goto(s, "ARPEGGIO");
     const p = s.api.pages[s.st().page];
-    assert.equal(p.knobs.map((k) => k.key).join(" "), "s_arpmode s_arprate s_arpoct s_arpgate");
-    assert.equal(p.knobs.map((k) => k.name).join(" "), "MODE RATE OCT GATE");
+    assert.equal(p.knobs.map((k) => k.key).join(" "), "s_arpmode s_arprate s_arpoct s_arpgate s_arphold");
+    assert.equal(p.knobs.map((k) => k.name).join(" "), "MODE RATE OCT GATE HOLD");
+    assert.equal(p.knobs[4].options.join(" "), "OFF ON");
+    assert.equal(p.knobs[4].def, 0);                                     // (a double tap: HOLD OFF, as arp_defaults)
     assert.equal(p.knobs[0].options.join(" "), "OFF UP DOWN UP-DN ORDER RAND");
     assert.equal(p.knobs[1].options.join(" "), "1/4 1/8 1/8T 1/16 1/16T 1/32");
     assert.equal(p.knobs[2].min, 1); assert.equal(p.knobs[2].max, 4);
     assert.equal(p.knobs[3].min, 10); assert.equal(p.knobs[3].max, 100);
     s.knob(0, 1); s.wait(200);
     assert.deepEqual(lastWrite(s), ["s_arpmode", "1"]);
+    s.knob(4, 1); s.wait(200);
+    assert.deepEqual(lastWrite(s), ["s_arphold", "1"]);                  // HOLD ON (2026-11-01)
+    s.knob(4, -1); s.wait(200);
+    assert.deepEqual(lastWrite(s), ["s_arphold", "0"]);
     const titles = s.api.pages.map((x) => x.title);
     assert.equal(titles.indexOf("ARPEGGIO"), titles.indexOf("TEMPO") + 1, titles.join(","));
+});
+
+test("PRESET: F01-F19, the Move-only F20-F57 (index 35..), then U01-U16 (index u_first 19..) (2026-11-01)", () => {
+    const s = new Screen().open();
+    assert.equal(s.plugin.get("preset_count"), "73");
+    assert.equal(s.plugin.names[35], "F20 STAGE77 ECHO");
+    const seen = [];
+    for (let i = 0; i < 80; i++) { s.knob(4, 1); s.wait(50); s.plugin.apply(); seen.push(s.plugin.preset); }
+    const want = [];
+    for (let i = 1; i < 19; i++) want.push(i);
+    for (let i = 35; i < 73; i++) want.push(i);
+    for (let i = 19; i < 35; i++) want.push(i);
+    assert.deepEqual(seen.slice(0, want.length), want);                  // the knob's order
+    assert.ok(seen.slice(want.length).every((v) => v === 34), "the last one stays");
+    for (let i = 0; i < 20; i++) { s.knob(4, -1); s.wait(50); s.plugin.apply(); }
+    assert.equal(s.plugin.preset, 68, "back from U16 through U01 to F53");
 });
 
 test("REVERB INF: DECAY reads SUSTAIN from 120 and FREEZE at 127, as the FM-1's card (ui.c); a number otherwise", () => {

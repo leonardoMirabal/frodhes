@@ -54,7 +54,10 @@ def wire(rng, p):
     if p["type"] == "float":
         return "%.1f" % rng.uniform(p["min"], p["max"])
     lo, hi = p["min"], p["max"]
-    return str(rng.choice([lo, hi, rng.randint(lo, hi)]))
+    v = rng.choice([lo, hi, rng.randint(lo, hi)])
+    if p["key"] in ("m_at_cc", "m_pa_cc") and v in monkey.DEV_CC:
+        v = 0                                   # (a pressure map onto a developer CC is that CC sent: as monkey.gen)
+    return str(v)
 
 
 def gen(seed):
@@ -69,7 +72,7 @@ def gen(seed):
             p = rng.choice(CHAIN)
             ev.append((t, f"key {p['key']} {wire(rng, p)}"))
         elif k < 0.65:
-            ev.append((t, f"preset {rng.randrange(35)}"))
+            ev.append((t, f"preset {rng.randrange(73)}"))
         elif k < 0.73:
             ev.append((t, "getstate"))
         elif k < 0.80:
@@ -85,7 +88,7 @@ def gen(seed):
                 if r < 0.6:
                     ev.append((tt, f"key p_type {wire(rng, types)}"))
                 elif r < 0.8:
-                    ev.append((tt, f"preset {rng.randrange(35)}"))
+                    ev.append((tt, f"preset {rng.randrange(73)}"))
                 else:
                     ev.append((tt, "setstate"))
                 tt += rng.randint(20, 250)

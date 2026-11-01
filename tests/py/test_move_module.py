@@ -196,7 +196,7 @@ def test_every_knob_resets_to_the_firmware_default():
     sw, mode = M["params"]["P_TW_SW"]["def"], M["params"]["P_TW_MODE"]["def"]
     firm = {"s_tune": 0, "s_mch": 0, "s_twkind": 3 if sw == 2 else 0 if sw != 1 else 2 if mode else 1,
             "s_arpmode": 0, "s_arprate": int(arp["ARP_RATE"]), "s_arpoct": int(arp["ARP_OCT"]) + 1,
-            "s_arpgate": int(arp["ARP_GATE"]), "s_sustain": 0, "s_fx": 1}
+            "s_arpgate": int(arp["ARP_GATE"]), "s_arphold": int(arp["ARP_HOLD"]), "s_sustain": 0, "s_fx": 1}
     mapd = [int(x) for x in re.search(r"#define MB_MAP_DEFAULT \{([^}]*)\}",
                                       open(os.path.join(ROOT, "move", "move_bridge.h")).read()).group(1).split(",")]
     firm.update({k: mapd[int(rows[k]["slot"])] for k in gen.MAP_KEYS})
@@ -214,4 +214,4 @@ def test_every_knob_resets_to_the_firmware_default():
                 want = firm[k["key"]]
             assert k["def"] == want, (pg["title"], k["key"], k["def"], want)
             seen.add(k["key"])
-    assert {"s_tune", "s_twkind", "s_arpmode", "s_arprate", "s_arpoct", "s_arpgate", "s_mch", "s_sustain"} <= seen
+    assert {"s_tune", "s_twkind", "s_arpmode", "s_arprate", "s_arpoct", "s_arpgate", "s_arphold", "s_mch", "s_sustain"} <= seen

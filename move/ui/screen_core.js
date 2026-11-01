@@ -189,8 +189,17 @@ function fraction(st, k) {
     const v = k.type === "preset" ? st.preset : st.vals[k.key];
     if (v === null || v === undefined) return null;
     const lo = k.type === "enum" ? 0 : k.min, hi = k.type === "enum" ? k.options.length - 1 : k.max;
-    if (k.type === "preset") return st.presetCount > 1 ? v / (st.presetCount - 1) : 0;
+    if (k.type === "preset") return st.presetCount > 1 ? Math.max(0, presetOrder(st).indexOf(v | 0)) / (st.presetCount - 1) : 0;
     return hi > lo ? Math.max(0, Math.min(1, (v - lo) / (hi - lo))) : 0;
+}
+
+// the presets in the PRESET knob's order: the factory ones (F01-F19, then the Move's own F20..), then the user slots
+// U01-U16 (u_first: U01's index; a plugin without the key has them last, as before the Move-only presets)
+function userFirst(st) { return st.uFirst !== null && st.uFirst !== undefined ? st.uFirst : (st.presetCount || 35) - 16; }
+function presetOrder(st) {
+    const n = st.presetCount || 1, uf = userFirst(st), f = [], u = [];
+    for (let i = 0; i < n; i++) (i >= uf && i < uf + 16 ? u : f).push(i);
+    return f.concat(u);
 }
 
 function detents(st, k) {
@@ -263,9 +272,9 @@ function turn(ctx, st, slot, d) {
     if (k.write) { if (d > 0) write(ctx, st, k, 1); return; }
     if (k.type === "preset") {
         if (st.preset === null || st.preset === undefined) readKey(ctx, st, k);
-        const n = st.presetCount || 1;
-        const v = Math.max(0, Math.min(n - 1, (st.preset | 0) + Math.sign(d)));
-        if (v !== st.preset) write(ctx, st, k, v);
+        const order = presetOrder(st), at = Math.max(0, order.indexOf(st.preset | 0));
+        const v = order[Math.max(0, Math.min(order.length - 1, at + Math.sign(d)))];
+        if (v !== undefined && v !== st.preset) write(ctx, st, k, v);
         return;
     }
     let cur = st.vals[k.key];
@@ -547,8 +556,8 @@ function userNames(ctx) {
 }
 function openSave(ctx, st) {
     const names = userNames(ctx);
-    const nf = (st.presetCount || 35) - 16;               // (F01-F19, then U01-U16)
-    let slot = st.preset !== null && st.preset >= nf ? st.preset - nf : names.indexOf("");
+    const nf = userFirst(st);                             // (U01-U16 from u_first)
+    let slot = st.preset !== null && st.preset >= nf && st.preset < nf + 16 ? st.preset - nf : names.indexOf("");
     st.save = { slot: Math.max(0, Math.min(15, slot)), names };
 }
 function saveStep(st, d) { st.save.slot = Math.max(0, Math.min(15, st.save.slot + Math.sign(d))); }
@@ -557,7 +566,7 @@ function saveNow(ctx, st) {
     st.save = null;
     ctx.userSave(u);
     st.expectRev++;
-    st.preset = (st.presetCount || 35) - 16 + u - 1;        // (the plugin loads the slot it saved)
+    st.preset = userFirst(st) + u - 1;                      // (the plugin loads the slot it saved)
     st.presetName = null;
     st.presetDirty = true;
     toast(ctx, st, "SAVED U" + (u < 10 ? "0" : "") + u);
@@ -595,7 +604,7 @@ function view(ctx, st) {
 function newState() {
     return { page: 0, engine: 0, vals: {}, written: {}, lastTurn: {}, focus: -1, until: 0,
              touch: [false, false, false, false, false, false, false, false], list: false, cursor: 0,
-             preset: null, presetName: null, presetCount: 0, presetDirty: false, rev: null, expectRev: 0,
+             preset: null, presetName: null, presetCount: 0, uFirst: null, presetDirty: false, rev: null, expectRev: 0,
              susOn: false, susKnown: false, fxOn: null, flash: null, rr: 0, gr: null, rows: [], menus: null, save: null,
              toast: null, tapAt: [] };
 }
@@ -605,6 +614,7 @@ globalThis.canvas_overlay = {
         const st = ctx.state.fr = newState();
         st.engine = asNum(ctx.getParam("ui_engine")) | 0;
         st.presetCount = asNum(ctx.getParam("preset_count")) | 0;
+        st.uFirst = asNum(ctx.getParam("u_first"));
         st.presetName = ctx.getParam("preset_name");
         st.preset = asNum(ctx.getParam("preset"));
         st.rev = asNum(ctx.getParam("rev"));

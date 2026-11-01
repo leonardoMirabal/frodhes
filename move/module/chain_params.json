@@ -724,6 +724,16 @@
     "unit": "%"
   },
   {
+    "key": "s_arphold",
+    "name": "HOLD",
+    "type": "enum",
+    "options": [
+      "OFF",
+      "ON"
+    ],
+    "default": 0
+  },
+  {
     "key": "p_lfo_shape",
     "name": "SHAPE",
     "type": "enum",
