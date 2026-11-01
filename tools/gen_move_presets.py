@@ -72,7 +72,15 @@ NAMES = {
     ("F19", "B"): ("RADIO LVL", "as F19, the level re-set"),
     ("F19", "C"): ("RADIO LOW", "the band a little lower: more body"),
 }
-BRANDS = re.compile(r"RHODES|WURLI|FENDER|YAMAHA|ROLAND|KORG|ABLETON|MOVE|DX7|CP70", re.I)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests", "py"))
+from test_repo_hygiene import BRANDS as HYGIENE_BRANDS  # noqa: E402  (the repo's banned names, one list)
+OTHER_NAMES = re.compile(r"RHODES|WURLI|ROLAND|KORG|MOVE|DX7|CP70", re.I)   # product names kept out of preset names
+
+
+def has_brand(n):
+    return bool(HYGIENE_BRANDS.search(n) or OTHER_NAMES.search(n))
+
+
 NAME_CHARS = re.compile(r"^[A-Z0-9][A-Z0-9 \-]*[A-Z0-9]$")
 LINE = re.compile(r"^(F\d\d) ([A-Z]) \(([^)]*)\): (.*)$")
 PAIR = re.compile(r"^(P_\w+)\[(\d+)\]=(\d+)$")
@@ -128,7 +136,7 @@ def table():
         raise SystemExit("NAMES has %d entries, the records give %d variants" % (len(NAMES), len(rows)))
     names = [r[1] for r in rows]
     for n in names:
-        if len(n) > NAME_MAX or not NAME_CHARS.match(n) or BRANDS.search(n):
+        if len(n) > NAME_MAX or not NAME_CHARS.match(n) or has_brand(n):
             raise SystemExit("bad name %r: at most %d of A-Z 0-9 space -, no brand" % (n, NAME_MAX))
     if len(set(names)) != len(names):
         raise SystemExit("two Move-only presets share a name")
