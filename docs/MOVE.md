@@ -315,7 +315,7 @@ Schwung's installer can also turn it on (`--enable-screen-reader`). With the scr
 The words are the large card's, spelled out where the card shortens them (HAMMR is *Hammer*, PREDLY *Pre-delay*, an
 option such as INF *Infinite*, a rate such as 16T *16th triplet*). The overview's four-letter names are never said.
 Messages such as `SPRD RESET` and `SAVED U05` are said in full. A row that opens one of Schwung's screens (Module
-Help, the preset browser) leaves the words to that screen. *(not yet verified on a device)*
+Help, the preset browser) leaves the words to that screen. *(verified on a device: a touched knob says its name and value; the rest of the list not yet)*
 
 ## Presets and saving
 
