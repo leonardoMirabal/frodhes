@@ -6,10 +6,12 @@
  * called: their call tree from fm1_alnk0_irq / fm1_timer5_irq stays byte for byte as it was (tools/isr_diff.py); the
  * effects' files (fx.c, drive.c, drv_*.c, dly_tape.c, rev_*.c) carry none, as their set-up is inlined into the ISR.
  * It goes before "static" (FR_COLD static void f(...)), so the tools that find a function by its "static void f("
- * text still do. The host, web, test and Move builds: empty. */
+ * text still do. Also the cold platform code: ota.c, gfx.c, platform.c's store / OTA / MIDI-out / poll (tags only, the
+ * upstream files kept close; usb.c none: its cold part is ~300 B and the loader shares it). The host, web, test, Move
+ * and loader builds: empty. */
 #ifndef FR_COLD_H
 #define FR_COLD_H
-#if defined(__PI32V2__) && !defined(DINGHY_HOST)
+#if defined(__PI32V2__) && !defined(DINGHY_HOST) && !defined(FELUCCA_LOADER)   /* (the loader: as it was) */
 #define FR_COLD __attribute__((minsize))
 #else
 #define FR_COLD

@@ -114,6 +114,7 @@ static int32_t bar_lsin(const bar_ms_t *s)
     return num > 0 ? (bar_log2_64((uint64_t)num) - bar_log2_32((uint32_t)s->k2) - 32 * 256) >> 1 : 0;
 }
 
+#define BAR_PZI(pb, f, l) (((pb) * BAR_NFAM + (f)) * BAR_NLAYER + (l))
 static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
 {
     uint32_t ty = bar_sub < BAR_NTYPE ? bar_sub : 0u;   /* constant while the voice lives (engine.c C1) */
@@ -121,16 +122,17 @@ static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
     uint32_t pb = BAR_PBAND[v->k->band];               /* the key's pulse band (shared bank) */
     int32_t a = (int32_t)(fam & 255u), w, pa, pa2, pr, pr2;
     uint32_t vi = RH_VPOS_I[vel], vf = RH_VPOS_F[vel];
-    const int16_t *p11, *p12, *p21, *p22;
     if (f > BAR_NFAM - 1u) { f = BAR_NFAM - 1u; a = 0; }
     f2 = f + 1u < BAR_NFAM ? f + 1u : f;
     l = RH_VLAY_I[vel]; l2 = l + 1u < BAR_NLAYER ? l + 1u : l; w = RH_VLAY_W[vel];
-    p11 = BAR_PULSE[pb][f][l]; p12 = BAR_PULSE[pb][f][l2];
-    p21 = BAR_PULSE[pb][f2][l]; p22 = BAR_PULSE[pb][f2][l2];
-    for (i = 0; i < BAR_PLEN + 2u; i++) {       /* hardness x velocity: one shape, once */
-        int32_t A = p11[i] + (((p12[i] - p11[i]) * w) >> 15);   /* |d| < 2^16, w <= 2^15: 32 bits are exact */
-        int32_t B = p21[i] + (((p22[i] - p21[i]) * w) >> 15);
-        v->pbuf[i] = (int16_t)(A + (((B - A) * a) >> 8));
+    rh_pz(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l));             /* hardness x velocity: one shape, once (the packed bank, rhodes.c
+                                                     * rh_pz: the table's integers, so the same shape as before) */
+    if (w) rh_pz_mix(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l2), w);   /* A = p11 + ((p12 - p11) w >> 15): an int16 */
+    if (a) {                                        /* B likewise, then A + ((B - A) a >> 8) (a 0: A) */
+        int16_t b[BAR_PLEN + 2];
+        rh_pz(b, &BAR_PZB, BAR_PZI(pb, f2, l));
+        if (w) rh_pz_mix(b, &BAR_PZB, BAR_PZI(pb, f2, l2), w);
+        for (i = 0; i < BAR_PLEN + 2u; i++) v->pbuf[i] = (int16_t)(v->pbuf[i] + (((b[i] - v->pbuf[i]) * a) >> 8));
     }
     {
         const uint16_t (*PA)[RH_NANCH] = BAR_PAMP[ty][key];
@@ -292,7 +294,7 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     v->fade = 32768; v->pend = 0; v->felt_n = 0; v->felt_lp = 0; v->lvl = v->lvl0 = 0;
     v->age = ++bar_ages;
     v->life = k->life;
-    v->pthump = BAR_PULSE[BAR_PBAND[k->band]][0][0];  /* the felt's knock: SOFT, the softest layer */
+    v->pthump = BAR_THUMP[BAR_PBAND[k->band]];     /* the felt's knock: SOFT, the softest layer (pulse_pz.h) */
     v->prate_thump = (uint32_t)BAR_PRATE[tyi][n - BAR_KEY_LO][0][1] << 4;
     bar_load_pulse(v, vel);
 #if defined(FR_HQ) && HQB_CONTACT

@@ -21,6 +21,7 @@
  *   ota_show(step, code)       progress / result for the screen
  *   ota_commit(parm)           write RAM record + reset (never returns on hardware)
  */
+#include "fr_cold.h"   /* FR_COLD (Frodhes): the app builds this for flash; the loader not */
 /* OTA_AREA: the app may give its own (Frodhes: frodhes_store.h, in no region of the stock firmware's table) */
 #if BOARD_SMK37
 /* SMK-37 Pro: the last 5 sectors of the stock VM (0xBB000..0xBFFFF, FL_OTA in fm1_flash.h), below BTIF /
@@ -59,13 +60,13 @@ static int ota_fread(uint32_t off, void *p, uint32_t n);
 static void ota_show(uint32_t step, int32_t code);
 static void ota_commit(const uint8_t *parm);
 
-static uint32_t ota_rd16(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8; }
-static uint32_t ota_rd24(const uint8_t *p) { return ota_rd16(p) | (uint32_t)p[2] << 16; }
-static uint32_t ota_rd32(const uint8_t *p) { return ota_rd24(p) | (uint32_t)p[3] << 24; }
-static void ota_wr16(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
-static void ota_wr32(uint8_t *p, uint32_t v) { ota_wr16(p, v); ota_wr16(p + 2, v >> 16); }
+FR_COLD static uint32_t ota_rd16(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8; }
+FR_COLD static uint32_t ota_rd24(const uint8_t *p) { return ota_rd16(p) | (uint32_t)p[2] << 16; }
+FR_COLD static uint32_t ota_rd32(const uint8_t *p) { return ota_rd24(p) | (uint32_t)p[3] << 24; }
+FR_COLD static void ota_wr16(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
+FR_COLD static void ota_wr32(uint8_t *p, uint32_t v) { ota_wr16(p, v); ota_wr16(p + 2, v >> 16); }
 
-static uint32_t ota_crc16(const uint8_t *p, uint32_t n, uint32_t c)   /* poly 0x1021, init 0 */
+FR_COLD static uint32_t ota_crc16(const uint8_t *p, uint32_t n, uint32_t c)   /* poly 0x1021, init 0 */
 {
     uint32_t i;
     while (n--) {
@@ -77,7 +78,7 @@ static uint32_t ota_crc16(const uint8_t *p, uint32_t n, uint32_t c)   /* poly 0x
     return c;
 }
 
-static void ota_jl_enc(uint8_t *p, uint32_t n)   /* UFW header cipher, key 0xFFFF */
+FR_COLD static void ota_jl_enc(uint8_t *p, uint32_t n)   /* UFW header cipher, key 0xFFFF */
 {
     uint32_t k = 0xFFFFu;
     while (n--) {
@@ -87,7 +88,7 @@ static void ota_jl_enc(uint8_t *p, uint32_t n)   /* UFW header cipher, key 0xFFF
 }
 
 /* 8-to-7, LSB first */
-static uint32_t ota_pack7(const uint8_t *in, uint32_t n, uint8_t *out)
+FR_COLD static uint32_t ota_pack7(const uint8_t *in, uint32_t n, uint8_t *out)
 {
     uint32_t acc = 0, nb = 0, o = 0;
     while (n--) {
@@ -104,7 +105,7 @@ static uint32_t ota_pack7(const uint8_t *in, uint32_t n, uint8_t *out)
     return o;
 }
 
-static uint32_t ota_unpack7(const uint8_t *in, uint32_t n, uint8_t *out, uint32_t max)
+FR_COLD static uint32_t ota_unpack7(const uint8_t *in, uint32_t n, uint8_t *out, uint32_t max)
 {
     uint32_t acc = 0, nb = 0, o = 0;
     while (n--) {
@@ -124,7 +125,7 @@ static uint32_t ota_unpack7(const uint8_t *in, uint32_t n, uint8_t *out, uint32_
 static uint8_t ota_msg[8 + 32], ota_wire[2 + 48];
 static uint8_t ota_dec[OTA_FRAME_MAX];           /* decoded host message */
 
-static int ota_send_msg(uint32_t cmd, const uint8_t *body, uint32_t n)   /* n <= 32 */
+FR_COLD static int ota_send_msg(uint32_t cmd, const uint8_t *body, uint32_t n)   /* n <= 32 */
 {
     uint32_t i, s = 0, w;
     ota_msg[0] = 0;
@@ -144,7 +145,7 @@ static int ota_send_msg(uint32_t cmd, const uint8_t *body, uint32_t n)   /* n <=
     return ota_wire_send(ota_wire, w);
 }
 
-static void ota_reply_identity(void)
+FR_COLD static void ota_reply_identity(void)
 {
 #ifdef OTA_IDENTITY
     const char *id_text = OTA_IDENTITY;
@@ -163,7 +164,7 @@ static void ota_reply_identity(void)
 }
 
 /* decode the pending frame; returns its decoded length (0 = not ours) */
-static uint32_t ota_take(void)
+FR_COLD static uint32_t ota_take(void)
 {
     const uint8_t *p;
     uint32_t n, d, s = 0, i;
@@ -181,7 +182,7 @@ static uint32_t ota_take(void)
 }
 
 /* main loop, outside a session: answer handshakes */
-static void ota_service(void)
+FR_COLD static void ota_service(void)
 {
     uint32_t d = ota_take();
     if (d == 7u && ota_dec[2] == 0x11)
@@ -191,7 +192,7 @@ static void ota_service(void)
 /* one read request (3 tries x 5 s); data -> dst */
 static uint32_t ota_deadline;                    /* 0 = none; else ota_now_ms() limit of the session */
 
-static int ota_read(uint32_t addr, uint8_t *dst, uint32_t len)
+FR_COLD static int ota_read(uint32_t addr, uint8_t *dst, uint32_t len)
 {
     uint8_t q[8];
     uint32_t tries, t, d, i;
@@ -225,7 +226,7 @@ static int ota_read(uint32_t addr, uint8_t *dst, uint32_t len)
     return -1;
 }
 
-static int ota_memeq(const uint8_t *a, const uint8_t *b, uint32_t n)
+FR_COLD static int ota_memeq(const uint8_t *a, const uint8_t *b, uint32_t n)
 {
     while (n--)
         if (*a++ != *b++)
@@ -234,7 +235,7 @@ static int ota_memeq(const uint8_t *a, const uint8_t *b, uint32_t n)
 }
 
 /* JLFS head "LOADER.BIN" in front of the staged loader (vm_update_defrag), written last */
-static int ota_stage_head(uint32_t len)
+FR_COLD static int ota_stage_head(uint32_t len)
 {
     static const char NAME[16] = "LOADER.BIN";
     uint8_t h[32];
@@ -257,7 +258,7 @@ static int ota_stage_head(uint32_t len)
  * flash.bin (entry type 0) and ota.bin (type 100), 0 if absent, and the CRC16 the
  * package stores for flash.bin (the loader checks what it was served against it);
  * -1 read, -2 CRC */
-static int ota_ufw(uint8_t *hdr, uint32_t *fl_off, uint32_t *fl_len, uint32_t *ota_off, uint32_t *ota_len,
+FR_COLD static int ota_ufw(uint8_t *hdr, uint32_t *fl_off, uint32_t *fl_len, uint32_t *ota_off, uint32_t *ota_len,
                    uint32_t *fl_crc)
 {
     uint32_t i, nent;
@@ -285,7 +286,7 @@ static int ota_ufw(uint8_t *hdr, uint32_t *fl_off, uint32_t *fl_len, uint32_t *o
     return 0;
 }
 
-static int ota_stage(void)                       /* steps 1..6; 0 = host said success */
+FR_COLD static int ota_stage(void)                       /* steps 1..6; 0 = host said success */
 {
     static uint8_t hdr[0x400], b[512], mine[512];
     uint32_t i, n, ota_off, ota_len, fl_off, fl_len, fl_crc, c, len, own, official;
@@ -358,7 +359,7 @@ static int ota_stage(void)                       /* steps 1..6; 0 = host said su
     return -13;
 }
 
-static void ota_unstage(void)
+FR_COLD static void ota_unstage(void)
 {
     uint32_t i;
     for (i = 0; i < OTA_AREA_LEN; i += 0x1000u)
@@ -366,7 +367,7 @@ static void ota_unstage(void)
 }
 
 /* returns only when nothing was committed (refused, failed, or dry run) */
-static int ota_session(void)
+FR_COLD static int ota_session(void)
 {
     static uint8_t parm[112];
     uint8_t back[112];
@@ -411,7 +412,7 @@ static int ota_session(void)
 
 /* boot: a staging area left over (we are running, so the update finished or
  * never started): erase it so the SPL does not re-enter the loader */
-static int ota_boot_cleanup(void)
+FR_COLD static int ota_boot_cleanup(void)
 {
     uint8_t a[4], r[8];
     uint32_t i, used = 0;

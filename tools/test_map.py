@@ -68,12 +68,14 @@ RULES = [
      (USB2,), "the platform: the ISRs, the clocks, the memory map (every scenario rides on it)"),
     # (the app's glue, not its DSP: the voices and effects are rhodes.c / bars.c / fx.c, and Gate R on the host
     # proves every render byte-identical, so the full scans wait for a DSP change)
-    ("app", ["firmware/src/frodhes.c", "firmware/src/frodhes_smk.h", "firmware/src/libc.c"], ALL, (), (USB2,),
+    ("app", ["firmware/src/frodhes.c", "firmware/src/frodhes_smk.h", "firmware/src/libc.c", "firmware/src/fr_cold.h"], ALL, (), (USB2,),
      "the app's glue: the audio ISR's wiring, the main loop, the MIDI CC map"),
     ("engine:rhodes", ["firmware/src/rhodes.c", "firmware/gen/rhodes_tables.h", "firmware/gen/rhodes_phim.h", "firmware/gen/rh_tone_g.h"], ALL, ("rhodes",), (),
      "the Rhodes engine (its DSP or tables)"),
     ("engine:bars", ["firmware/src/bars.c", "firmware/src/bars.h", "firmware/gen/bars_tables.h"], ALL,
      ("vibes", "marimba"), (), "the bar engine (VIBES, MARIMBA: its DSP or tables)"),
+    ("engine:pulses", ["firmware/gen/pulse_pz.h"], ALL, ENGINES_T2, (),
+     "the packed hammer / mallet pulses (rhodes.c rh_pz: the Rhodes and the bars decode them at the strike)"),
     ("engine:dispatch", ["firmware/src/engine.c", "firmware/src/fxp.h"], ALL, ENGINES_T2 + ("effects",), (),
      "the engine dispatcher / the fixed-point helpers (every engine's DSP)"),
     ("fx", ["firmware/src/fx.c", "firmware/src/fx_eq.c", "firmware/src/dly_tape.c",

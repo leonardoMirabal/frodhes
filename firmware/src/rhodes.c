@@ -187,7 +187,7 @@ static uint32_t rh_lfsr = 0xACE1u;
  * restart, no step). Started in rh_events (rh_strike), played by rh_noise after the voices */
 static volatile int32_t rh_knock;              /* Q15: the knock level (KN_KNOCK[NOISE]), 0 = none */
 static const uint8_t RH_KNOCK_ON[4] = {0, 1, 1, 1};   /* per TYPE: STAGE 77 none; SUITCASE, EARLY FELT, BELL DYNO */
-static const int16_t *rh_kn_tab;               /* the pulse playing (0 = none) */
+static const int16_t *rh_kn_tab;               /* the pulse playing (0 = none): rh_kn_buf */
 static uint32_t rh_kn_pos, rh_kn_rate;         /* Q16 position and step in it */
 static int32_t rh_kn_amp;                      /* force x level (<= 65535), Q20 out per Q15 pulse */
 static uint8_t rh_kn_note;
@@ -206,6 +206,7 @@ static uint8_t rh_ped_dn;                      /* the pedal as the thud last saw
 #else
 #define RH_OWN_SECTION(s) __attribute__((section(s)))
 #endif
+static int16_t rh_kn_buf[RH_PLEN + 2] RH_OWN_SECTION(".bss.rh_kn_buf");   /* the knock's pulse (rh_knock_strike): out of the global merge */
 static volatile int32_t rh_bend_t RH_OWN_SECTION(".bss.rh_bend_t");   /* main loop: Q30 2^(c/1200) - 1 of the bend */
 static int32_t rh_bend_used RH_OWN_SECTION(".bss.rh_bend_u");         /* ISR: the bend the voices are tuned to */
 /* the retune spread (rh_retune): the voices still to retune to rh_bend_used, and the round-robin cursor */
@@ -351,25 +352,44 @@ static void rh_pu_boot(void)
 #define RH_PU_PHIM(f) RH_PHIM[f]
 #endif
 
+/* ---- the pulse banks, packed (tools/gen_pulse_pz.py, firmware/gen/pulse_pz.h; 2026-11-01: 79 KB of flash): a pulse
+ * decodes into a voice's buffer at the strike, the same 66 int16 the table held (the pads 0), so the force is
+ * byte-identical. PZ: per point the 3rd difference, the head int16, the tail int8; ~7 instructions a point */
+#include "pulse_pz.h"
+#define RH_PZI(key, l) ((key) * RH_NLAYER + (l))
+static const int16_t *rh_pz(int16_t *o, const pz_bank_t *b, uint32_t p)
+{
+    const int16_t *h = b->d + b->off[p];
+    uint32_t n = b->nh[p], i;
+    const int8_t *t = (const int8_t *)(h + n);
+    int32_t x = 0, d1 = 0, d2 = 0;
+    for (i = 0; i < n; i++) { d2 += h[i]; d1 += d2; x += d1; o[i] = (int16_t)x; }
+    for (; i < 64u; i++) { d2 += *t++; d1 += d2; x += d1; o[i] = (int16_t)x; }
+    o[64] = o[65] = 0;
+    return o;
+}
+static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /* o + ((pulse - o) w >> 15): the layer crossfade */
+{
+    const int16_t *h = b->d + b->off[p];
+    uint32_t n = b->nh[p], i;
+    const int8_t *t = (const int8_t *)(h + n);
+    int32_t x = 0, d1 = 0, d2 = 0;
+    for (i = 0; i < n; i++) { d2 += h[i]; d1 += d2; x += d1; o[i] = (int16_t)(o[i] + (((x - o[i]) * w) >> 15)); }
+    for (; i < 64u; i++) { d2 += *t++; d1 += d2; x += d1; o[i] = (int16_t)(o[i] + (((x - o[i]) * w) >> 15)); }
+}
+
 /* ---- voices (ISR) */
 static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
 {
-    uint32_t key = (uint32_t)(v->k - RH_KEYS), i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
+    uint32_t key = (uint32_t)(v->k - RH_KEYS), i = RH_VPOS_I[vel], f = RH_VPOS_F[vel], l = RH_VLAY_I[vel];
     const uint16_t *pa = RH_PAMP[key];
     const uint16_t *pr = RH_PRATE[key];               /* (+ RH_PRATE_B[key]: the key's base) */
-    const int16_t *p1 = RH_PULSE[key][RH_VLAY_I[vel]];
     int32_t w = RH_VLAY_W[vel];
-    if (w) {        /* the layer crossfade, once per point (O2): the same integers the force loop computed per sample
+    rh_pz(v->pbuf, &RH_PZB, RH_PZI(key, l));
+    if (w)          /* the layer crossfade, once per point (O2): the same integers the force loop computed per sample
                      * (a + ((a2 - a) w >> 15), between a and a2: an int16), so the force is byte-identical */
-        const int16_t *p2 = RH_PULSE[key][RH_VLAY_I[vel] + 1u < RH_NLAYER ? RH_VLAY_I[vel] + 1u : RH_NLAYER - 1u];
-        uint32_t j;
-        for (j = 0; j < RH_PLEN + 2u; j++) {
-            int32_t a = p1[j];
-            v->pbuf[j] = (int16_t)(a + (((p2[j] - a) * w) >> 15));
-        }
-        v->ptab = v->pbuf;
-    } else
-        v->ptab = p1;
+        rh_pz_mix(v->pbuf, &RH_PZB, RH_PZI(key, l + 1u < RH_NLAYER ? l + 1u : RH_NLAYER - 1u), w);
+    v->ptab = v->pbuf;
     v->pamp = (int32_t)pa[i] + ((((int32_t)pa[i + 1] - (int32_t)pa[i]) * (int32_t)f) >> 8);
     v->prate = (uint32_t)((int32_t)RH_PRATE_B[key] + pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;  /* Q12 -> Q16 */
 #ifdef FR_HQ
@@ -673,7 +693,7 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
         if (n >= rh_kn_note) return;                    /* the lowest key's pulse (the longest, the heaviest hammer) */
     }
     rh_kn_amp = a;
-    rh_kn_tab = RH_PULSE[key][l]; rh_kn_rate = prate; rh_kn_pos = 0; rh_kn_note = (uint8_t)n;
+    rh_kn_tab = rh_pz(rh_kn_buf, &RH_PZB, RH_PZI(key, l)); rh_kn_rate = prate; rh_kn_pos = 0; rh_kn_note = (uint8_t)n;
 }
 
 static void rh_start_pend(rh_voice_t *v)                /* a stolen voice is gone: start the note waiting for it */
@@ -736,7 +756,7 @@ static void rh_events(void)
                         int32_t th = rh_thump > 32767 ? 32767 : rh_thump;
                         int32_t cap = (int32_t)(((uint32_t)rh_left(v) * RH_THUMP_CAP) >> 15);
                         th = mul15(th > cap ? cap : th, v->rgain);   /* the cap, then the release velocity's x0.6..1.4 */
-                        v->ptab = RH_PULSE[key][0];
+                        v->ptab = rh_pz(v->pbuf, &RH_PZB, RH_PZI(key, 0));
                         v->pamp = th > 32767 ? 32767 : th;
                         v->prate = (uint32_t)(RH_PRATE_B[key] + RH_PRATE[key][1]) << 4;
                         v->ppos = 0;

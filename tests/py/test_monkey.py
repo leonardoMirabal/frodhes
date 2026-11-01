@@ -110,12 +110,12 @@ def test_the_click_check_finds_a_known_click(binary):
 
 
 def test_the_wrap_check_finds_an_int16_wrap():
-    """a real fault: the sanitizer build with Rhodes' layer crossfade 4x too hot (rhodes.c: v->pbuf, an int16) wraps
+    """a real fault: the sanitizer build with Rhodes' layer crossfade 4x too hot (rhodes.c rh_pz_mix: v->pbuf, an int16) wraps
     on a loud note; the wrap check names it, and the build without the fault is clean"""
     out = os.path.join(mk.OUTD, "san-wrap-fault")
     os.makedirs(mk.OUTD, exist_ok=True)
-    old = "v->pbuf[j] = (int16_t)(a + (((p2[j] - a) * w) >> 15));"
-    b = mk.build(True, [("rhodes.c", old, old.replace("(a + ", "(4 * a + "))], out)
+    old = "o[i] = (int16_t)(o[i] + (((x - o[i]) * w) >> 15));"            # (rh_pz_mix: the crossfade at the strike)
+    b = mk.build(True, [("rhodes.c", old, old.replace("(o[i] + ", "(4 * o[i] + "))], out)
     try:
         ev = [(100, "midi 0x90 60 64"), (300, "midi 0x90 64 90"), (900, "midi 0x80 60 0")]
         pl, m = mk.panic(mk.RAND_MS + 50)

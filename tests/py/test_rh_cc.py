@@ -39,15 +39,18 @@ def test_burst_faster():
     """a 9-note burst: rh_init from the cache at least twice as fast as with rh_coef with clang (host -O2; ~19 vs
     ~66 ns, macOS arm64; the firmware's compiler is LLVM's too). gcc builds the cached copy slower: 36.6-40.9 vs
     66.9-74.0 ns (1.75-1.9x, gcc 14.2 -O2, Linux arm64 in Docker, 6 runs, 2026-10-24), so with gcc the bar is 1.5x,
-    still far from rh_coef's own cost. Each path at its best of 5 runs (the least disturbed)"""
-    cached, live = [], []
+    still far from rh_coef's own cost. Each path at its best of 5 runs (the least disturbed), less the pulse's own
+    decode (both paths run it; since the packed pulse banks, 2026-11-01, a fixed ~50 ns on the host)"""
+    cached, live, pulse = [], [], []
     for _ in range(5):
         f = subprocess.run([exe(), "time", "20000"], capture_output=True, text=True, check=True).stdout.split()
         cached.append(float(f[1]))
         live.append(float(f[3]))
+        pulse.append(float(f[7]))
     ver = subprocess.run(["cc", "--version"], capture_output=True, text=True).stdout
     need = 2.0 if "clang" in ver else 1.5
-    assert min(live) / min(cached) >= need, (min(live), min(cached), need, ver.splitlines()[:1])
+    p = min(pulse)
+    assert (min(live) - p) / (min(cached) - p) >= need, (min(live), min(cached), p, need, ver.splitlines()[:1])
 
 
 def test_main_loop_polls():

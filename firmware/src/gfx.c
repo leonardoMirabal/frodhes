@@ -12,6 +12,7 @@ typedef struct {               /* proportional, see tools/gen_font.py */
     const uint16_t *off;       /* byte offset of each glyph */
     const uint8_t *data;
 } felucca_font_t;
+#include "fr_cold.h"   /* FR_COLD (Frodhes): drawing is built for flash */
 #include "felucca_font.h"
 
 #ifndef CV_MAX
@@ -50,7 +51,7 @@ static uint16_t pal[5];
 #define C_AMB pal[3]                 /* 4 secondary text */
 #define C_HI pal[4]                  /* 5 values, curves */
 
-static void palette_set(uint32_t i)
+FR_COLD static void palette_set(uint32_t i)
 {
     uint32_t k;
     for (k = 0; k < 5u; k++)
@@ -59,7 +60,7 @@ static void palette_set(uint32_t i)
 
 static inline uint16_t swap16(uint32_t c) { return (uint16_t)(((c >> 8) & 0xFFu) | ((c & 0xFFu) << 8)); }
 
-static void cv_begin(uint32_t w, uint32_t h, uint16_t bg)
+FR_COLD static void cv_begin(uint32_t w, uint32_t h, uint16_t bg)
 {
     uint32_t i, n;
     if (w * h > CV_MAX)
@@ -72,10 +73,10 @@ static void cv_begin(uint32_t w, uint32_t h, uint16_t bg)
         cv_px[i] = swap16(bg);
 }
 
-static void cv_blit(uint32_t x, uint32_t y) { lcd_blit(x, y, cv_w, cv_h, cv_px); }
+FR_COLD static void cv_blit(uint32_t x, uint32_t y) { lcd_blit(x, y, cv_w, cv_h, cv_px); }
 
 /* canvas rows r0 .. cv_h-1 only, to screen row y + r0 */
-static void cv_blit_from(uint32_t x, uint32_t y, uint32_t r0)
+FR_COLD static void cv_blit_from(uint32_t x, uint32_t y, uint32_t r0)
 {
     if (r0 < cv_h)
         lcd_blit(x, y + r0, cv_w, cv_h - r0, cv_px + r0 * cv_w);
@@ -88,7 +89,7 @@ static inline void cv_pset(int32_t x, int32_t y, uint16_t c)
         cv_px[(uint32_t)y * cv_w + (uint32_t)x] = swap16(c);
 }
 
-static void cv_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
+FR_COLD static void cv_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
 {
     int32_t x1 = x + w, y1 = y + h + cv_oy, i;
     uint16_t sc = swap16(c);
@@ -106,7 +107,7 @@ static void cv_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t c)
             cv_px[(uint32_t)y * cv_w + (uint32_t)i] = sc;
 }
 
-static void cv_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)
+FR_COLD static void cv_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)
 {
     int32_t dx = x1 > x0 ? x1 - x0 : x0 - x1, sx = x0 < x1 ? 1 : -1;
     int32_t dy = y1 > y0 ? y0 - y1 : y1 - y0, sy = y0 < y1 ? 1 : -1;
@@ -129,7 +130,7 @@ static void cv_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t c)
 
 /* glyph index of a character: lower case folds to upper case when the font
  * has none, anything missing (and C1 controls) draws as '?' */
-static uint32_t glyph(const felucca_font_t *f, uint32_t ch)
+FR_COLD static uint32_t glyph(const felucca_font_t *f, uint32_t ch)
 {
     if (ch >= 'a' && ch <= 'z' && f->last < 'a')
         ch -= 32u;
@@ -139,7 +140,7 @@ static uint32_t glyph(const felucca_font_t *f, uint32_t ch)
 }
 
 /* text, alpha-blended onto black with colour c; returns the end x */
-static int32_t cv_text(int32_t x, int32_t y, const felucca_font_t *f, const char *s, uint16_t c)
+FR_COLD static int32_t cv_text(int32_t x, int32_t y, const felucca_font_t *f, const char *s, uint16_t c)
 {
     uint16_t ramp[16];
     uint32_t r = c >> 11, g = (c >> 5) & 63u, b = c & 31u, a;
@@ -163,7 +164,7 @@ static int32_t cv_text(int32_t x, int32_t y, const felucca_font_t *f, const char
     return x;
 }
 
-static int32_t text_w(const felucca_font_t *f, const char *s)
+FR_COLD static int32_t text_w(const felucca_font_t *f, const char *s)
 {
     int32_t w = 0;
     for (; *s; s++)
@@ -172,7 +173,7 @@ static int32_t text_w(const felucca_font_t *f, const char *s)
 }
 
 /* one-shot: text in a box, cleared to black, blitted */
-static void draw_text_box(uint32_t x, uint32_t y, uint32_t w, const felucca_font_t *f, const char *s,
+FR_COLD static void draw_text_box(uint32_t x, uint32_t y, uint32_t w, const felucca_font_t *f, const char *s,
                           uint16_t c, int align)
 {
     int32_t tw = text_w(f, s), tx = 0;

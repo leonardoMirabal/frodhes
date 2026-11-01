@@ -74,7 +74,7 @@ int main(int argc, char **argv)
     if (argc > 2 && !strcmp(argv[1], "time")) {
         long r, reps = atol(argv[2]);
         uint32_t n = 21, i;
-        double t0, t1, t2;
+        double t0, t1, t2, t3;
         unsigned long chk = 0;
         rh_tune_t = 0; rh_k_decay = 65536; rh_k_rel = 65536; rh_bend_t = 0;
         rh_cc_poll();
@@ -85,7 +85,11 @@ int main(int argc, char **argv)
         for (r = 0; r < reps; r++)
             for (i = 0; i < 9u; i++) { init_live(&rv[i], n, 100); chk += (uint32_t)rv[i].m[0].e0; n = n == 108u ? 21u : n + 1u; }
         t2 = now_ns();
-        printf("ns_cached %.1f ns_live %.1f chk %lu\n", (t1 - t0) / (reps * 9.0), (t2 - t1) / (reps * 9.0), chk & 1u);
+        for (r = 0; r < reps; r++)              /* the pulse alone (decoded at the strike, both paths: pulse_pz.h) */
+            for (i = 0; i < 9u; i++) { rh_load_pulse(&rv[i], 100); chk += (uint32_t)rv[i].pbuf[3]; }
+        t3 = now_ns();
+        printf("ns_cached %.1f ns_live %.1f chk %lu ns_pulse %.1f\n", (t1 - t0) / (reps * 9.0), (t2 - t1) / (reps * 9.0),
+               chk & 1u, (t3 - t2) / (reps * 9.0));
         return 0;
     }
     fprintf(stderr, "usage: rh_noteon check | time REPS\n");
