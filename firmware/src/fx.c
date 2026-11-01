@@ -1348,7 +1348,14 @@ __attribute__((noinline)) static void fx_delay(int32_t *L, int32_t *R, uint32_t 
  * row t holds the 8 lines' samples written at one time, line k reads its row HL_LEN[k] back (+ its modulation); HL_N
  * is a multiple of HL_NC (a block's 16 rows never wrap) and >= the longest line; row HL_N repeats row 0 (the
  * interpolation's next sample) */
+#ifndef FR_REV_HQ                   /* (the full-rate TYPEs, rev_hq.c: a build switch, off by default) */
+#define FR_REV_HQ 0
+#endif
+#if FR_REV_HQ
+#define HL_N 16u                    /* (FR_REV_HQ: HALL is rev_hq_hall.c; rev_hall and its lines are not used) */
+#else
 #define HL_N 752u
+#endif
 static int16_t rev_comb[(HL_N + 1u) * HL_NL] POOL;
 static int16_t rev_ap[556 + 441] POOL;
 #define HL_MOD 8                    /* the modulation's depth at MOD 64 (rev_types.c: (MOD + 4) >> 3, 0 .. 16) */

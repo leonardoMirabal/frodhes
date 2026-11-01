@@ -53,6 +53,9 @@ typedef struct {            /* filled by the framework once per control block */
                              * releases the tail (it decays again) */
 } rev_ctl_t;
 
+#if FR_REV_HQ                /* (the full-rate TYPEs, a build switch: rev_hq.c, its own framework) */
+#include "rev_hq.c"
+#else
 #ifndef REV_FILE_PLATE      /* (a test build may put another file in a TYPE's place) */
 #define REV_FILE_PLATE "rev_plate.c"
 #endif
@@ -304,3 +307,4 @@ static uint32_t rev_cost_us(void)
     if (t && REV_US[t] > us) us = REV_US[t];
     return REV_US_FRONT + us + (fx_p[FXP_RV_LOCUT] ? REV_US_LOCUT : 0u);
 }
+#endif  /* FR_REV_HQ */
