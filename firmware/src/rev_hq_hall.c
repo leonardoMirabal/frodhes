@@ -23,10 +23,10 @@
  * mix writes a row with plain stores; line k reads its column RQH_LEN[k] rows back (+ its modulation). RQH_R is a
  * multiple of the block, so a block's 32 rows never wrap; a read across the end is copied (rarely).
  * Exact silence: while the tank is quiet (every line end under RQH_LOUD) the products truncate toward zero (sh_tz), the
- * one-pole decays toward its input, the mix's / 4 truncates: without input every line can only shrink; loud, they
- * round (no bias: the T60 holds at any level). rev_hqh_active() is 0 once the input and every line end have been 0
+ * one-pole decays toward its input, the mix's / 4 truncates (always): without input every line can only shrink; loud,
+ * the line ends round (no bias: the T60 holds at any level). rev_hqh_active() is 0 once the input and every line end have been 0
  * for longer than the longest line. Start: O(1) (the ring is not cleared): until a line has been written through,
- * its reads older than the start read 0 (the warm-up path, the first 93 ms). */
+ * its reads older than the start read 0 (through the copy of the ring's end, the first 93 ms). */
 
 #ifndef FR_RAM
 #define FR_RAM
@@ -46,7 +46,7 @@ static const uint16_t RQH_LEN[RQH_NL] = {1427, 1789, 2161, 2539, 2903, 3271, 363
 _Static_assert(RQH_R >= RQH_LMAX + RQH_SW + 1u + 32u && RQH_R % 32u == 0u, "rev_hq_hall.c: the ring");
 #define RQH_KP 340                                      /* TONE's pole per damp step (Q15) */
 #define RQH_SGN 0x96u                                   /* the input's sign per line (bit k: - for line k) */
-#define RQH_OUT 13200                                   /* the taps (Q13 of the row / 4: the half-rate HALL's Bark loudness) */
+#define RQH_OUT 13800                                   /* the taps (Q13 of the row / 4: the half-rate HALL's Bark loudness) */
 #define RQH_LOUD 1024                                   /* a line end this quiet (4x the line's scale, all 8, the last block)
                                                          * truncates: it then dies to exact zero; louder, they round */
 static const uint16_t RQH_AL[RQH_AN] = {210, 158, 561, 410};
@@ -157,26 +157,8 @@ static FR_RAM __attribute__((noinline)) uint32_t rqh_end(const int16_t *q, int32
     *pao |= ao;
     return am;
 }
-/* the warm-up's line end: reads older than the start (age a + i < the delay) read 0 */
-static __attribute__((noinline)) uint32_t rqh_end_w(const int16_t *q, int32_t f, int32_t *y, int32_t *lp, int32_t p,
-                                                    int32_t g, uint32_t a, uint32_t D, int32_t *pao)
-{
-    int32_t l = *lp, ao = 0;
-    uint32_t i, am = 0;
-    for (i = 0; i < RQ_NC; i++, q += RQH_NL, y += RQH_NL) {
-        int32_t u0 = a + i >= D ? q[0] : 0, u1 = a + i >= D + 1u ? q[-(int32_t)RQH_NL] : 0, v;
-        int32_t u = u0 + (((u1 - u0) * f) >> 8);
-        l = u + sh_tz((l - u) * p, 15);
-        v = sh_tz(l * g, 15);
-        *y = v;
-        ao |= v;
-        am |= (uint32_t)(v + RQH_LOUD);
-    }
-    *lp = l;
-    *pao |= ao;
-    return am;
-}
-/* the mix: the 8-point Hadamard of the line ends, its row / 4 (lo: truncated; loud: rounded) +- the input, clamped,
+/* the mix: the 8-point Hadamard of the line ends, its row / 4 (truncated toward zero: no bias, and the flash it
+ * saves against a rounded twin; the T60s the same) +- the input, clamped,
  * into the ring's rows o (8 plain stores a row); row 0 the mid, row 1 the side */
 #define RQH_BF(a, b) { int32_t t_ = a; a = t_ + b; b = t_ - b; }
 #define RQH_W8(SH, k, h) o[k] = (int16_t)hl_c16(SH(h, 2) + (((RQH_SGN >> k) & 1u) ? -x : x));
@@ -192,11 +174,10 @@ static __attribute__((noinline)) uint32_t rqh_end_w(const int16_t *q, int32_t f,
         RQH_W8(SH, 4, h4) RQH_W8(SH, 5, h5) RQH_W8(SH, 6, h6) RQH_W8(SH, 7, h7)                                 \
     }
 static FR_RAM __attribute__((noinline)) void rqh_mix8(int16_t *o, const int32_t *y, const int32_t *xs, int32_t *mid,
-                                                      int32_t *side, int lo)
+                                                      int32_t *side)
 {
     uint32_t i;
-    if (lo) RQH_MIX8(RQH_TZ)
-    else RQH_MIX8(RQH_RND)
+    RQH_MIX8(RQH_TZ)
 }
 
 static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *in, int32_t *mid, int32_t *side,
@@ -220,19 +201,17 @@ static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *i
         }
         r = s->w + RQH_R - D - 1u;                     /* (the row of sample 0's older sample) */
         r = r >= RQH_R ? r - RQH_R : r;
-        if (r + RQ_NC + 1u <= RQH_R) q = s->ring + (r + 1u) * RQH_NL + k;
-        else {                                          /* (the ring's end inside: a contiguous copy, rarely) */
-            uint32_t j;
+        if (r + RQ_NC + 1u <= RQH_R && s->e >= RQH_WARM) q = s->ring + (r + 1u) * RQH_NL + k;
+        else {                                          /* (the ring's end inside, or the warm-up: a contiguous */
+            uint32_t j;                                 /*  copy, the rows older than the start read as 0) */
             for (i = 0, j = r; i < RQ_NC + 1u; i++, j = j + 1u == RQH_R ? 0u : j + 1u)
-                s->t[i * RQH_NL + k] = s->ring[j * RQH_NL + k];
+                s->t[i * RQH_NL + k] = s->e + i >= D + 1u ? s->ring[j * RQH_NL + k] : 0;
             q = s->t + RQH_NL + k;
         }
-        if (s->e >= RQH_WARM)
-            am |= FR_FAR(rqh_end)(q, (int32_t)f, &s->y[0][k], &s->lp[k], s->p, s->g[k], lo, &act);
-        else am |= rqh_end_w(q, (int32_t)f, &s->y[0][k], &s->lp[k], s->p, s->g[k], s->e, D, &act);
+        am |= FR_FAR(rqh_end)(q, (int32_t)f, &s->y[0][k], &s->lp[k], s->p, s->g[k], lo, &act);
     }
     s->amax = am;                                       /* (< 2 RQH_LOUD: the tank is quiet) */
-    FR_FAR(rqh_mix8)(s->ring + s->w * RQH_NL, &s->y[0][0], s->x, mid, side, lo);
+    FR_FAR(rqh_mix8)(s->ring + s->w * RQH_NL, &s->y[0][0], s->x, mid, side);
     s->w = s->w + RQ_NC >= RQH_R ? 0u : s->w + RQ_NC;
     if (s->e < RQH_WARM) s->e += RQ_NC;
     s->quiet = act ? 0u : s->quiet < RQH_WARM + RQ_NC ? s->quiet + RQ_NC : s->quiet;

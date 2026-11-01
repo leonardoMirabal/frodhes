@@ -138,7 +138,7 @@ static const uint16_t PL_ITOP[4] = {PL_IO0, PL_IO1, PL_IO2, PL_IO3};
 static const uint16_t PL_IL[4] = {PL_IL0, PL_IL1, PL_IL2, PL_IL3};
 
 /* sqrt(p / 32768) x 32768 (p Q15, 0 .. 32767): a one-pole's pole at twice the rate with the same time constant */
-static int32_t rq_sqrt15(int32_t p)
+static FR_RAM int32_t rq_sqrt15(int32_t p)
 {
     uint32_t x = (uint32_t)p << 15, r = 0, b = 1u << 30;
     while (b > x) b >>= 2;
