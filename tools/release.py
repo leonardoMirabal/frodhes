@@ -36,7 +36,7 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
                  release minimum) on every release, MT1 too when Move-only code changed. No "move" section: the
                  Move is not tested and the release ships no Move package; a wrong sha256 or tiers short stop it
  5 docs          tools/doc_links.py's check (each picture's ?v= = its file's hash, no version named in README /
-                 MANUAL), tests/py/test_docs_vs_code.py, test_doc_links.py, test_changes.py, test_manual_shots.py
+                 MANUAL / the device manuals), tests/py/test_docs_vs_code.py, test_doc_links.py, test_changes.py, test_manual_shots.py
                  (the screenshots = what the code draws); the fragments assembled into docs/releases/vX.Y.Z.md (shown in
                  full), then the release commit: the notes added, the fragments removed
  6 confirm       what will be pushed, then "Publish X.Y.Z? [y/N]" (--yes skips the prompt). --dry-run stops here.
@@ -435,7 +435,7 @@ class Release:
     # 5
     def s_docs(self):
         ev, problems = [], doc_links.problems(ROOT)
-        ev.append(f"doc_links: README.md / docs/MANUAL.md, {len(problems)} problem(s) (every picture's ?v= its "
+        ev.append(f"doc_links: {' / '.join(doc_links.DOCS)}, {len(problems)} problem(s) (every picture's ?v= its "
                   "file's hash, no version named)")
         problems = [f"{p} (tools/doc_links.py --fix, or tools/manual_shots.py)" for p in problems]
         _, o = sh([PY, "tools/pytest_run.py", "-q", "--", "tests/py/test_docs_vs_code.py", "tests/py/test_doc_links.py",

@@ -5,8 +5,10 @@ then composes overview.png (PERFORM, VOICE, PHASER, COMPRESSOR; the README's Scr
 walks SELECT and reads each page's name back (the engine's VOICE pages are dynamic: voice1.png, voice2.png on the
 Rhodes; voice1-vibes.png .. voice3-vibes.png on VIBES; voice1-marimba.png, voice2-marimba.png on MARIMBA, with
 piano-vibes.png / piano-marimba.png their FRODHES page). Files left in the folder from pages that went are listed.
-Into docs/manual/img/ (the default), it then sets every picture link's ?v= in README.md / docs/MANUAL.md to the
-file's hash (tools/doc_links.py --fix). tests/py/test_manual_shots.py runs it into a temporary folder and fails if
+The SMK-37's pictures go to docs/manual/img/smk/ (smk_shots: the SMK host build); the Move's, docs/manual/img/move/,
+are tools/move_ui_shots.mjs's.
+Into docs/manual/img/ (the default), it then sets every picture link's ?v= in README.md, docs/MANUAL.md and the
+device manuals to the file's hash (tools/doc_links.py --fix). tests/py/test_manual_shots.py runs it into a temporary folder and fails if
 a committed screenshot differs from what the code draws: a PR that changes the UI re-runs this script (and a
 conflict on a PNG is resolved by re-running it, never by hand).
 
@@ -111,6 +113,35 @@ def names(pages, suffix=""):
         else:
             out.append(NAME.get(base, base.lower().replace("/", "")) + suffix)
     return out
+
+
+SMK_BIN = os.path.join(ROOT, "build", "host-smk", "frodhes")
+
+
+def smk_shots(out):
+    """the SMK-37's pictures into out/smk/ (docs/manual/img/smk/: docs/SMK37.md, MANUAL appendix 15): the SMK build
+    on the host (make build/host-smk/frodhes), its own button and knob names. smk-frodhes.png: the FRODHES page
+    (> from PERFORM), its cards on K5..K8. The framebuffer's colours (the SMK's panel is not calibrated)."""
+    if os.environ.get("FRODHES_SMK_BIN"):
+        binary = os.environ["FRODHES_SMK_BIN"]
+    else:
+        subprocess.run(["make", "-C", ROOT, "build/host-smk/frodhes"], check=True, capture_output=True)
+        binary = SMK_BIN
+    d = os.path.join(out, "smk")
+    os.makedirs(d, exist_ok=True)
+    tag = os.path.join(ROOT, "build", "host-smk", "manual")
+    os.makedirs(os.path.dirname(tag), exist_ok=True)
+    shots = {4000: "smk-frodhes"}
+    L = ["0 ids smk", "2500 btn 3", "2600 keys 0x80", "2900 keys 0x0", "4000 shot", "4100 end"]
+    open(tag + ".txt", "w").write("\n".join(L) + "\n")
+    subprocess.run([binary, tag, tag + ".txt"], check=True, capture_output=True)
+    for ms, name in shots.items():
+        Image.open(f"{tag}-{ms}.ppm").convert("RGB").resize((480, 480), Image.NEAREST).save(
+            os.path.join(d, f"{name}.png"))
+    for f in os.listdir(os.path.dirname(tag)):             # (the host's other frames of this run)
+        if f.startswith("manual-") and f.endswith(".ppm"):
+            os.remove(os.path.join(os.path.dirname(tag), f))
+    return sorted(shots.values())
 
 
 def opt(name, default=None):
@@ -245,6 +276,7 @@ def main():
     overview(["perform", "voice1", "phaser", "comp"])
     made = set(shots.values()) | {"overview", "thumbnail"}
     print(sorted(made))
+    print("smk/:", smk_shots(OUT))
     stale = sorted(f for f in os.listdir(OUT) if f.endswith(".png") and f[:-4] not in made)
     if stale:
         print("not made by this run (pages that went: git rm them):", stale)

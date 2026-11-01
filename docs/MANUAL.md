@@ -1098,52 +1098,22 @@ issues: [github.com/leonardoMirabal/frodhes](https://github.com/leonardoMirabal/
 
 ## 15. Appendix: the SMK-37 (experimental)
 
-Frodhes also builds for the SMK-37 (SMK-37 Pro, SMK-37 Elite, MKE-P37: `frodhes-smk37-experimental.fwsc`,
-`frodhes-smk37-elite-experimental.fwsc`, `frodhes-smk37-mke-experimental.fwsc`, on the
-[release page](https://github.com/leonardoMirabal/frodhes/releases/latest)). **These builds are experimental: they are not tested on
-hardware by us.** Back up your flash first (the steps are in [SMK37.md](SMK37.md)); the way back is your model's stock
-package through the stock updater.
+Frodhes also builds for the SMK-37 (SMK-37 Pro, SMK-37 Elite, MKE-P37), the same chip as the FM-1, from the same
+source: one package per model on the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest).
+**These builds are experimental: they are not tested on hardware by us.** Everything in this manual applies to the
+sound and the pages; the SMK-37 reaches them with its own buttons, its eight knobs (K5..K8 are the four cards), its
+pads, faders and wheels. Its manual has the files, the flash backup to make first, the install, the way back to stock,
+the controls and what differs: **[SMK37.md](SMK37.md)**.
 
-Everything in this manual applies, with these differences:
-
-- The FM-1's buttons are on the SMK buttons of the same meaning: PATCH = HOME, CHORD = EDIT, PARA = ENV,
-  NOTE REPEAT = LFO, SCALE = SEL, GLOBE = GLO, BT = SAVE; the others keep their names. The screen's hints use these
-  names.
-- K1 is MASTER (kept when you switch off: it comes back at the level you left); K2 SELECT, K3 ALGORITHM,
-  K4 PRESETS; K5..K8 are the four cards (the FM-1's K1..K4). < > step through the pages; KNOB BANK held shows a panel check (the raw readings).
-- 37 keys, C3..C6 at OCTAVE 0, each at its own velocity: KEY VEL is the velocity of a medium press.
-- The pads: 1..6 TYPE, 7 / 8 the previous / next preset, 9 DRIVE, 10 COMP, 11 FILTER, 12 TREM/WAH (VIBES: the motor),
-  13 PHASER, 14 CHORUS, 15 DELAY (on / off), 16 SUSTAIN (held, or a tap latches; the latch is REC's own, so a tap on either one
-  lets go of it, and holding either one and letting go releases it).
-- The faders: FADER BANK A plays the instrument's first VOICE page, bank B the four PERFORM knobs. A fader takes over
-  once it reaches its card's value; until then the footer says where to move it.
-- Pitch wheel: pitch bend, ±2 semitones (the Rhodes types; VIBES and MARIMBA ignore it). Mod wheel: more TREM/WAH
-  depth on top of the DEPTH you set, up to full at the top (VIBES: more motor depth); at rest the DEPTH as set. Moved
-  up, it switches TREM/WAH (VIBES: the motor) on if it was off, and off again at rest. The pedal jack takes a sustain
-  pedal of either polarity (plug it in before switching on).
-- 7 voices. No TRS MIDI input (no TRS IN card), no key LEDs (no LEDS card on DISPLAY); BRIGHTNESS dims the pads and
-  the button LEDs.
+![The FRODHES page on the SMK-37: the cards on K5..K8](manual/img/smk/smk-frodhes.png?v=7f583e63)
 
 ## 16. Appendix: the Ableton Move (in development)
 
 Frodhes also runs on the Move, a standalone groove box, as a sound generator of Schwung, the community module host
-on it: the same instruments and effects as on the FM-1, with 16 voices on every instrument. **In development: not
-released yet.** The Move has its own manual, with the install, a picture of every page and the troubleshooting:
-**[MOVE.md](MOVE.md)**.
+on it: the same instruments and effects as on the FM-1, in their HQ version, with 16 voices on every instrument.
+**In development: not released yet.** Everything in this manual applies to the sound; Frodhes draws its own screen on
+the Move, the eight knobs as eight cards a page at a time, and the Move's own sequencer, scales and tempo lead. Its
+manual has the install, opening the screen, the buttons, a picture of every page, saving, velocity, several Frodhes
+at once, what differs and the troubleshooting: **[MOVE.md](MOVE.md)**.
 
 ![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=afb6680e)
-
-Everything in this manual applies to the sound. In short, what is different:
-
-- **The screen**: Frodhes draws its own (Shift + volume touch + the track's Track button, then click the synth). One
-  page is the Move's eight knobs as eight cards; touch or turn a knob and its card fills the screen. The jog wheel
-  turns the pages; a click lists them, with the menu below: SAVE TO USER (U01–U16) and Schwung's own rows.
-- **The buttons**: the Left arrow turns the effects off or on (FX; the compressor stays), the Right arrow the
-  sustain (SUS), on every page. A double tap on a knob resets it.
-- **The sound**: HQ, the Move's one version of the three engines (the FM-1 plays Classic), 16 voices, 2.2 dB louder.
-- **Sustain**: no pedal jack; SUS on the first page or the Right arrow, or a pedal on CC 64 over USB.
-- **Velocity**: turn the Move's Full Velocity setting off, or every pad plays at 127.
-- **The tempo is the Move's**: no BPM or CLOCK setting; the synced effects and the arpeggiator follow its clock.
-- **Only on the Move**: the pressure mappings, several Frodhes at once (one per track).
-- **Not on the Move**: PERFORM, ASSIGN and DISPLAY, the sequencer, the chords and the scales (the Move has its own),
-  the arpeggiator's HOLD, KEY VEL, TOUCH, USB VOL, TRS, COLOR, BRIGHT and LEDS.

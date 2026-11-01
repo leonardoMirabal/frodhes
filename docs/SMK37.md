@@ -9,6 +9,12 @@ The SMK-37 board support (keybed, pads, LEDs, flash map, update path) is genkige
 fm1-to-smk37 kit, as it came into Dinghy. The SMK-37 app layer of Frodhes (pads, fader banks, wheels, pedal, panel
 check) follows his PR #3 to Frodhes, rewritten for the current firmware.
 
+This page covers only the SMK-37: the files, the install, the way back and the controls. What the pages and their
+cards do to the sound is the same on every device and is described once, in the [manual](MANUAL.md) (sections 2-14,
+the [pages](MANUAL.md#4-the-pages) in section 4); the SMK-37 reaches them as below ([The controls](#the-controls)).
+
+![The FRODHES page on the SMK-37: TYPE, TONE, BELL and KEY VEL on K5..K8](manual/img/smk/smk-frodhes.png?v=7f583e63)
+
 ## The files
 
 | Model | File | Package identity |
@@ -20,7 +26,7 @@ check) follows his PR #3 to Frodhes, rewritten for the current firmware.
 Use the file for your model: the stock updater only accepts a package with the unit's own name. The identity stays the
 same for every Frodhes version. Each release attaches the three files under these names
 (the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest)). The SMK builds play 7 voices
-(the FM-1 plays 9).
+(the FM-1's: [polyphony](MANUAL.md#10-sustain-and-polyphony)).
 
 ## Before you install: back up your flash
 
@@ -83,7 +89,8 @@ kit's recovery steps (the mask-ROM bootloader) are the way back.
 
 ## The controls
 
-The FM-1's 14 buttons are on the SMK buttons that mean the same; the ones with another printed name:
+The FM-1's 14 buttons ([buttons and knobs](MANUAL.md#3-buttons-and-knobs)) are on the SMK buttons that mean the
+same; the ones with another printed name:
 
 | SMK-37 | FM-1 | Does |
 | --- | --- | --- |
@@ -106,8 +113,8 @@ FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1 (hold one OCT button 
 | KNOB BANK (held) | the panel check: the keyboard's raw readings (faders, wheels, pedal, pads, battery, flash) |
 | FADER BANK | the faders' bank, A or B (lit on B) |
 | 37 keys | C3..C6 at OCTAVE 0 (the middle 27 are the FM-1's F3..G5), each at its own velocity |
-| faders, bank A | the instrument's first VOICE page (Rhodes: TONE BARK BELL HAMMER; VIBES / MARIMBA: STRIKE MALLET TUBE WEIGHT) |
-| faders, bank B | the four PERFORM knobs (set them on ASSIGN) |
+| faders, bank A | the instrument's first VOICE page (Rhodes: TONE BARK BELL HAMMER, [VOICE 1/2](MANUAL.md#voice-12-and-22); VIBES / MARIMBA: STRIKE MALLET TUBE WEIGHT) |
+| faders, bank B | the four [PERFORM](MANUAL.md#perform) knobs (set them on [ASSIGN](MANUAL.md#assign)) |
 | pitch wheel | pitch bend, +-2 semitones (the Rhodes types, as MIDI pitch bend; VIBES and MARIMBA ignore it) |
 | mod wheel | more TREM/WAH depth on top of DEPTH, full at the top (VIBES: the motor's); switches it on if off, off again at rest |
 | pedal jack | sustain pedal, either polarity (plug it in before switching on) |
@@ -116,8 +123,8 @@ FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1 (hold one OCT button 
 preset, a knob or MIDI moved it), so nothing jumps; until then the footer says where to move it (`TONE UP TO +0.0`).
 
 **Velocity.** A key's velocity comes from the keyboard's own factory curve, through the same touch curve as the FM-1's
-keys: KEY VEL (FRODHES page) is the velocity of a medium press, a light touch plays softer, a hard one louder up to
-127. TOUCH (SETUP K4) works as on the FM-1: LIGHT, MEDIUM (the default), HEAVY or FIXED (every key at KEY VEL).
+keys: KEY VEL ([FRODHES page](MANUAL.md#frodhes-the-main-page)) is the velocity of a medium press, and TOUCH
+([SETUP](MANUAL.md#setup) K4) works as on the FM-1.
 
 **The pads** (the top row is 1..8, the bottom row 9..16):
 
@@ -133,10 +140,18 @@ keys: KEY VEL (FRODHES page) is the velocity of a medium press, a light touch pl
 Pad colours: dark orange off, light blue on, brighter while notes sound. DISPLAY BRIGHTNESS dims the pads and the
 button LEDs too.
 
-## What the SMK-37 does not have
+## What differs from the FM-1
 
+Everything in the [manual](MANUAL.md) applies, with these differences:
+
+- The buttons with another printed name ([The controls](#the-controls)); the screen's hints use the SMK's names.
+- Eight knobs: K1 MASTER (kept across power cycles), K2 SELECT, K3 ALGORITHM, K4 PRESETS; K5..K8 are the four cards
+  (the FM-1's K1..K4). < > step through the pages; KNOB BANK held shows the panel check.
+- 37 keys, C3..C6 at OCTAVE 0, each at its own velocity: KEY VEL is the velocity of a medium press.
+- The pads, the faders (soft takeover), the pitch and mod wheels and the pedal jack, as above.
+- 7 voices.
 - No TRS MIDI input: MIDI is USB only, and the MIDI page has no TRS IN card.
-- No LEDs on the keys: the DISPLAY page has no LEDS card.
+- No LEDs on the keys: the DISPLAY page has no LEDS card; BRIGHTNESS dims the pads and the button LEDs.
 
 ## For developers
 

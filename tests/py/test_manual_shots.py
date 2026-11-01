@@ -36,6 +36,13 @@ def test_screenshots_are_what_the_code_draws(tmp_path):
         if a.size != b.size or not np.array_equal(np.asarray(a.convert("RGB")), np.asarray(b.convert("RGB"))):
             stale.append(f)
     assert not stale, f"stale screenshots {stale}: run tools/manual_shots.py and commit docs/manual/img and the docs"
+    # the SMK-37's pictures (docs/manual/img/smk/, the SMK host build), the same rule
+    smk = os.path.join(IMG, "smk")
+    made = sorted(f for f in os.listdir(tmp_path / "smk") if f.endswith(".png"))
+    assert made == sorted(f for f in os.listdir(smk) if f.endswith(".png")), "img/smk/: run tools/manual_shots.py"
+    stale = [f for f in made if not np.array_equal(np.asarray(Image.open(tmp_path / "smk" / f).convert("RGB")),
+                                                   np.asarray(Image.open(os.path.join(smk, f)).convert("RGB")))]
+    assert not stale, f"stale SMK-37 screenshots {stale}: run tools/manual_shots.py"
 
 
 # where each picture belongs: the heading (### or ##) above its first link in docs/MANUAL.md names what it shows. A
@@ -85,3 +92,17 @@ def test_every_screenshot_is_linked_next_to_its_text():
             misplaced.append(f"{f} under {heads[0]!r}, expected {want!r}")
     assert not unused, f"screenshots no doc links (link them, or remove them if their page went): {unused}"
     assert not misplaced, "screenshots away from the text they show (or WHERE needs the new one):\n" + "\n".join(misplaced)
+
+
+def test_every_device_picture_is_linked_from_its_manual():
+    """the SMK-37's pictures (img/smk/) are linked from docs/SMK37.md, the Move's (img/move/) from docs/MOVE.md;
+    the MANUAL's appendices 15 and 16 show one each"""
+    man = open(os.path.join(ROOT, "docs", "MANUAL.md"), encoding="utf-8").read()
+    for folder, doc, app in (("smk", "SMK37.md", "## 15. "), ("move", "MOVE.md", "## 16. ")):
+        text = open(os.path.join(ROOT, "docs", doc), encoding="utf-8").read()
+        for f in sorted(os.listdir(os.path.join(IMG, folder))):
+            if f.endswith(".png"):
+                assert f"manual/img/{folder}/{f}?v=" in text, f"img/{folder}/{f} is not linked from docs/{doc}"
+        sec = man[man.index(app):]
+        sec = sec[:sec.find("\n## ", 1)] if "\n## " in sec[1:] else sec
+        assert f"manual/img/{folder}/" in sec and f"({doc})" in sec, f"MANUAL {app.strip()}: a picture and {doc}"
