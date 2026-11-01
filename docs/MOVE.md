@@ -263,7 +263,9 @@ The filter's [LFO](MANUAL.md#lfo), the delay's tone, the output LEVEL and the MI
   pressure.
 
 An HI under LO turns the direction round. A CC of 0 is off, and both are off by default. The control moves as if a
-controller sent that CC (the CC numbers are the FM-1's, MANUAL.md section 12). *(not yet verified on a device)*
+controller sent that CC (the CC numbers are the FM-1's, MANUAL.md section 12). The FM-1's developer and test CCs
+(2-4, 8-11, 41, 42, 114, 116 and 119) are never sent: a mapping set to one of them does nothing. *(not yet verified on
+a device)*
 
 ![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=9855f40d)
 ![MAPPINGS](manual/img/move/move-mappings.png?v=1a4cf615)

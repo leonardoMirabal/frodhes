@@ -65,6 +65,10 @@ typedef struct {
  * Its HOLD (2026-11-01) is the s_arphold card (MK_HOLD): the FM-1 has no CC for it (SEL on its ARPEGGIO page), so no
  * CC is let through for it here; it is in set.arp, so it goes with the state as MODE does. */
 #define MB_CC_DROP(cc) (((cc) >= 43u && (cc) <= 46u) || ((cc) >= 56u && (cc) <= 63u))
+/* the app's developer / test CCs (frodhes.c: 2-4, 8-11, 41-42, 114, 116, 119, as tools/hil_monkey.py DEV_CC): a
+ * pressure mapping never sends them (CC 119 RAW skips the limiter, CC 10 resets every effect's state) */
+#define MB_CC_DEV(cc) (((cc) >= 2u && (cc) <= 4u) || ((cc) >= 8u && (cc) <= 11u) || (cc) == 41u || (cc) == 42u || \
+                       (cc) == 114u || (cc) == 116u || (cc) == 119u)
 #define MB_NMAP 6                        /* the mappings' settings: 2 sources x (CC, LO, HI) */
 #define MB_MAP_DEFAULT {0, 0, 127, 0, 0, 127}   /* every mapping off (CC 0), LO 0, HI 127 */
 static struct {
@@ -1011,7 +1015,7 @@ static void mb_map_out(uint32_t src, uint8_t ch, int32_t p)
 {
     uint8_t cc = mb.map[3u * src];
     int32_t lo = mb.map[3u * src + 1u], hi = mb.map[3u * src + 2u], v;
-    if (!cc || MB_CC_DROP(cc)) return;
+    if (!cc || MB_CC_DROP(cc) || MB_CC_DEV(cc)) return;
     v = lo + (hi - lo) * p / 127;
     if (v == mb.map_last[src]) return;
     if (mq_w - mq_r >= MB_HOST_RING) { mb.map_drop++; return; }   /* (the app's ring is full: the next one) */

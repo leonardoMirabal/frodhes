@@ -90,3 +90,15 @@ def test_map_cc_range_and_state(out):
     assert g[0] == ("m_at_cc", "0"), g                                 # 200: refused
     assert [v for _, v in g[1:5]] == ["21", "5", "99", "18"], g        # the state brought them back
     assert [v for _, v in g[5:]] == ["0", "0", "127", "0", "0", "127"], g   # no "map": off
+
+
+def test_map_never_sends_a_developer_cc():
+    """a mapping set to a developer / test CC (119 RAW skips the limiter, 10 resets the effects, 41, 116, ...)
+    sends nothing (move_bridge.h MB_CC_DEV); a normal CC next to them still sends"""
+    lines = []
+    for cc in (119, 10, 41, 116):
+        lines += ["set m_at_cc %d" % cc, midi(0xD0, 100), "render 2", midi(0xD0, 20), "render 2", "get dev_map"]
+    lines += ["set m_at_cc %d" % CC, midi(0xD0, 100), "render 2", "get dev_map", "set m_at_cc 0"]
+    maps = [v for k, v in run(lines) if k == "dev_map"]
+    assert all(m.startswith("out=0 ") for m in maps[:4]), maps
+    assert maps[4].startswith("out=1 "), maps
