@@ -1,3 +1,8 @@
+## Changes
+
+- The FM-1 and SMK-37 files leave out KHLON's anti-aliased clipper, which their builds never run (the sound is
+  unchanged, every render byte-identical); the flash it took makes room for the drive fix below.
+
 ## Fixed
 
 - The drive (KHLON and the classic drive): after a panic or when every note had died away, the drive could hold a small constant offset (about -58 dBFS) instead of returning to silence, and the tremolo turned it into a faint 2-6 Hz pulse. Integer rounding left the drive's filters at a resting value that was not zero. Now the drive rests at exact zero once its input is silent.
