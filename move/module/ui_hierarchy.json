@@ -1050,13 +1050,24 @@
           "max": 100,
           "default": 60,
           "unit": "%"
+        },
+        {
+          "key": "s_arphold",
+          "name": "HOLD",
+          "type": "enum",
+          "options": [
+            "OFF",
+            "ON"
+          ],
+          "default": 0
         }
       ],
       "knobs": [
         "s_arpmode",
         "s_arprate",
         "s_arpoct",
-        "s_arpgate"
+        "s_arpgate",
+        "s_arphold"
       ]
     },
     "lfo_set": {

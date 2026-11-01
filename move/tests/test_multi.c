@@ -165,7 +165,7 @@ int main(int argc, char **argv)
         CHECK(ms_save(mod, "store.bin", rec, REC_N) == 0, "writing the other instance's store.bin");
     }
     CHECK(wait_import(b, ib, 5000), "B read the shared presets: %s", gb);
-    { char u16[16]; snprintf(u16, sizeof u16, "%d", atoi(get(b, "preset_count")) - 1); api->set_param(b, "preset", u16); }
+    { char u16[16]; snprintf(u16, sizeof u16, "%d", atoi(get(b, "u_first")) + 15); api->set_param(b, "preset", u16); }
     run_ms(200);
     CHECK(!strcmp(get(b, "preset_name"), "U16 SHARED"), "B loads U16 from the shared presets: %s", gb);
     CHECK(wait_import(a, ia, 5000), "A read them too: %s", gb);
@@ -186,7 +186,7 @@ int main(int argc, char **argv)
     eb = energy_all(b, 10);
     api->on_midi(c, on, 3, MOVE_MIDI_SOURCE_EXTERNAL);
     CHECK(energy_all(c, 100) > 1e6, "the re-picked slot plays");
-    { char u16[16]; snprintf(u16, sizeof u16, "%d", atoi(get(c, "preset_count")) - 1); api->set_param(c, "preset", u16); }
+    { char u16[16]; snprintf(u16, sizeof u16, "%d", atoi(get(c, "u_first")) + 15); api->set_param(c, "preset", u16); }
     run_ms(200);
     CHECK(!strcmp(get(c, "preset_name"), "U16 SHARED"), "a new instance boots with the shared presets: %s", gb);
     void *d = create(mod);

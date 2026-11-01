@@ -367,7 +367,8 @@ static int api_tests(const char *so)
             CHECK(api->get_param(in, "ui_hierarchy", gbuf, sizeof gbuf) < 0, "ui_hierarchy refused (own screen)");
     }
     CHECK(strstr(get(in, "chain_params"), "p_type") != NULL, "chain_params served");
-    CHECK(!strcmp(get(in, "preset_count"), "35"), "35 presets (%s)", gbuf);
+    CHECK(!strcmp(get(in, "preset_count"), "73"), "73 presets: F01-F19, U01-U16, the Move's F20-F57 (%s)", gbuf);
+    CHECK(!strcmp(get(in, "u_first"), "19"), "U01 is index 19, as on the FM-1 (%s)", gbuf);
     CHECK(!strncmp(get(in, "preset_name"), "F01", 3), "preset name (%s)", gbuf);
     api->set_param(in, "p_tone", "-20"); render(in, 3);
     CHECK(!strcmp(get(in, "p_tone"), "-20"), "p_tone -20 (%s)", gbuf);
@@ -414,6 +415,51 @@ static int api_tests(const char *so)
             CHECK(!strcmp(get(in, ak[i][0]), ak[i][1]), "%s = %s (is %s)", ak[i][0], ak[i][1], gbuf);
         }
         CHECK(strstr(get(in, "dev_inert"), " arp=0 ") != NULL, "MODE OFF: the arpeggiator off (%s)", gbuf);
+    }
+    {   /* the arpeggiator's HOLD (2026-11-01, the FM-1's latch, arp.c): a chord let go keeps playing; a chord started
+         * after every pad was let go replaces it; SUS does not touch the pattern; OFF lets the released notes go; the
+         * state carries it */
+        static const uint8_t c1[] = { 60, 64, 67 }, c2[] = { 62, 65 };
+        static char s0[4096], s1[4096];
+        unsigned an = 99;
+        double e, eh;
+#define CHORD(c, v) do { for (unsigned j_ = 0; j_ < sizeof c; j_++) { uint8_t m_[3] = { (uint8_t)((v) ? 0x90 : 0x80), c[j_], (uint8_t)((v) ? 100 : 0) }; \
+                            api->on_midi(in, m_, 3, MOVE_MIDI_SOURCE_EXTERNAL); } render(in, 20); } while (0)
+#define ARPN() (an = 99, sscanf(strstr(get(in, "dev_inert"), "arpn=") ? strstr(gbuf, "arpn=") + 5 : "99", "%u", &an), an)
+#define LOUD(nb) (e = 0.0, ({ for (int b_ = 0; b_ < (nb); b_++) { api->render_block(in, blk, 128); for (int k_ = 0; k_ < 256; k_++) e += (double)blk[k_] * blk[k_]; } }), e / (256.0 * (nb)))
+        CHECK(!strcmp(get(in, "s_arphold"), "0"), "HOLD OFF at the load (%s)", gbuf);
+        api->set_param(in, "s_arpmode", "1"); api->set_param(in, "s_arprate", "3"); api->set_param(in, "s_arphold", "1"); render(in, 3);
+        CHECK(!strcmp(get(in, "s_arphold"), "1") && strstr(get(in, "dev_inert"), " arp=1 hold=1 ") != NULL, "HOLD ON (%s)", gbuf);
+        CHORD(c1, 1); CHORD(c1, 0); render(in, 60);
+        CHECK(ARPN() == 3u, "HOLD: the chord let go stays in the pattern (arpn %u)", an);
+        eh = LOUD(200);
+        CHECK(eh > 10000.0, "HOLD: the arpeggio keeps playing after the pads are let go (ms %.0f)", eh);
+        CHORD(c2, 1); CHORD(c2, 0); render(in, 20);
+        CHECK(ARPN() == 2u, "HOLD: a new chord replaces the old one (arpn %u)", an);
+        api->set_param(in, "s_sustain", "1"); render(in, 20); api->set_param(in, "s_sustain", "0"); render(in, 20);
+        CHECK(ARPN() == 2u, "HOLD: SUS on and off leaves the pattern (arpn %u)", an);
+        api->get_param(in, "state", s1, sizeof s1);                /* (HOLD ON) */
+        api->set_param(in, "s_arphold", "0"); render(in, 3);
+        CHECK(ARPN() == 0u && !strcmp(get(in, "s_arphold"), "0"), "HOLD OFF lets the released notes go (arpn %u)", an);
+        render(in, 400);
+        CHECK(LOUD(200) < 0.01 * eh, "HOLD OFF: the arpeggio stopped, 20 dB under it held (ms %.1f, held %.0f)", e / 51200.0, eh);
+        api->get_param(in, "state", s0, sizeof s0);                /* (HOLD OFF) */
+        CHORD(c1, 1); CHORD(c1, 0); render(in, 3);
+        CHECK(ARPN() == 0u, "HOLD OFF: a chord let go leaves the pattern (arpn %u)", an);
+        api->set_param(in, "s_sustain", "1"); render(in, 3); CHORD(c1, 1); CHORD(c1, 0);
+        CHECK(ARPN() == 0u, "HOLD OFF, SUS ON: the pattern still stops (SUS holds the dampers, not the pattern) (arpn %u)", an);
+        api->set_param(in, "s_sustain", "0"); render(in, 3);
+        api->set_param(in, "state", s1); render(in, 3);
+        CHECK(!strcmp(get(in, "s_arphold"), "1"), "a state saved with HOLD ON loads it ON (%s)", gbuf);
+        CHORD(c1, 1); CHORD(c1, 0);
+        CHECK(ARPN() == 3u, "the state's HOLD latches (arpn %u)", an);
+        api->set_param(in, "state", s0); render(in, 3);
+        CHECK(!strcmp(get(in, "s_arphold"), "0") && ARPN() == 0u, "a state with HOLD OFF: off, the latched notes gone (arpn %u)", an);
+        api->set_param(in, "s_arpmode", "0"); render(in, 400);
+#undef CHORD
+#undef ARPN
+#undef LOUD
+        if (!fails) printf("ok    ARP HOLD: latch, replace, SUS, OFF, the state\n");
     }
     {   /* what the Move owns has no key: the sequencer, the chords, the scales, BPM, CLOCK */
         const char *gone[] = { "s_sqbars", "s_chtype", "s_chstrum", "s_scmode", "s_scale", "s_root", "s_trans",
@@ -482,6 +528,24 @@ static int api_tests(const char *so)
         while (sscanf(p, "%u %u %u", &a, &us, &fr) == 3) { CHECK(fr == 128 && (lines == 0 || a == prev + 1), "ring line %u", a); prev = a; lines++; p = strchr(p, '\n'); if (!p) break; p++; }
         CHECK(lines > 100, "the timer ring has the callbacks (%u lines)", lines);
         CHECK(strstr(get(in, "dev_cpu"), "max_us=") != NULL, "dev_cpu");
+    }
+    {   /* the Move-only factory presets (2026-11-01): F20-F57 at 35-72, by the key and by program change 35-72 */
+        uint8_t pc[3] = { 0xC0, 40, 0 };
+        api->set_param(in, "preset", "35"); render(in, 3);
+        CHECK(!strcmp(get(in, "preset"), "35") && !strcmp(get(in, "preset_name"), "F20 STAGE77 ECHO"), "preset 35: F20 (%s)", gbuf);
+        CHECK(!strcmp(get(in, "dev:pv13"), "2") && !strcmp(get(in, "dev:pv16"), "9"), "F20: F01 B's analog echo on 1/4 (DL_SW %s)", gbuf);
+        api->set_param(in, "preset", "72"); render(in, 3);
+        CHECK(!strcmp(get(in, "preset_name"), "F57 RADIO LOW"), "preset 72: F57 (%s)", gbuf);
+        api->set_param(in, "preset", "73"); render(in, 3);
+        CHECK(!strcmp(get(in, "preset"), "72"), "preset 73: none, F57 stays (%s)", gbuf);
+        api->on_midi(in, pc, 2, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3);
+        CHECK(!strcmp(get(in, "preset"), "40") && !strcmp(get(in, "preset_name"), "F25 FELT ECHO"), "program change 40: F25 (%s)", gbuf);
+        pc[1] = 73; api->on_midi(in, pc, 2, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3);
+        CHECK(!strcmp(get(in, "preset"), "40"), "program change 73: none (%s)", gbuf);
+        pc[1] = 33; api->on_midi(in, pc, 2, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3);
+        CHECK(!strcmp(get(in, "preset"), "17") && !strncmp(get(in, "preset_name"), "F18 ", 4), "program change 33: F18, as on the FM-1 (%s)", gbuf);
+        pc[1] = 72; api->on_midi(in, pc, 2, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 3);
+        CHECK(!strcmp(get(in, "preset"), "72"), "program change 72: F57 (%s)", gbuf);
     }
     api->set_param(in, "preset", "2"); render(in, 3);
     CHECK(!strcmp(get(in, "preset"), "2") && !strncmp(get(in, "preset_name"), "F03", 3), "preset F03 (%s)", gbuf);
@@ -682,9 +746,12 @@ static int presets(const char *so)
     if (!in) { printf("FAIL create\n"); return 1; }
     render(in, 400);
     printf("count %s\n", get(in, "preset_count"));
-    for (i = 0; i < 35; i++) {
+    for (i = 0; i < atoi(get(in, "preset_count")) || i < 35; i++) {
         snprintf(b, sizeof b, "%d", i); api->set_param(in, "preset", b); render(in, 3);
         printf("preset %d %s", i, get(in, "preset")); printf(" %s\n", get(in, "preset_name"));
+        printf("pv %d", i);                                   /* the panel after the load: every parameter */
+        for (int p = 0; p < 256; p++) { char k[16]; snprintf(k, sizeof k, "dev:pv%d", p); if (api->get_param(in, k, b, sizeof b) < 0) break; printf(" %s", b); }
+        printf("\n");
     }
     for (i = 0; i < 6; i++) { snprintf(b, sizeof b, "%d", i); api->set_param(in, "p_type", b); render(in, 3); printf("type %d %s\n", i, get(in, "ui_engine")); }
     printf("hierarchy %d\n", (int)strlen(get(in, api->get_param(in, "ui_pages", gbuf, sizeof gbuf) >= 0 ? "ui_pages"
@@ -845,7 +912,8 @@ static int persist(const char *so, const char *dir, int save)
                 api->on_midi(in, on, 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 40);
                 api->on_midi(in, off, 3, MOVE_MIDI_SOURCE_EXTERNAL); render(in, 40);
             }
-            CHECK(strstr(get(in, "dev_inert"), "seq=0 rec=0 arp=3 hold=0 chord=0 scale=0 trans=0 clock=1") != NULL,
+            api->set_param(in, "s_arphold", "1"); render(in, 3);   /* (HOLD left on too: store.bin holds it) */
+            CHECK(strstr(get(in, "dev_inert"), "seq=0 rec=0 arp=3 hold=1 chord=0 scale=0 trans=0 clock=1") != NULL,
                   "the sequencer, the chords and the scales stay off, the arpeggiator is on (UP-DN): %s", gbuf);
             { unsigned cd = 0; sscanf(gbuf, "cc_drop=%u", &cd); CHECK(cd == 4u, "the sequencer's and the chords' CCs dropped, not the ARP's: %s", gbuf); }
             if (!fails) printf("ok    no sequencer, chords or scales; the arpeggiator plays: %s\n", gbuf);
@@ -868,8 +936,10 @@ static int persist(const char *so, const char *dir, int save)
             CHECK(strstr(get(in, "dev_store"), "usave_n=1") != NULL, "u_save: one save, the bad slots none (%s)", gbuf);
             api->set_param(in, "preset", "0"); render(in, 5);
             CHECK(!strcmp(get(in, "p_spread"), "0"), "F01: SPREAD 0 (%s)", gbuf);
+            api->set_param(in, "preset", "50"); render(in, 5);
+            CHECK(!strncmp(get(in, "preset_name"), "F35 ", 4), "a Move-only preset between: F35 (%s)", gbuf);
             api->set_param(in, "preset", "23"); render(in, 5);
-            CHECK(!strcmp(get(in, "p_spread"), "77"), "U05: its SPREAD 77 back (%s)", gbuf);
+            CHECK(!strcmp(get(in, "p_spread"), "77") && !strncmp(get(in, "preset_name"), "U05 ", 4), "U05: its SPREAD 77 back (%s)", gbuf);
             if (!fails) printf("ok    u_save 5: U05 saved and loaded, u_names lists it\n");
         }
         for (t = 0; t < 6000; t++) {                          /* (the worker writes within 100 ms of the next staging) */
@@ -923,7 +993,7 @@ static int persist(const char *so, const char *dir, int save)
         CHECK(u5 && !strncmp(u5, "U05 ", 4), "u_save: U05 back in a new process (%s)", gbuf);
         CHECK(!strcmp(get(in, "preset"), "23"), "u_save: the preset U05 kept (%s)", gbuf); }
     CHECK(want[0] && !strcmp(get(in, "dev_pattern_crc"), want), "the pattern still empty: %s (want %s)", gbuf, want);
-    CHECK(strstr(get(in, "dev_inert"), " arp=0 hold=0 ") != NULL, "a new instance's arpeggiator is OFF, not store.bin's UP-DN: %s", gbuf);
+    CHECK(strstr(get(in, "dev_inert"), " arp=0 hold=0 ") != NULL, "a new instance's arpeggiator is OFF, HOLD OFF, not store.bin's UP-DN, HOLD ON: %s", gbuf);
     printf("%s    persist: the settings back in a new process, no pattern (%s)\n", fails ? "FAIL" : "ok", get(in, "dev_store"));
     api->destroy_instance(in);
     return fails != 0;

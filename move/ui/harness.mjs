@@ -46,6 +46,10 @@ export class Plugin {
         this.names = fn.map((n, i) => nm("F", i, n));
         for (let i = 0; i < 16; i++) this.names.push(nm("U", i, "----"));
         this.nf = fn.length;
+        // the Move-only factory presets after the user slots (move/move_presets.h MB_PX_NAME: F20..)
+        const px = fs.readFileSync(path.join(ROOT, "move", "move_presets.h"), "utf8");
+        const pn = [...px.match(/MB_PX_NAME\[MB_PX_N\] = \{([^}]*)\}/)[1].matchAll(/"([^"]*)"/g)].map((m) => m[1]);
+        pn.forEach((n, i) => this.names.push(nm("F", fn.length + i, n)));
         this.used = new Array(16).fill(false);        // (u_names: the used user slots by name, the rest empty)
         this.queue = [];
         this.reads = 0;
@@ -59,6 +63,7 @@ export class Plugin {
         if (key === "preset") return String(this.preset);
         if (key === "preset_count") return String(this.names.length);
         if (key === "preset_name") return this.names[this.preset];
+        if (key === "u_first") return String(this.nf);
         if (key === "u_names") return this.used.map((u, i) => u ? this.names[this.nf + i] : "").join("|");
         if (key === "s_sustain") return String(this.v.s_sustain ? 1 : 0);
         if (key === "r_cmp_gr") return this.gr !== undefined ? this.gr : this.v.p_cmp_sw ? "0 0" : "OFF";

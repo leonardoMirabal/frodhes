@@ -64,6 +64,20 @@ node tools/move_ui_shots.mjs --check      # exit 1 on a stale, missing or orphan
   `screen.js`: the pages from the FM-1's tables + the screen's code, `move/ui/screen_core.js`, and `canvas.js`: the
   COMPRESSOR page's meter, `move/ui/gr_cell.js`);
   `--check` fails when the files are out of date with the FM-1's tables. Never edit `move/module/` by hand.
+- `tools/gen_move_presets.py` writes `move/move_presets.h`, the Move-only factory presets F20-F57 (the factory
+  preset review's B and C variants of F01-F19, the user's pick of 2026-11-01), from `move/presets/proposed_records.txt`
+  (every variant's full id = value list as `tools/preset_review.py` read it back) and `move/presets/variants.json`
+  (what each changes: the generator stops when a record differs from its A in an id the variant does not name, LEVEL
+  aside). The names are the generator's `NAMES` table (generic, at most 12 characters). `--check` (in
+  `tools/ci_move.sh`'s Gate U) fails on a stale header. The header is a table of its own, `MB_PX_DATA`, included by
+  `move/move_bridge.h` only: `presets.c` and its `PR_FDATA` are untouched (Gate S), so a change of `PR_FDATA`'s
+  format never touches it. The bridge numbers them after the FM-1's indices (0-18 F01-F19, 19-34 U01-U16 as on the
+  FM-1, so store.bin and saved states keep their meaning; 35-72 F20-F57; `preset_count` 73, `u_first` 19), loads
+  them itself (`mb_pr_load`, presets.c `preset_load`'s steps) by the `preset` key and by program change 35-72, and
+  Frodhes' screen browses F01-F57, then U01-U16. To redo them after a new review: copy its `variants.json` and
+  `proposed_records.txt` into `move/presets/`, name any new variant in `NAMES`, run the generator, then
+  `node tools/move_ui_shots.mjs --docs` and the MOVE.md list (`test_plugin_presets_and_hierarchy_per_type` reads
+  every preset back against the records).
 - `tools/ci_move.sh` runs the Move's checks on the host. `node move/ui/test_screen.mjs` checks Frodhes' screen
   (`move/ui/harness.mjs` runs it on a model of the Move's screen and the plugin), `node move/ui/test_chain.mjs`
   the same screen as the whole Move UI (`ui_chain.js`); the pictures: [The screenshots](#the-screenshots).

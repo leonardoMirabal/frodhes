@@ -29,6 +29,7 @@
 #include <stdatomic.h>
 #include <time.h>
 #include "move_store.h"
+#include "move_presets.h"
 #include "coro/coro.h"
 
 #define MB_STACK (256u * 1024u)          /* the coroutine's stack (app_main and what it calls; ui_draw is the deepest) */
@@ -60,7 +61,9 @@ typedef struct {
  * transport Start or an older state would turn on (the sequencer playing or recording, a chord type, a scale mode,
  * a transpose, CLOCK INT). The arpeggiator plays (the user, 2026-10-30, reversing 2026-10-28): its CCs 52-55 reach
  * the app, its state is the slot's (the state's set.arp; a new instance starts with it OFF, not with what another
- * instance left in store.bin), and it steps on the Move's clock (CLOCK EXT: F8 / FA / FC, else the host's tempo). */
+ * instance left in store.bin), and it steps on the Move's clock (CLOCK EXT: F8 / FA / FC, else the host's tempo).
+ * Its HOLD (2026-11-01) is the s_arphold card (MK_HOLD): the FM-1 has no CC for it (SEL on its ARPEGGIO page), so no
+ * CC is let through for it here; it is in set.arp, so it goes with the state as MODE does. */
 #define MB_CC_DROP(cc) (((cc) >= 43u && (cc) <= 46u) || ((cc) >= 56u && (cc) <= 63u))
 #define MB_NMAP 6                        /* the mappings' settings: 2 sources x (CC, LO, HI) */
 #define MB_MAP_DEFAULT {0, 0, 127, 0, 0, 127}   /* every mapping off (CC 0), LO 0, HI 127 */
@@ -802,6 +805,7 @@ static int mb_wire_text(const move_key_t *k, char *buf, int n)
     case MK_BTN: v = k->cc == 111u ? fx_bypass == 0 : sus_latched || sus_held; break;   /* a button's key reads what it
                                                        * flips: FX (the Left arrow) or SUS (the Right arrow) */
     case MK_MAP: v = k->slot < MB_NMAP ? mb.map[k->slot] : 0; break;
+    case MK_HOLD: v = ARP_HOLD != 0; break;
     default: v = 0; break;
     }
     if (k->scale > 1u) {
@@ -820,7 +824,11 @@ static void mb_key_apply(uint32_t i, int32_t x)
     if ((k->kind == MK_LATCH || k->kind == MK_BTN) && x < 0) x = 0;   /* a switch under its OFF is OFF (the sweep:
                                                                          * s_fx / s_sustain -1 read ON) */
     if (k->kind == MK_PARAM || k->kind == MK_SLOT) mb_slot_abs(k->slot, x);
-    else if (k->cc == 64u) {                   /* SUS, the sustain toggle (the user, 2026-10-28): ON holds the notes as
+    else if (k->kind == MK_HOLD) {            /* the arpeggiator's HOLD (2026-11-01): the FM-1's SEL on ARPEGGIO, set to a
+                                                 * state (OFF lets the notes no longer held go: arp_hold_toggle) */
+        if ((x > 0) != (ARP_HOLD != 0)) arp_hold_toggle();
+        ui_mark(E_CARDS); ui_mark(E_FOOTER);
+    } else if (k->cc == 64u) {                   /* SUS, the sustain toggle (the user, 2026-10-28): ON holds the notes as
                                                  * the FM-1's REC latch does; OFF lets everything go and always wins
                                                  * (0.9.8 candidate: OFF went back to ON while the PEDAL cell held the
                                                  * REC button). A MIDI pedal let up still frees the latch (midi_cc). */
@@ -916,13 +924,16 @@ static int mb_state_set(const char *j)   /* parse into the mailbox; step() appli
 }
 static void mb_state_apply(void)         /* the boot's sanitize and apply steps (frodhes.c app_main), at run time */
 {
-    int expect = 2;
+    int expect = 2, held;
     if (!atomic_compare_exchange_strong(&mb.st_flag, &expect, 3)) return;
+    held = ARP_HOLD != 0;
     set = mb.st_set;
     if (set.ver != 1u && set.ver != SET_VER) params_defaults();   /* (as the boot: a record it cannot read) */
     params_sanitize();
     kv_apply();
     arp_sanitize();
+    if (held && !ARP_HOLD) { ARP_HOLD = 1; arp_hold_toggle(); }   /* a state with HOLD off: the latched notes go, as
+                                                                   * the card's OFF lets them go */
     chord_sanitize();
     seq_sanitize();
     if (set.usb_fixed > 1u) set.usb_fixed = 0;
@@ -1073,6 +1084,50 @@ static void mb_user_save(uint32_t u)
     mb.usaves++;
 }
 
+/* ---- the Move-only factory presets (move/move_presets.h, tools/gen_move_presets.py): F20-F57, the factory preset
+ * review's B and C variants of F01-F19 (the user, 2026-11-01); the FM-1 keeps presets.c as it is (Gate S). Their
+ * index (set.preset, the "preset" key, a program change) comes after presets.c's: 0-18 F01-F19 and 19-34 U01-U16 as
+ * on the FM-1 (store.bin and the states keep their meaning), then 35-72 F20-F57. Program change 35-72 loads them
+ * (presets.c preset_of_pc stops at 34); Frodhes' own screen browses F01-F57, then U01-U16 (u_first) */
+#define MB_PX_BASE (PR_NF + PR_NU)
+#define MB_PR_N (MB_PX_BASE + MB_PX_N)
+_Static_assert(MB_PR_N <= 255u && MB_PX_FIRST == PR_NF + 1u, "the presets' index fits set.preset; F20 follows F19");
+_Static_assert(MB_PX_BASE == 16u + PR_NF, "program change 16 + PR_NF.. is the Move-only presets (preset_of_pc: 255)");
+static int mb_pr_values(uint32_t idx, uint8_t *p)    /* preset_values, with the Move-only presets: -1 none there */
+{
+    const uint8_t *d;
+    uint32_t i;
+    if (idx < MB_PX_BASE) return preset_values(idx, p);
+    if (idx >= MB_PR_N) return -1;
+    for (i = 0; i < P_COUNT; i++) p[i] = PARAMS[i].def;
+    d = MB_PX_DATA[idx - MB_PX_BASE];
+    for (i = 0; i + 1u < MB_PX_REC && d[i] != 0xFFu; i += 2u) if (d[i] < P_COUNT && d[i + 1u] <= PARAMS[d[i]].hi) p[d[i]] = d[i + 1u];
+    return 0;
+}
+static void mb_pr_name(uint32_t idx, char *s)          /* preset_name: "F20 STAGE77 ECHO" */
+{
+    if (idx < MB_PX_BASE) { preset_name(idx, s); return; }
+    if (idx >= MB_PR_N) { snprintf(s, 20, "FRODHES"); return; }
+    snprintf(s, 20, "F%02u %s", (unsigned)(MB_PX_FIRST + idx - MB_PX_BASE), MB_PX_NAME[idx - MB_PX_BASE]);
+}
+static void mb_pr_load(uint32_t idx)                   /* presets.c preset_load, for every index */
+{
+    uint8_t p[P_COUNT];
+    uint32_t i;
+    if (idx < MB_PX_BASE) { preset_load(idx); return; }
+    if (mb_pr_values(idx, p)) return;
+    for (i = 0; i < P_COUNT; i++) UV(i) = PV(i);       /* (as preset_load: the sound before it is the undo copy) */
+    set.undo_valid = 1;
+    set.undo_preset = (uint8_t)(set.preset < PR_NF + PR_NU ? set.preset + 1u : 0u);
+    for (i = 0; i < P_COUNT; i++) param_set(i, p[i]);
+    rev_relatch();
+    set.preset = (uint8_t)idx;
+    snd_base_take();
+    tempo_sync_publish();
+    set_dirty = 1; set_t_change = fm1_ms;
+    ui_draw_page_change();
+}
+
 static void mb_step(void)
 {
     mb_ev_t *e;
@@ -1084,12 +1139,21 @@ static void mb_step(void)
         if (e->kind == MB_EV_MIDI) {
             if (mq_w - mq_r >= MB_HOST_RING) break;          /* the app's ring is full: the rest wait a millisecond */
             if ((e->st & 0xF0u) == 0xB0u && MB_CC_DROP(e->d1)) { mb.cc_drop++; mb_pop(e); continue; }
+            if ((e->st & 0xF0u) == 0xC0u && e->d1 >= MB_PX_BASE && e->d1 < MB_PR_N &&
+                (!set.midi_ch || (e->st & 0x0Fu) == set.midi_ch - 1u)) {   /* a program change to F20-F57 (the app's
+                                                     * CHANNEL filter as frodhes.c's), after what the app's ring holds */
+                if (mq_w != mq_r) break;
+                mb_pr_load(e->d1); mb.rev++; mb.midi_out++;
+                mb_fx_note("preset");
+                mb_pop(e);
+                continue;
+            }
             web_midi(e->st, e->d1, e->d2);
             if ((e->st & 0xF0u) == 0xB0u && e->d1 == 111u) mb_fxlog_cc = 1;   /* (dev_fxlog: the app takes it next) */
             mb.midi_out++;
             if ((e->st & 0xF0u) == 0xD0u || (e->st & 0xF0u) == 0xA0u || (e->st & 0xE0u) == 0x80u) mb_map(e->st, e->d1, e->d2);
         } else if (e->kind == MB_EV_KEY && e->key < MOVE_NKEYS) mb_key_apply(e->key, e->v);
-        else if (e->kind == MB_EV_PRESET) { uint8_t p[P_COUNT]; if (preset_values((uint32_t)e->v, p) == 0) { preset_load((uint32_t)e->v); mb.rev++; } }
+        else if (e->kind == MB_EV_PRESET) { uint8_t p[P_COUNT]; if (mb_pr_values((uint32_t)e->v, p) == 0) { mb_pr_load((uint32_t)e->v); mb.rev++; } }
         else if (e->kind == MB_EV_USAVE) { mb_user_save((uint32_t)e->v); mb.rev++; }
 #ifdef FR_HQ
         else if (e->kind == MB_EV_HQ) hq_mode = (uint8_t)(e->v != 0);   /* (new notes; a sounding note keeps its path) */
@@ -1336,8 +1400,9 @@ static int mb_get(const char *key, char *buf, int n)
     if (!strcmp(key, MOVE_SCREEN_KEY)) return snprintf(buf, (size_t)n, "%s", MOVE_SCREEN_VALUE);   /* PAGES' value line */
     if (!strcmp(key, MOVE_GATE_KEY)) return snprintf(buf, (size_t)n, "%u", mb_engine());
     if (!strcmp(key, "preset")) return snprintf(buf, (size_t)n, "%u", (unsigned)set.preset);
-    if (!strcmp(key, "preset_count")) return snprintf(buf, (size_t)n, "%u", (unsigned)(PR_NF + PR_NU));
-    if (!strcmp(key, "preset_name")) { char s[20]; preset_name(set.preset < PR_NF + PR_NU ? set.preset : 0u, s); return snprintf(buf, (size_t)n, "%s", s); }
+    if (!strcmp(key, "preset_count")) return snprintf(buf, (size_t)n, "%u", (unsigned)MB_PR_N);
+    if (!strcmp(key, "preset_name")) { char s[20]; mb_pr_name(set.preset < MB_PR_N ? set.preset : 0u, s); return snprintf(buf, (size_t)n, "%s", s); }
+    if (!strcmp(key, "u_first")) return snprintf(buf, (size_t)n, "%u", (unsigned)PR_NF);   /* U01's index (U01-U16 one run) */
     if (!strcmp(key, MB_PAGES_KEY)) {   /* the sounding engine's pages (gen_move_module.py hier_for_engine) */
         unsigned e = mb_engine();
         if ((int)MOVE_UI_HIERARCHY_N[e] >= n) return -1;
@@ -1376,11 +1441,11 @@ static int mb_get(const char *key, char *buf, int n)
         uint32_t w = atomic_load_explicit(&mb.gr_word, memory_order_relaxed);
         return w >> 20 & 1u ? snprintf(buf, (size_t)n, "%u", w >> 10 & 1023u) : snprintf(buf, (size_t)n, "OFF");
     }
-    if (!strcmp(key, "dev_inert")) return snprintf(buf, (size_t)n, "cc_drop=%u stops=%u seq=%u rec=%u arp=%u hold=%u chord=%u scale=%u trans=%d clock=%u bpm10=%u host_bpm=%u",
+    if (!strcmp(key, "dev_inert")) return snprintf(buf, (size_t)n, "cc_drop=%u stops=%u seq=%u rec=%u arp=%u hold=%u chord=%u scale=%u trans=%d clock=%u bpm10=%u host_bpm=%u arpn=%u",
                                                    mb.cc_drop, mb.inert_n, (unsigned)seq_play, (unsigned)seq_rec,
                                                    (unsigned)ARP_MODE, (unsigned)ARP_HOLD, (unsigned)CH_TYPE,
                                                    (unsigned)set.sc_mode, (int)set.sc_trans, (unsigned)set.clock,
-                                                   (unsigned)tempo_bpm10(), mb.bpm_host);
+                                                   (unsigned)tempo_bpm10(), mb.bpm_host, (unsigned)arp_n);
     if (!strcmp(key, "dev_map")) return snprintf(buf, (size_t)n, "out=%u drop=%u last=%d,%d", mb.map_out, mb.map_drop,
                                                  mb.map_last[0], mb.map_last[1]);
 #ifdef FR_HQ
@@ -1429,7 +1494,7 @@ static void mb_set(const char *key, const char *val)
         (void)mb_put(MB_EV_KEY, 0, 0, 0, 0, (uint16_t)i, x);
         return;
     }
-    if (!strcmp(key, "preset")) { int p = atoi(val); if (p >= 0 && p < (int)(PR_NF + PR_NU)) (void)mb_put(MB_EV_PRESET, 0, 0, 0, 0, 0, p); return; }
+    if (!strcmp(key, "preset")) { int p = atoi(val); if (p >= 0 && p < (int)MB_PR_N) (void)mb_put(MB_EV_PRESET, 0, 0, 0, 0, 0, p); return; }
     if (!strcmp(key, "u_save")) { int u = atoi(val); if (u >= 1 && u <= (int)PR_NU) (void)mb_put(MB_EV_USAVE, 0, 0, 0, 0, 0, u - 1); return; }
 #ifdef FR_HQ
     if (!strcmp(key, "p_hq")) { (void)mb_put(MB_EV_HQ, 0, 0, 0, 0, 0, atoi(val) != 0); return; }   /* dev / test only (no page):

@@ -187,7 +187,8 @@
             "K1 MODE",
             "K2 RATE",
             "K3 OCT",
-            "K4 GATE"
+            "K4 GATE",
+            "K5 HOLD"
           ]
         },
         {

@@ -158,6 +158,12 @@ EXTRA = {
     # so ON / OFF drew the switch off while the effects played (0.9.8 candidate)
     "s_fx": {"name": "FX", "cc": 111, "options": ["OFF", "ON"], "kind": "MK_LATCH", "default": 1,
              "help": "the effects on, or all off with their settings kept (the FM-1's FX button)"},
+    # the arpeggiator's HOLD (the user, 2026-11-01): the FM-1's latch (arp.c ARP_HOLD, set.arp[5]), which the FM-1
+    # reaches with SEL on its ARPEGGIO page and no CC; on the Move a card after GATE. ON: the notes keep playing after
+    # the pads are let go, a chord started after every pad was let go replaces them; OFF lets the released notes go
+    # (arp.c arp_hold_toggle). Saved with the slot's state (set.arp), OFF in a new instance (arp_defaults)
+    "s_arphold": {"name": "HOLD", "cc": 0, "options": ["OFF", "ON"], "kind": "MK_HOLD", "default": 0,
+                  "help": "the arpeggiator's HOLD: the notes keep playing after the pads are let go"},
 }
 # the Move-only mappings (plan 05 M6-03, U9): a source the FM-1 has no use for (channel pressure, poly pressure: the
 # Move's pads) turned into one of the app's own CCs, out = LO + (HI - LO) x pressure / 127 (HI < LO inverts), sent
@@ -200,7 +206,7 @@ MOVE_LEVELS = [
     # page's cards, its CCs 52-55 reach the app, and it steps on the Move's clock (F8 / FA / FC on cable 0) or, with
     # no clock, on the Move's tempo. The sequencer, the chords, the scales, BPM and CLOCK stay off)
     ("tmp", "TEMPO", ["TEMPO"], []),
-    ("arp", "ARPEGGIO", ["ARPEGGIO"], []),
+    ("arp", "ARPEGGIO", ["ARPEGGIO"], ["s_arphold"]),
     ("lfo_set", "LFO/SETUP", ["LFO", "SETUP", "MIDI"], []),
     ("maps", "MAPPINGS", [], MAP_KEYS),
 ]
@@ -650,9 +656,10 @@ def c_header(hier, chain, crow):
              "#define MOVE_GATE_KEY \"ui_engine\"   /* get_param: TYPE_UI[PV(P_TYPE)] (eng_pages.h), the VOICE levels' gate */",
              "#define MOVE_SCREEN_KEY %s   /* get_param: the PAGES cell's value line */" % c_str(SCREEN["key"]),
              "#define MOVE_SCREEN_VALUE %s" % c_str(SCREEN_VALUE),
-             "enum { MK_PARAM, MK_SLOT, MK_LATCH, MK_TRIG, MK_BTN, MK_MAP };   /* PV(id) / ui.c slot_val / a CC 0 or 127 /",
-             "                                                   * a CC 127 / the sustain control (the FM-1's REC button) /",
-             "                                                   * a Move-only mapping's setting (slot: its index) */",
+             "enum { MK_PARAM, MK_SLOT, MK_LATCH, MK_TRIG, MK_BTN, MK_MAP, MK_HOLD };   /* PV(id) / ui.c slot_val / a CC 0",
+             "                                                   * or 127 / a CC 127 / the sustain control (the FM-1's REC",
+             "                                                   * button) / a Move-only mapping's setting (slot: its",
+             "                                                   * index) / the arpeggiator's HOLD (arp.c ARP_HOLD) */",
              "typedef struct { const char *key; uint8_t slot, cc, kind, scale; int16_t off; } move_key_t;",
              "static const move_key_t MOVE_KEYS[] = {"]
     for r in crow:

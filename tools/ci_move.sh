@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # ci_move.sh [--dry-run]: the Move's checks (MT0, private plan 05 section 6.1) as one script, the same locally and in
 # CI's `move` job (ubuntu-24.04-arm in debian:bookworm, the Move's glibc). Light by default: nice, PYTEST_N=2.
-#   1 Gate U      move/module/ is what tools/gen_move_module.py makes (--check)
+#   1 Gate U      move/module/ is what tools/gen_move_module.py makes, move/move_presets.h what
+#                 tools/gen_move_presets.py makes (--check)
 #   2 build       make move test-move (dsp.so, the exports / imports, the dlopen smoke): when the Makefile has them
 #   3 Gate M / P  tools/gate_m.py, tests/py/test_move_safety.py: when they exist (M1-10, M1-11)
 #   4 pytest      the Move's own tests (tests/py/test_move_*.py, the closure map, float_check)
@@ -27,6 +28,7 @@ step() {  # $1 name, $2.. the command
 skip() { echo "SKIP  $1 ($2)"; }
 
 step "gate U" "$PY" tools/gen_move_module.py --check
+step "gate U presets" "$PY" tools/gen_move_presets.py --check
 if [ -f move/move_plugin.c ] && make -n move-native >/dev/null 2>&1; then
     step "build + test-move" make -s move test-move
 else

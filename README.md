@@ -12,7 +12,7 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 | Device | What Frodhes is on it | File |
 | --- | --- | --- |
 | **M-VAVE FM-1** | the whole firmware: the instruments, the effects, the pattern recorder, the arpeggiator, chords and scales, 10 voices | `frodhes.fwsc` |
-| **Ableton Move** (in development) | a sound generator in Schwung: the same instruments and effects in their HQ version, 16 voices, the arpeggiator, Frodhes' own screen; the Move's own sequencer, scales and tempo lead | `frodhes-module.tar.gz` |
+| **Ableton Move** (in development) | a sound generator in Schwung: the same instruments and effects in their HQ version, 16 voices, the arpeggiator (HOLD too), 38 factory presets of its own (F20-F57), Frodhes' own screen; the Move's own sequencer, scales and tempo lead | `frodhes-module.tar.gz` |
 
 
 Frodhes turns the FM-1 into an electric piano, a vibraphone and a marimba. Every note is computed live from the mechanics of the

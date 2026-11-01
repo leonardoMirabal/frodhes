@@ -144,8 +144,8 @@ Move runs and shown 4 times larger.
 
 - A fast turn of a wide range (more than 24 steps) moves four steps a detent.
 - The double tap works on every knob but PRESET. The defaults are the FM-1's: a parameter's as on a fresh FM-1, and
-  the settings as a new FM-1 boots (TUNE 0, the TREM switch OFF, the arpeggiator OFF at RATE 1/16, OCT 1 and GATE 60 %,
-  CHAN ALL, SUS OFF). A double tap on FX turns the effects on.
+  the settings as a new FM-1 boots (TUNE 0, the TREM switch OFF, the arpeggiator OFF at RATE 1/16, OCT 1, GATE 60 %
+  and HOLD OFF, CHAN ALL, SUS OFF). A double tap on FX turns the effects on.
 - An arrow press sets the state the screen shows next (FX OFF, say); it does not toggle. A press that Schwung
   delivers twice, or plays back later from an automation lane, cannot turn it back. Only before the screen has read
   SUS or FX for the first time does a press toggle it.
@@ -175,7 +175,7 @@ within about half a second; that is why the page count is 12 or 13.
 | **DELAY** | DELAY · MIX · TIME · FEEDBK |
 | **REVERB** | REVERB · MIX · DECAY · TONE · PREDLY · SIZE · MOD · LOWCUT |
 | **TEMPO** | TRSYNC · PHSYNC · DLSYNC |
-| **ARPEGGIO** | MODE · RATE · OCT · GATE |
+| **ARPEGGIO** | MODE · RATE · OCT · GATE · HOLD |
 | **LFO/SETUP** | SHAPE · RATE · SYNC · RETRIG · DLTONE · LEVEL · CHAN |
 | **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI |
 
@@ -250,7 +250,7 @@ CLOCK), and the arpeggiator ([The arpeggiator](#the-arpeggiator)). They follow t
 tempo](#midi-and-tempo)).
 
 ![TEMPO](manual/img/move/move-tempo.png?v=f53c923e)
-![ARPEGGIO, as a new Frodhes starts: OFF, 1/16, 1 octave, 60 %](manual/img/move/move-arpeggio.png?v=6647d24f)
+![ARPEGGIO, as a new Frodhes starts: OFF, 1/16, 1 octave, 60 %, HOLD OFF](manual/img/move/move-arpeggio.png?v=b714ea8b)
 
 ### LFO/SETUP, MAPPINGS
 
@@ -289,9 +289,56 @@ After Module Help, a preset load, Delete or a picker you leave, Back brings you 
 
 ## Presets and saving
 
-PRESET on the first page loads the 19 factory sounds (F01-F19, described in the manual's
-[presets](MANUAL.md#6-presets)) and the 16 user slots (U01-U16); program change loads them as on the FM-1 (0-15
-F01-F16, 16-31 U01-U16, 32-34 F17-F19).
+PRESET on the first page loads the factory sounds and the 16 user slots (U01-U16), in this order:
+
+- **F01-F19**, the FM-1's factory presets, the same sounds (described in the manual's [presets](MANUAL.md#6-presets)).
+- **F20-F57, on the Move only**: a second and a third take of each of F01-F19, from the review of the factory
+  presets (the list below). The FM-1 does not have them.
+- **U01-U16**, the user slots.
+
+Program change loads them as on the FM-1 (0-15 F01-F16, 16-31 U01-U16, 32-34 F17-F19), and 35-72 the Move's own
+F20-F57 (program change = the number less 15).
+
+| Preset | Name | Take of: what changes |
+| --- | --- | --- |
+| F20 | STAGE77 ECHO | F01 B: a soft dark analog echo on the quarter note, a little more hall |
+| F21 | STAGE77 TAPE | F01 C: a tape echo on the dotted 1/8, a slightly bigger hall |
+| F22 | SUITCASE DRY | F02 B: dry, a touch less cabinet noise, the level re-set |
+| F23 | SUITCASE AMP | F02 C: the amp's warmth (BHLUE drive) and a short dark analog slap |
+| F24 | FELT HALL | F03 B: dry, a bigger and softer hall |
+| F25 | FELT ECHO | F03 C: the bigger hall and a soft dark analog echo on the quarter note |
+| F26 | BELL SOFT | F04 B: dry, the top edge softer, a little more plate |
+| F27 | BELL ECHO | F04 C: a short digital echo on the dotted 1/8, a little more plate |
+| F28 | TREM ECHO | F05 B: a soft analog echo on the quarter note, the level re-set |
+| F29 | TREM DEEP | F05 C: a slower, deeper vibrato, more warmth and plate |
+| F30 | DRIVEN77 LVL | F06 B: as F06, the level re-set (half way between chord and phrase) |
+| F31 | DRIVEN BODY | F06 C: more drive and body, a longer tape slap |
+| F32 | BALLAD TIGHT | F07 B: less boom in the long plate's tail (LOW CUT 80) |
+| F33 | BALLAD DARK | F07 C: a longer, darker analog echo tail, a slower chorus |
+| F34 | DYNO80S LVL | F08 B: as F08, the level re-set |
+| F35 | DYNO80S SOFT | F08 C: the echo softer and darker, less chorus |
+| F36 | PHASER LVL | F09 B: as F09, the level re-set |
+| F37 | PHASER SLOW | F09 C: a slower, more liquid sweep, a longer analog echo |
+| F38 | FUNK WAH LVL | F10 B: as F10, the level re-set |
+| F39 | FUNK PLUCK | F10 C: less squash, more pluck (2:1, slower attack), a short dark slap |
+| F40 | RESO SPACE | F11 B: more echo and hall |
+| F41 | RESO SMOOTH | F11 C: a smoother peak (less resonance), a wider sweep |
+| F42 | AUTOWAH ECHO | F12 B: a digital echo on the quarter note |
+| F43 | AUTOWAH TAPE | F12 C: a tape echo on the dotted 1/8 and a plate |
+| F44 | VIBES HALL | F13 B: dry, a little more hall |
+| F45 | VIBES MOTOR | F13 C: the slower, deeper motor, more hall |
+| F46 | VIBES CLEAN | F14 B: a cleaner echo (fewer repeats) |
+| F47 | VIBES DRIFT | F14 C: the motor on, slow and shallow, under the echo |
+| F48 | MARIMBA HALL | F15 B: dry, more hall and pre-delay |
+| F49 | MARIMBA ECHO | F15 C: a soft analog echo on the quarter note |
+| F50 | WOOD PLAIN | F16 B: the chorus off |
+| F51 | WOOD LIGHT | F16 C: a lighter chorus, less echo and hall |
+| F52 | TAPE WIDE | F17 B: tamer repeats and a touch of chorus |
+| F53 | TAPE DARK | F17 C: the echo on the quarter note, darker repeats |
+| F54 | DREAM CLEAR | F18 B: less chorus wobble under the hall |
+| F55 | DREAM DEEP | F18 C: a slower, deeper pan, the echo on the dotted 1/4 |
+| F56 | RADIO LVL | F19 B: as F19, the level re-set |
+| F57 | RADIO LOW | F19 C: the band a little lower: more body |
 
 **To save the sound** into a user slot:
 
@@ -370,10 +417,15 @@ the Move.
 ## The arpeggiator
 
 **ARPEGGIO** is the FM-1's [arpeggiator page](MANUAL.md#arpeggio) (MODE, RATE, OCT, GATE) and its CCs 52-55. It
-plays the notes you hold, on the Move's clock while the Move plays and on its tempo setting while it is stopped. SUS
-sustains the notes it plays, as a pedal does, but does not hold the pattern: letting the pads go stops it (the FM-1's
-HOLD is not on the Move). Each Frodhes
-has its own, kept with the track; a Frodhes loaded new starts with it OFF.
+plays the notes you hold, on the Move's clock while the Move plays and on its tempo setting while it is stopped.
+
+**HOLD** (knob 5) is the FM-1's HOLD, which the FM-1 sets with SEL: ON, the notes keep playing after you let the pads
+go, and a chord you start after letting every pad go replaces them (pads added while others are held join the
+pattern); OFF lets the notes you no longer hold go. HOLD has no CC, as on the FM-1. SUS sustains the notes the
+arpeggiator plays, as a pedal does, but does not hold the pattern: with HOLD OFF, letting the pads go stops it.
+
+Each Frodhes has its own arpeggiator settings, HOLD included, kept with the track; a Frodhes loaded new starts with
+the arpeggiator and HOLD OFF.
 
 Schwung has its own arpeggiator, a MIDI FX before the sound generator. Use one or the other: with both on, every note
 is arpeggiated twice.
@@ -399,9 +451,10 @@ of them.
   of the FM-1's REC hold and tap.
 - **Not on the Move**: the PERFORM, ASSIGN and DISPLAY pages (the Move has its own pads, knobs and screen); the
   sequencer, the chords and the scales (the Move has its own; their CCs do nothing, and a setup saved with them on
-  loads with them off); the arpeggiator's HOLD; the BPM and CLOCK settings; KEY VEL, TOUCH, USB VOL, TRS, COLOR,
+  loads with them off); the BPM and CLOCK settings; KEY VEL, TOUCH, USB VOL, TRS, COLOR,
   BRIGHT and LEDS.
-- **Only on the Move**: the pressure [mappings](#lfosetup-mappings), SAVE TO USER from the menu, Schwung's own
+- **Only on the Move**: the factory presets F20-F57 ([Presets and saving](#presets-and-saving)), the pressure
+  [mappings](#lfosetup-mappings), SAVE TO USER from the menu, Schwung's own
   presets, and several Frodhes at once.
 - SPREAD and the compressor's RELEASE, set on the FM-1 by MIDI or a page of their own, are on the pages here.
 - The sound is part of the Move's set.
