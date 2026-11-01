@@ -119,15 +119,17 @@ function frame(ctx, x0, y0, x1, y1) {
 
 // a fader, one height along its whole length (x0..x1, rows y0..y1): a 1 px outline, solid from the left up to the
 // value. An enum's steps (3 or more) are notches in the inside rows (cut out of the fill, drawn into the empty part), where a
-// step is 4 px or wider; a number whose range spans 0 (bipolar) has its centre marked the same way. f null: the
-// outline alone (the value not read yet).
+// step is 4 px or wider; a number whose range spans 0 (bipolar) has its centre marked the same way. A switch (an
+// enum of two options: OFF / ON, FREE / KEY) is the outline alone at its first option and full at its second (half a
+// bar at OFF read as a value). f null: the outline alone (the value not read yet).
 function bar(ctx, st, k, x0, y0, x1, y1) {
     frame(ctx, x0, y0, x1, y1);
     const f = fraction(st, k);
     if (f === null) return;
     const w = x1 - x0 + 1, h = y1 - y0 + 1, det = detents(st, k);
     let fill;
-    if (det) fill = Math.round(w * (Math.round(f * (det - 1)) + 1) / det);
+    if (det === 2) fill = f >= 0.5 ? w : 0;
+    else if (det) fill = Math.round(w * (Math.round(f * (det - 1)) + 1) / det);
     else fill = Math.max(1, Math.round((w - 1) * f) + 1);
     ctx.fillRect(x0, y0, Math.min(w, fill), h, 1);
     const mark = (x) => {

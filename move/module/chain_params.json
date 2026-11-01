@@ -33,7 +33,8 @@
     "options": [
       "OFF",
       "ON"
-    ]
+    ],
+    "default": 0
   },
   {
     "key": "s_fx",
@@ -115,6 +116,7 @@
     "type": "int",
     "min": -50,
     "max": 50,
+    "default": 0,
     "unit": "c"
   },
   {
@@ -395,7 +397,8 @@
       "PAN",
       "TREM",
       "WAH"
-    ]
+    ],
+    "default": 0
   },
   {
     "key": "p_tw_depth",
@@ -686,7 +689,8 @@
       "UP-DN",
       "ORDER",
       "RAND"
-    ]
+    ],
+    "default": 0
   },
   {
     "key": "s_arprate",
@@ -699,14 +703,16 @@
       "1/16",
       "1/16T",
       "1/32"
-    ]
+    ],
+    "default": 3
   },
   {
     "key": "s_arpoct",
     "name": "OCT",
     "type": "int",
     "min": 1,
-    "max": 4
+    "max": 4,
+    "default": 1
   },
   {
     "key": "s_arpgate",
@@ -714,6 +720,7 @@
     "type": "int",
     "min": 10,
     "max": 100,
+    "default": 60,
     "unit": "%"
   },
   {
@@ -809,7 +816,8 @@
       "14",
       "15",
       "16"
-    ]
+    ],
+    "default": 0
   },
   {
     "key": "m_at_cc",

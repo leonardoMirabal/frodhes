@@ -945,8 +945,28 @@ static int boot(const char *so, const char *file)
         n++;
     }
     fclose(f);
+    {   /* every setting's chain_params default (what a double tap on the screen resets to) is the new instance's value:
+         * the FM-1's first boot (params_defaults, arp_defaults); the p_ keys play F01 here, their default is
+         * params.c's (tests/py/test_move_module.py) */
+        static char cp[65536];
+        const char *p;
+        int nd = 0;
+        CHECK(api->get_param(in, "chain_params", cp, sizeof cp) > 0, "boot: chain_params");
+        for (p = strstr(cp, "{\"key\":\""); p; p = strstr(p + 1, "{\"key\":\"")) {
+            char key[40], want[24];
+            const char *e = strchr(p, '}'), *q;
+            if (!e || sscanf(p, "{\"key\":\"%39[^\"]", key) != 1) break;
+            q = strstr(p, "\"default\":");
+            if (!q || q > e || key[0] == 'p' || !strcmp(key, "preset")) continue;
+            snprintf(want, sizeof want, "%d", atoi(q + 10));
+            CHECK(!strcmp(get(in, key), want), "boot: %s is %s, its chain_params default %s", key, gbuf, want);
+            nd++;
+        }
+        CHECK(nd >= 10, "boot: %d settings with a default in chain_params", nd);
+        n += nd;
+    }
     api->destroy_instance(in);
-    if (!fails) printf("ok    boot: %d settings as %s\n", n, file);
+    if (!fails) printf("ok    boot: %d settings as %s and chain_params' defaults\n", n, file);
     return fails != 0;
 }
 

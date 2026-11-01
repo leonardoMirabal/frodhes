@@ -1131,7 +1131,7 @@ on it: the same instruments and effects as on the FM-1, with 16 voices on every 
 released yet.** The Move has its own manual, with the install, a picture of every page and the troubleshooting:
 **[MOVE.md](MOVE.md)**.
 
-![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=5e9df1ba)
+![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=afb6680e)
 
 Everything in this manual applies to the sound. In short, what is different:
 
