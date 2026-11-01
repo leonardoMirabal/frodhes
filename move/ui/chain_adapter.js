@@ -7,7 +7,8 @@
 // This adapter runs the canvas overlay of screen_core.js (above it in the same closure) unchanged: its ctx maps onto
 // the host's globals (fill_rect, clear_screen) and the param shims loadModuleUi installs for this slot's synth
 // (host_module_get_param / host_module_set_param, "synth:<key>" on the slot). onValues gets the four live keys the
-// canvas cell's extra_keys named, every LIVE_MS, as Schwung's canvas did (fullscreen_live_ms).
+// canvas cell's extra_keys named, every LIVE_MS, as Schwung's canvas did (fullscreen_live_ms). The screen reader: the
+// screen's words go to Schwung's announce (ctx.announce, gated by ctx.srOn); screen_core.js says what and when.
 const OV = globalThis.canvas_overlay;
 if (PREV_OV === undefined) delete globalThis.canvas_overlay; else globalThis.canvas_overlay = PREV_OV;
 if (PREV_FS === undefined) delete globalThis.frodhes_screen; else globalThis.frodhes_screen = PREV_FS;
@@ -42,6 +43,15 @@ const ctx = {
     runAction(a) { return has("shadow_component_run_action") ? !!shadow_component_run_action(a) : false; },
     // SAVE TO USER: the sound into Frodhes' own user slot u (1-16, the plugin's u_save; store.bin, shared)
     userSave(u) { return ctx.setParam("u_save", String(u)); },
+    // the screen reader: Schwung's shared/screen_reader.mjs announce (imported at the top of ui_chain.js as
+    // FR_ANNOUNCE; it speaks only while the shadow UI is on screen), asked only while Schwung's screen reader is on
+    // (tts_get_enabled, Global Settings > Screen Reader): off, the screen builds no text and calls nothing
+    announce(s) { if (typeof FR_ANNOUNCE === "function") try { FR_ANNOUNCE(s); } catch (e) {} },
+    srOn() {
+        if (typeof FR_ANNOUNCE !== "function") return false;
+        if (!has("tts_get_enabled")) return true;     // (an older host: announce decides, as its own screens do)
+        try { return !!tts_get_enabled(); } catch (e) { return false; }
+    },
 };
 
 // The knob LEDs, as Schwung's grid lights them (shared/param_pages/knob_leds.mjs, imported at the top of ui_chain.js

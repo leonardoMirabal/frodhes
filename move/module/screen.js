@@ -30,6 +30,10 @@ const FR_CONF = {"hold_ms":500,"fast_ms":40,"fast_mul":4,"settle_ms":600,"tap_ms
 //   meter      COMPRESSOR: the gain reduction in the free cards' place (knobs 7-8), as the FM-1's COMP page shows it:
 //              the bar filled from the right on ui.c's segment scale (FR_CONF.gr_db10), the held peak, the reading;
 //              the plugin keeps the FM-1's ballistics (r_cmp_gr), the screen reads it once a live tick
+//   speech     with Schwung's screen reader on (the ctx's announce and srOn: chain_adapter.js), every event says what
+//              it changed, in words (FR_CONF.say): the screen opening, a page, a knob touched (its name and value) or
+//              turned (its value, at most one a SR_THROTTLE_MS a knob and the last value once the turn stops), the
+//              arrows, a reset, a message, the list's rows, the save card, a preset; nothing at all when it is off
 // Everything is drawn with fillRect and the font below (the device's print font is not used), so the host renderer
 // (tools/move_ui_shots.mjs) draws exactly what the Move draws. Reads (getParam, ~3 ms each) happen in the event
 // hooks only, never in draw: a page's values on open and on a page change (cached until something else changes
@@ -302,9 +306,10 @@ function turn(ctx, st, slot, d) {
 // a knob back to its default (FR_PAGES' def; a trigger, the preset and a key without one are left alone)
 function reset(ctx, st, slot) {
     const k = knobs(st)[slot];
-    if (!k || k.write || k.type === "preset" || k.def === undefined) return;
+    if (!k || k.write || k.type === "preset" || k.def === undefined) return false;
     write(ctx, st, k, k.def);
-    toast(ctx, st, (k.short || k.name) + " RESET");
+    toast(ctx, st, (k.short || k.name) + " RESET", sayName(k) + " reset");
+    return true;
 }
 
 function focus(ctx, st, slot, touched) {
@@ -325,6 +330,7 @@ function release(ctx, st, slot) {
 function setPage(ctx, st, idx) {
     if (idx === st.page) return;
     st.page = idx;
+    st.srPend = null;                     // (a turn's last value is not spoken over the new page)
     st.focus = -1;
     st.touch = [false, false, false, false, false, false, false, false];
     readPage(ctx, st);
@@ -335,7 +341,9 @@ function pageStep(ctx, st, d) {
     let at = vis.indexOf(st.page);
     if (at < 0) at = 0;
     const to = Math.max(0, Math.min(vis.length - 1, at + d));
+    if (vis[to] === st.page) return;
     setPage(ctx, st, vis[to]);
+    say(ctx, () => pageSay(st));
 }
 
 function engineChanged(ctx, st, e) {
@@ -362,6 +370,7 @@ function sustainBtn(ctx, st) {
     st.written.s_sustain = nowOf(ctx);
     if (known) ctx.setParam("s_sustain", st.susOn ? "1" : "0"); else ctx.setParam("s_susbtn", "1");
     st.expectRev++;
+    say(ctx, () => "Sustain " + (st.susOn ? "on" : "off"));
 }
 
 // the Left arrow: FX off / on (every effect but the compressor). Shown at once in the header (X) on every page, as
@@ -373,6 +382,116 @@ function fxBtn(ctx, st) {
     delete st.vals.s_fx;                  // (the first page's FX card reads it again)
     if (known) ctx.setParam("s_fx", st.fxOn ? "1" : "0"); else ctx.setParam("s_fxbtn", "1");
     st.expectRev++;
+    say(ctx, () => "Effects " + (known ? (st.fxOn ? "on" : "off") : "switched"));
+}
+
+// ---- the screen reader: words for the screen's text, said through the ctx (chain_adapter.js: Schwung's
+// shared/screen_reader.mjs announce; srOn: its tts_get_enabled). Nothing is built or said while it is off, and nothing
+// in draw: only the event hooks speak, and onValues only to finish a turn (st.srPend).
+const SAY = FR_CONF.say || {};
+const SR_THROTTLE_MS = 120;               // a knob's turn: one value at most this often (Schwung's grid,
+                                          // page_controller.mjs ANNOUNCE_THROTTLE_MS), the last one after the turn
+function srOn(ctx) { return typeof ctx.announce === "function" && (typeof ctx.srOn !== "function" || !!ctx.srOn()); }
+function say(ctx, f) {
+    if (!srOn(ctx)) return;
+    const s = typeof f === "function" ? f() : f;
+    if (s) ctx.announce(String(s));
+}
+// the screen's capitals as a sentence ("MODULE HELP" -> "Module help"); a text with lower case is left as it is
+function sayCase(s) {
+    s = String(s);
+    if (/[a-z]/.test(s) || !/[A-Z]/.test(s)) return s;
+    const l = s.toLowerCase(), i = l.search(/[a-z]/);
+    return l.slice(0, i) + l.charAt(i).toUpperCase() + l.slice(i + 1);
+}
+function sayName(k) { return (SAY.names && SAY.names[k.key]) || sayCase(k.name); }
+function sayPage(i) { const t = FR_PAGES[i].title; return (SAY.pages && SAY.pages[t]) || sayCase(t); }
+function sayWord(s) {
+    s = String(s);
+    if (SAY.words && SAY.words[s]) return SAY.words[s];
+    if (/^[0-9.]+:[0-9.]+$/.test(s)) return s.replace(":", " to ");      // a ratio: 4:1 -> 4 to 1
+    return sayCase(s);
+}
+// a preset: its number, then its name ("F01 BRIGHT STAGE" -> "F01, Bright stage"); an empty user slot "empty"
+function sayPreset(nm) {
+    if (!nm) return "";
+    const s = String(nm).trim(), sp = s.indexOf(" ");
+    if (sp <= 0) return s;
+    const rest = s.slice(sp + 1).trim();
+    return s.slice(0, sp) + ", " + (/^-*$/.test(rest) ? "empty" : sayCase(rest));
+}
+// a knob's value as the large card shows it, in words (an option's name, SUSTAIN / FREEZE, a number)
+function sayValue(st, k) {
+    if (k.type === "preset") return sayPreset(st.presetName) || "not read yet";
+    if (st.flash && st.flash.key === k.key) return sayWord(k.options[1]);
+    const v = st.vals[k.key];
+    if (v === null || v === undefined) return "not read yet";
+    return sayWord(valueText(st, k));
+}
+// a page: its name, where it is, how many controls (Schwung's announce_page.mjs announcePage)
+function pageSay(st) {
+    const vis = visiblePages(st.engine), n = knobs(st).filter((k) => k).length;
+    return sayPage(st.page) + ", " + (vis.indexOf(st.page) + 1) + " of " + vis.length + ", " + n +
+        (n === 1 ? " control" : " controls");
+}
+// a list row as Schwung's lists say one ("Preset: (none), 12 of 20"), the section's name first when the cursor enters it
+function rowSection(st, i) {
+    for (let j = i; j >= 0; j--) if (st.rows[j].kind === "sep") return j;
+    return -1;
+}
+function rowSay(st, was) {
+    const rows = st.rows || [], r = rows[st.cursor];
+    if (!r) return "";
+    const sel = rows.filter((x) => x.kind !== "sep");
+    let s;
+    if (r.kind === "page") s = sayPage(r.idx) + (r.idx === st.page ? ", current" : "");
+    else if (r.kind === "save") s = sayCase(r.label);
+    else s = (r.say || sayCase(r.label)) + (r.sayValue ? ": " + r.sayValue : "");
+    const sec = rowSection(st, st.cursor);
+    if (sec >= 0 && (was < 0 || rowSection(st, was) !== sec)) s = sayCase(rows[sec].label) + ", " + s;
+    return s + ", " + (sel.indexOf(r) + 1) + " of " + sel.length;
+}
+function slotSay(st) {
+    const u = st.save.slot + 1, nm = st.save.names[st.save.slot];
+    return "User " + u + ", " + (nm ? sayCase(nm.slice(nm.indexOf(" ") + 1)) : "empty");
+}
+// a knob touched: its whole name and its value (announce_page.mjs announceTouch)
+function srTouch(ctx, st, slot) {
+    const k = knobs(st)[slot];
+    if (k) say(ctx, () => sayName(k) + ", " + sayValue(st, k));
+}
+// a knob turned: the value only (announceTurn), at most one a SR_THROTTLE_MS for that knob; one held back is said by
+// srFlush once the turn has stopped, so the value spoken last is the value the knob ended on
+function srTurn(ctx, st, slot) {
+    if (!srOn(ctx)) return;
+    const k = knobs(st)[slot];
+    if (!k) return;
+    const t = nowOf(ctx), last = st.srLast[k.key];
+    // the preset: its name once the live read has the new one (a read right after the write can still name the old)
+    if (k.type === "preset") { st.srPend = { k, t, code: presetCode(st, st.preset) }; return; }
+    if (last === undefined || t - last >= SR_THROTTLE_MS) {
+        st.srLast[k.key] = t;
+        st.srPend = null;
+        say(ctx, () => sayValue(st, k));
+    } else st.srPend = { k, t };
+}
+// a preset's number as its name starts (F01-F19, U01-U16 from u_first, then the Move's own F20..)
+function presetCode(st, i) {
+    if (i === null || i === undefined) return "";
+    const uf = userFirst(st), two = (n) => (n < 10 ? "0" : "") + n;
+    if (i < uf) return "F" + two(i + 1);
+    if (i < uf + 16) return "U" + two(i - uf + 1);
+    return "F" + two(i - 16 + 1);
+}
+function srFlush(ctx, st) {
+    const p = st.srPend, t = nowOf(ctx);
+    if (t - p.t < SR_THROTTLE_MS) return;
+    if (p.code !== undefined && t - p.t < 2000 &&
+        !(st.presetName && String(st.presetName).indexOf(p.code + " ") === 0)) return;   // (the name not read yet)
+    st.srPend = null;
+    if (knobs(st).indexOf(p.k) < 0) return;
+    st.srLast[p.k.key] = t;
+    say(ctx, () => sayValue(st, p.k));
 }
 
 // ---- the views
@@ -490,7 +609,8 @@ function listRows(ctx, st) {
         rows.push({ kind: "sep", label: String(pg.name || "").toUpperCase() });
         for (const e of es) {
             const v = e.value !== undefined && e.value !== null ? String(e.value).toUpperCase() : "";
-            rows.push({ kind: "act", label: String(e.label || "").toUpperCase(), value: v, action: e.action });
+            rows.push({ kind: "act", label: String(e.label || "").toUpperCase(), value: v, action: e.action,
+                        say: String(e.label || ""), sayValue: e.value !== undefined && e.value !== null ? String(e.value) : "" });
         }
     }
     return rows;
@@ -513,18 +633,19 @@ function openList(ctx, st, at) {
         const i = st.rows.findIndex((r) => r.kind === "sep" && r.label === at.toUpperCase());
         if (i >= 0) st.cursor = rowStep(st.rows, i, 1);
     }
+    say(ctx, () => rowSay(st, -1));
 }
 function clickRow(ctx, st) {
     const r = st.rows[st.cursor];
     st.list = false;
     if (!r) return;
-    if (r.kind === "page") { setPage(ctx, st, r.idx); return; }
+    if (r.kind === "page") { setPage(ctx, st, r.idx); say(ctx, () => pageSay(st)); return; }
     if (r.kind === "save") { openSave(ctx, st); return; }
     if (r.kind === "act" && typeof ctx.runAction === "function") {
         let opened = false;
         try { opened = !!ctx.runAction(r.action); } catch (e) { opened = false; }
         st.menus = null;                       // (Save / Save As change what the rows say)
-        if (!opened) toast(ctx, st, r.label);
+        if (!opened) toast(ctx, st, r.label, r.say);
     }
 }
 
@@ -566,8 +687,13 @@ function openSave(ctx, st) {
     const nf = userFirst(st);                             // (U01-U16 from u_first)
     let slot = st.preset !== null && st.preset >= nf && st.preset < nf + 16 ? st.preset - nf : names.indexOf("");
     st.save = { slot: Math.max(0, Math.min(15, slot)), names };
+    say(ctx, () => "Save to user, " + slotSay(st));
 }
-function saveStep(st, d) { st.save.slot = Math.max(0, Math.min(15, st.save.slot + Math.sign(d))); }
+function saveStep(ctx, st, d) {
+    const was = st.save.slot;
+    st.save.slot = Math.max(0, Math.min(15, st.save.slot + Math.sign(d)));
+    if (st.save.slot !== was) say(ctx, () => slotSay(st));
+}
 function saveNow(ctx, st) {
     const u = st.save.slot + 1;
     st.save = null;
@@ -576,7 +702,7 @@ function saveNow(ctx, st) {
     st.preset = userFirst(st) + u - 1;                      // (the plugin loads the slot it saved)
     st.presetName = null;
     st.presetDirty = true;
-    toast(ctx, st, "SAVED U" + (u < 10 ? "0" : "") + u);
+    toast(ctx, st, "SAVED U" + (u < 10 ? "0" : "") + u, "Saved to user " + u);
 }
 function drawSave(ctx, st) {
     const u = st.save.slot + 1, nm = st.save.names[st.save.slot];
@@ -590,7 +716,10 @@ function drawSave(ctx, st) {
 }
 
 // a word in a box over the screen for a second (SAVED U05; a Schwung row that did its work in place)
-function toast(ctx, st, msg) { st.toast = { text: String(msg), until: nowOf(ctx) + 1200 }; }
+function toast(ctx, st, msg, spoken) {
+    st.toast = { text: String(msg), until: nowOf(ctx) + 1200 };
+    say(ctx, () => spoken || sayCase(msg));
+}
 function drawToast(ctx, st) {
     if (!st.toast || nowOf(ctx) >= st.toast.until) { st.toast = null; return; }
     const w = Math.min(124, textW(st.toast.text, 1) + 8), x = (W - w) >> 1;
@@ -613,7 +742,7 @@ function newState() {
              touch: [false, false, false, false, false, false, false, false], list: false, cursor: 0,
              preset: null, presetName: null, presetCount: 0, uFirst: null, presetDirty: false, rev: null, expectRev: 0,
              susOn: false, susKnown: false, fxOn: null, flash: null, rr: 0, gr: null, rows: [], menus: null, save: null,
-             toast: null, tapAt: [] };
+             toast: null, tapAt: [], srLast: {}, srPend: null };
 }
 
 globalThis.canvas_overlay = {
@@ -630,6 +759,10 @@ globalThis.canvas_overlay = {
         st.fxOn = fx === null || fx === undefined ? null : fx === "1" || fx === "ON";
         st.page = visiblePages(st.engine)[0];
         readPage(ctx, st);
+        say(ctx, () => {
+            const pg = sayPage(st.page), pr = sayPreset(st.presetName);
+            return "Frodhes" + (pg !== "Frodhes" ? ", " + pg : "") + (pr ? ", " + pr : "");
+        });
     },
     onMidi(ctx, msg) {
         const st = ctx.state.fr;
@@ -637,7 +770,7 @@ globalThis.canvas_overlay = {
         const d = (msg && msg.data) || [];
         const type = (d[0] | 0) & 0xF0, d1 = d[1] | 0, d2 = d[2] | 0;
         if (st.save) {                                              // the save card owns the controls
-            if (type === 0xB0 && (d1 === JOG_CC || (d1 >= KNOB_CC && d1 < KNOB_CC + 8))) { saveStep(st, rel(d2)); return true; }
+            if (type === 0xB0 && (d1 === JOG_CC || (d1 >= KNOB_CC && d1 < KNOB_CC + 8))) { saveStep(ctx, st, rel(d2)); return true; }
             if (type === 0xB0 && d1 === CLICK_CC && d2 > 0) { saveNow(ctx, st); return true; }
             if (type === 0xB0 || type === 0x90 || type === 0x80) return true;
         }
@@ -649,8 +782,10 @@ globalThis.canvas_overlay = {
                 st.touch[d1] = true;
                 const t = nowOf(ctx), was = st.tapAt[d1];
                 st.tapAt[d1] = t;
-                if (was !== undefined && t - was < FR_CONF.tap_ms) { st.tapAt[d1] = undefined; reset(ctx, st, d1); }
+                let wasReset = false;
+                if (was !== undefined && t - was < FR_CONF.tap_ms) { st.tapAt[d1] = undefined; wasReset = reset(ctx, st, d1); }
                 focus(ctx, st, d1, true);
+                if (!wasReset) srTouch(ctx, st, d1);
             } else release(ctx, st, d1);
             return true;
         }
@@ -663,12 +798,16 @@ globalThis.canvas_overlay = {
             turn(ctx, st, slot, rel(d2));
             if (st.presetDirty) { st.presetName = ctx.getParam("preset_name"); st.presetDirty = st.presetName === null; }
             focus(ctx, st, slot, st.touch[slot]);
+            srTurn(ctx, st, slot);
             return true;
         }
         if (d1 === JOG_CC) {
             const r = rel(d2);
-            if (st.list) st.cursor = rowStep(st.rows, st.cursor, Math.sign(r));
-            else pageStep(ctx, st, Math.sign(r));
+            if (st.list) {
+                const was = st.cursor;
+                st.cursor = rowStep(st.rows, st.cursor, Math.sign(r));
+                if (st.cursor !== was) say(ctx, () => rowSay(st, was));
+            } else pageStep(ctx, st, Math.sign(r));
             return true;
         }
         if (d1 === CLICK_CC && d2 > 0) {
@@ -684,7 +823,7 @@ globalThis.canvas_overlay = {
     handleBack(ctx) {
         const st = ctx.state.fr;
         if (st && st.save) { st.save = null; toast(ctx, st, "NOT SAVED"); return true; }   // the save card: unsaved
-        if (st && st.list) { st.list = false; return true; }     // up: the list closes, the page stays
+        if (st && st.list) { st.list = false; say(ctx, () => pageSay(st)); return true; }   // up: the list closes, the page stays
         return false;                                             // the top: the host closes the screen
     },
     // the host reloaded the screen after one of its own screens (Load, Delete, Swap, Help): back on the list there
@@ -706,11 +845,14 @@ globalThis.canvas_overlay = {
             if (rev > st.expectRev) {                             // a change we did not make: a preset, a state,
                 st.vals = {};                                     // the host's own page: read the page again
                 st.expectRev = rev;
+                const was = st.preset;
                 st.preset = asNum(ctx.getParam("preset"));
                 readPage(ctx, st);
+                if (st.preset !== null && st.preset !== was && st.presetName) say(ctx, () => sayPreset(st.presetName));
                 return;
             }
         }
+        if (st.srPend) srFlush(ctx, st);                       // a turn's last value, once the turn has stopped
         if (isComp(st)) readGr(ctx, st);                       // the meter: every tick
         // one value a tick, round the page, so a change by MIDI CC (no rev) shows too; never one being turned
         const ks = knobs(st);
