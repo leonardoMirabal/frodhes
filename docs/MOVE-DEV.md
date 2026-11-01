@@ -121,6 +121,18 @@ names the Move (default `ableton@move.local`).
 - `tools/ci_move.sh` runs the Move's checks on the host. `node move/ui/test_screen.mjs` checks Frodhes' screen
   (`move/ui/harness.mjs` runs it on a model of the Move's screen and the plugin), `node move/ui/test_chain.mjs`
   the same screen as the whole Move UI (`ui_chain.js`); the pictures: [The screenshots](#the-screenshots).
+- **The screen reader** ([MOVE.md](MOVE.md#screen-reader)): what is said and when is `move/ui/screen_core.js`
+  (its section "the screen reader": `say`, `pageSay`, `rowSay`, `srTouch`, `srTurn` / `srFlush`), from the event
+  hooks only, never from `draw`; a turn says at most one value per 120 ms a knob (Schwung's grid,
+  `page_controller.mjs` `ANNOUNCE_THROTTLE_MS`), and the value it ended on from the next live tick. The words are
+  `tools/gen_move_module.py`'s `SAY_NAMES` (every control on a page, by key: the generator stops on a new control
+  without one), `SAY_PAGES` and `SAY_WORDS` (options), written into `ui_chain.js`'s `FR_CONF.say`. The speaking is
+  `move/ui/chain_adapter.js`: `ctx.announce` is Schwung's `shared/screen_reader.mjs` `announce` (imported at the top
+  of `ui_chain.js`, as the knob LEDs' `knob_leds.mjs`; it speaks only while the shadow UI is on screen), and
+  `ctx.srOn` asks `tts_get_enabled()` first, so with the screen reader off no text is built and nothing is written
+  to Schwung's screen-reader memory. `screen.js` (the canvas cell) has no announce and says nothing.
+  `move/ui/test_chain.mjs` records every announcement (its last section). On the device, an announcement is the
+  text and sequence number in `/dev/shm/schwung-screenreader` (`host_send_screenreader`).
 - The meter on the COMPRESSOR page is a Schwung custom widget (Schwung's docs/MODULES.md, "Custom widgets"). Two
   read-only keys, `r_cmp_gr` (GR) and `r_cmp_pk` (PEAK), form one picture group with the kind `custom:frodhes_gr`.
   Schwung draws it with `drawCell` from `canvas.js`, which `module.json` names (`capabilities.canvas_script`).

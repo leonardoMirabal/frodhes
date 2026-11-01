@@ -25,15 +25,16 @@ the device measurements are in [MOVE-DEV.md](MOVE-DEV.md).
 5. [Buttons and knobs](#buttons-and-knobs)
 6. [The pages](#the-pages)
 7. [The menu](#the-menu)
-8. [Presets and saving](#presets-and-saving)
-9. [Sustain](#sustain)
-10. [The effects](#the-effects)
-11. [Velocity](#velocity)
-12. [MIDI and tempo](#midi-and-tempo)
-13. [The arpeggiator](#the-arpeggiator)
-14. [Several Frodhes at once](#several-frodhes-at-once)
-15. [What differs from the FM-1](#what-differs-from-the-fm-1)
-16. [Troubleshooting](#troubleshooting)
+8. [Screen reader](#screen-reader)
+9. [Presets and saving](#presets-and-saving)
+10. [Sustain](#sustain)
+11. [The effects](#the-effects)
+12. [Velocity](#velocity)
+13. [MIDI and tempo](#midi-and-tempo)
+14. [The arpeggiator](#the-arpeggiator)
+15. [Several Frodhes at once](#several-frodhes-at-once)
+16. [What differs from the FM-1](#what-differs-from-the-fm-1)
+17. [Troubleshooting](#troubleshooting)
 
 ## What you need
 
@@ -290,6 +291,31 @@ header counts the rows (`4/20`).
   Swap Module (another module in this slot) and Remove Module.
 
 After Module Help, a preset load, Delete or a picker you leave, Back brings you to this list.
+
+## Screen reader
+
+With Schwung's screen reader on, Frodhes' screen speaks through it, in words, as Schwung's own screens do. Turn it on
+in Schwung's **Global Settings** (hold **Shift**, touch the **volume knob** and press **Step 2**), page **Screen
+Reader**, row **Screen Reader** ON; the same page sets the voice, its speed and volume and the **Speak Delay**.
+Schwung's installer can also turn it on (`--enable-screen-reader`). With the screen reader off, Frodhes says nothing.
+
+| You | It says |
+| --- | --- |
+| open Frodhes' screen | Frodhes, then the preset (*Frodhes, F01, Stage 77*) |
+| turn the jog wheel to another page | the page, where it is, how many controls (*Reverb, 8 of 12, 8 controls*) |
+| touch a knob | the control's whole name and its value (*Decay, 64*; *Reverb type, Infinite*) |
+| turn a knob | the new value (*65*); a fast turn says a value at most every 0.12 s, then the value it ends on |
+| the Left or the Right arrow | *Effects on* / *Effects off*, *Sustain on* / *Sustain off* |
+| touch a knob twice quickly | the control and *reset* (*Mix reset*) |
+| click the jog wheel (the list) | the row and where it is (*Reverb, current, 8 of 19*); on entering a section, its name first (*User presets, Save to user, 13 of 19*); Schwung's rows with their value (*My presets, Preset: (none)*) |
+| click a row, Back on the list | the page you land on |
+| SAVE TO USER | the slot as it changes (*User 2, empty*), then *Saved to user 2*, or *Not saved* after Back |
+| turn PRESET, or load a preset by MIDI | the preset (*F02, Suitcase*) |
+
+The words are the large card's, spelled out where the card shortens them (HAMMR is *Hammer*, PREDLY *Pre-delay*, an
+option such as INF *Infinite*, a rate such as 16T *16th triplet*). The overview's four-letter names are never said.
+Messages such as `SPRD RESET` and `SAVED U05` are said in full. A row that opens one of Schwung's screens (Module
+Help, the preset browser) leaves the words to that screen. *(not yet verified on a device)*
 
 ## Presets and saving
 

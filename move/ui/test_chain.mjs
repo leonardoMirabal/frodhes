@@ -44,6 +44,11 @@ g.shadow_component_run_action = (a) => { host.actions.push(a); return a !== "up_
 // the arrows' LEDs (input_filter.mjs setButtonLED, imported on the device): every send, and what each CC shows
 const btn = { sends: [], now: {} };
 g.__SET_BUTTON_LED = (cc, c, force) => { btn.sends.push([cc, c, force]); btn.now[cc] = c; };
+// the screen reader: Schwung's announce (shared/screen_reader.mjs, imported on the device) records what is said;
+// tts_get_enabled is Global Settings > Screen Reader (off until the screen-reader section below)
+const sr = { on: false, said: [], asks: 0 };
+g.__ANNOUNCE = (s) => { sr.said.push(s); };
+g.tts_get_enabled = () => { sr.asks++; return sr.on; };
 vm.createContext(g);
 let src = fs.readFileSync(path.join(ROOT, "move", "module", "ui_chain.js"), "utf8");
 const IMP = /^import \* as KNOB_LEDS from '\/data\/UserData\/schwung\/shared\/param_pages\/knob_leds\.mjs';$/m;
@@ -52,6 +57,9 @@ src = src.replace(IMP, "const KNOB_LEDS = globalThis.__KNOB_LEDS;");
 const IMP2 = /^import \{ setButtonLED as FR_SET_BUTTON_LED \} from '\/data\/UserData\/schwung\/shared\/input_filter\.mjs';$/m;
 check(IMP2.test(src), "ui_chain.js imports Schwung's setButtonLED");
 src = src.replace(IMP2, "const FR_SET_BUTTON_LED = globalThis.__SET_BUTTON_LED;");
+const IMP3 = /^import \{ announce as FR_ANNOUNCE \} from '\/data\/UserData\/schwung\/shared\/screen_reader\.mjs';$/m;
+check(IMP3.test(src), "ui_chain.js imports Schwung's screen_reader.mjs announce");
+src = src.replace(IMP3, "const FR_ANNOUNCE = globalThis.__ANNOUNCE;");
 vm.runInContext(src, g);
 const ui = g.chain_ui;
 check(ui && ["init", "tick", "onMidiMessageInternal", "onMidiMessageExternal", "handleBack"]
@@ -272,5 +280,139 @@ check(btn.sends.every(([cc]) => cc === 62 || cc === 63), "LEDs: the only button 
       [...new Set(btn.sends.map(([cc]) => cc))].join(",") + ")");
 check(!/move_midi_internal_send|setLED\b/.test(src), "LEDs: the screen has no path to a note LED (no setLED, no raw send)");
 
+// ---- the screen reader (Schwung's announce, asked only while tts_get_enabled): what each event says, in words; the
+// turns throttled as Schwung's grid does (one value per 120 ms a knob, then the value it ended on); nothing per tick
+check(sr.said.length === 0, "screen reader off: nothing said in all of the above (" + JSON.stringify(sr.said.slice(0, 3)) + ")");
+sr.on = true;
+const heard = (fn) => { const n = sr.said.length; fn(); return sr.said.slice(n); };
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const sentence = (s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+const presetSaid = (i) => p.names[i].slice(0, 3) + ", " + sentence(p.names[i].slice(4));
+const ticks = (n, ms) => { for (let i = 0; i < n; i++) { t += ms || 100; ui.tick(); p.apply(); } };
+const engine0 = pages.filter((q) => q.gate < 0 || q.gate === 0).length;
+p.v.p_type = 0; p.preset = 0;
+let h = heard(() => { ui.init(); });
+check(eq(h, ["Frodhes, " + presetSaid(0)]), "sr: the screen opening says Frodhes and the preset " + JSON.stringify(h));
+ticks(12);
+let asks = sr.asks;
+h = heard(() => ticks(30));
+check(h.length === 0 && sr.asks === asks, "sr: idle, 30 ticks say nothing and never ask the screen reader (" +
+      JSON.stringify(h) + ", " + (sr.asks - asks) + " asks)");
+h = heard(() => midi(0xB0, 14, 1));
+check(eq(h, ["Piano voice, 2 of " + engine0 + ", 8 controls"]), "sr: the jog says the page " + JSON.stringify(h));
+h = heard(() => midi(0xB0, 14, 127));
+check(eq(h, ["Frodhes, 1 of " + engine0 + ", 6 controls"]), "sr: the jog back " + JSON.stringify(h));
+h = heard(() => midi(0xB0, 14, 127));
+check(h.length === 0, "sr: the jog at the first page says nothing (no page change) " + JSON.stringify(h));
+midi(0xB0, 14, 1); ticks(12);
+// a touch: the whole name and the value; a fast turn: one value, then the last; a slow one: every value
+h = heard(() => midi(0x90, 4, 127));
+check(eq(h, ["Decay, " + p.v.p_decay]), "sr: a touch says the name and the value " + JSON.stringify(h));
+h = heard(() => { for (let i = 0; i < 6; i++) { t += 10; midi(0xB0, 75, 1); } });
+check(h.length === 1 && /^\d+$/.test(h[0]) && h[0] !== String(st().vals.p_decay),
+      "sr: six detents in 60 ms say one value (the first) " + JSON.stringify(h));
+const ended = String(st().vals.p_decay);
+h = heard(() => ticks(3));
+check(eq(h, [ended]), "sr: the turn's last value said once it stops (" + ended + ") " + JSON.stringify(h));
+h = heard(() => ticks(10));
+check(h.length === 0, "sr: then nothing " + JSON.stringify(h));
+h = heard(() => { for (let i = 0; i < 3; i++) { t += 150; midi(0xB0, 75, 127); } });
+check(h.length === 3 && h[2] === String(st().vals.p_decay), "sr: a slow turn says each value " + JSON.stringify(h));
+h = heard(() => { midi(0x90, 4, 0); ticks(3); });
+check(h.length === 0, "sr: the release says nothing " + JSON.stringify(h));
+// words where the screen shows words: an option, INFINITE's SUSTAIN / FREEZE, a ratio, OFF / ON
+p.external("p_rv_type", 3); p.external("p_rv_decay", 127); p.external("p_cmp_sw", 0); p.external("p_cmp_ratio", 3);
+ticks(12);
+const toPage = (title) => { for (let i = 0; i < 20 && FR(st().page).title !== title; i++) midi(0xB0, 14, 1); ticks(12); };
+toPage("COMPRESSOR");
+h = heard(() => { midi(0x90, 1, 127); midi(0x90, 1, 0); t += 500; midi(0x90, 4, 127); midi(0x90, 4, 0); });
+check(eq(h, ["Ratio, 4 to 1", "Compressor, Off"]), "sr: RATIO and COMP in words " + JSON.stringify(h));
+toPage("REVERB");
+h = heard(() => { midi(0x90, 0, 127); midi(0x90, 0, 0); t += 500; midi(0x90, 2, 127); });
+check(eq(h, ["Reverb type, Infinite", "Decay, Freeze"]), "sr: the reverb's type and INFINITE's FREEZE " + JSON.stringify(h));
+h = heard(() => { t += 200; midi(0xB0, 73, 127); midi(0x90, 2, 0); });
+check(eq(h, ["Sustain"]), "sr: DECAY turned down to SUSTAIN " + JSON.stringify(h));
+check(!sr.said.some((s) => /\b(DCAY|RVB|SUST|FREZ|PDLY|LCUT)\b/.test(s)), "sr: never the cards' abbreviations");
+// the arrows
+h = heard(() => midi(0xB0, 63, 127));
+check(eq(h, ["Sustain " + (st().susOn ? "on" : "off")]), "sr: the Right arrow says the sustain " + JSON.stringify(h));
+h = heard(() => midi(0xB0, 62, 127));
+check(eq(h, ["Effects " + (st().fxOn ? "on" : "off")]), "sr: the Left arrow says the effects " + JSON.stringify(h));
+h = heard(() => { midi(0xB0, 62, 0); midi(0xB0, 63, 0); });
+check(h.length === 0, "sr: a release of an arrow says nothing " + JSON.stringify(h));
+ticks(12);
+// the double tap: the second touch says the reset, not the value
+p.external("p_rv_depth", 50); ticks(12);
+h = heard(() => { tap(1); tap(1); });
+check(eq(h, ["Mix, 50", "Mix reset"]), "sr: a double tap says <name> reset " + JSON.stringify(h));
+ticks(12);
+// the list: the row (and its section on entering it), the click, Back; the save card: the slot, saved / not saved
+h = heard(() => midi(0xB0, 3, 127));
+const selN = st().rows.filter((r) => r.kind !== "sep").length;
+const rvAt = st().rows.filter((r) => r.kind !== "sep").findIndex((r) => r.label === "REVERB") + 1;
+check(eq(h, ["Reverb, current, " + rvAt + " of " + selN]), "sr: the list opens on the page's row " + JSON.stringify(h));
+h = heard(() => midi(0xB0, 14, 1));
+check(eq(h, ["Tempo, " + (rvAt + 1) + " of " + selN]), "sr: the jog says the row " + JSON.stringify(h));
+h = heard(() => midi(0xB0, 14, 127));
+check(eq(h, ["Reverb, current, " + rvAt + " of " + selN]), "sr: and back " + JSON.stringify(h));
+go("SAVE TO USER");
+const saveAt = st().rows.filter((r) => r.kind !== "sep").findIndex((r) => r.label === "SAVE TO USER") + 1;
+check(sr.said[sr.said.length - 1] === "User presets, Save to user, " + saveAt + " of " + selN,
+      "sr: a row in a new section says the section first (" + sr.said[sr.said.length - 1] + ")");
+h = heard(() => midi(0xB0, 14, 1));
+check(eq(h, ["My presets, Preset: (none), " + (saveAt + 1) + " of " + selN]), "sr: Schwung's row, its value " + JSON.stringify(h));
+midi(0xB0, 14, 127);
+const used = (i) => p.used[i] ? sentence(p.names[p.nf + i].slice(4)) : "empty";
+h = heard(() => midi(0xB0, 3, 127));
+const s0 = st().save.slot;
+check(eq(h, ["Save to user, User " + (s0 + 1) + ", " + used(s0)]), "sr: the save card says its slot " + JSON.stringify(h));
+h = heard(() => midi(0xB0, 14, 1));
+check(eq(h, ["User " + (s0 + 2) + ", " + used(s0 + 1)]), "sr: the jog says the next slot " + JSON.stringify(h));
+h = heard(() => ui.handleBack());
+check(eq(h, ["Not saved"]), "sr: Back on the save card: not saved " + JSON.stringify(h));
+midi(0xB0, 3, 127); go("SAVE TO USER"); midi(0xB0, 3, 127); midi(0xB0, 14, 1);
+const s1 = st().save.slot;
+h = heard(() => midi(0xB0, 3, 127));
+check(eq(h, ["Saved to user " + (s1 + 1)]), "sr: a click saves: saved " + JSON.stringify(h));
+ticks(12);
+midi(0xB0, 3, 127);
+h = heard(() => ui.handleBack());
+check(h.length === 1 && /^Reverb, \d+ of \d+, 8 controls$/.test(h[0]), "sr: Back closes the list: the page " + JSON.stringify(h));
+midi(0xB0, 3, 127); go("TEMPO");
+h = heard(() => midi(0xB0, 3, 127));
+check(h.length === 1 && /^Tempo, \d+ of \d+, 3 controls$/.test(h[0]), "sr: a click on a page row says the page " + JSON.stringify(h));
+midi(0xB0, 3, 127); go("SAVE AS");
+h = heard(() => midi(0xB0, 3, 127));
+check(eq(h, ["Save As"]), "sr: a row done in place says it (Schwung's own words) " + JSON.stringify(h));
+midi(0xB0, 3, 127); go("MODULE HELP");
+h = heard(() => midi(0xB0, 3, 127));
+check(h.length === 0, "sr: a row that opens Schwung's screen leaves the words to it " + JSON.stringify(h));
+// the preset: the PRESET knob says the new preset once its name is read; a preset loaded elsewhere is said too
+ui.init(); ticks(12);
+p.preset = 0; p.rev++; ticks(12);
+h = heard(() => midi(0xB0, 75, 1));
+check(h.length === 0, "sr: the PRESET knob waits for the new name " + JSON.stringify(h));
+h = heard(() => ticks(3));
+check(eq(h, [presetSaid(1)]), "sr: then says it " + JSON.stringify(h));
+h = heard(() => { p.preset = 5; p.rev++; ticks(3); });
+check(eq(h, [presetSaid(5)]), "sr: a preset loaded elsewhere says its name " + JSON.stringify(h));
+asks = sr.asks;
+h = heard(() => ticks(30));
+check(h.length === 0 && sr.asks === asks, "sr: idle again, nothing said or asked " + JSON.stringify(h));
+// off again: nothing is said for anything
+sr.on = false;
+h = heard(() => {
+    ui.init(); ticks(3); midi(0xB0, 14, 1); midi(0x90, 0, 127); midi(0xB0, 71, 1); midi(0x90, 0, 0); tap(1); tap(1);
+    midi(0xB0, 63, 127); midi(0xB0, 62, 127); midi(0xB0, 3, 127); midi(0xB0, 14, 1); ui.handleBack(); ticks(10);
+    p.preset = 2; p.rev++; ticks(3); ui.handleBack();
+});
+check(h.length === 0, "sr: off, nothing said " + JSON.stringify(h));
+delete g.tts_get_enabled;            // (an older host without the setting: announce decides, as Schwung's own screens)
+h = heard(() => { ui.init(); });
+check(h.length === 1, "sr: no tts_get_enabled: announce is called " + JSON.stringify(h));
+g.tts_get_enabled = () => { sr.asks++; return sr.on; };
+ui.handleBack();
+
+if (process.env.SR_LOG) console.log(sr.said.join("\n"));
 if (fails) { console.log(fails + " failed"); process.exit(1); }
 console.log("test_chain: ok");

@@ -794,13 +794,67 @@ def screen_js(levels):
 
 KNOB_LEDS_MJS = "/data/UserData/schwung/shared/param_pages/knob_leds.mjs"   # Schwung's knob rings (the grid's)
 INPUT_FILTER_MJS = "/data/UserData/schwung/shared/input_filter.mjs"          # its setButtonLED (the arrows' LEDs)
+SCREEN_READER_MJS = "/data/UserData/schwung/shared/screen_reader.mjs"        # its announce (the screen reader)
+
+# What Frodhes' screen says with Schwung's screen reader on (move/ui/screen_core.js, FR_CONF.say): every control's
+# whole name in words (by key: the card's label is cut to fit, HAMMR FEEDBK PREDLY), a page's name, an option's word
+# (by the option as the card shows it). Anything else in capitals is said as a sentence (MODULE HELP: "Module help").
+# A new control on a page fails the generator until it is named here.
+SAY_NAMES = {
+    "p_type": "Type", "p_spread": "Spread", "s_sustain": "Sustain", "s_fx": "Effects", "preset": "Preset",
+    "p_delay": "Delay mix",
+    "p_tone": "Tone", "p_bark": "Bark", "p_bell": "Bell", "p_hammer": "Hammer", "p_decay": "Decay",
+    "p_release": "Release", "p_noise": "Noise", "s_tune": "Tune",
+    "p_strike": "Strike", "p_mallet": "Mallet", "p_tube": "Tube", "p_weight": "Weight", "p_ring": "Ring",
+    "p_damper": "Damper", "p_mute": "Mute",
+    "p_mot_on": "Motor", "p_mot_depth": "Depth", "p_mot_rate": "Speed", "p_mot_shape": "Shape", "p_mot_sync": "Sync",
+    "p_cmp_amt": "Threshold", "p_cmp_ratio": "Ratio", "p_cmp_atk": "Attack", "p_cmp_gain": "Makeup gain",
+    "p_cmp_sw": "Compressor", "p_cmp_rel": "Release",
+    "p_drv_sw": "Drive type", "p_drive": "Drive amount", "p_drv_tone": "Drive tone", "p_drv_mix": "Drive mix",
+    "p_fl_type": "Filter type", "p_fl_freq": "Filter frequency", "p_fl_reso": "Resonance", "p_fl_lfo": "Filter LFO",
+    "s_twkind": "Tremolo mode", "p_tw_depth": "Tremolo depth", "p_tw_rate": "Tremolo rate",
+    "p_tw_shape": "Tremolo shape", "p_ph_sw": "Phaser", "p_ph_depth": "Phaser depth", "p_ph_speed": "Phaser speed",
+    "p_ph_fdbk": "Phaser feedback",
+    "p_cp_sw": "Chorus", "p_cp_depth": "Depth", "p_cp_speed": "Speed", "p_cp_sync": "Sync",
+    "p_dl_sw": "Delay type", "p_dl_depth": "Mix", "p_dl_time": "Time", "p_dl_fdbk": "Feedback",
+    "p_rv_type": "Reverb type", "p_rv_depth": "Mix", "p_rv_decay": "Decay", "p_rv_tone": "Tone",
+    "p_rv_predly": "Pre-delay", "p_rv_size": "Size", "p_rv_mod": "Modulation", "p_rv_locut": "Low cut",
+    "p_tw_sync": "Tremolo sync", "p_ph_sync": "Phaser sync", "p_dl_sync": "Delay sync",
+    "s_arpmode": "Mode", "s_arprate": "Rate", "s_arpoct": "Octaves", "s_arpgate": "Gate", "s_arphold": "Hold",
+    "p_lfo_shape": "LFO shape", "p_lfo_rate": "LFO rate", "p_lfo_sync": "LFO sync", "p_lfo_retrig": "LFO retrigger",
+    "p_dl_tone": "Delay tone", "p_level": "Level", "s_mch": "MIDI channel",
+    "m_at_cc": "Aftertouch CC", "m_at_lo": "Aftertouch low", "m_at_hi": "Aftertouch high",
+    "m_pa_cc": "Poly pressure CC", "m_pa_lo": "Poly pressure low", "m_pa_hi": "Poly pressure high",
+}
+SAY_PAGES = {"DRIVE/FILTER": "Drive and filter", "TREM/PHASER": "Tremolo and phaser", "LFO/SETUP": "LFO and setup"}
+SAY_WORDS = {
+    "ST77": "Stage 77", "SUIT": "Suitcase", "FELT": "Early felt", "DYNO": "Bell dyno", "VIBE": "Vibes",
+    "MRMB": "Marimba", "INF": "Infinite", "DIG": "Digital", "ANA": "Analog", "RAND": "Random", "UP-DN": "Up down",
+    "SQR": "Square", "TRI": "Triangle", "S&H": "Sample and hold", "LP12": "Low pass 12", "LP18": "Low pass 18",
+    "HP12": "High pass 12", "HP18": "High pass 18", "BP": "Band pass", "TREM": "Tremolo",
+    "1/32": "32nd", "16T": "16th triplet", "1/16": "16th", "8T": "8th triplet", "16D": "dotted 16th", "1/8": "8th",
+    "4T": "quarter triplet", "8D": "dotted 8th", "1/4": "quarter", "4D": "dotted quarter", "1/2": "half",
+    "1/1": "whole", "2BAR": "2 bars", "4BAR": "4 bars", "1/8T": "8th triplet", "1/16T": "16th triplet",
+}
+
+
+def say_conf(levels):
+    """FR_CONF.say: the names of the controls on the screen's pages, the pages' and the options' words"""
+    pages = screen_pages(levels)
+    missing = sorted({k["key"] for p in pages for k in p["knobs"] if k and k["key"] not in SAY_NAMES})
+    assert not missing, "a control on Frodhes' screen with no spoken name: name it in SAY_NAMES: " + ", ".join(missing)
+    keys = {k["key"] for p in pages for k in p["knobs"] if k}
+    opts = {o for p in pages for k in p["knobs"] if k and k.get("options") for o in k["options"]}
+    return {"names": {k: v for k, v in SAY_NAMES.items() if k in keys},
+            "pages": {t: v for t, v in SAY_PAGES.items() if any(p["title"] == t for p in pages)},
+            "words": {o: v for o, v in SAY_WORDS.items() if o in opts}}
 
 
 def ui_chain_js(levels):
     """Frodhes' own screen as the whole Move UI (Schwung's own-screen path, COMPONENT_EDIT): screen.js's closure with
     move/ui/chain_adapter.js inside it, which maps the canvas overlay onto globalThis.chain_ui"""
     conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10(), rv=rv_conf(),
-                live_ms=SCREEN["fullscreen_live_ms"])
+                live_ms=SCREEN["fullscreen_live_ms"], say=say_conf(levels))
     with open(UI_CORE) as f:
         core = f.read()
     with open(CHAIN_ADAPTER) as f:
@@ -810,10 +864,12 @@ def ui_chain_js(levels):
             "move/ui/chain_adapter.js - do not edit.\n"
             "// Frodhes' own screen as Schwung's chain_ui: the pages and the settings, the screen's code, the adapter.\n")
     # Schwung loads ui_chain.js as an ES module (shadow_ui.c shadow_load_ui_module), so the grid's own knob-LED code
-    # and the shared button-LED helper come in by import (MODULES.md: as page_controller.mjs does); the host tests
-    # replace these two lines
+    # and the shared button-LED helper come in by import (MODULES.md: as page_controller.mjs does), and the screen
+    # reader's announce as Schwung's own module UIs import it (store/ui.js, file-browser/ui.js); the host tests
+    # replace these three lines
     imp = ("import * as KNOB_LEDS from '%s';\n" % KNOB_LEDS_MJS
-           + "import { setButtonLED as FR_SET_BUTTON_LED } from '%s';\n" % INPUT_FILTER_MJS)
+           + "import { setButtonLED as FR_SET_BUTTON_LED } from '%s';\n" % INPUT_FILTER_MJS
+           + "import { announce as FR_ANNOUNCE } from '%s';\n" % SCREEN_READER_MJS)
     return (head + imp + "(function () {\n\"use strict\";\nconst PREV_OV = globalThis.canvas_overlay, "
             "PREV_FS = globalThis.frodhes_screen;\nconst FR_PAGES = "
             + json.dumps(screen_pages(levels), separators=(",", ":")) + ";\n"

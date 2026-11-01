@@ -35,8 +35,8 @@ const FR_PAGES = JSON.parse(SRC.match(/const FR_PAGES = (\[.*?\]);\n/)[1]);
 const PRESET_OF = { 0: 0, 4: 12, 5: 14 };            // TYPE -> the factory sound shown with it (F01, F13, F15)
 
 // ui_chain.js as Schwung's component editor runs it: the globals of a module UI (fill_rect, clear_screen, the slot's
-// param shims) on the harness's plugin model, Schwung's trailing menus, a clock of our own. The two imports (the knob
-// rings, the arrows' LEDs) are left out: they light LEDs, not the screen.
+// param shims) on the harness's plugin model, Schwung's trailing menus, a clock of our own. The three imports (the knob
+// rings, the arrows' LEDs, the screen reader's announce) are left out: they light LEDs or speak, not the screen.
 class Chain {
     constructor(setup) {
         this.p = new Plugin();
@@ -54,7 +54,8 @@ class Chain {
         g.shadow_component_run_action = () => true;
         vm.createContext(g);
         const src = SRC.replace(/^import \* as KNOB_LEDS from .*$/m, "const KNOB_LEDS = undefined;")
-            .replace(/^import \{ setButtonLED as FR_SET_BUTTON_LED \} from .*$/m, "const FR_SET_BUTTON_LED = undefined;");
+            .replace(/^import \{ setButtonLED as FR_SET_BUTTON_LED \} from .*$/m, "const FR_SET_BUTTON_LED = undefined;")
+            .replace(/^import \{ announce as FR_ANNOUNCE \} from .*$/m, "const FR_ANNOUNCE = undefined;");
         vm.runInContext(src, g, { filename: "ui_chain.js" });
         this.ui = g.chain_ui;
         this.ui.init();

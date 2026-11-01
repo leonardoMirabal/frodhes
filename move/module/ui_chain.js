@@ -3,11 +3,12 @@
 // Frodhes' own screen as Schwung's chain_ui: the pages and the settings, the screen's code, the adapter.
 import * as KNOB_LEDS from '/data/UserData/schwung/shared/param_pages/knob_leds.mjs';
 import { setButtonLED as FR_SET_BUTTON_LED } from '/data/UserData/schwung/shared/input_filter.mjs';
+import { announce as FR_ANNOUNCE } from '/data/UserData/schwung/shared/screen_reader.mjs';
 (function () {
 "use strict";
 const PREV_OV = globalThis.canvas_overlay, PREV_FS = globalThis.frodhes_screen;
 const FR_PAGES = [{"title":"FRODHES","gate":-1,"part":-1,"root":true,"knobs":[{"key":"p_type","name":"TYPE","type":"enum","options":["ST77","SUIT","FELT","DYNO","VIBE","MRMB"],"def":0},{"key":"p_spread","name":"SPREAD","type":"int","short":"SPRD","min":0,"max":127,"def":0},{"key":"s_sustain","name":"SUS","type":"enum","options":["OFF","ON"],"def":0},{"key":"s_fx","name":"FX","type":"enum","options":["OFF","ON"],"def":1},{"key":"preset","name":"PRESET","type":"preset"},null,null,{"key":"p_delay","name":"DELAY","type":"int","short":"DLY","min":0,"max":127,"def":0}]},{"title":"PIANO VOICE","gate":0,"part":0,"root":false,"knobs":[{"key":"p_tone","name":"TONE","type":"int","min":-64,"max":63,"def":0},{"key":"p_bark","name":"BARK","type":"int","min":0,"max":127,"def":64},{"key":"p_bell","name":"BELL","type":"int","min":0,"max":127,"def":64},{"key":"p_hammer","name":"HAMMR","type":"int","short":"HAMR","min":0,"max":127,"def":64},{"key":"p_decay","name":"DECAY","type":"int","short":"DCAY","min":0,"max":127,"def":64},{"key":"p_release","name":"REL","type":"int","min":0,"max":127,"def":64},{"key":"p_noise","name":"NOISE","type":"int","short":"NOIS","min":0,"max":127,"def":48},{"key":"s_tune","name":"TUNE","type":"int","min":-50,"max":50,"def":0}]},{"title":"VIBES VOICE","gate":1,"part":0,"root":false,"knobs":[{"key":"p_strike","name":"STRIKE","type":"int","short":"STRK","min":0,"max":127,"def":64},{"key":"p_mallet","name":"MALLET","type":"int","short":"MLLT","min":0,"max":127,"def":64},{"key":"p_tube","name":"TUBE","type":"int","min":0,"max":127,"def":64},{"key":"p_weight","name":"WEIGHT","type":"int","short":"WGHT","min":0,"max":127,"def":64},{"key":"p_ring","name":"RING","type":"int","min":0,"max":127,"def":64},{"key":"p_damper","name":"DAMPR","type":"int","short":"DAMP","min":0,"max":127,"def":64},{"key":"p_noise","name":"NOISE","type":"int","short":"NOIS","min":0,"max":127,"def":48},{"key":"s_tune","name":"TUNE","type":"int","min":-50,"max":50,"def":0}]},{"title":"VIBES MOTOR","gate":1,"part":1,"root":false,"knobs":[{"key":"p_mot_on","name":"MOTOR","type":"enum","short":"MOTR","options":["OFF","ON"],"def":0},{"key":"p_mot_depth","name":"DEPTH","type":"int","short":"DPTH","min":0,"max":127,"def":110},{"key":"p_mot_rate","name":"SPEED","type":"int","short":"SPD","min":0,"max":127,"def":78},{"key":"p_mot_shape","name":"SHAPE","type":"int","short":"SHPE","min":0,"max":127,"def":0},{"key":"p_mot_sync","name":"SYNC","type":"enum","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR"],"def":0}]},{"title":"MARIMBA VOICE","gate":2,"part":0,"root":false,"knobs":[{"key":"p_strike","name":"STRIKE","type":"int","short":"STRK","min":0,"max":127,"def":64},{"key":"p_mallet","name":"MALLET","type":"int","short":"MLLT","min":0,"max":127,"def":64},{"key":"p_tube","name":"TUBE","type":"int","min":0,"max":127,"def":64},{"key":"p_weight","name":"WEIGHT","type":"int","short":"WGHT","min":0,"max":127,"def":64},{"key":"p_ring","name":"RING","type":"int","min":0,"max":127,"def":64},{"key":"p_mute","name":"MUTE","type":"int","min":0,"max":127,"def":64},{"key":"p_noise","name":"NOISE","type":"int","short":"NOIS","min":0,"max":127,"def":48},{"key":"s_tune","name":"TUNE","type":"int","min":-50,"max":50,"def":0}]},{"title":"COMPRESSOR","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_cmp_amt","name":"THRESH","type":"int","short":"THR","min":0,"max":127,"def":0},{"key":"p_cmp_ratio","name":"RATIO","type":"enum","short":"RTIO","options":["1.5:1","2:1","3:1","4:1","6:1","8:1","10:1","20:1"],"def":3},{"key":"p_cmp_atk","name":"ATTACK","type":"int","short":"ATK","min":0,"max":127,"def":40},{"key":"p_cmp_gain","name":"MKUP","type":"int","min":0,"max":127,"def":0},{"key":"p_cmp_sw","name":"COMP","type":"enum","options":["OFF","ON"],"def":0},{"key":"p_cmp_rel","name":"REL","type":"int","min":0,"max":127,"def":50}]},{"title":"DRIVE/FILTER","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_drv_sw","name":"DRIVE","type":"enum","short":"DRV","options":["OFF","FDRV","KHLON","TSH8","OHCD","BHLUE"],"def":1},{"key":"p_drive","name":"AMOUNT","type":"int","short":"AMT","min":0,"max":127,"def":0},{"key":"p_drv_tone","name":"TONE","type":"int","min":-64,"max":63,"def":0},{"key":"p_drv_mix","name":"MIX","type":"int","min":0,"max":127,"def":127},{"key":"p_fl_type","name":"FILTER","type":"enum","short":"FILT","options":["OFF","LP12","LP18","HP12","HP18","BP","NOTCH"],"def":2},{"key":"p_fl_freq","name":"FREQ","type":"int","min":0,"max":127,"def":127},{"key":"p_fl_reso","name":"RESO","type":"int","min":0,"max":127,"def":0},{"key":"p_fl_lfo","name":"LFO","type":"int","min":0,"max":127,"def":0}]},{"title":"TREM/PHASER","gate":-1,"part":-1,"root":false,"knobs":[{"key":"s_twkind","name":"TREM","type":"enum","options":["OFF","PAN","TREM","WAH"],"def":0},{"key":"p_tw_depth","name":"DEPTH","type":"int","short":"DPTH","min":0,"max":127,"def":0},{"key":"p_tw_rate","name":"RATE","type":"int","min":0,"max":127,"def":90},{"key":"p_tw_shape","name":"SHAPE","type":"int","short":"SHPE","min":0,"max":127,"def":0},{"key":"p_ph_sw","name":"PHASER","type":"enum","short":"PHAS","options":["OFF","ON"],"def":0},{"key":"p_ph_depth","name":"DEPTH","type":"int","short":"DPTH","min":0,"max":127,"def":0},{"key":"p_ph_speed","name":"SPEED","type":"int","short":"SPD","min":0,"max":127,"def":40},{"key":"p_ph_fdbk","name":"FEEDBK","type":"int","short":"FDBK","min":0,"max":127,"def":50}]},{"title":"CHORUS","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_cp_sw","name":"CHORUS","type":"enum","short":"CHOR","options":["OFF","ON"],"def":0},{"key":"p_cp_depth","name":"DEPTH","type":"int","short":"DPTH","min":0,"max":127,"def":0},{"key":"p_cp_speed","name":"SPEED","type":"int","short":"SPD","min":0,"max":127,"def":50},{"key":"p_cp_sync","name":"SYNC","type":"enum","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR","4BAR"],"def":0}]},{"title":"DELAY","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_dl_sw","name":"DELAY","type":"enum","short":"DLY","options":["OFF","DIG","ANA","TAPE"],"def":0},{"key":"p_dl_depth","name":"MIX","type":"int","min":0,"max":127,"def":0},{"key":"p_dl_time","name":"TIME","type":"int","min":0,"max":127,"def":85},{"key":"p_dl_fdbk","name":"FEEDBK","type":"int","short":"FDBK","min":0,"max":127,"def":90}]},{"title":"REVERB","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_rv_type","name":"REVERB","type":"enum","short":"RVB","options":["OFF","HALL","PLATE","INF"],"def":1},{"key":"p_rv_depth","name":"MIX","type":"int","min":0,"max":127,"def":0},{"key":"p_rv_decay","name":"DECAY","type":"int","short":"DCAY","min":0,"max":127,"def":64},{"key":"p_rv_tone","name":"TONE","type":"int","min":-64,"max":63,"def":0},{"key":"p_rv_predly","name":"PREDLY","type":"int","short":"PDLY","min":0,"max":127,"def":0},{"key":"p_rv_size","name":"SIZE","type":"int","min":0,"max":127,"def":0},{"key":"p_rv_mod","name":"MOD","type":"int","min":0,"max":127,"def":64},{"key":"p_rv_locut","name":"LOWCUT","type":"int","short":"LCUT","min":0,"max":127,"def":0}]},{"title":"TEMPO","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_tw_sync","name":"TRSYNC","type":"enum","short":"TSYN","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR"],"def":0},{"key":"p_ph_sync","name":"PHSYNC","type":"enum","short":"PSYN","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR","4BAR"],"def":0},{"key":"p_dl_sync","name":"DLSYNC","type":"enum","short":"DSYN","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR"],"def":0}]},{"title":"ARPEGGIO","gate":-1,"part":-1,"root":false,"knobs":[{"key":"s_arpmode","name":"MODE","type":"enum","options":["OFF","UP","DOWN","UP-DN","ORDER","RAND"],"def":0},{"key":"s_arprate","name":"RATE","type":"enum","options":["1/4","1/8","1/8T","1/16","1/16T","1/32"],"def":3},{"key":"s_arpoct","name":"OCT","type":"int","min":1,"max":4,"def":1},{"key":"s_arpgate","name":"GATE","type":"int","min":10,"max":100,"def":60},{"key":"s_arphold","name":"HOLD","type":"enum","options":["OFF","ON"],"def":0}]},{"title":"LFO/SETUP","gate":-1,"part":-1,"root":false,"knobs":[{"key":"p_lfo_shape","name":"SHAPE","type":"enum","short":"SHPE","options":["SINE","TRI","SAW","RAMP","SQR","S&H"],"def":0},{"key":"p_lfo_rate","name":"RATE","type":"int","min":0,"max":127,"def":40},{"key":"p_lfo_sync","name":"SYNC","type":"enum","options":["FREE","1/32","16T","1/16","8T","16D","1/8","4T","8D","1/4","4D","1/2","1/1","2BAR","4BAR"],"def":0},{"key":"p_lfo_retrig","name":"RETRIG","type":"enum","short":"TRIG","options":["FREE","KEY"],"def":0},{"key":"p_dl_tone","name":"DLTONE","type":"int","short":"DTON","min":0,"max":127,"def":70},{"key":"p_level","name":"LEVEL","type":"int","short":"LVL","min":0,"max":127,"def":64},{"key":"s_mch","name":"CHAN","type":"enum","options":["ALL","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"],"def":0}]},{"title":"MAPPINGS","gate":-1,"part":-1,"root":false,"knobs":[{"key":"m_at_cc","name":"AT CC","type":"int","short":"ATCC","min":0,"max":119,"def":0},{"key":"m_at_lo","name":"AT LO","type":"int","short":"ATLO","min":0,"max":127,"def":0},{"key":"m_at_hi","name":"AT HI","type":"int","short":"ATHI","min":0,"max":127,"def":127},{"key":"m_pa_cc","name":"PA CC","type":"int","short":"PACC","min":0,"max":119,"def":0},{"key":"m_pa_lo","name":"PA LO","type":"int","short":"PALO","min":0,"max":127,"def":0},{"key":"m_pa_hi","name":"PA HI","type":"int","short":"PAHI","min":0,"max":127,"def":127}]}];
-const FR_CONF = {"hold_ms":500,"fast_ms":40,"fast_mul":4,"settle_ms":600,"tap_ms":400,"sus_cc":63,"fx_cc":62,"gr_db10":[10,20,30,40,50,60,80,100,120,150,180,200,240,270,300],"rv":{"type":"p_rv_type","decay":"p_rv_decay","inf":3,"sustain_at":120,"freeze_at":127,"words":["SUSTAIN","FREEZE"],"short":["SUST","FREZ"]},"live_ms":100};
+const FR_CONF = {"hold_ms":500,"fast_ms":40,"fast_mul":4,"settle_ms":600,"tap_ms":400,"sus_cc":63,"fx_cc":62,"gr_db10":[10,20,30,40,50,60,80,100,120,150,180,200,240,270,300],"rv":{"type":"p_rv_type","decay":"p_rv_decay","inf":3,"sustain_at":120,"freeze_at":127,"words":["SUSTAIN","FREEZE"],"short":["SUST","FREZ"]},"live_ms":100,"say":{"names":{"p_type":"Type","p_spread":"Spread","s_sustain":"Sustain","s_fx":"Effects","preset":"Preset","p_delay":"Delay mix","p_tone":"Tone","p_bark":"Bark","p_bell":"Bell","p_hammer":"Hammer","p_decay":"Decay","p_release":"Release","p_noise":"Noise","s_tune":"Tune","p_strike":"Strike","p_mallet":"Mallet","p_tube":"Tube","p_weight":"Weight","p_ring":"Ring","p_damper":"Damper","p_mute":"Mute","p_mot_on":"Motor","p_mot_depth":"Depth","p_mot_rate":"Speed","p_mot_shape":"Shape","p_mot_sync":"Sync","p_cmp_amt":"Threshold","p_cmp_ratio":"Ratio","p_cmp_atk":"Attack","p_cmp_gain":"Makeup gain","p_cmp_sw":"Compressor","p_cmp_rel":"Release","p_drv_sw":"Drive type","p_drive":"Drive amount","p_drv_tone":"Drive tone","p_drv_mix":"Drive mix","p_fl_type":"Filter type","p_fl_freq":"Filter frequency","p_fl_reso":"Resonance","p_fl_lfo":"Filter LFO","s_twkind":"Tremolo mode","p_tw_depth":"Tremolo depth","p_tw_rate":"Tremolo rate","p_tw_shape":"Tremolo shape","p_ph_sw":"Phaser","p_ph_depth":"Phaser depth","p_ph_speed":"Phaser speed","p_ph_fdbk":"Phaser feedback","p_cp_sw":"Chorus","p_cp_depth":"Depth","p_cp_speed":"Speed","p_cp_sync":"Sync","p_dl_sw":"Delay type","p_dl_depth":"Mix","p_dl_time":"Time","p_dl_fdbk":"Feedback","p_rv_type":"Reverb type","p_rv_depth":"Mix","p_rv_decay":"Decay","p_rv_tone":"Tone","p_rv_predly":"Pre-delay","p_rv_size":"Size","p_rv_mod":"Modulation","p_rv_locut":"Low cut","p_tw_sync":"Tremolo sync","p_ph_sync":"Phaser sync","p_dl_sync":"Delay sync","s_arpmode":"Mode","s_arprate":"Rate","s_arpoct":"Octaves","s_arpgate":"Gate","s_arphold":"Hold","p_lfo_shape":"LFO shape","p_lfo_rate":"LFO rate","p_lfo_sync":"LFO sync","p_lfo_retrig":"LFO retrigger","p_dl_tone":"Delay tone","p_level":"Level","s_mch":"MIDI channel","m_at_cc":"Aftertouch CC","m_at_lo":"Aftertouch low","m_at_hi":"Aftertouch high","m_pa_cc":"Poly pressure CC","m_pa_lo":"Poly pressure low","m_pa_hi":"Poly pressure high"},"pages":{"DRIVE/FILTER":"Drive and filter","TREM/PHASER":"Tremolo and phaser","LFO/SETUP":"LFO and setup"},"words":{"ST77":"Stage 77","SUIT":"Suitcase","FELT":"Early felt","DYNO":"Bell dyno","VIBE":"Vibes","MRMB":"Marimba","INF":"Infinite","DIG":"Digital","ANA":"Analog","RAND":"Random","UP-DN":"Up down","SQR":"Square","TRI":"Triangle","S&H":"Sample and hold","LP12":"Low pass 12","LP18":"Low pass 18","HP12":"High pass 12","HP18":"High pass 18","BP":"Band pass","TREM":"Tremolo","1/32":"32nd","16T":"16th triplet","1/16":"16th","8T":"8th triplet","16D":"dotted 16th","1/8":"8th","4T":"quarter triplet","8D":"dotted 8th","1/4":"quarter","4D":"dotted quarter","1/2":"half","1/1":"whole","2BAR":"2 bars","4BAR":"4 bars","1/8T":"8th triplet","1/16T":"16th triplet"}}};
 // SPDX-License-Identifier: GPL-3.0-only
 // Frodhes' own screen on the Move (M6-02, private plan 05 M6-01 option F), the hand-written part of
 // move/module/screen.js: tools/gen_move_module.py writes FR_PAGES (the pages, from params.c / eng_pages.h / ui.c,
@@ -33,6 +34,10 @@ const FR_CONF = {"hold_ms":500,"fast_ms":40,"fast_mul":4,"settle_ms":600,"tap_ms
 //   meter      COMPRESSOR: the gain reduction in the free cards' place (knobs 7-8), as the FM-1's COMP page shows it:
 //              the bar filled from the right on ui.c's segment scale (FR_CONF.gr_db10), the held peak, the reading;
 //              the plugin keeps the FM-1's ballistics (r_cmp_gr), the screen reads it once a live tick
+//   speech     with Schwung's screen reader on (the ctx's announce and srOn: chain_adapter.js), every event says what
+//              it changed, in words (FR_CONF.say): the screen opening, a page, a knob touched (its name and value) or
+//              turned (its value, at most one a SR_THROTTLE_MS a knob and the last value once the turn stops), the
+//              arrows, a reset, a message, the list's rows, the save card, a preset; nothing at all when it is off
 // Everything is drawn with fillRect and the font below (the device's print font is not used), so the host renderer
 // (tools/move_ui_shots.mjs) draws exactly what the Move draws. Reads (getParam, ~3 ms each) happen in the event
 // hooks only, never in draw: a page's values on open and on a page change (cached until something else changes
@@ -305,9 +310,10 @@ function turn(ctx, st, slot, d) {
 // a knob back to its default (FR_PAGES' def; a trigger, the preset and a key without one are left alone)
 function reset(ctx, st, slot) {
     const k = knobs(st)[slot];
-    if (!k || k.write || k.type === "preset" || k.def === undefined) return;
+    if (!k || k.write || k.type === "preset" || k.def === undefined) return false;
     write(ctx, st, k, k.def);
-    toast(ctx, st, (k.short || k.name) + " RESET");
+    toast(ctx, st, (k.short || k.name) + " RESET", sayName(k) + " reset");
+    return true;
 }
 
 function focus(ctx, st, slot, touched) {
@@ -328,6 +334,7 @@ function release(ctx, st, slot) {
 function setPage(ctx, st, idx) {
     if (idx === st.page) return;
     st.page = idx;
+    st.srPend = null;                     // (a turn's last value is not spoken over the new page)
     st.focus = -1;
     st.touch = [false, false, false, false, false, false, false, false];
     readPage(ctx, st);
@@ -338,7 +345,9 @@ function pageStep(ctx, st, d) {
     let at = vis.indexOf(st.page);
     if (at < 0) at = 0;
     const to = Math.max(0, Math.min(vis.length - 1, at + d));
+    if (vis[to] === st.page) return;
     setPage(ctx, st, vis[to]);
+    say(ctx, () => pageSay(st));
 }
 
 function engineChanged(ctx, st, e) {
@@ -365,6 +374,7 @@ function sustainBtn(ctx, st) {
     st.written.s_sustain = nowOf(ctx);
     if (known) ctx.setParam("s_sustain", st.susOn ? "1" : "0"); else ctx.setParam("s_susbtn", "1");
     st.expectRev++;
+    say(ctx, () => "Sustain " + (st.susOn ? "on" : "off"));
 }
 
 // the Left arrow: FX off / on (every effect but the compressor). Shown at once in the header (X) on every page, as
@@ -376,6 +386,116 @@ function fxBtn(ctx, st) {
     delete st.vals.s_fx;                  // (the first page's FX card reads it again)
     if (known) ctx.setParam("s_fx", st.fxOn ? "1" : "0"); else ctx.setParam("s_fxbtn", "1");
     st.expectRev++;
+    say(ctx, () => "Effects " + (known ? (st.fxOn ? "on" : "off") : "switched"));
+}
+
+// ---- the screen reader: words for the screen's text, said through the ctx (chain_adapter.js: Schwung's
+// shared/screen_reader.mjs announce; srOn: its tts_get_enabled). Nothing is built or said while it is off, and nothing
+// in draw: only the event hooks speak, and onValues only to finish a turn (st.srPend).
+const SAY = FR_CONF.say || {};
+const SR_THROTTLE_MS = 120;               // a knob's turn: one value at most this often (Schwung's grid,
+                                          // page_controller.mjs ANNOUNCE_THROTTLE_MS), the last one after the turn
+function srOn(ctx) { return typeof ctx.announce === "function" && (typeof ctx.srOn !== "function" || !!ctx.srOn()); }
+function say(ctx, f) {
+    if (!srOn(ctx)) return;
+    const s = typeof f === "function" ? f() : f;
+    if (s) ctx.announce(String(s));
+}
+// the screen's capitals as a sentence ("MODULE HELP" -> "Module help"); a text with lower case is left as it is
+function sayCase(s) {
+    s = String(s);
+    if (/[a-z]/.test(s) || !/[A-Z]/.test(s)) return s;
+    const l = s.toLowerCase(), i = l.search(/[a-z]/);
+    return l.slice(0, i) + l.charAt(i).toUpperCase() + l.slice(i + 1);
+}
+function sayName(k) { return (SAY.names && SAY.names[k.key]) || sayCase(k.name); }
+function sayPage(i) { const t = FR_PAGES[i].title; return (SAY.pages && SAY.pages[t]) || sayCase(t); }
+function sayWord(s) {
+    s = String(s);
+    if (SAY.words && SAY.words[s]) return SAY.words[s];
+    if (/^[0-9.]+:[0-9.]+$/.test(s)) return s.replace(":", " to ");      // a ratio: 4:1 -> 4 to 1
+    return sayCase(s);
+}
+// a preset: its number, then its name ("F01 BRIGHT STAGE" -> "F01, Bright stage"); an empty user slot "empty"
+function sayPreset(nm) {
+    if (!nm) return "";
+    const s = String(nm).trim(), sp = s.indexOf(" ");
+    if (sp <= 0) return s;
+    const rest = s.slice(sp + 1).trim();
+    return s.slice(0, sp) + ", " + (/^-*$/.test(rest) ? "empty" : sayCase(rest));
+}
+// a knob's value as the large card shows it, in words (an option's name, SUSTAIN / FREEZE, a number)
+function sayValue(st, k) {
+    if (k.type === "preset") return sayPreset(st.presetName) || "not read yet";
+    if (st.flash && st.flash.key === k.key) return sayWord(k.options[1]);
+    const v = st.vals[k.key];
+    if (v === null || v === undefined) return "not read yet";
+    return sayWord(valueText(st, k));
+}
+// a page: its name, where it is, how many controls (Schwung's announce_page.mjs announcePage)
+function pageSay(st) {
+    const vis = visiblePages(st.engine), n = knobs(st).filter((k) => k).length;
+    return sayPage(st.page) + ", " + (vis.indexOf(st.page) + 1) + " of " + vis.length + ", " + n +
+        (n === 1 ? " control" : " controls");
+}
+// a list row as Schwung's lists say one ("Preset: (none), 12 of 20"), the section's name first when the cursor enters it
+function rowSection(st, i) {
+    for (let j = i; j >= 0; j--) if (st.rows[j].kind === "sep") return j;
+    return -1;
+}
+function rowSay(st, was) {
+    const rows = st.rows || [], r = rows[st.cursor];
+    if (!r) return "";
+    const sel = rows.filter((x) => x.kind !== "sep");
+    let s;
+    if (r.kind === "page") s = sayPage(r.idx) + (r.idx === st.page ? ", current" : "");
+    else if (r.kind === "save") s = sayCase(r.label);
+    else s = (r.say || sayCase(r.label)) + (r.sayValue ? ": " + r.sayValue : "");
+    const sec = rowSection(st, st.cursor);
+    if (sec >= 0 && (was < 0 || rowSection(st, was) !== sec)) s = sayCase(rows[sec].label) + ", " + s;
+    return s + ", " + (sel.indexOf(r) + 1) + " of " + sel.length;
+}
+function slotSay(st) {
+    const u = st.save.slot + 1, nm = st.save.names[st.save.slot];
+    return "User " + u + ", " + (nm ? sayCase(nm.slice(nm.indexOf(" ") + 1)) : "empty");
+}
+// a knob touched: its whole name and its value (announce_page.mjs announceTouch)
+function srTouch(ctx, st, slot) {
+    const k = knobs(st)[slot];
+    if (k) say(ctx, () => sayName(k) + ", " + sayValue(st, k));
+}
+// a knob turned: the value only (announceTurn), at most one a SR_THROTTLE_MS for that knob; one held back is said by
+// srFlush once the turn has stopped, so the value spoken last is the value the knob ended on
+function srTurn(ctx, st, slot) {
+    if (!srOn(ctx)) return;
+    const k = knobs(st)[slot];
+    if (!k) return;
+    const t = nowOf(ctx), last = st.srLast[k.key];
+    // the preset: its name once the live read has the new one (a read right after the write can still name the old)
+    if (k.type === "preset") { st.srPend = { k, t, code: presetCode(st, st.preset) }; return; }
+    if (last === undefined || t - last >= SR_THROTTLE_MS) {
+        st.srLast[k.key] = t;
+        st.srPend = null;
+        say(ctx, () => sayValue(st, k));
+    } else st.srPend = { k, t };
+}
+// a preset's number as its name starts (F01-F19, U01-U16 from u_first, then the Move's own F20..)
+function presetCode(st, i) {
+    if (i === null || i === undefined) return "";
+    const uf = userFirst(st), two = (n) => (n < 10 ? "0" : "") + n;
+    if (i < uf) return "F" + two(i + 1);
+    if (i < uf + 16) return "U" + two(i - uf + 1);
+    return "F" + two(i - 16 + 1);
+}
+function srFlush(ctx, st) {
+    const p = st.srPend, t = nowOf(ctx);
+    if (t - p.t < SR_THROTTLE_MS) return;
+    if (p.code !== undefined && t - p.t < 2000 &&
+        !(st.presetName && String(st.presetName).indexOf(p.code + " ") === 0)) return;   // (the name not read yet)
+    st.srPend = null;
+    if (knobs(st).indexOf(p.k) < 0) return;
+    st.srLast[p.k.key] = t;
+    say(ctx, () => sayValue(st, p.k));
 }
 
 // ---- the views
@@ -493,7 +613,8 @@ function listRows(ctx, st) {
         rows.push({ kind: "sep", label: String(pg.name || "").toUpperCase() });
         for (const e of es) {
             const v = e.value !== undefined && e.value !== null ? String(e.value).toUpperCase() : "";
-            rows.push({ kind: "act", label: String(e.label || "").toUpperCase(), value: v, action: e.action });
+            rows.push({ kind: "act", label: String(e.label || "").toUpperCase(), value: v, action: e.action,
+                        say: String(e.label || ""), sayValue: e.value !== undefined && e.value !== null ? String(e.value) : "" });
         }
     }
     return rows;
@@ -516,18 +637,19 @@ function openList(ctx, st, at) {
         const i = st.rows.findIndex((r) => r.kind === "sep" && r.label === at.toUpperCase());
         if (i >= 0) st.cursor = rowStep(st.rows, i, 1);
     }
+    say(ctx, () => rowSay(st, -1));
 }
 function clickRow(ctx, st) {
     const r = st.rows[st.cursor];
     st.list = false;
     if (!r) return;
-    if (r.kind === "page") { setPage(ctx, st, r.idx); return; }
+    if (r.kind === "page") { setPage(ctx, st, r.idx); say(ctx, () => pageSay(st)); return; }
     if (r.kind === "save") { openSave(ctx, st); return; }
     if (r.kind === "act" && typeof ctx.runAction === "function") {
         let opened = false;
         try { opened = !!ctx.runAction(r.action); } catch (e) { opened = false; }
         st.menus = null;                       // (Save / Save As change what the rows say)
-        if (!opened) toast(ctx, st, r.label);
+        if (!opened) toast(ctx, st, r.label, r.say);
     }
 }
 
@@ -569,8 +691,13 @@ function openSave(ctx, st) {
     const nf = userFirst(st);                             // (U01-U16 from u_first)
     let slot = st.preset !== null && st.preset >= nf && st.preset < nf + 16 ? st.preset - nf : names.indexOf("");
     st.save = { slot: Math.max(0, Math.min(15, slot)), names };
+    say(ctx, () => "Save to user, " + slotSay(st));
 }
-function saveStep(st, d) { st.save.slot = Math.max(0, Math.min(15, st.save.slot + Math.sign(d))); }
+function saveStep(ctx, st, d) {
+    const was = st.save.slot;
+    st.save.slot = Math.max(0, Math.min(15, st.save.slot + Math.sign(d)));
+    if (st.save.slot !== was) say(ctx, () => slotSay(st));
+}
 function saveNow(ctx, st) {
     const u = st.save.slot + 1;
     st.save = null;
@@ -579,7 +706,7 @@ function saveNow(ctx, st) {
     st.preset = userFirst(st) + u - 1;                      // (the plugin loads the slot it saved)
     st.presetName = null;
     st.presetDirty = true;
-    toast(ctx, st, "SAVED U" + (u < 10 ? "0" : "") + u);
+    toast(ctx, st, "SAVED U" + (u < 10 ? "0" : "") + u, "Saved to user " + u);
 }
 function drawSave(ctx, st) {
     const u = st.save.slot + 1, nm = st.save.names[st.save.slot];
@@ -593,7 +720,10 @@ function drawSave(ctx, st) {
 }
 
 // a word in a box over the screen for a second (SAVED U05; a Schwung row that did its work in place)
-function toast(ctx, st, msg) { st.toast = { text: String(msg), until: nowOf(ctx) + 1200 }; }
+function toast(ctx, st, msg, spoken) {
+    st.toast = { text: String(msg), until: nowOf(ctx) + 1200 };
+    say(ctx, () => spoken || sayCase(msg));
+}
 function drawToast(ctx, st) {
     if (!st.toast || nowOf(ctx) >= st.toast.until) { st.toast = null; return; }
     const w = Math.min(124, textW(st.toast.text, 1) + 8), x = (W - w) >> 1;
@@ -616,7 +746,7 @@ function newState() {
              touch: [false, false, false, false, false, false, false, false], list: false, cursor: 0,
              preset: null, presetName: null, presetCount: 0, uFirst: null, presetDirty: false, rev: null, expectRev: 0,
              susOn: false, susKnown: false, fxOn: null, flash: null, rr: 0, gr: null, rows: [], menus: null, save: null,
-             toast: null, tapAt: [] };
+             toast: null, tapAt: [], srLast: {}, srPend: null };
 }
 
 globalThis.canvas_overlay = {
@@ -633,6 +763,10 @@ globalThis.canvas_overlay = {
         st.fxOn = fx === null || fx === undefined ? null : fx === "1" || fx === "ON";
         st.page = visiblePages(st.engine)[0];
         readPage(ctx, st);
+        say(ctx, () => {
+            const pg = sayPage(st.page), pr = sayPreset(st.presetName);
+            return "Frodhes" + (pg !== "Frodhes" ? ", " + pg : "") + (pr ? ", " + pr : "");
+        });
     },
     onMidi(ctx, msg) {
         const st = ctx.state.fr;
@@ -640,7 +774,7 @@ globalThis.canvas_overlay = {
         const d = (msg && msg.data) || [];
         const type = (d[0] | 0) & 0xF0, d1 = d[1] | 0, d2 = d[2] | 0;
         if (st.save) {                                              // the save card owns the controls
-            if (type === 0xB0 && (d1 === JOG_CC || (d1 >= KNOB_CC && d1 < KNOB_CC + 8))) { saveStep(st, rel(d2)); return true; }
+            if (type === 0xB0 && (d1 === JOG_CC || (d1 >= KNOB_CC && d1 < KNOB_CC + 8))) { saveStep(ctx, st, rel(d2)); return true; }
             if (type === 0xB0 && d1 === CLICK_CC && d2 > 0) { saveNow(ctx, st); return true; }
             if (type === 0xB0 || type === 0x90 || type === 0x80) return true;
         }
@@ -652,8 +786,10 @@ globalThis.canvas_overlay = {
                 st.touch[d1] = true;
                 const t = nowOf(ctx), was = st.tapAt[d1];
                 st.tapAt[d1] = t;
-                if (was !== undefined && t - was < FR_CONF.tap_ms) { st.tapAt[d1] = undefined; reset(ctx, st, d1); }
+                let wasReset = false;
+                if (was !== undefined && t - was < FR_CONF.tap_ms) { st.tapAt[d1] = undefined; wasReset = reset(ctx, st, d1); }
                 focus(ctx, st, d1, true);
+                if (!wasReset) srTouch(ctx, st, d1);
             } else release(ctx, st, d1);
             return true;
         }
@@ -666,12 +802,16 @@ globalThis.canvas_overlay = {
             turn(ctx, st, slot, rel(d2));
             if (st.presetDirty) { st.presetName = ctx.getParam("preset_name"); st.presetDirty = st.presetName === null; }
             focus(ctx, st, slot, st.touch[slot]);
+            srTurn(ctx, st, slot);
             return true;
         }
         if (d1 === JOG_CC) {
             const r = rel(d2);
-            if (st.list) st.cursor = rowStep(st.rows, st.cursor, Math.sign(r));
-            else pageStep(ctx, st, Math.sign(r));
+            if (st.list) {
+                const was = st.cursor;
+                st.cursor = rowStep(st.rows, st.cursor, Math.sign(r));
+                if (st.cursor !== was) say(ctx, () => rowSay(st, was));
+            } else pageStep(ctx, st, Math.sign(r));
             return true;
         }
         if (d1 === CLICK_CC && d2 > 0) {
@@ -687,7 +827,7 @@ globalThis.canvas_overlay = {
     handleBack(ctx) {
         const st = ctx.state.fr;
         if (st && st.save) { st.save = null; toast(ctx, st, "NOT SAVED"); return true; }   // the save card: unsaved
-        if (st && st.list) { st.list = false; return true; }     // up: the list closes, the page stays
+        if (st && st.list) { st.list = false; say(ctx, () => pageSay(st)); return true; }   // up: the list closes, the page stays
         return false;                                             // the top: the host closes the screen
     },
     // the host reloaded the screen after one of its own screens (Load, Delete, Swap, Help): back on the list there
@@ -709,11 +849,14 @@ globalThis.canvas_overlay = {
             if (rev > st.expectRev) {                             // a change we did not make: a preset, a state,
                 st.vals = {};                                     // the host's own page: read the page again
                 st.expectRev = rev;
+                const was = st.preset;
                 st.preset = asNum(ctx.getParam("preset"));
                 readPage(ctx, st);
+                if (st.preset !== null && st.preset !== was && st.presetName) say(ctx, () => sayPreset(st.presetName));
                 return;
             }
         }
+        if (st.srPend) srFlush(ctx, st);                       // a turn's last value, once the turn has stopped
         if (isComp(st)) readGr(ctx, st);                       // the meter: every tick
         // one value a tick, round the page, so a change by MIDI CC (no rev) shows too; never one being turned
         const ks = knobs(st);
@@ -747,7 +890,8 @@ globalThis.frodhes_screen = { textW, view, visiblePages, valueText, grPx, grText
 // This adapter runs the canvas overlay of screen_core.js (above it in the same closure) unchanged: its ctx maps onto
 // the host's globals (fill_rect, clear_screen) and the param shims loadModuleUi installs for this slot's synth
 // (host_module_get_param / host_module_set_param, "synth:<key>" on the slot). onValues gets the four live keys the
-// canvas cell's extra_keys named, every LIVE_MS, as Schwung's canvas did (fullscreen_live_ms).
+// canvas cell's extra_keys named, every LIVE_MS, as Schwung's canvas did (fullscreen_live_ms). The screen reader: the
+// screen's words go to Schwung's announce (ctx.announce, gated by ctx.srOn); screen_core.js says what and when.
 const OV = globalThis.canvas_overlay;
 if (PREV_OV === undefined) delete globalThis.canvas_overlay; else globalThis.canvas_overlay = PREV_OV;
 if (PREV_FS === undefined) delete globalThis.frodhes_screen; else globalThis.frodhes_screen = PREV_FS;
@@ -782,6 +926,15 @@ const ctx = {
     runAction(a) { return has("shadow_component_run_action") ? !!shadow_component_run_action(a) : false; },
     // SAVE TO USER: the sound into Frodhes' own user slot u (1-16, the plugin's u_save; store.bin, shared)
     userSave(u) { return ctx.setParam("u_save", String(u)); },
+    // the screen reader: Schwung's shared/screen_reader.mjs announce (imported at the top of ui_chain.js as
+    // FR_ANNOUNCE; it speaks only while the shadow UI is on screen), asked only while Schwung's screen reader is on
+    // (tts_get_enabled, Global Settings > Screen Reader): off, the screen builds no text and calls nothing
+    announce(s) { if (typeof FR_ANNOUNCE === "function") try { FR_ANNOUNCE(s); } catch (e) {} },
+    srOn() {
+        if (typeof FR_ANNOUNCE !== "function") return false;
+        if (!has("tts_get_enabled")) return true;     // (an older host: announce decides, as its own screens do)
+        try { return !!tts_get_enabled(); } catch (e) { return false; }
+    },
 };
 
 // The knob LEDs, as Schwung's grid lights them (shared/param_pages/knob_leds.mjs, imported at the top of ui_chain.js
