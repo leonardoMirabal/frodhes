@@ -9,8 +9,9 @@ Frodhes draws its own screen on the Move: the eight knobs as eight cards, a page
 code run on a computer), and the screen, the knobs, the buttons, the presets, the levels and the clock on a Move.
 What still waits for its check on a Move is marked *(not yet verified on a device)*.
 
-This is the user manual for the Move. What the controls do to the sound is the FM-1's, described in the
-[FM-1 manual](MANUAL.md); this page says how to reach them on the Move and what is different. The build, the tests and
+This is the user manual for the Move. What the controls do to the sound is described once, for every device, in the
+[manual](MANUAL.md) (sections 2-14, the [pages](MANUAL.md#4-the-pages) in section 4); this page says only how to reach
+them on the Move and what is different, with a link to the manual's section for each page. The build, the tests and
 the device measurements are in [MOVE-DEV.md](MOVE-DEV.md).
 
 ![The first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=a6c53d5f)
@@ -180,20 +181,24 @@ within about half a second; that is why the page count is 12 or 13.
 
 The names are the FM-1's where they fit and shorter where they do not (HAMMR, DAMPR, MKUP; an option the same way
 everywhere, so the reverb's INFINITE is INF). CHAN is the FM-1's MIDI CHANNEL. The pictures below show each page with
-its default values.
+its default values; each page's link goes to the manual's description of its controls.
 
 ### FRODHES
 
-The sound: TYPE (the instrument: ST77, SUIT, FELT, DYNO, VIBE, MRMB), SPREAD (the keys across the stereo field),
-SUS (the sustain), FX (every effect off or on), PRESET (knob 5: the sound, its full name across knobs 5-7) and the
-delay's mix (DELAY, knob 8, the FM-1's PERFORM name for it). Knobs 6 and 7 have no control here.
+TYPE (ST77, SUIT, FELT, DYNO, VIBE, MRMB: the [FRODHES page](MANUAL.md#frodhes-the-main-page)'s TYPE), SPREAD
+(the keys across the stereo field: the manual's [MIDI](MANUAL.md#12-midi), CC 105), SUS ([Sustain](#sustain)), FX ([The
+effects](#the-effects)), PRESET (knob 5: the sound, its full name across knobs 5-7; [Presets and
+saving](#presets-and-saving)) and the delay's MIX (DELAY, knob 8, the FM-1's PERFORM name for it). Knobs 6 and 7 have
+no control here.
 
 ![FRODHES](manual/img/move/move-frodhes.png?v=a6c53d5f)
 ![Knob 5 touched: the preset, its name above and its number large](manual/img/move/move-frodhes-k5.png?v=caea2c9e)
 
 ### PIANO VOICE, VIBES VOICE, VIBES MOTOR, MARIMBA VOICE
 
-The instrument's own controls, as on the FM-1's VOICE pages (MANUAL.md sections 4 and 5).
+The instrument's own controls: the Rhodes types' [VOICE pages](MANUAL.md#voice-12-and-22), the
+[vibraphone](MANUAL.md#vibes-the-vibraphone) and [its motor](MANUAL.md#the-motor-on-and-off), the
+[marimba](MANUAL.md#marimba). The FRODHES page's TONE and BELL (MALLET, MOTOR, TUBE on the bars) are here.
 
 ![PIANO VOICE, with ST77](manual/img/move/move-piano-voice.png?v=301bdb0e)
 ![VIBES VOICE, with VIBE](manual/img/move/move-vibes-voice.png?v=b77ff6fa)
@@ -202,7 +207,8 @@ The instrument's own controls, as on the FM-1's VOICE pages (MANUAL.md sections 
 
 ### COMPRESSOR
 
-Knobs 7 and 8 have no control: the gain reduction is drawn in their place, as on the FM-1's COMP page. GR and the
+The [compressor](MANUAL.md#compressor)'s controls, its on / off switch (COMP) on knob 5. Knobs 7 and 8 have no
+control: the gain reduction is drawn in their place, as on the FM-1's COMP page. GR and the
 reading in dB are on the top line, under it a thick bar of 15 segments lit from the right as the reduction grows, on
 the FM-1's scale (up to 30 dB), and the peak held for a second as a taller segment. It moves while you play. When the
 compressor is off the bar is a dotted outline and reads COMP OFF. *(not yet verified on a device: the meter moving
@@ -213,23 +219,25 @@ while you play)*
 
 ### DRIVE/FILTER, TREM/PHASER
 
-Two of the FM-1's pages side by side: the drive and the filter, the tremolo / pan / wah and the phaser.
+Two of the FM-1's pages side by side: the [drive](MANUAL.md#drive) and the [filter](MANUAL.md#filter), the
+[tremolo / pan / wah](MANUAL.md#tremwah) and the [phaser](MANUAL.md#phaser).
 
 ![DRIVE/FILTER](manual/img/move/move-drive-filter.png?v=afb6680e)
 ![TREM/PHASER](manual/img/move/move-trem-phaser.png?v=f6b87239)
 
 ### CHORUS, DELAY
 
-A page each, with the FM-1's cards. The delay's mix is also on the first page (DELAY, knob 8).
+A page each, with the FM-1's cards: the [chorus](MANUAL.md#chorus), the [delay](MANUAL.md#delay). The delay's mix
+is also on the first page (DELAY, knob 8).
 
 ![CHORUS](manual/img/move/move-chorus.png?v=c4ac474b)
 ![DELAY](manual/img/move/move-delay.png?v=2d0c449e)
 
 ### REVERB
 
-**With REVERB at INF**, DECAY shows SUSTAIN from 120 to 126 and FREEZE at 127 (SUST and FREZ on the overview), as the
-FM-1's card does. FREEZE closes the reverb's input: the held tail stays as it is and new notes play dry. To get the
-tail moving again, turn DECAY under 120.
+The FM-1's [REVERB](MANUAL.md#reverb) and [REVERB 2](MANUAL.md#reverb-2) on one page. **With REVERB at INF**
+(INFINITE), DECAY shows SUSTAIN from 120 to 126 and FREEZE at 127, SUST and FREZ on the overview (what they do: the
+manual's REVERB). At FREEZE new notes play dry; turn DECAY under 120 to get the tail moving again.
 
 ![REVERB](manual/img/move/move-reverb.png?v=2fbfbe5a)
 ![REVERB at INF, DECAY at 127: FREZ on the overview](manual/img/move/move-reverb-freeze.png?v=83417b6d)
@@ -237,16 +245,17 @@ tail moving again, turn DECAY under 120.
 
 ### TEMPO, ARPEGGIO
 
-The synced rates of the tremolo, the phaser and the delay, and the arpeggiator ([The arpeggiator](#the-arpeggiator)).
-They follow the Move's tempo ([MIDI and tempo](#midi-and-tempo)).
+The synced rates of the tremolo, the phaser and the delay (the FM-1's [TEMPO](MANUAL.md#tempo) page without BPM and
+CLOCK), and the arpeggiator ([The arpeggiator](#the-arpeggiator)). They follow the Move's tempo ([MIDI and
+tempo](#midi-and-tempo)).
 
 ![TEMPO](manual/img/move/move-tempo.png?v=f53c923e)
 ![ARPEGGIO, as a new Frodhes starts: OFF, 1/16, 1 octave, 60 %](manual/img/move/move-arpeggio.png?v=6647d24f)
 
 ### LFO/SETUP, MAPPINGS
 
-The LFO, the delay's tone, the output LEVEL and the MIDI channel (CHAN, ALL by default); the pressure mappings
-(Move only):
+The filter's [LFO](MANUAL.md#lfo), the delay's tone, the output LEVEL and the MIDI channel (CHAN, ALL by default;
+[SETUP](MANUAL.md#setup) and [MIDI](MANUAL.md#midi)); the pressure mappings (Move only):
 
 - **AT CC / AT LO / AT HI**: channel pressure (aftertouch) drives the control on that MIDI CC number, from LO (no
   pressure) to HI (full pressure).
@@ -280,8 +289,9 @@ After Module Help, a preset load, Delete or a picker you leave, Back brings you 
 
 ## Presets and saving
 
-PRESET on the first page loads the 19 factory sounds (F01-F19) and the 16 user slots (U01-U16); program change loads
-them as on the FM-1 (0-15 F01-F16, 16-31 U01-U16, 32-34 F17-F19).
+PRESET on the first page loads the 19 factory sounds (F01-F19, described in the manual's
+[presets](MANUAL.md#6-presets)) and the 16 user slots (U01-U16); program change loads them as on the FM-1 (0-15
+F01-F16, 16-31 U01-U16, 32-34 F17-F19).
 
 **To save the sound** into a user slot:
 
@@ -301,21 +311,22 @@ back. SUS is not saved with it: a set that loads starts with SUS off and FX on, 
 
 ## Sustain
 
-The Move has no pedal jack. **SUS** is the sustain, on or off: ON holds the notes as a pedal held down does, OFF lets
-them go, and OFF always wins (over a MIDI pedal held down too). To set it:
+The Move has no pedal jack. **SUS** is the sustain ([sustain and polyphony](MANUAL.md#10-sustain-and-polyphony)),
+a switch: ON holds the notes as a pedal held down does, OFF lets them go, and OFF always wins (over a MIDI pedal held
+down too). To set it:
 
 - **SUS** on the first page (knob 3).
 - **The Right arrow**, on every page of Frodhes' screen: each press turns SUS on or off. The header's `S` and the
   arrow's light show it. On Schwung's other screens the arrow does its usual job.
 - **A sustain pedal or keyboard on CC 64** (on the Move's USB-A port, or MIDI from a computer): a pedal as on the
-  FM-1, half pedalling included. Letting the pedal up also turns SUS off, as on the FM-1.
+  FM-1, half pedalling included. Letting the pedal up also turns SUS off.
 
 ## The effects
 
-The compressor, the drive, the filter, the tremolo / pan / wah, the phaser, the chorus, the delay, the reverb and the
-LFO are inside Frodhes, on the pages above, with the FM-1's ranges and defaults. **FX** on the first page is the
-FM-1's FX button: OFF turns every effect off at once and keeps their settings. On the Move the compressor stays on
-(the FM-1 bypasses it too). FX is ON when Frodhes loads (also by MIDI, CC 111).
+The effects are inside Frodhes, on the pages above, with the FM-1's ranges and defaults (the manual's
+[pages](MANUAL.md#4-the-pages)). **FX** on the first page is the FM-1's FX button ([effects on and
+off](MANUAL.md#7-effects-on-and-off)), with one difference: on the Move the compressor stays on (the FM-1 bypasses it
+too). FX is ON when Frodhes loads (also by MIDI, CC 111).
 
 **The Left arrow**, on every page of Frodhes' screen, does the same: each press turns the effects off or on, and the
 compressor stays. The header's `X` shows that they are off; the arrow is lit while they are on.
@@ -338,8 +349,8 @@ also sends each such note a second time at 127; Frodhes drops that copy.)
 
 ## MIDI and tempo
 
-The MIDI of Schwung's track reaches Frodhes as on the FM-1 (MANUAL.md section 12): notes with velocity and release
-velocity, pitch bend, CC 64, the parameter CCs and program change. CHAN on LFO/SETUP picks the channel it listens to
+The MIDI of Schwung's track reaches Frodhes as on the FM-1 ([MIDI](MANUAL.md#12-midi)): notes with velocity and
+release velocity, pitch bend, CC 64, the parameter CCs and program change. CHAN on LFO/SETUP picks the channel it listens to
 (ALL by default). *(not yet verified on a device: CHAN with the Move's tracks)*
 
 The sequencer's and the chords' CCs (43-46, 56-63) do nothing on the Move. The arpeggiator's (52-55) work, as on the
@@ -347,7 +358,7 @@ FM-1.
 
 **The tempo is the Move's.** Frodhes follows the Move's transport: its clock and Start / Stop or, when no clock comes,
 its transport and beat position. The synced rates (TEMPO's TRSYNC, PHSYNC, DLSYNC, the chorus SYNC, the VIBES
-motor's SYNC), the LFO's SYNC and the arpeggiator lock to it. While the Move is stopped they use the Move's tempo
+motor's SYNC), the LFO's SYNC and the arpeggiator lock to it ([tempo and sync](MANUAL.md#8-tempo-and-sync)). While the Move is stopped they use the Move's tempo
 setting (120 BPM if the Move reports none). Frodhes has no BPM or CLOCK setting on the Move, and its tempo is kept
 within the FM-1's 40 to 240 BPM. When the Move starts, a synced LFO takes about 2 s to come into phase with the beat
 (it moves at most 1/8 faster or slower, so there is no jump).
@@ -358,10 +369,10 @@ the Move.
 
 ## The arpeggiator
 
-**ARPEGGIO** is the FM-1's arpeggiator page: MODE (OFF, UP, DOWN, UP-DN, ORDER, RAND), RATE (1/4 to 1/32, triplets
-included), OCT (1 to 4 octaves) and GATE (10 to 100 %), and its CCs 52-55. It plays the notes you hold, on the Move's
-clock while the Move plays and on its tempo setting while it is stopped. SUS sustains the notes it plays, as a pedal
-does, but does not hold the pattern: letting the pads go stops it (the FM-1's HOLD is not on the Move). Each Frodhes
+**ARPEGGIO** is the FM-1's [arpeggiator page](MANUAL.md#arpeggio) (MODE, RATE, OCT, GATE) and its CCs 52-55. It
+plays the notes you hold, on the Move's clock while the Move plays and on its tempo setting while it is stopped. SUS
+sustains the notes it plays, as a pedal does, but does not hold the pattern: letting the pads go stops it (the FM-1's
+HOLD is not on the Move). Each Frodhes
 has its own, kept with the track; a Frodhes loaded new starts with it OFF.
 
 Schwung has its own arpeggiator, a MIDI FX before the sound generator. Use one or the other: with both on, every note
