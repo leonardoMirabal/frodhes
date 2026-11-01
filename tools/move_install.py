@@ -18,7 +18,7 @@ process crashes; the probe's install.sh found the same rule):
      if the data folder turns out to be the module's: D1) are copied into the staging folder;
   3. two renames: frodhes -> .frodhes.prev-<time>, the staging folder -> frodhes. A running instance keeps its
      mapping of the old file (the inode lives on in the kept folder); the next load takes the new one;
-  4. kept folders beyond --keep (default 2) are deleted, oldest first.
+  4. kept folders beyond --keep (default 2; 0 keeps none) are deleted, oldest first.
 dsp.so is the loader and engine.so the plugin (move/move_loader.c): each slot's instance runs its own copy of
 engine.so, DATA/inst/<k>/dsp-<crc>.so, made at the instance's create and made again when engine.so changes (size, CRC). A
 running instance keeps its copy; the next load copies the new engine.so. The data folder (DATA: store.bin, the copies)
@@ -143,7 +143,7 @@ def install(t, src, keep=2, stamp=None):
            "carrying the module folder's own files over")
     t.need("cd %s && if [ -d %s ]; then mv %s %s; fi && mv %s %s" % (
         q(m), MODULE_ID, MODULE_ID, q(os.path.basename(prev)), q(os.path.basename(stage)), MODULE_ID), "the switch")
-    if keep > 0:                                   # (POSIX tail +N: the Move's busybox and macOS alike)
+    if keep >= 0:                                  # (POSIX tail +N: the Move's busybox and macOS alike; 0 keeps none)
         t.run("cd %s && ls -1d .%s.prev-* 2>/dev/null | sort -r | tail -n +%d | while read d; do rm -rf \"$d\"; done"
               % (q(m), MODULE_ID, keep + 1))
     return cur, prev

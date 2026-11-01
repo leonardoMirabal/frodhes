@@ -77,6 +77,15 @@ def test_keep_prunes_the_oldest(tmp_path):
     assert cur(mods) == b"ELF 4" * 100
 
 
+def test_keep_0_leaves_no_previous_module(tmp_path):
+    mods = tmp_path / "mods"
+    mods.mkdir()
+    for i in range(3):
+        mi.install(tgt(mods), pkg(str(tmp_path / ("v%d" % i)), str(i)), keep=0, stamp="2026010%d" % i)
+    assert kept(mods) == []
+    assert cur(mods) == b"ELF 2" * 100
+
+
 def test_bad_package_stops_before_copying(tmp_path):
     mods = tmp_path / "mods"
     mods.mkdir()
