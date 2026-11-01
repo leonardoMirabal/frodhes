@@ -36,6 +36,9 @@ def parse(path):
     for line in Path(path).read_text(errors="replace").splitlines():
         m = LABEL.match(line)
         if m:
+            if m[1].startswith(".GJTI") and cur is not None:   # a jump table's label inside a function (the cases
+                cur.append(m[1].split("_")[0][:6] + ":")         # after it): still that function (it cut drv_run's
+                continue                                         # body and hid its calls until 2026-11-01)
             cur = funcs.setdefault(m[1], [])
             continue
         m = INSN.match(line)

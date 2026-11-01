@@ -5,6 +5,7 @@
  * canvas of gfx.c. A glyph is trimmed to its ink box, advances are in 1/16 px, each glyph is rasterised at 1 << psh
  * horizontal phases; blending uses a 16-entry ramp per (ink, background) pair, cached. Names carry an aa_ prefix so
  * they sit next to gfx.c's bitmap fonts (FONT_S / FONT_L, text_w, cv_text). Included by ui.c after gfx.c. */
+#include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 typedef struct { uint16_t off, adv; int8_t bx; uint8_t by, bw, bh; } aag_t;
 typedef struct {
     uint8_t h, asc, first, last, nex;   /* line height, baseline; ASCII range; extras */
@@ -61,7 +62,7 @@ static const uint8_t AA_CURVE[16] = {0, 24, 43, 62, 80, 97, 114, 130, 147, 163, 
  * over one background colour */
 static uint8_t aa_ov;
 static uint16_t aa_ov_fg;
-static uint16_t aa_ov_px(uint16_t d, uint32_t a)
+FR_COLD static uint16_t aa_ov_px(uint16_t d, uint32_t a)
 {
     static const uint8_t SH[3] = {11, 5, 0}, MK[3] = {31, 63, 31};
     uint32_t c = swap16(d), out = 0, k;
@@ -74,7 +75,7 @@ static uint16_t aa_ov_px(uint16_t d, uint32_t a)
 }
 #define AA_NRAMP 8u
 static struct { uint16_t fg[AA_NRAMP], bg[AA_NRAMP], v[AA_NRAMP][16]; uint8_t next, n; } aa_rc;
-static const uint16_t *aa_ramp(uint16_t fg, uint16_t bg)
+FR_COLD static const uint16_t *aa_ramp(uint16_t fg, uint16_t bg)
 {
     static const uint8_t SH[3] = {11, 5, 0}, MK[3] = {31, 63, 31};
     uint32_t i, a, k;
@@ -101,7 +102,7 @@ static const uint16_t *aa_ramp(uint16_t fg, uint16_t bg)
 }
 
 #ifdef AA_RAW_FACES                     /* (gen_aa_font.py: only when a face is stored 2 px per byte) */
-static void aa_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d, const uint16_t *rv)
+FR_COLD static void aa_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d, const uint16_t *rv)
 {
     uint32_t k = 0, gx, gy;
     y += cv_oy;
@@ -124,7 +125,7 @@ static void aa_alpha(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t
  * when the face changes) */
 #define AA_HC_FONTS 2
 static struct { const uint8_t *hc; uint16_t lut[256]; } aa_hc_tab[AA_HC_FONTS] POOL;
-static const uint16_t *aa_hc_lut(const uint8_t *hc)
+FR_COLD static const uint16_t *aa_hc_lut(const uint8_t *hc)
 {
     uint32_t k, len, code = 0, sym = 15, i;
     for (k = 0; k < AA_HC_FONTS - 1u && aa_hc_tab[k].hc && aa_hc_tab[k].hc != hc; k++)
@@ -140,7 +141,7 @@ static const uint16_t *aa_hc_lut(const uint8_t *hc)
     }
     return aa_hc_tab[k].lut;
 }
-static void aa_alpha_hc(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d, const uint8_t *hc,
+FR_COLD static void aa_alpha_hc(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint8_t *d, const uint8_t *hc,
                         const uint16_t *rv)
 {
     const uint16_t *lut = aa_hc_lut(hc);
@@ -184,7 +185,7 @@ static void aa_alpha_hc(int32_t x, int32_t y, uint32_t w, uint32_t h, const uint
     }
 }
 
-static int32_t aa_glyph_at(const aafont_t *f, uint32_t ch)
+FR_COLD static int32_t aa_glyph_at(const aafont_t *f, uint32_t ch)
 {
     uint32_t i;
     if (ch >= f->first && ch <= f->last)
@@ -192,7 +193,7 @@ static int32_t aa_glyph_at(const aafont_t *f, uint32_t ch)
     for (i = 0; i < f->nex; i++) if (f->ex[i] == ch) return (int32_t)(f->last - f->first + 1u + i);
     return -1;
 }
-static uint32_t aa_glyph(const aafont_t *f, uint32_t ch)
+FR_COLD static uint32_t aa_glyph(const aafont_t *f, uint32_t ch)
 {
     int32_t k;
     if (ch >= 'a' && ch <= 'z' && f->last < 'a') ch -= 32u;           /* L has capitals only */
@@ -201,7 +202,7 @@ static uint32_t aa_glyph(const aafont_t *f, uint32_t ch)
         k = 0;
     return (uint32_t)k << f->psh;
 }
-static int32_t aa_kern(const aafont_t *f, uint32_t a, uint32_t b)
+FR_COLD static int32_t aa_kern(const aafont_t *f, uint32_t a, uint32_t b)
 {
     uint32_t key = (a << 8) | b, lo = 0, hi = f->nk;
     while (lo < hi) {
@@ -211,9 +212,9 @@ static int32_t aa_kern(const aafont_t *f, uint32_t a, uint32_t b)
     }
     return 0;
 }
-static uint32_t aa_fold(const aafont_t *f, uint32_t c) { return c >= 'a' && c <= 'z' && f->last < 'a' ? c - 32u : c; }
+FR_COLD static uint32_t aa_fold(const aafont_t *f, uint32_t c) { return c >= 'a' && c <= 'z' && f->last < 'a' ? c - 32u : c; }
 /* 1 when the face has a glyph for every character of s (L is sparse: a value with another character is set in S) */
-static int aa_covers(const aafont_t *f, const char *s)
+FR_COLD static int aa_covers(const aafont_t *f, const char *s)
 {
     for (; *s; s++) if (aa_glyph_at(f, aa_fold(f, (uint8_t)*s)) < 0) return 0;
     return 1;
@@ -225,7 +226,7 @@ static int aa_covers(const aafont_t *f, const char *s)
 #ifdef DINGHY_HOST
 static uint8_t aa_h_used[2][256];
 static uint32_t aa_h_miss;
-static void aa_h_note(const aafont_t *f, uint32_t c, uint32_t drawn)
+FR_COLD static void aa_h_note(const aafont_t *f, uint32_t c, uint32_t drawn)
 {
     uint32_t lf = f != &AF_S;
     aa_h_used[lf][c & 255u] |= (uint8_t)(drawn ? 2u : 1u);
@@ -237,7 +238,7 @@ static void aa_h_note(const aafont_t *f, uint32_t c, uint32_t drawn)
 #define AA_H_NOTE(f, c, d) ((void)0)
 #endif
 
-static int32_t aa_text_w(const aafont_t *f, const char *s)
+FR_COLD static int32_t aa_text_w(const aafont_t *f, const char *s)
 {
     int32_t pen = 0;
     uint32_t prev = 0;
@@ -252,7 +253,7 @@ static int32_t aa_text_w(const aafont_t *f, const char *s)
 }
 
 /* y = the top of the line box (the baseline is y + f->asc); fg on bg (what lies under the text); the pen x at the end */
-static int32_t aa_text(int32_t x, int32_t y, const aafont_t *f, const char *s, uint16_t fg, uint16_t bg)
+FR_COLD static int32_t aa_text(int32_t x, int32_t y, const aafont_t *f, const char *s, uint16_t fg, uint16_t bg)
 {
     const uint16_t *rv = aa_ov ? 0 : aa_ramp(fg, bg);
     int32_t pen = 0, err = 0;
@@ -288,18 +289,18 @@ static int32_t aa_text(int32_t x, int32_t y, const aafont_t *f, const char *s, u
     }
     return x + ((pen + 8) >> 4);
 }
-static int32_t aa_text_r(int32_t xr, int32_t y, const aafont_t *f, const char *s, uint16_t fg, uint16_t bg)
+FR_COLD static int32_t aa_text_r(int32_t xr, int32_t y, const aafont_t *f, const char *s, uint16_t fg, uint16_t bg)
 {
     int32_t w = aa_text_w(f, s);
     aa_text(xr - w, y, f, s, fg, bg);
     return xr - w;
 }
-static void aa_text_c(int32_t x, int32_t y, int32_t w, const aafont_t *f, const char *s, uint16_t fg, uint16_t bg)
+FR_COLD static void aa_text_c(int32_t x, int32_t y, int32_t w, const aafont_t *f, const char *s, uint16_t fg, uint16_t bg)
 {
     aa_text(x + (w - aa_text_w(f, s)) / 2, y, f, s, fg, bg);
 }
 /* the same over what the canvas holds (aa_ov_px): left / right-aligned / centred in w */
-static int32_t aa_text_ov(int32_t x, int32_t y, const aafont_t *f, const char *s, uint16_t fg)
+FR_COLD static int32_t aa_text_ov(int32_t x, int32_t y, const aafont_t *f, const char *s, uint16_t fg)
 {
     int32_t r;
     aa_ov = 1;
@@ -307,13 +308,13 @@ static int32_t aa_text_ov(int32_t x, int32_t y, const aafont_t *f, const char *s
     aa_ov = 0;
     return r;
 }
-static int32_t aa_text_ovr(int32_t xr, int32_t y, const aafont_t *f, const char *s, uint16_t fg)
+FR_COLD static int32_t aa_text_ovr(int32_t xr, int32_t y, const aafont_t *f, const char *s, uint16_t fg)
 {
     int32_t w = aa_text_w(f, s);
     aa_text_ov(xr - w, y, f, s, fg);
     return xr - w;
 }
-static void aa_text_ovc(int32_t x, int32_t y, int32_t w, const aafont_t *f, const char *s, uint16_t fg)
+FR_COLD static void aa_text_ovc(int32_t x, int32_t y, int32_t w, const aafont_t *f, const char *s, uint16_t fg)
 {
     aa_text_ov(x + (w - aa_text_w(f, s)) / 2, y, f, s, fg);
 }

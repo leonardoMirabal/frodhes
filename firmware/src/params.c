@@ -2,6 +2,7 @@
 /* Frodhes parameters (IMPLEMENTATION-v3 §10.1, §10.5): one table drives the panel, the pages, the settings record,
  * presets and the MIDI CC map. Ids and enum values are APPEND-ONLY (stored records map by id).
  * Values are bytes 0..127 (bipolar ones are stored with +64: TONE 0..127 means -64..+63). */
+#include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 
 enum { P_TYPE, P_DRIVE, P_TW_SW, P_TW_DEPTH, P_TW_RATE, P_TW_SYNC, P_TW_MODE, P_TW_SHAPE,
        P_CP_SW, P_CP_DEPTH, P_CP_SPEED, P_CP_SYNC, P_CP_FDBK,
@@ -64,9 +65,9 @@ _Static_assert(sizeof N_TYPE / sizeof N_TYPE[0] == N_TYPE_N && sizeof N_TYPE_LON
 #ifndef ENG_HAS_BARS
 enum { BK_STRIKE, BK_MALLET, BK_TUBE, BK_WEIGHT, BK_RING, BK_DAMPER, BK_NOISE,      /* the VOICE / DECAY cards, 0..127 */
        BK_MOT_ON, BK_MOT_DEPTH, BK_MOT_SHAPE, BK_MOT_INC };                          /* the motor (INC: a Q32 step) */
-static void eng_set_type(uint32_t t) { rh_type = (uint8_t)(t < N_TYPE_N && TYPE_ENGINE[t] ? 0u : t); }
-static int eng_is_bars(void) { return 0; }       /* the engine plays bars for the TYPE last set (not the ISR latch) */
-static void eng_bar_knob(uint32_t k, uint32_t v) { (void)k; (void)v; }
+FR_COLD static void eng_set_type(uint32_t t) { rh_type = (uint8_t)(t < N_TYPE_N && TYPE_ENGINE[t] ? 0u : t); }
+FR_COLD static int eng_is_bars(void) { return 0; }       /* the engine plays bars for the TYPE last set (not the ISR latch) */
+FR_COLD static void eng_bar_knob(uint32_t k, uint32_t v) { (void)k; (void)v; }
 #endif
 #define PR_NF_SET 19u              /* presets.c PR_NF: the factory presets (12 before VIBES, 14 before MARIMBA, 16
                                     * before F17..F19, 0.9.5) */
@@ -78,7 +79,7 @@ static const char *const N_DRV[] = {"OFF", "FDRV", "KHLON", "TSH8", "OHCD", "BHL
 static const uint8_t DRV_CC84[6] = {0, 112, 64, 76, 88, 100};   /* CC 84's band start per drive TYPE (as TYPE_CC79):
                                     * OFF 0..63 and FDRV 112..127 (0 and 127 keep their sound), the others in between */
 static uint8_t drv_last = 1;       /* the drive TYPE last on: turning DRIVE up on PERFORM / FRODHES wakes it (not saved) */
-static int32_t drv_cc84(uint32_t v)
+FR_COLD static int32_t drv_cc84(uint32_t v)
 {
     int32_t t, x = 0;
     for (t = 1; t < 6; t++) if (v >= DRV_CC84[t] && DRV_CC84[t] >= DRV_CC84[x]) x = t;
@@ -217,8 +218,8 @@ _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 static settings_t set;
 static uint8_t set_pr_from_rc;    /* params_sanitize converted an index of 16 factory presets that named U10..U12 */
 /* TOUCH (keyvel.h): stored so that 0, every record before key velocity, is MEDIUM */
-static uint32_t kv_touch(void) { return (set.vel_curve + 1u) & 3u; }
-static void kv_touch_store(uint32_t touch) { set.vel_curve = (uint8_t)((touch + 3u) & 3u); }
+FR_COLD static uint32_t kv_touch(void) { return (set.vel_curve + 1u) & 3u; }
+FR_COLD static void kv_touch_store(uint32_t touch) { set.vel_curve = (uint8_t)((touch + 3u) & 3u); }
 /* a parameter's value (PV) and its undo copy (UV); the masks keep the branches not taken in range (constant ids) */
 #define PV(id) (*((id) < 32u ? &set.panel[(id) & 31u] : (id) < 48u ? &set.panel2[((id) - 32u) & 15u] : \
                   (id) < 64u ? &set.panel3[((id) - 48u) & 15u] : &set.panel4[((id) - 64u) & 15u]))
@@ -226,7 +227,7 @@ static void kv_touch_store(uint32_t touch) { set.vel_curve = (uint8_t)((touch + 
                   (id) < 64u ? &set.undo3[((id) - 48u) & 15u] : &set.undo4[((id) - 64u) & 15u]))
 
 /* records before 0.4 had the phaser as CHO/PHA = 2, sharing the chorus' depth, speed, sync and feedback */
-static void params_split_phaser(uint8_t *p, uint32_t np)
+FR_COLD static void params_split_phaser(uint8_t *p, uint32_t np)
 {
     if (np > P_CP_FDBK && p[P_CP_SW] == 2u) {
         p[P_CP_SW] = 0;
@@ -238,7 +239,7 @@ static void params_split_phaser(uint8_t *p, uint32_t np)
 }
 /* a record from before v3 (ids 0..47; 48.. already at their defaults): what the v3 ids take over (presets.c converts
  * old user presets with it too) */
-static void params_v3_convert(uint8_t *p)
+FR_COLD static void params_v3_convert(uint8_t *p)
 {
     if (p[P_TW_SW] == 1u && p[P_TW_MODE] == 2u) {    /* TREM/WAH = MOTOR (VIBES, 0.9.3 drafts) */
         if (TYPE_IS_BARS(p[P_TYPE])) {               /* a bar TYPE: the motor's own parameters, the effect off */
@@ -259,7 +260,7 @@ static void params_v3_convert(uint8_t *p)
 #define PERF_DEF 5, 27, 3, 4
 #define PERF_DEF_OLD 0, 1, 27, 3
 static uint32_t perf_count(void);                    /* ui.c: PERF_N */
-static void params_perf_update(void)
+FR_COLD static void params_perf_update(void)
 {
     static const uint8_t OLD[4] = {PERF_DEF_OLD};
     uint8_t r[4];
@@ -297,8 +298,8 @@ static uint8_t smk_mw_uoff;                     /* set.mot_user_off before the w
 #define MW_ADD(v) (v)
 #define MW_FORGET() ((void)0)
 #endif
-static void snd_base_take(void) { uint32_t i; for (i = 0; i < P_SLOTS; i++) snd_base[i] = PV(i); MW_FORGET(); }
-static void settings_record(settings_t *r)
+FR_COLD static void snd_base_take(void) { uint32_t i; for (i = 0; i < P_SLOTS; i++) snd_base[i] = PV(i); MW_FORGET(); }
+FR_COLD static void settings_record(settings_t *r)
 {
     uint32_t i;
     *r = set;
@@ -307,7 +308,7 @@ static void settings_record(settings_t *r)
     r->bpm10 = bpm_hand;
 }
 
-static void params_defaults(void)
+FR_COLD static void params_defaults(void)
 {
     uint32_t i;
     for (i = 0; i < sizeof set; i++) ((uint8_t *)&set)[i] = 0;
@@ -326,7 +327,7 @@ static void params_defaults(void)
     for (i = 0; i < P_COUNT; i++) PV(i) = PARAMS[i].def;
 }
 
-static void params_sanitize(void)
+FR_COLD static void params_sanitize(void)
 {
     uint32_t i;
     if (set.ver == 1u) {                                 /* 0.1 .. 0.3: new ids get their defaults */
@@ -414,7 +415,7 @@ static void params_sanitize(void)
 
 /* the TREM/WAH switch and mode as fx.c gets them (records v3: a pure effect on every TYPE; the vibraphone's motor
  * has its own parameters, P_MOT_*, and runs inside the bar engine) */
-static void tw_apply(void)
+FR_COLD static void tw_apply(void)
 {
     fx_set(FXP_TW_SW, PV(P_TW_SW));
     fx_set(FXP_TW_MODE, PV(P_TW_MODE));
@@ -422,7 +423,7 @@ static void tw_apply(void)
 /* the motor's rate: 0.5 .. 10 Hz (the tremolo's law up to 120 = 10.08 Hz), or MOT SYNC's (tempo.c) */
 #define MOT_RATE_V(v) ((v) > 120 ? 120 : (v))
 static uint32_t mot_sync_inc;                    /* main loop: a synced motor (Q32 step a sample), 0 = free */
-static void mot_rate_apply(void)
+FR_COLD static void mot_rate_apply(void)
 {
     eng_bar_knob(BK_MOT_INC, mot_sync_inc ? mot_sync_inc : FX_LFO_INC[MOT_RATE_V(PV(P_MOT_RATE))]);
 }
@@ -502,7 +503,7 @@ static void param_apply(uint32_t id)
     default: break;                                                   /* SYNC: tempo.c */
     }
 }
-static void params_apply_all(void)
+FR_COLD static void params_apply_all(void)
 {
     uint32_t i;
     for (i = 0; i < P_COUNT; i++) param_apply(i);
@@ -525,7 +526,7 @@ static void param_set(uint32_t id, int32_t v)
  * motor (VIBES) from one without (a Rhodes type, MARIMBA) starts the motor (VIBES is heard with its motor), unless it
  * was switched off on the MOTOR page (set.mot_user_off, kept until its ON card turns it on again). MARIMBA leaves
  * P_MOT_ON as it is: stored, inaudible (no motor), there for the next VIBES */
-static void type_pick(int32_t t)
+FR_COLD static void type_pick(int32_t t)
 {
     int was = TYPE_HAS_MOTOR(PV(P_TYPE));
     param_set(P_TYPE, t);
@@ -533,13 +534,13 @@ static void type_pick(int32_t t)
 }
 
 /* ---- value text (<= 5 chars) */
-static void fmt_r10(char *s, int32_t v)           /* panel 0.0 .. 10.0 */
+FR_COLD static void fmt_r10(char *s, int32_t v)           /* panel 0.0 .. 10.0 */
 {
     int32_t t = (v * 100 + 63) / 127;
     if (t >= 100) { s[0] = '1'; s[1] = '0'; s[2] = '.'; s[3] = '0'; s[4] = 0; return; }
     s[0] = (char)('0' + t / 10); s[1] = '.'; s[2] = (char)('0' + t % 10); s[3] = 0;
 }
-static void p_fmt_int(char *s, int32_t v)
+FR_COLD static void p_fmt_int(char *s, int32_t v)
 {
     char t[8];
     int32_t i = 0, n = 0;
@@ -549,23 +550,23 @@ static void p_fmt_int(char *s, int32_t v)
     s[n] = 0;
 }
 /* every number on a card is rounded to its last digit (0.9.3: they were cut: 1.486 s showed "1.4S", +11.8 dB "+11") */
-static void fmt_hz(char *s, uint32_t inc)        /* a Q32 phase step per sample as Hz: "0.6", "4.7", "12" */
+FR_COLD static void fmt_hz(char *s, uint32_t inc)        /* a Q32 phase step per sample as Hz: "0.6", "4.7", "12" */
 {
     int32_t t = (int32_t)(((uint64_t)inc * 441000u + 0x80000000u) >> 32);   /* inc * fs / 2^32, tenths of a Hz */
     if (t >= 100) p_fmt_int(s, (int32_t)(((uint64_t)inc * 44100u + 0x80000000u) >> 32));
     else { s[0] = (char)('0' + t / 10); s[1] = '.'; s[2] = (char)('0' + t % 10); s[3] = 0; }
 }
 /* log2 in Q12 (>= 0) as dB (20 log10(2) = 6.0206 dB an octave), rounded to tenths / to whole dB */
-static int32_t q12_db10(int32_t q) { return (q * 60206 + 2048000) / 4096000; }
-static int32_t q12_db1(int32_t q) { return (q * 60206 + 20480000) / 40960000; }
-static void fmt_db10(char *s, int32_t t10, int32_t t1)   /* "+1.5", "-6.4"; from 10 dB on whole dB: "+12" */
+FR_COLD static int32_t q12_db10(int32_t q) { return (q * 60206 + 2048000) / 4096000; }
+FR_COLD static int32_t q12_db1(int32_t q) { return (q * 60206 + 20480000) / 40960000; }
+FR_COLD static void fmt_db10(char *s, int32_t t10, int32_t t1)   /* "+1.5", "-6.4"; from 10 dB on whole dB: "+12" */
 {
     int32_t a = t10 < 0 ? -t10 : t10, n = 0;
     s[n++] = t10 < 0 ? '-' : '+';
     if (a >= 100) { p_fmt_int(s + n, t1 < 0 ? -t1 : t1); return; }
     s[n++] = (char)('0' + a / 10); s[n++] = '.'; s[n++] = (char)('0' + a % 10); s[n] = 0;
 }
-static void param_text(uint32_t id, char *s)
+FR_COLD static void param_text(uint32_t id, char *s)
 {
     const pdesc_t *d = &PARAMS[id];
     int32_t v = PV(id);

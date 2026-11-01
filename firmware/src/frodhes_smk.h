@@ -26,6 +26,7 @@
  *   < >         the previous / next page (as SELECT); KNOB BANK held: the panel check (the readings, for bring-up)
  *   lights      KNOB BANK while held, FADER BANK on bank B, < > where there is a page that way; DISPLAY BRIGHTNESS
  *               dims the button LEDs (smk_led_dark) and the pads */
+#include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 #pragma once
 #if !BOARD_SMK37
 #error "frodhes_smk.h is the SMK-37's (BOARD_SMK37)"
@@ -37,7 +38,7 @@
  * 0.45, MEDIUM 0.70, HEAVY 1.10; kv_upow) and mapped so that a medium press (u = KV_UMID) plays at KEY VEL: 1 at
  * u = 0, KEY VEL at the middle, 127 at u = 1, linear on each side (kv_vmap). FIXED: every key at KEY VEL. One curve
  * for both boards: keyvel.c's two halves (tests/py/test_smk_app.py checks it against the formula) */
-static uint32_t smk_vel(uint32_t v)            /* the keybed's velocity -> the note's */
+FR_COLD static uint32_t smk_vel(uint32_t v)            /* the keybed's velocity -> the note's */
 {
     uint32_t t = kv_touch(), kvel = set.key_vel;
     if (kvel < 1u) kvel = 1u;
@@ -69,19 +70,19 @@ static uint8_t smk_panel_on;
  * record before: smk_input.h's 724). Restored by smk_init, before the main loop's first pass reads K1; kept in `set`
  * once a main-loop pass when it moved, so the settings' own auto save writes it (2 s after the last change, in
  * silence: never from the ISR, never a write per detent) */
-static int32_t smk_master_stored(void)
+FR_COLD static int32_t smk_master_stored(void)
 {
     uint32_t v = set.smk_mst[0] | (uint32_t)set.smk_mst[1] << 8;
     return v >= 1u && v <= 1024u ? (int32_t)v - 1 : 724;
 }
-static void smk_master_keep(void)
+FR_COLD static void smk_master_keep(void)
 {
     if (smk_master != smk_master_stored()) {
         uint32_t v = (uint32_t)smk_master + 1u;
         set.smk_mst[0] = (uint8_t)v; set.smk_mst[1] = (uint8_t)(v >> 8);
     }
 }
-static void smk_init(void)
+FR_COLD static void smk_init(void)
 {
     uint32_t i;
     smk_pad_events = 1;                        /* the pads are Frodhes' own controls (events, no notes) */
@@ -89,14 +90,14 @@ static void smk_init(void)
     smk_master = smk_master_stored();          /* (MASTER as it was left) */
 }
 
-static void smk_sus_update(void)
+FR_COLD static void smk_sus_update(void)
 {
     uint8_t on = (uint8_t)(smk_sus_pad || smk_pedal);
     if (on != smk_sus) { smk_sus = on; sustain_update(); }
 }
 
 /* ---- the outer keys (C3..E3 = keybed 0..4, G#5..C6 = 32..36): the keys' path, at their velocity */
-static void smk_outer(void)
+FR_COLD static void smk_outer(void)
 {
     int32_t e;
     while ((e = smk_extkey_take()) >= 0) {
@@ -112,7 +113,7 @@ static void smk_outer(void)
 }
 
 /* ---- the pads */
-static void smk_say_onoff(const char *name, int on)
+FR_COLD static void smk_say_onoff(const char *name, int on)
 {
     char s[24];
     uint32_t n = 0;
@@ -121,7 +122,7 @@ static void smk_say_onoff(const char *name, int on)
     p_strcpy(s + n, on ? " ON" : " OFF", 4);
     ui_say(s);
 }
-static void smk_fx_switch(uint32_t k)          /* TREM/WAH, CHORUS, DELAY, PHASER as their button on their page does */
+FR_COLD static void smk_fx_switch(uint32_t k)          /* TREM/WAH, CHORUS, DELAY, PHASER as their button on their page does */
 {
     static const uint8_t SW[4] = {P_TW_SW, P_CP_SW, P_DL_SW, P_PH_SW};
     static const char *const NAME[4] = {"TREM/WAH", "CHORUS", "DELAY", "PHASER"};
@@ -131,7 +132,7 @@ static void smk_fx_switch(uint32_t k)          /* TREM/WAH, CHORUS, DELAY, PHASE
     fx_wake(id);
     smk_say_onoff(NAME[k], PV(id) != 0);
 }
-static void smk_pad_hit(uint32_t p)
+FR_COLD static void smk_pad_hit(uint32_t p)
 {
     if (p < N_TYPE_N) {                        /* the TYPE, as ALGORITHM sets it */
         type_pick((int32_t)p);
@@ -163,7 +164,7 @@ static void smk_pad_hit(uint32_t p)
     ui_mark(E_CARDS);
     ui_mark(E_HEADER);
 }
-static void smk_pads(void)
+FR_COLD static void smk_pads(void)
 {
     int32_t e;
     while ((e = smk_pad_take()) >= 0) {
@@ -188,15 +189,15 @@ static void smk_pads(void)
 }
 
 /* ---- the faders: two banks, soft takeover */
-static uint32_t smk_fad_slot(uint32_t i)
+FR_COLD static uint32_t smk_fad_slot(uint32_t i)
 {
     const ectl_t *c;
     if (smk_bank) return slot_at_v(PG_PERF, 0, i);
     c = voice_ctl(0, i);
     return c ? c->id : S_NONE;
 }
-static const char *smk_fad_name(uint32_t i) { const ectl_t *c = voice_ctl(0, i); return smk_bank ? slot_label_v(PG_PERF, 0, i) : c ? c->name : ""; }
-static void smk_slot_set(uint32_t s, int32_t t)   /* a card's slot to t, as its knob would turn it there */
+FR_COLD static const char *smk_fad_name(uint32_t i) { const ectl_t *c = voice_ctl(0, i); return smk_bank ? slot_label_v(PG_PERF, 0, i) : c ? c->name : ""; }
+FR_COLD static void smk_slot_set(uint32_t s, int32_t t)   /* a card's slot to t, as its knob would turn it there */
 {
     uint32_t n;
     for (n = 0; n < 128u; n++) {
@@ -208,7 +209,7 @@ static void smk_slot_set(uint32_t s, int32_t t)   /* a card's slot to t, as its 
     }
     if (s < P_COUNT) perf_wake(s);             /* an effect's amount up from 0 switches it on (PERFORM) */
 }
-static void smk_fad_say(uint32_t i, uint32_t s, const char *pre)
+FR_COLD static void smk_fad_say(uint32_t i, uint32_t s, const char *pre)
 {
     char m[40], t[16];
     uint32_t n = 0;
@@ -220,7 +221,7 @@ static void smk_fad_say(uint32_t i, uint32_t s, const char *pre)
     p_strcpy(m + n, t, 15);
     ui_say(m);
 }
-static void smk_faders(void)
+FR_COLD static void smk_faders(void)
 {
     uint32_t i;
     for (i = 0; i < 4u; i++) {
@@ -250,7 +251,7 @@ static void smk_faders(void)
 }
 
 /* ---- the wheels */
-static void smk_wheels(void)
+FR_COLD static void smk_wheels(void)
 {
     enum { DEAD = 12, MOD_LO = 485, MOD_HI = 615 };
     static smk_pw_t pw;
@@ -301,7 +302,7 @@ static void smk_wheels(void)
 }
 
 /* ---- the pedal jack: a sustain pedal of either polarity (no plug detect: the reading at power-on is "up") */
-static void smk_pedal_poll(void)
+FR_COLD static void smk_pedal_poll(void)
 {
     static int32_t rest = -1;
     int32_t d, p = fm1_in.pedal;
@@ -313,7 +314,7 @@ static void smk_pedal_poll(void)
 }
 
 /* ---- the main loop's SMK part, after the middle keys */
-static void smk_poll(void)
+FR_COLD static void smk_poll(void)
 {
     smk_outer();
     smk_pads();
@@ -324,7 +325,7 @@ static void smk_poll(void)
 }
 
 /* ---- the SMK's own buttons, before the FM-1's reach sustain_button / ui_input; their bits are cleared here */
-static void smk_buttons(uint32_t *pressed, uint32_t *released)
+FR_COLD static void smk_buttons(uint32_t *pressed, uint32_t *released)
 {
     uint32_t b = *pressed, mine = 1u << BTN_KNOB_BANK | 1u << BTN_FADER_BANK | 1u << BTN_LEFT | 1u << BTN_RIGHT;
     if (b & mine && ui_splash_on) ui_splash_t = fm1_ms - UI_SPLASH_MS;   /* (any touch ends the start screen) */
@@ -342,8 +343,8 @@ static void smk_buttons(uint32_t *pressed, uint32_t *released)
 }
 
 /* ---- the lights: the pads, the SMK's own buttons (ui_leds sets the LEDs from smk_btn_leds) */
-static int smk_sounding(void) { return (eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits) != 0u; }
-static void smk_pad_rgb(uint32_t p, int on, int act)
+FR_COLD static int smk_sounding(void) { return (eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits) != 0u; }
+FR_COLD static void smk_pad_rgb(uint32_t p, int on, int act)
 {
     const uint8_t *c = !on ? SMK_OFF : act ? SMK_ACT : SMK_ON;
     uint32_t d = fm1_led_duty[0], k;            /* DISPLAY BRIGHTNESS (the FM-1's keys' duty, /16) */
@@ -351,7 +352,7 @@ static void smk_pad_rgb(uint32_t p, int on, int act)
     for (k = 0; k < 3u; k++) o[k] = (uint8_t)(c[k] ? (c[k] * d + 8u) / 16u ? (c[k] * d + 8u) / 16u : 1u : 0u);
     padled_set(p, o[0], o[1], o[2]);
 }
-static void smk_leds(void)
+FR_COLD static void smk_leds(void)
 {
     uint32_t p, snd = (uint32_t)smk_sounding(), fx = snd && !fx_bypass, pos = pg_pos(ui_page, ui_vp_ok());
     for (p = 0; p < N_TYPE_N; p++) smk_pad_rgb(p, PV(P_TYPE) == p, (int)snd);
@@ -371,15 +372,15 @@ static void smk_leds(void)
 }
 
 /* ---- KNOB BANK held: the panel check (the bring-up screen) instead of the pages; 1 = it owns the screen this pass */
-static char *smk_put(char *p, const char *s) { while (*s) *p++ = *s++; *p = 0; return p; }
-static char *smk_int(char *p, int32_t v) { p_fmt_int(p, v); while (*p) p++; return p; }
-static void smk_hex(char *s, uint32_t v, uint32_t n)
+FR_COLD static char *smk_put(char *p, const char *s) { while (*s) *p++ = *s++; *p = 0; return p; }
+FR_COLD static char *smk_int(char *p, int32_t v) { p_fmt_int(p, v); while (*p) p++; return p; }
+FR_COLD static void smk_hex(char *s, uint32_t v, uint32_t n)
 {
     uint32_t k;
     for (k = 0; k < n; k++) s[k] = "0123456789ABCDEF"[(v >> (4u * (n - 1u - k))) & 15u];
     s[n] = 0;
 }
-static int smk_panel(void)
+FR_COLD static int smk_panel(void)
 {
     static uint32_t t;
     static char ln[12][32];
@@ -422,8 +423,8 @@ static int smk_panel(void)
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
 /* the host tests (tests/host.c): "expect state" on the SMK's own state; a hint the FM-1's scripts expect, in the
  * SMK's words (ui_text) */
-static const char *host_xlat(const char *s) { return ui_text(s); }
-static int smk_host_state(const char *key, char *v, unsigned n)
+FR_COLD static const char *host_xlat(const char *s) { return ui_text(s); }
+FR_COLD static int smk_host_state(const char *key, char *v, unsigned n)
 {
     unsigned a;
     if (!strcmp(key, "fbank")) snprintf(v, n, "%c", smk_bank ? 'B' : 'A');

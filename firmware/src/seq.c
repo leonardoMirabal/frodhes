@@ -14,6 +14,7 @@
  * Recording armed while stopped is step recording: the notes go on the cursor's step (live_note_on). The page (ui.c) shows NOW / NEXT and the
  * bar's 16 cells. The notes play through notes.c (the
  * arpeggiator takes them when it runs) and are kept in two flash sectors written in turn (0x99000 / 0x9A000). */
+#include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 
 #define SQ_PPQ 96u                                  /* ticks per beat */
 #define SQ_MAXEV 448u
@@ -48,19 +49,19 @@ static const char *const SQ_QUANT_NAME[6] = {"OFF", "1/4", "1/8", "1/16", "1/8T"
 #define SQ_SWING (set.seq_swing)
 static void ui_mark(uint32_t e);
 
-static uint32_t sq_len(void) { return (uint32_t)SQ_BARS * 4u * SQ_PPQ; }
-static uint32_t sq_tick(void) { return sq_pos >> 16; }
-static void seq_sanitize(void)
+FR_COLD static uint32_t sq_len(void) { return (uint32_t)SQ_BARS * 4u * SQ_PPQ; }
+FR_COLD static uint32_t sq_tick(void) { return sq_pos >> 16; }
+FR_COLD static void seq_sanitize(void)
 {
     if (SQ_BARS < 1u || SQ_BARS > 16u) SQ_BARS = 4;
     if (SQ_QUANT > 5u) SQ_QUANT = 3;
     if (SQ_SWING < 50u || SQ_SWING > 75u) SQ_SWING = 50;
 }
 static uint8_t sq_sv_fail;                          /* the pattern's saves that failed since the last edit */
-static void sq_changed(void) { sq_dirty = 1; sq_roll_dirty = 1; sq_change_t = fm1_ms; sq_sv_fail = 0; }
+FR_COLD static void sq_changed(void) { sq_dirty = 1; sq_roll_dirty = 1; sq_change_t = fm1_ms; sq_sv_fail = 0; }
 
 /* where a note plays: its tick on the QUANT grid (with SWING), inside the loop */
-static uint32_t sq_at(const sq_ev_t *e)
+FR_COLD static uint32_t sq_at(const sq_ev_t *e)
 {
     uint32_t g = SQ_GRID[SQ_QUANT], t = e->tick, i, L = sq_len();
     if (g) {
@@ -70,18 +71,18 @@ static uint32_t sq_at(const sq_ev_t *e)
     }
     return t % L;
 }
-static int sq_in(uint32_t t, uint32_t p0, uint32_t p1)   /* t in (p0, p1], around the loop's end */
+FR_COLD static int sq_in(uint32_t t, uint32_t p0, uint32_t p1)   /* t in (p0, p1], around the loop's end */
 {
     return p0 <= p1 ? t > p0 && t <= p1 : t > p0 || t <= p1;
 }
 
-static void sq_all_off(void)
+FR_COLD static void sq_all_off(void)
 {
     uint32_t i;
     for (i = 0; i < sq_nact; i++) out_off(sq_act[i].note);
     sq_nact = 0;
 }
-static void sq_add(uint32_t tick, uint32_t len, uint32_t note, uint32_t vel)
+FR_COLD static void sq_add(uint32_t tick, uint32_t len, uint32_t note, uint32_t vel)
 {
     sq_ev_t *e;
     if (sq_n >= SQ_MAXEV) return;
@@ -90,7 +91,7 @@ static void sq_add(uint32_t tick, uint32_t len, uint32_t note, uint32_t vel)
     e->take = sq_take; e->rsv = 0;
     sq_changed();
 }
-static void sq_rec_close(uint32_t n)                    /* a recorded note ends: it becomes an event */
+FR_COLD static void sq_rec_close(uint32_t n)                    /* a recorded note ends: it becomes an event */
 {
     uint32_t L = sq_len(), t = sq_tick(), len;
     if (rec_start[n] == 0xFFFFu) return;
@@ -99,9 +100,9 @@ static void sq_rec_close(uint32_t n)                    /* a recorded note ends:
     sq_add(rec_start[n], len, n, rec_vel[n]);
     rec_start[n] = 0xFFFFu;
 }
-static void sq_rec_close_all(void) { uint32_t n; for (n = 0; n < 128u; n++) sq_rec_close(n); }
+FR_COLD static void sq_rec_close_all(void) { uint32_t n; for (n = 0; n < 128u; n++) sq_rec_close(n); }
 
-static void seq_start(void)
+FR_COLD static void seq_start(void)
 {
     seq_play = 1;
     sq_pos = 0; sq_prev = sq_len() - 1u; sq_last_ms = fm1_ms;
@@ -113,7 +114,7 @@ static void seq_start(void)
 /* Start / Continue from the clock (frodhes.c, CLOCK EXT): tick 0 is song position 0, so Start plays bar 1 on the
  * first pulse and Continue goes on at the song position (Stop stopped the count), the pattern looping */
 static void seq_stop(void);
-static void seq_start_ext(void)
+FR_COLD static void seq_start_ext(void)
 {
     if (seq_play) seq_stop();                           /* (Start again while playing: from bar 1) */
     seq_start();
@@ -124,7 +125,7 @@ static void seq_start_ext(void)
     sq_pos = (clk_sp % (sq_len() / 4u)) << 18;           /* (Continue: there, should no clock come; Start: 0) */
     sq_prev = ((sq_pos >> 16) + sq_len() - 1u) % sq_len();
 }
-static void seq_stop(void)                              /* stop: back to the start (the cursor too: bar 1, step 1) */
+FR_COLD static void seq_stop(void)                              /* stop: back to the start (the cursor too: bar 1, step 1) */
 {
     sq_rec_close_all();
     seq_play = 0;
@@ -132,14 +133,14 @@ static void seq_stop(void)                              /* stop: back to the sta
     sq_cur = 0; sq_cur_t = fm1_ms;
     ui_mark(6); ui_mark(7);
 }
-static void seq_toggle_play(void) { if (seq_play) seq_stop(); else seq_start(); }
-static void seq_toggle_rec(void)
+FR_COLD static void seq_toggle_play(void) { if (seq_play) seq_stop(); else seq_start(); }
+FR_COLD static void seq_toggle_rec(void)
 {
     if (seq_rec) { sq_rec_close_all(); seq_rec = 0; }
     else { seq_rec = 1; sq_erase = 0; sq_take++; }
     ui_mark(6); ui_mark(10);
 }
-static void seq_clear(void)
+FR_COLD static void seq_clear(void)
 {
     uint32_t n;
     sq_all_off();
@@ -147,7 +148,7 @@ static void seq_clear(void)
     sq_n = 0;
     sq_changed();
 }
-static uint32_t seq_undo(void)                          /* the last pass recorded goes: how many notes */
+FR_COLD static uint32_t seq_undo(void)                          /* the last pass recorded goes: how many notes */
 {
     uint32_t i, j, got = 0, best = 256u;
     uint8_t hi = 0;
@@ -165,9 +166,9 @@ static uint32_t seq_undo(void)                          /* the last pass recorde
 
 /* step recording (armed and stopped): the notes go on the cursor's step, as long as the QUANT grid (stretched by
  * ALGORITHM while they are held); let go, the cursor moves on by that much */
-static uint32_t sq_grid16(void) { static const uint8_t G[6] = {1, 4, 2, 1, 1, 1}; return G[SQ_QUANT]; }
-static uint32_t sq_steps(void) { return (uint32_t)SQ_BARS * 16u; }
-static void st_note_on(uint32_t n, uint32_t vel)
+FR_COLD static uint32_t sq_grid16(void) { static const uint8_t G[6] = {1, 4, 2, 1, 1, 1}; return G[SQ_QUANT]; }
+FR_COLD static uint32_t sq_steps(void) { return (uint32_t)SQ_BARS * 16u; }
+FR_COLD static void st_note_on(uint32_t n, uint32_t vel)
 {
     if (!st_keys) {                                     /* a new step: its own take (UNDO takes it back alone) */
         st_start = sq_cur >= 0 && (uint32_t)sq_cur < sq_steps() ? (uint32_t)sq_cur : 0u;
@@ -177,14 +178,14 @@ static void st_note_on(uint32_t n, uint32_t vel)
     if (sq_n < SQ_MAXEV && st_n < CH_MAX * 2u) { st_idx[st_n++] = (uint16_t)sq_n; sq_add(st_start * 24u, st_len * 24u - 2u, n, vel); }
     sq_cur = (int32_t)st_start; sq_cur_t = fm1_ms;
 }
-static void st_note_off(void)
+FR_COLD static void st_note_off(void)
 {
     if (!st_keys || --st_keys) return;
     sq_cur = (int32_t)((st_start + st_len) % sq_steps()); sq_cur_t = fm1_ms;
     sq_changed();
 }
-static int seq_step_held(void) { return seq_rec && !seq_play && st_keys != 0u; }
-static void seq_step_stretch(int32_t d)                 /* ALGORITHM while the step's keys are held */
+FR_COLD static int seq_step_held(void) { return seq_rec && !seq_play && st_keys != 0u; }
+FR_COLD static void seq_step_stretch(int32_t d)                 /* ALGORITHM while the step's keys are held */
 {
     uint32_t i;
     int32_t l = (int32_t)st_len + d;
@@ -194,7 +195,7 @@ static void seq_step_stretch(int32_t d)                 /* ALGORITHM while the s
 }
 
 /* live notes (keys, USB-MIDI, chord mode's notes; not the sequencer's own): notes.c calls these */
-static void live_note_on(uint32_t n, uint32_t vel)
+FR_COLD static void live_note_on(uint32_t n, uint32_t vel)
 {
     if (n > 127u) return;
     live_held[n]++;
@@ -202,7 +203,7 @@ static void live_note_on(uint32_t n, uint32_t vel)
     if (!seq_play) { st_note_on(n, vel); return; }      /* stopped: step recording */
     if (rec_start[n] == 0xFFFFu) { rec_start[n] = (uint16_t)sq_tick(); rec_vel[n] = (uint8_t)vel; }
 }
-static void live_note_off(uint32_t n)
+FR_COLD static void live_note_off(uint32_t n)
 {
     if (n > 127u) return;
     if (live_held[n]) live_held[n]--;
@@ -210,7 +211,7 @@ static void live_note_off(uint32_t n)
     if (!live_held[n]) sq_rec_close(n);
 }
 
-static void seq_poll(void)
+FR_COLD static void seq_poll(void)
 {
     uint32_t L = sq_len(), dt, p0, p1, i;
     int noon = 0, jump = 0;
@@ -285,14 +286,14 @@ static void seq_poll(void)
 #ifdef DINGHY_HOST
 static uint32_t crc32(const uint8_t *p, uint32_t n);   /* presets.c (host) */
 static uint32_t sq_host_reads;
-static int sq_fl_read(uint32_t at, void *p, uint32_t n)   /* at: a sector and an offset in it (sq_valid reads the
+FR_COLD static int sq_fl_read(uint32_t at, void *p, uint32_t n)   /* at: a sector and an offset in it (sq_valid reads the
                                                               * events after the header) */
 {
     sq_host_reads++;                                    /* (tests: no reads at save time) */
     if ((at & 0xFFFu) + n > 4096u) return -1;
     return st_read(at, p, n);                           /* (tests/host.c's flash) */
 }
-static int sq_fl_erase(uint32_t at)
+FR_COLD static int sq_fl_erase(uint32_t at)
 {
     if (host_fl_check("erase pattern", at, 0x1000u)) return -1;   /* (the firmware's allow-list, tests/host.c) */
     if (getenv("FRODHES_SQ_FAIL")) { printf("%6u ms  pattern erase failed\n", fm1_ms); return -1; }   /* (tests) */
@@ -300,14 +301,14 @@ static int sq_fl_erase(uint32_t at)
     memset(host_mem + at, 0xFF, 4096);
     return 0;
 }
-static int sq_fl_write(uint32_t at, uint32_t off, const void *p, uint32_t n)
+FR_COLD static int sq_fl_write(uint32_t at, uint32_t off, const void *p, uint32_t n)
 {
     if (host_fl_check("write pattern", at + off, n)) return -1;
     memcpy(host_mem + at + off, p, n);
     return 0;
 }
 #else
-static int sq_fl_read(uint32_t at, void *p, uint32_t n) { return flash_ok ? st_read(at, p, n) : -1; }
+FR_COLD static int sq_fl_read(uint32_t at, void *p, uint32_t n) { return flash_ok ? st_read(at, p, n) : -1; }
 #endif
 /* the pattern's save beside the main loop (0.9.5, as the settings' since pc-stall): one erase or page program
  * started per main-loop pass and run in slices (fm1_flash.h fl_op_start / fl_op_poll), not ~100 ms in one call:
@@ -316,25 +317,25 @@ static int sq_fl_read(uint32_t at, void *p, uint32_t n) { return flash_ok ? st_r
 #ifdef DINGHY_HOST
 static uint32_t sq_op_t, sq_op_ms;                      /* (the host: the part's time, the main loop going on: an
                                                          * erase HOST_SAVE_MS, a page 1 ms, as tests/host.c models it) */
-static int sq_op_start(uint32_t at, uint32_t off, const void *p, uint32_t n)
+FR_COLD static int sq_op_start(uint32_t at, uint32_t off, const void *p, uint32_t n)
 {
     int rc = p ? sq_fl_write(at, off, p, n) : sq_fl_erase(at);
     sq_op_t = fm1_ms; sq_op_ms = p ? 1u : HOST_SAVE_MS;
     return rc < 0 ? rc : 1;
 }
 static uint8_t sq_sync;                                 /* (the migration's save at power-on: no time goes by) */
-static int sq_op_poll(void) { return !sq_sync && fm1_ms - sq_op_t < sq_op_ms ? 1 : 0; }
+FR_COLD static int sq_op_poll(void) { return !sq_sync && fm1_ms - sq_op_t < sq_op_ms ? 1 : 0; }
 #define SQ_SYNC(on) (sq_sync = (on))
 #else
 #define SQ_SYNC(on) ((void)0)
-static int sq_op_start(uint32_t at, uint32_t off, const void *p, uint32_t n)
+FR_COLD static int sq_op_start(uint32_t at, uint32_t off, const void *p, uint32_t n)
 {
     int rc = flash_ok ? fl_op_start(at + off, (const uint8_t *)p, p ? n : 0u) : -1;
     return rc < 0 ? rc : 1;
 }
-static int sq_op_poll(void) { return fl_op_poll(); }
+FR_COLD static int sq_op_poll(void) { return fl_op_poll(); }
 #endif
-static int sq_valid(uint32_t at, sq_hdr_t *h)
+FR_COLD static int sq_valid(uint32_t at, sq_hdr_t *h)
 {
     if (sq_fl_read(at, h, sizeof *h) || h->magic != SQ_MAGIC || h->n > SQ_MAXEV) return 0;
     if (sq_fl_read(at + sizeof *h, sq_ev, h->n * sizeof(sq_ev_t))) return 0;
@@ -348,7 +349,7 @@ static uint8_t st_mig;                                  /* what to take from the
                                                          * st_old_scan): 1 the settings, 2 the presets, 4 the pattern */
 static uint32_t st_oid[3];                              /* the ids of what is there now (0: nothing) */
 /* the newest valid pattern of a / b (equal seq: b, as the load picks); 0: none */
-static uint32_t sq_newest(uint32_t pa, uint32_t pb, sq_hdr_t *h)
+FR_COLD static uint32_t sq_newest(uint32_t pa, uint32_t pb, sq_hdr_t *h)
 {
     sq_hdr_t a, b;
     int va = sq_valid(pa, &a), vb = sq_valid(pb, &b);
@@ -357,12 +358,12 @@ static uint32_t sq_newest(uint32_t pa, uint32_t pb, sq_hdr_t *h)
     *h = b;
     return pb;
 }
-static uint32_t sq_old_id(void)                         /* the pattern at the place before 0.9.6: its id (0: none) */
+FR_COLD static uint32_t sq_old_id(void)                         /* the pattern at the place before 0.9.6: its id (0: none) */
 {
     sq_hdr_t h;
     return sq_newest(OLD_SQ_A, OLD_SQ_B, &h) ? st_id(h.crc ^ h.n, h.seq) : 0u;
 }
-static void seq_load(void)                              /* the pattern: its own, or the one at the place before 0.9.6
+FR_COLD static void seq_load(void)                              /* the pattern: its own, or the one at the place before 0.9.6
                                                          * when the migration takes it (st_mig 4) */
 {
     sq_hdr_t h, o;
@@ -384,14 +385,14 @@ static int set_save_busy(void);                         /* frodhes.c: the settin
 static sq_hdr_t sq_sv_h;                                /* the save's header (written last: a cut save stays invalid) */
 static uint32_t sq_sv_at, sq_sv_off, sq_sv_end;
 static uint8_t sq_sv_step;                              /* 0 none, 1 erasing, 2 the events, 3 the header */
-static int seq_save_busy(void) { return sq_sv_step != 0; }   /* (frodhes.c settings_poll: not while it runs) */
-static void sq_sv_failed(void)                         /* a step failed: again 1.5 s later, at most 3 times an edit */
+FR_COLD static int seq_save_busy(void) { return sq_sv_step != 0; }   /* (frodhes.c settings_poll: not while it runs) */
+FR_COLD static void sq_sv_failed(void)                         /* a step failed: again 1.5 s later, at most 3 times an edit */
 {
     sq_sv_step = 0;
     if (++sq_sv_fail < 3u) { sq_dirty = 1; sq_change_t = fm1_ms; }
 }
 static void sq_sv_begin(void);
-static void seq_save_poll(void)
+FR_COLD static void seq_save_poll(void)
 {
     if (sq_sv_step) {                                   /* a save runs: its next step when the last one is done */
         int rc = sq_op_poll();
@@ -422,7 +423,7 @@ static void seq_save_poll(void)
                                                          * operation, and neither waits for the other in the loop) */
     sq_sv_begin();
 }
-static void sq_sv_begin(void)                           /* a save starts (seq_save_poll runs it; the migration too) */
+FR_COLD static void sq_sv_begin(void)                           /* a save starts (seq_save_poll runs it; the migration too) */
 {
     uint32_t at;
     sq_dirty = 0;
@@ -434,7 +435,7 @@ static void sq_sv_begin(void)                           /* a save starts (seq_sa
     sq_sv_step = 1;
     if (sq_op_start(at, 0, 0, 0) < 0) sq_sv_failed();   /* the erase first */
 }
-static int seq_save_now(void)                           /* the migration's: the pattern to its place, holding the loop;
+FR_COLD static int seq_save_now(void)                           /* the migration's: the pattern to its place, holding the loop;
                                                          * 0 = written */
 {
     uint8_t f = sq_sv_fail;

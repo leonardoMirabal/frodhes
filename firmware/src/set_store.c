@@ -12,6 +12,7 @@
  * another n is not this one (0.9.5's 256 bytes: settings_load_old reads them, once, for the migration; frodhes.c). A
  * valid record without a seq (0.9.4's, the tail erased) counts as seq 0. SETTINGS_B unset: B is A, one sector. Needs
  * crc32, area_load, st_read, fl_op_start / fl_op_poll, fm1_wdt_feed, flash_ok */
+#include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 #ifndef SETTINGS_B
 #define SETTINGS_B SETTINGS_AT
 #endif
@@ -30,13 +31,13 @@
 static uint32_t set_at = SETTINGS_B, set_seq;   /* the newest valid record's sector and seq (none: the first save to A) */
 static uint8_t *st_tail;                        /* the tail's bytes in RAM (presets.c: pr_user; set before the load) */
 static uint8_t st_rec[12u + ST_N + 8u] SET_SS_BSS;   /* [header][data][seq][~seq]: the load reads, the save writes it */
-static uint32_t set_tail_seq(uint32_t at, uint32_t n)
+FR_COLD static uint32_t set_tail_seq(uint32_t at, uint32_t n)
 {
     uint32_t s[2];
     return !st_read(at + 12u + n, s, sizeof s) && s[0] == ~s[1] ? s[0] : 0u;
 }
 /* the newer valid record of n bytes in a / b into st_rec + 12 (the newer claim first; its crc decides); 0: found */
-static int rec_load(uint32_t a, uint32_t b, uint32_t n)
+FR_COLD static int rec_load(uint32_t a, uint32_t b, uint32_t n)
 {
     uint32_t sa = set_tail_seq(a, n), sb = set_tail_seq(b, n), k, at = (int32_t)(sb - sa) > 0 ? b : a;
     for (k = 0; k < 2u; k++, at = at == a ? b : a)
@@ -48,7 +49,7 @@ static int rec_load(uint32_t a, uint32_t b, uint32_t n)
     return -1;
 }
 /* the record: the settings (n = 256) into p, the tail into st_tail. A load that fails leaves both as they were */
-static int settings_load(void *p, uint32_t n)
+FR_COLD static int settings_load(void *p, uint32_t n)
 {
     if (n != 256u || rec_load(SETTINGS_AT, SETTINGS_B, ST_N))
         return -1;
@@ -59,7 +60,7 @@ static int settings_load(void *p, uint32_t n)
 #ifdef OLD_SET_A
 /* the settings before 0.9.6 (OLD_SET_A / B, 256 bytes, no tail), once, at the first boot (frodhes.c): the next save
  * goes to the sector other than the one it came from (on the FM-1 the same pair: its newest copy stays) */
-static int settings_load_old(void *p, uint32_t n)
+FR_COLD static int settings_load_old(void *p, uint32_t n)
 {
     if (n != 256u || rec_load(OLD_SET_A, OLD_SET_B, n))
         return -1;
@@ -68,13 +69,13 @@ static int settings_load_old(void *p, uint32_t n)
 }
 /* an id of what is at a place before 0.9.6 (its data's crc and its seq; never 0, 0 is "nothing there"): the record
  * keeps the ids it has taken in (frodhes.c st_old_scan), so a later 0.9.5 save there is told from what was taken */
-static __attribute__((unused)) uint32_t st_id(uint32_t crc, uint32_t seq)
+FR_COLD static __attribute__((unused)) uint32_t st_id(uint32_t crc, uint32_t seq)
 {
     uint32_t v = crc ^ (seq * 0x9E3779B1u);
     return v ? v : 1u;
 }
 /* the id of those settings (0: none), without taking them: the record's sector and seq stay */
-static __attribute__((unused)) uint32_t settings_old_id(void)
+FR_COLD static __attribute__((unused)) uint32_t settings_old_id(void)
 {
     uint32_t at = set_at, q = set_seq, id = 0;
     if (!rec_load(OLD_SET_A, OLD_SET_B, 256u)) id = st_id(crc32(st_rec + 12u, 256u), set_seq);
@@ -88,7 +89,7 @@ static __attribute__((unused)) uint32_t settings_old_id(void)
  * it runs, 0 done (or none), < 0 it failed (that sector stays invalid, the other holds the last record; the next save
  * takes the same one). Another save finishes the step in progress first */
 static struct { uint32_t at, off; uint8_t step; } ss SET_SS_BSS;
-static int settings_save_poll(void)
+FR_COLD static int settings_save_poll(void)
 {
     int rc;
     if (!ss.step) return 0;
@@ -108,7 +109,7 @@ static int settings_save_poll(void)
     if (rc < 0) { ss.step = 0; return rc; }
     return 1;
 }
-static int settings_save_start(const void *p, uint32_t n)
+FR_COLD static int settings_save_start(const void *p, uint32_t n)
 {
     uint32_t h[3], t[2];
     while (settings_save_poll() == 1) ;         /* (one still running: to its end) */
@@ -129,7 +130,7 @@ static int settings_save_start(const void *p, uint32_t n)
     return 1;
 }
 /* the record last saved, read back (presets.c, after a preset save): 0 = as written */
-static __attribute__((unused)) int settings_check(void)
+FR_COLD static __attribute__((unused)) int settings_check(void)
 {
     uint8_t b[64];
     uint32_t o, k;
@@ -139,7 +140,7 @@ static __attribute__((unused)) int settings_check(void)
     }
     return 0;
 }
-static __attribute__((unused)) int settings_save(const void *p, uint32_t n)   /* the same, holding the loop */
+FR_COLD static __attribute__((unused)) int settings_save(const void *p, uint32_t n)   /* the same, holding the loop */
 {
     int rc = settings_save_start(p, n);
     while (rc == 1) { ST_WAIT(); rc = settings_save_poll(); }

@@ -11,6 +11,7 @@
  *
  * The keys' notes are echoed to USB-MIDI, notes from USB-MIDI are not; every note started is told to the
  * sequencer's recorder (seq.c live_note_on / off). */
+#include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 
 #define SRC_KEYS 0u
 #define SRC_MIDI 27u
@@ -28,7 +29,7 @@
  * note, 0.9.3). Every note, pedal and all-off goes through here; eng_pump() moves what fits, each main-loop pass. */
 #define ENGQ_N 256u
 static uint32_t engq[ENGQ_N], engq_r, engq_w, engq_drop;
-static int eng_ring_room(void) { return eq_w - eq_r < 31u; }   /* (one spare: a TYPE change to the Rhodes posts the
+FR_COLD static int eng_ring_room(void) { return eq_w - eq_r < 31u; }   /* (one spare: a TYPE change to the Rhodes posts the
                                                                  * pedal into rhodes.c's ring before the 31 move in) */
 /* the notes the pedal holds (the key LEDs under sustain, frodhes.c note_sustained), as the engine gets the events: a
  * note down when the pedal goes down, or struck while it is down; none once it is up or after an all-off. A note let
@@ -67,7 +68,7 @@ static void eng_q(uint32_t type, uint32_t n, uint32_t v)
     engq[engq_w % ENGQ_N] = type << 24 | (n & 127u) << 8 | (v & 255u);
     engq_w++;
 }
-static void eng_pump(void)
+FR_COLD static void eng_pump(void)
 {
     while (engq_r != engq_w && eng_ring_room()) {
         uint32_t e = engq[engq_r % ENGQ_N];
@@ -81,7 +82,7 @@ static int eng_idle(void) { return engq_r == engq_w && eng_quiet(); }   /* nothi
 static uint8_t note_to_arp[128], out_ref[128], out_echo[128];
 static uint8_t out_quiet_off;                    /* all notes off (frodhes.c): the engine gets one EV_ALL_OFF instead
                                                   * of a note-off per note (a burst of them overflowed its ring) */
-static void note_in_on(uint32_t n, uint32_t vel, int echo)
+FR_COLD static void note_in_on(uint32_t n, uint32_t vel, int echo)
 {
     if (arp_on()) { note_to_arp[n] = 1; arp_in_on(n, vel); return; }
     note_to_arp[n] = 0;
@@ -89,7 +90,7 @@ static void note_in_on(uint32_t n, uint32_t vel, int echo)
     if (echo) midi_send(0x90 | MIDI_OUT_CH, n, vel);
 }
 /* rv: the release velocity (MIDI note-off velocity 1..127; 0 = none given: the engines' neutral release) */
-static void note_in_off(uint32_t n, uint32_t rv, int echo)
+FR_COLD static void note_in_off(uint32_t n, uint32_t rv, int echo)
 {
     if (note_to_arp[n]) { note_to_arp[n] = 0; arp_in_off(n); return; }
     if (!out_quiet_off) eng_q(EV_NOTE_OFF, n, rv);
@@ -99,24 +100,24 @@ static void note_in_off(uint32_t n, uint32_t rv, int echo)
  * (engine.c eng_switch): pressed again (a MIDI note-on with no note-off between, a second source on it), it is struck
  * again on the new engine, once per change (eng_epoch); it stayed silent until every source let it go (0.9.3) */
 static uint16_t out_epoch[128];
-static void out_resound(uint32_t n, uint32_t vel)
+FR_COLD static void out_resound(uint32_t n, uint32_t vel)
 {
     if (n > 127u || !out_ref[n] || out_epoch[n] == eng_epoch) return;
     out_epoch[n] = eng_epoch;
     if (!note_to_arp[n]) eng_q(EV_NOTE_ON, n, vel);          /* (the arpeggiator strikes its notes each step) */
 }
-static void out_on(uint32_t n, uint32_t vel, int echo)
+FR_COLD static void out_on(uint32_t n, uint32_t vel, int echo)
 {
     if (n > 127u) return;
     if (out_ref[n] == 0u) { out_ref[n] = 1; out_epoch[n] = eng_epoch; out_echo[n] = (uint8_t)echo; note_in_on(n, vel, echo); }
     else { out_resound(n, vel); out_ref[n]++; }
 }
-static void out_off_v(uint32_t n, uint32_t rv)    /* the last source to let go gives the release velocity */
+FR_COLD static void out_off_v(uint32_t n, uint32_t rv)    /* the last source to let go gives the release velocity */
 {
     if (n > 127u || !out_ref[n]) return;
     if (--out_ref[n] == 0u) note_in_off(n, rv, out_echo[n]);
 }
-static void out_off(uint32_t n) { out_off_v(n, 0); }
+FR_COLD static void out_off(uint32_t n) { out_off_v(n, 0); }
 
 /* ---- chord mode */
 enum { CH_OFF, CH_DIA, CH_DIA7, CH_FIXED };                                    /* then the fixed shapes */
@@ -135,7 +136,7 @@ static const char *const CH_VOICE_NAME[3] = {"CLOSE", "OPEN", "+BASS"};
 #define CH_VOICE (set.chord[2])
 #define CH_STRUM (set.chord[3])                  /* 0..12: x 5 ms between the notes */
 #define CH_LAST (set.chord_last)                 /* the type EDIT turns back on (0: none yet) */
-static void chord_sanitize(void)
+FR_COLD static void chord_sanitize(void)
 {
     if (CH_TYPE >= CH_NTYPE) CH_TYPE = 0;
     if (CH_INV > 3u) CH_INV = 0;
@@ -143,16 +144,16 @@ static void chord_sanitize(void)
     if (CH_STRUM > 12u) CH_STRUM = 0;
     if (CH_LAST >= CH_NTYPE) CH_LAST = 0;
 }
-static int chord_on(void) { return CH_TYPE != CH_OFF; }
+FR_COLD static int chord_on(void) { return CH_TYPE != CH_OFF; }
 /* EDIT on the CHORD page (0.9.3): chord mode off, or back on with the last type (MAJ the first time) */
-static void chord_toggle(void)
+FR_COLD static void chord_toggle(void)
 {
     if (chord_on()) { CH_LAST = CH_TYPE; CH_TYPE = CH_OFF; }
     else CH_TYPE = CH_LAST ? CH_LAST : CH_FIXED;
 }
 
 /* the chord on root n (already on the scale if SNAP / DEGREE did it): its notes in out[], their count */
-static uint32_t chord_build(uint32_t n, uint8_t *out)
+FR_COLD static uint32_t chord_build(uint32_t n, uint8_t *out)
 {
     int32_t v[CH_MAX], t;
     uint32_t c = 0, i, j;
@@ -190,10 +191,10 @@ static uint32_t chord_build(uint32_t n, uint8_t *out)
 }
 
 static const char *const NOTE_NAME_S[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-static void ch_cat(char *d, const char *s) { while (*d) d++; while (*s) *d++ = *s++; *d = 0; }
+FR_COLD static void ch_cat(char *d, const char *s) { while (*d) d++; while (*s) *d++ = *s++; *d = 0; }
 
 /* a name for a set of notes (the sequencer's screen, capitals only): C, C MIN, C7, C MAJ7, C MIN7, C SUS4, C DIM ... */
-static void chord_name(const uint8_t *notes, uint32_t c, char *s)
+FR_COLD static void chord_name(const uint8_t *notes, uint32_t c, char *s)
 {
     static const struct { uint16_t mask; const char *suf; } T[] = {
         {0x891, " MAJ7"}, {0x489, " MIN7"}, {0x491, "7"}, {0x449, " M7B5"}, {0x249, " DIM7"}, {0x291, "6"},
@@ -223,13 +224,13 @@ static src_t src[SRC_N];
 static uint8_t src_active[SRC_N];
 static void live_note_on(uint32_t n, uint32_t vel);   /* seq.c: what is played, for the recorder */
 static void live_note_off(uint32_t n);
-static void src_note_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
+FR_COLD static void src_note_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
 {
     out_on(n, vel, echo);
     if (slot != SRC_SEQ) live_note_on(n, vel);
 }
 
-static void src_start(uint32_t slot, const uint8_t *notes, uint32_t c, uint32_t vel, int echo)
+FR_COLD static void src_start(uint32_t slot, const uint8_t *notes, uint32_t c, uint32_t vel, int echo)
 {
     src_t *s = &src[slot];
     uint32_t i;
@@ -241,7 +242,7 @@ static void src_start(uint32_t slot, const uint8_t *notes, uint32_t c, uint32_t 
     for (i = 1; i < s->c && !CH_STRUM; i++) { src_note_on(slot, s->n[i], vel, echo); s->started = (uint8_t)(i + 1u); }
 }
 /* a key or a MIDI note pressed: root n (after the scale) */
-static void src_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
+FR_COLD static void src_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
 {
     uint8_t notes[CH_MAX];
     uint32_t c;
@@ -254,7 +255,7 @@ static void src_on(uint32_t slot, uint32_t n, uint32_t vel, int echo)
     if (chord_on()) c = chord_build(n, notes); else { notes[0] = (uint8_t)n; c = 1; }
     src_start(slot, notes, c, vel, echo);
 }
-static void src_off_v(uint32_t slot, uint32_t rv)          /* rv: the release velocity (0 = none) */
+FR_COLD static void src_off_v(uint32_t slot, uint32_t rv)          /* rv: the release velocity (0 = none) */
 {
     src_t *s = &src[slot];
     uint32_t i;
@@ -266,9 +267,9 @@ static void src_off_v(uint32_t slot, uint32_t rv)          /* rv: the release ve
     src_active[slot] = 0;
     s->c = s->started = 0;
 }
-static void src_off(uint32_t slot) { src_off_v(slot, 0); }
+FR_COLD static void src_off(uint32_t slot) { src_off_v(slot, 0); }
 /* the strum: the next notes when their time comes */
-static void src_poll(void)
+FR_COLD static void src_poll(void)
 {
     uint32_t i;
     if (!CH_STRUM) {
