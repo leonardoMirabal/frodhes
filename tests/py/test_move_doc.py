@@ -44,8 +44,21 @@ def test_dev_part_apart():
 
 
 def test_unverified_marked():
-    assert "This port is in development and not released yet." in DOC
+    assert "in development" not in DOC and "not released yet" not in DOC
     assert DOC.count("*(not yet verified on a device") >= 5
+
+
+def test_install_through_schwung_manager():
+    """the user's install is Schwung Manager's (the catalog, the GitHub URL, the file); ssh and move_install.py are
+    the developers' (MOVE-DEV.md)"""
+    dev = (ROOT / "docs" / "MOVE-DEV.md").read_text()
+    inst = DOC[DOC.index("## Install"):DOC.index("## Open Frodhes' screen")]
+    assert "http://<move-ip>:7700" in inst and "**Global Settings > System > Web Manager**" in inst
+    assert "**Install Custom Module**" in inst and "**From GitHub URL**" in inst and "From Tarball**" in inst
+    assert "https://github.com/leonardoMirabal/frodhes" in inst and "**Uninstall**" in inst and "**Update**" in inst
+    assert "move_install.py install" not in DOC and "ssh ableton@move.local" not in DOC
+    assert "[MOVE-DEV.md](MOVE-DEV.md#install-over-ssh)" in inst and "## Install over ssh" in dev
+    assert "tools/move_install.py install --go" in dev
 
 
 def test_module_name_generic():
@@ -88,8 +101,9 @@ def test_package_contents():
 def test_install_paths():
     inst = _src("tools", "move_install.py")
     mods = re.search(r'^MODS = "([^"]+)"', inst, re.M).group(1)
-    assert f"-C {mods}'" in DOC and f"{mods}/frodhes" in DOC
-    assert "ableton@move.local" in inst and "ableton@move.local" in DOC
+    dev = _src("docs", "MOVE-DEV.md")
+    assert f"-C {mods}'" in dev and f"{mods}/frodhes" in dev
+    assert "ableton@move.local" in inst and "ableton@move.local" in dev
     data = re.search(r'snprintf\(mb\.dir, sizeof mb\.dir, "(/data[^"]+)"\)', _src("move", "move_bridge.h")).group(1)
     assert f"`{data}`" in DOC
 
@@ -124,8 +138,11 @@ def test_sustain_button_is_claimed():
 
 def test_manual_and_readme_point_here():
     assert "[MOVE.md](MOVE.md)" in MANUAL[MANUAL.index("## 16. Appendix: the Ableton Move"):]
-    assert "16. [Appendix: the Ableton Move (in development)](#16-appendix-the-ableton-move-in-development)" in MANUAL
+    assert "16. [Appendix: the Ableton Move](#16-appendix-the-ableton-move)" in MANUAL
     assert "[docs/MOVE.md](docs/MOVE.md)" in README
+    sec = MANUAL[MANUAL.index("## 16. Appendix: the Ableton Move"):]
+    assert "in development" not in sec.lower() and "not released yet" not in sec
+    assert "(in development)" not in README and "not released yet" not in README
 
 
 def test_screen_hold_and_fast_step():

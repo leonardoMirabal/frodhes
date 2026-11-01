@@ -12,7 +12,7 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 | Device | What Frodhes is on it | File |
 | --- | --- | --- |
 | **M-VAVE FM-1** | the whole firmware: the instruments, the effects, the pattern recorder, the arpeggiator, chords and scales, 10 voices | `frodhes.fwsc` |
-| **Ableton Move** (in development) | a sound generator in Schwung: the same instruments and effects in their HQ version, 16 voices, the arpeggiator (HOLD too), 38 factory presets of its own (F20-F57), Frodhes' own screen; the Move's own sequencer, scales and tempo lead | `frodhes-module.tar.gz` |
+| **Ableton Move** | a sound generator in Schwung: the same instruments and effects in their HQ version, 16 voices, the arpeggiator (HOLD too), 38 factory presets of its own (F20-F57), Frodhes' own screen; the Move's own sequencer, scales and tempo lead | `frodhes-module.tar.gz` |
 
 
 Frodhes turns the FM-1 into an electric piano, a vibraphone and a marimba. Every note is computed live from the mechanics of the
@@ -59,13 +59,13 @@ If anything goes wrong, switch the FM-1 off, hold **OCT−** and switch it on: t
 can always install again. To return to M-VAVE's firmware, use the "Official firmware" section of
 [thefirmwarehub.com](https://thefirmwarehub.com) with V15 from m-vave.com.
 
-## The Ableton Move (in development)
+## The Ableton Move
 
 Frodhes runs on the Ableton Move as a sound generator of Schwung, the community module host on it: 16 voices on every
 instrument, the HQ version of the three engines, and a screen of its own: the eight knobs as eight cards, a page at a
-time, the arrows for FX and the sustain. **In development: not released yet.** A release carries the module only
-once it has passed the tests on a Move. The Move's manual (install, every page, what differs from the FM-1,
-troubleshooting): [docs/MOVE.md](docs/MOVE.md).
+time, the arrows for FX and the sustain. It installs and updates through Schwung Manager; a release carries the
+module only once it has passed the tests on a Move. The Move's manual (install, every page, what differs from the
+FM-1, troubleshooting): [docs/MOVE.md](docs/MOVE.md).
 
 <p align="center">
   <img src="docs/manual/img/move/move-frodhes.png?v=a6c53d5f" width="384" alt="Frodhes' first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix">
@@ -86,7 +86,7 @@ stock package. The three SMK files are on the
 | SMK-37 Pro (experimental) | `frodhes-smk37-experimental.fwsc` | `SMK-37 Pro_470` |
 | SMK-37 Elite (experimental) | `frodhes-smk37-elite-experimental.fwsc` | `SMK-37 Elite_470` |
 | MKE-P37 (experimental) | `frodhes-smk37-mke-experimental.fwsc` | `MKE-P37_470` |
-| Ableton Move (in development) | `frodhes-module.tar.gz` | Schwung module `frodhes` |
+| Ableton Move | `frodhes-module.tar.gz` | Schwung module `frodhes` |
 
 ## Manual
 

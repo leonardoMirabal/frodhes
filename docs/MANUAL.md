@@ -34,7 +34,7 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 13. [If something goes wrong](#13-if-something-goes-wrong)
 14. [Specifications](#14-specifications)
 15. [Appendix: the SMK-37 (experimental)](#15-appendix-the-smk-37-experimental)
-16. [Appendix: the Ableton Move (in development)](#16-appendix-the-ableton-move-in-development)
+16. [Appendix: the Ableton Move](#16-appendix-the-ableton-move)
 
 ## 1. Install
 
@@ -1107,13 +1107,12 @@ the controls and what differs: **[SMK37.md](SMK37.md)**.
 
 ![The FRODHES page on the SMK-37: the cards on K5..K8](manual/img/smk/smk-frodhes.png?v=7f583e63)
 
-## 16. Appendix: the Ableton Move (in development)
+## 16. Appendix: the Ableton Move
 
 Frodhes also runs on the Move, a standalone groove box, as a sound generator of Schwung, the community module host
-on it: the same instruments and effects as on the FM-1, in their HQ version, with 16 voices on every instrument.
-**In development: not released yet.** Everything in this manual applies to the sound; Frodhes draws its own screen on
-the Move, the eight knobs as eight cards a page at a time, and the Move's own sequencer, scales and tempo lead. Its
-manual has the install, opening the screen, the buttons, a picture of every page, saving, velocity, several Frodhes
-at once, what differs and the troubleshooting: **[MOVE.md](MOVE.md)**.
+on it: the same instruments and effects as on the FM-1, in their HQ version, with 16 voices on every instrument. It
+installs and updates through Schwung Manager. Everything in this manual applies to the sound; Frodhes draws its own
+screen on the Move, the eight knobs as eight cards a page at a time. Its manual has the install, the screen, every
+page and what differs: **[MOVE.md](MOVE.md)**.
 
 ![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=afb6680e)

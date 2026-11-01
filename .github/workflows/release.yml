@@ -16,7 +16,9 @@ name: release
 # The Move package (private plan 05 M7-02): the job move builds it from the tag (make move, reproducible) on arm64 in
 # Debian bookworm (the Move's userland, as ci.yml's move job); the release attaches it, as frodhes-X.Y.Z-move.tar.gz
 # and frodhes-module.tar.gz, only when the release commit records that exact tarball's sha256 as tested on the Move
-# (tools/move_asset.sh: no record, no Move asset; a different sha256 stops the release).
+# (tools/move_asset.sh: no record, no Move asset; a different sha256 stops the release), after tools/move_catalog.py
+# checked the tag's tarball (one folder frodhes/, module.json's version the tag's). The job release-json then writes
+# release.json to main for Schwung Manager (see that job: it needs a key that may push to main).
 # Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
 on:
   push:
@@ -121,6 +123,8 @@ jobs:
       (needs.ci-gate.outputs.passed == 'true' ||
        (needs.generators-macos.result == 'success' && needs.host.result == 'success'))
     runs-on: ubuntu-latest
+    outputs:
+      move: ${{ steps.move-pkg.outputs.shipped }}   # 'true' when the release carries the Move package (job release-json)
     concurrency:
       group: gh-pages-deploy
       cancel-in-progress: false
@@ -156,6 +160,11 @@ jobs:
           path: build/move-ci
       - name: the Move package, if tested
         run: sh tools/move_asset.sh "${GITHUB_REF_NAME#v}" build/move-ci/frodhes-module.tar.gz build/publish/move
+      - name: the Move package as Schwung Manager installs it (frodhes/, module.json's version = the tag's)
+        id: move-pkg
+        run: |
+          python3 tools/move_catalog.py check build/move-ci/frodhes-module.tar.gz "${GITHUB_REF_NAME#v}"
+          if [ -f build/publish/move/frodhes-module.tar.gz ]; then echo "shipped=true" >> "$GITHUB_OUTPUT"; fi
       - name: draft release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -216,3 +225,45 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+  # ---- release.json on main: Schwung Manager's update check (the Move in Schwung's module catalog) ----
+  # After the release is public, and only when it carries the Move package (the job release's output move): writes
+  # release.json = {"version": "X.Y.Z", "download_url": the tag's frodhes-module.tar.gz} (tools/move_catalog.py
+  # release-json, the repository from the origin remote), checks that the URL downloads, commits it to main and
+  # pushes. Schwung Manager reads it from main (raw.githubusercontent.com/<repo>/main/release.json) to show the
+  # version and install or update. Safe to rerun; an older tag never moves release.json back.
+  # NEEDS a push to main that main's protection lets through. main requires the checks host, web and
+  # generators-macos for everyone, so a push with the workflow's own token (contents: write, above) is refused. With
+  # the repository secret RELEASE_JSON_DEPLOY_KEY (the private half of a deploy key with write access, the key allowed
+  # to bypass main's rules in a ruleset) the job pushes with that key. Without it the job fails at the push, after
+  # the release is out: its log shows the release.json to commit to main by hand.
+  release-json:
+    needs: release
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.move == 'true' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-json
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          ssh-key: ${{ secrets.RELEASE_JSON_DEPLOY_KEY }}   # (empty: the workflow's token)
+      - name: release.json for the tag, committed to main
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for try in 1 2 3; do
+            git fetch -q origin main && git reset -q --hard origin/main
+            python3 tools/move_catalog.py release-json "$V"
+            cat release.json
+            URL=$(python3 -c 'import json; print(json.load(open("release.json"))["download_url"])')
+            curl -fsIL -o /dev/null "$URL" || { echo "release.json: $URL does not download: not committed" >&2; exit 1; }
+            git add release.json
+            if git diff --cached --quiet; then echo "release.json: unchanged on main"; exit 0; fi
+            git commit -q -m "release.json: Frodhes $V on the Move (Schwung Manager's update check)"
+            if git push origin HEAD:main; then exit 0; fi
+            echo "release.json: push refused (try $try of 3)"; sleep 10
+          done
+          echo "::error::release.json not pushed to main (its protection: see RELEASE_JSON_DEPLOY_KEY in release.yml): commit the release.json shown above to main by hand"
+          exit 1

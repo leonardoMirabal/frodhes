@@ -7,8 +7,9 @@ the two targets).
 ## Contents
 
 1. [The screenshots](#the-screenshots)
-2. [Build, release and gates](#build-release-and-gates)
-3. [Device evidence for the manual](#device-evidence-for-the-manual)
+2. [Install over ssh](#install-over-ssh)
+3. [Build, release and gates](#build-release-and-gates)
+4. [Device evidence for the manual](#device-evidence-for-the-manual)
 
 ## The screenshots
 
@@ -44,6 +45,33 @@ node tools/move_ui_shots.mjs --check      # exit 1 on a stale, missing or orphan
   `arm`; a shot before `arm` is the mirror's last frame and is marked STALE). Leave `display_mirror` and
   `inject_as_hardware` at 0 afterwards.
 
+## Install over ssh
+
+Users install through Schwung Manager ([MOVE.md](MOVE.md#install)). For a build of your own, or without the manager,
+the module can be copied over ssh (the Move answers as `move.local`). Unload Frodhes from every track first, if an
+older one is loaded (a module that plays must not be replaced under it), then:
+
+```sh
+ssh ableton@move.local 'tar -xzf - -C /data/UserData/schwung/modules/sound_generators' < frodhes-module.tar.gz
+```
+
+*(not yet verified on a device: this plain `tar` route; `tools/move_install.py` below is the tested one)*
+
+To remove it this way, unload it from every track and delete `/data/UserData/schwung/modules/sound_generators/frodhes`.
+
+`tools/move_install.py` does the same with a check and a way back:
+
+```sh
+python3 tools/move_install.py install            # prints what it would do (dry run)
+python3 tools/move_install.py install --go       # copies the module over ssh and switches to it
+python3 tools/move_install.py info --go          # the installed version, the sha256 of dsp.so and engine.so
+python3 tools/move_install.py rollback --go      # back to the module installed before
+```
+
+It installs `build/move/frodhes/` (`--src DIR` for another folder, such as the unpacked download), checks the new
+module next to the old one before it switches, and keeps the two modules installed before it (`--keep`). `--host`
+names the Move (default `ableton@move.local`).
+
 ## Build, release and gates
 
 - **The build**: `make move` builds `build/move/frodhes/` (dsp.so, engine.so, module.json with the version, the screen scripts,
@@ -54,7 +82,19 @@ node tools/move_ui_shots.mjs --check      # exit 1 on a stale, missing or orphan
 - **The release**: `tools/release.py` builds the package in step 3. `release.yml`'s job `move` rebuilds it from the
   tag, and `tools/move_asset.sh` attaches it (`frodhes-X.Y.Z-move.tar.gz` and `frodhes-module.tar.gz`) only when the
   release commit records that exact sha256 as tested on the Move (`Move package sha256 <sha>`). Without the record
-  the release ships no Move package; a different sha256 stops the release.
+  the release ships no Move package; a different sha256 stops the release. Before that, `tools/move_catalog.py
+  check` stops the release unless the tag's tarball unpacks to `frodhes/` alone with module.json's version the tag's.
+- **Schwung Manager and the catalog**: the manager reads `release.json` from main
+  (`{"version", "download_url"}`) for the latest version and its tarball, for a catalog install and for Install
+  Custom Module > From GitHub URL. `release.yml`'s job `release-json` writes it after a release that carries the
+  Move package (`tools/move_catalog.py release-json X.Y.Z`: the tag's `frodhes-module.tar.gz`, the repository from
+  the origin remote; an older tag never moves it back), checks that the URL downloads, and pushes it to main. main's
+  protection refuses that push from the workflow's own token: the job needs the secret `RELEASE_JSON_DEPLOY_KEY` (a
+  deploy key with write access that may bypass main's rules), or the file is committed by hand from the job's log.
+  No `release.json` is committed before the first release with the Move package: without it the manager's catalog
+  install falls back to `releases/latest/download/frodhes-module.tar.gz` and the GitHub URL install refuses the
+  repository, and a placeholder would point at a file that does not exist. The catalog entry
+  (`module-catalog.json` in Schwung's repository, `asset_name` `frodhes-module.tar.gz`) waits for that release.
 - **The gates**: `tools/ci_move.sh` is the Move's MT0 (Gate U: the generated module is current, `make test-move`,
   Gate M: the plugin replays the host renders, and the Move pytest suites). `make gate-p` (ASan + UBSan, the
   seccomp and no-allocation guards), `make gate-h` (the HQ renders) and `tools/gate_s.py` (the FM-1 and SMK binaries
