@@ -22,9 +22,19 @@
 
 static union { rev_hqh_t h; rev_plate_t p; rev_inf_t i; } rev_u POOL;
 
-/* the cost, us per 256-frame block: REV_US_FRONT the framework (the send, the pre-delay at rest, the input's level and
- * DC blocker, the return at the full rate; the half-rate framework's 88 less its half-bands); the kernels' own at
- * their #defines (instruction counts of the compiled loops, rev_hq_*.c) */
+/* the cost, us per 256-frame block (fx_cost_us: the voice shedder and the bar engine's budget see it). The compiled
+ * loops' instructions per sample (pi32v2 clang -Os, tools/drive_insns.py -D FR_REV_HQ=1 --firmware ..., the loud
+ * paths) x 256, + the per-control-block code x 8, at the half-rate HALL's measured rate: its 45152 instructions a
+ * block (5644 a control block) for REV_US_HALL 223 us = 4.94 ns an instruction (FX-CPU-STUDY: ~5 ns):
+ *   REV_US_FRONT  the send ~10 + rq_in 17 + rq_ret 21 = 48 a sample: 12.3k                       ->  61 -> 70
+ *   HALL          rqh_end 4 x 20 + 4 x 15, rqh_mix8 109, rqh_dif 4 x 21 = 333 a sample + ~600 a control
+ *                 block: 90k                                                                    -> 445
+ *   PLATE         pl_in 65, pl_half 2 x (38 + 32), pl_taps 16 + 31 = 252 + rev_plate_run ~780: 70.7k -> 350
+ *   INFINITE      4 diffusers 80, 8 line ends 144, 4 line allpasses 56, DC 10, ri_mix 97, ri_input 22, out
+ *                 5 = 414 + the per-line control ~2000 a control block: 122k                       -> 600
+ * The half-rate TYPEs (rev_types.c): HALL 311 (FX_US_REVERB), PLATE 88 + 23 + 200 = 311, INFINITE 88 + 23 + 369 = 480.
+ * (tools/drive_insns.py's own rule, 1.6 us per instruction a sample, reads ~1.3x higher: HALL ~610, PLATE ~450,
+ * INFINITE ~780; the FM-1 decides: tools/hil_cpu.py) */
 #define REV_US_FRONT 70u
 #define REV_US_LOCUT 16u
 #define REV_US_HQ_MAX 1000u                            /* a full-rate TYPE's budget (the core-1 plan: the reverb before

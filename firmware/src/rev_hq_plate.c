@@ -56,7 +56,7 @@
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
 #endif
-#define REV_US_PLATE 410u                              /* (full rate: rev_hq.c's cost comment) */
+#define REV_US_PLATE 350u                              /* (full rate: rev_hq.c's cost comment) */
 
 #define PL_R(n) (((n) * 14818u + 5000u) / 10000u)      /* the paper's 29.76 kHz lengths at 44.1 kHz */
 #define PL_N 32768u                                    /* the tank's ring (int16) */

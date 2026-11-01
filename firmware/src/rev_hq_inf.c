@@ -56,7 +56,7 @@
  *   the framework's REV_US_DEC 10 and REV_US_LOCUT 16 (LOW CUT was on in that case)
  *   quarter now 4876 (-173: the mix in its own function): 364        bright (LITE=0): 478, over REV_US_MAX
  * rev_types.c adds REV_US_DEC (23 since the half-bands; 10 then) and checks it against REV_US_MAX (HALL + 200) */
-#define REV_US_INF 900u                                 /* (full rate: rev_hq.c's cost comment) */
+#define REV_US_INF 600u                                 /* (full rate: rev_hq.c's cost comment) */
 #define RI_NL 8u                    /* lines */
 #define RI_CPT (REV_INF_QUARTER ? 2u : REV_INF_LITE ? 4u : 1u)   /* control blocks a tank block: its fixed costs
                                      * once for several (the output that many control blocks late: quarter 1.5 ms,
