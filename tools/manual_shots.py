@@ -138,7 +138,7 @@ def main():
     L, shots, t = ["400 shot"], {400: "splash"}, 100
     if cards is not None:                                   # the rows' design variant (developer CC 11)
         L.insert(0, f"50 midi 0xB0 11 {int(cards)}")           # the start screen, before anything is touched
-    # a sound with something on every page: F04 80S BALLAD, then the tremolo, phaser and compressor on
+    # a sound with something on every page: F04 BELL DYNO, then the tremolo, phaser and compressor on
     t = 500
     L.append(f"{t} midi 0xC0 3 0"); t += 1300                # (the start screen holds the pages for 1.6 s)
     for cc, v in ((17, 64), (18, 70), (12, 127), (13, 70), (106, 127), (107, 64), (113, 15)):
@@ -160,21 +160,28 @@ def main():
                 L.append(f"{t} midi 0xB0 {cc} {v}"); t += 20
             L.append(f"{t} keys 0x1"); L.append(f"{t + 300} keys 0x0"); t += 900
             L.append(f"{t} shot"); shots[t] = name; t += 100
+            if name == "reverb":                            # TYPE INFINITE, DECAY at the top: its word FREEZE
+                L.append(f"{t} midi 0xB0 95 110"); L.append(f"{t + 20} midi 0xB0 92 127")
+                L.append(f"{t + 40} keys 0x1"); L.append(f"{t + 340} keys 0x0"); t += 1700   # (the TYPE message)
+                L.append(f"{t} shot"); shots[t] = "reverb-inf"; t += 100
+                L.append(f"{t} midi 0xB0 92 80"); L.append(f"{t + 20} midi 0xB0 95 80"); t += 900  # PLATE again
             continue
         if name == "chord":                                 # chord mode MAJ7 with a strum, a key held
             L.append(f"{t} midi 0xB0 56 6"); L.append(f"{t + 20} midi 0xB0 59 4"); L.append(f"{t + 100} keys 0x80"); t += 700
             L.append(f"{t} shot"); shots[t] = name
-            L.append(f"{t + 50} keys 0x0"); L.append(f"{t + 100} midi 0xB0 56 0"); t += 300   # chord mode off again
+            L.append(f"{t + 50} keys 0x0"); L.append(f"{t + 100} midi 0xB0 56 0")
+            L.append(f"{t + 120} midi 0xB0 59 0"); t += 300   # chord mode off again, no strum (SEQUENCER's chords)
             continue
         if name == "seq":                                   # a 2-bar pattern recorded live (chord mode, then notes)
             L.append(f"{t} midi 0xB0 61 2"); L.append(f"{t + 20} midi 0xB0 62 3"); L.append(f"{t + 40} midi 0xB0 43 127")
-            L.append(f"{t + 60} midi 0xB0 63 127"); L.append(f"{t + 80} midi 0xB0 56 7"); t += 200   # MIN7 chords
-            for k, dt, hold in ((12, 0, 900), (16, 1000, 900), (9, 2000, 400), (14, 2500, 400)):  # F, A, D, G
+            L.append(f"{t + 60} midi 0xB0 63 127"); L.append(f"{t + 80} midi 0xB0 56 7")   # REC armed, MIN7 chords
+            t += 100; L.append(f"{t} midi 0xB0 60 127")        # PLAY: the loop (2 bars, 4 s at 120) starts at t
+            for k, dt, hold in ((12, 10, 900), (16, 1010, 900), (9, 2010, 400), (14, 2510, 400)):  # F, A, D, G
                 L.append(f"{t + dt} keys {1 << k:#x}"); L.append(f"{t + dt + hold} keys 0x0")
-            L.append(f"{t + 3200} midi 0xB0 56 0"); t += 3300
-            for k, dt in ((19, 0), (21, 250), (23, 500), (24, 750)):          # a little line on top
+            L.append(f"{t + 2950} midi 0xB0 56 0")
+            for k, dt in ((19, 3010), (21, 3260), (23, 3510), (24, 3760)):  # a little line on top, in bar 2
                 L.append(f"{t + dt} keys {1 << k:#x}"); L.append(f"{t + dt + 150} keys 0x0")
-            t += 1200
+            t += 4500                                       # the second pass, bar 1 beat 2: the first chord sounds
             L.append(f"{t} shot"); shots[t] = name
             L.append(f"{t + 50} midi 0xB0 63 0"); L.append(f"{t + 60} midi 0xB0 60 0"); t += 300
             continue

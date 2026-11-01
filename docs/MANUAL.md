@@ -15,7 +15,7 @@ chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo
 
 Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE, the Rhodes or Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk (M-VAVE's own firmware can always be put back); see [LICENSING.md](../LICENSING.md).
 
-![The FRODHES page: TYPE (here EARLY FELT), TONE, BELL and KEY VEL](manual/img/piano.png?v=904c35f2)
+![The FRODHES page: TYPE (here BELL DYNO), TONE, BELL and KEY VEL](manual/img/piano.png?v=904c35f2)
 
 ## Contents
 
@@ -385,6 +385,8 @@ The types:
 | **PLATE** | A studio plate: dense from the first moment, bright, with no echoes you can pick out. Good for a ballad or a close, polished sound |
 | **INFINITE** | A huge space that no room has: very long, slowly moving tails that pile up into a pad. At DECAY SUSTAIN (120–126) the tail no longer fades: every note adds to it, up to a ceiling. At FREEZE (127) what is ringing holds, without growing or fading, while you play on top of it dry. Turn DECAY down from either and the tail dies away again |
 
+![REVERB on INFINITE: DECAY at the top reads FREEZE (120–126 read SUSTAIN)](manual/img/reverb-inf.png?v=32c401e1)
+
 When the reverb is OFF, a REVERB knob on PERFORM shows **OFF**; turning it up there switches the reverb on with the
 type you used last.
 
@@ -494,7 +496,7 @@ The filter's LFO (it moves FREQ by the FILTER page's LFO amount).
 
 ### SEQUENCER
 
-![SEQUENCER](manual/img/seq.png?v=7c39df98)
+![SEQUENCER](manual/img/seq.png?v=c0faf5f4)
 
 A **pattern recorder**: play notes or chords (chord mode too) and they loop, quantized, while you keep adding and
 editing. The screen is made to be read at a glance: the top line shows where the loop is (**BAR 2/4 . 3** = bar 2
