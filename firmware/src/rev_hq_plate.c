@@ -224,8 +224,8 @@ static void pl_ctl(rev_plate_t *s, const rev_ctl_t *c)
     }
     if (c->damp != s->cdamp) {
         /* the half rate's poles at 44.1 kHz: the same time constant, sqrt(p) (Q15) */
-        s->pdm = rq_sqrt15(clampi(c->damp * 350, 0, 31000));
-        s->pbw = rq_sqrt15(clampi(c->damp * 240, 0, 26000));
+        s->pdm = FR_FAR(rq_sqrt15)(clampi(c->damp * 350, 0, 31000));
+        s->pbw = FR_FAR(rq_sqrt15)(clampi(c->damp * 240, 0, 26000));
         s->cdamp = c->damp;
     }
 }
