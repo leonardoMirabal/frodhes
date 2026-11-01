@@ -54,7 +54,10 @@ def wire(rng, p):
     if p["type"] == "float":
         return "%.1f" % rng.uniform(p["min"], p["max"])
     lo, hi = p["min"], p["max"]
-    return str(rng.choice([lo, hi, rng.randint(lo, hi)]))
+    v = rng.choice([lo, hi, rng.randint(lo, hi)])
+    if p["key"] in ("m_at_cc", "m_pa_cc") and v in monkey.DEV_CC:
+        v = 0                                   # (a pressure map onto a developer CC is that CC sent: as monkey.gen)
+    return str(v)
 
 
 def gen(seed):
