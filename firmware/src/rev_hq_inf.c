@@ -282,7 +282,8 @@ static inline __attribute__((always_inline)) void ri_endp(const int16_t *b, int3
  * click at every step): a line's RI_NB + 1 rows from the new read (row dn) and the old (dol), the new weighted w + j
  * RI_XS (Q14) at row j, into t (one column, ri_end's stride); 4096 tank samples, 186 ms at 22.05 kHz. In runs that
  * do not wrap (9 instructions a row, not 19) */
-#define RI_XS 2
+#define RI_XS 3                     /* (rev_hq_inf.c: 124 ms at 44.1 kHz; 2 (186 ms) dipped the wet 6.1 dB on a SIZE
+                                     * turn, 4 bent it 6 cents: the control sweep) */
 static int16_t ri_xt[(RI_NB + 1u) * RI_NL];
 FR_RAM __attribute__((noinline)) static void ri_xrows(int16_t *t, const int16_t *r, uint32_t dn, uint32_t dol, int32_t w)
 {
@@ -419,7 +420,7 @@ static inline __attribute__((always_inline)) void ri_tank(rev_inf_t *s, int32_t 
                     s->mI[k] = (uint16_t)(s->mI[k] + s->tlen[k] - s->len[k]);   /* (the latched read moves with it) */
                     s->len[k] = s->tlen[k];
                 }
-                s->xf = 1, s->xw = 0;
+                s->xf = 1, s->xw = (int32_t)(16384u % (RI_NB * RI_XS));   /* (the last row's weight exactly 1) */
             }
         }
     }

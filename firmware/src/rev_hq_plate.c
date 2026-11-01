@@ -173,7 +173,8 @@ static int rev_plate_active(const rev_plate_t *s) { return s->quiet < PL_N; }
  * old ones one site after the other, 128 samples each (22 x 5.8 ms = 128 ms; one site at a time: the cost of one
  * blend, not 22; one fade at a time: a SIZE turned on during it waits for its end); the decay and output gains follow
  * the lengths and the size between as it fades. From silence, at once */
-#define PL_XS 64                                       /* a site's fade's step a sample (Q14): 128 samples a site */
+#define PL_XS 32                                       /* a site's fade's step a sample (Q14): 512 samples (11.6 ms) a
+                                                         * site (64, the half rate's time: zipper 2.6x on a SIZE turn) */
 static void pl_dset(rev_plate_t *s, uint32_t k, int32_t sz)
 {
     uint32_t d = (PL_R(PL_D0[k]) * (uint32_t)(128 + sz)) >> 8;

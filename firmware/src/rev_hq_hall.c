@@ -185,7 +185,9 @@ static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *i
 {
     uint32_t k, i, am = 0;
     int32_t act = 0, lo, sw = c->mod << 2;              /* the swing, Q8 samples (MOD 64: 4096 = 16) */
-    if (c->size != s->gsz) rqh_gains(s, c->size);
+    if (c->size != s->gsz)                              /* (SIZE / MIX moved: the gains glide one size step a control
+                                                         * block, 2.3 % of T60: a jump would step the tail) */
+        rqh_gains(s, s->gsz < 0 ? c->size : s->gsz + (c->size > s->gsz ? 1 : -1));
     if (c->damp != s->gdmp) { s->p = clampi(c->damp * RQH_KP, 0, 31500); s->gdmp = c->damp; }
     for (i = 0; i < RQ_NC; i++) { s->x[i] = in[i]; act |= in[i]; }
     FR_FAR(rqh_dif)(s, s->x);
