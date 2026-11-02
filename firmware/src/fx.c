@@ -846,8 +846,15 @@ static uint32_t cho_w;
 #endif
 static int32_t cho_xw;                                  /* the on / off crossfade's wet share (xf_next) */
 static uint8_t cho_fill, cho_run;                       /* blocks still to fill the line before the fade in; it runs */
+static int32_t cho_swq;                                 /* the sweep's width x 256, gliding (CHO_SWS) */
 static int32_t cho_el = -1, cho_er, cho_km, cho_cg, cho_hl[2];   /* the taps' end positions (Q8; -1: none yet), the
                                                          * last sub-block's mix and make-up, the wet's high-pass */
+#define CHO_SWS 256                                     /* the sweep width's largest step a sub-block (fxq-mod: with
+                                                         * the mix gliding, DEPTH 127 -> 0 moved the taps from 154
+                                                         * samples out to the centre in 32 samples under a still-wet
+                                                         * mix: a pitch dive, a click 17.3x the held renders'; now
+                                                         * 1 sample a sub-block at most, ~3 % (the LFO's own at DEPTH
+                                                         * 127 SPEED 64), the whole range in 112 ms) */
 #define CHO_KMS 256                                     /* the mix's largest step a sub-block (0.9.8 fxq-mod: DEPTH
                                                          * 0 -> 127 faded the wet in over 32 samples, a click 7.9x the
                                                          * held renders'; now the whole range in ~46 ms) */
@@ -907,9 +914,10 @@ FR_RAM __attribute__((noinline)) static int32_t cho_side(int32_t *x, const cho_k
     }
     return hl;
 }
-__attribute__((noinline)) static int32_t cho_pos(uint32_t ph, int32_t sw)   /* a tap's position (Q8) at the LFO's ph */
+/* a tap's position (Q8) at the LFO's ph, swq the sweep's width x 256 (|osc x swq| < 2^31) */
+__attribute__((noinline)) static int32_t cho_pos(uint32_t ph, int32_t swq)
 {
-    return 308 * 256 + ((osc_sine(ph) * sw) >> 7);
+    return 308 * 256 + ((osc_sine(ph) * swq) >> 15);
 }
 #if FX_SPLIT
 static void fxs_chorus(int32_t *L, int32_t *R, uint32_t n);   /* fx_c1.c: the right side on core 1 */
@@ -928,7 +936,10 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
                                                          * 153 .. 465 samples back; the mix at once: it is faded in) */
     w1 = xf_pre(cho_xw, on && !cho_fill, L, R, n);     /* (filling: cho_xw is 0, it stays 0) */
     if (cho_fill) cho_fill--;
-    if (cho_el < 0) { cho_el = cho_pos(cp_ph, sw); cho_er = cho_pos(cp_ph + 0x40000000u, sw); }   /* (the taps' start) */
+    if (cho_el < 0) {                                   /* (the taps' start) */
+        cho_swq = sw << 8;
+        cho_el = cho_pos(cp_ph, cho_swq); cho_er = cho_pos(cp_ph + 0x40000000u, cho_swq);
+    }
     {   /* the line for the whole block first (written backwards: sample w at -w), then each side's taps: a tap reads
          * 153 .. 465 samples back, all written by then and none overwritten (the ring holds 1024) */
         uint32_t p = 0u - cho_w;
@@ -942,7 +953,9 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
          * delay time, a zipper on the chorus' output of ~10x the signal's third difference, 2026-10-24); each sub-block
          * starts where the last one ended (it started from this DEPTH's position: each DEPTH step made the tap jump,
          * up to 1.2 samples, the audit 2026-10-25) */
-        int32_t el = cho_pos(cp_ph + inc * 32u, sw), er = cho_pos(cp_ph + inc * 32u + 0x40000000u, sw);
+        int32_t el, er;
+        cho_swq += clampi((sw << 8) - cho_swq, -CHO_SWS, CHO_SWS);   /* (held: sw << 8, the same taps as before) */
+        el = cho_pos(cp_ph + inc * 32u, cho_swq); er = cho_pos(cp_ph + inc * 32u + 0x40000000u, cho_swq);
         int32_t sl = el - cho_el, sr = er - cho_er;     /* per sample, in Q13 (x 32: the 32 steps add up exactly) */
         int32_t mix = cho_km + clampi(mt - cho_km, -CHO_KMS, CHO_KMS), cg;
         cg = (mix * 1950 >> 14) + (((mix * (16384 - mix)) >> 14) * 7 >> 3);   /* + half-mix comb; the gain is
