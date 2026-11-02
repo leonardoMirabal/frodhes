@@ -909,8 +909,7 @@ static inline __attribute__((always_inline)) int32_t cho_tap_k(int32_t *x, uint3
     return hl;
 }
 /* one side over the block, its sub-blocks' settings in kb (in place; its own registers: inlined it spilled). Each side
- * reads only the line (written for the whole block first) and its own samples: the sides run on either core (FX_SPLIT:
- * the right one on core 1, fx_c1.c fxs_chorus) */
+ * reads only the line (written for the whole block first) and its own samples */
 FR_RAM __attribute__((noinline)) static int32_t cho_side(int32_t *x, const cho_k_t *kb, uint32_t n, int32_t hl)
 {
     uint32_t sb;
@@ -926,9 +925,6 @@ __attribute__((noinline)) static int32_t cho_pos(uint32_t ph, int32_t swq)
 {
     return 308 * 256 + ((osc_sine(ph) * swq) >> 15);
 }
-#if FX_SPLIT
-static void fxs_chorus(int32_t *L, int32_t *R, uint32_t n);   /* fx_c1.c: the right side on core 1 */
-#endif
 static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's function: see there) */
 {
     int32_t depth = fx_p[FXP_CP_DEPTH], sw = 154 * depth / 127;
@@ -980,12 +976,8 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         cho_el = el; cho_er = er; cho_km = mix; cho_cg = cg;
         cp_ph += inc * 32u;
     }
-#if FX_SPLIT
-    fxs_chorus(L, R, n);
-#else
     cho_hl[0] = FR_FAR(cho_side)(L, cho_k[0], n, cho_hl[0]);
     cho_hl[1] = FR_FAR(cho_side)(R, cho_k[1], n, cho_hl[1]);
-#endif
     xf_post(L, R, xf_d[0], xf_d[1], n, cho_xw, w1);
     cho_xw = w1;
 }
@@ -1627,7 +1619,8 @@ static void fx_reset_state(void)
      * met them (its level moved up to 5 LU with what was played before, on the FM-1: the presets suite) */
     eng_rh_kill_all(); bar_kill_all();
     lfo_sh = 0; fl_ic[0] = fl_ic[1] = 0; fl_op = 0;                 /* the filters, the smoothers, the master */
-    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; eq_reset(); wah_env = wah_bp = wah_lp = 0; wah_cr = -1; cmp_env = 0; cmp_g = 65536;
+    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; eq_reset(); wah_env = wah_bp = wah_lp = 0; wah_cr = -1; cmp_env = 0;
+    cmp_g = 65536;
     dc_l = dc_r = dce_l = dce_r = 0; memset(lk_l, 0, sizeof lk_l); memset(lk_r, 0, sizeof lk_r); lk_pk = 0; lk_g = 32768;
     gate_g = gate_tgt = 32768; gate_quiet = 0;
 #ifdef FX_RESET_ONE_BLOCK
