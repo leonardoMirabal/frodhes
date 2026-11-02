@@ -15,7 +15,7 @@ chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo
 
 Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE, the Rhodes or Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk (M-VAVE's own firmware can always be put back); see [LICENSING.md](../LICENSING.md).
 
-![The FRODHES page: TYPE (here BELL DYNO), TONE, BELL and KEY VEL](manual/img/piano.png?v=904c35f2)
+![The FRODHES page: TYPE (here BELL DYNO), TONE, BELL and KEY VEL](manual/img/piano.png?v=b2c98a85)
 
 ## Contents
 
@@ -81,10 +81,10 @@ or earlier, use V15's own System > Reset Patches. (V16 rewrites that area when i
 
 The screen shows **one page at a time**, with **four cards**, one per knob, drawn as rows from K1 at the top to K4
 at the bottom: **K1–K4 always turn the four cards you see**. Under the top line, the page's name is on the left in
-amber and its place in the SELECT order on the right (3/23). Turn **SELECT** to move between pages, or press a
+amber and its place in the SELECT order on the right (3/24). Turn **SELECT** to move between pages, or press a
 page's button to jump straight there. The pages, in SELECT order:
 
-PERFORM · FRODHES (main) · VOICE 1/2 · VOICE 2/2 · COMPRESSOR · DRIVE · FILTER · TREM/WAH · PHASER · CHORUS ·
+PERFORM · FRODHES (main) · VOICE 1/2 · VOICE 2/2 · COMPRESSOR · EQ · DRIVE · FILTER · TREM/WAH · PHASER · CHORUS ·
 DELAY · REVERB · REVERB 2 · TEMPO · SCALE · CHORD · ARPEGGIO · LFO · SEQUENCER · ASSIGN · SETUP · MIDI · DISPLAY
 
 **The VOICE pages belong to the instrument.** Each TYPE brings its own controls, four to a page: the Rhodes types
@@ -159,7 +159,7 @@ stays dark; see LEDS on the DISPLAY page).
 
 ### PERFORM
 
-![PERFORM](manual/img/perform.png?v=765b8fe1)
+![PERFORM](manual/img/perform.png?v=ae099967)
 
 The first page, made for playing: four knobs for the sound while you play. Out of the box they follow the effects
 chain from left to right: the drive, the filter's cutoff, and the dry / wet of the delay and the reverb:
@@ -182,7 +182,7 @@ Turning it back to 0 makes it dry again (the effect stays switched on; its butto
 
 The page after PERFORM (press **HOME** twice) carries the instrument's name as its title and holds the essentials.
 
-![The main page](manual/img/piano.png?v=904c35f2)
+![The main page](manual/img/piano.png?v=b2c98a85)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -197,7 +197,7 @@ The instrument's own pages: on a Rhodes type there are two, right after the main
 with the vibraphone's controls: see [VIBES](#vibes-the-vibraphone). On **MARIMBA** there are two, with the marimba's
 controls: see [MARIMBA](#marimba).
 
-![VOICE 1/2](manual/img/voice1.png?v=a12de415)
+![VOICE 1/2](manual/img/voice1.png?v=8ffd2be4)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -206,7 +206,7 @@ controls: see [MARIMBA](#marimba).
 | K3 | **BELL** | The bright metallic overtone at the start of each note |
 | K4 | **HAMMER** | Hammer hardness: softer is darker, harder is brighter |
 
-![VOICE 2/2](manual/img/voice2.png?v=7b9554bc)
+![VOICE 2/2](manual/img/voice2.png?v=105c1e93)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -217,7 +217,7 @@ controls: see [MARIMBA](#marimba).
 
 ### COMPRESSOR
 
-![COMPRESSOR](manual/img/comp.png?v=14f143cb)
+![COMPRESSOR](manual/img/comp.png?v=09659c14)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -234,11 +234,31 @@ to 30 dB of reduction (scale 3, 6, 10, 20, 30), a bright segment holds the peak 
 right is the reduction now in dB. The compressor
 comes first in the chain, right after the piano.
 
+### EQ
+
+![EQ](manual/img/eq.png?v=4e2476d4)
+
+A three-band equaliser between the compressor and the drive, so it shapes what the drive hears: more bass into the
+drive makes it break up thicker, less makes it tighter; a mid boost makes it sing. With the drive off it is simply an
+EQ on the piano.
+
+| Knob | Card | What it does |
+| --- | --- | --- |
+| K1 | **LOW** | A low shelf at 120 Hz: −15 to +15 dB |
+| K2 | **MID** | A bell (Q 0.9) at MID FREQ: −15 to +15 dB |
+| K3 | **MID FREQ** | Where MID acts: 200 Hz to 5.0 kHz (1.0 kHz in the middle) |
+| K4 | **HIGH** | A high shelf at 5 kHz: −15 to +15 dB |
+
+Each gain moves in steps of about 0.24 dB; the middle of each knob (+0.0) is flat, and with all three at +0.0 the EQ
+is out of the sound entirely (bit for bit what it was before the EQ existed, and no CPU used). Every knob glides, so
+turning one while you play never steps or clicks. The EQ is part of the sound and is saved in presets; presets made
+before it load with it flat. Over MIDI: CC 34 LOW, 35 MID, 36 MID FREQ, 37 HIGH (64 = +0.0 dB).
+
 ### DRIVE
 
-![DRIVE](manual/img/drive.png?v=60e12a55)
+![DRIVE](manual/img/drive.png?v=0a34cc3e)
 
-The amp drive, right after the compressor (before the filter). AMOUNT can also be put on a PERFORM knob (DRIVE on ASSIGN). There are five drives, all
+The amp drive, right after the compressor and the EQ (before the filter). AMOUNT can also be put on a PERFORM knob (DRIVE on ASSIGN). There are five drives, all
 overdrive types (none of them a fuzz): **FDRV** is the original Frodhes drive, and the other
 four each follow a classic overdrive circuit type faithfully (its filters, its clipping and its tone stage, computed
 live like the instruments, never sampled).
@@ -254,8 +274,8 @@ The types:
 
 | Type | The sound | AMOUNT | TONE |
 | --- | --- | --- | --- |
-| **FDRV** | The original Frodhes drive, unchanged: a warm amp-like overdrive | Low settings warm the sound a little, above the middle a single note starts to break up, the top is a full, compressed overdrive. It changes the tone, not the volume (big chords come out a little lower at the top, as an amp squashes them) | Darker (down to the highs gone) or brighter (up to +6 dB of treble); the middle (+0.0) leaves it as it is |
-| **KHLON** | A clean-blend overdrive: clean paths run beside the clipped one (soft germanium-style diodes), so the notes keep their body and the low end stays mostly clean until AMOUNT is high | Low: a clean boost, the sound a little thicker, hardly any grit; the middle: a light edge on the attacks; the top: a full overdrive, the bass breaking up too. Turning AMOUNT onto its last step (10.0), or back off it, passes briefly through the clean sound, without a click | An active treble control from about 400 Hz up: a cut at the bottom, a little lift at the middle, a strong treble boost at the top. With AMOUNT and TONE both near the top a fine fizz rides on the high notes |
+| **FDRV** | The original Frodhes drive: a warm amp-like overdrive. Since 0.9.9 its clipping runs at twice the sample rate, so hard-driven high notes no longer bring folded, out-of-tune tones with them (about 28 dB less of them); the sound is otherwise the same | Low settings warm the sound a little, above the middle a single note starts to break up, the top is a full, compressed overdrive. It changes the tone, not the volume (big chords come out a little lower at the top, as an amp squashes them) | Darker (down to the highs gone) or brighter (up to +6 dB of treble); the middle (+0.0) leaves it as it is |
+| **KHLON** | A clean-blend overdrive: clean paths run beside the clipped one (soft germanium-style diodes), so the notes keep their body and the low end stays mostly clean until AMOUNT is high | Low: a clean boost, the sound a little thicker, hardly any grit; the middle: a light edge on the attacks; the top: a full overdrive, the bass breaking up too. Turning AMOUNT onto its last step (10.0), or back off it, passes briefly through the clean sound, without a click | An active treble control from about 400 Hz up: a cut at the bottom, a little lift at the middle, a strong treble boost at the top. With AMOUNT and TONE both near the top the high notes turn bright and edgy (since 0.9.9 anti-aliased: the fine fizz of folded tones it had there is about 15 dB lower) |
 | **TSH8** | A mid-hump overdrive: the clean sound plus a clipped, mid-focused copy (soft, symmetric clipping). The bass is driven less than the mids, so chords stay clear and single notes sing. Set for a soft input, so it stays smooth | Low: a light edge in the mids; the middle: a warm crunch; the top: a singing, compressed overdrive | Dark through most of its travel; the highs open in the last quarter. It never lifts the treble above flat |
 | **OHCD** | A MOSFET overdrive: a firmer edge (a sharper clipping knee) and a mid-focused sound. AMOUNT covers the circuit's own drive knob over its whole range | Low: nearly clean with a little bite; the middle: a crunchy but still open overdrive; the top: a thick, saturated drive | A treble cut: darker counter-clockwise, brightest at the top |
 | **BHLUE** | A two-stage soft overdrive, transparent and amp-like: soft diodes that never clip hard, the low end driven much less than the mids | Low: almost clean, a little warmer; the middle: a light crunch; the top: a thick, round overdrive | A treble cut: at 0 the highs are gone above about 400 Hz, the middle rolls off from about 500 Hz, the top is the brightest (open to about 2 kHz) |
@@ -275,7 +295,7 @@ knobs glides, so you can turn them while you play. Over MIDI: CC 81 AMOUNT, 82 T
 
 ### FILTER
 
-![FILTER](manual/img/filter.png?v=c2de0ecc)
+![FILTER](manual/img/filter.png?v=eebb3c87)
 
 A resonant filter right after the drive (before the tremolo and the other effects), moved by its own LFO. It
 filters the driven sound: a low-pass after the drive smooths its edge, a resonant sweep stays clean of the drive's
@@ -294,7 +314,7 @@ sound the FM-1 was left on. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 L
 
 ### TREM/WAH
 
-![TREM/WAH](manual/img/trem.png?v=63fe1c7a)
+![TREM/WAH](manual/img/trem.png?v=825891d3)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -307,7 +327,7 @@ sound the FM-1 was left on. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 L
 On **VIBES** the vibraphone's motor is not here but on its last VOICE page, VOICE 3/3 (see [the motor: on and off](#the-motor-on-and-off)); TREM/WAH can run on top of it.
 ### PHASER
 
-![PHASER](manual/img/phaser.png?v=8a35dfa3)
+![PHASER](manual/img/phaser.png?v=88c1c34d)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -318,7 +338,7 @@ On **VIBES** the vibraphone's motor is not here but on its last VOICE page, VOIC
 
 ### CHORUS
 
-![CHORUS](manual/img/chorus.png?v=514608a2)
+![CHORUS](manual/img/chorus.png?v=65601233)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -336,7 +356,7 @@ their weight.
 
 ### DELAY
 
-![DELAY](manual/img/delay.png?v=1bebf199)
+![DELAY](manual/img/delay.png?v=6c8719ad)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -363,7 +383,7 @@ back on to the type it last used (TAPE too). Over MIDI, CC 88 picks the type in 
 
 ### REVERB
 
-![REVERB](manual/img/reverb.png?v=9bb34082)
+![REVERB](manual/img/reverb.png?v=527f5d89)
 
 The reverb, the last effect. It has three types: **HALL** (the reverb Frodhes always had), **PLATE** and
 **INFINITE**. Its second page, **REVERB 2**, has the pre-delay and three more controls. MIX can also be put on a
@@ -385,7 +405,7 @@ The types:
 | **PLATE** | A studio plate: dense from the first moment, bright, with no echoes you can pick out. Good for a ballad or a close, polished sound |
 | **INFINITE** | A huge space that no room has: very long, slowly moving tails that pile up into a pad. At DECAY SUSTAIN (120–126) the tail no longer fades: every note adds to it, up to a ceiling. At FREEZE (127) what is ringing holds, without growing or fading, while you play on top of it dry. Turn DECAY down from either and the tail dies away again |
 
-![REVERB on INFINITE: DECAY at the top reads FREEZE (120–126 read SUSTAIN)](manual/img/reverb-inf.png?v=32c401e1)
+![REVERB on INFINITE: DECAY at the top reads FREEZE (120–126 read SUSTAIN)](manual/img/reverb-inf.png?v=a77d5675)
 
 When the reverb is OFF, a REVERB knob on PERFORM shows **OFF**; turning it up there switches the reverb on with the
 type you used last.
@@ -400,7 +420,7 @@ TONE glide when moved; MIX moves in small steps (every 32 samples, too small to 
 
 ### REVERB 2
 
-![REVERB 2](manual/img/reverb2.png?v=605a1025)
+![REVERB 2](manual/img/reverb2.png?v=f1504ceb)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -414,7 +434,7 @@ The defaults are the reverb's sound before it had types. Over MIDI: CC 94 PRE-DE
 
 ### TEMPO
 
-![TEMPO](manual/img/tempo.png?v=bb835d48)
+![TEMPO](manual/img/tempo.png?v=5d3d7301)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -425,7 +445,7 @@ The defaults are the reverb's sound before it had types. Over MIDI: CC 94 PRE-DE
 
 ### SCALE
 
-![SCALE](manual/img/scale.png?v=6c0bf354)
+![SCALE](manual/img/scale.png?v=c05d998e)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -440,7 +460,7 @@ scale from any source, so a MIDI note out of the scale plays the chord of the ne
 
 ### CHORD
 
-![CHORD](manual/img/chord.png?v=bff15419)
+![CHORD](manual/img/chord.png?v=4d783e12)
 
 Chord mode: **one key plays a whole chord**. Press **EDIT** to come here, and **EDIT** again to switch chord mode
 on / off (it comes back with the last chord type, MAJ the first time; the EDIT light shows it).
@@ -457,7 +477,7 @@ arpeggiator (which then arpeggiates the chord) and with the sequencer (which rec
 
 ### ARPEGGIO
 
-![ARPEGGIO](manual/img/arp.png?v=15999ac3)
+![ARPEGGIO](manual/img/arp.png?v=12f94078)
 
 Hold a chord and the arpeggiator plays its notes one at a time, in time with the tempo (tap tempo and MIDI clock
 too). Press **ARP** to come here, and **ARP** again to switch it on / off (the ARP light shows it).
@@ -483,7 +503,7 @@ settings belong to the FM-1, not to a preset; ARP RATE and ARP GATE can also be 
 
 ### LFO
 
-![LFO](manual/img/lfo.png?v=887d2dfb)
+![LFO](manual/img/lfo.png?v=17220512)
 
 The filter's LFO (it moves FREQ by the FILTER page's LFO amount).
 
@@ -535,7 +555,7 @@ stored when the loop is stopped).
 
 ### ASSIGN
 
-![ASSIGN](manual/img/assign.png?v=c173fac5)
+![ASSIGN](manual/img/assign.png?v=c7b0c300)
 
 Choose what each PERFORM knob plays: K1 here sets what K1 on PERFORM does, and so on. ASSIGN sits near the end of
 the pages, just before SETUP (the hint on PERFORM says so). Each knob can play any of:
@@ -547,7 +567,7 @@ DRIVE, FILTER, DELAY and REVERB.
 
 ### SETUP
 
-![SETUP](manual/img/setup.png?v=d3e9de08)
+![SETUP](manual/img/setup.png?v=ea6616aa)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -568,7 +588,7 @@ segments are worked out from), and the audio engine's time per block (it must st
 
 ### MIDI
 
-![MIDI](manual/img/midi.png?v=8fadd920)
+![MIDI](manual/img/midi.png?v=e8e5098c)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -581,7 +601,7 @@ the TRS jack: notes, every CC in the table below, program changes, clock, start 
 
 ### DISPLAY
 
-![DISPLAY](manual/img/display.png?v=0804e0cd)
+![DISPLAY](manual/img/display.png?v=57c874c7)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -607,7 +627,7 @@ times higher), the tube that takes a moment to build up under the bar, and the m
 Rhodes type and VIBES fades out what is still ringing, held notes too; a note still held plays again on the new type
 the next time it is struck (a MIDI note-on, or a key on the same note).
 
-![The main page on VIBES](manual/img/piano-vibes.png?v=33e4565d)
+![The main page on VIBES](manual/img/piano-vibes.png?v=b20f743f)
 
 The main page's middle cards belong to the engine: on VIBES they are **MALLET** (the same as VOICE 1/3's MALLET)
 and **MOTOR** (on / off, the same as VOICE 3/3's first card); on a Rhodes type they are **TONE** and **BELL** (DRIVE
@@ -621,7 +641,7 @@ VIBES has its own VOICE pages, three of them: **VOICE 1/3** (the strike), **VOIC
 and **VOICE 3/3** (the motor). VOICE 1/3 acts on the next strike (a ringing bar keeps the strike that started it, as
 a real one does).
 
-![VOICE 1/3 on VIBES](manual/img/voice1-vibes.png?v=9af0d189)
+![VOICE 1/3 on VIBES](manual/img/voice1-vibes.png?v=8731109f)
 
 | Knob | Card | What it does on VIBES |
 | --- | --- | --- |
@@ -630,7 +650,7 @@ a real one does).
 | K3 | **TUBE** | How much the tube rings with the bar: 0 is a bare bar (about 6-7 dB quieter than the middle, thin, rings longer, no bloom); up is a fuller, warmer, louder note that blooms just after the strike and dies sooner, as on a real vibraphone (the right end about 3-4 dB over the middle) |
 | K4 | **WEIGHT** | The mallet's weight: light is brighter, quicker and quieter; heavy is darker, with more body (about 6 dB louder at the top than at the bottom). How hard you play (KEY VEL, MIDI velocity) stays the strike's speed: a harder strike is louder and brighter (the overtones come up), a soft one round |
 
-![VOICE 2/3 on VIBES](manual/img/voice2-vibes.png?v=28da39c5)
+![VOICE 2/3 on VIBES](manual/img/voice2-vibes.png?v=f465596b)
 
 | Knob | Card | What it does on VIBES |
 | --- | --- | --- |
@@ -662,7 +682,7 @@ types have two VOICE pages: SELECT goes from VOICE 2/2 straight to COMPRESSOR).
 - **TREM/WAH** (the LFO button) is the same effect on VIBES as on the Rhodes and can run on top of the motor.
 - **Over MIDI:** CC 47 ON (≥ 64), 48 DEPTH, 49 SPEED, 50 SHAPE, 51 SYNC.
 
-![VOICE 3/3 on VIBES: the motor](manual/img/voice3-vibes.png?v=651cb1e9)
+![VOICE 3/3 on VIBES: the motor](manual/img/voice3-vibes.png?v=87bf5729)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -698,13 +718,13 @@ C5 up the note starts at its loudest. A marimba has **no damper and no motor**: 
 player stops it with a hand. Switching between VIBES and MARIMBA (or a Rhodes type) fades out what is still ringing,
 held notes too; a note still held plays again on the new type the next time it is struck.
 
-![The main page on MARIMBA](manual/img/piano-marimba.png?v=16e96cd0)
+![The main page on MARIMBA](manual/img/piano-marimba.png?v=8f56e39b)
 
 The main page's middle cards on MARIMBA are **MALLET** (the same as VOICE 1/2's MALLET) and **TUBE** (VOICE 1/2's
 TUBE). MARIMBA has two VOICE pages, **VOICE 1/2** (the strike) and **VOICE 2/2** (how the bars ring and stop), and no
 motor page: SELECT goes from VOICE 2/2 straight to COMPRESSOR. VOICE 1/2 acts on the next strike.
 
-![VOICE 1/2 on MARIMBA](manual/img/voice1-marimba.png?v=424ffdff)
+![VOICE 1/2 on MARIMBA](manual/img/voice1-marimba.png?v=fa361b69)
 
 | Knob | Card | What it does on MARIMBA |
 | --- | --- | --- |
@@ -713,7 +733,7 @@ motor page: SELECT goes from VOICE 2/2 straight to COMPRESSOR. VOICE 1/2 acts on
 | K3 | **TUBE** | How much the tube rings with the bar: 0 is a bare bar (quieter and thinner, no bloom); up is a fuller, louder note. Below C4 the tube also makes the note ring longer and bloom just after the strike; higher up, as on a vibraphone, it makes the note louder and shorter (at the top about a third shorter) |
 | K4 | **WEIGHT** | The mallet's weight: light is quieter, heavy louder, with more body. How hard you play (KEY VEL, MIDI velocity) stays the strike's speed: a harder strike is louder and brings the overtones up |
 
-![VOICE 2/2 on MARIMBA](manual/img/voice2-marimba.png?v=18121bb8)
+![VOICE 2/2 on MARIMBA](manual/img/voice2-marimba.png?v=1b4707e4)
 
 | Knob | Card | What it does on MARIMBA |
 | --- | --- | --- |
@@ -749,7 +769,7 @@ MARIMBA (0–95 VIBES); Program Change 14 / 15 loads F15 / F16. **Polyphony:** 1
 
 ## 6. Presets
 
-![Browsing presets](manual/img/browse.png?v=172e1e43)
+![Browsing presets](manual/img/browse.png?v=c949b827)
 
 Turn **PRESETS** to browse: **F01–F19** are the factory sounds (F13 and F14 are VIBES, F15 and F16 MARIMBA), **U01–U16** your own, after F19. A preset loads when you stop
 turning (after 0.4 s). If you did not mean to, **hold SAVE** (0.7 s) to go back to the sound you had before the
@@ -825,7 +845,7 @@ The first save writes them to the FM-1 with your preset; from then on they are u
 again to store it, or **HOME** (or **OCT−**) to cancel. The name is made from the type and the effects that are on
 ("SUIT TRM PHA").
 
-![Save mode](manual/img/save.png?v=6cd0471d)
+![Save mode](manual/img/save.png?v=1e14989a)
 
 The save waits for silence: the bottom line says **SAVING...** until the sound has died away, then **SAVED**. INFINITE's SUSTAIN and FREEZE hold their tail without end, so while one of them is on the save waits and the bottom line says **SAVE WAITS: SUSTAIN ON** or **SAVE WAITS: FREEZE ON**; turn DECAY down (or change the type, or switch the reverb OFF), let the tail die away, and the save goes through. The settings are saved the same way, once it is quiet. A user
 preset can be overwritten but not deleted, and browsing skips the empty ones. There is no factory reset: F01–F19 are
@@ -861,7 +881,7 @@ short crossfade), without changing any setting: compare the dry piano with
 your sound. The header shows **BYP** while they are off. It is not saved, so the FM-1 always starts with the effects
 on.
 
-![FX bypass](manual/img/bypass.png?v=6efc165a)
+![FX bypass](manual/img/bypass.png?v=3bbbaab2)
 
 The order of the chain: **COMP → DRIVE → FILTER → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter.** The limiter at the
 end keeps even big chords of ten notes from ever clipping.
@@ -985,6 +1005,7 @@ MARIMBA ignore it.
 | CC | Parameter | CC | Parameter |
 | --- | --- | --- | --- |
 | 64 | Sustain (half-pedal) | 80 | TYPE (0–31 STAGE, 32–63 SUITCASE, 64–95 FELT, 96–127 DYNO) |
+| 34 / 35 | EQ LOW / MID (−15 to +15 dB, 64 = 0 dB) | 36 / 37 | EQ MID FREQ (200 Hz – 5 kHz) / HIGH |
 | Pitch bend | ±2 semitones, the Rhodes types only (VIBES and MARIMBA ignore it) | 121 | Reset all controllers: the pitch bend back to 0 |
 | 47 / 48 | VIBES MOTOR on (≥ 64) / DEPTH (no effect on MARIMBA) | 49 / 50 / 51 | VIBES MOTOR SPEED / SHAPE / SYNC |
 | 79 | TYPE of the bar instruments: 0–95 VIBES, 96–127 MARIMBA | 9 | Developer: the bar instruments' mode cap, VIBES and MARIMBA (0 = automatic, 1–49 = 0–48 upper modes, ≥ 50 = none; not saved) |

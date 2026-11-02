@@ -6,7 +6,7 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 
 <p align="center">
   <img src="docs/manual/img/thumbnail.png?v=23c51997" width="380" alt="Frodhes: the start screen (FRODHES, ELECTRIC PIANO + VIBES + MARIMBA)">
-  <img src="docs/manual/img/piano.png?v=904c35f2" width="380" alt="Frodhes on the FM-1: the FRODHES page (TYPE, TONE, BELL, KEY VEL)">
+  <img src="docs/manual/img/piano.png?v=b2c98a85" width="380" alt="Frodhes on the FM-1: the FRODHES page (TYPE, TONE, BELL, KEY VEL)">
 </p>
 
 | Device | What Frodhes is on it | File |
@@ -35,7 +35,7 @@ code compiled to WebAssembly, with the FM-1's screen, knobs, buttons and keys (c
 
 ## Screens
 
-![The PERFORM, VOICE, PHASER and COMPRESSOR pages](docs/manual/img/overview.png?v=02b23618)
+![The PERFORM, VOICE, PHASER and COMPRESSOR pages](docs/manual/img/overview.png?v=40425df3)
 
 Every page is in the
 [manual](docs/MANUAL.md), with its screenshot.
@@ -101,6 +101,7 @@ the MIDI map.
 | **VOICE 2/2** (VIBES: 2/3) | DECAY (VIBES / MARIMBA: RING) | RELEASE (VIBES: DAMPER; MARIMBA: MUTE) | NOISE | TUNE | (SELECT) |
 | **VOICE 3/3** (VIBES only: the motor) | MOTOR (ON / OFF) | DEPTH | SPEED | SHAPE | (SELECT) |
 | **COMPRESSOR** | THRESHOLD (OFF / on) | RATIO | ATTACK | MAKEUP | (SELECT) |
+| **EQ** (before the drive) | LOW (±15 dB, 120 Hz) | MID (±15 dB) | MID FREQ (200 Hz – 5 kHz) | HIGH (±15 dB, 5 kHz) | (SELECT) |
 | **DRIVE** | OFF / FDRV / KHLON / TSH8 / OHCD / BHLUE | AMOUNT | TONE | MIX | (SELECT) |
 | **FILTER** | OFF / LP12 / LP18 (default) / HP12 / HP18 / BP / NOTCH | FREQ | RESO | LFO | (SELECT) |
 | **TREM/WAH** | OFF / PAN / TREM / WAH | DEPTH | RATE | SHAPE | LFO (there: on / off) |
