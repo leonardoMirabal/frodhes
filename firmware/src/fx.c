@@ -460,28 +460,27 @@ static int32_t wah_eslow, wah_g1 = 4096;        /* the input's slow envelope (on
  * scale) is clipped to it, 2x full scale (every render below it: the gates' heaviest ~14000) */
 #define WAH_XM 65535
 static inline __attribute__((always_inline)) int32_t div10(int32_t v) { return (int32_t)(((int64_t)v * 1717986919) >> 34) + (int32_t)((uint32_t)v >> 31); }
-/* the wah's filter (0.9.8 fxq-mod): the FILTER's TPT state-variable stage (svf_tick, rounded, 16x finer inside) for the
- * Chamberlin one with 13-bit coefficients it had, whose truncations were a noise floor -25 dB under a quiet note (a
- * 1 kHz sine at -41 dBFS, tools/fxq_metrics.py: mostly the output rounded to the bus' grain before the make-up gain,
- * which then raised it up to x32) and grit on loud high ones. Now the make-up gain takes the stage's 16x finer output.
+/* the wah's filter (0.9.8 fxq-mod): the same state-variable (Chamberlin) filter, the same response, computed 64 times
+ * finer inside (x 64) with 28-bit coefficients and rounded (it had 13-bit ones and truncated: a noise floor -25 dB under a
+ * quiet note, a 1 kHz sine at -41 dBFS, tools/fxq_metrics.py, mostly the output rounded to the bus' grain before the
+ * make-up gain raised it up to x32; and grit on loud notes). The make-up gain takes the finer output. (The FILTER's
+ * TPT stage was tried: it has zeros at Nyquist, the wah 2 dB darker at 6-13 kHz and 7 dB at 13-20 kHz: not taken.)
  * The cutoff: 300 Hz .. 2.5 kHz, 64 log rows by the envelope, as before, now with a row of hysteresis: up at once, down
  * when the envelope is a whole row under (the envelope's ripple within a cycle toggled the row at a row's edge, each
- * toggle a step of the cutoff: harmonics at -60 dB on a 300 Hz sine; the coefficients, with their divides, are
- * computed only when the row or the resonance moves: a few dozen times a block at most, the envelope falling slowly).
- * Rows interpolated measured worse (the ripple then moves the cutoff all the time: -47 dB on a loud 1 kHz sine), and
- * the row looked at every 8 samples aliased the ripple (300 Hz: sidebands at +-112 Hz, -50 dB). The output law
- * as before: 0.9 x the band-pass x 2q + 0.4 x the low-pass. Its sub-block (k <= 32 samples) into out: the wah, its
- * make-up gain ramped (wgq, wgs a sample), the input clipped to WAH_XM */
-static int32_t wah_ic[2];                       /* the stage's state, x 16 */
-static svf_t wah_c;                             /* its coefficients, at row wah_cr (-1: none yet) and k wah_ck */
-static int32_t wah_cr = -1, wah_ck;
+ * toggle a step of the cutoff: harmonics at -60 dB on a 300 Hz sine). Rows interpolated measured worse (the ripple then
+ * moves the cutoff all the time: -47 dB on a loud 1 kHz sine). The output law as before: 0.9 x the band-pass x 2q +
+ * 0.4 x the low-pass. Its sub-block (k <= 32 samples) into out: the wah, its make-up gain ramped (wgq, wgs a sample),
+ * the input clipped to WAH_XM */
+static int32_t wah_bp, wah_lp, wah_cr = -1;     /* the stage's state (x 64), the cutoff's row (-1: none yet) */
+#define WAH_CL(v) ((v) > (1 << 26) ? (1 << 26) : (v) < -(1 << 26) ? -(1 << 26) : (v))   /* (the resonant peak: ~7x
+                                                 * 2^22; the output's sum < 2^31) */
 FR_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t k, int32_t *out, int32_t wgq,
                                                      int32_t wgs, int32_t depth, int32_t q)
 {
     int32_t env = wah_env, ei = wah_ein, eo = wah_eout, es = wah_eslow, xi = wah_pi, xo = wah_po, dk = depth + 16;
     int32_t et = (4194304 + dk - 1) / dk;       /* (env x dk) >> 16 reaches row 63 from env >= et: below it the
                                                  * product fits 32 bits */
-    int32_t ic[2] = {wah_ic[0], wah_ic[1]}, kq = q << 10;   /* (q: Q14 -> k: Q24) */
+    int32_t bp = wah_bp, lp = wah_lp, cr = wah_cr, f = cr < 0 ? 0 : (int32_t)FX_WAH_F[cr];
     uint32_t j;
     for (j = 0; j < k; j++) {
         int32_t xin = mp[j], x, xf, a = xin < 0 ? -xin : xin, pi, po, vi, vo;
@@ -490,20 +489,15 @@ FR_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t
         if (env < 0) env = 0;
         {                                       /* the cutoff's row, 0 .. 63: up at once, down a row late */
             int32_t row = env >= et ? 63 : (env * dk) >> 16;   /* env >= 0, dk > 0 */
-            if (row > wah_cr || row < wah_cr - 1 || kq != wah_ck) {
-                wah_cr = row > wah_cr || kq != wah_ck ? row : row + 1; wah_ck = kq;
-                svf_coef(&wah_c, (int32_t)FX_WAH_G[wah_cr], kq);
-            }
+            if (row > cr || row < cr - 1) { cr = row > cr ? row : row + 1; f = (int32_t)FX_WAH_F[cr]; }
         }
         {
-            int32_t v3 = (xin << 4) - ic[1], v1, v2;
-            v1 = (int32_t)(((int64_t)wah_c.a1 * ic[0] + (int64_t)wah_c.a2 * v3 + (1 << 26)) >> 27);
-            v2 = ic[1] + (int32_t)(((int64_t)wah_c.a2 * ic[0] + (int64_t)wah_c.a3 * v3 + (1 << 26)) >> 27);
-            ic[0] = fl_cl(2 * v1 - ic[0]);
-            ic[1] = fl_cl(2 * v2 - ic[1]);
-            xf = div10(18 * (int32_t)(((int64_t)kq * v1 + (1 << 23)) >> 24) + 4 * v2);   /* bp x 2q: the resonant
-                                                 * peak's gain held, louder playing no longer gets louder (0.7); x 16 */
-            x = (xf + 8) >> 4;                  /* (the bus' grain: for the output's envelope) */
+            int32_t hi = (xin << 6) - lp - (int32_t)(((int64_t)q * bp + (1 << 13)) >> 14);
+            bp = WAH_CL(bp + (int32_t)(((int64_t)f * hi + (1 << 27)) >> 28));
+            lp = WAH_CL(lp + (int32_t)(((int64_t)f * bp + (1 << 27)) >> 28));
+            xf = div10((int32_t)(((int64_t)18 * q * bp + (1 << 13)) >> 14) + 4 * lp);   /* bp x 2q: the resonant
+                                                 * peak's gain held, louder playing no longer gets louder (0.7); x 64 */
+            x = (xf + 32) >> 6;                 /* (the bus' grain: for the output's envelope) */
         }
         /* envelopes of the input and the filtered output, each pre-emphasised (x - 3/4 x[-1]: +12 dB from the bass
          * to the treble, roughly the ear's weighting) so a closed wah's rumble does not count as loudness */
@@ -514,10 +508,10 @@ FR_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t
         eo += (vo - eo) >> (vo > eo ? 7 : 9);
         es += (vi - es) >> 11;
         wgq += wgs;
-        out[j] = (int32_t)(((int64_t)xf * (wgq >> 5) + (1 << 15)) >> 16);   /* (x 16, the gain Q12) */
+        out[j] = (int32_t)(((int64_t)xf * (wgq >> 5) + (1 << 17)) >> 18);   /* (x 64, the gain Q12) */
     }
     wah_env = env; wah_ein = ei; wah_eout = eo; wah_eslow = es; wah_pi = xi; wah_po = xo;
-    wah_ic[0] = ic[0]; wah_ic[1] = ic[1];
+    wah_bp = bp; wah_lp = lp; wah_cr = cr;
 }
 /* the wah, the tremolo's gains settled at unity: L / R = the wah (onto the cleared fx_L / fx_R: the wah is their
  * only writer before this) */
@@ -677,7 +671,7 @@ __attribute__((noinline)) static void fx_trem_x(const int32_t *m, int32_t *L, in
     int32_t w1, gl = tw_gl, gr = tw_gr;
     uint32_t ph = tw_ph;
     if (!wah_xw) {
-        wah_env = wah_ic[0] = wah_ic[1] = 0; wah_ein = wah_eout = wah_eslow = 0; wah_pi = wah_po = 0; wah_cr = -1;
+        wah_env = wah_bp = wah_lp = 0; wah_ein = wah_eout = wah_eslow = 0; wah_pi = wah_po = 0; wah_cr = -1;
         wah_g = wah_g1 = 4096;
     }
     w1 = xf_next(wah_xw, sw == 2, n);   /* (never at rest here: the blend always runs) */
@@ -1628,7 +1622,7 @@ static void fx_reset_state(void)
      * met them (its level moved up to 5 LU with what was played before, on the FM-1: the presets suite) */
     eng_rh_kill_all(); bar_kill_all();
     lfo_sh = 0; fl_ic[0] = fl_ic[1] = 0; fl_op = 0;                 /* the filters, the smoothers, the master */
-    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; eq_reset(); wah_env = wah_ic[0] = wah_ic[1] = 0; wah_cr = -1; cmp_env = 0; cmp_g = 65536;
+    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; eq_reset(); wah_env = wah_bp = wah_lp = 0; wah_cr = -1; cmp_env = 0; cmp_g = 65536;
     dc_l = dc_r = dce_l = dce_r = 0; memset(lk_l, 0, sizeof lk_l); memset(lk_r, 0, sizeof lk_r); lk_pk = 0; lk_g = 32768;
     gate_g = gate_tgt = 32768; gate_quiet = 0;
 #ifdef FX_RESET_ONE_BLOCK

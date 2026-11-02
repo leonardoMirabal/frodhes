@@ -10,8 +10,8 @@
   FX_TREM_MK[128]   its make-up gain per DEPTH, Q12: the same mean power as the linear law's (with its make-up)
   FX_DLY_T[128]     delay TIME in samples: 20 ms .. 1480 ms, exponential
   FX_PH_A[33]       phaser allpass coefficients (Q14) for corner frequencies 150 Hz .. 4.8 kHz (log), 33 points
-  FX_WAH_G[65]      the wah's TPT state-variable g = tan(pi fc / fs) in Q24 for fc 300 Hz .. 2.5 kHz (log, 64 rows + a
-                    guard); the resonance k is applied at run time
+  FX_WAH_F[64]      the wah's state-variable (Chamberlin) f = 2 sin(pi fc / fs) in Q28 for fc 300 Hz .. 2.5 kHz (log, 64
+                    rows); the resonance q is applied at run time
   FX_CMP_*, FX_LOG2F, FX_EXP2F   the compressor's detector and gain computer
   FX_FL_G[258]      the FILTER's g = tan(pi fc / fs) in Q24 for fc 30 Hz .. 16 kHz (log, 256 steps + guards)
   FX_FL_K[128]      its damping k = 1 / Q in Q24: Q 0.707 .. 20 (RESO, exponential)
@@ -214,8 +214,8 @@ def main():
         t = math.tan(math.pi * f / FS)
         pa.append(int(round((t - 1) / (t + 1) * 16384)))       # first-order allpass a = (t - 1)/(t + 1), Q14
     out.append(arr("FX_PH_A", "int16_t", pa))
-    wf = lambda i: 300 * (2500 / 300) ** (min(i, 63) / 63)
-    out.append(arr("FX_WAH_G", "uint32_t", [int(round(math.tan(math.pi * wf(i) / FS) * 2 ** 24)) for i in range(65)], 8))
+    out.append(arr("FX_WAH_F", "uint32_t", [int(round(2 * math.sin(math.pi * 300 * (2500 / 300) ** (i / 63) / FS) * 2 ** 28))
+                                            for i in range(64)], 8))
     # knob laws (Q16): 2^((v-64)/64) and its inverse (BARK tip scale and gain compensation), 2^((v-64)/32) (BELL),
     # 2^(-(v-64)/128) (HAMMER: contact-rate multiplier, x2^(-0.5) .. x2^(+0.5))
     # (0.9.6, the flash: none of it stored. v >= 64 is FX_EXP2F(4 (v - 64)), v < 64 half of FX_EXP2F(4 v), rounded up
