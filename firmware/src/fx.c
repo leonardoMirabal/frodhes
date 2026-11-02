@@ -295,6 +295,8 @@ static int32_t dr_gl RH_SP_SEC(".data.fx_drgl") = -1, dr_kl RH_SP_SEC(".bss.fx_d
                                                         * the gain and the make-up ramped apart over a big step were
                                                         * +4.8 dB: the make-up matches the gain per AMOUNT only) */
 #define DR_DSTEP 4
+static uint8_t dr_os_ok RH_SP_SEC(".bss.dr_os_ok");   /* FDRV's 2x state is valid (0: to rest at the next block;
+                                                        * drive.c dr_os2) */
 static int32_t dr_w = 32768, dr_tg = 4096, dr_tlp;      /* the wet share (Q15), the shelf's high gain (Q12), its low-pass */
 static uint8_t dr_ton;                                  /* the shelf runs (its gain is not 1, or on its way) */
 /* TONE and MIX settled (0.9.5): the gliding loop below with its glides at rest, so each sample does what that loop
@@ -302,17 +304,17 @@ static uint8_t dr_ton;                                  /* the shelf runs (its g
  * sample, its state in memory); shelf and full are constants at each use */
 /* clampi(v, -230000, 230000) as smax + smin (the same value) */
 static inline int32_t dr_cl(int32_t v) { v = v > -230000 ? v : -230000; return v < 230000 ? v : 230000; }
-static inline __attribute__((always_inline)) void dr_settled(int32_t *m, uint32_t n, int32_t g, int32_t k, int32_t mk,
-                                                             int32_t bias, int32_t b0, int32_t tg, int32_t w,
-                                                             const int shelf, const int full)
+/* FDRV's shaper at 2x (drive.c dr_os2): the high-pass, the gain, the curve between the half-bands -> ys[]; the
+ * loops below run its low-passes, make-up, TONE shelf and MIX at 1x on ys (dr_hp is dr_os2's) */
+static const int32_t *dr_os2(const int32_t *m, uint32_t n, int32_t gq, int32_t dgq, int32_t bias, int32_t b0);
+static inline __attribute__((always_inline)) void dr_settled(int32_t *m, const int32_t *ys, uint32_t n, int32_t k,
+                                                             int32_t mk, int32_t tg, int32_t w, const int shelf,
+                                                             const int full)
 {
-    int32_t hp = dr_hp, lp1 = dr_lp1, lp2 = dr_lp2, tlp = dr_tlp;
+    int32_t lp1 = dr_lp1, lp2 = dr_lp2, tlp = dr_tlp;
     uint32_t i;
     for (i = 0; i < n; i++) {
-        int32_t x0 = m[i], x, y;
-        hp += (x0 - hp + 64) >> 7;
-        x = dr_cl(x0 - hp);
-        y = softclip((int32_t)(((int64_t)x * g) >> 12) + bias) - b0;
+        int32_t x0 = m[i], y = ys[i];
         lp1 += mulq15(y - lp1, k);
         lp2 += mulq15(lp1 - lp2, k);
         y = mulq15(lp2, mk);
@@ -322,22 +324,19 @@ static inline __attribute__((always_inline)) void dr_settled(int32_t *m, uint32_
         }
         m[i] = full ? y : x0 + (int32_t)(((int64_t)(y - x0) * w) >> 15);
     }
-    dr_hp = hp; dr_lp1 = lp1; dr_lp2 = lp2; dr_tlp = tlp;
+    dr_lp1 = lp1; dr_lp2 = lp2; dr_tlp = tlp;
 }
 /* the gliding loop (TONE / MIX on their way, AMOUNT's ramp): out of app_audio (inlined, its registers moved the
  * defaults' and the settled loops: +1 instruction and a stack load each, 0.9.6); g, k, mk in Q8 from gq / kq / mq by
  * dgq / dkq / dmq a sample (0: constant) */
-__attribute__((noinline)) static void dr_general(int32_t *m, uint32_t n, int32_t gq, int32_t kq, int32_t mq, int32_t dgq,
-                                                 int32_t dkq, int32_t dmq, int32_t bias, int32_t b0, int32_t tt, int32_t wt)
+__attribute__((noinline)) static void dr_general(int32_t *m, const int32_t *ys, uint32_t n, int32_t kq, int32_t mq,
+                                                 int32_t dkq, int32_t dmq, int32_t tt, int32_t wt)
 {
     uint32_t i;
     for (i = 0; i < n; i++) {
-        int32_t x0 = m[i], x, y, g, k, mk;
-        gq += dgq; kq += dkq; mq += dmq;
-        g = gq >> 8; k = kq >> 8; mk = mq >> 8;
-        dr_hp += (x0 - dr_hp + 64) >> 7;
-        x = dr_cl(x0 - dr_hp);
-        y = softclip((int32_t)(((int64_t)x * g) >> 12) + bias) - b0;
+        int32_t x0 = m[i], y = ys[i], k, mk;
+        kq += dkq; mq += dmq;
+        k = kq >> 8; mk = mq >> 8;
         dr_lp1 += mulq15(y - dr_lp1, k);
         dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
         y = mulq15(dr_lp2, mk);
@@ -359,6 +358,7 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
     int32_t wt = !sw ? 0 : mv >= 127 ? 32768 : mv * 258;          /* the wet share it goes to */
     int32_t tt = tv >= 64 ? 4096 + (((tv - 64) * 4161) >> 6) : tv * 64;         /* the shelf's gain: 0 .. 1 .. 2 (Q12) */
     int32_t gq = -1, kq = 0, mq = 0, dgq = 0, dkq = 0, dmq = 0;   /* (gq >= 0: the ramp, Q8) */
+    const int32_t *ys;
     if (!d) { wt = 0; d = 1; }                          /* AMOUNT 0: off, faded out at AMOUNT 1's settings (it cut
                                                         * to dry in one sample: AMOUNT 1 is not the dry signal, the
                                                         * high-pass, the bias and the make-up still act; the bug hunt) */
@@ -387,29 +387,27 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
         dgq = ((g - dr_gl) << 8) / (int32_t)n; dkq = ((k - dr_kl) << 8) / (int32_t)n; dmq = ((mk - dr_ml) << 8) / (int32_t)n;
     }
     dr_gl = g; dr_kl = k; dr_ml = mk;
+    ys = dr_os2(m, n, gq < 0 ? g << 8 : gq, dgq, bias, b0);   /* the shaper at 2x (the gain's ramp in it) */
     if (gq < 0 && wt == 32768 && dr_w == 32768 && tt == 4096 && !dr_ton) {   /* the defaults: the loop before the page */
-        int32_t hp = dr_hp, lp1 = dr_lp1, lp2 = dr_lp2, *e = m + n;   /* (0.9.5: the state in locals) */
+        int32_t lp1 = dr_lp1, lp2 = dr_lp2, *e = m + n;   /* (0.9.5: the state in locals) */
         for (; m < e; m++) {
-            int32_t x = *m, y;
-            hp += (x - hp + 64) >> 7;
-            x = dr_cl(x - hp);
-            y = softclip((int32_t)(((int64_t)x * g) >> 12) + bias) - b0;
+            int32_t y = *ys++;
             lp1 += mulq15(y - lp1, k);
             lp2 += mulq15(lp1 - lp2, k);
             *m = mulq15(lp2, mk);
         }
-        dr_hp = hp; dr_lp1 = lp1; dr_lp2 = lp2;
+        dr_lp1 = lp1; dr_lp2 = lp2;
         return;
     }
     if (gq < 0 && dr_tg == tt && dr_w == wt && (dr_ton ? tt != 4096 : tt == 4096)) {   /* settled: the glides at rest, the
                                                         * shelf running (and staying on) or resting (dr_tg 4096) */
-        if (!dr_ton) dr_settled(m, n, g, k, mk, bias, b0, tt, wt, 0, 0);   /* (MIX alone: all wet is the defaults) */
-        else if (wt == 32768) dr_settled(m, n, g, k, mk, bias, b0, tt, wt, 1, 1);
-        else dr_settled(m, n, g, k, mk, bias, b0, tt, wt, 1, 0);
+        if (!dr_ton) dr_settled(m, ys, n, k, mk, tt, wt, 0, 0);   /* (MIX alone: all wet is the defaults) */
+        else if (wt == 32768) dr_settled(m, ys, n, k, mk, tt, wt, 1, 1);
+        else dr_settled(m, ys, n, k, mk, tt, wt, 1, 0);
         return;
     }
-    if (gq < 0) { gq = g << 8; kq = k << 8; mq = mk << 8; }   /* (no ramp: the steps are 0) */
-    dr_general(m, n, gq, kq, mq, dgq, dkq, dmq, bias, b0, tt, wt);
+    if (gq < 0) { kq = k << 8; mq = mk << 8; }          /* (no ramp: the steps are 0) */
+    dr_general(m, ys, n, kq, mq, dkq, dmq, tt, wt);
 }
 /* FDRV, and its silence (0.9.8, the residual after a panic): on zero input the rounding leaves fixed points that are
  * not 0 (the high-pass's hp += (x - hp + 64) >> 7 stops anywhere in -63 .. 64, the shaper turns -hp into a constant
@@ -421,7 +419,7 @@ __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, i
     int32_t hp = dr_hp, l1 = dr_lp1, l2 = dr_lp2, tl = dr_tlp, z = !(m[0] | m[n >> 1] | m[n - 1]);
     dr_classic(m, n, sw);
     if (z && hp == dr_hp && l1 == dr_lp1 && l2 == dr_lp2 && tl == dr_tlp && (hp | l1 | l2 | tl))
-        dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0;
+        { dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; }   /* (and the 2x state: drive.c dr_os2) */
 }
 #include "drive.c"                                      /* the drive's TYPEs and fx_drive */
 
@@ -1525,7 +1523,7 @@ static void fx_reset_state(void)
      * met them (its level moved up to 5 LU with what was played before, on the FM-1: the presets suite) */
     eng_rh_kill_all(); bar_kill_all();
     lfo_sh = 0; fl_ic[0] = fl_ic[1] = 0; fl_op = 0;                 /* the filters, the smoothers, the master */
-    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; wah_env = wah_lp = wah_bp = 0; cmp_env = 0; cmp_g = 65536;
+    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; wah_env = wah_lp = wah_bp = 0; cmp_env = 0; cmp_g = 65536;
     dc_l = dc_r = dce_l = dce_r = 0; memset(lk_l, 0, sizeof lk_l); memset(lk_r, 0, sizeof lk_r); lk_pk = 0; lk_g = 32768;
     gate_g = gate_tgt = 32768; gate_quiet = 0;
 #ifdef FX_RESET_ONE_BLOCK
@@ -1754,7 +1752,9 @@ static inline __attribute__((always_inline)) void fx_process(const int32_t *mono
  * rounded up; replace them with tools/hil_cpu.py --fx-each (idle, one effect at a time, minus idle without effects). */
 #define FX_US_COMP 90u
 #define FX_US_FILTER 150u      /* LP18 + the LFO, the heaviest type */
-#define FX_US_DRIVE 80u
+#define FX_US_DRIVE 248u      /* 0.9.9, the curve at 2x (drive.c dr_os2): 155 instructions a sample on the longest
+                                * path (front 20, up 25, curve 2 x 23, down 34, TONE / MIX 30; tools/drive_insns.py), x 1.6;
+                                * the defaults' path 139 (222 us). It was 80 (the 1x curve, 54, measured) */
 #define FX_US_TREM 40u         /* tremolo / pan (sw 1) */
 #define FX_US_WAH 90u          /* touch wah (sw 2) */
 #define FX_US_PHASER 150u

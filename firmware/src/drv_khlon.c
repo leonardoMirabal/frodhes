@@ -29,17 +29,18 @@
  * few instructions a sample more than the others.
  * Cost: tools/drive_insns.py counts the loops (pi32v2 -Os); DRV_US_KHLON is the longest block, a fade block of the dip,
  * at ~1.6 us per instruction per sample. */
-#ifndef KH_AA                                   /* the anti-aliased clipper: 0 until it fits the budget (below) */
-#define KH_AA 0
+#ifndef KH_AA                                   /* the anti-aliased clipper from KH_AA_A on (fxq-drive: on; 0 = the
+                                                 * plain curve at every AMOUNT, 0.9.8's budget) */
+#define KH_AA 1
 #endif
-#if !KH_AA       /* plain (pi32v2 -Os, the firmware build, per sample): post 69, pre 70, a dip block 80.5 (was 79 / 83 /
+#if KH_AA                                       /* AA: post 96, pre 100, a dip block 109 (DRV_US_MAX: drive.c) */
+#define DRV_US_KHLON 177u
+#define KH_AA_FROM KH_AA_A
+#else            /* plain (pi32v2 -Os, the firmware build, per sample): post 69, pre 70, a dip block 80.5 (was 79 / 83 /
                   * 96 counted the same way: O1+CL 25, clipper 21 (pre, adding into the sum: 24), slot 10, POST 13, the
                   * dip's blend 10.5) */
 #define DRV_US_KHLON 129u
 #define KH_AA_FROM 127u
-#else                                           /* AA: post 96, pre 100, a dip block 109: over the budget (no build) */
-#define DRV_US_KHLON 177u
-#define KH_AA_FROM KH_AA_A
 #endif
 #define KH_M64(a, b) ((int64_t)(a) * (int64_t)(b))
 #ifndef KH_FN
@@ -49,7 +50,8 @@
 static DRV_BSS int32_t kh_o1[5], kh_cl[3], kh_sl[3], kh_po[5];   /* the rows that run: b0 (b1 b2) a1 (a2), Q24, a negated */
 static DRV_BSS int64_t kh_so1[2], kh_spo[2], kh_scl, kh_ssl;      /* transposed form II states */
 static DRV_BSS int32_t kh_sc;                                     /* the coupling capacitor (Q20) */
-static DRV_BSS int32_t kh_tmp[DRV_BLK], kh_u[DRV_BLK];             /* the driven path; the sum while it dips */
+#define kh_tmp drv_scr.kh.tmp                                    /* the driven path; the sum while it dips: block */
+#define kh_u drv_scr.kh.u                                        /* scratch, shared (drive.c drv_scr: one TYPE a block) */
 static DRV_BSS const int32_t *kh_gf;                              /* the plain clipper's node at 0 V (KH_GF) */
 static DRV_BSS int32_t kh_e1, kh_F1, kh_v1;                       /* the AA clipper: the last e, F(e1), the last v */
 #if KH_AA
