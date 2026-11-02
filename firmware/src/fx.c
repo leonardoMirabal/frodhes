@@ -449,7 +449,7 @@ __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, i
 
 /* ---- TREMOLO (autopan / amplitude) and touch WAH; mono in, stereo out */
 static uint32_t tw_ph;
-static int32_t tw_gl = 32768, tw_gr = 32768, wah_env, wah_lp, wah_bp;
+static int32_t tw_gl = 32768, tw_gr = 32768, wah_env;
 static int32_t wah_ein, wah_eout, wah_g = 4096, wah_pi, wah_po;   /* the wah's make-up: loudness envelopes of the
                                                  * input and the output (pre-emphasised), the gain (Q12), last samples */
 static int32_t wah_eslow, wah_g1 = 4096;        /* the input's slow envelope (onsets), the gain's first smoothing pole */
@@ -460,40 +460,73 @@ static int32_t wah_eslow, wah_g1 = 4096;        /* the input's slow envelope (on
  * scale) is clipped to it, 2x full scale (every render below it: the gates' heaviest ~14000) */
 #define WAH_XM 65535
 static inline __attribute__((always_inline)) int32_t div10(int32_t v) { return (int32_t)(((int64_t)v * 1717986919) >> 34) + (int32_t)((uint32_t)v >> 31); }
-/* the wah, the tremolo's gains settled at unity: fx_trem's loop, bit for bit, with the state in registers (no reload
- * past the L / R stores) and L / R = x ((x * 32768) >> 15), onto the cleared fx_L / fx_R. Its own function: its
- * registers are its own (inlined into app_audio it spilled more, 86 -> 91 instructions a sample) */
-FR_RAM __attribute__((noinline)) static void fx_wah_unity(const int32_t *mp, const int32_t *me, int32_t *lo, int32_t *ro,
-                                                   int32_t wgq, int32_t wgs, int32_t depth, int32_t q)
+/* the wah's filter (0.9.8 fxq-mod): the FILTER's TPT state-variable stage (svf_tick, rounded, 16x finer inside) for the
+ * Chamberlin one with 13-bit coefficients it had, whose truncations were a noise floor -25 dB under a quiet note (a
+ * 1 kHz sine at -41 dBFS, tools/fxq_metrics.py: mostly the output rounded to the bus' grain before the make-up gain,
+ * which then raised it up to x32) and grit on loud high ones. Now the make-up gain takes the stage's 16x finer output.
+ * The cutoff: 300 Hz .. 2.5 kHz, 64 log rows by the envelope, as before, now with a row of hysteresis: up at once, down
+ * when the envelope is a whole row under (the envelope's ripple within a cycle toggled the row at a row's edge, each
+ * toggle a step of the cutoff: harmonics at -60 dB on a 300 Hz sine; the coefficients, with their divides, are
+ * computed only when the row or the resonance moves: a few dozen times a block at most, the envelope falling slowly).
+ * Rows interpolated measured worse (the ripple then moves the cutoff all the time: -47 dB on a loud 1 kHz sine), and
+ * the row looked at every 8 samples aliased the ripple (300 Hz: sidebands at +-112 Hz, -50 dB). The output law
+ * as before: 0.9 x the band-pass x 2q + 0.4 x the low-pass. Its sub-block (k <= 32 samples) into out: the wah, its
+ * make-up gain ramped (wgq, wgs a sample), the input clipped to WAH_XM */
+static int32_t wah_ic[2];                       /* the stage's state, x 16 */
+static svf_t wah_c;                             /* its coefficients, at row wah_cr (-1: none yet) and k wah_ck */
+static int32_t wah_cr = -1, wah_ck;
+FR_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t k, int32_t *out, int32_t wgq,
+                                                     int32_t wgs, int32_t depth, int32_t q)
 {
-    int32_t env = wah_env, lp = wah_lp, bp = wah_bp, ei = wah_ein, eo = wah_eout, es = wah_eslow;
-    int32_t xi = wah_pi, xo = wah_po, dk = depth + 16;
-    int32_t et = (4194304 + dk - 1) / dk;       /* (env x dk) >> 16 reaches row 63 from env >= et: below
-                                                 * it the product fits 32 bits */
-    while (mp < me) {
-        int32_t xin = *mp++, x, a = xin < 0 ? -xin : xin, f, hi, pi, po, vi, vo;
-        if (a > WAH_XM) { a = WAH_XM; xin = xin < 0 ? -WAH_XM : WAH_XM; }   /* (BUGHUNT #26: the SVF's range) */
+    int32_t env = wah_env, ei = wah_ein, eo = wah_eout, es = wah_eslow, xi = wah_pi, xo = wah_po, dk = depth + 16;
+    int32_t et = (4194304 + dk - 1) / dk;       /* (env x dk) >> 16 reaches row 63 from env >= et: below it the
+                                                 * product fits 32 bits */
+    int32_t ic[2] = {wah_ic[0], wah_ic[1]}, kq = q << 10;   /* (q: Q14 -> k: Q24) */
+    uint32_t j;
+    for (j = 0; j < k; j++) {
+        int32_t xin = mp[j], x, xf, a = xin < 0 ? -xin : xin, pi, po, vi, vo;
+        if (a > WAH_XM) { a = WAH_XM; xin = xin < 0 ? -WAH_XM : WAH_XM; }   /* (BUGHUNT #26: the stage's range) */
         if (a > env) env += (a - env) >> 3; else env -= (env >> 11) + 1;
         if (env < 0) env = 0;
-        f = FX_WAH_F[env >= et ? 63 : (env * dk) >> 16];   /* env >= 0, dk > 0 */
-        hi = xin - lp - ((q * bp) >> 14);
-        bp += (f * (hi >> 1)) >> 13;
-        lp += (f * (bp >> 1)) >> 13;
-        x = div10(9 * ((bp >> 2) * q >> 11) + 4 * lp);
+        {                                       /* the cutoff's row, 0 .. 63: up at once, down a row late */
+            int32_t row = env >= et ? 63 : (env * dk) >> 16;   /* env >= 0, dk > 0 */
+            if (row > wah_cr || row < wah_cr - 1 || kq != wah_ck) {
+                wah_cr = row > wah_cr || kq != wah_ck ? row : row + 1; wah_ck = kq;
+                svf_coef(&wah_c, (int32_t)FX_WAH_G[wah_cr], kq);
+            }
+        }
+        {
+            int32_t v3 = (xin << 4) - ic[1], v1, v2;
+            v1 = (int32_t)(((int64_t)wah_c.a1 * ic[0] + (int64_t)wah_c.a2 * v3 + (1 << 26)) >> 27);
+            v2 = ic[1] + (int32_t)(((int64_t)wah_c.a2 * ic[0] + (int64_t)wah_c.a3 * v3 + (1 << 26)) >> 27);
+            ic[0] = fl_cl(2 * v1 - ic[0]);
+            ic[1] = fl_cl(2 * v2 - ic[1]);
+            xf = div10(18 * (int32_t)(((int64_t)kq * v1 + (1 << 23)) >> 24) + 4 * v2);   /* bp x 2q: the resonant
+                                                 * peak's gain held, louder playing no longer gets louder (0.7); x 16 */
+            x = (xf + 8) >> 4;                  /* (the bus' grain: for the output's envelope) */
+        }
+        /* envelopes of the input and the filtered output, each pre-emphasised (x - 3/4 x[-1]: +12 dB from the bass
+         * to the treble, roughly the ear's weighting) so a closed wah's rumble does not count as loudness */
         pi = xin - ((3 * xi) >> 2); po = x - ((3 * xo) >> 2);
-        vi = (pi < 0 ? -pi : pi) << 8; vo = (po < 0 ? -po : po) << 8;
+        vi = (pi < 0 ? -pi : pi) << 8; vo = (po < 0 ? -po : po) << 8;   /* x 2^8: a Q15 level's steps survive the >> */
         xi = xin; xo = x;
-        ei += (vi - ei) >> (vi > ei ? 7 : 9);
+        ei += (vi - ei) >> (vi > ei ? 7 : 9);   /* 2.9 ms up, 11.6 ms down */
         eo += (vo - eo) >> (vo > eo ? 7 : 9);
         es += (vi - es) >> 11;
         wgq += wgs;
-        x = (int32_t)(((int64_t)x * (wgq >> 5)) >> 12);
-        *ro++ = x; *lo++ = x;                         /* (= x: fx_process clears fx_L / fx_R and the wah is their
-                                                        * only writer before this; R first: 90 instructions a sample,
-                                                        * 94 with L / R += x, 102 with L first) */
+        out[j] = (int32_t)(((int64_t)xf * (wgq >> 5) + (1 << 15)) >> 16);   /* (x 16, the gain Q12) */
     }
-    wah_env = env; wah_lp = lp; wah_bp = bp; wah_ein = ei; wah_eout = eo; wah_eslow = es;
-    wah_pi = xi; wah_po = xo;
+    wah_env = env; wah_ein = ei; wah_eout = eo; wah_eslow = es; wah_pi = xi; wah_po = xo;
+    wah_ic[0] = ic[0]; wah_ic[1] = ic[1];
+}
+/* the wah, the tremolo's gains settled at unity: L / R = the wah (onto the cleared fx_L / fx_R: the wah is their
+ * only writer before this) */
+static void fx_wah_unity(const int32_t *mp, const int32_t *me, int32_t *lo, int32_t *ro, int32_t wgq, int32_t wgs,
+                         int32_t depth, int32_t q)
+{
+    uint32_t k = (uint32_t)(me - mp);
+    FR_FAR(wah_sub)(mp, k, ro, wgq, wgs, depth, q);
+    memcpy(lo, ro, k * sizeof *lo);
 }
 /* the amp law (SHAPE 65..127, 0.9.5): an amp's tremolo rather than a sine on the volume. Its amount a (0 at SHAPE 64,
  * 1 at 127) brings in, together: (1) the LFO's fall from the top to the dip takes 50 -> 65 % of the cycle, the rise
@@ -570,7 +603,7 @@ static int32_t wah_xw;                                   /* (below: the wah's bl
 static int32_t wah_q RH_SP_SEC(".data.fx_wahq") = -1;
 static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, int32_t *R, uint32_t n, int32_t sw)
 {
-    int32_t depth = fx_p[FXP_TW_DEPTH], rate = fx_p[FXP_TW_RATE], qt = 9830 - rate * 58;
+    int32_t depth = fx_p[FXP_TW_DEPTH], rate = fx_p[FXP_TW_RATE], qt = 9830 - rate * 58, wt[32];
     uint32_t inc = fx_tw_sync_inc ? fx_tw_sync_inc : FX_LFO_INC[rate], sb, j;
     if (sw == 2 && (wah_q < 0 || !wah_xw || fx_quiet_blocks >= 2u)) wah_q = qt;
     if (sw == 1 && fx_p[FXP_TW_SHAPE] > 64) { fx_trem_amp(m, L, R, n, inc); return; }   /* the amp law */
@@ -610,7 +643,7 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
         }
         dl = (tl - gl) >> 5; dr = (tr - gr) >> 5;
         if (sw == 2 && gl == 32768 && gr == 32768) {    /* the wah, the tremolo's gains at unity (fx_wah_unity) */
-            FR_FAR(fx_wah_unity)(m + sb, m + (sb + 32u < n ? sb + 32u : n), L + sb, R + sb, wgq, wgs, depth, wq);
+            fx_wah_unity(m + sb, m + (sb + 32u < n ? sb + 32u : n), L + sb, R + sb, wgq, wgs, depth, wq);
             continue;                                    /* (tw_gl / tw_gr: 32768 already) */
         }
         if (sw == 0 && gl == 32768 && gr == 32768) {    /* TREM/WAH off, the gains settled: the loop below is
@@ -620,35 +653,10 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
             while (mp < me) { int32_t x = *mp++; *lo++ += x; *ro++ += x; }
             continue;
         }
+        if (sw == 2) FR_FAR(wah_sub)(m + sb, (sb + 32u < n ? sb + 32u : n) - sb, wt, wgq, wgs, depth, wq);
         for (j = sb; j < sb + 32u && j < n; j++) {
             int32_t x = m[j];
-            if (sw == 2) {                               /* touch wah: envelope -> SVF cutoff, RATE knob = resonance */
-                int32_t a = x < 0 ? -x : x, row, f, q, hi;
-                if (a > WAH_XM) { a = WAH_XM; x = x < 0 ? -WAH_XM : WAH_XM; }   /* (as fx_wah_unity) */
-                const int32_t xc = x;
-                if (a > wah_env) wah_env += (a - wah_env) >> 3; else wah_env -= (wah_env >> 11) + 1;
-                if (wah_env < 0) wah_env = 0;
-                row = clampi((int32_t)(((int64_t)wah_env * (depth + 16)) >> 16), 0, 63);
-                f = FX_WAH_F[row];
-                q = wq;                                  /* Q14 damping: 0.6 .. 0.15 (resonant; wah_q) */
-                hi = x - wah_lp - ((q * wah_bp) >> 14);
-                wah_bp += (f * (hi >> 1)) >> 13;
-                wah_lp += (f * (wah_bp >> 1)) >> 13;
-                x = div10(9 * ((wah_bp >> 2) * q >> 11) + 4 * wah_lp);   /* bp x 2q: the resonant peak's gain held,
-                                                                         * louder playing no longer gets louder (0.7) */
-                {   /* envelopes of the input and the filtered output, each pre-emphasised (x - 3/4 x[-1]: +12 dB
-                     * from the bass to the treble, roughly the ear's weighting) so a closed wah's rumble does not
-                     * count as loudness */
-                    int32_t pi = xc - ((3 * wah_pi) >> 2), po = x - ((3 * wah_po) >> 2);
-                    int32_t vi = (pi < 0 ? -pi : pi) << 8, vo = (po < 0 ? -po : po) << 8;   /* x 2^8: a Q15 level's */
-                    wah_pi = xc; wah_po = x;                                                /* steps survive the >> */
-                    wah_ein += (vi - wah_ein) >> (vi > wah_ein ? 7 : 9);      /* 2.9 ms up, 11.6 ms down */
-                    wah_eout += (vo - wah_eout) >> (vo > wah_eout ? 7 : 9);
-                    wah_eslow += (vi - wah_eslow) >> 11;
-                }
-                wgq += wgs;
-                x = (int32_t)(((int64_t)x * (wgq >> 5)) >> 12);
-            }
+            if (sw == 2) x = wt[j - sb];                 /* touch wah: envelope -> cutoff, RATE = resonance */
             gl += dl; gr += dr;
             L[j] += (int32_t)(((int64_t)x * gl) >> 15);
             R[j] += (int32_t)(((int64_t)x * gr) >> 15);
@@ -669,7 +677,7 @@ __attribute__((noinline)) static void fx_trem_x(const int32_t *m, int32_t *L, in
     int32_t w1, gl = tw_gl, gr = tw_gr;
     uint32_t ph = tw_ph;
     if (!wah_xw) {
-        wah_env = wah_lp = wah_bp = 0; wah_ein = wah_eout = wah_eslow = 0; wah_pi = wah_po = 0;
+        wah_env = wah_ic[0] = wah_ic[1] = 0; wah_ein = wah_eout = wah_eslow = 0; wah_pi = wah_po = 0; wah_cr = -1;
         wah_g = wah_g1 = 4096;
     }
     w1 = xf_next(wah_xw, sw == 2, n);   /* (never at rest here: the blend always runs) */
@@ -1081,6 +1089,8 @@ static int32_t dly_wk;                          /* the echo's gain (MIX: FX_DLY_
  * line holds half level), rounded. Linear, the swept fraction (wow, flutter) put images of a tone at the fraction's
  * rate, -26 dB re a 10 kHz tone on ANA (tools/fxq_metrics.py), and dulled each repeat's top by up to 2.4 dB at 10 kHz.
  * At f = 0 it is 2 x0 exactly (the linear read's). 32-bit products: |x| <= 2^15 (an int16 line) */
+/* (fxq-rev plans an int32 delay line: then these products need 64 bits, or the line's values a shift first; the
+ * assert stops the build until that is decided at the merge) */
 _Static_assert(sizeof dly_buf[0] == 2, "dly_h4: its 32-bit products hold for an int16 line only");
 static inline __attribute__((always_inline)) int32_t dly_h4(int32_t xm1, int32_t x0, int32_t x1, int32_t x2, int32_t f)
 {
@@ -1591,6 +1601,7 @@ static int32_t fx_L[256], fx_R[256];
 #define GATE_FALL(g) (((g) >> 13) + 1)
 #define GATE_RND 16384
 static int32_t gate_g = 32768, gate_tgt = 32768, fx_wet = 32768;
+static uint32_t fx_lv_dith = 0x2545F491u;            /* fx_out's LEVEL dither (its generator) */
 static uint32_t gate_quiet;
 /* developer CC 10 (>= 64): every free-running part back to its boot state, for before / after recordings that must
  * compare sample for sample (the user, 2026-10-18): the effect LFOs, the tape's wow / flutter, the reverb's modulation,
@@ -1603,7 +1614,7 @@ static volatile uint8_t fx_reset_req;
 static void fx_reset_state(void)
 {
     lfo_ph = 0; lfo_rnd = 0x9E3779B9u; tw_ph = 0; ph_ph = 0; cp_ph = 0; dly_wow = 0; dly_flt = 0;
-    ph_cq = -1; memset(&ph_st, 0, sizeof ph_st); ph_apv = 0;
+    ph_cq = -1; memset(&ph_st, 0, sizeof ph_st); ph_apv = 0; fx_lv_dith = 0x2545F491u;
     dly_rb = dly_w; dly_rst = 1; dly_lp = dly_hp = 0;   /* the delay line: dly_clear_step(), the next blocks */
     dly_clrn = DLY_CLR; dly_lc = 1;
     tp_reset();                                         /* TAPE's filters, noise and transport */
@@ -1617,7 +1628,7 @@ static void fx_reset_state(void)
      * met them (its level moved up to 5 LU with what was played before, on the FM-1: the presets suite) */
     eng_rh_kill_all(); bar_kill_all();
     lfo_sh = 0; fl_ic[0] = fl_ic[1] = 0; fl_op = 0;                 /* the filters, the smoothers, the master */
-    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; eq_reset(); wah_env = wah_lp = wah_bp = 0; cmp_env = 0; cmp_g = 65536;
+    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; eq_reset(); wah_env = wah_ic[0] = wah_ic[1] = 0; wah_cr = -1; cmp_env = 0; cmp_g = 65536;
     dc_l = dc_r = dce_l = dce_r = 0; memset(lk_l, 0, sizeof lk_l); memset(lk_r, 0, sizeof lk_r); lk_pk = 0; lk_g = 32768;
     gate_g = gate_tgt = 32768; gate_quiet = 0;
 #ifdef FX_RESET_ONE_BLOCK
@@ -1734,6 +1745,11 @@ FR_RAM __attribute__((noinline)) static int32_t fx_lv_ramp(int32_t lvl, int stil
     }
     return lvl;
 }
+/* LEVEL off unity re-quantizes the engine's TPDF-dithered Q15 (rhodes.c RH_DITH, GitHub #16) by a gain under 1: the
+ * dither shrinks under 1 LSB and the cut (it truncated) put the quiet tails' distortion back, harmonics 13-19 dB over
+ * the unity path's at LEVEL 40 / 20 (and half an LSB of DC). Now a TPDF dither of +-1 LSB at that cut, rounded (0.9.8
+ * fxq-mod; build/fxqm/dith.py: a -64 dBFS sine at LEVEL 40, the worst harmonic -42.5 -> -55.0 dB re the tone, the
+ * floor +4 dB, at -98 dBFS). An exact 0 stays 0 (silence, the gate). Its own generator, fx_lv_dith */
 /* the output stage: the bypass, the DC blocker, LEVEL, the look-ahead limiter, the gate (fx_process's end). Its own
  * function (0.9.6): inlined after the effects, their code moved its loops' registers (the limiter's copy 32 -> 36
  * instructions a sample, the DC blocker's a stack load more: cpu_check +36 us on VIBES with every effect) */
@@ -1762,15 +1778,19 @@ FR_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
                 if (ar > pn) pn = ar;
             }
         } else {                                       /* LEVEL off unity, or moving: its ramp (lq, Q20) */
+            uint32_t ds = fx_lv_dith;
             for (j = sb; j < sb + LK; j++) {
-                int32_t l = dc_block(fx_L[j], &dl, &el), r = dc_block(fx_R[j], &dr, &er), al, ar;
+                int32_t l = dc_block(fx_L[j], &dl, &el), r = dc_block(fx_R[j], &dr, &er), al, ar, d;
                 lq += ls;
-                l = (int32_t)(((int64_t)l * (lq >> 8)) >> 12); r = (int32_t)(((int64_t)r * (lq >> 8)) >> 12);
+                ds = ds * 1664525u + 1013904223u; d = (int32_t)((ds >> 8) & 4095u) + (int32_t)(ds >> 20) - 2048;
+                l = l ? (int32_t)(((int64_t)l * (lq >> 8) + d) >> 12) : 0;   /* TPDF dithered (above fx_out; the same */
+                r = r ? (int32_t)(((int64_t)r * (lq >> 8) + d) >> 12) : 0;   /* value both sides: mono stays L = R) */
                 fx_L[j] = l; fx_R[j] = r;
                 al = iabs(l); ar = iabs(r);
                 if (al > pn) pn = al;
                 if (ar > pn) pn = ar;
             }
+            fx_lv_dith = ds;
         }
         tgt = lk_g + ((32768 - lk_g) >> 6) + 1;        /* release */
         if (tgt > 32768) tgt = 32768;
