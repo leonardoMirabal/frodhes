@@ -297,6 +297,7 @@ static int32_t dr_gl RH_SP_SEC(".data.fx_drgl") = -1, dr_kl RH_SP_SEC(".bss.fx_d
 #define DR_DSTEP 4
 static uint8_t dr_os_ok RH_SP_SEC(".bss.dr_os_ok");   /* FDRV's 2x state is valid (0: to rest at the next block;
                                                         * drive.c dr_os2) */
+static int32_t dr_sal RH_SP_SEC(".bss.fx_dr_sal");      /* FDRV's wet share at the block's end (fx_drive; fx_spread) */
 static int32_t dr_w = 32768, dr_tg = 4096, dr_tlp;      /* the wet share (Q15), the shelf's high gain (Q12), its low-pass */
 static uint8_t dr_ton;                                  /* the shelf runs (its gain is not 1, or on its way) */
 /* TONE and MIX settled (0.9.5): the gliding loop below with its glides at rest, so each sample does what that loop
@@ -1535,9 +1536,34 @@ static void fx_reset_state(void)
  * level the mono stages (COMP, DRIVE, the FILTER, TREM / WAH) gave the mono sum: per 32-sample sub-block the gain
  * g = sum |L + R| / (2 sum |mono|), ramped over the sub-block (1 exactly while they are all transparent) */
 static int32_t sp_g RH_SP_SEC(".data.fx_sp_g") = 32768;   /* Q15: the last sub-block's gain */
+/* the side aligned to FDRV's 2x (0.9.9): the half-bands' up + down delay the driven mono by 1.84 samples (flat to 6 kHz,
+ * 2.0 at 10 kHz); the side, not driven, was that much ahead, and the image narrowed (C7 at SPREAD 127, DRIVE 90: +7.2 dB
+ * against +15.9 dry; tests/py/test_spread.py). The side takes z^-1 and a first-order allpass (SP_AP, Q15: within -32 dB
+ * of the half-bands' response to 8 kHz) in FDRV's wet share (dr_sal, fx_drive), the share the mono has: L / R stay
+ * M +- S at every MIX and through the drive's fades. Off (dr_sal 0 for two blocks): rh_side as before, bit for bit */
+#define SP_AP 1710
+static int32_t sp_aw RH_SP_SEC(".bss.fx_sp_aw"), sp_ad RH_SP_SEC(".bss.fx_sp_ad"), sp_ax RH_SP_SEC(".bss.fx_sp_ax"),
+               sp_ay RH_SP_SEC(".bss.fx_sp_ay");        /* the last share; z^-1; the allpass' input and output */
 FR_RAM __attribute__((noinline)) static void fx_spread(const int32_t *mono, int32_t *L, int32_t *R, uint32_t n)
 {
     uint32_t sb;
+    const int32_t *side = rh_side;
+    int32_t w1 = dr_sal, w0 = sp_aw;
+    if (w0 | w1) {                                      /* FDRV runs: the side aligned in its wet share (drv_wet: free
+                                                        * after the drive) */
+        int32_t d = sp_ad, xp = sp_ax, yp = sp_ay, w = w0, dw = (w1 - w0) / (int32_t)n;
+        uint32_t i;
+        if (!w0) d = xp = yp = rh_side[0];              /* (from rest: primed, the share starts at 0) */
+        for (i = 0; i < n; i++) {
+            int32_t x = rh_side[i], y = xp + (int32_t)(((int64_t)(d - yp) * SP_AP) >> 15);
+            xp = d; d = x; yp = y;
+            w += dw;
+            drv_wet[i] = x + (int32_t)(((int64_t)(y - x) * (i + 1u == n ? w1 : w)) >> 15);
+        }
+        sp_ad = d; sp_ax = xp; sp_ay = yp;
+        side = drv_wet;
+    }
+    sp_aw = w1;
     for (sb = 0; sb < n; sb += 32u) {
         uint32_t e = sb + 32u < n ? sb + 32u : n;
         int32_t num = 0, den = 0, g = sp_g, dg;
@@ -1554,7 +1580,7 @@ FR_RAM __attribute__((noinline)) static void fx_spread(const int32_t *mono, int3
         dg = (g - sp_g) / 32;
         {
             int32_t *l = L + sb, *r = R + sb, *le = L + e, k = sp_g;
-            const int32_t *sd = rh_side + sb;
+            const int32_t *sd = side + sb;
             while (l < le) {
                 int32_t s;
                 k += dg;
@@ -1714,7 +1740,7 @@ static inline __attribute__((always_inline)) void fx_process(const int32_t *mono
     static int32_t m[256];
     if (fx_reset_req) {                                /* (the voices' last block too: mono is frodhes.c's voice_mono) */
         fx_reset_state(); memset((void *)mono, 0, n * sizeof mono[0]); fx_reset_req = 0;
-        rh_side_on = 0; sp_g = 32768;                  /* (SPREAD's side of that last block too) */
+        rh_side_on = 0; sp_g = 32768; sp_aw = 0;       /* (SPREAD's side of that last block too) */
     }
     else if (dly_rst) dly_clear_step();
     uint32_t j;
@@ -1755,6 +1781,7 @@ static inline __attribute__((always_inline)) void fx_process(const int32_t *mono
 #define FX_US_DRIVE 248u      /* 0.9.9, the curve at 2x (drive.c dr_os2): 155 instructions a sample on the longest
                                 * path (front 20, up 25, curve 2 x 23, down 34, TONE / MIX 30; tools/drive_insns.py), x 1.6;
                                 * the defaults' path 139 (222 us). It was 80 (the 1x curve, 54, measured) */
+#define FX_US_SPAL 20u        /* SPREAD's side aligned to FDRV's 2x (fx_spread: ~12 instructions a sample, x 1.6) */
 #define FX_US_TREM 40u         /* tremolo / pan (sw 1) */
 #define FX_US_WAH 90u          /* touch wah (sw 2) */
 #define FX_US_PHASER 150u
@@ -1767,7 +1794,10 @@ static uint32_t fx_cost_us(void)
     if (fx_p[FXP_RAW]) return 0;
     if (fx_p[FXP_CMP_SW]) us += FX_US_COMP;
     if (t && t <= 6u) us += FX_US_FILTER;
-    if (fx_p[FXP_DRIVE] && (fx_p[FXP_DRV_SW] || dr_w)) us += drv_cost_us(FX_US_DRIVE);
+    if (fx_p[FXP_DRIVE] && (fx_p[FXP_DRV_SW] || dr_w)) {
+        us += drv_cost_us(FX_US_DRIVE);
+        if (rh_side_on && drv_on == 1u) us += FX_US_SPAL;   /* (SPREAD's side aligned to FDRV: fx_spread) */
+    }
     if (fx_p[FXP_TW_SW] == 1) us += FX_US_TREM;
     else if (fx_p[FXP_TW_SW] == 2) us += FX_US_WAH;
     if (fx_p[FXP_PH_SW]) us += FX_US_PHASER;

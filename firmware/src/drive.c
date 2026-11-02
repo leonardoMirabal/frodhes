@@ -479,8 +479,8 @@ static inline void fx_drive(int32_t *m, uint32_t n)
 {
     int32_t sw = fx_p[FXP_DRV_SW];
     if (sw && sw != (int32_t)drv_on) sw = drv_switch((uint32_t)sw);
-    if (drv_on == 1u) fx_drive_classic(m, n, sw);
-    else fx_drive_types(m, n, sw);
+    if (drv_on == 1u) { fx_drive_classic(m, n, sw); dr_sal = dr_w; }   /* (FDRV's wet share: fx.c fx_spread) */
+    else { fx_drive_types(m, n, sw); dr_sal = 0; }
 }
 /* the drive's cost (fx_cost_us, only while it runs): FDRV fdrv (FX_US_DRIVE: 248, whatever its settings); a TYPE whole: DRV_US[]
  * all wet (MIX 127, at rest), + DRV_US_BLEND while it blends (MIX < 127, gliding, a fade); while a switch waits, the
