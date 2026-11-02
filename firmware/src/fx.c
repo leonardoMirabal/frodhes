@@ -1204,7 +1204,7 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
         dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + (int32_t)(((int64_t)f * kfb) >> 15), -32768, 32767);
         w++;
         wq += ws;
-        r = mulq15(r, wq >> 8);
+        r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);   /* (64 bits: the 4-point read overshoots 2^16, c1-int) */
         dg += (dgt - dg) >> 9;
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
     }
