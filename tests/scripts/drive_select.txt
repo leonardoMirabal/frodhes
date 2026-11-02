@@ -1,12 +1,13 @@
 # The DRIVE page's K1 EFFECT is the drive's TYPE: OFF / FDRV (the classic drive; "ON" in older records) / KHLON /
 # TSH8 / OHCD / BHLUE. Encoders: SELECT 0, K1..K4 = 2..5. fxdrv: the value fx.c runs (fx_p[FXP_DRV_SW]).
-# DRIVE is five SELECT detents from PERFORM (ui.c PG_ORDER: COMP, DRIVE, FILTER since fx-order); its K1 starts on
+# DRIVE is six SELECT detents from PERFORM (ui.c PG_ORDER: COMP, EQ, DRIVE, FILTER: the chain's order); its K1 starts on
 # FDRV (the default, as ON was)
 100 turn 0 1
 110 turn 0 1
 120 turn 0 1
 130 turn 0 1
 140 turn 0 1
+145 turn 0 1
 200 expect state page DRIVE
 200 expect state label0 EFFECT
 200 expect state card0 FDRV
@@ -106,6 +107,7 @@
 3670 turn 0 -1
 3680 turn 0 -1
 3690 turn 0 -1
+3695 turn 0 -1
 3700 expect state page PERFORM
 3700 expect state card0 OFF
 3710 turn 2 20

@@ -21,8 +21,10 @@ _Static_assert(PR_NF >= 16u && PR_NF <= 16u + 96u, "program changes 0..15: F01..
 #define PR_BANK_B OLD_PR_B
 #define PR_MAGIC 0x42505246u                    /* "FRPB" */
 
-typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[P_SLOTS]; uint8_t rsv2[16]; } preset_t;   /* v3 */
-_Static_assert(sizeof(preset_t) == 96, "preset record is 96 B (v3: 64 parameters, 16 bytes spare)");
+typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[P_SLOTS]; } preset_t;   /* v3: 64 parameters and
+                                                * 16 spare bytes (zero) up to the EQ, which took them (ids 64..79); np
+                                                * says how many a record holds: the ids from np on load their defaults */
+_Static_assert(sizeof(preset_t) == 96, "preset record is 96 B (v3: 80 parameters)");
 typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[48]; } preset_v2_t;     /* 0.4 .. 0.9.2 */
 _Static_assert(sizeof(preset_v2_t) == 64, "v2 preset record is 64 B");
 typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[32]; } preset_v1_t;     /* 0.1 .. 0.3 */
@@ -222,7 +224,6 @@ static void presets_starters(void)                  /* an empty bank: U01..U09 t
         u->ver = 3; u->np = P_COUNT; u->used = 1; u->rsv = 0;
         for (j = 0; j < sizeof u->name; j++) u->name[j] = *nm ? *nm++ : ' ';
         for (j = 0; j < P_SLOTS; j++) u->p[j] = j < P_COUNT ? PARAMS[j].def : 0;
-        for (j = 0; j < sizeof u->rsv2; j++) u->rsv2[j] = 0;
         for (; *d != 0xFF; d += 2) u->p[d[0]] = d[1];
         d++;
     }
@@ -310,7 +311,6 @@ static void presets_load_bank_in(void)
                 u->ver = 3; u->used = o->used; u->rsv = 0;
                 memcpy(u->name, o->name, sizeof u->name);
                 for (j = 0; j < P_SLOTS; j++) u->p[j] = j < nold && j < o->np ? o->p[j] : j < P_COUNT ? PARAMS[j].def : 0;
-                for (j = 0; j < sizeof u->rsv2; j++) u->rsv2[j] = 0;
                 if (nold == 32u) params_split_phaser(u->p, P_SLOTS);
                 params_v3_convert(u->p);
                 u->np = P_COUNT;
@@ -464,7 +464,6 @@ static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t r
             u->ver = 3; u->np = P_COUNT; u->used = 1; u->rsv = 0;
             preset_autoname(u->name);
             for (i = 0; i < P_SLOTS; i++) u->p[i] = i < P_COUNT ? PV(i) : 0;
-            for (i = 0; i < sizeof u->rsv2; i++) u->rsv2[i] = 0;
             set.preset = (uint8_t)(PR_NF + pr_save_slot);
             snd_base_take();
             set_dirty = 1; set_t_change = fm1_ms;

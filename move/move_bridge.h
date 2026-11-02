@@ -914,8 +914,13 @@ static int mb_state_set(const char *j)   /* parse into the mailbox; step() appli
         if (expect != 0 && expect != 2) expect = 0;
     }
     if (mb_hex_get(s, &mb.st_set, sizeof mb.st_set)) { atomic_store(&mb.st_flag, 0); mb.state_bad++; return -1; }
-    if (!b || lb != 2u * P_SLOTS || mb_hex_get(b, mb.st_base, P_SLOTS))
-        for (uint32_t i = 0; i < P_SLOTS; i++) mb.st_base[i] = i < 32u ? mb.st_set.panel[i] : i < 48u ? mb.st_set.panel2[i - 32u] : mb.st_set.panel3[i - 48u];
+    if (!b || (lb != 2u * P_SLOTS && lb != 2u * 64u) || mb_hex_get(b, mb.st_base, lb / 2u))   /* (64: before the EQ) */
+        for (uint32_t i = 0; i < 64u; i++) mb.st_base[i] = i < 32u ? mb.st_set.panel[i] : i < 48u ? mb.st_set.panel2[i - 32u] : mb.st_set.panel3[i - 48u];
+    for (uint32_t i = P_EQ_LO; i < P_SLOTS; i++)        /* the EQ's ids (63, panel3's last byte, and 64..): a state from
+                                                        * before it (64 ids, no flags2 bit 2) flat */
+        if (!b || lb != 2u * P_SLOTS)
+            mb.st_base[i] = mb.st_set.flags2 & 2u ? (i < 64u ? mb.st_set.panel3[15] : mb.st_set.panel4[i - 64u]) :
+                            i < P_COUNT ? PARAMS[i].def : 0u;
     mb.st_hand = mb.st_set.bpm10;
     {   /* the mappings (M6-03): a state without them (before M6-03) loads them off */
         uint32_t lm = 0;
@@ -1079,7 +1084,6 @@ static void mb_user_save(uint32_t u)
     pu->ver = 3; pu->np = P_COUNT; pu->used = 1; pu->rsv = 0;
     preset_autoname(pu->name);
     for (i = 0; i < P_SLOTS; i++) pu->p[i] = i < P_COUNT ? PV(i) : 0;
-    for (i = 0; i < sizeof pu->rsv2; i++) pu->rsv2[i] = 0;
     set.preset = (uint8_t)(PR_NF + u);
     snd_base_take();
     set_dirty = 1; set_t_change = fm1_ms;

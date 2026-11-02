@@ -32,11 +32,13 @@ enum { FXP_DRIVE, FXP_TW_SW, FXP_TW_DEPTH, FXP_TW_RATE, FXP_TW_MODE, FXP_TW_SHAP
        FXP_FL_TYPE, FXP_FL_FREQ, FXP_FL_RESO, FXP_FL_LFO, FXP_LFO_SHAPE, FXP_LFO_RATE,
        FXP_DRV_TONE, FXP_DRV_MIX, FXP_DRV_SW, FXP_RV_DECAY, FXP_RV_TONE, FXP_RV_PREDLY,   /* 0.9.3: DRIVE / REVERB pages */
        FXP_RV_TYPE, FXP_RV_SIZE, FXP_RV_MOD, FXP_RV_LOCUT,  /* 0.9.5: the reverb's TYPE and REVERB 2 (rev_types.c) */
+       FXP_EQ_LO, FXP_EQ_MID, FXP_EQ_FREQ, FXP_EQ_HI,       /* the EQ before the drive (fx_eq.c; 64: flat) */
        FXP_N };   /* FXP_RAW: developer bypass of the whole chain (tests) */
 static volatile int32_t fx_p[FXP_N] = {[FXP_DL_FDBK] = 80, [FXP_DL_TONE] = 70, [FXP_LEVEL] = 64, [FXP_CMP_RATIO] = 3,
                                        [FXP_FL_FREQ] = 127, [FXP_LFO_RATE] = 40, [FXP_DRV_TONE] = 64,
                                        [FXP_DRV_MIX] = 127, [FXP_DRV_SW] = 1, [FXP_RV_DECAY] = 64, [FXP_RV_TONE] = 64,
-                                       [FXP_RV_TYPE] = 1, [FXP_RV_MOD] = 64};
+                                       [FXP_RV_TYPE] = 1, [FXP_RV_MOD] = 64, [FXP_EQ_LO] = 64, [FXP_EQ_MID] = 64,
+                                       [FXP_EQ_FREQ] = 64, [FXP_EQ_HI] = 64};
 static volatile uint32_t fx_lfo_sync_inc;        /* main loop: a synced LFO rate (Q32 step), 0 = free */
 static volatile uint8_t fx_lfo_retrig;           /* main loop: a note started and RETRIG is on: the LFO from 0 */
 static volatile uint32_t fx_cp_sync_inc;         /* main loop: a synced chorus rate, 0 = free */
@@ -423,6 +425,7 @@ __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, i
         { dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; }   /* (and the 2x state: drive.c dr_os2) */
 }
 #include "drive.c"                                      /* the drive's TYPEs and fx_drive */
+#include "fx_eq.c"                                      /* the EQ before the drive (fx_eq) */
 
 /* ---- TREMOLO (autopan / amplitude) and touch WAH; mono in, stereo out */
 static uint32_t tw_ph;
@@ -1524,7 +1527,7 @@ static void fx_reset_state(void)
      * met them (its level moved up to 5 LU with what was played before, on the FM-1: the presets suite) */
     eng_rh_kill_all(); bar_kill_all();
     lfo_sh = 0; fl_ic[0] = fl_ic[1] = 0; fl_op = 0;                 /* the filters, the smoothers, the master */
-    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; wah_env = wah_lp = wah_bp = 0; cmp_env = 0; cmp_g = 65536;
+    dr_hp = dr_lp1 = dr_lp2 = dr_tlp = 0; dr_os_ok = 0; eq_reset(); wah_env = wah_lp = wah_bp = 0; cmp_env = 0; cmp_g = 65536;
     dc_l = dc_r = dce_l = dce_r = 0; memset(lk_l, 0, sizeof lk_l); memset(lk_r, 0, sizeof lk_r); lk_pk = 0; lk_g = 32768;
     gate_g = gate_tgt = 32768; gate_quiet = 0;
 #ifdef FX_RESET_ONE_BLOCK
@@ -1756,6 +1759,7 @@ static inline __attribute__((always_inline)) void fx_process(const int32_t *mono
     static int32_t dry_c[256];
     for (j = 0; j < n; j++) dry_c[j] = m[j];
 #endif
+    fx_eq(m, n);                                       /* the EQ before the drive (flat: m untouched, no loop) */
     fx_drive(m, n);                                    /* (0.9.5, the user: DRIVE before the FILTER; both mono, on m
                                                         * in place) */
     fx_filter(m, n);
@@ -1794,6 +1798,7 @@ static uint32_t fx_cost_us(void)
     if (fx_p[FXP_RAW]) return 0;
     if (fx_p[FXP_CMP_SW]) us += FX_US_COMP;
     if (t && t <= 6u) us += FX_US_FILTER;
+    us += eq_cost_us();
     if (fx_p[FXP_DRIVE] && (fx_p[FXP_DRV_SW] || dr_w)) {
         us += drv_cost_us(FX_US_DRIVE);
         if (rh_side_on && drv_on == 1u) us += FX_US_SPAL;   /* (SPREAD's side aligned to FDRV: fx_spread) */

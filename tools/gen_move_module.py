@@ -108,7 +108,8 @@ HELP_MAX = 20                      # a help line: about 20 characters on the 128
 # the FM-1's pages that have no meaning on the Move (its knobs are direct, it has no screen or key lights of ours)
 FM1_ONLY_PAGES = {"PERFORM": "the Move's knobs are direct: no assignable performance knobs",
                   "ASSIGN": "the Move's knobs are direct: no assignable performance knobs",
-                  "DISPLAY": "the FM-1's screen and key lights"}
+                  "DISPLAY": "the FM-1's screen and key lights",
+                  "EQ": "not on the Move yet (0.9.9: the Move session adds its page; flat there, bit for bit as before)"}
 # the FM-1's settings cards that are hardware only (ui.c S_*), with the reason
 FM1_ONLY_SLOTS = {"S_KVEL": "the FM-1's own keys' velocity", "S_TOUCH": "the FM-1's own keys' touch",
                   "S_USBVOL": "the FM-1's USB audio", "S_TRS": "the FM-1's TRS MIDI jack",
@@ -216,7 +217,9 @@ MOTOR_EXTRA = ["p_mot_sync"]       # VIBES' MOTOR level: the motor's sync (CC 51
 VIA = {"P_TW_SW": ("s_twkind", "TREM/WAH's EFFECT card: OFF / PAN / TREM / WAH sets the switch and the mode"),
        "P_TW_MODE": ("s_twkind", "TREM/WAH's EFFECT card: OFF / PAN / TREM / WAH sets the switch and the mode")}
 # parameters left MIDI-only on the Move, with the reason (none today: tests/py/test_move_module.py lists the rule)
-MIDI_ONLY = {"P_CP_FDBK": "reserved: the chorus has no feedback yet (CC 24 is accepted and saved, no effect)"}
+MIDI_ONLY = {"P_CP_FDBK": "reserved: the chorus has no feedback yet (CC 24 is accepted and saved, no effect)",
+             **{p: "the EQ (0.9.9): CC 34-37 only until the Move session adds its page" for p in
+                ("P_EQ_LO", "P_EQ_MID", "P_EQ_FREQ", "P_EQ_HI")}}
 # the card's label on the FM-1 -> the Move's cell (<= LABEL_MAX characters); labels that fit are kept as they are
 SHORT = {"EFFECT": None, "TREM SYNC": "TRSYNC", "PHA SYNC": "PHSYNC", "DLY SYNC": "DLSYNC", "INVERSION": "INV",
          "VOICING": "VOICE", "OCTAVES": "OCT", "DLY TONE": "DLTONE", "CHANNEL": "CHAN", "PRE-DELAY": "PREDLY",

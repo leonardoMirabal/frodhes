@@ -21,11 +21,16 @@ enum { P_TYPE, P_DRIVE, P_TW_SW, P_TW_DEPTH, P_TW_RATE, P_TW_SYNC, P_TW_MODE, P_
                                                                                * (rev_types.c); in the records' spare
                                                                                * slots (np: older records load them at
                                                                                * their defaults: HALL, today's sound) */
+       P_EQ_LO, P_EQ_MID, P_EQ_FREQ, P_EQ_HI,                                /* the EQ before the drive (fx_eq.c); ids
+                                                                               * 64.. in the records' panel4 / p[64..]
+                                                                               * (older records: flat, today's sound) */
        P_COUNT };
-#define P_SLOTS 64u                /* room in the settings / preset records (P_COUNT <= P_SLOTS); 48 before the v3
-                                    * records (presets.c preset_t 96 B, the settings' panel3 / undo3) */
+#define P_SLOTS 80u                /* room in the settings / preset records (P_COUNT <= P_SLOTS); 48 before the v3
+                                    * records (presets.c preset_t 96 B, the settings' panel3 / undo3), 64 before the
+                                    * EQ (preset_t's spare 16 bytes and the settings' panel4 / undo4: ids 64..79) */
 
-enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB, F_THR, F_GAIN, F_FHZ, F_HZH, F_PDLY, F_RSIZE, F_LCUT };   /* F_RSIZE:
+enum { F_R10, F_ENUM, F_HZ, F_MS, F_DIV, F_BIP, F_DB, F_THR, F_GAIN, F_FHZ, F_HZH, F_PDLY, F_RSIZE, F_LCUT, F_EQDB,
+       F_EQHZ };   /* F_EQDB: the EQ's gains (64 = 0 dB, 15 / 63 dB a step), F_EQHZ: its MID FREQ (200 Hz .. 5 kHz) */   /* F_RSIZE:
                                                                        * 0 AUTO, F_LCUT: OFF / Hz (the reverb's) */   /* F_HZH: half of F_HZ,
                                                                                          * F_PDLY: the pre-delay, ms */
 typedef struct {
@@ -155,9 +160,13 @@ static const pdesc_t PARAMS[P_COUNT] = {
     [P_RV_SIZE] = {"SIZE", 127, 0, F_RSIZE, 73, 0},          /*        0 = AUTO (from MIX, as before) */
     [P_RV_MOD] = {"MOD", 127, 64, F_R10, 68, 0},             /*        64 = HALL's modulation as before */
     [P_RV_LOCUT] = {"LCUT", 127, 0, F_LCUT, 69, 0},          /*        0 = off (as before), 20 .. 800 Hz */
+    [P_EQ_LO] = {"LOW", 127, 64, F_EQDB, 34, 0},             /* the EQ: LOW shelf 120 Hz, -15 .. +15 dB (64 = 0 dB) */
+    [P_EQ_MID] = {"MID", 127, 64, F_EQDB, 35, 0},            /*         MID peak (Q 0.9) */
+    [P_EQ_FREQ] = {"MIDF", 127, 64, F_EQHZ, 36, 0},          /*         MID FREQ 200 Hz .. 5 kHz (64: 1.0 kHz) */
+    [P_EQ_HI] = {"HIGH", 127, 64, F_EQDB, 37, 0},            /*         HIGH shelf 5 kHz */
 };
 _Static_assert(P_COUNT <= P_SLOTS, "records hold P_SLOTS parameters");
-_Static_assert(P_SLOTS <= 64u, "ui.c card slots: a parameter id is under 64 (S_KVEL)");
+_Static_assert(P_SLOTS <= 80u, "ui.c card slots: a parameter id is under 80 (S_KVEL)");
 
 /* ---- the settings record: always 256 B, versioned, append-only (§10.5) */
 #define SET_VER 2u                 /* 2 (0.4): panel / undo hold P_SLOTS; version 1 records are converted */
@@ -191,8 +200,10 @@ typedef struct {
                                                 * record so far = ROOTS; 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
     uint8_t old_id[12];                        /* 0.9.6: the ids of 0.9.5's settings, presets, pattern this record
                                                 * has taken in (frodhes.c st_old_scan; 0: none) */
-    uint8_t seq_rsv[45];
-    uint8_t flags2;                            /* 0.9.5: 1 = the preset index in the 19-factory layout (U01 = 19) */
+    uint8_t panel4[16], undo4[16];             /* the EQ: ids 64..79 (flags2 bit 2: present; else their defaults) */
+    uint8_t seq_rsv[13];
+    uint8_t flags2;                            /* 0.9.5: 1 = the preset index in the 19-factory layout (U01 = 19);
+                                                * 2 = panel4 / undo4 present (the EQ) */
 #if BOARD_SMK37
     uint8_t smk_mst[2];                        /* 0.9.6, SMK-37: K1's MASTER + 1, little endian (0, every record
                                                 * before: smk_input.h's 724; frodhes_smk.h smk_master_stored) */
@@ -209,8 +220,10 @@ static uint8_t set_pr_from_rc;    /* params_sanitize converted an index of 16 fa
 static uint32_t kv_touch(void) { return (set.vel_curve + 1u) & 3u; }
 static void kv_touch_store(uint32_t touch) { set.vel_curve = (uint8_t)((touch + 3u) & 3u); }
 /* a parameter's value (PV) and its undo copy (UV); the masks keep the branches not taken in range (constant ids) */
-#define PV(id) (*((id) < 32u ? &set.panel[(id) & 31u] : (id) < 48u ? &set.panel2[((id) - 32u) & 15u] : &set.panel3[((id) - 48u) & 15u]))
-#define UV(id) (*((id) < 32u ? &set.undo[(id) & 31u] : (id) < 48u ? &set.undo2[((id) - 32u) & 15u] : &set.undo3[((id) - 48u) & 15u]))
+#define PV(id) (*((id) < 32u ? &set.panel[(id) & 31u] : (id) < 48u ? &set.panel2[((id) - 32u) & 15u] : \
+                  (id) < 64u ? &set.panel3[((id) - 48u) & 15u] : &set.panel4[((id) - 64u) & 15u]))
+#define UV(id) (*((id) < 32u ? &set.undo[(id) & 31u] : (id) < 48u ? &set.undo2[((id) - 32u) & 15u] : \
+                  (id) < 64u ? &set.undo3[((id) - 48u) & 15u] : &set.undo4[((id) - 64u) & 15u]))
 
 /* records before 0.4 had the phaser as CHO/PHA = 2, sharing the chorus' depth, speed, sync and feedback */
 static void params_split_phaser(uint8_t *p, uint32_t np)
@@ -290,7 +303,7 @@ static void settings_record(settings_t *r)
     uint32_t i;
     *r = set;
     for (i = 0; i < 32u; i++) r->panel[i] = snd_base[i];
-    for (i = 0; i < 16u; i++) { r->panel2[i] = snd_base[32u + i]; r->panel3[i] = snd_base[48u + i]; }
+    for (i = 0; i < 16u; i++) { r->panel2[i] = snd_base[32u + i]; r->panel3[i] = snd_base[48u + i]; r->panel4[i] = snd_base[64u + i]; }
     r->bpm10 = bpm_hand;
 }
 
@@ -301,7 +314,7 @@ static void params_defaults(void)
     set.ver = SET_VER;
     set.flags = 4u | 32u | 64u | 128u;   /* a fresh record: its preset index is already in today's layout (19 factory:
                                     * flags2 1), its PERFORM knobs today's defaults */
-    set.flags2 = 1u;
+    set.flags2 = 1u | 2u;
     set.preset = 0;
     set.bpm10 = 1200;
     set.clock = 1;                 /* EXT: follows MIDI clock when it comes (USB or TRS) */
@@ -372,6 +385,12 @@ static void params_sanitize(void)
                                                       * (HALL, AUTO, MOD 64, LOW CUT off: the sound as before) */
         for (i = P_RV_TYPE; i <= P_RV_LOCUT; i++) PV(i) = UV(i) = PARAMS[i].def;
         set.flags |= 128u;
+    }
+    if (!(set.flags2 & 2u)) {                        /* records before the EQ: its ids at their defaults (flat: the
+                                                      * sound as before): 63 (panel3's last byte, unused before: 0 in
+                                                      * every record) and 64.. (the bytes were seq_rsv's, never read) */
+        for (i = P_EQ_LO; i < P_SLOTS; i++) PV(i) = UV(i) = i < P_COUNT ? PARAMS[i].def : 0u;
+        set.flags2 |= 2u;
     }
     for (i = 0; i < P_COUNT; i++) if (PV(i) > PARAMS[i].hi) PV(i) = PARAMS[i].def;
     if (set.oct < -2 || set.oct > 2) set.oct = 0;
@@ -472,6 +491,10 @@ static void param_apply(uint32_t id)
     case P_RV_SIZE: fx_set(FXP_RV_SIZE, v); break;
     case P_RV_MOD: fx_set(FXP_RV_MOD, v); break;
     case P_RV_LOCUT: fx_set(FXP_RV_LOCUT, v); break;
+    case P_EQ_LO: fx_set(FXP_EQ_LO, v); break;                        /* the EQ (fx_eq.c) */
+    case P_EQ_MID: fx_set(FXP_EQ_MID, v); break;
+    case P_EQ_FREQ: fx_set(FXP_EQ_FREQ, v); break;
+    case P_EQ_HI: fx_set(FXP_EQ_HI, v); break;
     case P_MOT_ON: eng_bar_knob(BK_MOT_ON, (uint32_t)v); break;        /* the bar engine reads these, the Rhodes not */
     case P_MOT_DEPTH: eng_bar_knob(BK_MOT_DEPTH, (uint32_t)MW_ADD(v)); break;
     case P_MOT_RATE: mot_rate_apply(); break;
@@ -560,8 +583,10 @@ static void param_text(uint32_t id, char *s)
                                                     * (fx.c: FX_LFO_INC >> 1), 0.25 .. 6 Hz: shown as it plays */
         fmt_hz(s, d->fmt == F_HZH ? FX_LFO_INC[v] >> 1 : FX_LFO_INC[v]);
         break;
+    case F_EQHZ:                                   /* the EQ's MID FREQ: 200 * 25^(v / 127) Hz (fx_tables.h FX_EQ_F) */
     case F_FHZ: {                                  /* the filter's cutoff: "850" Hz / "4.2K" / "12K", rounded */
-        int32_t hz = FX_FL_HZ[v], c = (hz + 50) / 100;
+        int32_t hz = d->fmt == F_EQHZ ? (5000 * (int32_t)exp2_neg((uint32_t)(127 - v) * 2396u) + 16384) >> 15 : FX_FL_HZ[v];
+        int32_t c = (hz + 50) / 100;
         if (hz < 1000) p_fmt_int(s, hz);
         else if (c < 100) { s[0] = (char)('0' + c / 10); s[1] = '.'; s[2] = (char)('0' + c % 10); s[3] = 'K'; s[4] = 0; }
         else { p_fmt_int(s, (hz + 500) / 1000); s[2] = 'K'; s[3] = 0; }
@@ -595,6 +620,11 @@ static void param_text(uint32_t id, char *s)
     case F_DB:                                     /* "+1.5" / "-12" dB: 0.1875 dB a step (FX_LVL) */
         fmt_db10(s, ((v - 64) * 15 + (v >= 64 ? 4 : -4)) / 8, ((v - 64) * 3 + (v >= 64 ? 8 : -8)) / 16);
         break;
+    case F_EQDB: {                                 /* the EQ's gains: "+3.1" / "-15" dB, 15 / 63 dB a step (0: as 1) */
+        int32_t e = v ? v - 64 : -63;
+        fmt_db10(s, (e * 150 + (e >= 0 ? 31 : -31)) / 63, (e * 15 + (e >= 0 ? 31 : -31)) / 63);
+        break;
+    }
     case F_RSIZE:                                  /* the reverb's SIZE: "AUTO" (MIX; INFINITE 64) or 0.1 .. 10.0 */
         if (!v) { s[0] = 'A'; s[1] = 'U'; s[2] = 'T'; s[3] = 'O'; s[4] = 0; } else fmt_r10(s, v);
         break;

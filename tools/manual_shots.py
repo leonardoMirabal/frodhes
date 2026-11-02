@@ -71,7 +71,7 @@ BIN = os.path.join(ROOT, "build", "host", "frodhes")
 # a page's file name, by its base title (host_state "page"); the VOICE pages are numbered in the SELECT order
 # (voice1.png, voice2.png; VIBES: voice1-vibes.png ...), as the engine's table makes them. (DECAY / MOTOR: the pages
 # of the builds before the dynamic VOICE pages.)
-NAME = {"PERFORM": "perform", "FRODHES": "piano", "DECAY": "decay", "MOTOR": "motor", "COMPRESSOR": "comp",
+NAME = {"PERFORM": "perform", "FRODHES": "piano", "DECAY": "decay", "MOTOR": "motor", "COMPRESSOR": "comp", "EQ": "eq",
         "FILTER": "filter", "DRIVE": "drive", "TREM/WAH": "trem", "PHASER": "phaser", "CHORUS": "chorus",
         "DELAY": "delay", "REVERB": "reverb", "REVERB 2": "reverb2", "TEMPO": "tempo", "SCALE": "scale", "CHORD": "chord", "ARPEGGIO": "arp",
         "LFO": "lfo", "SEQUENCER": "seq", "ASSIGN": "assign", "SETUP": "setup", "MIDI": "midi", "DISPLAY": "display"}
@@ -220,6 +220,14 @@ def main():
             L.append(f"{t} turn 2 1"); L.append(f"{t + 100} keys 0x4880"); t += 900
             L.append(f"{t} shot"); shots[t] = name
             L.append(f"{t + 50} keys 0x0"); L.append(f"{t + 100} turn 2 -1"); t += 900
+            continue
+        if name == "eq":                                    # a warmer, scooped setting; flat again after the shot
+            for cc, v in ((34, 77), (35, 47), (36, 40), (37, 72)):
+                L.append(f"{t} midi 0xB0 {cc} {v}"); t += 20
+            L.append(f"{t} keys 0x1"); L.append(f"{t + 300} keys 0x0"); t += 900
+            L.append(f"{t} shot"); shots[t] = name; t += 100
+            for cc, v in ((34, 64), (35, 64), (36, 64), (37, 64)):
+                L.append(f"{t} midi 0xB0 {cc} {v}"); t += 20
             continue
         if name == "comp":                                  # a held chord: the gain-reduction meter moves
             L.append(f"{t} keys 0x2491"); t += 600

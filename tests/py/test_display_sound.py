@@ -471,8 +471,8 @@ def test_drive_type_card_is_what_runs():
         for v in range(128):
             lines += [cc(t, 84, v), f"{t + 1} dump"]
             t += 2
-        # SELECT from PERFORM to DRIVE (ui.c PG_ORDER: PERF PIANO VOICE 1/2 2/2 COMP DRIVE; VIBES: VOICE 3/3 too)
-        lines += [cc(t, 84, 0)] + [f"{t + 10 + 3 * i} turn 0 1" for i in range(5 + (eng == "vibes"))]
+        # SELECT from PERFORM to DRIVE (ui.c PG_ORDER: PERF PIANO VOICE 1/2 2/2 COMP EQ DRIVE; VIBES: VOICE 3/3 too)
+        lines += [cc(t, 84, 0)] + [f"{t + 10 + 3 * i} turn 0 1" for i in range(6 + (eng == "vibes"))]
         t += 40
         t_panel = t
         for d in (1, 1, 1, -1, -1, -1):

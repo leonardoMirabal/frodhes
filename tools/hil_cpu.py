@@ -104,7 +104,8 @@ def usb_line(acc):
             "per_max")
     return "USB " + s + ": " + ", ".join(f"{k} {acc[k]}" for k in keys if k in acc)
 
-CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_TONE=82, DRV_MIX=83, RV_PREDLY=94)
+CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_TONE=82, DRV_MIX=83, RV_PREDLY=94, EQ_LO=34, EQ_MID=35, EQ_FREQ=36,
+          EQ_HI=37)
 TARGET_US = 4500
 
 BLOCK_US = 5805
@@ -452,7 +453,7 @@ def run_cpu(argv):  # noqa: C901
         if st is not None and (not st & 2 or bool(st & 4) != (rate == 48000)):
             sys.exit(f"--usb {rate}: the FM-1 reports the stream {usb_line(query.usb)} (state {st}): not at {rate} Hz")
         print(f"USB audio open at {rate} Hz, blocksize 128 (the FM-1 confirms: {usb_line(query.usb).split(':')[0]})")
-    heavy = dict(DRIVE=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
+    heavy = dict(DRIVE=127, EQ_LO=127, EQ_MID=0, EQ_HI=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
                  CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
                  FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # the filter at its heaviest: LP18, the LFO
     nv = int(sys.argv[sys.argv.index("--voices") + 1]) if "--voices" in sys.argv else default_voices(eng)
@@ -517,7 +518,7 @@ def run_cpu(argv):  # noqa: C901
 
     if "--fx-each" in sys.argv:
         one = [("compressor", dict(CMP_SW=127, CMP_AMT=100)), ("filter LP18 + LFO", dict(FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)),
-               ("drive", dict(DRIVE=127)), ("tremolo", dict(TW_SW=64, TW_DEPTH=127)), ("wah", dict(TW_SW=127, TW_DEPTH=127)),
+               ("eq", dict(EQ_LO=127, EQ_MID=0, EQ_HI=127)), ("drive", dict(DRIVE=127)), ("tremolo", dict(TW_SW=64, TW_DEPTH=127)), ("wah", dict(TW_SW=127, TW_DEPTH=127)),
                ("phaser", dict(PH_SW=127, PH_DEPTH=127, PH_FDBK=127)), ("chorus", dict(CP_SW=64, CP_DEPTH=127)),
                ("delay", dict(DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127)), ("reverb", dict(REV=127))]
         base = []

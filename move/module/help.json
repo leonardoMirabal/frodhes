@@ -293,7 +293,11 @@
         "CC 95 RTYP",
         "CC 73 SIZE",
         "CC 68 MOD",
-        "CC 69 LCUT"
+        "CC 69 LCUT",
+        "CC 34 LOW",
+        "CC 35 MID",
+        "CC 36 MIDF",
+        "CC 37 HIGH"
       ]
     }
   ]

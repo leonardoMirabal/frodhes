@@ -78,9 +78,12 @@ LIM_T = 24000
 DEV_CC = {119, 41}                 # not sent: RAW skips the limiter by design; key velocity's test modes
 
 _src = open(os.path.join(ROOT, "firmware", "src", "params.c")).read()
-KNOWN_CC = sorted({int(c) for c in re.findall(r'\[P_\w+\] = \{"[^"]*", \d+, \d+, F_\w+, (\d+)', _src)}
+KNOWN_CC = sorted(({int(c) for c in re.findall(r'\[P_\w+\] = \{"[^"]*", \d+, \d+, F_\w+, (\d+)', _src)}
                   | {64, 85, 86, 87, 111, 114, 120, 123, 43, 44, 45, 46, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62,
                      63, 79, 121, 1})
+                  - {34, 35, 36, 37})   # (0.9.9's EQ, CC 34-37, out of the list: the seeds' streams stay as they were,
+#                                         the detectors' self-tests stand on them; the EQ gets its CCs from the 20 % of
+#                                         random numbers, its knobs from the turns on its page, and the control sweep)
 PNAME = re.search(r"enum \{ (P_TYPE.*?)P_COUNT \};", _src, re.S).group(1)
 PNAME = [w.strip() for w in re.sub(r"/\*.*?\*/", "", PNAME, flags=re.S).replace("\n", " ").split(",") if w.strip()]
 

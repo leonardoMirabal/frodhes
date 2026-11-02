@@ -1,7 +1,7 @@
 # The REVERB pages (0.9.5). REVERB: K1 TYPE (OFF / HALL / PLATE / INFINITE: on / off and the type in one card, as
 # the drive's), MIX, DECAY, TONE; REVERB 2, right after it: PRE-DELAY (moved from REVERB), SIZE (0 = AUTO: MIX sets
-# it, as before), MOD, LOW CUT (0 = OFF). Encoders: SELECT 0, K1..K4 = 2..5. REVERB is 11 SELECT detents from
-# PERFORM on the Rhodes (ui.c PG_ORDER: two VOICE pages). p.59: the TYPE's value (params.c P_RV_TYPE).
+# it, as before), MOD, LOW CUT (0 = OFF). Encoders: SELECT 0, K1..K4 = 2..5. REVERB is 12 SELECT detents from
+# PERFORM on the Rhodes (ui.c PG_ORDER: two VOICE pages, the EQ). p.59: the TYPE's value (params.c P_RV_TYPE).
 # An enum card steps once per pass whatever the detents, so the TYPE turns are one detent each.
 # (F01 since 0.9.5: MIX 18, LOW CUT 150 Hz; the pages from MIX 25, LOW CUT OFF as before)
 50 midi 0xB0 91 25
@@ -17,6 +17,7 @@
 180 turn 0 1
 190 turn 0 1
 200 turn 0 1
+205 turn 0 1
 300 expect state page REVERB
 300 expect state label0 TYPE
 300 expect state label1 MIX

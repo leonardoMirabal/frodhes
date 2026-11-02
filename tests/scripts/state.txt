@@ -173,7 +173,7 @@
 9200 expect state card0 DIG
 9200 expect state card1 3.9
 9200 expect sound
-# the compressor's THRESH is its switch: up = on with MAKEUP +2.8 (a 4:1 level-neutral start) (6 pages back from DELAY: DRIVE is between)
+# the compressor's THRESH is its switch: up = on with MAKEUP +2.8 (a 4:1 level-neutral start) (7 pages back from DELAY: EQ and DRIVE are between)
 # (the presets have the compressor on since 0.9.5: off, THRESH 0, MAKEUP 0 first)
 9250 midi 0xB0 106 0
 9255 midi 0xB0 107 0
@@ -184,6 +184,7 @@
 9330 turn 0 -1
 9340 turn 0 -1
 9345 turn 0 -1
+9350 turn 0 -1
 9400 expect state page COMPRESSOR
 9400 expect state card0 OFF
 9400 turn 2 10

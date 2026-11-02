@@ -1,0 +1,47 @@
+# The EQ page (0.9.9): before the drive (COMP -> EQ -> DRIVE), five SELECT detents from PERFORM on the Rhodes (ui.c
+# PG_ORDER: PIANO, two VOICE pages, COMP, EQ). K1 LOW (shelf 120 Hz), K2 MID (peak), K3 MID FREQ (200 Hz .. 5 kHz),
+# K4 HIGH (shelf 5 kHz); the gains -15 .. +15 dB in 15/63 dB steps, 64 = 0 dB (flat: the sound as before).
+# Encoders: SELECT 0, K1..K4 = 2..5. CCs 34..37 (params.c). p.63..66: P_EQ_LO .. P_EQ_HI.
+100 turn 0 1
+110 turn 0 1
+120 turn 0 1
+130 turn 0 1
+140 turn 0 1
+200 expect state page EQ
+200 expect state label0 LOW
+200 expect state label1 MID
+200 expect state label2 MID_FREQ
+200 expect state label3 HIGH
+200 expect state card0 +0.0
+200 expect state card1 +0.0
+200 expect state card2 1.0K
+200 expect state card3 +0.0
+200 expect state hint BEFORE_THE_DRIVE__0_DB:_FLAT
+200 expect state p.63 64
+# the knobs: LOW up 5 steps (+1.2 dB), MID down to the end (-15), MID FREQ to its bottom (200 Hz), HIGH up to the top
+300 turn 2 5
+350 expect state p.63 69
+350 expect state card0 +1.2
+400 turn 3 -80
+450 expect state p.64 0
+450 expect state card1 -15
+500 turn 4 -80
+550 expect state p.65 0
+550 expect state card2 200
+600 turn 5 80
+650 expect state p.66 127
+650 expect state card3 +15
+700 keys 0x80
+900 keys 0
+950 expect sound
+1000 shot
+# the CCs: 34 LOW, 35 MID, 36 MID FREQ, 37 HIGH; back to flat
+1100 midi 0xB0 34 64
+1110 midi 0xB0 35 64
+1120 midi 0xB0 36 127
+1130 midi 0xB0 37 64
+1200 expect state card0 +0.0
+1200 expect state card1 +0.0
+1200 expect state card2 5.0K
+1200 expect state card3 +0.0
+1300 end
