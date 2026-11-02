@@ -78,12 +78,13 @@ def p(typ, amount=127, tone_v=64, mix=127):
 def test_fdrv_harness_numbers_unchanged(exe):
     """the classic drive's output on a fixed signal, by sha256 (the value main a8320e8 gave, the parked harness
     branch measured it there, until 0.9.8's tail fix: the shaper's input x g >> 12, not (x >> 2) g >> 10,
-    test_drive_tail.py; 0.9.9: the curve at 2x), its aliasing at 127 / 127 (-30.6 dB at 1x, -58.6 at 2x), and its cost
+    test_drive_tail.py; 0.9.9: the curve at 2x; c1-int: its bits kept to one rounding at the make-up: the old
+    output less ~0.4 .. 2 LSB of DC the truncations left, at most 5 LSB apart), its aliasing at 127 / 127 (-30.6 dB at 1x, -58.6 at 2x), and its cost
     (FX_US_DRIVE: the bar budget, Gate V)"""
     x = np.concatenate([tone(440), chord(), tone(4186.0)])
     y, cost, _ = ds.render(exe, x, p("FDRV", 127, 127))
     assert cost == FDRV_US == 248
-    assert hashlib.sha256(y.astype("<i4").tobytes()).hexdigest()[:16] == "269602752c90db29"
+    assert hashlib.sha256(y.astype("<i4").tobytes()).hexdigest()[:16] == "1093ce8ab98a1345"
     rows, _, _ = ds.aliasing_tones(exe, p("FDRV", 127, 127))
     assert max(r["folded_db"] for r in rows) == pytest.approx(-58.6, abs=0.1)
     _, cost, _ = ds.render(exe, chord(4096), p("FDRV", 127, 30, 50))

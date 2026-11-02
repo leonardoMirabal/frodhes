@@ -307,6 +307,11 @@ static __attribute__((noinline)) void fx_filter(int32_t *m, uint32_t n)
 #define DR_TA 7700                                      /* the shelf's one-pole: 1 - e^(-2 pi 1.8 kHz / fs), Q15 */
 static const int16_t DR_S[4] = {16, 20, 14, 24}, DR_BIAS[4] = {2400, 2400, 1800, 3200}, DR_MU[4] = {4096, 4096, 4300, 3700};
 static int32_t dr_hp, dr_lp1, dr_lp2;
+/* FDRV's shaper output (ys, drive.c dr_os2) and its two low-passes carry 4 more bits; the make-up's product (64-bit)
+ * rounds once to the output (c1-int: the shaper's input, its curve, ys, both low-passes and the make-up each cut to
+ * the integer, ~5 truncations of a quiet tail: steps of 3 LSB in 3.3 % of its samples at AMOUNT 20, the dry signal
+ * 1.7 %; now 1.9 %, the residual over 2 kHz 0.62 -> 0.57 LSB, dry 0.55: tests/py/test_drive_tail.py) */
+#define DR_YS_X 4u
 /* 0.9.6's new state in sections of their own (RH_SP_SEC): in the compiler's merged globals they moved app_audio's
  * registers (the phaser loop 77 -> 80, the limiter's, +36 us on VIBES with every effect, cpu_check on 1415937) */
 static int32_t dr_gl RH_SP_SEC(".data.fx_drgl") = -1, dr_kl RH_SP_SEC(".bss.fx_drkl"), dr_ml RH_SP_SEC(".bss.fx_drml"),
@@ -338,9 +343,9 @@ static inline __attribute__((always_inline)) void dr_settled(int32_t *m, const i
     uint32_t i;
     for (i = 0; i < n; i++) {
         int32_t x0 = m[i], y = ys[i];
-        lp1 += mulq15(y - lp1, k);
-        lp2 += mulq15(lp1 - lp2, k);
-        y = mulq15(lp2, mk);
+        lp1 += (int32_t)(((int64_t)(y - lp1) * k) >> 15);
+        lp2 += (int32_t)(((int64_t)(lp1 - lp2) * k) >> 15);
+        y = (int32_t)(((int64_t)lp2 * mk + (1 << (14 + DR_YS_X))) >> (15 + DR_YS_X));
         if (shelf) {
             tlp += mulq15(y - tlp, DR_TA);
             y = tlp + (int32_t)(((int64_t)(y - tlp) * tg) >> 12);
@@ -360,9 +365,9 @@ __attribute__((noinline)) static void dr_general(int32_t *m, const int32_t *ys, 
         int32_t x0 = m[i], y = ys[i], k, mk;
         kq += dkq; mq += dmq;
         k = kq >> 8; mk = mq >> 8;
-        dr_lp1 += mulq15(y - dr_lp1, k);
-        dr_lp2 += mulq15(dr_lp1 - dr_lp2, k);
-        y = mulq15(dr_lp2, mk);
+        dr_lp1 += (int32_t)(((int64_t)(y - dr_lp1) * k) >> 15);
+        dr_lp2 += (int32_t)(((int64_t)(dr_lp1 - dr_lp2) * k) >> 15);
+        y = (int32_t)(((int64_t)dr_lp2 * mk + (1 << (14 + DR_YS_X))) >> (15 + DR_YS_X));
         if (dr_ton || tt != 4096) {                     /* TONE: lows + the highs x gain (lp + g (y - lp)) */
             if (!dr_ton) { dr_tlp = y; dr_ton = 1; }    /* (from the signal itself: no step when it starts) */
             dr_tg += dr_tg < tt ? (tt - dr_tg > 8 ? 8 : tt - dr_tg) : -(dr_tg - tt > 8 ? 8 : dr_tg - tt);
@@ -415,9 +420,9 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
         int32_t lp1 = dr_lp1, lp2 = dr_lp2, *e = m + n;   /* (0.9.5: the state in locals) */
         for (; m < e; m++) {
             int32_t y = *ys++;
-            lp1 += mulq15(y - lp1, k);
-            lp2 += mulq15(lp1 - lp2, k);
-            *m = mulq15(lp2, mk);
+            lp1 += (int32_t)(((int64_t)(y - lp1) * k) >> 15);
+            lp2 += (int32_t)(((int64_t)(lp1 - lp2) * k) >> 15);
+            *m = (int32_t)(((int64_t)lp2 * mk + (1 << (14 + DR_YS_X))) >> (15 + DR_YS_X));
         }
         dr_lp1 = lp1; dr_lp2 = lp2;
         return;

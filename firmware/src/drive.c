@@ -272,6 +272,7 @@ static __attribute__((noinline)) void drv_dn2(drv_os_t *s, const int32_t *in, in
  * high-pass's fixed point aside: fx_drive_classic). */
 #define DR_OS_IN 6u                                     /* the 2x input's extra bits */
 #define DR_OS_OUT 8u                                    /* the 2x output's */
+/* DR_YS_X (fx.c): the 1x shaper output's (ys), kept through dr_classic's low-passes to the make-up's one rounding */
 #ifndef DR_OS_ADAA
 #define DR_OS_ADAA 0                                    /* 1: the curve with ADAA-1 at 2x (dr_aa_mean): -59.5 dB, not
                                                         * -38.5, hard-driven at -6 dBFS (half-band 6), but +33
@@ -341,6 +342,17 @@ static void dr_os_rest(int32_t bias)                    /* FDRV's 2x state to re
 #endif
     dr_os_ok = 1;
 }
+/* softclip on the input's DR_OS_IN more bits, out with DR_OS_OUT more: its table read between entries at 16 bits, not
+ * 10 (the same curve; c1-int: the 6 bits were cut before it, its interpolation cut again, then shifted up) */
+static inline __attribute__((always_inline)) int32_t dr_curve_f(int32_t v)
+{
+    uint32_t u, i;
+    int32_t f;
+    v = v > -(131072 << DR_OS_IN) ? v : -(131072 << DR_OS_IN);
+    v = v < (131071 << DR_OS_IN) ? v : (131071 << DR_OS_IN);
+    u = (uint32_t)(v + (131072 << DR_OS_IN)); i = u >> (10u + DR_OS_IN); f = (int32_t)(u & ((1u << (10u + DR_OS_IN)) - 1u));
+    return FX_TANH[i] * (1 << DR_OS_OUT) + (((FX_TANH[i + 1] - FX_TANH[i]) * f) >> (10u + DR_OS_IN - DR_OS_OUT));
+}
 __attribute__((noinline)) static void dr_os_curve(int32_t *x, uint32_t n2, int32_t bias, int32_t b0)   /* in place */
 {
     int32_t *e = x + n2;
@@ -352,7 +364,9 @@ __attribute__((noinline)) static void dr_os_curve(int32_t *x, uint32_t n2, int32
     for (; x < e; x++) *x = (dr_aa_mean(f, h, rcp, xm, (*x >> DR_OS_IN) + bias, &xp, &pp) - b0) * (1 << DR_OS_OUT);
     dr_aa_x = xp; dr_aa_p = pp;
 #else
-    for (; x < e; x++) *x = (softclip((*x >> DR_OS_IN) + bias) - b0) * (1 << DR_OS_OUT);
+    int32_t z0 = dr_curve_f(bias * (1 << DR_OS_IN));     /* (b0 at this precision: 0 in, exact 0 out) */
+    (void)b0;
+    for (; x < e; x++) *x = dr_curve_f(*x + bias * (1 << DR_OS_IN)) - z0;
 #endif
 }
 static const int32_t *dr_os2(const int32_t *m, uint32_t n, int32_t gq, int32_t dgq, int32_t bias, int32_t b0)
@@ -365,14 +379,15 @@ static const int32_t *dr_os2(const int32_t *m, uint32_t n, int32_t gq, int32_t d
         int32_t x0 = m[i], x;
         gq += dgq;
         hp += (x0 - hp + 64) >> 7;
-        x = (int32_t)(((int64_t)dr_cl(x0 - hp) * (gq >> 8)) >> 12);
-        x = x > -(1 << 20) ? x : -(1 << 20);
-        y[i] = (x < (1 << 20) ? x : 1 << 20) * (1 << DR_OS_IN);
+        x = (int32_t)(((int64_t)dr_cl(x0 - hp) * (gq >> 8)) >> (12u - DR_OS_IN));   /* (the 6 bits from the product,
+                                                        * not zeros: c1-int, the tail's staircase) */
+        x = x > -(1 << (20 + DR_OS_IN)) ? x : -(1 << (20 + DR_OS_IN));
+        y[i] = x < (1 << (20 + DR_OS_IN)) ? x : 1 << (20 + DR_OS_IN);
     }
     dr_hp = hp;
     drv_up2(&dr_os, y, x2, n);
     dr_os_curve(x2, 2u * n, bias, b0);
-    drv_dn2(&dr_os, x2, y, n, DR_OS_OUT);
+    drv_dn2(&dr_os, x2, y, n, DR_OS_OUT - DR_YS_X);   /* (ys keeps DR_YS_X of them: dr_classic's low-passes) */
     return y;
 }
 

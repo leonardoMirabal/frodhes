@@ -410,13 +410,20 @@ def det_stale(q, w=16, maxlag=4096, p2p=64):
         for k in range(w):
             h += v[k:k + n] * rnd[k]
     from scipy.ndimage import maximum_filter1d, minimum_filter1d
-    rng_ = np.zeros(n)
+    rng_, rng4 = np.zeros(n), np.zeros(n)
+    ws = 4 * w                                             # (and over the window and the 48 frames after it, for a
+    # run of 64 frames or more with that sound in the run itself: a stale half block of a slow low tone, peak 630 LSB, moved 30 LSB in every 16 frames
+    # and went unseen with 50 LSB jumps at both ends, c1-int's self-test on marimba. The 16-frame rule stays as it was
+    # for shorter runs: a quiet decay matched itself 3805 frames back for a few frames on a clean render)
     for c in range(q.shape[1]):
         col = q[:, c].astype(float)
         hi = maximum_filter1d(col, w, origin=-(w // 2))[:n]
         lo = minimum_filter1d(col, w, origin=-(w // 2))[:n]
         rng_ = np.maximum(rng_, hi - lo)
-    idx = np.flatnonzero(rng_ >= p2p)
+        hi = maximum_filter1d(col, ws, origin=-(ws // 2))[:n]
+        lo = minimum_filter1d(col, ws, origin=-(ws // 2))[:n]
+        rng4 = np.maximum(rng4, hi - lo)
+    idx = np.flatnonzero(rng4 >= p2p)
     if not len(idx):
         return []
     o = idx[np.lexsort((idx, h[idx]))]
@@ -431,8 +438,9 @@ def det_stale(q, w=16, maxlag=4096, p2p=64):
         r = runs.get(lag)                                  # (a run's windows share its verdict)
         if r is None or not r[0] <= b < r[1]:
             s0, e0 = _exact_run(q, b, lag, w)
-            r = runs[lag] = (s0, e0, _own_period(q, b, lag, w, run=(s0, e0)))
-        if not r[2]:
+            r = runs[lag] = (s0, e0, _own_period(q, b, lag, w, run=(s0, e0)),
+                             e0 - s0 >= ws and int((q[s0:e0].max(0) - q[s0:e0].min(0)).max()) >= p2p)
+        if not r[2] and (rng_[b] >= p2p or r[3]):
             hits[b] = min(lag, hits.get(b, lag))
     out, last = [], -10 ** 9
     for b in sorted(hits):
