@@ -55,6 +55,7 @@ d7432cd12f48ccdf4e0024bcafed81d8f9efa26998940e99f0ae0ebda1f233b3  scripts/rhodes
 # host-only scripts/cmp_mkup_engine: FM-1 input lines: btn, turn
 # host-only scripts/display: FM-1 input lines: btn, keys, turn
 # host-only scripts/drive_select: FM-1 input lines: turn
+# host-only scripts/eq_page: FM-1 input lines: keys, turn
 # host-only scripts/fx_panel: FM-1 input lines: btn, keys, turn
 # host-only scripts/keyvel: FM-1 input lines: keys, vkey
 # host-only scripts/leds_scale: FM-1 input lines: btn, keys, turn

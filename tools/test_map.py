@@ -19,7 +19,7 @@ The map (first match wins; a firmware file no rule names -> T1 all + T2, so noth
  frodhes.c, libc.c, build.sh, build.py  -> T1 all (the glue; T2 waits for a DSP change: Gate R proves the renders)
  ota.c, recovery.c, loader/*, packaging -> T1 5
  rhodes.c, bars.c, engine.c, the tables -> T1 all + T2 (that engine's scans + sample-back)
- fx.c, fx_tables.h                      -> T1 1/4/6 + T2 effects suites
+ fx.c, fx_eq.c, fx_tables.h            -> T1 1/4/6 + T2 effects suites
  drive.c, drv_*.c, drive_tables.h       -> T1 1/4/6 + T2 effects suites (the DRIVE's TYPEs)
  rev_types.c, rev_*.c                   -> T1 1/4/6 + T2 effects suites (the REVERB's TYPEs)
  ui.c, params.c, presets.c, eng_pages.h -> T1 3/4/5 + the screenshots / docs tests (no audio scans)
@@ -76,7 +76,9 @@ RULES = [
      ("vibes", "marimba"), (), "the bar engine (VIBES, MARIMBA: its DSP or tables)"),
     ("engine:dispatch", ["firmware/src/engine.c", "firmware/src/fxp.h"], ALL, ENGINES_T2 + ("effects",), (),
      "the engine dispatcher / the fixed-point helpers (every engine's DSP)"),
-    ("fx", ["firmware/src/fx.c", "firmware/src/dly_tape.c", "firmware/gen/fx_tables.h"], (1, 4, 6), ("effects",), (),
+    ("fx", ["firmware/src/fx.c", "firmware/src/fx_eq.c", "firmware/src/dly_tape.c",
+            "firmware/gen/fx_tables.h"], (1, 4, 6),
+     ("effects",), (),
      "the effects chain (its DSP or tables)"),
     ("fx:drive", ["firmware/src/drive.c", "firmware/src/drv_*.c", "firmware/gen/drive_tables.h"], (1, 4, 6),
      ("effects",), (), "the DRIVE's TYPEs (the framework, a TYPE's kernel or its tables)"),
