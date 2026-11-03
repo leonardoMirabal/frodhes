@@ -11,7 +11,8 @@ click detector on every tap (and on the USB-C audio with --usb).
 
 Slots above N are emptied for a run (synth:module ""), slots 1..N get "frodhes". Another module in any slot stops the
 run before anything changes (emptying it loses its sound: a re-pick starts on the module's defaults and Schwung saves
-that over the set), unless --take-slots; use a test set."""
+that over the set), unless --take-slots (empties them) or --keep-others (leaves them as they are, idle, and runs the
+instances in the free slots only; the free slots end empty again but for slot 1)."""
 import argparse
 import json
 import os
@@ -121,6 +122,8 @@ def set_module(w, s, mod, wait=5.0):
 
 
 JS = {}
+FREE = [0, 1, 2, 3]                              # the slots a run may change (--keep-others: those empty or Frodhes)
+SLOTS = [0, 1, 2, 3]                             # instance i plays in slot SLOTS[i]
 USB = False
 LOW = True                                       # (LEVEL -12 dB: four slots at unity clip the Move's mix)
 
@@ -147,14 +150,15 @@ def run_n(n, secs, outdir, seed=1):
     with move_ws.Remote(URL) as w:
         t0 = time.time()
         rss0 = rss_kb()
-        for s in range(4):
-            set_module(w, s, "frodhes" if s < n else "", 6.0 if s < n else 2.0)
+        for s in FREE:
+            on = s in SLOTS[:n]
+            set_module(w, s, "frodhes" if on else "", 6.0 if on else 2.0)
         res["load_s"] = round(time.time() - t0, 1)
         res["rss_kb"] = rss_kb()
         res["rss0_kb"] = rss0
         res["inst"] = ssh("ls -d %s/*/ 2>/dev/null; cat %s/*/load.txt 2>/dev/null" % (INST, INST)).decode()
     ssh("rm -f %s/*/cpu-ring.log" % INST)
-    rigs = [mh.TapRig(URL, fetch_any(os.path.join(outdir, "n%d" % n)), slot=s) for s in range(n)]
+    rigs = [mh.TapRig(URL, fetch_any(os.path.join(outdir, "n%d" % n)), slot=SLOTS[s]) for s in range(n)]
     for s, r in enumerate(rigs):
         r.stamp = "%s%d" % (r.stamp, s)              # (one take id an instance)
     ccs = hc.engine_ccs("rhodes", dict(hc.HEAVY, LEVEL=0) if LOW else hc.HEAVY)
@@ -213,7 +217,7 @@ def run_n(n, secs, outdir, seed=1):
             takes[s] = rigs[s].rec(evs[s][1], evs[s][0])
         except Exception as e:     # noqa: BLE001
             takes[s] = {"error": "%s: %s" % (type(e).__name__, e)}
-            print("slot %d: %s" % (s + 1, takes[s]["error"]), flush=True)
+            print("slot %d: %s" % (SLOTS[s] + 1, takes[s]["error"]), flush=True)
             bar.abort()
     usb = {}
 
@@ -276,12 +280,12 @@ def run_n(n, secs, outdir, seed=1):
     for s in range(n):
         tk = takes[s]
         if not tk or "error" in tk:
-            res["takes"].append({"slot": s + 1, "tap": {k: v for k, v in JS.get("d%s-%03d" % (rigs[s].stamp, rigs[s].n), {}).items()
+            res["takes"].append({"slot": SLOTS[s] + 1, "tap": {k: v for k, v in JS.get("d%s-%03d" % (rigs[s].stamp, rigs[s].n), {}).items()
                                      if k in ("played", "events", "dropped", "late", "bad", "aborted", "inst_dir")}, "error": (tk or {}).get("error", "none")})
             continue
         g = mh.glitches(tk["x"], tk["sr"], evs[s][0], ccs=ccs)
         gated = [e for e in g if e[1] in hc.GATED]
-        res["takes"].append({"slot": s + 1, "tap": {k: v for k, v in JS.get("d%s-%03d" % (rigs[s].stamp, rigs[s].n), {}).items()
+        res["takes"].append({"slot": SLOTS[s] + 1, "tap": {k: v for k, v in JS.get("d%s-%03d" % (rigs[s].stamp, rigs[s].n), {}).items()
                                      if k in ("played", "events", "dropped", "late", "bad", "aborted", "inst_dir")}, "secs": round(evs[s][1], 1), "gated": len(gated), "events": len(g),
                              "first": [list(e) for e in gated[:5]], "xruns": tk["xruns"],
                              "peak_dbfs": round(20 * np.log10(np.abs(tk["x"]).max() / 32767 + 1e-12), 1)})
@@ -295,6 +299,7 @@ def main():
     ap.add_argument("--n", type=int, nargs="+", default=[1, 2, 3, 4])
     ap.add_argument("--secs", type=float, default=20.0)
     ap.add_argument("--usb", action="store_true", help="also record the Move's USB-C audio (Main Out) and check it")
+    ap.add_argument("--keep-others", action="store_true", help="leave slots with other modules alone; use the free ones")
     ap.add_argument("--take-slots", action="store_true", help="run even if a slot holds another module (it is emptied)")
     ap.add_argument("--out", default=os.path.join(mh.ROOT if hasattr(mh, "ROOT") else ".", "build", "move", "hil", "multi"))
     a = ap.parse_args()
@@ -306,7 +311,13 @@ def main():
     with mi.move_lock("move_multi_cpu"):
         with move_ws.Remote(URL) as w:
             other = {s + 1: m for s, m in slot_modules(w).items() if m not in ("", "frodhes")}
-        if other and not a.take_slots:
+        global FREE, SLOTS
+        if other and a.keep_others:
+            FREE = [s for s in range(4) if s + 1 not in other]
+            SLOTS = FREE[:]
+            if max(a.n) > len(SLOTS):
+                sys.exit("move_multi_cpu: --n %d needs %d free slots; %d are free" % (max(a.n), max(a.n), len(SLOTS)))
+        elif other and not a.take_slots:
             sys.exit("move_multi_cpu: slots %s hold %s; the run would empty them. Load a test set, or --take-slots"
                      % (", ".join(map(str, other)), ", ".join(sorted(set(other.values())))))
         for n in a.n:
