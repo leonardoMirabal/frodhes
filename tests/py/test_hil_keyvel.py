@@ -354,7 +354,7 @@ def test_hil_cpu_keyadc_modes(monkeypatch, clock, capsys):
 def test_hil_cpu_full_run_keeps_its_rows(monkeypatch, clock):
     r, _ = cpu_run(monkeypatch, clock, ["--keyadc", "idle", "--engine", "vibes"])
     names = [n for n, _ in r["rows"]]
-    assert "idle, no effects" in names and "repeated" in names and len(names) == 11   # + the slow paths
+    assert "idle, no effects" in names and "repeated" in names and len(names) == 14   # + the slow paths; + mid + top, TYPE change, program change (0.9.8)
     assert any(n.startswith("slow paths") for n in names) and r["code"] == 0 and hc.exit_code(r) == 0
 
 
