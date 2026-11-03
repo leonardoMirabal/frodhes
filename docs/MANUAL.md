@@ -1184,7 +1184,8 @@ the controls and what differs: **[SMK37.md](SMK37.md)**.
 ## 16. Appendix: the Ableton Move
 
 Frodhes also runs on the Move, a standalone groove box, as a sound generator of Schwung, the community module host
-on it: the same instruments and effects as on the FM-1, in their HQ version, with 16 voices on every instrument. It
+on it: the same instruments and effects as on the FM-1, in their HQ version, with 16 voices on every instrument and
+the reverb at the full sample rate. It
 installs and updates through Schwung Manager. Everything in this manual applies to the sound; Frodhes draws its own
 screen on the Move, the eight knobs as eight cards a page at a time. Its manual has the install, the screen, every
 page and what differs: **[MOVE.md](MOVE.md)**.

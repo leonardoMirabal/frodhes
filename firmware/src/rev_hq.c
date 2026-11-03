@@ -4,7 +4,8 @@
  * no down / up sampling filter sits in the path. Included by rev_types.c in place of its own framework; the panel, the
  * ranges, the records and the behaviour are the same (MIX, DECAY, TONE, PRE-DELAY, SIZE, MOD, LOW CUT; INFINITE's
  * SUSTAIN / FREEZE; tails end in exact silence; a TYPE change fades over RV_FADE control blocks; CC 10 to rest):
- *   HALL     rev_hq_hall.c   16 lines, a Hadamard mix, 4 input diffusers (the half-rate HALL: 8 lines, 2 diffusers)
+ *   HALL     rev_hq_hall.c   8 lines of 32 .. 91 ms, a Hadamard mix, 4 input diffusers (the half-rate HALL: 8 lines of
+ *                            21 .. 34 ms, 2 diffusers)
  *   PLATE    rev_hq_plate.c  the figure-8 plate tank at 44.1 kHz (the half-rate one ran the paper's design at 22 kHz)
  *   INFINITE rev_hq_inf.c    the bright tank as designed (4 diffusers, 4 line allpasses, 8 modulated lines) at 44.1 kHz
  * The kernel API (as rev_types.c's, at the full rate): one control block = CTL = 32 samples a call;

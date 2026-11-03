@@ -257,6 +257,13 @@ The FM-1's [REVERB](MANUAL.md#reverb) and [REVERB 2](MANUAL.md#reverb-2) on one 
 (INFINITE), DECAY shows SUSTAIN from 120 to 126 and FREEZE at 127, SUST and FREZ on the overview (what they do: the
 manual's REVERB). At FREEZE new notes play dry; turn DECAY under 120 to get the tail moving again.
 
+**The reverb runs at the full sample rate on the Move** (44.1 kHz; the FM-1's runs at half of it). Its tails keep
+their top octave, up to about 20 kHz, where the FM-1's stop near 11 kHz. HALL is a larger network (8 lines of 32 to
+91 ms and 4 diffusers, against the FM-1's 8 lines of 21 to 34 ms and 2), with more resonances in its tail. PLATE is
+the FM-1's design at the full rate, INFINITE its tank in full (the FM-1 runs a lighter version of it). The controls,
+their ranges and the presets are the same, and each TYPE's wet level is within 1.5 dB of the FM-1's.
+*(not yet verified on a device: the full-rate reverb's sound and its CPU time)*
+
 ![REVERB](manual/img/move/move-reverb.png?v=fec0fdc0)
 ![REVERB at INF, DECAY at 127: FREZ on the overview](manual/img/move/move-reverb-freeze.png?v=3d4bb58f)
 ![The DECAY card at 127: FREEZE](manual/img/move/move-reverb-freeze-k3.png?v=ecf3a9f3)
@@ -495,6 +502,8 @@ of them.
   re-strike of a key that still rings. VIBES and MARIMBA have more of the bar's and the tube's modes, and the
   mallet's contact computed live when a bar that still rings is struck again (MARIMBA's top keys, C6 up, always).
   *(not yet verified on a device)*
+- **The reverb at the full sample rate** ([REVERB](#reverb)): the tails keep their top octave and HALL is a larger
+  network. The FM-1 and the SMK-37 run it at half the rate. *(not yet verified on a device)*
 - **The screen**: one page is eight knobs (two of the FM-1's pages side by side), and the FM-1's knob card is the
   large card.
 - **Buttons**: the Left arrow is FX and the Right arrow is SUS, on every page. SUS is a switch, on or off, in place
