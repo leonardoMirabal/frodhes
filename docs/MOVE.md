@@ -496,7 +496,9 @@ of them.
 
 ## What differs from the FM-1
 
-- **16 voices** on every engine (the FM-1 plays 10).
+- **16 voices** on every engine (the FM-1 plays 10). On VIBES and MARIMBA, more notes than voices at the same instant
+  start 16 at a time, one audio block (5.8 ms) apart, in order (the FM-1: 10 at a time; the manual's
+  [sustain and polyphony](MANUAL.md#10-sustain-and-polyphony)).
 - **HQ, the Move's one version.** The FM-1 and the SMK-37 play the Classic engine; the Move plays HQ, with no
   setting. The electric piano types have the exact hammer strike at every velocity, a cleaner top octave and a truer
   re-strike of a key that still rings. VIBES and MARIMBA have more of the bar's and the tube's modes, and the
