@@ -169,7 +169,7 @@ class Remote:
         except TimeoutError:
             pass
 
-    def play(self, slot, take, dur_ms, events, lead_ms=100, pace=0.003):
+    def play(self, slot, take, dur_ms, events, lead_ms=100, pace=0.015):
         """the plugin's dev player (move/move_bridge.h dev_play): events [(t_ms, status, d1, d2)] from the take's
         start, in pieces under the set ring's 256 B; the plugin starts on its 2560 ms grid and writes the tap
         <data dir>/tap/<take>.wav (dur_ms long) and <take>.json"""
@@ -180,7 +180,8 @@ class Remote:
             ev = "%d %d %d %d;" % (int(t), int(st), int(d1) & 127, int(d2) & 127)
             if len(chunk) + len(ev) > PIECE:
                 self.set_param(slot, key + "_add", chunk)
-                time.sleep(pace)                  # (the shim drains the ring once a 2.9 ms frame)
+                time.sleep(pace)                  # (the shim drains the ring once a 2.9 ms frame; over Wi-Fi the
+                                                  #  pieces bunch up: 3 ms pacing filled the ring, 2026-11-04)
                 k += 1
                 chunk = "#%d " % k
             chunk += ev
