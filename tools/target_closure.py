@@ -30,7 +30,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INC = ["-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen"]
 APP = ["-DFELUCCA_ID=\"FM-1_958\"", "-DAPP_VER=\"0.0\""]
-MOVE_DEFS = ["-DDINGHY_HOST", "-DDINGHY_WEB", "-DDINGHY_MOVE", "-DFR_VOICES=16u"]
+MOVE_DEFS = ["-DDINGHY_HOST", "-DDINGHY_WEB", "-DDINGHY_MOVE", "-DFR_VOICES=16u", "-DFR_REV_HQ=1"]   # (the Makefile's MOVE_DEFS: the full-rate reverb)
 # (target, [(the C file, its flags)], the other files it is built from)
 FIRMWARE_FILES = ["firmware/crt0.S", "firmware/hal/fm1_vec.S", "firmware/hal/fm1_isr.S", "firmware/app.ld",
                   "firmware/loader/crt0_ldr.S", "firmware/loader/loader.ld", "build.sh", "tools/build.py",

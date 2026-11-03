@@ -7,7 +7,7 @@
 #                                           (MOVE_DEFS) -> build/gate_m/host16/NAME.wav (only for --save)
 set -eu
 MODE=$1 LIST=$2 JOBS=${3:-2}
-DEFS=${MOVE_DEFS:--DFR_VOICES=16u -DFR_BYP_KEEP_CMP=1}
+DEFS=${MOVE_DEFS:--DFR_VOICES=16u -DFR_BYP_KEEP_CMP=1 -DFR_REV_HQ=1}
 mkdir -p build/gate_m build/move/t
 case $MODE in
 replay)

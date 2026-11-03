@@ -7,8 +7,6 @@ jumps, Start / Stop / Continue. Checked: the tempo (bpm10, the samples a beat, t
 sound, the tremolo SYNC 1/4: its period within 0.5 % and its loudest point within 5 % of a beat from the beats sent,
 2 bars after Start. Before 0.9.5's fix the tempo never followed a clock read in bursts (any interval under 8 ms reset
 the count) and nothing locked the LFOs' phase."""
-import functools
-import os
 import re
 
 import numpy as np
@@ -91,8 +89,8 @@ def lfo_errors(r, times, beat0_ms, beat_ms):
     return np.array(errs)
 
 
-def run(tag, lines, end_ms, dumps=(), **kw):
-    return hostrun.run(f"clock-{tag}", lines + [f"{int(t)} dump" for t in dumps], end_ms=end_ms, **kw)
+def run(tag, lines, end_ms, dumps=()):
+    return hostrun.run(f"clock-{tag}", lines + [f"{int(t)} dump" for t in dumps], end_ms=end_ms)
 
 
 def tempo_at(r, t):
@@ -870,10 +868,6 @@ def test_auto_saves_one_at_a_time():
     for it (neither busy-finishes the other in the main loop), a note sent meanwhile is taken at once, both are
     written"""
     lines = seq_pattern()
-    # (the half-rate reverb: the saves wait for silence, and the full-rate HALL's tail (FR_REV_HQ) ends later, so both
-    # saves fall due at its end, the pattern's first; this scan looks for the overlap at the half-rate tail's timing)
-    half = hostrun.build(os.path.join(hostrun.OUT, "clk-half", "frodhes"), ["-DFR_REV_HQ=0"])
-    run = functools.partial(globals()["run"], binary=half)
     r0 = run("saves-probe", lines, 6000)
     t_pat = [int(t) for t in re.findall(r"^\s*(\d+) ms  pattern . erased", r0.out, re.M)][0]
     found = None

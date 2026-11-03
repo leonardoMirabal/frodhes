@@ -45,13 +45,15 @@ CHORD16 = (36, 40, 43, 47, 50, 53, 57, 60, 64, 67, 71, 74, 77, 81, 84, 88)
 def builds():
     OUT.mkdir(parents=True, exist_ok=True)
     fm = OUT / "fm1"
-    # (the FM-1's reverb as the Move's: FR_REV_HQ, on for the FM-1 since c1-rev, until the Move's MOVE_DEFS flip it)
+    # (every build with the Move's reverb, FR_REV_HQ as MOVE_DEFS has it (on for the Move only), so the levels compare
+    # the Move's trim and voices alone; the full-rate reverb's own level: tests/py/test_rev_hq.py)
     mk = (ROOT / "Makefile").read_text()
     rq = "-DFR_REV_HQ=1" if "-DFR_REV_HQ=1" in next(l for l in mk.splitlines() if l.startswith("MOVE_DEFS")) else \
         "-DFR_REV_HQ=0"
     subprocess.run(["cc", "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", '-DAPP_VER="dev"', rq, "-Ifirmware/src",
                     "-Ifirmware/gen", "-o", str(fm), "firmware/src/frodhes.c", "-lm"], cwd=ROOT, check=True)
-    return {"FM-1": fm, "Move": gate_h.build(False, OUT / "move"), "Move HQ": gate_h.build(True, OUT / "move-hq")}
+    return {"FM-1": fm, "Move": gate_h.build(False, OUT / "move", (rq,)),
+            "Move HQ": gate_h.build(True, OUT / "move-hq", (rq,))}
 
 
 def script(pc, what):

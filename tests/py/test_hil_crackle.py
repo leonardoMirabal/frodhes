@@ -667,5 +667,4 @@ def test_injected_whole_frame_copies_are_found_as_before():
         ev = [p for p, _ in C.det_repeat(y)]
         found += sum(any(abs(e - p) <= 2 for e in ev) for p in marks)
         placed += len(marks)
-    assert placed == 190 and found >= 150, (found, placed)   # (FR_REV_HQ, c1-rev: the full-rate reverb moved the
-                                                              # takes' tails: 190 places, 155 found; 189 / 151 before)
+    assert placed == 189 and found >= 150, (found, placed)

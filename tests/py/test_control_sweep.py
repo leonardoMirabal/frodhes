@@ -34,11 +34,6 @@ import hostrun  # noqa: E402
 KNOWN = {
     "rev INF auto MIX": "INFINITE's level guard holds the tank: the wet falls 1.1 dB from MIX 96 to 127 (by design; a law change moves presets)",
     "rev INF size64 MIX": "the same (INFINITE's level guard; #18's jump and click are fixed)",
-    "rev HALL size64 MIX": "FR_REV_HQ (c1-rev): the full-rate HALL's tail at the sweep's end (MIX back at 0, the tail "
-                           "ringing at its latched return): one of its modes, 27 cents under A4, outweighs the chord's "
-                           "decayed 440 Hz partial for 5 of 53 windows (the statics: single windows of -27 / +34); the "
-                           "wet alone -2.0 cents (the half-rate HALL's -9.2). The tail's fine structure, not a drift: "
-                           "to be heard in the A/B before the line goes",
 }
 
 
