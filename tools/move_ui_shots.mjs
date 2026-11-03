@@ -98,6 +98,12 @@ const DOC_SHOTS = {
     "marimba-voice": () => new Chain(engine(5)).page("MARIMBA VOICE"),
     "compressor": () => new Chain(engine(0)).page("COMPRESSOR"),
     "compressor-gr": () => new Chain((p) => { engine(0)(p); p.v.p_cmp_sw = 1; p.gr = "120 200"; }).page("COMPRESSOR").settle(),
+    "eq": () => new Chain(engine(0)).page("EQ"),
+    // the EQ set as the FM-1's EQ picture (docs/manual/img/eq.png): LOW +3.1, MID -4.0 at 551 Hz, HIGH +1.9
+    "eq-set": () => new Chain((p) => { engine(0)(p); Object.assign(p.v, { p_eq_lo: 77, p_eq_mid: 47, p_eq_freq: 40, p_eq_hi: 72 }); })
+        .page("EQ"),
+    "eq-set-k3": () => new Chain((p) => { engine(0)(p); Object.assign(p.v, { p_eq_lo: 77, p_eq_mid: 47, p_eq_freq: 40, p_eq_hi: 72 }); })
+        .page("EQ").touch(2, true),
     "drive-filter": () => new Chain(engine(0)).page("DRIVE/FILTER"),
     "trem-phaser": () => new Chain(engine(0)).page("TREM/PHASER"),
     "chorus": () => new Chain(engine(0)).page("CHORUS"),
@@ -123,8 +129,8 @@ const DOC_SHOTS = {
         c.touch(1, true).wait(60).touch(1, false).wait(100).touch(1, true).wait(60).touch(1, false);
         return c.wait(600);
     },
-    // the list: on the first page, the cursor three pages on; then the menu below the pages
-    "pages": () => new Chain(engine(0)).click().jog(1).jog(1).jog(1),
+    // the list: on the first page, the cursor four pages on (DRIVE/FILTER); then the menu below the pages
+    "pages": () => new Chain(engine(0)).click().jog(1).jog(1).jog(1).jog(1),
     "menu": () => listAt("SAVE TO USER"),
     "menu-module": () => listAt("SWAP MODULE"),
     // SAVE TO USER: U03 picked (empty). (No shot after the click: the plugin names the slot from the TYPE and the

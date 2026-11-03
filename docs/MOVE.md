@@ -14,7 +14,7 @@ This is the user manual for the Move. What the controls do to the sound is descr
 them on the Move and what is different, with a link to the manual's section for each page. The build, the tests and
 the device measurements are in [MOVE-DEV.md](MOVE-DEV.md).
 
-![The first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=a6c53d5f)
+![The first page on the Move: the sound, its type, the spread, the sustain, the effects and the delay's mix](manual/img/move/move-frodhes.png?v=ed05fe9c)
 
 ## Contents
 
@@ -97,18 +97,18 @@ stay the Move's.
 The Move's screen is 128 x 64 pixels in one colour. Every picture on this page is that screen, drawn by the file the
 Move runs and shown 4 times larger.
 
-![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=afb6680e)
+![The DRIVE/FILTER page: eight cards, each with its name, its value and a bar](manual/img/move/move-drive-filter.png?v=5388b9c5)
 
 - **The overview** is one page: eight cards, knobs 1-4 on the top row and 5-8 below, each with its name, its value
   and a bar. A knob with no control on that page has no card.
 - **The bar** is an outlined box filled from the left up to the value. A choice of three or more options shows a
   notch between its steps; a value with a centre (TONE, TUNE) shows a notch at 0. A two-way switch (SUS, FX, COMP,
   MOTOR, PHASER, CHORUS, RETRIG) is an empty box at OFF (FREE for RETRIG) and a full one at ON (KEY).
-- **The header** names the page and its number among the pages you can reach (`4/12`). An **`X`** before the number
+- **The header** names the page and its number among the pages you can reach (`4/13`). An **`X`** before the number
   shows that the effects are off (FX OFF, the Left arrow), and an **`S`** that the sustain holds (SUS ON, the Right
   arrow).
 
-![The header with the effects off (X) and the sustain on (S); the FX and SUS cards agree](manual/img/move/move-header-fx-sus.png?v=9b4fcc6e)
+![The header with the effects off (X) and the sustain on (S); the FX and SUS cards agree](manual/img/move/move-header-fx-sus.png?v=93d1d2cc)
 
 - **The large card**: touch a knob, or turn it, and its card fills the screen: the name, the value in large letters,
   a wide bar of the same kind and, along the bottom, a mark for each of the page's knobs, the one you hold filled.
@@ -121,7 +121,7 @@ Move runs and shown 4 times larger.
 - **A message** shows in a box for about a second: `SPRD RESET` after a double tap, `SAVED U05` after a save,
   `NOT SAVED` when you leave the save card with Back.
 
-![A double tap on SPREAD: back to 0, SPRD RESET](manual/img/move/move-reset.png?v=ae0bd720)
+![A double tap on SPREAD: back to 0, SPRD RESET](manual/img/move/move-reset.png?v=32b0b271)
 
 - **The knob lights** show each knob's value, as on Schwung's own screens: knobs 1-4 white and 5-8 amber, brighter
   as the value grows, dark where the page has no control. **The Left arrow** is lit while the effects are on, **the
@@ -162,7 +162,7 @@ Each page holds up to eight controls, one for each knob, in the FM-1's order and
 defaults. The overview shows a name of at most four letters on each card, so a card's name ends clear of the next
 (SPRD for SPREAD, DPTH for DEPTH, ATCC for AT CC); the large card shows the full name. The VOICE pages are the instrument's that plays: PIANO VOICE for ST77, SUIT, FELT and DYNO,
 VIBES VOICE and VIBES MOTOR for VIBE, MARIMBA VOICE for MRMB. They change with TYPE, a preset or a program change,
-within about half a second; that is why the page count is 12 or 13.
+within about half a second; that is why the page count is 13 or 14.
 
 | Page | Controls |
 | --- | --- |
@@ -172,6 +172,7 @@ within about half a second; that is why the page count is 12 or 13.
 | **VIBES MOTOR** | MOTOR · DEPTH · SPEED · SHAPE · SYNC |
 | **MARIMBA VOICE** | STRIKE · MALLET · TUBE · WEIGHT · RING · MUTE · NOISE · TUNE |
 | **COMPRESSOR** | THRESH · RATIO · ATTACK · MKUP · COMP · REL |
+| **EQ** | LOW · MID · FREQ · HIGH |
 | **DRIVE/FILTER** | DRIVE · AMOUNT · TONE · MIX · FILTER · FREQ · RESO · LFO |
 | **TREM/PHASER** | TREM · DEPTH · RATE · SHAPE · PHASER · DEPTH · SPEED · FEEDBK |
 | **CHORUS** | CHORUS · DEPTH · SPEED · SYNC |
@@ -183,8 +184,8 @@ within about half a second; that is why the page count is 12 or 13.
 | **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI |
 
 The names are the FM-1's where they fit and shorter where they do not (HAMMR, DAMPR, MKUP; an option the same way
-everywhere, so the reverb's INFINITE is INF). CHAN is the FM-1's MIDI CHANNEL. The pictures below show each page with
-its default values; each page's link goes to the manual's description of its controls.
+everywhere, so the reverb's INFINITE is INF). CHAN is the FM-1's MIDI CHANNEL; FREQ on the EQ page is its MID
+FREQ. The pictures below show each page with its default values; each page's link goes to the manual's description of its controls.
 
 ### FRODHES
 
@@ -194,7 +195,7 @@ effects](#the-effects)), PRESET (knob 5: the sound, its full name across knobs 5
 saving](#presets-and-saving)) and the delay's MIX (DELAY, knob 8, the FM-1's PERFORM name for it). Knobs 6 and 7 have
 no control here.
 
-![FRODHES](manual/img/move/move-frodhes.png?v=a6c53d5f)
+![FRODHES](manual/img/move/move-frodhes.png?v=ed05fe9c)
 ![Knob 5 touched: the preset, its name above and its number large](manual/img/move/move-frodhes-k5.png?v=caea2c9e)
 
 ### PIANO VOICE, VIBES VOICE, VIBES MOTOR, MARIMBA VOICE
@@ -203,10 +204,10 @@ The instrument's own controls: the Rhodes types' [VOICE pages](MANUAL.md#voice-1
 [vibraphone](MANUAL.md#vibes-the-vibraphone) and [its motor](MANUAL.md#the-motor-on-and-off), the
 [marimba](MANUAL.md#marimba). The FRODHES page's TONE and BELL (MALLET, MOTOR, TUBE on the bars) are here.
 
-![PIANO VOICE, with ST77](manual/img/move/move-piano-voice.png?v=301bdb0e)
-![VIBES VOICE, with VIBE](manual/img/move/move-vibes-voice.png?v=b77ff6fa)
-![VIBES MOTOR, with VIBE](manual/img/move/move-vibes-motor.png?v=7f62f232)
-![MARIMBA VOICE, with MRMB](manual/img/move/move-marimba-voice.png?v=40d4dfc8)
+![PIANO VOICE, with ST77](manual/img/move/move-piano-voice.png?v=ecc3ee4f)
+![VIBES VOICE, with VIBE](manual/img/move/move-vibes-voice.png?v=5813033f)
+![VIBES MOTOR, with VIBE](manual/img/move/move-vibes-motor.png?v=bae8352b)
+![MARIMBA VOICE, with MRMB](manual/img/move/move-marimba-voice.png?v=51161958)
 
 ### COMPRESSOR
 
@@ -217,24 +218,38 @@ the FM-1's scale (up to 30 dB), and the peak held for a second as a taller segme
 compressor is off the bar is a dotted outline and reads COMP OFF. *(not yet verified on a device: the meter moving
 while you play)*
 
-![COMPRESSOR, the compressor off: COMP OFF](manual/img/move/move-compressor.png?v=57f2cac0)
-![COMPRESSOR on: the meter at 12 dB of gain reduction, the peak held at 20 dB](manual/img/move/move-compressor-gr.png?v=af2373a6)
+![COMPRESSOR, the compressor off: COMP OFF](manual/img/move/move-compressor.png?v=56e9b438)
+![COMPRESSOR on: the meter at 12 dB of gain reduction, the peak held at 20 dB](manual/img/move/move-compressor-gr.png?v=d1821dfd)
+
+### EQ
+
+The [EQ](MANUAL.md#eq), between the compressor and the drive as on the FM-1: LOW (the low shelf), MID (the bell),
+FREQ (the FM-1's MID FREQ, where MID acts) and HIGH (the high shelf), on knobs 1-4. The cards show the FM-1's
+values: LOW, MID and HIGH in dB, from -15 to +15, with +0.0 (flat) in the middle of the bar, marked by a notch; FREQ
+in Hz, from 200 to 5.0K (5 kHz), 1.0K in the middle. Every one starts flat (+0.0, FREQ 1.0K), and with the three
+gains at +0.0 the EQ is out of the sound. A double tap sets a knob back to that. The screen reader says the values
+with their unit (*Low, plus 3.1 decibels*; *Mid frequency, 1.0 kilohertz*). Over MIDI: CC 34-37, 64 flat.
+*(not yet verified on a device: the EQ page)*
+
+![EQ, flat: every gain +0.0, FREQ 1.0K](manual/img/move/move-eq.png?v=1a870bcc)
+![EQ set as in the manual's picture: LOW +3.1, MID -4.0 at 551 Hz, HIGH +1.9](manual/img/move/move-eq-set.png?v=ab58ec77)
+![Knob 3 touched: FREQ at 551 Hz](manual/img/move/move-eq-set-k3.png?v=9ce90eaa)
 
 ### DRIVE/FILTER, TREM/PHASER
 
 Two of the FM-1's pages side by side: the [drive](MANUAL.md#drive) and the [filter](MANUAL.md#filter), the
 [tremolo / pan / wah](MANUAL.md#tremwah) and the [phaser](MANUAL.md#phaser).
 
-![DRIVE/FILTER](manual/img/move/move-drive-filter.png?v=afb6680e)
-![TREM/PHASER](manual/img/move/move-trem-phaser.png?v=f6b87239)
+![DRIVE/FILTER](manual/img/move/move-drive-filter.png?v=5388b9c5)
+![TREM/PHASER](manual/img/move/move-trem-phaser.png?v=c64100c6)
 
 ### CHORUS, DELAY
 
 A page each, with the FM-1's cards: the [chorus](MANUAL.md#chorus), the [delay](MANUAL.md#delay). The delay's mix
 is also on the first page (DELAY, knob 8).
 
-![CHORUS](manual/img/move/move-chorus.png?v=c4ac474b)
-![DELAY](manual/img/move/move-delay.png?v=2d0c449e)
+![CHORUS](manual/img/move/move-chorus.png?v=bb3314f0)
+![DELAY](manual/img/move/move-delay.png?v=77534716)
 
 ### REVERB
 
@@ -242,8 +257,8 @@ The FM-1's [REVERB](MANUAL.md#reverb) and [REVERB 2](MANUAL.md#reverb-2) on one 
 (INFINITE), DECAY shows SUSTAIN from 120 to 126 and FREEZE at 127, SUST and FREZ on the overview (what they do: the
 manual's REVERB). At FREEZE new notes play dry; turn DECAY under 120 to get the tail moving again.
 
-![REVERB](manual/img/move/move-reverb.png?v=2fbfbe5a)
-![REVERB at INF, DECAY at 127: FREZ on the overview](manual/img/move/move-reverb-freeze.png?v=83417b6d)
+![REVERB](manual/img/move/move-reverb.png?v=fec0fdc0)
+![REVERB at INF, DECAY at 127: FREZ on the overview](manual/img/move/move-reverb-freeze.png?v=3d4bb58f)
 ![The DECAY card at 127: FREEZE](manual/img/move/move-reverb-freeze-k3.png?v=ecf3a9f3)
 
 ### TEMPO, ARPEGGIO
@@ -252,8 +267,8 @@ The synced rates of the tremolo, the phaser and the delay (the FM-1's [TEMPO](MA
 CLOCK), and the arpeggiator ([The arpeggiator](#the-arpeggiator)). They follow the Move's tempo ([MIDI and
 tempo](#midi-and-tempo)).
 
-![TEMPO](manual/img/move/move-tempo.png?v=f53c923e)
-![ARPEGGIO, as a new Frodhes starts: OFF, 1/16, 1 octave, 60 %, HOLD OFF](manual/img/move/move-arpeggio.png?v=b714ea8b)
+![TEMPO](manual/img/move/move-tempo.png?v=7d2ac32b)
+![ARPEGGIO, as a new Frodhes starts: OFF, 1/16, 1 octave, 60 %, HOLD OFF](manual/img/move/move-arpeggio.png?v=d8d5cb02)
 
 ### LFO/SETUP, MAPPINGS
 
@@ -270,18 +285,18 @@ controller sent that CC (the CC numbers are the FM-1's, MANUAL.md section 12). T
 (2-4, 8-11, 41, 42, 114, 116 and 119) are never sent: a mapping set to one of them does nothing. *(not yet verified on
 a device)*
 
-![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=9855f40d)
-![MAPPINGS](manual/img/move/move-mappings.png?v=1a4cf615)
+![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=a1da1851)
+![MAPPINGS](manual/img/move/move-mappings.png?v=be59afe9)
 
 ## The menu
 
 **Click the jog wheel** for the list. It holds the pages you can reach (the one you are on marked `*`), and below them
 the menu, each section under its name. Turn the jog wheel to a row and click to open it; Back closes the list. The
-header counts the rows (`4/20`).
+header counts the rows (`5/21`).
 
-![The list: the pages, DRIVE/FILTER picked](manual/img/move/move-pages.png?v=b80ab4f6)
-![Below the pages: USER PRESETS (SAVE TO USER) and MY PRESETS](manual/img/move/move-menu.png?v=26c25c10)
-![The MODULE rows: Module Help, Swap Module ...](manual/img/move/move-menu-module.png?v=d8669489)
+![The list: the pages, DRIVE/FILTER picked](manual/img/move/move-pages.png?v=fcd9ce1d)
+![Below the pages: USER PRESETS (SAVE TO USER) and MY PRESETS](manual/img/move/move-menu.png?v=240d3549)
+![The MODULE rows: Module Help, Swap Module ...](manual/img/move/move-menu-module.png?v=5346c3ed)
 
 - **USER PRESETS, SAVE TO USER**: saves the sound into one of Frodhes' 16 user slots ([Presets and
   saving](#presets-and-saving)).
@@ -302,18 +317,19 @@ Schwung's installer can also turn it on (`--enable-screen-reader`). With the scr
 | You | It says |
 | --- | --- |
 | open Frodhes' screen | Frodhes, then the preset (*Frodhes, F01, Stage 77*) |
-| turn the jog wheel to another page | the page, where it is, how many controls (*Reverb, 8 of 12, 8 controls*) |
-| touch a knob | the control's whole name and its value (*Decay, 64*; *Reverb type, Infinite*) |
+| turn the jog wheel to another page | the page, where it is, how many controls (*Reverb, 9 of 13, 8 controls*) |
+| touch a knob | the control's whole name and its value (*Decay, 64*; *Reverb type, Infinite*; *Low, plus 3.1 decibels*) |
 | turn a knob | the new value (*65*); a fast turn says a value at most every 0.12 s, then the value it ends on |
 | the Left or the Right arrow | *Effects on* / *Effects off*, *Sustain on* / *Sustain off* |
 | touch a knob twice quickly | the control and *reset* (*Mix reset*) |
-| click the jog wheel (the list) | the row and where it is (*Reverb, current, 8 of 19*); on entering a section, its name first (*User presets, Save to user, 13 of 19*); Schwung's rows with their value (*My presets, Preset: (none)*) |
+| click the jog wheel (the list) | the row and where it is (*Reverb, current, 9 of 20*); on entering a section, its name first (*User presets, Save to user, 14 of 20*); Schwung's rows with their value (*My presets, Preset: (none)*) |
 | click a row, Back on the list | the page you land on |
 | SAVE TO USER | the slot as it changes (*User 2, empty*), then *Saved to user 2*, or *Not saved* after Back |
 | turn PRESET, or load a preset by MIDI | the preset (*F02, Suitcase*) |
 
 The words are the large card's, spelled out where the card shortens them (HAMMR is *Hammer*, PREDLY *Pre-delay*, an
-option such as INF *Infinite*, a rate such as 16T *16th triplet*). The overview's four-letter names are never said.
+option such as INF *Infinite*, a rate such as 16T *16th triplet*, FREQ *Mid frequency*; the EQ's values with
+their unit, *plus 3.1 decibels*, *551 hertz*). The overview's four-letter names are never said.
 Messages such as `SPRD RESET` and `SAVED U05` are said in full. A row that opens one of Schwung's screens (Module
 Help, the preset browser) leaves the words to that screen. *(verified on a device: a touched knob says its name and value; the rest of the list not yet)*
 
@@ -382,6 +398,10 @@ F20-F57 (program change = the number less 15).
 The slot then plays, named from the TYPE and the effects that are on, as on the FM-1, and `SAVED U03` shows. It is
 written when Frodhes is quiet. The user slots are one set for every Frodhes on the Move: a sound saved in one shows
 in the others within seconds.
+
+The EQ is part of the sound, as on the FM-1: a user slot keeps it. The factory presets (F01-F57) have it flat, and
+so do the user slots, the sets and the settings saved by a Frodhes from before the EQ: they load as they were, the EQ
+flat.
 
 The sound you set is also saved with the Move's set: Schwung keeps it with the track, and loading the set brings it
 back. SUS is not saved with it: a set that loads starts with SUS off and FX on, as the FM-1 does at power-on.

@@ -118,6 +118,12 @@ names the Move (default `ableton@move.local`).
   `proposed_records.txt` into `move/presets/`, name any new variant in `NAMES`, run the generator, then
   `node tools/move_ui_shots.mjs --docs` and the MOVE.md list (`test_plugin_presets_and_hierarchy_per_type` reads
   every preset back against the records).
+- **Old saves.** `move/tests/main097/` holds a state and a store.bin (as hex) saved by the main branch's plugin before
+  the EQ (64 ids), made with `test_bridge script`'s `state_dump` from that build's `dsp.so` in a `TB_DIR` data folder.
+  `tests/py/test_move_eq.py` loads both into today's plugin: the sound and the settings as saved, the EQ flat (the
+  bridge's `mb_state_set` takes a base of 64 or 80 ids). The EQ's cards show the FM-1's texts from
+  `tools/gen_move_module.py`'s `FMT` (a port of params.c's F_EQDB / F_EQHZ), checked against the C at every value
+  (`tests/c/eq_text.c`).
 - `tools/ci_move.sh` runs the Move's checks on the host. `node move/ui/test_screen.mjs` checks Frodhes' screen
   (`move/ui/harness.mjs` runs it on a model of the Move's screen and the plugin), `node move/ui/test_chain.mjs`
   the same screen as the whole Move UI (`ui_chain.js`); the pictures: [The screenshots](#the-screenshots).
