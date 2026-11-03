@@ -21,7 +21,7 @@
 
 ## Tested
 
-- Host: `tests/py/test_move_sustain.py` (the toggle; fails on the 0.9.8 candidate: SUS OFF read 1),
+- Host: `tests/py/test_move_sustain.py` (the toggle; fails on the first candidate: SUS OFF read 1),
   `tests/py/test_move_engine_pages.py` (the served pages and is_loading per TYPE, preset and program change),
   `move/ui/test_grid.mjs` (the pages through Schwung's own controller: the candidate's contract keeps PIANO VOICE
   after TYPE to VIBE, the new one follows; PAGES opens; no PEDAL; FX; no label cut), `tests/py/test_move_instances.py`

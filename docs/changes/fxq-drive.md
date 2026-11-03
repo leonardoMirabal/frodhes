@@ -41,13 +41,9 @@
   `drv_scr` with FDRV's 2x buffer (-2 KB RAM).
 - **TSH8, OHCD, BHLUE stay at 1x** with their ADAA-1. At 2x each kernel would cost about twice its 106-165 us, plus
   about 95 us for the filters: over core 0's budget.
-- Everything runs on **core 0**, in the chain. Core 1's job A (the HALL body, the delay's reads) is in flight from the
-  chain's start through COMP, EQ, DRIVE, FILTER and SPREAD, and only one job can be in flight. The EQ and the half-bands
-  are recursive (no data split). The 2x curve could split by time halves on core 1 once job A moves to the block's
-  start (lane fxq-rev): about 37 us a block saved, the same output.
-- Estimated worst whole ISR at 14 voices (today's measurements + FDRV +168 + three EQ bands 102): Rhodes 4278, VIBES
-  4470, MARIMBA 4410 (gate 4500). Estimates have run low before: `tools/hil_cpu.py --worst` decides. With the EQ flat,
-  subtract 102.
+- Everything runs in the chain on the one core, 10 voices on every engine.
+- Measured on the FM-1 (`tools/hil_cpu.py --worst`, every effect, the EQ's three bands running), whole ISR worst:
+  Rhodes 4080 us, VIBES 4344 us, MARIMBA 4436 us (gate 4500).
 
 ## Fixed
 
@@ -103,5 +99,6 @@
   builds the renders are bit-identical).
 - Host, scripts: new `tests/scripts/eq_page.txt`; SELECT counts +1 after COMPRESSOR in `drive_select`, `fx_panel`,
   `perform`, `reverb_pages`, `state`; `make test` passes.
-- Firmware: `./build.sh` passed at 00:58 (before the last `fx_eq.c` edit); the final build and package wait for Docker.
-- Not tested: the FM-1 (the device session runs it). The CPU numbers are the instruction model's.
+- Firmware: `./build.sh` passes; the image fits with the packed pulse banks (see flash-pack.md).
+- FM-1: `tools/hil_cpu.py --worst` on the three engines (above); `tools/hil_crackle.py` on every engine (USB and the
+  jack): 0 events. TO RE-MEASURE on the release build (the monkey's whole-ISR row, one take at 4668 us).
