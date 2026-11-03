@@ -11,7 +11,9 @@ The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder st
 notes (for a build with -DRH_VOICES=N, -DBAR_VOICES=N or -DFR_VOICES=N; more notes than the firmware's voices steal). The lists: bass 28 31 33 35 36 38 40 41 43 45 47 48,
 chord 48 52 55 59 62 64 67 71 74 76 79 83 (the first N).
 --scenario TEXT[,TEXT] (with --worst) runs only the scenarios whose name contains one of them (the key ADC gate on
-the worst ones: --keyadc gate --worst --scenario pedal; run_final_rev.sh). --worst runs only the worst-case scenarios (N bass v127 + pedal, every effect; VIBES: its edge-strike versions too)
+the worst ones: --keyadc gate --worst --scenario pedal; run_final_rev.sh). --worst runs only the worst-case scenarios (N bass v127 + pedal, every effect; N - 2 mid keys from 48 + keys 105 and 108
+v127 + pedal, every effect: more live modes; the same voicing with the reverb TYPE changed from a ringing PLATE /
+INFINITE five times, the chord struck again with each change: the fade blocks; VIBES: its edge-strike versions too)
 and the idle-with-every-effect one (the fixed part), 3 takes each as usual.
 
 --engine vibes selects VIBES (CC 79), with the motor on (CC 47; records v3: the engine's own) wherever the effects
@@ -104,11 +106,19 @@ def usb_line(acc):
             "per_max")
     return "USB " + s + ": " + ", ".join(f"{k} {acc[k]}" for k in keys if k in acc)
 
-CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_TONE=82, DRV_MIX=83, RV_PREDLY=94, EQ_LO=34, EQ_MID=35, EQ_FREQ=36,
+CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_TONE=82, DRV_MIX=83, RV_PREDLY=94, RV_TYPE=95, EQ_LO=34, EQ_MID=35, EQ_FREQ=36,
           EQ_HI=37)
 TARGET_US = 4500
 
 BLOCK_US = 5805
+TOP2 = [105, 108]                                 # the two top keys (firmware with the 2x pickup: its keys, v >= 96)
+
+
+def mid_top(nv):
+    """the --worst mid + top voicing: nv - 2 keys from 48 up (more live modes than the bass) and the two top keys
+    (with the 2x pickup, where a firmware has it: two 2x voices); the host twin: 9-11 % more voice time than the bass
+    list"""
+    return list(range(48, 48 + max(0, nv - 2))) + TOP2[:min(2, nv)]
 STAGES = {1: "engine (eng_render)", 2: "fx copy", 3: "compressor", 4: "filter + LFO", 5: "drive", 6: "trem / wah",
           7: "phaser", 8: "chorus", 9: "delay", 10: "reverb", 11: "bypass / DC / LEVEL", 12: "limiter", 13: "gate",
           14: "fx (other)", 15: "after the last stamp"}
@@ -396,11 +406,13 @@ def run_cpu(argv):  # noqa: C901
                 ccs_at[0] = now
             time.sleep(min(0.005, max(0.0, t_end - now)))
 
-    def play(notes, vel, hold, pedal=False, bypass=False, release=True):
+    def play(notes, vel, hold, pedal=False, bypass=False, release=True, types=()):
         """returns the longest block of the attack (first 0.3 s) and of the rest: the held part, the release (0.4 s
         after the note-offs) and, with the pedal, the pedal's release (0.4 s after letting it go). bypass: the FX
         bypass switched on and off during the chord (the crossfade's blocks); release=False: no release queries (the
-        repeated chords, the calibration: their timing as before)"""
+        repeated chords, the calibration: their timing as before); types: the reverb TYPE (CC 95) set to each in turn
+        while the chord rings, the chord struck again in the same breath (a TYPE change's fade block under the
+        strikes), 0.25 s apart, before the held part's query"""
         if pedal:
             cc(64, 127)
         for n in notes:
@@ -411,7 +423,12 @@ def run_cpu(argv):  # noqa: C901
             cc(111, 127)
             wait(0.1)
             cc(111, 0)
-        wait(max(0.0, hold - 0.3 - (0.1 if bypass else 0.0)))
+        for v in types:
+            cc(95, v)
+            for n in notes:
+                out.send(mido.Message("note_on", note=n, velocity=vel))
+            wait(0.25)
+        wait(max(0.0, hold - 0.3 - (0.1 if bypass else 0.0) - 0.25 * len(types)))
         held = query()[0]
         for n in notes:
             out.send(mido.Message("note_off", note=n))
@@ -479,7 +496,7 @@ def run_cpu(argv):  # noqa: C901
 
     scen = sys.argv[sys.argv.index("--scenario") + 1].split(",") if "--scenario" in sys.argv else None
 
-    def run(name, fx, notes=(), vel=100, hold=1.5, pedal=False, rep=3, bypass=False):
+    def run(name, fx, notes=(), vel=100, hold=1.5, pedal=False, rep=3, bypass=False, types=()):
         if scen and not any(k in name for k in scen):
             return                                    # (--scenario: only the scenarios whose name has one of these)
         att = held = 0
@@ -489,7 +506,7 @@ def run_cpu(argv):  # noqa: C901
             reset(**fx)
             query()                                   # clears the max
             if notes:
-                a, h = play(notes, vel, hold, pedal, bypass)
+                a, h = play(notes, vel, hold, pedal, bypass, types=types)
             else:
                 wait(hold)
                 a = h = query()[0]
@@ -580,6 +597,13 @@ def run_cpu(argv):  # noqa: C901
         run(N + " bass notes v127 at once, no effects", {}, bass8, 127)
         run(N + "-note chord v100, every effect on", heavy, chord8)
     run(N + " bass notes v127 + pedal, every effect on", heavy, bass8, 127, pedal=True)
+    midtop = mid_top(nv)                              # (2026-11-02: the monkey's peaks over this one's: more live
+                                                      # modes in the middle, and the top keys)
+    run(f"{N} mid + top keys v127 + pedal, every effect on", heavy, midtop, 127, pedal=True)
+    # (a TYPE change while PLATE / INFINITE ring made reverb-stage peaks in the monkey: the fade block)
+    # PLATE -> INFINITE -> PLATE -> HALL, then INFINITE -> HALL, the chord struck again with each change
+    run(f"TYPE change from ringing PLATE/INFINITE at {N} voices", dict(heavy, RV_TYPE=64), midtop, 127, pedal=True,
+        hold=2.0, types=(100, 64, 40, 100, 40))
     slow = dict(heavy, DRV_TONE=110, DRV_MIX=64, RV_PREDLY=127, LEVEL=20)
     steal = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48]       # 12 notes on the engine's voices: steals
     run("slow paths: + drive tone / mix, pre-delay, LEVEL, bypass xfade, 12 notes + pedal", slow, steal, 127,
