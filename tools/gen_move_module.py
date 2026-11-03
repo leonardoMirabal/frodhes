@@ -108,8 +108,7 @@ HELP_MAX = 20                      # a help line: about 20 characters on the 128
 # the FM-1's pages that have no meaning on the Move (its knobs are direct, it has no screen or key lights of ours)
 FM1_ONLY_PAGES = {"PERFORM": "the Move's knobs are direct: no assignable performance knobs",
                   "ASSIGN": "the Move's knobs are direct: no assignable performance knobs",
-                  "DISPLAY": "the FM-1's screen and key lights",
-                  "EQ": "not on the Move yet (0.9.9: the Move session adds its page; flat there, bit for bit as before)"}
+                  "DISPLAY": "the FM-1's screen and key lights"}
 # the FM-1's settings cards that are hardware only (ui.c S_*), with the reason
 FM1_ONLY_SLOTS = {"S_KVEL": "the FM-1's own keys' velocity", "S_TOUCH": "the FM-1's own keys' touch",
                   "S_USBVOL": "the FM-1's USB audio", "S_TRS": "the FM-1's TRS MIDI jack",
@@ -194,6 +193,8 @@ MOVE_LEVELS = [
     ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_fx", "s_screen", HOLE, HOLE, "p_delay"]),
     ("voice", "VOICE", ["VOICE"], []),
     ("comp", "COMPRESSOR", ["COMPRESSOR"], ["p_cmp_sw", "p_cmp_rel", "r_cmp_gr", "r_cmp_pk"]),
+    # the EQ before the drive, as on the FM-1 (COMPRESSOR, EQ, DRIVE): its own level of four, the FM-1's page
+    ("eq", "EQ", ["EQ"], []),
     ("drv_flt", "DRIVE/FILTER", ["DRIVE", "FILTER"], []),
     ("trm_pha", "TREM/PHASER", ["TREM/WAH", "PHASER"], []),
     # (the user, 2026-10-30: DELAY has its own page, as on the FM-1; CHORUS/DELAY was one level of eight before)
@@ -217,15 +218,15 @@ MOTOR_EXTRA = ["p_mot_sync"]       # VIBES' MOTOR level: the motor's sync (CC 51
 VIA = {"P_TW_SW": ("s_twkind", "TREM/WAH's EFFECT card: OFF / PAN / TREM / WAH sets the switch and the mode"),
        "P_TW_MODE": ("s_twkind", "TREM/WAH's EFFECT card: OFF / PAN / TREM / WAH sets the switch and the mode")}
 # parameters left MIDI-only on the Move, with the reason (none today: tests/py/test_move_module.py lists the rule)
-MIDI_ONLY = {"P_CP_FDBK": "reserved: the chorus has no feedback yet (CC 24 is accepted and saved, no effect)",
-             **{p: "the EQ (0.9.9): CC 34-37 only until the Move session adds its page" for p in
-                ("P_EQ_LO", "P_EQ_MID", "P_EQ_FREQ", "P_EQ_HI")}}
+MIDI_ONLY = {"P_CP_FDBK": "reserved: the chorus has no feedback yet (CC 24 is accepted and saved, no effect)"}
 # the card's label on the FM-1 -> the Move's cell (<= LABEL_MAX characters); labels that fit are kept as they are
 SHORT = {"EFFECT": None, "TREM SYNC": "TRSYNC", "PHA SYNC": "PHSYNC", "DLY SYNC": "DLSYNC", "INVERSION": "INV",
          "VOICING": "VOICE", "OCTAVES": "OCT", "DLY TONE": "DLTONE", "CHANNEL": "CHAN", "PRE-DELAY": "PREDLY",
          "LOW CUT": "LOWCUT", "RELEASE": "REL", "MOTOR": "MOTOR",
          # (Schwung sets grid labels in a proportional font, 29 px wide: these three are cut there, HAMME DAMPE MAKEU)
-         "HAMMER": "HAMMR", "DAMPER": "DAMPR", "MAKEUP": "MKUP"}
+         "HAMMER": "HAMMR", "DAMPER": "DAMPR", "MAKEUP": "MKUP",
+         # (the EQ's MID FREQ: FREQ on its page of four, LOW MID FREQ HIGH, as the filter's FREQ; said "Mid frequency")
+         "MID FREQ": "FREQ"}
 # parameters with no FM-1 card whose params.c label is a cryptic short form: their name on the Move (the FM-1's
 # manual's name)
 PARAM_NAME = {"P_SPREAD": "SPREAD"}
@@ -566,6 +567,9 @@ def build(m):
         levels[key] = lvl
         if key != "root":
             root_links.append({"level": key, "label": title})
+    for r in crow:                                 # (each parameter key's params.c format: screen_pages' FMT)
+        if r["slot"] in m["params"]:
+            PFMT[r["key"]] = m["params"][r["slot"]]["fmt"]
     for k in HIDDEN:                               # (a C row only)
         crow.append(extra_def(k)[1])
     root = levels["root"]
@@ -710,6 +714,63 @@ def outputs():
             "screen.js": screen_js(levels), "canvas.js": canvas_js(), "ui_chain.js": ui_chain_js(levels)}, m, reach
 
 
+# The values Frodhes' screen shows as the FM-1's card does (params.c param_text), where a raw 0..127 would say
+# nothing: the EQ's gains in dB ("+3.1", "-15"; 64 is flat, "+0.0") and its MID FREQ in Hz ("551", "1.0K"). Per
+# params.c format: (FR_CONF.fmt's name, the spoken unit, the spoken unit of a value in K, the bar's centre notch).
+# The texts are the firmware's integer arithmetic, ported (tests/py/test_move_eq.py compares all 128 of each with
+# the C, tests/c/eq_text.c); the knob's wire value stays the CC value 0..127.
+FMT = {"F_EQDB": ("eqdb", "decibels", None, 64), "F_EQHZ": ("eqhz", "hertz", "kilohertz", None)}
+PFMT = {}                                          # key -> its parameter's params.c format (build fills it)
+
+
+def _cdiv(a, b):
+    """C's integer division (towards 0)"""
+    q = abs(a) // abs(b)
+    return q if (a >= 0) == (b > 0) else -q
+
+
+def _exp2_neg(x):
+    """fx.c exp2_neg: 2^-(x / 65536) in Q15"""
+    i, u, p = x >> 16, 32768 - ((x & 0xFFFF) >> 1), 2579
+    p = ((p * u) >> 15) + 7409
+    p = ((p * u) >> 15) + 22780
+    p = ((p * u) >> 15) + 32768
+    return p >> (i + 1) if i < 15 else 0
+
+
+def _fmt_db10(t10, t1):
+    """params.c fmt_db10: "+1.5", "-6.4"; from 10 dB on whole dB"""
+    a = abs(t10)
+    sign = "-" if t10 < 0 else "+"
+    return sign + (str(abs(t1)) if a >= 100 else "%d.%d" % (a // 10, a % 10))
+
+
+def fmt_text(fmt, v):
+    """params.c param_text for the formats in FMT, value v 0..127"""
+    if fmt == "F_EQDB":
+        e = v - 64 if v else -63
+        r = 31 if e >= 0 else -31
+        return _fmt_db10(_cdiv(e * 150 + r, 63), _cdiv(e * 15 + r, 63))
+    if fmt == "F_EQHZ":
+        hz = (5000 * _exp2_neg((127 - v) * 2396) + 16384) >> 15
+        c = (hz + 50) // 100
+        if hz < 1000:
+            return str(hz)
+        return "%d.%dK" % (c // 10, c % 10) if c < 100 else "%dK" % ((hz + 500) // 1000)
+    raise KeyError(fmt)
+
+
+def fmt_conf():
+    """FR_CONF.fmt: per FMT name its 128 texts and the spoken units"""
+    out = {}
+    for f, (name, unit, kunit, _) in FMT.items():
+        c = {"text": [fmt_text(f, v) for v in range(128)], "unit": unit}
+        if kunit:
+            c["kunit"] = kunit
+        out[name] = c
+    return out
+
+
 def screen_pages(levels):
     """the levels as Frodhes' own screen shows them: [{title, gate (ui_engine, -1 always shown), part (an engine's
     VOICE page 0, its next page 1, -1 not an engine page), root, knobs}], each knob {key, name, type, min, max, step,
@@ -742,6 +803,11 @@ def screen_pages(levels):
                 k["def"] = it["default"]
             if it.get("access") == "write":
                 k["write"] = True
+            pf = FMT.get(PFMT.get(key, ""))            # (a value shown as the FM-1's text: FR_CONF.fmt)
+            if pf:
+                k["fmt"] = pf[0]
+                if pf[3] is not None:
+                    k["zero"] = pf[3]
             ks.append(k)
         assert len(ks) <= 8 and ks[-1] is not None, (lk, ks)
         out.append({"title": lvl["name"], "gate": gate, "part": part, "root": lk == "root", "knobs": ks})
@@ -781,7 +847,7 @@ def canvas_js():
 
 
 def screen_js(levels):
-    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10(), rv=rv_conf())
+    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10(), rv=rv_conf(), fmt=fmt_conf())
     with open(UI_CORE) as f:
         core = f.read()
     head = ("// SPDX-License-Identifier: GPL-3.0-only\n"
@@ -813,6 +879,7 @@ SAY_NAMES = {
     "p_mot_on": "Motor", "p_mot_depth": "Depth", "p_mot_rate": "Speed", "p_mot_shape": "Shape", "p_mot_sync": "Sync",
     "p_cmp_amt": "Threshold", "p_cmp_ratio": "Ratio", "p_cmp_atk": "Attack", "p_cmp_gain": "Makeup gain",
     "p_cmp_sw": "Compressor", "p_cmp_rel": "Release",
+    "p_eq_lo": "Low", "p_eq_mid": "Mid", "p_eq_freq": "Mid frequency", "p_eq_hi": "High",
     "p_drv_sw": "Drive type", "p_drive": "Drive amount", "p_drv_tone": "Drive tone", "p_drv_mix": "Drive mix",
     "p_fl_type": "Filter type", "p_fl_freq": "Filter frequency", "p_fl_reso": "Resonance", "p_fl_lfo": "Filter LFO",
     "s_twkind": "Tremolo mode", "p_tw_depth": "Tremolo depth", "p_tw_rate": "Tremolo rate",
@@ -829,7 +896,7 @@ SAY_NAMES = {
     "m_at_cc": "Aftertouch CC", "m_at_lo": "Aftertouch low", "m_at_hi": "Aftertouch high",
     "m_pa_cc": "Poly pressure CC", "m_pa_lo": "Poly pressure low", "m_pa_hi": "Poly pressure high",
 }
-SAY_PAGES = {"DRIVE/FILTER": "Drive and filter", "TREM/PHASER": "Tremolo and phaser", "LFO/SETUP": "LFO and setup"}
+SAY_PAGES = {"EQ": "EQ", "DRIVE/FILTER": "Drive and filter", "TREM/PHASER": "Tremolo and phaser", "LFO/SETUP": "LFO and setup"}
 SAY_WORDS = {
     "ST77": "Stage 77", "SUIT": "Suitcase", "FELT": "Early felt", "DYNO": "Bell dyno", "VIBE": "Vibes",
     "MRMB": "Marimba", "INF": "Infinite", "DIG": "Digital", "ANA": "Analog", "RAND": "Random", "UP-DN": "Up down",
@@ -856,7 +923,7 @@ def say_conf(levels):
 def ui_chain_js(levels):
     """Frodhes' own screen as the whole Move UI (Schwung's own-screen path, COMPONENT_EDIT): screen.js's closure with
     move/ui/chain_adapter.js inside it, which maps the canvas overlay onto globalThis.chain_ui"""
-    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10(), rv=rv_conf(),
+    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10(), rv=rv_conf(), fmt=fmt_conf(),
                 live_ms=SCREEN["fullscreen_live_ms"], say=say_conf(levels))
     with open(UI_CORE) as f:
         core = f.read()

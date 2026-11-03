@@ -141,7 +141,8 @@ function bar(ctx, st, k, x0, y0, x1, y1) {
         ctx.fillRect(x, y0 + 1, 1, h - 2, x < x0 + fill ? 0 : 1);
     };
     if (det > 2 && w / det >= 4) for (let i = 1; i < det; i++) mark(x0 + Math.round(w * i / det));
-    if (!det && k.type !== "preset" && k.min < 0 && k.max > 0) mark(x0 + Math.round((w - 1) * (-k.min) / (k.max - k.min)));
+    const z = k.zero !== undefined ? k.zero : 0;      // (k.zero: the centre of a range that does not span 0, the EQ's 64)
+    if (!det && k.type !== "preset" && k.min < z && k.max > z) mark(x0 + Math.round((w - 1) * (z - k.min) / (k.max - k.min)));
 }
 
 // ---- the model: pages, values, the knob arithmetic
@@ -184,9 +185,15 @@ function valueText(st, k, card) {
     const w = rvWord(st, k, v, card);
     if (w) return w;
     if (k.type === "enum") return k.options[Math.max(0, Math.min(k.options.length - 1, v | 0))];
+    const f = fmtOf(k);
+    if (f) return f.text[Math.max(0, Math.min(f.text.length - 1, v | 0))];
     if (k.step && k.step < 1) return v.toFixed(1);
     return String(v);
 }
+
+// a value the FM-1's card shows in its own unit (the EQ's dB and Hz: k.fmt, FR_CONF.fmt from params.c's arithmetic,
+// a text for each of 0..127); null for a plain number
+function fmtOf(k) { return k.fmt && FR_CONF.fmt && FR_CONF.fmt[k.fmt] ? FR_CONF.fmt[k.fmt] : null; }
 
 // where the bar stands: 0..1, or null when the value is unknown
 function fraction(st, k) {
@@ -419,7 +426,17 @@ function sayValue(st, k) {
     if (st.flash && st.flash.key === k.key) return sayWord(k.options[1]);
     const v = st.vals[k.key];
     if (v === null || v === undefined) return "not read yet";
+    const f = fmtOf(k);
+    if (f) return sayFmt(f, valueText(st, k));
     return sayWord(valueText(st, k));
+}
+// a value in its unit, in words: "+3.1" -> "plus 3.1 decibels", "+0.0" -> "0 decibels", "551" -> "551 hertz",
+// "1.0K" -> "1.0 kilohertz"
+function sayFmt(f, s) {
+    let unit = f.unit;
+    if (f.kunit && /K$/.test(s)) { s = s.slice(0, -1); unit = f.kunit; }
+    if (/^[+-]/.test(s)) s = Number(s.slice(1)) === 0 ? "0" : (s[0] === "-" ? "minus " : "plus ") + s.slice(1);
+    return s + " " + unit;
 }
 // a page: its name, where it is, how many controls (Schwung's announce_page.mjs announcePage)
 function pageSay(st) {
@@ -869,4 +886,4 @@ globalThis.canvas_overlay = {
     },
 };
 // (for the host tests: the font's width and the view, not used on the device)
-globalThis.frodhes_screen = { textW, view, visiblePages, valueText, grPx, grText, pages: FR_PAGES, conf: FR_CONF };
+globalThis.frodhes_screen = { textW, view, visiblePages, valueText, sayFmt, grPx, grText, pages: FR_PAGES, conf: FR_CONF };

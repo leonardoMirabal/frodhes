@@ -312,6 +312,38 @@
     }
   },
   {
+    "key": "p_eq_lo",
+    "name": "LOW",
+    "type": "int",
+    "min": 0,
+    "max": 127,
+    "default": 64
+  },
+  {
+    "key": "p_eq_mid",
+    "name": "MID",
+    "type": "int",
+    "min": 0,
+    "max": 127,
+    "default": 64
+  },
+  {
+    "key": "p_eq_freq",
+    "name": "FREQ",
+    "type": "int",
+    "min": 0,
+    "max": 127,
+    "default": 64
+  },
+  {
+    "key": "p_eq_hi",
+    "name": "HIGH",
+    "type": "int",
+    "min": 0,
+    "max": 127,
+    "default": 64
+  },
+  {
     "key": "p_drv_sw",
     "name": "DRIVE",
     "type": "enum",

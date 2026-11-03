@@ -327,6 +327,14 @@ const toPage = (title) => { for (let i = 0; i < 20 && FR(st().page).title !== ti
 toPage("COMPRESSOR");
 h = heard(() => { midi(0x90, 1, 127); midi(0x90, 1, 0); t += 500; midi(0x90, 4, 127); midi(0x90, 4, 0); });
 check(eq(h, ["Ratio, 4 to 1", "Compressor, Off"]), "sr: RATIO and COMP in words " + JSON.stringify(h));
+// the EQ: its page after COMPRESSOR; the gains and MID FREQ said with their units, as the FM-1's card shows them
+p.external("p_eq_lo", 77); p.external("p_eq_mid", 64); p.external("p_eq_freq", 64); p.external("p_eq_hi", 0);
+ticks(12);
+h = heard(() => { midi(0xB0, 14, 1); ticks(12); });
+check(eq(h, ["EQ, 4 of " + engine0 + ", 4 controls"]), "sr: the EQ page after COMPRESSOR " + JSON.stringify(h));
+h = heard(() => { for (let k = 0; k < 4; k++) { t += 500; midi(0x90, k, 127); midi(0x90, k, 0); } });
+check(eq(h, ["Low, plus 3.1 decibels", "Mid, 0 decibels", "Mid frequency, 1.0 kilohertz", "High, minus 15 decibels"]),
+      "sr: the EQ's names and values in words " + JSON.stringify(h));
 toPage("REVERB");
 h = heard(() => { midi(0x90, 0, 127); midi(0x90, 0, 0); t += 500; midi(0x90, 2, 127); });
 check(eq(h, ["Reverb type, Infinite", "Decay, Freeze"]), "sr: the reverb's type and INFINITE's FREEZE " + JSON.stringify(h));

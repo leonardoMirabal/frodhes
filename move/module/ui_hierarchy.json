@@ -90,6 +90,10 @@
           "label": "COMPRESSOR"
         },
         {
+          "level": "eq",
+          "label": "EQ"
+        },
+        {
           "level": "drv_flt",
           "label": "DRIVE/FILTER"
         },
@@ -557,6 +561,49 @@
         "p_cmp_rel",
         "r_cmp_gr",
         "r_cmp_pk"
+      ]
+    },
+    "eq": {
+      "name": "EQ",
+      "params": [
+        {
+          "key": "p_eq_lo",
+          "name": "LOW",
+          "type": "int",
+          "min": 0,
+          "max": 127,
+          "default": 64
+        },
+        {
+          "key": "p_eq_mid",
+          "name": "MID",
+          "type": "int",
+          "min": 0,
+          "max": 127,
+          "default": 64
+        },
+        {
+          "key": "p_eq_freq",
+          "name": "FREQ",
+          "type": "int",
+          "min": 0,
+          "max": 127,
+          "default": 64
+        },
+        {
+          "key": "p_eq_hi",
+          "name": "HIGH",
+          "type": "int",
+          "min": 0,
+          "max": 127,
+          "default": 64
+        }
+      ],
+      "knobs": [
+        "p_eq_lo",
+        "p_eq_mid",
+        "p_eq_freq",
+        "p_eq_hi"
       ]
     },
     "drv_flt": {

@@ -8,7 +8,9 @@
  *   test_bridge keys DSP < LINES         "key value" lines: set, render, print "key<TAB>value<TAB>read back"
  *   test_bridge script DSP < LINES       a timed session: "render N" (N blocks of 128), "set KEY VALUE", "midi SRC ST D1
  *                                        D2" (on_midi from source SRC), "get KEY" -> "KEY<TAB>value", "rms N" (N blocks
- *                                        rendered) -> "rms<TAB>mean square (LSB^2)" (M1-13b's sustain tests)
+ *                                        rendered) -> "rms<TAB>mean square (LSB^2)" (M1-13b's sustain tests),
+ *                                        "state_dump FILE" / "state_file FILE" (the state to / from a file); TB_DIR:
+ *                                        the data folder (an older build's store.bin) instead of a fresh one
  *   test_bridge presets DSP              every preset: "preset <i> <preset> <name>"; every TYPE: "type <t> <ui_engine>"
  *   test_bridge gatep DSP [N]            Gate P (M1-11): N (10^4) random blocks of MIDI, key writes, state reads and
  *                                        loads; no syscall (seccomp) and no allocation inside any callback (unless
@@ -695,7 +697,7 @@ static int script(const char *so)
     int nall = 1;
     static host_api_v1_t hosts[8];
     load(so);
-    in = create(NULL);
+    in = create(getenv("TB_DIR"));                /* (TB_DIR: a data folder of its own, e.g. an older build's store.bin) */
     if (!in) { printf("FAIL create\n"); return 1; }
     all[0] = in;
     render(in, 400);
@@ -725,6 +727,19 @@ static int script(const char *so)
             char *m = strstr(st, ",\"map\":\"");
             if (strstr(line, "nomap") && m) { char *e = strchr(m + 8, '"'); if (e) memmove(m, e + 1, strlen(e + 1) + 1); }
             api->set_param(in, "state", st);
+        } else if (sscanf(line, "state_dump %63s", v) == 1) {   /* the state into a file / a file's state loaded */
+            FILE *f = fopen(v, "w");
+            api->get_param(in, "state", st, sizeof st);
+            if (f) { fputs(st, f); fclose(f); }
+            printf("state_dump\t%s\n", f ? "ok" : "FAIL");
+        } else if (sscanf(line, "state_file %63s", v) == 1) {
+            FILE *f = fopen(v, "r");
+            size_t n = f ? fread(st, 1, sizeof st - 1, f) : 0;
+            if (f) fclose(f);
+            st[n] = 0;
+            while (n && (st[n - 1] == '\n' || st[n - 1] == '\r')) st[--n] = 0;
+            api->set_param(in, "state", st);
+            printf("state_file\t%s\n", n ? "ok" : "FAIL");
         } else if (sscanf(line, "get %63s", k) == 1) printf("%s\t%s\n", k, get(in, k));
         else if (sscanf(line, "rms %d", &n) == 1) {
             double e = 0.0; long cnt = 0;

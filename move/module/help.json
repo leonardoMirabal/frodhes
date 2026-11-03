@@ -117,6 +117,15 @@
           ]
         },
         {
+          "title": "EQ",
+          "lines": [
+            "K1 LOW",
+            "K2 MID",
+            "K3 FREQ",
+            "K4 HIGH"
+          ]
+        },
+        {
           "title": "DRIVE/FILTER",
           "lines": [
             "K1 DRIVE",

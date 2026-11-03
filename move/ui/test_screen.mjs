@@ -110,9 +110,9 @@ test("the jog pages through the pages and stops at the ends", () => {
 
 test("the VOICE pages follow TYPE (a knob here, or elsewhere)", () => {
     const s = new Screen().open();
-    assert.equal(s.api.visiblePages(0).length, 12);                  // (CHORUS and DELAY apart, ARPEGGIO: 2026-10-30)
-    assert.equal(s.api.visiblePages(1).length, 13);
-    assert.equal(s.api.visiblePages(2).length, 12);
+    assert.equal(s.api.visiblePages(0).length, 13);                  // (CHORUS and DELAY apart, ARPEGGIO: 2026-10-30;
+    assert.equal(s.api.visiblePages(1).length, 14);                  //  the EQ: 0.9.9)
+    assert.equal(s.api.visiblePages(2).length, 13);
     for (let i = 0; i < 4; i++) { s.knob(0, 1); s.wait(200); }        // TYPE ST77 -> VIBE
     s.live();
     assert.equal(s.st().engine, 1);
@@ -126,7 +126,7 @@ test("the page list: a click opens it, the jog picks, a click opens the page, Ba
     const s = new Screen().open();
     s.click();
     assert.equal(s.api.view(s.ctx(true), s.st()), "list");
-    s.jog(1); s.jog(1); s.jog(1);
+    s.jog(1); s.jog(1); s.jog(1); s.jog(1);                          // (FRODHES, PIANO VOICE, COMPRESSOR, EQ, DRIVE/FILTER)
     s.knob(0, 1);
     assert.equal(s.plugin.writes.length, 0, "the knobs do nothing in the list");
     s.click();
@@ -236,7 +236,7 @@ test("every page, label and option fits: card labels 4 characters (a longer labe
     const w = s.api.textW;
     for (const p of s.api.pages) {
         assert.ok(p.knobs.length >= 1 && p.knobs.length <= 8, p.title);
-        assert.ok(w(p.title + " S 12/12") <= 126, p.title);
+        assert.ok(w(p.title + " S 14/14") <= 126, p.title);
         p.knobs.forEach((k) => {
             if (!k) return;                                            // (a knob with no control)
             if (k.type !== "preset") assert.ok(w(k.short || k.name) <= 31, `${p.title} ${k.short || k.name}`);
@@ -441,6 +441,41 @@ const barRow = (s, i) => {
     for (let x = x0 + 1; x < x0 + 28; x++) r += fb.px[y * 128 + x] ? "#" : ".";
     return r;
 };
+
+test("EQ: after COMPRESSOR, before DRIVE/FILTER; LOW MID FREQ HIGH in dB and Hz as the FM-1's card; flat at 64, its centre marked", () => {
+    const s = new Screen().open();
+    const t = s.api.pages.map((p) => p.title);
+    assert.equal(t.indexOf("EQ"), t.indexOf("COMPRESSOR") + 1);
+    assert.equal(t.indexOf("DRIVE/FILTER"), t.indexOf("EQ") + 1);
+    goto(s, "EQ");
+    const p = s.api.pages[s.st().page];
+    assert.equal(JSON.stringify(p.knobs.map((k) => k.key)), JSON.stringify(["p_eq_lo", "p_eq_mid", "p_eq_freq", "p_eq_hi"]));
+    assert.equal(p.knobs.map((k) => k.short || k.name).join(" "), "LOW MID FREQ HIGH");
+    for (const k of p.knobs) assert.ok(k.min === 0 && k.max === 127 && k.def === 64, k.key);   // (the CC value, flat)
+    const st = s.st(), vt = (k, v) => { st.vals[k.key] = v; return s.api.valueText(st, k, true); };
+    const [lo, , fq] = p.knobs;
+    // the FM-1's texts (params.c F_EQDB / F_EQHZ; all 128 against the C: tests/py/test_move_eq.py)
+    assert.equal(vt(lo, 64), "+0.0"); assert.equal(vt(lo, 0), "-15"); assert.equal(vt(lo, 1), "-15");
+    assert.equal(vt(lo, 127), "+15"); assert.equal(vt(lo, 77), "+3.1"); assert.equal(vt(lo, 47), "-4.0");
+    assert.equal(vt(fq, 0), "200"); assert.equal(vt(fq, 127), "5.0K"); assert.equal(vt(fq, 64), "1.0K");
+    for (const k of p.knobs) for (let v = 0; v < 128; v++) assert.ok(s.api.textW(vt(k, v)) <= 31, `${k.key} ${v}`);
+    // spoken in words, with the unit
+    assert.equal(s.api.sayFmt(s.api.conf.fmt.eqdb, "+3.1"), "plus 3.1 decibels");
+    assert.equal(s.api.sayFmt(s.api.conf.fmt.eqdb, "-15"), "minus 15 decibels");
+    assert.equal(s.api.sayFmt(s.api.conf.fmt.eqdb, "+0.0"), "0 decibels");
+    assert.equal(s.api.sayFmt(s.api.conf.fmt.eqhz, "551"), "551 hertz");
+    assert.equal(s.api.sayFmt(s.api.conf.fmt.eqhz, "1.0K"), "1.0 kilohertz");
+    // the gains' bar: the centre (64, flat) marked as a bipolar number's 0; MID FREQ has none
+    s.plugin.external("p_eq_lo", 90); s.live();
+    const f = Math.round(28 * 90 / 127) + 1, c = Math.round(28 * 64 / 127);
+    let wb = "";
+    for (let x = 1; x < 28; x++) wb += (x < f) !== (x === c) ? "#" : ".";
+    assert.equal(barRow(s, 0), wb, "LOW at 90, flat marked");
+    s.plugin.external("p_eq_freq", 90); s.live();
+    let wf = "";
+    for (let x = 1; x < 28; x++) wf += x < f ? "#" : ".";
+    assert.equal(barRow(s, 2), wf, "FREQ at 90, no centre");
+});
 
 test("a switch (an enum of two options) is an empty outline at its first option and full at its second", () => {
     const sw = [];
