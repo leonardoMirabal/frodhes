@@ -111,6 +111,9 @@ CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_TONE=82, DRV_MIX=83, RV_
 TARGET_US = 4500
 
 BLOCK_US = 5805
+PC_BURST = [(47, 1), (23, 10), (26, 10), (29, 10), (42, 11), (45, 11), (127, 93), (86, 91), (123, 93), (59, 107),
+            (120, 93), (28, 88), (40, 11), (34, 49), (37, 11), (41, 49), (21, 83), (68, 83), (117, 93), (60, 107),
+            (33, 1), (36, 1), (27, 83), (19, 85), (22, 88), (25, 88)]   # monkey seed 3037's step (the --worst PC row)
 TOP2 = [105, 108]                                 # the two top keys (firmware with the 2x pickup: its keys, v >= 96)
 
 
@@ -406,13 +409,15 @@ def run_cpu(argv):  # noqa: C901
                 ccs_at[0] = now
             time.sleep(min(0.005, max(0.0, t_end - now)))
 
-    def play(notes, vel, hold, pedal=False, bypass=False, release=True, types=()):
+    def play(notes, vel, hold, pedal=False, bypass=False, release=True, types=(), pc=None):
         """returns the longest block of the attack (first 0.3 s) and of the rest: the held part, the release (0.4 s
         after the note-offs) and, with the pedal, the pedal's release (0.4 s after letting it go). bypass: the FX
         bypass switched on and off during the chord (the crossfade's blocks); release=False: no release queries (the
         repeated chords, the calibration: their timing as before); types: the reverb TYPE (CC 95) set to each in turn
         while the chord rings, the chord struck again in the same breath (a TYPE change's fade block under the
-        strikes), 0.25 s apart, before the held part's query"""
+        strikes), 0.25 s apart, before the held part's query; pc: (program, burst): that Program Change while the
+        chord rings, then 26 ms later the burst's (note, velocity) all at once (monkey seed 3037: a preset of
+        another engine, then a sequencer step of more notes than voices), 0.25 s before the held part's query"""
         if pedal:
             cc(64, 127)
         for n in notes:
@@ -428,9 +433,15 @@ def run_cpu(argv):  # noqa: C901
             for n in notes:
                 out.send(mido.Message("note_on", note=n, velocity=vel))
             wait(0.25)
-        wait(max(0.0, hold - 0.3 - (0.1 if bypass else 0.0) - 0.25 * len(types)))
+        if pc is not None:
+            out.send(mido.Message("program_change", program=pc[0]))
+            time.sleep(0.026)
+            for n, v in pc[1]:
+                out.send(mido.Message("note_on", note=n, velocity=v))
+            wait(0.25)
+        wait(max(0.0, hold - 0.3 - (0.1 if bypass else 0.0) - 0.25 * len(types) - (0.276 if pc else 0.0)))
         held = query()[0]
-        for n in notes:
+        for n in list(notes) + ([n for n, _ in pc[1]] if pc else []):
             out.send(mido.Message("note_off", note=n))
         if bend_on:
             bend(8192)
@@ -496,7 +507,7 @@ def run_cpu(argv):  # noqa: C901
 
     scen = sys.argv[sys.argv.index("--scenario") + 1].split(",") if "--scenario" in sys.argv else None
 
-    def run(name, fx, notes=(), vel=100, hold=1.5, pedal=False, rep=3, bypass=False, types=()):
+    def run(name, fx, notes=(), vel=100, hold=1.5, pedal=False, rep=3, bypass=False, types=(), pc=None):
         if scen and not any(k in name for k in scen):
             return                                    # (--scenario: only the scenarios whose name has one of these)
         att = held = 0
@@ -506,7 +517,7 @@ def run_cpu(argv):  # noqa: C901
             reset(**fx)
             query()                                   # clears the max
             if notes:
-                a, h = play(notes, vel, hold, pedal, bypass, types=types)
+                a, h = play(notes, vel, hold, pedal, bypass, types=types, pc=pc)
             else:
                 wait(hold)
                 a = h = query()[0]
@@ -604,6 +615,11 @@ def run_cpu(argv):  # noqa: C901
     # PLATE -> INFINITE -> PLATE -> HALL, then INFINITE -> HALL, the chord struck again with each change
     run(f"TYPE change from ringing PLATE/INFINITE at {N} voices", dict(heavy, RV_TYPE=64), midtop, 127, pedal=True,
         hold=2.0, types=(100, 64, 40, 100, 40))
+    # (0.9.8, monkey seed 3037: 4460-4692 us whole ISR) a Program Change to another engine's preset while the chord
+    # rings (the TYPE change frees every voice of the new engine), then a step of 26 notes at once: bars.c starts at
+    # most BAR_NV notes a block (tests/py/test_bar_starts.py). Rhodes / MARIMBA -> F14 VIBES ECHO, VIBES -> F16 MARIMBA
+    run(f"program change to {'F16 MARIMBA' if vibes and not marimba else 'F14 VIBES'} at {N} voices + 26-note burst",
+        heavy, midtop, 127, pedal=True, hold=2.0, pc=(15 if vibes and not marimba else 13, PC_BURST))
     slow = dict(heavy, DRV_TONE=110, DRV_MIX=64, RV_PREDLY=127, LEVEL=20)
     steal = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48]       # 12 notes on the engine's voices: steals
     run("slow paths: + drive tone / mix, pre-delay, LEVEL, bypass xfade, 12 notes + pedal", slow, steal, 127,

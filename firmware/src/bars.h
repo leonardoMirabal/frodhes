@@ -140,11 +140,14 @@ static volatile uint32_t bar_active_bits, bar_held_bits, bar_quiet_blocks;
 static volatile uint8_t bar_notes[BAR_NV];
 static volatile uint32_t bar_shed_count;
 static uint32_t bar_plan_us;                        /* the cost model's time for this block (bar_budget) */
+static uint8_t bar_starts;                          /* ISR: the notes bar_strike started this block (a free voice, a
+                                                     * re-strike, a steal's waiting note); BAR_NV at most (bars.c) */
 static volatile uint32_t bar_prof_cap = 0xFFFFu, bar_prof_used;   /* since the last profiler query (CC 116): the lowest
                                                      * cap and the most live upper modes, in modes (x 8 = units) */
 #ifdef DINGHY_HOST
 static uint64_t bar_h_sat, bar_h_ms, bar_h_mul;     /* host counters: sat28 hits, mode-samples, int64 multiplies */
 static uint32_t bar_h_blk_ms, bar_h_blk_mul, bar_h_blk_ns;   /* this block's; ns: the cost model's FM-1 time */
+static uint32_t bar_h_max_starts;                   /* the most note starts in one block (tests/py/test_bar_starts.py) */
 static int bar_h_nobudget, bar_h_nosleep;           /* host tests (S12 transparency): FRODHES_NOBUDGET / NOSLEEP */
 static int bar_h_fxus = -1;                         /* FRODHES_FXUS: the effects' cost the budget plans with (us; RAW
                                                      * renders that budget as if the effects ran) */

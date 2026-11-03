@@ -329,11 +329,23 @@ static uint32_t bar_level_sum(const bar_voice_t *v)
     return sum;
 }
 
-static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already waits for a note; try next block */
+/* At most BAR_NV note starts a block (0.9.8, monkey seed 3037 on the FM-1: 4460-4692 us): a burst of more note-ons than
+ * voices in one block (a sequencer step, a DAW's chord) on idle voices struck every free voice (bar_init: 16
+ * coefficient sets, the pulse) and then stole those same voices for the next notes, whose bar_init ran again at the
+ * block's end: twice BAR_NV starts in one block. With voices ringing the steals alone fill it (every voice waits:
+ * BAR_NV starts, as before). The note past the limit waits for the next block, in order, as the waiting notes always
+ * did; a block of BAR_NV starts or fewer is the same as before, sample for sample */
+static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already waits for a note, or this block started
+                                                     * BAR_NV notes; try next block */
 {
     uint32_t i, pick = BAR_NV, best = 0xFFFFFFFFu;
+    if (bar_starts >= BAR_NV) return 0;
     for (i = 0; i < BAR_NV && bv[i].pend; i++) ;
     if (i == BAR_NV) return 0;                      /* (more than BAR_NV steals in one block: BUGHUNT #21) */
+    bar_starts++;
+#ifdef DINGHY_HOST
+    if (bar_starts > bar_h_max_starts) bar_h_max_starts = bar_starts;
+#endif
     for (i = 0; i < BAR_NV; i++)                    /* the same note still ringing: strike it again, superposed */
         if (bv[i].alive && !bv[i].pend && bv[i].note == note && bv[i].fade == 32768) {
             bar_voice_t *v = &bv[i];
@@ -469,6 +481,7 @@ static void bar_kill_all(void)
     for (i = 0; i < BAR_NV; i++) { bv[i].alive = 0; bv[i].pend = 0; }
     for (sb = 0; sb < 2u; sb++) bar_bd_m[sb][0] = bar_bd_m[sb][1] = bar_bd_o[sb][0] = bar_bd_o[sb][1] = bar_bd_e[sb] = 0;
     bar_active_bits = bar_held_bits = 0;
+    bar_starts = 0;
     bar_nz_e = 0;
     bar_nz_s[0] = bar_nz_s[1] = bar_nz_s[2] = bar_nz_s[3] = 0;
 }
@@ -1196,6 +1209,7 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
         bar_quiet_blocks = 0;
     bar_held_bits = held;
     bar_active_bits = act;
+    bar_starts = 0;                                 /* (the next block's strikes count anew) */
 #ifdef DINGHY_HOST
     bar_h_ms += bar_h_blk_ms; bar_h_mul += bar_h_blk_mul;
 #endif

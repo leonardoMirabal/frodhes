@@ -256,6 +256,7 @@ static void eng_host_report(void)                /* tests/host.c, at the end of 
            eng_h_max_nv[ENG_BARS], (unsigned)BAR_NV);               /* tools/hil_crackle.py: every voice taken */
     printf("ev_drop %u\n", (unsigned)(eq_drop + ev_drop));
     printf("rhodes steals %u\n", (unsigned)rh_h_steals);          /* tools/engine_ab.py */
+    printf("bar starts max per block %u\n", (unsigned)bar_h_max_starts);   /* tests/py/test_bar_starts.py */
     printf("type %u\n", eng_cur == ENG_BARS ? ENG_RH_NTYPE + bar_sub : (unsigned)rh_type);   /* the TYPE last rendered (C11) */
     if (eng_h_log) fclose(eng_h_log);
     if (bar_h_pred) fclose(bar_h_pred);

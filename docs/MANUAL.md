@@ -951,7 +951,9 @@ the latch stays on until you tap REC again.
 **Polyphony: 10 voices.** Up to 10 notes sound at the same time on every instrument, counting
 notes still ringing under the sustain and the notes that chord mode, the arpeggiator and the sequencer play. Striking
 a note that is still sounding reuses its voice, so repeated notes do not use up voices. One note more takes over the
-quietest released note first, or else the oldest held one, with a short fade (1.5 ms) so there is no click. The
+quietest released note first, or else the oldest held one, with a short fade (1.5 ms) so there is no click. On VIBES
+and MARIMBA, more notes than voices at the same instant (a computer's chord, a sequencer step) start 10 at a time, one
+audio block (5.8 ms) apart, in order. The
 audio also has a safety guard: if it ever ran late, the quietest released note would be faded out rather than
 letting the sound break up. In testing the worst case (every voice on low notes at full velocity with the pedal and
 every effect on, the reverb on INFINITE, the USB audio at 48 kHz) takes the whole audio interrupt about 3.8 ms on the
