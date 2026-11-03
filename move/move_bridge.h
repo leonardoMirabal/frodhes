@@ -622,7 +622,7 @@ static int mp_get(char *buf, int n)
  * dsp.so file in the module folder as the worker found it when this instance started (zlib.crc32 of the local
  * build compares: the file this code was loaded from, dladdr; under the loader this instance's copy of engine.so); written to this instance's
  * folder (<data dir>/inst/<k>/boot.txt under the loader) and answered by get dev_build */
-#define MB_FEATURES "bridge=2 dev_play=1"
+#define MB_FEATURES "bridge=2 dev_play=1 dev_fault=1"
 static char mb_build[160];
 static uint32_t mb_starts;
 static void mb_note_build(void)
@@ -1288,6 +1288,47 @@ static inline int16_t mb_trimmed(int16_t x)
                                                          * and 1 stayed 1, an asymmetry in the last bits of a tail */
     return (int16_t)(y > 32767 ? 32767 : y < -32767 ? -32767 : y);
 }
+/* dev_fault (a dev / test key, no page; tools/move_jack.py's proof): a real fault in what Schwung gets, after the
+ * trim, so it reaches Main Out, USB-C and the jack as a glitch of the device's would (never the tap: the app's own
+ * output). "click N EVERY_MS LSB": N one-sample impulses of +LSB on both channels at frame MB_FLT_AT of a callback,
+ * one every EVERY_MS of rendered audio from the set; "zero N EVERY_MS FRAMES": N dropouts of FRAMES (<= the callback)
+ * from MB_FLT_AT; "off" (or anything else) disarms. Unarmed (the default) the output is untouched. dev_fault reads
+ * "kind=K left=N fired=M" */
+#define MB_FLT_AT 37u
+static struct { _Atomic uint32_t left; uint32_t kind, every, arg, acc, fired; } mb_flt;
+static void mb_fault_set(const char *val)
+{
+    char k[8] = { 0 };
+    unsigned n = 0, ms = 0, arg = 0;
+    atomic_store_explicit(&mb_flt.left, 0u, memory_order_release);
+    if (sscanf(val, "%7s %u %u %u", k, &n, &ms, &arg) < 3 || !n) return;
+    if (!strcmp(k, "click")) mb_flt.kind = 1u;
+    else if (!strcmp(k, "zero")) mb_flt.kind = 2u;
+    else return;
+    mb_flt.every = (uint32_t)((uint64_t)ms * 44100u / 1000u);
+    mb_flt.arg = arg ? arg : (mb_flt.kind == 1u ? 1000u : 88u);
+    mb_flt.acc = 0;
+    atomic_store_explicit(&mb_flt.left, n, memory_order_release);
+}
+static void mb_fault(int16_t *out, uint32_t n)
+{
+    uint32_t i, e;
+    if (!n || !atomic_load_explicit(&mb_flt.left, memory_order_acquire)) return;
+    mb_flt.acc += n;
+    if (mb_flt.acc < mb_flt.every) return;
+    mb_flt.acc = 0;
+    i = MB_FLT_AT < n ? MB_FLT_AT : 0u;
+    if (mb_flt.kind == 1u) {
+        int32_t a = (int32_t)(mb_flt.arg > 32767u ? 32767u : mb_flt.arg), y;
+        y = out[2u * i] + a; out[2u * i] = (int16_t)(y > 32767 ? 32767 : y);
+        y = out[2u * i + 1u] + a; out[2u * i + 1u] = (int16_t)(y > 32767 ? 32767 : y);
+    } else {
+        e = i + mb_flt.arg < n ? i + mb_flt.arg : n;
+        for (; i < e; i++) out[2u * i] = out[2u * i + 1u] = 0;
+    }
+    mb_flt.fired++;
+    atomic_fetch_sub_explicit(&mb_flt.left, 1u, memory_order_acq_rel);
+}
 static void mb_render_in(int16_t *out, int frames)
 {
     uint32_t i, n = frames < 0 ? 0u : (uint32_t)frames;
@@ -1299,6 +1340,7 @@ static void mb_render_in(int16_t *out, int frames)
         uint32_t r = (mb.fr + i) & (MB_FIFO - 1u);
         out[2u * i] = mb_trimmed(mb.fifo[2u * r]); out[2u * i + 1u] = mb_trimmed(mb.fifo[2u * r + 1u]);
     }
+    mb_fault(out, n);
     for (; i < (uint32_t)frames; i++) out[2u * i] = out[2u * i + 1u] = 0;
     mb.fr += n;
     mb.blocks++;
@@ -1461,6 +1503,9 @@ static int mb_get(const char *key, char *buf, int n)
 #endif
     if (!strcmp(key, "dev_cpu")) return snprintf(buf, (size_t)n, "callbacks=%u max_us=%u", atomic_load(&mb.cpu_n), mb.cpu_max);
     if (!strcmp(key, "dev_trim")) return snprintf(buf, (size_t)n, "%u", (unsigned)mb_trim);
+    if (!strcmp(key, "dev_fault")) return snprintf(buf, (size_t)n, "kind=%s left=%u fired=%u",
+                                                   mb_flt.kind == 1u ? "click" : mb_flt.kind == 2u ? "zero" : "off",
+                                                   atomic_load(&mb_flt.left), mb_flt.fired);
     /* development reads (tests, the device session) */
     if (!strcmp(key, "dev_stats")) return mb_stats(buf, n);
     if (!strcmp(key, "dev_rx") || !strcmp(key, "dev_fxlog")) {   /* oldest first: "n=<total>;ms st d1 d2 src;..." */
@@ -1509,6 +1554,7 @@ static void mb_set(const char *key, const char *val)
                                                           * 1 the HQ Rhodes (the load's), 0 Classic until the next load */
 #endif
     if (!strcmp(key, "dev_trim")) { mb_trim = atoi(val) ? MB_TRIM_Q12 : 4096; return; }   /* dev / test only: 0 unity */
+    if (!strcmp(key, "dev_fault")) { mb_fault_set(val); return; }   /* dev / test only: a real glitch (mb_fault) */
     if (!strcmp(key, "dev_midi")) {                       /* "T ST D1 D2": a message due at host ms T (the harness) */
         unsigned t, st, d1, d2;
         if (sscanf(val, "%u %i %i %i", &t, &st, &d1, &d2) == 4 && st >= 0x80u && st <= 0xFFu)

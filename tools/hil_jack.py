@@ -36,10 +36,11 @@ FS = 48000
 
 
 class Jack:
-    def __init__(self, devname, ch):
+    def __init__(self, devname, ch, rig=None):
+        """rig: the device's own rig (tools/move_jack.py: the Move's move_hil.UsbRig), else the FM-1's (hil_scan.Rig)"""
         import sounddevice as sd
         self.sd = sd
-        self.r = hs.Rig()
+        self.r = hs.Rig() if rig is None else rig
         self.jdev = [i for i, d in enumerate(sd.query_devices()) if d["name"] == devname][0]
         self.jch = ch - 1
         self.jn = sd.query_devices(self.jdev)["max_input_channels"]

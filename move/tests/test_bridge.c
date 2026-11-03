@@ -409,6 +409,19 @@ static int api_tests(const char *so)
     CHECK(!strcmp(get(in, "dev_trim"), "4096"), "dev_trim 0: unity (%s)", gbuf);
     api->set_param(in, "dev_trim", "1");
     CHECK(!strcmp(get(in, "dev_trim"), "5279"), "dev_trim 1: the trim again (%s)", gbuf);
+    {   /* dev_fault (tools/move_jack.py's proof): a real glitch after the trim, counted; off by default */
+        unsigned k, z = 1;
+        CHECK(!strcmp(get(in, "dev_fault"), "kind=off left=0 fired=0"), "dev_fault at load: off (%s)", gbuf);
+        api->set_param(in, "dev_fault", "zero 1 0 20"); render(in, 1);
+        for (k = 37; k < 57; k++) z &= blk[2 * k] == 0 && blk[2 * k + 1] == 0;
+        CHECK(z, "dev_fault zero: frames 37..56 of the next callback exact zero");
+        CHECK(!strcmp(get(in, "dev_fault"), "kind=zero left=0 fired=1"), "dev_fault zero: fired once (%s)", gbuf);
+        api->set_param(in, "dev_fault", "click 3 10 3000"); render(in, 40);
+        CHECK(!strcmp(get(in, "dev_fault"), "kind=click left=0 fired=4"), "dev_fault click: 3 more, one per 10 ms (%s)",
+              gbuf);
+        api->set_param(in, "dev_fault", "click 5 100 3000"); api->set_param(in, "dev_fault", "off"); render(in, 400);
+        CHECK(strstr(get(in, "dev_fault"), "left=0 fired=4") != NULL, "dev_fault off: disarmed (%s)", gbuf);
+    }
     {   /* the arpeggiator's cards are keys (2026-10-30): MODE, RATE, OCT, GATE through the FM-1's own steps */
         static const char *ak[][2] = { { "s_arpmode", "2" }, { "s_arprate", "5" }, { "s_arpoct", "3" }, { "s_arpgate", "90" },
                                        { "s_arpgate", "10" }, { "s_arpgate", "100" }, { "s_arpmode", "0" } };

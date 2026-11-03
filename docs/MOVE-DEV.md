@@ -192,6 +192,18 @@ names the Move (default `ableton@move.local`).
   the run. `move_ws.py` connects to the Move's IPv4 address first (and then to the one that answered last time):
   `move.local` also resolves to an IPv6 link-local address, and a connect to it that hangs used up the whole open
   timeout, so the VIBES `usb-host` of 2026-10-28 timed out. It tries the open 3 times.
+- `tools/move_jack.py` is the Move's `hil_jack.py`: while MIDI plays Frodhes over the Standalone port, it records
+  the Move's headphone / line jack on the M6's input 5 together with the USB-C audio. Per engine: the jack's floor
+  and hiss against USB, a loud chord's peak and RMS on both, `usb-stress`'s worst takes judged on the jack
+  (hil_crackle's detectors, plus bursts over 12 kHz: a one-sample click of the Move's reaches the jack
+  band-limited, between the M6's samples), and the jack against USB aligned by cross-correlation (the level
+  difference, the residual after the analog path's own response, per octave, and any click in the residual that
+  USB does not have). Before any verdict it proves its jack detector on the rig: a clean take, then a take with
+  six real clicks put into the plugin's output by the dev key `dev_fault` (`click N EVERY_MS LSB`, `zero N
+  EVERY_MS FRAMES` or `off`, over Schwung's WebSocket; no page has it, off at load). The detector must stay
+  silent on the first and find every click on the second, or the run stops without a verdict. `--prove` runs the
+  proof only, `--dry-run` runs everything against the host build with a simulated jack (no device, no lock).
+  Results: `build/move/hil/<time>-jack/summary.md`.
 - **The preflight** (`tools/move_hil.py preflight`) runs before every command that gives a sound or level verdict:
   `usb-host`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`, `d2` (over USB-C and over the tap) and
   `usb-levels`. `--no-preflight` skips it. A failure stops the command (exit 2). It needs USB-C audio and MIDI,

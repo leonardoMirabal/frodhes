@@ -42,6 +42,7 @@ DRIVE = [
     [T("move_hil.py"), "usb-levels", "--ws", "ws://127.0.0.1:9/x"],
     [T("move_hil.py"), "install", "--go", "--host", "nobody@127.0.0.1"],
     [T("move_ws.py"), "info", "--url", "ws://127.0.0.1:9/x", "--timeout", "1"],
+    [T("move_jack.py"), "--ws", "ws://127.0.0.1:9/x", "--host", "nobody@127.0.0.1"],
 ]
 
 
@@ -76,7 +77,8 @@ def test_offline_modes_never_take_it(held, tmp_path):
     for cmd in ([T("move_install.py"), "install", "--host", "nobody@127.0.0.1"],                    # (a dry run)
                 [T("move_install.py"), "info", "--target-dir", str(tmp_path / "mods")],
                 [T("move_hil.py"), "usb-note", "--fake", "--out", str(tmp_path / "n")],
-                [T("move_hil.py"), "crackle"]):
+                [T("move_hil.py"), "crackle"],
+                [T("move_jack.py"), "--dry-run", "--prove", "--out", str(tmp_path / "j")]):
         r = subprocess.run([sys.executable] + cmd, capture_output=True, text=True, env=env, cwd=ROOT, timeout=300)
         assert "lock MOVE" not in r.stdout + r.stderr, (cmd, r.stdout[-800:] + r.stderr[-800:])
 
