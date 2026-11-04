@@ -15,6 +15,3 @@
   - **Up to four Frodhes at once**, one per track, each with its own sound. Three play without dropouts. With four,
     very heavy playing with every effect on can drop audio.
   - To play at every velocity, turn the Move's **Full Velocity** setting off. Keep Schwung's slot volume at 100 %.
-  - **Install**: you need Schwung on the Move. Install Frodhes with Schwung Manager in a web browser: **Install
-    Custom Module > From GitHub URL**, `leonardoMirabal/frodhes`. Or download `frodhes-module.tar.gz` and use **From
-    Tarball**. Details: [the Move manual](https://github.com/leonardoMirabal/frodhes/blob/main/docs/MOVE.md#install).
