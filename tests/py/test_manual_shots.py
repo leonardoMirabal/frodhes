@@ -48,12 +48,13 @@ def test_screenshots_are_what_the_code_draws(tmp_path):
 # where each picture belongs: the heading (### or ##) above its first link in docs/MANUAL.md names what it shows. A
 # page's shot sits under that page's heading (tools/manual_shots.py NAME, by file stem); the others are listed here.
 WHERE = {"voice1": "VOICE 1/2 and 2/2", "voice2": "VOICE 1/2 and 2/2", "piano": "FRODHES (the main page)",
-         "reverb-inf": "REVERB", "splash": "1. Install", "browse": "6. Presets", "save": "6. Presets",
+         "reverb-inf": "REVERB", "splash": "Your first sound", "browse": "6. Presets", "save": "6. Presets",
          "bypass": "7. Effects on and off", "piano-vibes": "VIBES: the vibraphone",
          "voice1-vibes": "VIBES: the vibraphone", "voice2-vibes": "VIBES: the vibraphone",
          "voice3-vibes": "The motor: on and off", "piano-marimba": "MARIMBA", "voice1-marimba": "MARIMBA",
          "voice2-marimba": "MARIMBA"}
-README_ONLY = {"overview", "thumbnail"}                      # the README's pictures (tools/manual_shots.py makes both)
+README_ONLY = {"overview", "thumbnail"}                      # the README's pictures (tools/manual_shots.py makes both;
+                                                             # the social preview, thumbnail, is linked from docs/BUILD.md)
 
 
 def _links(name):
@@ -73,7 +74,7 @@ def test_every_screenshot_is_linked_next_to_its_text():
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import manual_shots
     page = {v: k for k, v in manual_shots.NAME.items()}
-    man, readme = _links("docs/MANUAL.md"), _links("README.md")
+    man, readme = _links("docs/MANUAL.md"), {**_links("docs/BUILD.md"), **_links("README.md")}
     unused, misplaced = [], []
     for f in sorted(os.listdir(IMG)):
         if not f.endswith(".png"):

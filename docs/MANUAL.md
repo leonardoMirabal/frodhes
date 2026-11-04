@@ -2,24 +2,28 @@
 
 **A physically modelled electric piano, vibraphone and marimba for the M-VAVE FM-1 and the Ableton Move.**
 
-Frodhes turns the FM-1 into an electric piano. Every note is computed from the physics of a real Rhodes: the hammer
-strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the motion into sound. As on a real
-instrument, no two keys are quite the same: each one rings a little longer or shorter and a little louder or softer
-than its neighbours (every key stays exactly in tune), and a held note from E2 to C6 has the tine's slow whirl: its
-level wobbles gently, about 2 dB, once or twice a second, as the tine's two ways of swinging trade energy. Struck
-hard, the bass goes a touch sharp and settles as it rings. Two struck-bar
-instruments, a vibraphone and a marimba, are computed the same way (section 5). No recordings
-are played back. Around the piano sits a stage-keyboard effects chain: compressor, drive (five overdrive types), a resonant filter,
-tremolo or wah, phaser, chorus, delay and reverb. For playing there is a PERFORM page with four assignable knobs,
-chord mode, a pattern recorder (sequencer), an arpeggiator, scales and tap tempo, USB-MIDI in and out and TRS MIDI in.
+Frodhes is free firmware that turns the M-VAVE FM-1 into an electric piano, a vibraphone and a marimba. Every note
+is computed live from the physics of the instrument: no recordings are played back. Around the instrument is a stage
+effects chain (compressor, EQ, drive, filter, tremolo or wah, phaser, chorus, delay, reverb), and for playing there
+are chords, an arpeggiator, a pattern recorder, scales and tap tempo.
 
-Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE, the Rhodes or Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk (M-VAVE's own firmware can always be put back); see [LICENSING.md](../LICENSING.md).
+On the electric piano, the hammer strikes a tine, the tine rings against its tonebar, and a magnetic pickup turns the
+motion into sound. As on a real instrument, no two keys are quite the same: each one rings a little longer or
+shorter and a little louder or softer than its neighbours, and every key stays exactly in tune. A held note from E2
+to C6 has the tine's slow whirl: its level wobbles gently, about 2 dB, once or twice a second. Struck hard, the bass
+goes a touch sharp and settles as it rings. The vibraphone and the marimba are computed the same way (section 5).
+
+Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE, the Rhodes or Fender
+trademark owners or any instrument maker. It comes with no warranty: install it at your own risk. The original
+firmware can always be put back ([how](#going-back-to-the-original-firmware)). See [LICENSING.md](../LICENSING.md).
 
 ![The FRODHES page: TYPE (here BELL DYNO), TONE, BELL and KEY VEL](manual/img/piano.png?v=b2c98a85)
 
 ## Contents
 
-1. [Install](#1-install)
+1. [Getting started](#1-getting-started): [install](#install), [your first sound](#your-first-sound),
+   [pages and knobs](#pages-and-knobs), [presets](#presets), [saving a sound](#saving-a-sound),
+   [how do I ...](#how-do-i-), [updating](#updating), [going back to the original firmware](#going-back-to-the-original-firmware)
 2. [The idea: one page, four knobs](#2-the-idea-one-page-four-knobs)
 3. [Buttons and knobs](#3-buttons-and-knobs)
 4. [The pages](#4-the-pages)
@@ -36,46 +40,107 @@ Frodhes is an independent open-source project, not affiliated with or endorsed b
 15. [Appendix: the SMK-37 (experimental)](#15-appendix-the-smk-37-experimental)
 16. [Appendix: the Ableton Move](#16-appendix-the-ableton-move)
 
-## 1. Install
+## 1. Getting started
 
-1. Download [`frodhes.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes.fwsc), the latest release (its notes and
-   earlier versions are on the [releases page](https://github.com/leonardoMirabal/frodhes/releases/latest)).
-2. Connect the FM-1 to your computer with USB.
-3. The easiest way: open [the emulator page](https://leonardomirabal.github.io/frodhes/#install) in Chrome or Edge,
-   go to **Install on your FM-1 or SMK-37**, press **Find my FM-1 or SMK-37** (allow MIDI with SysEx when the browser
-   asks), then **Install**. The page finds the unit, fetches the latest release's package for its model itself, shows
-   its version and sha256 and checks both before it writes anything; keep the FM-1 plugged in until it says Done.
-   (An SMK-37: see [SMK37.md](SMK37.md).) Safari and Firefox cannot send SysEx: use the
-   terminal installer below instead.
-   Or install it from a terminal with the installer in this repository:
-   `python3 tools/fm1_install.py frodhes.fwsc` (it needs `pip install mido python-rtmidi`). Once Frodhes is listed
-   on [thefirmwarehub.com](https://thefirmwarehub.com), its web installer works too (Chrome or Edge). Updating an
-   FM-1 that already runs Frodhes: use the installer from this repository as it is now; an older copy (0.9.4 and
-   before) does not know the FM-1's port name ("Frodhes FM-1", "Frodhes" in 0.9.5 and 0.9.6) and says "FM-1 not
-   found" (`--port Frodhes` works there).
-4. The FM-1 restarts into Frodhes. If it does not come back by itself, switch it off and on.
+### Install
 
-While an install writes, the screen shows FRODHES, **WRITING** (do not switch off) and a bar with the percent. If an
-install was cut off (the cable pulled, the computer asleep), the FM-1 comes back to that screen at every power-on,
-showing **UPDATE MODE** (waiting for the install) or **UPDATE FAILED**: connect it and install again, from
-`fm1_install.py`, the emulator page (it finds the FM-1 in update mode and offers **Resume the install**) or the hub.
+You need the FM-1, a USB cable and a computer with Chrome or Edge.
 
-Settings, user presets and the sequencer's pattern saved by earlier versions are read as they are. From a version
-with 14 factory presets (before MARIMBA), the saved preset number is moved past the two MARIMBA presets once, so the
-FM-1 comes back on the preset it was left on. The factory presets themselves can change from one version to the next;
-a user preset you saved keeps its own sound.
+1. Connect the FM-1 to the computer with USB.
+2. Open [the emulator page](https://leonardomirabal.github.io/frodhes/#install) and go to **Install on your FM-1 or
+   SMK-37**.
+3. Press **Find my FM-1 or SMK-37**. When the browser asks, allow MIDI with SysEx.
+4. Press the install button that appears. The page fetches the latest release's package for your model, shows its
+   version and sha256, and checks both before it writes anything.
+5. Keep the FM-1 connected until the page says **Done**. The FM-1 restarts into Frodhes. If it does not, switch it
+   off and on.
+
+While it installs, the FM-1 shows **WRITING** and a bar with the percent. Do not switch it off. If an install is cut
+off (the cable pulled, the computer asleep), the FM-1 shows **UPDATE MODE** or **UPDATE FAILED** at every power-on
+until you install again: connect it and open the page, which offers **Resume the install**.
+
+Safari and Firefox cannot install, because they cannot send SysEx. Use Chrome or Edge, or the terminal installer
+(see [Updating](#updating)). An SMK-37: see [SMK37.md](SMK37.md).
+
+### Your first sound
 
 <img src="manual/img/splash.png?v=86b49529" alt="The start screen: FRODHES, ELECTRIC PIANO + VIBES + MARIMBA" width="240" align="right">
 
-Frodhes starts with its own screen: the name, its three instruments (ELECTRIC PIANO + VIBES + MARIMBA) and the version installed. It gives way to the PERFORM page after a moment,
-or as soon as you touch a button or a knob.
+Frodhes starts with its own screen: the name, its three instruments and the version installed. After a moment, or
+as soon as you touch a button or a knob, it opens the **PERFORM** page. Play the keys: the first time, you hear
+**F01 STAGE 77**, a stage electric piano.
+
+- **MASTER** sets the volume of the headphone jack and of the USB audio.
+- **REC** is the sustain pedal: hold it, or tap it to latch the sustain and tap again to release.
+- **OCT−** and **OCT+** shift the keys by an octave, up to two. Hold one and press the other for octave 0.
+- Connected to a computer, the FM-1 is also a USB audio input and a USB-MIDI keyboard.
 <br clear="right">
 
-To go back to M-VAVE's own firmware, use the hub's "Official firmware" section with the V15 file from m-vave.com.
-From 0.9.6 Frodhes keeps its settings, presets and pattern only in flash that M-VAVE's firmware (V15 and V16) does not
-use, and erases an update's temporary copy at the next start. Up to 0.9.5 it kept its presets and pattern
-(0x97000-0x9AFFF) inside the area where V15 keeps its own settings: if V15 behaves oddly after you go back from 0.9.5
-or earlier, use V15's own System > Reset Patches. (V16 rewrites that area when it is installed.)
+### Pages and knobs
+
+The screen shows one page with four cards. **K1-K4** always change the four cards you see, from top to bottom.
+
+- Turn **SELECT** to go to the next or previous page. The page name is at top left, its place in the order at top
+  right.
+- Turn a knob quickly to move in bigger steps; turn it slowly for fine steps.
+- The buttons jump to pages: **HOME** to PERFORM (press again for the FRODHES page), **EDIT** to CHORD, **ENV** to
+  PHASER, **LFO** to TREM/WAH, **SEL** to DELAY, **ARP** to ARPEGGIO, **SEQ** to SEQUENCER, **GLO** to TEMPO and
+  the setup pages. On its own page, the button switches that effect or tool on and off.
+- **ALGORITHM** changes the instrument (TYPE) from any page: four electric pianos, VIBES and MARIMBA.
+- **FX** switches all effects off and on, to compare with the dry instrument.
+
+On PERFORM the four knobs are DRIVE, FILTER, DELAY and REVERB. Turning one up switches that effect on. You can put
+other controls on these knobs on the ASSIGN page.
+
+### Presets
+
+Turn **PRESETS** to browse. **F01-F19** are the factory sounds; **U01-U16** are your own. A preset loads when you
+stop turning.
+
+Loaded one by mistake? Hold **SAVE** for a moment to go back to the sound you had. Hold it again to return.
+
+### Saving a sound
+
+Changes you make are not kept when you switch off. To keep a sound, save it to a user preset:
+
+1. Press **SAVE**.
+2. Turn **PRESETS** or **K1** to choose a slot, U01-U16.
+3. Press **SAVE** again. Press **HOME** to cancel.
+
+The bottom line shows **SAVING...** until the sound has died away, then **SAVED**. Settings such as the MIDI
+channel, the tempo and the display are kept by themselves: let the FM-1 rest silent for two seconds before you
+switch it off.
+
+### How do I ...
+
+- Play softer or harder: KEY VEL ([FRODHES page](#frodhes-the-main-page)) and TOUCH ([SETUP page](#setup)).
+- Change the instrument's character: the [VOICE pages](#voice-12-and-22), right after the FRODHES page.
+- Shape the tone: the [EQ](#eq) page. Add grit: the [DRIVE](#drive) page.
+- Sync to a computer or a drum machine: MIDI clock, [section 8](#8-tempo-and-sync).
+- Record into a computer: choose **Frodhes FM-1** as the audio input in your recording software.
+- Use a sustain pedal: send CC 64 over MIDI ([section 10](#10-sustain-and-polyphony)).
+- Get back to the dry sound: **FX** ([section 7](#7-effects-on-and-off)).
+- Fix a problem: [section 13](#13-if-something-goes-wrong).
+
+### Updating
+
+Install a new version the same way as the first one. Your settings, your user presets and the sequencer's pattern
+are kept. The factory presets can change from one version to the next; a user preset you saved keeps its own sound.
+
+From a terminal, with the installer in this repository (it needs `pip install mido python-rtmidi`):
+
+```sh
+python3 tools/fm1_install.py frodhes.fwsc
+```
+
+Download [`frodhes.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes.fwsc) first:
+that link always gives the latest release. Use the installer as it is in this repository now: an old copy may not
+find an FM-1 that runs Frodhes.
+
+### Going back to the original firmware
+
+Use the "Official firmware" section of [thefirmwarehub.com](https://thefirmwarehub.com) with the V15 file from
+m-vave.com. If the original firmware behaves oddly afterwards, use its own System > Reset Patches.
 
 ## 2. The idea: one page, four knobs
 
@@ -87,15 +152,15 @@ page's button to jump straight there. The pages, in SELECT order:
 PERFORM · FRODHES (main) · VOICE 1/2 · VOICE 2/2 · COMPRESSOR · EQ · DRIVE · FILTER · TREM/WAH · PHASER · CHORUS ·
 DELAY · REVERB · REVERB 2 · TEMPO · SCALE · CHORD · ARPEGGIO · LFO · SEQUENCER · ASSIGN · SETUP · MIDI · DISPLAY
 
-**The VOICE pages belong to the instrument.** Each TYPE brings its own controls, four to a page: the Rhodes types
-have two VOICE pages (VOICE 1/2: TONE, BARK, BELL, HAMMER; VOICE 2/2: DECAY, RELEASE, NOISE, TUNE), VIBES has three
+**The VOICE pages belong to the instrument.** Each TYPE brings its own controls, four to a page: the electric piano
+types have two VOICE pages (VOICE 1/2: TONE, BARK, BELL, HAMMER; VOICE 2/2: DECAY, RELEASE, NOISE, TUNE), VIBES has three
 (VOICE 1/3: STRIKE, MALLET, TUBE, WEIGHT; 2/3: RING, DAMPER, NOISE, TUNE; 3/3: the motor), MARIMBA two (VOICE 1/2:
 STRIKE, MALLET, TUBE, WEIGHT; 2/2: RING, MUTE, NOISE, TUNE). SELECT walks them in order; changing the TYPE changes
 the pages with it.
 
 **Reading a card.** Each card shows its knob (K1–K4, small), the control's name, and its value on the right in large
-figures, every value the same size and ending at the same place, with the unit beside it in small letters (Hz, kHz,
-ms, s, dB, c for cents, %). What is drawn behind the value tells you at a glance what kind of control it is:
+figures, every value the same size and ending at the same place. Most values have their unit beside them in small
+letters (Hz, kHz, ms, s, dB, c for cents, %); the EQ's cards show the number only. What is drawn behind the value tells you at a glance what kind of control it is:
 
 - **An amount** (DEPTH, MIX, a time, a frequency ...): the card is a fader. It fills with warm amber from the left up
   to the value, with a bright amber edge where the fill ends (the edge stops short of the letters, so it never cuts a
@@ -120,7 +185,7 @@ The numbers are rounded to what fits on the card (1.486 s shows 1.5 s, +11.8 dB 
 The top line shows the preset, the octave (O+1, O−2...), **SUS** while the sustain is held, **BYP** while the effects
 are bypassed, the tempo and, last, the battery. The battery has three segments (the last one left turns the accent colour,
 an empty outline means charge it soon); while USB powers the FM-1 it shows a bolt instead. It follows the battery
-slowly (over about ten seconds), so it does not flicker. The levels are a first estimate and may be adjusted. The bottom line explains the page's button or shows a live reading; when you change a
+slowly (over about ten seconds), so it does not flicker. The bottom line explains the page's button or shows a live reading; when you change a
 preset or switch an effect it briefly shows what happened, in large letters.
 
 ## 3. Buttons and knobs
@@ -129,7 +194,7 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | --- | --- |
 | **SELECT** (knob) | Next / previous page |
 | **K1 K2 K3 K4** | The four cards on the current page |
-| **ALGORITHM** (knob) | The TYPE (the four Rhodes, VIBES and MARIMBA), from any page (on SEQUENCER: the step cursor) |
+| **ALGORITHM** (knob) | The TYPE (the four electric pianos, VIBES and MARIMBA), from any page (on SEQUENCER: the step cursor) |
 | **PRESETS** (knob) | Browse the sounds F01–F19 and your U01–U16 (loads when you stop turning; on SEQUENCER: bar by bar) |
 | **MASTER** (knob) | Volume (it glides as you turn it, without steps) |
 | **HOME** | PERFORM page; press again for the main page (titled FRODHES), and back |
@@ -145,6 +210,12 @@ preset or switch an effect it briefly shows what happened, in large letters.
 | **REC** | Sustain pedal |
 | **SAVE** | Save the sound to a user preset; hold to undo the last preset load |
 | **OCT− / OCT+** | Octave down / up (±2); hold one and press the other: back to octave 0 |
+
+**Fast turns.** Turn K1-K4 quickly and the value moves in bigger steps, so one quick turn covers the whole range:
+2 steps a click when the clicks come less than 40 ms apart, 4 under 20 ms, 8 under 10 ms. Turn slowly for single
+steps; a turn after a rest always starts with single steps. This works on amounts (DEPTH, MIX, FREQ ...), BPM and
+TUNE. Choices, note values and short ranges (under 32 steps) always move one step a click. SELECT, ALGORITHM,
+PRESETS and MASTER do not speed up.
 
 The lights tell you what is on: LFO (tremolo / wah), ENV (phaser) and SEL (delay) light up when their effect is on
 (on ARPEGGIO, and on every page while the arpeggiator is on, SEL shows HOLD), ARP while the arpeggiator runs, EDIT while chord mode is on, SEQ while the sequencer
@@ -172,8 +243,7 @@ chain from left to right: the drive, the filter's cutoff, and the dry / wet of t
 | K4 | **REVERB** | How much reverb |
 
 The tremolo / wah, phaser and chorus have their own buttons and pages, and any of them can be put on a knob on
-**ASSIGN**. Updating from 0.9.4 or earlier: if you never changed the assignment (or it was the old default, TREM/WAH,
-PHASER, FILTER, DELAY), the knobs become the new default; if you changed it, it stays as you set it.
+**ASSIGN**.
 
 Turning an effect up from here **switches it on**, so you can go from dry to wet with one knob; its light comes on.
 Turning it back to 0 makes it dry again (the effect stays switched on; its button switches it off). **FX** still bypasses all of them at once.
@@ -193,7 +263,7 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 
 ### VOICE 1/2 and 2/2
 
-The instrument's own pages: on a Rhodes type there are two, right after the main page. On **VIBES** there are three,
+The instrument's own pages: on an electric piano type there are two, right after the main page. On **VIBES** there are three,
 with the vibraphone's controls: see [VIBES](#vibes-the-vibraphone). On **MARIMBA** there are two, with the marimba's
 controls: see [MARIMBA](#marimba).
 
@@ -249,10 +319,11 @@ EQ on the piano.
 | K3 | **MID FREQ** | Where MID acts: 200 Hz to 5.0 kHz (1.0 kHz in the middle) |
 | K4 | **HIGH** | A high shelf at 5 kHz: −15 to +15 dB |
 
-Each gain moves in steps of about 0.24 dB; the middle of each knob (+0.0) is flat, and with all three at +0.0 the EQ
-is out of the sound entirely (bit for bit what it was before the EQ existed, and no CPU used). Every knob glides, so
-turning one while you play never steps or clicks. The EQ is part of the sound and is saved in presets; presets made
-before it load with it flat. Over MIDI: CC 34 LOW, 35 MID, 36 MID FREQ, 37 HIGH (64 = +0.0 dB).
+Each gain moves in steps of about 0.24 dB. The middle of each knob (+0.0) is flat; with LOW, MID and HIGH all at
++0.0 the EQ leaves the sound untouched. The cards show the gains in dB and MID FREQ in Hz (1.0K = 1.0 kHz), without
+the unit. Every knob glides, so turning one while you play never steps or clicks. The EQ is part of the sound and is
+saved in presets; the factory presets have it flat, and so do presets saved before the EQ was there. Over MIDI: CC 34
+LOW, 35 MID, 36 MID FREQ, 37 HIGH (64 = +0.0 dB).
 
 ### DRIVE
 
@@ -268,14 +339,14 @@ live like the instruments, never sampled).
 | K1 | **EFFECT** | The drive's type, or **OFF**: **FDRV**, **KHLON**, **TSH8**, **OHCD** or **BHLUE** (below). Switching it on with AMOUNT at 0 gives it a starting amount. A new type takes over smoothly: the one playing fades out, then the new one fades in (about a tenth of a second); only one type plays at a time |
 | K2 | **AMOUNT** | How hard the piano drives the type, from clean to its fullest (what each type does on the way is below); at 0 there is no drive |
 | K3 | **TONE** | The type's own tone control (below). On FDRV the middle leaves the sound as it is; on the other four TONE is the circuit's own tone knob, so its middle is that circuit's usual voice, not always flat |
-| K4 | **MIX** | Dry / driven, the same on every type: 10.0 is all drive (as before), lower blends the clean piano back in, 0 is clean |
+| K4 | **MIX** | Dry / driven, the same on every type: 10.0 is all drive, lower blends the clean piano back in, 0 is clean |
 
 The types:
 
 | Type | The sound | AMOUNT | TONE |
 | --- | --- | --- | --- |
-| **FDRV** | The original Frodhes drive: a warm amp-like overdrive. Since 0.9.9 its clipping runs at twice the sample rate, so hard-driven high notes no longer bring folded, out-of-tune tones with them (about 28 dB less of them); the sound is otherwise the same | Low settings warm the sound a little, above the middle a single note starts to break up, the top is a full, compressed overdrive. It changes the tone, not the volume (big chords come out a little lower at the top, as an amp squashes them) | Darker (down to the highs gone) or brighter (up to +6 dB of treble); the middle (+0.0) leaves it as it is |
-| **KHLON** | A clean-blend overdrive: clean paths run beside the clipped one (soft germanium-style diodes), so the notes keep their body and the low end stays mostly clean until AMOUNT is high | Low: a clean boost, the sound a little thicker, hardly any grit; the middle: a light edge on the attacks; the top: a full overdrive, the bass breaking up too. Turning AMOUNT onto its last step (10.0), or back off it, passes briefly through the clean sound, without a click | An active treble control from about 400 Hz up: a cut at the bottom, a little lift at the middle, a strong treble boost at the top. With AMOUNT and TONE both near the top the high notes turn bright and edgy (since 0.9.9 anti-aliased: the fine fizz of folded tones it had there is about 15 dB lower) |
+| **FDRV** | The original Frodhes drive: a warm amp-like overdrive. Its clipping runs at twice the sample rate, so hard-driven high notes bring very little of the folded, out-of-tune tones a plain clipper makes | Low settings warm the sound a little, above the middle a single note starts to break up, the top is a full, compressed overdrive. It changes the tone, not the volume (big chords come out a little lower at the top, as an amp squashes them) | Darker (down to the highs gone) or brighter (up to +6 dB of treble); the middle (+0.0) leaves it as it is |
+| **KHLON** | A clean-blend overdrive: clean paths run beside the clipped one (soft germanium-style diodes), so the notes keep their body and the low end stays mostly clean until AMOUNT is high | Low: a clean boost, the sound a little thicker, hardly any grit; the middle: a light edge on the attacks; the top: a full overdrive, the bass breaking up too. Turning AMOUNT onto its last step (10.0), or back off it, passes briefly through the clean sound, without a click | An active treble control from about 400 Hz up: a cut at the bottom, a little lift at the middle, a strong treble boost at the top. With AMOUNT and TONE both near the top the high notes turn bright and edgy; its clipper is anti-aliased, so they bring very little fizz of folded tones |
 | **TSH8** | A mid-hump overdrive: the clean sound plus a clipped, mid-focused copy (soft, symmetric clipping). The bass is driven less than the mids, so chords stay clear and single notes sing. Set for a soft input, so it stays smooth | Low: a light edge in the mids; the middle: a warm crunch; the top: a singing, compressed overdrive | Dark through most of its travel; the highs open in the last quarter. It never lifts the treble above flat |
 | **OHCD** | A MOSFET overdrive: a firmer edge (a sharper clipping knee) and a mid-focused sound. AMOUNT covers the circuit's own drive knob over its whole range | Low: nearly clean with a little bite; the middle: a crunchy but still open overdrive; the top: a thick, saturated drive | A treble cut: darker counter-clockwise, brightest at the top |
 | **BHLUE** | A two-stage soft overdrive, transparent and amp-like: soft diodes that never clip hard, the low end driven much less than the mids | Low: almost clean, a little warmer; the middle: a light crunch; the top: a thick, round overdrive | A treble cut: at 0 the highs are gone above about 400 Hz, the middle rolls off from about 500 Hz, the top is the brightest (open to about 2 kHz) |
@@ -291,7 +362,7 @@ When the drive is off, a DRIVE knob on PERFORM shows **OFF**; turning it up ther
 the drive on with the type you used last (after the FM-1 is switched off and on: the preset's type, or FDRV if the
 drive is off in it). The type is part of the sound and is saved in presets. Moving any of the
 knobs glides, so you can turn them while you play. Over MIDI: CC 81 AMOUNT, 82 TONE, 83 MIX, 84 the type:
-0–63 OFF, 64–75 KHLON, 76–87 TSH8, 88–99 OHCD, 100–111 BHLUE, 112–127 FDRV (0 and 127 still mean off and the drive as before).
+0–63 OFF, 64–75 KHLON, 76–87 TSH8, 88–99 OHCD, 100–111 BHLUE, 112–127 FDRV.
 
 ### FILTER
 
@@ -318,7 +389,7 @@ sound the FM-1 was left on. Over MIDI: CC 70 TYPE, 74 cutoff, 71 resonance, 72 L
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **EFFECT** | **OFF**, **PAN** (the Suitcase stereo vibrato), **TREM** (volume tremolo), **WAH** (touch wah: harder playing opens it; it keeps the sound's level at every DEPTH and RATE, so a closed wah on a high chord or a soft high note is not quieter and a low one not louder; MARIMBA's top octave, whose notes are very short, still comes out a little quieter) |
+| K1 | **EFFECT** | **OFF**, **PAN** (the suitcase piano's stereo vibrato), **TREM** (volume tremolo), **WAH** (touch wah: harder playing opens it; it keeps the sound's level at every DEPTH and RATE, so a closed wah on a high chord or a soft high note is not quieter and a low one not louder; MARIMBA's top octave, whose notes are very short, still comes out a little quieter) |
 | K2 | **DEPTH** | How deep |
 | K3 | **RATE** | How fast; on WAH, the resonance (it glides as you turn it, without a click). When synced it shows a note value |
 | K4 | **SHAPE** | Two halves. Up to the middle (0–64): from a smooth sine to a square, choppy pulse. Above it (65–127): an amp's tremolo, the square easing back into a sine: the level falls more slowly than it comes back (at the top the dip takes about two thirds of each cycle), it moves evenly in loudness so a deep setting breathes rather than chopping to silence (the deepest dip stays at −30 dB), and loud playing makes it a little shallower (up to a quarter less depth at full level). On PAN the upper half gives the same slower swing. On WAH the card shows **-**: SHAPE does nothing there and keeps its value for TREM and PAN |
@@ -385,8 +456,7 @@ back on to the type it last used (TAPE too). Over MIDI, CC 88 picks the type in 
 
 ![REVERB](manual/img/reverb.png?v=527f5d89)
 
-The reverb, the last effect. It has three types: **HALL** (the reverb Frodhes always had), **PLATE** and
-**INFINITE**. Its second page, **REVERB 2**, has the pre-delay and three more controls. MIX can also be put on a
+The reverb, the last effect. It has three types: **HALL**, **PLATE** and **INFINITE**. Its second page, **REVERB 2**, has the pre-delay and three more controls. MIX can also be put on a
 PERFORM knob (REVERB on ASSIGN).
 
 | Knob | Card | What it does |
@@ -395,13 +465,12 @@ PERFORM knob (REVERB on ASSIGN).
 | K2 | **MIX** | How much reverb (0 = none, the tail rings out). With SIZE on AUTO (REVERB 2), more MIX also makes the space bigger on HALL and PLATE (on PLATE once the tail has died away; on INFINITE MIX is the level only) |
 | K3 | **DECAY** | How long the tail rings. HALL: 5.0 (the default), 0 about half as long, 10.0 about twice. PLATE: from under a second to about 6 s. INFINITE: from about 4 s to a minute; from 120 (**SUSTAIN**) the tail stops fading and what you play piles up on it, and at the very top, 127 (**FREEZE**), the tail holds exactly as it is and what you play stays dry |
 | K4 | **TONE** | The tail's treble: darker (more damping) or brighter (less); +0.0 (the default) in between. On PLATE it also darkens what goes in |
-<!-- the PLATE / INFINITE DECAY ranges: measured on host, tests/py/test_rev_types.py (T60 PLATE 0.8..6 s, INFINITE 4..60 s, within 15 %) -->
 
 The types:
 
 | Type | The sound |
 | --- | --- |
-| **HALL** | A concert hall, as before (with a cleaner top octave, below): old presets and saved settings load as HALL with REVERB 2 at its defaults, so they sound the same |
+| **HALL** | A concert hall |
 | **PLATE** | A studio plate: dense from the first moment, bright, with no echoes you can pick out. Good for a ballad or a close, polished sound |
 | **INFINITE** | A huge space that no room has: very long, slowly moving tails that pile up into a pad. At DECAY SUSTAIN (120–126) the tail no longer fades: every note adds to it, up to a ceiling. At FREEZE (127) what is ringing holds, without growing or fading, while you play on top of it dry. Turn DECAY down from either and the tail dies away again |
 
@@ -410,10 +479,9 @@ The types:
 When the reverb is OFF, a REVERB knob on PERFORM shows **OFF**; turning it up there switches the reverb on with the
 type you used last.
 
-Every type runs at half the sample rate, as the hall always did; the filters into and out of it are now sharp
-half-band filters, so bright notes and cymbal-like overtones no longer fold back into the tail as faint, out-of-tune
-tones (a 15 kHz overtone used to come back at 7 kHz only 10 dB down; now 37 dB and more). The tail's top octave is
-cleaner on every type; its level and length are unchanged.
+On the FM-1 and the SMK-37 every type runs at half the sample rate (on the Move at the full rate:
+[MOVE.md](MOVE.md#reverb)). Bright notes stay clean in the tail: they do not fold back into it as faint, out-of-tune
+tones.
 
 Over MIDI: CC 95 TYPE (0–31 OFF, 32–63 HALL, 64–95 PLATE, 96–127 INFINITE), 91 MIX, 92 DECAY, 93 TONE. DECAY and
 TONE glide when moved; MIX moves in small steps (every 32 samples, too small to hear).
@@ -424,12 +492,12 @@ TONE glide when moved; MIX moves in small steps (every 32 samples, too small to 
 
 | Knob | Card | What it does |
 | --- | --- | --- |
-| K1 | **PRE-DELAY** | A gap before the reverb starts, 0–80 ms, so the notes stay clear in front of the reverb (it was K4 on REVERB before) |
-| K2 | **SIZE** | How big the space is. **AUTO** (0, the default) lets MIX set the size, as it always did on HALL. On PLATE the size waits while a tail rings and follows MIX once the plate is silent (a preset sets its size at once), and on INFINITE AUTO is a fixed 5.0, so turning MIX never bends a ringing tail's pitch; 0.1–10.0 fixes it, small to large (on PLATE the plate's size, on INFINITE the space's). Turned under a ringing tail on PLATE or INFINITE, the old size fades into the new one (in 0.13 s on PLATE, 0.19 s on INFINITE), with no bend and no click |
-| K3 | **MOD** | How much the tail moves: a slow drift that keeps long tails from sounding metallic. 5.0 (the default) is HALL as before; 0 holds still, 10.0 moves twice as much. On INFINITE it is the slow wander of its lines |
+| K1 | **PRE-DELAY** | A gap before the reverb starts, 0–80 ms, so the notes stay clear in front of the reverb |
+| K2 | **SIZE** | How big the space is. **AUTO** (0, the default) lets MIX set the size. On PLATE the size waits while a tail rings and follows MIX once the plate is silent (a preset sets its size at once), and on INFINITE AUTO is a fixed 5.0, so turning MIX never bends a ringing tail's pitch; 0.1–10.0 fixes it, small to large (on PLATE the plate's size, on INFINITE the space's). Turned under a ringing tail on PLATE or INFINITE, the old size fades into the new one (in 0.13 s on PLATE, 0.19 s on INFINITE), with no bend and no click |
+| K3 | **MOD** | How much the tail moves: a slow drift that keeps long tails from sounding metallic. 5.0 is the default; 0 holds still, 10.0 moves twice as much. On INFINITE it is the slow wander of its lines |
 | K4 | **LOW CUT** | Takes the bass out of what goes into the reverb, so long tails do not muddy the low notes: **OFF** (the default) or 20–800 Hz |
 
-The defaults are the reverb's sound before it had types. Over MIDI: CC 94 PRE-DELAY, 73 SIZE (0 = AUTO), 68 MOD,
+Over MIDI: CC 94 PRE-DELAY, 73 SIZE (0 = AUTO), 68 MOD,
 69 LOW CUT (0 = OFF).
 
 ### TEMPO
@@ -584,7 +652,8 @@ velocity. TOUCH and KEY VEL belong to the FM-1, not to a preset (a preset does n
 emulator has no velocity: its keys play at KEY VEL.
 
 The bottom line shows the name and the version installed, the battery's reading (BAT, the raw value the battery
-segments are worked out from), and the audio engine's time per block (it must stay under 5800 µs; every voice struck at once with every effect on reaches about 3450 on the Rhodes (3600 while bending, about 3600 with SPREAD at full width and 3750 bending with it), up to about 3950 on VIBES and 3800 on MARIMBA (10 notes each), measured on the FM-1; section 10 gives the whole audio interrupt's time).<!-- FM-1 (2026-10-25, the release package sha256 2ca1d517c430, final-rel/SUMMARY.md), every effect on, TSH8, TAPE, USB 48 kHz, hil_cpu --worst --usb 48000 --voices 10: app worst (the highest of INF / HALL / PLATE) Rhodes 3468 us, --bend-sweep 3588, SPREAD 127 3576, with bend 3752, VIBES 3944, MARIMBA 3812; 0 shed. --><!-- FM-1 (2026-10-25, build 353d023), every effect on, TSH8, TAPE, USB 48 kHz, hil_cpu --worst --usb 48000 --voices 10: app worst INFINITE Rhodes 3692/3640/3624 us, --bend-sweep 3768, SPREAD 127 3784, with bend 3912, VIBES 3796, MARIMBA 3740; HALL 3612/3724/3664, PLATE 3644/3860/3708 (Rhodes/VIBES/MARIMBA), 0 shed, USB clean (build/final-rev/cpu_*.log). --><!-- FM-1 (2026-10-24, build 57e0025), every effect on, the heaviest drive TSH8, delay TAPE, USB 48 kHz, hil_cpu --worst --usb 48000 --voices 10 (x3 on the Rhodes): app time worst Rhodes 3540/3512/3504 us, --bend-sweep 3632, VIBES 3700, MARIMBA 3660, 0 shed, USB clean (build/final2/cpu_*.log). Update with section 10's together. SPREAD 127 on 57e0025 (HALL, every effect, TSH8, TAPE, 10 voices): app worst 3668/3652/3668 us, with bend 3784 (build/final2b/cpu_spread_*.log). -->
+segments are worked out from), and how busy the audio engine is (its time per block, in µs; useful in a bug
+report).
 
 ### MIDI
 
@@ -606,7 +675,7 @@ the TRS jack: notes, every CC in the table below, program changes, clock, start 
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **COLOR** | The screen's colour, 27 steps: **AMBER** (the default), then 25 pastel hues around the colour wheel: PEACH, CORAL, ROSE, PINK, ORCHID, MAUVE, PURPLE, VIOLET, LILAC, IRIS, BLUE, DENIM, SKY, OCEAN, CYAN, AQUA, MINT, JADE, GREEN, LEAF, LIME, PEAR, LEMON, GOLD, MANGO, and last a full **RED**. Every page is drawn in it: the title, the fader fills and edges, the lit selector blocks |
-| K2 | **BRIGHTNESS** | For a dark room: **10** (full) to **1** dims the whole panel together, the screen (its colours and its text alike) and every light, keys and buttons alike (at 10 the keys are at full, as they always were; below, a little under the buttons, every step a change in both). The backlight itself is fixed, so black stays as it is and the screen's contrast falls at the low steps |
+| K2 | **BRIGHTNESS** | For a dark room: **10** (full) to **1** dims the whole panel together, the screen (its colours and its text alike) and every light, keys and buttons alike (10 is full brightness; below it the keys sit a little under the buttons, and every step changes both). The backlight itself is fixed, so black stays as it is and the screen's contrast falls at the low steps |
 | K3 | **LEDS** | Which keys light: **OFF** none; **PLAYED** a key while its note sounds; **ROOTS** (the default) the played keys, and while a scale is on its root keys glowing faintly as landmarks, never brighter than a played key; **ALL** every key lit, a light for playing in the dark; a key goes dark while its note sounds; **SCALE** as ALL, but only the keys of the scale lit (SCALE page): the keys, white and black, whose own note is in the scale, in SNAP and DEGREE alike; a played scale key goes dark, and the keys outside the scale stay dark even when pressed; with no scale on it looks as ALL |
 
 Press **GLO** four times to come here (TEMPO, SETUP, MIDI, DISPLAY). All three are kept with the settings, not with
@@ -614,7 +683,7 @@ a preset, so they stay as you set them whatever sound you load.
 
 ## 5. VIBES and MARIMBA: the bar instruments
 
-Two of the TYPEs are struck bars instead of a Rhodes: **VIBES**, the vibraphone, and **MARIMBA**. They share one
+Two of the TYPEs are struck bars instead of an electric piano: **VIBES**, the vibraphone, and **MARIMBA**. They share one
 engine and the same VOICE cards, each with its own bars, tubes and mallets; VIBES has a damper and a motor, MARIMBA
 neither (its VOICE 2/2's second card is **MUTE**, the player's hand). Over MIDI, CC 79 picks between them.
 
@@ -622,18 +691,18 @@ neither (its VOICE 2/2's second card is **MUTE**, the player's hand). Over MIDI,
 
 Turn **ALGORITHM** (or the TYPE card) to **VIBES** and the FM-1 plays a vibraphone: aluminium bars struck with
 mallets, each with its tuned tube underneath, and the motor that gives the vibraphone its pulsing shimmer. Like the
-Rhodes it is computed, not sampled: the bar's own modes (the fundamental and its tuned overtones, about 4 and 10
-times higher), the tube that takes a moment to build up under the bar, and the motor's discs. Switching between a
-Rhodes type and VIBES fades out what is still ringing, held notes too; a note still held plays again on the new type
+electric piano it is computed, not sampled: the bar's own modes (the fundamental and its tuned overtones, about 4 and 10
+times higher), the tube that takes a moment to build up under the bar, and the motor's discs. Switching between an
+electric piano type and VIBES fades out what is still ringing, held notes too; a note still held plays again on the new type
 the next time it is struck (a MIDI note-on, or a key on the same note).
 
 ![The main page on VIBES](manual/img/piano-vibes.png?v=b20f743f)
 
 The main page's middle cards belong to the engine: on VIBES they are **MALLET** (the same as VOICE 1/3's MALLET)
-and **MOTOR** (on / off, the same as VOICE 3/3's first card); on a Rhodes type they are **TONE** and **BELL** (DRIVE
+and **MOTOR** (on / off, the same as VOICE 3/3's first card); on an electric piano type they are **TONE** and **BELL** (DRIVE
 and REVERB have their own pages).
 
-VIBES plays about **2.5 dB louder** than the Rhodes types: a struck bar is peakier than a Rhodes note, so at the same
+VIBES plays about **2.5 dB louder** than the electric piano types: a struck bar is peakier than an electric piano note, so at the same
 loudness it sounded weaker and came out closer to the headphone jack's hiss. The limiter still keeps big chords from
 clipping.
 
@@ -659,27 +728,27 @@ a real one does).
 | K3 | **NOISE** | The mallet's contact and the damper's touch (at the key-up always under the note) |
 | K4 | **TUNE** | Fine tuning, ±50 cents (many vibraphones are tuned to A = 442 Hz: +8) |
 
-**The pedal** works like the Rhodes' sustain: **REC** (hold, or tap to latch) or a sustain pedal over MIDI (CC 64,
+**The pedal** works like the electric piano's sustain: **REC** (hold, or tap to latch) or a sustain pedal over MIDI (CC 64,
 half-pedal too). Without it the damper stops each note when you let go.
 
 ### The motor: on and off
 
 The motor (the vibrato's pulse) is part of the vibraphone, not an effect: it has VIBES' last VOICE page,
-**VOICE 3/3**, right after VOICE 2/3 in the SELECT order. The page is there only while the TYPE is VIBES (the Rhodes
-types have two VOICE pages: SELECT goes from VOICE 2/2 straight to COMPRESSOR).
+**VOICE 3/3**, right after VOICE 2/3 in the SELECT order. The page is there only while the TYPE is VIBES (the electric
+piano types have two VOICE pages: SELECT goes from VOICE 2/2 straight to COMPRESSOR).
 
 - **On by itself:** turning the TYPE to VIBES (ALGORITHM, the TYPE card or CC 79) starts the motor at its default:
   DEPTH 8.7, 3.5 Hz, a clear, regular pulse.
 - **Off and on:** on VOICE 3/3, **K1** turns it **OFF** or **ON**. Switched off there, it stays off: changing the
-  TYPE to a Rhodes and back to VIBES does not start it again (and the choice is saved), until K1 turns it on.
+  TYPE to an electric piano and back to VIBES does not start it again (and the choice is saved), until K1 turns it on.
 - **Presets keep theirs:** loading a preset is not a TYPE change: **F13 VIBES** has the motor on, **F14 VIBES
   ECHO** has it off, and a user preset saved with the motor off stays off.
-- **The Rhodes types** have no motor: going back to one leaves no tremolo running (TREM/WAH stays as it was).
+- **The electric piano types** have no motor: going back to one leaves no tremolo running (TREM/WAH stays as it was).
 - **The level** stays the same with the motor on or off, from the strike to the end of the note: the discs close
   the tubes' sound part of each turn and the motor makes up for what they take, while the bar rings exactly as long
   as with the discs open. Switching the motor on or off under a held chord starts or stops the pulse without a jump
   in level.
-- **TREM/WAH** (the LFO button) is the same effect on VIBES as on the Rhodes and can run on top of the motor.
+- **TREM/WAH** (the LFO button) is the same effect on VIBES as on the electric pianos and can run on top of the motor.
 - **Over MIDI:** CC 47 ON (≥ 64), 48 DEPTH, 49 SPEED, 50 SHAPE, 51 SYNC.
 
 ![VOICE 3/3 on VIBES: the motor](manual/img/voice3-vibes.png?v=87bf5729)
@@ -704,7 +773,7 @@ vibraphone's range.
 **Presets:** **F13 VIBES**, dry (a softer mallet, the motor slower, at 2.6 Hz, and a little shallower, a gentle
 compressor, a trace of hall) and **F14 VIBES ECHO** (motor off, a cord mallet, a longer ring, a light chorus, a tape
 echo on the tempo and a plate).
-**Polyphony:** 10 notes, as the Rhodes.
+**Polyphony:** 10 notes, as the electric pianos.
 
 ### MARIMBA
 
@@ -715,7 +784,7 @@ instead of aluminium, a warm, short note. A note rings for about **1.7 s at C2, 
 tenth of a second at C7** (the default cards, until it is 60 dB down). Below C4 the long tubes make the notes ring
 **longer** and **bloom**: the low note swells for a moment after the strike (about 0.15 s at C2, 0.05 s at C4); from
 C5 up the note starts at its loudest. A marimba has **no damper and no motor**: a note rings out by itself, and the
-player stops it with a hand. Switching between VIBES and MARIMBA (or a Rhodes type) fades out what is still ringing,
+player stops it with a hand. Switching between VIBES and MARIMBA (or an electric piano type) fades out what is still ringing,
 held notes too; a note still held plays again on the new type the next time it is struck.
 
 ![The main page on MARIMBA](manual/img/piano-marimba.png?v=8f56e39b)
@@ -754,10 +823,10 @@ MUTE says; let go, MUTE decides. **All Notes Off** (CC 123 / 120) stops everythi
 **No motor.** The motor belongs to VIBES. On MARIMBA its MIDI CCs (47-51) are accepted and kept for VIBES, and change
 nothing in the marimba's sound.
 
-**MARIMBA's level.** MARIMBA is set **2.5 dB louder** than the Rhodes types, as VIBES. But every marimba strike is
+**MARIMBA's level.** MARIMBA is set **2.5 dB louder** than the electric piano types, as VIBES. But every marimba strike is
 held under **−0.5 dBFS** (the top bars are rolled off and RING has its ceiling, so the hardest strike never reaches
-the limiter), and that keeps a chord lower: an A3-E4-A4 chord at velocity 100 reads about **1.5 LU under** the
-Rhodes F01 STAGE 77, on the USB audio and on the headphone jack alike.<!-- FM-1 hil_scan --marimba, scans 3 and 4 (build/marimba/p5/scan3/marimba-report.md, scan4-report.md): MARIMBA re ST77, A3-E4-A4 v100, LUFS 0..1 s, -1.50 LU USB, -1.48 jack. Level decision "A" (user, 2026-10-20): calib.st77_offset_db stays 2.5, no louder build -->
+the limiter), and that keeps a chord lower: an A3-E4-A4 chord at velocity 100 reads about **1.5 LU under**
+F01 STAGE 77, on the USB audio and on the headphone jack alike.
 
 **The range.** A concert marimba has five octaves, **C2 to C7**; that is where MARIMBA is measured. Every other MIDI
 note plays too (A0-C8), extended from the same physics. The FM-1's keys (F3–G5) sit in the marimba's middle.
@@ -765,7 +834,7 @@ note plays too (A0-C8), extended from the same physics. The FM-1's keys (F3–G5
 **Presets:** **F15 MARIMBA**, dry (the default mallet and tube, MUTE 0: rings out, a gentle compressor, a trace of
 hall) and **F16 WOOD ECHO** (a hard yarn mallet, heavier, MUTE 0, a light chorus, a digital echo on the tempo and a
 hall). **Over MIDI:** CC 79 from 96 to 127 selects
-MARIMBA (0–95 VIBES); Program Change 14 / 15 loads F15 / F16. **Polyphony:** 10 notes, as the Rhodes.
+MARIMBA (0–95 VIBES); Program Change 14 / 15 loads F15 / F16. **Polyphony:** 10 notes, as the electric pianos.
 
 ## 6. Presets
 
@@ -784,9 +853,9 @@ starts (or if its settings are ever lost), it plays **F01 STAGE 77**.
 | F13 VIBES | F14 VIBES ECHO | F15 MARIMBA | F16 WOOD ECHO |
 | F17 TAPE ECHO | F18 DREAM | F19 RADIO | |
 
-Each instrument comes twice: **dry**, the model as it plays (F01–F04, one for each Rhodes TYPE, F13 VIBES and F15
+Each instrument comes twice: **dry**, the model as it plays (F01–F04, one for each electric piano TYPE, F13 VIBES and F15
 MARIMBA: only a gentle compressor and a trace of room), and **with effects** (F05–F12, F14, F16, F17–F19). Every preset has the
-compressor on, set for glue rather than squash: a threshold of -16 dB at 2:1 on the Rhodes, its 5 ms attack letting
+compressor on, set for glue rather than squash: a threshold of -16 dB at 2:1 on the electric pianos, its 5 ms attack letting
 the hammer and the bark through, 1.5:1 with a slower attack on the mallets. Nearly every one has a little reverb, HALL
 or PLATE (the plate on the bright and vintage sounds), with LOW CUT at 150–200 Hz so the bass stays out of the tail.
 
@@ -813,19 +882,13 @@ or PLATE (the plate on the bright and vintage sounds), with LOW CUT at 150–200
 | F19 RADIO | A hard OHCD drive through a band-pass, like a small speaker, a short tape slap and a small room |
 
 The echoes and sweeps marked "on the tempo" follow the TEMPO page's BPM (120 when you start; PLAY taps it), so they
-fit what you play. The Rhodes presets F01–F12 and F17–F19 are level-matched: each one's LEVEL (SETUP) brings it within 1 LU of
-F01's loudness on a chord, so browsing does not jump in volume; the driven and filtered ones are set half way between
-a chord and a whole phrase (soft and hard notes), as they change more with how hard you play, and both stay within
-1.5 LU of F01, but for F12, whose deep band-pass sweep is set about 1.4 LU above F01 on a chord (it reads under F01 on
-a phrase). Six of them use a drive type: F06 KHLON, F09 BHLUE, F10 and F12 TSH8, F11 and F19 OHCD. VIBES, F13–F14, sits
-about 2–2.5 dB above, as the type does. MARIMBA is set 2.5 dB above as well, but every marimba strike is held just
-under full scale (see MARIMBA's level): F16, with its echo, chorus and reverb, comes out about 2 LU above F01, and
-F15, the plain marimba, about level with F01 on a chord in the middle of the keyboard (a wider chord, A3-E4-A4, reads
-1.5 LU under it on the FM-1).
+fit what you play. The factory presets are level-matched, so browsing does not jump in volume. VIBES and MARIMBA sit
+a little above the electric pianos, as their types do. Six presets use a drive type: F06 KHLON, F09 BHLUE, F10 and
+F12 TSH8, F11 and F19 OHCD.
 
-**The starter user presets.** Until you save your first preset, U01–U09 hold nine more Rhodes sounds to play or to
+**The starter user presets.** Until you save your first preset, U01–U09 hold nine more electric piano sounds to play or to
 overwrite (an FM-1 that already has saved user presets keeps exactly those); U10–U16 start empty. They are
-level-matched like F01–F12 (within 1 LU of F01 on a chord):
+level-matched like the factory presets:
 
 | Preset | What it is |
 | --- | --- |
@@ -883,7 +946,7 @@ on.
 
 ![FX bypass](manual/img/bypass.png?v=3bbbaab2)
 
-The order of the chain: **COMP → DRIVE → FILTER → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter.** The limiter at the
+The order of the chain: **COMP → EQ → DRIVE → FILTER → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter.** The limiter at the
 end keeps even big chords of ten notes from ever clipping.
 
 ## 8. Tempo and sync
@@ -948,19 +1011,13 @@ release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with ha
 up (CC 64 below 64) also releases a latched REC, so a real pedal always works as a pedal; with no CC 64 coming in,
 the latch stays on until you tap REC again.
 
-**Polyphony: 10 voices.** Up to 10 notes sound at the same time on every instrument, counting
-notes still ringing under the sustain and the notes that chord mode, the arpeggiator and the sequencer play. Striking
-a note that is still sounding reuses its voice, so repeated notes do not use up voices. One note more takes over the
-quietest released note first, or else the oldest held one, with a short fade (1.5 ms) so there is no click. On VIBES
-and MARIMBA, more notes than voices at the same instant (a computer's chord, a sequencer step) start 10 at a time, one
-audio block (5.8 ms) apart, in order. The
+**Polyphony: 10 voices** on every instrument, counting notes still ringing under the sustain and the notes that
+chord mode, the arpeggiator and the sequencer play. Striking a note that is still sounding reuses its voice, so
+repeated notes do not use up voices. One note more takes over the quietest released note first, or else the oldest
+held one, with a short fade (1.5 ms), so there is no click. On VIBES and MARIMBA, more notes than voices at the same
+instant (a computer's chord, a sequencer step) start 10 at a time, one audio block (5.8 ms) apart, in order. The
 audio also has a safety guard: if it ever ran late, the quietest released note would be faded out rather than
-letting the sound break up. In testing the worst case (every voice on low notes at full velocity with the pedal and
-every effect on, the reverb on INFINITE, the USB audio at 48 kHz) takes the whole audio interrupt about 3.8 ms on the
-Rhodes while bending (3808 µs), 4.0 ms with SPREAD at full width and bending (3972 µs), up to 4.2 ms on VIBES
-and 4.0 ms on MARIMBA of the 5.8 ms available per audio block; the longest single
-block in minutes of the stress test (every voice held by the pedal, chords across the registers) was 3.8 ms at 48 kHz
-and 3.6 ms at 44.1 kHz on the Rhodes, the same or less on VIBES and MARIMBA (measured on the FM-1), and the guard never acts.<!-- FM-1 (2026-10-25, the release package sha256 2ca1d517c430, final-rel/SUMMARY.md), every effect on, TSH8, TAPE, USB 48 kHz, 10 voices: whole ISR Rhodes bending 3808 us, SPREAD 127 + bend 3972, VIBES 4164, MARIMBA 4032 (the highest of the TYPEs); stress_max longest block Rhodes 48 kHz 3812, 44.1 kHz 3612; 0 shed. --><!-- FM-1 (2026-10-25, int-final after the CPU trims and the RAM hot loops, tools/cpu_check.sh), every effect on, TSH8, TAPE, INFINITE, USB 48 kHz, 10 voices, 3 takes each: whole ISR Rhodes SPREAD 127 + bend 3916-3972 us (4224-4268 before), --bend-sweep 3752-3772, VIBES 4040-4120 (4144-4216 before), MARIMBA 3988-4000; the stress_max figures below are 353d023's. --><!-- FM-1 (2026-10-25, build 353d023), every effect on, TSH8, TAPE, USB 48 kHz, 10 voices: whole ISR INFINITE Rhodes 3936/3892/3880 us, --bend-sweep 4028, SPREAD 127 4040, with bend 4172, VIBES 4052, MARIMBA 4000; HALL 3860/3976/3916, PLATE 3896/4116/3968; 0 shed, USB clean (build/final-rev/cpu_*.log); stress_max whole ISR 48 kHz Rhodes 4064 (final-rev3) / 4060 (final-rev), VIBES 3760, MARIMBA 3524; 44.1 kHz Rhodes 3832, VIBES 3524, MARIMBA 3292; 0 events, 0 shed; soak 8 runs 0 events (build/soak/rounds.txt). --><!-- FM-1 (2026-10-24), every effect on, the heaviest drive TSH8, delay TAPE, USB 48 kHz, 10 voices: hil_cpu --worst --usb 48000 x3 on build 57e0025: whole ISR Rhodes 3784/3760/3756 us (app 3504-3540), --bend-sweep 3880, VIBES 3956, MARIMBA 3916, 0 shed, USB clean (build/final2/cpu_*.log); SPREAD 127 (HALL, every effect, TSH8, TAPE): whole ISR 3916/3908/3920 us, with bend 4036 (build/final2b/cpu_spread_*.log); stress_max (hil_crackle.py) on 57e0025: whole ISR at 48 / 44.1 kHz Rhodes 3788 / 3604 us, VIBES 3460 / 3244, MARIMBA 3224 / 3036, 0 shed, 0 events (48 kHz: one marimba-worst2 USB step that the jack shows too, an hil_crackle false step fixed in d053a88) (build/final2/stress_*-report.txt). Update with SETUP's figure together. -->
+letting the sound break up. In testing, with every voice struck and every effect on, the guard never acts.
 
 ## 11. Sound and volume tips
 
@@ -983,21 +1040,21 @@ also send their notes to the computer.
 **MIDI out is USB only:** the FM-1's keys, chord mode, the arpeggiator and the sequencer send their notes on CHANNEL
 (channel 1 when ALL). Notes that come in over MIDI are not sent back, but what the arpeggiator or the sequencer
 makes from them is, so switch MIDI thru off in your computer's software. No clock, CCs or program changes are sent.
-The TRS jack is MIDI in only. **Program Change** 0–15 loads F01–F16, 16–31 loads U01–U16 (as before 0.9.5), and 32–34 loads F17–F19.
+The TRS jack is MIDI in only. **Program Change** 0–15 loads F01–F16, 16–31 loads U01–U16, and 32–34 loads F17–F19.
 
-**Pitch bend** (the pitch wheel, USB or TRS, on CHANNEL) bends the Rhodes ±2 semitones: every note that sounds
+**Pitch bend** (the pitch wheel, USB or TRS, on CHANNEL) bends the electric piano types ±2 semitones: every note that sounds
 glides with the wheel and a note struck while the wheel is moved starts at the bent pitch. The bend stays across a
 preset change and adds to TUNE. CC 121 (reset all controllers) and pulling the USB cable put it back to 0. VIBES and
-MARIMBA ignore pitch bend: their bars always play at their own pitch. (The retuning is genkigenki's work.)
+MARIMBA ignore pitch bend: their bars always play at their own pitch.
 
-**Release velocity** (the note-off velocity, from a keyboard that sends it) shapes how the Rhodes' damper lands: a
+**Release velocity** (the note-off velocity, from a keyboard that sends it) shapes how the electric piano's damper lands: a
 quick lift (127) damps faster and harder, with a slightly louder knock (NOISE); a slow lift (1) lets the felt settle
 gently and the note ring on a little longer. 64, or no release velocity (a note-off at 0, a note-on at velocity 0),
 is the normal release. The FM-1's own keys have no release speed: they always release normally. VIBES and MARIMBA
 ignore it. (The damper's own settle follows the register: a little slower in the bass, quicker in the
 treble.)
 
-**SPREAD** (CC 105, saved with the preset; MIDI only, there is no card for it) spreads the Rhodes across the stereo
+**SPREAD** (CC 105, saved with the preset; MIDI only, there is no card for it) spreads the electric piano across the stereo
 field by key, low keys left, high keys right, as seen from the player. 0 (the default) is the mono piano; 64 a gentle
 width; 127 places the lowest key of an 88-key piano fully left and the highest fully right. It is set at each strike
 (turning it moves the next notes). The chorus, phaser, delay and reverb take the spread; COMP, DRIVE, the FILTER and
@@ -1006,59 +1063,61 @@ MARIMBA ignore it.
 
 | CC | Parameter | CC | Parameter |
 | --- | --- | --- | --- |
-| 64 | Sustain (half-pedal) | 80 | TYPE (0–31 STAGE, 32–63 SUITCASE, 64–95 FELT, 96–127 DYNO) |
-| 34 / 35 | EQ LOW / MID (−15 to +15 dB, 64 = 0 dB) | 36 / 37 | EQ MID FREQ (200 Hz – 5 kHz) / HIGH |
-| Pitch bend | ±2 semitones, the Rhodes types only (VIBES and MARIMBA ignore it) | 121 | Reset all controllers: the pitch bend back to 0 |
+| 79 | TYPE of the bar instruments: 0–95 VIBES, 96–127 MARIMBA | 80 | TYPE of the electric pianos (0–31 STAGE, 32–63 SUITCASE, 64–95 FELT, 96–127 DYNO) |
+| 28–31 | TONE / BARK / BELL / HAMMER | 102 / 103 / 104 | DECAY / RELEASE (VIBES: DAMPER; MARIMBA: MUTE) / NOISE |
 | 47 / 48 | VIBES MOTOR on (≥ 64) / DEPTH (no effect on MARIMBA) | 49 / 50 / 51 | VIBES MOTOR SPEED / SHAPE / SYNC |
-| 79 | TYPE of the bar instruments: 0–95 VIBES, 96–127 MARIMBA | 9 | Developer: the bar instruments' mode cap, VIBES and MARIMBA (0 = automatic, 1–49 = 0–48 upper modes, ≥ 50 = none; not saved) |
-| 10 | Developer: reset (≥ 64): every LFO, the delay / reverb lines and the noise to their start state (for comparing recordings) | | |
-| 81 | DRIVE (AMOUNT) | 91 | REVERB (MIX) |
-| 82 / 83 | DRIVE TONE / MIX | 92 / 93 / 94 | REVERB DECAY / TONE / PRE-DELAY (0–80 ms) |
+| 105 | SPREAD: the electric piano across the stereo field by key (0 mono, the default; saved with the preset) | 64 | Sustain (half-pedal) |
+| Pitch bend | ±2 semitones, the electric piano types only (VIBES and MARIMBA ignore it) | 121 | Reset all controllers: the pitch bend back to 0 |
+| 120 / 123 | All notes off: every note held over MIDI is let go and rings out through the dampers (MARIMBA: stopped by the hand), every tail ending within 8 s (keys still held on the FM-1, the arpeggiator's HOLD and the sequencer keep going) | | |
+| 106 / 107 | COMP on (≥ 64; with THRESHOLD at 0 it starts at −16 dB with the make-up, as the panel) / THRESHOLD (0 to −40 dB; switch it on with 106) | 112 / 113 | COMP RATIO / MAKEUP |
+| 108 / 109 | COMP ATTACK / RELEASE | | |
+| 34 / 35 | EQ LOW / MID (−15 to +15 dB, 64 = 0 dB) | 36 / 37 | EQ MID FREQ (200 Hz – 5 kHz) / HIGH |
+| 81 | DRIVE (AMOUNT) | 82 / 83 | DRIVE TONE / MIX |
 | 84 | DRIVE type: 0–63 OFF, 64–75 KHLON, 76–87 TSH8, 88–99 OHCD, 100–111 BHLUE, 112–127 FDRV | | |
-| 95 | REVERB type: 0–31 OFF, 32–63 HALL, 64–95 PLATE, 96–127 INFINITE | 73 | REVERB SIZE (0 = AUTO: from MIX, on INFINITE 5.0) |
-| 68 / 69 | REVERB MOD (64 = the default) / LOW CUT (0 = off, 20–800 Hz) | | |
+| 70 / 74 | FILTER TYPE (7 bands: off, LP12, LP18, HP12, HP18, BP, notch) / CUTOFF | 71 / 72 | FILTER RESONANCE / LFO AMOUNT |
+| 75 / 76 | LFO SHAPE (6 bands) / RATE | 77 / 78 | LFO SYNC / RETRIG (free, key) |
 | 17 | TREM/WAH: 0–42 off, 43–85 trem/pan, 86–127 wah | 18 / 19 | TREM DEPTH / RATE |
 | 20 / 21 / 22 | TREM SYNC / MODE (0–63 pan, 64–127 am) / SHAPE | 85 | Chorus / phaser switch: 0–42 both off, 43–85 chorus, 86–127 phaser |
-| 86 / 87 | CHORUS DEPTH / SPEED (the phaser's, when only the phaser is on) | 23 | CHORUS SYNC |
 | 12 / 13 / 14 | PHASER on / DEPTH / SPEED | 15 / 16 | PHASER SYNC / FEEDBACK |
+| 86 / 87 | CHORUS DEPTH / SPEED (the phaser's, when only the phaser is on) | 23 | CHORUS SYNC |
 | 88 / 89 / 90 | DELAY type (0–31 off, 32–63 DIG, 64–95 ANA, 96–127 TAPE) / MIX / TIME | 25 / 26 / 27 | DELAY SYNC / FEEDBACK / TONE |
-| 106 / 107 | COMP on (≥ 64; with THRESHOLD at 0 it starts at −16 dB with the make-up, as the panel) / THRESHOLD (0 to −40 dB; switch it on with 106) | 112 / 113 | COMP RATIO / MAKEUP |
-| 108 / 109 | COMP ATTACK / RELEASE | 110 | LEVEL (64 = 0 dB) |
-| 111 | All effects off (≥ 64) / on | 28–31 | TONE / BARK / BELL / HAMMER |
-| 114 | USB VOL: knob (< 64) / fixed | 24 | Reserved (accepted and saved, no effect yet) |
-| 105 | SPREAD: the Rhodes across the stereo field by key (0 mono, the default; saved with the preset) | | |
-| 116 | Developer: CPU load and USB audio health query (replies on CC 115–118; 112 / 113, the bar instruments': the lowest mode cap / the most live upper modes; 107–110, the whole audio interrupt and its tail after the sound; 100–102, the USB audio counters since the last query: underruns, missed packets, overruns, rate adjustments, the ring's fill and its low point, the audio interrupt's spacing, the stream's state; the longest stretch a flash write held the interrupts off, the flash part's suspends, the longest erase; `tools/hil_cpu.py` reads them) | 119 | Developer: raw voice (≥ 64 bypasses every effect and the limiter; FX does not undo it) |
-| 4 | Developer: battery query (replies CC 4 / 5 = the reading: value / 8, value mod 8; CC 6 = the segments shown, 4 = USB power) | 8 | Developer: a simulated battery reading (value x 8; 0 = the real one) |
-| 102 / 103 / 104 | DECAY / RELEASE (VIBES: DAMPER; MARIMBA: MUTE) / NOISE | 120 / 123 | All notes off: every note held over MIDI is let go and rings out through the dampers (MARIMBA: stopped by the hand), every tail ending within 8 s (keys still held on the FM-1, the arpeggiator's HOLD and the sequencer keep going) |
+| 95 | REVERB type: 0–31 OFF, 32–63 HALL, 64–95 PLATE, 96–127 INFINITE | 91 | REVERB (MIX) |
+| 92 / 93 / 94 | REVERB DECAY / TONE / PRE-DELAY (0–80 ms) | 73 | REVERB SIZE (0 = AUTO: from MIX, on INFINITE 5.0) |
+| 68 / 69 | REVERB MOD (64 = the default) / LOW CUT (0 = off, 20–800 Hz) | | |
+| 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
 | 56 / 57 | CHORD TYPE (0–14 as listed) / INVERSION (0–3) | 58 / 59 | CHORD VOICING (0–2) / STRUM (0–12 × 5 ms) |
 | 60 / 61 | SEQUENCER play (≥ 64) or stop (< 64) / BARS (1–16) | 62 / 63 | SEQUENCER QUANT (0–5) / recording (≥ 64) |
 | 43 / 44 | SEQUENCER CLEAR / UNDO (≥ 64) | 45 / 46 | SEQUENCER ERASE (≥ 64 on) / SWING (50–75) |
-| 70 / 74 | FILTER TYPE (7 bands: off, LP12, LP18, HP12, HP18, BP, notch) / CUTOFF | 71 / 72 | FILTER RESONANCE / LFO AMOUNT |
-| 75 / 76 | LFO SHAPE (6 bands) / RATE | 77 / 78 | LFO SYNC / RETRIG (free, key) |
-| 3 | Developer: a colour test pattern on the screen (≥ 64; < 64 back to the page), to calibrate screenshots against the panel | 2 | Developer: the screen's colour candidate, for choosing on the FM-1: 0 = A black (the default), 1 = B dim outline, 2 (or more) = C model-matched; not saved |
-| 11 | Developer: the cards' design, for comparing on the FM-1 (not saved): 3 = the normal look (faders, selector blocks, switch lights); 0 = the rows before the design pass (a choice written large, no fill), 1 = a fill on every card, 2 = a thin meter line under each row, 4 = selectors as small pips under the value, 5 (or more) = a switch lights its whole card | | |
-| 41 / 42 | Developer: key velocity (not saved): 41 sets the key converter's test mode (0 normal, 1 off, 2 stress, 4 self-test; 8 / 9 every press's reading out on CC 33–36, on / off), 42 asks for its counters (replies on CC 38–40); `tools/hil_keyvel.py` and `tools/hil_cpu.py --keyadc` use them | | |
-| 52 / 53 | ARP MODE (0 off, 1 up, 2 down, 3 up-dn, 4 order, 5 random) / RATE (0–5: 1/4 … 1/32) | 54 / 55 | ARP OCTAVES (0–3 = 1–4) / GATE (10–100 %) |
+| 110 | LEVEL (64 = 0 dB) | 111 | All effects off (≥ 64) / on |
+| 114 | USB VOL: knob (< 64) / fixed | | |
+
+**For developers and testing.** These CCs are for test tools, not for playing; [BUILD.md](BUILD.md#developer-midi-ccs) says
+what each one does.
+
+| CC | What it is |
+| --- | --- |
+| 2 / 3 / 11 | The screen's colour candidate, a colour test pattern and the cards' design, for comparing on the FM-1 (not saved) |
+| 4 / 8 | Battery query / a simulated battery reading |
+| 9 | The bar instruments' mode cap (not saved) |
+| 10 | Reset every LFO, the delay and reverb lines and the noise to their start state, for comparing recordings |
+| 24 | Reserved: accepted and saved, no effect yet |
+| 41 / 42 | Key velocity's test mode and counters (not saved) |
+| 116 | CPU load and USB audio health query |
+| 119 | Raw voice: every effect and the limiter bypassed (≥ 64) |
 
 On the Move the same CCs reach Frodhes through Schwung's track, except the sequencer's and the chords'
 (43–46, 56–63), which do nothing there ([MOVE.md](MOVE.md), "MIDI and tempo").
 
 On the computer the FM-1 is called **Frodhes FM-1** (an SMK-37 running Frodhes: **Frodhes SMK-37 Pro**, Frodhes
-SMK-37 Elite or Frodhes MKE-P37). The name is the same everywhere the computer shows the unit: its MIDI port (a
-DAW's MIDI preferences, Audio MIDI Setup's MIDI Studio window on a Mac), its audio input (the system's sound
-settings, a DAW's audio input list) and the USB device list. The update mode is called "Felucca Update", after the
-platform. Since the name carries the model, the community firmware flasher finds the unit for its DOWNLOAD MODE by
-itself (0.9.5 and 0.9.6 called it only "Frodhes", and the flasher did not find it). Each model has its own USB
-product id, new in 0.9.7, so a computer that knew the unit under an earlier name sets it up as a new device, under
-the new name, by itself: in a DAW, switch the Frodhes FM-1 port on once (in its MIDI preferences) where the old one
-was. A Mac keeps the old entry in Audio MIDI Setup's MIDI Studio window, greyed out (offline): nothing needs
-deleting, but you can remove it. It appears as a USB audio input (class-compliant, stereo, 16-bit, 44.1 or 48 kHz): you can record exactly
-what it plays, digitally, without the headphone jack's hiss (at 48 kHz the converted stream keeps the same
-headroom: a loud, bright passage is softened just under full scale instead of clipping). It does not play audio from the computer. Saving the
-settings while it is recorded does not disturb the recording (section 6, "What is kept, and when"). The USB audio holds one block (5.8 ms) more
-than the jack in hand, so that no render, however long, can run it dry (that was a click now and then at full
-polyphony): a frame leaves the FM-1 about 6-11 ms after its block is computed, at either rate; a DAW's latency
-compensation takes care of it when you record.
+SMK-37 Elite or Frodhes MKE-P37): its MIDI port, its audio input and the USB device list all carry that name. During
+an install it shows up under another name for a moment; that is normal. After an update from an older Frodhes, a DAW
+may list it as a new device: switch the Frodhes FM-1 port on once in its MIDI preferences. A Mac may keep the old
+entry in Audio MIDI Setup, greyed out; nothing needs deleting.
+
+**USB audio:** class-compliant stereo, 16-bit, 44.1 or 48 kHz. It records exactly what Frodhes plays, digitally,
+without the headphone jack's hiss. It does not play audio from the computer. Saving the settings while you record
+does not disturb the recording (section 6, "What is kept, and when"). The USB audio comes a few milliseconds later
+than the jack; a DAW's latency compensation takes care of it when you record.
 
 ## 13. If something goes wrong
 
@@ -1074,39 +1133,31 @@ compensation takes care of it when you record.
   The setup and your user presets are kept together in two places in the flash and a save writes the older one, so
   if the power goes while it is being saved (a fraction of a second, about 2 s after a change or at a SAVE), only that
   last change is lost, never the setup or a preset. The pattern has one place: a power cut while it is saved loses
-  the pattern only. The first start after the update from 0.9.5 copies 0.9.5's setup, presets and pattern once.
-  Going back to 0.9.5 afterwards finds its presets and pattern as they were at the update, and its setup as it was or its defaults (once 0.9.6 has saved twice).
-  Whatever 0.9.5 saves after such a way back (its setup, a preset, the pattern) comes over again at the next update
-  to 0.9.6 and replaces 0.9.6's own; what 0.9.5 did not save stays as 0.9.6 had it.
+  the pattern only.
 - **It does not start:** switch the FM-1 off, hold **OCT−** and switch it on. That is the USB rescue: install again
-  from the hub or with `fm1_install.py`. Your FM-1 can always be recovered this way.
-- **It shows UPDATE MODE or UPDATE FAILED at power-on:** an install was cut off; install again (section 1).
-- **Back to the original firmware:** the hub's "Official firmware" section, with V15 from m-vave.com.
-
----
-
-Frodhes is free software under the GPL-3.0 licence, built on [Dinghy](https://github.com/zvenson/dinghy),
-[Felucca](https://github.com/hugelton/Felucca) and [SLOOP](https://github.com/isod89/sloop-fm1). Source and
-issues: [github.com/leonardoMirabal/frodhes](https://github.com/leonardoMirabal/frodhes).
+  ([section 1](#install)). Your FM-1 can always be recovered this way.
+- **It shows UPDATE MODE or UPDATE FAILED at power-on:** an install was cut off; install again ([section 1](#install)).
+- **Back to the original firmware:** see [Going back to the original firmware](#going-back-to-the-original-firmware).
 
 ## 14. Specifications
 
 | | |
 | --- | --- |
-| **Sound** | A physical model computed live, no samples. Rhodes: hammer, tine, tonebar and pickup, every key a little different, the tine's slow whirl on E2–C6, SPREAD across the stereo field (CC 105); 4 types (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO). VIBES: a vibraphone, mallet, bar modes, tuned tube and motor. MARIMBA: rosewood bars, mallet, bar modes and tuned tube, no damper or motor (C2–C7 authentic) |
-| **Polyphony** | 10 voices (the Rhodes, VIBES and MARIMBA); an 11th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
+| **Sound** | A physical model computed live, no samples. Electric pianos: hammer, tine, tonebar and pickup, every key a little different, the tine's slow whirl on E2–C6, SPREAD across the stereo field (CC 105); 4 types (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO). VIBES: a vibraphone, mallet, bar modes, tuned tube and motor. MARIMBA: rosewood bars, mallet, bar modes and tuned tube, no damper or motor (C2–C7 authentic) |
+| **Polyphony** | 10 voices (the electric pianos, VIBES and MARIMBA); an 11th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
 | **Range** | 88 notes, A0–C8 over MIDI (notes outside play the nearest end); the 27 keys play F3–G5, OCT ±2 octaves, TRANSP ±24 semitones, TUNE ±50 cents |
 | **Velocity** | MIDI 1–127. The FM-1's keys: F3–C5 sense how firmly they land (TOUCH LIGHT / MEDIUM / HEAVY, KEY VEL the velocity of a medium press, default 96), C#5–G5 play the recent average; TOUCH FIXED: every key at KEY VEL (1–127) |
-| **Audio** | 44.1 kHz, integer processing, 256-frame blocks (5.8 ms); output limiter; exact digital silence after the sound stays below −60 dBFS for 0.4 s (a smooth fade of about 0.45 s) |
-| **Latency** | About 14 ms from a MIDI note to the USB audio, including the computer's buffers (measured median 13.7 ms at 44.1 kHz, 12.9 ms at 48 kHz); the headphone jack about 10 ms |<!-- FM-1, 57e0025, tools/hil_usb_onset.py, 9 notes: 44.1 kHz USB median 13.7 ms (11.2-15.8), jack 10.0; 48 kHz USB 12.9 (10.7-14.6), jack 10.3 (build/final2/usb_onset.log) -->
+| **Audio** | 44.1 kHz, integer processing, 256-frame blocks (5.8 ms); output limiter; silent between notes (no hiss on the USB audio) |
+| **Latency** | About 14 ms from a MIDI note to the USB audio, including the computer's buffers; about 10 ms to the headphone jack |
 | **Outputs** | Stereo headphone jack (MASTER); USB audio to the computer, stereo 16-bit, 44.1 or 48 kHz, following MASTER or fixed (USB VOL) |
 | **MIDI in** | USB-MIDI and the TRS jack (on / off); CHANNEL ALL or 1–16 |
 | **MIDI out** | USB only: notes from the keys, chord mode, arpeggiator and sequencer. No clock, CC or program change out |
 | **Clock** | CLOCK INT or EXT: 24 PPQN in from USB or TRS, 40–240 BPM; the synced effects, the arpeggiator and the sequencer locked to its pulses; Start plays from bar 1, Continue from where Stop left it, Stop stops |
 | **Tempo** | 40–240 BPM; tap tempo on PLAY |
 | **Presets** | 19 factory (F01–F19) + 16 user (U01–U16); Program Change 0–15 (F01–F16), 16–31 (U01–U16), 32–34 (F17–F19) |
-| **Effects** | COMP → DRIVE → FILTER → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter |
+| **Effects** | COMP → EQ → DRIVE → FILTER → TREM/WAH → PHASER → CHORUS → DELAY → REVERB → limiter |
 | Compressor | Threshold 0 to −40 dB, ratio 1.5:1–20:1, attack 0.1–50 ms, release 20 ms–1.5 s (CC 109), makeup 0 to +24 dB |
+| EQ | LOW shelf 120 Hz, MID bell (Q 0.9) 200 Hz–5 kHz, HIGH shelf 5 kHz; each ±15 dB; CC 34–37 |
 | Filter | LP12, LP18, HP12, HP18, BP, NOTCH; 30 Hz–16 kHz; resonance Q 0.7–20; LFO ±4 octaves |
 | LFO | SINE, TRI, SAW, RAMP, SQR, S&H; 0.5–12 Hz or synced; FREE or KEY retrigger |
 | Tremolo / wah | PAN, TREM (SHAPE: sine to square, then an amp tremolo), WAH (the wah keeps the level); 0.5–12 Hz or synced. VIBES: its own motor, 0.5–10 Hz |
@@ -1139,3 +1190,11 @@ screen on the Move, the eight knobs as eight cards a page at a time. Its manual 
 page and what differs: **[MOVE.md](MOVE.md)**.
 
 ![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=afb6680e)
+
+---
+
+Frodhes is free software under the GPL-3.0 licence, built on [Dinghy](https://github.com/zvenson/dinghy),
+[Felucca](https://github.com/hugelton/Felucca) and [SLOOP](https://github.com/isod89/sloop-fm1). MIDI pitch bend is
+genkigenki's work; key velocity on the FM-1's keys follows Charles Vestal's
+[fm1-velocity](https://github.com/charlesvestal/fm1-velocity). Source and issues:
+[github.com/leonardoMirabal/frodhes](https://github.com/leonardoMirabal/frodhes).
