@@ -8,10 +8,12 @@ warm; play hard and it barks or rings.
 
 <table align="center">
   <tr>
-    <td align="center"><img src="docs/manual/img/piano.png?v=b2c98a85" width="360" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
-    <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ed05fe9c" width="420" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
+    <td align="center"><img src="docs/manual/img/thumbnail.png?v=23c51997" width="260" alt="Frodhes: the start screen (FRODHES, ELECTRIC PIANO + VIBES + MARIMBA)"></td>
+    <td align="center"><img src="docs/manual/img/piano.png?v=b2c98a85" width="260" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
+    <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ed05fe9c" width="340" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
   </tr>
   <tr>
+    <td align="center">The start screen</td>
     <td align="center"><b>On the M-VAVE FM-1</b>: colour screen, four knobs</td>
     <td align="center"><b>On the Ableton Move</b>: its own screen, eight knobs</td>
   </tr>
