@@ -10,18 +10,21 @@ by hand, and two PRs never edit the same notes file.
 A fragment (file name: lowercase letters, digits and '-', then .md) is only these sections, in this order, each at
 most once, at least one of them:
 
+    ## Summary
     ## New
     ## Changes
     ## Fixed
     ## Tools
     ## Tested
 
-and each section's body is a Markdown list: lines starting "- ", their continuation lines indented by two or more
+and each section's body is a Markdown list (Summary: one plain paragraph instead, the notes' first line after
+"**Frodhes X.Y.Z**", such as "adds a 3-band EQ and ...", in at most one fragment, usually 00-summary.md): lines starting "- ", their continuation lines indented by two or more
 spaces, blank lines. Nothing else: no other heading, no text before the first section (an <!-- HTML comment --> is
 allowed and dropped), no DRAFT line, no version number of the coming release (the release names itself; history such
 as "saved by 0.9.3" is fine). The fragments are assembled in file-name order, section by section (a number in front,
 01-usb-audio-clicks.md, sets the order by importance; a fragment without one comes after the numbered ones); the notes' head
-(the instrument line from docs/MANUAL.md's first line, the download and install) and foot are written here.
+(the Summary, or without one the instrument line from docs/MANUAL.md's first line; the download; the install for the
+FM-1, the Move and the SMK-37) and foot are written here.
 """
 import os
 import re
@@ -29,9 +32,10 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIR = os.path.join("docs", "changes")
-SECTIONS = ("New", "Changes", "Fixed", "Tools", "Tested")
+SECTIONS = ("Summary", "New", "Changes", "Fixed", "Tools", "Tested")
 PAGES_URL = "https://leonardomirabal.github.io/frodhes/"
 DOWNLOAD = "https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes.fwsc"
+BLOB = "https://github.com/leonardoMirabal/frodhes/blob/main/docs/"
 NAME = re.compile(r"[a-z0-9][a-z0-9-]*\.md")
 
 
@@ -64,11 +68,22 @@ def parse(text, name="fragment"):
                 out[cur].append("")
         elif cur is None:
             errs.append(f"{name}:{i}: text before the first section heading")
+        elif cur == "Summary":
+            if re.match(r"\s*([-*+] |\d+\. )", line):
+                errs.append(f"{name}:{i}: '## Summary' is one plain paragraph, not a list: {line[:60]!r}")
+            else:
+                out[cur].append(line.strip())
         elif not (line.startswith("- ") or re.match(r"  +\S", line)):
             errs.append(f"{name}:{i}: not a list line ('- ' or an indented continuation): {line[:60]!r}")
         else:
             out[cur].append(line.rstrip())
     body = {s: "\n".join(v).strip("\n") for s, v in out.items()}
+    if "Summary" in body:
+        if "\n\n" in body["Summary"]:
+            errs.append(f"{name}: '## Summary' is one paragraph (no blank line in it)")
+        body["Summary"] = " ".join(body["Summary"].split())
+        if re.match(r"\W*Frodhes\b", body["Summary"]):
+            errs.append(f"{name}: '## Summary' starts after '**Frodhes X.Y.Z**' (begin with the verb: 'adds ...')")
     for s, v in body.items():
         if not v:
             errs.append(f"{name}: '## {s}' is empty (leave the section out)")
@@ -92,6 +107,9 @@ def load(root=ROOT):
             frags.append((f, parse(open(os.path.join(d, f), encoding="utf-8").read(), f"{DIR}/{f}")))
         except Bad as e:
             errs.append(str(e))
+    summ = [f for f, secs in frags if "Summary" in secs]
+    if len(summ) > 1:
+        errs.append(f"{DIR}/: '## Summary' in {len(summ)} fragments ({', '.join(summ)}): the notes have one summary line")
     if errs:
         raise Bad("\n".join(errs))
     return frags
@@ -106,22 +124,37 @@ def tagline(root=ROOT):
     return "a " + m.group(1)
 
 
-def assemble(ver, frags, root=ROOT):
-    """the release notes for ver from frags (load()); Bad if there are none or one names ver"""
+def assemble(ver, frags, root=ROOT, move=True):
+    """the release notes for ver from frags (load()); move: the release ships the Move package (its install route);
+    Bad if there are none or one names ver"""
     if not frags:
         raise Bad(f"no release-note fragments in {DIR}/ (each change adds its own {DIR}/<topic>.md)")
     for f, secs in frags:
         for s, body in secs.items():
             if re.search(r"(?<![\d.])" + re.escape(ver) + r"(?![\d])", body):
                 raise Bad(f"{DIR}/{f}: '## {s}' names {ver}, the coming release (the notes' headings say it)")
-    parts = [f"**Frodhes {ver}**: {tagline(root)}. Every note is computed live from the mechanics of the instrument; "
-             "there are no samples.",
+    summ = [secs["Summary"] for _, secs in frags if "Summary" in secs]
+    head = (f"**Frodhes {ver}** {summ[0]}" if summ else
+            f"**Frodhes {ver}**: {tagline(root)}. Every note is computed live from the mechanics of the instrument; "
+            "there are no samples.")
+    install = ("### Install\n\n"
+               f"**FM-1**: download `frodhes.fwsc` below. Install it from the [emulator page]({PAGES_URL}#install) "
+               "(Chrome or Edge, **Install on your FM-1 or SMK-37**), or from a terminal:\n\n"
+               "```sh\npip install mido python-rtmidi\npython3 tools/fm1_install.py frodhes.fwsc\n```\n\n"
+               "Your settings, presets and pattern are kept. If anything goes wrong, switch the FM-1 off, hold "
+               "**OCT−** and switch it on: that is the USB rescue, and you can install again from there.")
+    if move:
+        install += ("\n\n**Move**: you need Schwung on the Move. Install Frodhes with Schwung Manager in a web "
+                    "browser: **Install Custom Module > From GitHub URL**, `leonardoMirabal/frodhes`. Or download "
+                    "`frodhes-module.tar.gz` below and use **From Tarball**. Details: "
+                    f"[the Move manual]({BLOB}MOVE.md#install).")
+    install += ("\n\n**SMK-37 Pro, SMK-37 Elite, MKE-P37** (experimental, not tested on hardware): the three "
+                f"`-experimental.fwsc` files below. Read [SMK37.md]({BLOB}SMK37.md) first.")
+    parts = [head,
              f"**Download:** `frodhes.fwsc` below (the same file as `frodhes-{ver}.fwsc`; the newest is always at "
              f"{DOWNLOAD}). **Try it first in your browser:** {PAGES_URL}",
-             "### Install\n```sh\npip install mido python-rtmidi\npython3 tools/fm1_install.py frodhes.fwsc\n```\n"
-             "If anything goes wrong, switch the FM-1 off, hold **OCT−** and switch it on to get the USB rescue, then "
-             "install again."]
-    for s in SECTIONS:
+             install]
+    for s in SECTIONS[1:]:
         bodies = [secs[s] for _, secs in frags if s in secs]
         if bodies:
             parts.append(f"### {'New in ' + ver if s == 'New' else s}\n" + "\n".join(bodies))

@@ -27,6 +27,10 @@ download), and the release tool fills in everything that depends on it.
   - What was tested, on the host and on the FM-1.
   ```
 
+  The release's summary line is one fragment of its own, usually `docs/changes/00-summary.md`: a `## Summary`
+  section with one plain paragraph that continues "**Frodhes X.Y.Z**" ("adds ... and ..."). Without one, the notes
+  open with the instrument line from the manual.
+
   `tools/changes.py` checks the fragments and `tools/changes.py --preview` shows the notes they make. At release time
   `tools/release.py` assembles every fragment (in file-name order) into `docs/releases/vX.Y.Z.md` and removes them.
 - **The screenshots**, if the screen changed: run `tools/manual_shots.py` and commit `docs/manual/img/` and the

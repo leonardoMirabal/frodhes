@@ -110,6 +110,8 @@ def test_dry_run_stops_before_push(tree, monkeypatch, capsys):
     notes = "\n".join(l[3:] for l in shown.splitlines())                 # (the log indents by 3)
     assert "**Frodhes 0.9.3**: a physically modelled electric piano and a test bar for the M-VAVE FM-1." in notes
     assert "python3 tools/fm1_install.py frodhes.fwsc" in notes
+    assert f"the newest is always at {rel.LATEST_DL})" in notes and "`-experimental.fwsc` files" in notes
+    assert "**Move**" not in notes                                        # no move/ here: no Move package, no route
     i = [notes.index(s) for s in ("### New in 0.9.3\n- **A new thing.**\n  Its second line.",
                                   "### Changes\n- Another change.", "### Fixed\n- Fix A.\n- A fix, as in 0.9.2.",
                                   "Full manual:")]

@@ -445,7 +445,8 @@ class Release:
         frags, text = self.frags, None
         if frags:
             try:
-                text = changes.assemble(self.ver, frags, ROOT)
+                # the Move's install route only when the release ships its package (step 4 decided; None: not yet)
+                text = changes.assemble(self.ver, frags, ROOT, move=self.has_move() and self.move_ok is not False)
             except changes.Bad as e:
                 problems.append(str(e))
         elif not os.path.exists(os.path.join(ROOT, notes)):
