@@ -33,6 +33,7 @@ import tempfile
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import near_header  # noqa: E402
 import bars_hq_study as hs  # noqa: E402
 import gen_bars as gb  # noqa: E402
 import gen_bars_hq as gq_  # noqa: E402
@@ -265,14 +266,17 @@ def run_fpk(hdr0):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--rel", type=float, default=0.0, help="with --check: near is enough (tools/near_header.py: "
+                    "each number within REL of its size; another machine than the committed header's)")
     a = ap.parse_args()
     types = [(t, build_type(t)) for t in ("vibes", "marimba")]
     hdr0 = emit(types)
     hdr = emit(types, run_fpk(hdr0))
     if a.check:
         old = open(OUT).read() if os.path.exists(OUT) else ""
-        print("equal" if old == hdr else "DIFFERS")
-        return 0 if old == hdr else 1
+        verdict, rc = near_header.check(old, hdr, a.rel)
+        print(verdict)
+        return rc
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     open(OUT, "w").write(hdr)
     print(f"wrote {OUT} ({len(hdr)} bytes)")

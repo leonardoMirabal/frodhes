@@ -13,6 +13,7 @@ MARIMBA as every Move user hears them.
 The builds are the Move's settings (16 voices, FR_HQ; tools/gate_h.py build), HQ_DEFAULT says whether notes play HQ."""
 import os
 import pathlib
+import platform
 import subprocess
 import sys
 import wave
@@ -172,10 +173,33 @@ def test_contact_steps_and_rest_scale():
 
 
 def test_generators_current():
-    """the committed HQ headers are what their generators make (the specs, the FE pins, bars_contact.c)"""
-    for g in ("tools/gen_bars_hq.py", "tools/gen_bars_hq_contact.py"):
-        p = subprocess.run([sys.executable, g, "--check"], cwd=ROOT, capture_output=True, text=True)
-        assert p.returncode == 0 and "equal" in p.stdout, (g, p.stdout[-400:], p.stderr[-400:])
+    """the committed HQ headers are what their generators make (the specs, the FE pins, bars_contact.c): byte for byte
+    on macOS arm64, the committed headers' machine. Elsewhere the FE eigen-solve (LAPACK) and the contact's C helper
+    (gcc's FMA contraction) round differently: there near (tools/near_header.py), 10 times the spread seen on Linux
+    arm64 and x86_64 (2026-11-04: the tables 1.1e-7, the contact 5.9e-5)"""
+    ref = (sys.platform, platform.machine()) == ("darwin", "arm64")
+    for g, rel in (("tools/gen_bars_hq.py", "1e-6"), ("tools/gen_bars_hq_contact.py", "1e-3")):
+        opt = [] if ref else ["--rel", rel]
+        p = subprocess.run([sys.executable, g, "--check"] + opt, cwd=ROOT, capture_output=True, text=True)
+        assert p.returncode == 0 and ("equal" in p.stdout or (opt and "near" in p.stdout)), (g, p.stdout[-400:],
+                                                                                              p.stderr[-400:])
+
+
+def test_near_header():
+    """near_header: a number within rel (an integer within 1 LSB too) passes; a bigger change, a text change, a number
+    more or fewer, or rel 0 fail; the body's sha256 is not compared"""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import near_header as nh
+    a = "/* sha256(body) = %s */\nstatic const int32_t t[] = {1000000000, 7, -3};\nconst float f[] = {545.049f, 1e-05f};\n"
+    ref = a % ("0" * 64)
+    assert nh.near(ref, a.replace("{1000000000, 7", "{1000000090, 8") % ("1" * 64), 1e-7)
+    assert nh.near(ref, ref.replace("545.049f", "545.081f"), 1e-3)
+    assert not nh.near(ref, ref.replace("545.049f", "545.081f"), 1e-5)
+    assert not nh.near(ref, ref.replace(", 7,", ", 9,"), 1e-7)
+    assert not nh.near(ref, ref.replace("int32_t", "int16_t"), 1e-3)
+    assert not nh.near(ref, ref.replace("-3}", "-3, 4}"), 1e-3)
+    assert not nh.near(ref, ref.replace(", 7,", ", 8,"), 0)
+    assert nh.check(ref, ref, 0) == ("equal", 0) and nh.check(ref, ref.replace(", 7,", ", 9,"), 1e-3)[1] == 1
 
 
 BARS = [t for t in nl.TYPES if t[1] == "79"]
