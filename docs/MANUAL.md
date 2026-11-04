@@ -13,8 +13,8 @@ shorter and a little louder or softer than its neighbours, and every key stays e
 to C6 has the tine's slow whirl: its level wobbles gently, about 2 dB, once or twice a second. Struck hard, the bass
 goes a touch sharp and settles as it rings. The vibraphone and the marimba are computed the same way (section 5).
 
-Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE, the Rhodes or Fender
-trademark owners or any instrument maker. It comes with no warranty: install it at your own risk. The original
+Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE,
+the Rhodes or Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk. The original
 firmware can always be put back ([how](#going-back-to-the-original-firmware)). See [LICENSING.md](../LICENSING.md).
 
 ![The FRODHES page: TYPE (here BELL DYNO), TONE, BELL and KEY VEL](manual/img/piano.png?v=b2c98a85)

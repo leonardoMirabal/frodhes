@@ -107,5 +107,5 @@ How to build, test and contribute: [docs/BUILD.md](docs/BUILD.md) and [CONTRIBUT
 
 GPL-3.0-only, the same as Dinghy, Felucca and SLOOP ([LICENSING.md](LICENSING.md)).
 
-Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE, Ableton, the Rhodes or
-Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk.
+Frodhes is an independent open-source project, not affiliated with or endorsed by M-VAVE,
+Ableton, the Rhodes or Fender trademark owners or any instrument maker. It comes with no warranty: install it at your own risk.
