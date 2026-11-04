@@ -177,6 +177,13 @@ def test_release_yml_checks_the_package_and_writes_release_json():
     rj = j["release-json"]
     assert rj["needs"] == "release" and "needs.release.outputs.move == 'true'" in rj["if"]
     assert rj["steps"][0]["with"]["ref"] == "main"
-    run_ = rj["steps"][-1]["run"]
+    step = next(s for s in rj["steps"] if s.get("name") == "release.json for the tag, committed to main")
+    run_ = step["run"]
     assert 'tools/move_catalog.py release-json "$V"' in run_ and "git push origin HEAD:main" in run_
     assert run_.index("curl -fsIL") < run_.index("git commit")     # (the URL downloads before it is committed)
+    # without the deploy key: no push, the release.json checked and shown, the job green (a hand commit to main)
+    assert step["env"]["HAS_KEY"] == "${{ secrets.RELEASE_JSON_DEPLOY_KEY != '' }}"
+    nokey = run_[run_.index('if [ "$HAS_KEY" != "true" ]'):run_.index("git config")]
+    assert "curl -fsIL" in nokey and "::notice::" in nokey and "exit 0" in nokey and "git push" not in nokey
+    up = rj["steps"][-1]
+    assert up["uses"].startswith("actions/upload-artifact@") and up["with"]["path"] == "release.json"

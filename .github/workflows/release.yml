@@ -234,8 +234,9 @@ jobs:
   # NEEDS a push to main that main's protection lets through. main requires the checks host, web and
   # generators-macos for everyone, so a push with the workflow's own token (contents: write, above) is refused. With
   # the repository secret RELEASE_JSON_DEPLOY_KEY (the private half of a deploy key with write access, the key allowed
-  # to bypass main's rules in a ruleset) the job pushes with that key. Without it the job fails at the push, after
-  # the release is out: its log shows the release.json to commit to main by hand.
+  # to bypass main's rules in a ruleset) the job pushes with that key. Without the key the job does not push: it writes
+  # and checks release.json, shows it in the log and as the artifact release-json, and a notice says to commit it to
+  # main by hand (the job stays green). With a key, a refused push fails the job.
   release-json:
     needs: release
     if: ${{ !cancelled() && needs.release.result == 'success' && needs.release.outputs.move == 'true' }}
@@ -249,8 +250,18 @@ jobs:
           ref: main
           ssh-key: ${{ secrets.RELEASE_JSON_DEPLOY_KEY }}   # (empty: the workflow's token)
       - name: release.json for the tag, committed to main
+        env:
+          HAS_KEY: ${{ secrets.RELEASE_JSON_DEPLOY_KEY != '' }}
         run: |
           V="${GITHUB_REF_NAME#v}"
+          if [ "$HAS_KEY" != "true" ]; then    # no key: main's protection refuses the push; the release.json is an artifact
+            python3 tools/move_catalog.py release-json "$V"
+            cat release.json
+            URL=$(python3 -c 'import json; print(json.load(open("release.json"))["download_url"])')
+            curl -fsIL -o /dev/null "$URL" || { echo "release.json: $URL does not download" >&2; exit 1; }
+            echo "::notice::no RELEASE_JSON_DEPLOY_KEY: commit the release.json above (also the artifact release-json) to main by hand"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for try in 1 2 3; do
@@ -267,3 +278,9 @@ jobs:
           done
           echo "::error::release.json not pushed to main (its protection: see RELEASE_JSON_DEPLOY_KEY in release.yml): commit the release.json shown above to main by hand"
           exit 1
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: release-json
+          path: release.json
+          if-no-files-found: ignore
