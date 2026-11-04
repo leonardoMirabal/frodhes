@@ -35,7 +35,8 @@ device: the plugin's dev key dev_fault (move/move_bridge.h mb_fault, set over Sc
 one-sample clicks of PROVE_LSB LSB in what the plugin hands Schwung (after its trim: on Main Out, USB-C and the jack,
 as a real glitch of the device's would be), one every PROVE_EVERY_MS. Proven when the clean take gives 0 jack
 events and in the fault take USB shows at least PROVE_N - 1 of the clicks (the fault reached the output) and the
-jack's click detectors (det_hf_click, hil_crackle's click) find every one USB shows. A failed proof stops the run (exit 2): no PASS is given. A build
+jack's click detectors (det_hf_click, hil_crackle's click) find every one USB shows, and neither take has an
+event flagged as on the jack only (the clicks are on USB too: (d) must say so). A failed proof stops the run (exit 2): no PASS is given. A build
 without dev_fault shows no click on USB: the proof says so (install a build with it, boot.txt "dev_fault=1").
 
 Writes build/move/hil/<time>-jack/summary.md + summary.json (each take's npz: USB LSB at its rate, the jack LSB at 48
@@ -51,6 +52,7 @@ differences are what matter. Never run on the device from a test or a gate witho
 import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -77,8 +79,17 @@ HF_LO, HF_K, HF_FLOOR = 12000.0, 12.0, 20.0     # det_hf_click: over 12 kHz, 12 
 OCT_EDGES = (22, 44, 88, 177, 355, 710, 1420, 2840, 5680, 11360, 20000)
 DRY_GAIN = 0.5                                 # the dry run's jack: 6 dB under USB (the Move's line out on the M6:
                                                # unmeasured; the jack's figures of a dry run are SIMULATED)
-DRY_JCLICK = 300.0                             # (LSB on the jack) --dry-inject jclick
+DRY_JCLICK = 1000.0                            # (LSB on the jack) --dry-inject jclick: -30 dBFS (with the
+                                               # Move's jack floor at -65.7 dBFS RMS, 300 LSB is under det_hf_click's
+                                               # 12 x the floor over 12 kHz, and under det_click's 20 x)
 DRY_CLICK = 1500.0                             # (LSB on USB) --dry-inject click
+DRY_FLOOR_DBFS = -65.7                         # the dry jack's own noise floor (RMS): the Move's jack on the M6's
+                                               # input 5 before the proof's chord, 2026-11-04 (flat 200 Hz-8 kHz,
+                                               # USB exact zero there; the FM-1's jack: about -91)
+DRY_DROP_S, DRY_STEP_S = 0.003, 0.3            # --dry-inject jdrop: 3 ms of zeros; jstep: 300 ms 20 dB down (the jack)
+NCC_GATE = 0.97                                # hil_crackle.track's ncc gate, as it is with no noise
+SNR_MIN_DB = 10.0                              # a track window is judged only this far over the jack's own floor
+TRACK_WIN = 2400                               # (hil_crackle.track's window: 50 ms at 48 kHz)
 NEVER_MIDI = ("frodhes", "m6") + mh.NEVER_PORTS
 
 
@@ -250,10 +261,17 @@ class DryJack:
                 jinj.append((kind, t))
         self.seed += 1
         j = hc.sim_jack(u, fs_usb=sr, gain=DRY_GAIN, seed=self.seed)
+        j += np.random.default_rng(self.seed + 7).normal(0, 32768 * 10 ** (DRY_FLOOR_DBFS / 20), len(j))
         for kind, t in jinj:                                # (sim_jack: the jack JACK_DELAY late, its clock slow)
             i = int((t + hc.JACK_DELAY) / (1 + hc.JACK_DRIFT) * FS_J)
-            if kind == "jclick" and i < len(j):
+            if i >= len(j):
+                continue
+            if kind == "jclick":
                 j[i] += DRY_JCLICK
+            elif kind == "jdrop":
+                j[i:i + int(DRY_DROP_S * FS_J)] = 0.0
+            elif kind == "jstep":
+                j[i:i + int(DRY_STEP_S * FS_J)] *= 0.1
         return {"usb": u, "usb_sr": sr, "jack": j, "clock": {"usb": 0.0, "jack": 1.0 / (1.0 + hc.JACK_DRIFT) - 1.0},
                 "xruns": [],                                 # (the rates as a device run's recorder measures them)
                 "injected": [(k, round(t, 4)) for k, t in jinj]}
@@ -294,6 +312,45 @@ def det_hf_click(x, fs, gmask, lo=HF_LO, k=HF_K, floor=HF_FLOOR):
     return out
 
 
+def jack_floor(j, events, cj):
+    """the jack's own noise power (LSB^2): its lead, from 10 ms to 10 ms before the first note-on on the jack's clock
+    (every take starts in silence: USB is exact zero there); None under 40 ms of lead"""
+    on = [e[0] for e in events if e[1] == "on"]
+    if not on:
+        return None
+    a, b = int(0.01 * FS_J), int((float(hc.map_clock(min(on), cj)) - 0.01) * FS_J)
+    return float(np.mean(np.asarray(j[a:b], float) ** 2)) if b - a >= int(0.04 * FS_J) else None
+
+
+NCC_RE = re.compile(r"ncc ([0-9.]+) <")
+
+
+def track_noise_aware(events, j, noise):
+    """hil_crackle.track's "jack vs USB ncc < 0.97" events judged against the jack's own floor: (kept, dropped). A
+    floor of power N under a window of power P caps the jack-vs-USB correlation at sqrt(1 - N / P) (the floor is in
+    the jack, not in USB), so the gate is ncc^2 < NCC_GATE^2 - N / P (the plain 0.97 with no noise), and a window
+    under SNR_MIN_DB over the floor is not judged. Why: the Move's jack on the M6 has a floor of -65.7 dBFS (the
+    proof's lead, 2026-11-04), and the proof's clean chord, decaying from -23 to -62 dBFS, fell from ncc 0.996 to
+    0.84 as it neared the floor: the residual after the path stayed at the floor's -65 dBFS the whole take (a drift
+    would have grown with the level; the clocks' 61 ppm is fitted and warped out by track). Slips stay as they are"""
+    if noise is None:
+        return list(events), []
+    kept, dropped = [], []
+    for e in events:
+        m = NCC_RE.search(e[2]) if e[1] == "track" else None
+        if not m:
+            kept.append(e)
+            continue
+        a = int(round(e[0] * FS_J))
+        p = float(np.mean(np.asarray(j[a:a + TRACK_WIN], float) ** 2)) + 1e-9
+        ncc, snr = float(m.group(1)), 10 * np.log10(p / max(noise, 1e-9))
+        if snr >= SNR_MIN_DB and ncc ** 2 < NCC_GATE ** 2 - noise / p:
+            kept.append((e[0], e[1], e[2] + " (SNR %.1f dB: gate %.3f)" % (snr, np.sqrt(NCC_GATE ** 2 - noise / p))))
+        else:
+            dropped.append((e[0], e[1], e[2] + " (SNR %.1f dB over the jack's floor)" % snr))
+    return kept, dropped
+
+
 def judge(tk, events, ccs=()):
     """hil_crackle's detectors on USB and the jack of one take (each recording's clock fitted to the events) and the
     jack-vs-USB comparison: {"usb": [...], "jack": [...], "gated_jack": [...], "compare": {...}, "clock": {...}}"""
@@ -305,11 +362,16 @@ def judge(tk, events, ccs=()):
     res = hc.analyse(q, j, sr, events, widen=WIDEN, ccs=ccs, clock_usb=cu, clock_jack=cj)
     gj = hc._guard_mask(len(j), FS_J, hc.guards(events, ccs, clock=cj, echo_rate=cj[1] - cu[1]), 0.0, WIDEN)
     res["jack"] = sorted(res["jack"] + [(i / FS_J, "hfclick", d) for i, d in det_hf_click(j, FS_J, gj)])
+    noise = jack_floor(j, events, cj)
+    res["jack"], dropped = track_noise_aware(res["jack"], j, noise)
+    res["info"]["jack_floor_dbfs"] = (None if noise is None else
+                                      round(10 * np.log10(noise + 1e-9) - 20 * np.log10(32768), 1))
+    res["info"]["track_under_floor"] = dropped
     out = {"usb": res["usb"], "jack": res["jack"], "info": res["info"],
            "gated_jack": [e for e in res["jack"] if e[1] in hc.GATED + ("hfclick",)],
            "gated_usb": [e for e in res["usb"] if e[1] in hc.GATED],
            "clock": {"usb": fu, "jack": fj}}
-    out["compare"] = compare(q, j, sr, events, ccs, cu, cj, res)
+    out["compare"] = compare(q, j, sr, events, ccs, cu, cj, res, noise)
     return out
 
 
@@ -338,20 +400,110 @@ def path_fir(y, x, K=FIR_K):
     return solve_toeplitz(rxx, rxy)
 
 
-def compare(q, j, sr, events, ccs, cu, cj, res):
-    """(d): the jack against USB time-aligned (hil_crackle.track's drift line and warp: the cross-correlation), the
-    level difference (one gain, least squares), the residual after the analog path's own response (path_fir): overall
-    and per octave re the jack (resid_gain_only_re_jack_db: after the gain alone), and the residual's clicks
+ALIGN_TOL = 0.0015                             # (s) align: the lag searched this close to the clocks' line
+ALIGN_WIDE = 0.03                              # (s) ... or this close, when too few windows agree within ALIGN_TOL
+ALIGN_WIN, ALIGN_HOP = 4800, 0.25              # align: 100 ms windows every 250 ms
+
+
+def align(q, j, sr, cu, cj, noise=None):
+    """USB warped onto the jack's clock: (uw at 48 kHz, rows [(t_jack, lag frames, ncc)], L0, r, how) or None. The
+    jack's frame a is USB's (at 48 kHz) a + L0 + r a. The line is the two recordings' clocks (clock_fit: each one's
+    first sound and rate, mapped through the event clock), refined by the cross-correlation of 100 ms windows (the
+    jack 10 dB over its own floor) searched only ALIGN_TOL around it, then a least-squares line through the windows
+    that agree (2 rounds, within 2 frames). Why not hil_crackle.track's fit alone: it searches +-0.3 s, and on the
+    proof's held chord (C3 G3 C4 E4: a common period of 15.3 ms) every window's best peak was one period off, so the
+    whole take was aligned 14.7 ms late: the residual held each click twice (the jack's and USB's, a period apart)
+    and flagged all six as on the jack only (the Move, 2026-11-04). The clocks' line is good to about a millisecond,
+    under any period that matters"""
+    from math import gcd
+    from scipy.signal import resample_poly
+    u = np.asarray(q, float)
+    u = u[:, 0] if u.ndim == 2 else u
+    g = gcd(4 * FS_J, int(sr))
+    u4 = resample_poly(u, 4 * FS_J // g, int(sr) // g)
+    u48 = u4[::4]
+    j = np.asarray(j, float)
+    n = min(len(u48), len(j))
+    k = (1.0 + cu[1]) / (1.0 + cj[1])
+
+    def prior(a):                                   # (USB's 48 kHz frame minus the jack's, on the clocks' line)
+        return (cu[0] + (a / FS_J - cj[0]) * k) * FS_J - a
+    thr = max(1.0, 10.0 * noise) if noise else 1.0
+    for how, tol_s in (("clocks", ALIGN_TOL), ("wide", ALIGN_WIDE)):
+        tol, pts = int(round(tol_s * FS_J)), []
+        for a in range(int(0.05 * FS_J), n - ALIGN_WIN, int(ALIGN_HOP * FS_J)):
+            if np.mean(j[a:a + ALIGN_WIN] ** 2) < thr:
+                continue
+            lp = int(round(prior(a)))
+            lo, hi = lp - tol, lp + tol
+            if a + lo < 0 or a + hi + ALIGN_WIN > len(u48):
+                continue
+            L, c = hc._lag(u48, j, a, ALIGN_WIN, lo, hi)
+            if c >= 0.8 and lo < L < hi:
+                pts.append((a, L, c))
+        if len(pts) >= 3:
+            break
+    if len(pts) < 3:
+        return None
+    P = np.array(pts, float)
+    keep = np.ones(len(P), bool)
+    for _ in range(2):
+        r, L0 = np.polyfit(P[keep, 0], P[keep, 1], 1) if keep.sum() >= 2 else (0.0, float(np.median(P[:, 1])))
+        keep = np.abs(P[:, 1] - (L0 + r * P[:, 0])) <= 2.0
+        if keep.sum() < 2:
+            keep = np.ones(len(P), bool)
+    pos = 4.0 * (np.arange(n) * (1.0 + r) + L0)
+    uw = np.interp(pos, np.arange(len(u4)), u4, left=0.0, right=0.0)
+    rows = [(a / FS_J, L, c) for a, L, c in pts]
+    return uw, rows, float(L0), float(r), how
+
+
+LEVEL_WIN, LEVEL_DB, LEVEL_SNR_DB = 960, 3.0, 20.0   # level_steps: 20 ms windows, 3 dB off, 20 dB over the floor
+
+
+def level_steps(jj, yh, m, noise):
+    """[(t s, detail)]: the jack's level against USB's through the path (yh) per 20 ms window (hop 10 ms): the local
+    gain sum(j yh) / sum(yh^2) (unbiased by the jack's own floor, which USB does not share) over LEVEL_DB off 1, where
+    USB's window is LEVEL_SNR_DB over the jack's floor; one event per run of such windows. A level step on the jack
+    alone (its codec, the interface): the music's own steps are on USB too, and the ncc of hil_crackle.track does not
+    see a gain"""
+    out, run = [], None
+    hop = LEVEL_WIN // 2
+    fl = noise or 0.0
+    for a in range(0, len(jj) - LEVEL_WIN, hop):
+        if not m[a:a + LEVEL_WIN].all():
+            continue
+        y, x = yh[a:a + LEVEL_WIN], jj[a:a + LEVEL_WIN]
+        py = float(np.mean(y * y))
+        if py <= 0 or (fl and py < fl * 10 ** (LEVEL_SNR_DB / 10)) or py < 1.0:
+            if run:
+                out.append(run)
+                run = None
+            continue
+        gdb = 20 * np.log10(max(abs(float(np.dot(x, y)) / (py * LEVEL_WIN)), 1e-6))
+        if abs(gdb) > LEVEL_DB:
+            run = [a, a + LEVEL_WIN, gdb] if run is None else [run[0], a + LEVEL_WIN, max(run[2], gdb, key=abs)]
+        elif run:
+            out.append(run)
+            run = None
+    if run:
+        out.append(run)
+    return [(round(a / FS_J, 4), "level %+.1f dB against USB for %.0f ms" % (g, 1000 * (b - a) / FS_J))
+            for a, b, g in out]
+
+
+def compare(q, j, sr, events, ccs, cu, cj, res, noise=None):
+    """(d): the jack against USB time-aligned (align: the clocks' line refined by the cross-correlation), the level
+    difference (one gain, least squares), the residual after the analog path's own response (path_fir): overall and
+    per octave re the jack (resid_gain_only_re_jack_db: after the gain alone), and the residual's clicks
     (det_hf_click) with no USB event near: on the jack only (jack_only)"""
-    warp = {}
     er = cj[1] - cu[1]
     gjt = hc.guards(events, ccs, clock=cj, echo_rate=er)
-    pr = (FS_J * (cu[0] - cj[0] * (1.0 + cu[1]) / (1.0 + cj[1])), (1.0 + cu[1]) / (1.0 + cj[1]) - 1.0)
-    rows, _ = hc.track(q, j, sr, gtimes=gjt, stimes=hc.guards(events, clock=cj), keep=warp, prior=pr)
-    if "uw" not in warp or not rows:
+    al = align(q, j, sr, cu, cj, noise)
+    if al is None:
         return {"ok": False, "why": "no alignment (too little sound in the take for the cross-correlation)",
                 "jack_only": []}
-    uw = warp["uw"]
+    uw, rows, L0, r_line, how = al
     n = min(len(j), len(uw))
     jj, uw = j[:n], uw[:n]
     m = uw != 0
@@ -359,11 +511,12 @@ def compare(q, j, sr, events, ccs, cu, cj, res):
     g = float(np.dot(jj[m], uw[m]) / den) if den > 0 else 0.0
     r0 = np.where(m, jj - g * uw, 0.0)
     h = path_fir(jj, np.where(m, uw, 0.0))           # (the analog path's own response: AC coupling, the filters)
-    r = np.where(m, jj - np.convolve(np.where(m, uw, 0.0), h)[FIR_K:FIR_K + n], 0.0)
+    yh = np.convolve(np.where(m, uw, 0.0), h)[FIR_K:FIR_K + n]   # (USB as the jack should have it)
+    r = np.where(m, jj - yh, 0.0)
     m[:FIR_K] = m[n - FIR_K:] = False
     r[~m] = 0.0
     R = np.array([(t, lag) for t, lag, _ in rows])
-    drift = float(np.polyfit(R[:, 0], R[:, 1] / FS_J, 1)[0]) if len(R) > 2 else 0.0
+    drift = r_line
     pj = float(np.sum(jj[m] ** 2)) + 1e-9
     w = np.hanning(n)
     sj, sr_ = np.abs(np.fft.rfft(np.where(m, jj, 0) * w)) ** 2, np.abs(np.fft.rfft(r * w)) ** 2
@@ -374,15 +527,20 @@ def compare(q, j, sr, events, ccs, cu, cj, res):
         bands.append({"band_hz": [f0, f1], "jack_db": round(float(10 * np.log10(sj[k].sum() * 2 / (n ** 2 * 0.375)
                                                                                   / 32768 ** 2 + 1e-30)), 1),
                       "resid_re_jack_db": round(float(10 * np.log10((sr_[k].sum() + 1e-9) / (sj[k].sum() + 1e-9))), 1)})
-    gm = hc._guard_mask(n, FS_J, gjt, 0.0, WIDEN) | ~m
+    from scipy.ndimage import minimum_filter1d
+    cover = minimum_filter1d(m.astype(np.uint8), 2 * int(0.05 * FS_J) + 1) > 0   # (det_hf_click's +-50 ms floor
+    gm = hc._guard_mask(n, FS_J, gjt, 0.0, WIDEN) | ~cover     # inside the covered part only: the zeroed rest of
+    #                                                            the residual put the floor at 1 LSB at its edge)
     cand = det_hf_click(r, FS_J, gm)
     tusb = [usb_to_jack(t, cu, cj) for t, k, _ in res["usb"] if k in USB_KINDS]
     jack_only, both = [], []
     for i, d in cand:
         t = i / FS_J
         (both if any(abs(t - x) <= MATCH_S for x in tusb) else jack_only).append((round(t, 4), d))
+    steps = level_steps(jj, yh, m, noise)
+    jack_only = sorted(jack_only + steps)
     jcl = [t for t, k, _ in res["jack"] if k in JACK_CLICKS]
-    return {"ok": True, "lag_ms": round(float(np.median(R[:, 1])) / FS_J * 1000, 3),
+    return {"ok": True, "align": how, "lag_ms": round(float(np.median(R[:, 1])) / FS_J * 1000, 3),
             "drift_ppm": round(1e6 * drift, 1), "gain": round(g, 5),
             "jack_re_usb_db": round(float(20 * np.log10(abs(g) + 1e-12)), 2),
             "ncc_min": round(float(min(x for _, _, x in rows)), 4), "windows": len(rows),
@@ -402,7 +560,7 @@ def proof(J, a, d, out=print):
     """the jack detector proven on this rig: a clean take, then PROVE_N real clicks (dev_fault) on a held pedalled
     chord. (ok, report)"""
     spec = "click %d %d %d" % (PROVE_N, PROVE_EVERY_MS, PROVE_LSB)
-    ev = [(0.0, "cc", 64, 127)] + [(0.1, "on", n, 90) for n in PROVE_CHORD]
+    ev = [(0.0, "cc", 64, 127)] + [(0.3, "on", n, 90) for n in PROVE_CHORD]   # (0.3 s of lead: the jack's floor)
     rep = {"spec": spec, "secs": PROVE_SECS, "chord": PROVE_CHORD}
     takes = {}
     J.fault_open(a.ws)
@@ -435,6 +593,9 @@ def _proof_takes(J, a, d, spec, ev, takes, out):
         matched = [t for t in usb_cl if any(abs(usb_to_jack(t, cu, cj) - x) <= MATCH_S for x in jack_cl)]
         takes[name] = {"usb_clicks": [round(t, 4) for t in usb_cl], "jack_clicks": [round(t, 4) for t in jack_cl],
                        "matched": len(matched), "gated_jack": res["gated_jack"], "gated_usb": res["gated_usb"],
+                       "jack_only": res["compare"].get("jack_only", []), "compare_ok": res["compare"].get("ok"),
+                       "jack_floor_dbfs": res["info"].get("jack_floor_dbfs"),
+                       "track_under_floor": len(res["info"].get("track_under_floor", [])),
                        "xruns": tk["xruns"], "jack_peak_dbfs": round(peak_dbfs(tk["jack"]), 1),
                        "usb_peak_dbfs": round(peak_dbfs(tk["usb"]), 1)}
         out("proof %-5s USB clicks %d, jack clicks %d (%d matched), jack gated events %d" % (
@@ -447,6 +608,12 @@ def proof_verdict(rep, takes, out=print):
     why = []
     if c["gated_jack"] or c["jack_clicks"]:
         why.append("the clean take gave %d jack event(s): the detector fires on clean audio" % len(c["gated_jack"]))
+    for k, q in (("clean", c), ("fault", f)):
+        if q["jack_only"]:
+            why.append("the %s take: %d event(s) flagged on the jack only (its clicks are on USB too)" % (
+                k, len(q["jack_only"])))
+        if not q["compare_ok"]:
+            why.append("the %s take: the jack could not be aligned on USB" % k)
     if len(f["usb_clicks"]) == 0:
         why.append("no fault reached the output (USB shows none of the %d clicks): a build without dev_fault "
                    "(boot.txt has no dev_fault=1) or the WebSocket key did not arrive" % PROVE_N)
@@ -539,7 +706,7 @@ def engine_run(J, e, a, d, out=print):
         if res["gated_jack"]:
             bad.append("%s: %d jack event(s)" % (name, len(res["gated_jack"])))
         if cmpr.get("jack_only"):
-            bad.append("%s: %d click(s) on the jack only" % (name, len(cmpr["jack_only"])))
+            bad.append("%s: %d event(s) on the jack only" % (name, len(cmpr["jack_only"])))
         if not cmpr.get("ok"):
             bad.append("%s: the jack against USB: %s" % (name, cmpr.get("why")))
         if tk["xruns"]:
@@ -576,15 +743,23 @@ def summary_md(R):
           "and its jack as a real glitch of the device's would; the key is set to `off` after the take. Proven when "
           "the clean take gives 0 jack events, USB shows at least %d of the clicks (the fault reached the output) and "
           "the jack's click detectors (det_hf_click: bursts over 12 kHz, as a click arrives band-limited through the DAC; and hil_crackle's) find every click USB shows (matched within %d ms on the event "
-          "clock). A run whose proof fails stops there and gives no PASS." % (
+          "clock), and neither take has an event flagged as on the jack only (the clicks are on USB too). The jack's "
+          "own floor is measured in each take's lead (before the first note): hil_crackle's jack-vs-USB correlation "
+          "check is judged against it (a window's ncc is capped at sqrt(1 - floor / level), so the gate is ncc^2 < "
+          "0.97^2 - floor / level, and windows under 10 dB over the floor are not judged), and the jack is aligned "
+          "on USB along the two recordings' clocks (within 1.5 ms), not on a held chord's period. A run whose proof "
+          "fails stops there and gives no PASS." % (
               ", ".join(map(str, PROVE_CHORD)), PROVE_SECS, "click %d %d %d" % (PROVE_N, PROVE_EVERY_MS, PROVE_LSB),
               PROVE_N, PROVE_LSB, PROVE_EVERY_MS, PROVE_N - 1, int(MATCH_S * 1000)), ""]
     if P:
-        L += ["| Take | USB clicks | Jack clicks | Matched | Jack gated events |", "| --- | --- | --- | --- | --- |"]
+        L += ["| Take | USB clicks | Jack clicks | Matched | Jack gated events | Jack only | Jack floor dBFS | "
+              "Track windows under the floor |", "| --- | --- | --- | --- | --- | --- | --- | --- |"]
         for k in ("clean", "fault"):
             q = P.get(k) or {}
-            L.append("| %s | %d | %d | %d | %d |" % (k, len(q.get("usb_clicks", [])), len(q.get("jack_clicks", [])),
-                                                    q.get("matched", 0), len(q.get("gated_jack", []))))
+            L.append("| %s | %d | %d | %d | %d | %d | %s | %s |" % (
+                k, len(q.get("usb_clicks", [])), len(q.get("jack_clicks", [])), q.get("matched", 0),
+                len(q.get("gated_jack", [])), len(q.get("jack_only", [])), q.get("jack_floor_dbfs"),
+                q.get("track_under_floor", 0)))
         L += ["", "**%s**" % P["verdict"], ""]
     if R["engines"]:
         L += ["## Per engine", "",
@@ -679,9 +854,9 @@ def run(a, out=print):
         if not R["stopped"]:
             if a.dry_run:
                 inj = [(k, float(t or 0)) for k, _, t in (s.partition("@") for s in a.dry_inject)]
-                bad = [k for k, _ in inj if k not in ("jclick", "click")]
+                bad = [k for k, _ in inj if k not in ("jclick", "click", "jdrop", "jstep")]
                 if bad:
-                    raise SystemExit("--dry-inject: %s (jclick, click)" % bad)
+                    raise SystemExit("--dry-inject: %s (jclick, click, jdrop, jstep)" % bad)
                 J = DryJack(seed=a.seed + 1, jinject=inj)
             else:
                 if a.ws == "none":

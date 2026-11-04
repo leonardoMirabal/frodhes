@@ -203,6 +203,10 @@ names the Move (default `ableton@move.local`).
   EVERY_MS FRAMES` or `off`, over Schwung's WebSocket; no page has it, off at load). The detector must stay
   silent on the first and find every click on the second, or the run stops without a verdict. `--prove` runs the
   proof only, `--dry-run` runs everything against the host build with a simulated jack (no device, no lock).
+  The jack on the M6 has a floor of -65.7 dBFS (the first device run, 2026-11-04; the FM-1's jack: about -91), so
+  the jack-vs-USB correlation is judged against the floor measured in each take's lead, and the jack is aligned
+  along the two recordings' clocks, not on a held chord's period. A jack-only level step (20 ms windows, 3 dB
+  off USB) is flagged too.
   Results: `build/move/hil/<time>-jack/summary.md`.
 - **The preflight** (`tools/move_hil.py preflight`) runs before every command that gives a sound or level verdict:
   `usb-host`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`, `d2` (over USB-C and over the tap) and
