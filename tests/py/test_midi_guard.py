@@ -97,6 +97,10 @@ def run_fake(tmp_path, hang, timeout="1"):
 @pytest.mark.parametrize("hang,before", [("open", "opening"), ("open-sleep", "opening"), ("close", "closing")])
 def test_a_hanging_open_or_close_exits_in_seconds(tmp_path, hang, before):
     r, secs = run_fake(tmp_path, hang)
+    if not g._Native.load():                                # not macOS: faulthandler's watchdog, by design exit 1
+        assert r.returncode == 1 and g.HANG_MSG in r.stderr and before in r.stdout, (r.returncode, r.stdout, r.stderr)
+        assert secs < 10 and "closed" not in r.stdout, secs
+        return
     assert r.returncode == g.HANG_EXIT, (r.returncode, r.stdout, r.stderr)
     assert secs < 10, secs                                  # (the fake hangs 30 s; the watchdog fires at 1 s)
     out = r.stdout
