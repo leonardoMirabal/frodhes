@@ -60,9 +60,12 @@ Frodhes runs on the Move as a sound generator in Schwung, the community module h
 - Its own screen: the eight knobs as eight cards, a page at a time.
 - 57 factory presets (the FM-1's 19 plus 38 more) and 16 slots for your own.
 - The Move's sequencer, scales and tempo drive it. The arpeggiator is Frodhes' own.
+- One Frodhes on each track, up to four, each with its own sound. Three play without dropouts.
 
 Install it with Schwung Manager in a web browser: **Install Custom Module > From GitHub URL**, then
-`leonardoMirabal/frodhes`. The steps, and every page: [docs/MOVE.md](docs/MOVE.md).
+`leonardoMirabal/frodhes`, or the downloaded `frodhes-module.tar.gz` under **From Tarball**. Once Frodhes is listed in
+Schwung's module catalog, you can also install and update it from there. The steps, and every page:
+[docs/MOVE.md](docs/MOVE.md).
 
 <p align="center">
   <img src="docs/manual/img/move/move-drive-filter.png?v=afb6680e" width="384" alt="The DRIVE/FILTER page on the Move: eight cards, each with its name, its value and a bar">

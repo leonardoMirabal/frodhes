@@ -5,6 +5,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DOC = (ROOT / "docs" / "MOVE.md").read_text()
+README = (ROOT / "README.md").read_text()
+DEV = (ROOT / "docs" / "MOVE-DEV.md").read_text()
 LEVELS = json.loads((ROOT / "move" / "module" / "ui_hierarchy.json").read_text())["levels"]
 
 
@@ -43,21 +45,27 @@ def test_dev_part_apart():
     assert "## For developers" not in DOC and "tools/gen_move_module.py" in dev and "tools/move_ui_shots.mjs" in dev
 
 
-def test_unverified_marked():
+def test_no_test_report_in_the_manual():
+    """a user manual: no development state, no device-check marks (the evidence and what waits for a device are in
+    MOVE-DEV.md), no screen reader (not described to users)"""
     assert "in development" not in DOC and "not released yet" not in DOC
-    assert DOC.count("*(not yet verified on a device") >= 5
+    assert "verified on a device" not in DOC and "screen reader" not in DOC.lower()
+    assert "screen reader" not in README.lower() and "Not verified on a device yet" in DEV
 
 
 def test_install_through_schwung_manager():
-    """the user's install is Schwung Manager's (the catalog, the GitHub URL, the file); ssh and move_install.py are
-    the developers' (MOVE-DEV.md)"""
-    dev = (ROOT / "docs" / "MOVE-DEV.md").read_text()
-    inst = DOC[DOC.index("## Install"):DOC.index("## Open Frodhes' screen")]
+    """the user's install is Schwung Manager's, the GitHub URL first (the catalog only once Frodhes is listed); ssh
+    and move_install.py are the developers' (MOVE-DEV.md)"""
+    dev = DEV
+    inst = DOC[DOC.index("### Install\n"):DOC.index("### Put Frodhes on a track")]
     assert "http://<move-ip>:7700" in inst and "**Global Settings > System > Web Manager**" in inst
     assert "**Install Custom Module**" in inst and "**From GitHub URL**" in inst and "From Tarball**" in inst
-    assert "https://github.com/leonardoMirabal/frodhes" in inst and "**Uninstall**" in inst and "**Update**" in inst
-    assert "move_install.py install" not in DOC and "ssh ableton@move.local" not in DOC
-    assert "[MOVE-DEV.md](MOVE-DEV.md#install-over-ssh)" in inst and "## Install over ssh" in dev
+    assert "`leonardoMirabal/frodhes`" in inst and "https://github.com/leonardoMirabal/frodhes" in inst
+    assert inst.index("**From GitHub URL**") < inst.index("Once Frodhes is listed in Schwung's module catalog")
+    upd = DOC[DOC.index("## Updating and removing"):DOC.index("## What differs from the FM-1")]
+    assert "**Uninstall**" in upd and "**Update**" in upd
+    assert "move_install.py" not in DOC and "ssh ableton@move.local" not in DOC
+    assert "## Install over ssh" in dev and "[MOVE.md](MOVE.md#install)" in dev
     assert "tools/move_install.py install --go" in dev
 
 
@@ -73,7 +81,6 @@ def _src(*p):
     return (ROOT.joinpath(*p)).read_text()
 
 
-README = (ROOT / "README.md").read_text()
 MANUAL = (ROOT / "docs" / "MANUAL.md").read_text()
 
 
@@ -82,16 +89,16 @@ def test_package_names_are_the_release_ones():
     stable = re.search(r'^MOVE_STABLE = "([^"]+)"', rel, re.M).group(1)
     versioned = re.search(r'^MOVE_VERSIONED = "([^"]+)"', rel, re.M).group(1).replace("{v}", "X.Y.Z")
     assert stable in _src("Makefile") and stable in _src("tools", "move_asset.sh")
-    assert f"**`{stable}`**" in DOC and f"`{versioned}`" in DOC
+    assert f"**`{stable}`**" in DOC and f"`{versioned}`" in DEV and versioned not in DOC
     assert f"| `{stable}` |" in README
 
 
 def test_package_contents():
-    """the files MOVE.md lists are the ones make move puts in the tarball (and move_install.py installs)"""
+    """the files MOVE-DEV.md lists are the ones make move puts in the tarball (and move_install.py installs)"""
     mk = _src("Makefile")
     tar = re.search(r"ls (frodhes/dsp\.so[^)]*?) 2>/dev/null", mk).group(1).split()
     files = [f.split("/", 1)[1] for f in tar]
-    para = DOC[DOC.index("The module is one file"):DOC.index("A release carries it")]
+    para = DEV[DEV.index("the module is one file"):DEV.index("A release carries it")]
     assert sorted(re.findall(r"`([\w.]+\.(?:so|json|js)|LICENSE)`", para)) == sorted(files)
     inst = _src("tools", "move_install.py")
     pkg = re.search(r"^PACKAGE = \(([^)]*)\)", inst, re.M).group(1)
@@ -124,6 +131,21 @@ def test_dropped_ccs():
     a, b, c, d = m.groups()
     assert f"({a}-{b}, {c}-{d}) do nothing on the Move" in DOC
     assert f"({a}–{b}, {c}–{d}), which do nothing there" in MANUAL
+
+
+def test_program_change_of_the_move_presets():
+    """F20-F57 are program change 35-72: the preset number plus 15 (move_bridge.h MB_PX_BASE = PR_NF + PR_NU)"""
+    br = _src("move", "move_bridge.h")
+    assert "#define MB_PX_BASE (PR_NF + PR_NU)" in br and "16u + PR_NF" in br
+    assert "Program change 35-72 loads\nF20-F57: the preset number plus 15 (F20 is 35, F57 is 72)." in DOC
+    assert "number less 15" not in DOC
+
+
+def test_arrows_left_fx_right_sus():
+    gen = _src("tools", "gen_move_module.py")
+    assert re.search(r"^SUS_BTN_CC = 63 .*Right", gen, re.M) and re.search(r"^FX_BTN_CC = 62 .*Left", gen, re.M)
+    assert "| **Left arrow** | the effects off or on" in DOC and "| **Right arrow** | the sustain on or off" in DOC
+    assert "it does not toggle" not in DOC
 
 
 def test_sustain_button_is_claimed():

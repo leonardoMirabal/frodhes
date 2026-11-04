@@ -79,6 +79,11 @@ names the Move (default `ableton@move.local`).
   macOS; natively with `MOVE_RUN=` on Linux arm64). `MOVE_VER=X.Y.Z` sets the version. The tarball is reproducible
   (sorted names, no times or owners, `gzip -n`): the release compares its sha256 with the one tested on the Move.
   The build defines `FR_VOICES=16u` and `FR_HQ=1`.
+- **The package**: the module is one file, **`frodhes-module.tar.gz`**: a folder `frodhes/` with `dsp.so` and
+  `engine.so` (the instrument), `module.json` and `help.json` (its description and help text), `ui_chain.js`
+  (Frodhes' screen), `screen.js` and `canvas.js` (the same screen and meter for Schwung's other screens) and
+  `LICENSE`. A release carries it, under that name and as `frodhes-X.Y.Z-move.tar.gz`, only when that exact file
+  passed the tests on a Move.
 - **The release**: `tools/release.py` builds the package in step 3. `release.yml`'s job `move` rebuilds it from the
   tag, and `tools/move_asset.sh` attaches it (`frodhes-X.Y.Z-move.tar.gz` and `frodhes-module.tar.gz`) only when the
   release commit records that exact sha256 as tested on the Move (`Move package sha256 <sha>`). Without the record
@@ -127,7 +132,7 @@ names the Move (default `ableton@move.local`).
 - `tools/ci_move.sh` runs the Move's checks on the host. `node move/ui/test_screen.mjs` checks Frodhes' screen
   (`move/ui/harness.mjs` runs it on a model of the Move's screen and the plugin), `node move/ui/test_chain.mjs`
   the same screen as the whole Move UI (`ui_chain.js`); the pictures: [The screenshots](#the-screenshots).
-- **The screen reader** ([MOVE.md](MOVE.md#screen-reader)): what is said and when is `move/ui/screen_core.js`
+- **The screen reader** (Schwung's; the user manual does not describe it): what is said and when is `move/ui/screen_core.js`
   (its section "the screen reader": `say`, `pageSay`, `rowSay`, `srTouch`, `srTurn` / `srFlush`), from the event
   hooks only, never from `draw`; a turn says at most one value per 120 ms a knob (Schwung's grid,
   `page_controller.mjs` `ANNOUNCE_THROTTLE_MS`), and the value it ended on from the next live tick. The words are
@@ -360,7 +365,11 @@ names the Move (default `ableton@move.local`).
   `FX_BTN_CC` 62 in `tools/gen_move_module.py`; the Left arrow's press is `s_fxbtn` 1, which flips FX, and the Move's
   bypass keeps the compressor: `FR_BYP_KEEP_CMP` in `MOVE_DEFS`, fx.c's dry taken after the compressor). The sustain
   control: the Right arrow (`SUS_BTN_CC` in
-  `tools/gen_move_module.py`); Schwung gives a claimed button only to the module's screen script, so `screen.js`
+  `tools/gen_move_module.py`). On Frodhes' screen (`move/ui/screen_core.js` `sustainBtn`, `fxBtn`) a press writes
+  the state the screen shows next (`s_sustain` / `s_fx` 0 or 1), not a flip: a press that Schwung delivers twice,
+  or plays back later from an automation lane, lands on the same state. Only before the screen has read SUS or FX
+  for the first time does a press ask the plugin to flip it (`s_susbtn` / `s_fxbtn` 1). The user manual says only
+  that each press turns it on or off. Schwung gives a claimed button only to the module's screen script, so `screen.js`
   passes its press to the plugin (`s_susbtn` 1), which flips SUS (`s_sustain`). `s_susbtn` is no page's knob and has
   no `chain_params` entry: Schwung's metadata merge lets a `chain_params` entry win over a hierarchy item, and the
   0.9.8 candidate's PEDAL cell became an UP / DOWN enum whose click left the button held (SUS could not be
@@ -404,7 +413,16 @@ from Schwung's display mirror and the controls sent through Schwung's test bus u
   second (82 x 24 / 60), with one Start and one Stop. The bridge made no pulses of its own, and the tremolo's dips
   came every 366 ms (1/8 at 82 BPM). Two Frodhes, in slots 1 and 2, both got every pulse. The clock sent over USB-C
   never arrived: the plugin counted 0 pulses.
-- **Not verified on a device yet**: the plain `tar` install (the installer is the tested route), the MAPPINGS
-  (pressure), the CHAN setting with the Move's tracks, the HQ sound's described differences, the 128-frame blocks and the 725 us working
-  limit, and the large pictures added for this manual's pages (FREEZE, the X header, the
-  toast, the menu rows), which are the same drawing code the device check covered.
+- **The release candidate** (2026-11-04, the coordinator's run): installed and updated over ssh
+  (`tools/move_install.py`); one, two and three Frodhes at 16 voices with every effect heavy, worst callback 584,
+  605 and 590 us, 0 clicks (so three play with no dropouts); all three engines sample-exact against the host build
+  on the tap (notes, velocity, sustain, the clock at 100 BPM, the stress take, the state across a reload); on the
+  jack no glitch that the USB-C take does not have too; the 73 presets; the arpeggiator's HOLD (by the user). The
+  screen and the pages were checked on an earlier build (2026-10-30, above). The mapping's guard against the
+  developer CCs is tested on the host only (`tests/py/test_move_maps.py`).
+- **Not verified on a device yet**: the install, update and removal through Schwung Manager (From GitHub URL,
+  From Tarball, Uninstall); the plain `tar` install (the installer is the tested route); the EQ page and the
+  COMPRESSOR meter moving while playing on this build; the MAPPINGS (pressure); the CHAN setting with the Move's
+  tracks; Schwung's Shift + volume touch + Track shortcut leaving Frodhes' screen; and the large pictures added
+  for the manual's pages (FREEZE, the X header, the toast, the menu rows), which are the same drawing code the
+  device check covered.
