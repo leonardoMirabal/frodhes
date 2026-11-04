@@ -5,6 +5,7 @@ message is raised, a silent server times out, the CLI prints the state; tools/mo
 and sets each engine's preset through it."""
 import json
 import os
+import socket
 import subprocess
 import sys
 import threading
@@ -35,6 +36,16 @@ def plugin_params():
         if int(c):
             cc.setdefault(int(c), []).append(k)
     return dflt, cc
+
+
+def cut(ws):
+    """the connection cut without a close frame. shutdown first: on Linux close() alone sends no FIN while the
+    server's reader thread sits in recv on the socket, so the client never saw the cut (python 3.14, 2026-11-04)"""
+    try:
+        ws.socket.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+    ws.socket.close()
 
 
 class FakeSchwung:
@@ -69,7 +80,7 @@ class FakeSchwung:
     def drop_all(self):
         """every connection cut without a close frame (as the manager did, 2026-10-28)"""
         for ws in self.conns:
-            ws.socket.close()
+            cut(ws)
 
     def handle(self, ws):
         self.conns.append(ws)
@@ -92,7 +103,7 @@ class FakeSchwung:
                     self.cut_sets[0] -= 1
                     if self.cut_sets[0] <= 0:
                         self.cut_sets.pop(0)
-                        ws.socket.close()
+                        cut(ws)
                         return
                 if self.refuse:
                     ws.send(json.dumps({"type": "error", "message": "set_param failed: busy"}))
@@ -114,7 +125,7 @@ class FakeSchwung:
                         self.hist.append(("take", self.cur))
                         if self.cut_on == "go":
                             self.cut_on = None
-                            ws.socket.close()
+                            cut(ws)
                             return
                 elif m["key"] == "synth:dev_play_add":
                     t = self.takes[self.cur]
@@ -129,7 +140,7 @@ class FakeSchwung:
                             t["ev"].append(tuple(int(x, 0) for x in e.split()))
                     if self.cut_on == "add":
                         self.cut_on = None
-                        ws.socket.close()
+                        cut(ws)
                         return
                 if m["key"] == "synth:p_hq":
                     self.hist.append(("hq", int(m["value"]) != 0))
