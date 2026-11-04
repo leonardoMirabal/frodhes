@@ -206,7 +206,9 @@ names the Move (default `ableton@move.local`).
   The jack on the M6 has a floor of -65.7 dBFS (the first device run, 2026-11-04; the FM-1's jack: about -91), so
   the jack-vs-USB correlation is judged against the floor measured in each take's lead, and the jack is aligned
   along the two recordings' clocks, not on a held chord's period. A jack-only level step (20 ms windows, 3 dB
-  off USB) is flagged too.
+  off USB) is flagged too. Each worst take starts from silence (the first run's unity takes began on the low take's
+  reverb tail and misjudged the floor and the guards), and a jack burst over 12 kHz that USB has too, with no USB
+  glitch there, is the music's own (information).
   Results: `build/move/hil/<time>-jack/summary.md`.
 - **The preflight** (`tools/move_hil.py preflight`) runs before every command that gives a sound or level verdict:
   `usb-host`, `usb-note`, `usb-vel`, `usb-sus`, `usb-clock`, `usb-stress`, `d2` (over USB-C and over the tap) and

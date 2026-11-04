@@ -111,3 +111,46 @@ def test_align_follows_the_clocks_not_a_held_chords_period():
     assert al is not None and al[4] == "clocks"
     L0, r = al[2], al[3]                     # (the truth: USB's frame = the jack's (a - 19.2) (1 + 60 ppm))
     assert abs(L0 + 0.0004 * (1 + 60e-6) * 48000) < 1.0 and abs(r - 60e-6) < 20e-6, (L0, r)
+
+
+def _burst(n, at, fs, amp, f=15000.0, ms=1.0):
+    """a Hann-windowed tone burst over 12 kHz (a transient's high band) at at s"""
+    import numpy as np
+    m = int(ms * 1e-3 * fs)
+    k = np.arange(m)
+    x = np.zeros(n)
+    x[int(at * fs):int(at * fs) + m] = amp * np.hanning(m) * np.sin(2 * np.pi * f * k / fs)
+    return x
+
+
+def test_a_burst_on_usb_too_is_the_musics_not_the_jacks():
+    """the first device run's low takes: 3-5 jack hfclicks an engine, each with USB's burst of the same size at the
+    same moment. A burst on both is the music's (information); one on the jack alone, or at a USB glitch, is kept"""
+    import numpy as np
+    rng = np.random.default_rng(1)
+    sr, n = 44100, 44100 * 2
+    u = rng.normal(0, 2, n) + _burst(n, 0.8, sr, 300)                      # (USB has a burst at 0.8 s only)
+    q = np.round(np.stack([u, u], 1)).astype(np.int64)
+    clk = (0.0, 0.0)
+    hf = mj.usb_hf_times(q, sr, clk, clk)
+    assert mj.near(hf, 0.8005, mj.HF_MATCH_S) and not mj.near(hf, 1.4, mj.HF_MATCH_S)
+    jack = [(0.8005, "hfclick", "music"), (1.4, "hfclick", "jack only"), (0.801, "zero", "a dropout")]
+    kept, music = mj.split_hf(jack, [], hf)
+    assert [e[2] for e in music] == ["music"] and [e[2] for e in kept] == ["jack only", "a dropout"]
+    kept, music = mj.split_hf(jack, [0.8], hf)                             # (a USB glitch there: on both, kept)
+    assert music == [] and len(kept) == 3
+
+
+def test_a_take_that_starts_on_a_tail_has_no_floor():
+    """the first device run's unity takes began on the low take's tail (USB -5 dBFS before the first note): the
+    jack's 'floor' read -12.8 dBFS and the alignment found no window over it. A lead that is not silent gives no
+    floor, and the worst takes say the take did not start in silence"""
+    import numpy as np
+    ev = [(0.3, "on", 60, 90)]
+    j = np.random.default_rng(2).normal(0, 20, 48000)
+    assert mj.jack_floor(j, ev, (0.0, 0.0), -300.0) is not None
+    assert mj.jack_floor(j, ev, (0.0, 0.0), -5.0) is None
+    u = np.zeros((44100, 2))
+    assert mj.lead_dbfs(u, 44100, ev, (0.0, 0.0)) < mj.LEAD_QUIET_DBFS
+    u[:13000] = 18000.0
+    assert mj.lead_dbfs(u, 44100, ev, (0.0, 0.0)) > mj.LEAD_QUIET_DBFS

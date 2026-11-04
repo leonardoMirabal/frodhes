@@ -73,7 +73,9 @@ PROVE_N, PROVE_EVERY_MS, PROVE_LSB = 6, 1000, 1500   # the proof's fault: 6 clic
 PROVE_SECS = 8.0
 PROVE_CHORD = (48, 55, 60, 64)
 MATCH_S = 0.012                                # a jack event this close to a USB one (on the event clock) is the same
-USB_KINDS = ("click", "click-lim", "zero", "repeat", "stale", "clip", "step")
+USB_KINDS = ("click", "zero", "repeat", "stale", "clip", "step")   # USB's glitches. Not click-lim (the limiter's
+# own steps, information): the unity takes had 910 of them in 30 s, one every 33 ms, so MATCH_S around them excused
+# most of a take. A jack burst at one of them is excused only by USB's own burst there (HF_MATCH_S, split_hf)
 JACK_CLICKS = ("click", "click-lim", "hfclick")
 HF_LO, HF_K, HF_FLOOR = 12000.0, 12.0, 20.0     # det_hf_click: over 12 kHz, 12 x the local floor and >= 20 LSB
 OCT_EDGES = (22, 44, 88, 177, 355, 710, 1420, 2840, 5680, 11360, 20000)
@@ -312,14 +314,68 @@ def det_hf_click(x, fs, gmask, lo=HF_LO, k=HF_K, floor=HF_FLOOR):
     return out
 
 
-def jack_floor(j, events, cj):
-    """the jack's own noise power (LSB^2): its lead, from 10 ms to 10 ms before the first note-on on the jack's clock
-    (every take starts in silence: USB is exact zero there); None under 40 ms of lead"""
+LEAD_QUIET_DBFS = -70.0                        # a take's lead (before its first note) must be this quiet on USB
+
+
+def lead_dbfs(u, sr, events, cu):
+    """USB's level (dBFS RMS) in the take's lead: from 10 ms to 10 ms before the first note-on (None: no lead)"""
     on = [e[0] for e in events if e[1] == "on"]
     if not on:
         return None
+    a, b = int(0.01 * sr), int((float(hc.map_clock(min(on), cu)) - 0.01) * sr)
+    return dbfs(np.asarray(u, float)[a:b]) if b - a >= int(0.04 * sr) else None
+
+
+def jack_floor(j, events, cj, usb_lead_db=None):
+    """the jack's own noise power (LSB^2): its lead, from 10 ms to 10 ms before the first note-on on the jack's clock;
+    None under 40 ms of lead, or when USB is not quiet there (usb_lead_db over LEAD_QUIET_DBFS: the lead holds
+    music, not the floor; the first device run's unity takes began on the low take's tail at -5 dBFS, and the
+    'floor' read -12.8 dBFS)"""
+    on = [e[0] for e in events if e[1] == "on"]
+    if not on or (usb_lead_db is not None and usb_lead_db > LEAD_QUIET_DBFS):
+        return None
     a, b = int(0.01 * FS_J), int((float(hc.map_clock(min(on), cj)) - 0.01) * FS_J)
     return float(np.mean(np.asarray(j[a:b], float) ** 2)) if b - a >= int(0.04 * FS_J) else None
+
+
+HF_MATCH_S = 0.003                             # a jack burst this close to one of USB's (on the clocks) is USB's too
+
+
+def usb_hf_times(q, sr, cu, cj):
+    """the times (on the jack's clock, sorted) of every USB frame over HF_LO at half det_hf_click's gates, no guards:
+    the music's high-frequency transients (the drive, the delay's and the reverb's edges) as USB has them. Every
+    frame, not one burst per 5 ms: two jack bursts 6.4 ms apart (marimba, 14.967 / 14.974 s) had USB's under both"""
+    from scipy.signal import butter, sosfiltfilt
+    x = np.asarray(q, float)
+    x = x[:, 0] if x.ndim == 2 else x
+    if len(x) < int(0.2 * sr):
+        return np.zeros(0)
+    a = np.abs(sosfiltfilt(butter(6, HF_LO, "high", fs=sr, output="sos"), x))
+    fl = hc._local_median(a, half=int(0.05 * sr), hop=int(0.005 * sr)) * 1.4826 + 1.0
+    i = np.flatnonzero((a > HF_K / 2 * fl) & (a > HF_FLOOR / 2))
+    return np.sort(hc.map_clock((i / sr - cu[0]) / (1.0 + cu[1]), cj))       # (usb_to_jack, every frame at once)
+
+
+def near(ts, t, tol):
+    """any of the sorted times ts within tol of t"""
+    k = int(np.searchsorted(ts, t - tol))
+    return k < len(ts) and ts[k] <= t + tol
+
+
+def split_hf(events, usb_ev, usb_hf):
+    """the jack's hfclick events: (kept, music): kept where USB's detectors have an event there too (a glitch of the
+    device: on both, the proof's clicks) or where USB has no burst there (the jack's own); music where USB has the
+    same burst and no event (the music's own transient, which USB's bit-exact detectors pass). The first device run's
+    low takes: 3-5 jack-only hfclicks an engine, 22-72 LSB at 13-39 x local, each with USB's burst of the same size
+    (x the jack's gain: 30-99 LSB) at the same moment"""
+    kept, music = [], []
+    for e in events:
+        if e[1] == "hfclick" and not any(abs(e[0] - x) <= MATCH_S for x in usb_ev) and \
+                near(usb_hf, e[0], HF_MATCH_S):
+            music.append(e)
+        else:
+            kept.append(e)
+    return kept, music
 
 
 NCC_RE = re.compile(r"ncc ([0-9.]+) <")
@@ -362,8 +418,14 @@ def judge(tk, events, ccs=()):
     res = hc.analyse(q, j, sr, events, widen=WIDEN, ccs=ccs, clock_usb=cu, clock_jack=cj)
     gj = hc._guard_mask(len(j), FS_J, hc.guards(events, ccs, clock=cj, echo_rate=cj[1] - cu[1]), 0.0, WIDEN)
     res["jack"] = sorted(res["jack"] + [(i / FS_J, "hfclick", d) for i, d in det_hf_click(j, FS_J, gj)])
-    noise = jack_floor(j, events, cj)
+    lead = lead_dbfs(q, sr, events, cu)
+    noise = jack_floor(j, events, cj, lead)
     res["jack"], dropped = track_noise_aware(res["jack"], j, noise)
+    usb_ev = [usb_to_jack(t, cu, cj) for t, k, _ in res["usb"] if k in USB_KINDS]
+    usb_hf = usb_hf_times(q, sr, cu, cj)
+    res["jack"], music = split_hf(res["jack"], usb_ev, usb_hf)
+    res["info"]["hfclick_usb_too"] = music
+    res["info"]["usb_lead_dbfs"] = None if lead is None else round(lead, 1)
     res["info"]["jack_floor_dbfs"] = (None if noise is None else
                                       round(10 * np.log10(noise + 1e-9) - 20 * np.log10(32768), 1))
     res["info"]["track_under_floor"] = dropped
@@ -371,7 +433,7 @@ def judge(tk, events, ccs=()):
            "gated_jack": [e for e in res["jack"] if e[1] in hc.GATED + ("hfclick",)],
            "gated_usb": [e for e in res["usb"] if e[1] in hc.GATED],
            "clock": {"usb": fu, "jack": fj}}
-    out["compare"] = compare(q, j, sr, events, ccs, cu, cj, res, noise)
+    out["compare"] = compare(q, j, sr, events, ccs, cu, cj, res, noise, usb_hf)
     return out
 
 
@@ -492,7 +554,7 @@ def level_steps(jj, yh, m, noise):
             for a, b, g in out]
 
 
-def compare(q, j, sr, events, ccs, cu, cj, res, noise=None):
+def compare(q, j, sr, events, ccs, cu, cj, res, noise=None, usb_hf=np.zeros(0)):
     """(d): the jack against USB time-aligned (align: the clocks' line refined by the cross-correlation), the level
     difference (one gain, least squares), the residual after the analog path's own response (path_fir): overall and
     per octave re the jack (resid_gain_only_re_jack_db: after the gain alone), and the residual's clicks
@@ -536,7 +598,8 @@ def compare(q, j, sr, events, ccs, cu, cj, res, noise=None):
     jack_only, both = [], []
     for i, d in cand:
         t = i / FS_J
-        (both if any(abs(t - x) <= MATCH_S for x in tusb) else jack_only).append((round(t, 4), d))
+        (both if any(abs(t - x) <= MATCH_S for x in tusb) or near(usb_hf, t, HF_MATCH_S)
+         else jack_only).append((round(t, 4), d))
     steps = level_steps(jj, yh, m, noise)
     jack_only = sorted(jack_only + steps)
     jcl = [t for t, k, _ in res["jack"] if k in JACK_CLICKS]
@@ -676,13 +739,22 @@ def engine_run(J, e, a, d, out=print):
     rep["worst"] = []
     for name, fx in (("low", dict(hc.HEAVY, LEVEL=0)), ("unity", hc.HEAVY)):
         ccs = hc.engine_ccs(e, fx)
-        J.r._send("cc", 120, 0)
-        for c, v in ccs:
-            J.r._send("cc", c, v)
-        time.sleep(0.3)
         ev, dur = hc.worst_events(a.nv, a.secs / 2, rng)
         ev = sorted(ev, key=lambda x: x[0])
-        tk = rec(J, dur, ev, worst=True, ccs=ccs)
+        for attempt in (1, 2):                    # (from silence: the last take's tail, the reverb's and the
+            J.r._send("cc", 64, 0)                # delay's, ran into the next one at -5 dBFS, 2026-11-04)
+            J.r._send("cc", 123, 0)
+            J.r._send("cc", 120, 0)
+            for c, v in ccs:
+                J.r._send("cc", c, v)
+            time.sleep(0.3)
+            J.r._send("cc", hs.RESET_CC, 127)     # (the effects' lines emptied: fx_reset_state)
+            J.r.wait_silence(10.0, LEAD_QUIET_DBFS - 10)
+            tk = rec(J, dur, ev, worst=True, ccs=ccs)
+            ld = lead_dbfs(tk["usb"], tk["usb_sr"], ev, (0.0, 0.0))
+            if ld is None or ld <= LEAD_QUIET_DBFS:
+                break
+            out("  %s %s: USB %.1f dBFS before the first note (not silent): again" % (e, name, ld))
         J.r._send("cc", 64, 0)
         save(os.path.join(d, e), "worst-" + name, tk)
         res = judge(tk, ev, ccs)
@@ -711,6 +783,8 @@ def engine_run(J, e, a, d, out=print):
             bad.append("%s: the jack against USB: %s" % (name, cmpr.get("why")))
         if tk["xruns"]:
             bad.append("%s: recorder xruns (RIG) %s" % (name, tk["xruns"][:3]))
+        if ld is not None and ld > LEAD_QUIET_DBFS:
+            bad.append("%s: the take did not start in silence (USB %.1f dBFS before its first note; RIG)" % (name, ld))
     rep["verdict"] = "FAIL: " + "; ".join(bad) if bad else "PASS"
     out("%s: (a) jack floor %.1f dB, hiss 8-20k jack %.1f / USB %.1f dB (added %+.1f); (b) loud USB peak %.1f rms %.1f, "
         "jack peak %.1f rms %.1f (jack re USB %+.1f dB); %s" % (
@@ -748,9 +822,13 @@ def summary_md(R):
           "check is judged against it (a window's ncc is capped at sqrt(1 - floor / level), so the gate is ncc^2 < "
           "0.97^2 - floor / level, and windows under 10 dB over the floor are not judged), and the jack is aligned "
           "on USB along the two recordings' clocks (within 1.5 ms), not on a held chord's period. A run whose proof "
-          "fails stops there and gives no PASS." % (
+          "fails stops there and gives no PASS. Each worst take starts from silence (pedal up, notes and sound off, "
+          "the effects' lines emptied, USB under %d dBFS before its first note, or the take is a rig failure). A jack "
+          "burst over 12 kHz with USB's own burst within %d ms and no USB glitch there is the music's (information: "
+          "hfclick_usb_too); the limiter's click-lim on USB excuses nothing by itself." % (
               ", ".join(map(str, PROVE_CHORD)), PROVE_SECS, "click %d %d %d" % (PROVE_N, PROVE_EVERY_MS, PROVE_LSB),
-              PROVE_N, PROVE_LSB, PROVE_EVERY_MS, PROVE_N - 1, int(MATCH_S * 1000)), ""]
+              PROVE_N, PROVE_LSB, PROVE_EVERY_MS, PROVE_N - 1, int(MATCH_S * 1000), LEAD_QUIET_DBFS,
+              int(HF_MATCH_S * 1000)), ""]
     if P:
         L += ["| Take | USB clicks | Jack clicks | Matched | Jack gated events | Jack only | Jack floor dBFS | "
               "Track windows under the floor |", "| --- | --- | --- | --- | --- | --- | --- | --- |"]
