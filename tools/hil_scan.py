@@ -492,7 +492,8 @@ class Rig(RigBase):
             sys.exit("no FM-1 MIDI port")
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import fm1_midi
-        self.out = fm1_midi.ChannelOut(mido.open_output(names[0]))   # every channel message on FRODHES_MIDI_CH (8)
+        import midi_guard                                           # (the open under a watchdog: rtmidi holds the GIL)
+        self.out = fm1_midi.ChannelOut(midi_guard.open_output(mido, names[0]))   # channel messages on FRODHES_MIDI_CH
         print(fm1_midi.say(self.out.ch), flush=True)
         self.mido = mido
         devs = [i for i, d in enumerate(sd.query_devices())
@@ -4304,11 +4305,12 @@ def run_classic(names, r=None, report="report"):
     return fails
 
 
-def stress_max(r, rep, rate=48000, seconds=None, quick=False, tier=None, engines=None):
-    """the cracks test (tools/hil_crackle.py t1): T1's S1 calls it by name (tools/hil_must.py), per rate"""
+def stress_max(r, rep, rate=48000, seconds=None, quick=False, tier=None, engines=None, dev=None):
+    """the cracks test (tools/hil_crackle.py t1): T1's S1 calls it by name (tools/hil_must.py), per rate; dev: the
+    caller's open hil_must.Dev (T1: no MIDI port opened while its USB stream and poller run)"""
     import hil_crackle
     return hil_crackle.t1(r, rep, rate=rate, seconds=seconds, quick=quick, tier=tier,
-                          engines=tuple(engines) if engines else hil_crackle.ENGINES)
+                          engines=tuple(engines) if engines else hil_crackle.ENGINES, dev=dev)
 
 
 TESTS["stress_max"] = stress_max                       # (not in the default run: main leaves it out)
@@ -4396,4 +4398,5 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import midi_guard
+    midi_guard.run(main)

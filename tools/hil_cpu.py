@@ -150,7 +150,9 @@ def ports():
         if not outs or not ins:
             sys.exit("no FM-1 MIDI port")
         import fm1_midi
-        _PORTS[:] = [mido, fm1_midi.ChannelOut(mido.open_output(outs[0])), mido.open_input(ins[0])]   # FRODHES_MIDI_CH
+        import midi_guard                             # (each open under a watchdog: rtmidi holds the GIL in CoreMIDI)
+        _PORTS[:] = [mido, fm1_midi.ChannelOut(midi_guard.open_output(mido, outs[0])),   # FRODHES_MIDI_CH
+                     midi_guard.open_input(mido, ins[0])]
         print(fm1_midi.say(_PORTS[1].ch), flush=True)
     return tuple(_PORTS)
 
@@ -658,4 +660,5 @@ def run_cpu(argv):  # noqa: C901
 
 
 if __name__ == "__main__":
-    sys.exit(exit_code(main()))
+    import midi_guard                                 # (the exit skips rtmidi's port destructors)
+    midi_guard.run(lambda: exit_code(main()))

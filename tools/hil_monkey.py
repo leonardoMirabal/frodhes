@@ -538,7 +538,7 @@ def main(argv=None):
                                          for r in bad) and not alive_ok(dev):
                     break
     finally:
-        dev.close()
+        dev.close()                                 # (after the take's stream stopped and its poller joined)
     js = dict(verdict=verdict, date=time.strftime("%Y-%m-%d %H:%M"), rate=a.rate, minutes=a.minutes, takes=report)
     json.dump(js, open(os.path.join(a.out, "report.json"), "w"), indent=1, default=str)
     md = [f"# hil_monkey: {verdict}", "", f"- {js['date']}, {len(report)} takes of {take_len():.1f} s, USB at "
@@ -551,4 +551,5 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import midi_guard
+    midi_guard.run(main)
