@@ -1190,7 +1190,7 @@ installs and updates through Schwung Manager. Everything in this manual applies 
 screen on the Move, the eight knobs as eight cards a page at a time. Its manual has the install, the screen, every
 page and what differs: **[MOVE.md](MOVE.md)**.
 
-![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=afb6680e)
+![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=5388b9c5)
 
 ---
 

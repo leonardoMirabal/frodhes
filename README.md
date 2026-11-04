@@ -9,7 +9,7 @@ warm; play hard and it barks or rings.
 <table align="center">
   <tr>
     <td align="center"><img src="docs/manual/img/piano.png?v=b2c98a85" width="360" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
-    <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=a6c53d5f" width="420" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
+    <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ed05fe9c" width="420" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
   </tr>
   <tr>
     <td align="center"><b>On the M-VAVE FM-1</b>: colour screen, four knobs</td>
@@ -68,8 +68,8 @@ Schwung's module catalog, you can also install and update it from there. The ste
 [docs/MOVE.md](docs/MOVE.md).
 
 <p align="center">
-  <img src="docs/manual/img/move/move-drive-filter.png?v=afb6680e" width="384" alt="The DRIVE/FILTER page on the Move: eight cards, each with its name, its value and a bar">
-  <img src="docs/manual/img/move/move-pages.png?v=b80ab4f6" width="384" alt="The list of pages on the Move">
+  <img src="docs/manual/img/move/move-drive-filter.png?v=5388b9c5" width="384" alt="The DRIVE/FILTER page on the Move: eight cards, each with its name, its value and a bar">
+  <img src="docs/manual/img/move/move-pages.png?v=fcd9ce1d" width="384" alt="The list of pages on the Move">
 </p>
 
 ## Manual
