@@ -230,7 +230,8 @@ def test_analyse_catches(tmp_path):
 @pytest.mark.skipif(not os.path.exists(os.path.join(ROOT, "move", "move_plugin.c")), reason="needs the plugin")
 def test_plugin_monkey_seeds():
     n = int(os.environ.get("MOVE_MONKEY_SEEDS", "4"))
-    fails = check_seeds(list(range(1, n + 1)), jobs=int(os.environ.get("PYTEST_N", "2")))
+    jn = os.environ.get("PYTEST_N", "2")              # (CI's move job: "auto", xdist's word for every CPU)
+    fails = check_seeds(list(range(1, n + 1)), jobs=(os.cpu_count() or 2) if jn == "auto" else int(jn))
     if fails is None:
         pytest.skip("no Linux arm64 and no frodhes-move:bookworm image (make move-image)")
     assert not fails, f"seeds failing (scripts in {os.path.relpath(OUT, ROOT)}): {fails}"
