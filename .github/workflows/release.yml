@@ -1,8 +1,8 @@
 name: release
 # A version tag (v0.9.1, v0.9.2 ...) builds the firmware and publishes the GitHub release with the .fwsc attached
-# (as frodhes-X.Y.Z.fwsc and frodhes.fwsc), and the SMK-37 builds next to them, marked experimental (not tested on
-# hardware): frodhes-smk37-experimental.fwsc, frodhes-smk37-elite-experimental.fwsc and
-# frodhes-smk37-mke-experimental.fwsc (./build.sh --board smk37 [--model elite|mke]; identity SMK-37 Pro_470,
+# (as frodhes-X.Y.Z.fwsc and frodhes.fwsc), and the SMK-37 builds next to them, each under a fixed name and a
+# versioned one: frodhes-smk37-pro.fwsc / frodhes-X.Y.Z-smk37-pro.fwsc, frodhes-smk37-elite.fwsc /
+# frodhes-X.Y.Z-smk37-elite.fwsc, frodhes-mke-p37.fwsc / frodhes-X.Y.Z-mke-p37.fwsc (./build.sh --board smk37 [--model elite|mke]; identity SMK-37 Pro_470,
 # SMK-37 Elite_470, MKE-P37_470, as tools/build.py sets them). The notes are docs/releases/<tag>.md (tools/release.py
 # assembles them).
 # The emulator (web/) goes live at the same moment as the release: the job web builds it from the tag
@@ -143,7 +143,7 @@ jobs:
           ./build.sh --release "$V"
           ls -l "build/frodhes-$V.fwsc"
           sha256sum "build/frodhes-$V.fwsc"
-      - name: build the SMK-37 packages (experimental)
+      - name: build the SMK-37 packages
         run: |
           V="${GITHUB_REF_NAME#v}"
           ./build.sh --board smk37 --release "$V"
@@ -176,13 +176,17 @@ jobs:
           # releases/latest/download/frodhes.fwsc (the docs never name a version)
           mkdir -p build/publish
           cp "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc
-          # the SMK-37 packages under fixed names, marked experimental (the SMK-37 is not tested on hardware)
-          cp "build/frodhes-$V-smk37.fwsc" build/publish/frodhes-smk37-experimental.fwsc
-          cp "build/frodhes-$V-smk37-elite.fwsc" build/publish/frodhes-smk37-elite-experimental.fwsc
-          cp "build/frodhes-$V-smk37-mke.fwsc" build/publish/frodhes-smk37-mke-experimental.fwsc
+          # the SMK-37 packages, versioned and under fixed names (the emulator and the docs link the fixed ones)
+          # (tools/release.py SMK_ASSETS; the build names them frodhes-X.Y.Z-smk37[-elite|-mke].fwsc)
+          for m in "smk37:smk37-pro" "smk37-elite:smk37-elite" "smk37-mke:mke-p37"; do
+            cp "build/frodhes-$V-${m%%:*}.fwsc" "build/publish/frodhes-${m#*:}.fwsc"
+            cp "build/frodhes-$V-${m%%:*}.fwsc" "build/publish/frodhes-$V-${m#*:}.fwsc"
+          done
           set -- "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc \
-            build/publish/frodhes-smk37-experimental.fwsc build/publish/frodhes-smk37-elite-experimental.fwsc \
-            build/publish/frodhes-smk37-mke-experimental.fwsc \
+            "build/publish/frodhes-$V-smk37-pro.fwsc" "build/publish/frodhes-$V-smk37-elite.fwsc" \
+            "build/publish/frodhes-$V-mke-p37.fwsc" \
+            build/publish/frodhes-smk37-pro.fwsc build/publish/frodhes-smk37-elite.fwsc \
+            build/publish/frodhes-mke-p37.fwsc \
             "LICENSES/Apache-2.0.txt#Apache-2.0.txt (the licence of the 3 JieLi SDK files in each .fwsc)"
           # the Move package, when tools/move_asset.sh found it tested (frodhes-X.Y.Z-move.tar.gz, frodhes-module.tar.gz)
           for f in "build/publish/move/frodhes-$V-move.tar.gz" build/publish/move/frodhes-module.tar.gz; do

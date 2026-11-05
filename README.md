@@ -82,8 +82,8 @@ Schwung's module catalog, you can also install and update it from there. The ste
 
 ## Other keyboards
 
-Frodhes also builds for the SMK-37 Pro, SMK-37 Elite and MKE-P37. These builds are **experimental and not tested on
-hardware**. Read [docs/SMK37.md](docs/SMK37.md) before you install one.
+Frodhes also runs on the SMK-37 Pro, SMK-37 Elite and MKE-P37. Read [docs/SMK37.md](docs/SMK37.md) before you
+install one.
 
 The files on the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest):
 
@@ -91,9 +91,9 @@ The files on the [release page](https://github.com/leonardoMirabal/frodhes/relea
 | --- | --- |
 | M-VAVE FM-1 | `frodhes.fwsc` |
 | Ableton Move | `frodhes-module.tar.gz` |
-| SMK-37 Pro (experimental) | `frodhes-smk37-experimental.fwsc` |
-| SMK-37 Elite (experimental) | `frodhes-smk37-elite-experimental.fwsc` |
-| MKE-P37 (experimental) | `frodhes-smk37-mke-experimental.fwsc` |
+| SMK-37 Pro | `frodhes-smk37-pro.fwsc` |
+| SMK-37 Elite | `frodhes-smk37-elite.fwsc` |
+| MKE-P37 | `frodhes-mke-p37.fwsc` |
 
 ## Credits
 

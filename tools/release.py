@@ -53,7 +53,7 @@ tools/doc_links.py), and the notes are assembled from the fragments each change 
                  app.js = the tag's web/. Fallback, for a release.yml without that job: web/build.sh, the selftest,
                  web/dist into the gh-pages worktree build/pages (tools/deploy_pages.sh), push, the live sha256
  9 verify        the release page (not a draft) lists frodhes-X.Y.Z.fwsc, frodhes.fwsc and the SMK-37 packages
-                 (SMK_ASSETS, marked experimental), and the Move package (MOVE_ASSETS) when it was tested;
+                 (SMK_ASSETS, both names), and the Move package (MOVE_ASSETS) when it was tested;
                  releases/latest/download/frodhes.fwsc redirects to vX.Y.Z and is byte for byte the build (with
                  --verify-only: the versioned asset); README on GitHub at the tag names no version and links it
 
@@ -81,11 +81,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = "leonardoMirabal/frodhes"
 PAGES_URL = "https://leonardomirabal.github.io/frodhes/"
 STABLE = "frodhes.fwsc"                       # release.yml uploads the package under this name too
-# release.yml also builds and attaches the SMK-37 packages (./build.sh --board smk37 [--model elite|mke]), marked
-# experimental (not tested on hardware): the published name -> the build's file (tools/build.py package())
-SMK_ASSETS = {"frodhes-smk37-experimental.fwsc": "frodhes-{v}-smk37.fwsc",
-              "frodhes-smk37-elite-experimental.fwsc": "frodhes-{v}-smk37-elite.fwsc",
-              "frodhes-smk37-mke-experimental.fwsc": "frodhes-{v}-smk37-mke.fwsc"}
+# release.yml also builds and attaches the SMK-37 packages (./build.sh --board smk37 [--model elite|mke]), each under
+# the fixed name and the build's own versioned one: the fixed name -> the build's file (tools/build.py package())
+SMK_ASSETS = {"frodhes-smk37-pro.fwsc": "frodhes-{v}-smk37.fwsc",
+              "frodhes-smk37-elite.fwsc": "frodhes-{v}-smk37-elite.fwsc",
+              "frodhes-mke-p37.fwsc": "frodhes-{v}-smk37-mke.fwsc"}
+
+
+def smk_versioned(name, v):
+    """an SMK-37 asset's versioned name: frodhes-smk37-pro.fwsc -> frodhes-X.Y.Z-smk37-pro.fwsc"""
+    return name.replace("frodhes-", f"frodhes-{v}-", 1)
 # the Move package (make move: build/move/frodhes-module.tar.gz), attached by release.yml (tools/move_asset.sh) only
 # when the release commit records its sha256 as tested on the Move: the versioned name and the stable one
 MOVE_BUILT = os.path.join("build", "move", "frodhes-module.tar.gz")
@@ -609,7 +614,8 @@ class Release:
         # the Move package: expected when the release commit records it (or this run tested it); with --verify-only,
         # when either name is there both must be
         want_move = bool(self.move_recorded or self.move_ok or (self.a.verify_only and set(move_names) & set(names)))
-        missing = [n for n in (versioned, STABLE, *SMK_ASSETS, LICENCE_ASSET, *(move_names if want_move else ()))
+        missing = [n for n in (versioned, STABLE, *SMK_ASSETS, *(smk_versioned(n, self.ver) for n in SMK_ASSETS),
+                               LICENCE_ASSET, *(move_names if want_move else ()))
                    if n not in names]
         if missing or r.get("isDraft"):
             raise Stop(f"{r['url']}: assets {names} (missing {missing}), draft {r.get('isDraft')}")

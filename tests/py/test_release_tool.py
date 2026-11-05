@@ -124,7 +124,7 @@ def test_dry_run_stops_before_push(tree, monkeypatch, capsys):
     notes = "\n".join(l[3:] for l in shown.splitlines())                 # (the log indents by 3)
     assert "**Frodhes 0.9.3**: a physically modelled electric piano and a test bar for the M-VAVE FM-1." in notes
     assert "python3 tools/fm1_install.py frodhes.fwsc" in notes
-    assert f"the newest is always at {rel.LATEST_DL})" in notes and "`-experimental.fwsc` files" in notes
+    assert f"the newest is always at {rel.LATEST_DL})" in notes and "`frodhes-smk37-pro.fwsc`, `frodhes-smk37-elite.fwsc`" in notes
     assert "**Move**" not in notes                                        # no move/ here: no Move package, no route
     i = [notes.index(s) for s in ("### New in 0.9.3\n- **A new thing.**\n  Its second line.",
                                   "### Changes\n- Another change.", "### Fixed\n- Fix A.\n- A fix, as in 0.9.2.",
@@ -215,7 +215,8 @@ def verify_shell(assets, readme, draft=False):
 
 def test_verify(monkeypatch, capsys):
     good = f"[`frodhes.fwsc`]({rel.LATEST_DL}) settings saved by 0.9.2 are read as they are"
-    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *rel.SMK_ASSETS, rel.LICENCE_ASSET]
+    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *rel.SMK_ASSETS, rel.LICENCE_ASSET,
+            *[rel.smk_versioned(n, "0.9.3") for n in rel.SMK_ASSETS]]
     tagged = "https://github.com/leonardoMirabal/frodhes/releases/download/v0.9.3/frodhes.fwsc"
     hits = []
 
@@ -228,7 +229,8 @@ def test_verify(monkeypatch, capsys):
     monkeypatch.setattr(rel, "sh", verify_shell(both, good))
     assert "README at v0.9.3 names no version" in r.s_verify() and hits == [rel.LATEST_DL]
     for assets, readme, sha, msg in ((both[:1] + both[2:], good, "a" * 64, r"missing \['frodhes.fwsc'\]"),
-                                     (both[:4] + both[5:], good, "a" * 64, r"missing \['frodhes-smk37-mke-experimental.fwsc'\]"),
+                                     (both[:4] + both[5:], good, "a" * 64, r"missing \['frodhes-mke-p37.fwsc'\]"),
+                                     (both[:-1], good, "a" * 64, r"missing \['frodhes-0.9.3-mke-p37.fwsc'\]"),
                                      (both, good, "b" * 64, "the build's bbbb"),
                                      (both, good.replace(rel.LATEST_DL, "frodhes-0.9.3.fwsc"), "a" * 64,
                                       "versions named")):

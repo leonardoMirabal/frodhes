@@ -52,7 +52,7 @@
     if (!r.ok) throw new X.InstallError("badpkg", `the package did not download (HTTP ${r.status})`);
     fetched = await X.loadPackage(new Uint8Array(await r.arrayBuffer()), e.sha256);
     if (fetched.product !== e.identity) throw new X.InstallError("badpkg", `${e.file} is ${fetched.product}, not ${e.identity}`);
-    showPackage(fetched, `Frodhes ${pub.version} for the ${want.model} (${e.identity}, ${e.size} bytes${want.experimental ? ", experimental" : ""})`);
+    showPackage(fetched, `Frodhes ${pub.version} for the ${want.model} (${e.identity}, ${e.size} bytes)`);
     return fetched;
   }
   async function midi() {
@@ -82,7 +82,7 @@
         dev = d;
         const unit = `the ${X.modelOf(dev.id.text)}`;
         say(dev.id.loader ? `${unit[0].toUpperCase() + unit.slice(1)} is in update mode (${dev.id.text}): an install was interrupted. Press "Resume the install" to finish it.`
-                          : `Found ${dev.id.text}. Press "Install on ${dev.id.text}" to install ${p.product}${X.productFor(p.product).experimental ? " (experimental)" : ""}.`);
+                          : `Found ${dev.id.text}. Press "Install on ${dev.id.text}" to install ${p.product}.`);
         return;
       }
       const p = await packageFor(dev.id);
@@ -164,7 +164,7 @@
     await go();
     window.fetch = realFetch;
     const smsg = $("inst-msg").textContent;
-    const sgood = /Install on SMK-37 Pro_470/.test(sfound) && /for the SMK-37 Pro .*experimental/.test(sver) && ssha === sp.sha256 &&
+    const sgood = /Install on SMK-37 Pro_470/.test(sfound) && /for the SMK-37 Pro \(SMK-37 Pro_470, \d+ bytes\)/.test(sver) && ssha === sp.sha256 &&
                   /Done: the SMK-37 Pro runs SMK-37 Pro_470/.test(smsg) && sfake.bad === 0 && sfake.upgrades === 2;
     document.title = `INSTALLTEST ${sgood ? "ok" : "FAIL"} ${msg} / ${smsg} [${found}] [${sfound}] bad=${fake.bad}+${sfake.bad}`;
   }

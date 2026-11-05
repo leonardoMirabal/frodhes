@@ -148,8 +148,8 @@ def assemble(ver, frags, root=ROOT, move=True):
                     "browser: **Install Custom Module > From GitHub URL**, `leonardoMirabal/frodhes`. Or download "
                     "`frodhes-module.tar.gz` below and use **From Tarball**. Details: "
                     f"[the Move manual]({BLOB}MOVE.md#install).")
-    install += ("\n\n**SMK-37 Pro, SMK-37 Elite, MKE-P37** (experimental, not tested on hardware): the three "
-                f"`-experimental.fwsc` files below. Read [SMK37.md]({BLOB}SMK37.md) first.")
+    install += ("\n\n**SMK-37 Pro, SMK-37 Elite, MKE-P37**: `frodhes-smk37-pro.fwsc`, `frodhes-smk37-elite.fwsc` and "
+                f"`frodhes-mke-p37.fwsc` below. Read [SMK37.md]({BLOB}SMK37.md) first.")
     parts = [head,
              f"**Download:** `frodhes.fwsc` below (the same file as `frodhes-{ver}.fwsc`; the newest is always at "
              f"{DOWNLOAD}). **Try it first in your browser:** {PAGES_URL}",

@@ -183,10 +183,10 @@ def test_release_workflow_wiring():
     assert 'cp "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc' in pub
     assert 'set -- "build/frodhes-$V.fwsc" build/publish/frodhes.fwsc \\ ' in pub
     assert 'gh release create "$GITHUB_REF_NAME" "$@"' in pub and "--draft" in pub and "--latest" not in pub
-    # the SMK-37 packages (experimental): built after the FM-1's, each board / model, the release version
+    # the SMK-37 packages: built after the FM-1's, each board / model, the release version
     builds = [s.get("run", "") for s in j["release"]["steps"]]
-    smk = " ".join(j["release"]["steps"][names.index("build the SMK-37 packages (experimental)")]["run"].split())
-    assert names.index("build") < names.index("build the SMK-37 packages (experimental)") < names.index("draft release")
+    smk = " ".join(j["release"]["steps"][names.index("build the SMK-37 packages")]["run"].split())
+    assert names.index("build") < names.index("build the SMK-37 packages") < names.index("draft release")
     for m in ("", " --model elite", " --model mke"):
         assert f'./build.sh --board smk37{m} --release "$V"' in smk
     assert sum(b.count("./build.sh") for b in builds) == 4        # the FM-1 once, each SMK-37 model once
@@ -232,7 +232,8 @@ def test_the_pytest_jobs_install_every_module_the_tests_import():
 
 def test_release_publish_step_uploads_both_names(tmp_path):
     """release.yml's publish step, run with a fake gh: frodhes-X.Y.Z.fwsc and frodhes.fwsc (the same bytes) attached,
-    then the three SMK-37 packages under their experimental names (tools/release.py SMK_ASSETS, checked by step 9)"""
+    then the three SMK-37 packages under their versioned and their fixed names (tools/release.py SMK_ASSETS, checked by
+    step 9)"""
     import yaml                          # (PyYAML, installed in CI: a missing module fails, never skips)
     steps = yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "release.yml")))["jobs"]["release"]["steps"]
     run = [s for s in steps if s.get("name") == "draft release"][0]["run"]
@@ -256,11 +257,13 @@ def test_release_publish_step_uploads_both_names(tmp_path):
     assert p.returncode == 0, p.stderr
     args = (tmp_path / "gh.log").read_text().splitlines()
     assert args[:5] == ["release", "create", "v0.9.9", "build/frodhes-0.9.9.fwsc", "build/publish/frodhes.fwsc"]
-    assert args[5:8] == [f"build/publish/{n}" for n in rel.SMK_ASSETS]
-    assert args[8].split("#")[0] == "LICENSES/Apache-2.0.txt"   # the SDK files' licence text (Apache-2.0 s. 4)
-    assert args[9] == "--title"                   # nothing else attached
-    for n in rel.SMK_ASSETS:                       # each the build of its own model
+    assert args[5:8] == [f"build/publish/{rel.smk_versioned(n, '0.9.9')}" for n in rel.SMK_ASSETS]
+    assert args[8:11] == [f"build/publish/{n}" for n in rel.SMK_ASSETS]
+    assert args[11].split("#")[0] == "LICENSES/Apache-2.0.txt"  # the SDK files' licence text (Apache-2.0 s. 4)
+    assert args[12] == "--title"                  # nothing else attached
+    for n in rel.SMK_ASSETS:                       # each the build of its own model, under both names
         assert (tmp_path / "build" / "publish" / n).read_bytes() == n.encode()
+        assert (tmp_path / "build" / "publish" / rel.smk_versioned(n, "0.9.9")).read_bytes() == n.encode()
     assert args[-1] == "--draft" and "--latest" not in args      # published (and made latest) after the emulator
     assert args[args.index("--notes-file") + 1] == "docs/releases/v0.9.9.md"
     assert (tmp_path / "build" / "publish" / "frodhes.fwsc").read_bytes() == b"package"
@@ -307,7 +310,7 @@ def test_the_emulator_is_live_when_the_release_is():
     rel = wf["jobs"]["release"]
     st = rel["steps"]
     names = [s.get("name") or s.get("uses") for s in st]
-    order = ["build", "build the SMK-37 packages (experimental)", "draft release", "actions/download-artifact@v4",
+    order = ["build", "build the SMK-37 packages", "draft release", "actions/download-artifact@v4",
              "actions/checkout@v4", "deploy the emulator", "wait for Pages", "publish the release"]
     idx = [len(names) - 1 - names[::-1].index(n) if n == "actions/checkout@v4" else names.index(n) for n in order]
     assert idx == sorted(idx) and idx[-1] == len(st) - 1, names                     # publishing is the very last step
@@ -531,8 +534,8 @@ def test_web_firmware_publishes_the_smk37_packages_too(tmp_path):
     ones, a stock identity or the same model twice is refused, nothing copied"""
     import hashlib
     import json
-    names = {"SMK-37 Pro_470": "frodhes-smk37-experimental.fwsc", "SMK-37 Elite_470": "frodhes-smk37-elite-experimental.fwsc",
-             "MKE-P37_470": "frodhes-smk37-mke-experimental.fwsc"}
+    names = {"SMK-37 Pro_470": "frodhes-smk37-pro.fwsc", "SMK-37 Elite_470": "frodhes-smk37-elite.fwsc",
+             "MKE-P37_470": "frodhes-mke-p37.fwsc"}
     files = {}
     for ident in ["FM-1_958", *names, "SMK-37 Pro_016"]:
         files[ident] = tmp_path / (ident.replace(" ", "_") + ".fwsc")

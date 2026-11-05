@@ -278,7 +278,7 @@ install runs or after one was cut off).
 
 The M-Vave SMK-37 (Pro, and the same keyboard as SMK-37 Elite and MKE-P37) has the FM-1's chip, a 37-key keybed with
 velocity, 16 pads, 4 faders, 2 wheels and 8 knobs. `./build.sh --board smk37` builds your app for it; nothing in your
-code needs to change, and `#if BOARD_SMK37` reaches the extras. Frodhes' own SMK-37 builds are experimental: not tested on hardware by us
+code needs to change, and `#if BOARD_SMK37` reaches the extras. Frodhes' own SMK-37 builds run on all three models
 (back up the flash first; [SMK37.md](SMK37.md)). The board layer is genkigenki's
 ([fm1-to-smk37](https://github.com/genkigenki/fm1-to-smk37), from his sloop-fm1 port); more in [SMK37.md](SMK37.md).
 
