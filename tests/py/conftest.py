@@ -17,6 +17,11 @@ GROUPS = {                         # node id prefix -> group
     "test_bars_calib.py": "bars_calib",                             # its va_checks fixture (100 s) computed once
     "test_voice_calib.py": "voice_calib",                           # its vel fixture (13 s) computed once
     "test_uac_ring.py": "uac_ring",                                 # build/uac_test/ (old.tar, old/, the binaries)
+    # (the 0.9.8 PR's CI: a worker building a fixed path while another ran it, "Text file busy" / "Permission denied")
+    "test_uac_seq.py": "uac_ring",                                  # build/uac_test/uac_seq_sie, planted/
+    "test_uac_fir.py": "uac_ring",                                  # build/uac_test/uac_fir_test
+    "test_eq.py": "eq",                                             # build/host/eq_test (its module fixture)
+    "test_rh_coef.py": "rh_coef",                                   # build/rh_coef/rh_coef_<tag>
 }
 # (build/gen_bars/fe_cache.json is shared by test_gen_bars and test_bars_calib, the two longest, which run apart: a
 # reader that finds it half written recomputes it, and both writers write the same bytes)
