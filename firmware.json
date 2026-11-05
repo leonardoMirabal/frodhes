@@ -13,19 +13,19 @@
   },
   {
    "identity": "SMK-37 Pro_470",
-   "file": "frodhes-smk37-experimental.fwsc",
+   "file": "frodhes-smk37-pro.fwsc",
    "size": 651363,
    "sha256": "385c9f28ca3a4701fe3173795da5eb76b0be75d6f4d0faa2ea6b9cd5040af003"
   },
   {
    "identity": "SMK-37 Elite_470",
-   "file": "frodhes-smk37-elite-experimental.fwsc",
+   "file": "frodhes-smk37-elite.fwsc",
    "size": 651367,
    "sha256": "914b38196b47a68bb7aa180c3c37e58f24b6baf22e392263f90ceed4a0de9462"
   },
   {
    "identity": "MKE-P37_470",
-   "file": "frodhes-smk37-mke-experimental.fwsc",
+   "file": "frodhes-mke-p37.fwsc",
    "size": 651359,
    "sha256": "c3a020b8fd18e8e31f85b8182a95ca91659c41952dcdfc868be7fde5ed3efdde"
   }
