@@ -19,7 +19,7 @@ import subprocess
 import numpy as np
 import pytest
 
-from hostrun import FS, ROOT, cc, run
+from hostrun import FS, ROOT, cc, once, run
 
 EXE = os.path.join(ROOT, "build", "host", "eq_test")
 FL, FM, FF, FH = 63, 64, 65, 66                            # params.c P_EQ_LO .. P_EQ_HI
@@ -28,11 +28,11 @@ CCS = {FL: 34, FM: 35, FF: 36, FH: 37}
 
 @pytest.fixture(scope="module")
 def exe():
-    os.makedirs(os.path.dirname(EXE), exist_ok=True)
-    subprocess.run(["cc", "-O2", "-Wall", "-Wno-unused-function", "-fsanitize=undefined,address", "-fno-sanitize-recover=all",
-                    "-DDINGHY_HOST", "-Ifirmware/src", "-Ifirmware/gen", "tests/c/eq_test.c", "-o", EXE],
-                   cwd=ROOT, check=True)
-    return EXE
+    """built once, into a temporary name and renamed into place (hostrun.once): a CI run once ran it half-written
+    ("Permission denied", 2026-11-05)"""
+    return once(EXE, lambda exe: subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wno-unused-function", "-fsanitize=undefined,address", "-fno-sanitize-recover=all",
+         "-DDINGHY_HOST", "-Ifirmware/src", "-Ifirmware/gen", "tests/c/eq_test.c", "-o", exe], cwd=ROOT, check=True))
 
 
 def eq(exe, x, lo=64, mid=64, fr=64, hi=64, mode="run", sched=None):
