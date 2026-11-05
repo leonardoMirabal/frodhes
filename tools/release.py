@@ -259,8 +259,11 @@ class Release:
         notes = f"docs/releases/v{self.ver}.md"
         problems, ev = [], []
         branch = out(["git", "rev-parse", "--abbrev-ref", "HEAD"])
-        if branch != "main":
-            problems.append(f"on branch {branch!r}, not main")
+        # main, or the release's test branch (rel-X.Y.Z / release-X.Y.Z: the release commit goes in through its PR; the
+        # local main can hold another session's work); --after-merge runs on main only
+        if branch != "main" and (self.a.after_merge or branch not in (f"rel-{self.ver}", f"release-{self.ver}")):
+            problems.append(f"on branch {branch!r}, not main" + ("" if self.a.after_merge else
+                                                                 f" or rel-{self.ver} / release-{self.ver}"))
         dirty = out(["git", "status", "--porcelain", "--untracked-files=no"]).splitlines()
         if dirty:
             problems.append("tracked changes:\n" + "\n".join(dirty[:15]))

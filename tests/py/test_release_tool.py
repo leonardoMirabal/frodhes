@@ -48,13 +48,13 @@ def test_cpu_and_jack_checks():
         rel.check_jack("rhodes", dict(loud=dict(jack_peak_db=-60.0), snr_db=20.0))
 
 
-def fake_shell(root, calls, notes_draft=False, changed=("docs/MANUAL.md", "firmware/src/usb.c")):
+def fake_shell(root, calls, notes_draft=False, changed=("docs/MANUAL.md", "firmware/src/usb.c"), branch="main"):
     def sh(cmd, check=True, input=None, timeout=None, quiet=False):
         s = cmd if isinstance(cmd, str) else " ".join(cmd)
         calls.append(s)
         replies = {
             "git tag --sort=-v:refname --list v*": "v0.9.2\nv0.9.1\n",
-            "git rev-parse --abbrev-ref HEAD": "main\n",
+            "git rev-parse --abbrev-ref HEAD": branch + "\n",
             "git status --porcelain --untracked-files=no": "",
             "git tag --list v0.9.3": "",
             "git ls-remote --tags origin refs/tags/v0.9.3": "",
@@ -91,6 +91,20 @@ def tree(tmp_path, monkeypatch):
     monkeypatch.setattr(rel, "ROOT", str(tmp_path))
     return tmp_path
 
+
+
+@pytest.mark.parametrize("branch,ok", [("rel-0.9.3", True), ("release-0.9.3", True), ("rel-0.9.4", False),
+                                       ("ship-1c", False)])
+def test_preconditions_take_the_release_branch(tree, monkeypatch, capsys, branch, ok):
+    """the release commit can be made on the release's own test branch (the local main may hold another session's
+    work); any other branch, or another version's, stops at step 2"""
+    calls = []
+    monkeypatch.setattr(rel, "sh", fake_shell(str(tree), calls, branch=branch))
+    monkeypatch.setattr("builtins.input", lambda *_: pytest.fail("--dry-run must not prompt"))
+    rel.main(["patch", "--dry-run", "--no-device", "--no-emulator"])
+    o = capsys.readouterr().out
+    assert (f"PROBLEM: on branch '{branch}', not main or rel-0.9.3 / release-0.9.3" in o) != ok, o
+    assert ("preconditions: PASS" in o) == ok, o
 
 def test_dry_run_stops_before_push(tree, monkeypatch, capsys):
     calls = []
