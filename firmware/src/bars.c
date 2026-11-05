@@ -114,6 +114,7 @@ static int32_t bar_lsin(const bar_ms_t *s)
     return num > 0 ? (bar_log2_64((uint64_t)num) - bar_log2_32((uint32_t)s->k2) - 32 * 256) >> 1 : 0;
 }
 
+#define BAR_PZI(pb, f, l) (((pb) * BAR_NFAM + (f)) * BAR_NLAYER + (l))
 static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
 {
     uint32_t ty = bar_sub < BAR_NTYPE ? bar_sub : 0u;   /* constant while the voice lives (engine.c C1) */
@@ -121,16 +122,17 @@ static void bar_load_pulse(bar_voice_t *v, uint32_t vel)
     uint32_t pb = BAR_PBAND[v->k->band];               /* the key's pulse band (shared bank) */
     int32_t a = (int32_t)(fam & 255u), w, pa, pa2, pr, pr2;
     uint32_t vi = RH_VPOS_I[vel], vf = RH_VPOS_F[vel];
-    const int16_t *p11, *p12, *p21, *p22;
     if (f > BAR_NFAM - 1u) { f = BAR_NFAM - 1u; a = 0; }
     f2 = f + 1u < BAR_NFAM ? f + 1u : f;
     l = RH_VLAY_I[vel]; l2 = l + 1u < BAR_NLAYER ? l + 1u : l; w = RH_VLAY_W[vel];
-    p11 = BAR_PULSE[pb][f][l]; p12 = BAR_PULSE[pb][f][l2];
-    p21 = BAR_PULSE[pb][f2][l]; p22 = BAR_PULSE[pb][f2][l2];
-    for (i = 0; i < BAR_PLEN + 2u; i++) {       /* hardness x velocity: one shape, once */
-        int32_t A = p11[i] + (((p12[i] - p11[i]) * w) >> 15);   /* |d| < 2^16, w <= 2^15: 32 bits are exact */
-        int32_t B = p21[i] + (((p22[i] - p21[i]) * w) >> 15);
-        v->pbuf[i] = (int16_t)(A + (((B - A) * a) >> 8));
+    rh_pz(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l));             /* hardness x velocity: one shape, once (the packed bank, rhodes.c
+                                                     * rh_pz: the table's integers, so the same shape as before) */
+    if (w) rh_pz_mix(v->pbuf, &BAR_PZB, BAR_PZI(pb, f, l2), w);   /* A = p11 + ((p12 - p11) w >> 15): an int16 */
+    if (a) {                                        /* B likewise, then A + ((B - A) a >> 8) (a 0: A) */
+        int16_t b[BAR_PLEN + 2];
+        rh_pz(b, &BAR_PZB, BAR_PZI(pb, f2, l));
+        if (w) rh_pz_mix(b, &BAR_PZB, BAR_PZI(pb, f2, l2), w);
+        for (i = 0; i < BAR_PLEN + 2u; i++) v->pbuf[i] = (int16_t)(v->pbuf[i] + (((b[i] - v->pbuf[i]) * a) >> 8));
     }
     {
         const uint16_t (*PA)[RH_NANCH] = BAR_PAMP[ty][key];
@@ -214,6 +216,10 @@ static int32_t bar_fam_nz(void)
     return BAR_FAM_NZ[f] + (((BAR_FAM_NZ[f2] - BAR_FAM_NZ[f]) * a) >> 8);
 }
 
+#ifdef FR_HQ
+#include "hq/bars_hq.c"                            /* the HQ bars (the Move only) */
+#endif
+
 static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
 {
     uint32_t tyi = bar_sub < BAR_NTYPE ? bar_sub : 0u;
@@ -255,6 +261,9 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
         else if (m == 1u) ms->live = s != 0;                       /* BELL 0: no tube at all */
         else ms->live = ms->b != 0;                 /* bar_budget() trims, before the slot ever sounds */
     }
+#ifdef FR_HQ
+    hqb_init(v, n - BAR_KEY_LO, tyi, tone, pi, pf);     /* HQ (hq_mode): the extra slots; else they stay off */
+#endif
     v->note = (uint8_t)note; v->vel = (uint8_t)vel;
     {   /* the key's gain x the band's level compensation at this TONE and BELL for this mallet (Q14, vibes.json
          * card_level: the strike position holds the level, the tube's own gain is scaled to its allowed span) */
@@ -285,9 +294,12 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     v->fade = 32768; v->pend = 0; v->felt_n = 0; v->felt_lp = 0; v->lvl = v->lvl0 = 0;
     v->age = ++bar_ages;
     v->life = k->life;
-    v->pthump = BAR_PULSE[BAR_PBAND[k->band]][0][0];  /* the felt's knock: SOFT, the softest layer */
+    v->pthump = BAR_THUMP[BAR_PBAND[k->band]];     /* the felt's knock: SOFT, the softest layer (pulse_pz.h) */
     v->prate_thump = (uint32_t)BAR_PRATE[tyi][n - BAR_KEY_LO][0][1] << 4;
     bar_load_pulse(v, vel);
+#if defined(FR_HQ) && HQB_CONTACT
+    hqb_pulse(v, vel, 0);                           /* HQ: MARIMBA's top keys from the live contact */
+#endif
     /* contact noise: filtered noise, louder for harder mallets and faster strikes, decaying (tau ~ 23 ms) */
     bar_nz_e += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * vel) >> 22);
 }
@@ -296,7 +308,11 @@ static void bar_set_damper(bar_voice_t *v, int32_t w)
 {
     uint32_t m;
     if (w == v->w_tgt) return;
+#ifdef FR_HQ
+    for (m = 0; m < BAR_NMV(v); m++) { v->m[m].es = v->m[m].e; v->m[m].epss = v->m[m].eps; }
+#else
     for (m = 0; m < BAR_NM; m++) { v->m[m].es = v->m[m].e; v->m[m].epss = v->m[m].eps; }
+#endif
     v->w_tgt = w;
     v->ramp = BAR_RAMP_SUB;
 }
@@ -305,20 +321,40 @@ static void bar_set_damper(bar_voice_t *v, int32_t w)
 static uint32_t bar_level_sum(const bar_voice_t *v)
 {
     uint32_t m, sum = 0;
+#ifdef FR_HQ
+    for (m = 0; m < BAR_NMV(v); m++) sum += (uint32_t)v->m[m].amp >> 4;
+#else
     for (m = 0; m < BAR_NM; m++) sum += (uint32_t)v->m[m].amp >> 4;
+#endif
     return sum;
 }
 
-static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already waits for a note; try next block */
+/* At most BAR_NV note starts a block (0.9.8, monkey seed 3037 on the FM-1: 4460-4692 us): a burst of more note-ons than
+ * voices in one block (a sequencer step, a DAW's chord) on idle voices struck every free voice (bar_init: 16
+ * coefficient sets, the pulse) and then stole those same voices for the next notes, whose bar_init ran again at the
+ * block's end: twice BAR_NV starts in one block. With voices ringing the steals alone fill it (every voice waits:
+ * BAR_NV starts, as before). The note past the limit waits for the next block, in order, as the waiting notes always
+ * did; a block of BAR_NV starts or fewer is the same as before, sample for sample */
+static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already waits for a note, or this block started
+                                                     * BAR_NV notes; try next block */
 {
     uint32_t i, pick = BAR_NV, best = 0xFFFFFFFFu;
+    if (bar_starts >= BAR_NV) return 0;
     for (i = 0; i < BAR_NV && bv[i].pend; i++) ;
     if (i == BAR_NV) return 0;                      /* (more than BAR_NV steals in one block: BUGHUNT #21) */
+    bar_starts++;
+#ifdef DINGHY_HOST
+    if (bar_starts > bar_h_max_starts) bar_h_max_starts = bar_starts;
+#endif
     for (i = 0; i < BAR_NV; i++)                    /* the same note still ringing: strike it again, superposed */
         if (bv[i].alive && !bv[i].pend && bv[i].note == note && bv[i].fade == 32768) {
             bar_voice_t *v = &bv[i];
             uint32_t m;
+#ifdef FR_HQ
+            for (m = BAR_UP0; m < BAR_NMV(v); m++)   /* relight (a fading slot keeps its state); bar_budget() trims */
+#else
             for (m = BAR_UP0; m < BAR_NM; m++)       /* relight (a fading slot keeps its state); bar_budget() trims */
+#endif
                 if (v->m[m].b) { if (!v->m[m].live) { v->m[m].amp = 0; v->m[m].x1 = v->m[m].x2 = v->m[m].err = 0; }
                                  v->m[m].live = 1; v->m[m].fresh = 1; }
             v->m[0].fresh = 1;
@@ -326,6 +362,9 @@ static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already wa
             v->vel = (uint8_t)vel; v->held = 1; v->age = ++bar_ages; v->life = v->k->life; v->struck = 1;
             bar_set_damper(v, 0);
             bar_load_pulse(v, vel);
+#if defined(FR_HQ) && HQB_CONTACT
+            hqb_pulse(v, vel, 1);                   /* HQ: the mallet meets the ringing bar (the live contact) */
+#endif
             bar_nz_e += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * vel) >> 22);
             return 1;
         }
@@ -442,6 +481,7 @@ static void bar_kill_all(void)
     for (i = 0; i < BAR_NV; i++) { bv[i].alive = 0; bv[i].pend = 0; }
     for (sb = 0; sb < 2u; sb++) bar_bd_m[sb][0] = bar_bd_m[sb][1] = bar_bd_o[sb][0] = bar_bd_o[sb][1] = bar_bd_e[sb] = 0;
     bar_active_bits = bar_held_bits = 0;
+    bar_starts = 0;
     bar_nz_e = 0;
     bar_nz_s[0] = bar_nz_s[1] = bar_nz_s[2] = bar_nz_s[3] = 0;
 }
@@ -631,6 +671,12 @@ static uint32_t bar_budget_run(void)                /* returns the ranking's own
         uint32_t tcap = (uint32_t)BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u].budget * BAR_NSUB;
         if (tcap < cap) cap = tcap;
     }
+#ifdef FR_HQ
+    cap = 0xFFFFu; rank = 0;                        /* the Move (FR_HQ builds): no FM-1-time cost model and no type
+                                                     * cap (48 upper modes in all, both TYPEs: under 16 voices x 6).
+                                                     * 16 voices with every upper mode fit its callback (private plan
+                                                     * 05 M3-03). CC 9 still applies */
+#endif
     if (bar_budget_force) cap = bar_budget_force >= 50u ? 0xFFFFu : (uint32_t)(bar_budget_force - 1u) * BAR_NSUB;
 #ifdef DINGHY_HOST
     if (bar_h_nobudget) cap = 0xFFFFu;
@@ -847,7 +893,11 @@ static void bar_damper_step(bar_voice_t *v)
     v->ramp--;
     f = (int32_t)(BAR_RAMP_SUB - v->ramp) * 4681;
     if (f > 32768 || !v->ramp) f = 32768;
+#ifdef FR_HQ
+    for (m = 0; m < BAR_NMV(v); m++) {
+#else
     for (m = 0; m < BAR_NM; m++) {
+#endif
         bar_ms_t *s = &v->m[m];
         int32_t et, pt;
         if (!s->live) continue;
@@ -939,14 +989,21 @@ FR_RAM __attribute__((noinline)) static void bar_felt_pass(bar_voice_t *v, int32
 static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
 {
     const bar_type_t *ty = &BAR_TYPE[bar_sub < BAR_NTYPE ? bar_sub : 0u];
-    uint32_t j, m, sb, nf = FR_FAR(bar_force)(v), nf4 = (nf + 3u) & ~3u, nlive = 0, fade0 = 0;
+    uint32_t j, m, sb, nf = FR_FAR(bar_force)(v), nf4 = (nf + 3u) & ~3u, nlive = 0, fade0 = 0, stuck = 0;
+#ifdef FR_HQ
+    int32_t gain = v->gain, ref, sum, la[BAR_NM + HQB_NX];
+#else
     int32_t gain = v->gain, ref, sum, la[BAR_NM];
+#endif
     if (v->ramp) {                                  /* the damper moves: every slot's coefficients per sub-block */
         for (sb = 0; sb < BAR_NSUB; sb++) {
             uint32_t o = sb * BAR_SUB;
             int frc = o < nf;
             if (v->ramp) bar_damper_step(v);
             FR_FAR(bar_pair)(v, o, o + BAR_SUB, nf);
+#ifdef FR_HQ
+            if (v->hq) { hqb_upper(v, o, BAR_SUB, nf); continue; }   /* the HQ voice: its slots in float */
+#endif
             for (m = BAR_UP0; m < BAR_NM; m++) {
                 bar_ms_t *s = &v->m[m];
                 if (!s->live) continue;
@@ -956,6 +1013,9 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
         }
     } else {
         FR_FAR(bar_pair)(v, 0, BAR_N, nf);
+#ifdef FR_HQ
+        if (v->hq) hqb_upper(v, 0, BAR_N, nf); else   /* the HQ voice: its slots in float */
+#endif
         for (m = BAR_UP0; m < BAR_NM; m++) {        /* the upper modes: the whole block at once */
             bar_ms_t *s = &v->m[m];
             uint32_t o = 0;
@@ -988,13 +1048,22 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
     }
     /* the levels, once a block: each live slot's amplitude, the voice's output, then the end and the sleep */
     sum = 0;
+#ifdef FR_HQ
+    if (v->hq) hqb_sync(v);                         /* the lanes' x into the slots, for the levels */
+    for (m = 0; m < BAR_NMV(v); m++) {
+#else
     for (m = 0; m < BAR_NM; m++) {
+#endif
         bar_ms_t *s = &v->m[m];
         la[m] = BAR_LZERO;
         if (!s->live) continue;
         s->x1 = bar_sat(s->x1); s->x2 = bar_sat(s->x2);
         la[m] = bar_lamp(s);
+        ref = s->amp;                               /* (the last block's) */
         s->amp = bar_exp2(la[m]);
+        if (v->w_tgt && s->amp >= ref && s->amp < (v->kill1 << 1)) stuck |= 1u << m;   /* damped, not falling,
+                                                     * under 2 LSB out: an upper slot here is in its rounding's limit
+                                                     * cycle (below) */
 #ifdef DINGHY_HOST
         if (getenv("BAR_DBG")) fprintf(stderr, "m%u la %d amp %d x1 %d x2 %d lsin %d live %u\n", (unsigned)m, (int)la[m], (int)s->amp, (int)s->x1, (int)s->x2, (int)s->lsin, (unsigned)s->live);
 #endif
@@ -1018,6 +1087,17 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
         return;
     }
     v->lvl = sum; if (sum > v->lvl0) v->lvl0 = sum;
+#ifdef BAR_LVL_LOG
+    {   /* (tests/py/test_bar_kill.py: each live voice's level once a block) */
+        static uint32_t blk, lastv = 99u;
+        if ((uint32_t)(v - bv) <= lastv) blk++;
+        lastv = (uint32_t)(v - bv);
+        fprintf(stderr, "bl %u %u %u %u %d %d %u", (unsigned)blk, (unsigned)(v - bv), (unsigned)v->note, (unsigned)v->held,
+                (int)sum, (int)v->kill1, (unsigned)v->life);
+        for (m = 0; m < BAR_NM; m++) fprintf(stderr, " %d", v->m[m].live ? (int)v->m[m].amp : -1);
+        fprintf(stderr, "\n");
+    }
+#endif
     if (!v->ptab && !v->felt_n && sum < v->kill1) { /* under 1 LSB out: the voice ends; a stolen one dying in its
                                                      * fade still starts the note waiting for it (BUGHUNT #21) */
         v->alive = 0;
@@ -1025,13 +1105,25 @@ static void bar_voice_block(bar_voice_t *v, int32_t *mix, int first)
         return;
     }
     if (!v->ptab BAR_SLEEP_ON) {                    /* upper modes: absolute and relative sleep, faded out over the
-                                                     * next sub-block (live = 2); they never wake on their own */
+                                                     * next sub-block (live = 2); they never wake on their own. And
+                                                     * the stuck ones: with no force and the damper on, a free
+                                                     * mode's level falls every block; at a few hundred LSB of x the
+                                                     * integer recursion's rounding can hold it in a limit cycle
+                                                     * instead (a V4 at ~1 LSB out for 15 s: the voice never fell
+                                                     * under kill1, kept its slot and changed the stealing). Damped,
+                                                     * under 2 LSB out and not falling: asleep. (Undamped, under the
+                                                     * pedal, a slow decay reads flat for blocks: not touched. The HQ
+                                                     * voice's upper slots are float: not theirs.) */
         ref = v->m[0].amp + (int32_t)(((int64_t)v->m[1].amp * iabs(v->wt)) >> 28);
         ref >>= ty->sleep_rel;
         if (ref < (v->kill1 >> 4)) ref = v->kill1 >> 4;
+#ifdef FR_HQ
+        for (m = BAR_UP0; m < BAR_NMV(v); m++) {
+#else
         for (m = BAR_UP0; m < BAR_NM; m++) {
+#endif
             bar_ms_t *s = &v->m[m];
-            if (s->live == 1u && s->amp < ref) s->live = 2;
+            if (s->live == 1u && (s->amp < ref || (stuck >> m & 1u BAR_STUCK_ON(v)))) s->live = 2;
         }
     }
 }
@@ -1042,6 +1134,9 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
 {
     uint32_t i, sb, j, act = 0, held = 0, ty = bar_sub < BAR_NTYPE ? bar_sub : 0u, nb = BAR_TYPE[ty].nbody, r;
     int32_t mx = 0, first = 1, hi = 0, lo = 0, dm, a, b;
+#if defined(FR_HQ) && HQB_CONTACT
+    hqb_ck_n = 0;                                   /* (this block's strikes are in: the next block's count anew) */
+#endif
     bar_motor_block();
     bar_budget();
 #ifdef DINGHY_HOST
@@ -1114,6 +1209,7 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
         bar_quiet_blocks = 0;
     bar_held_bits = held;
     bar_active_bits = act;
+    bar_starts = 0;                                 /* (the next block's strikes count anew) */
 #ifdef DINGHY_HOST
     bar_h_ms += bar_h_blk_ms; bar_h_mul += bar_h_blk_mul;
 #endif

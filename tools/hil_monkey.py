@@ -247,6 +247,18 @@ def saved_name(seed, rows, bad):
     return None
 
 
+def save_take(out, seed, rows, bad, xi, rate, ev, cnt):
+    """keeps the take as out/<saved_name> (the USB audio as int16, the rate, the events, the counters, the lead), in
+    the form --rejudge reads; the path, or None when the take is not kept"""
+    keep = saved_name(seed, rows, bad)
+    if not keep:
+        return None
+    path = os.path.join(out, keep)
+    np.savez_compressed(path, usb=np.clip(xi, -32768, 32767).astype(np.int16), fs=rate, events=json.dumps(ev),
+                        counters=json.dumps(cnt, default=str), lead=LEAD_S)
+    return path
+
+
 AUDIO_CHECKS = ("USB repeat / stale", "USB at full scale", "USB clamped", "USB isolated clamps", "the probe note",
                 "frames recorded")
 TRIAGE_COUNTERS = ("underruns", "missed", "overruns", "stalls", "sie_to")
@@ -519,18 +531,14 @@ def main(argv=None):
             report.append(dict(seed=s, rows=[list(map(str, r)) for r in rows], counters=cnt, load=[load0, load1]))
             print(f"{time.strftime('%H:%M:%S')} seed {s}: " + ("FAIL " + "; ".join(f"{r[0]} {r[1]}" for r in bad)
                                                                 if bad else "ok"), flush=True)
-            keep = saved_name(s, rows, bad)
-            if keep:                            # (a take with silent note-ons too: kept to classify them)
-                np.savez_compressed(os.path.join(a.out, keep),
-                                    usb=np.clip(xi, -32768, 32767).astype(np.int16), fs=a.rate, events=json.dumps(ev),
-                                    counters=json.dumps(cnt, default=str), lead=LEAD_S)
+            save_take(a.out, s, rows, bad, xi, a.rate, ev, cnt)    # (silent note-ons too: kept to classify them)
             if bad:
                 verdict = "FAIL"
                 if a.stop_on_fail or any(r[0].startswith(("CC 116 answers", "frames recorded", "the probe"))
                                          for r in bad) and not alive_ok(dev):
                     break
     finally:
-        dev.close()
+        dev.close()                                 # (after the take's stream stopped and its poller joined)
     js = dict(verdict=verdict, date=time.strftime("%Y-%m-%d %H:%M"), rate=a.rate, minutes=a.minutes, takes=report)
     json.dump(js, open(os.path.join(a.out, "report.json"), "w"), indent=1, default=str)
     md = [f"# hil_monkey: {verdict}", "", f"- {js['date']}, {len(report)} takes of {take_len():.1f} s, USB at "
@@ -543,4 +551,5 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import midi_guard
+    midi_guard.run(main)

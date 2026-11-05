@@ -721,7 +721,7 @@ def pedal_w():
     """Damper weight (Q15) vs CC64: a sampled reference piano's half-pedal curve inverted (§5.7)."""
     pts = [(0, 32768), (41, 32768), (42, 29491), (54, 22938), (62, 19661), (63, 19661), (64, 0), (127, 0)]
     xs, ys = zip(*pts)
-    return [min(32767, int(round(np.interp(v, xs, ys)))) for v in range(128)]
+    return [int(round(np.interp(v, xs, ys))) for v in range(128)]   # full damping 32768, as the boot value
 
 
 def main():

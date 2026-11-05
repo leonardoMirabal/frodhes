@@ -8,6 +8,7 @@
  *   SAVE              open the save mode: PRESETS / K1 pick the slot, SAVE again saves (when quiet), HOME cancels
  *   SAVE held 700 ms  undo / redo the last load
  *   MIDI PC           0..15 -> F01..F16, 16..31 -> U01..U16 (as before 0.9.5), 32..34 -> F17..F19 (preset_of_pc) */
+#include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 
 #define PR_NF 19u                               /* 12 Rhodes (F01..F12, unchanged), the bar types' F13..F16, then
                                                  * F17..F19 (0.9.5: the starters U10..U12 before) */
@@ -21,8 +22,10 @@ _Static_assert(PR_NF >= 16u && PR_NF <= 16u + 96u, "program changes 0..15: F01..
 #define PR_BANK_B OLD_PR_B
 #define PR_MAGIC 0x42505246u                    /* "FRPB" */
 
-typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[P_SLOTS]; uint8_t rsv2[16]; } preset_t;   /* v3 */
-_Static_assert(sizeof(preset_t) == 96, "preset record is 96 B (v3: 64 parameters, 16 bytes spare)");
+typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[P_SLOTS]; } preset_t;   /* v3: 64 parameters and
+                                                * 16 spare bytes (zero) up to the EQ, which took them (ids 64..79); np
+                                                * says how many a record holds: the ids from np on load their defaults */
+_Static_assert(sizeof(preset_t) == 96, "preset record is 96 B (v3: 80 parameters)");
 typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[48]; } preset_v2_t;     /* 0.4 .. 0.9.2 */
 _Static_assert(sizeof(preset_v2_t) == 64, "v2 preset record is 64 B");
 typedef struct { uint8_t ver, np, used, rsv; char name[12]; uint8_t p[32]; } preset_v1_t;     /* 0.1 .. 0.3 */
@@ -50,106 +53,111 @@ _Static_assert(sizeof pr_user == ST_TAIL_N, "the user presets are the store reco
  *   F19 RADIO       OHCD    the hard drive before the band-pass
  * F12's deep 1/4 sweep (the band-pass passes little: LEVEL 127, the compressor's make-up) is a documented exception to
  * the 1.5 LU (hil_scan.py's PRESET_TARGET: 0 +- 2.0) */
-#define PR_FDN 64u                              /* bytes per factory record: up to 31 pairs, then 0xFF */
 /* the compressor on every preset (0.9.5, the user: "always a bit of compression"): glue, not squash. Keys: THR -16 dB,
  * 2:1, ATTACK 80 (5 ms: the hammer and the bark pass before it acts), RELEASE 72 (~230 ms); the mallets (VIBES,
  * MARIMBA): 1.5:1, ATTACK 92 (9 ms), RELEASE 64. LOW CUT 70 (~150 Hz) / 80 (~200 Hz) keeps the bass out of the tails. */
 static const char *const PR_FNAME[PR_NF] = {
     "STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "SUIT TREM", "DRIVEN 77", "BALLAD", "DYNO 80S", "70S PHASER",
     "FUNK WAH", "RESO SWEEP", "AUTO WAH", "VIBES", "VIBES ECHO", "MARIMBA", "WOOD ECHO", "TAPE ECHO", "DREAM", "RADIO"};   /* (the header shows 14 characters: names up to 10) */
-static const uint8_t PR_FDATA[PR_NF][PR_FDN] = {
+static const uint8_t PR_FDATA[] = {   /* the factory records, one after another: id / value pairs, 0xFF ends each */
     /* ---- DRY (F01..F04, F13, F15): each instrument as the model plays it, the compressor and a trace of room only */
     /* F01 STAGE 77: the clean stage piano (the boot sound) */
-    {P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-     P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 55, 0xFF},
+    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 55, 0xFF,
     /* F02 SUITCASE: the suitcase's cabinet, no vibrato */
-    {P_TYPE, 1, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-     P_RV_DEPTH, 16, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 49, 0xFF},
+    P_TYPE, 1, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 16, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 49, 0xFF,
     /* F03 EARLY FELT: the felt hammers, their soft onset, NOISE lower (soft playing) */
-    {P_TYPE, 2, P_NOISE, 36, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-     P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 52, 0xFF},
+    P_TYPE, 2, P_NOISE, 36, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 52, 0xFF,
     /* F04 BELL DYNO: the bell voicing, a short plate */
-    {P_TYPE, 3, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-     P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 56, 0xFF},
+    P_TYPE, 3, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 56, 0xFF,
     /* ---- FX */
     /* F05 SUIT TREM: the suitcase amp, its stereo PAN vibrato at 4.5 Hz, a little warmth, a vintage plate */
-    {P_TYPE, 1, P_NOISE, 44, P_DRIVE, 20, P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 72, P_TW_RATE, 88, P_CMP_SW, 1,
-     P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_RV_DEPTH, 24, P_RV_TYPE, 2,
-     P_RV_LOCUT, 70, P_LEVEL, 46, 0xFF},
+    P_TYPE, 1, P_NOISE, 44, P_DRIVE, 20, P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 72, P_TW_RATE, 88, P_CMP_SW, 1,
+    P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_RV_DEPTH, 24, P_RV_TYPE, 2,
+    P_RV_LOCUT, 70, P_LEVEL, 46, 0xFF,
     /* F06 DRIVEN 77: a gentle compressor that lets the hammer through, then the drive (soft playing clean, hard barks),
      * a tape slap on the dotted 1/8, a short plate */
-    {P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 40, P_CMP_RATIO, 2, P_CMP_ATK, 70, P_CMP_GAIN, 16, P_DRIVE, 64,
-     P_DRV_SW, 2, P_DRV_TONE, 72, P_BARK, 96, P_HAMMER, 80, P_DL_SW, 3, P_DL_DEPTH, 12, P_DL_SYNC, 8, P_DL_FDBK, 40,
-     P_DL_TONE, 56, P_RV_DEPTH, 18, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 45, 0xFF},
+    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 40, P_CMP_RATIO, 2, P_CMP_ATK, 70, P_CMP_GAIN, 16, P_DRIVE, 64,
+    P_DRV_SW, 2, P_DRV_TONE, 72, P_BARK, 96, P_HAMMER, 80, P_DL_SW, 3, P_DL_DEPTH, 12, P_DL_SYNC, 8, P_DL_FDBK, 40,
+    P_DL_TONE, 56, P_RV_DEPTH, 18, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 45, 0xFF,
     /* F07 BALLAD: rounder, a slow chorus, a long plate behind a pre-delay, a soft quarter-note digital echo */
-    {P_TYPE, 0, P_TONE, 56, P_BELL, 76, P_NOISE, 40, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80,
-     P_CMP_REL, 72, P_CMP_GAIN, 8, P_CP_SW, 1, P_CP_DEPTH, 56, P_CP_SPEED, 40, P_DL_SW, 1, P_DL_DEPTH, 12,
-     P_DL_SYNC, 9, P_DL_FDBK, 30, P_DL_TONE, 50, P_RV_DEPTH, 48, P_RV_TYPE, 2, P_RV_DECAY, 84, P_RV_PREDLY, 40,
-     P_RV_LOCUT, 70, P_LEVEL, 53, 0xFF},
+    P_TYPE, 0, P_TONE, 56, P_BELL, 76, P_NOISE, 40, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80,
+    P_CMP_REL, 72, P_CMP_GAIN, 8, P_CP_SW, 1, P_CP_DEPTH, 56, P_CP_SPEED, 40, P_DL_SW, 1, P_DL_DEPTH, 12,
+    P_DL_SYNC, 9, P_DL_FDBK, 30, P_DL_TONE, 50, P_RV_DEPTH, 48, P_RV_TYPE, 2, P_RV_DECAY, 84, P_RV_PREDLY, 40,
+    P_RV_LOCUT, 70, P_LEVEL, 53, 0xFF,
     /* F08 DYNO 80S: the bell voicing, chorus, a dotted-1/8 digital echo on the tempo, a bright plate */
-    {P_TYPE, 3, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-     P_CP_SW, 1, P_CP_DEPTH, 70, P_CP_SPEED, 56, P_DL_SW, 1, P_DL_DEPTH, 18, P_DL_SYNC, 8, P_DL_FDBK, 24,
-     P_DL_TONE, 76, P_RV_DEPTH, 30, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 68, 0xFF},
+    P_TYPE, 3, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_CP_SW, 1, P_CP_DEPTH, 70, P_CP_SPEED, 56, P_DL_SW, 1, P_DL_DEPTH, 18, P_DL_SYNC, 8, P_DL_FDBK, 24,
+    P_DL_TONE, 76, P_RV_DEPTH, 30, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 68, 0xFF,
     /* F09 70S PHASER: a slow, deep phaser with feedback on a lightly driven stage piano, a dark analog echo, a plate */
-    {P_TYPE, 0, P_NOISE, 48, P_DRIVE, 34, P_DRV_SW, 5, P_BARK, 76, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1,
-     P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_PH_SW, 1, P_PH_DEPTH, 85, P_PH_SPEED, 30, P_PH_FDBK, 64,
-     P_DL_SW, 2, P_DL_DEPTH, 12, P_DL_SYNC, 9, P_DL_FDBK, 30, P_DL_TONE, 50, P_RV_DEPTH, 22, P_RV_TYPE, 2,
-     P_RV_LOCUT, 70, P_LEVEL, 60, 0xFF},
+    P_TYPE, 0, P_NOISE, 48, P_DRIVE, 34, P_DRV_SW, 5, P_BARK, 76, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1,
+    P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_PH_SW, 1, P_PH_DEPTH, 85, P_PH_SPEED, 30, P_PH_FDBK, 64,
+    P_DL_SW, 2, P_DL_DEPTH, 12, P_DL_SYNC, 9, P_DL_FDBK, 30, P_DL_TONE, 50, P_RV_DEPTH, 22, P_RV_TYPE, 2,
+    P_RV_LOCUT, 70, P_LEVEL, 60, 0xFF,
     /* F10 FUNK WAH: a fast compressor, drive, the touch wah (harder playing opens it), a small dry room */
-    {P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 56, P_CMP_RATIO, 3, P_CMP_ATK, 20, P_CMP_REL, 40, P_CMP_GAIN, 26,
-     P_DRIVE, 44, P_DRV_SW, 3, P_TW_SW, 2, P_TW_DEPTH, 92, P_TW_RATE, 72, P_BARK, 84, P_RV_DEPTH, 14, P_RV_TYPE, 1,
-     P_RV_LOCUT, 80, P_LEVEL, 42, 0xFF},
+    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 56, P_CMP_RATIO, 3, P_CMP_ATK, 20, P_CMP_REL, 40, P_CMP_GAIN, 26,
+    P_DRIVE, 44, P_DRV_SW, 3, P_TW_SW, 2, P_TW_DEPTH, 92, P_TW_RATE, 72, P_BARK, 84, P_RV_DEPTH, 14, P_RV_TYPE, 1,
+    P_RV_LOCUT, 80, P_LEVEL, 42, 0xFF,
     /* F11 RESO SWEEP: a driven tone into the resonant LP12, the LFO's triangle sweeping it over 2 bars, a clean
      * quarter-note digital echo, a hall */
-    {P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-     P_DRIVE, 53, P_DRV_SW, 4, P_DRV_TONE, 60, P_FL_TYPE, 1, P_FL_FREQ, 76, P_FL_RESO, 88, P_FL_LFO, 64,
-     P_LFO_SHAPE, 1, P_LFO_SYNC, 13, P_DL_SW, 1, P_DL_DEPTH, 14, P_DL_SYNC, 9, P_DL_FDBK, 40, P_DL_TONE, 60,
-     P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 18, 0xFF},
+    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_DRIVE, 53, P_DRV_SW, 4, P_DRV_TONE, 60, P_FL_TYPE, 1, P_FL_FREQ, 76, P_FL_RESO, 88, P_FL_LFO, 64,
+    P_LFO_SHAPE, 1, P_LFO_SYNC, 13, P_DL_SW, 1, P_DL_DEPTH, 14, P_DL_SYNC, 9, P_DL_FDBK, 40, P_DL_TONE, 60,
+    P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 18, 0xFF,
     /* F12 AUTO WAH: the wah: a resonant band-pass swept deep by the LFO, a sine at 1/4 on the tempo, restarted by every
      * note (the compressor's make-up carries the level LEVEL 127 cannot) */
-    {P_TYPE, 0, P_BARK, 80, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-     P_DRIVE, 52, P_DRV_SW, 3, P_FL_TYPE, 5, P_FL_FREQ, 70, P_FL_RESO, 84, P_FL_LFO, 50, P_LFO_SHAPE, 0, P_LFO_SYNC, 9,
-     P_LFO_RETRIG, 1, P_RV_DEPTH, 14, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 121, 0xFF},
+    P_TYPE, 0, P_BARK, 80, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_DRIVE, 52, P_DRV_SW, 3, P_FL_TYPE, 5, P_FL_FREQ, 70, P_FL_RESO, 84, P_FL_LFO, 50, P_LFO_SHAPE, 0, P_LFO_SYNC, 9,
+    P_LFO_RETRIG, 1, P_RV_DEPTH, 14, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 121, 0xFF,
     /* F13 VIBES (dry): the vibraphone as the model plays it: STRIKE at L/3, a mallet between YARN and the middle, the
      * tube a little fuller, the motor at 2.6 Hz a little shallower, the damper and the ring as made, a quiet mallet
      * contact; the mallet compressor (1.5:1, 9 ms: the strike passes) and a trace of hall */
-    {P_TYPE, 4, P_TONE, 64, P_BARK, 52, P_BELL, 70, P_HAMMER, 64, P_DECAY, 64, P_RELEASE, 64, P_NOISE, 40, P_MOT_ON, 1,
-     P_MOT_DEPTH, 90, P_MOT_RATE, 66, P_MOT_SHAPE, 0, P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92,
-     P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 20, P_RV_TYPE, 1, P_RV_PREDLY, 20, P_RV_LOCUT, 70, P_LEVEL, 55, 0xFF},
+    P_TYPE, 4, P_TONE, 64, P_BARK, 52, P_BELL, 70, P_HAMMER, 64, P_DECAY, 64, P_RELEASE, 64, P_NOISE, 40, P_MOT_ON, 1,
+    P_MOT_DEPTH, 90, P_MOT_RATE, 66, P_MOT_SHAPE, 0, P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92,
+    P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 20, P_RV_TYPE, 1, P_RV_PREDLY, 20, P_RV_LOCUT, 70, P_LEVEL, 55, 0xFF,
     /* F14 VIBES ECHO: the motor off, a cord mallet, a longer ring and a softer damper, a light slow chorus, a dotted-1/8
      * tape echo on the tempo (darker repeats), a bright plate behind a short pre-delay */
-    {P_TYPE, 4, P_TONE, 64, P_BARK, 82, P_BELL, 64, P_HAMMER, 60, P_DECAY, 72, P_RELEASE, 54, P_NOISE, 36, P_MOT_ON, 0,
-     P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1,
-     P_CP_DEPTH, 40, P_CP_SPEED, 40, P_DL_SW, 3, P_DL_DEPTH, 20, P_DL_SYNC, 8, P_DL_FDBK, 50, P_DL_TONE, 56,
-     P_RV_DEPTH, 34, P_RV_TYPE, 2, P_RV_DECAY, 70, P_RV_PREDLY, 16, P_RV_LOCUT, 80, P_LEVEL, 59, 0xFF},
+    P_TYPE, 4, P_TONE, 64, P_BARK, 82, P_BELL, 64, P_HAMMER, 60, P_DECAY, 72, P_RELEASE, 54, P_NOISE, 36, P_MOT_ON, 0,
+    P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1,
+    P_CP_DEPTH, 40, P_CP_SPEED, 40, P_DL_SW, 3, P_DL_DEPTH, 20, P_DL_SYNC, 8, P_DL_FDBK, 50, P_DL_TONE, 56,
+    P_RV_DEPTH, 34, P_RV_TYPE, 2, P_RV_DECAY, 70, P_RV_PREDLY, 16, P_RV_LOCUT, 80, P_LEVEL, 59, 0xFF,
     /* F15 MARIMBA (dry): the default mallet, tube and weight, MUTE 0 (rings out, as the instrument), a soft mallet
      * tick, the mallet compressor and a trace of hall */
-    {P_TYPE, 5, P_TONE, 64, P_BARK, 64, P_BELL, 64, P_HAMMER, 64, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
-     P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 22, P_RV_TYPE, 1,
-     P_RV_PREDLY, 12, P_RV_LOCUT, 70, P_LEVEL, 59, 0xFF},
+    P_TYPE, 5, P_TONE, 64, P_BARK, 64, P_BELL, 64, P_HAMMER, 64, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
+    P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 22, P_RV_TYPE, 1,
+    P_RV_PREDLY, 12, P_RV_LOCUT, 70, P_LEVEL, 59, 0xFF,
     /* F16 WOOD ECHO: a hard yarn mallet, heavier, MUTE 0, a light chorus, a dotted-1/8 digital echo on the tempo with a
      * few soft repeats, a hall behind a pre-delay */
-    {P_TYPE, 5, P_TONE, 60, P_BARK, 80, P_BELL, 64, P_HAMMER, 110, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
-     P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1, P_CP_DEPTH, 40,
-     P_CP_SPEED, 44, P_DL_SW, 1, P_DL_DEPTH, 22, P_DL_SYNC, 8, P_DL_FDBK, 26, P_DL_TONE, 50, P_RV_DEPTH, 38,
-     P_RV_TYPE, 1, P_RV_DECAY, 64, P_RV_PREDLY, 24, P_RV_LOCUT, 80, P_LEVEL, 67, 0xFF},
+    P_TYPE, 5, P_TONE, 60, P_BARK, 80, P_BELL, 64, P_HAMMER, 110, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
+    P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1, P_CP_DEPTH, 40,
+    P_CP_SPEED, 44, P_DL_SW, 1, P_DL_DEPTH, 22, P_DL_SYNC, 8, P_DL_FDBK, 26, P_DL_TONE, 50, P_RV_DEPTH, 38,
+    P_RV_TYPE, 1, P_RV_DECAY, 64, P_RV_PREDLY, 24, P_RV_LOCUT, 80, P_LEVEL, 67, 0xFF,
     /* ---- 0.9.5: TAPE ECHO, DREAM, RADIO (the starters U10..U12 until 0.9.5's RC, the same records: their sound and
      * their compressor as they were) */
     /* F17 TAPE ECHO: a warm piano into the tape echo, dotted 1/8 on the tempo, a plate */
-    {P_TYPE, 0, P_TONE, 58, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72,
-     P_CMP_GAIN, 8, P_DRIVE, 22, P_DL_SW, 3, P_DL_DEPTH, 29, P_DL_SYNC, 8, P_DL_FDBK, 72, P_DL_TONE, 62,
-     P_RV_DEPTH, 22, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 47, 0xFF},
+    P_TYPE, 0, P_TONE, 58, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72,
+    P_CMP_GAIN, 8, P_DRIVE, 22, P_DL_SW, 3, P_DL_DEPTH, 29, P_DL_SYNC, 8, P_DL_FDBK, 72, P_DL_TONE, 62,
+    P_RV_DEPTH, 22, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 47, 0xFF,
     /* F18 DREAM: felt hammers, a slow stereo pan, chorus, a quarter-note analog echo, a long dark hall, more motion */
-    {P_TYPE, 2, P_DECAY, 84, P_NOISE, 30, P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 1, P_CMP_ATK, 90, P_CMP_REL, 80,
-     P_CMP_GAIN, 8, P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 36, P_TW_RATE, 30, P_CP_SW, 1, P_CP_DEPTH, 60,
-     P_CP_SPEED, 30, P_DL_SW, 2, P_DL_DEPTH, 21, P_DL_SYNC, 9, P_DL_FDBK, 30, P_RV_DEPTH, 76, P_RV_TYPE, 1,
-     P_RV_DECAY, 104, P_RV_PREDLY, 60, P_RV_TONE, 56, P_RV_MOD, 84, P_RV_LOCUT, 80, P_LEVEL, 55, 0xFF},
+    P_TYPE, 2, P_DECAY, 84, P_NOISE, 30, P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 1, P_CMP_ATK, 90, P_CMP_REL, 80,
+    P_CMP_GAIN, 8, P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 36, P_TW_RATE, 30, P_CP_SW, 1, P_CP_DEPTH, 60,
+    P_CP_SPEED, 30, P_DL_SW, 2, P_DL_DEPTH, 21, P_DL_SYNC, 9, P_DL_FDBK, 30, P_RV_DEPTH, 76, P_RV_TYPE, 1,
+    P_RV_DECAY, 104, P_RV_PREDLY, 60, P_RV_TONE, 56, P_RV_MOD, 84, P_RV_LOCUT, 80, P_LEVEL, 55, 0xFF,
     /* F19 RADIO: a hard drive through a band-pass (a small speaker's band), a short tape slap, a small room */
-    {P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-     P_DRIVE, 55, P_DRV_SW, 4, P_DRV_TONE, 76, P_FL_TYPE, 5, P_FL_FREQ, 66, P_FL_RESO, 0, P_DL_SW, 3, P_DL_DEPTH, 15,
-     P_DL_TIME, 54, P_DL_FDBK, 30, P_RV_DEPTH, 10, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 75, 0xFF},
+    P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
+    P_DRIVE, 55, P_DRV_SW, 4, P_DRV_TONE, 76, P_FL_TYPE, 5, P_FL_FREQ, 66, P_FL_RESO, 0, P_DL_SW, 3, P_DL_DEPTH, 15,
+    P_DL_TIME, 54, P_DL_FDBK, 30, P_RV_DEPTH, 10, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 75, 0xFF,
 };
-_Static_assert(PR_FDN % 2u == 0u, "id / value pairs");
+/* factory record idx (< PR_NF): the records are stored back to back (0.9.6: no padding to 64 bytes, 423 B less) */
+FR_COLD static const uint8_t *pr_fdata(uint32_t idx)
+{
+    const uint8_t *d = PR_FDATA;
+    for (; idx; idx--) { while (*d != 0xFFu) d += 2; d++; }
+    return d;
+}
 
 /* the user bank's starters (0.9.5): a bank that was never saved (no header in either sector: a new FM-1, or one that
  * never saved a preset) opens with these in U01..U09, in RAM only; the first save writes them with the bank. A bank
@@ -212,7 +220,7 @@ static const uint8_t PR_SDATA[] = {
     P_RV_PREDLY, 30, P_RV_LOCUT, 62, P_LEVEL, 39, 0xFF,
 };
 
-static void presets_starters(void)                  /* an empty bank: U01..U09 the starters (RAM; saved with the bank) */
+FR_COLD static void presets_starters(void)                  /* an empty bank: U01..U09 the starters (RAM; saved with the bank) */
 {
     const uint8_t *d = PR_SDATA;
     uint32_t i, j;
@@ -222,7 +230,6 @@ static void presets_starters(void)                  /* an empty bank: U01..U09 t
         u->ver = 3; u->np = P_COUNT; u->used = 1; u->rsv = 0;
         for (j = 0; j < sizeof u->name; j++) u->name[j] = *nm ? *nm++ : ' ';
         for (j = 0; j < P_SLOTS; j++) u->p[j] = j < P_COUNT ? PARAMS[j].def : 0;
-        for (j = 0; j < sizeof u->rsv2; j++) u->rsv2[j] = 0;
         for (; *d != 0xFF; d += 2) u->p[d[0]] = d[1];
         d++;
     }
@@ -230,22 +237,22 @@ static void presets_starters(void)                  /* an empty bank: U01..U09 t
 
 /* ---- bank storage (host: two RAM sectors) */
 #ifdef DINGHY_HOST
-static uint32_t crc32(const uint8_t *p, uint32_t n)
+FR_COLD static uint32_t crc32(const uint8_t *p, uint32_t n)
 {
     uint32_t c = 0xFFFFFFFFu, k;
     while (n--) { c ^= *p++; for (k = 0; k < 8u; k++) c = c & 1u ? (c >> 1) ^ 0xEDB88320u : c >> 1; }
     return ~c;
 }
-static int bank_read(uint32_t at, void *p, uint32_t n) { return st_read(at, p, n); }   /* (tests/host.c's flash) */
+FR_COLD static int bank_read(uint32_t at, void *p, uint32_t n) { return st_read(at, p, n); }   /* (tests/host.c's flash) */
 static uint8_t bank_buf[sizeof(bank_hdr_t) + sizeof pr_user];
 #else
-static int bank_read(uint32_t at, void *p, uint32_t n) { return flash_ok ? st_read(at, p, n) : -1; }
+FR_COLD static int bank_read(uint32_t at, void *p, uint32_t n) { return flash_ok ? st_read(at, p, n) : -1; }
 #define bank_buf st_rec                         /* (the migration's: the store's record buffer, free until its save) */
 _Static_assert(sizeof st_rec >= sizeof(bank_hdr_t) + sizeof pr_user, "the old bank fits the record buffer");
 #endif
 
 _Static_assert(sizeof(bank_hdr_t) + sizeof pr_user <= 4096u, "a bank copy is one 4 KiB sector");
-static int bank_valid(uint32_t at, bank_hdr_t *h)          /* the records: v3 (96 B), 0.4 (64 B) or 0.1 .. 0.3 (48 B) */
+FR_COLD static int bank_valid(uint32_t at, bank_hdr_t *h)          /* the records: v3 (96 B), 0.4 (64 B) or 0.1 .. 0.3 (48 B) */
 {
     if (bank_read(at, h, sizeof *h) || h->magic != PR_MAGIC) return 0;
     if (h->len != sizeof pr_user && h->len != PR_NU * sizeof(preset_v2_t) && h->len != PR_NU * sizeof(preset_v1_t)) return 0;
@@ -254,7 +261,7 @@ static int bank_valid(uint32_t at, bank_hdr_t *h)          /* the records: v3 (9
 }
 
 static void presets_load_bank_in(void);
-static void presets_load_bank(void)
+FR_COLD static void presets_load_bank(void)
 {
     presets_load_bank_in();
     if (set_pr_from_rc) {                            /* the settings named U10..U12 of 16 factory presets (params.c's
@@ -269,7 +276,7 @@ static void presets_load_bank(void)
     }
 }
 static uint8_t pr_old;                          /* the migration found a bank before 0.9.6's (frodhes.c) */
-static uint32_t pr_old_id(void)                 /* the bank before 0.9.6, the copy the load takes: its id (0: none) */
+FR_COLD static uint32_t pr_old_id(void)                 /* the bank before 0.9.6, the copy the load takes: its id (0: none) */
 {
     bank_hdr_t ha, hb;
     int va = bank_valid(PR_BANK_A, &ha), vb = bank_valid(PR_BANK_B, &hb);
@@ -277,7 +284,7 @@ static uint32_t pr_old_id(void)                 /* the bank before 0.9.6, the co
     if (!va || (vb && (int32_t)(ha.seq - hb.seq) <= 0)) ha = hb;
     return st_id(ha.crc ^ ha.len, ha.seq);
 }
-static void presets_load_bank_in(void)
+FR_COLD static void presets_load_bank_in(void)
 {
     bank_hdr_t ha, hb;
     int va, vb;
@@ -310,7 +317,6 @@ static void presets_load_bank_in(void)
                 u->ver = 3; u->used = o->used; u->rsv = 0;
                 memcpy(u->name, o->name, sizeof u->name);
                 for (j = 0; j < P_SLOTS; j++) u->p[j] = j < nold && j < o->np ? o->p[j] : j < P_COUNT ? PARAMS[j].def : 0;
-                for (j = 0; j < sizeof u->rsv2; j++) u->rsv2[j] = 0;
                 if (nold == 32u) params_split_phaser(u->p, P_SLOTS);
                 params_v3_convert(u->p);
                 u->np = P_COUNT;
@@ -320,7 +326,7 @@ static void presets_load_bank_in(void)
 }
 
 static settings_t set_saved;                     /* (frodhes.c: the settings last written) */
-static int presets_save_bank(void)                 /* main loop, only when quiet (the erase stalls the audio): the
+FR_COLD static int presets_save_bank(void)                 /* main loop, only when quiet (the erase stalls the audio): the
                                                     * record with the settings last written, then read back */
 {
     int rc;
@@ -335,7 +341,7 @@ static int presets_save_bank(void)                 /* main loop, only when quiet
 static uint8_t pr_cand = 255, pr_save_mode, pr_save_slot, pr_save_pending;
 static uint32_t pr_cand_t;
 
-static void preset_name(uint32_t idx, char *s)          /* "F03 SUITCASE" / "U05 ST77 TRM" */
+FR_COLD static void preset_name(uint32_t idx, char *s)          /* "F03 SUITCASE" / "U05 ST77 TRM" */
 {
     uint32_t i = 0, n = idx < PR_NF ? idx + 1u : idx - PR_NF + 1u;
     const char *nm = idx < PR_NF ? PR_FNAME[idx] : pr_user[idx - PR_NF].used ? pr_user[idx - PR_NF].name : "----";
@@ -346,21 +352,21 @@ static void preset_name(uint32_t idx, char *s)          /* "F03 SUITCASE" / "U05
     s[i] = 0;
 }
 
-static uint32_t preset_of_pc(uint32_t pc)              /* a MIDI program change: 0..15 F01..F16, 16..31 U01..U16 (the
+FR_COLD static uint32_t preset_of_pc(uint32_t pc)              /* a MIDI program change: 0..15 F01..F16, 16..31 U01..U16 (the
                                                         * map before 0.9.5, kept), 32.. F17..; else 255 (none) */
 {
     return pc < 16u ? pc : pc < 32u ? PR_NF + pc - 16u : pc < 16u + PR_NF ? pc - 16u : 255u;
 }
 
-static int preset_values(uint32_t idx, uint8_t *p)      /* the parameters preset idx sets; -1: no preset there */
+FR_COLD static int preset_values(uint32_t idx, uint8_t *p)      /* the parameters preset idx sets; -1: no preset there */
 {
     uint32_t i;                                         /* ids from P_SLOTS on are not in presets yet: defaults */
     if (idx >= PR_NF + PR_NU) return -1;
     if (idx >= PR_NF && !pr_user[idx - PR_NF].used) return -1;
     for (i = 0; i < P_COUNT; i++) p[i] = PARAMS[i].def;
     if (idx < PR_NF) {
-        const uint8_t *d = PR_FDATA[idx];
-        for (i = 0; i < PR_FDN && d[i] != 0xFF; i += 2u) p[d[i]] = d[i + 1u];
+        const uint8_t *d = pr_fdata(idx);
+        for (i = 0; d[i] != 0xFF; i += 2u) p[d[i]] = d[i + 1u];
     } else {
         const preset_t *u = &pr_user[idx - PR_NF];
         for (i = 0; i < P_SLOTS && i < P_COUNT && i < u->np; i++) p[i] = u->p[i] <= PARAMS[i].hi ? u->p[i] : PARAMS[i].def;
@@ -370,7 +376,7 @@ static int preset_values(uint32_t idx, uint8_t *p)      /* the parameters preset
 
 /* the boot (frodhes.c app_main): the preset the record names, played as it is stored, without an undo step (the
  * record's undo copy stays); 0 = done, -1 = it is not there (the record's sound plays: snd_base, params.c) */
-static int preset_boot(void)
+FR_COLD static int preset_boot(void)
 {
     uint8_t p[P_COUNT];
     uint32_t i;
@@ -381,7 +387,7 @@ static int preset_boot(void)
     return 0;
 }
 
-static void preset_load(uint32_t idx)
+FR_COLD static void preset_load(uint32_t idx)
 {
     uint8_t p[P_COUNT];
     uint32_t i;
@@ -403,7 +409,7 @@ static void preset_load(uint32_t idx)
     }
 }
 
-static void preset_undo(void)
+FR_COLD static void preset_undo(void)
 {
     uint8_t t[P_COUNT];
     uint32_t i;
@@ -425,7 +431,7 @@ static void preset_undo(void)
     ui_say("UNDO");
 }
 
-static void preset_autoname(char *n)                     /* TYPE + the effects on: "ST77 TRM PHA DD" */
+FR_COLD static void preset_autoname(char *n)                     /* TYPE + the effects on: "ST77 TRM PHA DD" */
 {
     const char *parts[5];
     uint32_t i = 0, k, np = 0;
@@ -443,7 +449,7 @@ static void preset_autoname(char *n)                     /* TYPE + the effects o
     while (i < 12u) n[i++] = ' ';
 }
 
-static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t rel)
+FR_COLD static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t rel)
 {
     static uint32_t save_t;
     char s[20];
@@ -464,7 +470,6 @@ static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t r
             u->ver = 3; u->np = P_COUNT; u->used = 1; u->rsv = 0;
             preset_autoname(u->name);
             for (i = 0; i < P_SLOTS; i++) u->p[i] = i < P_COUNT ? PV(i) : 0;
-            for (i = 0; i < sizeof u->rsv2; i++) u->rsv2[i] = 0;
             set.preset = (uint8_t)(PR_NF + pr_save_slot);
             snd_base_take();
             set_dirty = 1; set_t_change = fm1_ms;
@@ -497,7 +502,7 @@ static void presets_poll(int32_t d_presets, int32_t d_k1, uint32_t b, uint32_t r
 }
 
 static uint32_t pr_wait_t;
-static void presets_save_poll(void)
+FR_COLD static void presets_save_poll(void)
 {
     /* a save waits for silence (the flash rule); INFINITE's held tail (SUSTAIN, FREEZE) never falls silent: the footer says so every
      * MSG_MS until the freeze is left (INFINITE's SUSTAIN or FREEZE: DECAY under 120, another TYPE, OFF) and the tail

@@ -29,17 +29,18 @@
  * few instructions a sample more than the others.
  * Cost: tools/drive_insns.py counts the loops (pi32v2 -Os); DRV_US_KHLON is the longest block, a fade block of the dip,
  * at ~1.6 us per instruction per sample. */
-#ifndef KH_AA                                   /* the anti-aliased clipper: 0 until it fits the budget (below) */
-#define KH_AA 0
+#ifndef KH_AA                                   /* the anti-aliased clipper from KH_AA_A on (fxq-drive: on; 0 = the
+                                                 * plain curve at every AMOUNT, 0.9.8's budget) */
+#define KH_AA 1
 #endif
-#if !KH_AA       /* plain (pi32v2 -Os, the firmware build, per sample): post 69, pre 70, a dip block 80.5 (was 79 / 83 /
+#if KH_AA                                       /* AA: post 96, pre 100, a dip block 109 (DRV_US_MAX: drive.c) */
+#define DRV_US_KHLON 177u
+#define KH_AA_FROM KH_AA_A
+#else            /* plain (pi32v2 -Os, the firmware build, per sample): post 69, pre 70, a dip block 80.5 (was 79 / 83 /
                   * 96 counted the same way: O1+CL 25, clipper 21 (pre, adding into the sum: 24), slot 10, POST 13, the
                   * dip's blend 10.5) */
 #define DRV_US_KHLON 129u
 #define KH_AA_FROM 127u
-#else                                           /* AA: post 96, pre 100, a dip block 109: over the budget (no build) */
-#define DRV_US_KHLON 177u
-#define KH_AA_FROM KH_AA_A
 #endif
 #define KH_M64(a, b) ((int64_t)(a) * (int64_t)(b))
 #ifndef KH_FN
@@ -49,10 +50,15 @@
 static DRV_BSS int32_t kh_o1[5], kh_cl[3], kh_sl[3], kh_po[5];   /* the rows that run: b0 (b1 b2) a1 (a2), Q24, a negated */
 static DRV_BSS int64_t kh_so1[2], kh_spo[2], kh_scl, kh_ssl;      /* transposed form II states */
 static DRV_BSS int32_t kh_sc;                                     /* the coupling capacitor (Q20) */
-static DRV_BSS int32_t kh_tmp[DRV_BLK], kh_u[DRV_BLK];             /* the driven path; the sum while it dips */
+#define kh_tmp drv_scr.kh.tmp                                    /* the driven path; the sum while it dips: block */
+#define kh_u drv_scr.kh.u                                        /* scratch, shared (drive.c drv_scr: one TYPE a block) */
 static DRV_BSS const int32_t *kh_gf;                              /* the plain clipper's node at 0 V (KH_GF) */
 static DRV_BSS int32_t kh_e1, kh_F1, kh_v1;                       /* the AA clipper: the last e, F(e1), the last v */
+#if KH_AA
 static DRV_BSS uint8_t kh_aa;                                     /* the AA clipper runs (AMOUNT index >= KH_AA_A) */
+#else                    /* (0.9.8, flash: KH_AA_FROM is past the last row, so the AA passes and KH_RCP are left out) */
+#define kh_aa 0
+#endif
 static DRV_BSS int32_t kh_kc4, kh_rail;                           /* (in RAM: loaded into registers, as the reference) */
 static DRV_DATA uint8_t kh_ra = 0xFFu, kh_rt, kh_pre, kh_dip, kh_held;      /* rows (AMOUNT 0..126, TONE 0..128); 0xFF: none yet */
 /* each section's last two inputs and outputs (x1 x2 y1 y2), kept at the end of a block: when a row changes, the
@@ -99,8 +105,10 @@ static void kh_load(void)                        /* the rows -> the coefficients
         kh_po[i] = i < 3 ? (int32_t)((KH_M64(v, s) + (1 << 23)) >> 24) : v;
     }
     kh_pre = (uint8_t)(gr >= KH_PRE_ROW);
+#if KH_AA
     if (kh_ra >= KH_AA_FROM && !kh_aa) kh_F1 = kh_F(kh_e1);   /* (the AA rows start: F1 from the carried e1) */
     kh_aa = kh_ra >= KH_AA_FROM;
+#endif
     kh_gf = KH_GF; kh_kc4 = KH_KC4; kh_rail = KH_RAIL;
 }
 static void kh_rest(void)                        /* every state to rest */
@@ -216,7 +224,7 @@ KH_FN void kh_clipvadd_pass(int32_t *u, uint32_t n)
 KH_FN void kh_clipaa_pass(uint32_t n)
 {
     const int32_t *gf = KH_GF;
-    const uint16_t *rc = KH_RCP - (1 << 10);
+    const uint16_t *rc = KH_RCP;
     int32_t sc = kh_sc, kc4 = kh_kc4, L = kh_rail, nL = -kh_rail, e1 = kh_e1, F1 = kh_F1;
     uint32_t i;
     for (i = 0; i < n; i++) {
@@ -230,7 +238,7 @@ KH_FN void kh_clipaa_pass(uint32_t n)
         ad = (uint32_t)(d < 0 ? -d : d);
         if (__builtin_expect(ad >= (1u << KH_AA_SF), 1)) {
             int nz = __builtin_clz(ad);
-            uint32_t r = rc[(ad << nz) >> (32 - 11)];
+            uint32_t r = rc[((ad << nz) >> (32 - 11)) - (1u << 10)];   /* the top bit is set: 1024..2047 */
             int32_t q = (int32_t)(KH_M64(F - F1, r) >> (47 - KH_AA_SF - nz));
             v = d < 0 ? -q : q;
         } else {
@@ -339,6 +347,8 @@ static void drv_khlon_run(const int32_t *in, int32_t *out, uint32_t n, const drv
     uint32_t ta = (uint32_t)(c->amount - 1), tt = (uint32_t)(c->tone + ((c->tone + 1) >> 7));   /* 0..126, 0..128 */
     uint32_t tpre = kh_mode_of(ta), ph = kh_dip;
     int32_t *u = out, cl1, cl2, x1, x2;
+    int64_t q0[7];                               /* (the states at a silent block's start) */
+    uint32_t q;
     if (kh_ra == 0xFFu) { kh_ra = (uint8_t)ta; kh_rt = (uint8_t)tt; kh_load(); ph = 0; }
     else {
         uint32_t ra = kh_ra, rt = kh_rt;
@@ -371,6 +381,16 @@ static void drv_khlon_run(const int32_t *in, int32_t *out, uint32_t n, const drv
 #endif
     if (ph) u = kh_u;                            /* (the dry signal stays in in) */
     x1 = in[n - 1] << 5; x2 = in[n - 2] << 5;      /* (in may be u: overwritten) */
+    /* silence (0.9.8, the residual after a panic): on zero input the rounding (every >> floors) leaves fixed points
+     * that are not 0, the coupling capacitor's update ((e - v) kc4 >> 32 is 0 for a small positive e - v: its state
+     * stops at a few hundred LSB below 0, so the diodes see a constant e and give a constant v) and the sections' own
+     * (y = s >> 24 stays at -1 or a few LSB): a DC of ~44 LSB out, for ever, kept open by the silence gate. A block
+     * that starts and ends on 0 in, outside a dip, with every state where it started is that fixed point: to rest
+     * (exact 0 from the next block). Once a block, no per-sample work; music never leaves the states unmoved */
+    if (!(x1 | x2 | in[0]) && !ph && !kh_held) {
+        q0[0] = kh_so1[0]; q0[1] = kh_so1[1]; q0[2] = kh_spo[0]; q0[3] = kh_spo[1];
+        q0[4] = kh_scl; q0[5] = kh_ssl; q0[6] = kh_sc; q = 1;
+    } else q = 0;
     kh_o1cl_pass(in, u, n);
     kh_hist(kh_ho1, x1, x2, kh_tmp[n - 1], kh_tmp[n - 2]);
     kh_hist(kh_hcl, x1, x2, cl1 = u[n - 1], cl2 = u[n - 2]);
@@ -405,4 +425,8 @@ static void drv_khlon_run(const int32_t *in, int32_t *out, uint32_t n, const drv
     kh_hpo[2] = u[n - 1]; kh_hpo[3] = u[n - 2];  /* POST's output (in a dip block: not; the rows hold the block after) */
     kh_held = u != out;
     kh_dip = (uint8_t)ph;
+    if (q && q0[0] == kh_so1[0] && q0[1] == kh_so1[1] && q0[2] == kh_spo[0] && q0[3] == kh_spo[1] &&
+        q0[4] == kh_scl && q0[5] == kh_ssl && q0[6] == kh_sc && (kh_sc | kh_scl | kh_ssl | kh_so1[0] |
+        kh_so1[1] | kh_spo[0] | kh_spo[1]))
+        kh_rest();                               /* (the stuck fixed point: silence, a block from now) */
 }

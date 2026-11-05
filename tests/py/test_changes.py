@@ -15,12 +15,16 @@ def test_repo_fragments_are_well_formed():
     frags = ch.load()                                   # raises with every problem
     ch.tagline()                                        # the notes' head line comes from the manual
     notes = ch.assemble("9.9.9", frags) if frags else ""
-    assert not frags or notes.startswith("**Frodhes 9.9.9**: a physically modelled ")
+    summ = [secs["Summary"] for _, secs in frags if "Summary" in secs]
+    assert not frags or notes.startswith(f"**Frodhes 9.9.9** {summ[0]}\n\n" if summ else
+                                         "**Frodhes 9.9.9**: a physically modelled ")
 
 
 def test_parse():
     secs = ch.parse("<!-- topic: x -->\n## New\n- a\n  more of a\n  - a sub-item\n\n- b\n## Tools\n- t\n")
     assert secs == {"New": "- a\n  more of a\n  - a sub-item\n\n- b", "Tools": "- t"}
+    assert ch.parse("## Summary\n\nadds a thing\nand **another**.\n\n## New\n- a\n") == {
+        "Summary": "adds a thing and **another**.", "New": "- a"}
     for text, msg in (("## New\n- a\n## New\n- b\n", "a second time"),
                       ("## Fixed\n- a\n## New\n- b\n", "after '## Fixed'"),
                       ("## Fixes\n- a\n", "heading '## Fixes'"),
@@ -29,7 +33,11 @@ def test_parse():
                       ("## New\nplain text\n", "not a list line"),
                       ("## New\n\n## Tools\n- t\n", "'## New' is empty"),
                       ("> **DRAFT** x\n## New\n- a\n", "a DRAFT line"),
-                      ("", "no section")):
+                      ("", "no section"),
+                      ("## New\n- a\n## Summary\nadds x\n", "after '## New'"),
+                      ("## Summary\n- adds x\n", "one plain paragraph, not a list"),
+                      ("## Summary\nadds x\n\nand y\n", "no blank line"),
+                      ("## Summary\nFrodhes adds x\n", "begin with the verb")):
         with pytest.raises(ch.Bad, match=msg):
             ch.parse(text)
 
@@ -51,10 +59,35 @@ def test_load_and_assemble_in_file_name_order(tmp_path):
     n = ch.assemble("1.2.3", frags, r)
     assert n.startswith("**Frodhes 1.2.3**: a physically modelled thing for the M-VAVE FM-1. Every note")
     assert "`frodhes.fwsc` below (the same file as `frodhes-1.2.3.fwsc`" in n and ch.DOWNLOAD in n
+    # the install: three routes, FM-1 (browser or terminal, then the rescue), the Move, the SMK-37 files
+    inst = n[n.index("### Install"):n.index("### New in")]
+    i = [inst.index(s) for s in ("**FM-1**", f"{ch.PAGES_URL}#install", "python3 tools/fm1_install.py frodhes.fwsc",
+                                 "**OCT−**", "**Move**", "Schwung Manager", "From GitHub URL**, `leonardoMirabal/frodhes`",
+                                 "`frodhes-module.tar.gz`", "**From Tarball**", "**SMK-37 Pro, SMK-37 Elite, MKE-P37**",
+                                 "`-experimental.fwsc`")]
+    assert i == sorted(i)
+    nm = ch.assemble("1.2.3", frags, r, move=False)                      # no Move package: no Move route
+    assert "**Move**" not in nm and "frodhes-module.tar.gz" not in nm and "**SMK-37 Pro" in nm
     order = [n.index(s) for s in ("### Install", "### New in 1.2.3\n- Z new", "### Changes\n- M change",
                                   "### Fixed\n- A fix\n- Z fix", "Full manual:")]
     assert order == sorted(order) and "### Tools" not in n and "### Tested" not in n
     assert ch.assemble("1.2.3", ch.load(r), r) == n                      # stable
+    (tmp_path / "docs" / "MANUAL.md").write_text("**A physically modelled thing for the M-VAVE FM-1 and the Ableton Move.** More.\n")
+    assert ch.assemble("1.2.3", ch.load(r), r).startswith(
+        "**Frodhes 1.2.3**: a physically modelled thing for the M-VAVE FM-1 and the Ableton Move. Every note")   # two devices
+
+
+def test_summary_line(tmp_path):
+    r = write(tmp_path, {"00-summary.md": "## Summary\nadds a thing\n  and more.\n", "a.md": "## New\n- A new\n"})
+    n = ch.assemble("1.2.3", ch.load(r), r)
+    assert n.startswith("**Frodhes 1.2.3** adds a thing and more.\n\n**Download:**")
+    assert "Every note is computed" not in n and "### Summary" not in n and "### New in 1.2.3\n- A new" in n
+    (tmp_path / "docs" / "changes" / "b.md").write_text("## Summary\nadds two\n")
+    with pytest.raises(ch.Bad, match="'## Summary' in 2 fragments"):
+        ch.load(r)
+    r = write(tmp_path / "v", {"00-summary.md": "## Summary\nadds the 1.2.3 thing\n"})
+    with pytest.raises(ch.Bad, match="names 1.2.3"):
+        ch.assemble("1.2.3", ch.load(r), r)
 
 
 def test_refusals(tmp_path):

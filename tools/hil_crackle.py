@@ -410,13 +410,20 @@ def det_stale(q, w=16, maxlag=4096, p2p=64):
         for k in range(w):
             h += v[k:k + n] * rnd[k]
     from scipy.ndimage import maximum_filter1d, minimum_filter1d
-    rng_ = np.zeros(n)
+    rng_, rng4 = np.zeros(n), np.zeros(n)
+    ws = 4 * w                                             # (and over the window and the 48 frames after it, for a
+    # run of 64 frames or more with that sound in the run itself: a stale half block of a slow low tone, peak 630 LSB, moved 30 LSB in every 16 frames
+    # and went unseen with 50 LSB jumps at both ends, c1-int's self-test on marimba. The 16-frame rule stays as it was
+    # for shorter runs: a quiet decay matched itself 3805 frames back for a few frames on a clean render)
     for c in range(q.shape[1]):
         col = q[:, c].astype(float)
         hi = maximum_filter1d(col, w, origin=-(w // 2))[:n]
         lo = minimum_filter1d(col, w, origin=-(w // 2))[:n]
         rng_ = np.maximum(rng_, hi - lo)
-    idx = np.flatnonzero(rng_ >= p2p)
+        hi = maximum_filter1d(col, ws, origin=-(ws // 2))[:n]
+        lo = minimum_filter1d(col, ws, origin=-(ws // 2))[:n]
+        rng4 = np.maximum(rng4, hi - lo)
+    idx = np.flatnonzero(rng4 >= p2p)
     if not len(idx):
         return []
     o = idx[np.lexsort((idx, h[idx]))]
@@ -431,8 +438,9 @@ def det_stale(q, w=16, maxlag=4096, p2p=64):
         r = runs.get(lag)                                  # (a run's windows share its verdict)
         if r is None or not r[0] <= b < r[1]:
             s0, e0 = _exact_run(q, b, lag, w)
-            r = runs[lag] = (s0, e0, _own_period(q, b, lag, w, run=(s0, e0)))
-        if not r[2]:
+            r = runs[lag] = (s0, e0, _own_period(q, b, lag, w, run=(s0, e0)),
+                             e0 - s0 >= ws and int((q[s0:e0].max(0) - q[s0:e0].min(0)).max()) >= p2p)
+        if not r[2] and (rng_[b] >= p2p or r[3]):
             hits[b] = min(lag, hits.get(b, lag))
     out, last = [], -10 ** 9
     for b in sorted(hits):
@@ -1134,7 +1142,9 @@ def _places(x, fs, events, rng, k, kind, avoid_lim=None, ccs=(), widen=0.0, cloc
             ref = np.concatenate([np.full(sh, -200.0), db[:-sh]])
             g |= np.abs(db - ref) > 3.0
     ok = (lv > 32767 * 0.01) & ~g
-    ok[:int(0.5 * fs)] = False
+    ok[:int((0.6 if kind == "drop1ms" else 0.5) * fs)] = False   # (a slip: against the jack's steady windows, which
+                                                            # need the take's first ~0.56 s: a slip at 0.30 - 0.55 s
+                                                            # is not judged on any build, from 0.56 s it is: 2026-10-28)
     ok[-int((2.0 if kind == "drop1ms" else 0.5) * fs):] = False   # (a slip is judged over the next second)
     if avoid_lim is not None:
         ok &= ~avoid_lim[:len(ok)]
@@ -1378,11 +1388,11 @@ class Device:
     at the asked rate (and blocksize) and the jack on the interface. poll: the counters read every 0.5 s through
     hil_must.Poller around each take (False inside T1, where hil_must polls around the whole run)"""
 
-    def __init__(self, rate, jack, jack_dev, jack_ch, blocksize=0, poll=True):
+    def __init__(self, rate, jack, jack_dev, jack_ch, blocksize=0, poll=True, mdev=None):
         import sounddevice as sd
         import hil_must
         self.hm, self.sd, self.poll = hil_must, sd, poll
-        self.mdev = hil_must.Dev()
+        self.mdev = mdev or hil_must.Dev()                   # (the MIDI ports before any stream; T1 passes its own)
         devs = [i for i, d in enumerate(sd.query_devices())
                 if any(k in d["name"].lower() for k in hil_scan.PORT_KEYS) and d["max_input_channels"] >= 2]
         if not devs:
@@ -1813,7 +1823,7 @@ def main(argv=None):
             print(f"stress_max --rate {a.rate}: FAIL before any take: {e}")
             return 1
         rep, od = run_takes(engines, a, dev)
-        dev.cap.close()
+        dev.cap.close()                              # (the streams stopped; the ports: the exit, tools/midi_guard.py)
     txt = report_text(rep)
     print(txt)
     open(os.path.join(od, "report.txt"), "w").write(txt + "\n")
@@ -1821,11 +1831,13 @@ def main(argv=None):
     return 0 if rep["ok"] else 1
 
 
-def t1(r=None, rep=None, rate=48000, seconds=None, quick=False, tier="must", engines=ENGINES, log=print):
+def t1(r=None, rep=None, rate=48000, seconds=None, quick=False, tier="must", engines=ENGINES, log=print, dev=None):
     """hil_scan TESTS["stress_max"], called by hil_must's S1 per rate (keywords it accepts: rate, seconds, quick,
     tier): every engine on the FM-1 at that rate with the jack when the interface is there, the counters left to
     hil_must (it polls around the whole call; a second poller would split the replies). seconds: the worst-case and
-    recipe time per engine (0.6 / 0.4 of it); without it the --quick lengths. Returns (ok, message)"""
+    recipe time per engine (0.6 / 0.4 of it); without it the --quick lengths. dev: the caller's open hil_must.Dev
+    (T1: no second MIDI port pair opened while its USB stream and poller run). Returns (ok, message)"""
+    mdev = dev
     a = parse_args(["--rate", str(rate), "--no-usb-s", "0"] + ([] if seconds else ["--quick"]))
     if seconds:
         a.worst_s, a.recipe_s = 0.6 * seconds, 0.4 * seconds
@@ -1833,7 +1845,7 @@ def t1(r=None, rep=None, rate=48000, seconds=None, quick=False, tier="must", eng
     jack = any(d["name"] == a.jack_dev and d["max_input_channels"] >= a.jack_ch for d in sd.query_devices())
     a.source = "both" if jack else "usb"
     try:
-        dev = Device(a.rate, jack, a.jack_dev, a.jack_ch, poll=False)
+        dev = Device(a.rate, jack, a.jack_dev, a.jack_ch, poll=False, mdev=mdev)
     except RateError as e:                           # (the device not at rate: no take means anything)
         return False, f"stress_max {rate} Hz: FAIL before any take: {e}"
     try:
@@ -1851,4 +1863,5 @@ def t1(r=None, rep=None, rate=48000, seconds=None, quick=False, tier="must", eng
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import midi_guard
+    midi_guard.run(main)

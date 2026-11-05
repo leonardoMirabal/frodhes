@@ -25,6 +25,9 @@ def test_every_firmware_file_is_named_by_a_rule():
     assert not unnamed, f"add these to tools/test_map.py RULES: {unnamed}"
     for f in fw:
         m = tm.tiers_of(f)
+        if m["group"] == "engine:hq":                # (the Move's HQ code: never in an FM-1 build, so no FM-1 tier;
+            assert m["tiers"] == ["T0"] and not m["t1"], (f, m)   # its targets' tests come per target, Gate S)
+            continue
         assert "T0" in m["tiers"] and "T1" in m["tiers"] and m["t1"], (f, m)
         assert set(m["t1"]) <= set(tm.SCENARIOS)
         assert set(m["t2"]) <= set(tm.ENGINES_T2 + ("effects",))

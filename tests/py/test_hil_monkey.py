@@ -16,7 +16,7 @@ import hil_monkey as hm  # noqa: E402
 
 
 def test_dry_run_plans_and_checks_every_message(capsys):
-    pytest.importorskip("mido")                         # (the dry run checks every message with mido; CI has none)
+    import mido  # noqa: F401                           # (the dry run checks every message with mido; CI installs it)
     assert hm.main(["--dry-run", "--minutes", "1"]) == 0
     out = capsys.readouterr().out
     assert "every message valid" in out and "no MIDI or audio opened" in out
@@ -137,6 +137,26 @@ def test_rejudge_reads_a_saved_take(take, tmp_path, capsys):
     np.savez_compressed(p, usb=xi.astype(np.int16), fs=44100, events=hm.json.dumps(ev), counters="{}", lead=hm.LEAD_S)
     assert hm.main(["--rejudge", str(p)]) == 0
     assert "fail-1000.npz: ok" in capsys.readouterr().out
+
+
+def test_a_passing_take_with_silent_note_ons_is_saved_and_rejudged(take1012, take, tmp_path, capsys):
+    """s1024 end to end on a fake take (seed 1012's host render, its first note-on silenced as on the FM-1): it passes,
+    judge_audio counts the silent note-on, save_take keeps it as silent-1012.npz and --rejudge reads it back"""
+    x, ev = take1012
+    rows = hm.judge_audio(x, 44100, ev)
+    bad = [r for r in rows if r[3] == "FAIL"]
+    assert not bad, rows
+    p = hm.save_take(str(tmp_path), 1012, rows, bad, x, 44100, ev, {"underruns": 0})
+    assert p == str(tmp_path / "silent-1012.npz") and os.path.exists(p)
+    z = np.load(p)
+    assert int(z["fs"]) == 44100 and np.array_equal(z["usb"], x.astype(np.int16))
+    assert hm.json.loads(str(z["counters"])) == {"underruns": 0}
+    assert hm.main(["--rejudge", p]) == 0
+    assert "silent-1012.npz: ok" in capsys.readouterr().out
+    xi, ev0 = take                                                    # (a clean take: nothing kept)
+    clean = hm.judge_audio(xi, 44100, ev0)
+    assert hm.save_take(str(tmp_path), 1000, clean, [], xi, 44100, ev0, {}) is None
+    assert sorted(os.listdir(tmp_path)) == ["silent-1012.npz"]
 
 
 @pytest.fixture(scope="module")

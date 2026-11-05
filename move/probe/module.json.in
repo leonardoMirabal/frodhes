@@ -1,0 +1,37 @@
+{
+  "id": "@ID@",
+  "name": "@NAME@",
+  "abbrev": "FP",
+  "version": "0.0.1",
+  "description": "Development probe: a sine per note, logs MIDI, timing, state and data directories",
+  "author": "Frodhes",
+  "license": "GPL-3.0-only",
+  "dsp": "dsp.so",
+  "api_version": 2,
+  "capabilities": {
+    "audio_out": true,
+    "audio_in": false,
+    "midi_in": true,
+    "midi_out": false,
+    "aftertouch": true,
+    "touch_observe": true,
+    "raw_midi": @RAW@,
+    "chainable": true,
+    "component_type": "sound_generator",
+    "ui_hierarchy": {
+      "levels": {
+        "root": {
+          "label": "Probe",
+          "params": [
+            { "key": "state_kb", "label": "State", "type": "enum",
+              "options": ["Auto", "1K", "2K", "4K", "8K", "16K", "32K", "64K"], "default": 0 },
+            { "key": "burn_us", "label": "Burn", "type": "int", "min": 0, "max": 2500, "step": 50, "default": 0,
+              "unit": "us" },
+            { "key": "level", "label": "Level", "type": "float", "min": 0, "max": 1, "step": 0.05, "default": 0.25 }
+          ],
+          "knobs": ["state_kb", "burn_us", "level"]
+        }
+      }
+    }
+  }
+}

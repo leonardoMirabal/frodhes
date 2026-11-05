@@ -29,7 +29,7 @@ WANT = {(1, 20000): "a653d56baadc01b3 12038 5", (7, 20000): "2e96769e51e80132 10
 def fuzz_bin():
     os.makedirs(OUT, exist_ok=True)
     exe = os.path.join(OUT, "rev_fuzz")
-    subprocess.run(["cc", "-O2", "-w", "-DDINGHY_HOST", '-DAPP_VER="dev"', "-I" + os.path.join(ROOT, "firmware", "src"),
+    subprocess.run(["cc", "-O2", "-w", "-DDINGHY_HOST", '-DAPP_VER="dev"', "-DFR_REV_HQ=0", "-I" + os.path.join(ROOT, "firmware", "src"),
                     "-I" + os.path.join(ROOT, "firmware", "gen"), "-o", exe,
                     os.path.join(ROOT, "tests", "c", "rev_fuzz.c"), "-lm"], check=True)
     return exe

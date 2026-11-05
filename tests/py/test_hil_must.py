@@ -190,13 +190,27 @@ def test_s4_vibes_restrike_is_no_repeat():
     render of the same panel and sweep has 2 too (2026-10-24), both in the chord's re-strikes: 2.048 s (48 ms into
     the strike at 2.0: -5848, -5843, -5843, -5795 on both channels, steps +5 / +48) and 23.997 s (its first frames:
     795, 802, 802, 864, steps +7 / +62), the attack's own turn. The old check (2 equal frames, > 40 LSB across them)
-    counted them; hil_crackle's repeat does not (steps that unlike are no copy's slope)"""
+    counted them; hil_crackle's repeat does not (steps that unlike are no copy's slope).
+    0.9.8 (c1-int: the new drives, the EQ, the effects' quality) moved the render and the strike at 2.0 s no longer
+    has its own repeated frame; the witness is now made there: in the strike's first 150 ms, at the frame whose steps
+    either side are the most unlike (the same sign, the step after over 40 LSB, both channels over 300 LSB), that frame
+    is held one sample (the old check's pattern: +small, 0, +large). The old criterion counts it, hil_crackle's does not"""
     import hil_crackle as hc
     params = [p for p in hs.param_defaults() if p[0] not in m.SWEEP_SKIP][:5]     # the sweep's first 2.65 s
     ev, _ = m.stim_sweep(params)
     ccs = [(c, v) for c, v in m.panel_msgs("vibes") if c != 120]
     u, _ = hc.host_take("s4-vibes-restrike", ccs, ev, m.dur_of(ev, 0.5), tag="must")
     q = np.round(u).astype(np.int64)
+    k0 = int(2.0 * hc.FS_HOST)                                   # the attack's turn: the witness, held one frame
+    best, kw = 0.0, None
+    for k in range(k0 + 2, k0 + int(0.15 * hc.FS_HOST)):
+        b, a = q[k - 1] - q[k - 2], q[k + 1] - q[k - 1]
+        if np.abs(q[k - 1]).min() > 300 and np.any((np.abs(a) > 40) & (np.sign(a) == np.sign(b)) & (b != 0)):
+            r = float(np.max(np.abs(a) / np.maximum(np.abs(b), 1)))
+            if r > best:
+                best, kw = r, k
+    assert kw is not None and best >= 5, best
+    q[kw] = q[kw - 1]
     i = np.arange(2, len(q) - 1)                                 # the old criterion, here only as the witness
     same = np.all(q[i] == q[i - 1], axis=1) & (np.abs(q[i]).max(axis=1) > 300)
     b, a = q[i - 1] - q[i - 2], q[i + 1] - q[i]

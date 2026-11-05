@@ -109,7 +109,7 @@ def test_cc84_row_matches_the_drive_type_bands():
 
 def test_every_drive_type_is_described():
     """the DRIVE page's types table has a row per drive TYPE (params.c N_DRV, OFF aside) with its sound, AMOUNT and
-    TONE, and the README's page table and DRIVE paragraph name every one"""
+    TONE (the README names no type: a feature list only)"""
     names = re.findall(r'"([^"]+)"', re.search(r"N_DRV\[\] = \{([^}]*)\}", src("params.c")).group(1))[1:]
     page = section("### DRIVE")
     page = page[:page.index("\n### ", 4)]
@@ -117,11 +117,6 @@ def test_every_drive_type_is_described():
         row = next((ln for ln in page.splitlines() if ln.startswith(f"| **{n}** |")), None)
         assert row is not None, f"the DRIVE page has no row for {n}"
         assert len([c for c in row.strip("|").split("|") if c.strip()]) == 4, row
-    readme = open(os.path.join(ROOT, "README.md")).read()
-    assert "| **DRIVE** | OFF / " + " / ".join(names) + " |" in readme
-    para = readme[readme.index("The **DRIVE** page's K1"):]
-    para = para[:para.index("\n\n")]
-    assert all(f"**{n}**" in para for n in names), names
 
 
 # the circuit names the drive TYPEs follow stay out of everything public (the user's rule: generic names only): the

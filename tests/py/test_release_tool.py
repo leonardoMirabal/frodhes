@@ -48,13 +48,13 @@ def test_cpu_and_jack_checks():
         rel.check_jack("rhodes", dict(loud=dict(jack_peak_db=-60.0), snr_db=20.0))
 
 
-def fake_shell(root, calls, notes_draft=False, changed=("docs/MANUAL.md", "firmware/src/usb.c")):
+def fake_shell(root, calls, notes_draft=False, changed=("docs/MANUAL.md", "firmware/src/usb.c"), branch="main"):
     def sh(cmd, check=True, input=None, timeout=None, quiet=False):
         s = cmd if isinstance(cmd, str) else " ".join(cmd)
         calls.append(s)
         replies = {
             "git tag --sort=-v:refname --list v*": "v0.9.2\nv0.9.1\n",
-            "git rev-parse --abbrev-ref HEAD": "main\n",
+            "git rev-parse --abbrev-ref HEAD": branch + "\n",
             "git status --porcelain --untracked-files=no": "",
             "git tag --list v0.9.3": "",
             "git ls-remote --tags origin refs/tags/v0.9.3": "",
@@ -92,6 +92,20 @@ def tree(tmp_path, monkeypatch):
     return tmp_path
 
 
+
+@pytest.mark.parametrize("branch,ok", [("rel-0.9.3", True), ("release-0.9.3", True), ("rel-0.9.4", False),
+                                       ("ship-1c", False)])
+def test_preconditions_take_the_release_branch(tree, monkeypatch, capsys, branch, ok):
+    """the release commit can be made on the release's own test branch (the local main may hold another session's
+    work); any other branch, or another version's, stops at step 2"""
+    calls = []
+    monkeypatch.setattr(rel, "sh", fake_shell(str(tree), calls, branch=branch))
+    monkeypatch.setattr("builtins.input", lambda *_: pytest.fail("--dry-run must not prompt"))
+    rel.main(["patch", "--dry-run", "--no-device", "--no-emulator"])
+    o = capsys.readouterr().out
+    assert (f"PROBLEM: on branch '{branch}', not main or rel-0.9.3 / release-0.9.3" in o) != ok, o
+    assert ("preconditions: PASS" in o) == ok, o
+
 def test_dry_run_stops_before_push(tree, monkeypatch, capsys):
     calls = []
     monkeypatch.setattr(rel, "sh", fake_shell(str(tree), calls))
@@ -110,6 +124,8 @@ def test_dry_run_stops_before_push(tree, monkeypatch, capsys):
     notes = "\n".join(l[3:] for l in shown.splitlines())                 # (the log indents by 3)
     assert "**Frodhes 0.9.3**: a physically modelled electric piano and a test bar for the M-VAVE FM-1." in notes
     assert "python3 tools/fm1_install.py frodhes.fwsc" in notes
+    assert f"the newest is always at {rel.LATEST_DL})" in notes and "`-experimental.fwsc` files" in notes
+    assert "**Move**" not in notes                                        # no move/ here: no Move package, no route
     i = [notes.index(s) for s in ("### New in 0.9.3\n- **A new thing.**\n  Its second line.",
                                   "### Changes\n- Another change.", "### Fixed\n- Fix A.\n- A fix, as in 0.9.2.",
                                   "Full manual:")]
@@ -167,7 +183,7 @@ def test_docs_step_writes_the_notes_and_removes_the_fragments(tree, monkeypatch)
     assert "git rm -q docs/changes/a-other.md docs/changes/b-thing.md" in calls
     assert "git add docs/releases/v0.9.3.md" in calls and any(c.startswith("git commit") for c in calls)
     assert not [c for c in calls if c.startswith("git add") and ("README" in c or "MANUAL" in c)]   # nothing bumped
-    assert "doc_links: README.md / docs/MANUAL.md, 0 problem(s)" in ev
+    assert "doc_links: README.md / docs/MANUAL.md / docs/MOVE.md / docs/MOVE-DEV.md / docs/SMK37.md, 0 problem(s)" in ev
 
 
 def test_docs_step_refuses_stale_links_and_the_next_version(tree, monkeypatch):

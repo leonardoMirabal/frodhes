@@ -74,8 +74,16 @@ typedef struct {
                                                      * always), else the Q30 form */
 } bar_ms_t;
 
+#ifdef FR_HQ
+#define HQB_NX 5u                                   /* the HQ bars' extra slots (the Move only: hq/bars_hq.h): V5 V6 V7
+                                                     * T3 T4 at m[8 ..12] */
+typedef struct {
+    bar_ms_t m[BAR_NM + HQB_NX];
+    uint8_t hq;                                     /* latched at the note-on: the HQ bar voice (hq/bars_hq.c) */
+#else
 typedef struct {
     bar_ms_t m[BAR_NM];
+#endif
     const bar_key_t *k;
     uint8_t note, vel, alive, held, ramp, pend, pend_note, pend_vel, struck, pred;
     int32_t w_tgt, fade;
@@ -132,11 +140,14 @@ static volatile uint32_t bar_active_bits, bar_held_bits, bar_quiet_blocks;
 static volatile uint8_t bar_notes[BAR_NV];
 static volatile uint32_t bar_shed_count;
 static uint32_t bar_plan_us;                        /* the cost model's time for this block (bar_budget) */
+static uint8_t bar_starts;                          /* ISR: the notes bar_strike started this block (a free voice, a
+                                                     * re-strike, a steal's waiting note); BAR_NV at most (bars.c) */
 static volatile uint32_t bar_prof_cap = 0xFFFFu, bar_prof_used;   /* since the last profiler query (CC 116): the lowest
                                                      * cap and the most live upper modes, in modes (x 8 = units) */
 #ifdef DINGHY_HOST
 static uint64_t bar_h_sat, bar_h_ms, bar_h_mul;     /* host counters: sat28 hits, mode-samples, int64 multiplies */
 static uint32_t bar_h_blk_ms, bar_h_blk_mul, bar_h_blk_ns;   /* this block's; ns: the cost model's FM-1 time */
+static uint32_t bar_h_max_starts;                   /* the most note starts in one block (tests/py/test_bar_starts.py) */
 static int bar_h_nobudget, bar_h_nosleep;           /* host tests (S12 transparency): FRODHES_NOBUDGET / NOSLEEP */
 static int bar_h_fxus = -1;                         /* FRODHES_FXUS: the effects' cost the budget plans with (us; RAW
                                                      * renders that budget as if the effects ran) */
@@ -144,6 +155,11 @@ static FILE *bar_h_pred;                            /* FRODHES_PREDLOG: predicte
 #define BAR_SLEEP_ON && !bar_h_nosleep
 #else
 #define BAR_SLEEP_ON
+#endif
+#ifdef FR_HQ
+#define BAR_STUCK_ON(v) && !(v)->hq                 /* (bars.c: the stuck-slot sleep, the classic voice's only) */
+#else
+#define BAR_STUCK_ON(v)
 #endif
 static uint32_t fx_cost_us(void);                   /* fx.c: the effects that run now, us per block */
 
@@ -158,3 +174,6 @@ static void bar_kill_all(void);
 static int bar_quiet(void);
 static uint32_t bar_cost_fixed(uint32_t *unit);
 static void bar_render(int32_t *mono_out, uint32_t n);
+#ifdef FR_HQ
+#include "hq/bars_hq.h"                            /* the HQ bars (the Move only; never in the FM-1 / SMK builds) */
+#endif

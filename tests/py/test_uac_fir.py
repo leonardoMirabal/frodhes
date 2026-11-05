@@ -53,8 +53,12 @@ def reference(x, taps, with_knee=True):
 def run(secs, seed, pieces=False):
     os.makedirs(OUT, exist_ok=True)
     exe = os.path.join(OUT, "uac_fir_test")
-    subprocess.run(["cc", "-O1", "-w", "-I" + os.path.join(ROOT, "firmware", "src"), "-o", exe,
+    # built under this process's own name, then renamed over exe: another pytest worker may be running exe, and
+    # writing over a running binary fails on Linux (CI, 0.9.8: "Text file busy"); a rename never does
+    tmp = f"{exe}.{os.getpid()}"
+    subprocess.run(["cc", "-O1", "-w", "-I" + os.path.join(ROOT, "firmware", "src"), "-o", tmp,
                     os.path.join(ROOT, "tests", "uac_fir_test.c")], check=True)
+    os.replace(tmp, exe)
     txt = subprocess.run([exe, str(secs), str(seed)] + (["pieces"] if pieces else []), check=True, capture_output=True, text=True).stdout
     return np.array([[int(v) for v in ln.split()] for ln in txt.splitlines()], dtype=np.int64)
 

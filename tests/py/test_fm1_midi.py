@@ -11,8 +11,7 @@ import pytest
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import fm1_midi  # noqa: E402
-
-mido = pytest.importorskip("mido")
+import mido  # noqa: E402  (installed in CI: a missing module fails, never skips)
 
 
 class Port:
@@ -66,7 +65,8 @@ def test_rotate():
 
 # the output ports opened on purpose without the channel: the TRS interface's (not the FM-1), the installer (SysEx)
 RAW_OK = {"hil_clock.py": "the TRS interface's port", "hil_midi_parity.py": "the TRS interface's port",
-          "fm1_install.py": "SysEx only"}
+          "fm1_install.py": "SysEx only", "move_hil.py": "the Move's own port (not the FM-1)",
+          "midi_guard.py": "the open under a watchdog; its callers wrap it in ChannelOut"}
 
 
 def test_every_fm1_output_goes_through_the_channel():

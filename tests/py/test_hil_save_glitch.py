@@ -102,7 +102,7 @@ def test_jack_line_and_a_wrong_drift_fit():
     evs, info = G.audio_events(u, j, C.FS_HOST, ev, ccs, fit=False)
     assert not evs and "one line" in info["jack_line"], (evs, info.get("jack_line"))
     j2 = j.copy()
-    a = int((2.6 + 0.06 + C.JACK_DELAY) * C.FS_JACK)
+    a = int((2.6 + 0.07 + C.JACK_DELAY) * C.FS_JACK)      # (+70 ms: the jack's loudest in the save's window)
     j2[a:a + 144] = 0.0
     evs, _ = G.audio_events(u, j2, C.FS_HOST, ev, ccs, fit=False)
     assert any(s == "jack" for s, _, _, _ in evs), evs

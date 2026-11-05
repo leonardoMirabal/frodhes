@@ -64,12 +64,134 @@ SHARD ?=                   # make pytest SHARD=2/4: only shard 2 of 4 (tools/pyt
 PYTEST_FILES = $(if $(strip $(SHARD)),$$($(PY) tools/pytest_shard.py $(subst /, ,$(strip $(SHARD)))),tests/py)
 pytest:                    ## Python tools' unit tests (analysis, generators), in parallel with pytest-xdist
 	@if [ "$(strip $(PYTEST_N))" != 0 ] && $(PY) -c "import xdist" 2>/dev/null; then \
-	  echo "$(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup $(PYTEST_FILES)"; \
-	  $(PY) -m pytest -q -n $(strip $(PYTEST_N)) --dist loadgroup $(PYTEST_FILES); \
-	else echo "$(PY) -m pytest -q $(PYTEST_FILES)  (serial: no pytest-xdist)"; $(PY) -m pytest -q $(PYTEST_FILES); fi
+	  echo "$(PY) tools/pytest_run.py -q -n $(strip $(PYTEST_N)) --dist loadgroup -- $(PYTEST_FILES)"; \
+	  $(PY) tools/pytest_run.py -q -n $(strip $(PYTEST_N)) --dist loadgroup -- $(PYTEST_FILES); \
+	else echo "$(PY) tools/pytest_run.py -q -- $(PYTEST_FILES)  (serial: no pytest-xdist)"; \
+	  $(PY) tools/pytest_run.py -q -- $(PYTEST_FILES); fi
 
 firmware:                  ## build/frodhes.fwsc (Docker on macOS)
 	PYTHON=$(PY) ./build.sh
 
 clean:
 	rm -rf build
+
+# ---- the Move (a Schwung sound generator, aarch64 Linux): move/, private plan 05 ----
+# On macOS everything runs in the arm64 bookworm image (move/docker; light: 2 CPUs); on Linux arm64 (CI) natively:
+# make move MOVE_RUN=
+MOVE_IMG  ?= frodhes-move:bookworm
+MOVE_RUN  ?= $(if $(filter Darwin,$(shell uname -s)),docker run --rm --cpus=2 --platform linux/arm64 -v "$(CURDIR)":/src -w /src $(MOVE_IMG),)
+MOVE_CC   ?= gcc
+MOVE_VER  ?= 0.0.0-dev
+MOVE_DEFS ?= -DFR_VOICES=16u -DFR_HQ=1 -DFR_BYP_KEEP_CMP=1 -DFR_REV_HQ=1
+MOVE_CFLAGS := -O2 -fPIC -ffp-contract=off -std=gnu11 -Wall -Wno-unused-function -Wno-unused-variable \
+  -fvisibility=hidden -ffile-prefix-map=$(CURDIR)=. -DAPP_VER='"$(MOVE_VER)"' $(MOVE_DEFS) \
+  -Imove/compat -Ifirmware/src -Ifirmware/gen
+MOVE_OUT  := build/move/frodhes
+MOVE_LOADER_CFLAGS := -O2 -fPIC -std=gnu11 -Wall -Wextra -fvisibility=hidden -ffile-prefix-map=$(CURDIR)=. -Imove
+
+.PHONY: move-image move move-native move-tools-native test-move test-move-native gate-p gate-p-native gate-m gate-h move-probe test-move-probe
+move-image:                ## the Move build image (Debian bookworm arm64, about 250 MB)
+	docker build --platform linux/arm64 -t $(MOVE_IMG) move/docker
+
+move:                      ## build/move/frodhes/{dsp.so,engine.so,module.json} + build/move/frodhes-module.tar.gz
+	$(MOVE_RUN) make -s move-native MOVE_VER=$(MOVE_VER)
+
+move-native:
+	@mkdir -p $(MOVE_OUT)
+	@# engine.so the plugin; dsp.so the loader that gives each slot its own copy of it (move/move_loader.c)
+	$(MOVE_CC) $(MOVE_CFLAGS) -shared -Wl,-z,defs -o $(MOVE_OUT)/engine.so move/move_plugin.c move/coro/coro_aarch64.S -lm
+	$(MOVE_CC) $(MOVE_LOADER_CFLAGS) -shared -Wl,-z,defs -o $(MOVE_OUT)/dsp.so move/move_loader.c -ldl -lpthread
+	@# (module.json's version: MOVE_VER, the release's X.Y.Z; the committed file says 0.0.0-dev, the default)
+	@if [ -f move/module/module.json ]; then sed 's/"version": "0.0.0-dev"/"version": "$(MOVE_VER)"/' move/module/module.json > $(MOVE_OUT)/module.json; else \
+	  printf '{"id":"frodhes","name":"Frodhes","version":"%s","dsp":"dsp.so","api_version":2,"capabilities":{"audio_out":true,"midi_in":true,"component_type":"sound_generator"}}\n' "$(MOVE_VER)" > $(MOVE_OUT)/module.json; fi
+	@if [ -f move/module/help.json ]; then cp move/module/help.json $(MOVE_OUT)/; fi
+	@if [ -f move/module/screen.js ]; then cp move/module/screen.js $(MOVE_OUT)/; fi
+	@if [ -f move/module/canvas.js ]; then cp move/module/canvas.js $(MOVE_OUT)/; fi
+	@if [ -f move/module/ui_chain.js ]; then cp move/module/ui_chain.js $(MOVE_OUT)/; fi
+	@cp LICENSE $(MOVE_OUT)/LICENSE
+	@# reproducible (M7-02: the release compares the tarball's sha256 with the one tested on the Move): sorted
+	@# names, no times, owners or umask in it, gzip without its name and time
+	tar -C build/move --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w -cf - \
+	  $$(cd build/move && ls frodhes/dsp.so frodhes/engine.so frodhes/module.json frodhes/help.json frodhes/screen.js frodhes/canvas.js frodhes/ui_chain.js frodhes/LICENSE 2>/dev/null) \
+	  | gzip -9n > build/move/frodhes-module.tar.gz
+	@ls -l $(MOVE_OUT)/dsp.so $(MOVE_OUT)/engine.so build/move/frodhes-module.tar.gz
+
+test-move:                 ## the Move checks: exports/imports, the coroutine, the bridge (api, Gate P, eq), persistence (M1-08)
+	$(MOVE_RUN) make -s test-move-native
+
+test-move-native: move-native
+	@for f in dsp.so engine.so; do syms=$$(nm -D --defined-only $(MOVE_OUT)/$$f | awk '{print $$3}'); \
+	  [ "$$syms" = move_plugin_init_v2 ] || { echo "FAIL exports $$f: $$syms"; exit 1; }; echo "ok    exports $$f: $$syms"; done
+	@bad=$$(nm -D --undefined-only $(MOVE_OUT)/dsp.so | awk '{print $$2}' | grep -vE '^(_ITM_|__cxa_finalize|__gmon_start__)' | \
+	  grep -vE '^(calloc|free|memset|strlen|strcmp|strncmp|strstr|strrchr|snprintf|clock_gettime|getpid|open|open64|close|read|write|rename|unlink|mkdir|stat|stat64|__errno_location|dlopen|dlsym|dlclose|dladdr|opendir|readdir|readdir64|closedir|strncmp|pthread_mutex_lock|pthread_mutex_unlock)@' || true); \
+	  [ -z "$$bad" ] || { echo "FAIL loader imports beyond the allow-list: $$bad"; exit 1; }; echo "ok    loader imports"
+	@bad=$$(nm -D --undefined-only $(MOVE_OUT)/engine.so | awk '{print $$2}' | grep -vE '^(_ITM_|__cxa_finalize|__gmon_start__)' | \
+	  grep -vE '^(calloc|free|malloc|aligned_alloc|memcmp|memcpy|memmove|memset|strlen|strcmp|strncmp|strchr|strstr|snprintf|sprintf|__isoc99_sscanf|atoi|strtol|clock_gettime|abort|__getauxval|pthread_create|pthread_join|pthread_self|pthread_setschedparam|sched_setaffinity|nanosleep|open|open64|close|read|write|fsync|flock|dladdr|rename|unlink|mkdir|stat|stat64|__errno_location|fopen|fopen64|fclose|fwrite)@' || true); \
+	  [ -z "$$bad" ] || { echo "FAIL engine imports beyond the allow-list: $$bad"; exit 1; }; echo "ok    engine imports"
+	@mkdir -p build/move/t
+	@$(MOVE_CC) -O2 -Wall -Wextra -o build/move/t/coro move/tests/test_coro.c move/coro/coro_aarch64.S
+	build/move/t/coro
+	@build/move/t/coro selftest >/dev/null 2>&1; [ $$? -ne 0 ] && echo "ok    seccomp guard kills a syscall" || { echo "FAIL seccomp guard"; exit 1; }
+	@$(MOVE_CC) -O1 -std=gnu11 -Wall -o build/move/smoke move/tests/smoke.c -ldl
+	build/move/smoke $(MOVE_OUT)/dsp.so
+	@$(MOVE_CC) -O1 -g -std=gnu11 -Wall -Wextra -o build/move/t/test_bridge move/tests/test_bridge.c -ldl
+	@# (the engine on its own: one app a file; then the loader, the shipping dsp.so: a copy a slot)
+	build/move/t/test_bridge api $(MOVE_OUT)/engine.so
+	build/move/t/test_bridge hq $(MOVE_OUT)/dsp.so
+	build/move/t/test_bridge boot $(MOVE_OUT)/dsp.so move/tests/boot_keys.txt
+	build/move/t/test_bridge gatep $(MOVE_OUT)/engine.so 10000
+	build/move/t/test_bridge gatep $(MOVE_OUT)/dsp.so 10000
+	@$(MOVE_CC) -O1 -g -std=gnu11 -Wall -Wextra -o build/move/t/test_multi move/tests/test_multi.c -ldl
+	@rm -rf build/move/t/multi
+	build/move/t/test_multi $(MOVE_OUT)/dsp.so build/move/t/multi
+	@rm -rf build/move/t/multi
+	@$(MOVE_CC) -O1 -std=gnu11 -Wall -Wextra -o build/move/t/test_store move/tests/test_store.c
+	@rm -rf build/move/t/store build/move/t/persist build/move/t/run.*
+	build/move/t/test_store build/move/t/store 40
+	@mkdir -p build/move/t/persist
+	build/move/t/test_bridge persist $(MOVE_OUT)/engine.so build/move/t/persist save
+	build/move/t/test_bridge persist $(MOVE_OUT)/engine.so build/move/t/persist check
+	@rm -rf build/move/t/store build/move/t/persist build/move/t/run.*
+	MOVE_DEFS='$(MOVE_DEFS)' move/tests/run_eq.sh
+
+move-tools-native: move-native   ## (the plugin and build/move/t/test_bridge only: tests/py/test_move_params.py)
+	@mkdir -p build/move/t
+	@$(MOVE_CC) -O1 -g -std=gnu11 -Wall -Wextra -o build/move/t/test_bridge move/tests/test_bridge.c -ldl
+
+gate-p:                    ## Gate P (M1-11): test-move's guards, then ASan + UBSan builds through every bridge test
+	$(MOVE_RUN) make -s gate-p-native
+
+# (-fno-sanitize=shift-base: shared DSP shifts negative values left at 16 places, gcc defines it; fixed after 0.9.7)
+MOVE_SAN := -O1 -g -fsanitize=address,undefined -fno-sanitize=shift-base -fno-sanitize-recover=undefined -fno-omit-frame-pointer
+gate-p-native: test-move-native
+	@mkdir -p build/move/san
+	$(MOVE_CC) $(filter-out -O2,$(MOVE_CFLAGS)) $(MOVE_SAN) -shared -o build/move/san/engine.so move/move_plugin.c move/coro/coro_aarch64.S -lm 2>/dev/null
+	$(MOVE_CC) $(filter-out -O2,$(MOVE_LOADER_CFLAGS)) $(MOVE_SAN) -shared -o build/move/san/dsp.so move/move_loader.c -ldl -lpthread
+	$(MOVE_CC) $(MOVE_SAN) -DNO_GUARDS -std=gnu11 -o build/move/san/test_bridge move/tests/test_bridge.c -ldl
+	$(MOVE_CC) $(MOVE_SAN) -std=gnu11 -o build/move/san/test_multi move/tests/test_multi.c -ldl
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge api build/move/san/engine.so
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge gatep build/move/san/engine.so 10000
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge gatep build/move/san/dsp.so 10000
+	@rm -rf build/move/san/multi
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_multi build/move/san/dsp.so build/move/san/multi
+	@rm -rf build/move/san/persist build/move/san/multi; mkdir -p build/move/san/persist
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge persist build/move/san/engine.so build/move/san/persist save
+	ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge persist build/move/san/engine.so build/move/san/persist check
+	@rm -rf build/move/san/persist build/move/t/run.*
+	@for s in move/tests/scripts/*.txt; do n=$$(basename $$s .txt); \
+	  build/move/t/host build/move/san/$$n $$s > /dev/null 2>&1 && \
+	  ASAN_OPTIONS=detect_leaks=0 build/move/san/test_bridge eq build/move/san/dsp.so $$s build/move/san/$$n.wav || exit 1; \
+	  rm -f build/move/san/$$n.wav build/move/san/$$n-*.ppm; done
+	@echo "ok    gate P"
+
+gate-m: move               ## Gate M (M1-10): the shipping dsp.so replays every MIDI-driven Gate R render byte-identical
+	python3 tools/gate_m.py
+
+gate-h:                    ## Gate H: the HQ Rhodes' renders (tests/hq/) against tests/baselines/renders-hq.sha256
+	python3 tools/gate_h.py
+
+move-probe:                ## the device-session probe (move/probe/README.md)
+	$(MOVE_RUN) make -s -C move/probe -j2
+
+test-move-probe:           ## the probe's dlopen host test
+	$(MOVE_RUN) make -s -C move/probe -j2 test

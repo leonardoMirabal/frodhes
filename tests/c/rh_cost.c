@@ -55,7 +55,8 @@ int main(int argc, char **argv)
         for (vi = 0; vi < RH_NV; vi++) {        /* rh_render's voice loop, counted sub-block by sub-block */
             rh_voice_t *v = &rv[vi];
             for (sb = 0; sb < 256u && v->alive; sb += SUB) {
-                uint32_t n = 0, ppos = v->ppos, mix = v->ptab == v->pbuf, fnz = v->ptab != 0, first = 1;
+                uint32_t n = 0, ppos = v->ppos, mix = RH_VLAY_W[vel] != 0, fnz = v->ptab != 0, first = 1;   /* (mix: the RC's layer
+                                                 * mix; the pulse is always in pbuf now, decoded at the strike) */
                 if (fnz) {                      /* the pulse's samples in this sub-block */
                     while (n < SUB) { n++; ppos += v->prate; if ((ppos >> 16) >= RH_PLEN) break; }
 #ifdef RH_COST_OLD

@@ -78,12 +78,14 @@ def test_centre_is_the_mono_sum():
 def test_image_through_drive_and_comp():
     """DRIVE 90 (the boot TYPE) and COMP on: the side is level-matched to what the mono stages did, so the image
     stays on its side and at least 60 % as wide in dB as the dry one (the drive's own harmonics of the sum are in the
-    centre: A1 -11.5 dB against -15.9 dry, C7 +14.4 against +15.9)"""
+    centre: A1 -11.1 dB against -15.9 dry, C7 +14.7 against +15.9). 0.9.9: FDRV's curve at 2x delays the mono 1.84
+    samples; the side follows it (fx_spread, dr_sal); unaligned, C7 came out +7.2 dB, so the top keeps 85 %"""
     L, R = run("dry", DRY, [LOW, TOP], spread=127)
     d0 = [balance(L, R, i) for i in range(2)]
     L, R = run("drv", [(81, 90), (91, 0), (106, 127)], [LOW, TOP], spread=127)
     d1 = [balance(L, R, i) for i in range(2)]
     assert all(a * b > 0 and abs(b) >= 0.6 * abs(a) for a, b in zip(d0, d1)), (d0, d1)
+    assert abs(d1[1]) >= 0.85 * abs(d0[1]), (d0, d1)
     assert np.all(np.isfinite(L)) and np.max(np.abs(L)) < 32767
 
 
@@ -93,3 +95,25 @@ def test_bars_engine_ignores_spread():
     b = run("vb127", [], [LOW + 24, MID], spread=127, pc=12)
     assert np.max(np.abs(a[0])) > 1000
     assert np.array_equal(a[0], b[0]) and np.array_equal(a[1], b[1])
+
+
+def test_drive_fades_keep_the_side_smooth():
+    """the side follows FDRV's wet share (fx.c fx_spread, dr_sal: z^-1 + an allpass, the half-bands' delay): a
+    held C7 at SPREAD 127 while DRIVE goes 0 -> 90 -> 0 and MIX 127 -> 40 -> 127 (fades and glides): the side
+    (L - R) / 2 has no step: its second difference around each move stays within 1.1x the held note's"""
+    out = hostrun.out("spread-fades")
+    ev = [(400, 81, 90), (900, 83, 40), (1400, 83, 127), (1900, 81, 0)]
+    lines = ["20 midi 0xB0 81 0", "20 midi 0xB0 91 0", "25 midi 0xB0 105 127", "100 midi 0x90 96 127"]
+    lines += [f"{t} midi 0xB0 {c} {v}" for t, c, v in ev] + ["2400 midi 0x80 96 0", "2500 end"]
+    open(out + ".txt", "w").write("\n".join(lines) + "\n")
+    subprocess.run([BIN, out, out + ".txt"], check=True, capture_output=True)
+    w = wave.open(out + ".wav")
+    x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float).reshape(-1, 2)
+    s = (x[:, 0] - x[:, 1]) / 2
+    d2 = np.abs(np.diff(s, 2))
+
+    def peak(t0, t1):
+        return d2[int(t0 * FS / 1000):int(t1 * FS / 1000)].max()
+    for t, _, _ in ev:
+        held = max(peak(t - 120, t - 20), peak(t + 200, t + 300))
+        assert peak(t - 10, t + 120) <= 1.1 * held + 2, (t, peak(t - 10, t + 120), held)

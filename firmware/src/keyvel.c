@@ -43,6 +43,7 @@
  * the velocity of a medium press, as it was every press's before. The floor starts at KV_FLOOR0 and only learns
  * downward, at most KV_FLOOR_STEP a landing, never under KV_FLOOR_MIN (lost at power-off; CC 41 32 resets it).
  * Every constant is a starting point from fm1-velocity's unit, to be re-measured on ours (tools/hil_keyvel.py). */
+#include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 
 static const char *const KV_TOUCH_NAME[KV_NTOUCH] = {"LIGHT", "MEDIUM", "HEAVY", "FIXED"};
 
@@ -155,7 +156,7 @@ KV_ISR int kv_isr_defer(uint32_t n, uint32_t r)    /* wait a frame for a sparse 
     kv.defer |= 1u << k;
     return 1;
 }
-static void kv_isr_storm(void)          /* developer: 8 landings at once, columns 2..9, both rows (results dropped) */
+FR_COLD static void kv_isr_storm(void)          /* developer: 8 landings at once, columns 2..9, both rows (results dropped) */
 {
     uint32_t c;
     for (c = 2; c < 10u; c++) {
@@ -172,11 +173,11 @@ static void kv_isr_storm(void)          /* developer: 8 landings at once, column
                                          * "T vkey" gave it a reading */
 #endif
 #ifdef DINGHY_HOST
-static uint32_t kv_lock(void) { return 0; }
-static void kv_unlock(uint32_t k) { (void)k; }
+FR_COLD static uint32_t kv_lock(void) { return 0; }
+FR_COLD static void kv_unlock(uint32_t k) { (void)k; }
 #else
-static uint32_t kv_lock(void) { return fm1__lock(); }
-static void kv_unlock(uint32_t k) { fm1__unlock(k); }
+FR_COLD static uint32_t kv_lock(void) { return fm1__lock(); }
+FR_COLD static void kv_unlock(uint32_t k) { fm1__unlock(k); }
 #endif
 
 static struct {
@@ -201,7 +202,7 @@ static const uint16_t KV_LOG2T[128] = {   /* log2(1 + i / 128) in Q16 (the 129th
 static const uint16_t KV_EXP2T[33] = {32768, 32066, 31379, 30706, 30048, 29405, 28774, 28158, 27554, 26964, 26386, 25821,
     25268, 24726, 24196, 23678, 23170, 22674, 22188, 21713, 21247, 20792, 20347, 19911, 19484, 19066, 18658, 18258,
     17867, 17484, 17109, 16743, 16384};   /* 2^(-i / 32) in Q15 */
-static uint32_t kv_log2(uint32_t x)     /* log2(x) in Q16, 1 <= x < 2^16 (0 reads as 1) */
+FR_COLD static uint32_t kv_log2(uint32_t x)     /* log2(x) in Q16, 1 <= x < 2^16 (0 reads as 1) */
 {
     uint32_t e = 0, m, i, f, a, b;
     if (!x) x = 1;
@@ -211,7 +212,7 @@ static uint32_t kv_log2(uint32_t x)     /* log2(x) in Q16, 1 <= x < 2^16 (0 read
     a = KV_LOG2T[i]; b = i < 127u ? KV_LOG2T[i + 1u] : 65536u;
     return (e << 16) + a + (((b - a) * f + 128u) >> 8);
 }
-static uint32_t kv_exp2n(uint32_t a)    /* 2^(-a / 65536) in Q15 */
+FR_COLD static uint32_t kv_exp2n(uint32_t a)    /* 2^(-a / 65536) in Q15 */
 {
     uint32_t k = a >> 16, f = a & 65535u, i = f >> 11, r = f & 2047u, v;
     if (k >= 16u) return 0;
@@ -220,14 +221,14 @@ static uint32_t kv_exp2n(uint32_t a)    /* 2^(-a / 65536) in Q15 */
 }
 /* the curve's two halves, shared with the SMK-37 (frodhes_smk.h smk_vel: its keybed's velocity is the strength):
  * u = s ^ gamma at TOUCH touch (LIGHT..HEAVY), s and u in Q15 */
-static uint32_t kv_upow(uint32_t s, uint32_t touch)
+FR_COLD static uint32_t kv_upow(uint32_t s, uint32_t touch)
 {
     if (!s) return 0;
     if (s >= 32768u) return 32768u;
     return kv_exp2n(((15u << 16) - kv_log2(s)) * KV_GAMMA[touch] >> 8);   /* s ^ gamma (< 2^31: 15 x 2^16 x 282) */
 }
 /* u (Q15) -> the velocity: 1 at u = 0, KEY VEL kvel (1..127) at u = KV_UMID, 127 at u = 1, linear on each side */
-static uint32_t kv_vmap(uint32_t u, uint32_t kvel)
+FR_COLD static uint32_t kv_vmap(uint32_t u, uint32_t kvel)
 {
     uint32_t v;
     if (u <= KV_UMID) v = 1u + ((kvel - 1u) * u + KV_UMID / 2u) / KV_UMID;
@@ -235,7 +236,7 @@ static uint32_t kv_vmap(uint32_t u, uint32_t kvel)
     return v < 1u ? 1u : v > 127u ? 127u : v;
 }
 /* the velocity of driven reading d on a key whose floor is fl, at TOUCH touch, KEY VEL kvel (the top) */
-static uint32_t kv_curve(uint32_t d, uint32_t fl, uint32_t touch, uint32_t kvel)
+FR_COLD static uint32_t kv_curve(uint32_t d, uint32_t fl, uint32_t touch, uint32_t kvel)
 {
     uint32_t s;
     if (kvel < 1u) kvel = 1u;
@@ -256,17 +257,17 @@ static uint32_t kv_curve(uint32_t d, uint32_t fl, uint32_t touch, uint32_t kvel)
     }
     return kv_vmap(kv_upow(s, touch), kvel);
 }
-static uint32_t kv_ctx(void)            /* CONTEXT: the recent average of the analog keys, else KEY VEL */
+FR_COLD static uint32_t kv_ctx(void)            /* CONTEXT: the recent average of the analog keys, else KEY VEL */
 {
     if (!kvm.ctx_have || fm1_ms - kvm.ctx_t > KV_CTX_MS) return set.key_vel;
     return (kvm.ctx_q8 + 128u) >> 8;
 }
-static void kv_apply(void)              /* TOUCH, the hardware or the developer mode changed (main loop) */
+FR_COLD static void kv_apply(void)              /* TOUCH, the hardware or the developer mode changed (main loop) */
 {
     kv.on = (uint8_t)(KV_HW && kv_touch() != KV_FIXED && kvm.mode != KV_DEV_OFF ? KV_ON_ROWS : 0u);
     if (!kv.wait) kv.wait = 1;
 }
-static void kv_report(uint32_t k, uint32_t raw, uint32_t src, uint32_t ms)
+FR_COLD static void kv_report(uint32_t k, uint32_t raw, uint32_t src, uint32_t ms)
 {
     if (!kvm.report) return;            /* developer (tools/hil_keyvel.py, keyvel.h KV_DEV_REPORT_ON) */
     midi_send(0xB0, 33, k);
@@ -274,7 +275,7 @@ static void kv_report(uint32_t k, uint32_t raw, uint32_t src, uint32_t ms)
     midi_send(0xB0, 35, (raw & 7u) | (src & 15u) << 3);
     midi_send(0xB0, 36, ms > 127u ? 127u : ms);
 }
-static void kv_learn(uint32_t k, uint32_t d, uint32_t v)   /* a landing with its reading: the floor, CONTEXT */
+FR_COLD static void kv_learn(uint32_t k, uint32_t d, uint32_t v)   /* a landing with its reading: the floor, CONTEXT */
 {
     uint32_t fl = kvm.floor_[k] ? kvm.floor_[k] : KV_FLOOR0;
     if (d < fl) {                       /* learned downward only, at most a step a landing */
@@ -287,7 +288,7 @@ static void kv_learn(uint32_t k, uint32_t d, uint32_t v)   /* a landing with its
     kvm.ctx_have = 1; kvm.ctx_t = fm1_ms;
 }
 /* the keys pressed (down) and let go (up) since the last pass: the keys to start now, their velocity in kvm.vel[] */
-static uint32_t kv_keys(uint32_t down, uint32_t up)
+FR_COLD static uint32_t kv_keys(uint32_t down, uint32_t up)
 {
     uint32_t go = 0, rdy, k, lk, touch = kv_touch();
     uint16_t raw[KV_NA];
@@ -327,16 +328,16 @@ static uint32_t kv_keys(uint32_t down, uint32_t up)
     }
     return go;
 }
-static uint32_t kv_vel(uint32_t k)      /* the velocity of a key kv_keys just returned */
+FR_COLD static uint32_t kv_vel(uint32_t k)      /* the velocity of a key kv_keys just returned */
 {
     if (kv_touch() == KV_FIXED || k >= KV_NK || !kvm.vel[k]) return set.key_vel;
     return kvm.vel[k];
 }
-static uint32_t kv_last_vel(void) { return kvm.last_vel; }
+FR_COLD static uint32_t kv_last_vel(void) { return kvm.last_vel; }
 
 #ifdef DINGHY_HOST
 /* tests/host.c "T vkey K RAW": key K's next press lands with driven reading RAW (as the ISR would hand it over) */
-static void kv_host_vkey(uint32_t k, uint32_t raw)
+FR_COLD static void kv_host_vkey(uint32_t k, uint32_t raw)
 {
     if (k >= KV_NA) return;             /* the top 7 have no converter */
     kv.raw[k] = (uint16_t)(raw > 1023u ? 1023u : raw);
@@ -345,8 +346,8 @@ static void kv_host_vkey(uint32_t k, uint32_t raw)
 #endif
 
 /* ---- developer (keyvel.h KV_CC_*, KV_DEV_*, KV_IT_*; nothing saved) */
-static void kv_dev_edges(uint32_t buttons) { while (buttons) { kvm.n_buttons += (uint16_t)(buttons & 1u); buttons >>= 1; } }
-static uint32_t kv_dev_item(uint32_t i)
+FR_COLD static void kv_dev_edges(uint32_t buttons) { while (buttons) { kvm.n_buttons += (uint16_t)(buttons & 1u); buttons >>= 1; } }
+FR_COLD static uint32_t kv_dev_item(uint32_t i)
 {
     if (i == KV_IT_WAIT) return kv.wait;
     if (i == KV_IT_TOUCH) return kv_touch();
@@ -362,7 +363,7 @@ static uint32_t kv_dev_item(uint32_t i)
     return i == KV_IT_MODE ? kvm.mode : 0;
 #endif
 }
-static void kv_dev_cc(uint32_t cc, uint32_t v)
+FR_COLD static void kv_dev_cc(uint32_t cc, uint32_t v)
 {
     uint32_t i;
     if (cc == KV_CC_QUERY) {

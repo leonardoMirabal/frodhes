@@ -62,6 +62,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hil_crackle as hc  # noqa: E402  (T1 judges USB audio with stress_max's detectors)
 import hil_scan as hs  # noqa: E402
+import midi_guard  # noqa: E402  (every MIDI open / close under a watchdog; the exit without rtmidi's destructors)
 from hil_cpu import USB_ITEMS, usb_merge  # noqa: E402
 
 ROOT = hs.ROOT
@@ -453,21 +454,27 @@ def offered(sd, dev, rate, channels=2):
         return False
 
 
+JOIN_S = 5.0                     # Dev.close: the wait for each poller thread (a query is 0.25 s; tests shorten it)
+
+
 class Dev:
     """the FM-1 over USB-MIDI: one output (a lock: the events and the poller's CC 116 share it), one input. The port
-    by name: PORT_KEYS (Frodhes; macOS CoreMIDI may keep the older 'Felucca' name of the same device)"""
+    by name: PORT_KEYS (Frodhes; macOS CoreMIDI may keep the older 'Felucca' name of the same device). Opened before
+    any audio stream and kept for the whole run; open / close under midi_guard's watchdog (tools/midi_guard.py: rtmidi
+    holds the GIL in CoreMIDI); close() joins the pollers first. mido: tests pass a fake"""
 
-    def __init__(self):
-        import mido
-        self.mido = mido
+    def __init__(self, mido=None):
+        if mido is None:
+            import mido
+        self.mido, self.threads, self.taps, self.qlock = mido, [], [], threading.Lock()
         outs = [n for n in mido.get_output_names() if any(k in n.lower() for k in hs.PORT_KEYS)]
         ins = [n for n in mido.get_input_names() if any(k in n.lower() for k in hs.PORT_KEYS)]
         if not outs or not ins:
             raise NoDevice("no FM-1 MIDI port")
         import fm1_midi
-        self.out = fm1_midi.ChannelOut(mido.open_output(outs[0]))   # every channel message on FRODHES_MIDI_CH (8)
+        self.out = fm1_midi.ChannelOut(midi_guard.open_output(mido, outs[0]))   # channel messages on FRODHES_MIDI_CH
         self.raw = self.out.raw                                     # the port itself (the monkey's own channels)
-        self.inp, self.lock = mido.open_input(ins[0]), threading.Lock()
+        self.inp, self.lock = midi_guard.open_input(mido, ins[0]), threading.Lock()
         print(fm1_midi.say(self.out.ch), flush=True)
 
     def send(self, kind, a, b=0):
@@ -486,24 +493,35 @@ class Dev:
         time.sleep(0.3)
 
     def query(self, wait=0.25):
-        """one CC 116 query: the reply's (control, value) pairs"""
-        for _ in self.inp.iter_pending():
-            pass
-        self.cc(116, 127)
-        got, t0 = [], time.monotonic()
-        while time.monotonic() - t0 < wait:
-            for m in self.inp.iter_pending():
-                if m.type == "control_change":
-                    got.append((m.control, m.value))
-            time.sleep(0.005)
+        """one CC 116 query: the reply's (control, value) pairs. One at a time (qlock: a poller thread and the caller
+        share the one input port; each query gets its own whole reply), every reply also to the taps (the running
+        Pollers' Accs: no reply's maxima lost to another reader)"""
+        with self.qlock:
+            for _ in self.inp.iter_pending():
+                pass
+            self.cc(116, 127)
+            got, t0 = [], time.monotonic()
+            while time.monotonic() - t0 < wait:
+                for m in self.inp.iter_pending():
+                    if m.type == "control_change":
+                        got.append((m.control, m.value))
+                time.sleep(0.005)
+            for f in list(self.taps):
+                f(got)
         return got
 
     def close(self):
-        for p in (self.out, self.inp):
-            try:
-                p.close()
-            except Exception:
-                pass
+        """the ports closed (each under the watchdog) once every poller thread is joined; the caller stops its audio
+        streams first. A poller still running after 5 s: the ports left open (the exit skips their destructors)"""
+        for th in self.threads:
+            th.join(JOIN_S)
+        if any(th.is_alive() for th in self.threads):
+            print("MIDI ports left open: a poller thread is still running", file=sys.stderr, flush=True)
+            return
+        self.threads = []
+        for p in (self.inp, self.out):
+            midi_guard.close(getattr(p, "raw", p))
+        self.inp = self.out = self.raw = None
 
 
 class Poller:
@@ -511,23 +529,36 @@ class Poller:
 
     def __init__(self, dev):
         self.dev, self.acc, self.stop_ = dev, Acc(), threading.Event()
+        self.tapped = isinstance(getattr(dev, "taps", None), list)   # (Dev: every reply, any reader's, in order)
         self.th = threading.Thread(target=self.loop, daemon=True)
+        getattr(dev, "threads", []).append(self.th)   # (Dev.close joins it before the ports close)
+
+    def add(self, got):
+        self.acc.add(parse_reply(got))
 
     def loop(self):
         while not self.stop_.is_set():
             t0 = time.monotonic()
-            self.acc.add(parse_reply(self.dev.query()))
+            got = self.dev.query()
+            if not self.tapped:
+                self.add(got)
             self.stop_.wait(max(0.0, POLL_S - (time.monotonic() - t0)))
 
     def __enter__(self):
         self.dev.query()                              # the maxima / ranges restart here
+        if self.tapped:
+            self.dev.taps.append(self.add)
         self.th.start()
         return self.acc
 
     def __exit__(self, *a):
         self.stop_.set()
-        self.th.join(2.0)
-        self.acc.add(parse_reply(self.dev.query()))   # the last part, the release blocks included
+        self.th.join(5.0)                             # (a query is 0.25 s: joined long before)
+        got = self.dev.query()                        # the last part, the release blocks included
+        if self.tapped:
+            self.dev.taps.remove(self.add)
+        else:
+            self.add(got)
 
 
 class Rec:
@@ -796,6 +827,11 @@ class Must:
                     engines=tuple(self.a.engines))
         sig = inspect.signature(fn).parameters
         kw = {k: v for k, v in want.items() if k in sig}
+        if "dev" in sig:                         # our MIDI ports (no second pair opened under a running stream / poller)
+            kw["dev"] = self.dev
+            r = None
+        else:
+            r = hs.Rig()                         # (its MIDI output opened before the USB stream)
         u = self.open_usb(rate, 1.0)                                   # the device switched to rate, kept there
         time.sleep(1.0)
         st = parse_reply(self.dev.query())["usb"].get("state")         # the FM-1's own view, before the run
@@ -803,7 +839,6 @@ class Must:
                 f"{'flowing' if st & 2 else 'not flowing'}, {'48' if st & 4 else '44.1'} kHz",
                 f"flowing at {rate / 1000:g} kHz",
                 "ok" if st is not None and st & 2 and bool(st & 4) == (rate == 48000) else "FAIL")]
-        r = hs.Rig()
         rep = {}
         with Poller(self.dev) as acc:
             try:
@@ -942,13 +977,20 @@ class Must:
         """pkg over USB, then the FM-1 found again (MIDI port, USB audio input, PortAudio restarted). self.not_new:
         the FM-1 may not be on --fwsc (set before any install, cleared once --fwsc is installed and back)"""
         self.not_new = True
-        self.dev.close()
+        self.close_dev()
         code, out = self.installer(pkg)
         if code:
             raise InstallFailed(f"fm1_install {pkg} exited {code}:\n{out[-2000:]}")
         self.reconnect()
         if os.path.abspath(pkg) == os.path.abspath(self.a.fwsc or ""):
             self.not_new = False
+
+    def close_dev(self):
+        """the MIDI ports closed (only for an install: the FM-1 leaves the bus): every audio stream of ours stopped
+        first, the pollers joined (Dev.close)"""
+        for r in self.live:
+            r.stop()
+        self.dev.close()
 
     def restore(self):
         """S5 failed with the FM-1 maybe on --prev (or half way): install --fwsc again, loudly; twice at most. Still
@@ -964,7 +1006,7 @@ class Must:
             except Exception as e:  # noqa: PERF203
                 err = e
                 try:
-                    self.dev.close()
+                    self.close_dev()
                 except Exception:
                     pass
         ok = not self.not_new
@@ -996,10 +1038,8 @@ class Must:
                 r.stop()
             try:
                 self.refresh()                    # the devices found again (an earlier install, a replug)
-                if sc == "S6":                    # hil_cpu opens its own MIDI ports and USB stream
-                    self.dev.close()
-                    self.s6()
-                    self.dev = self.dev_factory()
+                if sc == "S6":                    # hil_cpu opens its own MIDI ports and USB stream (ours stay open:
+                    self.s6()                     # no reopen per scenario, tools/midi_guard.py)
                 else:
                     getattr(self, sc.lower())()
             except SystemExit:
@@ -1149,4 +1189,4 @@ def tier_main(argv):
 
 
 if __name__ == "__main__":
-    sys.exit(tier_main(sys.argv[1:]))
+    midi_guard.run(tier_main, sys.argv[1:])

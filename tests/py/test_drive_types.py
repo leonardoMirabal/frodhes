@@ -2,8 +2,8 @@
 """The DRIVE's TYPEs (firmware/src/drive.c): the framework, on the firmware's own code (tests/c/drive_scan.c through
 tools/drive_scan.py: fx_drive alone, 256 frames a call as fx_process calls it).
 
-- FDRV (the classic drive) is what it was: its output on a fixed signal (sha256), its aliasing, its cost (80 us, the
-  bar engines' budget); tools/gate_r.py checks every render besides.
+- FDRV (the classic drive): its output on a fixed signal (sha256; 0.9.9: its curve at 2x, tests/py/test_drive_os.py),
+  its aliasing, its cost (FX_US_DRIVE, the bar engines' budget); tools/gate_r.py checks every render besides.
 - Every TYPE: AMOUNT 0, OFF and MIX 0 are the dry signal, bit for bit; a stub (its file says DRV_STUB) is the dry
   signal at any setting.
 - Switching TYPE while it sounds: the TYPE that runs fades out (46 ms, exactly as OFF), then the new one fades in
@@ -11,7 +11,7 @@ tools/drive_scan.py: fx_drive alone, 256 frames a call as fx_process calls it).
   switch waits); no click. From silence (OFF faded, AMOUNT 0, MIX 0) the new TYPE starts at once.
 - The cost (fx_cost_us -> drv_cost_us): a TYPE's whole cost, DRV_US_CORE (drive.c around the TYPE, once a block) +
   DRV_US_<T> (its loop), + DRV_US_BLEND while it blends (MIX < 127, a glide, a fade); while a switch waits, the
-  larger of the two; within the budget, DRV_US_MAX (180 us, private plan: the cost gate; a TYPE over it does not
+  larger of the two; within the budget, DRV_US_MAX (192 us, private plan: the cost gate; a TYPE over it does not
   build).
 - MIX and the fades: the blend is x + ((y - x) w >> 15), w ramping 64 every 4 samples (46 ms), on multiples of 256.
 - A TYPE with a model (not a stub): it drives, its peak keeps headroom, it folds no more than FDRV."""
@@ -48,6 +48,7 @@ def us_const(name):
 
 
 CORE, US_MAX, BLEND = us_const("DRV_US_CORE"), us_const("DRV_US_MAX"), us_const("DRV_US_BLEND")
+FDRV_US = int(re.search(r"#define FX_US_DRIVE (\d+)u", open(os.path.join(ROOT, "firmware", "src", "fx.c")).read()).group(1))
 
 
 @pytest.fixture(scope="module")
@@ -75,16 +76,19 @@ def p(typ, amount=127, tone_v=64, mix=127):
 # ---- FDRV: what it was
 
 def test_fdrv_harness_numbers_unchanged(exe):
-    """the classic drive's output on a fixed signal, by sha256 (the value main a8320e8 gives: the parked harness
-    branch measured it there), its aliasing at 127 / 127, and its cost (FX_US_DRIVE: the bar budget, Gate V)"""
+    """the classic drive's output on a fixed signal, by sha256 (the value main a8320e8 gave, the parked harness
+    branch measured it there, until 0.9.8's tail fix: the shaper's input x g >> 12, not (x >> 2) g >> 10,
+    test_drive_tail.py; 0.9.9: the curve at 2x; c1-int: its bits kept to one rounding at the make-up: the old
+    output less ~0.4 .. 2 LSB of DC the truncations left, at most 5 LSB apart), its aliasing at 127 / 127 (-30.6 dB at 1x, -58.6 at 2x), and its cost
+    (FX_US_DRIVE: the bar budget, Gate V)"""
     x = np.concatenate([tone(440), chord(), tone(4186.0)])
     y, cost, _ = ds.render(exe, x, p("FDRV", 127, 127))
-    assert cost == 80
-    assert hashlib.sha256(y.astype("<i4").tobytes()).hexdigest()[:16] == "bf962ad1b4d7c1fc"
+    assert cost == FDRV_US == 248
+    assert hashlib.sha256(y.astype("<i4").tobytes()).hexdigest()[:16] == "1093ce8ab98a1345"
     rows, _, _ = ds.aliasing_tones(exe, p("FDRV", 127, 127))
-    assert max(r["folded_db"] for r in rows) == pytest.approx(-30.6, abs=0.1)
+    assert max(r["folded_db"] for r in rows) == pytest.approx(-58.6, abs=0.1)
     _, cost, _ = ds.render(exe, chord(4096), p("FDRV", 127, 30, 50))
-    assert cost == 80                                    # (MIX, TONE: FDRV is 80 whatever its settings)
+    assert cost == FDRV_US                               # (MIX, TONE: FDRV costs the same whatever its settings)
 
 
 def test_harness_is_deterministic(exe):
@@ -139,7 +143,7 @@ def test_switch_fades_out_then_in(exe, to):
     assert nx[:10] == [0] * 10 and nx[10:10 + X] == [T] * X and set(nx[10 + X:]) == {0}
     us = CORE + us_const(f"DRV_US_{to}")
     bl = us + BLEND
-    assert [c for c, _, _ in tr[10:10 + X]] == [max(80, bl)] * X                         # (the switch waits)
+    assert [c for c, _, _ in tr[10:10 + X]] == [max(FDRV_US, bl)] * X                         # (the switch waits)
     assert tr[10 + X][0] == bl and tr[-1][0] == us                                       # (fading in, then alone)
     assert np.array_equal(y[:(10 + X) * 256], off[:(10 + X) * 256])                       # FDRV out, as OFF
     if to not in MODELLED:
@@ -203,7 +207,7 @@ def _aa_on(name):
 
 
 # the folded energy a TYPE may show at AMOUNT 127 / TONE 127 (dB), measured, following its AA switch: anti-aliased
-# (on in TSH8, BHLUE and OHCD), better than FDRV's -30.6 (OHCD at its full top: about it), what it measures + 0.5 dB; plain (KHLON: its AA switch off,
+# (on in every TYPE, KHLON too from 0.9.9: -33.18), better than FDRV's 1x -30.6 (OHCD at its full top: about it), what it measures + 0.5 dB; plain (KHLON: its AA switch off,
 # KH_AA 0), what its 1x kernel measures (+0.5 dB): a regression guard
 ALIAS_AA = {"TSH8": -33.75, "BHLUE": -34.65, "KHLON": -33.0, "OHCD": -29.35}  # (measured with AA: TSH8 -34.25, BHLUE
 #   -35.16; +0.5 dB. OHCD: -29.85 at its full range's top (0.9.5: AMOUNT 127 is the DRIVE knob's end, ~13 dB more gain
@@ -306,7 +310,7 @@ def test_cost_is_whole_and_within_the_budget(demo):
     """drv_cost_us: CORE + the TYPE's loop at MIX 127 at rest, + DRV_US_BLEND while MIX < 127 or the wet share
     glides (any TONE, AMOUNT > 0); every TYPE (and the demo) within DRV_US_MAX blending; drive.c's constants as
     recorded"""
-    assert US_MAX == 180 and US_MAX - CORE - BLEND == 165
+    assert US_MAX == 192 and US_MAX - CORE - BLEND == 177
     for typ in NEW:
         assert CORE + us_const(f"DRV_US_{typ}") + BLEND <= US_MAX, typ
     assert CORE + DEMO_BL <= US_MAX
@@ -314,7 +318,8 @@ def test_cost_is_whole_and_within_the_budget(demo):
     for mix, tone_v, amount in ((127, 64, 127), (0, 64, 127), (1, 0, 1), (64, 127, 64), (126, 64, 127)):
         _, _, _, tr = ds.render(demo, x, p("KHLON", amount, tone_v, mix), [(20, "DRV_MIX", 127 - mix)], trace=True)
         cs = [c for c, _, _ in tr]
-        assert set(cs) <= {CORE + DEMO_US, CORE + DEMO_BL, 0}, (mix, tone_v, amount)    # (0: MIX 0, faded: idle)
+        assert set(cs) <= {CORE + DEMO_US, CORE + DEMO_BL, FDRV_US, 0}, (mix, tone_v, amount)   # (0: MIX 0, faded:
+        #   idle; FDRV_US: from power-on FDRV fades out first, and at 2x it costs more than the TYPE blending)
         end = 127 - mix
         assert cs[-1] == (CORE + DEMO_US if end == 127 else CORE + DEMO_BL), (mix, cs[-1])   # (MIX 0 counted)
 

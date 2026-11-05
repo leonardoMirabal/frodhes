@@ -1,0 +1,175 @@
+"""docs/MOVE.md names only the pages and controls the Move module has (M1-20)."""
+import json
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+DOC = (ROOT / "docs" / "MOVE.md").read_text()
+README = (ROOT / "README.md").read_text()
+DEV = (ROOT / "docs" / "MOVE-DEV.md").read_text()
+LEVELS = json.loads((ROOT / "move" / "module" / "ui_hierarchy.json").read_text())["levels"]
+
+
+def doc_pages():
+    sec = DOC[DOC.index("## The pages"):]
+    sec = sec[:sec.index("\n## ", 1)]
+    rows = re.findall(r"^\| \*\*(.+?)\*\* \| (.+?) \|$", sec, re.M)
+    return {name: ctl.split(" · ") for name, ctl in rows}
+
+
+def screen_pages():
+    """the pages of Frodhes' screen as the Move runs it (move/module/ui_chain.js FR_PAGES): the user's pages"""
+    js = (ROOT / "move" / "module" / "ui_chain.js").read_text()
+    return json.loads(re.search(r"const FR_PAGES = (\[.*?\]);\n", js).group(1))
+
+
+def test_pages_match_module():
+    """the page table is the screen's pages, in order, each knob's full name (the large card's)"""
+    pages = screen_pages()
+    assert list(doc_pages()) == [p["title"] for p in pages]
+    assert doc_pages() == {p["title"]: [k["name"] for k in p["knobs"] if k] for p in pages}
+    assert [p["title"] for p in pages] == [l["name"] for l in LEVELS.values()]   # (the same pages as the levels)
+
+
+def test_every_page_has_a_shot():
+    """the user manual shows every page of the screen (tools/move_ui_shots.mjs names them after the title)"""
+    for p in screen_pages():
+        name = re.sub(r"^-|-$", "", re.sub(r"[^a-z0-9]+", "-", p["title"].lower()))
+        assert f"manual/img/move/move-{name}.png?v=" in DOC, p["title"]
+
+
+def test_dev_part_apart():
+    """the developer and test material is in docs/MOVE-DEV.md, linked both ways"""
+    dev = (ROOT / "docs" / "MOVE-DEV.md").read_text()
+    assert "[MOVE-DEV.md](MOVE-DEV.md)" in DOC and "[MOVE.md](MOVE.md)" in dev
+    assert "## For developers" not in DOC and "tools/gen_move_module.py" in dev and "tools/move_ui_shots.mjs" in dev
+
+
+def test_no_test_report_in_the_manual():
+    """a user manual: no development state, no device-check marks (the evidence and what waits for a device are in
+    MOVE-DEV.md), no screen reader (not described to users)"""
+    assert "in development" not in DOC and "not released yet" not in DOC
+    assert "verified on a device" not in DOC and "screen reader" not in DOC.lower()
+    assert "screen reader" not in README.lower() and "Not verified on a device yet" in DEV
+
+
+def test_install_through_schwung_manager():
+    """the user's install is Schwung Manager's, the GitHub URL first (the catalog only once Frodhes is listed); ssh
+    and move_install.py are the developers' (MOVE-DEV.md)"""
+    dev = DEV
+    inst = DOC[DOC.index("### Install\n"):DOC.index("### Put Frodhes on a track")]
+    assert "http://<move-ip>:7700" in inst and "**Global Settings > System > Web Manager**" in inst
+    assert "**Install Custom Module**" in inst and "**From GitHub URL**" in inst and "From Tarball**" in inst
+    assert "`leonardoMirabal/frodhes`" in inst and "https://github.com/leonardoMirabal/frodhes" in inst
+    assert inst.index("**From GitHub URL**") < inst.index("Once Frodhes is listed in Schwung's module catalog")
+    upd = DOC[DOC.index("## Updating and removing"):DOC.index("## What differs from the FM-1")]
+    assert "**Uninstall**" in upd and "**Update**" in upd
+    assert "move_install.py" not in DOC and "ssh ableton@move.local" not in DOC
+    assert "## Install over ssh" in dev and "[MOVE.md](MOVE.md#install)" in dev
+    assert "tools/move_install.py install --go" in dev
+
+
+def test_module_name_generic():
+    mod = json.loads((ROOT / "move" / "module" / "module.json").read_text())
+    assert mod["name"] == "Frodhes" and mod["id"] == "frodhes"
+    assert "Frodhes" in DOC and "FRDH" in DOC
+
+
+# ---- the Move's docs against the code (M7-01): the install, the package, the voices, the CCs that do nothing
+
+def _src(*p):
+    return (ROOT.joinpath(*p)).read_text()
+
+
+MANUAL = (ROOT / "docs" / "MANUAL.md").read_text()
+
+
+def test_package_names_are_the_release_ones():
+    rel = _src("tools", "release.py")
+    stable = re.search(r'^MOVE_STABLE = "([^"]+)"', rel, re.M).group(1)
+    versioned = re.search(r'^MOVE_VERSIONED = "([^"]+)"', rel, re.M).group(1).replace("{v}", "X.Y.Z")
+    assert stable in _src("Makefile") and stable in _src("tools", "move_asset.sh")
+    assert f"**`{stable}`**" in DOC and f"`{versioned}`" in DEV and versioned not in DOC
+    assert f"| `{stable}` |" in README
+
+
+def test_package_contents():
+    """the files MOVE-DEV.md lists are the ones make move puts in the tarball (and move_install.py installs)"""
+    mk = _src("Makefile")
+    tar = re.search(r"ls (frodhes/dsp\.so[^)]*?) 2>/dev/null", mk).group(1).split()
+    files = [f.split("/", 1)[1] for f in tar]
+    para = DEV[DEV.index("the module is one file"):DEV.index("A release carries it")]
+    assert sorted(re.findall(r"`([\w.]+\.(?:so|json|js)|LICENSE)`", para)) == sorted(files)
+    inst = _src("tools", "move_install.py")
+    pkg = re.search(r"^PACKAGE = \(([^)]*)\)", inst, re.M).group(1)
+    assert sorted(re.findall(r'"([^"]+)"', pkg)) == sorted(f for f in files if f != "LICENSE")
+
+
+def test_install_paths():
+    inst = _src("tools", "move_install.py")
+    mods = re.search(r'^MODS = "([^"]+)"', inst, re.M).group(1)
+    dev = _src("docs", "MOVE-DEV.md")
+    assert f"-C {mods}'" in dev and f"{mods}/frodhes" in dev
+    assert "ableton@move.local" in inst and "ableton@move.local" in dev
+    data = re.search(r'snprintf\(mb\.dir, sizeof mb\.dir, "(/data[^"]+)"\)', _src("move", "move_bridge.h")).group(1)
+    assert f"`{data}`" in DOC
+
+
+def test_voices_and_hq():
+    defs = re.search(r"^MOVE_DEFS \?= (.+)$", _src("Makefile"), re.M).group(1)
+    v = int(re.search(r"-DFR_VOICES=(\d+)u", defs).group(1))
+    assert "-DFR_HQ=1" in defs
+    assert f"**{v} voices** on every engine" in DOC
+    sec = MANUAL[MANUAL.index("## 16. Appendix: the Ableton Move"):]
+    assert f"{v} voices on every instrument" in sec and f"{v} voices on every" in README
+    assert "hq_mode = 1;" in _src("move", "move_bridge.h")     # HQ at every load: the Move's one version
+
+
+def test_dropped_ccs():
+    m = re.search(r"#define MB_CC_DROP\(cc\) \(\(\(cc\) >= (\d+)u && \(cc\) <= (\d+)u\) \|\| \(\(cc\) >= (\d+)u && "
+                  r"\(cc\) <= (\d+)u\)\)", _src("move", "move_bridge.h"))
+    a, b, c, d = m.groups()
+    assert f"({a}-{b}, {c}-{d}) do nothing on the Move" in DOC
+    assert f"({a}–{b}, {c}–{d}), which do nothing there" in MANUAL
+
+
+def test_program_change_of_the_move_presets():
+    """F20-F57 are program change 35-72: the preset number plus 15 (move_bridge.h MB_PX_BASE = PR_NF + PR_NU)"""
+    br = _src("move", "move_bridge.h")
+    assert "#define MB_PX_BASE (PR_NF + PR_NU)" in br and "16u + PR_NF" in br
+    assert "Program change 35-72 loads\nF20-F57: the preset number plus 15 (F20 is 35, F57 is 72)." in DOC
+    assert "number less 15" not in DOC
+
+
+def test_arrows_left_fx_right_sus():
+    gen = _src("tools", "gen_move_module.py")
+    assert re.search(r"^SUS_BTN_CC = 63 .*Right", gen, re.M) and re.search(r"^FX_BTN_CC = 62 .*Left", gen, re.M)
+    assert "| **Left arrow** | the effects off or on" in DOC and "| **Right arrow** | the sustain on or off" in DOC
+    assert "it does not toggle" not in DOC
+
+
+def test_sustain_button_is_claimed():
+    gen = _src("tools", "gen_move_module.py")
+    cc = int(re.search(r"^SUS_BTN_CC = (\d+)", gen, re.M).group(1))
+    fx = int(re.search(r"^FX_BTN_CC = (\d+)", gen, re.M).group(1))
+    mod = json.loads((ROOT / "move" / "module" / "module.json").read_text())
+    assert mod["capabilities"]["claims_ccs"] == [cc, fx]
+    assert "**The Right arrow**" in DOC and "each press turns SUS on or off" in DOC
+    assert "**The Left arrow**" in DOC and "the compressor stays" in DOC
+
+
+def test_manual_and_readme_point_here():
+    assert "[MOVE.md](MOVE.md)" in MANUAL[MANUAL.index("## 16. Appendix: the Ableton Move"):]
+    assert "16. [Appendix: the Ableton Move](#16-appendix-the-ableton-move)" in MANUAL
+    assert "[docs/MOVE.md](docs/MOVE.md)" in README
+    sec = MANUAL[MANUAL.index("## 16. Appendix: the Ableton Move"):]
+    assert "in development" not in sec.lower() and "not released yet" not in sec
+    assert "(in development)" not in README and "not released yet" not in README
+
+
+def test_screen_hold_and_fast_step():
+    gen = _src("tools", "gen_move_module.py")
+    hold = int(re.search(r'"hold_ms": (\d+)', gen).group(1))
+    mul = int(re.search(r'"fast_mul": (\d+)', gen).group(1))
+    assert hold == 500 and "Half a second after you let go" in DOC
+    assert {4: "four"}[mul] + " steps a detent" in DOC

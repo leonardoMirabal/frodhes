@@ -14,6 +14,7 @@
  *              GLO = TEMPO (again: SETUP, MIDI).
  *   FX         all effects off / on (a bypass: no setting changes; not saved). PLAY: tap tempo (on SEQUENCER: start /
  *              stop, unless the arpeggiator is on: then a tap there too). REC: sustain. */
+#include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 
 #include "aatext.c"                                   /* anti-aliased Inter Tight text (Felucca), the FOCUS look */
 
@@ -29,11 +30,13 @@ static void tempo_set10(uint32_t b);
  * engines' pages came from their tables (eng_pages.h): VOICE 1/n .. n/n, one PG_VOICE page with its number ui_vp */
 enum { PG_PERF, PG_ASSIGN, PG_PIANO, PG_VOICE, PG_RETIRED4, PG_COMP, PG_FILTER, PG_TREM, PG_PHA, PG_CHO, PG_DELAY,
        PG_TEMPO, PG_SCALE, PG_CHORD, PG_SEQ, PG_ARP, PG_LFO, PG_SETUP, PG_MIDI, PG_DRIVE, PG_REVERB, PG_DISPLAY,
-       PG_REVERB2, PG_N };                              /* REVERB 2 (0.9.5): PRE-DELAY, SIZE, MOD, LOW CUT */
+       PG_REVERB2, PG_EQ, PG_N };                       /* REVERB 2 (0.9.5): PRE-DELAY, SIZE, MOD, LOW CUT; EQ: before
+                                                         * the drive (fx_eq.c) */
 enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL = 8, E_N = 9, E_CARDS = 10 };   /* E_CARDS: all four;
                                     * E_METER: COMP's meter / SEQUENCER's cells, E_ROLL: SEQUENCER's NOW / NEXT */
-/* card slots: a parameter id (< P_COUNT) or one of these */
-enum { S_KVEL = 64, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
+/* card slots: a parameter id (< P_COUNT) or one of these (not stored: set.focus is a column, set.perf a PERF_T index;
+ * S_KVEL above P_SLOTS, 64 before the EQ's ids) */
+enum { S_KVEL = 80, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
        S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
        S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_MCH, S_TRS, S_COLOR, S_BRIGHT, S_LEDS, S_TOUCH, S_NONE = 0xFF };
 #ifndef FM1_NENC                                       /* the HAL's encoders and buttons (the FM-1: 7, 14; the SMK-37:
@@ -60,7 +63,7 @@ static const char *const UI_SMK_TEXT[][2] = {           /* the FM-1's text -> th
     {"SEL: ARP HOLD  K1: DIG/ANA/TAPE", "SCALE: HOLD  K5: DIG/ANA/TAPE"},
     {"SAVE: YES   HOME: NO", "BT: YES   PATCH: NO"}, {"K1 THRESH: TURN UP = ON", "K5 THRESH: TURN UP = ON"},
 };
-static const char *ui_text(const char *s)
+FR_COLD static const char *ui_text(const char *s)
 {
     uint32_t i, k;
     for (i = 0; i < sizeof UI_SMK_TEXT / sizeof UI_SMK_TEXT[0]; i++) {
@@ -79,7 +82,7 @@ static const char *ui_text(const char *s)
 #define ui_text(s) (s)
 #endif
 #include "eng_pages.h"                                /* the engines' controls: VOICE pages, FRODHES K2 / K3, names */
-static const engui_t *eng_ui(void) { return &ENG_UI[PV(P_TYPE) < N_TYPE_N ? TYPE_UI[PV(P_TYPE)] : 0u]; }   /* per TYPE */
+FR_COLD static const engui_t *eng_ui(void) { return &ENG_UI[PV(P_TYPE) < N_TYPE_N ? TYPE_UI[PV(P_TYPE)] : 0u]; }   /* per TYPE */
 static const ectl_t *eng_ctl(uint32_t id)              /* the TYPE's engine's control for a slot (0: not one of its) */
 {
     const engui_t *e = eng_ui();
@@ -87,15 +90,15 @@ static const ectl_t *eng_ctl(uint32_t id)              /* the TYPE's engine's co
     for (i = 0; i < e->n; i++) if (e->c[i].id == id) return &e->c[i];
     return 0;
 }
-static const ectl_t *eng_head(uint32_t h)              /* the engine's headline control h (1: FRODHES K2, 2: K3) */
+FR_COLD static const ectl_t *eng_head(uint32_t h)              /* the engine's headline control h (1: FRODHES K2, 2: K3) */
 {
     const engui_t *e = eng_ui();
     uint32_t i;
     for (i = 0; i < e->n; i++) if (e->c[i].head == h) return &e->c[i];
     return 0;
 }
-static uint32_t vp_count(void) { return (eng_ui()->n + 3u) / 4u; }   /* the engine's VOICE pages */
-static const ectl_t *voice_ctl(uint32_t vp, uint32_t k)   /* VOICE page vp's K(k+1) (0: an empty row) */
+FR_COLD static uint32_t vp_count(void) { return (eng_ui()->n + 3u) / 4u; }   /* the engine's VOICE pages */
+FR_COLD static const ectl_t *voice_ctl(uint32_t vp, uint32_t k)   /* VOICE page vp's K(k+1) (0: an empty row) */
 {
     uint32_t i = vp * 4u + k;
     return i < eng_ui()->n ? &eng_ui()->c[i] : 0;
@@ -106,18 +109,19 @@ static uint32_t sq_delete_step(void);
 static void sq_browse(int32_t d);
 /* the SELECT order (0.9.3, user: the instrument pages next to each other right after PERFORM; ASSIGN, rarely used,
  * next to SETUP); VOICE stands for all the engine's VOICE pages */
-#define PG_NORD 22u
-static const uint8_t PG_ORDER[PG_NORD] = {PG_PERF, PG_PIANO, PG_VOICE, PG_COMP, PG_DRIVE, PG_FILTER, PG_TREM, PG_PHA,
+#define PG_NORD 23u
+static const uint8_t PG_ORDER[PG_NORD] = {PG_PERF, PG_PIANO, PG_VOICE, PG_COMP, PG_EQ, PG_DRIVE, PG_FILTER, PG_TREM, PG_PHA,
                                           PG_CHO, PG_DELAY, PG_REVERB, PG_REVERB2, PG_TEMPO, PG_SCALE, PG_CHORD, PG_ARP,
                                           PG_LFO, PG_SEQ, PG_ASSIGN, PG_SETUP, PG_MIDI, PG_DISPLAY};   /* DRIVE before FILTER
                                     * (0.9.5, the user), REVERB the last effect, as in the chain, its second page right
-                                    * after it (0.9.5); SEQUENCER after LFO (user, TODO 3) */
+                                    * after it (0.9.5); SEQUENCER after LFO (user, TODO 3); EQ between COMPRESSOR and
+                                    * DRIVE, as in the chain */
 static uint8_t ui_vp;                                   /* the VOICE page shown: 0 .. vp_count() - 1 */
-static int ui_bars(void) { return TYPE_IS_BARS(PV(P_TYPE)); }    /* the main loop's TYPE (not the ISR's latch) */
+FR_COLD static int ui_bars(void) { return TYPE_IS_BARS(PV(P_TYPE)); }    /* the main loop's TYPE (not the ISR's latch) */
 static void ui_goto(uint32_t pg);
 static void ui_goto_v(uint32_t pg, uint32_t vp);
-static uint32_t pg_count(void) { return PG_NORD - 1u + vp_count(); }    /* the pages SELECT walks */
-static uint32_t pg_pos(uint32_t pg, uint32_t vp)        /* a page's place in the SELECT order */
+FR_COLD static uint32_t pg_count(void) { return PG_NORD - 1u + vp_count(); }    /* the pages SELECT walks */
+FR_COLD static uint32_t pg_pos(uint32_t pg, uint32_t vp)        /* a page's place in the SELECT order */
 {
     uint32_t i, k = 0;
     for (i = 0; i < PG_NORD; i++) {
@@ -126,7 +130,7 @@ static uint32_t pg_pos(uint32_t pg, uint32_t vp)        /* a page's place in the
     }
     return 0;
 }
-static uint32_t pg_at(uint32_t k, uint32_t *vp)         /* the k-th page (and its VOICE number) */
+FR_COLD static uint32_t pg_at(uint32_t k, uint32_t *vp)         /* the k-th page (and its VOICE number) */
 {
     uint32_t i, n;
     for (i = 0; i < PG_NORD; i++) {
@@ -140,7 +144,7 @@ static uint32_t pg_at(uint32_t k, uint32_t *vp)         /* the k-th page (and it
 static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VOICE", "", "COMPRESSOR", "FILTER", "TREM/WAH",
                                              "PHASER", "CHORUS", "DELAY", "TEMPO", "SCALE", "CHORD", "SEQUENCER",
                                              "ARPEGGIO", "LFO", "SETUP", "MIDI", "DRIVE", "REVERB", "DISPLAY",
-                                             "REVERB 2"};
+                                             "REVERB 2", "EQ"};
 static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 / K3: the engine's (slot_at) */
     {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
     {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
@@ -165,6 +169,7 @@ static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 
     {P_RV_TYPE, P_RV_DEPTH, P_RV_DECAY, P_RV_TONE},     /* REVERB (0.9.5): TYPE = on / off + the type, as DRIVE */
     {S_COLOR, S_BRIGHT, UI_LEDS, S_NONE},
     {P_RV_PREDLY, P_RV_SIZE, P_RV_MOD, P_RV_LOCUT},     /* REVERB 2: PRE-DELAY moved here from REVERB */
+    {P_EQ_LO, P_EQ_MID, P_EQ_FREQ, P_EQ_HI},            /* EQ: before the drive */
 };
 static const char *const PAGE_LAB[PG_N][4] = {
     {"", "", "", ""},                                   /* PERFORM: the assigned parameter's name (slot_label) */
@@ -190,6 +195,7 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"TYPE", "MIX", "DECAY", "TONE"},
     {"COLOR", "BRIGHTNESS", UI_LEDS_LAB, ""},
     {"PRE-DELAY", "SIZE", "MOD", "LOW CUT"},
+    {"LOW", "MID", "MID FREQ", "HIGH"},
 };
 static const char *const PAGE_HINT[PG_N] = {"THE KNOBS: SET ON ASSIGN", "WHAT EACH PERFORM KNOB PLAYS",
                                             "FX: ALL EFFECTS ON / OFF", "", "",
@@ -197,14 +203,15 @@ static const char *const PAGE_HINT[PG_N] = {"THE KNOBS: SET ON ASSIGN", "WHAT EA
                                             "K1: ON / OFF", "SEL: ON / OFF  K1: DIG / ANA / TAPE", "PLAY: TAP TEMPO", "DEGREE: WHITE KEYS PLAY IT",
                                             "EDIT: CHORDS ON / OFF", "", "ARP: ON / OFF   SEL: HOLD", "MOVES THE FILTER (ITS LFO)", "",
                                             "USB AND TRS: THE SAME CHANNEL", "K1: THE DRIVE TYPE", "NEXT PAGE: SIZE, MOD, LOW CUT",
-                                            "THE SCREEN AND THE KEY LIGHTS", "SIZE AUTO: MIX SETS THE SIZE"};
+                                            "THE SCREEN AND THE KEY LIGHTS", "SIZE AUTO: MIX SETS THE SIZE",
+                                            "BEFORE THE DRIVE  0 DB: FLAT"};
 /* the reverb's TYPE card (P_RV_TYPE, as the drive's: 0 OFF, then the types; params.c N_RV / N_RV_LONG) */
 #define RV_INF 3u                                       /* INFINITE: DECAY 120..126 SUSTAIN (the tail holds, the input
                                                          * open), 127 FREEZE (the input closed): rev_ctl_t.freeze */
 #define RV_SUSTAIN_AT 120
 #define RV_FREEZE_AT 127
-static uint32_t ui_vp_ok(void) { return ui_vp < vp_count() ? ui_vp : vp_count() - 1u; }
-static const char *page_hint(uint32_t pg)
+FR_COLD static uint32_t ui_vp_ok(void) { return ui_vp < vp_count() ? ui_vp : vp_count() - 1u; }
+FR_COLD static const char *page_hint(uint32_t pg)
 {
     if (pg == PG_DELAY && arp_on()) return ui_text("SEL: ARP HOLD  K1: DIG/ANA/TAPE");
     if (pg == PG_REVERB && PV(P_RV_TYPE) == RV_INF) return "DECAY UP: SUSTAIN, TOP: FREEZE";   /* (slot_text) */
@@ -220,8 +227,8 @@ static const char *const CLOCK_NAME[2] = {"INT", "EXT"};   /* EXT: MIDI clock fr
 static uint8_t ui_page;
 /* SEL is the arpeggiator's HOLD on ARPEGGIO and, while the arpeggiator is on, on every page (else DELAY); PLAY starts /
  * stops the sequencer on SEQUENCER only while the arpeggiator is off (else it taps the tempo, like everywhere) */
-static int sel_is_hold(void) { return ui_page == PG_ARP || arp_on(); }
-static int play_is_seq(void) { return ui_page == PG_SEQ && !arp_on(); }
+FR_COLD static int sel_is_hold(void) { return ui_page == PG_ARP || arp_on(); }
+FR_COLD static int play_is_seq(void) { return ui_page == PG_SEQ && !arp_on(); }
 static uint32_t ui_dirty = ~0u;
 static uint32_t ui_msg_t, ui_hot_t, ui_last_draw;
 static uint8_t ui_hot_card = 0xFF;
@@ -289,7 +296,7 @@ static uint8_t ui_look;                                 /* developer CC 2 (not s
 #ifndef UI_FILL_LO
 #define UI_FILL_LO 15
 #endif
-static uint16_t cd_shade(uint16_t c, uint32_t pct)      /* an RGB565 colour x pct / 100 */
+FR_COLD static uint16_t cd_shade(uint16_t c, uint32_t pct)      /* an RGB565 colour x pct / 100 */
 {
     uint32_t r = (c >> 11) & 31u, g = (c >> 5) & 63u, b = c & 31u;
     return (uint16_t)((r * pct / 100u) << 11 | (g * pct / 100u) << 5 | (b * pct / 100u));
@@ -317,7 +324,7 @@ static const char *const COLOR_NAME[COLOR_N] = {
     "OCEAN", "CYAN", "AQUA", "MINT", "JADE", "GREEN", "LEAF",
     "LIME", "PEAR", "LEMON", "GOLD", "MANGO", "RED",
 };
-static uint16_t cd_lighten(uint16_t c)                 /* an RGB565 colour half way to white */
+FR_COLD static uint16_t cd_lighten(uint16_t c)                 /* an RGB565 colour half way to white */
 {
     uint32_t r = (c >> 11) & 31u, g = (c >> 5) & 63u, b = c & 31u;
     return (uint16_t)((r + (31u - r) / 2u) << 11 | (g + (63u - g) / 2u) << 5 | (b + (31u - b) / 2u));
@@ -336,8 +343,8 @@ static uint16_t cd_lighten(uint16_t c)                 /* an RGB565 colour half 
 static const uint8_t dim_key[DIM_N] = {16, 12, 9, 7, 6, 5, 4, 3, 2, 1};
 static const uint8_t dim_btn[DIM_N] = {16, 14, 12, 10, 8, 6, 5, 4, 3, 2};
 static const uint8_t dim_scr[DIM_N] = {100, 86, 73, 63, 54, 46, 40, 34, 29, 25};
-static uint32_t dim_pct(void) { return dim_scr[set.dim < DIM_N ? set.dim : 0u]; }
-static void color_apply(uint32_t i)                     /* the COLOR step, at BRIGHTNESS, onto gfx.c's pal[] */
+FR_COLD static uint32_t dim_pct(void) { return dim_scr[set.dim < DIM_N ? set.dim : 0u]; }
+FR_COLD static void color_apply(uint32_t i)                     /* the COLOR step, at BRIGHTNESS, onto gfx.c's pal[] */
 {
     uint16_t a;
     uint32_t k, pct = dim_pct();
@@ -349,7 +356,7 @@ static void color_apply(uint32_t i)                     /* the COLOR step, at BR
     a = cd_shade(COLOR_ACC[i], pct);
     pal[0] = cd_shade(a, 25); pal[1] = cd_shade(a, 45); pal[2] = cd_shade(a, 70); pal[3] = a; pal[4] = cd_lighten(a);
 }
-static void dim_apply(void)
+FR_COLD static void dim_apply(void)
 {
     uint32_t d = set.dim < DIM_N ? set.dim : 0u;
     fm1_led_duty[0] = dim_key[d]; fm1_led_duty[1] = dim_btn[d];
@@ -368,7 +375,7 @@ static void dim_apply(void)
 #define LEDS_N 5u
 static const uint8_t LEDS_DISP[LEDS_N] = {2, 0, 1, 3, 4}, LEDS_STORED[LEDS_N] = {1, 2, 0, 3, 4};
 static const char *const LEDS_NAME[LEDS_N] = {"OFF", "PLAYED", "ROOTS", "ALL", "SCALE"};
-static uint32_t leds_disp(void) { return LEDS_DISP[set.leds < LEDS_N ? set.leds : 0u]; }
+FR_COLD static uint32_t leds_disp(void) { return LEDS_DISP[set.leds < LEDS_N ? set.leds : 0u]; }
 static uint8_t ui_cards = UI_CARDS_DEF;
 static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab, val, unit, dim, acc, seq, white; } mt;
 /* a static in a section of its own, out of the compiler's global merge (merged in, it can split rhodes.c's rh_F / rh_x:
@@ -378,7 +385,7 @@ static struct { uint16_t surf, track, outline, hair, fill, edge, frame, tag, lab
 #else
 #define UI_OWN_SECTION(name) __attribute__((section(name)))
 #endif
-static void mt_update(void)                             /* the tokens for the look and the palette (each pass; done
+FR_COLD static void mt_update(void)                             /* the tokens for the look and the palette (each pass; done
                                                          * again only when one of them changed: the dimmed tokens
                                                          * cost 33 divides) */
 {
@@ -411,7 +418,7 @@ static void mt_update(void)                             /* the tokens for the lo
 #define FC_VAL mt.val                                   /* values */
 #define FC_DIM mt.dim                                   /* hints */
 /* a track (the gain-reduction meter's scale): solid, or black in a 1 px outline */
-static void mt_track(int32_t x, int32_t y, int32_t w, int32_t h)
+FR_COLD static void mt_track(int32_t x, int32_t y, int32_t w, int32_t h)
 {
     if (!mt.outline || w < 3 || h < 3) { cv_rect(x, y, w, h, mt.outline ? mt.outline : mt.track); return; }
     cv_rect(x, y, w, h, mt.outline);
@@ -420,7 +427,7 @@ static void mt_track(int32_t x, int32_t y, int32_t w, int32_t h)
 #define S_TOP(yc) ((yc) - AF_S_CAP_Y - AF_S_CAP_H / 2)  /* the line top that centres AF_S's capitals on row yc */
 #define L_TOP(yc) ((yc) - AF_L_CAP_Y - AF_L_CAP_H / 2)
 /* the large face for s: it has every character (aa_covers: AF_L is trimmed to the values' characters) and s fits w */
-static int big_ok(const char *s, int32_t w) { return aa_covers(&AF_L, s) && aa_text_w(&AF_L, s) <= w; }
+FR_COLD static int big_ok(const char *s, int32_t w) { return aa_covers(&AF_L, s) && aa_text_w(&AF_L, s) <= w; }
 /* the screen: header 0..19, title 20..39, rows 46 + 42 k (38 high, x 6..233), footer 210..239 */
 #define HD_H 20u
 #define TI_Y 20u
@@ -435,15 +442,15 @@ static int big_ok(const char *s, int32_t w) { return aa_covers(&AF_L, s) && aa_t
 #define MSG_MS 1500u
 #define HOT_MS 1000u
 
-static void ui_mark(uint32_t e)
+FR_COLD static void ui_mark(uint32_t e)
 {
     if (e == E_CARDS) ui_dirty |= 0xFu << E_CARD0;
     else ui_dirty |= 1u << e;
 }
-static void ui_mark_param(uint32_t id) { ui_mark(E_CARDS); if (id == P_RV_TYPE) ui_mark(E_FOOTER); }   /* cheap: the
+FR_COLD static void ui_mark_param(uint32_t id) { ui_mark(E_CARDS); if (id == P_RV_TYPE) ui_mark(E_FOOTER); }   /* cheap: the
                                                          * marks coalesce; REVERB's hint follows its TYPE */
 static uint8_t ui_msg_big;                            /* the message in the large face (the TYPE flash) */
-static void ui_say(const char *s)                     /* a message in the footer for MSG_MS, small */
+FR_COLD static void ui_say(const char *s)                     /* a message in the footer for MSG_MS, small */
 {
     uint32_t i = 0;
     while (s[i] && i < sizeof ui_msg - 1u) { ui_msg[i] = s[i]; i++; }
@@ -452,16 +459,16 @@ static void ui_say(const char *s)                     /* a message in the footer
     ui_msg_big = 0;
     ui_mark(E_FOOTER);
 }
-static void ui_say_big(const char *s) { ui_say(s); ui_msg_big = 1; }
-static void p_strcpy(char *d, const char *s, uint32_t max) { uint32_t i = 0; while (s[i] && i < max) { d[i] = s[i]; i++; } d[i] = 0; }
+FR_COLD static void ui_say_big(const char *s) { ui_say(s); ui_msg_big = 1; }
+FR_COLD static void p_strcpy(char *d, const char *s, uint32_t max) { uint32_t i = 0; while (s[i] && i < max) { d[i] = s[i]; i++; } d[i] = 0; }
 /* the version on screen: a release build's ("0.8.1"), else DEV (dev builds are "0.0", host / web "dev" / "web") */
-static const char *ui_version(void)
+FR_COLD static const char *ui_version(void)
 {
     static const char v[] = APP_VER;
     return v[0] < '0' || v[0] > '9' || (v[0] == '0' && v[1] == '.' && v[2] == '0' && !v[3]) ? "DEV" : v;
 }
-static void ui_changed(void) { set_dirty = 1; set_t_change = fm1_ms; }
-static int32_t sgn(int32_t d) { return d > 0 ? 1 : -1; }
+FR_COLD static void ui_changed(void) { set_dirty = 1; set_t_change = fm1_ms; }
+FR_COLD static int32_t sgn(int32_t d) { return d > 0 ? 1 : -1; }
 
 /* switching an effect on from the panel while its depth is 0 would be silent (the depths default to 0): give it a
  * starting depth then; a depth the player set is never touched. The compressor's make-up: the engine's (cmp_mkup) */
@@ -484,7 +491,7 @@ static void fx_wake(uint32_t sw_id)
  * about the same volume (0.9.5 started it at THRESH 1, -0.3 dB, with +2.8 dB of make-up: 2.8 dB louder; CC 106 came on
  * without the make-up: quieter; the bug hunt, 2026-10-25) */
 #define CMP_WAKE_THR 50
-static void cmp_wake(int midi)                         /* midi: a THRESH already set over MIDI (CC 107) is kept, and
+FR_COLD static void cmp_wake(int midi)                         /* midi: a THRESH already set over MIDI (CC 107) is kept, and
                                                         * so is its make-up (none unless CC 113 set one) */
 {
     if (midi && PV(P_CMP_AMT)) { param_set(P_CMP_SW, 1); return; }
@@ -508,15 +515,15 @@ static const perf_t PERF_T[] = {
     {P_FL_FREQ, "FILTER"}, {P_FL_RESO, "FILT RESO"}, {P_FL_LFO, "FILT LFO"}, {P_LFO_RATE, "LFO RATE"},   /* 0.9.3 */
 };
 #define PERF_N (sizeof PERF_T / sizeof PERF_T[0])
-static uint32_t perf_idx(uint32_t k)                     /* knob k's entry in PERF_T */
+FR_COLD static uint32_t perf_idx(uint32_t k)                     /* knob k's entry in PERF_T */
 {
     uint32_t v = set.perf[k];
     static const uint8_t DEF[4] = {PERF_DEF};            /* default: DRIVE, FILTER, DELAY, REVERB */
     return v && v <= PERF_N ? v - 1u : DEF[k & 3u];
 }
-static uint32_t perf_count(void) { return PERF_N; }     /* (params.c: the PERFORM defaults' update) */
+FR_COLD static uint32_t perf_count(void) { return PERF_N; }     /* (params.c: the PERFORM defaults' update) */
 /* turning an effect's amount up from PERFORM switches the effect on (TREM/WAH: as TREM unless WAH was chosen) */
-static void perf_wake(uint32_t id)
+FR_COLD static void perf_wake(uint32_t id)
 {
     if (id == P_FL_FREQ) { if (!PV(P_FL_TYPE) && PV(P_FL_FREQ) < 127) param_set(P_FL_TYPE, 2); return; }   /* LP18 */
     if (!PV(id)) return;
@@ -531,37 +538,37 @@ static void perf_wake(uint32_t id)
     else if (id == P_CMP_AMT && !PV(P_CMP_SW)) cmp_wake(0);
 }
 /* the control a card shows from the engine's table: VOICE page vp, or FRODHES K2 / K3 (the headlines); 0: none */
-static const ectl_t *page_ctl(uint32_t pg, uint32_t vp, uint32_t k)
+FR_COLD static const ectl_t *page_ctl(uint32_t pg, uint32_t vp, uint32_t k)
 {
     if (pg == PG_VOICE) return voice_ctl(vp, k);
     if (pg == PG_PIANO && (k == 1u || k == 2u)) return eng_head(k);
     return 0;
 }
 /* the slot a card shows: the engine's, else the page's; PERFORM's are resolved to the assigned parameter */
-static uint32_t slot_at_v(uint32_t pg, uint32_t vp, uint32_t k)
+FR_COLD static uint32_t slot_at_v(uint32_t pg, uint32_t vp, uint32_t k)
 {
     const ectl_t *c = page_ctl(pg, vp, k);
     uint32_t s = c ? c->id : pg == PG_VOICE ? S_NONE : PAGE_S[pg][k];
     return s >= S_PERF0 && s < S_PERF0 + 4u ? PERF_T[perf_idx(s - S_PERF0)].id : s;
 }
-static uint32_t slot_at(uint32_t pg, uint32_t k) { return slot_at_v(pg, ui_vp_ok(), k); }
+FR_COLD static uint32_t slot_at(uint32_t pg, uint32_t k) { return slot_at_v(pg, ui_vp_ok(), k); }
 static const char *perf_name(uint32_t i) { const ectl_t *c = eng_ctl(PERF_T[i].id); return c ? c->name : PERF_T[i].name; }
-static const char *slot_label_v(uint32_t pg, uint32_t vp, uint32_t k)
+FR_COLD static const char *slot_label_v(uint32_t pg, uint32_t vp, uint32_t k)
 {
     const ectl_t *c = page_ctl(pg, vp, k);
     if (pg == PG_PERF) return perf_name(perf_idx(k));
     if (c) return c->name;
     return pg == PG_VOICE ? "" : PAGE_LAB[pg][k];
 }
-static const char *slot_label(uint32_t pg, uint32_t k) { return slot_label_v(pg, ui_vp_ok(), k); }
+FR_COLD static const char *slot_label(uint32_t pg, uint32_t k) { return slot_label_v(pg, ui_vp_ok(), k); }
 /* ---- card slots */
-static uint32_t tw_kind(void)                          /* OFF PAN TREM WAH */
+FR_COLD static uint32_t tw_kind(void)                          /* OFF PAN TREM WAH */
 {
     uint32_t sw = PV(P_TW_SW), m = PV(P_TW_MODE);
     return sw == 2u ? 3u : sw != 1u ? 0u : m ? 2u : 1u;
 }
-static void color_text(char *v, uint32_t i) { p_strcpy(v, COLOR_NAME[i < COLOR_N ? i : 0u], 6); }
-static int32_t slot_val(uint32_t s, int32_t *hi)
+FR_COLD static void color_text(char *v, uint32_t i) { p_strcpy(v, COLOR_NAME[i < COLOR_N ? i : 0u], 6); }
+FR_COLD static int32_t slot_val(uint32_t s, int32_t *hi)
 {
     if (s < P_COUNT) { *hi = PARAMS[s].hi; return PV(s); }
     switch (s) {
@@ -597,22 +604,22 @@ static int32_t slot_val(uint32_t s, int32_t *hi)
     default: *hi = 0; return 0;
     }
 }
-static int slot_is_level(uint32_t s)                    /* a gauge only for amounts, not for choices */
+FR_COLD static int slot_is_level(uint32_t s)                    /* a gauge only for amounts, not for choices */
 {
     if (s < P_COUNT) return PARAMS[s].fmt != F_ENUM && PARAMS[s].fmt != F_DIV;
     return s == S_KVEL || s == S_TUNE || s == S_BPM || s == S_TRANS || s == S_ARPGATE || s == S_CHSTRUM;
 }
-static void fmt_signed(char *s, int32_t v) { if (v > 0) { s[0] = '+'; p_fmt_int(s + 1, v); } else p_fmt_int(s, v); }
+FR_COLD static void fmt_signed(char *s, int32_t v) { if (v > 0) { s[0] = '+'; p_fmt_int(s + 1, v); } else p_fmt_int(s, v); }
 /* a rate / time knob that is synced to the tempo: its SYNC parameter (the knob shows and steps the note value), else 0 */
-static uint32_t slot_sync_id(uint32_t s)
+FR_COLD static uint32_t slot_sync_id(uint32_t s)
 {
     uint32_t y = s == P_DL_TIME ? P_DL_SYNC : s == P_CP_SPEED ? P_CP_SYNC : s == P_PH_SPEED ? P_PH_SYNC :
                  s == P_LFO_RATE ? P_LFO_SYNC : s == P_MOT_RATE ? P_MOT_SYNC :
                  s == P_TW_RATE && PV(P_TW_SW) != 2u ? P_TW_SYNC : 0u;   /* (WAH: RATE is a resonance) */
     return y && PV(y) ? y : 0u;
 }
-static int slot_synced(uint32_t s) { return slot_sync_id(s) != 0u; }
-static void slot_text(uint32_t s, char *v)
+FR_COLD static int slot_synced(uint32_t s) { return slot_sync_id(s) != 0u; }
+FR_COLD static void slot_text(uint32_t s, char *v)
 {
     v[0] = 0;
     if (slot_synced(s)) { p_strcpy(v, N_SYNC[PV(slot_sync_id(s))], 5); return; }
@@ -688,7 +695,7 @@ static void slot_text(uint32_t s, char *v)
 }
 
 static void ui_draw_page_change(void);                 /* (below: every element dirty) */
-static void slot_turn(uint32_t s, int32_t d)
+FR_COLD static void slot_turn(uint32_t s, int32_t d)
 {
     if (!d || s == S_NONE) return;
     if (s < P_COUNT) {
@@ -805,15 +812,15 @@ static const int16_t BATT_T[3] = {BATT_T1, BATT_T2, BATT_T3};
 static int32_t batt_avg;                            /* the smoothed reading x 256 (0: none yet) */
 static uint8_t batt_lvl, batt_sim;                    /* the segments shown; batt_sim: developer CC 8 (x 8, 0 = real) */
 #ifdef DINGHY_HOST
-static int32_t batt_adc(void) { return BATT_HOST_RAW; }
-static int batt_usb(void) { return 0; }
+FR_COLD static int32_t batt_adc(void) { return BATT_HOST_RAW; }
+FR_COLD static int batt_usb(void) { return 0; }
 #else
-static int32_t batt_adc(void) { return fm1_adc_read(FM1_ADC_BATT); }
-static int batt_usb(void) { return usb.config && !usb.suspended; }
+FR_COLD static int32_t batt_adc(void) { return fm1_adc_read(FM1_ADC_BATT); }
+FR_COLD static int batt_usb(void) { return usb.config && !usb.suspended; }
 #endif
-static int32_t batt_raw(void) { return (batt_avg + 128) / 256; }
-static uint32_t batt_shown(void) { return batt_usb() ? 4u : batt_lvl; }
-static void batt_poll(void)
+FR_COLD static int32_t batt_raw(void) { return (batt_avg + 128) / 256; }
+FR_COLD static uint32_t batt_shown(void) { return batt_usb() ? 4u : batt_lvl; }
+FR_COLD static void batt_poll(void)
 {
     static uint32_t t;
     static uint8_t shown = 0xFF;
@@ -835,7 +842,7 @@ static void batt_poll(void)
 }
 /* the icon, 18 x 9 at (x, y): a body with a tip, three segments, or a bolt on USB power. ink: the outline; the
  * segments in hi, the last one (or the empty outline) in the accent */
-static void batt_icon(int32_t x, int32_t y, uint16_t ink, uint16_t hi, uint16_t bg)
+FR_COLD static void batt_icon(int32_t x, int32_t y, uint16_t ink, uint16_t hi, uint16_t bg)
 {
     static const uint8_t BOLT[7] = {0x08, 0x10, 0x30, 0x7E, 0x0C, 0x08, 0x10};   /* 7 x 7, bit 6 = left */
     uint32_t lv = batt_shown(), i, j;
@@ -853,7 +860,7 @@ static void batt_icon(int32_t x, int32_t y, uint16_t ink, uint16_t hi, uint16_t 
 
 /* the header, right to left: the battery (last, the user), the BPM, BYP, SUS, the octave; the preset name gets what is
  * left (cut only when the flags reach it) */
-static void draw_header(void)
+FR_COLD static void draw_header(void)
 {
     char nm[20], b[8];
     int32_t x;
@@ -881,14 +888,14 @@ static void draw_header(void)
 static void seq_pos_text(char *t);
 static uint32_t sq_view_tick(void);
 static void sq_shown_beat_set(void);
-static void fmt_frac(char *t, uint32_t a, uint32_t b)   /* "a/b" */
+FR_COLD static void fmt_frac(char *t, uint32_t a, uint32_t b)   /* "a/b" */
 {
     uint32_t n = 0;
     p_fmt_int(t, (int32_t)a); while (t[n]) n++;
     t[n++] = '/'; p_fmt_int(t + n, (int32_t)b);
 }
 /* the title: the page's name in the accent, where we are at the right (the SEQUENCER: where the loop is) */
-static void draw_title(void)
+FR_COLD static void draw_title(void)
 {
     char t[24];
     cv_begin(240, TI_H, FC_BG);
@@ -908,7 +915,7 @@ static void draw_title(void)
 /* a row's text and its unit: the number apart from its unit ("16K" -> "16" + "kHz", "3.5HZ" -> "3.5" + "Hz", "1.5S" ->
  * "1.5" + "s", "60 MS" -> "60" + "ms"); 0: no unit (a name, a note value, a plain number) */
 static int slot_synced(uint32_t s);
-static const char *slot_unit(uint32_t s, char *v)
+FR_COLD static const char *slot_unit(uint32_t s, char *v)
 {
     uint32_t n = 0, f = s < P_COUNT ? PARAMS[s].fmt : 0xFFu;
     while (v[n]) n++;
@@ -941,7 +948,7 @@ static struct {
     int16_t vx0, vx1, ux0, ux1, lx1;                    /* the variants: the value's, the unit's x, the label's end */
 } ui_row_drawn[4];                                      /* what each row shows (the host's tests read it) */
 static void draw_row_cards(uint32_t k);
-static void draw_row(uint32_t k)
+FR_COLD static void draw_row(uint32_t k)
 {
     uint32_t s = slot_at(ui_page, k);
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
@@ -1024,9 +1031,9 @@ static const char *const CD_LONG[] = {"EARLY FELT", "BELL DYNO", "TREM/WAH", "CO
 static const char *const CD_SHORT[] = {"FELT", "DYNO", "TRM/WAH", "CMP THR", "CMP GAIN", "TRM RATE", "TRM SHP",
                                        "PHA SPD", "PHA FDBK", "CHO SPD", "DLY FDBK"};
 _Static_assert(sizeof CD_LONG == sizeof CD_SHORT, "one short form per long one");
-static int cd_eq(const char *a, const char *b) { while (*a && *a == *b) { a++; b++; } return *a == *b; }
+FR_COLD static int cd_eq(const char *a, const char *b) { while (*a && *a == *b) { a++; b++; } return *a == *b; }
 /* the value's text, its unit apart (slot_unit, and a number's "%"); 0: none */
-static const char *cd_unit(uint32_t s, char *v)
+FR_COLD static const char *cd_unit(uint32_t s, char *v)
 {
     const char *u = slot_unit(s, v);
     uint32_t n = 0;
@@ -1035,7 +1042,7 @@ static const char *cd_unit(uint32_t s, char *v)
     return u;
 }
 /* the meter's width (0 .. w) for slot s showing v */
-static int32_t cd_frac(uint32_t s, const char *v, int32_t val, int32_t hi, int32_t w)
+FR_COLD static int32_t cd_frac(uint32_t s, const char *v, int32_t val, int32_t hi, int32_t w)
 {
     if (!hi || cd_eq(v, "OFF")) return 0;
     if (slot_synced(s)) {                               /* the note value's place among the sync divisions */
@@ -1046,7 +1053,7 @@ static int32_t cd_frac(uint32_t s, const char *v, int32_t val, int32_t hi, int32
     return w * (clampi(val, 0, hi) + 1) / (hi + 1);     /* a choice: option i of n at (i + 1) / n */
 }
 /* the value and the room it has (the label ends at le): its text (the short form if the long one does not fit) */
-static int cd_fit(char *v, int32_t room, uint8_t *shortf)
+FR_COLD static int cd_fit(char *v, int32_t room, uint8_t *shortf)
 {
     uint32_t i;
     *shortf = 0;
@@ -1056,7 +1063,7 @@ static int cd_fit(char *v, int32_t room, uint8_t *shortf)
     return aa_text_w(&AF_L, v) <= room;
 }
 /* FADER: the bright edge at x ex (2 px), in the rows no text box (grown by CD_KEEP) covers at that x */
-static void cd_edge(int32_t ex, const int16_t *bx, uint32_t nb)
+FR_COLD static void cd_edge(int32_t ex, const int16_t *bx, uint32_t nb)
 {
     uint64_t blocked = 0;
     uint32_t i;
@@ -1078,7 +1085,7 @@ enum { CS_FADER, CS_LINE, CS_SEG, CS_PIPS, CS_LED, CS_BACK };
 static const char CS_LETTER[] = "FLSPDB";
 /* an amount (a fill); a selector (n options: a choice, or a synced knob's note value); a toggle (a choice of two that
  * reads ON / OFF). idx / n: the selector's option and its count */
-static uint32_t cd_kind(uint32_t s, const char *v, int32_t val, int32_t hi, int32_t *idx, int32_t *n)
+FR_COLD static uint32_t cd_kind(uint32_t s, const char *v, int32_t val, int32_t hi, int32_t *idx, int32_t *n)
 {
     if (slot_synced(s)) {
         uint32_t y = slot_sync_id(s);
@@ -1090,7 +1097,7 @@ static uint32_t cd_kind(uint32_t s, const char *v, int32_t val, int32_t hi, int3
     if (hi == 1 && (cd_eq(v, "ON") || cd_eq(v, "OFF"))) return CK_TOGGLE;
     return CK_SELECT;
 }
-static uint32_t cd_style(uint32_t kind)
+FR_COLD static uint32_t cd_style(uint32_t kind)
 {
     if (ui_cards == 1u) return CS_FADER;
     if (ui_cards == 2u) return CS_LINE;
@@ -1099,14 +1106,14 @@ static uint32_t cd_style(uint32_t kind)
     return ui_cards == 4u ? CS_PIPS : CS_SEG;
 }
 /* the value's room: from the label's end + CD_GAP (and the LED's place) to CD_VR */
-static int32_t cd_room(int32_t le, uint32_t style)
+FR_COLD static int32_t cd_room(int32_t le, uint32_t style)
 {
     return CD_VR - le - CD_GAP - (style == CS_LED ? CD_LED_D + CD_LED_GAP : 0);
 }
 /* LED: a 12 px dot (half-widths per row), OFF a ring (the hole's half-widths) */
 static const uint8_t CD_DOT[CD_LED_D] = {2, 4, 5, 5, 6, 6, 6, 6, 5, 5, 4, 2};
 static const uint8_t CD_HOLE[CD_LED_D] = {0, 0, 2, 3, 4, 4, 4, 4, 3, 2, 0, 0};
-static void cd_led(int32_t x, int32_t y, int on)
+FR_COLD static void cd_led(int32_t x, int32_t y, int on)
 {
     uint32_t r;
     for (r = 0; r < CD_LED_D; r++) {
@@ -1115,7 +1122,7 @@ static void cd_led(int32_t x, int32_t y, int on)
         else { cv_rect(cx - w, y + (int32_t)r, w - h, 1, mt.dim); cv_rect(cx + h, y + (int32_t)r, w - h, 1, mt.dim); }
     }
 }
-static void draw_row_cards(uint32_t k)
+FR_COLD static void draw_row_cards(uint32_t k)
 {
     uint32_t s = slot_at(ui_page, k);
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
@@ -1223,7 +1230,7 @@ static void draw_row_cards(uint32_t k)
  * numbers), the synced knobs' note values too; prints "FITSCAN BAD|SHORT page K label = value w room" and returns the
  * values that do not fit in the large face (0 = the rule holds). It walks the settings and restores them; the host
  * run it is in is for this alone (the side effects of the setup slots' turns are not undone). */
-static uint32_t cd_check(uint32_t pg, uint32_t vp, uint32_t k, uint32_t s)
+FR_COLD static uint32_t cd_check(uint32_t pg, uint32_t vp, uint32_t k, uint32_t s)
 {
     char v[16], kk[3] = {'K', (char)(UI_K1 + k), 0};
     const char *lab = slot_label_v(pg, vp, k);
@@ -1239,7 +1246,7 @@ static uint32_t cd_check(uint32_t pg, uint32_t vp, uint32_t k, uint32_t s)
                pg == PG_VOICE ? (vp == 0 ? " 1" : vp == 1 ? " 2" : " 3") : "", k + 1u, lab, v, aa_text_w(&AF_L, v), room);
     return !fit || !aa_covers(&AF_L, v);
 }
-static uint32_t ui_fit_scan(void)
+FR_COLD static uint32_t ui_fit_scan(void)
 {
     static settings_t keep;
     static const uint8_t SYNC[] = {P_TW_SYNC, P_CP_SYNC, P_PH_SYNC, P_DL_SYNC, P_LFO_SYNC, P_MOT_SYNC};
@@ -1287,19 +1294,19 @@ static uint32_t ui_fit_scan(void)
 #define SQ_STRIP_Y 104
 #define SQ_CARD_Y 171
 #define SQ_CARD_H 38                                    /* 171 .. 208: the footer starts at 210 */
-static int sq_browsing(void) { return (sq_cur >= 0 || (seq_rec && !seq_play)) && (!seq_play || fm1_ms - sq_cur_t < 4000u); }
-static uint32_t sq_view_tick(void)                      /* the place looked at: the cursor's step, else the loop's */
+FR_COLD static int sq_browsing(void) { return (sq_cur >= 0 || (seq_rec && !seq_play)) && (!seq_play || fm1_ms - sq_cur_t < 4000u); }
+FR_COLD static uint32_t sq_view_tick(void)                      /* the place looked at: the cursor's step, else the loop's */
 {
     if (sq_browsing()) return (uint32_t)(sq_cur >= 0 && sq_cur < (int32_t)(SQ_BARS * 16u) ? sq_cur : 0) * 24u;
     return seq_play ? sq_tick() : 0u;
 }
-static void sq_browse(int32_t d)                        /* d in 16ths (a bar = 16), around the loop */
+FR_COLD static void sq_browse(int32_t d)                        /* d in 16ths (a bar = 16), around the loop */
 {
     int32_t n = (int32_t)SQ_BARS * 16, c = sq_browsing() ? sq_cur : (int32_t)(sq_view_tick() / 24u);
     sq_cur = ((c + d) % n + n) % n;
     sq_cur_t = fm1_ms;
 }
-static uint32_t sq_delete_step(void)                    /* the notes starting in the cursor's step go */
+FR_COLD static uint32_t sq_delete_step(void)                    /* the notes starting in the cursor's step go */
 {
     uint32_t i, j, t0 = (uint32_t)(sq_cur < 0 ? 0 : sq_cur) * 24u, got = 0, L = sq_len();
     for (i = j = 0; i < sq_n; i++) {
@@ -1310,7 +1317,7 @@ static uint32_t sq_delete_step(void)                    /* the notes starting in
     if (got) { sq_all_off(); sq_changed(); }
     return got;
 }
-static void seq_pos_text(char *t)                       /* BAR 2/4 . 3 (bar / bars . beat); on a step: . 3.2 (16th) */
+FR_COLD static void seq_pos_text(char *t)                       /* BAR 2/4 . 3 (bar / bars . beat); on a step: . 3.2 (16th) */
 {
     uint32_t p = sq_view_tick(), n = 0;
     p_strcpy(t, "BAR ", 4); n = 4;
@@ -1321,7 +1328,7 @@ static void seq_pos_text(char *t)                       /* BAR 2/4 . 3 (bar / ba
     if (sq_browsing()) { t[n++] = '.'; p_fmt_int(t + n, (int32_t)(p / 24u % 4u + 1u)); }
 }
 /* the notes struck together at tick g (their quantized start) and a name for them: a chord name, or C4 for one note */
-static uint32_t sq_group(uint32_t g, uint8_t *notes)
+FR_COLD static uint32_t sq_group(uint32_t g, uint8_t *notes)
 {
     uint32_t i, j, c = 0, L = sq_len();
     for (i = 0; i < sq_n && c < CH_MAX; i++) {
@@ -1331,7 +1338,7 @@ static uint32_t sq_group(uint32_t g, uint8_t *notes)
     }
     return c;
 }
-static void sq_group_name(uint32_t g, char *v)
+FR_COLD static void sq_group_name(uint32_t g, char *v)
 {
     uint8_t notes[CH_MAX];
     uint32_t c = sq_group(g, notes);
@@ -1339,7 +1346,7 @@ static void sq_group_name(uint32_t g, char *v)
     else chord_name(notes, c, v);
 }
 /* the last start at or before tick p (around the loop), and the first after it; 0xFFFF: none */
-static void sq_now_next(uint32_t p, uint32_t *now, uint32_t *next)
+FR_COLD static void sq_now_next(uint32_t p, uint32_t *now, uint32_t *next)
 {
     uint32_t i, L = sq_len(), a = 0xFFFFu, b = 0xFFFFu, hi = 0xFFFFu, lo = 0xFFFFu;
     for (i = 0; i < sq_n; i++) {
@@ -1355,13 +1362,13 @@ static void sq_now_next(uint32_t p, uint32_t *now, uint32_t *next)
     *next = b != 0xFFFFu ? b : lo;                      /* nothing after: the loop's first */
 }
 static uint32_t sq_shown_now = 0xFFFFFFFFu, sq_shown_cell = 0xFFFFFFFFu, sq_shown_beat = 0xFFFFFFFFu, sq_shown_ph;
-static void sq_shown_beat_set(void) { sq_shown_beat = sq_view_tick() / SQ_PPQ; }
+FR_COLD static void sq_shown_beat_set(void) { sq_shown_beat = sq_view_tick() / SQ_PPQ; }
 /* centred text in the two faces (the SEQUENCER, the footer, the splash): small = AF_S, big = AF_L; yc: the row its
  * capitals are centred on */
-static void ft_c(int32_t yc, const char *s, uint16_t c) { aa_text_c(0, S_TOP(yc), 240, &AF_S, s, c, FC_BG); }
-static void ft_big(int32_t yc, const char *s, uint16_t c) { aa_text_c(0, L_TOP(yc), 240, &AF_L, s, c, FC_BG); }
+FR_COLD static void ft_c(int32_t yc, const char *s, uint16_t c) { aa_text_c(0, S_TOP(yc), 240, &AF_S, s, c, FC_BG); }
+FR_COLD static void ft_big(int32_t yc, const char *s, uint16_t c) { aa_text_c(0, L_TOP(yc), 240, &AF_L, s, c, FC_BG); }
 
-static void draw_now(void)                              /* NOW (big) and NEXT */
+FR_COLD static void draw_now(void)                              /* NOW (big) and NEXT */
 {
     char v[20], t[40];
     uint32_t now, next, n = 0;
@@ -1390,7 +1397,7 @@ static void draw_now(void)                              /* NOW (big) and NEXT */
     }
     cv_blit(0, SQ_NOW_Y);
 }
-static void draw_strip(void)                            /* the bar playing: 16 cells (16ths) in two rows of 8 */
+FR_COLD static void draw_strip(void)                            /* the bar playing: 16 cells (16ths) in two rows of 8 */
 {
     uint32_t p = sq_view_tick(), b0 = p / (4u * SQ_PPQ) * 4u * SQ_PPQ, i, L = sq_len();
     uint32_t cur = seq_play && sq_tick() >= b0 && sq_tick() < b0 + 4u * SQ_PPQ ? (sq_tick() - b0) / 24u : 99u;   /* the playhead */
@@ -1426,7 +1433,7 @@ static void draw_strip(void)                            /* the bar playing: 16 c
     }
     cv_blit(0, SQ_STRIP_Y);
 }
-static void draw_card_small(uint32_t k)                 /* the SEQUENCER's four: the name, the value, a hairline */
+FR_COLD static void draw_card_small(uint32_t k)                 /* the SEQUENCER's four: the name, the value, a hairline */
 {
     uint32_t s = PAGE_S[PG_SEQ][k];
     int hot = ui_hot_card == k && ui_hot_t && fm1_ms - ui_hot_t < HOT_MS;
@@ -1444,7 +1451,7 @@ static void draw_card_small(uint32_t k)                 /* the SEQUENCER's four:
 /* the footer (210..239): the save prompt, a message for MSG_MS (the TYPE flash large), the COMPRESSOR's meter, the
  * SEQUENCER's state, the ARPEGGIO's HOLD and the SETUP's readouts on two lines, else the page's hint */
 static void draw_meter(void);
-static void draw_footer(void)
+FR_COLD static void draw_footer(void)
 {
     cv_begin(240, FT_H, FC_BG);
     if (pr_save_mode) {                                 /* the save mode owns the footer until it ends */
@@ -1491,7 +1498,7 @@ static void draw_footer(void)
 /* the compressor's gain reduction, as a hardware meter reads: a full-width bar filled from the right (1 .. 30 dB on the
  * scale GR_DB10, its 15 steps evenly apart), a peak that holds for a second, the reading in dB; the footer's canvas,
  * drawn again only when it changes (~30 Hz) */
-static int32_t gr_px(int32_t db10)                      /* a reduction's place on the bar, from its right end */
+FR_COLD static int32_t gr_px(int32_t db10)                      /* a reduction's place on the bar, from its right end */
 {
     uint32_t i;
     int32_t lo = 0;
@@ -1501,7 +1508,7 @@ static int32_t gr_px(int32_t db10)                      /* a reduction's place o
     }
     return GR_W;
 }
-static void draw_meter(void)
+FR_COLD static void draw_meter(void)
 {
     char t[12];
     uint32_t n = 0;
@@ -1519,7 +1526,7 @@ static void draw_meter(void)
     cv_blit(0, FT_Y);
 }
 /* ~30 Hz on the COMP page: follow the ISR's reduction (it rises at once, falls at 15 dB/s, like a meter's needle) */
-static void meter_poll(void)
+FR_COLD static void meter_poll(void)
 {
     static uint32_t t, peak_t;
     int32_t g;
@@ -1539,7 +1546,7 @@ static void meter_poll(void)
 #define UI_SPLASH_MS 1600u
 static uint32_t ui_splash_t;
 static uint8_t ui_splash_on;
-static void ui_splash(void)
+FR_COLD static void ui_splash(void)
 {
     static char v[20];
     uint32_t i;
@@ -1561,7 +1568,7 @@ static void ui_splash(void)
     ui_splash_t = fm1_ms;
     ui_splash_on = 1;
 }
-static void ui_draw_page_change(void) { ui_dirty |= (1u << E_N) - 1u; }
+FR_COLD static void ui_draw_page_change(void) { ui_dirty |= (1u << E_N) - 1u; }
 
 /* one element per pass, in priority order: footer, header, title, cards */
 /* developer (MIDI CC 3 >= 64, 0.9.3): a colour test pattern for calibrating the screenshots and the palettes against
@@ -1569,7 +1576,7 @@ static void ui_draw_page_change(void) { ui_dirty |= (1u << E_N) - 1u; }
  * 0 32 64 128 192 255 and under it (15 px each) a dark ramp 0 4 8 12 16 20, then pure red, green, blue, yellow,
  * black, white. CC 3 < 64 draws the page again. */
 static uint8_t ui_testpat, ui_testpat_shown;
-static void ui_draw_testpat(void)
+FR_COLD static void ui_draw_testpat(void)
 {
     static const uint8_t G[6] = {0, 32, 64, 128, 192, 255};
     static const uint16_t P[6] = {RGB(255, 0, 0), RGB(0, 255, 0), RGB(0, 0, 255), RGB(255, 255, 0), C_BLACK, C_WHITE};
@@ -1583,7 +1590,7 @@ static void ui_draw_testpat(void)
     for (i = 0; i < 6u; i++) lcd_fill(40 * i, 210, 40, 30, P[i]);
 }
 
-static void ui_draw(void)
+FR_COLD static void ui_draw(void)
 {
     uint32_t e, d;
     static uint8_t cleared, eng_shown, look_shown, cards_shown = UI_CARDS_DEF;
@@ -1647,7 +1654,7 @@ static void ui_draw(void)
 }
 
 /* ---- input */
-static void ui_goto_v(uint32_t pg, uint32_t vp)         /* a page (VOICE: its number vp) */
+FR_COLD static void ui_goto_v(uint32_t pg, uint32_t vp)         /* a page (VOICE: its number vp) */
 {
     if (pg >= PG_N || pg == PG_RETIRED4) pg = PG_PERF;
     if ((pg == PG_SEQ) != (ui_page == PG_SEQ)) lcd_fill(0, TI_Y, 240, FT_Y - TI_Y, C_BLACK);   /* its own layout: no leftovers */
@@ -1657,10 +1664,10 @@ static void ui_goto_v(uint32_t pg, uint32_t vp)         /* a page (VOICE: its nu
     ui_hot_card = 0xFF;
     ui_draw_page_change();
 }
-static void ui_goto(uint32_t pg) { ui_goto_v(pg, 0); }
+FR_COLD static void ui_goto(uint32_t pg) { ui_goto_v(pg, 0); }
 
 /* LFO / SEQ / SEL / ENV: go to the effect's page; on it, the effect on <-> off (back to the last one used) */
-static void ui_fx_button(uint32_t pg, uint32_t k)
+FR_COLD static void ui_fx_button(uint32_t pg, uint32_t k)
 {
     static const uint8_t SW[5] = {P_TW_SW, P_CP_SW, P_DL_SW, P_PH_SW, P_CMP_SW};
     static const char *const NAME[5] = {"TREM/WAH", "CHORUS", "DELAY", "PHASER", "COMP"};
@@ -1677,7 +1684,29 @@ static void ui_fx_button(uint32_t pg, uint32_t k)
     ui_mark(E_CARDS);
 }
 
-static void ui_input(uint32_t b, uint32_t rel)
+/* knob acceleration (issue #25): a fast turn moves an amount more per detent, so 0 .. 127 takes about one turn; a
+ * slow turn keeps single steps. The time per detent since that knob's last one: under 40 ms x2, 20 ms x4, 10 ms x8; a
+ * turn's first detents (after 150 ms at rest) are single steps, however many arrive at once. Only amounts with 32
+ * steps or more, BPM and TUNE; choices, note values and short ranges keep one step a detent */
+static uint32_t ui_acc_t[4];
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+static int ui_accel_on_ = -1;                            /* the host's scripts turn exact detents: off unless
+                                                         * FRODHES_KNOB_ACCEL is set (test_knob_accel.py) */
+#define ui_accel_on (ui_accel_on_ >= 0 ? ui_accel_on_ : (ui_accel_on_ = getenv("FRODHES_KNOB_ACCEL") != NULL))
+#else
+#define ui_accel_on 1
+#endif
+FR_COLD static int32_t ui_accel(uint32_t k, uint32_t s, int32_t d)
+{
+    uint32_t a = (uint32_t)(d < 0 ? -d : d), gap = fm1_ms - ui_acc_t[k], dt = gap / a;
+    ui_acc_t[k] = fm1_ms;
+    if (!ui_accel_on || gap > 150u || (s < P_COUNT ? PARAMS[s].fmt == F_ENUM || PARAMS[s].fmt == F_DIV || PARAMS[s].hi < 32u || slot_synced(s)
+                                   : s != S_BPM && s != S_TUNE))
+        return d;
+    return d * (dt < 10u ? 8 : dt < 20u ? 4 : dt < 40u ? 2 : 1);
+}
+
+FR_COLD static void ui_input(uint32_t b, uint32_t rel)
 {
     int32_t d[FM1_NENC];                                /* (the SMK-37: 8; its K1 = ENC_MASTER is platform.c's MASTER,
                                                          * never read here: it would steal MASTER's detents) */
@@ -1771,7 +1800,7 @@ static void ui_input(uint32_t b, uint32_t rel)
     for (k = 0; k < 4u; k++) {
         uint32_t s = slot_at(ui_page, k);
         if (!d[ENC_KNOB1 + k] || s == S_NONE) continue;
-        slot_turn(s, d[ENC_KNOB1 + k]);
+        slot_turn(s, ui_accel(k, s, d[ENC_KNOB1 + k]));
         if ((ui_page == PG_PERF || (ui_page == PG_PIANO && s == P_DRIVE)) && s < P_COUNT) perf_wake(s);
         if (ui_msg_t) { ui_msg_t = 0; ui_mark(E_FOOTER); }   /* an old message would contradict the card */
         if (ui_hot_card != k && ui_hot_card < 4u) ui_mark(E_CARD0 + ui_hot_card);
@@ -1786,7 +1815,7 @@ static void ui_input(uint32_t b, uint32_t rel)
 
 /* ---- LEDs, once per pass: the page's shortcut button is lit; LFO / SEL / ENV: that effect is on (SEL while it is
  * HOLD: HOLD), ARP: the arpeggiator, EDIT: chord mode, SEQ: the sequencer playing (blinking: recording) */
-static void ui_leds(uint32_t lit, uint32_t beat_on)
+FR_COLD static void ui_leds(uint32_t lit, uint32_t beat_on)
 {
     static struct { uint32_t lit, glow, btn; uint8_t done; } was UI_OWN_SECTION(".bss.ui_leds");
     uint32_t k, btn = 0, glow = 0, all = 0x7FFFFFFu;

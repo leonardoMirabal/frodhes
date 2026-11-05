@@ -139,7 +139,7 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 #include "store.h"
 #include "fm1_flash.h"
 static uint8_t flash_ok;
-static int st_read(uint32_t off, void *dst, uint32_t n)
+FR_COLD static int st_read(uint32_t off, void *dst, uint32_t n)
 {
     uint8_t *d = dst;
     while (n) {
@@ -166,28 +166,28 @@ static uint32_t fr_ota_area = FR_OTA_V16;      /* (frodhes_store.h OTA_AREA: fr_
 #endif
 #include "ota.c"
 static void recovery_poll(void);
-static uint32_t ota_now_ms(void) { return fm1_ms; }
-static void ota_idle(void)
+FR_COLD static uint32_t ota_now_ms(void) { return fm1_ms; }
+FR_COLD static void ota_idle(void)
 {
     fm1_wdt_feed();
     if (recovery_active) recovery_poll();
 }
-static int ota_in_area(uint32_t off, uint32_t n) { return FL_IN(off, n, OTA_AREA, OTA_AREA + OTA_AREA_LEN); }
-static int ota_erase(uint32_t off)
+FR_COLD static int ota_in_area(uint32_t off, uint32_t n) { return FL_IN(off, n, OTA_AREA, OTA_AREA + OTA_AREA_LEN); }
+FR_COLD static int ota_erase(uint32_t off)
 {
     uint32_t took;
     if (!ota_in_area(off, 0x1000u) || (off & 0xFFFu))
         return -8;
     return fl_erase4k(off, &took);
 }
-static int ota_prog(uint32_t off, const void *p, uint32_t n)
+FR_COLD static int ota_prog(uint32_t off, const void *p, uint32_t n)
 {
     if (!ota_in_area(off, n))
         return -8;
     return fl_write(off, p, n);
 }
-static int ota_fread(uint32_t off, void *p, uint32_t n) { return st_read(off, p, n); }
-static void ota_show(uint32_t step, int32_t code)
+FR_COLD static int ota_fread(uint32_t off, void *p, uint32_t n) { return st_read(off, p, n); }
+FR_COLD static void ota_show(uint32_t step, int32_t code)
 {
 #if BOARD_SMK37   /* step 5 stays on screen while the loader writes the flash: say so */
     static const char *const STEP[] = {"", "PACKAGE", "CHECK HEAD", "LOADER", "CONFIRM", "UPDATING..."};
@@ -202,7 +202,7 @@ static void ota_show(uint32_t step, int32_t code)
     else
         draw_text_box(0, 124, 240, &FONT_S, code == 1 ? "DRY RUN OK" : "FAILED", C_WHITE, 1);
 }
-static void ota_commit(const uint8_t *parm)
+FR_COLD static void ota_commit(const uint8_t *parm)
 {
     bootguard_clear(&bootguard);
     usb_detach();
@@ -230,7 +230,7 @@ static int area_load(uint32_t at, uint32_t max, uint32_t magic, void *p, uint32_
         return -1;
     return crc32(p, n) == h[2] ? 0 : -1;
 }
-static int area_save(uint32_t at, uint32_t sectors, uint32_t magic, const void *p, uint32_t n)   /* p in RAM */
+FR_COLD static int area_save(uint32_t at, uint32_t sectors, uint32_t magic, const void *p, uint32_t n)   /* p in RAM */
 {
     uint32_t h[3] = {magic, n, 0}, k, took;
     int rc;
@@ -257,20 +257,20 @@ static int sector_load(uint32_t at, void *p, uint32_t n)
 }
 #include "set_store.c"                          /* (Frodhes: the settings in two sectors, A / B: settings_load,
                                                  * settings_save_start / _poll, settings_save) */
-static int blob_load(uint32_t i, void *p, uint32_t n) { return i < NBLOB ? sector_load(BLOBS_AT + i * 0x1000u, p, n) : -1; }
-static int blob_save(uint32_t i, const void *p, uint32_t n) { return i < NBLOB ? area_save(BLOBS_AT + i * 0x1000u, 1u, STORE_MAGIC, p, n) : -1; }
+FR_COLD static int blob_load(uint32_t i, void *p, uint32_t n) { return i < NBLOB ? sector_load(BLOBS_AT + i * 0x1000u, p, n) : -1; }
+FR_COLD static int blob_save(uint32_t i, const void *p, uint32_t n) { return i < NBLOB ? area_save(BLOBS_AT + i * 0x1000u, 1u, STORE_MAGIC, p, n) : -1; }
 /* slot i: SLOT_SECT sectors, up to SLOT_MAX bytes. slot_load reads straight into p (no buffer that big): on -1 p holds
  * rubbish, start afresh */
 #define SLOT_MAGIC 0x544F4C53u                  /* "SLOT" */
-static int slot_load(uint32_t i, void *p, uint32_t n) { return i < NSLOT ? area_load(SLOTS_AT + i * SLOT_SECT * 0x1000u, SLOT_MAX, SLOT_MAGIC ^ STORE_MAGIC, p, n) : -1; }
-static int slot_save(uint32_t i, const void *p, uint32_t n) { return i < NSLOT ? area_save(SLOTS_AT + i * SLOT_SECT * 0x1000u, SLOT_SECT, SLOT_MAGIC ^ STORE_MAGIC, p, n) : -1; }
+FR_COLD static int slot_load(uint32_t i, void *p, uint32_t n) { return i < NSLOT ? area_load(SLOTS_AT + i * SLOT_SECT * 0x1000u, SLOT_MAX, SLOT_MAGIC ^ STORE_MAGIC, p, n) : -1; }
+FR_COLD static int slot_save(uint32_t i, const void *p, uint32_t n) { return i < NSLOT ? area_save(SLOTS_AT + i * SLOT_SECT * 0x1000u, SLOT_SECT, SLOT_MAGIC ^ STORE_MAGIC, p, n) : -1; }
 #if BOARD_SMK37
 static uint8_t smk_store_cleared, smk_trim_ok;   /* (the panel check shows them) */
 static uint32_t smk_jedec;
 #ifndef OLD_OWNER_AT                            /* (Frodhes 0.9.6: no owner clear, nothing of the stock VM written) */
 /* the store's owner (the kit's convention, store.h): our tag, load as ever; anything else (the stock settings,
  * another port's data) is cleared once and the tag written, before the audio starts */
-static void smk_owner_check(void)
+FR_COLD static void smk_owner_check(void)
 {
     uint8_t tag[16], want[16];
     uint32_t i, ours = 1, took;
@@ -306,7 +306,7 @@ static int smk_old_ours(void)                   /* the data before 0.9.6 in the 
 }
 #endif
 /* the factory key / pad velocity curves (USRTRIM 0xC1000, read only; smk_input.h checks them, else its defaults) */
-static void smk_trim_read(void)
+FR_COLD static void smk_trim_read(void)
 {
     static uint8_t rec[0x22Cu];
     if (flash_ok && !st_read(SMK_TRIM_FLASH, rec, sizeof rec))
@@ -327,7 +327,7 @@ static int midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)   /* 1 (USB) or 2 (TR
     *d2 = (uint8_t)(pk >> 24);
     return pk & 0xF0u ? 2 : 1;
 }
-static void midi_send(uint32_t st, uint32_t d1, uint32_t d2)   /* USB out, from the main loop only; F8 FA FB FC too */
+FR_COLD static void midi_send(uint32_t st, uint32_t d1, uint32_t d2)   /* USB out, from the main loop only; F8 FA FB FC too */
 {
     midi_out_event((st >> 4) | st << 8 | (d1 & 0x7Fu) << 16 | (d2 & 0x7Fu) << 24);
 }
@@ -567,7 +567,7 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
 extern void isr_alnk0(void);
 
 /* ---- the main loop's duties: watchdog, USB, the installer's update request, the MASTER knob */
-static void platform_poll(void)
+FR_COLD static void platform_poll(void)
 {
     static int32_t knob_avg = 512 * 16;
     int32_t a;
@@ -604,7 +604,7 @@ static void platform_poll(void)
     }
 }
 
-static void fm1_fault(const fm1_crash_t *c)
+FR_COLD static void fm1_fault(const fm1_crash_t *c)
 {
     char b[12];
     uint32_t i, t0, v[3] = {c->vec, c->pc, c->rets};

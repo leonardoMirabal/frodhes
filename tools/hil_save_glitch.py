@@ -371,10 +371,12 @@ def self_test(eng="rhodes", log=print):
     r = judge(P, 48000, t_change, t_chord, audio=clean)
     say(f"clean render + clean replies: {r['verdict']}", r["verdict"] == ("PASS" if not clean else "FAIL"))
     fs = C.FS_HOST
-    # inside the save's ~85-125 ms, outside the attack's 20 ms guard. The jack: 3 ms at +60 / +80 ms, each alone
+    # inside the save's ~85-125 ms, outside the attack's 20 ms guard. The jack: 3 ms at +70 / +80 ms, each alone
     # (found by track there; the jack's detectors are partly blind in this window: the attack's guards, and the jack
-    # ~-40 dBFS under the full-depth tremolo, under det_zero's 200 LSB around; USB's exact detectors are not)
-    for name, marks, ms in (("USB dropout 2 ms", (0.06, 0.13), 2), ("jack dropout 3 ms", (0.06,), 3),
+    # ~-40 dBFS under the full-depth tremolo, under det_zero's 200 LSB around; USB's exact detectors are not). +70 ms,
+    # not +60 (c1-int, 0.9.8's new drives moved the heavy sound: the jack's peak there fell to 195, under the tremolo's
+    # trough): where the jack is loudest in the window (peak 245), so the gap is clearly audible
+    for name, marks, ms in (("USB dropout 2 ms", (0.06, 0.13), 2), ("jack dropout 3 ms", (0.07,), 3),
                             ("jack dropout 3 ms", (0.08,), 3), ("USB underrun hold 12 frames", (0.06, 0.13), 0)):
         u2, j2 = u.copy(), j.copy()
         for m in marks:

@@ -1,0 +1,24 @@
+{
+  "id": "frodhes",
+  "name": "Frodhes",
+  "abbrev": "FRDH",
+  "version": "0.0.0-dev",
+  "description": "Physical-model electric piano, vibraphone and marimba",
+  "author": "Frodhes",
+  "dsp": "dsp.so",
+  "api_version": 2,
+  "component_type": "sound_generator",
+  "capabilities": {
+    "audio_out": true,
+    "midi_in": true,
+    "chainable": true,
+    "requires_continuous_processing": true,
+    "component_type": "sound_generator",
+    "claims_ccs": [
+      63,
+      62
+    ],
+    "touch_observe": true,
+    "canvas_script": "canvas.js"
+  }
+}

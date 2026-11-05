@@ -11,6 +11,7 @@
  * the keys are let go until new notes come (a chord started after every key was let go replaces the pattern; keys
  * added while others are held join it). The sustain (REC / CC 64) stays the piano's damper pedal only.
  * Settings (set.arp[]) belong to the FM-1, not to a preset. Nothing here runs in the audio ISR. */
+#include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 
 #define MIDI_OUT_CH (set.midi_ch ? set.midi_ch - 1u : 0u)   /* the MIDI page's CHANNEL (ALL: sent on 1) */
 static void eng_q(uint32_t type, uint32_t n, uint32_t v);   /* notes.c: to the engine, in order */
@@ -30,16 +31,16 @@ static uint8_t arp_note[ARP_MAX], arp_vel[ARP_MAX], arp_down[ARP_MAX], arp_n;   
 static uint32_t arp_step_no = 0xFFFFFFFFu, arp_off_t, arp_seed = 0x1234567u;
 static uint8_t arp_playing = 255, arp_pos, arp_dir;
 
-static void arp_defaults(void) { ARP_MODE = ARP_OFF; ARP_RATE = 3; ARP_OCT = 0; ARP_GATE = 60; ARP_LAST = ARP_UP; ARP_HOLD = 0; }
-static void arp_sanitize(void)
+FR_COLD static void arp_defaults(void) { ARP_MODE = ARP_OFF; ARP_RATE = 3; ARP_OCT = 0; ARP_GATE = 60; ARP_LAST = ARP_UP; ARP_HOLD = 0; }
+FR_COLD static void arp_sanitize(void)
 {
     if (ARP_MODE >= ARP_NMODE || ARP_RATE > 5u || ARP_OCT > 3u || ARP_GATE < 10u || ARP_GATE > 100u ||
         ARP_LAST == ARP_OFF || ARP_LAST >= ARP_NMODE || ARP_HOLD > 1u)
         arp_defaults();
 }
-static int arp_on(void) { return ARP_MODE != ARP_OFF; }
+FR_COLD static int arp_on(void) { return ARP_MODE != ARP_OFF; }
 
-static void arp_stop_note(void)
+FR_COLD static void arp_stop_note(void)
 {
     if (arp_playing < 128u) { eng_q(EV_NOTE_OFF, arp_playing, 0); midi_send(0x80 | MIDI_OUT_CH, arp_playing, 0); }
     arp_playing = 255;
@@ -47,7 +48,7 @@ static void arp_stop_note(void)
 
 static void arp_remove(uint32_t i);
 /* a note in / out: the keys (frodhes.c, after the scale) and USB-MIDI */
-static void arp_in_on(uint32_t n, uint32_t vel)
+FR_COLD static void arp_in_on(uint32_t n, uint32_t vel)
 {
     uint32_t i;
     int any = 0;
@@ -63,23 +64,23 @@ static void arp_in_on(uint32_t n, uint32_t vel)
     }
     arp_note[arp_n] = (uint8_t)n; arp_vel[arp_n] = (uint8_t)vel; arp_down[arp_n] = 1; arp_n++;
 }
-static void arp_remove(uint32_t i)
+FR_COLD static void arp_remove(uint32_t i)
 {
     for (; i + 1u < arp_n; i++) { arp_note[i] = arp_note[i + 1u]; arp_vel[i] = arp_vel[i + 1u]; arp_down[i] = arp_down[i + 1u]; }
     arp_n--;
 }
 static void arp_stop_note(void);
-static void arp_in_off(uint32_t n)                 /* HOLD: the note stays in the pattern; else it leaves */
+FR_COLD static void arp_in_off(uint32_t n)                 /* HOLD: the note stays in the pattern; else it leaves */
 {
     uint32_t i;
     for (i = 0; i < arp_n; i++)
         if (arp_note[i] == n) { if (ARP_HOLD) arp_down[i] = 0; else arp_remove(i); break; }
     if (!arp_n) arp_stop_note();
 }
-static void arp_clear(void) { arp_n = 0; arp_stop_note(); }
+FR_COLD static void arp_clear(void) { arp_n = 0; arp_stop_note(); }
 
 /* the k-th note of the pattern (before octaves), the notes sorted low to high or as played */
-static uint32_t arp_pick(uint32_t k, int sorted)
+FR_COLD static uint32_t arp_pick(uint32_t k, int sorted)
 {
     uint8_t s[ARP_MAX];
     uint32_t i, j;
@@ -90,7 +91,7 @@ static uint32_t arp_pick(uint32_t k, int sorted)
     return s[k];
 }
 /* the next note: a walk over len = notes x octaves positions */
-static uint32_t arp_next(void)
+FR_COLD static uint32_t arp_next(void)
 {
     uint32_t len = arp_n * (ARP_OCT + 1u), k, base;
     if (arp_pos >= len) arp_pos = 0;
@@ -116,7 +117,7 @@ static uint32_t arp_next(void)
 
 /* every main-loop pass: a step starts on the grid; the gate ends the note */
 static uint8_t arp_clk;                                                /* 1: the last step was on the clock */
-static void arp_poll(void)
+FR_COLD static void arp_poll(void)
 {
     uint32_t unit_ms10, step, now = fm1_ms;
     if (!arp_on() || !arp_n) { arp_clk = (uint8_t)clk_live(); if (arp_playing < 128u && !arp_on()) arp_stop_note(); return; }
@@ -142,7 +143,7 @@ static void arp_poll(void)
 }
 
 /* PLAY on the ARPEGGIO page: HOLD on / off (off: the notes no longer held leave the pattern) */
-static void arp_hold_toggle(void)
+FR_COLD static void arp_hold_toggle(void)
 {
     uint32_t i = 0;
     ARP_HOLD = (uint8_t)!ARP_HOLD;
@@ -153,7 +154,7 @@ static void arp_hold_toggle(void)
 }
 
 /* the ARP button on its page: on with the last mode / off */
-static void arp_toggle(void)
+FR_COLD static void arp_toggle(void)
 {
     if (arp_on()) { ARP_LAST = ARP_MODE; ARP_MODE = ARP_OFF; arp_clear(); }
     else ARP_MODE = ARP_LAST;

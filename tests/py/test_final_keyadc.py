@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""tools/final/run_final_rev.sh's key-ADC gate follow-up (TEST-PLAN 3b): the gate's run-to-run spread (~+-100 us) is
-wider than its limits (+10 idle / +60 STRESS), so an engine that FAILs on 3 runs gets 5 (keyadc_<engine>5) and those
-decide its verdict. Before 0.9.7 the Rhodes only; now VIBES and MARIMBA the same way (summarize_rev.py)."""
+"""tools/final/run_final_rev.sh's key-ADC gate: until 0.9.8 an engine that FAILed on 3 runs (the worst over the runs
+read +-100 us run to run, wider than the +10 idle / +60 STRESS limits) got 5 more (keyadc_<engine>5, TEST-PLAN 3b);
+since 0.9.8 hil_cpu's gate takes the median of 5 runs itself and its verdict is the step's, one try."""
 import os
 import subprocess
 import sys
@@ -43,36 +43,21 @@ def summary(tmp_path, gate_rows, fives):
     return res, md
 
 
-def test_every_engine_gets_its_five_runs_in_the_script():
+def test_the_gate_runs_once_with_five_runs():
+    """0.9.8: the gate itself takes the median of 5 runs (hil_cpu.py keyadc_gate), so no engine gets a second try"""
     s = open(SH, encoding="utf-8").read()
-    assert "for eng in rhodes vibes marimba; do" in s
-    assert 'grep -q -E "^  $eng .*FAIL" "$OUT/keyadc_gate.log"' in s
-    assert 'step "keyadc_${eng}5" keyadc "$PY" tools/hil_cpu.py --keyadc gate --worst --runs 5 --engines "$eng"' in s
-    assert "keyadc_*5) echo 600 ;;" in s
+    assert 'step keyadc_gate keyadc "$PY" tools/hil_cpu.py --keyadc gate --worst --runs 5' in s
+    assert "keyadc_${eng}5" not in s and "--runs 3" not in s.split("keyadc_gate keyadc", 1)[1].split("\n", 1)[0]
 
 
-def test_the_rhodes_as_before(tmp_path):
-    r, md = summary(tmp_path, [line("rhodes", 40, 30), line("vibes", 0, 20), line("marimba", 0, 20)], {"rhodes": "PASS"})
-    assert r == {"keyadc_gate": "PASS", "keyadc_rhodes5": "INFO"}
-    assert any("Rhodes FAILed on 3 runs, PASSed on 5 (keyadc_rhodes5; TEST-PLAN 3b)" in ln for ln in md)
+def test_a_failed_gate_stays_failed(tmp_path):
+    r, _ = summary(tmp_path, [line("rhodes", 40, 30), line("vibes", 0, 20), line("marimba", 0, 20)], {})
+    assert r == {"keyadc_gate": "FAIL"}
 
 
-def test_vibes_and_marimba_the_same_way(tmp_path):
-    r, md = summary(tmp_path, [line("rhodes", 0, 20), line("vibes", 30, 20), line("marimba", 0, 90)],
-                    {"vibes": "PASS", "marimba": "PASS"})
-    assert r == {"keyadc_gate": "PASS", "keyadc_vibes5": "INFO", "keyadc_marimba5": "INFO"}
-    assert any("MARIMBA, VIBES FAILed on 3 runs, PASSed on 5 (keyadc_marimba5, keyadc_vibes5" in ln for ln in md)
-
-
-def test_a_failed_five_keeps_the_gate_failed(tmp_path):
-    r, _ = summary(tmp_path, [line("rhodes", 0, 20), line("vibes", 30, 20), line("marimba", 0, 90)],
-                   {"vibes": "PASS", "marimba": "FAIL"})
-    assert r["keyadc_gate"] == "FAIL" and r["keyadc_marimba5"] == "FAIL" and r["keyadc_vibes5"] == "INFO"
-
-
-def test_an_engine_without_its_five_keeps_the_gate_failed(tmp_path):
-    r, _ = summary(tmp_path, [line("rhodes", 40, 20), line("vibes", 30, 20)], {"rhodes": "PASS"})
-    assert r["keyadc_gate"] == "FAIL"
+def test_a_passed_gate_passes(tmp_path):
+    r, _ = summary(tmp_path, [line("rhodes", 5, 30), line("vibes", 0, 20), line("marimba", 0, 20)], {})
+    assert r == {"keyadc_gate": "PASS"}
 
 
 def test_an_only_run_skips_the_rows_its_left_out_step_covers(tmp_path):

@@ -6,6 +6,7 @@
  * ISR reads). Time base: fm1_ms (32-bit, wraps after 49 days; compared by difference).
  * Scales: OFF / SNAP (the nearest note of the scale) / DEG (white keys walk the scale degrees from C4 = degree 0,
  * black keys silent), Felucca's masks (seq.c SCALE_MASK, GPL-3.0). */
+#include "fr_cold.h"   /* FR_COLD (the cold code: minsize on the firmware) */
 
 static const uint16_t SYNC_UNITS[15] = {0, 12, 16, 24, 32, 36, 48, 64, 72, 96, 144, 192, 384, 768, 1536};
 static uint32_t tap_t[4], tap_n, beat_t0, beat_ms = 500;
@@ -14,14 +15,14 @@ static uint32_t beat_smp = 22050;                                            /* 
 static void ui_mark(uint32_t e);                                              /* ui.c */
 static int eng_idle(void);                                                    /* notes.c */
 
-static uint32_t beat_samples(void) { return beat_smp; }   /* 26460000 / bpm10 (fs * 60 * 10 / bpm10), or the clock's */
+FR_COLD static uint32_t beat_samples(void) { return beat_smp; }   /* 26460000 / bpm10 (fs * 60 * 10 / bpm10), or the clock's */
 
 /* the synced LFOs (tremolo, chorus, phaser, the filter's LFO, the vibraphone's motor): their nominal increments, which
  * the clock's phase lock (tempo_lock_poll) corrects; 0 = not synced */
 enum { LK_TW, LK_CP, LK_PH, LK_LFO, LK_MOT, LK_N };
 static uint32_t lk_nom[LK_N];
 
-static void tempo_sync_publish(void)
+FR_COLD static void tempo_sync_publish(void)
 {
     uint32_t d = PV(P_DL_SYNC), t = PV(P_TW_SYNC);
     fx_dly_sync_samples = d ? beat_samples() * SYNC_UNITS[d] / 96u : 0u;
@@ -52,9 +53,9 @@ static void tempo_sync_publish(void)
 
 static uint8_t clk_owns;                         /* the tempo is the clock's (tempo_bpm10 shows clk_bpm10, not the setting) */
 static uint16_t clk_bpm10;
-static uint32_t tempo_bpm10(void) { return clk_owns ? clk_bpm10 : set.bpm10; }   /* the BPM shown (ui.c) */
+FR_COLD static uint32_t tempo_bpm10(void) { return clk_owns ? clk_bpm10 : set.bpm10; }   /* the BPM shown (ui.c) */
 static int clk_follows(void);
-static void tempo_set10(uint32_t b)
+FR_COLD static void tempo_set10(uint32_t b)
 {
     if (clk_follows()) { ui_mark(0); ui_mark(10); return; }   /* a clock leads: its tempo stays (no jump, no save) */
     if ((int32_t)b < 400) b = 400;
@@ -71,7 +72,7 @@ static void tempo_set10(uint32_t b)
     ui_mark(10);                                                             /* E_CARDS: the TEMPO page */
 }
 
-static void tempo_tap(void)
+FR_COLD static void tempo_tap(void)
 {
     uint32_t now = fm1_ms;
     if (clk_follows()) return;                          /* (a clock leads: the taps change nothing) */
@@ -118,8 +119,8 @@ static uint8_t clk_oor;                                /* beats in a row out of 
 static uint32_t clk_jumps;                             /* Start, Continue, Song Position, missing pulses: the
                                                         * count jumped (seq.c: not a lag to catch up) */
 
-static uint32_t clk_ago(uint32_t j) { return clk_hist[(clk_hw + 2u * (CLK_N + 1u) - 1u - j) % (CLK_N + 1u)]; }
-static void clk_push(uint32_t t)
+FR_COLD static uint32_t clk_ago(uint32_t j) { return clk_hist[(clk_hw + 2u * (CLK_N + 1u) - 1u - j) % (CLK_N + 1u)]; }
+FR_COLD static void clk_push(uint32_t t)
 {
     clk_hist[clk_hw] = t;
     clk_hw = (clk_hw + 1u) % (CLK_N + 1u);
@@ -127,7 +128,7 @@ static void clk_push(uint32_t t)
 }
 
 static uint32_t tempo_pubs, tempo_marks;                             /* (the host tests: how often the clock's tempo was published) */
-static void tempo_clock_set(uint32_t b8)                /* publish a beat (Q8 ms): the delay, the LFOs, the BPM shown */
+FR_COLD static void tempo_clock_set(uint32_t b8)                /* publish a beat (Q8 ms): the delay, the LFOs, the BPM shown */
 {
     uint32_t bpm100 = 1536000000u / b8, b = (bpm100 + 5u) / 10u;   /* 60000 * 256 * 100 / b8 */
     b = b < 400u ? 400u : b > 2400u ? 2400u : b;
@@ -145,7 +146,7 @@ static void tempo_clock_set(uint32_t b8)                /* publish a beat (Q8 ms
     tempo_sync_publish();
 }
 
-static void tempo_spp(uint32_t pos, int src)            /* Song Position (F2): 16ths from the start */
+FR_COLD static void tempo_spp(uint32_t pos, int src)            /* Song Position (F2): 16ths from the start */
 {
     if (!set.clock || !clk_stop) return;                /* (only while stopped, as the MIDI spec has it) */
     if (clk_src && src != clk_src && fm1_ms - clk_src_t < 500u) return;   /* (the source followed only) */
@@ -154,7 +155,7 @@ static void tempo_spp(uint32_t pos, int src)            /* Song Position (F2): 1
     clk_jumps++;
 }
 
-static int tempo_clock(uint8_t st, uint32_t stamp, int src)   /* 1: taken (frodhes.c: Start / Stop for the sequencer) */
+FR_COLD static int tempo_clock(uint8_t st, uint32_t stamp, int src)   /* 1: taken (frodhes.c: Start / Stop for the sequencer) */
 {
     uint32_t now = fm1_ms, t, dt, n = 1, cnt = stamp >> 12 & 15u, j, ne;
     if (st != 0xF8u && st != 0xFAu && st != 0xFBu && st != 0xFCu) return 0;
@@ -254,15 +255,15 @@ static int tempo_clock(uint8_t st, uint32_t stamp, int src)   /* 1: taken (frodh
  * follow the pulses themselves, not the tempo: the last pulse is clk_k - 1 (the beat grid's count, clk_gk) / clk_sp -
  * 1 (the song position), at clk_gt; clk_frac16 is how far the next one is (Q16, from the tempo; never a whole pulse:
  * never ahead of the clock) */
-static int clk_live(void)                               /* pulses coming, or Start / Continue waiting for the first */
+FR_COLD static int clk_live(void)                               /* pulses coming, or Start / Continue waiting for the first */
 {
     if (!set.clock) return 0;
     if (clk_wait && fm1_ms - clk_wait_t <= 100u) return 1;   /* (Start / Continue wait for the next pulse; without
                                                              * a clock they go on their own after 100 ms) */
     return clk_last_ms && fm1_ms - clk_last_ms <= 250u && !clk_wait;
 }
-static int clk_follows(void) { return clk_lock && clk_live(); }   /* a clock's tempo leads now */
-static void tempo_clock_int(void)                       /* CLOCK INT (ui.c): the setting's tempo again */
+FR_COLD static int clk_follows(void) { return clk_lock && clk_live(); }   /* a clock's tempo leads now */
+FR_COLD static void tempo_clock_int(void)                       /* CLOCK INT (ui.c): the setting's tempo again */
 {
     if (!clk_owns) return;
     clk_owns = 0; clk_lock = 0;
@@ -271,7 +272,7 @@ static void tempo_clock_int(void)                       /* CLOCK INT (ui.c): the
     tempo_sync_publish();
     ui_mark(0); ui_mark(10);
 }
-static uint32_t clk_frac16(void)
+FR_COLD static uint32_t clk_frac16(void)
 {
     int32_t d = (int32_t)((fm1_ms << 8 | 128u) - clk_gt);
     uint32_t f;
@@ -279,7 +280,7 @@ static uint32_t clk_frac16(void)
     f = (uint32_t)(((uint64_t)(uint32_t)d * 24u * (0xFFFFFFFFu / clk_b8)) >> 16);
     return f > 0xFFFFu ? 0xFFFFu : f;
 }
-static int tempo_flash_ok(void) { return !clk_live(); }   /* (the automatic saves: not while a clock runs, whose
+FR_COLD static int tempo_flash_ok(void) { return !clk_live(); }   /* (the automatic saves: not while a clock runs, whose
                                                            * pulses an erase would hold back) */
 
 /* the phase lock: called every main-loop pass; works on each new audio block's snapshot (app_audio: blk_n, blk_ms
@@ -295,12 +296,12 @@ static volatile uint32_t blk_n, blk_ms, blk_ph[5];      /* app_audio (the audio 
 static uint32_t lk_prev[LK_N], lk_blk, ig_t0, ig_k0, ig_t, ig_k;   /* ig_*: the internal grid (tempo_lock_poll) */
 static uint32_t ig_b8;                                  /* the internal grid's beat (Q8 ms) */
 static uint8_t lk_reset;                                /* CC 10 (frodhes.c): the FM-1's own beat from the reset's block */
-static void lk_st(volatile uint32_t *p, uint32_t v) { *p = v; }
-static uint32_t *lk_phase(uint32_t i)
+FR_COLD static void lk_st(volatile uint32_t *p, uint32_t v) { *p = v; }
+FR_COLD static uint32_t *lk_phase(uint32_t i)
 {
     return i == LK_TW ? &tw_ph : i == LK_CP ? &cp_ph : i == LK_PH ? &ph_ph : i == LK_LFO ? &lfo_ph : &bar_mot_ph;
 }
-static void lk_inc(uint32_t i, uint32_t v)
+FR_COLD static void lk_inc(uint32_t i, uint32_t v)
 {
     if (i == LK_TW) fx_tw_sync_inc = v;
     else if (i == LK_CP) fx_cp_sync_inc = v;
@@ -308,13 +309,13 @@ static void lk_inc(uint32_t i, uint32_t v)
     else if (i == LK_LFO) fx_lfo_sync_inc = v;
     else eng_bar_knob(BK_MOT_INC, v);
 }
-static uint32_t lk_div(uint32_t i)                     /* the LFO's SYNC (an index into SYNC_UNITS), 0 = free */
+FR_COLD static uint32_t lk_div(uint32_t i)                     /* the LFO's SYNC (an index into SYNC_UNITS), 0 = free */
 {
     return i == LK_TW ? PV(P_TW_SYNC) : i == LK_CP ? PV(P_CP_SYNC) : i == LK_PH ? PV(P_PH_SYNC)
          : i == LK_LFO ? (PV(P_LFO_RETRIG) ? 0u : PV(P_LFO_SYNC)) : PV(P_MOT_SYNC);   /* (RETRIG: the keys lead it) */
 }
 
-static void tempo_lock_poll(void)
+FR_COLD static void tempo_lock_poll(void)
 {
     uint32_t now = fm1_ms, i, t, inv, q, gk, gt, b8, n = blk_n, ms, ph[5];
     int32_t d;
@@ -386,7 +387,7 @@ static void tempo_lock_poll(void)
 }
 
 /* the beat LED: on for 1/6 of a beat, only while something is synced */
-static uint32_t tempo_beat_led(void)
+FR_COLD static uint32_t tempo_beat_led(void)
 {
     uint32_t ph = (fm1_ms - beat_t0) % (beat_ms ? beat_ms : 1u);
     if (fm1_ms - tap_t[tap_n ? tap_n - 1u : 0] < 80u) return 1;
@@ -404,7 +405,7 @@ static const uint16_t SCALE_MASK[11] = {
 static const int8_t DEGREE[12] = {0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6};   /* white keys C..B -> degree */
 
 /* the nearest note of the scale (a tie, as F between E and G in a pentatonic, goes down) */
-static int32_t scale_snap(int32_t n)
+FR_COLD static int32_t scale_snap(int32_t n)
 {
     uint32_t m = SCALE_MASK[set.sc_scale], i;
     for (i = 0; i < 12u; i++) {
@@ -416,7 +417,7 @@ static int32_t scale_snap(int32_t n)
 }
 
 /* key k plays the scale's root (the keys that glow): SNAP, the key's own note is the root; DEGREE, the C keys */
-static int scale_is_root(uint32_t k)
+FR_COLD static int scale_is_root(uint32_t k)
 {
     int32_t n = 53 + (int32_t)k;
     if (set.sc_mode == 1) return ((n + set.sc_trans - (int32_t)set.sc_root) % 12 + 12) % 12 == 0;
@@ -426,7 +427,7 @@ static int scale_is_root(uint32_t k)
 /* key k's own pitch is in the scale (DISPLAY LEDS SCALE lights these, white and black keys alike): no scale, every key;
  * SNAP and DEGREE, the keys whose own pitch (TRANS applied; the octave shift moves no pitch class) is in the scale
  * (the user, 2026-10-20: SCALE highlights the scale on the keyboard, whatever the keys play) */
-static int scale_key_in(uint32_t k)
+FR_COLD static int scale_key_in(uint32_t k)
 {
     int32_t n = 53 + (int32_t)k;
     if (set.sc_mode == 1 || set.sc_mode == 2)
@@ -435,7 +436,7 @@ static int scale_key_in(uint32_t k)
 }
 
 /* the note on-board key k plays (255 = silent), octave and transpose applied */
-static uint32_t scale_key_note(uint32_t k)
+FR_COLD static uint32_t scale_key_note(uint32_t k)
 {
     int32_t n = 53 + (int32_t)k + 12 * set.oct, out;
     if (set.sc_mode == 0) out = n + set.sc_trans;

@@ -3,6 +3,8 @@ mido
 python-rtmidi
 numpy
 scipy
+PyYAML
 pytest
 pytest-xdist
 sounddevice
+websockets

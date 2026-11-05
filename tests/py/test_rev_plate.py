@@ -26,7 +26,7 @@ FS = 22050
 def exe():
     os.makedirs(OUT, exist_ok=True)
     e = os.path.join(OUT, "rev_plate_test")
-    subprocess.run(["cc", "-O2", "-w", "-DDINGHY_HOST", '-DAPP_VER="dev"', "-I" + os.path.join(ROOT, "firmware", "src"),
+    subprocess.run(["cc", "-O2", "-w", "-DDINGHY_HOST", '-DAPP_VER="dev"', "-DFR_REV_HQ=0", "-I" + os.path.join(ROOT, "firmware", "src"),
                     "-I" + os.path.join(ROOT, "firmware", "gen"), "-o", e,
                     os.path.join(ROOT, "tests", "c", "rev_plate_test.c"), "-lm"], check=True)
     return e

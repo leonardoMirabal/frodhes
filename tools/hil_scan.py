@@ -213,6 +213,15 @@ class RigBase:
     def pc(self, p):
         self._send("pc", int(p), 0)
 
+    def clock(self, bpm=120):
+        """the tempo pinned for a with-block (a synced LFO or delay reads at the FM-1's saved BPM otherwise): the host
+        plays at its boot 120 BPM, nothing to send"""
+        import contextlib
+        return contextlib.nullcontext()
+
+    def clock_align(self, pulses, at=0):
+        """inside clock(): wait for pulse at of the next lap of pulses of the sent clock (the host: nothing to wait)"""
+
     def note_off(self, n):
         self._send("off", int(n), 0)
 
@@ -483,7 +492,8 @@ class Rig(RigBase):
             sys.exit("no FM-1 MIDI port")
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import fm1_midi
-        self.out = fm1_midi.ChannelOut(mido.open_output(names[0]))   # every channel message on FRODHES_MIDI_CH (8)
+        import midi_guard                                           # (the open under a watchdog: rtmidi holds the GIL)
+        self.out = fm1_midi.ChannelOut(midi_guard.open_output(mido, names[0]))   # channel messages on FRODHES_MIDI_CH
         print(fm1_midi.say(self.out.ch), flush=True)
         self.mido = mido
         devs = [i for i, d in enumerate(sd.query_devices())
@@ -492,6 +502,50 @@ class Rig(RigBase):
             sys.exit("no FM-1 audio input")
         self.dev = devs[0]
         self.cap, self.xruns = None, []
+
+    def clock(self, bpm=120):
+        """a MIDI clock at bpm (24 PPQN) for a with-block, from a thread: CLOCK EXT (the default) follows it, so the
+        synced LFOs and delays run at the host's tempo and not at the BPM the FM-1 saved (2026-10-28: F11 RESO SWEEP
+        read +2.1 LU re F01 at the unit's own BPM, -1.9 at LEVEL 10 with this clock, the host -1.5). Start then Stop
+        at once first (tempo.c: Start makes the next pulse pulse 0; the sequencer's Start is stopped before any pulse
+        plays a step): the FM-1 counts the pulses from there, clock_align() from the same pulse"""
+        import contextlib
+        import threading
+
+        @contextlib.contextmanager
+        def run():
+            stop, msg, per = threading.Event(), self.mido.Message("clock"), 60.0 / (bpm * 24)
+            self.out.raw.send(self.mido.Message("start"))
+            self.out.raw.send(self.mido.Message("stop"))
+            self._clk = (time.monotonic() + 0.05, per)          # pulse 0 50 ms after them
+
+            def tick():
+                t = self._clk[0]
+                while not stop.is_set():
+                    self.out.raw.send(msg)
+                    t += per
+                    stop.wait(max(0.0, t - time.monotonic()))
+            th = threading.Thread(target=tick, daemon=True)
+            th.start()
+            time.sleep(1.0)                                # two beats: the tempo locked before the first take
+            try:
+                yield
+            finally:
+                stop.set()
+                th.join()
+                self._clk = None
+        return run()
+
+    def clock_align(self, pulses, at=0):
+        """inside clock(): sleep to pulse at of the next lap of pulses of the sent clock, so a take starts at a known
+        phase of every synced LFO (the FM-1 locks each one to the pulses it counts: a 2BAR LFO without a note
+        retrigger, F11's, read 2.1 LU apart over 3 takes at a free start, and -4.5 / -5.4 at one phase of two runs
+        before the Start pinned the count)"""
+        t0, per = getattr(self, "_clk", None) or (None, None)
+        if t0 is None:
+            return
+        span = pulses * per
+        time.sleep((t0 + at * per - time.monotonic()) % span)
 
     def capture(self):
         """the persistent recorder, opened at the first use (the FM-1's USB, stereo)"""
@@ -1201,7 +1255,9 @@ def preset_pc(p):
 # a preset the host reads at another level than the FM-1 (re F01, LU), its host target shifted by that much: F11 RESO
 # SWEEP (OHCD into the resonant LP12). At LEVEL 10 the FM-1 read -1.8 (0.9.5), -1.7 / -2.0 (0.9.6), -1.7 (0.9.7's T2),
 # the host -1.5: the FM-1 ~0.2 LU under the host (the 2026-10-25 reading, +1.8 at LEVEL 18 on a build before OHCD's
-# full range, no longer holds). 0.9.7: LEVEL 18, the host +0.0
+# full range, no longer holds). 0.9.7: LEVEL 18, the host +0.0. 2026-10-28: the FM-1's readings moved with its saved
+# BPM (F11's LFO and echo are synced: +2.1 at LEVEL 18 at the unit's own tempo); with presets()' 120 BPM clock and
+# every take on bar 1 of the sweep the FM-1 reads -0.4 (4 runs, spread <= 0.21 LU)
 HOST_SHIFT = {11: 0.2}
 
 
@@ -1227,40 +1283,42 @@ def presets(r, rep):
     def level(x, thr, t=0.05):
         i = max(onset(x, thr, t), 0)
         return lufs(x[i:i + int(1.1 * FS)]), i
-    for p in range(PR_COUNT + (PR_STARTERS if isinstance(r, HostRig) else 0)):
-        r.cc_raw(120, 0)
-        r.pc(preset_pc(p))
-        ks = []
-        for k in range(reps("presets")):
-            quiet = r.settle()                         # (False: no exact silence in 10 s, a note still sounds)
+    with r.clock(120):                                 # the synced LFOs and echoes at the host's tempo
+        for p in range(PR_COUNT + (PR_STARTERS if isinstance(r, HostRig) else 0)):
+            r.cc_raw(120, 0)
+            r.pc(preset_pc(p))
+            ks = []
+            for k in range(reps("presets")):
+                quiet = r.settle()                         # (False: no exact silence in 10 s, a note still sounds)
+                r.clock_align(192)                         # bar 1 of 2: F11 swings 5 LU over its 2BAR sweep (0, 1/3, 2/3: -0.4, -5.6, -4.4 re F01); its phase 0 is the host's
+                if jk:
+                    dd = r.both(2.0, with_reset(CHORD), jack=True)
+                    x, j = dd["usb"] * 32768, dd["jack"][:, 0]
+                else:
+                    x, j = r.take(2.0, CHORD), None
+                lv, i = level(x / 32768.0, 200 / 32768)
+                q = dict(level=lv, onset_ms=1000 * i / FS, rms_db=db(x[i:i + int(1.1 * FS)]),
+                         peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
+                         clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x), quiet=bool(quiet),
+                         gaps=[str(g) for g in getattr(r, "xruns", []) if "gap" in str(g)])
+                if j is not None:
+                    floor = float(np.abs(j[:int(0.04 * FS)]).max()) if len(j) else 0.0
+                    q["jack"], ij = level(j, max(4 * floor, 0.01 * float(np.abs(j).max())))
+                    q["jack_onset_ms"] = 1000 * ij / FS
+                ks.append(q)
+                np.savez_compressed(os.path.join(d, f"{preset_label(p + 1)}-{k + 1}.npz"), usb=(x / 32768).astype(np.float32),
+                                    jack=(j if j is not None else np.zeros(0)).astype(np.float32))
+            lv = [q["level"] for q in ks]
+            row = dict(preset=p + 1, level=float(np.median(lv)), spread_lu=float(max(lv) - min(lv)),
+                       rms_db=float(np.median([q["rms_db"] for q in ks])), peak_db=max(q["peak_db"] for q in ks),
+                       clipped=max(q["clipped"] for q in ks), clicks=max(q["clicks"] for q in ks),
+                       onset_ms=[round(q["onset_ms"], 1) for q in ks], not_quiet=sum(not q["quiet"] for q in ks),
+                       gaps=sum(len(q["gaps"]) for q in ks))
             if jk:
-                dd = r.both(2.0, with_reset(CHORD), jack=True)
-                x, j = dd["usb"] * 32768, dd["jack"][:, 0]
-            else:
-                x, j = r.take(2.0, CHORD), None
-            lv, i = level(x / 32768.0, 200 / 32768)
-            q = dict(level=lv, onset_ms=1000 * i / FS, rms_db=db(x[i:i + int(1.1 * FS)]),
-                     peak_db=20 * np.log10(np.abs(x).max() / 32767 + 1e-12),
-                     clipped=int((np.abs(x) >= 32700).sum()), clicks=clicks(x), quiet=bool(quiet),
-                     gaps=[str(g) for g in getattr(r, "xruns", []) if "gap" in str(g)])
-            if j is not None:
-                floor = float(np.abs(j[:int(0.04 * FS)]).max()) if len(j) else 0.0
-                q["jack"], ij = level(j, max(4 * floor, 0.01 * float(np.abs(j).max())))
-                q["jack_onset_ms"] = 1000 * ij / FS
-            ks.append(q)
-            np.savez_compressed(os.path.join(d, f"{preset_label(p + 1)}-{k + 1}.npz"), usb=(x / 32768).astype(np.float32),
-                                jack=(j if j is not None else np.zeros(0)).astype(np.float32))
-        lv = [q["level"] for q in ks]
-        row = dict(preset=p + 1, level=float(np.median(lv)), spread_lu=float(max(lv) - min(lv)),
-                   rms_db=float(np.median([q["rms_db"] for q in ks])), peak_db=max(q["peak_db"] for q in ks),
-                   clipped=max(q["clipped"] for q in ks), clicks=max(q["clicks"] for q in ks),
-                   onset_ms=[round(q["onset_ms"], 1) for q in ks], not_quiet=sum(not q["quiet"] for q in ks),
-                   gaps=sum(len(q["gaps"]) for q in ks))
-        if jk:
-            jl = [q["jack"] for q in ks]
-            row.update(jack=float(np.median(jl)), jack_spread_lu=float(max(jl) - min(jl)),
-                       jack_onset_ms=[round(q["jack_onset_ms"], 1) for q in ks])
-        rows.append(row)
+                jl = [q["jack"] for q in ks]
+                row.update(jack=float(np.median(jl)), jack_spread_lu=float(max(jl) - min(jl)),
+                           jack_onset_ms=[round(q["jack_onset_ms"], 1) for q in ks])
+            rows.append(row)
     rep["presets"] = rows
     lv = [q["level"] for q in rows]
     bad = [q["preset"] for q in rows if q["clipped"] or q["clicks"]]
@@ -2376,13 +2434,14 @@ class VSuite:
         passed = info or all(res.values())
         # (a large change: 5 % of it, the analogue path's own spread; round 1: REVERB 0 -> 127, +36.8 / +35.7)
         bad_mm = mm is not None and abs(mm) > max(MISMATCH_DB, 0.05 * abs(vals["usb"]))
-        why = m_known(check, setting) if not passed and self.name.startswith("marimba_") else None
+        why = m_known(check, setting, self.name, {k: vals[k] for k in res}) if not passed and \
+            self.name.startswith(("marimba_", "vibes_")) else None
         status = ("info" if info else "ok" if passed else "KNOWN" if why else "FAIL") + (" MISMATCH" if bad_mm else "")
         row = dict(check=check, setting=setting, usb=txt["usb"], jack=txt["jack"], crit=crit,
                    mismatch=mm, status=status, ok=bool((passed or why) and not bad_mm),
                    src_ok=None if info else res)            # per source (tools/full_scan.py: the jack decides)
         if why:
-            row["known"] = why                              # (a MARIMBA user decision: m_known)
+            row["known"] = why                              # (a MARIMBA / VIBES user decision: m_known)
         self.rows.append(row)
 
     def known(self):
@@ -3578,11 +3637,51 @@ M_CAPPED = {(84, "SOFT", "MED")}
 M_FX_RATE, M_FX_JIT, M_FX_SEED, M_FX_VEL = 8.0, 0.0, 1, 80   # marimba_fx's roll: per note, the jitter, the seed (m_fx_roll)          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
 
 
-def m_known(check, setting):
+# The struck bars' effect rows (the user's decision 2026-11-05, "A": the limits, not the sound): the jump and fx limits
+# were set on the Rhodes' held chord; on a struck or rolled chord that dies in ~1 s the same effect reads differently.
+# 0.9.7 (main) and 0.9.8 give the same numbers (host and FM-1 T2, 2026-11-05). Each is KNOWN only inside its band (the
+# value on every source): a change past it fails as before. (suite, check, setting, band, reason)
+STRUCK_KNOWN = (
+    (r"^(vibes|marimba)_jump$", r"^chorus 64: on vs off", r"", lambda d: -2.0 <= d <= 0.5,
+     "USER DECISION 2026-11-05: chorus 64 on a struck chord reads -0.5 .. -1.0 LU re dry (VIBES -0.99, MARIMBA -0.60; "
+     "the Rhodes' held chord -2.5, the width compensation's target). The wet copy's delay falls in the strike's decay, "
+     "so the sum loses less than on a held chord; band -2.0 .. +0.5 LU"),
+    (r"^marimba_jump$", r"^comp \(-20 dB 4:1, MKUP 15\): (on vs off|switched under a chord)", r"",
+     lambda d: max(abs(x) for x in (d if isinstance(d, tuple) else (d,))) <= 6.0,
+     "USER DECISION 2026-11-05: MKUP 15 is the Rhodes' level-neutral make-up; a marimba strike's peaks are sharper, so "
+     "the same threshold takes more (-4.35 LU held, -4.73 / +4.72 switched). The compressor works as set: the MAKEUP "
+     "knob is a fixed gain; band |step| <= 6 LU"),
+    (r"^marimba_jump$", r"^delay (DIG|ANA) 50: on vs off", r"", lambda d: 0.0 <= d <= 6.0,
+     "USER DECISION 2026-11-05: the echoes of a strike that dies in ~1 s add more to the 1.8 s loudness than on a held "
+     "chord (DIG +4.38, ANA +3.31 LU); the direct sound (0..0.25 s, information) is unchanged; band 0 .. +6 LU"),
+    (r"^marimba_jump$", r"^reverb 50 \(no switch: REV 0 -> 50\): (on vs off|switched under a chord)", r"",
+     lambda d: max(abs(x) for x in (d if isinstance(d, tuple) else (d,))) <= 3.0,
+     "USER DECISION 2026-11-05: the hall over a dying roll is a larger share of its loudness than over a held chord "
+     "(+1.57 LU held, +1.20 / -1.74 switched; limit 1.5); band |step| <= 3 LU"),
+    (r"^marimba_fx$", r"^CHORUS DEPTH .* 0 -> 127$", r"^spectral motion$", lambda d: d >= 0.6,
+     "USER DECISION 2026-11-05: on the roll the chorus moves the spectrum +0.9 / +1.0 dB at DEPTH 127 (limit +1): each "
+     "strike resets the bands the chorus would move; band >= +0.6 dB"),
+    (r"^marimba_fx$", r"^FILTER TYPE LP12$", r"^FREQ 64, RESO 0, vs no filter$", lambda d: d >= 2.5,
+     "USER DECISION 2026-11-05: LP12 at FREQ 64 on the roll, 3.5 dB USB and 2.5-3.0 dB on the jack in every T2 since "
+     "0.9.7 (limit 3; LP18 passes, the slope check passes): MARIMBA's energy is V1, under the cutoff; band >= 2.5 dB"),
+)
+
+
+def m_known(check, setting, suite="marimba_", vals=None):
     """the KNOWN reason of a MARIMBA row (tools/marimba_scan.py KNOWN / KNOWN_CARDS: the plan's thresholds a wooden bar
     cannot meet as written, user decisions; the host scan and the tests report the same items KNOWN / xfail), or None.
-    A failing marimba_* row that matches is reported KNOWN with its reason, not FAIL; anything else fails as before."""
+    A failing marimba_* row that matches is reported KNOWN with its reason, not FAIL; anything else fails as before.
+    STRUCK_KNOWN (VIBES and MARIMBA): KNOWN only when every source's value is inside the rule's band."""
     import re
+    for rsu, rc, rs, band, why in STRUCK_KNOWN:
+        if re.search(rsu, suite) and re.search(rc, check) and re.search(rs, setting):
+            try:
+                inside = bool(vals) and all(v is not None and band(v) for v in vals.values())
+            except Exception:
+                inside = False
+            return why if inside else None
+    if not suite.startswith("marimba_"):
+        return None
     import marimba_scan as ms
     rules = ((r"^C4 MED: v40 -> v117 brighter$", r"", ms.KNOWN_CARDS["VELOCITY centroid"]),
              (r"^pumping$", r"", ms.known("M5", " pumping")),
@@ -4036,8 +4135,10 @@ def marimba_vel(V, S):
     S.check("keys C2..C7: neighbour step", "every key, v100",
             {s_: v and float(np.abs(np.diff(v[0])).max()) for s_, v in vals.items()}, lambda d: d <= 1.5,
             "<= 1.5 dB (PLAN M1, D)", fmt=lambda d: f"{d:.2f} dB")
+    # (information, as tools/marimba_scan.py's M1 row, the user 2026-11-05: the 1 s loudness falls 8.6 dB C2 -> C7
+    # because the high bars die in ~0.3 s; the peaks are within 4 dB, the neighbour step above gates the evenness)
     S.check("keys C2..C7: level span", "", {s_: v and float(v[0].max() - v[0].min()) for s_, v in vals.items()},
-            lambda d: d <= 3.0, "<= 3 dB (PLAN M1, D)", fmt=lambda d: f"{d:.1f} dB")
+            lambda d: True, "information (PLAN M1: the neighbour step gates)", fmt=lambda d: f"{d:.1f} dB", info=True)
     S.check("keys C2..C7: tuning re the spec", "", {s_: v and float(np.abs(v[1]).max()) for s_, v in vals.items()},
             lambda d: d <= 3, "|cents| <= 3", fmt=lambda d: f"{d:.2f} c")
 
@@ -4247,11 +4348,12 @@ def run_classic(names, r=None, report="report"):
     return fails
 
 
-def stress_max(r, rep, rate=48000, seconds=None, quick=False, tier=None, engines=None):
-    """the cracks test (tools/hil_crackle.py t1): T1's S1 calls it by name (tools/hil_must.py), per rate"""
+def stress_max(r, rep, rate=48000, seconds=None, quick=False, tier=None, engines=None, dev=None):
+    """the cracks test (tools/hil_crackle.py t1): T1's S1 calls it by name (tools/hil_must.py), per rate; dev: the
+    caller's open hil_must.Dev (T1: no MIDI port opened while its USB stream and poller run)"""
     import hil_crackle
     return hil_crackle.t1(r, rep, rate=rate, seconds=seconds, quick=quick, tier=tier,
-                          engines=tuple(engines) if engines else hil_crackle.ENGINES)
+                          engines=tuple(engines) if engines else hil_crackle.ENGINES, dev=dev)
 
 
 TESTS["stress_max"] = stress_max                       # (not in the default run: main leaves it out)
@@ -4339,4 +4441,5 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import midi_guard
+    midi_guard.run(main)

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""tools/doc_links.py: every picture link in README.md / docs/MANUAL.md carries ?v= its file's sha256 (8 hex), so a
+"""tools/doc_links.py: every picture link in README.md / docs/MANUAL.md / the device manuals carries ?v= its file's sha256 (8 hex), so a
 link changes only when its picture does; no download / 'Latest release' / 'Version' line names a version (the
 version lives in the GitHub release alone)."""
 import os
@@ -15,8 +15,13 @@ def test_repo_docs_links_match_their_files():
     assert not bad, "run tools/doc_links.py --fix (or tools/manual_shots.py):\n" + "\n".join(bad)
 
 
+def test_the_device_manuals_are_checked():
+    """the Move's and the SMK-37's manuals carry ?v= links too: the check covers them"""
+    assert {"docs/MOVE.md", "docs/MOVE-DEV.md", "docs/SMK37.md"} <= set(dl.DOCS)
+
+
 def test_install_lines_use_the_stable_download():
-    for name in dl.DOCS:
+    for name in dl.INSTALL_DOCS:
         text = open(os.path.join(ROOT, name), encoding="utf-8").read()
         assert dl.DOWNLOAD in text, f"{name} does not link {dl.DOWNLOAD}"
         assert "fm1_install.py frodhes.fwsc" in text, f"{name}: the install command is not for frodhes.fwsc"
@@ -56,3 +61,16 @@ def test_version_pins_and_missing_files(tmp_path):
     bad = dl.problems(r)
     assert [b.split(":")[1] for b in bad] == ["2", "1", "1", "4", "3"]
     assert "does not exist" in bad[0] and "versioned package name" in bad[1]
+
+
+def test_heading_links(tmp_path):
+    r = tree(tmp_path)
+    dl.fix(r)
+    (tmp_path / "docs" / "MANUAL.md").write_text("## 4. The pages\n### VOICE 1/2 and 2/2\n### Open Frodhes' screen\n"
+                                                 "## 4. The pages\n[a](#4-the-pages-1) [b](#gone)\n")
+    (tmp_path / "README.md").write_text("[c](docs/MANUAL.md#voice-12-and-22) [d](docs/MANUAL.md#open-frodhes-screen) "
+                                        "[e](docs/NONE.md#x) [f](docs/MANUAL.md#nope)\n")
+    bad = dl.problems(r)
+    assert len(bad) == 3, bad
+    assert any("#gone: no such heading" in b for b in bad) and any("#nope: no such heading" in b for b in bad)
+    assert any("docs/NONE.md does not exist" in b for b in bad)

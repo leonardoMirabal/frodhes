@@ -5,8 +5,10 @@ then composes overview.png (PERFORM, VOICE, PHASER, COMPRESSOR; the README's Scr
 walks SELECT and reads each page's name back (the engine's VOICE pages are dynamic: voice1.png, voice2.png on the
 Rhodes; voice1-vibes.png .. voice3-vibes.png on VIBES; voice1-marimba.png, voice2-marimba.png on MARIMBA, with
 piano-vibes.png / piano-marimba.png their FRODHES page). Files left in the folder from pages that went are listed.
-Into docs/manual/img/ (the default), it then sets every picture link's ?v= in README.md / docs/MANUAL.md to the
-file's hash (tools/doc_links.py --fix). tests/py/test_manual_shots.py runs it into a temporary folder and fails if
+The SMK-37's pictures go to docs/manual/img/smk/ (smk_shots: the SMK host build); the Move's, docs/manual/img/move/,
+are tools/move_ui_shots.mjs's.
+Into docs/manual/img/ (the default), it then sets every picture link's ?v= in README.md, docs/MANUAL.md and the
+device manuals to the file's hash (tools/doc_links.py --fix). tests/py/test_manual_shots.py runs it into a temporary folder and fails if
 a committed screenshot differs from what the code draws: a PR that changes the UI re-runs this script (and a
 conflict on a PNG is resolved by re-running it, never by hand).
 
@@ -69,7 +71,7 @@ BIN = os.path.join(ROOT, "build", "host", "frodhes")
 # a page's file name, by its base title (host_state "page"); the VOICE pages are numbered in the SELECT order
 # (voice1.png, voice2.png; VIBES: voice1-vibes.png ...), as the engine's table makes them. (DECAY / MOTOR: the pages
 # of the builds before the dynamic VOICE pages.)
-NAME = {"PERFORM": "perform", "FRODHES": "piano", "DECAY": "decay", "MOTOR": "motor", "COMPRESSOR": "comp",
+NAME = {"PERFORM": "perform", "FRODHES": "piano", "DECAY": "decay", "MOTOR": "motor", "COMPRESSOR": "comp", "EQ": "eq",
         "FILTER": "filter", "DRIVE": "drive", "TREM/WAH": "trem", "PHASER": "phaser", "CHORUS": "chorus",
         "DELAY": "delay", "REVERB": "reverb", "REVERB 2": "reverb2", "TEMPO": "tempo", "SCALE": "scale", "CHORD": "chord", "ARPEGGIO": "arp",
         "LFO": "lfo", "SEQUENCER": "seq", "ASSIGN": "assign", "SETUP": "setup", "MIDI": "midi", "DISPLAY": "display"}
@@ -113,6 +115,35 @@ def names(pages, suffix=""):
     return out
 
 
+SMK_BIN = os.path.join(ROOT, "build", "host-smk", "frodhes")
+
+
+def smk_shots(out):
+    """the SMK-37's pictures into out/smk/ (docs/manual/img/smk/: docs/SMK37.md, MANUAL appendix 15): the SMK build
+    on the host (make build/host-smk/frodhes), its own button and knob names. smk-frodhes.png: the FRODHES page
+    (> from PERFORM), its cards on K5..K8. The framebuffer's colours (the SMK's panel is not calibrated)."""
+    if os.environ.get("FRODHES_SMK_BIN"):
+        binary = os.environ["FRODHES_SMK_BIN"]
+    else:
+        subprocess.run(["make", "-C", ROOT, "build/host-smk/frodhes"], check=True, capture_output=True)
+        binary = SMK_BIN
+    d = os.path.join(out, "smk")
+    os.makedirs(d, exist_ok=True)
+    tag = os.path.join(ROOT, "build", "host-smk", "manual")
+    os.makedirs(os.path.dirname(tag), exist_ok=True)
+    shots = {4000: "smk-frodhes"}
+    L = ["0 ids smk", "2500 btn 3", "2600 keys 0x80", "2900 keys 0x0", "4000 shot", "4100 end"]
+    open(tag + ".txt", "w").write("\n".join(L) + "\n")
+    subprocess.run([binary, tag, tag + ".txt"], check=True, capture_output=True)
+    for ms, name in shots.items():
+        Image.open(f"{tag}-{ms}.ppm").convert("RGB").resize((480, 480), Image.NEAREST).save(
+            os.path.join(d, f"{name}.png"))
+    for f in os.listdir(os.path.dirname(tag)):             # (the host's other frames of this run)
+        if f.startswith("manual-") and f.endswith(".ppm"):
+            os.remove(os.path.join(os.path.dirname(tag), f))
+    return sorted(shots.values())
+
+
 def opt(name, default=None):
     a = sys.argv[1:]
     return a[a.index(name) + 1] if name in a and a.index(name) + 1 < len(a) else default
@@ -138,7 +169,7 @@ def main():
     L, shots, t = ["400 shot"], {400: "splash"}, 100
     if cards is not None:                                   # the rows' design variant (developer CC 11)
         L.insert(0, f"50 midi 0xB0 11 {int(cards)}")           # the start screen, before anything is touched
-    # a sound with something on every page: F04 80S BALLAD, then the tremolo, phaser and compressor on
+    # a sound with something on every page: F04 BELL DYNO, then the tremolo, phaser and compressor on
     t = 500
     L.append(f"{t} midi 0xC0 3 0"); t += 1300                # (the start screen holds the pages for 1.6 s)
     for cc, v in ((17, 64), (18, 70), (12, 127), (13, 70), (106, 127), (107, 64), (113, 15)):
@@ -160,21 +191,28 @@ def main():
                 L.append(f"{t} midi 0xB0 {cc} {v}"); t += 20
             L.append(f"{t} keys 0x1"); L.append(f"{t + 300} keys 0x0"); t += 900
             L.append(f"{t} shot"); shots[t] = name; t += 100
+            if name == "reverb":                            # TYPE INFINITE, DECAY at the top: its word FREEZE
+                L.append(f"{t} midi 0xB0 95 110"); L.append(f"{t + 20} midi 0xB0 92 127")
+                L.append(f"{t + 40} keys 0x1"); L.append(f"{t + 340} keys 0x0"); t += 1700   # (the TYPE message)
+                L.append(f"{t} shot"); shots[t] = "reverb-inf"; t += 100
+                L.append(f"{t} midi 0xB0 92 80"); L.append(f"{t + 20} midi 0xB0 95 80"); t += 900  # PLATE again
             continue
         if name == "chord":                                 # chord mode MAJ7 with a strum, a key held
             L.append(f"{t} midi 0xB0 56 6"); L.append(f"{t + 20} midi 0xB0 59 4"); L.append(f"{t + 100} keys 0x80"); t += 700
             L.append(f"{t} shot"); shots[t] = name
-            L.append(f"{t + 50} keys 0x0"); L.append(f"{t + 100} midi 0xB0 56 0"); t += 300   # chord mode off again
+            L.append(f"{t + 50} keys 0x0"); L.append(f"{t + 100} midi 0xB0 56 0")
+            L.append(f"{t + 120} midi 0xB0 59 0"); t += 300   # chord mode off again, no strum (SEQUENCER's chords)
             continue
         if name == "seq":                                   # a 2-bar pattern recorded live (chord mode, then notes)
             L.append(f"{t} midi 0xB0 61 2"); L.append(f"{t + 20} midi 0xB0 62 3"); L.append(f"{t + 40} midi 0xB0 43 127")
-            L.append(f"{t + 60} midi 0xB0 63 127"); L.append(f"{t + 80} midi 0xB0 56 7"); t += 200   # MIN7 chords
-            for k, dt, hold in ((12, 0, 900), (16, 1000, 900), (9, 2000, 400), (14, 2500, 400)):  # F, A, D, G
+            L.append(f"{t + 60} midi 0xB0 63 127"); L.append(f"{t + 80} midi 0xB0 56 7")   # REC armed, MIN7 chords
+            t += 100; L.append(f"{t} midi 0xB0 60 127")        # PLAY: the loop (2 bars, 4 s at 120) starts at t
+            for k, dt, hold in ((12, 10, 900), (16, 1010, 900), (9, 2010, 400), (14, 2510, 400)):  # F, A, D, G
                 L.append(f"{t + dt} keys {1 << k:#x}"); L.append(f"{t + dt + hold} keys 0x0")
-            L.append(f"{t + 3200} midi 0xB0 56 0"); t += 3300
-            for k, dt in ((19, 0), (21, 250), (23, 500), (24, 750)):          # a little line on top
+            L.append(f"{t + 2950} midi 0xB0 56 0")
+            for k, dt in ((19, 3010), (21, 3260), (23, 3510), (24, 3760)):  # a little line on top, in bar 2
                 L.append(f"{t + dt} keys {1 << k:#x}"); L.append(f"{t + dt + 150} keys 0x0")
-            t += 1200
+            t += 4500                                       # the second pass, bar 1 beat 2: the first chord sounds
             L.append(f"{t} shot"); shots[t] = name
             L.append(f"{t + 50} midi 0xB0 63 0"); L.append(f"{t + 60} midi 0xB0 60 0"); t += 300
             continue
@@ -182,6 +220,14 @@ def main():
             L.append(f"{t} turn 2 1"); L.append(f"{t + 100} keys 0x4880"); t += 900
             L.append(f"{t} shot"); shots[t] = name
             L.append(f"{t + 50} keys 0x0"); L.append(f"{t + 100} turn 2 -1"); t += 900
+            continue
+        if name == "eq":                                    # a warmer, scooped setting; flat again after the shot
+            for cc, v in ((34, 77), (35, 47), (36, 40), (37, 72)):
+                L.append(f"{t} midi 0xB0 {cc} {v}"); t += 20
+            L.append(f"{t} keys 0x1"); L.append(f"{t + 300} keys 0x0"); t += 900
+            L.append(f"{t} shot"); shots[t] = name; t += 100
+            for cc, v in ((34, 64), (35, 64), (36, 64), (37, 64)):
+                L.append(f"{t} midi 0xB0 {cc} {v}"); t += 20
             continue
         if name == "comp":                                  # a held chord: the gain-reduction meter moves
             L.append(f"{t} keys 0x2491"); t += 600
@@ -238,6 +284,7 @@ def main():
     overview(["perform", "voice1", "phaser", "comp"])
     made = set(shots.values()) | {"overview", "thumbnail"}
     print(sorted(made))
+    print("smk/:", smk_shots(OUT))
     stale = sorted(f for f in os.listdir(OUT) if f.endswith(".png") and f[:-4] not in made)
     if stale:
         print("not made by this run (pages that went: git rm them):", stale)

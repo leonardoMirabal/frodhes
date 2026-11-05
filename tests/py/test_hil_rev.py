@@ -50,7 +50,7 @@ class FakePort:
 
 def test_out_rewrites():
     """CC > 0 rewritten, 0 passed, the after-CCs right behind their trigger, SPREAD before a note"""
-    mido = pytest.importorskip("mido")
+    import mido                          # (installed in CI: a missing module fails, never skips)
     p = FakePort()
     o = hcr.Out(p, {95: 112, 84: 81}, {91: [(95, 112), (69, 64)]}, spread=127)
     for c, v in ((95, 48), (95, 0), (84, 127), (91, 100), (91, 0), (7, 5)):

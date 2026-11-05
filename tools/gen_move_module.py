@@ -1,0 +1,970 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""The Move module's description (move/module/) from the firmware's own tables: params.c PARAMS[] (ranges, defaults,
+enum names, CCs), eng_pages.h (the engines' VOICE cards, swapped by TYPE) and ui.c (the FM-1's pages: PAGE_TITLE,
+PAGE_S, PAGE_LAB, PG_ORDER, and slot_val's ranges for the settings cards). Nothing is typed in twice: a new
+parameter, card or enum name shows up here when the tool is rerun, and tests/py/test_move_module.py fails until it is.
+
+  tools/gen_move_module.py           write move/module/*
+  tools/gen_move_module.py --check   exit 1 if a committed file is not what the sources give
+
+What it writes:
+
+  module.json         the module's metadata (id frodhes, name Frodhes, api_version 2, a sound generator); small on
+                      purpose: the host reads a sound generator's pages only from get_param("ui_hierarchy"), and it
+                      caps module.json at 8 KB
+  ui_hierarchy.json   the knob pages the plugin serves from get_param("ui_hierarchy"): levels of <= 8 knobs, each
+                      two FM-1 pages of 4 cards (MOVE_LEVELS); the engine's VOICE levels carry visible_if on the
+                      read-only key ui_engine (0 the Rhodes types, 1 VIBES, 2 MARIMBA: eng_pages.h TYPE_UI), so the
+                      pages follow TYPE; the root level holds the preset browser (preset / preset_count /
+                      preset_name) and SUS, the sustain toggle (the Move has no pedal jack)
+  chain_params.json   every key once, with its range or options (get_param("chain_params"))
+  canvas.js           the knob grid's gain-reduction cell (COMPRESSOR knobs 7-8, METER): Schwung's custom widget,
+                      move/ui/gr_cell.js with the FM-1's GR scale
+  help.json           the on-device help (lines <= 20 characters, ASCII)
+  move_ui.h           the same for the plugin's C side: MOVE_KEYS[] (key -> parameter id or ui.c slot, its CC, the
+                      offset between the wire value and the slot's 0..hi value) and the two JSON texts as literals,
+                      so get_param never reads a file
+
+The wire value of every key is the card's value, shifted so it reads as on the FM-1's screen where that is a plain
+number: wire = slot_val (ui.c, 0..hi) - off, times scale for the tempo (BPM in tenths). Enums go by index.
+"""
+import json
+import os
+import re
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC = os.path.join(ROOT, "firmware", "src")
+OUT = os.path.join(ROOT, "move", "module")
+FILES = ("module.json", "ui_hierarchy.json", "chain_params.json", "help.json", "move_ui.h", "screen.js", "canvas.js",
+         "ui_chain.js")
+UI_CORE = os.path.join(ROOT, "move", "ui", "screen_core.js")   # Frodhes' own screen: the hand-written part
+CHAIN_ADAPTER = os.path.join(ROOT, "move", "ui", "chain_adapter.js")   # the same screen as Schwung's chain_ui (ui_chain.js)
+GR_CELL = os.path.join(ROOT, "move", "ui", "gr_cell.js")       # the knob grid's gain-reduction cell: the hand-written part
+# Frodhes' own screen (M6-02, private plan 05 M6-01 option F): a fullscreen canvas the first page's PAGES cell
+# opens. screen.js = the pages (FR_PAGES, the levels below as the screen shows them) + FR_CONF + move/ui/screen_core.js.
+# The live keys the host reads for it (at most four, one a tick): rev (a change the screen did not make: re-read),
+# ui_engine (the VOICE pages follow TYPE), s_sustain (the SUS mark), preset_name (the first page). The COMPRESSOR
+# page's gain-reduction meter reads r_cmp_gr itself each tick (getParam in onValues); fullscreen_live_ms 100 so it
+# moves at 10 Hz (the FM-1's meter: 30 Hz). Schwung's knob grid opens a canvas cell on a knob touch + the jog click
+# (shared/param_pages/page_input.mjs: a click with no knob held opens the section list) and draws its value line
+# (the plugin answers s_screen with "OPEN", move_bridge.h mb_get; with no answer the grid drew NONE).
+# s_screen must stay out of chain_params: Schwung merges a key's chain_params entry OVER its hierarchy item
+# (param_meta.mjs buildMetaIndex, shadow_ui.js getParamMetadata), so a chain_params type would turn the canvas into
+# that type (the PEDAL cell's bug, 0.9.8 candidate: an enum UP / DOWN that a click left DOWN).
+SCREEN = {"key": "s_screen", "name": "PAGES", "type": "canvas", "canvas_script": "screen.js", "enterable": True,
+          "show_footer": False, "show_value": True, "fullscreen_live_ms": 100,
+          "extra_keys": ["rev", "ui_engine", "s_sustain", "preset_name"]}
+CHAIN_EXTRA_KEYS = ["preset", "preset_name", "preset_count"]   # (on chain_params' first entry: outputs())
+SCREEN_VALUE = "OPEN"             # what the plugin answers for s_screen: the cell's value line
+# The gain-reduction meter on Schwung's own knob grid (the COMPRESSOR level, knobs 7-8): two read-only cells, one
+# picture. Schwung (v1.8.1, docs/MODULES.md "Custom widgets") draws a chain_params viz kind "custom:..." with the
+# module's canvas.js drawCell; the two keys are one viz group (roles gr + pk, adjacent on one row), so the picture
+# spans both cells, 64 x 15 px; their labels read GAIN REDUCT under it (the FM-1's GAIN REDUCTION).
+# r_cmp_gr is "live": the grid reads r_cmp_gr:effective every tick (the plugin keeps
+# the FM-1's ballistics, 33 ms ticks, in render_block, which the host never skips: requires_continuous_processing).
+# access "read": no knob, no write, no list. Not a C row (MOVE_KEYS): move_bridge.h mb_get serves both keys itself.
+GR_KIND = "custom:frodhes_gr"
+METER = {
+    "r_cmp_gr": {"key": "r_cmp_gr", "name": "GAIN", "type": "string", "access": "read", "live": True,
+                 "viz": {"group": "gr", "role": "gr", "kind": GR_KIND}},
+    "r_cmp_pk": {"key": "r_cmp_pk", "name": "REDUCT", "type": "string", "access": "read",
+                 "viz": {"group": "gr", "role": "pk"}},
+}
+SCREEN_CONF = {"hold_ms": 500,     # the large card stays this long after the knob is let go (tune on the device)
+               "fast_ms": 40,      # two detents closer than this: a fast turn ...
+               "fast_mul": 4,      # ... moves a wide range (> 24 steps) this many steps a detent
+               "settle_ms": 600,   # a value written this recently is not re-read (the write may still be queued)
+               "tap_ms": 400,      # two touches of a knob closer than this: a double tap, the knob back to its default
+               "sus_cc": None,     # the claimed sustain button (SUS_BTN_CC)
+               "fx_cc": None}      # the claimed effects button (FX_BTN_CC)
+# The sustain (the user, 2026-10-28 18:25: "we just need a toggle option, sustain pedal on or off"): SUS on the first
+# page is the toggle (ON holds the notes as a pedal down, OFF lets everything go and always wins), and a Move button
+# the module claims (capabilities.claims_ccs; Schwung hands a claimed button to the module's screen script only, so it
+# works on Frodhes' own screen, PAGES) flips it: screen.js turns a press into set_param("s_susbtn", "1"), which the
+# plugin turns into SUS's other state (a release, "0", does nothing). s_susbtn is no page's knob (HIDDEN: a C row,
+# not in the hierarchy or chain_params). The direct route, a knob or jog-wheel touch (capabilities.touch_observe, the
+# plugin's on_midi), is off until dev_sus_touch picks one (the device session); it flips SUS on the touch too.
+# The buttons (the user, 2026-10-28 23:50): Right flips SUS, Left flips the effects (FX, the compressor kept on the
+# Move: FR_BYP_KEEP_CMP). Schwung hands a claimed button to the module's screen script only, so both work on Frodhes'
+# own screen (PAGES), not on Schwung's knob grid (a device test, 2026-10-28: a press there never reaches the plugin)
+SUS_BTN_CC = 63                    # the Right arrow (Schwung constants.mjs MoveRight)
+FX_BTN_CC = 62                     # the Left arrow (MoveLeft); Up / Down stay the Move's octave
+LABEL_MAX = 6                      # the knob grid's cell label: six of Schwung's capitals fit a cell (its own cap: a
+                                   # declared "Sustain" draws SUSTAI, render_page_movy.mjs; move/ui/test_cell.mjs
+                                   # renders every page through Schwung's renderer and checks no two labels touch)
+SCREEN_LABEL_MAX = 4               # Frodhes' own screen's overview card: four of its 6 px glyphs, 23 px in the 29 px
+                                   # card with a clear gap to the next (five, 29 px, ran into it: AT CCAT LO)
+VALUE_MAX = 5                      # an enum option on the Move: five of the 6 px glyphs (29 px, the card's width)
+# The Move's abbreviations of the firmware's option names longer than VALUE_MAX, one scheme everywhere (the pages, the
+# screen, the docs, the mock-ups): four letters, the word's first syllable and the consonant after it (DORIAN DORN,
+# DEGREE DEGR), a digit kept (DIA 7TH DIA7). A new long name fails the generator until it is named here.
+VALUE_SHORT = {"DEGREE": "DEGR", "DORIAN": "DORN", "LYDIAN": "LYDN", "HARMON": "HARM", "MELODIC": "MELO",
+               "MPENTA": "MPNT", "DIATONIC": "DIAT", "DIA 7TH": "DIA7", "RANDOM": "RAND",
+               "SUSTAIN": "SUST", "FREEZE": "FREZ"}   # (the reverb's DECAY under INFINITE: rv_conf)
+HELP_MAX = 20                      # a help line: about 20 characters on the 128 px screen
+
+# the FM-1's pages that have no meaning on the Move (its knobs are direct, it has no screen or key lights of ours)
+FM1_ONLY_PAGES = {"PERFORM": "the Move's knobs are direct: no assignable performance knobs",
+                  "ASSIGN": "the Move's knobs are direct: no assignable performance knobs",
+                  "DISPLAY": "the FM-1's screen and key lights"}
+# the FM-1's settings cards that are hardware only (ui.c S_*), with the reason
+FM1_ONLY_SLOTS = {"S_KVEL": "the FM-1's own keys' velocity", "S_TOUCH": "the FM-1's own keys' touch",
+                  "S_USBVOL": "the FM-1's USB audio", "S_TRS": "the FM-1's TRS MIDI jack",
+                  "S_COLOR": "the FM-1's screen", "S_BRIGHT": "the FM-1's screen", "S_LEDS": "the FM-1's key lights"}
+# the settings cards the Move owns (the user, 2026-10-28 12:10): the Move's tempo and transport lead (move_bridge.h
+# mb_inert: CLOCK stays EXT, the tempo is the host's), its own pads play the scales; no card, no key
+MOVE_OWNS_SLOTS = {"S_BPM": "the Move's tempo leads (host get_bpm while no clock runs)",
+                   "S_CLOCK": "always EXT: the Move's transport is the clock",
+                   "S_SCMODE": "the Move's own scales", "S_SCALE": "the Move's own scales",
+                   "S_ROOT": "the Move's own scales", "S_TRANS": "the Move's own transpose"}
+# the settings cards on the Move: their options (a names array of the firmware's), or a number range as shown:
+# wire = slot_val - off; unit as the host shows it. hi always comes from ui.c slot_val (checked).
+SLOTS = {
+    "S_TUNE": {"off": 50, "unit": "c"},
+    "S_BPM": {"off": -400, "scale": 10, "unit": "BPM"},     # slot = BPM x 10 - 400: 40.0 .. 240.0
+    "S_CLOCK": {"names": "CLOCK_NAME"},
+    "S_SCMODE": {"names": "SCMODE_NAME"},
+    "S_SCALE": {"names": "SCALE_NAME"},
+    "S_ROOT": {"names": "NOTE_NAME"},
+    "S_TRANS": {"off": 24, "unit": "st"},
+    "S_TWKIND": {"names": "TWKIND_NAME"},
+    "S_ARPMODE": {"names": "ARP_MODE_NAME", "cc": 52},
+    "S_ARPRATE": {"names": "ARP_RATE_NAME", "cc": 53},
+    "S_ARPOCT": {"off": -1, "cc": 54},                         # 1 .. 4 octaves
+    "S_ARPGATE": {"off": -10, "unit": "%", "cc": 55},          # 10 .. 100 %
+    "S_CHTYPE": {"names": "CH_TYPE_NAME", "cc": 56},
+    "S_CHINV": {"names": "CH_INV_NAME", "cc": 57},
+    "S_CHVOICE": {"names": "CH_VOICE_NAME", "cc": 58},
+    "S_CHSTRUM": {"cc": 59},                                   # x 5 ms
+    "S_SQBARS": {"min": 1, "cc": 61},
+    "S_SQQUANT": {"names": "SQ_QUANT_NAME", "cc": 62},
+    "S_SQSWING": {"off": -50, "unit": "%", "cc": 46},          # 50 .. 75 %
+    "S_SQEDIT": {"options": ["UNDO", "ERASE"], "cc": 45},
+    "S_MCH": {"options": ["ALL"] + [str(c) for c in range(1, 17)]},
+}
+# keys of the Move's own, with no FM-1 card: a CC sent as is (latch: 0 / 127; trigger: 127 on a write)
+EXTRA = {
+    "s_sustain": {"name": "SUS", "cc": 64, "options": ["OFF", "ON"], "kind": "MK_LATCH", "default": 0,
+                  "help": "the sustain pedal (CC 64), latched"},
+    "s_susbtn": {"name": "SUSBT", "cc": 0, "options": ["UP", "DOWN"], "kind": "MK_BTN",
+                 "help": "the Right arrow (screen.js): a press flips SUS"},
+    "s_fxbtn": {"name": "FXBTN", "cc": 111, "options": ["UP", "DOWN"], "kind": "MK_BTN",
+                "help": "the Left arrow (screen.js): a press flips FX (every effect but the compressor)"},
+    # M5-01: the FM-1's FX button (CC 111, the bypass): every effect off with its settings kept; ON (not bypassed) by
+    # default, as on the FM-1. OFF / ON in this order (the wire value is "effects on", move_bridge.h inverts the
+    # bypass): Schwung draws a two-option OFF / ON enum as a switch that is on at index 1 (viz_draw.mjs drawSwitch),
+    # so ON / OFF drew the switch off while the effects played (0.9.8 candidate)
+    "s_fx": {"name": "FX", "cc": 111, "options": ["OFF", "ON"], "kind": "MK_LATCH", "default": 1,
+             "help": "the effects on, or all off with their settings kept (the FM-1's FX button)"},
+    # the arpeggiator's HOLD (the user, 2026-11-01): the FM-1's latch (arp.c ARP_HOLD, set.arp[5]), which the FM-1
+    # reaches with SEL on its ARPEGGIO page and no CC; on the Move a card after GATE. ON: the notes keep playing after
+    # the pads are let go, a chord started after every pad was let go replaces them; OFF lets the released notes go
+    # (arp.c arp_hold_toggle). Saved with the slot's state (set.arp), OFF in a new instance (arp_defaults)
+    "s_arphold": {"name": "HOLD", "cc": 0, "options": ["OFF", "ON"], "kind": "MK_HOLD", "default": 0,
+                  "help": "the arpeggiator's HOLD: the notes keep playing after the pads are let go"},
+}
+# the Move-only mappings (plan 05 M6-03, U9): a source the FM-1 has no use for (channel pressure, poly pressure: the
+# Move's pads) turned into one of the app's own CCs, out = LO + (HI - LO) x pressure / 127 (HI < LO inverts), sent
+# only when it changes; poly pressure follows the most pressed note. Every mapping is off (CC 0) by default, so
+# nothing changes until one is set (Gate M); which ones ship on is the user's pick (U9). The bridge keeps them in
+# its state (move_bridge.h MB_NMAP, "map" in the state JSON); the key's slot field is the mapping's index
+for _i, (_k, _src) in enumerate((("m_at", "channel pressure"), ("m_pa", "poly pressure (the most pressed note)"))):
+    EXTRA[_k + "_cc"] = {"name": _k[2:].upper() + " CC", "cc": 0, "kind": "MK_MAP", "map": 3 * _i, "min": 0,
+                         "max": 119, "default": 0, "help": _src + " to this CC (0 off)"}
+    EXTRA[_k + "_lo"] = {"name": _k[2:].upper() + " LO", "cc": 0, "kind": "MK_MAP", "map": 3 * _i + 1, "min": 0,
+                         "max": 127, "default": 0, "help": "the CC's value at no " + _src.split(" (")[0]}
+    EXTRA[_k + "_hi"] = {"name": _k[2:].upper() + " HI", "cc": 0, "kind": "MK_MAP", "map": 3 * _i + 2, "min": 0,
+                         "max": 127, "default": 127, "help": "the CC's value at full " + _src.split(" (")[0]}
+MAP_KEYS = ["m_at_cc", "m_at_lo", "m_at_hi", "m_pa_cc", "m_pa_lo", "m_pa_hi"]
+# keys the plugin takes that no page shows: a C row only (not in the hierarchy, not in chain_params, so no knob, no
+# list row, no modulation target and no state read-back can write them)
+HIDDEN = ["s_susbtn", "s_fxbtn"]
+# the Move's levels: (key, title, the FM-1 pages it holds (their cards in order), extra keys after them). "VOICE"
+# stands for an engine's VOICE pages: one level per engine, VOICE 1 + 2, and VOICE 3 (VIBES' MOTOR) its own level.
+#
+# The first page (the user, 2026-10-30: a delay control there, the delay's MIX): knobs 1-5 as they were (TYPE SPREAD
+# SUS FX, then PAGES on Schwung's grid, PRESET in its place on Frodhes' own screen), DELAY on knob 8. Knobs 6 and 7
+# stay without a control (HOLE) because the overview's PRESET card draws the sound's whole name across them (up to
+# 16 characters, 95 px: it ends before knob 8's card at x 96)
+HOLE = None
+MOVE_LEVELS = [
+    ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_fx", "s_screen", HOLE, HOLE, "p_delay"]),
+    ("voice", "VOICE", ["VOICE"], []),
+    ("comp", "COMPRESSOR", ["COMPRESSOR"], ["p_cmp_sw", "p_cmp_rel", "r_cmp_gr", "r_cmp_pk"]),
+    # the EQ before the drive, as on the FM-1 (COMPRESSOR, EQ, DRIVE): its own level of four, the FM-1's page
+    ("eq", "EQ", ["EQ"], []),
+    ("drv_flt", "DRIVE/FILTER", ["DRIVE", "FILTER"], []),
+    ("trm_pha", "TREM/PHASER", ["TREM/WAH", "PHASER"], []),
+    # (the user, 2026-10-30: DELAY has its own page, as on the FM-1; CHORUS/DELAY was one level of eight before)
+    ("chorus", "CHORUS", ["CHORUS"], []),
+    ("delay", "DELAY", ["DELAY"], []),
+    ("reverb", "REVERB", ["REVERB", "REVERB 2"], []),
+    # (the user, 2026-10-28: no FM-1 sequencer, arpeggiator, chords or scales on the Move, which has its own, and no
+    # BPM or CLOCK: the Move's tempo leads (MOVE_OWNS_SLOTS); no SEQUENCER, CHORD or SCALE cards, no keys;
+    # move/move_bridge.h keeps them inert, MB_CC_DROP and mb_inert. The user, 2026-10-30, reverses it for the
+    # arpeggiator ("also i miss to add the arpegiator, lets also added to move"): the ARPEGGIO level with the FM-1
+    # page's cards, its CCs 52-55 reach the app, and it steps on the Move's clock (F8 / FA / FC on cable 0) or, with
+    # no clock, on the Move's tempo. The sequencer, the chords, the scales, BPM and CLOCK stay off)
+    ("tmp", "TEMPO", ["TEMPO"], []),
+    ("arp", "ARPEGGIO", ["ARPEGGIO"], ["s_arphold"]),
+    ("lfo_set", "LFO/SETUP", ["LFO", "SETUP", "MIDI"], []),
+    ("maps", "MAPPINGS", [], MAP_KEYS),
+]
+# extra keys that are parameters with no FM-1 card (they keep their CC on the FM-1)
+MOTOR_EXTRA = ["p_mot_sync"]       # VIBES' MOTOR level: the motor's sync (CC 51, no card on the FM-1)
+# parameters reached through another key (the FM-1's combined card)
+VIA = {"P_TW_SW": ("s_twkind", "TREM/WAH's EFFECT card: OFF / PAN / TREM / WAH sets the switch and the mode"),
+       "P_TW_MODE": ("s_twkind", "TREM/WAH's EFFECT card: OFF / PAN / TREM / WAH sets the switch and the mode")}
+# parameters left MIDI-only on the Move, with the reason (none today: tests/py/test_move_module.py lists the rule)
+MIDI_ONLY = {"P_CP_FDBK": "reserved: the chorus has no feedback yet (CC 24 is accepted and saved, no effect)"}
+# the card's label on the FM-1 -> the Move's cell (<= LABEL_MAX characters); labels that fit are kept as they are
+SHORT = {"EFFECT": None, "TREM SYNC": "TRSYNC", "PHA SYNC": "PHSYNC", "DLY SYNC": "DLSYNC", "INVERSION": "INV",
+         "VOICING": "VOICE", "OCTAVES": "OCT", "DLY TONE": "DLTONE", "CHANNEL": "CHAN", "PRE-DELAY": "PREDLY",
+         "LOW CUT": "LOWCUT", "RELEASE": "REL", "MOTOR": "MOTOR",
+         # (Schwung sets grid labels in a proportional font, 29 px wide: these three are cut there, HAMME DAMPE MAKEU)
+         "HAMMER": "HAMMR", "DAMPER": "DAMPR", "MAKEUP": "MKUP",
+         # (the EQ's MID FREQ: FREQ on its page of four, LOW MID FREQ HIGH, as the filter's FREQ; said "Mid frequency")
+         "MID FREQ": "FREQ"}
+# parameters with no FM-1 card whose params.c label is a cryptic short form: their name on the Move (the FM-1's
+# manual's name)
+PARAM_NAME = {"P_SPREAD": "SPREAD"}
+# a second key for a parameter that another level shows under another name (key: (parameter, its name there)):
+# Schwung keeps one name a key (param_meta.mjs buildMetaIndex: the chain_params entry wins, and two levels that name
+# one key differently are a contract warning), so the first page's delay mix has a key of its own. p_delay: the
+# delay's MIX (P_DL_DEPTH) on the first page, named DELAY as on the FM-1's PERFORM list (ui.c PERF_T); the DELAY
+# level keeps p_dl_depth as MIX (the user, 2026-10-30)
+ALIAS = {"p_delay": ("P_DL_DEPTH", "DELAY")}
+# Frodhes' own screen's overview cards fit SCREEN_LABEL_MAX: a longer label is shown so there (its large card, a
+# knob touched, shows the whole label); a new long label fails the generator until it is named here
+SCREEN_SHORT = {"SPREAD": "SPRD", "THRESH": "THR", "ATTACK": "ATK", "MAKEUP": "MKUP", "FEEDBK": "FDBK",
+                "STRIKE": "STRK", "MALLET": "MLLT", "HAMMER": "HAMR", "HAMMR": "HAMR", "WEIGHT": "WGHT",
+                "DAMPER": "DAMP", "DAMPR": "DAMP", "AMOUNT": "AMT", "TRSYNC": "TSYN", "PHSYNC": "PSYN",
+                "DLSYNC": "DSYN", "DLTONE": "DTON", "PREDLY": "PDLY", "LOWCUT": "LCUT", "RETRIG": "TRIG",
+                "CHORUS": "CHOR", "PHASER": "PHAS", "FILTER": "FILT", "REVERB": "RVB", "DELAY": "DLY",
+                "DECAY": "DCAY", "NOISE": "NOIS", "MOTOR": "MOTR", "DEPTH": "DPTH", "SPEED": "SPD", "SHAPE": "SHPE",
+                "RATIO": "RTIO", "DRIVE": "DRV", "LEVEL": "LVL", "AT CC": "ATCC", "AT LO": "ATLO", "AT HI": "ATHI",
+                "PA CC": "PACC", "PA LO": "PALO", "PA HI": "PAHI"}
+# EFFECT (each effect page's K1: its switch or TYPE) is named after the effect, so two on one level differ
+EFFECT_NAME = {"DRIVE": "DRIVE", "TREM/WAH": "TREM", "PHASER": "PHASER", "CHORUS": "CHORUS", "DELAY": "DELAY"}
+TYPE_NAME = {"FILTER": "FILTER", "REVERB": "REVERB", "CHORD": "CHORD"}
+ENGINE_TITLE = ["PIANO", "VIBES", "MARIMBA"]   # eng_pages.h ENG_UI rows (generic names: the help's)
+
+
+def strip_comments(t):
+    return re.sub(r"/\*.*?\*/", "", re.sub(r"//[^\n]*", "", t), flags=re.S)
+
+
+def read(name):
+    with open(os.path.join(SRC, name)) as f:
+        return strip_comments(f.read())
+
+
+def sources():
+    """every firmware source's text, comments removed"""
+    out = {}
+    for n in sorted(os.listdir(SRC)):
+        if n.endswith((".c", ".h")):
+            out[n] = read(n)
+    return out
+
+
+def cint(tok, defs):
+    """a C constant expression of ints and #define names (u suffixes, casts): 'ARP_NMODE - 1' -> 5; None if a name
+    is not a plain #define"""
+    expr = re.sub(r"\(\w+_t\)", "", re.sub(r"\b(\d+)u\b", r"\1", tok.strip()))
+    if not re.fullmatch(r"[\w\s+\-*/()]+", expr) or any(n not in defs for n in re.findall(r"[A-Za-z_]\w*", expr)):
+        return None
+    return int(eval(expr, {"__builtins__": {}}, dict(defs)))   # (only ints, #define names and + - * / ( ))
+
+
+def model():
+    """the firmware's tables, parsed"""
+    src = sources()
+    allt = "\n".join(src.values())
+    defs = {}
+    for m in re.finditer(r"^\s*#define\s+(\w+)\s+\(?(\d+)u?\)?\s*$", allt, re.M):
+        defs.setdefault(m.group(1), int(m.group(2)))
+    for m in re.finditer(r"enum \{([^}=]*)\}", allt):             # plain enums: A, B, .., X_N (ARP_NMODE)
+        for i, n in enumerate(x.strip() for x in m.group(1).split(",")):
+            if re.fullmatch(r"[A-Za-z_]\w*", n):
+                defs.setdefault(n, i)
+    names = {m.group(1): re.findall(r'"([^"]*)"', m.group(2))
+             for m in re.finditer(r"static const char \*const (\w+)\[[^\]]*\] = \{([^}]*)\};", allt)}
+    pc = src["params.c"]
+    penum = re.search(r"enum \{ (P_TYPE.*?)P_COUNT \};", pc, re.S).group(1)
+    pids = [p.strip() for p in penum.split(",") if p.strip()]
+    params = {}
+    for m in re.finditer(r'\[(P_\w+)\] = \{"([^"]*)", (\d+), (\d+), (F_\w+), (\d+), (\w+)\}', pc):
+        params[m.group(1)] = {"id": pids.index(m.group(1)), "lab": m.group(2), "hi": int(m.group(3)),
+                              "def": int(m.group(4)), "fmt": m.group(5), "cc": int(m.group(6)),
+                              "names": None if m.group(7) == "0" else m.group(7)}
+    assert sorted(params) == sorted(pids), "PARAMS[] and the P_ enum disagree"
+    ui = src["ui.c"]
+    pg_enum = [p.strip() for p in re.search(r"enum \{ (PG_PERF.*?)PG_N \};", ui, re.S).group(1).split(",") if p.strip()]
+    titles = re.findall(r'"([^"]*)"', re.search(r"PAGE_TITLE\[PG_N\] = \{(.*?)\};", ui, re.S).group(1))
+    rows_s = re.findall(r"\{([^{}]*)\}", re.search(r"PAGE_S\[PG_N\]\[4\] = \{(.*?)\n\};", ui, re.S).group(1))
+    rows_l = re.findall(r"\{([^{}]*)\}", re.search(r"PAGE_LAB\[PG_N\]\[4\] = \{(.*?)\n\};", ui, re.S).group(1))
+    order = [p.strip() for p in re.search(r"PG_ORDER\[PG_NORD\] = \{(.*?)\};", ui, re.S).group(1).split(",")]
+    assert len(titles) == len(pg_enum) == len(rows_s) == len(rows_l), "ui.c's page tables disagree"
+    lab_tok = {"UI_TRS_LAB": "TRS IN", "UI_LEDS_LAB": "LEDS"}      # (the FM-1's: the SMK-37 leaves them empty)
+    slot_tok = {"UI_TRS": "S_TRS", "UI_LEDS": "S_LEDS"}
+    pages = {}
+    for i, pg in enumerate(pg_enum):
+        cards = [slot_tok.get(t.strip(), t.strip()) for t in rows_s[i].split(",")]
+        labs = []
+        for t in re.findall(r'"[^"]*"|\w+', rows_l[i]):
+            labs.append(t[1:-1] if t.startswith('"') else lab_tok[t])
+        pages[pg] = {"title": titles[i], "cards": cards, "labs": labs}
+    sv = re.search(r"static int32_t slot_val\(uint32_t s, int32_t \*hi\)\n\{(.*?)\n\}", ui, re.S).group(1)
+    slot_hi = {}
+    for m in re.finditer(r"case (S_\w+): \*hi = ([^;]+);", sv):
+        slot_hi[m.group(1)] = cint(m.group(2), defs)
+    ep = read("eng_pages.h")
+    engines = []
+    rows = re.findall(r"ENG_UI_ROW\((ENG_\w+),", ep)
+    for arr in rows:
+        body = re.search(r"static const ectl_t " + arr + r"\[\] = \{(.*?)\n\};", ep, re.S).group(1)
+        ctls = []
+        for m in re.finditer(r'\{((?:P|S)_\w+), "([^"]+)", (EK_\w+), (EU_\w+)([^}]*)\}', body):
+            rest = [x.strip() for x in m.group(5).split(",") if x.strip()]
+            c = {"slot": m.group(1), "name": m.group(2), "kind": m.group(3), "unit": m.group(4),
+                 "head": int(rest[0]) if rest else 0}
+            if m.group(3) == "EK_DETENT":
+                c["detents"] = list(zip(names[rest[3]], [int(x) for x in re.search(
+                    r"static const uint8_t " + rest[4] + r"\[\d+\] = \{([^}]*)\}", ep).group(1).split(",")]))
+            ctls.append(c)
+        engines.append(ctls)
+    type_ui = [int(x) for x in re.search(r"TYPE_UI\[N_TYPE_N\] = \{([^}]*)\}", ep).group(1).split(",")]
+    slot_def = slot_defaults(src, params, defs, sv)
+    return {"params": params, "pids": pids, "names": names, "pages": pages, "order": order, "slot_hi": slot_hi,
+            "slot_def": slot_def, "engines": engines, "type_ui": type_ui, "defs": defs}
+
+
+def c_eval(expr, env):
+    """a C expression of ints, names in env, == != + - and ?: (casts and u suffixes dropped) -> int"""
+    e = re.sub(r"\((?:u?int\d+_t)\)", "", re.sub(r"\b(\d+)u\b", r"\1", expr)).strip()
+    depth, q = 0, -1
+    for i, ch in enumerate(e):                     # (the first ? at depth 0, its : the matching one: right-assoc)
+        depth += ch == "(" or -(ch == ")")
+        if ch == "?" and depth == 0:
+            q = i
+            break
+    if q >= 0:
+        depth, n = 0, 0
+        for j in range(q + 1, len(e)):
+            depth += e[j] == "(" or -(e[j] == ")")
+            if depth == 0 and e[j] == "?":
+                n += 1
+            elif depth == 0 and e[j] == ":":
+                if n == 0:
+                    return c_eval(e[q + 1:j], env) if c_eval(e[:q], env) else c_eval(e[j + 1:], env)
+                n -= 1
+        raise ValueError(expr)
+    names = re.findall(r"[A-Za-z_][\w.]*", e)
+    assert all(n in env for n in names), (expr, [n for n in names if n not in env])
+    return int(eval(re.sub(r"[A-Za-z_][\w.]*", lambda mm: "(%d)" % env[mm.group(0)], e), {"__builtins__": {}}))
+
+
+def slot_defaults(src, params, defs, sv):
+    """every ui.c slot's value at the FM-1's first boot (S_* -> slot_val's value): params_defaults zeroes the
+    settings record and sets some fields (set.X = N), arp_sanitize then puts arp.c's arp_defaults in (the zeroed GATE
+    is out of range), the parameters are PARAMS[].def; slot_val's return expression evaluated on those, tw_kind() on
+    the TREM/WAH switch's and mode's defaults. None where an expression reads anything else"""
+    pc, ac, ui = src["params.c"], src["arp.c"], src["ui.c"]
+    env = dict(defs)
+    body = re.search(r"static void params_defaults\(void\)\n\{(.*?)\n\}", pc, re.S).group(1)
+    for f in re.findall(r"set\.(\w+)", "\n".join(src.values())):
+        env["set." + f] = 0
+    for m in re.finditer(r"set\.(\w+) = (\d+)u?;", body):
+        env["set." + m.group(1)] = int(m.group(2))
+    for m in re.finditer(r"#define (ARP_\w+) \(set\.arp\[(\d)\]\)", ac):
+        env[m.group(1)] = 0
+    ad = re.search(r"static void arp_defaults\(void\) \{([^}]*)\}", ac).group(1)
+    for m in re.finditer(r"(ARP_\w+) = (\w+);", ad):
+        env[m.group(1)] = c_eval(m.group(2), env)
+    pv = {p: v["def"] for p, v in params.items()}
+    tw = re.search(r"static uint32_t tw_kind\(void\)[^{]*\{(.*?)\n\}", ui, re.S).group(1)
+    tenv = dict(env)
+    for m in re.finditer(r"(\w+) = PV\((P_\w+)\)", tw):
+        tenv[m.group(1)] = pv[m.group(2)]
+    env["tw_kind()"] = c_eval(re.search(r"return ([^;]+);", tw).group(1), tenv)
+    out = {}
+    for m in re.finditer(r"case (S_\w+): \*hi = [^;]+; return ([^;]+);", sv):
+        e = m.group(2).replace("tw_kind()", "tw_kind__")
+        try:
+            out[m.group(1)] = c_eval(e, dict(env, tw_kind__=env["tw_kind()"]))
+        except (AssertionError, SyntaxError):     # (another kind of expression: no default from here)
+            out[m.group(1)] = None
+    return out
+
+
+def pkey(p):
+    return "p_" + p[2:].lower()
+
+
+def skey(s):
+    return "s_" + s[2:].lower()
+
+
+def short(label, fallback):
+    if label in SHORT and SHORT[label]:
+        return SHORT[label]
+    if len(label) <= LABEL_MAX:
+        return label
+    return fallback
+
+
+def short_value(o):
+    v = VALUE_SHORT.get(o, o)
+    assert len(v) <= VALUE_MAX, f"the option {o!r} is longer than {VALUE_MAX}: name it in VALUE_SHORT"
+    return v
+
+
+def key_def(m, slot, label, key=None, bip=True):
+    """a key's entry: (key, its JSON item, its C row) for a parameter id or a ui.c slot; key: another name for the
+    same parameter (an engine's card), bip: a bipolar parameter reads -64..63 (not on a card with named detents)"""
+    if slot.startswith("P_"):
+        p = m["params"][slot]
+        off = 64 if p["fmt"] == "F_BIP" and bip else 0
+        key = key or pkey(slot)
+        item = {"key": key, "name": label}
+        if p["fmt"] in ("F_ENUM", "F_DIV"):
+            opts = m["names"][p["names"]][:p["hi"] + 1]
+            assert len(opts) == p["hi"] + 1, (slot, opts)
+            item.update({"type": "enum", "options": [short_value(o) for o in opts], "default": p["def"]})
+        else:
+            item.update({"type": "int", "min": -off, "max": p["hi"] - off, "default": p["def"] - off})
+        return item, {"key": key, "slot": slot, "cc": p["cc"], "off": off, "scale": 1, "kind": "MK_PARAM"}
+    sd = SLOTS[slot]
+    hi = m["slot_hi"][slot]
+    item = {"key": skey(slot), "name": label}
+    off, scale = sd.get("off", 0), sd.get("scale", 1)
+    if "names" in sd or "options" in sd:
+        opts = sd["options"] if "options" in sd else m["names"][sd["names"]]
+        assert len(opts) == hi + 1, (slot, hi, opts)
+        item.update({"type": "enum", "options": [short_value(o) for o in opts]})
+    elif scale != 1:
+        item.update({"type": "float", "min": (0 - off) / scale, "max": (hi - off) / scale, "step": 1.0 / scale})
+    else:
+        item.update({"type": "int", "min": max(sd.get("min", 0), 0) - off, "max": hi - off})
+    d = m["slot_def"].get(slot)                 # (the FM-1's first-boot value: a double tap resets to it)
+    if d is not None:                           # (None: slot_val reads something else, S_SQEDIT's action, say)
+        item["default"] = (d - off) / scale if scale != 1 else d - off
+    if sd.get("unit"):
+        item["unit"] = sd["unit"]
+    return item, {"key": skey(slot), "slot": slot, "cc": sd.get("cc", 0), "off": off, "scale": scale,
+                  "kind": "MK_SLOT"}
+
+
+def extra_def(k):
+    e = EXTRA[k]
+    if e["kind"] == "MK_MAP":                  # a number, the bridge's own (the slot field: the mapping's index)
+        return ({"key": k, "name": e["name"], "type": "int", "min": e["min"], "max": e["max"], "default": e["default"]},
+                {"key": k, "slot": str(e["map"]), "cc": 0, "off": 0, "scale": 1, "kind": "MK_MAP"})
+    item = {"key": k, "name": e["name"], "type": "enum", "options": e["options"]}
+    if "default" in e:
+        item["default"] = e["default"]
+    if e["kind"] == "MK_TRIG":
+        item["access"] = "write"
+    return item, {"key": k, "slot": "S_NONE", "cc": e["cc"], "off": 0, "scale": 1, "kind": e["kind"]}
+
+
+def engine_key(m, c):
+    """an engine's card on a parameter the first engine (the piano) names otherwise: its own key (p_strike for VIBES'
+    and MARIMBA's STRIKE on P_TONE), so a key means one thing; else None (the parameter's key)"""
+    first = {x["slot"]: x["name"] for x in m["engines"][0]}
+    if c["slot"].startswith("P_") and c["slot"] in first and first[c["slot"]] != c["name"]:
+        return "p_" + re.sub(r"[^a-z0-9]", "", c["name"].lower())
+    return None
+
+
+def card_label(m, page, k):
+    lab = m["pages"][page]["labs"][k]
+    slot = m["pages"][page]["cards"][k]
+    title = m["pages"][page]["title"]
+    if lab == "EFFECT":
+        return EFFECT_NAME[title]
+    if lab == "TYPE" and title in TYPE_NAME:   # FILTER's and REVERB's K1: named after the page
+        return TYPE_NAME[title]
+    fb = m["params"][slot]["lab"] if slot.startswith("P_") else lab[:LABEL_MAX]
+    return short(lab, fb)
+
+
+def build(m):
+    """-> (levels dict, chain_params list, C key rows, reach {P_: where})"""
+    page_of = {v["title"]: pg for pg, v in m["pages"].items()}
+    levels, chain, crow, reach, seen = {}, [], [], {}, {}
+
+    def add(lvl, item, row, where):
+        lvl["params"].append(item)
+        lvl["knobs"].append(item["key"])
+        if row["key"] not in seen:
+            seen[row["key"]] = 1
+            c = {k: v for k, v in item.items()}
+            chain.append(c)
+            crow.append(row)
+        if row["slot"].startswith("P_") and row["key"] not in ALIAS:   # (an alias is a second way in, not its home)
+            reach.setdefault(row["slot"], where)
+
+    def page_cards(lvl, title):
+        pg = page_of[title]
+        for k, slot in enumerate(m["pages"][pg]["cards"]):
+            if slot == "S_NONE" or slot in FM1_ONLY_SLOTS or slot in MOVE_OWNS_SLOTS:
+                continue
+            item, row = key_def(m, slot, card_label(m, pg, k))
+            add(lvl, item, row, lvl["name"])
+
+    def extras(lvl, keys):
+        for k in keys:
+            if k is HOLE:                          # a knob left without a control (Schwung: an authored hole)
+                lvl["knobs"].append(None)
+                continue
+            if k == SCREEN["key"]:                 # a screen of ours: a hierarchy item only (no value, no C row)
+                lvl["params"].append(dict(SCREEN))
+                lvl["knobs"].append(k)
+                continue
+            if k in METER:                         # the GR meter's cells: a hierarchy item + chain_params (no C row)
+                lvl["params"].append(dict(METER[k]))
+                lvl["knobs"].append(k)
+                chain.append(dict(METER[k]))
+                continue
+            if k in EXTRA:
+                item, row = extra_def(k)
+            elif k in ALIAS:
+                item, row = key_def(m, ALIAS[k][0], ALIAS[k][1], k)
+            else:
+                slot = "P_" + k[2:].upper()
+                p = m["params"][slot]
+                item, row = key_def(m, slot, PARAM_NAME.get(slot) or short(p["lab"], p["lab"]))
+            add(lvl, item, row, lvl["name"])
+
+    root_links = []
+    for key, title, pgs, ext in MOVE_LEVELS:
+        if pgs == ["VOICE"]:
+            for e, ctls in enumerate(m["engines"]):
+                groups = [ctls[i:i + 8] for i in range(0, len(ctls), 8)]
+                for g, grp in enumerate(groups):
+                    lk = "%s_%d%s" % (key, e, "" if g == 0 else "_%d" % (g + 1))
+                    lt = ENGINE_TITLE[e] + (" " + ("VOICE" if g == 0 else grp[0]["name"]))
+                    lvl = {"name": lt, "params": [], "knobs": [], "visible_if": {"param": "ui_engine", "equals": e}}
+                    for c in grp:
+                        fb = m["params"][c["slot"]]["lab"] if c["slot"].startswith("P_") else c["name"][:LABEL_MAX]
+                        item, row = key_def(m, c["slot"], short(c["name"], fb), engine_key(m, c),
+                                            c["kind"] != "EK_DETENT")
+                        add(lvl, item, row, lt)
+                    if g == len(groups) - 1 and g > 0:
+                        extras(lvl, MOTOR_EXTRA)
+                    levels[lk] = lvl
+                    root_links.append({"level": lk, "label": lt})
+            continue
+        lvl = {"name": title, "params": [], "knobs": []}
+        for t in pgs:
+            page_cards(lvl, t)
+        extras(lvl, ext)
+        assert len(lvl["knobs"]) <= 8, (key, lvl["knobs"])
+        levels[key] = lvl
+        if key != "root":
+            root_links.append({"level": key, "label": title})
+    for r in crow:                                 # (each parameter key's params.c format: screen_pages' FMT)
+        if r["slot"] in m["params"]:
+            PFMT[r["key"]] = m["params"][r["slot"]]["fmt"]
+    for k in HIDDEN:                               # (a C row only)
+        crow.append(extra_def(k)[1])
+    root = levels["root"]
+    root["list_param"], root["count_param"], root["name_param"] = "preset", "preset_count", "preset_name"
+    root["params"] += root_links
+    for p in m["pids"]:
+        if p not in reach and p in VIA:
+            reach[p] = "via " + VIA[p][0]
+    return levels, chain, crow, reach
+
+
+def dumps(o):
+    return json.dumps(o, indent=2, ensure_ascii=True) + "\n"
+
+
+def help_lines(text):
+    """words -> lines of <= HELP_MAX characters"""
+    out, cur = [], ""
+    for w in text.split():
+        if cur and len(cur) + 1 + len(w) > HELP_MAX:
+            out.append(cur)
+            cur = w
+        else:
+            cur = (cur + " " + w) if cur else w
+    if cur:
+        out.append(cur)
+    return out
+
+
+def help_json(m, levels, reach):
+    kids = [{"title": "Overview", "lines": help_lines(
+        "Physical models of an electric piano (four types), a vibraphone and a marimba. No samples. TYPE on the "
+        "first page picks the instrument; its VOICE pages follow it.") + [""] + help_lines(
+        "SUS is the sustain pedal, on or off: ON holds the notes, OFF lets them go. A pedal on CC 64 works too.") + [""]
+        + help_lines(
+        "PAGES opens Frodhes' own screen: touch its knob and click the jog wheel. Eight cards a page, a touched knob "
+        "shown large. The jog wheel turns the pages; a click lists them. Capture turns SUS on or off there. FX "
+        "turns all effects off or on.") + [""] + help_lines(
+        "Frodhes plays in one slot at a time.")}]
+    pages = []
+    for k, lvl in levels.items():
+        lines = []
+        for i, key in enumerate(lvl["knobs"]):
+            if key is None:
+                continue
+            item = next(p for p in lvl["params"] if p.get("key") == key)
+            lines.append("K%d %s" % (i + 1, item["name"]))
+        pages.append({"title": lvl["name"][:HELP_MAX], "lines": lines})
+    kids.append({"title": "Pages", "children": pages})
+    midi = help_lines("Notes with velocity and release velocity, pitch bend (piano types), sustain CC 64 with half "
+                      "pedal, program change 0-15 F01-F16, 16-31 U01-U16, 32-34 F17-F19, MIDI clock. Every "
+                      "parameter has its CC, as on the FM-1:")
+    for p in m["pids"]:
+        cc = m["params"][p]["cc"]
+        if cc:
+            midi.append("CC %d %s" % (cc, m["params"][p]["lab"]))
+    kids.append({"title": "MIDI", "lines": midi})
+    return {"title": "Frodhes", "children": kids}
+
+
+def c_str(s):
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def hier_for_engine(hier, e):
+    """the hierarchy the plugin serves while engine e sounds: the levels of every engine but e left out (with the links
+    to them), no visible_if left. Schwung v1.8.1 re-plans the knob pages on a visible_if only when the grid itself
+    writes the gate key or a pad press / focus change marks the gates due (page_controller.mjs, the gate lane); a gate
+    that moves because TYPE moved (ui_engine) is never re-read, so after a TYPE change the grid kept the old engine's
+    VOICE pages. A contract whose bytes change is re-planned on the is_loading edge (shadow_ui_param_pages.mjs
+    tickParamPages -> reloadIfChanged) and after a preset pick (armContractSettle): move_bridge.h serves this text
+    and answers is_loading 1 for a moment after the engine changes."""
+    gone = {k for k, lv in hier["levels"].items() if lv.get("visible_if", {}).get("equals", e) != e}
+    levels = {}
+    for k, lv in hier["levels"].items():
+        if k in gone:
+            continue
+        lv = {f: v for f, v in lv.items() if f != "visible_if"}
+        lv["params"] = [x for x in lv["params"] if not (isinstance(x, dict) and x.get("level") in gone)]
+        levels[k] = lv
+    return {"levels": levels}
+
+
+def c_header(hier, chain, crow):
+    lines = ["/* SPDX-License-Identifier: GPL-3.0-only */",
+             "/* GENERATED by tools/gen_move_module.py from params.c, eng_pages.h and ui.c - do not edit. */",
+             "/* The Move's keys: MOVE_KEYS[] (a parameter id < P_COUNT or a ui.c S_* slot, its CC (0: none), the",
+             " * offset off and scale: wire = (slot value - off) / scale) and the texts get_param serves. Included by",
+             " * the plugin after frodhes.c (P_* / S_* in scope). */",
+             "#ifndef MOVE_UI_H", "#define MOVE_UI_H",
+             "#define MOVE_GATE_KEY \"ui_engine\"   /* get_param: TYPE_UI[PV(P_TYPE)] (eng_pages.h), the VOICE levels' gate */",
+             "#define MOVE_SCREEN_KEY %s   /* get_param: the PAGES cell's value line */" % c_str(SCREEN["key"]),
+             "#define MOVE_SCREEN_VALUE %s" % c_str(SCREEN_VALUE),
+             "enum { MK_PARAM, MK_SLOT, MK_LATCH, MK_TRIG, MK_BTN, MK_MAP, MK_HOLD };   /* PV(id) / ui.c slot_val / a CC 0",
+             "                                                   * or 127 / a CC 127 / the sustain control (the FM-1's REC",
+             "                                                   * button) / a Move-only mapping's setting (slot: its",
+             "                                                   * index) / the arpeggiator's HOLD (arp.c ARP_HOLD) */",
+             "typedef struct { const char *key; uint8_t slot, cc, kind, scale; int16_t off; } move_key_t;",
+             "static const move_key_t MOVE_KEYS[] = {"]
+    for r in crow:
+        lines.append("    {%s, %s, %d, %s, %d, %d}," % (c_str(r["key"]), r["slot"], r["cc"], r["kind"], r["scale"],
+                                                       r["off"]))
+    lines.append("};")
+    lines.append("#define MOVE_NKEYS (sizeof MOVE_KEYS / sizeof MOVE_KEYS[0])")
+    n_eng = 1 + max(lv["visible_if"]["equals"] for lv in hier["levels"].values() if "visible_if" in lv)
+    texts = [("MOVE_UI_HIERARCHY_E%d" % e, hier_for_engine(hier, e)) for e in range(n_eng)]
+    for name, obj in texts + [("MOVE_CHAIN_PARAMS", chain)]:
+        txt = json.dumps(obj, separators=(",", ":"), ensure_ascii=True)
+        lines.append("static const char %s[] =" % name)
+        for i in range(0, len(txt), 100):
+            lines.append("    " + c_str(txt[i:i + 100]) + ("" if i + 100 < len(txt) else ";"))
+    lines.append("/* get_param(\"ui_hierarchy\"): the sounding engine's text (TYPE_UI[PV(P_TYPE)]), its VOICE levels only */")
+    lines.append("static const char *const MOVE_UI_HIERARCHY[] = {%s};" % ", ".join(n for n, _ in texts))
+    lines.append("static const uint16_t MOVE_UI_HIERARCHY_N[] = {%s};" % ", ".join("sizeof %s - 1" % n for n, _ in texts))
+    lines.append("#define MOVE_N_ENG %du" % n_eng)
+    lines.append("#endif")
+    return "\n".join(lines) + "\n"
+
+
+def outputs():
+    m = model()
+    levels, chain, crow, reach = build(m)
+    # The preset keys for Schwung's web remote (schwung-manager remote_ui.go): it reads a preset browser's keys from
+    # ui_hierarchy only, and the plugin serves none (Frodhes' own screen, MB_OWN_UI); the keys a chain_params entry
+    # names as extra_keys it reads and pushes too (fetchExtraKeysFrom), so the remote, tools/move_ws.py and the
+    # preflight see the preset, its name and the count again
+    chain[0] = dict(chain[0], extra_keys=CHAIN_EXTRA_KEYS)
+    hier = {"levels": levels}
+    module = {"id": "frodhes", "name": "Frodhes", "abbrev": "FRDH", "version": "0.0.0-dev",
+              "description": "Physical-model electric piano, vibraphone and marimba",
+              "author": "Frodhes", "dsp": "dsp.so", "api_version": 2, "component_type": "sound_generator",
+              # requires_continuous_processing (Schwung 1.8.1 chain_synth_load.c): the host otherwise stops calling
+              # render_block after ~1 s of silence, and the app's clock (the arp, the sequencer, the tempo's beat,
+              # the settings' save) runs on render_block
+              "capabilities": {"audio_out": True, "midi_in": True, "chainable": True,
+                               "requires_continuous_processing": True, "component_type": "sound_generator",
+                               "claims_ccs": [SUS_BTN_CC, FX_BTN_CC], "touch_observe": True,
+                               # the knob grid's custom widget (the GR meter): Schwung loads <module>/canvas.js
+                               "canvas_script": "canvas.js"}}
+    return {"module.json": dumps(module), "ui_hierarchy.json": dumps(hier), "chain_params.json": dumps(chain),
+            "help.json": dumps(help_json(m, levels, reach)), "move_ui.h": c_header(hier, chain, crow),
+            "screen.js": screen_js(levels), "canvas.js": canvas_js(), "ui_chain.js": ui_chain_js(levels)}, m, reach
+
+
+# The values Frodhes' screen shows as the FM-1's card does (params.c param_text), where a raw 0..127 would say
+# nothing: the EQ's gains in dB ("+3.1", "-15"; 64 is flat, "+0.0") and its MID FREQ in Hz ("551", "1.0K"). Per
+# params.c format: (FR_CONF.fmt's name, the spoken unit, the spoken unit of a value in K, the bar's centre notch).
+# The texts are the firmware's integer arithmetic, ported (tests/py/test_move_eq.py compares all 128 of each with
+# the C, tests/c/eq_text.c); the knob's wire value stays the CC value 0..127.
+FMT = {"F_EQDB": ("eqdb", "decibels", None, 64), "F_EQHZ": ("eqhz", "hertz", "kilohertz", None)}
+PFMT = {}                                          # key -> its parameter's params.c format (build fills it)
+
+
+def _cdiv(a, b):
+    """C's integer division (towards 0)"""
+    q = abs(a) // abs(b)
+    return q if (a >= 0) == (b > 0) else -q
+
+
+def _exp2_neg(x):
+    """fx.c exp2_neg: 2^-(x / 65536) in Q15"""
+    i, u, p = x >> 16, 32768 - ((x & 0xFFFF) >> 1), 2579
+    p = ((p * u) >> 15) + 7409
+    p = ((p * u) >> 15) + 22780
+    p = ((p * u) >> 15) + 32768
+    return p >> (i + 1) if i < 15 else 0
+
+
+def _fmt_db10(t10, t1):
+    """params.c fmt_db10: "+1.5", "-6.4"; from 10 dB on whole dB"""
+    a = abs(t10)
+    sign = "-" if t10 < 0 else "+"
+    return sign + (str(abs(t1)) if a >= 100 else "%d.%d" % (a // 10, a % 10))
+
+
+def fmt_text(fmt, v):
+    """params.c param_text for the formats in FMT, value v 0..127"""
+    if fmt == "F_EQDB":
+        e = v - 64 if v else -63
+        r = 31 if e >= 0 else -31
+        return _fmt_db10(_cdiv(e * 150 + r, 63), _cdiv(e * 15 + r, 63))
+    if fmt == "F_EQHZ":
+        hz = (5000 * _exp2_neg((127 - v) * 2396) + 16384) >> 15
+        c = (hz + 50) // 100
+        if hz < 1000:
+            return str(hz)
+        return "%d.%dK" % (c // 10, c % 10) if c < 100 else "%dK" % ((hz + 500) // 1000)
+    raise KeyError(fmt)
+
+
+def fmt_conf():
+    """FR_CONF.fmt: per FMT name its 128 texts and the spoken units"""
+    out = {}
+    for f, (name, unit, kunit, _) in FMT.items():
+        c = {"text": [fmt_text(f, v) for v in range(128)], "unit": unit}
+        if kunit:
+            c["kunit"] = kunit
+        out[name] = c
+    return out
+
+
+def screen_pages(levels):
+    """the levels as Frodhes' own screen shows them: [{title, gate (ui_engine, -1 always shown), part (an engine's
+    VOICE page 0, its next page 1, -1 not an engine page), root, knobs}], each knob {key, name, type, min, max, step,
+    options, write, short (the overview card's label, <= SCREEN_LABEL_MAX)}; a canvas cell (PAGES) is no knob there,
+    and the first page gets the preset as a knob in the screen cell's place (PRESET, its name over the holes 6-7)"""
+    out = []
+    for lk, lvl in levels.items():
+        gate = lvl.get("visible_if", {}).get("equals", -1)
+        part = (1 if lk.count("_") == 2 else 0) if gate >= 0 else -1
+        ks = []
+        for key in lvl["knobs"]:
+            if key is None:                          # a knob with no control (HOLE): none on the screen either
+                ks.append(None)
+                continue
+            it = next(p for p in lvl["params"] if p.get("key") == key)
+            if it["type"] == "canvas" and lk == "root":   # (the preset in the PAGES cell's place: knob 5 on both)
+                ks.append({"key": "preset", "name": "PRESET", "type": "preset"})
+                continue
+            if it["type"] == "canvas" or it.get("access") == "read":   # (the GR cells: the screen draws its own meter)
+                continue
+            k = {"key": key, "name": it["name"], "type": it["type"]}
+            if len(it["name"]) > SCREEN_LABEL_MAX:
+                assert it["name"] in SCREEN_SHORT, f"the label {it['name']!r} is longer than {SCREEN_LABEL_MAX}: " \
+                                                   "name its overview form in SCREEN_SHORT"
+                k["short"] = SCREEN_SHORT[it["name"]]
+            for f in ("min", "max", "step", "options"):
+                if f in it:
+                    k[f] = it[f]
+            if "default" in it:                      # (a double tap on the knob's touch resets it: the screen's reset)
+                k["def"] = it["default"]
+            if it.get("access") == "write":
+                k["write"] = True
+            pf = FMT.get(PFMT.get(key, ""))            # (a value shown as the FM-1's text: FR_CONF.fmt)
+            if pf:
+                k["fmt"] = pf[0]
+                if pf[3] is not None:
+                    k["zero"] = pf[3]
+            ks.append(k)
+        assert len(ks) <= 8 and ks[-1] is not None, (lk, ks)
+        out.append({"title": lvl["name"], "gate": gate, "part": part, "root": lk == "root", "knobs": ks})
+    return out
+
+
+def gr_db10():
+    """the gain-reduction meter's scale (COMPRESSOR): ui.c's GR_DB10, dB x 10 at each of its evenly spaced segments"""
+    m = re.search(r"GR_DB10\[GR_SEGS\] = \{([^}]*)\}", read("ui.c"))
+    return [int(x) for x in m.group(1).split(",")]
+
+
+def rv_conf():
+    """the reverb's DECAY under TYPE INFINITE (ui.c slot_text): SUSTAIN from RV_SUSTAIN_AT, FREEZE from RV_FREEZE_AT
+    (the input to the reverb closed: new notes play dry), the FM-1's words and their card forms (VALUE_SHORT); the
+    thresholds and the words from ui.c, never typed in here"""
+    ui = read("ui.c")
+    defs = {m.group(1): int(m.group(2)) for m in re.finditer(r"^\s*#define\s+(RV_\w+)\s+(\d+)u?\s*$", ui, re.M)}
+    case = re.search(r"case P_RV_DECAY:(.*?)break;", ui, re.S).group(1)
+    assert "RV_INF" in case and "RV_SUSTAIN_AT" in case and "RV_FREEZE_AT" in case, "ui.c's P_RV_DECAY text moved"
+    freeze, sustain = re.findall(r'p_strcpy\(v, "(\w+)"', case)
+    return {"type": "p_rv_type", "decay": "p_rv_decay", "inf": defs["RV_INF"], "sustain_at": defs["RV_SUSTAIN_AT"],
+            "freeze_at": defs["RV_FREEZE_AT"], "words": [sustain, freeze],
+            "short": [short_value(sustain), short_value(freeze)]}
+
+
+def canvas_js():
+    """the knob grid's GR cell (Schwung's custom widget, METER): GR_CONF + move/ui/gr_cell.js, in one closure"""
+    conf = {"kind": GR_KIND, "gr": "r_cmp_gr", "gr_db10": gr_db10()}
+    with open(GR_CELL) as f:
+        core = f.read()
+    head = ("// SPDX-License-Identifier: GPL-3.0-only\n"
+            "// GENERATED by tools/gen_move_module.py from ui.c and move/ui/gr_cell.js - do not edit.\n"
+            "// The gain-reduction meter on Schwung's knob grid (COMPRESSOR, knobs 7-8): a custom widget (drawCell).\n")
+    return (head + "(function () {\n\"use strict\";\nconst GR_CONF = " + json.dumps(conf, separators=(",", ":"))
+            + ";\n" + core + "})();\n")
+
+
+def screen_js(levels):
+    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10(), rv=rv_conf(), fmt=fmt_conf())
+    with open(UI_CORE) as f:
+        core = f.read()
+    head = ("// SPDX-License-Identifier: GPL-3.0-only\n"
+            "// GENERATED by tools/gen_move_module.py from params.c, eng_pages.h, ui.c and move/ui/screen_core.js - do "
+            "not edit.\n"
+            "// Frodhes' own screen (option F): the pages and the settings, then the screen's code.\n")
+    # one closure: nothing of the screen's lands in the host's globals but globalThis.canvas_overlay (and the tests'
+    # globalThis.frodhes_screen)
+    return (head + "(function () {\n\"use strict\";\nconst FR_PAGES = "
+            + json.dumps(screen_pages(levels), separators=(",", ":")) + ";\n"
+            + "const FR_CONF = " + json.dumps(conf, separators=(",", ":")) + ";\n" + core + "})();\n")
+
+
+KNOB_LEDS_MJS = "/data/UserData/schwung/shared/param_pages/knob_leds.mjs"   # Schwung's knob rings (the grid's)
+INPUT_FILTER_MJS = "/data/UserData/schwung/shared/input_filter.mjs"          # its setButtonLED (the arrows' LEDs)
+SCREEN_READER_MJS = "/data/UserData/schwung/shared/screen_reader.mjs"        # its announce (the screen reader)
+
+# What Frodhes' screen says with Schwung's screen reader on (move/ui/screen_core.js, FR_CONF.say): every control's
+# whole name in words (by key: the card's label is cut to fit, HAMMR FEEDBK PREDLY), a page's name, an option's word
+# (by the option as the card shows it). Anything else in capitals is said as a sentence (MODULE HELP: "Module help").
+# A new control on a page fails the generator until it is named here.
+SAY_NAMES = {
+    "p_type": "Type", "p_spread": "Spread", "s_sustain": "Sustain", "s_fx": "Effects", "preset": "Preset",
+    "p_delay": "Delay mix",
+    "p_tone": "Tone", "p_bark": "Bark", "p_bell": "Bell", "p_hammer": "Hammer", "p_decay": "Decay",
+    "p_release": "Release", "p_noise": "Noise", "s_tune": "Tune",
+    "p_strike": "Strike", "p_mallet": "Mallet", "p_tube": "Tube", "p_weight": "Weight", "p_ring": "Ring",
+    "p_damper": "Damper", "p_mute": "Mute",
+    "p_mot_on": "Motor", "p_mot_depth": "Depth", "p_mot_rate": "Speed", "p_mot_shape": "Shape", "p_mot_sync": "Sync",
+    "p_cmp_amt": "Threshold", "p_cmp_ratio": "Ratio", "p_cmp_atk": "Attack", "p_cmp_gain": "Makeup gain",
+    "p_cmp_sw": "Compressor", "p_cmp_rel": "Release",
+    "p_eq_lo": "Low", "p_eq_mid": "Mid", "p_eq_freq": "Mid frequency", "p_eq_hi": "High",
+    "p_drv_sw": "Drive type", "p_drive": "Drive amount", "p_drv_tone": "Drive tone", "p_drv_mix": "Drive mix",
+    "p_fl_type": "Filter type", "p_fl_freq": "Filter frequency", "p_fl_reso": "Resonance", "p_fl_lfo": "Filter LFO",
+    "s_twkind": "Tremolo mode", "p_tw_depth": "Tremolo depth", "p_tw_rate": "Tremolo rate",
+    "p_tw_shape": "Tremolo shape", "p_ph_sw": "Phaser", "p_ph_depth": "Phaser depth", "p_ph_speed": "Phaser speed",
+    "p_ph_fdbk": "Phaser feedback",
+    "p_cp_sw": "Chorus", "p_cp_depth": "Depth", "p_cp_speed": "Speed", "p_cp_sync": "Sync",
+    "p_dl_sw": "Delay type", "p_dl_depth": "Mix", "p_dl_time": "Time", "p_dl_fdbk": "Feedback",
+    "p_rv_type": "Reverb type", "p_rv_depth": "Mix", "p_rv_decay": "Decay", "p_rv_tone": "Tone",
+    "p_rv_predly": "Pre-delay", "p_rv_size": "Size", "p_rv_mod": "Modulation", "p_rv_locut": "Low cut",
+    "p_tw_sync": "Tremolo sync", "p_ph_sync": "Phaser sync", "p_dl_sync": "Delay sync",
+    "s_arpmode": "Mode", "s_arprate": "Rate", "s_arpoct": "Octaves", "s_arpgate": "Gate", "s_arphold": "Hold",
+    "p_lfo_shape": "LFO shape", "p_lfo_rate": "LFO rate", "p_lfo_sync": "LFO sync", "p_lfo_retrig": "LFO retrigger",
+    "p_dl_tone": "Delay tone", "p_level": "Level", "s_mch": "MIDI channel",
+    "m_at_cc": "Aftertouch CC", "m_at_lo": "Aftertouch low", "m_at_hi": "Aftertouch high",
+    "m_pa_cc": "Poly pressure CC", "m_pa_lo": "Poly pressure low", "m_pa_hi": "Poly pressure high",
+}
+SAY_PAGES = {"EQ": "EQ", "DRIVE/FILTER": "Drive and filter", "TREM/PHASER": "Tremolo and phaser", "LFO/SETUP": "LFO and setup"}
+SAY_WORDS = {
+    "ST77": "Stage 77", "SUIT": "Suitcase", "FELT": "Early felt", "DYNO": "Bell dyno", "VIBE": "Vibes",
+    "MRMB": "Marimba", "INF": "Infinite", "DIG": "Digital", "ANA": "Analog", "RAND": "Random", "UP-DN": "Up down",
+    "SQR": "Square", "TRI": "Triangle", "S&H": "Sample and hold", "LP12": "Low pass 12", "LP18": "Low pass 18",
+    "HP12": "High pass 12", "HP18": "High pass 18", "BP": "Band pass", "TREM": "Tremolo",
+    "1/32": "32nd", "16T": "16th triplet", "1/16": "16th", "8T": "8th triplet", "16D": "dotted 16th", "1/8": "8th",
+    "4T": "quarter triplet", "8D": "dotted 8th", "1/4": "quarter", "4D": "dotted quarter", "1/2": "half",
+    "1/1": "whole", "2BAR": "2 bars", "4BAR": "4 bars", "1/8T": "8th triplet", "1/16T": "16th triplet",
+}
+
+
+def say_conf(levels):
+    """FR_CONF.say: the names of the controls on the screen's pages, the pages' and the options' words"""
+    pages = screen_pages(levels)
+    missing = sorted({k["key"] for p in pages for k in p["knobs"] if k and k["key"] not in SAY_NAMES})
+    assert not missing, "a control on Frodhes' screen with no spoken name: name it in SAY_NAMES: " + ", ".join(missing)
+    keys = {k["key"] for p in pages for k in p["knobs"] if k}
+    opts = {o for p in pages for k in p["knobs"] if k and k.get("options") for o in k["options"]}
+    return {"names": {k: v for k, v in SAY_NAMES.items() if k in keys},
+            "pages": {t: v for t, v in SAY_PAGES.items() if any(p["title"] == t for p in pages)},
+            "words": {o: v for o, v in SAY_WORDS.items() if o in opts}}
+
+
+def ui_chain_js(levels):
+    """Frodhes' own screen as the whole Move UI (Schwung's own-screen path, COMPONENT_EDIT): screen.js's closure with
+    move/ui/chain_adapter.js inside it, which maps the canvas overlay onto globalThis.chain_ui"""
+    conf = dict(SCREEN_CONF, sus_cc=SUS_BTN_CC, fx_cc=FX_BTN_CC, gr_db10=gr_db10(), rv=rv_conf(), fmt=fmt_conf(),
+                live_ms=SCREEN["fullscreen_live_ms"], say=say_conf(levels))
+    with open(UI_CORE) as f:
+        core = f.read()
+    with open(CHAIN_ADAPTER) as f:
+        adapter = f.read()
+    head = ("// SPDX-License-Identifier: GPL-3.0-only\n"
+            "// GENERATED by tools/gen_move_module.py from params.c, eng_pages.h, ui.c, move/ui/screen_core.js and "
+            "move/ui/chain_adapter.js - do not edit.\n"
+            "// Frodhes' own screen as Schwung's chain_ui: the pages and the settings, the screen's code, the adapter.\n")
+    # Schwung loads ui_chain.js as an ES module (shadow_ui.c shadow_load_ui_module), so the grid's own knob-LED code
+    # and the shared button-LED helper come in by import (MODULES.md: as page_controller.mjs does), and the screen
+    # reader's announce as Schwung's own module UIs import it (store/ui.js, file-browser/ui.js); the host tests
+    # replace these three lines
+    imp = ("import * as KNOB_LEDS from '%s';\n" % KNOB_LEDS_MJS
+           + "import { setButtonLED as FR_SET_BUTTON_LED } from '%s';\n" % INPUT_FILTER_MJS
+           + "import { announce as FR_ANNOUNCE } from '%s';\n" % SCREEN_READER_MJS)
+    return (head + imp + "(function () {\n\"use strict\";\nconst PREV_OV = globalThis.canvas_overlay, "
+            "PREV_FS = globalThis.frodhes_screen;\nconst FR_PAGES = "
+            + json.dumps(screen_pages(levels), separators=(",", ":")) + ";\n"
+            + "const FR_CONF = " + json.dumps(conf, separators=(",", ":")) + ";\n" + core + adapter + "})();\n")
+
+
+def main():
+    out, _, _ = outputs()
+    if "--check" in sys.argv[1:]:
+        bad = []
+        for n, t in out.items():
+            p = os.path.join(OUT, n)
+            if not os.path.exists(p) or open(p).read() != t:
+                bad.append(n)
+        if bad:
+            print("move/module out of date (run tools/gen_move_module.py): " + ", ".join(bad))
+            return 1
+        return 0
+    os.makedirs(OUT, exist_ok=True)
+    for n, t in out.items():
+        with open(os.path.join(OUT, n), "w") as f:
+            f.write(t)
+    print("wrote " + ", ".join("move/module/" + n for n in out))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

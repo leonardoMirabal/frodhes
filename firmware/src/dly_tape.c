@@ -85,12 +85,10 @@ static inline __attribute__((always_inline)) void tp_tape_k(int32_t *m, const in
         i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
         if (rst && c <= DLY_LEN) {                      /* (as dly_loop: behind the clean span reads 0) */
             uint32_t lb = (w - i) & (DLY_LEN - 1u);
-            int32_t a0 = ((lb - 1u) & (DLY_LEN - 1u)) < c ? dly_buf[i] : 0;
-            int32_t a1 = (lb & (DLY_LEN - 1u)) < c ? dly_buf[(i - 1u) & (DLY_LEN - 1u)] : 0;
-            r = (a0 + (((a1 - a0) * (d & 255)) >> 8)) << 1;
+            r = DLY_H4C(i, lb, c, d & 255);              /* (fx.c's 4-point read, 0.9.8 fxq-mod) */
             c++;
         } else
-            r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
+            r = DLY_H4(i, d & 255);
         /* the playback head: the bump (2nd-order high-pass, resonant; Q4 inside) */
         x = (r << 4) - b2 - (int32_t)(((int64_t)b1 * kr) >> 14);
         {   /* (kf, kh read once a sample each, used twice: one stack load, not two) */
@@ -205,11 +203,10 @@ static inline __attribute__((always_inline)) int32_t dly_rd(uint32_t w, int32_t 
     uint32_t i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
     if (c <= DLY_LEN) {
         uint32_t lb = (w - i) & (DLY_LEN - 1u);
-        int32_t a0 = ((lb - 1u) & (DLY_LEN - 1u)) < c ? dly_buf[i] : 0;
-        int32_t a1 = (lb & (DLY_LEN - 1u)) < c ? dly_buf[(i - 1u) & (DLY_LEN - 1u)] : 0;
-        return (a0 + (((a1 - a0) * (d & 255)) >> 8)) << 1;
+        return DLY_H4C(i, lb, c, d & 255);
     }
-    return (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
+    return DLY_H4(i, d & 255);                           /* (fx.c's 4-point read, 0.9.8 fxq-mod: DIG's whole-sample
+                                                          * taps read as before) */
 }
 __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t n, int tape, int32_t msk,
                                                int32_t sg16, int32_t target, int32_t col, int32_t fb, int32_t wet,
@@ -258,7 +255,7 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
         dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + (int32_t)(((int64_t)f * fb) >> 15), -32768, 32767);
         w++;
         wq += ws;
-        r = mulq15(r, wq >> 8);
+        r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);   /* (64 bits: the 4-point read overshoots 2^16, c1-int) */
         dg += (dgt - dg) >> 9;
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
     }

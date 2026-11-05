@@ -11,7 +11,9 @@ The block is 256 frames at 44.1 kHz = 5805 us of real time; the voice shedder st
 notes (for a build with -DRH_VOICES=N, -DBAR_VOICES=N or -DFR_VOICES=N; more notes than the firmware's voices steal). The lists: bass 28 31 33 35 36 38 40 41 43 45 47 48,
 chord 48 52 55 59 62 64 67 71 74 76 79 83 (the first N).
 --scenario TEXT[,TEXT] (with --worst) runs only the scenarios whose name contains one of them (the key ADC gate on
-the worst ones: --keyadc gate --worst --scenario pedal; run_final_rev.sh). --worst runs only the worst-case scenarios (N bass v127 + pedal, every effect; VIBES: its edge-strike versions too)
+the worst ones: --keyadc gate --worst --scenario pedal; run_final_rev.sh). --worst runs only the worst-case scenarios (N bass v127 + pedal, every effect; N - 2 mid keys from 48 + keys 105 and 108
+v127 + pedal, every effect: more live modes; the same voicing with the reverb TYPE changed from a ringing PLATE /
+INFINITE five times, the chord struck again with each change: the fade blocks; VIBES: its edge-strike versions too)
 and the idle-with-every-effect one (the fixed part), 3 takes each as usual.
 
 --engine vibes selects VIBES (CC 79), with the motor on (CC 47; records v3: the engine's own) wherever the effects
@@ -62,6 +64,7 @@ voice was shed, or a USB counter that must stay 0 moved (any scenario), or (--ke
 failed.
 """
 import os
+import statistics
 import sys
 import time
 
@@ -103,10 +106,22 @@ def usb_line(acc):
             "per_max")
     return "USB " + s + ": " + ", ".join(f"{k} {acc[k]}" for k in keys if k in acc)
 
-CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_TONE=82, DRV_MIX=83, RV_PREDLY=94)
+CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_TONE=82, DRV_MIX=83, RV_PREDLY=94, RV_TYPE=95, EQ_LO=34, EQ_MID=35, EQ_FREQ=36,
+          EQ_HI=37)
 TARGET_US = 4500
 
 BLOCK_US = 5805
+PC_BURST = [(47, 1), (23, 10), (26, 10), (29, 10), (42, 11), (45, 11), (127, 93), (86, 91), (123, 93), (59, 107),
+            (120, 93), (28, 88), (40, 11), (34, 49), (37, 11), (41, 49), (21, 83), (68, 83), (117, 93), (60, 107),
+            (33, 1), (36, 1), (27, 83), (19, 85), (22, 88), (25, 88)]   # monkey seed 3037's step (the --worst PC row)
+TOP2 = [105, 108]                                 # the two top keys (firmware with the 2x pickup: its keys, v >= 96)
+
+
+def mid_top(nv):
+    """the --worst mid + top voicing: nv - 2 keys from 48 up (more live modes than the bass) and the two top keys
+    (with the 2x pickup, where a firmware has it: two 2x voices); the host twin: 9-11 % more voice time than the bass
+    list"""
+    return list(range(48, 48 + max(0, nv - 2))) + TOP2[:min(2, nv)]
 STAGES = {1: "engine (eng_render)", 2: "fx copy", 3: "compressor", 4: "filter + LFO", 5: "drive", 6: "trem / wah",
           7: "phaser", 8: "chorus", 9: "delay", 10: "reverb", 11: "bypass / DC / LEVEL", 12: "limiter", 13: "gate",
           14: "fx (other)", 15: "after the last stamp"}
@@ -135,7 +150,9 @@ def ports():
         if not outs or not ins:
             sys.exit("no FM-1 MIDI port")
         import fm1_midi
-        _PORTS[:] = [mido, fm1_midi.ChannelOut(mido.open_output(outs[0])), mido.open_input(ins[0])]   # FRODHES_MIDI_CH
+        import midi_guard                             # (each open under a watchdog: rtmidi holds the GIL in CoreMIDI)
+        _PORTS[:] = [mido, fm1_midi.ChannelOut(midi_guard.open_output(mido, outs[0])),   # FRODHES_MIDI_CH
+                     midi_guard.open_input(mido, ins[0])]
         print(fm1_midi.say(_PORTS[1].ch), flush=True)
     return tuple(_PORTS)
 
@@ -162,16 +179,19 @@ def keyadc_check(mido, out, inp, kmode):
 
 
 def keyadc_gate(argv):
-    """--keyadc gate: each engine (--engines, default rhodes,vibes,marimba) x --runs (default 3) x OFF / idle / STRESS
+    """--keyadc gate: each engine (--engines, default rhodes,vibes,marimba) x --runs (default 5) x OFF / idle / STRESS
     (the order rotated per run, so a drift spreads over the modes), every measurement a whole hil_cpu run with the
     other options as given (--worst: its scenarios only; the USB stream, open by default, stays open for all of them;
-    --voices: by default each engine's own count). Per engine and mode the worst block over the runs; the gates:
-    idle <= OFF + 10 us, STRESS <= OFF + 60 us. Each scenario's own difference (its worst over the runs) is printed
-    too. Returns (True when every engine passes, the worst exit code of the runs' own verdicts)"""
+    --voices: by default each engine's own count). Per engine and mode the median over the runs of each run's worst
+    block; the gates: idle <= OFF + 10 us, STRESS <= OFF + 60 us. The worst over 3 runs (until 0.9.8) read +-80 us
+    run to run on one build, over both limits: 0.9.6's and 0.9.7's first gates failed, their reruns passed (the user's
+    pick, 2026-10-28: the median of 5, the limits kept). Each scenario's own difference (the medians) is printed too.
+    Every run's own verdict (4500 us, a shed voice, a USB fault) still counts. Returns (True when every engine
+    passes, the worst exit code of the runs' own verdicts)"""
     i = argv.index("--keyadc")
     base = argv[:i] + argv[i + 2:]
     engines = ["rhodes", "vibes", "marimba"]
-    runs = 3
+    runs = 5
     for flag in ("--engines", "--runs", "--engine"):
         if flag in base:
             j = base.index(flag)
@@ -193,11 +213,11 @@ def keyadc_gate(argv):
                 finally:
                     sys.argv = argv0
     ok = True
-    print(f"\nkey ADC gate ({runs} runs per engine and mode; worst block over the runs; gates idle <= OFF + "
+    print(f"\nkey ADC gate ({runs} runs per engine and mode; the median of the runs' worst blocks; gates idle <= OFF + "
           f"{KEYADC_GATE['idle']} us, STRESS <= OFF + {KEYADC_GATE['stress']} us)")
     summary = {}
     for e in engines:
-        w = {m: max(x["worst"] for x in res[(e, m)]) for m in modes}
+        w = {m: int(statistics.median_low([x["worst"] for x in res[(e, m)]])) for m in modes}
         d = {m: w[m] - w["off"] for m in ("idle", "stress")}
         good = {m: d[m] <= KEYADC_GATE[m] for m in d}
         ok &= all(good.values())
@@ -206,7 +226,8 @@ def keyadc_gate(argv):
             for x in res[(e, m)]:
                 for name, us in x["rows"]:
                     sc.setdefault(name, {}).setdefault(m, []).append(us)
-        per = {n: {m: max(v[m]) - max(v["off"]) for m in ("idle", "stress") if m in v and "off" in v}
+        per = {n: {m: statistics.median_low(v[m]) - statistics.median_low(v["off"]) for m in ("idle", "stress")
+                   if m in v and "off" in v}
                for n, v in sc.items()}
         summary[e] = dict(worst=w, delta=d, ok=good, per_scenario=per)
         print(f"  {e:8s} OFF {w['off']:5d} us   idle {w['idle']:5d} ({d['idle']:+d}: "
@@ -390,11 +411,15 @@ def run_cpu(argv):  # noqa: C901
                 ccs_at[0] = now
             time.sleep(min(0.005, max(0.0, t_end - now)))
 
-    def play(notes, vel, hold, pedal=False, bypass=False, release=True):
+    def play(notes, vel, hold, pedal=False, bypass=False, release=True, types=(), pc=None):
         """returns the longest block of the attack (first 0.3 s) and of the rest: the held part, the release (0.4 s
         after the note-offs) and, with the pedal, the pedal's release (0.4 s after letting it go). bypass: the FX
         bypass switched on and off during the chord (the crossfade's blocks); release=False: no release queries (the
-        repeated chords, the calibration: their timing as before)"""
+        repeated chords, the calibration: their timing as before); types: the reverb TYPE (CC 95) set to each in turn
+        while the chord rings, the chord struck again in the same breath (a TYPE change's fade block under the
+        strikes), 0.25 s apart, before the held part's query; pc: (program, burst): that Program Change while the
+        chord rings, then 26 ms later the burst's (note, velocity) all at once (monkey seed 3037: a preset of
+        another engine, then a sequencer step of more notes than voices), 0.25 s before the held part's query"""
         if pedal:
             cc(64, 127)
         for n in notes:
@@ -405,9 +430,20 @@ def run_cpu(argv):  # noqa: C901
             cc(111, 127)
             wait(0.1)
             cc(111, 0)
-        wait(max(0.0, hold - 0.3 - (0.1 if bypass else 0.0)))
+        for v in types:
+            cc(95, v)
+            for n in notes:
+                out.send(mido.Message("note_on", note=n, velocity=vel))
+            wait(0.25)
+        if pc is not None:
+            out.send(mido.Message("program_change", program=pc[0]))
+            time.sleep(0.026)
+            for n, v in pc[1]:
+                out.send(mido.Message("note_on", note=n, velocity=v))
+            wait(0.25)
+        wait(max(0.0, hold - 0.3 - (0.1 if bypass else 0.0) - 0.25 * len(types) - (0.276 if pc else 0.0)))
         held = query()[0]
-        for n in notes:
+        for n in list(notes) + ([n for n, _ in pc[1]] if pc else []):
             out.send(mido.Message("note_off", note=n))
         if bend_on:
             bend(8192)
@@ -447,7 +483,7 @@ def run_cpu(argv):  # noqa: C901
         if st is not None and (not st & 2 or bool(st & 4) != (rate == 48000)):
             sys.exit(f"--usb {rate}: the FM-1 reports the stream {usb_line(query.usb)} (state {st}): not at {rate} Hz")
         print(f"USB audio open at {rate} Hz, blocksize 128 (the FM-1 confirms: {usb_line(query.usb).split(':')[0]})")
-    heavy = dict(DRIVE=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
+    heavy = dict(DRIVE=127, EQ_LO=127, EQ_MID=0, EQ_HI=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
                  CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
                  FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # the filter at its heaviest: LP18, the LFO
     nv = int(sys.argv[sys.argv.index("--voices") + 1]) if "--voices" in sys.argv else default_voices(eng)
@@ -473,7 +509,7 @@ def run_cpu(argv):  # noqa: C901
 
     scen = sys.argv[sys.argv.index("--scenario") + 1].split(",") if "--scenario" in sys.argv else None
 
-    def run(name, fx, notes=(), vel=100, hold=1.5, pedal=False, rep=3, bypass=False):
+    def run(name, fx, notes=(), vel=100, hold=1.5, pedal=False, rep=3, bypass=False, types=(), pc=None):
         if scen and not any(k in name for k in scen):
             return                                    # (--scenario: only the scenarios whose name has one of these)
         att = held = 0
@@ -483,7 +519,7 @@ def run_cpu(argv):  # noqa: C901
             reset(**fx)
             query()                                   # clears the max
             if notes:
-                a, h = play(notes, vel, hold, pedal, bypass)
+                a, h = play(notes, vel, hold, pedal, bypass, types=types, pc=pc)
             else:
                 wait(hold)
                 a = h = query()[0]
@@ -512,7 +548,7 @@ def run_cpu(argv):  # noqa: C901
 
     if "--fx-each" in sys.argv:
         one = [("compressor", dict(CMP_SW=127, CMP_AMT=100)), ("filter LP18 + LFO", dict(FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)),
-               ("drive", dict(DRIVE=127)), ("tremolo", dict(TW_SW=64, TW_DEPTH=127)), ("wah", dict(TW_SW=127, TW_DEPTH=127)),
+               ("eq", dict(EQ_LO=127, EQ_MID=0, EQ_HI=127)), ("drive", dict(DRIVE=127)), ("tremolo", dict(TW_SW=64, TW_DEPTH=127)), ("wah", dict(TW_SW=127, TW_DEPTH=127)),
                ("phaser", dict(PH_SW=127, PH_DEPTH=127, PH_FDBK=127)), ("chorus", dict(CP_SW=64, CP_DEPTH=127)),
                ("delay", dict(DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127)), ("reverb", dict(REV=127))]
         base = []
@@ -574,6 +610,18 @@ def run_cpu(argv):  # noqa: C901
         run(N + " bass notes v127 at once, no effects", {}, bass8, 127)
         run(N + "-note chord v100, every effect on", heavy, chord8)
     run(N + " bass notes v127 + pedal, every effect on", heavy, bass8, 127, pedal=True)
+    midtop = mid_top(nv)                              # (2026-11-02: the monkey's peaks over this one's: more live
+                                                      # modes in the middle, and the top keys)
+    run(f"{N} mid + top keys v127 + pedal, every effect on", heavy, midtop, 127, pedal=True)
+    # (a TYPE change while PLATE / INFINITE ring made reverb-stage peaks in the monkey: the fade block)
+    # PLATE -> INFINITE -> PLATE -> HALL, then INFINITE -> HALL, the chord struck again with each change
+    run(f"TYPE change from ringing PLATE/INFINITE at {N} voices", dict(heavy, RV_TYPE=64), midtop, 127, pedal=True,
+        hold=2.0, types=(100, 64, 40, 100, 40))
+    # (0.9.8, monkey seed 3037: 4460-4692 us whole ISR) a Program Change to another engine's preset while the chord
+    # rings (the TYPE change frees every voice of the new engine), then a step of 26 notes at once: bars.c starts at
+    # most BAR_NV notes a block (tests/py/test_bar_starts.py). Rhodes / MARIMBA -> F14 VIBES ECHO, VIBES -> F16 MARIMBA
+    run(f"program change to {'F16 MARIMBA' if vibes and not marimba else 'F14 VIBES'} at {N} voices + 26-note burst",
+        heavy, midtop, 127, pedal=True, hold=2.0, pc=(15 if vibes and not marimba else 13, PC_BURST))
     slow = dict(heavy, DRV_TONE=110, DRV_MIX=64, RV_PREDLY=127, LEVEL=20)
     steal = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48]       # 12 notes on the engine's voices: steals
     run("slow paths: + drive tone / mix, pre-delay, LEVEL, bypass xfade, 12 notes + pedal", slow, steal, 127,
@@ -612,4 +660,5 @@ def run_cpu(argv):  # noqa: C901
 
 
 if __name__ == "__main__":
-    sys.exit(exit_code(main()))
+    import midi_guard                                 # (the exit skips rtmidi's port destructors)
+    midi_guard.run(lambda: exit_code(main()))

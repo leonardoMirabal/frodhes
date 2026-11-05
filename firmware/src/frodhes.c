@@ -28,12 +28,13 @@
  * called through its address in a register the compiler cannot fold back (one instruction more a call) */
 #define FR_FAR(fn) (__extension__({ __typeof__(&fn) p_ = &fn; HAL_KEEP_REG(p_); p_; }))
 #endif
+#include "fr_cold.h"     /* FR_COLD: the cold code built for flash, not speed */
 #include "frodhes_store.h"   /* the flash Frodhes writes, per board, and its allow-list APP_FL_RANGE (store.h) */
 #include "keyvel.h"     /* key velocity's interfaces: first, so the scan tick (platform.c) can reach its hooks */
 #include "platform.c"
 #if defined(DINGHY_HOST) && !defined(HOST_FL_CHECK)
 /* (the web build: no flash log; a place the firmware's allow-list refuses fails as on the device) */
-static int host_fl_check(const char *what, uint32_t at, uint32_t n) { (void)what; return FL_GUARD(at, n) ? 0 : -1; }
+FR_COLD static int host_fl_check(const char *what, uint32_t at, uint32_t n) { (void)what; return FL_GUARD(at, n) ? 0 : -1; }
 #endif
 #if BOARD_SMK37
 /* the SMK-37's versions of the FM-1 HAL's names ui.c uses (smk_input.h has none of them): no TRS input (the MIDI page
@@ -42,8 +43,8 @@ static int host_fl_check(const char *what, uint32_t at, uint32_t n) { (void)what
  * the multiplexed LEDs can be lit fully, half or a quarter of the time without a visible flicker) */
 static volatile uint8_t uart_midi_on;           /* (stored by the MIDI page's code, nothing reads it) */
 static uint8_t fm1_led_duty[2] = {16u, 16u};
-static void fm1_led_group_ids(uint32_t id0, uint32_t id1) { (void)id0; (void)id1; }   /* (no key LEDs) */
-static void fm1_led_build(void) { smk_led_dark = fm1_led_duty[1] >= 10u ? 0u : fm1_led_duty[1] >= 5u ? 2u : 6u; }
+FR_COLD static void fm1_led_group_ids(uint32_t id0, uint32_t id1) { (void)id0; (void)id1; }   /* (no key LEDs) */
+FR_COLD static void fm1_led_build(void) { smk_led_dark = fm1_led_duty[1] >= 10u ? 0u : fm1_led_duty[1] >= 5u ? 2u : 6u; }
 static uint32_t smk_btn_leds;                   /* the SMK's own buttons' LEDs (KNOB / FADER BANK, < >: smk_leds), as
                                                  * ui_leds' mask of button ids */
 #endif
@@ -90,12 +91,12 @@ static uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof_st"))); 
  * (0x80 / 0x04; 0 = none), 19 the longest erase's own time (x 10 us, the part busy: the slices summed), 20 the longest
  * the main loop was held by a flash write (x 10 us: a preset's or the pattern's erase or page program from start to
  * end; the settings' auto save one slice, fm1_flash.h fl_op_poll, the ISRs meanwhile included). The counters are deltas since the last query; the ranges restart at each query. */
-static void usb_health_send(uint32_t id, uint32_t v)
+FR_COLD static void usb_health_send(uint32_t id, uint32_t v)
 {
     if (v > 16383u) v = 16383u;
     midi_send(0xB0, 100, id); midi_send(0xB0, 101, v >> 7); midi_send(0xB0, 102, v & 127u);
 }
-static void usb_health_reply(void)
+FR_COLD static void usb_health_reply(void)
 {
     static uint32_t seen[7] __attribute__((section(".bss.usb_seen")));   /* own section: out of the global merge */
     uint32_t now[7], i, v;
@@ -139,11 +140,11 @@ static void usb_health_reply(void)
 }
 #endif
 #if !defined(DINGHY_HOST)
-static int usb_link(void) { return usb.config != 0; }          /* a computer has the FM-1 configured (USB-MIDI up) */
+FR_COLD static int usb_link(void) { return usb.config != 0; }          /* a computer has the FM-1 configured (USB-MIDI up) */
 #elif defined(DINGHY_WEB)
-static int usb_link(void) { return 1; }
+FR_COLD static int usb_link(void) { return 1; }
 #else
-static int usb_link(void) { return host_usb_link; }
+FR_COLD static int usb_link(void) { return host_usb_link; }
 #endif
 #include "seq.c"
 #include "ui.c"
@@ -156,7 +157,7 @@ static int32_t voice_mono[256];
  * pending), every voice held down must be a note the notes layer wants sounding (a source's pitch sent to the engine,
  * or the arpeggiator's note): "RACE STUCK" after 3 blocks without one; a voice that ended while a note waited for its
  * steal's fade lost that note: "RACE LOST" (the waiting note never starts) */
-static void host_race_check(void)
+FR_COLD static void host_race_check(void)
 {
     static uint8_t bad[16], lost[16];
     uint32_t i, nv = eng_cur == ENG_BARS ? BAR_NV : RH_NV;
@@ -236,7 +237,7 @@ static void sustain_update(void) { eng_q(EV_PEDAL, 0, sus_held || sus_latched ||
 static void sustain_update(void) { eng_q(EV_PEDAL, 0, sus_held || sus_latched ? 127u : sus_midi); ui_mark(E_HEADER); }
 #endif
 
-static void sustain_button(uint32_t pressed, uint32_t released)
+FR_COLD static void sustain_button(uint32_t pressed, uint32_t released)
 {
     if (pressed >> BTN_SUSTAIN & 1u) {
         sus_held = 1; sus_t = fm1_ms; sus_was_latched = sus_latched;
@@ -251,7 +252,7 @@ static void sustain_button(uint32_t pressed, uint32_t released)
 /* MIDI CC: every parameter's CC from the PARAMS table (the panel CC map, after a vintage stage keyboard's: switch CCs 0-42 off,
  * 43-85 A, 86-127 B; TYPE in bands of 32), CC 64 sustain (continuous: half-pedal), 120/123 all off,
  * 119 developer: bypass the effects (tests of the voice engine); the other developer CCs below (2 3 4 8 9 10 11 116) */
-static void midi_cc(uint32_t cc, uint32_t v)
+FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
 {
     uint32_t id;
     if (cc == 64u) {                            /* a MIDI pedal let up also releases the REC latch */
@@ -383,7 +384,7 @@ static void midi_cc(uint32_t cc, uint32_t v)
 }
 
 /* a note the pedal holds and a voice still sounds (the per-key LEDs under sustain; notes.c ped.sus) */
-static int note_sustained(uint32_t n)
+FR_COLD static int note_sustained(uint32_t n)
 {
     return n < 128u && ped.sus[n >> 5] >> (n & 31u) & 1u && eng_note_sounding(n);
 }
@@ -405,9 +406,9 @@ static settings_t set_pend, set_saved;          /* the record waiting to be writ
 static uint32_t set_pend_t;
 static uint8_t set_pend_new;                    /* set_pend is not what the flash holds */
 static uint8_t set_saving KV_BSS(set_saving);                       /* a save runs (settings_save_poll) */
-static int set_save_busy(void) { return set_saving; }   /* (seq.c seq_save_poll: not while it runs) */
+FR_COLD static int set_save_busy(void) { return set_saving; }   /* (seq.c seq_save_poll: not while it runs) */
 static uint32_t set_chk_t;
-static void settings_poll(void)
+FR_COLD static void settings_poll(void)
 {
     if (set_saving && settings_save_poll() != 1) set_saving = 0;
     if (set_dirty || fm1_ms - set_chk_t >= 250u) {  /* (also every 250 ms: a setup change that marked nothing) */
@@ -431,7 +432,7 @@ static void settings_poll(void)
  * told by its id, which the record keeps (set.old_id); one that is gone is not newer. 0.9.5 ran last, so what it saved
  * is the newer (the FM-1: its settings share the record's two sectors, so a copy of the record left from before the
  * way back would else win, the 0.9.5 setup and pattern never read) */
-static void st_old_scan(void)
+FR_COLD static void st_old_scan(void)
 {
     uint32_t i, was[3];
     st_mig = 0;
@@ -442,7 +443,7 @@ static void st_old_scan(void)
         if (!st_new || (st_oid[i] && st_oid[i] != was[i])) st_mig |= (uint8_t)(1u << i);
 }
 
-static void app_main(void)
+FR_COLD static void app_main(void)
 {
     uint32_t prev = 0, k;
     int link = 0, fresh;
@@ -610,10 +611,10 @@ EMSCRIPTEN_KEEPALIVE const char *web_page(void) { return PAGE_TITLE[ui_page]; }
 #endif
 
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
-static void host_shed(void) { eng_shed_req = 1; }   /* tests/host.c "T shed": as app_audio asks it on the FM-1 */
+FR_COLD static void host_shed(void) { eng_shed_req = 1; }   /* tests/host.c "T shed": as app_audio asks it on the FM-1 */
 
 /* tests/host.c "expect preset": the panel equals what the preset the header names sets (presets.c preset_load) */
-static int host_preset_check(char *msg, unsigned n)
+FR_COLD static int host_preset_check(char *msg, unsigned n)
 {
     uint8_t p[P_COUNT];
     char nm[20];
@@ -622,9 +623,10 @@ static int host_preset_check(char *msg, unsigned n)
     preset_name(idx, nm);
     if (idx >= PR_NF && !pr_user[idx - PR_NF].used) { snprintf(msg, n, "%s: the header names an empty user preset", nm); return 1; }
     for (i = 0; i < P_COUNT; i++) p[i] = PARAMS[i].def;
-    if (idx < PR_NF)
-        for (i = 0; i < PR_FDN && PR_FDATA[idx][i] != 0xFF; i += 2u) p[PR_FDATA[idx][i]] = PR_FDATA[idx][i + 1u];
-    else
+    if (idx < PR_NF) {
+        const uint8_t *d = pr_fdata(idx);
+        for (i = 0; d[i] != 0xFF; i += 2u) p[d[i]] = d[i + 1u];
+    } else
         for (i = 0; i < P_SLOTS && i < P_COUNT && i < pr_user[idx - PR_NF].np; i++)    /* as preset_load reads it */
             p[i] = pr_user[idx - PR_NF].p[i] <= PARAMS[i].hi ? pr_user[idx - PR_NF].p[i] : PARAMS[i].def;
     for (i = 0; i < P_COUNT; i++)
@@ -642,7 +644,7 @@ typedef struct {
     int32_t bar[16];
     uint8_t want;
 } host_snd_t;
-static void host_snd(host_snd_t *s)
+FR_COLD static void host_snd(host_snd_t *s)
 {
     uint32_t i;
     memset(s, 0, sizeof *s);
@@ -659,7 +661,7 @@ static void host_snd(host_snd_t *s)
     s->want = eng_want;
     s->bar[14] = bar_mute; s->bar[15] = eng_want_sub;          /* MUTE, the bar type asked for (MARIMBA) */
 }
-static int host_sound_check(char *msg, unsigned n)
+FR_COLD static int host_sound_check(char *msg, unsigned n)
 {
     static const char *const FXN[FXP_N] = {"DRIVE", "TW_SW", "TW_DEPTH", "TW_RATE", "TW_MODE", "TW_SHAPE", "CP_SW",
         "CP_DEPTH", "CP_SPEED", "CP_FDBK", "DL_SW", "DL_DEPTH", "DL_TIME", "DL_FDBK", "DL_SYNC", "RV_DEPTH",
@@ -684,8 +686,8 @@ static int host_sound_check(char *msg, unsigned n)
 }
 
 /* "expect state" / "dump": what the screen, the LEDs and the state say, by name */
-static uint32_t host_bits(uint32_t x) { uint32_t c = 0; while (x) { c += x & 1u; x >>= 1; } return c; }
-static int host_state(const char *key, char *v, unsigned n)
+FR_COLD static uint32_t host_bits(uint32_t x) { uint32_t c = 0; while (x) { c += x & 1u; x >>= 1; } return c; }
+FR_COLD static int host_state(const char *key, char *v, unsigned n)
 {
     unsigned a = 0, b = 0;
     uint32_t i, c;
@@ -821,7 +823,7 @@ static int host_state(const char *key, char *v, unsigned n)
     else return 1;
     return 0;
 }
-static void host_dump(void)
+FR_COLD static void host_dump(void)
 {
     static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
                                     "arpn", "arpv", "arpends", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",

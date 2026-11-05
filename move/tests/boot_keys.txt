@@ -1,0 +1,6 @@
+# The app's settings as a fresh instance has them (the host build's boot): "key value" as get_param reads them.
+# test_bridge boot checks a new instance against this file; tools/move_hil.py (usb-host over the tap) writes them
+# before the take, so a saved setup on the Move (a TUNE, a MIDI CHANNEL, the mappings) cannot play along.
+s_tune 0
+s_twkind 0
+s_sustain 0

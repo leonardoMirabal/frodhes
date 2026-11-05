@@ -1,0 +1,313 @@
+{
+  "title": "Frodhes",
+  "children": [
+    {
+      "title": "Overview",
+      "lines": [
+        "Physical models of",
+        "an electric piano",
+        "(four types), a",
+        "vibraphone and a",
+        "marimba. No samples.",
+        "TYPE on the first",
+        "page picks the",
+        "instrument; its",
+        "VOICE pages follow",
+        "it.",
+        "",
+        "SUS is the sustain",
+        "pedal, on or off: ON",
+        "holds the notes, OFF",
+        "lets them go. A",
+        "pedal on CC 64 works",
+        "too.",
+        "",
+        "PAGES opens Frodhes'",
+        "own screen: touch",
+        "its knob and click",
+        "the jog wheel. Eight",
+        "cards a page, a",
+        "touched knob shown",
+        "large. The jog wheel",
+        "turns the pages; a",
+        "click lists them.",
+        "Capture turns SUS on",
+        "or off there. FX",
+        "turns all effects",
+        "off or on.",
+        "",
+        "Frodhes plays in one",
+        "slot at a time."
+      ]
+    },
+    {
+      "title": "Pages",
+      "children": [
+        {
+          "title": "FRODHES",
+          "lines": [
+            "K1 TYPE",
+            "K2 SPREAD",
+            "K3 SUS",
+            "K4 FX",
+            "K5 PAGES",
+            "K8 DELAY"
+          ]
+        },
+        {
+          "title": "PIANO VOICE",
+          "lines": [
+            "K1 TONE",
+            "K2 BARK",
+            "K3 BELL",
+            "K4 HAMMR",
+            "K5 DECAY",
+            "K6 REL",
+            "K7 NOISE",
+            "K8 TUNE"
+          ]
+        },
+        {
+          "title": "VIBES VOICE",
+          "lines": [
+            "K1 STRIKE",
+            "K2 MALLET",
+            "K3 TUBE",
+            "K4 WEIGHT",
+            "K5 RING",
+            "K6 DAMPR",
+            "K7 NOISE",
+            "K8 TUNE"
+          ]
+        },
+        {
+          "title": "VIBES MOTOR",
+          "lines": [
+            "K1 MOTOR",
+            "K2 DEPTH",
+            "K3 SPEED",
+            "K4 SHAPE",
+            "K5 SYNC"
+          ]
+        },
+        {
+          "title": "MARIMBA VOICE",
+          "lines": [
+            "K1 STRIKE",
+            "K2 MALLET",
+            "K3 TUBE",
+            "K4 WEIGHT",
+            "K5 RING",
+            "K6 MUTE",
+            "K7 NOISE",
+            "K8 TUNE"
+          ]
+        },
+        {
+          "title": "COMPRESSOR",
+          "lines": [
+            "K1 THRESH",
+            "K2 RATIO",
+            "K3 ATTACK",
+            "K4 MKUP",
+            "K5 COMP",
+            "K6 REL",
+            "K7 GAIN",
+            "K8 REDUCT"
+          ]
+        },
+        {
+          "title": "EQ",
+          "lines": [
+            "K1 LOW",
+            "K2 MID",
+            "K3 FREQ",
+            "K4 HIGH"
+          ]
+        },
+        {
+          "title": "DRIVE/FILTER",
+          "lines": [
+            "K1 DRIVE",
+            "K2 AMOUNT",
+            "K3 TONE",
+            "K4 MIX",
+            "K5 FILTER",
+            "K6 FREQ",
+            "K7 RESO",
+            "K8 LFO"
+          ]
+        },
+        {
+          "title": "TREM/PHASER",
+          "lines": [
+            "K1 TREM",
+            "K2 DEPTH",
+            "K3 RATE",
+            "K4 SHAPE",
+            "K5 PHASER",
+            "K6 DEPTH",
+            "K7 SPEED",
+            "K8 FEEDBK"
+          ]
+        },
+        {
+          "title": "CHORUS",
+          "lines": [
+            "K1 CHORUS",
+            "K2 DEPTH",
+            "K3 SPEED",
+            "K4 SYNC"
+          ]
+        },
+        {
+          "title": "DELAY",
+          "lines": [
+            "K1 DELAY",
+            "K2 MIX",
+            "K3 TIME",
+            "K4 FEEDBK"
+          ]
+        },
+        {
+          "title": "REVERB",
+          "lines": [
+            "K1 REVERB",
+            "K2 MIX",
+            "K3 DECAY",
+            "K4 TONE",
+            "K5 PREDLY",
+            "K6 SIZE",
+            "K7 MOD",
+            "K8 LOWCUT"
+          ]
+        },
+        {
+          "title": "TEMPO",
+          "lines": [
+            "K1 TRSYNC",
+            "K2 PHSYNC",
+            "K3 DLSYNC"
+          ]
+        },
+        {
+          "title": "ARPEGGIO",
+          "lines": [
+            "K1 MODE",
+            "K2 RATE",
+            "K3 OCT",
+            "K4 GATE",
+            "K5 HOLD"
+          ]
+        },
+        {
+          "title": "LFO/SETUP",
+          "lines": [
+            "K1 SHAPE",
+            "K2 RATE",
+            "K3 SYNC",
+            "K4 RETRIG",
+            "K5 DLTONE",
+            "K6 LEVEL",
+            "K7 CHAN"
+          ]
+        },
+        {
+          "title": "MAPPINGS",
+          "lines": [
+            "K1 AT CC",
+            "K2 AT LO",
+            "K3 AT HI",
+            "K4 PA CC",
+            "K5 PA LO",
+            "K6 PA HI"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "MIDI",
+      "lines": [
+        "Notes with velocity",
+        "and release",
+        "velocity, pitch bend",
+        "(piano types),",
+        "sustain CC 64 with",
+        "half pedal, program",
+        "change 0-15 F01-F16,",
+        "16-31 U01-U16, 32-34",
+        "F17-F19, MIDI clock.",
+        "Every parameter has",
+        "its CC, as on the",
+        "FM-1:",
+        "CC 80 TYPE",
+        "CC 81 DRV",
+        "CC 17 TREM",
+        "CC 18 DPTH",
+        "CC 19 RATE",
+        "CC 20 SYNC",
+        "CC 21 MODE",
+        "CC 22 SHPE",
+        "CC 85 CHO",
+        "CC 86 DPTH",
+        "CC 87 SPD",
+        "CC 23 SYNC",
+        "CC 24 FDBK",
+        "CC 88 DLY",
+        "CC 89 DPTH",
+        "CC 90 TIME",
+        "CC 25 SYNC",
+        "CC 26 FDBK",
+        "CC 27 TONE",
+        "CC 91 REV",
+        "CC 28 TONE",
+        "CC 29 BARK",
+        "CC 30 BELL",
+        "CC 31 HAMR",
+        "CC 102 DCAY",
+        "CC 103 REL",
+        "CC 104 NOIS",
+        "CC 105 SPRD",
+        "CC 12 PHA",
+        "CC 13 DPTH",
+        "CC 14 SPD",
+        "CC 15 SYNC",
+        "CC 16 FDBK",
+        "CC 106 COMP",
+        "CC 107 THR",
+        "CC 108 ATK",
+        "CC 109 REL",
+        "CC 110 LVL",
+        "CC 112 RAT",
+        "CC 113 MKUP",
+        "CC 70 FILT",
+        "CC 74 FREQ",
+        "CC 71 RESO",
+        "CC 72 LFO",
+        "CC 75 SHPE",
+        "CC 76 RATE",
+        "CC 77 SYNC",
+        "CC 78 TRIG",
+        "CC 82 DTON",
+        "CC 83 DMIX",
+        "CC 84 DRV",
+        "CC 92 RDCY",
+        "CC 93 RTON",
+        "CC 94 PDLY",
+        "CC 47 MOT",
+        "CC 48 DPTH",
+        "CC 49 RATE",
+        "CC 50 SHPE",
+        "CC 51 SYNC",
+        "CC 95 RTYP",
+        "CC 73 SIZE",
+        "CC 68 MOD",
+        "CC 69 LCUT",
+        "CC 34 LOW",
+        "CC 35 MID",
+        "CC 36 MIDF",
+        "CC 37 HIGH"
+      ]
+    }
+  ]
+}

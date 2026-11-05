@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""The links in README.md and docs/MANUAL.md that change by content, never by release.
+"""The links in README.md, docs/MANUAL.md and the device manuals (docs/MOVE.md, docs/MOVE-DEV.md, docs/SMK37.md)
+that change by content, never by release.
 
     tools/doc_links.py            check (the default): exit 1 and list every problem
     tools/doc_links.py --fix      rewrite every picture's ?v= to its file's hash, then check
@@ -13,6 +14,7 @@ of their own:
   - no download, "Latest release" or "Version" line names a version: the package is linked as
     releases/latest/download/frodhes.fwsc (release.yml uploads it under that fixed name too). History ("settings
     saved by 0.9.3 are read as they are") is allowed.
+  - every link to a heading ([..](MANUAL.md#4-the-pages), [..](#install)) names a heading that is there.
 tests/py/test_doc_links.py runs the check; tools/release.py's docs step too.
 """
 import hashlib
@@ -21,7 +23,8 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DOCS = ("README.md", "docs/MANUAL.md")
+DOCS = ("README.md", "docs/MANUAL.md", "docs/MOVE.md", "docs/MOVE-DEV.md", "docs/SMK37.md")
+INSTALL_DOCS = ("README.md", "docs/MANUAL.md")              # the FM-1 install: the stable download link
 LATEST = "https://github.com/leonardoMirabal/frodhes/releases/latest"
 DOWNLOAD = LATEST + "/download/frodhes.fwsc"
 IMG = r"\.(?:png|jpe?g|gif|svg|webp)"
@@ -34,6 +37,26 @@ PINS = (
     (re.compile(r"\bVersion \d+\.\d+\.\d+"), "a 'Version X.Y.Z' line (the release says the version)"),
     (re.compile(r"releases/download/v\d+\.\d+\.\d+/"), "a download link to one release (use " + DOWNLOAD + ")"),
 )
+
+
+# a link to a heading: [..](FILE.md#anchor) or [..](#anchor); group 1 the file (or ""), 2 the anchor
+ANCHOR = re.compile(r"\]\(([\w./-]*\.md)?#([^)\s]+)\)")
+
+
+def anchors(path):
+    """the heading anchors GitHub makes for a Markdown file: lower case, punctuation dropped, spaces as -, a repeat
+    numbered -1, -2 ..."""
+    out, seen, fence = set(), {}, False
+    for line in open(path, encoding="utf-8"):
+        if line.startswith("```"):
+            fence = not fence
+        if fence or not re.match(r"#{1,6} ", line):
+            continue
+        a = re.sub(r"[^\w\- ]", "", line.lstrip("#").strip().lower()).replace(" ", "-")
+        n = seen.get(a, 0)
+        seen[a] = n + 1
+        out.add(a if n == 0 else f"{a}-{n}")
+    return out
 
 
 def short_hash(path):
@@ -52,6 +75,10 @@ def problems(root=ROOT, docs=DOCS):
     """every problem in the docs, as 'FILE:LINE: what'"""
     out = []
     for name in docs:
+        if not os.path.exists(os.path.join(root, name)):
+            if root == ROOT:                                    # (a test's own tree may hold only some of them)
+                out.append(f"{name}: the file does not exist")
+            continue
         text = open(os.path.join(root, name), encoding="utf-8").read()
 
         def where(pos):
@@ -63,6 +90,13 @@ def problems(root=ROOT, docs=DOCS):
                 out.append(f"{where(m.start())}: {m.group(1)} has no ?v= (want ?v={short_hash(path)})")
             elif m.group(2) != short_hash(path):
                 out.append(f"{where(m.start())}: {m.group(1)}?v={m.group(2)}, the file's hash is {short_hash(path)}")
+        for m in ANCHOR.finditer(text):
+            target = os.path.normpath(os.path.join(os.path.dirname(os.path.join(root, name)), m.group(1) or
+                                                   os.path.basename(name)))
+            if not os.path.exists(target):
+                out.append(f"{where(m.start())}: {m.group(1)} does not exist")
+            elif m.group(2) not in anchors(target):
+                out.append(f"{where(m.start())}: {(m.group(1) or '')}#{m.group(2)}: no such heading")
         for rx, what in PINS:
             for m in rx.finditer(text):
                 out.append(f"{where(m.start())}: {m.group(0)!r}: {what}")
@@ -74,6 +108,8 @@ def fix(root=ROOT, docs=DOCS):
     changed = []
     for name in docs:
         p = os.path.join(root, name)
+        if not os.path.exists(p):
+            continue
         text = open(p, encoding="utf-8").read()
         new, last = [], 0
         for m, path in _pics(root, name, text):
