@@ -1,9 +1,9 @@
-# Frodhes on the SMK-37 (experimental)
+# Frodhes on the SMK-37
 
 The SMK-37 (sold as SMK-37 Pro, SMK-37 Elite and MKE-P37) is built on the same chip as the FM-1, so Frodhes
-builds for it from the same source. **These builds are experimental: we have not tested them on an SMK-37 ourselves.**
-Everything below was checked on the host build only (the same code, run on a computer against a simulated keyboard,
-`make test-smk`). If you try one, back up your flash first, and please tell us what works and what does not.
+builds for it from the same source. SMK-37 owners have confirmed them working on their keyboards;
+we test them on the host build (the same code, run on a computer against a simulated keyboard, `make test-smk`). Back
+up your flash first, and please tell us on GitHub if something does not work.
 
 The SMK-37 board support (keybed, pads, LEDs, flash map, update path) is genkigenki's, from his SMK-37 port and the
 fm1-to-smk37 kit, as it came into Dinghy. The SMK-37 app layer of Frodhes (pads, fader banks, wheels, pedal, panel
@@ -19,9 +19,9 @@ the [pages](MANUAL.md#4-the-pages) in section 4); the SMK-37 reaches them as bel
 
 | Model | File | Package identity |
 | --- | --- | --- |
-| SMK-37 Pro | `frodhes-smk37-experimental.fwsc` | `SMK-37 Pro_470` |
-| SMK-37 Elite | `frodhes-smk37-elite-experimental.fwsc` | `SMK-37 Elite_470` |
-| MKE-P37 | `frodhes-smk37-mke-experimental.fwsc` | `MKE-P37_470` |
+| SMK-37 Pro | `frodhes-smk37.fwsc` | `SMK-37 Pro_470` |
+| SMK-37 Elite | `frodhes-smk37-elite.fwsc` | `SMK-37 Elite_470` |
+| MKE-P37 | `frodhes-smk37-mke.fwsc` | `MKE-P37_470` |
 
 Use the file for your model: the stock updater only accepts a package with the unit's own name. The identity stays the
 same for every Frodhes version. Each release attaches the three files under these names
@@ -40,12 +40,12 @@ two reads and check that the calibration record (`trimdat`) is in them. Do this 
 
 From the browser (Chrome or Edge): open the [emulator page](https://leonardomirabal.github.io/frodhes/#install),
 **Install on your FM-1 or SMK-37**, press **Find my FM-1 or SMK-37** (allow MIDI with SysEx), then **Install**. The
-page reads the unit's identity and picks the package for its model (SMK-37 Pro, SMK-37 Elite or MKE-P37, marked
-experimental), checks its sha256, and refuses a package for another model before it sends anything. It works over
+page reads the unit's identity and picks the package for its model (SMK-37 Pro, SMK-37 Elite or MKE-P37),
+checks its sha256, and refuses a package for another model before it sends anything. It works over
 the stock firmware or over Frodhes, and resumes an install that was cut off. Or from a terminal:
 
 ```sh
-python3 tools/fm1_install.py frodhes-smk37-experimental.fwsc
+python3 tools/fm1_install.py frodhes-smk37.fwsc
 ```
 
 The installer knows the SMK-37's names. On the computer the unit is called **Frodhes SMK-37 Pro** (Frodhes SMK-37

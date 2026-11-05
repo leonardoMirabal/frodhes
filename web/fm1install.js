@@ -18,13 +18,13 @@
   const MAXDATA = 512, BLOCKS = 20, BLK = 0x30, KEEP = 0x2F, MAX_BLOCKS = 64;
   const LOADER_MARK = "FELUCCA-LOADER-1";
   const PRODUCT = "FM-1_958";                         // the FM-1's package
-  // the packages this page installs, by the device's model (the identity before the "_"); the SMK-37 builds are
-  // experimental, as on the release page. file: the fixed name next to the page (tools/web_firmware.sh)
+  // the packages this page installs, by the device's model (the identity before the "_"). file: the fixed name next
+  // to the page (tools/web_firmware.sh)
   const PRODUCTS = [
     { model: "FM-1", product: "FM-1_958", file: "frodhes.fwsc" },
-    { model: "SMK-37 Pro", product: "SMK-37 Pro_470", file: "frodhes-smk37-experimental.fwsc", experimental: true },
-    { model: "SMK-37 Elite", product: "SMK-37 Elite_470", file: "frodhes-smk37-elite-experimental.fwsc", experimental: true },
-    { model: "MKE-P37", product: "MKE-P37_470", file: "frodhes-smk37-mke-experimental.fwsc", experimental: true },
+    { model: "SMK-37 Pro", product: "SMK-37 Pro_470", file: "frodhes-smk37.fwsc" },
+    { model: "SMK-37 Elite", product: "SMK-37 Elite_470", file: "frodhes-smk37-elite.fwsc" },
+    { model: "MKE-P37", product: "MKE-P37_470", file: "frodhes-smk37-mke.fwsc" },
   ];
   const PORT_RE = /fm-1|frodhes|smk|elite|mke-p37|felucca|sloop|ota|usb-midi/i;   // never ask other gear
   const OWN_LOADER_RE = /^ota-(FM-1|SMK-37 Pro|SMK-37 Elite|MKE-P37)_9\d\d$/i;   // our update loader (an install not finished)

@@ -36,13 +36,13 @@ def test_smk_builds_never_take_the_fm1_identity():
 
 
 def test_release_smk_assets_are_the_release_builds():
-    """tools/release.py SMK_ASSETS (release.yml's experimental SMK-37 assets) are build.py's release packages of the
+    """tools/release.py SMK_ASSETS (release.yml's SMK-37 assets, fixed names) are build.py's release packages of the
     three models, each under its own identity (SMK-37 Pro_470, SMK-37 Elite_470, MKE-P37_470), never the FM-1's"""
     b = build_py()
     import release
-    want = {"pro": ("SMK-37 Pro_470", "frodhes-smk37-experimental.fwsc"),
-            "elite": ("SMK-37 Elite_470", "frodhes-smk37-elite-experimental.fwsc"),
-            "mke": ("MKE-P37_470", "frodhes-smk37-mke-experimental.fwsc")}
+    want = {"pro": ("SMK-37 Pro_470", "frodhes-smk37.fwsc"),
+            "elite": ("SMK-37 Elite_470", "frodhes-smk37-elite.fwsc"),
+            "mke": ("MKE-P37_470", "frodhes-smk37-mke.fwsc")}
     assert list(release.SMK_ASSETS) == [want[m][1] for m in ("pro", "elite", "mke")]
     for model, (ident, pub) in want.items():
         assert b.package("smk37", model, "0.9.9") == (ident, release.SMK_ASSETS[pub].format(v="0.9.9"))

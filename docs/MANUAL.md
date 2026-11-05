@@ -37,7 +37,7 @@ firmware can always be put back ([how](#going-back-to-the-original-firmware)). S
 12. [MIDI](#12-midi)
 13. [If something goes wrong](#13-if-something-goes-wrong)
 14. [Specifications](#14-specifications)
-15. [Appendix: the SMK-37 (experimental)](#15-appendix-the-smk-37-experimental)
+15. [Appendix: the SMK-37](#15-appendix-the-smk-37)
 16. [Appendix: the Ableton Move](#16-appendix-the-ableton-move)
 
 ## 1. Getting started
@@ -1170,11 +1170,11 @@ than the jack; a DAW's latency compensation takes care of it when you record.
 | **Sustain** | REC (hold, or tap to latch) and CC 64 with half-pedalling |
 | **Recovery** | Hold OCT− while switching on: the USB rescue. No factory reset |
 
-## 15. Appendix: the SMK-37 (experimental)
+## 15. Appendix: the SMK-37
 
 Frodhes also builds for the SMK-37 (SMK-37 Pro, SMK-37 Elite, MKE-P37), the same chip as the FM-1, from the same
 source: one package per model on the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest).
-**These builds are experimental: they are not tested on hardware by us.** Everything in this manual applies to the
+Everything in this manual applies to the
 sound and the pages; the SMK-37 reaches them with its own buttons, its eight knobs (K5..K8 are the four cards), its
 pads, faders and wheels. Its manual has the files, the flash backup to make first, the install, the way back to stock,
 the controls and what differs: **[SMK37.md](SMK37.md)**.

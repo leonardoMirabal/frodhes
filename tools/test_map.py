@@ -30,7 +30,7 @@ Per target (tools/target_closure.py, the preprocessor's own file lists): which o
 builds from, and that target's tests. A change that reaches the Move or HQ and neither firmware needs Gate S
 (tools/gate_s.py: the FM-1 and SMK packages byte-identical to the parent commit's) in place of the FM-1 tiers.
  fm1    the tiers above, from the files the FM-1 builds from
- smk    make test-smk, the SMK packages build (no unit to test on: experimental)
+ smk    make test-smk, the SMK packages build (no unit here: the host build)
  move   tools/ci_move.sh (Gate U, the Move tests), make test-move, Gate M; on the Move: CPU, crackle, the null test
  hq     the same with FR_HQ=1; on the Move: the HQ CPU and a listening round
 """
@@ -135,7 +135,7 @@ def analyze(files):
 PER_TARGET = ("fm1", "smk", "move", "hq")
 TARGET_TESTS = {
     "smk": (["make test-smk (the host build, 7 voices)", "the SMK packages build (./build.sh --board smk37)"],
-            "none (experimental: no SMK-37 to test on)"),
+            "none (no SMK-37 here: the host build)"),
     "move": (["tools/ci_move.sh (Gate U, the Move tests)", "make test-move", "Gate M (the host render nulls the Move build)"],
              "tools/move_hil.py cpu + crackle, tools/device_null.py (Classic)"),
     "hq": (["tools/ci_move.sh", "make test-move (FR_HQ=1)"],

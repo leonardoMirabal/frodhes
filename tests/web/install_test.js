@@ -81,7 +81,7 @@ print(json.dumps({"resp": list(I.response(0x12345, bytes([1, 2, 3]), 5)), "pack"
   for (const [model, port, stock] of [["SMK-37 Pro", "Frodhes SMK-37 Pro", "SMK-37 Pro"], ["SMK-37 Elite", "Frodhes SMK-37 Elite", "SMK-37 Elite"],
                                       ["MKE-P37", "Frodhes MKE-P37", "MKE-P37"]]) {
     const want = X.productFor(model + "_470");
-    ok(want && want.product === model + "_470" && want.experimental, `productFor: ${model} -> ${want && want.product}, experimental`);
+    ok(want && want.product === model + "_470", `productFor: ${model} -> ${want && want.product}`);
     const sp = await X.loadPackage(makePackage(model + "_470"));
     for (const [what, identity, name] of [["over Frodhes", model + "_470", port], ["over the stock firmware", model + "_016", stock]]) {
       dev = new FakeFM1(sp.image, { identity, name, loader: [`ota-${model}_900`, "Felucca Update"], afterWrite: model + "_470", afterName: port });
