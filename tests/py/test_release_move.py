@@ -126,7 +126,8 @@ def test_release_commit_records_the_move_only_when_tested(mtree, monkeypatch, tm
 
 def test_verify_expects_the_move_only_when_recorded(monkeypatch):
     good = f"[`frodhes.fwsc`]({rel.LATEST_DL})"
-    base = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *rel.SMK_ASSETS, rel.LICENCE_ASSET]
+    base = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *rel.SMK_ASSETS, *[rel.smk_versioned(n, "0.9.3") for n in rel.SMK_ASSETS],
+            rel.LICENCE_ASSET]
     mv = ["frodhes-0.9.3-move.tar.gz", rel.MOVE_STABLE]
     tagged = "https://github.com/leonardoMirabal/frodhes/releases/download/v0.9.3/frodhes.fwsc"
     monkeypatch.setattr(rel, "resolve", lambda url: (tagged, "a" * 64))
@@ -225,6 +226,6 @@ def test_release_publish_step_attaches_the_move_when_there(tmp_path):
     p = subprocess.run(["sh", "-e", "-c", run], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
     assert p.returncode == 0, p.stderr
     args = (tmp_path / "gh.log").read_text().splitlines()
-    assert args[8].split("#")[0] == "LICENSES/Apache-2.0.txt"
-    assert args[9:12] == ["build/publish/move/frodhes-0.9.9-move.tar.gz", "build/publish/move/frodhes-module.tar.gz",
+    assert args[11].split("#")[0] == "LICENSES/Apache-2.0.txt"
+    assert args[12:15] == ["build/publish/move/frodhes-0.9.9-move.tar.gz", "build/publish/move/frodhes-module.tar.gz",
                           "--title"]
