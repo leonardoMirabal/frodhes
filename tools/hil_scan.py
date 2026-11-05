@@ -2497,8 +2497,10 @@ def v_report(suites, V, path, dry):
                  f"{t.get('usb_slip_ms', 0):.0f} / {t.get('jack_slip_ms', 0):.0f} | {t.get('usb_pre_db', -240):.0f} |")
     L += ["", f"Takes with a problem: {', '.join(t['tag'] for t in bad) or 'none'}", ""]
     open(path, "w").write("\n".join(L))
-    json.dump(dict(suites={S.name: S.rows for S in suites}, takes=tk), open(path[:-3] + ".json", "w"), indent=1,
-              default=float)
+    js = path[:-3] + ".json"                        # (written whole, then renamed: a reader never sees half a report)
+    with open(js + ".tmp", "w") as f:
+        json.dump(dict(suites={S.name: S.rows for S in suites}, takes=tk), f, indent=1, default=float)
+    os.replace(js + ".tmp", js)
     return bad
 
 

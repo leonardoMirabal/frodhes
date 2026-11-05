@@ -45,7 +45,9 @@ def build(src_text, tag, extra=()):
     open(c, "w").write(core(src_text))
     exe = os.path.join(OUT, f"rh_coef_{tag}")
     subprocess.run(["cc", "-O2", "-Wall", *extra, "-I" + os.path.join(ROOT, "firmware", "src"),
-                    f'-DRH_COEF_CORE="{c}"', "-o", exe, os.path.join(ROOT, "tests", "c", "rh_coef.c")], check=True)
+                    f'-DRH_COEF_CORE="{c}"', "-o", f"{exe}.{os.getpid()}", os.path.join(ROOT, "tests", "c", "rh_coef.c")],
+                   check=True)
+    os.replace(f"{exe}.{os.getpid()}", exe)                # (whole, then renamed: never run half-written)
     return exe
 
 

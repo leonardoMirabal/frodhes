@@ -54,9 +54,13 @@ def take(noise, key, up_ms):
 def test_the_suite_row_on_the_host(seed):
     """the suite itself on the host build: the seeds whose latencies put a key-up a block later than the reference's
     (seed 2: A4 let go at 5508 ms in the NOISE 0 take, 5509 in the NOISE 48 one, a block boundary between)"""
-    subprocess.run([sys.executable, os.path.join(ROOT, "tools", "hil_scan.py"), "--host", str(seed), "--only", "vibes_decay"],
-                   capture_output=True, cwd=ROOT)        # (exit 1 on a failed row: the rows say which)
-    rows = json.load(open(os.path.join(ROOT, "build", "hil", "vibes-host.json")))["suites"]["vibes_decay"]
+    js = os.path.join(ROOT, "build", "hil", "vibes-host.json")
+    if os.path.exists(js):
+        os.remove(js)                                   # (a report left by an earlier run never passes for this one)
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "hil_scan.py"), "--host", str(seed), "--only",
+                        "vibes_decay"], capture_output=True, text=True, cwd=ROOT)   # (exit 1 on a failed row: the rows say which)
+    assert os.path.exists(js), (seed, r.returncode, r.stdout[-2000:], r.stderr[-2000:])
+    rows = json.load(open(js))["suites"]["vibes_decay"]
     bad = [(r["check"], r["setting"], r["usb"]) for r in rows if r["check"].startswith("NOISE") and not r["ok"]]
     assert not bad, (seed, bad)
 
