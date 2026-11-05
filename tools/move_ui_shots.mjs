@@ -20,6 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import crypto from "node:crypto";
+import zlib from "node:zlib";
 import { ROOT, W, H, png, grey, Plugin, Frame, CHAIN_MENUS } from "../move/ui/harness.mjs";
 
 const args = process.argv.slice(2);
@@ -151,13 +152,27 @@ const hash = (buf) => crypto.createHash("sha256").update(buf).digest("hex").slic
 const docs = {};
 for (const [n, make] of Object.entries(DOC_SHOTS)) docs[n] = big(make().draw(), 4);
 
+// a PNG's header and pixels (its IDAT inflated): node's zlib compresses the same pixels to other bytes in other
+// versions (CI's node 20 vs 25 here: every docs picture read "stale"), so --check compares the pixels
+function pixelsOf(buf) {
+    const ihdr = [], idat = [];
+    for (let i = 8; i + 8 <= buf.length;) {
+        const len = buf.readUInt32BE(i), type = buf.toString("latin1", i + 4, i + 8), data = buf.subarray(i + 8, i + 8 + len);
+        if (type === "IHDR") ihdr.push(data);
+        else if (type === "IDAT") idat.push(data);
+        i += 12 + len;
+    }
+    return Buffer.concat([...ihdr, zlib.inflateSync(Buffer.concat(idat))]);
+}
+const samePixels = (a, b) => { try { return pixelsOf(a).equals(pixelsOf(b)); } catch { return false; } };
+
 if (CHECK) {
     const bad = [];
     const have = fs.existsSync(IMG) ? fs.readdirSync(IMG).filter((f) => f.endsWith(".png")) : [];
     for (const [n, b] of Object.entries(docs)) {
         const f = path.join(IMG, `move-${n}.png`);
         if (!fs.existsSync(f)) bad.push(`missing: docs/manual/img/move/move-${n}.png`);
-        else if (!fs.readFileSync(f).equals(b)) bad.push(`stale: docs/manual/img/move/move-${n}.png`);
+        else if (!samePixels(fs.readFileSync(f), b)) bad.push(`stale: docs/manual/img/move/move-${n}.png`);
     }
     for (const f of have) if (!(f.replace(/^move-|\.png$/g, "") in docs)) bad.push(`orphan: docs/manual/img/move/${f}`);
     const used = new Set();
