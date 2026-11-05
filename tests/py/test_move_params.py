@@ -182,7 +182,19 @@ def _bridge(*args, stdin=None):
                "frodhes-move:bookworm", "sh", "-c", inner]
     else:
         return None
-    return subprocess.run(cmd, input=stdin, capture_output=True, text=True, cwd=ROOT, timeout=1800)
+    return bridge_run(cmd, stdin)
+
+
+def bridge_run(cmd, stdin):
+    """one bridge run at a time across the pytest workers (test_move_eq's too): each one's make relinks
+    build/move/frodhes/dsp.so, and a worker that loaded it mid-link read "file too short" (the 0.9.8 release run,
+    test_move_maps, -n 2)"""
+    import fcntl
+    import subprocess
+    os.makedirs(os.path.join(ROOT, "build", "move"), exist_ok=True)
+    with open(os.path.join(ROOT, "build", "move", ".bridge.lock"), "w") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        return subprocess.run(cmd, input=stdin, capture_output=True, text=True, cwd=ROOT, timeout=1800)
 
 
 NO_GLUE = pytest.mark.skipif(not os.path.exists(PLUGIN), reason="needs move/move_plugin.c")

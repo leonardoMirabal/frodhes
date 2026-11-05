@@ -95,7 +95,8 @@ def _bridge(lines, tb_dir=None):
                "/src", "frodhes-move:bookworm", "sh", "-c", inner]
     else:
         pytest.skip("no Linux arm64 and no frodhes-move:bookworm image (make move-image)")
-    r = subprocess.run(cmd, input="\n".join(lines) + "\n", capture_output=True, text=True, cwd=ROOT, timeout=1800)
+    import test_move_params as tmp                   # (its lock: one bridge run at a time across the workers)
+    r = tmp.bridge_run(cmd, "\n".join(lines) + "\n")
     got = {}
     for ln in r.stdout.splitlines():
         if ln.count("\t") == 1:
