@@ -19,9 +19,9 @@ the [pages](MANUAL.md#4-the-pages) in section 4); the SMK-37 reaches them as bel
 
 | Model | File | Package identity |
 | --- | --- | --- |
-| SMK-37 Pro | `frodhes-smk37.fwsc` | `SMK-37 Pro_470` |
+| SMK-37 Pro | `frodhes-smk37-pro.fwsc` | `SMK-37 Pro_470` |
 | SMK-37 Elite | `frodhes-smk37-elite.fwsc` | `SMK-37 Elite_470` |
-| MKE-P37 | `frodhes-smk37-mke.fwsc` | `MKE-P37_470` |
+| MKE-P37 | `frodhes-mke-p37.fwsc` | `MKE-P37_470` |
 
 Use the file for your model: the stock updater only accepts a package with the unit's own name. The identity stays the
 same for every Frodhes version. Each release attaches the three files under these names
@@ -45,7 +45,7 @@ checks its sha256, and refuses a package for another model before it sends anyth
 the stock firmware or over Frodhes, and resumes an install that was cut off. Or from a terminal:
 
 ```sh
-python3 tools/fm1_install.py frodhes-smk37.fwsc
+python3 tools/fm1_install.py frodhes-smk37-pro.fwsc
 ```
 
 The installer knows the SMK-37's names. On the computer the unit is called **Frodhes SMK-37 Pro** (Frodhes SMK-37

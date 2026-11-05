@@ -64,7 +64,7 @@ def test_load_and_assemble_in_file_name_order(tmp_path):
     i = [inst.index(s) for s in ("**FM-1**", f"{ch.PAGES_URL}#install", "python3 tools/fm1_install.py frodhes.fwsc",
                                  "**OCT−**", "**Move**", "Schwung Manager", "From GitHub URL**, `leonardoMirabal/frodhes`",
                                  "`frodhes-module.tar.gz`", "**From Tarball**", "**SMK-37 Pro, SMK-37 Elite, MKE-P37**",
-                                 "`frodhes-smk37.fwsc`")]
+                                 "`frodhes-smk37-pro.fwsc`")]
     assert i == sorted(i)
     nm = ch.assemble("1.2.3", frags, r, move=False)                      # no Move package: no Move route
     assert "**Move**" not in nm and "frodhes-module.tar.gz" not in nm and "**SMK-37 Pro" in nm

@@ -83,9 +83,14 @@ PAGES_URL = "https://leonardomirabal.github.io/frodhes/"
 STABLE = "frodhes.fwsc"                       # release.yml uploads the package under this name too
 # release.yml also builds and attaches the SMK-37 packages (./build.sh --board smk37 [--model elite|mke]), each under
 # the fixed name and the build's own versioned one: the fixed name -> the build's file (tools/build.py package())
-SMK_ASSETS = {"frodhes-smk37.fwsc": "frodhes-{v}-smk37.fwsc",
+SMK_ASSETS = {"frodhes-smk37-pro.fwsc": "frodhes-{v}-smk37.fwsc",
               "frodhes-smk37-elite.fwsc": "frodhes-{v}-smk37-elite.fwsc",
-              "frodhes-smk37-mke.fwsc": "frodhes-{v}-smk37-mke.fwsc"}
+              "frodhes-mke-p37.fwsc": "frodhes-{v}-smk37-mke.fwsc"}
+
+
+def smk_versioned(name, v):
+    """an SMK-37 asset's versioned name: frodhes-smk37-pro.fwsc -> frodhes-X.Y.Z-smk37-pro.fwsc"""
+    return name.replace("frodhes-", f"frodhes-{v}-", 1)
 # the Move package (make move: build/move/frodhes-module.tar.gz), attached by release.yml (tools/move_asset.sh) only
 # when the release commit records its sha256 as tested on the Move: the versioned name and the stable one
 MOVE_BUILT = os.path.join("build", "move", "frodhes-module.tar.gz")
@@ -609,7 +614,7 @@ class Release:
         # the Move package: expected when the release commit records it (or this run tested it); with --verify-only,
         # when either name is there both must be
         want_move = bool(self.move_recorded or self.move_ok or (self.a.verify_only and set(move_names) & set(names)))
-        missing = [n for n in (versioned, STABLE, *SMK_ASSETS, *(f.format(v=self.ver) for f in SMK_ASSETS.values()),
+        missing = [n for n in (versioned, STABLE, *SMK_ASSETS, *(smk_versioned(n, self.ver) for n in SMK_ASSETS),
                                LICENCE_ASSET, *(move_names if want_move else ()))
                    if n not in names]
         if missing or r.get("isDraft"):

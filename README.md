@@ -91,9 +91,9 @@ The files on the [release page](https://github.com/leonardoMirabal/frodhes/relea
 | --- | --- |
 | M-VAVE FM-1 | `frodhes.fwsc` |
 | Ableton Move | `frodhes-module.tar.gz` |
-| SMK-37 Pro | `frodhes-smk37.fwsc` |
+| SMK-37 Pro | `frodhes-smk37-pro.fwsc` |
 | SMK-37 Elite | `frodhes-smk37-elite.fwsc` |
-| MKE-P37 | `frodhes-smk37-mke.fwsc` |
+| MKE-P37 | `frodhes-mke-p37.fwsc` |
 
 ## Credits
 

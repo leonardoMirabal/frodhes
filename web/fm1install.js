@@ -22,9 +22,9 @@
   // to the page (tools/web_firmware.sh)
   const PRODUCTS = [
     { model: "FM-1", product: "FM-1_958", file: "frodhes.fwsc" },
-    { model: "SMK-37 Pro", product: "SMK-37 Pro_470", file: "frodhes-smk37.fwsc" },
+    { model: "SMK-37 Pro", product: "SMK-37 Pro_470", file: "frodhes-smk37-pro.fwsc" },
     { model: "SMK-37 Elite", product: "SMK-37 Elite_470", file: "frodhes-smk37-elite.fwsc" },
-    { model: "MKE-P37", product: "MKE-P37_470", file: "frodhes-smk37-mke.fwsc" },
+    { model: "MKE-P37", product: "MKE-P37_470", file: "frodhes-mke-p37.fwsc" },
   ];
   const PORT_RE = /fm-1|frodhes|smk|elite|mke-p37|felucca|sloop|ota|usb-midi/i;   // never ask other gear
   const OWN_LOADER_RE = /^ota-(FM-1|SMK-37 Pro|SMK-37 Elite|MKE-P37)_9\d\d$/i;   // our update loader (an install not finished)

@@ -40,9 +40,9 @@ def test_release_smk_assets_are_the_release_builds():
     three models, each under its own identity (SMK-37 Pro_470, SMK-37 Elite_470, MKE-P37_470), never the FM-1's"""
     b = build_py()
     import release
-    want = {"pro": ("SMK-37 Pro_470", "frodhes-smk37.fwsc"),
+    want = {"pro": ("SMK-37 Pro_470", "frodhes-smk37-pro.fwsc"),
             "elite": ("SMK-37 Elite_470", "frodhes-smk37-elite.fwsc"),
-            "mke": ("MKE-P37_470", "frodhes-smk37-mke.fwsc")}
+            "mke": ("MKE-P37_470", "frodhes-mke-p37.fwsc")}
     assert list(release.SMK_ASSETS) == [want[m][1] for m in ("pro", "elite", "mke")]
     for model, (ident, pub) in want.items():
         assert b.package("smk37", model, "0.9.9") == (ident, release.SMK_ASSETS[pub].format(v="0.9.9"))

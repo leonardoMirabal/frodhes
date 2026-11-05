@@ -257,12 +257,13 @@ def test_release_publish_step_uploads_both_names(tmp_path):
     assert p.returncode == 0, p.stderr
     args = (tmp_path / "gh.log").read_text().splitlines()
     assert args[:5] == ["release", "create", "v0.9.9", "build/frodhes-0.9.9.fwsc", "build/publish/frodhes.fwsc"]
-    assert args[5:8] == [f"build/{b.format(v='0.9.9')}" for b in rel.SMK_ASSETS.values()]
+    assert args[5:8] == [f"build/publish/{rel.smk_versioned(n, '0.9.9')}" for n in rel.SMK_ASSETS]
     assert args[8:11] == [f"build/publish/{n}" for n in rel.SMK_ASSETS]
     assert args[11].split("#")[0] == "LICENSES/Apache-2.0.txt"  # the SDK files' licence text (Apache-2.0 s. 4)
     assert args[12] == "--title"                  # nothing else attached
-    for n in rel.SMK_ASSETS:                       # each the build of its own model
+    for n in rel.SMK_ASSETS:                       # each the build of its own model, under both names
         assert (tmp_path / "build" / "publish" / n).read_bytes() == n.encode()
+        assert (tmp_path / "build" / "publish" / rel.smk_versioned(n, "0.9.9")).read_bytes() == n.encode()
     assert args[-1] == "--draft" and "--latest" not in args      # published (and made latest) after the emulator
     assert args[args.index("--notes-file") + 1] == "docs/releases/v0.9.9.md"
     assert (tmp_path / "build" / "publish" / "frodhes.fwsc").read_bytes() == b"package"
@@ -533,8 +534,8 @@ def test_web_firmware_publishes_the_smk37_packages_too(tmp_path):
     ones, a stock identity or the same model twice is refused, nothing copied"""
     import hashlib
     import json
-    names = {"SMK-37 Pro_470": "frodhes-smk37.fwsc", "SMK-37 Elite_470": "frodhes-smk37-elite.fwsc",
-             "MKE-P37_470": "frodhes-smk37-mke.fwsc"}
+    names = {"SMK-37 Pro_470": "frodhes-smk37-pro.fwsc", "SMK-37 Elite_470": "frodhes-smk37-elite.fwsc",
+             "MKE-P37_470": "frodhes-mke-p37.fwsc"}
     files = {}
     for ident in ["FM-1_958", *names, "SMK-37 Pro_016"]:
         files[ident] = tmp_path / (ident.replace(" ", "_") + ".fwsc")
