@@ -19,10 +19,11 @@ PREV_REF = os.environ.get("BARS_COMPAT_PREV", "v0.9.3")    # the release before 
 def build(src_root, exe, old=False):
     cmd = ["cc", "-O1", "-w", "-DDINGHY_HOST", "-DAPP_VER=\"dev\"", "-Dmain=host_main",
            "-I" + os.path.join(src_root, "firmware", "src"), "-I" + os.path.join(src_root, "firmware", "gen"),
-           "-o", exe, os.path.join(ROOT, "tests", "c", "bars_ui.c"), "-lm"]
+           "-o", f"{exe}.{os.getpid()}", os.path.join(ROOT, "tests", "c", "bars_ui.c"), "-lm"]
     if old:
         cmd.insert(1, "-DBARS_UI_OLD")
     subprocess.run(cmd, check=True, cwd=src_root)
+    os.replace(f"{exe}.{os.getpid()}", exe)                # (whole, then renamed: never run half-written)
     return exe
 
 
