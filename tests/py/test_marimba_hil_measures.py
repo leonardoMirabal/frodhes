@@ -161,6 +161,34 @@ def test_known_rows_are_reported_known():
     assert V.rows[0]["status"] == "FAIL" and "known" not in V.rows[0]
 
 
+
+def test_struck_known_rows_only_inside_their_band():
+    """STRUCK_KNOWN (the user's decision 2026-11-05): a VIBES / MARIMBA effect row whose limit was set on the Rhodes'
+    held chord is KNOWN at 0.9.7's value, FAIL past its band (every source inside), FAIL on another suite (the Rhodes
+    rows are not VSuite's) and FAIL for a check it does not name"""
+    lim = lambda d: abs(d - (-2.5)) <= 1.5          # noqa: E731
+    V = h.VSuite("vibes_jump", _V())
+    V.check("chorus 64: on vs off", "held on", {"usb": -0.99, "jack": -0.91}, lim, "")
+    V.check("chorus 64: on vs off", "held on", {"usb": -0.99, "jack": 1.2}, lim, "")       # the jack past the band
+    V.check("phaser 80: on vs off", "held on", {"usb": -0.99, "jack": -0.91}, lim, "")
+    assert [r["status"] for r in V.rows] == ["KNOWN", "FAIL", "FAIL"], [r["status"] for r in V.rows]
+    M = h.VSuite("marimba_jump", _V())
+    big = lambda d: max(abs(x) for x in (d if isinstance(d, tuple) else (d,))) <= 4.0   # noqa: E731
+    M.check("comp (-20 dB 4:1, MKUP 15): switched under a chord", "", {"usb": (-4.73, 4.72), "jack": (-4.77, 4.76)},
+            big, "")
+    M.check("comp (-20 dB 4:1, MKUP 15): switched under a chord", "", {"usb": (-7.0, 7.0), "jack": (-7.0, 7.0)}, big, "")
+    M.check("delay DIG 50: on vs off", "", {"usb": 4.38, "jack": 4.41}, lambda d: abs(d) <= 1.5, "")
+    M.check("delay DIG 50: on vs off", "", {"usb": -2.0, "jack": -2.0}, lambda d: abs(d) <= 1.5, "")
+    assert [r["status"] for r in M.rows] == ["KNOWN", "FAIL", "KNOWN", "FAIL"], [r["status"] for r in M.rows]
+    F = h.VSuite("marimba_fx", _V())
+    F.check("FILTER TYPE LP12", "FREQ 64, RESO 0, vs no filter", {"usb": 3.5, "jack": 2.9}, lambda v: v >= 3, "")
+    F.check("FILTER TYPE LP12", "FREQ 64, RESO 0, vs no filter", {"usb": 3.5, "jack": 2.0}, lambda v: v >= 3, "")
+    F.check("FILTER TYPE LP18", "FREQ 64, RESO 0, vs no filter", {"usb": 3.5, "jack": 2.9}, lambda v: v >= 3, "")
+    assert [r["status"] for r in F.rows] == ["KNOWN", "FAIL", "FAIL"], [r["status"] for r in F.rows]
+    R = h.VSuite("vibes_fx", _V())                   # (the MARIMBA-only rules: not on VIBES)
+    R.check("FILTER TYPE LP12", "FREQ 64, RESO 0, vs no filter", {"usb": 3.5, "jack": 2.9}, lambda v: v >= 3, "")
+    assert R.rows[0]["status"] == "FAIL"
+
 def band_trace(f, L, ph, seed=0):
     """a phaser band's level (dB, the hil frames) as a triangle LFO at f Hz sweeps the notches: no repeat at half a
     period, harmonics strong"""

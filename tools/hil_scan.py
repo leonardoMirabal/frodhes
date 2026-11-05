@@ -2434,13 +2434,14 @@ class VSuite:
         passed = info or all(res.values())
         # (a large change: 5 % of it, the analogue path's own spread; round 1: REVERB 0 -> 127, +36.8 / +35.7)
         bad_mm = mm is not None and abs(mm) > max(MISMATCH_DB, 0.05 * abs(vals["usb"]))
-        why = m_known(check, setting) if not passed and self.name.startswith("marimba_") else None
+        why = m_known(check, setting, self.name, {k: vals[k] for k in res}) if not passed and \
+            self.name.startswith(("marimba_", "vibes_")) else None
         status = ("info" if info else "ok" if passed else "KNOWN" if why else "FAIL") + (" MISMATCH" if bad_mm else "")
         row = dict(check=check, setting=setting, usb=txt["usb"], jack=txt["jack"], crit=crit,
                    mismatch=mm, status=status, ok=bool((passed or why) and not bad_mm),
                    src_ok=None if info else res)            # per source (tools/full_scan.py: the jack decides)
         if why:
-            row["known"] = why                              # (a MARIMBA user decision: m_known)
+            row["known"] = why                              # (a MARIMBA / VIBES user decision: m_known)
         self.rows.append(row)
 
     def known(self):
@@ -3636,11 +3637,51 @@ M_CAPPED = {(84, "SOFT", "MED")}
 M_FX_RATE, M_FX_JIT, M_FX_SEED, M_FX_VEL = 8.0, 0.0, 1, 80   # marimba_fx's roll: per note, the jitter, the seed (m_fx_roll)          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
 
 
-def m_known(check, setting):
+# The struck bars' effect rows (the user's decision 2026-11-05, "A": the limits, not the sound): the jump and fx limits
+# were set on the Rhodes' held chord; on a struck or rolled chord that dies in ~1 s the same effect reads differently.
+# 0.9.7 (main) and 0.9.8 give the same numbers (host and FM-1 T2, 2026-11-05). Each is KNOWN only inside its band (the
+# value on every source): a change past it fails as before. (suite, check, setting, band, reason)
+STRUCK_KNOWN = (
+    (r"^(vibes|marimba)_jump$", r"^chorus 64: on vs off", r"", lambda d: -2.0 <= d <= 0.5,
+     "USER DECISION 2026-11-05: chorus 64 on a struck chord reads -0.5 .. -1.0 LU re dry (VIBES -0.99, MARIMBA -0.60; "
+     "the Rhodes' held chord -2.5, the width compensation's target). The wet copy's delay falls in the strike's decay, "
+     "so the sum loses less than on a held chord; band -2.0 .. +0.5 LU"),
+    (r"^marimba_jump$", r"^comp \(-20 dB 4:1, MKUP 15\): (on vs off|switched under a chord)", r"",
+     lambda d: max(abs(x) for x in (d if isinstance(d, tuple) else (d,))) <= 6.0,
+     "USER DECISION 2026-11-05: MKUP 15 is the Rhodes' level-neutral make-up; a marimba strike's peaks are sharper, so "
+     "the same threshold takes more (-4.35 LU held, -4.73 / +4.72 switched). The compressor works as set: the MAKEUP "
+     "knob is a fixed gain; band |step| <= 6 LU"),
+    (r"^marimba_jump$", r"^delay (DIG|ANA) 50: on vs off", r"", lambda d: 0.0 <= d <= 6.0,
+     "USER DECISION 2026-11-05: the echoes of a strike that dies in ~1 s add more to the 1.8 s loudness than on a held "
+     "chord (DIG +4.38, ANA +3.31 LU); the direct sound (0..0.25 s, information) is unchanged; band 0 .. +6 LU"),
+    (r"^marimba_jump$", r"^reverb 50 \(no switch: REV 0 -> 50\): (on vs off|switched under a chord)", r"",
+     lambda d: max(abs(x) for x in (d if isinstance(d, tuple) else (d,))) <= 3.0,
+     "USER DECISION 2026-11-05: the hall over a dying roll is a larger share of its loudness than over a held chord "
+     "(+1.57 LU held, +1.20 / -1.74 switched; limit 1.5); band |step| <= 3 LU"),
+    (r"^marimba_fx$", r"^CHORUS DEPTH .* 0 -> 127$", r"^spectral motion$", lambda d: d >= 0.6,
+     "USER DECISION 2026-11-05: on the roll the chorus moves the spectrum +0.9 / +1.0 dB at DEPTH 127 (limit +1): each "
+     "strike resets the bands the chorus would move; band >= +0.6 dB"),
+    (r"^marimba_fx$", r"^FILTER TYPE LP12$", r"^FREQ 64, RESO 0, vs no filter$", lambda d: d >= 2.5,
+     "USER DECISION 2026-11-05: LP12 at FREQ 64 on the roll, 3.5 dB USB and 2.5-3.0 dB on the jack in every T2 since "
+     "0.9.7 (limit 3; LP18 passes, the slope check passes): MARIMBA's energy is V1, under the cutoff; band >= 2.5 dB"),
+)
+
+
+def m_known(check, setting, suite="marimba_", vals=None):
     """the KNOWN reason of a MARIMBA row (tools/marimba_scan.py KNOWN / KNOWN_CARDS: the plan's thresholds a wooden bar
     cannot meet as written, user decisions; the host scan and the tests report the same items KNOWN / xfail), or None.
-    A failing marimba_* row that matches is reported KNOWN with its reason, not FAIL; anything else fails as before."""
+    A failing marimba_* row that matches is reported KNOWN with its reason, not FAIL; anything else fails as before.
+    STRUCK_KNOWN (VIBES and MARIMBA): KNOWN only when every source's value is inside the rule's band."""
     import re
+    for rsu, rc, rs, band, why in STRUCK_KNOWN:
+        if re.search(rsu, suite) and re.search(rc, check) and re.search(rs, setting):
+            try:
+                inside = bool(vals) and all(v is not None and band(v) for v in vals.values())
+            except Exception:
+                inside = False
+            return why if inside else None
+    if not suite.startswith("marimba_"):
+        return None
     import marimba_scan as ms
     rules = ((r"^C4 MED: v40 -> v117 brighter$", r"", ms.KNOWN_CARDS["VELOCITY centroid"]),
              (r"^pumping$", r"", ms.known("M5", " pumping")),
@@ -4094,8 +4135,10 @@ def marimba_vel(V, S):
     S.check("keys C2..C7: neighbour step", "every key, v100",
             {s_: v and float(np.abs(np.diff(v[0])).max()) for s_, v in vals.items()}, lambda d: d <= 1.5,
             "<= 1.5 dB (PLAN M1, D)", fmt=lambda d: f"{d:.2f} dB")
+    # (information, as tools/marimba_scan.py's M1 row, the user 2026-11-05: the 1 s loudness falls 8.6 dB C2 -> C7
+    # because the high bars die in ~0.3 s; the peaks are within 4 dB, the neighbour step above gates the evenness)
     S.check("keys C2..C7: level span", "", {s_: v and float(v[0].max() - v[0].min()) for s_, v in vals.items()},
-            lambda d: d <= 3.0, "<= 3 dB (PLAN M1, D)", fmt=lambda d: f"{d:.1f} dB")
+            lambda d: True, "information (PLAN M1: the neighbour step gates)", fmt=lambda d: f"{d:.1f} dB", info=True)
     S.check("keys C2..C7: tuning re the spec", "", {s_: v and float(np.abs(v[1]).max()) for s_, v in vals.items()},
             lambda d: d <= 3, "|cents| <= 3", fmt=lambda d: f"{d:.2f} c")
 
