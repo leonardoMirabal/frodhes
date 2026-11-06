@@ -92,6 +92,7 @@ f87969f6ef4fb922f5e961ba246a3d8a70dfee3a4c983aeb5fe80ecea4eacae4  scripts/drive_
 # host-only scripts/pc_stall_trs: FM-1 input lines: trs
 # host-only scripts/perform: FM-1 input lines: btn, keys, turn
 # host-only scripts/perform_wake: FM-1 input lines: btn, turn
+# host-only scripts/play_led: FM-1 input lines: btn, keys, turn
 # host-only scripts/quiet_gated: FM-1 input lines: btn, turn
 # host-only scripts/release_vel: FM-1 input lines: keys
 # host-only scripts/rev_freeze_save: FM-1 input lines: btn
