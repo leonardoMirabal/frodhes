@@ -616,7 +616,8 @@ FR_COLD static int32_t slot_val(uint32_t s, int32_t *hi)
 FR_COLD static int slot_is_level(uint32_t s)                    /* a gauge only for amounts, not for choices */
 {
     if (s < P_COUNT) return PARAMS[s].fmt != F_ENUM && PARAMS[s].fmt != F_DIV;
-    return s == S_KVEL || s == S_TUNE || s == S_BPM || s == S_TRANS || s == S_ARPGATE || s == S_CHSTRUM;
+    return s == S_KVEL || s == S_TUNE || s == S_BPM || s == S_TRANS || s == S_ARPGATE || s == S_CHSTRUM
+        || s == S_SQSTEP;                               /* (STEP: the cursor's place in the loop, up to 256 steps) */
 }
 FR_COLD static void fmt_signed(char *s, int32_t v) { if (v > 0) { s[0] = '+'; p_fmt_int(s + 1, v); } else p_fmt_int(s, v); }
 /* a rate / time knob that is synced to the tempo: its SYNC parameter (the knob shows and steps the note value), else 0 */
@@ -793,7 +794,12 @@ FR_COLD static void slot_turn(uint32_t s, int32_t d)
     case S_SQBARS: SQ_BARS = (uint8_t)clampi(SQ_BARS + sgn(d), 1, 16); sq_roll_dirty = 1; break;
     case S_SQQUANT: SQ_QUANT = (uint8_t)clampi(SQ_QUANT + sgn(d), 0, 5); sq_roll_dirty = 1; break;
     case S_SQSWING: SQ_SWING = (uint8_t)clampi(SQ_SWING + sgn(d), 50, 75); sq_roll_dirty = 1; break;
-    case S_SQSTEP: sq_cur = (int32_t)sq_step_at(); sq_browse(sgn(d)); ui_mark(E_CARDS); break;   /* (CHANCE shows the new step's) */
+    case S_SQSTEP: {                                    /* from the step shown (sq_browse would start from the playing
+                                                         * step while the loop plays and the cursor sat 4 s); CHANCE
+                                                         * shows the new step's */
+        int32_t n = (int32_t)SQ_BARS * 16;
+        sq_cur = (((int32_t)sq_step_at() + sgn(d)) % n + n) % n; sq_cur_t = fm1_ms; ui_mark(E_CARDS); break;
+    }
     case S_SQCHANCE: sq_step_chance_set(sgn(d)); break;
     case S_SQEDIT:                                      /* left: UNDO the last pass; right: ERASE on / off */
         if (d < 0) {
