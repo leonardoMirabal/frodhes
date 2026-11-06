@@ -668,3 +668,82 @@ def test_injected_whole_frame_copies_are_found_as_before():
         found += sum(any(abs(e - p) <= 2 for e in ev) for p in marks)
         placed += len(marks)
     assert placed == 189 and found >= 150, (found, placed)
+
+
+# ---- 0.9.9 (BUGHUNT #24): 2 equal frames at 48 kHz need the kink above the resampler's band -------------------------
+def _usb48(x):
+    """usb.c's 44.1 -> 48 kHz resampler (test_uac_fir.reference, vectorised: the same frames, bit for bit)"""
+    sys.path.insert(0, os.path.dirname(__file__))
+    import test_uac_fir as F
+    t = F.fir()
+    x = np.clip(np.asarray(x, np.int64), -32768, 32767)
+    xp = np.vstack([np.zeros((11, 2), np.int64), x])
+    k = np.arange((len(x) * 160 + 146) // 147)
+    i, ph = k * 147 // 160, k * 147 % 160
+    i, ph = i[i < len(x)], ph[i < len(x)]
+    c = np.vstack([t, t[::-1, ::-1]])                       # (phase p >= 80: phase 159 - p backwards)
+    s = sum(c[ph, j][:, None] * xp[i + j] for j in range(12))
+    return np.clip(F.knee((s + (1 << 14)) >> 15), -32768, 32767)
+
+
+def test_usb48_is_the_resampler():
+    sys.path.insert(0, os.path.dirname(__file__))
+    import test_uac_fir as F
+    x = np.random.default_rng(3).integers(-40000, 40000, (2000, 2))
+    assert (_usb48(x) == F.reference(x, F.fir())).all()
+
+
+def test_no_repeat_on_the_fm1_seed_3128_plateau():
+    """the FM-1's monkey seed 3128 at 48 kHz (0.9.9 candidate, every counter 0, ring low point 202): -275 / 63 twice
+    on a slope (-14 / -14), ch1 13.1 dB smoother without the copy, ch0 8.0 dB, an event by the AR evidence alone; no
+    burst above the resampler's band (9.6 dB, under 10): the music's own"""
+    path = os.path.join(ROOT, "tests", "py", "data", "fm1-seed3128-992173.txt")     # text: no binary in the tree
+    at = int(re.search(r"^# at (\d+)$", open(path).read(), re.M).group(1))
+    q = np.loadtxt(path, dtype=np.int64, comments="#")
+    assert (q[at] == q[at + 1]).all()
+    assert [p for p, _ in C.det_repeat(q)] == [at]          # (no rate given: the AR evidence alone)
+    assert C._band_burst(q, at, at + 1) < 10.0
+    assert C.det_repeat(q, fs=48000) == []
+    c = at - 56                                             # a real copy 56 frames earlier (-175 / -322, steps -38 / -23)
+    q2 = np.concatenate([q[:c + 1], q[c:c + 1], q[c + 1:]])
+    assert [p for p, _ in C.det_repeat(q2, fs=48000) if abs(p - c) <= 2]
+
+
+def test_no_repeat_on_the_host_seed_3099_plateau_at_48k():
+    """the host build through the exact resampler (no USB, no copy possible): seed 3099's 2 equal frames at 7.918 s
+    (+17 / +30, 19 / 17 dB smoother) were an event by the AR evidence; the top band has no kink there (6 dB)"""
+    import hil_monkey as hm
+    x, _ = hm.host_take(3099, lead_ms=500)
+    y = _usb48(x)
+    assert C.det_repeat(y, fs=48000) == []
+
+
+def test_injected_copies_at_48k_are_found_as_without_the_band_test():
+    """copies made after the resampler (1-2 frames, at random audible places of host takes through it) are found as
+    the AR evidence alone finds them: the band test removes none here (400 takes: 10561 of the 10563)"""
+    import hil_monkey as hm
+    old = new = placed = 0
+    for s in range(3000, 3004):
+        x, _ = hm.host_take(s, lead_ms=500)
+        rng = np.random.default_rng(s)
+        y = _usb48(x)
+        lv = np.abs(y).max(axis=1)
+        ok = np.flatnonzero(np.convolve(lv >= 256, np.ones(65), "same") > 0)
+        ok = ok[(ok > 2000) & (ok < len(y) - 2000)]
+        pl = np.sort(rng.choice(ok, 40, replace=False))
+        pl = [p for i, p in enumerate(pl) if i == 0 or p - pl[i - 1] > 3000]
+        out, marks, last, shift = [], [], 0, 0
+        for p in pl:
+            m = int(rng.integers(1, 3))                    # (1 or 2 copies: 2 or 3 equal frames)
+            out += [y[last:p], np.repeat(y[p - 1:p], m, 0)]
+            marks.append(p - 1 + shift)
+            shift += m
+            last = p
+        out.append(y[last:])
+        z = np.concatenate(out)
+        a = [p for p, _ in C.det_repeat(z)]
+        b = [p for p, _ in C.det_repeat(z, fs=48000)]
+        old += sum(any(abs(e - p) <= 2 for e in a) for p in marks)
+        new += sum(any(abs(e - p) <= 2 for e in b) for p in marks)
+        placed += len(marks)
+    assert new == old and new >= 0.6 * placed, (new, old, placed)
