@@ -12,7 +12,8 @@
  * output as 16-bit stereo at 44.1 kHz on an isochronous asynchronous IN
  * endpoint (EP4), so a computer can record the FM-1 over the cable. audio.c
  * fills a ring (uac_render_start, uac_tap); uac_service sends one packet per
- * USB frame from the TIMER5 ISR, nested in the render too (main.c). The
+ * USB frame from the TIMER5 ISR, nested in the render too (main.c; with
+ * FELUCCA_UAC_PHASE, uac_tick from every TIMER5 tick instead). The
  * update loader leaves both off: MIDI only.
  * SLOOP 2.5, after Felucca 1.1.5: FELUCCA_UAC_48K=1 (the default with FELUCCA_UAC) offers 48 kHz too, for
  * phones and apps that only take 48 kHz: the host picks the rate with SET_CUR (two discrete rates in the one alt
@@ -33,9 +34,15 @@
 #ifndef FELUCCA_UAC_48K
 #define FELUCCA_UAC_48K 1
 #endif
+#ifndef FELUCCA_UAC_PHASE
+#define FELUCCA_UAC_PHASE 0                     /* 1: the EP4 poll on its own phase (uac_tick, every TIMER5 tick);
+                                                 * Frodhes' platform.c turns it on */
+#endif
 #if !FELUCCA_UAC
 #undef FELUCCA_UAC_48K
 #define FELUCCA_UAC_48K 0
+#undef FELUCCA_UAC_PHASE
+#define FELUCCA_UAC_PHASE 0
 #endif
 enum { S_FADDR = 0, S_POWER = 1, S_INTRTX1 = 2, S_INTRTX2 = 3, S_INTRRX1 = 4, S_INTRRX2 = 5, S_INTRUSB = 6,
        S_INTRTX1E = 7, S_INTRTX2E = 8, S_INTRRX1E = 9, S_INTRRX2E = 10, S_INTRUSBE = 11, S_FRAME1 = 12,
@@ -124,7 +131,21 @@ static struct {
     uint32_t adj_up, adj_down;                   /* packets one frame longer / shorter than the pattern */
     uint32_t fill_lo, fill_hi;                   /* range of fill_min since the stream started */
     uint32_t rate_sets;                          /* SET_CUR sampling frequency requests */
+#if FELUCCA_UAC_PHASE
+    uint8_t cd;                  /* TIMER5 ticks to the next EP4 poll (uac_tick) */
+    uint8_t probe;               /* polls since the last early look */
+    uint8_t look;                /* the looks after a late poll (0: none) */
+    uint8_t acq;                 /* lock on: the poll after the next wait looks on the following ticks */
+    uint32_t ph_early, ph_late;  /* the poll moved one tick earlier / later (diagnostics) */
+#endif
+#ifdef UAC_STAMP
+    volatile uint32_t t_q;       /* UAC_STAMP() when the last packet after a host take was queued (uac_slice_ok) */
+#endif
 } uac;
+#if FELUCCA_UAC_PHASE
+#define UA_PROBE 16u             /* (uac_slot) frames between two early looks */
+#define UA_LOOKS 4u              /* (uac_slot) the ticks after a late poll that look again */
+#endif
 #if FELUCCA_UAC_48K
 #include "uac_fir.h"
 /* the resampler's input history (Frodhes 0.9.5): the UAC_FIR_N - 1 frames before a pass, then the pass's RS_C frames,
@@ -411,6 +432,9 @@ static void uac_ep4_reset(void)                         /* drop a queued packet;
     sie_wr(S_TXCSR2, 0x40);                             /* ISO */
 }
 
+#if FELUCCA_UAC_PHASE
+static void uac_service(void);
+#endif
 static void uac_stream(uint32_t alt)                    /* SET_INTERFACE, configuration, bus reset */
 {
     uac.go = 0;                                         /* the next render primes the ring again */
@@ -421,6 +445,10 @@ static void uac_stream(uint32_t alt)                    /* SET_INTERFACE, config
     uac.alt = (uint8_t)alt;
     uac.acc = 0;
     uac.last = 0;
+#if FELUCCA_UAC_PHASE
+    uac.look = 0;
+    uac.acq = 1;                                        /* (uac_slot: lock on to the host's first tokens) */
+#endif
     if (alt) {                                          /* (the fill range of the last stream stays readable) */
         uac.starts++;
         uac.fill_lo = 0xFFFFFFFFu;
@@ -626,6 +654,10 @@ static void ep0_service(void)
         if (s[4] == UAC_AS_IF && wvalue <= 1u && usb.config) {
             uac_ep4_reset();
             uac_stream(wvalue);
+#if FELUCCA_UAC_PHASE
+            uac_service();                              /* the first (silence) packet now, as usb_poll's own call did:
+                                                         * a token right after the request finds it */
+#endif
             goto ack;
         }
 #endif
@@ -1245,15 +1277,18 @@ static uint32_t uac_packet(uint32_t *d)
     return n;
 }
 
-/* TIMER5, 2 kHz, also nested in the render: the host takes one packet per 1 ms frame; queue the
+/* TIMER5, 2 kHz (uac_service; FELUCCA_UAC_PHASE: uac_slot, below), also nested in the render: the host takes one
+ * packet per 1 ms frame; queue the
  * next one as soon as the last has gone (TxPktRdy clear). Not paced on SOF-pending (see usb_poll).
  * The ring is fed only while the host reads: it often selects alt 1 long before its first IN token,
- * and a recorder may stop reading without going back to alt 0 (a packet waiting > 20 ms). */
-static void uac_service(void)
+ * and a recorder may stop reading without going back to alt 0 (a packet waiting > 20 ms).
+ * (FELUCCA_UAC_PHASE: probe 1 is uac_tick's early look, which does not count as a wait. Returns 0 while the packet
+ * waits, else 1 + the polls it waited.) */
+static uint32_t uac_ep4_poll(uint32_t probe)
 {
-    uint32_t csr, n;
+    uint32_t csr, n, w;
     if (!usb.up || !usb.config || !uac.alt)
-        return;
+        return 0;
     sie_wr(S_INDEX, 4);
     csr = usb.timeouts ? 0x01u : sie_rd(S_TXCSR1);
     if (usb.timeouts) {                                 /* (0.9.7) the INDEX write or the TXCSR1 read timed out: sie_rd's
@@ -1263,11 +1298,11 @@ static void uac_service(void)
         uac.sie_to++;
     }
     if (csr & 0x01u) {                                  /* still queued */
-        if (uac.wait < 255u && ++uac.wait == 40u && uac.flowing) {
+        if (!probe && uac.wait < 255u && ++uac.wait == 40u && uac.flowing) {
             uac.flowing = 0;
             uac.stalls++;
         }
-        return;
+        return 0;
     }
     if (uac.queued) {
         if (csr & 0x04u)
@@ -1275,11 +1310,98 @@ static void uac_service(void)
         uac.flowing = 1;
     }
     uac.queued = 1;
+    w = uac.wait;
     uac.wait = 0;
     n = uac_packet(ep4tx);
     fm1_usb_ep4_send(ep4tx, n * 4u);
     sie_wr(S_TXCSR1, 0x01);                             /* TxPktRdy (and UnderRun cleared) */
+#ifdef UAC_STAMP
+    if (uac.flowing)
+        uac.t_q = UAC_STAMP();
+#endif
+    return 1u + w;
 }
+
+#ifdef UAC_STAMP
+/* Frodhes (0.9.9), the main loop (with the interrupts off, before a flash slice: fm1_flash.h FL_SLICE_OK): 1 when an
+ * interrupts-off stretch of ~300 us costs the USB audio stream nothing now: the stream does not flow, or a packet
+ * went in less than UAC_SLICE_WIN ago right after the host took the last. The next IN token is then ~1 ms after the
+ * last, so the stretch ends with most of the frame left for the poll that queues the next packet (uac_tick runs it
+ * as soon as the stretch ends); a slice at a random moment may instead cover that poll's whole margin. */
+static int uac_slice_ok(void)
+{
+    return !uac.flowing || UAC_STAMP() - uac.t_q < UAC_SLICE_WIN;
+}
+#endif
+
+static void uac_service(void)
+{
+    (void)uac_ep4_poll(0);
+}
+
+#if FELUCCA_UAC_PHASE
+/* Frodhes (0.9.9): the EP4 poll on its own phase. The host takes the queued packet at about the same place in every
+ * 1 ms frame, and the next packet must be queued before the next frame's IN token, else that token finds nothing
+ * (uac.missed: no data that frame). This controller holds one IN packet (no double buffering), so the margin is the
+ * time from the token to the poll that queues the next packet. With the 2 kHz poll at a fixed phase that is anywhere
+ * in 0..500 us, the poll after an interrupts-off stretch waits for its tick in the 5 (the stretch folds the ticks),
+ * and a stretch of ~520 us may already cost a frame (tests/py/uac_timing.py). Here:
+ *   - the poll still runs every 5 ticks (2 kHz), but on its own count, and after a stretch (uac_tick's n: the ticks
+ *     it folded) a poll whose time has passed runs at once;
+ *   - its phase follows the token: once in UA_PROBE frames the poll expected to queue looks one tick (100 us) early,
+ *     and if the packet has gone already it queues the next one there, keeps that phase and looks again the next
+ *     frame; a poll that finds the packet still there one frame after the last (two waits: the token came late,
+ *     drift or jitter) looks again on each of the next 4 ticks, and the tick that queues becomes the phase;
+ *   - when the stream starts or resumes after a gap, the looks follow the frame's first wait once, so the poll
+ *     locks on within a frame.
+ * So the next packet is queued within ~100 us of the token and a stretch may last ~900 us (less the token's
+ * movement) before a frame is missed. The same polls, plus two SIE accesses once in UA_PROBE frames and the looks
+ * after a late token; the counters (missed, stalls, sie_to) count as before (looks are not waits). */
+static __attribute__((noinline)) void uac_slot(uint32_t c)
+{
+    uint32_t q, look = uac.look;
+    if (c == 1u) {                                      /* one tick before the poll */
+        uac.cd = 1;
+        if (uac.wait != 1u || ++uac.probe < UA_PROBE)
+            return;                                     /* (look before the poll expected to queue, now and then) */
+        uac.probe = 0;
+        if (!uac_ep4_poll(1))
+            return;                                     /* still queued: the poll stays where it is */
+        uac.ph_early++;                                 /* queued a tick early: the poll keeps this phase, */
+        uac.probe = UA_PROBE;                           /* and looks again next frame */
+        uac.cd = 5;
+        return;
+    }
+    q = uac_ep4_poll(look != 0u);                       /* (c 0, or past it: ticks folded, or the first tick) */
+    uac.cd = 5;
+    if (c + 4u < 4u)                                    /* (late by 1..4 ticks, a stretch folded them: the next poll */
+        uac.cd = (uint8_t)(5u + c);                     /*  on the old grid, the phase not pushed late by the stretch) */
+    uac.look = 0;
+    if (q) {
+        uac.ph_late += look != 0u;                      /* queued on a look: the poll keeps this phase */
+        if (q > 3u)
+            uac.acq = 1;                                /* (after a gap: the host starts, or resumes: lock again) */
+        return;
+    }
+    if (look ? look < UA_LOOKS : uac.wait == 2u || (uac.wait == 1u && uac.acq)) {
+        uac.look = (uint8_t)(look + 1u);                /* late, or locking: look again next tick */
+        uac.acq = 0;
+        uac.cd = 1;
+    } else if (look) {
+        uac.cd = 1;                                     /* (the 4 looks done: the poll in its place, next tick) */
+    }
+}
+
+/* TIMER5, every tick (10 kHz), n: the ticks since the last one (1; more when an interrupts-off stretch folded some) */
+static inline __attribute__((always_inline)) void uac_tick(uint32_t n)
+{
+    uint32_t c = uac.cd - n;
+    if (c - 2u < 4u)                                    /* (2..5: not this tick, nor the one before the poll) */
+        uac.cd = (uint8_t)c;
+    else
+        uac_slot(c);
+}
+#endif
 #endif
 
 static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
@@ -1371,8 +1493,8 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
             ep3_tx();
     }
 #endif
-#if FELUCCA_UAC
-    uac_service();
+#if FELUCCA_UAC && !FELUCCA_UAC_PHASE
+    uac_service();                                      /* (FELUCCA_UAC_PHASE: uac_tick, from TIMER5 itself) */
 #endif
 }
 
