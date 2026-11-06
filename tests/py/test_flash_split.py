@@ -3,7 +3,8 @@
 (tests/fl_host_model.h, tests/flash_split_test.c): the settings save's erase and page programs never hold the
 interrupts off longer than FL_SLICE_US + 100 us, keep the USB ISR's wait (after a silent audio ISR) <= 700 us, never run the part while XIP is on or an ISR runs, keep the
 datasheet's resume-to-suspend minimum, write the right bytes; a part that ignores the suspend (or another JEDEC id)
-gets the old blocking erase. FM-1 and SMK-37 store layouts."""
+gets the old blocking erase. FM-1 and SMK-37 store layouts; and with FL_SLICE_OK holding each slice for its moment
+(0.9.9: right after a USB audio packet), the same checks."""
 import subprocess
 from pathlib import Path
 
@@ -13,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CC = ["cc", "-O1", "-Wall", "-Wno-unused-function", "-Wno-int-to-pointer-cast", "-Ifirmware/hal"]
 
 
-@pytest.mark.parametrize("board", [[], ["-DBOARD_SMK37=1"]], ids=["fm1", "smk37"])
+@pytest.mark.parametrize("board", [[], ["-DBOARD_SMK37=1"], ["-DFL_ALIGN_TEST"]], ids=["fm1", "smk37", "fm1-align"])
 def test_flash_split(tmp_path, board):
     exe = tmp_path / "flash_split_test"
     subprocess.run([*CC, *board, "-o", str(exe), "tests/flash_split_test.c"], cwd=ROOT, check=True)

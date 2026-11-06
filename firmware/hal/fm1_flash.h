@@ -344,6 +344,14 @@ static void fl_off_note(uint32_t t0)
  * 20 ms erase, ~125 ms for the SH's 30 ms worst (the saves run in silence only) */
 static struct { uint32_t off, t, k, took; uint16_t prog; uint8_t busy; int8_t err; } fl_aop FL_OWN_BSS(fl_aop);   /* (err: the
                                                    * result of one fl_op_start finished for another, for its owner's next poll) */
+/* FL_SLICE_OK(): the app may hold each slice back, the interrupts already off, for a better moment (Frodhes 0.9.9:
+ * right after a USB audio packet, usb.c uac_slice_ok): the first at most FL_ALIGN1_US in fl_op_start (the main loop
+ * waits), the others at most FL_ALIGN_US past the gap (fl_op_poll returns meanwhile); 1: no wait */
+#ifndef FL_SLICE_OK
+#define FL_SLICE_OK() 1
+#endif
+#define FL_ALIGN_US   2000u
+#define FL_ALIGN1_US  1100u
 static int fl_op_poll(void)
 {
     uint32_t f, t;
@@ -351,6 +359,10 @@ static int fl_op_poll(void)
     if (!fl_aop.busy) { rc = fl_aop.err; fl_aop.err = 0; return rc; }   /* (done; or another's start finished it) */
     if ((T4_CNT - fl_aop.t) / 24u < FL_GAP_US) return 1;   /* the gap: the ISRs, the main loop */
     f = irq_save(); t = T4_CNT;
+    if (!FL_SLICE_OK() && (t - fl_aop.t) / 24u < FL_GAP_US + FL_ALIGN_US) {
+        irq_restore(f);                           /* (not now: the next poll looks again) */
+        return 1;
+    }
     rc = FL_FAR(fl_resume_ram)(fl_aop.off, fl_aop.prog ? fl_aop.prog : 4096u, fl_aop.prog ? FL_SUS_PROG : FL_SUS_ERASE,
                                fl_aop.k++ < FL_SLICES_MAX ? FL_SLICE_US : 0u, &fl_aop.took);
     fl_off_note(t); irq_restore(f);
@@ -372,7 +384,17 @@ static int fl_op_start(uint32_t off, const uint8_t *src, uint32_t n)   /* src: a
         irq_restore(f);
     }
     fl_aop.off = off; fl_aop.prog = (uint16_t)(src ? n : 0u); fl_aop.k = 0; fl_aop.took = 0;
-    f = irq_save(); t = T4_CNT;
+    t = T4_CNT;
+    for (;;) {                                    /* (FL_SLICE_OK: the first slice waits too, here: src is sent in it, the
+                                                   * caller may reuse it after; at most FL_ALIGN1_US, ~a USB frame. The
+                                                   * wait with the interrupts on: the ISRs make the moment) */
+        uint32_t t1 = t;
+        while (!FL_SLICE_OK() && (T4_CNT - t1) / 24u < FL_ALIGN1_US) ;
+        f = irq_save(); t = T4_CNT;
+        if (FL_SLICE_OK() || (t - t1) / 24u >= FL_ALIGN1_US) break;
+        irq_restore(f);                           /* (the moment passed before the interrupts went off: again) */
+        t = t1;
+    }
     rc = FL_FAR(fl_start_ram)(off, src, n, fl_can_split ? FL_SLICE_US : 0u, &fl_aop.took);
     fl_off_note(t); irq_restore(f);
     fl_aop.t = T4_CNT;

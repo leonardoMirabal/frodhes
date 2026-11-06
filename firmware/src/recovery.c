@@ -17,6 +17,9 @@ static void recovery_poll(void)
     if (now - recovery_usb_last >= 500u * FM1_TICKS_PER_US) {
         recovery_usb_last = now;
         usb_poll();
+#if FELUCCA_UAC_PHASE
+        uac_service();                       /* (no TIMER5 here: EP4 at this 2 kHz, as usb_poll did before) */
+#endif
     }
 }
 

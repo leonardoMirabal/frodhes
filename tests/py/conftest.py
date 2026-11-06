@@ -20,6 +20,7 @@ GROUPS = {                         # node id prefix -> group
     # (the 0.9.8 PR's CI: a worker building a fixed path while another ran it, "Text file busy" / "Permission denied")
     "test_uac_seq.py": "uac_ring",                                  # build/uac_test/uac_seq_sie, planted/
     "test_uac_fir.py": "uac_ring",                                  # build/uac_test/uac_fir_test
+    "test_uac_phase.py": "uac_ring",                                # build/uac_test/uac_seq_phase*
     "test_eq.py": "eq",                                             # build/host/eq_test (its module fixture)
     "test_rh_coef.py": "rh_coef",                                   # build/rh_coef/rh_coef_<tag>
 }
