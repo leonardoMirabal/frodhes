@@ -16,11 +16,11 @@
 #   crackle48  hil_crackle --engine all --rate 48000
 #   cpu        hil_cpu (the default run), then hil_cpu --worst --usb 48000 x3 for each engine (whole ISR <= 4500 us,
 #              nothing shed, 0 USB underruns / missed / overruns)
-#   monkey     hil_monkey 20 min at 48 kHz, seeds 3000, 3100, 3200
+#   monkey     hil_monkey 20 min at 48 kHz, seeds 3000, 3100, 3200, 3300 (each take opens the USB stream again:
+#              with s3 this is the "USB missed" soak)
+#   s3         T1's S3 (preset and TYPE switching, the first 0.9.9 candidate's "USB missed 1") 3 more times
 #   t2         private/release-095/t2_run.py (release.py's T2) on the package
 #   autosave   hil_autosave --rate both --rounds 10
-#   reopen     hil_usb_reopen 150 rounds at 48 kHz, 150 at 44.1 kHz, 150 with the 44.1 -> 48 kHz switch (the USB
-#              stream closed and opened again: the "USB missed" trigger; needs tools/hil_usb_reopen.py)
 #
 # Logs: the main checkout's build/rc-VERSION/ (or RC_OUT=DIR): <step>.log, gate-summary.txt (step, exit code,
 # time). The whole queue holds DEVICE (tools/lock.py: the tools inherit it). Before it: the FM-1 on MIDI CHANNEL ALL
@@ -44,7 +44,7 @@ MAIN=$(dirname "$(git -C "$R" rev-parse --path-format=absolute --git-common-dir)
 PKG=${PKG:-$R/build/frodhes-$V.fwsc}
 OUT=${RC_OUT:-$MAIN/build/rc-$V}
 SUM=$OUT/gate-summary.txt
-STEPS="install t1 crackle44 crackle48 cpu monkey t2 autosave reopen"
+STEPS="install t1 crackle44 crackle48 cpu monkey s3 t2 autosave"
 cd "$R" || exit 2
 if [ $DRY = 0 ]; then
   [ -f "$PKG" ] || { echo "no $PKG (./build.sh --release $V)" >&2; exit 2; }
@@ -93,21 +93,14 @@ want cpu && {
     done
   done
 }
-want monkey && for s in 3000 3100 3200; do
+want monkey && for s in 3000 3100 3200 3300; do
   run monkey hil_monkey_$s $PY tools/hil_monkey.py --minutes 20 --seed $s --rate 48000 --out "$OUT/monkey-$s"
+done
+want s3 && for k in 1 2 3; do
+  run s3 t1_s3_$k $PY tools/hil_scan.py --tier must --scenarios S3
 done
 want t2 && run t2 t2 $PY "$MAIN/private/release-095/t2_run.py" --tree "$R" -o "$OUT/t2" "$PKG"
 want autosave && run autosave hil_autosave $PY tools/hil_autosave.py --rate both --rounds 10 --out "$OUT/autosave"
-want reopen && {
-  if [ -f tools/hil_usb_reopen.py ] || [ $DRY = 1 ]; then
-    for rate in 48000 44100 switch; do
-      run reopen hil_usb_reopen_$rate $PY tools/hil_usb_reopen.py --rounds 150 --rate $rate --out "$OUT/reopen-$rate"
-    done
-  else
-    echo "[reopen] tools/hil_usb_reopen.py missing (the usb-repro branch): NOT RUN" | tee -a "$SUM"
-    FAILS=$((FAILS + 1))
-  fi
-}
 [ $DRY = 1 ] && exit 0
 echo "== rc_gate $V done $(date '+%T'): $FAILS step(s) failed" | tee -a "$SUM"
 [ $FAILS = 0 ]

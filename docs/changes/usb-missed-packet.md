@@ -11,7 +11,7 @@ and the USB ring's high point one packet up; tests/py/test_uac_timing.py has the
 ## Tools
 
 - `tools/rc_gate.sh`: the release candidate's device gates in one queue (install, T1, crackle at both rates, CPU,
-  monkey, T2, the save test, 150 stream reopens per rate), each step's log and exit code kept.
+  monkey, the preset switching scenario 3 more times, T2, the save test), each step's log and exit code kept.
 - A timing model of the USB packet hand-off (`tests/py/uac_timing.py`): the IN tokens, the 2 kHz poll, a pause of
   the interrupts at any place; it shows the margin a change leaves.
 
