@@ -221,7 +221,8 @@ The lights tell you what is on: LFO (tremolo / wah), ENV (phaser) and SEL (delay
 (on ARPEGGIO, and on every page while the arpeggiator is on, SEL shows HOLD), ARP while the arpeggiator runs, EDIT while chord mode is on, SEQ while the sequencer
 plays (blinking while it records), FX when the effects are
 active, REC while the sustain holds (from MIDI CC 64 too), PLAY on the beat when something is synced (and while the
-sequencer or the arpeggiator plays), HOME on PERFORM and the main page, GLO on TEMPO, SETUP, MIDI and DISPLAY,
+sequencer or the arpeggiator plays; PLAY LED on the DISPLAY page switches it off), HOME on PERFORM and the main page,
+GLO on TEMPO, SETUP, MIDI and DISPLAY,
 OCT− / OCT+ while the octave is shifted, SAVE blinking in save mode, and each key while it is held, or its note is
 held over MIDI (USB or TRS), or the sustain holds it and it still rings (a note let go before the pedal went down
 stays dark; see LEDS on the DISPLAY page).
@@ -670,15 +671,16 @@ the TRS jack: notes, every CC in the table below, program changes, clock, start 
 
 ### DISPLAY
 
-![DISPLAY](manual/img/display.png?v=57c874c7)
+![DISPLAY](manual/img/display.png?v=41d8e044)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **COLOR** | The screen's colour, 27 steps: **AMBER** (the default), then 25 pastel hues around the colour wheel: PEACH, CORAL, ROSE, PINK, ORCHID, MAUVE, PURPLE, VIOLET, LILAC, IRIS, BLUE, DENIM, SKY, OCEAN, CYAN, AQUA, MINT, JADE, GREEN, LEAF, LIME, PEAR, LEMON, GOLD, MANGO, and last a full **RED**. Every page is drawn in it: the title, the fader fills and edges, the lit selector blocks |
 | K2 | **BRIGHTNESS** | For a dark room: **10** (full) to **1** dims the whole panel together, the screen (its colours and its text alike) and every light, keys and buttons alike (10 is full brightness; below it the keys sit a little under the buttons, and every step changes both). The backlight itself is fixed, so black stays as it is and the screen's contrast falls at the low steps |
 | K3 | **LEDS** | Which keys light: **OFF** none; **PLAYED** a key while its note sounds; **ROOTS** (the default) the played keys, and while a scale is on its root keys glowing faintly as landmarks, never brighter than a played key; **ALL** every key lit, a light for playing in the dark; a key goes dark while its note sounds; **SCALE** as ALL, but only the keys of the scale lit (SCALE page): the keys, white and black, whose own note is in the scale, in SNAP and DEGREE alike; a played scale key goes dark, and the keys outside the scale stay dark even when pressed; with no scale on it looks as ALL |
+| K4 | **PLAY LED** | **BEAT** (the default): PLAY blinks on the beat (synced effects, the arpeggiator, the sequencer, MIDI clock). **OFF**: PLAY's light stays dark, for a dark stage; everything else lights as before (SEQ still blinks while the sequencer records). Turn left for OFF, right for BEAT |
 
-Press **GLO** four times to come here (TEMPO, SETUP, MIDI, DISPLAY). All three are kept with the settings, not with
+Press **GLO** four times to come here (TEMPO, SETUP, MIDI, DISPLAY). All four are kept with the settings, not with
 a preset, so they stay as you set them whatever sound you load.
 
 ## 5. VIBES and MARIMBA: the bar instruments
@@ -959,7 +961,8 @@ delay can each lock to the tempo on the TEMPO page (TREM SYNC, PHA SYNC, DLY SYN
 page. When one is synced, its RATE / SPEED / TIME card shows a note
 value and turning it steps through them: 1/32, 16T, 1/16, 8T, 16D, 1/8, 4T, 8D, 1/4, 4D, 1/2, 1/1, 2 BAR (and 4 BAR
 for the chorus, phaser and the LFO). A synced echo longer than the delay's 1.48 s plays at half (or a quarter) of
-that time. PLAY blinks on the beat while anything is synced.
+that time. PLAY blinks on the beat while anything is synced (unless PLAY LED on the
+[DISPLAY](#display) page is OFF).
 
 MIDI clock in is 24 pulses per beat, from 40 to 240 BPM (a clock outside that range is not followed: the tempo stays
 where it was). With CLOCK on EXT and a clock coming in:
