@@ -21,7 +21,8 @@
 #define SQ_MAXACT 32u
 /* SQ_A, SQ_B: the pattern's two sectors, per board (frodhes_store.h) */
 #define SQ_MAGIC 0x46535131u                        /* "FSQ1" */
-typedef struct { uint16_t tick, len; uint8_t note, vel, take, rsv; } sq_ev_t;
+typedef struct { uint16_t tick, len; uint8_t note, vel, take, rsv; } sq_ev_t;   /* rsv: CHANCE (0.9.9), 0 = 100 %, k =
+                                                     * 100 - 10 k % (ui.c SEQUENCER 2; 0 in every pattern before) */
 typedef struct { uint32_t magic, seq, n, crc; } sq_hdr_t;
 static sq_ev_t sq_ev[SQ_MAXEV];
 static uint32_t sq_n, sq_flash_seq;
@@ -30,6 +31,7 @@ static uint32_t sq_pos, sq_last_ms, sq_prev;        /* sq_pos: ticks in Q16 */
 static uint32_t sq_k0;                              /* CLOCK EXT: the song position (tempo.c clk_sp) of tick 0 */
 static uint8_t sq_ext, sq_jump, sq_src;
 static uint32_t sq_jseen;                           /* tempo.c clk_jumps, as seq_poll saw it */
+static uint32_t sq_pass, sq_seed;                   /* CHANCE: the passes since start, the start's seed */
 static uint16_t sq_L;                               /* (the loop length seq_poll last saw) */                     /* sq_ext 1: sq_pos follows the clock's pulses (sq_k0 set); sq_jump:
                                                      * Start / Continue's first position (only from there on) */
 static struct { uint8_t note; uint16_t off; } sq_act[SQ_MAXACT];
@@ -71,6 +73,15 @@ FR_COLD static uint32_t sq_at(const sq_ev_t *e)
     }
     return t % L;
 }
+/* CHANCE: does a note with chance byte k play on this pass? One roll a step (16th) a pass, so a step's chord plays
+ * whole or not at all: a hash of the step, the pass and the start's seed, 0..99 against the chance */
+FR_COLD static int sq_roll(uint32_t t, uint32_t k)
+{
+    uint32_t h = (t / 24u) * 0x9E3779B1u ^ sq_pass * 0x85EBCA77u ^ sq_seed;
+    if (!k) return 1;
+    h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12; h *= 0x297A2D39u; h ^= h >> 15;
+    return (h >> 16) % 100u < 100u - 10u * k;
+}
 FR_COLD static int sq_in(uint32_t t, uint32_t p0, uint32_t p1)   /* t in (p0, p1], around the loop's end */
 {
     return p0 <= p1 ? t > p0 && t <= p1 : t > p0 || t <= p1;
@@ -106,6 +117,7 @@ FR_COLD static void seq_start(void)
 {
     seq_play = 1;
     sq_pos = 0; sq_prev = sq_len() - 1u; sq_last_ms = fm1_ms;
+    sq_pass = 0; sq_seed = fm1_ms * 0x01000193u;      /* (CHANCE: each start rolls anew) */
     sq_ext = 0;                                         /* (a clock: taken up from here, seq_poll) */
     if (!clk_live()) beat_t0 = fm1_ms, beat_k0 = 0;                  /* the tempo's beat (arpeggiator, LED) from bar 1 (a clock's
                                                          * beats stay the clock's) */
@@ -267,7 +279,7 @@ FR_COLD static void seq_poll(void)
         t = sq_at(e);
         if (!noon && sq_in(t, p0, p1)) {
             if (sq_erase && live_held[e->note]) { sq_ev[i] = sq_ev[--sq_n]; sq_changed(); continue; }
-            if (sq_nact < SQ_MAXACT) {
+            if (sq_nact < SQ_MAXACT && sq_roll(t, e->rsv)) {
                 out_on(e->note, e->vel, 1);
                 sq_act[sq_nact].note = e->note;
                 sq_act[sq_nact].off = (uint16_t)((t + (e->len < L ? e->len : L - 1u)) % L);
@@ -279,6 +291,7 @@ FR_COLD static void seq_poll(void)
         i++;
     }
     if (p1 < p0 && seq_rec) sq_take++;                  /* a new pass: UNDO takes it away on its own */
+    if (p1 < p0) sq_pass++;                             /* (CHANCE: a new roll each pass) */
     sq_prev = p1;
 }
 
