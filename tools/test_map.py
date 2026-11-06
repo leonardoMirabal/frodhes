@@ -48,7 +48,7 @@ SCENARIOS = {1: "DAW recording: stress_max (USB 44.1 + 48 kHz)", 2: "live on the
 ALL = (1, 2, 3, 4, 5, 6)
 ENGINES_T2 = ("rhodes", "vibes", "marimba")
 SHOTS = "the screenshots / docs tests (tools/manual_shots.py, test_manual_shots, test_docs_vs_code)"
-SEQ = "the sequencer / arp scripts (tests/scripts/seq.txt, arp*.txt; tools/hil_seq.py)"
+SEQ = "the sequencer / arp scripts (tests/scripts/seq.txt, arp*.txt; tests/py/test_seq_chance.py; tools/hil_seq.py)"
 USB2 = "the USB counters at both rates (44.1 and 48 kHz)"
 KEYVEL = ("the key velocity checks: hil_cpu.py --keyadc gate (OFF / idle / STRESS: idle <= +10 us, STRESS <= +60 us, "
           "3 engines x 3 runs), hil_keyvel.py selftest, soak (10 min, zero edges), jack (no 455 / 909 Hz / 10 kHz "

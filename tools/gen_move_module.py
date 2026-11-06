@@ -108,12 +108,15 @@ HELP_MAX = 20                      # a help line: about 20 characters on the 128
 # the FM-1's pages that have no meaning on the Move (its knobs are direct, it has no screen or key lights of ours)
 FM1_ONLY_PAGES = {"PERFORM": "the Move's knobs are direct: no assignable performance knobs",
                   "ASSIGN": "the Move's knobs are direct: no assignable performance knobs",
-                  "DISPLAY": "the FM-1's screen and key lights"}
+                  "DISPLAY": "the FM-1's screen and key lights",
+                  "SEQUENCER 2": "the FM-1's sequencer (a step's CHANCE): the Move has its own, ours stays inert"}
 # the FM-1's settings cards that are hardware only (ui.c S_*), with the reason
 FM1_ONLY_SLOTS = {"S_KVEL": "the FM-1's own keys' velocity", "S_TOUCH": "the FM-1's own keys' touch",
                   "S_USBVOL": "the FM-1's USB audio", "S_TRS": "the FM-1's TRS MIDI jack",
                   "S_COLOR": "the FM-1's screen", "S_BRIGHT": "the FM-1's screen", "S_LEDS": "the FM-1's key lights",
-                  "S_PLED": "the FM-1's PLAY light"}
+                  "S_PLED": "the FM-1's PLAY light",
+                  "S_SQSTEP": "the FM-1's sequencer cursor (SEQUENCER 2): no sequencer on the Move",
+                  "S_SQCHANCE": "the FM-1's sequencer, a step's CHANCE (SEQUENCER 2): no sequencer on the Move"}
 # the settings cards the Move owns (the user, 2026-10-28 12:10): the Move's tempo and transport lead (move_bridge.h
 # mb_inert: CLOCK stays EXT, the tempo is the host's), its own pads play the scales; no card, no key
 MOVE_OWNS_SLOTS = {"S_BPM": "the Move's tempo leads (host get_bpm while no clock runs)",

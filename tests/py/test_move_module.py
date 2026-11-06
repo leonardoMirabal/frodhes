@@ -46,6 +46,19 @@ def test_every_parameter_reachable_or_midi_only():
         assert any(c["key"] == key for c in CHAIN) and why
 
 
+def test_fm1_only_pages_stay_off_the_move():
+    """the FM-1-only pages (FM1_ONLY_PAGES, SEQUENCER 2 among them) are FM-1 pages, on no Move level; their cards
+    (FM1_ONLY_SLOTS: SEQUENCER 2's STEP and CHANCE) have no key, no C row, each with its reason"""
+    titles = {v["title"] for v in M["pages"].values()}
+    assert "SEQUENCER 2" in gen.FM1_ONLY_PAGES and {"S_SQSTEP", "S_SQCHANCE"} <= set(gen.FM1_ONLY_SLOTS)
+    assert all(t in titles and why.strip() for t, why in gen.FM1_ONLY_PAGES.items())
+    assert all(why.strip() for why in gen.FM1_ONLY_SLOTS.values())
+    placed = {t for _, _, ts, _ in gen.MOVE_LEVELS for t in ts}
+    assert not placed & set(gen.FM1_ONLY_PAGES), placed & set(gen.FM1_ONLY_PAGES)
+    rows = {r[1] for r in re.findall(r'\{"(\w+)", (\w+),', OUT["move_ui.h"])}
+    assert not rows & set(gen.FM1_ONLY_SLOTS), rows & set(gen.FM1_ONLY_SLOTS)
+
+
 def test_levels_keep_the_hosts_limits():
     for name, lvl in HIER.items():
         assert 1 <= len(lvl["knobs"]) <= 8, (name, lvl["knobs"])

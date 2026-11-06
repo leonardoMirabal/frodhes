@@ -137,7 +137,7 @@ def check_row(im, s, k, variant, w, geo):
     if not len(ys):
         return errs + [f"{w}: no value drawn"]
     top, h = int(ys[0]), int(ys[-1] - ys[0] + 1)
-    if abs(top - (base - cap)) > 1 or h < cap - 2:
+    if card not in M.NO_CAP and (abs(top - (base - cap)) > 1 or h < cap - 2):   # ("-": no cap-height glyph)
         errs.append(f"{w}: the value's ink rows {top}..{ys[-1]} (height {h}), the face's {base - cap}.. ({cap})")
     xs = np.nonzero(M.ink(im[y0 + base - cap:y0 + base, x0 + b["vx0"] - 4:x0 + vr + 2]).any(axis=0))[0]
     if len(xs) and not vr - 9 <= b["vx0"] - 4 + int(xs[-1]) <= vr + 1:

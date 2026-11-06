@@ -55,6 +55,8 @@ LABEL_X1 = 90                                                     # the labels e
 VALUE_XR = ROW_X0 + 220                                           # ui.c draw_row: values right-aligned at row x 220
 # a choice's option written in the small face (too wide for the large one next to its label): (page, label, value)
 SMALL_OK = set()                                                  # (28 px: TREM SHAPE; the 24 px face fits all)
+# values with no glyph of cap height, whose face cannot be read off the ink (SEQUENCER 2's CHANCE on a step without notes)
+NO_CAP = {"-"}
 T0, STEP, NWALK = 2500, 600, 30                                   # after the start screen and the TYPE message
 PROBE = "~"
 KEYS = (["title", "count", "page", "vpage", "hint", "hot"] + [f"row{k}" for k in range(4)] + [f"label{k}" for k in range(4)]
@@ -362,7 +364,7 @@ def check_screen(im, s, where, fallbacks):
                 fallbacks.append(f"{w}: the value in the small face")
         elif kind == "choice":
             errs += check_choice(im, box, acc, w)
-            face, small = row_face(s.get(f"row{k}")), bool(value_is_small(im, box))
+            face, small = row_face(s.get(f"row{k}")), bool(value_is_small(im, box)) and s.get(f"card{k}") not in NO_CAP
             if face is not None and (face == "S") != small:
                 errs.append(f"{w}: the firmware says face {face}, the screen shows the {'small' if small else 'large'}")
             if small and (title_of(s).split(" ")[0], s.get(f"label{k}"), s.get(f"card{k}")) not in SMALL_OK:
@@ -495,6 +497,8 @@ def test_every_choice_option_written(meters, name, cc_n, v):
             kind, v0, hi = parse_row(s.get(f"row{k}"))
             if kind != "choice" or s.get(f"label{k}") in ("TYPE", "COLOR", "BRIGHTNESS"):
                 continue
+            if s.get(f"card{k}") in NO_CAP:                             # (CHANCE on a step without notes: no option
+                continue                                                # to turn to; test_seq_chance.py)
             for _ in range(hi + 1):                                     # to option 0 (a choice: one step a detent)
                 L.append(f"{t} turn {2 + k} -1"); t += 20
             t += 1100
@@ -522,7 +526,7 @@ def test_every_choice_option_written(meters, name, cc_n, v):
         acc = accent_of(im)
         box = row_box(im, k)
         errs += check_choice(im, box, acc, w) + check_clear_of_borders(im, box, w)
-        face, small = row_face(s.get(f"row{k}")), bool(value_is_small(im, box))
+        face, small = row_face(s.get(f"row{k}")), bool(value_is_small(im, box)) and s.get(f"card{k}") not in NO_CAP
         if (face == "S") != small:
             errs.append(f"{w}: the firmware says face {face}, the screen shows the {'small' if small else 'large'}")
         key = (want.split(" ")[0], s.get(f"label{k}"), s.get(f"card{k}"))
