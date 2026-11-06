@@ -476,6 +476,7 @@ FR_COLD static void app_main(void)
     if (set.palette >= COLOR_N) set.palette = 0;   /* AMBER (ui.c S_COLOR) */
     if (set.dim >= DIM_N) set.dim = 0;
     if (set.leds > 4u) set.leds = 0;                /* (ui.c LEDS_N: 0 ROOTS 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
+    if (set.play_off > 1u) set.play_off = 0;        /* (DISPLAY PLAY LED: 0 BEAT 1 OFF) */
     usb_pre_master = set.usb_fixed;
     uart_midi_on = !set.trs_off;
     fm1_led_group_ids(KEY_LED(0), KEY_LED(26));     /* BRIGHTNESS: the keys' LEDs are their own group */

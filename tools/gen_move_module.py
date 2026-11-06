@@ -112,7 +112,8 @@ FM1_ONLY_PAGES = {"PERFORM": "the Move's knobs are direct: no assignable perform
 # the FM-1's settings cards that are hardware only (ui.c S_*), with the reason
 FM1_ONLY_SLOTS = {"S_KVEL": "the FM-1's own keys' velocity", "S_TOUCH": "the FM-1's own keys' touch",
                   "S_USBVOL": "the FM-1's USB audio", "S_TRS": "the FM-1's TRS MIDI jack",
-                  "S_COLOR": "the FM-1's screen", "S_BRIGHT": "the FM-1's screen", "S_LEDS": "the FM-1's key lights"}
+                  "S_COLOR": "the FM-1's screen", "S_BRIGHT": "the FM-1's screen", "S_LEDS": "the FM-1's key lights",
+                  "S_PLED": "the FM-1's PLAY light"}
 # the settings cards the Move owns (the user, 2026-10-28 12:10): the Move's tempo and transport lead (move_bridge.h
 # mb_inert: CLOCK stays EXT, the tempo is the host's), its own pads play the scales; no card, no key
 MOVE_OWNS_SLOTS = {"S_BPM": "the Move's tempo leads (host get_bpm while no clock runs)",
