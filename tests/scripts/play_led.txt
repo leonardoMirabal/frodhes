@@ -1,0 +1,102 @@
+# DISPLAY PLAY LED (issue #29): the 4th card of the DISPLAY page (GLO 7 four times; K4 = encoder 5). BEAT (the default):
+# the PLAY button's light (12) blinks with the beat (the ARP's notes, a synced effect, the SEQUENCER playing); OFF: it
+# stays dark. The SEQ light's record blink (11, ui.c: fm1_ms & 256 while REC is armed) is the same either way. Saved
+# with the settings and the older records: tests/py/test_play_led.py.
+100 btn 7
+200 btn 7
+300 btn 7
+400 btn 7
+450 expect state page DISPLAY
+450 expect state label3 PLAY_LED
+450 expect state card3 BEAT
+450 expect state dirty 0
+450 expect led 12 0
+# ARP on (ARP 10 twice), a C major triad held: PLAY blinks with the arpeggio's notes (1/16 at 120 BPM: 125 ms)
+500 btn 10
+600 btn 10
+700 keys 0x4880
+1050 expect led 12 1
+1125 expect led 12 0
+1175 expect led 12 1
+1250 expect led 12 0
+1300 expect led 12 1
+# back to DISPLAY; K4 left: OFF, and it stops there. The arpeggio goes on, PLAY stays dark
+1300 btn 7
+1400 btn 7
+1500 btn 7
+1600 btn 7
+1650 expect state page DISPLAY
+1700 turn 5 -1
+1750 expect state card3 OFF
+1750 expect state dirty 1
+1775 expect led 12 0
+1800 turn 5 -1
+1800 expect led 12 0
+1850 expect state card3 OFF
+1900 expect led 12 0
+2050 expect led 12 0
+2175 expect led 12 0
+2300 expect led 12 0
+2425 expect led 12 0
+2550 expect led 12 0
+2675 expect led 12 0
+2800 expect led 12 0
+# K4 right: BEAT again (it stops there too); the blink is back
+2900 turn 5 1
+2950 expect state card3 BEAT
+2950 expect led 12 1
+3000 turn 5 1
+3050 expect state card3 BEAT
+3050 expect led 12 1
+3100 expect led 12 0
+# OFF; the chord let go, ARP off (ARP 10: its page, then off); the DELAY synced (CC 25); the SEQUENCER (SEQ 11 twice:
+# the page, REC armed), PLAY (12) starts the loop and a note is recorded. SEQ blinks as it records; PLAY stays dark
+3100 turn 5 -1
+3150 expect state card3 OFF
+3200 keys 0
+3300 btn 10
+3400 btn 10
+3450 midi 0xB0 25 64
+3500 btn 11
+3600 btn 11
+3700 btn 12
+3725 expect led 12 0
+3750 expect led 12 0
+3800 keys 0x80
+3825 expect led 11 0
+3850 expect led 11 1
+3900 keys 0
+4075 expect led 11 1
+4100 expect led 11 0
+4225 expect led 12 0
+4250 expect led 12 0
+4350 expect led 11 0
+4375 expect led 11 1
+4725 expect led 12 0
+4750 expect led 12 0
+4975 expect led 12 0
+5000 expect led 12 0
+# DISPLAY, BEAT, SEQ (11: back to its page, still recording and playing): PLAY blinks on the beat (500 ms), SEQ as before
+5100 btn 7
+5200 btn 7
+5300 btn 7
+5400 btn 7
+5450 expect state page DISPLAY
+5500 turn 5 1
+5550 expect state card3 BEAT
+5600 btn 11
+5650 expect state page SEQUENCER
+5725 expect led 12 1
+5775 expect led 12 1
+5800 expect led 12 0
+5875 expect led 11 0
+5900 expect led 11 1
+6125 expect led 11 1
+6150 expect led 11 0
+6225 expect led 12 1
+6300 expect led 12 0
+6400 expect led 11 0
+6425 expect led 11 1
+6500 end
+6725 expect led 12 1
+6800 expect led 12 0
