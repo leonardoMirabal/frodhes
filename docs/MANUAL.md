@@ -625,7 +625,7 @@ stored when the loop is stopped). Its second page, **SEQUENCER 2**, sets how oft
 
 ### SEQUENCER 2
 
-![SEQUENCER 2](manual/img/seq2.png?v=f9a4ecb0)
+![SEQUENCER 2](manual/img/seq2.png?v=ed0e61e4)
 
 The sequencer's second page, right after SEQUENCER (turn **SELECT** one page on). It makes a pattern change from pass
 to pass: each step can play every time, or only now and then.
