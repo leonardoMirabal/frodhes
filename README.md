@@ -108,6 +108,10 @@ Vestal's [fm1-velocity](https://github.com/charlesvestal/fm1-velocity).
 
 How to build, test and contribute: [docs/BUILD.md](docs/BUILD.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Support
+
+Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/leomirabal).
+
 ## License and disclaimer
 
 GPL-3.0-only, the same as Dinghy, Felucca and SLOOP ([LICENSING.md](LICENSING.md)).
