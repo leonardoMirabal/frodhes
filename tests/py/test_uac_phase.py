@@ -195,3 +195,15 @@ def test_save_adds_no_service_gap(exes):
     al = max(r["gap_max_us"] for r in cases(exes[1], *args, "--align")[0])
     print(f"save slices: the longest EP4 poll gap {free:.0f} us at random moments, {al:.0f} us aligned")
     assert free >= 700 and al <= 520, (free, al)
+
+
+def test_sie_accesses_per_block(exes):
+    """the cost inside the audio ISR (the polls nest in it; an SIE access is a CON1 round trip): the SIE accesses in
+    the worst 256-frame block, +-200 us token jitter. The phased poll's looks and early looks read TXCSR1 alone (INDEX
+    written only when another access changed it), so its worst block has no more accesses than the fixed poll's"""
+    fixed, rc0 = cases(exes[0], "--hours", "0.02")
+    phased, rc1 = cases(exes[1], "--hours", "0.02")
+    assert rc0 == 0 and rc1 == 0
+    m0, m1 = max(r["sie_blk_max"] for r in fixed), max(r["sie_blk_max"] for r in phased)
+    print(f"SIE accesses in the worst block: fixed {m0:.0f}, phased {m1:.0f}")
+    assert m1 <= m0, (m0, m1)

@@ -95,9 +95,22 @@ static void sie_token(void)                            /* this frame's token, if
     }
 }
 static uint32_t sim_sie_on(void) { return 1; }
+static uint64_t blk_id;                                /* the SIE accesses in each 256-frame audio block (5805 us): */
+static uint32_t blk_acc, blk_max;                      /* the poll's cost inside the audio ISR, worst block (blk_max) */
+static void sie_count(void)
+{
+    uint64_t b = (uint64_t)(now / 5805e3);
+    if (b != blk_id) {
+        blk_id = b;
+        blk_acc = 0;
+    }
+    if (++blk_acc > blk_max)
+        blk_max = blk_acc;
+}
 static void sim_sie_wr_start(uint32_t r, uint32_t v)
 {
-    sie_token();                                       /* the host does not wait for our SIE accesses */
+    sie_token();
+    sie_count();                                       /* the host does not wait for our SIE accesses */
     sie_fail = sie_fault > 0 && r == S_INDEX && urand() < sie_fault;
     if (sie_fail)
         return;                                        /* (timed out: not written) */
@@ -116,6 +129,7 @@ static double poll_last, gap_max, take_t, lat_max;     /* the longest time betwe
 static void sim_sie_rd_start(uint32_t r)
 {
     sie_token();
+    sie_count();
     sie_fail = sie_fault > 0 && r == S_TXCSR1 && urand() < sie_fault;
     sie_last = r == S_TXCSR1 && sie_index == 4u ? ep4_csr : 0u;
     if (r == S_TXCSR1 && sie_index == 4u) {
@@ -269,6 +283,8 @@ static void run(const cfg_t *c)
     cli_next(0.0);
     n_cli = 0;
     n_polls = 0;
+    blk_max = blk_acc = 0;
+    blk_id = 0;
     poll_last = gap_max = take_t = lat_max = 0;
     t_fold = 1e30;
     memset(&R, 0, sizeof R);
@@ -422,14 +438,14 @@ int main(int argc, char **argv)
             printf("case ppm %.0f rend %.0f hours %.2f pkts %llu taken %llu frames %llu nmin %u nmax %u n_bad %llu "
                    "underruns %u dup_counted %llu missed %u stalls %u overruns %u overwritten %u gaps_counted %llu "
                    "adj_up %u adj_down %u silence %llu sie_to %u dup_uncounted %llu drop_uncounted %llu "
-                   "true_missed %llu cli %llu phase %d polls_per_s %.0f gap_max_us %.0f lat_max_us %.0f\n",
+                   "true_missed %llu cli %llu phase %d polls_per_s %.0f gap_max_us %.0f lat_max_us %.0f sie_blk_max %u\n",
                    c.ppm, c.rend_us, c.hours, (unsigned long long)R.pkts, (unsigned long long)R.taken,
                    (unsigned long long)R.frames, R.nmin, R.nmax, (unsigned long long)R.n_bad, uac.underruns,
                    (unsigned long long)R.dup_counted, uac.missed, uac.stalls, uac.overruns, q_overwritten,
                    (unsigned long long)R.gaps_counted, uac.adj_up, uac.adj_down, (unsigned long long)R.silence,
                    UAC_SIE_TO, (unsigned long long)R.dup_uncounted, (unsigned long long)R.drop_uncounted,
                    (unsigned long long)R.true_missed, (unsigned long long)n_cli, FELUCCA_UAC_PHASE,
-                   (double)n_polls / (c.hours * 3600.0), gap_max / 1e3, lat_max / 1e3);
+                   (double)n_polls / (c.hours * 3600.0), gap_max / 1e3, lat_max / 1e3, blk_max);
             if (R.dup_uncounted || R.drop_uncounted || R.n_bad || q_overwritten)
                 bad++;
         }
