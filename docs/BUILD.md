@@ -69,6 +69,10 @@ These tools play the FM-1 over USB-MIDI and analyse its USB audio:
 - `tools/hil_jack.py`: compares the headphone jack, recorded with an audio interface, against the USB audio.
 - `tools/hil_usb_onset.py`: every note reaches the USB recording as soon as the jack, after a knob turn and a pause
   too (the settings save lands there).
+- `tools/rc_gate.sh VERSION PREV_FWSC [--from STEP] [--only STEPS] [--dry-run]`: the release candidate's device
+  queue in one DEVICE hold: install, T1, crackle at 44.1 and 48 kHz, hil_cpu and `--worst` x3 per engine, the
+  monkey 4 x 20 min, T1's S3 3 more times, T2, hil_autosave; each step's log and exit code in
+  build/rc-VERSION/.
 - `tools/hil_autosave.py`: lets the settings save land while a computer records, and checks that the USB stream stays
   clean (missed 0, overruns 0) and the flash write's longest interrupts-off stretch.
 - `tools/hil_clock.py`: sends MIDI clock (over USB-MIDI, or `--via trs --port NAME` from a MIDI interface into the
