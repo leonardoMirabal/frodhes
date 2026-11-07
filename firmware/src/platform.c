@@ -124,6 +124,10 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 #define FELUCCA_UAC_ALIGN 1                     /* Frodhes 0.9.9: each flash slice right after a USB audio packet (usb.c
                                                  * uac_slice_ok, fm1_flash.h FL_SLICE_OK; 0: at any moment, as before) */
 #endif
+#ifndef FELUCCA_UAC_LOCK
+#define FELUCCA_UAC_LOCK 1                      /* Frodhes 0.9.9 (iOS): the stream locked to the USB frame clock, the
+                                                 * FM-1's clock drift resampled out (usb.c uac_tap_lock; 0: as before) */
+#endif
 #if FELUCCA_UAC && FELUCCA_UAC_ALIGN
 #define UAC_STAMP() fm1_ticks()
 #define UAC_SLICE_WIN (200u * FM1_TICKS_PER_US)  /* a slice may start up to 200 us after the packet */
