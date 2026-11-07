@@ -6,6 +6,8 @@ No samples: every note is calculated as you play it, from how the real instrumen
 and a pickup turns its motion into sound; a mallet strikes a bar and its tube rings along. Play softly and it is
 warm; play hard and it barks or rings.
 
+Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/leomirabal).
+
 <table align="center">
   <tr>
     <td align="center"><img src="docs/manual/img/thumbnail.png?v=23c51997" width="260" alt="Frodhes: the start screen (FRODHES, ELECTRIC PIANO + VIBES + MARIMBA)"></td>
