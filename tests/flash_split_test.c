@@ -12,7 +12,22 @@
  *   cc -O1 -Wall -Wno-unused-function -Ifirmware/hal -o build/flash_split_test tests/flash_split_test.c */
 #define FL_HOST_MODEL "../../tests/fl_host_model.h"
 #include "../firmware/src/frodhes_store.h"
+#ifdef FL_ALIGN_TEST                    /* -DFL_ALIGN_TEST: FL_SLICE_OK (0.9.9) says yes only in the first 200 us of each
+                                         * 1 ms (as usb.c uac_slice_ok right after a USB packet): every check still holds,
+                                         * and each slice starts in its window or after FL_ALIGN_US of waiting */
+static int fl_align_ok(void);
+#define FL_SLICE_OK() fl_align_ok()
+#endif
 #include "fm1_flash.h"
+#ifdef FL_ALIGN_TEST
+static uint32_t al_no, al_yes;
+static int fl_align_ok(void)
+{
+    int ok = (T4_CNT / 24u) % 1000u < 200u;
+    if (ok) al_yes++; else al_no++;
+    return ok;
+}
+#endif
 
 static int fails;
 static void check(const char *what, int ok)
@@ -130,9 +145,14 @@ int main(void)
                          (unsigned long long)(M.off_max / 24u));
                 check(msg, M.off_max / 24u <= OFF_LIMIT_US);
             }
+#ifdef FL_ALIGN_TEST
+#define CALL_LIMIT_US (2u * OFF_LIMIT_US + FL_ALIGN1_US)   /* (+ the first slice's wait for its moment) */
+#else
+#define CALL_LIMIT_US (2u * OFF_LIMIT_US)
+#endif
         snprintf(msg, sizeof msg, "async: the longest call %u us (<= 2 x %u: a step's end, the next's start)",
                  worst_call, OFF_LIMIT_US);
-        check(msg, worst_call <= 2u * OFF_LIMIT_US);
+        check(msg, worst_call <= CALL_LIMIT_US);
         printf("async: the longest call (the main loop held, the ISRs not counted) %u us, up to %u calls a save\n",
                worst_call, calls_max);
 
@@ -195,6 +215,10 @@ int main(void)
     check("program outside the allow-list refused", fl_write(0x10000u, rec, 16u) == -1 && !M.busy);
     check("erase not sector aligned refused", fl_erase4k(SETTINGS_AT + 0x100u, &took) == -1);
 
+#ifdef FL_ALIGN_TEST
+    check("FL_SLICE_OK asked: said no and yes", al_no > 0 && al_yes > 0);
+    printf("align: FL_SLICE_OK yes %u, no %u\n", al_yes, al_no);
+#endif
     printf(fails ? "flash split: %d FAILED\n" : "flash split: all ok\n", fails);
     return fails != 0;
 }

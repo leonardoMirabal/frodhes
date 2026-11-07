@@ -116,6 +116,18 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 #ifndef FELUCCA_UAC
 #define FELUCCA_UAC 1                           /* USB audio to the computer (0: MIDI only, as zp12) */
 #endif
+#ifndef FELUCCA_UAC_PHASE
+#define FELUCCA_UAC_PHASE 1                     /* Frodhes 0.9.9: the EP4 poll follows the host's IN token (usb.c
+                                                 * uac_tick; 0: the 2 kHz poll at a fixed phase, as before) */
+#endif
+#ifndef FELUCCA_UAC_ALIGN
+#define FELUCCA_UAC_ALIGN 1                     /* Frodhes 0.9.9: each flash slice right after a USB audio packet (usb.c
+                                                 * uac_slice_ok, fm1_flash.h FL_SLICE_OK; 0: at any moment, as before) */
+#endif
+#if FELUCCA_UAC && FELUCCA_UAC_ALIGN
+#define UAC_STAMP() fm1_ticks()
+#define UAC_SLICE_WIN (200u * FM1_TICKS_PER_US)  /* a slice may start up to 200 us after the packet */
+#endif
 #define FELUCCA_UART (!BOARD_SMK37)             /* the FM-1's TRS MIDI IN (SMK-37: none, PH8 is a key-matrix row) */
 #if BOARD_SMK37 && FELUCCA_UART
 #error "BOARD_SMK37: no UART MIDI IN (RX on PH8, a key-matrix row on the SMK)"
@@ -137,6 +149,9 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 /* ---- flash: read anywhere; erase / program only the update's staging area and the app's store (store.h; the app
  * may give its own, tighter allow-list: APP_FL_RANGE) */
 #include "store.h"
+#if FELUCCA_UAC && FELUCCA_UAC_ALIGN
+#define FL_SLICE_OK() uac_slice_ok()
+#endif
 #include "fm1_flash.h"
 static uint8_t flash_ok;
 FR_COLD static int st_read(uint32_t off, void *dst, uint32_t n)
@@ -383,6 +398,16 @@ void fm1_timer5_irq(void)
     uint32_t t0 = fm1_ticks(), usb_due = sub == 0u;
     fm1_timer5_ack();
     fm1_input_tick();
+#if FELUCCA_UAC_PHASE
+    {   /* (usb.c uac_tick: the ticks since the last one; an interrupts-off stretch folds several into this one) */
+        uint32_t dt = t0 - last, n = 1;
+        while (dt >= 200u * FM1_TICKS_PER_US && n < 20u) {   /* (only after a stretch) */
+            dt -= 100u * FM1_TICKS_PER_US;
+            n++;
+        }
+        uac_tick(n);
+    }
+#endif
     acc += t0 - last;
     last = t0;
     while (acc >= 1000u * FM1_TICKS_PER_US) {
@@ -408,11 +433,16 @@ void fm1_timer5_irq(void)
     owed = 0;
     return;
 #endif
+#if FELUCCA_UAC_PHASE
+    if (in_audio)
+        return;                                 /* (EP4: uac_tick above, every tick) */
+#else
     if (in_audio) {
         if (usb_due)
             UAC_ONLY(uac_service());
         return;
     }
+#endif
     if (owed & 1u)
         usb_poll();
 #if FELUCCA_UART
@@ -572,6 +602,22 @@ FR_COLD static void platform_poll(void)
     static int32_t knob_avg = 512 * 16;
     int32_t a;
     fm1_wdt_feed();
+#if defined(UAC_FAULT_CLI_US) && FELUCCA_UAC
+    {   /* developer builds only (APP_DEFS=-DUAC_FAULT_CLI_US=N): while the USB audio stream flows, the interrupts off
+         * for N us every ~50 ms (N 0: 300, 400 .. 900 us in turn), a flash slice's shape, for the EP4 poll's device
+         * A/B (FELUCCA_UAC_PHASE 0 / 1: CC 116's missed) */
+        static uint32_t t_last, k;
+        if (uac.flowing && fm1_ms - t_last >= 50u) {
+            uint32_t n = UAC_FAULT_CLI_US ? UAC_FAULT_CLI_US : 300u + 100u * (k++ % 7u), t0;
+            t_last = fm1_ms;
+            fm1_irq_off();
+            t0 = fm1_ticks();
+            while (fm1_ticks() - t0 < n * FM1_TICKS_PER_US)
+                ;
+            fm1_irq_on();
+        }
+    }
+#endif
     usb_retry(fm1_ms);
     ota_service();
     if (usb.ota_req) {
