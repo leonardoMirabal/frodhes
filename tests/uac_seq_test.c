@@ -189,7 +189,10 @@ typedef struct {
     uint64_t last45;
 } res_t;
 static int uac_restarted = 1;
-static int sim_r48;                                    /* --r48: the host set 48 kHz (uac.r48; the ring resampled) */
+static int sim_r48;
+static int sim_zero;                                   /* --zero (LOCK): the render all zeros; every frame sent must be 0 */
+static uint64_t n_nonzero;
+static int sim_trace;                                  /* --trace (LOCK 1): t, fill, the correction every 100 ms, the first 20 s */                                    /* --r48: the host set 48 kHz (uac.r48; the ring resampled) */
 static res_t R;
 static uint32_t h_prev, h_expect, h_seen;
 /* the frames an overrun dropped (uac_tap counted it): [lo, hi) of the counter, in order */
@@ -231,6 +234,8 @@ static void host_token(void)
     }
     uac_restarted = 0;
     R.frames += n;
+    for (i = 0; i < n; i++)
+        if (sim_zero && d[i]) n_nonzero++;
     return;                                            /* (the frames' values: a correction interpolates two counters) */
 #else
     if (n < 43u || n > 46u)
@@ -327,6 +332,9 @@ static void run(const cfg_t *c)
     memset(&R, 0, sizeof R);
     R.nmin = 0xFFFFFFFFu;
     memset(&uac, 0, sizeof uac);
+#if FELUCCA_UAC_LOCK == 1
+    uac.lk_I = UA_LK_I0;                               /* (the boot's seed: usb_start, uac_lock_init once) */
+#endif
     memset(ua_ring, 0, sizeof ua_ring);
     memset(ep4tx, 0, sizeof ep4tx);
     ua_w = ua_r = 0;
@@ -396,9 +404,13 @@ static void run(const cfg_t *c)
             in_audio_ctx = 1;
             uac_render_start();
             in_audio_ctx = 0;
+#if FELUCCA_UAC_LOCK == 1
+            if (sim_trace && t < 20e9 && 1)
+                printf("trace %.3f fill %u e1 %.2f ef %.2f ppm %.2f\n", t / 1e9, ua_w - ua_r, uac.lk_e1 / 4096.0, uac.lk_ef / 4096.0, uac.lk_u10 / 10.0);
+#endif
             for (i = 0; i < HALF_FRAMES; i++, ctr = (ctr + 1u) & 0x3FFFFFFFu ? (ctr + 1u) & 0x3FFFFFFFu : 1u) {
-                blk[2u * i] = (int32_t)(ctr & 0x7FFFu);
-                blk[2u * i + 1u] = (int32_t)(ctr >> 15 & 0x7FFFu);
+                blk[2u * i] = sim_zero ? 0 : (int32_t)(ctr & 0x7FFFu);
+                blk[2u * i + 1u] = sim_zero ? 0 : (int32_t)(ctr >> 15 & 0x7FFFu);
             }
             tap_dt = c->tail_us * 1e3 / 8.0;
             t_tap = t + (rend < 50.0 ? 50.0 : rend) * 1e3 + tap_dt;
@@ -464,6 +476,8 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[k], "--align")) cli_align = 1;
         else if (!strcmp(argv[k], "--clean")) clean = 1;
         else if (!strcmp(argv[k], "--r48")) sim_r48 = 1;
+        else if (!strcmp(argv[k], "--zero")) sim_zero = 1;
+        else if (!strcmp(argv[k], "--trace")) sim_trace = 1;
         else if (!strcmp(argv[k], "--ctl-reset") && k + 1 < argc) ctl_ms = atof(argv[++k]);
         else if (!strcmp(argv[k], "--tj") && k + 1 < argc) tj = atof(argv[++k]);
     }
@@ -489,7 +503,7 @@ int main(int argc, char **argv)
             printf("case ppm %.0f rend %.0f hours %.2f pkts %llu taken %llu frames %llu nmin %u nmax %u n_bad %llu "
                    "underruns %u dup_counted %llu missed %u stalls %u overruns %u overwritten %u gaps_counted %llu "
                    "adj_up %u adj_down %u silence %llu sie_to %u dup_uncounted %llu drop_uncounted %llu "
-                   "true_missed %llu fill_lo %u fill_hi %u cli %llu phase %d polls_per_s %.0f gap_max_us %.0f lat_max_us %.0f sie_blk_max %u ep_wrong %llu\n",
+                   "true_missed %llu fill_lo %u fill_hi %u cli %llu phase %d polls_per_s %.0f gap_max_us %.0f lat_max_us %.0f sie_blk_max %u ep_wrong %llu nonzero %llu\n",
                    c.ppm, c.rend_us, c.hours, (unsigned long long)R.pkts, (unsigned long long)R.taken,
                    (unsigned long long)R.frames, R.nmin, R.nmax, (unsigned long long)R.n_bad, uac.underruns,
                    (unsigned long long)R.dup_counted, uac.missed, uac.stalls, uac.overruns, q_overwritten,
@@ -497,8 +511,8 @@ int main(int argc, char **argv)
                    UAC_SIE_TO, (unsigned long long)R.dup_uncounted, (unsigned long long)R.drop_uncounted,
                    (unsigned long long)R.true_missed, uac.fill_lo, uac.fill_hi, (unsigned long long)n_cli, FELUCCA_UAC_PHASE,
                    (double)n_polls / (c.hours * 3600.0), gap_max / 1e3, lat_max / 1e3, blk_max,
-                   (unsigned long long)ep_wrong);
-            if (R.dup_uncounted || R.drop_uncounted || R.n_bad || q_overwritten)
+                   (unsigned long long)ep_wrong, (unsigned long long)n_nonzero);
+            if (R.dup_uncounted || R.drop_uncounted || R.n_bad || q_overwritten || n_nonzero)
                 bad++;
         }
     printf("%s\n", bad ? "FAIL" : "ok");

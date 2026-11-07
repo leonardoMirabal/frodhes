@@ -801,6 +801,7 @@ class Must:
             rows.append(("the whole take (npz: judge it again on the host)", os.path.relpath(p, ROOT),
                          "tools/hil_scan.py --tier must --rejudge FILE", "info"))
         self.rep.add(sc, name, rows, acc.summary())
+        self.last_case = dict(mj=mj, jsr=(j.sr if j else None), events=events, pm=pm, switch_times=switch_times)
         return xu, xj, mu
 
     # S1
@@ -879,14 +880,29 @@ class Must:
     def s3(self):
         ev, sw, rel = stim_switch()
         ev = ev + [(rel + 10.0, "cc", 64, 0)]                 # (the recording runs 10 s past the release)
-        xu, _, mu = self.case("S3", "F01..F16 + TYPEs, held chord + pedal, 48 kHz", "rhodes", ev, 48000, switch_times=sw)
+        xu, xj, mu = self.case("S3", "F01..F16 + TYPEs, held chord + pedal, 48 kHz", "rhodes", ev, 48000, switch_times=sw)
         # no stuck note: exact zero within 10 s of the release (F01, the pedal up)
         if xu is not None:
             i = int((mu + rel + 0.01) * 48000)
             nz = np.flatnonzero(np.abs(xu[i:]).max(axis=1) > 0) if len(xu) > i else np.zeros(0, int)
             last = (nz[-1] / 48000.0) if len(nz) else 0.0
-            self.rep.add("S3", "after the release", [("exact zero after the release (s)", f"{last:.1f}",
-                                                      "<= 10 s: no stuck note", "ok" if last <= 10.0 else "FAIL")])
+            rows = [("exact zero after the release (s)", f"{last:.1f}", "<= 10 s: no stuck note",
+                     "ok" if last <= 10.0 else "FAIL")]
+            lc = getattr(self, "last_case", {})
+            if last > 10.0:                               # (0.9.9: the evidence kept, to judge on the host: USB only, or
+                tail = xu[int((mu + rel + 10.0) * 48000):]  # the jack too (a note that sounds); the USB tail's values)
+                rows.append(("USB after release + 10 s", f"{np.count_nonzero(np.abs(tail.astype(np.int32)).max(axis=1))} "
+                             f"non-zero frames, peak {int(np.abs(tail).max()) if len(tail) else 0}", "information",
+                             "info"))
+                if xj is not None and lc.get("jsr"):
+                    js = xj[int((lc["mj"] + rel + 10.0) * lc["jsr"]):, 0].astype(float)
+                    rows.append(("jack after release + 10 s", f"{20 * np.log10(np.sqrt(np.mean(js ** 2)) + 1e-9) - 90.3:.1f}"
+                                 " dBFS rms" if len(js) else "-", "information (a note still sounding?)", "info"))
+                p = save_take("S3", "after the release", xu, 48000, xj, lc.get("jsr"), ev, lc.get("pm", []), mu,
+                              lc.get("mj", 0.0), sw)
+                rows.append(("the whole take (npz: judge it again on the host)", os.path.relpath(p, ROOT),
+                             "tools/hil_scan.py --tier must --rejudge FILE", "info"))
+            self.rep.add("S3", "after the release", rows)
 
     # S4
     def s4(self):
