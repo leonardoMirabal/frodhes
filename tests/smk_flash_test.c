@@ -108,7 +108,7 @@ int main(void)
           LDR_RANGE_OK(0x4000u, 0x1000u) && LDR_RANGE_OK(0x9C000u, 0x1000u) && LDR_RANGE_OK(0xBF000u, 0x1000u) &&
           !LDR_RANGE_OK(0xC0000u, 0x1000u) && FL_REC_HI == 0xC0000u);
     check("FL_PLAIN_LO = the VM start 0x9D000", FL_PLAIN_LO == 0x9D000u);
-    check("FL_JEDEC_OK: the SMK part 0xEB6014 and 0x856014 only", FL_JEDEC_OK(0xEB6014u) && FL_JEDEC_OK(0x856014u) &&
+    check("FL_JEDEC_OK: the SMK part 0xEB6014, 0x856014 and 0xB36014 only", FL_JEDEC_OK(0xEB6014u) && FL_JEDEC_OK(0x856014u) && FL_JEDEC_OK(0xB36014u) &&
           !FL_JEDEC_OK(0u) && !FL_JEDEC_OK(0xFFFFFFu) && !FL_JEDEC_OK(0xEB6015u));
     smk_owner_tag(tag);
     check("owner tag: \"SMK37DATA\" + the family, 16 bytes (" DATA_FAMILY ")",
