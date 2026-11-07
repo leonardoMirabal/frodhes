@@ -1,6 +1,3 @@
-<!-- review draft (usb-review): the Fixed line follows the usb-fix branch's final change; matches the usb-fix diff
-reviewed 2026-11-06 (FELUCCA_UAC_PHASE, FELUCCA_UAC_ALIGN: 79847d82). Measured basis: both 0.9.9 candidate failures had a late audio ISR entry (122 / 144 us)
-and the USB ring's high point one packet up; tests/py/test_uac_timing.py has the margins. -->
 ## Fixed
 
 - USB audio: while the computer recorded, a settings or preset save (or another short pause of the interrupts) could
@@ -21,3 +18,7 @@ and the USB ring's high point one packet up; tests/py/test_uac_timing.py has the
 
 - Host: `tests/py/test_uac_timing.py` (the margins before and after the change: ~520 -> ~920 us),
   `tests/py/test_uac_phase.py`, `tests/py/test_uac_seq.py`, `tests/py/test_flash_split.py` (the slices aligned), `tests/py/test_rc_gate.py`.
+- FM-1 over USB at 44.1 and 48 kHz: with a 600 us pause of the interrupts injected, 0.9.9 sends every packet (the code before:
+  243-268 empty packets in 120 s); the save test (settings saves while recording) and clean-piano takes with the
+  70S PHASER preset and the INFINITE reverb show no empty packet and no digital glitch; the audio interrupt's worst
+  case stays under 4500 us on every engine.
