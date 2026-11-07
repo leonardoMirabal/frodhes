@@ -17,7 +17,10 @@
  * ID: 0xeb6014"). The driver uses only generic SPI NOR commands (9F, 05/35, 06, 20, 02, 0B). */
 #define FL_JEDEC_OK(id) ((id) == 0xEB6014u || (id) == 0x856014u)
 #else
-#define FL_JEDEC_OK(id) ((id) == 0x856014u)
+/* FM-1: the P25Q80H (0x856014); newer units carry a UC25HQ80 (0xB36014, 1 MiB, the same generic SPI NOR commands;
+ * upstream Dinghy f77bf032): without it they keep settings, presets and the pattern in RAM only. It is not in
+ * FL_SUSPEND_OK (fm1_flash.h): its saves take the blocking wait. */
+#define FL_JEDEC_OK(id) ((id) == 0x856014u || (id) == 0xB36014u)
 #endif
 
 #if BOARD_SMK37
