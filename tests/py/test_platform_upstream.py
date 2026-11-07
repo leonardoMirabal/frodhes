@@ -62,3 +62,14 @@ def test_loader_installs_the_package(tmp_path):
                    cwd=ROOT, check=True, capture_output=True, env={**os.environ, "AC79_SDK": str(SDK)})
     out = run_c(tmp_path, "tests/ldr_test.c", str(tmp_path / "old.fwsc"), "build/frodhes.fwsc")
     assert " ok" in out          # (the return code says it passed: run_c)
+
+
+def test_fm1_flash_parts(tmp_path):
+    """The FM-1's storage takes both flash parts (#31): the P25Q80H (0x856014) and the newer units' UC25HQ80 (0xB36014);
+    only the first suspends (the split save), the second takes the blocking wait."""
+    src = tmp_path / "fm1_parts.c"
+    src.write_text('#include <stdint.h>\n#include "fm1_flash_map.h"\n'
+                   'int main(void) { return !(FL_JEDEC_OK(0x856014u) && FL_JEDEC_OK(0xB36014u) && !FL_JEDEC_OK(0u) &&\n'
+                   '                          !FL_JEDEC_OK(0xFFFFFFu) && !FL_JEDEC_OK(0xEB6014u) && !FL_JEDEC_OK(0xB36015u)); }\n')
+    run_c(tmp_path, str(src))
+    assert "#define FL_SUSPEND_OK(id) ((id) == 0x856014u)" in (ROOT / "firmware/hal/fm1_flash.h").read_text()

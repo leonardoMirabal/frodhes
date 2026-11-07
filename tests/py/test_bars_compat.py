@@ -108,9 +108,9 @@ def test_vibes_cards(new):
     assert [d[f"kind4.down{i}"] for i in range(5)] == ["WAH", "TREM", "PAN", "OFF", "OFF"]
     assert labels(d, "motor", 4) == ["MOTOR", "DEPTH", "SPEED", "SHAPE"]
     assert d["motor4.hint"] == "THE VIBRAPHONE'S MOTOR"
-    assert d["pages4"] == "vpages=3 count=25 comp_pos=5"            # VOICE 1/3 2/3 3/3 (MOTOR), then COMPRESSOR (EQ next)
+    assert d["pages4"] == "vpages=3 count=26 comp_pos=5"            # VOICE 1/3 2/3 3/3 (MOTOR), then COMPRESSOR (EQ next)
     for t in range(4):
-        assert d[f"pages{t}"] == "vpages=2 count=24 comp_pos=4"     # VOICE 1/2 2/2, then COMPRESSOR (EQ next)
+        assert d[f"pages{t}"] == "vpages=2 count=25 comp_pos=4"     # VOICE 1/2 2/2, then COMPRESSOR (EQ next)
     # the motor on, then a Rhodes TYPE: no tremolo comes on
     assert d["motor_on_rhodes"] == "OFF fxsw=0 fxmode=0"
     assert (d["motrate.0"], d["motrate.78"], d["motrate.120"], d["motrate.127"]) == ("0.5HZ", "3.5HZ", "10HZ", "10HZ")
@@ -233,7 +233,7 @@ def test_marimba_cards(new):
     assert labels(d, "voice", 5) == ["STRIKE", "MALLET", "TUBE", "WEIGHT"]
     assert labels(d, "decay", 5) == ["RING", "MUTE", "NOISE", "TUNE"]
     assert d["decay5.hint"] == "HOW BARS RING; MUTE = HAND"
-    assert d["pages5"] == "vpages=2 count=24 comp_pos=4"   # (23: the DISPLAY page, then REVERB 2; 24: the EQ)
+    assert d["pages5"] == "vpages=2 count=25 comp_pos=4"   # (23: the DISPLAY page, then REVERB 2; 24: the EQ; 25: SEQUENCER 2)
     assert [d[f"perf5.{i}"] for i in range(16, 23)] == ["STRIKE", "MALLET", "TUBE", "WEIGHT", "RING", "MUTE", "NOISE"]
     assert (d["tone5.0"], d["tone5.64"], d["tone5.127"]) == ("CENTRE", "L/3", "EDGE")
     assert [d[f"bark5.{v}"] for v in (0, 42, 85, 127, 20)] == ["SOFT", "MED", "HARD", "RUBBER", "1.6"]

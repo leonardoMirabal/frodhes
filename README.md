@@ -6,10 +6,12 @@ No samples: every note is calculated as you play it, from how the real instrumen
 and a pickup turns its motion into sound; a mallet strikes a bar and its tube rings along. Play softly and it is
 warm; play hard and it barks or rings.
 
+Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/leomirabal).
+
 <table align="center">
   <tr>
     <td align="center"><img src="docs/manual/img/thumbnail.png?v=23c51997" width="260" alt="Frodhes: the start screen (FRODHES, ELECTRIC PIANO + VIBES + MARIMBA)"></td>
-    <td align="center"><img src="docs/manual/img/piano.png?v=b2c98a85" width="260" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
+    <td align="center"><img src="docs/manual/img/piano.png?v=9a948ee0" width="260" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
     <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ed05fe9c" width="340" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
   </tr>
   <tr>
@@ -29,8 +31,8 @@ the FM-1's screen, knobs and keys. Play it from your computer keyboard or a MIDI
 - **Effects**: compressor, 3-band EQ, drive with five overdrive types, resonant filter with its own LFO, tremolo /
   pan / wah, phaser, chorus, delay (digital, analog, tape) and reverb (hall, plate, infinite).
 - **For playing**: sustain pedal, velocity from the FM-1's own keys, chords, scales, arpeggiator, a pattern recorder
-  (1-16 bars, overdub, undo), tap tempo or MIDI clock.
-- **Connections**: MIDI over USB and the TRS input, pitch bend, audio over USB as well as the headphone jack.
+  (1-16 bars, overdub, undo, a chance per step), tap tempo or MIDI clock.
+- **Connections**: MIDI over USB and the TRS input, pitch bend, audio over USB (to a computer, phone or tablet) as well as the headphone jack.
 - **Presets**: 19 factory sounds and 16 slots for your own.
 - **A screen you can read**: one page at a time, one card per knob.
 
@@ -78,7 +80,7 @@ Schwung's module catalog, you can also install and update it from there. The ste
 
 **[The user manual](docs/MANUAL.md)**: every page, knob and button, the presets, the effects and the MIDI map.
 
-![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=40425df3)
+![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=c6d97fae)
 
 ## Other keyboards
 
@@ -107,6 +109,10 @@ Vestal's [fm1-velocity](https://github.com/charlesvestal/fm1-velocity).
 ## For developers
 
 How to build, test and contribute: [docs/BUILD.md](docs/BUILD.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Support
+
+Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/leomirabal).
 
 ## License and disclaimer
 

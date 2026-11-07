@@ -18,7 +18,7 @@ setup:                     ## project-local venv, toolchain and the 3 SDK files
 
 $(HOSTBIN): firmware/src/*.c firmware/src/*.h firmware/gen/*.h tests/host.c
 	@mkdir -p build/host $(dir $@)
-	$(CC) $(CFLAGS_HOST) -o $@ firmware/src/frodhes.c -lm
+	$(CC) $(CFLAGS_HOST) -o $@.$$$$ firmware/src/frodhes.c -lm && mv -f $@.$$$$ $@   # (a new file, renamed in: a test running it never sees it half-written)
 
 host: $(HOSTBIN)           ## the firmware on this computer (fake FM-1)
 	PYTHON=$(PY) tests/run_host.sh

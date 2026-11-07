@@ -208,9 +208,12 @@ typedef struct {
 #if BOARD_SMK37
     uint8_t smk_mst[2];                        /* 0.9.6, SMK-37: K1's MASTER + 1, little endian (0, every record
                                                 * before: smk_input.h's 724; frodhes_smk.h smk_master_stored) */
-    uint8_t reserved[19];
+    uint8_t play_off;                          /* 0.9.9: DISPLAY PLAY LED: 0 BEAT (every record before), 1 OFF; after
+                                                * smk_mst, which keeps its place (offset 235) */
+    uint8_t reserved[18];
 #else
-    uint8_t reserved[21];
+    uint8_t play_off;                          /* 0.9.9: DISPLAY PLAY LED: 0 BEAT (every record before), 1 OFF */
+    uint8_t reserved[20];
 #endif
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
@@ -338,6 +341,7 @@ FR_COLD static void params_sanitize(void)
 #if BOARD_SMK37
         set.smk_mst[0] = set.smk_mst[1] = 0;
 #endif
+        set.play_off = 0;
         set.flags2 = 0;
         for (i = 0; i < 4u; i++) set.perf[i] = 0;
         params_split_phaser(p, P_SLOTS);

@@ -67,8 +67,11 @@
 3200 turn 0 1
 3250 expect state page SEQUENCER
 3300 turn 0 1
+3320 expect state page SEQUENCER_2
+3330 turn 0 1
 3350 expect state page ASSIGN
 3400 turn 0 -1
+3420 turn 0 -1
 3450 turn 0 -1
 3500 turn 0 -1
 3550 expect state page ARPEGGIO

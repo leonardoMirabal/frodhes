@@ -48,7 +48,7 @@ SCENARIOS = {1: "DAW recording: stress_max (USB 44.1 + 48 kHz)", 2: "live on the
 ALL = (1, 2, 3, 4, 5, 6)
 ENGINES_T2 = ("rhodes", "vibes", "marimba")
 SHOTS = "the screenshots / docs tests (tools/manual_shots.py, test_manual_shots, test_docs_vs_code)"
-SEQ = "the sequencer / arp scripts (tests/scripts/seq.txt, arp*.txt; tools/hil_seq.py)"
+SEQ = "the sequencer / arp scripts (tests/scripts/seq.txt, arp*.txt; tests/py/test_seq_chance.py; tools/hil_seq.py)"
 USB2 = "the USB counters at both rates (44.1 and 48 kHz)"
 KEYVEL = ("the key velocity checks: hil_cpu.py --keyadc gate (OFF / idle / STRESS: idle <= +10 us, STRESS <= +60 us, "
           "3 engines x 3 runs), hil_keyvel.py selftest, soak (10 min, zero edges), jack (no 455 / 909 Hz / 10 kHz "
@@ -61,7 +61,7 @@ RULES = [
                 "firmware/src/keyvel.c", "firmware/src/keyvel.h"], ALL, (), (USB2, KEYVEL),
      "the key velocity: the converter's scheduler (MASTER, the battery), the key rows' drive and LED blanking in the "
      "scan tick, the velocity itself"),
-    ("usb", ["firmware/src/usb.c", "firmware/src/uac_fir.h"], ALL, (), (USB2,),
+    ("usb", ["firmware/src/usb.c", "firmware/src/uac_fir.h", "firmware/src/uac_fir_lock.h"], ALL, (), (USB2,),
      "the USB audio / MIDI stack (the ring the DAW hears)"),
     ("platform", ["firmware/src/platform.c", "firmware/src/store.h", "firmware/src/frodhes_store.h",
                   "firmware/src/set_store.c", "firmware/src/smk_wheel.h", "firmware/hal/*", "firmware/crt0.S", "firmware/app.ld"], ALL, (),

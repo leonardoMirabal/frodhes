@@ -110,6 +110,11 @@ FR_COLD static void usb_health_reply(void)
 #ifndef RH_PROF_STAGES                                 /* (a stage build answers its stages instead: the MIDI
                                                         * out ring holds 64 messages) */
     for (i = 0; i < 5u; i++)
+#if FELUCCA_UAC_LOCK == 1
+        if (i != 3u && i != 4u)                        /* (locked: no packet is ever a frame longer or shorter; 4 and 5
+                                                        * left out, 6 messages: the reply stays well inside the MIDI out
+                                                        * ring's 64, tests/py/test_usb_health_reply.py) */
+#endif
         usb_health_send(i + 1u, now[i] - seen[i]);
     usb_health_send(6, uac.fill_lo == 0xFFFFFFFFu ? 16383u : uac.fill_lo);
     usb_health_send(7, uac.fill_hi);
@@ -281,6 +286,15 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == KV_CC_MODE || cc == KV_CC_QUERY) { kv_dev_cc(cc, v); return; }   /* developer: key velocity (keyvel.h) */
     if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
     if (cc == 114u) { set.usb_fixed = v >= 64u; usb_pre_master = set.usb_fixed; set_dirty = 1; ui_mark(E_CARDS); return; }   /* USB VOL */
+#if FELUCCA_UAC_LOCK == 1 && !defined(DINGHY_HOST)
+    if (cc == 116u && v == 22u) {                      /* the USB lock's query (CC 116 = 22): item 22 alone, the clock
+                                                        * correction (0.1 ppm + 8192); not in the full reply (the MIDI
+                                                        * out ring holds 64) */
+        uint32_t u = (uint32_t)(uac.lk_u10 + 8192);
+        usb_health_send(22, u > 16383u ? 16383u : u);
+        return;
+    }
+#endif
     if (cc == 116u) {                                  /* profiler query: CC 116 -> CC 116/117 = max audio us (MSB, LSB
                                                         * of us / 4), CC 118 = this block's (us / 32), CC 115 = voices shed
                                                         * (mod 128); then the max resets */
@@ -476,6 +490,7 @@ FR_COLD static void app_main(void)
     if (set.palette >= COLOR_N) set.palette = 0;   /* AMBER (ui.c S_COLOR) */
     if (set.dim >= DIM_N) set.dim = 0;
     if (set.leds > 4u) set.leds = 0;                /* (ui.c LEDS_N: 0 ROOTS 1 OFF 2 PLAYED 3 ALL 4 SCALE) */
+    if (set.play_off > 1u) set.play_off = 0;        /* (DISPLAY PLAY LED: 0 BEAT 1 OFF) */
     usb_pre_master = set.usb_fixed;
     uart_midi_on = !set.trs_off;
     fm1_led_group_ids(KEY_LED(0), KEY_LED(26));     /* BRIGHTNESS: the keys' LEDs are their own group */

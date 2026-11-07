@@ -43,7 +43,8 @@ The detectors (each event: time, source, kind, detail):
   repeat     (USB) the underrun's mark: a run of equal stereo frames between two steps the same way (>= 8 LSB). 4 frames
              or more are an event; 2 or 3 when the wave without the copies is smoother (the AR interpolation residual
              around it 3 dB lower): an underrun inserts its copies and the wave runs on after them, while a flat spot
-             of the music's own (a bright partial's turn) leaves a jump when taken out
+             of the music's own (a bright partial's turn) leaves a jump when taken out; at 48 kHz 2 frames also need
+             a burst above the resampler's band (a copy is made after it; the music's own plateaus leave it alone)
   stale      (USB) 16 frames exactly equal to 16 frames 16..4096 frames earlier, with something in them (>= 64 LSB peak
              to peak): a block, half a block or a packet played twice; not where the match is seamless: the 8
              frames either side of the exact run repeat those as far back too (within 3 % of the wave: the wave's own
@@ -109,6 +110,7 @@ import time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fm1_ports  # noqa: E402
 import hil_scan  # noqa: E402
 from hil_scan import CC, DRY, param_defaults  # noqa: E402
 
@@ -263,7 +265,7 @@ def _peak(x):
 
 
 def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0, floor=256, agree=4.0, mono_db=18.0, long_db=8.0,
-               long_mono_db=10.0, turn_db=26.0, like_db=20.0):
+               long_mono_db=10.0, turn_db=26.0, like_db=20.0, fs=None, burst_db=10.0):
     """frames that repeat the frame before where the wave runs on: [(frame, detail)]; q (n, 2) int. A candidate is a
     run of equal stereo frames (a USB copy repeats the whole frame) where the wave is above floor LSB (-42 dBFS, its
     peak within 32 frames). The evidence, per channel: the AR interpolation residual over the run with the copies and
@@ -280,6 +282,11 @@ def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0, floor=256, agr
       (down to 0.15; under 0.15 when every channel is >= like_db smoother); one channel's evidence alone (mono, or
       the other channel at its turn) >= mono_db.
     - 2 or 3 frames at a turn (no channel on a slope; stereo only): every channel predictable and >= turn_db smoother.
+    - At 48 kHz (fs: the stream through usb.c's 44.1 -> 48 kHz FIR, band-limited to ~20 kHz), 2 frames with both
+      channels on a slope also need a burst above the FIR's band (>= burst_db, _band_burst). A copy is made after the
+      FIR (the ring, the packets: the resampler's phase always advances, so it never makes two equal frames itself) and
+      puts a kink into the stream; two equal frames of the music's own are the band-limited wave rounded and leave the
+      top band as it was around them.
     History: 2026-10-26 (BUGHUNT #24): 2 or 3 frames need the wave predictable and 10 dB (before: 3 dB on any wave: noise-
     like music through the 44.1 -> 48 kHz resampler gave ~300 events a minute; 0.9.4's real 2-frame copies score 11 and
     16 dB, copies injected in a chord 12 .. 23 dB, noise under 8 dB). 2026-10-27 (0.9.7, T19): the host build, which has
@@ -289,7 +296,15 @@ def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0, floor=256, agr
     the other channel at its turn: 27 and 30 dB). Hence the agreement, the one-channel rule and the evidence on 4
     frames and more. Measured on host takes (seeds 3000-3199 x lead 500-503 ms: 0 events, 7 takes before) and 1-5-frame
     whole-frame copies injected at random audible places (seeds 3000-3099: 1498 of 1880 found, 1492 before; 3100-3199,
-    not used to tune: 1530 of 1878, 1524 before; tests/py/test_hil_crackle.py)"""
+    not used to tune: 1530 of 1878, 1524 before; tests/py/test_hil_crackle.py). 2026-11-06 (0.9.9, BUGHUNT #24): the
+    FM-1's monkey seed 3128 at 48 kHz (every counter 0, ring low point 202): 2 frames at -275 / 63 on a slope (-14 /
+    -14), ch1 13.1 dB smoother, ch0 8.0 dB, the band burst 9.6 dB. Host takes 3000-3399 through the exact resampler
+    (167 min, no copy possible) had one event of the same kind, seed 3099 at 7.918 s (19 / 17 dB smoother, burst 6.2
+    dB): ~1 in 400 takes, about what the FM-1 showed (1 in ~300 takes at 48 kHz since 2026-10-26). Their 2-frame
+    plateaus burst 0 dB (median), 10.2 dB (99th percentile); of 14185 2-3-frame copies injected into them, 10563 found
+    before and 10561 now (2-frame copies burst 18.5 dB at the 1st percentile). In the FM-1's take 3128 itself,
+    2-frame copies at its level (both channels on a slope 8 .. 24 LSB, peak 256 .. 1000): 396 of 2595 found before,
+    392 now (at that level the AR evidence finds few of them either way)"""
     q = np.asarray(q, np.int64)
     eq = np.all(q[1:] == q[:-1], axis=1)                  # eq[i]: frame i + 1 == frame i
     s, e = _runs(eq)                                       # run i..j-1 of eq: plateau frames i..j
@@ -333,10 +348,34 @@ def det_repeat(q, slope=8, gain=10.0, ctx=256, half=4, pred=12.0, floor=256, agr
                                                            # mono_db
         if pr < pred:
             continue                                       # (noise-like: its own neighbours meet by chance)
+        if fs == 48000 and n == 2 and not mono and len(moving) == 2 and _band_burst(q, p0, p1) < burst_db:
+            continue                                       # (no kink above the resampler's band: the music's own)
         if Ea > need * Eb and Ea > 4 * slope ** 2:
             out.append((int(p0), f"{n} equal frames on a slope ({int(d0[ch]):+d} / {int(d1[ch]):+d}); "
                                  f"the wave without the copies {10 * np.log10(Ea / max(Eb, 1e-9)):.0f} dB smoother"))
     return out
+
+
+_BAND_HP = None
+
+
+def _band_burst(q, p0, p1, edge=3, ref=300, guard=50):
+    """dB: the energy above 21.5 kHz (a 63-tap high-pass at 48 kHz, both channels) over the run p0..p1 and edge frames
+    either side, over its median in the frames ref .. guard before and after the run. usb.c's 44.1 -> 48 kHz FIR
+    leaves the top band to rounding and the images it attenuates; a frame copied after it puts a kink there"""
+    global _BAND_HP
+    if _BAND_HP is None:
+        from scipy.signal import firwin
+        _BAND_HP = firwin(63, 21500, fs=48000, pass_zero=False, window=("kaiser", 8.0))
+    a, b = max(0, p0 - ref), min(len(q), p1 + 1 + ref)
+    seg = np.asarray(q[a:b], float)
+    y = np.stack([np.convolve(seg[:, c], _BAND_HP, "same") for c in range(seg.shape[1])], 1)
+    e = (y ** 2).sum(axis=1)
+    i0, i1 = p0 - a, p1 - a
+    loc = float(e[max(0, i0 - edge):i1 + edge + 1].mean())
+    out = np.concatenate([e[:max(0, i0 - guard)], e[i1 + guard + 1:]])
+    base = float(np.median(out)) if len(out) else 0.0
+    return 10 * np.log10(max(loc, 1e-6) / max(base, 1e-3))
 
 
 def _copy_evidence(q, p0, p1, ch, ctx, half):
@@ -939,7 +978,7 @@ def analyse(usb, jack, fs_usb, events, lag_usb=0.0, lag_jack=None, widen=0.0, cc
     def add(src, fs, kind, fn):
         if want(kind):
             res[src] += [(i / fs, kind, d) for i, d in fn()]
-    add("usb", fs_usb, "repeat", lambda: det_repeat(q))
+    add("usb", fs_usb, "repeat", lambda: det_repeat(q, fs=fs_usb))
     add("usb", fs_usb, "stale", lambda: det_stale(q))
     add("usb", fs_usb, "zero", lambda: det_zero(q, fs_usb))
     add("usb", fs_usb, "clip", lambda: det_clip(q, 32767))
@@ -1393,8 +1432,7 @@ class Device:
         import hil_must
         self.hm, self.sd, self.poll = hil_must, sd, poll
         self.mdev = mdev or hil_must.Dev()                   # (the MIDI ports before any stream; T1 passes its own)
-        devs = [i for i, d in enumerate(sd.query_devices())
-                if any(k in d["name"].lower() for k in hil_scan.PORT_KEYS) and d["max_input_channels"] >= 2]
+        devs = fm1_ports.devices(sd.query_devices(), 2)
         if not devs:
             sys.exit("no FM-1 audio input")
         self.udev, self.rate, self.bs = devs[0], rate, blocksize

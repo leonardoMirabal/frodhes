@@ -61,6 +61,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hil_crackle as hc  # noqa: E402  (T1 judges USB audio with stress_max's detectors)
+import fm1_ports  # noqa: E402  (the Frodhes FM-1 first when other FM-1s are connected)
 import hil_scan as hs  # noqa: E402
 import midi_guard  # noqa: E402  (every MIDI open / close under a watchdog; the exit without rtmidi's destructors)
 from hil_cpu import USB_ITEMS, usb_merge  # noqa: E402
@@ -467,8 +468,8 @@ class Dev:
         if mido is None:
             import mido
         self.mido, self.threads, self.taps, self.qlock = mido, [], [], threading.Lock()
-        outs = [n for n in mido.get_output_names() if any(k in n.lower() for k in hs.PORT_KEYS)]
-        ins = [n for n in mido.get_input_names() if any(k in n.lower() for k in hs.PORT_KEYS)]
+        outs = fm1_ports.pick(mido.get_output_names())
+        ins = fm1_ports.pick(mido.get_input_names())
         if not outs or not ins:
             raise NoDevice("no FM-1 MIDI port")
         import fm1_midi
@@ -602,8 +603,7 @@ class Rec:
 
 
 def find_usb(sd):
-    d = [i for i, x in enumerate(sd.query_devices()) if any(k in x["name"].lower() for k in hs.PORT_KEYS)
-         and x["max_input_channels"] >= 2]
+    d = fm1_ports.devices(sd.query_devices(), 2)
     return d[0] if d else None
 
 
@@ -801,6 +801,7 @@ class Must:
             rows.append(("the whole take (npz: judge it again on the host)", os.path.relpath(p, ROOT),
                          "tools/hil_scan.py --tier must --rejudge FILE", "info"))
         self.rep.add(sc, name, rows, acc.summary())
+        self.last_case = dict(mj=mj, jsr=(j.sr if j else None), events=events, pm=pm, switch_times=switch_times)
         return xu, xj, mu
 
     # S1
@@ -879,14 +880,29 @@ class Must:
     def s3(self):
         ev, sw, rel = stim_switch()
         ev = ev + [(rel + 10.0, "cc", 64, 0)]                 # (the recording runs 10 s past the release)
-        xu, _, mu = self.case("S3", "F01..F16 + TYPEs, held chord + pedal, 48 kHz", "rhodes", ev, 48000, switch_times=sw)
+        xu, xj, mu = self.case("S3", "F01..F16 + TYPEs, held chord + pedal, 48 kHz", "rhodes", ev, 48000, switch_times=sw)
         # no stuck note: exact zero within 10 s of the release (F01, the pedal up)
         if xu is not None:
             i = int((mu + rel + 0.01) * 48000)
             nz = np.flatnonzero(np.abs(xu[i:]).max(axis=1) > 0) if len(xu) > i else np.zeros(0, int)
             last = (nz[-1] / 48000.0) if len(nz) else 0.0
-            self.rep.add("S3", "after the release", [("exact zero after the release (s)", f"{last:.1f}",
-                                                      "<= 10 s: no stuck note", "ok" if last <= 10.0 else "FAIL")])
+            rows = [("exact zero after the release (s)", f"{last:.1f}", "<= 10 s: no stuck note",
+                     "ok" if last <= 10.0 else "FAIL")]
+            lc = getattr(self, "last_case", {})
+            if last > 10.0:                               # (0.9.9: the evidence kept, to judge on the host: USB only, or
+                tail = xu[int((mu + rel + 10.0) * 48000):]  # the jack too (a note that sounds); the USB tail's values)
+                rows.append(("USB after release + 10 s", f"{np.count_nonzero(np.abs(tail.astype(np.int32)).max(axis=1))} "
+                             f"non-zero frames, peak {int(np.abs(tail).max()) if len(tail) else 0}", "information",
+                             "info"))
+                if xj is not None and lc.get("jsr"):
+                    js = xj[int((lc["mj"] + rel + 10.0) * lc["jsr"]):, 0].astype(float)
+                    rows.append(("jack after release + 10 s", f"{20 * np.log10(np.sqrt(np.mean(js ** 2)) + 1e-9) - 90.3:.1f}"
+                                 " dBFS rms" if len(js) else "-", "information (a note still sounding?)", "info"))
+                p = save_take("S3", "after the release", xu, 48000, xj, lc.get("jsr"), ev, lc.get("pm", []), mu,
+                              lc.get("mj", 0.0), sw)
+                rows.append(("the whole take (npz: judge it again on the host)", os.path.relpath(p, ROOT),
+                             "tools/hil_scan.py --tier must --rejudge FILE", "info"))
+            self.rep.add("S3", "after the release", rows)
 
     # S4
     def s4(self):

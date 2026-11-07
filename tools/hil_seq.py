@@ -5,14 +5,13 @@ back on the QUANT grid) and step recording (stopped: three notes, two steps apar
 import sys, time, numpy as np, mido, sounddevice as sd
 sys.path.insert(0, "tools")
 from hil_scan import param_defaults, CC, DRY
-KEYS = ("frodhes", "felucca", "fm-1")   # the FM-1's port names: Frodhes since the rename, Felucca before
+import fm1_ports   # the FM-1's port names: Frodhes preferred, Felucca / FM-1 only as a fallback
 import fm1_midi
-out = fm1_midi.ChannelOut(mido.open_output([n for n in mido.get_output_names() if any(k in n.lower() for k in KEYS)][0]))
+out = fm1_midi.ChannelOut(mido.open_output(fm1_ports.first(mido.get_output_names())))
 print(fm1_midi.say(out.ch), flush=True)
 cc = lambda c, v: out.send(mido.Message("control_change", control=c, value=v))
 note = lambda n, on: out.send(mido.Message("note_on" if on else "note_off", note=n, velocity=100))
-dev = [i for i, d in enumerate(sd.query_devices()) if any(k in d["name"].lower() for k in KEYS[:2])
-       and d["max_input_channels"] >= 2][0]
+dev = fm1_ports.devices(sd.query_devices(), 2, fm1_ports.PORT_KEYS[:2])[0]
 FS = 48000; names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B']
 def reset():
     for c, v in param_defaults(): cc(c, v)

@@ -116,6 +116,22 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 #ifndef FELUCCA_UAC
 #define FELUCCA_UAC 1                           /* USB audio to the computer (0: MIDI only, as zp12) */
 #endif
+#ifndef FELUCCA_UAC_PHASE
+#define FELUCCA_UAC_PHASE 1                     /* Frodhes 0.9.9: the EP4 poll follows the host's IN token (usb.c
+                                                 * uac_tick; 0: the 2 kHz poll at a fixed phase, as before) */
+#endif
+#ifndef FELUCCA_UAC_ALIGN
+#define FELUCCA_UAC_ALIGN 1                     /* Frodhes 0.9.9: each flash slice right after a USB audio packet (usb.c
+                                                 * uac_slice_ok, fm1_flash.h FL_SLICE_OK; 0: at any moment, as before) */
+#endif
+#ifndef FELUCCA_UAC_LOCK
+#define FELUCCA_UAC_LOCK 1                      /* Frodhes 0.9.9 (iOS): the stream locked to the USB frame clock, the
+                                                 * FM-1's clock drift resampled out (usb.c uac_tap_lock; 0: as before) */
+#endif
+#if FELUCCA_UAC && FELUCCA_UAC_ALIGN
+#define UAC_STAMP() fm1_ticks()
+#define UAC_SLICE_WIN (200u * FM1_TICKS_PER_US)  /* a slice may start up to 200 us after the packet */
+#endif
 #define FELUCCA_UART (!BOARD_SMK37)             /* the FM-1's TRS MIDI IN (SMK-37: none, PH8 is a key-matrix row) */
 #if BOARD_SMK37 && FELUCCA_UART
 #error "BOARD_SMK37: no UART MIDI IN (RX on PH8, a key-matrix row on the SMK)"
@@ -137,6 +153,9 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 /* ---- flash: read anywhere; erase / program only the update's staging area and the app's store (store.h; the app
  * may give its own, tighter allow-list: APP_FL_RANGE) */
 #include "store.h"
+#if FELUCCA_UAC && FELUCCA_UAC_ALIGN
+#define FL_SLICE_OK() uac_slice_ok()
+#endif
 #include "fm1_flash.h"
 static uint8_t flash_ok;
 FR_COLD static int st_read(uint32_t off, void *dst, uint32_t n)
@@ -383,6 +402,16 @@ void fm1_timer5_irq(void)
     uint32_t t0 = fm1_ticks(), usb_due = sub == 0u;
     fm1_timer5_ack();
     fm1_input_tick();
+#if FELUCCA_UAC_PHASE
+    {   /* (usb.c uac_tick: the ticks since the last one; an interrupts-off stretch folds several into this one) */
+        uint32_t dt = t0 - last, n = 1;
+        while (dt >= 200u * FM1_TICKS_PER_US && n < 20u) {   /* (only after a stretch) */
+            dt -= 100u * FM1_TICKS_PER_US;
+            n++;
+        }
+        uac_tick(n);
+    }
+#endif
     acc += t0 - last;
     last = t0;
     while (acc >= 1000u * FM1_TICKS_PER_US) {
@@ -408,11 +437,16 @@ void fm1_timer5_irq(void)
     owed = 0;
     return;
 #endif
+#if FELUCCA_UAC_PHASE
+    if (in_audio)
+        return;                                 /* (EP4: uac_tick above, every tick) */
+#else
     if (in_audio) {
         if (usb_due)
             UAC_ONLY(uac_service());
         return;
     }
+#endif
     if (owed & 1u)
         usb_poll();
 #if FELUCCA_UART
@@ -436,6 +470,21 @@ extern void isr_timer5(void);
 static int32_t abuf[2u * HALF_WORDS] __attribute__((aligned(4)));
 static volatile int32_t master_q12 = 2048;
 static int32_t tap_q[64] __attribute__((section(".bss.tap_q")));   /* Frodhes: 32 frames for the USB tap (Q15) */
+#if FELUCCA_UAC && FELUCCA_UAC_LOCK == 1
+/* Frodhes (0.9.9, the 48 kHz tail): the block's USB samples straight into the locked resampler's history (usb.c
+ * uac_tap_hist), one tap after the block; master_ramp keeps tap_q and its pieces. Otherwise tap_q, a tap per 32 */
+#define TAIL_Q_T int16_t
+#define TAIL_Q(b) (UAC_HIST + (b))
+#define TAIL_TAP(q) ((void)0)
+#define TAIL_TAP_BLOCK() uac_tap_hist(HALF_FRAMES)
+#define TAIL_KEEP(q) HAL_KEEP_REG(q)            /* (in the loop: a moving pointer, not an index from the block) */
+#else
+#define TAIL_Q_T int32_t
+#define TAIL_Q(b) tap_q
+#define TAIL_TAP(q) UAC_ONLY(uac_tap((q) - 64, 32u))
+#define TAIL_TAP_BLOCK() ((void)0)
+#define TAIL_KEEP(q) ((void)0)
+#endif
 static volatile uint8_t usb_pre_master;        /* the app: 1 = the USB audio does not follow the MASTER knob */
 static void app_audio(int32_t *out, uint32_t n);
 static void app_main(void);
@@ -509,7 +558,7 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
     fm1_audio_ack_aux(p);
     if (p & FM1_AUDIO_HALF) {
         int32_t *o = &abuf[fm1_audio_free_half() * HALF_WORDS];
-        uint32_t i, b;
+        uint32_t i, b, ramp;
         int32_t m;
 #if !APP_OUT_WRITTEN
         for (i = 0; i < HALF_WORDS; i++)
@@ -530,14 +579,17 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
             master_ramp(o, m);
             b = HALF_WORDS;
         } else b = 0;
+        ramp = b != 0;
         for (; b < HALF_WORDS; b += 64u) {
-            int32_t *c = o + b, *q = tap_q;
+            int32_t *c = o + b;
+            TAIL_Q_T *q = TAIL_Q(b);
             HAL_KEEP_REG(q);                    /* (an opaque pointer: else the compiler specialises uac_tap48 on
                                                  * tap_q and its per-frame loop gets 7 instructions longer) */
             if (usb_pre_master) {               /* the computer records the app at full level, the jack follows MASTER */
                 for (i = 0; i < 32u; i++, c += 2, q += 2) {
                     int32_t l = TAIL_PRE(c[0]), r = TAIL_PRE(c[1]);
-                    q[0] = l; q[1] = r;
+                    TAIL_KEEP(q);
+                    q[0] = (TAIL_Q_T)l; q[1] = (TAIL_Q_T)r;
                     c[0] = (l * m) >> MASTER_JACK_SH;   /* (0.9.7, #8: 24 bits on the jack) */
                     c[1] = (r * m) >> MASTER_JACK_SH;
                 }
@@ -545,7 +597,8 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
                 for (i = 0; i < 32u; i++, c += 2, q += 2) {
                     int32_t pl = c[0] * m, pr = c[1] * m, l = pl >> 12, r = pr >> 12;
                     l = TAIL_PRE(l); r = TAIL_PRE(r);
-                    q[0] = l; q[1] = r;
+                    TAIL_KEEP(q);
+                    q[0] = (TAIL_Q_T)l; q[1] = (TAIL_Q_T)r;
                     /* Q15 x Q12 -> 24 bit: APP_OUT_SHIFT 7 = a -6 dBFS ceiling (Dinghy), 8 = full scale; 0.9.7 (#8):
                      * the product's low bits kept on the jack, clamped at the same ceiling */
                     pl >>= MASTER_JACK_SH; pr >>= MASTER_JACK_SH;
@@ -553,8 +606,10 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
                     c[1] = TAIL_JACK(pr);
                 }
             }
-            UAC_ONLY(uac_tap(q - 64, 32u));
+            TAIL_TAP(q);
         }
+        if (!ramp)
+            TAIL_TAP_BLOCK();
 #undef TAIL_PRE
         fm1_audio_ack_half();
         isr_stats(t0, t1, fill);
@@ -572,6 +627,22 @@ FR_COLD static void platform_poll(void)
     static int32_t knob_avg = 512 * 16;
     int32_t a;
     fm1_wdt_feed();
+#if defined(UAC_FAULT_CLI_US) && FELUCCA_UAC
+    {   /* developer builds only (APP_DEFS=-DUAC_FAULT_CLI_US=N): while the USB audio stream flows, the interrupts off
+         * for N us every ~50 ms (N 0: 300, 400 .. 900 us in turn), a flash slice's shape, for the EP4 poll's device
+         * A/B (FELUCCA_UAC_PHASE 0 / 1: CC 116's missed) */
+        static uint32_t t_last, k;
+        if (uac.flowing && fm1_ms - t_last >= 50u) {
+            uint32_t n = UAC_FAULT_CLI_US ? UAC_FAULT_CLI_US : 300u + 100u * (k++ % 7u), t0;
+            t_last = fm1_ms;
+            fm1_irq_off();
+            t0 = fm1_ticks();
+            while (fm1_ticks() - t0 < n * FM1_TICKS_PER_US)
+                ;
+            fm1_irq_on();
+        }
+    }
+#endif
     usb_retry(fm1_ms);
     ota_service();
     if (usb.ota_req) {

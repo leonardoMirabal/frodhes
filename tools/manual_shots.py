@@ -74,7 +74,7 @@ BIN = os.path.join(ROOT, "build", "host", "frodhes")
 NAME = {"PERFORM": "perform", "FRODHES": "piano", "DECAY": "decay", "MOTOR": "motor", "COMPRESSOR": "comp", "EQ": "eq",
         "FILTER": "filter", "DRIVE": "drive", "TREM/WAH": "trem", "PHASER": "phaser", "CHORUS": "chorus",
         "DELAY": "delay", "REVERB": "reverb", "REVERB 2": "reverb2", "TEMPO": "tempo", "SCALE": "scale", "CHORD": "chord", "ARPEGGIO": "arp",
-        "LFO": "lfo", "SEQUENCER": "seq", "ASSIGN": "assign", "SETUP": "setup", "MIDI": "midi", "DISPLAY": "display"}
+        "LFO": "lfo", "SEQUENCER": "seq", "SEQUENCER 2": "seq2", "ASSIGN": "assign", "SETUP": "setup", "MIDI": "midi", "DISPLAY": "display"}
 
 
 def walk_pages(pre=(), t0=2500, n=30):
@@ -215,6 +215,12 @@ def main():
             t += 4500                                       # the second pass, bar 1 beat 2: the first chord sounds
             L.append(f"{t} shot"); shots[t] = name
             L.append(f"{t + 50} midi 0xB0 63 0"); L.append(f"{t + 60} midi 0xB0 60 0"); t += 300
+            continue
+        if name == "seq2":                                  # the cursor on bar 1's first step (its chord): CHANCE 70 %
+            for k in range(3):
+                L.append(f"{t} turn 3 -1"); t += 150        # K2, one 10 % step a turn
+            t += 1300                                       # (the turned card's frame has gone)
+            L.append(f"{t} shot"); shots[t] = name; t += 100
             continue
         if name == "arp":                                   # the arpeggiator on (UP) over a held chord, then off
             L.append(f"{t} turn 2 1"); L.append(f"{t + 100} keys 0x4880"); t += 900

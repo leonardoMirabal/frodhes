@@ -76,9 +76,12 @@ import time
 
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fm1_ports  # noqa: E402  (which port / audio device is the Frodhes FM-1)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "build", "hil")
-PORT_KEYS = ("frodhes", "felucca", "fm-1")   # the FM-1's MIDI port / USB audio names: Frodhes, Felucca before
+PORT_KEYS = fm1_ports.PORT_KEYS   # the FM-1's MIDI port / USB audio names: Frodhes, Felucca before
 FS = 48000
 A4 = 440.0
 
@@ -487,7 +490,7 @@ class Rig(RigBase):
         import mido
         import sounddevice as sd
         self.sd = sd
-        names = [n for n in mido.get_output_names() if any(k in n.lower() for k in PORT_KEYS)]
+        names = fm1_ports.pick(mido.get_output_names())
         if not names:
             sys.exit("no FM-1 MIDI port")
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -496,8 +499,7 @@ class Rig(RigBase):
         self.out = fm1_midi.ChannelOut(midi_guard.open_output(mido, names[0]))   # channel messages on FRODHES_MIDI_CH
         print(fm1_midi.say(self.out.ch), flush=True)
         self.mido = mido
-        devs = [i for i, d in enumerate(sd.query_devices())
-                if any(k in d["name"].lower() for k in PORT_KEYS[:2]) and d["max_input_channels"] >= 2]
+        devs = fm1_ports.devices(sd.query_devices(), 2, PORT_KEYS[:2])
         if not devs:
             sys.exit("no FM-1 audio input")
         self.dev = devs[0]

@@ -20,15 +20,23 @@ Exit codes: 0 done, 1 cancelled or other error, 2 bad arguments or package,
 loader / no restart), 6 wrong model, another identity after the install, or the
 FM-1 is in the update mode of another firmware (only SLOOP's own loader,
 ota-FM-1_9XX or ota-SMK-37 Pro_9XX, is resumed).
+7 more than one device could be the FM-1: name it with --port.
+
+With several FM-1s connected, a Frodhes port is the target when there is one (fm1_ports.py); without one the
+install refuses unless only one FM-1-like port exists or --port names one. Another unit's ports are never probed.
 
 Packages: 20 interleave blocks (FM-1, SLOOP, SMK-37 Pro up to v011) or more (the stock SMK-37 Pro
 v016 has 36: the extra markers are 0x7D); the count is detected and checked with the files' CRCs.
 """
 import argparse
+import os
 import queue
 import re
 import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fm1_ports  # noqa: E402  (the Frodhes FM-1 first; never another unit's firmware)
 
 HS_QUERY = bytes([0xF0, 0x00, 0x32, 0x45, 0x00, 0x00, 0x00, 0x40, 0x7F, 0xF7])
 UPGRADE = bytes([0xF0, 0x22, 0x24, 0x35, 0x7F, 0xF7])
@@ -48,7 +56,7 @@ DELAY = {"open": 0.3, "start": 2.0, "reply": 0.01, "loader": 3.0, "reboot": 3.0,
          "wait_loader": 30.0, "wait_reboot": 40.0}
 
 EXIT = {"usage": 2, "badpkg": 2, "notfound": 3, "model": 6, "lost": 4, "stopped": 4, "badreq": 4,
-        "noloader": 5, "noreturn": 5, "mismatch": 6, "foreign": 6}
+        "noloader": 5, "noreturn": 5, "mismatch": 6, "foreign": 6, "ambiguous": 7}
 
 
 class InstallError(Exception):
@@ -296,15 +304,27 @@ class Updater:
     def __init__(self, backend, port=None):
         self.backend = backend
         self.port = port
+        self.others = set()        # the other devices' ports at the start: never probed in the waits
 
     def candidates(self, only_port):
-        names = self.backend.input_names()
-        if self.port:
-            mine = [n for n in names if self.port.lower() in n.lower()]
-            if only_port:
-                return mine
-            return mine + [n for n in names if n not in mine and PORT_RE.search(n)]
-        return [n for n in names if PORT_RE.search(n)]
+        """only_port: the ports of the one device to install (refuses when two devices could be it); else (the wait
+        for the update loader and the new firmware) also every FM-1-like port except the other devices' ports seen
+        at the start. Never a fm1_ports.NEVER port (another unit's firmware)."""
+        names = [n for n in self.backend.input_names() if not fm1_ports._never(n)]
+        if only_port:
+            if self.port:
+                mine = [n for n in names if self.port.lower() in n.lower()]
+            else:
+                mine = [n for n in names if PORT_RE.search(n)]
+                frodhes = [n for n in mine if fm1_ports.PREFER in n.lower()]
+                mine = frodhes or mine
+            if len(mine) > 1:
+                raise InstallError("ambiguous", f"{len(mine)} devices could be the FM-1 ({', '.join(mine)}): "
+                                                "name the one to use with --port NAME (its full port name)")
+            self.others = {n for n in names if PORT_RE.search(n) and n not in mine}
+            return mine
+        mine = [n for n in names if self.port and self.port.lower() in n.lower() and n not in self.others]
+        return mine + [n for n in names if n not in mine and n not in self.others and PORT_RE.search(n)]
 
     def find(self, want=None, only_port=True):
         """the first matching port that answers the handshake (and want(identity))"""

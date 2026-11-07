@@ -88,7 +88,7 @@ test("turning writes the wire value: numbers step and clamp, enums by index, a f
 test("what the Move owns is not on the Move: no sequencer, chords, scales, BPM or CLOCK (the arpeggiator is)", () => {
     const s = new Screen().open();
     const titles = s.api.pages.map((p) => p.title);
-    for (const t of ["SEQUENCER", "CHORD/ARP", "CHORD", "TEMPO/SCALE"]) assert.ok(!titles.includes(t), titles.join(","));
+    for (const t of ["SEQUENCER", "SEQUENCER 2", "CHORD/ARP", "CHORD", "TEMPO/SCALE"]) assert.ok(!titles.includes(t), titles.join(","));
     const keys = s.api.pages.flatMap((p) => p.knobs.filter((k) => k).map((k) => k.key));
     const gone = ["s_sq", "s_ch", "s_bpm", "s_clock", "s_scmode", "s_scale", "s_root", "s_trans"];
     assert.ok(!keys.some((k) => gone.some((g) => k.startsWith(g))), keys.join(","));
