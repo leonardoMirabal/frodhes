@@ -61,7 +61,7 @@ RULES = [
                 "firmware/src/keyvel.c", "firmware/src/keyvel.h"], ALL, (), (USB2, KEYVEL),
      "the key velocity: the converter's scheduler (MASTER, the battery), the key rows' drive and LED blanking in the "
      "scan tick, the velocity itself"),
-    ("usb", ["firmware/src/usb.c", "firmware/src/uac_fir.h"], ALL, (), (USB2,),
+    ("usb", ["firmware/src/usb.c", "firmware/src/uac_fir.h", "firmware/src/uac_fir_lock.h"], ALL, (), (USB2,),
      "the USB audio / MIDI stack (the ring the DAW hears)"),
     ("platform", ["firmware/src/platform.c", "firmware/src/store.h", "firmware/src/frodhes_store.h",
                   "firmware/src/set_store.c", "firmware/src/smk_wheel.h", "firmware/hal/*", "firmware/crt0.S", "firmware/app.ld"], ALL, (),
