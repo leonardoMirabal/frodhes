@@ -38,11 +38,20 @@
 #define FELUCCA_UAC_PHASE 0                     /* 1: the EP4 poll on its own phase (uac_tick, every TIMER5 tick);
                                                  * Frodhes' platform.c turns it on */
 #endif
+#ifndef FELUCCA_UAC_LOCK
+#define FELUCCA_UAC_LOCK 0                      /* Frodhes 0.9.9 (iOS): the stream locked to the USB frame clock: every
+                                                 * packet nominal (44.1: 9 x 44 + 45 per 10 ms, 48: 48), the FM-1's clock
+                                                 * drift taken out of the samples instead. 2: the diagnostic (one frame
+                                                 * dropped or repeated, stretched over 32 frames, when the ring's
+                                                 * average fill leaves its band); 0: the packet sizes follow the fill */
+#endif
 #if !FELUCCA_UAC
 #undef FELUCCA_UAC_48K
 #define FELUCCA_UAC_48K 0
 #undef FELUCCA_UAC_PHASE
 #define FELUCCA_UAC_PHASE 0
+#undef FELUCCA_UAC_LOCK
+#define FELUCCA_UAC_LOCK 0
 #endif
 enum { S_FADDR = 0, S_POWER = 1, S_INTRTX1 = 2, S_INTRTX2 = 3, S_INTRRX1 = 4, S_INTRRX2 = 5, S_INTRUSB = 6,
        S_INTRTX1E = 7, S_INTRTX2E = 8, S_INTRRX1E = 9, S_INTRRX2E = 10, S_INTRUSBE = 11, S_FRAME1 = 12,
@@ -139,6 +148,11 @@ static struct {
     volatile uint8_t idx4;       /* the SIE's INDEX is 4 since the EP4 poll wrote it (sie_wr clears it: any INDEX write) */
     uint32_t ph_early, ph_late;  /* the poll moved one tick earlier / later (diagnostics) */
 #endif
+#if FELUCCA_UAC_LOCK == 2
+    uint32_t favg16;             /* the ring's fill at a render's start, averaged (x 16: 1/16 of the way each block) */
+    int8_t adj;                  /* the next piece tapped in: 1 = one frame fewer, -1 = one more (adj_up / adj_down) */
+    uint8_t cool;                /* blocks to wait before the next correction */
+#endif
 #ifdef UAC_STAMP
     volatile uint32_t t_q;       /* UAC_STAMP() when the last packet after a host take was queued (uac_slice_ok;
                                   * Frodhes' platform.c defines UAC_STAMP and UAC_SLICE_WIN) */
@@ -147,6 +161,10 @@ static struct {
 #if FELUCCA_UAC_PHASE
 #define UA_PROBE 16u             /* (uac_slot) frames between two early looks */
 #define UA_LOOKS 4u              /* (uac_slot) the ticks after a late poll that look again */
+#endif
+#if FELUCCA_UAC_LOCK == 2
+#define UA_LK_M 8u               /* (uac_render_start) the average fill's dead band around the band's middle, frames */
+#define UA_LK_GAP 8u             /* blocks between two corrections (46 ms) */
 #endif
 #if FELUCCA_UAC_48K
 #include "uac_fir.h"
@@ -1100,6 +1118,11 @@ static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, bef
         RING_PUBLISH();
         ua_w = r + prime;
         uac.fill_min = prime;
+#if FELUCCA_UAC_LOCK == 2
+        uac.favg16 = prime << 4;
+        uac.adj = 0;
+        uac.cool = UA_LK_GAP;
+#endif
         RING_PUBLISH();
         uac.go = 1;
         return;
@@ -1110,7 +1133,59 @@ static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, bef
         uac.fill_lo = fill;
     if (fill > uac.fill_hi)
         uac.fill_hi = fill;
+#if FELUCCA_UAC_LOCK == 2
+    {   /* the packets take the host's rate exactly; the render gives the FM-1's: the drift moves the fill (the
+         * fill at a render's start jumps by up to a packet with the 1 ms frames' place: averaged over ~16 blocks).
+         * Out of the band's middle +- UA_LK_M: the next piece tapped in loses or gains one frame, at most one
+         * correction every UA_LK_GAP blocks (46 ms: 21.5 frames a second, 490 ppm; far out, as after a host that skipped a frame, every block) */
+        uint32_t c, a;
+# if FELUCCA_UAC_48K
+        c = uac.ring48 ? (UA_LO48 + UA_HI48) / 2u : (UA_LO + UA_HI) / 2u;
+# else
+        c = (UA_LO + UA_HI) / 2u;
+# endif
+        uac.favg16 += fill - (uac.favg16 >> 4);
+        a = uac.favg16 >> 4;
+        if (uac.cool)
+            uac.cool--;
+        else if (a > c + UA_LK_M) {
+            uac.adj = 1;
+            uac.cool = a > c + 3u * UA_LK_M ? 0u : UA_LK_GAP;
+            uac.favg16 -= 16u;
+        } else if (a + UA_LK_M < c) {
+            uac.adj = -1;
+            uac.cool = a + 3u * UA_LK_M < c ? 0u : UA_LK_GAP;
+            uac.favg16 += 16u;
+        }
+    }
+#endif
 }
+
+#if FELUCCA_UAC_LOCK == 2
+/* the piece (n frames, 3 <= n <= 32) as n - 1 (adj 1) or n + 1 (adj -1) frames spread over the same span: output i at
+ * position i * (n - 1) / (m - 1) of the piece, linear between its neighbours (a 3 % stretch for 0.7 ms, then the stream goes on one frame
+ * ahead or behind) */
+static int32_t ua_lk_buf[2u * 33u];
+static const int32_t *uac_lock_piece(const int32_t *x, uint32_t *pn)
+{
+    uint32_t n = *pn, m = uac.adj > 0 ? n - 1u : n + 1u, i, step;
+    step = ((n - 1u) << 16) / (m - 1u);                 /* (the first and the last frame stay where they are) */
+    for (i = 0; i < m; i++) {
+        uint32_t p = i * step, k = p >> 16, fr = p & 0xFFFFu, ch;
+        for (ch = 0; ch < 2u; ch++) {
+            int32_t a = x[2u * k + ch];
+            if (fr && k + 1u < n)
+                a += (int32_t)(((int64_t)(x[2u * k + 2u + ch] - a) * (int32_t)fr) >> 16);
+            ua_lk_buf[2u * i + ch] = a;
+        }
+    }
+    if (uac.adj > 0) uac.adj_up++;
+    else uac.adj_down++;
+    uac.adj = 0;
+    *pn = m;
+    return ua_lk_buf;
+}
+#endif
 
 static inline __attribute__((always_inline)) int32_t uac_s16(int32_t v)
 {
@@ -1208,6 +1283,10 @@ static __attribute__((noinline)) void uac_tap(const int32_t *out, uint32_t n)   
     uint32_t w = ua_w, i;
     if (!uac.feed)
         return;
+#if FELUCCA_UAC_LOCK == 2
+    if (uac.adj && n >= 3u && n <= 32u)
+        out = uac_lock_piece(out, &n);
+#endif
 #if FELUCCA_UAC_48K
     if (uac.ring48) {
         FR_FAR(uac_tap48)(out, n);
@@ -1262,6 +1341,9 @@ static uint32_t uac_packet(uint32_t *d)
             d[i] = 0;
         return n;
     }
+#if FELUCCA_UAC_LOCK
+    (void)lo; (void)hi;                                 /* (locked: the packet is always the nominal size) */
+#else
     if (uac.fill_min > hi) {
         n++;
         uac.adj_up++;
@@ -1269,6 +1351,7 @@ static uint32_t uac_packet(uint32_t *d)
         n--;
         uac.adj_down++;
     }
+#endif
     r = ua_r;
     fill = ua_w - r;
     RING_PUBLISH();                                     /* the slots after the index */
