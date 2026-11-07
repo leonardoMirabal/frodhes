@@ -18,5 +18,7 @@
 - Host: `tests/py/test_uac_lock.py`: sines from 20 Hz to 19 kHz at -600 to +600 ppm on both rates (distortion plus
   noise within 1 dB of the previous 48 kHz path), no zipper noise from a correction ramp, 10 minutes of the stream
   model at six drifts with render times up to 5.4 ms (only 44/45 or 48 frame packets, no underrun, overrun or missed
-  packet), no start transient, exact zero out for a silent render.
+  packet), no start transient, exact zero out for a silent render, and the
+  same stream bit for bit when the audio interrupt writes a whole block straight into the converter (less CPU at
+  48 kHz).
 - Device: to be measured (CPU at 48 kHz, recording on a phone or tablet and on a computer).

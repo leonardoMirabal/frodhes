@@ -12,7 +12,10 @@
  * Output length: about n x RATE / 44100 / (1 + PPM 1e-6) samples, n rounded up to whole blocks of 256 (the last
  * block padded with silence) (one output of latency, the resampler's hold). The
  * exit code is 1 if the ring overran (it cannot here: the pipe drains it every block). On stderr: "S <step>" at the
- * end (the last step, Q16 of 1/2560 frame).
+ * end (the last step, Q16 of 1/2560 frame). With UAC_RS_BLOCK=1 in the environment the block goes in as the firmware's
+ * tail feeds it (platform.c: the samples straight into the history, UAC_HIST, then one uac_tap_hist a block): the
+ * same output, bit for bit; UAC_RS_BLOCK=2: two blocks so, then one in pieces (a MASTER ramp's block, master_ramp), and
+ * so on. Exit 3 if a frame's right channel differs from its left (the history's R half misplaced).
  *   cc -O1 -w -Ifirmware/src -o build/uac_test/uac_rs_test tests/uac_rs_test.c
  */
 #include <stdint.h>
@@ -38,6 +41,8 @@ int main(int argc, char **argv)
     int32_t fr[2u * HALF_FRAMES];
     int16_t outb[UA_N];
     uint32_t b = 0, p, i, k;
+    const char *be = getenv("UAC_RS_BLOCK");
+    int mode = be ? be[0] - '0' : 0, lr = 0;
     if ((rate != 44100 && rate != 48000) || argc == 4 || argc > 5) {
         fprintf(stderr, "usage: uac_rs_test 44100|48000 PPM [PPM_END SECONDS] < in.s16 > out.s16\n");
         return 2;
@@ -57,14 +62,24 @@ int main(int argc, char **argv)
         uac_lock_set(q52(ppm));
         for (i = 0; i < HALF_FRAMES; i++)
             fr[2u * i] = fr[2u * i + 1u] = (int32_t)in[i];         /* (Q15: the ISR's int32 samples are Q15 here) */
-        for (p = 0; p < HALF_FRAMES; p += 32u)
-            uac_tap(fr + 2u * p, 32u);
-        for (k = 0, i = ua_r; i != ua_w; i++)
-            outb[k++] = (int16_t)(ua_ring[i & (UA_N - 1u)] & 0xFFFFu);
+        if (mode == 1 || (mode == 2 && b % 3u != 2u)) {
+            for (i = 0; i < HALF_FRAMES; i++) {
+                UAC_HIST[2u * i] = (int16_t)fr[2u * i];
+                UAC_HIST[2u * i + 1u] = (int16_t)fr[2u * i + 1u];
+            }
+            uac_tap_hist(HALF_FRAMES);
+        } else
+            for (p = 0; p < HALF_FRAMES; p += 32u)
+                uac_tap(fr + 2u * p, 32u);
+        for (k = 0, i = ua_r; i != ua_w; i++) {
+            uint32_t v = ua_ring[i & (UA_N - 1u)];
+            lr |= (v & 0xFFFFu) != v >> 16;
+            outb[k++] = (int16_t)(v & 0xFFFFu);
+        }
         fwrite(outb, sizeof outb[0], k, stdout);
         ua_r = ua_w;
         b++;
     }
     fprintf(stderr, "S %u\n", uac.lk_S);
-    return uac.overruns ? 1 : 0;
+    return uac.overruns ? 1 : lr ? 3 : 0;
 }
