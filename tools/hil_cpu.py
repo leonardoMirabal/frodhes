@@ -75,7 +75,8 @@ PORT_KEYS = ("frodhes", "felucca", "fm-1")                       # the FM-1's MI
 USB_BAD_RUNS = []                                     # scenarios with a USB underrun, missed packet or overrun
 USB_ITEMS = {1: "underruns", 2: "missed", 3: "overruns", 4: "adj_up", 5: "adj_down", 6: "fill_lo", 7: "fill_hi",
              8: "fill_low", 9: "per_min", 10: "per_max", 11: "stalls", 12: "state",
-             21: "sie_to"}                    # (21, 0.9.7: EP4 polls whose SIE access timed out, left queued)
+             21: "sie_to",                    # (21, 0.9.7: EP4 polls whose SIE access timed out, left queued)
+             22: "lock_ppm10"}                # (22, 0.9.9 FELUCCA_UAC_LOCK 1: the clock correction, 0.1 ppm + 8192)
 TICK_ITEMS = {13: "tick_max", 14: "blk_max", 15: "blk_mean", 16: "tick_mean"}   # (--tick: FM1_PROF_TICK builds)
 USB_SUM = ("underruns", "missed", "overruns", "adj_up", "adj_down", "stalls", "sie_to")   # deltas: summed
 USB_MIN = ("fill_lo", "fill_low", "per_min")

@@ -118,6 +118,10 @@ FR_COLD static void usb_health_reply(void)
     usb_health_send(10, isr_st.per_max);
     usb_health_send(11, now[5] - seen[5]);
     usb_health_send(21, now[6] - seen[6]);
+#if FELUCCA_UAC_LOCK == 1
+    v = (uint32_t)(uac.lk_u10 + 8192); if (v > 16383u) v = 16383u;  /* the clock correction, 0.1 ppm + 8192 */
+    usb_health_send(22, v);
+#endif
     usb_health_send(12, (uint32_t)(uac.alt != 0) | (uint32_t)(uac.flowing != 0) << 1 | (uint32_t)(uac.r48 != 0) << 2 |
                         (uint32_t)(uac.go != 0) << 3);
     usb_health_send(17, fl_off_max_us);

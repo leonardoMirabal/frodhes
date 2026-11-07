@@ -38,11 +38,24 @@
 #define FELUCCA_UAC_PHASE 0                     /* 1: the EP4 poll on its own phase (uac_tick, every TIMER5 tick);
                                                  * Frodhes' platform.c turns it on */
 #endif
+#ifndef FELUCCA_UAC_LOCK
+#define FELUCCA_UAC_LOCK 0                      /* Frodhes 0.9.9 (iOS): the stream locked to the USB frame clock: every
+                                                 * packet nominal (44.1: 9 x 44 + 45 per 10 ms, 48: 48), the FM-1's clock
+                                                 * drift taken out of the samples instead. 1: a fine-ratio resampler at
+                                                 * both rates (uac_tap_lock), steered by the ring's fill; 2: the diagnostic (one frame
+                                                 * dropped or repeated, stretched over 32 frames, when the ring's
+                                                 * average fill leaves its band); 0: the packet sizes follow the fill */
+#endif
 #if !FELUCCA_UAC
 #undef FELUCCA_UAC_48K
 #define FELUCCA_UAC_48K 0
 #undef FELUCCA_UAC_PHASE
 #define FELUCCA_UAC_PHASE 0
+#undef FELUCCA_UAC_LOCK
+#define FELUCCA_UAC_LOCK 0
+#endif
+#if FELUCCA_UAC_LOCK == 1 && !FELUCCA_UAC_48K
+#error "FELUCCA_UAC_LOCK 1 uses the 48 kHz resampler's history (FELUCCA_UAC_48K)"
 #endif
 enum { S_FADDR = 0, S_POWER = 1, S_INTRTX1 = 2, S_INTRTX2 = 3, S_INTRRX1 = 4, S_INTRRX2 = 5, S_INTRUSB = 6,
        S_INTRTX1E = 7, S_INTRTX2E = 8, S_INTRRX1E = 9, S_INTRRX2E = 10, S_INTRUSBE = 11, S_FRAME1 = 12,
@@ -139,6 +152,23 @@ static struct {
     volatile uint8_t idx4;       /* the SIE's INDEX is 4 since the EP4 poll wrote it (sie_wr clears it: any INDEX write) */
     uint32_t ph_early, ph_late;  /* the poll moved one tick earlier / later (diagnostics) */
 #endif
+#if FELUCCA_UAC_LOCK == 1
+    uint32_t lk_P;               /* the next output's place after the newest input frame (Q16 of 1/2560 frame) */
+    uint32_t lk_S;               /* the step a frame out: 2560 / 44.1 frame x 2^16 x (147 / 160 at 48 kHz), drift in */
+    uint32_t lk_inv2;            /* ~2^44 / (2 lk_S): the correction's scale */
+    uint32_t lk_g;               /* the held output's correction gain (its fraction of a phase x lk_inv2) */
+    int32_t lk_sp[2], lk_sc[2];  /* the sums (>> UA_LK_SQ) of the output before the held one and of the held one (L, R) */
+    int32_t lk_e1, lk_ef;        /* the fill's error (Q12 frames) through two smoothing stages */
+    uint32_t lk_blocks;          /* blocks since the ring was primed (the loop's gains by stage) */
+    uint32_t lk_n;               /* frames in the last packet */
+    int64_t lk_I;                /* the loop's integral: the drift (Q52 of 1.0); kept over restarts and rate changes */
+    int32_t lk_u10;              /* the last correction in 0.1 ppm (CC 116 item 22) */
+#endif
+#if FELUCCA_UAC_LOCK == 2
+    uint32_t favg16;             /* the ring's fill at a render's start, averaged (x 16: 1/16 of the way each block) */
+    int8_t adj;                  /* the next piece tapped in: 1 = one frame fewer, -1 = one more (adj_up / adj_down) */
+    uint8_t cool;                /* blocks to wait before the next correction */
+#endif
 #ifdef UAC_STAMP
     volatile uint32_t t_q;       /* UAC_STAMP() when the last packet after a host take was queued (uac_slice_ok;
                                   * Frodhes' platform.c defines UAC_STAMP and UAC_SLICE_WIN) */
@@ -147,6 +177,70 @@ static struct {
 #if FELUCCA_UAC_PHASE
 #define UA_PROBE 16u             /* (uac_slot) frames between two early looks */
 #define UA_LOOKS 4u              /* (uac_slot) the ticks after a late poll that look again */
+#endif
+#if FELUCCA_UAC_LOCK == 1
+#include "uac_fir_lock.h"
+/* Frodhes 0.9.9 (iOS): the locked stream. The packets take exactly the host's rate; the samples are read from the
+ * 44.1 kHz render at a step that holds the ring's fill, so the FM-1's clock drift (its I2S runs ~44,117.6 Hz, not
+ * 44,100) never reaches the host as a packet size. uac_tap_lock: each output at its place, 2560 phases a frame
+ * (uac_fir_lock.h, the nearest one below it) plus the rest of the way as a first-order term (the slope of the outputs
+ * either side x the fraction of a phase left: one output of latency); the knee and clamp of the 48 kHz path.
+ * uac_render_start: the error of the fill at the block's start (the partial packet since the last one went out taken
+ * off: a low-noise reading) through two smoothing stages into a PI loop on the step, fast for 3 s after a start, then
+ * slower (12 s), then 0.005 Hz: the step moves by well under 0.1 ppm from block to block (no zipper, no flutter). The
+ * integral (the drift) is kept over restarts. tests/py/test_uac_lock.py. */
+#define UA_LK_ONE (UAC_FL_L << 16)                       /* one 44.1 kHz frame in lk_P units */
+#define UA_LK_S48 (147u * 16u * 65536u)                  /* 48 kHz: 147 / 160 of a frame */
+#define UA_LK_MAX ((int64_t)1 << 42)                      /* the correction's limit: 2^-10 (977 ppm) in Q52 */
+#ifndef UAC_STAMP_MS
+#ifdef FM1_TICKS_PER_US
+#define UAC_STAMP_MS (FM1_TICKS_PER_US * 1000u)           /* (UAC_STAMP's ticks a millisecond) */
+#endif
+#endif
+#if defined(__ELF__) && !defined(DINGHY_HOST)
+#define UA_LK_POOL __attribute__((section(".pool")))
+#else
+#define UA_LK_POOL
+#endif
+static int16_t uac_fl[UAC_FL_L / 2u][UAC_FL_N] UA_LK_POOL;   /* the table in RAM (the render reads a row an output:
+                                                              * scattered over 30 KB, it would miss the flash cache) */
+static uint8_t uac_fl_ok;
+#define UA_LK_SQ 4                              /* (uac_tap_lock: its sums >> 4) */
+#define UA_LK_I0 2026619832317LL                        /* the loop's start: +450 ppm (Q52), the FM-1's I2S as measured
+                                                         * against a computer (+450.8 at both rates): the first lock
+                                                         * after boot starts near the answer */
+static void uac_lock_init(void)                         /* boot (usb_start): the table into RAM */
+{
+    if (!uac_fl_ok) {
+        memcpy(uac_fl, UAC_FL, sizeof uac_fl);
+        uac.lk_I = UA_LK_I0;
+        uac_fl_ok = 1;
+    }
+}
+static void uac_lock_set(int64_t u)                     /* the step from the loop's output u (Q52 of 1.0: + = fewer
+                                                         * outputs, the FM-1's clock fast) */
+{
+    uint32_t s0 = uac.ring48 ? UA_LK_S48 : UA_LK_ONE, st;
+    int32_t u32;
+    if (u > UA_LK_MAX) u = UA_LK_MAX;
+    if (u < -UA_LK_MAX) u = -UA_LK_MAX;
+    u32 = (int32_t)(u >> 20);                           /* (Q32 of 1.0, |u32| <= 2^22) */
+    st = s0 + (uint32_t)(int32_t)(((int64_t)s0 * u32) >> 32);
+    uac.lk_S = st;
+    uac.lk_inv2 = 0xFFFFFFFFu / ((2u * st) >> 12);
+    uac.lk_u10 = (int32_t)(((int64_t)u32 * 10000000) >> 32);
+}
+/* the loop's stages: until the block count, smoothing shift, KP and KI (Q52 of 1.0 a Q12 frame of error: 2 zeta wn /
+ * 48000 x 2^40 and wn^2 / 48000 x 256 / 44100 x 2^40; zeta 0.7, fn 0.3 / 0.08 / 0.005 Hz; tests/py/test_uac_lock.py) */
+static const struct { uint32_t until; uint8_t sh; int32_t kp, ki; } UA_LK_ST[3] = {
+    {517u, 3u, 60448809, 472457},                       /* 3 s: 0.3 Hz (a start: the fill within ~+-100 frames) */
+    {2067u, 5u, 16119682, 33597},                       /* 12 s: 0.08 Hz */
+    {0xFFFFFFFFu, 8u, 1007480, 131},                    /* then 0.005 Hz */
+};
+#endif
+#if FELUCCA_UAC_LOCK == 2
+#define UA_LK_M 8u               /* (uac_render_start) the average fill's dead band around the band's middle, frames */
+#define UA_LK_GAP 8u             /* blocks between two corrections (46 ms) */
 #endif
 #if FELUCCA_UAC_48K
 #include "uac_fir.h"
@@ -1100,6 +1194,24 @@ static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, bef
         RING_PUBLISH();
         ua_w = r + prime;
         uac.fill_min = prime;
+#if FELUCCA_UAC_LOCK == 1
+        for (i = 0; i < RS_B; i++)                      /* (both rates: the resampler starts from silence) */
+            rs.l[i] = rs.r[i] = 0;
+        uac.lk_P = 0;
+        uac.lk_g = 0;
+        uac.lk_sp[0] = uac.lk_sp[1] = uac.lk_sc[0] = uac.lk_sc[1] = 0;
+        uac.lk_e1 = uac.lk_ef = 0;
+        uac.lk_blocks = 0;
+        if (!uac.lk_n)
+            uac.lk_n = uac.ring48 ? 48u : 44u;
+        uac_lock_set(uac.lk_I);                         /* (the drift as last found) */
+        uac_lock_init();                                /* (done at boot: usb_start; the host tests start here) */
+#endif
+#if FELUCCA_UAC_LOCK == 2
+        uac.favg16 = prime << 4;
+        uac.adj = 0;
+        uac.cool = UA_LK_GAP;
+#endif
         RING_PUBLISH();
         uac.go = 1;
         return;
@@ -1110,7 +1222,85 @@ static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, bef
         uac.fill_lo = fill;
     if (fill > uac.fill_hi)
         uac.fill_hi = fill;
+#if FELUCCA_UAC_LOCK == 1
+    {
+        uint32_t c = uac.ring48 ? (UA_LO48 + UA_HI48) / 2u : (UA_LO + UA_HI) / 2u, k = 0, part = 0;
+        int32_t e;
+        int64_t u;
+#if defined(UAC_STAMP) && defined(UAC_STAMP_MS)
+        {   /* the frames the host has taken since the last packet went in (the fill falls a packet at a time; this
+             * reading falls smoothly) */
+            uint32_t dt = UAC_STAMP() - uac.t_q;
+            if (uac.flowing && dt < UAC_STAMP_MS)
+                part = uac.lk_n * dt * 256u / (UAC_STAMP_MS / 16u);
+        }
+#endif
+        e = (int32_t)((fill - c) << 12) - (int32_t)part;
+        while (uac.lk_blocks >= UA_LK_ST[k].until)
+            k++;
+        uac.lk_blocks++;
+        uac.lk_e1 += (e - uac.lk_e1) >> UA_LK_ST[k].sh;
+        uac.lk_ef += (uac.lk_e1 - uac.lk_ef) >> UA_LK_ST[k].sh;
+        uac.lk_I += (int64_t)uac.lk_ef * UA_LK_ST[k].ki;
+        if (uac.lk_I > UA_LK_MAX) uac.lk_I = UA_LK_MAX;
+        if (uac.lk_I < -UA_LK_MAX) uac.lk_I = -UA_LK_MAX;
+        u = uac.lk_I + (int64_t)uac.lk_ef * UA_LK_ST[k].kp;
+        uac_lock_set(u);
+    }
+#endif
+#if FELUCCA_UAC_LOCK == 2
+    {   /* the packets take the host's rate exactly; the render gives the FM-1's: the drift moves the fill (the
+         * fill at a render's start jumps by up to a packet with the 1 ms frames' place: averaged over ~16 blocks).
+         * Out of the band's middle +- UA_LK_M: the next piece tapped in loses or gains one frame, at most one
+         * correction every UA_LK_GAP blocks (46 ms: 21.5 frames a second, 490 ppm; far out, as after a host that skipped a frame, every block) */
+        uint32_t c, a;
+# if FELUCCA_UAC_48K
+        c = uac.ring48 ? (UA_LO48 + UA_HI48) / 2u : (UA_LO + UA_HI) / 2u;
+# else
+        c = (UA_LO + UA_HI) / 2u;
+# endif
+        uac.favg16 += fill - (uac.favg16 >> 4);
+        a = uac.favg16 >> 4;
+        if (uac.cool)
+            uac.cool--;
+        else if (a > c + UA_LK_M) {
+            uac.adj = 1;
+            uac.cool = a > c + 3u * UA_LK_M ? 0u : UA_LK_GAP;
+            uac.favg16 -= 16u;
+        } else if (a + UA_LK_M < c) {
+            uac.adj = -1;
+            uac.cool = a + 3u * UA_LK_M < c ? 0u : UA_LK_GAP;
+            uac.favg16 += 16u;
+        }
+    }
+#endif
 }
+
+#if FELUCCA_UAC_LOCK == 2
+/* the piece (n frames, 3 <= n <= 32) as n - 1 (adj 1) or n + 1 (adj -1) frames spread over the same span: output i at
+ * position i * (n - 1) / (m - 1) of the piece, linear between its neighbours (a 3 % stretch for 0.7 ms, then the stream goes on one frame
+ * ahead or behind) */
+static int32_t ua_lk_buf[2u * 33u];
+static const int32_t *uac_lock_piece(const int32_t *x, uint32_t *pn)
+{
+    uint32_t n = *pn, m = uac.adj > 0 ? n - 1u : n + 1u, i, step;
+    step = ((n - 1u) << 16) / (m - 1u);                 /* (the first and the last frame stay where they are) */
+    for (i = 0; i < m; i++) {
+        uint32_t p = i * step, k = p >> 16, fr = p & 0xFFFFu, ch;
+        for (ch = 0; ch < 2u; ch++) {
+            int32_t a = x[2u * k + ch];
+            if (fr && k + 1u < n)
+                a += (int32_t)(((int64_t)(x[2u * k + 2u + ch] - a) * (int32_t)fr) >> 16);
+            ua_lk_buf[2u * i + ch] = a;
+        }
+    }
+    if (uac.adj > 0) uac.adj_up++;
+    else uac.adj_down++;
+    uac.adj = 0;
+    *pn = m;
+    return ua_lk_buf;
+}
+#endif
 
 static inline __attribute__((always_inline)) int32_t uac_s16(int32_t v)
 {
@@ -1124,6 +1314,7 @@ static inline __attribute__((always_inline)) int32_t uac_s16(int32_t v)
  * stays under 2.0: no overflow). Frodhes (0.9.5 cpu-trim): in passes of up to RS_C frames, the pass's frames into
  * the history first, then its outputs (the same frames, the same order: tests/py/test_uac_fir.py, bit for bit) */
 #define UAC_KNEE 24576                                  /* Frodhes: the 48 kHz knee (0.75 of full scale) */
+#if FELUCCA_UAC_LOCK != 1                               /* (locked: uac_tap_lock serves both rates) */
 static FR_RAM __attribute__((noinline)) void uac_tap48(const int32_t *out, uint32_t n)
 {
     uint32_t w = ua_w, i, wk = w, ph = rs.ph;
@@ -1202,13 +1393,113 @@ static FR_RAM __attribute__((noinline)) void uac_tap48(const int32_t *out, uint3
     ua_w = wk;
 }
 #endif
+#endif
+
+#if FELUCCA_UAC_LOCK == 1
+/* one piece of the render (n frames) into the ring at the locked step: as uac_tap48 (the history, passes of RS_C
+ * frames, the 12 taps unrolled on 64-bit sums, the knee, the clamp), each output at phase lk_P >> 16 of 2560 (phase
+ * 2559 - j backwards for j >= 1280), then held one output: written as its sum + (the next sum - the one before) x its
+ * fraction of a phase / 2 steps (the slope across it), so the fraction of a phase below the table's grid costs nothing */
+static FR_RAM __attribute__((noinline)) void uac_tap_lock(const int32_t *out, uint32_t n)
+{
+    uint32_t w = ua_w, i, wk = w, P = uac.lk_P, S = uac.lk_S, inv2 = uac.lk_inv2, g = uac.lk_g;
+    int32_t spl = uac.lk_sp[0], spr = uac.lk_sp[1], scl = uac.lk_sc[0], scr = uac.lk_sc[1];
+    uint32_t *ring = ua_ring;
+    if (UA_N - (w - ua_r) < n + n / 8u + 2u) {         /* nobody reads: drop the piece (<= n * 160 / 147 + 1) */
+        uac.overruns++;
+        return;
+    }
+    while (n) {
+        uint32_t c = n < RS_C ? n : RS_C;
+        int16_t *hp = rs.l + (UAC_FL_N - 1u);
+        for (i = 0; i < c; i++) {                       /* (no clip: the tail clipped them, +-32767: TAIL_PRE) */
+            hp[i] = (int16_t)out[2u * i];
+            hp[RS_B + i] = (int16_t)out[2u * i + 1u];
+        }
+        for (i = 0; i < c; i++) {
+            const int16_t *x = rs.l + i;                /* the window: frame i - 11 .. i (R: x[RS_B]) */
+            while (P < UA_LK_ONE) {
+                uint32_t j = P >> 16;
+                int64_t al = 1 << (UAC_FL_Q - 1), ar = 1 << (UAC_FL_Q - 1);
+                int32_t sl, sr, vl, vr;
+#define LK_TAP(i, t) do { int32_t t_ = (t); al += (int64_t)t_ * x[i]; ar += (int64_t)t_ * x[RS_B + (i)]; } while (0)
+#define LK_TAPS(c, d) do { LK_TAP(0, c[0]); LK_TAP(1, c[d]); LK_TAP(2, c[2 * d]); LK_TAP(3, c[3 * d]);             \
+                           LK_TAP(4, c[4 * d]); LK_TAP(5, c[5 * d]); LK_TAP(6, c[6 * d]); LK_TAP(7, c[7 * d]);     \
+                           LK_TAP(8, c[8 * d]); LK_TAP(9, c[9 * d]); LK_TAP(10, c[10 * d]); LK_TAP(11, c[11 * d]); } while (0)
+                _Static_assert(UAC_FL_N == 12u && UAC_FIR_N == 12u, "LK_TAPS: 12 taps, the history's 11 frames");
+                if (j < UAC_FL_L / 2u) {
+                    const int16_t *t = uac_fl[j];
+                    LK_TAPS(t, 1);
+                } else {
+                    const int16_t *t = &uac_fl[UAC_FL_L - 1u - j][UAC_FL_N - 1u];
+                    LK_TAPS(t, -1);
+                }
+#undef LK_TAPS
+#undef LK_TAP
+                sl = (int32_t)(al >> UA_LK_SQ);         /* (the sums kept with 11 bits below the output's LSB: |s| <
+                                                         * 2^27, so a difference fits 32 bits and the correction is one
+                                                         * 32 x 32 multiply's high word; the high word of each sum is
+                                                         * used, so both halves keep the one-instruction 64-bit MACs) */
+                sr = (int32_t)(ar >> UA_LK_SQ);
+                vl = (scl + (int32_t)(((int64_t)(sl - spl) * (int32_t)g) >> 32)) >> (UAC_FL_Q - UA_LK_SQ);
+                vr = (scr + (int32_t)(((int64_t)(sr - spr) * (int32_t)g) >> 32)) >> (UAC_FL_Q - UA_LK_SQ);
+                if (((uint32_t)(vl + UAC_KNEE) | (uint32_t)(vr + UAC_KNEE)) > 2u * UAC_KNEE) {
+                    /* (either above the knee, rare: the 48 kHz path's knee, then the clamp; under it both fit 16 bits
+                     * as they are: the same samples, one test) */
+                    if ((uint32_t)(vl + UAC_KNEE) > 2u * UAC_KNEE)
+                        vl = vl > 0 ? UAC_KNEE + ((vl - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vl - UAC_KNEE) >> 1);
+                    if ((uint32_t)(vr + UAC_KNEE) > 2u * UAC_KNEE)
+                        vr = vr > 0 ? UAC_KNEE + ((vr - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vr - UAC_KNEE) >> 1);
+                    vl = vl < -32768 ? -32768 : vl; vl = vl > 32767 ? 32767 : vl;
+                    vr = vr < -32768 ? -32768 : vr; vr = vr > 32767 ? 32767 : vr;
+                }
+                ring[wk++ & (UA_N - 1u)] = (uint32_t)(uint16_t)vl | (uint32_t)vr << 16;
+                spl = scl; scl = sl; spr = scr; scr = sr;
+                g = ((P & 0xFFFFu) >> 1) * inv2 >> 11;  /* (this output's fraction x 2^32 / 2 steps, < 2^20) */
+                P += S;
+            }
+            P -= UA_LK_ONE;
+        }
+        for (i = 0; i < UAC_FL_N - 1u; i++) {           /* the last frames before the next pass */
+            rs.l[i] = rs.l[c + i];
+            rs.r[i] = rs.r[c + i];
+        }
+        out += 2u * c;
+        n -= c;
+    }
+    uac.lk_P = P;
+    uac.lk_g = g;
+    uac.lk_sp[0] = spl; uac.lk_sp[1] = spr; uac.lk_sc[0] = scl; uac.lk_sc[1] = scr;
+#if FELUCCA_UAC_TONE == 1
+    {   /* bench (as uac_tap48's): the frames made replaced by triangles of period 100 frames (L, R in antiphase) */
+        static uint32_t phl;
+        for (i = w; i != wk; i++, phl = phl == 99u ? 0u : phl + 1u) {
+            uint32_t q = phl < 50u ? phl : 100u - phl, q2 = phl < 50u ? 50u - phl : phl - 50u;
+            ring[i & (UA_N - 1u)] = (uint32_t)(uint16_t)(int16_t)((int32_t)q * 1000 - 25000) |
+                                    (uint32_t)(uint16_t)(int16_t)((int32_t)q2 * 1000 - 25000) << 16;
+        }
+    }
+#endif
+    RING_PUBLISH();
+    ua_w = wk;
+}
+#endif
 
 static __attribute__((noinline)) void uac_tap(const int32_t *out, uint32_t n)   /* audio ISR: one block (Q15) */
 {
     uint32_t w = ua_w, i;
     if (!uac.feed)
         return;
-#if FELUCCA_UAC_48K
+#if FELUCCA_UAC_LOCK == 2
+    if (uac.adj && n >= 3u && n <= 32u)
+        out = uac_lock_piece(out, &n);
+#endif
+#if FELUCCA_UAC_LOCK == 1
+    FR_FAR(uac_tap_lock)(out, n);                       /* (both rates) */
+    (void)w; (void)i;
+    return;
+#endif
+#if FELUCCA_UAC_48K && FELUCCA_UAC_LOCK != 1
     if (uac.ring48) {
         FR_FAR(uac_tap48)(out, n);
         return;
@@ -1262,6 +1553,9 @@ static uint32_t uac_packet(uint32_t *d)
             d[i] = 0;
         return n;
     }
+#if FELUCCA_UAC_LOCK
+    (void)lo; (void)hi;                                 /* (locked: the packet is always the nominal size) */
+#else
     if (uac.fill_min > hi) {
         n++;
         uac.adj_up++;
@@ -1269,6 +1563,7 @@ static uint32_t uac_packet(uint32_t *d)
         n--;
         uac.adj_down++;
     }
+#endif
     r = ua_r;
     fill = ua_w - r;
     RING_PUBLISH();                                     /* the slots after the index */
@@ -1282,6 +1577,9 @@ static uint32_t uac_packet(uint32_t *d)
             d[i] = last;
     }
     uac.last = d[n - 1u];
+#if FELUCCA_UAC_LOCK == 1
+    uac.lk_n = n;
+#endif
     RING_PUBLISH();
     ua_r = r + k;
     uac.pkts++;
@@ -1534,6 +1832,9 @@ static void usb_start(void)                             /* boot, or main-loop re
     uac.idx4 = 0;                                       /* (the reset puts INDEX back to 0; usb_retry runs this with
                                                          * usb.config and uac.alt still set; usb.up is 0 meanwhile, so
                                                          * no EP4 poll runs until the end) */
+#endif
+#if FELUCCA_UAC_LOCK == 1
+    uac_lock_init();                                    /* (the locked stream's table into RAM, once) */
 #endif
     fm1_usb_reset();                                    /* reset whatever the ROM left */
     fm1_delay_ms(25);
