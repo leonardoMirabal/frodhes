@@ -22,7 +22,7 @@ complete source under the same licence too.
 | What | Licence | Where |
 | --- | --- | --- |
 | Terminus font 8x16 (`assets/fonts/ter-u16n.bdf`), rendered into `firmware/gen/felucca_font.h` by `tools/gen_font.py` | SIL OFL 1.1 | `assets/fonts/Terminus-LICENSE.txt` |
-| Inter Tight (`assets/fonts/InterTight[wght].ttf`), rendered into `firmware/gen/aa_font.h` by `tools/gen_aa_font.py` (the screen's values and labels) | SIL OFL 1.1, Copyright 2022 The Inter Project Authors | `assets/fonts/OFL-InterTight.txt` |
+| Inter Tight (`assets/fonts/InterTight[wght].ttf`), rendered into `firmware/gen/aa_font.h` by `tools/gen_aa_font.py` (the screen's values and labels); the desktop plugin's UI (`plugin/ui/`) draws its text from the same file | SIL OFL 1.1, Copyright 2022 The Inter Project Authors | `assets/fonts/OFL-InterTight.txt` |
 | JieLi AC79 SDK: `uboot.boot`, `cfg_tool.bin`, `eq_cfg_hw.bin` are read from your SDK checkout at build time and placed in the package; no SDK files are in this tree. Every release attaches the licence text as `Apache-2.0.txt` | Apache-2.0 | `LICENSES/Apache-2.0.txt`; <https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK> |
 
 ## Trademarks
