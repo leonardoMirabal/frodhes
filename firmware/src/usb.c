@@ -1412,9 +1412,9 @@ static FR_RAM __attribute__((noinline)) void uac_tap_lock(const int32_t *out, ui
     while (n) {
         uint32_t c = n < RS_C ? n : RS_C;
         int16_t *hp = rs.l + (UAC_FL_N - 1u);
-        for (i = 0; i < c; i++) {
-            hp[i] = (int16_t)uac_s16(out[2u * i]);
-            hp[RS_B + i] = (int16_t)uac_s16(out[2u * i + 1u]);
+        for (i = 0; i < c; i++) {                       /* (no clip: the tail clipped them, +-32767: TAIL_PRE) */
+            hp[i] = (int16_t)out[2u * i];
+            hp[RS_B + i] = (int16_t)out[2u * i + 1u];
         }
         for (i = 0; i < c; i++) {
             const int16_t *x = rs.l + i;                /* the window: frame i - 11 .. i (R: x[RS_B]) */
@@ -1443,12 +1443,16 @@ static FR_RAM __attribute__((noinline)) void uac_tap_lock(const int32_t *out, ui
                 sr = (int32_t)(ar >> UA_LK_SQ);
                 vl = (scl + (int32_t)(((int64_t)(sl - spl) * (int32_t)g) >> 32)) >> (UAC_FL_Q - UA_LK_SQ);
                 vr = (scr + (int32_t)(((int64_t)(sr - spr) * (int32_t)g) >> 32)) >> (UAC_FL_Q - UA_LK_SQ);
-                if ((uint32_t)(vl + UAC_KNEE) > 2u * UAC_KNEE)   /* (the 48 kHz path's knee, then the clamp) */
-                    vl = vl > 0 ? UAC_KNEE + ((vl - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vl - UAC_KNEE) >> 1);
-                if ((uint32_t)(vr + UAC_KNEE) > 2u * UAC_KNEE)
-                    vr = vr > 0 ? UAC_KNEE + ((vr - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vr - UAC_KNEE) >> 1);
-                vl = vl < -32768 ? -32768 : vl; vl = vl > 32767 ? 32767 : vl;
-                vr = vr < -32768 ? -32768 : vr; vr = vr > 32767 ? 32767 : vr;
+                if (((uint32_t)(vl + UAC_KNEE) | (uint32_t)(vr + UAC_KNEE)) > 2u * UAC_KNEE) {
+                    /* (either above the knee, rare: the 48 kHz path's knee, then the clamp; under it both fit 16 bits
+                     * as they are: the same samples, one test) */
+                    if ((uint32_t)(vl + UAC_KNEE) > 2u * UAC_KNEE)
+                        vl = vl > 0 ? UAC_KNEE + ((vl - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vl - UAC_KNEE) >> 1);
+                    if ((uint32_t)(vr + UAC_KNEE) > 2u * UAC_KNEE)
+                        vr = vr > 0 ? UAC_KNEE + ((vr - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vr - UAC_KNEE) >> 1);
+                    vl = vl < -32768 ? -32768 : vl; vl = vl > 32767 ? 32767 : vl;
+                    vr = vr < -32768 ? -32768 : vr; vr = vr > 32767 ? 32767 : vr;
+                }
                 ring[wk++ & (UA_N - 1u)] = (uint32_t)(uint16_t)vl | (uint32_t)vr << 16;
                 spl = scl; scl = sl; spr = scr; scr = sr;
                 g = ((P & 0xFFFFu) >> 1) * inv2 >> 11;  /* (this output's fraction x 2^32 / 2 steps, < 2^20) */
