@@ -136,6 +136,7 @@ static struct {
     uint8_t probe;               /* polls since the last early look */
     uint8_t look;                /* the looks after a late poll (0: none) */
     uint8_t acq;                 /* lock on: the poll after the next wait looks on the following ticks */
+    volatile uint8_t idx4;       /* the SIE's INDEX is 4 since the EP4 poll wrote it (sie_wr clears it: any INDEX write) */
     uint32_t ph_early, ph_late;  /* the poll moved one tick earlier / later (diagnostics) */
 #endif
 #ifdef UAC_STAMP
@@ -396,11 +397,21 @@ static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)
 static void sie_wr(uint32_t r, uint32_t v)
 {
     uint32_t n = 20000;
+#if FELUCCA_UAC && FELUCCA_UAC_PHASE
+    if (r == S_INDEX)
+        uac.idx4 = 0;                                   /* (uac_ep4_poll: INDEX is no longer known to be 4. Before the
+                                                         * write and after it: an EP4 poll in TIMER5 may preempt the
+                                                         * write anywhere) */
+#endif
     if (!fm1_usb_sie_on())
         return;
     fm1_usb_sie_wr_start(r, v);
     while (!fm1_usb_sie_done() && --n)
         ;
+#if FELUCCA_UAC && FELUCCA_UAC_PHASE
+    if (r == S_INDEX)
+        uac.idx4 = 0;
+#endif
     if (n)
         usb.timeouts = 0;                               /* consecutive failures only */
     else if (++usb.timeouts > 50u)
@@ -1290,13 +1301,30 @@ static uint32_t uac_ep4_poll(uint32_t probe)
     uint32_t csr, n, w;
     if (!usb.up || !usb.config || !uac.alt)
         return 0;
+#if FELUCCA_UAC_PHASE
+    if (!fm1_usb_sie_on()) {                            /* (the SIE held in reset: sie_rd's 0 is not "free", and INDEX */
+        uac.idx4 = 0;                                   /*  is lost; not a wait either) */
+        return 0;
+    }
+    if (!uac.idx4) {                                    /* (0.9.9: INDEX written only when another access changed it:
+                                                         * an SIE access costs ~2 us of the audio ISR the poll nests in,
+                                                         * and the phase-locked poll's looks read TXCSR1 alone) */
+        sie_wr(S_INDEX, 4);
+        uac.idx4 = !usb.timeouts;
+    }
+    csr = uac.idx4 ? sie_rd(S_TXCSR1) : 0x01u;
+#else
     sie_wr(S_INDEX, 4);
     csr = usb.timeouts ? 0x01u : sie_rd(S_TXCSR1);
+#endif
     if (usb.timeouts) {                                 /* (0.9.7) the INDEX write or the TXCSR1 read timed out: sie_rd's
                                                          * 0 is not "free" (a new packet over the queued one lost its
                                                          * frames); as still queued, counted */
         csr = 0x01u;
         uac.sie_to++;
+#if FELUCCA_UAC_PHASE
+        uac.idx4 = 0;                                   /* (write INDEX again next time) */
+#endif
     }
     if (csr & 0x01u) {                                  /* still queued */
         if (!probe && uac.wait < 255u && ++uac.wait == 40u && uac.flowing) {
@@ -1502,6 +1530,11 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
 static void usb_start(void)                             /* boot, or main-loop retry while usb.up == 0 */
 {
     usb.timeouts = 0;
+#if FELUCCA_UAC_PHASE
+    uac.idx4 = 0;                                       /* (the reset puts INDEX back to 0; usb_retry runs this with
+                                                         * usb.config and uac.alt still set; usb.up is 0 meanwhile, so
+                                                         * no EP4 poll runs until the end) */
+#endif
     fm1_usb_reset();                                    /* reset whatever the ROM left */
     fm1_delay_ms(25);
     fm1_usb_attach(ep0buf);
@@ -1532,5 +1565,8 @@ static void usb_detach(void)
 {
     usb.detached = 1;
     usb.up = 0;
+#if FELUCCA_UAC_PHASE
+    uac.idx4 = 0;
+#endif
     fm1_usb_off();
 }
