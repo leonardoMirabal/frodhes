@@ -46,8 +46,10 @@ static void sim_preempt(void);
 #define HALF_FRAMES 256u
 #define FELUCCA_UAC 1
 static double now;                                     /* the time (ns) */
-#define UAC_STAMP() ((uint32_t)(now / 1e3))            /* (us: usb.c uac_slice_ok, --align) */
-#define UAC_SLICE_WIN 200u
+#define UAC_STAMP() ((uint32_t)(now / 1e3 * 24.0))     /* (24 MHz ticks, as fm1_ticks: usb.c uac_slice_ok, --align,
+                                                         * the locked stream's fill reading) */
+#define UAC_SLICE_WIN (200u * 24u)
+#define UAC_STAMP_MS 24000u
 static void fm1_delay_ms(uint32_t ms) { (void)ms; }   /* (usb_start: never called here) */
 #include "../hal/fm1_usb.h"                         /* the real helpers first; usb.c's calls go to the model: */
 static uint32_t sim_sie_on(void);
@@ -445,7 +447,7 @@ static void run(const cfg_t *c)
 int main(int argc, char **argv)
 {
 #if FELUCCA_UAC_LOCK
-    static const double ppms[] = {400, 176, 0, -400, 540, -540};
+    static const double ppms[] = {451, 600, 176, 0, -400, -600};
 #else
     static const double ppms[] = {540, 0, -540};
 #endif
