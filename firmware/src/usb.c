@@ -159,6 +159,8 @@ static struct {
     uint32_t lk_g;               /* the held output's correction gain (its fraction of a phase x lk_inv2) */
     int32_t lk_sp[2], lk_sc[2];  /* the sums (>> UA_LK_SQ) of the output before the held one and of the held one (L, R) */
     int32_t lk_e1, lk_ef;        /* the fill's error (Q12 frames) through two smoothing stages */
+    int32_t lk_c;                /* the fill the loop holds (Q12 frames): the one found after the prime (UA_LK_CAP) */
+    uint8_t lk_fast;             /* the fill > UA_LK_FAR off: the 0.08 Hz stage */
     uint32_t lk_blocks;          /* blocks since the ring was primed (the loop's gains by stage) */
     uint32_t lk_n;               /* frames in the last packet */
     int64_t lk_I;                /* the loop's integral: the drift (Q52 of 1.0); kept over restarts and rate changes */
@@ -205,6 +207,11 @@ static struct {
 static int16_t uac_fl[UAC_FL_L / 2u][UAC_FL_N] UA_LK_POOL;   /* the table in RAM (the render reads a row an output:
                                                               * scattered over 30 KB, it would miss the flash cache) */
 static uint8_t uac_fl_ok;
+#define UA_LK_FAR (24 << 12)                    /* (the fill this far off its mark: the 0.08 Hz stage, Q12) */
+#define UA_LK_PRIME 42u                         /* (frames: the fill found ~42 under the middle without) */
+#define UA_LK_CAP 32u                           /* (the blocks averaged for the fill to hold: 186 ms) */
+#define UA_LK_CAP_SH 5
+#define UA_LK_CAP_BAND 64u                      /* (that fill within +-64 frames of the band's middle) */
 #define UA_LK_SQ 4                              /* (uac_tap_lock: its sums >> 4) */
 #define UA_LK_I0 2026619832317LL                        /* the loop's start: +450 ppm (Q52), the FM-1's I2S as measured
                                                          * against a computer (+450.8 at both rates): the first lock
@@ -231,10 +238,14 @@ static void uac_lock_set(int64_t u)                     /* the step from the loo
     uac.lk_u10 = (int32_t)(((int64_t)u32 * 10000000) >> 32);
 }
 /* the loop's stages: until the block count, smoothing shift, KP and KI (Q52 of 1.0 a Q12 frame of error: 2 zeta wn /
- * 48000 x 2^40 and wn^2 / 48000 x 256 / 44100 x 2^40; zeta 0.7, fn 0.3 / 0.08 / 0.005 Hz; tests/py/test_uac_lock.py) */
+ * 48000 x 2^40 and wn^2 / 48000 x 256 / 44100 x 2^40; zeta 0.7, fn 0.08 (far off) / 0.02 / 0.005 Hz; tests/py/test_uac_lock.py) */
 static const struct { uint32_t until; uint8_t sh; int32_t kp, ki; } UA_LK_ST[3] = {
-    {517u, 3u, 60448809, 472457},                       /* 3 s: 0.3 Hz (a start: the fill within ~+-100 frames) */
-    {2067u, 5u, 16119682, 33597},                       /* 12 s: 0.08 Hz */
+    {0u, 5u, 16119682, 33597},                          /* 0.08 Hz: only while the fill is > UA_LK_FAR off its mark,
+                                                         * until back within a quarter of that (a drift far from the
+                                                         * seed); a start at 0.3 Hz turned the fill's +-1..3 frames of
+                                                         * noise into +-150 ppm */
+    {2067u, 7u, 4029920, 2100},                         /* the first 12 s: 0.02 Hz (from the seed or the drift last
+                                                         * found: +-3 ppm of the fill's noise) */
     {0xFFFFFFFFu, 8u, 1007480, 131},                    /* then 0.005 Hz */
 };
 #endif
@@ -1189,6 +1200,10 @@ static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, bef
             rs.ph = 0;
         }
 #endif
+#if FELUCCA_UAC_LOCK == 1
+        prime += UA_LK_PRIME;                           /* (the loop holds the fill it finds after the prime: this
+                                                         * puts it at the band's middle, as the packets' adjustment did) */
+#endif
         for (i = 0; i < prime; i++)
             ua_ring[(r + i) & (UA_N - 1u)] = 0;
         RING_PUBLISH();
@@ -1201,11 +1216,13 @@ static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, bef
         uac.lk_g = 0;
         uac.lk_sp[0] = uac.lk_sp[1] = uac.lk_sc[0] = uac.lk_sc[1] = 0;
         uac.lk_e1 = uac.lk_ef = 0;
+        uac.lk_c = 0;
+        uac.lk_fast = 0;
         uac.lk_blocks = 0;
         if (!uac.lk_n)
             uac.lk_n = uac.ring48 ? 48u : 44u;
-        uac_lock_set(uac.lk_I);                         /* (the drift as last found) */
         uac_lock_init();                                /* (done at boot: usb_start; the host tests start here) */
+        uac_lock_set(uac.lk_I);                         /* (the drift as last found; after the init: its seed) */
 #endif
 #if FELUCCA_UAC_LOCK == 2
         uac.favg16 = prime << 4;
@@ -1235,17 +1252,38 @@ static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, bef
                 part = uac.lk_n * dt * 256u / (UAC_STAMP_MS / 16u);
         }
 #endif
-        e = (int32_t)((fill - c) << 12) - (int32_t)part;
-        while (uac.lk_blocks >= UA_LK_ST[k].until)
-            k++;
-        uac.lk_blocks++;
-        uac.lk_e1 += (e - uac.lk_e1) >> UA_LK_ST[k].sh;
-        uac.lk_ef += (uac.lk_e1 - uac.lk_ef) >> UA_LK_ST[k].sh;
-        uac.lk_I += (int64_t)uac.lk_ef * UA_LK_ST[k].ki;
-        if (uac.lk_I > UA_LK_MAX) uac.lk_I = UA_LK_MAX;
-        if (uac.lk_I < -UA_LK_MAX) uac.lk_I = -UA_LK_MAX;
-        u = uac.lk_I + (int64_t)uac.lk_ef * UA_LK_ST[k].kp;
-        uac_lock_set(u);
+        e = (int32_t)(fill << 12) - (int32_t)part;
+        if (uac.lk_blocks < UA_LK_CAP) {                /* after the prime: the fill as it is (averaged over the first
+                                                         * blocks), not the band's middle, becomes the fill to hold: a
+                                                         * start ~12 frames off the middle drove the 0.3 Hz stage to the
+                                                         * clamp (-977 ppm, then +730: ~2.4 cents for 3 s, and the jack
+                                                         * and USB off by a varying fraction of a sample); the step stays
+                                                         * the drift last found meanwhile */
+            uac.lk_c += e >> UA_LK_CAP_SH;
+            if (++uac.lk_blocks == UA_LK_CAP) {
+                int32_t lo = (int32_t)((c - UA_LK_CAP_BAND) << 12), hi = (int32_t)((c + UA_LK_CAP_BAND) << 12);
+                uac.lk_c = uac.lk_c < lo ? lo : uac.lk_c > hi ? hi : uac.lk_c;   /* (inside the band) */
+            }
+        } else {
+            e -= uac.lk_c;
+            if (!uac.lk_fast && (uac.lk_ef > UA_LK_FAR || uac.lk_ef < -UA_LK_FAR))
+                uac.lk_fast = 1;
+            else if (uac.lk_fast && uac.lk_ef < UA_LK_FAR / 4 && uac.lk_ef > -UA_LK_FAR / 4)
+                uac.lk_fast = 0;
+            k = 1u;
+            while (uac.lk_blocks >= UA_LK_ST[k].until)
+                k++;
+            if (uac.lk_fast)
+                k = 0;
+            uac.lk_blocks++;
+            uac.lk_e1 += (e - uac.lk_e1) >> UA_LK_ST[k].sh;
+            uac.lk_ef += (uac.lk_e1 - uac.lk_ef) >> UA_LK_ST[k].sh;
+            uac.lk_I += (int64_t)uac.lk_ef * UA_LK_ST[k].ki;
+            if (uac.lk_I > UA_LK_MAX) uac.lk_I = UA_LK_MAX;
+            if (uac.lk_I < -UA_LK_MAX) uac.lk_I = -UA_LK_MAX;
+            u = uac.lk_I + (int64_t)uac.lk_ef * UA_LK_ST[k].kp;
+            uac_lock_set(u);
+        }
     }
 #endif
 #if FELUCCA_UAC_LOCK == 2
@@ -1422,6 +1460,10 @@ static FR_RAM __attribute__((noinline)) void uac_tap_lock(const int32_t *out, ui
                 uint32_t j = P >> 16;
                 int64_t al = 1 << (UAC_FL_Q - 1), ar = 1 << (UAC_FL_Q - 1);
                 int32_t sl, sr, vl, vr;
+#if defined(__PI32V2__) && !defined(DINGHY_HOST)
+                HAL_KEEP_REG(x);                        /* (the window read in each output: hoisted, its last two
+                                                         * samples were kept as 64-bit pairs on the stack) */
+#endif
 #define LK_TAP(i, t) do { int32_t t_ = (t); al += (int64_t)t_ * x[i]; ar += (int64_t)t_ * x[RS_B + (i)]; } while (0)
 #define LK_TAPS(c, d) do { LK_TAP(0, c[0]); LK_TAP(1, c[d]); LK_TAP(2, c[2 * d]); LK_TAP(3, c[3 * d]);             \
                            LK_TAP(4, c[4 * d]); LK_TAP(5, c[5 * d]); LK_TAP(6, c[6 * d]); LK_TAP(7, c[7 * d]);     \

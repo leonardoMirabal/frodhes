@@ -76,7 +76,8 @@ USB_BAD_RUNS = []                                     # scenarios with a USB und
 USB_ITEMS = {1: "underruns", 2: "missed", 3: "overruns", 4: "adj_up", 5: "adj_down", 6: "fill_lo", 7: "fill_hi",
              8: "fill_low", 9: "per_min", 10: "per_max", 11: "stalls", 12: "state",
              21: "sie_to",                    # (21, 0.9.7: EP4 polls whose SIE access timed out, left queued)
-             22: "lock_ppm10"}                # (22, 0.9.9 FELUCCA_UAC_LOCK 1: the clock correction, 0.1 ppm + 8192)
+             22: "lock_ppm10"}                # (22, 0.9.9 FELUCCA_UAC_LOCK 1: the clock correction, 0.1 ppm + 8192;
+                                              # its own query, CC 116 = 22: lock_query; not in the full reply)
 TICK_ITEMS = {13: "tick_max", 14: "blk_max", 15: "blk_mean", 16: "tick_mean"}   # (--tick: FM1_PROF_TICK builds)
 USB_SUM = ("underruns", "missed", "overruns", "adj_up", "adj_down", "stalls", "sie_to")   # deltas: summed
 USB_MIN = ("fill_lo", "fill_low", "per_min")
@@ -91,7 +92,7 @@ def usb_merge(acc, got):
         elif k in USB_MIN:
             if not (k == "fill_low" and v == 16383) and not (k == "fill_lo" and v == 16383):
                 acc[k] = min(acc.get(k, v), v)
-        elif k == "state":
+        elif k in ("state", "lock_ppm10"):
             acc[k] = v
         else:
             acc[k] = max(acc.get(k, v), v)
@@ -105,7 +106,8 @@ def usb_line(acc):
     s = "stream " + ("off" if not st & 2 else ("48 kHz" if st & 4 else "44.1 kHz"))
     keys = ("underruns", "missed", "overruns", "adj_up", "adj_down", "fill_lo", "fill_hi", "fill_low", "per_min",
             "per_max")
-    return "USB " + s + ": " + ", ".join(f"{k} {acc[k]}" for k in keys if k in acc)
+    lk = f", lock {(acc['lock_ppm10'] - 8192) / 10:+.1f} ppm" if "lock_ppm10" in acc else ""   # (only when present)
+    return "USB " + s + ": " + ", ".join(f"{k} {acc[k]}" for k in keys if k in acc) + lk
 
 CC = dict(CC, TONE=28, BARK=29, BELL=30, HAMMER=31, DRV_TONE=82, DRV_MIX=83, RV_PREDLY=94, RV_TYPE=95, EQ_LO=34, EQ_MID=35, EQ_FREQ=36,
           EQ_HI=37)
@@ -382,6 +384,28 @@ def run_cpu(argv):  # noqa: C901
             query.whole = max(query.whole, (got[108] << 7 | got[107]) * 4)   # (the run's, never cleared)
         return (got[116] << 7 | got[117]) * 4, got[118] * 32, got[115]
 
+    def lock_query():
+        """the USB lock's correction (ppm), asked alone (CC 116 = 22: firmware with FELUCCA_UAC_LOCK 1); None when the
+        reply has no item 22 (an older firmware answers the full reply instead: its items are not merged)"""
+        if not query.usb.get("state", 0) & 2:
+            return None                               # (no stream: no lock)
+        for _ in inp.iter_pending():
+            pass
+        cc(116, 22)
+        uid, val, t0 = dict(id=None, msb=0), None, time.monotonic()
+        while time.monotonic() - t0 < 0.15:
+            for m in inp.iter_pending():
+                if m.type != "control_change":
+                    continue
+                if m.control == 100:
+                    uid["id"] = m.value
+                elif m.control == 101:
+                    uid["msb"] = m.value
+                elif m.control == 102 and uid["id"] == 22:
+                    val = (uid["msb"] << 7 | m.value) - 8192
+            time.sleep(0.005)
+        return None if val is None else val / 10.0
+
     bend_on = "--bend-sweep" in sys.argv
     ccs = cc_sweep_arg(sys.argv)                      # (cc, lo, hi, step_s) or None
     ccs_at = [0.0, None]                              # the last CC sweep message: when, the value
@@ -651,6 +675,9 @@ def run_cpu(argv):  # noqa: C901
     print(f"{'':44s} {usb_line(query.usb)}")
     if any(query.usb.get(k) for k in USB_BAD):
         usb_bad.append("repeated")
+    lk = lock_query()
+    if lk is not None:
+        print(f"{'':44s} USB lock: the FM-1's clock corrected by {lk:+.1f} ppm (CC 116 = 22)")
     reset()
     worst = max(w for _, w in rows)
     print(f"\nworst {worst} us of {BLOCK_US} us per block ({100 * worst / BLOCK_US:.0f} %) with {nv} voices; shedder at "

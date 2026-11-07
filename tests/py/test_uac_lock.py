@@ -135,3 +135,44 @@ def test_stream_nominal_and_in_band(r48):
     for c in rows:
         assert c["n_bad"] == 0 and c["nmin"] == (48 if r48 else 44) and c["nmax"] == (48 if r48 else 45), c
         assert c["underruns"] == 0 and c["overruns"] == 0 and c["true_missed"] == 0, c
+
+
+@pytest.mark.parametrize("r48", [False, True])
+def test_stream_exact_zero_for_zero_input(r48):
+    """the closed loop (packets, host skips and bursts, nested polls, the prime) with a silent render: every frame the
+    host takes is exact zero (T1 S3 counts any non-zero sample after the release)"""
+    exe = build("uac_seq_lock" + ("48" if r48 else ""), "uac_seq_test.c", "-DFELUCCA_UAC_PHASE=1", "-DFELUCCA_UAC_LOCK=1")
+    p = subprocess.run([exe, "--hours", "0.01", "--zero"] + (["--r48"] if r48 else []), capture_output=True, text=True)
+    rows = [dict(zip(ln.split()[1::2], map(float, ln.split()[2::2]))) for ln in p.stdout.splitlines() if ln.startswith("case ")]
+    assert rows
+    for c in rows:
+        assert c["nonzero"] == 0, c
+
+
+@pytest.mark.parametrize("r48", [False, True])
+def test_start_no_transient(r48):
+    """after a start the step stays near the seed (the FM-1's measured +450 ppm, here the clock at +451): within
+    +-10 ppm, and the stream's time against the FM-1's stays on a line within 0.25 sample over the first 14 s (the
+    jack and USB compared sample for sample, T1 S1's tracker: rc-0.9.9f's start went to the clamp, -977 then +730
+    ppm, and the two drifted ~3 samples apart off any line)"""
+    exe = build("uac_seq_lock" + ("48" if r48 else ""), "uac_seq_test.c", "-DFELUCCA_UAC_PHASE=1", "-DFELUCCA_UAC_LOCK=1")
+    p = subprocess.run([exe, "--hours", "0.004", "--clean", "--trace"] + (["--r48"] if r48 else []),
+                       capture_output=True, text=True)
+    t, u = [], []
+    for ln in p.stdout.splitlines():
+        if not ln.startswith("trace "):
+            continue
+        f = ln.split()
+        if t and float(f[1]) < t[-1]:
+            break                                       # (the first case only: ppm 451, renders of 500 us)
+        t.append(float(f[1])); u.append(float(f[-1]))
+    t, u = np.array(t), np.array(u)
+    m = (t > 0.3) & (t < 14.0)
+    assert m.sum() > 1000
+    print("u", u[m].min(), u[m].max())
+    assert np.all(np.abs(u[m] - 451) <= 10.0), (u[m].min(), u[m].max())
+    ph = np.cumsum(u * 1e-6 * np.diff(t, prepend=t[0])) * 44100.0
+    a = np.vstack([t[m], np.ones(m.sum())]).T
+    dev = ph[m] - a @ np.linalg.lstsq(a, ph[m], rcond=None)[0]
+    print("line dev", np.abs(dev).max())
+    assert np.abs(dev).max() <= 0.25
