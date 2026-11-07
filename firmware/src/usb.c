@@ -257,10 +257,21 @@ static const struct { uint32_t until; uint8_t sh; int32_t kp, ki; } UA_LK_ST[3] 
 #include "uac_fir.h"
 /* the resampler's input history (Frodhes 0.9.5): the UAC_FIR_N - 1 frames before a pass, then the pass's RS_C frames,
  * in a line (no wrap: a window is 12 frames in a row); after a pass its last UAC_FIR_N - 1 frames move to the front */
+#if FELUCCA_UAC_LOCK == 1
+#define RS_C HALF_FRAMES         /* (locked: the tail writes a whole block into the history, one tap a block:
+                                  * uac_tap_hist; the pieces of uac_tap still work, up to RS_C frames a pass. L and R
+                                  * interleaved, h[2k], h[2k + 1]: a window's 24 samples at small offsets from one
+                                  * pointer, as l / r did with 32-frame passes) */
+#else
 #define RS_C 32u
+#endif
 #define RS_B (UAC_FIR_N - 1u + RS_C)
 static struct {
+#if FELUCCA_UAC_LOCK == 1
+    int16_t h[2u * RS_B];        /* frame k: L at h[2k], R at h[2k + 1] */
+#else
     int16_t l[RS_B], r[RS_B];    /* r right after l (the FIR loop reads both from one pointer: x[RS_B + i]) */
+#endif
     uint32_t ph;                 /* the next output's phase, 0..159 */
 } rs;
 #endif
@@ -1195,8 +1206,10 @@ static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, bef
         uac.ring48 = uac.r48;
         if (uac.ring48) {                               /* the resampler starts from silence */
             prime = UA_PRIME48;
+#if FELUCCA_UAC_LOCK != 1                               /* (locked: below) */
             for (i = 0; i < RS_B; i++)
                 rs.l[i] = rs.r[i] = 0;
+#endif
             rs.ph = 0;
         }
 #endif
@@ -1210,8 +1223,8 @@ static __attribute__((noinline)) void uac_render_start(void)   /* audio ISR, bef
         ua_w = r + prime;
         uac.fill_min = prime;
 #if FELUCCA_UAC_LOCK == 1
-        for (i = 0; i < RS_B; i++)                      /* (both rates: the resampler starts from silence) */
-            rs.l[i] = rs.r[i] = 0;
+        for (i = 0; i < 2u * RS_B; i++)                 /* (both rates: the resampler starts from silence) */
+            rs.h[i] = 0;
         uac.lk_P = 0;
         uac.lk_g = 0;
         uac.lk_sp[0] = uac.lk_sp[1] = uac.lk_sc[0] = uac.lk_sc[1] = 0;
@@ -1449,13 +1462,14 @@ static FR_RAM __attribute__((noinline)) void uac_tap_lock(const int32_t *out, ui
     }
     while (n) {
         uint32_t c = n < RS_C ? n : RS_C;
-        int16_t *hp = rs.l + (UAC_FL_N - 1u);
-        for (i = 0; i < c; i++) {                       /* (no clip: the tail clipped them, +-32767: TAIL_PRE) */
-            hp[i] = (int16_t)out[2u * i];
-            hp[RS_B + i] = (int16_t)out[2u * i + 1u];
-        }
+        int16_t *hp = rs.h + 2u * (UAC_FL_N - 1u);
+        if (out)                                        /* (0: the tail wrote them there, uac_tap_hist) */
+            for (i = 0; i < c; i++) {                   /* (no clip: the tail clipped them, +-32767: TAIL_PRE) */
+                hp[2u * i] = (int16_t)out[2u * i];
+                hp[2u * i + 1u] = (int16_t)out[2u * i + 1u];
+            }
         for (i = 0; i < c; i++) {
-            const int16_t *x = rs.l + i;                /* the window: frame i - 11 .. i (R: x[RS_B]) */
+            const int16_t *x = rs.h + 2u * i;           /* the window: frame i - 11 .. i (L x[2k], R x[2k + 1]) */
             while (P < UA_LK_ONE) {
                 uint32_t j = P >> 16;
                 int64_t al = 1 << (UAC_FL_Q - 1), ar = 1 << (UAC_FL_Q - 1);
@@ -1464,7 +1478,7 @@ static FR_RAM __attribute__((noinline)) void uac_tap_lock(const int32_t *out, ui
                 HAL_KEEP_REG(x);                        /* (the window read in each output: hoisted, its last two
                                                          * samples were kept as 64-bit pairs on the stack) */
 #endif
-#define LK_TAP(i, t) do { int32_t t_ = (t); al += (int64_t)t_ * x[i]; ar += (int64_t)t_ * x[RS_B + (i)]; } while (0)
+#define LK_TAP(i, t) do { int32_t t_ = (t); al += (int64_t)t_ * x[2 * (i)]; ar += (int64_t)t_ * x[2 * (i) + 1]; } while (0)
 #define LK_TAPS(c, d) do { LK_TAP(0, c[0]); LK_TAP(1, c[d]); LK_TAP(2, c[2 * d]); LK_TAP(3, c[3 * d]);             \
                            LK_TAP(4, c[4 * d]); LK_TAP(5, c[5 * d]); LK_TAP(6, c[6 * d]); LK_TAP(7, c[7 * d]);     \
                            LK_TAP(8, c[8 * d]); LK_TAP(9, c[9 * d]); LK_TAP(10, c[10 * d]); LK_TAP(11, c[11 * d]); } while (0)
@@ -1502,11 +1516,10 @@ static FR_RAM __attribute__((noinline)) void uac_tap_lock(const int32_t *out, ui
             }
             P -= UA_LK_ONE;
         }
-        for (i = 0; i < UAC_FL_N - 1u; i++) {           /* the last frames before the next pass */
-            rs.l[i] = rs.l[c + i];
-            rs.r[i] = rs.r[c + i];
-        }
-        out += 2u * c;
+        for (i = 0; i < 2u * (UAC_FL_N - 1u); i++)      /* the last frames before the next pass */
+            rs.h[i] = rs.h[2u * c + i];
+        if (out)
+            out += 2u * c;
         n -= c;
     }
     uac.lk_P = P;
@@ -1527,6 +1540,17 @@ static FR_RAM __attribute__((noinline)) void uac_tap_lock(const int32_t *out, ui
 }
 #endif
 
+#if FELUCCA_UAC_LOCK == 1
+/* Frodhes (0.9.9): the tail (platform.c) writes the block's frames straight into the resampler's history, as uac_tap_lock
+ * would copy them (frame i: L at UAC_HIST[2i], R at UAC_HIST[2i + 1], int16, already clipped), then taps once: the
+ * same outputs as eight pieces of 32 (tests/uac_rs_test.c, bit for bit), without the copy, the calls and the passes */
+#define UAC_HIST (rs.h + 2u * (UAC_FL_N - 1u))
+static __attribute__((noinline)) void uac_tap_hist(uint32_t n)   /* audio ISR: the block in the history, n <= RS_C */
+{
+    if (uac.feed)
+        FR_FAR(uac_tap_lock)(0, n);
+}
+#endif
 static __attribute__((noinline)) void uac_tap(const int32_t *out, uint32_t n)   /* audio ISR: one block (Q15) */
 {
     uint32_t w = ua_w, i;

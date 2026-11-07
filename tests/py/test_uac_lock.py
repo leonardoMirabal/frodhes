@@ -176,3 +176,26 @@ def test_start_no_transient(r48):
     dev = ph[m] - a @ np.linalg.lstsq(a, ph[m], rcond=None)[0]
     print("line dev", np.abs(dev).max())
     assert np.abs(dev).max() <= 0.25
+
+
+@pytest.mark.parametrize("rate", [44100, 48000])
+@pytest.mark.parametrize("ppm", [["451"], ["-977"], ["-977", "977", "6"]])
+def test_tail_into_history_bit_exact(rate, ppm):
+    """the firmware's tail (platform.c, locked) writes the block straight into the resampler's history and taps once
+    (uac_tap_hist); a MASTER ramp's block still goes in 32-frame pieces (uac_tap). Both, and the two mixed, give the
+    pieces' stream bit for bit: a chirp + noise, full-scale noise through the knee, silence; L and R in place"""
+    exe = build("uac_rs_test", "uac_rs_test.c")
+    rng = np.random.default_rng(3)
+    t = np.arange(int(FS * 8)) / FS
+    x = np.sin(2 * np.pi * (20 * t + 1200 * t * t)) * 24000 + rng.normal(0, 1, t.size) * 6000
+    x[int(FS * 3):int(FS * 4)] = rng.choice([-32767, 32767], int(FS))
+    x[int(FS * 6):int(FS * 6.5)] = 0
+    x = np.clip(np.round(x), -32767, 32767).astype("<i2").tobytes()
+    out = {}
+    for mode in "012":
+        p = subprocess.run([exe, str(rate), *ppm], input=x, capture_output=True,
+                           env={**os.environ, "UAC_RS_BLOCK": mode})
+        assert p.returncode == 0, (mode, p.returncode, p.stderr.decode()[-300:])
+        out[mode] = p.stdout
+    assert len(out["0"]) > rate * 7 * 2
+    assert out["1"] == out["0"] and out["2"] == out["0"]

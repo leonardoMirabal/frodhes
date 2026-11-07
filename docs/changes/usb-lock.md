@@ -8,6 +8,8 @@
   with no steps, so nothing can be heard. 44.1 and 48 kHz (build flag `FELUCCA_UAC_LOCK`).
   The loop starts at the fill it finds and at the drift last measured. The stream follows the FM-1's time on a
   straight line from the first second: within 0.05 sample over 14 s on the host, and within 3 ppm of the drift.
+  The audio interrupt writes each block's USB samples straight into the converter's input and converts the block in
+  one pass, which saves CPU time at 48 kHz. The output is the same, bit for bit.
 
 ## Tools
 
@@ -29,4 +31,7 @@
   - `test_start_no_transient`: the first 14 s after a start stay within 10 ppm of the drift and within 0.25 sample
     of a straight line (before this fix: a swing to the clamp, -977 then +802 ppm, 26 samples off the line).
   - `test_stream_exact_zero_for_zero_input`: with a silent render, every frame the host takes is exact zero.
+  - `test_tail_into_history_bit_exact`: a block written straight into the converter's input, or mixed with
+    32-frame pieces (a MASTER ramp), gives the same stream bit for bit. `tests/uac_rs_test.c` was compared with the
+    previous build at both rates, -977 to +977 ppm, held and ramped.
 - Device: to be measured (CPU at 48 kHz, recording on a phone or tablet and on a computer).
