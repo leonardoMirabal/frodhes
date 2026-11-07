@@ -195,3 +195,28 @@ move-probe:                ## the device-session probe (move/probe/README.md)
 
 test-move-probe:           ## the probe's dlopen host test
 	$(MOVE_RUN) make -s -C move/probe -j2 test
+
+# ---- the desktop plugin (CLAP, VST3, Audio Unit v2; docs/PLUGIN.md): plugin/, the next-release plan section B ----
+# Light by default: nice -n 15 and 2 jobs (PLUGIN_J). The bundles land in build/plugin/bundles; nothing is installed.
+PLUGIN_J     ?= 2
+PLUGIN_BUILD ?= build/plugin
+PLUGIN_NICE  ?= nice -n 15
+.PHONY: plugin-deps plugin test-plugin gate-d
+plugin-deps:               ## the pinned plugin dependencies (plugin/deps.lock) into .local/plugin-deps
+	sh tools/plugin_deps.sh
+
+plugin:                    ## build/plugin/bundles/Frodhes.{clap,vst3,component} (macOS: universal arm64 + x86_64)
+	@test -d .local/plugin-deps/clap || sh tools/plugin_deps.sh --libs
+	@test -f $(PLUGIN_BUILD)/CMakeCache.txt || $(PLUGIN_NICE) cmake -S plugin -B $(PLUGIN_BUILD) \
+	  $(if $(shell command -v ninja),-G Ninja,) -DFRP_VERSION=$(or $(PLUGIN_VER),0.0.0-dev)
+	$(PLUGIN_NICE) cmake --build $(PLUGIN_BUILD) -j$(PLUGIN_J)
+
+test-plugin: plugin        ## the coroutine, the headless host's selftest (params, state, rates, 16 slots), the
+                           ## parameter table up to date, a quick Gate D
+	$(PLUGIN_BUILD)/frp_test_coro
+	$(PLUGIN_BUILD)/frp_clap_render $(PLUGIN_BUILD)/bundles/Frodhes.clap --selftest
+	$(PY) tools/gen_plugin_params.py --check
+	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py --quick --only classic,hq,rate48
+
+gate-d: plugin             ## Gate D: the plugin renders the host build's audio (tools/gate_d.py, every mode)
+	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py

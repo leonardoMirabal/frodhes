@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# The desktop plugin's dependencies, pinned by commit (tools/plugin_deps.sh fetches them into .local/plugin-deps;
+# plugin/cmake/deps.cmake checks each checkout's HEAD against this file and refuses anything else). Nothing here is
+# vendored in git. One line each: kind name url ref commit-or-sha256 licence
+#   git   a shallow checkout of that commit (submodules: the VST3 SDK's four the wrapper needs, at the commits the tag records)
+#   zip   a release archive, checked by its sha256 (test tools only: never linked into the plugin)
+git clap         https://github.com/free-audio/clap.git          1.2.10                195b42a004144fab0b3cf95e9c067187d15365b7 MIT
+git clap-wrapper https://github.com/free-audio/clap-wrapper.git  v0.17.0               806bba0a5f792e3966b99c1561ab9952d3316d7c MIT
+git vst3sdk      https://github.com/steinbergmedia/vst3sdk.git   v3.8.0_build_66       9fad9770f2ae8542ab1a548a68c1ad1ac690abe0 MIT
+git audiounitsdk https://github.com/apple/AudioUnitSDK.git       AudioUnitSDK-1.1.0    53a9a2008aae7fb1b0a9f093dd523b9b12f6c0d9 Apache-2.0
+zip clap-validator https://github.com/free-audio/clap-validator/releases/download/0.4.1/clap-validator-0.4.1-127-g152b982-macos-universal.zip 0.4.1 bbec8cd7d18274e549d5d8c12ece3cec54be966129388dd2e742b9957f2ba9f1 MIT
+zip pluginval    https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip v1.0.4 3c4c533bda0c5059eea3ddaea752d757ee2025041f0f47e6bcb0e87f6082b29f GPL-3.0
