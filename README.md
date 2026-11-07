@@ -30,7 +30,7 @@ the FM-1's screen, knobs and keys. Play it from your computer keyboard or a MIDI
   pan / wah, phaser, chorus, delay (digital, analog, tape) and reverb (hall, plate, infinite).
 - **For playing**: sustain pedal, velocity from the FM-1's own keys, chords, scales, arpeggiator, a pattern recorder
   (1-16 bars, overdub, undo, a chance per step), tap tempo or MIDI clock.
-- **Connections**: MIDI over USB and the TRS input, pitch bend, audio over USB as well as the headphone jack.
+- **Connections**: MIDI over USB and the TRS input, pitch bend, audio over USB (to a computer, phone or tablet) as well as the headphone jack.
 - **Presets**: 19 factory sounds and 16 slots for your own.
 - **A screen you can read**: one page at a time, one card per knob.
 

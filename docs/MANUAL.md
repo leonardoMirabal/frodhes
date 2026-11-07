@@ -1141,7 +1141,9 @@ entry in Audio MIDI Setup, greyed out; nothing needs deleting.
 **USB audio:** class-compliant stereo, 16-bit, 44.1 or 48 kHz. It records exactly what Frodhes plays, digitally,
 without the headphone jack's hiss. It does not play audio from the computer. Saving the settings while you record
 does not disturb the recording (section 6, "What is kept, and when"). The USB audio comes a few milliseconds later
-than the jack; a DAW's latency compensation takes care of it when you record.
+than the jack; a DAW's latency compensation takes care of it when you record. It works with phones and tablets as
+well as computers: every USB packet has its nominal size, and the stream follows the host's clock, so hosts that click on
+an uneven stream record it cleanly.
 
 ## 13. If something goes wrong
 
