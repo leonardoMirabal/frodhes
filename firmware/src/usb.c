@@ -1458,19 +1458,16 @@ static FR_RAM __attribute__((noinline)) void uac_tap_lock(const int32_t *out, ui
             const int16_t *x = rs.l + i;                /* the window: frame i - 11 .. i (R: x[RS_B]) */
             while (P < UA_LK_ONE) {
                 uint32_t j = P >> 16;
-                int64_t al = 1 << (UAC_FL_Q - 1), ar = 1 << (UAC_FL_Q - 1), bl = 0, br = 0;   /* (even taps a / odd
-                                                         * taps b: two MAC chains a channel, the same exact sum) */
+                int64_t al = 1 << (UAC_FL_Q - 1), ar = 1 << (UAC_FL_Q - 1);
                 int32_t sl, sr, vl, vr;
 #if defined(__PI32V2__) && !defined(DINGHY_HOST)
                 HAL_KEEP_REG(x);                        /* (the window read in each output: hoisted, its last two
                                                          * samples were kept as 64-bit pairs on the stack) */
 #endif
 #define LK_TAP(i, t) do { int32_t t_ = (t); al += (int64_t)t_ * x[i]; ar += (int64_t)t_ * x[RS_B + (i)]; } while (0)
-#define LK_TAPB(i, t) do { int32_t t_ = (t); bl += (int64_t)t_ * x[i]; br += (int64_t)t_ * x[RS_B + (i)]; } while (0)
-#define LK_TAPS(c, d) do { LK_TAP(0, c[0]); LK_TAPB(1, c[d]); LK_TAP(2, c[2 * d]); LK_TAPB(3, c[3 * d]);           \
-                           LK_TAP(4, c[4 * d]); LK_TAPB(5, c[5 * d]); LK_TAP(6, c[6 * d]); LK_TAPB(7, c[7 * d]);   \
-                           LK_TAP(8, c[8 * d]); LK_TAPB(9, c[9 * d]); LK_TAP(10, c[10 * d]); LK_TAPB(11, c[11 * d]); \
-                           al += bl; ar += br; } while (0)
+#define LK_TAPS(c, d) do { LK_TAP(0, c[0]); LK_TAP(1, c[d]); LK_TAP(2, c[2 * d]); LK_TAP(3, c[3 * d]);             \
+                           LK_TAP(4, c[4 * d]); LK_TAP(5, c[5 * d]); LK_TAP(6, c[6 * d]); LK_TAP(7, c[7 * d]);     \
+                           LK_TAP(8, c[8 * d]); LK_TAP(9, c[9 * d]); LK_TAP(10, c[10 * d]); LK_TAP(11, c[11 * d]); } while (0)
                 _Static_assert(UAC_FL_N == 12u && UAC_FIR_N == 12u, "LK_TAPS: 12 taps, the history's 11 frames");
                 if (j < UAC_FL_L / 2u) {
                     const int16_t *t = uac_fl[j];
@@ -1480,7 +1477,6 @@ static FR_RAM __attribute__((noinline)) void uac_tap_lock(const int32_t *out, ui
                     LK_TAPS(t, -1);
                 }
 #undef LK_TAPS
-#undef LK_TAPB
 #undef LK_TAP
                 sl = (int32_t)(al >> UA_LK_SQ);         /* (the sums kept with 11 bits below the output's LSB: |s| <
                                                          * 2^27, so a difference fits 32 bits and the correction is one
