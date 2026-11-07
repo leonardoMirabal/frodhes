@@ -406,11 +406,67 @@ def against_js():
     ok(I.LOADER_MARK in raw, f"{clean.name} carries the Felucca loader marker")
 
 
+class WithOthers:
+    """a FakeFM1 plus another unit's ports (listed before or after it): opening one of those is recorded, and fails"""
+
+    def __init__(self, fm1, others, before=True):
+        self.fm1, self.others, self.before, self.probed = fm1, list(others), before, []
+
+    def input_names(self):
+        mine = self.fm1.input_names()
+        return self.others + mine if self.before else mine + self.others
+
+    output_names = input_names
+
+    def open(self, in_name, out_name):
+        if in_name in self.others or out_name in self.others:
+            self.probed.append(in_name)
+            raise IOError("another unit")
+        return self.fm1.open(in_name, out_name)
+
+
+def two_units():
+    """two FM-1s on one computer: the Frodhes one is the target, the other unit's ports are never opened; without a
+    Frodhes port the installer refuses unless --port names one"""
+    raw = package()
+    image = I.logical_image(raw)
+    p = pkgfile("ok.fwsc", raw)
+    for others in (["Felucca", "AMB-1 FM-1"], ["Textura", "Textura FM-1"], ["Felucca", "Textura FM-1", "FM-1"]):
+        for before in (True, False):
+            where = f"{'+'.join(others)} {'before' if before else 'after'}"
+            b = WithOthers(FakeFM1(image, identity="FM-1_958", name="Frodhes FM-1", after_name="Frodhes FM-1"),
+                           others, before)
+            rc, out, err = cli([p, "--yes"], b)
+            ok(rc == 0 and b.fm1.bad == 0 and b.fm1.upgrades == 2 and "(Frodhes FM-1)" in out and not b.probed,
+               f"two units ({where}): installed on 'Frodhes FM-1', the other unit never opened {b.probed}")
+            b = WithOthers(FakeFM1(image, identity="FM-1_958", name="Frodhes FM-1"), others, before)
+            rc, out, err = cli(["--info"], b)
+            ok(rc == 0 and "port: Frodhes FM-1" in out and not b.probed,
+               f"two units ({where}): --info on 'Frodhes FM-1', the other unit never opened")
+    for before in (True, False):
+        b = WithOthers(FakeFM1(image), ["Felucca"], before)          # two FM-1-like ports, no Frodhes one
+        rc, out, err = cli([p, "--yes"], b)
+        ok(rc == 7 and "--port" in err and not b.probed and not b.fm1.links and b.fm1.upgrades == 0,
+           f"two units, no Frodhes port ({'before' if before else 'after'}): refused (exit 7), nothing opened")
+        rc, out, err = cli(["--info"], b)
+        ok(rc == 7 and not b.probed and not b.fm1.links, "two units, no Frodhes port: --info refused too")
+        b = WithOthers(FakeFM1(image, identity="FM-1_905", name="Felucca"), ["FM-1"], before)
+        rc, out, err = cli([p, "--yes", "--port", "Felucca"], b)
+        ok(rc == 0 and b.fm1.upgrades == 2 and not b.probed,
+           "two units, --port Felucca: installed there, the other unit never opened (also in the loader waits)")
+    b = WithOthers(FakeFM1(image, name="IAC Driver Bus 1"), ["Textura FM-1"])
+    rc, out, err = cli([p, "--yes"], b)
+    ok(rc == 3 and not b.probed, "a Textura unit alone: never a candidate (exit 3), never opened")
+    rc, out, err = cli([p, "--yes", "--port", "Textura"], b)
+    ok(rc == 3 and not b.probed, "--port Textura: still never opened")
+
+
 wire()
 installs()
 errors()
 smk()
 against_js()
+two_units()
 shutil.rmtree(TMP, ignore_errors=True)
 # the SMK-37 Pro, Elite and MKE-P37 are one keyboard: packages install across them, never across FM-1 / SMK
 ok(I.same_keyboard("SMK-37 Elite_016", "SMK-37 Pro_900") and I.same_keyboard("ota-MKE-P37_900", "SMK-37 Elite_900")

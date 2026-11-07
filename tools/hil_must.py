@@ -61,6 +61,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import hil_crackle as hc  # noqa: E402  (T1 judges USB audio with stress_max's detectors)
+import fm1_ports  # noqa: E402  (the Frodhes FM-1 first when other FM-1s are connected)
 import hil_scan as hs  # noqa: E402
 import midi_guard  # noqa: E402  (every MIDI open / close under a watchdog; the exit without rtmidi's destructors)
 from hil_cpu import USB_ITEMS, usb_merge  # noqa: E402
@@ -467,8 +468,8 @@ class Dev:
         if mido is None:
             import mido
         self.mido, self.threads, self.taps, self.qlock = mido, [], [], threading.Lock()
-        outs = [n for n in mido.get_output_names() if any(k in n.lower() for k in hs.PORT_KEYS)]
-        ins = [n for n in mido.get_input_names() if any(k in n.lower() for k in hs.PORT_KEYS)]
+        outs = fm1_ports.pick(mido.get_output_names())
+        ins = fm1_ports.pick(mido.get_input_names())
         if not outs or not ins:
             raise NoDevice("no FM-1 MIDI port")
         import fm1_midi
@@ -602,8 +603,7 @@ class Rec:
 
 
 def find_usb(sd):
-    d = [i for i, x in enumerate(sd.query_devices()) if any(k in x["name"].lower() for k in hs.PORT_KEYS)
-         and x["max_input_channels"] >= 2]
+    d = fm1_ports.devices(sd.query_devices(), 2)
     return d[0] if d else None
 
 

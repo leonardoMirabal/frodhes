@@ -41,9 +41,12 @@ import os
 import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fm1_ports  # noqa: E402  (which port / audio device is the Frodhes FM-1)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "build", "hil")
-PORT_KEYS = ("frodhes", "felucca", "fm-1")
+PORT_KEYS = fm1_ports.PORT_KEYS
 
 CC_MODE, CC_QUERY, CC_ITEM, CC_HI, CC_LO = 41, 42, 38, 39, 40     # keyvel.h KV_CC_*
 CC_REP = (33, 34, 35, 36)                                          # the per-press report
@@ -73,8 +76,8 @@ LIMITS = dict(sep_gap=30, sep_order=0.90, even_spread=30, even_off=15, even_min=
 def open_ports():
     """(mido, out, inp) of the FM-1 (tests replace this)"""
     import mido
-    outs = [n for n in mido.get_output_names() if any(k in n.lower() for k in PORT_KEYS)]
-    ins = [n for n in mido.get_input_names() if any(k in n.lower() for k in PORT_KEYS)]
+    outs = fm1_ports.pick(mido.get_output_names())
+    ins = fm1_ports.pick(mido.get_input_names())
     if not outs or not ins:
         sys.exit("no FM-1 MIDI port")
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

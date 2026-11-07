@@ -96,6 +96,8 @@ import time
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fm1_ports  # noqa: E402  (which port / audio device is the Frodhes FM-1)
 ROOT = os.path.dirname(HERE)
 OUT = os.path.join(ROOT, "build", "hil", "clock")
 PPQN = 24
@@ -1482,8 +1484,7 @@ def run_device(a, vias):
         rig.out = ChannelPort(rig.out, ch)
         replies = []                                      # the FM-1's CC 100-102 (the clock counters), timestamped
         try:
-            inn = rig.mido.open_input(next(n for n in rig.mido.get_input_names()
-                                           if any(k in n.lower() for k in H.PORT_KEYS)))
+            inn = rig.mido.open_input(next(iter(fm1_ports.pick(rig.mido.get_input_names()))))
             inn.callback = lambda m: replies.append((time.perf_counter(), m.control, m.value)) \
                 if m.type == "control_change" and m.control in (100, 101, 102) else None
         except (StopIteration, OSError):
@@ -1497,7 +1498,7 @@ def run_device(a, vias):
             ports = {"usb": rig.out, "clk": rig.out}
             if via in ("trs", "trsoff"):
                 pn = find_port(rig.mido.get_output_names(), a.port)
-                if any(k in pn.lower() for k in H.PORT_KEYS):
+                if fm1_ports.is_fm1(pn):
                     sys.exit(f"--port {a.port} is the FM-1's own USB port ({pn}): the TRS path needs the interface's")
                 ports["clk"] = rig.mido.open_output(pn)
             d = os.path.join(OUT, via)

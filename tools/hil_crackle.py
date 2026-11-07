@@ -110,6 +110,7 @@ import time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fm1_ports  # noqa: E402
 import hil_scan  # noqa: E402
 from hil_scan import CC, DRY, param_defaults  # noqa: E402
 
@@ -1431,8 +1432,7 @@ class Device:
         import hil_must
         self.hm, self.sd, self.poll = hil_must, sd, poll
         self.mdev = mdev or hil_must.Dev()                   # (the MIDI ports before any stream; T1 passes its own)
-        devs = [i for i, d in enumerate(sd.query_devices())
-                if any(k in d["name"].lower() for k in hil_scan.PORT_KEYS) and d["max_input_channels"] >= 2]
+        devs = fm1_ports.devices(sd.query_devices(), 2)
         if not devs:
             sys.exit("no FM-1 audio input")
         self.udev, self.rate, self.bs = devs[0], rate, blocksize

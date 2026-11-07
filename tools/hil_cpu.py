@@ -69,9 +69,10 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fm1_ports  # noqa: E402  (which port / audio device is the Frodhes FM-1)
 from hil_scan import CC, DRY, param_defaults  # noqa: E402
 
-PORT_KEYS = ("frodhes", "felucca", "fm-1")                       # the FM-1's MIDI port / audio device names
+PORT_KEYS = fm1_ports.PORT_KEYS                     # the FM-1's MIDI port / audio device names
 USB_BAD_RUNS = []                                     # scenarios with a USB underrun, missed packet or overrun
 USB_ITEMS = {1: "underruns", 2: "missed", 3: "overruns", 4: "adj_up", 5: "adj_down", 6: "fill_lo", 7: "fill_hi",
              8: "fill_low", 9: "per_min", 10: "per_max", 11: "stalls", 12: "state",
@@ -146,8 +147,8 @@ def ports():
     """(mido, out, inp): the FM-1's MIDI ports, opened at the first call (tests replace this)"""
     if not _PORTS:
         import mido
-        outs = [n for n in mido.get_output_names() if any(k in n.lower() for k in PORT_KEYS)]
-        ins = [n for n in mido.get_input_names() if any(k in n.lower() for k in PORT_KEYS)]
+        outs = fm1_ports.pick(mido.get_output_names())
+        ins = fm1_ports.pick(mido.get_input_names())
         if not outs or not ins:
             sys.exit("no FM-1 MIDI port")
         import fm1_midi
@@ -464,8 +465,7 @@ def run_cpu(argv):  # noqa: C901
     if "--no-usb-stream" not in sys.argv:             # a DAW-like USB audio stream for the whole run (the default)
         import sounddevice as sd
         rate = int(sys.argv[sys.argv.index("--usb") + 1]) if "--usb" in sys.argv else 48000
-        devs = [i for i, d in enumerate(sd.query_devices()) if any(k in d["name"].lower() for k in PORT_KEYS)
-                and d["max_input_channels"] >= 2]
+        devs = fm1_ports.devices(sd.query_devices(), 2)
         if not devs:
             sys.exit("--usb: no FM-1 audio input")
         # the device itself switched to RATE (as rh_devcmp): without it Core Audio keeps the FM-1 at its current

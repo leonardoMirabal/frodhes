@@ -45,6 +45,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import fm1_ports  # noqa: E402
 import hil_clock as HC  # noqa: E402
 
 ROOT = os.path.dirname(HERE)
@@ -370,7 +371,7 @@ def run_device(a):
             return 2
         raw_usb = rig.out
         pn = HC.find_port(mido.get_output_names(), a.port)
-        if any(k in pn.lower() for k in H.PORT_KEYS):
+        if fm1_ports.is_fm1(pn):
             sys.exit(f"--port {a.port} is the FM-1's own port ({pn})")
         raw_trs = mido.open_output(pn)
         rig.out = HC.ChannelPort(raw_usb, ch)
