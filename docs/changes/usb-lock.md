@@ -21,4 +21,7 @@
   packet), no start transient, exact zero out for a silent render, and the
   same stream bit for bit when the audio interrupt writes a whole block straight into the converter (less CPU at
   48 kHz).
-- Device: to be measured (CPU at 48 kHz, recording on a phone or tablet and on a computer).
+- Device (FM-1, release build): on a computer the USB counters stay at zero (no missed packet, underrun or overrun)
+  and the glitch takes pass at 44.1 and 48 kHz. Worst audio interrupt with every effect on and 10 voices at 48 kHz:
+  4452 us (Rhodes 4444, VIBES 4412, MARIMBA 4452), the converter's share 216-220 us; T1, crackle (44.1 and 48 kHz) and
+  the CPU runs pass.
