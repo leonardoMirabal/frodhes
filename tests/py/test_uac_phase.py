@@ -14,6 +14,7 @@ resumes) and runs a poll whose time a stretch covered as soon as the stretch end
   uncounted in every case (stalls, overruns, SIE time-outs), packets of 43..46 frames; under 700 us stretches every
   ~50 ms the phased poll loses no token where the fixed one loses hundreds; the extra EP4 polls stay under ~6 %."""
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -207,3 +208,26 @@ def test_sie_accesses_per_block(exes):
     m0, m1 = max(r["sie_blk_max"] for r in fixed), max(r["sie_blk_max"] for r in phased)
     print(f"SIE accesses in the worst block: fixed {m0:.0f}, phased {m1:.0f}")
     assert m1 <= m0, (m0, m1)
+
+
+def test_controller_reset_rewrites_index(exes, tmp_path):
+    """usb_retry's usb_start after SIE timeouts, the stream still configured: the controller reset puts INDEX back to
+    0, so the next EP4 poll must write INDEX again, never read or write EP0's CSR0 as TXCSR1 (ep_wrong). The tree
+    with usb_start's uac.idx4 = 0 taken out fails"""
+    for exe in exes:
+        rows, _ = cases(exe, "--hours", "0.01", "--ctl-reset", "100")
+        assert all(r["ep_wrong"] == 0 for r in rows), rows[:1]
+    src, hal = tmp_path / "src", tmp_path / "hal"
+    shutil.copytree(ROOT / "firmware" / "hal", hal)
+    src.mkdir()
+    shutil.copy(ROOT / "firmware" / "src" / "uac_fir.h", src)
+    usb = (ROOT / "firmware" / "src" / "usb.c").read_text()
+    planted = usb.replace("    usb.timeouts = 0;\n#if FELUCCA_UAC_PHASE\n    uac.idx4 = 0; ",
+                          "    usb.timeouts = 0;\n#if FELUCCA_UAC_PHASE\n    (void)0; ", 1)
+    assert planted != usb
+    (src / "usb.c").write_text(planted)
+    exe = str(tmp_path / "planted")
+    subprocess.run(["cc", "-O1", "-w", "-DFELUCCA_UAC_PHASE=1", "-I" + str(src), "-o", exe,
+                    str(ROOT / "tests" / "uac_seq_test.c")], check=True)
+    rows, _ = cases(exe, "--hours", "0.01", "--ctl-reset", "100")
+    assert all(r["ep_wrong"] > 0 for r in rows), rows[:1]

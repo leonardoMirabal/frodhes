@@ -62,6 +62,11 @@ static void sim_ep4_send(void *p, uint32_t n);
 #define fm1_usb_sie_done sim_sie_done
 #define fm1_usb_sie_data sim_sie_data
 #define fm1_usb_ep4_send sim_ep4_send
+static void sim_usb_reset(void);                       /* (usb_start, --ctl-reset: the controller reset; the rest no-ops) */
+static void sim_usb_nop(void) {}
+#define fm1_usb_reset sim_usb_reset
+#define fm1_usb_attach(b) sim_usb_nop()
+#define fm1_usb_ep_enable(m) sim_usb_nop()
 #include "usb.c"
 
 #ifdef UAC_OLD                                         /* (a tree before 0.9.7: no uac.sie_to) */
@@ -95,6 +100,13 @@ static void sie_token(void)                            /* this frame's token, if
     }
 }
 static uint32_t sim_sie_on(void) { return 1; }
+static uint64_t ep_wrong;                              /* TXCSR1 read or written with INDEX not 4 while the stream runs
+                                                        * (an EP4 poll on another endpoint: EP0's CSR0 after a reset) */
+static void sim_usb_reset(void)
+{
+    sie_index = 0;                                     /* the controller reset: INDEX 0, the queued packet gone */
+    ep4_csr = 0;
+}
 static uint64_t blk_id;                                /* the SIE accesses in each 256-frame audio block (5805 us): */
 static uint32_t blk_acc, blk_max;                      /* the poll's cost inside the audio ISR, worst block (blk_max) */
 static void sie_count(void)
@@ -114,6 +126,8 @@ static void sim_sie_wr_start(uint32_t r, uint32_t v)
     sie_fail = sie_fault > 0 && r == S_INDEX && urand() < sie_fault;
     if (sie_fail)
         return;                                        /* (timed out: not written) */
+    if (r == S_TXCSR1 && sie_index != 4u && in_timer)
+        ep_wrong++;
     if (r == S_INDEX)
         sie_index = v;
     else if (r == S_TXCSR1 && sie_index == 4u) {
@@ -132,6 +146,8 @@ static void sim_sie_rd_start(uint32_t r)
     sie_count();
     sie_fail = sie_fault > 0 && r == S_TXCSR1 && urand() < sie_fault;
     sie_last = r == S_TXCSR1 && sie_index == 4u ? ep4_csr : 0u;
+    if (r == S_TXCSR1 && sie_index != 4u && in_timer)
+        ep_wrong++;
     if (r == S_TXCSR1 && sie_index == 4u) {
         n_polls++;
         if (poll_last > 0 && uac.flowing && now - poll_last > gap_max)
@@ -147,6 +163,8 @@ static uint32_t sim_sie_data(void) { return sie_last; }
 /* ---- the queued packet's bookkeeping (what uac_packet did when it built ep4tx) */
 static uint32_t q_n, q_under, q_overwritten;
 static int cli_pending;                                /* (--align, below) */
+static double ctl_ms, t_ctl;                           /* --ctl-reset MS: usb_start every MS ms in the main loop, the
+                                                        * stream still configured (usb_retry after SIE timeouts) */
 static double cli_due;
 static void cli_arm(double t);
 static void sim_ep4_send(void *p, uint32_t n)
@@ -285,6 +303,8 @@ static void run(const cfg_t *c)
     n_polls = 0;
     blk_max = blk_acc = 0;
     blk_id = 0;
+    ep_wrong = 0;
+    t_ctl = ctl_ms > 0 ? ctl_ms * 1e6 : 1e30;
     poll_last = gap_max = take_t = lat_max = 0;
     t_fold = 1e30;
     memset(&R, 0, sizeof R);
@@ -330,6 +350,13 @@ static void run(const cfg_t *c)
 #endif
             in_timer = 0;
             continue;
+        }
+        if (t >= t_ctl) {                              /* --ctl-reset: usb_retry's usb_start (usb.up 0 after the
+                                                         * SIE timeouts), between two events of the ISRs */
+            now = t;
+            usb.up = 0;
+            usb_start();
+            t_ctl += ctl_ms * 1e6;
         }
         if (cli_pending && t >= cli_due) {             /* --align: the main loop's flash slice asks usb.c */
             now = t;
@@ -414,6 +441,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[k], "--cli-exact")) cli_exact = 1;
         else if (!strcmp(argv[k], "--align")) cli_align = 1;
         else if (!strcmp(argv[k], "--clean")) clean = 1;
+        else if (!strcmp(argv[k], "--ctl-reset") && k + 1 < argc) ctl_ms = atof(argv[++k]);
         else if (!strcmp(argv[k], "--tj") && k + 1 < argc) tj = atof(argv[++k]);
     }
     sie_fault = fault;
@@ -438,14 +466,15 @@ int main(int argc, char **argv)
             printf("case ppm %.0f rend %.0f hours %.2f pkts %llu taken %llu frames %llu nmin %u nmax %u n_bad %llu "
                    "underruns %u dup_counted %llu missed %u stalls %u overruns %u overwritten %u gaps_counted %llu "
                    "adj_up %u adj_down %u silence %llu sie_to %u dup_uncounted %llu drop_uncounted %llu "
-                   "true_missed %llu cli %llu phase %d polls_per_s %.0f gap_max_us %.0f lat_max_us %.0f sie_blk_max %u\n",
+                   "true_missed %llu cli %llu phase %d polls_per_s %.0f gap_max_us %.0f lat_max_us %.0f sie_blk_max %u ep_wrong %llu\n",
                    c.ppm, c.rend_us, c.hours, (unsigned long long)R.pkts, (unsigned long long)R.taken,
                    (unsigned long long)R.frames, R.nmin, R.nmax, (unsigned long long)R.n_bad, uac.underruns,
                    (unsigned long long)R.dup_counted, uac.missed, uac.stalls, uac.overruns, q_overwritten,
                    (unsigned long long)R.gaps_counted, uac.adj_up, uac.adj_down, (unsigned long long)R.silence,
                    UAC_SIE_TO, (unsigned long long)R.dup_uncounted, (unsigned long long)R.drop_uncounted,
                    (unsigned long long)R.true_missed, (unsigned long long)n_cli, FELUCCA_UAC_PHASE,
-                   (double)n_polls / (c.hours * 3600.0), gap_max / 1e3, lat_max / 1e3, blk_max);
+                   (double)n_polls / (c.hours * 3600.0), gap_max / 1e3, lat_max / 1e3, blk_max,
+                   (unsigned long long)ep_wrong);
             if (R.dup_uncounted || R.drop_uncounted || R.n_bad || q_overwritten)
                 bad++;
         }

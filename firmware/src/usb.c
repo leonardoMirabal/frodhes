@@ -1302,6 +1302,10 @@ static uint32_t uac_ep4_poll(uint32_t probe)
     if (!usb.up || !usb.config || !uac.alt)
         return 0;
 #if FELUCCA_UAC_PHASE
+    if (!fm1_usb_sie_on()) {                            /* (the SIE held in reset: sie_rd's 0 is not "free", and INDEX */
+        uac.idx4 = 0;                                   /*  is lost; not a wait either) */
+        return 0;
+    }
     if (!uac.idx4) {                                    /* (0.9.9: INDEX written only when another access changed it:
                                                          * an SIE access costs ~2 us of the audio ISR the poll nests in,
                                                          * and the phase-locked poll's looks read TXCSR1 alone) */
@@ -1526,6 +1530,11 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
 static void usb_start(void)                             /* boot, or main-loop retry while usb.up == 0 */
 {
     usb.timeouts = 0;
+#if FELUCCA_UAC_PHASE
+    uac.idx4 = 0;                                       /* (the reset puts INDEX back to 0; usb_retry runs this with
+                                                         * usb.config and uac.alt still set; usb.up is 0 meanwhile, so
+                                                         * no EP4 poll runs until the end) */
+#endif
     fm1_usb_reset();                                    /* reset whatever the ROM left */
     fm1_delay_ms(25);
     fm1_usb_attach(ep0buf);
@@ -1556,5 +1565,8 @@ static void usb_detach(void)
 {
     usb.detached = 1;
     usb.up = 0;
+#if FELUCCA_UAC_PHASE
+    uac.idx4 = 0;
+#endif
     fm1_usb_off();
 }
