@@ -171,7 +171,7 @@ static void hq_pulse_gain(rh_voice_t *v)
          * the modes at this strike's physical-to-drive ratio over the ringing one's (dr / drl), not at the gain law's
          * ratio the table's pulse takes (rh_load_pulse: g / gq; the two differ where the old v127 law was compressed
          * by the pickup: key 108 played +4 dB over the table's pulse) */
-        float g = (float)rh_drive_g((uint32_t)(v->k - RH_KEYS), v->vel);
+        float g = (float)rh_drive_g((uint32_t)(v->k - RH_KEYS), v->vel, v->lt);
         h->lg *= (h->dr / (h->drl > 0.0f ? h->drl : 1.0f)) * ((float)v->gq / g);
         h->lg *= (float)v->mk / (float)rh_drv_mkt((uint32_t)(v->k - RH_KEYS), v->vel);   /* (the make-up's, as g's) */
     }

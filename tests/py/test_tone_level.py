@@ -36,13 +36,9 @@ def loud(seg):
     return lufs(seg[int(0.05 * FS):int(0.6 * FS)])
 
 
-# RESPONSE (CC 40) A, the pickup drive (rh_tone_g.h), and B, the velocity map (rh_tone_b.h). B's curves were fitted
-# before the 0.9.10 dry-distortion fix (the swing back to 0.9.9's physical law) and not refitted since: TONE 127 at
-# v127 -8.5 .. +3.6 LU re TONE 64 (C2 .. C6). Strict: it fails once B is refitted, so the mark comes off then
-B_UNFIT = pytest.mark.xfail(strict=True, reason="rh_tone_b.h (RESPONSE B) not refitted after the dry-distortion fix")
-
-
-@pytest.mark.parametrize("resp", [0, pytest.param(127, marks=B_UNFIT)], ids=["A", "B"])
+# RESPONSE (CC 40): A and B play the same sound (B is A x a soft-end gain, rhodes.c rh_dyn), so one compensation
+# (rh_tone_g.h) holds for both; both are checked
+@pytest.mark.parametrize("resp", [0, 127], ids=["A", "B"])
 @pytest.mark.parametrize("ty", range(4))
 def test_tone_keeps_the_loudness(ty, resp):
     for vel in (40, 80, 100, 127):

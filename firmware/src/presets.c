@@ -45,8 +45,9 @@ _Static_assert(sizeof pr_user == ST_TAIL_N, "the user presets are the store reco
  * with either velocity RESPONSE; the hot ones less or trimmed (F04 +3, F08 -8, F12 to 127, F13..F15 +5..+8, F16 -26),
  * so hard playing never reaches the limiter (build/sonic/hr: a safety net for pile-ups only); F04 / F08 / F13 / F15 / F16 sit under their
  * targets by it (MANUAL 'Factory presets'). F06 / F09 / F11 / F19 back to F01's level after the engine moved them (54 / 62 /
- * 23 / 80). The starters U01..U09 to F01's level (+8..+14) where their hard chords stay under -1.2 dBFS: U02 -10 (it
- * peaked at +0.6 dBFS before the limiter), U07 +5 only (MANUAL: both under F01).
+ * 23 / 80). The starters U01..U09 to F01's level (+8..+14) where their hard chords stay under -1.2 dBFS: U02 -16 (it
+ * peaked at +0.6 dBFS before the limiter at -10; 6 more when TONE's level compensation was refitted on the clean
+ * engine, which gave its TONE 76 back 1.2 LU), U07 +5 only (MANUAL: both under F01).
  * 2026-11-08 (the user: "the effects super loud", headphones clipping): 0.9.9's absolute output level again, every
  * LEVEL here -19 (-3.6 dB: the +14 and the engine's +0.9 dB since 0.9.9; F01 within 0.5 dB of 0.9.9's on host) under
  * the -2.7 dBFS ceiling (fx.c LIM_T 24000); the balance between the presets as 0.9.10 set it.
@@ -189,7 +190,7 @@ static const uint8_t PR_SDATA[] = {
     P_TYPE, 3, P_TONE, 76, P_BELL, 80, P_HAMMER, 84, P_BARK, 56, P_NOISE, 40, P_CMP_SW, 1, P_CMP_AMT, 50,
     P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_CP_SW, 1, P_CP_DEPTH, 56, P_CP_SPEED, 50,
     P_DL_SW, 1, P_DL_DEPTH, 17, P_DL_SYNC, 8, P_DL_FDBK, 24, P_DL_TONE, 80, P_RV_DEPTH, 32, P_RV_TYPE, 2,
-    P_RV_PREDLY, 20, P_RV_LOCUT, 80, P_LEVEL, 59, 0xFF,
+    P_RV_PREDLY, 20, P_RV_LOCUT, 80, P_LEVEL, 53, 0xFF,
     /* U03 FUNK COMP: the bright, barky comping piano: a firm compressor for evenness, a touch of mid drive (TSH8), a
      * small room */
     P_TYPE, 0, P_TONE, 72, P_BARK, 88, P_HAMMER, 84, P_BELL, 72, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50,
