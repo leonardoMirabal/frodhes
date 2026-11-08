@@ -11,9 +11,9 @@ DFONT := $(ROOT)/assets/fonts/Michroma-Regular.ttf
 
 .PHONY: renders clean
 renders: $(OUT)/frui_render
-	rm -f $(OUT)/*.png $(OUT)/directions/*.png
+	rm -f $(OUT)/*.png $(OUT)/directions-a3/*.png
 	$(OUT)/frui_render "$(FONT)" $(OUT) $(DFONT)
-	mkdir -p $(OUT)/directions && FRUI_DIRECTIONS=1 $(OUT)/frui_render "$(FONT)" $(OUT) $(DFONT)
+	mkdir -p $(OUT)/directions-a3 && FRUI_DIRECTIONS=1 $(OUT)/frui_render "$(FONT)" $(OUT) $(DFONT)
 
 $(OUT)/frui_render: $(SRC) tools/frui_render.c frui.h frui_font.h frui_gfx.h frui_params.h frui_text.h
 	mkdir -p $(OUT)

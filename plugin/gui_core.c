@@ -573,7 +573,7 @@ frp_gui_t *frp_gui_new(const frp_ui_host_t *h)
     g->u = frui_new(s_font, g->h.text ? (frui_text_fn)g->h.text : frui_text_default, g->h.ctx);
     if (!g->u) { free(g); return 0; }
     s_refs++;
-    frui_set_look(g->u, FRUI_LOOK_PLATE, s_dfont);  /* the A2 plate (the user's choice, 2026-11-07) */
+    frui_set_look(g->u, FRUI_LOOK_A3, s_dfont);     /* A3, the default look (the user's choice) */
     g->m.focus = g->m.hover = g->m.menu = g->m.ctx_knob = g->m.learning = -1;
     g->loc_learning = -1;
     g->wheel_id = -1;
