@@ -13,7 +13,10 @@ set(FRP_ENGINE_FLAGS -O2 -std=gnu11 -ffp-contract=off -fvisibility=hidden -Wall 
                      -Wno-unused-variable)
 # Full LTO on the slot objects: the 16 copies of the firmware's constant tables (bars, rhodes, pulse, HQ: ~3 MB per
 # slot) are identical, and the link-time constant merge keeps one copy (a 4-slot arm64 test: 3.6 MB of constants, not
-# 11.9 MB). Without it a universal bundle is ~108 MB. The audio is unchanged (Gate D: tools/gate_d.py).
+# 11.9 MB). Without it a universal bundle is ~108 MB. The audio is unchanged (Gate D: tools/gate_d.py). The tables
+# whose address the code keeps (RH_KEYS, BAR_KEYS, RH_PHIM_*, the drive and font tables) are not merged that way: the
+# slots read them through plugin/compat/<header>.h (first on the include path), weak hidden definitions the linker
+# keeps once (shared_tables.h; a 32-slot arm64 slice: 3.0 MB of constants, not 8.1 MB).
 option(FRP_LTO "full LTO on the slot objects (shares their constant tables)" ON)
 if(FRP_LTO)
     list(APPEND FRP_ENGINE_FLAGS -flto=full)
