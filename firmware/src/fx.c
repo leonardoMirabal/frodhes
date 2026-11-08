@@ -18,10 +18,14 @@
 #ifndef FX_RAM                                  /* (frodhes.c: FR_RAM, or flash in FR_C1 builds: core 1 runs the effects from XIP) */
 #define FX_RAM FR_RAM
 #endif
-#ifndef FX_SIDE                                 /* the Rhodes' side signal the effects read (SPREAD): rhodes.c's own;
-                                                 * FR_C1 builds (frodhes.c): the copy of the block in flight */
+#ifndef FX_SIDE                                 /* the Rhodes' side signal the effects read (SPREAD): rhodes.c's own */
 #define FX_SIDE rh_side
 #define FX_SIDE_ON rh_side_on
+#endif
+#if FR_C1
+#define FX_SIDE_ONB fxc_side                    /* (FR_C1: latched at the block's first chunk, fx_process) */
+#else
+#define FX_SIDE_ONB FX_SIDE_ON
 #endif
 #ifndef FX_PROC_ATTR                            /* fx_process: inlined into app_audio; FR_C1 builds: one copy, called
                                                  * from core 1's job and from core 0's fallback */
@@ -129,6 +133,7 @@ static uint32_t fxc_o, fxc_e = 256u, fxc_n = 256u;
 #ifdef C1_EST_LOG
 static uint32_t c1_est_blk;                              /* (host diagnostics: the block count, fx_process) */
 #endif
+static uint8_t fxc_side;                                 /* FX_SIDE_ON, latched at the block's first chunk (fx_process) */
 #define FXC_1 (fxc_o == 0u)
 #define FXC_Z (fxc_e == fxc_n)
 /* xf_pre / xf_post for a chunk: the dry copy of the chunk, the blend's ramp from the block's start */
@@ -1295,12 +1300,14 @@ static void fx_comp(int32_t *m, uint32_t n)
     int32_t w1;
     uint32_t sb, j;
 #if FR_C1
-    {                                                 /* the input's peak: the block before's and this block's so far */
+    if (!cmp_xw) {                                    /* at rest: the input's peak, the block before's and this one's
+                                                       * so far (for a switch-on; not scanned while COMP runs or fades,
+                                                       * the block before's then 0: this block's first chunk alone) */
         int32_t pk = 0;
         if (FXC_1) { cmp_pkb = cmp_pkc; cmp_pkc = 0; }
         for (j = fxc_o; j < fxc_e; j++) if (iabs(m[j]) > pk) pk = iabs(m[j]);
         if (pk > cmp_pkc) cmp_pkc = pk;
-    }
+    } else if (FXC_1) cmp_pkb = cmp_pkc = 0;
     if (!on && !cmp_xw) { fx_cmp_gr = 0; return; }
     if (!cmp_xw && FXC_1) {                           /* switched on from rest: the detector from the peak of the block
                                                        * before and the first chunk (one core: this block's; its later
@@ -2201,9 +2208,9 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
          * goes through them independently, so a pass per stage is the one fused loop sample for sample (0.9.5: that
          * loop spilled, 88 instructions a sample with LEVEL off unity; the bypass pass, then 30 / 36 a sample) */
         if (byp && wet == 0)                           /* bypassed: the dry signal ((x 0 + dry x 32768) >> 15) */
-            fx_spread_dry(mono, FX_SIDE_ON ? FX_SIDE + sb : fx_zs, sb);
+            fx_spread_dry(mono, FX_SIDE_ONB ? FX_SIDE + sb : fx_zs, sb);
         else if (byp || wet != 32768)                  /* the crossfade (either way; toward SPREAD's M +- S: #25) */
-            wet = fx_xf_side(mono, FX_SIDE_ON ? FX_SIDE + sb : fx_zs, sb, wet, byp);
+            wet = fx_xf_side(mono, FX_SIDE_ONB ? FX_SIDE + sb : fx_zs, sb, wet, byp);
         if (lvl == 4096) {                             /* the usual case: LEVEL at unity */
             for (j = sb; j < sb + LK; j++) {
                 int32_t l = dc_block(fx_L[j], &dl, &el), r = dc_block(fx_R[j], &dr, &er), al = iabs(l), ar = iabs(r);
@@ -2299,6 +2306,7 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
             FX_SIDE_ON = 0; sp_g = 32768; sp_aw = 0;
         }
         else if (dly_rst) dly_clear_step();
+        fxc_side = FX_SIDE_ON;                         /* (the engine decides it at its block's start, eng_begin) */
     }
     if (fx_p[FXP_RAW]) {
         for (j = fxc_o; j < fxc_e; j++) { out[2u * j] = mono[j]; out[2u * j + 1u] = mono[j]; }
@@ -2333,7 +2341,7 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
                                                         * in place) */
     fx_filter(m, n);
     fx_trem(m, fx_L, fx_R, n);
-    if (FX_SIDE_ON) FR_FAR(fx_spread)(mono, fx_L, fx_R, n);   /* SPREAD: the side (S13) */
+    if (FX_SIDE_ONB) FR_FAR(fx_spread)(mono, fx_L, fx_R, n);   /* SPREAD: the side (S13) */
     FR_FAR(fx_phaser)(fx_L, fx_R, n);
     fx_delay(fx_L, fx_R, n);                           /* (the chorus, then the delay) */
     fx_reverb(fx_L, fx_R, n);
