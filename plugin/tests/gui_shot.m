@@ -19,7 +19,8 @@
 #include <zlib.h>
 #include <clap/clap.h>
 #include "../gui_shot.h"
-#include "../gui_core.h"
+#include "../gui_platform.h"
+#include "../ui/frui.h"
 
 static int fails;
 #define CHECK(c, ...) do { if (c) { printf("ok    "); } else { printf("FAIL  "); fails++; } printf(__VA_ARGS__); printf("\n"); } while (0)
@@ -197,10 +198,30 @@ static int find(int kind, int id, float *cx, float *cy, float r[4])
     *cx = rr[0] + rr[2] * 0.5f; *cy = rr[1] + rr[3] * 0.5f;
     return 1;
 }
+/* input as a view sends it (gui_platform.h) */
+enum { FRP_MOUSE_DOWN, FRP_MOUSE_DRAG, FRP_MOUSE_UP, FRP_MOUSE_RDOWN };
+static int sh_send(int kind, int button, int mods, float x, float y, float wheel, int key)
+{
+    frg_input e;
+    memset(&e, 0, sizeof e);
+    e.kind = kind; e.button = button; e.mods = mods; e.x = x; e.y = y; e.wheel = wheel; e.key = key;
+    return shot->input(pl, &e);
+}
+static void sh_mouse(int ev, float x, float y, int mods, int clicks)
+{
+    switch (ev) {
+    case FRP_MOUSE_DOWN: sh_send(clicks >= 2 ? FRG_DOUBLE : FRG_DOWN, FRG_LEFT, mods, x, y, 0.f, 0); break;
+    case FRP_MOUSE_DRAG: sh_send(FRG_MOVE, 0, mods, x, y, 0.f, 0); break;
+    case FRP_MOUSE_UP: sh_send(FRG_UP, FRG_LEFT, mods, x, y, 0.f, 0); break;
+    case FRP_MOUSE_RDOWN: sh_send(FRG_DOWN, FRG_RIGHT, mods, x, y, 0.f, 0); sh_send(FRG_UP, FRG_RIGHT, mods, x, y, 0.f, 0); break;
+    }
+}
+static void sh_wheel(float x, float y, float n, int mods) { sh_send(FRG_WHEEL, 0, mods, x, y, n, 0); }
+static int sh_key(int key, int mods) { return sh_send(FRG_KEY, 0, mods, 0.f, 0.f, 0.f, key); }
 static void click(float x, float y, int clicks)
 {
-    shot->mouse(pl, FRP_MOUSE_DOWN, x, y, 0, clicks);
-    shot->mouse(pl, FRP_MOUSE_UP, x, y, 0, clicks);
+    sh_mouse(FRP_MOUSE_DOWN, x, y, 0, clicks);
+    sh_mouse(FRP_MOUSE_UP, x, y, 0, clicks);
 }
 
 int main(int argc, char **argv)
@@ -310,9 +331,9 @@ int main(int argc, char **argv)
         /* a knob dragged up 40 px: one gesture, values, the app's value */
         v0 = pval(20);                               /* TONE */
         if (find(FRW_KNOB, 20, &x, &y, 0)) {
-            shot->mouse(pl, FRP_MOUSE_DOWN, x, y, 0, 1);
-            for (int k = 1; k <= 8; k++) { shot->mouse(pl, FRP_MOUSE_DRAG, x, y - 5.f * k, 0, 1); pump(0.02); }
-            shot->mouse(pl, FRP_MOUSE_UP, x, y - 40.f, 0, 1);
+            sh_mouse(FRP_MOUSE_DOWN, x, y, 0, 1);
+            for (int k = 1; k <= 8; k++) { sh_mouse(FRP_MOUSE_DRAG, x, y - 5.f * k, 0, 1); pump(0.02); }
+            sh_mouse(FRP_MOUSE_UP, x, y - 40.f, 0, 1);
         }
         pump(0.3);
         CHECK(out_begin[20] == 1 && out_end[20] == 1 && out_val[20] >= 1, "the drag is one gesture to the host (begin %d, values %d, end %d)",
@@ -322,23 +343,23 @@ int main(int argc, char **argv)
         CHECK(m && m->p[20] == (uint8_t)pval(20) && m->focus == FRUI_WID(FRW_KNOB, 20), "the knob shows it, with the focus ring");
         /* shift: ten times finer */
         v0 = pval(20);
-        shot->mouse(pl, FRP_MOUSE_DOWN, x, y, FRP_MOD_SHIFT, 1);
-        shot->mouse(pl, FRP_MOUSE_DRAG, x, y + 40.f, FRP_MOD_SHIFT, 1);
-        shot->mouse(pl, FRP_MOUSE_UP, x, y + 40.f, FRP_MOD_SHIFT, 1);
+        sh_mouse(FRP_MOUSE_DOWN, x, y, FRG_SHIFT, 1);
+        sh_mouse(FRP_MOUSE_DRAG, x, y + 40.f, FRG_SHIFT, 1);
+        sh_mouse(FRP_MOUSE_UP, x, y + 40.f, FRG_SHIFT, 1);
         pump(0.2);
         CHECK(fabs(pval(20) - (v0 - 40.0 * 127.0 / 2000.0)) <= 1.0, "shift-drag is fine (%.0f -> %.0f)", v0, pval(20));
         /* the wheel, the arrow keys */
         v0 = pval(20);
-        shot->wheel(pl, x, y, 3.f, 0);
+        sh_wheel(x, y, 3.f, 0);
         pump(0.6);
         CHECK(pval(20) == v0 + 6.0, "three wheel notches: +6 (%.0f -> %.0f)", v0, pval(20));
         v0 = pval(20);
-        shot->key(pl, FRP_KEY_DOWN, 0);
+        sh_key(FRK_DOWN, 0);
         pump(0.2);
         CHECK(pval(20) == v0 - 1.0, "the down arrow on the focused knob: -1");
         /* double click: the default */
-        shot->mouse(pl, FRP_MOUSE_DOWN, x, y, 0, 2);
-        shot->mouse(pl, FRP_MOUSE_UP, x, y, 0, 2);
+        sh_mouse(FRP_MOUSE_DOWN, x, y, 0, 2);
+        sh_mouse(FRP_MOUSE_UP, x, y, 0, 2);
         pump(0.2);
         {
             clap_param_info_t inf;
@@ -358,24 +379,24 @@ int main(int argc, char **argv)
         /* the keyboard: a key plays (the app hears it: the meter, the key lit) */
         if (find(FRW_KEYS, 0, &x, &y, r)) {
             float kx = r[0] + r[2] / 36.f * 14.5f, ky = r[1] + r[3] * 0.85f;   /* C3 (MIDI 48), a white key */
-            shot->mouse(pl, FRP_MOUSE_DOWN, kx, ky, 0, 1);
+            sh_mouse(FRP_MOUSE_DOWN, kx, ky, 0, 1);
             pump(0.3);
             m = snap("keyboard");
             CHECK(m && m->notes[48], "a click on C3 plays MIDI note 48");
-            shot->mouse(pl, FRP_MOUSE_UP, kx, ky, 0, 1);
+            sh_mouse(FRP_MOUSE_UP, kx, ky, 0, 1);
             pump(0.2);
         }
         /* the knob's menu (right click) and SETTINGS (the gear) */
-        if (find(FRW_KNOB, 20, &x, &y, 0)) shot->mouse(pl, FRP_MOUSE_RDOWN, x, y, 0, 1);
+        if (find(FRW_KNOB, 20, &x, &y, 0)) sh_mouse(FRP_MOUSE_RDOWN, x, y, 0, 1);
         pump(0.2);
         m = snap("knob-menu");
         CHECK(m && m->ctx_knob == 20, "right click: the knob's menu (MIDI LEARN, FORGET, DEFAULT)");
-        shot->key(pl, FRP_KEY_ESC, 0);
+        sh_key(FRK_ESCAPE, 0);
         if (find(FRW_BUTTON, FRB_GEAR, &x, &y, 0)) click(x, y, 1);
         pump(0.2);
         m = snap("settings");
         CHECK(m && m->settings, "the gear opens SETTINGS");
-        shot->key(pl, FRP_KEY_ESC, 0);
+        sh_key(FRK_ESCAPE, 0);
         pump(0.1);
 
         /* resize (the host drags the window): 75 % and 150 % */

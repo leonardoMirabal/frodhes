@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* The plugin window on macOS (gui_view.h): an NSView whose sublayer shows gui_core's canvas as a CGImage at the
- * window's backing scale (2x on Retina: the canvas is drawn at the pixel size, never scaled), sRGB as the canvas's
- * colours are (the documentation pictures and the screen show the same values).
+/* The plugin window on macOS (gui_platform.h): an NSView whose sublayer shows the canvas as a CGImage at the window's
+ * backing scale (2x on Retina: the canvas is drawn at the pixel size, never scaled), sRGB as the canvas's colours are
+ * (the documentation pictures and the screen show the same values). The canvas is the largest 16:10 rectangle in the
+ * view (hosts keep the aspect: the gui extension's hints), its corners rounded as the plate's (look A3: 22 logical px)
+ * so the host's window shows behind them. Sizes are points (CLAP's cocoa API); the timer runs at 60 Hz.
  *
  * The view's class is registered at run time under a name unique to this binary image: AppKit's classes are global to
  * the process, and the same plugin can be loaded twice in one host (its CLAP and its VST3, or two versions), each with
@@ -13,42 +15,42 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <clap/clap.h>
-#include "gui_view.h"
+#include "gui_platform.h"
+#include "ui/frui.h"
 
-const char *const FRP_VIEW_API = CLAP_WINDOW_API_COCOA;
+const char *const FRG_VIEW_API = "cocoa";
 
-struct frp_view {
-    frp_gui_t *core;
+struct frg_view {
+    frg_client cl;
     NSView *nsv;
     CALayer *img;                    /* the canvas's layer */
     NSTimer *timer;
     NSTrackingArea *track;
+    uint32_t *px;                    /* the canvas, pw x ph pixels */
+    int pw, ph;
     uint32_t *grab;
-    int gw, gh;
+    int dirty;
     CGColorSpaceRef cs;
 };
 
 static Class s_cls;
-static ptrdiff_t s_ivar;             /* the view's frp_view pointer */
-static frp_view_t *V(id self) { return *(frp_view_t **)((char *)self + s_ivar); }
-
-static double now_s(void) { return CACurrentMediaTime(); }
+static ptrdiff_t s_ivar;             /* the view's frg_view pointer */
+static frg_view *V(id self) { return *(frg_view **)((char *)self + s_ivar); }
 
 /* ---- painting */
-static void blit(frp_view_t *v)
+static double backing(const frg_view *v)
 {
-    int w, h;
-    const uint32_t *px = frp_gui_pixels(v->core, &w, &h);
-    CFDataRef data;
-    CGDataProviderRef dp;
-    CGImageRef im;
-    if (!px) return;
-    data = CFDataCreate(NULL, (const UInt8 *)px, (CFIndex)w * h * 4);
-    dp = CGDataProviderCreateWithCFData(data);
-    im = CGImageCreate((size_t)w, (size_t)h, 8, 32, (size_t)w * 4, v->cs,
-                       kCGBitmapByteOrder32Little | (CGBitmapInfo)kCGImageAlphaNoneSkipFirst, dp, NULL, false,
-                       kCGRenderingIntentDefault);
+    NSWindow *w = [v->nsv window];
+    double s = w ? [w backingScaleFactor] : [[NSScreen mainScreen] backingScaleFactor];
+    return s > 0.0 ? s : 1.0;
+}
+static void blit(frg_view *v)
+{
+    CFDataRef data = CFDataCreate(NULL, (const UInt8 *)v->px, (CFIndex)v->pw * v->ph * 4);
+    CGDataProviderRef dp = CGDataProviderCreateWithCFData(data);
+    CGImageRef im = CGImageCreate((size_t)v->pw, (size_t)v->ph, 8, 32, (size_t)v->pw * 4, v->cs,
+                                  kCGBitmapByteOrder32Little | (CGBitmapInfo)kCGImageAlphaNoneSkipFirst, dp, NULL, false,
+                                  kCGRenderingIntentDefault);
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     v->img.contents = (id)im;
@@ -57,62 +59,68 @@ static void blit(frp_view_t *v)
     CGDataProviderRelease(dp);
     CFRelease(data);
 }
-static void frame(frp_view_t *v, int force)
+static void paint(frg_view *v)
 {
-    int d[4];
-    if (frp_gui_tick(v->core, now_s()) || force)
-        if (frp_gui_paint(v->core, d) || force) blit(v);
+    frui_canvas c;
+    if (!v->px || !v->cl.paint) return;
+    frui_canvas_init(&c, v->px, v->pw, v->ph);
+    v->cl.paint(v->cl.ctx, &c, (float)backing(v));
+    v->dirty = 0;
+    blit(v);
 }
-static double backing(frp_view_t *v)
-{
-    NSWindow *w = [v->nsv window];
-    double s = w ? [w backingScaleFactor] : [[NSScreen mainScreen] backingScaleFactor];
-    return s > 0.0 ? s : 1.0;
-}
-static void layout(frp_view_t *v)
+static void layout(frg_view *v)
 {
     NSRect b = [v->nsv bounds];
-    double s = backing(v);
-    int pw = (int)lround(b.size.width * s), ph = (int)lround(b.size.height * s), cw, ch;
-    if (pw < 1 || ph < 1) return;
-    frp_gui_resize(v->core, pw, ph);
-    (void)frp_gui_pixels(v->core, &cw, &ch);
+    double s = backing(v), lw = b.size.width, lh = b.size.height;
+    int pw, ph;
+    if (lw < 1.0 || lh < 1.0) return;
+    if (lh * FRUI_W > lw * FRUI_H) lh = lw * FRUI_H / FRUI_W; else lw = lh * FRUI_W / FRUI_H;   /* 16:10 */
+    pw = (int)lround(lw * s); ph = (int)lround(lh * s);
+    if (pw != v->pw || ph != v->ph || !v->px) {
+        uint32_t *px = calloc((size_t)pw * (size_t)ph, 4);
+        if (!px) return;
+        free(v->px);
+        v->px = px; v->pw = pw; v->ph = ph;
+    }
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     v->img.contentsScale = s;
-    v->img.frame = CGRectMake(0, b.size.height - ch / s, cw / s, ch / s);   /* (the layer tree's y runs up) */
-    if ([v->nsv.layer isGeometryFlipped]) v->img.frame = CGRectMake(0, 0, cw / s, ch / s);
-    /* the plate's rounded corners (look A3: 22 logical px) show the host's window behind them */
-    v->img.cornerRadius = 22.0 * (cw / s) / FRP_GUI_W;
+    v->img.frame = CGRectMake(0, b.size.height - ph / s, pw / s, ph / s);   /* the top left (the layer tree's y runs up) */
+    if ([v->nsv.layer isGeometryFlipped]) v->img.frame = CGRectMake(0, 0, pw / s, ph / s);
+    v->img.cornerRadius = 22.0 * (pw / s) / FRUI_W;
     v->img.masksToBounds = YES;
     [CATransaction commit];
-    frame(v, 1);
+    paint(v);
 }
 
 /* ---- input */
-static void logical(id self, NSEvent *e, float *x, float *y)
-{
-    frp_view_t *v = V(self);
-    NSPoint p = [self convertPoint:[e locationInWindow] fromView:nil];
-    float k = frp_gui_px_to_logical(v->core) * (float)backing(v);
-    *x = (float)p.x * k;
-    *y = (float)p.y * k;             /* (the view is flipped: y from the top) */
-}
 static int mods_of(NSEvent *e)
 {
     NSEventModifierFlags f = [e modifierFlags];
-    return (f & NSEventModifierFlagShift ? FRP_MOD_SHIFT : 0) | (f & NSEventModifierFlagOption ? FRP_MOD_ALT : 0) |
-           (f & NSEventModifierFlagCommand ? FRP_MOD_CMD : 0) | (f & NSEventModifierFlagControl ? FRP_MOD_CTRL : 0);
+    return (f & NSEventModifierFlagShift ? FRG_SHIFT : 0) | (f & NSEventModifierFlagOption ? FRG_ALT : 0) |
+           (f & NSEventModifierFlagCommand ? FRG_CMD : 0) | (f & NSEventModifierFlagControl ? FRG_CTRL : 0);
 }
-static void mouse(id self, NSEvent *e, int ev)
+static int view_send(frg_view *v, frg_input *e)
 {
-    frp_view_t *v = V(self);
-    float x, y;
-    if (!v) return;
-    logical(self, e, &x, &y);
-    if (ev == FRP_MOUSE_DOWN && (mods_of(e) & FRP_MOD_CTRL)) ev = FRP_MOUSE_RDOWN;   /* control-click: the menu */
-    frp_gui_mouse(v->core, ev, x, y, mods_of(e), ev == FRP_MOUSE_DOWN ? (int)[e clickCount] : 1);
-    frame(v, 0);
+    int r = v->cl.input ? v->cl.input(v->cl.ctx, e) : 0;
+    if (r & 1) paint(v);
+    return r;
+}
+static void mouse(id self, NSEvent *e, int kind, int button)
+{
+    frg_view *v = V(self);
+    frg_input in;
+    NSPoint p;
+    float k;
+    if (!v || v->pw < 1) return;
+    memset(&in, 0, sizeof in);
+    p = [self convertPoint:[e locationInWindow] fromView:nil];
+    k = (float)(FRUI_W / (v->pw / backing(v)));      /* logical px per point */
+    in.kind = kind; in.button = button; in.mods = mods_of(e);
+    in.x = (float)p.x * k; in.y = (float)p.y * k;    /* (flipped: y from the top) */
+    if (kind == FRG_DOWN && button == FRG_LEFT && (in.mods & FRG_CTRL)) in.button = FRG_RIGHT;   /* control-click */
+    if (kind == FRG_DOWN && [e clickCount] == 2) in.kind = FRG_DOUBLE;
+    view_send(v, &in);
 }
 static BOOL m_yes(id self, SEL s) { (void)self; (void)s; return YES; }
 static BOOL m_yes1(id self, SEL s, id a) { (void)self; (void)s; (void)a; return YES; }
@@ -120,62 +128,91 @@ static void m_down(id self, SEL s, NSEvent *e)
 {
     (void)s;
     [[self window] makeFirstResponder:self];
-    mouse(self, e, FRP_MOUSE_DOWN);
+    mouse(self, e, FRG_DOWN, FRG_LEFT);
 }
-static void m_drag(id self, SEL s, NSEvent *e) { (void)s; mouse(self, e, FRP_MOUSE_DRAG); }
-static void m_up(id self, SEL s, NSEvent *e) { (void)s; mouse(self, e, FRP_MOUSE_UP); }
-static void m_rdown(id self, SEL s, NSEvent *e) { (void)s; mouse(self, e, FRP_MOUSE_RDOWN); }
-static void m_move(id self, SEL s, NSEvent *e) { (void)s; mouse(self, e, FRP_MOUSE_MOVE); }
-static void m_exit(id self, SEL s, NSEvent *e) { (void)s; mouse(self, e, FRP_MOUSE_LEAVE); }
+static void m_drag(id self, SEL s, NSEvent *e) { (void)s; mouse(self, e, FRG_MOVE, 0); }
+static void m_up(id self, SEL s, NSEvent *e) { (void)s; mouse(self, e, FRG_UP, FRG_LEFT); }
+static void m_rdown(id self, SEL s, NSEvent *e) { (void)s; mouse(self, e, FRG_DOWN, FRG_RIGHT); }
+static void m_rup(id self, SEL s, NSEvent *e) { (void)s; mouse(self, e, FRG_UP, FRG_RIGHT); }
+static void m_move(id self, SEL s, NSEvent *e) { (void)s; mouse(self, e, FRG_MOVE, 0); }
+static void m_exit(id self, SEL s, NSEvent *e) { (void)s; mouse(self, e, FRG_LEAVE, 0); }
 static void m_scroll(id self, SEL s, NSEvent *e)
 {
-    frp_view_t *v = V(self);
-    float x, y, n;
+    frg_view *v = V(self);
+    frg_input in;
+    NSPoint p;
+    float k, n;
     (void)s;
-    if (!v) return;
-    logical(self, e, &x, &y);
+    if (!v || v->pw < 1) return;
+    memset(&in, 0, sizeof in);
+    p = [self convertPoint:[e locationInWindow] fromView:nil];
+    k = (float)(FRUI_W / (v->pw / backing(v)));
     n = (float)[e scrollingDeltaY];
     if ([e hasPreciseScrollingDeltas]) n /= 16.f;   /* a trackpad's pixels: about one notch each 16 */
     if ([e isDirectionInvertedFromDevice]) n = -n;  /* (natural scrolling: up on the knob is still up) */
-    frp_gui_wheel(v->core, x, y, n, mods_of(e));
-    frame(v, 0);
+    in.kind = FRG_WHEEL; in.mods = mods_of(e); in.wheel = n;
+    in.x = (float)p.x * k; in.y = (float)p.y * k;
+    view_send(v, &in);
 }
 static void m_key(id self, SEL s, NSEvent *e)
 {
-    frp_view_t *v = V(self);
-    int k = 0;
+    frg_view *v = V(self);
+    frg_input in;
     struct objc_super sup = {self, [NSView class]};
+    memset(&in, 0, sizeof in);
+    in.kind = FRG_KEY; in.mods = mods_of(e);
     switch ([e keyCode]) {
-    case 48: k = FRP_KEY_TAB; break;
-    case 53: k = FRP_KEY_ESC; break;
-    case 36: case 76: k = FRP_KEY_ENTER; break;
-    case 123: k = FRP_KEY_LEFT; break;
-    case 124: k = FRP_KEY_RIGHT; break;
-    case 125: k = FRP_KEY_DOWN; break;
-    case 126: k = FRP_KEY_UP; break;
-    case 115: k = FRP_KEY_HOME; break;
-    case 119: k = FRP_KEY_END; break;
+    case 48: in.key = FRK_TAB; break;
+    case 53: in.key = FRK_ESCAPE; break;
+    case 36: case 76: in.key = FRK_RETURN; break;
+    case 123: in.key = FRK_LEFT; break;
+    case 124: in.key = FRK_RIGHT; break;
+    case 125: in.key = FRK_DOWN; break;
+    case 126: in.key = FRK_UP; break;
+    case 115: in.key = FRK_HOME; break;
+    case 119: in.key = FRK_END; break;
+    case 116: in.key = FRK_PGUP; break;
+    case 121: in.key = FRK_PGDN; break;
+    case 51: in.key = FRK_BACKSPACE; break;
+    case 117: in.key = FRK_DELETE; break;
+    default: {
+        NSString *ch = [e charactersIgnoringModifiers];
+        unichar c = [ch length] == 1 ? [ch characterAtIndex:0] : 0;
+        if (c >= 0x20 && c < 0x7f && !(in.mods & (FRG_CMD | FRG_CTRL))) in.key = (int)c;
     }
-    if (v && k && frp_gui_key(v->core, k, mods_of(e))) { frame(v, 0); return; }
+    }
+    if (v && in.key && (view_send(v, &in) & 2)) return;
     ((void (*)(struct objc_super *, SEL, NSEvent *))objc_msgSendSuper)(&sup, s, e);   /* the host's key */
+}
+static void m_resign(id self, SEL s)
+{
+    frg_view *v = V(self);
+    frg_input in;
+    (void)s;
+    if (v) { memset(&in, 0, sizeof in); in.kind = FRG_FOCUS_LOST; view_send(v, &in); }
+}
+static BOOL m_resign_first(id self, SEL s)
+{
+    m_resign(self, s);
+    return YES;
 }
 static void m_backing(id self, SEL s)
 {
-    frp_view_t *v = V(self);
+    frg_view *v = V(self);
     (void)s;
     if (v) layout(v);
 }
 static void m_setsize(id self, SEL s, NSSize sz)
 {
     struct objc_super sup = {self, [NSView class]};
-    frp_view_t *v = V(self);
+    frg_view *v = V(self);
     ((void (*)(struct objc_super *, SEL, NSSize))objc_msgSendSuper)(&sup, s, sz);
     if (v) layout(v);
 }
 static void m_tracking(id self, SEL s)
 {
     struct objc_super sup = {self, [NSView class]};
-    frp_view_t *v = V(self);
+    frg_view *v = V(self);
     if (v) {
         if (v->track) { [self removeTrackingArea:v->track]; [v->track release]; }
         v->track = [[NSTrackingArea alloc]
@@ -191,7 +228,7 @@ static void m_tracking(id self, SEL s)
 static void m_window(id self, SEL s)
 {
     struct objc_super sup = {self, [NSView class]};
-    frp_view_t *v = V(self);
+    frg_view *v = V(self);
     ((void (*)(struct objc_super *, SEL))objc_msgSendSuper)(&sup, s);
     if (v && [self window]) layout(v);
 }
@@ -207,11 +244,13 @@ static Class view_class(void)
     class_addIvar(c, "frp", sizeof(void *), sizeof(void *) == 8 ? 3 : 2, "^v");
     class_addMethod(c, @selector(isFlipped), (IMP)m_yes, "c@:");
     class_addMethod(c, @selector(acceptsFirstResponder), (IMP)m_yes, "c@:");
+    class_addMethod(c, @selector(resignFirstResponder), (IMP)m_resign_first, "c@:");
     class_addMethod(c, @selector(acceptsFirstMouse:), (IMP)m_yes1, "c@:@");
     class_addMethod(c, @selector(mouseDown:), (IMP)m_down, "v@:@");
     class_addMethod(c, @selector(mouseDragged:), (IMP)m_drag, "v@:@");
     class_addMethod(c, @selector(mouseUp:), (IMP)m_up, "v@:@");
     class_addMethod(c, @selector(rightMouseDown:), (IMP)m_rdown, "v@:@");
+    class_addMethod(c, @selector(rightMouseUp:), (IMP)m_rup, "v@:@");
     class_addMethod(c, @selector(mouseMoved:), (IMP)m_move, "v@:@");
     class_addMethod(c, @selector(mouseExited:), (IMP)m_exit, "v@:@");
     class_addMethod(c, @selector(scrollWheel:), (IMP)m_scroll, "v@:@");
@@ -226,16 +265,23 @@ static Class view_class(void)
     return c;
 }
 
-/* ---- gui_view.h */
-frp_view_t *frp_view_new(frp_gui_t *core, uint32_t w, uint32_t h)
+/* ---- gui_platform.h */
+float frg_view_scale(const frg_view *v) { return v ? (float)backing(v) : (float)[[NSScreen mainScreen] backingScaleFactor]; }
+void frg_view_set_scale(frg_view *v, float scale) { (void)v; (void)scale; }   /* (the window's backing scale) */
+void frg_view_default_size(const frg_view *v, int *w, int *h)
 {
-    frp_view_t *v = calloc(1, sizeof *v);
+    (void)v;
+    *w = FRUI_W; *h = FRUI_H;
+}
+frg_view *frg_view_create(const frg_client *cl, int w, int h)
+{
+    frg_view *v = calloc(1, sizeof *v);
     Class c = view_class();
     if (!v || !c) { free(v); return 0; }
-    v->core = core;
+    v->cl = *cl;
     v->cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
     v->nsv = [[c alloc] initWithFrame:NSMakeRect(0, 0, w, h)];
-    *(frp_view_t **)((char *)v->nsv + s_ivar) = v;
+    *(frg_view **)((char *)v->nsv + s_ivar) = v;
     [v->nsv setWantsLayer:YES];
     v->nsv.layer.backgroundColor = CGColorGetConstantColor(kCGColorClear);
     v->img = [[CALayer alloc] init];
@@ -245,39 +291,45 @@ frp_view_t *frp_view_new(frp_gui_t *core, uint32_t w, uint32_t h)
     layout(v);
     v->timer = [[NSTimer timerWithTimeInterval:1.0 / 60.0
                                       repeats:YES
-                                        block:^(NSTimer *t) { (void)t; frame(v, 0); }] retain];
+                                        block:^(NSTimer *t) {
+                                            (void)t;
+                                            if ((v->cl.tick && v->cl.tick(v->cl.ctx)) || v->dirty) paint(v);
+                                        }] retain];
     [[NSRunLoop mainRunLoop] addTimer:v->timer forMode:NSRunLoopCommonModes];
     return v;
 }
-void frp_view_free(frp_view_t *v)
+void frg_view_destroy(frg_view *v)
 {
     if (!v) return;
     [v->timer invalidate];
     [v->timer release];
-    *(frp_view_t **)((char *)v->nsv + s_ivar) = 0;   /* (a late event finds no window) */
+    *(frg_view **)((char *)v->nsv + s_ivar) = 0;   /* (a late event finds no window) */
     if (v->track) { [v->nsv removeTrackingArea:v->track]; [v->track release]; }
     [v->nsv removeFromSuperview];
     [v->img release];
     [v->nsv release];
     CGColorSpaceRelease(v->cs);
+    free(v->px);
     free(v->grab);
     free(v);
 }
-int frp_view_attach(frp_view_t *v, void *parent)
+int frg_view_set_parent(frg_view *v, void *native_parent)
 {
-    NSView *p = (NSView *)parent;
+    NSView *p = (NSView *)native_parent;
     if (!p) return -1;
     [p addSubview:v->nsv];
     return 0;
 }
-void frp_view_size(frp_view_t *v, uint32_t w, uint32_t h) { [v->nsv setFrameSize:NSMakeSize(w, h)]; }
-void frp_view_show(frp_view_t *v, int show)
+void frg_view_show(frg_view *v, int visible)
 {
-    [v->nsv setHidden:show ? NO : YES];
-    if (show) frame(v, 1);
+    [v->nsv setHidden:visible ? NO : YES];
+    if (visible) paint(v);
 }
-void frp_view_scale(frp_view_t *v, double scale) { (void)v; (void)scale; }
-const uint32_t *frp_view_grab(frp_view_t *v, int *w, int *h)
+void frg_view_resize(frg_view *v, int w, int h) { [v->nsv setFrameSize:NSMakeSize(w, h)]; }
+void frg_view_repaint(frg_view *v) { paint(v); }   /* (macOS: at once; the main thread) */
+int frg_view_poll_fd(const frg_view *v) { (void)v; return -1; }   /* (the run loop) */
+void frg_view_poll(frg_view *v) { (void)v; }
+const uint32_t *frg_view_grab(frg_view *v, int *w, int *h)   /* what the layer shows, read back */
 {
     CGImageRef im = (CGImageRef)v->img.contents;
     CFDataRef d;

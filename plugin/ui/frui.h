@@ -99,6 +99,7 @@ int frui_hit(const frui *u, float x, float y, frui_widget *w);
 /* a control's value as drawn (the parameters, TUNE, TREM/WAH's EFFECT, the settings) and its range 0..hi */
 int frui_value(const frui_model *m, int id);
 int frui_value_hi(int id);
+int frui_range(int id);                 /* (= frui_value_hi) */
 /* the option names of a switch / menu (n = hi + 1) */
 const char *const *frui_options(int id, int *n);
 /* the MIDI note of the on-screen key at logical (x, y), -1 none; a key's span along x (logical pixels) */

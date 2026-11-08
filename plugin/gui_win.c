@@ -1,10 +1,19 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* The plugin window on Windows (gui_view.h): a child HWND that blits gui_core's canvas with SetDIBitsToDevice (a
- * top-down 32-bit DIB: the canvas's 0xFFRRGGBB words are BGRA bytes, as GDI wants them). Sizes are physical pixels
- * (CLAP's rule on Windows: the host's set_scale gives the factor; the canvas is drawn at the pixel size). The window
- * class is registered under a name unique to this module (two copies of the plugin in one host keep their own).
- *
- * B-M2b status: compiled by the Windows CI build; not yet run in a Windows host (the plan's B-M4). */
+/* The plugin window on Windows (plugin/gui_platform.h): a child HWND in the host's window.
+ *   pixels   a top-down 32-bit DIB section whose bits are the frui canvas itself (frui's 0xFFRRGGBB in memory is
+ *            GDI's B G R A byte order): frui draws straight into it, WM_PAINT blits the dirty rectangle (BitBlt),
+ *            no conversion, no scaling. The canvas is the window's client size in physical pixels.
+ *   DPI      per monitor: GetDpiForWindow (Windows 10 1607+, looked up at run time; older: the screen's LOGPIXELSX),
+ *            WM_DPICHANGED_AFTERPARENT when the host's window moves to another monitor. The view never changes the
+ *            thread's DPI awareness: it follows the host's (a host that is not DPI aware gets 96 and Windows
+ *            stretches its whole window, as for every other plugin there).
+ *   input    the mouse with capture during a drag (WM_LBUTTONDOWN .. UP, CS_DBLCLKS for the double-click), the wheel
+ *            (WM_MOUSEWHEEL, screen coordinates), the keyboard (WM_GETDLGCODE asks for every key, so a host's
+ *            dialog does not take the arrows / TAB; keys the controller does not use go to the parent window, so
+ *            the host's own shortcuts keep working), WM_MOUSELEAVE through TrackMouseEvent
+ *   timer    SetTimer 33 ms on the UI thread: the client's tick says whether anything drawn changed
+ * The window class is registered once per module (the name carries the module's address: two copies of the plugin
+ * in one host never share a class) and unregistered when the last view goes, so the DLL can unload. */
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -12,216 +21,380 @@
 #include <windowsx.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <clap/clap.h>
-#include "gui_view.h"
+#include "gui_platform.h"
+#include "ui/frui.h"
 
-const char *const FRP_VIEW_API = CLAP_WINDOW_API_WIN32;
+#ifndef WM_DPICHANGED_AFTERPARENT
+#define WM_DPICHANGED_AFTERPARENT 0x02E3
+#endif
+#define FRG_TIMER_ID 1
+#define FRG_TIMER_MS 33
 
-struct frp_view {
-    frp_gui_t *core;
+struct frg_view {
+    frg_client cl;
     HWND hwnd;
-    uint32_t w, h;                   /* logical points */
-    double scale;
-    int tracking, captured;
+    int w, h;                      /* the client size, physical pixels */
+    HDC mem;                       /* the DIB's memory DC */
+    HBITMAP dib, old;
+    uint32_t *bits;
+    int bw, bh;                    /* the DIB's size */
+    int dirty;                     /* the canvas must be redrawn before the next blit */
+    float scale_override;          /* the host's set_scale, 0: the monitor's */
+    int tracking;                  /* TrackMouseEvent armed */
+    int captured;                  /* buttons down with the capture held (bit per button) */
 };
 
-static ATOM s_cls;
-static wchar_t s_name[64];
+static LONG g_class_refs;
+static ATOM g_class;
+static wchar_t g_class_name[64];
 
-static double now_s(void)
-{
-    static LARGE_INTEGER f;
-    LARGE_INTEGER c;
-    if (!f.QuadPart) QueryPerformanceFrequency(&f);
-    QueryPerformanceCounter(&c);
-    return (double)c.QuadPart / (double)f.QuadPart;
-}
-static void frame(frp_view_t *v, int force)
-{
-    int d[4];
-    if (!v->hwnd) return;
-    if (frp_gui_tick(v->core, now_s()) || force) {
-        if (frp_gui_paint(v->core, d)) {
-            RECT r = {d[0], d[1], d[2], d[3]};
-            InvalidateRect(v->hwnd, &r, FALSE);
-        } else if (force) InvalidateRect(v->hwnd, NULL, FALSE);
-    }
-}
-static void layout(frp_view_t *v)
-{
-    RECT r;
-    if (!v->hwnd) return;
-    GetClientRect(v->hwnd, &r);
-    if (r.right > 0 && r.bottom > 0) frp_gui_resize(v->core, r.right, r.bottom);
-    frame(v, 1);
-}
-static int mods_now(void)
-{
-    return (GetKeyState(VK_SHIFT) < 0 ? FRP_MOD_SHIFT : 0) | (GetKeyState(VK_MENU) < 0 ? FRP_MOD_ALT : 0) |
-           (GetKeyState(VK_CONTROL) < 0 ? FRP_MOD_CMD : 0);   /* (control: the command key's role, as on Windows) */
-}
-static void mouse(frp_view_t *v, int ev, LPARAM lp, int clicks)
-{
-    float k = frp_gui_px_to_logical(v->core);
-    frp_gui_mouse(v->core, ev, (float)GET_X_LPARAM(lp) * k, (float)GET_Y_LPARAM(lp) * k, mods_now(), clicks);
-    frame(v, 0);
-}
-static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
-{
-    frp_view_t *v = (frp_view_t *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-    if (!v) return DefWindowProcW(hwnd, msg, wp, lp);
-    switch (msg) {
-    case WM_ERASEBKGND: return 1;
-    case WM_PAINT: {
-        PAINTSTRUCT ps;
-        HDC dc = BeginPaint(hwnd, &ps);
-        int w, h;
-        const uint32_t *px = frp_gui_pixels(v->core, &w, &h);
-        RECT cr;
-        GetClientRect(hwnd, &cr);
-        if (px) {
-            BITMAPINFO bi;
-            memset(&bi, 0, sizeof bi);
-            bi.bmiHeader.biSize = sizeof bi.bmiHeader;
-            bi.bmiHeader.biWidth = w;
-            bi.bmiHeader.biHeight = -h;                  /* top-down */
-            bi.bmiHeader.biPlanes = 1;
-            bi.bmiHeader.biBitCount = 32;
-            bi.bmiHeader.biCompression = BI_RGB;
-            SetDIBitsToDevice(dc, 0, 0, (DWORD)w, (DWORD)h, 0, 0, 0, (UINT)h, px, &bi, DIB_RGB_COLORS);
-        }
-        if (!px || w < cr.right || h < cr.bottom) {     /* a host that keeps another aspect: a dark margin */
-            HBRUSH b = (HBRUSH)GetStockObject(BLACK_BRUSH);
-            RECT a = {px ? w : 0, 0, cr.right, cr.bottom}, c = {0, px ? h : 0, cr.right, cr.bottom};
-            FillRect(dc, &a, b);
-            FillRect(dc, &c, b);
-        }
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    case WM_SIZE: layout(v); return 0;
-    case WM_TIMER: frame(v, 0); return 0;
-    case WM_GETDLGCODE: return DLGC_WANTALLKEYS | DLGC_WANTARROWS | DLGC_WANTTAB;
-    case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK:
-        SetFocus(hwnd);
-        SetCapture(hwnd);
-        v->captured = 1;
-        mouse(v, FRP_MOUSE_DOWN, lp, msg == WM_LBUTTONDBLCLK ? 2 : 1);
-        return 0;
-    case WM_LBUTTONUP:
-        if (v->captured) { ReleaseCapture(); v->captured = 0; }
-        mouse(v, FRP_MOUSE_UP, lp, 1);
-        return 0;
-    case WM_RBUTTONDOWN: mouse(v, FRP_MOUSE_RDOWN, lp, 1); return 0;
-    case WM_MOUSEMOVE:
-        if (!v->tracking) {
-            TRACKMOUSEEVENT t = {sizeof t, TME_LEAVE, hwnd, 0};
-            TrackMouseEvent(&t);
-            v->tracking = 1;
-        }
-        mouse(v, v->captured ? FRP_MOUSE_DRAG : FRP_MOUSE_MOVE, lp, 1);
-        return 0;
-    case WM_MOUSELEAVE:
-        v->tracking = 0;
-        frp_gui_mouse(v->core, FRP_MOUSE_LEAVE, -1.f, -1.f, 0, 1);
-        frame(v, 0);
-        return 0;
-    case WM_MOUSEWHEEL: {
-        POINT p = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
-        float k = frp_gui_px_to_logical(v->core);
-        ScreenToClient(hwnd, &p);
-        frp_gui_wheel(v->core, (float)p.x * k, (float)p.y * k, (float)GET_WHEEL_DELTA_WPARAM(wp) / (float)WHEEL_DELTA,
-                      mods_now());
-        frame(v, 0);
-        return 0;
-    }
-    case WM_KEYDOWN: {
-        int key = 0;
-        switch (wp) {
-        case VK_TAB: key = FRP_KEY_TAB; break;
-        case VK_ESCAPE: key = FRP_KEY_ESC; break;
-        case VK_RETURN: key = FRP_KEY_ENTER; break;
-        case VK_LEFT: key = FRP_KEY_LEFT; break;
-        case VK_RIGHT: key = FRP_KEY_RIGHT; break;
-        case VK_UP: key = FRP_KEY_UP; break;
-        case VK_DOWN: key = FRP_KEY_DOWN; break;
-        case VK_HOME: key = FRP_KEY_HOME; break;
-        case VK_END: key = FRP_KEY_END; break;
-        }
-        if (key && frp_gui_key(v->core, key, mods_now())) { frame(v, 0); return 0; }
-        break;                                           /* (the host's key) */
-    }
-    }
-    return DefWindowProcW(hwnd, msg, wp, lp);
-}
-static HINSTANCE module_of(void)
+static HINSTANCE module_handle(void)
 {
     HMODULE m = 0;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       (LPCWSTR)(void *)&wndproc, &m);
+                       (LPCWSTR)(void *)module_handle, &m);
     return (HINSTANCE)m;
 }
-static int register_class(void)
+
+/* GetDpiForWindow: Windows 10 1607 and later (looked up, so the DLL still loads on 8.1) */
+typedef UINT(WINAPI *dpi_for_window_fn)(HWND);
+static UINT window_dpi(HWND hwnd)
 {
-    WNDCLASSW wc;
-    if (s_cls) return 1;
-    swprintf(s_name, 64, L"FrodhesView_%p", (void *)&s_cls);   /* this module's own */
-    memset(&wc, 0, sizeof wc);
-    wc.style = CS_DBLCLKS;
-    wc.lpfnWndProc = wndproc;
-    wc.hInstance = module_of();
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.lpszClassName = s_name;
-    s_cls = RegisterClassW(&wc);
-    return s_cls != 0;
+    static dpi_for_window_fn fn;
+    static int looked;
+    UINT dpi = 0;
+    if (!looked) {
+        HMODULE u = GetModuleHandleW(L"user32.dll");
+        fn = u ? (dpi_for_window_fn)(void *)GetProcAddress(u, "GetDpiForWindow") : 0;
+        looked = 1;
+    }
+    if (fn && hwnd) dpi = fn(hwnd);
+    if (!dpi) {
+        HDC dc = GetDC(hwnd);
+        dpi = (UINT)GetDeviceCaps(dc, LOGPIXELSX);
+        ReleaseDC(hwnd, dc);
+    }
+    return dpi ? dpi : 96u;
 }
 
-frp_view_t *frp_view_new(frp_gui_t *core, uint32_t w, uint32_t h)
+float frg_view_scale(const frg_view *v)
 {
-    frp_view_t *v;
-    if (!register_class()) return 0;
-    v = calloc(1, sizeof *v);
-    if (!v) return 0;
-    v->core = core; v->w = w; v->h = h; v->scale = 1.0;
-    return v;
+    if (v && v->scale_override > 0.f) return v->scale_override;
+    return (float)window_dpi(v ? v->hwnd : 0) / 96.f;
 }
-void frp_view_free(frp_view_t *v)
+void frg_view_set_scale(frg_view *v, float scale) { v->scale_override = scale > 0.f ? scale : 0.f; }
+void frg_view_default_size(const frg_view *v, int *w, int *h)
 {
-    if (!v) return;
-    if (v->hwnd) {
-        KillTimer(v->hwnd, 1);
-        SetWindowLongPtrW(v->hwnd, GWLP_USERDATA, 0);
-        DestroyWindow(v->hwnd);
+    float s = frg_view_scale(v);
+    *w = (int)(FRUI_W * s + 0.5f);
+    *h = (int)(FRUI_H * s + 0.5f);
+}
+
+static void dib_free(frg_view *v)
+{
+    if (v->mem) {
+        if (v->old) SelectObject(v->mem, v->old);
+        DeleteDC(v->mem);
     }
-    free(v);
+    if (v->dib) DeleteObject(v->dib);
+    v->mem = 0; v->dib = 0; v->old = 0; v->bits = 0; v->bw = v->bh = 0;
 }
-int frp_view_attach(frp_view_t *v, void *parent)
+static int dib_ensure(frg_view *v)
 {
-    int pw = (int)(v->w * v->scale + 0.5), ph = (int)(v->h * v->scale + 0.5);
-    if (!parent || v->hwnd) return -1;
-    v->hwnd = CreateWindowExW(0, s_name, L"Frodhes", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0, 0, pw, ph, (HWND)parent,
-                              NULL, module_of(), NULL);
-    if (!v->hwnd) return -1;
-    SetWindowLongPtrW(v->hwnd, GWLP_USERDATA, (LONG_PTR)v);
-    SetTimer(v->hwnd, 1, 16, NULL);                      /* ~60 Hz; a frame paints only what changed */
-    layout(v);
+    BITMAPINFO bi;
+    HDC screen;
+    void *bits = 0;
+    if (v->bits && v->bw == v->w && v->bh == v->h) return 0;
+    dib_free(v);
+    if (v->w <= 0 || v->h <= 0) return -1;
+    memset(&bi, 0, sizeof bi);
+    bi.bmiHeader.biSize = sizeof bi.bmiHeader;
+    bi.bmiHeader.biWidth = v->w;
+    bi.bmiHeader.biHeight = -v->h;                 /* top-down: row 0 first, as the canvas */
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    screen = GetDC(0);
+    v->dib = CreateDIBSection(screen, &bi, DIB_RGB_COLORS, &bits, 0, 0);
+    v->mem = CreateCompatibleDC(screen);
+    ReleaseDC(0, screen);
+    if (!v->dib || !v->mem || !bits) { dib_free(v); return -1; }
+    v->old = (HBITMAP)SelectObject(v->mem, v->dib);
+    v->bits = (uint32_t *)bits;
+    v->bw = v->w; v->bh = v->h;
+    v->dirty = 1;
     return 0;
 }
-void frp_view_size(frp_view_t *v, uint32_t w, uint32_t h)
+
+static void redraw(frg_view *v)
+{
+    frui_canvas c;
+    if (dib_ensure(v)) return;
+    GdiFlush();                                    /* (GDI's pending work on the DIB before the CPU writes it) */
+    frui_canvas_init(&c, v->bits, v->bw, v->bh);
+    if (v->cl.paint) v->cl.paint(v->cl.ctx, &c, frg_view_scale(v));
+    v->dirty = 0;
+}
+
+static int mods_now(void)
+{
+    int m = 0;
+    if (GetKeyState(VK_SHIFT) & 0x8000) m |= FRG_SHIFT;
+    if (GetKeyState(VK_CONTROL) & 0x8000) m |= FRG_CTRL;
+    if (GetKeyState(VK_MENU) & 0x8000) m |= FRG_ALT;
+    return m;
+}
+static void to_logical(const frg_view *v, int px, int py, float *x, float *y)
+{
+    float s = v->w > 0 ? (float)FRUI_W / (float)v->w : 1.f;    /* frui draws the layout at w / FRUI_W */
+    *x = ((float)px + 0.5f) * s;
+    *y = ((float)py + 0.5f) * s;
+}
+static void send(frg_view *v, frg_input *e)
+{
+    int r;
+    if (!v->cl.input) return;
+    r = v->cl.input(v->cl.ctx, e);
+    if (r & 1) { v->dirty = 1; InvalidateRect(v->hwnd, 0, FALSE); }
+}
+static void mouse(frg_view *v, int kind, int button, LPARAM lp)
+{
+    frg_input e;
+    memset(&e, 0, sizeof e);
+    e.kind = kind; e.button = button; e.mods = mods_now();
+    to_logical(v, GET_X_LPARAM(lp), GET_Y_LPARAM(lp), &e.x, &e.y);
+    send(v, &e);
+}
+static int key_of(WPARAM vk)
+{
+    switch (vk) {
+    case VK_LEFT: return FRK_LEFT;
+    case VK_RIGHT: return FRK_RIGHT;
+    case VK_UP: return FRK_UP;
+    case VK_DOWN: return FRK_DOWN;
+    case VK_HOME: return FRK_HOME;
+    case VK_END: return FRK_END;
+    case VK_PRIOR: return FRK_PGUP;
+    case VK_NEXT: return FRK_PGDN;
+    case VK_TAB: return FRK_TAB;
+    case VK_RETURN: return FRK_RETURN;
+    case VK_ESCAPE: return FRK_ESCAPE;
+    case VK_DELETE: return FRK_DELETE;
+    case VK_BACK: return FRK_BACKSPACE;
+    default: return 0;
+    }
+}
+
+static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    frg_view *v = (frg_view *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    if (msg == WM_NCCREATE) {
+        CREATESTRUCTW *cs = (CREATESTRUCTW *)lp;
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)cs->lpCreateParams);
+        return DefWindowProcW(hwnd, msg, wp, lp);
+    }
+    if (!v) return DefWindowProcW(hwnd, msg, wp, lp);
+    switch (msg) {
+    case WM_ERASEBKGND: return 1;                  /* (the paint covers every pixel) */
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(hwnd, &ps);
+        if (v->dirty || !v->bits || v->bw != v->w || v->bh != v->h) redraw(v);
+        if (v->bits)
+            BitBlt(dc, ps.rcPaint.left, ps.rcPaint.top, ps.rcPaint.right - ps.rcPaint.left,
+                   ps.rcPaint.bottom - ps.rcPaint.top, v->mem, ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_PRINTCLIENT:                           /* (PrintWindow: host thumbnails, the self-test) */
+        if (v->dirty || !v->bits || v->bw != v->w || v->bh != v->h) redraw(v);
+        if (v->bits) BitBlt((HDC)wp, 0, 0, v->bw, v->bh, v->mem, 0, 0, SRCCOPY);
+        return 0;
+    case WM_SIZE:
+        v->w = LOWORD(lp); v->h = HIWORD(lp);
+        v->dirty = 1;
+        InvalidateRect(hwnd, 0, FALSE);
+        return 0;
+    case WM_TIMER:
+        if (wp == FRG_TIMER_ID && v->cl.tick && v->cl.tick(v->cl.ctx)) { v->dirty = 1; InvalidateRect(hwnd, 0, FALSE); }
+        return 0;
+    case WM_DPICHANGED_AFTERPARENT:                /* the host resizes us; the canvas follows the new size */
+        v->dirty = 1;
+        InvalidateRect(hwnd, 0, FALSE);
+        return 0;
+    case WM_MOUSEMOVE:
+        if (!v->tracking) {
+            TRACKMOUSEEVENT t = { sizeof t, TME_LEAVE, hwnd, 0 };
+            v->tracking = TrackMouseEvent(&t) ? 1 : 0;
+        }
+        mouse(v, FRG_MOVE, 0, lp);
+        return 0;
+    case WM_MOUSELEAVE: {
+        frg_input e;
+        v->tracking = 0;
+        memset(&e, 0, sizeof e);
+        e.kind = FRG_LEAVE;
+        send(v, &e);
+        return 0;
+    }
+    case WM_LBUTTONDOWN: case WM_RBUTTONDOWN: case WM_MBUTTONDOWN: {
+        int b = msg == WM_LBUTTONDOWN ? FRG_LEFT : msg == WM_RBUTTONDOWN ? FRG_RIGHT : FRG_MIDDLE;
+        SetFocus(hwnd);                            /* (the keyboard comes to the view once it is clicked) */
+        if (!v->captured) SetCapture(hwnd);
+        v->captured |= 1 << b;
+        mouse(v, FRG_DOWN, b, lp);
+        return 0;
+    }
+    case WM_LBUTTONDBLCLK: case WM_RBUTTONDBLCLK: case WM_MBUTTONDBLCLK: {
+        int b = msg == WM_LBUTTONDBLCLK ? FRG_LEFT : msg == WM_RBUTTONDBLCLK ? FRG_RIGHT : FRG_MIDDLE;
+        if (!v->captured) SetCapture(hwnd);
+        v->captured |= 1 << b;
+        mouse(v, FRG_DOUBLE, b, lp);
+        return 0;
+    }
+    case WM_LBUTTONUP: case WM_RBUTTONUP: case WM_MBUTTONUP: {
+        int b = msg == WM_LBUTTONUP ? FRG_LEFT : msg == WM_RBUTTONUP ? FRG_RIGHT : FRG_MIDDLE;
+        v->captured &= ~(1 << b);
+        if (!v->captured && GetCapture() == hwnd) ReleaseCapture();
+        mouse(v, FRG_UP, b, lp);
+        return 0;
+    }
+    case WM_CAPTURECHANGED:                        /* the capture taken away mid-drag (a host dialog, alt-tab) */
+        if (v->captured && (HWND)lp != hwnd) {
+            frg_input e;
+            v->captured = 0;
+            memset(&e, 0, sizeof e);
+            e.kind = FRG_FOCUS_LOST;
+            send(v, &e);
+        }
+        return 0;
+    case WM_MOUSEWHEEL: {
+        POINT p = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+        frg_input e;
+        ScreenToClient(hwnd, &p);
+        memset(&e, 0, sizeof e);
+        e.kind = FRG_WHEEL; e.mods = mods_now();
+        e.wheel = (float)GET_WHEEL_DELTA_WPARAM(wp) / (float)WHEEL_DELTA;
+        to_logical(v, p.x, p.y, &e.x, &e.y);
+        send(v, &e);
+        return 0;
+    }
+    case WM_GETDLGCODE: return DLGC_WANTALLKEYS | DLGC_WANTARROWS | DLGC_WANTCHARS | DLGC_WANTTAB;
+    case WM_KEYDOWN: case WM_KEYUP: case WM_CHAR: case WM_SYSKEYDOWN: case WM_SYSKEYUP: {
+        frg_input e;
+        int used = 0;
+        memset(&e, 0, sizeof e);
+        e.kind = FRG_KEY; e.mods = mods_now();
+        if (msg == WM_KEYDOWN) e.key = key_of(wp);
+        else if (msg == WM_CHAR && wp >= 0x20 && wp < 0x7f) e.key = (int)wp;
+        if (e.key && v->cl.input) {
+            int r = v->cl.input(v->cl.ctx, &e);
+            if (r & 1) { v->dirty = 1; InvalidateRect(hwnd, 0, FALSE); }
+            used = (r & 2) != 0;
+        }
+        if (!used) {                               /* the host's shortcuts (space: play ...) */
+            HWND parent = GetParent(hwnd);
+            if (parent) return SendMessageW(parent, msg, wp, lp);
+            return DefWindowProcW(hwnd, msg, wp, lp);
+        }
+        return 0;
+    }
+    case WM_KILLFOCUS: {
+        frg_input e;
+        memset(&e, 0, sizeof e);
+        e.kind = FRG_FOCUS_LOST;
+        send(v, &e);
+        return 0;
+    }
+    case WM_NCDESTROY:                             /* (also when the host destroys its window before ours) */
+        KillTimer(hwnd, FRG_TIMER_ID);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        v->hwnd = 0;
+        return DefWindowProcW(hwnd, msg, wp, lp);
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static int class_acquire(void)
+{
+    if (InterlockedIncrement(&g_class_refs) == 1 || !g_class) {
+        WNDCLASSEXW wc;
+        HINSTANCE inst = module_handle();
+        swprintf(g_class_name, sizeof g_class_name / sizeof g_class_name[0], L"FrodhesView%p", (void *)inst);
+        memset(&wc, 0, sizeof wc);
+        wc.cbSize = sizeof wc;
+        wc.style = CS_DBLCLKS;
+        wc.lpfnWndProc = wndproc;
+        wc.hInstance = inst;
+        wc.hCursor = LoadCursorW(0, (LPCWSTR)IDC_ARROW);
+        wc.lpszClassName = g_class_name;
+        g_class = RegisterClassExW(&wc);
+        if (!g_class && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) { InterlockedDecrement(&g_class_refs); return -1; }
+    }
+    return 0;
+}
+static void class_release(void)
+{
+    if (InterlockedDecrement(&g_class_refs) == 0 && g_class) {
+        UnregisterClassW(g_class_name, module_handle());
+        g_class = 0;
+    }
+}
+
+frg_view *frg_view_create(const frg_client *cl, int w, int h)
+{
+    frg_view *v;
+    if (class_acquire()) return 0;
+    v = calloc(1, sizeof *v);
+    if (!v) { class_release(); return 0; }
+    v->cl = *cl;
+    v->w = w; v->h = h;
+    v->dirty = 1;
+    return v;
+}
+void frg_view_destroy(frg_view *v)
+{
+    if (!v) return;
+    if (v->hwnd) DestroyWindow(v->hwnd);           /* (WM_NCDESTROY clears v->hwnd) */
+    dib_free(v);
+    free(v);
+    class_release();
+}
+int frg_view_set_parent(frg_view *v, void *native_parent)
+{
+    HWND parent = (HWND)native_parent;
+    if (!parent) return -1;
+    if (v->hwnd) { SetParent(v->hwnd, parent); return 0; }
+    v->hwnd = CreateWindowExW(0, g_class_name, L"Frodhes", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_TABSTOP,
+                              0, 0, v->w, v->h, parent, 0, module_handle(), v);
+    if (!v->hwnd) return -1;
+    SetTimer(v->hwnd, FRG_TIMER_ID, FRG_TIMER_MS, 0);
+    return 0;
+}
+void frg_view_show(frg_view *v, int visible)
+{
+    if (v->hwnd) ShowWindow(v->hwnd, visible ? SW_SHOWNA : SW_HIDE);
+}
+void frg_view_resize(frg_view *v, int w, int h)
 {
     v->w = w; v->h = h;
-    if (v->hwnd) SetWindowPos(v->hwnd, NULL, 0, 0, (int)(w * v->scale + 0.5), (int)(h * v->scale + 0.5),
-                              SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
+    v->dirty = 1;
+    if (v->hwnd) SetWindowPos(v->hwnd, 0, 0, 0, w, h, SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
 }
-void frp_view_show(frp_view_t *v, int show)
+int frg_view_poll_fd(const frg_view *v) { (void)v; return -1; }   /* (the window's messages and SetTimer) */
+void frg_view_poll(frg_view *v) { (void)v; }
+
+void frg_view_repaint(frg_view *v)
 {
-    if (v->hwnd) ShowWindow(v->hwnd, show ? SW_SHOWNA : SW_HIDE);
-    if (show) frame(v, 1);
+    v->dirty = 1;
+    if (v->hwnd) InvalidateRect(v->hwnd, 0, FALSE);
 }
-void frp_view_scale(frp_view_t *v, double scale)
+
+const char *const FRG_VIEW_API = "win32";
+const uint32_t *frg_view_grab(frg_view *v, int *w, int *h)
 {
-    v->scale = scale > 0.0 ? scale : 1.0;
-    frp_view_size(v, v->w, v->h);
+    if (!v->bits) return 0;
+    GdiFlush();
+    *w = v->bw; *h = v->bh;
+    return v->bits;
 }
-const uint32_t *frp_view_grab(frp_view_t *v, int *w, int *h) { return frp_gui_pixels(v->core, w, h); }

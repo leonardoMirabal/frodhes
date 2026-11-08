@@ -521,6 +521,8 @@ static const void *pl_ext(const clap_plugin_t *plugin, const char *id)
     if (!strcmp(id, CLAP_EXT_STATE)) return &EXT_STATE;
     if (!strcmp(id, CLAP_EXT_GUI)) return frp_gui_clap_ext();
     if (!strcmp(id, FRP_EXT_GUI_SHOT)) return frp_gui_clap_shot_ext();
+    if (!strcmp(id, CLAP_EXT_POSIX_FD_SUPPORT)) return frp_gui_clap_fd_ext();     /* (Linux: the X11 view) */
+    if (!strcmp(id, CLAP_EXT_TIMER_SUPPORT)) return frp_gui_clap_timer_ext();
     return 0;
 }
 static void pl_main(const clap_plugin_t *plugin)

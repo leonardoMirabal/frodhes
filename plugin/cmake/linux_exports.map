@@ -1,0 +1,7 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+/* Linux: the plugin modules export their entry points only (CLAP: clap_entry; VST3: GetPluginFactory, ModuleEntry,
+ * ModuleExit); everything else stays local, so two plugins in one host never bind to each other's symbols. */
+{
+    global: clap_entry; GetPluginFactory; ModuleEntry; ModuleExit;
+    local: *;
+};

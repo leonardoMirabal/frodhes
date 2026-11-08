@@ -1331,6 +1331,8 @@ void frui_draw(frui *u, const frui_model *m, frui_canvas *c)
     popup(u);
 }
 
+int frui_range(int id) { return phi(id); }
+
 int frui_hit(const frui *u, float x, float y, frui_widget *w)
 {
     int i;

@@ -18,7 +18,8 @@
  *   clap_render PLUGIN --selftest
  *       the parameters (every value's text back to the same value), the state (saved, loaded into a second instance,
  *       saved again: the same), the rates (500 Hz refused, 96 kHz taken), FRP_SLOTS + 1 instances (the last
- *       one silent, with its warning), the latency, the descriptor and the absence of a GUI extension.
+ *       one silent, with its warning), the latency, the descriptor and the GUI extension (Linux: with
+ *       the posix-fd and timer support its X11 view runs on).
  * Exit: 0 ok, 1 failure, 3 the script is not MIDI-driven (nothing written). */
 #include <dlfcn.h>
 #include <math.h>
@@ -310,10 +311,10 @@ static int selftest(void)
     CHECK(d && d->id && d->name && !strcmp(d->name, "Frodhes"), "descriptor");
     CHECK(factory->get_plugin_count(factory) == 1, "one plugin in the factory");
     CHECK((a = create()) != 0, "create");
-#if defined(__APPLE__) || defined(_WIN32)
     CHECK(a->get_extension(a, CLAP_EXT_GUI) != 0, "the GUI extension (the plugin's window: tests/py/test_plugin_gui.py)");
-#else
-    CHECK(!a->get_extension(a, CLAP_EXT_GUI), "no GUI extension on this OS yet (the host's generic view)");
+#if !defined(__APPLE__) && !defined(_WIN32)
+    CHECK(a->get_extension(a, CLAP_EXT_POSIX_FD_SUPPORT) && a->get_extension(a, CLAP_EXT_TIMER_SUPPORT),
+          "posix-fd and timer support (the X11 view runs on the host's event loop)");
 #endif
     CHECK((pp = a->get_extension(a, CLAP_EXT_PARAMS)) != 0, "params extension");
     CHECK((ps = a->get_extension(a, CLAP_EXT_STATE)) != 0, "state extension");

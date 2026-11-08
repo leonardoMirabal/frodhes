@@ -4,21 +4,26 @@
  * Windows (CLAP's rule: there the host's set_scale gives the factor). */
 #include "gui_clap.h"
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include "gui_core.h"
+#include "gui_platform.h"
 #include "gui_shot.h"
-#include "gui_view.h"
 
 struct frp_gui_clap {
     const clap_host_t *host;
     frp_ui_host_t uh;
     frp_gui_t *core;
-    frp_view_t *view;
+    frg_view *view;
     uint32_t w, h;                   /* logical points */
-    double scale;                    /* the host's (Windows) */
-    int win32;
+    double scale;                    /* the host's (Windows, X11) */
+    int px_api;                      /* sizes in physical pixels (win32, x11) */
+    /* X11: the host's event loop */
+    const clap_host_posix_fd_support_t *hfd;
+    const clap_host_timer_support_t *htm;
+    int fd;
+    clap_id timer;
 };
 
 frp_gui_clap_t *frp_gui_clap_new(const clap_host_t *host, const frp_ui_host_t *uh)
@@ -28,12 +33,22 @@ frp_gui_clap_t *frp_gui_clap_new(const clap_host_t *host, const frp_ui_host_t *u
     c->host = host;
     c->uh = *uh;
     c->w = FRP_GUI_W; c->h = FRP_GUI_H;
-    c->scale = 1.0;
+    c->scale = 0.0;
+    c->fd = -1;
+    c->timer = CLAP_INVALID_ID;
     return c;
+}
+static void loop_release(frp_gui_clap_t *c)
+{
+    if (c->fd >= 0 && c->hfd) c->hfd->unregister_fd(c->host, c->fd);
+    if (c->timer != CLAP_INVALID_ID && c->htm) c->htm->unregister_timer(c->host, c->timer);
+    c->fd = -1;
+    c->timer = CLAP_INVALID_ID;
 }
 static void close_window(frp_gui_clap_t *c)
 {
-    if (c->view) { frp_view_free(c->view); c->view = 0; }
+    loop_release(c);
+    if (c->view) { frg_view_destroy(c->view); c->view = 0; }
     if (c->core) { frp_gui_free(c->core); c->core = 0; }
 }
 void frp_gui_clap_free(frp_gui_clap_t *c)
@@ -42,7 +57,12 @@ void frp_gui_clap_free(frp_gui_clap_t *c)
     close_window(c);
     free(c);
 }
-static double px_scale(const frp_gui_clap_t *c) { return c->win32 ? c->scale : 1.0; }
+static double px_scale(const frp_gui_clap_t *c)
+{
+    if (!c->px_api) return 1.0;
+    if (c->scale > 0.0) return c->scale;
+    return c->view ? (double)frg_view_scale(c->view) : 1.0;
+}
 static void saved_size(frp_gui_clap_t *c)        /* the size the state remembers (a backend: frp_ui_iface.h) */
 {
     int w;
@@ -52,13 +72,11 @@ static void saved_size(frp_gui_clap_t *c)        /* the size the state remembers
         c->w = ww; c->h = hh;
     }
 }
+static int phys(const frp_gui_clap_t *c, uint32_t v) { return (int)lround(v * px_scale(c)); }
 
 /* ---- clap.gui */
 #define GUI(plugin) frp_plugin_gui(plugin)
-static bool g_api_ok(const char *api, bool floating)
-{
-    return !floating && api && FRP_VIEW_API && !strcmp(api, FRP_VIEW_API);
-}
+static bool g_api_ok(const char *api, bool floating) { return !floating && api && !strcmp(api, FRG_VIEW_API); }
 static bool g_is_api_supported(const clap_plugin_t *plugin, const char *api, bool is_floating)
 {
     (void)plugin;
@@ -67,8 +85,7 @@ static bool g_is_api_supported(const clap_plugin_t *plugin, const char *api, boo
 static bool g_get_preferred_api(const clap_plugin_t *plugin, const char **api, bool *is_floating)
 {
     (void)plugin;
-    if (!FRP_VIEW_API) return false;
-    *api = FRP_VIEW_API;
+    *api = FRG_VIEW_API;
     *is_floating = false;
     return true;
 }
@@ -76,13 +93,14 @@ static bool g_create(const clap_plugin_t *plugin, const char *api, bool is_float
 {
     frp_gui_clap_t *c = GUI(plugin);
     if (!c || !g_api_ok(api, is_floating) || c->core) return false;
-    c->win32 = !strcmp(api, CLAP_WINDOW_API_WIN32);
+    c->px_api = strcmp(api, CLAP_WINDOW_API_COCOA) != 0;
     saved_size(c);
     c->core = frp_gui_new(&c->uh);
     if (!c->core) return false;
-    c->view = frp_view_new(c->core, c->w, c->h);
+    c->view = frg_view_create(frp_gui_client(c->core), 1, 1);
     if (!c->view) { close_window(c); return false; }
-    frp_view_scale(c->view, c->scale);
+    if (c->scale > 0.0) frg_view_set_scale(c->view, (float)c->scale);
+    frg_view_resize(c->view, phys(c, c->w), phys(c, c->h));
     return true;
 }
 static void g_destroy(const clap_plugin_t *plugin)
@@ -94,17 +112,17 @@ static bool g_set_scale(const clap_plugin_t *plugin, double scale)
 {
     frp_gui_clap_t *c = GUI(plugin);
     if (!c || !(scale > 0.0)) return false;
-    if (!c->win32) return false;     /* macOS: the window's backing scale, read by the view itself */
+    if (!c->px_api) return false;    /* macOS: the window's backing scale, read by the view itself */
     c->scale = scale;
-    if (c->view) frp_view_scale(c->view, scale);
+    if (c->view) frg_view_set_scale(c->view, (float)scale);
     return true;
 }
 static bool g_get_size(const clap_plugin_t *plugin, uint32_t *width, uint32_t *height)
 {
     frp_gui_clap_t *c = GUI(plugin);
     if (!c) return false;
-    *width = (uint32_t)lround(c->w * px_scale(c));
-    *height = (uint32_t)lround(c->h * px_scale(c));
+    *width = (uint32_t)phys(c, c->w);
+    *height = (uint32_t)phys(c, c->h);
     return true;
 }
 static bool g_can_resize(const clap_plugin_t *plugin) { (void)plugin; return true; }
@@ -139,14 +157,25 @@ static bool g_set_size(const clap_plugin_t *plugin, uint32_t width, uint32_t hei
     frp_gui_fit_size(&w, &h);
     c->w = w; c->h = h;
     if (c->uh.setting_set) c->uh.setting_set(c->uh.ctx, FRP_UI_WIN_W, (int)w);
-    if (c->view) frp_view_size(c->view, w, h);
+    if (c->view) frg_view_resize(c->view, (int)width, (int)height);   /* (the host's size: the view fits 16:10 in it) */
     return true;
 }
 static bool g_set_parent(const clap_plugin_t *plugin, const clap_window_t *window)
 {
     frp_gui_clap_t *c = GUI(plugin);
+    void *parent;
     if (!c || !c->view || !window) return false;
-    return frp_view_attach(c->view, c->win32 ? window->win32 : window->cocoa) == 0;
+    parent = !strcmp(FRG_VIEW_API, CLAP_WINDOW_API_X11) ? (void *)(uintptr_t)window->x11
+           : !strcmp(FRG_VIEW_API, CLAP_WINDOW_API_WIN32) ? window->win32 : window->cocoa;
+    if (frg_view_set_parent(c->view, parent)) return false;
+    if (frg_view_poll_fd(c->view) >= 0 && c->fd < 0) {   /* X11: the host's loop watches the display */
+        c->hfd = c->host->get_extension(c->host, CLAP_EXT_POSIX_FD_SUPPORT);
+        c->htm = c->host->get_extension(c->host, CLAP_EXT_TIMER_SUPPORT);
+        if (c->hfd && c->hfd->register_fd(c->host, frg_view_poll_fd(c->view), CLAP_POSIX_FD_READ))
+            c->fd = frg_view_poll_fd(c->view);
+        if (c->htm && !c->htm->register_timer(c->host, 33, &c->timer)) c->timer = CLAP_INVALID_ID;
+    }
+    return true;
 }
 static bool g_set_transient(const clap_plugin_t *plugin, const clap_window_t *window)
 {
@@ -158,31 +187,57 @@ static bool g_show(const clap_plugin_t *plugin)
 {
     frp_gui_clap_t *c = GUI(plugin);
     if (!c || !c->view) return false;
-    frp_view_show(c->view, 1);
+    frg_view_show(c->view, 1);
     return true;
 }
 static bool g_hide(const clap_plugin_t *plugin)
 {
     frp_gui_clap_t *c = GUI(plugin);
     if (!c || !c->view) return false;
-    frp_view_show(c->view, 0);
+    frg_view_show(c->view, 0);
     return true;
 }
 static const clap_plugin_gui_t EXT_GUI = {
     g_is_api_supported, g_get_preferred_api, g_create, g_destroy, g_set_scale, g_get_size, g_can_resize,
     g_get_resize_hints, g_adjust_size, g_set_size, g_set_parent, g_set_transient, g_suggest_title, g_show, g_hide,
 };
-const clap_plugin_gui_t *frp_gui_clap_ext(void) { return FRP_VIEW_API ? &EXT_GUI : 0; }
+const clap_plugin_gui_t *frp_gui_clap_ext(void) { return &EXT_GUI; }
+
+/* ---- X11: the host's loop */
+static void on_fd(const clap_plugin_t *plugin, int fd, clap_posix_fd_flags_t flags)
+{
+    frp_gui_clap_t *c = GUI(plugin);
+    (void)fd; (void)flags;
+    if (c && c->view) frg_view_poll(c->view);
+}
+static void on_timer(const clap_plugin_t *plugin, clap_id id)
+{
+    frp_gui_clap_t *c = GUI(plugin);
+    if (c && c->view && id == c->timer) frg_view_poll(c->view);
+}
+static const clap_plugin_posix_fd_support_t EXT_FD = { on_fd };
+static const clap_plugin_timer_support_t EXT_TIMER = { on_timer };
+const clap_plugin_posix_fd_support_t *frp_gui_clap_fd_ext(void)
+{
+    return strcmp(FRG_VIEW_API, CLAP_WINDOW_API_X11) ? 0 : &EXT_FD;
+}
+const clap_plugin_timer_support_t *frp_gui_clap_timer_ext(void)
+{
+    return strcmp(FRG_VIEW_API, CLAP_WINDOW_API_X11) ? 0 : &EXT_TIMER;
+}
 
 /* ---- the tests' extension (gui_shot.h) */
 static bool s_tick(const clap_plugin_t *plugin)
 {
     frp_gui_clap_t *c = GUI(plugin);
     int d[4];
-    struct timespec ts;
     if (!c || !c->core) return false;
-    timespec_get(&ts, TIME_UTC);
-    frp_gui_tick(c->core, (double)ts.tv_sec + ts.tv_nsec * 1e-9);
+    if (c->view) {                   /* (the view paints the core: the view's copy needs the core's dirty area) */
+        frg_view_repaint(c->view);
+        frg_view_poll(c->view);
+        return true;
+    }
+    frp_gui_client(c->core)->tick(c->core);
     frp_gui_paint(c->core, d);
     return true;
 }
@@ -191,31 +246,17 @@ static bool s_grab(const clap_plugin_t *plugin, int view, const uint32_t **px, i
 {
     frp_gui_clap_t *c = GUI(plugin);
     if (!c || !c->core) return false;
-    *px = view && c->view ? frp_view_grab(c->view, w, h) : frp_gui_pixels(c->core, w, h);
+    *px = view && c->view ? frg_view_grab(c->view, w, h) : frp_gui_pixels(c->core, w, h);
     if (!*px) return false;
     *model = frp_gui_model(c->core);
     *model_size = (uint32_t)sizeof(frui_model);
     return true;
 }
-static bool s_mouse(const clap_plugin_t *plugin, int ev, float x, float y, int mods, int clicks)
+static int s_input(const clap_plugin_t *plugin, const frg_input *e)
 {
     frp_gui_clap_t *c = GUI(plugin);
-    if (!c || !c->core) return false;
-    frp_gui_mouse(c->core, ev, x, y, mods, clicks);
-    return true;
-}
-static bool s_wheel(const clap_plugin_t *plugin, float x, float y, float notches, int mods)
-{
-    frp_gui_clap_t *c = GUI(plugin);
-    if (!c || !c->core) return false;
-    frp_gui_wheel(c->core, x, y, notches, mods);
-    return true;
-}
-static bool s_key(const clap_plugin_t *plugin, int key, int mods)
-{
-    frp_gui_clap_t *c = GUI(plugin);
-    if (!c || !c->core) return false;
-    return frp_gui_key(c->core, key, mods) != 0;
+    if (!c || !c->core) return -1;
+    return frp_gui_input(c->core, e);
 }
 static bool s_headless(const clap_plugin_t *plugin, int pw, int ph)
 {
@@ -229,5 +270,5 @@ static bool s_find(const clap_plugin_t *plugin, int kind, int id, float r[4])
     frp_gui_clap_t *c = GUI(plugin);
     return c && c->core && frp_gui_find(c->core, kind, id, r);
 }
-static const frp_gui_shot_t EXT_SHOT = { s_tick, s_grab, s_mouse, s_wheel, s_key, s_headless, s_find };
+static const frp_gui_shot_t EXT_SHOT = { s_tick, s_grab, s_input, s_headless, s_find };
 const void *frp_gui_clap_shot_ext(void) { return &EXT_SHOT; }
