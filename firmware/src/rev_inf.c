@@ -31,6 +31,9 @@
  *   REV_INF_QUARTER=1 (the fallback, the plan's name): the tank at 11.025 kHz, run every second control block for 16
  *     samples (half the memory, cheaper than HALL, darker: 5.5 kHz). */
 
+#ifndef FX_HC                                   /* (fx.c's host clip counter; a standalone harness: none) */
+#define FX_HC(k, v, lo, hi) (v)
+#endif
 #ifndef FR_RAM
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
