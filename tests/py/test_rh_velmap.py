@@ -59,9 +59,11 @@ def test_bark_knee(key):
         assert b[127] - b[16] < 2.0, b
 
 
-@pytest.mark.parametrize("key,top", [(33, 3.0), (45, 3.0), (60, 6.0)])
+@pytest.mark.parametrize("key,top", [(33, 5.6), (45, 5.9), (60, 8.3)])
 def test_h1_saturates(key, top):
-    """H1(v127) - H1(v64) as velmap.json's h1_top_db (finding 2: +3 dB in the bass, +6 dB E3..D#4; 14 dB before)"""
+    """H1(v127) - H1(v64): the map's saturation (velmap.json h1_top_db: +3 dB in the bass, +6 dB E3..D#4; 0.9.9: 14 dB)
+    plus the level make-up (rh_velmap_mk.h: the map at the 0.9.9 loudness from v48 up, +2.3..2.6 dB more at v127 than
+    at v64 at these keys; re-baselined 2026-11-08 for the loudness rule, the bark's knee unchanged: test_bark_knee)"""
     h64 = note(f"vm_h1_{key}_64", key, 64)[1]
     h127 = note(f"vm_h1_{key}_127", key, 127)[1]
     assert abs((h127 - h64) - top) < 1.5, (key, h127 - h64)
