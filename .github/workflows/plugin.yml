@@ -138,15 +138,17 @@ jobs:
           key: plugin-deps-${{ hashFiles('plugin/deps.lock') }}-windows
       - name: the pinned dependencies and the test tools (plugin/deps.lock)
         run: sh tools/plugin_deps.sh
-      - uses: ilammy/msvc-dev-cmd@v1          # (the Windows SDK and the MSVC CRT for clang-cl: INCLUDE, LIB)
-        with:
-          arch: x64
-      - name: build (x64, clang-cl + lld-link, the static CRT; plugin/cmake/win-x64-clangcl.cmake)
+      - name: version
         run: |
           V="${{ inputs.version }}"; V="${V#v}"
-          cmake -S plugin -B build/plugin-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/plugin/cmake/win-x64-clangcl.cmake" \
-            -DFRP_VERSION="${V:-0.0.0-dev}"
-          cmake --build build/plugin-win -j3
+          echo "FRP_VER=${V:-0.0.0-dev}" >> "$GITHUB_ENV"
+      - name: build (x64, clang-cl + lld-link, the static CRT; plugin/cmake/win-x64-clangcl.cmake)
+        shell: cmd                     # (vcvars64 gives clang-cl the Windows SDK and the MSVC CRT: INCLUDE, LIB)
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSDIR=%%i"
+          call "%VSDIR%\VC\Auxiliary\Build\vcvars64.bat" || exit /b 1
+          cmake -S plugin -B build/plugin-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=%CD%/plugin/cmake/win-x64-clangcl.cmake -DFRP_VERSION=%FRP_VER% || exit /b 1
+          cmake --build build/plugin-win -j3 || exit /b 1
       - name: package (frodhes-plugin-windows.zip)
         run: sh tools/plugin_pack.sh windows
       - name: unpack the zip (what a user copies)
