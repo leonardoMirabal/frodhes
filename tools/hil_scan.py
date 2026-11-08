@@ -1247,12 +1247,15 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # 4-note v127 pedalled chords already peak at -1.2 .. -1.4 dBFS before the limiter (-1.0), so it cannot come up to
 # its usual target without hard playing reaching the limiter; the global level stays as loud as fits. F06 / F09 /
 # F11 / F19 came down to the target (LEVEL 54 / 62 / 23 / 80: -0.1, -0.0, +0.2, +0.1)
-PRESET_TARGET = {4: (-2.2, 1.5), 8: (-3.6, 1.5), 12: (0.0, 2.0), 13: (1.0, 1.0), 14: (2.5, 1.0), 15: (-1.5, 1.0),
+PRESET_TARGET = {4: (-2.2, 1.5), 8: (-3.6, 1.5), 12: (0.0, 2.0), 13: (1.0, 1.0), 14: (1.2, 1.0), 15: (-1.5, 1.0),
                  16: (-5.0, 1.0), 17: (0.0, 1.0), 18: (0.0, 1.0), 19: (0.0, 1.0),
-                 21: (-4.6, 1.0), 26: (-1.2, 1.0)}
+                 21: (-3.4, 1.0), 26: (-1.2, 1.0)}
+# (F14, 0.9.10's clean Rhodes: F01 came up 0.75 dB on the chord, F14 VIBES ECHO cannot follow (its 4-note v127
+# chords at -1.28 dBFS before the limiter): +1.2 instead of +2.5, a headroom exception (MANUAL))
 # (the starters, 2026-11-08: U01..U09 each +8..+14 to F01's level, except two headroom exceptions (MANUAL): U02's hard
 # chords peaked at +0.6 dBFS before the limiter at its old LEVEL, so it came down 10 steps (-4.6 LU); U07 could come
-# up 5 steps only, to -1.3 dBFS (-1.2 LU))
+# up 5 steps only, to -1.3 dBFS (-1.2 LU)); U02 with the clean Rhodes (the physical swing, 0.9.9's overtone decay):
+# -3.4 LU at the same LEVEL, its typical chords -5.3 dBFS before the limiter)
 # the user bank's starters (presets.c PR_NS: U01..U09 in a bank never saved): judged on the host only (a device's bank
 # may hold the player's own presets), each within 1 LU of F01 on the chord; presets 20.. in the rows = U01..
 PR_STARTERS = 9

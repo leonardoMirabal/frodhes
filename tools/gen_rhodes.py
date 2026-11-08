@@ -68,8 +68,8 @@ def tine_lengths():
     return out
 
 
-def t60_v1(p, n):
-    c = p["t60_v1"]
+def t60_v1(p, n, key="t60_v1"):
+    c = p[key]
     pts = c["points"]
     if n <= pts[0][0]:
         return pts[0][1]
@@ -182,6 +182,7 @@ def key_physics(p, n, L):
     f = np.array(fr["f"])
     psi_c, psi_t = fr["psi_c"], fr["psi_t"]
     T1 = t60_v1(p, n) * jit_pct(p, n, "t60")            # S2: each tine its own Q (V1, the overtones follow)
+    Tot = t60_v1(p, n, "t60_overtones") * jit_pct(p, n, "t60") if "t60_overtones" in p else T1   # O1 / O2's scale
     sig_t = 6.907755 / (T1 * tb["tine_t60_frac"])
     sig_b = 6.907755 / (T1 * tb["bar_t60_mult"])
     sys_ = tbm.TineBar(f[0], f[0] * 2 ** (bar_cents(p, n) / 1200), tb["k_rel"], tb["mu"], sig_t, sig_b)
@@ -218,7 +219,7 @@ def key_physics(p, n, L):
     ex = p["overtone_damping_exp"]
     for m, name in ((1, "O1"), (2, "O2")):
         fq = f0 * f[m] / f[0]
-        t60 = T1 * tb["tine_t60_frac"] / (f[m] / f[0]) ** ex
+        t60 = Tot * tb["tine_t60_frac"] / (f[m] / f[0]) ** ex
         modes.append(dict(name=name, f=fq, t60=t60, t60_rel=min(t60, Trel),
                           amp=psi_c[m] * psi_t[m] / (2 * math.pi * f[m])))
     modes.append(dict(name="H1", f=0.0, t60=1.0, t60_rel=1.0, amp=0.0))      # Phase 3
@@ -453,7 +454,7 @@ def drive_targets(p, n):
         vk = ip(c["knee_points"])
         bt = [b0 + c["slope_db_per_vel"] * w * float(np.logaddexp(0.0, (v - vk) / w)) for v in V_ANCH]
     sp = c["h1_sat_points"]                     # [midi, dB], interpolated; above the last key: the law unchanged
-    sat = ip(sp) if n <= sp[-1][0] else None
+    sat = ip(sp) if sp and n <= sp[-1][0] else None   # (empty: the fundamental's own law on every key)
     return bt, sat
 
 
@@ -504,17 +505,30 @@ def pickup_drive(p, spec_keys, fams):
         r = [bark_h1(yy, spec_keys[k]["f0"]) for yy, (k, a) in zip(y, jobs)]
         return np.array([q[0] for q in r]), np.array([q[1] for q in r])
 
-    _, H1o = measure(np.zeros(len(jobs)))                 # the fundamental's law as it is
+    bk0, H1o = measure(np.zeros(len(jobs)))               # the fundamental's law as it is
     lo = np.full(len(jobs), float(c.get("min_db", -40.0)))
     hi = np.full(len(jobs), float(c.get("max_db", 40.0)))
     tgt = np.array([BT[k, a] for k, a in jobs])
-    for it in range(c.get("iterations", 14)):
+    phys = bool(c.get("bark_physical"))                    # 0.9.10 (the user: a clean Rhodes at every velocity):
+    # the swing is the physical force law's on every key and velocity (0.9.9's through the pickup: clean at the
+    # bottom, still brighter with velocity at the top); the targets above are not used, only the gain laws below
+    if phys:                                               # (bark_physical_offset_points [[midi, dB]]: the bark
+        # that far under the physical law's, interpolated; the top keys' upper partials stand out more since 0.9.9)
+        po = c.get("bark_physical_offset_points", [])
+        off = np.array([float(np.interp(spec_keys[k]["midi"], [q[0] for q in po], [q[1] for q in po])) if po else 0.0
+                        for k, a in jobs])
+        tgt = bk0 + off
+        hi = np.zeros(len(jobs))                           # (never over the physical swing; never more than 3x
+        lo = np.minimum(np.maximum(lo, np.minimum(off, 0.0) * 3.0), -1e-3)   # the offset under it:
+        # where the bark no longer falls with the swing (soft notes at the top, the pickup's own floor) it stays there)
+        phys = not np.any(off)                             # (an offset: solved as before)
+    for it in range(0 if phys else c.get("iterations", 14)):
         mid = 0.5 * (lo + hi)
         bk, _ = measure(mid)
         up = bk < tgt
         lo = np.where(up, mid, lo)
         hi = np.where(up, hi, mid)
-    mdb = 0.5 * (lo + hi)
+    mdb = np.zeros(len(jobs)) if phys else 0.5 * (lo + hi)
     bk, H1n = measure(mdb)
     print("pickup drive: bark error worst %.2f dB, median %.2f dB; excursion %.1f .. %.1f dB" % (
         float(np.max(np.abs(bk - tgt))), float(np.median(np.abs(bk - tgt))), float(mdb.min()), float(mdb.max())),
@@ -581,6 +595,10 @@ def pickup_drive(p, spec_keys, fams):
     for k, spec in enumerate(spec_keys):
         lk = np.maximum.accumulate(lv[k]) - max(lv[k])
         spec["pulse"]["plev"] = [max(1, min(32767, int(round(32767 * 10 ** (x / 20))))) for x in lk]
+        if c.get("bark_physical"):                     # 0.9.10: the swing is the physical force law's again, so the
+            # note's measure for the noises is 0.9.9's too (the physical force: the noises were set against it; the
+            # level law above put a v1 note's felt / thud 3-5 dB over 0.9.9's, test_release_never_louder)
+            spec["pulse"]["plev"] = [max(1, min(32767, int(x))) for x in spec["pulse"]["pamp"]]
 
 
 def vlayers():

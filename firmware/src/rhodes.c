@@ -654,11 +654,10 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
         uint32_t h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
         v->prate = (uint32_t)(((uint64_t)v->prate * h) >> 16);
         v->pamp = (int32_t)(((int64_t)v->pamp * h) >> 16);
-#ifdef RH_DRIVE
-        if (v->pamp > (RH_IS_MAP(v) ? 32767 : 65535)) v->pamp = RH_IS_MAP(v) ? 32767 : 65535;   /* mul15s range */
-#else
-        if (v->pamp > 32767) v->pamp = 32767;                                 /* mul15s range */
-#endif
+        if (v->pamp > 32767) v->pamp = 32767;   /* mul15s range; the drive too (0.9.10, the user: clean at every
+                                                * velocity): a TYPE's harder tip (DYNO x1.2) swings the tine no further
+                                                * than 0.9.9's full scale (65535 let DYNO v127 fold: H3 +3 dB over
+                                                * 0.9.9's, tests/py/test_dry_distortion.py) */
 #ifdef RH_DRIVE
         v->pphys = (int32_t)(((int64_t)v->pphys * h) >> 16);
         if (v->pphys > 32767) v->pphys = 32767;

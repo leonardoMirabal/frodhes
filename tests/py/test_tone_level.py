@@ -24,10 +24,10 @@ from tone_level import KEYS, lufs  # noqa: E402
 TYPES = ["STAGE77", "SUITCASE", "FELT", "DYNO"]
 
 
-def note(ty, tone, n, vel, extra=()):
-    ev = ["20 midi 0xB0 119 127", "30 midi 0xB0 104 0", f"40 midi 0xB0 80 {ty * 32}", f"50 midi 0xB0 28 {tone}",
-          f"200 midi 0x90 {n} {vel}", *extra, f"800 midi 0x80 {n} 0"]
-    x = run(f"tone-{ty}-{tone}-{n}-{vel}-{len(extra)}", ev, 900).L.astype(float)
+def note(ty, tone, n, vel, extra=(), resp=0):
+    ev = ["20 midi 0xB0 119 127", "30 midi 0xB0 104 0", f"35 midi 0xB0 40 {resp}", f"40 midi 0xB0 80 {ty * 32}",
+          f"50 midi 0xB0 28 {tone}", f"200 midi 0x90 {n} {vel}", *extra, f"800 midi 0x80 {n} 0"]
+    x = run(f"tone-{ty}-{tone}-{n}-{vel}-{len(extra)}-r{resp}", ev, 900).L.astype(float)
     seg = x[int(0.2 * FS):int(0.8 * FS)]
     return seg[int(np.argmax(np.abs(seg) > 0)):]
 
@@ -36,12 +36,14 @@ def loud(seg):
     return lufs(seg[int(0.05 * FS):int(0.6 * FS)])
 
 
+# RESPONSE (CC 40) A, the pickup drive (rh_tone_g.h), and B, the velocity map (rh_tone_b.h; tone_level.py --map)
+@pytest.mark.parametrize("resp", [0, 127], ids=["A", "B"])
 @pytest.mark.parametrize("ty", range(4))
-def test_tone_keeps_the_loudness(ty):
+def test_tone_keeps_the_loudness(ty, resp):
     for vel in (40, 80, 100, 127):
-        ref = {n: loud(note(ty, 64, n, vel)) for n in KEYS + (21, 96)}
+        ref = {n: loud(note(ty, 64, n, vel, resp=resp)) for n in KEYS + (21, 96)}
         for tone in (80, 96, 112, 127):
-            d = {n: loud(note(ty, tone, n, vel)) - ref[n] for n in ref}
+            d = {n: loud(note(ty, tone, n, vel, resp=resp)) - ref[n] for n in ref}
             mean = float(np.mean([d[n] for n in KEYS]))
             assert abs(mean) < 0.75, f"{TYPES[ty]} v{vel} TONE {tone}: the level moved {mean:+.2f} LU"
             worst = max(d.values(), key=abs)

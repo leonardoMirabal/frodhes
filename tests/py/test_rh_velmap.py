@@ -42,28 +42,32 @@ def test_tables_in_range():
             assert len(v) == 17 and all(0 < q < 65536 for q in v)
 
 
+def note_deep(tag, key, vel):
+    r = run(tag, ["20 midi 0xB0 119 127", "25 midi 0xB0 40 0", "30 midi 0xB0 104 0", f"100 midi 0x90 {key} {vel}"], end_ms=560)
+    x = r.L / 32768.0
+    a = np.abs(x)
+    i = int(np.argmax(a > 0.02 * a.max()))
+    return gv.metrics(x[max(0, i - 22):], key)
+
+
 @pytest.mark.parametrize("key", [33, 45, 57, 64, 69, 76, 88])
 def test_bark_knee(key):
-    """flat below the knee (within 2 dB from v16 to 8 below it), +0.45 dB / velocity above (to v127, within 25 %),
-    none from C6 up; the measured bark within 2 dB of the target at v32, the knee + 24 and v127"""
-    kn = gv.pts(CFG["knee_points"], key)
-    b = {v: note(f"vm_{key}_{v}", key, v)[0] for v in sorted({16, 32, 127, int(min(kn, 120)) - 8, int(min(kn + 24, 127))})}
-    for v, got in b.items():
-        assert abs(got - gv.bark_target(CFG, key, v)) < 2.0, (key, v, got, gv.bark_target(CFG, key, v))
-    lo = int(min(kn, 120)) - 8
-    assert abs(b[lo] - b[16]) < 2.0, b
-    if kn < 120:
-        rise = (b[127] - b[lo]) / (127 - kn)
-        assert 0.33 < rise < 0.6, (key, rise, b)
-    else:
-        assert b[127] - b[16] < 2.0, b
+    """0.9.10 (the user: a clean Rhodes at every velocity; velmap.json bark_physical): the map's swing is the
+    engine's own on every key (0.9.9's), so its bark is DEEP's within 1.5 dB at v32, v64, v96 and v127, and it never
+    falls as the velocity rises (tests/py/test_rhodes_clean.py: never over 0.9.9's at v110 / v127)"""
+    vs = (32, 64, 96, 127)
+    b = {v: note(f"vm_{key}_{v}", key, v)[0] for v in vs}
+    d = {v: note_deep(f"vd_{key}_{v}", key, v)[0] for v in vs}
+    for v in vs:
+        assert abs(b[v] - d[v]) < 1.5, (key, v, b[v], d[v])
+    assert all(b[v2] > b[v1] - 1.0 for v1, v2 in zip(vs, vs[1:])), b
 
 
-@pytest.mark.parametrize("key,top", [(33, 5.6), (45, 5.9), (60, 8.3)])
+@pytest.mark.parametrize("key,top", [(33, 14.7), (45, 14.5), (60, 14.3)])
 def test_h1_saturates(key, top):
-    """H1(v127) - H1(v64): the map's saturation (velmap.json h1_top_db: +3 dB in the bass, +6 dB E3..D#4; 0.9.9: 14 dB)
-    plus the level make-up (rh_velmap_mk.h: the map at the 0.9.9 loudness from v48 up, +2.3..2.6 dB more at v127 than
-    at v64 at these keys; re-baselined 2026-11-08 for the loudness rule, the bark's knee unchanged: test_bark_knee)"""
+    """H1(v127) - H1(v64) with the map and its level make-up. 0.9.10 (the user: a clean Rhodes at every velocity;
+    velmap.json bark_physical): the swing stays at the engine's own, nothing folds, so the fundamental keeps its own
+    velocity law, as 0.9.9's (14 dB; the first 0.9.10 map saturated it to 5.6 .. 8.3 dB, the bark taking the energy)"""
     h64 = note(f"vm_h1_{key}_64", key, 64)[1]
     h127 = note(f"vm_h1_{key}_127", key, 127)[1]
     assert abs((h127 - h64) - top) < 1.5, (key, h127 - h64)

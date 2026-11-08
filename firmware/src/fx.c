@@ -985,7 +985,7 @@ FX_RAM __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, u
      * off at every DEPTH, within 0.1 LU (fitted on host renders; tests/py/test_mix_levels.py); the low shelf's depth follows it (ksh), so
      * the bass keeps its level too (C2 within +1.5 dB). The mix was a fixed 0.70: the chord -2.1 LU at DEPTH 64.
      * Refitted 2026-11-08 on the 0.9.10 Rhodes (with the centre law below): every knot within 0.11 LU */
-    static const int16_t PH_G[9] = {2731, 2820, 3318, 5112, 5390, 4989, 4710, 4502, 4331};
+    static const int16_t PH_G[9] = {2731, 2820, 3200, 5112, 5390, 4989, 4710, 4502, 4331};
     int32_t gt = PH_G[depth >> 4] + (((PH_G[(depth >> 4) + 1] - PH_G[depth >> 4]) * (depth & 15)) >> 4);
     /* the centre under DEPTH 64 rises 1.5x as fast as the sweep narrows, at the top from DEPTH 21 down (it was 1x, the
      * top at DEPTH 0: with the 0.9.10 Rhodes' brighter 1-3 kHz a high chord lost 3.3 dB at DEPTH 30, a low one gained

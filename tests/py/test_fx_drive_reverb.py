@@ -233,7 +233,9 @@ def test_drive_is_heard(eng, vel):
     code is unchanged and stays so (user, 2026-11-08): the test point moved to v95, where the dry note is still clean
     enough for the 1-3 kHz band to show what the effect adds, instead of the effect being made harsher to stand out
     over a pickup that already barks. v110 is back as well (AGENTS.md 5b, THRESHOLD: test_drive_is_heard v95 -> v95 and
-    v110): moving the test hid the 0.9.10 dry distortion; 0.9.9 passes at v110, and so must a clean dry engine"""
+    v110): moving the test hid the 0.9.10 dry distortion; 0.9.9 passes at v110, and so must a clean dry engine. With the
+    clean Rhodes (the physical pickup swing again) v95 reads the band -73.4 -> -46.3 dB (+27.1) and the crest factor
+    5.7 -> 4.1 dB: its crest step is 1 dB there (0.9.9 drops 1.8, so 2 dB never held at v95), 2 dB at v110"""
     sel = [(79, 0), (47, 0)] if eng == "vibes" else []
     out = {}
     for d in (0, 64, 127):
@@ -244,5 +246,5 @@ def test_drive_is_heard(eng, vel):
         hi = 10 * np.log10(X[(f >= 1000) & (f < 3000)].sum() + 1e-9) - 10 * np.log10(X[f < 300].sum() + 1e-9)
         out[d] = (hi, 20 * np.log10(np.abs(x).max() / np.sqrt(np.mean(x * x))), rms_db(x))
     assert out[127][0] - out[0][0] >= (15 if eng == "rhodes" else 5), out   # (VIBES starts brighter: +6 dB, the Rhodes +43)
-    assert out[127][1] < out[0][1] - 2, out
+    assert out[127][1] < out[0][1] - (2 if vel >= 110 else 1), out   # (v95: 0.9.9 drops 1.8 dB, the clean 0.9.10 1.6)
     assert abs(out[64][2] - out[0][2]) <= 2.0, out
