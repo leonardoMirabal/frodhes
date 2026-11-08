@@ -1,19 +1,23 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-only
 # Gate M's renders (tools/gate_m.py runs this in the Move image on macOS, natively on Linux arm64):
-#   move/tests/gate_m.sh replay LIST JOBS   each "NAME SCRIPT" line of LIST through build/move/frodhes/dsp.so
-#                                           (move/tests/move_replay.c) -> build/gate_m/replay/NAME.wav
+#   move/tests/gate_m.sh replay LIST JOBS [DSP]   each "NAME SCRIPT" line of LIST through DSP (default
+#                                           build/move/frodhes/dsp.so; tools/gate_m.py passes its snapshot,
+#                                           build/gate_m/so/dsp.so) (move/tests/move_replay.c) -> build/gate_m/replay/NAME.wav;
+#                                           the instances' folders in build/gate_m/t (MOVE_REPLAY_TMP), not build/move/t
 #   move/tests/gate_m.sh host16 LIST JOBS   the same scripts through the host build at the Move's voice count
 #                                           (MOVE_DEFS) -> build/gate_m/host16/NAME.wav (only for --save)
 set -eu
-MODE=$1 LIST=$2 JOBS=${3:-2}
+MODE=$1 LIST=$2 JOBS=${3:-2} DSP=${4:-build/move/frodhes/dsp.so}
 DEFS=${MOVE_DEFS:--DFR_VOICES=16u -DFR_BYP_KEEP_CMP=1 -DFR_REV_HQ=1}
-mkdir -p build/gate_m build/move/t
+mkdir -p build/gate_m build/gate_m/t
+export MOVE_REPLAY_TMP=build/gate_m/t DSP
 case $MODE in
 replay)
-    [ -f build/move/frodhes/dsp.so ] || { echo "no build/move/frodhes/dsp.so: make move first"; exit 1; }
-    cc -O1 -std=gnu11 -Wall -Wextra -o build/gate_m/move_replay move/tests/move_replay.c -ldl
-    RUN='mkdir -p "$(dirname build/gate_m/replay/$0)" && build/gate_m/move_replay build/move/frodhes/dsp.so "$1" "build/gate_m/replay/$0.wav" > "build/gate_m/replay/$0.log" 2>&1 || { echo "FAIL $0 (exit $?)"; cat "build/gate_m/replay/$0.log"; }' ;;
+    [ -f "$DSP" ] || { echo "no $DSP: make move first"; exit 1; }
+    cc -O1 -std=gnu11 -Wall -Wextra -o build/gate_m/move_replay.tmp move/tests/move_replay.c -ldl
+    mv -f build/gate_m/move_replay.tmp build/gate_m/move_replay
+    RUN='mkdir -p "$(dirname build/gate_m/replay/$0)" && build/gate_m/move_replay "$DSP" "$1" "build/gate_m/replay/$0.wav" > "build/gate_m/replay/$0.log" 2>&1 || { echo "FAIL $0 (exit $?)"; cat "build/gate_m/replay/$0.log"; }' ;;
 host16)
     cc -O2 -Wall -Wno-unused-function -DDINGHY_HOST $DEFS -DAPP_VER='"dev"' -Ifirmware/src -Ifirmware/gen \
       -o build/gate_m/host16.bin firmware/src/frodhes.c -lm 2> build/gate_m/host16.build.log
@@ -21,4 +25,4 @@ host16)
 *) echo "usage: gate_m.sh replay|host16 LIST JOBS"; exit 2 ;;
 esac
 xargs -P "$JOBS" -L 1 sh -c "$RUN" < "$LIST"
-rm -rf build/move/t/run.*
+rm -rf build/gate_m/t/run.*
