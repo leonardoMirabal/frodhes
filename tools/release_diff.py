@@ -20,7 +20,7 @@ Measured per note (mono, 44.1 kHz; t = the strike): H2..H6 re H1 (dB, band peaks
 (the energy off every harmonic band re H1: aliasing and any inharmonic product), "level" (RMS over the hold, dBFS),
 "peak" (the attack's peak, first 100 ms), "cent" (spectral centroid, Hz), "decay" (dB lost over the hold), "keyup"
 (the level 80..280 ms after the key-up re the last 200 ms before it), "clk" (the largest 1 ms second-difference peak
-re the median, body and key-up: clicks), and in full mode "lu" (K-weighted loudness of the hold), "cb" (critical-band
+re the median: in the body re the body, after the key-up re the 200 ms before it: clicks), and in full mode "lu" (K-weighted loudness of the hold), "cb" (critical-band
 loudness, phon-like, tools/cb_loud.py) and "lim" (the limiter's gain reduction: RAW minus effects-off level). Per
 chord: "imd" (the energy off every harmonic band of the notes re their fundamentals), level, peak. Per script: "clip"
 (samples at full scale) and "noise" (the floor 2..3 s after the last note, the effects' lines reset by CC 10 2 s before).
@@ -300,8 +300,9 @@ def measure_once(binary, case, grid, tmp, shift):
         c["clk"] = clicks(body, body)
         if not ped:
             c["keyup"] = rms_db(mono[off + int(0.08 * FS):off + int(0.28 * FS)]) - rms_db(mono[off - int(0.2 * FS):off])
-            tail = mono[off - int(0.01 * FS):off + int(0.3 * FS)]
-            c["clk_off"] = clicks(np.where(np.abs(tail) <= LSB_FLOOR, 0.0, tail), body)
+            tail = mono[off:off + int(0.3 * FS)]      # (re the 200 ms before the key-up, 935763a5; samples of at
+            c["clk_off"] = clicks(np.where(np.abs(tail) <= LSB_FLOOR, 0.0, tail), mono[off - int(0.2 * FS):off])
+            # most 1 LSB are silence, 1d3c1ca9)
         if full:
             import cb_loud
             c["lu"] = -0.691 + db(np.mean(np.square(kweight(hold / 32768.0))))
