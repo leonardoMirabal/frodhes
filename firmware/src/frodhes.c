@@ -72,7 +72,18 @@ static uint32_t c1_nv = FR_VOICES;              /* the voices a strike may take:
 #define FX_XFD_SEC __attribute__((section(".noinit.fx")))   /* fx.c xf_d (2 KB of scratch, written before it is read):
                                                  * the pool's room for the full-rate REVERB TYPEs */
 #include "fm1_core1.h"
-#define APP_EARLY() ((void)fr_c1_boot())
+/* .ramx (tools/build.py --c1): RAMTEXT's room past .ram_text, NOLOAD; zeroed here, before core 1 starts and before
+ * the audio (as .bss would be). Core 0's data only: rhodes.c rh_cc (14 KB, the note-on cache: the main loop fills it,
+ * the ISR reads it) and seq.c sq_ev (3.5 KB, the pattern); no core 1 job touches .ramx */
+#define RH_CC_SEC ".ramx.rh_cc"
+#define SQ_EV_SEC __attribute__((section(".ramx.sq_ev")))
+static void fr_ramx_clear(void)
+{
+    extern uint32_t _ramx_start[], _ramx_end[];
+    uint32_t *d;
+    for (d = _ramx_start; d < _ramx_end; d++) *d = 0;
+}
+#define APP_EARLY() (fr_ramx_clear(), (void)fr_c1_boot())
 #endif
 #else
 #define FX_RAM FR_RAM
