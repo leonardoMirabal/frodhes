@@ -468,6 +468,10 @@ static int32_t rel_k(int32_t v)
     return (int32_t)(((uint64_t)DECAY_K[64 + a] * DECAY_K[64 + x - a]) >> 16);
 }
 
+/* HAMMER's contact-rate scale (Q16): 2^(1.5 (v-64)/128), x0.59 .. x1.68 (0.9.10; it was KN_HAM, 2^((v-64)/128), x0.71 ..
+ * x1.41: the pickup drive's harmonics, there at every contact time, halved its range: ST77's brightness 10.8 -> 5.3 dB,
+ * SUIT 8.4 -> 3.9, test_every_control). FX_EXP2F(i) = 2^(i/256); under 64 one octave up, then halved */
+#define RH_HAM_LAW(v) ((uint32_t)(v) >= 64u ? FX_EXP2F(((uint32_t)(v) - 64u) * 3u) : FX_EXP2F(256u - (64u - (uint32_t)(v)) * 3u) >> 1)
 static void param_apply(uint32_t id)
 {
     int32_t v = PV(id);
@@ -497,7 +501,7 @@ static void param_apply(uint32_t id)
         rh_tone_off = v <= 64 ? (v - 64) * (1 << 18) : (v - 64) * RH_TONE_UP; eng_bar_knob(BK_STRIKE, (uint32_t)v); break;
     case P_BARK: rh_bark_s = (int32_t)KN_P64(v); rh_bark_g = (int32_t)KN_P64I(v); eng_bar_knob(BK_MALLET, (uint32_t)v); break;
     case P_BELL: rh_bell = (int32_t)KN_P32(v); eng_bar_knob(BK_TUBE, (uint32_t)v); break;
-    case P_HAMMER: rh_ham = (int32_t)KN_HAM(v); eng_bar_knob(BK_WEIGHT, (uint32_t)v); break;
+    case P_HAMMER: rh_ham = (int32_t)RH_HAM_LAW(v); eng_bar_knob(BK_WEIGHT, (uint32_t)v); break;
     case P_DECAY: rh_k_decay = (int32_t)DECAY_K[v]; eng_bar_knob(BK_RING, (uint32_t)v); break;   /* k = 1/S, S = 2^((v-64)/32): higher = longer */
     case P_RELEASE: rh_k_rel = rel_k(v); eng_bar_knob(BK_DAMPER, (uint32_t)v); break;
     case P_NOISE: rh_thump = KN_THUMP[v]; rh_felt = KN_FELT[v]; rh_knock = KN_KNOCK[v]; rh_pnz = KN_PEDAL[v]; eng_bar_knob(BK_NOISE, (uint32_t)v); break;
