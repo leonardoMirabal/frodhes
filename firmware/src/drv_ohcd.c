@@ -11,7 +11,7 @@
  * bit for bit (tests/c/drv_kern_ref.c; tests/py/test_drive_kernels.py). Four passes, each its own function:
  *   A  the input high-pass (a shift-only one-pole, ~14 Hz, on x << 8) and stage 1 x P (a biquad per AMOUNT step, direct
  *      form I: its states are the signal's own history, so a row change is clean; C4's pole and the droop split
- *      before the clipper in it)                                                                    -> u
+ *      before the clipper in it; u x 2^OHCD_S1F inside)                                             -> u, rounded
  *   C  oh_aa1: stage 1's rail (a clamp at 2^17 u) and the clipper with ADAA-1 (no divide: clz and the shared
  *      reciprocal table DRV_AA_RCP; its exact antiderivative on a {2 g, F, step} node table; the midpoint below |du|
  *      4), output u x 2^12. (The rail sits after C4 here, before it in the circuit: past 2.8 V the
@@ -26,11 +26,11 @@
  * Rows: 65 stored per knob (tools/drive_gen/ohcd.py: every other step), a step between two stored rows their mean.
  * Knobs: the steps that run glide toward the knobs, OHCD_GSTEP steps a block (the whole range in 64 blocks, 0.37 s:
  * no click); the coefficients are copied (and the tone's b scaled) only when a step moves. */
-/* compiled (pi32v2 -Os, tools/drive_insns.py; two-sample loops halved), per sample: A 19 (oh_s12, 38 / 2) + C 38
- * (oh_aa1, 76 / 2) + B 21 (oh_s2r, 42 / 2, inside the rail) + D 16 (oh_out, 32 / 2) = 94 = 150.4 us at 1.6; ~200
+/* compiled (pi32v2 -Os, tools/drive_insns.py; two-sample loops halved), per sample: A 21 (oh_s12, 42 / 2) + C 38
+ * (oh_aa1, 76 / 2) + B 21 (oh_s2r, 42 / 2, inside the rail) + D 16 (oh_out, 32 / 2) = 96 = 153.6 us at 1.6; ~200
  * instructions of set-up a block (~1.3 us); a sample whose pair crosses the IC1B rail adds ~58 (oh_rail's quotient):
- * 5 % of them (a full-range chord crosses far less) ~4.6 us -> 157 us. (The capped kernel: 78.5, 127 us.) */
-#define DRV_US_OHCD 157u
+ * 5 % of them (a full-range chord crosses far less) ~4.6 us -> 160 us. (The capped kernel: 78.5, 127 us.) */
+#define DRV_US_OHCD 160u
 _Static_assert(OHCD_AA, "OHCD runs its anti-aliased kernel only (tools/drive_gen/ohcd.py AA)");
 _Static_assert((DRV_BLK & 1u) == 0, "OHCD runs two samples a pass: the block must be even");
 #ifndef OHCD_GSTEP
@@ -61,6 +61,13 @@ static void drv_ohcd_reset(void)
  * product; |u - u1| < OHCD_AT: the curve at the midpoint (first order). Clamped to stage 1's rail first (past
  * 2.8 V the curve is flat: the rail's own corners fold back little; an antiderivative held past the rail measured the
  * same fold-back, 0.9.5). One function, so another clipper can replace it. */
+/* stage 1 (pass A) runs 2^OHCD_S1F finer than u inside (its b x 2^S1F, oh_set; its output states so), the clipper
+ * gets u rounded (0.9.10): its feedback kept in whole u was a staircase on quiet notes (a bass note's 3rd and 5th
+ * harmonics 15-25 dB over the curve's own at an input of 40..160, -38 dB re H1 at 40); 2 instructions a sample */
+#ifndef OHCD_S1F
+#define OHCD_S1F 4
+#endif
+#define OHCD_S1R (OHCD_S1F ? 1 << (OHCD_S1F - 1) : 0)
 #define OHCD_AT 4                                        /* 2^AA_SF, F in u^2 / 4 */
 #define OHCD_VSH 12                                      /* the clipper's output: u x 2^12 (the quotient's bits kept) */
 static DRV_DATA const int32_t *volatile oh_gfp = &OHCD_GF[0][0];                        /* (read once a block: held in */
@@ -129,7 +136,7 @@ static OH_PASS void oh_s12(const oh_coef_t *k, oh_state_t *st, const int32_t *in
         pb += OHM(c, ya);
         yb = (int32_t)(pb >> OHCD_QS1);
         x2 = xa; x1 = xb; y2 = ya; y1 = yb;
-        m[0] = ya; m[1] = yb;
+        m[0] = (ya + OHCD_S1R) >> OHCD_S1F; m[1] = (yb + OHCD_S1R) >> OHCD_S1F;
         in += 2; m += 2;
     }
     st->lp = lp; st->x1 = x1; st->x2 = x2; st->y1 = y1; st->y2 = y2;
@@ -233,7 +240,7 @@ static void oh_set(int32_t a, int32_t t)
     for (i = 0; i < 5; i++) {
         int32_t v = (int32_t)(s[i] ^ 0x80000000u);
         if (gh) v = (v + (int32_t)(s[5 + i] ^ 0x80000000u)) >> 1;
-        w[i] = i < 3 ? v : -v;
+        w[i] = i < 3 ? v * (1 << OHCD_S1F) : -v;     /* (b x 2^S1F: |b| < 2^25) */
         o[i] = th ? (OHCD_OUT[tr][i] + OHCD_OUT[tr + 1][i]) >> 1 : OHCD_OUT[tr][i];
     }
     oh_k.b0 = w[0]; oh_k.b1 = w[1]; oh_k.b2 = w[2]; oh_k.a1 = w[3]; oh_k.a2 = w[4];
