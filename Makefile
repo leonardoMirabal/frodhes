@@ -6,7 +6,7 @@ HOSTBIN ?= build/host/frodhes
 HOST_DEFS ?=                # other builds, e.g. make test HOST_DEFS=-DRH_VOICES=9u HOSTBIN=build/host9/frodhes (default: 10)
 CFLAGS_HOST := -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER='"dev"' -Ifirmware/src -Ifirmware/gen $(HOST_DEFS)
 
-.PHONY: all setup host pristine release-diff test testv test10 test-c1 test-smk pytest firmware clean
+.PHONY: all setup host pristine release-diff clean-renders test testv test10 test-c1 test-smk pytest firmware clean
 
 all: test pytest
 
@@ -99,6 +99,12 @@ pytest: pristine           ## the pristine gate, then the Python tools' unit tes
 
 firmware:                  ## build/frodhes.fwsc (Docker on macOS)
 	PYTHON=$(PY) ./build.sh
+
+clean-renders:             ## the tests' render folders (a make pytest leaves ~10 GB in build/host/gw*): only these;
+                           ## the binaries, build/memo, device takes (build/hil) and the gate queue's files stay
+	rm -rf build/host/gw* build/host/py build/hq_test build/hq_bars_test build/move_levels build/bar_cards \
+	  build/dry_dist build/gate_h/hq-* build/release_diff/cand-* build/release_diff/last-fast build/release_diff/last-full
+	rm -f build/host/*.wav build/host/*.ppm build/host/*.png build/host/*.log
 
 clean:
 	rm -rf build

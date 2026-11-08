@@ -9,7 +9,7 @@ sine's reference the sine itself there, any other signal's a Kaiser-windowed sin
    are printed and written to build/uac_test/uac_resample_sweep_<rate>.<worker>.txt.
 2. A ramp of the FM-1's clock, -600 -> +600 ppm (10 s; 60 s with --long or UAC_RS_LONG=1), the step set every block,
    with a 1 kHz tone, an 8 kHz tone (both TPDF-dithered: no rounding spurs of the test signal) and the host's piano
-   render (build/host/frodhes.wav):
+   render (the host build's demo, uacrs.piano):
    - no click: no glitch-detector event (tests/py/glitch_lpc.py, the FM-1 takes' detector) that the exact reference
      confirms, and no sample whose error against the reference stands out of the held runs' error at the same place;
      with --long the detector's own rate <= 1.4 events a minute (a clean take) too. The check is shown to find a bad,
