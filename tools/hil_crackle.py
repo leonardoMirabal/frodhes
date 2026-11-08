@@ -143,10 +143,10 @@ HEAVY = dict(DRIVE=127, DRV_MIX=64, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH
              PH_FDBK=127, CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
              RV_DECAY=127, RV_PREDLY=127, FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # hil_cpu's + the reverb's
 MODERATE = dict(DRIVE=60, CP_SW=64, CP_DEPTH=64, PH_SW=127, PH_DEPTH=64, DL_SW=48, DL_DEPTH=64, DL_TIME=60, REV=80)
-REG = dict(bass=[28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48],
-           mid=[48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83],
-           high=[72, 76, 79, 83, 86, 88, 91, 95, 98, 100, 103, 107],
-           spread=[28, 40, 52, 59, 64, 71, 76, 83, 88, 95, 100, 105])
+REG = dict(bass=[28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52, 53, 55],   # (13-16: --voices, FR_C1)
+           mid=[48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83, 86, 88, 91, 95],
+           high=[72, 76, 79, 83, 86, 88, 91, 95, 98, 100, 103, 107, 60, 64, 67, 69],
+           spread=[28, 40, 52, 59, 64, 71, 76, 83, 88, 95, 100, 105, 35, 47, 67, 91])
 RECIPE = [36, 60, 84, 43, 67, 91, 48, 72, 96, 55, 79, 41, 65, 89, 52]   # low, middle, high in turn
 LEDS = (("OFF", 1), ("PLAYED", 2), ("ALL", 3))                         # ui.c LEDS_N: 0 ROOTS 1 OFF 2 PLAYED 3 ALL
 
@@ -1657,7 +1657,7 @@ def save_snip(path, x, fs, t):
 # ------------------------------------------------------------------------------------------------------ the runs
 def device_takes(eng, a):
     """the takes of a device run: the stimulus, then (both sources) the no-USB recipe, then (--leds) the LEDS ones"""
-    T = [(n, c, e, d, dict(usb=True)) for n, c, e, d in takes(eng, a.worst_s, a.recipe_s, a.seed)]
+    T = [(n, c, e, d, dict(usb=True)) for n, c, e, d in takes(eng, a.worst_s, a.recipe_s, a.seed, a.voices)]
     rng = np.random.default_rng(a.seed + 7)
     if a.source == "both" and a.no_usb_s > 0:
         ev, dur = recipe_events(voices(eng), a.no_usb_s, rng)
@@ -1701,7 +1701,7 @@ def run_takes(engines, a, dev=None, log=print):
         E = dict(takes=[], events=0, cpu_worst=None, whole_worst=None, shed=0, usb_counters={}, voices=None, rig=[],
                  click_lim=0, over_ceiling=0, zero_own=0, counter_fails=[], polled=bool(dev and dev.poll))
         T = device_takes(eng, a) if dev else [(n, c, e, d, dict(usb=True)) for n, c, e, d in
-                                              takes(eng, a.worst_s, a.recipe_s, a.seed)]
+                                              takes(eng, a.worst_s, a.recipe_s, a.seed, a.voices)]
         for name, ccs, ev, dur, opt in T:
             counters = None
             if dev:
@@ -1823,6 +1823,8 @@ def parse_args(argv=None):
     ap.add_argument("--leds", action="store_true", help="the LEDS OFF / PLAYED / ALL takes (asks for each)")
     ap.add_argument("--quick", action="store_true", help="20 s worst + 24 s recipe per engine")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--voices", type=int, default=None, choices=range(1, 17), metavar="N",
+                    help="the chords' notes (default: the firmware's RH_VOICES / BAR_VOICES; 14 for a two-core FR_C1 build)")
     ap.add_argument("--jack-dev", default="M6")
     ap.add_argument("--jack-ch", type=int, default=5)
     ap.add_argument("--dry-run", action="store_true")

@@ -335,13 +335,17 @@ static uint32_t bar_level_sum(const bar_voice_t *v)
  * block's end: twice BAR_NV starts in one block. With voices ringing the steals alone fill it (every voice waits:
  * BAR_NV starts, as before). The note past the limit waits for the next block, in order, as the waiting notes always
  * did; a block of BAR_NV starts or fewer is the same as before, sample for sample */
+#ifndef BAR_NA
+#define BAR_NA BAR_NV                               /* the voices a strike may take (FR_C1 builds, frodhes.c: fewer once
+                                                     * core 1 is held: the one-core fallback) */
+#endif
 static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already waits for a note, or this block started
                                                      * BAR_NV notes; try next block */
 {
     uint32_t i, pick = BAR_NV, best = 0xFFFFFFFFu;
-    if (bar_starts >= BAR_NV) return 0;
-    for (i = 0; i < BAR_NV && bv[i].pend; i++) ;
-    if (i == BAR_NV) return 0;                      /* (more than BAR_NV steals in one block: BUGHUNT #21) */
+    if (bar_starts >= BAR_NA) return 0;
+    for (i = 0; i < BAR_NA && bv[i].pend; i++) ;
+    if (i == BAR_NA) return 0;                      /* (more than BAR_NV steals in one block: BUGHUNT #21) */
     bar_starts++;
 #ifdef DINGHY_HOST
     if (bar_starts > bar_h_max_starts) bar_h_max_starts = bar_starts;
@@ -368,9 +372,9 @@ static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already wa
             bar_nz_e += (int32_t)(((int64_t)bar_nz * bar_fam_nz() * vel) >> 22);
             return 1;
         }
-    for (i = 0; i < BAR_NV; i++)
+    for (i = 0; i < BAR_NA; i++)
         if (!bv[i].alive) { bar_init(&bv[i], note, vel); return 1; }
-    for (i = 0; i < BAR_NV; i++) {                  /* steal: the quietest released voice, else the oldest */
+    for (i = 0; i < BAR_NA; i++) {                  /* steal: the quietest released voice, else the oldest */
         uint32_t sum, score;
         if (bv[i].pend) continue;
         sum = bar_level_sum(&bv[i]);
@@ -591,6 +595,10 @@ static void bar_motor_block(void)
 #define BAR_NS_UNITF 320u         /* ... more while any voice's pulse runs (the force MAC; counted for every slot)
                                    * (1500: x 2.5 / 12) */
 
+#ifndef FX_COST_C0
+#define FX_COST_C0() fx_cost_us()                   /* the effects' time on this core (FR_C1 builds, frodhes.c: core 1
+                                                     * runs them; core 0 pays the hand-off) */
+#endif
 static uint32_t bar_upper_units(void)               /* live upper slots over the alive voices, in sub-block units */
 {
     uint32_t i, m, c = 0;
@@ -603,7 +611,7 @@ static uint32_t bar_upper_units(void)               /* live upper slots over the
 /* everything this block will do except the upper modes (ns); *unit = one unit's ns */
 static uint32_t bar_cost_fixed(uint32_t *unit)
 {
-    uint32_t i, ns = BAR_NS_BASE + 1000u * fx_cost_us(), f = 0;
+    uint32_t i, ns = BAR_NS_BASE + 1000u * FX_COST_C0(), f = 0;
 #ifdef DINGHY_HOST
     if (bar_h_fxus >= 0) ns = BAR_NS_BASE + 1000u * (uint32_t)bar_h_fxus;
 #endif

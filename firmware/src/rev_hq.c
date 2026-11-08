@@ -73,7 +73,7 @@ static __attribute__((noinline)) void rev_locut(int32_t *x, int32_t v)
 }
 /* the kernels' input at the full rate: the clamp and HL_IN as rev_down, its DC blocker at the same corner (>> 6 at
  * twice the rate: ~110 Hz -> 0.9.5's ~110 Hz) */
-static FR_RAM __attribute__((noinline)) void rq_in(const int32_t *in, int32_t *out)
+static FX_RAM __attribute__((noinline)) void rq_in(const int32_t *in, int32_t *out)
 {
     int32_t hp = rv_hp, he = rv_he;
     uint32_t i;
@@ -126,7 +126,7 @@ __attribute__((noinline)) static void rv_send_ramp(const int32_t *L, const int32
     }
 }
 /* the return of one control block, with MIX's law (rk) or (MIX 0, a tail ringing out) as it is; act: its OR */
-static FR_RAM __attribute__((noinline)) int32_t rq_ret(int32_t *L, int32_t *R, int32_t rk)
+static FX_RAM __attribute__((noinline)) int32_t rq_ret(int32_t *L, int32_t *R, int32_t rk)
 {
     uint32_t j;
     int32_t act = 0;

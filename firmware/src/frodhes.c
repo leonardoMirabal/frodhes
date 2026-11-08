@@ -28,6 +28,58 @@
  * called through its address in a register the compiler cannot fold back (one instruction more a call) */
 #define FR_FAR(fn) (__extension__({ __typeof__(&fn) p_ = &fn; HAL_KEEP_REG(p_); p_; }))
 #endif
+/* FR_C1 (a build switch, off by default: ./build.sh with APP_DEFS=-DFR_C1=1, tools/build.py --c1): two cores. Core 0
+ * renders the voices (14 by default, FR_VOICES), core 1 the whole effects chain and the master stage (fx_process, the
+ * full-rate REVERB TYPEs, FR_REV_HQ) of the block before, at the same time: one block (256 frames, 5.8 ms) more
+ * latency, no voice ever on core 1 (core 1 faulted in the voice loops while core 0 multiplied, 2026-11-01). Every
+ * function core 1 reaches runs from flash (FX_RAM empty): the two cores never fetch code from RAM at once (Textura
+ * 548fd55). Core 1 refuses a job it read wrong (core 0 renders it, core 1 stays on); a late job, refusals too often or
+ * a fault of core 1 hold it for good: one core from then on, at FR_C1_NV1 voices (the effects from flash, the shedder
+ * as the last guard). hal/fm1_core1.h (the FM-1), c1_host.h (the host's twin), app_audio below. The FM-1 firmware and
+ * the host only: not the SMK-37, not the Move, not the web emulator. */
+#ifndef FR_C1
+#define FR_C1 0
+#endif
+#if FR_C1
+#if (defined(BOARD_SMK37) && BOARD_SMK37) || defined(FR_HQ) || defined(DINGHY_WEB)
+#error "FR_C1: the FM-1 firmware and its host build only"
+#endif
+#ifndef FR_VOICES
+#define FR_VOICES 14u
+#endif
+#ifndef FR_REV_HQ
+#define FR_REV_HQ 1
+#endif
+#ifndef FR_C1_NV1
+#define FR_C1_NV1 10u                           /* the voices a strike may take once core 1 is held (one core) */
+#endif
+#ifndef FR_C1_FX_US
+#define FR_C1_FX_US 40u                         /* core 0's share of the effects while core 1 runs them (the hand-off,
+                                                 * the side's copy): the bar engine's cost model (bars.c FX_COST_C0) */
+#endif
+#define FX_RAM                                  /* the effects from flash (XIP): core 1 runs them */
+#define FX_PROC_ATTR static __attribute__((noinline))
+#define FX_SIDE c1_side                         /* the effects read the side of the block in flight (app_audio) */
+#define FX_SIDE_ON c1_side_on
+#define RH_NA c1_nv
+#define BAR_NA c1_nv
+#define FX_COST_C0() (c1_nv > FR_C1_NV1 ? FR_C1_FX_US : fx_cost_us())
+#include <stdint.h>
+static int32_t c1_side[256];                    /* the Rhodes' side (rh_side) of the block core 1 works on */
+static uint8_t c1_side_on;
+static uint32_t c1_nv = FR_VOICES;              /* the voices a strike may take: FR_VOICES with core 1 live */
+#if defined(DINGHY_HOST)
+#define FX_XFD_SEC
+#include "c1_host.h"
+#else
+#define FX_XFD_SEC __attribute__((section(".noinit.fx")))   /* fx.c xf_d (2 KB of scratch, written before it is read):
+                                                 * the pool's room for the full-rate REVERB TYPEs */
+#include "fm1_core1.h"
+#define APP_EARLY() ((void)fr_c1_boot())
+#endif
+#else
+#define FX_RAM FR_RAM
+#endif
 #include "fr_cold.h"     /* FR_COLD: the cold code built for flash, not speed */
 #include "frodhes_store.h"   /* the flash Frodhes writes, per board, and its allow-list APP_FL_RANGE (store.h) */
 #include "keyvel.h"     /* key velocity's interfaces: first, so the scan tick (platform.c) can reach its hooks */
@@ -156,7 +208,34 @@ FR_COLD static int usb_link(void) { return host_usb_link; }
 #include "presets.c"
 #include "bars.c"       /* last: the bar engine's code (see bars.c) */
 
+#if FR_C1
+/* two cores (FR_C1): the voices of block k on core 0 while core 1 runs the effects of block k-1 into out. The dry
+ * blocks alternate in c1_mono; the side (rh_side, SPREAD) of the block in flight is copied to c1_side when its voices
+ * are done. A block the developer's CC 10 resets (fx_reset_state ends the voices, touches the engines) runs on core 0
+ * after the voices, as one core does */
+static int32_t c1_mono[2][256];
+static uint8_t c1_pp;
+static struct { const int32_t *mono; int32_t *out; uint32_t n; } c1_job;
+static void c1_fx_job(uint32_t a)               /* core 1 (or core 0: refused, late, one core) */
+{
+    (void)a;
+    fx_process(c1_job.mono, c1_job.out, c1_job.n);
+}
+/* core 1 held for good: from now on strikes take FR_C1_NV1 voices, the ones above fade out as a steal */
+static void c1_one_core(void)
+{
+    uint32_t i;
+    if (c1_nv <= FR_C1_NV1) return;
+    c1_nv = FR_C1_NV1;
+    for (i = FR_C1_NV1; i < RH_NV; i++)
+        if (rv[i].alive) { if (rv[i].fade == 32768) rv[i].fade = 32767; rv[i].pend = 0; }
+    for (i = FR_C1_NV1; i < BAR_NV; i++)
+        if (bv[i].alive) { if (bv[i].fade == 32768) bv[i].fade = 32767; bv[i].pend = 0; }
+}
+#define C1_DEADLINE_US 4600u                    /* a job not done this long after the block's start is late */
+#else
 static int32_t voice_mono[256];
+#endif
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
 /* host only (tests/py/test_race_fuzz.py): after each block, with nothing in flight (both rings empty, no TYPE change
  * pending), every voice held down must be a note the notes layer wants sounding (a source's pitch sent to the engine,
@@ -190,12 +269,45 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #if defined(RH_PROF_STAGES) && !defined(DINGHY_HOST)
     prof_st_t = t0;
 #endif
+#if FR_C1
+    {
+        int32_t *cur = c1_mono[c1_pp], *prev = c1_mono[c1_pp ^ 1u];
+        int on1 = 0, r = 0;
+        c1_job.mono = prev; c1_job.out = out; c1_job.n = n;
+        if (!fx_reset_req)
+            on1 = fr_c1_run(c1_fx_job, 0);      /* core 1: the effects of the block before, from now */
+        eng_render(cur, n);                     /* core 0: this block's voices */
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        host_race_check();
+#endif
+        PROF_STAMP(1);
+        if (on1) {
+#ifndef DINGHY_HOST
+            uint32_t el = (fm1_ticks() - t0) / 24u;
+            r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+#else
+            r = fr_c1_wait_us(C1_DEADLINE_US);
+#endif
+        }
+        if (!on1 || r) {                        /* refused (-2: core 1 stays on), late / held (-1), one core, CC 10 */
+            int rst = fx_reset_req;
+            c1_fx_job(0);
+            if (rst) { memset(cur, 0, n * sizeof cur[0]); rh_side_on = 0; }   /* (the voices CC 10 ended: as one core) */
+        }
+        if (c1_nv > FR_C1_NV1 && !fr_c1_live()) c1_one_core();
+        c1_side_on = rh_side_on;                /* this block's side, for its effects in the next block */
+        if (rh_side_on) memcpy(c1_side, rh_side, n * sizeof c1_side[0]);
+        c1_pp ^= 1u;
+        fr_c1_block_end();
+    }
+#else
     eng_render(voice_mono, n);
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
     host_race_check();
 #endif
     PROF_STAMP(1);
     fx_process(voice_mono, out, n);
+#endif
     PROF_STAMP(15);
 #if FELUCCA_UAC_TONE == 2
     {   /* bench (BUGHUNT #24, builds with APP_DEFS=-DFELUCCA_UAC_TONE=2 only): the app's output replaced by triangles of
@@ -292,6 +404,32 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
                                                         * out ring holds 64) */
         uint32_t u = (uint32_t)(uac.lk_u10 + 8192);
         usb_health_send(22, u > 16383u ? 16383u : u);
+        return;
+    }
+#endif
+#if FR_C1 && !defined(DINGHY_HOST)
+    if (cc == 116u && (v == 30u || v == 31u)) {        /* FR_C1: core 1's items (hal/fm1_core1.h fr_c1_info), CC 100 id
+                                                        * / 101-102 value as usb_health_reply's, each waiting (up to
+                                                        * 50 ms) for room in the 64-message MIDI out ring. 30: the status,
+                                                        * items 30 + FR_C1_INFO_* (30 the state: 0 never started, 1 live,
+                                                        * held for good: 2 refusals too often, 3 a late job, 4 no answer
+                                                        * at start, 5 the rails not raised, 6 a fault of core 1, 7 parked,
+                                                        * 8 the mailbox not as left; 31 / 32 jobs done low / high 14 bits,
+                                                        * 33 jobs refused (core 0 did them), 34 core 1's bad reads, 35 the
+                                                        * longest wait (us), 36 / 37 VDC14 / SYSVDD as the boot loader left
+                                                        * them, 38 / 39 now, 40 core 1's fault vector + 1, 41 its stack's
+                                                        * deepest (B), 42 / 43 read-again recoveries on core 1 / core 0,
+                                                        * 44 late jobs, 45 holds for good, 46 core 1's busiest block (us),
+                                                        * 47 the voices a strike may take); 31: core 1's fault record
+                                                        * after a fault of its own (items 50 on, each word as 3 items) */
+        uint32_t k, k0 = v == 30u ? 0u : FR_C1_INFO_N, k1 = v == 30u ? FR_C1_INFO_N + 1u : fr_c1_info_n(), t1;
+        for (k = k0; k < k1; k++) {
+            t1 = fm1_ticks();
+            while (usb.config && mo_w - mo_r > MQ - 3u && fm1_ticks() - t1 < 50000u * FM1_TICKS_PER_US)
+                fm1_wdt_feed();
+            if (v == 30u) usb_health_send(30u + k, k < FR_C1_INFO_N ? fr_c1_info(k) : c1_nv);
+            else usb_health_send(50u + k - FR_C1_INFO_N, fr_c1_info(k));
+        }
         return;
     }
 #endif

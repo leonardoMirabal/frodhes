@@ -56,6 +56,9 @@
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
 #endif
+#ifndef FX_RAM                                  /* (frodhes.c: FR_RAM, or flash in FR_C1 builds: core 1 runs the effects from XIP) */
+#define FX_RAM FR_RAM
+#endif
 #define REV_US_PLATE 350u                              /* (full rate: rev_hq.c's cost comment) */
 
 #define PL_R(n) (((n) * 14818u + 5000u) / 10000u)      /* the paper's 29.76 kHz lengths at 44.1 kHz */
@@ -138,7 +141,7 @@ static const uint16_t PL_ITOP[4] = {PL_IO0, PL_IO1, PL_IO2, PL_IO3};
 static const uint16_t PL_IL[4] = {PL_IL0, PL_IL1, PL_IL2, PL_IL3};
 
 /* sqrt(p / 32768) x 32768 (p Q15, 0 .. 32767): a one-pole's pole at twice the rate with the same time constant */
-static FR_RAM int32_t rq_sqrt15(int32_t p)
+static FX_RAM int32_t rq_sqrt15(int32_t p)
 {
     uint32_t x = (uint32_t)p << 15, r = 0, b = 1u << 30;
     while (b > x) b >>= 2;
@@ -231,7 +234,7 @@ static void pl_ctl(rev_plate_t *s, const rev_ctl_t *c)
     }
 }
 /* a SIZE fade: n samples of the old reads (q) x a plus the new (p) x b (Q14, this block's), into t */
-static FR_RAM __attribute__((noinline)) void pl_xblend(int16_t *t, const int16_t *q, const int16_t *p, uint32_t n,
+static FX_RAM __attribute__((noinline)) void pl_xblend(int16_t *t, const int16_t *q, const int16_t *p, uint32_t n,
                                                        int32_t a, int32_t b)
 {
     uint32_t i;
@@ -278,7 +281,7 @@ static void pl_cpy(int16_t *d, const int16_t *q)     /* PL_G + 1 int16 (both 4-b
  * v = x - g d into its write, y = d + g v (plain shifts: with g > 0 and no input the stored value changes sign every
  * pass and never grows, so it dies out). Returns the OR of the input */
 #define PL_AP(k, g) d = r##k[i], v = hl_c16(y - ((d * (g)) >> 15)), o##k[i] = (int16_t)v, y = d + ((v * (g)) >> 15)
-static FR_RAM __attribute__((noinline)) int32_t pl_in(const int16_t *const *r, int16_t *const *o, const int32_t *in,
+static FX_RAM __attribute__((noinline)) int32_t pl_in(const int16_t *const *r, int16_t *const *o, const int32_t *in,
                                                       int32_t *x, int32_t *bw, int32_t pb)   /* (RAM: 0.9.7) */
 {
     const int16_t *r0 = r[0], *r1 = r[1], *r2 = r[2], *r3 = r[3];
@@ -310,7 +313,7 @@ static FR_RAM __attribute__((noinline)) int32_t pl_in(const int16_t *const *r, i
  * shifts. a = x + g f (f = the other half's end); the modulated allpass (read q, the interpolation fm, gain -0.7,
  * write wm) into delay 1 (w1); delay 1's end (r1), damped (lp), x g, through allpass 2 (read r2, gain g2, write w2)
  * into delay 2 (w3). Returns the OR of the writes */
-static FR_RAM __attribute__((noinline)) int32_t pl_half(const int32_t *x, const int16_t *f, const int16_t *const *r,
+static FX_RAM __attribute__((noinline)) int32_t pl_half(const int32_t *x, const int16_t *f, const int16_t *const *r,
                                                  int32_t fm, int16_t *const *o, int32_t *lp, const int32_t *k)
 {
     const int16_t *q = r[0], *r1 = r[1], *r2 = r[2];
@@ -340,14 +343,14 @@ static FR_RAM __attribute__((noinline)) int32_t pl_half(const int32_t *x, const 
 }
 
 /* the 7 taps of a side (+ + - + - - -), one block: the left into mid[]; then the right, and mid / side */
-static FR_RAM __attribute__((noinline)) void pl_taps(const int16_t *const *t, int32_t *o)
+static FX_RAM __attribute__((noinline)) void pl_taps(const int16_t *const *t, int32_t *o)
 {
     const int16_t *a0 = t[0], *a1 = t[1], *a2 = t[2], *a3 = t[3], *a4 = t[4], *a5 = t[5], *a6 = t[6];
     uint32_t i;
     for (i = 0; i < RQ_NC; i++)
         o[i] = a0[i] + a1[i] - a2[i] + a3[i] - a4[i] - a5[i] - a6[i];
 }
-static FR_RAM __attribute__((noinline)) void pl_taps_ms(const int16_t *const *t, int32_t *mid, int32_t *side, int32_t k)
+static FX_RAM __attribute__((noinline)) void pl_taps_ms(const int16_t *const *t, int32_t *mid, int32_t *side, int32_t k)
 {
     const int16_t *a0 = t[0], *a1 = t[1], *a2 = t[2], *a3 = t[3], *a4 = t[4], *a5 = t[5], *a6 = t[6];
     uint32_t i;

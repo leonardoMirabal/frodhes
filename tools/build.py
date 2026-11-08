@@ -308,6 +308,30 @@ BAR_LOOPS = [("bar_run_lo", 32, "upper slot Q32, 4 samples"), ("bar_run_hi", 32,
              ("bar_felt_pass", 15, "felt noise"), ("bar_force", 16, "the pulse")]
 
 
+C1 = False                          # --c1: two cores (frodhes.c FR_C1), the FM-1 only
+
+
+def c1_check(rt_names):
+    """--c1: core 1 runs only flash code (Textura 548fd55): no function marked FX_RAM in the effects' files may sit in
+    .ram_text (frodhes.c defines FX_RAM empty in FR_C1 builds); the core-1 idle loop and entry must"""
+    errors, notes, fx = [], [], set()
+    for f in sorted((Path(__file__).resolve().parents[1] / "firmware" / "src").glob("*.c")):
+        src = re.sub(r"__attribute__\(\([^()]*(\([^()]*\))?[^()]*\)\)", "", f.read_text())
+        for m in re.finditer(r"^[^#*\n]*\bFX_RAM\b[^;{(\n]*?\b(\w+)\s*\(", src, re.M):
+            fx.add(m.group(1))
+    bad = sorted(n for n in rt_names if n in fx)
+    if bad:
+        errors.append(f"--c1: effect code in .ram_text (core 1 must run it from flash): {bad[:6]}")
+    for need in ("fr_c1_main", "fr_c1_entry"):
+        if need not in rt_names:
+            errors.append(f"--c1: {need} not in .ram_text (core 1 idles in RAM)")
+    if len(fx) < 30:
+        errors.append(f"--c1: only {len(fx)} FX_RAM functions found in the sources (the check's pattern is stale)")
+    if not errors:
+        notes.append(f"--c1: core 1's {len(fx)} effect functions all in flash, its idle loop in .ram_text")
+    return errors, notes
+
+
 def check(img, syms, dis, rt):
     errors, notes = [], []
     m = re.search(r"^([0-9a-f]+) .*\s_start$", syms, re.M)
@@ -328,6 +352,10 @@ def check(img, syms, dis, rt):
             rt_calls.append(f"{rt_fn}: {ln.strip()}")
     if not any(n.startswith("fl_") for n in rt_names):
         errors.append(".ram_text: the flash driver (fl_*) not found")
+    if C1:
+        e, n = c1_check(rt_names)
+        errors += e
+        notes += n
     if rt_calls:
         errors.append(f".ram_text: the flash driver contains calls: {rt_calls[:3]}")
     else:
@@ -498,7 +526,7 @@ def package(board="fm1", model="pro", release=None):
 
 
 def main():
-    global PRODUCT, VERSION, BOARD, APP_SLOT, APP_OPT
+    global PRODUCT, VERSION, BOARD, APP_SLOT, APP_OPT, C1
     ap = argparse.ArgumentParser()
     ap.add_argument("--release", metavar="X.Y.Z", help="release build: version string X.Y.Z, file frodhes-X.Y.Z.fwsc")
     ap.add_argument("--board", choices=sorted(BOARD_DEFS), default=None,
@@ -509,6 +537,9 @@ def main():
     ap.add_argument("--o2", action="store_true",
                     help="probe: the app at -O2 -fno-unroll-loops instead of -Os (not with --release; the USB-MIDI "
                          "babbled at -O2 once, 2026-10-13: run the USB checks on such a build)")
+    ap.add_argument("--c1", action="store_true",
+                    help="two cores (frodhes.c FR_C1: 14 voices on core 0, the effects and the full-rate reverb on "
+                         "core 1); the FM-1 only; file frodhes[-X.Y.Z]-c1.fwsc, identity FM-1_958 as every build")
     a = ap.parse_args()
     if a.o2:
         if a.release:
@@ -531,6 +562,12 @@ def main():
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z or X.Y.Z-suffix")
         VERSION = a.release
     PRODUCT, name = package(BOARD, model, a.release)
+    if a.c1:
+        if BOARD != "fm1":
+            raise SystemExit("--c1: the FM-1 only")
+        C1 = True
+        BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], "-DFR_C1=1"]
+        name = name[:-len(".fwsc")] + "-c1.fwsc"
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:

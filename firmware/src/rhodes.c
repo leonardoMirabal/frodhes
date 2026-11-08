@@ -704,11 +704,15 @@ static void rh_start_pend(rh_voice_t *v)                /* a stolen voice is gon
     if (rel == 3u && v->life > RH_OFF_LIFE) v->life = RH_OFF_LIFE;
 }
 
+#ifndef RH_NA
+#define RH_NA RH_NV                                     /* the voices a strike may take (FR_C1 builds, frodhes.c: fewer
+                                                         * once core 1 is held: the one-core fallback) */
+#endif
 static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already waits for a note; try next block */
 {
     uint32_t i, pick = RH_NV, best = 0xFFFFFFFFu;
-    for (i = 0; i < RH_NV && rv[i].pend; i++) ;
-    if (i == RH_NV) return 0;                           /* (more than RH_NV steals in one block: BUGHUNT #21) */
+    for (i = 0; i < RH_NA && rv[i].pend; i++) ;
+    if (i == RH_NA) return 0;                           /* (more than RH_NV steals in one block: BUGHUNT #21) */
     rh_knock_strike(note, vel);
     for (i = 0; i < RH_NV; i++)                         /* the same note still sounding: re-strike, superpose */
         if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) {
@@ -720,9 +724,9 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
             rh_load_pulse(v, vel);
             return 1;
         }
-    for (i = 0; i < RH_NV; i++)
+    for (i = 0; i < RH_NA; i++)
         if (!rv[i].alive) { rh_init(&rv[i], note, vel); return 1; }
-    for (i = 0; i < RH_NV; i++) {                       /* steal: the quietest released voice, else the oldest */
+    for (i = 0; i < RH_NA; i++) {                       /* steal: the quietest released voice, else the oldest */
         uint32_t m, sum = 0, score;
         if (rv[i].pend) continue;
         for (m = 0; m < RH_NM; m++) sum += (uint32_t)rv[i].m[m].peak >> 4;

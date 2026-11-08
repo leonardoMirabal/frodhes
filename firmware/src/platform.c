@@ -20,6 +20,8 @@
  * and may define, before the #include:
  *   LCD_IDLE()        called while the screen's DMA sends a strip (the keys, MIDI: nothing waits for a redraw)
  *   FELUCCA_UAC 0     no USB audio (MIDI only)
+ *   APP_EARLY()       (Frodhes) called once at boot, the interrupts off, before the audio and the timers start and the
+ *                     top of RAM is locked: what must start first (FR_C1: the second core, hal/fm1_core1.h)
  */
 /* Frodhes: and APP_OUT_WRITTEN 1: app_audio writes every sample of out (then out is not cleared before it) */
 /* the panel by name: buttons (fm1_in.buttons, fm1_input_edges, fm1_led_key: bit / id), the encoders
@@ -753,6 +755,9 @@ void fm1_cstart(void)
 #ifndef OLD_OWNER_AT
     smk_owner_check();
 #endif
+#endif
+#ifdef APP_EARLY
+    APP_EARLY();
 #endif
     fm1_audio_init(abuf, HALF_WORDS, isr_alnk0, 3);   /* (abuf is zero: .bss) */
     usb_start();

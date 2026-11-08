@@ -19,6 +19,12 @@
 #include <stdint.h>
 #include "fm1_cc.h"
 
+/* FM1_RESET_HOOK(): run first on every reset this file makes and at boot (fm1_reset_reason); registers only. Frodhes'
+ * FR_C1 builds: the second core held there (fm1_core1.h, included before this file defines it) */
+#ifndef FM1_RESET_HOOK
+#define FM1_RESET_HOOK() ((void)0)
+#endif
+
 #define FM1_P33_CON (*(volatile uint32_t *)0x13E08u)
 #define FM1_P33_DAT (*(volatile uint32_t *)0x13E0Cu)
 #define FM1_RST_SRC (*(volatile uint32_t *)0x100C0u)
@@ -101,6 +107,7 @@ static struct {
 
 static void fm1_reset_reason(void)
 {
+    FM1_RESET_HOOK();
     fm1_boot.p3_rst = fm1_p33_read(FM1_P3_RST_SRC);
     fm1_boot.rst_src = FM1_RST_SRC;
     fm1_boot.wdt_con = fm1_p33_read(FM1_P3_WDT_CON);
@@ -109,6 +116,7 @@ static void fm1_reset_reason(void)
 static void fm1_reboot(void)
 {
     __asm__ volatile("cli");
+    FM1_RESET_HOOK();
     fm1_p33_or(FM1_P3_PR_PWR, 0x10);
     for (;;)
         ;
@@ -119,6 +127,7 @@ static void fm1_enter_uboot(void)
     static const char k[16] = "usb_update_mode";
     uint32_t i;
     __asm__ volatile("cli");
+    FM1_RESET_HOOK();
     /* CPU0 write limits (fm1_guard.h) may cover the mailbox: drop them all */
     if (!(*(volatile uint32_t *)0x1EEE240u & 1u))
         *(volatile uint32_t *)0x1EEE240u = 0xE7u;
@@ -132,6 +141,7 @@ static void fm1_enter_uboot(void)
 
 FM1_INLINE void fm1_core_reset(void)
 {
+    FM1_RESET_HOOK();
     FM1_PWR_CON |= 0x10u;
     for (;;)
         ;

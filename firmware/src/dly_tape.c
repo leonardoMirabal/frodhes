@@ -21,6 +21,9 @@
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
 #endif
+#ifndef FX_RAM                                  /* (frodhes.c: FR_RAM, or flash in FR_C1 builds: core 1 runs the effects from XIP) */
+#define FX_RAM FR_RAM
+#endif
 #define TP_CTL 16u                                      /* the wow / flutter control step, samples */
 #ifndef TP_WOWX
 #define TP_WOWX 256                                     /* wow and flutter depth, Q8 (listening tests: other depths) */
@@ -36,7 +39,7 @@ static int32_t tp_kf, tp_kq = TP_KQ, tp_kh;             /* this block's coeffici
 
 /* the wow / flutter pre-pass: dly_dt[] = this block's delay per sample (Q8); s = log2 speed re the reference (Q12),
  * lv = log2 T (Q12) */
-FR_RAM __attribute__((noinline)) static void tp_mod(uint32_t n, int32_t target, int32_t s, int32_t lv)   /* (RAM: 0.9.6) */
+FX_RAM __attribute__((noinline)) static void tp_mod(uint32_t n, int32_t target, int32_t s, int32_t lv)   /* (RAM: 0.9.6) */
 {
     int32_t dq = tp_dq, d0 = tp_dc, v = FR_FAR(exp2_q16)(s), iv = FR_FAR(exp2_q16)(-s), t12 = target << 4;
     int32_t kw = FR_FAR(exp2_q16)((5 << 12) - lv);              /* 32 / T in Q16: the transit mean's one-pole per step */
@@ -118,7 +121,7 @@ static inline __attribute__((always_inline)) void tp_tape_k(int32_t *m, const in
 /* (three copies, 0.9.5 fx-trim: the developer reset's clean span only where it is (elsewhere c stays 0x7FFFFFFF, its
  * test never true), and the send on (-1) or off (0) as constants: 78 -> 71 instructions a sample with the send on,
  * 68 off, ~600 B more code, in .ram_text with tp_tape) */
-FR_RAM __attribute__((noinline)) static void tp_tape(int32_t *m, const int32_t *dt, uint32_t n, const int32_t msk,
+FX_RAM __attribute__((noinline)) static void tp_tape(int32_t *m, const int32_t *dt, uint32_t n, const int32_t msk,
                                                      int32_t fb)
 {
     if (dly_rst) tp_tape_k(m, dt, n, msk, fb, 1);
@@ -128,7 +131,7 @@ FR_RAM __attribute__((noinline)) static void tp_tape(int32_t *m, const int32_t *
 
 /* the sample loop: the tape pass (tp_tape: m[] in place, the echoes), then the dry easing to dgt plus the echo, x
  * the echo's gain ramped from w0 (the last block's) to wet */
-FR_RAM __attribute__((noinline)) static void tp_loop(int32_t *L, int32_t *R, int32_t *m, const int32_t *dt, uint32_t n,
+FX_RAM __attribute__((noinline)) static void tp_loop(int32_t *L, int32_t *R, int32_t *m, const int32_t *dt, uint32_t n,
                                                           const int32_t msk, int32_t sg16, int32_t fb, int32_t wet,
                                                           int32_t dgt, int32_t w0)
 {

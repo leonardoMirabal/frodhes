@@ -30,6 +30,9 @@
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
 #endif
+#ifndef FX_RAM                                  /* (frodhes.c: FR_RAM, or flash in FR_C1 builds: core 1 runs the effects from XIP) */
+#define FX_RAM FR_RAM
+#endif
 #if TSH8_AA
 #define DRV_US_TSH8 165u
 #else
@@ -215,7 +218,7 @@ static inline __attribute__((always_inline)) void ts_tab1x(const int32_t *g0, co
 }
 
 /* pass 4: s = vi + V, the tone biquad (Q28), 2 samples per iteration, the output over V */
-static FR_RAM __attribute__((noinline)) void ts_tone2qi(const int32_t *c, int32_t *st, const int32_t *vi,
+static FX_RAM __attribute__((noinline)) void ts_tone2qi(const int32_t *c, int32_t *st, const int32_t *vi,
                                                              int32_t *v, uint32_t n)
 {
     int32_t x1 = st[0], x2 = st[1], y1 = st[2], y2 = st[3];
@@ -249,7 +252,7 @@ static FR_RAM __attribute__((noinline)) void ts_tone2qi(const int32_t *c, int32_
 #define TSH8_AT (1 << TSH8_AA_SF)                         /* |du| below this (2 mV): g at the midpoint, no quotient */
 
 /* pass 1: the input biquad (HP x P, Q28), x TSH8_IN_K on the way in, 2 samples per iteration */
-static FR_RAM __attribute__((noinline)) void ts_in2q(const int32_t *c, int32_t *st, const int32_t *in,
+static FX_RAM __attribute__((noinline)) void ts_in2q(const int32_t *c, int32_t *st, const int32_t *in,
                                                           int32_t *out, uint32_t n)
 {
     int32_t x1 = st[0], x2 = st[1], y1 = st[2], y2 = st[3];
@@ -273,7 +276,7 @@ static FR_RAM __attribute__((noinline)) void ts_in2q(const int32_t *c, int32_t *
 }
 
 /* pass 2: the branch biquad, writing the two-sample average of Vi back over vi (x1 is the previous Vi) */
-static FR_RAM __attribute__((noinline)) void ts_br2qa(const int32_t *c, int32_t *st, int32_t *in, int32_t *out,
+static FX_RAM __attribute__((noinline)) void ts_br2qa(const int32_t *c, int32_t *st, int32_t *in, int32_t *out,
                                                            uint32_t n)
 {
     int32_t x1 = st[0], x2 = st[1], y1 = st[2], y2 = st[3];
@@ -333,7 +336,7 @@ static FR_RAM __attribute__((noinline)) void ts_br2qa(const int32_t *c, int32_t 
 #define TS_RCP ((const uint16_t *)((uintptr_t)DRV_AA_RCP - (2u << (DRV_AA_RB - 1))))   /* (indexed from 2^(RB-1)) */
 
 /* pass 3: the clipper, in place, one sample per iteration */
-static FR_RAM __attribute__((noinline)) void ts_aa1(const int32_t *gf, int32_t *st, int32_t *u, uint32_t n)
+static FX_RAM __attribute__((noinline)) void ts_aa1(const int32_t *gf, int32_t *st, int32_t *u, uint32_t n)
 {
     const int32_t *gc = TS_GC(gf);
     const uint16_t *rcp = TS_RCP;
@@ -378,7 +381,7 @@ static __attribute__((noinline)) void ts_aa1x(const int32_t *g0f, const int32_t 
 
 /* the four passes, in to out (out may be in); g0f: the table before a swap (crossfaded into gf), or 0. In RAM with
  * the three steady passes (0.9.7); the swap's crossfade (ts_aa1x, a block now and then) stays in flash */
-static FR_RAM __attribute__((noinline)) void ts_kernel_aa(const int32_t *br, const int32_t *tone, const int32_t *g0f,
+static FX_RAM __attribute__((noinline)) void ts_kernel_aa(const int32_t *br, const int32_t *tone, const int32_t *g0f,
                                                    const int32_t *gf, const int32_t *in, int32_t *out, uint32_t n)
 {
     ts_in2q(ts_inp, ts_is, in, ts_vi, n);

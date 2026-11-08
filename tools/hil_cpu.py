@@ -512,10 +512,10 @@ def run_cpu(argv):  # noqa: C901
                  CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
                  FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # the filter at its heaviest: LP18, the LFO
     nv = int(sys.argv[sys.argv.index("--voices") + 1]) if "--voices" in sys.argv else default_voices(eng)
-    if not 1 <= nv <= 12:
-        sys.exit("--voices: 1..12")
-    bass8 = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48][:nv]          # the first 8: the lists as before
-    chord8 = [48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83][:nv]
+    if not 1 <= nv <= 16:
+        sys.exit("--voices: 1..16")
+    bass8 = [28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52, 53, 55][:nv]   # the first 8: the lists as before
+    chord8 = [48, 52, 55, 59, 62, 64, 67, 71, 74, 76, 79, 83, 86, 88, 91, 95][:nv]  # (13-16: two-core builds, FR_C1)
     worst_only = "--worst" in sys.argv
     rows = []
 
