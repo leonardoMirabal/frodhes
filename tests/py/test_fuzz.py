@@ -7,7 +7,8 @@ Each seed must:
   - run to the end without a crash, and without any undefined behaviour or memory error (a second build with
     UBSan + ASan runs a share of the seeds; left shifts of negative numbers are allowed: the chip shifts
     arithmetically), and without the host's event ring dropping an event;
-  - never put out more than the limiter's ceiling (24576 = the master clip's knee; CC 119 RAW is not fuzzed);
+  - never put out more than the limiter's ceiling (LIM_T 29204, fx.c; 24576 = the old master clip's knee before
+    0.9.10; CC 119 RAW is not fuzzed);
   - go silent after the panic (the engine alone, RAW, within 3 s), with no voice left (the Rhodes; VIBES can keep a
     silent voice, a reported bars.c bug, test_persistence.py);
   - sound when a note is played afterwards over MIDI (and from a key when KEY VEL allows), without a click (the
@@ -30,6 +31,8 @@ import numpy as np
 import pytest
 
 from hostrun import BIN, FS, OUT, ROOT, build, env_rms, rms_db, run
+
+LIM_T = 29204   # 2026-11-08: fx.c LIM_T (-1.0 dBFS since 0.9.10; the checks were at 24576, the old clip knee over LIM_T 24000)
 
 SAN = os.path.join(ROOT, "build", "host", "frodhes-san")
 SAN_FLAGS = ["-fsanitize=undefined,address", "-fno-sanitize=shift-base", "-fno-omit-frame-pointer"]
@@ -153,7 +156,7 @@ def one(seed, eng, sanitized):
     if bad or not len(r.L):
         return tag, bad or ["no sound file"]
     x = np.maximum(np.abs(r.L), np.abs(r.R))
-    if x[:int(mk["quiet"][0] / 1000 * FS)].max() > 24576:
+    if x[:int(mk["quiet"][0] / 1000 * FS)].max() > LIM_T:
         bad.append(f"over the limiter: {x.max():.0f} at {np.argmax(x) / FS:.3f} s")
     q = slice(int((mk["gone"] - 500) / 1000 * FS), int(mk["gone"] / 1000 * FS))
     if x[q].max() > 2:
@@ -171,7 +174,7 @@ def one(seed, eng, sanitized):
         bad.append(f"a MIDI note after the panic: {rms_db(r.L[p]):.1f} dBFS")
     if clicks(r.L[p]):
         bad.append(f"{clicks(r.L[p])} clicks in the probe note")
-    if x[p].max() > 24576:
+    if x[p].max() > LIM_T:
         bad.append(f"the probe note near clipping: {x[p].max():.0f}")
     kv = int(r.state(mk["dump"])["card.2.3"])                       # KEY VEL
     kq = slice(int(mk["key"][0] / 1000 * FS), int(mk["key"][1] / 1000 * FS))

@@ -67,7 +67,7 @@ def test_each_detector_fails_on_its_fault(clean, fault):
         r.x[t:t + 40, 1] = 32767
         want = "rail"
     elif fault == "peak":
-        r.x[t, 0] = 26000
+        r.x[t, 0] = mk.LIM_T + 1   # 2026-11-08: one LSB over the ceiling (LIM_T 29204 since 0.9.10; 26000 was over 24000)
     elif fault == "silence":
         r.x[mk.ms(m["quiet"][0] + 500), 0] = 1
     elif fault == "stuck":

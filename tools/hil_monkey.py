@@ -72,6 +72,7 @@ CLIP = 32767
 LAG_MAX = 0.1                                   # (s) the clock fit's lag past LEAD_S beyond which its anchor is
                                                 # wrong (25 takes on the FM-1, 2026-10-26: -0.01 .. 0.05; 1012: 0.75)
 LIM_T = 29204                                   # fx.c's limiter threshold (-1.0 dBFS; 24000 before 0.9.10)
+LIM_T_OLD = 24000                               # (2026-11-08) the limiter of the firmware --old-48k judges (before 0.9.7)
 CLAMP_RUN, CLAMP_DENSE, CLAMP_LOUD = 3, 8, 8    # the 48 kHz full-scale gate (clamp_rows)
 STRICT48 = True                                 # 0.9.7 (usb.c's knee, #38b): 0 at full scale at 48 kHz too
 
@@ -206,7 +207,8 @@ def clamp_rows(xi, rate, strict48=None):
     one (fewer than CLAMP_LOUD samples >= LIM_T within 1 ms: a spike, not the overshoot of a loud passage).
     From 0.9.7 (#38b) usb.c has a knee before the clamp (above 24576 the excess halved): a passage the limiter kept
     at 24000 can no longer reach full scale, so 0 samples at full scale is the gate at 48 kHz too (strict48,
-    STRICT48; --old-48k judges a firmware before 0.9.7 as before: full scale information, the audible rows gate)"""
+    STRICT48; --old-48k judges a firmware before 0.9.7 as before: full scale information, the audible rows gate,
+    the loud samples counted at that firmware's LIM_T_OLD)"""
     x = np.asarray(xi).reshape(len(xi), -1)
     a = np.abs(x)
     nclip = int((a >= CLIP).sum())
@@ -226,13 +228,14 @@ def clamp_rows(xi, rate, strict48=None):
     rows.append(("USB clamped frames in 10 ms (most)", dense, f"<= {CLAMP_DENSE}",
                  "ok" if dense <= CLAMP_DENSE else "FAIL"))
     ms = rate // 1000
-    loud = ((a >= LIM_T) & (a < CLIP)).sum(axis=1)
+    lim = LIM_T if strict48 else LIM_T_OLD
+    loud = ((a >= lim) & (a < CLIP)).sum(axis=1)
     cl = np.concatenate(([0], np.cumsum(loud)))
     iso = 0
     for k in np.flatnonzero(hit):
         lo, hi = max(0, k - ms), min(len(hit), k + ms + 1)
         iso += int(cl[hi] - cl[lo] < CLAMP_LOUD)
-    rows.append(("USB isolated clamps (spikes)", iso, f"0 (< {CLAMP_LOUD} samples >= {LIM_T} within 1 ms)",
+    rows.append(("USB isolated clamps (spikes)", iso, f"0 (< {CLAMP_LOUD} samples >= {lim} within 1 ms)",
                  "ok" if not iso else "FAIL"))
     return rows
 

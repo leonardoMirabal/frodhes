@@ -18,7 +18,9 @@ import hil_scan as h  # noqa: E402
 NAMES = ["types", "presets", "effects", "bypass", "fx_all", "fx_toggle", "delay_time", "tremolo_rate", "sustain",
          "held_tail", "stress", "silence"]
 # measure group -> the largest difference allowed between two runs (dB / LU; host: <= 0.09 seen)
-TOL = {"types": 0.15, "preset": 0.15, "effects": 0.25, "fx_all": 0.25, "toggle": 0.25, "bypass": 0.25}
+TOL = {"types": 0.15, "preset": 0.15, "effects": 0.25, "fx_all": 0.45, "toggle": 0.25, "bypass": 0.25}
+# 2026-11-08: fx_all 0.45 (0.25): 0.9.10's partials (pulse_pz.h, rhodes_tables.h) make C3 G3's coinciding partials
+# phase-sensitive (G3 a block late: F06 0.37 LU, F11 0.44; 0.15 on 0.9.9; the levels and RH_NO_* flags not the cause)
 
 
 def metrics(rep):
@@ -64,7 +66,7 @@ def test_without_the_reset_the_runs_differ():
     assert max(d.values()) > 1.0, sorted(d.items(), key=lambda kv: -kv[1])[:6]
 
 
-@pytest.mark.parametrize("notes, lim", [((57, 64, 69), None), (h.CH_NOTES, 0.25), (h.FX_NOTES, 0.25)],
+@pytest.mark.parametrize("notes, lim", [((57, 64, 69), None), (h.CH_NOTES, 0.25), (h.FX_NOTES, 0.5)],   # (2026-11-08: TOL)
                          ids=["octave", "CHORD", "fx_all"])
 def test_a_chord_note_one_block_late(notes, lim):
     """the classic chords hold no octave: a note one block late moves an octave chord's loudness by up to 2 LU
