@@ -1188,7 +1188,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         el = cho_pos(cp_ph + inc * 32u, cho_swq); er = cho_pos(cp_ph + inc * 32u + 0x40000000u, cho_swq);
         int32_t sl = el - cho_el, sr = er - cho_er;
         int32_t mix = cho_km + clampi(mt - cho_km, -CHO_KMS, CHO_KMS), cg;
-        cg = (mix * 1950 >> 14) + (((mix * (16384 - mix)) >> 14) * 7 >> 3);
+        cg = (mix * CHO_MKF >> 14) + (((mix * (16384 - mix)) >> 14) * 7 >> 3);   /* (as the one-chunk form: CHO_MKF) */
         uint32_t p = 0u - (cho_w - fxc_e + sb);
         cho_k_t *kl = &cho_k[0][sb >> 5], *kr = &cho_k[1][sb >> 5];
         kl->v = (p << 13) + ((uint32_t)cho_el << 5); kr->v = (p << 13) + ((uint32_t)cho_er << 5);
