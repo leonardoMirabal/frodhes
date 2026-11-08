@@ -294,6 +294,44 @@ def run_n(n, secs, outdir, seed=1):
     return res
 
 
+# The pass bars (the user, 2026-11-02: 16 voices stay, three Frodhes at the worst case guaranteed): one instance within
+# U12's working limit (tools/move_hil.py U12_LIMIT_US); two or three instances each within a third of the 128-frame
+# block (2902 us / 3: ~967 us); four is reported only. REF_1_US: one instance's worst on 0.9.9 (573 us), the reference
+# a new engine is compared with (over it by more than REF_TOL: a regression to explain, not a failure by itself)
+BAR_US = {1: mh.U12_LIMIT_US, 2: 967, 3: 967}
+REF_1_US, REF_TOL = 573, 0.15
+
+
+def verdict(r, n):
+    """(PASS / FAIL / INFO, text) for one run_n result: every instance's ring worst within BAR_US[n], no ring gaps,
+    no Schwung overrun during the loads, no gated click on any tap (or on the USB-C audio)"""
+    rings = r.get("rings") or {}
+    worst = max((s.get("worst", 0) for s in rings.values()), default=None)
+    bad = []
+    if worst is None or len(rings) < n:
+        bad.append("rings: %d of %d instances read" % (len(rings), n))
+    elif n in BAR_US and worst > BAR_US[n]:
+        bad.append("worst %d us > %d us" % (worst, BAR_US[n]))
+    if any(s.get("missing") for s in rings.values()):
+        bad.append("ring gaps")
+    ovr = (r.get("perf") or {}).get("overruns")
+    if ovr:
+        bad.append("%d Schwung overruns" % ovr)
+    clicks = sum(t.get("gated", 0) for t in r.get("takes", [])) + (r.get("usb") or {}).get("gated", 0)
+    if clicks:
+        bad.append("%d gated clicks" % clicks)
+    if any("error" in t for t in r.get("takes", [])):
+        bad.append("a take failed")
+    txt = "n=%d: worst %s us (bar %s us)" % (n, worst, BAR_US.get(n, "none"))
+    if n == 1 and worst:
+        txt += ", %+.0f %% re 0.9.9's %d us%s" % (100.0 * (worst / REF_1_US - 1), REF_1_US,
+                                                  " (over +%d %%: explain)" % (100 * REF_TOL)
+                                                  if worst > REF_1_US * (1 + REF_TOL) else "")
+    if n not in BAR_US:
+        return "INFO", txt + ("; " + "; ".join(bad) if bad else "")
+    return ("FAIL" if bad else "PASS"), txt + ("; " + "; ".join(bad) if bad else "")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, nargs="+", default=[1, 2, 3, 4])
@@ -326,7 +364,11 @@ def main():
             allr.append(r)
             json.dump(allr, open(os.path.join(out, "report.json"), "w"), indent=1, default=str)
     print("report:", os.path.join(out, "report.json"))
+    vs = [verdict(r, n) for r, n in zip(allr, a.n)]
+    for v, txt in vs:
+        print("%-4s %s" % (v, txt))
+    return 1 if any(v == "FAIL" for v, _ in vs) else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
