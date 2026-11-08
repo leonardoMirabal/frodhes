@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Two cores (FR_C1, a build switch, off by default: frodhes.c app_audio, hal/fm1_core1.h, the host's twin
-firmware/src/c1_host.h). Core 0 renders block k's voices while core 1 runs the effects of block k-1, so the effects
-see the voices one block (256 frames) later. On the host the twin runs core 1's job on this thread, at the hand-off
-(order 0) or at the wait (order 1), and injects refusals, a late job or a core 1 that never started (FRODHES_C1).
+firmware/src/c1_host.h). Each block runs in C1_SUB chunks: core 0 renders chunk j's voices while core 1 runs the
+effects on chunk j - 1, and the last chunk's effects end before the block does: no latency over one core
+(tests/py/test_c1_subblock.py: the chunks against the one-core build, effect by effect). On the host the twin runs
+core 1's job on this thread, at the hand-off (order 0) or at the wait (order 1), and injects refusals, a late job or a
+core 1 that never started (FRODHES_C1).
 
 - the two orders render the same samples: nothing the voices and the effects both touch changes while both run (a
   shared variable would show here as a difference: the race test of the pipeline);
 - refused jobs (core 0 renders them, core 1 stays on) render the same samples as none refused;
-- the voices are those of the one-core 14-voice build, one block later (the effects bypassed by CC 119: the voice
-  engine's own output), and the whole chain with every effect is as loud as the one-core build's within 0.5 dB, its
-  envelope one block later;
+- the voices are those of the one-core 14-voice build, sample for sample (the effects bypassed by CC 119: the voice
+  engine's own output), and so is the whole chain with every effect;
 - a late job (core 1 held for good) and a core 1 that never started keep playing (one core, FR_C1_NV1 voices).
 The default build (no FR_C1) is byte-identical to before: Gate R (tools/gate_r.py) and the firmware's image."""
 import os
@@ -29,7 +30,8 @@ def c1_bin():
 
 
 def ref_bin():
-    return build(REF, ["-DFR_VOICES=14u", "-DFR_REV_HQ=1"])
+    """the one-core 14-voice HQ build, the effects' cost on core 0 as the two-core build's (the bar engine's budget)"""
+    return build(REF, ["-DFR_VOICES=14u", "-DFR_REV_HQ=1", "-DFX_COST_C0()=40u"])
 
 
 HEAVY = dict(DRIVE=(81, 90), CMP_SW=(106, 127), CMP_AMT=(107, 90), TW_SW=(17, 64), TW_DEPTH=(18, 100),
@@ -82,28 +84,20 @@ def test_refused_jobs_render_the_same():
     assert d.size == 0, f"refused jobs changed the output from frame {d[0]}"
 
 
-def test_voices_as_one_core_one_block_later():
+def test_voices_as_one_core():
     a = render("c1_raw", take(raw=True), c1_bin())
     r = render("c1_raw_ref", take(raw=True), ref_bin())
     assert rms_db(r[0]) > -40
-    n = min(a.shape[1] - BLK, r.shape[1])
-    assert np.array_equal(a[:, BLK:BLK + n], r[:, :n]), "the voices are not the one-core build's, one block later"
-    assert not np.any(a[:, :BLK]), "the first block is not silence"
+    assert a.shape == r.shape and np.array_equal(a, r), "the voices are not the one-core build's"
 
 
-@pytest.mark.parametrize("engine", [0, 2])
-def test_every_effect_as_loud_one_block_later(engine):
+@pytest.mark.parametrize("engine", [0, 1, 2])
+def test_every_effect_as_one_core(engine):
     a = render(f"c1_fx_{engine}", take(engine), c1_bin())
     r = render(f"c1_fx_ref_{engine}", take(engine), ref_bin())
-    n = min(a.shape[1] - BLK, r.shape[1])
-    la, lr = rms_db(a[0, BLK:BLK + n]), rms_db(r[0, :n])
-    assert abs(la - lr) < 0.5, f"engine {engine}: {la:.2f} dB on two cores, {lr:.2f} on one"
-    hop = 512
-    ea = np.sqrt(np.mean(a[0, :(a.shape[1] // hop) * hop].reshape(-1, hop) ** 2, axis=1))
-    er = np.sqrt(np.mean(r[0, :(r.shape[1] // hop) * hop].reshape(-1, hop) ** 2, axis=1))
-    m = min(len(ea), len(er))
-    lag = max(range(-4, 5), key=lambda k: float(np.dot(ea[max(k, 0):m + min(k, 0)], er[max(-k, 0):m - max(k, 0)])))
-    assert lag in (0, 1), f"engine {engine}: the envelope is {lag} hops off (one block = half a hop)"
+    assert rms_db(r[0]) > -40
+    d = np.flatnonzero(np.any(a != r, axis=0)) if a.shape == r.shape else [0]
+    assert len(d) == 0, f"engine {engine}: two cores differ from one from frame {d[0]}"
 
 
 def test_late_job_goes_on_with_one_core():
