@@ -185,10 +185,14 @@ static int key_of(WPARAM vk)
     default: return 0;
     }
 }
-/* the keys that type a value (a knob's field), from the key itself: the window takes them on WM_KEYDOWN (so the host
- * never sees the press) and skips their WM_CHAR */
+/* the keys that type a value (a knob's field) or a name (SAVE's field), from the key itself: the window takes them on
+ * WM_KEYDOWN when a field is open (so the host never sees the press) and skips their WM_CHAR; the letters as capitals
+ * (the name field's), never with Control or Alt (the host's shortcuts) */
 static int number_key(WPARAM vk)
 {
+    int chord = (GetKeyState(VK_CONTROL) & 0x8000) || (GetKeyState(VK_MENU) & 0x8000);
+    if (vk >= 'A' && vk <= 'Z') return chord ? 0 : (int)vk;
+    if (vk == VK_SPACE) return chord ? 0 : ' ';
     if (vk >= '0' && vk <= '9') return GetKeyState(VK_SHIFT) & 0x8000 ? 0 : (int)vk;
     if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) return '0' + (int)(vk - VK_NUMPAD0);
     switch (vk) {
@@ -199,7 +203,11 @@ static int number_key(WPARAM vk)
     default: return 0;
     }
 }
-static int number_char(WPARAM c) { return (c >= '0' && c <= '9') || c == '.' || c == ',' || c == '-' || c == '+'; }
+static int number_char(WPARAM c)
+{
+    return (c >= '0' && c <= '9') || c == '.' || c == ',' || c == '-' || c == '+' || (c >= 'A' && c <= 'Z') ||
+           (c >= 'a' && c <= 'z') || c == ' ';
+}
 
 static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {

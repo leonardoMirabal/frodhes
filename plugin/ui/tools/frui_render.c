@@ -56,6 +56,33 @@ static const uint8_t PR_F18[] = {FRP_TYPE, 2, FRP_DECAY, 84, FRP_NOISE, 30, FRP_
     FRP_RV_DEPTH, 76, FRP_RV_TYPE, 1, FRP_RV_DECAY, 104, FRP_RV_PREDLY, 60, FRP_RV_TONE, 56, FRP_RV_MOD, 84,
     FRP_RV_LOCUT, 80, FRP_LEVEL, 55, 0xFF};
 
+/* the factory presets' names and instruments (F01..F57: presets.c, move/move_presets.h), for the PRESETS sheet */
+static const struct { const char *name; int type; } FACT[57] = {
+    {"STAGE 77", 0}, {"SUITCASE", 1}, {"EARLY FELT", 2}, {"BELL DYNO", 3}, {"SUIT TREM", 1}, {"DRIVEN 77", 0},
+    {"BALLAD", 0}, {"DYNO 80S", 3}, {"70S PHASER", 0}, {"FUNK WAH", 0}, {"RESO SWEEP", 0}, {"AUTO WAH", 0},
+    {"VIBES", 4}, {"VIBES ECHO", 4}, {"MARIMBA", 5}, {"WOOD ECHO", 5}, {"TAPE ECHO", 0}, {"DREAM", 2}, {"RADIO", 0},
+    {"STAGE77 ECHO", 0}, {"STAGE77 TAPE", 0}, {"SUITCASE DRY", 1}, {"SUITCASE AMP", 1}, {"FELT HALL", 2},
+    {"FELT ECHO", 2}, {"BELL SOFT", 3}, {"BELL ECHO", 3}, {"TREM ECHO", 1}, {"TREM DEEP", 1}, {"DRIVEN77 LVL", 0},
+    {"DRIVEN BODY", 0}, {"BALLAD TIGHT", 0}, {"BALLAD DARK", 0}, {"DYNO80S LVL", 3}, {"DYNO80S SOFT", 3},
+    {"PHASER LVL", 0}, {"PHASER SLOW", 0}, {"FUNK WAH LVL", 0}, {"FUNK PLUCK", 0}, {"RESO SPACE", 0},
+    {"RESO SMOOTH", 0}, {"AUTOWAH ECHO", 0}, {"AUTOWAH TAPE", 0}, {"VIBES HALL", 4}, {"VIBES MOTOR", 4},
+    {"VIBES CLEAN", 4}, {"VIBES DRIFT", 4}, {"MARIMBA HALL", 5}, {"MARIMBA ECHO", 5}, {"WOOD PLAIN", 5},
+    {"WOOD LIGHT", 5}, {"TAPE WIDE", 0}, {"TAPE DARK", 0}, {"DREAM CLEAR", 2}, {"DREAM DEEP", 2}, {"RADIO LVL", 0},
+    {"RADIO LOW", 0},
+};
+/* the list: the factory presets, then nu user presets (named from users[], instruments from utype[]) */
+static void plist(frui_model *m, int nu, const char *const *users, const int *utype)
+{
+    int i;
+    for (i = 0; i < 57 + nu && i < FRUI_PL_MAX; i++) {
+        int u = i >= 57;
+        snprintf(m->pl[i].tag, sizeof m->pl[i].tag, "%c%02d", u ? 'U' : 'F', u ? i - 56 : i + 1);
+        snprintf(m->pl[i].name, sizeof m->pl[i].name, "%s", u ? users[(i - 57) % 4] : FACT[i].name);
+        m->pl[i].type = (uint8_t)(u ? utype[(i - 57) % 4] : FACT[i].type);
+        m->pl[i].user = (uint8_t)u;
+    }
+    m->pl_n = i;
+}
 static void load(frui_model *m, const uint8_t *rec, const char *tag, const char *name)
 {
     int i;
@@ -155,6 +182,7 @@ static int check_layout(const frui *u, const char *name)
             if (fabsf(cy - 196.f) > 1.f && fabsf(cy - 424.f) > 1.f) { printf("  %s: knob %d centre y %.2f off its row\n", name, g->id, cy); bad++; }
         }
         if ((g->kind == FRW_SEG || g->kind == FRW_MENU || g->kind == FRW_PAGER) && g->id != FRP_TYPE && g->id < FRS_CHANNEL &&
+            g->id != FRUI_PL_PAGER &&
             (fabsf(g->y - 336.f) > 1.f || fabsf(g->h - 28.f) > 1.f)) {
             printf("  %s: control %d row y %.2f h %.2f (want 336, 28)\n", name, g->id, g->y, g->h); bad++;
         }
@@ -429,6 +457,40 @@ int main(int argc, char **argv)
     m.focus = FRUI_WID(FRW_KNOB, FRP_TW_DEPTH); m.hover = FRUI_WID(FRW_KNOB, FRP_DRIVE);
     chord(&m, min9, 3);
     render(&m, "state-focus-hover", 960, 600);
+
+    /* PRESETS (a click on the preset's name): every preset by instrument, the one playing marked, a row hovered; with
+     * user presets (two of them on VIBES and STAGE); a long list over two pages */
+    {
+        static const char *const un[4] = {"MY BALLAD", "LATE SET", "MY VIBES", "GOSPEL ROOM"};
+        static const int ut[4] = {0, 0, 4, 1};
+        load(&m, PR_F09, "F09", "70S PHASER");
+        m.tab_l = FRT_DRIVE; m.tab_r = FRT_PHASER;
+        plist(&m, 4, un, ut);
+        m.presets = 1; m.pl_cur = 8; m.hover = FRUI_WID(FRW_PITEM, 44);
+        chord(&m, maj7, 5);
+        render(&m, "presets-open", 960, 600);
+        render(&m, "presets-open@2x", 1920, 1200);
+        plist(&m, 60, un, ut);
+        m.pl_page = 1; m.pl_cur = 70; m.hover = -1;
+        render(&m, "presets-page2", 960, 600);
+        /* SAVE: the name field, the name selected; then typed, and one that replaces a user preset */
+        load(&m, PR_F09, "F09", "70S PHASER");
+        m.tab_l = FRT_DRIVE; m.tab_r = FRT_PHASER; m.edited = 1;
+        plist(&m, 4, un, ut);
+        m.saving = 1; m.save_sel = 1; snprintf(m.save_text, sizeof m.save_text, "%s", "70S PHASER");
+        render(&m, "save-name", 960, 600);
+        render(&m, "save-name@2x", 1920, 1200);
+        m.save_sel = 0; snprintf(m.save_text, sizeof m.save_text, "%s", "PHASER NIGHT");
+        render(&m, "save-typed", 960, 600);
+        snprintf(m.save_text, sizeof m.save_text, "%s", "LATE SET");
+        render(&m, "save-replace", 960, 600);
+        render(&m, "save-replace@2x", 1920, 1200);
+    }
+    /* the effects bypassed (EFFECTS: BYPASS): every effect knob drawn inactive, the voice's knobs as they are */
+    load(&m, PR_F06, "F06", "DRIVEN 77");
+    m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 0.f; m.fx_bypass = 1;
+    render(&m, "fx-bypass", 960, 600);
+    render(&m, "fx-bypass@2x", 1920, 1200);
     frui_font_free(font);
     free(d);
     return 0;

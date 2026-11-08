@@ -88,6 +88,7 @@ typedef struct frp_core {
     uint32_t tail_blocks, tail_pend;     /* (the audio thread: tail_pend, the change seen at the last check) */
     int tail_main;                       /* tell on the main thread: the host is clap-wrapper (VST3 / Audio Unit) */
     void *gui;                           /* frp_ui_gui_data */
+    int win_w;                           /* the window's logical width, saved in the state ("win"; 0: the default) */
     oq_ev_t oq[OQ];
     _Atomic uint32_t oqw, oqr;
     /* the UI's own view until the app has taken its writes (a drag must not jump back for a block) */
@@ -317,9 +318,11 @@ static const clap_plugin_latency_t EXT_LATENCY = { lat_get };
 static bool st_save(const clap_plugin_t *plugin, const clap_ostream_t *s)
 {
     frp_plugin_t *p = plugin->plugin_data;
-    char buf[FRP_STATE_MAX];
-    int n = frp_inst_state_get(p->in, buf, (int)sizeof buf), done = 0;
+    char buf[FRP_STATE_MAX + 32];
+    int n = frp_inst_state_get(p->in, buf, FRP_STATE_MAX), done = 0;
     if (n < 0) return false;
+    if (p->win_w > 0 && n > 0 && buf[n - 1] == '}')   /* the window's size ("pv" 3), once it was resized */
+        n += snprintf(buf + n - 1, sizeof buf - (size_t)n + 1, ",\"win\":\"%d\"}", p->win_w) - 1;
     while (done < n) {
         int64_t w = s->write(s, buf + done, (uint64_t)(n - done));
         if (w <= 0) return false;
@@ -337,6 +340,13 @@ static bool st_load(const clap_plugin_t *plugin, const clap_istream_t *s)
     buf[got] = 0;
     if (frp_inst_state_set(p->in, buf)) { say(p, CLAP_LOG_WARNING, "Frodhes: the saved state could not be read"); return false; }
     pend_clear(p);
+    {   /* the window's size: a state without it (older, or never resized) keeps the size the window has */
+        const char *w = strstr(buf, "\"win\":\"");
+        if (w) {
+            int x = atoi(w + 7);
+            if (x >= 720 && x <= 1920 && x != p->win_w) { p->win_w = x; frp_gui_clap_size_changed(p->gui); }
+        }
+    }
     if (!p->active) { if (p->hparams) p->hparams->rescan(p->host, CLAP_PARAM_RESCAN_VALUES); }
     else {                               /* applied by the audio thread's next step: re-read the values after it */
         atomic_store(&p->rescan_rev, frp_inst_rev(p->in));
@@ -775,6 +785,17 @@ int frp_ui_preset_save(frp_core *c, const char *name)
     c->ui_rev++;
     return (int)FRP_NFACTORY + k;
 }
+int frp_ui_preset_type(const frp_core *c, int idx)
+{
+    uint8_t v[FRP_NPARAM_APP];
+    (void)c;
+    if (idx < 0) return -1;
+    if (idx < (int)FRP_NFACTORY) { if (frp_fact_info((uint32_t)idx, 0, 0, v)) return -1; }
+    else if (frp_user_values(idx - (int)FRP_NFACTORY, v)) return -1;
+    return v[0] <= 5u ? v[0] : 0;                    /* (params.c P_TYPE: id 0) */
+}
+int frp_ui_win_w(const frp_core *c) { return c->win_w; }
+void frp_ui_win_w_set(frp_core *c, int w) { c->win_w = w <= 0 ? 0 : w < 720 ? 720 : w > 1920 ? 1920 : w; }
 int frp_ui_preset_delete(frp_core *c, int idx)
 {
     if (idx < (int)FRP_NFACTORY) return -1;
@@ -922,5 +943,5 @@ static const frp_ui_vtable UI_VTABLE = {
     frp_ui_preset_rescan, frp_ui_can_undo, frp_ui_undo, frp_ui_settings_get, frp_ui_settings_set, frp_ui_host_bpm10,
     frp_ui_tempo_bpm10, frp_ui_learn_start, frp_ui_learn_cancel, frp_ui_learning, frp_ui_learned_cc, frp_ui_learn_forget,
     frp_ui_learn_forget_all, frp_ui_cc_target, frp_ui_sustain_set, frp_ui_sustain, frp_ui_fx_bypass_set, frp_ui_fx_bypass,
-    frp_ui_note, frp_ui_meters, frp_ui_notes, frp_ui_voices,
+    frp_ui_note, frp_ui_meters, frp_ui_notes, frp_ui_voices, frp_ui_preset_type, frp_ui_win_w, frp_ui_win_w_set,
 };
