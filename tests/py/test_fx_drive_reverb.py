@@ -229,7 +229,10 @@ def test_drive_is_heard(eng):
     A3 v110 at AMOUNT 127 vs 0 raises the 1-3 kHz band re the lows (Rhodes 15 dB, VIBES 5) or more and drops the crest factor; at 64
     the level stays within 2 LU (it changes the tone, not the volume). 0.9.10: the Rhodes at v95 (the band +19.3 dB, the crest
     factor 8.0 -> 5.7; 0.9.9 +22.7, 6.9 -> 5.1). At v110 its own pickup already barks (the 1-3 kHz band -27 dB re the lows dry, H2 at H1's level; 0.9.9 -75
-    dB), so the effect adds +3.3 dB there and shows in the crest factor (9.4 -> 5.1 dB) rather than the band"""
+    dB), so the effect adds +3.3 dB there and shows in the crest factor (9.4 -> 5.1 dB) rather than the band. The DRIVE
+    code is unchanged and stays so (user, 2026-11-08): the test point moved to v95, where the dry note is still clean
+    enough for the 1-3 kHz band to show what the effect adds, instead of the effect being made harsher to stand out
+    over a pickup that already barks"""
     sel = [(79, 0), (47, 0)] if eng == "vibes" else []
     vel = 110 if eng == "vibes" else 95
     out = {}

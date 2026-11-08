@@ -726,9 +726,18 @@ The main page's middle cards belong to the engine: on VIBES they are **MALLET** 
 and **MOTOR** (on / off, the same as VOICE 3/3's first card); on an electric piano type they are **TONE** and **BELL** (DRIVE
 and REVERB have their own pages).
 
-VIBES plays about **2.5 dB louder** than the electric piano types: a struck bar is peakier than an electric piano note, so at the same
+VIBES was set about **2.5 dB louder** than the electric piano types: a struck bar is peakier than an electric piano note, so at the same
 loudness it sounded weaker and came out closer to the headphone jack's hiss. The limiter still keeps big chords from
-clipping.
+clipping. VIBES itself is unchanged in 0.9.10, but the electric piano is new and louder in the middle and the top of the
+keyboard, so the balance now depends on the register. VIBES minus the default electric piano, notes at velocity 100:
+
+| Notes | 0.9.10 | 0.9.9 |
+|---|---|---|
+| A3-E4-A4 chord | +0.1 LU | +2.0 LU |
+| C2 + E2 | +2.1 LU | +2.3 LU |
+| D4 + F#4 | +2.5 LU | +2.7 LU |
+| E5 + A5 | -2.0 LU | +2.5 LU |
+| E6 + C7 | +1.9 LU | +2.4 LU |
 
 VIBES has its own VOICE pages, three of them: **VOICE 1/3** (the strike), **VOICE 2/3** (how the bars ring and stop)
 and **VOICE 3/3** (the motor). VOICE 1/3 acts on the next strike (a ringing bar keeps the strike that started it, as
@@ -849,8 +858,9 @@ nothing in the marimba's sound.
 
 **MARIMBA's level.** MARIMBA is set **2.5 dB louder** than the electric piano types, as VIBES. But every marimba strike is
 held under **−0.5 dBFS** (the top bars are rolled off and RING has its ceiling, so the hardest strike never reaches
-the limiter), and that keeps a chord lower: an A3-E4-A4 chord at velocity 100 reads about **1.5 LU under**
-F01 STAGE 77, on the USB audio and on the headphone jack alike.
+the limiter), and that keeps a chord lower: an A3-E4-A4 chord at velocity 100 reads about **3.5 LU under**
+F01 STAGE 77 (0.9.9: 1.5; MARIMBA is unchanged, the 0.9.10 electric piano is louder), on the USB audio and on the
+headphone jack alike.
 
 **The range.** A concert marimba has five octaves, **C2 to C7**; that is where MARIMBA is measured. Every other MIDI
 note plays too (A0-C8), extended from the same physics. The FM-1's keys (F3–G5) sit in the marimba's middle.

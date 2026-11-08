@@ -46,12 +46,8 @@ BASE = {
     "vibes WEIGHT": {"stuck": (2.3, 2.25, "the bar engine's tail after the sweep (VIBES frozen)")},
     "rhodes TYPE": {"jump": (1.9, 1.83, "a TYPE step under a ringing chord")},
     "rhodes TYPE SPREAD": {"jump": (1.9, 1.83, "the same, TYPE with SPREAD")},
-    "filter LFO": {"jump": (2.2, 1.62, "the LFO's own swing at depth ~110, the down sweep at 3.88 s")},
     "delay TAPE TIME": {"zipper": (2.3, 3.40, "the tape's varispeed of fresh strikes"),
                         "zipper_wet": (3.5, 5.27, "the same, the echoes alone")},
-    "rev PLATE auto MIX": {"zipper_wet": (2.3, 2.63, "the plate's tank, fresh strikes against the held mix")},
-    "rev PLATE size64 MIX": {"zipper": (2.8, 2.33, "the same at SIZE 64"),
-                             "zipper_wet": (4.0, 2.97, "the same, the wet alone")},
     "rev PLATE SIZE": {"jump": (1.8, 2.10, "the size cross-fade under fresh strikes"),
                        "zipper_wet": (2.4, 2.78, "the same, the wet alone")},
 }
