@@ -261,7 +261,7 @@ static int write_png(const char *path, const uint32_t *px, int w, int h)
 
 static frui_font *font, *dfont;
 static const char *outdir;
-static int look;
+static int look = FRUI_LOOK_A3;
 
 /* the layout check: every widget's edges on the 4 px grid, every knob on a column centre (or the half-column of a
  * row of three) and on its tier's row, every control row one height; prints what is off by more than 1 px at 1x */
@@ -337,11 +337,38 @@ static int check_layout(const frui *u, const char *name)
             }
         }
     }
+    /* the rounded shapes: corners that nest (both gaps under the outer radius) concentric, the same gap on both sides,
+     * the inner radius the outer less the gap; each shape's edges on the 4 px grid */
+    {
+        int ns = frui_shell_count(u), a, b, q;
+        for (a = 0; a < ns; a++) {
+            const frui_shell *o = frui_shell_get(u, a);
+            float e[4] = {o->x, o->y, o->x + o->w, o->y + o->h};
+            for (q = 0; q < 4; q++)
+                if (fabsf(e[q] - 4.f * roundf(e[q] / 4.f)) > 0.01f) { printf("  %s: shape %d edge %.2f off the 4 px grid\n", name, a, e[q]); bad++; }
+            for (b = 0; b < ns; b++) {
+                const frui_shell *in = frui_shell_get(u, b);
+                if (a == b || in->w * in->h >= o->w * o->h || in->x < o->x - 0.01f || in->y < o->y - 0.01f ||
+                    in->x + in->w > o->x + o->w + 0.01f || in->y + in->h > o->y + o->h + 0.01f) continue;
+                for (q = 0; q < 4; q++) {
+                    float dx = q == 0 || q == 3 ? in->x - o->x : o->x + o->w - in->x - in->w;
+                    float dy = q < 2 ? in->y - o->y : o->y + o->h - in->y - in->h;
+                    if (dx >= o->r || dy >= o->r) continue;            /* not nested in this corner */
+                    if (fabsf(dx - dy) > 0.01f || fabsf(in->r - (o->r - dx)) > 0.01f) {
+                        printf("  %s: shape %d (r %.1f) in shape %d (r %.1f), corner %d gaps %.1f/%.1f: not concentric\n", name, b,
+                               in->r, a, o->r, q, dx, dy);
+                        bad++;
+                    }
+                }
+            }
+        }
+    }
     /* the rail: every control centred on the rail's centre line, one height */
     for (i = 0; i < n; i++) {
         const frui_widget *g = frui_widget_get(u, i);
-        if (g->y < 56.f && (fabsf(g->y + g->h * 0.5f - 28.f) > 0.5f || fabsf(g->h - 32.f) > 0.5f)) {
-            printf("  %s: rail widget %d/%d centre %.2f h %.2f (want 28, 32)\n", name, g->kind, g->id, g->y + g->h * 0.5f, g->h); bad++;
+        float rc = look == FRUI_LOOK_A3 ? 32.f : 28.f;    /* A3: the centre of the metal above the body (y 0 .. 64) */
+        if (g->y < 56.f && (fabsf(g->y + g->h * 0.5f - rc) > 0.5f || fabsf(g->h - 32.f) > 0.5f)) {
+            printf("  %s: rail widget %d/%d centre %.2f h %.2f (want %.0f, 32)\n", name, g->kind, g->id, g->y + g->h * 0.5f, g->h, rc); bad++;
         }
     }
     return bad;
@@ -372,8 +399,8 @@ static void render(const frui_model *m, const char *name, int pw, int ph)
     free(px);
 }
 
-/* the look's variants side by side: each variant's main view, an effect tab and the instrument menu at 2x, and a
- * contact sheet of all of them at 1x (outdir/directions) */
+/* the looks side by side (A1 rail, A2 plate, A3 framed): five screens each at 1x and 2x, and contact sheets of all of
+ * them, one look per column, at 1x and 2x (outdir/directions-a3) */
 static void blit(uint32_t *dst, int dw, const uint32_t *src, int sw, int sh, int ox, int oy)
 {
     int y;
@@ -381,46 +408,54 @@ static void blit(uint32_t *dst, int dw, const uint32_t *src, int sw, int sh, int
 }
 static int directions(const int *maj7, const int *min9, const int *vib)
 {
-    static const char *const vn[2] = {"A1-rail", "A2-plate"};
+    static const char *const vn[3] = {"A1-rail", "A2-plate", "A3-framed"};
+    static const int vl[3] = {FRUI_LOOK_RAIL, FRUI_LOOK_PLATE, FRUI_LOOK_A3};
+    static const char *const SN[5] = {"main", "menu-engine", "settings-midi", "knob-learn", "tab-comp-delay"};
     char path[1024], dir[1024];
-    int v, sw = 960 * 2 + 48, sh = 600 * 5 + 96, bad = 0;
-    uint32_t *sheet = malloc(sizeof(uint32_t) * (size_t)sw * (size_t)sh);
+    int v, k, bad = 0;
+    uint32_t *sheet[2];
     frui_model m;
-    for (v = 0; v < sw * sh; v++) sheet[v] = 0xFF2A2A2Cu;
-    snprintf(dir, sizeof dir, "%s/directions", outdir);
-    for (v = 0; v < 2; v++) {
+    snprintf(dir, sizeof dir, "%s/directions-a3", outdir);
+    for (k = 0; k < 2; k++) {                          /* the contact sheets: three columns (the looks), five rows */
+        int sw = (960 * 3 + 64) << k, sh = (600 * 5 + 96) << k, i;
+        sheet[k] = malloc(sizeof(uint32_t) * (size_t)sw * (size_t)sh);
+        for (i = 0; i < sw * sh; i++) sheet[k][i] = 0xFF2A2A2Cu;
+    }
+    for (v = 0; v < 3; v++) {
         int s;
-        look = v;
+        look = vl[v];
         for (s = 0; s < 5; s++) {
             uint32_t *px;
-            static const char *const SN[5] = {"main", "tab-comp-delay", "menu-engine", "settings-midi", "knob-learn"};
             const char *sn = SN[s];
             if (s == 0) { load(&m, PR_F09, "F09", "70S PHASER"); m.tab_l = FRT_DRIVE; m.tab_r = FRT_PHASER; chord(&m, maj7, 5);
                           m.sustain = 1; m.learn_cc[FRP_DRIVE] = 2; }
-            else if (s == 3) { load(&m, PR_F06, "F06", "DRIVEN 77"); m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY;
+            else if (s == 2) { load(&m, PR_F06, "F06", "DRIVEN 77"); m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY;
                                m.settings = 1; m.vel_curve = 0; m.pgm_change = 1; m.tempo_src = 0; m.host_bpm10 = 965;
                                m.sync_all = 0; m.learn_cc[FRP_DRIVE] = 2; m.learn_cc[FRP_FL_FREQ] = 75; m.cc_scroll = 0; }
-            else if (s == 4) { load(&m, PR_F11, "F11", "SWEEP"); m.tab_l = FRT_DRIVE; m.tab_r = FRT_FILTER; chord(&m, min9, 3);
+            else if (s == 3) { load(&m, PR_F11, "F11", "SWEEP"); m.tab_l = FRT_DRIVE; m.tab_r = FRT_FILTER; chord(&m, min9, 3);
                                m.learn_cc[FRP_DRIVE] = 2; m.ctx_knob = FRP_FL_FREQ; m.learning = FRP_FL_FREQ;
                                m.hover = FRUI_WID(FRW_CTX, FRC_LEARN); }
-            else if (s == 1) { load(&m, PR_F06, "F06", "DRIVEN 77"); m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 3.6f; chord(&m, min9, 5); }
+            else if (s == 4) { load(&m, PR_F06, "F06", "DRIVEN 77"); m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 3.6f; chord(&m, min9, 5); }
             else { load(&m, PR_F13, "F13", "VIBES"); m.tab_l = FRT_MOTOR; m.tab_r = FRT_REVERB; chord(&m, vib, 5);
                    m.menu = FRUI_WID(FRW_MENU, FRP_TYPE); m.fx_bypass = 1; }
-            snprintf(path, sizeof path, "%s-%s", vn[v], sn);
-            px = render_px(&m, 960, 600, 1, path);
-            blit(sheet, sw, px, 960, 600, 16 + v * (960 + 16), 16 + s * (600 + 16));
-            free(px);
-            px = render_px(&m, 1920, 1200, 0, path);
-            snprintf(path, sizeof path, "%s/%s-%s.png", dir, vn[v], sn);
-            if (write_png(path, px, 1920, 1200)) { fprintf(stderr, "cannot write %s\n", path); return 1; }
-            printf("%s\n", path);
-            free(px);
+            for (k = 0; k < 2; k++) {
+                int pw = 960 << k, ph = 600 << k;
+                snprintf(path, sizeof path, "%s-%s@%dx", vn[v], sn, k + 1);
+                px = render_px(&m, pw, ph, k == 0, path);
+                blit(sheet[k], (960 * 3 + 64) << k, px, pw, ph, (16 + v * (960 + 16)) << k, (16 + s * (600 + 16)) << k);
+                snprintf(path, sizeof path, "%s/%s-%s@%dx.png", dir, vn[v], sn, k + 1);
+                if (write_png(path, px, pw, ph)) { fprintf(stderr, "cannot write %s\n", path); return 1; }
+                printf("%s\n", path);
+                free(px);
+            }
         }
     }
-    snprintf(path, sizeof path, "%s/compare.png", dir);
-    if (write_png(path, sheet, sw, sh)) return 1;
-    printf("%s\n", path);
-    free(sheet);
+    for (k = 0; k < 2; k++) {
+        snprintf(path, sizeof path, k ? "%s/compare@2x.png" : "%s/compare.png", dir);
+        if (write_png(path, sheet[k], (960 * 3 + 64) << k, (600 * 5 + 96) << k)) return 1;
+        printf("%s\n", path);
+        free(sheet[k]);
+    }
     return bad;
 }
 
