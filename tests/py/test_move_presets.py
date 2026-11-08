@@ -39,3 +39,27 @@ def test_move_only():
                 assert "move_presets.h" not in t and "MB_PX_" not in t, os.path.join(d, f)
     assert '#include "move_presets.h"' in open(os.path.join(ROOT, "move", "move_bridge.h")).read()
 
+
+def test_records_follow_params(monkeypatch):
+    """the 0.9.10 hook: a new parameter, a renumbered one or a smaller range in params.c stops the generator"""
+    import pytest
+    import gen_move_module as gm
+    real = gm.model()
+    rec = gp.records()
+    gp.check_params(rec)                                   # as committed: every record is params.c's
+
+    def with_params(edit):
+        p = {n: dict(v) for n, v in real["params"].items()}
+        edit(p)
+        monkeypatch.setattr(gm, "model", lambda: dict(real, params=p))
+
+    with_params(lambda p: p.__setitem__("P_NEWKNOB", {"id": max(v["id"] for v in p.values()) + 1, "hi": 127}))
+    with pytest.raises(SystemExit, match="P_NEWKNOB"):
+        gp.check_params(rec)
+    with_params(lambda p: p["P_DECAY"].__setitem__("hi", 10))
+    with pytest.raises(SystemExit, match="P_DECAY is .* over its range"):
+        gp.check_params(rec)
+    with_params(lambda p: p["P_DECAY"].__setitem__("id", 99))
+    with pytest.raises(SystemExit, match="P_DECAY"):
+        gp.check_params(rec)
+

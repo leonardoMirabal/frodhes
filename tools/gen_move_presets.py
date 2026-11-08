@@ -107,9 +107,36 @@ def records():
     return out
 
 
+NOT_IN_RECORDS = ("P_EQ_",)                 # parameters the records predate: the EQ (P_EQ_*, added after the review;
+# the Move presets load it at its defaults, flat); any other parameter missing from a record stops the tool
+
+
+def check_params(rec):
+    """every record against params.c as it is now (tools/gen_move_module.py's parse): the same parameters at the same
+    ids, every value within the parameter's range. A parameter added, renumbered or given a smaller range (a sound
+    change: the 0.9.10 engine work) stops the generator here, before a Move preset could load a value the parameter
+    no longer has; then update proposed_records.txt (the new parameter at its default, or the value re-set) and rerun"""
+    import gen_move_module as gm
+    params = gm.model()["params"]
+    want = [n for n in sorted(params, key=lambda n: params[n]["id"]) if not n.startswith(NOT_IN_RECORDS)]
+    for (base, v), (_, pairs) in rec.items():
+        names = [n for n, _, _ in pairs]
+        if names != want:
+            odd = sorted(set(names) ^ set(want)) or [next(a for a, b in zip(names, want) if a != b) + " moved"]
+            raise SystemExit("%s %s: the record's parameters are not params.c's (%s); update %s" % (
+                base, v, ", ".join(odd), RECORDS))
+        for n, i, x in pairs:
+            if i != params[n]["id"]:
+                raise SystemExit("%s %s: %s is id %d in the record, %d in params.c" % (base, v, n, i, params[n]["id"]))
+            if not 0 <= x <= params[n]["hi"]:
+                raise SystemExit("%s %s: %s is %d, over its range 0..%d in params.c; update %s" % (
+                    base, v, n, x, params[n]["hi"], RECORDS))
+
+
 def table():
     """the Move-only presets in order: [(number, name, line, base, variant, pairs)]"""
     rec = records()
+    check_params(rec)
     with open(VARIANTS) as f:
         var = json.load(f)
     rows = []
