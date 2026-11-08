@@ -763,8 +763,11 @@ static int coretest(void)
     blk_n = 0; ev_midi(0, 0xB2, 9, 20); run(a, 2);
     VT->preset_load(ca, 6); run(a, 2);
     VT->param_set(ca, P_TONE_, 100); VT->param_set(ca, ID_TUNE, 57); run(a, 2);
-    set_param_inactive(a, ENGINE_ID, 0);         /* (a flush while active: the switch at the next block) */
-    run(a, 2);
+    blk_n = 0; ev_param(0, ID_SUSTAIN, 1); run(a, 2);   /* (SUSTAIN: a parameter, so in the state too) */
+    blk_n = 0; ev_param(0, P_RV_DEPTH_, 41); ev_param(0, ENGINE_ID, 0); ev_param(10, P_RV_DEPTH_, 42);
+    run(a, 2);                                   /* (the block's changes before and after the switch go with it) */
+    CHECK(VT->voices(ca) == 10 && VT->param_get(ca, P_RV_DEPTH_) == 42, "a block's changes across the switch (%d %d)",
+          VT->voices(ca), VT->param_get(ca, P_RV_DEPTH_));
     a->stop_processing(a);
     a->deactivate(a);
     CHECK(state_of(a, &m1) == 0, "state save");
@@ -780,6 +783,8 @@ static int coretest(void)
           "the preset (F07, edited), TONE and TUNE come back");
     CHECK(VT->voices(cb) == 10, "the engine (CLASSIC) comes back: %d voices", VT->voices(cb));
     CHECK(VT->can_undo(cb), "the undo copy comes back");
+    CHECK(VT->param_get(cb, ID_SUSTAIN) == 1 && VT->param_get(cb, P_RV_DEPTH_) == 42, "SUSTAIN and REVERB come back (%d %d)",
+          VT->param_get(cb, ID_SUSTAIN), VT->param_get(cb, P_RV_DEPTH_));
     printf("ok    state: %zu bytes, every setting, the learned CCs, the preset and its edit, TUNE, CLASSIC, the undo copy\n", m1.n);
     {
         /* the scaffold's state (version 1: the Move's keys only): the sound loads, the plugin's settings default */

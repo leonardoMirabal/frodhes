@@ -67,6 +67,7 @@ static struct {
     uint8_t st_base[P_SLOTS];
     uint16_t st_hand;
     sb_cfg_t st_cfg;
+    uint8_t st_sus;
     uint8_t st_learn[128];
     int16_t st_pidx, st_upidx;           /* -2: the state had none (derived from set.preset) */
     char st_pname[FRP_PNAME], st_upname[FRP_PNAME];
@@ -204,10 +205,10 @@ static void sb_read_pub(frp_snap_t *snap, settings_t *s, uint8_t *base, uint16_t
  * TOUCH, KEY VEL, TUNE ...), the sound it was loaded as (snd_base), the Move's mappings (written off; ignored here),
  * the tempo set by hand; "engine" (the plugin's ENGINE: bridge.c picks the slot by it; the Move ignores it). Then the
  * plugin's own keys (version "pv" 2; the Move ignores them, a state without them loads their defaults): "pgm" program
- * changes, "tsrc" the tempo source, "ibpm" its BPM, "sall" / "sdiv" SYNC ALL, "learn" the learned CCs (128 bytes:
- * code + 1 per CC), "pidx" / "pname" the preset playing, "upidx" / "upname" the undo copy's. The Move's "rev" (a
- * change counter its state_set never reads) is left out: a saved state depends on the sound only, so saving, loading
- * and saving again gives the same bytes. Version history: "v" 1 the Move's keys (the scaffold); "pv" 2 the plugin's. */
+ * changes, "tsrc" the tempo source, "ibpm" its BPM, "sall" / "sdiv" SYNC ALL, "sus" the SUSTAIN parameter, "learn"
+ * the learned CCs (128 bytes: code + 1 per CC), "pidx" / "pname" the preset playing, "upidx" / "upname" the undo
+ * copy's. The Move's "rev" (a change counter its state_set never reads) is left out: a saved state depends on the
+ * sound only, so saving, loading and saving again gives the same bytes. Version history: "v" 1 the Move's keys (the scaffold); "pv" 2 the plugin's. */
 static const char SB_HEX[] = "0123456789abcdef";
 static int sb_hex_put(char *o, const void *p, uint32_t n)
 {
@@ -247,8 +248,9 @@ static int sb_state_get(char *buf, int n)
     o += sprintf(o, "\",\"base\":\"");
     o += sb_hex_put(o, base, P_SLOTS);
     o += sprintf(o, "\",\"map\":\"%s\",\"hand\":\"%u\",\"engine\":\"%u\",\"pv\":\"2\",\"pgm\":\"%u\",\"tsrc\":\"%u\","
-                 "\"ibpm\":\"%u\",\"sall\":\"%u\",\"sdiv\":\"%u\",\"learn\":\"", SB_MAP_DEFAULT_HEX, (unsigned)hand,
-                 (unsigned)snap.engine, snap.pgm, snap.tempo_src, snap.bpm10, snap.sync_all, snap.sync_div);
+                 "\"ibpm\":\"%u\",\"sall\":\"%u\",\"sdiv\":\"%u\",\"sus\":\"%u\",\"learn\":\"", SB_MAP_DEFAULT_HEX,
+                 (unsigned)hand, (unsigned)snap.engine, snap.pgm, snap.tempo_src, snap.bpm10, snap.sync_all,
+                 snap.sync_div, snap.sustain);
     o += sb_hex_put(o, snap.learn, sizeof snap.learn);
     o += sprintf(o, "\",\"pidx\":\"%d\",\"pname\":\"%s\",\"upidx\":\"%d\",\"upname\":\"%s\"}", snap.pidx, snap.pname,
                  upidx, upn);
@@ -316,6 +318,7 @@ static int sb_state_set(const char *j)   /* into the mailbox; sb_state_apply app
     sb.st_cfg.bpm10 = (uint16_t)sb_json_int(j, "ibpm", 400, 2400, sb.st_hand >= 400u && sb.st_hand <= 2400u ? sb.st_hand : 1200);
     sb.st_cfg.sync_all = (uint8_t)sb_json_int(j, "sall", 0, 1, 0);
     sb.st_cfg.sync_div = (uint8_t)sb_json_int(j, "sdiv", 1, 13, 9);
+    sb.st_sus = (uint8_t)sb_json_int(j, "sus", 0, 1, 0);
     if (!lr || ll != 256u || sb_hex_get(lr, sb.st_learn, 128u)) memset(sb.st_learn, 0, sizeof sb.st_learn);
     for (uint32_t i = 0; i < 128u; i++) {                /* (a code this build does not have: dropped) */
         uint32_t c = sb.st_learn[i];
@@ -360,6 +363,8 @@ static void sb_state_apply(void)         /* the boot's sanitize and apply steps 
     bpm_hand = sb.st_hand >= 400u && sb.st_hand <= 2400u ? sb.st_hand : set.bpm10;
     for (uint32_t i = 0; i < P_SLOTS; i++) snd_base[i] = i < P_COUNT && sb.st_base[i] <= PARAMS[i].hi ? sb.st_base[i] : PV(i);
     sb.cfg = sb.st_cfg;
+    if ((uint8_t)(sus_held || sus_latched || sus_midi >= 64u) != sb.st_sus)   /* (SUSTAIN, a parameter: as saved) */
+        midi_cc(64u, sb.st_sus ? 127u : 0u);
     memcpy(sb.learn, sb.st_learn, sizeof sb.learn);
     sb.learning = -1;
     if (sb.st_pidx == -2) sb_name_of_app(set.preset, &sb.pidx, sb.pname);   /* (a state without the keys: the record's) */

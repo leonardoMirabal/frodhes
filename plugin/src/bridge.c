@@ -184,7 +184,11 @@ static void do_swap(frp_inst_t *in, int np, const char *json)
 {
     const frp_slot_api_t *o = in->s, *n = in->sp[np];
     if (!o || !n || np == in->cur) return;
-    if (!json) json = o->state_get(in->xbuf, (int)sizeof in->xbuf) >= 0 ? in->xbuf : 0;
+    if (!json) {                         /* what the old slot was given and has not applied yet (the same block's
+                                          * parameter changes, before or after the switch) goes with the sound */
+        o->drain();
+        json = o->state_get(in->xbuf, (int)sizeof in->xbuf) >= 0 ? in->xbuf : 0;
+    }
     n->reuse(ENGINE_OF(np));
     if (json) (void)n->state_set(json);
     if (!in->active) {
