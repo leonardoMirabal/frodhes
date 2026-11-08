@@ -74,7 +74,10 @@ struct frp_inst {
     int slot;                            /* the slot playing (-1 none) */
     const frp_slot_api_t *s;             /* its table */
     int slots[2];                        /* the instance's slot of each pool (-1 none) */
-    const frp_slot_api_t *sp[2];
+    const frp_slot_api_t *sp[2];         /* (the other pool's: claimed at the first switch; set by the main thread,
+                                          * read by the audio side with __atomic acquire) */
+    _Atomic int need;                    /* the audio side waits for the other pool's slot: 0 no, 1 asked, 2 the main
+                                          * thread was called (frp_inst_wants_main) */
     int cur;                             /* the pool playing */
     int tail;                            /* the pool ringing out after a switch, -1 none */
     uint32_t tail_ms0;                   /* its ms when it started */
@@ -136,29 +139,31 @@ static int slot_claim(int pool)
     return -1;
 }
 
+static const frp_slot_api_t *pool_api(const frp_inst_t *in, int k) { return __atomic_load_n(&in->sp[k], __ATOMIC_ACQUIRE); }
+/* main thread: the instance's slot of pool k, claimed and booted now if it has none yet. An instance takes the other
+ * pool's slot at its first ENGINE switch (and keeps it): 16 instances of each engine fit. 0 ok, -1 none free */
+static int pool_take(frp_inst_t *in, int k)
+{
+    int sl;
+    if (pool_api(in, k)) return 0;
+    if ((sl = slot_claim(k)) < 0) return -1;
+    if (SLOT[sl]->booted()) SLOT[sl]->reuse(ENGINE_OF(k));
+    else if (SLOT[sl]->boot(ENGINE_OF(k))) { atomic_store(&slot_used[sl], 0); return -1; }
+    in->slots[k] = sl;
+    __atomic_store_n(&in->sp[k], SLOT[sl], __ATOMIC_RELEASE);
+    return 0;
+}
+
 frp_inst_t *frp_inst_new(void)
 {
     frp_inst_t *in = calloc(1, sizeof *in);
-    int k;
     if (!in) return 0;
     in->engine = FRP_ENGINE_HQ;          /* (the plugin's default; params_map.h FRP_ID_ENGINE) */
     atomic_store(&in->want, in->engine);
     in->tail = -1;
-    for (k = 0; k < 2; k++) {            /* one slot of each pool, both booted now (the main thread) */
-        int sl = slot_claim(k);
-        in->slots[k] = sl;
-        in->sp[k] = 0;
-        if (sl < 0) continue;
-        if (SLOT[sl]->booted()) SLOT[sl]->reuse(ENGINE_OF(k));
-        else if (SLOT[sl]->boot(ENGINE_OF(k))) { atomic_store(&slot_used[sl], 0); in->slots[k] = -1; continue; }
-        in->sp[k] = SLOT[sl];
-    }
-    if (!in->sp[0] || !in->sp[1]) {      /* (both or none: an instance never plays only one path) */
-        for (k = 0; k < 2; k++) if (in->slots[k] >= 0) atomic_store(&slot_used[in->slots[k]], 0);
-        in->slots[0] = in->slots[1] = -1;
-        in->sp[0] = in->sp[1] = 0;
-    }
+    in->slots[0] = in->slots[1] = -1;
     in->cur = POOL_OF(in->engine);
+    (void)pool_take(in, in->cur);        /* (the engine's slot, booted now: the main thread; none: silence) */
     in->s = in->sp[in->cur];
     in->slot = in->s ? in->slots[in->cur] : -1;
     return in;
@@ -182,7 +187,7 @@ static uint32_t pos_ms(const frp_inst_t *in, uint64_t h)
  * clock re-based, the old one rings out as the tail. */
 static void do_swap(frp_inst_t *in, int np, const char *json)
 {
-    const frp_slot_api_t *o = in->s, *n = in->sp[np];
+    const frp_slot_api_t *o = in->s, *n = pool_api(in, np);
     if (!o || !n || np == in->cur) return;
     if (!json) {                         /* what the old slot was given and has not applied yet (the same block's
                                           * parameter changes, before or after the switch) goes with the sound */
@@ -219,7 +224,11 @@ static void block_start(frp_inst_t *in)
         atomic_store_explicit(&in->uqr, ++r, memory_order_release);
     }
     np = POOL_OF(atomic_load_explicit(&in->want, memory_order_acquire));
-    if (np != in->cur) {
+    if (np != in->cur && !pool_api(in, np)) {   /* the other pool's slot not taken yet: the main thread takes it (the
+                                          * old engine plays on meanwhile; frp_inst_wants_main / frp_inst_main) */
+        int zero = 0;
+        (void)atomic_compare_exchange_strong(&in->need, &zero, 1);
+    } else if (np != in->cur) {
         int two = 2;
         int have = atomic_compare_exchange_strong(&in->sj_flag, &two, 3);
         do_swap(in, np, have ? in->sj : 0);
@@ -258,8 +267,10 @@ int frp_inst_activate(frp_inst_t *in, double rate)
         uint32_t a;
         block_start(in);                 /* (what the UI queued, a switch asked: the instance is not active yet) */
         for (int k = 0; k < 2; k++) {
-            in->sp[k]->drain();          /* (what the main thread queued while inactive) */
-            while ((a = in->sp[k]->avail()) != 0) in->sp[k]->read(in->buf, a < CHUNK ? a : CHUNK);   /* (frames from before) */
+            const frp_slot_api_t *t = pool_api(in, k);
+            if (!t) continue;
+            t->drain();                  /* (what the main thread queued while inactive) */
+            while ((a = t->avail()) != 0) t->read(in->buf, a < CHUNK ? a : CHUNK);   /* (frames from before) */
         }
         in->ms0 = in->s->now();
     }
@@ -326,6 +337,7 @@ static void param_put(frp_inst_t *in, uint32_t at, uint32_t id, double value)
     if (i < 0) return;
     if (id == FRP_ID_ENGINE) {           /* the slot of that pool plays from the next block (inactive: at once) */
         in->engine = param_round((uint32_t)i, value) ? FRP_ENGINE_HQ : FRP_ENGINE_CLASSIC;
+        if (!in->active && in->s && pool_take(in, POOL_OF(in->engine))) in->engine = ENGINE_OF(in->cur);   /* (none free) */
         atomic_store(&in->want, in->engine);
         if (!in->active) block_start(in);
         return;
@@ -362,6 +374,25 @@ void frp_inst_put_now(frp_inst_t *in, int kind, uint32_t a, int32_t v)
         in->uq[w & (UQ - 1u)] = (uq_ev_t){ (uint8_t)kind, a, v };
         atomic_store_explicit(&in->uqw, w + 1u, memory_order_release);
     }
+}
+int frp_inst_wants_main(frp_inst_t *in)
+{
+    int one = 1;
+    return atomic_compare_exchange_strong(&in->need, &one, 2);
+}
+int frp_inst_main(frp_inst_t *in)
+{
+    int np;
+    if (atomic_load(&in->need) == 0) return 0;
+    np = POOL_OF(atomic_load(&in->want));
+    if (np != in->cur && pool_take(in, np)) {   /* no slot of that engine free: the ENGINE stays */
+        in->engine = ENGINE_OF(in->cur);
+        atomic_store(&in->want, in->engine);
+        atomic_store(&in->need, 0);
+        return -1;
+    }
+    atomic_store(&in->need, 0);          /* (the switch: at the audio side's next block) */
+    return 1;
 }
 void frp_inst_drain(frp_inst_t *in)
 {
@@ -403,12 +434,14 @@ int frp_inst_state_set(frp_inst_t *in, const char *json)
     np = e < 0 ? in->cur : POOL_OF(e);
     if (e >= 0) in->engine = e;
     if (!in->active) {                   /* (the main thread owns the slots) */
-        atomic_store(&in->want, in->engine);
         if (np != in->cur) {
+            if (pool_take(in, np)) { in->engine = ENGINE_OF(in->cur); return -1; }   /* (no slot of that engine free) */
+            atomic_store(&in->want, in->engine);
             if (in->sp[np]->state_set(json)) return -1;   /* (parsed first: a state it cannot read changes nothing) */
             do_swap(in, np, json);
             return 0;
         }
+        atomic_store(&in->want, in->engine);
         if (in->s->state_set(json)) return -1;
         in->s->drain();
         return 0;

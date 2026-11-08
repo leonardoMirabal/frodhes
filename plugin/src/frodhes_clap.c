@@ -171,6 +171,7 @@ static void p_flush(const clap_plugin_t *plugin, const clap_input_events_t *in, 
                                           * applies them); else the main thread owns the instance: at once */
     if (p->active && !proc) frp_inst_drain(p->in);
     p_out(p, out);
+    if (frp_inst_wants_main(p->in)) p->host->request_callback(p->host);
 }
 static const clap_plugin_params_t EXT_PARAMS = { p_count, p_info, p_value, p_to_text, p_from_text, p_flush };
 
@@ -365,6 +366,7 @@ static clap_process_status pl_process(const clap_plugin_t *plugin, const clap_pr
     }
     pr->audio_outputs[0].constant_mask = 0;
     if (pr->out_events) p_out(p, pr->out_events);
+    if (frp_inst_wants_main(p->in)) p->host->request_callback(p->host);   /* (an ENGINE switch: its slot) */
     return CLAP_PROCESS_CONTINUE;
 }
 /* the host's view: first the UI's gestures and values (in their order), then the app's own changes (a MIDI CC, a
@@ -438,7 +440,12 @@ static const void *pl_ext(const clap_plugin_t *plugin, const char *id)
 static void pl_main(const clap_plugin_t *plugin)
 {
     frp_plugin_t *p = plugin->plugin_data;
-    int t = atomic_load(&p->rescan_tries);
+    int t;
+    if (frp_inst_main(p->in) < 0) {      /* an ENGINE switch with no slot of that engine free: it stays */
+        say(p, CLAP_LOG_WARNING, "Frodhes: no engine slot free for that ENGINE (16 instances use it): it stays");
+        if (p->hparams) p->hparams->rescan(p->host, CLAP_PARAM_RESCAN_VALUES);
+    }
+    t = atomic_load(&p->rescan_tries);
     if (t <= 0) return;
     if (frp_inst_rev(p->in) != atomic_load(&p->rescan_rev) || t == 1) {
         atomic_store(&p->rescan_tries, 0);

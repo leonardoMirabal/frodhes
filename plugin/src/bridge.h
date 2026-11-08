@@ -113,8 +113,14 @@ int frp_user_get(uint32_t k, uint8_t *vals, char *name);
 /* ---- the instance (bridge.c) */
 #define FRP_LAT_MS 10u                   /* the events' schedule ahead of the app (and the output's pre-roll): 10 ms */
 typedef struct frp_inst frp_inst_t;
-frp_inst_t *frp_inst_new(void);          /* main thread: claims a slot of each pool (none: 16 in use, plays silence) */
+frp_inst_t *frp_inst_new(void);          /* main thread: claims a slot of its ENGINE's pool (none: 16 in use, plays
+                                          * silence); the other pool's slot at the first switch */
 void frp_inst_free(frp_inst_t *in);
+/* an ENGINE switch on the audio side waits for the other pool's slot: frp_inst_wants_main (any thread) says once that
+ * the host should call the main thread (clap request_callback), where frp_inst_main takes the slot (0 nothing to do,
+ * 1 taken: the switch at the next block, -1 none free: the ENGINE stays as it was) */
+int frp_inst_wants_main(frp_inst_t *in);
+int frp_inst_main(frp_inst_t *in);
 int frp_inst_slot(const frp_inst_t *in); /* the slot playing, -1 none */
 int frp_inst_activate(frp_inst_t *in, double rate);   /* main thread: 0 ok, -1 a rate outside 1 .. 768 kHz */
 void frp_inst_deactivate(frp_inst_t *in);

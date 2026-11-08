@@ -452,9 +452,30 @@ static float run(const clap_plugin_t *p, int blocks)
         process(p, l, r, 512, steady_pos);
         steady_pos += 512;
         blk_n = 0;
+        if (callbacks) { callbacks = 0; p->on_main_thread(p); }   /* (the host calls the main thread back) */
         for (int i = 0; i < 512; i++) { float a = fabsf(l[i]), c = fabsf(r[i]); if (a > pk) pk = a; if (c > pk) pk = c; if (l[i] != l[i]) return -1.0f; }
     }
     return pk;
+}
+/* as run, the largest step between two samples (across the blocks too): a click shows as a step far above the
+ * music's own */
+static float run_step(const clap_plugin_t *p, int blocks)
+{
+    static float l[512], r[512], pl, pr;
+    float st = 0.0f;
+    for (int b = 0; b < blocks; b++) {
+        process(p, l, r, 512, steady_pos);
+        steady_pos += 512;
+        blk_n = 0;
+        if (callbacks) { callbacks = 0; p->on_main_thread(p); }
+        for (int i = 0; i < 512; i++) {
+            float a = fabsf(l[i] - pl), c = fabsf(r[i] - pr);
+            if (a > st) st = a;
+            if (c > st) st = c;
+            pl = l[i]; pr = r[i];
+        }
+    }
+    return st;
 }
 static int out_count(uint16_t type, uint32_t id, double *last)
 {
@@ -541,6 +562,26 @@ static int coretest(void)
                                           * reset's voice kill ran at the next block, after the note) */
     pk = note_peak(a, 0x90, 64, 100);
     CHECK(pk > 0.01f, "a note right after reset() sounds (%.4f)", pk);
+    {   /* a new instance holds its engine's slot only; its first switch while active takes the other pool's slot on
+         * the main thread (the host's callback) and plays it from the next block, the old one ringing out */
+        const clap_plugin_t *c2 = create();
+        frp_core *cc2;
+        float p0, p1;
+        CHECK(c2 != 0, "a third instance");
+        cc2 = VT->core_of(c2);
+        CHECK(c2->activate(c2, 44100.0, 1, 4096) && c2->start_processing(c2), "activate it");
+        float s0, s1;
+        blk_n = 0; ev_midi(0, 0x90, 60, 100); p0 = run(c2, 10);
+        s0 = run_step(c2, 4);                /* (the note's own steps, then the same across the switch) */
+        blk_n = 0; ev_param(0, ENGINE_ID, 0); s1 = run_step(c2, 4);
+        p1 = run(c2, 3);
+        CHECK(s1 <= s0 * 1.5f + 1e-4f, "no click at the switch: largest step %.5f, before it %.5f", s1, s0);
+        CHECK(VT->voices(cc2) == 10 && p0 > 0.01f && p1 > 0.001f, "its first switch while active: CLASSIC (%d voices), "
+              "the note before %.4f, its tail %.4f", VT->voices(cc2), p0, p1);
+        pk = note_peak(c2, 0x90, 64, 100);
+        CHECK(pk > 0.01f, "it plays CLASSIC (%.4f)", pk);
+        c2->stop_processing(c2); c2->deactivate(c2); c2->destroy(c2);
+    }
     CHECK(late_warnings == 0, "no late events");
     printf("ok    engine: HQ 16 voices, CLASSIC 10, switched while a note sounds (the old one rings out: peak %.3f)\n", pk2);
 
