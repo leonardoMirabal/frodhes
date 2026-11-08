@@ -63,6 +63,9 @@ static volatile int32_t fx_cmp_gr;               /* ISR: the compressor's gain r
 static volatile uint32_t fx_dly_sync_samples;    /* main loop (tempo.c): a synced delay time, 0 = free */
 static volatile uint32_t fx_tw_sync_inc;         /* main loop: a synced tremolo rate (Q32 step), 0 = free */
 static volatile uint8_t fx_bypass;              /* main loop (the FX button): all effects off, settings kept */
+#ifndef FR_BYP_KEEP_CMP
+#define FR_BYP_KEEP_CMP 1                       /* the bypass keeps the compressor (fx_process: dry_c) */
+#endif
 static volatile int32_t fx_peak;                 /* ISR: last block's max |out| */
 static volatile uint32_t prof_us, prof_max_us;   /* ISR (frodhes.c app_audio): its own time, this block / maximum */
 static uint32_t prof_over;
@@ -2403,11 +2406,17 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
 #if defined(C1PF_ON)
     C1PS(0);
 #endif
-#ifdef FR_BYP_KEEP_CMP
-    /* the Move (FR_BYP_KEEP_CMP, the user 2026-10-28): FX bypasses every effect but the compressor, so its dry is the
-     * compressor's output; the FM-1 (no define) bypasses the compressor too */
+#if FR_BYP_KEEP_CMP
+    /* FX bypasses every effect but the compressor, so its dry is the compressor's output (the Move, the user
+     * 2026-10-28; every build from 0.9.10, the user 2026-11-08: "leave compressor aside of the efx off button, I don't
+     * want to change the dynamic of the piano": the bypass had dropped the compressor's make-up, the effects-on sound
+     * 1-2.6 dB over the bypass on the factory presets). -DFR_BYP_KEEP_CMP=0: the bypass without the compressor */
     static int32_t dry_c[256];
+#if FR_C1
+    for (j = fxc_o; j < fxc_e; j++) dry_c[j] = m[j];   /* (this chunk's: the later chunks' m is not written yet) */
+#else
     for (j = 0; j < n; j++) dry_c[j] = m[j];
+#endif
 #endif
     fx_eq(m, n);                                       /* the EQ before the drive (flat: m untouched, no loop) */
 #if defined(C1PF_ON)
@@ -2439,7 +2448,7 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
 #if defined(C1PF_ON)
     C1PS(7);
 #endif
-#ifdef FR_BYP_KEEP_CMP
+#if FR_BYP_KEEP_CMP
     FR_FAR(fx_out)(dry_c, out, n);
 #else
     FR_FAR(fx_out)(mono, out, n);

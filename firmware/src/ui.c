@@ -1593,7 +1593,7 @@ FR_COLD static void meter_poll(void)
     uint32_t segs = 0, key;
     if (ui_page != PG_COMP || pr_save_mode || (ui_msg_t && fm1_ms - ui_msg_t < MSG_MS) || fm1_ms - t < 33u) return;
     t = fm1_ms;
-    g = PV(P_CMP_SW) && !fx_bypass ? fx_cmp_gr * 301 / 20480 : 0;      /* log2 Q12 -> dB x 10 */
+    g = PV(P_CMP_SW) && (FR_BYP_KEEP_CMP || !fx_bypass) ? fx_cmp_gr * 301 / 20480 : 0;      /* log2 Q12 -> dB x 10 */
     if (g > 300) g = 300;
     gr_db10 = g > gr_db10 ? g : gr_db10 > g + 5 ? gr_db10 - 5 : g;
     while (segs < GR_SEGS && gr_db10 >= GR_DB10[segs]) segs++;
