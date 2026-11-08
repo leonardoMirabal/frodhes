@@ -184,7 +184,8 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
 - The user folders per OS (`plugin/tests/test_paths.c`, `tests/py/test_plugin_paths.py`): macOS and its App
   Sandbox, Linux XDG, Windows APPDATA, drive and UNC roots, all tested on any OS; mkdir -p, the atomic replace (also
   over an existing file) and the listing ran on macOS, on Linux (Docker) and on Windows (Wine).
-- clap-validator (the CLAP bundle), pluginval at strictness 10 (the VST3 and the Audio Unit, with its editor tests),
+- clap-validator (the CLAP bundle), pluginval at strictness 10 (the VST3 and the Audio Unit, with its editor tests;
+  the macOS CI runs them too, the Windows and Linux CI without),
   `auval -strict` (the Audio Unit) and the VST3 SDK's own validator (`tools/plugin_vst3_validator.sh`, built from the
   pinned SDK with the command line tools: 47 tests).
 - The tail (`tests/py/test_plugin_tail.py`, in `make test-plugin`): `clap_render --tail-check` is a host that stops at

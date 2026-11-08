@@ -101,9 +101,9 @@ jobs:
         run: python3 tools/plugin_depcheck.py macos ~/Library/Audio/Plug-Ins
       - name: clap-validator (CLAP)
         run: .local/plugin-deps/clap-validator/binaries/clap-validator validate ~/Library/Audio/Plug-Ins/CLAP/Frodhes.clap
-      - name: pluginval (VST3, strictness 10)
+      - name: pluginval (VST3, strictness 10, with the editor tests)
         run: |
-          .local/plugin-deps/pluginval/pluginval.app/Contents/MacOS/pluginval --strictness-level 10 --skip-gui-tests \
+          .local/plugin-deps/pluginval/pluginval.app/Contents/MacOS/pluginval --strictness-level 10 \
             --validate-in-process --validate ~/Library/Audio/Plug-Ins/VST3/Frodhes.vst3
       - name: auval (Audio Unit, strict)
         run: |
@@ -163,7 +163,7 @@ jobs:
           build/plugin-win/frp_clap_render.exe "$RUNNER_TEMP/w/Frodhes/CLAP/Frodhes.clap" --selftest
       - name: clap-validator (CLAP)
         run: .local/plugin-deps/clap-validator/clap-validator.exe validate "$RUNNER_TEMP/w/Frodhes/CLAP/Frodhes.clap"
-      - name: pluginval (VST3, strictness 10)
+      - name: pluginval (VST3, strictness 10, with the editor tests)
         run: |
           .local/plugin-deps/pluginval/pluginval.exe --strictness-level 10 --skip-gui-tests --validate-in-process \
             --validate "$RUNNER_TEMP/w/Frodhes/VST3/Frodhes.vst3"
