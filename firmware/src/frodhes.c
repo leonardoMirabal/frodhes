@@ -243,6 +243,12 @@ FR_COLD static int usb_link(void) { return host_usb_link; }
 #define C1_SUB 8u                               /* chunks a block: 8 (32 frames) or 4 (64) */
 #endif
 _Static_assert(C1_SUB == 1u || C1_SUB == 2u || C1_SUB == 4u || C1_SUB == 8u, "C1_SUB: 1, 2, 4 or 8 chunks a block");
+#ifdef C1_EDGES
+/* uneven chunks (experiment: APP_DEFS=-DC1_EDGES=32,128,224): the inner edges of a 256-frame block, each a multiple of 32
+ * (every effect's sub-block), rising */
+static const uint16_t c1_ed[] = {0u, C1_EDGES, 256u};
+#define C1_NED ((uint32_t)(sizeof c1_ed / sizeof c1_ed[0]) - 1u)
+#endif
 static int32_t c1_mono[256];
 static struct { const int32_t *mono; int32_t *out; uint32_t n, o, e; } c1_job;
 static void c1_fx_job(uint32_t a)               /* core 1 (or core 0: refused, late, one core) */
@@ -358,7 +364,10 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         c1_fx_job(0);
         if (rst) rh_side_on = 0;                /* (the voices CC 10 ended: as one core) */
     } else {
-        uint32_t j, k = n / C1_SUB, posted = 0;
+        uint32_t j, k = n / C1_SUB, posted = 0, nch = C1_SUB, co, ce;
+#ifdef C1_EDGES
+        if (n == 256u) nch = C1_NED;            /* (uneven chunks: c1_ed's edges) */
+#endif
 #if defined(C1PF_ON)
         uint32_t pw = 0, pv = 0, pt;
         c1_pf_t0 = t0;
@@ -368,12 +377,16 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         posted = fr_c1_run(c1_pre_job, 0);
         if (!posted) c1_pre_job(0);
         eng_begin(n);
-        for (j = 0; j < C1_SUB; j++) {
+        for (j = 0; j < nch; j++) {
+#ifdef C1_EDGES
+            if (n == 256u) { co = c1_ed[j]; ce = c1_ed[j + 1u]; } else
+#endif
+            { co = j * k; ce = co + k; }
 #if defined(C1PF_ON)
             pt = fm1_ticks();
 #endif
-            eng_chunk(c1_mono, j * k, j * k + k);   /* core 0: chunk j's voices */
-            if (j + 1u == C1_SUB) { eng_end(c1_mono, n); C1PF(16, fm1_ticks() - t0); }
+            eng_chunk(c1_mono, co, ce);         /* core 0: chunk j's voices */
+            if (j + 1u == nch) { eng_end(c1_mono, n); C1PF(16, fm1_ticks() - t0); }
 #if defined(C1PF_ON)
             pv += fm1_ticks() - pt;
 #endif
@@ -393,7 +406,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
                 if (r) jf(0);                   /* (refused -2: core 1 stays on; late / held -1) */
             }
-            c1_job.o = j * k; c1_job.e = j * k + k;
+            c1_job.o = co; c1_job.e = ce;
             jf = c1_fx_job;
             posted = fr_c1_run(c1_fx_job, 0);   /* core 1: chunk j's effects, from now */
             if (!posted) c1_fx_job(0);
