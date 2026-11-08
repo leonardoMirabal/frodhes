@@ -1613,7 +1613,7 @@ static void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
         if (sw != 2 && fb > 13926) fb = 13926;
         dly_c.quiet = !sw && !dly_lp && !dly_hp && dly_cur != 3;
         if (dly_c.quiet) {
-            dly_wk = wet;
+            dly_wk = wet; dly_fbk = fb;
             if (!dly_lc) { dly_rb = dly_w; dly_rst = 1; dly_clrn = DLY_CLR / 4u; dly_lc = 1; }
             if (dly_rst)
                 for (j = 0; j < n; j++) dly_buf[(dly_w + j) & (DLY_LEN - 1u)] = 0;
@@ -1681,7 +1681,7 @@ static void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
         dly_sg += (tg - dly_sg) >> 2;
         if (tg == 0 && dly_sg < 4) dly_sg = 0;
         sg16 = dly_c.last ? 0 : exp2_q16(dly_sg);
-        dly_wk = dly_c.wet;
+        dly_wk = dly_c.wet; dly_fbk = dly_c.fb;         /* (every path's end of block, as fx_delay_t's one-chunk form) */
         dly_pd.sg16 = sg16; dly_pd.n = n; dly_pd.on = 1;   /* (the rows: the next block's first chunk, dly_flush_c) */
     }
 }

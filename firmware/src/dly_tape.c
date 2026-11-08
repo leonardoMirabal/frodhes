@@ -367,7 +367,9 @@ static inline __attribute__((always_inline)) void dly_loop_c(int32_t *L, int32_t
     uint32_t o = fxc_o, e = fxc_e, w = dly_w, wow = dly_wow, flt = dly_flt, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;
     int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg;
     int32_t ws = DLY_WSTEP(dly_wk, wet, n), wq = (dly_wk << 8) + ws * (int32_t)o;
-    FX_K32 kcol = col, kfb = fb;
+    int32_t f0 = dly_fbk < 0 ? fb : dly_fbk, fs = DLY_WSTEP(f0, fb, n), fq = (f0 << 8) + fs * (int32_t)o, kfb;   /* FDBK's
+                                                          * ramp from the last block's (fx.c dly_loop), from frame o */
+    FX_K32 kcol = col;
     if (tape)
         for (j = o; j < e; j++) {
             int32_t sf;
@@ -404,6 +406,7 @@ static inline __attribute__((always_inline)) void dly_loop_c(int32_t *L, int32_t
         f = tape ? softclip(lp) : lp;
         hp += (f - hp + 64) >> 7;
         f -= hp;
+        fq += fs; kfb = fq >> 8;
         dly_fbv[j] = (int32_t)(((int64_t)f * kfb) >> 15);
         w++;
         wq += ws;
