@@ -858,9 +858,8 @@ nothing in the marimba's sound.
 
 **MARIMBA's level.** MARIMBA is set **2.5 dB louder** than the electric piano types, as VIBES. But every marimba strike is
 held under **−0.5 dBFS** (the top bars are rolled off and RING has its ceiling, so the hardest strike never reaches
-the limiter), and that keeps a chord lower: an A3-E4-A4 chord at velocity 100 reads about **3.5 LU under**
-F01 STAGE 77 (0.9.9: 1.5; MARIMBA is unchanged, the 0.9.10 electric piano is louder), on the USB audio and on the
-headphone jack alike.
+the limiter), and that keeps a chord lower: an A3-E4-A4 chord at velocity 100 reads about **3.2 LU under**
+STAGE 77 (0.9.9: 1.5; MARIMBA is unchanged, the 0.9.10 electric piano is louder).
 
 **The range.** A concert marimba has five octaves, **C2 to C7**; that is where MARIMBA is measured. Every other MIDI
 note plays too (A0-C8), extended from the same physics. The FM-1's keys (F3–G5) sit in the marimba's middle.

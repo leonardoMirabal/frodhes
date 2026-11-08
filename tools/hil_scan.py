@@ -3645,8 +3645,10 @@ MFAMS = (("SOFT", 0), ("MED", 42), ("HARD", 85), ("RUBBER", 127))
 MVELS = (8, 24, 40, 64, 88, 100, 117, 127)
 # MARIMBA's chord re ST77 (the user's level decision "A", 2026-10-20: marimba.json calib.st77_offset_db stays +2.5 dB,
 # VIBES's; every MARIMBA strike is held under -0.5 dBFS by the top roll-off and the RING ceiling, so the A3-E4-A4 v100
-# chord reads -1.5 LU re ST77: FM-1 scans 3 and 4, -1.50 USB / -1.48 jack)
-MLEVEL_DB = -1.5
+# chord reads -1.5 LU re ST77: FM-1 scans 3 and 4, -1.50 USB / -1.48 jack). 0.9.10: MARIMBA unchanged, the Rhodes
+# louder: this suite on the host build (--host) reads -3.22 (0.9.9's host -0.99, its FM-1 -1.50); the FM-1 value to
+# confirm on the next scan
+MLEVEL_DB = -3.2
 M_CAPPED = {(84, "SOFT", "MED")}
 M_FX_RATE, M_FX_JIT, M_FX_SEED, M_FX_VEL = 8.0, 0.0, 1, 80   # marimba_fx's roll: per note, the jitter, the seed (m_fx_roll)          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
 
