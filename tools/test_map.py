@@ -70,7 +70,8 @@ RULES = [
     # proves every render byte-identical, so the full scans wait for a DSP change)
     ("app", ["firmware/src/frodhes.c", "firmware/src/frodhes_smk.h", "firmware/src/libc.c", "firmware/src/fr_cold.h"], ALL, (), (USB2,),
      "the app's glue: the audio ISR's wiring, the main loop, the MIDI CC map"),
-    ("engine:rhodes", ["firmware/src/rhodes.c", "firmware/gen/rhodes_tables.h", "firmware/gen/rhodes_phim.h", "firmware/gen/rh_tone_g.h"], ALL, ("rhodes",), (),
+    ("engine:rhodes", ["firmware/src/rhodes.c", "firmware/gen/rhodes_tables.h", "firmware/gen/rhodes_phim.h", "firmware/gen/rh_tone_g.h",
+                       "firmware/gen/rh_tone_b.h", "firmware/gen/rh_velmap.h", "firmware/gen/rh_velmap_mk.h", "firmware/gen/rh_drive_mk.h"], ALL, ("rhodes",), (),
      "the Rhodes engine (its DSP or tables)"),
     ("engine:bars", ["firmware/src/bars.c", "firmware/src/bars.h", "firmware/gen/bars_tables.h"], ALL,
      ("vibes", "marimba"), (), "the bar engine (VIBES, MARIMBA: its DSP or tables)"),
