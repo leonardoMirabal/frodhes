@@ -138,8 +138,8 @@ def test_reverb_tone_tilts():
     notes = [(100, n, 127, 150) for n in (48, 60, 72, 84, 91, 96)]
     def tilt(v):
         x = seg(wet(f"rtn{v}", [(81, 127), (91, 80), (93, v)], notes, 3000), 0.3, 0.8)
-        return band_db(x, 6000, 10000) - band_db(x, 100, 600)
-    d0, d64, d127 = tilt(0), tilt(64), tilt(127)
+        return band_db(x, 3000, 6000) - band_db(x, 100, 600)   # (2026-11-08: was 6 .. 10 kHz, on the 16-bit floor at
+    d0, d64, d127 = tilt(0), tilt(64), tilt(127)             # TONE 0 .. 64: 0.9.9 read 0 > 32 there, the 0.9.10 Rhodes 0 > 64)
     assert d0 < d64 < d127, (d0, d64, d127)
     assert d127 - d0 >= 6, (d0, d127)                # (measured: ~22 dB; the dark end sits on the 16-bit floor)
 

@@ -23,7 +23,8 @@ END_LSB = 4          # measured: <= 3 LSB (the voice ends under 1 LSB of V1 + tu
 
 
 def tail(key, vel, mute, raw, knobs=(), end_ms=3000):
-    ls = ["50 midi 0xB0 79 127", f"51 midi 0xB0 103 {mute}"] + [f"52 midi 0xB0 {c} {v}" for c, v in knobs]
+    ls = ["49 midi 0xB0 110 55",          # (2026-11-08: LEVEL 55, F01's before the headroom trims, as END_LSB was measured)
+          "50 midi 0xB0 79 127", f"51 midi 0xB0 103 {mute}"] + [f"52 midi 0xB0 {c} {v}" for c, v in knobs]
     ls += [f"100 midi 0x90 {key} {vel}", f"300 midi 0x80 {key} 0"]
     if raw:
         ls.insert(0, "40 midi 0xB0 119 127")
