@@ -285,6 +285,10 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
     if (cc == 8u) { batt_sim = (uint8_t)v; return; }           /* developer: a simulated battery reading (v x 8; 0 = the ADC) */
     if (cc == KV_CC_MODE || cc == KV_CC_QUERY) { kv_dev_cc(cc, v); return; }   /* developer: key velocity (keyvel.h) */
     if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
+    if (cc == 40u) { vresp_set(v * VRESP_N >> 7); ui_mark(E_CARDS); return; }   /* MIDI RESPONSE, the velocity
+                                                        * response in VRESP_N bands (two: 0-63 A, 64-127 B; three: 0-42,
+                                                        * 43-85, 86-127; params.c N_VRESP): the next strike; saved with the
+                                                        * settings */
     if (cc == 114u) { set.usb_fixed = v >= 64u; usb_pre_master = set.usb_fixed; set_dirty = 1; ui_mark(E_CARDS); return; }   /* USB VOL */
 #if FELUCCA_UAC_LOCK == 1 && !defined(DINGHY_HOST)
     if (cc == 116u && v == 22u) {                      /* the USB lock's query (CC 116 = 22): item 22 alone, the clock
@@ -712,6 +716,7 @@ FR_COLD static int host_state(const char *key, char *v, unsigned n)
     else if (!strcmp(key, "preset")) snprintf(v, n, "%u", set.preset);
     else if (!strcmp(key, "bpm10")) snprintf(v, n, "%u", tempo_bpm10());          /* the tempo shown (tempo.c) */
     else if (!strcmp(key, "setbpm")) snprintf(v, n, "%u", set.bpm10);             /* the tempo setting */
+    else if (!strcmp(key, "vresp")) snprintf(v, n, "%u/%u", set.vel_resp, rh_touch_mode);   /* RESPONSE: the setting, the engine's */
     else if (!strcmp(key, "pubs")) snprintf(v, n, "%u", tempo_pubs);              /* the clock's tempo publishes */
     else if (!strcmp(key, "sqtick")) snprintf(v, n, "%u %u %u %u", sq_tick(), clk_sp, clk_k, sq_k0);   /* (seq.c) */
     else if (!strcmp(key, "twinc")) snprintf(v, n, "%u %u", fx_tw_sync_inc, lk_nom[LK_TW]);   /* the tremolo's rate, nominal */
@@ -843,7 +848,7 @@ FR_COLD static void host_dump(void)
     static const char *const K[] = {"header", "preset", "page", "vpage", "hint", "msg", "oct", "bpm", "sus", "byp", "arp", "hold",
                                     "arpn", "arpv", "arpends", "chord", "play", "rec", "notes", "savemode", "undo", "dirty", "ledduty", "bars", "voices", "held", "pitches",
                                     "srcs", "refs", "quiet", "drops", "fxdrv", "label0", "card0", "label1", "card1", "label2", "card2",
-                                    "label3", "card3", "bpm10", "setbpm", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
+                                    "label3", "card3", "bpm10", "setbpm", "vresp", "pubs", "bpmmarks", "sqtick", "sqreads", "twinc", "lfoinc", "clklock", "beatsmp", "dlysync", "twph", "cpph", "phph", "lfoph", "motph", "wavn"};
     char key[24], v[64];
     uint32_t i, k;
     for (i = 0; i < sizeof K / sizeof K[0]; i++) { host_state(K[i], v, sizeof v); printf("@ %u %s %s\n", fm1_ms, K[i], v); }

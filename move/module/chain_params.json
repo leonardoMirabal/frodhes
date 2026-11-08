@@ -862,6 +862,16 @@
     "default": 0
   },
   {
+    "key": "s_vresp",
+    "name": "RESP",
+    "type": "enum",
+    "options": [
+      "DEEP",
+      "EVEN"
+    ],
+    "default": 0
+  },
+  {
     "key": "m_at_cc",
     "name": "AT CC",
     "type": "int",
