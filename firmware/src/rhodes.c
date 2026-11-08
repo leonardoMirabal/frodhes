@@ -232,8 +232,13 @@ static uint32_t rh_mk_q12(const uint8_t *row, uint32_t vel)      /* Q12, < 2^16 
  * before it at mf and above, never under it (tools/drive_makeup.py). A gain on the voice's output only: the timbre
  * (the swing through the pickup) is the drive's. Note-on / re-strike only */
 #define rh_drv_mk(key, vel) rh_mk_q12(RH_DRV_MK[rh_type & 3u][key], vel)
+/* the mechanical noises (knock, felt, pedal thud: absolute levels) follow the notes' level: the make-up brings the
+ * notes back to the reference's level, the noises were set against, so they stay at their own (without it: RH_NZ_G,
+ * the drive's gain target re the noises' reference, -6 dB; with it the pedal's thud played 6 dB under 0.9.9's) */
+#define RH_NZ_S(a) ((uint32_t)(a))
 #else
 #define rh_drv_mk(key, vel) 4096u
+#define RH_NZ_S(a) (((uint32_t)(a) * RH_NZ_G) >> 15)
 #endif
 #endif
 /* voicing, written by the main loop (params.c), applied at each note-on (IMPLEMENTATION-v3 §4.4, §10.1) */
@@ -1303,7 +1308,7 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
     if (pamp > 32767) pamp = 32767;
     a = (int32_t)(((int64_t)pamp * rh_knock) >> 10);   /* <= 32767 x 653 >> 10 = 20896 */
 #ifdef RH_DRIVE
-    if (!rh_touch_mode) a = (int32_t)(((uint32_t)a * RH_NZ_G) >> 15);   /* (the notes' level; MAP plays at the noises' own) */
+    if (!rh_touch_mode) a = (int32_t)RH_NZ_S(a);   /* (the notes' level; MAP plays at the noises' own) */
     a = rh_dyn_gain(a, rh_dyn(n, vel));                 /* the dynamics stage, as the note's own */
 #endif
     l = RH_VLAY_I[vel];
@@ -1415,7 +1420,7 @@ static void rh_events(void)
 #endif
 #ifdef RH_DRIVE
                         {
-                            g = (int32_t)(((uint32_t)(g > 32768 ? 32768 : g) * RH_NZ_G) >> 15);   /* (the notes' level) */
+                            g = (int32_t)RH_NZ_S(g > 32768 ? 32768 : g);   /* (the notes' level) */
                             if (g > 32768) g = 32768;
                             g = rh_dyn_gain(g, rh_dyn(v->note, v->vel));   /* x the dynamics stage (MAP: in vn) */
                         }
@@ -1448,7 +1453,7 @@ static void rh_events(void)
                     g = lm < 0 ? 32768 : lm >> 2;
                     rh_pn_n = RH_PN_LEN; rh_pn_env = g >= 32768 ? rh_pnz : (int32_t)(((uint32_t)rh_pnz * (uint32_t)g) >> 15);
 #ifdef RH_DRIVE
-                    rh_pn_env = (int32_t)(((uint32_t)rh_pn_env * RH_NZ_G) >> 15);   /* (the notes' level) */
+                    rh_pn_env = (int32_t)RH_NZ_S(rh_pn_env);   /* (the notes' level) */
 #endif
 #ifdef RH_VMAP
                     if (lmb >= 0 && lm < 0) rh_pn_env = eb;          /* only MAP's notes sound */
