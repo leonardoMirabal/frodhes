@@ -256,6 +256,8 @@ def run(a):  # noqa: C901 (the device run)
                       f"{r.get('rec0')}  app {r.get('app_us')} whole {r.get('whole_us')} c1busy {r.get('busy_us')} "
                       f"wait {r.get('wait_us')} shed {r.get('shed')}", flush=True)
                 next_read = t + p["read_every_s"]
+                if len(reads) % 120 == 0:            # every 10 min: the report so far
+                    write_report(a, p, reads, {}, False, interim=True)
                 if r.get("noreply") and a.stop_on_fail:
                     break
             time.sleep(0.01)
@@ -268,6 +270,14 @@ def run(a):  # noqa: C901 (the device run)
         cc(120, 0)
     rec = decode(query(31))
     complete = time.monotonic() - t0 >= dur - 1
+    verdict = write_report(a, p, reads, rec, complete)
+    code = 0 if verdict == "PASS" and complete else (1 if verdict == "FAIL" else 2)
+    close_stream(stream, code)               # (after the report: CoreAudio's stop can hang on close)
+    return code
+
+
+def write_report(a, p, reads, rec, complete, interim=False):
+    """OUT/<row>-report.md + .json; interim (every 10 min of a run): the reads so far, no fault-record query"""
     verdict, why = judge(reads)
     if rec.get("frec"):
         verdict, why = "FAIL", why + [f"core 1's fault record: {rec['frec']}"]
@@ -279,17 +289,17 @@ def run(a):  # noqa: C901 (the device run)
                                                                            "stack")}
     last = reads[-1] if reads else {}
     with open(base + ".md", "w") as f:
-        f.write(f"# Two-core soak, row {a.row}: {verdict if complete else 'INCOMPLETE'}\n\n")
+        state = f"RUNNING ({verdict} so far)" if interim else (verdict if complete else "INCOMPLETE")
+        f.write(f"# Two-core soak, row {a.row}: {state}\n\n")
         f.write(f"- {p['minutes']} min, engines {', '.join(p['engines'])}, {len(reads)} reads\n")
         f.write(f"- worst: {', '.join(f'{k} {v}' for k, v in worst.items())}\n")
         f.write(f"- last: jobs {last.get('jobs')}, bad {last.get('bad')}, refused {last.get('refused')}, late "
                 f"{last.get('late')}, holds {last.get('holds')}, recoveries {last.get('rec1')} / {last.get('rec0')}\n")
         for w in why:
             f.write(f"- FAIL: {w}\n")
-    print(open(base + ".md").read(), flush=True)
-    code = 0 if verdict == "PASS" and complete else (1 if verdict == "FAIL" else 2)
-    close_stream(stream, code)               # (after the report: CoreAudio's stop can hang on close)
-    return code
+    if not interim:
+        print(open(base + ".md").read(), flush=True)
+    return verdict
 
 
 def close_stream(stream, code, secs=15.0):
@@ -316,11 +326,14 @@ def main():
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--stop-on-fail", action="store_true")
     ap.add_argument("--port", metavar="NAME", help="only the unit whose MIDI port / audio device name contains NAME "
-                    "(a second FM-1 with its own USB name, tools/build.py --usb-name)")
+                    "(a second FM-1 with its own USB name, tools/build.py --usb-name); refused when two USB "
+                    "devices share the name")
+    ap.add_argument("--location", metavar="LOC", help="with --port: the unit's USB location (macOS ioreg locationID, "
+                    "e.g. 0x00100000), refused when the unit is not there")
     a = ap.parse_args()
     if a.port:
         import fm1_ports
-        fm1_ports.force(a.port)
+        fm1_ports.force(a.port, None if a.location is None else fm1_ports.parse_loc(a.location))
     if a.selftest:
         selftest()
         return 0
