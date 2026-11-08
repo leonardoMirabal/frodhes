@@ -27,7 +27,9 @@ chord: "imd" (the energy off every harmonic band of the notes re their fundament
 
 The verdict (exit 1 on any failure):
   ceilings  pristine, from AGENTS.md section 1, NOT overridable by the expected-changes file:
-            H2..H6 <= max(last + 3, -60) dB re H1, and H3 <= -25 dB at v127 where the last release was below that;
+            H2..H6 <= max(last + 3, -60) dB re H1, and H3 <= -25 dB at v127 where the last release was below that
+            (effects-on cells: the median of 4 strike times, and a harmonic under -95 dBFS is under the reverb's
+            int16 grain, never a break; "grain", the off-harmonic 12..20 kHz power in dBFS, <= last + 3 dB instead);
             inh / imd <= last + 3 dB; clk <= last + 6 dB; noise <= max(last + 3, -90) dBFS;
             no clip outside RAW; keyup <= +0.5 dB (never louder after the key-up; the pedal cells and the presets, whose
             delays repeat the strike, are exempt).
@@ -115,9 +117,9 @@ def cases(grid):
     return out
 
 
-def events(grid, keys):
-    """[(label, t_ms, notes, vel, pedal)] and the script's end (ms)"""
-    g, ev, t = GRID[grid], [], 1200
+def events(grid, keys, shift=0):
+    """[(label, t_ms, notes, vel, pedal)] and the script's end (ms); shift: every note later by that (ms)"""
+    g, ev, t = GRID[grid], [], 1200 + shift
     for k in keys:
         for v in g["vels"]:
             ev.append((f"k{k}v{v}", t, (k,), v, False))
@@ -130,8 +132,8 @@ def events(grid, keys):
     return ev, t + 3000                 # 3 s of silence: the noise floor
 
 
-def script(grid, setup, keys):
-    ev, end = events(grid, keys)
+def script(grid, setup, keys, shift=0):
+    ev, end = events(grid, keys, shift)
     ls = []
     for t, st, a, b in setup:
         ls.append(f"{t} midi 0x{st:02X} {a}" + ("" if b is None else f" {b}"))
@@ -223,12 +225,36 @@ def kweight(x):
     return signal.lfilter(b2, a2, signal.lfilter(b1, a1, x))
 
 
+def fx_cell(cid):
+    """a case whose effects are on (the default effects, a preset): its reverb's int16 rounding grain sits at about
+    -92..-101 dBFS and moves +-5 dB with the strike time alone (0.9.9 too), so its harmonics are measured as the
+    median of SHIFTS and judged only above FX_FLOOR (AGENTS.md 5b: a measurement rule, not a loosening)"""
+    return cid.split("/")[2] in ("FX", "PRESET")
+
+
+SHIFTS = (0, 29, 61, 97)            # ms: the strike-time offsets of an effects-on case (the median of the four)
+FX_FLOOR = -95.0                    # dBFS: a harmonic of an effects-on cell below this is under the reverb's grain
+
+
 def measure(binary, case, grid, tmp):
-    """{cell label: {metric: value}} of one case"""
+    """{cell label: {metric: value}} of one case; an effects-on case: the median over SHIFTS (clip: the maximum)"""
+    if not fx_cell(case[0]):
+        return measure_once(binary, case, grid, tmp, 0)
+    runs = [measure_once(binary, case, grid, tmp, sh) for sh in SHIFTS]
+    out = {}
+    for lab in runs[0]:
+        out[lab] = {}
+        for m in runs[0][lab]:
+            vs = [r[lab][m] for r in runs if m in r.get(lab, {})]
+            out[lab][m] = max(vs) if m == "clip" else float(np.median(vs))
+    return out
+
+
+def measure_once(binary, case, grid, tmp, shift):
     cid, _, setup, keys, kind = case
-    x = render(binary, os.path.join(tmp, cid.replace("/", "_")), script(grid, setup, keys))
+    x = render(binary, os.path.join(tmp, cid.replace("/", "_") + f"-{shift}"), script(grid, setup, keys, shift))
     mono = x.mean(1)
-    ev, end = events(grid, keys)
+    ev, end = events(grid, keys, shift)
     full = grid == "full"
     out = {}
     for label, t, ns, v, ped in ev:
@@ -248,10 +274,18 @@ def measure(binary, case, grid, tmp):
                 pk.append(p[m].max() if m.any() else 1e-30)
             for k in range(2, 7):
                 c[f"H{k}"] = db(pk[k - 1] / pk[0])
+            c["h1"] = 20 * np.log10(2 * np.sqrt(pk[0]) / len(seg) / 0.5 / 32768.0 + 1e-15)   # H1, dBFS (Hann: sum w = N/2)
             c["inh"] = offharm(p, fr, [f0(ns[0])])
         else:
             c["imd"] = offharm(p, fr, [f0(n) for n in ns])
         c["cent"] = float((p * fr).sum() / (p.sum() + 1e-30))
+        if fx_cell(cid):                # the effects' grain: the power off every harmonic band, 12..20 kHz, in dBFS
+            on = np.zeros(len(fr), bool)
+            for fu in [f0(n) for n in ns]:
+                for k in range(1, int(20000 / fu) + 1):
+                    on |= np.abs(fr - k * fu) < max(IBW, k * fu * IREL)
+            hf = (fr >= 12000) & (fr < 20000) & ~on
+            c["grain"] = db(p[hf].sum() * 2 / (len(seg) * 0.375 * len(seg)) / 32768.0 ** 2)   # (Hann: sum w^2 = 3N/8)
         c["decay"] = rms_db(mono[i + int(0.05 * FS):i + int(0.15 * FS)]) - rms_db(mono[off - int(0.15 * FS):off])
         body = mono[i + int(0.03 * FS):off]
         c["clk"] = clicks(body, body)
@@ -370,9 +404,17 @@ def moved(m, v, b):
     return d if abs(d) > tol_of(m) else None
 
 
-def ceiling(cid, lab, m, v, b):
+INFO = ("h1",)                      # measured for the other rules, judged by none
+NODIFF = ("grain",)                 # a ceiling only (a lower grain needs no entry)
+
+
+def ceiling(cid, lab, m, v, b, cell=None):
     """(limit, why) of a pristine ceiling for this value, or None"""
     cfg = cid.split("/")[2]
+    if m[0] == "H" and m[1:].isdigit() and fx_cell(cid) and cell and "h1" in cell and v + cell["h1"] < FX_FLOOR:
+        return None                     # under the reverb's int16 grain (FX_FLOOR); the grain has its own ceiling
+    if m == "grain":
+        return b + MARGIN, "the effects' grain (12..20 kHz off the harmonics, dBFS) over the last release + 3 dB"
     if m[0] == "H" and m[1:].isdigit():
         lim = max(b + MARGIN, FLOOR_H)
         if m == "H3" and lab.endswith("v127") and b <= CEIL_H3:
@@ -402,15 +444,17 @@ def judge(cand, base, expected):
         for lab, ms in cand[cid].items():
             bl = bc.get(lab, {})
             for m, v in ms.items():
+                if m in INFO:
+                    continue
                 b = bl.get(m)
                 if b is None:
                     if m != "lim" and "level" in bl and bl["level"] >= SILENT:
                         fails.append((cid, lab, m, v, None, None, "no baseline value"))
                     continue
-                c = ceiling(cid, lab, m, v, b)
+                c = ceiling(cid, lab, m, v, b, ms)
                 if c and v > c[0] + 1e-9:
                     fails.append((cid, lab, m, v, b, c[0], "CEILING: " + c[1]))
-                d = moved(m, v, b)
+                d = None if m in NODIFF else moved(m, v, b)
                 if d is None:
                     continue
                 hit = None
