@@ -28,12 +28,41 @@ include(cmake/slots.cmake)
 set(CLAP_WRAPPER_BUILD_AUV2 ON CACHE BOOL "" FORCE)
 add_subdirectory("${CLAP_WRAPPER_ROOT}" clap-wrapper EXCLUDE_FROM_ALL)
 
+# the plugin window (B-M2b): plugin/gui_*.c over the renderer plugin/ui/, the fonts embedded in the binary
+set(FRP_FONT_TEXT "${FRP_ROOT}/assets/fonts/InterTight[wght].ttf")
+set(FRP_FONT_DISPLAY "${FRP_ROOT}/assets/fonts/Michroma-Regular.ttf")
+foreach(_f text display)
+    string(TOUPPER "${_f}" _F)
+    add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/gen/font_${_f}.c"
+        COMMAND ${CMAKE_COMMAND} -DIN=${FRP_FONT_${_F}} -DOUT=${CMAKE_BINARY_DIR}/gen/font_${_f}.c -DNAME=frp_font_${_f}
+                -P "${FRP_ROOT}/plugin/cmake/embed.cmake"
+        DEPENDS "${FRP_FONT_${_F}}" "${FRP_ROOT}/plugin/cmake/embed.cmake" VERBATIM)
+endforeach()
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/gen")
+set(FRP_GUI_SRC "${FRP_ROOT}/plugin/gui_core.c" "${FRP_ROOT}/plugin/gui_clap.c"
+    "${FRP_ROOT}/plugin/ui/frui.c" "${FRP_ROOT}/plugin/ui/frui_font.c" "${FRP_ROOT}/plugin/ui/frui_gfx.c"
+    "${FRP_ROOT}/plugin/ui/frui_text.c" "${CMAKE_BINARY_DIR}/gen/font_text.c" "${CMAKE_BINARY_DIR}/gen/font_display.c")
+if(APPLE)
+    list(APPEND FRP_GUI_SRC "${FRP_ROOT}/plugin/gui_mac.m")
+elseif(WIN32)
+    list(APPEND FRP_GUI_SRC "${FRP_ROOT}/plugin/gui_win.c")
+else()
+    list(APPEND FRP_GUI_SRC "${FRP_ROOT}/plugin/gui_none.c")    # (an X11 view: a later milestone)
+endif()
+
 # the plugin: a static library with the CLAP entry's three functions (clap-wrapper's "clap first" layout)
-add_library(frodhes_clap_impl STATIC "${FRP_ROOT}/plugin/src/frodhes_clap.c")
+add_library(frodhes_clap_impl STATIC "${FRP_ROOT}/plugin/src/frodhes_clap.c" ${FRP_GUI_SRC})
 target_link_libraries(frodhes_clap_impl PUBLIC frodhes_engine clap)
 target_compile_definitions(frodhes_clap_impl PRIVATE "FRP_VERSION=\"${FRP_VERSION}\"")
-target_compile_options(frodhes_clap_impl PRIVATE -O2 -std=gnu11 -ffp-contract=off -Wall -Wextra)
+target_compile_options(frodhes_clap_impl PRIVATE -O2 -ffp-contract=off -Wall -Wextra
+                       $<$<COMPILE_LANGUAGE:C>:-std=gnu11>)
 set_target_properties(frodhes_clap_impl PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(APPLE)
+    target_link_libraries(frodhes_clap_impl PUBLIC "-framework Cocoa" "-framework QuartzCore")
+elseif(WIN32)
+    target_link_libraries(frodhes_clap_impl PUBLIC user32 gdi32)
+    target_compile_definitions(frodhes_clap_impl PRIVATE _USE_MATH_DEFINES _CRT_SECURE_NO_WARNINGS)
+endif()
 
 set(FRP_BUNDLES "${CMAKE_BINARY_DIR}/bundles")
 make_clapfirst_plugins(
@@ -60,5 +89,13 @@ add_executable(frp_clap_render "${FRP_ROOT}/plugin/tests/clap_render.c")
 target_include_directories(frp_clap_render PRIVATE "${CLAP_SDK_ROOT}/include")
 target_compile_options(frp_clap_render PRIVATE -O1 -Wall -Wextra)
 target_link_libraries(frp_clap_render PRIVATE ${CMAKE_DL_LIBS})
-add_custom_target(frodhes_tests ALL DEPENDS frp_test_coro frp_clap_render)
+set(FRP_TEST_TARGETS frp_test_coro frp_clap_render)
+if(APPLE)   # the window's test host (tests/py/test_plugin_gui.py)
+    add_executable(frp_gui_shot "${FRP_ROOT}/plugin/tests/gui_shot.m")
+    target_include_directories(frp_gui_shot PRIVATE "${CLAP_SDK_ROOT}/include")
+    target_compile_options(frp_gui_shot PRIVATE -O1 -Wall -Wextra)
+    target_link_libraries(frp_gui_shot PRIVATE "-framework Cocoa" "-framework QuartzCore" z)
+    list(APPEND FRP_TEST_TARGETS frp_gui_shot)
+endif()
+add_custom_target(frodhes_tests ALL DEPENDS ${FRP_TEST_TARGETS})
 add_custom_target(frodhes_plugins ALL DEPENDS frodhes_all)

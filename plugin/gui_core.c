@@ -327,6 +327,15 @@ const uint32_t *frp_gui_pixels(const frp_gui_t *g, int *w, int *h)
     return g->px;
 }
 const frui_model *frp_gui_model(const frp_gui_t *g) { return &g->m; }
+int frp_gui_find(const frp_gui_t *g, int kind, int id, float r[4])
+{
+    int i, n = frui_widget_count(g->u);
+    for (i = 0; i < n; i++) {
+        const frui_widget *w = frui_widget_get(g->u, i);
+        if (w->kind == kind && w->id == id) { r[0] = w->x; r[1] = w->y; r[2] = w->w; r[3] = w->h; return 1; }
+    }
+    return 0;
+}
 float frp_gui_px_to_logical(const frp_gui_t *g) { return g->pw > 0 ? (float)FRUI_W / (float)g->pw : 1.f; }
 void frp_gui_fit_size(uint32_t *w, uint32_t *h)
 {

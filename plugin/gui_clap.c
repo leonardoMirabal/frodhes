@@ -224,5 +224,10 @@ static bool s_headless(const clap_plugin_t *plugin, int pw, int ph)
     c->core = frp_gui_new(&c->uh);
     return c->core && frp_gui_resize(c->core, pw, ph) == 0;
 }
-static const frp_gui_shot_t EXT_SHOT = { s_tick, s_grab, s_mouse, s_wheel, s_key, s_headless };
+static bool s_find(const clap_plugin_t *plugin, int kind, int id, float r[4])
+{
+    frp_gui_clap_t *c = GUI(plugin);
+    return c && c->core && frp_gui_find(c->core, kind, id, r);
+}
+static const frp_gui_shot_t EXT_SHOT = { s_tick, s_grab, s_mouse, s_wheel, s_key, s_headless, s_find };
 const void *frp_gui_clap_shot_ext(void) { return &EXT_SHOT; }

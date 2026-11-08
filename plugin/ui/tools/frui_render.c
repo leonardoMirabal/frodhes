@@ -323,6 +323,24 @@ static int directions(const int *maj7, const int *min9, const int *vib)
     return bad;
 }
 
+/* FRUI_MODEL=<file> FRUI_SIZE=<w>x<h>: draws the frui_model saved in the file (the plugin window's own, plugin/tests/
+ * gui_shot.m) at that pixel size into <out dir>/model.png: the reference the window's picture is compared with */
+static int render_model(const char *path, const char *size)
+{
+    frui_model m;
+    FILE *f = fopen(path, "rb");
+    int w = 960, h = 600;
+    if (!f || fread(&m, 1, sizeof m, f) != sizeof m || fgetc(f) != EOF) {
+        fprintf(stderr, "%s: not a frui_model of %zu bytes\n", path, sizeof m);
+        if (f) fclose(f);
+        return 1;
+    }
+    fclose(f);
+    if (size && sscanf(size, "%dx%d", &w, &h) != 2) return 2;
+    render(&m, "model", w, h);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     FILE *f;
@@ -353,6 +371,7 @@ int main(int argc, char **argv)
         dfont = frui_font_load(d2, (size_t)n2);
         if (!dfont) { fprintf(stderr, "not a TrueType font: %s\n", argv[3]); return 1; }
     }
+    if (getenv("FRUI_MODEL")) return render_model(getenv("FRUI_MODEL"), getenv("FRUI_SIZE"));
     if (getenv("FRUI_DIRECTIONS")) return directions(maj7, min9, vib);
 
     /* the main view: F09 70S PHASER, DRIVE and PHASER open, a chord held; the default size at 1x and 2x, the smallest

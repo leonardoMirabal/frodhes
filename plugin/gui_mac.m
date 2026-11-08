@@ -82,6 +82,9 @@ static void layout(frp_view_t *v)
     v->img.contentsScale = s;
     v->img.frame = CGRectMake(0, b.size.height - ch / s, cw / s, ch / s);   /* (the layer tree's y runs up) */
     if ([v->nsv.layer isGeometryFlipped]) v->img.frame = CGRectMake(0, 0, cw / s, ch / s);
+    /* the plate's rounded corners (look A3: 22 logical px) show the host's window behind them */
+    v->img.cornerRadius = 22.0 * (cw / s) / FRP_GUI_W;
+    v->img.masksToBounds = YES;
     [CATransaction commit];
     frame(v, 1);
 }
@@ -234,7 +237,7 @@ frp_view_t *frp_view_new(frp_gui_t *core, uint32_t w, uint32_t h)
     v->nsv = [[c alloc] initWithFrame:NSMakeRect(0, 0, w, h)];
     *(frp_view_t **)((char *)v->nsv + s_ivar) = v;
     [v->nsv setWantsLayer:YES];
-    v->nsv.layer.backgroundColor = CGColorGetConstantColor(kCGColorBlack);
+    v->nsv.layer.backgroundColor = CGColorGetConstantColor(kCGColorClear);
     v->img = [[CALayer alloc] init];
     v->img.contentsGravity = kCAGravityResize;
     v->img.magnificationFilter = kCAFilterNearest;  /* (only ever shown 1:1) */

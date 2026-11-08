@@ -21,5 +21,7 @@ typedef struct {
     bool (*key)(const clap_plugin_t *plugin, int key, int mods);
     /* a window core without a native view (no gui create needed), its canvas pw x ph pixels */
     bool (*headless)(const clap_plugin_t *plugin, int pw, int ph);
+    /* a widget of the last draw (frui.h: kind FRW_*, id), its rectangle in logical points */
+    bool (*find)(const clap_plugin_t *plugin, int kind, int id, float r[4]);
 } frp_gui_shot_t;
 #endif

@@ -35,6 +35,7 @@ int frp_gui_tick(frp_gui_t *g, double now);
 int frp_gui_paint(frp_gui_t *g, int dirty[4]);
 const uint32_t *frp_gui_pixels(const frp_gui_t *g, int *w, int *h);   /* the canvas, 0xFFRRGGBB, w x h */
 const frui_model *frp_gui_model(const frp_gui_t *g);
+int frp_gui_find(const frp_gui_t *g, int kind, int id, float r[4]);   /* a widget of the last draw: 1 found */
 /* input, logical coordinates; clicks: 2 for a double click */
 void frp_gui_mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks);
 void frp_gui_wheel(frp_gui_t *g, float x, float y, float notches, int mods);   /* + = up / away */

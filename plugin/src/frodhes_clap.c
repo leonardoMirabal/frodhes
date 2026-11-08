@@ -10,8 +10,9 @@
  *                 goes back to the host as a parameter output event
  *   state         the Move's flat JSON (a sound moves between a Move track and a desktop session)
  *   latency       the bridge's pre-roll (plugin/src/bridge.c), constant
- * No GUI extension: until the plugin's own UI is finished and approved, every host shows its own generic view of the
- * parameters. Sample rates: 44.1 kHz (the app's own), 48 kHz (the FM-1's USB resampler), any other from 1 to 768 kHz
+ *   gui           the plugin's window (plugin/gui_*.c drawing plugin/ui/frui.c; macOS Cocoa, Windows HWND): its changes
+ *                 reach the audio thread through a queue and go to the host as parameter events with gestures
+ * Sample rates: 44.1 kHz (the app's own), 48 kHz (the FM-1's USB resampler), any other from 1 to 768 kHz
  * (a windowed-sinc resampler: plugin/src/bridge.c); outside that the instance refuses to activate and logs why. More
  * than FRP_SLOTS (16) instances in one process: the extra ones play silence and log why. */
 #include <math.h>
@@ -22,6 +23,8 @@
 #include <strings.h>
 #include <clap/clap.h>
 #include "bridge.h"
+#include "../gui_clap.h"
+#include "../gui_shot.h"
 
 #ifndef FRP_VERSION
 #define FRP_VERSION "0.0.0-dev"
@@ -43,6 +46,8 @@ static const clap_plugin_descriptor_t DESC = {
     .features = FEATURES,
 };
 
+#define FRP_UIQ_N 1024u                  /* the window's queue (a power of two) */
+enum { UIQ_BEGIN, UIQ_END, UIQ_VALUE, UIQ_MIDI };
 typedef struct {
     clap_plugin_t plugin;
     const clap_host_t *host;
@@ -60,6 +65,15 @@ typedef struct {
     /* a state loaded while active: the host is told to re-read the values once the app has taken it */
     _Atomic uint32_t rescan_rev;
     _Atomic int rescan_tries;
+    /* the window (plugin/gui_clap.c), its queue to the audio thread (one writer: the main thread; one reader: process
+     * or flush) and what the audio thread shows it (the output's peak, the held notes, the sustain) */
+    frp_gui_clap_t *gui;
+    struct { uint8_t kind, st, d1, d2; uint32_t id; double v; } uiq[FRP_UIQ_N];
+    _Atomic uint32_t uiq_w, uiq_r;
+    _Atomic int processing;
+    _Atomic uint32_t mon_peak[2];        /* float bits */
+    _Atomic uint8_t mon_notes[128];
+    _Atomic int mon_sustain;
 } frp_plugin_t;
 
 static void say(frp_plugin_t *p, clap_log_severity sev, const char *msg)
@@ -123,6 +137,126 @@ static bool p_from_text(const clap_plugin_t *plugin, clap_id id, const char *tex
     *out = x < 0.0 ? 0.0 : x > FRP_PARAMS[i].hi ? FRP_PARAMS[i].hi : floor(x + 0.5);
     return true;
 }
+/* ---- the window's queue (main thread -> audio thread) and the monitor (audio thread -> the window) */
+static void mon_midi(frp_plugin_t *p, uint8_t st, uint8_t d1, uint8_t d2)
+{
+    uint8_t t = st & 0xF0u;
+    if (d1 > 127) return;
+    if (t == 0x90u && d2) atomic_store_explicit(&p->mon_notes[d1], d2, memory_order_relaxed);
+    else if (t == 0x80u || t == 0x90u) atomic_store_explicit(&p->mon_notes[d1], 0, memory_order_relaxed);
+    else if (t == 0xB0u && d1 == 64) atomic_store_explicit(&p->mon_sustain, d2 >= 64, memory_order_relaxed);
+    else if (t == 0xB0u && (d1 == 120 || d1 == 123)) for (int k = 0; k < 128; k++) atomic_store(&p->mon_notes[k], 0);
+}
+static void mon_peak(frp_plugin_t *p, const float *l, const float *r, uint32_t n)
+{
+    float pk[2] = {0.f, 0.f};
+    for (uint32_t i = 0; i < n; i++) {
+        float a = fabsf(l[i]), b = r ? fabsf(r[i]) : a;
+        if (a > pk[0]) pk[0] = a;
+        if (b > pk[1]) pk[1] = b;
+    }
+    for (int c = 0; c < 2; c++) {                /* max into the window's accumulator (the window takes and clears it) */
+        uint32_t old = atomic_load_explicit(&p->mon_peak[c], memory_order_relaxed), nw;
+        float f;
+        do {
+            memcpy(&f, &old, 4);
+            if (!(pk[c] > f)) break;
+            memcpy(&nw, &pk[c], 4);
+        } while (!atomic_compare_exchange_weak(&p->mon_peak[c], &old, nw));
+    }
+}
+static void out_param(const clap_output_events_t *out, uint16_t type, clap_id id, double v)
+{
+    if (!out) return;
+    if (type == CLAP_EVENT_PARAM_VALUE) {
+        clap_event_param_value_t o;
+        memset(&o, 0, sizeof o);
+        o.header.size = sizeof o; o.header.space_id = CLAP_CORE_EVENT_SPACE_ID; o.header.type = type;
+        o.param_id = id; o.note_id = -1; o.port_index = -1; o.channel = -1; o.key = -1; o.value = v;
+        out->try_push(out, &o.header);
+    } else {
+        clap_event_param_gesture_t o;
+        memset(&o, 0, sizeof o);
+        o.header.size = sizeof o; o.header.space_id = CLAP_CORE_EVENT_SPACE_ID; o.header.type = type;
+        o.param_id = id;
+        out->try_push(out, &o.header);
+    }
+}
+/* the window's changes into the app (at the block's start) and to the host; timed: active (process, or flush on the
+ * audio thread), else the main thread while inactive (notes are dropped then: nothing plays) */
+static void uiq_drain(frp_plugin_t *p, const clap_output_events_t *out, int timed)
+{
+    uint32_t r = atomic_load_explicit(&p->uiq_r, memory_order_relaxed);
+    uint32_t w = atomic_load_explicit(&p->uiq_w, memory_order_acquire);
+    for (; r != w; r++) {
+        const __typeof__(p->uiq[0]) *e = &p->uiq[r & (FRP_UIQ_N - 1u)];
+        int i;
+        switch (e->kind) {
+        case UIQ_BEGIN: out_param(out, CLAP_EVENT_PARAM_GESTURE_BEGIN, e->id, 0.0); break;
+        case UIQ_END: out_param(out, CLAP_EVENT_PARAM_GESTURE_END, e->id, 0.0); break;
+        case UIQ_VALUE:
+            if ((i = pidx(e->id)) < 0) break;
+            p->host_view[i] = e->v;
+            if (timed) frp_inst_param(p->in, 0, e->id, e->v);
+            else frp_inst_param_now(p->in, e->id, e->v);
+            out_param(out, CLAP_EVENT_PARAM_VALUE, e->id, e->v);
+            break;
+        case UIQ_MIDI:
+            if (timed) { frp_inst_midi(p->in, 0, e->st, e->d1, e->d2); mon_midi(p, e->st, e->d1, e->d2); }
+            break;
+        }
+    }
+    atomic_store_explicit(&p->uiq_r, r, memory_order_release);
+}
+static void uiq_push(frp_plugin_t *p, uint8_t kind, uint32_t id, double v, uint8_t st, uint8_t d1, uint8_t d2)
+{
+    uint32_t w = atomic_load_explicit(&p->uiq_w, memory_order_relaxed);
+    if (w - atomic_load_explicit(&p->uiq_r, memory_order_acquire) >= FRP_UIQ_N) return;   /* (full: the host stalled) */
+    p->uiq[w & (FRP_UIQ_N - 1u)].kind = kind;
+    p->uiq[w & (FRP_UIQ_N - 1u)].id = id;
+    p->uiq[w & (FRP_UIQ_N - 1u)].v = v;
+    p->uiq[w & (FRP_UIQ_N - 1u)].st = st;
+    p->uiq[w & (FRP_UIQ_N - 1u)].d1 = d1;
+    p->uiq[w & (FRP_UIQ_N - 1u)].d2 = d2;
+    atomic_store_explicit(&p->uiq_w, w + 1u, memory_order_release);
+    if (!atomic_load(&p->processing) && p->hparams && p->hparams->request_flush) p->hparams->request_flush(p->host);
+}
+/* frp_ui_iface.h's core calls (main thread) */
+static int ui_param_get(void *ctx, uint32_t id, double *v) { return frp_inst_get(((frp_plugin_t *)ctx)->in, id, v); }
+static double ui_param_default(void *ctx, uint32_t id)
+{
+    int i = pidx(id);
+    return i < 0 ? 0.0 : ((frp_plugin_t *)ctx)->def[i];
+}
+static void ui_gesture(void *ctx, uint32_t id, int begin) { uiq_push(ctx, begin ? UIQ_BEGIN : UIQ_END, id, 0.0, 0, 0, 0); }
+static void ui_param_set(void *ctx, uint32_t id, double v) { uiq_push(ctx, UIQ_VALUE, id, v, 0, 0, 0); }
+static void ui_midi(void *ctx, uint8_t st, uint8_t d1, uint8_t d2) { uiq_push(ctx, UIQ_MIDI, 0, 0.0, st, d1, d2); }
+static void ui_monitor(void *ctx, frp_ui_monitor_t *o)
+{
+    frp_plugin_t *p = ctx;
+    for (int c = 0; c < 2; c++) {
+        uint32_t b = atomic_exchange(&p->mon_peak[c], 0u);
+        memcpy(&o->peak[c], &b, 4);
+    }
+    for (int k = 0; k < 128; k++) o->notes[k] = atomic_load_explicit(&p->mon_notes[k], memory_order_relaxed);
+    o->sustain = atomic_load_explicit(&p->mon_sustain, memory_order_relaxed);
+    o->gr_db = 0.f;                      /* (the compressor's reduction is not published by the app yet) */
+}
+/* the window's table: the core calls here; the backends (presets, settings, MIDI learn, tempo, the value texts) are
+ * B-M1's and stay NULL until they exist (frp_ui_iface.h) */
+static void frp_ui_host_bind(frp_plugin_t *p, frp_ui_host_t *h)
+{
+    memset(h, 0, sizeof *h);
+    h->ctx = p;
+    h->param_get = ui_param_get;
+    h->param_default = ui_param_default;
+    h->param_gesture = ui_gesture;
+    h->param_set = ui_param_set;
+    h->midi = ui_midi;
+    h->monitor = ui_monitor;
+}
+frp_gui_clap_t *frp_plugin_gui(const clap_plugin_t *plugin) { return ((frp_plugin_t *)plugin->plugin_data)->gui; }
+
 static void p_events_in(frp_plugin_t *p, const clap_input_events_t *ev, int timed)
 {
     uint32_t n = ev ? ev->size(ev) : 0, k;
@@ -141,7 +275,7 @@ static void p_events_in(frp_plugin_t *p, const clap_input_events_t *ev, int time
 static void p_flush(const clap_plugin_t *plugin, const clap_input_events_t *in, const clap_output_events_t *out)
 {
     frp_plugin_t *p = plugin->plugin_data;
-    (void)out;
+    uiq_drain(p, out, p->active);        /* the window's changes first (they reach the host as output events) */
     p_events_in(p, in, p->active);       /* active: the audio thread, between two blocks (the next block applies them) */
 }
 static const clap_plugin_params_t EXT_PARAMS = { p_count, p_info, p_value, p_to_text, p_from_text, p_flush };
@@ -231,11 +365,17 @@ static bool pl_init(const clap_plugin_t *plugin)
         p->host_view[i] = v;
         p->def[i] = v;
     }
+    {
+        frp_ui_host_t uh;
+        frp_ui_host_bind(p, &uh);
+        p->gui = frp_gui_clap_new(p->host, &uh);
+    }
     return true;
 }
 static void pl_destroy(const clap_plugin_t *plugin)
 {
     frp_plugin_t *p = plugin->plugin_data;
+    frp_gui_clap_free(p->gui);
     frp_inst_free(p->in);
     free(p);
 }
@@ -267,12 +407,17 @@ static void pl_deactivate(const clap_plugin_t *plugin)
         say(p, CLAP_LOG_WARNING, m);
     }
 }
-static bool pl_start(const clap_plugin_t *plugin) { (void)plugin; return true; }
-static void pl_stop(const clap_plugin_t *plugin) { (void)plugin; }
+static bool pl_start(const clap_plugin_t *plugin)
+{
+    atomic_store(&((frp_plugin_t *)plugin->plugin_data)->processing, 1);
+    return true;
+}
+static void pl_stop(const clap_plugin_t *plugin) { atomic_store(&((frp_plugin_t *)plugin->plugin_data)->processing, 0); }
 static void pl_reset(const clap_plugin_t *plugin)
 {
     frp_plugin_t *p = plugin->plugin_data;
     frp_inst_reset(p->in);
+    for (int k = 0; k < 128; k++) atomic_store(&p->mon_notes[k], 0);
 }
 
 static uint8_t vel7(double v)
@@ -289,6 +434,7 @@ static clap_process_status pl_process(const clap_plugin_t *plugin, const clap_pr
     frp_snap_t sn;
     if (pr->transport && (pr->transport->flags & CLAP_TRANSPORT_HAS_TEMPO) && pr->transport->tempo > 0.0)
         tempo10 = (uint32_t)lround(pr->transport->tempo * 10.0);
+    uiq_drain(p, pr->out_events, 1);     /* the window's changes, at the block's start */
     for (k = 0; k < n; k++) {
         const clap_event_header_t *h = ev->get(ev, k);
         if (h->space_id != CLAP_CORE_EVENT_SPACE_ID) continue;
@@ -300,13 +446,17 @@ static clap_process_status pl_process(const clap_plugin_t *plugin, const clap_pr
             if (h->type == CLAP_EVENT_NOTE_ON) {
                 v = vel7(e->velocity);
                 frp_inst_midi(p->in, h->time, (uint8_t)(0x90u | ch), (uint8_t)e->key, v ? v : 1u);
-            } else
+                mon_midi(p, 0x90u, (uint8_t)e->key, v ? v : 1u);
+            } else {
                 frp_inst_midi(p->in, h->time, (uint8_t)(0x80u | ch), (uint8_t)e->key, h->type == CLAP_EVENT_NOTE_OFF ? vel7(e->velocity) : 0u);
+                mon_midi(p, 0x80u, (uint8_t)e->key, 0);
+            }
             break;
         }
         case CLAP_EVENT_MIDI: {
             const clap_event_midi_t *e = (const clap_event_midi_t *)h;
             frp_inst_midi(p->in, h->time, e->data[0], e->data[1], e->data[2]);
+            mon_midi(p, e->data[0], e->data[1], e->data[2]);
             break;
         }
         case CLAP_EVENT_PARAM_VALUE: {
@@ -335,6 +485,7 @@ static clap_process_status pl_process(const clap_plugin_t *plugin, const clap_pr
         }
     }
     pr->audio_outputs[0].constant_mask = 0;
+    mon_peak(p, l, r, pr->frames_count);
     /* the app's own changes (a MIDI CC, a program change, a state) back to the host: a value that moved since the
      * last block and is not what the host last sent (a host write reaches the app FRP_LAT_MS later: until then
      * the app's value has not moved, so nothing is echoed) */
@@ -368,7 +519,9 @@ static const void *pl_ext(const clap_plugin_t *plugin, const char *id)
     if (!strcmp(id, CLAP_EXT_NOTE_PORTS)) return &EXT_NOTES;
     if (!strcmp(id, CLAP_EXT_LATENCY)) return &EXT_LATENCY;
     if (!strcmp(id, CLAP_EXT_STATE)) return &EXT_STATE;
-    return 0;                            /* no CLAP_EXT_GUI: the host's generic view */
+    if (!strcmp(id, CLAP_EXT_GUI)) return frp_gui_clap_ext();
+    if (!strcmp(id, FRP_EXT_GUI_SHOT)) return frp_gui_clap_shot_ext();
+    return 0;
 }
 static void pl_main(const clap_plugin_t *plugin)
 {
