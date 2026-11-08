@@ -151,6 +151,23 @@ static void b_learn_cmd(void *ctx, int cmd, int id)
     case FRP_UI_LEARN_FORGET_ALL: frp_ui_learn_forget_all(pc); break;
     }
 }
+static int b_preset_entry(void *ctx, int idx, char tag[8], char name[24], int *type, int *user)
+{
+    frp_preset_info pi;
+    if (frp_ui_preset_info(PC(ctx), idx, &pi)) return -1;
+    snprintf(tag, 8, "%s", pi.tag);
+    snprintf(name, 24, "%s", pi.name);
+    *type = frp_ui_preset_type(PC(ctx), idx);
+    if (*type < 0) *type = 0;
+    *user = pi.user;
+    return 0;
+}
+static int b_preset_index(void *ctx)
+{
+    frp_preset_info pi;
+    return frp_ui_preset_current(PC(ctx), &pi, 0);
+}
+static int b_preset_load(void *ctx, int idx) { return frp_ui_preset_load(PC(ctx), idx); }
 static void bind(frp_gui_clap_t *c)
 {
     frp_ui_host_t *h = &c->uh;
@@ -163,6 +180,8 @@ static void bind(frp_gui_clap_t *c)
     h->preset = b_preset; h->preset_cmd = b_preset_cmd;
     h->setting_get = b_setting_get; h->setting_set = b_setting_set;
     h->learn_get = b_learn_get; h->learn_cmd = b_learn_cmd;
+    h->preset_entry = b_preset_entry; h->preset_index = b_preset_index;
+    h->preset_load = b_preset_load;
 }
 
 frp_gui_clap_t *frp_gui_clap_new(const clap_host_t *host, frp_core *pc)

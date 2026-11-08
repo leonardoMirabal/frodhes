@@ -56,6 +56,12 @@ typedef struct frp_ui_host {
     /* MIDI learn: the learned CC + 1 per parameter (0: the default map only) and the parameter waiting for a CC */
     void (*learn_get)(void *ctx, uint8_t cc1[], int n, int *learning);
     void (*learn_cmd)(void *ctx, int cmd, int id);                       /* FRP_UI_LEARN_* (id: the parameter) */
+    /* the preset list (the PRESETS sheet; NULL: it stays empty): entry idx's tag, name, instrument (TYPE 0..5) and
+     * whether it is the user's (0 ok, -1 past the end; the factory presets first, then the user's); the entry playing
+     * (-1 none); load one (0 ok) */
+    int (*preset_entry)(void *ctx, int idx, char tag[8], char name[24], int *type, int *user);
+    int (*preset_index)(void *ctx);
+    int (*preset_load)(void *ctx, int idx);
 } frp_ui_host_t;
 
 #endif

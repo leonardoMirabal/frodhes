@@ -268,6 +268,11 @@ int main(int argc, char **argv)
     if (argc < 3) { fprintf(stderr, "usage: gui_shot <Frodhes.clap> <out dir> [--headless]\n"); return 2; }
     outdir = argv[2];
     headless = argc > 3 && !strcmp(argv[3], "--headless");
+    if (!getenv("FRODHES_PRESET_DIR")) {             /* (SAVE writes a user preset: never into the user's own folder) */
+        char pd[1100];
+        snprintf(pd, sizeof pd, "%s/user-presets", outdir);
+        setenv("FRODHES_PRESET_DIR", pd, 1);
+    }
     snprintf(exe, sizeof exe, "%s/Contents/MacOS/Frodhes", argv[1]);
     if (!(lib = dlopen(exe, RTLD_LOCAL | RTLD_NOW))) { fprintf(stderr, "%s\n", dlerror()); return 1; }
     entry = dlsym(lib, "clap_entry");
@@ -534,6 +539,53 @@ int main(int argc, char **argv)
                 CHECK(m && m->midi_ch == ch0, "a core change shows in the window (CHANNEL %d)", m ? m->midi_ch : -1);
                 sh_key(FRK_ESCAPE, 0);
                 pump(0.1);
+
+                /* PRESETS: a click on the preset's name opens every preset (the core's list), grouped by instrument; a
+                 * click loads one (F13 VIBES) and the sheet stays open; ESC closes it */
+                {
+                    int n0 = vt->preset_count(pc), ok = 1, k;
+                    if (find(FRW_PRESET, 0, &x, &y, 0)) click(x, y, 1);
+                    pump(0.3);
+                    m = snap("presets");
+                    CHECK(m && m->presets && m->pl_n == n0, "the preset's name opens PRESETS (%d entries, the core has %d)",
+                          m ? m->pl_n : -1, n0);
+                    for (k = 0; m && k < m->pl_n && k < 57; k++) {
+                        frp_preset_info q;
+                        vt->preset_info(pc, k, &q);
+                        ok &= !strcmp(m->pl[k].name, q.name) && m->pl[k].type == vt->preset_type(pc, k) && !m->pl[k].user;
+                    }
+                    CHECK(ok, "every factory entry: the core's name and instrument");
+                    if (find(FRW_PITEM, 12, &x, &y, 0)) click(x, y, 1);
+                    pump(0.4);
+                    vt->preset_current(pc, &p2, &ed);
+                    m = snap("presets-pick");
+                    CHECK(!strcmp(p2.tag, "F13") && m && m->presets && m->pl_cur == 12 && !strcmp(m->preset_tag, "F13"),
+                          "a click loads F13 (%s), the sheet stays open, the entry marked", p2.tag);
+                    sh_key(FRK_ESCAPE, 0);
+                    pump(0.2);
+                    m = snap("presets-closed");
+                    CHECK(m && !m->presets, "ESC closes PRESETS");
+                    pump(0.2);
+                    /* EFFECTS: BYPASS draws the effect knobs inactive */
+                    if (find(FRW_BUTTON, FRB_FX, &x, &y, 0)) click(x, y, 1);
+                    pump(0.3);
+                    m = snap("fx-bypass");
+                    CHECK(m && m->fx_bypass, "BYPASS shown (the effect knobs drawn inactive)");
+                    if (find(FRW_BUTTON, FRB_FX, &x, &y, 0)) click(x, y, 1);
+                    pump(0.2);
+                }
+                /* the window's size in the project: the state carries "win" once it was set, and brings it back */
+                vt->win_w_set(pc, 1200);
+                CHECK(state_save() && strstr(st_buf, ",\"win\":\"1200\"}") != 0, "the state carries the window's size (1200)");
+                vt->win_w_set(pc, 0);
+                CHECK(state_load() && vt->win_w(pc) == 1200, "a state brings the size back (%d)", vt->win_w(pc));
+                {
+                    char *w = strstr(st_buf, ",\"win\":");
+                    if (w) strcpy(w, "}");
+                    vt->win_w_set(pc, 1440);
+                    CHECK(state_load() && vt->win_w(pc) == 1440, "a state without it (older) keeps the size (%d)", vt->win_w(pc));
+                }
+                vt->win_w_set(pc, 0);
             }
         }
 

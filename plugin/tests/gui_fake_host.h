@@ -14,6 +14,10 @@ extern const unsigned long frp_font_text_len, frp_font_display_len;
 typedef struct {
     int v[512];                          /* the parameters by id, FRP_TUNE (0..100), the settings FRS_* */
     int sets, gestures_open, gesture_begins, notes_on, notes_off, last_note, last_vel, learns, last_learn, learning;
+    /* the preset list: n entries (the factory ones, then the user's), the one playing, the names saved */
+    int np, pcur, loads, saves;
+    char pname[64][24];
+    int ptype[64], puser[64];
 } fake_host;
 
 static int fh_get(void *ctx, uint32_t id, double *v) { *v = ((fake_host *)ctx)->v[id]; return 0; }
@@ -41,8 +45,29 @@ static void fh_text(void *ctx, const struct frui_model_s *m, int id, char *val, 
 }
 static void fh_preset(void *ctx, char tag[8], char name[24], int *edited)
 {
-    (void)ctx;
-    strcpy(tag, "F01"); strcpy(name, "TEST"); *edited = 0;
+    fake_host *h = ctx;
+    if (h->pcur >= 0 && h->pcur < h->np) {
+        snprintf(tag, 8, "%c%02d", h->puser[h->pcur] ? 'U' : 'F', h->pcur + 1);
+        memcpy(name, h->pname[h->pcur], 24);
+    } else { strcpy(tag, "F01"); strcpy(name, "TEST"); }
+    *edited = 0;
+}
+static int fh_preset_entry(void *ctx, int idx, char tag[8], char name[24], int *type, int *user)
+{
+    fake_host *h = ctx;
+    if (idx < 0 || idx >= h->np) return -1;
+    snprintf(tag, 8, "%c%02d", h->puser[idx] ? 'U' : 'F', idx + 1);
+    memcpy(name, h->pname[idx], 24);
+    *type = h->ptype[idx]; *user = h->puser[idx];
+    return 0;
+}
+static int fh_preset_index(void *ctx) { return ((fake_host *)ctx)->pcur; }
+static int fh_preset_load(void *ctx, int idx)
+{
+    fake_host *h = ctx;
+    if (idx < 0 || idx >= h->np) return -1;
+    h->pcur = idx; h->loads++;
+    return 0;
 }
 static int fh_setting_get(void *ctx, int key, int *v)
 {
@@ -78,12 +103,21 @@ static void fh_init(fake_host *h, frp_ui_host_t *uh)
     h->v[FRP_TUNE] = 50;
     h->v[FRS_FIXVEL] = 100; h->v[FRS_PGM] = 1; h->v[FRS_BPM] = 1200; h->v[FRS_SYNCDIV] = 6;
     h->learning = -1;
+    {   /* twelve factory presets over the six instruments, two user presets */
+        static const char *const nm[14] = {"STAGE", "SUITCASE", "FELT", "BELL", "VIBES", "MARIMBA", "STAGE TWO",
+                                            "PHASER", "WARM FELT", "MOTOR VIBES", "WOOD", "DRIVEN", "MY BALLAD", "MY VIBES"};
+        static const int ty[14] = {0, 1, 2, 3, 4, 5, 0, 0, 2, 4, 5, 0, 0, 4};
+        for (i = 0; i < 14; i++) { snprintf(h->pname[i], 24, "%s", nm[i]); h->ptype[i] = ty[i]; h->puser[i] = i >= 12; }
+        h->np = 14; h->pcur = 0;
+    }
     memset(uh, 0, sizeof *uh);
     uh->ctx = h;
     uh->param_get = fh_get; uh->param_default = fh_def; uh->param_gesture = fh_gesture; uh->param_set = fh_set;
     uh->midi = fh_midi; uh->monitor = fh_monitor; uh->text = fh_text; uh->preset = fh_preset;
     uh->setting_get = fh_setting_get; uh->setting_set = fh_setting_set;
     uh->learn_get = fh_learn_get; uh->learn_cmd = fh_learn_cmd;
+    uh->preset_entry = fh_preset_entry; uh->preset_index = fh_preset_index;
+    uh->preset_load = fh_preset_load;
 }
 /* the centre of the first widget of a kind (and id, -1: any) of the last draw; its index, -1 none */
 static int fh_find(const frui *u, int kind, int id, float *x, float *y)

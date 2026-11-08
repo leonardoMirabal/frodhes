@@ -12,6 +12,8 @@
 
 #define FRUI_W 960                 /* logical size */
 #define FRUI_H 600
+#define FRUI_PL_MAX 320            /* the PRESETS sheet's entries: the 57 factory presets and the first user ones */
+#define FRUI_PL_PAGER 100          /* the PRESETS sheet's pager (an FRW_PAGER id beside REVERB's) */
 
 /* the two effect panels' tabs */
 enum { FRT_MOTOR, FRT_COMP, FRT_EQ, FRT_DRIVE, FRT_NL };                                   /* left: before the drive */
@@ -49,6 +51,11 @@ typedef struct frui_model_s {
     /* typing a value (a double-click on a knob's value): the knob's id + 1 (0: none) and the text so far */
     int editing;
     char edit_text[12];
+    /* PRESETS: a sheet over the main view (a click on the preset's name), every preset grouped by its instrument, the
+     * factory ones, then the user's; a click loads one and leaves the sheet open, so the keys can try it */
+    int presets;                   /* the sheet is open */
+    int pl_n, pl_cur, pl_page;     /* the entries; the one playing (-1: none); the page shown */
+    struct { char tag[8]; char name[24]; uint8_t type, user; } pl[FRUI_PL_MAX];   /* type: the instrument (TYPE) */
 } frui_model;
 
 /* the settings' pseudo parameter ids (for the controls and the widget ids) */
@@ -58,7 +65,8 @@ enum { FRS_CHANNEL = 200, FRS_VEL, FRS_FIXVEL, FRS_PGM, FRS_TEMPO, FRS_BPM, FRS_
 typedef void (*frui_text_fn)(void *ctx, const frui_model *m, int id, char *val, char *unit);
 
 enum { FRW_KNOB, FRW_SEG, FRW_MENU, FRW_TAB_L, FRW_TAB_R, FRW_BUTTON, FRW_PAGER, FRW_PRESET, FRW_KEYS, FRW_FADER, FRW_CTX,
-       FRW_CCMAP, FRW_ITEM };       /* FRW_ITEM: an item of the open menu (id: the option's value) */
+       FRW_CCMAP, FRW_ITEM, FRW_PITEM };   /* FRW_ITEM: an item of the open menu (id: the option's value); FRW_PITEM:
+                                            * a preset in the PRESETS sheet (id: its index in pl) */
 enum { FRB_PREV, FRB_NEXT, FRB_SAVE, FRB_UNDO, FRB_TYPE_PREV, FRB_TYPE_NEXT, FRB_GEAR, FRB_CLOSE, FRB_SUSTAIN, FRB_FX,
        FRB_BPM_DOWN, FRB_BPM_UP, FRB_LEARN_RESET };
 /* the knob menu's items (FRW_CTX ids) */
@@ -119,4 +127,7 @@ int frui_seg_at(const frui_widget *w, float x);
 /* regions of the last draw that change without the layout changing (logical rectangles; w = 0 when not drawn) */
 enum { FRR_METER, FRR_GR, FRR_EQ, FRR_RAIL, FRR_PANEL_L, FRR_PANEL_R, FRR_KEYS, FRR_VOICE, FRR_N };
 void frui_region(const frui *u, int which, float r[4]);
+/* the PRESETS sheet's pages (four columns of 17 rows each) for the model's list */
+int frui_preset_pages(const frui_model *m);
+int frui_preset_page_of(const frui_model *m, int idx);   /* the page that shows entry idx (0 when none) */
 #endif

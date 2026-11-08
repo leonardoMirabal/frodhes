@@ -648,13 +648,16 @@ static void rail(frui *u)
     x += 36.f;
     {
         float w = 264.f;
-        int open = m->menu == FRUI_WID(FRW_PRESET, 0);
+        int open = m->presets || is_hover(u, FRW_PRESET, 0);
         well(u, x, y, w, h, R_CTRL);
-        if (open) frui_rrect_stroke(u->c, X(x) + 0.5f, X(y) + 0.5f, X(w) - 1.f, X(h) - 1.f, X(R_CTRL), 1.f, C_ACC);
+        if (open) frui_rrect_stroke(u->c, X(x) + 0.5f, X(y) + 0.5f, X(w) - 1.f, X(h) - 1.f, X(R_CTRL), 1.f,
+                                    m->presets ? C_ACC : C_EDGE);
         tx(u, x + 12.f, mid(u, cy, 12.5f), 12.5f, 640.f, 0.4f, FRUI_TNUM, m->preset_tag, C_ACC);
+        frui_clip(u->c, X(x + 50.f), X(y), X(w - 50.f - (m->edited ? 76.f : 26.f)), X(h));
         tx(u, x + 50.f, mid(u, cy, 12.5f), 12.5f, 560.f, 0.6f, 0, m->preset_name, C_TEXT);
+        frui_clip_reset(u->c);
         if (m->edited) txr(u, x + w - 30.f, mid(u, cy, 8.5f), T_CAPTION, 0, "EDITED", C_TEXT3);
-        chevron(u, x + w - 15.f, cy, 3.f, 0, C_TEXT2);
+        chevron(u, x + w - 15.f, cy, 3.f, 0, m->presets ? C_ACC : C_TEXT2);
         reg(u, FRW_PRESET, 0, x, y, w, h);
         x += w + 4.f;
     }
@@ -1178,20 +1181,15 @@ static void cc_table(frui *u, float x, float y, float w, float h)
     }
     reg(u, FRW_CCMAP, 0, x, y, w, h);
 }
+static void body_dim(frui *u);
+static void sheet_bg(frui *u, float x, float y, float w, float h);
 static void settings_sheet(frui *u)
 {
     const frui_model *m = u->m;
     float x = G_M, y = SH_Y, w = (float)FRUI_W - 2.f * G_M, h = SH_H, c1 = G_H0 + G_COL, d1 = G_H1 + G_COL;
     char buf[32];
-    /* the main view sinks back (A3: the body only, the plate stays lit) */
-    if (u->look == FRUI_LOOK_A3)
-        frui_rrect(u->c, X(A3_FRAME) + 1.f, X(A3_BODY_Y) + 1.f, X((float)FRUI_W - 2.f * A3_FRAME) - 2.f,
-                   X((float)FRUI_H - A3_BODY_Y - A3_FRAME) - 2.f, X(R_BODY) - 1.f, FRUI_RGBA(0, 0, 0, 170));
-    else frui_rect(u->c, 0.f, X(RAIL_H) + 1.f, X((float)FRUI_W), X((float)FRUI_H - RAIL_H) - 1.f, FRUI_RGBA(0, 0, 0, 170));
-    frui_rrect_shadow(u->c, X(x), X(y + 8.f), X(w), X(h), X(R_PANEL), X(16.f), FRUI_RGBA(0, 0, 0, 230));
-    frui_rrect_grad(u->c, X(x), X(y), X(w), X(h), X(R_PANEL), FRUI_RGB(25, 25, 26), FRUI_RGB(19, 19, 20));
-    frui_rrect_stroke(u->c, X(x) + 0.5f, X(y) + 0.5f, X(w) - 1.f, X(h) - 1.f, X(R_PANEL), 1.f, FRUI_RGB(44, 44, 47));
-    frui_rect(u->c, X(x + R_PANEL), X(y) + 1.f, X(w - 2.f * R_PANEL), 1.f, FRUI_RGBA(255, 255, 255, 30));
+    body_dim(u);
+    sheet_bg(u, x, y, w, h);
     section_title(u, G_H0, y + 22.f, "SETTINGS");
     key_btn(u, FRB_CLOSE, 0, G_H1 + 4.f * G_COL - 32.f, y + 8.f, 32.f, 28.f);
     hair_h(u, x + 1.f, x + w - 1.f, y + 44.f, FRUI_RGB(34, 34, 36));
@@ -1235,6 +1233,129 @@ static void settings_sheet(frui *u)
     group_caption(u, G_H1, 290.f, "CC MAP");
     key_btn(u, FRB_LEARN_RESET, "FORGET LEARNED", G_H1 + 4.f * G_COL - (2.f * G_COL - 8.f), 276.f, 2.f * G_COL - 8.f, 28.f);
     cc_table(u, G_H1, 312.f, 4.f * G_COL, 144.f);
+}
+
+/* ---- PRESETS: a sheet over the main view (the rail, the switches and the keys stay live, so a sound can be tried as
+ * it is chosen): every preset grouped by its instrument, in the instrument menu's order, each group the factory
+ * presets then the user's; columns of 17 rows of 20 px on the halves' two-column spans (x 28 244 500 716, 208 wide),
+ * four columns a page; a group's title never ends a column, and a group that goes on in the next column has its title
+ * again at the top */
+#define PL_ROW0 128.f
+#define PL_RH 20.f
+#define PL_ROWS 17
+#define PL_COLW 208.f
+static float pl_colx(int k) { return (k & 2 ? G_H1 : G_H0) + (k & 1 ? 2.f * G_COL : 0.f); }
+/* the flow: calls f for every title (idx -1, type) and entry (idx) with its slot (column * PL_ROWS + row); the slots used */
+static int pl_flow(const frui_model *m, void (*f)(void *ctx, int slot, int idx, int type), void *ctx)
+{
+    int t, i, pass, slot = 0, n = m->pl_n < FRUI_PL_MAX ? m->pl_n : FRUI_PL_MAX;
+    for (t = 0; t < 6; t++) {
+        int any = 0;
+        for (i = 0; i < n && !any; i++) any = m->pl[i].type == t;
+        if (!any) continue;
+        if (slot % PL_ROWS == PL_ROWS - 1) slot++;   /* (a title on a column's last row: to the next column) */
+        if (f) f(ctx, slot, -1, t);
+        slot++;
+        for (pass = 0; pass < 2; pass++)             /* the factory presets, then the user's */
+            for (i = 0; i < n; i++)
+                if (m->pl[i].type == t && (int)m->pl[i].user == pass) {
+                    if (slot % PL_ROWS == 0) { if (f) f(ctx, slot, -1, t); slot++; }   /* (a new column: the title again) */
+                    if (f) f(ctx, slot, i, t);
+                    slot++;
+                }
+    }
+    return slot;
+}
+int frui_preset_pages(const frui_model *m)
+{
+    int slots = pl_flow(m, 0, 0), cols = (slots + PL_ROWS - 1) / PL_ROWS;
+    return cols > 4 ? (cols + 3) / 4 : 1;
+}
+struct pl_find { int idx, slot; };
+static void pl_find_one(void *ctx, int slot, int idx, int type)
+{
+    struct pl_find *f = ctx;
+    (void)type;
+    if (idx >= 0 && idx == f->idx) f->slot = slot;
+}
+int frui_preset_page_of(const frui_model *m, int idx)
+{
+    struct pl_find f = {idx, -1};
+    if (idx < 0) return 0;
+    pl_flow(m, pl_find_one, &f);
+    return f.slot < 0 ? 0 : f.slot / PL_ROWS / 4;
+}
+static void pl_draw_one(void *ctx, int slot, int idx, int type)
+{
+    frui *u = ctx;
+    const frui_model *m = u->m;
+    int col = slot / PL_ROWS, row = slot % PL_ROWS, page = m->pl_page;
+    float x, y, cy;
+    if (col / 4 != page) return;
+    x = pl_colx(col % 4); y = PL_ROW0 + PL_RH * (float)row; cy = y + PL_RH * 0.5f;
+    if (idx < 0) {                                   /* the instrument's title: its drawing, its name, a rule */
+        const char *nm = FRN_TYPE[type];
+        float wn = twf(u, u->fd, 8.f, 400.f, 1.8f, 0, nm) - 1.8f;
+        eicon(u, type, x + 2.f, cy - 6.f, 0.5f, C_TEXT2);
+        txf(u, u->fd, x + 30.f, midd(u, cy, 8.f), 8.f, 400.f, 1.8f, 0, nm, C_TEXT);
+        hair_h(u, x + 30.f + wn + 10.f, x + PL_COLW, cy, FRUI_RGB(44, 44, 47));
+        return;
+    }
+    {
+        int cur = idx == m->pl_cur, hot = is_hover(u, FRW_PITEM, idx);
+        if (cur) {
+            frui_rrect(u->c, X(x), X(y + 1.f), X(PL_COLW), X(PL_RH - 2.f), X(R_CTRL), FRUI_RGB(40, 40, 43));
+            frui_rrect(u->c, X(x + 3.f), X(cy - 5.f), X(2.f), X(10.f), X(1.f), C_ACC);
+        } else if (hot) frui_rrect(u->c, X(x), X(y + 1.f), X(PL_COLW), X(PL_RH - 2.f), X(R_CTRL), FRUI_RGB(30, 30, 33));
+        tx(u, x + 12.f, mid(u, cy, 10.f), 10.f, 640.f, 0.3f, FRUI_TNUM, m->pl[idx].tag,
+           cur ? C_ACC : m->pl[idx].user ? C_TEXT2 : C_TEXT3);
+        frui_clip(u->c, X(x + 46.f), X(y), X(PL_COLW - 52.f), X(PL_RH));
+        tx(u, x + 46.f, mid(u, cy, 10.5f), T_MENU, 0, m->pl[idx].name, cur || hot ? C_TEXT : C_TEXT2);
+        frui_clip_reset(u->c);
+        reg(u, FRW_PITEM, idx, x, y, PL_COLW, PL_RH);
+    }
+}
+static void body_dim(frui *u)                        /* the main view sinks back (A3: the body only, the plate stays lit) */
+{
+    if (u->look == FRUI_LOOK_A3)
+        frui_rrect(u->c, X(A3_FRAME) + 1.f, X(A3_BODY_Y) + 1.f, X((float)FRUI_W - 2.f * A3_FRAME) - 2.f,
+                   X((float)FRUI_H - A3_BODY_Y - A3_FRAME) - 2.f, X(R_BODY) - 1.f, FRUI_RGBA(0, 0, 0, 170));
+    else frui_rect(u->c, 0.f, X(RAIL_H) + 1.f, X((float)FRUI_W), X((float)FRUI_H - RAIL_H) - 1.f, FRUI_RGBA(0, 0, 0, 170));
+}
+static void sheet_bg(frui *u, float x, float y, float w, float h)
+{
+    frui_rrect_shadow(u->c, X(x), X(y + 8.f), X(w), X(h), X(R_PANEL), X(16.f), FRUI_RGBA(0, 0, 0, 230));
+    frui_rrect_grad(u->c, X(x), X(y), X(w), X(h), X(R_PANEL), FRUI_RGB(25, 25, 26), FRUI_RGB(19, 19, 20));
+    frui_rrect_stroke(u->c, X(x) + 0.5f, X(y) + 0.5f, X(w) - 1.f, X(h) - 1.f, X(R_PANEL), 1.f, FRUI_RGB(44, 44, 47));
+    frui_rect(u->c, X(x + R_PANEL), X(y) + 1.f, X(w - 2.f * R_PANEL), 1.f, FRUI_RGBA(255, 255, 255, 30));
+}
+static void presets_sheet(frui *u)
+{
+    const frui_model *m = u->m;
+    float x = G_M, y = VO_Y, w = (float)FRUI_W - 2.f * G_M, h = FX_Y + FX_H - VO_Y;
+    int i, nf = 0, nu = 0, pages = frui_preset_pages(m);
+    char buf[48];
+    body_dim(u);
+    sheet_bg(u, x, y, w, h);
+    section_title(u, G_H0, y + 22.f, "PRESETS");
+    for (i = 0; i < m->pl_n && i < FRUI_PL_MAX; i++) { if (m->pl[i].user) nu++; else nf++; }
+    snprintf(buf, sizeof buf, nu == 1 ? "%d FACTORY, 1 USER" : "%d FACTORY, %d USER", nf, nu);
+    tx(u, G_H0 + G_COL, mid(u, y + 22.f, 8.5f), T_CAPTION, 0, buf, C_TEXT3);
+    txc(u, (float)FRUI_W * 0.5f + G_COL, mid(u, y + 22.f, 8.5f), T_CAPTION, 0, "PLAY THE KEYS TO TRY A SOUND", C_TEXT3);
+    key_btn(u, FRB_CLOSE, 0, G_H1 + 4.f * G_COL - 32.f, y + 8.f, 32.f, 28.f);
+    if (pages > 1) {                                 /* the pager, a gutter's half before the close key */
+        float pw = 100.f, px = G_H1 + 4.f * G_COL - 32.f - 8.f - pw, py = y + 8.f, ph = 28.f;
+        ctrl_box(u, px, py, pw, ph, 0, 0);
+        chevron(u, px + 14.f, py + ph * 0.5f, 3.5f, 1, m->pl_page > 0 ? C_TEXT : C_DIM);
+        chevron(u, px + pw - 14.f, py + ph * 0.5f, 3.5f, 2, m->pl_page < pages - 1 ? C_TEXT : C_DIM);
+        snprintf(buf, sizeof buf, "%d / %d", m->pl_page + 1, pages);
+        txc(u, px + pw * 0.5f, mid(u, py + ph * 0.5f, 10.5f), T_MENU, FRUI_TNUM, buf, C_TEXT);
+        reg(u, FRW_PAGER, FRUI_PL_PAGER, px, py, pw, ph);
+    }
+    hair_h(u, x + 1.f, x + w - 1.f, y + 44.f, FRUI_RGB(34, 34, 36));
+    hair_v(u, (float)FRUI_W * 0.5f, PL_ROW0, PL_ROW0 + PL_RH * (float)PL_ROWS, FRUI_RGB(34, 34, 36));
+    if (m->pl_n <= 0) txc(u, (float)FRUI_W * 0.5f, mid(u, 280.f, 10.5f), T_MENU, 0, "NO PRESETS", C_TEXT3);
+    pl_flow(m, pl_draw_one, u);
 }
 
 /* ---- a knob's right-click menu: MIDI LEARN, FORGET (when learned), the default value */
@@ -1364,10 +1485,17 @@ void frui_draw(frui *u, const frui_model *m, frui_canvas *c)
         voice(u);
         left_panel(u);
         right_panel(u);
-        switches(u);
-        keyboard(u);
-        if (m->settings) { u->nw = nrail; settings_sheet(u); }   /* only the rail and the sheet answer the mouse */
-        else knob_menu(u);
+        if (m->presets && !m->settings) {            /* PRESETS: the rail, the sheet, the switches and the keys answer */
+            u->nw = nrail;
+            presets_sheet(u);
+            switches(u);
+            keyboard(u);
+        } else {
+            switches(u);
+            keyboard(u);
+            if (m->settings) { u->nw = nrail; settings_sheet(u); }   /* only the rail and the sheet answer the mouse */
+            else knob_menu(u);
+        }
     }
     popup(u);
     if (u->layer == FRUI_LAYER_STATIC) frui_clip_base(c, u->sb[0], u->sb[1], u->sb[2], u->sb[3]);
