@@ -104,7 +104,7 @@ F. FINAL CHECKS
 [ ] make pytest subset: tests/py/test_changes.py test_doc_links.py test_docs_vs_code.py test_manual_shots.py
     test_move_doc.py
 [ ] tools/doc_links.py (no version named, every ?v= = its file's hash)
-[ ] grep -rni "reface\|yamaha\|fender\|rhodes" README.md docs/MANUAL.md docs/SMK37.md docs/MOVE.md docs/changes/
+[ ] grep -rniE "<BRANDS of tests/py/test_repo_hygiene.py>|rhodes" README.md docs/MANUAL.md docs/SMK37.md docs/MOVE.md docs/changes/
     -> only the existing disclaimer lines (README "License and disclaimer", MANUAL line 15-16). Already on main:
     docs/SMK37.md:116 "(Rhodes: TONE BARK BELL HAMMER, ...)" and :118 "(the Rhodes types, ...)" -> "the electric
     piano types" (the same words as MANUAL)

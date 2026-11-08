@@ -244,9 +244,9 @@ the Mac, a DAW that opens the audio interface may change its sample rate.
    tail is not cut at the end of the last note (extend the render by 3 s if the host asks for a tail length).
 8. **Sample rates.** Switch the project between 44.1, 48 and 96 kHz while it plays: the pitch stays right, no noise.
 
-Hosts on the maintainer's Mac (2026-11): Ableton Live 12 (VST3 and AU; Live has no CLAP) and Renoise 3.0
-(AU only: the version predates its VST3 and CLAP support). Logic, GarageBand, Reaper and Bitwig are not installed
-there; the list above is the same for them (Reaper: also the CLAP, `Options > Preferences > Plug-ins > CLAP`).
+Hosts on the maintainer's Mac (2026-11): two DAWs, one that loads VST3 and AU (no CLAP support) and one that loads
+AU only (its version predates VST3 and CLAP support). The list above is the same in any other host; a host with
+CLAP support may need CLAP enabled in its plug-in preferences first.
 
 ## Layout
 

@@ -1,6 +1,6 @@
 <!-- CONDITIONAL: ONLY IF THE TWO-CORE BUILD SHIPS (the user's decision: the default FM-1 file, or a second file next
 to the 10-voice one). The name ends in .ifships so tools/changes.py and the release ignore it.
-Ships: rename to 04-two-cores.md (build/rel0910.sh --two-cores-ship does it), fill the VERIFY numbers from the K6b
+Ships: rename to 04-two-cores.md (git mv), fill the VERIFY numbers from the K6b
 device gates (c1-subblock), update 00-summary.md, apply CHECKLIST-0910.txt block B "only if two cores ship".
 Does not ship: delete this file; the developer note below then becomes docs/changes/04-two-cores-dev.md:
   ## Tools

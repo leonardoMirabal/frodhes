@@ -9,7 +9,8 @@ import re
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CC = re.compile(r'\[\s*"(cc|gcc|clang)",')                  # a compiler call: subprocess.run(["cc", ...
-SAFE = ("once(", "getpid", "WORKER", "PYTEST_XDIST_WORKER", "tmp_path", "tmpdir", "mkdtemp", "flock")
+SAFE = ("once(", "getpid", "WORKER", "PYTEST_XDIST_WORKER", "tmp_path", "tmpdir", "mkdtemp", "flock",
+        "-fsyntax-only")                                    # (a syntax-only compile writes no file)
 
 
 def unsafe(src):
