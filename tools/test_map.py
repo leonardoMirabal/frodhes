@@ -220,6 +220,21 @@ def changed_since(tag, root=ROOT):
     return [l for l in p.stdout.splitlines() if l.strip()]
 
 
+# The Move tier of `make pytest` (coordinator, 2026-11-08): tests/py/test_move_*.py run whenever anything the Move
+# build compiles or its tests read changes (the firmware's sources and tables, move/, the host harness, the Move's
+# tools: tools/move*, ci_move.sh, target_closure.py, and every tool those tests import, which conftest.py follows),
+# so an FM-1 engine change still runs them and a docs-, UI-doc- or plugin-only change skips them. Locally conftest.py's
+# memo keys them on these inputs (skipped while unchanged since they passed); CI runs them on every push.
+MOVE_TIER_TESTS = "tests/py/test_move_*.py"
+MOVE_TIER_INPUTS = ("firmware", "move", "tests/host.c", "tests/*.c", "tests/*.h", "Makefile", "tools/move*",
+                    "tools/ci_move.sh", "tools/target_closure.py")
+
+
+def move_tier_needed(files):
+    """the changed files that make the Move tier run ([] = it may skip)"""
+    return [f for f in files if any(f == p or f.startswith(p + "/") or fnmatch.fnmatch(f, p) for p in MOVE_TIER_INPUTS)]
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="the test tiers a change needs (T0 host, T1 must-pass, T2 full scans)")
     ap.add_argument("files", nargs="*", help="the changed files (default: git diff --name-only TAG..HEAD)")
@@ -236,6 +251,8 @@ def main(argv=None):
         files, src = changed_since(tag), f"git diff {tag}..HEAD ({{}} file(s))"
         src = src.format(len(files))
     res = analyze(files)
+    mv = move_tier_needed(files)
+    res["move_tier"] = {"tests": MOVE_TIER_TESTS, "run": bool(mv), "because": mv[:20]}
     pt = None
     if not a.no_targets:
         try:
@@ -249,6 +266,8 @@ def main(argv=None):
     else:
         print(src + ":")
         print("\n".join(reason(res)))
+        print(f"Move tier ({MOVE_TIER_TESTS}): " + (f"run ({len(mv)} file(s): {', '.join(mv[:5])}"
+                                                    f"{' ...' if len(mv) > 5 else ''})" if mv else "may skip"))
         if pt is not None:
             print("\n".join(target_lines(pt)))
     return 0
