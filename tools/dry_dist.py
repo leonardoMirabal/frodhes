@@ -25,6 +25,14 @@ limit min(base + 3, -25)). A cell where 0.9.9 itself is above -25 keeps base + 3
   tools/dry_dist.py --save                          measure the host binary BIN (default build/host/frodhes) and write
                                                     tests/baselines/dry_dist_099.json (run it on a 0.9.9 build)
   tools/dry_dist.py --judge CELLS.json [--base B]   the table and the verdict (exit 1 on a failure)
+  --hq                                              the Move's HQ build instead: --save writes (and --judge reads)
+                                                    tests/baselines/dry_dist_099_hq.json; build one with --build-hq
+
+The Move (and the plugin's HQ slots) have their own reference, dry_dist_099_hq.json: 0.9.9 (456b5da4) built with the
+Move's defines and HQ_DEFAULT=1 (HQ_DEFS). The FM-1's does not hold there: FX on the Move keeps the compressor
+(FR_BYP_KEEP_CMP: the FXOFF chords), and the HQ voice has its own pickup from key 85 and its own pulse at every
+velocity (key 93's H3 differs by 1-2 dB at v64..96).
+  tools/dry_dist.py --build-hq OUT [--src TREE]     compile the HQ host build of TREE (default: this one) to OUT
 """
 import argparse
 import json
@@ -37,6 +45,9 @@ import numpy as np
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BASE = os.path.join(ROOT, "tests", "baselines", "dry_dist_099.json")
+BASE_HQ = os.path.join(ROOT, "tests", "baselines", "dry_dist_099_hq.json")
+HQ_DEFS = ("-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1", "-DHQ_DEFAULT=1")   # (the Makefile's
+                                  # MOVE_DEFS, the HQ Rhodes on: the Move as it loads; make test-move's host-hq build)
 FS = 44100
 KEYS = (28, 33, 45, 57, 69, 81, 93)
 VELS = (64, 96, 110, 127)
@@ -170,6 +181,15 @@ def measure(binary, outdir=None):
     return {t[0]: measure_tag(binary, t[0], outdir) for t in tags()}
 
 
+def build_hq(out, src=ROOT):
+    """the Move's HQ host build of the tree src at out (move/tests/run_eq.sh's host-hq flags)"""
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    subprocess.run([os.environ.get("CC", "cc"), "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", *HQ_DEFS,
+                    '-DAPP_VER="dev"', "-I" + os.path.join(src, "firmware", "src"), "-I" + os.path.join(src, "firmware", "gen"),
+                    "-o", out, os.path.join(src, "firmware", "src", "frodhes.c"), "-lm"], check=True)
+    return out
+
+
 def judge(cells, base, methods_base="A"):
     """[(cell, metric, value, base, limit, ok)]; the base has one method (0.9.9): every method is held to it"""
     rows = []
@@ -208,15 +228,22 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--save", action="store_true")
     ap.add_argument("--judge")
-    ap.add_argument("--base", default=BASE)
+    ap.add_argument("--base")
+    ap.add_argument("--hq", action="store_true", help="the Move's HQ reference (dry_dist_099_hq.json)")
+    ap.add_argument("--build-hq", metavar="OUT", help="compile the HQ host build to OUT and exit")
+    ap.add_argument("--src", default=ROOT, help="--build-hq: the source tree")
     ap.add_argument("--all", action="store_true", help="--judge: every failing value (else the 40 closest)")
     a = ap.parse_args()
+    if a.build_hq:
+        print(build_hq(a.build_hq, os.path.abspath(a.src)))
+        return
+    a.base = a.base or (BASE_HQ if a.hq else BASE)
     if a.judge:
         rows = judge(json.load(open(a.judge)), json.load(open(a.base)))
         print(table(rows, only_bad=a.all, worst=10000 if a.all else 40))
         sys.exit(0 if all(r[5] for r in rows) else 1)
     cells = measure(os.path.abspath(a.bin))
-    path = BASE if a.save else a.out
+    path = a.base if a.save else a.out
     if path:
         json.dump(cells, open(path, "w"), indent=1, sort_keys=True)
         print(path)

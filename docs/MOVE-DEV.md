@@ -287,6 +287,11 @@ names the Move (default `ableton@move.local`).
   Classic and the tables, never louder after key-up and the velocity range; Gate H holds their renders.
   `tools/gen_bars_hq.py` and `tools/gen_bars_hq_contact.py` write the two headers in `firmware/gen/hq/`
   (`--check` compares).
+- The dry distortion gate (`tools/dry_dist.py`, `tests/py/test_dry_distortion.py`) holds the HQ build to its own
+  0.9.9 reference, `tests/baselines/dry_dist_099_hq.json`. It is 0.9.9 (456b5da4) built with the Move's defines and
+  `HQ_DEFAULT=1` (`dry_dist.HQ_DEFS`; `tools/dry_dist.py --build-hq OUT --src TREE`, then `--hq --save`). The FM-1's
+  reference does not hold there: FX on the Move keeps the compressor, so the FXOFF chords differ, and the HQ pickup
+  from key 85 moves key 93's H3 by 1-2 dB. `tools/dry_dist.py --hq --judge CELLS.json` judges against it.
 - `d2 --path tap --hq 1` also runs `usb-restrike` on the Rhodes. The pedal is down and a chord of 8 notes is
   held on keys 28 to 59. Every 30 to 50 ms, one of 8 keys from 60 to 108 is struck again while it still rings,
   at velocities 127, 64 and 30 in turn. The key goes up 20 ms before each new strike. One time in six, 3 or 4
