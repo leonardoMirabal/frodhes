@@ -45,6 +45,7 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #endif
 #endif
 #include "rhodes_phim.h"                       /* the pickup table interleaved (tools/gen_phim.py) */
+#define RH_MK_N 12                             /* the level make-ups' anchors per row (rh_mk_q12) */
 #if defined(RH_DRIVE) && !defined(RH_NO_DRV_MK)  /* (-DRH_NO_DRV_MK: without it, as tools/drive_makeup.py measures) */
 #include "rh_drive_mk.h"                       /* the pickup drive's level make-up (tools/drive_makeup.py --write) */
 #endif
@@ -211,18 +212,24 @@ static int32_t sd_st[3][5] RH_SP_SEC(".bss.rh_sd_st");      /* the side's RLC an
 static uint8_t rh_side_on RH_SP_SEC(".bss.rh_side_on"), rh_side_tail RH_SP_SEC(".bss.rh_side_tail");
 static uint8_t rh_type;
 #ifdef RH_DRIVE
-#ifdef RH_DRV_MK_Q
-/* the pickup drive's level make-up per TYPE, key and velocity (anchors every 8 velocities: v0, 8 .. 120, 128), coded
- * in 1/32 octave (RH_DRV_MK_L: the code to the Q12 gain, 128 = none) and interpolated in the code: the drive's
- * loudness back to the level the notes had before it at mf and above, never under it (tools/drive_makeup.py). A gain
- * on the voice's output only: the timbre (the swing through the pickup) is the drive's. Note-on / re-strike only */
-static uint32_t rh_drv_mk(uint32_t key, uint32_t vel)
+/* the level make-ups' code (rh_drive_mk.h: the pickup drive's per TYPE, key, velocity; rh_velmap_mk.h: the map's per
+ * key, velocity): 1/32 octave, 128 = none, RH_MK_N anchors per row (v40, 48 .. 120, 128; under v40 the v40 value),
+ * interpolated in the code; the code to a Q12 gain: 4096 x 2^((c - 128) / 32), from the octave's 32 steps (Q15) */
+static const uint16_t RH_MK_F[32] = {32768,33486,34219,34968,35734,36516,37316,38133,38968,39821,40693,41584,42495,43425,44376,45348,46341,47356,48393,49452,50535,51642,52773,53928,55109,56316,57549,58809,60097,61413,62757,64132};
+static uint32_t rh_mk_l(uint32_t c) { return ((uint32_t)RH_MK_F[c & 31u] << (c >> 5)) >> 7; }   /* c <= 256 */
+static uint32_t rh_mk_q12(const uint8_t *row, uint32_t vel)      /* Q12, < 2^16 */
 {
-    const uint8_t *m = RH_DRV_MK[rh_type & 3u][key] + (vel >> 3);
-    uint32_t c = ((uint32_t)m[0] << 3) + (uint32_t)(((int32_t)m[1] - (int32_t)m[0]) * (int32_t)(vel & 7u));
-    uint32_t i = c >> 3, f = c & 7u;
-    return (uint32_t)((int32_t)RH_DRV_MK_L[i] + ((((int32_t)RH_DRV_MK_L[i + 1] - (int32_t)RH_DRV_MK_L[i]) * (int32_t)f) >> 3));
+    uint32_t u = vel < 40u ? 0u : vel - 40u;
+    const uint8_t *m = row + (u >> 3);
+    uint32_t c = ((uint32_t)m[0] << 3) + (uint32_t)(((int32_t)m[1] - (int32_t)m[0]) * (int32_t)(u & 7u));
+    int32_t x0 = (int32_t)rh_mk_l(c >> 3), x1 = (int32_t)rh_mk_l((c >> 3) + 1u);
+    return (uint32_t)(x0 + (((x1 - x0) * (int32_t)(c & 7u)) >> 3));
 }
+#ifdef RH_DRV_MK_Q
+/* the pickup drive's level make-up per TYPE, key and velocity: the drive's loudness back to the level the notes had
+ * before it at mf and above, never under it (tools/drive_makeup.py). A gain on the voice's output only: the timbre
+ * (the swing through the pickup) is the drive's. Note-on / re-strike only */
+#define rh_drv_mk(key, vel) rh_mk_q12(RH_DRV_MK[rh_type & 3u][key], vel)
 #else
 #define rh_drv_mk(key, vel) 4096u
 #endif
@@ -907,10 +914,8 @@ static int32_t rh_vm(uint32_t t, uint32_t key, uint32_t vel)     /* t 0: X, 1: G
     int32_t a = (int32_t)r[i] + ((((int32_t)r[i + 1] - (int32_t)r[i]) * (int32_t)f) >> 3);
 #ifdef RH_VM_MK_Q
     if (t) {   /* G x the level make-up (Q12, the notes back to the reference release's level at mf and above, never
-                * under it below: an output gain only, the colour is the map's); G x mk < 2^16 (gen: asserted) */
-        const uint16_t *k = RH_VM_MK[key];
-        int32_t m = (int32_t)k[i] + ((((int32_t)k[i + 1] - (int32_t)k[i]) * (int32_t)f) >> 3);
-        a = (int32_t)(((uint32_t)a * (uint32_t)m) >> 12);
+                * under it below: an output gain only, the colour is the map's) */
+        a = (int32_t)(((uint32_t)a * rh_mk_q12(RH_VM_MK[key], vel)) >> 12);
         if (a > 65535) a = 65535;
         if (a < 1) a = 1;
     }
