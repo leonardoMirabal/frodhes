@@ -266,8 +266,6 @@ def run(a):  # noqa: C901 (the device run)
             note(n, 0)
         cc(64, 0)
         cc(120, 0)
-        stream.stop()
-        stream.close()
     rec = decode(query(31))
     complete = time.monotonic() - t0 >= dur - 1
     verdict, why = judge(reads)
@@ -288,8 +286,23 @@ def run(a):  # noqa: C901 (the device run)
                 f"{last.get('late')}, holds {last.get('holds')}, recoveries {last.get('rec1')} / {last.get('rec0')}\n")
         for w in why:
             f.write(f"- FAIL: {w}\n")
-    print(open(base + ".md").read())
-    return 0 if verdict == "PASS" and complete else (1 if verdict == "FAIL" else 2)
+    print(open(base + ".md").read(), flush=True)
+    code = 0 if verdict == "PASS" and complete else (1 if verdict == "FAIL" else 2)
+    close_stream(stream, code)               # (after the report: CoreAudio's stop can hang on close)
+    return code
+
+
+def close_stream(stream, code, secs=15.0):
+    """stream.stop() + close() in a thread; a hang past secs is the computer's (AudioOutputUnitStop), not the FM-1's:
+    said so, and the process ends with the run's own code"""
+    import threading
+    th = threading.Thread(target=lambda: (stream.stop(), stream.close()), daemon=True)
+    th.start()
+    th.join(secs)
+    if th.is_alive():
+        print(f"hil_c1_soak: the USB audio stream did not close in {secs:.0f} s (a CoreAudio hang on this computer, "
+              "not the FM-1): exiting with the run's verdict", flush=True)
+        os._exit(code)
 
 
 def main():

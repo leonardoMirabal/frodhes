@@ -19,6 +19,8 @@ and the idle-with-every-effect one (the fixed part), 3 takes each as usual.
 --engine vibes selects VIBES (CC 79), with the motor on (CC 47; records v3: the engine's own) wherever the effects
 are on (the tremolo too: it can run on top of the motor), off elsewhere, and adds the bar engine's worst voicings (edge strike, RUBBER, tube and weight at 127). It also prints the
 bar engine's lowest mode cap and most live upper modes per scenario (CC 112 / 113 replies).
+--heavy-cc CC:V[,CC:V] adds those controls to every heavy (every-effect) scenario: 84:76 the drive TSH8, 105:127
+SPREAD. --port NAME: only the unit whose MIDI port / audio device name contains NAME (fm1_ports.force).
 --fx-each: idle, then each effect alone (minus idle without effects) = the per-effect cost table of fx.c (FX_US_*).
 --calib (VIBES): 8 RUBBER edge strikes at v127 with the mode cap forced (developer CC 9) to 0, 8, 16, 24, 32, 40, 48
 upper modes, no effects, then 4 and 1 voices: fits the cost per upper mode-block and the fixed part per voice, for
@@ -515,6 +517,13 @@ def run_cpu(argv):  # noqa: C901
     heavy = dict(DRIVE=127, EQ_LO=127, EQ_MID=0, EQ_HI=127, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127, PH_DEPTH=127, PH_FDBK=127,
                  CP_SW=64, CP_DEPTH=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127,
                  FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64)   # the filter at its heaviest: LP18, the LFO
+    if "--heavy-cc" in sys.argv:                      # --heavy-cc CC:V[,CC:V]: more controls in every heavy scenario
+        for kv in sys.argv[sys.argv.index("--heavy-cc") + 1].split(","):   # (e.g. 84:76 the drive TSH8, 105:127 SPREAD)
+            c, v = (int(x) for x in kv.split(":"))
+            if not (0 <= c <= 127 and 0 <= v <= 127):
+                sys.exit("--heavy-cc: CC:V, 0..127 each")
+            CC[f"CC{c}"] = c
+            heavy[f"CC{c}"] = v
     nv = int(sys.argv[sys.argv.index("--voices") + 1]) if "--voices" in sys.argv else default_voices(eng)
     if not 1 <= nv <= 16:
         sys.exit("--voices: 1..16")

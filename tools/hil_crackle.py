@@ -1675,7 +1675,7 @@ def plan_text(engines, a):
         for name, ccs, ev, dur, opt in device_takes(eng, a):
             non = sum(1 for e in ev if e[1] == "on")
             lines.append(f"  {name:22s} {dur:6.1f} s  {len(ccs):3d} setup CCs  {non:4d} note-ons  "
-                         f"{sum(1 for e in ev if e[1] == 'cc' and e[2] == 64):3d} pedal moves  voices {voices(eng)}"
+                         f"{sum(1 for e in ev if e[1] == 'cc' and e[2] == 64):3d} pedal moves  voices {a.voices or voices(eng)}"
                          + ("  (USB stream closed: the jack alone)" if not opt["usb"] else "")
                          + (f"  (LEDS {opt['leds']}: set on the DISPLAY page when asked)" if opt.get("leds") else ""))
             total += dur + 1.5
