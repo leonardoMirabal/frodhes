@@ -27,9 +27,12 @@ chord: "imd" (the energy off every harmonic band of the notes re their fundament
 
 The verdict (exit 1 on any failure):
   ceilings  pristine, from AGENTS.md section 1, NOT overridable by the expected-changes file:
-            H2..H6 <= max(last + 3, -60) dB re H1, and H3 <= -25 dB at v127 where the last release was below that;
+            H2..H6 <= max(last + 3, -60) dB re H1, and H3 <= -25 dB at v127 where the last release was below that
+            (effects-on cells: the median of 4 strike times, and a harmonic under -95 dBFS is under the reverb's
+            int16 grain, never a break; "grain", the off-harmonic 12..20 kHz power in dBFS, <= last + 3 dB instead);
             inh / imd <= last + 3 dB; clk <= last + 6 dB; noise <= max(last + 3, -90) dBFS;
-            no clip outside RAW; keyup <= +0.5 dB (never louder after the key-up; the pedal cells are exempt).
+            no clip outside RAW; keyup <= +0.5 dB (never louder after the key-up; the pedal cells and the presets, whose
+            delays repeat the strike, are exempt).
   diffs     every value that moves by more than TOL in EITHER direction must be listed, with a reason, in the
             expected-changes file (tests/expected_changes.yaml); anything unlisted fails.
 
@@ -69,6 +72,10 @@ GRID = {
                  chords=(("low", (33, 40, 45, 49)), ("mid", (57, 60, 64, 67)), ("high", (69, 72, 76, 79))),
                  presets=tuple(range(16)) + (32, 33, 34)),
 }
+CONTROLS = (("TONE", 28), ("BARK", 29), ("BELL", 30), ("HAMMER", 31), ("DECAY", 102), ("NOISE", 104))
+# (full: each voice control at 0 and 127 on every TYPE, effects off, the FM-1 build: the control rows elsewhere
+# (test_every_control, hil_scan's VOICE rows) only ask that a control changes something; these hold its extremes
+# to the last release's)
 STEP, HOLD = 1500, 800              # ms: a note every STEP, released after HOLD
 W0, W1 = 0.05, 0.45                 # s: the harmonic window after the strike
 BAND, IBW, IREL = 0.03, 6.0, 0.003  # harmonic peaks +-3 %; inh / imd: a harmonic's band +-6 Hz or +-0.3 %
@@ -94,6 +101,14 @@ def cases(grid):
                     setup = [(110, 0xB0, tcc, tval), (120, 0xB0, 40, mv)] + [(100, 0xB0, c, v) for c, v in ccs]
                     keys = g["keys_ep"] if tcc == 80 else g["keys_bar"]
                     out.append((f"{build}/{tname}/{cfg}/{m}", build, setup, keys, "type"))
+        if grid == "full" and build == "fm1":
+            for tname, tcc, tval in TYPES:
+                for cname, ccn in CONTROLS:
+                    for cv in (0, 127):
+                        setup = [(100, 0xB0, 111, 127), (110, 0xB0, tcc, tval), (120, 0xB0, 40, 0),
+                                 (130, 0xB0, ccn, cv)]
+                        out.append((f"{build}/{tname}/{cname}{cv}/A", build, setup,
+                                    g["keys_ep"] if tcc == 80 else g["keys_bar"], "control"))
         for pc in g["presets"]:
             name = f"F{pc + 1:02d}" if pc < 16 else f"F{pc - 15:02d}"
             for m, mv in METHODS:
@@ -102,9 +117,9 @@ def cases(grid):
     return out
 
 
-def events(grid, keys):
-    """[(label, t_ms, notes, vel, pedal)] and the script's end (ms)"""
-    g, ev, t = GRID[grid], [], 1200
+def events(grid, keys, shift=0):
+    """[(label, t_ms, notes, vel, pedal)] and the script's end (ms); shift: every note later by that (ms)"""
+    g, ev, t = GRID[grid], [], 1200 + shift
     for k in keys:
         for v in g["vels"]:
             ev.append((f"k{k}v{v}", t, (k,), v, False))
@@ -117,8 +132,8 @@ def events(grid, keys):
     return ev, t + 3000                 # 3 s of silence: the noise floor
 
 
-def script(grid, setup, keys):
-    ev, end = events(grid, keys)
+def script(grid, setup, keys, shift=0):
+    ev, end = events(grid, keys, shift)
     ls = []
     for t, st, a, b in setup:
         ls.append(f"{t} midi 0x{st:02X} {a}" + ("" if b is None else f" {b}"))
@@ -210,12 +225,36 @@ def kweight(x):
     return signal.lfilter(b2, a2, signal.lfilter(b1, a1, x))
 
 
+def fx_cell(cid):
+    """a case whose effects are on (the default effects, a preset): its reverb's int16 rounding grain sits at about
+    -92..-101 dBFS and moves +-5 dB with the strike time alone (0.9.9 too), so its harmonics are measured as the
+    median of SHIFTS and judged only above FX_FLOOR (AGENTS.md 5b: a measurement rule, not a loosening)"""
+    return cid.split("/")[2] in ("FX", "PRESET")
+
+
+SHIFTS = (0, 29, 61, 97)            # ms: the strike-time offsets of an effects-on case (the median of the four)
+FX_FLOOR = -95.0                    # dBFS: a harmonic of an effects-on cell below this is under the reverb's grain
+
+
 def measure(binary, case, grid, tmp):
-    """{cell label: {metric: value}} of one case"""
+    """{cell label: {metric: value}} of one case; an effects-on case: the median over SHIFTS (clip: the maximum)"""
+    if not fx_cell(case[0]):
+        return measure_once(binary, case, grid, tmp, 0)
+    runs = [measure_once(binary, case, grid, tmp, sh) for sh in SHIFTS]
+    out = {}
+    for lab in runs[0]:
+        out[lab] = {}
+        for m in runs[0][lab]:
+            vs = [r[lab][m] for r in runs if m in r.get(lab, {})]
+            out[lab][m] = max(vs) if m == "clip" else float(np.median(vs))
+    return out
+
+
+def measure_once(binary, case, grid, tmp, shift):
     cid, _, setup, keys, kind = case
-    x = render(binary, os.path.join(tmp, cid.replace("/", "_")), script(grid, setup, keys))
+    x = render(binary, os.path.join(tmp, cid.replace("/", "_") + f"-{shift}"), script(grid, setup, keys, shift))
     mono = x.mean(1)
-    ev, end = events(grid, keys)
+    ev, end = events(grid, keys, shift)
     full = grid == "full"
     out = {}
     for label, t, ns, v, ped in ev:
@@ -235,10 +274,18 @@ def measure(binary, case, grid, tmp):
                 pk.append(p[m].max() if m.any() else 1e-30)
             for k in range(2, 7):
                 c[f"H{k}"] = db(pk[k - 1] / pk[0])
+            c["h1"] = 20 * np.log10(2 * np.sqrt(pk[0]) / len(seg) / 0.5 / 32768.0 + 1e-15)   # H1, dBFS (Hann: sum w = N/2)
             c["inh"] = offharm(p, fr, [f0(ns[0])])
         else:
             c["imd"] = offharm(p, fr, [f0(n) for n in ns])
         c["cent"] = float((p * fr).sum() / (p.sum() + 1e-30))
+        if fx_cell(cid):                # the effects' grain: the power off every harmonic band, 12..20 kHz, in dBFS
+            on = np.zeros(len(fr), bool)
+            for fu in [f0(n) for n in ns]:
+                for k in range(1, int(20000 / fu) + 1):
+                    on |= np.abs(fr - k * fu) < max(IBW, k * fu * IREL)
+            hf = (fr >= 12000) & (fr < 20000) & ~on
+            c["grain"] = db(p[hf].sum() * 2 / (len(seg) * 0.375 * len(seg)) / 32768.0 ** 2)   # (Hann: sum w^2 = 3N/8)
         c["decay"] = rms_db(mono[i + int(0.05 * FS):i + int(0.15 * FS)]) - rms_db(mono[off - int(0.15 * FS):off])
         body = mono[i + int(0.03 * FS):off]
         c["clk"] = clicks(body, body)
@@ -316,6 +363,20 @@ def last_tree(path=None):
     return path
 
 
+def last_cells(grid, base_tree=None):
+    """the last release's cells, measured live from its tree; cached in build/release_diff/ by the release's commit
+    and this tool's own bytes (a change to the measures re-measures it; nothing here can be saved from a candidate)"""
+    import hashlib
+    tree = last_tree(base_tree)
+    key = hashlib.sha256(open(os.path.join(tree, ".rev")).read().encode() + open(__file__, "rb").read()).hexdigest()[:16]
+    cache = os.path.join(OUT, f"last-{grid}-{key}.json")
+    if os.path.exists(cache):
+        return json.load(open(cache))
+    cells = measure_all(tree_bins(tree, os.path.join(OUT, "last-bin")), grid, "last-" + grid)
+    json.dump(cells, open(cache, "w"))
+    return cells
+
+
 # ---------------------------------------------------------------- the verdict
 
 def load_expected(path):
@@ -343,9 +404,17 @@ def moved(m, v, b):
     return d if abs(d) > tol_of(m) else None
 
 
-def ceiling(cid, lab, m, v, b):
+INFO = ("h1",)                      # measured for the other rules, judged by none
+NODIFF = ("grain",)                 # a ceiling only (a lower grain needs no entry)
+
+
+def ceiling(cid, lab, m, v, b, cell=None):
     """(limit, why) of a pristine ceiling for this value, or None"""
     cfg = cid.split("/")[2]
+    if m[0] == "H" and m[1:].isdigit() and fx_cell(cid) and cell and "h1" in cell and v + cell["h1"] < FX_FLOOR:
+        return None                     # under the reverb's int16 grain (FX_FLOOR); the grain has its own ceiling
+    if m == "grain":
+        return b + MARGIN, "the effects' grain (12..20 kHz off the harmonics, dBFS) over the last release + 3 dB"
     if m[0] == "H" and m[1:].isdigit():
         lim = max(b + MARGIN, FLOOR_H)
         if m == "H3" and lab.endswith("v127") and b <= CEIL_H3:
@@ -359,8 +428,8 @@ def ceiling(cid, lab, m, v, b):
         return max(b + MARGIN, -90.0), "noise floor over the last release + 3 dB"
     if m == "clip" and cfg != "RAW":
         return 0, "a clip outside RAW"
-    if m == "keyup":
-        return 0.5, "louder after the key-up"
+    if m == "keyup" and cfg != "PRESET":            # (a preset's delay repeats the strike after the key-up: diff only;
+        return 0.5, "louder after the key-up"       # 0.9.9's F18 HQ k69 v64 is +1.7 dB by its echo)
     return None
 
 
@@ -375,15 +444,17 @@ def judge(cand, base, expected):
         for lab, ms in cand[cid].items():
             bl = bc.get(lab, {})
             for m, v in ms.items():
+                if m in INFO:
+                    continue
                 b = bl.get(m)
                 if b is None:
                     if m != "lim" and "level" in bl and bl["level"] >= SILENT:
                         fails.append((cid, lab, m, v, None, None, "no baseline value"))
                     continue
-                c = ceiling(cid, lab, m, v, b)
+                c = ceiling(cid, lab, m, v, b, ms)
                 if c and v > c[0] + 1e-9:
                     fails.append((cid, lab, m, v, b, c[0], "CEILING: " + c[1]))
-                d = moved(m, v, b)
+                d = None if m in NODIFF else moved(m, v, b)
                 if d is None:
                     continue
                 hit = None
@@ -429,7 +500,7 @@ def report(cand, base, fails, moves, stale, expected, grid, top=25):
         for cid, lab, m, v, b, lim, why in sorted(other, key=lambda f: -abs((f[3] or 0) - (f[4] or 0)))[:top]:
             lines.append(f"  {cid}/{lab:10s} {m:7s} {v if v is None else round(v, 2)!s:>8}  last "
                          f"{b if b is None else round(b, 2)!s:>8}  {why}")
-    big = sorted(moves, key=lambda x: -abs(x[5]) / (tol_of(x[2]) if x[2] != "cent" else TOL["cent"]))[:top]
+    big = sorted(moves, key=lambda x: -abs(x[5]) / max(tol_of(x[2]) if x[2] != "cent" else TOL["cent"], 0.1))[:top]
     if big:
         lines.append(f"\nthe biggest moves (in tolerances):")
         for cid, lab, m, v, b, d, hit in big:
@@ -442,16 +513,17 @@ def report(cand, base, fails, moves, stale, expected, grid, top=25):
 
 
 def draft(moves, path):
-    """the unlisted moves as expected-changes entries, grouped by case and metric (reason: TODO)"""
+    """the unlisted moves as expected-changes entries, one per TYPE (or preset) and metric over both builds, every
+    config and method (reason: TODO; narrow them by hand where a move belongs to one case)"""
     import yaml
     g = {}
     for cid, lab, m, v, b, d, hit in moves:
         if hit is None:
-            k = (cid, m)
+            k = (cid.split("/")[1], m)
             lo, hi = g.get(k, (d, d))
             g[k] = (min(lo, d), max(hi, d))
-    doc = {"changes": [{"match": f"{cid}/*", "metric": m, "min": round(lo - 0.5, 1), "max": round(hi + 0.5, 1),
-                        "reason": "TODO"} for (cid, m), (lo, hi) in sorted(g.items())]}
+    doc = {"changes": [{"match": f"*/{t}/*", "metric": m, "min": round(lo - 0.5, 1), "max": round(hi + 0.5, 1),
+                        "reason": "TODO"} for (t, m), (lo, hi) in sorted(g.items())]}
     yaml.safe_dump(doc, open(path, "w"), sort_keys=False, width=120)
 
 
@@ -463,10 +535,23 @@ def run(grid="fast", bins=None, expected=EXPECTED, base_tree=None):
         doc = json.load(open(BASE_FAST))
         base = doc["cases"]
     else:
-        base = measure_all(tree_bins(last_tree(base_tree), os.path.join(OUT, "last-bin")), grid, "last-" + grid)
+        base = last_cells(grid, base_tree)
     exp = load_expected(expected)
     fails, moves, stale = judge(cand, base, exp)
     return not fails, report(cand, base, fails, moves, stale, exp, grid), cand, base, fails, moves
+
+
+def save_guard(name):
+    """a gate baseline is re-saved only on a tree that passes the pristine gate (AGENTS.md 5b: a hash catches a
+    change, not a bad change); the report's head goes in the commit message"""
+    ok, text, *_ = run("fast")
+    os.makedirs(OUT, exist_ok=True)
+    open(os.path.join(OUT, "save-guard.txt"), "w").write(text + "\n")
+    print("\n".join(text.splitlines()[:2]) + f"  (build/release_diff/save-guard.txt: put its head in the commit)")
+    if not ok:
+        raise SystemExit(f"{name} --save refused: the pristine gate fails against {LAST} "
+                         "(build/release_diff/save-guard.txt). Fix the sound, or list the intended moves in "
+                         "tests/expected_changes.yaml with the coordinator's sign-off.")
 
 
 def main():
@@ -488,6 +573,7 @@ def main():
         if a.grid != "fast" or not bins:
             raise SystemExit("--save-base: --grid fast with --fm1 and --hq of the last release's tree")
         cells = measure_all(bins, "fast", "base-fast")
+        cells = {c: {l: {m: round(v, 3) for m, v in ms.items()} for l, ms in cs.items()} for c, cs in cells.items()}
         json.dump({"release": LAST, "cases": cells}, open(BASE_FAST, "w"), indent=0, sort_keys=True)
         print(f"{BASE_FAST}: {len(cells)} cases ({time.time() - t0:.1f} s)")
         return 0
