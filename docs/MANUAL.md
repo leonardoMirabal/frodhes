@@ -907,12 +907,13 @@ or PLATE (the plate on the bright and vintage sounds), with LOW CUT at 150–200
 
 The echoes and sweeps marked "on the tempo" follow the TEMPO page's BPM (120 when you start; PLAY taps it), so they
 fit what you play. The factory presets are level-matched, so browsing does not jump in volume. VIBES and MARIMBA sit
-a little above the electric pianos, as their types do. Six presets use a drive type: F06 KHLON, F09 BHLUE, F10 and
+a little above the electric pianos, as their types do. Five presets play quieter than that, so that hard playing stays clear of the output limiter (their hottest chords would reach it): F04 about 2.2 LU and F08 about 3.6 LU under F01, F13 at +1.0 instead of +2.5, F15 at -1.5 instead of -0.2 and F16 at -5.0 instead of +2.5 (LU against F01, an A3-C4-E4 chord at velocity 100). Six presets use a drive type: F06 KHLON, F09 BHLUE, F10 and
 F12 TSH8, F11 and F19 OHCD.
 
 **The starter user presets.** Until you save your first preset, U01–U09 hold nine more electric piano sounds to play or to
 overwrite (an FM-1 that already has saved user presets keeps exactly those); U10–U16 start empty. They are
-level-matched like the factory presets:
+level-matched like the factory presets, except U02 (about 4.6 LU under F01) and U07 (about 1.2 LU under), kept quieter for the
+same reason as the five factory presets above:
 
 | Preset | What it is |
 | --- | --- |
