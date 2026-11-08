@@ -745,17 +745,22 @@ def _tsync():
 
 @case("TREM-WAH")
 def _wah():
-    """EFFECT WAH: a touch wah, harder playing opens it. A soft and a hard chord's centroid apart: 41 Hz dry, 117 Hz
-    with the wah at DEPTH 64; the wah at least 40 Hz more than dry"""
-    def spread(extra):
-        c = []
-        for vel in (30, 127):
+    """EFFECT WAH: a touch wah, harder playing opens it. The wah's own response (the wah over dry, per third octave, on
+    a soft and a hard chord): its peak moves up by at least 2 octaves from v30 to v127 (0.9.9: 356 Hz -> 3.6 kHz).
+    (2026-11-08: was the chords' centroid spread, wah over dry >= 40 Hz; the pickup drive brightens the hard chord on
+    its own, dry 41 -> 325 Hz, which the centroid can no longer tell from the wah: the wah's peak 356 Hz -> 7.2 kHz)"""
+    edges = 100 * 2 ** (np.arange(0, 22) / 3)
+
+    def peak(vel):
+        S = []
+        for extra in ([], [cc(30, 17, 127), cc(32, 18, 64), cc(33, 19, 64)]):
             w = R(CLEAN + extra + sum((note(200, n, vel, 1200) for n in (48, 55, 60, 64)), []), 1600)
             f, X = spec(w.seg(0.21, 0.4))
-            c.append((f * X).sum() / X.sum())
-        return c[1] - c[0]
-    d, wv = spread([]), spread([cc(30, 17, 127), cc(32, 18, 64), cc(33, 19, 64)])
-    return wv - d, 40.0, f"dry {d:.0f} Hz, wah {wv:.0f} Hz"
+            S.append(np.array([X[(f >= a) & (f < b)].sum() for a, b in zip(edges[:-1], edges[1:])]) + 1e-9)
+        i = int(np.argmax(S[1] / S[0]))
+        return math.sqrt(edges[i] * edges[i + 1])
+    lo, hi = peak(30), peak(127)
+    return math.log2(hi / lo), 2.0, f"the wah's peak {lo:.0f} Hz at v30, {hi:.0f} Hz at v127"
 
 
 @case("TREM-KINDS-panel")

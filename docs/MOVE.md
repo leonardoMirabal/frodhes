@@ -177,7 +177,7 @@ so the page count is 13 or 14.
 | **REVERB** | REVERB · MIX · DECAY · TONE · PREDLY · SIZE · MOD · LOWCUT |
 | **TEMPO** | TRSYNC · PHSYNC · DLSYNC |
 | **ARPEGGIO** | MODE · RATE · OCT · GATE · HOLD |
-| **LFO/SETUP** | SHAPE · RATE · SYNC · RETRIG · DLTONE · LEVEL · CHAN |
+| **LFO/SETUP** | SHAPE · RATE · SYNC · RETRIG · DLTONE · LEVEL · CHAN · RESP |
 | **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI |
 
 The names are the FM-1's where they fit and shorter where they do not (HAMMR, DAMPR, MKUP; an option the same way
@@ -270,8 +270,9 @@ tempo](#midi-and-tempo)).
 
 ### LFO/SETUP, MAPPINGS
 
-The filter's [LFO](MANUAL.md#lfo), the delay's tone, the output LEVEL and the MIDI channel (CHAN, ALL by default;
-[SETUP](MANUAL.md#setup) and [MIDI](MANUAL.md#midi)), and the pressure mappings (Move only):
+The filter's [LFO](MANUAL.md#lfo), the delay's tone, the output LEVEL, the MIDI channel (CHAN, ALL by default;
+[SETUP](MANUAL.md#setup) and [MIDI](MANUAL.md#midi)) and RESP, the electric piano's velocity response (DEEP by
+default, or EVEN; the manual's [MIDI](MANUAL.md#midi) RESPONSE, CC 40), and the pressure mappings (Move only):
 
 - **AT CC / AT LO / AT HI**: channel pressure (aftertouch) drives the control on that MIDI CC number, from LO (no
   pressure) to HI (full pressure).
@@ -282,7 +283,7 @@ An HI under LO turns the direction round. A CC of 0 is off, and both mappings ar
 as if a controller sent that CC (the CC numbers are the FM-1's, the manual's [MIDI](MANUAL.md#12-midi)). A mapping
 to one of the FM-1's developer and test CCs (2-4, 8-11, 41, 42, 114, 116 and 119) does nothing.
 
-![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=a1da1851)
+![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=ba68223e)
 ![MAPPINGS](manual/img/move/move-mappings.png?v=be59afe9)
 
 ## The list

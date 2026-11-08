@@ -427,7 +427,8 @@ class FakeRig(UsbRig):
                 ph = tt / 0.25
             x *= 1 - st.get(18, 0) / 127 * (0.5 + 0.5 * np.cos(2 * np.pi * ph))
         x *= 0.25 if self.state.get(110, 64) == 0 else 1.0                # LEVEL (CC 110 0: -12 dB)
-        x = 24000 * np.tanh(x / 24000)                                    # (the app's limiter, softly)
+        x = 29204 * np.tanh(x / 29204)                                    # (the app's limiter, softly: fx.c LIM_T;
+        #                                                                     2026-11-08: 24000 before 0.9.10)
         clean = np.stack([x, 0.9 * x], 1)
         # (the tap: the plugin's own output, before the Move's trim and mix, FAKE_TAP_LEAD s ahead of the take)
         self.tap = np.concatenate([np.zeros((int(FAKE_TAP_LEAD * FS), 2)), np.round(clean / FAKE_MIX),
