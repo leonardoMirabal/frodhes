@@ -212,11 +212,11 @@ plugin:                    ## build/plugin/bundles/Frodhes.{clap,vst3,component}
 	$(PLUGIN_NICE) cmake --build $(PLUGIN_BUILD) -j$(PLUGIN_J)
 
 test-plugin: plugin        ## the coroutine, the headless host's selftest (params, state, rates, 16 slots), the
-                           ## parameter table up to date, a quick Gate D
+                           ## parameter table up to date, a quick Gate D with the core (presets, learn, tempo ...)
 	$(PLUGIN_BUILD)/frp_test_coro
 	$(PLUGIN_BUILD)/frp_clap_render $(PLUGIN_BUILD)/bundles/Frodhes.clap --selftest
 	$(PY) tools/gen_plugin_params.py --check
-	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py --quick --only classic,hq,rate48
+	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py --quick --only classic,hq,rate48,core
 
 gate-d: plugin             ## Gate D: the plugin renders the host build's audio (tools/gate_d.py, every mode)
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py
