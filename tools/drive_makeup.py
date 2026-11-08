@@ -10,8 +10,9 @@
 
 The drive (S1a) makes the swing through the pickup follow the velocity, which is its timbre; it also took the mf level
 about 6 dB down and the top keys 6 dB down at v127. The make-up is a gain on the voice's output only (the swing, the
-pickup's curve and every timbre term stay the drive's): per key and velocity (every 8), ref RMS / drive RMS (one note in
-its own run, effects bypassed by CC 119, NOISE 0, 50 .. 500 ms after the note-on). The drive's hard
+pickup's curve and every timbre term stay the drive's): per key and velocity anchor, ref RMS / drive RMS (one note in
+its own run, effects bypassed by CC 119, NOISE 0, 50 .. 500 ms after the note-on), or the gain that matches the
+critical-band loudness (tools/cb_loud.py) where that is larger: the darker treble at the same RMS sounds quieter. The drive's hard
 low notes are peakier at the same RMS (a v127 bass chord peaks ~1-2 dB over the reference's): the headroom is the
 output level's (set for the worst case), not this table's. Anchors at v48 and above match the
 reference; below, the larger of the two levels (the make-up never under 1), so the curve has no step. The pickup output
@@ -24,6 +25,9 @@ import wave
 from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import cb_loud  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "build", "drive_makeup")
@@ -79,14 +83,14 @@ def render(job):
     pk = float(np.abs(x[int(0.2 * FS):]).max() + 1e-9)
     seg = seg[i:][int(0.05 * FS):int(0.5 * FS)]
     pf = float(np.abs(run1(binary, ty, n, vel, 0)[int(0.2 * FS):]).max() + 1e-9)
-    return float(np.sqrt(np.mean(seg * seg)) + 1e-9), pk, pf
+    return (float(np.sqrt(np.mean(seg * seg)) + 1e-9), pk, pf, *cb_loud.bands(seg / 32768.0))
 
 
 def grid(binary, keys, vels, jobs, types=TYPES):
     js = [(binary, t, n, v) for t in types for n in keys for v in vels]
     with ProcessPoolExecutor(jobs) as ex:
         r = list(ex.map(render, js, chunksize=8))
-    return np.array(r).reshape(len(types), len(keys), len(vels), 3)
+    return np.array(r).reshape(len(types), len(keys), len(vels), 3 + len(cb_loud.EDGES) - 1)
 
 
 def write(code):
@@ -115,6 +119,10 @@ def main():
         nomk = build("nomk", ROOT, ["-DRH_NO_DRV_MK", "-DRH_NO_DYN"])   # (the dynamics stage after it)
         R, D = grid(ref, keys, ANCH, a.j), grid(nomk, keys, ANCH, a.j)
         c = 32 * np.log2(R[..., 0] / D[..., 0])                      # 1/32 octave: the RMS's ratio
+        for idx in np.ndindex(c.shape):                              # ... or the critical-band loudness's, the
+            if ANCH[idx[2]] >= MATCH_V:                              # larger (never quieter by either: the
+                g = cb_loud.match_db(D[idx][3:], cb_loud.loud(R[idx][3:]))   # treble's brightness)
+                c[idx] = max(c[idx], 32 * g / 6.0206)
         for j, v in enumerate(ANCH):
             if v < MATCH_V:
                 c[:, :, j] = np.maximum(c[:, :, j], 0.0)
