@@ -1586,6 +1586,7 @@ __attribute__((noinline)) static void dly_type(int32_t sw)
  * TIME change after a silent line routes only if the block carries sound; with the first chunk silent the decision waits
  * for the chunk that has some, below); at the last: the make-up, the rows, the tail's end */
 static struct { int32_t sw, last, target, wet, fb, col, depth, ddr; uint8_t quiet, routed, amb, olast; uint32_t w0; int64_t e, m; } dly_c;
+static struct { int32_t sg16; uint32_t n; uint8_t on; } dly_pd;   /* the last block's rows, not yet written */
 static void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
 {
     uint32_t j, o = fxc_o, e = fxc_e;
@@ -1674,11 +1675,21 @@ static void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
         dly_sg += (tg - dly_sg) >> 2;
         if (tg == 0 && dly_sg < 4) dly_sg = 0;
         sg16 = dly_c.last ? 0 : exp2_q16(dly_sg);
-        if (dly_wm) dly_wr_c(dly_c.w0, n, sg16);
         dly_wk = dly_c.wet;
-        if (dly_c.routed) tp_route_end(n, dly_c.target);
-        else if (!dly_c.sw && dly_tail_over(n, dly_c.target)) dly_lp = dly_hp = 0;
+        dly_pd.sg16 = sg16; dly_pd.n = n; dly_pd.on = 1;   /* (the rows: the next block's first chunk, dly_flush_c) */
     }
+}
+/* the block's rows and the tail's end, once its last chunk is in: run at the next block's first chunk, before anything
+ * else there (fx_process), off the last chunk (core 0 waits for it). Nothing reads the rows before that: every read is
+ * at least 257 samples behind (dly_wr_c); dly_tail_over reads them, so it moves too. A chunk run again (a late job)
+ * finds it done */
+static void dly_flush_c(void)
+{
+    if (!dly_pd.on) return;
+    if (dly_wm) dly_wr_c(dly_c.w0, dly_pd.n, dly_pd.sg16);
+    if (dly_c.routed) tp_route_end(dly_pd.n, dly_c.target);
+    else if (!dly_c.sw && dly_tail_over(dly_pd.n, dly_c.target)) dly_lp = dly_hp = 0;
+    dly_pd.on = 0;
 }
 #else
 static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
@@ -2318,6 +2329,7 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     if (FXC_1) c1_est_blk++;
 #endif
     if (FXC_1) {                                       /* (CC 10's block: one chunk, frodhes.c) */
+        dly_flush_c();                                 /* (the block before's delay rows) */
         if (fx_reset_req) {
             fx_reset_state(); memset((void *)mono, 0, n * sizeof mono[0]); fx_reset_req = 0;
             FX_SIDE_ON = 0; sp_g = 32768; sp_aw = 0;
