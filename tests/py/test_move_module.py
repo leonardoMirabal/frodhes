@@ -207,7 +207,7 @@ def test_every_knob_resets_to_the_firmware_default():
     tw = re.search(r"static uint32_t tw_kind\(void\)[^{]*\{(.*?)\n\}", src("ui.c"), re.S).group(1)
     assert "return sw == 2u ? 3u : sw != 1u ? 0u : m ? 2u : 1u;" in tw
     sw, mode = M["params"]["P_TW_SW"]["def"], M["params"]["P_TW_MODE"]["def"]
-    firm = {"s_tune": 0, "s_mch": 0, "s_twkind": 3 if sw == 2 else 0 if sw != 1 else 2 if mode else 1,
+    firm = {"s_tune": 0, "s_mch": 0, "s_vresp": 0, "s_twkind": 3 if sw == 2 else 0 if sw != 1 else 2 if mode else 1,
             "s_arpmode": 0, "s_arprate": int(arp["ARP_RATE"]), "s_arpoct": int(arp["ARP_OCT"]) + 1,
             "s_arpgate": int(arp["ARP_GATE"]), "s_arphold": int(arp["ARP_HOLD"]), "s_sustain": 0, "s_fx": 1}
     mapd = [int(x) for x in re.search(r"#define MB_MAP_DEFAULT \{([^}]*)\}",
