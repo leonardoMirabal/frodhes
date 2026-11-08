@@ -58,3 +58,23 @@ def test_log_on_runs_in_a_posix_shell(tmp_path):
         assert not os.path.exists(flag)
     finally:
         mc.LOG_FLAG = old
+
+
+def _run(worst, n, **kw):
+    r = {"rings": {str(k): {"worst": w, "missing": 0} for k, w in enumerate(worst)}, "perf": {"overruns": 0},
+         "takes": [{"gated": 0} for _ in worst]}
+    r.update(kw)
+    return mc.verdict(r, n)
+
+
+def test_verdict_bars():
+    """one instance within U12 (725 us), two or three each within ~967 us, four reported only"""
+    assert _run([573], 1)[0] == "PASS"
+    assert _run([700], 1)[0] == "PASS" and "explain" in _run([700], 1)[1]   # +22 % re 0.9.9: a regression to explain
+    assert _run([726], 1)[0] == "FAIL"
+    assert _run([900, 960, 940], 3)[0] == "PASS"
+    assert _run([900, 970, 940], 3)[0] == "FAIL"
+    assert _run([1500] * 4, 4)[0] == "INFO"
+    assert _run([600, 600], 3)[0] == "FAIL"                                  # an instance's ring missing
+    assert _run([600], 1, perf={"overruns": 2})[0] == "FAIL"
+    assert _run([600], 1, takes=[{"gated": 1}])[0] == "FAIL"
