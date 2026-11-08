@@ -74,7 +74,8 @@ def test_bark_grows_with_velocity(binr):
         if n < 60:
             assert h[2] > h[1] + 10, (n, h)
             g = (h[3] - h[2]) / (r[3]["L"] - r[2]["L"])
-            assert 0.7 < g < 1.4, (n, g)                # ~1 dB of H2/H1 per dB of level above v96 (0.98, 1.07)
+            assert 1.4 < g < 2.8, (n, g)                # ~2 dB of H2/H1 per dB of level above v96 (2.05, the
+            # level make-up (rh_drv_mk): the level from v96 to v127 is 0.9.9's, the bark the drive's; before it ~1)
         else:
             assert h[2] - h[1] < 8.0, (n, h)            # v96 is just past the knee
 
