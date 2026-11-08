@@ -727,11 +727,25 @@ static const uint16_t *rh_vm_row(uint32_t t, uint32_t key)
 #else
 #define RH_VM_ROW(t, key) ((t) ? RH_VM_G[key] : RH_VM_X[key])
 #endif
+#if !defined(RH_VM_PROBE) && !defined(RH_NO_VM_MK)
+#include "rh_velmap_mk.h"                      /* MAP's level make-up (tools/velmap_makeup.py --write) */
+#endif
 static int32_t rh_vm(uint32_t t, uint32_t key, uint32_t vel)     /* t 0: X, 1: G; Q11 */
 {
     const uint16_t *r = RH_VM_ROW(t, key);
     uint32_t i = vel >> 3, f = vel & 7u;
-    return (int32_t)r[i] + ((((int32_t)r[i + 1] - (int32_t)r[i]) * (int32_t)f) >> 3);
+    int32_t a = (int32_t)r[i] + ((((int32_t)r[i + 1] - (int32_t)r[i]) * (int32_t)f) >> 3);
+#ifdef RH_VM_MK_Q
+    if (t) {   /* G x the level make-up (Q12, the notes back to the reference release's level at mf and above, never
+                * under it below: an output gain only, the colour is the map's); G x mk < 2^16 (gen: asserted) */
+        const uint16_t *k = RH_VM_MK[key];
+        int32_t m = (int32_t)k[i] + ((((int32_t)k[i + 1] - (int32_t)k[i]) * (int32_t)f) >> 3);
+        a = (int32_t)(((uint32_t)a * (uint32_t)m) >> 12);
+        if (a > 65535) a = 65535;
+        if (a < 1) a = 1;
+    }
+#endif
+    return a;
 }
 /* MAP: the voice gain x the gain before the drive's (RH_DRV_SG, Q16) x G, the kill level / both (the same output
  * level ends the voice), the noises' scale X x G (at most 1), the steal score's swing (the state / X) */

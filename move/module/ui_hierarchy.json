@@ -1215,6 +1215,16 @@
             "16"
           ],
           "default": 0
+        },
+        {
+          "key": "s_vresp",
+          "name": "RESP",
+          "type": "enum",
+          "options": [
+            "DEEP",
+            "EVEN"
+          ],
+          "default": 0
         }
       ],
       "knobs": [
@@ -1224,7 +1234,8 @@
         "p_lfo_retrig",
         "p_dl_tone",
         "p_level",
-        "s_mch"
+        "s_mch",
+        "s_vresp"
       ]
     },
     "maps": {
