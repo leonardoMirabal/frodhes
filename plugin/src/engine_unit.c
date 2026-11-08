@@ -5,9 +5,11 @@
  * unit is static except the slot's table frp_slot_<FRP_SLOT>, which the build checks with nm (no other global), so
  * the copies never meet. web_hal.c's exports become static here (plugin/compat/emscripten.h makes
  * EMSCRIPTEN_KEEPALIVE "static") and its main() is renamed; the host build's diagnostics (printf, getenv) are
- * compiled out, as on the Move. DINGHY_PLUGIN is defined for any future hook in shared code (none so far). */
+ * compiled out, as on the Move. DINGHY_PLUGIN is defined for any future hook in shared code (none so far).
+ * Slots 0..15 are built with the Move's switches (HQ: 16 voices, the float paths), 16..31 with none (CLASSIC: the
+ * FM-1's build, 10 voices); plugin/cmake/slots.cmake. */
 #ifndef FRP_SLOT
-#error "plugin/src/engine_unit.c: build with -DFRP_SLOT=<0..15> (plugin/cmake/slots.cmake)"
+#error "plugin/src/engine_unit.c: build with -DFRP_SLOT=<0..31> (plugin/cmake/slots.cmake)"
 #endif
 #define DINGHY_HOST 1
 #define DINGHY_WEB 1
@@ -36,4 +38,5 @@ const frp_slot_api_t FRP_CAT(frp_slot_, FRP_SLOT) = {
     .boot = sb_boot, .booted = sb_booted, .reuse = sb_reuse, .put = sb_put, .step = sb_step, .drain = sb_drain,
     .avail = sb_avail, .read = sb_read, .now = sb_now, .snapshot = sb_snapshot, .state_get = sb_state_get,
     .state_set = sb_state_set, .set_tempo = sb_set_tempo, .stats = sb_stats, .check_params = sb_check_params,
+    .user_put = sb_user_put, .fact_info = sb_fact_info,
 };
