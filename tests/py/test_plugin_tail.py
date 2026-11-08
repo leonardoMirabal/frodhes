@@ -68,13 +68,14 @@ def randoms(n, seed):
     return out
 
 
-def tail_check(tmp_path, name, params, engine, want):
+def tail_check(tmp_path, name, params, engine, want, extra=()):
     lines = [f"10 param {i} {v}" for i, v in params.items()]
-    lines += [f"100 midi 0x90 {k} 127" for k in (36, 48, 60, 67, 76, 84)]
-    lines += [f"600 midi 0x80 {k} 0" for k in (36, 48, 60, 67, 76, 84)]
+    # the chord 1 s after the settings: the plugin tells a changed tail once it held for two checks (64 blocks)
+    lines += [f"48100 midi 0x90 {k} 127" for k in (36, 48, 60, 67, 76, 84)]
+    lines += [f"48600 midi 0x80 {k} 0" for k in (36, 48, 60, 67, 76, 84)]
     script = tmp_path / "tail.txt"
     script.write_text("\n".join(lines) + "\n")
-    r = subprocess.run([RENDER, CLAP, str(script), str(tmp_path / "x.wav"), "--engine", engine, "--tail-check", want],
+    r = subprocess.run([RENDER, CLAP, str(script), str(tmp_path / "x.wav"), "--engine", engine, "--tail-check", want, *extra],
                        capture_output=True, text=True, timeout=600)
     assert r.returncode == 0, f"{name} ({engine}): {r.stdout[-1500:]}"
     return r.stdout
@@ -92,3 +93,11 @@ def test_tail_not_cut(tmp_path, engine, name, params):
 @pytest.mark.parametrize("name,params", INFINITE)
 def test_tail_infinite(tmp_path, name, params):
     tail_check(tmp_path, name, params, "hq", "infinite")
+
+
+@pytest.mark.parametrize("name,params", [CASES[3], CASES[12]])
+def test_tail_told_on_main_thread_under_the_wrapper(tmp_path, name, params):
+    """As clap-wrapper's host (the VST3 / Audio Unit), the change is told from the main thread (its restartComponent and
+    property change are main-thread calls); clap_render fails on a call in process."""
+    out = tail_check(tmp_path, name, params, "hq", "finite", ("--host-vendor", "wrapper"))
+    assert "0 tail changes told" not in out, out

@@ -17,7 +17,9 @@
  *   latency       the bridge's pre-roll (plugin/src/bridge.c), constant
  *   tail          how long the sound can go on after the last event: the notes' release, the reverb and the delay
  *                 at their settings (tail_ms below; INFINITE reverb at SUSTAIN / FREEZE and self-oscillating echoes:
- *                 infinite); the host is told when it changes
+ *                 infinite); the host is told when it changes and has held for a moment: on the audio thread
+ *                 (CLAP's rule); under clap-wrapper on the main thread (the VST3's restartComponent and the Audio
+ *                 Unit's property change are main-thread calls)
  *   gui           the plugin's window (plugin/gui_clap.c over plugin/gui_*.c, drawing plugin/ui/frui.c; macOS
  *                 Cocoa, Windows HWND, Linux X11 with the host's posix-fd and timer support): it reaches the core
  *                 only through frp_ui_iface.h's calls
@@ -83,7 +85,8 @@ typedef struct frp_core {
     double rate;                         /* the activation's (0: not active yet) */
     _Atomic uint32_t tail_said;          /* the tail (ms) the host was last told about; tail_new: a change to tell */
     _Atomic int tail_new;
-    uint32_t tail_blocks;
+    uint32_t tail_blocks, tail_pend;     /* (the audio thread: tail_pend, the change seen at the last check) */
+    int tail_main;                       /* tell on the main thread: the host is clap-wrapper (VST3 / Audio Unit) */
     void *gui;                           /* frp_ui_gui_data */
     oq_ev_t oq[OQ];
     _Atomic uint32_t oqw, oqr;
@@ -288,10 +291,19 @@ static uint32_t tail_get(const clap_plugin_t *plugin)
     return (uint32_t)ceil(ms * rate / 1000.0) + frp_inst_latency(p->in);
 }
 static const clap_plugin_tail_t EXT_TAIL = { tail_get };
-static void tail_watch(frp_plugin_t *p)  /* the audio thread, every 32nd block: a changed tail is told on the main thread */
+static void tail_watch(frp_plugin_t *p)  /* the audio thread, every 32nd block */
 {
-    if (++p->tail_blocks & 31u) return;
-    if (tail_ms(p) != atomic_load(&p->tail_said) && !atomic_exchange(&p->tail_new, 1)) p->host->request_callback(p->host);
+    uint32_t t;
+    if (!p->htail || ++p->tail_blocks & 31u) return;
+    t = tail_ms(p);
+    if (t == atomic_load(&p->tail_said)) { p->tail_pend = t; return; }
+    if (t != p->tail_pend) { p->tail_pend = t; return; }    /* told once it holds for two checks (a knob turned: once) */
+    if (p->tail_main) {
+        if (!atomic_exchange(&p->tail_new, 1)) p->host->request_callback(p->host);
+    } else {
+        atomic_store(&p->tail_said, t);
+        p->htail->changed(p->host);                         /* ([audio-thread]); the host reads it (tail_get) */
+    }
 }
 
 /* ---- latency, state */
@@ -342,6 +354,7 @@ static bool pl_init(const clap_plugin_t *plugin)
     p->log = p->host->get_extension(p->host, CLAP_EXT_LOG);
     p->hparams = p->host->get_extension(p->host, CLAP_EXT_PARAMS);
     p->htail = p->host->get_extension(p->host, CLAP_EXT_TAIL);
+    p->tail_main = p->host->vendor && !strcmp(p->host->vendor, "The CLAP Wrapper Team");
     p->in = frp_inst_new();
     if (!p->in) return false;
     if (frp_inst_slot(p->in) < 0)
@@ -541,7 +554,7 @@ static void pl_main(const clap_plugin_t *plugin)
         say(p, CLAP_LOG_WARNING, "Frodhes: no engine slot free for that ENGINE (16 instances use it): it stays");
         if (p->hparams) p->hparams->rescan(p->host, CLAP_PARAM_RESCAN_VALUES);
     }
-    if (atomic_exchange(&p->tail_new, 0)) {   /* told once; the host reads the new tail (tail_get) */
+    if (atomic_exchange(&p->tail_new, 0)) {   /* (clap-wrapper) told once; the host reads the new tail (tail_get) */
         atomic_store(&p->tail_said, tail_ms(p));
         if (p->htail) p->htail->changed(p->host);
     }

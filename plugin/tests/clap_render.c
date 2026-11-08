@@ -20,6 +20,8 @@
  *                             a host that stops at the tail the plugin reports: after the script's last event the
  *                             tail is read (and must be finite / infinite); a finite one is checked by rendering 20 s
  *                             past it: nothing may sound after it (16-bit). No WAV is written (OUT.wav is ignored)
+ *     --host-vendor wrapper   the host says it is clap-wrapper (the VST3 / Audio Unit): the tail's change is told from
+ *                             the main thread, not in process
  *   Plugin-only script lines (plugin/tests/scripts): "T param ID VALUE", a CLAP parameter event at T (ID decimal or
  *   0x..., the value 0..hi).
  *   clap_render PLUGIN --selftest
@@ -67,8 +69,10 @@ static void h_clear(const clap_host_t *h, clap_id id, clap_param_clear_flags f) 
 static void h_flush(const clap_host_t *h) { (void)h; }
 static const clap_host_params_t H_PARAMS = { h_rescan, h_clear, h_flush };
 static int callbacks;
-static int tail_changes;
-static void h_tail_changed(const clap_host_t *h) { (void)h; tail_changes++; }
+/* the tail's changed() is an [audio-thread] call (in process); as clap-wrapper (--host-vendor wrapper) the plugin
+   calls it from the main thread instead, for the VST3's and the Audio Unit's main-thread calls behind it */
+static int tail_changes, tail_off_thread, in_process, as_wrapper;
+static void h_tail_changed(const clap_host_t *h) { (void)h; tail_changes++; if (in_process == as_wrapper) tail_off_thread++; }
 static const clap_host_tail_t H_TAIL = { h_tail_changed };
 static const void *h_ext(const clap_host_t *h, const char *id)
 {
@@ -80,7 +84,7 @@ static const void *h_ext(const clap_host_t *h, const char *id)
 }
 static void h_req(const clap_host_t *h) { (void)h; }
 static void h_cb(const clap_host_t *h) { (void)h; callbacks++; }
-static const clap_host_t HOST = { CLAP_VERSION_INIT, 0, "frodhes clap_render", "Frodhes tests", "", "1",
+static clap_host_t HOST = { CLAP_VERSION_INIT, 0, "frodhes clap_render", "Frodhes tests", "", "1",
                                   h_ext, h_req, h_req, h_cb };
 
 /* the input events of one process call */
@@ -160,6 +164,7 @@ static int process(const clap_plugin_t *p, float *l, float *r, uint32_t n, int64
     clap_audio_buffer_t out = { 0 };
     clap_process_t pr = { 0 };
     clap_event_transport_t tr = { 0 };
+    clap_process_status st;
     if (transport_bpm > 0.0) {
         tr.header.size = sizeof tr; tr.header.type = CLAP_EVENT_TRANSPORT; tr.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
         tr.flags = CLAP_TRANSPORT_HAS_TEMPO | CLAP_TRANSPORT_IS_PLAYING;
@@ -170,7 +175,10 @@ static int process(const clap_plugin_t *p, float *l, float *r, uint32_t n, int64
     pr.steady_time = steady; pr.frames_count = n;
     pr.audio_outputs = &out; pr.audio_outputs_count = 1;
     pr.in_events = &IN_EVENTS; pr.out_events = &OUT_EVENTS;
-    return p->process(p, &pr) == CLAP_PROCESS_ERROR ? -1 : 0;
+    in_process = 1;
+    st = p->process(p, &pr);
+    in_process = 0;
+    return st == CLAP_PROCESS_ERROR ? -1 : 0;
 }
 
 /* ---- the script */
@@ -316,6 +324,10 @@ static int tail_check(const clap_plugin_t *p, double rate, int block, int clap_n
             stop = last_ev + tail + (uint64_t)(20.0 * rate);
         }
     }
+    if (tail_off_thread) {
+        printf("FAIL the tail's changed() called %s process %d times\n", as_wrapper ? "in" : "outside", tail_off_thread);
+        return 1;
+    }
     printf("%s tail %.0f ms after the last event; the last sound %.0f ms after it (%.0f ms to spare), %d tail changes told\n",
            last_snd <= last_ev + tail ? "ok   " : "FAIL ", tail * 1000.0 / rate, ((double)last_snd - (double)last_ev) * 1000.0 / rate,
            ((double)(last_ev + tail) - (double)last_snd) * 1000.0 / rate, tail_changes);
@@ -344,6 +356,10 @@ int main(int argc, char **argv)
         } else if (!strcmp(argv[i], "--dialect")) clap_notes = !strcmp(argv[i + 1], "clap");
         else if (!strcmp(argv[i], "--tempo")) transport_bpm = atof(argv[i + 1]);
         else if (!strcmp(argv[i], "--tail-check")) tailck = !strcmp(argv[i + 1], "infinite");
+        else if (!strcmp(argv[i], "--host-vendor") && !strcmp(argv[i + 1], "wrapper")) {
+            HOST.vendor = "The CLAP Wrapper Team";
+            as_wrapper = 1;
+        }
     }
     if ((rc = read_script(argv[2], rate, &end))) return rc;
     if (load(argv[1]) || !(p = create())) return 1;

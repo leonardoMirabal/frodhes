@@ -195,7 +195,9 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
   is not affected.
 - The tail (`tests/py/test_plugin_tail.py`, in `make test-plugin`): `clap_render --tail-check` is a host that stops at
   the tail the plugin reports; with the measured worst corners and seeded random settings, both engines, it renders 20 s
-  past the tail and nothing sounds there; the settings that hold the sound report an infinite tail.
+  past the tail and nothing sounds there; the settings that hold the sound report an infinite tail. A changed tail is
+  told once it has held for two checks, in process (CLAP's audio thread); as clap-wrapper's host (the VST3 and the
+  Audio Unit) from the main thread, where their restart and property-change calls belong.
 - In other hosts (`make plugin-hosts`, `tools/plugin_hosts.py`, macOS): the Audio Unit in Apple's own AU host
   (AVAudioEngine offline, `tools/plugin_au_render.swift`, every event at its frame) renders a host script sample for
   sample as the CLAP render does, at 44.1 and 48 kHz; the VST3 and the Audio Unit in a JUCE-based host (pedalboard)
