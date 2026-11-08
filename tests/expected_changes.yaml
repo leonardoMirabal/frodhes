@@ -1,0 +1,20 @@
+# The intended sound changes of the next release against the last one (tools/release_diff.py, `make pristine` and
+# `make release-diff`). Every value that moves beyond its tolerance in either direction must match an entry here, with
+# a reason, or the gate fails. An entry never lifts a pristine ceiling (distortion, aliasing, clicks, noise, clips,
+# louder after the key-up): those hold whatever is listed.
+#
+# Reviewed: every new or widened entry needs the coordinator's sign-off, named in the commit message (AGENTS.md 5b).
+# At a release: `against` moves to the new release, the fast baseline is re-measured on the release's own tree
+# (tools/release_diff.py --save-base), and this list is emptied.
+#
+# An entry:
+#   - match: "fm1/MARIMBA/*"       # fnmatch on <build>/<TYPE or preset>/<FXOFF|RAW|FX|PRESET>/<A|B>/<cell>,
+#                                  # cell: k<key>v<vel>, chord-<name>, pedal or script
+#     metric: "level peak"         # space-separated fnmatch patterns (H2..H6 inh imd level peak cent decay keyup clk
+#                                  # clk_off noise clip lu cb lim)
+#     min: -4.0                    # optional: the allowed move (dB; cent: a ratio - 1)
+#     max: -2.0
+#     reason: "MARIMBA re-levelled to STAGE 77 (commit ...), measured -3.2 LU"
+#   `tools/release_diff.py --draft FILE` writes the unlisted moves in this form, each with reason TODO (which fails).
+against: v0.9.9
+changes: []
