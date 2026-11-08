@@ -83,9 +83,17 @@ def test_dropout_and_level_step_on_the_jack_are_caught(tmp_path):
 
 def test_the_plain_ncc_gate_fails_the_clean_proof_on_the_moves_floor(tmp_path, monkeypatch):
     """the device case of 2026-11-04: with the jack's floor at -65.7 dBFS, hil_crackle.track's plain 0.97 gate fires
-    on the clean chord as it decays toward the floor; judged against the floor (the default), the proof holds"""
+    on the clean chord as it decays toward the floor; judged against the floor (the default), the proof holds.
+    The jack 9 dB under USB (DRY_GAIN 0.35; the default 0.5 is 6 dB): the clean Rhodes (61baedac) plays the proof's
+    v90 chord 1.6 dB softer, and with the jack 6 dB under USB its tail stayed over the floor's reach for the 8 s take
+    (the plain gate: 0 events; 568fe9d6: 5). At 0.35 the plain gate fires (61baedac 20, 568fe9d6 28) and the
+    noise-aware one still proves (0 clean events, 6 of 6 clicks matched on both); at 0.25 the clicks themselves sink
+    under the floor (1 matched), so 0.35 it is"""
+    monkeypatch.setattr(mj, "DRY_GAIN", 0.35)
+    code, R, _ = run(tmp_path / "aware", "--prove")
+    assert code == 0 and R["proof"]["verdict"] == "PROVEN", R["proof"]["verdict"]
     monkeypatch.setattr(mj, "track_noise_aware", lambda events, j, noise: (list(events), []))
-    code, R, _ = run(tmp_path, "--prove")
+    code, R, _ = run(tmp_path / "plain", "--prove")
     assert code == 2 and "the clean take gave" in R["proof"]["verdict"]
     assert all(e[1] == "track" for e in R["proof"]["clean"]["gated_jack"]) and R["proof"]["clean"]["gated_jack"]
 

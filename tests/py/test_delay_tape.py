@@ -128,7 +128,12 @@ def test_mix_first_echo_as_loud_as_the_dry_at_64(kind):
     eased dry), the same at 127 as before (+3.0 here: the gain +5.9 dB), and MIX 32 still clearly under the dry"""
     e32, e64, e127 = echo_rel(kind, 32), echo_rel(kind, 64), echo_rel(kind, 127)
     assert abs(e64) < 1.0, e64
-    assert 2.0 < e127 < 4.0, e127
+    assert 2.0 < e127 < 4.5, e127
+    # (THRESHOLD, 2026-11-08: 4.5, was 4.0. The ratio is the echo's gain through the TONE filter on this chord's
+    # spectrum, so the source moves it: DIG / ANA / TAPE +3.94 / +3.79 / +3.91 on 0.9.9, +2.48 / +2.20 / +2.69 on
+    # 568fe9d6 (the barking Rhodes, more highs for the filter to take), +4.04 / +3.88 / +3.99 on 61baedac. The delay's
+    # code is the same in 568fe9d6 and 61baedac (only the Rhodes moved); MIX 64 within 0.6 dB of the dry on all three. A MIX
+    # 127 law 0.5 dB louder than today's would still fail)
     assert e32 < e64 - 3, (e32, e64)
 
 

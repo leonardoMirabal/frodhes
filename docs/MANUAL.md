@@ -289,7 +289,7 @@ controls: see [MARIMBA](#marimba).
 
 ### COMPRESSOR
 
-![COMPRESSOR](manual/img/comp.png?v=f5766e60)
+![COMPRESSOR](manual/img/comp.png?v=c3db5c74)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
