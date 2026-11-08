@@ -1242,7 +1242,6 @@ __attribute__((noinline)) static void bar_render(int32_t *mono_out, uint32_t n) 
  *    bar_fam / bar_nz do not change inside the ISR), so the noise of the first chunk already plays the block's level;
  *  - the levels, the ends, the steals' notes, the sleep and life: bar_end, voice by voice, in voice order.
  * bar_render (one core: CC 10's block, core 1 held) is bar_begin + one chunk + bar_end. */
-#define BAR_C1_CHUNKS 1
 _Static_assert(BAR_FADE_STEP * BAR_N >= 32767u, "FR_C1: a steal's fade must end in the block it starts");
 typedef struct {
     const int16_t *t;                               /* the pulse table this block (v->ptab at the block's start) */

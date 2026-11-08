@@ -356,10 +356,3 @@ static void eng_host_report(void)                /* tests/host.c, at the end of 
     if (bar_h_pred) fclose(bar_h_pred);
 }
 #endif
-
-#if FR_C1 && !defined(BAR_C1_CHUNKS)
-/* c1-bars stub (the bars branch removes this block): the whole block in the first chunk, as before */
-static void bar_begin(uint32_t n) { (void)n; }
-static void bar_chunk(int32_t *mono_out, uint32_t o, uint32_t e) { if (!o) bar_render(mono_out, 256u); (void)e; }
-static void bar_end(void) { }
-#endif
