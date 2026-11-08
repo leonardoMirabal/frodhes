@@ -67,7 +67,7 @@ static struct {
     uint8_t st_base[P_SLOTS];
     uint16_t st_hand;
     sb_cfg_t st_cfg;
-    uint8_t st_sus;
+    uint8_t st_sus, st_byp;
     uint8_t st_learn[128];
     int16_t st_pidx, st_upidx;           /* -2: the state had none (derived from set.preset) */
     char st_pname[FRP_PNAME], st_upname[FRP_PNAME];
@@ -151,12 +151,13 @@ static void sb_publish(void)
     atomic_store_explicit(&sb.pub_seq, q + 1u, memory_order_relaxed);
     atomic_thread_fence(memory_order_release);
     for (i = 0; i < P_COUNT; i++) { sb.pub.pv[i] = PV(i); ed |= PV(i) != snd_base[i]; }
-#ifdef FR_HQ
-    sb.pub.engine = FRP_ENGINE_HQ;
-#else
-    sb.pub.engine = FRP_ENGINE_CLASSIC;
-#endif
     sb.pub.voices = (uint8_t)RH_NV;
+    {   /* the voices sounding and held: the running engine's summaries (32-bit masks, rhodes.c / bars.h) */
+        uint32_t a = eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits, h = eng_cur == ENG_BARS ? bar_held_bits : rh_held_bits;
+        h &= a;
+        sb.pub.active = (uint8_t)__builtin_popcount(a);
+        sb.pub.held = (uint8_t)__builtin_popcount(h);
+    }
     sb.pub.tune = (uint8_t)(set.tune + 50);
     sb.pub.sustain = (uint8_t)(sus_held || sus_latched || sus_midi >= 64u);
     sb.pub.bypass = fx_bypass;
@@ -203,9 +204,11 @@ static void sb_read_pub(frp_snap_t *snap, settings_t *s, uint8_t *base, uint16_t
 /* ---- the state: the Move's flat JSON (move_bridge.h mb_state_get / mb_state_set), so a sound moves between a Move
  * track and a desktop session: the 256 B settings record as the app holds it (the sound, its undo copy, MIDI CHANNEL,
  * TOUCH, KEY VEL, TUNE ...), the sound it was loaded as (snd_base), the Move's mappings (written off; ignored here),
- * the tempo set by hand; "engine" (the plugin's ENGINE: bridge.c picks the slot by it; the Move ignores it). Then the
+ * the tempo set by hand; "engine" (the plugin's ENGINE until it became HQ only: always written "1", HQ, so an older
+ * build loads the sound on its HQ engine; never read: a state with "0", CLASSIC, loads on HQ too). Then the
  * plugin's own keys (version "pv" 2; the Move ignores them, a state without them loads their defaults): "pgm" program
- * changes, "tsrc" the tempo source, "ibpm" its BPM, "sall" / "sdiv" SYNC ALL, "sus" the SUSTAIN parameter, "learn"
+ * changes, "tsrc" the tempo source, "ibpm" its BPM, "sall" / "sdiv" SYNC ALL, "sus" the SUSTAIN parameter, "byp" the
+ * EFFECTS BYPASS parameter (a host parameter too: a host's saved value comes back; from 2026-11), "learn"
  * the learned CCs (128 bytes: code + 1 per CC), "pidx" / "pname" the preset playing, "upidx" / "upname" the undo
  * copy's. The Move's "rev" (a change counter its state_set never reads) is left out: a saved state depends on the
  * sound only, so saving, loading and saving again gives the same bytes. Version history: "v" 1 the Move's keys (the scaffold); "pv" 2 the plugin's. */
@@ -226,7 +229,7 @@ static int sb_hex_get(const char *s, void *p, uint32_t n)
     }
     return 0;
 }
-#define SB_STATE_N (40 + 2 * 256 + 12 + 2 * P_SLOTS + 12 + 12 + 24 + 24 + 16 + 120 + 2 * 128 + 4 * FRP_PNAME)
+#define SB_STATE_N (40 + 2 * 256 + 12 + 2 * P_SLOTS + 12 + 12 + 24 + 24 + 16 + 120 + 12 + 2 * 128 + 4 * FRP_PNAME)
 _Static_assert(SB_STATE_N < FRP_STATE_MAX, "the state fits bridge.h FRP_STATE_MAX");
 static int sb_state_get(char *buf, int n)
 {
@@ -248,9 +251,9 @@ static int sb_state_get(char *buf, int n)
     o += sprintf(o, "\",\"base\":\"");
     o += sb_hex_put(o, base, P_SLOTS);
     o += sprintf(o, "\",\"map\":\"%s\",\"hand\":\"%u\",\"engine\":\"%u\",\"pv\":\"2\",\"pgm\":\"%u\",\"tsrc\":\"%u\","
-                 "\"ibpm\":\"%u\",\"sall\":\"%u\",\"sdiv\":\"%u\",\"sus\":\"%u\",\"learn\":\"", SB_MAP_DEFAULT_HEX,
-                 (unsigned)hand, (unsigned)snap.engine, snap.pgm, snap.tempo_src, snap.bpm10, snap.sync_all,
-                 snap.sync_div, snap.sustain);
+                 "\"ibpm\":\"%u\",\"sall\":\"%u\",\"sdiv\":\"%u\",\"sus\":\"%u\",\"byp\":\"%u\",\"learn\":\"", SB_MAP_DEFAULT_HEX,
+                 (unsigned)hand, 1u, snap.pgm, snap.tempo_src, snap.bpm10, snap.sync_all,
+                 snap.sync_div, snap.sustain, snap.bypass);
     o += sb_hex_put(o, snap.learn, sizeof snap.learn);
     o += sprintf(o, "\",\"pidx\":\"%d\",\"pname\":\"%s\",\"upidx\":\"%d\",\"upname\":\"%s\"}", snap.pidx, snap.pname,
                  upidx, upn);
@@ -319,10 +322,12 @@ static int sb_state_set(const char *j)   /* into the mailbox; sb_state_apply app
     sb.st_cfg.sync_all = (uint8_t)sb_json_int(j, "sall", 0, 1, 0);
     sb.st_cfg.sync_div = (uint8_t)sb_json_int(j, "sdiv", 1, 13, 9);
     sb.st_sus = (uint8_t)sb_json_int(j, "sus", 0, 1, 0);
+    sb.st_byp = (uint8_t)sb_json_int(j, "byp", 0, 1, 0);
     if (!lr || ll != 256u || sb_hex_get(lr, sb.st_learn, 128u)) memset(sb.st_learn, 0, sizeof sb.st_learn);
     for (uint32_t i = 0; i < 128u; i++) {                /* (a code this build does not have: dropped) */
         uint32_t c = sb.st_learn[i];
-        if (c && !(c - 1u < P_COUNT || (c - 1u >= SB_LEARN_OWN && c - 1u < SB_LEARN_OWN + SB_NOWN))) sb.st_learn[i] = 0;
+        if (c && !(c - 1u < P_COUNT || (c - 1u > SB_LEARN_OWN && c - 1u < SB_LEARN_OWN + SB_NOWN))) sb.st_learn[i] = 0;
+                                                         /* (SB_LEARN_OWN + 0 was ENGINE: never learned, no more) */
     }
     sb.st_pidx = (int16_t)sb_json_int(j, "pidx", -1, (int)SB_NFACT - 1, -2);
     sb.st_upidx = (int16_t)sb_json_int(j, "upidx", -1, (int)SB_NFACT - 1, -2);
@@ -365,6 +370,7 @@ static void sb_state_apply(void)         /* the boot's sanitize and apply steps 
     sb.cfg = sb.st_cfg;
     if ((uint8_t)(sus_held || sus_latched || sus_midi >= 64u) != sb.st_sus)   /* (SUSTAIN, a parameter: as saved) */
         midi_cc(64u, sb.st_sus ? 127u : 0u);
+    if (fx_bypass != sb.st_byp) midi_cc(111u, sb.st_byp ? 127u : 0u);   /* (EFFECTS BYPASS, a parameter: as saved) */
     memcpy(sb.learn, sb.st_learn, sizeof sb.learn);
     sb.learning = -1;
     if (sb.st_pidx == -2) sb_name_of_app(set.preset, &sb.pidx, sb.pname);   /* (a state without the keys: the record's) */
@@ -514,10 +520,10 @@ static void sb_tune_abs(int32_t x)
 }
 static void sb_own_abs(uint32_t k, int32_t x)
 {
-    if (k == FRP_ID_TUNE - FRP_ID_ENGINE) sb_tune_abs(x);
-    else if (k == FRP_ID_PRESET - FRP_ID_ENGINE) { if (x >= 0 && x < (int32_t)SB_NFACT) sb_load_fact((uint32_t)x); }
-    else if (k == FRP_ID_SUSTAIN - FRP_ID_ENGINE) midi_cc(64u, x ? 127u : 0u);   /* the SUSTAIN latch: as a CC 64 */
-    else if (k == FRP_ID_FX_BYPASS - FRP_ID_ENGINE) midi_cc(111u, x ? 127u : 0u);  /* the FX button: as its CC 111 */
+    if (k == FRP_ID_TUNE - FRP_ID_OWN0) sb_tune_abs(x);
+    else if (k == FRP_ID_PRESET - FRP_ID_OWN0) { if (x >= 0 && x < (int32_t)SB_NFACT) sb_load_fact((uint32_t)x); }
+    else if (k == FRP_ID_SUSTAIN - FRP_ID_OWN0) midi_cc(64u, x ? 127u : 0u);   /* the SUSTAIN latch: as a CC 64 */
+    else if (k == FRP_ID_FX_BYPASS - FRP_ID_OWN0) midi_cc(111u, x ? 127u : 0u);  /* the FX button: as its CC 111 */
 }
 static int32_t sb_code_hi(uint32_t c)    /* a learn code's range */
 {
@@ -697,7 +703,7 @@ static void sb_events(int timed)
             }
         } else if (e->kind == FRP_EV_PARAM) {
             if (e->a < P_COUNT) sb_param_abs(e->a, e->v);
-            else if (e->a > FRP_ID_ENGINE && e->a < FRP_ID_ENGINE + SB_NOWN) sb_own_abs(e->a - FRP_ID_ENGINE, e->v);
+            else if (e->a > FRP_ID_OWN0 && e->a < FRP_ID_OWN0 + SB_NOWN) sb_own_abs(e->a - FRP_ID_OWN0, e->v);
             sb.st.params++; sb.rev++;
         } else if (e->kind == FRP_EV_CFG) sb_cfg(e->a, e->v);
         else if (e->kind == FRP_EV_PRESET) { if (e->v >= 0 && e->v < (int32_t)SB_NFACT) sb_load_fact((uint32_t)e->v); }
@@ -742,7 +748,10 @@ static void sb_step(void)
     fesetenv(&env);
 }
 
-static int sb_boot(int engine)
+#ifndef FR_HQ
+#error "the plugin's slots are the HQ build (plugin/cmake/slots.cmake FRP_ENGINE_DEFS)"
+#endif
+static int sb_boot(void)
 {
     if (sb.booted) return 0;
     sb.stack = aligned_alloc(16, SB_STACK);
@@ -750,11 +759,7 @@ static int sb_boot(int engine)
     memset(sb.stack, 0, SB_STACK);       /* (every page touched now, not on the audio thread) */
     memset(host_mem, 0xFF, sizeof host_mem);   /* (the flash, erased: nothing saved, the defaults load) */
     memset(web_store_buf, 0, sizeof web_store_buf);
-#ifdef FR_HQ
-    hq_mode = (uint8_t)(engine != 0);
-#else
-    (void)engine;
-#endif
+    hq_mode = 1;                         /* (every note HQ, every engine: hq/rhodes_hq.h) */
     coro_init(&sb.co, sb.stack, SB_STACK, sb_entry, 0);
     coro_resume(&sb.co);                 /* app_main up to its first poll */
     arp_defaults();
@@ -776,18 +781,14 @@ static void sb_drain(void)
     sb_preset_watch();
     sb_publish();
 }
-static void sb_reuse(int engine)
+static void sb_reuse(void)
 {
     if (!sb.booted) return;
     atomic_store(&sb.qr, atomic_load(&sb.qw));   /* (the last instance's events: dropped) */
     if (sb.boot_state[0]) (void)sb_state_set(sb.boot_state);
     sb_state_apply();
     if (sb.st.steps) sb_reset_now();     /* (a slot that never ran is as it booted: nothing to clear, its bits kept) */
-#ifdef FR_HQ
-    hq_mode = (uint8_t)(engine != 0);
-#else
-    (void)engine;
-#endif
+    hq_mode = 1;
     sb.fr = sb.fw;                       /* (what the last instance left in the FIFO: dropped) */
     sb.rev++;
     sb_publish();

@@ -5,7 +5,8 @@
  *   clap_stress <Frodhes.clap> [--minutes M (30)] [--instances N (3)] [--seed S] [--fast] [--no-gui | --gui-only]
  *
  *   - notes and chords on every instance (CLAP note events and raw MIDI), always released
- *   - ENGINE switches (CLASSIC / HQ) while notes ring, PRESET changes through the PRESET parameter
+ *   - full chords: 20 to 28 keys at once (every one of the 24 voices, and steals past them), PRESET changes through
+ *     the PRESET parameter
  *   - automation floods: 2000 parameter changes in one block on random app parameters; a few blocks later every
  *     touched parameter must read back the last value sent (no event dropped)
  *   - the window opened in a real NSWindow, shown, painted for a while, hidden and destroyed, over and over
@@ -33,7 +34,6 @@
 #define BLOCK 512
 #define RATE 44100.0
 #define QCAP 8192
-#define ID_ENGINE 0x10000u   /* plugin/gen/params_map.h */
 #define ID_PRESET 0x10002u
 
 static int fails;
@@ -320,9 +320,9 @@ int main(int argc, char **argv)
     const char *pid;
     double minutes = 30;
     unsigned seed = 1;
-    long n_notes = 0, n_eng = 0, n_pre = 0, n_flood = 0, n_flood_ev = 0, n_drop = 0, n_gui = 0, n_state = 0;
+    long n_notes = 0, n_full = 0, n_pre = 0, n_flood = 0, n_flood_ev = 0, n_drop = 0, n_gui = 0, n_state = 0;
     double rss0 = -1, foot0 = -1, rss_max = 0, foot_max = 0, t_start, t_end, t_next_log, t_warm;
-    int held[MAXI][8] = {{0}}, nheld[MAXI] = {0};
+    int held[MAXI][32] = {{0}}, nheld[MAXI] = {0};
     static mstream sa, sb;
     if (argc < 2) { fprintf(stderr, "usage: clap_stress <Frodhes.clap> [--minutes M] [--instances N] [--seed S] [--fast] [--no-gui | --gui-only]\n"); return 2; }
     for (int i = 2; i < argc; i++) {
@@ -388,8 +388,9 @@ int main(int argc, char **argv)
             for (int j = 0; j < nn; j++) { held[k][j] = root + 3 * j + (int)(random() % 2); note(in, 1, held[k][j], 0.2 + 0.8 * (random() % 100) / 100.0, j & 1); }
             nheld[k] = nn; n_notes += nn;
         } else if (act < 52) {
-            param(in, ID_ENGINE, (double)(random() % 2)); n_eng++;
-            note(in, 1, 60, 0.9, 0); held[k][0] = 60; nheld[k] = 1;
+            int nn = 20 + (int)(random() % 9);   /* a full chord: 20..28 keys (24 voices: steals past them) */
+            for (int j = 0; j < nn; j++) { held[k][j] = 33 + 2 * j + (int)(random() % 2); note(in, 1, held[k][j], 0.3 + 0.7 * (random() % 100) / 100.0, j & 1); }
+            nheld[k] = nn; n_notes += nn; n_full++;
         } else if (act < 64) {
             param(in, ID_PRESET, (double)(random() % 57)); n_pre++;
         } else if (act < 76) {   /* the flood, then the read-back */
@@ -439,8 +440,8 @@ int main(int argc, char **argv)
             if (now_s() >= t_warm && rss0 < 0) { rss0 = rss; foot0 = foot; }
             if (rss > rss_max) rss_max = rss;
             if (foot > foot_max) foot_max = foot;
-            printf("min %5.1f  rss %.1f MB  footprint %.1f MB  notes %ld engine %ld preset %ld flood %ld gui %ld state %ld  peaks",
-                   (now_s() - t_start) / 60.0, rss, foot, n_notes, n_eng, n_pre, n_flood, n_gui, n_state);
+            printf("min %5.1f  rss %.1f MB  footprint %.1f MB  notes %ld full %ld preset %ld flood %ld gui %ld state %ld  peaks",
+                   (now_s() - t_start) / 60.0, rss, foot, n_notes, n_full, n_pre, n_flood, n_gui, n_state);
             for (int j = 0; j < NI; j++) { printf(" %.3f", I[j].peak_win); I[j].peak_win = 0; }
             printf("\n");
             fflush(stdout);
@@ -471,8 +472,8 @@ int main(int argc, char **argv)
         in->pl->destroy(in->pl);
     }
     entry->deinit();
-    printf("info  %ld notes, %ld engine switches, %ld preset changes, %ld floods (%ld events, %ld dropped), %ld window open/close, %ld state round trips\n",
-           n_notes, n_eng, n_pre, n_flood, n_flood_ev, n_drop, n_gui, n_state);
+    printf("info  %ld notes, %ld full chords, %ld preset changes, %ld floods (%ld events, %ld dropped), %ld window open/close, %ld state round trips\n",
+           n_notes, n_full, n_pre, n_flood, n_flood_ev, n_drop, n_gui, n_state);
     printf("%s  clap_stress: %d failure%s\n", fails ? "FAIL" : "ok   ", fails, fails == 1 ? "" : "s");
     return fails ? 1 : 0;
 }

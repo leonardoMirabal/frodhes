@@ -6,8 +6,8 @@
  *   note-ports    one input, CLAP and MIDI dialects: notes with velocity, CC, pitch bend, sustain (CC 64), program
  *                 change, as the FM-1 takes them over USB MIDI (its CHANNEL setting filters; ALL by default)
  *   params        the app's PARAMS[] (plugin/gen/params_map.h: stable ids, 0..hi, stepped, the FM-1's texts) and
- *                 the plugin's own: ENGINE (CLASSIC: the FM-1's build and its 10 voices / HQ: the Move's float paths,
- *                 16 voices; HQ by default), TUNE, PRESET (F01..F57), SUSTAIN (the latch), FX BYPASS; a change the
+ *                 the plugin's own: TUNE, PRESET (F01..F57), SUSTAIN (the latch), FX BYPASS (the sound is the HQ
+ *                 build, 24 voices on every engine: no ENGINE choice any more, id 0x10000 reserved); a change the
  *                 app makes itself (a MIDI CC, a program change, a preset) goes back to the host as a parameter output
  *                 event, and the plugin UI's writes as gestures and values
  *   state         the Move's flat JSON (a sound moves between a Move track and a desktop session) and the plugin's
@@ -122,8 +122,8 @@ static bool p_info(const clap_plugin_t *plugin, uint32_t index, clap_param_info_
     memset(info, 0, sizeof *info);
     info->id = d->id;
     info->flags = CLAP_PARAM_IS_STEPPED | (d->stepped ? CLAP_PARAM_IS_ENUM : 0) |
-                  (d->id == FRP_ID_ENGINE || d->id == FRP_ID_PRESET ? 0 : CLAP_PARAM_IS_AUTOMATABLE);   /* (ENGINE and
-                   * PRESET are choices a user makes, not curves: a host may still set them) */
+                  (d->id == FRP_ID_PRESET ? 0 : CLAP_PARAM_IS_AUTOMATABLE);   /* (PRESET is a choice a user makes,
+                   * not a curve: a host may still set it) */
     snprintf(info->name, sizeof info->name, "%s", d->name);
     snprintf(info->module, sizeof info->module, "%s", d->module);
     info->min_value = 0.0;
@@ -187,7 +187,6 @@ static void p_flush(const clap_plugin_t *plugin, const clap_input_events_t *in, 
                                           * applies them); else the main thread owns the instance: at once */
     if (p->active && !proc) frp_inst_drain(p->in);
     p_out(p, out);
-    if (frp_inst_wants_main(p->in)) p->host->request_callback(p->host);
 }
 static const clap_plugin_params_t EXT_PARAMS = { p_count, p_info, p_value, p_to_text, p_from_text, p_flush };
 
@@ -472,7 +471,6 @@ static clap_process_status pl_process(const clap_plugin_t *plugin, const clap_pr
     }
     pr->audio_outputs[0].constant_mask = 0;
     if (pr->out_events) p_out(p, pr->out_events);
-    if (frp_inst_wants_main(p->in)) p->host->request_callback(p->host);   /* (an ENGINE switch: its slot) */
     tail_watch(p);
     return CLAP_PROCESS_CONTINUE;
 }
@@ -516,7 +514,6 @@ static void p_out(frp_plugin_t *p, const clap_output_events_t *out)
     if (frp_inst_snap(p->in, &sn)) return;
     for (i = 0; i < FRP_NPARAM; i++) {
         double v, was;
-        if (FRP_PARAMS[i].id == FRP_ID_ENGINE) continue;   /* (the host's own write, or the UI's: never the app's) */
         v = i < FRP_NPARAM_APP ? sn.pv[i] : FRP_PARAMS[i].id == FRP_ID_TUNE ? sn.tune : FRP_PARAMS[i].id == FRP_ID_PRESET ?
             sn.last_fact : FRP_PARAMS[i].id == FRP_ID_SUSTAIN ? sn.sustain : sn.bypass;
         was = i < FRP_NPARAM_APP ? p->last.pv[i] : FRP_PARAMS[i].id == FRP_ID_TUNE ? p->last.tune :
@@ -550,10 +547,6 @@ static void pl_main(const clap_plugin_t *plugin)
 {
     frp_plugin_t *p = plugin->plugin_data;
     int t;
-    if (frp_inst_main(p->in) < 0) {      /* an ENGINE switch with no slot of that engine free: it stays */
-        say(p, CLAP_LOG_WARNING, "Frodhes: no engine slot free for that ENGINE (16 instances use it): it stays");
-        if (p->hparams) p->hparams->rescan(p->host, CLAP_PARAM_RESCAN_VALUES);
-    }
     if (atomic_exchange(&p->tail_new, 0)) {   /* (clap-wrapper) told once; the host reads the new tail (tail_get) */
         atomic_store(&p->tail_said, tail_ms(p));
         if (p->htail) p->htail->changed(p->host);
@@ -638,7 +631,7 @@ static int ui_snap(const frp_core *c, frp_snap_t *sn)
 }
 uint32_t frp_ui_rev(const frp_core *c)
 {
-    return frp_inst_rev(c->in) + frp_user_gen() * 7919u + c->ui_rev * 104729u + (uint32_t)frp_inst_engine(c->in) * 31u;
+    return frp_inst_rev(c->in) + frp_user_gen() * 7919u + c->ui_rev * 104729u;
 }
 static void oq_put(frp_core *c, uint8_t type, uint32_t id, double v)
 {
@@ -842,17 +835,17 @@ int frp_ui_tempo_bpm10(const frp_core *c) { frp_snap_t sn; ui_snap(c, &sn); retu
 static int learn_code(uint32_t id)
 {
     if (id < FRP_NPARAM_APP) return (int)id;
-    if (id > FRP_ID_ENGINE && id < FRP_ID_ENGINE + FRP_NOWN) return (int)(FRP_LEARN_OWN + (id - FRP_ID_ENGINE));
+    if (id > FRP_ID_OWN0 && id < FRP_ID_OWN0 + FRP_OWN_SPAN) return (int)(FRP_LEARN_OWN + (id - FRP_ID_OWN0));
     return -1;
 }
 static int code_id(int code)
 {
-    return code < 0 ? -1 : code < (int)FRP_NPARAM_APP ? code : code >= (int)FRP_LEARN_OWN ? (int)(FRP_ID_ENGINE + (uint32_t)(code - (int)FRP_LEARN_OWN)) : -1;
+    return code < 0 ? -1 : code < (int)FRP_NPARAM_APP ? code : code >= (int)FRP_LEARN_OWN ? (int)(FRP_ID_OWN0 + (uint32_t)(code - (int)FRP_LEARN_OWN)) : -1;
 }
 void frp_ui_learn_start(frp_core *c, uint32_t id)
 {
     int k = learn_code(id);
-    if (k < 0 || id == FRP_ID_ENGINE) return;
+    if (k < 0) return;
     frp_inst_put_now(c->in, FRP_EV_LEARN, FRP_LEARN_START, k);
     c->ui_rev++;
 }
@@ -914,6 +907,13 @@ void frp_ui_meters(const frp_core *c, float out_db[2], float peak_db[2], float *
 }
 void frp_ui_notes(const frp_core *c, uint8_t notes[128]) { frp_inst_notes(c->in, notes); }
 int frp_ui_voices(const frp_core *c) { frp_snap_t sn; return ui_snap(c, &sn) ? 0 : sn.voices; }
+int frp_ui_voices_on(const frp_core *c, int *held)
+{
+    frp_snap_t sn;
+    int bad = ui_snap(c, &sn);
+    if (held) *held = bad ? 0 : sn.held;
+    return bad ? 0 : sn.active;
+}
 
 static const frp_ui_vtable UI_VTABLE = {
     FRP_UI_IFACE_VERSION, frp_core_of, frp_ui_has_slot, frp_ui_rev, frp_ui_param_get, frp_ui_param_default,
@@ -922,5 +922,5 @@ static const frp_ui_vtable UI_VTABLE = {
     frp_ui_preset_rescan, frp_ui_can_undo, frp_ui_undo, frp_ui_settings_get, frp_ui_settings_set, frp_ui_host_bpm10,
     frp_ui_tempo_bpm10, frp_ui_learn_start, frp_ui_learn_cancel, frp_ui_learning, frp_ui_learned_cc, frp_ui_learn_forget,
     frp_ui_learn_forget_all, frp_ui_cc_target, frp_ui_sustain_set, frp_ui_sustain, frp_ui_fx_bypass_set, frp_ui_fx_bypass,
-    frp_ui_note, frp_ui_meters, frp_ui_notes, frp_ui_voices,
+    frp_ui_note, frp_ui_meters, frp_ui_notes, frp_ui_voices, frp_ui_voices_on,
 };

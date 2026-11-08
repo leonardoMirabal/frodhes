@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# The engine: plugin/src/engine_unit.c compiled 2 x FRP_SLOTS (32) times, -DFRP_SLOT=0..31, each into its own object
-# (the app's statics are one set per object: 32 independent apps in one binary), plus the instance layer and the
-# coroutine. Two pools of 16: slots 0..15 are HQ (the Move's build: 16 voices, the float paths), slots 16..31 CLASSIC
-# (the FM-1's build, unchanged: 10 voices, the integer paths; Gate R's renders). An instance holds one of each and plays
-# the one its ENGINE names (plugin/src/bridge.c). Before the archive is written, plugin/cmake/nm_check.cmake fails the build if any slot object defines a
-# global symbol other than its table frp_slot_<N> (two copies of the app must never share a symbol).
+# The engine: plugin/src/engine_unit.c compiled FRP_SLOTS (16) times, -DFRP_SLOT=0..15, each into its own object
+# (the app's statics are one set per object: 16 independent apps in one binary), plus the instance layer and the
+# coroutine. Every slot is the HQ build: the Move's HQ switches (the float paths of every engine, the full-rate reverb
+# TYPEs, the compressor kept through FX BYPASS) with 24 voices on every engine; an instance holds one slot
+# (plugin/src/bridge.c). There is no CLASSIC (the FM-1's 10-voice integer build) in the plugin any more: Gate D
+# compares the plugin with the host build at these same switches. Before the archive is written,
+# plugin/cmake/nm_check.cmake fails the build if any slot object defines a global symbol other than its table
+# frp_slot_<N> (two copies of the app must never share a symbol).
 set(FRP_SLOTS 16)
-# the app's build switches: HQ the Move's (16 voices, the HQ paths), CLASSIC the FM-1's (none: 10 voices)
-set(FRP_ENGINE_DEFS_HQ FR_VOICES=16u FR_HQ=1 FR_BYP_KEEP_CMP=1 FR_REV_HQ=1 "APP_VER=\"${FRP_VERSION}\"")
-set(FRP_ENGINE_DEFS_CLASSIC "APP_VER=\"${FRP_VERSION}\"")
+# the app's build switches (tools/gate_d.py DEFS and tools/gen_plugin_params.py DEFS are the same)
+set(FRP_ENGINE_DEFS FR_VOICES=24u FR_HQ=1 FR_BYP_KEEP_CMP=1 FR_REV_HQ=1 "APP_VER=\"${FRP_VERSION}\"")
 if(MSVC)   # clang-cl (Windows): the same switches in its spelling; COFF exports nothing unless asked
     set(FRP_ENGINE_FLAGS -O2 ${FRP_C_STD} /W3 -Wno-unused-function -Wno-unused-variable ${FRP_C_WIN})
 else()
@@ -27,14 +28,10 @@ if(FRP_LTO)
 endif()
 set(_frp_objs "")
 set(_frp_slot_targets "")
-math(EXPR _last "2 * ${FRP_SLOTS} - 1")
+math(EXPR _last "${FRP_SLOTS} - 1")
 foreach(n RANGE 0 ${_last})
     add_library(frp_slot_${n} OBJECT "${FRP_ROOT}/plugin/src/engine_unit.c")
-    if(n LESS ${FRP_SLOTS})
-        target_compile_definitions(frp_slot_${n} PRIVATE FRP_SLOT=${n} ${FRP_ENGINE_DEFS_HQ})
-    else()
-        target_compile_definitions(frp_slot_${n} PRIVATE FRP_SLOT=${n} ${FRP_ENGINE_DEFS_CLASSIC})
-    endif()
+    target_compile_definitions(frp_slot_${n} PRIVATE FRP_SLOT=${n} ${FRP_ENGINE_DEFS})
     target_include_directories(frp_slot_${n} PRIVATE "${FRP_ROOT}/plugin/compat" "${FRP_ROOT}/firmware/src"
                                "${FRP_ROOT}/firmware/gen" ${FRP_C_WIN_INC})
     target_compile_options(frp_slot_${n} PRIVATE ${FRP_ENGINE_FLAGS})

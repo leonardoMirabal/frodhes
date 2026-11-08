@@ -12,7 +12,7 @@
  *       sha256), and at 48 kHz the FM-1's USB resampler over it.
  *     --rate R                (44100; 48000 the FM-1's resampler; another rate from 1000 to 1536000 the plugin's
  *                             windowed-sinc resampler)
- *     --engine classic|hq     ENGINE, set before activation (the plugin's default: hq)
+ *     --engine hq             accepted (the plugin is HQ only: 24 voices on every engine); any other value refused
  *     --block N               frames a process call (512); --block random:SEED for random sizes 0..2048
  *     --dialect midi|clap     notes as raw MIDI events (midi) or CLAP note events (clap); CC and the rest stay MIDI
  *     --tempo BPM             the host transport's tempo (none by default: the plugin plays 120)
@@ -20,6 +20,7 @@
  *                             a host that stops at the tail the plugin reports: after the script's last event the
  *                             tail is read (and must be finite / infinite); a finite one is checked by rendering 20 s
  *                             past it: nothing may sound after it (16-bit). No WAV is written (OUT.wav is ignored)
+ *     --bench 1               print the time process() took (in all and the worst call) against the audio's length
  *     --host-vendor wrapper   the host says it is clap-wrapper (the VST3 / Audio Unit): the tail's change is told from
  *                             the main thread, not in process
  *   Plugin-only script lines (plugin/tests/scripts): "T param ID VALUE", a CLAP parameter event at T (ID decimal or
@@ -30,8 +31,8 @@
  *       one silent, with its warning), the latency, the descriptor and the GUI extension (Linux: with
  *       the posix-fd and timer support its X11 view runs on).
  *   clap_render PLUGIN --coretest
- *       the plugin core through its UI extension (plugin/frp_ui_iface.h FRP_UI_EXT_ID): CLASSIC 10 voices / HQ 16 and
- *       the switch while playing, the state (every setting, MIDI learn, the preset, robust to older and broken
+ *       the plugin core through its UI extension (plugin/frp_ui_iface.h FRP_UI_EXT_ID): 24 voices on every engine
+ *       (24 keys held all sound, the 25th steals one), the state (every setting, MIDI learn, the preset, robust to older and broken
  *       states), presets (factory, user files in $FRODHES_PRESET_DIR, browse, UNDO, program changes), automation
  *       (host writes not echoed, the app's and the UI's reported, gestures), MIDI learn, the tempo sources and SYNC
  *       ALL, SUSTAIN and FX BYPASS, the velocity curves, MIDI CHANNEL, the on-screen keyboard, the meters.
@@ -43,6 +44,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <clap/clap.h>
 #include "../frp_ui_iface.h"
 
@@ -50,7 +52,6 @@
 #define HOST_BLOCK 256u                  /* tests/host.c HALF_FRAMES */
 #define END_DEFAULT 6500u                /* tests/host.c: no "end" line */
 #define MAXEV 200000
-#define ENGINE_ID 0x10000u               /* plugin/gen/params_map.h FRP_ID_ENGINE */
 
 /* ---- the host side */
 static int warnings, late_warnings, slot_warnings, full_warnings;
@@ -256,10 +257,16 @@ static uint32_t rnd(void) { rnd_state ^= rnd_state << 13; rnd_state ^= rnd_state
 static void put32(FILE *f, uint32_t v) { fwrite(&v, 4, 1, f); }
 
 /* render the loaded script: pre + frames output frames; the frames after the pre-roll as int16 into pcm */
+/* --bench: the time spent in process() (the plugin's own work), in all and the worst call */
+static int bench;
+static double bench_s, bench_worst_s;
+static uint32_t bench_worst_n;
+static double now_s(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
 static int render(const clap_plugin_t *p, int16_t *pcm, uint32_t pre, uint32_t frames, int block, int clap_notes,
                   uint32_t *clips)
 {
     static float l[4096], r[4096];
+    double t0;
     uint64_t pos = 0, total = (uint64_t)pre + frames;
     uint32_t k = 0;
     while (pos < total) {
@@ -268,7 +275,13 @@ static int render(const clap_plugin_t *p, int16_t *pcm, uint32_t pre, uint32_t f
         if (pos + n > total) n = (uint32_t)(total - pos);
         blk_n = 0;
         while (k < nsev && sev[k].h < pos + n && blk_n < 4096u) { put_event(&sev[k], (uint32_t)(sev[k].h - pos), clap_notes); k++; }
+        t0 = bench ? now_s() : 0.0;
         if (process(p, l, r, n, (int64_t)pos)) { printf("FAIL process\n"); return -1; }
+        if (bench) {
+            double dt = now_s() - t0;
+            bench_s += dt;
+            if (dt > bench_worst_s) { bench_worst_s = dt; bench_worst_n = n; }
+        }
         for (i = 0; i < n; i++) {
             uint64_t g = pos + i;
             if (g >= pre) {
@@ -337,7 +350,7 @@ static int tail_check(const clap_plugin_t *p, double rate, int block, int clap_n
 int main(int argc, char **argv)
 {
     double rate = 44100.0;
-    int engine = -1, block = 512, clap_notes = 0, rc, i, tailck = -1;
+    int block = 512, clap_notes = 0, rc, i, tailck = -1;
     unsigned end;
     uint32_t frames, pre, clips = 0;
     int16_t *pcm;
@@ -345,17 +358,20 @@ int main(int argc, char **argv)
     FILE *w;
     if (argc >= 3 && !strcmp(argv[2], "--selftest")) { if (load(argv[1])) return 1; return selftest(); }
     if (argc >= 3 && !strcmp(argv[2], "--coretest")) { if (load(argv[1])) return 1; return coretest(); }
-    if (argc < 4) { fprintf(stderr, "usage: clap_render PLUGIN SCRIPT OUT.wav [--rate R] [--engine classic|hq] "
+    if (argc < 4) { fprintf(stderr, "usage: clap_render PLUGIN SCRIPT OUT.wav [--rate R] [--engine hq] "
                                     "[--block N|random:SEED] [--dialect midi|clap]\n       clap_render PLUGIN --selftest\n"); return 1; }
     for (i = 4; i + 1 < argc; i += 2) {
         if (!strcmp(argv[i], "--rate")) rate = atof(argv[i + 1]);
-        else if (!strcmp(argv[i], "--engine")) engine = !strcmp(argv[i + 1], "hq");
+        else if (!strcmp(argv[i], "--engine")) {   /* (hq, the only sound: kept for the scripts that name it) */
+            if (strcmp(argv[i + 1], "hq")) { fprintf(stderr, "clap_render: --engine %s: the plugin is HQ only\n", argv[i + 1]); return 1; }
+        }
         else if (!strcmp(argv[i], "--block")) {
             if (!strncmp(argv[i + 1], "random:", 7)) { block = 0; rnd_state = (uint32_t)strtoul(argv[i + 1] + 7, 0, 0) | 1u; }
             else block = atoi(argv[i + 1]);
         } else if (!strcmp(argv[i], "--dialect")) clap_notes = !strcmp(argv[i + 1], "clap");
         else if (!strcmp(argv[i], "--tempo")) transport_bpm = atof(argv[i + 1]);
         else if (!strcmp(argv[i], "--tail-check")) tailck = !strcmp(argv[i + 1], "infinite");
+        else if (!strcmp(argv[i], "--bench")) bench = atoi(argv[i + 1]);
         else if (!strcmp(argv[i], "--host-vendor") && !strcmp(argv[i + 1], "wrapper")) {
             HOST.vendor = "The CLAP Wrapper Team";
             as_wrapper = 1;
@@ -363,7 +379,6 @@ int main(int argc, char **argv)
     }
     if ((rc = read_script(argv[2], rate, &end))) return rc;
     if (load(argv[1]) || !(p = create())) return 1;
-    if (engine >= 0) set_param_inactive(p, ENGINE_ID, engine);
     if (!p->activate(p, rate, 1, 4096)) { printf("FAIL activate at %.0f\n", rate); return 1; }
     if (!p->start_processing(p)) { printf("FAIL start_processing\n"); return 1; }
     if (tailck >= 0) return tail_check(p, rate, block, clap_notes, tailck);
@@ -373,6 +388,13 @@ int main(int argc, char **argv)
     pre = rate == 48000.0 ? 48u * LAT_MS : rate == 44100.0 ? 441u * LAT_MS / 10u : latency_of(p);
     if (!(pcm = calloc((size_t)frames + 1u, 4u))) return 1;
     if (render(p, pcm, pre, frames, block, clap_notes, &clips)) { printf("FAIL render\n"); return 1; }
+    if (bench) {
+        double audio = (double)(pre + frames) / rate;
+        printf("bench: process %.3f s for %.3f s of audio at %.0f Hz: %.4f of real time (%.1f x faster); the worst "
+               "call %.0f us for %u frames (%.0f us of audio: %.3f)\n", bench_s, audio, rate, bench_s / audio,
+               audio / bench_s, bench_worst_s * 1e6, bench_worst_n, bench_worst_n * 1e6 / rate,
+               bench_worst_s * rate / (bench_worst_n ? bench_worst_n : 1));
+    }
     p->stop_processing(p);
     p->deactivate(p);
     if (late_warnings) { printf("FAIL %d late events\n", late_warnings); return 1; }
@@ -455,7 +477,6 @@ static int selftest(void)
     /* the state: a changed sound saved, loaded into a second instance, saved again */
     set_param_inactive(a, 0, 3);         /* TYPE: BELL DYNO */
     set_param_inactive(a, 19, 90);       /* REVERB mix */
-    set_param_inactive(a, ENGINE_ID, 0); /* ENGINE: CLASSIC */
     CHECK(pp->get_value(a, 0, &v) && v == 3, "TYPE written while inactive (flush): %g", v);
     CHECK(ps->save(a, &os), "state save");
     CHECK((b = create()) != 0, "second instance");
@@ -469,7 +490,7 @@ static int selftest(void)
         const clap_plugin_params_t *pb = b->get_extension(b, CLAP_EXT_PARAMS);
         double x;
         CHECK(pb->get_value(b, 0, &x) && x == 3 && pb->get_value(b, 19, &x) && x == 90 &&
-              pb->get_value(b, ENGINE_ID, &x) && x == 0, "the loaded instance's values");
+              !pb->get_value(b, 0x10000u, &x), "the loaded instance's values (no ENGINE)");
     }
     printf("ok    state: %zu bytes, saved -> loaded in a second instance -> saved: the same (rescans %d)\n", m1.n, rescans);
     CHECK(!a->activate(a, 500.0, 1, 4096), "500 Hz refused");
@@ -669,7 +690,7 @@ static int coretest(void)
     frp_preset_info pi;
     mem_t m1 = { 0 }, m2 = { 0 };
     int ed, idx, n0, k, l;
-    float pk, pk2;
+    float pk;
     char val[64], unit[16];
     const char *dir = getenv("FRODHES_PRESET_DIR");
     CHECK(dir && *dir, "FRODHES_PRESET_DIR names the test's user preset folder");
@@ -678,50 +699,48 @@ static int coretest(void)
     ca = VT->core_of(a);
     CHECK(VT->has_slot(ca), "a slot");
 
-    /* ---- CLASSIC 10 voices, HQ 16; the switch while playing */
-    CHECK(VT->voices(ca) == 16, "HQ (the default): 16 voices, not %d", VT->voices(ca));
-    set_param_inactive(a, ENGINE_ID, 0);
-    CHECK(VT->voices(ca) == 10, "CLASSIC: 10 voices, not %d", VT->voices(ca));
-    set_param_inactive(a, ENGINE_ID, 1);
-    CHECK(VT->voices(ca) == 16, "HQ again: 16 voices, not %d", VT->voices(ca));
+    /* ---- 24 voices on every engine (the HQ sound, the only one): 24 keys held all sound, none stolen; the 25th
+     * steals one and the voices stay 24 */
+    CHECK(VT->voices(ca) == 24, "24 voices, not %d", VT->voices(ca));
+    CHECK(VT->version >= 3u && VT->voices_on, "the UI extension has voices_on (version %u)", VT->version);
+    {
+        const clap_plugin_params_t *pa = a->get_extension(a, CLAP_EXT_PARAMS);
+        clap_param_info_t info;
+        for (uint32_t i = 0; i < pa->count(a); i++)
+            CHECK(pa->get_info(a, i, &info) && info.id != 0x10000u, "no ENGINE parameter (0x10000) any more");
+    }
     CHECK(a->activate(a, 44100.0, 1, 4096) && a->start_processing(a), "activate");
-    blk_n = 0; ev_midi(0, 0x90, 60, 100);
-    pk = run(a, 20);
-    blk_n = 0; ev_param(100, ENGINE_ID, 0);   /* CLASSIC while the note sounds */
-    run(a, 1);
-    pk2 = run(a, 8);                     /* the HQ note rings out as the tail (released) */
-    CHECK(pk > 0.01f && pk2 > 0.001f, "the note before the switch %.4f, its tail after %.4f", pk, pk2);
-    CHECK(VT->voices(ca) == 10, "switched while playing: CLASSIC 10 voices (%d)", VT->voices(ca));
-    pk = note_peak(a, 0x90, 64, 100);
-    CHECK(pk > 0.01f, "CLASSIC plays after the switch (%.4f)", pk);
-    blk_n = 0; ev_param(0, ENGINE_ID, 1); run(a, 4);
-    CHECK(VT->voices(ca) == 16, "back to HQ while active (%d)", VT->voices(ca));
+    {
+        static const int TYPES[3] = { 0, 4, 5 };   /* STAGE 77 (the Rhodes), VIBES, MARIMBA (the bar engine) */
+        static const char *const TNAME[3] = { "STAGE 77", "VIBES", "MARIMBA" };
+        for (int t = 0; t < 3; t++) {
+            int on = 0, held = 0, on_max = 0;
+            blk_n = 0; ev_param(0, P_TYPE_, TYPES[t]); ev_midi(0, 0xB0, 47, 0);   /* (VIBES: its motor off) */
+            run(a, 40);
+            CHECK(VT->voices_on(ca, &held) == 0, "%s: nothing sounds before the chord (%d)", TNAME[t], VT->voices_on(ca, 0));
+            for (k = 0; k < 24; k++) {   /* keys 36, 38 .. 82: every engine's range, one new key a block */
+                blk_n = 0; ev_midi(0, 0x90, (uint8_t)(36 + 2 * k), 100);
+                run(a, 1);
+                on = VT->voices_on(ca, &held);
+                CHECK(on == k + 1 && held == k + 1, "%s: key %d of 24 struck: %d voices sound (%d held), want %d: none "
+                      "stolen", TNAME[t], k + 1, on, held, k + 1);
+            }
+            blk_n = 0; ev_midi(0, 0x90, 84, 100); ev_midi(0, 0x80, 84, 0);   /* the 25th, let go at once */
+            for (l = 0; l < 4; l++) { run(a, 1); on = VT->voices_on(ca, &held); if (on > on_max) on_max = on; }
+            CHECK(on_max == 24 && held == 23, "%s: the 25th key steals a voice: %d voices (want 24), %d held (want 23)",
+                  TNAME[t], on_max, held);
+            blk_n = 0; ev_midi(0, 0xB0, 123, 0);
+            for (k = 0; k < 24; k++) ev_midi(0, 0x80, (uint8_t)(36 + 2 * k), 0);
+            run(a, 300);                 /* (rings out) */
+            printf("ok    voices: %s: 24 keys held, 24 voices sound, none stolen; the 25th steals one\n", TNAME[t]);
+        }
+        blk_n = 0; ev_param(0, P_TYPE_, 0); run(a, 40);
+    }
     a->reset(a);                         /* a note at once after the host's reset is heard (it was killed: the
                                           * reset's voice kill ran at the next block, after the note) */
     pk = note_peak(a, 0x90, 64, 100);
     CHECK(pk > 0.01f, "a note right after reset() sounds (%.4f)", pk);
-    {   /* a new instance holds its engine's slot only; its first switch while active takes the other pool's slot on
-         * the main thread (the host's callback) and plays it from the next block, the old one ringing out */
-        const clap_plugin_t *c2 = create();
-        frp_core *cc2;
-        float p0, p1;
-        CHECK(c2 != 0, "a third instance");
-        cc2 = VT->core_of(c2);
-        CHECK(c2->activate(c2, 44100.0, 1, 4096) && c2->start_processing(c2), "activate it");
-        float s0, s1;
-        blk_n = 0; ev_midi(0, 0x90, 60, 100); p0 = run(c2, 10);
-        s0 = run_step(c2, 4);                /* (the note's own steps, then the same across the switch) */
-        blk_n = 0; ev_param(0, ENGINE_ID, 0); s1 = run_step(c2, 4);
-        p1 = run(c2, 3);
-        CHECK(s1 <= s0 * 1.5f + 1e-4f, "no click at the switch: largest step %.5f, before it %.5f", s1, s0);
-        CHECK(VT->voices(cc2) == 10 && p0 > 0.01f && p1 > 0.001f, "its first switch while active: CLASSIC (%d voices), "
-              "the note before %.4f, its tail %.4f", VT->voices(cc2), p0, p1);
-        pk = note_peak(c2, 0x90, 64, 100);
-        CHECK(pk > 0.01f, "it plays CLASSIC (%.4f)", pk);
-        c2->stop_processing(c2); c2->deactivate(c2); c2->destroy(c2);
-    }
     CHECK(late_warnings == 0, "no late events");
-    printf("ok    engine: HQ 16 voices, CLASSIC 10, switched while a note sounds (the old one rings out: peak %.3f)\n", pk2);
 
     /* ---- automation: host writes not echoed, the app's own changes and the UI's reported (gestures in order) */
     n_outs = 0;
@@ -793,8 +812,8 @@ static int coretest(void)
     CHECK(VT->sustain(ca) == 1, "SUSTAIN learned on CC 70");
     blk_n = 0; ev_midi(0, 0xB0, 70, 0); run(a, 2);
     CHECK(VT->sustain(ca) == 0, "and let go");
-    VT->learn_start(ca, ENGINE_ID); run(a, 1);
-    CHECK(VT->learning(ca) == -1, "ENGINE cannot be learned");
+    VT->learn_start(ca, 0x10000u); run(a, 1);
+    CHECK(VT->learning(ca) == -1, "the retired ENGINE id (0x10000) cannot be learned");
     printf("ok    MIDI learn: learned, scaled, before the default map, forgotten; own parameters too\n");
 
     /* ---- tempo sources, SYNC ALL */
@@ -944,7 +963,7 @@ static int coretest(void)
     }
     printf("ok    SUSTAIN latch and a pedal, FX BYPASS, the on-screen keyboard, the meters, MIDI CHANNEL\n");
 
-    /* ---- the state: every setting, MIDI learn, the preset, and the engine; older and broken states */
+    /* ---- the state: every setting, MIDI learn, the preset; older (CLASSIC too) and broken states */
     s.midi_ch = 3; s.vel_curve = FRP_VEL_HEAVY; s.fixed_vel = 100; s.pgm_change = 0; s.tempo_src = FRP_TEMPO_INTERNAL;
     s.bpm10 = 975; s.sync_all = 1; s.sync_div = 6;
     VT->settings_set(ca, &s); run(a, 2);
@@ -953,10 +972,10 @@ static int coretest(void)
     VT->preset_load(ca, 6); run(a, 2);
     VT->param_set(ca, P_TONE_, 100); VT->param_set(ca, ID_TUNE, 57); run(a, 2);
     blk_n = 0; ev_param(0, ID_SUSTAIN, 1); run(a, 2);   /* (SUSTAIN: a parameter, so in the state too) */
-    blk_n = 0; ev_param(0, P_RV_DEPTH_, 41); ev_param(0, ENGINE_ID, 0); ev_param(10, P_RV_DEPTH_, 42);
-    run(a, 2);                                   /* (the block's changes before and after the switch go with it) */
-    CHECK(VT->voices(ca) == 10 && VT->param_get(ca, P_RV_DEPTH_) == 42, "a block's changes across the switch (%d %d)",
-          VT->voices(ca), VT->param_get(ca, P_RV_DEPTH_));
+    blk_n = 0; ev_param(0, ID_BYPASS, 1); run(a, 2);    /* (EFFECTS BYPASS too) */
+    blk_n = 0; ev_param(0, P_RV_DEPTH_, 41); ev_param(10, P_RV_DEPTH_, 42);
+    run(a, 2);
+    CHECK(VT->param_get(ca, P_RV_DEPTH_) == 42, "a block's changes in order (%d)", VT->param_get(ca, P_RV_DEPTH_));
     a->stop_processing(a);
     a->deactivate(a);
     CHECK(state_of(a, &m1) == 0, "state save");
@@ -970,11 +989,13 @@ static int coretest(void)
     CHECK(VT->learned_cc(cb, 37u) == 9 && VT->learned_cc(cb, P_FL_FREQ_) == 3, "the learned CCs come back");
     CHECK(VT->preset_current(cb, &pi, &ed) == 6 && ed && VT->param_get(cb, P_TONE_) == 100 && VT->param_get(cb, ID_TUNE) == 57,
           "the preset (F07, edited), TONE and TUNE come back");
-    CHECK(VT->voices(cb) == 10, "the engine (CLASSIC) comes back: %d voices", VT->voices(cb));
+    CHECK(VT->voices(cb) == 24 && strstr(m1.b, "\"engine\":\"1\""), "24 voices; the state says HQ (\"engine\" 1) for "
+          "older builds: %d voices", VT->voices(cb));
     CHECK(VT->can_undo(cb), "the undo copy comes back");
     CHECK(VT->param_get(cb, ID_SUSTAIN) == 1 && VT->param_get(cb, P_RV_DEPTH_) == 42, "SUSTAIN and REVERB come back (%d %d)",
           VT->param_get(cb, ID_SUSTAIN), VT->param_get(cb, P_RV_DEPTH_));
-    printf("ok    state: %zu bytes, every setting, the learned CCs, the preset and its edit, TUNE, CLASSIC, the undo copy\n", m1.n);
+    CHECK(VT->fx_bypass(cb) == 1 && VT->param_get(cb, ID_BYPASS) == 1, "EFFECTS BYPASS comes back (%d)", VT->fx_bypass(cb));
+    printf("ok    state: %zu bytes, every setting, the learned CCs, the preset and its edit, TUNE, SUSTAIN, EFFECTS BYPASS, the undo copy\n", m1.n);
     {
         /* the scaffold's state (version 1: the Move's keys only): the sound loads, the plugin's settings default */
         char old[4096], *pv;
@@ -995,13 +1016,25 @@ static int coretest(void)
         pv[9] = 'Z';
         CHECK(state_load(b, old) == 0 && VT->learned_cc(cb, 37u) == -1 && VT->learned_cc(cb, P_FL_FREQ_) == -1,
               "a bad learn map loads empty, the rest loads");
+        /* a state saved with ENGINE CLASSIC (the builds before the plugin became HQ only wrote "engine":"0"; the rest
+         * of their state is this one's format): it loads, on HQ with 24 voices, the sound, settings and learned CCs
+         * whole, and saves again as this build's own state */
         snprintf(old, sizeof old, "%s", m1.b);
-        pv = strstr(old, "\"engine\":\"0\"");
-        pv[10] = '1';
-        CHECK(state_load(b, old) == 0 && VT->voices(cb) == 16 && VT->param_get(cb, P_TONE_) == 100, "ENGINE HQ in a state: "
-              "16 voices, the same sound (%d)", VT->voices(cb));
+        pv = strstr(old, "\"engine\":\"1\"");
+        CHECK(pv != 0, "the engine key");
+        pv[10] = '0';
+        CHECK(state_load(b, "hello") != 0, "(a broken state first)");
+        CHECK(state_load(b, old) == 0 && VT->voices(cb) == 24 && VT->param_get(cb, P_TONE_) == 100 &&
+              VT->param_get(cb, ID_TUNE) == 57 && VT->learned_cc(cb, 37u) == 9, "a CLASSIC state loads on HQ: 24 voices "
+              "(%d), the same sound and learned CCs", VT->voices(cb));
+        CHECK(state_of(b, &m2) == 0 && !strcmp(m1.b, m2.b), "the CLASSIC state saved again is the HQ state:\n%s\n%s",
+              m1.b, m2.b);
+        pv = strstr(old, ",\"engine\":\"0\"");
+        memmove(pv, pv + 13, strlen(pv + 13) + 1);
+        CHECK(state_load(b, old) == 0 && VT->voices(cb) == 24 && state_of(b, &m2) == 0 && !strcmp(m1.b, m2.b),
+              "a state without the engine key: the same:\n%s\n%s", m1.b, m2.b);
         printf("ok    older and broken states: version 1 loads (defaults for the new keys), garbage and a cut state "
-               "refused, a bad learn map dropped, the engine key followed\n");
+               "refused, a bad learn map dropped, a CLASSIC state loads on HQ (24 voices) and saves as HQ\n");
     }
     b->destroy(b);
     /* the user preset seen by a new instance, deleted */

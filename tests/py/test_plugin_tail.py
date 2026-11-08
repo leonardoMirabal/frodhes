@@ -3,7 +3,8 @@
 cuts nothing. plugin/tests/clap_render --tail-check plays a 6-note fortissimo chord with the settings below, reads
 the tail after the last event and renders 20 s past it: no sample (16-bit) may sound after the tail. The settings
 that hold the sound forever (INFINITE reverb at SUSTAIN / FREEZE, ANA and TAPE echoes that build up) must report an
-infinite tail. Both engines, the worst corners measured for the tables, and seeded random settings. Skipped when the
+infinite tail. The HQ sound (the plugin's only one, 24 voices), the worst corners measured for the tables, and seeded
+random settings. Skipped when the
 plugin is not built."""
 import os
 import random
@@ -81,8 +82,8 @@ def tail_check(tmp_path, name, params, engine, want, extra=()):
     return r.stdout
 
 
-@pytest.mark.parametrize("engine", ["hq", "classic"])
-@pytest.mark.parametrize("name,params", CASES + randoms(6, 1))
+@pytest.mark.parametrize("engine", ["hq"])
+@pytest.mark.parametrize("name,params", CASES + randoms(6, 1) + randoms(6, 2))
 def test_tail_not_cut(tmp_path, engine, name, params):
     want = "infinite" if expect_infinite(params) else "finite"
     out = tail_check(tmp_path, name, params, engine, want)

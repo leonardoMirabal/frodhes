@@ -70,7 +70,9 @@ test_wine() {
     wine_image
     local T="$ROOT/build/plugin-win-test"
     rm -rf "$T"; mkdir -p "$T/out"
-    # a Gate D subset: CLASSIC 44.1 kHz, every 8th MIDI-driven Gate R entry, against its baseline sha256
+    # a Gate D subset: 44.1 kHz, every 8th MIDI-driven Gate R entry, against the host build with the plugin's switches
+    # (HQ only, 24 voices), built for x86_64 here and run under Rosetta: the HQ paths give the same bits on every
+    # platform (firmware/src/hq: no fused multiply-add, no reassociation)
     python3 - "$ROOT" "$T" <<'EOF'
 import sys
 from pathlib import Path
@@ -78,15 +80,15 @@ root, t = Path(sys.argv[1]), Path(sys.argv[2])
 sys.path.insert(0, str(root / "tools"))
 import gate_m, gate_d
 midi, _ = gate_m.entries()
-base, want16 = gate_m.read_sums(gate_m.BASE), gate_m.read_sums(gate_m.BASE16)
 sub = gate_d.subset(midi, 8)
+hq = gate_d.host_build("hq-x86_64", ["-DHQ_DEFAULT=1"], "x86_64")
 z = lambda p: "Z:" + str(p)
 with open(t / "renders.sh", "w") as f, open(t / "want.txt", "w") as w:
     for e in sub:
         n, script = e[0], root / e[1]
-        want = base.get(n)          # (CLASSIC is the FM-1's build, 10 voices: every entry its Gate R render)
+        want = gate_d.sha(gate_d.host_render(hq, n.replace("/", "_"), e[1], "x86_64"))
         o = t / "out" / (n.replace("/", "__") + ".wav")
-        f.write(f'wine "$B/frp_clap_render.exe" "{z("$CLAP")}" "{z(script)}" "{z(o)}" --engine classic --block 512 >/dev/null 2>&1 || echo "render failed: {n}"\n')
+        f.write(f'wine "$B/frp_clap_render.exe" "{z("$CLAP")}" "{z(script)}" "{z(o)}" --engine hq --block 512 >/dev/null 2>&1 || echo "render failed: {n}"\n')
         w.write(f"{n} {want}\n")
 print(f"plugin_win: {len(sub)} Gate D renders under wine")
 EOF

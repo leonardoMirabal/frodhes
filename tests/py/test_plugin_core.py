@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The desktop plugin's core (plugin/frp_ui_iface.h, plugin/src/slot_bridge.h): Gate D's core mode on the built
-plugin (make plugin): CLASSIC 10 voices / HQ 16, the state round trip with every setting and older or broken states,
-presets (factory, user files, UNDO, program changes), automation (= the device's CC path, byte for byte), MIDI learn,
+plugin (make plugin): 24 voices on every engine, the state round trip with every setting and older (CLASSIC too) or
+broken states, presets (factory, user files, UNDO, program changes), automation (= the device's CC path, byte for byte), MIDI learn,
 the tempo sources and a synced delay at the transport's tempo. Skipped when the plugin is not built."""
 import os
 import subprocess

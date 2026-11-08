@@ -10,15 +10,15 @@
  * disagree.
  *
  * Ids: the parameter ids are plugin/gen/params_map.h's (the app's params.c ids 0 .. FRP_NPARAM_APP - 1, the plugin's
- * own from 0x10000: FRP_ID_ENGINE, FRP_ID_TUNE, FRP_ID_PRESET, FRP_ID_SUSTAIN, FRP_ID_FX_BYPASS). Values are always the
- * app's integers 0 .. hi.
+ * own from 0x10000: FRP_ID_TUNE, FRP_ID_PRESET, FRP_ID_SUSTAIN, FRP_ID_FX_BYPASS; 0x10000 itself, ENGINE, is retired).
+ * Values are always the app's integers 0 .. hi.
  *
  * Stability: this header is append-only. FRP_UI_IFACE_VERSION bumps only when something is added. */
 #ifndef FRP_UI_IFACE_H
 #define FRP_UI_IFACE_H
 #include <stdint.h>
 
-#define FRP_UI_IFACE_VERSION 2
+#define FRP_UI_IFACE_VERSION 3   /* 3: voices_on (the HQ-only plugin, 24 voices) */
 
 typedef struct frp_core frp_core;            /* one plugin instance */
 struct clap_plugin;
@@ -113,7 +113,8 @@ void frp_ui_sustain_set(frp_core *c, int on);   /* the SUSTAIN latch: CC 64 127 
                                                  * 64 lets the latch go, as on the device) */
 int frp_ui_sustain(const frp_core *c);          /* the dampers are held off now (the latch, a pedal, a CC 64) */
 void frp_ui_fx_bypass_set(frp_core *c, int on); /* every effect off at once (the device's FX button; their own
-                                                 * switches unchanged; not saved) */
+                                                 * switches unchanged; saved with the project, as the host
+                                                 * parameter EFFECTS BYPASS) */
 int frp_ui_fx_bypass(const frp_core *c);
 void frp_ui_note(frp_core *c, int key, int vel);    /* the on-screen keyboard: vel 1..127 on, 0 off (channel 1) */
 
@@ -121,7 +122,9 @@ void frp_ui_note(frp_core *c, int key, int vel);    /* the on-screen keyboard: v
 void frp_ui_meters(const frp_core *c, float out_db[2], float peak_db[2], float *gr_db);   /* dBFS (-120 floor),
                                                  * the peak held ~1.5 s; the compressor's gain reduction, dB >= 0 */
 void frp_ui_notes(const frp_core *c, uint8_t notes[128]);   /* the keys held now (their velocity, 0 = up) */
-int frp_ui_voices(const frp_core *c);           /* the voice count of the sound path: CLASSIC 10, HQ 16 */
+int frp_ui_voices(const frp_core *c);           /* the voice count: 24, every engine (the HQ sound) */
+int frp_ui_voices_on(const frp_core *c, int *held);   /* the voices sounding now (and of them, in *held when not
+                                                 * NULL, the ones whose key or the sustain holds them down) */
 
 /* ---- (version 2) the same functions as a CLAP extension, for out-of-process callers (the headless test host,
  * plugin/tests/clap_render.c --coretest): plugin->get_extension(plugin, FRP_UI_EXT_ID) returns a const frp_ui_vtable *.
@@ -167,5 +170,6 @@ typedef struct frp_ui_vtable {
     void (*meters)(const frp_core *c, float out_db[2], float peak_db[2], float *gr_db);
     void (*notes)(const frp_core *c, uint8_t notes[128]);
     int (*voices)(const frp_core *c);
+    int (*voices_on)(const frp_core *c, int *held);
 } frp_ui_vtable;
 #endif

@@ -216,7 +216,7 @@ test-plugin: plugin        ## the coroutine, the headless host's selftest (param
 	$(PLUGIN_BUILD)/frp_test_coro
 	$(PLUGIN_BUILD)/frp_clap_render $(PLUGIN_BUILD)/bundles/Frodhes.clap --selftest
 	$(PY) tools/gen_plugin_params.py --check
-	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py --quick --only classic,hq,rate48,core
+	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py --quick --only hq,rate48,core
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) -m pytest -q tests/py/test_plugin_gui.py tests/py/test_plugin_tail.py
 
 gate-d: plugin             ## Gate D: the plugin renders the host build's audio (tools/gate_d.py, every mode)

@@ -20,11 +20,9 @@
  * the pre-roll grows by the filter's reach instead (FRP_LAT_MS + RS reach, rounded up to a ms), and the latency the
  * host is told is that pre-roll at its rate.
  *
- * ENGINE. An instance holds a slot of each pool (bridge.h): HQ (16 voices, the float paths) and CLASSIC (the FM-1's
- * build: 10 voices). Only the one ENGINE names is stepped. A switch hands the sound over (the state, the slot's own
- * JSON, into a fresh start of the other slot) at the next block; the old slot gets every note let go and is mixed in
- * until it is quiet (its tails ring out), then rests. The new slot's clock is re-based so that events keep their
- * FRP_LAT_MS lead and the latency stays the same.
+ * The engine. An instance holds one slot (bridge.h): the HQ build, 24 voices on every engine. (Until the plugin became
+ * HQ only it held a CLASSIC slot too, the FM-1's 10-voice build, behind a parameter ENGINE: a state that names
+ * ENGINE CLASSIC loads its sound on the HQ slot.)
  *
  * The UI queue. The plugin UI writes from the main thread while the audio thread owns the slot: its events wait in
  * the instance's own queue (one producer, one consumer) and the audio thread moves them into the slot at the start
@@ -44,17 +42,12 @@
 #include "frp_paths.h"
 #include "../../firmware/src/uac_fir.h"
 
-static const frp_slot_api_t *const SLOT[2u * FRP_SLOTS] = {
+static const frp_slot_api_t *const SLOT[FRP_SLOTS] = {
     &frp_slot_0, &frp_slot_1, &frp_slot_2, &frp_slot_3, &frp_slot_4, &frp_slot_5, &frp_slot_6, &frp_slot_7,
     &frp_slot_8, &frp_slot_9, &frp_slot_10, &frp_slot_11, &frp_slot_12, &frp_slot_13, &frp_slot_14, &frp_slot_15,
-    &frp_slot_16, &frp_slot_17, &frp_slot_18, &frp_slot_19, &frp_slot_20, &frp_slot_21, &frp_slot_22, &frp_slot_23,
-    &frp_slot_24, &frp_slot_25, &frp_slot_26, &frp_slot_27, &frp_slot_28, &frp_slot_29, &frp_slot_30, &frp_slot_31,
 };
-static atomic_int slot_used[2u * FRP_SLOTS];
-#define POOL_OF(engine) ((engine) == FRP_ENGINE_HQ ? FRP_POOL_HQ : FRP_POOL_CLASSIC)
-#define ENGINE_OF(pool) ((pool) == FRP_POOL_HQ ? FRP_ENGINE_HQ : FRP_ENGINE_CLASSIC)
+static atomic_int slot_used[FRP_SLOTS];
 #define UQ 512u                          /* the UI queue (power of two) */
-#define TAIL_MAX_MS 30000u               /* a tail rests after this long even if it is not quiet (an INFINITE reverb) */
 
 #define CHUNK 256u                       /* frames read from the FIFO at a time */
 #define UAC_KNEE 24576                   /* usb.c UAC_KNEE: above it the excess is halved, before the clamp */
@@ -72,19 +65,6 @@ typedef struct { uint8_t kind; uint32_t a; int32_t v; } uq_ev_t;
 struct frp_inst {
     int slot;                            /* the slot playing (-1 none) */
     const frp_slot_api_t *s;             /* its table */
-    int slots[2];                        /* the instance's slot of each pool (-1 none) */
-    const frp_slot_api_t *sp[2];         /* (the other pool's: claimed at the first switch; set by the main thread,
-                                          * read by the audio side with __atomic acquire) */
-    _Atomic int need;                    /* the audio side waits for the other pool's slot: 0 no, 1 asked, 2 the main
-                                          * thread was called (frp_inst_wants_main) */
-    int cur;                             /* the pool playing */
-    int tail;                            /* the pool ringing out after a switch, -1 none */
-    uint32_t tail_ms0;                   /* its ms when it started */
-    _Atomic int want;                    /* the ENGINE asked (FRP_ENGINE_*): the audio side follows at its next block */
-    _Atomic int sj_flag;                 /* a state for the switch (0 none, 1 being written, 2 ready) */
-    char sj[FRP_STATE_MAX];
-    char xbuf[FRP_STATE_MAX];            /* the audio side's hand-over buffer */
-    int32_t tbuf[2u * 256u];
     /* changes held back while the slot's queue is nearly full (a host's flood of automation): the latest value and
      * time per parameter and per MIDI controller, put into the queue as it empties (park_put, park_flush) */
     int32_t pk_v[PK_N];
@@ -100,7 +80,6 @@ struct frp_inst {
     uint32_t ms0;                        /* the slot's ms at the activation */
     uint32_t pre;                        /* pre-roll frames still to play */
     uint32_t late;
-    int engine;                          /* ENGINE as last set (the slot's published value wins once it runs) */
     /* 48 kHz: the resampler's history (12 frames, oldest first), its phase, the outputs not yet handed out */
     int16_t hl[UAC_FIR_N], hr[UAC_FIR_N];
     uint32_t ph;
@@ -132,11 +111,11 @@ static void rs_init(void)                /* sinc(u) x Kaiser(u / RS_HALF), u = 0
     }
 }
 
-static int slot_claim(int pool)
+static int slot_claim(void)
 {
-    int i, pass, i0 = pool == FRP_POOL_HQ ? 0 : (int)FRP_SLOTS;
+    int i, pass;
     for (pass = 0; pass < 2; pass++)     /* a slot never used first (a clean app), then a used one */
-        for (i = i0; i < i0 + (int)FRP_SLOTS; i++) {
+        for (i = 0; i < (int)FRP_SLOTS; i++) {
             int z = 0;
             if (pass == 0 && SLOT[i]->booted()) continue;
             if (atomic_compare_exchange_strong(&slot_used[i], &z, 1)) return i;
@@ -144,108 +123,38 @@ static int slot_claim(int pool)
     return -1;
 }
 
-static const frp_slot_api_t *pool_api(const frp_inst_t *in, int k) { return __atomic_load_n(&in->sp[k], __ATOMIC_ACQUIRE); }
-/* main thread: the instance's slot of pool k, claimed and booted now if it has none yet. An instance takes the other
- * pool's slot at its first ENGINE switch (and keeps it): 16 instances of each engine fit. 0 ok, -1 none free */
-static int pool_take(frp_inst_t *in, int k)
-{
-    int sl;
-    if (pool_api(in, k)) return 0;
-    if ((sl = slot_claim(k)) < 0) return -1;
-    if (SLOT[sl]->booted()) SLOT[sl]->reuse(ENGINE_OF(k));
-    else if (SLOT[sl]->boot(ENGINE_OF(k))) { atomic_store(&slot_used[sl], 0); return -1; }
-    in->slots[k] = sl;
-    __atomic_store_n(&in->sp[k], SLOT[sl], __ATOMIC_RELEASE);
-    return 0;
-}
-
 frp_inst_t *frp_inst_new(void)
 {
     frp_inst_t *in = calloc(1, sizeof *in);
+    int sl;
     if (!in) return 0;
-    in->engine = FRP_ENGINE_HQ;          /* (the plugin's default; params_map.h FRP_ID_ENGINE) */
-    atomic_store(&in->want, in->engine);
-    in->tail = -1;
-    in->slots[0] = in->slots[1] = -1;
-    in->cur = POOL_OF(in->engine);
-    (void)pool_take(in, in->cur);        /* (the engine's slot, booted now: the main thread; none: silence) */
-    in->s = in->sp[in->cur];
-    in->slot = in->s ? in->slots[in->cur] : -1;
+    in->slot = -1;
+    if ((sl = slot_claim()) < 0) return in;   /* (16 in use: silence) */
+    if (SLOT[sl]->booted()) SLOT[sl]->reuse();
+    else if (SLOT[sl]->boot()) { atomic_store(&slot_used[sl], 0); return in; }   /* (booted now: the main thread) */
+    in->slot = sl;
+    in->s = SLOT[sl];
     return in;
 }
 void frp_inst_free(frp_inst_t *in)
 {
     if (!in) return;
-    for (int k = 0; k < 2; k++) if (in->slots[k] >= 0) atomic_store(&slot_used[in->slots[k]], 0);
+    if (in->slot >= 0) atomic_store(&slot_used[in->slot], 0);
     free(in);
 }
 int frp_inst_slot(const frp_inst_t *in) { return in ? in->slot : -1; }
-int frp_inst_engine(const frp_inst_t *in) { return in->engine; }
 
-/* the host frames since the activation as the app's milliseconds (due_ms's clock, without ms0) */
-static uint32_t pos_ms(const frp_inst_t *in, uint64_t h)
-{
-    return (uint32_t)(in->mode == M48 ? h / 48u : in->mode == M441 ? h * 10u / 441u : (uint64_t)floor((double)h * 1000.0 / in->rate));
-}
-/* the ENGINE switch to pool np: the sound (json, or the playing slot's own state) into a fresh start of the other
- * slot. Inactive (main thread): at once, the old slot cleared. Active (the thread that processes): the new slot's
- * clock re-based, the old one rings out as the tail. */
-static void do_swap(frp_inst_t *in, int np, const char *json)
-{
-    const frp_slot_api_t *o = in->s, *n = pool_api(in, np);
-    if (!o || !n || np == in->cur) return;
-    if (!json) {                         /* what the old slot was given and has not applied yet (the same block's
-                                          * parameter changes, before or after the switch) goes with the sound */
-        o->drain();
-        json = o->state_get(in->xbuf, (int)sizeof in->xbuf) >= 0 ? in->xbuf : 0;
-    }
-    n->reuse(ENGINE_OF(np));
-    if (json) (void)n->state_set(json);
-    if (!in->active) {
-        n->drain();
-        (void)o->put(FRP_EV_RESET, 0, 0, 0);
-        o->drain();
-        in->tail = -1;
-    } else {
-        n->drain();                      /* (the hand-over applied before the first step: no time passes) */
-        in->ms0 = n->now() + FRP_LAT_MS - pos_ms(in, in->pos);
-        (void)o->put(FRP_EV_RELEASE, o->now() + FRP_LAT_MS + 1u, 0, 0);   /* (after what it was already given) */
-        in->tail = in->cur;
-        in->tail_ms0 = o->now();
-    }
-    in->cur = np;
-    in->s = n;
-    in->slot = in->slots[np];
-}
 static void apply_ev(frp_inst_t *in, uint8_t kind, uint32_t a, int32_t v);
 static void park_flush(frp_inst_t *in);
 static void park_drain(frp_inst_t *in);
-/* the processing side, at a block's start: the UI's events, a state's switch, a switch asked */
+/* the processing side, at a block's start: the UI's events */
 static void block_start(frp_inst_t *in)
 {
     uint32_t r = atomic_load_explicit(&in->uqr, memory_order_relaxed);
-    int np;
     while (r != atomic_load_explicit(&in->uqw, memory_order_acquire)) {
         uq_ev_t *e = &in->uq[r & (UQ - 1u)];
         apply_ev(in, e->kind, e->a, e->v);
         atomic_store_explicit(&in->uqr, ++r, memory_order_release);
-    }
-    np = POOL_OF(atomic_load_explicit(&in->want, memory_order_acquire));
-    if (np != in->cur && !pool_api(in, np)) {   /* the other pool's slot not taken yet: the main thread takes it (the
-                                          * old engine plays on meanwhile; frp_inst_wants_main / frp_inst_main) */
-        int zero = 0;
-        (void)atomic_compare_exchange_strong(&in->need, &zero, 1);
-    } else if (np != in->cur) {
-        int two = 2;
-        int have = atomic_compare_exchange_strong(&in->sj_flag, &two, 3);
-        do_swap(in, np, have ? in->sj : 0);
-        if (have) atomic_store(&in->sj_flag, 0);
-    } else {                             /* (a state of the same pool that waited for a switch: the slot takes it) */
-        int two = 2;
-        if (atomic_compare_exchange_strong(&in->sj_flag, &two, 3)) {
-            if (in->s) (void)in->s->state_set(in->sj);
-            atomic_store(&in->sj_flag, 0);
-        }
     }
 }
 
@@ -269,17 +178,12 @@ int frp_inst_activate(frp_inst_t *in, double rate)
     in->late = 0;
     memset(in->hl, 0, sizeof in->hl); memset(in->hr, 0, sizeof in->hr);
     in->ph = 0; in->on = in->oi = 0;
-    in->tail = -1;                       /* (a tail from before: it rests) */
     if (in->s) {
         uint32_t a;
-        block_start(in);                 /* (what the UI queued, a switch asked: the instance is not active yet) */
+        block_start(in);                 /* (what the UI queued: the instance is not active yet) */
         park_flush(in);                  /* (what stayed parked at the deactivation) */
-        for (int k = 0; k < 2; k++) {
-            const frp_slot_api_t *t = pool_api(in, k);
-            if (!t) continue;
-            t->drain();                  /* (what the main thread queued while inactive) */
-            while ((a = t->avail()) != 0) t->read(in->buf, a < CHUNK ? a : CHUNK);   /* (frames from before) */
-        }
+        in->s->drain();                  /* (what the main thread queued while inactive) */
+        while ((a = in->s->avail()) != 0) in->s->read(in->buf, a < CHUNK ? a : CHUNK);   /* (frames from before) */
         in->ms0 = in->s->now();
     }
     in->active = 1;
@@ -300,7 +204,6 @@ void frp_inst_reset(frp_inst_t *in)
 {
     if (!in->s) return;
     (void)in->s->put(FRP_EV_RESET, 0, 0, 0);
-    if (in->tail >= 0) { (void)in->sp[in->tail]->put(FRP_EV_RESET, 0, 0, 0); in->tail = -1; }
     for (int k = 0; k < 128; k++) atomic_store_explicit(&in->notes[k], 0, memory_order_relaxed);
 }
 
@@ -406,15 +309,7 @@ static int param_index(uint32_t id)
 static void param_put(frp_inst_t *in, uint32_t at, uint32_t id, double value)
 {
     int i = param_index(id);
-    if (i < 0) return;
-    if (id == FRP_ID_ENGINE) {           /* the slot of that pool plays from the next block (inactive: at once) */
-        in->engine = param_round((uint32_t)i, value) ? FRP_ENGINE_HQ : FRP_ENGINE_CLASSIC;
-        if (!in->active && in->s && pool_take(in, POOL_OF(in->engine))) in->engine = ENGINE_OF(in->cur);   /* (none free) */
-        atomic_store(&in->want, in->engine);
-        if (!in->active) block_start(in);
-        return;
-    }
-    if (!in->s) return;
+    if (i < 0 || !in->s) return;         /* (an id not in the table: 0x10000, ENGINE, is no more) */
     if (park_put(in, (uint32_t)i, at, param_round((uint32_t)i, value))) return;
     (void)in->s->put(FRP_EV_PARAM, at, id, param_round((uint32_t)i, value));
 }
@@ -449,25 +344,6 @@ void frp_inst_put_now(frp_inst_t *in, int kind, uint32_t a, int32_t v)
         atomic_store_explicit(&in->uqw, w + 1u, memory_order_release);
     }
 }
-int frp_inst_wants_main(frp_inst_t *in)
-{
-    int one = 1;
-    return atomic_compare_exchange_strong(&in->need, &one, 2);
-}
-int frp_inst_main(frp_inst_t *in)
-{
-    int np;
-    if (atomic_load(&in->need) == 0) return 0;
-    np = POOL_OF(atomic_load(&in->want));
-    if (np != in->cur && pool_take(in, np)) {   /* no slot of that engine free: the ENGINE stays */
-        in->engine = ENGINE_OF(in->cur);
-        atomic_store(&in->want, in->engine);
-        atomic_store(&in->need, 0);
-        return -1;
-    }
-    atomic_store(&in->need, 0);          /* (the switch: at the audio side's next block) */
-    return 1;
-}
 void frp_inst_drain(frp_inst_t *in)
 {
     block_start(in);
@@ -486,7 +362,6 @@ int frp_inst_get(const frp_inst_t *in, uint32_t id, double *value)
     frp_snap_t sn;
     int i = param_index(id);
     if (i < 0) return -1;
-    if (id == FRP_ID_ENGINE) { *value = in->engine; return 0; }
     if (!in->s) { *value = FRP_PARAMS[i].def; return 0; }
     in->s->snapshot(&sn);
     *value = id < FRP_NPARAM_APP ? sn.pv[id] : id == FRP_ID_TUNE ? sn.tune : id == FRP_ID_PRESET ? sn.last_fact :
@@ -494,39 +369,14 @@ int frp_inst_get(const frp_inst_t *in, uint32_t id, double *value)
     return 0;
 }
 int frp_inst_state_get(const frp_inst_t *in, char *buf, int n) { return in->s ? in->s->state_get(buf, n) : -1; }
-static int json_engine(const char *j)    /* the state's "engine" ("0" / "1"), -1 none */
-{
-    const char *p = j ? strstr(j, "\"engine\":\"") : 0;
-    if (!p) return -1;
-    p += 10;
-    return (p[0] == '0' || p[0] == '1') && p[1] == '"' ? p[0] - '0' : -1;
-}
+/* a state: any thread. Its "engine" key (ENGINE, CLASSIC "0" or HQ "1", in states from before the plugin became HQ
+ * only) is not read: every sound loads on the HQ slot (slot_bridge.h ignores the key too) */
 int frp_inst_state_set(frp_inst_t *in, const char *json)
 {
-    int e = json_engine(json), np, zero = 0;
     if (!in->s || !json) return -1;
-    np = e < 0 ? in->cur : POOL_OF(e);
-    if (e >= 0) in->engine = e;
-    if (!in->active) {                   /* (the main thread owns the slots) */
-        if (np != in->cur) {
-            if (pool_take(in, np)) { in->engine = ENGINE_OF(in->cur); return -1; }   /* (no slot of that engine free) */
-            atomic_store(&in->want, in->engine);
-            if (in->sp[np]->state_set(json)) return -1;   /* (parsed first: a state it cannot read changes nothing) */
-            do_swap(in, np, json);
-            return 0;
-        }
-        atomic_store(&in->want, in->engine);
-        if (in->s->state_set(json)) return -1;
-        in->s->drain();
-        return 0;
-    }
-    if (np == in->cur && atomic_load(&in->want) == in->engine && atomic_load(&in->sj_flag) == 0)
-        return in->s->state_set(json);   /* (the slot's own mailbox) */
-    /* a switch with it: the processing side takes the state at its next block (block_start) */
-    if (strlen(json) >= sizeof in->sj || !atomic_compare_exchange_strong(&in->sj_flag, &zero, 1)) return -1;
-    strcpy(in->sj, json);
-    atomic_store(&in->sj_flag, 2);
-    atomic_store(&in->want, in->engine);
+    if (in->active) return in->s->state_set(json);   /* (the slot's own mailbox: the next step applies it) */
+    if (in->s->state_set(json)) return -1;   /* (parsed first: a state it cannot read changes nothing) */
+    in->s->drain();
     return 0;
 }
 uint32_t frp_inst_rev(const frp_inst_t *in)
@@ -534,7 +384,7 @@ uint32_t frp_inst_rev(const frp_inst_t *in)
     frp_snap_t sn;
     if (!in->s) return 0;
     in->s->snapshot(&sn);
-    return sn.rev + (uint32_t)in->slot * 0x10000u;   /* (a switch: another slot's counter) */
+    return sn.rev;
 }
 int frp_inst_snap(const frp_inst_t *in, frp_snap_t *out)
 {
@@ -564,19 +414,6 @@ static void pull(frp_inst_t *in, uint32_t n)
 {
     while (in->s->avail() < n) in->s->step();
     in->s->read(in->buf, n);
-    if (in->tail >= 0) {                 /* the other slot rings out after a switch: mixed in until it is quiet */
-        const frp_slot_api_t *t = in->sp[in->tail];
-        uint32_t k, ran;
-        while (t->avail() < n) t->step();
-        t->read(in->tbuf, n);
-        for (k = 0; k < 2u * n; k++) in->buf[k] += in->tbuf[k];
-        ran = t->now() - in->tail_ms0;
-        if (ran > FRP_LAT_MS + 50u && (ran & 31u) == 0u) {
-            frp_snap_t sn;
-            t->snapshot(&sn);
-            if (sn.quiet || ran > TAIL_MAX_MS) in->tail = -1;
-        }
-    }
 }
 static int16_t s16(int32_t v) { return (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v); }
 static int32_t knee_clamp(int32_t v)     /* usb.c uac_tap48: the knee above UAC_KNEE, then the 16-bit clamp */
@@ -659,7 +496,6 @@ void frp_inst_render(frp_inst_t *in, float *l, float *r, uint32_t n, uint32_t te
     block_start(in);
     park_flush(in);
     in->s->set_tempo(tempo_bpm10);
-    if (in->tail >= 0) in->sp[in->tail]->set_tempo(tempo_bpm10);
     if (in->mode == MANY) { rs_render(in, l, r, n); in->pos += n; meter(in, l, r, n); return; }
     for (; i < n && in->pre; i++, in->pre--) l[i] = r[i] = 0.0f;
     if (!in->r48) {

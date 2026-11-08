@@ -9,8 +9,9 @@ FM-1's own (params.c param_text, the enums' full names), with the unit spelled o
 is typed in here is only what a host shows and the panel does not: the long names and the groups (LONG below); a new
 parameter in params.c without one fails the generator, and tests/py/test_plugin_params.py fails until it is added.
 
-The plugin's own parameters (not the app's) have ids from 0x10000 (append-only too): ENGINE, the sound path (CLASSIC,
-the FM-1's integer engine and voice count, or HQ, the Move's float paths and 16 voices; HQ is the default); TUNE (the
+The plugin's own parameters (not the app's) have ids from 0x10000 (append-only too). 0x10000 was ENGINE (the sound
+path, CLASSIC or HQ) until the plugin became HQ only (24 voices): its id stays reserved, never reused (FRP_ID_OWN0,
+the own ids' base: MIDI learn's codes count from it). Then TUNE (the
 app's setting, -50..+50 cents); PRESET (the factory presets F01..F57: a host's generic view can browse them); SUSTAIN
 (the latch, as a CC 64) and FX BYPASS (the FX button).
 
@@ -24,8 +25,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "plugin", "gen", "params_map.h")
 BUILD = os.path.join(ROOT, "build", "plugin", "gen")
-# the plugin's engine flags (plugin/cmake/slots.cmake FRP_ENGINE_DEFS; the Move's: 16 voices, the HQ paths)
-DEFS = ["-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1"]
+# the plugin's engine flags (plugin/cmake/slots.cmake FRP_ENGINE_DEFS: the HQ paths, 24 voices)
+DEFS = ["-DFR_VOICES=24u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1"]
 
 # id name -> (long name, group). The VOICE parameters mean other things on the bar engine (eng_pages.h ENG_BARS_C):
 # both names, the Rhodes' first.
@@ -103,8 +104,9 @@ FMTS = ["F_R10", "F_ENUM", "F_HZ", "F_MS", "F_DIV", "F_BIP", "F_DB", "F_THR", "F
         "F_RSIZE", "F_LCUT", "F_EQDB", "F_EQHZ"]
 # the plugin's own parameters: (id, C name, long name, group, values, default)
 # (the PRESET texts come from the app: dump()'s factory names)
-OWN = [(0x10000, "FRP_ID_ENGINE", "Engine", "Engine", ["CLASSIC", "HQ"], 1),
-       (0x10001, "FRP_ID_TUNE", "Tune", "Voice", [f"{c:+d} c" if c else "0 c" for c in range(-50, 51)], 50),
+# (0x10000: ENGINE until the plugin became HQ only; reserved)
+OWN0, OWN_SPAN = 0x10000, 5
+OWN = [(0x10001, "FRP_ID_TUNE", "Tune", "Voice", [f"{c:+d} c" if c else "0 c" for c in range(-50, 51)], 50),
        (0x10002, "FRP_ID_PRESET", "Preset", "Preset", None, 0),
        (0x10003, "FRP_ID_SUSTAIN", "Sustain", "Performance", ["OFF", "ON"], 0),
        (0x10004, "FRP_ID_FX_BYPASS", "Effects bypass", "Performance", ["OFF", "ON"], 0)]
@@ -217,8 +219,8 @@ def render():
         f"#define FRP_NPARAM {len(params) + len(OWN)}u",
         *(f"#define {cname} {oid:#x}u" for oid, cname, *_ in OWN),
         f"#define FRP_NOWN {len(OWN)}u",
-        "#define FRP_ENGINE_CLASSIC 0u",
-        "#define FRP_ENGINE_HQ 1u",
+        f"#define FRP_ID_OWN0 {OWN0:#x}u   /* the own ids' base (0x10000 + k; 0x10000 itself was ENGINE: reserved) */",
+        f"#define FRP_OWN_SPAN {OWN_SPAN}u   /* the own ids span 0x10000 .. 0x10000 + FRP_OWN_SPAN - 1 */",
         "",
         "static const frp_param_t FRP_PARAMS[FRP_NPARAM] = {",
         *rows,

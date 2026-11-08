@@ -3,13 +3,12 @@
  *
  * Two layers:
  *   the slot     one copy of the app (firmware/src/frodhes.c over web/web_hal.c) compiled into its own object
- *                (plugin/src/engine_unit.c with FRP_SLOT = 0 .. 2 x FRP_SLOTS - 1, plugin/cmake/slots.cmake). Everything
+ *                (plugin/src/engine_unit.c with FRP_SLOT = 0 .. FRP_SLOTS - 1, plugin/cmake/slots.cmake). Everything
  *                in it is static except its table, frp_slot_<N> (frp_slot_api_t below): independent apps in one binary,
- *                no runtime file copies. Two pools: slots 0..15 HQ (the Move's build: 16 voices, the float paths),
- *                16..31 CLASSIC (the FM-1's build: 10 voices, the integer paths). The per-slot glue (time, queue,
- *                FIFO, state, presets, MIDI learn, settings) is slot_bridge.h.
- *   the instance a plugin instance (plugin/src/bridge.c): it holds one slot of each pool and plays the one its ENGINE
- *                names (a switch hands the state over and lets the other ring out), maps the host's frames and events
+ *                no runtime file copies. Every slot is the HQ build (the float paths of every engine, the full-rate
+ *                reverb) with 24 voices on every engine. The per-slot glue (time, queue, FIFO, state, presets, MIDI
+ *                learn, settings) is slot_bridge.h.
+ *   the instance a plugin instance (plugin/src/bridge.c): it holds one slot, maps the host's frames and events
  *                onto the app's milliseconds, resamples for other rates and hands out float. The user presets (files)
  *                are bridge.c's too.
  *
@@ -28,15 +27,14 @@
 #include "../gen/params_map.h"
 #include "../frp_ui_iface.h"           /* FRP_VEL_*, FRP_TEMPO_* */
 
-#define FRP_SLOTS 16u                    /* a pool's slots: the instances that can play at once */
+#define FRP_SLOTS 16u                    /* the slots: the instances that can play at once */
 #define FRP_FS 44100u                    /* the app's rate: always */
 #define FRP_SETTINGS_N 256u              /* params.c settings_t */
 #define FRP_BASE_N 80u                   /* params.c P_SLOTS */
 #define FRP_STATE_MAX 2048               /* the state's JSON text (slot_bridge.h SB_STATE_N) */
 #define FRP_PNAME 32                     /* a preset name with its terminator */
 #define FRP_NFACTORY 57u                 /* F01..F19 (presets.c) + F20..F57 (move/move_presets.h) */
-#define FRP_POOL_HQ 0
-#define FRP_POOL_CLASSIC 1
+#define FRP_VOICES 24u                   /* every slot's voice count, every engine (slots.cmake FR_VOICES) */
 
 enum { FRP_EV_MIDI = 1, FRP_EV_PARAM, FRP_EV_RESERVED3, FRP_EV_RESET, FRP_EV_CFG, FRP_EV_PRESET, FRP_EV_UNDO,
        FRP_EV_LEARN, FRP_EV_RELEASE, FRP_EV_UINOTE };
@@ -51,8 +49,8 @@ enum { FRP_LEARN_START, FRP_LEARN_CANCEL, FRP_LEARN_FORGET, FRP_LEARN_FORGET_ALL
 typedef struct {
     uint32_t rev;                        /* bumps on every change the app made or took (a parameter, a state) */
     uint8_t pv[FRP_NPARAM_APP];          /* the parameters' values (params.c PV) */
-    uint8_t engine;                      /* FRP_ENGINE_CLASSIC / _HQ: the slot's pool */
-    uint8_t voices;                      /* the slot's voice count (rhodes.c RH_NV) */
+    uint8_t voices;                      /* the slot's voice count (rhodes.c RH_NV = BAR_NV) */
+    uint8_t active, held;                /* the voices sounding now, and of them the ones whose key is down */
     uint8_t tune;                        /* TUNE + 50 (0..100) */
     uint8_t sustain, bypass;             /* the dampers held off; every effect bypassed */
     uint8_t edited, can_undo, quiet;     /* the sound differs from its preset; an undo copy exists; nothing sounds */
@@ -71,9 +69,9 @@ typedef struct {
 } frp_stats_t;
 
 typedef struct frp_slot_api {
-    int (*boot)(int engine);             /* main thread: the app's first pass (once a slot; later calls: 0 at once) */
+    int (*boot)(void);                   /* main thread: the app's first pass (once a slot; later calls: 0 at once) */
     int (*booted)(void);
-    void (*reuse)(int engine);           /* main thread, inactive (or the audio thread that owns it): a fresh start:
+    void (*reuse)(void);                 /* main thread, inactive (or the audio thread that owns it): a fresh start:
                                           * the boot's state, all notes off, the effects' state cleared */
     int (*put)(int kind, uint32_t at_ms, uint32_t a, int32_t v);   /* queue an event (0 ok, -1 full); at_ms 0 = at once.
                                           * MIDI / UINOTE: a = st | d1 << 8 | d2 << 16. PARAM: a = id, v = value.
@@ -103,9 +101,6 @@ typedef struct frp_slot_api {
 FRP_SLOT_DECL(0) FRP_SLOT_DECL(1) FRP_SLOT_DECL(2) FRP_SLOT_DECL(3) FRP_SLOT_DECL(4) FRP_SLOT_DECL(5)
 FRP_SLOT_DECL(6) FRP_SLOT_DECL(7) FRP_SLOT_DECL(8) FRP_SLOT_DECL(9) FRP_SLOT_DECL(10) FRP_SLOT_DECL(11)
 FRP_SLOT_DECL(12) FRP_SLOT_DECL(13) FRP_SLOT_DECL(14) FRP_SLOT_DECL(15)
-FRP_SLOT_DECL(16) FRP_SLOT_DECL(17) FRP_SLOT_DECL(18) FRP_SLOT_DECL(19) FRP_SLOT_DECL(20) FRP_SLOT_DECL(21)
-FRP_SLOT_DECL(22) FRP_SLOT_DECL(23) FRP_SLOT_DECL(24) FRP_SLOT_DECL(25) FRP_SLOT_DECL(26) FRP_SLOT_DECL(27)
-FRP_SLOT_DECL(28) FRP_SLOT_DECL(29) FRP_SLOT_DECL(30) FRP_SLOT_DECL(31)
 
 /* the user presets' cache for program changes 16..31 (bridge.c; the slots call it on the audio thread): the k-th
  * user preset's values and name, 0 ok, -1 none there. Lock-free (a sequence lock over a fixed table). */
@@ -114,14 +109,8 @@ int frp_user_get(uint32_t k, uint8_t *vals, char *name);
 /* ---- the instance (bridge.c) */
 #define FRP_LAT_MS 10u                   /* the events' schedule ahead of the app (and the output's pre-roll): 10 ms */
 typedef struct frp_inst frp_inst_t;
-frp_inst_t *frp_inst_new(void);          /* main thread: claims a slot of its ENGINE's pool (none: 16 in use, plays
-                                          * silence); the other pool's slot at the first switch */
+frp_inst_t *frp_inst_new(void);          /* main thread: claims a slot (none: 16 in use, plays silence) */
 void frp_inst_free(frp_inst_t *in);
-/* an ENGINE switch on the audio side waits for the other pool's slot: frp_inst_wants_main (any thread) says once that
- * the host should call the main thread (clap request_callback), where frp_inst_main takes the slot (0 nothing to do,
- * 1 taken: the switch at the next block, -1 none free: the ENGINE stays as it was) */
-int frp_inst_wants_main(frp_inst_t *in);
-int frp_inst_main(frp_inst_t *in);
 int frp_inst_slot(const frp_inst_t *in); /* the slot playing, -1 none */
 int frp_inst_activate(frp_inst_t *in, double rate);   /* main thread: 0 ok, -1 a rate outside 1 .. 1536 kHz */
 void frp_inst_deactivate(frp_inst_t *in);
@@ -134,7 +123,7 @@ void frp_inst_render(frp_inst_t *in, float *l, float *r, uint32_t n, uint32_t te
 /* an event for the slot playing, at once: the audio thread between blocks, or the main thread while not processing
  * (then followed by frp_inst_drain) */
 void frp_inst_put_now(frp_inst_t *in, int kind, uint32_t a, int32_t v);
-void frp_inst_drain(frp_inst_t *in);     /* not processing: apply what is queued now (and a pending ENGINE switch) */
+void frp_inst_drain(frp_inst_t *in);     /* not processing: apply what is queued now */
 int frp_inst_user_put(frp_inst_t *in, const uint8_t *vals, const char *name, int saved);
 /* the main thread outside processing (CLAP flush / state while inactive) */
 void frp_inst_param_now(frp_inst_t *in, uint32_t id, double value);
@@ -143,7 +132,6 @@ int frp_inst_state_get(const frp_inst_t *in, char *buf, int n);
 int frp_inst_state_set(frp_inst_t *in, const char *json);   /* applied now (inactive) or by the next block */
 uint32_t frp_inst_rev(const frp_inst_t *in);
 int frp_inst_snap(const frp_inst_t *in, frp_snap_t *out);   /* the slot's published values: 0, -1 no slot */
-int frp_inst_engine(const frp_inst_t *in);                  /* the ENGINE asked (the slot follows at the next block) */
 void frp_inst_stats(const frp_inst_t *in, frp_stats_t *st, uint32_t *late);
 int frp_fact_info(uint32_t i, char *name, uint32_t n, uint8_t *vals);   /* any thread: a factory preset */
 void frp_inst_meters(frp_inst_t *in, float peak[2]);        /* any thread: the output's peak since the last call */

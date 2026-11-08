@@ -14,15 +14,14 @@ typedef struct {
 } frp_param_t;
 
 #define FRP_NPARAM_APP 67u   /* params.c P_COUNT */
-#define FRP_NPARAM 72u
-#define FRP_ID_ENGINE 0x10000u
+#define FRP_NPARAM 71u
 #define FRP_ID_TUNE 0x10001u
 #define FRP_ID_PRESET 0x10002u
 #define FRP_ID_SUSTAIN 0x10003u
 #define FRP_ID_FX_BYPASS 0x10004u
-#define FRP_NOWN 5u
-#define FRP_ENGINE_CLASSIC 0u
-#define FRP_ENGINE_HQ 1u
+#define FRP_NOWN 4u
+#define FRP_ID_OWN0 0x10000u   /* the own ids' base (0x10000 + k; 0x10000 itself was ENGINE: reserved) */
+#define FRP_OWN_SPAN 5u   /* the own ids span 0x10000 .. 0x10000 + FRP_OWN_SPAN - 1 */
 
 static const frp_param_t FRP_PARAMS[FRP_NPARAM] = {
     {0u, "Type", "Voice", 5u, 0u, 80u, 1u, 0u},   /* P_TYPE (TYPE) */
@@ -92,14 +91,13 @@ static const frp_param_t FRP_PARAMS[FRP_NPARAM] = {
     {64u, "EQ mid", "EQ", 127u, 64u, 35u, 0u, 5775u},   /* P_EQ_MID (MID) */
     {65u, "EQ mid frequency", "EQ", 127u, 64u, 36u, 0u, 5903u},   /* P_EQ_FREQ (MIDF) */
     {66u, "EQ high", "EQ", 127u, 64u, 37u, 0u, 6031u},   /* P_EQ_HI (HIGH) */
-    {0x10000u, "Engine", "Engine", 1u, 1u, 0u, 1u, 6159u},   /* FRP_ID_ENGINE */
-    {0x10001u, "Tune", "Voice", 100u, 50u, 0u, 0u, 6161u},   /* FRP_ID_TUNE */
-    {0x10002u, "Preset", "Preset", 56u, 0u, 0u, 1u, 6262u},   /* FRP_ID_PRESET */
-    {0x10003u, "Sustain", "Performance", 1u, 0u, 0u, 1u, 6319u},   /* FRP_ID_SUSTAIN */
-    {0x10004u, "Effects bypass", "Performance", 1u, 0u, 0u, 1u, 6321u},   /* FRP_ID_FX_BYPASS */
+    {0x10001u, "Tune", "Voice", 100u, 50u, 0u, 0u, 6159u},   /* FRP_ID_TUNE */
+    {0x10002u, "Preset", "Preset", 56u, 0u, 0u, 1u, 6260u},   /* FRP_ID_PRESET */
+    {0x10003u, "Sustain", "Performance", 1u, 0u, 0u, 1u, 6317u},   /* FRP_ID_SUSTAIN */
+    {0x10004u, "Effects bypass", "Performance", 1u, 0u, 0u, 1u, 6319u},   /* FRP_ID_FX_BYPASS */
 };
 
-static const char *const FRP_TEXT[6323] = {
+static const char *const FRP_TEXT[6321] = {
     "STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "VIBES", "MARIMBA", "0.0", "0.1",
     "0.2", "0.2", "0.3", "0.4", "0.5", "0.6", "0.6", "0.7",
     "0.8", "0.9", "0.9", "1.0", "1.1", "1.2", "1.3", "1.3",
@@ -869,27 +867,27 @@ static const char *const FRP_TEXT[6323] = {
     "+7.9 dB", "+8.1 dB", "+8.3 dB", "+8.6 dB", "+8.8 dB", "+9.0 dB", "+9.3 dB", "+9.5 dB",
     "+9.8 dB", "+10 dB", "+10 dB", "+10 dB", "+11 dB", "+11 dB", "+11 dB", "+11 dB",
     "+12 dB", "+12 dB", "+12 dB", "+12 dB", "+13 dB", "+13 dB", "+13 dB", "+13 dB",
-    "+14 dB", "+14 dB", "+14 dB", "+14 dB", "+15 dB", "+15 dB", "+15 dB", "CLASSIC",
-    "HQ", "-50 c", "-49 c", "-48 c", "-47 c", "-46 c", "-45 c", "-44 c",
-    "-43 c", "-42 c", "-41 c", "-40 c", "-39 c", "-38 c", "-37 c", "-36 c",
-    "-35 c", "-34 c", "-33 c", "-32 c", "-31 c", "-30 c", "-29 c", "-28 c",
-    "-27 c", "-26 c", "-25 c", "-24 c", "-23 c", "-22 c", "-21 c", "-20 c",
-    "-19 c", "-18 c", "-17 c", "-16 c", "-15 c", "-14 c", "-13 c", "-12 c",
-    "-11 c", "-10 c", "-9 c", "-8 c", "-7 c", "-6 c", "-5 c", "-4 c",
-    "-3 c", "-2 c", "-1 c", "0 c", "+1 c", "+2 c", "+3 c", "+4 c",
-    "+5 c", "+6 c", "+7 c", "+8 c", "+9 c", "+10 c", "+11 c", "+12 c",
-    "+13 c", "+14 c", "+15 c", "+16 c", "+17 c", "+18 c", "+19 c", "+20 c",
-    "+21 c", "+22 c", "+23 c", "+24 c", "+25 c", "+26 c", "+27 c", "+28 c",
-    "+29 c", "+30 c", "+31 c", "+32 c", "+33 c", "+34 c", "+35 c", "+36 c",
-    "+37 c", "+38 c", "+39 c", "+40 c", "+41 c", "+42 c", "+43 c", "+44 c",
-    "+45 c", "+46 c", "+47 c", "+48 c", "+49 c", "+50 c", "F01 STAGE 77", "F02 SUITCASE",
-    "F03 EARLY FELT", "F04 BELL DYNO", "F05 SUIT TREM", "F06 DRIVEN 77", "F07 BALLAD", "F08 DYNO 80S", "F09 70S PHASER", "F10 FUNK WAH",
-    "F11 RESO SWEEP", "F12 AUTO WAH", "F13 VIBES", "F14 VIBES ECHO", "F15 MARIMBA", "F16 WOOD ECHO", "F17 TAPE ECHO", "F18 DREAM",
-    "F19 RADIO", "F20 STAGE77 ECHO", "F21 STAGE77 TAPE", "F22 SUITCASE DRY", "F23 SUITCASE AMP", "F24 FELT HALL", "F25 FELT ECHO", "F26 BELL SOFT",
-    "F27 BELL ECHO", "F28 TREM ECHO", "F29 TREM DEEP", "F30 DRIVEN77 LVL", "F31 DRIVEN BODY", "F32 BALLAD TIGHT", "F33 BALLAD DARK", "F34 DYNO80S LVL",
-    "F35 DYNO80S SOFT", "F36 PHASER LVL", "F37 PHASER SLOW", "F38 FUNK WAH LVL", "F39 FUNK PLUCK", "F40 RESO SPACE", "F41 RESO SMOOTH", "F42 AUTOWAH ECHO",
-    "F43 AUTOWAH TAPE", "F44 VIBES HALL", "F45 VIBES MOTOR", "F46 VIBES CLEAN", "F47 VIBES DRIFT", "F48 MARIMBA HALL", "F49 MARIMBA ECHO", "F50 WOOD PLAIN",
-    "F51 WOOD LIGHT", "F52 TAPE WIDE", "F53 TAPE DARK", "F54 DREAM CLEAR", "F55 DREAM DEEP", "F56 RADIO LVL", "F57 RADIO LOW", "OFF",
-    "ON", "OFF", "ON",
+    "+14 dB", "+14 dB", "+14 dB", "+14 dB", "+15 dB", "+15 dB", "+15 dB", "-50 c",
+    "-49 c", "-48 c", "-47 c", "-46 c", "-45 c", "-44 c", "-43 c", "-42 c",
+    "-41 c", "-40 c", "-39 c", "-38 c", "-37 c", "-36 c", "-35 c", "-34 c",
+    "-33 c", "-32 c", "-31 c", "-30 c", "-29 c", "-28 c", "-27 c", "-26 c",
+    "-25 c", "-24 c", "-23 c", "-22 c", "-21 c", "-20 c", "-19 c", "-18 c",
+    "-17 c", "-16 c", "-15 c", "-14 c", "-13 c", "-12 c", "-11 c", "-10 c",
+    "-9 c", "-8 c", "-7 c", "-6 c", "-5 c", "-4 c", "-3 c", "-2 c",
+    "-1 c", "0 c", "+1 c", "+2 c", "+3 c", "+4 c", "+5 c", "+6 c",
+    "+7 c", "+8 c", "+9 c", "+10 c", "+11 c", "+12 c", "+13 c", "+14 c",
+    "+15 c", "+16 c", "+17 c", "+18 c", "+19 c", "+20 c", "+21 c", "+22 c",
+    "+23 c", "+24 c", "+25 c", "+26 c", "+27 c", "+28 c", "+29 c", "+30 c",
+    "+31 c", "+32 c", "+33 c", "+34 c", "+35 c", "+36 c", "+37 c", "+38 c",
+    "+39 c", "+40 c", "+41 c", "+42 c", "+43 c", "+44 c", "+45 c", "+46 c",
+    "+47 c", "+48 c", "+49 c", "+50 c", "F01 STAGE 77", "F02 SUITCASE", "F03 EARLY FELT", "F04 BELL DYNO",
+    "F05 SUIT TREM", "F06 DRIVEN 77", "F07 BALLAD", "F08 DYNO 80S", "F09 70S PHASER", "F10 FUNK WAH", "F11 RESO SWEEP", "F12 AUTO WAH",
+    "F13 VIBES", "F14 VIBES ECHO", "F15 MARIMBA", "F16 WOOD ECHO", "F17 TAPE ECHO", "F18 DREAM", "F19 RADIO", "F20 STAGE77 ECHO",
+    "F21 STAGE77 TAPE", "F22 SUITCASE DRY", "F23 SUITCASE AMP", "F24 FELT HALL", "F25 FELT ECHO", "F26 BELL SOFT", "F27 BELL ECHO", "F28 TREM ECHO",
+    "F29 TREM DEEP", "F30 DRIVEN77 LVL", "F31 DRIVEN BODY", "F32 BALLAD TIGHT", "F33 BALLAD DARK", "F34 DYNO80S LVL", "F35 DYNO80S SOFT", "F36 PHASER LVL",
+    "F37 PHASER SLOW", "F38 FUNK WAH LVL", "F39 FUNK PLUCK", "F40 RESO SPACE", "F41 RESO SMOOTH", "F42 AUTOWAH ECHO", "F43 AUTOWAH TAPE", "F44 VIBES HALL",
+    "F45 VIBES MOTOR", "F46 VIBES CLEAN", "F47 VIBES DRIFT", "F48 MARIMBA HALL", "F49 MARIMBA ECHO", "F50 WOOD PLAIN", "F51 WOOD LIGHT", "F52 TAPE WIDE",
+    "F53 TAPE DARK", "F54 DREAM CLEAR", "F55 DREAM DEEP", "F56 RADIO LVL", "F57 RADIO LOW", "OFF", "ON", "OFF",
+    "ON",
 };
 #endif

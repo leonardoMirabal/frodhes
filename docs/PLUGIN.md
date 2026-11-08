@@ -3,7 +3,9 @@
 The FM-1 firmware's sound engine as a CLAP, VST3 and Audio Unit (v2) instrument for macOS, and a CLAP and VST3
 instrument for Windows and Linux. The plugin is the app
 itself, `firmware/src/frodhes.c` compiled unchanged (as for the browser emulator and the Move), so it plays what the
-FM-1 plays: the same parameters, the same factory sounds, the same state.
+FM-1 plays: the same parameters, the same factory sounds, the same state. A desktop computer has no CPU limit like
+the devices', so the plugin plays the high-quality version of everything: every engine and every effect on its HQ
+path, with 24 voices on every engine.
 
 This is a developer build. On macOS it opens its own window (the CLAP, VST3 and Audio Unit alike); on other systems
 the host shows its generic parameter view.
@@ -65,17 +67,18 @@ while the plugin is loaded, not in the project yet.
 
 | | |
 | --- | --- |
-| Engine | **ENGINE** parameter: HQ (the default: the Move's float paths, 16 voices) or CLASSIC (the FM-1's own build, bit for bit: its integer engine and its 10 voices). Switching while notes sound lets them ring out on the old engine |
-| Parameters | the app's 67 parameters with their FM-1 ids (stable: saved sessions and automation keep them), ranges and texts, grouped by module, plus ENGINE, TUNE, PRESET (F01-F57, for the host's own view), SUSTAIN (the latch) and EFFECTS BYPASS. A change the app makes itself (a program change, a CC, a preset) goes back to the host. Automation takes the device's own path: a sweep renders the same bytes as the same sweep sent as MIDI CCs, so the smoothing is the FM-1's |
+| Engine | HQ only: every engine (the Rhodes types, VIBES, MARIMBA) on its HQ float path and every effect on its HQ path (the full-rate reverb TYPEs, the compressor kept through EFFECTS BYPASS: the Move's and the two-core FM-1's build switches), with **24 voices on every engine**. 24 keys held all sound; a 25th steals a voice (faded out over one 5.8 ms block: no click). The FM-1's own 10-voice integer build (CLASSIC, an ENGINE parameter until 2026-11) is not in the plugin any more: a saved state or project that asks for it loads its sound on HQ |
+| Parameters | the app's 67 parameters with their FM-1 ids (stable: saved sessions and automation keep them), ranges and texts, grouped by module, plus TUNE, PRESET (F01-F57, for the host's own view), SUSTAIN (the latch) and EFFECTS BYPASS (71 in all; the id 0x10000, ENGINE's, stays reserved). A change the app makes itself (a program change, a CC, a preset) goes back to the host. Automation takes the device's own path: a sweep renders the same bytes as the same sweep sent as MIDI CCs, so the smoothing is the FM-1's |
 | Presets | F01-F19 (the FM-1's) and F20-F57 (the Move's variants), then the user's own, one file each (`*.frpreset`) in `~/Library/Application Support/Frodhes/Presets` (Linux `$XDG_DATA_HOME/frodhes/presets`, else `~/.local/share/frodhes/presets`; Windows `%APPDATA%\Frodhes\Presets`; `FRODHES_PRESET_DIR` overrides; the folders are made when the first preset is saved). In a sandboxed Audio Unit host the plugin uses the account's own folder when the sandbox lets it write there (the same presets as every other host), else the host's container (that host's presets only). The plugin-wide settings file has its place beside the presets (`settings.json`, `plugin/src/frp_paths.h`). Browse with wrap-around, UNDO as on the device. Program changes follow the FM-1's map, continued past F19 so that every factory preset can be reached: 0-15 F01-F16, 16-31 the first 16 user files (where there is none, the FM-1's own user bank: its starter sounds), 32-72 F17-F57 (32-34 are F17-F19 as on the FM-1, which has no preset after F19; 35-72 reach F20-F57 by the same rule). 73-127 load nothing |
 | Settings | MIDI CHANNEL (ALL or 1-16), the velocity curve (MEDIUM as played, LIGHT, HEAVY: the device's TOUCH curves; FIXED with its velocity), program changes on / off, the tempo source (HOST: the DAW's tempo, 120 without one, a MIDI clock sent to the plugin still leads; INTERNAL: the BPM setting; MIDI CLOCK: an incoming clock, else the BPM setting), SYNC ALL (every tempo effect's SYNC at one division, also on every preset load) |
 | MIDI learn | any knob (and TUNE, PRESET, SUSTAIN, BYPASS) learns the next CC; a learned CC comes before the device's CC map; forget one or all; saved with the project |
-| State | the sound as the Move saves it (the 256-byte settings record and the sound it came from) plus ENGINE and the plugin's own keys (settings, learned CCs, SUSTAIN, the preset's name; version "pv" 2). A state without them (the first builds, a Move track) loads them as defaults; a broken or cut state is refused and changes nothing |
+| State | the sound as the Move saves it (the 256-byte settings record and the sound it came from) plus the plugin's own keys (settings, learned CCs, SUSTAIN, EFFECTS BYPASS, the preset's name; version "pv" 2). A state without them (the first builds, a Move track) loads them as defaults; a broken or cut state is refused and changes nothing. The "engine" key is always written as HQ (an older build then loads the sound on its HQ engine) and never read: a state saved with ENGINE CLASSIC loads on HQ, 24 voices, and saves again as HQ |
 | Tempo | the tempo source above (the delay's and the LFOs' sync) |
 | Sample rates | 44.1 kHz: the app's own samples. 48 kHz: the FM-1's own USB resampler, the FM-1's USB stream bit for bit. Any other rate from 1 to 1536 kHz: a windowed-sinc resampler (error under 1 LSB of 16 bits in the passband) |
 | Tail | reported to the host (CLAP tail; the VST3's tail samples and the Audio Unit's tail time follow), and the host is told when it changes: how long the sound can go on after the last event at the current settings, an upper bound measured per setting: the notes' release (under 2 s), the reverb by TYPE and DECAY (HALL up to 8 s, PLATE 7 s, INFINITE up to 59 s below SUSTAIN), the delay by FEEDBACK scaled by its TIME (a synced time counts as the longest), added up with a quarter more. INFINITE at SUSTAIN / FREEZE and the ANA / TAPE echoes that build up (FEEDBACK 115 / 114 and over) report an infinite tail. FX BYPASS: the notes' only |
 | Latency | reported to the host: 10 ms (441 frames at 44.1 kHz, 487 at 48 kHz, 11 ms or more at other rates). Events are placed on the millisecond the FM-1 would see them |
 | Instances | up to 16 in one host process; a 17th stays silent and says so in the host's log |
+| CPU | one instance at its worst (24 keys struck at velocity 127 with the pedal down, struck again every 2 s, every effect on at its heaviest, each REVERB TYPE, every engine) takes under 2 % of one core of the maintainer's arm64 laptop (2024) at 44.1 and 48 kHz, in every format: CLAP 1.7 %, VST3 1.9 %, Audio Unit 1.7 % (`tools/plugin_cpu.py`; the 16-voice HQ build before: CLAP 1.2 %). The app computes 256 frames at a time, so a host buffer under 256 frames gets the whole cost in one call of four or eight: at 32 frames the worst call took 0.75 of its 0.67 ms there (64 frames: 0.17); a slower machine wants a host buffer of 64 frames or more |
 | Floods | a host may send thousands of parameter, program or controller changes in one block (pluginval does): none is dropped. When the event queue runs low, the changes to one parameter (or one controller of a channel) wait in one entry that keeps the latest value, which is all the app would have played: it applies everything due before each millisecond's step. Notes are never merged |
 | The UI core | `plugin/frp_ui_iface.h`: everything the plugin's own window shows and does (parameters with gestures, presets, settings, MIDI learn, SUSTAIN, BYPASS, meters, held notes), main thread only, never blocking the audio |
 
@@ -170,17 +173,21 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
 
 - **Gate D** (`tools/gate_d.py`): every MIDI-driven render of the test suite, played through the CLAP plugin by a
   headless host (`plugin/tests/clap_render.c`), is byte-identical to the host build's (the same list as the Move's
-  Gate M); with random block sizes, 1-frame blocks and CLAP note events too; HQ against the host build with HQ on;
-  48 kHz against the FM-1's resampler compiled unchanged; the other rates against an FFT reference; the Intel slice
-  under Rosetta.
+  Gate M, and the HQ scripts) against the host build at the plugin's switches (24 voices, HQ on every note); with
+  random block sizes, 1-frame blocks and CLAP note events too; 48 kHz against the FM-1's resampler compiled
+  unchanged; the other rates against an FFT reference; the Intel slice under Rosetta.
 - The headless host's selftest: every parameter value's text reads back as itself, the state saves, loads and saves
   to the same bytes, the rates and latencies, 16 instances play and the 17th is silent.
 - Gate D's core mode (`tools/gate_d.py --only core`, also `tests/py/test_plugin_core.py`): the headless host's
-  `--coretest` drives the UI core through a CLAP extension (CLASSIC 10 voices, HQ 16 and the switch while playing;
-  the state with every setting, older and broken states; presets, user files, UNDO, program changes; automation and
-  gestures; MIDI learn; the tempo sources and SYNC ALL; SUSTAIN, BYPASS, velocity, MIDI CHANNEL); an automation sweep
-  equals the same sweep as MIDI CCs byte for byte (CLASSIC and HQ); a 1/4 delay's echo lands at 600 / 500 ms at the
-  transport's 100 / 120 BPM.
+  `--coretest` drives the UI core through a CLAP extension (24 voices on STAGE 77, VIBES and MARIMBA: 24 keys
+  struck one by one, each one a new voice sounding and held, none stolen; the 25th steals one; the state with every
+  setting, older, CLASSIC and broken states; presets, user files, UNDO, program changes; automation and gestures; MIDI
+  learn; the tempo sources and SYNC ALL; SUSTAIN, BYPASS, velocity, MIDI CHANNEL); an automation sweep equals the
+  same sweep as MIDI CCs byte for byte; a 1/4 delay's echo lands at 600 / 500 ms at the transport's 100 / 120 BPM.
+- The 24 voices heard (`tests/py/test_plugin_voices.py`, the engine alone): a 24-key chord is the 23-key chord plus
+  its top key alone (nothing stolen for it), and a 25th key over 24 held steals cleanly: against the same music
+  without the steal, its largest second difference stays under 1.5 x (a voice cut dead fails it, proven on the same
+  renders). On the host build, `make testv V=24` (`tests/scripts24`) holds 24 keys per engine with the same counts.
 - The user folders per OS (`plugin/tests/test_paths.c`, `tests/py/test_plugin_paths.py`): macOS and its App
   Sandbox, Linux XDG, Windows APPDATA, drive and UNC roots, all tested on any OS; mkdir -p, the atomic replace (also
   over an existing file) and the listing ran on macOS, on Linux (Docker) and on Windows (Wine).
@@ -194,7 +201,7 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
   sound and the settings come back whole. A host that names its own presets (most keep the name in their own file)
   is not affected.
 - The tail (`tests/py/test_plugin_tail.py`, in `make test-plugin`): `clap_render --tail-check` is a host that stops at
-  the tail the plugin reports; with the measured worst corners and seeded random settings, both engines, it renders 20 s
+  the tail the plugin reports; with the measured worst corners and seeded random settings, it renders 20 s
   past the tail and nothing sounds there; the settings that hold the sound report an infinite tail. A changed tail is
   told once it has held for two checks, in process (CLAP's audio thread); as clap-wrapper's host (the VST3 and the
   Audio Unit) from the main thread, where their restart and property-change calls belong.
@@ -204,7 +211,8 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
   match its level and loudness envelope (that host plays a probe note into every instrument it loads, so not sample
   for sample), and their state saves, loads and saves to the same bytes.
 - The stress run (`make plugin-stress`, `plugin/tests/clap_stress.m`, macOS): 30 minutes in a host that behaves like a
-  DAW, 3 instances processed at real time on an audio thread while the main thread plays chords, switches ENGINE,
+  DAW, 3 instances processed at real time on an audio thread while the main thread plays chords (full ones of 20 to 28
+  keys too: every voice and steals),
   changes presets, floods 2000 automation changes into one block (every parameter then reads back the last value
   sent, except the pairs the app couples itself: an effect's depth and its switch, the compressor's THRESH and make-up),
   opens the window in a real NSWindow and closes it again, and round-trips the state between instances; every sample
@@ -228,11 +236,11 @@ the Mac, a DAW that opens the audio interface may change its sample rate.
 1. **Install and scan.** Install the package; rescan plug-ins (Logic and GarageBand check the Audio Unit at start).
    Frodhes shows as an instrument, vendor Frodhes, version the release's: in the CLAP list (Bitwig, Reaper, Studio
    One), the VST3 list, and the Audio Unit list (Logic, GarageBand, Live, Renoise: Instruments > Frodhes > Frodhes).
-2. **Play.** Put it on a MIDI / instrument track and play: the first sound is F01 STAGE 77 on the HQ engine. Hold a
+2. **Play.** Put it on a MIDI / instrument track and play: the first sound is F01 STAGE 77. Hold a
    chord with the sustain pedal (or SUSTAIN in the window), let go: the notes ring out and stop. No click at the start
    of playback or when the track is armed.
 3. **The window.** Open it: 960 x 600 points, sharp on a Retina / high-DPI screen. Drag a knob, double-click its value
-   and type a number, step a preset with the arrows, switch ENGINE to CLASSIC and back while a note rings. Resize the
+   and type a number, step a preset with the arrows. Hold 24 keys (or the sustain and a glissando): every key sounds. Resize the
    window (16:10, 720 x 450 to 1920 x 1200). Close and reopen it twice: nothing is lost.
 4. **Automation.** Record a knob move while the transport runs (the host shows one gesture); play it back: the knob
    follows. Draw an automation curve for TONE, play: the sound follows smoothly, no zipper noise.
@@ -252,9 +260,9 @@ there; the list above is the same for them (Reaper: also the CLAP, `Options > Pr
 
 | | |
 | --- | --- |
-| `plugin/CMakeLists.txt`, `plugin/cmake/` | the build: the pins, the 32 engine slots (16 HQ, 16 CLASSIC), the formats through clap-wrapper |
+| `plugin/CMakeLists.txt`, `plugin/cmake/` | the build: the pins, the 16 engine slots (the HQ build, 24 voices), the formats through clap-wrapper |
 | `plugin/src/engine_unit.c`, `slot_bridge.h` | one engine slot: the app over the browser's platform layer, with every symbol private to the slot; its presets, MIDI learn, settings, state |
-| `plugin/src/bridge.c`, `bridge.h` | the instance: its two slots and the ENGINE switch, time, events, the UI queue, the resamplers, the user preset files |
+| `plugin/src/bridge.c`, `bridge.h` | the instance: its slot, time, events, the UI queue, the resamplers, the user preset files |
 | `plugin/frp_ui_iface.h` | the UI core's interface (implemented in `frodhes_clap.c`) |
 | `plugin/src/frodhes_clap.c`, `clap_entry.cpp` | the CLAP plugin; clap-wrapper turns it into the VST3 and the Audio Unit |
 | `plugin/src/coro/` | the coroutine the app's main loop runs in (arm64, x86_64) |
@@ -265,6 +273,7 @@ there; the list above is the same for them (Reaper: also the CLAP, `Options > Pr
 | `plugin/ui/` | the renderer, its fonts reader and value texts, the headless render tool |
 | `plugin/tests/` | the headless host, the coroutine test, the parameter dump, the window's test host, the stress host |
 | `tools/plugin_hosts.py`, `plugin_au_render.swift`, `plugin_vst3_validator.sh` | the plugin in other hosts (Apple's AU host, a JUCE host), the VST3 SDK's validator |
+| `tools/plugin_cpu.py` | the CPU per instance at the worst case, per format and rate |
 | `tools/plugin_deps.sh`, `plugin/deps.lock` | the pinned dependencies and test tools |
 | `tools/plugin_pack.sh`, `plugin_depcheck.py`, `plugin_asset.sh` | the packages, the self-contained check, the release's choice of packages |
 | `tools/plugin_win.sh`, `plugin/cmake/win-x64-clangcl.cmake`, `plugin/compat/win/` | the Windows build (clang-cl), its checks and wine tests |

@@ -77,13 +77,18 @@ root, t, b = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
 sys.path.insert(0, str(root / "tools"))
 import gate_m, gate_d
 midi, _ = gate_m.entries()
-base, want16 = gate_m.read_sums(gate_m.BASE), gate_m.read_sums(gate_m.BASE16)
 sub = gate_d.subset(midi, 8)
+# the plugin is HQ only: the reference is the host build with the plugin's switches (gate_d.DEFS, HQ on every note),
+# compiled in the same container (the same compiler and libm), rendered next to the plugin
+defs = " ".join(gate_d.DEFS + ["-DHQ_DEFAULT=1"])
 with open(t / "renders.sh", "w") as f, open(t / "want.txt", "w") as w:
+    f.write(f'clang-12 -O2 -w -ffp-contract=off -DDINGHY_HOST {defs} -DAPP_VER=\\"dev\\" -I"{root}/firmware/src" -I"{root}/firmware/gen" '
+            f'-o "{t}/host-hq" "{root}/firmware/src/frodhes.c" -lm || echo "render failed: the host build"\n')
     for n, script in sub:
         o = t / "out" / (n.replace("/", "__") + ".wav")
-        f.write(f'"{b}/frp_clap_render" "{b}/bundles/Frodhes.clap" "{root / script}" "{o}" --engine classic --block 512 >/dev/null 2>&1 || echo "render failed: {n}"\n')
-        w.write(f"{n} {base.get(n)}\n")   # (CLASSIC: the FM-1's build, its Gate R render)
+        f.write(f'"{b}/frp_clap_render" "{b}/bundles/Frodhes.clap" "{root / script}" "{o}" --engine hq --block 512 >/dev/null 2>&1 || echo "render failed: {n}"\n')
+        f.write(f'(cd "{root}" && "{t}/host-hq" "{t}/out/host__{n.replace("/", "__")}" "{root / script}" >/dev/null 2>&1) || true\n')
+        w.write(f"{n}\n")
 print(f"plugin_linux: {len(sub)} Gate D renders")
 PY
     in_docker "cd '$T'
@@ -96,13 +101,13 @@ PY
 import hashlib, sys
 from pathlib import Path
 t = Path(sys.argv[1]); ok = bad = 0
-for line in (t / "want.txt").read_text().splitlines():
-    n, want = line.split()
-    p = t / "out" / (n.replace("/", "__") + ".wav")
-    got = hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else "MISSING"
-    if got == want: ok += 1
-    else: bad += 1; print(f"FAIL gate d {n}: {got[:12]} want {want[:12]}")
-print(f"{'ok   ' if not bad else 'FAIL '} gate d on Linux: {ok} identical, {bad} differ")
+sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest() if p.exists() else "MISSING"
+for n in (t / "want.txt").read_text().split():
+    got = sha(t / "out" / (n.replace("/", "__") + ".wav"))
+    want = sha(t / "out" / ("host__" + n.replace("/", "__") + ".wav"))
+    if got == want and got != "MISSING": ok += 1
+    else: bad += 1; print(f"FAIL gate d {n}: {got[:12]} want {want[:12]} (the host build)")
+print(f"{'ok   ' if not bad else 'FAIL '} gate d on Linux (HQ, against the host build): {ok} identical, {bad} differ")
 sys.exit(1 if bad else 0)
 PY
     if grep -q "FAIL" "$T/log.txt"; then echo "plugin_linux: failures above"; return 1; fi
