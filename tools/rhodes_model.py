@@ -3,7 +3,7 @@
 
 It has exactly the C engine's structure (32-frame sub-blocks, the pulse player with linear interpolation, the MC3
 kernel per mode with the force injected into y, the radial pickup as an exact flux difference, the damper as a
-7-sub-block linear crossfade of E and eps, the post-mix RLC biquad) but in double precision and with the exact
+linear crossfade of E and eps over rh_settle()'s sub-blocks, the post-mix RLC biquad) but in double precision and with the exact
 flux function instead of the Hermite table. Gate B compares the C engine against it (residual <= -60 dB).
 
 The model runs a batch of notes in parallel (numpy over notes x modes), so calibrating all 88 keys is quick.
@@ -23,8 +23,15 @@ import rh_coefs as rc  # noqa: E402
 
 FS = 44100.0
 SUB = 32
-RAMP_SUB = 7
+RAMP_SUB = 5                # rhodes.c RAMP_SUB
 PLEN = 64
+
+
+def settle(n):
+    """the damper crossfade's length in sub-blocks for key n, as rhodes.c rh_settle()"""
+    if n < 48:
+        return RAMP_SUB + min((50 - n) >> 2, 2)
+    return RAMP_SUB if n < 72 else RAMP_SUB - 1 if n < 84 else RAMP_SUB - 2
 LAYER_V = [8, 24, 40, 56, 72, 88, 104, 120]
 
 
@@ -101,7 +108,7 @@ def modes_batch(specs, vels, n, off_at=None):
     x = np.zeros((nn, nm)); y = np.zeros((nn, nm))
     E = E0.copy(); D = D0.copy()
     Es, Ds = E.copy(), D.copy()
-    ramp = 0
+    L = np.array([float(settle(int(s.get("midi", 60)))) for s in specs])[:, None]   # per note (rh_settle)
     out = np.zeros((nn, n))
     ppos = np.zeros(nn)
     live = np.ones(nn, bool)
@@ -110,10 +117,9 @@ def modes_batch(specs, vels, n, off_at=None):
     for sb in range(0, n, SUB):
         k = sb // SUB
         if off_sub is not None and k == off_sub:
-            ramp = RAMP_SUB; Es, Ds = E.copy(), D.copy()
-        if ramp:
-            ramp -= 1
-            f = (RAMP_SUB - ramp) / RAMP_SUB
+            Es, Ds = E.copy(), D.copy()
+        if off_sub is not None and off_sub <= k < off_sub + L.max():
+            f = np.minimum((k - off_sub + 1) / L, 1.0)
             E = Es + (E1 - Es) * f
             D = Ds + (D1 - Ds) * f
         for j in range(sb, min(sb + SUB, n)):

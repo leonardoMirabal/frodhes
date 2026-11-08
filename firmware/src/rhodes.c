@@ -78,7 +78,7 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #define RH_NV RH_VOICES
 _Static_assert(RH_NV >= 1u && RH_NV <= 32u, "summaries are 32-bit masks");
 #define SUB 32u
-#define RAMP_SUB 7u
+#define RAMP_SUB 5u                            /* the damper settle (rh_settle) on C3..B4, sub-blocks */
 #define FADE_SAMPLES 64u
 #define RH_OFF_LIFE 1378u                      /* blocks (8 s) a voice may still ring after an all-off */
 #define Q30 (1 << 30)
@@ -633,11 +633,12 @@ static void rh_set_damper_n(rh_voice_t *v, int32_t w, uint32_t len)
     v->ramp = (uint8_t)len; v->rlen = (uint8_t)len;
 }
 /* the damper settle per register (S6): the felt takes longer to seat on a heavy bass tine than on a short treble one.
- * RAMP_SUB (7 sub-blocks, 5.1 ms) on C3..B4 (48..71), one more every 4 keys below C3 to 10 (7.3 ms) from D2 (38)
- * down, 6 on C5..B5, 5 (3.6 ms) from C6 (84) up */
+ * RAMP_SUB (5 sub-blocks, 3.6 ms) on C3..B4 (48..71), one more every 4 keys below C3 to 7 (5.1 ms) from A#2 (42)
+ * down, 4 on C5..B5, 3 (2.2 ms) from C6 (84) up. (Until 2026-11-08 7 / 10 / 6 / 5: the felt acted 10-20 ms late
+ * against a real tine piano's, which damps within ~5 ms of the key-up) */
 static uint32_t rh_settle(uint32_t note)
 {
-    if (note < 48u) { uint32_t d = (50u - note) >> 2; return RAMP_SUB + (d > 3u ? 3u : d); }
+    if (note < 48u) { uint32_t d = (50u - note) >> 2; return RAMP_SUB + (d > 2u ? 2u : d); }
     return note < 72u ? RAMP_SUB : note < 84u ? RAMP_SUB - 1u : RAMP_SUB - 2u;
 }
 static void rh_set_damper(rh_voice_t *v, int32_t w) { rh_set_damper_n(v, w, rh_settle(v->note)); }
