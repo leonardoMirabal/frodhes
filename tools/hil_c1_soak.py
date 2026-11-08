@@ -16,8 +16,9 @@ Rows (Textura's bench/fm1 rows 274 / 275, Frodhes' worst case):
   276   "max", 30 min (or --minutes): the CPU smashed on both cores. The engine turned every 10 min (Rhodes, VIBES,
         MARIMBA, in a loop), all 14 voices sounding all the time: a 14-note chord at v127 every 0.25 s (mid + top,
         14 bass, spread: steals all the time), the pedal held, lifted every 5 s; every effect at its heaviest (as
-        274) with the drive TYPE turned TSH8 / KHLON / TSH8 every 20 s, the REVERB TYPE every 30 s (HALL, PLATE,
-        INFINITE); every 100 ms a step of a sweep on the cutoff, the delay TIME, the phaser and tremolo depths, the
+        274) with the drive TYPE turned TSH8 / KHLON / TSH8 every 20 s; the full-rate REVERB at MIX, DECAY,
+        PRE-DELAY and SIZE 127 all the time, INFINITE (the heaviest) most of it: in each engine's 10 min, 5 min of
+        INFINITE alone, then each minute INFINITE 40 s, HALL 10 s, PLATE 10 s (the switches: the transitions); every 100 ms a step of a sweep on the cutoff, the delay TIME, the phaser and tremolo depths, the
         compressor's threshold and the drive's amount; the bypass (CC 111) on for 0.5 s every 20 s; a Program Change
         burst (presets 1-6) every 60 s, then the heavy settings again
 (Boots: power-cycle the FM-1 and run --status after each boot: core 1 live, the rails 7 / 15.)
@@ -54,7 +55,7 @@ FREC_ID = 50
 CC = dict(DRIVE=81, DRV_SW=84, DRV_MIX=83, CMP_SW=106, CMP_AMT=107, TW_SW=17, TW_DEPTH=18, PH_SW=12, PH_DEPTH=13,
           PH_FDBK=16, CP_SW=85, CP_DEPTH=86, DL_SW=88, DL_DEPTH=89, DL_TIME=90, DL_FDBK=26, REV=91, RV_DECAY=92,
           RV_PREDLY=94, RV_TYPE=95, FL_TYPE=70, FL_FREQ=74, FL_RESO=71, FL_LFO=72, EQ_LO=34, EQ_MID=35, EQ_HI=37,
-          SPREAD=105, USB_VOL=114)
+          SPREAD=105, USB_VOL=114, RV_SIZE=73)
 HEAVY = dict(DRIVE=127, DRV_SW=76, DRV_MIX=64, CMP_SW=127, CMP_AMT=100, TW_SW=127, TW_DEPTH=127, PH_SW=127,
              PH_DEPTH=127, PH_FDBK=127, DL_SW=80, DL_DEPTH=127, DL_TIME=127, DL_FDBK=127, REV=127, RV_DECAY=127,
              RV_PREDLY=127, RV_TYPE=32, FL_TYPE=45, FL_FREQ=60, FL_RESO=100, FL_LFO=64, EQ_LO=127, EQ_MID=0,
@@ -64,7 +65,17 @@ ENGINES = ((None, "rhodes"), (0, "vibes"), (127, "marimba"))   # CC 79: VIBES 0,
 VOICINGS = dict(midtop=list(range(48, 60)) + [105, 108], bass=[28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52],
                 spread=[28, 40, 52, 59, 64, 71, 76, 83, 88, 95, 100, 105, 35, 47])
 ROWS = {"274": dict(minutes=30, engines=1, rev_every=0), "275": dict(minutes=120, engines=3, rev_every=120),
-        "276": dict(minutes=30, engines=3, rev_every=30, max=1)}
+        "276": dict(minutes=30, engines=3, rev_every=0, max=1)}
+def max_rev(t):
+    """row 276: the REVERB TYPE (CC 95) at t s: in each engine's 10 min, 5 min of INFINITE, then each minute
+    INFINITE 40 s, HALL 10 s, PLATE 10 s"""
+    u = t % 600.0
+    if u < 300.0:
+        return 96
+    v = u % 60.0
+    return 96 if v < 40.0 else 32 if v < 50.0 else 64
+
+
 MAX_DRV = (76, 70, 76)                                   # row 276: the drive TYPE in turn (CC 84): TSH8, KHLON, TSH8
 MAX_SWEEP = dict(FL_FREQ=(0, 127), DL_TIME=(60, 127), PH_DEPTH=(64, 127), TW_DEPTH=(64, 127), CMP_AMT=(60, 127),
                  DRIVE=(64, 127))                        # row 276: CC -> the sweep's range (a triangle, 100 ms steps)
@@ -168,6 +179,8 @@ def selftest():
     assert pm["max"] and pm["chord_every_s"] == 0.25 and pm["engines"] == ["rhodes", "vibes", "marimba"], pm
     pe = per_engine(pm, [dict(r, t=10, app_us=4000), dict(r, t=700, app_us=4400), dict(r, t=1300, app_us=4100)])
     assert pe.startswith("rhodes 4000/") and "vibes 4400/" in pe and "marimba 4100/" in pe, pe
+    assert [max_rev(x) for x in (0, 299, 300, 339, 340, 349, 350, 359, 360, 600)] == [96, 96, 96, 96, 32, 32, 64,
+                                                                                      64, 96, 96]
     print("hil_c1_soak selftest: ok")
 
 
@@ -178,7 +191,9 @@ def plan(row, minutes):
     return dict(row=row, minutes=m, engines=[e[1] for e in ENGINES[:p["engines"]]], rev_every_s=p["rev_every"],
                 voices=14, chord_every_s=0.25 if mx else 1.2, pedal_every_s=5 if mx else 20, read_every_s=5,
                 max=mx, drive_every_s=20 if mx else 0, sweep_every_s=0.1 if mx else 0, bypass_every_s=20 if mx else 0,
-                pc_every_s=60 if mx else 0, bars=BARS)
+                pc_every_s=60 if mx else 0,
+                reverb="each engine's 10 min: INFINITE 5 min, then per minute INFINITE 40 s / HALL 10 s / PLATE 10 s; "
+                       "MIX, DECAY, PRE-DELAY, SIZE 127" if mx else "", bars=BARS)
 
 
 def run(a):  # noqa: C901 (the device run)
@@ -227,12 +242,17 @@ def run(a):  # noqa: C901 (the device run)
             cc(79, sel)
             cc(47, 127)                                   # VIBES' motor (inert on MARIMBA)
         for n, v in HEAVY.items():
-            cc(CC[n], v)
+            if not (p["max"] and n == "RV_TYPE"):
+                cc(CC[n], v)
+        if p["max"]:
+            cc(CC["RV_SIZE"], 127)                        # (row 276: the largest room, not AUTO)
+            cc(CC["RV_TYPE"], rev_cur)
         cc(111, 0)
         cc(64, 127)
 
     reads, t0, held, k, eng_i, rev_i = [], time.monotonic(), [], 0, -1, 0
     drv_i = sw_i = 0
+    rev_cur = 96
     next_read = next_chord = next_ped = next_rev = next_eng = next_burst = 0.0
     next_drv = next_sweep = 0.0
     next_byp, next_pc = 10.0, 40.0
@@ -248,6 +268,10 @@ def run(a):  # noqa: C901 (the device run)
                 setup(eng_i)
                 next_eng = t + (600.0 if len(p["engines"]) > 1 else dur + 1)
             if p["max"]:
+                rv = max_rev(t)
+                if rv != rev_cur:                         # the REVERB TYPE (INFINITE most of the time)
+                    cc(CC["RV_TYPE"], rv)
+                    rev_cur = rv
                 if t >= next_drv:                         # the drive TYPE in turn (KHLON among them)
                     drv_i += 1
                     cc(CC["DRV_SW"], MAX_DRV[drv_i % len(MAX_DRV)])
@@ -270,7 +294,7 @@ def run(a):  # noqa: C901 (the device run)
                         time.sleep(0.04)
                     setup(eng_i)
                     cc(CC["DRV_SW"], MAX_DRV[drv_i % len(MAX_DRV)])
-                    cc(CC["RV_TYPE"], REV_TYPES[(rev_i - 1) % 3])
+                    cc(CC["RV_TYPE"], rev_cur)
                     next_pc = t + p["pc_every_s"]
             if p["rev_every_s"] and t >= next_rev:
                 cc(CC["RV_TYPE"], REV_TYPES[rev_i % 3])
