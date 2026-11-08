@@ -39,6 +39,7 @@ firmware can always be put back ([how](#going-back-to-the-original-firmware)). S
 14. [Specifications](#14-specifications)
 15. [Appendix: the SMK-37](#15-appendix-the-smk-37)
 16. [Appendix: the Ableton Move](#16-appendix-the-ableton-move)
+17. [Appendix: the desktop plugin](#17-appendix-the-desktop-plugin)
 
 ## 1. Getting started
 
@@ -261,7 +262,7 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 | K1 | **TYPE** | The instrument: **STAGE 77** (the classic stage piano), **SUITCASE** (with its own amp and four 12-inch speakers in a closed cabinet: warm lows, a gently rolled-off treble), **EARLY FELT** (early felt hammers: rounder, darker), **BELL DYNO** (a modified, bell-like voicing: glassy), **VIBES**, the vibraphone (see [VIBES](#vibes-the-vibraphone)), or **MARIMBA** (see [MARIMBA](#marimba)). Applies to the next notes. |
 | K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE 1/2's TONE). On VIBES and MARIMBA: **MALLET** |
 | K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE 1/2's BELL). On VIBES: **MOTOR** on / off; on MARIMBA: **TUBE** |
-| K4 | **KEY VEL** | How hard the FM-1's own keys strike: the velocity of a medium press (TOUCH on [SETUP](#setup); harder presses play louder, softer ones quieter), and with TOUCH at **FIXED** the velocity of every press. Around 60–80 soft and round, 96 medium (the default), 108–127 hard with bark. MIDI notes keep their own velocity. |
+| K4 | **KEY VEL** | How hard the FM-1's own keys strike: the velocity of a medium press (TOUCH on [SETUP](#setup); harder presses play louder, softer ones quieter), and with TOUCH at **FIXED** the velocity of every press. Around 60–80 soft and round, 96 medium (the default), 108–127 hard with bark (the bark comes in at a firmer touch in the treble than in the bass). MIDI notes keep their own velocity. |
 
 ### VOICE 1/2 and 2/2
 
@@ -1046,8 +1047,8 @@ letting the sound break up. In testing, with every voice struck and every effect
 ## 11. Sound and volume tips
 
 - **KEY VEL** on the main page sets the velocity of a medium press (with TOUCH FIXED, of every press). 96–108 is a
-  good start; the bark comes in above about 100. If you play softly and the sound stays thin, try TOUCH **LIGHT**
-  (SETUP); if your normal playing already barks, **HEAVY**.
+  good start; the bark comes in above about 100 in the middle, earlier in the bass and later in the treble. If you
+  play softly and the sound stays thin, try TOUCH **LIGHT** (SETUP); if your normal playing already barks, **HEAVY**.
 - **MASTER is digital.** For the least hiss on the headphone jack, keep MASTER high and turn your speakers or
   headphones down instead. Between notes the output is exact silence, so the jack is silent too.
 - **TYPE** changes the whole instrument: try BELL DYNO for glassy ballads and SUITCASE for the classic vibrato with
@@ -1217,6 +1218,17 @@ screen on the Move, the eight knobs as eight cards a page at a time. Its manual 
 page and what differs: **[MOVE.md](MOVE.md)**.
 
 ![Frodhes' screen on the Move: the DRIVE/FILTER page, eight knobs as eight cards](manual/img/move/move-drive-filter.png?v=5388b9c5)
+
+## 17. Appendix: the desktop plugin
+
+Frodhes also runs in your music software as an instrument plugin: CLAP and VST3 on macOS, Windows and Linux, and an
+Audio Unit on macOS. It has the same instruments, effects and factory sounds as the FM-1, computed by the same code,
+in the higher-quality version with 16 voices, as on the Move; its ENGINE control switches to CLASSIC, the FM-1's own
+sound with its 10 voices. Everything in this manual applies to the sound. Its own window shows the pages as cards
+with knobs, with the presets, MIDI learn, the effects' bypass and the sustain latch; your host saves everything with
+the project. The host's tempo drives the synced effects; the FM-1's sequencer, arpeggiator and chord mode are not in
+the plugin. The downloads, the install and the first-open steps for a plugin that is not signed yet:
+[the README](../README.md#on-your-computer-the-desktop-plugin).
 
 ---
 

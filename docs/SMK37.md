@@ -113,9 +113,9 @@ FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1 (hold one OCT button 
 | KNOB BANK (held) | the panel check: the keyboard's raw readings (faders, wheels, pedal, pads, battery, flash) |
 | FADER BANK | the faders' bank, A or B (lit on B) |
 | 37 keys | C3..C6 at OCTAVE 0 (the middle 27 are the FM-1's F3..G5), each at its own velocity |
-| faders, bank A | the instrument's first VOICE page (Rhodes: TONE BARK BELL HAMMER, [VOICE 1/2](MANUAL.md#voice-12-and-22); VIBES / MARIMBA: STRIKE MALLET TUBE WEIGHT) |
+| faders, bank A | the instrument's first VOICE page (the electric piano types: TONE BARK BELL HAMMER, [VOICE 1/2](MANUAL.md#voice-12-and-22); VIBES / MARIMBA: STRIKE MALLET TUBE WEIGHT) |
 | faders, bank B | the four [PERFORM](MANUAL.md#perform) knobs (set them on [ASSIGN](MANUAL.md#assign)) |
-| pitch wheel | pitch bend, +-2 semitones (the Rhodes types, as MIDI pitch bend; VIBES and MARIMBA ignore it) |
+| pitch wheel | pitch bend, +-2 semitones (the electric piano types, as MIDI pitch bend; VIBES and MARIMBA ignore it) |
 | mod wheel | more TREM/WAH depth on top of DEPTH, full at the top (VIBES: the motor's); switches it on if off, off again at rest |
 | pedal jack | sustain pedal, either polarity (plug it in before switching on) |
 

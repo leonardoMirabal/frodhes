@@ -1,18 +1,37 @@
-<!-- CONDITIONAL DRAFT: ONLY IF THE TWO-CORE BUILD SHIPS. The name ends in .ifships so tools/changes.py and the
-release ignore it. If it ships: rename to 04-two-cores.md, fill every [TODO ...], update 00-summary.md and
-03-smk37-10-voices.md, and apply the "two cores" block of CHECKLIST-0910.txt. If it does not ship: delete this file. -->
+<!-- CONDITIONAL: ONLY IF THE TWO-CORE BUILD SHIPS (the user's decision: the default FM-1 file, or a second file next
+to the 10-voice one). The name ends in .ifships so tools/changes.py and the release ignore it.
+Ships: rename to 04-two-cores.md (build/rel0910.sh --two-cores-ship does it), fill the VERIFY numbers from the K6b
+device gates (c1-subblock), update 00-summary.md, apply CHECKLIST-0910.txt block B "only if two cores ship".
+Does not ship: delete this file; the developer note below then becomes docs/changes/04-two-cores-dev.md:
+  ## Tools
+  - `tools/build.py --c1` builds a developer two-core image (`frodhes-c1.fwsc`, not the release build): 14 voices on
+    the first core, the whole effects chain and the full-rate REVERB TYPEs on the second, with no added latency.
+    The default image is byte-identical with or without it.
+  - `tools/hil_c1_soak.py` soaks a two-core image on the FM-1 and judges the second core's counters;
+    `tools/hil_cpu.py` and `tools/hil_crackle.py` play up to 16 voices (`--voices`).
+VERIFY: if it ships as a second file, name it here (and in README / MANUAL) instead of "on the FM-1". -->
 ## Changes
 
 - **14 voices on the FM-1** (were 10), on every instrument, counting the notes under the sustain and the ones chord
-  mode, the arpeggiator and the sequencer play. [TODO: the SMK-37 too: "and on the SMK-37 (were 7)".]
+  mode, the arpeggiator and the sequencer play.
 - **The reverb at the full sample rate on the FM-1**, as on the Move: its tails keep their top octave. Every reverb
   type, the same controls and presets.
-- The FM-1's chip has a second processor core, which Frodhes now uses: the voices play on the first, the effects
-  and the reverb on the second, each with room to spare.
+- The FM-1's chip has a second processor core, which Frodhes now uses: the voices play on the first, the effects and
+  the reverb on the second, each with room to spare, and with no added latency: a note sounds as soon as on the
+  one-core build.
+
+## Tools
+
+- `tools/build.py --c1` builds the two-core image; the default build is byte-identical with or without the two-core
+  code. `tools/hil_c1_soak.py` soaks a two-core image on the FM-1 and judges the second core's counters;
+  `tools/hil_cpu.py` and `tools/hil_crackle.py` play up to 16 voices (`--voices`).
 
 ## Tested
 
-- Host: [TODO: the two-core model and its tests].
-- FM-1 (release build): a [TODO] h soak at full load (14 voices, every effect, the pedal) with no hang, no crackle
-  and no lost note; the CPU worst case per core [TODO] us / [TODO] us (limit 4500 each); the crackle test at 44.1
-  and 48 kHz; T1 and T2 scans; the reverb's top octave measured on the jack [TODO].
+- Host: the effects and both voice engines processed in chunks render sample for sample what the one-core 14-voice
+  build renders, with no added delay; the hand-off orders, refused jobs and the one-core fallback
+  (`tests/py/test_c1_pipeline.py`); the default build unchanged (Gate R, the firmware image's sha256).
+- FM-1 (release build): <!-- VERIFY: the K6b device gates: hil_cpu --worst --voices 14 x3 per engine (worst block
+  and whole ISR, limit 4500 us, 0 shed), MIDI-in to jack onset equal to the one-core build, the 30 min and 2 h soaks,
+  20 restarts, the crackle test at 44.1 and 48 kHz, T1/T2. --> the CPU worst case per core, the latency against the
+  one-core build, the soaks with no hang, no crackle and no lost note, the restarts and the scans.

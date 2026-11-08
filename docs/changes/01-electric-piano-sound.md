@@ -1,32 +1,29 @@
-<!-- DRAFT: finalise every [TODO ...] from the sound agents' reports (host numbers + the FM-1 on the jack) and
-the user's listening round; drop any item that did not ship. Public text: player terms only, no reference
-instrument or brand named or compared. -->
+<!-- Public text: player terms only; never name or compare with a reference instrument or a brand.
+VERIFY after sonic-0910 lands (the numbers are the host prototypes' of 2026-11-08: S1b velocity map 65876d86, S2 tine
+1f596312, S3 decay/damper 624ed178 option D, S4 dynamics): every number below against the merged build (host) and the
+FM-1 jack; add the FM-1 Tested lines after the release gates; drop an item that did not ship. -->
 ## Changes
 
 - **The electric piano's touch** (every electric piano type: STAGE 77, SUITCASE, EARLY FELT, BELL DYNO). Soft notes
-  stay mellow and round all the way up to a medium touch. Above that the bark comes in clearly, and the point where
-  it starts rises with the register: about velocity [TODO] in the bass (C2), [TODO] in the middle (C4) and [TODO] in
-  the treble (C6), so a medium touch no longer growls in the upper keys while a firm one still barks in the bass.
-- **A wider dynamic range**: from the softest note to the hardest, [TODO] dB on the headphone jack (was [TODO] dB),
-  at the same loudness for a medium note, so presets keep their level.
-- **A sweeter upper register**: hard notes in the top two octaves keep their bell but lose the hard, brittle edge
-  ([TODO: the measured change, e.g. "about [TODO] dB less above 5 kHz at C6, velocity 127"]).
-- **Longer sustain in the middle register**: a held note around C4 rings for about [TODO] s before it fades away
-  (was [TODO] s); the bass and the top keep their own decay. DECAY scales it as before.
-- **A faster, more natural damper**: letting go stops a note in about [TODO] ms (was [TODO] ms), as the felt lands
-  and settles, with no click; RELEASE, release velocity and NOISE shape it as before, and letting go never makes
-  the sound louder.
-- **KEY VEL**: with the new touch the bark comes in above about [TODO] (was about 100); 96 is still the default
-  medium press. [TODO: say so only if the threshold moved.]
-- [TODO: only if they changed: "The factory presets are rebalanced for the new touch; your user presets keep their
-  settings."]
+  stay mellow and round up to a medium touch. Above that the bark comes in clearly, and the point where it starts
+  rises with the register: from about velocity 58 in the bass to about 108 from E5 up, so a medium touch no longer
+  growls in the upper keys while a firm one still barks in the bass. Soft and medium notes keep their level, so
+  presets keep their balance.
+- **A sweeter upper register**: the tine's high, inharmonic ring at the start of a hard note is turned down key by
+  key from A3 up. At velocity 127, in the first 20 ms, it sits about 40 dB under the note at C5, 55 dB at C6 and
+  65 dB at C7 (it was 12, 33 and 32 dB). The bell stays; the hard, brittle edge goes. Keys below A3 and the bark are
+  unchanged.
+- **Longer sustain in the middle register**: a held note around C4 now rings about twice as long before it fades
+  away (about 20 s to silence, was 10 s); the bass and the top keep their own decay. DECAY scales it as before.
+- **A quicker, more natural damper**: letting go stops a note about twice as fast (10 dB down in 25-45 ms), as the
+  felt lands and settles, with no click. RELEASE keeps its range (127 still lets a note ring on for about 2 s),
+  release velocity and NOISE shape it as before, and letting go never makes the sound louder.
+- The Move's higher-quality engine and the desktop plugin get the same changes.
 
 ## Tested
 
-- Host: [TODO: the new pytest names] (the velocity map per register, the dynamic range, the top octave's
-  spectrum, the middle register's decay, the damper time); the dynamic-range retest of every sound at velocity 1
-  and 127 (none louder after the key-up); Gate R renders updated [TODO]; `make test`, `make pytest`.
-- FM-1 (release build): the CPU worst case with 10 voices and every effect on [TODO] us (limit 4500, nothing shed);
-  the crackle test at 44.1 and 48 kHz; T1 and T2 scans; the jack recordings of every type at velocities 1-127
-  [TODO: numbers].
-- Listening: [TODO: the user's round on the jack].
+- Host: keys 28-100 at velocities 20, 40, 64, 90, 110 and 127, before and after: the velocity knee per register, the
+  tine band in the first 20 ms, H2 against H1, the attack above 1 kHz, the level, the decay per register and the
+  damper time; the never-louder-after-key-up check (10 ms windows sliding by 1 ms against the onset, with three
+  synthetic regression cases) on every sound at the softest and the hardest velocity; VIBES and MARIMBA
+  byte-identical; Gate R, Gate H and Gate M references renewed for the intended change; `make test`, `make pytest`.

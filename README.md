@@ -1,6 +1,6 @@
 # Frodhes
 
-**An electric piano, vibraphone and marimba, computed live, for the M-VAVE FM-1 and the Ableton Move.**
+**An electric piano, vibraphone and marimba, computed live, for the M-VAVE FM-1, the Ableton Move and your computer.**
 
 No samples: every note is calculated as you play it, from how the real instrument works. A hammer strikes a tine
 and a pickup turns its motion into sound; a mallet strikes a bar and its tube rings along. Play softly and it is
@@ -76,6 +76,54 @@ Schwung's module catalog, you can also install and update it from there. The ste
   <img src="docs/manual/img/move/move-pages.png?v=fcd9ce1d" width="384" alt="The list of pages on the Move">
 </p>
 
+## On your computer: the desktop plugin
+
+Frodhes also runs in your music software as an instrument plugin: CLAP and VST3 on macOS, Windows and Linux, and an
+Audio Unit on macOS.
+
+- The same instruments, effects and factory sounds, computed by the same code. It opens in the higher-quality
+  version with 16 voices, as on the Move; ENGINE switches to CLASSIC, the FM-1's own sound with its 10 voices.
+- Its own window: the FM-1's pages as cards with knobs, resizable. Presets, MIDI learn, the effects' bypass and the
+  sustain latch are in it, and everything is saved with your project.
+- The host's tempo drives the synced effects. Any sample rate. Up to 16 instances in one project.
+- macOS 11 or newer (Apple silicon or Intel), Windows x64, Linux x86_64 or aarch64 (glibc 2.31 or newer). Nothing
+  else to install.
+
+**macOS.** Download
+[`frodhes-plugin-macos.pkg`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-macos.pkg)
+and open it: it installs the three formats into your own Library. The plugin is not signed by Apple yet, so macOS
+refuses it the first time: right-click the file and choose **Open** (or System Settings > Privacy & Security >
+**Open Anyway**). Or download
+[`frodhes-plugin-macos.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-macos.zip)
+and copy the format your host uses into its folder (create the folder if it is not there; in the Finder,
+**Go > Go to Folder...** and paste the path):
+
+| Format | File | Folder |
+| --- | --- | --- |
+| CLAP | `Frodhes.clap` | `~/Library/Audio/Plug-Ins/CLAP/` |
+| VST3 | `Frodhes.vst3` | `~/Library/Audio/Plug-Ins/VST3/` |
+| Audio Unit | `Frodhes.component` | `~/Library/Audio/Plug-Ins/Components/` |
+
+Then clear the download flag once, in Terminal:
+
+```sh
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/*/Frodhes.*
+```
+
+**Windows.** Download
+[`frodhes-plugin-windows.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-windows.zip).
+It is not signed yet: before you extract it, right-click it, **Properties**, tick **Unblock**. Copy `Frodhes.clap`
+into `C:\Program Files\Common Files\CLAP\` and `Frodhes.vst3` into `C:\Program Files\Common Files\VST3\`.
+
+**Linux.** Download
+[`frodhes-plugin-linux-x86_64.zip`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-plugin-linux-x86_64.zip)
+(or `-aarch64`) and copy `Frodhes.clap` into `~/.clap/` and `Frodhes.vst3` into `~/.vst3/`.
+
+Then restart your music software, or let it rescan its plugins: it appears as **Frodhes**, an instrument. For the
+Audio Unit, `killall -9 AudioComponentRegistrar` in Terminal (or a restart of the Mac) makes macOS see it at once.
+To remove it, delete the `Frodhes.*` files again. More:
+[the manual](docs/MANUAL.md#17-appendix-the-desktop-plugin).
+
 ## Manual
 
 **[The user manual](docs/MANUAL.md)**: every page, knob and button, the presets, the effects and the MIDI map.
@@ -96,6 +144,9 @@ The files on the [release page](https://github.com/leonardoMirabal/frodhes/relea
 | SMK-37 Pro | `frodhes-smk37-pro.fwsc` |
 | SMK-37 Elite | `frodhes-smk37-elite.fwsc` |
 | MKE-P37 | `frodhes-mke-p37.fwsc` |
+| Desktop plugin, macOS | `frodhes-plugin-macos.pkg` or `frodhes-plugin-macos.zip` |
+| Desktop plugin, Windows | `frodhes-plugin-windows.zip` |
+| Desktop plugin, Linux | `frodhes-plugin-linux-x86_64.zip`, `frodhes-plugin-linux-aarch64.zip` |
 
 ## Credits
 
