@@ -23,10 +23,15 @@ complete source under the same licence too.
 | --- | --- | --- |
 | Terminus font 8x16 (`assets/fonts/ter-u16n.bdf`), rendered into `firmware/gen/felucca_font.h` by `tools/gen_font.py` | SIL OFL 1.1 | `assets/fonts/Terminus-LICENSE.txt` |
 | Inter Tight (`assets/fonts/InterTight[wght].ttf`), rendered into `firmware/gen/aa_font.h` by `tools/gen_aa_font.py` (the screen's values and labels) | SIL OFL 1.1, Copyright 2022 The Inter Project Authors | `assets/fonts/OFL-InterTight.txt` |
+| The desktop plugin's dependencies (`plugin/`; fetched by `tools/plugin_deps.sh` at the commits pinned in `plugin/deps.lock` into `.local/plugin-deps`, none in this tree; compiled into the plugin bundles): the [CLAP](https://github.com/free-audio/clap) headers, [clap-wrapper](https://github.com/free-audio/clap-wrapper) (with its copy of the {fmt} library), the [VST3 SDK](https://github.com/steinbergmedia/vst3sdk) | MIT ({fmt}: MIT, with its optional exception for compiled forms) | `LICENSES/MIT.txt`; each project's own `LICENSE` |
+| The desktop plugin's Audio Unit layer: Apple's [AudioUnitSDK](https://github.com/apple/AudioUnitSDK), fetched the same way, compiled into `Frodhes.component` | Apache-2.0 | `LICENSES/Apache-2.0.txt` |
+| The plugin test tools, fetched pinned by `tools/plugin_deps.sh` and run only (never shipped): clap-validator (MIT), pluginval (GPL-3.0) | MIT, GPL-3.0 | their own repositories |
 | JieLi AC79 SDK: `uboot.boot`, `cfg_tool.bin`, `eq_cfg_hw.bin` are read from your SDK checkout at build time and placed in the package; no SDK files are in this tree. Every release attaches the licence text as `Apache-2.0.txt` | Apache-2.0 | `LICENSES/Apache-2.0.txt`; <https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK> |
 
 ## Trademarks
 
 "Felucca" and "Hügelton Instruments" are names of Hügelton Instruments; "M-VAVE", "FM-1", "SMK-37" and "MKE-P37"
 belong to their owners. Frodhes is not made or endorsed by them. "Fender" and "Rhodes" are trademarks of their owners;
-Frodhes is an independent emulation, not affiliated with or endorsed by them.
+Frodhes is an independent emulation, not affiliated with or endorsed by them. "VST" is a trademark of Steinberg Media
+Technologies GmbH; "Audio Units" and "macOS" are trademarks of Apple Inc. The desktop plugin uses these formats
+under their SDKs' licences and is not made or endorsed by either company.
