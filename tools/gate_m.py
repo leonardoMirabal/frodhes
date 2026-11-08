@@ -236,7 +236,17 @@ def update(a, midi, host, base):
     rev = rev.stdout.strip()
     print(f"Gate M update: REF {a.ref} ({rev}) against the working tree, {len(midi)} MIDI-driven entries, "
           f"engines allowed to change: {', '.join(want)}")
-    old = render("host16", midi, a.jobs, src=ref_tree(a.ref), tag="host16ref")
+    full = subprocess.run(["git", "rev-parse", a.ref], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+    stamp = OUT / "host16ref.rev"                  # REF's renders are kept for the next --update against the same REF
+    lst = "".join(f"{n} {s}\n" for n, s in midi)
+    if stamp.exists() and stamp.read_text() == full + "\n" + lst and all((OUT / "host16ref" / f"{n}.wav").exists()
+                                                                         for n, _ in midi):
+        old = {n: hashlib.sha256((OUT / "host16ref" / f"{n}.wav").read_bytes()).hexdigest() for n, _ in midi}
+        print(f"Gate M update: REF's renders reused (build/gate_m/host16ref, {rev})")
+    else:
+        stamp.unlink(missing_ok=True)
+        old = render("host16", midi, a.jobs, src=ref_tree(a.ref), tag="host16ref")
+        stamp.write_text(full + "\n" + lst)
     new = render("host16", midi, a.jobs)
     miss = [n for n in new if new[n] == "MISSING" or old[n] == "MISSING"]
     if miss:
