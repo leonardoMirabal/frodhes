@@ -311,6 +311,12 @@ static int fr_c1_run(void (*fn)(uint32_t), uint32_t arg)
     return 1;
 }
 
+static int fr_c1_busy(void)                     /* core 0: the job posted not done yet (a hint: fr_c1_wait_us decides) */
+{
+    C1_SYNC();
+    return c1.st == C1_ON && c1_mb.done != c1.s;
+}
+
 static int fr_c1_wait_us(uint32_t us)
 {
     uint32_t t0 = fm1_ticks();

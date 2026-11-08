@@ -8,6 +8,7 @@
  *               job and the voices both touch would show as a difference: tests/py/test_c1_pipeline.py)
  *   refuse=N    every Nth job is refused (never run, -2: core 0 does it, core 1 stays on)
  *   late=N      the Nth job is late (run, then -1: core 1 held for good, core 0 redoes it)
+ *   busy=N      fr_c1_busy: N - 1 of every N looks say busy (C1_AHEAD: chunks merged into one job)
  *   off=1       core 1 never started (the one-core fallback from the first block)
  * The web build: order 0, nothing injected. */
 #pragma once
@@ -18,7 +19,7 @@
 enum { C1_OFF, C1_ON, C1_BAD, C1_LATE, C1_DEAF, C1_LOWV, C1_FAULT, C1_PARK, C1_DESYNC };
 static struct {
     uint8_t st, order, cfg;
-    uint32_t refuse, late_at, jobs, ref, holds, posted;
+    uint32_t refuse, late_at, jobs, ref, holds, posted, busy, bq;
     void (*fn)(uint32_t);
     uint32_t arg;
 } c1h;
@@ -34,6 +35,7 @@ static void c1h_config(void)
         if (!strncmp(e, "order=", 6)) c1h.order = (uint8_t)atoi(e + 6);
         else if (!strncmp(e, "refuse=", 7)) c1h.refuse = (uint32_t)atoi(e + 7);
         else if (!strncmp(e, "late=", 5)) c1h.late_at = (uint32_t)atoi(e + 5);
+        else if (!strncmp(e, "busy=", 5)) c1h.busy = (uint32_t)atoi(e + 5);
         else if (!strncmp(e, "off=", 4) && atoi(e + 4)) c1h.st = C1_OFF;
         e = strchr(e, ',');
         if (e) e++;
@@ -57,6 +59,11 @@ static int fr_c1_run(void (*fn)(uint32_t), uint32_t arg)
     if (c1h.refuse && c1h.jobs % c1h.refuse == 0u) { c1h.fn = 0; return 1; }   /* (refused: never runs) */
     if (!c1h.order) { fn(arg); c1h.fn = 0; }
     return 1;
+}
+
+static int fr_c1_busy(void)                     /* busy=N: N - 1 of every N looks find core 1 busy (C1_AHEAD merges) */
+{
+    return c1h.posted && c1h.busy && ++c1h.bq % c1h.busy != 0u;
 }
 
 static int fr_c1_wait_us(uint32_t us)
