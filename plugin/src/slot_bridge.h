@@ -204,11 +204,13 @@ static void sb_read_pub(frp_snap_t *snap, settings_t *s, uint8_t *base, uint16_t
  * track and a desktop session: the 256 B settings record as the app holds it (the sound, its undo copy, MIDI CHANNEL,
  * TOUCH, KEY VEL, TUNE ...), the sound it was loaded as (snd_base), the Move's mappings (written off; ignored here),
  * the tempo set by hand; "engine" (the plugin's ENGINE: bridge.c picks the slot by it; the Move ignores it). Then the
- * plugin's own keys (version "pv" 2; the Move ignores them, a state without them loads their defaults): "pgm" program
+ * plugin's own keys (version "pv" 2 and 3; the Move ignores them, a state without them loads their defaults): "pgm" program
  * changes, "tsrc" the tempo source, "ibpm" its BPM, "sall" / "sdiv" SYNC ALL, "sus" the SUSTAIN parameter, "learn"
  * the learned CCs (128 bytes: code + 1 per CC), "pidx" / "pname" the preset playing, "upidx" / "upname" the undo
  * copy's. The Move's "rev" (a change counter its state_set never reads) is left out: a saved state depends on the
- * sound only, so saving, loading and saving again gives the same bytes. Version history: "v" 1 the Move's keys (the scaffold); "pv" 2 the plugin's. */
+ * sound only, so saving, loading and saving again gives the same bytes. Version history: "v" 1 the Move's keys (the scaffold); "pv" 2 the plugin's;
+ * "pv" 3 adds "win", the window's logical width, written by the instance (frodhes_clap.c) after these keys once the
+ * window was resized (a state without it keeps the window's size; older builds ignore it). */
 static const char SB_HEX[] = "0123456789abcdef";
 static int sb_hex_put(char *o, const void *p, uint32_t n)
 {
@@ -247,7 +249,7 @@ static int sb_state_get(char *buf, int n)
     o += sb_hex_put(o, &s, sizeof s);
     o += sprintf(o, "\",\"base\":\"");
     o += sb_hex_put(o, base, P_SLOTS);
-    o += sprintf(o, "\",\"map\":\"%s\",\"hand\":\"%u\",\"engine\":\"%u\",\"pv\":\"2\",\"pgm\":\"%u\",\"tsrc\":\"%u\","
+    o += sprintf(o, "\",\"map\":\"%s\",\"hand\":\"%u\",\"engine\":\"%u\",\"pv\":\"3\",\"pgm\":\"%u\",\"tsrc\":\"%u\","
                  "\"ibpm\":\"%u\",\"sall\":\"%u\",\"sdiv\":\"%u\",\"sus\":\"%u\",\"learn\":\"", SB_MAP_DEFAULT_HEX,
                  (unsigned)hand, (unsigned)snap.engine, snap.pgm, snap.tempo_src, snap.bpm10, snap.sync_all,
                  snap.sync_div, snap.sustain);
@@ -312,7 +314,7 @@ static int sb_state_set(const char *j)   /* into the mailbox; sb_state_apply app
                             i < P_COUNT ? PARAMS[i].def : 0u;
     sb.st_hand = sb.st_set.bpm10;
     if (h && lh > 0 && lh < 6) { uint32_t x = 0; for (uint32_t i = 0; i < lh; i++) x = x * 10u + (uint32_t)(h[i] - '0'); sb.st_hand = (uint16_t)x; }
-    /* the plugin's keys ("pv" 2): each one missing or out of range loads its default */
+    /* the plugin's keys ("pv" 2, 3): each one missing or out of range loads its default */
     sb.st_cfg.pgm = (uint8_t)sb_json_int(j, "pgm", 0, 1, 1);
     sb.st_cfg.tempo_src = (uint8_t)sb_json_int(j, "tsrc", 0, 2, FRP_TEMPO_HOST);
     sb.st_cfg.bpm10 = (uint16_t)sb_json_int(j, "ibpm", 400, 2400, sb.st_hand >= 400u && sb.st_hand <= 2400u ? sb.st_hand : 1200);

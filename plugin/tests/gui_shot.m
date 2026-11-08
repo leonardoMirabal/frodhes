@@ -224,6 +224,37 @@ static void click(float x, float y, int clicks)
     sh_mouse(FRP_MOUSE_DOWN, x, y, 0, clicks);
     sh_mouse(FRP_MOUSE_UP, x, y, 0, clicks);
 }
+/* the plugin's state (CLAP state) through memory streams */
+static char st_buf[8192];
+static size_t st_n, st_r;
+static int64_t os_write(const clap_ostream_t *s, const void *b, uint64_t n)
+{
+    (void)s;
+    if (st_n + n >= sizeof st_buf) return -1;
+    memcpy(st_buf + st_n, b, n); st_n += n; st_buf[st_n] = 0;
+    return (int64_t)n;
+}
+static int64_t is_read(const clap_istream_t *s, void *b, uint64_t n)
+{
+    (void)s;
+    if (n > st_n - st_r) n = st_n - st_r;
+    memcpy(b, st_buf + st_r, n); st_r += n;
+    return (int64_t)n;
+}
+static int state_save(void)
+{
+    const clap_plugin_state_t *se = pl->get_extension(pl, CLAP_EXT_STATE);
+    clap_ostream_t os = {0, os_write};
+    st_n = 0; st_buf[0] = 0;
+    return se && se->save(pl, &os);
+}
+static int state_load(void)
+{
+    const clap_plugin_state_t *se = pl->get_extension(pl, CLAP_EXT_STATE);
+    clap_istream_t is = {0, is_read};
+    st_r = 0;
+    return se && se->load(pl, &is);
+}
 
 int main(int argc, char **argv)
 {
@@ -527,6 +558,18 @@ int main(int argc, char **argv)
                 pump(0.2);
             }
             gui->destroy(pl);
+            {   /* a project saved with the window at 1200 x 750 opens it at that size */
+                const frp_ui_vtable *vt = pl->get_extension(pl, FRP_UI_EXT_ID);
+                uint32_t gw = 0, gh = 0;
+                vt->win_w_set(vt->core_of(pl), 1200);
+                state_save();
+                vt->win_w_set(vt->core_of(pl), 0);
+                state_load();
+                CHECK(gui->create(pl, CLAP_WINDOW_API_COCOA, false) && gui->get_size(pl, &gw, &gh) && gw == 1200 && gh == 750,
+                      "a loaded state's size opens the window at it (%u x %u)", gw, gh);
+                gui->destroy(pl);
+                vt->win_w_set(vt->core_of(pl), 0);
+            }
             [win close];
         }
     }

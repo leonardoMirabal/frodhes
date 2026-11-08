@@ -17,7 +17,6 @@ struct frp_gui_clap {
     const clap_host_t *host;
     frp_core *pc;                    /* the plugin core (frp_ui_iface.h) */
     frp_ui_host_t uh;                /* the controller's table, bound to pc (below) */
-    int win_w;                       /* the window's logical width as last set (0: the default) */
     frp_gui_t *core;
     frg_view *view;
     uint32_t w, h;                   /* logical points */
@@ -111,7 +110,7 @@ static int b_setting_get(void *ctx, int key, int *v)
     case FRP_UI_TUNE: *v = frp_ui_param_get(c->pc, FRP_ID_TUNE) - 50; return 0;
     case FRP_UI_FX_BYPASS: *v = frp_ui_fx_bypass(c->pc); return 0;
     case FRP_UI_HOST_BPM10: *v = frp_ui_host_bpm10(c->pc); return 0;
-    case FRP_UI_WIN_W: if (!c->win_w) return -1; *v = c->win_w; return 0;
+    case FRP_UI_WIN_W: if (!frp_ui_win_w(c->pc)) return -1; *v = frp_ui_win_w(c->pc); return 0;
     }
     frp_ui_settings_get(c->pc, &s);
     if (!(f = set_field(&s, key))) return -1;
@@ -127,7 +126,7 @@ static void b_setting_set(void *ctx, int key, int v)
     case FRP_UI_TUNE: frp_ui_param_set(c->pc, FRP_ID_TUNE, v + 50); return;
     case FRP_UI_FX_BYPASS: frp_ui_fx_bypass_set(c->pc, v != 0); return;
     case FRP_UI_HOST_BPM10: return;
-    case FRP_UI_WIN_W: c->win_w = v; return;
+    case FRP_UI_WIN_W: frp_ui_win_w_set(c->pc, v); return;
     }
     frp_ui_settings_get(c->pc, &s);
     if (!(f = set_field(&s, key))) return;
@@ -204,7 +203,7 @@ static double px_scale(const frp_gui_clap_t *c)
     if (c->scale > 0.0) return c->scale;
     return c->view ? (double)frg_view_scale(c->view) : 1.0;
 }
-static void saved_size(frp_gui_clap_t *c)        /* the size last set (this session) */
+static void saved_size(frp_gui_clap_t *c)        /* the size last set (saved with the project) */
 {
     int w;
     if (c->uh.setting_get && c->uh.setting_get(c->uh.ctx, FRP_UI_WIN_W, &w) == 0 && w > 0) {
@@ -214,6 +213,16 @@ static void saved_size(frp_gui_clap_t *c)        /* the size last set (this sess
     }
 }
 static int phys(const frp_gui_clap_t *c, uint32_t v) { return (int)lround(v * px_scale(c)); }
+void frp_gui_clap_size_changed(frp_gui_clap_t *c)  /* a loaded state's size: the window asks its host for it */
+{
+    const clap_host_gui_t *hg;
+    if (!c) return;
+    saved_size(c);
+    if (!c->view) return;
+    hg = c->host->get_extension(c->host, CLAP_EXT_GUI);
+    if (hg && hg->request_resize && hg->request_resize(c->host, (uint32_t)phys(c, c->w), (uint32_t)phys(c, c->h)))
+        frg_view_resize(c->view, phys(c, c->w), phys(c, c->h));
+}
 
 /* ---- clap.gui */
 #define GUI(plugin) ((frp_gui_clap_t *)*frp_ui_gui_data(frp_core_of(plugin)))
