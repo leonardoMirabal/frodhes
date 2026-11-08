@@ -21,6 +21,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import cb_loud  # noqa: E402
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WD = os.path.join(ROOT, "build", "velmap")
 HDR = os.path.join(ROOT, "firmware", "gen", "rh_velmap_mk.h")
@@ -57,7 +60,7 @@ def level(binary, key, vel, cc):
     a = np.abs(x)
     i = int(np.argmax(a > 0.02 * a.max())) if a.max() > 0 else 0
     s = x[i + int(0.05 * 44100): i + int(0.5 * 44100)]
-    return 10 * math.log10(float(np.mean(s * s)) + 1e-20)
+    return 10 * math.log10(float(np.mean(s * s)) + 1e-20), cb_loud.bands(s)
 
 
 def grid(binary, cc):
@@ -78,14 +81,17 @@ def main():
     if not a.write:
         m = grid(os.path.join(ROOT, "build", "host", "frodhes"), mapcc)
         for k in range(KEY_LO, KEY_LO + NKEY, 4):
-            print("%3d %s" % (k, " ".join("%5.1f" % (m[(k, v)] - ref[(k, v)]) for v in VG[1:])))
+            print("%3d %s" % (k, " ".join("%5.1f/%5.1f" % (m[(k, v)][0] - ref[(k, v)][0], cb_loud.phon(m[(k, v)][1]) - cb_loud.phon(ref[(k, v)][1])) for v in VG)))
         return
     b = os.path.join(WD, "frodhes-nomk")
     build(b, ROOT, ["-DRH_NO_VM_MK", "-DRH_NO_DYN"])
     m = grid(b, mapcc)
     rows = []
     for k in range(KEY_LO, KEY_LO + NKEY):
-        d = {v: ref[(k, v)] - m[(k, v)] for v in VG}
+        d = {v: ref[(k, v)][0] - m[(k, v)][0] for v in VG}           # RMS; at v48 up the critical-band loudness's
+        for v in VG:                                                  # gain where larger (the treble's brightness)
+            if v >= 48:
+                d[v] = max(d[v], cb_loud.match_db(m[(k, v)][1], cb_loud.loud(ref[(k, v)][1])))
         d = {v: (x if v >= 48 else max(0.0, x)) for v, x in d.items()}
         p = [d[v] for v in VG[:-1]]
         p.append(p[-1] + (d[127] - p[-1]) * 8.0 / 7.0)
