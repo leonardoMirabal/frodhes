@@ -566,7 +566,7 @@ static int32_t rh_pdrv_at(uint32_t ki, uint32_t vel)   /* the drive's force at v
  * harder than the new strike */
 static void rh_drv_restrike(rh_voice_t *v, uint32_t ki, uint32_t vel)
 {
-#if !defined(RH_NO_HD) && !defined(FR_HQ)
+#ifndef RH_NO_HD
     uint32_t go = (uint32_t)v->hd_g0;         /* (the glide's base: rh_hd_restrike puts the offset back to it) */
 #else
     uint32_t go = (uint32_t)v->gain;
@@ -862,8 +862,9 @@ static int32_t __attribute__((noinline)) rh_tone_gain(int32_t gain, int32_t o64,
  * Decided at the strike (end, lags, rates from the velocity and the key); after a 0.4 s wait a step every RH_HD_SUBS
  * sub-blocks:
  * two lags, the gain, and the last sample's flux at the new offset (Hprev: the output has no step). Keys 72 up: none
- * (tapered over 69..72). -DRH_NO_HD: without it (the A/B reference, byte-identical to before) */
-#if !defined(RH_NO_HD) && !defined(FR_HQ)
+ * (tapered over 69..72). -DRH_NO_HD: without it (the A/B reference, byte-identical to before). The Move (FR_HQ) too:
+ * the glide runs on keys under 72, where every HQ voice uses the Classic pickup (the 2x one from key 85) */
+#ifndef RH_NO_HD
 #define RH_HD 1
 #ifndef RH_HD_SUBS                             /* a glide step every this many 32-sample sub-blocks */
 #define RH_HD_SUBS 2
