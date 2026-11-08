@@ -48,12 +48,13 @@ def take(target, amount, drive=True):
 
 
 def tail_stats(x):
-    """(the share of |steps| >= 3 in %, the residual above 2 kHz in LSB rms) over the frames (50 ms, from 1.5 s on)
-    whose peak is 8..40 LSB"""
-    w = int(0.05 * FS)
+    """(the share of |steps| >= 3 in %, the residual above 2 kHz in LSB rms) over the frames (25 ms, from 1.5 s on)
+    whose peak is 8..40 LSB, at least 20 of them (0.5 s of tail). (2026-11-08: 50 ms frames, 20 of them, until the clean
+    0.9.10 Rhodes left 19 x 50 ms in that range at AMOUNT 20: the same judgement on 25 ms frames)"""
+    w = int(0.025 * FS)
     n = len(x) // w
     pk = np.abs(x[:n * w]).reshape(n, w).max(1)
-    sel = [i for i in range(int(1.5 / 0.05), n) if 8 <= pk[i] <= 40]
+    sel = [i for i in range(int(1.5 / 0.025), n) if 8 <= pk[i] <= 40]
     assert len(sel) >= 20, f"the tail has {len(sel)} frames at 8..40 LSB (no tail to judge)"
     spec = np.fft.rfft(x)
     spec[np.fft.rfftfreq(len(x), 1 / FS) < 2000] = 0

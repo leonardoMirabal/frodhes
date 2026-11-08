@@ -33,7 +33,8 @@
                                                  * plain curve at every AMOUNT, 0.9.8's budget) */
 #define KH_AA 1
 #endif
-#if KH_AA                                       /* AA: post 96, pre 100, a dip block 109 (DRV_US_MAX: drive.c) */
+#if KH_AA                                       /* AA: post 97, pre 101, a dip block 110 (DRV_US_MAX: drive.c;
+                                                 * 0.9.10: POST's Q8 output +1) */
 #define DRV_US_KHLON 177u
 #define KH_AA_FROM KH_AA_A
 #else            /* plain (pi32v2 -Os, the firmware build, per sample): post 69, pre 70, a dip block 80.5 (was 79 / 83 /
@@ -102,7 +103,7 @@ static void kh_load(void)                        /* the rows -> the coefficients
     for (i = 0; i < 5; i++) {
         int32_t v = (int32_t)(t[i] ^ 0x80000000u);
         if (th) v = (v + (int32_t)(t[5 + i] ^ 0x80000000u)) >> 1;
-        kh_po[i] = i < 3 ? (int32_t)((KH_M64(v, s) + (1 << 23)) >> 24) : v;
+        kh_po[i] = i < 3 ? (int32_t)((KH_M64(v, s) + (1 << 15)) >> 16) : v;   /* (b x 2^8: POST's output Q8) */
     }
     kh_pre = (uint8_t)(gr >= KH_PRE_ROW);
 #if KH_AA
@@ -128,18 +129,6 @@ static void drv_khlon_reset(void)
     kh_ra = 0xFFu; kh_dip = kh_held = 0;                  /* the next run starts at the knobs' rows, no glide */
 }
 
-/* a biquad, transposed form II: in -> out (in may be out); IN_SH: the input's shift to Q20 */
-#define KH_BQ(c, st, in, out, IN_SH) do {                                                  \
-        int32_t b0 = (c)[0], b1 = (c)[1], b2 = (c)[2], a1 = (c)[3], a2 = (c)[4];         \
-        int64_t s1 = (st)[0], s2 = (st)[1];                                                \
-        for (i = 0; i < n; i++) {                                                          \
-            int32_t x = (in)[i] << (IN_SH), y;                                             \
-            y = (int32_t)((s1 + KH_M64(b0, x)) >> 24);                                     \
-            s1 = s2 + KH_M64(b1, x) + KH_M64(a1, y);                                       \
-            s2 = KH_M64(b2, x) + KH_M64(a2, y);                                            \
-            (out)[i] = y;                                                                  \
-        }                                                                                  \
-        (st)[0] = s1; (st)[1] = s2; } while (0)
 /* a first-order section, transposed form II; STORE(y) */
 #define KH_OP(c, st, in, IN_SH, STORE) do {                                                \
         int32_t b0 = (c)[0], b1 = (c)[1], a1 = (c)[2];                                     \
@@ -296,10 +285,26 @@ KH_FN void kh_firadd_pass(int32_t *u, uint32_t n)
     }
     kh_v1 = v1;
 }
+/* POST, in place, transposed form II. Its output carries 8 bits below the bus's LSB through the recursion (b x 2^8:
+ * kh_load), cut to the bus on the way out (0.9.10; 14 instructions a sample, was 13): with the output floored to the
+ * bus in the loop, its rounding error went round the poles (a DC gain of ~95 at GAIN 20) and a quiet note (below ~-60
+ * dBFS in) sat in a dead band or came out at H3 -5..-15 dB. The last two outputs (Q8) are POST's history (kh_hpo). */
+#define KH_PO1(i) do {                                                                                      \
+        int32_t x = u[i];                                                                                   \
+        int64_t t = s1 + KH_M64(b0, x);                                                                     \
+        y = (int32_t)(t >> 24);                                                                             \
+        u[i] = (int32_t)(t >> 32);                      /* (y >> 8: the sum's high word, no shift) */       \
+        s1 = s2 + KH_M64(b1, x) + KH_M64(a1, y);                                                            \
+        s2 = KH_M64(b2, x) + KH_M64(a2, y); } while (0)
 KH_FN void kh_post_pass(int32_t *u, uint32_t n)
 {
+    int32_t b0 = kh_po[0], b1 = kh_po[1], b2 = kh_po[2], a1 = kh_po[3], a2 = kh_po[4], y;
+    int64_t s1 = kh_spo[0], s2 = kh_spo[1];
     uint32_t i;
-    KH_BQ(kh_po, kh_spo, u, u, 0);
+    for (i = 0; i < n - 1u; i++) KH_PO1(i);
+    kh_hpo[3] = y;                               /* (the last sample apart: the history without a move a sample) */
+    KH_PO1(i);
+    kh_spo[0] = s1; kh_spo[1] = s2; kh_hpo[2] = y;
 }
 /* a dip's fade block: POST into u, then the blend over the dry signal, out = dry + (POST(u) - dry) w / 256, w = 1..n
  * (up: fading in) or n - 1..0 (fading out) a sample (a block of DRV_BLK = 256 ends at 0 or 1; a smooth ramp: one
@@ -501,10 +506,10 @@ static void drv_khlon_run(const int32_t *in, int32_t *out, uint32_t n, const drv
      * (y = s >> 24 stays at -1 or a few LSB): a DC of ~44 LSB out, for ever, kept open by the silence gate. A block
      * that starts and ends on 0 in, outside a dip, with every state where it started is that fixed point: to rest
      * (exact 0 from the next block). Once a block, no per-sample work; music never leaves the states unmoved */
-    if (!(x1 | x2 | in[0]) && !ph && !kh_held) {
-        q0[0] = kh_so1[0]; q0[1] = kh_so1[1]; q0[2] = kh_spo[0]; q0[3] = kh_spo[1];
-        q0[4] = kh_scl; q0[5] = kh_ssl; q0[6] = kh_sc; q = 1;
-    } else q = 0;
+    q = !(x1 | x2 | in[0]) && !ph && !kh_held;
+    q0[0] = kh_so1[0]; q0[1] = kh_so1[1]; q0[2] = kh_spo[0]; q0[3] = kh_spo[1];   /* (every block: 7 copies, and no
+                                                                                    * maybe-uninitialised q0, K8) */
+    q0[4] = kh_scl; q0[5] = kh_ssl; q0[6] = kh_sc;
     kh_o1cl_pass(in, u, n);
     kh_hist(kh_ho1, x1, x2, kh_tmp[n - 1], kh_tmp[n - 2]);
     kh_hist(kh_hcl, x1, x2, cl1 = u[n - 1], cl2 = u[n - 2]);
@@ -536,7 +541,6 @@ static void drv_khlon_run(const int32_t *in, int32_t *out, uint32_t n, const drv
         }
         ph = ph < 3u ? ph + 1u : 0u;
     }
-    kh_hpo[2] = u[n - 1]; kh_hpo[3] = u[n - 2];  /* POST's output (in a dip block: not; the rows hold the block after) */
     kh_held = u != out;
     kh_dip = (uint8_t)ph;
     if (q && q0[0] == kh_so1[0] && q0[1] == kh_so1[1] && q0[2] == kh_spo[0] && q0[3] == kh_spo[1] &&

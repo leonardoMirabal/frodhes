@@ -173,7 +173,7 @@ static void hq_pulse_gain(rh_voice_t *v)
          * by the pickup: key 108 played +4 dB over the table's pulse) */
         float g = (float)rh_drive_g((uint32_t)(v->k - RH_KEYS), v->vel);
         h->lg *= (h->dr / (h->drl > 0.0f ? h->drl : 1.0f)) * ((float)v->gq / g);
-        h->lg *= (float)v->mk / (float)rh_drv_mk((uint32_t)(v->k - RH_KEYS), v->vel);   /* (the make-up's, as g's) */
+        h->lg *= (float)v->mk / (float)rh_drv_mkt((uint32_t)(v->k - RH_KEYS), v->vel);   /* (the make-up's, as g's) */
     }
 #endif
     p = (float)v->pamp * h->lg + 0.5f;

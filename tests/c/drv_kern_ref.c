@@ -73,13 +73,15 @@ static void ts_tab1(const int32_t *g, int32_t *u, uint32_t n)
     for (i = 0; i < n; i++) u[i] = ts_g(g, u[i]);
 }
 
+static int ts_vsh;                                        /* 0.9.10: V in Q15 + ts_vsh into the tone (the AA
+                                                           * kernel's TSH8_VSH; the plain one: 0, the same integers) */
 static int ts_osh;                                        /* the port's one addition: the output shifted (TSH8_OSH) */
 static void ts_tone2qi(const ts_bq *c, int32_t *st, const int32_t *vi, int32_t *v, uint32_t n)
 {
     int32_t x1 = st[0], x2 = st[1], y1 = st[2], y2 = st[3];
     uint32_t i;
     for (i = n >> 1; i; i--) {
-        int32_t xa = vi[0] + (v[0] << 9), xb = vi[1] + (v[1] << 9), ya, yb, k;
+        int32_t xa = vi[0] + (v[0] << (9 - ts_vsh)), xb = vi[1] + (v[1] << (9 - ts_vsh)), ya, yb, k;
         int64_t pa, pb;
         k = c->b2; pa = M(k, x2); pb = M(k, x1);
         k = c->b1; pa += M(k, x1); pb += M(k, xa);
@@ -102,7 +104,7 @@ void ref_tsh8(const int32_t *hc, const int32_t *cb, const int32_t *ct, const int
 {
     int32_t s1[2] = {0, 0}, s2[4] = {0, 0, 0, 0}, s3[4] = {0, 0, 0, 0}, vi[256];
     uint32_t k, i;
-    ts_osh = osh;
+    ts_osh = osh; ts_vsh = 0;
     for (k = 0; k < len; k += 256) {
         uint32_t n = len - k < 256 ? len - k : 256;
         for (i = 0; i < n; i++) out[k + i] = 0;
@@ -254,11 +256,15 @@ static const uint16_t *OA_RCP0;                  /* the reciprocal table less it
         (st)[0] = x1; (st)[1] = x2; (st)[2] = y1; (st)[3] = y2; } while (0)
 #define ID(v) (v)
 #define HPPRE(v) (lp += (((v) << 8) - lp) >> 9, ((v) << 8) - lp)
+#define OHR_S1F 4                                /* 0.9.10, the port's change: stage 1 x 2^4 inside (its b), u rounded
+                                                  * out (drv_ohcd.c OHCD_S1F) */
+#define S1POST(v) (((v) + (1 << (OHR_S1F - 1))) >> OHR_S1F)
 static void ohr_s1hp_pass(ohr_t *s, int32_t *m, unsigned n)
 {
-    int32_t lp = s->iy1;
+    int32_t lp = s->iy1, c1[5];
     unsigned i;
-    BQPASS(s->s1, &s->s1x1, OHR_QS1, HPPRE, ID);
+    for (i = 0; i < 5; i++) c1[i] = i < 3 ? s->s1[i] * (1 << OHR_S1F) : s->s1[i];
+    BQPASS(c1, &s->s1x1, OHR_QS1, HPPRE, S1POST);
     s->iy1 = lp;
 }
 static void ohr_clipaa_pass(ohr_aa_t *sa, int32_t *m, unsigned n)
@@ -443,15 +449,15 @@ static void ts_aa1h(const int32_t *gf, const uint16_t *rcp0, int32_t *st, int32_
         d = x - x1;
         ad = (uint32_t)(d < 0 ? -d : d);
         if (ad < RAA_T) {
-            int32_t v_ = g0 + (p >> (hd - 1));
+            int32_t v_ = (g0 << ts_vsh) + (p >> (hd - 1 - ts_vsh));
             v_ = x < 0 ? -v_ : v_;
-            v = v_ - ((dg * d) >> hd);
+            v = v_ - ((dg * d) >> (hd - ts_vsh));
         } else {
             int nz = __builtin_clz(ad);
             int32_t r = rcp[(ad << nz) >> (32 - RAA_RB)];
             int32_t df = F - F1;
             if (d < 0) df = -df;
-            v = (int32_t)(M(df, r) >> (47 - RAA_SF - nz));
+            v = (int32_t)(M(df, r) >> (47 - RAA_SF - ts_vsh - nz));
         }
         x1 = x; F1 = F;
         *u++ = v;
@@ -464,7 +470,7 @@ void ref_tsh8_aa(const int32_t *ci, const int32_t *cb, const int32_t *ct, const 
 {
     int32_t s1[4] = {0}, s2[4] = {0}, s3[2] = {0}, s4[4] = {0}, vi[256];
     uint32_t k, i;
-    ts_osh = osh;
+    ts_osh = osh; ts_vsh = 4;                                /* (drv_tsh8.c TSH8_VSH) */
     for (k = 0; k < len; k += 256) {
         uint32_t n = len - k < 256 ? len - k : 256;
         for (i = 0; i < n; i++) vi[i] = xi[k + i];
