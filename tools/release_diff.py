@@ -429,7 +429,7 @@ def report(cand, base, fails, moves, stale, expected, grid, top=25):
         for cid, lab, m, v, b, lim, why in sorted(other, key=lambda f: -abs((f[3] or 0) - (f[4] or 0)))[:top]:
             lines.append(f"  {cid}/{lab:10s} {m:7s} {v if v is None else round(v, 2)!s:>8}  last "
                          f"{b if b is None else round(b, 2)!s:>8}  {why}")
-    big = sorted(moves, key=lambda x: -abs(x[5]) / (tol_of(x[2]) if x[2] != "cent" else TOL["cent"]))[:top]
+    big = sorted(moves, key=lambda x: -abs(x[5]) / ((tol_of(x[2]) or 1) if x[2] != "cent" else TOL["cent"]))[:top]   # (clip: TOL 0)
     if big:
         lines.append(f"\nthe biggest moves (in tolerances):")
         for cid, lab, m, v, b, d, hit in big:

@@ -16,5 +16,797 @@
 #     max: -2.0
 #     reason: "MARIMBA re-levelled to STAGE 77 (commit ...), measured -3.2 LU"
 #   `tools/release_diff.py --draft FILE` writes the unlisted moves in this form, each with reason TODO (which fails).
+#
+# 0.9.10 (the sonic fix): grouped by cause. Each entry's range is the measured move (fast + full grid, FM-1 and HQ
+# builds, RESPONSE A and B) +-0.5 dB (centroid +-0.05), clamped to the cause's own direction; a move outside every
+# entry fails, so a new fault in the same cells still shows.
 against: v0.9.9
-changes: []
+changes:
+
+# ---- 1. The global output LEVEL +14 (+2.6 dB, 1ae87375) and the -1.0 dBFS ceiling (LIM_T 24000 to 29204, 61ec1e8b)
+  - match: "*/VIBES/FX*/*"
+    metric: "cb"
+    min: 1.64
+    max: 3.18
+    reason: "VIBES: critical-band loudness (phon-like) of the +2.6 dB global LEVEL (1ae87375): it rises faster than the RMS at the quiet top keys and soft notes (up to +4.5 at k89); the engine itself is unchanged (RAW 0.0)"
+  - match: "*/VIBES/FX*/*"
+    metric: "level peak lu cb"
+    min: 2.0
+    max: 3.0
+    reason: "VIBES: the global output LEVEL +14 (+2.6 dB, 1ae87375, under the -1.0 dBFS ceiling); the engine itself is unchanged (RAW 0.0 dB in every cell)"
+  - match: "*/VIBES/FXOFF/*"
+    metric: "lim"
+    min: -3.0
+    max: -2.0
+    reason: "VIBES: lim is RAW minus effects-off: the +2.6 dB global LEVEL applies with the effects off, not in RAW (1ae87375)"
+  - match: "*/MARIMBA/FX*/*"
+    metric: "cb"
+    min: 1.61
+    max: 4.7
+    reason: "MARIMBA: critical-band loudness (phon-like) of the +2.6 dB global LEVEL (1ae87375): it rises faster than the RMS at the quiet top keys and soft notes (up to +4.5 at k89); the engine itself is unchanged (RAW 0.0)"
+  - match: "*/MARIMBA/FX*/*"
+    metric: "level peak lu cb"
+    min: 1.66
+    max: 3.0
+    reason: "MARIMBA: the global output LEVEL +14 (+2.6 dB, 1ae87375, under the -1.0 dBFS ceiling); the engine itself is unchanged (RAW 0.0 dB in every cell)"
+  - match: "*/MARIMBA/FXOFF/*"
+    metric: "lim"
+    min: -3.0
+    max: -1.66
+    reason: "MARIMBA: lim is RAW minus effects-off: the +2.6 dB global LEVEL applies with the effects off, not in RAW (1ae87375)"
+  - match: "*/MARIMBA/FX*/*"
+    metric: "keyup decay"
+    min: -3.44
+    max: 3.7
+    reason: "MARIMBA: a ratio against digital silence (the note has died, -300 dBFS floor) shifts by the +2.6 dB global LEVEL (1ae87375); the sound after the key-up is unchanged"
+  - match: "*/[SFD][TUEY]??/FX*/*"
+    metric: "level peak lu cb"
+    min: 1.0
+    max: 3.7
+    reason: "Rhodes TYPEs v64..127: the global output LEVEL +14 (+2.6 dB, 1ae87375); the engine's own level unchanged at v64..127 (RAW within +-0.3 dB)"
+  - match: "*/[SFD][TUEY]??/FXOFF/*"
+    metric: "lim"
+    min: -4.0
+    max: -2.3
+    reason: "Rhodes TYPEs: lim is RAW minus effects-off: the +2.6 dB global LEVEL applies with the effects off, not in RAW (1ae87375)"
+
+# ---- 2. rh_dyn soft end (15780dac): range 31 dB against 0.9.9's 25.5; v20 -5.8 dB, v40 -2.5 dB RAW
+  - match: "*/[SFD][TUEY]??/*/*/k[2-8]?v20"
+    metric: "cb"
+    min: -15.39
+    max: -1.4
+    reason: "rh_dyn soft end (15780dac): critical-band loudness (phon-like) of v20 falls faster than its RMS near the hearing threshold at the bass keys (k28/k33 RAW -12..-15, FX -6.5..-8.4); RMS -5.8 RAW"
+  - match: "*/[SFD][TUEY]??/*/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -7.0
+    max: -1.4
+    reason: "rh_dyn soft end (15780dac, 61ec1e8b): range 31 dB against 0.9.9's 25.5; RAW v20 -5.8, v40 -2.5; with the +2.6 dB global LEVEL v20 -3.2 and v40 within tolerance"
+
+# ---- 3. The top taper and the longer upper decay (61ec1e8b, 89e4ab30): key 93
+  - match: "*/DYNO/*/*/k93v*"
+    metric: "peak"
+    min: -20.0
+    max: -8.22
+    reason: "DYNO key 93: the attack peak -12..-20 dB: the top taper (61ec1e8b) and the pickup drive's fold removed (DYNO's x1.2 tip no longer folds into a spike at the top key)"
+  - match: "*/[SFD][TUEY]??/*/*/k93v*"
+    metric: "level peak lu cb"
+    min: -13.0
+    max: -0.9
+    reason: "the top taper (sonic-dyn, 61ec1e8b): key 93 -1.2..-1.4 LU with the effects off (RAW -4); at v20/v40 the soft end adds to it; the attack peak down to -5.5 (v127)"
+  - match: "*/[SFD][TUEY]??/*/*/k93v*"
+    metric: "decay"
+    min: -9.84
+    max: -7.05
+    reason: "the top key holds longer: the upper register's decay lengthened (t60_v1, 89e4ab30) and the top taper: 8..9 dB less lost over the hold at key 93"
+
+# ---- 4. The shorter damper and quicker felt (40fc8931): the key-up
+  - match: "*/[SFD][TUEY]??/*"
+    metric: "keyup"
+    min: -207.41
+    max: -2.0
+    reason: "the shorter damper and quicker felt (40fc8931; RELEASE x8 at 127 keeps 0.9.9's long releases, 624ed178): the note falls 4..22 dB further 80..280 ms after the key-up; -2xx: fully damped to digital silence. Key-up noise peaks equal to 0.9.9"
+
+# ---- 5. The pickup drive's fold removed (0.9.10, clean at every velocity: rh_load_pulse caps the swing at 0.9.9's full scale)
+  - match: "*/[SFD][TUEY]??/*"
+    metric: "clk clk_off"
+    min: -19.21
+    max: -6.0
+    reason: "the pickup drive's fold removed (the tine swing capped at 0.9.9's full scale, rh_load_pulse; 0.9.10 clean at every velocity): no folded attack edges, body clicks 6..19 dB lower re the median"
+  - match: "*/DYNO/RAW/*"
+    metric: "clip"
+    min: -26.5
+    max: -19.5
+    reason: "DYNO RAW: fewer full-scale samples: the pickup drive's fold removed (DYNO x1.2 tip no longer folds at v127) and the -1.0 dBFS output ceiling (61ec1e8b)"
+  - match: "*/DYNO/*"
+    metric: "peak"
+    min: -8.0
+    max: -2.0
+    reason: "DYNO: the attack peak 2..8 dB lower (net of the +2.6 dB global LEVEL in FX/FXOFF): the pickup drive's fold removed, DYNO's x1.2 tip capped at 0.9.9's full scale (rh_load_pulse)"
+  - match: "*/DYNO/*/*/k57v127"
+    metric: "level lu cb"
+    min: -1.6
+    max: -0.9
+    reason: "DYNO k57 v127 RAW -1.2 LU: the fold removed takes the folded overtones' energy away (clean at every velocity)"
+
+# ---- 6. Fewer harmonics: decreases only (every rise of H2..H6 / inh / imd is a pristine ceiling, never listed here)
+  - match: "*/[SFD][TUEY]??/*"
+    metric: "H? inh imd"
+    min: -17.7
+    max: -3.0
+    reason: "fewer harmonics / inharmonic energy: the fold removed (0.9.10 clean at every velocity), the tine mode turned down from A3 up (1f596312) and the harmonic-decay glide RH_HD (fecfb141: later H2 lower); decreases only, every rise is a pristine ceiling"
+  - match: "*/F0?/*"
+    metric: "H? inh imd"
+    min: -24.0
+    max: -3.0
+    reason: "fewer harmonics / inharmonic energy: the fold removed (0.9.10 clean at every velocity), the tine mode turned down from A3 up (1f596312) and the harmonic-decay glide RH_HD (fecfb141: later H2 lower); decreases only, every rise is a pristine ceiling"
+  - match: "*/F1[012]/*"
+    metric: "H? inh imd"
+    min: -15.44
+    max: -3.0
+    reason: "fewer harmonics / inharmonic energy: the fold removed (0.9.10 clean at every velocity), the tine mode turned down from A3 up (1f596312) and the harmonic-decay glide RH_HD (fecfb141: later H2 lower); decreases only, every rise is a pristine ceiling"
+  - match: "*/F1[789]/*"
+    metric: "H? inh imd"
+    min: -22.26
+    max: -3.0
+    reason: "fewer harmonics / inharmonic energy: the fold removed (0.9.10 clean at every velocity), the tine mode turned down from A3 up (1f596312) and the harmonic-decay glide RH_HD (fecfb141: later H2 lower); decreases only, every rise is a pristine ceiling"
+
+# ---- 7. Factory presets: the LEVEL retrim (1ae87375, b8a7d4ee, the 0.9.10 fix) on the 0.9.10 engine and the refitted effect make-ups (dab6f113, a539d91d)
+  - match: "*/F01/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -6.52
+    max: -1.4
+    reason: "F01 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F01/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.53
+    max: -2.26
+    reason: "F01 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 55 to 69 (1ae87375 / b8a7d4ee)"
+  - match: "*/F01/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -10.56
+    max: -0.9
+    reason: "F01 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 55 to 69; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F01/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.85
+    max: 3.85
+    reason: "F01: the preset LEVEL 55 to 69 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.7 dB"
+  - match: "*/F01/PRESET/*"
+    metric: "keyup"
+    min: -204.51
+    max: -202.83
+    reason: "F01: fully damped to digital silence after the key-up: the shorter damper and quicker felt (40fc8931)"
+  - match: "*/F01/PRESET/*"
+    metric: "keyup"
+    min: -21.76
+    max: -2.34
+    reason: "F01: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F01/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.27
+    max: -7.05
+    reason: "F01 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F01/PRESET/*"
+    metric: "clk clk_off"
+    min: -8.18
+    max: -6.39
+    reason: "F01: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F02/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -7.85
+    max: -1.4
+    reason: "F02 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F02/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.65
+    max: -2.28
+    reason: "F02 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 49 to 63 (1ae87375 / b8a7d4ee)"
+  - match: "*/F02/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -10.38
+    max: -0.9
+    reason: "F02 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 49 to 63; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F02/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.82
+    max: 4.02
+    reason: "F02: the preset LEVEL 49 to 63 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.7 dB"
+  - match: "*/F02/PRESET/*"
+    metric: "keyup"
+    min: -203.45
+    max: -201.77
+    reason: "F02: fully damped to digital silence after the key-up: the shorter damper and quicker felt (40fc8931)"
+  - match: "*/F02/PRESET/*"
+    metric: "keyup"
+    min: -21.09
+    max: -1.51
+    reason: "F02: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F02/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.28
+    max: -7.57
+    reason: "F02 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F02/PRESET/*"
+    metric: "clk clk_off"
+    min: -8.54
+    max: -6.0
+    reason: "F02: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F03/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -7.23
+    max: -1.4
+    reason: "F03 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F03/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.62
+    max: -2.27
+    reason: "F03 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 52 to 66 (1ae87375 / b8a7d4ee)"
+  - match: "*/F03/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -10.32
+    max: -0.9
+    reason: "F03 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 52 to 66; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F03/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.52
+    max: 3.81
+    reason: "F03: the preset LEVEL 52 to 66 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.8 dB"
+  - match: "*/F03/PRESET/*"
+    metric: "keyup"
+    min: -203.37
+    max: -201.69
+    reason: "F03: fully damped to digital silence after the key-up: the shorter damper and quicker felt (40fc8931)"
+  - match: "*/F03/PRESET/*"
+    metric: "keyup"
+    min: -22.64
+    max: -2.2
+    reason: "F03: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F03/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.28
+    max: -7.07
+    reason: "F03 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F03/PRESET/*"
+    metric: "clk clk_off"
+    min: -6.58
+    max: -6.0
+    reason: "F03: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F04/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -13.56
+    max: -2.93
+    reason: "F04 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F04/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -6.47
+    max: -1.09
+    reason: "F04 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 56 to 59 (1ae87375 / b8a7d4ee)"
+  - match: "*/F04/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -19.58
+    max: -1.05
+    reason: "F04 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 56 to 59; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F04/PRESET/*"
+    metric: "level peak lu cb"
+    min: -4.63
+    max: 1.1
+    reason: "F04: the preset LEVEL 56 to 59 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move -1.9 dB"
+  - match: "*/F04/PRESET/*"
+    metric: "keyup"
+    min: -15.64
+    max: -1.5
+    reason: "F04: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F04/PRESET/*"
+    metric: "peak"
+    min: -7.72
+    max: -5.4
+    reason: "F04 (DYNO-based): the attack peak 2..8 dB lower: the pickup drive's fold removed, DYNO's x1.2 tip capped at 0.9.9's full scale"
+  - match: "*/F04/PRESET/*"
+    metric: "cb"
+    min: 1.01
+    max: 2.01
+    reason: "F04: critical-band loudness (phon-like) of the preset level change: it moves up to ~2.5x the RMS change at quiet cells"
+  - match: "*/F04/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.52
+    max: -7.54
+    reason: "F04 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F04/PRESET/*"
+    metric: "clk clk_off"
+    min: -15.81
+    max: -6.0
+    reason: "F04: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F05/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -5.03
+    max: -1.4
+    reason: "F05 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F05/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -6.49
+    max: -1.0
+    reason: "F05 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 46 to 60 (1ae87375 / b8a7d4ee)"
+  - match: "*/F05/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -7.75
+    max: -0.9
+    reason: "F05 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 46 to 60; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F05/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.29
+    max: 5.18
+    reason: "F05: the preset LEVEL 46 to 60 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.7 dB"
+  - match: "*/F05/PRESET/*"
+    metric: "keyup"
+    min: -13.95
+    max: -2.54
+    reason: "F05: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F05/PRESET/*"
+    metric: "cent"
+    min: 0.06
+    max: 0.17
+    reason: "F05: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F05/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.01
+    max: -6.99
+    reason: "F05 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F05/PRESET/*"
+    metric: "clk clk_off"
+    min: -8.81
+    max: -6.0
+    reason: "F05: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F06/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -2.41
+    max: -1.4
+    reason: "F06 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F06/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.7
+    max: -1.55
+    reason: "F06 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 45 to 54 (1ae87375 / b8a7d4ee)"
+  - match: "*/F06/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -7.35
+    max: -1.13
+    reason: "F06 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 45 to 54; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F06/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.72
+    max: 4.06
+    reason: "F06: the preset LEVEL 45 to 54 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.8 dB"
+  - match: "*/F06/PRESET/*"
+    metric: "keyup"
+    min: -4.61
+    max: -1.63
+    reason: "F06: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F06/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 1.88
+    max: 7.73
+    reason: "F06 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F06/PRESET/*"
+    metric: "cent"
+    min: -0.32
+    max: -0.17
+    reason: "F06: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F06/PRESET/*/k93v*"
+    metric: "decay"
+    min: -8.98
+    max: -4.04
+    reason: "F06 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F06/PRESET/*"
+    metric: "clk clk_off"
+    min: -8.14
+    max: -6.0
+    reason: "F06: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F07/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -4.78
+    max: -3.26
+    reason: "F07 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F07/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -3.42
+    max: -1.24
+    reason: "F07 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 53 to 67 (1ae87375 / b8a7d4ee)"
+  - match: "*/F07/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -5.52
+    max: -0.9
+    reason: "F07 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 53 to 67; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F07/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.12
+    max: 3.99
+    reason: "F07: the preset LEVEL 53 to 67 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +3.1 dB"
+  - match: "*/F07/PRESET/*"
+    metric: "keyup"
+    min: -4.16
+    max: -1.58
+    reason: "F07: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F07/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 3.04
+    max: 4.7
+    reason: "F07 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F07/PRESET/*"
+    metric: "cent"
+    min: -0.34
+    max: -0.06
+    reason: "F07: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F07/PRESET/*/k93v*"
+    metric: "decay"
+    min: -7.01
+    max: -4.75
+    reason: "F07 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F07/PRESET/*"
+    metric: "clk clk_off"
+    min: -7.02
+    max: -6.0
+    reason: "F07: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F08/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -16.0
+    max: -4.58
+    reason: "F08 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F08/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -7.52
+    max: -1.91
+    reason: "F08 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 68 to 60 (1ae87375 / b8a7d4ee)"
+  - match: "*/F08/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -15.51
+    max: -4.02
+    reason: "F08 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 68 to 60; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F08/PRESET/*"
+    metric: "level peak lu cb"
+    min: -4.2
+    max: -0.5
+    reason: "F08: the preset LEVEL 68 to 60 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move -1.2 dB"
+  - match: "*/F08/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 1.93
+    max: 3.53
+    reason: "F08 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F08/PRESET/*"
+    metric: "peak"
+    min: -8.0
+    max: -3.7
+    reason: "F08 (DYNO-based): the attack peak 2..8 dB lower: the pickup drive's fold removed, DYNO's x1.2 tip capped at 0.9.9's full scale"
+  - match: "*/F08/PRESET/*"
+    metric: "cent"
+    min: -0.31
+    max: -0.05
+    reason: "F08: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F08/PRESET/*/k93v*"
+    metric: "decay"
+    min: -6.84
+    max: -4.7
+    reason: "F08 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F08/PRESET/*"
+    metric: "clk clk_off"
+    min: -22.63
+    max: -6.0
+    reason: "F08: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F09/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -10.09
+    max: -1.4
+    reason: "F09 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F09/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -5.99
+    max: -1.0
+    reason: "F09 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 60 to 62 (1ae87375 / b8a7d4ee)"
+  - match: "*/F09/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -9.72
+    max: -1.1
+    reason: "F09 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 60 to 62; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F09/PRESET/*"
+    metric: "keyup"
+    min: -4.89
+    max: -1.55
+    reason: "F09: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F09/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 1.69
+    max: 4.61
+    reason: "F09 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F09/PRESET/*"
+    metric: "cent"
+    min: -0.28
+    max: 0.2
+    reason: "F09: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F09/PRESET/*/k93v*"
+    metric: "decay"
+    min: -8.77
+    max: -3.11
+    reason: "F09 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F09/PRESET/*"
+    metric: "clk clk_off"
+    min: -9.8
+    max: -6.0
+    reason: "F09: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F10/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -15.29
+    max: -1.4
+    reason: "F10 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F10/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.78
+    max: -2.07
+    reason: "F10 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 42 to 56 (1ae87375 / b8a7d4ee)"
+  - match: "*/F10/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -9.72
+    max: -1.04
+    reason: "F10 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 42 to 56; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F10/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.05
+    max: 5.7
+    reason: "F10: the preset LEVEL 42 to 56 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.7 dB"
+  - match: "*/F10/PRESET/*"
+    metric: "keyup"
+    min: -21.03
+    max: -1.51
+    reason: "F10: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F10/PRESET/*/k93v*"
+    metric: "decay"
+    min: -8.87
+    max: -2.53
+    reason: "F10 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F11/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -2.95
+    max: -1.64
+    reason: "F11 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F11/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -3.73
+    max: -1.0
+    reason: "F11 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 18 to 35 (1ae87375 / b8a7d4ee)"
+  - match: "*/F11/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -11.87
+    max: -2.92
+    reason: "F11 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 18 to 35; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F11/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.5
+    max: 6.2
+    reason: "F11: the preset LEVEL 18 to 35 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +3.2 dB"
+  - match: "*/F11/PRESET/*"
+    metric: "keyup"
+    min: -6.08
+    max: -1.54
+    reason: "F11: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F11/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 1.59
+    max: 6.27
+    reason: "F11 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F11/PRESET/*"
+    metric: "cb"
+    min: 6.17
+    max: 8.62
+    reason: "F11: critical-band loudness (phon-like) of the preset level change: it moves up to ~2.5x the RMS change at quiet cells"
+  - match: "*/F11/PRESET/*"
+    metric: "cent"
+    min: -0.21
+    max: -0.08
+    reason: "F11: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F11/PRESET/*/k93v*"
+    metric: "decay"
+    min: -10.59
+    max: -7.88
+    reason: "F11 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F12/PRESET/*/k45v20"
+    metric: "level"
+    min: -32.86
+    max: -31.61
+    reason: "F12 AUTO WAH k45 v20: 0.9.9 at -70.1 dBFS (at the audibility floor, the wah's notch at this key); the soft end takes it to -102 dBFS. Inaudible both ways"
+  - match: "*/F12/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -5.15
+    max: -2.89
+    reason: "F12 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F12/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -6.34
+    max: -1.0
+    reason: "F12 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 121 to 127 (1ae87375 / b8a7d4ee)"
+  - match: "*/F12/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -11.11
+    max: -2.21
+    reason: "F12 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 121 to 127; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F12/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.54
+    max: 4.4
+    reason: "F12: the preset LEVEL 121 to 127 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.4 dB"
+  - match: "*/F12/PRESET/*"
+    metric: "keyup"
+    min: -203.46
+    max: -201.24
+    reason: "F12: fully damped to digital silence after the key-up: the shorter damper and quicker felt (40fc8931)"
+  - match: "*/F12/PRESET/*"
+    metric: "keyup"
+    min: -22.41
+    max: -1.61
+    reason: "F12: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F12/PRESET/*"
+    metric: "cb"
+    min: 4.21
+    max: 7.34
+    reason: "F12: critical-band loudness (phon-like) of the preset level change: it moves up to ~2.5x the RMS change at quiet cells"
+  - match: "*/F12/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.14
+    max: -2.98
+    reason: "F12 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F12/PRESET/*"
+    metric: "clk clk_off"
+    min: -8.68
+    max: -6.01
+    reason: "F12: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F14/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.0
+    max: 2.09
+    reason: "F14: the preset LEVEL 59 to 66 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.5 dB; the bar engine itself unchanged, PH_G refit (dab6f113)"
+  - match: "*/F15/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.81
+    max: 2.9
+    reason: "F15: the preset LEVEL 59 to 66 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.3 dB; the bar engine itself unchanged, PH_G refit (dab6f113)"
+  - match: "*/F16/PRESET/*"
+    metric: "level peak lu cb"
+    min: -7.52
+    max: -2.28
+    reason: "F16: the preset LEVEL 67 to 40 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move -4.9 dB; the bar engine itself unchanged, PH_G refit (dab6f113)"
+  - match: "*/F17/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -6.17
+    max: -5.11
+    reason: "F17 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F17/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -5.76
+    max: -3.84
+    reason: "F17 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 47 to 61 (1ae87375 / b8a7d4ee)"
+  - match: "*/F17/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -5.02
+    max: -0.9
+    reason: "F17 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 47 to 61; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F17/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.59
+    max: 4.63
+    reason: "F17: the preset LEVEL 47 to 61 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.7 dB"
+  - match: "*/F17/PRESET/*"
+    metric: "keyup"
+    min: -4.9
+    max: -1.5
+    reason: "F17: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F17/PRESET/*"
+    metric: "cent"
+    min: -0.27
+    max: 0.36
+    reason: "F17: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F17/PRESET/*/k93v*"
+    metric: "decay"
+    min: -5.15
+    max: -3.72
+    reason: "F17 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F18/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -5.09
+    max: -3.71
+    reason: "F18 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F18/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -3.4
+    max: -2.32
+    reason: "F18 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 55 to 69 (1ae87375 / b8a7d4ee)"
+  - match: "*/F18/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -6.36
+    max: -0.9
+    reason: "F18 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 55 to 69; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F18/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.55
+    max: 4.23
+    reason: "F18: the preset LEVEL 55 to 69 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.9 dB"
+  - match: "*/F18/PRESET/*"
+    metric: "keyup"
+    min: -2.7
+    max: -1.7
+    reason: "F18: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F18/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 1.54
+    max: 2.97
+    reason: "F18 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F18/PRESET/*"
+    metric: "cent"
+    min: -0.35
+    max: -0.07
+    reason: "F18: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F18/PRESET/*/k93v*"
+    metric: "decay"
+    min: -4.8
+    max: -2.95
+    reason: "F18 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F19/PRESET/*/k[23][38]v20"
+    metric: "level"
+    min: -225.23
+    max: -21.42
+    reason: "F19 RADIO k28/k33 v20: 0.9.9 already at -73..-75 dBFS (under the -70 dBFS audibility floor: the band-pass removes the bass); the soft end (-5.8 dB) takes it to -95 dBFS / digital silence. Inaudible both ways"
+  - match: "*/F19/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -3.87
+    max: -1.4
+    reason: "F19 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F19/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.49
+    max: -2.08
+    reason: "F19 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 75 to 90 (1ae87375 / b8a7d4ee)"
+  - match: "*/F19/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -10.14
+    max: -0.9
+    reason: "F19 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 75 to 90; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F19/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.14
+    max: 6.0
+    reason: "F19: the preset LEVEL 75 to 90 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +3.0 dB"
+  - match: "*/F19/PRESET/*"
+    metric: "keyup"
+    min: -201.49
+    max: -200.42
+    reason: "F19: fully damped to digital silence after the key-up: the shorter damper and quicker felt (40fc8931)"
+  - match: "*/F19/PRESET/*"
+    metric: "keyup"
+    min: -11.03
+    max: -1.6
+    reason: "F19: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F19/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 1.61
+    max: 5.56
+    reason: "F19 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F19/PRESET/*"
+    metric: "cb"
+    min: 6.02
+    max: 10.0
+    reason: "F19: critical-band loudness (phon-like) of the preset level change: it moves up to ~2.5x the RMS change at quiet cells"
+  - match: "*/F19/PRESET/*"
+    metric: "cent"
+    min: 0.07
+    max: 0.22
+    reason: "F19: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F19/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.34
+    max: -3.39
+    reason: "F19 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F19/PRESET/*"
+    metric: "clk clk_off"
+    min: -10.96
+    max: -6.54
+    reason: "F19: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+
+# ---- 8. RESPONSE B ("light touch", being redesigned: soft notes louder, the same tone, range ~25.5 dB). Its moves are
+# not listed yet: add a group matching "*/*/*/B/*" (RESPONSE B cells only) once the redesign lands. Until then the
+# entries above cover B where it moves with A.
