@@ -582,7 +582,8 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
     v->ppos = 0;
 }
 
-static int32_t rh_hermite(const int32_t *T, int64_t s)
+static inline __attribute__((always_inline)) int32_t rh_hermite_i(const int32_t *T, int64_t s)   /* (rh_hd_step: inlined
+                                                * into its RAM leaf) */
 {
     uint32_t i, t;
     int32_t p0, p1, m0, m1, c2, c3, a;
@@ -599,6 +600,7 @@ static int32_t rh_hermite(const int32_t *T, int64_t s)
     a = m0 + (int32_t)(((int64_t)t * a) >> 22);
     return p0 + (int32_t)(((int64_t)t * a) >> 22);
 }
+static int32_t rh_hermite(const int32_t *T, int64_t s) { return rh_hermite_i(T, s); }
 
 /* keeps x a plain 32-bit register value (no code): the compiler otherwise carries sign-extended 64-bit copies of a
  * multiplier (t, the gain, eps, b), which in the hot loops cost a register pair and stack traffic */
@@ -795,15 +797,12 @@ static int32_t __attribute__((noinline)) rh_tone_gain(int32_t gain, int32_t o64,
                                                 * colour stay the strike's) */
 #define RH_HD_STEPS (16536u / RH_HD_SUBS)      /* 12 s of steps */
 #define RH_HD_DU 524288                        /* the slope's half step (1/64 gap) */
-static int32_t rh_hd_slope(const int32_t *T, int32_t o, int32_t a)   /* |Phi~((o + a)^2) - Phi~((o - a)^2)| */
+static inline __attribute__((always_inline)) uint32_t rh_hd_isqrt(uint32_t n)          /* floor(sqrt(n)), bit by bit (32-bit, no divide); the first bit
+                                                * from the leading zeros (the same result, no scan down to it) */
 {
-    int32_t p = o + a, q = o - a, s = rh_hermite(T, (int64_t)p * p) - rh_hermite(T, (int64_t)q * q);
-    return s < 0 ? -s : s;
-}
-static uint32_t rh_hd_isqrt(uint32_t n)          /* floor(sqrt(n)), bit by bit (32-bit, no divide) */
-{
-    uint32_t r = 0, b = 1u << 30;
-    while (b > n) b >>= 2;
+    uint32_t r = 0, b;
+    if (!n) return 0;
+    b = 1u << ((31u - (uint32_t)__builtin_clz(n)) & ~1u);
     while (b) {
         if (n >= r + b) { n -= r + b; r = (r >> 1) + b; } else r >>= 1;
         b >>= 2;
@@ -830,29 +829,20 @@ static void rh_hd_init(rh_voice_t *v, uint32_t n, uint32_t vel)
     v->hd_off0 = v->off; v->hd_g0 = v->hd_gc = v->gain;
     rh_hd_target(v, n, vel);
 }
-static void rh_hd_gain(rh_voice_t *v)         /* the gain at the offset now: the base x the pickup's fundamental gain
-                                                * at the strike's offset over the one here, both at V1's swing now (the
-                                                * secant over +-a: the large swing's own, not the small-signal slope) */
-{
-    const rh_ms_t *m1 = &v->m[RH_V1];
-    const int32_t *T = RH_PU_PHIM(v->k->fam);
-    uint64_t a2 = (uint64_t)((int64_t)m1->x * m1->x + (int64_t)m1->y * m1->y) >> 22;   /* (|x|, |y| < 2^28: < 2^35) */
-    int32_t a = (int32_t)(rh_hd_isqrt(a2 > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t)a2) << 11), s0, s1;
-    uint32_t r;
-    int64_t g;
-    if (a < RH_HD_DU) a = RH_HD_DU;
-    if (a > (1 << 26)) a = 1 << 26;                                /* (2 gap) */
-    s0 = rh_hd_slope(T, v->hd_off0, a); s1 = rh_hd_slope(T, v->off, a);
-    while (s0 >= (1 << 17) || s1 >= (1 << 17)) { s0 >>= 1; s1 >>= 1; }
-    r = s1 < 1 ? 4u << 14 : ((uint32_t)s0 << 14) / (uint32_t)s1;   /* Q14 (a 32-bit divide) */
-    if (r > (4u << 14)) r = 4u << 14;                              /* +12 dB at most */
-    g = ((int64_t)v->hd_g0 * r) >> 14;
-    v->gain = v->hd_gc = g > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)g;
-}
-static __attribute__((noinline)) int32_t rh_hd_step(rh_voice_t *v, int32_t Hp)
+/* a step of the glide: a leaf in RAM (FR_RAM; 0.9.10 cpu: from XIP flash it waited on the cache, 10 voices x 4 steps
+ * a block), no call: the five flux values (the slopes at the strike's offset and here, then the last sample's at the
+ * new offset) through one inlined rh_hermite in a loop (RAM is short), the root and the divide inline. The gain at the
+ * offset now: the base x the pickup's fundamental gain at the strike's offset over the one here, both at V1's swing now
+ * (the secant over +-a: the large swing's own, not the small-signal slope) */
+static FR_RAM __attribute__((noinline)) int32_t rh_hd_step(rh_voice_t *v, int32_t Hp)
 {
     const rh_key_t *k = v->k;
-    int32_t o, mx = RH_OFF_MAX >> RH_FAM_SH[k->fam];
+    const rh_ms_t *m1 = &v->m[RH_V1];
+    const int32_t *T;
+    int32_t o, mx = RH_OFF_MAX >> RH_FAM_SH[k->fam], a, s0, s1, q[5], h[5];
+    uint64_t a2;
+    uint32_t r, i;
+    int64_t g;
     if (v->hd_w) { v->hd_w--; return Hp; }
     v->hd_n--;
     v->hd_y1 += (int32_t)(((int64_t)(v->hd_d - v->hd_y1) * v->hd_a1) >> 30);
@@ -865,9 +855,25 @@ static __attribute__((noinline)) int32_t rh_hd_step(rh_voice_t *v, int32_t Hp)
     }
     if (o == v->off) return Hp;
     v->off = o;
-    rh_hd_gain(v);
-    o += rh_x[SUB - 1u];
-    return rh_hermite(RH_PU_PHIM(k->fam), (int64_t)o * o);
+    T = RH_PU_PHIM(k->fam);
+    a2 = (uint64_t)((int64_t)m1->x * m1->x + (int64_t)m1->y * m1->y) >> 22;   /* (|x|, |y| < 2^28: < 2^35) */
+    a = (int32_t)(rh_hd_isqrt(a2 > 0xFFFFFFFFu ? 0xFFFFFFFFu : (uint32_t)a2) << 11);
+    if (a < RH_HD_DU) a = RH_HD_DU;
+    if (a > (1 << 26)) a = 1 << 26;                                /* (2 gap) */
+    q[0] = v->hd_off0 + a; q[1] = v->hd_off0 - a; q[2] = o + a; q[3] = o - a; q[4] = o + rh_x[SUB - 1u];
+#pragma clang loop unroll(disable)
+    for (i = 0; i < 5u; i++) h[i] = rh_hermite_i(T, (int64_t)q[i] * q[i]);
+    s0 = h[0] - h[1]; s0 = s0 < 0 ? -s0 : s0;                      /* |Phi~((o0 + a)^2) - Phi~((o0 - a)^2)| */
+    s1 = h[2] - h[3]; s1 = s1 < 0 ? -s1 : s1;
+    {   /* both under 2^17, the same shift (the leading zeros of the larger: no loop) */
+        uint32_t mxs = (uint32_t)(s0 > s1 ? s0 : s1), sh = mxs >= (1u << 17) ? 15u - (uint32_t)__builtin_clz(mxs) : 0u;
+        s0 >>= sh; s1 >>= sh;
+    }
+    r = s1 < 1 ? 4u << 14 : ((uint32_t)s0 << 14) / (uint32_t)s1;   /* Q14 (a 32-bit divide) */
+    if (r > (4u << 14)) r = 4u << 14;                              /* +12 dB at most */
+    g = ((int64_t)v->hd_g0 * r) >> 14;
+    v->gain = v->hd_gc = g > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)g;
+    return h[4];
 }
 /* a re-strike of a sounding note: the offset goes back to the strike's, and the glide starts again for the new strike
  * (gliding on from a soft strike's offset, near the axis, the new hard strike barked +13 dB > 5 kHz in its first 6 ms
@@ -1626,7 +1632,7 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
         rh_lfsr = lfsr; v->felt_lp = lp; v->felt_n = (uint16_t)(v->felt_n - nf);
     }
 #ifdef RH_HD
-    if (v->hd_n && !--v->hd_ph) { v->hd_ph = RH_HD_SUBS; Hp = rh_hd_step(v, Hp); }   /* the harmonic decay glide */
+    if (v->hd_n && !--v->hd_ph) { v->hd_ph = RH_HD_SUBS; Hp = FR_FAR(rh_hd_step)(v, Hp); }   /* the harmonic decay glide */
 #endif
     v->Hprev = Hp;
     if (v->fade == 0) {                                   /* a steal finished fading: start the waiting note */
