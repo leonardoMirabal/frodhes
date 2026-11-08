@@ -86,6 +86,7 @@ def analyse(usb, jack, ev, cal=None):
         s, e = int((t + W0) * FS), int((t + W1) * FS)
         if i + 1 < len(ev):
             e = min(e, int(ev[i + 1][0] * FS))          # (monophonic windows: the next note ends this one)
+        e = min(e, len(usb), len(jack))                   # (a note too close to the take's end has no window)
         if e - s < 4096:
             continue
         f0 = 440 * 2 ** ((note - 69) / 12)
@@ -136,6 +137,7 @@ def main():
     ev, t0 = [], [None]
     if a.dry_run:
         demo = [(0.5 + 0.7 * i, n, v) for i, (n, v) in enumerate((n, v) for n in (45, 57, 69) for v in (40, 96, 127))]
+        demo = [d for d in demo if d[0] + 0.7 <= a.seconds]
         events = [(t, "on", n, v) for t, n, v in demo] + [(t + 0.6, "off", n, 0) for t, n, v in demo]
         usb, jack = hil_jack.DryJack().both(a.seconds, events)
         ev = list(demo)
