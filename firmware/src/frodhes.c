@@ -118,8 +118,8 @@ static uint32_t smk_btn_leds;                   /* the SMK's own buttons' LEDs (
  * core 0's voices done (the last chunk's, eng_end); 17 core 0's voice time in a block (the waits out); 19 its last wait,
  * 20 the waits before it summed; 23 the last chunk's effects, 24 the first's, 25 a middle one's; each stage's time in a
  * block (its chunks summed): 26 COMP, 27 EQ, 28 DRIVE, 29 FILTER, 30 TREM / WAH, 31 SPREAD + PHASER, 32 the delay
- * (chorus too), 33 the reverb, 34 fx_out */
-#define PROF_NST 35u
+ * (chorus too), 33 the reverb, 34 fx_out; 35-43 the same stages in the first chunk alone */
+#define PROF_NST 44u
 static volatile uint32_t c1_pf_t0;
 #define C1PF_ON 1
 #define C1PF(i, d) do { uint32_t d2_ = (d); if (d2_ > prof_st_max[i]) prof_st_max[i] = d2_; } while (0)

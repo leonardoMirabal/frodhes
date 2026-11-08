@@ -136,7 +136,8 @@ STAGES = {1: "engine (eng_render)", 2: "fx copy", 3: "compressor", 4: "filter + 
           16: "c0 voices done @", 17: "c0 voices blk", 19: "c0 last wait", 20: "c0 waits before",
           23: "c1 last chunk fx", 24: "c1 first chunk fx", 25: "c1 middle chunk fx", 26: "COMP blk", 27: "EQ blk",
           28: "DRIVE blk", 29: "FILTER blk", 30: "TREM blk", 31: "SPREAD+PHASER blk", 32: "delay blk", 33: "reverb blk",
-          34: "fx_out blk"}
+          34: "fx_out blk", **{35 + i: f"first: {k}" for i, k in enumerate(("COMP", "EQ", "DRIVE", "FILTER", "TREM",
+                                                                             "SPREAD+PHASER", "delay", "reverb", "fx_out"))}}
 
 
 def default_voices(eng):

@@ -2361,7 +2361,7 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     uint32_t q0, q1, k_;
     if (FXC_1) for (k_ = 0; k_ < 9u; k_++) c1_ps[k_] = 0;
     q0 = fm1_ticks();
-#define C1PS(k) do { q1 = fm1_ticks(); c1_ps[k] += q1 - q0; q0 = q1; } while (0)
+#define C1PS(k) do { q1 = fm1_ticks(); c1_ps[k] += q1 - q0; if (FXC_1 && !FXC_Z) C1PF(35u + (k), q1 - q0); q0 = q1; } while (0)
 #endif
     fx_comp(m, n);
 #if defined(C1PF_ON)
