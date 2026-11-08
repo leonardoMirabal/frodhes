@@ -469,16 +469,17 @@ def report(cand, base, fails, moves, stale, expected, grid, top=25):
 
 
 def draft(moves, path):
-    """the unlisted moves as expected-changes entries, grouped by case and metric (reason: TODO)"""
+    """the unlisted moves as expected-changes entries, one per TYPE (or preset) and metric over both builds, every
+    config and method (reason: TODO; narrow them by hand where a move belongs to one case)"""
     import yaml
     g = {}
     for cid, lab, m, v, b, d, hit in moves:
         if hit is None:
-            k = (cid, m)
+            k = (cid.split("/")[1], m)
             lo, hi = g.get(k, (d, d))
             g[k] = (min(lo, d), max(hi, d))
-    doc = {"changes": [{"match": f"{cid}/*", "metric": m, "min": round(lo - 0.5, 1), "max": round(hi + 0.5, 1),
-                        "reason": "TODO"} for (cid, m), (lo, hi) in sorted(g.items())]}
+    doc = {"changes": [{"match": f"*/{t}/*", "metric": m, "min": round(lo - 0.5, 1), "max": round(hi + 0.5, 1),
+                        "reason": "TODO"} for (t, m), (lo, hi) in sorted(g.items())]}
     yaml.safe_dump(doc, open(path, "w"), sort_keys=False, width=120)
 
 
@@ -528,6 +529,7 @@ def main():
         if a.grid != "fast" or not bins:
             raise SystemExit("--save-base: --grid fast with --fm1 and --hq of the last release's tree")
         cells = measure_all(bins, "fast", "base-fast")
+        cells = {c: {l: {m: round(v, 3) for m, v in ms.items()} for l, ms in cs.items()} for c, cs in cells.items()}
         json.dump({"release": LAST, "cases": cells}, open(BASE_FAST, "w"), indent=0, sort_keys=True)
         print(f"{BASE_FAST}: {len(cells)} cases ({time.time() - t0:.1f} s)")
         return 0
