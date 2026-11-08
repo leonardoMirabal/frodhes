@@ -23,7 +23,7 @@ import re
 import numpy as np
 import pytest
 
-from hostrun import FS, ROOT, cc, env_rms, note, rate_of, rms_db, run
+from hostrun import FS, ROOT, cc, env_rms, note, rate_of, rms_db, run, tap_lag
 
 CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(21, 70, 0),  # F01's drive, reverb and filter (on by default since 0.9.3:
          cc(22, 106, 0), cc(22, 107, 0), cc(22, 113, 0),    # LP18 at 16K) off, and its compressor (on since 0.9.5:
@@ -878,25 +878,25 @@ def _cdepth():
 @case("CHORUS-SPEED")
 def _cspeed():
     """SPEED (CC 87): 0.96 Hz at 20, 5.0 Hz at 120 (x5.2); at least x4"""
-    r = []
+    r, off = [], pha([(85, 0), (86, 100)])
     for v, g in ((20, 0.4), (120, 5.0)):
         w = pha([(85, 64), (86, 100), (87, v)])
         f, fps = lr_band(w.seg(0.5, 6.2), w.seg(0.5, 6.2, 1))
         assert p2p(f) * 10 / math.log(10) > 3, f"SPEED {v}: no sweep"
-        r.append(rate_of(f, fps, g))
+        r.append(rate_of(*tap_lag(w.seg(0.5, 6.2), off.seg(0.5, 6.2)), g))   # (the tap's delay: the rate itself)
     return r[1] / r[0], 4.0, f"{r[0]:.2f} -> {r[1]:.2f} Hz"
 
 
 @case("CHORUS-SYNC")
 def _csync():
     """CHORUS SYNC (its K4, CC 23): 1/4 at 120 BPM = 2.000 Hz, by the panel and by the CC"""
-    out = []
+    out, off = [], pha([(85, 0), (86, 100)])
     for extra in (goto("CHO", 50) + detents(5, 1, 9, 120), [cc(50, 23, sync_cc(9, 14))]):
         w = pha([(85, 64), (86, 100)], extra)
         assert w.state(400)[f"card.{PG['CHO']}.3"] == "1/4"
         f, fps = lr_band(w.seg(0.5, 6.2), w.seg(0.5, 6.2, 1))
         assert p2p(f) * 10 / math.log(10) > 3, "no sweep"
-        out.append(rate_of(f, fps, 2.0))
+        out.append(rate_of(*tap_lag(w.seg(0.5, 6.2), off.seg(0.5, 6.2)), 2.0))   # (the tap's delay)
     return -max(abs(r - 2.0) for r in out), -0.02, " ".join(f"{r:.3f}" for r in out)
 
 

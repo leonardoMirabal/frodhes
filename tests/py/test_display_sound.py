@@ -18,7 +18,7 @@ import subprocess
 import numpy as np
 import pytest
 
-from hostrun import FS, ROOT, card_hz, cc, env_rms, note, once, rate_of, rms_db, run
+from hostrun import FS, ROOT, card_hz, cc, env_rms, note, once, rate_of, rms_db, run, tap_lag
 
 ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 0), cc(11, 47, 0)]}   # VIBES: its motor (on with it) off
 CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(23, 106, 0), cc(24, 110, 64)]   # F01's drive, reverb, comp off; 0 dB
@@ -177,8 +177,12 @@ def test_chorus_phaser_speed(eng, fx):
     """CHORUS / PHASER SPEED: the sweep runs at the card's rate (0.25-6 Hz; the bug of 0.9.2 showed twice that). A
     chord held under the pedal with DECAY / RING at 10 (a steady sound). The chorus is measured on the Rhodes only:
     VIBES' few pure partials make the left / right level difference a mix of the rate and its double (the chorus
-    code is the same for both engines; its card text is checked at every value above)"""
+    code is the same for both engines; its card text is checked at every value above). The chorus: its left tap's
+    delay against the chorus off (hostrun.tap_lag; 0.9.10's Rhodes read twice the rate by the level difference)"""
     chord = (48, 55, 60, 64, 67, 72, 76, 79)
+    pre = ENGINES[eng] + CLEAN + PEDAL + [cc(23, 102, 127)]
+    if fx == "chorus":
+        off = run(f"ds-{fx}off-{eng}", pre + [cc(30, 85, 0), "100 dump"] + sum((note(200, m, 100, 10000) for m in chord), []), 10500)
     for v in (20, 64, 127):
         if fx == "chorus":
             p, card = [cc(30, 85, 64), cc(31, 86, 100), cc(32, 87, v)], f"card.{PG['CHO']}.2"
@@ -188,7 +192,7 @@ def test_chorus_phaser_speed(eng, fx):
                 + sum((note(200, m, 100, 10000) for m in chord), []), 10500)
         txt = w.state(100)[card]
         L, R = w.seg(0.5, 10.2), w.seg(0.5, 10.2, 1)
-        feat, fps = lr_band(L, R) if fx == "chorus" else band_share(L)
+        feat, fps = tap_lag(L, off.seg(0.5, 10.2)) if fx == "chorus" else band_share(L)
         assert_rate(rate_of(feat, fps, card_hz(txt)), txt, f"{fx} SPEED {v}")
 
 
