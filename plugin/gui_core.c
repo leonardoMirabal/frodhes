@@ -657,7 +657,9 @@ static void cl_paint(void *ctx, frui_canvas *c, float scale)
         d[0] = 0; d[1] = 0; d[2] = g->pw; d[3] = g->ph;
         g->tpx = c->px; g->tw = c->w; g->th = c->h;
     }
-    for (y = d[1]; y < d[3]; y++)
+    if (d[2] > c->w) d[2] = c->w;                    /* (a view smaller than the core's least canvas, 16 x 10) */
+    if (d[3] > c->h) d[3] = c->h;
+    for (y = d[1]; y < d[3] && d[2] > d[0]; y++)
         memcpy(c->px + (size_t)y * (size_t)c->w + (size_t)d[0], g->px + (size_t)y * (size_t)g->pw + (size_t)d[0],
                sizeof(uint32_t) * (size_t)(d[2] - d[0]));
 }
