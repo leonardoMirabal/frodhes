@@ -19,6 +19,12 @@ name: release
 # (tools/move_asset.sh: no record, no Move asset; a different sha256 stops the release), after tools/move_catalog.py
 # checked the tag's tarball (one folder frodhes/, module.json's version the tag's). The job release-json then writes
 # release.json to main for Schwung Manager (see that job: it needs a key that may push to main).
+# The desktop plugin: the job plugin runs .github/workflows/plugin.yml on the tag (macOS, Windows, Linux x86_64 and
+# aarch64: built with the tag's version, packaged, checked self-contained, validated); after the release is public the
+# job plugin-release attaches its packages under fixed names (frodhes-plugin-macos.pkg, frodhes-plugin-macos.zip,
+# frodhes-plugin-windows.zip, frodhes-plugin-linux-x86_64.zip, frodhes-plugin-linux-aarch64.zip), only those of the
+# platforms the release commit records as tested ("Plugin tested: macos windows linux-x86_64 ...", tools/plugin_asset.sh:
+# no record, no plugin asset). Nothing above waits for it: a plugin failure never holds back the firmware or the Move.
 # Tag only what passed the tests on the FM-1 (CLAUDE.md: test and document).
 on:
   push:
@@ -229,6 +235,37 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+  # ---- the desktop plugin (see the top): built and validated from the tag by plugin.yml, attached once the release
+  # is public. sign: Developer ID + notarization on macOS when the MACOS_* secrets exist (docs/PLUGIN.md "Signing"),
+  # else ad-hoc signed.
+  plugin:
+    uses: ./.github/workflows/plugin.yml
+    with:
+      version: ${{ github.ref_name }}
+      sign: true
+    secrets: inherit
+  plugin-release:
+    needs: [release, plugin]
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.plugin.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0             # (tools/plugin_asset.sh reads the release commit)
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: plugin-*
+          merge-multiple: true
+          path: build/plugin-ci
+      - name: the packages of the platforms the release commit records as tested
+        run: sh tools/plugin_asset.sh "${GITHUB_REF_NAME#v}" build/plugin-ci build/publish/plugin
+      - name: attach them to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -- build/publish/plugin/*
+          if [ ! -e "$1" ]; then echo "no plugin asset for this release"; exit 0; fi
+          gh release upload "$GITHUB_REF_NAME" "$@" --clobber
   # ---- release.json on main: Schwung Manager's update check (the Move in Schwung's module catalog) ----
   # After the release is public, and only when it carries the Move package (the job release's output move): writes
   # release.json = {"version": "X.Y.Z", "download_url": the tag's frodhes-module.tar.gz} (tools/move_catalog.py

@@ -3,6 +3,7 @@
 # one global symbol, frp_slot_<n> (Mach-O: _frp_slot_<n>), in every architecture slice; anything else fails. Weak
 # definitions (nm W) are the shared constant tables (plugin/compat/shared_tables.h: hidden, one copy for all slots);
 # they are counted and allowed, and only a slot built with the shared headers defines any.
+# -DWEAK_CRT_OK=1 (Windows): the MSVC CRT's weak inline definitions and string literals are allowed (see below).
 string(REPLACE "|" ";" _objs "${OBJS}")
 set(_n 0)
 foreach(_o IN LISTS _objs)
@@ -39,10 +40,20 @@ foreach(_o IN LISTS _objs)
     set(_defs "")
     set(_weak "")
     foreach(_ln IN LISTS _lines)
-        if(_ln MATCHES "^[0-9a-fA-F-]+ W (.+)$")             # a shared table (weak, hidden)
-            list(APPEND _weak "${CMAKE_MATCH_1}")
-        elseif(_ln MATCHES "^[0-9a-fA-F-]+ [A-TV-Z] (.+)$")  # a defined global (not U: an import; bitcode: no address)
-            list(APPEND _defs "${CMAKE_MATCH_1}")
+        if(_ln MATCHES "^[0-9a-fA-F-]+ ([A-TV-Z]) (.+)$")    # a defined global (not U: an import; bitcode: no address)
+            set(_kind "${CMAKE_MATCH_1}")
+            set(_sym "${CMAKE_MATCH_2}")
+            # Windows (COFF): the MSVC CRT's inline functions (snprintf ...) and the pooled string literals (??_C@)
+            # are weak COMDAT definitions, identical in every object, which the linker keeps once: not the app's
+            if(WEAK_CRT_OK AND _kind STREQUAL "W" AND _sym MATCHES
+               "^(\\?\\?_C@.*|__real@[0-9a-f]+|__xmm@[0-9a-f]+|_Fenv0|__local_stdio_(printf|scanf)_options|_?v?sn?printf(_l)?|_?vs?n?printf_l|_vscprintf_l|_vfprintf_l)$")
+                continue()
+            endif()
+            if(_kind STREQUAL "W")                           # a shared table (weak, hidden)
+                list(APPEND _weak "${_sym}")
+            else()
+                list(APPEND _defs "${_sym}")
+            endif()
         endif()
     endforeach()
     list(REMOVE_DUPLICATES _defs)

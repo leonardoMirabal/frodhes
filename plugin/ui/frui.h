@@ -55,7 +55,7 @@ enum { FRS_CHANNEL = 200, FRS_VEL, FRS_FIXVEL, FRS_PGM, FRS_TEMPO, FRS_BPM, FRS_
 typedef void (*frui_text_fn)(void *ctx, const frui_model *m, int id, char *val, char *unit);
 
 enum { FRW_KNOB, FRW_SEG, FRW_MENU, FRW_TAB_L, FRW_TAB_R, FRW_BUTTON, FRW_PAGER, FRW_PRESET, FRW_KEYS, FRW_FADER, FRW_CTX,
-       FRW_CCMAP };
+       FRW_CCMAP, FRW_ITEM };    /* FRW_ITEM: an open menu's option (id: the option's value; the menu: model.menu) */
 enum { FRB_PREV, FRB_NEXT, FRB_SAVE, FRB_UNDO, FRB_TYPE_PREV, FRB_TYPE_NEXT, FRB_GEAR, FRB_CLOSE, FRB_SUSTAIN, FRB_FX,
        FRB_BPM_DOWN, FRB_BPM_UP, FRB_LEARN_RESET };
 /* the knob menu's items (FRW_CTX ids) */
@@ -92,6 +92,9 @@ const frui_anchor *frui_anchor_get(const frui *u, int i);
 void frui_draw(frui *u, const frui_model *m, frui_canvas *c);
 /* the widget at logical point (x, y) after the last draw, or -1; *w gets its description */
 int frui_hit(const frui *u, float x, float y, frui_widget *w);
+/* a control's value as drawn (the parameters, TUNE, TREM/WAH's EFFECT, the settings' ids) and its range 0..hi */
+int frui_value(const frui_model *m, int id);
+int frui_range(int id);
 /* widget ids for focus / hover / menu: (kind << 8) | id */
 #define FRUI_WID(kind, id) (((kind) << 8) | (id))
 #endif

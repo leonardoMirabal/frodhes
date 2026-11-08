@@ -4,7 +4,10 @@
  * pass up to its next platform_poll() and switches back. Registers only, no syscall, no allocation:
  *   arm64 (macOS, Linux)    coro_arm64.S: x19-x30, sp, d8-d15
  *   x86_64 (macOS, Linux)   coro_x86_64.S: rbx, rbp, r12-r15, rsp, the resume address
- * Windows x64 (B-M4) will use Fibers: a hand-made stack switch breaks the thread block's stack limits there.
+ *   Windows x64             Fibers (below): a hand-made stack switch breaks the thread block's stack limits there.
+ *                           The fiber has its own stack (the caller's buffer is not used); a thread that resumes the
+ *                           coroutine becomes a fiber the first time and stays one (ConvertThreadToFiberEx once,
+ *                           never an allocation on later resumes).
  * The floating-point control state (FPCR, MXCSR) is the thread's and is not switched: both sides run on one thread.
  * ASan builds tell the sanitizer about the stack switches (fiber annotations). */
 #ifndef FRODHES_PLUGIN_CORO_H
@@ -27,6 +30,41 @@ void __sanitizer_finish_switch_fiber(void *fake_stack_save, const void **bottom_
 
 typedef void (*coro_fn)(void *arg);
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+typedef struct {
+    void *fiber;                                  /* the coroutine */
+    void *caller;                                 /* the fiber that resumed it last */
+    coro_fn fn; void *arg;
+    void *stack; size_t size;                     /* (the caller's buffer: unused, the fiber has its own) */
+    int started;
+} coro_t;
+static void WINAPI coro_win_main(void *p)
+{
+    coro_t *c = (coro_t *)p;
+    c->fn(c->arg);                                /* (never returns: the body ends in a yield loop) */
+}
+/* size: the fiber's stack, committed now (no page faults on the audio thread) */
+static void coro_init(coro_t *c, void *stack, size_t size, coro_fn fn, void *arg)
+{
+    c->stack = stack; c->size = size; c->fn = fn; c->arg = arg; c->started = 0; c->caller = 0;
+    c->fiber = CreateFiberEx(size, size > 1048576 ? size : 1048576, FIBER_FLAG_FLOAT_SWITCH, coro_win_main, c);
+}
+static void coro_resume(coro_t *c)
+{
+    if (!c->fiber) return;
+    if (!IsThreadAFiber()) ConvertThreadToFiberEx(0, FIBER_FLAG_FLOAT_SWITCH);
+    c->caller = GetCurrentFiber();
+    c->started = 1;
+    SwitchToFiber(c->fiber);
+}
+static void coro_yield(coro_t *c) { SwitchToFiber(c->caller); }
+static void coro_entered(coro_t *c) { (void)c; }
+#else
+
 #if defined(__aarch64__) || defined(__arm64__)
 typedef struct { uint64_t r[21]; } coro_regs_t;   /* x19..x30, sp, d8..d15 (coro_arm64.S) */
 #define CORO_ARM64 1
@@ -34,7 +72,7 @@ typedef struct { uint64_t r[21]; } coro_regs_t;   /* x19..x30, sp, d8..d15 (coro
 typedef struct { uint64_t r[8]; } coro_regs_t;    /* rbx, rbp, r12..r15, rsp, the resume address (coro_x86_64.S) */
 #define CORO_X86_64 1
 #else
-#error "the plugin's coroutine: arm64 or x86_64 only (Windows: Fibers, B-M4)"
+#error "the plugin's coroutine: arm64 or x86_64 (Windows: Fibers)"
 #endif
 void frp_coro_switch(coro_regs_t *from, const coro_regs_t *to);
 void frp_coro_boot(void);
@@ -102,4 +140,5 @@ static void coro_entered(coro_t *c)
     (void)c;
 #endif
 }
+#endif /* _WIN32 */
 #endif
