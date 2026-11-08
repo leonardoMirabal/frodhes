@@ -792,6 +792,24 @@ def build(repin=False):
     print("gain: target %.1f dBFS, global peak cap %.2f dB" % (p["gain_target_dbfs"], 20 * math.log10(cap)), file=sys.stderr)
     g_s = g_raw * cap
     g_s = np.minimum(g_s, (2 ** 31 - 1) / Q16)         # Q16 in int32
+    if "pickup_drive" in p:
+        # the velocity method MAP (rhodes.c rh_vm_level) plays the engine without the drive: the force gains / bsc,
+        # the physical force, and the gain the key had then (gain_target at noise_ref_dbfs, the level the map was
+        # fitted at); stored as its ratio to the drive's gain (RH_DRV_SG)
+        import copy
+        pre = []
+        for spec in spec_keys:
+            q = copy.deepcopy(spec)
+            for md in q["modes"]:
+                md["b"] /= q["drive"]["bsc"]
+            for kk in ("pdrv", "pgf", "plev"):
+                q["pulse"].pop(kk, None)
+            pre.append(q)
+        y0 = gm.render_batch(pre, fams, [100] * len(pre), 1.0)
+        t0 = 10 ** (p["pickup_drive"].get("noise_ref_dbfs", p["gain_target_dbfs"]) / 20) * 32767
+        g_pre = np.array([t0 / (float(np.sqrt(np.mean(r[2205:13230] ** 2))) + 1e-12) for r in y0]) * cap
+        for spec, gp, g in zip(spec_keys, g_pre, g_s):
+            spec["drive"]["sg"] = float(gp / g)
     for spec, g in zip(spec_keys, g_s):
         g *= 10 ** (p.get("jitter", {}).get("level_db", 0.0) * jit(p, spec["midi"], "level") / 20)   # S2
         spec["gain"] = float(g)
@@ -871,6 +889,8 @@ def emit(spec, fam_tabs):
           "pickup_drive.noise_ref_dbfs) */" % min(32768, int(round(32768 * nzg))))
         w("static const uint16_t RH_DRV_IB[RH_NKEY] = {   /* 4096 / the force gains' scale (the steal score) */")
         w("  " + ",".join(str(max(1, min(65535, int(round(4096 / k["drive"]["bsc"]))))) for k in spec["keys"]) + "};")
+        w("static const uint32_t RH_DRV_SG[RH_NKEY] = {   /* Q16: the velocity method MAP's gain over the drive's (rh_vm_level) */")
+        w("  " + ",".join(str(max(1, min(0xFFFFFFFF, int(round(65536 * k["drive"]["sg"]))))) for k in spec["keys"]) + "};")
         w("#ifdef FR_HQ   /* the Move's HQ live contact: the force gains' scale over the physical ones (hq_pulse) */")
         w("static const float RH_DRV_BSC[RH_NKEY] = {" + ",".join("%.9gf" % k["drive"]["bsc"] for k in spec["keys"]) + "};")
         w("#endif")
