@@ -50,6 +50,10 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #if defined(RH_DRIVE) && !defined(RH_NO_DRV_MK)  /* (-DRH_NO_DRV_MK: without it, as tools/drive_makeup.py measures) */
 #include "rh_drive_mk.h"                       /* the pickup drive's level make-up (tools/drive_makeup.py --write) */
 #endif
+#if defined(RH_DRIVE) && !defined(RH_NO_TOP) && !defined(RH_VM_PROBE)   /* (-DRH_NO_TOP: without it, as tools/rh_top.py
+                                                * measures) */
+#include "rh_top.h"                            /* the clean top's swing cut per TYPE and key (tools/rh_top.py --write) */
+#endif
 #if defined(RH_DRIVE) && !defined(RH_NO_VM)
 #define RH_VMAP 1                              /* the second velocity method, MAP (rh_touch_mode 1): rh_velmap.h */
 #endif
@@ -148,7 +152,8 @@ typedef struct {
     uint16_t gq;                               /* Q16: the gain law's value at the note-on */
     uint32_t pq;                               /* Q12: the tine's physical swing over the modes' (the note-on's
                                                 * strike: RH_PAMP / (RH_PDRV x the force gains' scale)) */
-    uint16_t mk;                               /* Q12: the level make-up at the note-on (rh_drv_mk, 4096 = none) */
+    uint32_t mk;                               /* Q12: the level make-up at the note-on (rh_drv_mkt, 4096 = none;
+                                                * < 2^20 with the clean top's gain back) */
     int32_t gain0;                             /* the voice gain before the velocity's (MAP's G, the drive's gain law
                                                 * and make-up): a re-strike's level from it */
 #endif
@@ -239,6 +244,50 @@ static uint32_t rh_mk_q12(const uint8_t *row, uint32_t vel)      /* Q12, < 2^16 
 #else
 #define rh_drv_mk(key, vel) 4096u
 #define RH_NZ_S(a) (((uint32_t)(a) * RH_NZ_G) >> 15)
+#endif
+/* the clean top (0.9.10, the user: "v127 itself must be cleaned up", external controllers send 127 easily): the
+ * pickup's H2 grows with the tine's swing (H2 / H1 in proportion to it), to about -6 dB re H1 at v127 on the mid keys
+ * (0.9.9 the same). Above a knee the swing is cut, linearly in dB to RH_TOP_R[TYPE][key] (1/32 octave) at v127, and
+ * the voice's output gain takes the same factor back (the fundamental's level as it was) and RH_TOP_G more on the
+ * same ramp: the loudness the bark took with it (K-weighted, at v127; never less), so the dynamic range is kept
+ * (tools/rh_top.py: the pickup's H2 and the attack's H2 to -14 dB re H1 at v127). The cut runs over 1.25 R velocity
+ * steps (0.15 dB a step: the swing still grows, ~0.2 dB a step before), so the knee is per key (127 - 1.25 R) and
+ * every velocity under it, and every key with R 0, is the engine as it was. Both velocity methods: the drive's force
+ * (RH_PDRV) and make-up, MAP's X and G. Note-on / re-strike only */
+#ifdef RH_TOP_Q
+static uint32_t rh_top_x(uint32_t key, uint32_t vel, uint32_t *g8)   /* the cut and the gain back, 1/256 octave */
+{
+    uint32_t r = RH_TOP_R[rh_type & 3u][key], span = r + (r >> 2), u;
+    *g8 = 0;
+    if (!r || vel + span <= 127u) return 0;
+    u = vel + span - 127u;                                   /* 1 .. span */
+    *g8 = ((r + RH_TOP_G[rh_type & 3u][key]) * 8u * u) / span;   /* (32-bit divides; r + g <= 128) */
+    return (r * 8u * u) / span;
+}
+static uint32_t rh_q12_of(uint32_t c8)                       /* 4096 x 2^((c8 - 1024) / 256), c8 8 .. 2047 */
+{
+    uint32_t x0 = rh_mk_l(c8 >> 3), x1 = rh_mk_l((c8 >> 3) + 1u);
+    return x0 + (((x1 - x0) * (c8 & 7u)) >> 3);
+}
+static uint32_t rh_top_q12(uint32_t key, uint32_t vel)      /* Q12 <= 4096: the swing's factor */
+{
+    uint32_t g8, c8 = rh_top_x(key, vel, &g8);
+    return c8 ? rh_q12_of(1024u - c8) : 4096u;               /* (r <= 120: the code stays >= 64) */
+}
+static uint32_t rh_top_g12(uint32_t key, uint32_t vel)      /* Q12 >= 4096: the output's gain back (< 2^16) */
+{
+    uint32_t g8;
+    return rh_top_x(key, vel, &g8) ? rh_q12_of(1024u + g8) : 4096u;
+}
+static uint32_t rh_drv_mkt(uint32_t key, uint32_t vel)      /* the make-up x the top's gain back (Q12, < 2^20) */
+{
+    uint32_t m = rh_drv_mk(key, vel), g = rh_top_g12(key, vel);
+    return g == 4096u ? m : (uint32_t)(((uint64_t)m * g) >> 12);   /* (m < 2^16, g <= 2^16) */
+}
+#else
+#define rh_top_q12(key, vel) 4096u
+#define rh_top_g12(key, vel) 4096u
+#define rh_drv_mkt(key, vel) rh_drv_mk(key, vel)
 #endif
 #endif
 /* voicing, written by the main loop (params.c), applied at each note-on (IMPLEMENTATION-v3 §4.4, §10.1) */
@@ -522,6 +571,17 @@ static int32_t rh_drive_g(uint32_t key, uint32_t vel)
 /* ---- voices (ISR) */
 #ifdef RH_DRIVE
 static int32_t rh_hermite(const int32_t *T, int64_t s);
+static int32_t rh_pd(uint32_t ki, uint32_t vel)        /* the drive's force at vel (RH_PDRV, interpolated) x the top */
+{
+    uint32_t i = RH_VPOS_I[vel], f = RH_VPOS_F[vel], t = rh_top_q12(ki, vel);
+    int32_t pd = (int32_t)RH_PDRV[ki][i] + ((((int32_t)RH_PDRV[ki][i + 1] - (int32_t)RH_PDRV[ki][i]) * (int32_t)f) >> 8);
+    return t >= 4096u ? pd : (int32_t)(((uint32_t)pd * t) >> 12);   /* (pd < 2^16) */
+}
+static int32_t rh_pdrv_at(uint32_t ki, uint32_t vel)   /* ... at least 16 (a ratio's divisor) */
+{
+    int32_t pd = rh_pd(ki, vel);
+    return pd < 16 ? 16 : pd;
+}
 /* the pickup drive's output gain law at this velocity (Q16, <= 1), and the kill level in that gain: the voice ends where
  * its output falls under half an LSB, as before (kill was set for the key's gain); then the level make-up. From the
  * voice gain before them (gain0): the note-on, and a re-strike louder than the ringing note (rh_load_pulse) */
@@ -534,7 +594,7 @@ static void rh_drv_level(rh_voice_t *v, uint32_t ki, uint32_t vel)
     {
         uint32_t i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
         int32_t pa = (int32_t)RH_PAMP[ki][i] + ((((int32_t)RH_PAMP[ki][i + 1] - (int32_t)RH_PAMP[ki][i]) * (int32_t)f) >> 8);
-        int32_t pd = (int32_t)RH_PDRV[ki][i] + ((((int32_t)RH_PDRV[ki][i + 1] - (int32_t)RH_PDRV[ki][i]) * (int32_t)f) >> 8);
+        int32_t pd = rh_pd(ki, vel);
         uint64_t r = ((uint64_t)(((uint32_t)(pa < 1 ? 1 : pa) << 12) / (uint32_t)(pd < 1 ? 1 : pd)) * RH_DRV_IB[ki]) >> 12;
         v->pq = r > 0xFFFFFFu ? 0xFFFFFFu : (uint32_t)r;     /* (32-bit divide) */
     }
@@ -542,20 +602,14 @@ static void rh_drv_level(rh_voice_t *v, uint32_t ki, uint32_t vel)
     q = kk < 32768u ? (kk << 16) / (uint32_t)g : kk / (uint32_t)g;     /* 32-bit divides */
     v->kl = kk < 32768u ? (int32_t)(q > 0x7FFFFFFFu ? 0x7FFFFFFFu : q) : q >= 32768u ? 0x7FFFFFFF : (int32_t)(q << 16);
     {   /* the level make-up: the output gain x mk, the kill level / mk (the same output level ends the voice) */
-        uint32_t mk = rh_drv_mk(ki, vel), kl = (uint32_t)v->kl;
+        uint32_t mk = rh_drv_mkt(ki, vel), kl = (uint32_t)v->kl;
         int64_t gm = ((int64_t)v->gain * mk) >> 12;
-        v->mk = (uint16_t)mk;
+        v->mk = mk;
         v->gain = gm > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)gm;
         v->kl = (int32_t)(kl < (1u << 19) ? (kl << 12) / mk : (kl / mk) << 12);
     }
 }
 static uint32_t rh_vel_old;                    /* a re-strike: the ringing strike's velocity (rh_note_on, for rh_load_pulse) */
-static int32_t rh_pdrv_at(uint32_t ki, uint32_t vel)   /* the drive's force at vel (RH_PDRV, interpolated) */
-{
-    uint32_t i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
-    int32_t pd = (int32_t)RH_PDRV[ki][i] + ((((int32_t)RH_PDRV[ki][i + 1] - (int32_t)RH_PDRV[ki][i]) * (int32_t)f) >> 8);
-    return pd < 16 ? 16 : pd;
-}
 /* a harder re-strike at another level than the ringing note's (the gain law x the make-up): the voice takes the new strike's
  * gain, the ringing note's mode states are scaled by the old gain over the new at once, so its output goes on with no
  * step (as MAP's rh_vm_restrike; the pickup's last flux value taken again from the scaled tip), and the new strike gets
@@ -617,9 +671,9 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
     else
     {   /* the note's level law (rh_left's measure of the note: the physical force was it before the drive), and the
          * excursion law's force for the modes (the same interpolation) */
-        const uint16_t *pd = RH_PDRV[key], *pl = RH_PLEV[key];
+        const uint16_t *pl = RH_PLEV[key];
         v->pphys = (int32_t)pl[i] + ((((int32_t)pl[i + 1] - (int32_t)pl[i]) * (int32_t)f) >> 8);
-        v->pamp = (int32_t)pd[i] + ((((int32_t)pd[i + 1] - (int32_t)pd[i]) * (int32_t)f) >> 8);
+        v->pamp = rh_pd(key, vel);                    /* (the clean top's cut in it: rh_top_q12) */
     }
 #endif
     v->prate = (uint32_t)((int32_t)RH_PRATE_B[key] + pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;  /* Q12 -> Q16 */
@@ -634,14 +688,17 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
          * pass 1); before the HAMMER scaling and the HQ live force, which cap it. Never above 1: a softer strike of a
          * note ringing from a harder one (E2 v110 -> v64) took the force up by the gain law's ratio and swung the tine
          * past a fresh strike's, a burst of bark (+25 dB > 5 kHz, the pedal down); capped, it plays at its own swing,
-         * under the ringing note's gain. At the note-on the ratio is 1, exactly. num / den: both < 2^32 (Q16 x Q12
-         * under 2^16 each), scaled down to 15 bits for the 32-bit divide */
-        uint32_t num = (uint32_t)rh_drive_g(key, vel) * rh_drv_mk(key, vel), den = (uint32_t)v->gq * v->mk, sh;
+         * under the ringing note's gain. At the note-on the ratio is 1, exactly. num / den: Q16 x Q12, under 2^36
+         * (the make-up < 2^20 with the clean top's gain back), scaled down to 15 bits for the 32-bit divide */
+        uint64_t num = (uint64_t)rh_drive_g(key, vel) * rh_drv_mkt(key, vel), den = (uint64_t)v->gq * v->mk;
+        uint32_t sh;
         int32_t a = (int32_t)v->pamp;
         if (num != den && vel > rh_vel_old) rh_drv_restrike(v, key, vel);
         else if (num < den && den) {
-            sh = den >= 32768u ? 17u - (uint32_t)__builtin_clz(den) : 0u;   /* den >> sh in [2^14, 2^15) */
-            a = (int32_t)(((uint32_t)v->pamp * (num >> sh)) / (den >> sh));   /* < 2^16 x 2^15 */
+            uint32_t hi = (uint32_t)(den >> 32);
+            sh = hi ? 49u - (uint32_t)__builtin_clz(hi)
+                    : den >= 32768u ? 17u - (uint32_t)__builtin_clz((uint32_t)den) : 0u;   /* den >> sh in [2^14, 2^15) */
+            a = (int32_t)(((uint32_t)v->pamp * (uint32_t)(num >> sh)) / (uint32_t)(den >> sh));   /* < 2^16 x 2^15 */
         }
         v->pamp = a > 65535 ? 65535 : a < 1 ? 1 : a;   /* mul15s: 32767 x 65535 < 2^31 (gen_rhodes: the headroom) */
     }
@@ -1034,6 +1091,14 @@ static int32_t rh_vm(uint32_t t, uint32_t key, uint32_t vel)     /* t 0: X, 1: G
     const uint16_t *r = RH_VM_ROW(t, key);
     uint32_t i = vel >> 3, f = vel & 7u;
     int32_t a = (int32_t)r[i] + ((((int32_t)r[i + 1] - (int32_t)r[i]) * (int32_t)f) >> 3);
+    {   /* the clean top (rh_top_q12): X x the cut, G x the gain back (rh_top_g12) */
+        uint32_t tq = t ? rh_top_g12(key, vel) : rh_top_q12(key, vel);
+        if (tq != 4096u) {
+            a = (int32_t)(((uint64_t)(uint32_t)a * tq) >> 12);      /* (a < 2^16, tq <= 2^16) */
+            if (a > 65535) a = 65535;
+            if (a < 1) a = 1;
+        }
+    }
 #ifdef RH_VM_MK_Q
     if (t) {   /* G x the level make-up (Q12, the notes back to the reference release's level at mf and above, never
                 * under it below: an output gain only, the colour is the map's) */

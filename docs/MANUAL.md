@@ -274,7 +274,7 @@ controls: see [MARIMBA](#marimba).
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange, brighter all the way to the top at the same loudness |
-| K2 | **BARK** | How close the pickup is: more bark (the growl of hard notes) and more output |
+| K2 | **BARK** | How close the pickup is: more bark (the growl of hard notes) and more output. The hardest strikes (near velocity 127) stay clean: the growl levels off there instead of overdriving the pickup, and they are still louder and brighter than a firm note |
 | K3 | **BELL** | The bright metallic overtone at the start of each note |
 | K4 | **HAMMER** | Hammer hardness: softer is darker, harder is brighter |
 

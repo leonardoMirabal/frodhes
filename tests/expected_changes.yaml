@@ -1126,3 +1126,108 @@ changes:
 # ---- 11. RESPONSE B ("light touch", being redesigned: soft notes louder, the same tone, range ~25.5 dB). Its moves are
 # not listed yet: add a group matching "*/*/*/B/*" (RESPONSE B cells only) once the redesign lands. Until then the
 # entries above cover B where it moves with A.
+
+# ---- clean-top. The clean top (rhodes.c rh_top_x, firmware/gen/rh_top.h by tools/rh_top.py): above each key's knee
+#      (127 - 1.25 R) the tine's swing is cut, linear in dB to R/32 octave at v127, and the output takes it back:
+#      H2 and the attack's H2 at v127 <= -12 dB re H1 on every TYPE (0.9.9: -5 / -2 dB on DYNO). Velocities under the
+#      knee, VIBES and MARIMBA byte-identical (-DRH_NO_TOP). Ranges: the fast grid's move +-0.5 (centroid +-0.05)
+  - match: "*/DYNO/*/*/k*v127"
+    metric: "H3 H4"
+    min: -38.02
+    max: -20.62
+    reason: "DYNO: the clean top (42 cells): the swing cut takes the pickup's overdrive down: its H3..H5 fall with H2 (1 dB a dB and more)"
+  - match: "*/DYNO/*/*/chord-mid"
+    metric: "cent"
+    min: -0.26
+    max: -0.12
+    reason: "DYNO: the clean top (12 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/DYNO/*/*/k*v127"
+    metric: "cent"
+    min: -0.27
+    max: -0.1
+    reason: "DYNO: the clean top (20 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/DYNO/*/*/pedal"
+    metric: "cent"
+    min: -0.26
+    max: -0.12
+    reason: "DYNO: the clean top (12 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/DYNO/*/*/chord-mid"
+    metric: "decay"
+    min: -3.53
+    max: -2.53
+    reason: "DYNO: the clean top (2 cells): the 2 f0 bark that held the tail gone: the measured decay rate a little lower"
+  - match: "*/DYNO/*/*/k*v127"
+    metric: "decay"
+    min: -4.2
+    max: -2.52
+    reason: "DYNO: the clean top (13 cells): the 2 f0 bark that held the tail gone: the measured decay rate a little lower"
+  - match: "*/DYNO/*/*/pedal"
+    metric: "decay"
+    min: -3.52
+    max: -2.52
+    reason: "DYNO: the clean top (2 cells): the 2 f0 bark that held the tail gone: the measured decay rate a little lower"
+  - match: "*/DYNO/*/*/k*v127"
+    metric: "level"
+    min: 1.05
+    max: 4.67
+    reason: "DYNO: the clean top (7 cells): RH_TOP_G: the loudness the cut took given back (DYNO's bass keys, the K-weighted loudness at v127 as before, at most +1.5 dB)"
+  - match: "*/DYNO/FX*/*/k*v127"
+    metric: "peak"
+    min: 3.75
+    max: 4.75
+    reason: "DYNO: the clean top (4 cells): the attack's peak: down with the bark's crest, up where RH_TOP_G gives the loudness back"
+  - match: "*/DYNO/*/*/k*v127"
+    metric: "peak"
+    min: -11.59
+    max: -7.52
+    reason: "DYNO: the clean top (6 cells): the attack's peak: down with the bark's crest, up where RH_TOP_G gives the loudness back"
+  - match: "*/ST77/*/*/chord-mid"
+    metric: "cent"
+    min: -0.16
+    max: -0.05
+    reason: "ST77: the clean top (12 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/ST77/*/*/k*v127"
+    metric: "cent"
+    min: -0.15
+    max: -0.05
+    reason: "ST77: the clean top (8 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/ST77/*/*/pedal"
+    metric: "cent"
+    min: -0.16
+    max: -0.05
+    reason: "ST77: the clean top (12 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/ST77/FXOFF/*/k*v127"
+    metric: "decay"
+    min: -3.5
+    max: -2.5
+    reason: "ST77: the clean top (2 cells): the 2 f0 bark that held the tail gone: the measured decay rate a little lower"
+  - match: "*/ST77/RAW/*/k*v127"
+    metric: "peak"
+    min: -3.1
+    max: -1.57
+    reason: "ST77: the clean top (8 cells): the attack's peak: down with the bark's crest, up where RH_TOP_G gives the loudness back"
+  - match: "*/SUIT/*/*/k*v127"
+    metric: "H4 H5"
+    min: -41.6
+    max: -19.49
+    reason: "SUIT: the clean top (46 cells): the swing cut takes the pickup's overdrive down: its H3..H5 fall with H2 (1 dB a dB and more)"
+  - match: "*/SUIT/*/*/k*v127"
+    metric: "cent"
+    min: -0.18
+    max: -0.05
+    reason: "SUIT: the clean top (16 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/SUIT/*/*/pedal"
+    metric: "cent"
+    min: -0.15
+    max: -0.05
+    reason: "SUIT: the clean top (2 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/SUIT/*/*/k*v127"
+    metric: "decay"
+    min: -3.77
+    max: -2.73
+    reason: "SUIT: the clean top (6 cells): the 2 f0 bark that held the tail gone: the measured decay rate a little lower"
+  - match: "*/SUIT/RAW/*/k*v127"
+    metric: "peak"
+    min: -3.16
+    max: -1.58
+    reason: "SUIT: the clean top (8 cells): the attack's peak: down with the bark's crest, up where RH_TOP_G gives the loudness back"
