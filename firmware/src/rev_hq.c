@@ -114,7 +114,10 @@ static void rev_reset_state(void)
 }
 
 #define RV_RET(w) ((int32_t)(((int64_t)(w) * rk) >> 30) + (int32_t)((uint32_t)(w) >> 31))
-static int32_t rv_vl RH_SP_SEC(".data.fx_rvvl") = -1, rv_sk RH_SP_SEC(".bss.fx_rvsk");
+#define RV_SEND(v) ((v) * 258 * (254 - (v)) / 127)    /* MIX's law all in the send, the return x0.5; INFINITE as it
+                                                         * was (rev_types.c) */
+#define RV_RK ((1 << 29) + 1)
+static int32_t rv_vl RH_SP_SEC(".data.fx_rvvl") = -1, rv_sk RH_SP_SEC(".bss.fx_rvsk"), rv_sko RH_SP_SEC(".bss.fx_rvsko");
 static int32_t rv_mg RH_SP_SEC(".bss.fx_rvmg");
 __attribute__((noinline)) static void rv_send_ramp(const int32_t *L, const int32_t *R, int32_t s0, int32_t s1)
 {
@@ -125,39 +128,29 @@ __attribute__((noinline)) static void rv_send_ramp(const int32_t *L, const int32
         rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[j] + R[j]) >> 1) * (q >> 5)) >> 15), -131071, 131071), -131071, 131071);
     }
 }
-/* the return of one control block, with MIX's law (rk) or (MIX 0, a tail ringing out) as it is; act: its OR */
-static FX_RAM __attribute__((noinline)) int32_t rq_ret(int32_t *L, int32_t *R, int32_t rk)
+/* the return of one control block (rk: x0.5, RV_RK, or INFINITE's x1 .. x0.5 by the latched MIX; at MIX 0 exactly x1) */
+static FX_RAM __attribute__((noinline)) void rq_ret(int32_t *L, int32_t *R, int32_t rk)
 {
     uint32_t j;
-    int32_t act = 0;
-    if (rk)
-        for (j = 0; j < RQ_NC; j++) {
-            int32_t m = RV_RET(rv_m[j]), s = RV_RET(rv_s[j]);
-            L[j] += m + s;
-            R[j] += m - s;
-        }
-    else
-        for (j = 0; j < RQ_NC; j++) {
-            int32_t m = rv_m[j], s = rv_s[j];
-            L[j] += m + s;
-            R[j] += m - s;
-            act |= m | s;
-        }
-    return act;
+    for (j = 0; j < RQ_NC; j++) {
+        int32_t m = RV_RET(rv_m[j]), s = RV_RET(rv_s[j]);
+        L[j] += m + s;
+        R[j] += m - s;
+    }
 }
 #if FR_C1
 /* fx_reverb for a chunk (fx.c fxc_o / fxc_e): the settings, MIX's send and return at the first chunk, the control
  * blocks of the chunk */
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 {
-    static int32_t v, tgt, zv, send, size, dv, lcv, off, damp, rk, vl, sk, rest;
+    static int32_t v, tgt, zv, sendn, sendo, size, dv, lcv, off, damp, rko, vl, skn, sko, rest;
     static uint32_t pd;
     static int quiet;
     uint32_t sb, i, j;
     if (FXC_1) {
         int32_t tv;
         v = fx_p[FXP_RV_DEPTH]; tgt = fx_p[FXP_RV_TYPE]; zv = fx_p[FXP_RV_SIZE];
-        send = tgt ? v * 258 : 0; size = 40 + (zv ? zv : v) * 70 / 127;
+        sendn = tgt ? RV_SEND(v) : 0; sendo = tgt ? v * 258 : 0; size = 40 + (zv ? zv : v) * 70 / 127;
         dv = fx_p[FXP_RV_DECAY]; tv = fx_p[FXP_RV_TONE]; lcv = fx_p[FXP_RV_LOCUT];
         off = ((dv - 64) * 15) / 32;
         damp = tv >= 64 ? 60 - ((tv - 64) * 60) / 63 : 60 + ((64 - tv) * 90) / 64;
@@ -165,12 +158,12 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
         quiet = !rv_running;
         if (tgt >= (int32_t)RV_N) tgt = RV_HALL;
         if (!rv_running) rv_mg = fx_p[FXP_RV_MOD] << 4;
-        if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = send; }
+        if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = sendn; rv_sko = sendo; }
         vl = rv_vl;
-        if (v != vl && send) send = (int32_t)(((int64_t)send * (254 - v)) / (254 - vl));
-        rk = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;
-        sk = rv_sk; rv_sk = send;
-        rest = !send && !rv_running && !rv_fade;
+        if (v != vl && sendo) sendo = (int32_t)(((int64_t)sendo * (254 - v)) / (254 - vl));
+        rko = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;
+        skn = rv_sk; rv_sk = sendn; sko = rv_sko; rv_sko = sendo;
+        rest = !sendn && !rv_running && !rv_fade;
         if (rest) return;
         rv_running = 1;
     }
@@ -180,30 +173,32 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t v = fx_p[FXP_RV_DEPTH], tgt = fx_p[FXP_RV_TYPE], zv = fx_p[FXP_RV_SIZE];
-    int32_t send = tgt ? v * 258 : 0, size = 40 + (zv ? zv : v) * 70 / 127;
+    int32_t sendn = tgt ? RV_SEND(v) : 0, sendo = tgt ? v * 258 : 0, size = 40 + (zv ? zv : v) * 70 / 127;
     int32_t dv = fx_p[FXP_RV_DECAY], tv = fx_p[FXP_RV_TONE], lcv = fx_p[FXP_RV_LOCUT];
     int32_t off = ((dv - 64) * 15) / 32;
     int32_t damp = tv >= 64 ? 60 - ((tv - 64) * 60) / 63 : 60 + ((64 - tv) * 90) / 64;
     uint32_t sb, i, j, pd = FX_PDLY_SAMPLES(fx_p[FXP_RV_PREDLY]);
-    int32_t rk, vl, sk;
+    int32_t rko, vl, skn, sko;
     int quiet = !rv_running;
     if (tgt >= (int32_t)RV_N) tgt = RV_HALL;
     if (!rv_running) rv_mg = fx_p[FXP_RV_MOD] << 4;
-    if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = send; }
+    if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = sendn; rv_sko = sendo; }
     vl = rv_vl;
-    if (v != vl && send) send = (int32_t)(((int64_t)send * (254 - v)) / (254 - vl));
-    rk = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;
-    sk = rv_sk; rv_sk = send;
-    if (!send && !rv_running && !rv_fade) return;
+    if (v != vl && sendo) sendo = (int32_t)(((int64_t)sendo * (254 - v)) / (254 - vl));
+    rko = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;
+    skn = rv_sk; rv_sk = sendn; sko = rv_sko; rv_sko = sendo;
+    if (!sendn && !rv_running && !rv_fade) return;
     rv_running = 1;
     for (sb = 0; sb < n; sb += CTL) {
 #endif
-        int32_t act = 0;
+        int32_t act = 0, send, sk, rk;
         uint32_t cur;
         if (tgt && (uint32_t)tgt != rv_cur && !rv_fade) {
             if (quiet || !rv_cur) rev_begin((uint32_t)tgt);
             else rv_fade = RV_FADE;
         }
+        if (rv_cur == RV_INF) send = sendo, sk = sko, rk = rko;   /* (the TYPE that runs now: its law) */
+        else send = sendn, sk = skn, rk = RV_RK;
         if (sk != send)
             rv_send_ramp(L + sb, R + sb, sk + (int32_t)(((int64_t)(send - sk) * (int32_t)sb) / (int32_t)n),
                          sk + (int32_t)(((int64_t)(send - sk) * (int32_t)(sb + CTL)) / (int32_t)n));
@@ -231,7 +226,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
             else if (cur == RV_PLATE) rev_plate_run(&rev_u.p, rv_x, rv_m, rv_s, &c);
             else FR_FAR(rev_inf_run)(&rev_u.i, rv_x, rv_m, rv_s, &c);
         }
-        if (cur && (rv_fade || (vl && !send))) {
+        if (cur && (rv_fade || !send)) {
             int32_t g = (int32_t)rv_fade << 12;
             for (i = 0; i < RQ_NC; i++, g -= 4096 / (int32_t)RQ_NC) {
                 act |= rv_m[i] | rv_s[i];
@@ -239,7 +234,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
             }
             if (rv_fade) act = 1;
         }
-        if (cur) act |= FR_FAR(rq_ret)(L + sb, R + sb, vl ? rk : 0);
+        if (cur) FR_FAR(rq_ret)(L + sb, R + sb, rk);
         if (rv_fade && !--rv_fade) {
             rev_begin(tgt ? (uint32_t)tgt : cur ? cur : RV_HALL);
         }
