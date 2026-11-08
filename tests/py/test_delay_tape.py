@@ -39,8 +39,10 @@ def chords(t0=300, n=6, step=700, dur=400):
 
 
 def first_echo(kind, time=100, tone=70):
-    """one staccato chord, MIX 127, FDBK 0: the echo's window and the chord's window (one delay apart)"""
-    r = hr.run(f"tape-echo-{kind}-{time}-{tone}", CLEAN + dly(kind, 127, time, 0, tone) +
+    """one staccato chord, MIX 127, FDBK 0: the echo's window and the chord's window (one delay apart). On VIBES (CC 79
+    0): its mallet's partials reach past 6 kHz on every key, the Rhodes' since 0.9.10 hardly (the tine mode turned
+    down from A3 up), and the head's loss needs a bright source to show"""
+    r = hr.run(f"tape-echo-{kind}-{time}-{tone}", CLEAN + [hr.cc(10, 79, 0)] + dly(kind, 127, time, 0, tone) +
                [l for k in (36, 48, 60, 64, 67, 72, 79, 84, 91) for l in hr.note(300, k, 115, 60)], 3000)
     T = int(round(0.020 * 74 ** (time / 127) * hr.FS))
     a = r.L[int(0.3 * hr.FS):int(0.3 * hr.FS) + 8192]

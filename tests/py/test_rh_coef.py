@@ -94,7 +94,7 @@ def t_grid():
 def k_grid():
     rt, _ = table_ab.parse(os.path.join(ROOT, "firmware", "gen", "rhodes_tables.h"))
     dk = rt["DECAY_K"]["vals"]
-    return np.array(sorted({dk[0], dk[32], 65536, dk[96], dk[127]}), dtype=np.int64)
+    return np.array(sorted({dk[0], dk[32], 65536, dk[96], dk[127], 8192}), dtype=np.int64)   # 8192: RELEASE 127 (params.c rel_k)
 
 
 def run_c(exe, W, T, K):

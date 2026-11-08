@@ -961,10 +961,11 @@ def _dfb():
 
 @case("DELAY-TONE")
 def _dtone():
-    """DLY TONE (SETUP K1, CC 27): the echoes' energy above 2 kHz -27 dB at 0, -20 dB at 10; at least 4"""
+    """DLY TONE (SETUP K1, CC 27): the echoes' energy above 2 kHz -27 dB at 0, -20 dB at 10; at least 4. On VIBES (CC 79
+    0): a bright source (the Rhodes C5 has little above 2 kHz since 0.9.10: its tine mode turned down)"""
     h = []
     for v in (0, 127):
-        w = dly([(88, 48), (89, 100), (90, 64), (26, 64), (27, v)])
+        w = dly([(79, 0), (88, 48), (89, 100), (90, 64), (26, 64), (27, v)])
         h.append(band_db(np.concatenate([w.seg(0.2 + k * 0.1753, 0.26 + k * 0.1753) for k in (1, 2, 3)]), 2000, 16000))
     return h[1] - h[0], 4.0, f"{h[0]:.1f} -> {h[1]:.1f} dB"
 

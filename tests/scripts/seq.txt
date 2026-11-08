@@ -13,9 +13,10 @@
 2030 keys 0x4000
 2230 keys 0
 2900 shot
-# REC off; the loop plays C E G on its own (G on the 1/8 grid)
+# REC off; the loop plays C E G on its own (G on the 1/8 grid) (2026-11-08, S1a: -65.7 on the pickup drive's level law)
 3100 btn 11
-3400 expect rms > -60
+# (just after the loop's C: at 3400 its tail was already under the shorter felt release, 2026-11-08)
+3250 expect rms > -60
 4100 shot
 # PLAY: stop
 5200 btn 12

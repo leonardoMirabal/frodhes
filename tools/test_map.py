@@ -136,7 +136,7 @@ def analyze(files):
 
 PER_TARGET = ("fm1", "smk", "move", "hq")
 TARGET_TESTS = {
-    "smk": (["make test-smk (the host build, 7 voices)", "the SMK packages build (./build.sh --board smk37)"],
+    "smk": (["make test-smk (the host build, 10 voices)", "the SMK packages build (./build.sh --board smk37)"],
             "none (no SMK-37 here: the host build)"),
     "move": (["tools/ci_move.sh (Gate U, the Move tests)", "make test-move", "Gate M (the host render nulls the Move build)"],
              "tools/move_hil.py cpu + crackle, tools/device_null.py (Classic)"),

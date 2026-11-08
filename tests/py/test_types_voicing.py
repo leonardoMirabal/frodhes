@@ -60,26 +60,37 @@ def test_suitcase_level_and_timbre(binr):
 
 
 def test_bark_grows_with_velocity(binr):
-    vels = (60, 96, 127)
-    for n in (45, 57, 69):
+    # the pickup drive (params.json pickup_drive): the soft colour holds up to the register's knee (key 45: ~v58,
+    # 57: ~v64, 69: ~v90), then the swing passes the pickup offset and the bark grows; the top keys have no rise
+    vels = (40, 60, 96, 127)
+    for n in (45, 57, 69, 88):
         r = [ta.note_stats(x, n) for x in ta.render(hostrun.out(f"bark_{n}"), [([], n, v) for v in vels], 800)]
         h = [x["H21"] for x in r]
-        assert h[0] < h[1] - 3 < h[2] - 6, (n, h)                          # the bark grows at every step
-        g = (h[2] - h[1]) / (r[2]["L"] - r[1]["L"])
-        assert 0.7 < g < 1.2, (n, g)                    # ~1 dB of H2/H1 per dB of level above v96 (0.84..0.94)
-        assert h[2] < -3.0                              # still mostly fundamental at v127 (the tip in its range)
+        if n == 88:
+            assert max(h) - min(h) < 1.0, (n, h)
+            continue
+        assert h[1] - h[0] < 4.0, (n, h)                                   # flat below the knee
+        assert h[3] > h[2] + 10, (n, h)                                    # and growing above it
+        if n < 60:
+            assert h[2] > h[1] + 10, (n, h)
+            g = (h[3] - h[2]) / (r[3]["L"] - r[2]["L"])
+            assert 0.7 < g < 1.4, (n, g)                # ~1 dB of H2/H1 per dB of level above v96 (0.98, 1.07)
+        else:
+            assert h[2] - h[1] < 8.0, (n, h)            # v96 is just past the knee
 
 
 @pytest.mark.parametrize("ti", [0, 3])                  # STAGE 77, DYNO (its +0.1 gap meets the offset cap)
 def test_tone_top_short_of_the_axis(binr, ti):
     vals = (0, 32, 64, 80, 96, 112, 127)
-    segs = ta.render(hostrun.out(f"tone_{ti}"), [([(80, ti * 32), (28, v)], 57, 100) for v in vals], 800)
-    s = [ta.note_stats(x, 57) for x in segs]
-    h1, h21, lv = [x["H1"] for x in s], [x["H21"] for x in s], [x["L"] for x in s]
-    assert np.all(np.diff(h1) <= 0.3), h1                # the fundamental falls steadily: no cancel, no come-back
-    assert np.all(np.diff(h21) >= -0.3), h21             # brighter all the way up
-    assert h21[-1] < 0.0, h21                            # the fundamental still leads at the top
-    assert lv[2] - lv[-1] < 12.0, lv                     # 0.9.4: -14 dB at TONE 104 (the axis), then louder again
+    for vel in (64, 100):
+        segs = ta.render(hostrun.out(f"tone_{ti}"), [([(80, ti * 32), (28, v)], 57, vel) for v in vals], 800)
+        s = [ta.note_stats(x, 57) for x in segs]
+        h1, h21, lv = [x["H1"] for x in s], [x["H21"] for x in s], [x["L"] for x in s]
+        assert np.all(np.diff(h1) <= 0.3), h1            # the fundamental falls steadily: no cancel, no come-back
+        assert np.all(np.diff(h21) >= -0.3), h21         # brighter all the way up
+        if vel == 64:                                    # at the knee (key 57: ~v64; above it the pickup drive
+            assert h21[-1] < 0.0, h21                    # swings past the offset by design): the fundamental leads
+        assert lv[2] - lv[-1] < 12.0, lv                 # 0.9.4: -14 dB at TONE 104 (the axis), then louder again
 
 
 def test_tone_law_in_tables():

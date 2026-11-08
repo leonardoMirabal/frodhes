@@ -434,6 +434,19 @@ FR_COLD static void mot_rate_apply(void)
 
 /* ---- apply a parameter to the engine (main loop; volatile one-writer handover). The Rhodes volatiles are written
  * exactly as before; the bar engine gets the same knobs through eng_bar_knob() (each engine reads only its own) */
+/* RELEASE's k = 1/S (Q16): S = 2^((v-64)/32) up to the middle (x0.25 at 0, x1 at 64), above it S = 2^(3 (v-64)/63)
+ * (x8 at 127): the damper's release T60 (params.json release_t60) became ~2x shorter on 2026-11-08 and RELEASE 127
+ * kept 0.9.9's long releases (~2 s in the bass, ~1.5 s at C4). The exponent in 1/32 octaves, x = 96 (v-64)/63, as two
+ * DECAY_K words (each <= 63 steps); monotonic, 1-2 steps a knob step. Taken at the note-on (no zipper) */
+static int32_t rel_k(int32_t v)
+{
+    int32_t x, a;
+    if (v <= 64) return (int32_t)DECAY_K[v < 0 ? 0 : v];
+    x = (96 * (v - 64) + 31) / 63;
+    a = x > 63 ? 63 : x;
+    return (int32_t)(((uint64_t)DECAY_K[64 + a] * DECAY_K[64 + x - a]) >> 16);
+}
+
 static void param_apply(uint32_t id)
 {
     int32_t v = PV(id);
@@ -465,7 +478,7 @@ static void param_apply(uint32_t id)
     case P_BELL: rh_bell = (int32_t)KN_P32(v); eng_bar_knob(BK_TUBE, (uint32_t)v); break;
     case P_HAMMER: rh_ham = (int32_t)KN_HAM(v); eng_bar_knob(BK_WEIGHT, (uint32_t)v); break;
     case P_DECAY: rh_k_decay = (int32_t)DECAY_K[v]; eng_bar_knob(BK_RING, (uint32_t)v); break;   /* k = 1/S, S = 2^((v-64)/32): higher = longer */
-    case P_RELEASE: rh_k_rel = (int32_t)DECAY_K[v]; eng_bar_knob(BK_DAMPER, (uint32_t)v); break;
+    case P_RELEASE: rh_k_rel = rel_k(v); eng_bar_knob(BK_DAMPER, (uint32_t)v); break;
     case P_NOISE: rh_thump = KN_THUMP[v]; rh_felt = KN_FELT[v]; rh_knock = KN_KNOCK[v]; rh_pnz = KN_PEDAL[v]; eng_bar_knob(BK_NOISE, (uint32_t)v); break;
     case P_SPREAD: rh_spread = v; break;                              /* (S13; the Rhodes, at each strike) */
     case P_DL_TONE: fx_set(FXP_DL_TONE, v); break;
