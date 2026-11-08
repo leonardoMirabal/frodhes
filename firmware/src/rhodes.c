@@ -121,9 +121,36 @@ typedef struct {
                                                 * strike (the key-up thump's cap: rh_left) */
     uint16_t felt_g;                           /* Q15: the key-up felt noise's gain (the same cap: RH_FELT_K) */
     int32_t kd, kr;                            /* DECAY's and RELEASE's k at the note-on: eps0 / eps1's (rh_retune) */
+#ifdef RH_DRIVE
+    /* S1a, the pickup drive (gen_rhodes.pickup_drive): pamp above is the excursion law's force (RH_PDRV), the one the
+     * modes get; the physical hammer force (RH_PAMP) stays the measure of the note for the key-up noises and the thump
+     * cap (rh_left); the output gain law (RH_PGAIN) is in gain, its value kept for a re-strike; kill in the voice's own
+     * gain (an output of half an LSB) */
+    int32_t pphys;                             /* Q15: the physical force of the strike (rh_left) */
+    int32_t kl;                                /* the kill level, sum units (k->kill >> 3 over the gain law) */
+    uint16_t gq;                               /* Q16: the gain law's value at the note-on */
+    uint32_t pq;                               /* Q12: the tine's physical swing over the modes' (the note-on's
+                                                * strike: RH_PAMP / (RH_PDRV x the force gains' scale)) */
+#endif
 } rh_voice_t;
 
 static rh_voice_t rv[RH_NV];
+#ifdef RH_DRIVE
+#define RH_KILL(v, k) ((v)->kl)                /* the kill level in the voice's own gain (rh_init) */
+#define RH_OUT_SUM(v, s) rh_phys_sum(v, s)      /* a steal / shed score: the mode peaks as the tine's physical
+                                                * swing, the order the score had before the drive (the modes' units
+                                                * carry each key's own force scale) */
+#else
+#define RH_KILL(v, k) ((k)->kill >> 3)
+#define RH_OUT_SUM(v, s) (s)
+#endif
+#ifdef RH_DRIVE
+static inline uint32_t rh_phys_sum(const rh_voice_t *v, uint32_t s)
+{
+    uint64_t o = ((uint64_t)s * v->pq) >> 12;
+    return o > 0x7FFFFFFFu ? 0x7FFFFFFFu : (uint32_t)o;
+}
+#endif
 #ifdef FR_HQ
 #include "hq/rhodes_hq.h"                      /* the HQ Rhodes (the Move only; never in the FM-1 / SMK builds) */
 #endif
@@ -378,6 +405,21 @@ static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /
     for (; i < 64u; i++) { d2 += *t++; d1 += d2; x += d1; o[i] = (int16_t)(o[i] + (((x - o[i]) * w) >> 15)); }
 }
 
+#ifdef RH_DRIVE
+/* the pickup drive's output gain law at a velocity (Q16, 1 .. 65535): RH_PGF (gain x force) and RH_PDRV (the force)
+ * interpolated between the anchors as rh_load_pulse does, then divided, so the output (their product while the swing
+ * is small) is linear between anchors (tools/rhodes_model.py vgain: the same integers). Note-on / re-strike only */
+static int32_t rh_drive_g(uint32_t key, uint32_t vel)
+{
+    uint32_t i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
+    const uint16_t *pg = RH_PGF[key], *pd = RH_PDRV[key];
+    int32_t q = (int32_t)pg[i] + ((((int32_t)pg[i + 1] - (int32_t)pg[i]) * (int32_t)f) >> 8);
+    int32_t d = (int32_t)pd[i] + ((((int32_t)pd[i + 1] - (int32_t)pd[i]) * (int32_t)f) >> 8);
+    uint32_t g = ((uint32_t)q << 15) / (uint32_t)(d < 1 ? 1 : d);   /* q < 2^16: 32-bit */
+    return g < 1u ? 1 : g > 65535u ? 65535 : (int32_t)g;
+}
+#endif
+
 /* ---- voices (ISR) */
 static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
 {
@@ -391,16 +433,41 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
         rh_pz_mix(v->pbuf, &RH_PZB, RH_PZI(key, l + 1u < RH_NLAYER ? l + 1u : RH_NLAYER - 1u), w);
     v->ptab = v->pbuf;
     v->pamp = (int32_t)pa[i] + ((((int32_t)pa[i + 1] - (int32_t)pa[i]) * (int32_t)f) >> 8);
+#ifdef RH_DRIVE
+    {   /* the note's level law (rh_left's measure of the note: the physical force was it before the drive), and the
+         * excursion law's force for the modes (the same interpolation) */
+        const uint16_t *pd = RH_PDRV[key], *pl = RH_PLEV[key];
+        v->pphys = (int32_t)pl[i] + ((((int32_t)pl[i + 1] - (int32_t)pl[i]) * (int32_t)f) >> 8);
+        v->pamp = (int32_t)pd[i] + ((((int32_t)pd[i + 1] - (int32_t)pd[i]) * (int32_t)f) >> 8);
+    }
+#endif
     v->prate = (uint32_t)((int32_t)RH_PRATE_B[key] + pr[i] + ((((int32_t)pr[i + 1] - (int32_t)pr[i]) * (int32_t)f) >> 8)) << 4;  /* Q12 -> Q16 */
 #ifdef FR_HQ
     hq_pulse(v, vel);
+#endif
+#ifdef RH_DRIVE
+    {   /* the voice keeps its note-on's output gain (on a re-strike the tine still rings through it: a step would
+         * click), so the force takes the gain law's ratio, this velocity's over the note-on's (at the note-on 1,
+         * exactly); before the HAMMER scaling and the HQ live force, which cap it */
+        int32_t g = rh_drive_g(key, vel);
+        int32_t a = (int32_t)(((uint32_t)v->pamp * (uint32_t)g) / v->gq);   /* < 2^15 x 2^16: 32-bit */
+        v->pamp = a > 65535 ? 65535 : a < 1 ? 1 : a;   /* mul15s: 32767 x 65535 < 2^31 (gen_rhodes: the headroom) */
+    }
 #endif
     {   /* HAMMER knob x TYPE tips scale the contact rate; the force scales with it so the impulse (the hammer's
          * momentum) is kept: a softer tip pushes longer and less hard, it does not give more energy */
         uint32_t h = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
         v->prate = (uint32_t)(((uint64_t)v->prate * h) >> 16);
         v->pamp = (int32_t)(((int64_t)v->pamp * h) >> 16);
+#ifdef RH_DRIVE
+        if (v->pamp > 65535) v->pamp = 65535;                                 /* mul15s range (a re-strike's) */
+#else
         if (v->pamp > 32767) v->pamp = 32767;                                 /* mul15s range */
+#endif
+#ifdef RH_DRIVE
+        v->pphys = (int32_t)(((int64_t)v->pphys * h) >> 16);
+        if (v->pphys > 32767) v->pphys = 32767;
+#endif
     }
 #ifdef FR_HQ
     hq_pulse_gain(v);
@@ -523,16 +590,37 @@ static int32_t rh_tone_a(const uint16_t *A, int32_t o)            /* the curve a
     if (i >= RH_TG_N - 1u) return A[RH_TG_N - 1u];
     return A[i] + ((((int32_t)A[i + 1] - (int32_t)A[i]) * f) >> 15);
 }
-static int32_t __attribute__((noinline)) rh_tone_gain(int32_t gain, int32_t o64, int32_t o, uint32_t vel, uint32_t fam)
+static int32_t __attribute__((noinline)) rh_tone_gain(int32_t gain, int32_t o64, int32_t o, uint32_t vel, uint32_t fam,
+                                                    uint32_t ki)
 {   /* (o64, o: capped by the caller, at the family's own cap) */
     const uint16_t *As = RH_TONE_A[fam & 1u][rh_type & 3u][0], *Ah = RH_TONE_A[fam & 1u][rh_type & 3u][1];
-    int32_t w = vel <= 40u ? 0 : vel >= 127u ? 87 : ((int32_t)vel - 40) * ((int32_t)vel - 40) / 87, a64, a, s, h;
+    int32_t a64, a, s, h;
     uint32_t g;
+#ifdef RH_TONE_W_Q
+    /* S1a: with the pickup drive each key swings its own way at each velocity, so the blend is per TYPE, key and
+     * velocity anchor (tone_level.py fit_w), x RH_TONE_W_Q, extrapolated past the two curves where the swing is past them */
+    const uint8_t *wt = RH_TONE_W[rh_type & 3u][ki];
+    uint32_t vi = RH_VPOS_I[vel], vf = RH_VPOS_F[vel] > 255u ? 255u : RH_VPOS_F[vel];
+    int32_t w = (int32_t)wt[vi] + ((((int32_t)wt[vi + 1u] - (int32_t)wt[vi]) * (int32_t)vf) >> 8) - RH_TONE_W_Q;
+    s = rh_tone_a(As, o64); h = rh_tone_a(Ah, o64); a64 = s + (h - s) * w / RH_TONE_W_Q;
+    s = rh_tone_a(As, o); h = rh_tone_a(Ah, o); a = s + (h - s) * w / RH_TONE_W_Q;
+    if (a64 < 1) a64 = 1;
+    if (a64 > 0x3FFFF) a64 = 0x3FFFF;                              /* (a64 << 14) in 32 bits */
+    if (a < 1) a = 1;
+    g = ((uint32_t)a64 << 14) / (uint32_t)a;
+    if (g > (16u << 14)) g = 16u << 14;                            /* +24 dB at most */
+#else
+    int32_t w = vel <= 40u ? 0 : vel >= 127u ? 87 : ((int32_t)vel - 40) * ((int32_t)vel - 40) / 87;
+    (void)ki;
     s = rh_tone_a(As, o64); h = rh_tone_a(Ah, o64); a64 = s + (h - s) * w / 87;
     s = rh_tone_a(As, o); h = rh_tone_a(Ah, o); a = s + (h - s) * w / 87;
     if (a < 1) a = 1;
     g = ((uint32_t)a64 << 14) / (uint32_t)a;                       /* Q14; a64 < 2^15: no overflow */
-    return (int32_t)(((int64_t)gain * g) >> 14);
+#endif
+    {
+        int64_t r = ((int64_t)gain * g) >> 14;
+        return r > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)r;
+    }
 }
 #endif
 
@@ -592,10 +680,28 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
         if (rh_tone_off > 0) {                         /* TONE above 64: its loudness back (the offsets in the family's
                                                         * own gap, the family's own curve: S8) */
             int32_t o64 = k->off + (ty->off_delta >> sh);
-            v->gain = rh_tone_gain(v->gain, o64 > mx ? mx : o64, v->off, vel, k->fam);
+            v->gain = rh_tone_gain(v->gain, o64 > mx ? mx : o64, v->off, vel, k->fam, n - RH_KEY_LO);
         }
 #endif
     }
+#ifdef RH_DRIVE
+    {   /* the pickup drive's output gain law at this velocity (Q16, <= 1), and the kill level in that gain: the voice
+         * ends where its output falls under half an LSB, as before (kill was set for the key's gain) */
+        uint32_t kk = (uint32_t)(k->kill >> 3), q;
+        int32_t g = rh_drive_g(n - RH_KEY_LO, vel);
+        v->gq = (uint16_t)g;
+        {
+            uint32_t ki = n - RH_KEY_LO, i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
+            int32_t pa = (int32_t)RH_PAMP[ki][i] + ((((int32_t)RH_PAMP[ki][i + 1] - (int32_t)RH_PAMP[ki][i]) * (int32_t)f) >> 8);
+            int32_t pd = (int32_t)RH_PDRV[ki][i] + ((((int32_t)RH_PDRV[ki][i + 1] - (int32_t)RH_PDRV[ki][i]) * (int32_t)f) >> 8);
+            uint64_t r = ((uint64_t)(((uint32_t)(pa < 1 ? 1 : pa) << 12) / (uint32_t)(pd < 1 ? 1 : pd)) * RH_DRV_IB[ki]) >> 12;
+            v->pq = r > 0xFFFFFFu ? 0xFFFFFFu : (uint32_t)r;     /* (32-bit divide) */
+        }
+        v->gain = (int32_t)(((int64_t)v->gain * g) >> 16);
+        q = kk < 32768u ? (kk << 16) / (uint32_t)g : kk / (uint32_t)g;     /* 32-bit divides */
+        v->kl = kk < 32768u ? (int32_t)(q > 0x7FFFFFFFu ? 0x7FFFFFFFu : q) : q >= 32768u ? 0x7FFFFFFF : (int32_t)(q << 16);
+    }
+#endif
     u = v->off;
     v->Hprev = rh_hermite(RH_PU_PHIM(k->fam), (int64_t)u * u);
     v->alive = 1; v->held = 1; v->ramp = 0; v->w_tgt = 0;
@@ -614,6 +720,10 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
         v->m[RH_V1].kap = (int32_t)(((uint64_t)RH_KAP[n - RH_KEY_LO] * ig * ig) >> 30);
         v->m[RH_V1].kap <<= 2u * RH_FAM_SH[k->fam];      /* S8: the 1/16" family's x is in its own (double) gap, so
                                                            * the same swing is half the x: kap x 4 keeps the offset */
+#ifdef RH_DRIVE
+        v->m[RH_V1].kap = (int32_t)(((uint64_t)(uint32_t)v->m[RH_V1].kap * RH_KAP_X[n - RH_KEY_LO]) >> 16);   /* the
+                                                           * drive's swing at v127 is m127 x the physical one */
+#endif
     }
 #endif
     rh_load_pulse(v, vel);
@@ -659,7 +769,11 @@ static int32_t rh_rel_gain(uint32_t rv)                                      /* 
 static int32_t rh_left(const rh_voice_t *v)     /* the note's level now in strike-force units (Q15): the strike's
                                                 * force (its velocity law) x the level left. 32-bit, no 64-bit divide */
 {
+#ifdef RH_DRIVE
+    int32_t f = v->pphys, l = v->lvl, l0 = v->lvl0;  /* (the physical force: pamp is the drive's excursion law) */
+#else
     int32_t f = v->pamp, l = v->lvl, l0 = v->lvl0;
+#endif
     if (l0 <= 0 || l >= l0) return f;
     if (l < 0) l = 0;
     while (l0 > 0x7FFF) { l0 >>= 1; l >>= 1; }
@@ -685,6 +799,9 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
     pamp = (int32_t)(((int64_t)pamp * h) >> 16);
     if (pamp > 32767) pamp = 32767;
     a = (int32_t)(((int64_t)pamp * rh_knock) >> 10);   /* <= 32767 x 653 >> 10 = 20896 */
+#ifdef RH_DRIVE
+    a = (int32_t)(((uint32_t)a * RH_NZ_G) >> 15);       /* (the notes' level) */
+#endif
     l = RH_VLAY_I[vel];
     if (RH_VLAY_W[vel] >= 16384 && l + 1u < RH_NLAYER) l++;
     if (rh_kn_tab) {                                    /* another strike of this block: one knock, the forces add */
@@ -718,7 +835,7 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
             for (m = 0; m < RH_NM; m++) if (rh_mode_runs(v->k, m)) v->m[m].live = 1;
             v->vel = (uint8_t)vel; v->held = 1; v->age = ++rh_ages; v->life = v->k->life; v->lvl0 = v->lvl;
             rh_set_damper(v, 0);
-            rh_load_pulse(v, vel);
+            rh_load_pulse(v, vel);                      /* (with the pickup drive: the force at the note-on's gain) */
             return 1;
         }
     for (i = 0; i < RH_NV; i++)
@@ -727,6 +844,7 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
         uint32_t m, sum = 0, score;
         if (rv[i].pend) continue;
         for (m = 0; m < RH_NM; m++) sum += (uint32_t)rv[i].m[m].peak >> 4;
+        sum = RH_OUT_SUM(&rv[i], sum);
         score = rv[i].held ? 0x80000000u + (rv[i].age & 0x7FFFFFFFu) : (sum > 0x7FFFFFFFu ? 0x7FFFFFFFu : sum);
         if (score < best) { best = score; pick = i; }
     }
@@ -758,12 +876,24 @@ static void rh_events(void)
                         int32_t cap = (int32_t)(((uint32_t)rh_left(v) * RH_THUMP_CAP) >> 15);
                         th = mul15(th > cap ? cap : th, v->rgain);   /* the cap, then the release velocity's x0.6..1.4 */
                         v->ptab = rh_pz(v->pbuf, &RH_PZB, RH_PZI(key, 0));
+#ifdef RH_DRIVE
+                        {   /* th is a physical force: the modes get it at the strike's drive ratio (pamp / pphys) */
+                            int32_t pp = v->pphys < 1 ? 1 : v->pphys, a;
+                            th = th > 32767 ? 32767 : th;
+                            a = (int32_t)(((uint32_t)th * (uint32_t)v->pamp) / (uint32_t)pp);
+                            v->pphys = th;
+                            th = a;
+                        }
+#endif
                         v->pamp = th > 32767 ? 32767 : th;
                         v->prate = (uint32_t)(RH_PRATE_B[key] + RH_PRATE[key][1]) << 4;
                         v->ppos = 0;
                     }
                     if (rh_pedal_w && rh_felt) {             /* 8 ms of felt noise */
                         int32_t g = rh_left(v) * (32768 / RH_FELT_FULL);
+#ifdef RH_DRIVE
+                        g = (int32_t)(((uint32_t)(g > 32768 ? 32768 : g) * RH_NZ_G) >> 15);   /* (the notes' level) */
+#endif
                         v->felt_n = 353; v->felt_g = (uint16_t)(g > 32768 ? 32768 : g);
                     }
                 }
@@ -782,6 +912,9 @@ static void rh_events(void)
                         if (rv[i].alive) { g = rh_left(&rv[i]); if (g > lm) lm = g; }
                     g = lm < 0 ? 32768 : lm >> 2;
                     rh_pn_n = RH_PN_LEN; rh_pn_env = g >= 32768 ? rh_pnz : (int32_t)(((uint32_t)rh_pnz * (uint32_t)g) >> 15);
+#ifdef RH_DRIVE
+                    rh_pn_env = (int32_t)(((uint32_t)rh_pn_env * RH_NZ_G) >> 15);   /* (the notes' level) */
+#endif
                 }
             }
             for (i = 0; i < RH_NV; i++)
@@ -865,7 +998,12 @@ static inline __attribute__((always_inline)) int32_t rh_mode_p_t(rh_ms_t *s, int
 static inline int32_t rh_s4_e(const rh_ms_t *s)
 {
     int64_t a2 = ((int64_t)s->x * s->x + (int64_t)s->y * s->y) >> 20, f;
+#ifdef RH_DRIVE
+    if (a2 > ((int64_t)Q30 << 6)) a2 = (int64_t)Q30 << 6;   /* the drive swings past 1 gap (kap is scaled down by
+                                                           * RH_KAP_X): held at 64 gap^2, a2 kap < 2^52 */
+#else
     if (a2 > Q30) a2 = Q30;
+#endif
     f = (a2 * s->kap) >> 16;                              /* the fraction, Q30: at most 1/16 (a guard: ~6 c here) */
     if (f > (Q30 >> 4)) f = Q30 >> 4;
     return s->e + (int32_t)(((int64_t)s->e * f) >> 30);
@@ -1015,7 +1153,7 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
         return;
     }
     v->lvl = sum; if (sum > v->lvl0) v->lvl0 = sum;
-    if (!v->ptab && !v->felt_n && sum < (k->kill >> 3)) {   /* died away; a stolen voice dying in its fade still
+    if (!v->ptab && !v->felt_n && sum < RH_KILL(v, k)) {   /* died away; a stolen voice dying in its fade still
                                                            * starts the note waiting for it (it ended, and the note was
                                                            * lost: BUGHUNT #21) */
         v->alive = 0;
@@ -1023,7 +1161,7 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
         return;
     }
     for (m = 1; m < RH_NM; m++)                           /* sleep overtone modes that have died away */
-        if (v->m[m].live && !v->ptab && v->m[m].peak < (k->kill >> 3)) {
+        if (v->m[m].live && !v->ptab && v->m[m].peak < RH_KILL(v, k)) {
             v->m[m].live = 0; v->m[m].x = v->m[m].y = v->m[m].ex = v->m[m].ey = 0;
         }
 }
@@ -1035,6 +1173,7 @@ static void rh_shed(void)                                 /* overload: fade the 
         uint32_t sum = 0, score;
         if (!rv[i].alive || rv[i].fade != 32768) continue;
         for (m = 0; m < RH_NM; m++) sum += (uint32_t)rv[i].m[m].peak >> 4;
+        sum = RH_OUT_SUM(&rv[i], sum);
         score = (rv[i].held ? 0x40000000u : 0u) + (sum > 0x3FFFFFFFu ? 0x3FFFFFFFu : sum);
         if (score < best) { best = score; pick = i; }
     }

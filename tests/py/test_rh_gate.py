@@ -142,7 +142,8 @@ def test_cost_model():
     old, new = cost("old", ["-DRH_NO_GATE", "-DRH_COST_OLD"]), cost("new", ["-DRH_COST_RC"])
     gate, split = cost("gate", ["-DRH_COST_OLD"]), cost("split", ["-DRH_NO_GATE", "-DRH_COST_RC"])
     tree = cost("tree", [])
-    assert [b[1] for b in old][:5] == [240] * 5 and [b[1] for b in new][:5] == [240] * 5   # 30 modes x 8
+    # 30 modes x 8 (the pickup drive, S1a: a mode sleeps by its output in the voice's gain, so in the 5th block 235)
+    assert [b[1] for b in old][:4] == [240] * 4 and [b[1] for b in new][:4] == [240] * 4
     assert [b[1] for b in tree] == [b[1] for b in new]                                   # the same modes run
     assert max(b[2] for b in old) == 414368 and max(b[2] for b in new) == 386787
     assert max(b[2] for b in gate) == 414368 and max(b[2] for b in split) == 386787

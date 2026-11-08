@@ -69,6 +69,11 @@ static void hq_voice_init(rh_voice_t *v)       /* rhodes.c rh_init, before rh_lo
     hq_voice_t *h = &hq_v[v - rv];
     h->on = hq_mode != 0;
     h->os = (uint8_t)(h->on && v->note >= HQ_OS_LO);
+#ifdef RH_DRIVE
+    h->dr = 1.0f;                              /* (at rest: hq_live finds no motion to scale) */
+    h->pa = 1;
+    h->drl = 1.0f;
+#endif
     if (!h->os) return;
     {
         float o = (float)v->off * HQ_GAP, R = HQ_PU_R[v->k->fam & 1u];
@@ -104,6 +109,10 @@ static int hq_live(rh_voice_t *v, uint32_t key, uint32_t vel)
         q[fe_of[m]] += (float)s->x * f;
         qd[fe_of[m]] += (float)s->y * ((float)s->e * (1.0f / 1073741824.0f)) * HQ_FS * f;
     }
+#ifdef RH_DRIVE
+    for (m = 0; m < HQ_CK_NFE; m++) { q[m] *= hq_v[v - rv].dr; qd[m] *= hq_v[v - rv].dr; }   /* the modes hold the
+                                                * drive's swing: the contact meets the tine's physical one */
+#endif
     for (m = 0; m < HQ_CK_NFE; m++) { xc += c->pc[m] * q[m]; vc += c->pc[m] * qd[m]; }
     if (vc * vc + c->w2[0] * xc * xc < HQ_LIVE_THR * HQ_LIVE_THR * vh * vh) return 0;   /* (as good as at rest) */
     if (!hq_contact_run(key, vel, hq_prate_ram[key][vel - 1u], q, qd, &o)) return 0;
@@ -126,6 +135,17 @@ static void hq_pulse(rh_voice_t *v, uint32_t vel)
     v->ptab = hq_pulse_ram[key][vel - 1u];
     v->prate = hq_prate_ram[key][vel - 1u] << 4;          /* Q12 -> Q16 */
     if (v->note >= HQ_LIVE_LO && hq_live_n < HQ_LIVE_MAX && hq_live(v, key, vel)) hq_live_n++;
+#ifdef RH_DRIVE
+    {   /* this strike's physical swing re the drive's: the hammer force (RH_PAMP) over the drive's (v->pamp here: RH_PDRV
+         * at vel, before the HAMMER scaling, which scales both) and the drive's force-gain scale (RH_DRV_BSC) */
+        HQ_FP_STRICT
+        uint32_t i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
+        int32_t pa = (int32_t)RH_PAMP[key][i] + ((((int32_t)RH_PAMP[key][i + 1] - (int32_t)RH_PAMP[key][i]) * (int32_t)f) >> 8);
+        h->drl = h->dr;
+        h->dr = (float)pa / ((float)(v->pamp < 1 ? 1 : v->pamp) * RH_DRV_BSC[key]);
+        h->pa = pa;
+    }
+#endif
 }
 
 /* rhodes.c rh_load_pulse, after the HAMMER scaling and its cap: the live pulse's force re the table's. The force
@@ -137,6 +157,24 @@ static void hq_pulse_gain(rh_voice_t *v)
     hq_voice_t *h = &hq_v[v - rv];
     float p;
     if (h->lg <= 0.0f) return;
+#ifdef RH_DRIVE
+    {   /* the live force's ratio within the physical force's range, as before the drive (the physical force after
+         * HAMMER and its cap, then the live force's cap): the modes take the force in the drive's units, where the
+         * same contact would pass the cap and play up to 4 dB over the table's pulse (key 108, v127 then v1) */
+        uint32_t hh = (uint32_t)(((uint64_t)(uint32_t)rh_ham * (uint32_t)RH_TYPE[rh_type & 3u].ham) >> 16);
+        float pp = (float)(((int64_t)h->pa * hh) >> 16);
+        if (pp > 32767.0f) pp = 32767.0f;
+        if (pp < 1.0f) pp = 1.0f;
+        if (h->lg > 65535.0f / pp) h->lg = 65535.0f / pp;
+    }
+    {   /* the live force meets the tine's physical swing (hq_live: the state x the ringing strike's dr), so it goes to
+         * the modes at this strike's physical-to-drive ratio over the ringing one's (dr / drl), not at the gain law's
+         * ratio the table's pulse takes (rh_load_pulse: g / gq; the two differ where the old v127 law was compressed
+         * by the pickup: key 108 played +4 dB over the table's pulse) */
+        float g = (float)rh_drive_g((uint32_t)(v->k - RH_KEYS), v->vel);
+        h->lg *= (h->dr / (h->drl > 0.0f ? h->drl : 1.0f)) * ((float)v->gq / g);
+    }
+#endif
     p = (float)v->pamp * h->lg + 0.5f;
     v->pamp = p > 65535.0f ? 65535 : (int32_t)p;
     h->lg = 0.0f;
