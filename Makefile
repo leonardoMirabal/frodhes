@@ -195,3 +195,52 @@ move-probe:                ## the device-session probe (move/probe/README.md)
 
 test-move-probe:           ## the probe's dlopen host test
 	$(MOVE_RUN) make -s -C move/probe -j2 test
+
+# ---- the desktop plugin (CLAP, VST3, Audio Unit v2; docs/PLUGIN.md): plugin/, the next-release plan section B ----
+# Light by default: nice -n 15 and 2 jobs (PLUGIN_J). The bundles land in build/plugin/bundles; nothing is installed.
+PLUGIN_J     ?= 2
+PLUGIN_BUILD ?= build/plugin
+PLUGIN_NICE  ?= nice -n 15
+.PHONY: plugin-deps plugin test-plugin gate-d plugin-pack plugin-win plugin-linux plugin-stress plugin-hosts
+plugin-deps:               ## the pinned plugin dependencies (plugin/deps.lock) into .local/plugin-deps
+	sh tools/plugin_deps.sh
+
+plugin:                    ## build/plugin/bundles/Frodhes.{clap,vst3,component} (macOS: universal arm64 + x86_64)
+	@test -d .local/plugin-deps/clap || sh tools/plugin_deps.sh --libs
+	@test -f $(PLUGIN_BUILD)/CMakeCache.txt || $(PLUGIN_NICE) cmake -S plugin -B $(PLUGIN_BUILD) \
+	  $(if $(shell command -v ninja),-G Ninja,) -DFRP_VERSION=$(or $(PLUGIN_VER),0.0.0-dev)
+	$(PLUGIN_NICE) cmake --build $(PLUGIN_BUILD) -j$(PLUGIN_J)
+
+test-plugin: plugin        ## the coroutine, the headless host's selftest (params, state, rates, 16 slots), the
+                           ## parameter table up to date, a quick Gate D with the core (presets, learn, tempo ...)
+	$(PLUGIN_BUILD)/frp_test_coro
+	$(PLUGIN_BUILD)/frp_clap_render $(PLUGIN_BUILD)/bundles/Frodhes.clap --selftest
+	$(PY) tools/gen_plugin_params.py --check
+	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py --quick --only classic,hq,rate48,core
+	FRP_BUILD=$(PLUGIN_BUILD) $(PY) -m pytest -q tests/py/test_plugin_gui.py tests/py/test_plugin_tail.py
+
+gate-d: plugin             ## Gate D: the plugin renders the host build's audio (tools/gate_d.py, every mode)
+	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py
+
+plugin-pack: plugin        ## build/plugin-pkg/frodhes-plugin-macos.pkg + .zip (ad-hoc signed; docs/PLUGIN.md Signing)
+	sh tools/plugin_pack.sh macos $(PLUGIN_BUILD)
+	$(PY) tools/plugin_depcheck.py macos $(PLUGIN_BUILD)/bundles
+
+plugin-win:                ## Windows x64 (clang-cl over xwin; tools/plugin_win.sh setup once): build, depcheck,
+                           ## the wine tests (coroutine, controller, view, CLAP host, Gate D subset), the zip
+	bash tools/plugin_win.sh all
+
+plugin-linux:              ## Linux in Docker (Ubuntu 20.04): build, depcheck, the Xvfb tests, the zip (x86_64 and aarch64)
+	FRP_LINUX_ARCH=x86_64 bash tools/plugin_linux.sh all
+	FRP_LINUX_ARCH=aarch64 bash tools/plugin_linux.sh all
+
+STRESS_MIN ?= 30
+plugin-stress: plugin      ## macOS: STRESS_MIN (30) minutes in a DAW-like host: 3 instances, engines, presets, automation
+                           ## floods, the window opened and closed, state round trips, memory (plugin/tests/clap_stress.m)
+	FRODHES_PRESET_DIR=$(PLUGIN_BUILD)/stress-presets $(PLUGIN_BUILD)/frp_clap_stress $(PLUGIN_BUILD)/bundles/Frodhes.clap \
+	  --minutes $(STRESS_MIN) --instances 3
+
+plugin-hosts: plugin       ## macOS: the VST3 / AU in Apple's AU host and a JUCE host against the CLAP render
+                           ## (tools/plugin_hosts.py; the AU must be installed; pip install pedalboard numpy)
+	$(PY) tools/plugin_hosts.py --bundles $(PLUGIN_BUILD)/bundles --render $(PLUGIN_BUILD)/frp_clap_render \
+	  --au ~/Library/Audio/Plug-Ins/Components/Frodhes.component
