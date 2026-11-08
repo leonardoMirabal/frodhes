@@ -155,9 +155,10 @@ def test_khlon_dip_estimate(eng, chord):
                                              ("rhodes", [36, 43, 52], True), ("marimba", [36, 43, 52], True)])
 def test_comp_switch_on_estimate(eng, chord, onset):
     """COMP switched on from rest at the slowest ATTACK (the detector's start lasts longest): the first chunk's peak
-    starts the detector, the whole block runs it again at the block's end (fx.c cmp_redo), so only that block's first
-    eighth of the crossfade hears the estimate: every 25 ms window within 0.5 dB of one core's (build/c1sub/cmpwin.py,
-    monkey seeds 0-179: 0.15 dB at most), no click while the chord rings (click ratio as one core's within 1)"""
+    starts the detector, a higher peak in a later chunk starts it again over the block so far, the whole block runs it
+    again at the block's end (fx.c cmp_redo): every 25 ms window within 0.2 dB of one core's (the user: 0.19 accepted;
+    0.012 at most here; build/c1sub/cmpwin.py, monkey seeds 0-179 above -60 dBFS: 0.08 dB at most), no click while the
+    chord rings (click ratio as one core's within 1)"""
     keep = list(cs.CHORD)
     cs.CHORD[:] = chord
     try:
@@ -175,6 +176,6 @@ def test_comp_switch_on_estimate(eng, chord, onset):
             if ry > 32767 * 10 ** (-70 / 20):
                 x = cm[s:s + w, ch].astype(float)
                 worst = max(worst, abs(20 * np.log10(max(np.sqrt(np.mean(x * x)), 1e-9) / ry)))
-    assert worst <= 0.5, f"{eng}: a 25 ms window {worst:.2f} dB off one core"
+    assert worst <= 0.2, f"{eng}: a 25 ms window {worst:.2f} dB off one core"
     if not onset:
         assert cc < rc + 1.0, f"{eng}: click ratio {cc:.2f} on two cores, {rc:.2f} on one"

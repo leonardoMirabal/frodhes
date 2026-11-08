@@ -1314,10 +1314,19 @@ static void fx_comp(int32_t *m, uint32_t n)
 #endif
     }
     if (cmp_redo || (!cmp_xw && FXC_1)) {             /* (the switch-on block's input peak so far, before the gain) */
+        int32_t p0 = cmp_pkc;
         for (j = fxc_o; j < fxc_e; j++) if (iabs(m[j]) > cmp_pkc) cmp_pkc = iabs(m[j]);
         if (FXC_1) {
             cmp_env = cmp_pkc << 8;
             cmp_g = exp2_q16(mk - cmp_gr_at(cmp_env, thr, slope));
+        } else if (cmp_pkc > p0) {                    /* a higher peak in a later chunk: the detector run again from
+                                                       * it over the block so far (closer to one core's start from the
+                                                       * block's peak); the gain ramps to it over the next 16 samples */
+            cmp_env = cmp_pkc << 8;
+            for (j = 0; j < fxc_o; j++) {
+                int32_t a = iabs(fxc_mono[j]) << 8, d = a - cmp_env;
+                cmp_env += (int32_t)(((int64_t)d * (d > 0 ? ka : kr)) >> 16);
+            }
         }
     }
     w1 = xf_pre_c(cmp_xw, on, m, 0, n);
