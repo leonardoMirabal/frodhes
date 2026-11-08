@@ -5,6 +5,7 @@
 # The bundles land in build/plugin/bundles: Frodhes.clap, Frodhes.vst3, Frodhes.component. Nothing is installed.
 # Windows x64 (CLAP + VST3; clang-cl, not MSVC: the engine uses GNU C): on Windows, cmake -G Ninja with clang-cl;
 # from macOS, tools/plugin_win.sh (clang-cl + lld-link over the xwin SDK: plugin/cmake/win-x64-clangcl.cmake).
+# Linux x86_64 (CLAP + VST3): tools/plugin_linux.sh builds in Docker on Ubuntu 20.04 (glibc 2.31) with clang 12 + lld.
 # The firmware build (tools/build.py) never sees this tree; this tree only reads firmware/src (plugin/src/engine_unit.c
 # includes firmware/src/frodhes.c unchanged, over web/web_hal.c).
 cmake_minimum_required(VERSION 3.21)
@@ -41,6 +42,15 @@ else()
     set(FRP_C_WIN_INC "")
 endif()
 
+# Linux: self-contained modules (the C++ runtime linked in: no libstdc++ version needed on the user's machine), no
+# undefined symbols left, a non-executable stack (tools/plugin_linux.sh checks the result with readelf)
+if(UNIX AND NOT APPLE)
+    foreach(_k SHARED MODULE)
+        string(APPEND CMAKE_${_k}_LINKER_FLAGS " -static-libstdc++ -static-libgcc -Wl,--no-undefined -Wl,-z,noexecstack -Wl,--as-needed")
+    endforeach()
+    find_package(Threads REQUIRED)
+endif()
+
 include(cmake/deps.cmake)
 include(cmake/slots.cmake)
 
@@ -55,6 +65,9 @@ add_subdirectory("${CLAP_WRAPPER_ROOT}" clap-wrapper EXCLUDE_FROM_ALL)
 # the plugin: a static library with the CLAP entry's three functions (clap-wrapper's "clap first" layout)
 add_library(frodhes_clap_impl STATIC "${FRP_ROOT}/plugin/src/frodhes_clap.c")
 target_link_libraries(frodhes_clap_impl PUBLIC frodhes_engine clap)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(frodhes_clap_impl PUBLIC Threads::Threads m)
+endif()
 target_compile_definitions(frodhes_clap_impl PRIVATE "FRP_VERSION=\"${FRP_VERSION}\"")
 target_compile_options(frodhes_clap_impl PRIVATE -O2 ${FRP_C_STD} ${FRP_C_WARN} ${FRP_C_WIN})
 target_include_directories(frodhes_clap_impl PRIVATE ${FRP_C_WIN_INC})
@@ -91,4 +104,5 @@ target_include_directories(frp_clap_render PRIVATE "${CLAP_SDK_ROOT}/include" ${
 target_compile_options(frp_clap_render PRIVATE -O1 ${FRP_C_WARN} ${FRP_C_WIN})
 target_link_libraries(frp_clap_render PRIVATE ${CMAKE_DL_LIBS})
 add_custom_target(frodhes_tests ALL DEPENDS frp_test_coro frp_clap_render)
+include(cmake/gui.cmake)
 add_custom_target(frodhes_plugins ALL DEPENDS frodhes_all)
