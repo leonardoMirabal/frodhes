@@ -42,6 +42,9 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #include "rh_tone_g.h"                         /* TONE's level compensation (tools/tone_level.py --write) */
 #endif
 #include "rhodes_phim.h"                       /* the pickup table interleaved (tools/gen_phim.py) */
+#if defined(RH_DRIVE) && !defined(RH_NO_DRV_MK)  /* (-DRH_NO_DRV_MK: without it, as tools/drive_makeup.py measures) */
+#include "rh_drive_mk.h"                       /* the pickup drive's level make-up (tools/drive_makeup.py --write) */
+#endif
 
 #define RH_V1 0u
 #define RH_V2 1u
@@ -131,6 +134,7 @@ typedef struct {
     uint16_t gq;                               /* Q16: the gain law's value at the note-on */
     uint32_t pq;                               /* Q12: the tine's physical swing over the modes' (the note-on's
                                                 * strike: RH_PAMP / (RH_PDRV x the force gains' scale)) */
+    uint16_t mk;                               /* Q12: the level make-up at the note-on (rh_drv_mk, 4096 = none) */
 #endif
 } rh_voice_t;
 
@@ -183,6 +187,23 @@ static int32_t rh_side[256] RH_SP_SEC(".bss.rh_side");
 static int32_t sd_st[3][5] RH_SP_SEC(".bss.rh_sd_st");      /* the side's RLC and body biquad states (m1 m2 o1 o2 e) */
 static uint8_t rh_side_on RH_SP_SEC(".bss.rh_side_on"), rh_side_tail RH_SP_SEC(".bss.rh_side_tail");
 static uint8_t rh_type;
+#ifdef RH_DRIVE
+#ifdef RH_DRV_MK_Q
+/* the pickup drive's level make-up per TYPE, key and velocity (anchors every 8 velocities: v0, 8 .. 120, 128), coded
+ * in 1/32 octave (RH_DRV_MK_L: the code to the Q12 gain, 128 = none) and interpolated in the code: the drive's
+ * loudness back to the level the notes had before it at mf and above, never under it (tools/drive_makeup.py). A gain
+ * on the voice's output only: the timbre (the swing through the pickup) is the drive's. Note-on / re-strike only */
+static uint32_t rh_drv_mk(uint32_t key, uint32_t vel)
+{
+    const uint8_t *m = RH_DRV_MK[rh_type & 3u][key] + (vel >> 3);
+    uint32_t c = ((uint32_t)m[0] << 3) + (uint32_t)(((int32_t)m[1] - (int32_t)m[0]) * (int32_t)(vel & 7u));
+    uint32_t i = c >> 3, f = c & 7u;
+    return (uint32_t)((int32_t)RH_DRV_MK_L[i] + ((((int32_t)RH_DRV_MK_L[i + 1] - (int32_t)RH_DRV_MK_L[i]) * (int32_t)f) >> 3));
+}
+#else
+#define rh_drv_mk(key, vel) 4096u
+#endif
+#endif
 /* voicing, written by the main loop (params.c), applied at each note-on (IMPLEMENTATION-v3 §4.4, §10.1) */
 static volatile int32_t rh_tone_off;           /* Q25: added to the pickup offset (TONE) */
 static volatile int32_t rh_bark_s = 65536;     /* Q16: tip scale (BARK) */
@@ -451,6 +472,8 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
          * exactly); before the HAMMER scaling and the HQ live force, which cap it */
         int32_t g = rh_drive_g(key, vel);
         int32_t a = (int32_t)(((uint32_t)v->pamp * (uint32_t)g) / v->gq);   /* < 2^15 x 2^16: 32-bit */
+        a = a > 65535 ? 65535 : a;
+        a = (int32_t)(((uint32_t)a * rh_drv_mk(key, vel)) / v->mk);   /* the make-up's ratio too (< 2^16 x 2^16) */
         v->pamp = a > 65535 ? 65535 : a < 1 ? 1 : a;   /* mul15s: 32767 x 65535 < 2^31 (gen_rhodes: the headroom) */
     }
 #endif
@@ -700,6 +723,13 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
         v->gain = (int32_t)(((int64_t)v->gain * g) >> 16);
         q = kk < 32768u ? (kk << 16) / (uint32_t)g : kk / (uint32_t)g;     /* 32-bit divides */
         v->kl = kk < 32768u ? (int32_t)(q > 0x7FFFFFFFu ? 0x7FFFFFFFu : q) : q >= 32768u ? 0x7FFFFFFF : (int32_t)(q << 16);
+        {   /* the level make-up: the output gain x mk, the kill level / mk (the same output level ends the voice) */
+            uint32_t mk = rh_drv_mk(n - RH_KEY_LO, vel), kl = (uint32_t)v->kl;
+            int64_t gm = ((int64_t)v->gain * mk) >> 12;
+            v->mk = (uint16_t)mk;
+            v->gain = gm > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)gm;
+            v->kl = (int32_t)(kl < (1u << 19) ? (kl << 12) / mk : (kl / mk) << 12);
+        }
     }
 #endif
     u = v->off;
