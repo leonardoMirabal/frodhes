@@ -46,6 +46,9 @@ typedef struct frui_model_s {
     int host_bpm10;
     int sync_all, sync_div;        /* new: every tempo effect synced (FREE / TEMPO), at this FRN_SYNC division */
     int cc_scroll;                 /* the CC map's first row */
+    /* typing a value (a double-click on a knob's value): the knob's id + 1 (0: none) and the text so far */
+    int editing;
+    char edit_text[12];
 } frui_model;
 
 /* the settings' pseudo parameter ids (for the controls and the widget ids) */

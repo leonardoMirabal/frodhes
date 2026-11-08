@@ -46,7 +46,7 @@ uncached draw.
 
 | | |
 | --- | --- |
-| Knobs | drag up / down (200 points for the whole range), Shift for ten times finer, the wheel, double-click (or Command-click; Control-click on Windows and Linux) for the default, right-click (or Control-click on macOS) for MIDI LEARN, FORGET and DEFAULT VALUE |
+| Knobs | drag up / down (200 points for the whole range), Shift for ten times finer, the wheel, double-click the value text to type a value (Enter sets the value whose text is nearest the number, Esc or a click elsewhere leaves it), double-click the knob itself (or Command-click; Control-click on Windows and Linux) for the default, right-click (or Control-click on macOS) for MIDI LEARN, FORGET and DEFAULT VALUE |
 | Switches, menus, tabs | click; the wheel steps a switch or a menu |
 | Keyboard focus | click a control or Tab / Shift-Tab; the arrows step the value (Shift: by 10), Page Up / Down by 10, Home / End, Delete the default, Enter opens a menu, Esc closes a menu, SETTINGS or the focus. Other keys go to the host |
 | The keys | play notes (lower on the key: louder); held notes light up, the host's too |

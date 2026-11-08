@@ -201,6 +201,10 @@ static void diff(frp_gui_t *g)
     if (a->fx_bypass != b->fx_bypass) g->full = 1;
     if (a->hover != b->hover) { dirty_wid(g, a->hover); dirty_wid(g, b->hover); }
     if (a->focus != b->focus) { dirty_wid(g, a->focus); dirty_wid(g, b->focus); }
+    if (a->editing != b->editing || strcmp(a->edit_text, b->edit_text)) {
+        if (a->editing) dirty_wid(g, FRUI_WID(FRW_KNOB, a->editing - 1));
+        if (b->editing) dirty_wid(g, FRUI_WID(FRW_KNOB, b->editing - 1));
+    }
     /* everything else changes the layout or many places at once */
     if (strcmp(a->preset_tag, b->preset_tag) || strcmp(a->preset_name, b->preset_name) || a->edited != b->edited ||
         a->tab_l != b->tab_l || a->tab_r != b->tab_r || a->page_rv != b->page_rv || a->menu != b->menu ||
@@ -428,6 +432,75 @@ static void step_value(frp_gui_t *g, int id, int dir, int mods)
     set_once(g, id, clampi(frui_value(&g->m, id) + dir * st, 0, hi));
 }
 
+/* ---- typing a value: a double-click on a knob's value text opens a field; RETURN sets the value whose text is
+ * nearest the number typed (one gesture), ESC (or a click elsewhere) leaves it */
+static int in_value(frp_gui_t *g, int id, float x, float y)
+{
+    int i, n = frui_anchor_count(g->u);
+    for (i = 0; i < n; i++) {
+        const frui_anchor *a = frui_anchor_get(g->u, i);
+        if (a->what == FRA_VALUE && a->id == id) return fabsf(x - a->x) <= 36.f && y >= a->y - 17.f && y <= a->y + 6.f;
+    }
+    return 0;
+}
+/* a decimal number at the start of s (never the C library's: a host's locale may want a comma); 0: none */
+static int num_of(const char *s, double *out)
+{
+    double v = 0.0, k = 0.1;
+    int neg = 0, digits = 0;
+    while (*s == ' ') s++;
+    if (*s == '-' || *s == '+') neg = *s++ == '-';
+    for (; *s >= '0' && *s <= '9'; s++, digits++) v = v * 10.0 + (*s - '0');
+    if (*s == '.' || *s == ',')
+        for (s++; *s >= '0' && *s <= '9'; s++, digits++, k *= 0.1) v += (*s - '0') * k;
+    *out = neg ? -v : v;
+    return digits > 0;
+}
+static void edit_close(frp_gui_t *g) { g->m.editing = 0; g->m.edit_text[0] = 0; }
+static void text_of(frp_gui_t *g, int id, int v, char *val, char *unit)
+{
+    frui_model mm = g->m;
+    if (id == FRP_TUNE) mm.tune = v - 50; else mm.p[id] = (uint8_t)v;
+    val[0] = unit[0] = 0;
+    (g->h.text ? (frui_text_fn)g->h.text : frui_text_default)(g->h.ctx, &mm, id, val, unit);
+}
+static void edit_commit(frp_gui_t *g)
+{
+    int id = g->m.editing - 1, v, hi, best = -1;
+    double want, bd = 1e30;
+    char val[32], unit[16];
+    int ok = num_of(g->m.edit_text, &want);
+    edit_close(g);
+    if (id < 0 || !ok) return;
+    hi = hi_of(id);
+    for (v = 0; v <= hi; v++) {                      /* the text the knob would show, as a number */
+        double x, dd;
+        text_of(g, id, v, val, unit);
+        if (!num_of(val, &x)) continue;
+        dd = fabs(x - want);
+        if (dd < bd) { bd = dd; best = v; }
+    }
+    if (best >= 0) set_once(g, id, best);
+}
+static int edit_key(frp_gui_t *g, int key)
+{
+    size_t n = strlen(g->m.edit_text);
+    switch (key) {
+    case FRK_ESCAPE: edit_close(g); break;
+    case FRK_RETURN: edit_commit(g); break;
+    case FRK_BACKSPACE: if (n) g->m.edit_text[n - 1] = 0; break;
+    case FRK_DELETE: g->m.edit_text[0] = 0; break;
+    default:
+        if (((key >= '0' && key <= '9') || key == '.' || key == ',' || key == '-' || key == '+') &&
+            n + 1 < sizeof g->m.edit_text) {
+            g->m.edit_text[n] = (char)(key == ',' ? '.' : key);
+            g->m.edit_text[n + 1] = 0;
+        }
+        break;
+    }
+    return 1;                                        /* (every key goes to the field while it is open) */
+}
+
 static void mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks)
 {
     frui_model *m = &g->m;
@@ -438,10 +511,15 @@ static void mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks)
         m->hover = ev == M_MOVE && on && w.kind != FRW_KEYS && w.kind != FRW_CCMAP ? FRUI_WID(w.kind, w.id) : -1;
         return;
     case M_RDOWN:
+        edit_close(g);
         close_popups(g);
         if (on && w.kind == FRW_KNOB && w.id < FRP_COUNT) m->ctx_knob = w.id;
         return;
     case M_DOWN:
+        if (m->editing) {                            /* a click in the field: keep typing; elsewhere: leave it */
+            if (on && w.kind == FRW_KNOB && w.id == m->editing - 1 && in_value(g, w.id, x, y)) return;
+            edit_close(g);
+        }
         if (m->menu >= 0) {                          /* an open menu: an item, or a click anywhere closes it */
             int id = m->menu & 0xFF, kind = m->menu >> 8;
             if (on && w.kind == FRW_ITEM && kind == FRW_MENU) set_once(g, id, w.id);
@@ -463,6 +541,11 @@ static void mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks)
         switch (w.kind) {
         case FRW_KNOB:
             m->focus = FRUI_WID(w.kind, w.id);
+            if (clicks >= 2 && (w.id < FRP_COUNT || w.id == FRP_TUNE) && in_value(g, w.id, x, y)) {
+                m->editing = w.id + 1;               /* a double-click on the value: type one */
+                m->edit_text[0] = 0;
+                return;
+            }
             if (clicks >= 2 || (mods & (FRG_CMD | FRG_CTRL))) { set_once(g, w.id, default_of(g, w.id)); return; }
             g->drag = DR_KNOB; g->drag_id = w.id; g->drag_y = y; g->drag_v = frui_value(m, w.id);
             gesture(g, w.id, 1);
@@ -558,6 +641,7 @@ static int on_key(frp_gui_t *g, int key, int mods)
 {
     frui_model *m = &g->m;
     int i, n = frui_widget_count(g->u), cur = -1, fid;
+    if (m->editing) return edit_key(g, key);
     switch (key) {
     case FRK_ESCAPE:
         if (m->menu >= 0 || m->ctx_knob >= 0) { close_popups(g); return 1; }
@@ -632,7 +716,7 @@ int frp_gui_input(frp_gui_t *g, const frg_input *e)
     case FRG_LEAVE: if (g->drag == DR_NONE) mouse(g, M_LEAVE, x, y, e->mods, 1); used = 0; break;
     case FRG_WHEEL: wheel(g, x, y, e->wheel, e->mods); break;
     case FRG_KEY: used = on_key(g, e->key, e->mods) ? 2 : 0; break;
-    case FRG_FOCUS_LOST: focus_lost(g); break;
+    case FRG_FOCUS_LOST: focus_lost(g); edit_close(g); break;
     default: used = 0; break;
     }
     return used | (used || memcmp(&before, &g->m, sizeof before) ? 1 : 0);

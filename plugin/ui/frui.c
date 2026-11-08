@@ -419,9 +419,19 @@ static void knob(frui *u, int id, const char *label, float cx, float cy, int act
         float vs = u->look == FRUI_LOOK_A3 ? 14.f : 15.f, vw = u->look == FRUI_LOOK_A3 ? 500.f : 560.f;
         float wv = tw(u, vs, vw, 0.f, FRUI_TNUM, val), wu = unit[0] ? tw(u, T_UNIT, 0, unit) + 3.f : 0.f;
         float x0 = cx - (wv + wu) * 0.5f, yb = cy + r + 24.f;
-        tx(u, x0, yb, vs, vw, 0.f, FRUI_TNUM, val, m->learning == id ? C_ACC : active ? C_TEXT : C_TEXT2);
-        anchor(u, FRA_VALUE, id, x0 + (wv + wu) * 0.5f, yb);
-        if (unit[0]) tx(u, x0 + wv + 3.f, yb, T_UNIT, 0, unit, C_TEXT3);
+        if (m->editing == id + 1) {      /* the value being typed: a small field, the text and a caret */
+            float we = tw(u, vs, vw, 0.f, FRUI_TNUM, m->edit_text), fw = we + 20.f < 64.f ? 64.f : we + 20.f;
+            float fx = cx - fw * 0.5f, fy = yb - 16.f, xt = cx - we * 0.5f - 2.f;
+            frui_rrect(u->c, X(fx), X(fy), X(fw), X(21.f), X(4.f), C_INSET);
+            frui_rrect_stroke(u->c, X(fx) + 0.5f, X(fy) + 0.5f, X(fw) - 1.f, X(21.f) - 1.f, X(4.f), X(1.f), C_ACC);
+            tx(u, xt, yb, vs, vw, 0.f, FRUI_TNUM, m->edit_text, C_TEXT);
+            frui_rect(u->c, X(xt + we + 2.f), X(fy + 4.f), X(1.2f), X(13.f), C_ACC);
+            anchor(u, FRA_VALUE, id, cx, yb);
+        } else {
+            tx(u, x0, yb, vs, vw, 0.f, FRUI_TNUM, val, m->learning == id ? C_ACC : active ? C_TEXT : C_TEXT2);
+            anchor(u, FRA_VALUE, id, x0 + (wv + wu) * 0.5f, yb);
+            if (unit[0]) tx(u, x0 + wv + 3.f, yb, T_UNIT, 0, unit, C_TEXT3);
+        }
     }
     reg(u, FRW_KNOB, id, cx - G_COL * 0.5f, cy - r - 28.f, G_COL, 2.f * r + 56.f);
 }

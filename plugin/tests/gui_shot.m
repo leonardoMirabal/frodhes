@@ -367,6 +367,35 @@ int main(int argc, char **argv)
             CHECK(pval(20) == inf.default_value, "double click: TONE back to its default (%.0f, default %.0f)", pval(20), inf.default_value);
         }
 
+        /* typing a value: a double-click on TONE's value text (-5.0 .. +5.0), "2.5", RETURN (one gesture); ESC leaves it */
+        if (find(FRW_KNOB, 20, &x, &y, r)) {
+            float vx = r[0] + r[2] * 0.5f, vy = r[1] + r[3] - 10.f;   /* (the value's baseline: 4 above the bottom) */
+            int b0 = out_begin[20], e0 = out_end[20];
+            char txt[64] = "";
+            double shown;
+            sh_mouse(FRP_MOUSE_DOWN, vx, vy, 0, 1); sh_mouse(FRP_MOUSE_UP, vx, vy, 0, 1);
+            sh_mouse(FRP_MOUSE_DOWN, vx, vy, 0, 2); sh_mouse(FRP_MOUSE_UP, vx, vy, 0, 2);
+            sh_key('2', 0); sh_key('.', 0); sh_key('5', 0);
+            pump(0.2);
+            m = snap("value-entry");
+            CHECK(m && m->editing == 21 && !strcmp(m->edit_text, "2.5"), "a double-click on the value opens a field; typed \"%s\"",
+                  m ? m->edit_text : "");
+            b0 = out_begin[20]; e0 = out_end[20];
+            sh_key(FRK_RETURN, 0);
+            pump(0.3);
+            params->value_to_text(pl, 20, pval(20), txt, sizeof txt);
+            shown = atof(txt);
+            CHECK(fabs(shown - 2.5) <= 0.05 && out_begin[20] == b0 + 1 && out_end[20] == e0 + 1,
+                  "RETURN: TONE shows %s (typed 2.5), one gesture to the host", txt);
+            v0 = pval(20);
+            sh_mouse(FRP_MOUSE_DOWN, vx, vy, 0, 2); sh_mouse(FRP_MOUSE_UP, vx, vy, 0, 2);
+            sh_key('9', 0);
+            sh_key(FRK_ESCAPE, 0);
+            pump(0.2);
+            m = snap("value-escape");
+            CHECK(m && !m->editing && pval(20) == v0, "ESC closes the field, TONE unchanged (%.0f)", pval(20));
+        }
+
         /* a menu: open, pick */
         if (find(FRW_MENU, 16, &x, &y, 0)) click(x, y, 1);   /* DELAY's SYNC */
         pump(0.2);

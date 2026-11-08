@@ -237,6 +237,38 @@ int main(void)
     CHECK(frp_gui_model(ctl)->settings == 0, "ESC closes them");
     paint();
 
+    /* typing a value: a double-click on the value text, digits, RETURN (one gesture); ESC leaves it */
+    paint();
+    {
+        int k, n = frui_anchor_count(frp_gui_frui(ctl)), b0 = h.gesture_begins;
+        float vx = -1.f, vy = -1.f;
+        for (k = 0; k < n; k++) {
+            const frui_anchor *a = frui_anchor_get(frp_gui_frui(ctl), k);
+            if (a->what == FRA_VALUE && a->id == FRP_BARK) { vx = a->x; vy = a->y - 6.f; }
+        }
+        CHECK(vx > 0.f, "BARK's value text is drawn (%.0f, %.0f)", vx, vy);
+        ev(FRG_DOWN, FRG_LEFT, 0, vx, vy, 0, 0); ev(FRG_UP, FRG_LEFT, 0, vx, vy, 0, 0);
+        ev(FRG_DOUBLE, FRG_LEFT, 0, vx, vy, 0, 0); ev(FRG_UP, FRG_LEFT, 0, vx, vy, 0, 0);
+        CHECK(frp_gui_model(ctl)->editing == FRP_BARK + 1, "a double-click on the value opens the field");
+        b0 = h.gesture_begins;
+        ev(FRG_KEY, 0, 0, 0, 0, 0, '1'); ev(FRG_KEY, 0, 0, 0, 0, 0, '0'); ev(FRG_KEY, 0, 0, 0, 0, 0, 'x');
+        ev(FRG_KEY, 0, 0, 0, 0, 0, '0');
+        CHECK(!strcmp(frp_gui_model(ctl)->edit_text, "100"), "digits go into it, other keys not (\"%s\")",
+              frp_gui_model(ctl)->edit_text);
+        CHECK(ev(FRG_KEY, 0, 0, 0, 0, 0, ' ') & 2, "while it is open the window keeps every key");
+        paint();
+        ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_RETURN);
+        CHECK(h.v[FRP_BARK] == 100 && h.gesture_begins == b0 + 1 && h.gestures_open == 0 && !frp_gui_model(ctl)->editing,
+              "RETURN sets 100 in one gesture and closes the field (BARK %d)", h.v[FRP_BARK]);
+        paint();
+        ev(FRG_DOUBLE, FRG_LEFT, 0, vx, vy, 0, 0); ev(FRG_UP, FRG_LEFT, 0, vx, vy, 0, 0);
+        ev(FRG_KEY, 0, 0, 0, 0, 0, '5');
+        ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_ESCAPE);
+        CHECK(h.v[FRP_BARK] == 100 && !frp_gui_model(ctl)->editing, "ESC leaves it, the value unchanged");
+        h.v[FRP_BARK] = 64;
+    }
+    paint();
+
     /* hover */
     fh_find(frp_gui_frui(ctl), FRW_KNOB, FRP_BARK, &x, &y);
     CHECK(ev(FRG_MOVE, 0, 0, x, y, 0, 0) & 1, "moving onto a knob asks for a repaint (hover)");
