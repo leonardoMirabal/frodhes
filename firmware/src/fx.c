@@ -438,8 +438,8 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
     dr_general(m, ys, n, kq, mq, dkq, dmq, tt, wt);
 }
 /* FDRV, and its silence (0.9.8, the residual after a panic): on zero input the rounding leaves fixed points that are
- * not 0 (the high-pass's hp += (x - hp + 64) >> 7 stops anywhere in -63 .. 64, the shaper turns -hp into a constant
- * and the low-passes hold it): a DC of ~30 LSB out, for ever, kept open by the silence gate. A block that starts and
+ * not 0 (the high-pass stops anywhere in -63 .. 64, in Q7 from 0.9.10: -64 .. 63 / 128 LSB; the shaper turns -hp
+ * into a constant and the low-passes hold it): a DC of ~30 LSB out, for ever, kept open by the silence gate. A block that starts and
  * ends on 0 in with every state where it started is that fixed point: to rest (exact 0 from the next block). Once a
  * block, no per-sample work (dr_classic's loops as they were); music never leaves the states unmoved */
 __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, int32_t sw)

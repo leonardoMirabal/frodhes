@@ -376,11 +376,14 @@ static const int32_t *dr_os2(const int32_t *m, uint32_t n, int32_t gq, int32_t d
     if (!dr_os_ok) dr_os_rest(bias);
     if (n > DRV_BLK) n = DRV_BLK;
     for (i = 0; i < n; i++) {
-        int32_t x0 = m[i], x;
+        int32_t x0 = m[i], x, d;
         gq += dgq;
-        hp += (x0 - hp + 64) >> 7;
-        x = (int32_t)(((int64_t)dr_cl(x0 - hp) * (gq >> 8)) >> (12u - DR_OS_IN));   /* (the 6 bits from the product,
-                                                        * not zeros: c1-int, the tail's staircase) */
+        d = x0 - ((hp + 64) >> 7);                      /* (hp in Q7, 0.9.10: in whole LSB, hp += (x0 - hp + 64) >> 7
+                                                        * moved only once x0 was 64 LSB away: a quiet bass (k28 v20,
+                                                        * ~-55 dBFS) came out of a staircase at H3 -15 dB) */
+        hp += d;
+        x = (int32_t)(((int64_t)dr_cl(d) * (gq >> 8)) >> (12u - DR_OS_IN));   /* (the 6 bits from the product, not
+                                                        * zeros: c1-int, the tail's staircase) */
         x = x > -(1 << (20 + DR_OS_IN)) ? x : -(1 << (20 + DR_OS_IN));
         y[i] = x < (1 << (20 + DR_OS_IN)) ? x : 1 << (20 + DR_OS_IN);
     }
