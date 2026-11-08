@@ -7,12 +7,14 @@
 #                                .local/win-toolchain/sdk (~630 MB; xwin asks to accept Microsoft's licence: --accept-
 #                                license is passed, read https://go.microsoft.com/fwlink/?LinkId=2086102 first)
 #   tools/plugin_win.sh build    build/plugin-win/bundles/CLAP/Frodhes.clap and VST3/Frodhes.vst3/ + the test programs
-#   tools/plugin_win.sh check    the binaries: x86_64 PE, the CLAP / VST3 exports, only system DLLs imported (static CRT)
+#   tools/plugin_win.sh check    tools/plugin_depcheck.py windows: x86_64 PE, the CLAP / VST3 exports, only Windows'
+#                                own DLLs imported (the static CRT: no VCRUNTIME, no UCRT DLLs)
 #   tools/plugin_win.sh test     under wine in Docker (amd64, plugin/tests/docker/wine.Dockerfile): the coroutine, the
 #                                window's controller, the view's self-test (Xvfb), the CLAP host's --selftest and a
 #                                Gate D subset (CLASSIC, 44.1 kHz) against the host build's sha256. wine is not
 #                                Windows: a pass is a smoke test, not a release check.
-#   tools/plugin_win.sh all      build, check, test
+#   tools/plugin_win.sh pack     build/plugin-pkg/frodhes-plugin-windows.zip (tools/plugin_pack.sh windows)
+#   tools/plugin_win.sh all      build, check, test, pack
 # On a Windows machine none of this is needed: cmake -S plugin -B build/plugin -G Ninja with clang-cl in PATH
 # (CC=clang-cl CXX=clang-cl), plus the same dependencies (tools/plugin_deps.sh).
 # Light: every build under nice -n 15 and build/cpuq.py when it exists; Docker under tools/lock.py DOCKER.
@@ -53,31 +55,10 @@ build() {
 }
 
 check() {
-    local R="$LLVM/llvm-readobj" fail=0 f
-    local clap="$B/bundles/CLAP/Frodhes.clap" vst="$B/bundles/VST3/Frodhes.vst3/Contents/x86_64-win/Frodhes.vst3"
-    for f in "$clap" "$vst"; do
-        [ -f "$f" ] || { echo "FAIL missing $f"; fail=1; continue; }
-        "$R" --file-headers "$f" | grep -q "IMAGE_FILE_MACHINE_AMD64" && echo "ok    $(basename "$f"): x86_64 PE" \
-            || { echo "FAIL $f is not x86_64"; fail=1; }
-        local ex imp
-        ex="$("$R" --coff-exports "$f" | sed -n 's/^ *Name: //p' | sort | tr '\n' ' ')"
-        imp="$("$R" --coff-imports "$f" | sed -n 's/^ *Name: \(.*\.dll\)$/\1/ip' | sort -u | tr '\n' ' ')"
-        echo "      exports: $ex"
-        echo "      imports: $imp"
-        case "$ex" in *clap_entry*) ;; *) echo "FAIL no clap_entry export"; fail=1 ;; esac
-        if [ "$f" = "$vst" ]; then
-            case "$ex" in *GetPluginFactory*InitDll*) ;; *) echo "FAIL no VST3 exports"; fail=1 ;; esac
-        fi
-        for d in $imp; do   # the static CRT: no vcruntime / msvcp / ucrtbase / api-ms-win-crt
-            case "$(echo "$d" | tr 'A-Z' 'a-z')" in
-                kernel32.dll|user32.dll|gdi32.dll|ole32.dll|shell32.dll|advapi32.dll|comdlg32.dll|uuid.dll|shlwapi.dll) ;;
-                *) echo "FAIL $(basename "$f") imports $d (only system DLLs)"; fail=1 ;;
-            esac
-        done
-    done
-    [ $fail = 0 ] && echo "ok    check: exports and imports"
-    return $fail
+    FRP_OBJDUMP="${FRP_OBJDUMP:-$LLVM/llvm-objdump}" python3 "$ROOT/tools/plugin_depcheck.py" windows "$B/bundles"
 }
+
+pack() { sh "$ROOT/tools/plugin_pack.sh" windows "$B"; }
 
 wine_image() {
     docker image inspect "$IMG" >/dev/null 2>&1 && return 0
@@ -103,7 +84,7 @@ z = lambda p: "Z:" + str(p)
 with open(t / "renders.sh", "w") as f, open(t / "want.txt", "w") as w:
     for e in sub:
         n, script = e[0], root / e[1]
-        want = want16.get(n, base.get(n))
+        want = base.get(n)          # (CLASSIC is the FM-1's build, 10 voices: every entry its Gate R render)
         o = t / "out" / (n.replace("/", "__") + ".wav")
         f.write(f'wine "$B/frp_clap_render.exe" "{z("$CLAP")}" "{z(script)}" "{z(o)}" --engine classic --block 512 >/dev/null 2>&1 || echo "render failed: {n}"\n')
         w.write(f"{n} {want}\n")
@@ -143,6 +124,7 @@ case "${1:-}" in
     build) build ;;
     check) check ;;
     test) test_wine ;;
-    all) build; check; test_wine ;;
-    *) sed -n '3,20p' "$0"; exit 2 ;;
+    pack) pack ;;
+    all) build; check; test_wine; pack ;;
+    *) sed -n '3,22p' "$0"; exit 2 ;;
 esac

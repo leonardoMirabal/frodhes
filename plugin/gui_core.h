@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* The plugin window's core (B-M2b): everything but the operating system. It keeps the frui_model the window draws
- * (the app's values through frp_ui_iface.h, the meters, the held notes, the window's own state: tabs, menus, focus),
+ * (the app's values through gui_host.h, the meters, the held notes, the window's own state: tabs, menus, focus),
  * turns mouse, wheel and keys into parameter changes, and repaints into an RGBA canvas only what changed (frui draws
  * the whole window through a base clip, so a partial repaint gives exactly the pixels a full one does).
  *
@@ -10,7 +10,7 @@
 #ifndef FRP_GUI_CORE_H
 #define FRP_GUI_CORE_H
 #include <stdint.h>
-#include "frp_ui_iface.h"
+#include "gui_host.h"
 #include "gui_platform.h"
 #include "ui/frui.h"
 

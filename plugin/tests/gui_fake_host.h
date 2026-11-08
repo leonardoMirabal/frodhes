@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* A stand-in plugin for the window's tests (plugin/tests/test_gui_ctl.c, gui_win_demo.c, gui_x11_demo.c): the
- * frp_ui_host_t (frp_ui_iface.h) over an array of values, the defaults at mid-range, every call counted. Not the real
+ * frp_ui_host_t (gui_host.h) over an array of values, the defaults at mid-range, every call counted. Not the real
  * parameter path (that is plugin/src/frodhes_clap.c's). */
 #ifndef FRODHES_GUI_FAKE_HOST_H
 #define FRODHES_GUI_FAKE_HOST_H
@@ -96,7 +96,7 @@ static int fh_find(const frui *u, int kind, int id, float *x, float *y)
     return -1;
 }
 /* a knob's value text (its anchor, a little above the baseline: inside the double-click's zone); 0: not drawn */
-static int fh_value_at(const frui *u, int id, float *x, float *y)
+static inline int fh_value_at(const frui *u, int id, float *x, float *y)
 {
     int i, n = frui_anchor_count(u);
     for (i = 0; i < n; i++) {

@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # cmake -DOBJS=a.o|b.o|... -DNM=nm -P nm_check.cmake: every slot object (engine_unit.c, FRP_SLOT n) defines exactly
-# one global symbol, frp_slot_<n> (Mach-O: _frp_slot_<n>), in every architecture slice; anything else fails.
+# one global symbol, frp_slot_<n> (Mach-O: _frp_slot_<n>), in every architecture slice; anything else fails. Weak
+# definitions (nm W) are the shared constant tables (plugin/compat/shared_tables.h: hidden, one copy for all slots);
+# they are counted and allowed, and only a slot built with the shared headers defines any.
 # -DWEAK_CRT_OK=1 (Windows): the MSVC CRT's weak inline definitions and string literals are allowed (see below).
 string(REPLACE "|" ";" _objs "${OBJS}")
 set(_n 0)
@@ -36,6 +38,7 @@ foreach(_o IN LISTS _objs)
     endforeach()
     string(REPLACE "\n" ";" _lines "${_out}")
     set(_defs "")
+    set(_weak "")
     foreach(_ln IN LISTS _lines)
         if(_ln MATCHES "^[0-9a-fA-F-]+ ([A-TV-Z]) (.+)$")    # a defined global (not U: an import; bitcode: no address)
             set(_kind "${CMAKE_MATCH_1}")
@@ -46,7 +49,11 @@ foreach(_o IN LISTS _objs)
                "^(\\?\\?_C@.*|__real@[0-9a-f]+|__xmm@[0-9a-f]+|_Fenv0|__local_stdio_(printf|scanf)_options|_?v?sn?printf(_l)?|_?vs?n?printf_l|_vscprintf_l|_vfprintf_l)$")
                 continue()
             endif()
-            list(APPEND _defs "${_sym}")
+            if(_kind STREQUAL "W")                           # a shared table (weak, hidden)
+                list(APPEND _weak "${_sym}")
+            else()
+                list(APPEND _defs "${_sym}")
+            endif()
         endif()
     endforeach()
     list(REMOVE_DUPLICATES _defs)
@@ -54,6 +61,8 @@ foreach(_o IN LISTS _objs)
     if(NOT _k EQUAL 1 OR NOT _defs MATCHES "^_?frp_slot_[0-9]+$")
         message(FATAL_ERROR "nm_check: ${_o} defines the globals '${_defs}' (only its frp_slot_<n> may be global)")
     endif()
+    list(REMOVE_DUPLICATES _weak)
+    list(LENGTH _weak _nw)
     math(EXPR _n "${_n} + 1")
 endforeach()
-message(STATUS "nm_check: ${_n} slot objects, one global each")
+message(STATUS "nm_check: ${_n} slot objects, one global each (and ${_nw} shared weak tables)")

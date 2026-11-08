@@ -20,6 +20,7 @@
 #include <clap/clap.h>
 #include "../gui_shot.h"
 #include "../gui_platform.h"
+#include "../frp_ui_iface.h"
 #include "../ui/frui.h"
 
 static int fails;
@@ -427,6 +428,73 @@ int main(int argc, char **argv)
         CHECK(m && m->settings, "the gear opens SETTINGS");
         sh_key(FRK_ESCAPE, 0);
         pump(0.1);
+
+        /* the window's boxes are the plugin core's (frp_ui_iface.h, read back through its extension): the preset,
+         * NEXT / UNDO, MIDI LEARN, FX, SUSTAIN, a setting */
+        {
+            const frp_ui_vtable *vt = pl->get_extension(pl, FRP_UI_EXT_ID);
+            frp_core *pc = vt ? vt->core_of(pl) : 0;
+            frp_preset_info pi, p2;
+            frp_settings st;
+            int ed = 0, ch0;
+            CHECK(pc != 0, "the core's UI extension");
+            if (pc) {
+                vt->preset_current(pc, &pi, &ed);
+                m = snap("preset");
+                CHECK(m && !strcmp(m->preset_tag, pi.tag) && !strcmp(m->preset_name, pi.name),
+                      "the preset box shows the core's preset (%s %s / %s %s)", m ? m->preset_tag : "", m ? m->preset_name : "", pi.tag, pi.name);
+                if (find(FRW_BUTTON, FRB_NEXT, &x, &y, 0)) click(x, y, 1);
+                pump(0.3);
+                vt->preset_current(pc, &p2, &ed);
+                m = snap("preset-next");
+                CHECK(strcmp(pi.tag, p2.tag) != 0 && m && !strcmp(m->preset_tag, p2.tag),
+                      "NEXT loads the next preset (%s -> %s, shown %s)", pi.tag, p2.tag, m ? m->preset_tag : "");
+                if (find(FRW_BUTTON, FRB_UNDO, &x, &y, 0)) click(x, y, 1);
+                pump(0.3);
+                vt->preset_current(pc, &p2, &ed);
+                CHECK(!strcmp(pi.tag, p2.tag), "UNDO goes back (%s)", p2.tag);
+                if (find(FRW_KNOB, 20, &x, &y, 0)) sh_mouse(FRP_MOUSE_RDOWN, x, y, 0, 1);
+                pump(0.2);
+                if (find(FRW_CTX, FRC_LEARN, &x, &y, 0)) click(x, y, 1);
+                pump(0.2);
+                CHECK(vt->learning(pc) == 20, "MIDI LEARN arms the core (%d)", vt->learning(pc));
+                m = snap("learning");
+                CHECK(m && m->learning == 20, "the window shows the knob learning");
+                sh_key(FRK_ESCAPE, 0);
+                click(5.f, 300.f, 1);                    /* (any click cancels a learn) */
+                pump(0.2);
+                CHECK(vt->learning(pc) < 0, "a click cancels the learn (%d)", vt->learning(pc));
+                if (find(FRW_BUTTON, FRB_FX, &x, &y, 0)) click(x, y, 1);
+                pump(0.2);
+                CHECK(vt->fx_bypass(pc) == 1, "FX bypasses every effect in the core");
+                if (find(FRW_BUTTON, FRB_FX, &x, &y, 0)) click(x, y, 1);
+                pump(0.2);
+                CHECK(vt->fx_bypass(pc) == 0, "FX again: the effects back");
+                if (find(FRW_BUTTON, FRB_SUSTAIN, &x, &y, 0)) click(x, y, 1);
+                pump(0.2);
+                CHECK(vt->sustain(pc) == 1, "SUSTAIN latches the core's sustain");
+                if (find(FRW_BUTTON, FRB_SUSTAIN, &x, &y, 0)) click(x, y, 1);
+                pump(0.2);
+                CHECK(vt->sustain(pc) == 0, "SUSTAIN again lets it go");
+                vt->settings_get(pc, &st);
+                ch0 = st.midi_ch;
+                if (find(FRW_BUTTON, FRB_GEAR, &x, &y, 0)) click(x, y, 1);
+                pump(0.2);
+                if (find(FRW_MENU, FRS_CHANNEL, &x, &y, 0)) click(x, y, 1);
+                pump(0.2);
+                if (find(FRW_ITEM, 3, &x, &y, 0)) click(x, y, 1);
+                pump(0.3);
+                vt->settings_get(pc, &st);
+                CHECK(st.midi_ch == 3, "SETTINGS: MIDI CHANNEL 3 reaches the core (%d)", st.midi_ch);
+                st.midi_ch = ch0;
+                vt->settings_set(pc, &st);
+                pump(0.2);
+                m = snap("settings-core");
+                CHECK(m && m->midi_ch == ch0, "a core change shows in the window (CHANNEL %d)", m ? m->midi_ch : -1);
+                sh_key(FRK_ESCAPE, 0);
+                pump(0.1);
+            }
+        }
 
         /* resize (the host drags the window): 75 % and 150 % */
         if (!headless) {

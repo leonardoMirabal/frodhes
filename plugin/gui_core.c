@@ -44,7 +44,7 @@ struct frp_gui {
     int wheel_id;
     double wheel_t;
     float wheel_acc;
-    /* the window's own values when a backend is missing (frp_ui_iface.h) */
+    /* the window's own values when a host call is missing (gui_host.h: a test's stand-in) */
     int loc_tune, loc_fx, loc_set[8], loc_learning;
     uint8_t loc_learn[FRP_COUNT];
     int sustain_latch;
@@ -84,7 +84,8 @@ static void setting_set(frp_gui_t *g, int key, int v)
 static void gesture(frp_gui_t *g, int id, int begin)
 {
     if (id == FRP_TW_KIND) { gesture(g, FRP_TW_SW, begin); gesture(g, FRP_TW_MODE, begin); return; }
-    if (id >= 0 && id < FRP_COUNT && g->h.param_gesture) g->h.param_gesture(g->h.ctx, (uint32_t)id, begin);
+    if (((id >= 0 && id < FRP_COUNT) || id == FRP_TUNE) && g->h.param_gesture)   /* (TUNE: a host parameter too) */
+        g->h.param_gesture(g->h.ctx, (uint32_t)id, begin);
 }
 static void param_set(frp_gui_t *g, int id, int v)
 {
@@ -385,7 +386,7 @@ static void close_popups(frp_gui_t *g) { g->m.menu = -1; g->m.ctx_knob = -1; }
 static void learn(frp_gui_t *g, int cmd, int id)
 {
     if (g->h.learn_cmd) { g->h.learn_cmd(g->h.ctx, cmd, id); return; }
-    switch (cmd) {                                   /* (no backend: shown only; nothing listens for the CC) */
+    switch (cmd) {                                   /* (no host call: shown only; nothing listens for the CC) */
     case FRP_UI_LEARN_START: g->loc_learning = id; break;
     case FRP_UI_LEARN_CANCEL: g->loc_learning = -1; break;
     case FRP_UI_LEARN_FORGET: if (id >= 0 && id < FRP_COUNT) g->loc_learn[id] = 0; break;
@@ -416,7 +417,7 @@ static void button(frp_gui_t *g, int id)
         m->fx_bypass = !m->fx_bypass;
         break;
     case FRB_BPM_DOWN: case FRB_BPM_UP:
-        if (m->tempo_src == 1) setting_set(g, FRS_BPM, clampi(m->bpm10 + (id == FRB_BPM_UP ? 10 : -10), 200, 3000));
+        if (m->tempo_src == 1) setting_set(g, FRS_BPM, clampi(m->bpm10 + (id == FRB_BPM_UP ? 10 : -10), 400, 2400));
         break;
     case FRB_LEARN_RESET: learn(g, FRP_UI_LEARN_FORGET_ALL, -1); break;
     }

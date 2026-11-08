@@ -1,8 +1,21 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Windows x64 from macOS (or Linux): clang-cl + lld-link (LLVM 20, Homebrew llvm@20 + lld@20) over the Windows SDK and
 # the MSVC CRT laid out by xwin (tools/plugin_win_toolchain.sh puts them in .local/win-toolchain/sdk; nothing of it is
-# committed). On a Windows machine none of this is needed: cmake -G Ninja -T ClangCL (or a clang-cl in PATH).
+# committed). On a Windows machine (CI's windows-2022) the same file uses the installed LLVM's clang-cl + lld-link and
+# the SDK / CRT of the Visual Studio environment (vcvars64: INCLUDE, LIB), no xwin.
 #   cmake -S plugin -B build/plugin-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=plugin/cmake/win-x64-clangcl.cmake
+if(CMAKE_HOST_WIN32)   # native: clang-cl from LLVM (FRP_LLVM_BIN, else PATH), the MSVC environment's headers and libraries
+    find_program(_frp_clangcl clang-cl HINTS "${FRP_LLVM_BIN}" "$ENV{ProgramFiles}/LLVM/bin" REQUIRED)
+    get_filename_component(_frp_llvm "${_frp_clangcl}" DIRECTORY)
+    set(CMAKE_C_COMPILER "${_frp_clangcl}")
+    set(CMAKE_CXX_COMPILER "${_frp_clangcl}")
+    set(CMAKE_LINKER "${_frp_llvm}/lld-link.exe" CACHE FILEPATH "")
+    set(CMAKE_AR "${_frp_llvm}/llvm-lib.exe" CACHE FILEPATH "")
+    set(CMAKE_NM "${_frp_llvm}/llvm-nm.exe" CACHE FILEPATH "")
+    set(CMAKE_CXX_FLAGS_INIT "/EHsc")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    return()
+endif()
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_VERSION 10.0)
 set(CMAKE_SYSTEM_PROCESSOR AMD64)

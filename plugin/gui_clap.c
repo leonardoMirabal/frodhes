@@ -4,16 +4,20 @@
  * Windows (CLAP's rule: there the host's set_scale gives the factor). */
 #include "gui_clap.h"
 #include <math.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include "gui_core.h"
 #include "gui_platform.h"
 #include "gui_shot.h"
+#include "gen/params_map.h"
 
 struct frp_gui_clap {
     const clap_host_t *host;
-    frp_ui_host_t uh;
+    frp_core *pc;                    /* the plugin core (frp_ui_iface.h) */
+    frp_ui_host_t uh;                /* the controller's table, bound to pc (below) */
+    int win_w;                       /* the window's logical width as last set (0: the default) */
     frp_gui_t *core;
     frg_view *view;
     uint32_t w, h;                   /* logical points */
@@ -26,12 +30,149 @@ struct frp_gui_clap {
     clap_id timer;
 };
 
-frp_gui_clap_t *frp_gui_clap_new(const clap_host_t *host, const frp_ui_host_t *uh)
+/* ---- the controller's table (gui_host.h) over the plugin core's calls (frp_ui_iface.h) */
+static frp_core *PC(void *ctx) { return ((frp_gui_clap_t *)ctx)->pc; }
+static uint32_t pid_of(int id) { return id == FRP_TUNE ? FRP_ID_TUNE : (uint32_t)id; }   /* (TUNE: the plugin's own) */
+static int b_param_get(void *ctx, uint32_t id, double *v)
+{
+    int x = frp_ui_param_get(PC(ctx), id);
+    if (x < 0) return -1;
+    *v = x;
+    return 0;
+}
+static double b_param_default(void *ctx, uint32_t id) { int x = frp_ui_param_default(PC(ctx), id); return x < 0 ? 0 : x; }
+static void b_gesture(void *ctx, uint32_t id, int begin)
+{
+    if (begin) frp_ui_param_begin(PC(ctx), pid_of((int)id));
+    else frp_ui_param_end(PC(ctx), pid_of((int)id));
+}
+static void b_param_set(void *ctx, uint32_t id, double v) { frp_ui_param_set(PC(ctx), id, (int)floor(v + 0.5)); }
+static void b_midi(void *ctx, uint8_t st, uint8_t d1, uint8_t d2)
+{
+    uint8_t t = st & 0xF0u;
+    if (t == 0x90u) frp_ui_note(PC(ctx), d1, d2);
+    else if (t == 0x80u) frp_ui_note(PC(ctx), d1, 0);
+    else if (t == 0xB0u && d1 == 64) frp_ui_sustain_set(PC(ctx), d2 >= 64);
+}
+static void b_monitor(void *ctx, frp_ui_monitor_t *o)
+{
+    float db[2], pk[2], gr = 0.f;
+    frp_ui_meters(PC(ctx), db, pk, &gr);
+    for (int i = 0; i < 2; i++) o->peak[i] = db[i] <= -120.f ? 0.f : powf(10.f, db[i] / 20.f);
+    o->gr_db = gr;
+    frp_ui_notes(PC(ctx), o->notes);
+    o->sustain = frp_ui_sustain(PC(ctx));
+}
+static void b_preset(void *ctx, char tag[8], char name[24], int *edited)
+{
+    frp_preset_info pi;
+    memset(&pi, 0, sizeof pi);
+    if (frp_ui_preset_current(PC(ctx), &pi, edited) < 0 && !pi.name[0]) snprintf(pi.name, sizeof pi.name, "%s", "-");
+    snprintf(tag, 8, "%s", pi.tag);
+    snprintf(name, 24, "%s", pi.name);
+}
+static void b_preset_cmd(void *ctx, int cmd)
+{
+    frp_core *pc = PC(ctx);
+    switch (cmd) {
+    case FRP_UI_PRESET_PREV: frp_ui_preset_step(pc, -1); break;
+    case FRP_UI_PRESET_NEXT: frp_ui_preset_step(pc, 1); break;
+    case FRP_UI_PRESET_UNDO: frp_ui_undo(pc); break;
+    case FRP_UI_PRESET_SAVE: {               /* as a user preset of the playing preset's name (no name entry yet) */
+        frp_preset_info pi;
+        int ed = 0;
+        memset(&pi, 0, sizeof pi);
+        frp_ui_preset_current(pc, &pi, &ed);
+        frp_ui_preset_save(pc, pi.name[0] ? pi.name : "USER");
+        break;
+    }
+    }
+}
+static int *set_field(frp_settings *s, int key)
+{
+    switch (key) {
+    case FRS_CHANNEL: return &s->midi_ch;
+    case FRS_VEL: return &s->vel_curve;
+    case FRS_FIXVEL: return &s->fixed_vel;
+    case FRS_PGM: return &s->pgm_change;
+    case FRS_TEMPO: return &s->tempo_src;
+    case FRS_BPM: return &s->bpm10;
+    case FRS_SYNCALL: return &s->sync_all;
+    case FRS_SYNCDIV: return &s->sync_div;
+    }
+    return 0;
+}
+static int b_setting_get(void *ctx, int key, int *v)
+{
+    frp_gui_clap_t *c = ctx;
+    frp_settings s;
+    int *f;
+    switch (key) {
+    case FRP_UI_TUNE: *v = frp_ui_param_get(c->pc, FRP_ID_TUNE) - 50; return 0;
+    case FRP_UI_FX_BYPASS: *v = frp_ui_fx_bypass(c->pc); return 0;
+    case FRP_UI_HOST_BPM10: *v = frp_ui_host_bpm10(c->pc); return 0;
+    case FRP_UI_WIN_W: if (!c->win_w) return -1; *v = c->win_w; return 0;
+    }
+    frp_ui_settings_get(c->pc, &s);
+    if (!(f = set_field(&s, key))) return -1;
+    *v = *f;
+    return 0;
+}
+static void b_setting_set(void *ctx, int key, int v)
+{
+    frp_gui_clap_t *c = ctx;
+    frp_settings s;
+    int *f;
+    switch (key) {
+    case FRP_UI_TUNE: frp_ui_param_set(c->pc, FRP_ID_TUNE, v + 50); return;
+    case FRP_UI_FX_BYPASS: frp_ui_fx_bypass_set(c->pc, v != 0); return;
+    case FRP_UI_HOST_BPM10: return;
+    case FRP_UI_WIN_W: c->win_w = v; return;
+    }
+    frp_ui_settings_get(c->pc, &s);
+    if (!(f = set_field(&s, key))) return;
+    *f = v;
+    frp_ui_settings_set(c->pc, &s);
+}
+static void b_learn_get(void *ctx, uint8_t cc1[], int n, int *learning)
+{
+    for (int i = 0; i < n; i++) {
+        int cc = frp_ui_learned_cc(PC(ctx), (uint32_t)i);
+        cc1[i] = (uint8_t)(cc < 0 ? 0 : cc + 1);
+    }
+    *learning = frp_ui_learning(PC(ctx));
+}
+static void b_learn_cmd(void *ctx, int cmd, int id)
+{
+    frp_core *pc = PC(ctx);
+    switch (cmd) {
+    case FRP_UI_LEARN_START: if (id >= 0) frp_ui_learn_start(pc, (uint32_t)id); break;
+    case FRP_UI_LEARN_CANCEL: frp_ui_learn_cancel(pc); break;
+    case FRP_UI_LEARN_FORGET: if (id >= 0) frp_ui_learn_forget(pc, (uint32_t)id); break;
+    case FRP_UI_LEARN_FORGET_ALL: frp_ui_learn_forget_all(pc); break;
+    }
+}
+static void bind(frp_gui_clap_t *c)
+{
+    frp_ui_host_t *h = &c->uh;
+    memset(h, 0, sizeof *h);
+    h->ctx = c;
+    h->param_get = b_param_get; h->param_default = b_param_default;
+    h->param_gesture = b_gesture; h->param_set = b_param_set;
+    h->midi = b_midi; h->monitor = b_monitor;   /* (text: the window's own, frui_text.c: it knows SYNC and the bar
+                                                  * engine's named detents, which need the whole model) */
+    h->preset = b_preset; h->preset_cmd = b_preset_cmd;
+    h->setting_get = b_setting_get; h->setting_set = b_setting_set;
+    h->learn_get = b_learn_get; h->learn_cmd = b_learn_cmd;
+}
+
+frp_gui_clap_t *frp_gui_clap_new(const clap_host_t *host, frp_core *pc)
 {
     frp_gui_clap_t *c = calloc(1, sizeof *c);
     if (!c) return 0;
     c->host = host;
-    c->uh = *uh;
+    c->pc = pc;
+    bind(c);
     c->w = FRP_GUI_W; c->h = FRP_GUI_H;
     c->scale = 0.0;
     c->fd = -1;
@@ -63,7 +204,7 @@ static double px_scale(const frp_gui_clap_t *c)
     if (c->scale > 0.0) return c->scale;
     return c->view ? (double)frg_view_scale(c->view) : 1.0;
 }
-static void saved_size(frp_gui_clap_t *c)        /* the size the state remembers (a backend: frp_ui_iface.h) */
+static void saved_size(frp_gui_clap_t *c)        /* the size last set (this session) */
 {
     int w;
     if (c->uh.setting_get && c->uh.setting_get(c->uh.ctx, FRP_UI_WIN_W, &w) == 0 && w > 0) {
@@ -75,7 +216,7 @@ static void saved_size(frp_gui_clap_t *c)        /* the size the state remembers
 static int phys(const frp_gui_clap_t *c, uint32_t v) { return (int)lround(v * px_scale(c)); }
 
 /* ---- clap.gui */
-#define GUI(plugin) frp_plugin_gui(plugin)
+#define GUI(plugin) ((frp_gui_clap_t *)*frp_ui_gui_data(frp_core_of(plugin)))
 static bool g_api_ok(const char *api, bool floating) { return !floating && api && !strcmp(api, FRG_VIEW_API); }
 static bool g_is_api_supported(const clap_plugin_t *plugin, const char *api, bool is_floating)
 {

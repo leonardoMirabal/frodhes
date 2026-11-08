@@ -201,7 +201,7 @@ test-move-probe:           ## the probe's dlopen host test
 PLUGIN_J     ?= 2
 PLUGIN_BUILD ?= build/plugin
 PLUGIN_NICE  ?= nice -n 15
-.PHONY: plugin-deps plugin test-plugin gate-d
+.PHONY: plugin-deps plugin test-plugin gate-d plugin-pack plugin-win plugin-linux
 plugin-deps:               ## the pinned plugin dependencies (plugin/deps.lock) into .local/plugin-deps
 	sh tools/plugin_deps.sh
 
@@ -212,12 +212,24 @@ plugin:                    ## build/plugin/bundles/Frodhes.{clap,vst3,component}
 	$(PLUGIN_NICE) cmake --build $(PLUGIN_BUILD) -j$(PLUGIN_J)
 
 test-plugin: plugin        ## the coroutine, the headless host's selftest (params, state, rates, 16 slots), the
-                           ## parameter table up to date, a quick Gate D
+                           ## parameter table up to date, a quick Gate D with the core (presets, learn, tempo ...)
 	$(PLUGIN_BUILD)/frp_test_coro
 	$(PLUGIN_BUILD)/frp_clap_render $(PLUGIN_BUILD)/bundles/Frodhes.clap --selftest
 	$(PY) tools/gen_plugin_params.py --check
-	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py --quick --only classic,hq,rate48
+	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py --quick --only classic,hq,rate48,core
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) -m pytest -q tests/py/test_plugin_gui.py
 
 gate-d: plugin             ## Gate D: the plugin renders the host build's audio (tools/gate_d.py, every mode)
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py
+
+plugin-pack: plugin        ## build/plugin-pkg/frodhes-plugin-macos.pkg + .zip (ad-hoc signed; docs/PLUGIN.md Signing)
+	sh tools/plugin_pack.sh macos $(PLUGIN_BUILD)
+	$(PY) tools/plugin_depcheck.py macos $(PLUGIN_BUILD)/bundles
+
+plugin-win:                ## Windows x64 (clang-cl over xwin; tools/plugin_win.sh setup once): build, depcheck,
+                           ## the wine tests (coroutine, controller, view, CLAP host, Gate D subset), the zip
+	bash tools/plugin_win.sh all
+
+plugin-linux:              ## Linux in Docker (Ubuntu 20.04): build, depcheck, the Xvfb tests, the zip (x86_64 and aarch64)
+	FRP_LINUX_ARCH=x86_64 bash tools/plugin_linux.sh all
+	FRP_LINUX_ARCH=aarch64 bash tools/plugin_linux.sh all
