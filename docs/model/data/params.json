@@ -3,30 +3,58 @@
  "version": 1,
  "spring_pos": 0.65,
  "t60_v1": {
-  "_doc": "sustain T60 of V1 (s) at MIDI keys, log-interpolated; flat below the first point, halving every 10 keys above the last (floor). Source: Shear 2011 tine Q (1974 Mark I), T60 = 6.908 Q/(pi f0) (research/09)",
+  "_doc": "sustain T60 of V1 (s) at MIDI keys, log-interpolated; flat below the first point, halving every halve_keys above the last (floor). 0.9.10 (2026-11-08): the mid / upper register longer, keys 32-43 slightly shorter; before: Shear 2011 tine Q (1974 Mark I), T60 = 6.908 Q/(pi f0) (research/09)",
   "points": [
    [
+    31,
+    28
+   ],
+   [
     39,
-    26.8
+    23
+   ],
+   [
+    45,
+    18
    ],
    [
     51,
-    10.3
+    19
+   ],
+   [
+    57,
+    20
    ],
    [
     63,
-    10.7
+    18
+   ],
+   [
+    69,
+    18
    ],
    [
     75,
-    7.7
+    13
+   ],
+   [
+    81,
+    6.5
    ],
    [
     87,
-    3.1
+    4.2
+   ],
+   [
+    93,
+    4.0
+   ],
+   [
+    96,
+    2.8
    ]
   ],
-  "halve_keys": 10.0,
+  "halve_keys": 4.0,
   "floor_s": 0.8
  },
  "tinebar": {
