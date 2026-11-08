@@ -378,6 +378,57 @@ def voice_pickups(p, spec_keys, fams):
         print("voicing %d: H2/H1 at v100, worst error %.2f dB" % (it, float(np.max(np.abs(err)))), file=sys.stderr)
 
 
+def _pspec(seg):
+    """mean-square spectrum (Parseval: a band's bins sum to its mean square in the window), Hann, zero-padded"""
+    w = np.hanning(len(seg))
+    nf = max(1 << 16, len(seg))
+    X = np.abs(np.fft.rfft(seg * w, nf)) ** 2
+    return np.fft.rfftfreq(nf, 1 / FS), 2.0 * X / (nf * float(np.sum(w * w)))
+
+
+def tine_band_db(y, f0):
+    """the tine-mode band (6.3-7.7 f0) in 0-20 ms re H1 (f0 +-25 %) in 30-300 ms of a rendered note, dB (the reference
+    study's measure; NaN where the band reaches 20 kHz)"""
+    if 7.7 * f0 >= 20000:
+        return float("nan")
+    fa, Sa = _pspec(y[:int(0.02 * FS)])
+    fb, Sb = _pspec(y[int(0.03 * FS):int(0.30 * FS)])
+    bd = lambda fr, S, lo, hi: float(np.sum(S[(fr >= lo) & (fr < hi)])) + 1e-30
+    return 10 * math.log10(bd(fa, Sa, 6.3 * f0, 7.7 * f0) / bd(fb, Sb, 0.75 * f0, 1.25 * f0))
+
+
+def strike_fit(p, spec_keys, fams):
+    """S2 (0.9.10, the reference study, finding 4): the tine's 2nd mode (O1, at 6.3-6.9 f0, inharmonic) rang 20-37 dB
+    over the reference's in the upper register. Per key from params strike_fit.tine_v127_points' first key up, O1's
+    force weight is turned down (never up from its physical weight) until the tine-mode band at v = 127 (0-20 ms re
+    the 30-300 ms H1) is no stronger than the points (-40 dB at key 72, -55 at 84, -65 at 96). The golden model's
+    numbers (the host C engine within ~1 dB); a few multiplicative steps (O1 is the band where it binds)."""
+    import rhodes_model as gm
+    sf = p.get("strike_fit")
+    if not sf:
+        return
+    tp = sf["tine_v127_points"]
+    sel = [s for s in spec_keys if s["midi"] >= tp[0][0]]
+    want = {s["midi"]: float(np.interp(s["midi"], [q[0] for q in tp], [q[1] for q in tp])) for s in sel}
+    trim = {s["midi"]: 0.0 for s in sel}
+    for it in range(sf.get("iterations", 6)):
+        y = gm.render_batch(sel, fams, [127] * len(sel), 0.30)
+        worst = 0.0
+        for spec, r in zip(sel, y):
+            n = spec["midi"]
+            tine = tine_band_db(r, spec["f0"])
+            e = want[n] - tine if tine == tine else 0.0
+            # down from the physics; back up toward it (half the error) where an earlier step went too far
+            step = min(float(np.clip(e, -24.0, 6.0)) * (1.0 if e < 0 else 0.5), -trim[n])
+            step = max(step, -60.0 - trim[n])
+            trim[n] += step
+            worst = max(worst, -e)
+            spec["modes"][2]["b"] *= 10 ** (step / 20)
+        print("strike fit %d: tine band worst %.2f dB over its target" % (it, worst), file=sys.stderr)
+    for spec in sel:
+        spec["o1_trim_db"] = trim[spec["midi"]]
+
+
 def vlayers():
     """Per MIDI velocity: the pulse layer below it and the Q15 weight of the next layer (the engine crossfades the
     two shapes: a nearest-layer switch made steps of up to 1.4 dB in the level against velocity)."""
@@ -534,6 +585,7 @@ def build(repin=False):
             m["b"] *= scale
         spec_keys.append(spec)
     voice_pickups(p, spec_keys, fams)
+    strike_fit(p, spec_keys, fams)
     # velocity calibration (FM-1 scan, 0.6): on some keys the hammer's contact at middle velocities partly cancels
     # the tine's fundamental, so their level against velocity had holes of up to 20 dB next to normal keys. Each
     # key's force amplitude per velocity anchor is fitted so its level curve (re the v = 104 anchor) follows the
