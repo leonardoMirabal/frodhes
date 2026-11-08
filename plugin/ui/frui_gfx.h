@@ -14,6 +14,8 @@ typedef struct {
     int cx0, cy0, cx1, cy1;        /* clip rectangle, pixels: x0 <= x < x1 */
     int bx0, by0, bx1, by1;        /* the base clip (the whole canvas, or the rectangle a partial repaint redraws):
                                     * frui_clip intersects with it and frui_clip_reset returns to it */
+    int hole;                      /* frui_shadow_hole: 0 none, 1 a rounded rectangle, 2 a circle (the next shadow's) */
+    float hx, hy, hw, hh, hr;
 } frui_canvas;
 
 #define FRUI_A(c) ((uint32_t)(c) >> 24)
@@ -41,6 +43,12 @@ void frui_circle(frui_canvas *c, float cx, float cy, float r, uint32_t col);
 void frui_circle_grad(frui_canvas *c, float cx, float cy, float r, uint32_t top, uint32_t bot);
 void frui_ring(frui_canvas *c, float cx, float cy, float r, float lw, uint32_t col);
 void frui_circle_shadow(frui_canvas *c, float cx, float cy, float r, float blur, uint32_t col);
+/* the next shadow (frui_rrect_shadow / frui_circle_shadow) leaves out the pixels the opaque shape drawn right after it
+ * replaces whatever is under them (its coverage exactly 1): pass that shape's own arguments (frui_rrect /
+ * frui_rrect_grad's, frui_circle / frui_circle_grad's) and give it opaque colours; the pixels are the same, the shadow
+ * costs less */
+void frui_shadow_hole_rrect(frui_canvas *c, float x, float y, float w, float h, float r);
+void frui_shadow_hole_circle(frui_canvas *c, float cx, float cy, float r);
 /* an arc of radius r, line width lw, round caps, from angle a0 to a1 (radians, a0 < a1; 0 = 3 o'clock, counter-
  * clockwise positive, as on paper with y up) */
 void frui_arc(frui_canvas *c, float cx, float cy, float r, float lw, float a0, float a1, uint32_t col);

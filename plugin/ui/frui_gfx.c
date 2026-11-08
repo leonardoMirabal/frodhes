@@ -2,6 +2,7 @@
 /* Frodhes plugin UI: canvas and anti-aliased primitives (frui_gfx.h). */
 #include "frui_gfx.h"
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,6 +11,7 @@ static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ?
 void frui_canvas_init(frui_canvas *c, uint32_t *px, int w, int h)
 {
     c->px = px; c->w = w; c->h = h;
+    c->hole = 0;
     frui_clip_base(c, 0, 0, w, h);
 }
 void frui_clip_base(frui_canvas *c, int x0, int y0, int x1, int y1)
@@ -42,14 +44,11 @@ uint32_t frui_alpha(uint32_t c, float a)
     float x = (float)FRUI_A(c) * clampf(a, 0.f, 1.f);
     return (c & 0xFFFFFFu) | ((uint32_t)(x + 0.5f) << 24);
 }
-void frui_blend(frui_canvas *c, int x, int y, uint32_t col, float cov)
+static inline void blend_px(uint32_t *d, uint32_t col, float cov)
 {
-    float a;
-    uint32_t *d, o;
-    if (x < c->cx0 || y < c->cy0 || x >= c->cx1 || y >= c->cy1 || cov <= 0.f) return;
-    a = cov * (float)FRUI_A(col) * (1.f / 255.f);
+    float a = cov * (float)FRUI_A(col) * (1.f / 255.f);
+    uint32_t o;
     if (a <= 0.f) return;
-    d = &c->px[(size_t)y * (size_t)c->w + (size_t)x];
     if (a >= 1.f) { *d = col | 0xFF000000u; return; }
     o = *d;
     {
@@ -58,6 +57,11 @@ void frui_blend(frui_canvas *c, int x, int y, uint32_t col, float cov)
         *d = FRUI_RGB((uint32_t)(r0 + (r1 - r0) * a + 0.5f), (uint32_t)(g0 + (g1 - g0) * a + 0.5f),
                       (uint32_t)(b0 + (b1 - b0) * a + 0.5f));
     }
+}
+void frui_blend(frui_canvas *c, int x, int y, uint32_t col, float cov)
+{
+    if (x < c->cx0 || y < c->cy0 || x >= c->cx1 || y >= c->cy1 || cov <= 0.f) return;
+    blend_px(&c->px[(size_t)y * (size_t)c->w + (size_t)x], col, cov);
 }
 void frui_fill(frui_canvas *c, uint32_t col)
 {
@@ -77,22 +81,91 @@ static float sd_rrect(const void *u, float x, float y)
     float ox = qx > 0.f ? qx : 0.f, oy = qy > 0.f ? qy : 0.f, in = qx > qy ? qx : qy;
     return sqrtf(ox * ox + oy * oy) + (in < 0.f ? in : 0.f) - r;
 }
+/* A soft edge's erfc, skipped where its value is known exactly (the same pixels as computing it): beyond erf_out[a]
+ * (d / blur) a colour of alpha a moves no channel (coverage x alpha under 1/1024 changes a value by less than a
+ * quarter, which the blend's rounding drops); below erf_in1, 0.5 erfc is exactly 1.0f. Found once by bisection on
+ * erfcf itself (monotonic). */
+static float erf_out[256], erf_in1;
+static int erf_ok[256], erf_in_ok;
+static float erf_bisect(int (*hit)(float, int), int arg, float lo, float hi)   /* hit(lo) false, hit(hi) true */
+{
+    int i;
+    for (i = 0; i < 60; i++) {
+        float m = 0.5f * (lo + hi);
+        if (m <= lo || m >= hi) break;
+        if (hit(m, arg)) hi = m; else lo = m;
+    }
+    return hi;
+}
+static int erf_small(float x, int a) { return 0.5f * erfcf(x) * (float)a * (1.f / 255.f) < 1.f / 1024.f; }
+static int erf_one(float x, int a) { (void)a; return 0.5f * erfcf(-x) == 1.f; }
+static void erf_limits(int a, float *out, float *in1)
+{
+    if (!erf_ok[a]) { erf_out[a] = erf_bisect(erf_small, a, 0.f, 16.f); erf_ok[a] = 1; }
+    if (!erf_in_ok) { erf_in1 = -erf_bisect(erf_one, 0, 0.f, 16.f); erf_in_ok = 1; }
+    *out = erf_out[a]; *in1 = erf_in1;
+}
+static float sd_circle(const void *u, float x, float y);
+static uint32_t col_vgrad(const void *u, float x, float y);
+static rr_t mk_rr(float x, float y, float w, float h, float r);
 static void shade(frui_canvas *c, float bx0, float by0, float bx1, float by1, sdf_fn f, const void *u, float lw,
                   float blur, uint32_t col, col_fn cf, const void *cu)
 {
     int x0 = (int)floorf(bx0) - 1, y0 = (int)floorf(by0) - 1, x1 = (int)ceilf(bx1) + 1, y1 = (int)ceilf(by1) + 1, x, y;
+    float out = 0.f, in1 = 0.f;
+    int hole = blur > 0.f ? c->hole : 0;           /* (frui_shadow_hole: this shadow's) */
+    rr_t hr;
+    struct { float cx, cy, r; } hc;
+    if (blur > 0.f) c->hole = 0;
+    if (hole == 1) hr = mk_rr(c->hx, c->hy, c->hw, c->hh, c->hr);
+    if (hole == 2) { hc.cx = c->hx; hc.cy = c->hy; hc.r = c->hr; }
     if (x0 < c->cx0) x0 = c->cx0;
     if (y0 < c->cy0) y0 = c->cy0;
     if (x1 > c->cx1) x1 = c->cx1;
     if (y1 > c->cy1) y1 = c->cy1;
-    for (y = y0; y < y1; y++)
-        for (x = x0; x < x1; x++) {
-            float px = (float)x + 0.5f, py = (float)y + 0.5f, d = f(u, px, py), cov;
-            if (lw > 0.f) d = fabsf(d) - lw * 0.5f;     /* a stroke centred on the edge */
-            if (blur > 0.f) cov = 0.5f * erfcf(d / blur);   /* a soft shadow: a Gaussian edge */
-            else cov = clampf(0.5f - d, 0.f, 1.f);
-            if (cov > 0.f) frui_blend(c, x, y, cf ? cf(cu, px, py) : col, cov);
+    if (x0 >= x1 || y0 >= y1) return;
+    if (blur > 0.f) erf_limits(cf ? 255 : (int)FRUI_A(col), &out, &in1);   /* (cf: any alpha, the limits of 255's) */
+    for (y = y0; y < y1; y++) {
+        uint32_t *row = c->px + (size_t)y * (size_t)c->w;
+        float py = (float)y + 0.5f;
+        uint32_t rc = col;
+        col_fn rf = cf;
+        int sx0 = x1, sx1 = x1;                     /* the row's deep interior (a rounded rectangle) */
+        if (cf == col_vgrad) { rc = cf(cu, 0.f, py); rf = 0; }   /* (a vertical gradient: one colour per row) */
+        if (f == sd_rrect && blur <= 0.f) {
+            /* inside the core (both of sd_rrect's q <= 0) d = max(qx, qy) - r; a pixel with max(qx, qy) <= b is more
+             * than a pixel inside the edge: a fill's coverage there is exactly 1, a stroke's exactly 0 (a pixel of
+             * margin for the rounding: the same pixels as evaluating d) */
+            const rr_t *q = u;
+            float chw = q->hw - q->r, b = (lw > 0.f ? q->r - lw * 0.5f : q->r) - 1.5f - 1.f, qy;
+            if (b > 0.f) b = 0.f;
+            qy = fabsf(py - q->cy) - (q->hh - q->r);
+            if (qy <= b && chw + b > 0.f) {
+                sx0 = (int)ceilf(q->cx - (chw + b) - 0.5f) + 1;
+                sx1 = (int)floorf(q->cx + (chw + b) - 0.5f);
+                if (sx0 < x0) sx0 = x0;
+                if (sx1 > x1) sx1 = x1;
+                if (sx1 <= sx0) sx0 = sx1 = x1;
+            }
         }
+        for (x = x0; x < x1; x++) {
+            if (x == sx0) {
+                if (lw <= 0.f)
+                    for (; x < sx1; x++) blend_px(row + x, rf ? rf(cu, (float)x + 0.5f, py) : rc, 1.f);
+                x = sx1;
+                if (x >= x1) break;
+            }
+            float px = (float)x + 0.5f, d = f(u, px, py), cov;
+            if (lw > 0.f) d = fabsf(d) - lw * 0.5f;     /* a stroke centred on the edge */
+            if (blur > 0.f) {                           /* a soft shadow: a Gaussian edge */
+                float v = d / blur;
+                if (v >= out) continue;
+                if (hole && (hole == 1 ? sd_rrect(&hr, px, py) : sd_circle(&hc, px, py)) <= -0.5f) continue;
+                cov = v <= in1 ? 1.f : 0.5f * erfcf(v);
+            } else cov = clampf(0.5f - d, 0.f, 1.f);
+            if (cov > 0.f) blend_px(row + x, rf ? rf(cu, px, py) : rc, cov);
+        }
+    }
 }
 static rr_t mk_rr(float x, float y, float w, float h, float r)
 {
@@ -157,6 +230,14 @@ void frui_ring(frui_canvas *c, float cx, float cy, float r, float lw, uint32_t c
 {
     ci_t s = {cx, cy, r};
     shade(c, cx - r - lw, cy - r - lw, cx + r + lw, cy + r + lw, sd_circle, &s, lw, 0.f, col, 0, 0);
+}
+void frui_shadow_hole_rrect(frui_canvas *c, float x, float y, float w, float h, float r)
+{
+    c->hole = 1; c->hx = x; c->hy = y; c->hw = w; c->hh = h; c->hr = r;
+}
+void frui_shadow_hole_circle(frui_canvas *c, float cx, float cy, float r)
+{
+    c->hole = 2; c->hx = cx; c->hy = cy; c->hr = r; c->hw = c->hh = 0.f;
 }
 void frui_circle_shadow(frui_canvas *c, float cx, float cy, float r, float blur, uint32_t col)
 {
@@ -350,25 +431,55 @@ static uint32_t scale_rgb(uint32_t c, float k)
     r = clampf(r, 0.f, 255.f); g = clampf(g, 0.f, 255.f); b = clampf(b, 0.f, 255.f);
     return FRUI_RGB((uint32_t)(r + 0.5f), (uint32_t)(g + 0.5f), (uint32_t)(b + 0.5f));
 }
-typedef struct { float x0, y0, w, h, grain, sc; uint32_t top, bot, seed; } brush_t;
+typedef struct {
+    float x0, y0, w, h, grain, sc;
+    uint32_t top, bot, seed;
+    /* the values that change only per row or per column, computed once (the same arithmetic: the same pixels) */
+    float ly;                      /* the row cached (NAN: none) */
+    uint32_t row, base;
+    float hr, hx, s;
+    int cx0, ncol;                 /* the columns cached: pixel centres cx0 + 0.5 .. */
+    float *sh;
+} brush_t;
+static float brush_sheen(const brush_t *b, float x)
+{
+    float xn = (x - b->x0) / b->w;
+    return 0.055f * expf(-((xn - 0.3f) * (xn - 0.3f)) / 0.05f) + 0.03f * expf(-((xn - 0.8f) * (xn - 0.8f)) / 0.03f) - 0.02f;
+}
 static uint32_t col_brushed(const void *u, float x, float y)
 {
-    const brush_t *b = u;
-    uint32_t row = (uint32_t)(int32_t)floorf(y) + b->seed * 7919u, base = frui_mix(b->top, b->bot, (y - b->y0) / b->h);
-    float xn = (x - b->x0) / b->w, g, s, sh;
-    g = 0.55f * hashf(row) + 0.45f * vnoise(x / (36.f * b->sc) + 13.7f * hashf(row ^ 0xA5A5u), row);
-    s = hashf(row ^ 0x5bd1e995u);
-    if (s > 0.86f) g += 1.6f * (s - 0.86f) / 0.14f * (0.5f + 0.5f * vnoise(x / (140.f * b->sc), row ^ 77u));
-    if (s < -0.9f) g -= 1.2f * (-0.9f - s) / 0.1f * (0.5f + 0.5f * vnoise(x / (120.f * b->sc), row ^ 91u));
-    sh = 0.055f * expf(-((xn - 0.3f) * (xn - 0.3f)) / 0.05f) + 0.03f * expf(-((xn - 0.8f) * (xn - 0.8f)) / 0.03f) - 0.02f;
-    return scale_rgb(base, 1.f + b->grain * g + sh);
+    brush_t *b = (brush_t *)(uintptr_t)u;
+    float g, sh;
+    int ix;
+    if (!(y == b->ly)) {
+        b->ly = y;
+        b->row = (uint32_t)(int32_t)floorf(y) + b->seed * 7919u;
+        b->base = frui_mix(b->top, b->bot, (y - b->y0) / b->h);
+        b->hr = hashf(b->row);
+        b->hx = 13.7f * hashf(b->row ^ 0xA5A5u);
+        b->s = hashf(b->row ^ 0x5bd1e995u);
+    }
+    g = 0.55f * b->hr + 0.45f * vnoise(x / (36.f * b->sc) + b->hx, b->row);
+    if (b->s > 0.86f) g += 1.6f * (b->s - 0.86f) / 0.14f * (0.5f + 0.5f * vnoise(x / (140.f * b->sc), b->row ^ 77u));
+    if (b->s < -0.9f) g -= 1.2f * (-0.9f - b->s) / 0.1f * (0.5f + 0.5f * vnoise(x / (120.f * b->sc), b->row ^ 91u));
+    ix = (int)floorf(x) - b->cx0;
+    sh = b->sh && ix >= 0 && ix < b->ncol && x == (float)(ix + b->cx0) + 0.5f ? b->sh[ix] : brush_sheen(b, x);
+    return scale_rgb(b->base, 1.f + b->grain * g + sh);
 }
 void frui_brushed(frui_canvas *c, float x, float y, float w, float h, float r, uint32_t top, uint32_t bot, float grain,
                   float sc, uint32_t seed)
 {
     rr_t s = mk_rr(x, y, w, h, r);
-    brush_t b = {x, y, w, h, grain, sc, top, bot, seed};
+    brush_t b = {x, y, w, h, grain, sc, top, bot, seed, NAN, 0, 0, 0.f, 0.f, 0.f, 0, 0, 0};
+    int x0 = (int)floorf(x) - 1, x1 = (int)ceilf(x + w) + 1, i;
+    if (x0 < c->cx0) x0 = c->cx0;
+    if (x1 > c->cx1) x1 = c->cx1;
+    if (x1 > x0 && (b.sh = malloc(sizeof(float) * (size_t)(x1 - x0)))) {
+        b.cx0 = x0; b.ncol = x1 - x0;
+        for (i = 0; i < b.ncol; i++) b.sh[i] = brush_sheen(&b, (float)(x0 + i) + 0.5f);
+    }
     shade(c, x, y, x + w, y + h, sd_rrect, &s, 0.f, 0.f, 0, col_brushed, &b);
+    free(b.sh);
 }
 typedef struct { float cx, cy, r, grain, sc; uint32_t lo, hi, seed; } spun_t;
 static uint32_t col_spun(const void *u, float x, float y)

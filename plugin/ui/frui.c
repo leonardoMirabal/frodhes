@@ -37,6 +37,7 @@ struct frui {
     frui_anchor an[MAXW];
     frui_shell sh[16];
     int nw, na, nsh, look;
+    int layer, sb[4];              /* FRUI_LAYER_*; the canvas's base clip (the static layer's sections draw in it) */
     float s;                       /* pixels per logical pixel */
     float hp;                      /* one device pixel, in logical pixels */
     frui_canvas *c;
@@ -156,6 +157,18 @@ static void shell(frui *u, float x, float y, float w, float h, float r)
 {
     if (u->nsh < 16) { frui_shell *s = &u->sh[u->nsh++]; s->x = x; s->y = y; s->w = w; s->h = h; s->r = r; }
 }
+/* the static layer (frui_set_layer): st_begin before its shapes (0: skip them), st_end after; between them the static
+ * pass draws in the canvas's base clip, everywhere else in an empty one */
+static int st_begin(frui *u)
+{
+    if (u->layer == FRUI_LAYER_DYNAMIC) return 0;
+    if (u->layer == FRUI_LAYER_STATIC) frui_clip_base(u->c, u->sb[0], u->sb[1], u->sb[2], u->sb[3]);
+    return 1;
+}
+static void st_end(frui *u)
+{
+    if (u->layer == FRUI_LAYER_STATIC) frui_clip_base(u->c, 0, 0, 0, 0);
+}
 static int is_focus(frui *u, int kind, int id) { return u->m->focus == FRUI_WID(kind, id); }
 static int is_hover(frui *u, int kind, int id) { return u->m->hover == FRUI_WID(kind, id); }
 
@@ -268,9 +281,14 @@ static void well(frui *u, float x, float y, float w, float h, float r)
     frui_rect(u->c, X(x + r), X(y) + 1.f, X(w - 2.f * r), X(2.f), FRUI_RGBA(0, 0, 0, 200));
 }
 /* the black section panels: raised from the black body (rail) or set into the plate */
+static void panel_px(frui *u, float x, float y, float w, float h);
 static void panel(frui *u, float x, float y, float w, float h)
 {
     shell(u, x, y, w, h, R_PANEL);
+    if (st_begin(u)) { panel_px(u, x, y, w, h); st_end(u); }
+}
+static void panel_px(frui *u, float x, float y, float w, float h)
+{
     if (u->look == FRUI_LOOK_A3) {   /* barely raised from the body: a hairline lit edge on top, a flat face */
         frui_rrect(u->c, X(x), X(y) + 1.f, X(w), X(h), X(R_PANEL), FRUI_RGBA(0, 0, 0, 200));
         frui_rrect(u->c, X(x), X(y), X(w), X(h), X(R_PANEL), FRUI_RGB(40, 40, 42));
@@ -300,17 +318,19 @@ static void a3_plate(frui *u)
 {
     float W = (float)FRUI_W, H = (float)FRUI_H, bx = A3_FRAME, by = A3_BODY_Y, bw = W - 2.f * A3_FRAME,
           bh = H - A3_BODY_Y - A3_FRAME;
-    frui_fill(u->c, FRUI_RGB(6, 6, 7));
     shell(u, 0.f, 0.f, W, H, R_OUT);
+    shell(u, bx, by, bw, bh, R_BODY);
+    if (!st_begin(u)) return;
+    frui_fill(u->c, FRUI_RGB(6, 6, 7));
     frui_brushed(u->c, 0.f, 0.f, X(W), X(H), X(R_OUT), FRUI_RGB(200, 202, 205), FRUI_RGB(176, 178, 182), 0.03f, u->s, 1u);
     frui_rrect_stroke(u->c, 0.5f, 0.5f, X(W) - 1.f, X(H) - 1.f, X(R_OUT), 1.f, FRUI_RGBA(0, 0, 0, 110));
     frui_rrect_stroke(u->c, 1.5f, 1.5f, X(W) - 3.f, X(H) - 3.f, X(R_OUT) - 1.f, 1.f, FRUI_RGBA(255, 255, 255, 110));
     /* the body: a chamfer, dark above and lit below, then the black with a two-pixel shade under its top edge */
-    shell(u, bx, by, bw, bh, R_BODY);
     frui_rrect(u->c, X(bx), X(by) + 1.f, X(bw), X(bh), X(R_BODY), FRUI_RGBA(255, 255, 255, 150));
     frui_rrect(u->c, X(bx), X(by), X(bw), X(bh), X(R_BODY), FRUI_RGB(52, 53, 56));
     frui_rrect(u->c, X(bx) + 1.f, X(by) + 1.f, X(bw) - 2.f, X(bh) - 2.f, X(R_BODY) - 1.f, FRUI_RGB(2, 2, 3));
     frui_rrect(u->c, X(bx) + 1.f, X(by) + 3.f, X(bw) - 2.f, X(bh) - 4.f, X(R_BODY) - 1.f, FRUI_RGB(8, 8, 9));
+    st_end(u);
 }
 /* A3: square corners outside a rounded one cut away in col (for the keys in their rounded bed); q: 0 top left, 1 top
  * right, 2 bottom right, 3 bottom left */
@@ -354,6 +374,7 @@ static void knob_body(frui *u, float cx, float cy, float r, float v, int centred
                       X(1.3f), col);
         }
     }
+    frui_shadow_hole_circle(u->c, X(cx), X(cy), X(r));   /* (the skirt below covers it: cheaper, the same pixels) */
     frui_circle_shadow(u->c, X(cx), X(cy + r * 0.14f), X(r * 0.96f), X(r * 0.16f), FRUI_RGBA(0, 0, 0, metal ? 120 : 200));
     frui_circle_grad(u->c, X(cx), X(cy), X(r), hov ? FRUI_RGB(62, 62, 66) : FRUI_RGB(54, 54, 57), FRUI_RGB(10, 10, 11));
     /* the knurl: fine ridges on the skirt's edge, lit from above */
@@ -982,6 +1003,7 @@ static void keyboard(frui *u)
         if (white_of[pc] < 0) {
             float kx = x + ww * (float)((oct - 1) * 7 + white_of[pc - 1] + 1) - bw * 0.5f;
             int on = m->notes[n] != 0;
+            frui_shadow_hole_rrect(u->c, X(kx), X(y - 6.f), X(bw), X(bh + 6.f), X(2.5f));
             frui_rrect_shadow(u->c, X(kx + 1.f), X(y), X(bw), X(bh), X(2.f), X(2.f), FRUI_RGBA(0, 0, 0, 120));
             frui_rrect(u->c, X(kx), X(y - 6.f), X(bw), X(bh + 6.f), X(2.5f), FRUI_RGB(4, 4, 5));
             frui_rrect_grad(u->c, X(kx + 1.5f), X(y - 6.f), X(bw - 3.f), X(bh + 6.f - 5.f), X(2.f),
@@ -1311,12 +1333,17 @@ void frui_draw(frui *u, const frui_model *m, frui_canvas *c)
     region(u, FRR_VOICE, G_M, VO_Y, (float)FRUI_W - 2.f * G_M, VO_H);
     u->s = (float)c->w / (float)FRUI_W;
     u->hp = 1.f / u->s;
+    u->sb[0] = c->bx0; u->sb[1] = c->by0; u->sb[2] = c->bx1; u->sb[3] = c->by1;
     frui_clip_reset(c);
-    if (u->look == FRUI_LOOK_PLATE) {
-        frui_fill(c, FRUI_RGB(40, 40, 42));
-        frui_brushed(c, 0.f, 0.f, (float)c->w, (float)c->h, 0.f, C_AL_T, FRUI_RGB(158, 160, 164), 0.045f, u->s, 1u);
-    } else if (u->look == FRUI_LOOK_A3) a3_plate(u);
-    else frui_fill(c, C_BG);
+    if (u->look == FRUI_LOOK_A3) a3_plate(u);       /* (its shells always; its pixels: the static layer) */
+    else if (st_begin(u)) {
+        if (u->look == FRUI_LOOK_PLATE) {
+            frui_fill(c, FRUI_RGB(40, 40, 42));
+            frui_brushed(c, 0.f, 0.f, (float)c->w, (float)c->h, 0.f, C_AL_T, FRUI_RGB(158, 160, 164), 0.045f, u->s, 1u);
+        } else frui_fill(c, C_BG);
+        st_end(u);
+    }
+    if (u->layer == FRUI_LAYER_STATIC) frui_clip_base(c, 0, 0, 0, 0);
     rail(u);
     {
         int nrail = u->nw;
@@ -1329,7 +1356,9 @@ void frui_draw(frui *u, const frui_model *m, frui_canvas *c)
         else knob_menu(u);
     }
     popup(u);
+    if (u->layer == FRUI_LAYER_STATIC) frui_clip_base(c, u->sb[0], u->sb[1], u->sb[2], u->sb[3]);
 }
+void frui_set_layer(frui *u, int layer) { u->layer = layer; }
 
 int frui_range(int id) { return phi(id); }
 

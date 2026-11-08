@@ -39,7 +39,10 @@ the FM-1.
 
 960 x 600 points by default, resizable at 16:10 from 720 x 450 to 1920 x 1200, drawn at the screen's pixel size
 (Retina and high-DPI Windows / Linux screens too), on macOS (Cocoa), Windows (a child window) and Linux (X11, run
-by the host's event loop). The plugin's own renderer (`plugin/ui/`) draws it; the fonts are inside the binary.
+by the host's event loop). The plugin's own renderer (`plugin/ui/`) draws it; the fonts are inside the binary. It repaints only what
+changed; the plate and the section panels are drawn once per window size and kept, so even a whole repaint at 2x
+(1920 x 1200 pixels) takes about 8 ms on an M-series Mac (`frp_test_gui_ctl` prints it), with the same pixels as one
+uncached draw.
 
 | | |
 | --- | --- |

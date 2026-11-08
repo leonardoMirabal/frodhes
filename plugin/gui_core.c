@@ -28,6 +28,8 @@ struct frp_gui {
     int have_drawn, full;
     uint32_t *px;
     int pw, ph;
+    uint32_t *st;                    /* the static layer at pw x ph (frui_set_layer): the plate, the section panels */
+    int st_ok;
     float dr[MAXDIRTY][4];           /* logical rectangles to repaint */
     int nd;
     double now, last_tick;
@@ -287,9 +289,12 @@ int frp_gui_resize(frp_gui_t *g, int pw, int ph)
     px = malloc(sizeof(uint32_t) * (size_t)w * (size_t)h);
     if (!px) return -1;
     free(g->px);
+    free(g->st);
     g->px = px; g->pw = w; g->ph = h;
+    g->st = malloc(sizeof(uint32_t) * (size_t)w * (size_t)h);
+    g->st_ok = 0;
     g->full = 1;
-    return 0;
+    return g->st ? 0 : -1;
 }
 int frp_gui_paint(frp_gui_t *g, int d[4])
 {
@@ -298,6 +303,14 @@ int frp_gui_paint(frp_gui_t *g, int d[4])
     int i;
     if (!g->px) return 0;
     if (!g->full && !g->nd) return 0;
+    if (!g->st_ok) {                                 /* the static layer, once per size */
+        frui_canvas_init(&c, g->st, g->pw, g->ph);
+        frui_set_layer(g->u, FRUI_LAYER_STATIC);
+        frui_draw(g->u, &g->m, &c);
+        frui_set_layer(g->u, FRUI_LAYER_DYNAMIC);
+        g->st_ok = 1;
+        g->full = 1;
+    }
     frui_canvas_init(&c, g->px, g->pw, g->ph);
     s = (float)g->pw / (float)FRUI_W;
     if (!g->full) {                                  /* many small rectangles: one full paint is cheaper */
@@ -306,6 +319,7 @@ int frp_gui_paint(frp_gui_t *g, int d[4])
         if (area > 0.4f * (float)(FRUI_W * FRUI_H)) g->full = 1;
     }
     if (g->full) {
+        memcpy(g->px, g->st, sizeof(uint32_t) * (size_t)g->pw * (size_t)g->ph);
         frui_draw(g->u, &g->m, &c);
         d[0] = 0; d[1] = 0; d[2] = g->pw; d[3] = g->ph;
     } else {
@@ -315,6 +329,9 @@ int frp_gui_paint(frp_gui_t *g, int d[4])
             int x1 = (int)ceilf((g->dr[i][0] + g->dr[i][2]) * s), y1 = (int)ceilf((g->dr[i][1] + g->dr[i][3]) * s);
             x0 = clampi(x0, 0, g->pw); x1 = clampi(x1, 0, g->pw); y0 = clampi(y0, 0, g->ph); y1 = clampi(y1, 0, g->ph);
             if (x1 <= x0 || y1 <= y0) continue;
+            for (int y = y0; y < y1; y++)
+                memcpy(g->px + (size_t)y * (size_t)g->pw + (size_t)x0, g->st + (size_t)y * (size_t)g->pw + (size_t)x0,
+                       sizeof(uint32_t) * (size_t)(x1 - x0));
             frui_clip_base(&c, x0, y0, x1, y1);
             frui_draw(g->u, &g->m, &c);
             if (x0 < d[0]) d[0] = x0;
@@ -691,6 +708,7 @@ void frp_gui_free(frp_gui_t *g)
     for (k = 0; k < 128; k++) if (g->own_notes[k]) note(g, k, 0);   /* (a key held while the window closes) */
     frui_free(g->u);
     free(g->px);
+    free(g->st);
     free(g);
     if (--s_refs == 0) {
         frui_font_free(s_font); frui_font_free(s_dfont);

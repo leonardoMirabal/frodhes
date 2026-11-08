@@ -74,6 +74,12 @@ void frui_free(frui *u);
  * text font) */
 enum { FRUI_LOOK_RAIL, FRUI_LOOK_PLATE, FRUI_LOOK_A3 };
 void frui_set_look(frui *u, int look, frui_font *display);
+/* what frui_draw paints (the window's cache, plugin/gui_core.c): everything (the default); only the static layer (the
+ * background and the section panels: the same for every model at a size); or everything but it. The static layer drawn
+ * once, then the dynamic one over a copy of it, gives exactly the pixels of one whole draw (each static shape comes
+ * before every dynamic one that touches its pixels: plugin/tests/test_gui_ctl.c checks it) */
+enum { FRUI_LAYER_ALL, FRUI_LAYER_STATIC, FRUI_LAYER_DYNAMIC };
+void frui_set_layer(frui *u, int layer);
 /* the rounded shapes of the last draw that nest (plate, body, sections, keyboard, corner switches), for the layout
  * check: nested corners must be concentric (inner radius = outer radius - the gap); logical pixels */
 typedef struct { float x, y, w, h, r; } frui_shell;

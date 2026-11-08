@@ -4,6 +4,7 @@
  * default / the right-click menu, segments, menus and their options, the keys strip, TAB + arrows, the gear, ESC,
  * hover) and that every write is inside a gesture. Prints PASS / FAIL lines; exit 0 when all pass. */
 #include <stdlib.h>
+#include <time.h>
 #include "gui_fake_host.h"
 
 static int fails;
@@ -22,6 +23,87 @@ static int ev(int kind, int button, int mods, float x, float y, float wheel, int
 }
 static void paint(void) { frui_canvas_init(&cv, px, cv.w, cv.h); cl->paint(cl->ctx, &cv, 1.f); }
 
+/* the window's cache (frui_set_layer): the static layer, then the dynamic one over a copy of it, is pixel for pixel
+ * one whole draw, for every look (A3 at 1x / 1.5x / 2x, the others at 1x), over models that open every pop-up and state */
+static int layer_check(frui_font *f, frui_font *d)
+{
+    static const int sz[3] = {960, 1440, 1920};
+    frui *u = frui_new(f, fh_text, 0);
+    int look, k, sc, i, bad = 0, runs = 0;
+    unsigned seed = 7;
+    for (look = 0; look < 3; look++)
+        for (k = 0; k < (look == FRUI_LOOK_A3 ? 3 : 1); k++)
+            for (sc = 0; sc < 8; sc++) {
+                int W = sz[k], H = W * FRUI_H / FRUI_W;
+                uint32_t *a = calloc((size_t)W * H, 4), *b = calloc((size_t)W * H, 4);
+                frui_canvas ca, cb;
+                frui_model m;
+                memset(&m, 0, sizeof m);
+                m.focus = m.hover = m.menu = m.ctx_knob = m.learning = -1;
+                for (i = 0; i < FRP_COUNT; i++) { seed = seed * 1103515245u + 12345u; m.p[i] = (uint8_t)((seed >> 16) % 128u); }
+                m.p[FRP_TYPE] = (uint8_t)(sc % 6); m.tab_l = sc % 4; m.tab_r = sc % 6; m.page_rv = sc & 1;
+                m.out_db[0] = -6.f; m.out_peak_db[1] = -2.f; m.gr_db = -5.f; m.notes[48] = 100; m.notes[61] = 90; m.sustain = sc & 1;
+                if (sc == 1) m.settings = 1;
+                if (sc == 2) m.menu = FRUI_WID(FRW_MENU, FRP_TYPE);
+                if (sc == 3) m.ctx_knob = FRP_BARK;
+                if (sc == 4) { m.fx_bypass = 1; m.hover = FRUI_WID(FRW_KNOB, FRP_TONE); m.focus = FRUI_WID(FRW_KNOB, FRP_BELL); }
+                if (sc == 5) m.learning = FRP_DECAY;
+                if (sc == 6) { m.settings = 1; m.menu = FRUI_WID(FRW_MENU, FRS_SYNCDIV); }
+                if (sc == 7) m.learn_cc[FRP_TONE] = 21;
+                frui_set_look(u, look, d);
+                frui_canvas_init(&ca, a, W, H);
+                frui_set_layer(u, FRUI_LAYER_ALL);
+                frui_draw(u, &m, &ca);
+                frui_canvas_init(&cb, b, W, H);
+                frui_set_layer(u, FRUI_LAYER_STATIC);
+                frui_draw(u, &m, &cb);
+                frui_set_layer(u, FRUI_LAYER_DYNAMIC);
+                frui_draw(u, &m, &cb);
+                for (i = 0; i < W * H; i++) bad += a[i] != b[i];
+                runs++;
+                free(a); free(b);
+            }
+    frui_free(u);
+    CHECK(bad == 0, "the cached static layer + the dynamic one = one whole draw: %d pictures, %d pixels differ", runs, bad);
+    return bad;
+}
+
+/* the full repaint's time at 2x (1920 x 1200): every pixel redrawn (a switch moved: the layout changes), the static
+ * layer from the cache; the median of 21 (printed, not checked: the build machine's load decides) */
+static double ms_now(void)
+{
+    struct timespec t;
+    timespec_get(&t, TIME_UTC);
+    return (double)t.tv_sec * 1e3 + (double)t.tv_nsec * 1e-6;
+}
+static int cmpd(const void *a, const void *b) { double x = *(const double *)a, y = *(const double *)b; return (x > y) - (x < y); }
+static void time_full(void)
+{
+    fake_host h2;
+    frp_ui_host_t uh;
+    frp_gui_t *g;
+    double t[21], t0, first;
+    int i, d[4];
+    fh_init(&h2, &uh);
+    if (!(g = frp_gui_new(&uh)) || frp_gui_resize(g, 1920, 1200)) { CHECK(0, "a window core at 2x"); return; }
+    frp_gui_tick(g, 0.0);
+    t0 = ms_now();
+    frp_gui_paint(g, d);
+    first = ms_now() - t0;
+    for (i = 0; i < 21; i++) {
+        h2.v[FRP_TYPE] = i & 1 ? 0 : 4;          /* (a Rhodes / a vibraphone: the layout changes, all of it repaints) */
+        frp_gui_tick(g, 0.1 * (i + 1));
+        t0 = ms_now();
+        frp_gui_paint(g, d);
+        t[i] = ms_now() - t0;
+    }
+    qsort(t, 21, sizeof t[0], cmpd);
+    printf("TIME the first paint at 2x (the static layer cached): %.1f ms; a full repaint at 2x: median %.1f ms, "
+           "min %.1f, max %.1f\n", first, t[10], t[0], t[20]);
+    CHECK(d[2] - d[0] == 1920 && d[3] - d[1] == 1200, "the repaint was a full one (%d x %d)", d[2] - d[0], d[3] - d[1]);
+    frp_gui_free(g);
+}
+
 int main(void)
 {
     fake_host h;
@@ -31,6 +113,8 @@ int main(void)
     int v, i, nonblack = 0;
     CHECK(f && d, "the embedded fonts load (%lu + %lu bytes)", frp_font_text_len, frp_font_display_len);
     if (!f || !d) return 1;
+    layer_check(f, d);
+    time_full();
     fh_init(&h, &ch);
     ctl = frp_gui_new(&ch);
     CHECK(ctl != 0, "the window core starts");
