@@ -16,40 +16,64 @@
 # harder (500), softer (900): louder, softer
 1000 vkey 7 500
 1010 keys 0x80
-1020 expect state lastvel 121
+1020 expect state lastvel 114
 1200 keys 0
 1300 vkey 7 900
 1310 keys 0x80
 1320 expect state lastvel 47
 1500 keys 0
-# the firmest (400, under the floor): 127, and C4's floor learns down a step (402)
+# firmer than the floor (400, a third of an octave under it): 124, not 127 (127 needs half an octave under the
+# floor, keyvel.c KV_HEAD), and C4's floor learns down a step (402)
 1600 vkey 7 400
 1610 keys 0x80
-1620 expect state lastvel 127
+1620 expect state lastvel 124
 1800 keys 0
 # the same medium press on the lower floor: softer now (87)
 1900 vkey 7 743
 1910 keys 0x80
 1920 expect state lastvel 87
 2000 keys 0
-# a top key (D#5: no converter) plays CONTEXT, the recent average (96 121 47 127 87 -> 95)
+# a top key (D#5: no converter) plays CONTEXT, the recent average (96 114 47 124 87 -> 94)
 2100 keys 0x400000
-2120 expect state lastvel 95
+2120 expect state lastvel 94
 2300 keys 0
-# a chord of two analog keys and a top key, each its own: F3 110, C5 29, D#5 CONTEXT (81: after both, the last in key order)
+# a chord of two analog keys and a top key, each its own: F3 106, C5 29, D#5 CONTEXT (80: after both, the last in key order)
 2400 vkey 0 600
 2400 vkey 19 950
 2410 keys 0x480001
-2490 expect state lastvel 81
+2490 expect state lastvel 80
 2500 keys 0
 # a short press (one millisecond, a reading): plays and stops
 2600 vkey 3 500
 2610 keys 0x8
 2611 keys 0
-2620 expect state lastvel 121
+2620 expect state lastvel 114
 # a vkey on a top key is ignored (no converter): CONTEXT
 2700 vkey 22 300
 2710 keys 0x400000
-2720 expect state lastvel 91
+2720 expect state lastvel 89
 2800 keys 0
-3000 end
+# a hard player (0.9.10, the user: 45 % of the presses at 127 on MEDIUM): landings at the key's floor, its firmest so
+# far, play KEY VEL + 0.75 (127 - KEY VEL) = 119, never 127; only one half an octave firmer than the floor plays 127.
+# E4 (key 11): its floor 450 -> the same firm press four times, then a far firmer one
+2900 vkey 11 450
+2910 keys 0x800
+2920 expect state lastvel 119
+2950 keys 0
+3000 vkey 11 450
+3010 keys 0x800
+3020 expect state lastvel 119
+3050 keys 0
+3100 vkey 11 440
+3110 keys 0x800
+3120 expect state lastvel 120
+3150 keys 0
+3200 vkey 11 440
+3210 keys 0x800
+3220 expect state lastvel 119
+3250 keys 0
+3300 vkey 11 250
+3310 keys 0x800
+3320 expect state lastvel 127
+3350 keys 0
+3500 end

@@ -27,7 +27,7 @@ BASE = json.load(open(dry_dist.BASE))
 def test_the_reference_covers_every_cell():
     """every config / TYPE has its 0.9.9 cells, and every note and chord in them"""
     ev, _ = dry_dist.events()
-    labels = {e[1] if e[0] == "note" else "chord/" + e[1] for e in ev}
+    labels = {"chord/" + e[1] if e[0] == "chord" else e[1] for e in ev}
     for tag, *_ in dry_dist.tags():
         cfg, ty, _ = tag.split("-")
         assert set(BASE[f"{cfg}-{ty}-A"]) == labels, tag

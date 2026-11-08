@@ -39,16 +39,23 @@ static int fails;
 static double ref_curve(double d, double fl, uint32_t touch, double kvel)
 {
     static const double G[3] = {115 / 256.0, 179 / 256.0, 282 / 256.0};
-    double s, u, v, um = KV_UMID / 32768.0;
+    double s, u, v, top, um = KV_UMID / 32768.0;
     if (kvel < 1) kvel = 1;
+    if (kvel > 127) kvel = 127;
     if (touch >= KV_FIXED) return kvel;
     if (fl < KV_FLOOR_MIN) fl = KV_FLOOR_MIN;
     if (fl >= KV_CEIL) fl = KV_CEIL - 1;
+    top = kvel + (127 - kvel) * KV_TOPQ / 32768.0;
+    if (d < fl) {                     /* firmer than the floor: top .. 127 over KV_HEAD (log2) */
+        double h = log2((fl - KV_DBASE) / (d > KV_DBASE ? d - KV_DBASE : 1)) / (KV_HEAD / 65536.0);
+        v = h >= 1 ? 127 : top + (127 - top) * h;
+        return v > 127 ? 127 : v;
+    }
     if (d <= fl) s = 1;
     else if (d >= KV_CEIL) s = 0;
     else s = 1 - log2((d - KV_DBASE) / (fl - KV_DBASE)) / log2((KV_CEIL - KV_DBASE) / (fl - KV_DBASE));
     u = s <= 0 ? 0 : pow(s, G[touch]);
-    v = u <= um ? 1 + (kvel - 1) * u / um : kvel + (127 - kvel) * (u - um) / (1 - um);
+    v = u <= um ? 1 + (kvel - 1) * u / um : kvel + (top - kvel) * (u - um) / (1 - um);
     return v < 1 ? 1 : v > 127 ? 127 : v;
 }
 static void test_curve(void)
@@ -73,7 +80,12 @@ static void test_curve(void)
     CHECK(n == 0, "the integer curve within 1 of the float one (worst %.2f, %u off)", worst, n);
     CHECK(mono, "the curve never rises with the reading");
     CHECK(kv_curve(300, 450, KV_FIXED, 77) == 77 && kv_curve(0, 0, KV_FIXED, 0) == 1, "FIXED = KEY VEL");
-    CHECK(kv_curve(400, 450, KV_MEDIUM, 96) == 127 && kv_curve(1023, 450, KV_MEDIUM, 96) == 1, "the floor 127, the ceiling 1");
+    CHECK(kv_curve(450, 450, KV_MEDIUM, 96) == 119 && kv_curve(1023, 450, KV_MEDIUM, 96) == 1, "the floor 119 (KEY VEL 96), the ceiling 1");
+    CHECK(kv_curve(400, 450, KV_MEDIUM, 96) < 127 && kv_curve(372, 450, KV_MEDIUM, 96) == 127 && kv_curve(0, 450, KV_MEDIUM, 96) == 127,
+          "firmer than the floor: louder, 127 from half an octave under it (400: %u)", kv_curve(400, 450, KV_MEDIUM, 96));
+    for (t = 0; t < KV_FIXED; t++)     /* every TOUCH: the floor plays the same TOP, 127 only under it */
+        CHECK(kv_curve(450, 450, t, 96) == 119 && kv_curve(451, 450, t, 96) <= 119, "TOUCH %u: the floor plays 119", t);
+    CHECK(kv_curve(450, 450, KV_MEDIUM, 127) == 127, "KEY VEL 127: the floor plays 127");
     CHECK(kv_curve(600, 1000, KV_MEDIUM, 96) >= 1 && kv_curve(600, 5000, KV_HEAVY, 96) >= 1 && kv_curve(600, 0, KV_LIGHT, 0) >= 1,
           "no divide by zero: floor at / past the ceiling, 0, KEY VEL 0");
     {   /* a medium press: u = KV_UMID plays KEY VEL; LIGHT plays it louder, HEAVY softer */

@@ -20,7 +20,7 @@ from test_persistence import boot, flash_file, put_settings, read_img, settings_
 O_KEY_VEL, O_VEL_CURVE = 8, 9                     # settings_t: clock 6, midi_ch 7, key_vel 8, vel_curve 9
 
 # keyvel.c's constants (test_constants_are_keyvel_c checks them)
-K = dict(KV_DBASE=185, KV_FLOOR0=450, KV_FLOOR_MIN=217, KV_FLOOR_STEP=48, KV_CEIL=1000, KV_UMID=15073)
+K = dict(KV_DBASE=185, KV_FLOOR0=450, KV_FLOOR_MIN=217, KV_FLOOR_STEP=48, KV_CEIL=1000, KV_UMID=15073, KV_TOPQ=24576, KV_HEAD=32768)
 GAMMA = [115 / 256, 179 / 256, 282 / 256]         # LIGHT MEDIUM HEAVY
 LIGHT, MEDIUM, HEAVY, FIXED = range(4)
 
@@ -31,10 +31,14 @@ def curve(d, fl, touch, kvel):
         return kvel
     fl = min(max(fl, K["KV_FLOOR_MIN"]), K["KV_CEIL"] - 1)
     b, c = K["KV_DBASE"], K["KV_CEIL"]
+    top = kvel + (127 - kvel) * K["KV_TOPQ"] / 32768
+    if d < fl:                                    # firmer than the floor: top .. 127 over KV_HEAD (log2)
+        h = math.log2((fl - b) / max(d - b, 1)) / (K["KV_HEAD"] / 65536)
+        return min(127, top + (127 - top) * h)
     s = 1.0 if d <= fl else 0.0 if d >= c else 1 - math.log2((d - b) / (fl - b)) / math.log2((c - b) / (fl - b))
     u = s ** GAMMA[touch] if s > 0 else 0.0
     um = K["KV_UMID"] / 32768
-    v = 1 + (kvel - 1) * u / um if u <= um else kvel + (127 - kvel) * (u - um) / (1 - um)
+    v = 1 + (kvel - 1) * u / um if u <= um else kvel + (top - kvel) * (u - um) / (1 - um)
     return min(max(v, 1), 127)
 
 
@@ -137,11 +141,11 @@ def test_script_is_the_curve():
     """tests/scripts/keyvel.txt's velocities (MIDI out) = the curve in floating point (+-1), with the floor learned
     downward only and CONTEXT the running average of the analog keys"""
     lines = [l.strip() for l in open(os.path.join(ROOT, "tests", "scripts", "keyvel.txt")) if l.strip() and l[0] != "#"]
-    r = run("keyvel-script", [l for l in lines if " end" not in l], 3000)
+    r = run("keyvel-script", [l for l in lines if " end" not in l], 3600)
     got, want = note_ons(r), expect_script(lines)
     check(got, want)
     # every press of the script plays, once
-    assert len(got) == 12
+    assert len(got) == 17
 
 
 def test_chord_arp_seq_get_the_velocity():

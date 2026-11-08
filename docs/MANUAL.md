@@ -670,7 +670,7 @@ DRIVE, FILTER, DELAY and REVERB.
 to C5** do this. The top 7 keys (**C#5 to G5**) have no way to measure it: they play the average of your recent
 presses, so they follow how you are playing (after 5 s without a press, KEY VEL again). A note starts a few
 milliseconds after the key closes, while the reading comes in. The notes the keys send over USB-MIDI carry the same
-velocity. TOUCH and KEY VEL belong to the FM-1, not to a preset (a preset does not change them). The browser
+velocity. Each key learns how firmly you can press it: a press as firm as your firmest so far plays a little under 127 (119 at KEY VEL 96), and only a clearly firmer one reaches 127, so velocity 127 stays for the hardest hits. TOUCH and KEY VEL belong to the FM-1, not to a preset (a preset does not change them). The browser
 emulator has no velocity: its keys play at KEY VEL.
 
 The bottom line shows the name and the version installed, the battery's reading (BAT, the raw value the battery
