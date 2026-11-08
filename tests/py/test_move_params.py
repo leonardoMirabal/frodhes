@@ -113,6 +113,8 @@ def test_settings_options_match_the_cards():
         opts = chain[key]["options"]
         for x in range(len(opts)):
             v = 64 if slot == "S_SQEDIT" and x else x
+            if slot == "S_VRESP":                       # (CC 40 in bands of 128 / the methods: each band's middle)
+                v = (2 * x + 1) * 64 // len(opts)
             lines += [cc(t, int(kcc), v), f"{t + 3} dump"]
             want.append((t + 3, slot, opts[x]))
             t += 6

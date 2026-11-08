@@ -110,6 +110,7 @@ e0d241a77ca78a6ff9c6ea582be21e45ea710fc475d1662b975fed96e1b3b683  scripts/vibes_
 # host-only scripts/ui_panel: FM-1 input lines: btn, turn
 # host-only scripts/ui_presets: FM-1 input lines: btn, press, release, turn
 # host-only scripts/usb_rec_save: FM-1 input lines: usbrec
+# host-only scripts/vel_resp: FM-1 input lines: btn, turn
 # host-only scripts/vibes_head: FM-1 input lines: turn
 # host-only scripts/vibes_motor_page: FM-1 input lines: btn, keys, turn
 # host-only scripts/wah_shape: FM-1 input lines: btn, turn
