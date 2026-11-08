@@ -94,7 +94,7 @@ def test_dev_opens_only_frodhes(monkeypatch, names):
 def test_force_takes_only_the_named_unit():
     """--port / FM1_PORT (a loaned unit with its own USB name): only that name, never the Frodhes FM-1"""
     try:
-        fp.force("Dualcore")
+        fp.force("Dualcore", devs=[])
         names = ["Frodhes FM-1", "Dualcore Test", "Textura FM-1", "M6"]
         assert fp.pick(names) == ["Dualcore Test"] and fp.first(names) == "Dualcore Test"
         assert fp.devices([dev("Frodhes FM-1"), dev("Dualcore Test")], 2) == [1]
@@ -103,3 +103,42 @@ def test_force_takes_only_the_named_unit():
     finally:
         fp.force(None)
     assert "FM1_PORT" not in os.environ and fp.pick(["Frodhes FM-1", "Dualcore Test"]) == ["Frodhes FM-1"]
+
+
+IOREG = """+-o Root  <class IORegistryEntry>
+  +-o AppleT8132USBXHCI@00000000  <class AppleT8132USBXHCI>
+  | +-o Felucca Update@00100000  <class IOUSBHostDevice>
+  |     {
+  |       "USB Product Name" = "Felucca Update"
+  |       "locationID" = 1048576
+  |     }
+  |   +-o Dualcore Test@20130000  <class IOUSBHostDevice>
+  |       "USB Product Name" = "Dualcore Test"
+  |       "locationID" = 538116096
+  | +-o Frodhes FM-1@20140000  <class IOUSBHostDevice>
+  |       "locationID" = 538181632
+  |       "USB Product Name" = "Frodhes FM-1"
+"""
+
+
+def test_ioreg_and_match():
+    devs = fp.parse_ioreg(IOREG)
+    assert devs == [("Felucca Update", 0x00100000), ("Dualcore Test", 0x20130000), ("Frodhes FM-1", 0x20140000)]
+    assert fp.usb_match("Dualcore", devs) == [("Dualcore Test", 0x20130000)]
+    assert fp.usb_match("Frodhes FM-1", devs) == [("Frodhes FM-1", 0x20140000)]
+    assert fp.parse_loc("0x00100000") == 1048576 and fp.parse_loc("1048576") == 1048576
+
+
+def test_force_refuses_a_shared_name_and_a_wrong_location():
+    two = [("Frodhes FM-1", 0x20130000), ("Frodhes FM-1", 0x00100000)]
+    try:
+        with pytest.raises(SystemExit, match="cannot be told apart"):
+            fp.force("Frodhes FM-1", devs=two)
+        one = [("Frodhes FM-1", 0x20130000), ("Dualcore Test", 0x00100000)]
+        with pytest.raises(SystemExit, match="not there"):
+            fp.force("Dualcore", 0x20130000, devs=one)
+        assert fp.FORCED is None
+        fp.force("Dualcore", 0x00100000, devs=one)
+        assert fp.pick(["Frodhes FM-1", "Dualcore Test"]) == ["Dualcore Test"]
+    finally:
+        fp.force(None)

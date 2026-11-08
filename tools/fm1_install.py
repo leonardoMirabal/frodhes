@@ -24,6 +24,12 @@ ota-FM-1_9XX or ota-SMK-37 Pro_9XX, is resumed).
 
 With several FM-1s connected, a Frodhes port is the target when there is one (fm1_ports.py); without one the
 install refuses unless only one FM-1-like port exists or --port names one. Another unit's ports are never probed.
+Every update loader takes the same name ("Felucca Update"), so the unit is pinned by its USB location (macOS
+ioreg locationID) before it is switched: only a loader, and then a restarted firmware, at that same location is
+taken, and only when no other USB device has its name (two ports of one name cannot be told apart: refused, the
+unit left in update mode for a later run). --location 0x... asserts where the unit is. Two installs never overlap:
+the whole switch -> write -> restart holds the machine-wide INSTALL lock (tools/lock.py, the main checkout's
+build/locks/INSTALL.lockdir; separate from the DEVICE locks).
 
 Packages: 20 interleave blocks (FM-1, SLOOP, SMK-37 Pro up to v011) or more (the stock SMK-37 Pro
 v016 has 36: the extra markers are 0x7D); the count is detected and checked with the files' CRCs.
@@ -266,6 +272,12 @@ class MidoBackend:
     def open(self, in_name, out_name):
         return MidoLink(self, in_name, out_name)
 
+    install_lock = True                     # a real computer: installs hold the INSTALL lock (tests: off)
+
+    @staticmethod
+    def usb_devices():
+        return fm1_ports.usb_devices()
+
 
 def pair_output(name, outs):
     if name in outs:
@@ -301,11 +313,56 @@ def handshake(link, tries=3):
 
 
 class Updater:
-    def __init__(self, backend, port=None, new_port=None):
+    def __init__(self, backend, port=None, new_port=None, location=None):
         self.backend = backend
         self.port = port
         self.new_port = new_port   # --new-port: the name the device takes after the restart (another USB name)
         self.others = set()        # the other devices' ports at the start: never probed in the waits
+        self.location = location   # --location: where the unit must be (asserted)
+        self.loc = None            # pin(): the unit's USB location; the waits take only ports there
+        self.skipped = set()       # ports passed over in the waits (another unit's, or a shared name)
+
+    def usb(self):
+        f = getattr(self.backend, "usb_devices", None)
+        return f() if f else None
+
+    def pin(self, name):
+        """the USB location of the device behind port `name`, kept for the waits; refuses when it cannot tell this
+        unit from another one"""
+        devs = self.usb()
+        if devs is None:
+            if self.location is not None:
+                raise InstallError("usage", "--location: no USB device list on this computer (macOS ioreg)")
+            return None
+        m = fm1_ports.usb_match(name, devs)
+        where = ", ".join(f"{n!r} at 0x{l:08x}" for n, l in m) or "none"
+        if len(m) > 1:
+            raise InstallError("ambiguous", f"{len(m)} USB devices answer to the port name {name!r} ({where}): "
+                                            "they cannot be told apart; unplug one or give it its own USB name")
+        if self.location is not None and [l for _, l in m] != [self.location]:
+            raise InstallError("notfound", f"--location 0x{self.location:08x}: the port {name!r} is not the unit "
+                                           f"there (found: {where})")
+        if not m:
+            near = [f"{n!r} at 0x{l:08x}" for n, l in devs if PORT_RE.search(n) or "textura" in n.lower()]
+            if near:
+                raise InstallError("ambiguous", f"no USB device found for the port {name!r} while other FM-1-like "
+                                                f"devices are connected ({', '.join(near)}): unplug them")
+            return None
+        self.loc = m[0][1]
+        return self.loc
+
+    def at_ours(self, name):
+        """a port the waits may take: the only USB device of that name, at the pinned location"""
+        if self.loc is None:
+            return True
+        devs = self.usb()
+        if devs is None:
+            return True
+        m = fm1_ports.usb_match(name, devs)
+        if len(m) == 1 and m[0][1] == self.loc:
+            return True
+        self.skipped.add(f"{name!r} at " + (", ".join(f"0x{l:08x}" for _, l in m) or "?"))
+        return False
 
     def candidates(self, only_port):
         """only_port: the ports of the one device to install (refuses when two devices could be it); else (the wait
@@ -339,6 +396,8 @@ class Updater:
             out = pair_output(name, outs)
             if not out:
                 continue
+            if not only_port and not self.at_ours(name):
+                continue                   # another unit's loader / firmware, or a name two units share
             try:
                 link = self.backend.open(name, out)
             except Exception:
@@ -403,7 +462,9 @@ class Updater:
         time.sleep(DELAY["loader"])
         ota = self.wait_for(lambda i: i.loader, DELAY["wait_loader"])
         if not ota:
-            raise InstallError("noloader", "the update loader did not appear. Replug the USB cable and "
+            other = (f" (not taken: {'; '.join(sorted(self.skipped))}: another unit's, or a name two units share; "
+                     "finish when it is alone)") if self.skipped else ""
+            raise InstallError("noloader", "the update loader did not appear" + other + ". Replug the USB cable and "
                                            "run the install again: the FM-1 stays in update mode until it is done")
         return ota
 
@@ -426,7 +487,8 @@ class Updater:
         time.sleep(DELAY["reboot"])
         back = self.wait_for(lambda i: not i.loader, DELAY["wait_reboot"])
         if not back:
-            raise InstallError("noreturn", "the FM-1 did not come back: power-cycle it")
+            other = f" (not taken: {'; '.join(sorted(self.skipped))})" if self.skipped else ""
+            raise InstallError("noreturn", "the FM-1 did not come back" + other + ": power-cycle it")
         back.link.close()
         if back.id.text != product:
             raise InstallError("mismatch", f"written, but the FM-1 reports {back.id.text} (expected {product})")
@@ -551,23 +613,51 @@ class Progress:
             self.line = False
 
 
+INSTALL_LOCK_WAIT_S = 1800.0                # another install still running after this long: give up (nothing sent)
+
+
+def install_lock(backend, out):
+    """the machine-wide INSTALL lock (a real computer only: backend.install_lock), or a no-op"""
+    import contextlib
+    if not getattr(backend, "install_lock", False):
+        return contextlib.nullcontext()
+    import lock
+    return lock.Lock("INSTALL", who="fm1_install", why="switch -> write -> restart", wait_s=INSTALL_LOCK_WAIT_S,
+                     say=lambda m: print(m, file=out, flush=True))
+
+
 def run(a, backend, out, ask):
-    up = Updater(backend, a.port, getattr(a, "new_port", None))
+    with install_lock(backend, out):
+        return run_locked(a, backend, out, ask)
+
+
+def run_locked(a, backend, out, ask):
+    loc = getattr(a, "location", None)
+    up = Updater(backend, a.port, getattr(a, "new_port", None), None if loc is None else fm1_ports.parse_loc(loc))
     if a.info:
         dev = up.find()
         if not dev:
             raise not_found(up)
-        dev.link.close()
+        try:
+            at = up.pin(dev.name)
+        finally:
+            dev.link.close()
         mode = "update loader (update not finished)" if dev.id.loader else "running"
-        print(f"{dev.id.text}  [{mode}]  port: {dev.name}", file=out)
+        print(f"{dev.id.text}  [{mode}]  port: {dev.name}" + (f"  usb: 0x{at:08x}" if at is not None else ""),
+              file=out)
         return 0
     product, image = load_package(a.package, a.force)
     print(f"package: {product}  ({a.package})", file=out)
     dev = up.find()
     if not dev:
         raise not_found(up)
-    print(f"device:  {dev.id.text}  ({dev.name})" + ("  in update mode: the write will be finished" if dev.id.loader else ""),
-          file=out)
+    try:
+        up.pin(dev.name)
+    except InstallError:
+        dev.link.close()
+        raise
+    print(f"device:  {dev.id.text}  ({dev.name})" + (f"  usb 0x{up.loc:08x}" if up.loc is not None else "")
+          + ("  in update mode: the write will be finished" if dev.id.loader else ""), file=out)
     if not a.yes and not ask("Install? Do not unplug the FM-1 while writing. [y/N] "):
         dev.link.close()
         print("cancelled", file=out)
@@ -595,6 +685,8 @@ def main(argv=None, backend=None, out=sys.stdout, ask=ask_tty):
                                                    "when fm1_ports.py would never pick it)")
     ap.add_argument("--new-port", metavar="NAME", help="the port name the FM-1 takes after the restart, when the "
                                                        "package changes it (tools/build.py --usb-name)")
+    ap.add_argument("--location", metavar="LOC", help="the unit's USB location (macOS ioreg locationID, e.g. "
+                                                      "0x00100000): refuse unless the port's unit is there")
     ap.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     ap.add_argument("--force", action="store_true", help="install a package without the Felucca loader marker")
     a = ap.parse_args(argv)

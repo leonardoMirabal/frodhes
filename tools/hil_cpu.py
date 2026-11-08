@@ -20,7 +20,8 @@ and the idle-with-every-effect one (the fixed part), 3 takes each as usual.
 are on (the tremolo too: it can run on top of the motor), off elsewhere, and adds the bar engine's worst voicings (edge strike, RUBBER, tube and weight at 127). It also prints the
 bar engine's lowest mode cap and most live upper modes per scenario (CC 112 / 113 replies).
 --heavy-cc CC:V[,CC:V] adds those controls to every heavy (every-effect) scenario: 84:76 the drive TSH8, 105:127
-SPREAD. --port NAME: only the unit whose MIDI port / audio device name contains NAME (fm1_ports.force).
+SPREAD. --port NAME: only the unit whose MIDI port / audio device name contains NAME (fm1_ports.force: refused
+when two USB devices share the name); --location LOC (with --port): and it must be the unit at that USB location.
 --fx-each: idle, then each effect alone (minus idle without effects) = the per-effect cost table of fx.c (FX_US_*).
 --calib (VIBES): 8 RUBBER edge strikes at v127 with the mode cap forced (developer CC 9) to 0, 8, 16, 24, 32, 40, 48
 upper modes, no effects, then 4 and 1 voices: fits the cost per upper mode-block and the fixed part per voice, for
@@ -281,9 +282,14 @@ def main(argv=None):
     if "-h" in argv or "--help" in argv:              # the options only: no device opened
         print(__doc__)
         return dict(code=0)
-    if "--port" in argv:                              # --port NAME: only that unit (fm1_ports.force: a second FM-1)
-        i = argv.index("--port")
-        fm1_ports.force(argv[i + 1])
+    loc = None
+    if "--location" in argv:                          # --location LOC: the --port unit's USB location (asserted)
+        i = argv.index("--location")
+        loc = fm1_ports.parse_loc(argv[i + 1])
+        del argv[i:i + 2]
+    if "--port" in argv:                              # --port NAME: only that unit (fm1_ports.force: a second FM-1;
+        i = argv.index("--port")                      # refused when two USB devices share the name)
+        fm1_ports.force(argv[i + 1], loc)
         del argv[i:i + 2]
     argv0 = sys.argv
     try:

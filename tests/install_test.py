@@ -9,6 +9,9 @@ Also checks logical_image/product_of against web/fm1pkg.js (needs node, web/ and
 build/dinghy.fwsc, skipped otherwise: Dinghy has no web installer of its own; from genkigenki/sloop-fm1 smk37), the SMK-37 Pro identities, and the 20 / 36 block
 deinterleave against the stock SMK-37 Pro packages (a directory named by SMK_STOCK_DIR, skipped when unset)."""
 import io
+import json
+import os
+import socket
 import queue
 import shutil
 import subprocess
@@ -475,12 +478,130 @@ def two_units():
            f"loaned unit back: --port Dualcore --new-port Textura, the Frodhes FM-1 never opened {b.probed}")
 
 
+class TwoUnits:
+    """two FakeFM1s on USB at their own locations (usb_devices: what ioreg lists); a port name both share opens the
+    first one listed, as CoreMIDI does"""
+
+    def __init__(self, *units):
+        self.units = list(units)            # (FakeFM1, locationID)
+
+    def input_names(self):
+        return list(dict.fromkeys(n for u, _ in self.units for n in u.input_names()))   # (as MidoBackend)
+
+    output_names = input_names
+
+    def open(self, in_name, out_name):
+        for u, _ in self.units:
+            if u.connected and u.name == in_name:
+                return u.open(in_name, out_name)
+        raise IOError("no such port")
+
+    def usb_devices(self):
+        return [(u.name, loc) for u, loc in self.units if u.connected]
+
+
+class Racing(FakeFM1):
+    """a unit whose switch to update mode puts the other unit in update mode too (another install at that moment:
+    2026-11-08, two loaders named 'Felucca Update' at once)"""
+    other = None
+
+    def boot(self, identity, name):
+        if self.other is not None and identity.startswith("ota-"):
+            self.other.boot("ota-FM-1_900", "Felucca Update")
+        super().boot(identity, name)
+
+
+class Locked(FakeFM1):
+    """records whether the INSTALL lock was held at each UPGRADE"""
+    lockdir, held = None, []
+
+    def rx(self, d):
+        if d == I.UPGRADE:
+            self.held.append(os.path.isdir(self.lockdir))
+        super().rx(d)
+
+
+def two_loaders():
+    """the unit pinned by its USB location: another unit's loader (the same name) is never taken, a shared port name
+    is refused, --location asserts the unit; the INSTALL lock is held for the whole install and waited for"""
+    raw = package()
+    image = I.logical_image(raw)
+    p = pkgfile("ok.fwsc", raw)
+    for first in (True, False):
+        f = FakeFM1(image, identity="FM-1_958", name="Frodhes FM-1", after_name="Frodhes FM-1")
+        t = Racing(image, identity="FM-1_958", name="Dualcore Test", after_name="Dualcore Test")
+        t.other = f
+        b = TwoUnits(*([(f, 0x20130000), (t, 0x00100000)] if first else [(t, 0x00100000), (f, 0x20130000)]))
+        rc, out, err = cli([p, "--yes", "--port", "Dualcore"], b)
+        ok(rc == 5 and f.served == 0 and f.upgrades == 0 and "not taken" in err and "0x20130000" in err,
+           f"two loaders named 'Felucca Update' at once ({'other first' if first else 'other second'}): refused "
+           f"(exit {rc}), the other unit's loader never written ({f.served} reads)")
+    f = FakeFM1(image, identity="FM-1_958", name="Frodhes FM-1")
+    t = FakeFM1(image, identity="FM-1_958", name="Dualcore Test", after_name="Dualcore Test")
+    b = TwoUnits((f, 0x20130000), (t, 0x00100000))
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore"], b)
+    ok(rc == 0 and t.upgrades == 2 and not f.links and "usb 0x00100000" in out,
+       "two units, --port Dualcore: pinned at 0x00100000, installed, the other unit never opened")
+    t = FakeFM1(image, identity="FM-1_958", name="Dualcore Test", after_name="Dualcore Test")
+    b = TwoUnits((FakeFM1(image, identity="FM-1_958", name="Frodhes FM-1"), 0x20130000), (t, 0x00100000))
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore", "--location", "0x20130000"], b)
+    ok(rc == 3 and t.upgrades == 0 and "0x00100000" in err, "--location elsewhere: refused (exit 3), nothing sent")
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore", "--location", "0x00100000"], b)
+    ok(rc == 0 and t.upgrades == 2, "--location at the unit: installed")
+    rc, out, err = cli(["--info", "--port", "Dualcore"], b)
+    ok(rc == 0 and "usb: 0x00100000" in out, "--info prints the unit's USB location")
+    u1 = FakeFM1(image, identity="FM-1_958", name="Frodhes FM-1")
+    u2 = FakeFM1(image, identity="FM-1_958", name="Frodhes FM-1")
+    b = TwoUnits((u1, 0x20130000), (u2, 0x00100000))
+    rc, out, err = cli([p, "--yes", "--port", "Frodhes FM-1"], b)
+    ok(rc == 7 and u1.upgrades == 0 and u2.upgrades == 0 and "cannot be told apart" in err,
+       "two units with one name: refused (exit 7), nothing sent")
+
+    # the INSTALL lock (a real computer's backend: install_lock), in a private lock root
+    import lock as L
+    root = TMP / "locks"
+    os.environ["FRODHES_LOCK_ROOT"] = str(root)
+    Locked.lockdir = L.lock_dir("INSTALL", str(root))
+    Locked.held = []
+    t = Locked(image, identity="FM-1_958", name="Dualcore Test", after_name="Dualcore Test")
+    b = TwoUnits((t, 0x00100000))
+    b.install_lock = True
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore"], b)
+    ok(rc == 0 and Locked.held == [True, True] and not os.path.isdir(Locked.lockdir),
+       f"INSTALL lock held at both switches {Locked.held}, released after")
+    holder = subprocess.Popen(["sleep", "30"])          # another install (a live process, not ours)
+    try:
+        os.makedirs(Locked.lockdir)
+        with open(os.path.join(Locked.lockdir, "owner.json"), "w") as fh:
+            json.dump(dict(name="INSTALL", token="x" * 32, pid=holder.pid, host=socket.gethostname(),
+                           who="another install", since=time.time()), fh)
+        Locked.held = []
+        t = Locked(image, identity="FM-1_958", name="Dualcore Test", after_name="Dualcore Test")
+        b = TwoUnits((t, 0x00100000))
+        b.install_lock = True
+        old, I.INSTALL_LOCK_WAIT_S = I.INSTALL_LOCK_WAIT_S, 0.5
+        try:
+            cli([p, "--yes", "--port", "Dualcore"], b)
+            gave_up = False
+        except SystemExit:
+            gave_up = True
+        finally:
+            I.INSTALL_LOCK_WAIT_S = old
+        ok(gave_up and t.upgrades == 0 and not t.links,
+           "another install holds INSTALL: waited, gave up, the unit never opened")
+    finally:
+        holder.kill()
+        shutil.rmtree(Locked.lockdir, ignore_errors=True)
+        os.environ.pop("FRODHES_LOCK_ROOT", None)
+
+
 wire()
 installs()
 errors()
 smk()
 against_js()
 two_units()
+two_loaders()
 shutil.rmtree(TMP, ignore_errors=True)
 # the SMK-37 Pro, Elite and MKE-P37 are one keyboard: packages install across them, never across FM-1 / SMK
 ok(I.same_keyboard("SMK-37 Elite_016", "SMK-37 Pro_900") and I.same_keyboard("ota-MKE-P37_900", "SMK-37 Elite_900")
