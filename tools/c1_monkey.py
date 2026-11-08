@@ -36,6 +36,10 @@ SUB = os.environ.get("C1M_SUB")                  # (C1M_SUB=n: the two-core buil
 if SUB:
     C1 = C1 + f"-sub{SUB}"
 DEFS = {C1: ["-DFR_C1=1"] + ([f"-DC1_SUB={SUB}u"] if SUB else []), REF: ["-DFR_VOICES=14u", "-DFR_REV_HQ=1", f"-DFX_COST_C0()={_FXUS.group(1)}u"]}
+AHEAD = os.environ.get("C1M_AHEAD") == "1"      # (C1M_AHEAD=1: frodhes.c C1_AHEAD, core 1 busy on some looks: busy=N)
+if AHEAD:
+    DEFS[C1 + "-ahead"] = DEFS.pop(C1) + ["-DC1_AHEAD=1"]
+    C1 = C1 + "-ahead"
 GAP_MS = 50                        # differing frames closer than this are one stretch
 LOOK_MS = 300                      # the events listed before a stretch
 CMP_CC = {106, 107, 108, 109}      # the compressor (switch, amount, ...): COMP on from rest
@@ -86,7 +90,7 @@ def stream(seed):
 
 
 def c1_env(seed):
-    e = f"order={seed % 2}"
+    e = f"order={seed % 2}" + (f",busy={2 + seed % 3}" if AHEAD else "")
     return e + (",refuse=7" if seed % 3 == 0 else "")
 
 
