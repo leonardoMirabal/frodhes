@@ -122,6 +122,11 @@ make_clapfirst_plugins(
     AUV2_SUBTYPE_CODE "Frd1"
     AUV2_INSTRUMENT_TYPE "aumu"
 )
+if(APPLE)   # (the Audio Unit's description: clap-wrapper's explicit mode writes "<name> CLAP to AU Wrapper"; the CLAP's own)
+    add_custom_command(TARGET frodhes_auv2-build-helper POST_BUILD
+        COMMAND /usr/libexec/PlistBuddy -c "Set :AudioComponents:0:description Physical-model electric piano, vibraphone and marimba"
+                "${CMAKE_CURRENT_BINARY_DIR}/frodhes_auv2-build-helper-output/auv2_Info.plist")
+endif()
 
 # ---- tests (make test-plugin): the coroutine, the headless CLAP host of Gate D
 if(WIN32)

@@ -53,7 +53,7 @@ static const clap_plugin_descriptor_t DESC = {
     .manual_url = "https://github.com/leonardoMirabal/frodhes/blob/main/docs/MANUAL.md",
     .support_url = "https://github.com/leonardoMirabal/frodhes/issues",
     .version = FRP_VERSION,
-    .description = "A physical-model electric piano, vibraphone and marimba: the FM-1 firmware's engine",
+    .description = "Physical-model electric piano, vibraphone and marimba",
     .features = FEATURES,
 };
 
