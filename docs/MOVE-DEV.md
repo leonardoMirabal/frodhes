@@ -143,6 +143,9 @@ names the Move (default `ableton@move.local`).
      in one interleaved run (`classic_bench -r 15 -s 2 old.so new.so old.so:top new.so:top`; the Mac's arm64 cores
      run the image natively). Only the ratio counts (another core than the A72): the new one's quiet p99.9 and mean
      over REF's, per engine. Estimate the Move's worst as 573 us x the ratio; over 660 us, look before the device.
+     The bench takes `engine.so` itself. Its noise on a busy Mac is large: the same file as two cases read 206 and
+     248 us p99.9 (means 48 and 53 us) over 2 rounds on 2026-11-08. So run the full 15 rounds, add REF against
+     itself as a third case to see the spread, and trust the means and the quiet columns over one p99.9.
   2. One instance on the Move: `tools/move_hil.py d2 --path tap --engines rhodes,vibes,marimba --tests usb-stress`
      (16 voices, every effect heavy, the pedal; its `cpu` row is the plugin's own callback ring against U12).
   3. Several: `tools/move_multi_cpu.py --n 1 2 3 --secs 30` (the worst take in N slots at once). It prints a
