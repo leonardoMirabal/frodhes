@@ -32,7 +32,7 @@ add_subdirectory("${CLAP_WRAPPER_ROOT}" clap-wrapper EXCLUDE_FROM_ALL)
 add_library(frodhes_clap_impl STATIC "${FRP_ROOT}/plugin/src/frodhes_clap.c")
 target_link_libraries(frodhes_clap_impl PUBLIC frodhes_engine clap)
 target_compile_definitions(frodhes_clap_impl PRIVATE "FRP_VERSION=\"${FRP_VERSION}\"")
-target_compile_options(frodhes_clap_impl PRIVATE -O2 -std=gnu11 -ffp-contract=off -Wall -Wextra)
+target_compile_options(frodhes_clap_impl PRIVATE -O2 -std=gnu11 -ffp-contract=off -fvisibility=hidden -Wall -Wextra)
 set_target_properties(frodhes_clap_impl PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 set(FRP_BUNDLES "${CMAKE_BINARY_DIR}/bundles")

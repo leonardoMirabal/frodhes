@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Gate D (desktop plugin, B-M0): the CLAP plugin renders what the host build renders, bit for bit.
+"""Gate D (desktop plugin): the CLAP plugin renders what the host build renders, bit for bit, and its core works.
 
 The plugin (build/plugin/bundles/Frodhes.clap, make plugin) is driven by plugin/tests/clap_render.c, a headless CLAP
 host that plays a host script's MIDI and writes the WAV the host build writes (the 10 ms pre-roll skipped).
 
   classic   every MIDI-driven Gate R entry (tools/gate_m.py entries(): the Move's list, the same reasons for the
-            host-only ones), ENGINE CLASSIC, 44.1 kHz, 512-frame blocks: the sha256 equals
-            tests/baselines/move16.sha256 where the 16 voices change the render, else tests/baselines/renders.sha256
+            host-only ones), ENGINE CLASSIC (the FM-1's build: 10 voices), 44.1 kHz, 512-frame blocks: the sha256
+            equals tests/baselines/renders.sha256, the FM-1's own renders (Gate R), for every entry
   blocks    a subset again with random block sizes (0..2048 frames a process call) and with CLAP note events in
             place of raw MIDI: the same sha256
   hq        ENGINE HQ (the plugin's default): tests/hq/*.txt and a subset, against the host build with the plugin's
@@ -20,6 +20,11 @@ host that plays a host script's MIDI and writes the WAV the host build writes (t
             numpy (make gate-d runs the venv)
   x86_64    (macOS, universal build) classic and hq subsets with the plugin's x86_64 slice under Rosetta, the HQ
             against an x86_64 host build
+  core      the plugin core: clap_render --coretest (engines and voices, state, presets with user files in a fresh
+            folder, automation and gestures, MIDI learn, tempo sources, SYNC ALL, SUSTAIN, FX BYPASS, velocity, MIDI
+            CHANNEL); automation = the device's CC path (a sweep of six knobs as CLAP parameter events renders the
+            same bytes as the same sweep as MIDI CCs, both CLASSIC and HQ); the tempo: a synced delay's echo at the
+            host transport's 100 and 120 BPM is a quarter note late (600 / 500 ms, +-2 ms; needs numpy)
 
   tools/gate_d.py [--jobs 2] [--only classic,hq,...] [--quick]
 Light by default: --jobs 2, every process under nice -n 15.
@@ -42,10 +47,11 @@ OUT = ROOT / "build" / "gate_d"
 PLUG_BUILD = Path(os.environ.get("FRP_BUILD", ROOT / "build" / "plugin"))
 PLUGIN = PLUG_BUILD / "bundles" / "Frodhes.clap"
 RENDER = PLUG_BUILD / "frp_clap_render"
-# the plugin's engine switches (plugin/cmake/slots.cmake FRP_ENGINE_DEFS = the Makefile's MOVE_DEFS)
+# the plugin's engine switches (plugin/cmake/slots.cmake): HQ FRP_ENGINE_DEFS_HQ (= the Makefile's MOVE_DEFS); CLASSIC
+# none (the FM-1's build, the baselines' own)
 DEFS = ["-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1"]
 NICE = ["nice", "-n", "15"]
-MODES = ["classic", "blocks", "hq", "rate48", "rates", "x86_64"]
+MODES = ["classic", "blocks", "hq", "rate48", "rates", "x86_64", "core"]
 RATES = [8000, 22050, 88200, 96000, 192000]
 
 
@@ -57,11 +63,12 @@ def sha(p):
     return hashlib.sha256(Path(p).read_bytes()).hexdigest() if Path(p).exists() else "MISSING"
 
 
-def host_build(tag, extra, arch=None):
-    """the host build (tests/host.c through frodhes.c) with the plugin's switches + extra; built once per run"""
+def host_build(tag, extra, arch=None, defs=None):
+    """the host build (tests/host.c through frodhes.c) with the plugin's HQ switches (defs=[]: CLASSIC's, none) +
+    extra; built once per run"""
     out = OUT / "bin" / f"host-{tag}"
     out.parent.mkdir(parents=True, exist_ok=True)
-    cmd = ["cc", "-O2", "-w", "-DDINGHY_HOST", *DEFS, *extra, "-DAPP_VER=\"dev\"", "-Ifirmware/src", "-Ifirmware/gen",
+    cmd = ["cc", "-O2", "-w", "-DDINGHY_HOST", *(DEFS if defs is None else defs), *extra, "-DAPP_VER=\"dev\"", "-Ifirmware/src", "-Ifirmware/gen",
            "-o", out, "firmware/src/frodhes.c", "-lm"]
     if arch:
         cmd[1:1] = ["-arch", arch]
@@ -127,7 +134,7 @@ class Gate:
 
 
 def want_of(base, want16, n):
-    return want16.get(n, base.get(n)), ("move16" if n in want16 else "baseline")
+    return base.get(n), "baseline"           # (CLASSIC is the FM-1's build: every entry its Gate R render)
 
 
 def mode_classic(g, midi, base, want16, tag="classic", extra=(), arch=None):
@@ -235,6 +242,89 @@ def mode_rates(g, entries):
     g.pmap(one, entries)
 
 
+def param_rows():
+    """plugin/gen/params_map.h's rows: id -> (name, hi, cc)"""
+    import re
+    src = (ROOT / "plugin" / "gen" / "params_map.h").read_text()
+    rows = {}
+    for m in re.finditer(r'\{(0x[0-9a-f]+|\d+)u, "([^"]*)", "[^"]*", (\d+)u, (\d+)u, (\d+)u,', src):
+        rows[int(m.group(1), 0)] = (m.group(2), int(m.group(3)), int(m.group(5)))
+    return rows
+
+
+def mode_core(g):
+    import shutil
+    pdir = OUT / "presets"
+    shutil.rmtree(pdir, ignore_errors=True)
+    pdir.mkdir(parents=True)
+    r = subprocess.run(NICE + [str(RENDER), str(PLUGIN), "--coretest"], cwd=ROOT, capture_output=True, text=True,
+                       env={**os.environ, "FRODHES_PRESET_DIR": str(pdir)})
+    for ln in r.stdout.splitlines():
+        if ln.startswith("ok"):
+            print(ln, flush=True)
+    g.check("core", "coretest", r.returncode == 0, (r.stdout + r.stderr).strip().splitlines()[-1:] or ["no output"])
+    shutil.rmtree(pdir, ignore_errors=True)
+    # automation = the device's CC path: the same sweep as CCs at T and as parameter events at T + 1 (a CC acts in the
+    # app's main-loop pass after that millisecond's audio, a parameter event before the next one's: the same block)
+    rows = param_rows()
+    knobs = [3, 14, 19, 37, 41, 63]          # TREMOLO depth, DELAY mix, REVERB mix, LEVEL, FILTER cutoff, EQ low
+    assert all(rows[k][1] == 127 and rows[k][2] for k in knobs), "the sweep's knobs: 0..127 with a CC"
+    head = ["0 midi 0xB0 17 64", "0 midi 0xB0 88 40", "0 midi 0xB0 70 19", "20 midi 0x90 48 100",
+            "25 midi 0x90 55 90", "30 midi 0x90 64 80", "35 midi 0x90 72 100"]
+    cc, pa = list(head), list(head)
+    t = 100
+    for k in knobs:
+        for v in list(range(0, 128, 3)) + list(range(127, -1, -5)):
+            cc.append(f"{t} midi 0xB0 {rows[k][2]} {v}")
+            pa.append(f"{t + 1} param {k} {v}")
+            t += 2
+    tail = [f"{t + 300} midi 0xB0 123 0", f"{t + 1500} end"]
+    d = OUT / "core"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "sweep_cc.txt").write_text("\n".join(cc + tail) + "\n")
+    (d / "sweep_param.txt").write_text("\n".join(pa + tail) + "\n")
+    for eng in ("classic", "hq"):
+        a, ea = plug_render(f"sweep_cc_{eng}", d / "sweep_cc.txt", "core", ["--engine", eng])
+        b, eb = plug_render(f"sweep_param_{eng}", d / "sweep_param.txt", "core", ["--engine", eng])
+        ok = a is not None and b is not None and a.read_bytes() == b.read_bytes()
+        g.check("core", f"automation {eng}", ok, f"CC sweep {sha(a)[:12] if a else ea}, parameter sweep "
+                f"{sha(b)[:12] if b else eb}")
+        if ok:
+            print(f"ok    automation {eng}: a sweep of {len(knobs)} knobs ({len(cc) - len(head)} steps) as CLAP "
+                  f"parameters = the same as MIDI CCs, byte for byte", flush=True)
+    # the tempo: a DIG delay synced to 1/4, one short note: the echo comes a quarter note at the transport's tempo later
+    try:
+        import numpy as np
+    except ImportError:
+        print("Gate D: core tempo skipped (no numpy: run it with the venv, make gate-d)")
+        return
+    scr = ["0 midi 0xB0 88 40", "0 midi 0xB0 89 127", "0 midi 0xB0 26 0", "0 midi 0xB0 25 83", "0 midi 0xB0 91 0",
+           "0 midi 0xB0 106 0", "300 midi 0x90 72 127", "330 midi 0x80 72 0", "3000 end"]
+    (d / "echo.txt").write_text("\n".join(scr) + "\n")
+    for bpm in (100, 120):
+        w, err = plug_render(f"echo_{bpm}", d / "echo.txt", "core", ["--engine", "classic", "--tempo", str(bpm)])
+        if not w:
+            g.check("core", f"tempo {bpm}", False, " ".join(err or []))
+            continue
+        with wave.open(str(w)) as f:
+            x = np.frombuffer(f.readframes(f.getnframes()), dtype="<i2").reshape(-1, 2).astype(float).sum(axis=1)
+        env = np.abs(x)
+        win = 44  # 1 ms
+        e = np.add.reduceat(env, np.arange(0, len(env) - win, win))
+        on = int(np.argmax(e > 0.2 * e.max()))      # the note's onset (ms)
+        want = 60000 / bpm
+        seg = e[on + int(want * 0.6):on + int(want * 1.4)]
+        # the echo's onset as the note's: the first ms over 0.2 of its peak (the steepest rise is inside the strike
+        # and moves with the tone: 519 ms at 120 BPM for an echo that starts at 500)
+        echo = on + int(want * 0.6) + int(np.argmax(seg > 0.2 * seg.max())) if len(seg) and seg.max() > 0 else -1
+        lag = echo - on
+        ok = abs(lag - want) <= 2
+        g.check("core", f"tempo {bpm}", ok, f"the echo {lag} ms after the note, want {want:.0f}")
+        if ok:
+            print(f"ok    tempo {bpm} BPM: the 1/4 delay's echo {lag} ms after the note (want {want:.0f})", flush=True)
+        w.unlink()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--jobs", type=int, default=2)
@@ -244,6 +334,12 @@ def main():
     modes = [m for m in a.only.split(",") if m]
     if not PLUGIN.exists() or not RENDER.exists():
         raise SystemExit("Gate D: build the plugin first (make plugin)")
+    # the user presets (program changes 16..31 load them): an empty folder, never the machine's own
+    empty = OUT / "presets-empty"
+    empty.mkdir(parents=True, exist_ok=True)
+    for f in empty.iterdir():
+        f.unlink()
+    os.environ["FRODHES_PRESET_DIR"] = str(empty)
     midi, host = gate_m.entries()
     base, want16 = gate_m.read_sums(gate_m.BASE), gate_m.read_sums(gate_m.BASE16)
     g = Gate(a.jobs)
@@ -266,8 +362,8 @@ def main():
         r = run(["cc", "-O1", "-w", "-Ifirmware/src", "-o", fir, "tests/uac_fir_test.c"])
         if r.returncode:
             raise SystemExit(f"Gate D: tests/uac_fir_test.c did not build:\n{r.stderr[-1500:]}")
-        c16 = host_build("c16", [])
-        mode_rate48(g, [(e, c16, "classic") for e in subset(midi, 4)] + [(e, hq_bin, "hq") for e in hq_list[:2]], fir)
+        c10 = host_build("c10", [], defs=[])
+        mode_rate48(g, [(e, c10, "classic") for e in subset(midi, 4)] + [(e, hq_bin, "hq") for e in hq_list[:2]], fir)
     if "rates" in modes:
         try:
             import numpy  # noqa: F401
@@ -276,9 +372,9 @@ def main():
             print("Gate D: rates skipped (no numpy: run it with the venv, make gate-d)")
         if numpy:
             hq_bin = hq_bin if "hq_bin" in locals() else host_build("hq", ["-DHQ_DEFAULT=1"])
-            c16 = c16 if "c16" in locals() else host_build("c16", [])
+            c10 = c10 if "c10" in locals() else host_build("c10", [], defs=[])
             two = subset(midi, 2)[:2]
-            mode_rates(g, [(e, c16, "classic", r) for e in two for r in RATES] +
+            mode_rates(g, [(e, c10, "classic", r) for e in two for r in RATES] +
                        [(hq_list[3], hq_bin, "hq", r) for r in (22050, 96000)])
     if "x86_64" in modes and platform.system() == "Darwin":
         lipo = subprocess.run(["lipo", "-archs", str(PLUGIN / "Contents" / "MacOS" / "Frodhes")],
@@ -291,6 +387,8 @@ def main():
         else:
             print(f"Gate D: x86_64 skipped (the plugin {lipo}, clap_render {rlipo}, this machine "
                   f"{platform.machine()})")
+    if "core" in modes:
+        mode_core(g)
     for m, (n, k) in g.counts.items():
         print(f"Gate D {m}: {k} of {n} pass")
     print(f"Gate D: {'PASS' if not g.fails else 'FAIL'} ({sum(k for _, k in g.counts.values())} checks pass, "

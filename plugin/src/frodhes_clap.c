@@ -6,9 +6,14 @@
  *   note-ports    one input, CLAP and MIDI dialects: notes with velocity, CC, pitch bend, sustain (CC 64), program
  *                 change, as the FM-1 takes them over USB MIDI (its CHANNEL setting filters; ALL by default)
  *   params        the app's PARAMS[] (plugin/gen/params_map.h: stable ids, 0..hi, stepped, the FM-1's texts) and
- *                 ENGINE (CLASSIC / HQ, HQ by default); a change the app makes itself (a MIDI CC, a program change)
- *                 goes back to the host as a parameter output event
- *   state         the Move's flat JSON (a sound moves between a Move track and a desktop session)
+ *                 the plugin's own: ENGINE (CLASSIC: the FM-1's build and its 10 voices / HQ: the Move's float paths,
+ *                 16 voices; HQ by default), TUNE, PRESET (F01..F57), SUSTAIN (the latch), FX BYPASS; a change the
+ *                 app makes itself (a MIDI CC, a program change, a preset) goes back to the host as a parameter output
+ *                 event, and the plugin UI's writes as gestures and values
+ *   state         the Move's flat JSON (a sound moves between a Move track and a desktop session) and the plugin's
+ *                 own keys (slot_bridge.h: settings, MIDI learn, the preset's name)
+ *   the UI core   plugin/frp_ui_iface.h: what the plugin's own UI calls (and the extension FRP_UI_EXT_ID for the
+ *                 headless tests)
  *   latency       the bridge's pre-roll (plugin/src/bridge.c), constant
  * No GUI extension: until the plugin's own UI is finished and approved, every host shows its own generic view of the
  * parameters. Sample rates: 44.1 kHz (the app's own), 48 kHz (the FM-1's USB resampler), any other from 1 to 768 kHz
@@ -20,8 +25,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 #include <clap/clap.h>
 #include "bridge.h"
+#include "../frp_ui_iface.h"
 
 #ifndef FRP_VERSION
 #define FRP_VERSION "0.0.0-dev"
@@ -43,7 +50,10 @@ static const clap_plugin_descriptor_t DESC = {
     .features = FEATURES,
 };
 
-typedef struct {
+#define OQ 1024u                         /* the UI's notes to the host (gestures, values): main thread -> processing */
+enum { OQ_VALUE, OQ_BEGIN, OQ_END };
+typedef struct { uint8_t type; uint32_t id; double v; } oq_ev_t;
+typedef struct frp_core {
     clap_plugin_t plugin;
     const clap_host_t *host;
     const clap_host_log_t *log;
@@ -60,6 +70,18 @@ typedef struct {
     /* a state loaded while active: the host is told to re-read the values once the app has taken it */
     _Atomic uint32_t rescan_rev;
     _Atomic int rescan_tries;
+    _Atomic int processing;              /* between start_processing and stop_processing */
+    void *gui;                           /* frp_ui_gui_data */
+    oq_ev_t oq[OQ];
+    _Atomic uint32_t oqw, oqr;
+    /* the UI's own view until the app has taken its writes (a drag must not jump back for a block) */
+    int pend_v[FRP_NPARAM];
+    double pend_t[FRP_NPARAM];           /* when (monotonic s; 0 none) */
+    frp_settings pend_set;
+    double pend_set_t;
+    uint32_t ui_rev;
+    float m_db[2], m_pk[2];              /* the meter's ballistics (frp_ui_meters) */
+    double m_pk_t[2], m_t;
 } frp_plugin_t;
 
 static void say(frp_plugin_t *p, clap_log_severity sev, const char *msg)
@@ -83,7 +105,9 @@ static bool p_info(const clap_plugin_t *plugin, uint32_t index, clap_param_info_
     d = &FRP_PARAMS[index];
     memset(info, 0, sizeof *info);
     info->id = d->id;
-    info->flags = CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_STEPPED | (d->stepped ? CLAP_PARAM_IS_ENUM : 0);
+    info->flags = CLAP_PARAM_IS_STEPPED | (d->stepped ? CLAP_PARAM_IS_ENUM : 0) |
+                  (d->id == FRP_ID_ENGINE || d->id == FRP_ID_PRESET ? 0 : CLAP_PARAM_IS_AUTOMATABLE);   /* (ENGINE and
+                   * PRESET are choices a user makes, not curves: a host may still set them) */
     snprintf(info->name, sizeof info->name, "%s", d->name);
     snprintf(info->module, sizeof info->module, "%s", d->module);
     info->min_value = 0.0;
@@ -138,11 +162,16 @@ static void p_events_in(frp_plugin_t *p, const clap_input_events_t *ev, int time
         else frp_inst_param_now(p->in, pv->param_id, pv->value);
     }
 }
+static void p_out(frp_plugin_t *p, const clap_output_events_t *out);
 static void p_flush(const clap_plugin_t *plugin, const clap_input_events_t *in, const clap_output_events_t *out)
 {
     frp_plugin_t *p = plugin->plugin_data;
-    (void)out;
-    p_events_in(p, in, p->active);       /* active: the audio thread, between two blocks (the next block applies them) */
+    int proc = atomic_load(&p->processing);
+    p_events_in(p, in, p->active && proc);   /* processing: the audio thread, between two blocks (the next block
+                                          * applies them); else the main thread owns the instance: at once */
+    if (p->active && !proc) frp_inst_drain(p->in);
+    p_out(p, out);
+    if (frp_inst_wants_main(p->in)) p->host->request_callback(p->host);
 }
 static const clap_plugin_params_t EXT_PARAMS = { p_count, p_info, p_value, p_to_text, p_from_text, p_flush };
 
@@ -197,6 +226,7 @@ static bool st_save(const clap_plugin_t *plugin, const clap_ostream_t *s)
     }
     return true;
 }
+static void pend_clear(frp_core *c);
 static bool st_load(const clap_plugin_t *plugin, const clap_istream_t *s)
 {
     frp_plugin_t *p = plugin->plugin_data;
@@ -205,6 +235,7 @@ static bool st_load(const clap_plugin_t *plugin, const clap_istream_t *s)
     while (got < (int64_t)sizeof buf - 1 && (r = s->read(s, buf + got, (uint64_t)(sizeof buf - 1 - (size_t)got))) > 0) got += r;
     buf[got] = 0;
     if (frp_inst_state_set(p->in, buf)) { say(p, CLAP_LOG_WARNING, "Frodhes: the saved state could not be read"); return false; }
+    pend_clear(p);
     if (!p->active) { if (p->hparams) p->hparams->rescan(p->host, CLAP_PARAM_RESCAN_VALUES); }
     else {                               /* applied by the audio thread's next step: re-read the values after it */
         atomic_store(&p->rescan_rev, frp_inst_rev(p->in));
@@ -267,8 +298,8 @@ static void pl_deactivate(const clap_plugin_t *plugin)
         say(p, CLAP_LOG_WARNING, m);
     }
 }
-static bool pl_start(const clap_plugin_t *plugin) { (void)plugin; return true; }
-static void pl_stop(const clap_plugin_t *plugin) { (void)plugin; }
+static bool pl_start(const clap_plugin_t *plugin) { frp_plugin_t *p = plugin->plugin_data; atomic_store(&p->processing, 1); return true; }
+static void pl_stop(const clap_plugin_t *plugin) { frp_plugin_t *p = plugin->plugin_data; atomic_store(&p->processing, 0); }
 static void pl_reset(const clap_plugin_t *plugin)
 {
     frp_plugin_t *p = plugin->plugin_data;
@@ -286,7 +317,6 @@ static clap_process_status pl_process(const clap_plugin_t *plugin, const clap_pr
     const clap_input_events_t *ev = pr->in_events;
     uint32_t n = ev ? ev->size(ev) : 0, k, tempo10 = 0;
     float *l, *r;
-    frp_snap_t sn;
     if (pr->transport && (pr->transport->flags & CLAP_TRANSPORT_HAS_TEMPO) && pr->transport->tempo > 0.0)
         tempo10 = (uint32_t)lround(pr->transport->tempo * 10.0);
     for (k = 0; k < n; k++) {
@@ -335,31 +365,64 @@ static clap_process_status pl_process(const clap_plugin_t *plugin, const clap_pr
         }
     }
     pr->audio_outputs[0].constant_mask = 0;
-    /* the app's own changes (a MIDI CC, a program change, a state) back to the host: a value that moved since the
-     * last block and is not what the host last sent (a host write reaches the app FRP_LAT_MS later: until then
-     * the app's value has not moved, so nothing is echoed) */
-    if (pr->out_events && frp_inst_snap(p->in, &sn) == 0) {
-        uint32_t i;
-        for (i = 0; i < FRP_NPARAM; i++) {
-            double v = i < FRP_NPARAM_APP ? sn.pv[i] : sn.engine;
-            double was = i < FRP_NPARAM_APP ? p->last.pv[i] : p->last.engine;
-            clap_event_param_value_t o;
-            if (!p->have_last || v == was || v == p->host_view[i]) continue;
-            memset(&o, 0, sizeof o);
-            o.header.size = sizeof o;
-            o.header.time = 0;
-            o.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
-            o.header.type = CLAP_EVENT_PARAM_VALUE;
-            o.param_id = FRP_PARAMS[i].id;
-            o.note_id = -1; o.port_index = -1; o.channel = -1; o.key = -1;
-            o.value = v;
-            if (pr->out_events->try_push(pr->out_events, &o.header)) p->host_view[i] = v;
-        }
-        p->last = sn;
-        p->have_last = 1;
-    }
+    if (pr->out_events) p_out(p, pr->out_events);
+    if (frp_inst_wants_main(p->in)) p->host->request_callback(p->host);   /* (an ENGINE switch: its slot) */
     return CLAP_PROCESS_CONTINUE;
 }
+/* the host's view: first the UI's gestures and values (in their order), then the app's own changes (a MIDI CC, a
+ * program change, a state, a preset): a value that moved since the last time and is not what the host last sent (a
+ * host write reaches the app FRP_LAT_MS later: until then the app's value has not moved, so nothing is echoed) */
+static int out_push(const clap_output_events_t *out, uint8_t type, uint32_t id, double v)
+{
+    if (type == OQ_VALUE) {
+        clap_event_param_value_t o;
+        memset(&o, 0, sizeof o);
+        o.header.size = sizeof o;
+        o.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+        o.header.type = CLAP_EVENT_PARAM_VALUE;
+        o.param_id = id;
+        o.note_id = -1; o.port_index = -1; o.channel = -1; o.key = -1;
+        o.value = v;
+        return out->try_push(out, &o.header);
+    } else {
+        clap_event_param_gesture_t g;
+        memset(&g, 0, sizeof g);
+        g.header.size = sizeof g;
+        g.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+        g.header.type = type == OQ_BEGIN ? CLAP_EVENT_PARAM_GESTURE_BEGIN : CLAP_EVENT_PARAM_GESTURE_END;
+        g.param_id = id;
+        return out->try_push(out, &g.header);
+    }
+}
+static void p_out(frp_plugin_t *p, const clap_output_events_t *out)
+{
+    frp_snap_t sn;
+    uint32_t r = atomic_load_explicit(&p->oqr, memory_order_relaxed), i;
+    if (!out) return;
+    while (r != atomic_load_explicit(&p->oqw, memory_order_acquire)) {
+        oq_ev_t *e = &p->oq[r & (OQ - 1u)];
+        int k = pidx(e->id);
+        if (!out_push(out, e->type, e->id, e->v)) break;   /* (the host's list is full: the rest next time) */
+        if (e->type == OQ_VALUE && k >= 0) p->host_view[k] = e->v;
+        atomic_store_explicit(&p->oqr, ++r, memory_order_release);
+    }
+    if (frp_inst_snap(p->in, &sn)) return;
+    for (i = 0; i < FRP_NPARAM; i++) {
+        double v, was;
+        if (FRP_PARAMS[i].id == FRP_ID_ENGINE) continue;   /* (the host's own write, or the UI's: never the app's) */
+        v = i < FRP_NPARAM_APP ? sn.pv[i] : FRP_PARAMS[i].id == FRP_ID_TUNE ? sn.tune : FRP_PARAMS[i].id == FRP_ID_PRESET ?
+            sn.last_fact : FRP_PARAMS[i].id == FRP_ID_SUSTAIN ? sn.sustain : sn.bypass;
+        was = i < FRP_NPARAM_APP ? p->last.pv[i] : FRP_PARAMS[i].id == FRP_ID_TUNE ? p->last.tune :
+              FRP_PARAMS[i].id == FRP_ID_PRESET ? p->last.last_fact : FRP_PARAMS[i].id == FRP_ID_SUSTAIN ? p->last.sustain :
+              p->last.bypass;
+        if (!p->have_last || v == was || v == p->host_view[i]) continue;
+        if (out_push(out, OQ_VALUE, FRP_PARAMS[i].id, v)) p->host_view[i] = v;
+    }
+    p->last = sn;
+    p->have_last = 1;
+}
+
+static const frp_ui_vtable UI_VTABLE;
 static const void *pl_ext(const clap_plugin_t *plugin, const char *id)
 {
     (void)plugin;
@@ -368,12 +431,21 @@ static const void *pl_ext(const clap_plugin_t *plugin, const char *id)
     if (!strcmp(id, CLAP_EXT_NOTE_PORTS)) return &EXT_NOTES;
     if (!strcmp(id, CLAP_EXT_LATENCY)) return &EXT_LATENCY;
     if (!strcmp(id, CLAP_EXT_STATE)) return &EXT_STATE;
+    if (!strcmp(id, FRP_UI_EXT_ID)) return &UI_VTABLE;
+#ifdef FRP_HAVE_GUI                      /* (B-M2b: the plugin UI, plugin/frp_ui_iface.h; until then the host's view) */
+    if (!strcmp(id, CLAP_EXT_GUI)) return frp_gui_extension();
+#endif
     return 0;                            /* no CLAP_EXT_GUI: the host's generic view */
 }
 static void pl_main(const clap_plugin_t *plugin)
 {
     frp_plugin_t *p = plugin->plugin_data;
-    int t = atomic_load(&p->rescan_tries);
+    int t;
+    if (frp_inst_main(p->in) < 0) {      /* an ENGINE switch with no slot of that engine free: it stays */
+        say(p, CLAP_LOG_WARNING, "Frodhes: no engine slot free for that ENGINE (16 instances use it): it stays");
+        if (p->hparams) p->hparams->rescan(p->host, CLAP_PARAM_RESCAN_VALUES);
+    }
+    t = atomic_load(&p->rescan_tries);
     if (t <= 0) return;
     if (frp_inst_rev(p->in) != atomic_load(&p->rescan_rev) || t == 1) {
         atomic_store(&p->rescan_tries, 0);
@@ -414,3 +486,311 @@ static const clap_plugin_factory_t FACTORY = { f_count, f_desc, f_create };
 bool frp_entry_init(const char *path) { (void)path; return true; }
 void frp_entry_deinit(void) {}
 const void *frp_entry_get_factory(const char *id) { return id && !strcmp(id, CLAP_PLUGIN_FACTORY_ID) ? &FACTORY : 0; }
+
+/* ---- the plugin UI's core (plugin/frp_ui_iface.h): the main thread */
+static double mono_s(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (double)t.tv_sec + t.tv_nsec * 1e-9;
+}
+#define PEND_S 0.3                       /* the UI's own value wins this long after its write (then the app's) */
+frp_core *frp_core_of(const clap_plugin_t *plugin) { return plugin ? plugin->plugin_data : 0; }
+void **frp_ui_gui_data(frp_core *c) { return &c->gui; }
+int frp_ui_has_slot(const frp_core *c) { return frp_inst_slot(c->in) >= 0; }
+static int ui_snap(const frp_core *c, frp_snap_t *sn)
+{
+    if (frp_inst_snap(c->in, sn) == 0) return 0;
+    memset(sn, 0, sizeof *sn);
+    sn->pidx = -1; sn->learning = -1; sn->key_vel = 96; sn->touch = 1; sn->tune = 50; sn->bpm10 = 1200;
+    sn->sync_div = 9; sn->pgm = 1;
+    return -1;
+}
+uint32_t frp_ui_rev(const frp_core *c)
+{
+    return frp_inst_rev(c->in) + frp_user_gen() * 7919u + c->ui_rev * 104729u + (uint32_t)frp_inst_engine(c->in) * 31u;
+}
+static void oq_put(frp_core *c, uint8_t type, uint32_t id, double v)
+{
+    uint32_t w = atomic_load_explicit(&c->oqw, memory_order_relaxed);
+    if (w - atomic_load_explicit(&c->oqr, memory_order_acquire) >= OQ) return;   /* (full: the host misses a note) */
+    c->oq[w & (OQ - 1u)] = (oq_ev_t){ type, id, v };
+    atomic_store_explicit(&c->oqw, w + 1u, memory_order_release);
+}
+static void host_flush(frp_core *c)      /* the host calls flush (or process) and gets the notes */
+{
+    if (c->hparams && c->hparams->request_flush) c->hparams->request_flush(c->host);
+}
+static void host_values_changed(frp_core *c)   /* the app changed values while not active: the host re-reads them */
+{
+    if (!c->active && c->hparams) c->hparams->rescan(c->host, CLAP_PARAM_RESCAN_VALUES);
+}
+int frp_ui_param_hi(uint32_t id) { int i = pidx(id); return i < 0 ? -1 : FRP_PARAMS[i].hi; }
+const char *frp_ui_param_name(uint32_t id) { int i = pidx(id); return i < 0 ? "" : FRP_PARAMS[i].name; }
+int frp_ui_param_default(const frp_core *c, uint32_t id) { int i = pidx(id); return i < 0 ? -1 : (int)c->def[i]; }
+int frp_ui_param_get(const frp_core *c, uint32_t id)
+{
+    int i = pidx(id);
+    double v;
+    if (i < 0 || frp_inst_get(c->in, id, &v)) return -1;
+    if (c->pend_t[i] > 0.0) {            /* the UI's write until the app shows it (or PEND_S passed) */
+        if ((int)v == c->pend_v[i] || mono_s() - c->pend_t[i] >= PEND_S) ((frp_core *)c)->pend_t[i] = 0.0;
+        else return c->pend_v[i];
+    }
+    return (int)v;
+}
+void frp_ui_param_text(const frp_core *c, uint32_t id, int v, char *val, uint32_t nval, char *unit, uint32_t nunit)
+{
+    static const char *const UNITS[] = { "Hz", "kHz", "ms", "s", "dB", "c" };
+    int i = pidx(id);
+    const char *t, *sp;
+    (void)c;
+    if (nval) val[0] = 0;
+    if (nunit) unit[0] = 0;
+    if (i < 0 || !nval) return;
+    v = v < 0 ? 0 : v > FRP_PARAMS[i].hi ? FRP_PARAMS[i].hi : v;
+    t = FRP_TEXT[FRP_PARAMS[i].text0 + (uint32_t)v];
+    sp = strrchr(t, ' ');
+    if (sp && !FRP_PARAMS[i].stepped)
+        for (uint32_t k = 0; k < sizeof UNITS / sizeof UNITS[0]; k++)
+            if (!strcmp(sp + 1, UNITS[k])) {
+                snprintf(val, nval, "%.*s", (int)(sp - t), t);
+                if (nunit) snprintf(unit, nunit, "%s", UNITS[k]);
+                return;
+            }
+    snprintf(val, nval, "%s", t);
+}
+void frp_ui_param_begin(frp_core *c, uint32_t id) { if (pidx(id) >= 0) { oq_put(c, OQ_BEGIN, id, 0); host_flush(c); } }
+void frp_ui_param_end(frp_core *c, uint32_t id) { if (pidx(id) >= 0) { oq_put(c, OQ_END, id, 0); host_flush(c); } }
+void frp_ui_param_set(frp_core *c, uint32_t id, int v)
+{
+    int i = pidx(id);
+    if (i < 0) return;
+    v = v < 0 ? 0 : v > FRP_PARAMS[i].hi ? FRP_PARAMS[i].hi : v;
+    if (frp_ui_param_get(c, id) == v) return;
+    c->pend_v[i] = v;
+    c->pend_t[i] = mono_s();
+    frp_inst_put_now(c->in, FRP_EV_PARAM, id, v);
+    oq_put(c, OQ_VALUE, id, v);
+    c->ui_rev++;
+    host_flush(c);
+}
+
+/* presets */
+int frp_ui_preset_factory_count(void) { return (int)FRP_NFACTORY; }
+int frp_ui_preset_count(const frp_core *c) { (void)c; return (int)FRP_NFACTORY + frp_user_count(); }
+int frp_ui_preset_info(const frp_core *c, int idx, frp_preset_info *out)
+{
+    (void)c;
+    memset(out, 0, sizeof *out);
+    if (idx < 0) return -1;
+    if (idx < (int)FRP_NFACTORY) {
+        snprintf(out->tag, sizeof out->tag, "F%02d", idx + 1);
+        return frp_fact_info((uint32_t)idx, out->name, sizeof out->name, 0);
+    }
+    snprintf(out->tag, sizeof out->tag, "U%02d", idx - (int)FRP_NFACTORY + 1);
+    out->user = 1;
+    return frp_user_info(idx - (int)FRP_NFACTORY, out->name, sizeof out->name);
+}
+int frp_ui_preset_current(const frp_core *c, frp_preset_info *out, int *edited)
+{
+    frp_snap_t sn;
+    int idx = -1, k;
+    ui_snap(c, &sn);
+    if (edited) *edited = sn.edited;
+    if (sn.pidx >= 0) idx = sn.pidx;
+    else if (sn.pname[0] && (k = frp_user_find(sn.pname)) >= 0) idx = (int)FRP_NFACTORY + k;
+    if (idx >= 0) return frp_ui_preset_info(c, idx, out) ? -1 : idx;
+    memset(out, 0, sizeof *out);
+    snprintf(out->name, sizeof out->name, "%s", sn.pname[0] ? sn.pname : "FRODHES");
+    return -1;
+}
+/* a whole new sound asked (a preset, UNDO): the UI's own writes are no longer what it shows (they come after) */
+static void pend_clear(frp_core *c) { for (uint32_t i = 0; i < FRP_NPARAM; i++) c->pend_t[i] = 0.0; }
+int frp_ui_preset_load(frp_core *c, int idx)
+{
+    if (idx >= 0 && idx < (int)FRP_NFACTORY) frp_inst_put_now(c->in, FRP_EV_PRESET, 0, idx);
+    else {
+        uint8_t v[FRP_NPARAM_APP];
+        char nm[FRP_PNAME];
+        int k = idx - (int)FRP_NFACTORY;
+        if (idx < 0 || frp_user_info(k, nm, sizeof nm) || frp_user_values(k, v)) return -1;
+        if (frp_inst_user_put(c->in, v, nm, 0)) return -1;
+    }
+    pend_clear(c);
+    c->ui_rev++;
+    host_values_changed(c);
+    return 0;
+}
+int frp_ui_preset_step(frp_core *c, int dir)
+{
+    frp_preset_info cur;
+    frp_snap_t sn;
+    int n = frp_ui_preset_count(c), idx = frp_ui_preset_current(c, &cur, 0);
+    if (idx < 0) { ui_snap(c, &sn); idx = sn.last_fact; }
+    idx = ((idx + (dir < 0 ? -1 : 1)) % n + n) % n;
+    return frp_ui_preset_load(c, idx) ? -1 : idx;
+}
+int frp_ui_preset_save(frp_core *c, const char *name)
+{
+    frp_snap_t sn;
+    char nm[FRP_PNAME];
+    int k;
+    if (ui_snap(c, &sn)) return -1;
+    for (uint32_t i = 0; i < FRP_NPARAM_APP; i++)   /* (a write the app has not taken yet: the UI's value) */
+        if (c->pend_t[i] > 0.0 && mono_s() - c->pend_t[i] < PEND_S) sn.pv[i] = (uint8_t)c->pend_v[i];
+    if ((k = frp_user_save(name, sn.pv)) < 0) return -1;
+    frp_user_info(k, nm, sizeof nm);
+    (void)frp_inst_user_put(c->in, 0, nm, 1);
+    c->ui_rev++;
+    return (int)FRP_NFACTORY + k;
+}
+int frp_ui_preset_delete(frp_core *c, int idx)
+{
+    if (idx < (int)FRP_NFACTORY) return -1;
+    c->ui_rev++;
+    return frp_user_delete(idx - (int)FRP_NFACTORY);
+}
+void frp_ui_preset_rescan(frp_core *c) { frp_user_rescan(); c->ui_rev++; }
+const char *frp_ui_preset_dir(void) { return frp_user_dir(); }
+int frp_ui_can_undo(const frp_core *c) { frp_snap_t sn; return ui_snap(c, &sn) ? 0 : sn.can_undo; }
+int frp_ui_undo(frp_core *c)
+{
+    if (!frp_ui_can_undo(c)) return -1;
+    frp_inst_put_now(c->in, FRP_EV_UNDO, 0, 0);
+    pend_clear(c);
+    c->ui_rev++;
+    host_values_changed(c);
+    return 0;
+}
+
+/* settings */
+void frp_ui_settings_get(const frp_core *c, frp_settings *out)
+{
+    static const uint8_t VEL_OF_TOUCH[4] = { FRP_VEL_LIGHT, FRP_VEL_MEDIUM, FRP_VEL_HEAVY, FRP_VEL_FIXED };
+    frp_snap_t sn;
+    ui_snap(c, &sn);
+    out->midi_ch = sn.midi_ch;
+    out->vel_curve = VEL_OF_TOUCH[sn.touch & 3u];
+    out->fixed_vel = sn.key_vel;
+    out->pgm_change = sn.pgm;
+    out->tempo_src = sn.tempo_src;
+    out->bpm10 = sn.bpm10;
+    out->sync_all = sn.sync_all;
+    out->sync_div = sn.sync_div;
+    if (c->pend_set_t > 0.0) {           /* the UI's write until the app shows it (or PEND_S passed) */
+        if (!memcmp(out, &c->pend_set, sizeof *out) || mono_s() - c->pend_set_t >= PEND_S) ((frp_core *)c)->pend_set_t = 0.0;
+        else *out = c->pend_set;
+    }
+}
+static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+void frp_ui_settings_set(frp_core *c, const frp_settings *s)
+{
+    frp_settings o, n = *s;
+    frp_ui_settings_get(c, &o);
+    n.midi_ch = clampi(n.midi_ch, 0, 16); n.vel_curve = clampi(n.vel_curve, 0, 3); n.fixed_vel = clampi(n.fixed_vel, 1, 127);
+    n.pgm_change = n.pgm_change != 0; n.tempo_src = clampi(n.tempo_src, 0, 2); n.bpm10 = clampi(n.bpm10, 400, 2400);
+    n.sync_all = n.sync_all != 0; n.sync_div = clampi(n.sync_div, 1, 13);
+    if (n.midi_ch != o.midi_ch) frp_inst_put_now(c->in, FRP_EV_CFG, FRP_CFG_MIDI_CH, n.midi_ch);
+    if (n.vel_curve != o.vel_curve) frp_inst_put_now(c->in, FRP_EV_CFG, FRP_CFG_VEL, n.vel_curve);
+    if (n.fixed_vel != o.fixed_vel) frp_inst_put_now(c->in, FRP_EV_CFG, FRP_CFG_FIXVEL, n.fixed_vel);
+    if (n.pgm_change != o.pgm_change) frp_inst_put_now(c->in, FRP_EV_CFG, FRP_CFG_PGM, n.pgm_change);
+    if (n.tempo_src != o.tempo_src) frp_inst_put_now(c->in, FRP_EV_CFG, FRP_CFG_TEMPO, n.tempo_src);
+    if (n.bpm10 != o.bpm10) frp_inst_put_now(c->in, FRP_EV_CFG, FRP_CFG_BPM, n.bpm10);
+    if (n.sync_div != o.sync_div) frp_inst_put_now(c->in, FRP_EV_CFG, FRP_CFG_SYNC_DIV, n.sync_div);
+    if (n.sync_all != o.sync_all) frp_inst_put_now(c->in, FRP_EV_CFG, FRP_CFG_SYNC_ALL, n.sync_all);
+    if (n.sync_all != o.sync_all || (n.sync_all && n.sync_div != o.sync_div)) host_values_changed(c);
+    c->pend_set = n;
+    c->pend_set_t = mono_s();
+    c->ui_rev++;
+    host_flush(c);
+}
+int frp_ui_host_bpm10(const frp_core *c) { frp_snap_t sn; ui_snap(c, &sn); return sn.host10; }
+int frp_ui_tempo_bpm10(const frp_core *c) { frp_snap_t sn; ui_snap(c, &sn); return sn.tempo10; }
+
+/* MIDI learn: the slot's codes (an app id, FRP_LEARN_OWN + k for 0x10000 + k) */
+static int learn_code(uint32_t id)
+{
+    if (id < FRP_NPARAM_APP) return (int)id;
+    if (id > FRP_ID_ENGINE && id < FRP_ID_ENGINE + FRP_NOWN) return (int)(FRP_LEARN_OWN + (id - FRP_ID_ENGINE));
+    return -1;
+}
+static int code_id(int code)
+{
+    return code < 0 ? -1 : code < (int)FRP_NPARAM_APP ? code : code >= (int)FRP_LEARN_OWN ? (int)(FRP_ID_ENGINE + (uint32_t)(code - (int)FRP_LEARN_OWN)) : -1;
+}
+void frp_ui_learn_start(frp_core *c, uint32_t id)
+{
+    int k = learn_code(id);
+    if (k < 0 || id == FRP_ID_ENGINE) return;
+    frp_inst_put_now(c->in, FRP_EV_LEARN, FRP_LEARN_START, k);
+    c->ui_rev++;
+}
+void frp_ui_learn_cancel(frp_core *c) { frp_inst_put_now(c->in, FRP_EV_LEARN, FRP_LEARN_CANCEL, 0); c->ui_rev++; }
+int frp_ui_learning(const frp_core *c) { frp_snap_t sn; ui_snap(c, &sn); return code_id(sn.learning); }
+int frp_ui_learned_cc(const frp_core *c, uint32_t id)
+{
+    frp_snap_t sn;
+    int k = learn_code(id);
+    if (k < 0 || ui_snap(c, &sn)) return -1;
+    for (int cc = 0; cc < 128; cc++) if (sn.learn[cc] == k + 1) return cc;
+    return -1;
+}
+void frp_ui_learn_forget(frp_core *c, uint32_t id)
+{
+    int k = learn_code(id);
+    if (k >= 0) { frp_inst_put_now(c->in, FRP_EV_LEARN, FRP_LEARN_FORGET, k); c->ui_rev++; }
+}
+void frp_ui_learn_forget_all(frp_core *c) { frp_inst_put_now(c->in, FRP_EV_LEARN, FRP_LEARN_FORGET_ALL, 0); c->ui_rev++; }
+int frp_ui_default_cc(uint32_t id) { int i = pidx(id); return i < 0 || !FRP_PARAMS[i].cc ? -1 : FRP_PARAMS[i].cc; }
+int frp_ui_cc_target(const frp_core *c, int cc, int *learned)
+{
+    frp_snap_t sn;
+    if (learned) *learned = 0;
+    if (cc < 0 || cc > 127) return -1;
+    if (!ui_snap(c, &sn) && sn.learn[cc]) { if (learned) *learned = 1; return code_id(sn.learn[cc] - 1); }
+    for (uint32_t i = 0; i < FRP_NPARAM_APP; i++) if (FRP_PARAMS[i].cc == cc) return (int)FRP_PARAMS[i].id;
+    return -1;
+}
+
+/* performance, live values */
+void frp_ui_sustain_set(frp_core *c, int on) { frp_ui_param_set(c, FRP_ID_SUSTAIN, on != 0); }
+int frp_ui_sustain(const frp_core *c) { frp_snap_t sn; ui_snap(c, &sn); return sn.sustain; }
+void frp_ui_fx_bypass_set(frp_core *c, int on) { frp_ui_param_set(c, FRP_ID_FX_BYPASS, on != 0); }
+int frp_ui_fx_bypass(const frp_core *c) { return frp_ui_param_get(c, FRP_ID_FX_BYPASS); }
+void frp_ui_note(frp_core *c, int key, int vel)
+{
+    if (key < 0 || key > 127) return;
+    vel = clampi(vel, 0, 127);
+    frp_inst_put_now(c->in, FRP_EV_UINOTE, (uint32_t)(vel ? 0x90u : 0x80u) | (uint32_t)key << 8 | (uint32_t)vel << 16, 0);
+}
+void frp_ui_meters(const frp_core *c, float out_db[2], float peak_db[2], float *gr_db)
+{
+    frp_core *m = (frp_core *)c;         /* (the ballistics are the meter's own state) */
+    frp_snap_t sn;
+    float pk[2];
+    double now = mono_s(), dt = m->m_t > 0.0 ? now - m->m_t : 0.0;
+    m->m_t = now;
+    frp_inst_meters(m->in, pk);
+    for (int k = 0; k < 2; k++) {
+        float db = pk[k] > 1e-6f ? 20.0f * log10f(pk[k]) : -120.0f, fall = m->m_db[k] - (float)(dt * 20.0);   /* 20 dB/s */
+        m->m_db[k] = db > fall ? db : fall < -120.0f ? -120.0f : fall;
+        if (db >= m->m_pk[k] || now - m->m_pk_t[k] > 1.5) { m->m_pk[k] = db > m->m_db[k] ? db : m->m_db[k]; m->m_pk_t[k] = now; }
+        out_db[k] = m->m_db[k];
+        peak_db[k] = m->m_pk[k];
+    }
+    ui_snap(c, &sn);
+    if (gr_db) *gr_db = (float)sn.gr_q12 * 6.0206f / 4096.0f;
+}
+void frp_ui_notes(const frp_core *c, uint8_t notes[128]) { frp_inst_notes(c->in, notes); }
+int frp_ui_voices(const frp_core *c) { frp_snap_t sn; return ui_snap(c, &sn) ? 0 : sn.voices; }
+
+static const frp_ui_vtable UI_VTABLE = {
+    FRP_UI_IFACE_VERSION, frp_core_of, frp_ui_has_slot, frp_ui_rev, frp_ui_param_get, frp_ui_param_default,
+    frp_ui_param_text, frp_ui_param_begin, frp_ui_param_set, frp_ui_param_end, frp_ui_preset_count, frp_ui_preset_info,
+    frp_ui_preset_current, frp_ui_preset_load, frp_ui_preset_step, frp_ui_preset_save, frp_ui_preset_delete,
+    frp_ui_preset_rescan, frp_ui_can_undo, frp_ui_undo, frp_ui_settings_get, frp_ui_settings_set, frp_ui_host_bpm10,
+    frp_ui_tempo_bpm10, frp_ui_learn_start, frp_ui_learn_cancel, frp_ui_learning, frp_ui_learned_cc, frp_ui_learn_forget,
+    frp_ui_learn_forget_all, frp_ui_cc_target, frp_ui_sustain_set, frp_ui_sustain, frp_ui_fx_bypass_set, frp_ui_fx_bypass,
+    frp_ui_note, frp_ui_meters, frp_ui_notes, frp_ui_voices,
+};

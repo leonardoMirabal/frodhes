@@ -3,11 +3,13 @@
  * the host harness tests/host.c, its main renamed) prints every parameter of PARAMS[] and the text the FM-1 shows for
  * every value (params.c param_text; the enums' full names), so the plugin's value texts are the panel's, never typed in
  * twice.
- *   param_dump                    one "P id lab hi def fmt cc" line per parameter, then "T id v text" per value
+ *   param_dump                    one "P id lab hi def fmt cc" line per parameter, then "T id v text" per value,
+ *                                 then "F i name" per factory preset (F01..F19 presets.c, F20..F57 move_presets.h)
  * Built by the generator with the plugin's engine flags (plugin/CMakeLists.txt FRP_ENGINE_DEFS). */
 #define main host_main_unused
 #include "../../firmware/src/frodhes.c"
 #undef main
+#include "../../move/move_presets.h"
 
 int main(void)
 {
@@ -32,6 +34,12 @@ int main(void)
             printf("T %u %d %s\n", (unsigned)id, (int)v, t);
         }
         PV(id) = keep;
+    }
+    for (id = 0; id < PR_NF + MB_PX_N; id++) {
+        const char *nm = id < PR_NF ? PR_FNAME[id] : MB_PX_NAME[id - PR_NF];
+        int n = (int)strlen(nm);
+        while (n > 0 && nm[n - 1] == ' ') n--;
+        printf("F %u %.*s\n", (unsigned)id, n, nm);
     }
     return 0;
 }
