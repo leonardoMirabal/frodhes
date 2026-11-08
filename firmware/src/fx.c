@@ -438,8 +438,8 @@ __attribute__((noinline)) static void dr_classic(int32_t *m, uint32_t n, int32_t
     dr_general(m, ys, n, kq, mq, dkq, dmq, tt, wt);
 }
 /* FDRV, and its silence (0.9.8, the residual after a panic): on zero input the rounding leaves fixed points that are
- * not 0 (the high-pass's hp += (x - hp + 64) >> 7 stops anywhere in -63 .. 64, the shaper turns -hp into a constant
- * and the low-passes hold it): a DC of ~30 LSB out, for ever, kept open by the silence gate. A block that starts and
+ * not 0 (the high-pass stops anywhere in -63 .. 64, in Q7 from 0.9.10: -64 .. 63 / 128 LSB; the shaper turns -hp
+ * into a constant and the low-passes hold it): a DC of ~30 LSB out, for ever, kept open by the silence gate. A block that starts and
  * ends on 0 in with every state where it started is that fixed point: to rest (exact 0 from the next block). Once a
  * block, no per-sample work (dr_classic's loops as they were); music never leaves the states unmoved */
 __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, int32_t sw)
@@ -781,7 +781,7 @@ FR_RAM __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, u
      * off at every DEPTH, within 0.1 LU (fitted on host renders; tests/py/test_mix_levels.py); the low shelf's depth follows it (ksh), so
      * the bass keeps its level too (C2 within +1.5 dB). The mix was a fixed 0.70: the chord -2.1 LU at DEPTH 64.
      * Refitted 2026-11-08 on the 0.9.10 Rhodes (with the centre law below): every knot within 0.11 LU */
-    static const int16_t PH_G[9] = {2731, 2820, 3318, 5112, 5390, 4989, 4710, 4502, 4331};
+    static const int16_t PH_G[9] = {2731, 2820, 3200, 5112, 5390, 4989, 4710, 4502, 4331};
     int32_t gt = PH_G[depth >> 4] + (((PH_G[(depth >> 4) + 1] - PH_G[depth >> 4]) * (depth & 15)) >> 4);
     /* the centre under DEPTH 64 rises 1.5x as fast as the sweep narrows, at the top from DEPTH 21 down (it was 1x, the
      * top at DEPTH 0: with the 0.9.10 Rhodes' brighter 1-3 kHz a high chord lost 3.3 dB at DEPTH 30, a low one gained
@@ -1594,6 +1594,8 @@ static int32_t dc_l, dc_r, dce_l, dce_r;
  * each sub-block towards the lowest gain this one and the next need, so no sample ever passes LIM_T, nothing is
  * clipped, and the gain moves smoothly (big chords of 7-8 notes stay clean); release ~46 ms */
 #define LK 32u
+/* the limiter's gain ramp over a sub-block: a raised cosine (no slope step at the sub-block edges), Q15, ends on 1 */
+static const uint16_t LK_S[LK] = {79,315,705,1247,1935,2761,3719,4799,5990,7282,8661,10114,11628,13188,14778,16384,17990,19580,21140,22654,24107,25486,26778,27969,29049,30007,30833,31521,32063,32453,32689,32768};
 static int32_t lk_l[LK], lk_r[LK], lk_pk, lk_g = 32768;
 static inline __attribute__((always_inline)) int32_t lk_need(int32_t pk) { return pk > LIM_T ? (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)pk) : 32768; }
 static inline __attribute__((always_inline)) int32_t dc_block(int32_t x, int32_t *dc, int32_t *err)
@@ -1831,7 +1833,7 @@ FR_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
             /* limiting: g0 (the last sub-block's tgt, <= lk_need of its pn, which is lk_pk now) and tgt are both
              * <= lk_need(lk_pk) and the ramp stays between them, so |x g >> 15| <= lk_pk lk_need(lk_pk) >> 15 <=
              * LIM_T (-1.0 dBFS since 0.9.10): no clip after it (the master clip never acted and is gone, 0.9.5) */
-            int32_t g = g0 + (int32_t)(((int64_t)(tgt - g0) * (i + 1)) >> 5), xl = lk_l[i], xr = lk_r[i];
+            int32_t g = g0 + (int32_t)(((int64_t)(tgt - g0) * LK_S[i]) >> 15), xl = lk_l[i], xr = lk_r[i];
             lk_l[i] = fx_L[sb + (uint32_t)i]; lk_r[i] = fx_R[sb + (uint32_t)i];
             if (g != 32768) { xl = (int32_t)(((int64_t)xl * g) >> 15); xr = (int32_t)(((int64_t)xr * g) >> 15); }
             po[2 * i] = xl; po[2 * i + 1] = xr;          /* (no clip: <= LIM_T) */

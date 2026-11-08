@@ -126,7 +126,9 @@ def main():
         for j, v in enumerate(ANCH):
             if v < MATCH_V:
                 c[:, :, j] = np.maximum(c[:, :, j], 0.0)
-        c[:, :, -1] = c[:, :, -2] + (c[:, :, -1] - c[:, :, -2]) * 8 / 7     # v128: the line through 120, 127
+        c[:, :, -1] = c[:, :, -2] + (c[:, :, -1] - c[:, :, -2]) * 8 / 7     # v128: the line through 120, 127,
+        c[:, :, -1] = np.clip(c[:, :, -1], c[:, :, -2] - 1, c[:, :, -2] + 1)   # within 1 code of v120: at v127 a hard
+        # TYPE's tip (DYNO) reaches the pamp cap and the match chased 0.9.9's folded loudness (DYNO A3 +2..4.7 dB)
         code = np.clip(np.round(c + 128), 0, 255).astype(int)
         write(code)
         print("wrote %s: make-up %.1f .. %.1f dB" % (HDR, (code.min() - 128) * 6.0206 / 32, (code.max() - 128) * 6.0206 / 32))

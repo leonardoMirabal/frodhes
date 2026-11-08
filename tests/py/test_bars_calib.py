@@ -90,14 +90,15 @@ def st77_makeup(n, v):
     return (x0 + (((x1 - x0) * (c & 7)) >> 3)) / 4096.0
 
 
-# 0.9.10: VIBES stays byte-identical (user, 2026-11-08), and the Rhodes is new: louder in the middle and the top
-# relative to its bass, so the 0.9.9 balance (VIBES 2.5 dB over the Rhodes in every region, user 2026-10-17) moved.
-# These two tests now hold the measured 0.9.10 balance (golden models, the Rhodes x its drive make-up), so a level
-# change in either engine still shows: VIBES minus the Rhodes, single notes at v100, K-weighted over 0..1 s, per key
-# region (the firmware's own chord / register measure: docs/MANUAL.md, VIBES).
-CHORD_DB = 0.2                                     # the A3-E4-A4 chord at v100 (0.9.9: 2.5)
-REGION_LU = {(21, 40): 0.3, (41, 52): 2.5, (53, 59): 2.9, (60, 71): 1.5, (72, 83): -2.4, (84, 89): -1.8,
-             (90, 99): -0.1, (100, 108): -2.2}    # (0.9.9: 2.5 in every region)
+# 0.9.10: VIBES stays byte-identical (user, 2026-11-08). The clean Rhodes (the pickup swing of the physical force law
+# again, with the drive's level make-up) puts the 0.9.9 balance back (VIBES 2.5 dB over the Rhodes in every region,
+# user 2026-10-17), except the top keys: 100..108 0.8 (the clean top register's offset, gen_rhodes
+# bark_physical_offset_points). (The first 0.9.10 drive had moved it: the chord 0.2, the regions -2.4 .. +2.9.)
+# VIBES minus the Rhodes, single notes at v100, K-weighted over 0..1 s, per key region (golden models, the Rhodes x
+# its drive make-up; the firmware's own chord / register measure: docs/MANUAL.md, VIBES).
+CHORD_DB = 2.5                                     # the A3-E4-A4 chord at v100 (measured 2.2)
+REGION_LU = {(21, 40): 2.5, (41, 52): 2.5, (53, 59): 2.5, (60, 71): 2.5, (72, 83): 2.5, (84, 89): 2.5,
+             (90, 99): 2.5, (100, 108): 0.8}      # (measured 2.5, 2.8, 2.7, 2.5, 2.2, 2.5, 2.8, 0.8)
 
 
 def test_level_matched_to_st77():

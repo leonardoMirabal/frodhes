@@ -112,7 +112,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_DRIVE, 53, P_DRV_SW, 4, P_DRV_TONE, 60, P_FL_TYPE, 1, P_FL_FREQ, 76, P_FL_RESO, 88, P_FL_LFO, 64,
     P_LFO_SHAPE, 1, P_LFO_SYNC, 13, P_DL_SW, 1, P_DL_DEPTH, 14, P_DL_SYNC, 9, P_DL_FDBK, 40, P_DL_TONE, 60,
-    P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 23, 0xFF,
+    P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 35, 0xFF,
     /* F12 AUTO WAH: the wah: a resonant band-pass swept deep by the LFO, a sine at 1/4 on the tempo, restarted by every
      * note (the compressor's make-up carries the level LEVEL 127 cannot) */
     P_TYPE, 0, P_BARK, 80, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
@@ -129,7 +129,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     P_TYPE, 4, P_TONE, 64, P_BARK, 82, P_BELL, 64, P_HAMMER, 60, P_DECAY, 72, P_RELEASE, 54, P_NOISE, 36, P_MOT_ON, 0,
     P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1,
     P_CP_DEPTH, 40, P_CP_SPEED, 40, P_DL_SW, 3, P_DL_DEPTH, 20, P_DL_SYNC, 8, P_DL_FDBK, 50, P_DL_TONE, 56,
-    P_RV_DEPTH, 34, P_RV_TYPE, 2, P_RV_DECAY, 70, P_RV_PREDLY, 16, P_RV_LOCUT, 80, P_LEVEL, 67, 0xFF,
+    P_RV_DEPTH, 34, P_RV_TYPE, 2, P_RV_DECAY, 70, P_RV_PREDLY, 16, P_RV_LOCUT, 80, P_LEVEL, 66, 0xFF,
     /* F15 MARIMBA (dry): the default mallet, tube and weight, MUTE 0 (rings out, as the instrument), a soft mallet
      * tick, the mallet compressor and a trace of hall */
     P_TYPE, 5, P_TONE, 64, P_BARK, 64, P_BELL, 64, P_HAMMER, 64, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
@@ -140,7 +140,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     P_TYPE, 5, P_TONE, 60, P_BARK, 80, P_BELL, 64, P_HAMMER, 110, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
     P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1, P_CP_DEPTH, 40,
     P_CP_SPEED, 44, P_DL_SW, 1, P_DL_DEPTH, 22, P_DL_SYNC, 8, P_DL_FDBK, 26, P_DL_TONE, 50, P_RV_DEPTH, 38,
-    P_RV_TYPE, 1, P_RV_DECAY, 64, P_RV_PREDLY, 24, P_RV_LOCUT, 80, P_LEVEL, 41, 0xFF,
+    P_RV_TYPE, 1, P_RV_DECAY, 64, P_RV_PREDLY, 24, P_RV_LOCUT, 80, P_LEVEL, 40, 0xFF,
     /* ---- 0.9.5: TAPE ECHO, DREAM, RADIO (the starters U10..U12 until 0.9.5's RC, the same records: their sound and
      * their compressor as they were) */
     /* F17 TAPE ECHO: a warm piano into the tape echo, dotted 1/8 on the tempo, a plate */
@@ -155,7 +155,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     /* F19 RADIO: a hard drive through a band-pass (a small speaker's band), a short tape slap, a small room */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_DRIVE, 55, P_DRV_SW, 4, P_DRV_TONE, 76, P_FL_TYPE, 5, P_FL_FREQ, 66, P_FL_RESO, 0, P_DL_SW, 3, P_DL_DEPTH, 15,
-    P_DL_TIME, 54, P_DL_FDBK, 30, P_RV_DEPTH, 10, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 80, 0xFF,
+    P_DL_TIME, 54, P_DL_FDBK, 30, P_RV_DEPTH, 10, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 90, 0xFF,
 };
 /* factory record idx (< PR_NF): the records are stored back to back (0.9.6: no padding to 64 bytes, 423 B less) */
 FR_COLD static const uint8_t *pr_fdata(uint32_t idx)
@@ -213,13 +213,13 @@ static const uint8_t PR_SDATA[] = {
     P_TYPE, 1, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 96, P_TW_RATE, 58, P_CP_SW, 1, P_CP_DEPTH, 30, P_CP_SPEED, 30, P_DL_SW, 2,
     P_DL_DEPTH, 10, P_DL_SYNC, 9, P_DL_FDBK, 26, P_DL_TONE, 54, P_RV_DEPTH, 30, P_RV_TYPE, 1, P_RV_PREDLY, 24,
-    P_RV_LOCUT, 70, P_LEVEL, 58, 0xFF,
+    P_RV_LOCUT, 70, P_LEVEL, 57, 0xFF,
     /* U08 REEDY: a reedy electric piano: the tine near the pickup's axis (a strong second harmonic), a hard hammer, a
      * short decay, a mid drive (TSH8), an AM tremolo at 3.9 Hz, a tape slap, a short plate */
     P_TYPE, 0, P_TONE, 94, P_BARK, 72, P_BELL, 40, P_HAMMER, 100, P_DECAY, 40, P_RELEASE, 44, P_NOISE, 36, P_CMP_SW, 1,
     P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_DRV_SW, 3, P_DRIVE, 26,
     P_DRV_TONE, 66, P_TW_SW, 1, P_TW_MODE, 1, P_TW_DEPTH, 64, P_TW_RATE, 82, P_DL_SW, 3, P_DL_DEPTH, 10, P_DL_SYNC, 6,
-    P_DL_FDBK, 20, P_DL_TONE, 56, P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 68, 0xFF,
+    P_DL_FDBK, 20, P_DL_TONE, 56, P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 75, 0xFF,
     /* U09 VELVET: the softest piano, early felt hammers, the dampers softly audible, a mid hall */
     P_TYPE, 2, P_TONE, 46, P_BARK, 44, P_BELL, 36, P_HAMMER, 40, P_DECAY, 72, P_NOISE, 40, P_CMP_SW, 1, P_CMP_AMT, 46,
     P_CMP_RATIO, 1, P_CMP_ATK, 90, P_CMP_REL, 72, P_CMP_GAIN, 8, P_RV_DEPTH, 40, P_RV_TYPE, 1, P_RV_DECAY, 76,

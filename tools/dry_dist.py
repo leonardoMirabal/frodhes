@@ -12,19 +12,27 @@ Cells (every one measured on the host build, 44.1 kHz):
   TYPE      the four electric pianos (CC 80: 0 / 32 / 64 / 96)
   RESPONSE  CC 40 0 (A, pickup excursion) and 127 (B, velocity map); 0.9.9 has no CC 40 (ignored: one method)
   notes     keys 28 33 45 57 69 81 93 x velocities 64 96 110 127: H2..H6 re H1 (dB, each the peak within +-3 % of
-            k f0 in a Hann window 150..650 ms after the strike) and "inh": the energy off every harmonic band
-            (+-6 Hz or +-0.3 %) up to 20 kHz re the energy of H1 (the aliasing and any inharmonic product; the tine's own
+            k f0 in a Blackman-Harris window 150..650 ms after the strike) and "inh": the energy off every harmonic band
+            (+-15 Hz or +-0.3 %, around k x the f0 measured on H1) up to 20 kHz re the energy of H1 (the aliasing and any inharmonic product; the tine's own
             upper modes are in it too, so it is judged against 0.9.9, never alone)
   chords    4-note chords at v127 (low, mid, high): "imd", the energy off every harmonic band of the four notes re
             the energy of their fundamentals
 
-Limits (judge): every value <= 0.9.9's same cell + 3 dB (a harmonic: or <= -60 dB re H1, never heard); and at v127 the absolute ceiling H3 re H1 <= -25 dB (the
+Limits (judge): every value <= 0.9.9's same cell + 3 dB (or <= -60 dB re H1: never heard, the path's floor); and at v127 the absolute ceiling H3 re H1 <= -25 dB (the
 limit min(base + 3, -25)). A cell where 0.9.9 itself is above -25 keeps base + 3 (0.9.9 is the reference).
 
   tools/dry_dist.py --bin BIN [--out FILE]          measure a host binary, write the cells (JSON)
   tools/dry_dist.py --save                          measure the host binary BIN (default build/host/frodhes) and write
                                                     tests/baselines/dry_dist_099.json (run it on a 0.9.9 build)
   tools/dry_dist.py --judge CELLS.json [--base B]   the table and the verdict (exit 1 on a failure)
+  --hq                                              the Move's HQ build instead: --save writes (and --judge reads)
+                                                    tests/baselines/dry_dist_099_hq.json; build one with --build-hq
+
+The Move (and the plugin's HQ slots) have their own reference, dry_dist_099_hq.json: 0.9.9 (456b5da4) built with the
+Move's defines and HQ_DEFAULT=1 (HQ_DEFS). The FM-1's does not hold there: FX on the Move keeps the compressor
+(FR_BYP_KEEP_CMP: the FXOFF chords), and the HQ voice has its own pickup from key 85 and its own pulse at every
+velocity (key 93's H3 differs by 1-2 dB at v64..96).
+  tools/dry_dist.py --build-hq OUT [--src TREE]     compile the HQ host build of TREE (default: this one) to OUT
 """
 import argparse
 import json
@@ -37,6 +45,9 @@ import numpy as np
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BASE = os.path.join(ROOT, "tests", "baselines", "dry_dist_099.json")
+BASE_HQ = os.path.join(ROOT, "tests", "baselines", "dry_dist_099_hq.json")
+HQ_DEFS = ("-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1", "-DHQ_DEFAULT=1")   # (the Makefile's
+                                  # MOVE_DEFS, the HQ Rhodes on: the Move as it loads; make test-move's host-hq build)
 FS = 44100
 KEYS = (28, 33, 45, 57, 69, 81, 93)
 VELS = (64, 96, 110, 127)
@@ -47,11 +58,13 @@ CHORDS = (("low", (33, 40, 45, 49)), ("mid", (57, 60, 64, 67)), ("high", (69, 72
 STEP, HOLD = 1500, 800            # ms: a note every STEP, released after HOLD
 W0, W1 = 0.15, 0.65               # s: the analysis window after the strike
 BAND = 0.03                       # the harmonic peaks: within +-3 % of k f0
-IBW, IREL = 6.0, 0.003            # inh / imd: a harmonic's band, +-6 Hz (the 0.5 s Hann window's main lobe is +-4 Hz)
+IBW, IREL = 15.0, 0.003           # inh / imd: a harmonic's band, +-15 Hz (the window's main lobe +-8 Hz, and a harmonic's own envelope: the harmonic decay glide from 0.4 s spreads H2 +-12 Hz)
                                   # or +-0.3 % (the pickup's products are exact multiples of the tine's frequency)
 MARGIN, CEIL_H3 = 3.0, -25.0
-FLOOR = -60.0                     # a harmonic below -60 dB re H1 passes whatever 0.9.9 had (H5 at -90 dB moves by
-                                  # more than 3 dB with any change and is not heard); inh / imd have no floor
+FLOOR = -60.0                     # any value below -60 dB re H1 passes whatever 0.9.9 had: H5 at -90 dB moves by more
+                                  # than 3 dB with any change and is not heard, and inh / imd down there are the path's
+                                  # floor (the USB stream requantized to 16 bits at 48 kHz: 0.9.9's -91 dB chord imd read
+                                  # -74 through the dry run's 44.1 -> 48 kHz path, 2026-11-08)
 
 
 def f0(n):
@@ -97,14 +110,40 @@ def render(binary, tag, lines, outdir):
 
 
 def spectrum(x, fs=FS):
-    s = x * np.hanning(len(x))
+    """the power spectrum through a 4-term Blackman-Harris window (sidelobes -92 dB, main lobe +-4 bins = +-8 Hz at
+    0.5 s). Hann's sidelobes (-31 dB at +-6 Hz) put the fundamental's own skirt in inh: at key 93 that skirt WAS inh
+    (-45 dB at the host's clock), and an f0 a fraction of a bin off (the FM-1's clock on USB) moved it by 6 dB"""
+    from scipy.signal.windows import blackmanharris
+    s = x * blackmanharris(len(x))
     p = np.abs(np.fft.rfft(s)) ** 2
     return p, np.fft.rfftfreq(len(x), 1 / fs)
+
+
+def tuned(p, fr, funds):
+    """the fundamentals as they sound: each nominal f0 times the ratio measured on the H1 peaks (the median over the
+    notes; a peak within +-3 %, refined by a parabola on the log power). The FM-1's clock is a few hundred ppm off the
+    host's on USB (the device's 44.1 kHz against the computer's 48 kHz), so its harmonics sit k x that many ppm off the
+    nominal k f0: at key 93, 500 ppm moves H11 by 10 Hz, out of its band, and inh read 10 dB worse with nothing
+    in the sound (FM-1 2026-11-08: -33.6 dB at every velocity, the host -43; the host through usb.c's resampler at
+    +-600 ppm: -32.2)"""
+    rs = []
+    for fu in funds:
+        m = np.flatnonzero((fr > fu * (1 - BAND)) & (fr < fu * (1 + BAND)))
+        if len(m) < 3:
+            continue
+        i = m[np.argmax(p[m])]
+        if 0 < i < len(p) - 1:
+            a, b, c = np.log(p[i - 1] + 1e-30), np.log(p[i] + 1e-30), np.log(p[i + 1] + 1e-30)
+            d = 0.5 * (a - c) / (a - 2 * b + c) if a - 2 * b + c < 0 else 0.0
+            rs.append((fr[i] + d * (fr[1] - fr[0])) / fu)
+    r = float(np.median(rs)) if rs else 1.0
+    return [fu * r for fu in funds]
 
 
 def harm_cells(seg, fund, fs=FS):
     """H2..H6 re H1 (dB, band peaks) and inh: the power off the harmonic bands re the power of H1 (dB)"""
     p, fr = spectrum(seg, fs)
+    fund = tuned(p, fr, [fund])[0]
     pk = []
     for k in range(1, 7):
         m = (fr > k * fund * (1 - BAND)) & (fr < k * fund * (1 + BAND))
@@ -117,6 +156,7 @@ def inharm(p, fr, funds):
     """the power off every harmonic band of the fundamentals (30 Hz .. 20 kHz) re the power in the fundamentals' own
     bands (H1: so a distortion that fills the harmonic bands does not lower it), dB"""
     use = (fr > 30) & (fr < 20000)
+    funds = tuned(p, fr, funds)
     on, h1 = np.zeros(len(fr), bool), np.zeros(len(fr), bool)
     for fu in funds:
         h1 |= np.abs(fr - fu) < max(IBW, fu * IREL)
@@ -126,13 +166,25 @@ def inharm(p, fr, funds):
     return float(10 * np.log10(b / (a + 1e-30) + 1e-30))
 
 
+def strike(x, t, fs):
+    """the strike's onset near its event time t (s): the first sample over a quarter of the peak in [t - 40, t + 120]
+    ms. The FM-1's clock drifts against the recording's (500 ppm is 25 ms over a 50 s take), so a window placed by the
+    take's first onset alone slid toward the attack on the last keys"""
+    i0, i1 = max(0, int((t - 0.04) * fs)), int((t + 0.12) * fs)
+    a = np.abs(x[i0:i1])
+    if not len(a) or a.max() <= 0:
+        return t
+    return (i0 + int(np.argmax(a > 0.25 * a.max()))) / fs
+
+
 def measure_wave(x, t0=0.0, fs=FS):
     """the cells of one script's recording (x mono at fs; t0: where the script's 0 ms is in x, s). Every cell is a
     ratio, so the FM-1's USB at 48 kHz is judged against the host's 44.1 kHz reference as it is"""
     ev, _ = events()
     out = {}
     for kind, label, t, ns, v in ev:
-        i0, i1 = int((t0 + t / 1000 + W0) * fs), int((t0 + t / 1000 + W1) * fs)
+        ts = strike(x, t0 + t / 1000, fs)
+        i0, i1 = int((ts + W0) * fs), int((ts + W1) * fs)
         seg = x[i0:i1]
         if kind == "note":
             h, inh = harm_cells(seg, f0(ns[0]), fs)
@@ -170,6 +222,15 @@ def measure(binary, outdir=None):
     return {t[0]: measure_tag(binary, t[0], outdir) for t in tags()}
 
 
+def build_hq(out, src=ROOT):
+    """the Move's HQ host build of the tree src at out (move/tests/run_eq.sh's host-hq flags)"""
+    os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+    subprocess.run([os.environ.get("CC", "cc"), "-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", *HQ_DEFS,
+                    '-DAPP_VER="dev"', "-I" + os.path.join(src, "firmware", "src"), "-I" + os.path.join(src, "firmware", "gen"),
+                    "-o", out, os.path.join(src, "firmware", "src", "frodhes.c"), "-lm"], check=True)
+    return out
+
+
 def judge(cells, base, methods_base="A"):
     """[(cell, metric, value, base, limit, ok)]; the base has one method (0.9.9): every method is held to it"""
     rows = []
@@ -184,8 +245,7 @@ def judge(cells, base, methods_base="A"):
                     rows.append((f"{tag} {label}", m, v, None, None, False))
                     continue
                 lim = b + MARGIN
-                if m.startswith("H"):
-                    lim = max(lim, FLOOR)
+                lim = max(lim, FLOOR)
                 if m == "H3" and label.endswith("/127"):
                     lim = min(b + MARGIN, CEIL_H3) if b <= CEIL_H3 else b + MARGIN
                 rows.append((f"{tag} {label}", m, v, b, lim, bool(v <= lim + 1e-9)))
@@ -208,15 +268,22 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--save", action="store_true")
     ap.add_argument("--judge")
-    ap.add_argument("--base", default=BASE)
+    ap.add_argument("--base")
+    ap.add_argument("--hq", action="store_true", help="the Move's HQ reference (dry_dist_099_hq.json)")
+    ap.add_argument("--build-hq", metavar="OUT", help="compile the HQ host build to OUT and exit")
+    ap.add_argument("--src", default=ROOT, help="--build-hq: the source tree")
     ap.add_argument("--all", action="store_true", help="--judge: every failing value (else the 40 closest)")
     a = ap.parse_args()
+    if a.build_hq:
+        print(build_hq(a.build_hq, os.path.abspath(a.src)))
+        return
+    a.base = a.base or (BASE_HQ if a.hq else BASE)
     if a.judge:
         rows = judge(json.load(open(a.judge)), json.load(open(a.base)))
         print(table(rows, only_bad=a.all, worst=10000 if a.all else 40))
         sys.exit(0 if all(r[5] for r in rows) else 1)
     cells = measure(os.path.abspath(a.bin))
-    path = BASE if a.save else a.out
+    path = a.base if a.save else a.out
     if path:
         json.dump(cells, open(path, "w"), indent=1, sort_keys=True)
         print(path)

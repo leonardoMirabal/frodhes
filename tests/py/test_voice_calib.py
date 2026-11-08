@@ -63,16 +63,16 @@ def test_neighbour_keys_even(vel):
 
 
 def test_bark_grows_with_velocity(vel):
-    # the pickup drive (params.json pickup_drive): the soft colour holds up to each register's knee, then the bark
-    # grows; the knee rises with the register and the top has none
+    # 0.9.10 (the user: a clean Rhodes at every velocity; params.json pickup_drive.bark_physical): the swing through the
+    # pickup follows the physical force law, as 0.9.9's: the bark (H2 re H1) grows with velocity on every key, gently,
+    # and stays well under H1 at v127 (0.9.10's first drive: H2 +19 dB over H1 at A1 v127)
     h = vel["H21"]
     med = lambda v: float(np.median(h[:, jv(v)]))
-    assert med(64) < -18 and med(127) > med(104) + 3, (med(64), med(104), med(127))
-    bass = [KEYS.index(n) for n in range(28, 53)]          # knee ~v58
-    assert np.abs(h[bass, jv(48)] - h[bass, jv(1)]).max() < 1.0      # flat below the knee
-    assert np.all(h[bass, jv(127)] - h[bass, jv(64)] > 20)           # and well up above it
+    assert med(64) < -18 and med(104) < med(127) < -3, (med(64), med(104), med(127))
+    assert h[:, jv(127)].max() < 0.0, h[:, jv(127)].max()            # H2 under H1 on every key at v127
     top = [KEYS.index(n) for n in range(86, 104)]
-    assert np.abs(h[top, jv(127)] - h[top, jv(40)]).max() < 2.0      # no rise on the top keys
+    rt = h[top, jv(127)] - h[top, jv(40)]
+    assert 6.0 < rt.min() and rt.max() < 25.0, (rt.min(), rt.max())   # the top keys brighten too, as 0.9.9's
     assert np.all(np.diff(h[:, jv(40):], axis=1) > -0.5)  # every key's H2/H1 rises with velocity
 
 
