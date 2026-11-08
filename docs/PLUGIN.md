@@ -210,6 +210,13 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
   sample as the CLAP render does, at 44.1 and 48 kHz; the VST3 and the Audio Unit in a JUCE-based host (pedalboard)
   match its level and loudness envelope (that host plays a probe note into every instrument it loads, so not sample
   for sample), and their state saves, loads and saves to the same bytes.
+- The dry distortion (`make plugin-dist`, `tools/plugin_dist.py`, macOS; `tests/py/test_plugin_dist.py`): the 16
+  scripts of the firmware's dry-distortion gate (`tools/dry_dist.py`: FXOFF / RAW x the four TYPEs x RESPONSE A / B,
+  keys 28-93 at v64-127 and loud chords) played offline through the CLAP (the headless host), the VST3 (a minimal
+  host on the VST3 SDK's hosting classes, `plugin/tests/vst3_render.cpp`: controllers through the plugin's MIDI
+  mapping, as a DAW sends them) and the Audio Unit (Apple's AU host, registered for the run only, nothing installed);
+  each format's H2..H6, inharmonic residue and chord intermodulation within 0.9.9's + 3 dB and H3 at most -25 dB at
+  v127, and the three formats sample-identical, on the plugin's HQ sound. The WAVs and each format's cells (`tools/dry_dist.py --judge` reads them) land in `build/plugin-dist/out`.
 - The stress run (`make plugin-stress`, `plugin/tests/clap_stress.m`, macOS): 30 minutes in a host that behaves like a
   DAW, 3 instances processed at real time on an audio thread while the main thread plays chords (full ones of 20 to 28
   keys too: every voice and steals),
@@ -274,6 +281,7 @@ there; the list above is the same for them (Reaper: also the CLAP, `Options > Pr
 | `plugin/tests/` | the headless host, the coroutine test, the parameter dump, the window's test host, the stress host |
 | `tools/plugin_hosts.py`, `plugin_au_render.swift`, `plugin_vst3_validator.sh` | the plugin in other hosts (Apple's AU host, a JUCE host), the VST3 SDK's validator |
 | `tools/plugin_cpu.py` | the CPU per instance at the worst case, per format and rate |
+| `tools/plugin_dist.py`, `plugin/tests/vst3_render.cpp` | the dry-distortion gate through every format (the VST3 render host) |
 | `tools/plugin_deps.sh`, `plugin/deps.lock` | the pinned dependencies and test tools |
 | `tools/plugin_pack.sh`, `plugin_depcheck.py`, `plugin_asset.sh` | the packages, the self-contained check, the release's choice of packages |
 | `tools/plugin_win.sh`, `plugin/cmake/win-x64-clangcl.cmake`, `plugin/compat/win/` | the Windows build (clang-cl), its checks and wine tests |
