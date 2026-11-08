@@ -216,12 +216,23 @@ def build_app():
     tc_all(*cmds)
     elf = OUT / "frodhes.elf"
     ld = FW / "app.ld"
+    txt = ld.read_text()
     if APP_SLOT != 0x8DFBC:          # another board's app slot (SMK-37): the same script, its XIP length
-        txt = ld.read_text()
         if txt.count("LENGTH = 0x8DFBC") != 1:
             raise SystemExit("app.ld: the XIP LENGTH line was not found")
+        txt = txt.replace("LENGTH = 0x8DFBC", f"LENGTH = {APP_SLOT:#X}".replace("0X", "0x"))
+    if C1:
+        # --c1: the effects run from flash, so .ram_text is half of RAMTEXT; the rest of it and 0x01C06000..0x01C08000
+        # (the "RAM-run debug" room no tool uses) become .ramx: NOLOAD, never cleared (scratch written before it is
+        # read, as NOINIT's), CPU data only; the PC limit still covers .ram_text alone (fm1_guard.h)
+        a, b = "RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x6000", "_rt_load = LOADADDR(.ram_text);"
+        if txt.count(a) != 1 or txt.count(b) != 1:
+            raise SystemExit("app.ld: the RAMTEXT lines were not found (--c1 .ramx)")
+        txt = txt.replace(a, "RAMTEXT (rwx): ORIGIN = 0x01C00000, LENGTH = 0x8000").replace(
+            b, b + "\n    .ramx (NOLOAD) : { . = ALIGN(8); _ramx_start = .; *(.ramx*) . = ALIGN(4); _ramx_end = .; } > RAMTEXT")
+    if txt != ld.read_text():
         ld = OUT / "app.ld"
-        ld.write_text(txt.replace("LENGTH = 0x8DFBC", f"LENGTH = {APP_SLOT:#X}".replace("0X", "0x")))
+        ld.write_text(txt)
     tc("pi32v2/bin/ld", "--gc-sections", "-e", "_start", "-T", ld, OUT / "crt0.o", OUT / "fm1_vec.o",
        OUT / "fm1_isr.o", OUT / "frodhes.o", "-o", elf)
     for sect in ("text.bin", "data.bin", "ramtext.bin"):
@@ -405,6 +416,9 @@ def check(img, syms, dis, rt):
     ram = sym("_bss_end") - 0x01C08000
     pool = sym("_pool_end") - 0x01C20000
     notes.append(f"image {len(img)} B of {APP_SLOT}; RAM .data+.bss {ram} B of 98304; pool {pool} B of 344064")
+    if C1:
+        notes.append(f"--c1: .ramx {sym('_ramx_end') - sym('_ramx_start')} B, .ram_text + .ramx end at "
+                     f"{sym('_ramx_end'):#x} of 0x1c08000")
     # the fonts' tables in the image (UI-SIMPLIFY: the flash they take; a face the code no longer uses is gone):
     # AF_<N>* (aa_font.h, gen_aa_font.py) and FONT_<N>* (felucca_font.h, gfx.c), by objdump -t sizes
     font = {}

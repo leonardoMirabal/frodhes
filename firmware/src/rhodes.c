@@ -313,7 +313,10 @@ static void rh_coef(const rh_mode_t *m, int32_t d30, int32_t t30, int32_t k16, i
  * one only when its stamp is the tuning and the decays of this note-on (no bend: the bend changes the tuning), else
  * rh_coef as before: the same integers either way (Gate R; tests/py/test_rh_cc.py). 2 x 88 x 5 x 16 B in the pool */
 typedef struct { int32_t e0, eps0, e1, eps1; } rh_cc_t;
-static rh_cc_t rh_cc[2][RH_NKEY][RH_NM] RH_OWN_SECTION(".pool.rh_cc");
+#ifndef RH_CC_SEC
+#define RH_CC_SEC ".pool.rh_cc"                 /* (FR_C1 builds, frodhes.c: .ramx) */
+#endif
+static rh_cc_t rh_cc[2][RH_NKEY][RH_NM] RH_OWN_SECTION(RH_CC_SEC);
 static volatile int32_t rh_cc_st[2][3] RH_OWN_SECTION(".bss.rh_cc_st");   /* each buffer's TUNE t, DECAY k, RELEASE k */
 static volatile uint32_t rh_cc_pub RH_OWN_SECTION(".bss.rh_cc_pub");      /* the published buffer + 1 (0 = none yet) */
 
