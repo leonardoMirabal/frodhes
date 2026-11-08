@@ -439,7 +439,8 @@ static void drv_khlon_run(const int32_t *in, int32_t *out, uint32_t n, const drv
 #ifdef C1_EST_LOG
         if (!o) printf("C1EST khlon %u\n", c1_est_blk);
 #endif
-        if (!o) kh_dg_of(pw + cw, pd + cd);       /* (the block before and this first chunk: 288 samples at C1_SUB 8) */
+        if (!o && last) kh_dip_gain(ip, u, k);   /* (the block whole, one chunk: as one core) */
+        else if (!o) kh_dg_of(pw + cw, pd + cd);       /* (the block before and this first chunk: 288 samples at C1_SUB 8) */
         kh_fade_pass(ip, u, op, k, (int32_t)(n - 1u - o), -1);
     } else if (ph == 2)
         for (i = 0; i < k; i++) op[i] = kh_dry(ip[i]);

@@ -43,34 +43,14 @@ DRV_CC = {81, 84}                  # the drive (AMOUNT, TYPE): KHLON's dip (AMOU
 
 
 ORACLE = os.environ.get("C1M_ORACLE") == "1"
-# C1M_ORACLE=1: the two-core build at one chunk a block (C1_SUB 1) with its two estimates put back to the one-core
-# formulas (at one chunk the first chunk is the whole block, so they are exact there): COMP's detector from this
-# block's peak alone, KHLON's dip gain from the dip's block alone. That build must equal the one-core reference on every
-# seed: whatever else differs is a real difference of the two-core path (run with --strict). Built from a patched copy
-# of the sources (build/host-c1m-oracle/src), the tree untouched.
-ORACLE_EDITS = [("fx.c", "int32_t pk = cmp_pkb > cmp_pkc ? cmp_pkb : cmp_pkc;", "int32_t pk = cmp_pkc;"),
-                ("drv_khlon.c", "kh_dg_of(pw + cw, pd + cd);", "kh_dg_of(cw, cd);")]
-# C1M_ORACLE=8: the two-core build at its own C1_SUB (8) against the reference, both with COMP's start from rest taken
-# from the block before's peak alone (a rule both can follow exactly at any chunk size): with that one estimate
-# made the same, every stretch left must follow a KHLON mode change (its dip's dry gain; under BYPASS its crossfade
-# waits and shows the difference when BYPASS is let go): any other is a real difference and fails
-ORACLE8_C1 = [("fx.c", "int32_t pk = cmp_pkb > cmp_pkc ? cmp_pkb : cmp_pkc;", "int32_t pk = cmp_pkb;")]
-ORACLE8_REF = [("fx.c", "#else\n    if (!on && !cmp_xw) { fx_cmp_gr = 0; return; }\n",
-                "#else\n    static int32_t pkb_, pkc_;\n    { int32_t pk_ = 0; uint32_t q_; for (q_ = 0; q_ < n; q_++) "
-                "if (iabs(m[q_]) > pk_) pk_ = iabs(m[q_]); pkb_ = pkc_; pkc_ = pk_; }\n"
-                "    if (!on && !cmp_xw) { fx_cmp_gr = 0; return; }\n"),
-               ("fx.c", "cmp_from(m, n, mk, thr, slope);",
-                "{ cmp_env = pkb_ << 8; cmp_g = exp2_q16(mk - cmp_gr_at(cmp_env, thr, slope)); }")]
-ORACLE8 = os.environ.get("C1M_ORACLE") == "8"
+# C1M_ORACLE=1: the two-core build at one chunk a block (C1_SUB 1): its two estimates take the one-core formulas there
+# (the first chunk is the whole block: fx.c fx_comp, drv_khlon.c), so it must equal the one-core reference on every
+# seed: whatever else differs is a real difference of the two-core path (run with --strict)
+ORACLE_EDITS = []
 PATCH = {}
 if ORACLE:
     C1 = os.path.join(ROOT, "build", "host-c1m-oracle", "frodhes")
     DEFS[C1] = ["-DFR_C1=1", "-DC1_SUB=1u"]
-    PATCH[C1] = ORACLE_EDITS
-elif ORACLE8:
-    C1, REF = (os.path.join(ROOT, "build", f"host-c1m-oracle8{t}", "frodhes") for t in ("", "ref"))
-    DEFS[C1], DEFS[REF] = ["-DFR_C1=1"], DEFS[os.path.join(ROOT, "build", "host-c1mref", "frodhes")]
-    PATCH[C1], PATCH[REF] = ORACLE8_C1, ORACLE8_REF
 
 
 def build(binary):
@@ -87,7 +67,7 @@ def build(binary):
         shutil.copytree(src, os.path.join(m, "firmware", "src"))
         for d in ("firmware/hal", "tests", "web"):
             os.symlink(os.path.join(ROOT, d), os.path.join(m, d))
-        for f, old, new in PATCH[binary]:
+        for f, old, new in PATCH[binary]:   # (none now: kept for a probe)
             fp = os.path.join(m, "firmware", "src", f)
             txt = open(fp).read()
             assert txt.count(old) == 1, (f, old)
@@ -277,10 +257,7 @@ def main():
                   f"(peak {s['ref_peak']})  cause: {','.join(s['cause']) or 'UNEXPLAINED'}  near: {','.join(s['why']) or '-'}")
             for e in s["events"][-6:]:
                 print(f"            {e}")
-        if ORACLE8:                    # (COMP's estimate made the same: only KHLON's may be behind a stretch)
-            unexp = [s for s in st if "khlon" not in s["prior"]]
-        else:
-            unexp = [s for s in st if a.strict or not s["cause"]]
+        unexp = [s for s in st if a.strict or not s["cause"]]
         if crash or unexp:
             bad += 1
     n = sum(1 for r in rs if not r["stretches"])
