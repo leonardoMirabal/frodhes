@@ -41,6 +41,7 @@ endforeach()
 
 add_library(frodhes_engine STATIC
     "${FRP_ROOT}/plugin/src/bridge.c"
+    "${FRP_ROOT}/plugin/src/frp_paths.c"
     "${FRP_ROOT}/plugin/src/coro/coro_arm64.S"
     "${FRP_ROOT}/plugin/src/coro/coro_x86_64.S"
     ${_frp_objs})

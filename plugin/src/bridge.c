@@ -33,8 +33,6 @@
  * The user presets: one file a preset (FRP_USER_EXT) in the user's folder (frp_user_dir), written atomically (a
  * temporary file, then rename) on the main thread; the list is read at the first use and after every change. Program
  * changes 16..31 load the first 16 of them on the audio thread from a copy kept for it (a sequence lock). */
-#include <dirent.h>
-#include <errno.h>
 #include <math.h>
 #include <pthread.h>
 #include <stdatomic.h>
@@ -42,9 +40,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <sys/stat.h>
-#include <unistd.h>
 #include "bridge.h"
+#include "frp_paths.h"
 #include "../../firmware/src/uac_fir.h"
 
 static const frp_slot_api_t *const SLOT[2u * FRP_SLOTS] = {
@@ -627,40 +624,18 @@ static struct {                          /* the first 16 for program changes 16.
     char name[16][FRP_PNAME];
 } pc_cache;
 
-const char *frp_user_dir(void)
+const char *frp_user_dir(void)           /* (frp_paths.h: per OS; FRODHES_PRESET_DIR first; "" none known) */
 {
     if (!user_dir_s[0]) {
-        const char *e = getenv("FRODHES_PRESET_DIR"), *h = getenv("HOME");
-#if defined(_WIN32)
-        const char *ad = getenv("APPDATA");
-        if (e && *e) snprintf(user_dir_s, sizeof user_dir_s, "%s", e);
-        else snprintf(user_dir_s, sizeof user_dir_s, "%s\\Frodhes\\Presets", ad ? ad : ".");
-#elif defined(__APPLE__)
-        if (e && *e) snprintf(user_dir_s, sizeof user_dir_s, "%s", e);
-        else snprintf(user_dir_s, sizeof user_dir_s, "%s/Library/Application Support/Frodhes/Presets", h ? h : ".");
-#else
-        const char *x = getenv("XDG_DATA_HOME");
-        if (e && *e) snprintf(user_dir_s, sizeof user_dir_s, "%s", e);
-        else if (x && *x) snprintf(user_dir_s, sizeof user_dir_s, "%s/frodhes/presets", x);
-        else snprintf(user_dir_s, sizeof user_dir_s, "%s/.local/share/frodhes/presets", h ? h : ".");
-#endif
+        frp_env_t e;
+        frp_env_here(&e);
+        if (frp_path_presets(FRP_OS_HERE, &e, user_dir_s, sizeof user_dir_s)) user_dir_s[0] = 0;
     }
     return user_dir_s;
 }
-static int mkdirs(const char *path)
+static void upath(char *out, size_t n, const char *file)   /* a file of the preset folder */
 {
-    char t[1024];
-    size_t n = strlen(path);
-    if (n >= sizeof t) return -1;
-    memcpy(t, path, n + 1);
-    for (size_t i = 1; i <= n; i++)
-        if (t[i] == '/' || t[i] == 0) {
-            char c = t[i];
-            t[i] = 0;
-            if (mkdir(t, 0755) && errno != EEXIST) return -1;
-            t[i] = c;
-        }
-    return 0;
+    snprintf(out, n, "%s%c%s", frp_user_dir(), frp_path_sep(FRP_OS_HERE), file);
 }
 static void name_clean(char *out, const char *in)   /* printable, no quote / backslash, trimmed, 1..24 */
 {
@@ -700,7 +675,7 @@ static int user_read_file(const char *path, char *name, uint8_t *vals)
     size_t got, l = 0, ln = 0;
     const char *p, *v;
     unsigned n = 0;
-    FILE *f = fopen(path, "rb");
+    FILE *f = frp_fopen(path, "rb");
     if (!f) return -1;
     got = fread(buf, 1, sizeof buf - 1, f);
     fclose(f);
@@ -734,36 +709,37 @@ static void pc_cache_fill(void)          /* (user_mu held) */
     atomic_thread_fence(memory_order_release);
     pc_cache.n = 0;
     for (int k = 0; k < n_users && pc_cache.n < 16; k++) {
-        snprintf(path, sizeof path, "%s/%s", frp_user_dir(), users[k].file);
+        upath(path, sizeof path, users[k].file);
         if (user_read_file(path, pc_cache.name[pc_cache.n], pc_cache.v[pc_cache.n])) continue;
         pc_cache.n++;
     }
     atomic_store_explicit(&pc_cache.seq, q + 2u, memory_order_release);
 }
+static int user_scan_one(const char *fname, void *u)   /* (user_mu held) */
+{
+    int *cap = u;
+    size_t l = strlen(fname), lx = strlen(FRP_USER_EXT);
+    char path[1200], nm[FRP_PNAME];
+    if (l <= lx || l >= sizeof users[0].file || strcmp(fname + l - lx, FRP_USER_EXT)) return 0;
+    upath(path, sizeof path, fname);
+    if (user_read_file(path, nm, 0)) return 0;
+    if (n_users >= FRP_USER_MAX) return 1;
+    if (n_users == *cap) {
+        user_t *nu = realloc(users, (size_t)(*cap ? 2 * *cap : 64) * sizeof *nu);
+        if (!nu) return 1;
+        users = nu; *cap = *cap ? 2 * *cap : 64;
+    }
+    memcpy(users[n_users].name, nm, FRP_PNAME);
+    snprintf(users[n_users].file, sizeof users[0].file, "%s", fname);
+    n_users++;
+    return 0;
+}
 static void user_scan_locked(void)
 {
-    DIR *d = opendir(frp_user_dir());
-    struct dirent *e;
-    int cap = 0;
+    static int cap;
     n_users = 0;
     users_read = 1;
-    while (d && (e = readdir(d)) != 0) {
-        size_t l = strlen(e->d_name), lx = strlen(FRP_USER_EXT);
-        char path[1200], nm[FRP_PNAME];
-        if (l <= lx || l >= sizeof users[0].file || strcmp(e->d_name + l - lx, FRP_USER_EXT)) continue;
-        snprintf(path, sizeof path, "%s/%s", frp_user_dir(), e->d_name);
-        if (user_read_file(path, nm, 0)) continue;
-        if (n_users >= FRP_USER_MAX) break;
-        if (n_users == cap) {
-            user_t *u = realloc(users, (size_t)(cap ? 2 * cap : 64) * sizeof *u);
-            if (!u) break;
-            users = u; cap = cap ? 2 * cap : 64;
-        }
-        memcpy(users[n_users].name, nm, FRP_PNAME);
-        snprintf(users[n_users].file, sizeof users[0].file, "%s", e->d_name);
-        n_users++;
-    }
-    if (d) closedir(d);
+    if (frp_user_dir()[0]) (void)frp_list_dir(frp_user_dir(), user_scan_one, &cap);
     if (n_users) qsort(users, (size_t)n_users, sizeof *users, user_cmp);
     pc_cache_fill();
     atomic_fetch_add(&user_gen, 1u);
@@ -792,7 +768,7 @@ int frp_user_values(int k, uint8_t *vals)
     char path[1200];
     pthread_mutex_lock(&user_mu);
     user_ensure();
-    if (k >= 0 && k < n_users) { snprintf(path, sizeof path, "%s/%s", frp_user_dir(), users[k].file); rc = user_read_file(path, 0, vals); }
+    if (k >= 0 && k < n_users) { upath(path, sizeof path, users[k].file); rc = user_read_file(path, 0, vals); }
     pthread_mutex_unlock(&user_mu);
     return rc;
 }
@@ -813,30 +789,31 @@ int frp_user_save(const char *name, const uint8_t *vals)
     int k = -1;
     FILE *f;
     name_clean(nm, name);
-    if (!nm[0] || mkdirs(frp_user_dir())) return -1;
+    if (!nm[0] || !frp_user_dir()[0] || frp_mkdirs(frp_user_dir())) return -1;
     pthread_mutex_lock(&user_mu);
     user_ensure();
     for (int i = 0; i < n_users; i++) if (!strcasecmp(users[i].name, nm)) k = i;   /* (the same name: overwritten) */
     if (k >= 0) snprintf(file, sizeof file, "%s", users[k].file);
     else {
-        struct stat st;
         file_of(file, sizeof file, nm);
         for (int u = 2; u < 1000; u++) {   /* (another name with the same file name: a number) */
-            snprintf(path, sizeof path, "%s/%s", frp_user_dir(), file);
-            if (stat(path, &st)) break;
+            FILE *x;
+            upath(path, sizeof path, file);
+            if (!(x = frp_fopen(path, "rb"))) break;
+            fclose(x);
             char base[64];
             file_of(base, sizeof base, nm);
             base[strlen(base) - strlen(FRP_USER_EXT)] = 0;
             snprintf(file, sizeof file, "%s %d%s", base, u, FRP_USER_EXT);
         }
     }
-    snprintf(path, sizeof path, "%s/%s", frp_user_dir(), file);
+    upath(path, sizeof path, file);
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
-    if (!(f = fopen(tmp, "wb"))) { pthread_mutex_unlock(&user_mu); return -1; }
+    if (!(f = frp_fopen(tmp, "wb"))) { pthread_mutex_unlock(&user_mu); return -1; }
     fprintf(f, "{\"frodhes_preset\":\"1\",\"name\":\"%s\",\"n\":\"%u\",\"p\":\"", nm, (unsigned)FRP_NPARAM_APP);
     for (unsigned i = 0; i < FRP_NPARAM_APP; i++) fprintf(f, "%02x", vals[i]);
     fprintf(f, "\"}\n");
-    if (fclose(f) || rename(tmp, path)) { remove(tmp); pthread_mutex_unlock(&user_mu); return -1; }
+    if (fclose(f) || frp_replace(tmp, path)) { frp_remove(tmp); pthread_mutex_unlock(&user_mu); return -1; }
     user_scan_locked();
     k = -1;
     for (int i = 0; i < n_users && k < 0; i++) if (!strcasecmp(users[i].name, nm)) k = i;
@@ -850,8 +827,8 @@ int frp_user_delete(int k)
     pthread_mutex_lock(&user_mu);
     user_ensure();
     if (k >= 0 && k < n_users) {
-        snprintf(path, sizeof path, "%s/%s", frp_user_dir(), users[k].file);
-        rc = remove(path) ? -1 : 0;
+        upath(path, sizeof path, users[k].file);
+        rc = frp_remove(path);
         user_scan_locked();
     }
     pthread_mutex_unlock(&user_mu);
