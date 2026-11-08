@@ -1811,7 +1811,7 @@ FR_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
         } else for (i = 0; i < (int32_t)LK; i++) {
             /* limiting: g0 (the last sub-block's tgt, <= lk_need of its pn, which is lk_pk now) and tgt are both
              * <= lk_need(lk_pk) and the ramp stays between them, so |x g >> 15| <= lk_pk lk_need(lk_pk) >> 15 <=
-             * LIM_T, under the master clip's knee (24576): the clip never acted here and is left out (0.9.5) */
+             * LIM_T (-1.0 dBFS since 0.9.10): no clip after it (the master clip never acted and is gone, 0.9.5) */
             int32_t g = g0 + (int32_t)(((int64_t)(tgt - g0) * (i + 1)) >> 5), xl = lk_l[i], xr = lk_r[i];
             lk_l[i] = fx_L[sb + (uint32_t)i]; lk_r[i] = fx_R[sb + (uint32_t)i];
             if (g != 32768) { xl = (int32_t)(((int64_t)xl * g) >> 15); xr = (int32_t)(((int64_t)xr * g) >> 15); }
