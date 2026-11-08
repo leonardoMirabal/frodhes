@@ -126,6 +126,9 @@ __attribute__((noinline)) static void xf_post(int32_t *L, int32_t *R, const int3
  * (tests/py/test_c1_subblock.py: the two-core build = the one-core 14-voice build, sample for sample). The block whole
  * (fxc_o 0, fxc_e fxc_n) is one chunk. Chunks are multiples of 32 samples: every effect's sub-block grid */
 static uint32_t fxc_o, fxc_e = 256u, fxc_n = 256u;
+#ifdef C1_EST_LOG
+static uint32_t c1_est_blk;                              /* (host diagnostics: the block count, fx_process) */
+#endif
 #define FXC_1 (fxc_o == 0u)
 #define FXC_Z (fxc_e == fxc_n)
 /* xf_pre / xf_post for a chunk: the dry copy of the chunk, the blend's ramp from the block's start */
@@ -1303,6 +1306,12 @@ static void fx_comp(int32_t *m, uint32_t n)
                                                        * before and the first chunk (one core: this block's; its later
                                                        * samples are not rendered yet: tests/py/test_c1_subblock.py) */
         int32_t pk = cmp_pkb > cmp_pkc ? cmp_pkb : cmp_pkc;
+#ifdef C1_EST_LOG
+        printf("C1EST cmp %u\n", c1_est_blk);
+#endif
+#ifdef C1_DIAG_EXACT_CMP                              /* (host diagnostics: the block's own peak, fx_process copied it) */
+        for (pk = 0, j = 0; j < n; j++) if (iabs(m[j]) > pk) pk = iabs(m[j]);
+#endif
         cmp_env = pk << 8;
         cmp_g = exp2_q16(mk - cmp_gr_at(cmp_env, thr, slope));
     }
@@ -1549,13 +1558,14 @@ __attribute__((noinline)) static void dly_type(int32_t sw)
  * the arrangement tried (tools/build.py's hot-loop counts, 2026-10-18); this one leaves them as they were. */
 #if FR_C1
 /* fx_delay_t for a chunk (dly_tape.c's FR_C1 part: the rows written by the last chunk). Once a block, at the first chunk:
- * the settings, the quiet path, the routing (dly_sil there from the first chunk's send: the block's own decides it in
- * the one-block code, ANA with a far TIME change after a silent line; the rest of the block's send cannot move it, the
- * line holding nothing then); at the last: the make-up, the rows, the tail's end */
-static struct { int32_t sw, last, target, wet, fb, col, depth; uint8_t quiet, routed; uint32_t w0; int64_t e, m; } dly_c;
+ * the settings, the quiet path, the routing (the one-block code decides it from the whole block's send: ANA with a far
+ * TIME change after a silent line routes only if the block carries sound; with the first chunk silent the decision waits
+ * for the chunk that has some, below); at the last: the make-up, the rows, the tail's end */
+static struct { int32_t sw, last, target, wet, fb, col, depth, ddr; uint8_t quiet, routed, amb, olast; uint32_t w0; int64_t e, m; } dly_c;
 static void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
 {
     uint32_t j, o = fxc_o, e = fxc_e;
+    int64_t m0;
     (void)rst;
     if (FXC_1) {
         int32_t sw = fx_p[FXP_DL_SW], depth = fx_p[FXP_DL_DEPTH], last = !sw && dly_son;
@@ -1586,6 +1596,7 @@ static void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
         dly_wm = 0;
     }
     if (dly_c.quiet) return;
+    m0 = dly_c.m;
     if (dly_c.sw)                                       /* the send and the make-up's sums, this chunk */
         for (j = o; j < e; j++) {
             int32_t a = L[j], b = R[j], c = (a + b) >> 1;
@@ -1595,12 +1606,34 @@ static void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
         }
     if (FXC_1) {
         uint32_t sil = dly_sil;
+        dly_sil = 0;                                    /* (the routing with sound in the block) */
+        dly_c.amb = (uint8_t)dly_routed(dly_c.sw, dly_c.target);
+        if (sil < DLY_LEN) dly_sil = sil + n; else dly_sil = sil;   /* (and with a silent block) */
+        dly_c.amb = (uint8_t)(dly_c.amb && !dly_routed(dly_c.sw, dly_c.target));
+        dly_sil = sil;
+        if (dly_c.amb && dly_c.m > 0) dly_c.amb = 0;    /* (this first chunk has sound: decided) */
         if (dly_c.m > 0) dly_sil = 0; else if (dly_sil < DLY_LEN) dly_sil += n;   /* (the routing's view: see above) */
         dly_c.routed = (uint8_t)dly_routed(dly_c.sw, dly_c.target);
         dly_sil = sil;
+        dly_c.olast = dly_last;
         if (dly_c.routed) tp_route_plan(dly_c.sw, dly_c.target, dly_c.depth);
         else dly_last = (uint8_t)dly_c.sw;
         if (dly_c.routed && !tp_rc.kind) dly_c.routed = 0;
+        dly_c.ddr = dly_d;
+    } else if (dly_c.amb && dly_c.m > m0) {             /* ANA's far TIME change over a silent line, and the first sound
+                                                         * of the block in this chunk: the block is routed after all (the
+                                                         * one-block code: its send decides). The chunks before ran the
+                                                         * loop over silence: the same output, every read of the silent
+                                                         * line 0, only the time's glide differs; it takes the routed
+                                                         * glide's value (dly_fade's capped slew, replayed) */
+        dly_d = dly_c.ddr; dly_xm = 32768; dly_last = dly_c.olast;
+        tp_route_plan(dly_c.sw, dly_c.target, dly_c.depth);
+        dly_c.routed = 1; dly_c.amb = 0;
+    }
+    if (dly_c.amb) {                                    /* (still undecided: the routed glide over this chunk) */
+        int32_t dr = dly_c.ddr, t = dly_c.target;
+        for (j = o; j < e; j++) dr += PH_CL((t - dr) >> 12, -16, 16);
+        dly_c.ddr = dr;
     }
     if (dly_c.routed) tp_route_run(L, R, n, dly_c.target, dly_c.fb, dly_c.wet);
     else if (dly_c.sw == 2) dly_loop_ca(L, R, n, dly_c.target, dly_c.col, dly_c.fb, dly_c.wet, 32768 - dly_c.depth * dly_c.depth);
@@ -2257,6 +2290,9 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     static int32_t m[256];
 #if FR_C1
     uint32_t j;
+#ifdef C1_EST_LOG
+    if (FXC_1) c1_est_blk++;
+#endif
     if (FXC_1) {                                       /* (CC 10's block: one chunk, frodhes.c) */
         if (fx_reset_req) {
             fx_reset_state(); memset((void *)mono, 0, n * sizeof mono[0]); fx_reset_req = 0;
@@ -2269,6 +2305,9 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
         return;
     }
     for (j = fxc_o; j < fxc_e; j++) { m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }
+#ifdef C1_DIAG_EXACT_CMP
+    if (FXC_1) for (j = 0; j < n; j++) m[j] = mono[j];
+#endif
 #else
     if (fx_reset_req) {                                /* (the voices' last block too: mono is frodhes.c's voice_mono) */
         fx_reset_state(); memset((void *)mono, 0, n * sizeof mono[0]); fx_reset_req = 0;
