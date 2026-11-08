@@ -85,9 +85,10 @@ def test_renders(tmp_path):
 
 
 def test_layout_grid_and_looks(tmp_path):
-    """Both looks (the aluminium rail over a black body, the aluminium plate with black sections) with the display
-    font: every widget on the 4 px grid, every knob on a column centre (or a half-column) and its row, every control
-    row one height (frui_render's layout check), and the look's comparison renders written."""
+    """The three looks (A1 the aluminium rail over a black body, A2 the aluminium plate with black sections, A3 the
+    rounded plate framing one black body) with the display font: every widget on the 4 px grid, every knob on a column
+    centre (or a half-column) and its row, every control row one height, nested rounded corners concentric
+    (frui_render's layout check), and the looks' comparison renders written at 1x and 2x."""
     cc = shutil.which("cc")
     if not cc:
         pytest.skip("no C compiler")
@@ -100,7 +101,7 @@ def test_layout_grid_and_looks(tmp_path):
     assert r.returncode == 0, r.stderr
     font = os.path.join(ROOT, "assets", "fonts", "InterTight[wght].ttf")
     dfont = os.path.join(ROOT, "assets", "fonts", "Michroma-Regular.ttf")
-    (tmp_path / "directions").mkdir()
+    (tmp_path / "directions-a3").mkdir()
     for env in ({}, {"FRUI_DIRECTIONS": "1"}):
         p = subprocess.run([exe, font, str(tmp_path), dfont], capture_output=True, text=True, timeout=120,
                            env=dict(os.environ, **env))
@@ -108,6 +109,7 @@ def test_layout_grid_and_looks(tmp_path):
         checks = re.findall(r"layout check (\S+): (.*)", p.stdout)
         assert len(checks) >= 10
         assert all(v == "all on the grid" for _, v in checks), p.stdout
-    for f in [v + "-" + sc for v in ("A1-rail", "A2-plate")
-              for sc in ("main", "tab-comp-delay", "menu-engine", "settings-midi", "knob-learn")] + ["compare"]:
-        assert (tmp_path / "directions" / (f + ".png")).stat().st_size > 10000
+    for f in [v + "-" + sc + k for v in ("A1-rail", "A2-plate", "A3-framed")
+              for sc in ("main", "tab-comp-delay", "menu-engine", "settings-midi", "knob-learn") for k in ("@1x", "@2x")] + \
+            ["compare", "compare@2x"]:
+        assert (tmp_path / "directions-a3" / (f + ".png")).stat().st_size > 10000

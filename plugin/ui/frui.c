@@ -15,7 +15,12 @@
  *
  * The look: brushed aluminium and deep black, white legends, one amber accent (the pilot lamp, the effects' lamps,
  * the held keys). Knobs: black skirts with spun-aluminium caps over an engraved scale whose ticks light up to the
- * value. Hairlines are one device pixel. */
+ * value. Hairlines are one device pixel.
+ *
+ * Three looks share the layout: A1 (an aluminium rail over a black body), A2 (one aluminium plate, black sections set
+ * into it) and A3, the default: a rounded plate (R_OUT) carries the rail and an 8 px frame round one rounded black body
+ * (R_BODY); the sections, the keys' bed and the corner switch sit 8 px in, on R_PANEL, so every nested corner is
+ * concentric (the layout check proves it). Bevels are hairlines; the metal is brushed lightly and only frames. */
 #include "frui.h"
 #include <math.h>
 #include <stdio.h>
@@ -30,7 +35,8 @@ struct frui {
     void *ctx;
     frui_widget wg[MAXW];
     frui_anchor an[MAXW];
-    int nw, na, look;
+    frui_shell sh[16];
+    int nw, na, nsh, look;
     float s;                       /* pixels per logical pixel */
     float hp;                      /* one device pixel, in logical pixels */
     frui_canvas *c;
@@ -53,6 +59,11 @@ struct frui {
 #define R_PANEL 6.f                /* corner radii: panels, controls, small parts */
 #define R_CTRL 4.f
 #define R_SMALL 2.f
+#define R_OUT 22.f                 /* A3: the plate's outer corners; the body's (R_OUT - A3_FRAME); the sections' R_PANEL
+                                    * (R_BODY - the 8 px gap): one scale, concentric where corners nest */
+#define A3_FRAME 8.f               /* A3: the metal frame round the body; the body from y A3_BODY_Y */
+#define R_BODY (R_OUT - A3_FRAME)
+#define A3_BODY_Y 64.f
 #define KB_X 136.f                 /* the keys from column 2, after the SUSTAIN and FX switches (16..120) */
 #define KNOB_R 24.f                /* knob tiers */
 #define KNOB_R2 14.f
@@ -135,6 +146,10 @@ static void reg(frui *u, int kind, int id, float x, float y, float w, float h)
 static void anchor(frui *u, int what, int id, float x, float y)
 {
     if (u->na < MAXW) { frui_anchor *a = &u->an[u->na++]; a->what = what; a->id = id; a->x = x; a->y = y; }
+}
+static void shell(frui *u, float x, float y, float w, float h, float r)
+{
+    if (u->nsh < 16) { frui_shell *s = &u->sh[u->nsh++]; s->x = x; s->y = y; s->w = w; s->h = h; s->r = r; }
 }
 static int is_focus(frui *u, int kind, int id) { return u->m->focus == FRUI_WID(kind, id); }
 static int is_hover(frui *u, int kind, int id) { return u->m->hover == FRUI_WID(kind, id); }
@@ -250,6 +265,14 @@ static void well(frui *u, float x, float y, float w, float h, float r)
 /* the black section panels: raised from the black body (rail) or set into the plate */
 static void panel(frui *u, float x, float y, float w, float h)
 {
+    shell(u, x, y, w, h, R_PANEL);
+    if (u->look == FRUI_LOOK_A3) {   /* barely raised from the body: a hairline lit edge on top, a flat face */
+        frui_rrect(u->c, X(x), X(y) + 1.f, X(w), X(h), X(R_PANEL), FRUI_RGBA(0, 0, 0, 200));
+        frui_rrect(u->c, X(x), X(y), X(w), X(h), X(R_PANEL), FRUI_RGB(40, 40, 42));
+        frui_rrect_grad(u->c, X(x), X(y) + 1.f, X(w), X(h) - 1.f, X(R_PANEL), FRUI_RGB(24, 24, 25), FRUI_RGB(19, 19, 20));
+        frui_rrect_stroke(u->c, X(x) + 0.5f, X(y) + 0.5f, X(w) - 1.f, X(h) - 1.f, X(R_PANEL), 1.f, FRUI_RGBA(255, 255, 255, 9));
+        return;
+    }
     if (u->look == FRUI_LOOK_PLATE) {
         frui_rrect(u->c, X(x), X(y) + 1.f, X(w), X(h), X(R_PANEL), C_HL);                 /* the chamfer's lit edge */
         frui_rrect(u->c, X(x), X(y), X(w), X(h), X(R_PANEL), FRUI_RGB(70, 71, 74));        /* the chamfer */
@@ -266,6 +289,39 @@ static void panel(frui *u, float x, float y, float w, float h)
         frui_rrect_stroke(u->c, X(x) + 0.5f, X(y) + 0.5f, X(w) - 1.f, X(h) - 1.f, X(R_PANEL), 1.f, FRUI_RGB(31, 31, 33));
         frui_rect(u->c, X(x + R_PANEL), X(y) + 1.f, X(w - 2.f * R_PANEL), 1.f, FRUI_RGBA(255, 255, 255, 22));
     }
+}
+/* A3: the plate (rounded, brushed, a machined edge) and the black body set into it under the rail */
+static void a3_plate(frui *u)
+{
+    float W = (float)FRUI_W, H = (float)FRUI_H, bx = A3_FRAME, by = A3_BODY_Y, bw = W - 2.f * A3_FRAME,
+          bh = H - A3_BODY_Y - A3_FRAME;
+    frui_fill(u->c, FRUI_RGB(6, 6, 7));
+    shell(u, 0.f, 0.f, W, H, R_OUT);
+    frui_brushed(u->c, 0.f, 0.f, X(W), X(H), X(R_OUT), FRUI_RGB(200, 202, 205), FRUI_RGB(176, 178, 182), 0.03f, u->s, 1u);
+    frui_rrect_stroke(u->c, 0.5f, 0.5f, X(W) - 1.f, X(H) - 1.f, X(R_OUT), 1.f, FRUI_RGBA(0, 0, 0, 110));
+    frui_rrect_stroke(u->c, 1.5f, 1.5f, X(W) - 3.f, X(H) - 3.f, X(R_OUT) - 1.f, 1.f, FRUI_RGBA(255, 255, 255, 110));
+    /* the body: a chamfer, dark above and lit below, then the black with a two-pixel shade under its top edge */
+    shell(u, bx, by, bw, bh, R_BODY);
+    frui_rrect(u->c, X(bx), X(by) + 1.f, X(bw), X(bh), X(R_BODY), FRUI_RGBA(255, 255, 255, 150));
+    frui_rrect(u->c, X(bx), X(by), X(bw), X(bh), X(R_BODY), FRUI_RGB(52, 53, 56));
+    frui_rrect(u->c, X(bx) + 1.f, X(by) + 1.f, X(bw) - 2.f, X(bh) - 2.f, X(R_BODY) - 1.f, FRUI_RGB(2, 2, 3));
+    frui_rrect(u->c, X(bx) + 1.f, X(by) + 3.f, X(bw) - 2.f, X(bh) - 4.f, X(R_BODY) - 1.f, FRUI_RGB(8, 8, 9));
+}
+/* A3: square corners outside a rounded one cut away in col (for the keys in their rounded bed); q: 0 top left, 1 top
+ * right, 2 bottom right, 3 bottom left */
+static void corner_cut(frui *u, float x, float y, float r, int q, uint32_t col)
+{
+    float sx = q == 1 || q == 2 ? -1.f : 1.f, sy = q >= 2 ? -1.f : 1.f, k = 0.5523f;
+    frui_path p;
+    frui_path_init(&p);
+    frui_path_move(&p, X(x), X(y));
+    frui_path_line(&p, X(x + sx * r), X(y));
+    /* the quarter circle as two quadratics through its 45 degree point */
+    frui_path_quad(&p, X(x + sx * r * (1.f - k * 0.75f)), X(y), X(x + sx * r * 0.2929f), X(y + sy * r * 0.2929f));
+    frui_path_quad(&p, X(x), X(y + sy * r * (1.f - k * 0.75f)), X(x), X(y + sy * r));
+    frui_path_line(&p, X(x), X(y));
+    frui_path_fill(u->c, &p, col);
+    frui_path_free(&p);
 }
 static void section_title(frui *u, float x, float cy, const char *s)
 {
@@ -319,18 +375,25 @@ static void knob(frui *u, int id, const char *label, float cx, float cy, int act
     float r = KNOB_R, v = (float)pval(m, id) / (float)phi(id);
     char val[24], unit[12];
     int hov = is_hover(u, FRW_KNOB, id), foc = is_focus(u, FRW_KNOB, id);
+    if (u->look == FRUI_LOOK_A3) {   /* A3: quieter labels (smaller, wider, dimmer) under brighter values */
+        txc(u, cx, cy - r - 15.f, 8.5f, 600.f, 1.5f, 0, label, m->learning == id ? C_ACC : hov || foc ? C_TEXT : FRUI_RGB(132, 132, 137));
+        if (id < FRP_COUNT && m->learn_cc[id])
+            frui_circle(u->c, X(cx - tw(u, 8.5f, 600.f, 1.5f, 0, label) * 0.5f - 6.f), X(cy - r - 18.f), X(1.5f), C_ACC);
+    } else {
     txc(u, cx, cy - r - 15.f, T_LABEL, 0, label, m->learning == id ? C_ACC : hov || foc ? C_TEXT : C_TEXT2);
     if (id < FRP_COUNT && m->learn_cc[id])            /* a learned CC: a small amber mark before the label */
         frui_circle(u->c, X(cx - tw(u, T_LABEL, 0, label) * 0.5f - 6.f), X(cy - r - 18.5f), X(1.6f), C_ACC);
+    }
     anchor(u, FRA_LABEL, id, cx, cy - r - 15.f);
     knob_body(u, cx, cy, r, v, FRP_CENTRED(id), 1, !active, 0, hov);
     if (foc || m->learning == id) frui_arc(u->c, X(cx), X(cy), X(r + 12.f), X(1.2f), KA0 - KSPAN, KA0, frui_alpha(C_ACC, 0.9f));   /* open below: the value */
     u->text(u->ctx, m, id, val, unit);
     if (m->learning == id) { strcpy(val, "LEARN"); unit[0] = 0; }
     {
-        float wv = tw(u, T_VALUE, FRUI_TNUM, val), wu = unit[0] ? tw(u, T_UNIT, 0, unit) + 3.f : 0.f;
+        float vs = u->look == FRUI_LOOK_A3 ? 14.f : 15.f, vw = u->look == FRUI_LOOK_A3 ? 500.f : 560.f;
+        float wv = tw(u, vs, vw, 0.f, FRUI_TNUM, val), wu = unit[0] ? tw(u, T_UNIT, 0, unit) + 3.f : 0.f;
         float x0 = cx - (wv + wu) * 0.5f, yb = cy + r + 24.f;
-        tx(u, x0, yb, T_VALUE, FRUI_TNUM, val, m->learning == id ? C_ACC : active ? C_TEXT : C_TEXT2);
+        tx(u, x0, yb, vs, vw, 0.f, FRUI_TNUM, val, m->learning == id ? C_ACC : active ? C_TEXT : C_TEXT2);
         anchor(u, FRA_VALUE, id, x0 + (wv + wu) * 0.5f, yb);
         if (unit[0]) tx(u, x0 + wv + 3.f, yb, T_UNIT, 0, unit, C_TEXT3);
     }
@@ -404,7 +467,8 @@ static float menu_btn(frui *u, int id, const char *caption, float x, float y, fl
 static void key_btn(frui *u, int id, const char *label, float x, float y, float w, float h)
 {
     int hov = is_hover(u, FRW_BUTTON, id);
-    frui_rrect_shadow(u->c, X(x), X(y + 1.5f), X(w), X(h), X(R_CTRL), X(1.5f), FRUI_RGBA(0, 0, 0, 120));
+    if (u->look == FRUI_LOOK_A3) frui_rrect(u->c, X(x), X(y) + 1.f, X(w), X(h), X(R_CTRL), FRUI_RGBA(255, 255, 255, 120));
+    else frui_rrect_shadow(u->c, X(x), X(y + 1.5f), X(w), X(h), X(R_CTRL), X(1.5f), FRUI_RGBA(0, 0, 0, 120));
     frui_rrect(u->c, X(x), X(y), X(w), X(h), X(R_CTRL), FRUI_RGB(6, 6, 7));
     frui_rrect_grad(u->c, X(x) + 1.f, X(y) + 1.f, X(w) - 2.f, X(h) - 2.f, X(R_CTRL) - 1.f,
                     hov ? FRUI_RGB(46, 46, 49) : FRUI_RGB(38, 38, 41), FRUI_RGB(18, 18, 19));
@@ -508,7 +572,7 @@ static void meter(frui *u, float x, float y, float w, float h)
 static void rail(frui *u)
 {
     const frui_model *m = u->m;
-    float cy = RAIL_H * 0.5f, y = cy - 16.f, h = 32.f, x;
+    float cy = u->look == FRUI_LOOK_A3 ? A3_BODY_Y * 0.5f : RAIL_H * 0.5f, y = cy - 16.f, h = 32.f, x;   /* A3: the metal's centre */
     if (u->look == FRUI_LOOK_RAIL) {
         frui_brushed(u->c, 0.f, 0.f, X((float)FRUI_W), X(RAIL_H), 0.f, C_AL_T, C_AL_B, 0.045f, u->s, 1u);
         frui_rect(u->c, 0.f, X(RAIL_H) - 1.f, X((float)FRUI_W), 1.f, FRUI_RGBA(255, 255, 255, 120));
@@ -517,7 +581,7 @@ static void rail(frui *u)
             int i;
             for (i = 1; i < 8; i++) frui_rect(u->c, 0.f, X(RAIL_H) + (float)i, X((float)FRUI_W), 1.f, FRUI_RGBA(0, 0, 0, 140 - 18 * i));
         }
-    } else {                      /* the plate: a machined groove under the rail */
+    } else if (u->look == FRUI_LOOK_PLATE) {   /* the plate: a machined groove under the rail */
         frui_rect(u->c, X(G_M), X(RAIL_H) - 1.f, X((float)FRUI_W - 2.f * G_M), 1.f, FRUI_RGBA(0, 0, 0, 90));
         frui_rect(u->c, X(G_M), X(RAIL_H), X((float)FRUI_W - 2.f * G_M), 1.f, FRUI_RGBA(255, 255, 255, 160));
     }
@@ -653,7 +717,8 @@ static void tabs(frui *u, int right, float x, float y, float w)
         int kind = right ? FRW_TAB_R : FRW_TAB_L;
         if (i == sel) {
             float kx = cx - 10.f, kw = cw + 20.f, ky = y + 8.f, kh = 28.f;
-            frui_rrect_shadow(u->c, X(kx), X(ky + 1.5f), X(kw), X(kh), X(R_CTRL), X(2.f), FRUI_RGBA(0, 0, 0, 200));
+            if (u->look != FRUI_LOOK_A3)
+                frui_rrect_shadow(u->c, X(kx), X(ky + 1.5f), X(kw), X(kh), X(R_CTRL), X(2.f), FRUI_RGBA(0, 0, 0, 200));
             frui_rrect(u->c, X(kx), X(ky), X(kw), X(kh), X(R_CTRL), FRUI_RGB(4, 4, 5));
             frui_rrect_grad(u->c, X(kx) + 1.f, X(ky) + 1.f, X(kw) - 2.f, X(kh) - 2.f, X(R_CTRL) - 1.f, FRUI_RGB(44, 44, 47),
                             FRUI_RGB(26, 26, 28));
@@ -882,7 +947,9 @@ static void keyboard(frui *u)
         frui_rrect(u->c, X(x - 2.f), X(y - 2.f) + 1.f, X(w + 4.f), X(h + 4.f), X(R_PANEL), C_HL);
         frui_rrect(u->c, X(x - 2.f), X(y - 2.f), X(w + 4.f), X(h + 4.f), X(R_PANEL), FRUI_RGB(70, 71, 74));
     }
-    frui_rrect(u->c, X(x - 1.f), X(y - 1.f), X(w + 2.f), X(h + 2.f), X(R_PANEL - 1.f), FRUI_RGB(3, 3, 4));
+    if (u->look == FRUI_LOOK_A3) shell(u, x, y, w, h, R_PANEL);
+    frui_rrect(u->c, X(x - 1.f), X(y - 1.f), X(w + 2.f), X(h + 2.f), X(R_PANEL + (u->look == FRUI_LOOK_A3 ? 1.f : -1.f)),
+               FRUI_RGB(3, 3, 4));
     frui_clip(u->c, X(x), X(y), X(w), X(h));
     for (n = 24; n <= 84; n++) {
         int pc = n % 12, oct = n / 12 - 1, wi = white_of[pc];
@@ -917,6 +984,12 @@ static void keyboard(frui *u)
         int i;
         for (i = 0; i < 8; i++) frui_rect(u->c, X(x), X(y) + (float)i * u->s, X(w), u->s, FRUI_RGBA(0, 0, 0, 150 - 18 * i));
     }
+    if (u->look == FRUI_LOOK_A3) {   /* the keys' bed is rounded as the sections */
+        corner_cut(u, x, y, R_PANEL, 0, FRUI_RGB(3, 3, 4));
+        corner_cut(u, x + w, y, R_PANEL, 1, FRUI_RGB(3, 3, 4));
+        corner_cut(u, x + w, y + h, R_PANEL, 2, FRUI_RGB(3, 3, 4));
+        corner_cut(u, x, y + h, R_PANEL, 3, FRUI_RGB(3, 3, 4));
+    }
     frui_clip_reset(u->c);
     reg(u, FRW_KEYS, 0, x, y, w, h);
 }
@@ -927,11 +1000,19 @@ static void keyboard(frui *u)
 static void stomp(frui *u, int id, float x, float y, float w, float h, int lit, const char *label, const char *state)
 {
     int hov = is_hover(u, FRW_BUTTON, id);
-    frui_rrect_shadow(u->c, X(x), X(y + 2.f), X(w), X(h), X(R_CTRL), X(2.f), FRUI_RGBA(0, 0, 0, 170));
-    frui_rrect(u->c, X(x), X(y), X(w), X(h), X(R_CTRL), FRUI_RGB(4, 4, 5));
-    frui_rrect_grad(u->c, X(x) + 1.f, X(y) + 1.f, X(w) - 2.f, X(h) - 2.f, X(R_CTRL) - 1.f,
-                    hov ? FRUI_RGB(48, 48, 51) : FRUI_RGB(40, 40, 43), FRUI_RGB(18, 18, 19));
-    frui_rect(u->c, X(x + R_CTRL), X(y) + 1.f, X(w - 2.f * R_CTRL), 1.f, FRUI_RGBA(255, 255, 255, 44));
+    if (u->look == FRUI_LOOK_A3) {   /* the switches sit in the body's corner: the sections' radius, a flat face */
+        shell(u, x, y, w, h, R_PANEL);
+        frui_rrect(u->c, X(x), X(y) + 1.f, X(w), X(h), X(R_PANEL), FRUI_RGBA(0, 0, 0, 200));
+        frui_rrect(u->c, X(x), X(y), X(w), X(h), X(R_PANEL), FRUI_RGB(50, 50, 53));
+        frui_rrect_grad(u->c, X(x), X(y) + 1.f, X(w), X(h) - 1.f, X(R_PANEL), hov ? FRUI_RGB(36, 36, 38) : FRUI_RGB(30, 30, 32),
+                        FRUI_RGB(20, 20, 21));
+    } else {
+        frui_rrect_shadow(u->c, X(x), X(y + 2.f), X(w), X(h), X(R_CTRL), X(2.f), FRUI_RGBA(0, 0, 0, 170));
+        frui_rrect(u->c, X(x), X(y), X(w), X(h), X(R_CTRL), FRUI_RGB(4, 4, 5));
+        frui_rrect_grad(u->c, X(x) + 1.f, X(y) + 1.f, X(w) - 2.f, X(h) - 2.f, X(R_CTRL) - 1.f,
+                        hov ? FRUI_RGB(48, 48, 51) : FRUI_RGB(40, 40, 43), FRUI_RGB(18, 18, 19));
+        frui_rect(u->c, X(x + R_CTRL), X(y) + 1.f, X(w - 2.f * R_CTRL), 1.f, FRUI_RGBA(255, 255, 255, 44));
+    }
     lamp(u, x + 12.f, y + h * 0.5f, 3.f, lit);
     tx(u, x + 22.f, mid(u, y + h * 0.5f - 5.f, 9.5f), T_BTN, 0, label, C_TEXT);
     tx(u, x + 22.f, mid(u, y + h * 0.5f + 7.f, 8.5f), T_CAPTION, 0, state, lit ? C_ACC : C_TEXT3);
@@ -1055,8 +1136,11 @@ static void settings_sheet(frui *u)
     const frui_model *m = u->m;
     float x = G_M, y = SH_Y, w = (float)FRUI_W - 2.f * G_M, h = SH_H, c1 = G_H0 + G_COL, d1 = G_H1 + G_COL;
     char buf[32];
-    /* the main view sinks back */
-    frui_rect(u->c, 0.f, X(RAIL_H) + 1.f, X((float)FRUI_W), X((float)FRUI_H - RAIL_H) - 1.f, FRUI_RGBA(0, 0, 0, 170));
+    /* the main view sinks back (A3: the body only, the plate stays lit) */
+    if (u->look == FRUI_LOOK_A3)
+        frui_rrect(u->c, X(A3_FRAME) + 1.f, X(A3_BODY_Y) + 1.f, X((float)FRUI_W - 2.f * A3_FRAME) - 2.f,
+                   X((float)FRUI_H - A3_BODY_Y - A3_FRAME) - 2.f, X(R_BODY) - 1.f, FRUI_RGBA(0, 0, 0, 170));
+    else frui_rect(u->c, 0.f, X(RAIL_H) + 1.f, X((float)FRUI_W), X((float)FRUI_H - RAIL_H) - 1.f, FRUI_RGBA(0, 0, 0, 170));
     frui_rrect_shadow(u->c, X(x), X(y + 8.f), X(w), X(h), X(R_PANEL), X(16.f), FRUI_RGBA(0, 0, 0, 230));
     frui_rrect_grad(u->c, X(x), X(y), X(w), X(h), X(R_PANEL), FRUI_RGB(25, 25, 26), FRUI_RGB(19, 19, 20));
     frui_rrect_stroke(u->c, X(x) + 0.5f, X(y) + 0.5f, X(w) - 1.f, X(h) - 1.f, X(R_PANEL), 1.f, FRUI_RGB(44, 44, 47));
@@ -1191,6 +1275,7 @@ frui *frui_new(frui_font *font, frui_text_fn text, void *ctx)
 {
     frui *u = calloc(1, sizeof *u);
     u->f = u->fd = font; u->text = text; u->ctx = ctx;
+    u->look = FRUI_LOOK_A3;
     return u;
 }
 void frui_free(frui *u) { free(u); }
@@ -1201,19 +1286,22 @@ void frui_set_look(frui *u, int look, frui_font *display)
 }
 int frui_widget_count(const frui *u) { return u->nw; }
 int frui_anchor_count(const frui *u) { return u->na; }
+int frui_shell_count(const frui *u) { return u->nsh; }
+const frui_shell *frui_shell_get(const frui *u, int i) { return i >= 0 && i < u->nsh ? &u->sh[i] : 0; }
 const frui_anchor *frui_anchor_get(const frui *u, int i) { return i >= 0 && i < u->na ? &u->an[i] : 0; }
 const frui_widget *frui_widget_get(const frui *u, int i) { return i >= 0 && i < u->nw ? &u->wg[i] : 0; }
 
 void frui_draw(frui *u, const frui_model *m, frui_canvas *c)
 {
-    u->c = c; u->m = m; u->nw = 0; u->na = 0;
+    u->c = c; u->m = m; u->nw = 0; u->na = 0; u->nsh = 0;
     u->s = (float)c->w / (float)FRUI_W;
     u->hp = 1.f / u->s;
     frui_clip_reset(c);
     if (u->look == FRUI_LOOK_PLATE) {
         frui_fill(c, FRUI_RGB(40, 40, 42));
         frui_brushed(c, 0.f, 0.f, (float)c->w, (float)c->h, 0.f, C_AL_T, FRUI_RGB(158, 160, 164), 0.045f, u->s, 1u);
-    } else frui_fill(c, C_BG);
+    } else if (u->look == FRUI_LOOK_A3) a3_plate(u);
+    else frui_fill(c, C_BG);
     rail(u);
     {
         int nrail = u->nw;
