@@ -147,6 +147,8 @@ SLOTS = {
     "S_SQSWING": {"off": -50, "unit": "%", "cc": 46},          # 50 .. 75 %
     "S_SQEDIT": {"options": ["UNDO", "ERASE"], "cc": 45},
     "S_MCH": {"options": ["ALL"] + [str(c) for c in range(1, 17)]},
+    # the velocity response (0.9.10, params.c N_VRESP): the names of the methods built so far (VRESP_N), CC 40
+    "S_VRESP": {"names": "N_VRESP", "first": True, "cc": 40},
 }
 # keys of the Move's own, with no FM-1 card: a CC sent as is (latch: 0 / 127; trigger: 127 on a write)
 EXTRA = {
@@ -230,7 +232,9 @@ SHORT = {"EFFECT": None, "TREM SYNC": "TRSYNC", "PHA SYNC": "PHSYNC", "DLY SYNC"
          # (Schwung sets grid labels in a proportional font, 29 px wide: these three are cut there, HAMME DAMPE MAKEU)
          "HAMMER": "HAMMR", "DAMPER": "DAMPR", "MAKEUP": "MKUP",
          # (the EQ's MID FREQ: FREQ on its page of four, LOW MID FREQ HIGH, as the filter's FREQ; said "Mid frequency")
-         "MID FREQ": "FREQ"}
+         "MID FREQ": "FREQ",
+         # (the MIDI page's velocity response, 0.9.10; a placeholder name, as the card's)
+         "RESPONSE": "RESP"}
 # parameters with no FM-1 card whose params.c label is a cryptic short form: their name on the Move (the FM-1's
 # manual's name)
 PARAM_NAME = {"P_SPREAD": "SPREAD"}
@@ -447,6 +451,8 @@ def key_def(m, slot, label, key=None, bip=True):
     off, scale = sd.get("off", 0), sd.get("scale", 1)
     if "names" in sd or "options" in sd:
         opts = sd["options"] if "options" in sd else m["names"][sd["names"]]
+        if sd.get("first"):                     # (a table ahead of the slot's range: its first hi + 1 names)
+            opts = opts[:hi + 1]
         assert len(opts) == hi + 1, (slot, hi, opts)
         item.update({"type": "enum", "options": [short_value(o) for o in opts]})
     elif scale != 1:
@@ -896,7 +902,7 @@ SAY_NAMES = {
     "p_tw_sync": "Tremolo sync", "p_ph_sync": "Phaser sync", "p_dl_sync": "Delay sync",
     "s_arpmode": "Mode", "s_arprate": "Rate", "s_arpoct": "Octaves", "s_arpgate": "Gate", "s_arphold": "Hold",
     "p_lfo_shape": "LFO shape", "p_lfo_rate": "LFO rate", "p_lfo_sync": "LFO sync", "p_lfo_retrig": "LFO retrigger",
-    "p_dl_tone": "Delay tone", "p_level": "Level", "s_mch": "MIDI channel",
+    "p_dl_tone": "Delay tone", "p_level": "Level", "s_mch": "MIDI channel", "s_vresp": "Velocity response",
     "m_at_cc": "Aftertouch CC", "m_at_lo": "Aftertouch low", "m_at_hi": "Aftertouch high",
     "m_pa_cc": "Poly pressure CC", "m_pa_lo": "Poly pressure low", "m_pa_hi": "Poly pressure high",
 }

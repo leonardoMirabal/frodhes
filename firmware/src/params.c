@@ -210,15 +210,28 @@ typedef struct {
                                                 * before: smk_input.h's 724; frodhes_smk.h smk_master_stored) */
     uint8_t play_off;                          /* 0.9.9: DISPLAY PLAY LED: 0 BEAT (every record before), 1 OFF; after
                                                 * smk_mst, which keeps its place (offset 235) */
-    uint8_t reserved[18];
+    uint8_t vel_resp;                          /* 0.9.10: MIDI RESPONSE, the velocity response (N_VRESP; rhodes.c
+                                                * rh_touch_mode): 0 = A (every record before) */
+    uint8_t reserved[17];
 #else
     uint8_t play_off;                          /* 0.9.9: DISPLAY PLAY LED: 0 BEAT (every record before), 1 OFF */
-    uint8_t reserved[20];
+    uint8_t vel_resp;                          /* 0.9.10: MIDI RESPONSE, the velocity response (N_VRESP; rhodes.c
+                                                * rh_touch_mode): 0 = A (every record before) */
+    uint8_t reserved[19];
 #endif
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 
 static settings_t set;
+/* the velocity response (MIDI page RESPONSE; CC 40, frodhes.c midi_cc): how a strike's velocity becomes the electric
+ * piano's sound (rhodes.c rh_touch_mode, read at each note-on: a change takes effect at the next strike). 0 = A (the
+ * pickup excursion follows the velocity; every record before it), 1 = B (the piecewise velocity map), 2 = C (both,
+ * not built yet: VRESP_N 3 when it is; CC 40's bands follow, v * VRESP_N / 128). One table for the names (the card's
+ * label, RESPONSE, is ui.c PAGE_LAB's): placeholders until the user picks them */
+#define VRESP_N 2u
+static const char *const N_VRESP[] = {"DEEP", "EVEN", "BLEND"};   /* A, B, C */
+_Static_assert(VRESP_N >= 1u && VRESP_N <= sizeof N_VRESP / sizeof N_VRESP[0], "one name per response");
+FR_COLD static void vresp_apply(void) { rh_touch_mode = set.vel_resp < VRESP_N ? set.vel_resp : 0u; }
 static uint8_t set_pr_from_rc;    /* params_sanitize converted an index of 16 factory presets that named U10..U12 */
 /* TOUCH (keyvel.h): stored so that 0, every record before key velocity, is MEDIUM */
 FR_COLD static uint32_t kv_touch(void) { return (set.vel_curve + 1u) & 3u; }
@@ -277,6 +290,12 @@ FR_COLD static void params_perf_update(void)
 }
 static uint8_t set_dirty;          /* something in `set` may have changed: frodhes.c settings_poll looks (and decides) */
 static uint32_t set_t_change;
+FR_COLD static void vresp_set(uint32_t m)        /* the velocity response from the card or CC 40 (next strike) */
+{
+    if (m >= VRESP_N) m = VRESP_N - 1u;
+    if (set.vel_resp != m) { set.vel_resp = (uint8_t)m; set_dirty = 1; set_t_change = fm1_ms; }
+    vresp_apply();
+}
 
 /* ---- auto save keeps the system setup only (0.9.5; the user, 2026-10-25: "if I'm performing I always want to get
  * back to the original state"). The record written is settings_record()'s: `set` as it is (the MIDI page, CLOCK,
@@ -342,6 +361,7 @@ FR_COLD static void params_sanitize(void)
         set.smk_mst[0] = set.smk_mst[1] = 0;
 #endif
         set.play_off = 0;
+        set.vel_resp = 0;
         set.flags2 = 0;
         for (i = 0; i < 4u; i++) set.perf[i] = 0;
         params_split_phaser(p, P_SLOTS);
@@ -407,6 +427,7 @@ FR_COLD static void params_sanitize(void)
     if (set.undo_preset > PR_NF_SET + 16u) set.undo_preset = 0;
     if (!set.key_vel || set.key_vel > 127) set.key_vel = 96;
     if (set.vel_curve > 3u) set.vel_curve = 0;              /* TOUCH (keyvel.h): 0 = MEDIUM */
+    if (set.vel_resp >= VRESP_N) set.vel_resp = 0;          /* RESPONSE: 0 = A */
     if (set.tune < -50 || set.tune > 50) set.tune = 0;
     if (set.focus > 2) set.focus = 0;
     if (set.sc_mode > 2) set.sc_mode = 0;
@@ -525,6 +546,7 @@ FR_COLD static void params_apply_all(void)
     uint32_t i;
     for (i = 0; i < P_COUNT; i++) param_apply(i);
     rh_tune_t = TUNE_T[set.tune + 50];
+    vresp_apply();
 }
 
 static void param_set(uint32_t id, int32_t v)
