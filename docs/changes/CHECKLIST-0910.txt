@@ -86,7 +86,14 @@ D. THE DESKTOP PLUGIN (docs/changes/PLUGIN-INSTALL-DRAFT.txt has the text)
 [ ] tools/doc_links.py --fix after any picture; tests/py/test_doc_links.py (heading links: the new #17 anchor and
     README's #on-your-computer-the-desktop-plugin)
 
-E. SCREENSHOTS AND EMULATOR (dry-run status on main 456b5da4: see the commit message)
+E. SCREENSHOTS AND EMULATOR
+   Dry run on main 456b5da4 (2026-11-08): tests/py/test_manual_shots.py 3 passed (manual_shots.py runs, the
+   committed FM-1 + SMK pictures = what the code draws); web/build.sh builds web/dist (needs emcc: a worktree has no
+   .local/, so source the main checkout's .local/emsdk/emsdk_env.sh first); tools/release.py --web-selftest web/dist
+   passes (Chromium + WebKit, 1280 / 390 px, the fake-FM-1 install), with PLAYWRIGHT_BROWSERS_PATH = the main
+   checkout's .local/playwright and its venv python. One warning: web_hal.c:74 redefines HOST_SAVE_MS (100u) over
+   web/build.sh's -DHOST_SAVE_MS=1u, so the -D has no effect (harmless today; not fixed here). The Move's
+   move_ui_shots.mjs was not run.
 [ ] tools/manual_shots.py (FM-1 img/*.png, SMK img/smk/): re-run only if a screen changed (a new card text, KEY VEL
     range); test_manual_shots.py says so. The SMK pictures: voice count is not drawn
 [ ] node tools/move_ui_shots.mjs --docs: only if the Move's pages changed
