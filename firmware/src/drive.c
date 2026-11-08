@@ -424,6 +424,7 @@ static void drv_boot(void)
 #endif
     if (!ts_ok) ts_first(fx_p[FXP_DRIVE]);              /* (TSH8: its first diode table, at the AMOUNT set) */
 }
+static DRV_BSS int32_t drv_rlast;                 /* the TYPE's last output sample (drv_rest_ramp) */
 static __attribute__((noinline)) void drv_reset(uint32_t t)
 {
     switch (t) {
@@ -433,9 +434,25 @@ static __attribute__((noinline)) void drv_reset(uint32_t t)
     case 5: drv_bhlue_reset(); break;
     default: break;                                       /* (FDRV keeps its state, as it always did) */
     }
+    drv_rlast = 0;
+}
+/* the rest step (0.9.10): on zero input a TYPE's rounding holds a fixed point, a DC of a few tens of LSB, until its
+ * states stop moving and it rests (KHLON kh_rest, ...): the DC dropped to 0 in one sample, a tick after every last note
+ * (F06 DRIVEN 77: C1 +21 dB re 0.9.9's key-up; 0.9.10's shorter damper brought it inside 300 ms of the key-up). A
+ * block of zero input whose output is 0 at both ends after a last sample that was not: the DC ramps from that sample
+ * to 0 over the block instead (only there: while anything sounds, every sample as it was). drv_rlast: the last output */
+static void drv_rest_ramp(int32_t *out, uint32_t n, int32_t z, int32_t *last)
+{
+    int32_t L = *last;
+    if (L && z && !out[0] && !out[n - 1u]) {
+        uint32_t i;
+        for (i = 0; i < n; i++) out[i] += L * (int32_t)(n - 1u - i) / (int32_t)n;   /* (|L| < 2^16: no overflow) */
+    }
+    *last = out[n - 1u];
 }
 static void drv_run(uint32_t t, const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)   /* t >= 2 */
 {
+    int32_t z = !(in[0] | in[n >> 1] | in[n - 1u]);     /* (before an in-place run overwrites in) */
     switch (t) {
     case 2: drv_khlon_run(in, out, n, c); break;
     case 3: drv_tsh8_run(in, out, n, c); break;
@@ -443,6 +460,7 @@ static void drv_run(uint32_t t, const int32_t *in, int32_t *out, uint32_t n, con
     case 5: drv_bhlue_run(in, out, n, c); break;
     default: break;
     }
+    drv_rest_ramp(out, n, z, &drv_rlast);
 }
 
 /* ---- the dispatch ---------------------------------------------------------------------------------------------- */
