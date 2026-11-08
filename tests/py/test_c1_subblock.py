@@ -71,6 +71,17 @@ def test_heavy_any_chunking(sub, env):
     assert np.array_equal(a.L, r.L) and np.array_equal(a.R, r.R), f"C1_SUB {sub} {env}: not the one-core build"
 
 
+@pytest.mark.parametrize("edges,env", [("32,128,224", None), ("32,224", "order=1"), ("64,96,160,192,224", "order=1,refuse=3")])
+def test_heavy_uneven_chunks(edges, env):
+    """C1_EDGES: chunks of different lengths (multiples of 32), as the one-core build"""
+    b = build(os.path.join(ROOT, "build", "host", "c1e" + edges.replace(",", "_"), "frodhes"),
+              ["-DFR_C1=1", f"-DC1_EDGES={edges}"])
+    ls = take(0)
+    a = run(f"c1s_heavy_e{edges.replace(',', '_')}_{env}", ls, end_ms=6000, binary=b, env=env and {"FRODHES_C1": env})
+    r = run("c1s_heavy_ref", ls, end_ms=6000, binary=ref_bin())
+    assert np.array_equal(a.L, r.L) and np.array_equal(a.R, r.R), f"C1_EDGES {edges} {env}: not the one-core build"
+
+
 def _flip(case, v0, v1, b, tag, onset=None):
     """case's control held at v0, moved to v1 at T_FLIP; onset: the chord struck at T_FLIP instead of T_NOTE"""
     t = cs.script(case, v0, flip=v1)
