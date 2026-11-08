@@ -36,4 +36,9 @@
 10500 expect rms < -47
 10500 expect rms > -55
 12500 expect rms < -60
-12600 end
+# RELEASE 127 (CC 103): x8, the long release of before (C4 T60 ~1.4 s): 100 ms after the key-up -32 dB (neutral -50.8)
+12600 midi 0xB0 103 127
+12700 midi 0x90 60 100
+13200 midi 0x80 60 0
+13300 expect rms > -36
+14000 end

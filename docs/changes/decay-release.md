@@ -6,7 +6,8 @@
 - Electric piano damper: letting go of a key stops the note faster and sooner. The release T60 is 0.25 s in the bass,
   0.18 s in the middle, 0.14 s and 0.12 s in the treble (was 0.5 / 0.4 / 0.3 / 0.2 s), and the felt lands within a few
   ms (its settle is 2.2-5.1 ms by register, was 3.6-7.3 ms): a note falls 10 dB in 25-45 ms (was 55-95 ms). RELEASE
-  still scales it x0.25 to x4 (127: about 1 s in the bass, 0.5 s in the treble). Release velocity, the pedal and the
+  scales it x0.25 (0) to x8 (127): 127 keeps the long releases of before (about 2 s in the bass, 1.4 s at C4, 1 s at
+  E6). Release velocity, the pedal and the
   half pedal work as before, on the new times.
 
 ## Tested
