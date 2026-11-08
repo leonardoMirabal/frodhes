@@ -27,7 +27,10 @@ install refuses unless only one FM-1-like port exists or --port names one. Anoth
 Every update loader takes the same name ("Felucca Update"), so the unit is pinned by its USB location (macOS
 ioreg locationID) before it is switched: only a loader, and then a restarted firmware, at that same location is
 taken, and only when no other USB device has its name (two ports of one name cannot be told apart: refused, the
-unit left in update mode for a later run). --location 0x... asserts where the unit is. Two installs never overlap:
+unit left in update mode for a later run). --location 0x... asserts where the unit is, before anything is sent
+to the port; when CoreMIDI still shows the port under the unit's old USB name (it caches it after an image with
+another USB name), the port is taken as the unit at --location only by exclusion (fm1_ports.stale_match: every other
+port matched by its own name at another location, nothing else left without a port), else refused. Two installs never overlap:
 the whole switch -> write -> restart holds the machine-wide INSTALL lock (tools/lock.py, the main checkout's
 build/locks/INSTALL.lockdir; separate from the DEVICE locks).
 
@@ -278,6 +281,10 @@ class MidoBackend:
     def usb_devices():
         return fm1_ports.usb_devices()
 
+    @staticmethod
+    def usb_ids():
+        return fm1_ports.usb_ids()
+
 
 def pair_output(name, outs):
     if name in outs:
@@ -321,10 +328,18 @@ class Updater:
         self.location = location   # --location: where the unit must be (asserted)
         self.loc = None            # pin(): the unit's USB location; the waits take only ports there
         self.skipped = set()       # ports passed over in the waits (another unit's, or a shared name)
+        self.stale = set()         # ports taken by exclusion (a stale CoreMIDI name, fm1_ports.stale_match)
 
     def usb(self):
         f = getattr(self.backend, "usb_devices", None)
         return f() if f else None
+
+    def ids(self):
+        f = getattr(self.backend, "usb_ids", None)
+        return f() if f else None
+
+    def say(self, msg):
+        print(f"note: {msg}", file=sys.stderr)
 
     def pin(self, name):
         """the USB location of the device behind port `name`, kept for the waits; refuses when it cannot tell this
@@ -335,6 +350,12 @@ class Updater:
                 raise InstallError("usage", "--location: no USB device list on this computer (macOS ioreg)")
             return None
         m = fm1_ports.usb_match(name, devs)
+        if not m and self.location is not None:   # CoreMIDI's name may be stale: the unit by exclusion
+            m = fm1_ports.stale_match(name, self.location, devs, self.backend.input_names(), self.ids())
+            if m:
+                self.stale.add(name)
+                self.say(f"the port {name!r} has no USB device of that name; taken as {m[0][0]!r} at "
+                         f"0x{self.location:08x}: every other port is matched elsewhere (CoreMIDI keeps the old name)")
         where = ", ".join(f"{n!r} at 0x{l:08x}" for n, l in m) or "none"
         if len(m) > 1:
             raise InstallError("ambiguous", f"{len(m)} USB devices answer to the port name {name!r} ({where}): "
@@ -359,6 +380,8 @@ class Updater:
         if devs is None:
             return True
         m = fm1_ports.usb_match(name, devs)
+        if not m and self.location is not None:   # (a stale CoreMIDI name: the same exclusion as pin)
+            m = fm1_ports.stale_match(name, self.loc, devs, self.backend.input_names(), self.ids())
         if len(m) == 1 and m[0][1] == self.loc:
             return True
         self.skipped.add(f"{name!r} at " + (", ".join(f"0x{l:08x}" for _, l in m) or "?"))
@@ -398,6 +421,9 @@ class Updater:
                 continue
             if not only_port and not self.at_ours(name):
                 continue                   # another unit's loader / firmware, or a name two units share
+            if only_port and self.location is not None:
+                self.pin(name)             # --location: the port checked to be the unit there before anything is
+                                           # sent to it (refuses otherwise)
             try:
                 link = self.backend.open(name, out)
             except Exception:
