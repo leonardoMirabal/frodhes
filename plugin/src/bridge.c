@@ -15,7 +15,7 @@
  * 44.1 kHz: app_audio's own int32 samples, exact as float (x / 32768, no clip: the host's mixer has the headroom).
  * 48 kHz: the FM-1's own USB resampler, firmware/src/uac_fir.h (160 / 147, 12 taps a phase, the knee and the 16-bit
  * clamp of usb.c uac_tap48), so the stream is the FM-1's USB stream at 48 kHz bit for bit.
- * Any other rate (1 to 768 kHz): a windowed-sinc resampler in float (RS_HALF zero crossings, a Kaiser window, the
+ * Any other rate (1 to 1536 kHz): a windowed-sinc resampler in float (RS_HALF zero crossings, a Kaiser window, the
  * cutoff 0.96 x the lower Nyquist), read at the 44.1 kHz time of each output frame, so it adds no delay of its own:
  * the pre-roll grows by the filter's reach instead (FRP_LAT_MS + RS reach, rounded up to a ms), and the latency the
  * host is told is that pre-roll at its rate.
@@ -63,7 +63,7 @@ static atomic_int slot_used[2u * FRP_SLOTS];
 #define RS_BETA 9.0                      /* the Kaiser window (about -90 dB side lobes) */
 #define RS_N 4096u                       /* the input ring (power of 2): 2 x the reach at 1 kHz + a chunk fit */
 #define RS_MIN 1000.0
-#define RS_MAX 768000.0
+#define RS_MAX 1536000.0                 /* (the VST3 SDK validator asks for 1234567.8 Hz) */
 enum { M441, M48, MANY };
 #define PK_MIDI (16u * 128u + 3u * 16u)  /* the parked MIDI: CC (channel x controller), program, pressure, bend */
 #define PK_N (FRP_NPARAM + PK_MIDI)

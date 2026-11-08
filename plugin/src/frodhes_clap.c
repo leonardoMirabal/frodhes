@@ -18,7 +18,7 @@
  *   gui           the plugin's window (plugin/gui_clap.c over plugin/gui_*.c, drawing plugin/ui/frui.c; macOS
  *                 Cocoa, Windows HWND, Linux X11 with the host's posix-fd and timer support): it reaches the core
  *                 only through frp_ui_iface.h's calls
- * Sample rates: 44.1 kHz (the app's own), 48 kHz (the FM-1's USB resampler), any other from 1 to 768 kHz
+ * Sample rates: 44.1 kHz (the app's own), 48 kHz (the FM-1's USB resampler), any other from 1 to 1536 kHz
  * (a windowed-sinc resampler: plugin/src/bridge.c); outside that the instance refuses to activate and logs why. More
  * than FRP_SLOTS (16) instances in one process: the extra ones play silence and log why. */
 #include <math.h>
@@ -282,7 +282,7 @@ static bool pl_activate(const clap_plugin_t *plugin, double rate, uint32_t min_f
     (void)min_frames; (void)max_frames;
     if (frp_inst_activate(p->in, rate)) {
         char m[160];
-        snprintf(m, sizeof m, "Frodhes: plays at 1 to 768 kHz, not at %.0f Hz", rate);
+        snprintf(m, sizeof m, "Frodhes: plays at 1 to 1536 kHz, not at %.0f Hz", rate);
         say(p, CLAP_LOG_ERROR, m);
         return false;
     }

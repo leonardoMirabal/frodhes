@@ -23,6 +23,13 @@ endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(FRP_VERSION "0.0.0-dev" CACHE STRING "the version text (the release's X.Y.Z; a number only in the GitHub release)")
+# The bundles' version (Info.plist CFBundleVersion / ShortVersionString, the Audio Unit's component version, which
+# hosts compare to decide whether to rescan an updated plugin): FRP_VERSION's X.Y.Z, 0.0.0 for a dev build.
+if(FRP_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)")
+    set(FRP_BUNDLE_VERSION "${CMAKE_MATCH_1}")
+else()
+    set(FRP_BUNDLE_VERSION "0.0.0")
+endif()
 get_filename_component(FRP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
@@ -48,12 +55,29 @@ if(UNIX AND NOT APPLE)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)   # (the VST3 SDK's and clap-wrapper's static libraries go into modules)
     foreach(_k SHARED MODULE)
         string(APPEND CMAKE_${_k}_LINKER_FLAGS " -static-libstdc++ -static-libgcc -Wl,--no-undefined -Wl,-z,noexecstack"
-               " -Wl,--as-needed -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/cmake/linux_exports.map")
+               " -Wl,--as-needed -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/cmake/linux_exports.map"
+               " -s")   # (stripped: the local symbols' names stay out of the users' binaries, as on macOS and Windows)
     endforeach()
     find_package(Threads REQUIRED)
 endif()
 
 include(cmake/deps.cmake)
+# No build-machine paths in the binaries (the SDKs' asserts keep __FILE__): the tree and the pinned checkouts are
+# written as "frodhes/..." and "deps/...", whatever folder (and account) they were built in
+get_filename_component(_frp_root_real "${FRP_ROOT}" REALPATH)
+get_filename_component(_frp_deps_real "${FRP_DEPS_DIR}" REALPATH)
+foreach(_m IN ITEMS "${FRP_ROOT}=frodhes" "${_frp_root_real}=frodhes" "${FRP_DEPS_DIR}=deps" "${_frp_deps_real}=deps")
+    if(MSVC)
+        add_compile_options("/clang:-ffile-prefix-map=${_m}")
+    else()
+        add_compile_options("-ffile-prefix-map=${_m}")
+    endif()
+endforeach()
+if(MSVC)   # (the PE's debug directory names its .pdb by file name only, not the build folder's path)
+    foreach(_k SHARED MODULE EXE)
+        string(APPEND CMAKE_${_k}_LINKER_FLAGS " /pdbaltpath:%_PDB%")
+    endforeach()
+endif()
 include(cmake/slots.cmake)
 
 if(APPLE)
@@ -88,7 +112,7 @@ make_clapfirst_plugins(
     OUTPUT_NAME "Frodhes"
     ENTRY_SOURCE "${FRP_ROOT}/plugin/src/clap_entry.cpp"
     BUNDLE_IDENTIFIER "io.github.leonardomirabal.frodhes"
-    BUNDLE_VERSION "0.0.0"
+    BUNDLE_VERSION "${FRP_BUNDLE_VERSION}"
     COPY_AFTER_BUILD FALSE
     PLUGIN_FORMATS ${FRP_FORMATS}
     WINDOWS_FOLDER_VST3 TRUE        # (Windows: the VST3 bundle folder, Frodhes.vst3/Contents/x86_64-win/Frodhes.vst3)
@@ -121,6 +145,12 @@ if(APPLE)   # the window's test host (tests/py/test_plugin_gui.py)
     target_compile_options(frp_gui_shot PRIVATE -O1 -Wall -Wextra)
     target_link_libraries(frp_gui_shot PRIVATE "-framework Cocoa" "-framework QuartzCore" z)
     list(APPEND FRP_TEST_TARGETS frp_gui_shot)
+    # the long stress run in a DAW-like host (make plugin-stress): instances, engines, presets, floods, the window
+    add_executable(frp_clap_stress "${FRP_ROOT}/plugin/tests/clap_stress.m")
+    target_include_directories(frp_clap_stress PRIVATE "${CLAP_SDK_ROOT}/include")
+    target_compile_options(frp_clap_stress PRIVATE -O1 -fobjc-arc -Wall -Wextra)
+    target_link_libraries(frp_clap_stress PRIVATE "-framework Cocoa")
+    list(APPEND FRP_TEST_TARGETS frp_clap_stress)
 endif()
 add_custom_target(frodhes_tests ALL DEPENDS ${FRP_TEST_TARGETS})
 add_custom_target(frodhes_plugins ALL DEPENDS frodhes_all)

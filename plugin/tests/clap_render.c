@@ -10,7 +10,7 @@
  *       the pre-roll (FRP_LAT_MS, 10 ms: 441 / 480 frames; another rate: the latency the plugin reports)
  *       and are not written: the rest is the host build's render of the script at 44.1 kHz (Gate D compares the
  *       sha256), and at 48 kHz the FM-1's USB resampler over it.
- *     --rate R                (44100; 48000 the FM-1's resampler; another rate from 1000 to 768000 the plugin's
+ *     --rate R                (44100; 48000 the FM-1's resampler; another rate from 1000 to 1536000 the plugin's
  *                             windowed-sinc resampler)
  *     --engine classic|hq     ENGINE, set before activation (the plugin's default: hq)
  *     --block N               frames a process call (512); --block random:SEED for random sizes 0..2048

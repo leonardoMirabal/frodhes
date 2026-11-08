@@ -201,7 +201,7 @@ test-move-probe:           ## the probe's dlopen host test
 PLUGIN_J     ?= 2
 PLUGIN_BUILD ?= build/plugin
 PLUGIN_NICE  ?= nice -n 15
-.PHONY: plugin-deps plugin test-plugin gate-d plugin-pack plugin-win plugin-linux
+.PHONY: plugin-deps plugin test-plugin gate-d plugin-pack plugin-win plugin-linux plugin-stress plugin-hosts
 plugin-deps:               ## the pinned plugin dependencies (plugin/deps.lock) into .local/plugin-deps
 	sh tools/plugin_deps.sh
 
@@ -233,3 +233,14 @@ plugin-win:                ## Windows x64 (clang-cl over xwin; tools/plugin_win.
 plugin-linux:              ## Linux in Docker (Ubuntu 20.04): build, depcheck, the Xvfb tests, the zip (x86_64 and aarch64)
 	FRP_LINUX_ARCH=x86_64 bash tools/plugin_linux.sh all
 	FRP_LINUX_ARCH=aarch64 bash tools/plugin_linux.sh all
+
+STRESS_MIN ?= 30
+plugin-stress: plugin      ## macOS: STRESS_MIN (30) minutes in a DAW-like host: 3 instances, engines, presets, automation
+                           ## floods, the window opened and closed, state round trips, memory (plugin/tests/clap_stress.m)
+	FRODHES_PRESET_DIR=$(PLUGIN_BUILD)/stress-presets $(PLUGIN_BUILD)/frp_clap_stress $(PLUGIN_BUILD)/bundles/Frodhes.clap \
+	  --minutes $(STRESS_MIN) --instances 3
+
+plugin-hosts: plugin       ## macOS: the VST3 / AU in Apple's AU host and a JUCE host against the CLAP render
+                           ## (tools/plugin_hosts.py; the AU must be installed; pip install pedalboard numpy)
+	$(PY) tools/plugin_hosts.py --bundles $(PLUGIN_BUILD)/bundles --render $(PLUGIN_BUILD)/frp_clap_render \
+	  --au ~/Library/Audio/Plug-Ins/Components/Frodhes.component

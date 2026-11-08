@@ -72,7 +72,7 @@ while the plugin is loaded, not in the project yet.
 | MIDI learn | any knob (and TUNE, PRESET, SUSTAIN, BYPASS) learns the next CC; a learned CC comes before the device's CC map; forget one or all; saved with the project |
 | State | the sound as the Move saves it (the 256-byte settings record and the sound it came from) plus ENGINE and the plugin's own keys (settings, learned CCs, SUSTAIN, the preset's name; version "pv" 2). A state without them (the first builds, a Move track) loads them as defaults; a broken or cut state is refused and changes nothing |
 | Tempo | the tempo source above (the delay's and the LFOs' sync) |
-| Sample rates | 44.1 kHz: the app's own samples. 48 kHz: the FM-1's own USB resampler, the FM-1's USB stream bit for bit. Any other rate from 1 to 768 kHz: a windowed-sinc resampler (error under 1 LSB of 16 bits in the passband) |
+| Sample rates | 44.1 kHz: the app's own samples. 48 kHz: the FM-1's own USB resampler, the FM-1's USB stream bit for bit. Any other rate from 1 to 1536 kHz: a windowed-sinc resampler (error under 1 LSB of 16 bits in the passband) |
 | Latency | reported to the host: 10 ms (441 frames at 44.1 kHz, 487 at 48 kHz, 11 ms or more at other rates). Events are placed on the millisecond the FM-1 would see them |
 | Instances | up to 16 in one host process; a 17th stays silent and says so in the host's log |
 | Floods | a host may send thousands of parameter, program or controller changes in one block (pluginval does): none is dropped. When the event queue runs low, the changes to one parameter (or one controller of a channel) wait in one entry that keeps the latest value, which is all the app would have played: it applies everything due before each millisecond's step. Notes are never merged |
@@ -121,7 +121,9 @@ VST3 bundles also carry the two licence files in `Contents/Resources`.
 system: macOS only `libSystem`, `libc++`, `libobjc` and system frameworks, universal, macOS 11; Windows only its own
 DLLs (`kernel32`, `user32`, `gdi32` ...; the C runtime is linked in); Linux only `libc`,
 `libm`, `libdl`, `libpthread`, `librt`, `libX11` and `libxcb`, no symbol newer than glibc 2.31. It also checks that
-each format exports its entry point.
+each format exports its entry point. The binaries carry no path of the machine that built them (the SDKs' source
+paths are written as `deps/...`, the `.pdb` by its name only) and the Linux ones are stripped. The bundles' version
+(Info.plist, the Audio Unit's component version, which hosts compare to rescan an update) is the release's X.Y.Z.
 
 **CI** (`.github/workflows/plugin.yml`, on every pull request that touches the plugin or the code it compiles): macOS
 builds, runs `make test-plugin`, packages, installs the `.pkg` with `installer` into the runner's home and runs the
@@ -181,7 +183,20 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
 - The user folders per OS (`plugin/tests/test_paths.c`, `tests/py/test_plugin_paths.py`): macOS and its App
   Sandbox, Linux XDG, Windows APPDATA, drive and UNC roots, all tested on any OS; mkdir -p, the atomic replace (also
   over an existing file) and the listing ran on macOS, on Linux (Docker) and on Windows (Wine).
-- clap-validator (the CLAP bundle), pluginval at strictness 10 (the VST3) and `auval -strict` (the Audio Unit).
+- clap-validator (the CLAP bundle), pluginval at strictness 10 (the VST3 and the Audio Unit, with its editor tests),
+  `auval -strict` (the Audio Unit) and the VST3 SDK's own validator (`tools/plugin_vst3_validator.sh`, built from the
+  pinned SDK with the command line tools: 47 tests).
+- In other hosts (`make plugin-hosts`, `tools/plugin_hosts.py`, macOS): the Audio Unit in Apple's own AU host
+  (AVAudioEngine offline, `tools/plugin_au_render.swift`, every event at its frame) renders a host script sample for
+  sample as the CLAP render does, at 44.1 and 48 kHz; the VST3 and the Audio Unit in a JUCE-based host (pedalboard)
+  match its level and loudness envelope (that host plays a probe note into every instrument it loads, so not sample
+  for sample), and their state saves, loads and saves to the same bytes.
+- The stress run (`make plugin-stress`, `plugin/tests/clap_stress.m`, macOS): 30 minutes in a host that behaves like a
+  DAW, 3 instances processed at real time on an audio thread while the main thread plays chords, switches ENGINE,
+  changes presets, floods 2000 automation changes into one block (every parameter then reads back the last value
+  sent, except the pairs the app couples itself: an effect's depth and its switch, the compressor's THRESH and make-up),
+  opens the window in a real NSWindow and closes it again, and round-trips the state between instances; every sample
+  finite, every instance heard, no warning in the log, and the memory flat after a 3-minute warm-up.
 - The window (`tests/py/test_plugin_gui.py`): `frp_gui_shot` opens it in a real window, drives it as a user does,
   automates and plays as a host does, resizes, closes and opens it; every picture it showed, read back from its own
   surface, is pixel for pixel what the reference renderer (`plugin/ui/tools/frui_render.c`) draws from the same state.
@@ -189,6 +204,35 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
   Windows and Linux views in their own windows under wine and Xvfb (`plugin/tests/gui_win_demo.c`, `gui_x11_demo.c`,
   through `tools/plugin_win.sh test` and `tools/plugin_linux.sh test`) get the same input checks.
 - The firmware build never sees `plugin/`: the plugin only reads `firmware/src`.
+
+## Checking it in a DAW (by hand)
+
+What a script cannot do: a real DAW's scan, its browser, its project save and its audio device. Five minutes a host,
+with the packages a release attaches (the `.pkg` on macOS, the zips elsewhere). Close other audio software first; on
+the Mac, a DAW that opens the audio interface may change its sample rate.
+
+1. **Install and scan.** Install the package; rescan plug-ins (Logic and GarageBand check the Audio Unit at start).
+   Frodhes shows as an instrument, vendor Frodhes, version the release's: in the CLAP list (Bitwig, Reaper, Studio
+   One), the VST3 list, and the Audio Unit list (Logic, GarageBand, Live, Renoise: Instruments > Frodhes > Frodhes).
+2. **Play.** Put it on a MIDI / instrument track and play: the first sound is F01 STAGE 77 on the HQ engine. Hold a
+   chord with the sustain pedal (or SUSTAIN in the window), let go: the notes ring out and stop. No click at the start
+   of playback or when the track is armed.
+3. **The window.** Open it: 960 x 600 points, sharp on a Retina / high-DPI screen. Drag a knob, double-click its value
+   and type a number, step a preset with the arrows, switch ENGINE to CLASSIC and back while a note rings. Resize the
+   window (16:10, 720 x 450 to 1920 x 1200). Close and reopen it twice: nothing is lost.
+4. **Automation.** Record a knob move while the transport runs (the host shows one gesture); play it back: the knob
+   follows. Draw an automation curve for TONE, play: the sound follows smoothly, no zipper noise.
+5. **Presets and MIDI.** Choose F13 VIBES, then F15 MARIMBA from the window's preset box and from the host's view of
+   PRESET. Send a program change (0 = F01). Right-click a knob > MIDI LEARN, move a controller: the knob follows.
+6. **The project.** Save the project with a changed sound, a learned CC and SUSTAIN on; close it, reopen it: the
+   sound, the learned CC and the setting are back. Duplicate the track: both instances play the same sound.
+7. **Render.** Bounce / export 10 s with a chord at the end: the file is not silent, has no clicks, and the reverb
+   tail is not cut at the end of the last note (extend the render by 3 s if the host asks for a tail length).
+8. **Sample rates.** Switch the project between 44.1, 48 and 96 kHz while it plays: the pitch stays right, no noise.
+
+Hosts on the maintainer's Mac (2026-11): Ableton Live 12 (VST3 and AU; Live has no CLAP) and Renoise 3.0
+(AU only: the version predates its VST3 and CLAP support). Logic, GarageBand, Reaper and Bitwig are not installed
+there; the list above is the same for them (Reaper: also the CLAP, `Options > Preferences > Plug-ins > CLAP`).
 
 ## Layout
 
@@ -205,7 +249,8 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
 | `plugin/gui_platform.h`, `gui_mac.m`, `gui_win.c`, `gui_x11.c` | the platform views behind one interface: macOS, Windows, Linux |
 | `plugin/gui_host.h` | what the window's controller asks of its host (bound to `frp_ui_iface.h` in `gui_clap.c`) |
 | `plugin/ui/` | the renderer, its fonts reader and value texts, the headless render tool |
-| `plugin/tests/` | the headless host, the coroutine test, the parameter dump, the window's test host |
+| `plugin/tests/` | the headless host, the coroutine test, the parameter dump, the window's test host, the stress host |
+| `tools/plugin_hosts.py`, `plugin_au_render.swift`, `plugin_vst3_validator.sh` | the plugin in other hosts (Apple's AU host, a JUCE host), the VST3 SDK's validator |
 | `tools/plugin_deps.sh`, `plugin/deps.lock` | the pinned dependencies and test tools |
 | `tools/plugin_pack.sh`, `plugin_depcheck.py`, `plugin_asset.sh` | the packages, the self-contained check, the release's choice of packages |
 | `tools/plugin_win.sh`, `plugin/cmake/win-x64-clangcl.cmake`, `plugin/compat/win/` | the Windows build (clang-cl), its checks and wine tests |

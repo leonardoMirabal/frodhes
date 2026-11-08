@@ -123,7 +123,7 @@ void frp_inst_free(frp_inst_t *in);
 int frp_inst_wants_main(frp_inst_t *in);
 int frp_inst_main(frp_inst_t *in);
 int frp_inst_slot(const frp_inst_t *in); /* the slot playing, -1 none */
-int frp_inst_activate(frp_inst_t *in, double rate);   /* main thread: 0 ok, -1 a rate outside 1 .. 768 kHz */
+int frp_inst_activate(frp_inst_t *in, double rate);   /* main thread: 0 ok, -1 a rate outside 1 .. 1536 kHz */
 void frp_inst_deactivate(frp_inst_t *in);
 uint32_t frp_inst_latency(const frp_inst_t *in);       /* output frames at the host's rate */
 void frp_inst_reset(frp_inst_t *in);     /* audio thread: all notes off, effects cleared (CLAP reset) */
