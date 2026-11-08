@@ -67,7 +67,8 @@ def pytest_collection_modifyitems(items):
 # versions and HOST_DEFS / CC. A pass writes build/memo/<test>.<hash>; the next run with the same hash skips it
 # ("memo: ..."). Off in CI (CI or GITHUB_ACTIONS set: every run runs everything), with FRODHES_NO_MEMO=1, and for
 # --long. A test listed here must read nothing outside its inputs (no device, no clock, no network).
-PURE = ("docs/model", "firmware/gen", "tests/py/data", "tests/baselines")
+PURE = ("docs/model", "firmware/gen", "tests/py/data")   # (not tests/baselines: no memo test reads it, and a
+                                                         # gate re-save there re-ran them all, 2026-11-08)
 HARNESS = PURE + ("firmware", "tests/*.c", "tests/*.h", "Makefile")   # (a C harness: every source it may compile)
 MEMO_FILES = {                     # test file -> what it reads besides its code (a dir, or a glob from the root)
     "test_gen_bars.py": PURE, "test_hil_crackle.py": PURE, "test_marimba_calib.py": PURE,
