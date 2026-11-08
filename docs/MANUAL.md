@@ -289,7 +289,7 @@ controls: see [MARIMBA](#marimba).
 
 ### COMPRESSOR
 
-![COMPRESSOR](manual/img/comp.png?v=2a1cac33)
+![COMPRESSOR](manual/img/comp.png?v=f5766e60)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -657,7 +657,7 @@ DRIVE, FILTER, DELAY and REVERB.
 
 ### SETUP
 
-![SETUP](manual/img/setup.png?v=e432acdf)
+![SETUP](manual/img/setup.png?v=a310bb0f)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -679,13 +679,14 @@ report).
 
 ### MIDI
 
-![MIDI](manual/img/midi.png?v=789009e2)
+![MIDI](manual/img/midi.png?v=80a09ae6)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
 | K1 | **CHANNEL** | **ALL** (the default: every channel is played) or **1–16**: only that channel is heard (notes, CCs and program changes; clock, Start and Stop always are), from USB-MIDI and from the TRS jack alike, and the FM-1 sends its notes on it (on ALL it sends on 1) |
 | K2 | **TRS IN** | **ON** / **OFF**: MIDI from the 3.5 mm TRS MIDI input (for a DAWless setup: a keyboard, a sequencer, a drum machine's clock) |
 | K3 | **CLOCK** | **INT**: its own tempo. **EXT** (the default): follows MIDI clock from USB or the TRS jack when it comes (the tempo and the beats: section 8), and a MIDI **Start** / **Continue** starts the sequencer, **Stop** stops it |
+| K4 | **RESPONSE** | How the electric piano answers velocity (MIDI notes and the FM-1's keys alike; taken at each new note, so a change never jumps a ringing one). **DEEP** (the default): the strike drives the tine harder through the pickup, so the tone opens up steadily from soft to hard. **EVEN**: the tone stays round and level up to a knee that rises with the register, then the bark comes in quickly; the bass's fundamental saturates. Both play at the same loudness at medium and hard velocities. VIBES and MARIMBA ignore it. Not part of a preset (CC 40) |
 
 Press **GLO** three times to come here (TEMPO, SETUP, MIDI). Everything MIDI does, it does the same from USB and from
 the TRS jack: notes, every CC in the table below, program changes, clock, start and stop.
@@ -1113,7 +1114,7 @@ MARIMBA ignore it.
 | 60 / 61 | SEQUENCER play (≥ 64) or stop (< 64) / BARS (1–16) | 62 / 63 | SEQUENCER QUANT (0–5) / recording (≥ 64) |
 | 43 / 44 | SEQUENCER CLEAR / UNDO (≥ 64) | 45 / 46 | SEQUENCER ERASE (≥ 64 on) / SWING (50–75) |
 | 110 | LEVEL (64 = 0 dB) | 111 | All effects off (≥ 64) / on |
-| 114 | USB VOL: knob (< 64) / fixed | | |
+| 114 | USB VOL: knob (< 64) / fixed | 40 | RESPONSE: 0–63 DEEP, 64–127 EVEN (the electric piano's velocity response) |
 
 **For developers and testing.** These CCs are for test tools, not for playing; [BUILD.md](BUILD.md#developer-midi-ccs) says
 what each one does.
