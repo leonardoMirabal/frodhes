@@ -115,10 +115,11 @@ static uint32_t smk_btn_leds;                   /* the SMK's own buttons' LEDs (
 #if FR_C1 && defined(C1_PROF)
 /* and the two cores' timeline (APP_DEFS="-DRH_PROF_STAGES -DC1_PROF" ./build.sh --c1): C1PF(i, ticks) keeps item i's
  * maximum, written by either core (a lost maximum at the query's reset is fine here). Since the block's start: 16
- * core 0's voices done (the last chunk's, eng_end), 18 its last wait over; 19 that last wait, 20 the waits before it
- * summed; 21 / 22 core 1's last chunk started / done; 23 the last chunk's effects, 24 the first's, 25 a middle one's;
- * the last chunk's stages: 26 COMP..PHASER, 27 the delay, 28 the reverb, 29 fx_out */
-#define PROF_NST 30u
+ * core 0's voices done (the last chunk's, eng_end); 17 core 0's voice time in a block (the waits out); 19 its last wait,
+ * 20 the waits before it summed; 23 the last chunk's effects, 24 the first's, 25 a middle one's; each stage's time in a
+ * block (its chunks summed): 26 COMP, 27 EQ, 28 DRIVE, 29 FILTER, 30 TREM / WAH, 31 SPREAD + PHASER, 32 the delay
+ * (chorus too), 33 the reverb, 34 fx_out */
+#define PROF_NST 35u
 static volatile uint32_t c1_pf_t0;
 #define C1PF_ON 1
 #define C1PF(i, d) do { uint32_t d2_ = (d); if (d2_ > prof_st_max[i]) prof_st_max[i] = d2_; } while (0)
@@ -254,7 +255,7 @@ static void c1_fx_job(uint32_t a)               /* core 1 (or core 0: refused, l
     fx_process(c1_job.mono, c1_job.out, c1_job.n);
 #if defined(C1PF_ON)
     a1 = fm1_ticks();
-    if (fxc_e == fxc_n) { C1PF(21, a0 - c1_pf_t0); C1PF(22, a1 - c1_pf_t0); C1PF(23, a1 - a0); }
+    if (fxc_e == fxc_n) C1PF(23, a1 - a0);
     else if (!fxc_o) C1PF(24, a1 - a0);
     else C1PF(25, a1 - a0);
 #endif
@@ -321,14 +322,20 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
     } else {
         uint32_t j, k = n / C1_SUB, posted = 0;
 #if defined(C1PF_ON)
-        uint32_t pw = 0, pt;
+        uint32_t pw = 0, pv = 0, pt;
         c1_pf_t0 = t0;
 #endif
         c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n;
         eng_begin(n);
         for (j = 0; j < C1_SUB; j++) {
+#if defined(C1PF_ON)
+            pt = fm1_ticks();
+#endif
             eng_chunk(c1_mono, j * k, j * k + k);   /* core 0: chunk j's voices */
             if (j + 1u == C1_SUB) { eng_end(c1_mono, n); C1PF(16, fm1_ticks() - t0); }
+#if defined(C1PF_ON)
+            pv += fm1_ticks() - pt;
+#endif
             if (posted) {                       /* chunk j - 1's effects: done, or core 0 does them */
                 int r;
 #ifndef DINGHY_HOST
@@ -353,7 +360,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         host_race_check();
 #endif
         PROF_STAMP(1);
-        C1PF(20, pw);
+        C1PF(20, pw); C1PF(17, pv);
         if (posted) {
             int r;
 #ifndef DINGHY_HOST
@@ -361,7 +368,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #if defined(C1PF_ON)
             pt = fm1_ticks();
             r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
-            C1PF(19, fm1_ticks() - pt); C1PF(18, fm1_ticks() - t0);
+            C1PF(19, fm1_ticks() - pt);
 #else
             r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
 #endif
@@ -524,6 +531,10 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
         for (id = 1; id < PROF_NST; id++) {           /* the stage maxima (us), then they reset */
             uint32_t su = prof_st_max[id] / 24u;
             if (!prof_st_max[id]) continue;           /* a stage without a stamp (the MIDI out ring holds 64) */
+#if defined(C1PF_ON)
+            { uint32_t t1 = fm1_ticks();             /* (more stages than the ring holds: room for each) */
+              while (usb.config && mo_w - mo_r > MQ - 3u && fm1_ticks() - t1 < 50000u * FM1_TICKS_PER_US) fm1_wdt_feed(); }
+#endif
             if (su > 16383u) su = 16383u;
             midi_send(0xB0, 97, id); midi_send(0xB0, 98, su >> 7); midi_send(0xB0, 99, su & 127u);
             prof_st_max[id] = 0;

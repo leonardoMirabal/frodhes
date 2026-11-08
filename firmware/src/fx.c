@@ -2357,9 +2357,16 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     for (j = 0; j < n; j++) { m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }   /* (mono is the dry signal for the bypass) */
 #endif
 #if defined(C1PF_ON)
-    uint32_t q0 = fm1_ticks(), q1;
+    static uint32_t c1_ps[9];
+    uint32_t q0, q1, k_;
+    if (FXC_1) for (k_ = 0; k_ < 9u; k_++) c1_ps[k_] = 0;
+    q0 = fm1_ticks();
+#define C1PS(k) do { q1 = fm1_ticks(); c1_ps[k] += q1 - q0; q0 = q1; } while (0)
 #endif
     fx_comp(m, n);
+#if defined(C1PF_ON)
+    C1PS(0);
+#endif
 #ifdef FR_BYP_KEEP_CMP
     /* the Move (FR_BYP_KEEP_CMP, the user 2026-10-28): FX bypasses every effect but the compressor, so its dry is the
      * compressor's output; the FM-1 (no define) bypasses the compressor too */
@@ -2367,22 +2374,34 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     for (j = 0; j < n; j++) dry_c[j] = m[j];
 #endif
     fx_eq(m, n);                                       /* the EQ before the drive (flat: m untouched, no loop) */
+#if defined(C1PF_ON)
+    C1PS(1);
+#endif
     fx_drive(m, n);                                    /* (0.9.5, the user: DRIVE before the FILTER; both mono, on m
                                                         * in place) */
+#if defined(C1PF_ON)
+    C1PS(2);
+#endif
     fx_filter(m, n);
+#if defined(C1PF_ON)
+    C1PS(3);
+#endif
     fx_trem(m, fx_L, fx_R, n);
+#if defined(C1PF_ON)
+    C1PS(4);
+#endif
     if (FX_SIDE_ONB) FR_FAR(fx_spread)(mono, fx_L, fx_R, n);   /* SPREAD: the side (S13) */
     FR_FAR(fx_phaser)(fx_L, fx_R, n);
 #if defined(C1PF_ON)
-    q1 = fm1_ticks(); if (FXC_Z) C1PF(26, q1 - q0); q0 = q1;
+    C1PS(5);
 #endif
     fx_delay(fx_L, fx_R, n);                           /* (the chorus, then the delay) */
 #if defined(C1PF_ON)
-    q1 = fm1_ticks(); if (FXC_Z) C1PF(27, q1 - q0); q0 = q1;
+    C1PS(6);
 #endif
     fx_reverb(fx_L, fx_R, n);
 #if defined(C1PF_ON)
-    q1 = fm1_ticks(); if (FXC_Z) C1PF(28, q1 - q0); q0 = q1;
+    C1PS(7);
 #endif
 #ifdef FR_BYP_KEEP_CMP
     FR_FAR(fx_out)(dry_c, out, n);
@@ -2390,7 +2409,11 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     FR_FAR(fx_out)(mono, out, n);
 #endif
 #if defined(C1PF_ON)
-    if (FXC_Z) C1PF(29, fm1_ticks() - q0);
+    C1PS(8);
+#endif
+#if defined(C1PF_ON)
+    if (FXC_Z) for (k_ = 0; k_ < 9u; k_++) C1PF(26u + k_, c1_ps[k_]);
+#undef C1PS
 #endif
 }
 
