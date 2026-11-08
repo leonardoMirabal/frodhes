@@ -29,7 +29,8 @@ The verdict (exit 1 on any failure):
   ceilings  pristine, from AGENTS.md section 1, NOT overridable by the expected-changes file:
             H2..H6 <= max(last + 3, -60) dB re H1, and H3 <= -25 dB at v127 where the last release was below that;
             inh / imd <= last + 3 dB; clk <= last + 6 dB; noise <= max(last + 3, -90) dBFS;
-            no clip outside RAW; keyup <= +0.5 dB (never louder after the key-up; the pedal cells are exempt).
+            no clip outside RAW; keyup <= +0.5 dB (never louder after the key-up; the pedal cells and the presets, whose
+            delays repeat the strike, are exempt).
   diffs     every value that moves by more than TOL in EITHER direction must be listed, with a reason, in the
             expected-changes file (tests/expected_changes.yaml); anything unlisted fails.
 
@@ -69,6 +70,10 @@ GRID = {
                  chords=(("low", (33, 40, 45, 49)), ("mid", (57, 60, 64, 67)), ("high", (69, 72, 76, 79))),
                  presets=tuple(range(16)) + (32, 33, 34)),
 }
+CONTROLS = (("TONE", 28), ("BARK", 29), ("BELL", 30), ("HAMMER", 31), ("DECAY", 102), ("NOISE", 104))
+# (full: each voice control at 0 and 127 on every TYPE, effects off, the FM-1 build: the control rows elsewhere
+# (test_every_control, hil_scan's VOICE rows) only ask that a control changes something; these hold its extremes
+# to the last release's)
 STEP, HOLD = 1500, 800              # ms: a note every STEP, released after HOLD
 W0, W1 = 0.05, 0.45                 # s: the harmonic window after the strike
 BAND, IBW, IREL = 0.03, 6.0, 0.003  # harmonic peaks +-3 %; inh / imd: a harmonic's band +-6 Hz or +-0.3 %
@@ -94,6 +99,14 @@ def cases(grid):
                     setup = [(110, 0xB0, tcc, tval), (120, 0xB0, 40, mv)] + [(100, 0xB0, c, v) for c, v in ccs]
                     keys = g["keys_ep"] if tcc == 80 else g["keys_bar"]
                     out.append((f"{build}/{tname}/{cfg}/{m}", build, setup, keys, "type"))
+        if grid == "full" and build == "fm1":
+            for tname, tcc, tval in TYPES:
+                for cname, ccn in CONTROLS:
+                    for cv in (0, 127):
+                        setup = [(100, 0xB0, 111, 127), (110, 0xB0, tcc, tval), (120, 0xB0, 40, 0),
+                                 (130, 0xB0, ccn, cv)]
+                        out.append((f"{build}/{tname}/{cname}{cv}/A", build, setup,
+                                    g["keys_ep"] if tcc == 80 else g["keys_bar"], "control"))
         for pc in g["presets"]:
             name = f"F{pc + 1:02d}" if pc < 16 else f"F{pc - 15:02d}"
             for m, mv in METHODS:
@@ -316,6 +329,20 @@ def last_tree(path=None):
     return path
 
 
+def last_cells(grid, base_tree=None):
+    """the last release's cells, measured live from its tree; cached in build/release_diff/ by the release's commit
+    and this tool's own bytes (a change to the measures re-measures it; nothing here can be saved from a candidate)"""
+    import hashlib
+    tree = last_tree(base_tree)
+    key = hashlib.sha256(open(os.path.join(tree, ".rev")).read().encode() + open(__file__, "rb").read()).hexdigest()[:16]
+    cache = os.path.join(OUT, f"last-{grid}-{key}.json")
+    if os.path.exists(cache):
+        return json.load(open(cache))
+    cells = measure_all(tree_bins(tree, os.path.join(OUT, "last-bin")), grid, "last-" + grid)
+    json.dump(cells, open(cache, "w"))
+    return cells
+
+
 # ---------------------------------------------------------------- the verdict
 
 def load_expected(path):
@@ -359,8 +386,8 @@ def ceiling(cid, lab, m, v, b):
         return max(b + MARGIN, -90.0), "noise floor over the last release + 3 dB"
     if m == "clip" and cfg != "RAW":
         return 0, "a clip outside RAW"
-    if m == "keyup":
-        return 0.5, "louder after the key-up"
+    if m == "keyup" and cfg != "PRESET":            # (a preset's delay repeats the strike after the key-up: diff only;
+        return 0.5, "louder after the key-up"       # 0.9.9's F18 HQ k69 v64 is +1.7 dB by its echo)
     return None
 
 
@@ -429,7 +456,7 @@ def report(cand, base, fails, moves, stale, expected, grid, top=25):
         for cid, lab, m, v, b, lim, why in sorted(other, key=lambda f: -abs((f[3] or 0) - (f[4] or 0)))[:top]:
             lines.append(f"  {cid}/{lab:10s} {m:7s} {v if v is None else round(v, 2)!s:>8}  last "
                          f"{b if b is None else round(b, 2)!s:>8}  {why}")
-    big = sorted(moves, key=lambda x: -abs(x[5]) / (tol_of(x[2]) if x[2] != "cent" else TOL["cent"]))[:top]
+    big = sorted(moves, key=lambda x: -abs(x[5]) / max(tol_of(x[2]) if x[2] != "cent" else TOL["cent"], 0.1))[:top]
     if big:
         lines.append(f"\nthe biggest moves (in tolerances):")
         for cid, lab, m, v, b, d, hit in big:
@@ -463,10 +490,23 @@ def run(grid="fast", bins=None, expected=EXPECTED, base_tree=None):
         doc = json.load(open(BASE_FAST))
         base = doc["cases"]
     else:
-        base = measure_all(tree_bins(last_tree(base_tree), os.path.join(OUT, "last-bin")), grid, "last-" + grid)
+        base = last_cells(grid, base_tree)
     exp = load_expected(expected)
     fails, moves, stale = judge(cand, base, exp)
     return not fails, report(cand, base, fails, moves, stale, exp, grid), cand, base, fails, moves
+
+
+def save_guard(name):
+    """a gate baseline is re-saved only on a tree that passes the pristine gate (AGENTS.md 5b: a hash catches a
+    change, not a bad change); the report's head goes in the commit message"""
+    ok, text, *_ = run("fast")
+    os.makedirs(OUT, exist_ok=True)
+    open(os.path.join(OUT, "save-guard.txt"), "w").write(text + "\n")
+    print("\n".join(text.splitlines()[:2]) + f"  (build/release_diff/save-guard.txt: put its head in the commit)")
+    if not ok:
+        raise SystemExit(f"{name} --save refused: the pristine gate fails against {LAST} "
+                         "(build/release_diff/save-guard.txt). Fix the sound, or list the intended moves in "
+                         "tests/expected_changes.yaml with the coordinator's sign-off.")
 
 
 def main():
