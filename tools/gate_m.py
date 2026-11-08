@@ -124,6 +124,8 @@ def main():
         print(f"Gate M: {len(midi)} MIDI-driven, {len(host)} host-only")
         return 0
     if a.save:
+        import release_diff                    # (AGENTS.md 5b: never re-save over a tree the pristine gate fails)
+        release_diff.save_guard("Gate M")
         got = render("host16", midi, a.jobs)
         miss = [n for n in got if got[n] == "MISSING"]
         if miss:
