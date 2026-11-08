@@ -3,7 +3,7 @@
 
 It has exactly the C engine's structure (32-frame sub-blocks, the pulse player with linear interpolation, the MC3
 kernel per mode with the force injected into y, the radial pickup as an exact flux difference, the damper as a
-7-sub-block linear crossfade of E and eps, the post-mix RLC biquad) but in double precision and with the exact
+linear crossfade of E and eps over rh_settle()'s sub-blocks, the post-mix RLC biquad) but in double precision and with the exact
 flux function instead of the Hermite table. Gate B compares the C engine against it (residual <= -60 dB).
 
 The model runs a batch of notes in parallel (numpy over notes x modes), so calibrating all 88 keys is quick.
@@ -23,8 +23,15 @@ import rh_coefs as rc  # noqa: E402
 
 FS = 44100.0
 SUB = 32
-RAMP_SUB = 7
+RAMP_SUB = 5                # rhodes.c RAMP_SUB
 PLEN = 64
+
+
+def settle(n):
+    """the damper crossfade's length in sub-blocks for key n, as rhodes.c rh_settle()"""
+    if n < 48:
+        return RAMP_SUB + min((50 - n) >> 2, 2)
+    return RAMP_SUB if n < 72 else RAMP_SUB - 1 if n < 84 else RAMP_SUB - 2
 LAYER_V = [8, 24, 40, 56, 72, 88, 104, 120]
 
 
@@ -66,12 +73,27 @@ def vpos(v):
     return i, int(round(256 * (v - V_ANCH[i]) / (V_ANCH[i + 1] - V_ANCH[i])))
 
 
+def vlaw(tab, v):
+    """a per-key anchor table at velocity v, the C interpolation (RH_VPOS_I / RH_VPOS_F, Q8)"""
+    i, f = vpos(v)
+    f = min(f, 255)
+    return tab[i] + (((tab[i + 1] - tab[i]) * f) >> 8)
+
+
+def vgain(spec, v):
+    """the pickup drive's output gain at velocity v (Q16 / 65536; 1.0 without the drive): rhodes.c rh_init"""
+    pg = spec["pulse"].get("pgf")                 # gain x force: both interpolated, then divided (rh_drive_g)
+    return 1.0 if pg is None else min(65535, max(1, (vlaw(pg, v) << 15) // max(1, vlaw(spec["pulse"]["pdrv"], v)))) / 65536.0
+
+
 def pulse_params(spec, v):
-    """(shape int16 list, pamp Q15, prate Q16) exactly as rh_load_pulse() computes them."""
+    """(shape int16 list, pamp Q15, prate Q16) exactly as rh_load_pulse() computes them. With the pickup drive
+    (gen_rhodes.pickup_drive) the force the modes get is the drive's excursion law pdrv, not the physical pamp."""
     pz = spec["pulse"]
     i, f = vpos(v)
     f = min(f, 255)
-    pa = pz["pamp"][i] + (((pz["pamp"][i + 1] - pz["pamp"][i]) * f) >> 8)
+    tab = pz.get("pdrv", pz["pamp"])
+    pa = tab[i] + (((tab[i + 1] - tab[i]) * f) >> 8)
     pr = (pz["prate"][i] + (((pz["prate"][i + 1] - pz["prate"][i]) * f) >> 8)) << 4
     return blend_shape(pz["shapes"], v), pa, pr
 
@@ -101,7 +123,7 @@ def modes_batch(specs, vels, n, off_at=None):
     x = np.zeros((nn, nm)); y = np.zeros((nn, nm))
     E = E0.copy(); D = D0.copy()
     Es, Ds = E.copy(), D.copy()
-    ramp = 0
+    L = np.array([float(settle(int(s.get("midi", 60)))) for s in specs])[:, None]   # per note (rh_settle)
     out = np.zeros((nn, n))
     ppos = np.zeros(nn)
     live = np.ones(nn, bool)
@@ -110,10 +132,9 @@ def modes_batch(specs, vels, n, off_at=None):
     for sb in range(0, n, SUB):
         k = sb // SUB
         if off_sub is not None and k == off_sub:
-            ramp = RAMP_SUB; Es, Ds = E.copy(), D.copy()
-        if ramp:
-            ramp -= 1
-            f = (RAMP_SUB - ramp) / RAMP_SUB
+            Es, Ds = E.copy(), D.copy()
+        if off_sub is not None and off_sub <= k < off_sub + L.max():
+            f = np.minimum((k - off_sub + 1) / L, 1.0)
             E = Es + (E1 - Es) * f
             D = Ds + (D1 - Ds) * f
         for j in range(sb, min(sb + SUB, n)):
@@ -159,7 +180,7 @@ def render_batch(specs, fams, vels, dur, off_at=None, gains=None, q=1.0):
     tip = modes_batch(specs, vels, n, off_at)
     d = pickup_batch(tip, [s["off"] for s in specs], [s["fam"] for s in specs],
                      [f["A"] for f in fams], [f["R"] for f in fams])
-    g = np.array([1.0 if gains is None else gains[i] for i in range(len(specs))])
+    g = np.array([(1.0 if gains is None else gains[i]) * vgain(specs[i], vels[i]) for i in range(len(specs))])
     return rlc(d * g[:, None] * 32768.0, q)
 
 

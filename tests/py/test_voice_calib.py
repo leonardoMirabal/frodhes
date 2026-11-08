@@ -56,24 +56,34 @@ def test_neighbour_keys_even(vel):
     for v in (40, 64, 104, 127):
         c = vel["L"][:, jv(v)]
         assert np.abs(np.diff(c)).max() < 1.0, (v, np.abs(np.diff(c)).max())
-    assert np.ptp(vel["L"][:, jv(104)]) < 0.5
+    # level-matched at the calibration velocity (gen_rhodes: v100); with the pickup drive each register has its own
+    # velocity knee (params.json pickup_drive), so away from v100 the keys part by design (v104: under 1 dB)
+    lv = cr.measure_velocity(SPEC, KEYS, [100])["L"][:, 0]
+    assert np.ptp(lv) < 0.5, np.ptp(lv)
 
 
 def test_bark_grows_with_velocity(vel):
+    # the pickup drive (params.json pickup_drive): the soft colour holds up to each register's knee, then the bark
+    # grows; the knee rises with the register and the top has none
     h = vel["H21"]
     med = lambda v: float(np.median(h[:, jv(v)]))
-    assert med(64) < -18 and med(104) < -10 and med(127) > med(104) + 3, (med(64), med(104), med(127))
-    bass = [KEYS.index(n) for n in range(28, 41)]
-    assert h[bass, jv(104)].max() < -14                  # the bass is mostly fundamental at mf (R05 W3)
+    assert med(64) < -18 and med(127) > med(104) + 3, (med(64), med(104), med(127))
+    bass = [KEYS.index(n) for n in range(28, 53)]          # knee ~v58
+    assert np.abs(h[bass, jv(48)] - h[bass, jv(1)]).max() < 1.0      # flat below the knee
+    assert np.all(h[bass, jv(127)] - h[bass, jv(64)] > 20)           # and well up above it
+    top = [KEYS.index(n) for n in range(86, 104)]
+    assert np.abs(h[top, jv(127)] - h[top, jv(40)]).max() < 2.0      # no rise on the top keys
     assert np.all(np.diff(h[:, jv(40):], axis=1) > -0.5)  # every key's H2/H1 rises with velocity
 
 
 def test_timbre_continuous_across_keys(vel):
     f0 = np.array([BY[n]["f0"] for n in KEYS])
-    for v in (64, 104, 127):
+    # below the knees 0.1 octave / 1.5 dB a key; at v104 and v127 the knee moves 18 velocity steps from key 64 to
+    # key 69 (pickup_drive.knee_points, as measured), so the bark (and the centroid) falls up to 2.9 dB a key there
+    for v, cm, hm in ((64, 0.1, 1.5), (104, 0.2, 3.2), (127, 0.2, 3.2)):
         c = np.log2(vel["CEN"][:, jv(v)] / f0)
-        assert np.abs(np.diff(c)).max() < 0.1, v
-        assert np.abs(np.diff(vel["H21"][:, jv(v)])).max() < 1.5, v
+        assert np.abs(np.diff(c)).max() < cm, v
+        assert np.abs(np.diff(vel["H21"][:, jv(v)])).max() < hm, v
 
 
 def test_attack_has_no_spike(vel):

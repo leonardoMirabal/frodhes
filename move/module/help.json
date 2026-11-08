@@ -209,7 +209,8 @@
             "K4 RETRIG",
             "K5 DLTONE",
             "K6 LEVEL",
-            "K7 CHAN"
+            "K7 CHAN",
+            "K8 RESP"
           ]
         },
         {

@@ -75,7 +75,7 @@ literals are forbidden in code: they live in generated tables (ROM-window rule, 
 | S6 | **Pickup numerics:** tip Q25 int32, s in int64, cubic Hermite on Φ̃ (Q28) + slope table, 22-bit fraction, exact difference `H[n] − H[n−1]` (first-order ADAA). | §0 #2. The midpoint form has no ADAA and droops at high harmonics. |
 | S7 | **Hammer:** run-time pulse player; shapes from a coupled contact simulation on the host (felt power law, 6 FE tine modes + bar, 16×fs), 5 tip bands × 8 velocity layers; MIDI velocity → hammer **speed** (dB-linear, R = 30 dB default, 12–36 user range). | The tine's effective mass at the strike point (21–43 g) is comparable to the hammer, so the contact is coupled (`scratch-01/meff.py`). |
 | S8 | **Re-strike of a sounding note superposes** (state kept, pulse restarted). Fade-and-clear only when stealing for a different note. | A real tine is hit while moving. |
-| S9 | **Damper:** per-mode (E_rel, eps_rel) from adding felt damping on the tine coordinate in the 2-DOF solve, matched by eigenvalue continuity; 7 sub-block (5.1 ms) linear crossfade of both E and eps; thump injected on the tine force. Half-pedal scales the crossfade target. | Stable: for MC3 any E ∈ (0, 2), D ∈ (0, 1) is stable, so convex combinations are. |
+| S9 | **Damper:** per-mode (E_rel, eps_rel) from adding felt damping on the tine coordinate in the 2-DOF solve, matched by eigenvalue continuity; a linear crossfade of both E and eps over rh_settle()'s 3-7 sub-blocks (2.2-5.1 ms by register; 5-10 until 2026-11-08); thump injected on the tine force. Half-pedal scales the crossfade target. | Stable: for MC3 any E ∈ (0, 2), D ∈ (0, 1) is stable, so convex combinations are. |
 | S10 | **One RLC load biquad on the mono mix**, per TYPE. Default 5 kHz, Q ≈ 1 (ESTIMATE, by ear). Excluded from spectral checks. | Linear, time-invariant, identical for all keys (R03). |
 | S11 | **Amplitude→pitch:** E(V1), E(V2) scale by (1 + κ·a²) per sub-block, a² = x² + y² of the mode (MC3 quadrature). Fitted from the loud vs soft layers of the bass roots. | R05: "low notes go a bit sharp when struck harder". |
 | S12 | **Upper-mode attack residual** (modes ≥ 4, first 11.6 ms): a precomputed tip-displacement table per band and layer added to x_v (Phase 3). | Linear superposition; exact for a tine at rest. |
@@ -386,7 +386,7 @@ static const uint16_t  PEDAL_W[128];                      /* Q15 damper weight v
 ```c
 #define RH_NV 8u
 #define SUB 32u
-#define RAMP_SUB 7u              /* damper crossfade: 7 sub-blocks = 5.1 ms */
+#define RAMP_SUB 5u              /* damper crossfade on C3..B4: 5 sub-blocks = 3.6 ms (rh_settle: by register) */
 #define FADE_SUB 2u              /* steal fade: 64 frames = 1.45 ms */
 
 typedef struct {

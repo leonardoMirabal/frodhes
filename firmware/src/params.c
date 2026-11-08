@@ -210,15 +210,28 @@ typedef struct {
                                                 * before: smk_input.h's 724; frodhes_smk.h smk_master_stored) */
     uint8_t play_off;                          /* 0.9.9: DISPLAY PLAY LED: 0 BEAT (every record before), 1 OFF; after
                                                 * smk_mst, which keeps its place (offset 235) */
-    uint8_t reserved[18];
+    uint8_t vel_resp;                          /* 0.9.10: MIDI RESPONSE, the velocity response (N_VRESP; rhodes.c
+                                                * rh_touch_mode): 0 = A (every record before) */
+    uint8_t reserved[17];
 #else
     uint8_t play_off;                          /* 0.9.9: DISPLAY PLAY LED: 0 BEAT (every record before), 1 OFF */
-    uint8_t reserved[20];
+    uint8_t vel_resp;                          /* 0.9.10: MIDI RESPONSE, the velocity response (N_VRESP; rhodes.c
+                                                * rh_touch_mode): 0 = A (every record before) */
+    uint8_t reserved[19];
 #endif
 } settings_t;
 _Static_assert(sizeof(settings_t) == 256, "settings record is 256 B");
 
 static settings_t set;
+/* the velocity response (MIDI page RESPONSE; CC 40, frodhes.c midi_cc): how a strike's velocity becomes the electric
+ * piano's sound (rhodes.c rh_touch_mode, read at each note-on: a change takes effect at the next strike). 0 = A (the
+ * pickup excursion follows the velocity; every record before it), 1 = B (the piecewise velocity map), 2 = C (both,
+ * not built yet: VRESP_N 3 when it is; CC 40's bands follow, v * VRESP_N / 128). One table for the names (the card's
+ * label, RESPONSE, is ui.c PAGE_LAB's): placeholders until the user picks them */
+#define VRESP_N 2u
+static const char *const N_VRESP[] = {"DEEP", "EVEN", "BLEND"};   /* A, B, C */
+_Static_assert(VRESP_N >= 1u && VRESP_N <= sizeof N_VRESP / sizeof N_VRESP[0], "one name per response");
+FR_COLD static void vresp_apply(void) { rh_touch_mode = set.vel_resp < VRESP_N ? set.vel_resp : 0u; }
 static uint8_t set_pr_from_rc;    /* params_sanitize converted an index of 16 factory presets that named U10..U12 */
 /* TOUCH (keyvel.h): stored so that 0, every record before key velocity, is MEDIUM */
 FR_COLD static uint32_t kv_touch(void) { return (set.vel_curve + 1u) & 3u; }
@@ -277,6 +290,12 @@ FR_COLD static void params_perf_update(void)
 }
 static uint8_t set_dirty;          /* something in `set` may have changed: frodhes.c settings_poll looks (and decides) */
 static uint32_t set_t_change;
+FR_COLD static void vresp_set(uint32_t m)        /* the velocity response from the card or CC 40 (next strike) */
+{
+    if (m >= VRESP_N) m = VRESP_N - 1u;
+    if (set.vel_resp != m) { set.vel_resp = (uint8_t)m; set_dirty = 1; set_t_change = fm1_ms; }
+    vresp_apply();
+}
 
 /* ---- auto save keeps the system setup only (0.9.5; the user, 2026-10-25: "if I'm performing I always want to get
  * back to the original state"). The record written is settings_record()'s: `set` as it is (the MIDI page, CLOCK,
@@ -342,6 +361,7 @@ FR_COLD static void params_sanitize(void)
         set.smk_mst[0] = set.smk_mst[1] = 0;
 #endif
         set.play_off = 0;
+        set.vel_resp = 0;
         set.flags2 = 0;
         for (i = 0; i < 4u; i++) set.perf[i] = 0;
         params_split_phaser(p, P_SLOTS);
@@ -407,6 +427,7 @@ FR_COLD static void params_sanitize(void)
     if (set.undo_preset > PR_NF_SET + 16u) set.undo_preset = 0;
     if (!set.key_vel || set.key_vel > 127) set.key_vel = 96;
     if (set.vel_curve > 3u) set.vel_curve = 0;              /* TOUCH (keyvel.h): 0 = MEDIUM */
+    if (set.vel_resp >= VRESP_N) set.vel_resp = 0;          /* RESPONSE: 0 = A */
     if (set.tune < -50 || set.tune > 50) set.tune = 0;
     if (set.focus > 2) set.focus = 0;
     if (set.sc_mode > 2) set.sc_mode = 0;
@@ -434,6 +455,19 @@ FR_COLD static void mot_rate_apply(void)
 
 /* ---- apply a parameter to the engine (main loop; volatile one-writer handover). The Rhodes volatiles are written
  * exactly as before; the bar engine gets the same knobs through eng_bar_knob() (each engine reads only its own) */
+/* RELEASE's k = 1/S (Q16): S = 2^((v-64)/32) up to the middle (x0.25 at 0, x1 at 64), above it S = 2^(3 (v-64)/63)
+ * (x8 at 127): the damper's release T60 (params.json release_t60) became ~2x shorter on 2026-11-08 and RELEASE 127
+ * kept 0.9.9's long releases (~2 s in the bass, ~1.5 s at C4). The exponent in 1/32 octaves, x = 96 (v-64)/63, as two
+ * DECAY_K words (each <= 63 steps); monotonic, 1-2 steps a knob step. Taken at the note-on (no zipper) */
+static int32_t rel_k(int32_t v)
+{
+    int32_t x, a;
+    if (v <= 64) return (int32_t)DECAY_K[v < 0 ? 0 : v];
+    x = (96 * (v - 64) + 31) / 63;
+    a = x > 63 ? 63 : x;
+    return (int32_t)(((uint64_t)DECAY_K[64 + a] * DECAY_K[64 + x - a]) >> 16);
+}
+
 static void param_apply(uint32_t id)
 {
     int32_t v = PV(id);
@@ -465,7 +499,7 @@ static void param_apply(uint32_t id)
     case P_BELL: rh_bell = (int32_t)KN_P32(v); eng_bar_knob(BK_TUBE, (uint32_t)v); break;
     case P_HAMMER: rh_ham = (int32_t)KN_HAM(v); eng_bar_knob(BK_WEIGHT, (uint32_t)v); break;
     case P_DECAY: rh_k_decay = (int32_t)DECAY_K[v]; eng_bar_knob(BK_RING, (uint32_t)v); break;   /* k = 1/S, S = 2^((v-64)/32): higher = longer */
-    case P_RELEASE: rh_k_rel = (int32_t)DECAY_K[v]; eng_bar_knob(BK_DAMPER, (uint32_t)v); break;
+    case P_RELEASE: rh_k_rel = rel_k(v); eng_bar_knob(BK_DAMPER, (uint32_t)v); break;
     case P_NOISE: rh_thump = KN_THUMP[v]; rh_felt = KN_FELT[v]; rh_knock = KN_KNOCK[v]; rh_pnz = KN_PEDAL[v]; eng_bar_knob(BK_NOISE, (uint32_t)v); break;
     case P_SPREAD: rh_spread = v; break;                              /* (S13; the Rhodes, at each strike) */
     case P_DL_TONE: fx_set(FXP_DL_TONE, v); break;
@@ -512,6 +546,7 @@ FR_COLD static void params_apply_all(void)
     uint32_t i;
     for (i = 0; i < P_COUNT; i++) param_apply(i);
     rh_tune_t = TUNE_T[set.tune + 50];
+    vresp_apply();
 }
 
 static void param_set(uint32_t id, int32_t v)

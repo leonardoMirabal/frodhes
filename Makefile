@@ -42,17 +42,17 @@ test10:                    ## make testv V=10
 	@$(MAKE) -s testv V=10
 
 SMKBIN  := build/host-smk/frodhes
-SMK_DEFS := -DBOARD_SMK37=1 -DFR_VOICES=7u
+SMK_DEFS := -DBOARD_SMK37=1 -DFR_VOICES=10u
 $(SMKBIN): firmware/src/*.c firmware/src/*.h firmware/hal/*.h firmware/gen/*.h tests/host.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_HOST) $(SMK_DEFS) -o $@ firmware/src/frodhes.c -lm
 
-test-smk: $(SMKBIN)        ## the SMK-37 build on the host (7 voices): every script (the FM-1's button / knob / LED
-                           ## ids on the SMK buttons of the same name, tests/host.c), tests/scripts7/ for the steal
+test-smk: $(SMKBIN)        ## the SMK-37 build on the host (10 voices): every script (the FM-1's button / knob / LED
+                           ## ids on the SMK buttons of the same name, tests/host.c), tests/scripts10/ for the steal
                            ## scripts, tests/smk/ (its own controls); each flash call checked against the SMK allow-list.
                            ## The FM-1-only scripts (TRS IN, the key LEDs) are listed in tests/smk/known.txt: reported, not
                            ## failed
-	@fail=0; for s in tests/scripts/*.txt tests/scripts7/*.txt tests/smk/*.txt; do n=$$(basename $$s .txt); \
+	@fail=0; for s in tests/scripts/*.txt tests/scripts10/*.txt tests/smk/*.txt; do n=$$(basename $$s .txt); \
 	  case $$s in tests/scripts/*_steal_release.txt|tests/smk/known.txt) continue;; esac; \
 	  if $(SMKBIN) build/host-smk/$$n $$s > build/host-smk/$$n.log 2>&1; then echo "ok    $$n"; \
 	  elif grep -q "FAIL flash" build/host-smk/$$n.log; then echo "FAIL  $$n: a flash call refused (build/host-smk/$$n.log)"; fail=1; \

@@ -37,6 +37,12 @@ typedef struct {
     float pprev;                               /* the last decimated flux (the difference's), re the rest flux */
     float xb[HQ_HIS + SUB], eb[HQ_HIS + SUB], ob[HQ_HIS + SUB];   /* tip in; the flux's even / odd phases */
     float lg;                                  /* the live pulse's force re the table's (0: none), for hq_pulse_gain */
+#ifdef RH_DRIVE
+    float dr;                                  /* the pickup drive (S1a): the tine's physical swing re the modes' state
+                                                * (the drive's excursion law), the last strike's (hq_live) */
+    int32_t pa;                                /* this strike's physical force (RH_PAMP at vel, before HAMMER) */
+    float drl;                                 /* dr before this strike (the ringing tine's), for hq_pulse_gain */
+#endif
 } hq_voice_t;
 static hq_voice_t hq_v[RH_NV];
 static uint32_t hq_live_n;                     /* live contacts this block */

@@ -1,0 +1,52 @@
+# MIDI RESPONSE (0.9.10): the velocity response, the MIDI page's 4th card (GLO 7 three times: TEMPO, SETUP, MIDI; K4 =
+# encoder 5). DEEP (A, the default and every older record), EVEN (B); BLEND (C) once it is built (params.c VRESP_N).
+# It stops at both ends. "expect state vresp" = "set/engine": the setting and the engine's copy (rhodes.c
+# rh_touch_mode, read at each note-on). A change marks the settings for the auto save. CC 40 sets it in VRESP_N bands
+# (two: 0-63 A, 64-127 B). The save, the power cycle and the older records: tests/py/test_vel_resp.py.
+100 btn 7
+200 btn 7
+300 btn 7
+350 expect state page MIDI
+350 expect state label3 RESPONSE
+350 expect state card3 DEEP
+350 expect state vresp 0/0
+350 expect state dirty 0
+400 turn 5 -1
+450 expect state card3 DEEP
+450 expect state vresp 0/0
+450 expect state dirty 0
+500 turn 5 1
+550 expect state card3 EVEN
+550 expect state vresp 1/1
+550 expect state dirty 1
+# a note held across the changes keeps sounding (the response applies at the next strike)
+600 midi 0x90 60 100
+700 turn 5 1
+750 expect state card3 EVEN
+750 expect state vresp 1/1
+800 turn 5 -1
+850 expect state card3 DEEP
+850 expect state vresp 0/0
+900 midi 0x90 64 100
+1000 expect rms > -40
+1100 midi 0x80 60 0
+1100 midi 0x80 64 0
+1200 turn 5 1
+1250 expect state card3 EVEN
+1300 turn 5 -1
+1350 expect state card3 DEEP
+1350 expect state vresp 0/0
+# CC 40: two bands, the card follows
+1400 midi 0xB0 40 127
+1450 expect state card3 EVEN
+1450 expect state vresp 1/1
+1500 midi 0xB0 40 63
+1550 expect state card3 DEEP
+1550 expect state vresp 0/0
+1600 midi 0xB0 40 64
+1650 expect state card3 EVEN
+1650 expect state vresp 1/1
+1700 midi 0xB0 40 0
+1750 expect state card3 DEEP
+1750 expect state vresp 0/0
+2000 end

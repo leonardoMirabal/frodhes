@@ -9,13 +9,13 @@ Outputs in build/: frodhes.bin (app), loader/ota.bin (update loader),
 frodhes.fwsc (package). See README.md for the toolchain and the SDK.
 
 --board smk37 (or BOARD=smk37) builds for the M-Vave SMK-37 (docs/SMK37.md): -DBOARD_SMK37=1 for the app and the
-loader, the app at 7 voices (-DFR_VOICES=7u), identity SMK-37 Pro_470 (every version, as the FM-1's FM-1_958: PR #3's,
+loader, the app at 10 voices (-DFR_VOICES=10u), identity SMK-37 Pro_470 (every version, as the FM-1's FM-1_958: PR #3's,
 so a unit that ran 0.9.2-SMK updates in place; not tested on hardware), the store family FRODHES (the owner tag), the
 SMK flash layout (fm1pkg_make.py, app slot 0x97400 = 619,520 B), the package build/frodhes-smk37.fwsc. --model elite /
 mke (or MODEL=) with smk37: the same build under the SMK-37 Elite's or the MKE-P37's model name (identity SMK-37
 Elite_470 / MKE-P37_470, the loader's and the update record's name too; -DSMK_MODEL), so M-Vave's updater still takes
 that unit's factory package: frodhes-smk37-elite.fwsc, -mke.fwsc. The default stays the FM-1, built as before
-(FM-1_958, 9 voices).
+(FM-1_958, 10 voices).
 
 The JieLi toolchain is Linux x86-64 only. JIELI_TOOLCHAIN points at it; on
 macOS (or with JIELI_DOCKER=1) each tool runs in a linux/amd64 container.
@@ -64,7 +64,7 @@ BOARD = "fm1"                       # fm1 (default) or smk37: BOARD env or --boa
 BOARD_PREFIX = {"smk37": "SMK-37 Pro_47"}   # Frodhes' SMK-37 identity: prefix + 0 = SMK-37 Pro_470 for every version
                                     # and model name (PR #3's; Dinghy's own is _99N); the FM-1's is PRODUCT below
 BOARD_DEFS = {"fm1": [], "smk37": ["-DBOARD_SMK37=1"]}
-BOARD_APP_DEFS = {"fm1": [], "smk37": ["-DFR_VOICES=7u"]}   # the app only (not the loader): the SMK at 7 voices
+BOARD_APP_DEFS = {"fm1": [], "smk37": ["-DFR_VOICES=10u"]}   # the app only (not the loader): the SMK at 10 voices (the FM-1's)
 MODELS = {"pro": "SMK-37 Pro", "elite": "SMK-37 Elite", "mke": "MKE-P37"}   # smk37: one keyboard, three names
 MODEL_PID = {"pro": 0x0007, "elite": 0x0008, "mke": 0x0009}   # the app's USB product id per model (usb.c: the FM-1
                                     # 0x0006, the SMK-37 Pro 0x0007 by default; the name "Frodhes <model>", GitHub #21)
