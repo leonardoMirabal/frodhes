@@ -331,9 +331,8 @@ static void sb_step(void)
 static int sb_boot(int engine)
 {
     if (sb.booted) return 0;
-    sb.stack = aligned_alloc(16, SB_STACK);
+    sb.stack = coro_stack_alloc(SB_STACK);   /* (every page touched now, not on the audio thread) */
     if (!sb.stack) return -1;
-    memset(sb.stack, 0, SB_STACK);       /* (every page touched now, not on the audio thread) */
     memset(host_mem, 0xFF, sizeof host_mem);   /* (the flash, erased: nothing saved, the defaults load) */
     memset(web_store_buf, 0, sizeof web_store_buf);
 #ifdef FR_HQ

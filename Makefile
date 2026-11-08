@@ -201,7 +201,7 @@ test-move-probe:           ## the probe's dlopen host test
 PLUGIN_J     ?= 2
 PLUGIN_BUILD ?= build/plugin
 PLUGIN_NICE  ?= nice -n 15
-.PHONY: plugin-deps plugin test-plugin gate-d
+.PHONY: plugin-deps plugin test-plugin gate-d plugin-pack plugin-win plugin-linux
 plugin-deps:               ## the pinned plugin dependencies (plugin/deps.lock) into .local/plugin-deps
 	sh tools/plugin_deps.sh
 
@@ -220,3 +220,15 @@ test-plugin: plugin        ## the coroutine, the headless host's selftest (param
 
 gate-d: plugin             ## Gate D: the plugin renders the host build's audio (tools/gate_d.py, every mode)
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py
+
+plugin-pack: plugin        ## build/plugin-pkg/frodhes-plugin-macos.pkg + .zip (ad-hoc signed; docs/PLUGIN.md Signing)
+	sh tools/plugin_pack.sh macos $(PLUGIN_BUILD)
+	$(PY) tools/plugin_depcheck.py macos $(PLUGIN_BUILD)/bundles
+
+plugin-win:                ## Windows x64 (llvm-mingw, cross): build/plugin-win, frodhes-plugin-windows.zip
+	PLUGIN_NICE="$(PLUGIN_NICE)" PLUGIN_J=$(PLUGIN_J) sh tools/plugin_pack.sh build windows
+	sh tools/plugin_pack.sh windows
+	$(PY) tools/plugin_depcheck.py windows build/plugin-win/bundles
+
+plugin-linux:              ## Linux in Docker (ubuntu:20.04, this machine's arch): frodhes-plugin-linux-<arch>.zip
+	sh tools/plugin_linux_docker.sh

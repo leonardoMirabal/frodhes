@@ -29,10 +29,14 @@ foreach(n RANGE 0 ${_last})
     list(APPEND _frp_slot_targets frp_slot_${n})
 endforeach()
 
+# the coroutine's switch routines (Windows: fibers, plugin/src/coro/coro.h, no assembly)
+set(FRP_CORO_SRC "")
+if(NOT WIN32)
+    set(FRP_CORO_SRC "${FRP_ROOT}/plugin/src/coro/coro_arm64.S" "${FRP_ROOT}/plugin/src/coro/coro_x86_64.S")
+endif()
 add_library(frodhes_engine STATIC
     "${FRP_ROOT}/plugin/src/bridge.c"
-    "${FRP_ROOT}/plugin/src/coro/coro_arm64.S"
-    "${FRP_ROOT}/plugin/src/coro/coro_x86_64.S"
+    ${FRP_CORO_SRC}
     ${_frp_objs})
 target_include_directories(frodhes_engine PUBLIC "${FRP_ROOT}/plugin/src" "${FRP_ROOT}/plugin/gen"
                            PRIVATE "${FRP_ROOT}/firmware/src")

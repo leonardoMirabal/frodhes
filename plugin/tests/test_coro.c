@@ -34,7 +34,7 @@ int main(void)
 {
     static long n;
     size_t sz = 256u * 1024u;
-    void *stk = aligned_alloc(16, sz);
+    void *stk = coro_stack_alloc(sz);
     double x = 0.5, y = 3.0;                      /* the caller's FP state, kept across switches */
     long i, k = 7;
     if (!stk) return 1;
@@ -47,6 +47,6 @@ int main(void)
     printf("%s    coro: %ld switches each way, coroutine ran %ld passes, x %.6f y %.6f k %ld\n",
            n == N + 1 && ticks == N + 1 && k > 0 ? "ok" : "FAIL", N, n, x, y, k);
     if (!(n == N + 1 && x > 0.55 && y > 2.89 && y < 2.91)) { printf("FAIL coro: values\n"); return 1; }
-    free(stk);
+    coro_stack_free(stk);
     return 0;
 }
