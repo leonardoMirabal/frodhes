@@ -1395,6 +1395,9 @@ static int16_t dly_buf[DLY_LEN] POOL;
 static uint32_t dly_w, dly_wow, dly_flt;
 static int32_t dly_d = 4410 << 8, dly_lp, dly_hp, dly_dg = 32768, dly_sg;   /* dly_sg: the send's stereo make-up, log2 Q12 */
 static int32_t dly_sgk = 65536;                 /* the make-up (Q16) the last block ended on: each block ramps from it */
+static int32_t dly_fbk = -1;                    /* FDBK's feedback gain the last block ended on (-1: none yet): DIG / ANA
+                                                 * ramp from it over the block, as the echo's gain (a step once a block
+                                                 * stepped the loop's gain: a zipper one delay time later, 2.4-3.1x) */
 static int32_t dly_wk;                          /* the echo's gain (MIX: FX_DLY_WET) the last block ended on: each block
                                                  * ramps from it to the new one, sample by sample (a step once per
                                                  * block put a small step into the echoes at each MIX step; the
@@ -1474,7 +1477,9 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
     uint32_t w = dly_w, wow = dly_wow, flt = dly_flt, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;   /* c: the clean span behind w */
     int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg;
     int32_t wq = dly_wk << 8, ws = DLY_WSTEP(dly_wk, wet, n);   /* the echo's gain: a ramp from the last block's */
-    FX_K32 kcol = col, kfb = fb;                         /* the tone filter's and the feedback's (r - lp) * col, f * fb:
+    int32_t fq = (dly_fbk < 0 ? fb : dly_fbk) << 8, fs = DLY_WSTEP(fq >> 8, fb, n);   /* the feedback's, the same */
+    FX_K32 kcol = col;
+    int32_t kfb;                         /* the tone filter's and the feedback's (r - lp) * col, f * fb:
                                                           * 32 x 32 -> 64, one instruction each (they were split into
                                                           * two 32-bit products, mulq15w: (a * b) >> 15, the same bits
                                                           * for |a| < 2^18; a * b alone overflows int32 from |a| 65536,
@@ -1517,6 +1522,7 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
         f = tape ? softclip(lp) : lp;
         hp += (f - hp + 64) >> 7;
         f -= hp;
+        fq += fs; kfb = fq >> 8;
         dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + (int32_t)(((int64_t)f * kfb) >> 15), -32768, 32767);
         w++;
         wq += ws;
@@ -1720,7 +1726,7 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
      * do, held by its softclip (where tanh's slope times the loop gain is 1); TAPE's own law: dly_tape.c tp_block */
     if (sw != 2 && fb > 13926) fb = 13926;
     if (!sw && !dly_lp && !dly_hp && dly_cur != 3) {        /* fully quiet and off: only keep time */
-        dly_wk = wet;                                       /* (nothing heard: no ramp to keep) */
+        dly_wk = wet; dly_fbk = fb;                         /* (nothing heard: no ramp to keep) */
         if (!dly_lc) { dly_rb = dly_w; dly_rst = 1; dly_clrn = DLY_CLR / 4u; dly_lc = 1; }   /* (the tail's line: cleared) */
         if (dly_rst)                                        /* (the skipped span is clean too: what the reset left) */
             for (j = 0; j < n; j++) dly_buf[(dly_w + j) & (DLY_LEN - 1u)] = 0;
@@ -1757,7 +1763,7 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
     }
     sg16 = last ? 0 : exp2_q16(dly_sg);
     if (dly_routed(sw, target)) {                           /* TAPE, a switch to / from it, DIG <-> ANA, a time change */
-        if (tp_route(L, R, n, sw, target, sg16, fb, wet, depth)) { dly_wk = wet; return; }
+        if (tp_route(L, R, n, sw, target, sg16, fb, wet, depth)) { dly_wk = wet; dly_fbk = fb; return; }
     } else dly_last = (uint8_t)sw;                          /* (what a switch to TAPE fades out) */
     if (sw) FR_FAR(dly_ramp)(dly_m, n, sg16);                       /* (dly_loop sets dly_sgk to sg16) */
     /* the dry eases down as the mix rises (-0.7 dB at 50, -5.9 dB at 127): a full-mix delay no longer jumps +5 LU (0.8) */
@@ -1766,7 +1772,7 @@ static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t
                                                              * mask a constant: one register fewer in either loop) */
     else dly_fade(L, R, n, dly_ana, 0, sg16, target, col, fb, wet, 32768, 0);   /* the tail (OFF): DIG's or ANA's,
                                                              * dly_fade's loop at g 1 (the same integers as dly_loop's) */
-    dly_wk = wet;
+    dly_wk = wet; dly_fbk = fb;                             /* (the tail's and TAPE's loops: FDBK as it is) */
     if (!sw && dly_tail_over(n, target)) dly_lp = dly_hp = 0;
 }
 #endif
