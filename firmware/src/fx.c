@@ -2049,9 +2049,7 @@ static uint32_t rev_cost_us(void);
 static void rev_reset_state(void);
 
 /* ---- master: DC blocker, peak limiter (Felucca master_out; its soft clip never acted: gone, 0.9.5) */
-#define LIM_T 29204                                     /* -1.0 dBFS: the look-ahead limiter's ceiling (-2.7 dBFS, 24000, 0.8 ..
-                                                         * 0.9.9; 0.9.10: a safety net for pile-ups only, the hot presets' LEVELs
-                                                         * trimmed so hard playing never reaches it) */
+#define LIM_T 24000                                     /* -2.7 dBFS: the look-ahead limiter's ceiling (0.8) */
 static int32_t dc_l, dc_r, dce_l, dce_r;
 /* look-ahead limiter (0.8): the output runs one 32-sample sub-block (0.73 ms) late; the gain ramps linearly over
  * each sub-block towards the lowest gain this one and the next need, so no sample ever passes LIM_T, nothing is
@@ -2326,7 +2324,7 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
         } else for (i = 0; i < (int32_t)LK; i++) {
             /* limiting: g0 (the last sub-block's tgt, <= lk_need of its pn, which is lk_pk now) and tgt are both
              * <= lk_need(lk_pk) and the ramp stays between them, so |x g >> 15| <= lk_pk lk_need(lk_pk) >> 15 <=
-             * LIM_T (-1.0 dBFS since 0.9.10): no clip after it (the master clip never acted and is gone, 0.9.5) */
+             * LIM_T (-2.7 dBFS): no clip after it (the master clip never acted and is gone, 0.9.5) */
             int32_t g = g0 + (int32_t)(((int64_t)(tgt - g0) * (i + 1)) >> 5), xl = lk_l[i], xr = lk_r[i];
             lk_l[i] = fx_L[sb + (uint32_t)i]; lk_r[i] = fx_R[sb + (uint32_t)i];
             if (g != 32768) { xl = (int32_t)(((int64_t)xl * g) >> 15); xr = (int32_t)(((int64_t)xr * g) >> 15); }

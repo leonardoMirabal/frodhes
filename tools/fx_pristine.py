@@ -31,7 +31,7 @@ import numpy as np
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 OUT = os.path.join(ROOT, "build", "fxp")
 FS = 44100
-LIM_T = 29204
+LIM_T = 24000
 BUILD_DEFS = {"one": [], "c1": ["-DFR_C1=1"],
               "hq": ["-DFR_VOICES=16u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1"]}
 # every effect off: COMP, DRIVE, TREM/WAH, CHO/PHA, DELAY, REVERB MIX, FILTER, SPREAD, EQ flat
@@ -135,7 +135,7 @@ def analyse(res, build, name, byp=False):
     clip = tuple(sum(g[s][2][i] for s in g) for i in range(3))
     nl = resid_db(*((g[s][0], g[s][1]) for s in ("AB", "A", "B")))
     lvl = rms_db(g["c127"][0], g["c127"][1])
-    pk = max(np.abs(g[s][0]).max() for s in g) / 32768
+    pk = max(max(np.abs(g[s][0]).max(), np.abs(g[s][1]).max()) for s in g) / 32768
     return dict(lim=lim, clip=clip, nl=nl, lvl=lvl, pk=20 * math.log10(pk + 1e-12))
 
 

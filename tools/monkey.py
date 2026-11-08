@@ -17,7 +17,7 @@ toward fast changes while notes ring ("ring" bursts: a pedalled chord and a run 
 The invariants (check), on every run:
   crash      the host exits 0 within its time limit; no sanitizer report (--san: ASan + UBSan build)
   race       the host's own voice checks (RACE STUCK / RACE LOST: a voice held that no note wants)
-  peak       the output never passes the limiter's ceiling (LIM_T 29204, -1.0 dBFS)
+  peak       the output never passes the limiter's ceiling (LIM_T 24000, -2.7 dBFS)
   wrap       (--san / --san-every) no int16 narrowing in the audio path out of range: the sanitizer build has the
              (int16_t) casts of rhodes / bars / fx / the delay and reverbs taken out (a no-op in range) and checks the
              implicit ones; with signed overflow (UBSan) that is every int wrap. (A sample-step test cannot tell a
@@ -74,7 +74,7 @@ RAND_MS = 20000                    # the random part
 FOCUS_XF = False                   # --focus-xfade: more of the controls with a crossfade (switches, TYPEs, LEVEL, MIX, presets)
 FOCUS_CC = [80, 79, 17, 85, 88, 12, 106, 107, 110, 70, 84, 95, 91, 111, 27, 89]
 SHED_PER_MIN = 0                   # --shed: voice sheds a minute (the FM-1 sheds when the audio runs late; tests/host.c)
-LIM_T = 29204                      # fx.c LIM_T (-1.0 dBFS; 24000 before 0.9.10)
+LIM_T = 24000
 DEV_CC = {119, 41}                 # not sent: RAW skips the limiter by design; key velocity's test modes
 
 _src = open(os.path.join(ROOT, "firmware", "src", "params.c")).read()
