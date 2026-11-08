@@ -6,12 +6,14 @@ Per cell: the output of a tree minus the output of the same tree with its reverb
 rounding (the send x4 (v0.9.9) or x2 (RV_SEND, 0.9.10), the return / 4 or / 2: the same wet level, a closer
 approximation of the exact, linear reverb). That residual is the reverb's own non-linear part (its rounding, a tail
 truncated to zero). The candidate's extra content is linear reverb when its residual stays at or under v0.9.9's in the
-quantity the gate reads: the harmonic band's power (H2..H6, absolute), the 12..20 kHz grain, or the residual's rms
+quantity the gate reads (the median of the gate's 4 strike times): the harmonic band's power (H2..H6, absolute), the 12..20 kHz grain, or the residual's rms
 (LSB) over the hold (decay, cb, level, lu, cent, inh), after the key-up (keyup; a residual under 0.5 LSB rms is under
 the 1-LSB silence floor, 1d3c1ca9) or over the key-up's 300 ms (clk_off). A cell whose residual grows is a defect.
 
   tools/rev_lin_proof.py CELLS.json OUT.json      CELLS: [[grid, cid, cell, metric], ...]
-The x4 builds count the int16 lines' clamps (none may clip: the reference must stay linear)."""
+  REV_LIN_SRC=DIR|REV: judge that tree (uncommitted sources) in place of HEAD
+The x4 builds count the int16 lines' clamps (none may clip: the reference must stay linear); where v0.9.9's x4 clips
+(a loud MIX), its x3 or x2 is the reference."""
 import json
 import os
 import subprocess
@@ -24,13 +26,13 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import release_diff as rd  # noqa: E402
 
-OUT = os.path.join(rd.ROOT, "build", "rev_lin")
+OUT = os.environ.get("REV_LIN_OUT", os.path.join(rd.ROOT, "build", "rev_lin"))
 X4 = {   # (file, old, new) per tree kind
     "new": [("#define RV_SEND(v) ((v) * 258 * (254 - (v)) / 127)", "#define RV_SEND(v) ((v) * 258 * (254 - (v)) / 127 * 2)"),
             ("#define RV_RK ((1 << 29) + 1)", "#define RV_RK ((1 << 28) + 1)")],
-    "o99": [("int32_t send = tgt ? v * 258 : 0,", "int32_t send = tgt ? v * 258 * 4 : 0,"),
-            ("rk = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;",
-             "rk = ((254 - vl) * 4227330 + (4 * (254 - vl)) / 254) / 4 + 1;")]}
+    **{("o99" if f == 4 else f"o99/{f}"): [("int32_t send = tgt ? v * 258 : 0,", f"int32_t send = tgt ? v * 258 * {f} : 0,"),
+                         ("rk = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;",
+                          f"rk = ((254 - vl) * 4227330 + (4 * (254 - vl)) / 254) / {f} + 1;")] for f in (4, 3, 2)}}
 CLAMP = ("static inline __attribute__((always_inline)) int32_t hl_c16(int32_t v) { v = v > -32768",
          'static uint32_t hl_ncl;\nstatic void hl_rep(void) { fprintf(stderr, "HLCLAMPS %u\\n", hl_ncl); }\n'
          "static inline __attribute__((always_inline)) int32_t hl_c16(int32_t v) { { static int reg; if (!reg) { reg = 1; "
@@ -41,7 +43,11 @@ def tree(rev, name, x4):
     path = os.path.join(OUT, name)
     subprocess.run(["rm", "-rf", path], check=True)
     os.makedirs(path)
-    a = subprocess.run(["git", "-C", rd.ROOT, "archive", rev, "firmware", "tests/host.c"], capture_output=True, check=True).stdout
+    if os.path.isdir(rev):              # (a source tree: its firmware/ and tests/host.c as they are, uncommitted)
+        a = subprocess.run(["tar", "-cf", "-", "-C", rev, "firmware", "tests/host.c"], capture_output=True, check=True).stdout
+    else:
+        a = subprocess.run(["git", "-C", rd.ROOT, "archive", rev, "firmware", "tests/host.c"], capture_output=True,
+                           check=True).stdout
     subprocess.run(["tar", "-x", "-C", path], input=a, check=True)
     if x4:
         for f in ("rev_types.c", "rev_hq.c"):
@@ -105,20 +111,31 @@ def quantities(x, d, t, ns):
 
 def main():
     cells, out = json.load(open(sys.argv[1])), sys.argv[2]
-    bins = {"new": tree("HEAD", "new", None), "newx4": tree("HEAD", "newx4", "new"),
-            "o99": tree(rd.LAST, "o99", None), "o99x4": tree(rd.LAST, "o99x4", "o99")}
+    src = os.environ.get("REV_LIN_SRC", "HEAD")    # (a tree to judge in place of HEAD: a directory or a git rev)
+    bins = {"new": tree(src, "new", None), "newx4": tree(src, "newx4", "new"),
+            "o99": tree(rd.LAST, "o99", None), "o99x4": tree(rd.LAST, "o99x4", "o99"),
+            "o99x3": tree(rd.LAST, "o99x3", "o99/3"), "o99x2": tree(rd.LAST, "o99x2", "o99/2")}
     cases = {g: {c[0]: c for c in rd.cases(g)} for g in ("fast", "full")}
 
     def job(key):
         g, cid = key
         case, b = cases[g][cid], "fm1" if cid.startswith("fm1") else "hq"
-        lines = rd.script(g, case[2], case[3], 0)
-        ev, _ = rd.events(g, case[3], 0)
-        X, CL = {}, {}
-        for t in bins:
-            X[t], CL[t] = render(bins[t][b], f"{t}-{g}-{cid.replace('/', '_')}", lines)
-        return key, ({lab: {tr: quantities(X[tr], X[tr] - X[tr + "x4"], t, ns) for tr in ("new", "o99")}
-                      for lab, t, ns, v, ped in ev}, CL)
+        per, CL = [], {t: 0 for t in bins}
+        for sh in rd.SHIFTS:            # (the gate's 4 strike times: the median of each quantity, as release_diff's)
+            lines = rd.script(g, case[2], case[3], sh)
+            ev, _ = rd.events(g, case[3], sh)
+            X = {}
+            for t in bins:
+                X[t], c = render(bins[t][b], f"{t}-{g}-{cid.replace('/', '_')}-{sh}", lines)
+                CL[t] += c
+            per.append((X, ev))
+        # (v0.9.9's reference: x4, or the most precise of x3 / x2 whose lines do not clip: a clipped reference is not linear)
+        ref = next((r for r in ("o99x4", "o99x3", "o99x2") if CL[r] == 0), "o99x4")
+        per = [{lab: {tr: quantities(X[tr], X[tr] - X[rf], t, ns) for tr, rf in (("new", "newx4"), ("o99", ref))}
+                for lab, t, ns, v, ped in ev} for X, ev in per]
+        res = {lab: {tr: {q: float(np.median([p[lab][tr][q] for p in per])) for q in per[0][lab][tr]}
+                     for tr in ("new", "o99")} for lab in per[0]}
+        return key, (res, {"new": CL["newx4"], ref: CL[ref]})
     with ThreadPoolExecutor(2) as ex:
         R = dict(ex.map(job, sorted({(c[0], c[1]) for c in cells})))
     rows = []
