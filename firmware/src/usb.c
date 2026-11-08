@@ -216,10 +216,26 @@ static uint8_t uac_fl_ok;
 #define UA_LK_I0 2026619832317LL                        /* the loop's start: +450 ppm (Q52), the FM-1's I2S as measured
                                                          * against a computer (+450.8 at both rates): the first lock
                                                          * after boot starts near the answer */
+static void uac_fl_unpack(void)                         /* the packed table (uac_fir_lock.h) into RAM: phases 0
+                                                         * and 1, then each tap's second difference along the phases */
+{
+    int32_t d[UAC_FL_N];
+    uint32_t i, t, k = 0;
+    for (t = 0; t < UAC_FL_N; t++) {
+        uac_fl[0][t] = UAC_FL_HEAD[0][t]; uac_fl[1][t] = UAC_FL_HEAD[1][t];
+        d[t] = UAC_FL_HEAD[1][t] - UAC_FL_HEAD[0][t];
+    }
+    for (i = 2; i < UAC_FL_L / 2u; i++)
+        for (t = 0; t < UAC_FL_N; t++, k++) {
+            int32_t n = UAC_FL_D2[k >> 1] >> (k & 1u ? 4 : 0) & 15;
+            d[t] += n & 8 ? n - 16 : n;
+            uac_fl[i][t] = (int16_t)(uac_fl[i - 1u][t] + d[t]);
+        }
+}
 static void uac_lock_init(void)                         /* boot (usb_start): the table into RAM */
 {
     if (!uac_fl_ok) {
-        memcpy(uac_fl, UAC_FL, sizeof uac_fl);
+        uac_fl_unpack();
         uac.lk_I = UA_LK_I0;
         uac_fl_ok = 1;
     }
