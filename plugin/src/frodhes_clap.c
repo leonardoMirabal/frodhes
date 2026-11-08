@@ -44,6 +44,7 @@
 
 static const char *const FEATURES[] = { CLAP_PLUGIN_FEATURE_INSTRUMENT, CLAP_PLUGIN_FEATURE_SYNTHESIZER,
                                         CLAP_PLUGIN_FEATURE_STEREO, 0 };
+static int test_ext;                     /* FRP_TEST_EXT=1 at load (frp_entry_init): the tests' gui-shot extension */
 static const clap_plugin_descriptor_t DESC = {
     .clap_version = CLAP_VERSION_INIT,
     .id = FRP_PLUGIN_ID,
@@ -527,7 +528,7 @@ static const void *pl_ext(const clap_plugin_t *plugin, const char *id)
     if (!strcmp(id, CLAP_EXT_TAIL)) return &EXT_TAIL;
     if (!strcmp(id, FRP_UI_EXT_ID)) return &UI_VTABLE;
     if (!strcmp(id, CLAP_EXT_GUI)) return frp_gui_clap_ext();
-    if (!strcmp(id, FRP_EXT_GUI_SHOT)) return frp_gui_clap_shot_ext();
+    if (!strcmp(id, FRP_EXT_GUI_SHOT)) return test_ext ? frp_gui_clap_shot_ext() : 0;   /* (the tests only) */
     if (!strcmp(id, CLAP_EXT_POSIX_FD_SUPPORT)) return frp_gui_clap_fd_ext();     /* (Linux: the X11 view) */
     if (!strcmp(id, CLAP_EXT_TIMER_SUPPORT)) return frp_gui_clap_timer_ext();
     return 0;
@@ -582,7 +583,13 @@ static const clap_plugin_descriptor_t *f_desc(const clap_plugin_factory_t *f, ui
 static const clap_plugin_factory_t FACTORY = { f_count, f_desc, f_create };
 
 /* the entry's three functions (plugin/src/clap_entry.cpp exports clap_entry from them in every format) */
-bool frp_entry_init(const char *path) { (void)path; return true; }
+bool frp_entry_init(const char *path)
+{
+    const char *t = getenv("FRP_TEST_EXT");   /* the GUI tests' private extension (gui-shot): only when asked at load */
+    (void)path;
+    test_ext = t && !strcmp(t, "1");
+    return true;
+}
 void frp_entry_deinit(void) {}
 const void *frp_entry_get_factory(const char *id) { return id && !strcmp(id, CLAP_PLUGIN_FACTORY_ID) ? &FACTORY : 0; }
 

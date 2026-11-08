@@ -240,7 +240,17 @@ int main(int argc, char **argv)
     snprintf(exe, sizeof exe, "%s/Contents/MacOS/Frodhes", argv[1]);
     if (!(lib = dlopen(exe, RTLD_LOCAL | RTLD_NOW))) { fprintf(stderr, "%s\n", dlerror()); return 1; }
     entry = dlsym(lib, "clap_entry");
+    /* the gui-shot extension is the tests' only: absent unless FRP_TEST_EXT=1 at load (a release load) */
+    unsetenv("FRP_TEST_EXT");
     if (!entry || !entry->init(argv[1])) return 1;
+    fac = entry->get_factory(CLAP_PLUGIN_FACTORY_ID);
+    pl = fac->create_plugin(fac, &HOST, fac->get_plugin_descriptor(fac, 0)->id);
+    if (!pl || !pl->init(pl)) return 1;
+    CHECK(!pl->get_extension(pl, FRP_EXT_GUI_SHOT), "no gui-shot extension without FRP_TEST_EXT=1");
+    pl->destroy(pl);
+    entry->deinit();
+    setenv("FRP_TEST_EXT", "1", 1);
+    if (!entry->init(argv[1])) return 1;
     fac = entry->get_factory(CLAP_PLUGIN_FACTORY_ID);
     pl = fac->create_plugin(fac, &HOST, fac->get_plugin_descriptor(fac, 0)->id);
     if (!pl || !pl->init(pl)) return 1;

@@ -59,7 +59,8 @@ def test_window_matches_the_renderer(tmp_path):
     out = tmp_path / "shots"
     out.mkdir()
     args = [shot, clap, str(out)] + (["--headless"] if os.environ.get("FRP_GUI_HEADLESS") else [])
-    p = subprocess.run(args, capture_output=True, text=True, timeout=180)
+    # FRP_TEST_EXT=1: the plugin offers the tests' gui-shot extension (gui_shot sets it too, after checking a load without it)
+    p = subprocess.run(args, capture_output=True, text=True, timeout=180, env=dict(os.environ, FRP_TEST_EXT="1"))
     assert p.returncode == 0 and "FAIL" not in p.stdout, p.stdout + p.stderr
     shots = [ln.split()[1:] for ln in p.stdout.splitlines() if ln.startswith("shot ")]
     assert len(shots) >= 7, p.stdout

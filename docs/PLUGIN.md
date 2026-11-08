@@ -204,6 +204,8 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
 - The window (`tests/py/test_plugin_gui.py`): `frp_gui_shot` opens it in a real window, drives it as a user does,
   automates and plays as a host does, resizes, closes and opens it; every picture it showed, read back from its own
   surface, is pixel for pixel what the reference renderer (`plugin/ui/tools/frui_render.c`) draws from the same state.
+  It reads the window through the plugin's private gui-shot extension, offered only when `FRP_TEST_EXT=1` is set when
+  the plugin loads (the test sets it, after checking a load without it offers none); a host never sees it.
   pluginval's editor tests open and close it. The window's core alone (`plugin/tests/test_gui_ctl.c`) and the
   Windows and Linux views in their own windows under wine and Xvfb (`plugin/tests/gui_win_demo.c`, `gui_x11_demo.c`,
   through `tools/plugin_win.sh test` and `tools/plugin_linux.sh test`) get the same input checks.
