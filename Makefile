@@ -201,7 +201,7 @@ test-move-probe:           ## the probe's dlopen host test
 PLUGIN_J     ?= 2
 PLUGIN_BUILD ?= build/plugin
 PLUGIN_NICE  ?= nice -n 15
-.PHONY: plugin-deps plugin test-plugin gate-d plugin-pack plugin-win plugin-linux plugin-stress plugin-hosts
+.PHONY: plugin-deps plugin test-plugin gate-d plugin-dist plugin-pack plugin-win plugin-linux plugin-stress plugin-hosts
 plugin-deps:               ## the pinned plugin dependencies (plugin/deps.lock) into .local/plugin-deps
 	sh tools/plugin_deps.sh
 
@@ -221,6 +221,11 @@ test-plugin: plugin        ## the coroutine, the headless host's selftest (param
 
 gate-d: plugin             ## Gate D: the plugin renders the host build's audio (tools/gate_d.py, every mode)
 	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/gate_d.py
+
+DIST_ENGINES ?= hq
+plugin-dist: plugin        ## the dry-distortion gate (tools/dry_dist.py, against 0.9.9) through the CLAP, VST3 and AU
+                           ## (macOS; DIST_ENGINES=hq,classic for both engines; tools/plugin_dist.py)
+	FRP_BUILD=$(PLUGIN_BUILD) $(PY) tools/plugin_dist.py --engines $(DIST_ENGINES)
 
 plugin-pack: plugin        ## build/plugin-pkg/frodhes-plugin-macos.pkg + .zip (ad-hoc signed; docs/PLUGIN.md Signing)
 	sh tools/plugin_pack.sh macos $(PLUGIN_BUILD)
