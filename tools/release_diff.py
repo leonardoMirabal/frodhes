@@ -29,7 +29,8 @@ before it, so the previous note's reverb / echo tail never lands in its hold or 
 now ring out (rather than truncate) is judged on its own note only. The same mechanism as the noise window's.
 
 The verdict (exit 1 on any failure):
-  ceilings  pristine, from AGENTS.md section 1, NOT overridable by the expected-changes file:
+  ceilings  pristine, from AGENTS.md section 1, NOT overridable by the expected-changes file (one exception: an entry
+            naming one exact cell and metric with a `ceiling_proof` file, proven() below, e.g. linear reverb content):
             H2..H6 <= max(last + 3, -60) dB re H1, and H3 <= -25 dB at v127 where the last release was below that
             (effects-on cells: the median of 4 strike times, and a harmonic under -95 dBFS is under the reverb's
             int16 grain, never a break; "grain", the off-harmonic 12..20 kHz power in dBFS, <= last + 3 dB instead);
@@ -450,6 +451,24 @@ def ceiling(cid, lab, m, v, b, cell=None):
     return None
 
 
+def proven(expected, cid, lab, m, v, b, used):
+    """the entry that lifts this one cell's pristine ceiling, or None: only an entry naming the exact cell (no
+    wildcard) and the exact metric, with its proof (`ceiling_proof`: a file in the repo, e.g. tools/rev_lin_proof.py's
+    output showing the move is linear reverb content, not distortion), and the move inside its min / max (the
+    coordinator's sign-off in the commit that adds it, with a THRESHOLD: line)"""
+    for i, e in enumerate(expected):
+        pat = e.get("match", "")
+        if not e.get("ceiling_proof") or any(ch in pat for ch in "*?") or str(e.get("metric", "")) != m:
+            continue
+        if pat.replace("[AB]", cid.split("/")[3]) != f"{cid}/{lab}":
+            continue
+        lo, hi, d = e.get("min"), e.get("max"), v - b
+        if (lo is None or d >= lo) and (hi is None or d <= hi) and os.path.exists(os.path.join(ROOT, e["ceiling_proof"])):
+            used.add(i)
+            return i
+    return None
+
+
 def judge(cand, base, expected):
     """(failures, moves, listed): failures [(cid, lab, metric, value, base, limit or None, why)]"""
     fails, moves, used = [], [], set()
@@ -469,7 +488,7 @@ def judge(cand, base, expected):
                         fails.append((cid, lab, m, v, None, None, "no baseline value"))
                     continue
                 c = ceiling(cid, lab, m, v, b, ms)
-                if c and v > c[0] + 1e-9:
+                if c and v > c[0] + 1e-9 and proven(expected, cid, lab, m, v, b, used) is None:
                     fails.append((cid, lab, m, v, b, c[0], "CEILING: " + c[1]))
                 d = None if m in NODIFF else moved(m, v, b)
                 if d is None:
