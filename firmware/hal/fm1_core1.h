@@ -311,6 +311,9 @@ static int fr_c1_run(void (*fn)(uint32_t), uint32_t arg)
     return 1;
 }
 
+static inline __attribute__((always_inline)) void fr_c1_sync(void) { C1_SYNC(); }   /* the app's shared words */
+static inline __attribute__((always_inline)) void fr_c1_pause(void) { c1_pause(); }
+
 static int fr_c1_busy(void)                     /* core 0: the job posted not done yet (a hint: fr_c1_wait_us decides) */
 {
     C1_SYNC();

@@ -40,6 +40,10 @@ AHEAD = os.environ.get("C1M_AHEAD") == "1"      # (C1M_AHEAD=1: frodhes.c C1_AHE
 if AHEAD:
     DEFS[C1 + "-ahead"] = DEFS.pop(C1) + ["-DC1_AHEAD=1"]
     C1 = C1 + "-ahead"
+STREAM = os.environ.get("C1M_STREAM") == "1"    # (C1M_STREAM=1: frodhes.c C1_STREAM, core 1 taking frames on some looks)
+if STREAM:
+    DEFS[C1 + "-stream"] = DEFS.pop(C1) + ["-DC1_STREAM=1"]
+    C1 = C1 + "-stream"
 GAP_MS = 50                        # differing frames closer than this are one stretch
 LOOK_MS = 300                      # the events listed before a stretch
 CMP_CC = {106, 107, 108, 109}      # the compressor (switch, amount, ...): COMP on from rest
@@ -90,7 +94,7 @@ def stream(seed):
 
 
 def c1_env(seed):
-    e = f"order={seed % 2}" + (f",busy={2 + seed % 3}" if AHEAD else "")
+    e = f"order={seed % 2}" + (f",busy={2 + seed % 3}" if AHEAD or STREAM else "")
     return e + (",refuse=7" if seed % 3 == 0 else "")
 
 
