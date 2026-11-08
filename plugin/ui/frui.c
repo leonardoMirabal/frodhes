@@ -53,6 +53,7 @@ struct frui {
 #define R_PANEL 6.f                /* corner radii: panels, controls, small parts */
 #define R_CTRL 4.f
 #define R_SMALL 2.f
+#define KB_X 136.f                 /* the keys from column 2, after the SUSTAIN and FX switches (16..120) */
 #define KNOB_R 24.f                /* knob tiers */
 #define KNOB_R2 14.f
 static float colc(int half, int k) { return (half ? G_H1 : G_H0) + G_COL * (float)k + G_COL * 0.5f; }
@@ -141,18 +142,48 @@ static int is_hover(frui *u, int kind, int id) { return u->m->hover == FRUI_WID(
 /* ---- values */
 static int pval(const frui_model *m, int id)
 {
+    switch (id) {
+    case FRS_CHANNEL: return m->midi_ch;
+    case FRS_VEL: return m->vel_curve;
+    case FRS_FIXVEL: return m->fixed_vel;
+    case FRS_PGM: return m->pgm_change;
+    case FRS_TEMPO: return m->tempo_src;
+    case FRS_SYNCALL: return m->sync_all;
+    case FRS_SYNCDIV: return m->sync_div;
+    }
     if (id == FRP_TUNE) return m->tune + 50;
     if (id == FRP_TW_KIND) return m->p[FRP_TW_SW] == 0 ? 0 : m->p[FRP_TW_SW] == 2 ? 3 : m->p[FRP_TW_MODE] ? 2 : 1;
     return id >= 0 && id < FRP_COUNT ? m->p[id] : 0;
 }
-static int phi(int id) { return id == FRP_TUNE ? 100 : id == FRP_TW_KIND ? 3 : id >= 0 && id < FRP_COUNT ? FRP_HI[id] : 1; }
+static int phi(int id)
+{
+    switch (id) {
+    case FRS_CHANNEL: return 16;
+    case FRS_VEL: return 3;
+    case FRS_FIXVEL: return 127;
+    case FRS_TEMPO: return 2;
+    case FRS_SYNCDIV: return 14;
+    case FRS_PGM: case FRS_SYNCALL: return 1;
+    }
+    return id == FRP_TUNE ? 100 : id == FRP_TW_KIND ? 3 : id >= 0 && id < FRP_COUNT ? FRP_HI[id] : 1;
+}
 static int is_bars(const frui_model *m) { return m->p[FRP_TYPE] >= 4; }
 static int has_motor(const frui_model *m) { return m->p[FRP_TYPE] == 4; }
 
 static const char *const *opt_names(int id, int *n)
 {
     *n = phi(id) + 1;
+    static const char *const ch[17] = {"ALL", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14",
+                                       "15", "16"};
+    static const char *const vel[4] = {"MEDIUM", "LIGHT", "HEAVY", "FIXED"};
+    static const char *const src[3] = {"HOST", "INTERNAL", "MIDI CLOCK"};
+    static const char *const sall[2] = {"FREE", "TEMPO"};
     switch (id) {
+    case FRS_CHANNEL: return ch;
+    case FRS_VEL: return vel;
+    case FRS_TEMPO: return src;
+    case FRS_SYNCALL: return sall;
+    case FRS_SYNCDIV: return FRN_SYNC;
     case FRP_TYPE: return FRN_TYPE;
     case FRP_TW_KIND: return FRN_TWK;
     case FRP_DRV_SW: return FRN_DRV;
@@ -288,15 +319,18 @@ static void knob(frui *u, int id, const char *label, float cx, float cy, int act
     float r = KNOB_R, v = (float)pval(m, id) / (float)phi(id);
     char val[24], unit[12];
     int hov = is_hover(u, FRW_KNOB, id), foc = is_focus(u, FRW_KNOB, id);
-    txc(u, cx, cy - r - 15.f, T_LABEL, 0, label, hov || foc ? C_TEXT : C_TEXT2);
+    txc(u, cx, cy - r - 15.f, T_LABEL, 0, label, m->learning == id ? C_ACC : hov || foc ? C_TEXT : C_TEXT2);
+    if (id < FRP_COUNT && m->learn_cc[id])            /* a learned CC: a small amber mark before the label */
+        frui_circle(u->c, X(cx - tw(u, T_LABEL, 0, label) * 0.5f - 6.f), X(cy - r - 18.5f), X(1.6f), C_ACC);
     anchor(u, FRA_LABEL, id, cx, cy - r - 15.f);
     knob_body(u, cx, cy, r, v, FRP_CENTRED(id), 1, !active, 0, hov);
-    if (foc) frui_arc(u->c, X(cx), X(cy), X(r + 12.f), X(1.2f), KA0 - KSPAN, KA0, frui_alpha(C_ACC, 0.9f));   /* open below: the value */
+    if (foc || m->learning == id) frui_arc(u->c, X(cx), X(cy), X(r + 12.f), X(1.2f), KA0 - KSPAN, KA0, frui_alpha(C_ACC, 0.9f));   /* open below: the value */
     u->text(u->ctx, m, id, val, unit);
+    if (m->learning == id) { strcpy(val, "LEARN"); unit[0] = 0; }
     {
         float wv = tw(u, T_VALUE, FRUI_TNUM, val), wu = unit[0] ? tw(u, T_UNIT, 0, unit) + 3.f : 0.f;
         float x0 = cx - (wv + wu) * 0.5f, yb = cy + r + 24.f;
-        tx(u, x0, yb, T_VALUE, FRUI_TNUM, val, active ? C_TEXT : C_TEXT2);
+        tx(u, x0, yb, T_VALUE, FRUI_TNUM, val, m->learning == id ? C_ACC : active ? C_TEXT : C_TEXT2);
         anchor(u, FRA_VALUE, id, x0 + (wv + wu) * 0.5f, yb);
         if (unit[0]) tx(u, x0 + wv + 3.f, yb, T_UNIT, 0, unit, C_TEXT3);
     }
@@ -359,7 +393,7 @@ static float menu_btn(frui *u, int id, const char *caption, float x, float y, fl
     int open = u->m->menu == FRUI_WID(FRW_MENU, id);
     ctrl_box(u, x, y, w, h, open || is_hover(u, FRW_MENU, id), open);
     tx(u, x + 10.f, mid(u, y + h * 0.5f, 8.5f), T_CAPTION, 0, caption, C_TEXT3);
-    tx(u, x + 10.f + wc + 7.f, mid(u, y + h * 0.5f, 10.5f), T_MENU, 0, sel < n ? names[sel] : "", C_TEXT);
+    tx(u, x + 10.f + (caption[0] ? wc + 7.f : 0.f), mid(u, y + h * 0.5f, 10.5f), T_MENU, 0, sel < n ? names[sel] : "", C_TEXT);
     chevron(u, x + w - 12.f, y + h * 0.5f, 3.f, 0, C_TEXT2);
     if (is_focus(u, FRW_MENU, id))
         frui_rrect_stroke(u->c, X(x - 3.f), X(y - 3.f), X(w + 6.f), X(h + 6.f), X(R_CTRL + 3.f), X(1.f), C_ACC);
@@ -376,7 +410,19 @@ static void key_btn(frui *u, int id, const char *label, float x, float y, float 
                     hov ? FRUI_RGB(46, 46, 49) : FRUI_RGB(38, 38, 41), FRUI_RGB(18, 18, 19));
     frui_rect(u->c, X(x + R_CTRL), X(y) + 1.f, X(w - 2.f * R_CTRL), 1.f, FRUI_RGBA(255, 255, 255, 40));
     if (label) txc(u, x + w * 0.5f, mid(u, y + h * 0.5f, 9.5f), T_BTN, 0, label, C_TEXT);
-    else chevron(u, x + w * 0.5f, y + h * 0.5f, 4.f, id == FRB_PREV || id == FRB_TYPE_PREV ? 1 : 2, C_TEXT);
+    else if (id == FRB_GEAR) {                       /* a gear: eight teeth round a ring */
+        float gx = x + w * 0.5f, gy = y + h * 0.5f;
+        int i;
+        for (i = 0; i < 8; i++) {
+            float t = (float)i * (float)M_PI / 4.f;
+            frui_line(u->c, X(gx + cosf(t) * 4.5f), X(gy - sinf(t) * 4.5f), X(gx + cosf(t) * 7.f), X(gy - sinf(t) * 7.f), X(2.4f), C_TEXT);
+        }
+        frui_ring(u->c, X(gx), X(gy), X(4.6f), X(1.8f), C_TEXT);
+    } else if (id == FRB_CLOSE) {
+        float gx = x + w * 0.5f, gy = y + h * 0.5f;
+        frui_line(u->c, X(gx - 4.5f), X(gy - 4.5f), X(gx + 4.5f), X(gy + 4.5f), X(1.5f), C_TEXT);
+        frui_line(u->c, X(gx - 4.5f), X(gy + 4.5f), X(gx + 4.5f), X(gy - 4.5f), X(1.5f), C_TEXT);
+    } else chevron(u, x + w * 0.5f, y + h * 0.5f, 4.f, id == FRB_PREV || id == FRB_TYPE_PREV || id == FRB_BPM_DOWN ? 1 : 2, C_TEXT);
     reg(u, FRW_BUTTON, id, x, y, w, h);
 }
 
@@ -488,6 +534,10 @@ static void rail(frui *u)
         frui_circle_grad(u->c, X(x), X(cy), X(3.4f), FRUI_RGB(255, 196, 96), FRUI_RGB(214, 92, 4));
         frui_circle(u->c, X(x - 1.f), X(cy - 1.2f), X(1.1f), FRUI_RGBA(255, 244, 220, 220));
     }
+    /* SETTINGS: the gear, a gutter's half before the preset */
+    key_btn(u, FRB_GEAR, 0, colc(0, 2) - G_COL * 0.5f - 40.f, y, 32.f, h);
+    if (m->settings) frui_rrect_stroke(u->c, X(colc(0, 2) - G_COL * 0.5f - 40.f) + 0.5f, X(y) + 0.5f, X(32.f) - 1.f, X(h) - 1.f,
+                                       X(R_CTRL), 1.f, C_ACC);
     /* the preset: < [tag name (edited) v] > SAVE UNDO, from column 3 of the left half */
     x = colc(0, 2) - G_COL * 0.5f;
     key_btn(u, FRB_PREV, 0, x, y, 32.f, h);
@@ -825,7 +875,7 @@ static void right_panel(frui *u)
 static void keyboard(frui *u)
 {
     const frui_model *m = u->m;
-    float x = G_M, y = KB_Y, w = (float)FRUI_W - 2.f * G_M, h = KB_H, ww = w / 36.f, bw = ww * 0.58f, bh = h * 0.6f;
+    float x = KB_X, y = KB_Y, w = (float)FRUI_W - G_M - KB_X, h = KB_H, ww = w / 36.f, bw = ww * 0.58f, bh = h * 0.6f;
     static const int white_of[12] = {0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6};
     int n;
     if (u->look == FRUI_LOOK_PLATE) {
@@ -869,6 +919,231 @@ static void keyboard(frui *u)
     }
     frui_clip_reset(u->c);
     reg(u, FRW_KEYS, 0, x, y, w, h);
+}
+
+/* ---- the switches beside the keys: SUSTAIN (latching, as the device's REC: tap to latch, tap again to let go; lit
+ * while the sustain is down from any source) and FX (every effect bypassed at once, their own switches unchanged:
+ * the device's FX button; lit while the effects are active) */
+static void stomp(frui *u, int id, float x, float y, float w, float h, int lit, const char *label, const char *state)
+{
+    int hov = is_hover(u, FRW_BUTTON, id);
+    frui_rrect_shadow(u->c, X(x), X(y + 2.f), X(w), X(h), X(R_CTRL), X(2.f), FRUI_RGBA(0, 0, 0, 170));
+    frui_rrect(u->c, X(x), X(y), X(w), X(h), X(R_CTRL), FRUI_RGB(4, 4, 5));
+    frui_rrect_grad(u->c, X(x) + 1.f, X(y) + 1.f, X(w) - 2.f, X(h) - 2.f, X(R_CTRL) - 1.f,
+                    hov ? FRUI_RGB(48, 48, 51) : FRUI_RGB(40, 40, 43), FRUI_RGB(18, 18, 19));
+    frui_rect(u->c, X(x + R_CTRL), X(y) + 1.f, X(w - 2.f * R_CTRL), 1.f, FRUI_RGBA(255, 255, 255, 44));
+    lamp(u, x + 12.f, y + h * 0.5f, 3.f, lit);
+    tx(u, x + 22.f, mid(u, y + h * 0.5f - 5.f, 9.5f), T_BTN, 0, label, C_TEXT);
+    tx(u, x + 22.f, mid(u, y + h * 0.5f + 7.f, 8.5f), T_CAPTION, 0, state, lit ? C_ACC : C_TEXT3);
+    reg(u, FRW_BUTTON, id, x, y, w, h);
+}
+static void pedal_icon(frui *u, float x, float y, uint32_t col)     /* a piano pedal, side view: the foot plate on its pivot */
+{
+    frui_line(u->c, X(x), X(y + 12.f), X(x + 16.f), X(y + 12.f), X(1.3f), col);
+    frui_line(u->c, X(x + 3.f), X(y + 9.f), X(x + 16.f), X(y + 4.f), X(2.4f), col);
+    frui_circle(u->c, X(x + 4.f), X(y + 9.5f), X(1.6f), col);
+    frui_line(u->c, X(x + 4.f), X(y + 9.5f), X(x + 4.f), X(y + 12.f), X(1.3f), col);
+}
+static void switches(frui *u)
+{
+    const frui_model *m = u->m;
+    float x = G_M, w = KB_X - G_M - G_M, h = 36.f;
+    stomp(u, FRB_SUSTAIN, x, KB_Y, w, h, m->sustain, "SUSTAIN", m->sustain ? "HELD" : "PEDAL");
+    pedal_icon(u, x + w - 26.f, KB_Y + 11.f, m->sustain ? C_TEXT : C_TEXT2);
+    stomp(u, FRB_FX, x, KB_Y + KB_H - h, w, h, !m->fx_bypass, "EFFECTS", m->fx_bypass ? "BYPASS" : "ON");
+}
+
+/* ---- SETTINGS: a sheet over the main view (the rail stays): MIDI on the left half, TEMPO and the CC map on the
+ * right; rows of 28 every 44 px from y 148, the labels on the halves' first column, the controls from the second */
+#define SH_Y VO_Y
+#define SH_H (FX_Y + FX_H - VO_Y)
+#define SH_ROW(k) (148.f + 44.f * (float)(k))
+static void row_label(frui *u, float x, float yc, const char *s, int dim)
+{
+    anchor(u, FRA_ROWLABEL, 0, x, yc);
+    tx(u, x, mid(u, yc, 9.5f), T_LABEL, 0, s, dim ? C_TEXT3 : C_TEXT2);
+}
+static void group_caption(frui *u, float x, float yc, const char *s)
+{
+    anchor(u, FRA_ROWLABEL, 1, x, yc);
+    txf(u, u->fd, x, midd(u, yc, 8.5f), 8.5f, 400.f, 2.f, 0, s, C_TEXT);
+}
+static void fader(frui *u, int id, float x, float y, float w, float h, int dim)
+{
+    float v = (float)pval(u->m, id) / (float)phi(id);
+    ctrl_box(u, x, y, w, h, is_hover(u, FRW_FADER, id), 0);
+    if (v > 0.f) {
+        if (dim) frui_rrect(u->c, X(x + 3.f), X(y + 3.f), X((w - 6.f) * v), X(h - 6.f), X(R_SMALL), FRUI_RGB(44, 44, 47));
+        else alu(u, x + 3.f, y + 3.f, (w - 6.f) * v, h - 6.f, R_SMALL, (uint32_t)id);
+    }
+    reg(u, FRW_FADER, id, x, y, w, h);
+}
+static void info(frui *u, float x, float yc, const char *s)
+{
+    tx(u, x, mid(u, yc, 9.5f), 9.5f, 560.f, 0.6f, 0, s, C_TEXT2);
+}
+/* the default CC map (the device's: MANUAL.md section 12), for the table */
+static const struct { uint8_t cc; const char *name; } CCMAP[] = {
+    {12, "PHASER ON"}, {13, "PHASER DEPTH"}, {14, "PHASER SPEED"}, {15, "PHASER SYNC"}, {16, "PHASER FEEDBACK"},
+    {17, "TREM/WAH"}, {18, "TREM DEPTH"}, {19, "TREM RATE"}, {20, "TREM SYNC"}, {21, "TREM MODE"}, {22, "TREM SHAPE"},
+    {23, "CHORUS SYNC"}, {25, "DELAY SYNC"}, {26, "DELAY FEEDBACK"}, {27, "DELAY TONE"}, {28, "TONE"}, {29, "BARK"},
+    {30, "BELL"}, {31, "HAMMER"}, {34, "EQ LOW"}, {35, "EQ MID"}, {36, "EQ MID FREQ"}, {37, "EQ HIGH"},
+    {47, "MOTOR ON"}, {48, "MOTOR DEPTH"}, {49, "MOTOR SPEED"}, {50, "MOTOR SHAPE"}, {51, "MOTOR SYNC"},
+    {64, "SUSTAIN"}, {68, "REVERB MOD"}, {69, "REVERB LOW CUT"}, {70, "FILTER TYPE"}, {71, "FILTER RESO"},
+    {72, "FILTER LFO"}, {73, "REVERB SIZE"}, {74, "FILTER FREQ"}, {75, "LFO SHAPE"}, {76, "LFO RATE"}, {77, "LFO SYNC"},
+    {78, "LFO RETRIG"}, {79, "TYPE: BARS"}, {80, "TYPE: PIANOS"}, {81, "DRIVE"}, {82, "DRIVE TONE"}, {83, "DRIVE MIX"},
+    {84, "DRIVE TYPE"}, {85, "CHORUS / PHASER"}, {86, "CHORUS DEPTH"}, {87, "CHORUS SPEED"}, {88, "DELAY TYPE"},
+    {89, "DELAY MIX"}, {90, "DELAY TIME"}, {91, "REVERB MIX"}, {92, "REVERB DECAY"}, {93, "REVERB TONE"},
+    {94, "REVERB PRE-DELAY"}, {95, "REVERB TYPE"}, {102, "DECAY"}, {103, "RELEASE"}, {104, "NOISE"}, {105, "SPREAD"},
+    {106, "COMP ON"}, {107, "COMP THRESHOLD"}, {108, "COMP ATTACK"}, {109, "COMP RELEASE"}, {110, "LEVEL"},
+    {111, "ALL EFFECTS OFF"}, {112, "COMP RATIO"}, {113, "COMP MAKEUP"},
+};
+static const char *param_name(int id)       /* a learned parameter's name in the table: its CC map name */
+{
+    static const struct { int id; uint8_t cc; } P2CC[] = {
+        {FRP_PH_DEPTH, 13}, {FRP_PH_SPEED, 14}, {FRP_PH_FDBK, 16}, {FRP_TW_DEPTH, 18}, {FRP_TW_RATE, 19}, {FRP_TW_SHAPE, 22},
+        {FRP_TONE, 28}, {FRP_BARK, 29}, {FRP_BELL, 30}, {FRP_HAMMER, 31}, {FRP_EQ_LO, 34}, {FRP_EQ_MID, 35},
+        {FRP_EQ_FREQ, 36}, {FRP_EQ_HI, 37}, {FRP_MOT_DEPTH, 48}, {FRP_MOT_RATE, 49}, {FRP_MOT_SHAPE, 50},
+        {FRP_RV_MOD, 68}, {FRP_RV_LOCUT, 69}, {FRP_FL_RESO, 71}, {FRP_FL_LFO, 72}, {FRP_RV_SIZE, 73}, {FRP_FL_FREQ, 74},
+        {FRP_LFO_RATE, 76}, {FRP_DRIVE, 81}, {FRP_DRV_TONE, 82}, {FRP_DRV_MIX, 83}, {FRP_CP_DEPTH, 86},
+        {FRP_CP_SPEED, 87}, {FRP_DL_DEPTH, 89}, {FRP_DL_TIME, 90}, {FRP_DL_FDBK, 26}, {FRP_DL_TONE, 27},
+        {FRP_RV_DEPTH, 91}, {FRP_RV_DECAY, 92}, {FRP_RV_TONE, 93}, {FRP_RV_PREDLY, 94}, {FRP_DECAY, 102},
+        {FRP_RELEASE, 103}, {FRP_NOISE, 104}, {FRP_CMP_AMT, 107}, {FRP_CMP_ATK, 108}, {FRP_CMP_REL, 109},
+        {FRP_LEVEL, 110}, {FRP_CMP_RATIO, 112}, {FRP_CMP_GAIN, 113},
+    };
+    size_t i, j;
+    for (i = 0; i < sizeof P2CC / sizeof P2CC[0]; i++)
+        if (P2CC[i].id == id)
+            for (j = 0; j < sizeof CCMAP / sizeof CCMAP[0]; j++) if (CCMAP[j].cc == P2CC[i].cc) return CCMAP[j].name;
+    return "PARAMETER";
+}
+static void cc_table(frui *u, float x, float y, float w, float h)
+{
+    const frui_model *m = u->m;
+    int rows[160], learned[160], nr = 0, cc, i, first, vis = (int)(h / 24.f) - 1;
+    size_t j;
+    for (cc = 0; cc < 128; cc++) {                  /* the learned first at their CC, then the defaults */
+        for (i = 0; i < FRP_COUNT; i++) if (m->learn_cc[i] == cc + 1 && nr < 160) { rows[nr] = i; learned[nr++] = cc; }
+        for (j = 0; j < sizeof CCMAP / sizeof CCMAP[0]; j++)
+            if (CCMAP[j].cc == cc && nr < 160) { rows[nr] = (int)j; learned[nr++] = -1; }
+    }
+    ctrl_box(u, x, y, w, h, 0, 0);
+    tx(u, x + 12.f, mid(u, y + 12.f, 8.5f), T_CAPTION, 0, "CC", C_TEXT3);
+    tx(u, x + 56.f, mid(u, y + 12.f, 8.5f), T_CAPTION, 0, "PARAMETER", C_TEXT3);
+    txr(u, x + w - 24.f, mid(u, y + 12.f, 8.5f), T_CAPTION, 0, "SOURCE", C_TEXT3);
+    hair_h(u, x + 1.f, x + w - 1.f, y + 24.f, C_EDGE);
+    first = m->cc_scroll < 0 ? 0 : m->cc_scroll > nr - vis ? nr - vis : m->cc_scroll;
+    for (i = 0; i < vis && first + i < nr; i++) {
+        int k = first + i, l = learned[k] >= 0;
+        float ry = y + 24.f + 24.f * (float)i, yc = ry + 12.f;
+        char buf[8];
+        snprintf(buf, sizeof buf, "%d", l ? learned[k] : CCMAP[rows[k]].cc);
+        if (i) hair_h(u, x + 8.f, x + w - 20.f, ry, FRUI_RGB(22, 22, 24));
+        txr(u, x + 32.f, mid(u, yc, 10.5f), T_MENU, FRUI_TNUM, buf, l ? C_ACC : C_TEXT);
+        tx(u, x + 56.f, mid(u, yc, 10.5f), T_MENU, 0, l ? param_name(rows[k]) : CCMAP[rows[k]].name, C_TEXT);
+        txr(u, x + w - 24.f, mid(u, yc, 8.5f), T_CAPTION, 0, l ? "LEARNED" : "DEFAULT", l ? C_ACC : C_TEXT3);
+    }
+    {   /* the scroll bar */
+        float th = h - 32.f, sh = th * (float)vis / (float)(nr > vis ? nr : vis), sy = y + 28.f + (th - sh) * (float)first / (float)(nr > vis ? nr - vis : 1);
+        frui_rrect(u->c, X(x + w - 10.f), X(y + 28.f), X(3.f), X(th), X(1.5f), FRUI_RGB(28, 28, 30));
+        frui_rrect(u->c, X(x + w - 10.f), X(sy), X(3.f), X(sh), X(1.5f), FRUI_RGB(120, 120, 124));
+    }
+    reg(u, FRW_CCMAP, 0, x, y, w, h);
+}
+static void settings_sheet(frui *u)
+{
+    const frui_model *m = u->m;
+    float x = G_M, y = SH_Y, w = (float)FRUI_W - 2.f * G_M, h = SH_H, c1 = G_H0 + G_COL, d1 = G_H1 + G_COL;
+    char buf[32];
+    /* the main view sinks back */
+    frui_rect(u->c, 0.f, X(RAIL_H) + 1.f, X((float)FRUI_W), X((float)FRUI_H - RAIL_H) - 1.f, FRUI_RGBA(0, 0, 0, 170));
+    frui_rrect_shadow(u->c, X(x), X(y + 8.f), X(w), X(h), X(R_PANEL), X(16.f), FRUI_RGBA(0, 0, 0, 230));
+    frui_rrect_grad(u->c, X(x), X(y), X(w), X(h), X(R_PANEL), FRUI_RGB(25, 25, 26), FRUI_RGB(19, 19, 20));
+    frui_rrect_stroke(u->c, X(x) + 0.5f, X(y) + 0.5f, X(w) - 1.f, X(h) - 1.f, X(R_PANEL), 1.f, FRUI_RGB(44, 44, 47));
+    frui_rect(u->c, X(x + R_PANEL), X(y) + 1.f, X(w - 2.f * R_PANEL), 1.f, FRUI_RGBA(255, 255, 255, 30));
+    section_title(u, G_H0, y + 22.f, "SETTINGS");
+    key_btn(u, FRB_CLOSE, 0, G_H1 + 4.f * G_COL - 32.f, y + 8.f, 32.f, 28.f);
+    hair_h(u, x + 1.f, x + w - 1.f, y + 44.f, FRUI_RGB(34, 34, 36));
+    hair_v(u, (float)FRUI_W * 0.5f, y + 60.f, y + h - 16.f, FRUI_RGB(34, 34, 36));
+    /* MIDI */
+    group_caption(u, G_H0, 132.f, "MIDI");
+    row_label(u, G_H0, SH_ROW(0) + 14.f, "CHANNEL", 0);
+    menu_btn(u, FRS_CHANNEL, "", c1, SH_ROW(0), 28.f, MENU_W);
+    row_label(u, G_H0, SH_ROW(1) + 14.f, "VELOCITY", 0);
+    segmented(u, FRS_VEL, c1, SH_ROW(1), 28.f, 3.f * G_COL);
+    row_label(u, G_H0, SH_ROW(2) + 14.f, "FIXED VEL", m->vel_curve != 3);
+    fader(u, FRS_FIXVEL, c1, SH_ROW(2), 2.f * G_COL - 8.f, 28.f, m->vel_curve != 3);
+    snprintf(buf, sizeof buf, "%d", m->fixed_vel);
+    txr(u, G_H0 + 4.f * G_COL, mid(u, SH_ROW(2) + 14.f, 15.f), T_VALUE, FRUI_TNUM, buf, m->vel_curve != 3 ? C_TEXT3 : C_TEXT);
+    row_label(u, G_H0, SH_ROW(3) + 14.f, "PROGRAM CHG", 0);
+    segmented(u, FRS_PGM, c1, SH_ROW(3), 28.f, 2.f * G_COL - 8.f);
+    row_label(u, G_H0, SH_ROW(4) + 14.f, "PITCH BEND", 0);
+    info(u, c1, SH_ROW(4) + 14.f, "\xC2\xB1" "2 SEMITONES, ELECTRIC PIANOS");
+    row_label(u, G_H0, SH_ROW(5) + 14.f, "SUSTAIN", 0);
+    info(u, c1, SH_ROW(5) + 14.f, "CC 64, HALF-PEDAL; SUSTAIN SWITCH LATCHES");
+    tx(u, G_H0, mid(u, SH_ROW(6) + 14.f, 8.5f), T_CAPTION, 0, "RIGHT-CLICK A KNOB: MIDI LEARN, FORGET", C_TEXT3);
+    /* TEMPO */
+    group_caption(u, G_H1, 132.f, "TEMPO");
+    row_label(u, G_H1, SH_ROW(0) + 14.f, "SOURCE", 0);
+    segmented(u, FRS_TEMPO, d1, SH_ROW(0), 28.f, 3.f * G_COL);
+    row_label(u, G_H1, SH_ROW(1) + 14.f, "BPM", m->tempo_src != 1);
+    key_btn(u, FRB_BPM_DOWN, 0, d1, SH_ROW(1), 28.f, 28.f);
+    ctrl_box(u, d1 + 32.f, SH_ROW(1), 2.f * G_COL - 8.f - 64.f, 28.f, 0, 0);
+    {
+        int b = m->tempo_src == 1 ? m->bpm10 : m->host_bpm10;
+        snprintf(buf, sizeof buf, "%d.%d", b / 10, b % 10);
+        txc(u, d1 + G_COL - 4.f, mid(u, SH_ROW(1) + 14.f, 10.5f), T_MENU, FRUI_TNUM, buf, m->tempo_src == 1 ? C_TEXT : C_TEXT2);
+        reg(u, FRW_FADER, FRS_BPM, d1 + 32.f, SH_ROW(1), 2.f * G_COL - 8.f - 64.f, 28.f);
+    }
+    key_btn(u, FRB_BPM_UP, 0, d1 + 2.f * G_COL - 8.f - 28.f, SH_ROW(1), 28.f, 28.f);
+    info(u, G_H1 + 3.f * G_COL + 8.f, SH_ROW(1) + 14.f, m->tempo_src == 0 ? "FROM THE HOST" : m->tempo_src == 2 ? "FROM MIDI CLOCK" : "INTERNAL");
+    row_label(u, G_H1, SH_ROW(2) + 14.f, "SYNC ALL FX", 0);
+    segmented(u, FRS_SYNCALL, d1, SH_ROW(2), 28.f, 2.f * G_COL - 8.f);
+    menu_btn(u, FRS_SYNCDIV, "DIV", G_H1 + 4.f * G_COL - MENU_W, SH_ROW(2), 28.f, MENU_W);
+    /* the CC map */
+    group_caption(u, G_H1, 290.f, "CC MAP");
+    key_btn(u, FRB_LEARN_RESET, "FORGET LEARNED", G_H1 + 4.f * G_COL - (2.f * G_COL - 8.f), 276.f, 2.f * G_COL - 8.f, 28.f);
+    cc_table(u, G_H1, 312.f, 4.f * G_COL, 144.f);
+}
+
+/* ---- a knob's right-click menu: MIDI LEARN, FORGET (when learned), the default value */
+static void knob_menu(frui *u)
+{
+    const frui_model *m = u->m;
+    const frui_widget *g = 0;
+    int i, id, cc;
+    float px, py, pw = 168.f, ih = 24.f, ph;
+    char forget[32];
+    const char *items[3];
+    if (m->ctx_knob < 0) return;
+    for (i = 0; i < u->nw; i++) if (u->wg[i].kind == FRW_KNOB && u->wg[i].id == m->ctx_knob) g = &u->wg[i];
+    if (!g) return;
+    id = g->id;
+    cc = id < FRP_COUNT ? m->learn_cc[id] : 0;
+    if (cc) snprintf(forget, sizeof forget, "FORGET CC %d", cc - 1); else snprintf(forget, sizeof forget, "FORGET (NONE LEARNED)");
+    items[0] = m->learning == id ? "LEARNING: MOVE A CC" : "MIDI LEARN";
+    items[1] = forget;
+    items[2] = "DEFAULT VALUE";
+    for (i = 0, pw = 0.f; i < 3; i++) { float t = tw(u, T_MENU, 0, items[i]) + 40.f; if (t > pw) pw = t; }
+    pw = ceilf(pw / 4.f) * 4.f;
+    ph = ih * 3.f + 8.f;
+    px = g->x + g->w * 0.5f + 8.f; py = g->y + 52.f - 8.f;
+    if (px + pw > (float)FRUI_W - G_M) px = g->x + g->w * 0.5f - 8.f - pw;
+    if (py + ph > (float)FRUI_H - G_M) py = (float)FRUI_H - G_M - ph;
+    frui_rrect_shadow(u->c, X(px), X(py + 6.f), X(pw), X(ph), X(R_PANEL), X(12.f), FRUI_RGBA(0, 0, 0, 200));
+    frui_rrect(u->c, X(px), X(py), X(pw), X(ph), X(R_PANEL), FRUI_RGB(24, 24, 26));
+    frui_rrect_stroke(u->c, X(px) + 0.5f, X(py) + 0.5f, X(pw) - 1.f, X(ph) - 1.f, X(R_PANEL), 1.f, FRUI_RGB(52, 52, 56));
+    frui_rect(u->c, X(px + R_PANEL), X(py) + 1.f, X(pw - 2.f * R_PANEL), 1.f, FRUI_RGBA(255, 255, 255, 24));
+    for (i = 0; i < 3; i++) {
+        float iy = py + 4.f + ih * (float)i;
+        int off = i == 1 && !cc, hot = m->hover == FRUI_WID(FRW_CTX, i);
+        if (hot && !off) frui_rrect(u->c, X(px + 4.f), X(iy), X(pw - 8.f), X(ih), X(R_CTRL), FRUI_RGB(40, 40, 43));
+        if (i == 0) lamp(u, px + 14.f, iy + ih * 0.5f, 2.5f, m->learning == id);
+        tx(u, px + 24.f, mid(u, iy + ih * 0.5f, 10.5f), T_MENU, 0, items[i], off ? C_TEXT3 : i == 0 && m->learning == id ? C_ACC : C_TEXT);
+    }
+    reg(u, FRW_CTX, FRC_LEARN, px, py + 4.f, pw, ih);
+    reg(u, FRW_CTX, FRC_FORGET, px, py + 4.f + ih, pw, ih);
+    reg(u, FRW_CTX, FRC_DEFAULT, px, py + 4.f + 2.f * ih, pw, ih);
 }
 
 /* ---- an open menu, over everything (the instrument's menu shows each engine's drawing) */
@@ -940,10 +1215,16 @@ void frui_draw(frui *u, const frui_model *m, frui_canvas *c)
         frui_brushed(c, 0.f, 0.f, (float)c->w, (float)c->h, 0.f, C_AL_T, FRUI_RGB(158, 160, 164), 0.045f, u->s, 1u);
     } else frui_fill(c, C_BG);
     rail(u);
-    voice(u);
-    left_panel(u);
-    right_panel(u);
-    keyboard(u);
+    {
+        int nrail = u->nw;
+        voice(u);
+        left_panel(u);
+        right_panel(u);
+        switches(u);
+        keyboard(u);
+        if (m->settings) { u->nw = nrail; settings_sheet(u); }   /* only the rail and the sheet answer the mouse */
+        else knob_menu(u);
+    }
     popup(u);
 }
 

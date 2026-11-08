@@ -30,13 +30,36 @@ typedef struct {
     int focus;                     /* widget id with the keyboard focus ring, or -1 */
     int hover;                     /* widget id under the mouse, or -1 */
     int menu;                      /* widget id whose menu is open, or -1 */
+    int sustain;                   /* the sustain is down: the PEDAL button latched, a CC 64 or a real pedal */
+    int fx_bypass;                 /* every effect bypassed at once (their own switches unchanged; not saved) */
+    int ctx_knob;                  /* the knob whose right-click menu (MIDI LEARN ...) is open, or -1 */
+    int learning;                  /* the knob waiting for a CC (MIDI LEARN), or -1 */
+    uint8_t learn_cc[FRP_COUNT];   /* a learned CC per parameter, the CC + 1 (0: the default map only) */
+    /* SETTINGS (the sheet over the main view, from the rail's gear) */
+    int settings;                  /* the sheet is open */
+    int midi_ch;                   /* 0 = all channels, 1..16 */
+    int vel_curve;                 /* MIDI velocity: MEDIUM LIGHT HEAVY FIXED (the device's TOUCH curves) */
+    int fixed_vel;                 /* 1..127: the velocity on FIXED (the device's KEY VEL) */
+    int pgm_change;                /* program changes load presets */
+    int tempo_src;                 /* HOST, INTERNAL, MIDI CLOCK */
+    int bpm10;                     /* the internal tempo, BPM x 10; host_bpm10: the host's (shown when it leads) */
+    int host_bpm10;
+    int sync_all, sync_div;        /* new: every tempo effect synced (FREE / TEMPO), at this FRN_SYNC division */
+    int cc_scroll;                 /* the CC map's first row */
 } frui_model;
+
+/* the settings' pseudo parameter ids (for the controls and the widget ids) */
+enum { FRS_CHANNEL = 200, FRS_VEL, FRS_FIXVEL, FRS_PGM, FRS_TEMPO, FRS_BPM, FRS_SYNCALL, FRS_SYNCDIV };
 
 /* the app's text for a value: the value ("5.0", "1/8", "BELL DYNO") and its unit ("Hz", "dB", "" if none) */
 typedef void (*frui_text_fn)(void *ctx, const frui_model *m, int id, char *val, char *unit);
 
-enum { FRW_KNOB, FRW_SEG, FRW_MENU, FRW_TAB_L, FRW_TAB_R, FRW_BUTTON, FRW_PAGER, FRW_PRESET, FRW_KEYS };
-enum { FRB_PREV, FRB_NEXT, FRB_SAVE, FRB_UNDO, FRB_TYPE_PREV, FRB_TYPE_NEXT };
+enum { FRW_KNOB, FRW_SEG, FRW_MENU, FRW_TAB_L, FRW_TAB_R, FRW_BUTTON, FRW_PAGER, FRW_PRESET, FRW_KEYS, FRW_FADER, FRW_CTX,
+       FRW_CCMAP };
+enum { FRB_PREV, FRB_NEXT, FRB_SAVE, FRB_UNDO, FRB_TYPE_PREV, FRB_TYPE_NEXT, FRB_GEAR, FRB_CLOSE, FRB_SUSTAIN, FRB_FX,
+       FRB_BPM_DOWN, FRB_BPM_UP, FRB_LEARN_RESET };
+/* the knob menu's items (FRW_CTX ids) */
+enum { FRC_LEARN, FRC_FORGET, FRC_DEFAULT };
 typedef struct {
     int kind, id;                  /* kind FRW_*; id: the parameter (FRP_*), the tab, the button (FRB_*) */
     float x, y, w, h;              /* logical pixels */
@@ -54,7 +77,7 @@ int frui_widget_count(const frui *u);
 const frui_widget *frui_widget_get(const frui *u, int i);
 /* the text anchors of the last draw (for the layout check): what (FRA_*), its widget id, the text's centre or left x
  * and its baseline, logical pixels */
-enum { FRA_LABEL, FRA_VALUE, FRA_TAB, FRA_TITLE, FRA_RAIL, FRA_CAPTION };
+enum { FRA_LABEL, FRA_VALUE, FRA_TAB, FRA_TITLE, FRA_RAIL, FRA_CAPTION, FRA_ROWLABEL };
 typedef struct { int what, id; float x, y; } frui_anchor;
 int frui_anchor_count(const frui *u);
 const frui_anchor *frui_anchor_get(const frui *u, int i);

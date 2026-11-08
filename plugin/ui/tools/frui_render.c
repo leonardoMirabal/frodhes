@@ -200,7 +200,8 @@ static void load(frui_model *m, const uint8_t *rec, const char *tag, const char 
     for (; *rec != 0xFF; rec += 2) m->p[rec[0]] = rec[1];
     snprintf(m->preset_tag, sizeof m->preset_tag, "%s", tag);
     snprintf(m->preset_name, sizeof m->preset_name, "%s", name);
-    m->focus = m->hover = m->menu = -1;
+    m->focus = m->hover = m->menu = m->ctx_knob = m->learning = -1;
+    m->fixed_vel = 100; m->bpm10 = 1200; m->host_bpm10 = 1200; m->sync_div = 6;
     m->out_db[0] = -15.5f; m->out_db[1] = -16.8f; m->out_peak_db[0] = -7.2f; m->out_peak_db[1] = -8.1f;
     m->gr_db = m->p[FRP_CMP_SW] ? 2.4f : 0.f;
 }
@@ -272,7 +273,7 @@ static int check_layout(const frui *u, const char *name)
         float e[4] = {g->x, g->y, g->x + g->w, g->y + g->h};
         static const char *const en[4] = {"left", "top", "right", "bottom"};
         int k;
-        if (g->kind == FRW_TAB_L || g->kind == FRW_TAB_R) continue;      /* text-width tabs: checked by their baseline */
+        if (g->kind == FRW_TAB_L || g->kind == FRW_TAB_R || g->kind == FRW_CTX) continue;   /* (the knob menu: a pop-up) */      /* text-width tabs: checked by their baseline */
         if (g->kind == FRW_KNOB && g->id != FRP_LEVEL) goto knob;          /* a knob: its centre, below */
         for (k = 0; k < 4; k++) {
             float d = e[k] - 4.f * roundf(e[k] / 4.f);
@@ -289,7 +290,7 @@ static int check_layout(const frui *u, const char *name)
             if (best > 1.f) { printf("  %s: knob %d centre x %.2f off its column by %.2f\n", name, g->id, cx, best); bad++; }
             if (fabsf(cy - 196.f) > 1.f && fabsf(cy - 424.f) > 1.f) { printf("  %s: knob %d centre y %.2f off its row\n", name, g->id, cy); bad++; }
         }
-        if ((g->kind == FRW_SEG || g->kind == FRW_MENU || g->kind == FRW_PAGER) && g->id != FRP_TYPE &&
+        if ((g->kind == FRW_SEG || g->kind == FRW_MENU || g->kind == FRW_PAGER) && g->id != FRP_TYPE && g->id < FRS_CHANNEL &&
             (fabsf(g->y - 336.f) > 1.f || fabsf(g->h - 28.f) > 1.f)) {
             printf("  %s: control %d row y %.2f h %.2f (want 336, 28)\n", name, g->id, g->y, g->h); bad++;
         }
@@ -317,11 +318,24 @@ static int check_layout(const frui *u, const char *name)
                 else if (fabsf(a->y - tab_y[side]) > 0.01f) { printf("  %s: tab %d baseline %.2f, its row %.2f\n", name, a->id, a->y, tab_y[side]); bad++; }
             } else if (a->what == FRA_TITLE) {
                 if (fabsf(a->x - 28.f) > 1.f) { printf("  %s: title %d at x %.2f, want 28\n", name, a->id, a->x); bad++; }
+            } else if (a->what == FRA_ROWLABEL) {
+                if (fabsf(a->x - 28.f) > 1.f && fabsf(a->x - 500.f) > 1.f) { printf("  %s: row label at x %.2f, want 28 or 500\n", name, a->x); bad++; }
             } else if (a->what == FRA_CAPTION) {
                 if (fabsf(a->x - (a->id ? 716.f : 244.f)) > 1.f) { printf("  %s: caption %d at %.2f\n", name, a->id, a->x); bad++; }
             }
         }
         if (tab_y[0] >= 0.f && tab_y[1] >= 0.f && fabsf(tab_y[0] - tab_y[1]) > 0.01f) { printf("  %s: the panels' tabs on different baselines\n", name); bad++; }
+    }
+    /* SETTINGS: every control on a row (148 + 44 k, h 28) or in the CC map's header row */
+    for (i = 0; i < n; i++) {
+        const frui_widget *g = frui_widget_get(u, i);
+        if (g->id >= FRS_CHANNEL && (g->kind == FRW_SEG || g->kind == FRW_MENU || g->kind == FRW_FADER)) {
+            float k = (g->y - 148.f) / 44.f;
+            if (fabsf(k - roundf(k)) * 44.f > 1.f || fabsf(g->h - 28.f) > 0.5f) { printf("  %s: setting %d off its row (y %.2f h %.2f)\n", name, g->id, g->y, g->h); bad++; }
+            if (g->id != FRS_BPM && fabsf(g->x - 136.f) > 1.f && fabsf(g->x - 608.f) > 1.f && fabsf(g->x - 832.f) > 1.f) {
+                printf("  %s: setting %d at x %.2f, not on a column\n", name, g->id, g->x); bad++;
+            }
+        }
     }
     /* the rail: every control centred on the rail's centre line, one height */
     for (i = 0; i < n; i++) {
@@ -369,7 +383,7 @@ static int directions(const int *maj7, const int *min9, const int *vib)
 {
     static const char *const vn[2] = {"A1-rail", "A2-plate"};
     char path[1024], dir[1024];
-    int v, sw = 960 * 2 + 48, sh = 600 * 3 + 64, bad = 0;
+    int v, sw = 960 * 2 + 48, sh = 600 * 5 + 96, bad = 0;
     uint32_t *sheet = malloc(sizeof(uint32_t) * (size_t)sw * (size_t)sh);
     frui_model m;
     for (v = 0; v < sw * sh; v++) sheet[v] = 0xFF2A2A2Cu;
@@ -377,13 +391,21 @@ static int directions(const int *maj7, const int *min9, const int *vib)
     for (v = 0; v < 2; v++) {
         int s;
         look = v;
-        for (s = 0; s < 3; s++) {
+        for (s = 0; s < 5; s++) {
             uint32_t *px;
-            const char *sn = s == 0 ? "main" : s == 1 ? "tab-comp-delay" : "menu-engine";
-            if (s == 0) { load(&m, PR_F09, "F09", "70S PHASER"); m.tab_l = FRT_DRIVE; m.tab_r = FRT_PHASER; chord(&m, maj7, 5); }
+            static const char *const SN[5] = {"main", "tab-comp-delay", "menu-engine", "settings-midi", "knob-learn"};
+            const char *sn = SN[s];
+            if (s == 0) { load(&m, PR_F09, "F09", "70S PHASER"); m.tab_l = FRT_DRIVE; m.tab_r = FRT_PHASER; chord(&m, maj7, 5);
+                          m.sustain = 1; m.learn_cc[FRP_DRIVE] = 2; }
+            else if (s == 3) { load(&m, PR_F06, "F06", "DRIVEN 77"); m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY;
+                               m.settings = 1; m.vel_curve = 0; m.pgm_change = 1; m.tempo_src = 0; m.host_bpm10 = 965;
+                               m.sync_all = 0; m.learn_cc[FRP_DRIVE] = 2; m.learn_cc[FRP_FL_FREQ] = 75; m.cc_scroll = 0; }
+            else if (s == 4) { load(&m, PR_F11, "F11", "SWEEP"); m.tab_l = FRT_DRIVE; m.tab_r = FRT_FILTER; chord(&m, min9, 3);
+                               m.learn_cc[FRP_DRIVE] = 2; m.ctx_knob = FRP_FL_FREQ; m.learning = FRP_FL_FREQ;
+                               m.hover = FRUI_WID(FRW_CTX, FRC_LEARN); }
             else if (s == 1) { load(&m, PR_F06, "F06", "DRIVEN 77"); m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 3.6f; chord(&m, min9, 5); }
             else { load(&m, PR_F13, "F13", "VIBES"); m.tab_l = FRT_MOTOR; m.tab_r = FRT_REVERB; chord(&m, vib, 5);
-                   m.menu = FRUI_WID(FRW_MENU, FRP_TYPE); }
+                   m.menu = FRUI_WID(FRW_MENU, FRP_TYPE); m.fx_bypass = 1; }
             snprintf(path, sizeof path, "%s-%s", vn[v], sn);
             px = render_px(&m, 960, 600, 1, path);
             blit(sheet, sw, px, 960, 600, 16 + v * (960 + 16), 16 + s * (600 + 16));

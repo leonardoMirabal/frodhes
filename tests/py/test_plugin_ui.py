@@ -106,7 +106,8 @@ def test_layout_grid_and_looks(tmp_path):
                            env=dict(os.environ, **env))
         assert p.returncode == 0, p.stderr
         checks = re.findall(r"layout check (\S+): (.*)", p.stdout)
-        assert len(checks) >= 6
+        assert len(checks) >= 10
         assert all(v == "all on the grid" for _, v in checks), p.stdout
-    for f in ("A1-rail-main", "A1-rail-tab-comp-delay", "A2-plate-main", "A2-plate-tab-comp-delay", "compare"):
+    for f in [v + "-" + sc for v in ("A1-rail", "A2-plate")
+              for sc in ("main", "tab-comp-delay", "menu-engine", "settings-midi", "knob-learn")] + ["compare"]:
         assert (tmp_path / "directions" / (f + ".png")).stat().st_size > 10000
