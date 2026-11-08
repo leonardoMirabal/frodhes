@@ -18,7 +18,7 @@
 #define FRP_UI_IFACE_H
 #include <stdint.h>
 
-#define FRP_UI_IFACE_VERSION 1
+#define FRP_UI_IFACE_VERSION 2
 
 typedef struct frp_core frp_core;            /* one plugin instance */
 struct clap_plugin;
@@ -122,4 +122,50 @@ void frp_ui_meters(const frp_core *c, float out_db[2], float peak_db[2], float *
                                                  * the peak held ~1.5 s; the compressor's gain reduction, dB >= 0 */
 void frp_ui_notes(const frp_core *c, uint8_t notes[128]);   /* the keys held now (their velocity, 0 = up) */
 int frp_ui_voices(const frp_core *c);           /* the voice count of the sound path: CLASSIC 10, HQ 16 */
+
+/* ---- (version 2) the same functions as a CLAP extension, for out-of-process callers (the headless test host,
+ * plugin/tests/clap_render.c --coretest): plugin->get_extension(plugin, FRP_UI_EXT_ID) returns a const frp_ui_vtable *.
+ * The GUI inside the plugin calls the functions above directly. */
+#define FRP_UI_EXT_ID "io.github.leonardomirabal.frodhes.ui-iface/2"
+typedef struct frp_ui_vtable {
+    uint32_t version;                            /* FRP_UI_IFACE_VERSION */
+    frp_core *(*core_of)(const struct clap_plugin *plugin);
+    int (*has_slot)(const frp_core *c);
+    uint32_t (*rev)(const frp_core *c);
+    int (*param_get)(const frp_core *c, uint32_t id);
+    int (*param_default)(const frp_core *c, uint32_t id);
+    void (*param_text)(const frp_core *c, uint32_t id, int v, char *val, uint32_t nval, char *unit, uint32_t nunit);
+    void (*param_begin)(frp_core *c, uint32_t id);
+    void (*param_set)(frp_core *c, uint32_t id, int v);
+    void (*param_end)(frp_core *c, uint32_t id);
+    int (*preset_count)(const frp_core *c);
+    int (*preset_info)(const frp_core *c, int idx, frp_preset_info *out);
+    int (*preset_current)(const frp_core *c, frp_preset_info *out, int *edited);
+    int (*preset_load)(frp_core *c, int idx);
+    int (*preset_step)(frp_core *c, int dir);
+    int (*preset_save)(frp_core *c, const char *name);
+    int (*preset_delete)(frp_core *c, int idx);
+    void (*preset_rescan)(frp_core *c);
+    int (*can_undo)(const frp_core *c);
+    int (*undo)(frp_core *c);
+    void (*settings_get)(const frp_core *c, frp_settings *out);
+    void (*settings_set)(frp_core *c, const frp_settings *s);
+    int (*host_bpm10)(const frp_core *c);
+    int (*tempo_bpm10)(const frp_core *c);
+    void (*learn_start)(frp_core *c, uint32_t id);
+    void (*learn_cancel)(frp_core *c);
+    int (*learning)(const frp_core *c);
+    int (*learned_cc)(const frp_core *c, uint32_t id);
+    void (*learn_forget)(frp_core *c, uint32_t id);
+    void (*learn_forget_all)(frp_core *c);
+    int (*cc_target)(const frp_core *c, int cc, int *learned);
+    void (*sustain_set)(frp_core *c, int on);
+    int (*sustain)(const frp_core *c);
+    void (*fx_bypass_set)(frp_core *c, int on);
+    int (*fx_bypass)(const frp_core *c);
+    void (*note)(frp_core *c, int key, int vel);
+    void (*meters)(const frp_core *c, float out_db[2], float peak_db[2], float *gr_db);
+    void (*notes)(const frp_core *c, uint8_t notes[128]);
+    int (*voices)(const frp_core *c);
+} frp_ui_vtable;
 #endif
