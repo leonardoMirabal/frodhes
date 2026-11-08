@@ -111,3 +111,17 @@ F. FINAL CHECKS
 [ ] "Apple silicon and Intel" in the plugin texts: platform names, kept as the minimum a buyer needs; the user may
     prefer "arm64 and x86_64 Macs"
 [ ] delete docs/changes/CHECKLIST-0910.txt, PLUGIN-INSTALL-DRAFT.txt, *.ifships
+
+G. VELOCITY RESPONSE SETTING (sonic-0910; WAIT: write nothing until the user validates it on the device; names pending)
+[ ] docs/MANUAL.md section 4 "### SETUP" (line ~659): the card table row (which knob / page the setting lands on)
+    and the paragraph under it (line ~674, "TOUCH and KEY VEL belong to the FM-1 ..."): the new setting's methods;
+    section 6 table (line ~945): add it to "The setup" column if it is saved with the settings, not the preset
+[ ] docs/MANUAL.md 1 "how do I ..." (line ~117 "Play softer or harder") and 11 tips (line ~1049): one line each
+[ ] docs/MANUAL.md section 12 CC table, if the setting has a CC; tests/py/test_docs_vs_code.py follows PARAMS[]
+[ ] README.md "What you get", "For playing" (line ~33): the setting in a few words
+[ ] screenshots: tools/manual_shots.py PAGES "SETUP": "setup" (line ~77) re-renders docs/manual/img/setup.png;
+    SMK img/smk/ if the SMK page shows it; tools/doc_links.py --fix
+[ ] docs/MOVE.md 10 "Velocity" + its page table (test_move_doc.py); node tools/move_ui_shots.mjs --docs if drawn
+[ ] docs/PLUGIN.md "Settings" row (line ~71, the velocity curve list) and the plugin window
+[ ] web emulator rebuild (web/build.sh), Playwright check
+[ ] its release-note fragment (docs/changes/06-velocity-response.md or a line in 01), generic names
