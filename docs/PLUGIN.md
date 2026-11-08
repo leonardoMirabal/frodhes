@@ -187,7 +187,12 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
 - clap-validator (the CLAP bundle), pluginval at strictness 10 (the VST3 and the Audio Unit, with its editor tests;
   the macOS CI runs them too, the Windows and Linux CI without),
   `auval -strict` (the Audio Unit) and the VST3 SDK's own validator (`tools/plugin_vst3_validator.sh`, built from the
-  pinned SDK with the command line tools: 47 tests).
+  pinned SDK with the command line tools: 47 tests). `auval` passes with one warning, "Preset name is not retained in
+  retrieved class data": it comes from clap-wrapper, not the plugin. Its Audio Unit writes the saved state's name from
+  its own field, which only a restored state sets, and a name the host gives through the present preset never reaches
+  it, so the class data it hands back is named "Program". The plugin's state (the CLAP state) carries no name; the
+  sound and the settings come back whole. A host that names its own presets (most keep the name in their own file)
+  is not affected.
 - The tail (`tests/py/test_plugin_tail.py`, in `make test-plugin`): `clap_render --tail-check` is a host that stops at
   the tail the plugin reports; with the measured worst corners and seeded random settings, both engines, it renders 20 s
   past the tail and nothing sounds there; the settings that hold the sound report an infinite tail.
