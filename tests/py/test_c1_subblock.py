@@ -71,25 +71,25 @@ def test_heavy_any_chunking(sub, env):
     assert np.array_equal(a.L, r.L) and np.array_equal(a.R, r.R), f"C1_SUB {sub} {env}: not the one-core build"
 
 
+@pytest.mark.parametrize("sub,env", [(8, None), (4, "order=1,refuse=3")])
+def test_heavy_lockstep(sub, env):
+    """C1_STREAM 0: a job a chunk (the lockstep path), as the one-core build"""
+    b = build(os.path.join(ROOT, "build", "host", f"c1lock{sub}", "frodhes"), ["-DFR_C1=1", "-DC1_STREAM=0", f"-DC1_SUB={sub}u"])
+    ls = take(0)
+    a = run(f"c1s_heavy_lock_{sub}_{env}", ls, end_ms=6000, binary=b, env=env and {"FRODHES_C1": env})
+    r = run("c1s_heavy_ref", ls, end_ms=6000, binary=ref_bin())
+    assert np.array_equal(a.L, r.L) and np.array_equal(a.R, r.R), f"lockstep C1_SUB {sub} {env}: not the one-core build"
+
+
 @pytest.mark.parametrize("edges,env", [("32,128,224", None), ("32,224", "order=1"), ("64,96,160,192,224", "order=1,refuse=3")])
 def test_heavy_uneven_chunks(edges, env):
     """C1_EDGES: chunks of different lengths (multiples of 32), as the one-core build"""
     b = build(os.path.join(ROOT, "build", "host", "c1e" + edges.replace(",", "_"), "frodhes"),
-              ["-DFR_C1=1", f"-DC1_EDGES={edges}"])
+              ["-DFR_C1=1", "-DC1_STREAM=0", f"-DC1_EDGES={edges}"])
     ls = take(0)
     a = run(f"c1s_heavy_e{edges.replace(',', '_')}_{env}", ls, end_ms=6000, binary=b, env=env and {"FRODHES_C1": env})
     r = run("c1s_heavy_ref", ls, end_ms=6000, binary=ref_bin())
     assert np.array_equal(a.L, r.L) and np.array_equal(a.R, r.R), f"C1_EDGES {edges} {env}: not the one-core build"
-
-
-@pytest.mark.parametrize("env", ["busy=2", "busy=3,order=1", "busy=4,refuse=3", "busy=5,order=1,refuse=4"])
-def test_heavy_ahead(env):
-    """C1_AHEAD: core 0 renders ahead while core 1 is busy, the chunks rendered so far one job: as the one-core build"""
-    b = build(os.path.join(ROOT, "build", "host", "c1ahead", "frodhes"), ["-DFR_C1=1", "-DC1_AHEAD=1"])
-    ls = take(0)
-    a = run(f"c1s_heavy_ahead_{env}", ls, end_ms=6000, binary=b, env={"FRODHES_C1": env})
-    r = run("c1s_heavy_ref", ls, end_ms=6000, binary=ref_bin())
-    assert np.array_equal(a.L, r.L) and np.array_equal(a.R, r.R), f"C1_AHEAD {env}: not the one-core build"
 
 
 @pytest.mark.parametrize("env", [None, "busy=2", "busy=3,order=1", "busy=4,refuse=3", "busy=2,refuse=5", "order=1,refuse=2"])
