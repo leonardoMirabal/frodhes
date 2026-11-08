@@ -30,8 +30,9 @@
 #endif
 /* FR_C1 (a build switch, off by default: ./build.sh with APP_DEFS=-DFR_C1=1, tools/build.py --c1): two cores. Core 0
  * renders the voices (14 by default, FR_VOICES), core 1 the whole effects chain and the master stage (fx_process, the
- * full-rate REVERB TYPEs, FR_REV_HQ) of the block before, at the same time: one block (256 frames, 5.8 ms) more
- * latency, no voice ever on core 1 (core 1 faulted in the voice loops while core 0 multiplied, 2026-11-01). Every
+ * full-rate REVERB TYPEs, FR_REV_HQ), the block in C1_SUB chunks (app_audio below): core 1 runs chunk j - 1's effects
+ * while core 0 renders chunk j's voices, so no latency over one core; no voice ever on core 1 (core 1 faulted in the
+ * voice loops while core 0 multiplied, 2026-11-01). Every
  * function core 1 reaches runs from flash (FX_RAM empty): the two cores never fetch code from RAM at once (Textura
  * 548fd55). Core 1 refuses a job it read wrong (core 0 renders it, core 1 stays on); a late job, refusals too often or
  * a fault of core 1 hold it for good: one core from then on, at FR_C1_NV1 voices (the effects from flash, the shedder
