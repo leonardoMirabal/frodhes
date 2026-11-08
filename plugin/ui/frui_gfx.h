@@ -41,6 +41,16 @@ void frui_circle_shadow(frui_canvas *c, float cx, float cy, float r, float blur,
 void frui_arc(frui_canvas *c, float cx, float cy, float r, float lw, float a0, float a1, uint32_t col);
 void frui_line(frui_canvas *c, float x0, float y0, float x1, float y1, float lw, uint32_t col);   /* round caps */
 
+/* materials (procedural, deterministic): brushed aluminium in a rounded rectangle, the grain along x (fine rows of
+ * slightly different brightness, each varying slowly along its length), lit from above (top .. bot) with a broad soft
+ * sheen; grain is the brightness spread (0.04 = +-4 %), sc the pixels per logical pixel (the grain's streak length
+ * follows the logical size) */
+void frui_brushed(frui_canvas *c, float x, float y, float w, float h, float r, uint32_t top, uint32_t bot, float grain,
+                  float sc, uint32_t seed);
+/* a machined (spun) aluminium disc: concentric grain and the conical highlight of a turned surface lit from the upper
+ * left (lo .. hi: the darkest and brightest of the turn) */
+void frui_spun(frui_canvas *c, float cx, float cy, float r, uint32_t lo, uint32_t hi, float grain, float sc, uint32_t seed);
+
 /* paths: closed polygons (curves flattened by the caller or by frui_path_quad), non-zero winding, exact coverage */
 typedef struct {
     float *xy;                     /* points, x y pairs */

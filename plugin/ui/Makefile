@@ -7,15 +7,17 @@ CC ?= cc
 CFLAGS ?= -O2 -std=c99 -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE -Wall -Wextra -Wshadow -Wno-unused-const-variable
 SRC := frui.c frui_font.c frui_gfx.c
 FONT := $(ROOT)/assets/fonts/InterTight[wght].ttf
+DFONT := $(ROOT)/assets/fonts/Michroma-Regular.ttf
 
 .PHONY: renders clean
 renders: $(OUT)/frui_render
-	rm -f $(OUT)/*.png
-	$(OUT)/frui_render "$(FONT)" $(OUT)
+	rm -f $(OUT)/*.png $(OUT)/directions/*.png
+	$(OUT)/frui_render "$(FONT)" $(OUT) $(DFONT)
+	mkdir -p $(OUT)/directions && FRUI_DIRECTIONS=1 $(OUT)/frui_render "$(FONT)" $(OUT) $(DFONT)
 
 $(OUT)/frui_render: $(SRC) tools/frui_render.c frui.h frui_font.h frui_gfx.h frui_params.h
 	mkdir -p $(OUT)
-	$(CC) $(CFLAGS) -o $@.tmp $(SRC) tools/frui_render.c -lz -lm && mv $@.tmp $@
+	nice -n 10 $(CC) $(CFLAGS) -o $@.tmp $(SRC) tools/frui_render.c -lz -lm && mv $@.tmp $@
 
 clean:
 	rm -rf $(OUT)

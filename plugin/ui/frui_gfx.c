@@ -322,3 +322,63 @@ void frui_path_fill(frui_canvas *c, const frui_path *p, uint32_t col)
     free(m);
     free(q.xy);
 }
+
+/* ---- materials */
+static float hashf(uint32_t v)                 /* -1 .. 1 */
+{
+    v ^= v >> 16; v *= 0x7feb352du; v ^= v >> 15; v *= 0x846ca68bu; v ^= v >> 16;
+    return (float)(v & 0xFFFFFFu) / (float)0x800000 - 1.f;
+}
+static float vnoise(float x, uint32_t row)     /* smooth 1-D value noise along x, one sequence per row */
+{
+    float fx = floorf(x), t = x - fx, a, b;
+    uint32_t i = (uint32_t)(int32_t)fx;
+    a = hashf(i * 0x9E3779B1u + row * 0x85EBCA77u);
+    b = hashf((i + 1u) * 0x9E3779B1u + row * 0x85EBCA77u);
+    t = t * t * (3.f - 2.f * t);
+    return a + (b - a) * t;
+}
+static uint32_t scale_rgb(uint32_t c, float k)
+{
+    float r = (float)((c >> 16) & 255u) * k, g = (float)((c >> 8) & 255u) * k, b = (float)(c & 255u) * k;
+    r = clampf(r, 0.f, 255.f); g = clampf(g, 0.f, 255.f); b = clampf(b, 0.f, 255.f);
+    return FRUI_RGB((uint32_t)(r + 0.5f), (uint32_t)(g + 0.5f), (uint32_t)(b + 0.5f));
+}
+typedef struct { float x0, y0, w, h, grain, sc; uint32_t top, bot, seed; } brush_t;
+static uint32_t col_brushed(const void *u, float x, float y)
+{
+    const brush_t *b = u;
+    uint32_t row = (uint32_t)(int32_t)floorf(y) + b->seed * 7919u, base = frui_mix(b->top, b->bot, (y - b->y0) / b->h);
+    float xn = (x - b->x0) / b->w, g, s, sh;
+    g = 0.55f * hashf(row) + 0.45f * vnoise(x / (36.f * b->sc) + 13.7f * hashf(row ^ 0xA5A5u), row);
+    s = hashf(row ^ 0x5bd1e995u);
+    if (s > 0.86f) g += 1.6f * (s - 0.86f) / 0.14f * (0.5f + 0.5f * vnoise(x / (140.f * b->sc), row ^ 77u));
+    if (s < -0.9f) g -= 1.2f * (-0.9f - s) / 0.1f * (0.5f + 0.5f * vnoise(x / (120.f * b->sc), row ^ 91u));
+    sh = 0.055f * expf(-((xn - 0.3f) * (xn - 0.3f)) / 0.05f) + 0.03f * expf(-((xn - 0.8f) * (xn - 0.8f)) / 0.03f) - 0.02f;
+    return scale_rgb(base, 1.f + b->grain * g + sh);
+}
+void frui_brushed(frui_canvas *c, float x, float y, float w, float h, float r, uint32_t top, uint32_t bot, float grain,
+                  float sc, uint32_t seed)
+{
+    rr_t s = mk_rr(x, y, w, h, r);
+    brush_t b = {x, y, w, h, grain, sc, top, bot, seed};
+    shade(c, x, y, x + w, y + h, sd_rrect, &s, 0.f, 0.f, 0, col_brushed, &b);
+}
+typedef struct { float cx, cy, r, grain, sc; uint32_t lo, hi, seed; } spun_t;
+static uint32_t col_spun(const void *u, float x, float y)
+{
+    const spun_t *p = u;
+    float dx = x - p->cx, dy = p->cy - y, rho = sqrtf(dx * dx + dy * dy), th = atan2f(dy, dx), k, g;
+    uint32_t ring = (uint32_t)(int32_t)floorf(rho * 2.f / (p->sc > 1.f ? p->sc : 1.f)) + p->seed * 131u;
+    k = 0.5f + 0.5f * cosf(2.f * (th - 2.35f));          /* brightest towards the upper left and the lower right */
+    k = k * k * (3.f - 2.f * k);
+    k = 0.15f + 0.85f * k * (0.75f + 0.25f * cosf(th - 2.35f));
+    g = 0.6f * hashf(ring) + 0.4f * vnoise(th * 6.f, ring);
+    return scale_rgb(frui_mix(p->lo, p->hi, k), 1.f + p->grain * g);
+}
+void frui_spun(frui_canvas *c, float cx, float cy, float r, uint32_t lo, uint32_t hi, float grain, float sc, uint32_t seed)
+{
+    ci_t s = {cx, cy, r};
+    spun_t p = {cx, cy, r, grain, sc, lo, hi, seed};
+    shade(c, cx - r, cy - r, cx + r, cy + r, sd_circle, &s, 0.f, 0.f, 0, col_spun, &p);
+}

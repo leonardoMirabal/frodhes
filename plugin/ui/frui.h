@@ -36,7 +36,7 @@ typedef struct {
 typedef void (*frui_text_fn)(void *ctx, const frui_model *m, int id, char *val, char *unit);
 
 enum { FRW_KNOB, FRW_SEG, FRW_MENU, FRW_TAB_L, FRW_TAB_R, FRW_BUTTON, FRW_PAGER, FRW_PRESET, FRW_KEYS };
-enum { FRB_PREV, FRB_NEXT, FRB_SAVE, FRB_UNDO };
+enum { FRB_PREV, FRB_NEXT, FRB_SAVE, FRB_UNDO, FRB_TYPE_PREV, FRB_TYPE_NEXT };
 typedef struct {
     int kind, id;                  /* kind FRW_*; id: the parameter (FRP_*), the tab, the button (FRB_*) */
     float x, y, w, h;              /* logical pixels */
@@ -45,6 +45,19 @@ typedef struct {
 typedef struct frui frui;
 frui *frui_new(frui_font *font, frui_text_fn text, void *ctx);
 void frui_free(frui *u);
+/* the look: the brushed-aluminium name rail over a black body, or one aluminium plate with black sections set into
+ * it; display is the wordmark's and the section titles' font (0: the text font) */
+enum { FRUI_LOOK_RAIL, FRUI_LOOK_PLATE };
+void frui_set_look(frui *u, int look, frui_font *display);
+/* the widgets of the last draw, for the input handling and the layout checks */
+int frui_widget_count(const frui *u);
+const frui_widget *frui_widget_get(const frui *u, int i);
+/* the text anchors of the last draw (for the layout check): what (FRA_*), its widget id, the text's centre or left x
+ * and its baseline, logical pixels */
+enum { FRA_LABEL, FRA_VALUE, FRA_TAB, FRA_TITLE, FRA_RAIL, FRA_CAPTION };
+typedef struct { int what, id; float x, y; } frui_anchor;
+int frui_anchor_count(const frui *u);
+const frui_anchor *frui_anchor_get(const frui *u, int i);
 /* draws the whole window into c (c->w x c->h pixels = FRUI_W x FRUI_H logical times the scale) */
 void frui_draw(frui *u, const frui_model *m, frui_canvas *c);
 /* the widget at logical point (x, y) after the last draw, or -1; *w gets its description */

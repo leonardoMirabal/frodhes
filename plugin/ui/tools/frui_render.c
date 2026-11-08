@@ -258,21 +258,148 @@ static int write_png(const char *path, const uint32_t *px, int w, int h)
     return 0;
 }
 
-static frui_font *font;
+static frui_font *font, *dfont;
 static const char *outdir;
-static void render(const frui_model *m, const char *name, int pw, int ph)
+static int look;
+
+/* the layout check: every widget's edges on the 4 px grid, every knob on a column centre (or the half-column of a
+ * row of three) and on its tier's row, every control row one height; prints what is off by more than 1 px at 1x */
+static int check_layout(const frui *u, const char *name)
 {
-    char path[1024];
+    int i, n = frui_widget_count(u), bad = 0;
+    for (i = 0; i < n; i++) {
+        const frui_widget *g = frui_widget_get(u, i);
+        float e[4] = {g->x, g->y, g->x + g->w, g->y + g->h};
+        static const char *const en[4] = {"left", "top", "right", "bottom"};
+        int k;
+        if (g->kind == FRW_TAB_L || g->kind == FRW_TAB_R) continue;      /* text-width tabs: checked by their baseline */
+        if (g->kind == FRW_KNOB && g->id != FRP_LEVEL) goto knob;          /* a knob: its centre, below */
+        for (k = 0; k < 4; k++) {
+            float d = e[k] - 4.f * roundf(e[k] / 4.f);
+            if (fabsf(d) > 1.f) { printf("  %s: widget kind %d id %d %s edge %.2f off the 4 px grid by %.2f\n", name, g->kind, g->id, en[k], e[k], d); bad++; }
+        }
+    knob:
+        if (g->kind == FRW_KNOB && g->id != FRP_LEVEL) {
+            float cx = g->x + g->w * 0.5f, cy = g->y + 52.f, best = 1e9f;
+            int j;
+            for (j = 0; j < 2 * 8 - 1; j++) {                 /* column centres and the half-columns between them */
+                float b2 = fabsf(cx - ((j < 7 ? 28.f : 500.f) + 54.f * (float)(j % 7 + 1)));
+                if (b2 < best) best = b2;
+            }
+            if (best > 1.f) { printf("  %s: knob %d centre x %.2f off its column by %.2f\n", name, g->id, cx, best); bad++; }
+            if (fabsf(cy - 196.f) > 1.f && fabsf(cy - 424.f) > 1.f) { printf("  %s: knob %d centre y %.2f off its row\n", name, g->id, cy); bad++; }
+        }
+        if ((g->kind == FRW_SEG || g->kind == FRW_MENU || g->kind == FRW_PAGER) && g->id != FRP_TYPE &&
+            (fabsf(g->y - 336.f) > 1.f || fabsf(g->h - 28.f) > 1.f)) {
+            printf("  %s: control %d row y %.2f h %.2f (want 336, 28)\n", name, g->id, g->y, g->h); bad++;
+        }
+    }
+    /* the text: each knob's label and value centred on the knob, one baseline per row; the tabs on one baseline per
+     * panel; the titles on the padding's left edge; the halves' captions on their centres */
+    {
+        int na = frui_anchor_count(u), j;
+        float tab_y[2] = {-1.f, -1.f};
+        for (i = 0; i < na; i++) {
+            const frui_anchor *a = frui_anchor_get(u, i);
+            if (a->what == FRA_LABEL || a->what == FRA_VALUE) {
+                for (j = 0; j < n; j++) {
+                    const frui_widget *g = frui_widget_get(u, j);
+                    if (g->kind == FRW_KNOB && g->id == a->id) {
+                        float cx = g->x + g->w * 0.5f, cy = g->y + 52.f;
+                        float want = a->what == FRA_LABEL ? cy - 39.f : cy + 48.f;
+                        if (fabsf(a->x - cx) > 1.f) { printf("  %s: knob %d %s centred at %.2f, knob at %.2f\n", name, a->id, a->what ? "value" : "label", a->x, cx); bad++; }
+                        if (fabsf(a->y - want) > 1.f) { printf("  %s: knob %d %s baseline %.2f, want %.2f\n", name, a->id, a->what ? "value" : "label", a->y, want); bad++; }
+                    }
+                }
+            } else if (a->what == FRA_TAB) {
+                int side = a->x > 480.f;
+                if (tab_y[side] < 0.f) tab_y[side] = a->y;
+                else if (fabsf(a->y - tab_y[side]) > 0.01f) { printf("  %s: tab %d baseline %.2f, its row %.2f\n", name, a->id, a->y, tab_y[side]); bad++; }
+            } else if (a->what == FRA_TITLE) {
+                if (fabsf(a->x - 28.f) > 1.f) { printf("  %s: title %d at x %.2f, want 28\n", name, a->id, a->x); bad++; }
+            } else if (a->what == FRA_CAPTION) {
+                if (fabsf(a->x - (a->id ? 716.f : 244.f)) > 1.f) { printf("  %s: caption %d at %.2f\n", name, a->id, a->x); bad++; }
+            }
+        }
+        if (tab_y[0] >= 0.f && tab_y[1] >= 0.f && fabsf(tab_y[0] - tab_y[1]) > 0.01f) { printf("  %s: the panels' tabs on different baselines\n", name); bad++; }
+    }
+    /* the rail: every control centred on the rail's centre line, one height */
+    for (i = 0; i < n; i++) {
+        const frui_widget *g = frui_widget_get(u, i);
+        if (g->y < 56.f && (fabsf(g->y + g->h * 0.5f - 28.f) > 0.5f || fabsf(g->h - 32.f) > 0.5f)) {
+            printf("  %s: rail widget %d/%d centre %.2f h %.2f (want 28, 32)\n", name, g->kind, g->id, g->y + g->h * 0.5f, g->h); bad++;
+        }
+    }
+    return bad;
+}
+
+static uint32_t *render_px(const frui_model *m, int pw, int ph, int chk, const char *name)
+{
     uint32_t *px = malloc(sizeof(uint32_t) * (size_t)pw * (size_t)ph);
     frui_canvas c;
     frui *u = frui_new(font, text_cb, 0);
+    frui_set_look(u, look, dfont);
     frui_canvas_init(&c, px, pw, ph);
     frui_draw(u, m, &c);
+    if (chk) {
+        int bad = check_layout(u, name);
+        printf("layout check %s: %s\n", name, bad ? "OFF-GRID ITEMS ABOVE" : "all on the grid");
+    }
+    frui_free(u);
+    return px;
+}
+static void render(const frui_model *m, const char *name, int pw, int ph)
+{
+    char path[1024];
+    uint32_t *px = render_px(m, pw, ph, pw == 960 && ph == 600, name);
     snprintf(path, sizeof path, "%s/%s.png", outdir, name);
     if (write_png(path, px, pw, ph)) { fprintf(stderr, "cannot write %s\n", path); exit(1); }
     printf("%s  %dx%d\n", path, pw, ph);
-    frui_free(u);
     free(px);
+}
+
+/* the look's variants side by side: each variant's main view, an effect tab and the instrument menu at 2x, and a
+ * contact sheet of all of them at 1x (outdir/directions) */
+static void blit(uint32_t *dst, int dw, const uint32_t *src, int sw, int sh, int ox, int oy)
+{
+    int y;
+    for (y = 0; y < sh; y++) memcpy(dst + (size_t)(oy + y) * (size_t)dw + (size_t)ox, src + (size_t)y * (size_t)sw, sizeof(uint32_t) * (size_t)sw);
+}
+static int directions(const int *maj7, const int *min9, const int *vib)
+{
+    static const char *const vn[2] = {"A1-rail", "A2-plate"};
+    char path[1024], dir[1024];
+    int v, sw = 960 * 2 + 48, sh = 600 * 3 + 64, bad = 0;
+    uint32_t *sheet = malloc(sizeof(uint32_t) * (size_t)sw * (size_t)sh);
+    frui_model m;
+    for (v = 0; v < sw * sh; v++) sheet[v] = 0xFF2A2A2Cu;
+    snprintf(dir, sizeof dir, "%s/directions", outdir);
+    for (v = 0; v < 2; v++) {
+        int s;
+        look = v;
+        for (s = 0; s < 3; s++) {
+            uint32_t *px;
+            const char *sn = s == 0 ? "main" : s == 1 ? "tab-comp-delay" : "menu-engine";
+            if (s == 0) { load(&m, PR_F09, "F09", "70S PHASER"); m.tab_l = FRT_DRIVE; m.tab_r = FRT_PHASER; chord(&m, maj7, 5); }
+            else if (s == 1) { load(&m, PR_F06, "F06", "DRIVEN 77"); m.tab_l = FRT_COMP; m.tab_r = FRT_DELAY; m.gr_db = 3.6f; chord(&m, min9, 5); }
+            else { load(&m, PR_F13, "F13", "VIBES"); m.tab_l = FRT_MOTOR; m.tab_r = FRT_REVERB; chord(&m, vib, 5);
+                   m.menu = FRUI_WID(FRW_MENU, FRP_TYPE); }
+            snprintf(path, sizeof path, "%s-%s", vn[v], sn);
+            px = render_px(&m, 960, 600, 1, path);
+            blit(sheet, sw, px, 960, 600, 16 + v * (960 + 16), 16 + s * (600 + 16));
+            free(px);
+            px = render_px(&m, 1920, 1200, 0, path);
+            snprintf(path, sizeof path, "%s/%s-%s.png", dir, vn[v], sn);
+            if (write_png(path, px, 1920, 1200)) { fprintf(stderr, "cannot write %s\n", path); return 1; }
+            printf("%s\n", path);
+            free(px);
+        }
+    }
+    snprintf(path, sizeof path, "%s/compare.png", dir);
+    if (write_png(path, sheet, sw, sh)) return 1;
+    printf("%s\n", path);
+    free(sheet);
+    return bad;
 }
 
 int main(int argc, char **argv)
@@ -282,7 +409,7 @@ int main(int argc, char **argv)
     uint8_t *d;
     frui_model m;
     static const int maj7[] = {36, 48, 52, 55, 59}, min9[] = {41, 56, 60, 63, 67}, vib[] = {60, 64, 67, 71, 74};
-    if (argc < 3) { fprintf(stderr, "usage: frui_render <font.ttf> <out dir>\n"); return 2; }
+    if (argc < 3) { fprintf(stderr, "usage: frui_render <font.ttf> <out dir> [display.ttf]\n"); return 2; }
     f = fopen(argv[1], "rb");
     if (!f) { fprintf(stderr, "cannot read %s\n", argv[1]); return 1; }
     fseek(f, 0, SEEK_END); n = ftell(f); fseek(f, 0, SEEK_SET);
@@ -292,6 +419,20 @@ int main(int argc, char **argv)
     font = frui_font_load(d, (size_t)n);
     if (!font) { fprintf(stderr, "not a TrueType font: %s\n", argv[1]); return 1; }
     outdir = argv[2];
+    dfont = 0;
+    if (argc > 3) {
+        FILE *g = fopen(argv[3], "rb");
+        long n2;
+        uint8_t *d2;
+        if (!g) { fprintf(stderr, "cannot read %s\n", argv[3]); return 1; }
+        fseek(g, 0, SEEK_END); n2 = ftell(g); fseek(g, 0, SEEK_SET);
+        d2 = malloc((size_t)n2);
+        if (fread(d2, 1, (size_t)n2, g) != (size_t)n2) return 1;
+        fclose(g);
+        dfont = frui_font_load(d2, (size_t)n2);
+        if (!dfont) { fprintf(stderr, "not a TrueType font: %s\n", argv[3]); return 1; }
+    }
+    if (getenv("FRUI_DIRECTIONS")) return directions(maj7, min9, vib);
 
     /* the main view: F09 70S PHASER, DRIVE and PHASER open, a chord held; the default size at 1x and 2x, the smallest
      * and the largest window */

@@ -82,3 +82,31 @@ def test_renders(tmp_path):
         assert len(sizes) >= 17
         digests.append({k: hashlib.sha256((out / (k + ".png")).read_bytes()).hexdigest() for k in sizes})
     assert digests[0] == digests[1]
+
+
+def test_layout_grid_and_looks(tmp_path):
+    """Both looks (the aluminium rail over a black body, the aluminium plate with black sections) with the display
+    font: every widget on the 4 px grid, every knob on a column centre (or a half-column) and its row, every control
+    row one height (frui_render's layout check), and the look's comparison renders written."""
+    cc = shutil.which("cc")
+    if not cc:
+        pytest.skip("no C compiler")
+    exe = str(tmp_path / "frui_render")
+    srcs = [os.path.join(UI, f) for f in ("frui.c", "frui_font.c", "frui_gfx.c", os.path.join("tools", "frui_render.c"))]
+    r = subprocess.run([cc, "-O2", "-std=c99", "-D_DEFAULT_SOURCE", "-D_DARWIN_C_SOURCE", "-Wall", "-Wextra", "-Werror",
+                        "-Wno-unused-const-variable", "-o", exe] + srcs + ["-lz", "-lm"], capture_output=True, text=True)
+    if r.returncode and "zlib.h" in r.stderr:
+        pytest.skip("no zlib headers")
+    assert r.returncode == 0, r.stderr
+    font = os.path.join(ROOT, "assets", "fonts", "InterTight[wght].ttf")
+    dfont = os.path.join(ROOT, "assets", "fonts", "Michroma-Regular.ttf")
+    (tmp_path / "directions").mkdir()
+    for env in ({}, {"FRUI_DIRECTIONS": "1"}):
+        p = subprocess.run([exe, font, str(tmp_path), dfont], capture_output=True, text=True, timeout=120,
+                           env=dict(os.environ, **env))
+        assert p.returncode == 0, p.stderr
+        checks = re.findall(r"layout check (\S+): (.*)", p.stdout)
+        assert len(checks) >= 6
+        assert all(v == "all on the grid" for _, v in checks), p.stdout
+    for f in ("A1-rail-main", "A1-rail-tab-comp-delay", "A2-plate-main", "A2-plate-tab-comp-delay", "compare"):
+        assert (tmp_path / "directions" / (f + ".png")).stat().st_size > 10000
