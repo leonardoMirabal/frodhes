@@ -68,9 +68,14 @@ static int selftest(Window top)
     unsigned nk = 0;
     float x, y;
     int v, i, lit = 0;
-    XQueryTree(dpy, top, &root, &parent, &kids, &nk);
-    child = nk ? kids[0] : 0;
-    if (kids) XFree(kids);
+    for (i = 0; i < 100 && !child; i++) {   /* (the view's own connection made it: wait up to 1 s for the server) */
+        XSync(dpy, False);
+        XQueryTree(dpy, top, &root, &parent, &kids, &nk);
+        child = nk ? kids[0] : 0;
+        if (kids) XFree(kids);
+        kids = 0;
+        if (!child) spin(10);
+    }
     say(child != 0, "the view is a child window", W, H);
     if (!child) return 1;
     spin(300);

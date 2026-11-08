@@ -309,7 +309,7 @@ int frg_view_set_parent(frg_view *v, void *native_parent)
     XWindowAttributes pa;
     if (!parent) return -1;
     if (!v->dpy && !(v->dpy = XOpenDisplay(0))) return -1;
-    if (v->win) { XReparentWindow(v->dpy, v->win, parent, 0, 0); v->parent = parent; XFlush(v->dpy); return 0; }
+    if (v->win) { XReparentWindow(v->dpy, v->win, parent, 0, 0); v->parent = parent; XSync(v->dpy, False); return 0; }
     if (!XGetWindowAttributes(v->dpy, parent, &pa)) return -1;
     /* the parent's visual and depth (a host window with an ARGB visual: the canvas is opaque, alpha 0xFF) */
     v->visual = pa.visual;
@@ -330,7 +330,7 @@ int frg_view_set_parent(frg_view *v, void *native_parent)
     v->gc = XCreateGC(v->dpy, v->win, 0, 0);
     XMapWindow(v->dpy, v->win);
     v->visible = 1;
-    XFlush(v->dpy);
+    XSync(v->dpy, False);          /* (a round trip: the window exists for every client, the host's too, on return) */
     return 0;
 }
 void frg_view_show(frg_view *v, int visible)
