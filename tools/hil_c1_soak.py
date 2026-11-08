@@ -302,7 +302,12 @@ def main():
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--stop-on-fail", action="store_true")
+    ap.add_argument("--port", metavar="NAME", help="only the unit whose MIDI port / audio device name contains NAME "
+                    "(a second FM-1 with its own USB name, tools/build.py --usb-name)")
     a = ap.parse_args()
+    if a.port:
+        import fm1_ports
+        fm1_ports.force(a.port)
     if a.selftest:
         selftest()
         return 0

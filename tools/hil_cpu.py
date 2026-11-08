@@ -279,6 +279,10 @@ def main(argv=None):
     if "-h" in argv or "--help" in argv:              # the options only: no device opened
         print(__doc__)
         return dict(code=0)
+    if "--port" in argv:                              # --port NAME: only that unit (fm1_ports.force: a second FM-1)
+        i = argv.index("--port")
+        fm1_ports.force(argv[i + 1])
+        del argv[i:i + 2]
     argv0 = sys.argv
     try:
         if "--keyadc" in argv and argv[argv.index("--keyadc") + 1:argv.index("--keyadc") + 2] == ["gate"]:

@@ -301,16 +301,19 @@ def handshake(link, tries=3):
 
 
 class Updater:
-    def __init__(self, backend, port=None):
+    def __init__(self, backend, port=None, new_port=None):
         self.backend = backend
         self.port = port
+        self.new_port = new_port   # --new-port: the name the device takes after the restart (another USB name)
         self.others = set()        # the other devices' ports at the start: never probed in the waits
 
     def candidates(self, only_port):
         """only_port: the ports of the one device to install (refuses when two devices could be it); else (the wait
         for the update loader and the new firmware) also every FM-1-like port except the other devices' ports seen
         at the start. Never a fm1_ports.NEVER port (another unit's firmware)."""
-        names = [n for n in self.backend.input_names() if not fm1_ports._never(n)]
+        names = [n for n in self.backend.input_names()
+                 if not fm1_ports._never(n) or any(k and k.lower() in n.lower() for k in (self.port, self.new_port))]
+        # (a named port is taken even when fm1_ports never picks it: a loaned unit)
         if only_port:
             if self.port:
                 mine = [n for n in names if self.port.lower() in n.lower()]
@@ -324,7 +327,10 @@ class Updater:
             self.others = {n for n in names if PORT_RE.search(n) and n not in mine}
             return mine
         mine = [n for n in names if self.port and self.port.lower() in n.lower() and n not in self.others]
-        return mine + [n for n in names if n not in mine and n not in self.others and PORT_RE.search(n)]
+        new = [n for n in names if self.new_port and self.new_port.lower() in n.lower() and n not in self.others
+               and n not in mine]
+        return mine + new + [n for n in names if n not in mine and n not in new and n not in self.others
+                             and PORT_RE.search(n)]
 
     def find(self, want=None, only_port=True):
         """the first matching port that answers the handshake (and want(identity))"""
@@ -546,7 +552,7 @@ class Progress:
 
 
 def run(a, backend, out, ask):
-    up = Updater(backend, a.port)
+    up = Updater(backend, a.port, getattr(a, "new_port", None))
     if a.info:
         dev = up.find()
         if not dev:
@@ -585,7 +591,10 @@ def main(argv=None, backend=None, out=sys.stdout, ask=ask_tty):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("package", nargs="?", help="Felucca package (.fwsc)")
     ap.add_argument("--info", action="store_true", help="print the identity of the connected FM-1")
-    ap.add_argument("--port", metavar="NAME", help="MIDI port to use (part of its name)")
+    ap.add_argument("--port", metavar="NAME", help="MIDI port to use (part of its name; a named port is used even "
+                                                   "when fm1_ports.py would never pick it)")
+    ap.add_argument("--new-port", metavar="NAME", help="the port name the FM-1 takes after the restart, when the "
+                                                       "package changes it (tools/build.py --usb-name)")
     ap.add_argument("--yes", action="store_true", help="do not ask for confirmation")
     ap.add_argument("--force", action="store_true", help="install a package without the Felucca loader marker")
     a = ap.parse_args(argv)

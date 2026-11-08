@@ -540,7 +540,17 @@ def main():
     ap.add_argument("--c1", action="store_true",
                     help="two cores (frodhes.c FR_C1: 14 voices on core 0, the effects and the full-rate reverb on "
                          "core 1); the FM-1 only; file frodhes[-X.Y.Z]-c1.fwsc, identity FM-1_958 as every build")
+    ap.add_argument("--usb-name", metavar="NAME",
+                    help="a developer image's USB product name (MIDI port, audio device), for a second FM-1 on the "
+                         "same computer: never a name the tools pick by themselves (frodhes, felucca, fm-1, textura); "
+                         "the FM-1 only, not with --release; file ...-usb.fwsc")
     a = ap.parse_args()
+    if a.usb_name is not None:
+        low = a.usb_name.lower()
+        if (a.release or not re.fullmatch(r"[A-Za-z0-9 ]{3,24}", a.usb_name)
+                or any(k in low for k in ("frodhes", "felucca", "fm-1", "textura"))):
+            raise SystemExit("--usb-name: 3-24 letters, digits, spaces; none of frodhes/felucca/fm-1/textura; "
+                             "not with --release")
     if a.o2:
         if a.release:
             raise SystemExit("--o2 is a probe: not with --release")
@@ -568,6 +578,11 @@ def main():
         C1 = True
         BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], "-DFR_C1=1"]
         name = name[:-len(".fwsc")] + "-c1.fwsc"
+    if a.usb_name is not None:
+        if BOARD != "fm1":
+            raise SystemExit("--usb-name: the FM-1 only")
+        BOARD_APP_DEFS[BOARD] = [*BOARD_APP_DEFS[BOARD], f'-DUSB_PRODUCT="{a.usb_name}"']
+        name = name[:-len(".fwsc")] + "-usb.fwsc"
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:

@@ -10,11 +10,27 @@ NEVER names are other firmware on another unit and are never matched, not even a
   first(names)       pick(names)[0], or None
   devices(devs, ch)  the indices of sounddevice.query_devices() entries picked the same way, with >= ch inputs
   is_fm1(name)       the name is an FM-1 port by any key (a guard: "is this port the FM-1's own?")
+  force(name)        from now on pick()/devices() take only the names that contain `name` (a tool's --port, for
+                     a second unit with its own USB name, tools/build.py --usb-name); nothing else is ever matched
 """
+import os
 
 PREFER = "frodhes"
 PORT_KEYS = ("frodhes", "felucca", "fm-1")   # Frodhes since the rename; Felucca before; fm-1 the stock name
 NEVER = ("textura",)                         # another unit's firmware: never opened, never probed
+
+
+FORCED = os.environ.get("FM1_PORT") or None  # force(); FM1_PORT=NAME does the same for every tool
+
+
+def force(name):
+    """only the ports / audio devices whose name contains `name` from now on (None: the usual choice)"""
+    global FORCED
+    FORCED = name or None
+    if FORCED:
+        os.environ["FM1_PORT"] = FORCED       # (the tools' child processes too)
+    else:
+        os.environ.pop("FM1_PORT", None)
 
 
 def _never(name):
@@ -24,10 +40,14 @@ def _never(name):
 
 def is_fm1(name, keys=PORT_KEYS):
     n = name.lower()
+    if FORCED:
+        return FORCED.lower() in n
     return not _never(name) and any(k in n for k in keys)
 
 
 def pick(names, keys=PORT_KEYS):
+    if FORCED:
+        return [n for n in names if FORCED.lower() in n.lower()]
     names = [n for n in names if not _never(n)]
     mine = [n for n in names if PREFER in n.lower()]
     return mine if mine else [n for n in names if any(k in n.lower() for k in keys)]

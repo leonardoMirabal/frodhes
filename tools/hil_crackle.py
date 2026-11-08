@@ -1831,7 +1831,12 @@ def parse_args(argv=None):
     ap.add_argument("--host", action="store_true")
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--no-self-test", action="store_true", help="(device) skip the self-test before the takes")
+    ap.add_argument("--port", metavar="NAME", help="only the unit whose MIDI port / audio device name contains NAME "
+                    "(a second FM-1 with its own USB name, tools/build.py --usb-name)")
     a = ap.parse_args(argv)
+    if a.port:
+        import fm1_ports
+        fm1_ports.force(a.port)
     if a.quick:
         a.worst_s, a.recipe_s, a.no_usb_s = 20.0, 24.0, min(a.no_usb_s, 20.0)
     return a

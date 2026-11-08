@@ -89,3 +89,17 @@ def test_dev_opens_only_frodhes(monkeypatch, names):
     monkeypatch.setitem(sys.modules, "mido", Mido)
     m.Dev()
     assert opened == ["Frodhes FM-1", "Frodhes FM-1"]
+
+
+def test_force_takes_only_the_named_unit():
+    """--port / FM1_PORT (a loaned unit with its own USB name): only that name, never the Frodhes FM-1"""
+    try:
+        fp.force("Dualcore")
+        names = ["Frodhes FM-1", "Dualcore Test", "Textura FM-1", "M6"]
+        assert fp.pick(names) == ["Dualcore Test"] and fp.first(names) == "Dualcore Test"
+        assert fp.devices([dev("Frodhes FM-1"), dev("Dualcore Test")], 2) == [1]
+        assert fp.is_fm1("Dualcore Test") and not fp.is_fm1("Frodhes FM-1")
+        assert fp.pick(["Frodhes FM-1"]) == [] and os.environ.get("FM1_PORT") == "Dualcore"
+    finally:
+        fp.force(None)
+    assert "FM1_PORT" not in os.environ and fp.pick(["Frodhes FM-1", "Dualcore Test"]) == ["Frodhes FM-1"]

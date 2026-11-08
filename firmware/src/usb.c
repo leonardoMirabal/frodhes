@@ -448,7 +448,7 @@ static const uint8_t STR2[] = {30, 3, 'F', 0, 'e', 0, 'l', 0, 'u', 0, 'c', 0, 'c
 #define SMK_MODEL "SMK-37 Pro"                                  /* (fm1_cc.h) */
 #endif
 #define USB_PRODUCT "Frodhes " SMK_MODEL
-#else
+#elif !defined(USB_PRODUCT)                     /* (tools/build.py --usb-name: a test unit's own name) */
 #define USB_PRODUCT "Frodhes FM-1"
 #endif
 /* the product, so the MIDI port and the audio input: "Frodhes" and the model (0.9.7, GitHub #21), UTF-16LE, written

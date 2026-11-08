@@ -458,7 +458,21 @@ def two_units():
     rc, out, err = cli([p, "--yes"], b)
     ok(rc == 3 and not b.probed, "a Textura unit alone: never a candidate (exit 3), never opened")
     rc, out, err = cli([p, "--yes", "--port", "Textura"], b)
-    ok(rc == 3 and not b.probed, "--port Textura: still never opened")
+    ok(rc == 3 and b.probed == ["Textura FM-1"] and not b.fm1.links,
+       "--port Textura: only the named unit tried (a loan, named on purpose), nothing else opened")
+    # a loaned unit (Textura's) beside the Frodhes FM-1: named with --port, its new USB name (build.py --usb-name)
+    # with --new-port; the Frodhes FM-1 never opened, in the install nor in the loader waits; and back again
+    for before in (True, False):
+        b = WithOthers(FakeFM1(image, identity="FM-1_958", name="Textura FM-1", after_name="Dualcore Test"),
+                       ["Frodhes FM-1"], before)
+        rc, out, err = cli([p, "--yes", "--port", "Textura", "--new-port", "Dualcore"], b)
+        ok(rc == 0 and b.fm1.upgrades == 2 and "done: the FM-1 runs FM-1_900" in out and not b.probed,
+           f"loaned unit --port Textura --new-port Dualcore: installed, found again, the Frodhes FM-1 never opened {b.probed}")
+        b = WithOthers(FakeFM1(image, identity="FM-1_958", name="Dualcore Test", after_name="Textura FM-1"),
+                       ["Frodhes FM-1"], before)
+        rc, out, err = cli([p, "--yes", "--port", "Dualcore", "--new-port", "Textura"], b)
+        ok(rc == 0 and b.fm1.upgrades == 2 and "done: the FM-1 runs FM-1_900" in out and not b.probed,
+           f"loaned unit back: --port Dualcore --new-port Textura, the Frodhes FM-1 never opened {b.probed}")
 
 
 wire()
