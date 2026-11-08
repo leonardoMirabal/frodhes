@@ -635,6 +635,7 @@ static int32_t wah_eslow, wah_g1 = 4096;        /* the input's slow envelope (on
  * (q x bp, f x hi) fit 32 bits up to here; a hot input (COMP's +24 dB make-up, the pedal: 0.9.5 overflowed at ~12x full
  * scale) is clipped to it, 2x full scale (every render below it: the gates' heaviest ~14000) */
 #define WAH_XM 65535
+#define WAH_PEN 4                                       /* the envelopes' pre-emphasis, x - WAH_PEN / 8 x[-1] (below) */
 static inline __attribute__((always_inline)) int32_t div10(int32_t v) { return (int32_t)(((int64_t)v * 1717986919) >> 34) + (int32_t)((uint32_t)v >> 31); }
 /* the wah's filter (0.9.8 fxq-mod): the same state-variable (Chamberlin) filter, the same response, computed 64 times
  * finer inside (x 64) with 28-bit coefficients and rounded (it had 13-bit ones and truncated: a noise floor -25 dB under a
@@ -675,9 +676,11 @@ FX_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t
                                                  * peak's gain held, louder playing no longer gets louder (0.7); x 64 */
             x = (xf + 32) >> 6;                 /* (the bus' grain: for the output's envelope) */
         }
-        /* envelopes of the input and the filtered output, each pre-emphasised (x - 3/4 x[-1]: +12 dB from the bass
-         * to the treble, roughly the ear's weighting) so a closed wah's rumble does not count as loudness */
-        pi = xin - ((3 * xi) >> 2); po = x - ((3 * xo) >> 2);
+        /* envelopes of the input and the filtered output, each pre-emphasised (x - 1/2 x[-1]: +9.5 dB from the bass
+         * to the treble, roughly the ear's weighting) so a closed wah's rumble does not count as loudness. (It was
+         * x - 3/4 x[-1], +12 dB: the 0.9.10 Rhodes C7 v40 under a closed resonant wah +1.16 LU; now +0.88, every
+         * engine's wah within test_hil_limits' bounds, 2026-11-08) */
+        pi = xin - ((WAH_PEN * xi) >> 3); po = x - ((WAH_PEN * xo) >> 3);
         vi = (pi < 0 ? -pi : pi) << 8; vo = (po < 0 ? -po : po) << 8;   /* x 2^8: a Q15 level's steps survive the >> */
         xi = xin; xo = x;
         ei += (vi - ei) >> (vi > ei ? 7 : 9);   /* 2.9 ms up, 11.6 ms down */
@@ -980,10 +983,15 @@ FX_RAM __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, u
      * apart (they were 90: a mono sound turned very wide). */
     /* the level per DEPTH (Q12, knots every 16, the last at 127): the chord's loudness (LUFS) matched to the phaser
      * off at every DEPTH, within 0.1 LU (fitted on host renders; tests/py/test_mix_levels.py); the low shelf's depth follows it (ksh), so
-     * the bass keeps its level too (C2 within +1.5 dB). The mix was a fixed 0.70: the chord -2.1 LU at DEPTH 64 */
-    static const int16_t PH_G[9] = {2618, 2935, 3614, 4797, 5481, 4990, 4633, 4376, 4182};
+     * the bass keeps its level too (C2 within +1.5 dB). The mix was a fixed 0.70: the chord -2.1 LU at DEPTH 64.
+     * Refitted 2026-11-08 on the 0.9.10 Rhodes (with the centre law below): every knot within 0.11 LU */
+    static const int16_t PH_G[9] = {2731, 2820, 3318, 5112, 5390, 4989, 4710, 4502, 4331};
     int32_t gt = PH_G[depth >> 4] + (((PH_G[(depth >> 4) + 1] - PH_G[depth >> 4]) * (depth & 15)) >> 4);
-    int32_t ct = 16384 + (depth < 64 ? (64 - depth) * 256 - (64 - depth) / 64 : 0);   /* (DEPTH 0: 32767) */
+    /* the centre under DEPTH 64 rises 1.5x as fast as the sweep narrows, at the top from DEPTH 21 down (it was 1x, the
+     * top at DEPTH 0: with the 0.9.10 Rhodes' brighter 1-3 kHz a high chord lost 3.3 dB at DEPTH 30, a low one gained
+     * 0.9; now -0.8 / +0.8, test_manual_claims) */
+    int32_t ct = depth < 64 ? 16384 + 384 * (64 - depth) : 16384;
+    ct = ct > 32767 ? 32767 : ct;                       /* (DEPTH 0..21: 32767) */
     uint32_t inc = fx_ph_sync_inc ? fx_ph_sync_inc : FX_LFO_INC[fx_p[FXP_PH_SPEED]] >> 1, sb, s;
     int on = fx_p[FXP_PH_SW] != 0;
     int32_t w1;
@@ -1075,6 +1083,10 @@ static uint8_t cho_fill, cho_run;                       /* blocks still to fill 
 static int32_t cho_swq;                                 /* the sweep's width x 256, gliding (CHO_SWS) */
 static int32_t cho_el = -1, cho_er, cho_km, cho_cg, cho_hl[2];   /* the taps' end positions (Q8; -1: none yet), the
                                                          * last sub-block's mix and make-up, the wet's high-pass */
+#define CHO_MKF 3300                                    /* the full mix's make-up, 1 + CHO_MKF / 32768 (+0.83 dB; it was
+                                                         * 1950, +0.50: the 0.9.10 Rhodes' chord -1.2 .. -1.5 LU at
+                                                         * DEPTH 64 .. 127, test_mix_levels' -1.5 .. +0.5; fx_all's wide
+                                                         * chorus target, -2.5 +- 2, bounds it from above) */
 #define CHO_SWS 256                                     /* the sweep width's largest step a sub-block (fxq-mod: with
                                                          * the mix gliding, DEPTH 127 -> 0 moved the taps from 154
                                                          * samples out to the centre in 32 samples under a still-wet
@@ -1221,9 +1233,10 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         el = cho_pos(cp_ph + inc * 32u, cho_swq); er = cho_pos(cp_ph + inc * 32u + 0x40000000u, cho_swq);
         int32_t sl = el - cho_el, sr = er - cho_er;     /* per sample, in Q13 (x 32: the 32 steps add up exactly) */
         int32_t mix = cho_km + clampi(mt - cho_km, -CHO_KMS, CHO_KMS), cg;
-        cg = (mix * 1950 >> 14) + (((mix * (16384 - mix)) >> 14) * 7 >> 3);   /* + half-mix comb; the gain is
+        cg = (mix * CHO_MKF >> 14) + (((mix * (16384 - mix)) >> 14) * 7 >> 3);   /* + half-mix comb; the gain is
                                                          * 1 + cg / 32768 (cg < 7600: l * cg fits up to |l| 282000; l * the
-                                                         * whole gain overflowed from |l| 61856: a hot chord, fuzz 2390) */
+                                                         * whole gain overflowed from |l| 61856: a hot chord, fuzz 2390;
+                                                         * the largest, 7028 at mix 11472) */
         /* the tap I + F (Q13) behind the sub-block's first sample (w, at -w) sits at -w + I: one Q13 position per
          * tap, (-w << 13) + d, gives the index (its bits 13..22) and the fraction (bits 3..12) and steps by s - 8192
          * a sample */
