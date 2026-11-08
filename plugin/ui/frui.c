@@ -609,6 +609,35 @@ static void meter(frui *u, float x, float y, float w, float h)
         }
     }
 }
+/* SAVE's name field, in the preset box: NAME, the text (selected: the first key replaces it) and the caret, what
+ * RETURN does (a new user preset, or REPLACE when a user preset of that name exists: it is overwritten) */
+static int user_named(const frui_model *m, const char *s)
+{
+    int i;
+    for (i = 0; i < m->pl_n && i < FRUI_PL_MAX; i++) {
+        const char *a = m->pl[i].name, *b = s;
+        if (!m->pl[i].user) continue;
+        while (*a && *b && (*a >= 'a' && *a <= 'z' ? *a - 32 : *a) == (*b >= 'a' && *b <= 'z' ? *b - 32 : *b)) { a++; b++; }
+        if (!*a && !*b) return 1;
+    }
+    return 0;
+}
+static void save_field(frui *u, float x, float y, float w, float h)
+{
+    const frui_model *m = u->m;
+    float cy = y + h * 0.5f, xt = x + 50.f, wt = tw(u, 12.5f, 560.f, 0.6f, 0, m->save_text);
+    int rp = m->save_text[0] && user_named(m, m->save_text);
+    float avail = w - 50.f - 64.f;                   /* (a long name scrolls left: the caret stays in sight) */
+    if (wt + 4.f > avail) xt -= wt + 4.f - avail;
+    tx(u, x + 12.f, mid(u, cy, 8.5f), T_CAPTION, 0, "NAME", C_ACC);
+    frui_clip(u->c, X(x + 46.f), X(y), X(avail + 4.f), X(h));
+    if (m->save_sel && m->save_text[0])
+        frui_rrect(u->c, X(xt - 3.f), X(cy - 9.f), X(wt + 6.f), X(18.f), X(R_SMALL), frui_alpha(C_ACC, 0.32f));
+    tx(u, xt, mid(u, cy, 12.5f), 12.5f, 560.f, 0.6f, 0, m->save_text, C_TEXT);
+    if (!m->save_sel || !m->save_text[0]) frui_rect(u->c, X(xt + wt + 2.f), X(cy - 8.f), X(1.2f), X(16.f), C_ACC);
+    frui_clip_reset(u->c);
+    txr(u, x + w - 12.f, mid(u, cy, 8.5f), T_CAPTION, 0, rp ? "REPLACE" : "RETURN", rp ? C_ACC : C_TEXT3);
+}
 static void rail(frui *u)
 {
     const frui_model *m = u->m;
@@ -648,22 +677,26 @@ static void rail(frui *u)
     x += 36.f;
     {
         float w = 264.f;
-        int open = m->presets || is_hover(u, FRW_PRESET, 0);
+        int open = m->presets || m->saving || is_hover(u, FRW_PRESET, 0);
         well(u, x, y, w, h, R_CTRL);
         if (open) frui_rrect_stroke(u->c, X(x) + 0.5f, X(y) + 0.5f, X(w) - 1.f, X(h) - 1.f, X(R_CTRL), 1.f,
-                                    m->presets ? C_ACC : C_EDGE);
-        tx(u, x + 12.f, mid(u, cy, 12.5f), 12.5f, 640.f, 0.4f, FRUI_TNUM, m->preset_tag, C_ACC);
-        frui_clip(u->c, X(x + 50.f), X(y), X(w - 50.f - (m->edited ? 76.f : 26.f)), X(h));
-        tx(u, x + 50.f, mid(u, cy, 12.5f), 12.5f, 560.f, 0.6f, 0, m->preset_name, C_TEXT);
-        frui_clip_reset(u->c);
-        if (m->edited) txr(u, x + w - 30.f, mid(u, cy, 8.5f), T_CAPTION, 0, "EDITED", C_TEXT3);
-        chevron(u, x + w - 15.f, cy, 3.f, 0, m->presets ? C_ACC : C_TEXT2);
+                                    m->presets || m->saving ? C_ACC : C_EDGE);
+        if (m->saving) save_field(u, x, y, w, h);
+        else {
+            tx(u, x + 12.f, mid(u, cy, 12.5f), 12.5f, 640.f, 0.4f, FRUI_TNUM, m->preset_tag, C_ACC);
+            frui_clip(u->c, X(x + 50.f), X(y), X(w - 50.f - (m->edited ? 76.f : 26.f)), X(h));
+            tx(u, x + 50.f, mid(u, cy, 12.5f), 12.5f, 560.f, 0.6f, 0, m->preset_name, C_TEXT);
+            frui_clip_reset(u->c);
+            if (m->edited) txr(u, x + w - 30.f, mid(u, cy, 8.5f), T_CAPTION, 0, "EDITED", C_TEXT3);
+            chevron(u, x + w - 15.f, cy, 3.f, 0, m->presets ? C_ACC : C_TEXT2);
+        }
         reg(u, FRW_PRESET, 0, x, y, w, h);
         x += w + 4.f;
     }
     key_btn(u, FRB_NEXT, 0, x, y, 32.f, h);
     x = colc(1, 1) - G_COL * 0.5f;                     /* 608: the right half's second column */
     key_btn(u, FRB_SAVE, "SAVE", x, y, 52.f, h);
+    if (m->saving) frui_rrect_stroke(u->c, X(x) + 0.5f, X(y) + 0.5f, X(52.f) - 1.f, X(h) - 1.f, X(R_CTRL), 1.f, C_ACC);
     key_btn(u, FRB_UNDO, "UNDO", x + 56.f, y, 52.f, h);
     meter(u, colc(1, 2) - G_COL * 0.5f + 12.f, y, 100.f, h);
     /* LEVEL: the preset's volume trim (P_LEVEL), its knob's edge on the grid's right edge */

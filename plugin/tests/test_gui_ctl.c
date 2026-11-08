@@ -58,6 +58,7 @@ static int layer_check(frui_font *f, frui_font *d)
                     }
                     m.pl_n = 90; m.pl_cur = 13; m.pl_page = sc - 8; m.presets = sc == 8;
                     m.hover = FRUI_WID(FRW_PITEM, 20);
+                    if (sc == 9) { m.saving = 1; m.save_sel = 0; strcpy(m.save_text, "WWWWWWWWWWWWWWWWWWWWWWWW"); }
                 }
                 frui_set_look(u, look, d);
                 frui_canvas_init(&ca, a, W, H);
@@ -311,6 +312,40 @@ int main(void)
         ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_ESCAPE);
         CHECK(frp_gui_model(ctl)->presets == 0, "ESC closes PRESETS");
         h.pcur = 7;
+        paint();
+    }
+    /* SAVE: a name field (the playing preset's name, selected); typing replaces it, capitals, at most 24; RETURN saves
+     * a user preset under the name; ESC leaves it */
+    {
+        const char *t = "my sound";
+        int s0 = h.saves, k;
+        paint();
+        fh_find(frp_gui_frui(ctl), FRW_BUTTON, FRB_SAVE, &x, &y);
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        CHECK(frp_gui_model(ctl)->saving && frp_gui_model(ctl)->save_sel && !strcmp(frp_gui_model(ctl)->save_text, "PHASER"),
+              "SAVE opens the name field with the preset's name selected (\"%s\")", frp_gui_model(ctl)->save_text);
+        paint();
+        for (; *t; t++) CHECK(ev(FRG_KEY, 0, 0, 0, 0, 0, *t) & 2, "the field keeps the key '%c'", *t);
+        ev(FRG_KEY, 0, 0, 0, 0, 0, '"');
+        CHECK(!strcmp(frp_gui_model(ctl)->save_text, "MY SOUND"), "typing replaces the name, in capitals, no quote (\"%s\")",
+              frp_gui_model(ctl)->save_text);
+        paint();
+        ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_RETURN);
+        CHECK(h.saves == s0 + 1 && h.np == 15 && !strcmp(h.pname[14], "MY SOUND") && h.puser[14] && !frp_gui_model(ctl)->saving,
+              "RETURN saves the user preset MY SOUND and closes the field");
+        paint();
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_BACKSPACE);
+        for (k = 0; k < 30; k++) ev(FRG_KEY, 0, 0, 0, 0, 0, 'a' + k % 26);
+        CHECK(strlen(frp_gui_model(ctl)->save_text) == 24, "at most 24 characters (%zu)", strlen(frp_gui_model(ctl)->save_text));
+        ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_ESCAPE);
+        CHECK(h.saves == s0 + 1 && !frp_gui_model(ctl)->saving, "ESC leaves the field, nothing saved");
+        paint();
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        fh_find(frp_gui_frui(ctl), FRW_KNOB, FRP_BARK, &x, &y);
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        CHECK(h.saves == s0 + 1 && !frp_gui_model(ctl)->saving, "a click elsewhere leaves it too");
+        CHECK(ev(FRG_KEY, 0, 0, 0, 0, 0, 'q') == 0, "with the field closed, letters go to the host");
         paint();
     }
 

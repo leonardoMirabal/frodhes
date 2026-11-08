@@ -473,6 +473,18 @@ int main(int argc, char **argv)
         plist(&m, 60, un, ut);
         m.pl_page = 1; m.pl_cur = 70; m.hover = -1;
         render(&m, "presets-page2", 960, 600);
+        /* SAVE: the name field, the name selected; then typed, and one that replaces a user preset */
+        load(&m, PR_F09, "F09", "70S PHASER");
+        m.tab_l = FRT_DRIVE; m.tab_r = FRT_PHASER; m.edited = 1;
+        plist(&m, 4, un, ut);
+        m.saving = 1; m.save_sel = 1; snprintf(m.save_text, sizeof m.save_text, "%s", "70S PHASER");
+        render(&m, "save-name", 960, 600);
+        render(&m, "save-name@2x", 1920, 1200);
+        m.save_sel = 0; snprintf(m.save_text, sizeof m.save_text, "%s", "PHASER NIGHT");
+        render(&m, "save-typed", 960, 600);
+        snprintf(m.save_text, sizeof m.save_text, "%s", "LATE SET");
+        render(&m, "save-replace", 960, 600);
+        render(&m, "save-replace@2x", 1920, 1200);
     }
     /* the effects bypassed (EFFECTS: BYPASS): every effect knob drawn inactive, the voice's knobs as they are */
     load(&m, PR_F06, "F06", "DRIVEN 77");

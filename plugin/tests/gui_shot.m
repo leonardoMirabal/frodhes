@@ -565,6 +565,29 @@ int main(int argc, char **argv)
                     pump(0.2);
                     m = snap("presets-closed");
                     CHECK(m && !m->presets, "ESC closes PRESETS");
+                    /* SAVE: the name field (the preset's name selected), typed, RETURN: a user preset of that name */
+                    if (find(FRW_BUTTON, FRB_SAVE, &x, &y, 0)) click(x, y, 1);
+                    pump(0.2);
+                    m = snap("save-field");
+                    CHECK(m && m->saving && m->save_sel && !strcmp(m->save_text, "VIBES"), "SAVE: the name field (\"%s\")",
+                          m ? m->save_text : "");
+                    for (const char *t = "night vibes"; *t; t++) sh_key(*t, 0);
+                    pump(0.2);
+                    m = snap("save-typed");
+                    CHECK(m && !strcmp(m->save_text, "NIGHT VIBES"), "typed: \"%s\"", m ? m->save_text : "");
+                    sh_key(FRK_RETURN, 0);
+                    pump(0.4);
+                    vt->preset_current(pc, &p2, &ed);
+                    CHECK(vt->preset_count(pc) == n0 + 1 && !strcmp(p2.name, "NIGHT VIBES") && p2.user && vt->preset_type(pc, n0) == 4,
+                          "RETURN saved the user preset %s %s (instrument %d)", p2.tag, p2.name, vt->preset_type(pc, n0));
+                    m = snap("saved");
+                    CHECK(m && !m->saving && !strcmp(m->preset_name, "NIGHT VIBES"), "the box shows it");
+                    if (find(FRW_PRESET, 0, &x, &y, 0)) click(x, y, 1);
+                    pump(0.3);
+                    m = snap("presets-user");
+                    CHECK(m && m->pl_n == n0 + 1 && m->pl[n0].user && m->pl_cur == n0, "PRESETS lists it with the user's, marked");
+                    sh_key(FRK_ESCAPE, 0);
+                    CHECK(vt->preset_delete(pc, n0) == 0, "(the test's user preset removed)");
                     pump(0.2);
                     /* EFFECTS: BYPASS draws the effect knobs inactive */
                     if (find(FRW_BUTTON, FRB_FX, &x, &y, 0)) click(x, y, 1);

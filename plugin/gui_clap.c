@@ -168,6 +168,7 @@ static int b_preset_index(void *ctx)
     return frp_ui_preset_current(PC(ctx), &pi, 0);
 }
 static int b_preset_load(void *ctx, int idx) { return frp_ui_preset_load(PC(ctx), idx); }
+static int b_preset_save_as(void *ctx, const char *name) { return frp_ui_preset_save(PC(ctx), name); }
 static void bind(frp_gui_clap_t *c)
 {
     frp_ui_host_t *h = &c->uh;
@@ -181,7 +182,7 @@ static void bind(frp_gui_clap_t *c)
     h->setting_get = b_setting_get; h->setting_set = b_setting_set;
     h->learn_get = b_learn_get; h->learn_cmd = b_learn_cmd;
     h->preset_entry = b_preset_entry; h->preset_index = b_preset_index;
-    h->preset_load = b_preset_load;
+    h->preset_load = b_preset_load; h->preset_save_as = b_preset_save_as;
 }
 
 frp_gui_clap_t *frp_gui_clap_new(const clap_host_t *host, frp_core *pc)

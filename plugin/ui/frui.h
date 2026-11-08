@@ -56,6 +56,10 @@ typedef struct frui_model_s {
     int presets;                   /* the sheet is open */
     int pl_n, pl_cur, pl_page;     /* the entries; the one playing (-1: none); the page shown */
     struct { char tag[8]; char name[24]; uint8_t type, user; } pl[FRUI_PL_MAX];   /* type: the instrument (TYPE) */
+    /* SAVE: a name field in the preset box; RETURN saves under it, ESC (or a click elsewhere) leaves it. save_sel: the
+     * whole text is selected (the first key typed replaces it) */
+    int saving, save_sel;
+    char save_text[28];
 } frui_model;
 
 /* the settings' pseudo parameter ids (for the controls and the widget ids) */
@@ -69,6 +73,7 @@ enum { FRW_KNOB, FRW_SEG, FRW_MENU, FRW_TAB_L, FRW_TAB_R, FRW_BUTTON, FRW_PAGER,
                                             * a preset in the PRESETS sheet (id: its index in pl) */
 enum { FRB_PREV, FRB_NEXT, FRB_SAVE, FRB_UNDO, FRB_TYPE_PREV, FRB_TYPE_NEXT, FRB_GEAR, FRB_CLOSE, FRB_SUSTAIN, FRB_FX,
        FRB_BPM_DOWN, FRB_BPM_UP, FRB_LEARN_RESET };
+#define FRUI_SAVE_MAX 24           /* a user preset's name: 1 .. 24 characters */
 /* the knob menu's items (FRW_CTX ids) */
 enum { FRC_LEARN, FRC_FORGET, FRC_DEFAULT };
 typedef struct {
