@@ -32,6 +32,13 @@ entry is MIDI-driven when its script has only "midi", "end", "expect", "shot" an
 move the sound). Every other entry (FM-1 panel buttons, knobs, keys, the TRS input, stalls, the default run) is
 host-only: the same code, covered by Gate R. The renders run in the Move image on macOS (MOVE_RUN, as the Makefile)
 and natively on Linux arm64 (MOVE_RUN=). Light: --jobs 2 by default.
+
+Concurrency (K3: the 0.9.9 release's Gate M had one DIFF, fx/rev127, while another process rebuilt and rewrote the
+shared build files mid-gate): the gate holds the GATE_M lock (tools/lock.py) for its whole run; it replays a snapshot
+of the plugin (build/move/frodhes/{dsp.so,engine.so} copied to build/gate_m/so/ at the start, the copy checked against
+the source, the sha256 printed), its own copy of the scripts (build/gate_m/scripts/, not build/gate_r/'s, which
+every jobs() caller rewrites) and its own instance folders (build/gate_m/t/, MOVE_REPLAY_TMP: test-move's cleanup
+removes build/move/t/run.*). A plugin rebuilt during the gate is named in the result: the gate tested the snapshot.
 """
 import argparse
 import hashlib
@@ -39,6 +46,7 @@ import json
 import os
 import platform
 import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -56,6 +64,43 @@ SOUNDLESS = {"midi", "end", "expect", "shot", "dump"}
 MOVE_DROP = set(range(43, 47)) | set(range(52, 64))   # (move/move_bridge.h MB_CC_DROP: the sequencer's CLEAR /
 # UNDO / ERASE / SWING, the arpeggiator, the chords, the sequencer's PLAY / BARS / QUANT / REC)
 IMG = os.environ.get("MOVE_IMG", "frodhes-move:bookworm")
+PLUGIN = ROOT / "build" / "move" / "frodhes"
+SNAP = OUT / "so"                                     # the plugin as the gate replays it
+SNAP_FILES = ("dsp.so", "engine.so")
+
+
+def sha(p):
+    return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+
+
+def snapshot(src=PLUGIN, dst=SNAP, tries=3):
+    """src's plugin files copied to dst, each copy checked against the source read again after it (a build that
+    rewrote it meanwhile: copied again, up to tries times). {file: sha256}; SystemExit when src has none or never
+    holds still"""
+    dst.mkdir(parents=True, exist_ok=True)
+    got = {}
+    for f in SNAP_FILES:
+        if not (src / f).exists():
+            if f == "dsp.so":
+                raise SystemExit(f"Gate M: no {src / f}: make move first")
+            continue
+        for _ in range(tries):
+            before = sha(src / f)
+            tmp = dst / f".{f}.{os.getpid()}"
+            shutil.copyfile(src / f, tmp)
+            if sha(tmp) == before == sha(src / f):
+                os.replace(tmp, dst / f)
+                got[f] = before
+                break
+            tmp.unlink()
+        else:
+            raise SystemExit(f"Gate M: {src / f} kept changing while it was copied (a build running?)")
+    return got
+
+
+def changed_since(snap, src=PLUGIN):
+    """the plugin files whose source no longer matches the snapshot (rebuilt during the gate)"""
+    return sorted(f for f, h in snap.items() if not (src / f).exists() or sha(src / f) != h)
 
 
 def move_run():
@@ -88,10 +133,11 @@ def classify(script):
     return None
 
 
-def entries():
-    """[(name, script relative to ROOT)] for the MIDI-driven entries, {name: reason} for the host-only ones"""
+def entries(out=None):
+    """[(name, script relative to ROOT)] for the MIDI-driven entries, {name: reason} for the host-only ones; the
+    generated scripts under out (default Gate R's build/gate_r: the gate itself uses its own, OUT / "scripts")"""
     midi, host = [], {}
-    for name, script in gate_r.jobs().items():
+    for name, script in gate_r.jobs(out).items():
         why = classify(script)
         if why:
             host[name] = why
@@ -113,7 +159,10 @@ def render(mode, midi, jobs, src=None, tag=None):
     tag = tag or mode
     lst = OUT / f"{tag}.list"
     lst.write_text("".join(f"{n} {s}\n" for n, s in midi))
-    extra = [str(Path(src).relative_to(ROOT)), tag] if src else []
+    if mode == "replay":   # the snapshot of dsp.so (K3: no shared build file swapped under a running gate)
+        extra = [f"{SNAP.relative_to(ROOT)}/dsp.so"]
+    else:                  # host16: another firmware/ tree and its tag (--update)
+        extra = [str(Path(src).relative_to(ROOT)), tag] if src else []
     r = subprocess.run(move_run() + ["sh", "move/tests/gate_m.sh", mode, str(lst.relative_to(ROOT)), str(jobs)] + extra,
                        cwd=ROOT, capture_output=True, text=True)
     sys.stdout.write("".join(ln + "\n" for ln in r.stdout.splitlines() if ln.startswith("FAIL") or "error" in ln))
@@ -313,7 +362,16 @@ def main():
     ap.add_argument("--dry", action="store_true", help="with --update: the report and the guard only, write nothing")
     ap.add_argument("--jobs", type=int, default=2)
     a = ap.parse_args()
-    midi, host = entries()
+    if a.list:
+        return gate(a)
+    import lock
+    with lock.Lock("GATE_M", who="gate_m", why="build/gate_m: the plugin snapshot, scripts and renders", wait_s=3600,
+                   poll_s=5):
+        return gate(a)
+
+
+def gate(a):
+    midi, host = entries(None if a.list else OUT / "scripts")
     base = read_sums(BASE)
     if a.list:
         for n, s in midi:
@@ -334,7 +392,13 @@ def main():
               f"{BASE16.relative_to(ROOT)}")
         return 0
     want16 = read_sums(BASE16)
+    snap = snapshot()
+    print("Gate M: the plugin as replayed: " + ", ".join(f"{f} {h[:12]}" for f, h in sorted(snap.items())))
     got = render("replay", midi, a.jobs)
+    moved = changed_since(snap)
+    if moved:
+        print(f"Gate M: {', '.join(moved)} rebuilt during the gate: the result is the snapshot's "
+              f"({SNAP.relative_to(ROOT)})")
     bad = []
     for n, _ in midi:
         want = want16.get(n, base.get(n))
