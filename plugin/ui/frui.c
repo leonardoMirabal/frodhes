@@ -369,29 +369,31 @@ static void knob_body(frui *u, float cx, float cy, float r, float v, int centred
                              : t <= v + 1e-3f && v > 0.f;
             uint32_t col;
             if (metal) col = on ? C_ENGR : FRUI_RGB(132, 133, 137);
-            else col = on ? (dim ? FRUI_RGB(120, 120, 124) : C_TEXT) : FRUI_RGB(50, 50, 54);
+            else col = on ? (dim ? FRUI_RGB(96, 96, 100) : C_TEXT) : dim ? FRUI_RGB(38, 38, 41) : FRUI_RGB(50, 50, 54);
             frui_line(u->c, X(cx + cosf(ta) * r0), X(cy - sinf(ta) * r0), X(cx + cosf(ta) * r1), X(cy - sinf(ta) * r1),
                       X(1.3f), col);
         }
     }
     frui_shadow_hole_circle(u->c, X(cx), X(cy), X(r));   /* (the skirt below covers it: cheaper, the same pixels) */
     frui_circle_shadow(u->c, X(cx), X(cy + r * 0.14f), X(r * 0.96f), X(r * 0.16f), FRUI_RGBA(0, 0, 0, metal ? 120 : 200));
-    frui_circle_grad(u->c, X(cx), X(cy), X(r), hov ? FRUI_RGB(62, 62, 66) : FRUI_RGB(54, 54, 57), FRUI_RGB(10, 10, 11));
+    /* (dim: the effect is off or bypassed: the same knob, its light taken down: a darker skirt and cap, a grey index) */
+    frui_circle_grad(u->c, X(cx), X(cy), X(r), dim ? FRUI_RGB(36, 36, 38) : hov ? FRUI_RGB(62, 62, 66) : FRUI_RGB(54, 54, 57),
+                     FRUI_RGB(10, 10, 11));
     /* the knurl: fine ridges on the skirt's edge, lit from above */
     for (i = 0; i < 72; i++) {
         float t = (float)i * 2.f * (float)M_PI / 72.f, l = 0.5f + 0.5f * sinf(t);
         frui_line(u->c, X(cx + cosf(t) * (r - 2.6f)), X(cy - sinf(t) * (r - 2.6f)), X(cx + cosf(t) * (r - 0.7f)),
-                  X(cy - sinf(t) * (r - 0.7f)), 1.f, FRUI_RGBA(255, 255, 255, (uint32_t)(10.f + 34.f * l * l)));
+                  X(cy - sinf(t) * (r - 0.7f)), 1.f, FRUI_RGBA(255, 255, 255, (uint32_t)((10.f + 34.f * l * l) * (dim ? 0.5f : 1.f))));
     }
-    frui_arc(u->c, X(cx), X(cy), X(r) - 0.5f, 1.f, 0.35f, (float)M_PI - 0.35f, FRUI_RGBA(255, 255, 255, 60));
+    frui_arc(u->c, X(cx), X(cy), X(r) - 0.5f, 1.f, 0.35f, (float)M_PI - 0.35f, FRUI_RGBA(255, 255, 255, dim ? 30 : 60));
     /* the step down to the cap, the cap and its lit rim */
     frui_circle(u->c, X(cx), X(cy), X(rc + 1.6f), FRUI_RGB(4, 4, 5));
-    frui_spun(u->c, X(cx), X(cy), X(rc), FRUI_RGB(92, 94, 98), FRUI_RGB(222, 223, 225), 0.05f, u->s,
-              (uint32_t)(cx * 7.f + cy));
-    frui_ring(u->c, X(cx), X(cy), X(rc) - 0.5f, 1.f, FRUI_RGBA(255, 255, 255, 110));
+    frui_spun(u->c, X(cx), X(cy), X(rc), dim ? FRUI_RGB(40, 41, 44) : FRUI_RGB(92, 94, 98),
+              dim ? FRUI_RGB(98, 99, 102) : FRUI_RGB(222, 223, 225), 0.05f, u->s, (uint32_t)(cx * 7.f + cy));
+    frui_ring(u->c, X(cx), X(cy), X(rc) - 0.5f, 1.f, FRUI_RGBA(255, 255, 255, dim ? 40 : 110));
     /* the index: white on the skirt, engraved on the cap */
     frui_line(u->c, X(cx + ca * (rc + 3.f)), X(cy - sa * (rc + 3.f)), X(cx + ca * (r - 3.2f)), X(cy - sa * (r - 3.2f)),
-              X(r >= 20.f ? 2.f : 1.6f), FRUI_RGB(246, 246, 242));
+              X(r >= 20.f ? 2.f : 1.6f), dim ? FRUI_RGB(124, 124, 122) : FRUI_RGB(246, 246, 242));
     frui_line(u->c, X(cx + ca * rc * 0.45f), X(cy - sa * rc * 0.45f), X(cx + ca * (rc - 2.f)), X(cy - sa * (rc - 2.f)),
               X(1.4f), FRUI_RGBA(30, 30, 33, 200));
 }
@@ -402,7 +404,8 @@ static void knob(frui *u, int id, const char *label, float cx, float cy, int act
     char val[24], unit[12];
     int hov = is_hover(u, FRW_KNOB, id), foc = is_focus(u, FRW_KNOB, id);
     if (u->look == FRUI_LOOK_A3) {   /* A3: quieter labels (smaller, wider, dimmer) under brighter values */
-        txc(u, cx, cy - r - 15.f, 8.5f, 600.f, 1.5f, 0, label, m->learning == id ? C_ACC : hov || foc ? C_TEXT : FRUI_RGB(132, 132, 137));
+        txc(u, cx, cy - r - 15.f, 8.5f, 600.f, 1.5f, 0, label, m->learning == id ? C_ACC : hov || foc ? (active ? C_TEXT : C_TEXT2) :
+                                                                 active ? FRUI_RGB(132, 132, 137) : FRUI_RGB(84, 84, 88));
         if (id < FRP_COUNT && m->learn_cc[id])
             frui_circle(u->c, X(cx - tw(u, 8.5f, 600.f, 1.5f, 0, label) * 0.5f - 6.f), X(cy - r - 18.f), X(1.5f), C_ACC);
     } else {
@@ -428,9 +431,9 @@ static void knob(frui *u, int id, const char *label, float cx, float cy, int act
             frui_rect(u->c, X(xt + we + 2.f), X(fy + 4.f), X(1.2f), X(13.f), C_ACC);
             anchor(u, FRA_VALUE, id, cx, yb);
         } else {
-            tx(u, x0, yb, vs, vw, 0.f, FRUI_TNUM, val, m->learning == id ? C_ACC : active ? C_TEXT : C_TEXT2);
+            tx(u, x0, yb, vs, vw, 0.f, FRUI_TNUM, val, m->learning == id ? C_ACC : active ? C_TEXT : C_TEXT3);
             anchor(u, FRA_VALUE, id, x0 + (wv + wu) * 0.5f, yb);
-            if (unit[0]) tx(u, x0 + wv + 3.f, yb, T_UNIT, 0, unit, C_TEXT3);
+            if (unit[0]) tx(u, x0 + wv + 3.f, yb, T_UNIT, 0, unit, active ? C_TEXT3 : FRUI_RGB(72, 72, 76));
         }
     }
     reg(u, FRW_KNOB, id, cx - G_COL * 0.5f, cy - r - 28.f, G_COL, 2.f * r + 56.f);
@@ -761,7 +764,8 @@ static void tabs(frui *u, int right, float x, float y, float w)
                             FRUI_RGB(26, 26, 28));
             frui_rect(u->c, X(kx + R_CTRL), X(ky) + 1.f, X(kw - 2.f * R_CTRL), 1.f, FRUI_RGBA(255, 255, 255, 46));
         }
-        lamp(u, cx + 2.5f, cy, 2.5f, eff_on(m, i, right));
+        /* (BYPASS: every effect's lamp out; MOTOR is the instrument's own, never bypassed) */
+        lamp(u, cx + 2.5f, cy, 2.5f, eff_on(m, i, right) && (!m->fx_bypass || (!right && i == FRT_MOTOR)));
         anchor(u, FRA_TAB, i, cx, mid(u, cy, 10.5f));
         tx(u, cx + 11.f, mid(u, cy, 10.5f), T_TAB, 0, names[i],
            i == sel ? C_TEXT : is_hover(u, kind, i) ? frui_mix(C_TEXT2, C_TEXT, 0.5f) : C_TEXT2);
