@@ -30,3 +30,46 @@ def test_move16_matches_the_list():
               if ln.startswith("# host-only ")}
     assert listed == set(host)
     assert names | set(host) == set(base)
+
+
+def test_engines_of(tmp_path):
+    """--update's guard: the engines an entry's notes sound on, by its script"""
+    s = tmp_path / "a.txt"
+    s.write_text("10 midi 0x90 60 100\n20 midi 0x80 60 0\n50 end\n")
+    assert gate_m.engines_of(s) == {"rhodes"}
+    s.write_text("5 midi 0xB0 79 0\n10 midi 0x90 60 100\n50 end\n")
+    assert gate_m.engines_of(s) == {"vibes"}
+    s.write_text("5 midi 0xB0 79 127\n10 midi 0x90 60 0\n12 midi 0x90 61 90\n20 midi 0xB0 80 40\n50 end\n")
+    assert gate_m.engines_of(s) == {"marimba"}                  # (a note-on at velocity 0 is a note-off)
+    s.write_text("5 midi 0xB0 79 0\n10 midi 0x90 60 100\n20 midi 0xB0 80 40\n30 midi 0x90 62 100\n50 end\n")
+    assert gate_m.engines_of(s) == {"vibes", "rhodes"}
+    s.write_text("5 midi 0xC0 3 0\n10 midi 0x90 60 100\n50 end\n")
+    assert gate_m.engines_of(s) == {"preset"}
+    assert gate_m.engines_of(None) == {"rhodes"}
+
+
+def test_update_guard():
+    """only entries sounding an allowed engine may change; a preset may be any engine; fx / all allow every entry"""
+    assert gate_m.allowed({"rhodes"}, ["rhodes"])
+    assert not gate_m.allowed({"vibes"}, ["rhodes"])
+    assert not gate_m.allowed({"marimba"}, ["rhodes", "vibes"])
+    assert gate_m.allowed({"vibes", "rhodes"}, ["rhodes"])
+    assert gate_m.allowed({"preset"}, ["rhodes"])
+    assert gate_m.allowed({"marimba"}, ["fx"])
+
+
+def test_bar_entries_are_guarded():
+    """the guard reads the bar engines' effect renders as bars only, so a Rhodes change cannot move them unseen, and
+    finds the bars in their own scripts (some end on a Rhodes note: vibes_motor, the swaps)"""
+    midi, _ = gate_m.entries()
+    eng = {n: gate_m.engines_of(gate_m.ROOT / s) for n, s in midi}
+    for n, e in eng.items():
+        if n.startswith("fx/m_"):
+            assert e == {"marimba"}, (n, e)
+        elif n.startswith("fx/v_"):
+            assert e == {"vibes"}, (n, e)
+        elif n.startswith("scripts/vibes"):
+            assert "vibes" in e, (n, e)
+        elif n.startswith("scripts/marimba"):
+            assert "marimba" in e, (n, e)
+    assert sum(1 for e in eng.values() if e <= {"vibes", "marimba"}) >= 36 + 4
