@@ -51,15 +51,18 @@ uncached draw.
 | Switches, menus, tabs | click; the wheel steps a switch or a menu |
 | Keyboard focus | click a control or Tab / Shift-Tab; the arrows step the value (Shift: by 10), Page Up / Down by 10, Home / End, Delete the default, Enter opens a menu, Esc closes a menu, SETTINGS or the focus. Other keys go to the host |
 | The keys | play notes (lower on the key: louder); held notes light up, the host's too |
-| SUSTAIN, EFFECTS | latch the sustain (CC 64); bypass every effect (the app's FX button, CC 111) |
+| SUSTAIN, EFFECTS | latch the sustain (CC 64); bypass every effect (the app's FX button, CC 111). An effect that is off, and every effect under BYPASS, draws its knobs inactive (dimmed; they still answer) and its tab's lamp out; MOTOR, the instrument's own, is never bypassed |
+| The preset's name | PRESETS: every preset grouped by instrument (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO, VIBES, MARIMBA), each group the factory presets then the user's, the one playing marked; a click loads one and leaves the sheet open, so the keys, SUSTAIN and EFFECTS try it at once; the wheel or the pager turns the pages of a long list; Esc, the close key or the preset's name close it. The arrows step through the presets as before |
+| SAVE | a name field in the preset box, the playing preset's name selected: type to replace it (capitals, up to 24 characters), Backspace / Delete edit, Enter (or SAVE again) saves the sound as a user preset of that name, Esc or a click elsewhere leaves it. REPLACE in the field: a user preset of that name exists and is overwritten. While the field is open the window keeps every key |
 | The gear | SETTINGS |
 
 Every change goes to the host as a parameter change with a gesture (its undo and automation recording see one
 move per drag); host automation moves the knobs. The preset box, its arrows and UNDO, SAVE, the SETTINGS values,
 MIDI learn, TUNE, SUSTAIN and EFFECTS are the plugin core's own (`plugin/frp_ui_iface.h`): saved with the project,
-the same as the host's view and MIDI show. SAVE stores the sound as a user preset under the name of the preset
-playing (a factory sound becomes a user file of the same name; a name field comes later). The window's size is kept
-while the plugin is loaded, not in the project yet.
+the same as the host's view and MIDI show. SAVE stores the sound as a user preset under the name typed in its field
+(a factory sound saved under its own name becomes a user file of that name). The window's size is saved with the
+project once the window was resized, and the window reopens at it (a project from an older build opens at the size
+the window has).
 
 ## What it does
 
@@ -70,7 +73,7 @@ while the plugin is loaded, not in the project yet.
 | Presets | F01-F19 (the FM-1's) and F20-F57 (the Move's variants), then the user's own, one file each (`*.frpreset`) in `~/Library/Application Support/Frodhes/Presets` (Linux `$XDG_DATA_HOME/frodhes/presets`, else `~/.local/share/frodhes/presets`; Windows `%APPDATA%\Frodhes\Presets`; `FRODHES_PRESET_DIR` overrides; the folders are made when the first preset is saved). In a sandboxed Audio Unit host the plugin uses the account's own folder when the sandbox lets it write there (the same presets as every other host), else the host's container (that host's presets only). The plugin-wide settings file has its place beside the presets (`settings.json`, `plugin/src/frp_paths.h`). Browse with wrap-around, UNDO as on the device. Program changes follow the FM-1's map, continued past F19 so that every factory preset can be reached: 0-15 F01-F16, 16-31 the first 16 user files (where there is none, the FM-1's own user bank: its starter sounds), 32-72 F17-F57 (32-34 are F17-F19 as on the FM-1, which has no preset after F19; 35-72 reach F20-F57 by the same rule). 73-127 load nothing |
 | Settings | MIDI CHANNEL (ALL or 1-16), the velocity curve (MEDIUM as played, LIGHT, HEAVY: the device's TOUCH curves; FIXED with its velocity), program changes on / off, the tempo source (HOST: the DAW's tempo, 120 without one, a MIDI clock sent to the plugin still leads; INTERNAL: the BPM setting; MIDI CLOCK: an incoming clock, else the BPM setting), SYNC ALL (every tempo effect's SYNC at one division, also on every preset load) |
 | MIDI learn | any knob (and TUNE, PRESET, SUSTAIN, BYPASS) learns the next CC; a learned CC comes before the device's CC map; forget one or all; saved with the project |
-| State | the sound as the Move saves it (the 256-byte settings record and the sound it came from) plus ENGINE and the plugin's own keys (settings, learned CCs, SUSTAIN, the preset's name; version "pv" 2). A state without them (the first builds, a Move track) loads them as defaults; a broken or cut state is refused and changes nothing |
+| State | the sound as the Move saves it (the 256-byte settings record and the sound it came from) plus ENGINE and the plugin's own keys (settings, learned CCs, SUSTAIN, the preset's name; version "pv" 3: "win", the window's size, once it was resized). A state without them (the first builds, a Move track) loads them as defaults (without "win": the window keeps its size); older builds ignore the keys they do not know; a broken or cut state is refused and changes nothing |
 | Tempo | the tempo source above (the delay's and the LFOs' sync) |
 | Sample rates | 44.1 kHz: the app's own samples. 48 kHz: the FM-1's own USB resampler, the FM-1's USB stream bit for bit. Any other rate from 1 to 1536 kHz: a windowed-sinc resampler (error under 1 LSB of 16 bits in the passband) |
 | Tail | reported to the host (CLAP tail; the VST3's tail samples and the Audio Unit's tail time follow), and the host is told when it changes: how long the sound can go on after the last event at the current settings, an upper bound measured per setting: the notes' release (under 2 s), the reverb by TYPE and DECAY (HALL up to 8 s, PLATE 7 s, INFINITE up to 59 s below SUSTAIN), the delay by FEEDBACK scaled by its TIME (a synced time counts as the longest), added up with a quarter more. INFINITE at SUSTAIN / FREEZE and the ANA / TAPE echoes that build up (FEEDBACK 115 / 114 and over) report an infinite tail. FX BYPASS: the notes' only |
@@ -232,14 +235,16 @@ the Mac, a DAW that opens the audio interface may change its sample rate.
    chord with the sustain pedal (or SUSTAIN in the window), let go: the notes ring out and stop. No click at the start
    of playback or when the track is armed.
 3. **The window.** Open it: 960 x 600 points, sharp on a Retina / high-DPI screen. Drag a knob, double-click its value
-   and type a number, step a preset with the arrows, switch ENGINE to CLASSIC and back while a note rings. Resize the
-   window (16:10, 720 x 450 to 1920 x 1200). Close and reopen it twice: nothing is lost.
+   and type a number, step a preset with the arrows, open PRESETS from the preset's name and load one while playing
+   the keys, SAVE under a typed name, switch EFFECTS to BYPASS (the effect knobs dim), switch ENGINE to CLASSIC and
+   back while a note rings. Resize the window (16:10, 720 x 450 to 1920 x 1200). Close and reopen it twice: nothing
+   is lost.
 4. **Automation.** Record a knob move while the transport runs (the host shows one gesture); play it back: the knob
    follows. Draw an automation curve for TONE, play: the sound follows smoothly, no zipper noise.
-5. **Presets and MIDI.** Choose F13 VIBES, then F15 MARIMBA from the window's preset box and from the host's view of
+5. **Presets and MIDI.** Choose F13 VIBES, then F15 MARIMBA from the window's PRESETS and from the host's view of
    PRESET. Send a program change (0 = F01). Right-click a knob > MIDI LEARN, move a controller: the knob follows.
-6. **The project.** Save the project with a changed sound, a learned CC and SUSTAIN on; close it, reopen it: the
-   sound, the learned CC and the setting are back. Duplicate the track: both instances play the same sound.
+6. **The project.** Save the project with a changed sound, a learned CC, SUSTAIN on and the window resized; close
+   it, reopen it: the sound, the learned CC, the setting and the window's size are back. Duplicate the track: both instances play the same sound.
 7. **Render.** Bounce / export 10 s with a chord at the end: the file is not silent, has no clicks, and the reverb
    tail is not cut at the end of the last note (extend the render by 3 s if the host asks for a tail length).
 8. **Sample rates.** Switch the project between 44.1, 48 and 96 kHz while it plays: the pitch stays right, no noise.
