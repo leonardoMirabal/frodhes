@@ -54,6 +54,7 @@ typedef struct {
     uint8_t engine;                      /* FRP_ENGINE_CLASSIC / _HQ: the slot's pool */
     uint8_t voices;                      /* the slot's voice count (rhodes.c RH_NV) */
     uint8_t tune;                        /* TUNE + 50 (0..100) */
+    uint8_t vresp;                       /* the settings' RESPONSE, the velocity response (params.c N_VRESP) */
     uint8_t sustain, bypass;             /* the dampers held off; every effect bypassed */
     uint8_t edited, can_undo, quiet;     /* the sound differs from its preset; an undo copy exists; nothing sounds */
     int16_t pidx, last_fact;             /* the preset playing (0..56 factory, -1 a user file / none); the last factory */

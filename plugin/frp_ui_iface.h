@@ -10,7 +10,7 @@
  * disagree.
  *
  * Ids: the parameter ids are plugin/gen/params_map.h's (the app's params.c ids 0 .. FRP_NPARAM_APP - 1, the plugin's
- * own from 0x10000: FRP_ID_ENGINE, FRP_ID_TUNE, FRP_ID_PRESET, FRP_ID_SUSTAIN, FRP_ID_FX_BYPASS). Values are always the
+ * own from 0x10000: FRP_ID_ENGINE, FRP_ID_TUNE, FRP_ID_PRESET, FRP_ID_SUSTAIN, FRP_ID_FX_BYPASS, FRP_ID_VRESP). Values are always the
  * app's integers 0 .. hi.
  *
  * Stability: this header is append-only. FRP_UI_IFACE_VERSION bumps only when something is added. */

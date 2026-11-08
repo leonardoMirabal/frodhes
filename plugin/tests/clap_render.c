@@ -648,6 +648,7 @@ static int state_load(const clap_plugin_t *p, const char *txt)
 #define ID_PRESET 0x10002u
 #define ID_SUSTAIN 0x10003u
 #define ID_BYPASS 0x10004u
+#define ID_VRESP 0x10005u
 static const uint32_t SYNC_IDS[6] = { 5u, 11u, 16u, 31u, 46u, 58u };   /* TW CP DL PH LFO MOT (params.c) */
 static const int SYNC_HI[6] = { 13, 14, 13, 14, 14, 13 };
 
@@ -952,6 +953,15 @@ static int coretest(void)
     blk_n = 0; ev_midi(0, 0xB2, 9, 20); run(a, 2);
     VT->preset_load(ca, 6); run(a, 2);
     VT->param_set(ca, P_TONE_, 100); VT->param_set(ca, ID_TUNE, 57); run(a, 2);
+    /* the velocity response (the settings' RESPONSE, 0.9.10): A by default, a host's automation (clamped to the methods
+     * built), saved with the settings record */
+    CHECK(VT->param_get(ca, ID_VRESP) == 0, "RESPONSE: A by default (%d)", VT->param_get(ca, ID_VRESP));
+    blk_n = 0; ev_param(0, ID_VRESP, 9); run(a, 2);
+    CHECK(VT->param_get(ca, ID_VRESP) == 1, "RESPONSE automated past its end: B (%d)", VT->param_get(ca, ID_VRESP));
+    blk_n = 0; ev_param(0, ID_VRESP, 0); run(a, 2);
+    CHECK(VT->param_get(ca, ID_VRESP) == 0, "RESPONSE automated back to A (%d)", VT->param_get(ca, ID_VRESP));
+    blk_n = 0; ev_midi(0, 0xB2, 40, 127); run(a, 2);      /* (CC 40 on CHANNEL 3: B; the host is told) */
+    CHECK(VT->param_get(ca, ID_VRESP) == 1, "RESPONSE by CC 40: B (%d)", VT->param_get(ca, ID_VRESP));
     blk_n = 0; ev_param(0, ID_SUSTAIN, 1); run(a, 2);   /* (SUSTAIN: a parameter, so in the state too) */
     blk_n = 0; ev_param(0, P_RV_DEPTH_, 41); ev_param(0, ENGINE_ID, 0); ev_param(10, P_RV_DEPTH_, 42);
     run(a, 2);                                   /* (the block's changes before and after the switch go with it) */
@@ -970,6 +980,7 @@ static int coretest(void)
     CHECK(VT->learned_cc(cb, 37u) == 9 && VT->learned_cc(cb, P_FL_FREQ_) == 3, "the learned CCs come back");
     CHECK(VT->preset_current(cb, &pi, &ed) == 6 && ed && VT->param_get(cb, P_TONE_) == 100 && VT->param_get(cb, ID_TUNE) == 57,
           "the preset (F07, edited), TONE and TUNE come back");
+    CHECK(VT->param_get(cb, ID_VRESP) == 1, "RESPONSE comes back (%d)", VT->param_get(cb, ID_VRESP));
     CHECK(VT->voices(cb) == 10, "the engine (CLASSIC) comes back: %d voices", VT->voices(cb));
     CHECK(VT->can_undo(cb), "the undo copy comes back");
     CHECK(VT->param_get(cb, ID_SUSTAIN) == 1 && VT->param_get(cb, P_RV_DEPTH_) == 42, "SUSTAIN and REVERB come back (%d %d)",

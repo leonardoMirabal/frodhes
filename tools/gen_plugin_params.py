@@ -18,6 +18,7 @@ app's setting, -50..+50 cents); PRESET (the factory presets F01..F57: a host's g
   tools/gen_plugin_params.py --check    exit 1 if the committed file is not what the sources give
 """
 import os
+import re
 import subprocess
 import sys
 
@@ -107,7 +108,17 @@ OWN = [(0x10000, "FRP_ID_ENGINE", "Engine", "Engine", ["CLASSIC", "HQ"], 1),
        (0x10001, "FRP_ID_TUNE", "Tune", "Voice", [f"{c:+d} c" if c else "0 c" for c in range(-50, 51)], 50),
        (0x10002, "FRP_ID_PRESET", "Preset", "Preset", None, 0),
        (0x10003, "FRP_ID_SUSTAIN", "Sustain", "Performance", ["OFF", "ON"], 0),
-       (0x10004, "FRP_ID_FX_BYPASS", "Effects bypass", "Performance", ["OFF", "ON"], 0)]
+       (0x10004, "FRP_ID_FX_BYPASS", "Effects bypass", "Performance", ["OFF", "ON"], 0),
+       (0x10005, "FRP_ID_VRESP", "Velocity response", "Voice", "VRESP", 0)]   # (0.9.10: the settings' RESPONSE)
+
+
+def vresp_names():
+    """the velocity response's names (the settings' RESPONSE: params.c N_VRESP, its first VRESP_N), the app's own"""
+    src = open(os.path.join(ROOT, "firmware", "src", "params.c")).read()
+    n = int(re.search(r"^#define VRESP_N (\d+)u", src, re.M).group(1))
+    names = re.findall(r'"([^"]*)"', re.search(r"N_VRESP\[\] = \{([^}]*)\}", src).group(1))
+    assert 1 <= n <= len(names), (n, names)
+    return names[:n]
 
 
 def param_enum():
@@ -192,7 +203,7 @@ def render():
                     f"{1 if stepped else 0}u, {t0}u}},   /* {nm} ({d['lab']}) */")
     own = []
     for oid, cname, lng, grp, vals, deff in OWN:
-        vals = vals or fact
+        vals = vresp_names() if vals == "VRESP" else vals or fact
         t0 = len(texts)
         texts += vals
         enum = 0 if cname == "FRP_ID_TUNE" else 1     # (TUNE is an amount, the others are choices)
