@@ -488,12 +488,23 @@ void frp_entry_deinit(void) {}
 const void *frp_entry_get_factory(const char *id) { return id && !strcmp(id, CLAP_PLUGIN_FACTORY_ID) ? &FACTORY : 0; }
 
 /* ---- the plugin UI's core (plugin/frp_ui_iface.h): the main thread */
+#if defined(_WIN32)
+#include <windows.h>
+static double mono_s(void)               /* (Windows: the performance counter) */
+{
+    LARGE_INTEGER f, c;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    return (double)c.QuadPart / (double)f.QuadPart;
+}
+#else
 static double mono_s(void)
 {
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (double)t.tv_sec + t.tv_nsec * 1e-9;
 }
+#endif
 #define PEND_S 0.3                       /* the UI's own value wins this long after its write (then the app's) */
 frp_core *frp_core_of(const clap_plugin_t *plugin) { return plugin ? plugin->plugin_data : 0; }
 void **frp_ui_gui_data(frp_core *c) { return &c->gui; }
