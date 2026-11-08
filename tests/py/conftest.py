@@ -57,3 +57,88 @@ def pytest_collection_modifyitems(items):
         for prefix, group in GROUPS.items():
             if nid.startswith(prefix):
                 it.add_marker(pytest.mark.xdist_group(group))
+
+
+# ---- memo: the pure-Python tests (no host binary) skipped while every input is unchanged since they passed here.
+# The slowest of the suite are deterministic functions of code and data (test_gen_bars' regeneration alone is 800 s of
+# a 34 min `make pytest -n 2`, 2026-11-08). Their inputs: the test file, every local module it imports (tools/,
+# tests/py/, followed through their own imports), docs/model/, firmware/gen/, tests/py/data/, tests/baselines/,
+# tools/*.json, and the Python / numpy / scipy versions. A pass writes build/memo/<test>.<hash>; the next run with the
+# same hash skips it ("memo: ..."). Off in CI (CI or GITHUB_ACTIONS set: every run runs everything), with
+# FRODHES_NO_MEMO=1, and for --long. A test listed here must read nothing else (no host build, no device, no clock).
+MEMO_FILES = ("test_gen_bars.py", "test_hil_crackle.py", "test_marimba_calib.py", "test_hil_determinism.py",
+              "test_bars_calib.py", "test_gen_rhodes_portable.py", "test_marimba_hil_measures.py")
+MEMO_DATA = ("docs/model", "firmware/gen", "tests/py/data", "tests/baselines")
+_memo_hash = {}
+
+
+def _memo_on(config):
+    return not (os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS") or os.environ.get("FRODHES_NO_MEMO")
+                or config.getoption("--long"))
+
+
+def _local_imports(path, seen):
+    import ast
+    if path in seen or not os.path.exists(path):
+        return
+    seen.add(path)
+    try:
+        tree = ast.parse(open(path).read())
+    except SyntaxError:
+        return
+    for n in ast.walk(tree):
+        names = [a.name for a in n.names] if isinstance(n, ast.Import) else \
+            [n.module] if isinstance(n, ast.ImportFrom) and n.module else []
+        for name in names:
+            top = name.split(".")[0]
+            for d in ("tools", os.path.join("tests", "py")):
+                _local_imports(os.path.join(ROOT, d, top + ".py"), seen)
+
+
+def _memo_key(fspath):
+    import hashlib
+    import platform
+    if fspath in _memo_hash:
+        return _memo_hash[fspath]
+    files = set()
+    _local_imports(fspath, files)
+    files.add(os.path.join(ROOT, "tests", "py", "conftest.py"))
+    for d in MEMO_DATA:
+        for dp, _, fs in os.walk(os.path.join(ROOT, d)):
+            files.update(os.path.join(dp, f) for f in fs if "__pycache__" not in dp)
+    files.update(os.path.join(ROOT, "tools", f) for f in os.listdir(os.path.join(ROOT, "tools")) if f.endswith(".json"))
+    h = hashlib.sha256()
+    try:
+        import numpy
+        import scipy
+        h.update(f"{platform.python_version()} {numpy.__version__} {scipy.__version__}".encode())
+    except ImportError:
+        pass
+    for f in sorted(files):
+        h.update(os.path.relpath(f, ROOT).encode() + b"\0" + open(f, "rb").read() + b"\0")
+    _memo_hash[fspath] = h.hexdigest()[:16]
+    return _memo_hash[fspath]
+
+
+def _memo_stamp(item):
+    nid = item.nodeid.split("tests/py/")[-1]
+    safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in nid)
+    return os.path.join(ROOT, "build", "memo", f"{safe}.{_memo_key(str(item.fspath))}")
+
+
+def _memo_item(item):
+    return os.path.basename(str(item.fspath)) in MEMO_FILES and _memo_on(item.config)
+
+
+def pytest_runtest_setup(item):
+    if _memo_item(item) and os.path.exists(_memo_stamp(item)):
+        pytest.skip("memo: every input unchanged since this test passed here (build/memo; FRODHES_NO_MEMO=1 runs it)")
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    rep = (yield).get_result()
+    if call.when == "call" and rep.passed and _memo_item(item):
+        p = _memo_stamp(item)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        open(p, "w").write(item.nodeid + "\n")
