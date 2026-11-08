@@ -24,7 +24,10 @@
 typedef struct { uint16_t tick, len; uint8_t note, vel, take, rsv; } sq_ev_t;   /* rsv: CHANCE (0.9.9), 0 = 100 %, k =
                                                      * 100 - 10 k % (ui.c SEQUENCER 2; 0 in every pattern before) */
 typedef struct { uint32_t magic, seq, n, crc; } sq_hdr_t;
-static sq_ev_t sq_ev[SQ_MAXEV];
+#ifndef SQ_EV_SEC
+#define SQ_EV_SEC                               /* (FR_C1 builds, frodhes.c: .ramx) */
+#endif
+static sq_ev_t sq_ev[SQ_MAXEV] SQ_EV_SEC;
 static uint32_t sq_n, sq_flash_seq;
 static uint8_t seq_play, seq_rec, sq_erase, sq_take;
 static uint32_t sq_pos, sq_last_ms, sq_prev;        /* sq_pos: ticks in Q16 */
