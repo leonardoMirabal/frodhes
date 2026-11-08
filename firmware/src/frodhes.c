@@ -239,6 +239,10 @@ FR_COLD static int usb_link(void) { return host_usb_link; }
  * one-core 14-voice build, sample for sample: tests/py/test_c1_subblock.py). Each chunk's effects start only once the
  * one before them is done (or done by core 0: refused, late, one core). A block the developer's CC 10 resets
  * (fx_reset_state ends the voices, touches the engines) and every block with core 1 held run on core 0, whole */
+#ifndef C1_STREAM
+#define C1_STREAM 1                             /* one job a block, core 1 takes the frames as they are ready (0: a job a
+                                                 * chunk, lockstep: C1_SUB / C1_EDGES) */
+#endif
 #ifndef C1_SUB
 #define C1_SUB 8u                               /* chunks a block: 8 (32 frames) or 4 (64) */
 #endif
@@ -268,9 +272,6 @@ static void c1_fx_job(uint32_t a)               /* core 1 (or core 0: refused, l
 }
 /* the block's start (core 1, while core 0 renders chunk 0's voices): the work left from the block before that no
  * chunk needs to wait for (fx.c fx_pre_c). Run again by core 0 (refused, late) it finds it done */
-#ifdef C1_WARM
-static volatile uint32_t c1_warm_sink;
-#endif
 static void c1_pre_job(uint32_t a)
 {
     (void)a;
@@ -278,28 +279,6 @@ static void c1_pre_job(uint32_t a)
     uint32_t a0 = fm1_ticks();
 #endif
     fx_pre_c();
-#ifdef C1_WARM
-    {   /* experiment (APP_DEFS=-DC1_WARM): read the effects' flash code once, so the first chunk finds it in the cache
-         * (the main loop between blocks runs other flash code) */
-        static void (*const fw[])(void) = {
-            (void (*)(void))dly_wr_c, (void (*)(void))eq_coef, (void (*)(void))fx_eq, (void (*)(void))drv_run,
-            (void (*)(void))fx_drive_types, (void (*)(void))fx_filter, (void (*)(void))fx_trem_k, (void (*)(void))dly_fade_c,
-            (void (*)(void))fx_delay, (void (*)(void))rev_plate_run, (void (*)(void))fx_process, (void (*)(void))c1_fx_job,
-            (void (*)(void))fx_spread, (void (*)(void))fx_phaser, (void (*)(void))fx_out, (void (*)(void))cho_side,
-            (void (*)(void))tp_mod_c, (void (*)(void))rev_hqh_run, (void (*)(void))rev_inf_run };
-        uintptr_t lo = ~(uintptr_t)0, hi = 0, lo2 = ~(uintptr_t)0, hi2 = 0, p;
-        uint32_t i, x = 0;
-        for (i = 0; i < sizeof fw / sizeof fw[0]; i++) {
-            uintptr_t f = (uintptr_t)fw[i];
-            if (i < 12u) { if (f < lo) lo = f; if (f > hi) hi = f; }
-            else { if (f < lo2) lo2 = f; if (f > hi2) hi2 = f; }
-        }
-        hi += 0x1000u; hi2 += 0xC00u;
-        for (p = lo & ~(uintptr_t)31; p < hi; p += 32u) x += *(const uint32_t *)p;
-        for (p = lo2 & ~(uintptr_t)31; p < hi2; p += 32u) x += *(const uint32_t *)p;
-        c1_warm_sink = x;
-    }
-#endif
 #if defined(C1PF_ON)
     C1PF(18, fm1_ticks() - a0);
 #endif
@@ -347,12 +326,6 @@ static void c1_one_core(void)
     for (i = FR_C1_NV1; i < BAR_NV; i++)
         if (bv[i].alive) { if (bv[i].fade == 32768) bv[i].fade = 32767; bv[i].pend = 0; }
 }
-#ifndef C1_STREAM
-#define C1_STREAM 0                             /* 1: one job a block, core 1 takes the frames as they are ready */
-#endif
-#ifndef C1_AHEAD
-#define C1_AHEAD 0                              /* 1: core 0 renders ahead while core 1 is busy (experiment) */
-#endif
 #define C1_DEADLINE_US 4600u                    /* a job not done this long after the block's start is late */
 #else
 static int32_t voice_mono[256];
@@ -454,7 +427,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
     }
 #else
     else {
-        uint32_t j, k = n / C1_SUB, posted = 0, nch = C1_SUB, co, ce, fxe = 0;   /* (fxe: the effects posted up to) */
+        uint32_t j, k = n / C1_SUB, posted = 0, nch = C1_SUB, co, ce;
 #ifdef C1_EDGES
         if (n == 256u) nch = C1_NED;            /* (uneven chunks: c1_ed's edges) */
 #endif
@@ -482,10 +455,6 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
             if (posted) {                       /* chunk j - 1's effects: done, or core 0 does them */
                 int r;
-#if C1_AHEAD
-                if (j + 1u < nch && fr_c1_busy()) continue;   /* (core 1 still busy: the next chunk's voices first; its
-                                                 * effects then take every chunk rendered so far, as one job) */
-#endif
 #ifndef DINGHY_HOST
                 uint32_t el = (fm1_ticks() - t0) / 24u;
 #if defined(C1PF_ON)
@@ -500,7 +469,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
                 if (r) jf(0);                   /* (refused -2: core 1 stays on; late / held -1) */
             }
-            c1_job.o = fxe; c1_job.e = ce; fxe = ce;
+            c1_job.o = co; c1_job.e = ce;
             jf = c1_fx_job;
             posted = fr_c1_run(c1_fx_job, 0);   /* core 1: chunk j's effects, from now */
             if (!posted) c1_fx_job(0);
