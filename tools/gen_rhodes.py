@@ -378,6 +378,161 @@ def voice_pickups(p, spec_keys, fams):
         print("voicing %d: H2/H1 at v100, worst error %.2f dB" % (it, float(np.max(np.abs(err)))), file=sys.stderr)
 
 
+def bark_h1(y, f0, t0=0.03, t1=0.15):
+    """(bark, H1) of a rendered note over [t0, t1]: bark = H2..H5 re H1 (dB, the harmonics under 0.45 fs), H1 its
+    level (dB, any reference); zero-padded Hann FFT, +-3 % bands"""
+    seg = y[int(t0 * FS):int(t1 * FS)]
+    S = np.abs(np.fft.rfft(seg * np.hanning(len(seg)), 1 << 16)) ** 2
+    fr = np.fft.rfftfreq(1 << 16, 1 / FS)
+    pw = lambda f: float(np.sum(S[(fr >= 0.97 * f) & (fr <= 1.03 * f)])) + 1e-30
+    hs = [pw(k * f0) for k in range(1, 6) if k * f0 < 0.45 * FS]
+    return 10 * math.log10(sum(hs[1:]) / hs[0]) if len(hs) > 1 else -99.0, 10 * math.log10(hs[0])
+
+
+def drive_targets(p, n):
+    """the pickup drive's targets for key n (params.json pickup_drive): the bark (dB) at each velocity anchor (flat
+    at the soft colour up to the knee, then slope dB per velocity step, a soft corner corner_vel wide (10-90 %)), and
+    the H1 saturation (dB of H1 from v64 to v127; None: the fundamental's velocity law stays as it is)"""
+    c = p["pickup_drive"]
+    ip = lambda pts: float(np.interp(n, [q[0] for q in pts], [q[1] for q in pts]))
+    b0 = ip(c["soft_bark_points"])
+    w = c["corner_vel"] / 4.39
+    if n >= c["no_rise_key"]:
+        bt = [b0] * len(V_ANCH)
+    else:
+        vk = ip(c["knee_points"])
+        bt = [b0 + c["slope_db_per_vel"] * w * float(np.logaddexp(0.0, (v - vk) / w)) for v in V_ANCH]
+    sp = c["h1_sat_points"]                     # [midi, dB], interpolated; above the last key: the law unchanged
+    sat = ip(sp) if n <= sp[-1][0] else None
+    return bt, sat
+
+
+def h1_sat_curve(L, d64, w):
+    """the fundamental's velocity law with a saturating top: L (dB re v127 per anchor, the law as it was) shifted up
+    by c and soft-limited at 0 dB (corner w dB), c chosen so that H1(v127) - H1(v64) = d64; re its own v127"""
+    L = np.asarray(L, float)
+    i127 = len(V_ANCH) - 1
+    f = lambda c: -w * np.logaddexp(0.0, -(L + c) / w)
+    v64 = lambda c: float(np.interp(64, V_ANCH, f(c) - f(c)[i127]))
+    lo, hi = -60.0, 60.0
+    for _ in range(60):                                  # v64(c) rises toward 0 as c grows
+        c = 0.5 * (lo + hi)
+        lo, hi = (c, hi) if v64(c) < -d64 else (lo, c)
+    T = f(c)
+    return T - T[i127]
+
+
+def pickup_drive(p, spec_keys, fams):
+    """S1a, the pickup drive (params.json pickup_drive): the velocity response of a struck tine heard through its
+    pickup. The tine's swing against the pickup sets the bark (the flux function folds when the swing passes the
+    offset: the fundamental saturates, H2..H5 take the energy), so each key gets an excursion law per velocity
+    anchor (pdrv: the force the modes get) that holds the soft colour flat up to the key's knee and then grows the
+    bark slope dB per velocity step, and an output gain law (pgf: gain x pdrv) that gives the fundamental its velocity law:
+    as it was where pickup_drive.h1_sat names no saturation, else saturating by h1_sat dB from v64 to v127. The
+    physical force law (pamp) stays for the knock, the key-up noises and the thump cap. Solved with the golden model
+    (bisection on the excursion per key and anchor), so the C engine plays the same numbers."""
+    import rhodes_model as gm
+    c = p["pickup_drive"]
+    nk, na = len(spec_keys), len(V_ANCH)
+    BT = np.zeros((nk, na))
+    SAT = []
+    for k, spec in enumerate(spec_keys):
+        bt, sat = drive_targets(p, spec["midi"])
+        BT[k] = bt
+        SAT.append(sat)
+    jobs = [(k, a) for k in range(nk) for a in range(na)]
+    vels = [V_ANCH[a] for k, a in jobs]
+
+    def measure(mdb):
+        """bark, H1 of every (key, anchor) with the excursion x 10^(mdb / 20) (the b scaled: the force is linear)"""
+        specs = []
+        for (k, a), m in zip(jobs, mdb):
+            s = dict(spec_keys[k])
+            s["modes"] = [dict(md, b=md["b"] * 10 ** (m / 20)) for md in spec_keys[k]["modes"]]
+            specs.append(s)
+        y = gm.render_batch(specs, fams, vels, c.get("dur_s", 0.16))
+        r = [bark_h1(yy, spec_keys[k]["f0"]) for yy, (k, a) in zip(y, jobs)]
+        return np.array([q[0] for q in r]), np.array([q[1] for q in r])
+
+    _, H1o = measure(np.zeros(len(jobs)))                 # the fundamental's law as it is
+    lo = np.full(len(jobs), float(c.get("min_db", -40.0)))
+    hi = np.full(len(jobs), float(c.get("max_db", 40.0)))
+    tgt = np.array([BT[k, a] for k, a in jobs])
+    for it in range(c.get("iterations", 14)):
+        mid = 0.5 * (lo + hi)
+        bk, _ = measure(mid)
+        up = bk < tgt
+        lo = np.where(up, mid, lo)
+        hi = np.where(up, hi, mid)
+    mdb = 0.5 * (lo + hi)
+    bk, H1n = measure(mdb)
+    print("pickup drive: bark error worst %.2f dB, median %.2f dB; excursion %.1f .. %.1f dB" % (
+        float(np.max(np.abs(bk - tgt))), float(np.median(np.abs(bk - tgt))), float(mdb.min()), float(mdb.max())),
+        file=sys.stderr)
+    MDB = mdb.reshape(nk, na)
+    H1o = H1o.reshape(nk, na)
+    H1n = H1n.reshape(nk, na)
+    BK = bk.reshape(nk, na)
+    for k, spec in enumerate(spec_keys):
+        L = H1o[k] - H1o[k, -1]
+        T = L if SAT[k] is None else h1_sat_curve(L, SAT[k], c["h1_corner_db"])
+        G = T - (H1n[k] - H1n[k, -1])
+        G -= G.max()
+        pa = spec["pulse"]["pamp"]
+        drv = [pa[a] * 10 ** (MDB[k, a] / 20) for a in range(na)]
+        sc = max(drv) / 32767.0
+        for md in spec["modes"]:
+            md["b"] *= sc
+        bmax = max(abs(md["b"]) for md in spec["modes"])
+        assert bmax * Q30 < 2 ** 31 - 1, (spec["midi"], bmax)
+        spec["pulse"]["pdrv"] = [max(1, int(round(x / sc))) for x in drv]
+        # the gain law stored as gain x force (Q16 x Q15 >> 15): the engine interpolates that product and the force
+        # between the anchors and divides (rh_init), so the output (~ their product while the swing is small) is
+        # linear between anchors: two straight lines multiplied bulged up to 0.6 dB over the next anchor's level
+        spec["pulse"]["pgf"] = [max(1, min(65535, int(round(65536 * 10 ** (g / 20) * d / 32768))))
+                                for g, d in zip(G, spec["pulse"]["pdrv"])]
+        spec["drive"] = dict(m_db=[float(x) for x in MDB[k]], bark=[float(x) for x in BK[k]],
+                             bark_t=[float(x) for x in BT[k]], h1_t=[float(x) for x in T],
+                             m127=float(10 ** (MDB[k, -1] / 20)), bsc=float(sc))
+    # the note's level law (RMS 50..300 ms re v127, Q15, made monotonic): the measure of the note the key-up felt
+    # noise, the pedal thud and the thump cap take (rh_left), as the physical force was before the drive
+    y = gm.render_batch([spec_keys[k] for k, a in jobs], fams, vels, 0.3)
+    lv = np.array([20 * math.log10(float(np.sqrt(np.mean(r[2205:13230] ** 2))) + 1e-12) for r in y]).reshape(nk, na)
+    # the whole note's velocity law (H1 and the bark together) smoothed across the keys (a Gaussian, sigma
+    # level_smooth_keys): the knee moves 18 velocity steps from key 64 to key 69, so the bark at v127 (and the
+    # level it adds) fell 2.8 dB a key there and the v127 level stepped 1.9 dB between neighbours; the reference's
+    # range v20..v127 is within 27..31 dB on every register. The correction goes into the gain law (pgf) only
+    sk = c.get("level_smooth_keys", 0)
+    if sk:
+        rel = lv - lv[:, -1:]
+        ks = np.arange(nk)
+        wt = np.exp(-0.5 * ((ks[:, None] - ks[None, :]) / sk) ** 2)
+        sm = (wt @ rel) / wt.sum(axis=1, keepdims=True)
+        corr = sm - rel
+        print("pickup drive: level smoothing worst %.2f dB" % float(np.abs(corr).max()), file=sys.stderr)
+        for k, spec in enumerate(spec_keys):
+            spec["pulse"]["pgf"] = [max(1, min(65535, int(round(q * 10 ** (d / 20)))))
+                                    for q, d in zip(spec["pulse"]["pgf"], corr[k])]
+        lv = lv + corr
+    # re-strike headroom: a re-strike keeps the voice's gain, so its force is pdrv(v2) x G(v2) / G(v1) (rhodes.c
+    # rh_load_pulse), at most 65535 (mul15s): where the gain law spans more than the force law (the top keys: a flat
+    # force, the gain ~25 dB) the force law is scaled down and b up, the product the same
+    for k, spec in enumerate(spec_keys):
+        pz = spec["pulse"]
+        gl = [q / (2.0 * d) for q, d in zip(pz["pgf"], pz["pdrv"])]
+        hk = min(1.0, 65535.0 * min(gl) / max(d * g for d, g in zip(pz["pdrv"], gl)))
+        if hk < 1.0:
+            pz["pdrv"] = [max(1, int(round(d * hk))) for d in pz["pdrv"]]
+            pz["pgf"] = [max(1, min(65535, int(round(q * hk)))) for q in pz["pgf"]]
+            for md in spec["modes"]:
+                md["b"] /= hk
+            spec["drive"]["bsc"] /= hk
+            assert max(abs(md["b"]) for md in spec["modes"]) * Q30 < 2 ** 31 - 1, spec["midi"]
+    for k, spec in enumerate(spec_keys):
+        lk = np.maximum.accumulate(lv[k]) - max(lv[k])
+        spec["pulse"]["plev"] = [max(1, min(32767, int(round(32767 * 10 ** (x / 20))))) for x in lk]
+
+
 def vlayers():
     """Per MIDI velocity: the pulse layer below it and the Q15 weight of the next layer (the engine crossfades the
     two shapes: a nearest-layer switch made steps of up to 1.4 dB in the level against velocity)."""
@@ -484,9 +639,14 @@ def rom_window_b(spec_keys):
         sc = next(1 + i / 4096 for i in range(1, 1366) if not any(inw(m, 1 + i / 4096) for m in live))
         for m in spec["modes"]:
             m["b"] *= sc
-        pa = spec["pulse"]["pamp"]
+        pa = spec["pulse"]["pdrv"] if "pdrv" in spec["pulse"] else spec["pulse"]["pamp"]   # the force the modes get
         for a in range(len(pa)):
             pa[a] = max(1, int(round(pa[a] / sc)))
+        if "pgf" in spec["pulse"]:                       # gain x force: the force's scale, so the gain stays
+            pg = spec["pulse"]["pgf"]
+            for a in range(len(pg)):
+                pg[a] = max(1, int(round(pg[a] / sc)))
+            spec["drive"]["bsc"] *= sc
         spec["rom_b_scale"] = sc
 
 
@@ -563,6 +723,8 @@ def build(repin=False):
             pa = spec["pulse"]["pamp"]
             for a in range(len(V_ANCH)):
                 pa[a] = int(min(32767, max(8, round(pa[a] * 10 ** (vt.get("gain", 0.85) * corr[k, a] / 20)))))
+    if "pickup_drive" in p:
+        pickup_drive(p, spec_keys, fams)
     # gain: v = 100, RMS of 50..300 ms (what is heard as the note's level) -> target dBFS, per key exactly: the
     # contact time against the tine's period makes the raw output of neighbouring keys differ by up to 18 dB, and
     # a +-3-key smoothing kept those holes (FM-1 scan, 0.6); kill: output below 1 LSB, x2 margin
@@ -638,6 +800,32 @@ def emit(spec, fam_tabs):
     for k in spec["keys"]:
         w("  {" + ",".join(map(str, k["pulse"]["pamp"])) + "},")
     w("};")
+    if "pdrv" in spec["keys"][0]["pulse"]:
+        # S1a, the pickup drive (pickup_drive): the excursion law (the force the modes get, Q15) and the output gain
+        # law (Q16) per key and velocity anchor; S4's amplitude -> pitch scale 1 / m127^2 (Q16) for keys < 48
+        w("#define RH_DRIVE 1")
+        w("static const uint16_t RH_PDRV[RH_NKEY][RH_NANCH] = {")
+        for k in spec["keys"]:
+            w("  {" + ",".join(map(str, k["pulse"]["pdrv"])) + "},")
+        w("};")
+        w("static const uint16_t RH_PGF[RH_NKEY][RH_NANCH] = {   /* the gain law x RH_PDRV >> 15 (rh_drive_g) */")
+        for k in spec["keys"]:
+            w("  {" + ",".join(map(str, k["pulse"]["pgf"])) + "},")
+        w("};")
+        w("static const uint16_t RH_PLEV[RH_NKEY][RH_NANCH] = {   /* the note's level law, Q15 re v127 (rh_left) */")
+        for k in spec["keys"]:
+            w("  {" + ",".join(map(str, k["pulse"]["plev"])) + "},")
+        w("};")
+        nzg = 10 ** ((p["gain_target_dbfs"] - p["pickup_drive"].get("noise_ref_dbfs", p["gain_target_dbfs"])) / 20)
+        w("#define RH_NZ_G %du   /* Q15: the mechanical noises follow the notes' level (gain_target_dbfs re "
+          "pickup_drive.noise_ref_dbfs) */" % min(32768, int(round(32768 * nzg))))
+        w("static const uint16_t RH_DRV_IB[RH_NKEY] = {   /* 4096 / the force gains' scale (the steal score) */")
+        w("  " + ",".join(str(max(1, min(65535, int(round(4096 / k["drive"]["bsc"]))))) for k in spec["keys"]) + "};")
+        w("#ifdef FR_HQ   /* the Move's HQ live contact: the force gains' scale over the physical ones (hq_pulse) */")
+        w("static const float RH_DRV_BSC[RH_NKEY] = {" + ",".join("%.9gf" % k["drive"]["bsc"] for k in spec["keys"]) + "};")
+        w("#endif")
+        w("static const uint16_t RH_KAP_X[48 - RH_KEY_LO] = {" + ",".join(
+            str(max(1, min(65535, int(round(65536 / k["drive"]["m127"] ** 2))))) for k in spec["keys"] if k["midi"] < 48) + "};")
     w("static const uint8_t RH_VPOS_I[128] = {" + ",".join(map(str, spec["vpos_idx"])) + "};")
     w("static const uint8_t RH_VPOS_F[128] = {" + ",".join(str(min(255, f)) for f in spec["vpos_frac"]) + "};")
     li, lw = vlayers()

@@ -8,9 +8,9 @@ The grid: every engine x TYPE (the four Rhodes, VIBES, MARIMBA) x NOISE (0, 48 t
 - let go with the pedal up;
 - the pedal down 100 ms before the key-up, then up 300 ms after it (the dampers land at the pedal-up): the key-up
   checked until the pedal-up, the pedal-up for 600 ms.
-The rule, at the key-up and at the pedal-up: the level 0..600 ms after (10 ms RMS windows, and the peak) never
+The rule, at the key-up and at the pedal-up: the level 0..600 ms after (20 ms RMS windows at a 10 ms hop, and the peak) never
 exceeds the level of the 50 ms just before by more than +0.5 dB, and no new onset (a 10 ms window more than ONSET_DB
-over the one before it, above the floor) appears after it. One render per engine x TYPE x NOISE x pedal x hold, the
+over the louder of the two before it, above the floor) appears after it. One render per engine x TYPE x NOISE x pedal x hold, the
 18 notes in a row."""
 import os
 import sys
@@ -79,16 +79,23 @@ def check_at(x, t_ms, span_ms=600):
     i = int(t_ms * FS / 1000) - W
     pre, post = x[i - 5 * W:i], x[i:i + span_ms // 10 * W + W]
     rp, ra = rms10(pre), rms10(post)
-    lb_r, lb_p = db(rp.max()), db(np.abs(pre).max())
+    p2 = lambda r: np.sqrt(0.5 * (r[1:] ** 2 + r[:-1] ** 2))   # 20 ms windows at a 10 ms hop: a bass note's period
+    lb_r, lb_p = db(p2(rp).max()), db(np.abs(pre).max())
     if lb_r < -90:                              # (the note under 1 LSB RMS, in the cut's dither noise (rhodes.c
                                                 # RH_DITH: ~-96 dBFS) or ended: nothing to be louder than; the pedal's
                                                 # thud into silence is S12's own. Before the dither: -100)
         return 0.0, 0.0, 0.0
-    rise_r = db(ra.max()) - lb_r
+    rise_r = db(p2(np.concatenate([rp[-1:], ra])).max()) - lb_r
     rise_p = db(np.abs(post).max()) - lb_p
     d = db(ra)
-    ok = d[1:] > lb_r - FLOOR_DB
-    on = float(np.max(np.where(ok, d[1:] - d[:-1], -99.0))) if len(d) > 1 else -99.0
+    # an onset: a window over both windows before it (20 ms, a bass note's period: with the pickup drive (S1a) a hard
+    # low note's waveform puts most of its energy in one half of its ~20 ms cycle, so 10 ms windows alternate by up to
+    # 10 dB through a note that nothing touches; a thump or a noise burst still rises over both)
+    da = np.concatenate([db(rp[-1:]), d])          # (the last window before, so post's first counts as before)
+    dp = np.maximum(da[1:-1], da[:-2])
+    dn = da[2:]
+    ok = dn > lb_r - FLOOR_DB
+    on = float(np.max(np.where(ok, dn - dp, -99.0))) if len(dn) else -99.0
     return rise_r, rise_p, on
 
 

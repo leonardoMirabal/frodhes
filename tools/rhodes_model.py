@@ -66,12 +66,27 @@ def vpos(v):
     return i, int(round(256 * (v - V_ANCH[i]) / (V_ANCH[i + 1] - V_ANCH[i])))
 
 
+def vlaw(tab, v):
+    """a per-key anchor table at velocity v, the C interpolation (RH_VPOS_I / RH_VPOS_F, Q8)"""
+    i, f = vpos(v)
+    f = min(f, 255)
+    return tab[i] + (((tab[i + 1] - tab[i]) * f) >> 8)
+
+
+def vgain(spec, v):
+    """the pickup drive's output gain at velocity v (Q16 / 65536; 1.0 without the drive): rhodes.c rh_init"""
+    pg = spec["pulse"].get("pgf")                 # gain x force: both interpolated, then divided (rh_drive_g)
+    return 1.0 if pg is None else min(65535, max(1, (vlaw(pg, v) << 15) // max(1, vlaw(spec["pulse"]["pdrv"], v)))) / 65536.0
+
+
 def pulse_params(spec, v):
-    """(shape int16 list, pamp Q15, prate Q16) exactly as rh_load_pulse() computes them."""
+    """(shape int16 list, pamp Q15, prate Q16) exactly as rh_load_pulse() computes them. With the pickup drive
+    (gen_rhodes.pickup_drive) the force the modes get is the drive's excursion law pdrv, not the physical pamp."""
     pz = spec["pulse"]
     i, f = vpos(v)
     f = min(f, 255)
-    pa = pz["pamp"][i] + (((pz["pamp"][i + 1] - pz["pamp"][i]) * f) >> 8)
+    tab = pz.get("pdrv", pz["pamp"])
+    pa = tab[i] + (((tab[i + 1] - tab[i]) * f) >> 8)
     pr = (pz["prate"][i] + (((pz["prate"][i + 1] - pz["prate"][i]) * f) >> 8)) << 4
     return blend_shape(pz["shapes"], v), pa, pr
 
@@ -94,6 +109,13 @@ def _prep(specs, vels):
     return E0, D0, E1, D1, B, shapes, pamp, prate
 
 
+def settle(note):
+    """the damper crossfade's length in sub-blocks per key (rhodes.c rh_settle, S6)"""
+    if note < 48:
+        return RAMP_SUB + min(3, (50 - note) >> 2)
+    return RAMP_SUB if note < 72 else RAMP_SUB - 1 if note < 84 else RAMP_SUB - 2
+
+
 def modes_batch(specs, vels, n, off_at=None):
     """Tip displacement (gap units) per note: x[n_notes, n] = sum of the mode states, the exact C structure."""
     E0, D0, E1, D1, B, shapes, pamp, prate = _prep(specs, vels)
@@ -102,6 +124,7 @@ def modes_batch(specs, vels, n, off_at=None):
     E = E0.copy(); D = D0.copy()
     Es, Ds = E.copy(), D.copy()
     ramp = 0
+    rlen = np.array([settle(sp["midi"]) for sp in specs], float)[:, None]   # the damper settle per key (rhodes.c)
     out = np.zeros((nn, n))
     ppos = np.zeros(nn)
     live = np.ones(nn, bool)
@@ -110,10 +133,10 @@ def modes_batch(specs, vels, n, off_at=None):
     for sb in range(0, n, SUB):
         k = sb // SUB
         if off_sub is not None and k == off_sub:
-            ramp = RAMP_SUB; Es, Ds = E.copy(), D.copy()
+            ramp = int(rlen.max()); Es, Ds = E.copy(), D.copy()
         if ramp:
             ramp -= 1
-            f = (RAMP_SUB - ramp) / RAMP_SUB
+            f = np.minimum((rlen.max() - ramp) / rlen, 1.0)
             E = Es + (E1 - Es) * f
             D = Ds + (D1 - Ds) * f
         for j in range(sb, min(sb + SUB, n)):
@@ -159,7 +182,7 @@ def render_batch(specs, fams, vels, dur, off_at=None, gains=None, q=1.0):
     tip = modes_batch(specs, vels, n, off_at)
     d = pickup_batch(tip, [s["off"] for s in specs], [s["fam"] for s in specs],
                      [f["A"] for f in fams], [f["R"] for f in fams])
-    g = np.array([1.0 if gains is None else gains[i] for i in range(len(specs))])
+    g = np.array([(1.0 if gains is None else gains[i]) * vgain(specs[i], vels[i]) for i in range(len(specs))])
     return rlc(d * g[:, None] * 32768.0, q)
 
 

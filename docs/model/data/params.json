@@ -156,7 +156,7 @@
   ],
   "off_gap": -0.3
  },
- "gain_target_dbfs": -26.0,
+ "gain_target_dbfs": -32.0,
  "rlc": {
   "_doc": "moved into types[*].rlc"
  },
@@ -387,5 +387,104 @@
   "contact_pct": 3.0,
   "beat_pct": 25.0,
   "w_pct": 10.0
+ },
+ "pickup_drive": {
+  "_doc": "S1a, the pickup drive (gen_rhodes.pickup_drive): the velocity response through the pickup. Per key the tine's excursion per velocity anchor is solved so the bark (H2..H5 re H1, 30-150 ms, golden model) stays at soft_bark_points (dB) up to the key's knee (knee_points [midi, velocity], interpolated, past 127 at the top so the rise fades out; keys >= no_rise_key: no rise) and then grows slope_db_per_vel, the corner corner_vel steps wide (10-90 %): the swing passes the pickup offset, the flux folds, the fundamental saturates and H2..H5 take the energy. An output gain law per anchor then gives the fundamental its velocity law: unchanged, or saturating by h1_sat_points [[midi, dB]] (interpolated; above the last key: unchanged, the last point ~ the law's own v64..v127 rise) from v64 to v127 (h1_corner_db: the soft limit's corner); noise_ref_dbfs: the gain_target_dbfs the mechanical noises (knock, felt, pedal thud: absolute levels) were set against, so they follow the notes' level (RH_NZ_G); level_smooth_keys: the whole note's velocity law smoothed across keys (Gaussian sigma, keys), so the knee's move with register makes no level steps between neighbours. min_db / max_db: the excursion search range re the physical force law; iterations: bisection steps.",
+  "soft_bark_points": [
+   [
+    21,
+    -20.0
+   ],
+   [
+    52,
+    -20.0
+   ],
+   [
+    57,
+    -22.0
+   ],
+   [
+    64,
+    -24.0
+   ],
+   [
+    69,
+    -27.0
+   ],
+   [
+    76,
+    -32.0
+   ],
+   [
+    88,
+    -35.0
+   ],
+   [
+    108,
+    -35.0
+   ]
+  ],
+  "knee_points": [
+   [
+    21,
+    58.0
+   ],
+   [
+    52,
+    58.0
+   ],
+   [
+    57,
+    64.0
+   ],
+   [
+    64,
+    72.0
+   ],
+   [
+    69,
+    90.0
+   ],
+   [
+    76,
+    108.0
+   ],
+   [
+    84,
+    132.0
+   ]
+  ],
+  "no_rise_key": 85,
+  "slope_db_per_vel": 0.6,
+  "corner_vel": 10.0,
+  "level_smooth_keys": 6.0,
+  "noise_ref_dbfs": -26.0,
+  "h1_corner_db": 3.0,
+  "min_db": -40.0,
+  "max_db": 40.0,
+  "iterations": 14,
+  "dur_s": 0.16,
+  "h1_sat_points": [
+   [
+    21,
+    3.0
+   ],
+   [
+    50,
+    3.0
+   ],
+   [
+    57,
+    6.0
+   ],
+   [
+    62,
+    6.0
+   ],
+   [
+    76,
+    14.5
+   ]
+  ]
  }
 }
