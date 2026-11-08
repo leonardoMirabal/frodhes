@@ -16,6 +16,10 @@
  *     --block N               frames a process call (512); --block random:SEED for random sizes 0..2048
  *     --dialect midi|clap     notes as raw MIDI events (midi) or CLAP note events (clap); CC and the rest stay MIDI
  *     --tempo BPM             the host transport's tempo (none by default: the plugin plays 120)
+ *     --tail-check finite|infinite
+ *                             a host that stops at the tail the plugin reports: after the script's last event the
+ *                             tail is read (and must be finite / infinite); a finite one is checked by rendering 20 s
+ *                             past it: nothing may sound after it (16-bit). No WAV is written (OUT.wav is ignored)
  *   Plugin-only script lines (plugin/tests/scripts): "T param ID VALUE", a CLAP parameter event at T (ID decimal or
  *   0x..., the value 0..hi).
  *   clap_render PLUGIN --selftest
@@ -63,9 +67,13 @@ static void h_clear(const clap_host_t *h, clap_id id, clap_param_clear_flags f) 
 static void h_flush(const clap_host_t *h) { (void)h; }
 static const clap_host_params_t H_PARAMS = { h_rescan, h_clear, h_flush };
 static int callbacks;
+static int tail_changes;
+static void h_tail_changed(const clap_host_t *h) { (void)h; tail_changes++; }
+static const clap_host_tail_t H_TAIL = { h_tail_changed };
 static const void *h_ext(const clap_host_t *h, const char *id)
 {
     (void)h;
+    if (!strcmp(id, CLAP_EXT_TAIL)) return &H_TAIL;
     if (!strcmp(id, CLAP_EXT_LOG)) return &H_LOG;
     if (!strcmp(id, CLAP_EXT_PARAMS)) return &H_PARAMS;
     return 0;
@@ -272,10 +280,52 @@ static int render(const clap_plugin_t *p, int16_t *pcm, uint32_t pre, uint32_t f
 static int selftest(void);
 static int coretest(void);
 
+/* --tail-check: render past the last event, read the tail, render 20 s past it; the last sound must lie inside it */
+static int tail_check(const clap_plugin_t *p, double rate, int block, int clap_notes, int want_inf)
+{
+    static float l[4096], r[4096];
+    const clap_plugin_tail_t *pt = p->get_extension(p, CLAP_EXT_TAIL);
+    uint64_t last_ev = 0, pos = 0, stop, last_snd = 0, tail;
+    uint32_t k = 0;
+    int got_tail = 0;
+    if (!pt) { printf("FAIL no tail extension\n"); return 1; }
+    for (uint32_t i = 0; i < nsev; i++) if (sev[i].h > last_ev) last_ev = sev[i].h;
+    stop = last_ev + 8192u;              /* (first: every event in, a few blocks run) */
+    while (pos < stop) {
+        uint32_t n = block > 0 ? (uint32_t)block : rnd() % 2049u, i;
+        if (n > 4096u) n = 4096u;
+        if (!n) continue;
+        if (pos + n > stop) n = (uint32_t)(stop - pos);
+        blk_n = 0;
+        while (k < nsev && sev[k].h < pos + n && blk_n < 4096u) { put_event(&sev[k], (uint32_t)(sev[k].h - pos), clap_notes); k++; }
+        if (process(p, l, r, n, (int64_t)pos)) { printf("FAIL process\n"); return 1; }
+        blk_n = 0;
+        for (i = 0; i < n; i++)
+            if (lrint(l[i] * 32768.0) || lrint(r[i] * 32768.0)) last_snd = pos + i;
+        pos += n;
+        if (callbacks) { callbacks = 0; p->on_main_thread(p); }
+        if (!got_tail && pos >= last_ev + 4096u) {
+            uint32_t t = pt->get(p);
+            got_tail = 1;
+            if (t >= 0x7FFFFFFFu) {
+                printf("%s tail infinite (expected %s)\n", want_inf ? "ok   " : "FAIL ", want_inf ? "infinite" : "finite");
+                return want_inf ? 0 : 1;
+            }
+            if (want_inf) { printf("FAIL tail %u frames (expected infinite)\n", t); return 1; }
+            tail = t;
+            stop = last_ev + tail + (uint64_t)(20.0 * rate);
+        }
+    }
+    printf("%s tail %.0f ms after the last event; the last sound %.0f ms after it (%.0f ms to spare), %d tail changes told\n",
+           last_snd <= last_ev + tail ? "ok   " : "FAIL ", tail * 1000.0 / rate, ((double)last_snd - (double)last_ev) * 1000.0 / rate,
+           ((double)(last_ev + tail) - (double)last_snd) * 1000.0 / rate, tail_changes);
+    return last_snd <= last_ev + tail ? 0 : 1;
+}
+
 int main(int argc, char **argv)
 {
     double rate = 44100.0;
-    int engine = -1, block = 512, clap_notes = 0, rc, i;
+    int engine = -1, block = 512, clap_notes = 0, rc, i, tailck = -1;
     unsigned end;
     uint32_t frames, pre, clips = 0;
     int16_t *pcm;
@@ -293,12 +343,14 @@ int main(int argc, char **argv)
             else block = atoi(argv[i + 1]);
         } else if (!strcmp(argv[i], "--dialect")) clap_notes = !strcmp(argv[i + 1], "clap");
         else if (!strcmp(argv[i], "--tempo")) transport_bpm = atof(argv[i + 1]);
+        else if (!strcmp(argv[i], "--tail-check")) tailck = !strcmp(argv[i + 1], "infinite");
     }
     if ((rc = read_script(argv[2], rate, &end))) return rc;
     if (load(argv[1]) || !(p = create())) return 1;
     if (engine >= 0) set_param_inactive(p, ENGINE_ID, engine);
     if (!p->activate(p, rate, 1, 4096)) { printf("FAIL activate at %.0f\n", rate); return 1; }
     if (!p->start_processing(p)) { printf("FAIL start_processing\n"); return 1; }
+    if (tailck >= 0) return tail_check(p, rate, block, clap_notes, tailck);
     frames = (uint32_t)((uint64_t)end * 44100u / (1000u * HOST_BLOCK)) * HOST_BLOCK;   /* the host build's length */
     if (rate == 48000.0) frames = (uint32_t)((uint64_t)frames * 160u / 147u);          /* (the resampler's outputs) */
     else if (rate != 44100.0) frames = (uint32_t)floor(frames * rate / 44100.0);

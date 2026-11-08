@@ -73,6 +73,7 @@ while the plugin is loaded, not in the project yet.
 | State | the sound as the Move saves it (the 256-byte settings record and the sound it came from) plus ENGINE and the plugin's own keys (settings, learned CCs, SUSTAIN, the preset's name; version "pv" 2). A state without them (the first builds, a Move track) loads them as defaults; a broken or cut state is refused and changes nothing |
 | Tempo | the tempo source above (the delay's and the LFOs' sync) |
 | Sample rates | 44.1 kHz: the app's own samples. 48 kHz: the FM-1's own USB resampler, the FM-1's USB stream bit for bit. Any other rate from 1 to 1536 kHz: a windowed-sinc resampler (error under 1 LSB of 16 bits in the passband) |
+| Tail | reported to the host (CLAP tail; the VST3's tail samples and the Audio Unit's tail time follow), and the host is told when it changes: how long the sound can go on after the last event at the current settings, an upper bound measured per setting: the notes' release (under 2 s), the reverb by TYPE and DECAY (HALL up to 8 s, PLATE 7 s, INFINITE up to 59 s below SUSTAIN), the delay by FEEDBACK scaled by its TIME (a synced time counts as the longest), added up with a quarter more. INFINITE at SUSTAIN / FREEZE and the ANA / TAPE echoes that build up (FEEDBACK 115 / 114 and over) report an infinite tail. FX BYPASS: the notes' only |
 | Latency | reported to the host: 10 ms (441 frames at 44.1 kHz, 487 at 48 kHz, 11 ms or more at other rates). Events are placed on the millisecond the FM-1 would see them |
 | Instances | up to 16 in one host process; a 17th stays silent and says so in the host's log |
 | Floods | a host may send thousands of parameter, program or controller changes in one block (pluginval does): none is dropped. When the event queue runs low, the changes to one parameter (or one controller of a channel) wait in one entry that keeps the latest value, which is all the app would have played: it applies everything due before each millisecond's step. Notes are never merged |
@@ -186,6 +187,9 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
 - clap-validator (the CLAP bundle), pluginval at strictness 10 (the VST3 and the Audio Unit, with its editor tests),
   `auval -strict` (the Audio Unit) and the VST3 SDK's own validator (`tools/plugin_vst3_validator.sh`, built from the
   pinned SDK with the command line tools: 47 tests).
+- The tail (`tests/py/test_plugin_tail.py`, in `make test-plugin`): `clap_render --tail-check` is a host that stops at
+  the tail the plugin reports; with the measured worst corners and seeded random settings, both engines, it renders 20 s
+  past the tail and nothing sounds there; the settings that hold the sound report an infinite tail.
 - In other hosts (`make plugin-hosts`, `tools/plugin_hosts.py`, macOS): the Audio Unit in Apple's own AU host
   (AVAudioEngine offline, `tools/plugin_au_render.swift`, every event at its frame) renders a host script sample for
   sample as the CLAP render does, at 44.1 and 48 kHz; the VST3 and the Audio Unit in a JUCE-based host (pedalboard)

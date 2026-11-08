@@ -15,6 +15,9 @@
  *   the UI core   plugin/frp_ui_iface.h: what the plugin's own UI calls (and the extension FRP_UI_EXT_ID for the
  *                 headless tests)
  *   latency       the bridge's pre-roll (plugin/src/bridge.c), constant
+ *   tail          how long the sound can go on after the last event: the notes' release, the reverb and the delay
+ *                 at their settings (tail_ms below; INFINITE reverb at SUSTAIN / FREEZE and self-oscillating echoes:
+ *                 infinite); the host is told when it changes
  *   gui           the plugin's window (plugin/gui_clap.c over plugin/gui_*.c, drawing plugin/ui/frui.c; macOS
  *                 Cocoa, Windows HWND, Linux X11 with the host's posix-fd and timer support): it reaches the core
  *                 only through frp_ui_iface.h's calls
@@ -75,6 +78,11 @@ typedef struct frp_core {
     _Atomic uint32_t rescan_rev;
     _Atomic int rescan_tries;
     _Atomic int processing;              /* between start_processing and stop_processing */
+    const clap_host_tail_t *htail;
+    double rate;                         /* the activation's (0: not active yet) */
+    _Atomic uint32_t tail_said;          /* the tail (ms) the host was last told about; tail_new: a change to tell */
+    _Atomic int tail_new;
+    uint32_t tail_blocks;
     void *gui;                           /* frp_ui_gui_data */
     oq_ev_t oq[OQ];
     _Atomic uint32_t oqw, oqr;
@@ -209,6 +217,82 @@ static bool np_get(const clap_plugin_t *plugin, uint32_t index, bool is_input, c
 }
 static const clap_plugin_note_ports_t EXT_NOTES = { np_count, np_get };
 
+/* ---- the tail: an upper bound for the time the output takes to fall under 1 LSB of 16 bits after the last event,
+ * from the settings. Measured with plugin/tests/clap_render (a 6-note fortissimo chord, MIX 127, CLASSIC and HQ, the
+ * longer of the two; tests/py/test_plugin_tail.py checks the bound against renders): the notes after their release
+ * (RELEASE 127, VIBES) under 2 s; the reverb by TYPE and DECAY (HALL, PLATE; INFINITE below SUSTAIN: up to 59 s;
+ * at SUSTAIN / FREEZE it holds: infinite); the delay by FEEDBACK at its longest time (1.49 s: the line; a synced
+ * time is taken as the longest), scaled by the time set; ANA from FEEDBACK 115 and TAPE from 114 build up into
+ * oscillation (fx.c fx_delay_t): infinite. The parts are added (a delay into the reverb), with a quarter more. */
+#define TAIL_INF 0xFFFFFFFFu
+#define TAIL_NOTES_MS 2500u
+#define DLY_LINE_MS 1486u                /* fx.c DLY_LEN 65536 at 44.1 kHz */
+typedef struct { uint8_t x; uint32_t ms; } tpt_t;
+static const tpt_t T_HALL[] = { {0, 2780}, {32, 3732}, {64, 4811}, {96, 6364}, {127, 8019} };
+static const tpt_t T_PLATE[] = { {0, 1017}, {32, 1678}, {64, 2611}, {96, 4212}, {127, 6924} };
+static const tpt_t T_INF[] = { {0, 3299}, {16, 4601}, {32, 6430}, {48, 9489}, {64, 13604}, {80, 19490}, {96, 29736},
+                               {105, 38963}, {110, 44092}, {115, 50657}, {119, 59129} };
+static const tpt_t T_DLY[] = { {0, 2047}, {16, 6197}, {32, 10474}, {48, 14949}, {64, 26768}, {80, 34188}, {90, 38708},
+                               {100, 47562}, {110, 62465}, {113, 89345} };   /* (at the line's length; 111..113 TAPE) */
+static uint32_t t_lerp(const tpt_t *t, int n, int x)   /* linear between the points, the last point beyond */
+{
+    int i;
+    if (x <= t[0].x) return t[0].ms;
+    for (i = 1; i < n; i++)
+        if (x <= t[i].x) return t[i - 1].ms + (uint32_t)((uint64_t)(t[i].ms - t[i - 1].ms) * (uint32_t)(x - t[i - 1].x) / (uint32_t)(t[i].x - t[i - 1].x));
+    return t[n - 1].ms;
+}
+#define NPT(t) ((int)(sizeof t / sizeof t[0]))
+static int pv_of(frp_plugin_t *p, clap_id id)
+{
+    double v = 0.0;
+    (void)frp_inst_get(p->in, id, &v);
+    return (int)floor(v + 0.5);
+}
+static uint32_t tail_ms(frp_plugin_t *p)   /* any thread (the app's published values) */
+{
+    uint32_t rv = 0, dl = 0;
+    int t, d, fb;
+    if (pv_of(p, FRP_ID_FX_BYPASS)) return TAIL_NOTES_MS * 5u / 4u;
+    t = pv_of(p, 59); d = pv_of(p, 51);                      /* P_RV_TYPE (OFF HALL PLATE INFINITE), P_RV_DECAY */
+    if (t && pv_of(p, 19)) {                                 /* P_RV_DEPTH: the MIX */
+        if (t == 3 && d >= 120) return TAIL_INF;             /* (INFINITE's SUSTAIN and FREEZE: ui.c RV_SUSTAIN_AT) */
+        rv = (t == 1 ? t_lerp(T_HALL, NPT(T_HALL), d) : t == 2 ? t_lerp(T_PLATE, NPT(T_PLATE), d)
+                                                              : t_lerp(T_INF, NPT(T_INF), d)) + 100u;   /* (+ PRE-DELAY) */
+    }
+    t = pv_of(p, 13); fb = pv_of(p, 17);                     /* P_DL_SW (OFF DIG ANA TAPE), P_DL_FDBK */
+    if (t && pv_of(p, 14)) {                                 /* P_DL_DEPTH: the MIX */
+        uint32_t len = DLY_LINE_MS, n;
+        if ((t == 2 && fb >= 115) || (t == 3 && fb >= 114)) return TAIL_INF;
+        n = fb > 110 && t != 3 ? 62465u : t_lerp(T_DLY, NPT(T_DLY), fb);
+        if (!pv_of(p, 16)) {                                 /* P_DL_SYNC FREE: the TIME's text ("357 ms", "1.5 s") */
+            const frp_param_t *pp = &FRP_PARAMS[15];         /* P_DL_TIME */
+            int v = pv_of(p, 15);
+            const char *tx = FRP_TEXT[pp->text0 + (uint32_t)(v < 0 ? 0 : v > pp->hi ? pp->hi : v)];
+            double ms = atof(tx) * (strstr(tx, " s") ? 1000.0 : 1.0);
+            if (ms > 0.0 && ms < (double)DLY_LINE_MS) len = (uint32_t)ceil(ms);
+        }
+        dl = (uint32_t)((uint64_t)n * len / DLY_LINE_MS);
+        if (dl < T_DLY[0].ms) dl = T_DLY[0].ms;
+    }
+    return (TAIL_NOTES_MS + rv + dl) * 5u / 4u;
+}
+static uint32_t tail_get(const clap_plugin_t *plugin)
+{
+    frp_plugin_t *p = plugin->plugin_data;
+    uint32_t ms = tail_ms(p);
+    double rate = p->rate > 0.0 ? p->rate : 48000.0;
+    if (ms == TAIL_INF) return TAIL_INF;                     /* (>= INT32_MAX: infinite) */
+    atomic_store(&p->tail_said, ms);
+    return (uint32_t)ceil(ms * rate / 1000.0) + frp_inst_latency(p->in);
+}
+static const clap_plugin_tail_t EXT_TAIL = { tail_get };
+static void tail_watch(frp_plugin_t *p)  /* the audio thread, every 32nd block: a changed tail is told on the main thread */
+{
+    if (++p->tail_blocks & 31u) return;
+    if (tail_ms(p) != atomic_load(&p->tail_said) && !atomic_exchange(&p->tail_new, 1)) p->host->request_callback(p->host);
+}
+
 /* ---- latency, state */
 static uint32_t lat_get(const clap_plugin_t *plugin)
 {
@@ -256,6 +340,7 @@ static bool pl_init(const clap_plugin_t *plugin)
     frp_plugin_t *p = plugin->plugin_data;
     p->log = p->host->get_extension(p->host, CLAP_EXT_LOG);
     p->hparams = p->host->get_extension(p->host, CLAP_EXT_PARAMS);
+    p->htail = p->host->get_extension(p->host, CLAP_EXT_TAIL);
     p->in = frp_inst_new();
     if (!p->in) return false;
     if (frp_inst_slot(p->in) < 0)
@@ -288,6 +373,7 @@ static bool pl_activate(const clap_plugin_t *plugin, double rate, uint32_t min_f
     }
     p->have_last = 0;
     p->active = 1;
+    p->rate = rate;
     return true;
 }
 static void pl_deactivate(const clap_plugin_t *plugin)
@@ -373,6 +459,7 @@ static clap_process_status pl_process(const clap_plugin_t *plugin, const clap_pr
     pr->audio_outputs[0].constant_mask = 0;
     if (pr->out_events) p_out(p, pr->out_events);
     if (frp_inst_wants_main(p->in)) p->host->request_callback(p->host);   /* (an ENGINE switch: its slot) */
+    tail_watch(p);
     return CLAP_PROCESS_CONTINUE;
 }
 /* the host's view: first the UI's gestures and values (in their order), then the app's own changes (a MIDI CC, a
@@ -437,6 +524,7 @@ static const void *pl_ext(const clap_plugin_t *plugin, const char *id)
     if (!strcmp(id, CLAP_EXT_NOTE_PORTS)) return &EXT_NOTES;
     if (!strcmp(id, CLAP_EXT_LATENCY)) return &EXT_LATENCY;
     if (!strcmp(id, CLAP_EXT_STATE)) return &EXT_STATE;
+    if (!strcmp(id, CLAP_EXT_TAIL)) return &EXT_TAIL;
     if (!strcmp(id, FRP_UI_EXT_ID)) return &UI_VTABLE;
     if (!strcmp(id, CLAP_EXT_GUI)) return frp_gui_clap_ext();
     if (!strcmp(id, FRP_EXT_GUI_SHOT)) return frp_gui_clap_shot_ext();
@@ -451,6 +539,10 @@ static void pl_main(const clap_plugin_t *plugin)
     if (frp_inst_main(p->in) < 0) {      /* an ENGINE switch with no slot of that engine free: it stays */
         say(p, CLAP_LOG_WARNING, "Frodhes: no engine slot free for that ENGINE (16 instances use it): it stays");
         if (p->hparams) p->hparams->rescan(p->host, CLAP_PARAM_RESCAN_VALUES);
+    }
+    if (atomic_exchange(&p->tail_new, 0)) {   /* told once; the host reads the new tail (tail_get) */
+        atomic_store(&p->tail_said, tail_ms(p));
+        if (p->htail) p->htail->changed(p->host);
     }
     t = atomic_load(&p->rescan_tries);
     if (t <= 0) return;
