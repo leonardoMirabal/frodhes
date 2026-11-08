@@ -33,8 +33,7 @@
  * full-rate REVERB TYPEs, FR_REV_HQ), the block in C1_SUB chunks (app_audio below): core 1 runs chunk j - 1's effects
  * while core 0 renders chunk j's voices, so no latency over one core; no voice ever on core 1 (core 1 faulted in the
  * voice loops while core 0 multiplied, 2026-11-01). Every
- * function core 1 reaches runs from flash (FX_RAM empty): the two cores never fetch code from RAM at once (Textura
- * 548fd55). Core 1 refuses a job it read wrong (core 0 renders it, core 1 stays on); a late job, refusals too often or
+ * function core 1 reaches runs from flash (FX_RAM empty): the two cores never fetch code from RAM at once. Core 1 refuses a job it read wrong (core 0 renders it, core 1 stays on); a late job, refusals too often or
  * a fault of core 1 hold it for good: one core from then on, at FR_C1_NV1 voices (the effects from flash, the shedder
  * as the last guard). hal/fm1_core1.h (the FM-1), c1_host.h (the host's twin), app_audio below. The FM-1 firmware and
  * the host only: not the SMK-37, not the Move, not the web emulator. */
@@ -113,13 +112,28 @@ static uint32_t smk_btn_leds;                   /* the SMK's own buttons' LEDs (
  * PROF_STAMP(i) charges the 24 MHz ticks since the previous stamp to stage i (its maximum since the last CC 116
  * query); app_audio stamps 1 after the engine and 15 at the end, fx_process may stamp 2..14 between its stages.
  * tools/hil_cpu.py --stages reads them (CC 116 replies also CC 97 = stage, CC 98 / 99 = us MSB / LSB). */
+#if FR_C1 && defined(C1_PROF)
+/* and the two cores' timeline (APP_DEFS="-DRH_PROF_STAGES -DC1_PROF" ./build.sh --c1): C1PF(i, ticks) keeps item i's
+ * maximum, written by either core (a lost maximum at the query's reset is fine here). Since the block's start: 16
+ * core 0's voices done (the last chunk's, eng_end), 18 its last wait over; 19 that last wait, 20 the waits before it
+ * summed; 21 / 22 core 1's last chunk started / done; 23 the last chunk's effects, 24 the first's, 25 a middle one's;
+ * the last chunk's stages: 26 COMP..PHASER, 27 the delay, 28 the reverb, 29 fx_out */
+#define PROF_NST 30u
+static volatile uint32_t c1_pf_t0;
+#define C1PF_ON 1
+#define C1PF(i, d) do { uint32_t d2_ = (d); if (d2_ > prof_st_max[i]) prof_st_max[i] = d2_; } while (0)
+#else
 #define PROF_NST 16u
+#endif
 static uint32_t prof_st_t __attribute__((section(".bss.prof_t")));     /* own sections: out of the global merge */
-static uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof_st")));     /* (engine.c eq) */
+static volatile uint32_t prof_st_max[PROF_NST] __attribute__((section(".bss.prof_st")));     /* (engine.c eq) */
 #define PROF_STAMP(i) do { uint32_t t_ = fm1_ticks(), d_ = t_ - prof_st_t; prof_st_t = t_; \
                            if (d_ > prof_st_max[i]) prof_st_max[i] = d_; } while (0)
 #else
 #define PROF_STAMP(i) ((void)0)
+#endif
+#ifndef C1PF
+#define C1PF(i, d) ((void)0)
 #endif
 #include "engine.c"     /* the voice engines: rhodes.c (the Rhodes), bars.c (VIBES + MARIMBA), and the dispatcher */
 #include "fx.c"
@@ -233,8 +247,17 @@ static struct { const int32_t *mono; int32_t *out; uint32_t n, o, e; } c1_job;
 static void c1_fx_job(uint32_t a)               /* core 1 (or core 0: refused, late, one core) */
 {
     (void)a;
+#if defined(C1PF_ON)
+    uint32_t a0 = fm1_ticks(), a1;
+#endif
     fxc_o = c1_job.o; fxc_e = c1_job.e; fxc_n = c1_job.n;
     fx_process(c1_job.mono, c1_job.out, c1_job.n);
+#if defined(C1PF_ON)
+    a1 = fm1_ticks();
+    if (fxc_e == fxc_n) { C1PF(21, a0 - c1_pf_t0); C1PF(22, a1 - c1_pf_t0); C1PF(23, a1 - a0); }
+    else if (!fxc_o) C1PF(24, a1 - a0);
+    else C1PF(25, a1 - a0);
+#endif
 }
 /* core 1 held for good: from now on strikes take FR_C1_NV1 voices, the ones above fade out as a steal */
 static void c1_one_core(void)
@@ -297,16 +320,26 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         if (rst) rh_side_on = 0;                /* (the voices CC 10 ended: as one core) */
     } else {
         uint32_t j, k = n / C1_SUB, posted = 0;
+#if defined(C1PF_ON)
+        uint32_t pw = 0, pt;
+        c1_pf_t0 = t0;
+#endif
         c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n;
         eng_begin(n);
         for (j = 0; j < C1_SUB; j++) {
             eng_chunk(c1_mono, j * k, j * k + k);   /* core 0: chunk j's voices */
-            if (j + 1u == C1_SUB) eng_end(c1_mono, n);
+            if (j + 1u == C1_SUB) { eng_end(c1_mono, n); C1PF(16, fm1_ticks() - t0); }
             if (posted) {                       /* chunk j - 1's effects: done, or core 0 does them */
                 int r;
 #ifndef DINGHY_HOST
                 uint32_t el = (fm1_ticks() - t0) / 24u;
+#if defined(C1PF_ON)
+                pt = fm1_ticks();
                 r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+                pw += fm1_ticks() - pt;
+#else
+                r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+#endif
 #else
                 r = fr_c1_wait_us(C1_DEADLINE_US);
 #endif
@@ -320,11 +353,18 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         host_race_check();
 #endif
         PROF_STAMP(1);
+        C1PF(20, pw);
         if (posted) {
             int r;
 #ifndef DINGHY_HOST
             uint32_t el = (fm1_ticks() - t0) / 24u;
+#if defined(C1PF_ON)
+            pt = fm1_ticks();
             r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+            C1PF(19, fm1_ticks() - pt); C1PF(18, fm1_ticks() - t0);
+#else
+            r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+#endif
 #else
             r = fr_c1_wait_us(C1_DEADLINE_US);
 #endif

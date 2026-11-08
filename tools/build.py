@@ -323,7 +323,7 @@ C1 = False                          # --c1: two cores (frodhes.c FR_C1), the FM-
 
 
 def c1_check(rt_names):
-    """--c1: core 1 runs only flash code (Textura 548fd55): no function marked FX_RAM in the effects' files may sit in
+    """--c1: core 1 runs only flash code: no function marked FX_RAM in the effects' files may sit in
     .ram_text (frodhes.c defines FX_RAM empty in FR_C1 builds); the core-1 idle loop and entry must"""
     errors, notes, fx = [], [], set()
     for f in sorted((Path(__file__).resolve().parents[1] / "firmware" / "src").glob("*.c")):

@@ -131,7 +131,11 @@ def mid_top(nv):
     return list(range(48, 48 + max(0, nv - 2))) + TOP2[:min(2, nv)]
 STAGES = {1: "engine (eng_render)", 2: "fx copy", 3: "compressor", 4: "filter + LFO", 5: "drive", 6: "trem / wah",
           7: "phaser", 8: "chorus", 9: "delay", 10: "reverb", 11: "bypass / DC / LEVEL", 12: "limiter", 13: "gate",
-          14: "fx (other)", 15: "after the last stamp"}
+          14: "fx (other)", 15: "after the last stamp",
+          # FR_C1 + C1_PROF (frodhes.c C1PF): since the block's start, or a span
+          16: "c0 voices done @", 18: "c0 last wait over @", 19: "c0 last wait", 20: "c0 waits before",
+          21: "c1 last chunk start @", 22: "c1 last chunk done @", 23: "c1 last chunk fx", 24: "c1 first chunk fx",
+          25: "c1 middle chunk fx", 26: "last: COMP..PHASER", 27: "last: delay", 28: "last: reverb", 29: "last: fx_out"}
 
 
 def default_voices(eng):
