@@ -1351,7 +1351,7 @@ def self_test(engines=ENGINES, worst_s=20.0, recipe_s=24.0, seed=0, k=10, log=pr
             rng = np.random.default_rng(seed + 99)
             base = [c for c in clips if c[0].endswith(("-worst1", "-recipe-dry1", "-recipe-fx1"))]
             kinds = r["kinds_device" if dev else "kinds"]
-            for kind in KINDS:
+            for ki, kind in enumerate(KINDS):
                 f = m = tries = 0
                 per = 1 if kind == "drop1ms" else 5         # (a lost packet moves the rest of the take: one a copy)
                 cand = [c for c in base if kind != "step" or "-recipe" in c[0]]   # (no room for a step in the busy
@@ -1359,6 +1359,10 @@ def self_test(engines=ENGINES, worst_s=20.0, recipe_s=24.0, seed=0, k=10, log=pr
                 while m < k and tries < 12:
                     name, u, jk, ev, ccs, fit = cand[tries % len(cand)]
                     tries += 1
+                    rng = np.random.default_rng([seed + 99, ki, tries])   # (each kind and take its own draws: the
+                    # places in one take no longer move with another's sound (the bounded draws' rejection sampling
+                    # takes as many as each take's audible frames allow): 0.9.10's effect make-ups changed a busy take
+                    # and moved a VIBES click in the dry one onto a bright attack's shadow)
                     u2, j2, marks = inject(kind, u, jk, ev, rng, min(per, k - m), ccs,   # (placed by the truth,
                                            widen=(DEV_JITTER + CLOCK_TOL) if dev else 0.0,   # found without it;
                                            clock_usb=cu, clock_jack=cj)                # outside the wider guards)

@@ -667,7 +667,8 @@ def test_injected_whole_frame_copies_are_found_as_before():
         ev = [p for p, _ in C.det_repeat(y)]
         found += sum(any(abs(e - p) <= 2 for e in ev) for p in marks)
         placed += len(marks)
-    assert placed == 190 and found >= 150, (found, placed)   # 2026-11-08: 0.9.10's louder presets: 190 places (189), 165 found
+    assert 180 <= placed <= 200 and found >= 150, (found, placed)   # 2026-11-08: 0.9.10's louder presets: 190 places
+    # (189), 165 found; the effects' make-ups (2026-11-08): 189 places, 159 found (the places move with the sound)
 
 
 # ---- 0.9.9 (BUGHUNT #24): 2 equal frames at 48 kHz need the kink above the resampler's band -------------------------

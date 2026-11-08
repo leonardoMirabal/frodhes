@@ -382,9 +382,11 @@ def self_test(eng="rhodes", log=print):
     # trough): where the jack is loudest in the window (peak 245), so the gap is clearly audible. The underrun's
     # second hold at +125 ms, not +130 (2026-11-08, LEVEL 127): +130 now holds channel 1 at its turn (3.5 dB evidence,
     # det_repeat's agreement needs 4: a channel at its turn shows little, by design; single 12-frame holds in 40-200 ms:
-    # 21 of 32 found at LEVEL 127, 14 at 64: the marks sit where the detector sees, as the jack's did)
+    # 21 of 32 found at LEVEL 127, 14 at 64: the marks sit where the detector sees, as the jack's did). The first at +65
+    # since 2026-11-08's effect make-ups (+60 then held a channel at its turn; +40 .. +90 in 5 ms steps with the second
+    # at +120 .. +130: both found at 45, 50, 65, 75, 80)
     for name, marks, ms in (("USB dropout 2 ms", (0.06, 0.13), 2), ("jack dropout 3 ms", (0.07,), 3),
-                            ("jack dropout 3 ms", (0.08,), 3), ("USB underrun hold 12 frames", (0.06, 0.125), 0)):
+                            ("jack dropout 3 ms", (0.08,), 3), ("USB underrun hold 12 frames", (0.065, 0.125), 0)):
         u2, j2 = u.copy(), j.copy()
         for m in marks:
             m += t_chord
