@@ -45,7 +45,12 @@ off), which is where a bent tail shows. Each render is cached by the binary's ha
 the pytest workers share them (build/host/ctl_sweep/).
 
 Material: the chord C3 E4 G4 A4 C5 at velocity 100, held by the pedal from 0.5 s (no other harmonic of the chord
-within 4 % of 440 or 880 Hz). MARIMBA rings out within a second, so there the chord is struck again every 800 ms.
+within 4 % of 440 or 880 Hz) and struck again every second (RESTRIKE) up to the sweep's end, so its timbre is steady
+over the sweep. 0.9.10: a hard-struck Rhodes note darkens over its first 2 s on purpose (the harmonic decay glide), and
+a reverb's tank or the tape's echo during a sweep holds older, brighter material than the held renders at that moment:
+the zipper and pitch checks then read the source's change, not the control's (plate MIX 3.0x, TAPE TIME 3.4x, broadband,
+at the sweep's end). The checks themselves are unchanged; the strikes fall 500 ms from T_FLIP, outside every flip
+window. MARIMBA rings out within a second, so there the chord is struck (and let go) every 800 ms.
 Setup: every effect off (COMP, DRIVE, FILTER, TREM, CHO/PHA, DELAY, REVERB, SPREAD 0, LEVEL 64), then only the
 control's own effect; CC 10 (the developer reset) at 300 ms makes every render deterministic.
 
@@ -79,6 +84,8 @@ PARTIALS = [440.0, 880.0]
 LIMITS = {"pitch": 5.0, "zipper": 2.0, "jump": 1.5, "dropout": 20.0, "mono": 1.0, "click": 10.0, "trans_hi": 3.0,
           "trans_lo": 6.0, "stuck": 1.5,
           "xjump": 0.5}
+PROMINENCE = 4.0                               # pitch_p90: a partial 12 dB over its band, or no pitch read
+RESTRIKE = 1000                                # the chord struck again this often (ms; T_FLIP sits between strikes)
 T_FLIP = 2000                                  # the one-move renders: the control moved here (the chord rings)
 
 # every effect off: COMP, its THRESH, DRIVE type, AMOUNT, FILTER, its LFO, TREM, CHO/PHA, PHASER, DELAY, its MIX,
@@ -233,8 +240,10 @@ def script(case, value=None, sweep=False, off=False, flip=None):
         while t < T_SW1:
             L += [f"{t} midi 0x90 {n} 100" for n in CHORD] + [f"{t + 100} midi 0x80 {n} 0" for n in CHORD]
             t += 800
-    else:
-        L += [f"{T_NOTE} midi 0x90 {n} 100" for n in CHORD]
+    else:                                                  # struck again every second, held by the pedal (0.9.10)
+        for t in range(T_NOTE, T_SW1, RESTRIKE):          # (let go after 100 ms, the pedal holds it: a key held
+            L += [f"{t} midi 0x90 {n} 100" for n in CHORD] + [f"{t + 100} midi 0x80 {n} 0" for n in CHORD]   # down
+                                                           # is not struck again by a second note-on)
     if sweep:
         for k, v in enumerate(list(range(1, 128)) + list(range(126, -1, -1))):
             L.append(f"{T_SW0 + k * STEP} midi 0xB0 {case.cc} {v}")
@@ -298,7 +307,8 @@ def rms_db(x):
 
 # ---- the measurements (the MIX audit's analysis, 2026-10-25)
 def peakf(x, f0, nfft=1 << 15):
-    """the spectral peak within 4 % of f0, parabolic interpolation on the log magnitude: (Hz, magnitude)"""
+    """the spectral peak within 4 % of f0, parabolic interpolation on the log magnitude: (Hz, magnitude, prominence:
+    the peak over the band's median magnitude)"""
     X = np.abs(np.fft.rfft(x * np.hanning(len(x)), nfft))
     fr = np.fft.rfftfreq(nfft, 1 / FS)
     idx = np.where((fr > f0 * 0.96) & (fr < f0 * 1.04))[0]
@@ -306,20 +316,23 @@ def peakf(x, f0, nfft=1 << 15):
     a, b, c = np.log(X[i - 1] + 1e-12), np.log(X[i] + 1e-12), np.log(X[i + 1] + 1e-12)
     d = a - 2 * b + c
     p = 0.5 * (a - c) / d if d != 0 else 0.0
-    return (i + p) * FS / nfft, X[i]
+    return (i + p) * FS / nfft, X[i], X[i] / (np.median(X[idx]) + 1e-12)
 
 
 def pitch_p90(sig, ref):
     """p90 of |cents| of the 440 / 880 Hz partials, sig against ref, windows of 8192 (hop 4096) over the sweep's
-    span; windows where sig's partial is under 3 % of ref's are skipped (the wet at MIX 0). None: no window"""
+    span; windows where sig's partial is under 3 % of ref's are skipped (the wet at MIX 0), and those where it stands
+    less than PROMINENCE over its +-4 % band's median (a reverb's tank smears a partial into a band with no one pitch:
+    the peak picked in it moved by tens of cents from window to window, held or swept alike, rev TYPE / PLATE SIZE's
+    wet 0.9.10). None: no window"""
     al = []
     for s0 in range(ms(T_SW0), ms(T_SW1) - 8192, 4096):
         a, b = sig[s0:s0 + 8192].mean(1), ref[s0:s0 + 8192].mean(1)
         cs = []
         for f0 in PARTIALS:
-            fa, ma = peakf(a, f0)
-            fb, mb = peakf(b, f0)
-            if ma < 0.03 * mb or not (np.isfinite(fa) and np.isfinite(fb)) or fa <= 0 or fb <= 0:
+            fa, ma, pa = peakf(a, f0)
+            fb, mb, _ = peakf(b, f0)
+            if ma < 0.03 * mb or pa < PROMINENCE or not (np.isfinite(fa) and np.isfinite(fb)) or fa <= 0 or fb <= 0:
                 continue
             cs.append(1200 * np.log2(fa / fb))
         if cs:
