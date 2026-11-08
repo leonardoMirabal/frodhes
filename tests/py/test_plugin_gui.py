@@ -74,3 +74,23 @@ def test_window_matches_the_renderer(tmp_path):
         a, b = _png_pixels(out / (name + ".png")), _png_pixels(rdir / "model.png")
         assert a[:2] == b[:2], (name, a[:2], b[:2])
         assert a[2] == b[2], "%s: the window's picture differs from the renderer's (%s)" % (name, size)
+
+
+def test_windows_view_compiles(tmp_path):
+    """The Windows view (plugin/gui_win.c: a child HWND, a DIB blit) and the window's core compile for x86_64 Windows
+    with clang-cl over the Windows SDK in .local/win-toolchain (xwin), warnings as errors. It is not run here: a
+    Windows host test is the plan's B-M4; the plugin's Windows CI build compiles the same files through CMake."""
+    clang_cl = shutil.which("clang-cl") or "/opt/homebrew/opt/llvm/bin/clang-cl"
+    sdk = os.path.join(ROOT, ".local", "win-toolchain", "sdk")
+    clap = os.path.join(ROOT, ".local", "plugin-deps", "clap", "include")
+    if not (os.path.exists(clang_cl) and os.path.isdir(sdk) and os.path.isdir(clap)):
+        pytest.skip("no clang-cl, Windows SDK (.local/win-toolchain) or CLAP headers")
+    inc = []
+    for d in ("crt/include", "sdk/include/ucrt", "sdk/include/um", "sdk/include/shared"):
+        inc += ["/imsvc", os.path.join(sdk, d)]
+    for src in ("gui_win.c", "gui_core.c", "gui_clap.c", "ui/frui.c", "ui/frui_font.c", "ui/frui_gfx.c", "ui/frui_text.c"):
+        r = subprocess.run([clang_cl, "--target=x86_64-pc-windows-msvc", "/c", "/W3", "/WX", "/O2", "-D_USE_MATH_DEFINES",
+                            "-D_CRT_SECURE_NO_WARNINGS"] + inc + ["-I" + clap, "-I" + os.path.join(ROOT, "plugin"),
+                           "/Fo" + str(tmp_path / (os.path.basename(src) + ".obj")), "--", os.path.join(ROOT, "plugin", src)],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, src + "\n" + r.stdout + r.stderr
