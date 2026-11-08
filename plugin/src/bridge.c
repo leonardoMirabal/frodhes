@@ -20,12 +20,7 @@
  * the pre-roll grows by the filter's reach instead (FRP_LAT_MS + RS reach, rounded up to a ms), and the latency the
  * host is told is that pre-roll at its rate. */
 #include <math.h>
-#ifdef _WIN32                            /* (Windows: InitOnceExecuteOnce in pthread_once's place, no winpthreads) */
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#else
 #include <pthread.h>
-#endif
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,14 +67,7 @@ struct frp_inst {
 };
 
 static float rs_tab[RS_HALF * RS_OS + 2];
-#ifdef _WIN32
-static INIT_ONCE rs_once = INIT_ONCE_STATIC_INIT;
-static void rs_init(void);
-static BOOL CALLBACK rs_init_win(PINIT_ONCE o, PVOID p, PVOID *c) { (void)o; (void)p; (void)c; rs_init(); return TRUE; }
-#define pthread_once(o, f) InitOnceExecuteOnce((o), rs_init_win, 0, 0)
-#else
 static pthread_once_t rs_once = PTHREAD_ONCE_INIT;
-#endif
 static double bessel_i0(double x)
 {
     double s = 1.0, t = 1.0;

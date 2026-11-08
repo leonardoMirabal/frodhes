@@ -20,17 +20,7 @@
  *       saved again: the same), the rates (500 Hz refused, 96 kHz taken), FRP_SLOTS + 1 instances (the last
  *       one silent, with its warning), the latency, the descriptor and the absence of a GUI extension.
  * Exit: 0 ok, 1 failure, 3 the script is not MIDI-driven (nothing written). */
-#ifdef _WIN32                            /* (Windows: the .clap is a DLL; LoadLibrary in dlopen's place) */
-#include <stdio.h>
-#include <windows.h>
-#define RTLD_NOW 0
-#define RTLD_LOCAL 0
-static void *dlopen(const char *f, int m) { (void)m; return (void *)LoadLibraryA(f); }
-static void *dlsym(void *h, const char *n) { return (void *)GetProcAddress((HMODULE)h, n); }
-static const char *dlerror(void) { static char e[32]; snprintf(e, sizeof e, "error %lu", GetLastError()); return e; }
-#else
 #include <dlfcn.h>
-#endif
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>

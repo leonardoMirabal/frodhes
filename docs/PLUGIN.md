@@ -52,19 +52,21 @@ host's transport start / stop, presets in the host's browser, a window.
 
 ## Windows and Linux builds
 
-Both need only CMake 3.21+ and Ninja on the build machine; the compilers are pinned like the other dependencies.
+    tools/plugin_win.sh setup   # once: clang-cl + lld-link (Homebrew llvm@20, lld@20) and the Windows SDK + MSVC CRT
+                                # through xwin into .local/win-toolchain (xwin asks you to accept Microsoft's licence)
+    make plugin-win      # Windows x64: build, dependency check, the tests under wine (Docker), frodhes-plugin-windows.zip
+    make plugin-linux    # Linux x86_64 + aarch64 in Docker: build, dependency check, the Xvfb tests, the zips
 
-    make plugin-win      # Windows x64: build/plugin-win, build/plugin-pkg/frodhes-plugin-windows.zip
-    make plugin-linux    # Linux (this machine's architecture) in Docker: build/plugin-linux, ...-linux-<arch>.zip
-
-- **Windows** builds with [llvm-mingw](https://github.com/mstorsjo/llvm-mingw) (clang, lld and the Universal C
-  Runtime), the same compiler natively on Windows (CI) and as a cross compiler on macOS or Linux, so a local build
-  is the release's build (`plugin/cmake/mingw-w64-x86_64.cmake`). The C and C++ runtimes are linked in: the binaries
-  import only Windows' own DLLs, nothing to install beside them (no Visual C++ redistributable). The app's main loop
-  runs in a fiber there (`plugin/src/coro/coro.h`).
-- **Linux** builds in `ubuntu:20.04` with clang 12 (`tools/plugin_linux_env.sh`, `plugin/cmake/linux-clang.cmake`):
+- **Windows** builds with clang-cl + lld-link and the static C runtime (`/MT`, `plugin/cmake/win-x64-clangcl.cmake`):
+  cross from macOS over the xwin SDK, natively on Windows (CI) with the installed LLVM and Visual Studio's SDK. The
+  binaries import only Windows' own DLLs: nothing to install beside them (no Visual C++ redistributable). The app's
+  main loop runs in a fiber there (`plugin/src/coro/coro.h`); `plugin/compat/win/` holds the few POSIX shims. The
+  wine tests (`tools/plugin_win.sh test`) run the coroutine, the window's controller and view, the headless host's
+  selftest and a Gate D subset: a smoke test, not Windows itself (CI runs the same on windows-2022).
+- **Linux** builds in Docker on Ubuntu 20.04 with clang 12 (`tools/plugin_linux.sh`, `plugin/tests/docker/linux.Dockerfile`):
   glibc 2.31 is the oldest the bundles need, so they load on Ubuntu 20.04, Debian 11, Fedora 32 and everything
-  newer. libstdc++ and libgcc are linked in.
+  newer. libstdc++ and libgcc are linked in; only the entry points are exported. `FRP_LINUX_ARCH=aarch64` builds
+  the ARM version.
 
 ## Packages
 
@@ -86,16 +88,16 @@ VST3 bundles also carry the two licence files in `Contents/Resources`.
 
 **Self-contained.** `tools/plugin_depcheck.py` fails a build whose binaries need anything beyond the operating
 system: macOS only `libSystem`, `libc++`, `libobjc` and system frameworks, universal, macOS 11; Windows only its own
-DLLs (`kernel32`, `user32` ... and the UCRT's `api-ms-win-crt-*`, part of Windows 10 and 11); Linux only `libc`,
+DLLs (`kernel32`, `user32`, `gdi32` ...; the C runtime is linked in); Linux only `libc`,
 `libm`, `libdl`, `libpthread`, `librt`, `libX11` and `libxcb`, no symbol newer than glibc 2.31. It also checks that
 each format exports its entry point.
 
 **CI** (`.github/workflows/plugin.yml`, on every pull request that touches the plugin or the code it compiles): macOS
 builds, runs `make test-plugin`, packages, installs the `.pkg` with `installer` into the runner's home and runs the
 dependency check, clap-validator, pluginval (strictness 10) and `auval -strict` on what was installed; Windows
-builds, packages, unpacks the zip and runs the dependency check, the coroutine test, the headless host's selftest,
-clap-validator and pluginval; Linux builds x86_64 and aarch64 in Ubuntu 20.04 with the dependency check, the
-coroutine test and the selftest, then loads the x86_64 zip on a current Ubuntu with clap-validator (and pluginval,
+builds with clang-cl, packages, unpacks the zip and runs the dependency check, the coroutine test, the window's
+controller and view self-tests, the headless host's selftest, clap-validator and pluginval; Linux runs
+`tools/plugin_linux.sh` for x86_64 and aarch64 (build, check, the Xvfb tests with a Gate D subset, the zip), then loads the x86_64 zip on a current Ubuntu with clap-validator (and pluginval,
 not blocking). A release tag runs the same workflow (release.yml's job `plugin`) and attaches the packages after the
 release is public, only for the platforms the release commit records as tested, in a line
 `Plugin tested: macos windows linux-x86_64 linux-aarch64` (`tools/plugin_asset.sh`): no line, no plugin asset.
@@ -153,8 +155,8 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
 | `plugin/src/coro/` | the coroutine the app's main loop runs in (arm64, x86_64) |
 | `plugin/gen/params_map.h` | the parameter table, generated by `tools/gen_plugin_params.py` from the app's own |
 | `plugin/tests/` | the headless host, the coroutine test, the parameter dump |
-| `tools/plugin_deps.sh`, `plugin/deps.lock` | the pinned dependencies, test tools and the Windows compiler |
+| `tools/plugin_deps.sh`, `plugin/deps.lock` | the pinned dependencies and test tools |
 | `tools/plugin_pack.sh`, `plugin_depcheck.py`, `plugin_asset.sh` | the packages, the self-contained check, the release's choice of packages |
-| `tools/plugin_linux_env.sh`, `plugin_linux_docker.sh` | the Linux build image (Ubuntu 20.04) and the local Docker build |
-| `plugin/cmake/mingw-w64-x86_64.cmake`, `linux-clang.cmake` | the Windows and Linux toolchains |
+| `tools/plugin_win.sh`, `plugin/cmake/win-x64-clangcl.cmake`, `plugin/compat/win/` | the Windows build (clang-cl), its checks and wine tests |
+| `tools/plugin_linux.sh`, `plugin/tests/docker/` | the Linux build in Docker (Ubuntu 20.04), its checks and Xvfb tests; the wine image |
 | `.github/workflows/plugin.yml` | the plugin's CI, also run by release.yml |

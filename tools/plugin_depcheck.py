@@ -9,14 +9,14 @@
 For every plugin binary found under PATH it checks, and fails (exit 1) on anything else:
   macos    universal (arm64 + x86_64); each slice's minimum macOS <= 11.0; linked only to /usr/lib/libSystem,
            libc++, libobjc and /System/Library/Frameworks (otool -L): no @rpath, no Homebrew, no other dylib
-  windows  imports only Windows' own DLLs (kernel32, user32, gdi32 ... and the UCRT's api-ms-win-crt-*, part of
-           Windows 10 and 11): no VCRUNTIME / MSVCP, no libc++ / libwinpthread / libgcc DLL (llvm-objdump -p)
+  windows  imports only Windows' own DLLs (kernel32, user32, gdi32 ...): the C runtime is linked in statically (/MT),
+           so no VCRUNTIME / MSVCP / ucrtbase / api-ms-win-crt-*, and no libc++ / libgcc DLL (llvm-objdump -p)
   linux    NEEDED only libc, libm, libdl, libpthread, librt, the loader, libX11 and libxcb; every GLIBC_ symbol
            version <= --glibc (the build image's baseline); no GLIBCXX_ / CXXABI_ / GCC_ versions (libstdc++ and
            libgcc are linked in) (readelf -d, readelf -V)
   all      the format's entry is exported (clap_entry; GetPluginFactory; bundleEntry / InitDll / ModuleEntry)
 Imports of dlopen / LoadLibrary are listed (info only: the OS's own loaders, used by the wrapper's host code).
-Tools: otool / lipo (macOS); llvm-objdump (FRP_OBJDUMP, else PATH, else .local/plugin-deps/llvm-mingw/bin);
+Tools: otool / lipo (macOS); llvm-objdump (FRP_OBJDUMP, else PATH, else Homebrew llvm@20);
 readelf or llvm-readelf (FRP_READELF, else PATH)."""
 import os
 import re
@@ -30,7 +30,7 @@ MAC_OK = re.compile(r"^(/usr/lib/libSystem\.B\.dylib|/usr/lib/libc\+\+\.1\.dylib
                     r"/System/Library/Frameworks/[A-Za-z0-9]+\.framework/.+)$")
 WIN_OK = re.compile(r"^(kernel32|user32|gdi32|shell32|ole32|oleaut32|advapi32|comdlg32|comctl32|uxtheme|dwmapi|"
                     r"shcore|imm32|winmm|version|opengl32|d2d1|dwrite|windowscodecs|shlwapi|ws2_32|bcrypt|"
-                    r"ucrtbase|api-ms-win-(crt|core)-[a-z0-9-]+)\.dll$", re.I)
+                    r"api-ms-win-core-[a-z0-9-]+)\.dll$", re.I)   # (no ucrtbase / api-ms-win-crt: the static CRT, /MT)
 LINUX_OK = re.compile(r"^(libc\.so\.6|libm\.so\.6|libdl\.so\.2|libpthread\.so\.0|librt\.so\.1|"
                       r"ld-linux[-a-z0-9_.]*\.so\.[12]|libX11\.so\.6|libxcb\.so\.1)$")
 ENTRY = {"clap": ["clap_entry"], "vst3": ["GetPluginFactory"], "component": []}
@@ -46,7 +46,7 @@ def tool(env, *names):
     if os.environ.get(env):
         return os.environ[env]
     for n in names:
-        p = shutil.which(n) or shutil.which(n, path=str(ROOT / ".local/plugin-deps/llvm-mingw/bin"))
+        p = shutil.which(n) or shutil.which(n, path="/opt/homebrew/opt/llvm@20/bin:/opt/homebrew/opt/llvm/bin")
         if p:
             return p
     sys.exit(f"plugin_depcheck: none of {names} found (set {env})")
@@ -143,7 +143,7 @@ def main(argv):
     bins = binaries(osname, rest)
     if not bins:
         sys.exit(f"plugin_depcheck: no plugin binaries under {' '.join(rest)}")
-    objdump = tool("FRP_OBJDUMP", "llvm-objdump", "x86_64-w64-mingw32-objdump") if osname == "windows" else None
+    objdump = tool("FRP_OBJDUMP", "llvm-objdump") if osname == "windows" else None
     readelf = tool("FRP_READELF", "readelf", "llvm-readelf") if osname == "linux" else None
     for b, fmt in bins:
         if osname == "macos":

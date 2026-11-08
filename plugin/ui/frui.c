@@ -1268,6 +1268,7 @@ static void popup(frui *u)
         }
         if (id == FRP_TYPE) eicon(u, i, ix + 16.f, iy + (ih - 24.f) * 0.5f, 1.f, i == sel ? C_TEXT : C_TEXT2);
         tx(u, ix + lx, mid(u, iy + ih * 0.5f, 10.5f), T_MENU, 0, names[i], i == sel ? C_TEXT : C_TEXT2);
+        reg(u, FRW_ITEM, i, ix, iy, cw, ih);
     }
 }
 
@@ -1315,6 +1316,9 @@ void frui_draw(frui *u, const frui_model *m, frui_canvas *c)
     }
     popup(u);
 }
+
+int frui_value(const frui_model *m, int id) { return pval(m, id); }
+int frui_range(int id) { return phi(id); }
 
 int frui_hit(const frui *u, float x, float y, frui_widget *w)
 {

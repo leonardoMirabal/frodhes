@@ -7,20 +7,22 @@ name: plugin
 #             selftest, the parameter table, a quick Gate D), the .pkg and the .zip (ad-hoc signed; Developer ID and
 #             notarization only when release.yml asks and the secrets exist), the .pkg installed with installer(8)
 #             into the runner's home, then clap-validator, pluginval (strictness 10) and auval -strict on it
-#   windows   x64 with llvm-mingw (clang + lld, the runtimes linked in; natively here, cross from macOS / Linux the
-#             same way), the zip, the coroutine (fibers) and the headless host's selftest, clap-validator, pluginval
-#   linux     x86_64 and aarch64 in ubuntu:20.04 (glibc 2.31: the bundles load on 20.04 and everything newer), the
-#             zip, the coroutine and the selftest; linux-validate then loads the x86_64 zip on a current Ubuntu
-#             (clap-validator; pluginval non-blocking: JUCE's headless needs vary by image)
+#   windows   x64 with clang-cl + lld-link and the static CRT (the same toolchain file as the cross build from macOS,
+#             tools/plugin_win.sh), the zip, the dependency check, the coroutine (fibers), the window's controller and
+#             view self-tests, the headless host's selftest, clap-validator, pluginval
+#   linux     x86_64 and aarch64 through tools/plugin_linux.sh (Docker, Ubuntu 20.04, glibc 2.31: the bundles load on
+#             20.04 and everything newer), exactly as locally: build, check, the Xvfb tests with a Gate D subset, the
+#             zip; linux-validate then loads the x86_64 zip on a current Ubuntu (clap-validator; pluginval
+#             non-blocking: JUCE's headless needs vary by image)
 # Every job's packages are its artifact (plugin-macos, plugin-windows, plugin-linux-<arch>).
 on:
   pull_request:
     paths: ['plugin/**', 'firmware/src/**', 'firmware/gen/**', 'web/web_hal.c', 'tools/plugin_*', 'tools/gate_d.py',
-            'tools/gen_plugin_params.py', 'Makefile', 'LICENSE', 'LICENSES/**', '.github/workflows/plugin.yml']
+            'tools/gen_plugin_params.py', 'tools/gate_m.py', 'tests/baselines/**', 'Makefile', 'LICENSE', 'LICENSES/**', '.github/workflows/plugin.yml']
   push:
     branches: [main]
     paths: ['plugin/**', 'firmware/src/**', 'firmware/gen/**', 'web/web_hal.c', 'tools/plugin_*', 'tools/gate_d.py',
-            'tools/gen_plugin_params.py', 'Makefile', 'LICENSE', 'LICENSES/**', '.github/workflows/plugin.yml']
+            'tools/gen_plugin_params.py', 'tools/gate_m.py', 'tests/baselines/**', 'Makefile', 'LICENSE', 'LICENSES/**', '.github/workflows/plugin.yml']
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -134,21 +136,28 @@ jobs:
         with:
           path: .local/plugin-deps
           key: plugin-deps-${{ hashFiles('plugin/deps.lock') }}-windows
-      - name: the pinned dependencies, llvm-mingw and the test tools (plugin/deps.lock)
-        run: sh tools/plugin_deps.sh --mingw && sh tools/plugin_deps.sh
-      - name: build (x64, llvm-mingw)
+      - name: the pinned dependencies and the test tools (plugin/deps.lock)
+        run: sh tools/plugin_deps.sh
+      - uses: ilammy/msvc-dev-cmd@v1          # (the Windows SDK and the MSVC CRT for clang-cl: INCLUDE, LIB)
+        with:
+          arch: x64
+      - name: build (x64, clang-cl + lld-link, the static CRT; plugin/cmake/win-x64-clangcl.cmake)
         run: |
           V="${{ inputs.version }}"; V="${V#v}"
-          PLUGIN_VER="${V:-0.0.0-dev}" sh tools/plugin_pack.sh build windows
+          cmake -S plugin -B build/plugin-win -G Ninja -DCMAKE_TOOLCHAIN_FILE="$PWD/plugin/cmake/win-x64-clangcl.cmake" \
+            -DFRP_VERSION="${V:-0.0.0-dev}"
+          cmake --build build/plugin-win -j3
       - name: package (frodhes-plugin-windows.zip)
         run: sh tools/plugin_pack.sh windows
       - name: unpack the zip (what a user copies)
         run: cmake -E make_directory "$RUNNER_TEMP/w" && cd "$RUNNER_TEMP/w" && cmake -E tar xf "$GITHUB_WORKSPACE/build/plugin-pkg/frodhes-plugin-windows.zip"
-      - name: self-contained (Windows' own DLLs only)
-        run: python tools/plugin_depcheck.py windows "$RUNNER_TEMP/w/Frodhes"
-      - name: the coroutine (fibers) and the headless host's selftest
+      - name: self-contained (Windows' own DLLs only, the static CRT)
+        run: FRP_OBJDUMP="$(cygpath -u "$PROGRAMFILES")/LLVM/bin/llvm-objdump.exe" python tools/plugin_depcheck.py windows "$RUNNER_TEMP/w/Frodhes"
+      - name: the coroutine (fibers), the window's controller and view, the headless host's selftest
         run: |
           build/plugin-win/frp_test_coro.exe
+          build/plugin-win/frp_test_gui_ctl.exe
+          build/plugin-win/frp_gui_demo.exe --selftest
           build/plugin-win/frp_clap_render.exe "$RUNNER_TEMP/w/Frodhes/CLAP/Frodhes.clap" --selftest
       - name: clap-validator (CLAP)
         run: .local/plugin-deps/clap-validator/clap-validator.exe validate "$RUNNER_TEMP/w/Frodhes/CLAP/Frodhes.clap"
@@ -173,31 +182,26 @@ jobs:
           - arch: aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    container: ubuntu:20.04          # (glibc 2.31: the oldest the bundles need, tools/plugin_linux_env.sh)
+    env:
+      FRP_LINUX_ARCH: ${{ matrix.arch }}
     steps:
-      - name: git, before the checkout (a real clone)
-        run: apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
       - uses: actions/checkout@v4
-      - name: the build image (clang 12, lld, CMake)
-        run: sh tools/plugin_linux_env.sh
       - uses: actions/cache@v4
         with:
           path: .local/plugin-deps
           key: plugin-deps-${{ hashFiles('plugin/deps.lock') }}-linux-${{ matrix.arch }}
       - name: the pinned dependencies (plugin/deps.lock)
         run: sh tools/plugin_deps.sh --libs
-      - name: build
+      - name: build in Ubuntu 20.04 (glibc 2.31; tools/plugin_linux.sh, as locally)
         run: |
           V="${{ inputs.version }}"; V="${V#v}"
-          PLUGIN_VER="${V:-0.0.0-dev}" sh tools/plugin_pack.sh build linux
+          FRP_VERSION="${V:-0.0.0-dev}" bash tools/plugin_linux.sh build
+      - name: self-contained (libc, libm, libdl, libpthread, libX11 / libxcb only; glibc <= 2.31), the exports, the stack
+        run: bash tools/plugin_linux.sh check
+      - name: the coroutine, the window's controller, the X11 view (Xvfb), the selftest, a Gate D subset
+        run: bash tools/plugin_linux.sh test
       - name: package (frodhes-plugin-linux-${{ matrix.arch }}.zip)
-        run: sh tools/plugin_pack.sh linux
-      - name: self-contained (libc, libm, libdl, libpthread, libX11 / libxcb only; glibc <= 2.31)
-        run: python3 tools/plugin_depcheck.py linux build/plugin-linux/bundles --glibc 2.31
-      - name: the coroutine and the headless host's selftest
-        run: |
-          build/plugin-linux/frp_test_coro
-          build/plugin-linux/frp_clap_render build/plugin-linux/bundles/Frodhes.clap --selftest
+        run: bash tools/plugin_linux.sh pack
       - uses: actions/upload-artifact@v4
         with:
           name: plugin-linux-${{ matrix.arch }}

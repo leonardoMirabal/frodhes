@@ -225,10 +225,10 @@ plugin-pack: plugin        ## build/plugin-pkg/frodhes-plugin-macos.pkg + .zip (
 	sh tools/plugin_pack.sh macos $(PLUGIN_BUILD)
 	$(PY) tools/plugin_depcheck.py macos $(PLUGIN_BUILD)/bundles
 
-plugin-win:                ## Windows x64 (llvm-mingw, cross): build/plugin-win, frodhes-plugin-windows.zip
-	PLUGIN_NICE="$(PLUGIN_NICE)" PLUGIN_J=$(PLUGIN_J) sh tools/plugin_pack.sh build windows
-	sh tools/plugin_pack.sh windows
-	$(PY) tools/plugin_depcheck.py windows build/plugin-win/bundles
+plugin-win:                ## Windows x64 (clang-cl over xwin; tools/plugin_win.sh setup once): build, depcheck,
+                           ## the wine tests (coroutine, controller, view, CLAP host, Gate D subset), the zip
+	bash tools/plugin_win.sh all
 
-plugin-linux:              ## Linux in Docker (ubuntu:20.04, this machine's arch): frodhes-plugin-linux-<arch>.zip
-	sh tools/plugin_linux_docker.sh
+plugin-linux:              ## Linux in Docker (Ubuntu 20.04): build, depcheck, the Xvfb tests, the zip (x86_64 and aarch64)
+	FRP_LINUX_ARCH=x86_64 bash tools/plugin_linux.sh all
+	FRP_LINUX_ARCH=aarch64 bash tools/plugin_linux.sh all

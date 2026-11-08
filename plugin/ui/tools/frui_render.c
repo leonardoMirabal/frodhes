@@ -273,7 +273,7 @@ static int check_layout(const frui *u, const char *name)
         float e[4] = {g->x, g->y, g->x + g->w, g->y + g->h};
         static const char *const en[4] = {"left", "top", "right", "bottom"};
         int k;
-        if (g->kind == FRW_TAB_L || g->kind == FRW_TAB_R || g->kind == FRW_CTX) continue;   /* (the knob menu: a pop-up) */      /* text-width tabs: checked by their baseline */
+        if (g->kind == FRW_TAB_L || g->kind == FRW_TAB_R || g->kind == FRW_CTX || g->kind == FRW_ITEM) continue;   /* (the knob menu, an open menu: pop-ups) */      /* text-width tabs: checked by their baseline */
         if (g->kind == FRW_KNOB && g->id != FRP_LEVEL) goto knob;          /* a knob: its centre, below */
         for (k = 0; k < 4; k++) {
             float d = e[k] - 4.f * roundf(e[k] / 4.f);
@@ -367,7 +367,7 @@ static int check_layout(const frui *u, const char *name)
     for (i = 0; i < n; i++) {
         const frui_widget *g = frui_widget_get(u, i);
         float rc = look == FRUI_LOOK_A3 ? 32.f : 28.f;    /* A3: the centre of the metal above the body (y 0 .. 64) */
-        if (g->y < 56.f && (fabsf(g->y + g->h * 0.5f - rc) > 0.5f || fabsf(g->h - 32.f) > 0.5f)) {
+        if (g->kind != FRW_ITEM && g->y < 56.f && (fabsf(g->y + g->h * 0.5f - rc) > 0.5f || fabsf(g->h - 32.f) > 0.5f)) {
             printf("  %s: rail widget %d/%d centre %.2f h %.2f (want %.0f, 32)\n", name, g->kind, g->id, g->y + g->h * 0.5f, g->h, rc); bad++;
         }
     }

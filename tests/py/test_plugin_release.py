@@ -67,10 +67,14 @@ def test_plugin_workflow_artifacts_are_the_fixed_names():
     assert {f for fs in NAMES.values() for f in fs} <= names
     arches = [m["arch"] for m in wf["jobs"]["linux"]["strategy"]["matrix"]["include"]]
     assert arches == ["x86_64", "aarch64"]
-    assert wf["jobs"]["linux"]["container"] == "ubuntu:20.04"      # the glibc 2.31 baseline (plugin_depcheck)
-    assert "--glibc 2.31" in yaml.dump(wf["jobs"]["linux"])
-    for j in ("macos", "windows", "linux"):                          # every platform runs the dependency check
+    linux = yaml.dump(wf["jobs"]["linux"])                          # the same script as a local build (Ubuntu 20.04)
+    assert all(f"tools/plugin_linux.sh {k}" in linux for k in ("build", "check", "test", "pack"))
+    sh = open(os.path.join(ROOT, "tools", "plugin_linux.sh")).read()
+    assert "FROM ubuntu:20.04" in open(os.path.join(ROOT, "plugin", "tests", "docker", "linux.Dockerfile")).read()
+    assert "plugin_depcheck.py linux" in sh and "--glibc 2.31" in sh
+    for j in ("macos", "windows"):                                   # every platform runs the dependency check
         assert "tools/plugin_depcheck.py" in yaml.dump(wf["jobs"][j])
+    assert "win-x64-clangcl.cmake" in yaml.dump(wf["jobs"]["windows"])   # one Windows toolchain, CI and local
 
 
 def test_release_yml_attaches_the_plugin_without_holding_the_release():
@@ -90,7 +94,7 @@ def test_deps_lock_form():
         if ln.startswith("#") or not ln.strip():
             continue
         kind, name, url, ref, pin, lic = ln.split()
-        assert kind in ("git", "zip", "tc"), ln
+        assert kind in ("git", "zip"), ln
         assert re.fullmatch(r"[a-z0-9-]+(@(macos|linux|windows))?", name), ln
         assert url.startswith("https://"), ln
         assert re.fullmatch(r"[0-9a-f]{40}" if kind == "git" else r"[0-9a-f]{64}", pin), ln
@@ -98,16 +102,16 @@ def test_deps_lock_form():
     names = [ln.split()[1] for ln in open(os.path.join(ROOT, "plugin", "deps.lock")) if ln[:1] not in "#\n"]
     for tool in ("clap-validator", "pluginval"):                     # the validators for every CI system
         assert {f"{tool}@{o}" for o in ("macos", "linux", "windows")} <= set(names)
-    assert {"llvm-mingw@macos", "llvm-mingw@windows"} <= set(names)
 
 
 def test_depcheck_allow_lists():
     spec = importlib.util.spec_from_file_location("dc", os.path.join(ROOT, "tools", "plugin_depcheck.py"))
     dc = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(dc)
-    for ok in ("KERNEL32.dll", "user32.dll", "api-ms-win-crt-runtime-l1-1-0.dll", "ole32.dll"):
+    for ok in ("KERNEL32.dll", "user32.dll", "gdi32.dll", "ole32.dll"):
         assert dc.WIN_OK.match(ok)
-    for bad in ("VCRUNTIME140.dll", "MSVCP140.dll", "libc++.dll", "libwinpthread-1.dll", "libgcc_s_seh-1.dll"):
+    for bad in ("VCRUNTIME140.dll", "MSVCP140.dll", "ucrtbase.dll", "api-ms-win-crt-runtime-l1-1-0.dll",
+                "libc++.dll", "libwinpthread-1.dll", "libgcc_s_seh-1.dll"):
         assert not dc.WIN_OK.match(bad)
     for ok in ("libc.so.6", "libm.so.6", "libdl.so.2", "libpthread.so.0", "libX11.so.6", "libxcb.so.1",
                "ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1"):

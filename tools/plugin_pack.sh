@@ -1,12 +1,12 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-only
 # The desktop plugin's packages (docs/PLUGIN.md "Packages"), under the fixed names the release attaches:
-#   tools/plugin_pack.sh build windows|linux      the bundles: build/plugin-win (llvm-mingw, cross from macOS or
-#                                                 Linux) or build/plugin-linux (clang + lld); macOS: make plugin
+# The bundles first: make plugin (macOS), tools/plugin_win.sh build (Windows, clang-cl), tools/plugin_linux.sh build
+# (Linux, Docker); those scripts' pack step calls this one.
 #   tools/plugin_pack.sh macos   [BUILD] [OUT]    OUT/frodhes-plugin-macos.pkg and frodhes-plugin-macos.zip
 #   tools/plugin_pack.sh windows [BUILD] [OUT]    OUT/frodhes-plugin-windows.zip
-#   tools/plugin_pack.sh linux   [BUILD] [OUT]    OUT/frodhes-plugin-linux-<x86_64|aarch64>.zip (built in
-#                                                 Ubuntu 20.04: tools/plugin_linux_docker.sh, CI)
+#   tools/plugin_pack.sh linux   [BUILD] [OUT]    OUT/frodhes-plugin-linux-<x86_64|aarch64>.zip (the
+#                                                 architecture of the bundle in BUILD)
 # BUILD defaults to build/plugin (macOS), build/plugin-win, build/plugin-linux; OUT to build/plugin-pkg.
 # Every package carries the GPL (LICENSE.txt), the source offer and THIRD-PARTY-NOTICES.txt (the licence texts of
 # what the binaries contain, taken from the pinned checkouts); the macOS and Windows VST3 bundles and the macOS
@@ -22,33 +22,9 @@
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DEPS=${FRP_DEPS_DIR:-"$ROOT/.local/plugin-deps"}
-J=${PLUGIN_J:-2}
-NICE=${PLUGIN_NICE-nice -n 10}   # (PLUGIN_NICE= : none)
 ID=io.github.leonardomirabal.frodhes
 
 die() { echo "plugin_pack: $*" >&2; exit 1; }
-
-build() {   # windows | linux
-    case $1 in
-    windows)
-        B=$ROOT/build/plugin-win
-        [ -x "$DEPS/llvm-mingw/bin/x86_64-w64-mingw32-clang" ] || sh "$ROOT/tools/plugin_deps.sh" --mingw
-        TC="-DCMAKE_TOOLCHAIN_FILE=$ROOT/plugin/cmake/mingw-w64-x86_64.cmake -DFRP_MINGW=$DEPS/llvm-mingw" ;;
-    linux)
-        B=$ROOT/build/plugin-linux
-        [ -d "$DEPS/clap" ] || sh "$ROOT/tools/plugin_deps.sh" --libs
-        S=${FRP_LLVM_SUFFIX:-}   # (clang, else the newest clang-N installed: Ubuntu 20.04's is clang-12)
-        if [ -z "$S" ] && ! command -v clang >/dev/null 2>&1; then
-            for v in 20 19 18 17 16 15 14 13 12; do if command -v clang-$v >/dev/null 2>&1; then S=-$v; break; fi; done
-        fi
-        TC="-DCMAKE_TOOLCHAIN_FILE=$ROOT/plugin/cmake/linux-clang.cmake -DFRP_LLVM_SUFFIX=$S" ;;
-    *) die "build: windows or linux (macOS: make plugin)" ;;
-    esac
-    # shellcheck disable=SC2086
-    [ -f "$B/CMakeCache.txt" ] || $NICE cmake -S "$ROOT/plugin" -B "$B" -G Ninja $TC -DFRP_DEPS_DIR="$DEPS" \
-        -DFRP_VERSION="${PLUGIN_VER:-0.0.0-dev}"
-    $NICE cmake --build "$B" -j"$J"
-}
 
 notices() {   # DIR [windows]: LICENSE.txt, SOURCE.txt, THIRD-PARTY-NOTICES.txt
     mkdir -p "$1"
@@ -74,12 +50,9 @@ EOF
         [ "${2:-}" = macos ] &&
         echo "  AudioUnitSDK (the Audio Unit only)             Apache-2.0  https://github.com/apple/AudioUnitSDK"
         [ "${2:-}" = windows ] &&
-        echo "  The MinGW-w64 runtime (llvm-mingw)             ZPL-2.1 / MIT-style, see below; LLVM's libc++,"
-        [ "${2:-}" = windows ] &&
-        echo "    libc++abi, libunwind and compiler-rt         Apache-2.0 WITH LLVM-exception (no notice needed)"
+        echo "  The Microsoft C/C++ runtime, linked statically  Microsoft's redistribution terms (no notice needed)"
         [ "${2:-}" = linux ] &&
         echo "  libstdc++ and libgcc (GCC runtime)             GPL-3.0 WITH GCC-exception-3.1"
-        grep -q 'plugin/ui' "$ROOT/plugin/CMakeLists.txt" &&
         echo "  Inter Tight and Michroma (the window's fonts)  SIL OFL 1.1 (texts below)"
         echo
         echo "VST is a trademark of Steinberg Media Technologies GmbH. Audio Units is a trademark of Apple Inc."
@@ -118,15 +91,9 @@ source code, you may redistribute such embedded portions in such object form
 without including the above copyright and permission notices.
 FMT
         sect "VST3 SDK" "$DEPS/vst3sdk/LICENSE.txt"
-        if grep -q 'plugin/ui' "$ROOT/plugin/CMakeLists.txt"; then   # (the plugin's window, once it is linked in)
-            sect "Inter Tight (the window's text)" "$ROOT/assets/fonts/OFL-InterTight.txt"
-            sect "Michroma (the window's wordmark and titles)" "$ROOT/assets/fonts/OFL-Michroma.txt"
-        fi
+        sect "Inter Tight (the window's text)" "$ROOT/assets/fonts/OFL-InterTight.txt"
+        sect "Michroma (the window's wordmark and titles)" "$ROOT/assets/fonts/OFL-Michroma.txt"
         if [ "${2:-}" = macos ]; then sect "AudioUnitSDK" "$DEPS/audiounitsdk/LICENSE.txt"; fi
-        if [ "${2:-}" = windows ]; then
-            m=$DEPS/llvm-mingw/x86_64-w64-mingw32/share/mingw32
-            sect "MinGW-w64 runtime" "$m/COPYING.MinGW-w64-runtime.txt"
-        fi
     } > "$n"
     grep -q "MIT License" "$n" || die "notices: a licence text is missing"
 }
@@ -230,7 +197,7 @@ EOF
 windows() {
     B=${1:-$ROOT/build/plugin-win}/bundles; O=${2:-$ROOT/build/plugin-pkg}
     [ -f "$B/CLAP/Frodhes.clap" ] && [ -f "$B/VST3/Frodhes.vst3/Contents/x86_64-win/Frodhes.vst3" ] ||
-        die "no Windows bundles in $B (tools/plugin_pack.sh build windows)"
+        die "no Windows bundles in $B (tools/plugin_win.sh build)"
     S=$O/_win; rm -rf "$S"; mkdir -p "$S/Frodhes/CLAP" "$S/Frodhes/VST3" "$O"
     notices "$S/Frodhes" windows
     cp "$B/CLAP/Frodhes.clap" "$S/Frodhes/CLAP/"
@@ -255,9 +222,9 @@ EOF
 
 linux() {
     B=${1:-$ROOT/build/plugin-linux}/bundles; O=${2:-$ROOT/build/plugin-pkg}
-    A=$(uname -m); [ "$A" = arm64 ] && A=aarch64
-    [ -f "$B/Frodhes.clap" ] && [ -f "$B/Frodhes.vst3/Contents/$A-linux/Frodhes.so" ] ||
-        die "no Linux bundles in $B (tools/plugin_pack.sh build linux)"
+    A=""
+    for a in x86_64 aarch64; do if [ -f "$B/Frodhes.vst3/Contents/$a-linux/Frodhes.so" ]; then A=$a; fi; done
+    [ -f "$B/Frodhes.clap" ] && [ -n "$A" ] || die "no Linux bundles in $B (tools/plugin_linux.sh build)"
     S=$O/_linux; rm -rf "$S"; mkdir -p "$S/Frodhes" "$O"
     notices "$S/Frodhes" linux
     cp "$B/Frodhes.clap" "$S/Frodhes/"
@@ -276,9 +243,8 @@ EOF
 }
 
 case ${1:-} in
-build) build "${2:-}" ;;
 macos) shift; macos "$@" ;;
 windows) shift; windows "$@" ;;
 linux) shift; linux "$@" ;;
-*) sed -n '3,9p' "$0"; exit 2 ;;
+*) sed -n '3,10p' "$0"; exit 2 ;;
 esac
