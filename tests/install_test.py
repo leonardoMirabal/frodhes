@@ -595,6 +595,108 @@ def two_loaders():
         os.environ.pop("FRODHES_LOCK_ROOT", None)
 
 
+class StaleUnits(TwoUnits):
+    """TwoUnits where CoreMIDI keeps a port's old name: a unit's port shows `alias` keys while its USB product name
+    is the value (the image changed its USB name, CoreMIDI cached the old one), plus ports with no unit (extra) and
+    the USB devices' vendor / product ids (usb_ids, as ioreg)"""
+
+    def __init__(self, *units, alias=None, extra=(), ids=None, devs=()):
+        super().__init__(*units)
+        self.alias, self.extra, self._ids, self.devs = dict(alias or {}), list(extra), ids, list(devs)
+
+    def input_names(self):
+        return super().input_names() + self.extra
+
+    output_names = input_names
+
+    def usb_devices(self):
+        return [(self.alias.get(u.name, u.name), loc) for u, loc in self.units if u.connected] + self.devs
+
+    def usb_ids(self):
+        return self._ids
+
+
+def stale_names():
+    """CoreMIDI's stale name (2026-11-08: the unit at 0x20130000 runs an image whose USB product is "Sonic Test",
+    CoreMIDI still lists its port as "Dualcore Test"): with --location the unit is taken by exclusion (every other
+    port matched by its own name elsewhere); the user's unit is never opened; anything less than a full account
+    refuses with nothing sent"""
+    import fm1_ports as P
+    raw = package()
+    image = I.logical_image(raw)
+    p = pkgfile("ok.fwsc", raw)
+    F, D = 0x00100000, 0x20130000
+    J = (0x4C4A, 0x4155)                                  # (any one vendor / product id: both units the same)
+
+    def pair(**kw):
+        f = FakeFM1(image, identity="FM-1_958", name="Frodhes FM-1", after_name="Frodhes FM-1")
+        t = FakeFM1(image, identity="FM-1_958", name="Dualcore Test", after_name="Dualcore Test")
+        return f, t, StaleUnits((f, F), (t, D), alias={"Dualcore Test": "Sonic Test"}, **kw)
+
+    f, t, b = pair(ids={F: J, D: J})
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore Test", "--location", "0x20130000"], b)
+    ok(rc == 0 and t.upgrades == 2 and not f.links and "taken as 'Sonic Test' at 0x20130000" in err,
+       f"stale port name, --location 0x20130000: installed by exclusion, the Frodhes FM-1 never opened (rc {rc})")
+    f, t, b = pair()
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore Test", "--location", "0x20130000"], b)
+    ok(rc == 0 and t.upgrades == 2 and not f.links, "the same without the vendor / product ids: installed")
+    f, t, b = pair()
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore Test", "--location", "0x00100000"], b)
+    ok(rc == 3 and not t.links and not f.links and t.upgrades == f.upgrades == 0,
+       f"--location at the Frodhes FM-1 with the stale port: refused (exit {rc}), neither unit opened")
+    f, t, b = pair()
+    rc, out, err = cli([p, "--yes", "--port", "Frodhes FM-1", "--location", "0x20130000"], b)
+    ok(rc == 3 and not f.links and not t.links, f"--port Frodhes FM-1 --location 0x20130000: refused (exit {rc}), nothing opened")
+    f, t, b = pair(extra=["Mystery Synth"])
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore Test", "--location", "0x20130000"], b)
+    ok(rc == 3 and not t.links and not f.links, f"another port without a USB device: refused (exit {rc}), nothing opened")
+    f, t, b = pair(extra=["MIDISPORT 2x4 Port 1"], ids={F: J, D: J})
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore Test", "--location", "0x20130000"], b)
+    ok(rc == 0 and t.upgrades == 2 and not f.links,
+       f"a driver's port without a USB device, with the ids (every unit of the kind matched): installed (rc {rc})")
+    f, t, b = pair(extra=["IAC Driver Bus 1"])
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore Test", "--location", "0x20130000"], b)
+    ok(rc == 0 and t.upgrades == 2 and not f.links, "a virtual port (IAC) besides: still accounted for, installed")
+    f, t, b = pair(ids={F: J, D: J, 0x14200000: J}, devs=[("FM-1", 0x14200000)])
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore Test", "--location", "0x20130000"], b)
+    ok(rc == 3 and not t.links and not f.links,
+       f"a third unit of the same ids without a port of its own: refused (exit {rc}), nothing opened")
+    f, t, b = pair(devs=[("Sonic Test", 0x14200000)])
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore Test", "--location", "0x20130000"], b)
+    ok(rc == 3 and not t.links and not f.links, f"a second device named like the unit: refused (exit {rc}), nothing opened")
+    f, t, b = pair()
+    rc, out, err = cli([p, "--yes", "--port", "Dualcore Test"], b)
+    ok(rc != 0 and t.upgrades == 0 and f.upgrades == 0 and not f.links,
+       f"without --location: refused as before (exit {rc}), nothing written, the Frodhes FM-1 never opened")
+
+    # fm1_ports.stale_match itself, and force() (the HIL tools' --port / --location)
+    devs = [("Frodhes FM-1", F), ("Sonic Test", D), ("M6", 0x01100000), ("USB2.0 Hub", 0x20100000)]
+    ports = ["Frodhes FM-1", "Dualcore Test", "M6", "IAC Driver Bus 1"]
+    ok(P.stale_match("Dualcore Test", D, devs, ports) == [("Sonic Test", D)], "stale_match: the unit at the location")
+    ok(P.stale_match("Dualcore Test", F, devs, ports) == [], "stale_match: never the location of a matched port")
+    ok(P.stale_match("Dualcore Test", None, devs, ports) == [], "stale_match: nothing without a location")
+    ok(P.stale_match("Frodhes FM-1", D, devs, ports) == [], "stale_match: a port that matches by name is never stale")
+    ok(P.stale_match("Dualcore Test", D, devs, ports + ["Sonic Test"]) == [],
+       "stale_match: a port carrying the unit's own name: that one is the unit's, not the stale one")
+    ok(P.stale_match("Dualcore Test", 0x30000000, devs, ports) == [], "stale_match: no device at the location")
+    ok(P.stale_match("Dualcore Test", D, devs, ports, {F: J, D: J, 0x01100000: (1, 2)}) == [("Sonic Test", D)],
+       "stale_match: other ids elsewhere do not matter")
+    ok(P.stale_match("Dualcore Test", D, devs, ports, {F: J}) == [], "stale_match: the unit's ids unknown: refused")
+    old = P.usb_ids, P.midi_inputs
+    try:
+        P.usb_ids, P.midi_inputs = (lambda: {F: J, D: J}), (lambda: ports)
+        P.force("Dualcore Test", D, devs)
+        ok(P.FORCED == "Dualcore Test", "force --location with a stale name: taken by exclusion")
+        try:
+            P.force("Dualcore Test", F, devs)
+            ok(False, "force at the Frodhes FM-1's location: refused")
+        except SystemExit as e:
+            ok("not there" in str(e), "force at the Frodhes FM-1's location: refused")
+    finally:
+        P.usb_ids, P.midi_inputs = old
+        P.force(None)
+
+
 wire()
 installs()
 errors()
@@ -602,6 +704,7 @@ smk()
 against_js()
 two_units()
 two_loaders()
+stale_names()
 shutil.rmtree(TMP, ignore_errors=True)
 # the SMK-37 Pro, Elite and MKE-P37 are one keyboard: packages install across them, never across FM-1 / SMK
 ok(I.same_keyboard("SMK-37 Elite_016", "SMK-37 Pro_900") and I.same_keyboard("ota-MKE-P37_900", "SMK-37 Elite_900")
