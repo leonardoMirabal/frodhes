@@ -6,7 +6,7 @@ HOSTBIN ?= build/host/frodhes
 HOST_DEFS ?=                # other builds, e.g. make test HOST_DEFS=-DRH_VOICES=9u HOSTBIN=build/host9/frodhes (default: 10)
 CFLAGS_HOST := -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER='"dev"' -Ifirmware/src -Ifirmware/gen $(HOST_DEFS)
 
-.PHONY: all setup host test testv test10 test-smk pytest firmware clean
+.PHONY: all setup host test testv test10 test-c1 test-smk pytest firmware clean
 
 all: test pytest
 
@@ -40,6 +40,14 @@ testv:                     ## another voice count: make testv V=8 (or 9, 10) run
 
 test10:                    ## make testv V=10
 	@$(MAKE) -s testv V=10
+
+test-c1:                   ## the two-core build on the host (FR_C1: 14 voices, the full-rate reverb, c1_host.h's twin):
+                           ## every script, tests/scripts14/ for the steal scripts
+	@$(MAKE) -s build/host-c1/frodhes HOSTBIN=build/host-c1/frodhes HOST_DEFS=-DFR_C1=1
+	@fail=0; for s in tests/scripts/*.txt tests/scripts14/*.txt; do n=$$(basename $$s .txt); \
+	  case $$s in tests/scripts/*_steal_release.txt) continue;; esac; \
+	  if build/host-c1/frodhes build/host-c1/$$n $$s > build/host-c1/$$n.log 2>&1; then echo "ok    $$n"; \
+	  else echo "FAIL  $$n (build/host-c1/$$n.log)"; fail=1; fi; done; exit $$fail
 
 SMKBIN  := build/host-smk/frodhes
 SMK_DEFS := -DBOARD_SMK37=1 -DFR_VOICES=7u
