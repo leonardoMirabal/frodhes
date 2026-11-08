@@ -740,6 +740,16 @@ static int coretest(void)
     CHECK(VT->preset_current(ca, &pi, &ed) == 4, "program change 4: F05 (%d)", VT->preset_current(ca, &pi, &ed));
     blk_n = 0; ev_midi(0, 0xC0, 40, 0); run(a, 3);
     CHECK(VT->preset_current(ca, &pi, &ed) == 24, "program change 40: F25 (%d)", VT->preset_current(ca, &pi, &ed));
+    {   /* the FM-1's map, on to F57: 0..15 F01..F16, 32 + k F17 + k (32..34 F17..F19 as the device, 35..72 F20..F57) */
+        static const int PC[][2] = { { 0, 0 }, { 15, 15 }, { 32, 16 }, { 34, 18 }, { 35, 19 }, { 50, 34 }, { 72, 56 } };
+        for (k = 0; k < (int)(sizeof PC / sizeof PC[0]); k++) {
+            blk_n = 0; ev_midi(0, 0xC0, (uint8_t)PC[k][0], 0); run(a, 3);
+            CHECK(VT->preset_current(ca, &pi, &ed) == PC[k][1], "program change %d: F%02d (%d)", PC[k][0], PC[k][1] + 1,
+                  VT->preset_current(ca, &pi, &ed));
+        }
+        blk_n = 0; ev_midi(0, 0xC0, 73, 0); run(a, 3);
+        CHECK(VT->preset_current(ca, &pi, &ed) == 56, "program change 73: no preset there, F57 stays");
+    }
     blk_n = 0; ev_midi(0, 0xC0, 16, 0); run(a, 3);
     CHECK(VT->preset_current(ca, &pi, &ed) == 57 && VT->param_get(ca, P_TONE_) == 111, "program change 16: U01 (%d)",
           VT->preset_current(ca, &pi, &ed));
@@ -748,7 +758,7 @@ static int coretest(void)
     CHECK(VT->preset_current(ca, &pi, &ed) == 57, "program changes off: ignored");
     s.pgm_change = 1; VT->settings_set(ca, &s); run(a, 2);
     printf("ok    presets: %d (57 factory + user), browse with wrap, UNDO both ways, a user file saved and loaded, "
-           "program changes (F05, F25, U01; off)\n", VT->preset_count(ca));
+           "program changes (0..15 F01..F16, 32..72 F17..F57, U01; off)\n", VT->preset_count(ca));
 
     /* ---- SUSTAIN, FX BYPASS, the on-screen keyboard, the meters, velocity, MIDI CHANNEL */
     n_outs = 0;

@@ -600,7 +600,8 @@ static uint8_t sb_vel(uint32_t v)
 
 /* ---- program changes: 0..15 F01..F16, 32..34 F17..F19 through the app (presets.c preset_of_pc: as the FM-1),
  * 16..31 the first 16 user presets (bridge.c's files: frp_user_get; where there is no file, the app's own user bank
- * as on the FM-1: its starter sounds), 35..72 F20..F57 (as the Move) */
+ * as on the FM-1: its starter sounds), 35..72 F20..F57: the FM-1's rule (32 + k loads F17 + k, presets.c) carried
+ * on past its last preset, so every factory preset has a program change; 73..127 load nothing */
 static int sb_pc_mine(uint32_t ch, uint32_t pc)   /* 1: the plugin takes it (or drops it), 0: the app's */
 {
     uint8_t p[P_COUNT];
