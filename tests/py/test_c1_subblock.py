@@ -92,6 +92,16 @@ def test_heavy_ahead(env):
     assert np.array_equal(a.L, r.L) and np.array_equal(a.R, r.R), f"C1_AHEAD {env}: not the one-core build"
 
 
+@pytest.mark.parametrize("env", [None, "busy=2", "busy=3,order=1", "busy=4,refuse=3", "busy=2,refuse=5", "order=1,refuse=2"])
+def test_heavy_stream(env):
+    """C1_STREAM: one job a block, core 1 takes the frames as they are ready (merged ranges): as the one-core build"""
+    b = build(os.path.join(ROOT, "build", "host", "c1stream", "frodhes"), ["-DFR_C1=1", "-DC1_STREAM=1"])
+    ls = take(0)
+    a = run(f"c1s_heavy_stream_{env}", ls, end_ms=6000, binary=b, env=env and {"FRODHES_C1": env})
+    r = run("c1s_heavy_ref", ls, end_ms=6000, binary=ref_bin())
+    assert np.array_equal(a.L, r.L) and np.array_equal(a.R, r.R), f"C1_STREAM {env}: not the one-core build"
+
+
 def _flip(case, v0, v1, b, tag, onset=None):
     """case's control held at v0, moved to v1 at T_FLIP; onset: the chord struck at T_FLIP instead of T_NOTE"""
     t = cs.script(case, v0, flip=v1)

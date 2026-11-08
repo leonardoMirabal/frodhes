@@ -61,6 +61,13 @@ static int fr_c1_run(void (*fn)(uint32_t), uint32_t arg)
     return 1;
 }
 
+static inline void fr_c1_sync(void) {}
+static inline void fr_c1_pause(void) {}
+static int fr_c1_host_tick(void)                /* C1_STREAM: core 1 takes the frames ready now? (busy=N: 1 look in N) */
+{
+    return !c1h.busy || ++c1h.bq % c1h.busy == 0u;
+}
+
 static int fr_c1_busy(void)                     /* busy=N: N - 1 of every N looks find core 1 busy (C1_AHEAD merges) */
 {
     return c1h.posted && c1h.busy && ++c1h.bq % c1h.busy != 0u;

@@ -304,6 +304,38 @@ static void c1_pre_job(uint32_t a)
     C1PF(18, fm1_ticks() - a0);
 #endif
 }
+#if C1_STREAM
+/* C1_STREAM: one job a block. Core 0 renders the voices chunk by chunk and raises c1_rdy (the frames ready); core 1
+ * runs the block-start work, then the effects over every frame ready and not done yet, as one range (c1_fxd: done up
+ * to), until the block's end: it never waits for a post, core 0 never waits for it before the block's end. Each word
+ * read twice (a word read wrong once is not believed), checked (a multiple of 32, rising, within the block) */
+static volatile uint32_t c1_rdy, c1_fxd;
+static int c1_stream_step(void)                 /* the frames ready, not done: their effects (1), or none ready (0) */
+{
+    uint32_t r, o = c1_fxd, n = c1_job.n;
+    fr_c1_sync();
+    r = c1_rdy;
+    fr_c1_sync();
+    if (r != c1_rdy || r <= o || r > n || (r & 31u)) return 0;
+    fxc_o = o; fxc_e = r; fxc_n = n;
+    fx_process(c1_job.mono, c1_job.out, n);
+    fr_c1_sync();
+    c1_fxd = r;
+    fr_c1_sync();
+    return 1;
+}
+static void c1_stream_job(uint32_t a)
+{
+    (void)a;
+    fx_pre_c();
+#ifndef DINGHY_HOST
+    while (c1_fxd < c1_job.n)                   /* (core 0's wait holds core 1 if this runs late: fr_c1_wait_us) */
+        if (!c1_stream_step()) fr_c1_pause();
+#else
+    c1_stream_step();                           /* (the host twin: the rest at core 0's ticks and its wait) */
+#endif
+}
+#endif
 /* core 1 held for good: from now on strikes take FR_C1_NV1 voices, the ones above fade out as a steal */
 static void c1_one_core(void)
 {
@@ -315,6 +347,9 @@ static void c1_one_core(void)
     for (i = FR_C1_NV1; i < BAR_NV; i++)
         if (bv[i].alive) { if (bv[i].fade == 32768) bv[i].fade = 32767; bv[i].pend = 0; }
 }
+#ifndef C1_STREAM
+#define C1_STREAM 0                             /* 1: one job a block, core 1 takes the frames as they are ready */
+#endif
 #ifndef C1_AHEAD
 #define C1_AHEAD 0                              /* 1: core 0 renders ahead while core 1 is busy (experiment) */
 #endif
@@ -366,7 +401,59 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n; c1_job.o = 0; c1_job.e = n;
         c1_fx_job(0);
         if (rst) rh_side_on = 0;                /* (the voices CC 10 ended: as one core) */
-    } else {
+    }
+#if C1_STREAM
+    else {
+        uint32_t j, k = n / C1_SUB, solo = 0, d;
+        int r;
+        c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n;
+        c1_rdy = 0; c1_fxd = 0;
+        fr_c1_sync();
+        if (!fr_c1_run(c1_stream_job, 0)) { solo = 1; fx_pre_c(); }
+        eng_begin(n);
+        for (j = 0; j < C1_SUB; j++) {
+            eng_chunk(c1_mono, j * k, j * k + k);   /* core 0: chunk j's voices */
+            if (j + 1u == C1_SUB) eng_end(c1_mono, n);
+#ifndef DINGHY_HOST
+            if (!solo && !fr_c1_busy()) {       /* (the job over before the block's end: refused, or core 1 held)
+                                                 * core 0 does the rest */
+                r = fr_c1_wait_us(200u);
+                (void)r;
+                solo = 1;
+            }
+#endif
+            if (solo) {
+                fr_c1_sync();
+                d = c1_fxd;
+                if (d < j * k + k) { c1_job.o = d; c1_job.e = j * k + k; c1_fx_job(0); c1_fxd = j * k + k; }
+            } else {
+                fr_c1_sync();
+                c1_rdy = j * k + k;             /* core 1: these frames are ready */
+                fr_c1_sync();
+#ifdef DINGHY_HOST
+                if (fr_c1_host_tick()) c1_stream_step();
+#endif
+            }
+        }
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        host_race_check();
+#endif
+        PROF_STAMP(1);
+        if (!solo) {
+#ifndef DINGHY_HOST
+            uint32_t el = (fm1_ticks() - t0) / 24u;
+            r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+#else
+            r = fr_c1_wait_us(C1_DEADLINE_US);
+            if (!r) while (c1_fxd < n) c1_stream_step();   /* (the host twin: core 1's rest) */
+#endif
+            fr_c1_sync();
+            d = c1_fxd;
+            if (r && d < n) { c1_job.o = d; c1_job.e = n; c1_fx_job(0); c1_fxd = n; }   /* (refused / late: core 0) */
+        }
+    }
+#else
+    else {
         uint32_t j, k = n / C1_SUB, posted = 0, nch = C1_SUB, co, ce, fxe = 0;   /* (fxe: the effects posted up to) */
 #ifdef C1_EDGES
         if (n == 256u) nch = C1_NED;            /* (uneven chunks: c1_ed's edges) */
@@ -440,6 +527,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
             if (r) c1_fx_job(0);
         }
     }
+#endif
     if (c1_nv > FR_C1_NV1 && !fr_c1_live()) c1_one_core();
     fr_c1_block_end();
 #else
