@@ -127,7 +127,7 @@ AUTH = (36, 96)                             # C2..C7, the authentic range (PLAN 
 VELS = (8, 24, 40, 64, 88, 100, 117, 127)   # the velocity anchors
 SOFT, MED, DEF, HARD, RUBBER = 0, 42, 64, 85, 127   # MALLET detents (KN_FAM; the card: SOFT MED (64) HARD RUBBER)
 KNEES = {84: "V3 untuned by the FE from key 84 (PLAN §2.1)"}   # documented M2 knees (+ the spec's 'knees', if any)
-LIM_DBFS = 20 * math.log10(24000 / 32767)   # fx.c LIM_T: the limiter's ceiling
+LIM_DBFS = 20 * math.log10(29204 / 32767)   # fx.c LIM_T: the limiter's ceiling (24000 before 0.9.10)
 LK = 32                                     # fx.c: the look-ahead limiter's sub-block (the master's delay, samples)
 
 # the profile (PLAN §10.1), with today's selector (CC 79 127) and the PCs of F15 / F16

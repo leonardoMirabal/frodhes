@@ -404,11 +404,11 @@ static int api_tests(const char *so)
     CHECK(!strcmp(get(in, "s_fx"), "0"), "its release does nothing (%s)", gbuf);
     api->set_param(in, "s_fxbtn", "1"); render(in, 3);
     CHECK(!strcmp(get(in, "s_fx"), "1"), "a second press: FX on again (%s)", gbuf);
-    CHECK(!strcmp(get(in, "dev_trim"), "5279"), "the output trim at load: +2.2 dB, Q12 5279 (%s)", gbuf);
+    CHECK(!strcmp(get(in, "dev_trim"), "4338"), "the output trim at load: +0.5 dB, Q12 4338 (%s)", gbuf);
     api->set_param(in, "dev_trim", "0");
     CHECK(!strcmp(get(in, "dev_trim"), "4096"), "dev_trim 0: unity (%s)", gbuf);
     api->set_param(in, "dev_trim", "1");
-    CHECK(!strcmp(get(in, "dev_trim"), "5279"), "dev_trim 1: the trim again (%s)", gbuf);
+    CHECK(!strcmp(get(in, "dev_trim"), "4338"), "dev_trim 1: the trim again (%s)", gbuf);
     {   /* dev_fault (tools/move_jack.py's proof): a real glitch after the trim, counted; off by default */
         unsigned k, z = 1;
         CHECK(!strcmp(get(in, "dev_fault"), "kind=off left=0 fired=0"), "dev_fault at load: off (%s)", gbuf);

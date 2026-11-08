@@ -23,7 +23,7 @@ then the bypass off again. The gates, per take:
             replies come, the USB stream flows at --rate, underruns = missed = overruns = 0, the ring's low point
             >= one packet, the whole ISR <= 4500 us (hil_cpu's CC 116 / 117 and 107 / 108), 0 voices shed
   glitches  hil_crackle.usb_judge on the USB take (stress_max's repeat and stale detectors, the one definition the
-            release judges USB audio with): 0 events. Full scale on USB (|x| >= 32767; the limiter keeps 24000):
+            release judges USB audio with): 0 events. Full scale on USB (|x| >= 32767; the limiter keeps LIM_T):
             0 samples at 44.1 kHz, and at 48 kHz from 0.9.7 (usb.c's knee before the resampler's clamp, #38b);
             with --old-48k (a firmware before it: the resampler overshoots a loud high passage to full scale, #38)
             full scale is information at 48 kHz and it fails on a clamp that could be heard (clamp_rows: a run > 3
@@ -71,7 +71,7 @@ LEAD_S = 0.02                                   # the take judged from this long
 CLIP = 32767
 LAG_MAX = 0.1                                   # (s) the clock fit's lag past LEAD_S beyond which its anchor is
                                                 # wrong (25 takes on the FM-1, 2026-10-26: -0.01 .. 0.05; 1012: 0.75)
-LIM_T = 24000                                   # fx.c's limiter threshold (-2.7 dBFS)
+LIM_T = 29204                                   # fx.c's limiter threshold (-1.0 dBFS; 24000 before 0.9.10)
 CLAMP_RUN, CLAMP_DENSE, CLAMP_LOUD = 3, 8, 8    # the 48 kHz full-scale gate (clamp_rows)
 STRICT48 = True                                 # 0.9.7 (usb.c's knee, #38b): 0 at full scale at 48 kHz too
 
@@ -198,7 +198,7 @@ def clamp_runs(c):
 
 
 def clamp_rows(xi, rate, strict48=None):
-    """the full-scale gate. 44.1 kHz: USB is the limiter's output (<= LIM_T 24000), so 0 samples at full scale.
+    """the full-scale gate. 44.1 kHz: USB is the limiter's output (<= LIM_T), so 0 samples at full scale.
     48 kHz: usb.c's 160/147 resampler (12 taps, a per-phase gain up to 1.667) overshoots between the samples of a
     loud high passage the limiter kept at 24000 and clamps it to int16 (#38: fail-1022, 1 sample, the burst 99 %
     at 6-12 kHz; 0.9.5 the same). Full scale is information there; the gate is a clamp that could be heard:

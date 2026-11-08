@@ -36,7 +36,7 @@ import monkey  # noqa: E402
 
 OUT = os.path.join(ROOT, "build", "move", "monkey")
 # the limiter's ceiling as the Move plays it: the plugin's output carries the bridge's trim (move_bridge.h MB_TRIM_Q12,
-# +2.2 dB, rounded as mb_trimmed rounds), so LIM_T 24000 comes out at 30932 (-0.5 dBFS) and the check is against that
+# +0.5 dB, rounded as mb_trimmed rounds), so LIM_T 29204 comes out at 30928 (-0.5 dBFS) and the check is against that
 TRIM_Q12 = int(re.search(r"#define MB_TRIM_Q12 (\d+)", open(os.path.join(ROOT, "move", "move_bridge.h")).read()).group(1))
 LIM_OUT = (monkey.LIM_T * TRIM_Q12 + 2048) >> 12
 SO = "build/move/monkey/so"                 # its own plugin build: never the shipping build/move/frodhes/ (a device
