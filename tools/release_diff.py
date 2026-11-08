@@ -24,6 +24,9 @@ re the median: in the body re the body, after the key-up re the 200 ms before it
 loudness, phon-like, tools/cb_loud.py) and "lim" (the limiter's gain reduction: RAW minus effects-off level). Per
 chord: "imd" (the energy off every harmonic band of the notes re their fundamentals), level, peak. Per script: "clip"
 (samples at full scale) and "noise" (the floor 2..3 s after the last note, the effects' lines reset by CC 10 2 s before).
+Every strike starts from the same state: CC 10 (the developer reset: every voice, line and LFO back to boot) RESET_LEAD
+before it, so the previous note's reverb / echo tail never lands in its hold or key-up window, and a tail the effects
+now ring out (rather than truncate) is judged on its own note only. The same mechanism as the noise window's.
 
 The verdict (exit 1 on any failure):
   ceilings  pristine, from AGENTS.md section 1, NOT overridable by the expected-changes file:
@@ -77,6 +80,8 @@ CONTROLS = (("TONE", 28), ("BARK", 29), ("BELL", 30), ("HAMMER", 31), ("DECAY", 
 # (test_every_control, hil_scan's VOICE rows) only ask that a control changes something; these hold its extremes
 # to the last release's)
 STEP, HOLD = 1500, 800              # ms: a note every STEP, released after HOLD
+RESET_LEAD = 200                    # ms: CC 10 this long before every strike (after the last one's key-up windows,
+                                    # HOLD + 300 ms; the delay line reads 0 behind its reset at once)
 W0, W1 = 0.05, 0.45                 # s: the harmonic window after the strike
 BAND, IBW, IREL = 0.03, 6.0, 0.003  # harmonic peaks +-3 %; inh / imd: a harmonic's band +-6 Hz or +-0.3 %
 SILENT = -70.0                      # dBFS: a note below this (out of the engine's range) has no spectral cells
@@ -144,6 +149,7 @@ def script(grid, setup, keys, shift=0):
     for t, st, a, b in setup:
         ls.append(f"{t} midi 0x{st:02X} {a}" + ("" if b is None else f" {b}"))
     for _, t, ns, v, ped in ev:
+        ls.append(f"{t - RESET_LEAD} midi 0xB0 10 127")   # (every strike from the boot state: no tail of the last)
         if ped:
             ls.append(f"{t - 50} midi 0xB0 64 127")
         ls += [f"{t + i} midi 0x90 {n} {v}" for i, n in enumerate(ns)]
