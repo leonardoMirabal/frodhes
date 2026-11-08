@@ -1832,11 +1832,14 @@ def parse_args(argv=None):
     ap.add_argument("--self-test", action="store_true")
     ap.add_argument("--no-self-test", action="store_true", help="(device) skip the self-test before the takes")
     ap.add_argument("--port", metavar="NAME", help="only the unit whose MIDI port / audio device name contains NAME "
-                    "(a second FM-1 with its own USB name, tools/build.py --usb-name)")
+                    "(a second FM-1 with its own USB name, tools/build.py --usb-name); refused when two USB "
+                    "devices share the name")
+    ap.add_argument("--location", metavar="LOC", help="with --port: the unit's USB location (macOS ioreg locationID, "
+                    "e.g. 0x00100000), refused when the unit is not there")
     a = ap.parse_args(argv)
     if a.port:
         import fm1_ports
-        fm1_ports.force(a.port)
+        fm1_ports.force(a.port, None if a.location is None else fm1_ports.parse_loc(a.location))
     if a.quick:
         a.worst_s, a.recipe_s, a.no_usb_s = 20.0, 24.0, min(a.no_usb_s, 20.0)
     return a
