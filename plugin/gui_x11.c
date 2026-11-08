@@ -180,6 +180,11 @@ static int key_of(KeySym k)
     case XK_Escape: return FRK_ESCAPE;
     case XK_Delete: case XK_KP_Delete: return FRK_DELETE;
     case XK_BackSpace: return FRK_BACKSPACE;
+    case XK_KP_0: case XK_KP_1: case XK_KP_2: case XK_KP_3: case XK_KP_4: case XK_KP_5: case XK_KP_6: case XK_KP_7:
+    case XK_KP_8: case XK_KP_9: return '0' + (int)(k - XK_KP_0);
+    case XK_KP_Decimal: return '.';
+    case XK_KP_Subtract: return '-';
+    case XK_KP_Add: return '+';
     default: return k >= 0x20 && k < 0x7f ? (int)k : 0;
     }
 }

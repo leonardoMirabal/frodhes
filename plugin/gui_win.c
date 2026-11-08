@@ -42,6 +42,7 @@ struct frg_view {
     float scale_override;          /* the host's set_scale, 0: the monitor's */
     int tracking;                  /* TrackMouseEvent armed */
     int captured;                  /* buttons down with the capture held (bit per button) */
+    int num_used;                  /* the last number key's press was the window's (its WM_CHAR too) */
 };
 
 static LONG g_class_refs;
@@ -184,6 +185,21 @@ static int key_of(WPARAM vk)
     default: return 0;
     }
 }
+/* the keys that type a value (a knob's field), from the key itself: the window takes them on WM_KEYDOWN (so the host
+ * never sees the press) and skips their WM_CHAR */
+static int number_key(WPARAM vk)
+{
+    if (vk >= '0' && vk <= '9') return GetKeyState(VK_SHIFT) & 0x8000 ? 0 : (int)vk;
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) return '0' + (int)(vk - VK_NUMPAD0);
+    switch (vk) {
+    case VK_DECIMAL: case VK_OEM_PERIOD: return '.';
+    case VK_OEM_COMMA: return ',';
+    case VK_SUBTRACT: case VK_OEM_MINUS: return '-';
+    case VK_ADD: return '+';
+    default: return 0;
+    }
+}
+static int number_char(WPARAM c) { return (c >= '0' && c <= '9') || c == '.' || c == ',' || c == '-' || c == '+'; }
 
 static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -285,13 +301,15 @@ static LRESULT CALLBACK wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         int used = 0;
         memset(&e, 0, sizeof e);
         e.kind = FRG_KEY; e.mods = mods_now();
-        if (msg == WM_KEYDOWN) e.key = key_of(wp);
-        else if (msg == WM_CHAR && wp >= 0x20 && wp < 0x7f) e.key = (int)wp;
+        if (msg == WM_KEYDOWN) e.key = key_of(wp) ? key_of(wp) : number_key(wp);
+        else if (msg == WM_CHAR && wp >= 0x20 && wp < 0x7f && !number_char(wp)) e.key = (int)wp;
+        else if (msg == WM_CHAR && number_char(wp) && v->num_used) { v->num_used = 0; return 0; }   /* (its press was ours) */
         if (e.key && v->cl.input) {
             int r = v->cl.input(v->cl.ctx, &e);
             if (r & 1) { v->dirty = 1; InvalidateRect(hwnd, 0, FALSE); }
             used = (r & 2) != 0;
         }
+        if (msg == WM_KEYDOWN && !key_of(wp) && number_key(wp)) v->num_used = used;
         if (!used) {                               /* the host's shortcuts (space: play ...) */
             HWND parent = GetParent(hwnd);
             if (parent) return SendMessageW(parent, msg, wp, lp);

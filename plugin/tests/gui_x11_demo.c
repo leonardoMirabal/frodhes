@@ -101,6 +101,18 @@ static int selftest(Window top)
     xkey(v < frui_range(i) ? XK_Up : XK_Down); XSync(dpy, False); spin(40);
     say(frp_gui_model(ctl)->focus >= 0 && frui_value(frp_gui_model(ctl), i) != v, "TAB + an arrow moves the focused control",
         v, frui_value(frp_gui_model(ctl), i));
+    xkey(XK_Escape); XSync(dpy, False); spin(40);
+    {   /* typing a value: a double-click on BARK's value text, 4 2, RETURN */
+        float vx, vy;
+        say(fh_value_at(frp_gui_frui(ctl), FRP_BARK, &vx, &vy), "BARK's value text is drawn", 0, 0);
+        xbutton(ButtonPress, 1, 0, vx, vy, 5000); xbutton(ButtonRelease, 1, Button1Mask, vx, vy, 5050);
+        xbutton(ButtonPress, 1, 0, vx, vy, 5200); xbutton(ButtonRelease, 1, Button1Mask, vx, vy, 5250);
+        XSync(dpy, False); spin(60);
+        say(frp_gui_model(ctl)->editing == FRP_BARK + 1, "a double-click on the value opens the field", 0, 0);
+        xkey(XK_4); xkey(XK_2); xkey(XK_Return); XSync(dpy, False); spin(60);
+        say(h.v[FRP_BARK] == 42 && h.gestures_open == 0 && !frp_gui_model(ctl)->editing, "4 2 RETURN types BARK 42",
+            h.v[FRP_BARK], h.gestures_open);
+    }
     spin(100);
     {
         XImage *im = XGetImage(dpy, child, 0, 0, (unsigned)W, (unsigned)H, AllPlanes, ZPixmap);

@@ -90,6 +90,22 @@ static int selftest(HWND top, int w, int hgt)
     v = frui_value(frp_gui_model(ctl), i);
     SendMessageW(c, WM_KEYDOWN, v < frui_range(i) ? VK_UP : VK_DOWN, 0);
     say(frui_value(frp_gui_model(ctl), i) != v, "TAB + an arrow moves the focused control", v, frui_value(frp_gui_model(ctl), i));
+    /* typing a value: a double-click on BARK's value text, 4 2 (the number keys' presses), RETURN */
+    SendMessageW(c, WM_KEYDOWN, VK_ESCAPE, 0);
+    {
+        float vx, vy;
+        say(fh_value_at(frp_gui_frui(ctl), FRP_BARK, &vx, &vy), "BARK's value text is drawn", 0, 0);
+        SendMessageW(c, WM_LBUTTONDOWN, MK_LBUTTON, at(w, vx, vy));
+        SendMessageW(c, WM_LBUTTONUP, 0, at(w, vx, vy));
+        SendMessageW(c, WM_LBUTTONDBLCLK, MK_LBUTTON, at(w, vx, vy));
+        SendMessageW(c, WM_LBUTTONUP, 0, at(w, vx, vy));
+        say(frp_gui_model(ctl)->editing == FRP_BARK + 1, "a double-click on the value opens the field", 0, 0);
+        SendMessageW(c, WM_KEYDOWN, '4', 0); SendMessageW(c, WM_CHAR, '4', 0);
+        SendMessageW(c, WM_KEYDOWN, VK_NUMPAD2, 0); SendMessageW(c, WM_CHAR, '2', 0);
+        SendMessageW(c, WM_KEYDOWN, VK_RETURN, 0);
+        say(h.v[FRP_BARK] == 42 && h.gestures_open == 0 && !frp_gui_model(ctl)->editing,
+            "4 2 RETURN types BARK 42 (each key once)", h.v[FRP_BARK], h.gestures_open);
+    }
     /* the pixels, through PrintWindow (WM_PRINTCLIENT) */
     {
         BITMAPINFO bi;

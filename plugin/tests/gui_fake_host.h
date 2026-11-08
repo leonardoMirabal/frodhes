@@ -95,4 +95,14 @@ static int fh_find(const frui *u, int kind, int id, float *x, float *y)
     }
     return -1;
 }
+/* a knob's value text (its anchor, a little above the baseline: inside the double-click's zone); 0: not drawn */
+static int fh_value_at(const frui *u, int id, float *x, float *y)
+{
+    int i, n = frui_anchor_count(u);
+    for (i = 0; i < n; i++) {
+        const frui_anchor *a = frui_anchor_get(u, i);
+        if (a->what == FRA_VALUE && a->id == id) { *x = a->x; *y = a->y - 6.f; return 1; }
+    }
+    return 0;
+}
 #endif
