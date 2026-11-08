@@ -1,0 +1,18 @@
+<!-- CONDITIONAL DRAFT: ONLY IF THE TWO-CORE BUILD SHIPS. The name ends in .ifships so tools/changes.py and the
+release ignore it. If it ships: rename to 04-two-cores.md, fill every [TODO ...], update 00-summary.md and
+03-smk37-10-voices.md, and apply the "two cores" block of CHECKLIST-0910.txt. If it does not ship: delete this file. -->
+## Changes
+
+- **14 voices on the FM-1** (were 10), on every instrument, counting the notes under the sustain and the ones chord
+  mode, the arpeggiator and the sequencer play. [TODO: the SMK-37 too: "and on the SMK-37 (were 7)".]
+- **The reverb at the full sample rate on the FM-1**, as on the Move: its tails keep their top octave. Every reverb
+  type, the same controls and presets.
+- The FM-1's chip has a second processor core, which Frodhes now uses: the voices play on the first, the effects
+  and the reverb on the second, each with room to spare.
+
+## Tested
+
+- Host: [TODO: the two-core model and its tests].
+- FM-1 (release build): a [TODO] h soak at full load (14 voices, every effect, the pedal) with no hang, no crackle
+  and no lost note; the CPU worst case per core [TODO] us / [TODO] us (limit 4500 each); the crackle test at 44.1
+  and 48 kHz; T1 and T2 scans; the reverb's top octave measured on the jack [TODO].
