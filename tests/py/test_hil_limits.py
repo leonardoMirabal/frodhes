@@ -84,13 +84,15 @@ def test_wah_level_every_depth(engine, notes):
     """the wah's loudness re dry (LUFS, as fx_all reads it) at DEPTH 0 .. 127, RATE 64: within 0.5 LU of dry and
     within 0.5 LU across the depths, on the Rhodes, VIBES and MARIMBA, chords and single notes (the depth law wg gave
     -2.9 .. +2.0 LU on the Rhodes chord). Measured: the Rhodes chord -0.1 .. +0.1, C4 0.0, C5 -0.2, VIBES -0.2 .. +0.1,
-    MARIMBA -0.5 .. -0.1"""
-    r = h.HostRig(1)
+    MARIMBA -0.5 .. -0.1. Each take on a fresh rig of the same seed: every take has the same preroll, latency and
+    onsets (0.9.10: C3 and G3's shared 392 Hz partial beats, so the chord's loudness over 1.8 s moved 0.45 LU with the
+    rig's +-1 ms onset jitter between takes, wah or none)"""
     sel = dict(TYPE=8) if engine == "rhodes" else {}
     bar = {"vibes": 64, "marimba": 127}.get(engine)
     ev = [(0.1, "on", n, v) for n, v in notes] + [(2.1, "off", n, 0) for n, v in notes]
 
     def lv(**kv):
+        r = h.HostRig(1)
         r.dry(**sel, **kv)
         if bar is not None:
             r.cc_raw(79, bar)
