@@ -223,8 +223,8 @@ def test_delay_keeps_its_echoes_under_stereo_effects(fx, eng):
     assert abs(rel(fx) - rel([])) <= 1.0, (rel(fx), rel([]))
 
 
-@pytest.mark.parametrize("eng", ["rhodes", "vibes"])
-def test_drive_is_heard(eng):
+@pytest.mark.parametrize("eng,vel", [("rhodes", 95), ("rhodes", 110), ("vibes", 110)])
+def test_drive_is_heard(eng, vel):
     """DRIVE distorts a single note audibly at the top (TODO #4: "drive effect is bare noticiable ... does nothing"):
     A3 v110 at AMOUNT 127 vs 0 raises the 1-3 kHz band re the lows (Rhodes 15 dB, VIBES 5) or more and drops the crest factor; at 64
     the level stays within 2 LU (it changes the tone, not the volume). 0.9.10: the Rhodes at v95 (the band +19.3 dB, the crest
@@ -232,9 +232,9 @@ def test_drive_is_heard(eng):
     dB), so the effect adds +3.3 dB there and shows in the crest factor (9.4 -> 5.1 dB) rather than the band. The DRIVE
     code is unchanged and stays so (user, 2026-11-08): the test point moved to v95, where the dry note is still clean
     enough for the 1-3 kHz band to show what the effect adds, instead of the effect being made harsher to stand out
-    over a pickup that already barks"""
+    over a pickup that already barks. v110 is back as well (AGENTS.md 5b, THRESHOLD: test_drive_is_heard v95 -> v95 and
+    v110): moving the test hid the 0.9.10 dry distortion; 0.9.9 passes at v110, and so must a clean dry engine"""
     sel = [(79, 0), (47, 0)] if eng == "vibes" else []
-    vel = 110 if eng == "vibes" else 95
     out = {}
     for d in (0, 64, 127):
         L, R = run(f"drh-{eng}-{d}", [(91, 0), (84, 127), (81, d)] + sel, [(300, 57, vel, 2000)], 2500)
