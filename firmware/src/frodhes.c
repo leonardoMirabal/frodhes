@@ -627,6 +627,11 @@ EMSCRIPTEN_KEEPALIVE const char *web_page(void) { return PAGE_TITLE[ui_page]; }
 
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
 FR_COLD static void host_shed(void) { eng_shed_req = 1; }   /* tests/host.c "T shed": as app_audio asks it on the FM-1 */
+FR_COLD static void host_tune(int c)                          /* tests/host.c "T tune": as ui.c S_TUNE sets it */
+{
+    set.tune = (int8_t)clampi(c, -50, 50);
+    rh_tune_t = TUNE_T[set.tune + 50];
+}
 
 /* tests/host.c "expect preset": the panel equals what the preset the header names sets (presets.c preset_load) */
 FR_COLD static int host_preset_check(char *msg, unsigned n)
