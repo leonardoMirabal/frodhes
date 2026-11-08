@@ -10,14 +10,14 @@ Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/le
 
 <table align="center">
   <tr>
-    <td align="center"><img src="docs/manual/img/thumbnail.png?v=23c51997" width="260" alt="Frodhes: the start screen (FRODHES, ELECTRIC PIANO + VIBES + MARIMBA)"></td>
     <td align="center"><img src="docs/manual/img/piano.png?v=9a948ee0" width="260" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
-    <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ed05fe9c" width="340" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
+    <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ed05fe9c" width="300" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
+    <td align="center"><img src="docs/manual/img/plugin/plugin-main.png?v=c7391692" width="300" alt="The desktop plugin's window: the VOICE knobs, two effect sections and a keyboard"></td>
   </tr>
   <tr>
-    <td align="center">The start screen</td>
     <td align="center"><b>On the M-VAVE FM-1</b>: colour screen, four knobs</td>
     <td align="center"><b>On the Ableton Move</b>: its own screen, eight knobs</td>
+    <td align="center"><b>On your computer</b>: a plugin with its own window</td>
   </tr>
 </table>
 
@@ -123,6 +123,11 @@ Then restart your music software, or let it rescan its plugins: it appears as **
 Audio Unit, `killall -9 AudioComponentRegistrar` in Terminal (or a restart of the Mac) makes macOS see it at once.
 To remove it, delete the `Frodhes.*` files again. More:
 [the manual](docs/MANUAL.md#17-appendix-the-desktop-plugin).
+
+<p align="center">
+  <img src="docs/manual/img/plugin/plugin-presets.png?v=df0615ed" width="384" alt="The plugin's PRESETS list: every factory and user sound, grouped by instrument">
+  <img src="docs/manual/img/plugin/plugin-effects.png?v=3f468120" width="384" alt="The plugin playing: the compressor and the tape delay on, their knobs and meters live">
+</p>
 
 ## Manual
 

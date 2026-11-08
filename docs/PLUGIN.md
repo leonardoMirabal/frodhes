@@ -38,6 +38,13 @@ the FM-1.
 
 ## The window
 
+![The plugin's window: the VOICE knobs, two effect sections and a keyboard](manual/img/plugin/plugin-main.png?v=c7391692)
+
+<p align="center">
+  <img src="manual/img/plugin/plugin-presets.png?v=df0615ed" width="384" alt="PRESETS: every factory and user sound, grouped by instrument">
+  <img src="manual/img/plugin/plugin-save.png?v=89d10d95" width="384" alt="SAVE: the name field in place of the preset's name">
+</p>
+
 960 x 600 points by default, resizable at 16:10 from 720 x 450 to 1920 x 1200, drawn at the screen's pixel size
 (Retina and high-DPI Windows / Linux screens too), on macOS (Cocoa), Windows (a child window) and Linux (X11, run
 by the host's event loop). The plugin's own renderer (`plugin/ui/`) draws it; the fonts are inside the binary. It repaints only what

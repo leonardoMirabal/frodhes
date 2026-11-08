@@ -23,7 +23,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DOCS = ("README.md", "docs/MANUAL.md", "docs/MOVE.md", "docs/MOVE-DEV.md", "docs/SMK37.md")
+DOCS = ("README.md", "docs/MANUAL.md", "docs/MOVE.md", "docs/MOVE-DEV.md", "docs/SMK37.md", "docs/PLUGIN.md")
 INSTALL_DOCS = ("README.md", "docs/MANUAL.md")              # the FM-1 install: the stable download link
 LATEST = "https://github.com/leonardoMirabal/frodhes/releases/latest"
 DOWNLOAD = LATEST + "/download/frodhes.fwsc"
