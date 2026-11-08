@@ -35,7 +35,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 SRC = os.path.join(ROOT, "firmware", "src")
 BIN = os.path.join(ROOT, "build", "host", "frodhes")
 FS = 44100
-LIM_T = 24000                    # fx.c: the look-ahead limiter's ceiling (-2.7 dBFS)
+LIM_T = 29204                    # fx.c: the look-ahead limiter's ceiling (-1.0 dBFS; 24000 before 0.9.10)
 LEVEL_DB = 0.1875                # params.c P_LEVEL: dB a step
 sys.path.insert(0, os.path.join(ROOT, "tests", "py"))
 sys.path.insert(0, os.path.join(ROOT, "tools"))

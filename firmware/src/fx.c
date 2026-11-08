@@ -1993,7 +1993,9 @@ static uint32_t rev_cost_us(void);
 static void rev_reset_state(void);
 
 /* ---- master: DC blocker, peak limiter (Felucca master_out; its soft clip never acted: gone, 0.9.5) */
-#define LIM_T 24000                                     /* -2.7 dBFS: the look-ahead limiter's ceiling (0.8) */
+#define LIM_T 29204                                     /* -1.0 dBFS: the look-ahead limiter's ceiling (-2.7 dBFS, 24000, 0.8 ..
+                                                         * 0.9.9; 0.9.10: a safety net for pile-ups only, the hot presets' LEVELs
+                                                         * trimmed so hard playing never reaches it) */
 static int32_t dc_l, dc_r, dce_l, dce_r;
 /* look-ahead limiter (0.8): the output runs one 32-sample sub-block (0.73 ms) late; the gain ramps linearly over
  * each sub-block towards the lowest gain this one and the next need, so no sample ever passes LIM_T, nothing is

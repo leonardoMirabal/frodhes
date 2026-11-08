@@ -185,4 +185,4 @@ def test_limiter_ten_notes():
     s = cc(84, 76, 30) + cc(81, 100, 31) + cc(17, 64, 32) + cc(18, 90, 33) + cc(13, 90, 34) + cc(12, 127, 35) + \
         cc(88, 110, 36) + cc(89, 127, 37) + cc(95, 112, 38) + cc(91, 127, 39) + cc(106, 127, 40) + cc(107, 40, 41)
     r = R(s + chord(notes=(24, 31, 36, 43, 48, 55, 60, 67, 72, 79), v=127), 3000)
-    assert max(np.abs(r.L).max(), np.abs(r.R).max()) <= 24000
+    assert max(np.abs(r.L).max(), np.abs(r.R).max()) <= 29204   # fx.c LIM_T

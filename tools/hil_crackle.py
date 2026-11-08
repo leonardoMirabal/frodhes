@@ -54,14 +54,14 @@ The detectors (each event: time, source, kind, detail):
              and USB, on the jack's clock, with the sound the jack lost (zero_vs_usb: a spell USB runs through too is
              the music's own, information; no USB there or no fit around it: the event stands)
   clip       (both) USB at full scale (|x| >= 32767), the jack >= 0.999 of full scale. Over the limiter's ceiling
-             (24100) is counted as information (the limiter's activity)
+             (29300) is counted as information (the limiter's activity)
   click      (both) one-sample impulses: the AR interpolation residual (order 24, per 4096 frames: each sample from 24
              on either side) over 20 x its local median and >= 40 LSB, whose neighbourhood has the shape an impulse
              leaves in it (the block's interpolator, ncc >= 0.98: steps, corners and bright attacks leave other
              shapes), outside the guards (8 ms before to 20 ms after a note-on or a pedal change and their delay
              echoes: the hammer, the steal fade, the damper are real transients; the plan's 3 / 17 ms plus the host's
              audio running a block ahead of its clock; +5.8 ms on the FM-1 for the event-to-block jitter). Where the
-             limiter works (a USB peak >= 22000 in the 50 ms before) the event is 'click-lim': information
+             limiter works (a USB peak >= 26770 in the 50 ms before) the event is 'click-lim': information
   step       (both) a sudden level step: a 20 ms window 12 dB off the one before and staying there (the next two
              within 6 dB), with no attack or pedal change near it and, down, no damper starting in the 300 ms before;
              with a free-running level modulation in the take (the vibraphone's motor, the tremolo, the filter's LFO:
@@ -120,8 +120,8 @@ FS_HOST = 44100
 FS_JACK = 48000
 ENGINES = ("rhodes", "vibes", "marimba")
 CPU_TARGET_US, SHEDDER_US = 4500, 5000
-CEIL = 24100                                  # fx.c LIM_T 24000 (+ rounding): information
-LIM_ON = 22000                                # a USB peak this high in the last 50 ms: the limiter is working
+CEIL = 29300                                  # fx.c LIM_T 29204 (+ rounding): information (24100 before 0.9.10)
+LIM_ON = 26770                                # (22000 before 0.9.10, 0.917 x LIM_T) a USB peak this high in the last 50 ms: the limiter is working
 GUARD = (0.008, 0.020)                        # s before / after a note-on or a pedal change (click): 3 / 17 ms
                                               # (the plan) + the host's audio running up to a block ahead of its clock
 DEV_JITTER = 0.0058                           # the FM-1: a MIDI event lands in the next audio block

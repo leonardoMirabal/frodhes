@@ -1276,11 +1276,11 @@ static int mb_cpu_ring(char *buf, int n)
     if (o < n) buf[o] = 0;
     return o;
 }
-/* the Move's output trim (Move only): fx.c's look-ahead limiter keeps every sample at or under LIM_T 24000
- * (-2.7 dBFS), so +2.2 dB (Q12 5279) puts that ceiling at 30934 (-0.5 dBFS): louder, a plain linear gain, never a
+/* the Move's output trim (Move only): fx.c's look-ahead limiter keeps every sample at or under LIM_T 29204
+ * (-1.0 dBFS; 24000 and Q12 5279 before 0.9.10), so +0.5 dB (Q12 4338) puts that ceiling at 30928 (-0.5 dBFS): a plain linear gain, never a
  * clip. It acts on what Schwung gets, after the FIFO: the tap (dev_play) stays the app's own output. dev_trim 0 (a
  * dev / test key, no page) plays at unity, so the byte-identity tests (Gate M, test_bridge eq) see the app's samples */
-#define MB_TRIM_Q12 5279
+#define MB_TRIM_Q12 4338
 static uint16_t mb_trim = MB_TRIM_Q12;
 static inline int16_t mb_trimmed(int16_t x)
 {

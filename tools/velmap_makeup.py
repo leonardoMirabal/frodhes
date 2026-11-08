@@ -81,7 +81,7 @@ def main():
             print("%3d %s" % (k, " ".join("%5.1f" % (m[(k, v)] - ref[(k, v)]) for v in VG[1:])))
         return
     b = os.path.join(WD, "frodhes-nomk")
-    build(b, ROOT, ["-DRH_NO_VM_MK"])
+    build(b, ROOT, ["-DRH_NO_VM_MK", "-DRH_NO_DYN"])
     m = grid(b, mapcc)
     rows = []
     for k in range(KEY_LO, KEY_LO + NKEY):

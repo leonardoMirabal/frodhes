@@ -127,6 +127,12 @@ typedef struct {
                                                 * strike (the key-up thump's cap: rh_left) */
     uint16_t felt_g;                           /* Q15: the key-up felt noise's gain (the same cap: RH_FELT_K) */
     int32_t kd, kr;                            /* DECAY's and RELEASE's k at the note-on: eps0 / eps1's (rh_retune) */
+    int32_t hd_off0, hd_g0, hd_gc, hd_s0, hd_d, hd_y1, hd_y2; /* the harmonic decay glide (rh_hd_init): the strike's offset, gain
+                                                * and pickup slope there, the gain it set last, the glide's end (Q25
+                                                * gap), its two lag states */
+    int32_t hd_a1, hd_a2;                      /* the two lags' coefficients per step (Q30) */
+    uint16_t hd_n, hd_w;                       /* glide steps left (0: none), steps still to wait before it */
+    uint8_t hd_ph;                             /* sub-blocks to the next step (RH_HD_SUBS) */
 #ifdef RH_DRIVE
     /* S1a, the pickup drive (gen_rhodes.pickup_drive): pamp above is the excursion law's force (RH_PDRV), the one the
      * modes get; the physical hammer force (RH_PAMP) stays the measure of the note for the key-up noises and the thump
@@ -427,6 +433,41 @@ static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /
     for (; i < 64u; i++) { d2 += *t++; d1 += d2; x += d1; o[i] = (int16_t)(o[i] + (((x - o[i]) * w) >> 15)); }
 }
 
+/* The dynamics stage (0.9.10): a key x velocity gain on the voice, set at the strike (no per-sample cost), relative
+ * to 0.9.9's loudness. mf and f (v >= 60) keep 0.9.9's level exactly; the soft end goes quieter on a smoothstep, 0 dB
+ * at v60 to -6 dB at v16 and below (no step, no corner: the v20 -> v127 range ~25.5 -> ~31 dB); the top keys taper,
+ * 0 dB at key 82 to -5 dB at key 98 and above (smoothstep: the upper octave thinner, keys 90-100 at v64 ~-6 dB re
+ * key 60). Only ever a cut, so no chord gets louder than 0.9.9's. It multiplies each velocity method's own gain:
+ * DRIVE's output gain law (rh_drive_g: the note-on's gain, the kill, a re-strike's force ratio), MAP's G (rh_vm_g:
+ * the level, the kill, the noises' scale, a re-strike's rescale). The tables:
+ * round(32768 x 10^(-6 s((60 - v) / 44) / 20)), round(32768 x 10^(-5 s((k - 82) / 16) / 20)), s(t) = 3t^2 - 2t^3 on
+ * [0, 1] */
+#define RH_DYN_V_HI 60u
+#define RH_DYN_K_LO 82u
+static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..59 (60..127: 32768) */
+    16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423,
+    16423, 16440, 16491, 16575, 16689, 16834, 17008, 17211, 17442, 17700, 17984, 18295, 18630, 18991, 19375, 19782,
+    20212, 20663, 21134, 21625, 22134, 22658, 23198, 23750, 24314, 24885, 25463, 26044, 26625, 27204, 27775, 28337,
+    28885, 29415, 29923, 30404, 30853, 31267, 31640, 31967, 32245, 32468, 32632, 32733};
+static const uint16_t RH_DYN_K[RH_KEY_LO + RH_NKEY - RH_DYN_K_LO] = {   /* Q15, keys 82..108 (below: 32768) */
+    32768, 32557, 31967, 31073, 29949, 28673, 27312, 25928, 24573, 23288, 22108, 21059, 20161, 19432, 18888, 18546,
+    18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427};
+static uint32_t rh_dyn(uint32_t n, uint32_t vel)            /* Q15 (<= 32768): the key n (clamped), velocity vel */
+{   /* (-DRH_NO_DYN: without it, as tests/py/test_rhodes_dyn.py compares; off in the velocity map's probe builds:
+     * gen_velmap.py measures the map without it) */
+#if defined(RH_NO_DYN) || defined(RH_VM_PROBE)
+    (void)n; (void)vel;
+    return 32768u;
+#else
+    uint32_t g = vel < RH_DYN_V_HI ? RH_DYN_V[vel] : 32768u;
+    if (n >= RH_DYN_K_LO) g = (g * RH_DYN_K[n - RH_DYN_K_LO]) >> 15;
+    return g;
+#endif
+}
+static int32_t rh_dyn_gain(int32_t gain, uint32_t gd)       /* gain x gd (32768: gain itself, byte-identical) */
+{
+    return gd >= 32768u ? gain : (int32_t)(((int64_t)gain * gd) >> 15);
+}
 #ifdef RH_DRIVE
 /* the pickup drive's output gain law at a velocity (Q16, 1 .. 65535): RH_PGF (gain x force) and RH_PDRV (the force)
  * interpolated between the anchors as rh_load_pulse does, then divided, so the output (their product while the swing
@@ -438,7 +479,9 @@ static int32_t rh_drive_g(uint32_t key, uint32_t vel)
     int32_t q = (int32_t)pg[i] + ((((int32_t)pg[i + 1] - (int32_t)pg[i]) * (int32_t)f) >> 8);
     int32_t d = (int32_t)pd[i] + ((((int32_t)pd[i + 1] - (int32_t)pd[i]) * (int32_t)f) >> 8);
     uint32_t g = ((uint32_t)q << 15) / (uint32_t)(d < 1 ? 1 : d);   /* q < 2^16: 32-bit */
-    return g < 1u ? 1 : g > 65535u ? 65535 : (int32_t)g;
+    if (g > 65535u) g = 65535u;
+    g = (g * rh_dyn(key + RH_KEY_LO, vel)) >> 15;                     /* x the dynamics stage (rh_dyn, <= 2^15) */
+    return g < 1u ? 1 : (int32_t)g;
 }
 #endif
 
@@ -687,6 +730,106 @@ static int32_t __attribute__((noinline)) rh_tone_gain(int32_t gain, int32_t o64,
 }
 #endif
 
+/* the harmonic decay against the strike (0.9.10; the target: the 2nd harmonic's T60 over the fundamental's
+ * ~0.8 after a soft strike, 0.2-0.4 after a hard one in the bass and the middle, and a hard-struck note darkening over
+ * its first 2 s). The 2nd harmonic is the pickup's curvature on V1's swing (H2 ~ A^2: T60 H2/H1 0.5 at every velocity);
+ * the tine's rest point in the pickup field moves a little after the strike instead: a soft strike's toward the pole
+ * axis (the curvature grows as the note rings: H2 decays slower), a hard strike's away from it (H2 falls faster). The
+ * voice gain follows the pickup's slope at the offset (the fundamental's small-signal gain, from the flux table), so
+ * the fundamental keeps the strike's level and decay.
+ * Decided at the strike (end, lags, rates from the velocity and the key); after a 0.4 s wait a step every RH_HD_SUBS
+ * sub-blocks:
+ * two lags, the gain, and the last sample's flux at the new offset (Hprev: the output has no step). Keys 72 up: none
+ * (tapered over 69..72). -DRH_NO_HD: without it (the A/B reference, byte-identical to before) */
+#if !defined(RH_NO_HD) && !defined(FR_HQ)
+#define RH_HD 1
+#ifndef RH_HD_SUBS                             /* a glide step every this many 32-sample sub-blocks */
+#define RH_HD_SUBS 2
+#endif
+#ifndef RH_HD_DS                               /* soft: the glide's end toward the axis (Q25, 1/32" gap: 5/8 gap), far, */
+#define RH_HD_DS 20971520                      /* so the glide is near linear until the cap (RH_OFF_MAX) stops it */
+#endif
+#ifndef RH_HD_RS                               /* soft: the glide's rate per unit of V1's decay (d), Q30 per step: H2 */
+#define RH_HD_RS (3 * RH_HD_SUBS)              /* over H1 rises as V1 decays (d ~ 1 / T60) */
+#endif
+#ifndef RH_HD_DH                               /* hard: the glide's end away from the axis (5/8 gap) */
+#define RH_HD_DH (-20971520)
+#endif
+#define RH_HD_AH (1731000 * RH_HD_SUBS)        /* hard: both lags' rate per step (Q30): tau 0.45 s */
+#define RH_HD_WAIT (552u / RH_HD_SUBS)                       /* the glide waits 0.4 s (the strike's first 30-500 ms: its level and
+                                                * colour stay the strike's) */
+#define RH_HD_STEPS (16536u / RH_HD_SUBS)      /* 12 s of steps */
+#define RH_HD_DU 524288                        /* the slope's half step (1/64 gap) */
+static int32_t rh_hd_slope(const int32_t *T, int32_t o)      /* |Phi~((o + du)^2) - Phi~((o - du)^2)| */
+{
+    int32_t a = o + RH_HD_DU, b = o - RH_HD_DU, s = rh_hermite(T, (int64_t)a * a) - rh_hermite(T, (int64_t)b * b);
+    return s < 0 ? -s : s;
+}
+static void rh_hd_target(rh_voice_t *v, uint32_t n, uint32_t vel)   /* the glide's end and lags for a strike */
+{
+    int32_t w, r, a1;
+    r = n <= 69u ? 32768 : n >= 72u ? 0 : (int32_t)(72u - n) * 32768 / 3;          /* the register, Q15 */
+    w = vel <= 40u ? 0 : vel >= 110u ? 32768 : ((int32_t)vel - 40) * 32768 / 70;  /* soft 0 .. hard 1, Q15 */
+    a1 = v->k->m[RH_V1].d * RH_HD_RS;           /* d < 2^17 at every key: no overflow */
+    if (a1 > Q30 / 64) a1 = Q30 / 64;
+    v->hd_d = (int32_t)(((((int64_t)RH_HD_DS * (32768 - w) + (int64_t)RH_HD_DH * w) >> 15) * r) >> 15)
+              >> RH_FAM_SH[v->k->fam];
+    v->hd_a1 = (int32_t)(((int64_t)a1 * (32768 - w) + (int64_t)RH_HD_AH * w) >> 15);
+    v->hd_a2 = (int32_t)(((int64_t)Q30 * (32768 - w) + (int64_t)RH_HD_AH * w) >> 15);
+    v->hd_w = RH_HD_WAIT;
+    v->hd_n = v->hd_d || v->hd_y2 ? RH_HD_STEPS : 0;
+}
+static void rh_hd_init(rh_voice_t *v, uint32_t n, uint32_t vel)
+{
+    v->hd_y1 = v->hd_y2 = 0; v->hd_ph = RH_HD_SUBS;
+    v->hd_off0 = v->off; v->hd_g0 = v->hd_gc = v->gain; v->hd_s0 = rh_hd_slope(RH_PU_PHIM(v->k->fam), v->off);
+    rh_hd_target(v, n, vel);
+}
+static void rh_hd_gain(rh_voice_t *v)         /* the gain at the offset now: the base x the slopes' ratio */
+{
+    int32_t s0 = v->hd_s0, s1 = rh_hd_slope(RH_PU_PHIM(v->k->fam), v->off);
+    uint32_t r;
+    int64_t g;
+    while (s0 >= (1 << 17) || s1 >= (1 << 17)) { s0 >>= 1; s1 >>= 1; }
+    r = s1 < 1 ? 4u << 14 : ((uint32_t)s0 << 14) / (uint32_t)s1;   /* Q14 (a 32-bit divide) */
+    if (r > (4u << 14)) r = 4u << 14;                              /* +12 dB at most */
+    g = ((int64_t)v->hd_g0 * r) >> 14;
+    v->gain = v->hd_gc = g > 0x7FFFFFFF ? 0x7FFFFFFF : (int32_t)g;
+}
+static __attribute__((noinline)) int32_t rh_hd_step(rh_voice_t *v, int32_t Hp)
+{
+    const rh_key_t *k = v->k;
+    int32_t o, mx = RH_OFF_MAX >> RH_FAM_SH[k->fam];
+    if (v->hd_w) { v->hd_w--; return Hp; }
+    v->hd_n--;
+    v->hd_y1 += (int32_t)(((int64_t)(v->hd_d - v->hd_y1) * v->hd_a1) >> 30);
+    v->hd_y2 += (int32_t)(((int64_t)(v->hd_y1 - v->hd_y2) * v->hd_a2) >> 30);
+    o = v->hd_off0 + v->hd_y2;
+    if (o > mx) {                                         /* at the cap: the lags wait there (a re-strike's glide
+                                                           * starts from the offset itself) */
+        o = mx; v->hd_y2 = mx - v->hd_off0;
+        if (v->hd_y1 > v->hd_y2) v->hd_y1 = v->hd_y2;
+    }
+    if (o == v->off) return Hp;
+    v->off = o;
+    rh_hd_gain(v);
+    o += rh_x[SUB - 1u];
+    return rh_hermite(RH_PU_PHIM(k->fam), (int64_t)o * o);
+}
+/* a re-strike of a sounding note: the glide goes on from where it is toward the new strike's end (no step: the offset
+ * stays). A gain the re-strike set anew (MAP: its G, from the gain at the strike's offset) becomes the glide's base and
+ * gets the slope compensation at once; else the gain stays the glide's own */
+static void rh_hd_restrike(rh_voice_t *v, uint32_t vel)
+{
+    v->hd_y1 = v->hd_y2;
+    if (v->gain != v->hd_gc) { v->hd_g0 = v->gain; rh_hd_gain(v); }
+    rh_hd_target(v, (uint32_t)(v->k - RH_KEYS) + RH_KEY_LO, vel);
+}
+#else
+static void rh_hd_init(rh_voice_t *v, uint32_t n, uint32_t vel) { (void)v; (void)n; (void)vel; }
+static void rh_hd_restrike(rh_voice_t *v, uint32_t vel) { (void)v; (void)vel; }
+#endif
+
 /* S4 (0.9.5): amplitude -> pitch in the bass. A struck tine's stiffness grows with its swing, so a hard-struck low note
  * starts a little sharp and settles as it rings down (spec S11). Per 32-sample sub-block V1's E is scaled by
  * (1 + kap a^2), a^2 = x^2 + y^2 its MC3 state (the coupled form's quadrature: a^2 almost constant over a cycle), so
@@ -750,6 +893,12 @@ static int32_t rh_vm(uint32_t t, uint32_t key, uint32_t vel)     /* t 0: X, 1: G
 #endif
     return a;
 }
+static int32_t rh_vm_g(uint32_t key, uint32_t vel)          /* MAP: G x the dynamics stage (rh_dyn), Q11 */
+{
+    uint32_t d = rh_dyn(key + RH_KEY_LO, vel);
+    int32_t g = rh_vm(1u, key, vel);
+    return d >= 32768u ? g : (int32_t)(((uint32_t)g * d) >> 15);   /* (G < 2^16, d <= 2^15: fits) */
+}
 /* MAP: the voice gain x the gain before the drive's (RH_DRV_SG, Q16) x G, the kill level / both (the same output
  * level ends the voice), the noises' scale X x G (at most 1), the steal score's swing (the state / X) */
 static void rh_vm_level(rh_voice_t *v, int32_t vx, int32_t vg)
@@ -795,7 +944,7 @@ static void rh_vm_kap(rh_voice_t *v, uint32_t n, const rh_type_t *ty, int32_t vx
 static void __attribute__((noinline)) rh_vm_restrike(rh_voice_t *v, uint32_t vel, uint32_t vel_old)
 {
     uint32_t key = (uint32_t)(v->k - RH_KEYS), m;
-    int32_t x = rh_vm(0u, key, vel), g = rh_vm(1u, key, vel);
+    int32_t x = rh_vm(0u, key, vel), g = rh_vm_g(key, vel);   /* (G x rh_dyn) */
     const rh_type_t *ty = &RH_TYPE[rh_type];
     if (g != v->vg) {
         uint32_t r = ((uint32_t)v->vg << 15) / (uint32_t)(g > 16 ? g : 16);    /* G_old / G_new, Q15 (vg < 2^16) */
@@ -856,7 +1005,7 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
 #ifdef RH_VMAP
     int32_t vx = RH_VM_ONE, vg = RH_VM_ONE;
     v->vm = (uint8_t)(rh_touch_mode != 0);
-    if (v->vm) { vx = rh_vm(0u, n - RH_KEY_LO, vel); vg = rh_vm(1u, n - RH_KEY_LO, vel); }   /* MAP: X, G (Q11) */
+    if (v->vm) { vx = rh_vm(0u, n - RH_KEY_LO, vel); vg = rh_vm_g(n - RH_KEY_LO, vel); }   /* MAP: X, G x rh_dyn (Q11) */
 #endif
     v->k = k; v->kd = rh_k_decay; v->kr = rh_k_rel;
     for (m = 0; m < RH_NM; m++) {
@@ -950,6 +1099,7 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
 #endif
     }
 #endif
+    rh_hd_init(v, n, vel);
     rh_load_pulse(v, vel);
 }
 
@@ -1025,6 +1175,7 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
     a = (int32_t)(((int64_t)pamp * rh_knock) >> 10);   /* <= 32767 x 653 >> 10 = 20896 */
 #ifdef RH_DRIVE
     if (!rh_touch_mode) a = (int32_t)(((uint32_t)a * RH_NZ_G) >> 15);   /* (the notes' level; MAP plays at the noises' own) */
+    a = rh_dyn_gain(a, rh_dyn(n, vel));                 /* the dynamics stage, as the note's own */
 #endif
     l = RH_VLAY_I[vel];
     if (RH_VLAY_W[vel] >= 16384 && l + 1u < RH_NLAYER) l++;
@@ -1073,6 +1224,7 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
 #else
             (void)vo;
 #endif
+            rh_hd_restrike(v, vel);                     /* (after the map's gain: the glide's base) */
             return 1;
         }
     for (i = 0; i < RH_NA; i++)
@@ -1134,7 +1286,11 @@ static void rh_events(void)
                         else
 #endif
 #ifdef RH_DRIVE
-                        g = (int32_t)(((uint32_t)(g > 32768 ? 32768 : g) * RH_NZ_G) >> 15);   /* (the notes' level) */
+                        {
+                            g = (int32_t)(((uint32_t)(g > 32768 ? 32768 : g) * RH_NZ_G) >> 15);   /* (the notes' level) */
+                            if (g > 32768) g = 32768;
+                            g = rh_dyn_gain(g, rh_dyn(v->note, v->vel));   /* x the dynamics stage (MAP: in vn) */
+                        }
 #endif
                         v->felt_n = 353; v->felt_g = (uint16_t)(g > 32768 ? 32768 : g);
                     }
@@ -1402,6 +1558,9 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
         }
         rh_lfsr = lfsr; v->felt_lp = lp; v->felt_n = (uint16_t)(v->felt_n - nf);
     }
+#ifdef RH_HD
+    if (v->hd_n && !--v->hd_ph) { v->hd_ph = RH_HD_SUBS; Hp = rh_hd_step(v, Hp); }   /* the harmonic decay glide */
+#endif
     v->Hprev = Hp;
     if (v->fade == 0) {                                   /* a steal finished fading: start the waiting note */
         v->alive = 0;

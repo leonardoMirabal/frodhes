@@ -106,7 +106,7 @@ def test_no_click(runs):
     attack = max(max(d2_blocks(c, BURST_AT, 10)) for c in runs["chords"])
     assert a[1] < a[0], f"the steal fade's block {a[1]:.0f} over the attack's {a[0]:.0f}"
     assert max(a) <= 1.15 * attack, (a, attack)
-    assert max(np.abs(runs["burst"].L).max(), np.abs(runs["burst"].R).max()) <= 24000   # the limiter's ceiling
+    assert max(np.abs(runs["burst"].L).max(), np.abs(runs["burst"].R).max()) <= 29204   # the limiter's ceiling (fx.c LIM_T)
 
 
 def test_the_newest_notes_sound():
