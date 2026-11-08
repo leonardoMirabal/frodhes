@@ -68,10 +68,17 @@ typedef struct {
 typedef struct frui frui;
 frui *frui_new(frui_font *font, frui_text_fn text, void *ctx);
 void frui_free(frui *u);
-/* the look: the brushed-aluminium name rail over a black body, or one aluminium plate with black sections set into
- * it; display is the wordmark's and the section titles' font (0: the text font) */
-enum { FRUI_LOOK_RAIL, FRUI_LOOK_PLATE };
+/* the look: the brushed-aluminium name rail over a black body (A1), one aluminium plate with black sections set into
+ * it (A2), or the default (A3): a rounded aluminium plate carrying the name rail and a thin frame round one rounded
+ * black body, the sections in it on concentric radii; display is the wordmark's and the section titles' font (0: the
+ * text font) */
+enum { FRUI_LOOK_RAIL, FRUI_LOOK_PLATE, FRUI_LOOK_A3 };
 void frui_set_look(frui *u, int look, frui_font *display);
+/* the rounded shapes of the last draw that nest (plate, body, sections, keyboard, corner switches), for the layout
+ * check: nested corners must be concentric (inner radius = outer radius - the gap); logical pixels */
+typedef struct { float x, y, w, h, r; } frui_shell;
+int frui_shell_count(const frui *u);
+const frui_shell *frui_shell_get(const frui *u, int i);
 /* the widgets of the last draw, for the input handling and the layout checks */
 int frui_widget_count(const frui *u);
 const frui_widget *frui_widget_get(const frui *u, int i);
