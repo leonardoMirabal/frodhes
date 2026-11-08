@@ -444,6 +444,43 @@ static void ts_first(int32_t a)
     ts_ok = 1;
 }
 
+#if FR_C1
+static void drv_tsh8_run(const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)
+{                                                  /* (FR_C1: a chunk, fx.c fxc_o / fxc_e; the rows, the table's
+                                                    * build and swap at the first, the swap's crossfade in it) */
+    int32_t a = c->amount, t = c->tone;
+    const int32_t *g0 = 0;
+    uint32_t o = fxc_o, k = fxc_e - o;
+    if (!ts_ok) { if (out != in) memcpy(out + o, in + o, k * sizeof *out); return; }
+    if (FXC_1) {
+#ifdef DINGHY_HOST
+        ts_nb = 0;
+#endif
+        if (ts_ra < 0) { ts_ra = a; ts_rt = t; ts_set(a, t); }
+        else if (ts_ra != a || ts_rt != t) { ts_ra = ts_step(ts_ra, a); ts_rt = ts_step(ts_rt, t); ts_set(ts_ra, ts_rt); }
+        if (ts_bpos < 0) {
+            if (ts_trow != ts_ra) {
+                int32_t d = ts_ra - ts_trow;
+                ts_brow = ts_trow + (d > TSH8_TSTEP ? TSH8_TSTEP : d < -TSH8_TSTEP ? -TSH8_TSTEP : d);
+                ts_bpos = 0;
+            }
+        } else if (ts_bpos < (int32_t)TSH8_NODES) {
+            uint32_t e = (uint32_t)ts_bpos + TSH8_SLICE;
+            if (e > TSH8_NODES) e = TSH8_NODES;
+            TS_BUILD(ts_tab[ts_cur ^ 1u], ts_brow, (uint32_t)ts_bpos, e);
+            ts_bpos = (int32_t)e;
+        } else {
+            ts_cur ^= 1u; ts_trow = ts_brow; ts_bpos = -1;
+            if (n >= TSH8_XF) g0 = ts_tab[ts_cur ^ 1u];
+        }
+    }
+#if TSH8_AA
+    FR_FAR(ts_kernel_aa)(ts_brp, ts_tonep, g0, ts_tab[ts_cur], in + o, out + o, k);
+#else
+    ts_kernel(ts_brp, ts_tonep, g0, ts_tab[ts_cur], in + o, out + o, k);
+#endif
+}
+#else
 static void drv_tsh8_run(const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)
 {
     int32_t a = c->amount, t = c->tone;
@@ -475,3 +512,4 @@ static void drv_tsh8_run(const int32_t *in, int32_t *out, uint32_t n, const drv_
     ts_kernel(ts_brp, ts_tonep, g0, ts_tab[ts_cur], in, out, n & ~1u);
 #endif
 }
+#endif

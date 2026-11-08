@@ -145,6 +145,38 @@ static FX_RAM __attribute__((noinline)) int32_t rq_ret(int32_t *L, int32_t *R, i
         }
     return act;
 }
+#if FR_C1
+/* fx_reverb for a chunk (fx.c fxc_o / fxc_e): the settings, MIX's send and return at the first chunk, the control
+ * blocks of the chunk */
+static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
+{
+    static int32_t v, tgt, zv, send, size, dv, lcv, off, damp, rk, vl, sk, rest;
+    static uint32_t pd;
+    static int quiet;
+    uint32_t sb, i, j;
+    if (FXC_1) {
+        int32_t tv;
+        v = fx_p[FXP_RV_DEPTH]; tgt = fx_p[FXP_RV_TYPE]; zv = fx_p[FXP_RV_SIZE];
+        send = tgt ? v * 258 : 0; size = 40 + (zv ? zv : v) * 70 / 127;
+        dv = fx_p[FXP_RV_DECAY]; tv = fx_p[FXP_RV_TONE]; lcv = fx_p[FXP_RV_LOCUT];
+        off = ((dv - 64) * 15) / 32;
+        damp = tv >= 64 ? 60 - ((tv - 64) * 60) / 63 : 60 + ((64 - tv) * 90) / 64;
+        pd = FX_PDLY_SAMPLES(fx_p[FXP_RV_PREDLY]);
+        quiet = !rv_running;
+        if (tgt >= (int32_t)RV_N) tgt = RV_HALL;
+        if (!rv_running) rv_mg = fx_p[FXP_RV_MOD] << 4;
+        if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = send; }
+        vl = rv_vl;
+        if (v != vl && send) send = (int32_t)(((int64_t)send * (254 - v)) / (254 - vl));
+        rk = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;
+        sk = rv_sk; rv_sk = send;
+        rest = !send && !rv_running && !rv_fade;
+        if (rest) return;
+        rv_running = 1;
+    }
+    if (rest) return;
+    for (sb = fxc_o; sb < fxc_e; sb += CTL) {
+#else
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t v = fx_p[FXP_RV_DEPTH], tgt = fx_p[FXP_RV_TYPE], zv = fx_p[FXP_RV_SIZE];
@@ -165,6 +197,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
     if (!send && !rv_running && !rv_fade) return;
     rv_running = 1;
     for (sb = 0; sb < n; sb += CTL) {
+#endif
         int32_t act = 0;
         uint32_t cur;
         if (tgt && (uint32_t)tgt != rv_cur && !rv_fade) {

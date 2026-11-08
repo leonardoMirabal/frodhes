@@ -242,6 +242,13 @@ static void eng_render(int32_t *mono, uint32_t n)
     }
 }
 
+#if FR_C1
+/* FR_C1 (frodhes.c app_audio): the block in chunks, the voices of chunk [o, e) at a time */
+static void eng_begin(uint32_t n) { (void)n; }
+static void eng_chunk(int32_t *mono, uint32_t o, uint32_t e) { if (!o) eng_render(mono, 256u); (void)e; }
+static void eng_end(int32_t *mono, uint32_t n) { (void)mono; (void)n; }
+#endif
+
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
 static void eng_host_report(void)                /* tests/host.c, at the end of a run */
 {

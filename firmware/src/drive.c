@@ -391,6 +391,31 @@ static const int32_t *dr_os2(const int32_t *m, uint32_t n, int32_t gq, int32_t d
     return y;
 }
 
+#if FR_C1
+/* dr_os2 for a chunk (fx.c fxc_o / fxc_e): samples fxc_o .. fxc_e of the block into drv_wet (indexed from the block's
+ * start, as the loops read it), the gain's ramp from the block's start */
+static const int32_t *dr_os2_c(const int32_t *m, int32_t gq, int32_t dgq, int32_t bias, int32_t b0)
+{
+    int32_t *y = drv_wet, *x2 = drv_scr.x2, hp = dr_hp;
+    uint32_t i, o = fxc_o, n = fxc_e - o;
+    if (!dr_os_ok) dr_os_rest(bias);
+    gq += dgq * (int32_t)o;
+    for (i = o; i < fxc_e; i++) {
+        int32_t x0 = m[i], x;
+        gq += dgq;
+        hp += (x0 - hp + 64) >> 7;
+        x = (int32_t)(((int64_t)dr_cl(x0 - hp) * (gq >> 8)) >> (12u - DR_OS_IN));
+        x = x > -(1 << (20 + DR_OS_IN)) ? x : -(1 << (20 + DR_OS_IN));
+        y[i] = x < (1 << (20 + DR_OS_IN)) ? x : 1 << (20 + DR_OS_IN);
+    }
+    dr_hp = hp;
+    drv_up2(&dr_os, y + o, x2, n);
+    dr_os_curve(x2, 2u * n, bias, b0);
+    drv_dn2(&dr_os, x2, y + o, n, DR_OS_OUT - DR_YS_X);
+    return y;
+}
+#endif
+
 /* ---- the TYPEs (one file each) --------------------------------------------------------------------------------- */
 #ifndef DRV_FILE_KHLON                 /* (a test build may put another file in a TYPE's place: tests/c/drv_demo.c) */
 #define DRV_FILE_KHLON "drv_khlon.c"
@@ -457,6 +482,53 @@ static DRV_BSS volatile uint8_t drv_rst_req;
  * place, nothing else; else into drv_wet, then the blend with dr_w ramping toward wt by 64 every 4 samples (46 ms,
  * as the classic drive; 4096 a block). The TYPE's wet shares are multiples of 256 (MIX v: (258 v + 128) & ~255), so
  * the ramp's step is exact and every block ends on its value. */
+#if FR_C1
+/* fx_drive_types, drv_switch's use and fx_drive for a chunk: the switch, the TYPE's settings and the blend's ramp at the
+ * first chunk (dr_sal set there: dr_w's value at the block's end, which fx_spread's first chunk reads); the TYPE's run
+ * gets the chunk (drv_<name>_run with fxc_o / fxc_e) */
+static struct { int32_t sw, w0, w1, d4; uint8_t rest, all; drv_ctl_t c; } drv_c;
+static __attribute__((noinline)) void fx_drive_types(int32_t *m, uint32_t n, int32_t sw)
+{
+    uint32_t o = fxc_o, k = fxc_e - o;
+    if (FXC_1) {
+        int32_t d = fx_p[FXP_DRIVE], mv = fx_p[FXP_DRV_MIX], wt = !sw ? 0 : mv >= 127 ? 32768 : (mv * 258 + 128) & ~255;
+        if (drv_rst_req) { uint32_t t; drv_rst_req = 0; for (t = 2u; t < DRV_N; t++) drv_reset(t); }
+        if (!d) { wt = 0; d = 1; }
+        dr_w &= ~255;
+        drv_c.rest = !wt && !dr_w;
+        if (drv_c.rest) return;
+        drv_c.c.amount = d; drv_c.c.tone = fx_p[FXP_DRV_TONE]; drv_c.c.row = fx_p[FXP_DRIVE_ROW] & 3;
+        drv_c.all = dr_w == 32768 && wt == 32768;
+        drv_c.w0 = dr_w; drv_c.w1 = drv_glide(dr_w, wt, (int32_t)(16u * n));
+        drv_c.d4 = (drv_c.w1 - drv_c.w0) >> 6;          /* (n: DRV_BLK) */
+    }
+    if (drv_c.rest) return;
+    if (drv_c.all) { drv_run(drv_on, m, m, n, &drv_c.c); return; }
+    drv_run(drv_on, m, drv_wet, n, &drv_c.c);
+    drv_blend(m + o, drv_wet + o, k, drv_c.w0 + drv_c.d4 * (int32_t)(o >> 2), drv_c.d4);
+    if (FXC_Z) dr_w = drv_c.w1;
+}
+static __attribute__((noinline)) int32_t drv_switch(uint32_t t)
+{
+    if (t >= DRV_N) t = 1u;
+    if (t == drv_on) return (int32_t)t;
+    if (dr_w) return 0;
+    drv_on = (uint8_t)t;
+    drv_reset(t);
+    dr_ton = 0; dr_tg = 4096;
+    return (int32_t)t;
+}
+static inline void fx_drive(int32_t *m, uint32_t n)
+{
+    static int32_t sw;
+    if (FXC_1) {
+        sw = fx_p[FXP_DRV_SW];
+        if (sw && sw != (int32_t)drv_on) sw = drv_switch((uint32_t)sw);
+    }
+    if (drv_on == 1u) { fx_drive_classic(m, n, sw); if (FXC_1) dr_sal = dr_c.w_end; }
+    else { fx_drive_types(m, n, sw); dr_sal = 0; }
+}
+#else
 static __attribute__((noinline)) void fx_drive_types(int32_t *m, uint32_t n, int32_t sw)
 {
     int32_t d = fx_p[FXP_DRIVE], mv = fx_p[FXP_DRV_MIX], wt = !sw ? 0 : mv >= 127 ? 32768 : (mv * 258 + 128) & ~255;
@@ -497,6 +569,7 @@ static inline void fx_drive(int32_t *m, uint32_t n)
     if (drv_on == 1u) { fx_drive_classic(m, n, sw); dr_sal = dr_w; }   /* (FDRV's wet share: fx.c fx_spread) */
     else { fx_drive_types(m, n, sw); dr_sal = 0; }
 }
+#endif
 /* the drive's cost (fx_cost_us, only while it runs): FDRV fdrv (FX_US_DRIVE: 248, whatever its settings); a TYPE whole: DRV_US[]
  * all wet (MIX 127, at rest), + DRV_US_BLEND while it blends (MIX < 127, gliding, a fade); while a switch waits, the
  * larger of the two (the one fading out, the one to fade in, blending: one runs at a time) */

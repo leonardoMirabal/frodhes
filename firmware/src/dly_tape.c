@@ -323,3 +323,317 @@ __attribute__((noinline)) static int tp_route(int32_t *L, int32_t *R, uint32_t n
     dly_fade(L, R, n, sw == 2, sw ? -1 : 0, sg16, target, col, fb, wet, sw ? dgt : 32768, TP_FADE);   /* fading in */
     return 1;
 }
+
+#if FR_C1
+/* ---- FR_C1's chunks (fx.c fxc_o / fxc_e): the delay's line written at the block's end. The send's stereo make-up
+ * (fx_delay_t: tg, dly_sg, sg16) is measured over the whole block and ramps every send of it from the block's first
+ * sample, so it is known only once the last chunk is in; but every read of a block is at least 257 samples behind its
+ * writes (TIME >= 20 ms, 882 samples; synced >= 1378 at 240 BPM, the clock's ceiling; wow and flutter a few tenths of a
+ * percent): no read of a block sees its own writes. So each chunk reads, filters and plays the echoes and keeps each
+ * sample's feedback term (dly_fbv: f x fb, the write's second half), and the last chunk writes the block's 256 rows
+ * (dly_wr_c) with the send ramped as the one-block loops ramp it: the same rows, the same reads, the same output. */
+static int32_t dly_fbv[256];                           /* each sample's feedback term (the write: send / 2 + it) */
+static uint8_t dly_wm;                                 /* the rows' write: 0 none, 1 DIG / ANA's clamp, 2 TAPE's curve */
+static uint8_t dly_wp;                                 /* the send's ramp: 0 over the block, 1 TAPE's fade (8 a piece) */
+static int32_t dly_wk_msk;                             /* the send on (-1) or off (0) */
+/* the last chunk: the block's rows, from w0 (dly_w at the block's start), the send ramped from dly_sgk to sg16 */
+__attribute__((noinline)) static void dly_wr_c(uint32_t w0, uint32_t n, int32_t sg16)
+{
+    int32_t msk = dly_wk_msk, kq = dly_sgk << 8, dk = n ? ((sg16 - dly_sgk) << 8) / (int32_t)n : 0;
+    uint32_t j;
+    if (dly_wp) dk = ((sg16 - dly_sgk) << 8) / 8;      /* (TAPE's fade: the first piece of 8 ramps, then sg16) */
+    for (j = 0; j < n; j++) {
+        int32_t in = dly_m[j] & msk, x;
+        if (dly_wp && j == 8u) { kq = sg16 << 8; dk = 0; }
+        kq += dk;
+        in = (int32_t)(((int64_t)in * (kq >> 8)) >> 16);   /* (x 65536 >> 16: the send itself, as dly_ramp's skip) */
+        if (dly_wm == 1u) x = clampi((in >> 1) + dly_fbv[j], -32768, 32767);
+        else {
+            uint32_t i;
+            x = PH_CL((in >> 1) + dly_fbv[j], -65536, 65535) + 65536;
+            i = (uint32_t)x >> 9;
+            x &= 511;
+            x = FX_TAPE_SAT[i] + (((FX_TAPE_SAT[i + 1u] - FX_TAPE_SAT[i]) * x) >> 9);
+        }
+        dly_buf[(w0 + j) & (DLY_LEN - 1u)] = (int16_t)x;
+    }
+    dly_sgk = msk ? sg16 : 0;
+}
+/* dly_loop for a chunk (its reads, dly_wr_c its writes) */
+static inline __attribute__((always_inline)) void dly_loop_c(int32_t *L, int32_t *R, uint32_t n, const int tape,
+                                                             int32_t target, int32_t col, int32_t fb, int32_t wet,
+                                                             int32_t dgt)
+{
+    uint32_t o = fxc_o, e = fxc_e, w = dly_w, wow = dly_wow, flt = dly_flt, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;
+    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg;
+    int32_t ws = DLY_WSTEP(dly_wk, wet, n), wq = (dly_wk << 8) + ws * (int32_t)o;
+    FX_K32 kcol = col, kfb = fb;
+    if (tape)
+        for (j = o; j < e; j++) {
+            int32_t sf;
+            dd += (target - dd) >> 12;
+            wow += 69000u; flt += 690000u;
+            sf = osc_sine(flt);
+            sf = (sf + (int32_t)((uint32_t)sf >> 31)) >> 1;
+            dly_dt[j] = dd + (int32_t)(((int64_t)dd * (osc_sine(wow) * 3 + sf)) >> 25);
+        }
+    for (j = o; j < e; j++) {
+        int32_t d, r, f;
+        uint32_t i;
+        if (tape)
+            d = dly_dt[j];
+        else {
+            dd += PH_CL(target - dd, -256, 256);
+            d = dd;
+        }
+        i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
+        if (c <= DLY_LEN) {
+            uint32_t lb = (w - i) & (DLY_LEN - 1u);
+            if (tape) r = DLY_H4C(i, lb, c, d & 255);
+            else {
+                int32_t a0 = ((lb - 1u) & (DLY_LEN - 1u)) < c ? dly_buf[i] : 0;
+                int32_t a1 = (lb & (DLY_LEN - 1u)) < c ? dly_buf[(i - 1u) & (DLY_LEN - 1u)] : 0;
+                r = (a0 + (((a1 - a0) * (d & 255)) >> 8)) << 1;
+            }
+            c++;
+        } else if (tape)
+            r = DLY_H4(i, d & 255);
+        else
+            r = (dly_buf[i] + (((dly_buf[(i - 1u) & (DLY_LEN - 1u)] - dly_buf[i]) * (d & 255)) >> 8)) << 1;
+        lp += (int32_t)(((int64_t)(r - lp) * kcol) >> 15);
+        f = tape ? softclip(lp) : lp;
+        hp += (f - hp + 64) >> 7;
+        f -= hp;
+        dly_fbv[j] = (int32_t)(((int64_t)f * kfb) >> 15);
+        w++;
+        wq += ws;
+        r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);
+        dg += (dgt - dg) >> 9;
+        L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
+    }
+    dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg;
+    dly_wm = 1; dly_wp = 0; dly_wk_msk = -1;
+}
+__attribute__((noinline)) static void dly_loop_cd(int32_t *L, int32_t *R, uint32_t n, int32_t target, int32_t col,
+                                                  int32_t fb, int32_t wet, int32_t dgt)
+{
+    dly_loop_c(L, R, n, 0, target, col, fb, wet, dgt);
+}
+__attribute__((noinline)) static void dly_loop_ca(int32_t *L, int32_t *R, uint32_t n, int32_t target, int32_t col,
+                                                  int32_t fb, int32_t wet, int32_t dgt)
+{
+    dly_loop_c(L, R, n, 1, target, col, fb, wet, dgt);
+}
+/* dly_fade for a chunk (the reads; the send's ramp is dly_wr_c's) */
+__attribute__((noinline)) static void dly_fade_c(int32_t *L, int32_t *R, uint32_t n, int tape, int32_t msk,
+                                                 int32_t target, int32_t col, int32_t fb, int32_t wet, int32_t dgt,
+                                                 int32_t gs)
+{
+    uint32_t o = fxc_o, e = fxc_e, w = dly_w, wow = dly_wow, flt = dly_flt, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;
+    int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg, g = dly_xg;
+    int32_t a = tape == 0 ? 0 : tape == 1 ? 32768 : dly_xm, da = tape == 2 ? TP_FADE : tape == 3 ? -TP_FADE : 0;
+    int32_t cd = tape >= 2 ? ((col * 19661) >> 15) - col : 0, c0 = col;
+    int32_t ws = DLY_WSTEP(dly_wk, wet, n), wq = (dly_wk << 8) + ws * (int32_t)o;
+    int32_t tn = dly_tn, tx = dly_tx;
+    for (j = o; j < e; j++) {
+        int32_t d, r, f;
+        a = PH_CL(a + da, 0, 32768);
+        col = c0 + (int32_t)(((int64_t)cd * a) >> 15);
+        if (a) {
+            int32_t sf;
+            if (a >= 16384) dd += PH_CL((target - dd) >> 12, -16, 16); else dd += PH_CL(target - dd, -256, 256);
+            tx = 0;
+            wow += 69000u; flt += 690000u;
+            sf = osc_sine(flt);
+            sf = (sf + (int32_t)((uint32_t)sf >> 31)) >> 1;
+            d = dd + (int32_t)(((((int64_t)dd * (osc_sine(wow) * 3 + sf)) >> 25) * a) >> 15);
+        } else {
+            if (!tx && dd != target) { tn = target; tx = 1; }
+            d = dd;
+        }
+        r = dly_rd(w, d, c);
+        if (tx) {
+            int32_t r1 = dly_rd(w, tn, c);
+            tx = tx + DLY_TXS > 32768 ? 32768 : tx + DLY_TXS;
+            r += (int32_t)(((int64_t)(r1 - r) * tx) >> 15);
+            if (tx == 32768) { dd = tn; tx = 0; }
+        }
+        if (c <= DLY_LEN) c++;
+        g = PH_CL(g + gs, 0, 32768);
+        r = (int32_t)(((int64_t)r * g) >> 15);
+        lp += (int32_t)(((int64_t)(r - lp) * col) >> 15);
+        f = lp;
+        if (a) f += (int32_t)(((int64_t)(softclip(lp) - lp) * a) >> 15);
+        hp += (f - hp + 64) >> 7;
+        f -= hp;
+        dly_fbv[j] = (int32_t)(((int64_t)f * fb) >> 15);
+        w++;
+        wq += ws;
+        r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);
+        dg += (dgt - dg) >> 9;
+        L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
+    }
+    dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg;
+    dly_xg = g; dly_xm = a; dly_tn = tn; dly_tx = tx;
+    dly_wm = 1; dly_wp = 0; dly_wk_msk = msk;
+}
+/* tp_mod for a chunk: dly_dt[fxc_o .. fxc_e) */
+FX_RAM __attribute__((noinline)) static void tp_mod_c(int32_t target, int32_t s, int32_t lv)
+{
+    int32_t dq = tp_dq, d0 = tp_dc, v = FR_FAR(exp2_q16)(s), iv = FR_FAR(exp2_q16)(-s), t12 = target << 4;
+    int32_t kw = FR_FAR(exp2_q16)((5 << 12) - lv);
+    uint32_t i1 = (uint32_t)(((uint64_t)TP_INC1 * (uint32_t)v) >> 16);
+    int32_t a1 = (int32_t)(((int64_t)(TP_A1 * TP_WOWX >> 8) * iv) >> 16), a2 = (int32_t)(((int64_t)(TP_A2 * TP_WOWX >> 8) * iv) >> 16);
+    int32_t a3 = (int32_t)(((int64_t)(TP_A3 * TP_WOWX >> 8) * iv) >> 16);
+    uint32_t j, k;
+    if (d0 < 0) d0 = dq = t12;
+    for (j = fxc_o; j < fxc_e; j += TP_CTL) {
+        int32_t wn, dc, fl, st, fr;
+        dq += (int32_t)(((int64_t)(t12 - dq) * (t12 > dq ? TP_KUP : TP_KDN)) >> 16);
+        tp_nz = tp_nz * 1664525u + 1013904223u;
+        wn = (int32_t)tp_nz >> 16;
+        tp_n1 += ((wn << 5) - tp_n1) * TP_KN >> 16;
+        tp_n2 += (tp_n1 - tp_n2) * TP_KN >> 16;
+        tp_n3 += ((wn << 5) - tp_n3) * TP_KM >> 16;
+        tp_avg += (int32_t)(((int64_t)(tp_n2 - tp_avg) * kw) >> 16);
+        tp_ph1 += i1;
+        fl = (int32_t)(((int64_t)a1 * osc_sine(tp_ph1) + (int64_t)a2 * osc_sine(tp_ph1 * 2u + 0x40000000u)
+                        + (int64_t)a3 * osc_sine(tp_ph1 * 3u + 0x9000000u)) >> 15);
+        fl += (int32_t)(((int64_t)fl * tp_n3 * TP_DM) >> 30);
+        fr = (int32_t)(((int64_t)tp_avg * (TP_DRIFT * TP_WOWX >> 8)) >> 16);
+        dc = dq - (int32_t)(((int64_t)dq * fr) >> 24) + fl;
+        st = (dc - d0) >> 4;
+        for (k = 0; k < TP_CTL; k++) { d0 += st; dly_dt[j + k] = d0 >> 4; }
+        d0 = dc;
+    }
+    tp_dq = dq; dly_d = dq >> 4; tp_dc = d0;
+}
+/* tp_tape + tp_loop for samples j0 .. j1 (the reads; the echo's feedback term into dly_fbv), the echo's gain from w0
+ * to wet over np samples, this piece's first at j0 - p0 of them */
+FX_RAM __attribute__((noinline)) static void tp_loop_c(int32_t *L, int32_t *R, uint32_t j0, uint32_t j1, uint32_t p0,
+                                                     uint32_t np, int32_t fb, int32_t wet, int32_t dgt, int32_t w0)
+{
+    uint32_t w = dly_w, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;
+    int32_t b1 = tp_b1, b2 = tp_b2, h1 = tp_h1, h2 = tp_h2, dg = dly_dg;
+    int32_t ws = FR_FAR(dly_wstep)(w0, wet, np), wq = (w0 << 8) + ws * (int32_t)(j0 - p0);
+    FX_K32 kf = tp_kf, kr = tp_kq, kh = tp_kh, kfb = fb;
+    for (j = j0; j < j1; j++) {
+        int32_t d, r, x, y;
+        uint32_t i;
+        d = dly_dt[j];
+        i = (w - (uint32_t)(d >> 8)) & (DLY_LEN - 1u);
+        if (c <= DLY_LEN) {
+            uint32_t lb = (w - i) & (DLY_LEN - 1u);
+            r = DLY_H4C(i, lb, c, d & 255);
+            c++;
+        } else
+            r = DLY_H4(i, d & 255);
+        x = (r << 4) - b2 - (int32_t)(((int64_t)b1 * kr) >> 14);
+        {
+            int32_t f = kf;
+            b1 += (int32_t)(((int64_t)x * f) >> 24);
+            b2 += (int32_t)(((int64_t)b1 * f) >> 24);
+        }
+        y = x >> 4;
+        {
+            int32_t h = kh;
+            h1 += (int32_t)(((int64_t)(y - h1) * h) >> 15);
+            h2 += (int32_t)(((int64_t)(h1 - h2) * h) >> 15);
+        }
+        y = h2;
+        dly_fbv[j] = (int32_t)(((int64_t)y * kfb) >> 15);
+        w++;
+        wq += ws;
+        y = (int32_t)(((int64_t)y * (wq >> 8)) >> 15);
+        dg += (dgt - dg) >> 9;
+        L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + y; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + y;
+    }
+    dly_w = w; tp_b1 = b1; tp_b2 = b2; tp_h1 = h1; tp_h2 = h2; dly_dg = dg;
+}
+/* tp_block for a chunk: its coefficients and TONE's glide at the first, its fade decided there (8 a piece) */
+static struct { int32_t fb, wet, s, lv, fade; } tp_c;
+__attribute__((noinline)) static void tp_block_c(int32_t *L, int32_t *R, uint32_t n, int32_t target, int32_t msk,
+                                                 int32_t wet, int32_t dgt, int32_t gt)
+{
+    uint32_t j;
+    if (FXC_1) {
+        int32_t lv = log2_q12((uint32_t)target >> 8), s = PH_CL(TP_LT_REF - lv, -TP_S_MAX, TP_S_MAX), v = exp2_q16(s), h;
+        tp_kf = (int32_t)(((int64_t)TP_KF_REF * v) >> 16);
+        h = PH_CL(TP_LH_REF + s + (fx_p[FXP_DL_TONE] - 70) * TP_TONE_K, 0, (128 << 8) - 1);
+        if (tp_hk < 0 || !tp_g || fx_quiet_blocks >= 2u) tp_hk = h;
+        else h = tp_hk += PH_CL(h - tp_hk, -256, 256);
+        tp_kh = FX_TAPE_HF[h >> 8] + (((FX_TAPE_HF[(h >> 8) + 1] - FX_TAPE_HF[h >> 8]) * (h & 255)) >> 8);
+        tp_c.fb = FX_TAPE_FB[fx_p[FXP_DL_FDBK] & 127];
+        tp_c.wet = (wet * TP_WET) >> 12;
+        tp_c.s = s; tp_c.lv = lv; tp_c.fade = tp_g != gt;
+    }
+    FR_FAR(tp_mod_c)(target, tp_c.s, tp_c.lv);
+    if (!tp_c.fade) tp_loop_c(L, R, fxc_o, fxc_e, 0, n, tp_c.fb, tp_c.wet, dgt, (dly_wk * TP_WET) >> 12);
+    else
+        for (j = fxc_o; j < fxc_e; j += 8u) {
+            tp_g = PH_CL(tp_g + (gt ? 8 * TP_FADE : -8 * TP_FADE), 0, 32768);
+            int32_t wg = (tp_c.wet * tp_g) >> 15;
+            tp_loop_c(L, R, j, j + 8u, j, 8u, (tp_c.fb * tp_g) >> 15, wg, dgt, wg);
+        }
+    dly_wm = 2; dly_wp = (uint8_t)tp_c.fade; dly_wk_msk = msk;
+}
+/* tp_route for a chunk: what this block runs, decided at the first chunk (and the switches before it); after the last
+ * chunk's rows, the switches after it (tp_route_end) */
+static struct { uint8_t kind, tape, post; int32_t msk, dgt, gs, gt, col; } tp_rc;   /* kind: 0 the old loops, 1 fade,
+                                                        * 2 TAPE; post: 1 the DIG <-> ANA fade's end, 2 TAPE's tail */
+static void tp_route_plan(int32_t sw, int32_t target, int32_t depth)
+{
+    int32_t dgt = 32768 - depth * depth, osw = dly_cur == 3 ? sw : dly_last;
+    int32_t col = 2000 + fx_p[FXP_DL_TONE] * 240;
+    tp_rc.post = 0;
+    if (dly_xo) {
+        tp_rc.kind = 1; tp_rc.tape = dly_ana ? 2 : 3; tp_rc.msk = sw ? -1 : 0; tp_rc.col = col;
+        tp_rc.dgt = sw ? dgt : 32768; tp_rc.gs = 0; tp_rc.post = 1;
+        return;
+    }
+    if (osw == 2) col = (col * 19661) >> 15;
+    tp_rc.col = col;
+    if (dly_cur == 3) {
+        if (sw == 3 || (sw == 0 && tp_g)) {
+            tp_rc.kind = 2; tp_rc.msk = sw ? -1 : 0; tp_rc.dgt = sw ? dgt : 32768; tp_rc.gt = sw ? 32768 : tp_g;
+            tp_rc.post = sw ? 0 : 2;
+            return;
+        }
+        if (tp_g) { tp_rc.kind = 2; tp_rc.msk = -1; tp_rc.dgt = dgt; tp_rc.gt = 0; return; }
+        tp_zero(); dly_cur = 0; dly_xg = 0; dly_lp = dly_hp = 0;
+        dly_d = target; dly_tx = 0;
+        dly_last = (uint8_t)sw;
+    }
+    if (sw == 3) {
+        if ((dly_lp || dly_hp) && dly_xg) {
+            tp_rc.kind = 1; tp_rc.tape = dly_last == 2; tp_rc.msk = dly_last ? -1 : 0;
+            tp_rc.dgt = dly_last ? dgt : 32768; tp_rc.gs = -TP_FADE;
+            return;
+        }
+        dly_xg = 32768; dly_lp = dly_hp = 0; dly_cur = 3; tp_g = 0;
+        tp_rc.kind = 2; tp_rc.msk = -1; tp_rc.dgt = dgt; tp_rc.gt = 32768;
+        return;
+    }
+    dly_last = (uint8_t)sw;
+    if (dly_xg == 32768) {
+        if (!sw) { tp_rc.kind = 0; return; }
+        tp_rc.kind = 1; tp_rc.tape = sw == 2; tp_rc.msk = -1; tp_rc.dgt = dgt; tp_rc.gs = 0;
+        return;
+    }
+    tp_rc.kind = 1; tp_rc.tape = sw == 2; tp_rc.msk = sw ? -1 : 0; tp_rc.dgt = sw ? dgt : 32768; tp_rc.gs = TP_FADE;
+}
+static void tp_route_run(int32_t *L, int32_t *R, uint32_t n, int32_t target, int32_t fb, int32_t wet)
+{
+    if (tp_rc.kind == 1) dly_fade_c(L, R, n, tp_rc.tape, tp_rc.msk, target, tp_rc.col, fb, wet, tp_rc.dgt, tp_rc.gs);
+    else tp_block_c(L, R, n, target, tp_rc.msk, wet, tp_rc.dgt, tp_rc.gt);
+}
+static void tp_route_end(uint32_t n, int32_t target)   /* after dly_wr_c */
+{
+    if (tp_rc.post == 1) { if (dly_xm == (dly_ana ? 32768 : 0)) dly_xo = 0; }
+    else if (tp_rc.post == 2) {
+        if (dly_tail_over(n, target) && iabs(tp_h2) < 2 && iabs(tp_b1) < 32 && iabs(tp_b2) < 32) {
+            tp_zero(); dly_cur = 0; dly_last = 0;
+        }
+    }
+}
+#endif

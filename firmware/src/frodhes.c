@@ -59,14 +59,10 @@
 #endif
 #define FX_RAM                                  /* the effects from flash (XIP): core 1 runs them */
 #define FX_PROC_ATTR static __attribute__((noinline))
-#define FX_SIDE c1_side                         /* the effects read the side of the block in flight (app_audio) */
-#define FX_SIDE_ON c1_side_on
 #define RH_NA c1_nv
 #define BAR_NA c1_nv
 #define FX_COST_C0() (c1_nv > FR_C1_NV1 ? FR_C1_FX_US : fx_cost_us())
 #include <stdint.h>
-static int32_t c1_side[256];                    /* the Rhodes' side (rh_side) of the block core 1 works on */
-static uint8_t c1_side_on;
 static uint32_t c1_nv = FR_VOICES;              /* the voices a strike may take: FR_VOICES with core 1 live */
 #if defined(DINGHY_HOST)
 #define FX_XFD_SEC
@@ -209,16 +205,23 @@ FR_COLD static int usb_link(void) { return host_usb_link; }
 #include "bars.c"       /* last: the bar engine's code (see bars.c) */
 
 #if FR_C1
-/* two cores (FR_C1): the voices of block k on core 0 while core 1 runs the effects of block k-1 into out. The dry
- * blocks alternate in c1_mono; the side (rh_side, SPREAD) of the block in flight is copied to c1_side when its voices
- * are done. A block the developer's CC 10 resets (fx_reset_state ends the voices, touches the engines) runs on core 0
- * after the voices, as one core does */
-static int32_t c1_mono[2][256];
-static uint8_t c1_pp;
-static struct { const int32_t *mono; int32_t *out; uint32_t n; } c1_job;
+/* two cores (FR_C1): each block in C1_SUB chunks of 256 / C1_SUB frames. Core 0 renders chunk j's voices (eng_chunk)
+ * while core 1 runs the effects on chunk j - 1 (fx_process on fxc_o .. fxc_e, fx.c); core 0 waits for the last chunk's
+ * effects before the block ends, so out holds this block's voices through every effect: no latency over one core.
+ * The chunks render the one-block integers exactly (fx.c FXC_1 / FXC_Z, engine.c eng_chunk; the two-core build = the
+ * one-core 14-voice build, sample for sample: tests/py/test_c1_subblock.py). Each chunk's effects start only once the
+ * one before them is done (or done by core 0: refused, late, one core). A block the developer's CC 10 resets
+ * (fx_reset_state ends the voices, touches the engines) and every block with core 1 held run on core 0, whole */
+#ifndef C1_SUB
+#define C1_SUB 8u                               /* chunks a block: 8 (32 frames) or 4 (64) */
+#endif
+_Static_assert(C1_SUB == 1u || C1_SUB == 2u || C1_SUB == 4u || C1_SUB == 8u, "C1_SUB: 1, 2, 4 or 8 chunks a block");
+static int32_t c1_mono[256];
+static struct { const int32_t *mono; int32_t *out; uint32_t n, o, e; } c1_job;
 static void c1_fx_job(uint32_t a)               /* core 1 (or core 0: refused, late, one core) */
 {
     (void)a;
+    fxc_o = c1_job.o; fxc_e = c1_job.e; fxc_n = c1_job.n;
     fx_process(c1_job.mono, c1_job.out, c1_job.n);
 }
 /* core 1 held for good: from now on strikes take FR_C1_NV1 voices, the ones above fade out as a steal */
@@ -270,36 +273,54 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
     prof_st_t = t0;
 #endif
 #if FR_C1
-    {
-        int32_t *cur = c1_mono[c1_pp], *prev = c1_mono[c1_pp ^ 1u];
-        int on1 = 0, r = 0;
-        c1_job.mono = prev; c1_job.out = out; c1_job.n = n;
-        if (!fx_reset_req)
-            on1 = fr_c1_run(c1_fx_job, 0);      /* core 1: the effects of the block before, from now */
-        eng_render(cur, n);                     /* core 0: this block's voices */
+    if (fx_reset_req || !fr_c1_live()) {         /* CC 10's block, or one core: core 0, whole */
+        int rst = fx_reset_req;
+        eng_render(c1_mono, n);
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
         host_race_check();
 #endif
         PROF_STAMP(1);
-        if (on1) {
+        c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n; c1_job.o = 0; c1_job.e = n;
+        c1_fx_job(0);
+        if (rst) rh_side_on = 0;                /* (the voices CC 10 ended: as one core) */
+    } else {
+        uint32_t j, k = n / C1_SUB, posted = 0;
+        c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n;
+        eng_begin(n);
+        for (j = 0; j < C1_SUB; j++) {
+            eng_chunk(c1_mono, j * k, j * k + k);   /* core 0: chunk j's voices */
+            if (j + 1u == C1_SUB) eng_end(c1_mono, n);
+            if (posted) {                       /* chunk j - 1's effects: done, or core 0 does them */
+                int r;
+#ifndef DINGHY_HOST
+                uint32_t el = (fm1_ticks() - t0) / 24u;
+                r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
+#else
+                r = fr_c1_wait_us(C1_DEADLINE_US);
+#endif
+                if (r) c1_fx_job(0);            /* (refused -2: core 1 stays on; late / held -1) */
+            }
+            c1_job.o = j * k; c1_job.e = j * k + k;
+            posted = fr_c1_run(c1_fx_job, 0);   /* core 1: chunk j's effects, from now */
+            if (!posted) c1_fx_job(0);
+        }
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        host_race_check();
+#endif
+        PROF_STAMP(1);
+        if (posted) {
+            int r;
 #ifndef DINGHY_HOST
             uint32_t el = (fm1_ticks() - t0) / 24u;
             r = fr_c1_wait_us(el + 200u < C1_DEADLINE_US ? C1_DEADLINE_US - el : 200u);
 #else
             r = fr_c1_wait_us(C1_DEADLINE_US);
 #endif
+            if (r) c1_fx_job(0);
         }
-        if (!on1 || r) {                        /* refused (-2: core 1 stays on), late / held (-1), one core, CC 10 */
-            int rst = fx_reset_req;
-            c1_fx_job(0);
-            if (rst) { memset(cur, 0, n * sizeof cur[0]); rh_side_on = 0; }   /* (the voices CC 10 ended: as one core) */
-        }
-        if (c1_nv > FR_C1_NV1 && !fr_c1_live()) c1_one_core();
-        c1_side_on = rh_side_on;                /* this block's side, for its effects in the next block */
-        if (rh_side_on) memcpy(c1_side, rh_side, n * sizeof c1_side[0]);
-        c1_pp ^= 1u;
-        fr_c1_block_end();
     }
+    if (c1_nv > FR_C1_NV1 && !fr_c1_live()) c1_one_core();
+    fr_c1_block_end();
 #else
     eng_render(voice_mono, n);
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
