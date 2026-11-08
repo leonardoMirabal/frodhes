@@ -109,7 +109,7 @@ static inline __attribute__((always_inline)) void tp_tape_k(int32_t *m, const in
         y = h2;
         /* the record head and the tape: send + regeneration through the transfer curve */
         in = m[j] & msk;                                /* (the send, ramped: dly_ramp; read here, where it is used) */
-        x = PH_CL((in >> 1) + (int32_t)(((int64_t)y * kfb) >> 15), -65536, 65535) + 65536;
+        x = PH_CL(FX_HC(0, (in >> 1) + (int32_t)(((int64_t)y * kfb) >> 15), -65536, 65535), -65536, 65535) + 65536;
         i = (uint32_t)x >> 9;
         x &= 511;
         dly_buf[w & (DLY_LEN - 1u)] = (int16_t)(FX_TAPE_SAT[i] + (((FX_TAPE_SAT[i + 1u] - FX_TAPE_SAT[i]) * x) >> 9));
@@ -255,7 +255,7 @@ __attribute__((noinline)) static void dly_fade(int32_t *L, int32_t *R, uint32_t 
         if (a) f += (int32_t)(((int64_t)(softclip(lp) - lp) * a) >> 15);
         hp += (f - hp + 64) >> 7;
         f -= hp;
-        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + (int32_t)(((int64_t)f * fb) >> 15), -32768, 32767);
+        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi(FX_HC(0, (in >> 1) + (int32_t)(((int64_t)f * fb) >> 15), -32768, 32767), -32768, 32767);
         w++;
         wq += ws;
         r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);   /* (64 bits: the 4-point read overshoots 2^16, c1-int) */
@@ -347,10 +347,10 @@ __attribute__((noinline)) static void dly_wr_c(uint32_t w0, uint32_t n, int32_t 
         if (dly_wp && j == 8u) { kq = sg16 << 8; dk = 0; }
         kq += dk;
         in = (int32_t)(((int64_t)in * (kq >> 8)) >> 16);   /* (x 65536 >> 16: the send itself, as dly_ramp's skip) */
-        if (dly_wm == 1u) x = clampi((in >> 1) + dly_fbv[j], -32768, 32767);
+        if (dly_wm == 1u) x = clampi(FX_HC(0, (in >> 1) + dly_fbv[j], -32768, 32767), -32768, 32767);
         else {
             uint32_t i;
-            x = PH_CL((in >> 1) + dly_fbv[j], -65536, 65535) + 65536;
+            x = PH_CL(FX_HC(0, (in >> 1) + dly_fbv[j], -65536, 65535), -65536, 65535) + 65536;
             i = (uint32_t)x >> 9;
             x &= 511;
             x = FX_TAPE_SAT[i] + (((FX_TAPE_SAT[i + 1u] - FX_TAPE_SAT[i]) * x) >> 9);

@@ -337,8 +337,13 @@ static void eng_end(int32_t *mono, uint32_t n)
 #endif
 
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+/* fx.c FX_HC (host): the effects' headroom, samples a clamp cut: [0] the delay line's write (DIG / ANA's clamp, TAPE's
+ * range before its curve), [1] the reverb's send and kernel inputs, [2] the chorus line; [3] the limiter's sub-blocks
+ * with a gain under 1 (tests/py/test_fx_pristine.py) */
+static uint32_t fx_h_clip[4];
 static void eng_host_report(void)                /* tests/host.c, at the end of a run */
 {
+    printf("fx-clip delay %u reverb %u chorus %u limiter %u\n", fx_h_clip[0], fx_h_clip[1], fx_h_clip[2], fx_h_clip[3]);
     printf("sat28 hits %llu\n", (unsigned long long)bar_h_sat);
     printf("mode-samples %llu (max per block %u, blocks %llu)\n", (unsigned long long)eng_h_ms, eng_h_max_ms,
            (unsigned long long)eng_h_blocks);

@@ -82,6 +82,14 @@ static int fx_quiet(void) { return fx_quiet_blocks >= 86u || fx_gz >= 86u; }
  * carries) instead of one instruction. */
 #define FX_K32 volatile int32_t
 static inline __attribute__((always_inline)) int32_t clampi(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v > hi ? hi : v; }
+/* FX_HC(k, v, lo, hi): v, and on the host a count when a clamp to [lo, hi] would cut it (engine.c fx_h_clip: the
+ * effects' headroom gate, tests/py/test_fx_pristine.py); the firmware: v (nothing) */
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+static inline int32_t fx_hc(int k, int32_t v, int32_t lo, int32_t hi) { if (v < lo || v > hi) fx_h_clip[k]++; return v; }
+#define FX_HC(k, v, lo, hi) fx_hc(k, v, lo, hi)
+#else
+#define FX_HC(k, v, lo, hi) (v)
+#endif
 static inline __attribute__((always_inline)) int32_t mulq15(int32_t a, int32_t b) { return (a * b) >> 15; }        /* |a|,|b| small enough */
 /* ---- the on / off crossfade (0.9.6, the bug hunt: switching an effect replaced the dry signal by the processed one,
  * or back, in one sample: up to 1700 LSB steps under a held chord). An effect switched on or off keeps running while
@@ -1181,7 +1189,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
     {   /* the chunk's line first, then its taps (they read 153 .. 465 samples back: written in the chunks before) */
         uint32_t p = 0u - cho_w;
         const int32_t *l = L + fxc_o, *r = R + fxc_o, *le = L + fxc_e;
-        for (; l < le; l++, r++) { cho_b[p & 1023u] = clampi((*l + *r) >> 1, -1048575, 1048575); p--; }
+        for (; l < le; l++, r++) { cho_b[p & 1023u] = clampi(FX_HC(2, (*l + *r) >> 1, -1048575, 1048575), -1048575, 1048575); p--; }
         cho_w += fxc_e - fxc_o;
         cho_b[-1] = cho_b[1023]; cho_b[1024] = cho_b[0]; cho_b[1025] = cho_b[1];
     }
@@ -1222,7 +1230,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
          * 153 .. 465 samples back, all written by then and none overwritten (the ring holds 1024) */
         uint32_t p = 0u - cho_w;
         const int32_t *l = L, *r = R, *le = L + n;
-        for (; l < le; l++, r++) { cho_b[p & 1023u] = clampi((*l + *r) >> 1, -1048575, 1048575); p--; }
+        for (; l < le; l++, r++) { cho_b[p & 1023u] = clampi(FX_HC(2, (*l + *r) >> 1, -1048575, 1048575), -1048575, 1048575); p--; }
         cho_w += n;
         cho_b[-1] = cho_b[1023]; cho_b[1024] = cho_b[0]; cho_b[1025] = cho_b[1];
     }
@@ -1548,7 +1556,7 @@ static inline __attribute__((always_inline)) void dly_loop(int32_t *L, int32_t *
         hp += (f - hp + 64) >> 7;
         f -= hp;
         fq += fs; kfb = fq >> 8;
-        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi((in >> 1) + (int32_t)(((int64_t)f * kfb) >> 15), -32768, 32767);
+        dly_buf[w & (DLY_LEN - 1u)] = (int16_t)clampi(FX_HC(0, (in >> 1) + (int32_t)(((int64_t)f * kfb) >> 15), -32768, 32767), -32768, 32767);
         w++;
         wq += ws;
         r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);   /* (64 bits: the 4-point read overshoots 2^16, c1-int) */
@@ -1917,7 +1925,7 @@ static FX_RAM __attribute__((noinline)) void rev_down(const int32_t *in, int32_t
     for (i = 0; i < HL_NC; i++) {
         const int32_t *c = in + 2u * i - 4u;                /* (c[5]: this pair's second sample, in[2i + 1]) */
         int32_t x = (1024 * c[0] + RV_HB(c + 1, 2) + 1024) >> 11, v;
-        x = mulq15(clampi(x, -131071, 131071), HL_IN);
+        x = mulq15(clampi(FX_HC(1, x, -131071, 131071), -131071, 131071), HL_IN);
         v = x - hp + he;
         he = v & 31;
         hp += v >> 5;
@@ -2331,6 +2339,9 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
         }
         lk_pk = pn;
         lk_g = tgt;
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        if (tgt < 32768 || g0 < 32768) fx_h_clip[3]++;  /* (the limiter acted on this sub-block) */
+#endif
     }
     fx_wet = wet; dc_l = dl; dce_l = el; dc_r = dr; dce_r = er;
 #if FR_C1
