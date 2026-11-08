@@ -8,8 +8,9 @@ here; the user's real-host checklist (docs/PLUGIN.md "Try it in a DAW") as a cou
   the same code. It opens in the higher-quality version with 16 voices, as on the Move; its ENGINE control switches
   to CLASSIC, the FM-1's own sound bit for bit with its 10 voices.
 - Its own window on every system: the FM-1's pages as cards with knobs, resizable, sharp on high-resolution screens.
-  Presets (the 57 factory sounds and your own, saved as files), MIDI learn, the effects' bypass and the sustain latch
-  are in it; everything is saved with your project.
+  Presets (the 57 factory sounds and your own, saved as files): click the preset's name for the whole list, grouped
+  by instrument, and SAVE with a name of your own. MIDI learn, the effects' bypass (a bypassed effect's knobs are
+  drawn inactive) and the sustain latch are in it; everything, the window's size too, is saved with your project.
 - The host's tempo drives the synced effects. It runs at any sample rate (44.1 and 48 kHz exactly as the FM-1),
   reports its latency (10 ms) and plays up to 16 instances in one project.
 - Downloads: `frodhes-plugin-macos.pkg` (installer) or `frodhes-plugin-macos.zip` (macOS 11 or newer, Apple silicon
