@@ -495,6 +495,8 @@ static uint32_t rh_dyn(uint32_t n, uint32_t vel)            /* Q15 (<= 32768): t
     return 32768u;
 #else
     uint32_t g = vel < RH_DYN_V_HI ? RH_DYN_V[vel] : 32768u;
+    if (n > RH_KEY_LO + RH_NKEY - 1u) n = RH_KEY_LO + RH_NKEY - 1u;   /* (a MIDI note over 108 plays the top key's
+                                                * values: the table ended there, read past its end: the sanitizer) */
     if (n >= RH_DYN_K_LO) g = (g * RH_DYN_K[n - RH_DYN_K_LO]) >> 15;
     return g;
 #endif
