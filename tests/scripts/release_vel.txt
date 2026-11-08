@@ -7,6 +7,8 @@
 # (were 200 ms, now near silence); C4 neutral -50.8, quick -58.7, slow -42.6; C5 -56.1 / -66.1 / -45.7; C3 quick -58.3.
 # 2026-11-08 (the level make-ups' critical-band match): C5 v100 +4.3 dB (darker treble brought to the reference's
 # loudness), its windows +4 dB: neutral -51.8, quick -61.8, slow -41.4 (the order and the gaps as before).
+# 2026-11-08 (the clean Rhodes: the drive no longer folds, the critical-band match back to the RMS one): C5 v100
+# -56.3 / -66.3 / -45.9, the neutral window -58..-49.
 # Run: build/host/frodhes build/host/release_vel tests/scripts/release_vel.txt
 40 midi 0xB0 119 127
 100 midi 0x90 60 100
@@ -22,7 +24,7 @@
 4300 midi 0x90 72 100
 4800 midi 0x80 72 64
 4900 expect rms < -49
-4900 expect rms > -56
+4900 expect rms > -58
 5700 midi 0x90 72 100
 6200 midi 0x80 72 127
 6300 expect rms < -59

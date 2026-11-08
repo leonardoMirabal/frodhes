@@ -182,6 +182,9 @@ def fit(c, keys, log):
         vals = {}
         for v in VG:
             bt = bark_target(c, k, v)
+            if c.get("bark_physical"):                   # 0.9.10 (the user: clean at every velocity): the engine's
+                bt = base[(k, v)][0] + (pts(c["bark_physical_offset_points"], k)   # own bark without the map
+                                        if "bark_physical_offset_points" in c else 0.0)   # (0.9.9's swing), + offset
             tgt[(k, v)] = bt
             s_need = float(np.interp(bt, Bm + 1e-6 * np.arange(len(Bm)), sdb)) if bt < Bm[-1] else smax
             s_need = min(s_need, smax)

@@ -60,24 +60,18 @@ def test_suitcase_level_and_timbre(binr):
 
 
 def test_bark_grows_with_velocity(binr):
-    # the pickup drive (params.json pickup_drive): the soft colour holds up to the register's knee (key 45: ~v58,
-    # 57: ~v64, 69: ~v90), then the swing passes the pickup offset and the bark grows; the top keys have no rise
+    # 0.9.10 (the user: a clean Rhodes at every velocity; params.json pickup_drive.bark_physical): the swing through the
+    # pickup follows the physical force law, as 0.9.9's: the bark (H2 re H1) rises with velocity, H2 stays under H1
+    # at v127 (0.9.10's first drive: +14 dB over it at A2), the top keys brighten as 0.9.9's
     vels = (40, 60, 96, 127)
     for n in (45, 57, 69, 88):
         r = [ta.note_stats(x, n) for x in ta.render(hostrun.out(f"bark_{n}"), [([], n, v) for v in vels], 800)]
         h = [x["H21"] for x in r]
-        if n == 88:
-            assert max(h) - min(h) < 1.0, (n, h)
+        if n == 88:                                                        # the top brightens too, as 0.9.9's
+            assert h[3] - h[0] > 6.0 and all(b > a - 0.5 for a, b in zip(h, h[1:])), (n, h)
             continue
-        assert h[1] - h[0] < 4.0, (n, h)                                   # flat below the knee
-        assert h[3] > h[2] + 10, (n, h)                                    # and growing above it
-        if n < 60:
-            assert h[2] > h[1] + 10, (n, h)
-            g = (h[3] - h[2]) / (r[3]["L"] - r[2]["L"])
-            assert 1.4 < g < 2.8, (n, g)                # ~2 dB of H2/H1 per dB of level above v96 (2.05, the
-            # level make-up (rh_drv_mk): the level from v96 to v127 is 0.9.9's, the bark the drive's; before it ~1)
-        else:
-            assert h[2] - h[1] < 8.0, (n, h)            # v96 is just past the knee
+        assert all(b > a - 0.5 for a, b in zip(h, h[1:])), (n, h)         # rises with velocity
+        assert h[3] > h[0] + 6 and h[3] < -3.0, (n, h)                     # audibly brighter, never past H1
 
 
 @pytest.mark.parametrize("ti", [0, 3])                  # STAGE 77, DYNO (its +0.1 gap meets the offset cap)

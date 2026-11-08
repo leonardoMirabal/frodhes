@@ -1,5 +1,5 @@
 {
- "_doc": "The Rhodes velocity map (rhodes.c rh_vm, tools/gen_velmap.py -> firmware/gen/rh_velmap.h). Per key: the bark (H2..H5 re H1, 30-150 ms) flat at flat_db up to the knee velocity, then slope_db_per_vel above it, a soft hinge of width hinge_w (the 10-90 % corner is 4.39 w velocity steps); a knee >= 127 is no rise. The fundamental (H1, 30-300 ms) follows the engine's own curve up to v64 and above it rises h1_top_db more to v127 on a saturating curve (time constant h1_sat_tau velocity steps), blended to the engine's own (linear in dB) curve by h1_linear (0 .. 1). Points are [key, value], linear in between, the end values held.",
+ "_doc": "The Rhodes velocity map (rhodes.c rh_vm, tools/gen_velmap.py -> firmware/gen/rh_velmap.h). Per key: the bark (H2..H5 re H1, 30-150 ms) flat at flat_db up to the knee velocity, then slope_db_per_vel above it, a soft hinge of width hinge_w (the 10-90 % corner is 4.39 w velocity steps); a knee >= 127 is no rise. The fundamental (H1, 30-300 ms) follows the engine's own curve up to v64 and above it rises h1_top_db more to v127 on a saturating curve (time constant h1_sat_tau velocity steps), blended to the engine's own (linear in dB) curve by h1_linear (0 .. 1). bark_physical (0.9.10, the user: clean at every velocity): the bark target is the engine's own without the map (X = G = 1: 0.9.9's swing) on every key, bark_physical_offset_points [[key, dB]] under it; the knee targets unused. Points are [key, value], linear in between, the end values held.",
  "knee_points": [[21, 58], [52, 58], [57, 64], [64, 72], [69, 90], [76, 108], [82, 127], [84, 200]],
  "flat_db_points": [[21, -22], [52, -22], [57, -20], [64, -20], [69, -24], [76, -30], [88, -33], [100, -35]],
  "slope_db_per_vel": 0.45,
@@ -8,5 +8,7 @@
  "h1_linear_points": [[21, 0.0], [60, 0.0], [64, 1.0]],
  "h1_sat_tau": 12.0,
  "x_db_range": [-36.0, 29.5],
- "iterations": 3
+ "iterations": 3,
+ "bark_physical": true,
+ "bark_physical_offset_points": [[64, 0.0], [69, -0.5], [84, -0.5], [93, -2.0], [108, -2.0]]
 }
