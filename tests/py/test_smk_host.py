@@ -3,7 +3,7 @@
 
 The host build checks every flash erase and write against the firmware's own allow-list and the board's store
 (tests/host.c host_fl_check); FRODHES_FLASHLOG=1 prints each call. Here: the SMK build (-DBOARD_SMK37=1
--DFR_VOICES=7u) saves the store's record (the settings and the presets, both copies) and the pattern (both copies), is
+-DFR_VOICES=10u) saves the store's record (the settings and the presets, both copies) and the pattern (both copies), is
 switched off and on (FRODHES_FLASH), and plays it all back; every logged place is one of Frodhes' SMK sectors
 (0.9.6: 0xEB000 / 0xEC000 the record, 0xED000 / 0xEE000 the pattern, in no region of the stock table), never the
 stock VM (0x9D000-0xBFFFF, where 0.9.5 kept its data), USRFLASH, the calibration or the FM-1's places. The FM-1
@@ -19,7 +19,7 @@ import pytest
 from hostrun import ROOT, cc, once, run, build
 
 SMKBIN = os.path.join(ROOT, "build", "host-smk", "frodhes")
-SMK_DEFS = ["-DBOARD_SMK37=1", "-DFR_VOICES=7u"]
+SMK_DEFS = ["-DBOARD_SMK37=1", "-DFR_VOICES=10u"]
 SMK_OK = {0xEB000: "record A", 0xEC000: "record B", 0xED000: "pattern A", 0xEE000: "pattern B"}
 FM1_OK = {0xFC000: "record A", 0xFD000: "record B", 0xFE000: "pattern"}
 FLASH = re.compile(r"^\s*\d+ ms  flash (\w+) ([\w ]+?) 0x([0-9A-F]+) \+ (\d+) ok$", re.M)
@@ -111,7 +111,7 @@ def test_smk_identities_and_names():
     assert m.package("smk37", "mke") == ("MKE-P37_470", "frodhes-smk37-mke.fwsc")
     assert m.package("smk37", "pro", "0.9.5") == ("SMK-37 Pro_470", "frodhes-0.9.5-smk37.fwsc")
     assert m.package() == ("FM-1_958", "frodhes.fwsc")
-    assert m.BOARD_APP_DEFS == {"fm1": [], "smk37": ["-DFR_VOICES=7u"]} and m.BOARD_DEFS["fm1"] == []
+    assert m.BOARD_APP_DEFS == {"fm1": [], "smk37": ["-DFR_VOICES=10u"]} and m.BOARD_DEFS["fm1"] == []
     assert m.DATA_FAMILY == "FRODHES"
 
 
