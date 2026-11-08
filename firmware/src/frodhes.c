@@ -262,6 +262,9 @@ static void c1_fx_job(uint32_t a)               /* core 1 (or core 0: refused, l
 }
 /* the block's start (core 1, while core 0 renders chunk 0's voices): the work left from the block before that no
  * chunk needs to wait for (fx.c fx_pre_c). Run again by core 0 (refused, late) it finds it done */
+#ifdef C1_WARM
+static volatile uint32_t c1_warm_sink;
+#endif
 static void c1_pre_job(uint32_t a)
 {
     (void)a;
@@ -269,6 +272,28 @@ static void c1_pre_job(uint32_t a)
     uint32_t a0 = fm1_ticks();
 #endif
     fx_pre_c();
+#ifdef C1_WARM
+    {   /* experiment (APP_DEFS=-DC1_WARM): read the effects' flash code once, so the first chunk finds it in the cache
+         * (the main loop between blocks runs other flash code) */
+        static void (*const fw[])(void) = {
+            (void (*)(void))dly_wr_c, (void (*)(void))eq_coef, (void (*)(void))fx_eq, (void (*)(void))drv_run,
+            (void (*)(void))fx_drive_types, (void (*)(void))fx_filter, (void (*)(void))fx_trem_k, (void (*)(void))dly_fade_c,
+            (void (*)(void))fx_delay, (void (*)(void))rev_plate_run, (void (*)(void))fx_process, (void (*)(void))c1_fx_job,
+            (void (*)(void))fx_spread, (void (*)(void))fx_phaser, (void (*)(void))fx_out, (void (*)(void))cho_side,
+            (void (*)(void))tp_mod_c, (void (*)(void))rev_hqh_run, (void (*)(void))rev_inf_run };
+        uintptr_t lo = ~(uintptr_t)0, hi = 0, lo2 = ~(uintptr_t)0, hi2 = 0, p;
+        uint32_t i, x = 0;
+        for (i = 0; i < sizeof fw / sizeof fw[0]; i++) {
+            uintptr_t f = (uintptr_t)fw[i];
+            if (i < 12u) { if (f < lo) lo = f; if (f > hi) hi = f; }
+            else { if (f < lo2) lo2 = f; if (f > hi2) hi2 = f; }
+        }
+        hi += 0x1000u; hi2 += 0xC00u;
+        for (p = lo & ~(uintptr_t)31; p < hi; p += 32u) x += *(const uint32_t *)p;
+        for (p = lo2 & ~(uintptr_t)31; p < hi2; p += 32u) x += *(const uint32_t *)p;
+        c1_warm_sink = x;
+    }
+#endif
 #if defined(C1PF_ON)
     C1PF(18, fm1_ticks() - a0);
 #endif
