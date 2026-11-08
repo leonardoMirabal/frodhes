@@ -134,6 +134,7 @@ static uint32_t fxc_o, fxc_e = 256u, fxc_n = 256u;
 static uint32_t c1_est_blk;                              /* (host diagnostics: the block count, fx_process) */
 #endif
 static uint8_t fxc_side;                                 /* FX_SIDE_ON, latched at the block's first chunk (fx_process) */
+static const int32_t *fxc_mono;                          /* the block's dry voices (fx_process's mono: whole at the last chunk) */
 #define FXC_1 (fxc_o == 0u)
 #define FXC_Z (fxc_e == fxc_n)
 /* xf_pre / xf_post for a chunk: the dry copy of the chunk, the blend's ramp from the block's start */
@@ -1286,7 +1287,8 @@ __attribute__((noinline)) static void cmp_from(const int32_t *m, uint32_t n, int
     cmp_g = exp2_q16(mk - cmp_gr_at(cmp_env, thr, slope));
 }
 #if FR_C1
-static int32_t cmp_pkb, cmp_pkc;                         /* (fx_comp: the input's peaks, the block before, this one) */
+static int32_t cmp_pkc;                                  /* (fx_comp: a switch-on block's input peak so far) */
+static uint8_t cmp_redo;                                 /* (fx_comp: a switch-on block's detector, again at its end) */
 #endif
 static void fx_comp(int32_t *m, uint32_t n)
 {
@@ -1300,27 +1302,23 @@ static void fx_comp(int32_t *m, uint32_t n)
     int32_t w1;
     uint32_t sb, j;
 #if FR_C1
-    if (!cmp_xw) {                                    /* at rest: the input's peak, the block before's and this one's
-                                                       * so far (for a switch-on; not scanned while COMP runs or fades,
-                                                       * the block before's then 0: this block's first chunk alone) */
-        int32_t pk = 0;
-        if (FXC_1) { cmp_pkb = cmp_pkc; cmp_pkc = 0; }
-        for (j = fxc_o; j < fxc_e; j++) if (iabs(m[j]) > pk) pk = iabs(m[j]);
-        if (pk > cmp_pkc) cmp_pkc = pk;
-    } else if (FXC_1) cmp_pkb = cmp_pkc = 0;
     if (!on && !cmp_xw) { fx_cmp_gr = 0; return; }
-    if (!cmp_xw && FXC_1) {                           /* switched on from rest: the detector from the peak of the block
-                                                       * before and the first chunk (one core: this block's; its later
-                                                       * samples are not rendered yet: tests/py/test_c1_subblock.py) */
-        int32_t pk = cmp_pkb > cmp_pkc ? cmp_pkb : cmp_pkc;
+    if (!cmp_xw && FXC_1) {                           /* switched on from rest: the detector from the first chunk's
+                                                       * peak (one core: the block's; its later samples are not
+                                                       * rendered yet), run again over the whole block at its end
+                                                       * (below); the block whole (one chunk): its own, as one core */
+        cmp_redo = !FXC_Z;
+        cmp_pkc = 0;
 #ifdef C1_EST_LOG
         printf("C1EST cmp %u\n", c1_est_blk);
 #endif
-#ifdef C1_DIAG_EXACT_CMP                              /* (host diagnostics: the block's own peak, fx_process copied it) */
-        for (pk = 0, j = 0; j < n; j++) if (iabs(m[j]) > pk) pk = iabs(m[j]);
-#endif
-        cmp_env = pk << 8;
-        cmp_g = exp2_q16(mk - cmp_gr_at(cmp_env, thr, slope));
+    }
+    if (cmp_redo || (!cmp_xw && FXC_1)) {             /* (the switch-on block's input peak so far, before the gain) */
+        for (j = fxc_o; j < fxc_e; j++) if (iabs(m[j]) > cmp_pkc) cmp_pkc = iabs(m[j]);
+        if (FXC_1) {
+            cmp_env = cmp_pkc << 8;
+            cmp_g = exp2_q16(mk - cmp_gr_at(cmp_env, thr, slope));
+        }
     }
     w1 = xf_pre_c(cmp_xw, on, m, 0, n);
     for (sb = fxc_o; sb < fxc_e; sb += 16u) {
@@ -1340,6 +1338,25 @@ static void fx_comp(int32_t *m, uint32_t n)
         cmp_g = g1;
     }
     xf_post_c(m, 0, xf_d[0], 0, n, cmp_xw, w1);
+    if (FXC_Z && cmp_redo) {                          /* the switch-on block's end: the detector and the gain run again
+                                                       * over the whole block's input (the dry voices: COMP is first)
+                                                       * from its own peak, as one core ran them: from the next block's
+                                                       * second sub-block on COMP is one core's again; the estimate is
+                                                       * heard in this block alone, under the crossfade's first eighth
+                                                       * (25 ms windows: build/c1sub/cmpwin.py, tests/py/test_c1_subblock.py) */
+        int32_t pk = cmp_pkc, gr = 0;
+        cmp_redo = 0;                                 /* (exact from the next block's second sub-block on) */
+        cmp_env = pk << 8;
+        for (sb = 0; sb < n; sb += 16u) {
+            for (j = sb; j < sb + 16u; j++) {
+                int32_t a = iabs(fxc_mono[j]) << 8, d = a - cmp_env;
+                cmp_env += (int32_t)(((int64_t)d * (d > 0 ? ka : kr)) >> 16);
+            }
+            gr = cmp_gr_at(cmp_env, thr, slope);
+        }
+        fx_cmp_gr = gr;                               /* (cmp_g kept: the next block's first 16 samples ramp from the
+                                                       * gain this one ended on to one core's, then it is one core's) */
+    }
     if (FXC_Z) { cmp_xw = w1; if (!w1) fx_cmp_gr = 0; }
 #else
     if (!on && !cmp_xw) { fx_cmp_gr = 0; return; }
@@ -2307,15 +2324,13 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
         }
         else if (dly_rst) dly_clear_step();
         fxc_side = FX_SIDE_ON;                         /* (the engine decides it at its block's start, eng_begin) */
+        fxc_mono = mono;
     }
     if (fx_p[FXP_RAW]) {
         for (j = fxc_o; j < fxc_e; j++) { out[2u * j] = mono[j]; out[2u * j + 1u] = mono[j]; }
         return;
     }
     for (j = fxc_o; j < fxc_e; j++) { m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }
-#ifdef C1_DIAG_EXACT_CMP
-    if (FXC_1) for (j = 0; j < n; j++) m[j] = mono[j];
-#endif
 #else
     if (fx_reset_req) {                                /* (the voices' last block too: mono is frodhes.c's voice_mono) */
         fx_reset_state(); memset((void *)mono, 0, n * sizeof mono[0]); fx_reset_req = 0;

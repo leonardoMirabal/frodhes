@@ -9,8 +9,8 @@ chunks must render what the one-core 14-voice HQ build renders, sample for sampl
   (order 1) and refused;
 - the two places that read the block's future, where a chunk cannot (the block's later samples are not rendered
   yet), stay within their measured size and add no click (the differential click check against the one-core build):
-  COMP switched on from rest (the detector from the peak of the block before and the first chunk; one core: the
-  block's) and KHLON's 17 ms dip at an AMOUNT mode change (the dip's dry gain from the block before and the first
+  COMP switched on from rest (the detector from the first chunk's peak, run again over the whole block at its end; one
+  core: from the block's peak) and KHLON's 17 ms dip at an AMOUNT mode change (the dip's dry gain from the block before and the first
   chunk; one core: the dip's first block)."""
 import os
 import sys
@@ -123,9 +123,10 @@ def test_khlon_dip_estimate(eng, chord):
                                              ("rhodes", [36, 43, 52], False),
                                              ("rhodes", [36, 43, 52], True), ("marimba", [36, 43, 52], True)])
 def test_comp_switch_on_estimate(eng, chord, onset):
-    """COMP switched on from rest at the slowest ATTACK (the detector's start lasts longest): the level over the
-    first 100 ms within 3 dB of one core's (ringing: +1.3 dB at most; the switch and a chord in the same block:
-    +2.5 dB, build/c1sub/cmpdev.py), no click while the chord rings (click ratio as one core's within 1)"""
+    """COMP switched on from rest at the slowest ATTACK (the detector's start lasts longest): the first chunk's peak
+    starts the detector, the whole block runs it again at the block's end (fx.c cmp_redo), so only that block's first
+    eighth of the crossfade hears the estimate: every 25 ms window within 0.5 dB of one core's (build/c1sub/cmpwin.py,
+    monkey seeds 0-179: 0.15 dB at most), no click while the chord rings (click ratio as one core's within 1)"""
     keep = list(cs.CHORD)
     cs.CHORD[:] = chord
     try:
@@ -135,8 +136,14 @@ def test_comp_switch_on_estimate(eng, chord, onset):
         cs.CHORD[:] = keep
     if d is None:
         return
-    s = slice(d, d + 4410)
-    g = 20 * np.log10(np.sqrt(np.mean(cm[s].astype(float) ** 2)) / np.sqrt(np.mean(rm[s].astype(float) ** 2)))
-    assert abs(g) < 3.0, f"{eng}: {g:+.2f} dB off one core over the first 100 ms"
+    w, worst = 1102, 0.0
+    for s in range(d - w, min(len(rm), d + 44100) - w, w // 2):
+        for ch in (0, 1):
+            y = rm[s:s + w, ch].astype(float)
+            ry = np.sqrt(np.mean(y * y))
+            if ry > 32767 * 10 ** (-70 / 20):
+                x = cm[s:s + w, ch].astype(float)
+                worst = max(worst, abs(20 * np.log10(max(np.sqrt(np.mean(x * x)), 1e-9) / ry)))
+    assert worst <= 0.5, f"{eng}: a 25 ms window {worst:.2f} dB off one core"
     if not onset:
         assert cc < rc + 1.0, f"{eng}: click ratio {cc:.2f} on two cores, {rc:.2f} on one"
