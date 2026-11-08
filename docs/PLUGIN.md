@@ -152,7 +152,7 @@ The plugin never holds back the firmware's or the Move's release.
 Today every bundle is signed **ad hoc** (`codesign -s -`) and the `.pkg` is unsigned. macOS then treats them as
 coming from an unidentified developer: the user opens the installer once from System Settings > Privacy & Security >
 Open Anyway, or, for the zip, runs `xattr -dr com.apple.quarantine` on the copied bundles. Hosts load the bundles
-either way (Logic loads the ad-hoc Audio Unit).
+either way (Audio Unit hosts load the ad-hoc signed Audio Unit too).
 
 Signing with an Apple Developer ID removes those steps. It needs the Apple Developer Program (individual, 99 USD a
 year) on the maintainer's own Apple account, so it is not set up yet. When it is:
@@ -235,9 +235,10 @@ What a script cannot do: a real DAW's scan, its browser, its project save and it
 with the packages a release attaches (the `.pkg` on macOS, the zips elsewhere). Close other audio software first; on
 the Mac, a DAW that opens the audio interface may change its sample rate.
 
-1. **Install and scan.** Install the package; rescan plug-ins (Logic and GarageBand check the Audio Unit at start).
-   Frodhes shows as an instrument, vendor Frodhes, version the release's: in the CLAP list (Bitwig, Reaper, Studio
-   One), the VST3 list, and the Audio Unit list (Logic, GarageBand, Live, Renoise: Instruments > Frodhes > Frodhes).
+1. **Install and scan.** Install the package; rescan plug-ins (some Audio Unit hosts check new Audio Units only at
+   start). Frodhes shows as an instrument, vendor Frodhes, version the release's: in a CLAP host's CLAP list, in a
+   VST3 host's VST3 list (on each system), and in the Audio Unit host's list on macOS (Instruments > Frodhes >
+   Frodhes).
 2. **Play.** Put it on a MIDI / instrument track and play: the first sound is F01 STAGE 77 on the HQ engine. Hold a
    chord with the sustain pedal (or SUSTAIN in the window), let go: the notes ring out and stop. No click at the start
    of playback or when the track is armed.
