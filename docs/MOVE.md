@@ -283,7 +283,7 @@ An HI under LO turns the direction round. A CC of 0 is off, and both mappings ar
 as if a controller sent that CC (the CC numbers are the FM-1's, the manual's [MIDI](MANUAL.md#12-midi)). A mapping
 to one of the FM-1's developer and test CCs (2-4, 8-11, 41, 42, 114, 116 and 119) does nothing.
 
-![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=ba68223e)
+![LFO/SETUP](manual/img/move/move-lfo-setup.png?v=c2907637)
 ![MAPPINGS](manual/img/move/move-mappings.png?v=be59afe9)
 
 ## The list
