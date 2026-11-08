@@ -6,7 +6,7 @@ HOSTBIN ?= build/host/frodhes
 HOST_DEFS ?=                # other builds, e.g. make test HOST_DEFS=-DRH_VOICES=9u HOSTBIN=build/host9/frodhes (default: 10)
 CFLAGS_HOST := -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER='"dev"' -Ifirmware/src -Ifirmware/gen $(HOST_DEFS)
 
-.PHONY: all setup host test testv test10 test-smk pytest firmware clean
+.PHONY: all setup host pristine release-diff test testv test10 test-smk pytest firmware clean
 
 all: test pytest
 
@@ -20,10 +20,30 @@ $(HOSTBIN): firmware/src/*.c firmware/src/*.h firmware/gen/*.h tests/host.c
 	@mkdir -p build/host $(dir $@)
 	$(CC) $(CFLAGS_HOST) -o $@.$$$$ firmware/src/frodhes.c -lm && mv -f $@.$$$$ $@   # (a new file, renamed in: a test running it never sees it half-written)
 
+HQBIN := build/host-hq/frodhes
+$(HQBIN): firmware/src/*.c firmware/src/*.h firmware/src/hq/* firmware/gen/*.h tests/host.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS_HOST) $(MOVE_DEFS) -DHQ_DEFAULT=1 -o $@.$$$$ firmware/src/frodhes.c -lm && mv -f $@.$$$$ $@
+
+PRISTINE ?= 1              # make test PRISTINE=0: skip the pristine gate (bisecting a known-bad tree only; CI never does)
+pristine: $(HOSTBIN) $(HQBIN)   ## the pristine gate, the first stage of make test / make pytest (seconds): every TYPE of
+                           ## every engine, FM-1 and HQ builds, against the last release with pristine ceilings
+                           ## (tools/release_diff.py --grid fast; tests/expected_changes.yaml lists the intended moves)
+	@if [ "$(strip $(PRISTINE))" = 0 ]; then echo "WARNING: the pristine gate SKIPPED (PRISTINE=0)"; else \
+	  mkdir -p build/release_diff; \
+	  $(PY) tools/release_diff.py --grid fast --fm1 $(HOSTBIN) --hq $(HQBIN) --report build/release_diff/fast.txt \
+	    > build/release_diff/fast.log 2>&1 && head -1 build/release_diff/fast.log | sed 's/^/pristine: /' \
+	  || { head -60 build/release_diff/fast.log; echo "pristine: FAIL (build/release_diff/fast.txt): the run stops here"; exit 1; }; fi
+
+release-diff:              ## the full release diff against the last release (about a minute): the gate before any device
+                           ## install of a candidate; the report: build/release_diff/full.txt
+	@mkdir -p build/release_diff
+	$(PY) tools/release_diff.py --grid full --report build/release_diff/full.txt
+
 host: $(HOSTBIN)           ## the firmware on this computer (fake FM-1)
 	PYTHON=$(PY) tests/run_host.sh
 
-test: $(HOSTBIN)           ## every script in tests/scripts must pass its expects
+test: pristine $(HOSTBIN)  ## the pristine gate, then every script in tests/scripts must pass its expects
 	@fail=0; for s in tests/scripts/*.txt; do n=$$(basename $$s .txt); \
 	  if $(HOSTBIN) build/host/$$n $$s > build/host/$$n.log 2>&1; then echo "ok    $$n"; \
 	  else echo "FAIL  $$n (build/host/$$n.log)"; fail=1; fi; done; exit $$fail
@@ -62,7 +82,7 @@ test-smk: $(SMKBIN)        ## the SMK-37 build on the host (10 voices): every sc
 PYTEST_N ?= auto           # make pytest PYTEST_N=4 (or 0: serial); serial anyway without pytest-xdist
 SHARD ?=                   # make pytest SHARD=2/4: only shard 2 of 4 (tools/pytest_shard.py; ci.yml's host jobs)
 PYTEST_FILES = $(if $(strip $(SHARD)),$$($(PY) tools/pytest_shard.py $(subst /, ,$(strip $(SHARD)))),tests/py)
-pytest:                    ## Python tools' unit tests (analysis, generators), in parallel with pytest-xdist
+pytest: pristine           ## the pristine gate, then the Python tools' unit tests (analysis, generators), in parallel with pytest-xdist
 	@if [ "$(strip $(PYTEST_N))" != 0 ] && $(PY) -c "import xdist" 2>/dev/null; then \
 	  echo "$(PY) tools/pytest_run.py -q -n $(strip $(PYTEST_N)) --dist loadgroup -- $(PYTEST_FILES)"; \
 	  $(PY) tools/pytest_run.py -q -n $(strip $(PYTEST_N)) --dist loadgroup -- $(PYTEST_FILES); \
