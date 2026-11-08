@@ -13,7 +13,7 @@ This page covers only the SMK-37: the files, the install, the way back and the c
 cards do to the sound is the same on every device and is described once, in the [manual](MANUAL.md) (sections 2-14,
 the [pages](MANUAL.md#4-the-pages) in section 4); the SMK-37 reaches them as below ([The controls](#the-controls)).
 
-![The FRODHES page on the SMK-37: TYPE, TONE, BELL and KEY VEL on K5..K8](manual/img/smk/smk-frodhes.png?v=81dc0c48)
+![The FRODHES page on the SMK-37: TYPE, TONE and BELL on K5..K7](manual/img/smk/smk-frodhes.png?v=6a45f016)
 
 ## The files
 
@@ -113,7 +113,7 @@ FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1 (hold one OCT button 
 | KNOB BANK (held) | the panel check: the keyboard's raw readings (faders, wheels, pedal, pads, battery, flash) |
 | FADER BANK | the faders' bank, A or B (lit on B) |
 | 37 keys | C3..C6 at OCTAVE 0 (the middle 27 are the FM-1's F3..G5), each at its own velocity |
-| faders, bank A | the instrument's first VOICE page (Rhodes: TONE BARK BELL HAMMER, [VOICE 1/2](MANUAL.md#voice-12-and-22); VIBES / MARIMBA: STRIKE MALLET TUBE WEIGHT) |
+| faders, bank A | the instrument's first VOICE page (Rhodes: TONE BARK BELL HAMMER, [VOICE 1/3](MANUAL.md#voice-13-and-23); VIBES / MARIMBA: STRIKE MALLET TUBE WEIGHT) |
 | faders, bank B | the four [PERFORM](MANUAL.md#perform) knobs (set them on [ASSIGN](MANUAL.md#assign)) |
 | pitch wheel | pitch bend, +-2 semitones (the Rhodes types, as MIDI pitch bend; VIBES and MARIMBA ignore it) |
 | mod wheel | more TREM/WAH depth on top of DEPTH, full at the top (VIBES: the motor's); switches it on if off, off again at rest |
@@ -123,8 +123,8 @@ FX, SEQ, PLAY, REC, ARP and OCT- / OCT+ are as on the FM-1 (hold one OCT button 
 preset, a knob or MIDI moved it), so nothing jumps; until then the footer says where to move it (`TONE UP TO +0.0`).
 
 **Velocity.** A key's velocity comes from the keyboard's own factory curve, through the same touch curve as the FM-1's
-keys: KEY VEL ([FRODHES page](MANUAL.md#frodhes-the-main-page)) is the velocity of a medium press, and TOUCH
-([SETUP](MANUAL.md#setup) K4) works as on the FM-1.
+keys: KEY VEL is the velocity of a medium press, and TOUCH works as on the FM-1 (both on the
+[velocity page](MANUAL.md#voice-33-velocity), the last VOICE page).
 
 **The pads** (the top row is 1..8, the bottom row 9..16):
 

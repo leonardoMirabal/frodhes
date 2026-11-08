@@ -174,6 +174,9 @@ typedef struct {
 #endif
 
 static rh_voice_t rv[RH_NV];
+#ifdef DINGHY_HOST
+static uint8_t rh_host_vel;                          /* (host: rh_strike's last velocity) */
+#endif
 #ifdef RH_DRIVE
 #define RH_KILL(v, k) ((v)->kl)                /* the kill level in the voice's own gain (rh_init) */
 #define RH_OUT_SUM(v, s) rh_phys_sum(v, s)      /* a steal / shed score: the mode peaks as the tine's physical
@@ -1425,6 +1428,10 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
     uint32_t i, pick = RH_NV, best = 0xFFFFFFFFu;
     for (i = 0; i < RH_NA && rv[i].pend; i++) ;
     if (i == RH_NA) return 0;                           /* (more than RH_NV steals in one block: BUGHUNT #21) */
+#ifdef DINGHY_HOST
+    rh_host_vel = (uint8_t)vel;                         /* (host: the velocity that reached the engine, frodhes.c
+                                                         * "engvel"; RESPONSE never rewrites it, tests/py/test_vel_layers.py) */
+#endif
     rh_knock_strike(note, vel);
     for (i = 0; i < RH_NV; i++)                         /* the same note still sounding: re-strike, superpose */
         if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) {

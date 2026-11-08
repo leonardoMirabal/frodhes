@@ -32,8 +32,9 @@ CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(21, 70, 0),  # F01's drive, reverb and
 PEDAL = [cc(22, 64, 127)]
 SHORT = [cc(23, 103, 0), cc(24, 104, 0)]            # RELEASE 0, NOISE 0: a note let go stops at once
 # the SELECT order (ui.c PG_ORDER) and the page ids the dump's card.<page>.<k> use (ui.c PG_*)
-ORDER = ["PERF", "PIANO", "VOICE", "DECAY", "COMP", "EQ", "DRIVE", "FILTER", "TREM", "PHA", "CHO", "DELAY", "REVERB",
-         "REVERB2", "TEMPO", "SCALE", "CHORD", "ARP", "LFO", "SEQ", "SEQ2", "ASSIGN", "SETUP", "MIDI", "DISPLAY"]   # (a Rhodes TYPE: no MOTOR page)
+ORDER = ["PERF", "PIANO", "VOICE", "DECAY", "VELO", "COMP", "EQ", "DRIVE", "FILTER", "TREM", "PHA", "CHO", "DELAY", "REVERB",
+         "REVERB2", "TEMPO", "SCALE", "CHORD", "ARP", "LFO", "SEQ", "SEQ2", "ASSIGN", "SETUP", "MIDI", "DISPLAY"]   # (a Rhodes TYPE: no MOTOR page; VELO: the
+# velocity page, the last VOICE page, 0.9.10)
 PG = {n: i for i, n in enumerate(["PERF", "ASSIGN", "PIANO", "VOICE", "DECAY", "COMP", "FILTER", "TREM", "PHA", "CHO",
                                   "DELAY", "TEMPO", "SCALE", "CHORD", "SEQ", "ARP", "LFO", "SETUP", "MIDI",
                                   "DRIVE", "REVERB", "DISPLAY", "REVERB2", "EQ", "SEQ2"])}
@@ -319,7 +320,7 @@ def _type_cc():
     return 1.0, 1.0, "ok"
 
 
-# ---- MARIMBA (TYPE 5): its cards through the panel (ALGORITHM to MARIMBA, SELECT to VOICE 1/2 or 2/2, the knob turned
+# ---- MARIMBA (TYPE 5): its cards through the panel (ALGORITHM to MARIMBA, SELECT to VOICE 1/3 or 2/2, the knob turned
 # from its default 64 to 0 / 127), the minimum each moves the sound by (the plan's own thresholds and the scan's are
 # tests/py/test_marimba_cards_audible.py / test_marimba_controls_audible.py; here: about half of today's movement)
 
@@ -327,7 +328,7 @@ MC3, MC4 = 130.81, 261.63
 
 
 def mrmb(page, enc, d, probe, end, extra=(), pre=()):
-    """MARIMBA by five ALGORITHM detents from STAGE 77, SELECT to the page (1 = FRODHES, 2 = VOICE 1/2, 3 = VOICE 2/2),
+    """MARIMBA by five ALGORITHM detents from STAGE 77, SELECT to the page (1 = FRODHES, 2 = VOICE 1/3, 3 = VOICE 2/3),
     knob enc turned d detents (0 = untouched), a dump at 90 ms (the card), then the probe"""
     turns = [f"{60 + 3 * i} turn 0 1" for i in range(page)]
     return R(CLEAN + list(pre) + detents(1, 1, 5, 40) + turns + ([f"80 turn {enc} {d}"] if d else []) + ["90 dump"]
@@ -342,10 +343,10 @@ def mrmb_card(w, page, k):
 
 @case("MRMB-STRIKE")
 def _m_strike():
-    """STRIKE (VOICE 1/2 K1): the strike point, CENTRE to EDGE. C4 v100's 1/3-octave timbre in its first 0.3 s moves
+    """STRIKE (VOICE 1/3 K1): the strike point, CENTRE to EDGE. C4 v100's 1/3-octave timbre in its first 0.3 s moves
     52 dB from 0 to 127; at least 20"""
     ws = [mrmb(2, 2, d, note(200, 60, 100, 1200), 1500) for d in (-64, 63)]
-    assert [mrmb_card(w, 2, 0) for w in ws] == [("VOICE", "1/2", "STRIKE", "CENTRE"), ("VOICE", "1/2", "STRIKE", "EDGE")], \
+    assert [mrmb_card(w, 2, 0) for w in ws] == [("VOICE", "1/3", "STRIKE", "CENTRE"), ("VOICE", "1/3", "STRIKE", "EDGE")], \
         [mrmb_card(w, 2, 0) for w in ws]
     x = tdist(ws[0].seg(0.2, 0.5), ws[1].seg(0.2, 0.5))
     return x, 20.0, f"{x:.1f} dB"
@@ -353,7 +354,7 @@ def _m_strike():
 
 @case("MRMB-MALLET")
 def _m_mallet():
-    """MALLET (VOICE 1/2 K2): SOFT to RUBBER. C4 v100's attack (first 50 ms) above 2 kHz rises 65 dB; at least 25"""
+    """MALLET (VOICE 1/3 K2): SOFT to RUBBER. C4 v100's attack (first 50 ms) above 2 kHz rises 65 dB; at least 25"""
     ws = [mrmb(2, 3, d, note(200, 60, 100, 1200), 1500) for d in (-64, 63)]
     assert [mrmb_card(w, 2, 1)[3] for w in ws] == ["SOFT", "RUBBER"], [mrmb_card(w, 2, 1) for w in ws]
     h = [band_db(w.seg(0.2, 0.25), 2000, 16000) for w in ws]
@@ -362,7 +363,7 @@ def _m_mallet():
 
 @case("MRMB-TUBE")
 def _m_tube():
-    """TUBE (VOICE 1/2 K3): the resonator. C3 v100 (0.2..1.2 s) is 9.6 dB louder at 64 than at 0; at least 4 (the plan's
+    """TUBE (VOICE 1/3 K3): the resonator. C3 v100 (0.2..1.2 s) is 9.6 dB louder at 64 than at 0; at least 4 (the plan's
     +4 LU)"""
     ws = [mrmb(2, 4, d, note(200, 48, 100, 1500), 1800) for d in (-64, 0)]
     lv = [rms_db(w.seg(0.2, 1.2)) for w in ws]
@@ -371,7 +372,7 @@ def _m_tube():
 
 @case("MRMB-WEIGHT")
 def _m_weight():
-    """WEIGHT (VOICE 1/2 K4): the mallet's mass. C4 v100 (0.2..0.6 s) is 12.7 dB louder at 127 than at
+    """WEIGHT (VOICE 1/3 K4): the mallet's mass. C4 v100 (0.2..0.6 s) is 12.7 dB louder at 127 than at
     0; at least 5"""
     ws = [mrmb(2, 5, d, note(200, 60, 100, 1200), 1500) for d in (-64, 63)]
     lv = [rms_db(w.seg(0.2, 0.6)) for w in ws]
@@ -380,7 +381,7 @@ def _m_weight():
 
 @case("MRMB-RING")
 def _m_ring():
-    """RING (VOICE 2/2 K1): how long a bar rings. A held C3 (pedal) takes x5.3 longer to fall 30 dB at 127 than at 0;
+    """RING (VOICE 2/3 K1): how long a bar rings. A held C3 (pedal) takes x5.3 longer to fall 30 dB at 127 than at 0;
     at least x2 (the plan's RING job)"""
     ws = [mrmb(3, 2, d, note(200, 48, 100, 5000), 5500, extra=PEDAL) for d in (-64, 63)]
     assert [mrmb_card(w, 3, 0)[2] for w in ws] == ["RING", "RING"]
@@ -390,7 +391,7 @@ def _m_ring():
 
 @case("MRMB-MUTE")
 def _m_mute():
-    """MUTE (VOICE 2/2 K2; RELEASE's slot: a marimba has no damper, the hand stops the bar): after a C4's key-up the
+    """MUTE (VOICE 2/3 K2; RELEASE's slot: a marimba has no damper, the hand stops the bar): after a C4's key-up the
     note falls 30 dB in 419 ms at 0 (rings out) and 35 ms at 127 (x12); at least x3 (the plan's)"""
     ws = [mrmb(3, 3, d, note(200, 60, 100, 300), 1500, extra=[cc(25, 104, 0)]) for d in (-64, 63)]
     assert [mrmb_card(w, 3, 1)[2:] for w in ws] == [("MUTE", "0.0"), ("MUTE", "10.0")], [mrmb_card(w, 3, 1) for w in ws]
@@ -400,7 +401,7 @@ def _m_mute():
 
 @case("MRMB-NOISE")
 def _m_noise():
-    """NOISE (VOICE 2/2 K3, default 48): the mallet's contact noise. C4 v100's first 50 ms above 1.5 kHz are 33 dB
+    """NOISE (VOICE 2/3 K3, default 48): the mallet's contact noise. C4 v100's first 50 ms above 1.5 kHz are 33 dB
     louder at 127 (10.0) than at 0; at least 10"""
     ws = [mrmb(3, 4, d, note(200, 60, 100, 1200), 1500) for d in (-64, 80)]
     assert [mrmb_card(w, 3, 2)[3] for w in ws] == ["0.0", "10.0"], [mrmb_card(w, 3, 2) for w in ws]
@@ -411,7 +412,7 @@ def _m_noise():
 
 @case("MRMB-TUNE")
 def _m_tune():
-    """TUNE (VOICE 2/2 K4, panel only): -50 to +50 on the card moves C4 by 100 cents (test_marimba_controls_audible
+    """TUNE (VOICE 2/3 K4, panel only): -50 to +50 on the card moves C4 by 100 cents (test_marimba_controls_audible
     checks +-1 cent); at least 80"""
     f = [pitch(mrmb(3, 5, d, note(200, 60, 100, 1300), 1600, extra=PEDAL).seg(0.25, 1.2), MC4) for d in (-50, 50)]
     return cents(f[1], f[0]), 80.0, f"-50 -> +50: {cents(f[1], f[0]):.1f} cents"
@@ -446,12 +447,26 @@ def _m_motor():
 
 @case("KEY-VEL")
 def _kvel():
-    """KEY VEL (main page K4): the FM-1's keys strike at it. A key at 1 vs 127: 31 dB apart; at least 15"""
+    """KEY VEL (the velocity page's K3): the FM-1's keys strike at it. A key at 1 vs 127: 31 dB apart; at least 15"""
     lv = []
     for d in (-40, 40):
-        w = R(CLEAN + goto("PIANO") + [f"60 turn 5 {d}", "200 keys 0x80", "1400 keys 0"], 1700)
+        w = R(CLEAN + goto("VELO") + [f"60 turn 4 {d}", "200 keys 0x80", "1400 keys 0"], 1700)
         lv.append(rms_db(w.seg(0.21, 0.5)))
     return lv[1] - lv[0], 15.0, f"{lv[0]:.1f} -> {lv[1]:.1f} dB"
+
+
+@case("RESPONSE")
+def _vresp():
+    """RESPONSE (the velocity page's K1, CC 40): LIGHT plays a soft MIDI note (v20) louder than FULL (FULL ~34.5 dB
+    v20 -> v127, LIGHT ~25.5: ~9 dB); a v127 note the same in both (within 0.5 dB)"""
+    lv = {}
+    for d in (0, 1):
+        for v in (20, 127):
+            w = R(CLEAN + goto("VELO") + ([f"60 turn 2 {d}"] if d else []) + ["100 dump"] + note(200, 60, v, 800), 1200)
+            assert w.state(100)["card0"] == ("LIGHT" if d else "FULL"), w.state(100)["card0"]
+            lv[d, v] = rms_db(w.seg(0.21, 0.5))
+    assert abs(lv[1, 127] - lv[0, 127]) < 0.5, lv
+    return lv[1, 20] - lv[0, 20], 6.0, f"v20 FULL {lv[0, 20]:.1f}, LIGHT {lv[1, 20]:.1f} dB"
 
 
 # ---- COMPRESSOR

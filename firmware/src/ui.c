@@ -102,7 +102,15 @@ FR_COLD static const ectl_t *eng_head(uint32_t h)              /* the engine's h
     for (i = 0; i < e->n; i++) if (e->c[i].head == h) return &e->c[i];
     return 0;
 }
-FR_COLD static uint32_t vp_count(void) { return (eng_ui()->n + 3u) / 4u; }   /* the engine's VOICE pages */
+FR_COLD static uint32_t vp_eng(void) { return (eng_ui()->n + 3u) / 4u; }     /* the engine's own VOICE pages */
+FR_COLD static uint32_t vp_count(void) { return vp_eng() + 1u; }               /* and the velocity page, the last */
+/* the last VOICE page, every engine (0.9.10, the user): the two velocity layers side by side. RESPONSE, the sound's
+ * answer to a velocity (every note: the keys, MIDI, the arpeggiator, the sequencer); TOUCH and KEY VEL, how the FM-1's
+ * own keys turn a press into a velocity (a MIDI note's velocity is never changed). (They were FRODHES K4, SETUP K4
+ * and MIDI K4 before; those cards stay empty.) */
+static const uint8_t VEL_S[4] = {S_VRESP, S_TOUCH, S_KVEL, S_NONE};
+static const char *const VEL_LAB[4] = {"RESPONSE", "TOUCH", "KEY VEL", ""};
+#define VEL_HINT "K1: EVERY NOTE  K2 K3: THE KEYS"     /* its footer: RESPONSE for every note, TOUCH and KEY VEL the keys */
 FR_COLD static const ectl_t *voice_ctl(uint32_t vp, uint32_t k)   /* VOICE page vp's K(k+1) (0: an empty row) */
 {
     uint32_t i = vp * 4u + k;
@@ -161,7 +169,7 @@ static const char *const PAGE_TITLE[PG_N] = {"PERFORM", "ASSIGN", "FRODHES", "VO
 static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 / K3: the engine's (slot_at) */
     {S_PERF0, S_PERF0 + 1, S_PERF0 + 2, S_PERF0 + 3},
     {S_ASG0, S_ASG0 + 1, S_ASG0 + 2, S_ASG0 + 3},
-    {P_TYPE, S_NONE, S_NONE, S_KVEL},
+    {P_TYPE, S_NONE, S_NONE, S_NONE},                  /* (K4 KEY VEL: the velocity page, VEL_S) */
     {S_NONE, S_NONE, S_NONE, S_NONE},
     {S_NONE, S_NONE, S_NONE, S_NONE},
     {P_CMP_AMT, P_CMP_RATIO, P_CMP_ATK, P_CMP_GAIN},
@@ -176,8 +184,8 @@ static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 
     {S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT},
     {S_ARPMODE, S_ARPRATE, S_ARPOCT, S_ARPGATE},
     {P_LFO_SHAPE, P_LFO_RATE, P_LFO_SYNC, P_LFO_RETRIG},
-    {P_DL_TONE, P_LEVEL, S_USBVOL, S_TOUCH},
-    {S_MCH, UI_TRS, S_CLOCK, S_VRESP},                 /* RESPONSE: the velocity response (params.c N_VRESP) */
+    {P_DL_TONE, P_LEVEL, S_USBVOL, S_NONE},             /* (K4 TOUCH: the velocity page) */
+    {S_MCH, UI_TRS, S_CLOCK, S_NONE},                  /* (K4 RESPONSE: the velocity page) */
     {P_DRV_SW, P_DRIVE, P_DRV_TONE, P_DRV_MIX},
     {P_RV_TYPE, P_RV_DEPTH, P_RV_DECAY, P_RV_TONE},     /* REVERB (0.9.5): TYPE = on / off + the type, as DRIVE */
     {S_COLOR, S_BRIGHT, UI_LEDS, S_PLED},
@@ -189,7 +197,7 @@ static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 
 static const char *const PAGE_LAB[PG_N][4] = {
     {"", "", "", ""},                                   /* PERFORM: the assigned parameter's name (slot_label) */
     {"PLAYS", "PLAYS", "PLAYS", "PLAYS"},
-    {"TYPE", "", "", "KEY VEL"},
+    {"TYPE", "", "", ""},
     {"", "", "", ""},
     {"", "", "", ""},
     {"THRESH", "RATIO", "ATTACK", "MAKEUP"},
@@ -204,8 +212,8 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"BARS", "QUANT", "SWING", "EDIT"},
     {"MODE", "RATE", "OCTAVES", "GATE"},
     {"SHAPE", "RATE", "SYNC", "RETRIG"},
-    {"DLY TONE", "LEVEL", "USB VOL", "TOUCH"},
-    {"CHANNEL", UI_TRS_LAB, "CLOCK", "RESPONSE"},   /* RESPONSE: placeholder (params.c N_VRESP) */
+    {"DLY TONE", "LEVEL", "USB VOL", ""},
+    {"CHANNEL", UI_TRS_LAB, "CLOCK", ""},
     {"EFFECT", "AMOUNT", "TONE", "MIX"},
     {"TYPE", "MIX", "DECAY", "TONE"},
     {"COLOR", "BRIGHTNESS", UI_LEDS_LAB, "PLAY LED"},
@@ -233,6 +241,7 @@ FR_COLD static const char *page_hint(uint32_t pg)
 {
     if (pg == PG_DELAY && arp_on()) return ui_text("SEL: ARP HOLD  K1: DIG/ANA/TAPE");
     if (pg == PG_REVERB && PV(P_RV_TYPE) == RV_INF) return "DECAY UP: SUSTAIN, TOP: FREEZE";   /* (slot_text) */
+    if (pg == PG_VOICE && ui_vp_ok() == vp_eng()) return ui_text(VEL_HINT);   /* the velocity page */
     return pg == PG_VOICE ? eng_ui()->hint[ui_vp_ok()] : ui_text(PAGE_HINT[pg]);
 }
 static const char *const SCALE_NAME[11] = {"MAJOR", "MINOR", "DORIAN", "MIXO", "LYDIAN", "PHRYG", "HARMON", "MELODIC",
@@ -570,7 +579,7 @@ FR_COLD static const ectl_t *page_ctl(uint32_t pg, uint32_t vp, uint32_t k)
 FR_COLD static uint32_t slot_at_v(uint32_t pg, uint32_t vp, uint32_t k)
 {
     const ectl_t *c = page_ctl(pg, vp, k);
-    uint32_t s = c ? c->id : pg == PG_VOICE ? S_NONE : PAGE_S[pg][k];
+    uint32_t s = c ? c->id : pg == PG_VOICE ? (vp == vp_eng() ? VEL_S[k & 3u] : S_NONE) : PAGE_S[pg][k];
     return s >= S_PERF0 && s < S_PERF0 + 4u ? PERF_T[perf_idx(s - S_PERF0)].id : s;
 }
 FR_COLD static uint32_t slot_at(uint32_t pg, uint32_t k) { return slot_at_v(pg, ui_vp_ok(), k); }
@@ -580,7 +589,7 @@ FR_COLD static const char *slot_label_v(uint32_t pg, uint32_t vp, uint32_t k)
     const ectl_t *c = page_ctl(pg, vp, k);
     if (pg == PG_PERF) return perf_name(perf_idx(k));
     if (c) return c->name;
-    return pg == PG_VOICE ? "" : PAGE_LAB[pg][k];
+    return pg == PG_VOICE ? (vp == vp_eng() ? VEL_LAB[k & 3u] : "") : PAGE_LAB[pg][k];
 }
 FR_COLD static const char *slot_label(uint32_t pg, uint32_t k) { return slot_label_v(pg, ui_vp_ok(), k); }
 /* ---- card slots */
@@ -1296,7 +1305,7 @@ FR_COLD static uint32_t cd_check(uint32_t pg, uint32_t vp, uint32_t k, uint32_t 
     fit = cd_fit(v, room, &sf);
     if (!fit || sf || !aa_covers(&AF_L, v))
         printf("FITSCAN %s %s%s K%u %s = %s %d %d\n", !fit || !aa_covers(&AF_L, v) ? "BAD" : "SHORT", PAGE_TITLE[pg],
-               pg == PG_VOICE ? (vp == 0 ? " 1" : vp == 1 ? " 2" : " 3") : "", k + 1u, lab, v, aa_text_w(&AF_L, v), room);
+               pg == PG_VOICE ? (vp == 0 ? " 1" : vp == 1 ? " 2" : vp == 2 ? " 3" : " 4") : "", k + 1u, lab, v, aa_text_w(&AF_L, v), room);
     return !fit || !aa_covers(&AF_L, v);
 }
 FR_COLD static uint32_t ui_fit_scan(void)
@@ -1679,9 +1688,11 @@ FR_COLD static void ui_draw(void)
     if (ui_cards != cards_shown) { cards_shown = ui_cards; ui_mark(E_CARDS); }                /* CC 11: the rows */
     if (eng_ui() != &ENG_UI[eng_shown]) {               /* the TYPE crossed engines (ALGORITHM, CC 80 / 79, a preset):
                                                          * other VOICE pages, names and hints; marked once per change */
+        int was_vel = ui_vp == (ENG_UI[eng_shown].n + 3u) / 4u;   /* on the velocity page: it stays there */
         eng_shown = (uint8_t)(eng_ui() - ENG_UI);
-        if (ui_page == PG_VOICE && ui_vp >= vp_count()) ui_goto_v(PG_VOICE, vp_count() - 1u);   /* (VIBES 3/3 ->
-                                                         * the Rhodes' last) */
+        if (ui_page == PG_VOICE && was_vel) ui_goto_v(PG_VOICE, vp_count() - 1u);
+        else if (ui_page == PG_VOICE && ui_vp >= vp_eng()) ui_goto_v(PG_VOICE, vp_eng() - 1u);   /* (VIBES 3/4 -> the
+                                                         * Rhodes' last own page, 2/3) */
         ui_mark(E_TITLE); ui_mark(E_CARDS); ui_mark(E_FOOTER);
     }
     if (ui_testpat) {

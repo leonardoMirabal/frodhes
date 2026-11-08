@@ -104,6 +104,12 @@
           ]
         },
         {
+          "title": "VELOCITY",
+          "lines": [
+            "K1 RESP"
+          ]
+        },
+        {
           "title": "COMPRESSOR",
           "lines": [
             "K1 THRESH",
@@ -209,8 +215,7 @@
             "K4 RETRIG",
             "K5 DLTONE",
             "K6 LEVEL",
-            "K7 CHAN",
-            "K8 RESP"
+            "K7 CHAN"
           ]
         },
         {

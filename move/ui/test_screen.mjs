@@ -110,9 +110,9 @@ test("the jog pages through the pages and stops at the ends", () => {
 
 test("the VOICE pages follow TYPE (a knob here, or elsewhere)", () => {
     const s = new Screen().open();
-    assert.equal(s.api.visiblePages(0).length, 13);                  // (CHORUS and DELAY apart, ARPEGGIO: 2026-10-30;
-    assert.equal(s.api.visiblePages(1).length, 14);                  //  the EQ: 0.9.9)
-    assert.equal(s.api.visiblePages(2).length, 13);
+    assert.equal(s.api.visiblePages(0).length, 14);                  // (CHORUS and DELAY apart, ARPEGGIO: 2026-10-30;
+    assert.equal(s.api.visiblePages(1).length, 15);                  //  the EQ: 0.9.9; VELOCITY: 0.9.10)
+    assert.equal(s.api.visiblePages(2).length, 14);
     for (let i = 0; i < 4; i++) { s.knob(0, 1); s.wait(200); }        // TYPE ST77 -> VIBE
     s.live();
     assert.equal(s.st().engine, 1);
@@ -126,7 +126,8 @@ test("the page list: a click opens it, the jog picks, a click opens the page, Ba
     const s = new Screen().open();
     s.click();
     assert.equal(s.api.view(s.ctx(true), s.st()), "list");
-    s.jog(1); s.jog(1); s.jog(1); s.jog(1);                          // (FRODHES, PIANO VOICE, COMPRESSOR, EQ, DRIVE/FILTER)
+    s.jog(1); s.jog(1); s.jog(1); s.jog(1); s.jog(1);                // (FRODHES, PIANO VOICE, VELOCITY, COMPRESSOR, EQ,
+                                                                     //  DRIVE/FILTER)
     s.knob(0, 1);
     assert.equal(s.plugin.writes.length, 0, "the knobs do nothing in the list");
     s.click();

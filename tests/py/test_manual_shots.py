@@ -47,7 +47,8 @@ def test_screenshots_are_what_the_code_draws(tmp_path):
 
 # where each picture belongs: the heading (### or ##) above its first link in docs/MANUAL.md names what it shows. A
 # page's shot sits under that page's heading (tools/manual_shots.py NAME, by file stem); the others are listed here.
-WHERE = {"voice1": "VOICE 1/2 and 2/2", "voice2": "VOICE 1/2 and 2/2", "piano": "FRODHES (the main page)",
+WHERE = {"voice1": "VOICE 1/3 and 2/3", "voice2": "VOICE 1/3 and 2/3", "voice3": "VOICE 3/3: velocity",
+         "voice4-vibes": "VOICE 3/3: velocity", "voice3-marimba": "VOICE 3/3: velocity", "piano": "FRODHES (the main page)",
          "reverb-inf": "REVERB", "splash": "Your first sound", "browse": "6. Presets", "save": "6. Presets",
          "bypass": "7. Effects on and off", "piano-vibes": "VIBES: the vibraphone",
          "voice1-vibes": "VIBES: the vibraphone", "voice2-vibes": "VIBES: the vibraphone",

@@ -199,6 +199,9 @@ HOLE = None
 MOVE_LEVELS = [
     ("root", "FRODHES", ["FRODHES"], ["p_spread", "s_sustain", "s_fx", "s_screen", HOLE, HOLE, "p_delay"]),
     ("voice", "VOICE", ["VOICE"], []),
+    # (the user, 2026-11-08: the velocity page right after the VOICE pages, as the FM-1's last VOICE page; RESPONSE
+    # only: the pads' velocity reaches the engine as played, the Move's own settings set its pads' sensitivity)
+    ("vel", "VELOCITY", ["VELOCITY"], []),
     ("comp", "COMPRESSOR", ["COMPRESSOR"], ["p_cmp_sw", "p_cmp_rel", "r_cmp_gr", "r_cmp_pk"]),
     # the EQ before the drive, as on the FM-1 (COMPRESSOR, EQ, DRIVE): its own level of four, the FM-1's page
     ("eq", "EQ", ["EQ"], []),
@@ -326,6 +329,11 @@ def model():
         for t in re.findall(r'"[^"]*"|\w+', rows_l[i]):
             labs.append(t[1:-1] if t.startswith('"') else lab_tok[t])
         pages[pg] = {"title": titles[i], "cards": cards, "labs": labs}
+    # the velocity page (0.9.10): every engine's last VOICE page on the FM-1 (ui.c VEL_S / VEL_LAB); the Move keeps
+    # RESPONSE of it (TOUCH and KEY VEL are the FM-1's own keys: FM1_ONLY_SLOTS)
+    vel_s = [t.strip() for t in re.search(r"VEL_S\[4\] = \{([^}]*)\};", ui).group(1).split(",")]
+    vel_l = re.findall(r'"([^"]*)"', re.search(r"VEL_LAB\[4\] = \{([^}]*)\};", ui).group(1))
+    pages["PG_VEL"] = {"title": "VELOCITY", "cards": vel_s, "labs": vel_l}
     sv = re.search(r"static int32_t slot_val\(uint32_t s, int32_t \*hi\)\n\{(.*?)\n\}", ui, re.S).group(1)
     slot_hi = {}
     for m in re.finditer(r"case (S_\w+): \*hi = ([^;]+);", sv):

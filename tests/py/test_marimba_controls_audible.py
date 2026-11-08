@@ -204,8 +204,9 @@ def test_motor_ccs_are_inert():
 def test_motor_ccs_are_accepted():
     """the plumbing: the motor CCs on MARIMBA leave TYPE and the VOICE pages as they are (no MOTOR page)"""
     r = run("mca-motpage", MARIMBA + [cc(30, 47, 127), cc(31, 48, 127), "100 dump", "200 btn 8", "250 turn 0 1",
-                                      "300 turn 0 1", "350 turn 0 1", "400 dump"], 500)
+                                      "300 turn 0 1", "350 turn 0 1", "370 dump", "380 turn 0 1", "400 dump"], 500)
     assert r.state(100)["card.2.0"] == "MARIMBA"
+    assert r.state(370)["vpage"] == "3/3" and r.state(370)["label0"] == "RESPONSE", r.state(370)["vpage"]   # (velocity)
     assert r.state(400)["page"] == "COMPRESSOR", r.state(400)["page"]
 
 
