@@ -9,10 +9,13 @@ bounces, storms); here: its build and run, the column table against the HAL's ke
 tests/scripts/keyvel.txt gets against the same curve written in Python, the velocity reaching chord mode, the
 arpeggiator, the sequencer's recording and MIDI out, short notes, TOUCH from the settings record (0 = MEDIUM, every
 older record; out of range: MEDIUM) and the developer query."""
+import json
 import math
 import os
 import re
 import subprocess
+
+import pytest
 
 from hostrun import HOST, ROOT, run
 from test_persistence import boot, flash_file, put_settings, read_img, settings_record
@@ -20,7 +23,7 @@ from test_persistence import boot, flash_file, put_settings, read_img, settings_
 O_KEY_VEL, O_VEL_CURVE = 8, 9                     # settings_t: clock 6, midi_ch 7, key_vel 8, vel_curve 9
 
 # keyvel.c's constants (test_constants_are_keyvel_c checks them)
-K = dict(KV_DBASE=185, KV_FLOOR0=450, KV_FLOOR_MIN=217, KV_FLOOR_STEP=48, KV_CEIL=1000, KV_UMID=15073)
+K = dict(KV_DBASE=185, KV_FLOOR0=450, KV_FLOOR_MIN=217, KV_FLOOR_STEP=48, KV_CEIL=1000, KV_UMID=15073, KV_TOPQ=24576, KV_HEAD=32768, KV_MIDMAX=107)
 GAMMA = [115 / 256, 179 / 256, 282 / 256]         # LIGHT MEDIUM HEAVY
 LIGHT, MEDIUM, HEAVY, FIXED = range(4)
 
@@ -31,10 +34,17 @@ def curve(d, fl, touch, kvel):
         return kvel
     fl = min(max(fl, K["KV_FLOOR_MIN"]), K["KV_CEIL"] - 1)
     b, c = K["KV_DBASE"], K["KV_CEIL"]
+    lo = 1
+    if kvel > K["KV_MIDMAX"]:                     # the medium press at most KV_MIDMAX, the excess lifts the soft end
+        lo, kvel = 1 + kvel - K["KV_MIDMAX"], K["KV_MIDMAX"]
+    top = kvel + (127 - kvel) * K["KV_TOPQ"] / 32768
+    if d < fl:                                    # firmer than the floor: top .. 127 over KV_HEAD (log2)
+        h = math.log2((fl - b) / max(d - b, 1)) / (K["KV_HEAD"] / 65536)
+        return min(127, top + (127 - top) * h)
     s = 1.0 if d <= fl else 0.0 if d >= c else 1 - math.log2((d - b) / (fl - b)) / math.log2((c - b) / (fl - b))
     u = s ** GAMMA[touch] if s > 0 else 0.0
     um = K["KV_UMID"] / 32768
-    v = 1 + (kvel - 1) * u / um if u <= um else kvel + (127 - kvel) * (u - um) / (1 - um)
+    v = lo + (kvel - lo) * u / um if u <= um else kvel + (top - kvel) * (u - um) / (1 - um)
     return min(max(v, 1), 127)
 
 
@@ -137,11 +147,11 @@ def test_script_is_the_curve():
     """tests/scripts/keyvel.txt's velocities (MIDI out) = the curve in floating point (+-1), with the floor learned
     downward only and CONTEXT the running average of the analog keys"""
     lines = [l.strip() for l in open(os.path.join(ROOT, "tests", "scripts", "keyvel.txt")) if l.strip() and l[0] != "#"]
-    r = run("keyvel-script", [l for l in lines if " end" not in l], 3000)
+    r = run("keyvel-script", [l for l in lines if " end" not in l], 3600)
     got, want = note_ons(r), expect_script(lines)
     check(got, want)
     # every press of the script plays, once
-    assert len(got) == 12
+    assert len(got) == 17
 
 
 def test_chord_arp_seq_get_the_velocity():
@@ -243,3 +253,46 @@ def test_dev_query():
     assert b[2] == 2 and b[32 + 7] == 450, b                                  # WAIT 2; the floors back
     c = items(810, 810)
     assert c[12] == 0 and c[14] == 0, c                                       # a mode: the counters start again
+
+
+def medium_reading(fl=450):
+    """the driven reading of a medium press (u = KV_UMID at MEDIUM) on a key whose floor is fl"""
+    b, c = K["KV_DBASE"], K["KV_CEIL"]
+    s = (K["KV_UMID"] / 32768) ** (1 / GAMMA[MEDIUM])
+    return b + (fl - b) * ((c - b) / (fl - b)) ** (1 - s)
+
+
+@pytest.mark.parametrize("kvel", [64, 96, 107, 127])
+@pytest.mark.parametrize("touch", [LIGHT, MEDIUM, HEAVY])
+def test_curve_at_key_vel(touch, kvel):
+    """KEY VEL 64 / 96 / 107 / 127 at every TOUCH: the medium press min(KEY VEL, 107) (MEDIUM), the floor
+    M + 0.75 (127 - M), 127 only half an octave under the floor, the lightest 1 + max(0, KEY VEL - 107), never
+    rising with the reading, and at least 20 steps from the medium press to 127 (2026-11-08: at KEY VEL 127 every press
+    firmer than medium played 127)"""
+    mid = min(kvel, K["KV_MIDMAX"])
+    top = mid + (127 - mid) * 0.75
+    assert abs(curve(450, 450, touch, kvel) - top) < 0.01
+    assert curve(449, 450, touch, kvel) < 127 and curve(372, 450, touch, kvel) == 127
+    assert abs(curve(1000, 450, touch, kvel) - (1 + max(0, kvel - K["KV_MIDMAX"]))) < 0.01
+    if touch == MEDIUM:
+        assert abs(curve(medium_reading(), 450, touch, kvel) - mid) < 0.01
+    assert 127 - mid >= 20
+    vs = [curve(d, 450, touch, kvel) for d in range(300, 1001)]
+    assert all(a >= b for a, b in zip(vs, vs[1:]))
+
+
+def test_users_take_rarely_127():
+    """the user's free playing (tests/baselines/keyvel_play_20261108.json: KEY VEL 127, MEDIUM, 160 analog presses)
+    replayed through the curve with the floors as they learned: 54 % played 127 on 0.9.10; now under 10 % (and the
+    velocities spread instead of piling up at the top)"""
+    d = json.load(open(os.path.join(ROOT, "tests", "baselines", "keyvel_play_20261108.json")))
+    fl, old, new = list(d["floors"]), 0, []
+    for k, raw, vel in d["presses"]:
+        old += vel == 127
+        new.append(round(curve(raw, fl[k], MEDIUM, 127)))
+        if raw < fl[k]:
+            fl[k] = max(raw, fl[k] - K["KV_FLOOR_STEP"], K["KV_FLOOR_MIN"])
+    n = len(new)
+    assert old / n > 0.5                                    # (the record as it played)
+    assert sum(v == 127 for v in new) / n < 0.10
+    assert len(set(new)) > 40 and sorted(new)[n // 2] < 120
