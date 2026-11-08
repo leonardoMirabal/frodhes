@@ -1594,6 +1594,8 @@ static int32_t dc_l, dc_r, dce_l, dce_r;
  * each sub-block towards the lowest gain this one and the next need, so no sample ever passes LIM_T, nothing is
  * clipped, and the gain moves smoothly (big chords of 7-8 notes stay clean); release ~46 ms */
 #define LK 32u
+/* the limiter's gain ramp over a sub-block: a raised cosine (no slope step at the sub-block edges), Q15, ends on 1 */
+static const uint16_t LK_S[LK] = {79,315,705,1247,1935,2761,3719,4799,5990,7282,8661,10114,11628,13188,14778,16384,17990,19580,21140,22654,24107,25486,26778,27969,29049,30007,30833,31521,32063,32453,32689,32768};
 static int32_t lk_l[LK], lk_r[LK], lk_pk, lk_g = 32768;
 static inline __attribute__((always_inline)) int32_t lk_need(int32_t pk) { return pk > LIM_T ? (int32_t)(((uint32_t)LIM_T << 15) / (uint32_t)pk) : 32768; }
 static inline __attribute__((always_inline)) int32_t dc_block(int32_t x, int32_t *dc, int32_t *err)
@@ -1831,7 +1833,7 @@ FR_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
             /* limiting: g0 (the last sub-block's tgt, <= lk_need of its pn, which is lk_pk now) and tgt are both
              * <= lk_need(lk_pk) and the ramp stays between them, so |x g >> 15| <= lk_pk lk_need(lk_pk) >> 15 <=
              * LIM_T (-1.0 dBFS since 0.9.10): no clip after it (the master clip never acted and is gone, 0.9.5) */
-            int32_t g = g0 + (int32_t)(((int64_t)(tgt - g0) * (i + 1)) >> 5), xl = lk_l[i], xr = lk_r[i];
+            int32_t g = g0 + (int32_t)(((int64_t)(tgt - g0) * LK_S[i]) >> 15), xl = lk_l[i], xr = lk_r[i];
             lk_l[i] = fx_L[sb + (uint32_t)i]; lk_r[i] = fx_R[sb + (uint32_t)i];
             if (g != 32768) { xl = (int32_t)(((int64_t)xl * g) >> 15); xr = (int32_t)(((int64_t)xr * g) >> 15); }
             po[2 * i] = xl; po[2 * i + 1] = xr;          /* (no clip: <= LIM_T) */
