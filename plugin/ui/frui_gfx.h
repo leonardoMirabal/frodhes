@@ -12,6 +12,8 @@ typedef struct {
     uint32_t *px;                  /* w * h pixels, 0xFFRRGGBB */
     int w, h;
     int cx0, cy0, cx1, cy1;        /* clip rectangle, pixels: x0 <= x < x1 */
+    int bx0, by0, bx1, by1;        /* the base clip (the whole canvas, or the rectangle a partial repaint redraws):
+                                    * frui_clip intersects with it and frui_clip_reset returns to it */
 } frui_canvas;
 
 #define FRUI_A(c) ((uint32_t)(c) >> 24)
@@ -19,8 +21,11 @@ typedef struct {
 #define FRUI_RGBA(r, g, b, a) (((uint32_t)(a) << 24) | ((uint32_t)(r) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(b))
 
 void frui_canvas_init(frui_canvas *c, uint32_t *px, int w, int h);
-void frui_clip(frui_canvas *c, float x, float y, float w, float h);   /* intersect with the full canvas */
+void frui_clip(frui_canvas *c, float x, float y, float w, float h);   /* intersect with the base clip */
 void frui_clip_reset(frui_canvas *c);
+/* a partial repaint: only pixels x0 <= x < x1, y0 <= y < y1 change (a whole draw through it gives those pixels exactly
+ * the values a full draw gives them); frui_canvas_init sets the whole canvas */
+void frui_clip_base(frui_canvas *c, int x0, int y0, int x1, int y1);
 
 uint32_t frui_mix(uint32_t a, uint32_t b, float t);                   /* a .. b, alpha too */
 uint32_t frui_alpha(uint32_t c, float a);                             /* c with its alpha x a */

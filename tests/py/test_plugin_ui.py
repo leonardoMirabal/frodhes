@@ -63,7 +63,7 @@ def test_renders(tmp_path):
     if not cc:
         pytest.skip("no C compiler")
     exe = str(tmp_path / "frui_render")
-    srcs = [os.path.join(UI, f) for f in ("frui.c", "frui_font.c", "frui_gfx.c", os.path.join("tools", "frui_render.c"))]
+    srcs = [os.path.join(UI, f) for f in ("frui.c", "frui_font.c", "frui_gfx.c", "frui_text.c", os.path.join("tools", "frui_render.c"))]
     r = subprocess.run([cc, "-O2", "-std=c99", "-D_DEFAULT_SOURCE", "-D_DARWIN_C_SOURCE", "-Wall", "-Wextra", "-Werror",
                         "-Wno-unused-const-variable", "-o", exe] + srcs + ["-lz", "-lm"], capture_output=True, text=True)
     if r.returncode and "zlib.h" in r.stderr:
@@ -92,7 +92,7 @@ def test_layout_grid_and_looks(tmp_path):
     if not cc:
         pytest.skip("no C compiler")
     exe = str(tmp_path / "frui_render")
-    srcs = [os.path.join(UI, f) for f in ("frui.c", "frui_font.c", "frui_gfx.c", os.path.join("tools", "frui_render.c"))]
+    srcs = [os.path.join(UI, f) for f in ("frui.c", "frui_font.c", "frui_gfx.c", "frui_text.c", os.path.join("tools", "frui_render.c"))]
     r = subprocess.run([cc, "-O2", "-std=c99", "-D_DEFAULT_SOURCE", "-D_DARWIN_C_SOURCE", "-Wall", "-Wextra", "-Werror",
                         "-Wno-unused-const-variable", "-o", exe] + srcs + ["-lz", "-lm"], capture_output=True, text=True)
     if r.returncode and "zlib.h" in r.stderr:

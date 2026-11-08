@@ -17,7 +17,7 @@
 enum { FRT_MOTOR, FRT_COMP, FRT_EQ, FRT_DRIVE, FRT_NL };                                   /* left: before the drive */
 enum { FRT_FILTER, FRT_TREM, FRT_PHASER, FRT_CHORUS, FRT_DELAY, FRT_REVERB, FRT_NR };      /* right: after it */
 
-typedef struct {
+typedef struct frui_model_s {
     uint8_t p[FRP_COUNT];          /* the app's parameter values (params.c PV) */
     int tune;                      /* cents, -50 .. +50 */
     char preset_tag[8];            /* "F09", "U01" */
@@ -55,7 +55,7 @@ enum { FRS_CHANNEL = 200, FRS_VEL, FRS_FIXVEL, FRS_PGM, FRS_TEMPO, FRS_BPM, FRS_
 typedef void (*frui_text_fn)(void *ctx, const frui_model *m, int id, char *val, char *unit);
 
 enum { FRW_KNOB, FRW_SEG, FRW_MENU, FRW_TAB_L, FRW_TAB_R, FRW_BUTTON, FRW_PAGER, FRW_PRESET, FRW_KEYS, FRW_FADER, FRW_CTX,
-       FRW_CCMAP };
+       FRW_CCMAP, FRW_ITEM };       /* FRW_ITEM: an item of the open menu (id: the option's value) */
 enum { FRB_PREV, FRB_NEXT, FRB_SAVE, FRB_UNDO, FRB_TYPE_PREV, FRB_TYPE_NEXT, FRB_GEAR, FRB_CLOSE, FRB_SUSTAIN, FRB_FX,
        FRB_BPM_DOWN, FRB_BPM_UP, FRB_LEARN_RESET };
 /* the knob menu's items (FRW_CTX ids) */
@@ -87,4 +87,19 @@ void frui_draw(frui *u, const frui_model *m, frui_canvas *c);
 int frui_hit(const frui *u, float x, float y, frui_widget *w);
 /* widget ids for focus / hover / menu: (kind << 8) | id */
 #define FRUI_WID(kind, id) (((kind) << 8) | (id))
+
+/* ---- for the plugin window's input handling and partial repaints (B-M2b) */
+/* a control's value as drawn (the parameters, TUNE, TREM/WAH's EFFECT, the settings) and its range 0..hi */
+int frui_value(const frui_model *m, int id);
+int frui_value_hi(int id);
+/* the option names of a switch / menu (n = hi + 1) */
+const char *const *frui_options(int id, int *n);
+/* the MIDI note of the on-screen key at logical (x, y), -1 none; a key's span along x (logical pixels) */
+int frui_key_at(float x, float y);
+void frui_key_span(int note, float *x0, float *x1);
+/* the segment of a segmented switch under logical x */
+int frui_seg_at(const frui_widget *w, float x);
+/* regions of the last draw that change without the layout changing (logical rectangles; w = 0 when not drawn) */
+enum { FRR_METER, FRR_GR, FRR_EQ, FRR_RAIL, FRR_PANEL_L, FRR_PANEL_R, FRR_KEYS, FRR_VOICE, FRR_N };
+void frui_region(const frui *u, int which, float r[4]);
 #endif

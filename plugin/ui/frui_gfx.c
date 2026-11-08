@@ -10,14 +10,20 @@ static float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ?
 void frui_canvas_init(frui_canvas *c, uint32_t *px, int w, int h)
 {
     c->px = px; c->w = w; c->h = h;
+    frui_clip_base(c, 0, 0, w, h);
+}
+void frui_clip_base(frui_canvas *c, int x0, int y0, int x1, int y1)
+{
+    c->bx0 = x0 < 0 ? 0 : x0; c->by0 = y0 < 0 ? 0 : y0;
+    c->bx1 = x1 > c->w ? c->w : x1; c->by1 = y1 > c->h ? c->h : y1;
     frui_clip_reset(c);
 }
-void frui_clip_reset(frui_canvas *c) { c->cx0 = 0; c->cy0 = 0; c->cx1 = c->w; c->cy1 = c->h; }
+void frui_clip_reset(frui_canvas *c) { c->cx0 = c->bx0; c->cy0 = c->by0; c->cx1 = c->bx1; c->cy1 = c->by1; }
 void frui_clip(frui_canvas *c, float x, float y, float w, float h)
 {
     int x0 = (int)floorf(x), y0 = (int)floorf(y), x1 = (int)ceilf(x + w), y1 = (int)ceilf(y + h);
-    c->cx0 = x0 < 0 ? 0 : x0; c->cy0 = y0 < 0 ? 0 : y0;
-    c->cx1 = x1 > c->w ? c->w : x1; c->cy1 = y1 > c->h ? c->h : y1;
+    c->cx0 = x0 < c->bx0 ? c->bx0 : x0; c->cy0 = y0 < c->by0 ? c->by0 : y0;
+    c->cx1 = x1 > c->bx1 ? c->bx1 : x1; c->cy1 = y1 > c->by1 ? c->by1 : y1;
 }
 
 uint32_t frui_mix(uint32_t a, uint32_t b, float t)

@@ -35,6 +35,7 @@ struct frui {
     float hp;                      /* one device pixel, in logical pixels */
     frui_canvas *c;
     const frui_model *m;
+    float rg[FRR_N][4];            /* frui_region */
 };
 
 /* ---- the grid */
@@ -135,6 +136,10 @@ static void reg(frui *u, int kind, int id, float x, float y, float w, float h)
 static void anchor(frui *u, int what, int id, float x, float y)
 {
     if (u->na < MAXW) { frui_anchor *a = &u->an[u->na++]; a->what = what; a->id = id; a->x = x; a->y = y; }
+}
+static void region(frui *u, int which, float x, float y, float w, float h)
+{
+    u->rg[which][0] = x; u->rg[which][1] = y; u->rg[which][2] = w; u->rg[which][3] = h;
 }
 static int is_focus(frui *u, int kind, int id) { return u->m->focus == FRUI_WID(kind, id); }
 static int is_hover(frui *u, int kind, int id) { return u->m->hover == FRUI_WID(kind, id); }
@@ -492,6 +497,7 @@ static void meter(frui *u, float x, float y, float w, float h)
     const frui_model *m = u->m;
     int ch, i, nseg;
     float x0 = x + 18.f, bw = w - 26.f, segw = 3.f;
+    region(u, FRR_METER, x, y, w, h);
     well(u, x, y, w, h, R_CTRL);
     nseg = (int)(bw / segw);
     for (ch = 0; ch < 2; ch++) {
@@ -701,6 +707,7 @@ static void eq_curve(frui *u, float x, float y, float w, float h)
     int i, n = 160;
     static const float grid[3] = {100.f, 1000.f, 10000.f};
     static const char *const gl[3] = {"100", "1K", "10K"};
+    region(u, FRR_EQ, x, y, w, h);
     ctrl_box(u, x, y, w, h, 0, 0);
     for (i = 0; i < 3; i++) {
         float gx = x + w * (log10f(grid[i] / 20.f) / 3.f);
@@ -739,6 +746,7 @@ static void gr_meter(frui *u, float x, float y, float w)
     char buf[16];
     float g = u->m->gr_db, k = g / 12.f, bx = x + 26.f, bw = w - 26.f - 60.f, segw = 3.f;
     int i, n = (int)(bw / segw), lit = (int)(k * (float)n + 0.5f);
+    region(u, FRR_GR, x, y - 10.f, w, 20.f);
     tx(u, x, mid(u, y, 8.5f), T_CAPTION, 0, "GR", C_TEXT3);
     for (i = 0; i < n; i++)
         frui_rect(u->c, X(bx + segw * (float)i), X(y - 2.f), X(segw - 1.f), X(4.f), i < lit ? C_ACC : FRUI_RGB(34, 34, 37));
@@ -769,6 +777,7 @@ static void left_panel(frui *u)
     float x = G_M, y = FX_Y, w = 456.f, h = FX_H, x0 = G_H0, rx = G_H0 + 4.f * G_COL;
     int tab = m->tab_l;
     if (tab == FRT_MOTOR && !has_motor(m)) tab = FRT_COMP;
+    region(u, FRR_PANEL_L, x, y, w, h);
     panel(u, x, y, w, h);
     tabs(u, 0, x, y, w);
     switch (tab) {
@@ -810,6 +819,7 @@ static void right_panel(frui *u)
 {
     const frui_model *m = u->m;
     float x = G_H1 - G_PAD, y = FX_Y, w = 456.f, h = FX_H, x0 = G_H1, rx = G_H1 + 4.f * G_COL;
+    region(u, FRR_PANEL_R, x, y, w, h);
     panel(u, x, y, w, h);
     tabs(u, 1, x, y, w);
 #define SYNC_BTN(id) menu_btn(u, (id), "SYNC", rx - MENU_W, ROW_Y, ROW_H, MENU_W)
@@ -919,6 +929,7 @@ static void keyboard(frui *u)
     }
     frui_clip_reset(u->c);
     reg(u, FRW_KEYS, 0, x, y, w, h);
+    region(u, FRR_KEYS, x - 2.f, y - 2.f, w + 4.f, h + 4.f);
 }
 
 /* ---- the switches beside the keys: SUSTAIN (latching, as the device's REC: tap to latch, tap again to let go; lit
@@ -1184,6 +1195,7 @@ static void popup(frui *u)
         }
         if (id == FRP_TYPE) eicon(u, i, ix + 16.f, iy + (ih - 24.f) * 0.5f, 1.f, i == sel ? C_TEXT : C_TEXT2);
         tx(u, ix + lx, mid(u, iy + ih * 0.5f, 10.5f), T_MENU, 0, names[i], i == sel ? C_TEXT : C_TEXT2);
+        reg(u, FRW_ITEM, i, ix, iy, cw, ih);
     }
 }
 
@@ -1207,6 +1219,9 @@ const frui_widget *frui_widget_get(const frui *u, int i) { return i >= 0 && i < 
 void frui_draw(frui *u, const frui_model *m, frui_canvas *c)
 {
     u->c = c; u->m = m; u->nw = 0; u->na = 0;
+    memset(u->rg, 0, sizeof u->rg);
+    region(u, FRR_RAIL, 0.f, 0.f, (float)FRUI_W, RAIL_H + 8.f);
+    region(u, FRR_VOICE, G_M, VO_Y, (float)FRUI_W - 2.f * G_M, VO_H);
     u->s = (float)c->w / (float)FRUI_W;
     u->hp = 1.f / u->s;
     frui_clip_reset(c);
@@ -1236,4 +1251,48 @@ int frui_hit(const frui *u, float x, float y, frui_widget *w)
         if (x >= g->x && x < g->x + g->w && y >= g->y && y < g->y + g->h) { if (w) *w = *g; return i; }
     }
     return -1;
+}
+
+/* ---- the plugin window's helpers (frui.h) */
+int frui_value(const frui_model *m, int id) { return pval(m, id); }
+int frui_value_hi(int id) { return phi(id); }
+const char *const *frui_options(int id, int *n) { return opt_names(id, n); }
+void frui_region(const frui *u, int which, float r[4])
+{
+    int i;
+    for (i = 0; i < 4; i++) r[i] = which >= 0 && which < FRR_N ? u->rg[which][i] : 0.f;
+}
+/* the keyboard's geometry (keyboard() above): C1 .. C6, 36 white keys */
+static const int KB_WHITE_OF[12] = {0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6};
+void frui_key_span(int note, float *x0, float *x1)
+{
+    float w = (float)FRUI_W - G_M - KB_X, ww = w / 36.f, bw = ww * 0.58f;
+    int pc = note % 12, oct = note / 12 - 1;
+    if (KB_WHITE_OF[pc] >= 0) { *x0 = KB_X + ww * (float)((oct - 1) * 7 + KB_WHITE_OF[pc]); *x1 = *x0 + ww; }
+    else { *x0 = KB_X + ww * (float)((oct - 1) * 7 + KB_WHITE_OF[pc - 1] + 1) - bw * 0.5f; *x1 = *x0 + bw; }
+}
+int frui_key_at(float x, float y)
+{
+    float w = (float)FRUI_W - G_M - KB_X, ww = w / 36.f;
+    int n, wi;
+    if (x < KB_X || x >= KB_X + w || y < KB_Y || y >= KB_Y + KB_H) return -1;
+    if (y < KB_Y + KB_H * 0.6f)                       /* the black keys first (they lie over the white) */
+        for (n = 24; n <= 84; n++) {
+            float x0, x1;
+            if (KB_WHITE_OF[n % 12] >= 0) continue;
+            frui_key_span(n, &x0, &x1);
+            if (x >= x0 && x < x1) return n;
+        }
+    wi = (int)((x - KB_X) / ww);
+    if (wi > 35) wi = 35;
+    for (n = 24; n <= 84; n++)
+        if (KB_WHITE_OF[n % 12] >= 0 && (n / 12 - 2) * 7 + KB_WHITE_OF[n % 12] == wi) return n;
+    return -1;
+}
+int frui_seg_at(const frui_widget *w, float x)
+{
+    int n, i;
+    (void)opt_names(w->id, &n);
+    i = (int)((x - w->x) / (w->w / (float)n));
+    return i < 0 ? 0 : i >= n ? n - 1 : i;
 }
