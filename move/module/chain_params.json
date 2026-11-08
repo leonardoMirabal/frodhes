@@ -866,8 +866,8 @@
     "name": "RESP",
     "type": "enum",
     "options": [
-      "DEEP",
-      "EVEN"
+      "FULL",
+      "LIGHT"
     ],
     "default": 0
   },

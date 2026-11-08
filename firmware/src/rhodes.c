@@ -296,8 +296,8 @@ static uint32_t rh_drv_mkt(uint32_t key, uint32_t vel)      /* the make-up x the
 #endif
 /* voicing, written by the main loop (params.c), applied at each note-on (IMPLEMENTATION-v3 §4.4, §10.1) */
 static volatile int32_t rh_tone_off;           /* Q25: added to the pickup offset (TONE) */
-static volatile uint8_t rh_touch_mode;         /* RESPONSE, taken at each note-on (params.c vresp_apply): 0 A (DEEP,
-                                                * dynamic), 1 B (EVEN, light touch): the dynamics stage's soft end
+static volatile uint8_t rh_touch_mode;         /* RESPONSE, taken at each note-on (params.c vresp_apply): 0 A (FULL,
+                                                * dynamic), 1 B (LIGHT, the light touch): the dynamics stage's soft end
                                                 * (rh_dyn); with -DRH_VM_ON, 1 is the retired velocity map MAP */
 static volatile int32_t rh_bark_s = 65536;     /* Q16: tip scale (BARK) */
 static volatile int32_t rh_bark_g = 65536;     /* Q16: its gain compensation (1/scale) */
@@ -524,8 +524,8 @@ static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /
 
 /* The dynamics stage (0.9.10): a key x velocity gain on the voice, set at the strike (no per-sample cost), relative
  * to 0.9.9's loudness. mf and f (v >= 60) keep 0.9.9's level exactly; below, RESPONSE (rh_touch_mode, taken at the
- * strike) picks the soft end: A (DEEP, dynamic) goes quieter on a smoothstep, 0 dB at v60 to -6 dB at v16 and below
- * (no step, no corner: v20 -> v127 ~31 dB, v1 -> v127 ~36 dB); B (EVEN, light touch) keeps 0.9.9's velocity law
+ * strike) picks the soft end: A (FULL, dynamic) goes quieter on a smoothstep, 0 dB at v60 to -6 dB at v16 and below
+ * (no step, no corner: v20 -> v127 ~31 dB, v1 -> v127 ~36 dB); B (LIGHT, the light touch) keeps 0.9.9's velocity law
  * (v20 -> v127 ~25.5 dB). The same sound at every velocity in both, only the soft end's level differs (the same
  * drive, swing and harmonics: B is A x a gain, to the integers' rounding; A = B from v60). A's depth is held by the
  * output gate (fx.c GATE_LO, 32 LSB peak, -60 dBFS, 406 ms): deeper, a soft note starts under it and is faded after

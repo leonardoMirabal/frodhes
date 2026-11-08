@@ -271,8 +271,8 @@ tempo](#midi-and-tempo)).
 ### LFO/SETUP, MAPPINGS
 
 The filter's [LFO](MANUAL.md#lfo), the delay's tone, the output LEVEL, the MIDI channel (CHAN, ALL by default;
-[SETUP](MANUAL.md#setup) and [MIDI](MANUAL.md#midi)) and RESP, the electric piano's velocity response (DEEP by
-default, or EVEN; the manual's [MIDI](MANUAL.md#midi) RESPONSE, CC 40), and the pressure mappings (Move only):
+[SETUP](MANUAL.md#setup) and [MIDI](MANUAL.md#midi)) and RESP, the electric piano's velocity response (FULL by
+default, or LIGHT; the manual's [MIDI](MANUAL.md#midi) RESPONSE, CC 40), and the pressure mappings (Move only):
 
 - **AT CC / AT LO / AT HI**: channel pressure (aftertouch) drives the control on that MIDI CC number, from LO (no
   pressure) to HI (full pressure).

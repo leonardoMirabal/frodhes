@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """RESPONSE (CC 40, the MIDI page's 4th card): what A and B do to the electric piano (rhodes.c rh_dyn, rh_touch_mode).
 
-A (DEEP) is the dynamic response: the soft end goes down to -6 dB at v16 (v20 -> v127 ~31.4 dB over the keys);
-B (EVEN) is the light touch: 0.9.9's velocity law (v20 -> v127 ~25.5 dB). Only the level of the soft end differs:
+A (FULL) is the dynamic response: the soft end goes down to -6 dB at v16 (v20 -> v127 ~31.4 dB over the keys);
+B (LIGHT) is the light touch: 0.9.9's velocity law (v20 -> v127 ~25.5 dB). Only the level of the soft end differs:
 the same drive, swing and harmonics at every key and velocity, so B is A times a gain (to the integers' rounding),
 the same from v60 up, and never under A. Measured on the host, the engine alone or effects off, LEVEL 64:
 
@@ -13,7 +13,7 @@ the same from v60 up, and never under A. Measured on the host, the engine alone 
   a measure of H3..H6 at a soft note reads the 16-bit floor, so the residual is the check);
 - CC 40 turned while a note sounds does not touch it (taken at the strike): the same samples;
 - VIBES and MARIMBA do not read RESPONSE: the same samples with A and B.
-Never louder after the key-up with either response: tests/py/test_release_never_louder.py (its -EVEN rows); TONE's
+Never louder after the key-up with either response: tests/py/test_release_never_louder.py (its -LIGHT rows); TONE's
 level compensation with either: tests/py/test_tone_level.py."""
 import os
 import sys
