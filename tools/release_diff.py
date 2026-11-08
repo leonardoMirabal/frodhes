@@ -102,6 +102,9 @@ def cases(grid):
             for cfg, ccs in CONFIGS.items():
                 for m, mv in METHODS:
                     setup = [(110, 0xB0, tcc, tval), (120, 0xB0, 40, mv)] + [(100, 0xB0, c, v) for c, v in ccs]
+                    if cfg == "FXOFF" and build == "fm1":    # the dry engine, as v0.9.9's bypass: the FX button keeps
+                        setup.append((125, 0xB0, 106, 0))    # the compressor from 0.9.10 (fx.c FR_BYP_KEEP_CMP), so
+                                                             # COMP off too (the HQ build kept it in v0.9.9 already)
                     keys = g["keys_ep"] if tcc == 80 else g["keys_bar"]
                     out.append((f"{build}/{tname}/{cfg}/{m}", build, setup, keys, "type"))
         if grid == "full" and build == "fm1":
@@ -109,7 +112,7 @@ def cases(grid):
                 for cname, ccn in CONTROLS:
                     for cv in (0, 127):
                         setup = [(100, 0xB0, 111, 127), (110, 0xB0, tcc, tval), (120, 0xB0, 40, 0),
-                                 (130, 0xB0, ccn, cv)]
+                                 (125, 0xB0, 106, 0), (130, 0xB0, ccn, cv)]   # (COMP off: the dry, as FXOFF)
                         out.append((f"{build}/{tname}/{cname}{cv}/A", build, setup,
                                     g["keys_ep"] if tcc == 80 else g["keys_bar"], "control"))
         for pc in g["presets"]:

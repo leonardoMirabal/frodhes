@@ -30,13 +30,19 @@ RING = [(48, 90), (52, 60), (55, 110), (59, 40), (60, 127), (64, 75), (67, 100),
 BURST = [(47, 1), (23, 10), (26, 10), (29, 10), (42, 11), (45, 11), (127, 93), (86, 91), (123, 93), (59, 107),
          (120, 93), (28, 88), (40, 11), (34, 49), (37, 11), (41, 49), (21, 83), (68, 83), (117, 93), (60, 107),
          (33, 1), (36, 1), (27, 83), (19, 85), (22, 88), (25, 88)]          # seed 3037's step (2.873 s)
-PC_AT, BURST_AT = 1500, 1530
+RING_MORE = [(79, 70), (81, 95), (83, 55), (84, 105), (89, 65), (91, 115)]   # builds with more voices (FR_C1: 14):
+PC_AT, BURST_AT = 1500, 1530                                                # the chord still fills them all
+
+
+def ring_notes():
+    return RING + RING_MORE[:max(0, voices("bars") - len(RING))]
 
 
 def lines(pc, notes):
-    """F18 DREAM (Rhodes, effects on) with a pedalled 10-note chord, then Program Change pc, then notes at once"""
+    """F18 DREAM (Rhodes, effects on) with a pedalled 10-note chord (every voice, at least), then Program Change pc,
+    then notes at once"""
     ls = ["50 midi 0xC0 17 0", "80 midi 0xB0 64 127"]
-    ls += [f"{100 + 4 * i} midi 0x90 {n} {v}" for i, (n, v) in enumerate(RING)]
+    ls += [f"{100 + 4 * i} midi 0x90 {n} {v}" for i, (n, v) in enumerate(ring_notes())]
     ls.append(f"{PC_AT} midi 0xC0 {pc} 0")
     ls += [f"{BURST_AT} midi 0x90 {n} {v}" for n, v in notes]
     ls += [f"2500 midi 0x80 {n} 0" for n, _ in notes]
@@ -82,8 +88,11 @@ def test_at_most_bar_nv_starts_a_block(runs):
 
 
 def test_the_burst_costs_as_on_ringing_voices(runs):
+    """within 100 us at 10 voices; with more (FR_C1: 14) the burst block's starts are 14, the margin 200 (MARIMBA 3182
+    against 3002 on the two-core build: 14 starts where the ringing case steals; both far under the cost model's 4650)"""
     b, r = runs["burst"].cpu_proxy_bars, runs["ring"].cpu_proxy_bars
-    assert b <= r + 100, (b, r)
+    assert b <= r + (100 if voices("bars") <= 10 else 200), (b, r)
+    assert b <= 4650, b
 
 
 def test_the_first_block_is_the_chord(runs):
@@ -97,7 +106,7 @@ def test_no_click(runs):
     attack = max(max(d2_blocks(c, BURST_AT, 10)) for c in runs["chords"])
     assert a[1] < a[0], f"the steal fade's block {a[1]:.0f} over the attack's {a[0]:.0f}"
     assert max(a) <= 1.15 * attack, (a, attack)
-    assert max(np.abs(runs["burst"].L).max(), np.abs(runs["burst"].R).max()) <= 29204   # the limiter's ceiling (fx.c LIM_T)
+    assert max(np.abs(runs["burst"].L).max(), np.abs(runs["burst"].R).max()) <= 24000   # the limiter's ceiling
 
 
 def test_the_newest_notes_sound():

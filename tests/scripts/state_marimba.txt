@@ -15,7 +15,7 @@
 200 expect led 5 0
 # a key plays it
 300 keys 0x80
-700 expect rms > -40
+500 expect rms > -40
 800 keys 0
 # ---- the VOICE pages: two (no MOTOR page): HOME, SELECT x3 = VOICE 1/2, VOICE 2/2, COMPRESSOR
 1700 btn 8

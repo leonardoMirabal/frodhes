@@ -3,7 +3,7 @@
 bit: tests/uac_fir_test.c runs the firmware's own code on a seeded random signal (full scale, over full scale, quiet,
 a square) and prints every 48 kHz frame; the reference is the polyphase FIR as specified there (each input frame
 clamped to 16 bits enters the history, then the outputs whose newest input it is: phase ph, the 12 frames ending at
-it, the taps of phase ph or of 159 - ph backwards, a 32-bit sum with the rounding 2^14, >> 15, the knee above 29204 (x 1/8), clamped). A faster
+it, the taps of phase ph or of 159 - ph backwards, a 32-bit sum with the rounding 2^14, >> 15, the knee above 24576, clamped). A faster
 uac_tap48 must leave the USB stream unchanged."""
 import os
 import re
@@ -24,14 +24,13 @@ def fir():
     return t
 
 
-KNEE = 29204     # usb.c UAC_KNEE (0.9.7, BUGHUNT #38b; 0.9.10: fx.c LIM_T -1.0 dBFS, was 24576): the excess over it
-KSH = 3          # x 1/8 (usb.c UAC_KNEE_SH; halved before 0.9.10), before the clamp
+KNEE = 24576     # usb.c UAC_KNEE (0.9.7, BUGHUNT #38b): above it the excess is halved, before the clamp
 
 
 def knee(v):
-    """usb.c's knee: |v| > KNEE -> KNEE + (|v| - KNEE) >> KSH, the sign kept (both signs the same)"""
+    """usb.c's knee: |v| > KNEE -> KNEE + (|v| - KNEE) // 2, the sign kept (both signs the same)"""
     a = np.abs(v)
-    return np.where(a > KNEE, np.sign(v) * (KNEE + ((a - KNEE) >> KSH)), v)
+    return np.where(a > KNEE, np.sign(v) * (KNEE + ((a - KNEE) >> 1)), v)
 
 
 def reference(x, taps, with_knee=True):
@@ -91,8 +90,8 @@ def test_resampler_bit_exact(pieces):
     assert not len(bad), f"{len(bad)} frames differ, first at {bad[0]}: {got[bad[0]]} vs {want[bad[0]]}"
 
 
-def loud_high_passage(n=44100 // 4, peak=29204):
-    """what the limiter lets through at its ceiling: a burst near 9-11 kHz (the FIR's phases gain on it), 29204 peak (LIM_T)"""
+def loud_high_passage(n=44100 // 4, peak=24000):
+    """what the limiter lets through at its ceiling: a burst near 9-11 kHz (the FIR's phases gain on it), 24000 peak"""
     t = np.arange(n)
     x = np.sin(2 * np.pi * 9500 * t / 44100) + 0.6 * np.sin(2 * np.pi * 11000 * t / 44100 + 1.0)
     x = np.sign(x) * np.minimum(np.abs(x) * peak / np.abs(x).max() * 1.6, peak)     # held at the ceiling, squared off
@@ -101,11 +100,11 @@ def loud_high_passage(n=44100 // 4, peak=29204):
 
 
 def test_knee_no_clamp_on_a_loud_high_passage():
-    """BUGHUNT #38b: the 0.9.6 resampler clamps a passage the limiter kept at its ceiling; with the knee it does not,
-    and the knee alone changes nothing below KNEE"""
+    """BUGHUNT #38b: the 0.9.6 resampler clamps a passage the limiter kept at 24000; with the knee it does not, and
+    the knee alone changes nothing below 24576"""
     taps = fir()
     x = loud_high_passage()
-    assert np.abs(x).max() <= 29204
+    assert np.abs(x).max() <= 24000
     old, new = reference(x, taps, with_knee=False), reference(x, taps)
     assert (np.abs(old) >= 32767).sum() > 0, "the test signal no longer overshoots: make it harder"
     assert (np.abs(new) >= 32767).sum() == 0
@@ -129,7 +128,7 @@ def test_knee_firmware_no_clamp():
 
 
 def test_knee_curve():
-    v = np.array([0, 29204, 29205, 29212, 57708, 57716, 70000, -29204, -29205, -29212, -57708, -57716])
+    v = np.array([0, 24576, 24577, 24578, 40958, 40960, 54638, -24576, -24577, -24578, -40958, -54638])
     k = np.clip(knee(v), -32768, 32767)
-    assert list(k) == [0, 29204, 29204, 29205, 32767, 32767, 32767, -29204, -29204, -29205, -32767, -32768]
+    assert list(k) == [0, 24576, 24576, 24577, 32767, 32767, 32767, -24576, -24576, -24577, -32767, -32768]
     assert (np.diff(knee(np.arange(-60000, 60000))) >= 0).all()      # monotonic

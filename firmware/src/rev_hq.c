@@ -73,12 +73,12 @@ static __attribute__((noinline)) void rev_locut(int32_t *x, int32_t v)
 }
 /* the kernels' input at the full rate: the clamp and HL_IN as rev_down, its DC blocker at the same corner (>> 6 at
  * twice the rate: ~110 Hz -> 0.9.5's ~110 Hz) */
-static FR_RAM __attribute__((noinline)) void rq_in(const int32_t *in, int32_t *out)
+static FX_RAM __attribute__((noinline)) void rq_in(const int32_t *in, int32_t *out)
 {
     int32_t hp = rv_hp, he = rv_he;
     uint32_t i;
     for (i = 0; i < RQ_NC; i++) {
-        int32_t x = mulq15(clampi(in[i], -131071, 131071), HL_IN), v;
+        int32_t x = mulq15(clampi(FX_HC(1, in[i], -131071, 131071), -131071, 131071), HL_IN), v;
         v = x - hp + he;
         he = v & 63;
         hp += v >> 6;
@@ -122,11 +122,11 @@ __attribute__((noinline)) static void rv_send_ramp(const int32_t *L, const int32
     uint32_t j;
     for (j = 0; j < CTL; j++) {
         q += dq;
-        rv_in[j] = clampi((int32_t)(((int64_t)((L[j] + R[j]) >> 1) * (q >> 5)) >> 15), -131071, 131071);
+        rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[j] + R[j]) >> 1) * (q >> 5)) >> 15), -131071, 131071), -131071, 131071);
     }
 }
 /* the return of one control block, with MIX's law (rk) or (MIX 0, a tail ringing out) as it is; act: its OR */
-static FR_RAM __attribute__((noinline)) int32_t rq_ret(int32_t *L, int32_t *R, int32_t rk)
+static FX_RAM __attribute__((noinline)) int32_t rq_ret(int32_t *L, int32_t *R, int32_t rk)
 {
     uint32_t j;
     int32_t act = 0;
@@ -145,6 +145,38 @@ static FR_RAM __attribute__((noinline)) int32_t rq_ret(int32_t *L, int32_t *R, i
         }
     return act;
 }
+#if FR_C1
+/* fx_reverb for a chunk (fx.c fxc_o / fxc_e): the settings, MIX's send and return at the first chunk, the control
+ * blocks of the chunk */
+static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
+{
+    static int32_t v, tgt, zv, send, size, dv, lcv, off, damp, rk, vl, sk, rest;
+    static uint32_t pd;
+    static int quiet;
+    uint32_t sb, i, j;
+    if (FXC_1) {
+        int32_t tv;
+        v = fx_p[FXP_RV_DEPTH]; tgt = fx_p[FXP_RV_TYPE]; zv = fx_p[FXP_RV_SIZE];
+        send = tgt ? v * 258 : 0; size = 40 + (zv ? zv : v) * 70 / 127;
+        dv = fx_p[FXP_RV_DECAY]; tv = fx_p[FXP_RV_TONE]; lcv = fx_p[FXP_RV_LOCUT];
+        off = ((dv - 64) * 15) / 32;
+        damp = tv >= 64 ? 60 - ((tv - 64) * 60) / 63 : 60 + ((64 - tv) * 90) / 64;
+        pd = FX_PDLY_SAMPLES(fx_p[FXP_RV_PREDLY]);
+        quiet = !rv_running;
+        if (tgt >= (int32_t)RV_N) tgt = RV_HALL;
+        if (!rv_running) rv_mg = fx_p[FXP_RV_MOD] << 4;
+        if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = send; }
+        vl = rv_vl;
+        if (v != vl && send) send = (int32_t)(((int64_t)send * (254 - v)) / (254 - vl));
+        rk = (254 - vl) * 4227330 + (4 * (254 - vl)) / 254 + 1;
+        sk = rv_sk; rv_sk = send;
+        rest = !send && !rv_running && !rv_fade;
+        if (rest) return;
+        rv_running = 1;
+    }
+    if (rest) return;
+    for (sb = fxc_o; sb < fxc_e; sb += CTL) {
+#else
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 {
     int32_t v = fx_p[FXP_RV_DEPTH], tgt = fx_p[FXP_RV_TYPE], zv = fx_p[FXP_RV_SIZE];
@@ -165,6 +197,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
     if (!send && !rv_running && !rv_fade) return;
     rv_running = 1;
     for (sb = 0; sb < n; sb += CTL) {
+#endif
         int32_t act = 0;
         uint32_t cur;
         if (tgt && (uint32_t)tgt != rv_cur && !rv_fade) {
@@ -176,7 +209,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
                          sk + (int32_t)(((int64_t)(send - sk) * (int32_t)(sb + CTL)) / (int32_t)n));
         else
         for (j = 0; j < CTL; j++)
-            rv_in[j] = clampi((int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15), -131071, 131071);
+            rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[sb + j] + R[sb + j]) >> 1) * send) >> 15), -131071, 131071), -131071, 131071);
         if (lcv || rv_lc) rev_locut(rv_in, lcv);
         if (pd || pd_on) fx_predelay(rv_in, pd);
         if (rv_off != off) rv_off += rv_off < off ? 1 : -1;

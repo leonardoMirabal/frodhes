@@ -250,6 +250,18 @@ static int32_t oh_step(int32_t v, int32_t tgt)
 }
 
 /* the wet signal of the block, in -> out (out may be in) */
+#if FR_C1
+static void drv_ohcd_run(const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)
+{                                                  /* (FR_C1: a chunk, fx.c fxc_o / fxc_e; the rows at the first) */
+    int32_t a = c->amount, t = c->tone;
+    (void)n;
+    if (FXC_1) {
+        if (oh_ra < 0) { oh_ra = a; oh_rt = t; oh_set(a, t); }
+        else if (oh_ra != a || oh_rt != t) { oh_ra = oh_step(oh_ra, a); oh_rt = oh_step(oh_rt, t); oh_set(oh_ra, oh_rt); }
+    }
+    oh_kernel(oh_kp, &oh_s, in + fxc_o, out + fxc_o, fxc_e - fxc_o);
+}
+#else
 static void drv_ohcd_run(const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)
 {
     int32_t a = c->amount, t = c->tone;
@@ -257,3 +269,4 @@ static void drv_ohcd_run(const int32_t *in, int32_t *out, uint32_t n, const drv_
     else if (oh_ra != a || oh_rt != t) { oh_ra = oh_step(oh_ra, a); oh_rt = oh_step(oh_rt, t); oh_set(oh_ra, oh_rt); }
     oh_kernel(oh_kp, &oh_s, in, out, n & ~1u);
 }
+#endif

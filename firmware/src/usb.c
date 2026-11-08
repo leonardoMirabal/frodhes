@@ -464,7 +464,7 @@ static const uint8_t STR2[] = {30, 3, 'F', 0, 'e', 0, 'l', 0, 'u', 0, 'c', 0, 'c
 #define SMK_MODEL "SMK-37 Pro"                                  /* (fm1_cc.h) */
 #endif
 #define USB_PRODUCT "Frodhes " SMK_MODEL
-#else
+#elif !defined(USB_PRODUCT)                     /* (tools/build.py --usb-name: a test unit's own name) */
 #define USB_PRODUCT "Frodhes FM-1"
 #endif
 /* the product, so the MIDI port and the audio input: "Frodhes" and the model (0.9.7, GitHub #21), UTF-16LE, written
@@ -1380,10 +1380,7 @@ static inline __attribute__((always_inline)) int32_t uac_s16(int32_t v)
  * ph (or of 159 - ph backwards: the prototype is symmetric), Q15 into 32-bit sums (the taps' absolute sum
  * stays under 2.0: no overflow). Frodhes (0.9.5 cpu-trim): in passes of up to RS_C frames, the pass's frames into
  * the history first, then its outputs (the same frames, the same order: tests/py/test_uac_fir.py, bit for bit) */
-#define UAC_KNEE 29204                                  /* Frodhes: the 48 kHz knee, fx.c's LIM_T (-1.0 dBFS; 24576 with
-                                                         * the -2.7 dBFS ceiling before 0.9.10) */
-#define UAC_KNEE_SH 3u                                  /* the excess over it x 1/8: up to 1.97 x the knee fits under full
-                                                         * scale (1/2 before 0.9.10, 1.67 x of 24576) */
+#define UAC_KNEE 24576                                  /* Frodhes: the 48 kHz knee (0.75 of full scale) */
 #if FELUCCA_UAC_LOCK != 1                               /* (locked: uac_tap_lock serves both rates) */
 static FR_RAM __attribute__((noinline)) void uac_tap48(const int32_t *out, uint32_t n)
 {
@@ -1425,13 +1422,13 @@ static FR_RAM __attribute__((noinline)) void uac_tap48(const int32_t *out, uint3
                     int32_t vl = (int32_t)(al >> UAC_FIR_Q), vr = (int32_t)(ar >> UAC_FIR_Q);
                     /* Frodhes (0.9.7, BUGHUNT #38b): a knee before the clamp. The FIR's phases gain up to 1.67 on a
                      * loud high passage, so a signal the limiter kept at 24000 could overshoot full scale and be
-                     * clamped (+2.7 dB measured on the FM-1). Above UAC_KNEE the excess is cut (UAC_KNEE_SH): 29204 ..
-                     * 57708 maps to 29204 .. 32767 (symmetric: -x gives -y); below it nothing changes (one unsigned
+                     * clamped (+2.7 dB measured on the FM-1). Above UAC_KNEE the excess is halved: 24576 .. 40958
+                     * maps to 24576 .. 32767 (symmetric: -x gives -y); below it nothing changes (one unsigned
                      * test a channel; tests/py/test_uac_fir.py) */
                     if ((uint32_t)(vl + UAC_KNEE) > 2u * UAC_KNEE)
-                        vl = vl > 0 ? UAC_KNEE + ((vl - UAC_KNEE) >> UAC_KNEE_SH) : -UAC_KNEE - ((-vl - UAC_KNEE) >> UAC_KNEE_SH);
+                        vl = vl > 0 ? UAC_KNEE + ((vl - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vl - UAC_KNEE) >> 1);
                     if ((uint32_t)(vr + UAC_KNEE) > 2u * UAC_KNEE)
-                        vr = vr > 0 ? UAC_KNEE + ((vr - UAC_KNEE) >> UAC_KNEE_SH) : -UAC_KNEE - ((-vr - UAC_KNEE) >> UAC_KNEE_SH);
+                        vr = vr > 0 ? UAC_KNEE + ((vr - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vr - UAC_KNEE) >> 1);
                     vl = vl < -32768 ? -32768 : vl; vl = vl > 32767 ? 32767 : vl;
                     vr = vr < -32768 ? -32768 : vr; vr = vr > 32767 ? 32767 : vr;
                     ring[wk++ & (UA_N - 1u)] = (uint32_t)(uint16_t)vl | (uint32_t)vr << 16;
@@ -1522,9 +1519,9 @@ static FR_RAM __attribute__((noinline)) void uac_tap_lock(const int32_t *out, ui
                     /* (either above the knee, rare: the 48 kHz path's knee, then the clamp; under it both fit 16 bits
                      * as they are: the same samples, one test) */
                     if ((uint32_t)(vl + UAC_KNEE) > 2u * UAC_KNEE)
-                        vl = vl > 0 ? UAC_KNEE + ((vl - UAC_KNEE) >> UAC_KNEE_SH) : -UAC_KNEE - ((-vl - UAC_KNEE) >> UAC_KNEE_SH);
+                        vl = vl > 0 ? UAC_KNEE + ((vl - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vl - UAC_KNEE) >> 1);
                     if ((uint32_t)(vr + UAC_KNEE) > 2u * UAC_KNEE)
-                        vr = vr > 0 ? UAC_KNEE + ((vr - UAC_KNEE) >> UAC_KNEE_SH) : -UAC_KNEE - ((-vr - UAC_KNEE) >> UAC_KNEE_SH);
+                        vr = vr > 0 ? UAC_KNEE + ((vr - UAC_KNEE) >> 1) : -UAC_KNEE - ((-vr - UAC_KNEE) >> 1);
                     vl = vl < -32768 ? -32768 : vl; vl = vl > 32767 ? 32767 : vl;
                     vr = vr < -32768 ? -32768 : vr; vr = vr > 32767 ? 32767 : vr;
                 }

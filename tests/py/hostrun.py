@@ -21,14 +21,17 @@ _built = {}
 
 def voices(engine="rhodes"):
     """the host build's voice count for an engine ("rhodes", or "bars" / "vibes" / "marimba"): HOST_DEFS
-    -DRH_VOICES=N / -DBAR_VOICES=N (one engine), -DFR_VOICES=N (both), else rhodes.c's defaults (10 on
-    every engine)"""
+    -DRH_VOICES=N / -DBAR_VOICES=N (one engine), -DFR_VOICES=N (both), -DFR_C1=1 (the two-core build: frodhes.c's
+    FR_VOICES 14), else rhodes.c's defaults (10 on every engine)"""
     key = "RH_VOICES" if engine == "rhodes" else "BAR_VOICES"
     defs = os.environ.get("HOST_DEFS", "")
     for name in (key, "FR_VOICES"):
         m = re.search(r"-D" + name + r"=(\d+)", defs)
         if m:
             return int(m.group(1))
+    if re.search(r"-DFR_C1=1\b", defs):
+        src = open(os.path.join(ROOT, "firmware", "src", "frodhes.c")).read()
+        return int(re.search(r"#define FR_VOICES (\d+)u", src).group(1))
     src = open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read()
     return int(re.search(r"#define " + key + r" (\d+)u", src).group(1))
 

@@ -97,6 +97,8 @@ RULES = [
     ("build", ["build.sh", "tools/build.py"], ALL, (), (), "the firmware build itself (flags, sections, checks)"),
     ("package", ["tools/fm1pkg_make.py", "tools/lz4blk.py"], (5,), (), (),
      "the package builder (what the update installs)"),
+    ("c1:host", ["firmware/src/c1_host.h"], (), (), (),
+     "the second core's host twin (FR_C1 host builds only: tests/py/test_c1_pipeline.py; never in a firmware image)"),
     ("engine:hq", ["firmware/src/hq/*", "firmware/gen/hq/*"], (), (), (),
      "the Move's HQ Rhodes (FR_HQ only, never in the FM-1 / SMK builds: float_check; Gate H, make test-move)"),
     ("firmware:unknown", ["firmware/*"], ALL, ENGINES_T2 + ("effects",), (USB2,),

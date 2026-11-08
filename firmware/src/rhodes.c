@@ -400,7 +400,10 @@ static void rh_coef(const rh_mode_t *m, int32_t d30, int32_t t30, int32_t k16, i
  * one only when its stamp is the tuning and the decays of this note-on (no bend: the bend changes the tuning), else
  * rh_coef as before: the same integers either way (Gate R; tests/py/test_rh_cc.py). 2 x 88 x 5 x 16 B in the pool */
 typedef struct { int32_t e0, eps0, e1, eps1; } rh_cc_t;
-static rh_cc_t rh_cc[2][RH_NKEY][RH_NM] RH_OWN_SECTION(".pool.rh_cc");
+#ifndef RH_CC_SEC
+#define RH_CC_SEC ".pool.rh_cc"                 /* (FR_C1 builds, frodhes.c: .ramx) */
+#endif
+static rh_cc_t rh_cc[2][RH_NKEY][RH_NM] RH_OWN_SECTION(RH_CC_SEC);
 static volatile int32_t rh_cc_st[2][3] RH_OWN_SECTION(".bss.rh_cc_st");   /* each buffer's TUNE t, DECAY k, RELEASE k */
 static volatile uint32_t rh_cc_pub RH_OWN_SECTION(".bss.rh_cc_pub");      /* the published buffer + 1 (0 = none yet) */
 
@@ -1333,11 +1336,15 @@ static void rh_start_pend(rh_voice_t *v)                /* a stolen voice is gon
     if (rel == 3u && v->life > RH_OFF_LIFE) v->life = RH_OFF_LIFE;
 }
 
+#ifndef RH_NA
+#define RH_NA RH_NV                                     /* the voices a strike may take (FR_C1 builds, frodhes.c: fewer
+                                                         * once core 1 is held: the one-core fallback) */
+#endif
 static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already waits for a note; try next block */
 {
     uint32_t i, pick = RH_NV, best = 0xFFFFFFFFu;
-    for (i = 0; i < RH_NV && rv[i].pend; i++) ;
-    if (i == RH_NV) return 0;                           /* (more than RH_NV steals in one block: BUGHUNT #21) */
+    for (i = 0; i < RH_NA && rv[i].pend; i++) ;
+    if (i == RH_NA) return 0;                           /* (more than RH_NV steals in one block: BUGHUNT #21) */
     rh_knock_strike(note, vel);
     for (i = 0; i < RH_NV; i++)                         /* the same note still sounding: re-strike, superpose */
         if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) {
@@ -1362,9 +1369,9 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
             rh_hd_restrike(v, vel);                     /* (after the map's gain: the glide's base) */
             return 1;
         }
-    for (i = 0; i < RH_NV; i++)
+    for (i = 0; i < RH_NA; i++)
         if (!rv[i].alive) { rh_init(&rv[i], note, vel); return 1; }
-    for (i = 0; i < RH_NV; i++) {                       /* steal: the quietest released voice, else the oldest */
+    for (i = 0; i < RH_NA; i++) {                       /* steal: the quietest released voice, else the oldest */
         uint32_t m, sum = 0, score;
         if (rv[i].pend) continue;
         for (m = 0; m < RH_NM; m++) sum += (uint32_t)rv[i].m[m].peak >> 4;
@@ -1982,6 +1989,163 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
     rh_held_bits = held;
     rh_active_bits = act;
 }
+#if defined(FR_C1) && FR_C1
+/* FR_C1 (engine.c eng_begin / eng_chunk / eng_end, frodhes.c app_audio): the block in chunks of frames [o, e), every
+ * voice's frames of a chunk, then that chunk's post chain (the noises, RLC, body, Q15, the side), so core 1 runs one
+ * chunk's effects while core 0 renders the next. The same integers as rh_render over the block: rh_voice_sub is per
+ * voice and per 32-frame sub-block already (its state is the voice's), the filters and the dithers carry their state
+ * from chunk to chunk, rh_begin decides what rh_render decides once a block (events, TYPE, retune, shed, idle, side) and
+ * rh_end sums up what it sums up at the end. Two things cross voices within a block: the felt noise's LFSR (rh_lfsr,
+ * consumed voice by voice, each felt voice starting where the one before it ends: rh_begin jumps it ahead by what each
+ * will take, rh_lfsr_jump; a voice's felt ends early only at its steal fade's end, known from fade), and rh_ages (a
+ * waiting note started at a steal's end takes the next age: rh_end gives those out again in voice order) */
+static const uint16_t RH_LJ32[16] = {0x137B, 0x26F6, 0x4DEC, 0x9BD8, 0x5FB1, 0xBF62, 0x16C5, 0x2D8A, 0x5B14, 0xB628,
+                                     0x0451, 0x08A2, 0x1144, 0x2288, 0x4510, 0x8A20};    /* bit b, 32 steps on */
+static const uint16_t RH_LJ256[16] = {0x9AB8, 0x5D71, 0xBAE2, 0x1DC5, 0x3B8A, 0x7714, 0xEE28, 0xB451, 0x00A3, 0x0146,
+                                      0x028C, 0x0518, 0x0A30, 0x1460, 0x28C0, 0x5180};   /* ... 256 steps on */
+static uint32_t rh_lfsr_mat(const uint16_t *J, uint32_t r)    /* the 0xB400 LFSR is linear: the bits' images summed */
+{
+    uint32_t o = 0;
+    for (; r; r >>= 1, J++) if (r & 1u) o ^= *J;
+    return o;
+}
+static uint32_t rh_lfsr_jump(uint32_t r, uint32_t k)        /* k steps of r = (r >> 1) ^ (-(r & 1) & 0xB400) (also
+                                                             * bars.c's bar_lfsr: its seed has bit 16, gone in 1 step) */
+{
+    for (; k && (r >> 16); k--) r = (r >> 1) ^ (-(r & 1u) & 0xB400u);
+    for (; k >= 256u; k -= 256u) r = rh_lfsr_mat(RH_LJ256, r);
+    for (; k >= 32u; k -= 32u) r = rh_lfsr_mat(RH_LJ32, r);
+    for (; k; k--) r = (r >> 1) ^ (-(r & 1u) & 0xB400u);
+    return r;
+}
+static uint32_t rhc_n, rhc_ty, rhc_felt, rhc_a0, rhc_lf_end;
+static uint32_t rhc_lf[RH_NV];                  /* each felt voice's LFSR as it plays (rhc_felt: the voices with felt) */
+static uint8_t rhc_idle;
+static int32_t rhc_mx;
+static uint32_t rhc_ds2;                        /* the side's crossfade chain's dither (rh_txf.n): rh_render runs it after
+                                                 * the whole block's side, so it starts n steps of RH_DITH further on */
+#ifdef DINGHY_HOST
+static uint32_t rhc_lfe[RH_NV];                 /* (host: where each felt voice's LFSR must end, checked in rh_end) */
+#endif
+static void rh_begin(uint32_t n)
+{
+    uint32_t i, sd, r;
+    rhc_n = n;
+    rh_events();
+    rhc_ty = rh_txf_type();
+    if (rh_bend_t != rh_bend_used || rh_rt_pend) rh_retune();
+    if (rh_shed_req) { rh_shed_req = 0; rh_shed(); }
+    for (i = 0; i < RH_NV && !rv[i].alive; i++) ;
+    rhc_idle = (uint8_t)(i == RH_NV && rh_quiet_blocks && !rh_pn_n);
+    if (i == RH_NV && !rhc_idle && !rh_pn_n && !rh_kn_tab && !rh_txf.n && rh_chain_zero())
+        rhc_idle = 1;
+    for (i = 0, sd = 0; i < RH_NV; i++) sd |= rv[i].alive && rv[i].pan;
+    if (sd) rh_side_tail = 4;
+    rh_side_on = rh_side_tail != 0;             /* fixed for the block: the effects' first chunk reads it */
+    rh_dith_on = rhc_idle ? 0 : -1;
+    if (rhc_idle) { rh_dith_m = RH_DITH_M0; rh_dith_s = RH_DITH_S0; }   /* (rh_render: after the mid, before the side;
+                                                 * the mid uses no dither in an idle block) */
+    for (i = 0, r = rh_lfsr, rhc_felt = 0; i < RH_NV; i++) {
+        const rh_voice_t *v = &rv[i];
+        uint32_t ns = n, c;
+        if (!v->alive || !v->felt_n) continue;
+        if (v->fade != 32768) {                 /* the steal fade ends it (rh_pickup_fx) after the sub-block where the
+                                                 * fade reaches 0: no felt after that */
+            uint32_t s = ((uint32_t)(v->fade > 0 ? v->fade : 0) + (32768u / FADE_SAMPLES) - 1u) / (32768u / FADE_SAMPLES);
+            uint32_t d = s ? ((s - 1u) / SUB + 1u) * SUB : SUB;
+            if (d < ns) ns = d;
+        }
+        c = v->felt_n < ns ? v->felt_n : ns;
+        rhc_felt |= 1u << i; rhc_lf[i] = r;
+        r = rh_lfsr_jump(r, c);
+#ifdef DINGHY_HOST
+        rhc_lfe[i] = r;
+#endif
+    }
+    rhc_lf_end = r;
+    rhc_a0 = rh_ages; rhc_mx = 0;
+    if (rh_txf.n && rh_side_tail) {             /* the LCG n steps on: x a^n + c (a^n - 1) / (a - 1) */
+        uint32_t a = 1u, c = 0u;
+        if (n == 256u) { a = 0x3E57C401u; c = 0x0292A500u; }
+        else for (i = 0; i < n; i++) { a *= 1664525u; c = c * 1664525u + 1013904223u; }
+        rhc_ds2 = rh_dith_s * a + c;
+    }
+}
+static void rh_txf_blend_c(int32_t *x, const int32_t *nw, uint32_t o, uint32_t cnt)   /* rh_txf_blend from frame o */
+{
+    int32_t dw = 32768 / (int32_t)RH_TXF_BLK / (int32_t)rhc_n;
+    int32_t w = (int32_t)(RH_TXF_BLK - rh_txf.n) * (32768 / (int32_t)RH_TXF_BLK) + (int32_t)o * dw;
+    uint32_t j;
+    for (j = 0; j < cnt; j++) { w += dw; x[j] += (int32_t)(((int64_t)(nw[j] - x[j]) * w) >> 15); }
+}
+static void rh_chunk(int32_t *mono_out, uint32_t o, uint32_t e)   /* frames [o, e) of the block: mono_out, rh_side */
+{
+    uint32_t i, sb, cnt = e - o;
+    int32_t *mo = mono_out + o;
+    for (i = o; i < e; i++) rh_mono[i] = 0;
+    if (rh_side_tail) for (i = o; i < e; i++) rh_side[i] = 0;
+    for (i = 0; i < RH_NV; i++) {
+        rh_voice_t *v = &rv[i];
+        if (!v->alive) continue;
+        if (rhc_felt >> i & 1u) rh_lfsr = rhc_lf[i];
+        for (sb = o; sb < e && v->alive; sb += SUB)
+            rh_voice_sub(v, rh_mono + sb, rh_side + sb);
+        if (rhc_felt >> i & 1u) rhc_lf[i] = rh_lfsr;
+    }
+    if (rh_kn_tab || rh_pn_n) FR_FAR(rh_noise)(rh_mono + o, cnt);   /* (from a sub-block's start: the same steps) */
+    if (rhc_idle)
+        for (i = 0; i < cnt; i++) mo[i] = 0;
+    else {
+        int32_t mx;
+        rh_chain(mo, rh_mono + o, cnt, rh_st, 0, rhc_ty);
+        if (rh_txf.n) { rh_chain(rh_txf.buf + o, rh_mono + o, cnt, rh_txf.st, 0, rh_txf.ty); rh_txf_blend_c(mo, rh_txf.buf + o, o, cnt); }
+        mx = FR_FAR(rh_q15)(mo, cnt);
+        if (mx > rhc_mx) rhc_mx = mx;
+    }
+    if (rh_side_tail) {
+        int32_t *sp = rh_side + o;
+        if (rh_txf.n) memcpy(rh_txf.sbuf + o, sp, cnt * sizeof *sp);
+        rh_chain(sp, sp, cnt, sd_st, 1, rhc_ty);
+        if (rh_txf.n) {
+            uint32_t d = rh_dith_s;
+            rh_dith_s = rhc_ds2;
+            rh_chain(rh_txf.sbuf + o, rh_txf.sbuf + o, cnt, rh_txf.ss, 1, rh_txf.ty);
+            rhc_ds2 = rh_dith_s; rh_dith_s = d;
+            rh_txf_blend_c(sp, rh_txf.sbuf + o, o, cnt);
+        }
+    }
+}
+static void rh_end(void)                        /* after the block's last chunk: rh_render's end of block */
+{
+    uint32_t i, act = 0, held = 0;
+    for (i = 0; i < RH_NV; i++) {
+        rh_voice_t *v = &rv[i];
+        if (v->alive && v->life && --v->life == 0 && v->fade == 32768) v->fade = 32767;
+    }
+#ifdef DINGHY_HOST
+    for (i = 0; i < RH_NV; i++)
+        if ((rhc_felt >> i & 1u) && rhc_lf[i] != rhc_lfe[i]) { fprintf(stderr, "C1 RH LFSR voice %u\n", (unsigned)i); abort(); }
+#endif
+    rh_lfsr = rhc_lf_end;
+    if (rh_txf.n && rh_side_tail) rh_dith_s = rhc_ds2;   /* (where rh_render's second side chain leaves it) */
+    if (rh_ages != rhc_a0) {                    /* waiting notes started this block: their ages in voice order */
+        uint32_t a = rhc_a0, k = rh_ages - rhc_a0;
+        for (i = 0; i < RH_NV; i++) if (rv[i].age - rhc_a0 - 1u < k) rv[i].age = ++a;
+    }
+    if (rh_side_tail && --rh_side_tail == 0) { memset(sd_st, 0, sizeof sd_st); memset(rh_txf.ss, 0, sizeof rh_txf.ss); }
+    for (i = 0; i < RH_NV; i++)
+        if (rv[i].alive) { act |= 1u << i; rh_notes[i] = rv[i].note; if (rv[i].held) held |= 1u << i; }
+    if (!act && !rh_pn_n && rhc_mx < 2) {
+        memset(rh_st, 0, sizeof rh_st);
+        if (rh_txf.n) { rh_txf.run = rh_txf.ty; rh_txf.n = 0; }
+        if (rh_quiet_blocks < 0xFFFFu) rh_quiet_blocks++;
+    } else
+        rh_quiet_blocks = 0;
+    if (rh_txf.n && !--rh_txf.n) rh_txf_end();
+    rh_held_bits = held;
+    rh_active_bits = act;
+}
+#endif
 #ifdef FR_HQ
 #include "hq/rhodes_hq.c"
 #endif

@@ -251,7 +251,7 @@ def test_a_repeat_at_a_turning_point_is_no_event():
 def test_the_limiter_corner_is_information():
     """a click where the limiter works is 'click-lim' (information), not a gated click"""
     q = chord()
-    q = np.round(q * 29204 / np.abs(q).max())                # 2026-11-08: at LIM_T 29204 (-1.0 dBFS since 0.9.10; was 24000)
+    q = np.round(q * 24000 / np.abs(q).max())                # at LIM_T 24000 (-2.7 dBFS; 29204 in the 0.9.10 RCs, reverted 2026-11-08)
     q[int(np.argmax(np.abs(q[:, 0]))) + 300] += 2000         # (just after the loudest frame: the limiter works)
     res = C.analyse(q, None, 44100, [])
     assert ("click-lim" in kinds(res)) and "click" not in kinds(res)

@@ -32,6 +32,9 @@
 #define FR_RAM
 #define FR_FAR(fn) fn
 #endif
+#ifndef FX_RAM                                  /* (frodhes.c: FR_RAM, or flash in FR_C1 builds: core 1 runs the effects from XIP) */
+#define FX_RAM FR_RAM
+#endif
 /* the cost, us per 256-frame block (instruction counts of the compiled loops, rev_hq.c's REV_US_* comment) */
 #define REV_US_HQH 445u
 
@@ -96,7 +99,7 @@ static void rqh_gains(rev_hqh_t *s, int32_t sz)
 }
 /* the 4 diffusers over the block (v = x + g b, y = b - g v, Q14, truncated: no input, no growth), in runs that do
  * not wrap */
-static FR_RAM __attribute__((noinline)) void rqh_dif(rev_hqh_t *s, int32_t *x)
+static FX_RAM __attribute__((noinline)) void rqh_dif(rev_hqh_t *s, int32_t *x)
 {
     int16_t *a = s->ap;
     uint32_t k, i;
@@ -141,7 +144,7 @@ static FR_RAM __attribute__((noinline)) void rqh_dif(rev_hqh_t *s, int32_t *x)
     }
 #define RQH_RND(m, sh) (((m) + (1 << ((sh) - 1))) >> (sh))
 #define RQH_TZ(m, sh) sh_tz(m, sh)
-static FR_RAM __attribute__((noinline)) uint32_t rqh_end(const int16_t *q, int32_t f, int32_t *y, int32_t *lp, int32_t p,
+static FX_RAM __attribute__((noinline)) uint32_t rqh_end(const int16_t *q, int32_t f, int32_t *y, int32_t *lp, int32_t p,
                                                          int32_t g, int lo, int32_t *pao)
 {
     int32_t l = *lp, ao = 0;
@@ -173,7 +176,7 @@ static FR_RAM __attribute__((noinline)) uint32_t rqh_end(const int16_t *q, int32
         RQH_W8(SH, 0, h0) RQH_W8(SH, 1, h1) RQH_W8(SH, 2, h2) RQH_W8(SH, 3, h3)                                 \
         RQH_W8(SH, 4, h4) RQH_W8(SH, 5, h5) RQH_W8(SH, 6, h6) RQH_W8(SH, 7, h7)                                 \
     }
-static FR_RAM __attribute__((noinline)) void rqh_mix8(int16_t *o, const int32_t *y, const int32_t *xs, int32_t *mid,
+static FX_RAM __attribute__((noinline)) void rqh_mix8(int16_t *o, const int32_t *y, const int32_t *xs, int32_t *mid,
                                                       int32_t *side)
 {
     uint32_t i;

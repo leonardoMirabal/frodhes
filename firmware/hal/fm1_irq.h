@@ -51,6 +51,11 @@ fm1_crash_t fm1_crash __attribute__((section(".noinit")));
 
 extern const char fm1_fatal_stubs[];
 static void fm1_fault(const fm1_crash_t *c);   /* application: report, then reset */
+/* FM1_FAULT_HOOK(f): first in every fault, before the "next fault resets" flag (Frodhes' FR_C1 builds: fm1_core1.h; a
+ * fault of the second core stops there, one of core 0 holds the second core and returns) */
+#ifndef FM1_FAULT_HOOK
+#define FM1_FAULT_HOOK(f) ((void)(f))
+#endif
 
 static void fm1_irq_init(void)
 {
@@ -95,6 +100,7 @@ void fm1_fault_c(uint32_t *f)
     static volatile uint32_t in_fault;
     uint32_t i, count = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.count : 0;
     uint32_t early = fm1_crash.magic == FM1_CRASH_MAGIC ? fm1_crash.early : 0;
+    FM1_FAULT_HOOK(f);
     fm1_irq_off();
     if (in_fault++)                           /* fault while reporting: reset at once */
         *(volatile uint32_t *)0x10000u |= 1u << 4;
