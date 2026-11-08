@@ -75,6 +75,7 @@ while the plugin is loaded, not in the project yet.
 | Sample rates | 44.1 kHz: the app's own samples. 48 kHz: the FM-1's own USB resampler, the FM-1's USB stream bit for bit. Any other rate from 1 to 768 kHz: a windowed-sinc resampler (error under 1 LSB of 16 bits in the passband) |
 | Latency | reported to the host: 10 ms (441 frames at 44.1 kHz, 487 at 48 kHz, 11 ms or more at other rates). Events are placed on the millisecond the FM-1 would see them |
 | Instances | up to 16 in one host process; a 17th stays silent and says so in the host's log |
+| Floods | a host may send thousands of parameter, program or controller changes in one block (pluginval does): none is dropped. When the event queue runs low, the changes to one parameter (or one controller of a channel) wait in one entry that keeps the latest value, which is all the app would have played: it applies everything due before each millisecond's step. Notes are never merged |
 | The UI core | `plugin/frp_ui_iface.h`: everything the plugin's own window shows and does (parameters with gestures, presets, settings, MIDI learn, SUSTAIN, BYPASS, meters, held notes), main thread only, never blocking the audio |
 
 Not in this build: the FM-1's sequencer, arpeggiator and chord buttons (their CCs are ignored, as on the Move), the

@@ -38,5 +38,5 @@ const frp_slot_api_t FRP_CAT(frp_slot_, FRP_SLOT) = {
     .boot = sb_boot, .booted = sb_booted, .reuse = sb_reuse, .put = sb_put, .step = sb_step, .drain = sb_drain,
     .avail = sb_avail, .read = sb_read, .now = sb_now, .snapshot = sb_snapshot, .state_get = sb_state_get,
     .state_set = sb_state_set, .set_tempo = sb_set_tempo, .stats = sb_stats, .check_params = sb_check_params,
-    .user_put = sb_user_put, .fact_info = sb_fact_info,
+    .user_put = sb_user_put, .fact_info = sb_fact_info, .room = sb_room,
 };

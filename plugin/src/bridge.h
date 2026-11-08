@@ -96,6 +96,7 @@ typedef struct frp_slot_api {
                                           * saved = 1 (vals unused): the sound playing was saved as name. -1 busy */
     int (*fact_info)(uint32_t i, char *name, uint32_t n, uint8_t *vals);   /* any thread: factory preset i's name
                                           * ("SUITCASE") and values (FRP_NPARAM_APP bytes; either may be NULL) */
+    uint32_t (*room)(void);              /* the thread that puts: how many more events fit the queue now */
 } frp_slot_api_t;
 
 #define FRP_SLOT_DECL(n) extern const frp_slot_api_t frp_slot_##n;

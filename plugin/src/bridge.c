@@ -65,6 +65,8 @@ static atomic_int slot_used[2u * FRP_SLOTS];
 #define RS_MIN 1000.0
 #define RS_MAX 768000.0
 enum { M441, M48, MANY };
+#define PK_MIDI (16u * 128u + 3u * 16u)  /* the parked MIDI: CC (channel x controller), program, pressure, bend */
+#define PK_N (FRP_NPARAM + PK_MIDI)
 
 typedef struct { uint8_t kind; uint32_t a; int32_t v; } uq_ev_t;
 struct frp_inst {
@@ -83,6 +85,12 @@ struct frp_inst {
     char sj[FRP_STATE_MAX];
     char xbuf[FRP_STATE_MAX];            /* the audio side's hand-over buffer */
     int32_t tbuf[2u * 256u];
+    /* changes held back while the slot's queue is nearly full (a host's flood of automation): the latest value and
+     * time per parameter and per MIDI controller, put into the queue as it empties (park_put, park_flush) */
+    int32_t pk_v[PK_N];
+    uint32_t pk_at[PK_N];
+    uint8_t pk_on[PK_N];
+    uint32_t pk_n, pk_merged;
     uq_ev_t uq[UQ];
     _Atomic uint32_t uqw, uqr;
     _Atomic uint32_t peak[2];            /* the output's peak since the last read (float bits) */
@@ -210,6 +218,8 @@ static void do_swap(frp_inst_t *in, int np, const char *json)
     in->slot = in->slots[np];
 }
 static void apply_ev(frp_inst_t *in, uint8_t kind, uint32_t a, int32_t v);
+static void park_flush(frp_inst_t *in);
+static void park_drain(frp_inst_t *in);
 /* the processing side, at a block's start: the UI's events, a state's switch, a switch asked */
 static void block_start(frp_inst_t *in)
 {
@@ -263,6 +273,7 @@ int frp_inst_activate(frp_inst_t *in, double rate)
     if (in->s) {
         uint32_t a;
         block_start(in);                 /* (what the UI queued, a switch asked: the instance is not active yet) */
+        park_flush(in);                  /* (what stayed parked at the deactivation) */
         for (int k = 0; k < 2; k++) {
             const frp_slot_api_t *t = pool_api(in, k);
             if (!t) continue;
@@ -274,7 +285,11 @@ int frp_inst_activate(frp_inst_t *in, double rate)
     in->active = 1;
     return 0;
 }
-void frp_inst_deactivate(frp_inst_t *in) { in->active = 0; }
+void frp_inst_deactivate(frp_inst_t *in)
+{
+    in->active = 0;
+    park_drain(in);                      /* (what is parked: applied now) */
+}
 uint32_t frp_inst_latency(const frp_inst_t *in)
 {
     /* the resampler: a symmetric prototype of 160 x 12 taps, its centre 959.5 / 160 = 6.0 input frames = 6.5 out */
@@ -309,11 +324,71 @@ static void note_track(frp_inst_t *in, uint8_t st, uint8_t d1, uint8_t d2)
     else if (t == 0xB0u && (d1 == 120u || d1 == 123u))
         for (int k = 0; k < 128; k++) atomic_store_explicit(&in->notes[k], 0, memory_order_relaxed);
 }
+/* The flood. The slot's queue holds SB_Q events; a host may send far more in one block (pluginval's parameter thread
+ * test, through the VST3 wrapper: 2000+ parameter changes and program changes a 32-frame block, every one due ~10 ms
+ * ahead, so the queue holds ~15 blocks of them). Rather than drop them, a change that finds PK_ROOM places or fewer
+ * left is parked: one entry a parameter, and one a MIDI controller of a channel, its program, its pressure and its
+ * bend; the entry keeps the latest value at the latest time, and every later change of the same thing joins it while
+ * it is parked (so the order per parameter or controller holds). Only values the app never plays are merged away:
+ * the app steps once a millisecond and applies everything due first, so of the changes to one parameter due at or
+ * before a step only the last is heard (a parked entry is due no earlier than the changes it merged; of a burst of
+ * program changes the last preset loads, and UNDO then goes back to the sound before the burst). MIDI that is
+ * not a level (notes, the switch and mode controllers, RPN / NRPN, bank select) is never merged; the queue keeps
+ * PK_ROOM / 2 places for it. */
+#define PK_ROOM 1024u
+static int park_midi_key(uint8_t st, uint8_t d1)   /* the MIDI's entry (FRP_NPARAM + ...), -1 not a level */
+{
+    uint32_t t = st & 0xF0u, ch = st & 15u, cc = d1 & 127u;
+    if (t == 0xC0u) return (int)(FRP_NPARAM + 16u * 128u + ch);
+    if (t == 0xD0u) return (int)(FRP_NPARAM + 16u * 128u + 16u + ch);
+    if (t == 0xE0u) return (int)(FRP_NPARAM + 16u * 128u + 32u + ch);
+    if (t != 0xB0u || cc == 0u || cc == 32u || cc == 6u || cc == 38u || (cc >= 64u && cc <= 69u) || (cc >= 96u && cc <= 101u) ||
+        cc >= 120u) return -1;
+    return (int)(FRP_NPARAM + ch * 128u + cc);
+}
+static int park_put(frp_inst_t *in, uint32_t i, uint32_t at, int32_t v)   /* 1: parked (else the caller puts it) */
+{
+    if (!in->pk_on[i] && !(at && in->s->room() <= PK_ROOM)) return 0;   /* (parked already: so must this one be) */
+    if (!at) at = in->s->now() + 1u;
+    if (!in->pk_on[i]) { in->pk_on[i] = 1; in->pk_n++; in->pk_at[i] = at; }
+    else {
+        in->pk_merged++;
+        if ((int32_t)(at - in->pk_at[i]) > 0) in->pk_at[i] = at;
+    }
+    in->pk_v[i] = v;
+    return 1;
+}
+static void park_flush(frp_inst_t *in)   /* the parked changes into the queue, as far as it has room */
+{
+    if (!in->pk_n || !in->s) return;
+    for (uint32_t i = 0; i < PK_N && in->pk_n; i++) {
+        if (!in->pk_on[i]) continue;
+        if (in->s->room() <= PK_ROOM / 2u) return;
+        if (i < FRP_NPARAM ? in->s->put(FRP_EV_PARAM, in->pk_at[i], FRP_PARAMS[i].id, in->pk_v[i])
+                           : in->s->put(FRP_EV_MIDI, in->pk_at[i], (uint32_t)in->pk_v[i], 0)) return;
+        in->pk_on[i] = 0;
+        in->pk_n--;
+    }
+}
+static void park_drain(frp_inst_t *in)   /* the thread that owns the slot, no block running: the queue applied now,
+                                          * the parked changes after it (a few rounds: a drain can leave MIDI waiting
+                                          * for the app's ring, and what is still parked goes at the next block) */
+{
+    for (int k = 0; k < 4 && in->s; k++) {
+        park_flush(in);
+        in->s->drain();
+        if (!in->pk_n) break;
+    }
+}
 void frp_inst_midi(frp_inst_t *in, uint32_t time, uint8_t st, uint8_t d1, uint8_t d2)
 {
+    uint32_t a = (uint32_t)st | (uint32_t)(d1 & 127u) << 8 | (uint32_t)(d2 & 127u) << 16, at;
+    int k;
     if (!in->s || st < 0x80u || st == 0xF0u || st == 0xF7u) return;
     note_track(in, st, d1, d2);
-    (void)in->s->put(FRP_EV_MIDI, due_ms(in, time), (uint32_t)st | (uint32_t)(d1 & 127u) << 8 | (uint32_t)(d2 & 127u) << 16, 0);
+    at = due_ms(in, time);
+    if ((k = park_midi_key(st, d1)) >= 0 && park_put(in, (uint32_t)k, at, (int32_t)a)) return;
+    (void)in->s->put(FRP_EV_MIDI, at, a, 0);
 }
 static int32_t param_round(uint32_t idx, double v)
 {
@@ -339,7 +414,9 @@ static void param_put(frp_inst_t *in, uint32_t at, uint32_t id, double value)
         if (!in->active) block_start(in);
         return;
     }
-    if (in->s) (void)in->s->put(FRP_EV_PARAM, at, id, param_round((uint32_t)i, value));
+    if (!in->s) return;
+    if (park_put(in, (uint32_t)i, at, param_round((uint32_t)i, value))) return;
+    (void)in->s->put(FRP_EV_PARAM, at, id, param_round((uint32_t)i, value));
 }
 void frp_inst_param(frp_inst_t *in, uint32_t time, uint32_t id, double value)
 {
@@ -348,7 +425,7 @@ void frp_inst_param(frp_inst_t *in, uint32_t time, uint32_t id, double value)
 void frp_inst_param_now(frp_inst_t *in, uint32_t id, double value)
 {
     param_put(in, 0u, id, value);
-    if (in->s && !in->active) in->s->drain();
+    if (in->s && !in->active) park_drain(in);
 }
 /* an event for the slot playing, at once (the processing side), or the UI's (the main thread: below) */
 static void apply_ev(frp_inst_t *in, uint8_t kind, uint32_t a, int32_t v)
@@ -394,7 +471,7 @@ int frp_inst_main(frp_inst_t *in)
 void frp_inst_drain(frp_inst_t *in)
 {
     block_start(in);
-    if (in->s) in->s->drain();
+    park_drain(in);
 }
 int frp_inst_user_put(frp_inst_t *in, const uint8_t *vals, const char *name, int saved)
 {
@@ -580,6 +657,7 @@ void frp_inst_render(frp_inst_t *in, float *l, float *r, uint32_t n, uint32_t te
     uint32_t i = 0;
     if (!in->s || !in->active) { memset(l, 0, n * sizeof *l); memset(r, 0, n * sizeof *r); return; }
     block_start(in);
+    park_flush(in);
     in->s->set_tempo(tempo_bpm10);
     if (in->tail >= 0) in->sp[in->tail]->set_tempo(tempo_bpm10);
     if (in->mode == MANY) { rs_render(in, l, r, n); in->pos += n; meter(in, l, r, n); return; }

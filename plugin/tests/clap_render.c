@@ -47,13 +47,14 @@
 #define ENGINE_ID 0x10000u               /* plugin/gen/params_map.h FRP_ID_ENGINE */
 
 /* ---- the host side */
-static int warnings, late_warnings, slot_warnings;
+static int warnings, late_warnings, slot_warnings, full_warnings;
 static void h_log(const clap_host_t *h, clap_log_severity s, const char *msg)
 {
     (void)h;
     if (s >= CLAP_LOG_WARNING) { warnings++; fprintf(stderr, "plugin log: %s\n", msg); }
     if (strstr(msg, "late")) late_warnings++;
     if (strstr(msg, "16 instances")) slot_warnings++;
+    if (strstr(msg, "did not fit") && !strstr(msg, " 0 did not fit")) full_warnings++;
 }
 static const clap_host_log_t H_LOG = { h_log };
 static int rescans;
@@ -411,6 +412,70 @@ static int selftest(void)
     CHECK(a->activate(a, 44100.0, 1, 4096) && pl->get(a) == 441u, "44.1 kHz: latency %u", pl->get(a));
     a->deactivate(a);
     printf("ok    rates: 44100 (latency 441), 48000 (487), 96000 (1056) taken, 500 refused\n");
+    /* a flood of automation (pluginval's parameter thread test: 2000+ changes a 32-frame block, each due ~10 ms
+     * ahead, ~15 blocks in the queue at once): no change dropped, every parameter ends on the last value sent */
+    {
+        enum { FB = 30, FN = 4000, FIDS = 40 };
+        int last[FIDS + 1], hi[FIDS + 1], sent = 0;
+        clap_param_info_t inf;
+        for (k = 1; k <= FIDS; k++) { last[k] = -1; hi[k] = pp->get_info(a, (uint32_t)k, &inf) ? (int)inf.max_value : 0; }
+        full_warnings = 0;
+        CHECK(a->activate(a, 48000.0, 1, 4096) && a->start_processing(a), "activate (flood)");
+        rnd_state = 0x27129cdu;
+        for (i = 0; i < FB + 120; i++) {
+            blk_n = 0;
+            for (k = 0; i < FB && k < FN; k++) {
+                int id = 1 + (int)(rnd() % FIDS), val = hi[id] ? (int)(rnd() % (uint32_t)(hi[id] + 1)) : 0;
+                clap_event_param_value_t *e = &blk_ev[blk_n++].u.p;
+                memset(e, 0, sizeof *e);
+                e->header.size = sizeof *e; e->header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+                e->header.type = CLAP_EVENT_PARAM_VALUE; e->header.time = (uint32_t)k * 32u / FN;
+                e->param_id = (clap_id)id; e->note_id = -1; e->port_index = -1; e->channel = -1; e->key = -1;
+                e->value = val;
+                last[id] = val;
+                sent++;
+            }
+            process(a, l, r, 32, (int64_t)i * 32);
+        }
+        blk_n = 0;
+        a->stop_processing(a);
+        for (k = 1; k <= FIDS; k++)
+            CHECK(last[k] < 0 || (pp->get_value(a, (clap_id)k, &v) && (int)v == last[k]),
+                  "flood: parameter %d ends on %d, the last value sent (%g)", k, last[k], v);
+        a->deactivate(a);
+        CHECK(!full_warnings, "flood: no change dropped (%d warnings)", full_warnings);
+        printf("ok    flood: %d changes in %d blocks of 32 frames, none dropped, every parameter on its last value\n", sent, FB);
+        /* the same through MIDI (the VST3 wrapper's program and controller parameters): program changes 0..15 and a
+         * controller, none dropped, the last program's preset loaded */
+        {
+            int lastpc = -1;
+            full_warnings = 0;
+            sent = 0;
+            CHECK(a->activate(a, 48000.0, 1, 4096) && a->start_processing(a), "activate (MIDI flood)");
+            for (i = 0; i < FB + 400; i++) {
+                blk_n = 0;
+                for (k = 0; i < FB && k < FN; k++) {
+                    clap_event_midi_t *e = &blk_ev[blk_n++].u.m;
+                    int pc = (int)(rnd() % 16u);
+                    memset(e, 0, sizeof *e);
+                    e->header.size = sizeof *e; e->header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+                    e->header.type = CLAP_EVENT_MIDI; e->header.time = (uint32_t)k * 32u / FN;
+                    if (k & 1) { e->data[0] = 0xB0; e->data[1] = 74; e->data[2] = (uint8_t)(rnd() % 128u); }
+                    else { e->data[0] = 0xC0; e->data[1] = (uint8_t)pc; lastpc = pc; }
+                    sent++;
+                }
+                process(a, l, r, 32, (int64_t)i * 32);
+            }
+            blk_n = 0;
+            a->stop_processing(a);
+            CHECK(pp->get_value(a, 0x10002u, &v) && (int)v == lastpc, "MIDI flood: the last program's preset (F%02d, PRESET %g)",
+                  lastpc + 1, v);
+            a->deactivate(a);
+            CHECK(!full_warnings, "MIDI flood: no change dropped (%d warnings)", full_warnings);
+            printf("ok    MIDI flood: %d program and controller changes in %d blocks, none dropped, F%02d loaded last\n",
+                   sent, FB, lastpc + 1);
+        }
+    }
     b->destroy(b);
     /* FRP_SLOTS + 1 instances: 16 play (with a ready-made a), the 17th is silent and says why */
     for (k = 0; k < 16; k++) CHECK((many[k] = create()) != 0, "instance %d", k + 2);

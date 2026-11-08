@@ -652,6 +652,10 @@ static int sb_put(int kind, uint32_t at, uint32_t a, int32_t v)
     atomic_store_explicit(&sb.qw, w + 1u, memory_order_release);
     return 0;
 }
+static uint32_t sb_room(void)            /* the producer's side: events that still fit */
+{
+    return SB_Q - (atomic_load_explicit(&sb.qw, memory_order_relaxed) - atomic_load_explicit(&sb.qr, memory_order_acquire));
+}
 static void sb_reset_now(void)           /* all notes off, the effects' state cleared (frodhes.c midi_cc 123, 10) */
 {
     uint32_t t;
