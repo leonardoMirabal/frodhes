@@ -1691,6 +1691,12 @@ static void dly_flush_c(void)
     else if (!dly_c.sw && dly_tail_over(dly_pd.n, dly_c.target)) dly_lp = dly_hp = 0;
     dly_pd.on = 0;
 }
+/* the block's start, before its first chunk (frodhes.c c1_pre_job: core 1 while core 0 renders chunk 0's voices; or
+ * fx_process's first chunk itself): the block before's leftovers */
+static void fx_pre_c(void)
+{
+    dly_flush_c();
+}
 #else
 static inline __attribute__((always_inline)) void fx_delay_t(int32_t *L, int32_t *R, uint32_t n, const int rst)
 {
@@ -2329,7 +2335,7 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     if (FXC_1) c1_est_blk++;
 #endif
     if (FXC_1) {                                       /* (CC 10's block: one chunk, frodhes.c) */
-        dly_flush_c();                                 /* (the block before's delay rows) */
+        fx_pre_c();                                    /* (the block before's leftovers, if c1_pre_job did not) */
         if (fx_reset_req) {
             fx_reset_state(); memset((void *)mono, 0, n * sizeof mono[0]); fx_reset_req = 0;
             FX_SIDE_ON = 0; sp_g = 32768; sp_aw = 0;

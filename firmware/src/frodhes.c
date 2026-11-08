@@ -115,7 +115,7 @@ static uint32_t smk_btn_leds;                   /* the SMK's own buttons' LEDs (
 #if FR_C1 && defined(C1_PROF)
 /* and the two cores' timeline (APP_DEFS="-DRH_PROF_STAGES -DC1_PROF" ./build.sh --c1): C1PF(i, ticks) keeps item i's
  * maximum, written by either core (a lost maximum at the query's reset is fine here). Since the block's start: 16
- * core 0's voices done (the last chunk's, eng_end); 17 core 0's voice time in a block (the waits out); 19 its last wait,
+ * core 0's voices done (the last chunk's, eng_end); 17 core 0's voice time in a block (the waits out); 18 core 1's block-start job (c1_pre_job); 19 its last wait,
  * 20 the waits before it summed; 23 the last chunk's effects, 24 the first's, 25 a middle one's; each stage's time in a
  * block (its chunks summed): 26 COMP, 27 EQ, 28 DRIVE, 29 FILTER, 30 TREM / WAH, 31 SPREAD + PHASER, 32 the delay
  * (chorus too), 33 the reverb, 34 fx_out; 35-43 the same stages in the first chunk alone */
@@ -260,6 +260,19 @@ static void c1_fx_job(uint32_t a)               /* core 1 (or core 0: refused, l
     else C1PF(25, a1 - a0);
 #endif
 }
+/* the block's start (core 1, while core 0 renders chunk 0's voices): the work left from the block before that no
+ * chunk needs to wait for (fx.c fx_pre_c). Run again by core 0 (refused, late) it finds it done */
+static void c1_pre_job(uint32_t a)
+{
+    (void)a;
+#if defined(C1PF_ON)
+    uint32_t a0 = fm1_ticks();
+#endif
+    fx_pre_c();
+#if defined(C1PF_ON)
+    C1PF(18, fm1_ticks() - a0);
+#endif
+}
 /* core 1 held for good: from now on strikes take FR_C1_NV1 voices, the ones above fade out as a steal */
 static void c1_one_core(void)
 {
@@ -325,7 +338,10 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         uint32_t pw = 0, pv = 0, pt;
         c1_pf_t0 = t0;
 #endif
+        void (*jf)(uint32_t) = c1_pre_job;      /* (the job posted: what core 0 runs if it is refused or late) */
         c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n;
+        posted = fr_c1_run(c1_pre_job, 0);
+        if (!posted) c1_pre_job(0);
         eng_begin(n);
         for (j = 0; j < C1_SUB; j++) {
 #if defined(C1PF_ON)
@@ -350,9 +366,10 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #else
                 r = fr_c1_wait_us(C1_DEADLINE_US);
 #endif
-                if (r) c1_fx_job(0);            /* (refused -2: core 1 stays on; late / held -1) */
+                if (r) jf(0);                   /* (refused -2: core 1 stays on; late / held -1) */
             }
             c1_job.o = j * k; c1_job.e = j * k + k;
+            jf = c1_fx_job;
             posted = fr_c1_run(c1_fx_job, 0);   /* core 1: chunk j's effects, from now */
             if (!posted) c1_fx_job(0);
         }
