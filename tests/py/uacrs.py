@@ -252,13 +252,16 @@ def sidebands(y, t, f, rate, ppm, win, band=1000.0):
 
 
 def piano(n):
-    """the host render (make host: build/host/frodhes.wav), left channel, repeated to n samples with 50 ms of
-    silence between the repeats (no click of its own at a seam)"""
+    """the host build's built-in demo (what make host renders to build/host/frodhes.wav), left channel, repeated to n
+    samples with 50 ms of silence between the repeats (no click of its own at a seam). Rendered into this worker's
+    own directory from the shared binary (hostrun: built once, atomically): `make host` here recompiled
+    build/host/frodhes in place while another worker ran it, and failed under a parallel run (2026-11-08)"""
     import wave
-    path = os.path.join(ROOT, "build", "host", "frodhes.wav")
-    if not os.path.exists(path):
-        subprocess.run(["make", "-s", "-C", ROOT, "host"], check=True, capture_output=True)
-    w = wave.open(path)
+    import hostrun
+    out = hostrun.out("uacrs-piano")
+    if not os.path.exists(out + ".wav"):
+        subprocess.run([hostrun.build(), out], check=True, capture_output=True)
+    w = wave.open(out + ".wav")
     v = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").reshape(-1, w.getnchannels())[:, 0].astype(float)
     nf = int(FS * 0.01)
     v[:nf] *= np.arange(nf) / nf
