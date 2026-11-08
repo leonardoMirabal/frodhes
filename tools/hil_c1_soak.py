@@ -3,7 +3,7 @@
 """The two-core soak (FR_C1 builds: tools/build.py --c1) on the FM-1, over USB-MIDI with the USB audio stream open:
 the worst case played for a long time while the firmware's own counters are read, the pass bars judged at the end.
 
-    tools/hil_c1_soak.py --row 274|275 [--minutes M] [--rate 48000] [--out build/hil/c1soak] [--dry-run]
+    tools/hil_c1_soak.py --row 274|275|276 [--minutes M] [--rate 48000] [--out build/hil/c1soak] [--dry-run]
     tools/hil_c1_soak.py --selftest            (no device: the decoding and the verdict on made-up replies)
     tools/hil_c1_soak.py --status              (the FM-1: core 1's items once, CC 116 = 30 / 31)
 
@@ -13,6 +13,13 @@ Rows (Textura's bench/fm1 rows 274 / 275, Frodhes' worst case):
         filter LP18 + LFO, the compressor, the EQ, REVERB HALL at the full rate, DECAY / PRE-DELAY 127)
   275   2 h: as 274, the engine turned every 10 min (Rhodes, VIBES with the motor, MARIMBA) and the REVERB TYPE
         every 2 min (HALL, PLATE, INFINITE: core 1's heaviest), a preset-like burst of CCs every 30 s
+  276   "max", 30 min (or --minutes): the CPU smashed on both cores. The engine turned every 10 min (Rhodes, VIBES,
+        MARIMBA, in a loop), all 14 voices sounding all the time: a 14-note chord at v127 every 0.25 s (mid + top,
+        14 bass, spread: steals all the time), the pedal held, lifted every 5 s; every effect at its heaviest (as
+        274) with the drive TYPE turned TSH8 / KHLON / TSH8 every 20 s, the REVERB TYPE every 30 s (HALL, PLATE,
+        INFINITE); every 100 ms a step of a sweep on the cutoff, the delay TIME, the phaser and tremolo depths, the
+        compressor's threshold and the drive's amount; the bypass (CC 111) on for 0.5 s every 20 s; a Program Change
+        burst (presets 1-6) every 60 s, then the heavy settings again
 (Boots: power-cycle the FM-1 and run --status after each boot: core 1 live, the rails 7 / 15.)
 
 Every 5 s: CC 116 (the app's worst block, the whole ISR, voices shed, the USB counters) and CC 116 = 30 (core 1's
@@ -56,7 +63,11 @@ REV_TYPES = (32, 64, 96)                                 # HALL, PLATE, INFINITE
 ENGINES = ((None, "rhodes"), (0, "vibes"), (127, "marimba"))   # CC 79: VIBES 0, MARIMBA 127 (the Rhodes: CC 80)
 VOICINGS = dict(midtop=list(range(48, 60)) + [105, 108], bass=[28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52],
                 spread=[28, 40, 52, 59, 64, 71, 76, 83, 88, 95, 100, 105, 35, 47])
-ROWS = {"274": dict(minutes=30, engines=1, rev_every=0), "275": dict(minutes=120, engines=3, rev_every=120)}
+ROWS = {"274": dict(minutes=30, engines=1, rev_every=0), "275": dict(minutes=120, engines=3, rev_every=120),
+        "276": dict(minutes=30, engines=3, rev_every=30, max=1)}
+MAX_DRV = (76, 70, 76)                                   # row 276: the drive TYPE in turn (CC 84): TSH8, KHLON, TSH8
+MAX_SWEEP = dict(FL_FREQ=(0, 127), DL_TIME=(60, 127), PH_DEPTH=(64, 127), TW_DEPTH=(64, 127), CMP_AMT=(60, 127),
+                 DRIVE=(64, 127))                        # row 276: CC -> the sweep's range (a triangle, 100 ms steps)
 BARS = dict(app_us=5000, whole_us=4500, c1_busy_us=5000, stack=11 * 1024, vdc14=7, sysvdd=15)
 
 
@@ -153,14 +164,21 @@ def selftest():
     assert judge([dict(t=0, noreply=1)])[0] == "FAIL"
     f = decode([(100, 50), (101, 1), (102, 2), (100, 51), (101, 0), (102, 1), (100, 52), (101, 0), (102, 0)])
     assert f["frec"]["reti"] == f"{(1 << 7 | 2) | (1 << 14):#010x}", f
+    pm = plan("276", 30)
+    assert pm["max"] and pm["chord_every_s"] == 0.25 and pm["engines"] == ["rhodes", "vibes", "marimba"], pm
+    pe = per_engine(pm, [dict(r, t=10, app_us=4000), dict(r, t=700, app_us=4400), dict(r, t=1300, app_us=4100)])
+    assert pe.startswith("rhodes 4000/") and "vibes 4400/" in pe and "marimba 4100/" in pe, pe
     print("hil_c1_soak selftest: ok")
 
 
 def plan(row, minutes):
     p = ROWS[row]
     m = minutes or p["minutes"]
+    mx = p.get("max", 0)
     return dict(row=row, minutes=m, engines=[e[1] for e in ENGINES[:p["engines"]]], rev_every_s=p["rev_every"],
-                voices=14, chord_every_s=1.2, pedal_every_s=20, read_every_s=5, bars=BARS)
+                voices=14, chord_every_s=0.25 if mx else 1.2, pedal_every_s=5 if mx else 20, read_every_s=5,
+                max=mx, drive_every_s=20 if mx else 0, sweep_every_s=0.1 if mx else 0, bypass_every_s=20 if mx else 0,
+                pc_every_s=60 if mx else 0, bars=BARS)
 
 
 def run(a):  # noqa: C901 (the device run)
@@ -201,8 +219,23 @@ def run(a):  # noqa: C901 (the device run)
         sys.exit("no core-1 reply (CC 116 = 30): not an FR_C1 build (tools/build.py --c1)")
     print(f"core 1 {STATE.get(first['state'], first['state'])}, rails {first.get('vdc14')} / {first.get('sysvdd')}, "
           f"voices {first.get('voices')}", flush=True)
+    def setup(i):                                         # the engine i and every effect at its heaviest
+        sel = ENGINES[i][0]
+        if sel is None:
+            cc(80, 0)                                     # the Rhodes (STAGE77)
+        else:
+            cc(79, sel)
+            cc(47, 127)                                   # VIBES' motor (inert on MARIMBA)
+        for n, v in HEAVY.items():
+            cc(CC[n], v)
+        cc(111, 0)
+        cc(64, 127)
+
     reads, t0, held, k, eng_i, rev_i = [], time.monotonic(), [], 0, -1, 0
+    drv_i = sw_i = 0
     next_read = next_chord = next_ped = next_rev = next_eng = next_burst = 0.0
+    next_drv = next_sweep = 0.0
+    next_byp, next_pc = 10.0, 40.0
     dur = p["minutes"] * 60.0
     try:
         while True:
@@ -211,17 +244,34 @@ def run(a):  # noqa: C901 (the device run)
                 break
             if t >= next_eng:
                 eng_i = (eng_i + 1) % len(p["engines"])
-                sel = ENGINES[eng_i][0]
                 cc(120, 0)
-                if sel is None:
-                    cc(80, 0)                             # the Rhodes (STAGE77)
-                else:
-                    cc(79, sel)
-                    cc(47, 127)                           # VIBES' motor (inert on MARIMBA)
-                for n, v in HEAVY.items():
-                    cc(CC[n], v)
-                cc(64, 127)
+                setup(eng_i)
                 next_eng = t + (600.0 if len(p["engines"]) > 1 else dur + 1)
+            if p["max"]:
+                if t >= next_drv:                         # the drive TYPE in turn (KHLON among them)
+                    drv_i += 1
+                    cc(CC["DRV_SW"], MAX_DRV[drv_i % len(MAX_DRV)])
+                    next_drv = t + p["drive_every_s"]
+                if t >= next_sweep:                       # a step of each sweep (a triangle over its range)
+                    sw_i += 1
+                    for i, (n, (lo, hi)) in enumerate(MAX_SWEEP.items()):
+                        span = hi - lo
+                        x = (sw_i * 3 + i * 17) % (2 * span)
+                        cc(CC[n], lo + (x if x <= span else 2 * span - x))
+                    next_sweep = t + p["sweep_every_s"]
+                if t >= next_byp:                         # the bypass for 0.5 s (the effects keep running)
+                    cc(111, 127)
+                    time.sleep(0.5)
+                    cc(111, 0)
+                    next_byp = t + p["bypass_every_s"]
+                if t >= next_pc:                          # a Program Change burst, then the heavy settings again
+                    for pc in range(1, 7):
+                        out.send(mido.Message("program_change", program=pc))
+                        time.sleep(0.04)
+                    setup(eng_i)
+                    cc(CC["DRV_SW"], MAX_DRV[drv_i % len(MAX_DRV)])
+                    cc(CC["RV_TYPE"], REV_TYPES[(rev_i - 1) % 3])
+                    next_pc = t + p["pc_every_s"]
             if p["rev_every_s"] and t >= next_rev:
                 cc(CC["RV_TYPE"], REV_TYPES[rev_i % 3])
                 rev_i += 1
@@ -231,7 +281,7 @@ def run(a):  # noqa: C901 (the device run)
                 time.sleep(0.12)
                 cc(64, 127)
                 next_ped = t + p["pedal_every_s"]
-            if p["engines"] and len(p["engines"]) > 1 and t >= next_burst:
+            if not p["max"] and len(p["engines"]) > 1 and t >= next_burst:
                 for n in ("DL_TIME", "PH_DEPTH", "FL_FREQ", "CMP_AMT"):   # a preset-like burst of CCs, then back
                     cc(CC[n], (k * 37) % 128)
                 for n in ("DL_TIME", "PH_DEPTH", "FL_FREQ", "CMP_AMT"):
@@ -276,6 +326,17 @@ def run(a):  # noqa: C901 (the device run)
     return code
 
 
+def per_engine(p, reads):
+    """the worst app / whole / core-1 busy / wait per engine (the engine turned every 10 min from t 0)"""
+    out = []
+    for i, e in enumerate(p["engines"]):
+        rs = [r for r in reads if len(p["engines"]) == 1 or int(r.get("t", 0) // 600) % len(p["engines"]) == i]
+        if rs:
+            out.append(e + " " + "/".join(str(max(r.get(k, 0) for r in rs)) for k in ("app_us", "whole_us", "busy_us",
+                                                                                      "wait_us")))
+    return "; ".join(out) + " (app / whole / c1 busy / wait, us)"
+
+
 def write_report(a, p, reads, rec, complete, interim=False):
     """OUT/<row>-report.md + .json; interim (every 10 min of a run): the reads so far, no fault-record query"""
     verdict, why = judge(reads)
@@ -292,6 +353,7 @@ def write_report(a, p, reads, rec, complete, interim=False):
         state = f"RUNNING ({verdict} so far)" if interim else (verdict if complete else "INCOMPLETE")
         f.write(f"# Two-core soak, row {a.row}: {state}\n\n")
         f.write(f"- {p['minutes']} min, engines {', '.join(p['engines'])}, {len(reads)} reads\n")
+        f.write(f"- worst per engine: {per_engine(p, reads)}\n")
         f.write(f"- worst: {', '.join(f'{k} {v}' for k, v in worst.items())}\n")
         f.write(f"- last: jobs {last.get('jobs')}, bad {last.get('bad')}, refused {last.get('refused')}, late "
                 f"{last.get('late')}, holds {last.get('holds')}, recoveries {last.get('rec1')} / {last.get('rec0')}\n")
