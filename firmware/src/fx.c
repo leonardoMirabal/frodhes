@@ -159,6 +159,9 @@ __attribute__((noinline)) static void xf_post(int32_t *L, int32_t *R, const int3
  * (tests/py/test_c1_subblock.py: the two-core build = the one-core 14-voice build, sample for sample). The block whole
  * (fxc_o 0, fxc_e fxc_n) is one chunk. Chunks are multiples of 32 samples: every effect's sub-block grid */
 static uint32_t fxc_o, fxc_e = 256u, fxc_n = 256u;
+#if FR_LAT
+static volatile uint32_t fxc_ce = 256u;               /* FR_LAT_HALF (frodhes.c app_audio): this interrupt's last frame + 1 */
+#endif
 #ifdef C1_EST_LOG
 static uint32_t c1_est_blk;                              /* (host diagnostics: the block count, fx_process) */
 #endif
@@ -2857,7 +2860,48 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
 #endif
     }
     fx_wet = wet; dc_l = dl; dce_l = el; dc_r = dr; dce_r = er;
-#if FR_C1
+#if FR_C1 && FR_LAT
+    /* FR_LAT_HALF (frodhes.c): out holds only this interrupt's frames [fxc_ce - FR_LAT_HALF, fxc_ce), the ones before
+     * are out of the DMA already. The gate at the interrupt's last frames, over its own: it opens on the block's peak
+     * so far (one core: the whole block's), from this interrupt's first frame; it counts and falls at the block's end,
+     * from its last interrupt's first frame (one core: from the block's first). Only under GATE_HI / GATE_LO (-60 dBFS) */
+    /* A change decided after the block's first frames went out takes the gain where one core's ramp from the block's
+     * start has it at this interrupt's first frame (from gate_g0): the same integers from there on; the frames before
+     * (all under -60 dBFS: that is what kept the gate as it was) had the old ramp */
+    if (fxc_e != fxc_ce) return;
+    {
+        static int32_t gate_g0;                        /* the gain at the block's first frame */
+        uint32_t co = fxc_ce - FR_LAT_HALF;
+        int32_t t0 = gate_tgt;
+        if (!co) gate_g0 = gate_g;
+        if (pk >= GATE_HI) { gate_quiet = 0; gate_tgt = 32768; }
+        else if (FXC_Z && pk < GATE_LO && ++gate_quiet >= GATE_HOLD) { gate_quiet = GATE_HOLD; gate_tgt = 0; }
+        if (gate_tgt != t0 && co) {
+            int32_t g = gate_g0;
+            for (j = 0; j < co; j++) {
+                if (g < gate_tgt) g = g + 512 > gate_tgt ? gate_tgt : g + 512;
+                else if (g > gate_tgt) g = g - GATE_FALL(g) < gate_tgt ? gate_tgt : g - GATE_FALL(g);
+            }
+            gate_g = g;
+        }
+    }
+    if (gate_g != 32768 || gate_tgt != 32768) {
+        const int32_t rnd = gate_tgt ? 0 : GATE_RND;
+        for (j = fxc_ce - FR_LAT_HALF; j < fxc_ce; j++) {
+            if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
+            else if (gate_g > gate_tgt) gate_g = gate_g - GATE_FALL(gate_g) < gate_tgt ? gate_tgt : gate_g - GATE_FALL(gate_g);
+            if (gate_g != 32768) {
+                out[2u * j] = (out[2u * j] * gate_g + rnd) >> 15;
+                out[2u * j + 1u] = (out[2u * j + 1u] * gate_g + rnd) >> 15;
+            }
+        }
+    }
+    if (!FXC_Z) return;
+    fx_peak = pk;
+    if (pk < 16) { if (fx_quiet_blocks < 0xFFFFu) fx_quiet_blocks++; } else fx_quiet_blocks = 0;
+    if (gate_g == 0) { if (fx_gz < 0xFFFFu) fx_gz++; } else fx_gz = 0;
+    return;
+#elif FR_C1
     if (!FXC_Z) return;                                /* (the gate: once the block's peak is in, over all of out) */
 #endif
     /* silence gate: the codec mutes itself on digital zero, but while anything at all comes out its analog hiss

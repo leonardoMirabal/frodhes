@@ -25,7 +25,9 @@
 #define APP_VER "0.0"
 #endif
 #define FS 44100u
-#define HALF_FRAMES 256u
+#ifndef HALF_FRAMES
+#define HALF_FRAMES 256u                        /* (the app may set it: frodhes.c FR_LAT_HALF) */
+#endif
 
 static volatile uint32_t fm1_ms;
 #if BOARD_SMK37
@@ -560,9 +562,21 @@ static void host_ms(void)
         step++;
     }
     owed += FS;                                 /* the frames this millisecond is worth, in blocks as the ISR renders */
+#if HALF_FRAMES != 256u
+    /* FR_LAT_HALF (frodhes.c): FRODHES_LAT_SYNC=1 renders a 256-frame block's halves back to back, when the 256-frame
+     * build renders its block (no main loop between them): the events land in the same blocks as there, so the two
+     * builds must give the same integers (tests/py/test_latency.py); unset, a half every HALF_FRAMES as on the FM-1 */
+    static int lat_sync = -1, lat_more;
+    if (lat_sync < 0) lat_sync = getenv("FRODHES_LAT_SYNC") && atoi(getenv("FRODHES_LAT_SYNC"));
+    while (lat_sync ? lat_more || owed >= 1000u * 256u : owed >= 1000u * HALF_FRAMES) {
+        uint32_t i;
+        if (lat_sync) { if (!lat_more) { owed -= 1000u * 256u; lat_more = 256u / HALF_FRAMES; } lat_more--; }
+        else owed -= 1000u * HALF_FRAMES;
+#else
     while (owed >= 1000u * HALF_FRAMES) {
         uint32_t i;
         owed -= 1000u * HALF_FRAMES;
+#endif
 #if APP_OUT_WRITTEN
         for (i = 0; i < 2u * HALF_FRAMES; i++)  /* garbage: the app must write every sample (as on the FM-1) */
             blk[i] = (int32_t)(0x5A5A5A5Au ^ (i * 2654435761u));

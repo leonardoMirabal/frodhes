@@ -94,6 +94,26 @@ static void fr_ramx_clear(void)
 #else
 #define FX_RAM FR_RAM
 #endif
+/* FR_LAT_HALF (a build switch, latency study: APP_DEFS="-DFR_C1=1 -DFR_LAT_HALF=128"): the I2S half buffer (the ISR's
+ * period and the output's buffering) in frames, 256 by default. Below 256 the app keeps its 256-frame block (every
+ * once-a-block decision, ramp, counter and LFO as before) and renders it over 256 / FR_LAT_HALF interrupts, chunk by
+ * chunk through FR_C1's chunk machinery (eng_begin / eng_chunk / eng_end, fx_process's [fxc_o, fxc_e)): the output is
+ * the 256-frame build's integers, its frames out one half buffer sooner (5.8 -> 2.9 ms at 128). FR_LAT_EV 1: a note-on
+ * that finds a free voice starts at the next interrupt instead of the next 256-frame block (app_audio_lat) */
+#ifndef FR_LAT_HALF
+#define FR_LAT_HALF 256u
+#endif
+#define FR_LAT (FR_LAT_HALF != 256u)
+#if FR_LAT
+#if !FR_C1
+#error "FR_LAT_HALF: the two-core build's chunks only (FR_C1)"
+#endif
+_Static_assert(FR_LAT_HALF == 128u || FR_LAT_HALF == 64u || FR_LAT_HALF == 32u, "FR_LAT_HALF: 128, 64 or 32 frames");
+#define HALF_FRAMES FR_LAT_HALF
+#ifndef FR_LAT_EV
+#define FR_LAT_EV 0
+#endif
+#endif
 #include "fr_cold.h"     /* FR_COLD: the cold code built for flash, not speed */
 #include "frodhes_store.h"   /* the flash Frodhes writes, per board, and its allow-list APP_FL_RANGE (store.h) */
 #include "keyvel.h"     /* key velocity's interfaces: first, so the scan tick (platform.c) can reach its hooks */
@@ -458,6 +478,125 @@ FR_COLD static void host_race_check(void)
     }
 }
 #endif
+#if FR_LAT
+/* FR_LAT_HALF below 256 (the top of this file): each interrupt renders frames [lat_o, lat_o + n) of the 256-frame
+ * block, as FR_C1's chunks: eng_begin at the block's first interrupt, eng_chunk per 32 frames, eng_end at its last;
+ * core 1 one job an interrupt (c1_lat_job: the block's start work at the first, then the effects over the frames
+ * ready, up to the interrupt's last), core 0 waits for it before the interrupt ends (as C1_STREAM at the block's end).
+ * fx_process indexes out from the block's start: out - 2 x lat_o (only [lat_o, lat_o + n) is written). The block's
+ * once-a-block work (the clock's phase lock, blk_n, the race check) at its last interrupt; the shedder's and the late
+ * job's limits scale with n. CC 10's block: the voices whole at its first interrupt (as eng_render), the effects on
+ * core 0 interrupt by interrupt; with core 1 held the block is chunked on core 0 (the same integers) */
+#define LAT_LB 256u                             /* the app's block */
+#define LAT_DEADLINE_US (C1_DEADLINE_US * FR_LAT_HALF / LAT_LB)
+#define LAT_SHED_US (5000u * FR_LAT_HALF / LAT_LB)
+static uint32_t lat_o;                          /* the block's frames done before this interrupt (core 1 reads it) */
+static uint8_t lat_solo, lat_whole;             /* this block: the effects on core 0 / CC 10's block */
+static uint32_t lat_ms0;                        /* fm1_ms at the block's first interrupt (tempo.c's phase lock) */
+#if FR_LAT_EV
+static void eng_mid(uint32_t o);
+#endif
+static void c1_lat_job(uint32_t a)              /* core 1, one an interrupt */
+{
+    (void)a;
+    if (!lat_o) fx_pre_c();                     /* (the block's start only: it flushes the block before's rows) */
+#ifndef DINGHY_HOST
+    while (c1_fxd < fxc_ce)
+        if (!c1_stream_step()) fr_c1_pause();
+#else
+    c1_stream_step();                           /* (the host twin: the rest at core 0's ticks and its wait) */
+#endif
+}
+static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
+{
+    uint32_t o = lat_o, e = o + n, j, k = LAT_LB / C1_SUB, solo = 0, d;
+    int32_t *ob = (int32_t *)(uintptr_t)((uintptr_t)out - (uintptr_t)o * 2u * sizeof *out);
+    int r;
+#ifndef DINGHY_HOST
+    uint32_t t0 = fm1_ticks(), us;
+#endif
+    if (!o) {
+        lat_ms0 = fm1_ms;
+        lat_whole = fx_reset_req != 0;
+        lat_solo = (uint8_t)(lat_whole || !fr_c1_live());
+        c1_rdy = 0; c1_fxd = 0;
+        c1_job.mono = c1_mono; c1_job.n = LAT_LB;
+    }
+    c1_job.out = ob;
+    fxc_ce = e;                                 /* (core 1's job stops there; fx.c's gate) */
+    fr_c1_sync();
+    if (lat_whole) {                            /* CC 10's block (fx_reset_state ends the voices: as one core) */
+        if (!o) {
+            eng_render(c1_mono, LAT_LB);
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+            host_race_check();
+#endif
+        }
+        c1_job.o = o; c1_job.e = e; c1_fx_job(0); c1_fxd = e;
+        if (!o) rh_side_on = 0;                 /* (the voices CC 10 ended: as one core) */
+    } else {
+        if (lat_solo || !fr_c1_run(c1_lat_job, 0)) { solo = 1; if (!o) fx_pre_c(); }
+        if (!o) eng_begin(LAT_LB);
+#if FR_LAT_EV
+        else eng_mid(o);                        /* (note-ons with a free voice: from this interrupt's first frame) */
+#endif
+        for (j = o; j < e; j += k) {
+            eng_chunk(c1_mono, j, j + k);       /* core 0: chunk j's voices */
+            if (j + k == LAT_LB) eng_end(c1_mono, LAT_LB);
+#ifndef DINGHY_HOST
+            if (!solo && !fr_c1_busy()) {       /* (the job over before its frames: refused, or core 1 held) */
+                r = fr_c1_wait_us(200u);
+                (void)r;
+                solo = 1;
+            }
+#endif
+            if (solo) {
+                fr_c1_sync();
+                d = c1_fxd;
+                if (d < j + k) { c1_job.o = d; c1_job.e = j + k; c1_fx_job(0); c1_fxd = j + k; }
+            } else {
+                fr_c1_sync();
+                c1_rdy = j + k;                 /* core 1: these frames are ready */
+                fr_c1_sync();
+#ifdef DINGHY_HOST
+                if (fr_c1_host_tick()) c1_stream_step();
+#endif
+            }
+        }
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        if (e == LAT_LB) host_race_check();
+#endif
+        if (!solo) {
+#ifndef DINGHY_HOST
+            uint32_t el = (fm1_ticks() - t0) / 24u;
+            r = fr_c1_wait_us(el + 200u < LAT_DEADLINE_US ? LAT_DEADLINE_US - el : 200u);
+#else
+            r = fr_c1_wait_us(LAT_DEADLINE_US);
+            if (!r) while (c1_fxd < e) c1_stream_step();   /* (the host twin: core 1's rest) */
+#endif
+            fr_c1_sync();
+            d = c1_fxd;
+            if (r && d < e) { c1_job.o = d; c1_job.e = e; c1_fx_job(0); c1_fxd = e; }   /* (refused / late: core 0) */
+        }
+    }
+    fr_c1_block_end();
+    if (e == LAT_LB) {                          /* the block's end */
+        if (c1_nv > FR_C1_NV1 && !fr_c1_live()) c1_one_core();
+        blk_ph[0] = tw_ph; blk_ph[1] = cp_ph; blk_ph[2] = ph_ph; blk_ph[3] = lfo_ph; blk_ph[4] = bar_mot_ph;
+        blk_ms = lat_ms0;
+        blk_n = blk_n + 1u;
+        lat_o = 0;
+    } else
+        lat_o = e;
+#ifndef DINGHY_HOST
+    us = (fm1_ticks() - t0) / 24u;
+    prof_us = us;
+    if (us > prof_max_us) prof_max_us = us;
+    prof_over = us > LAT_SHED_US ? prof_over + 1u : 0u;   /* (two interrupts over 5.0 ms x n / 256: shed a voice) */
+    if (prof_over >= 2u) { eng_shed_req = 1; prof_over = 0; }
+#endif
+}
+#else
 /* noinline (0.9.5): with the filter and the tremolo out of it, app_audio became small enough for the compiler to
  * inline it into the audio interrupt (fm1_alnk0_irq): its own function, as before (tools/build.py counts its loops) */
 static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
@@ -723,6 +862,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
     if (prof_over >= 2u) { eng_shed_req = 1; prof_over = 0; }
 #endif
 }
+#endif
 
 
 /* ---- the sustain pedal: REC held, or latched by a tap; MIDI CC 64 too. Either holds the dampers off; a CC 64 below 64

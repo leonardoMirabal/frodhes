@@ -111,7 +111,9 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 #include "gfx.c"
 
 #define FS 44100u                               /* the sample rate */
+#ifndef HALF_FRAMES                             /* (Frodhes: the app may set it, frodhes.c FR_LAT_HALF) */
 #define HALF_FRAMES 256u                        /* I2S half buffer: 5.8 ms (as sloopDX: the USB audio band is set for it) */
+#endif
 #define HALF_WORDS (HALF_FRAMES * 2u)
 #define FELUCCA_OTA 1
 #define FELUCCA_CDC 0
