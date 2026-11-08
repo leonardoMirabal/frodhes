@@ -315,6 +315,9 @@ static void c1_one_core(void)
     for (i = FR_C1_NV1; i < BAR_NV; i++)
         if (bv[i].alive) { if (bv[i].fade == 32768) bv[i].fade = 32767; bv[i].pend = 0; }
 }
+#ifndef C1_AHEAD
+#define C1_AHEAD 0                              /* 1: core 0 renders ahead while core 1 is busy (experiment) */
+#endif
 #define C1_DEADLINE_US 4600u                    /* a job not done this long after the block's start is late */
 #else
 static int32_t voice_mono[256];
@@ -364,7 +367,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         c1_fx_job(0);
         if (rst) rh_side_on = 0;                /* (the voices CC 10 ended: as one core) */
     } else {
-        uint32_t j, k = n / C1_SUB, posted = 0, nch = C1_SUB, co, ce;
+        uint32_t j, k = n / C1_SUB, posted = 0, nch = C1_SUB, co, ce, fxe = 0;   /* (fxe: the effects posted up to) */
 #ifdef C1_EDGES
         if (n == 256u) nch = C1_NED;            /* (uneven chunks: c1_ed's edges) */
 #endif
@@ -392,6 +395,10 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
             if (posted) {                       /* chunk j - 1's effects: done, or core 0 does them */
                 int r;
+#if C1_AHEAD
+                if (j + 1u < nch && fr_c1_busy()) continue;   /* (core 1 still busy: the next chunk's voices first; its
+                                                 * effects then take every chunk rendered so far, as one job) */
+#endif
 #ifndef DINGHY_HOST
                 uint32_t el = (fm1_ticks() - t0) / 24u;
 #if defined(C1PF_ON)
@@ -406,7 +413,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
                 if (r) jf(0);                   /* (refused -2: core 1 stays on; late / held -1) */
             }
-            c1_job.o = co; c1_job.e = ce;
+            c1_job.o = fxe; c1_job.e = ce; fxe = ce;
             jf = c1_fx_job;
             posted = fr_c1_run(c1_fx_job, 0);   /* core 1: chunk j's effects, from now */
             if (!posted) c1_fx_job(0);
