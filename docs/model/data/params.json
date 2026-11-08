@@ -387,5 +387,35 @@
   "contact_pct": 3.0,
   "beat_pct": 25.0,
   "w_pct": 10.0
+ },
+ "strike_fit": {
+  "_doc": "S2 (0.9.10): O1 (the tine's 2nd mode, 6.3-6.9 f0, inharmonic) per key no stronger at v = 127 than tine_v127_points (dB: its band 6.3-7.7 f0 in 0-20 ms re the 30-300 ms H1; gen_rhodes.strike_fit; only ever turned down from the physics). Measured targets: E4-A5 about -39, C6-E7 about -65; the tables had -17 / -28 (the inharmonic ring of a hard upper-register strike).",
+  "tine_v127_points": [
+   [
+    56,
+    -20.0
+   ],
+   [
+    64,
+    -31.0
+   ],
+   [
+    72,
+    -40.0
+   ],
+   [
+    84,
+    -55.0
+   ],
+   [
+    96,
+    -65.0
+   ],
+   [
+    108,
+    -65.0
+   ]
+  ],
+  "iterations": 6
  }
 }
