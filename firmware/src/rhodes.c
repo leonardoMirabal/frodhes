@@ -424,6 +424,41 @@ static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /
     for (; i < 64u; i++) { d2 += *t++; d1 += d2; x += d1; o[i] = (int16_t)(o[i] + (((x - o[i]) * w) >> 15)); }
 }
 
+/* The dynamics stage (0.9.10): a key x velocity gain on the voice, set at the strike (no per-sample cost), relative
+ * to 0.9.9's loudness. mf and f (v >= 60) keep 0.9.9's level exactly; the soft end goes quieter on a smoothstep, 0 dB
+ * at v60 to -6 dB at v16 and below (no step, no corner: the v20 -> v127 range ~25.5 -> ~31 dB); the top keys taper,
+ * 0 dB at key 82 to -5 dB at key 98 and above (smoothstep: the upper octave thinner, keys 90-100 at v64 ~-6 dB re
+ * key 60). Only ever a cut, so no chord gets louder than 0.9.9's. It multiplies each velocity method's own gain:
+ * DRIVE's output gain law (rh_drive_g: the note-on's gain, the kill, a re-strike's force ratio), MAP's G (rh_vm_g:
+ * the level, the kill, the noises' scale, a re-strike's rescale). The tables:
+ * round(32768 x 10^(-6 s((60 - v) / 44) / 20)), round(32768 x 10^(-5 s((k - 82) / 16) / 20)), s(t) = 3t^2 - 2t^3 on
+ * [0, 1] */
+#define RH_DYN_V_HI 60u
+#define RH_DYN_K_LO 82u
+static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..59 (60..127: 32768) */
+    16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423,
+    16423, 16440, 16491, 16575, 16689, 16834, 17008, 17211, 17442, 17700, 17984, 18295, 18630, 18991, 19375, 19782,
+    20212, 20663, 21134, 21625, 22134, 22658, 23198, 23750, 24314, 24885, 25463, 26044, 26625, 27204, 27775, 28337,
+    28885, 29415, 29923, 30404, 30853, 31267, 31640, 31967, 32245, 32468, 32632, 32733};
+static const uint16_t RH_DYN_K[RH_KEY_LO + RH_NKEY - RH_DYN_K_LO] = {   /* Q15, keys 82..108 (below: 32768) */
+    32768, 32557, 31967, 31073, 29949, 28673, 27312, 25928, 24573, 23288, 22108, 21059, 20161, 19432, 18888, 18546,
+    18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427};
+static uint32_t rh_dyn(uint32_t n, uint32_t vel)            /* Q15 (<= 32768): the key n (clamped), velocity vel */
+{   /* (-DRH_NO_DYN: without it, as tests/py/test_rhodes_dyn.py compares; off in the velocity map's probe builds:
+     * gen_velmap.py measures the map without it) */
+#if defined(RH_NO_DYN) || defined(RH_VM_PROBE)
+    (void)n; (void)vel;
+    return 32768u;
+#else
+    uint32_t g = vel < RH_DYN_V_HI ? RH_DYN_V[vel] : 32768u;
+    if (n >= RH_DYN_K_LO) g = (g * RH_DYN_K[n - RH_DYN_K_LO]) >> 15;
+    return g;
+#endif
+}
+static int32_t rh_dyn_gain(int32_t gain, uint32_t gd)       /* gain x gd (32768: gain itself, byte-identical) */
+{
+    return gd >= 32768u ? gain : (int32_t)(((int64_t)gain * gd) >> 15);
+}
 #ifdef RH_DRIVE
 /* the pickup drive's output gain law at a velocity (Q16, 1 .. 65535): RH_PGF (gain x force) and RH_PDRV (the force)
  * interpolated between the anchors as rh_load_pulse does, then divided, so the output (their product while the swing
@@ -435,7 +470,9 @@ static int32_t rh_drive_g(uint32_t key, uint32_t vel)
     int32_t q = (int32_t)pg[i] + ((((int32_t)pg[i + 1] - (int32_t)pg[i]) * (int32_t)f) >> 8);
     int32_t d = (int32_t)pd[i] + ((((int32_t)pd[i + 1] - (int32_t)pd[i]) * (int32_t)f) >> 8);
     uint32_t g = ((uint32_t)q << 15) / (uint32_t)(d < 1 ? 1 : d);   /* q < 2^16: 32-bit */
-    return g < 1u ? 1 : g > 65535u ? 65535 : (int32_t)g;
+    if (g > 65535u) g = 65535u;
+    g = (g * rh_dyn(key + RH_KEY_LO, vel)) >> 15;                     /* x the dynamics stage (rh_dyn, <= 2^15) */
+    return g < 1u ? 1 : (int32_t)g;
 }
 #endif
 
@@ -747,6 +784,12 @@ static int32_t rh_vm(uint32_t t, uint32_t key, uint32_t vel)     /* t 0: X, 1: G
 #endif
     return a;
 }
+static int32_t rh_vm_g(uint32_t key, uint32_t vel)          /* MAP: G x the dynamics stage (rh_dyn), Q11 */
+{
+    uint32_t d = rh_dyn(key + RH_KEY_LO, vel);
+    int32_t g = rh_vm(1u, key, vel);
+    return d >= 32768u ? g : (int32_t)(((uint32_t)g * d) >> 15);   /* (G < 2^16, d <= 2^15: fits) */
+}
 /* MAP: the voice gain x the gain before the drive's (RH_DRV_SG, Q16) x G, the kill level / both (the same output
  * level ends the voice), the noises' scale X x G (at most 1), the steal score's swing (the state / X) */
 static void rh_vm_level(rh_voice_t *v, int32_t vx, int32_t vg)
@@ -792,7 +835,7 @@ static void rh_vm_kap(rh_voice_t *v, uint32_t n, const rh_type_t *ty, int32_t vx
 static void __attribute__((noinline)) rh_vm_restrike(rh_voice_t *v, uint32_t vel, uint32_t vel_old)
 {
     uint32_t key = (uint32_t)(v->k - RH_KEYS), m;
-    int32_t x = rh_vm(0u, key, vel), g = rh_vm(1u, key, vel);
+    int32_t x = rh_vm(0u, key, vel), g = rh_vm_g(key, vel);   /* (G x rh_dyn) */
     const rh_type_t *ty = &RH_TYPE[rh_type];
     if (g != v->vg) {
         uint32_t r = ((uint32_t)v->vg << 15) / (uint32_t)(g > 16 ? g : 16);    /* G_old / G_new, Q15 (vg < 2^16) */
@@ -853,7 +896,7 @@ static void rh_init(rh_voice_t *v, uint32_t note, uint32_t vel)
 #ifdef RH_VMAP
     int32_t vx = RH_VM_ONE, vg = RH_VM_ONE;
     v->vm = (uint8_t)(rh_touch_mode != 0);
-    if (v->vm) { vx = rh_vm(0u, n - RH_KEY_LO, vel); vg = rh_vm(1u, n - RH_KEY_LO, vel); }   /* MAP: X, G (Q11) */
+    if (v->vm) { vx = rh_vm(0u, n - RH_KEY_LO, vel); vg = rh_vm_g(n - RH_KEY_LO, vel); }   /* MAP: X, G x rh_dyn (Q11) */
 #endif
     v->k = k; v->kd = rh_k_decay; v->kr = rh_k_rel;
     for (m = 0; m < RH_NM; m++) {
@@ -1022,6 +1065,7 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
     a = (int32_t)(((int64_t)pamp * rh_knock) >> 10);   /* <= 32767 x 653 >> 10 = 20896 */
 #ifdef RH_DRIVE
     if (!rh_touch_mode) a = (int32_t)(((uint32_t)a * RH_NZ_G) >> 15);   /* (the notes' level; MAP plays at the noises' own) */
+    a = rh_dyn_gain(a, rh_dyn(n, vel));                 /* the dynamics stage, as the note's own */
 #endif
     l = RH_VLAY_I[vel];
     if (RH_VLAY_W[vel] >= 16384 && l + 1u < RH_NLAYER) l++;
@@ -1127,7 +1171,11 @@ static void rh_events(void)
                         else
 #endif
 #ifdef RH_DRIVE
-                        g = (int32_t)(((uint32_t)(g > 32768 ? 32768 : g) * RH_NZ_G) >> 15);   /* (the notes' level) */
+                        {
+                            g = (int32_t)(((uint32_t)(g > 32768 ? 32768 : g) * RH_NZ_G) >> 15);   /* (the notes' level) */
+                            if (g > 32768) g = 32768;
+                            g = rh_dyn_gain(g, rh_dyn(v->note, v->vel));   /* x the dynamics stage (MAP: in vn) */
+                        }
 #endif
                         v->felt_n = 353; v->felt_g = (uint16_t)(g > 32768 ? 32768 : g);
                     }
