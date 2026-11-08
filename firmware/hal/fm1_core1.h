@@ -1,8 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* The AC79's second core (core 1) for Frodhes' FR_C1 builds: the supply raised, core 1 started into a RAM idle loop
  * at boot, one job at a time through a mailbox with a check word, refused jobs done by core 0 while core 1 stays on,
- * and core 1 held on every reset path. Ported from Textura's firmware/src/core1.h (same author, GPL-3.0-only:
- * commits 4a3cff4, 2135288, 3c14399 "read again before holding", 548fd55), on the HAL hooks of Frodhes' c1-hal.
+ * and core 1 held on every reset path, on the HAL hooks of Frodhes' c1-hal.
  *
  * The app includes this file BEFORE platform.c (frodhes.c, FR_C1 1: the FM-1 firmware only; the host build has its
  * twin, src/c1_host.h). It defines the HAL's two hooks first, so every reset and fault goes through it:
@@ -11,7 +10,7 @@
  *                      fault of core 1 is noted (vector, frame, ETM) and core 1 stops in a RAM loop: no crash record,
  *                      no reset; core 0's next wait holds it (C1_FAULT: one core from then on)
  * and platform.c calls APP_EARLY() (fr_c1_boot) at boot, interrupts off, before the audio, the timers and the top of
- * RAM's write lock (core 1 started later does not reach its entry: Textura's finding).
+ * RAM's write lock (core 1 started later does not reach its entry).
  *
  *   int  fr_c1_boot(void)           hold, the rails (VDC14 -> 7 = 1.60 V, then SYSVDD -> 15 = 1.38 V, a level per
  *                                   100 us, never lowered: the stock firmware's), then start and one ping job:
@@ -26,7 +25,7 @@
  *   void fr_c1_park(void)           hold core 1 (registers only: safe before the RAM is set up and when it never ran)
  *   uint32_t fr_c1_info(k)          the CC 116 items (frodhes.c fr_c1_reply): FR_C1_INFO_* below
  *
- * The chip (the AC79 SDK's start sequence, as Textura documented it):
+ * The chip (the AC79 SDK's start sequence):
  *   C1_CON 0x1EEE004   bit 3 enables core 1, bit 1 holds it. Start: bit 3 set, then bit 1 cleared; hold: bit 1 set,
  *                      then bit 3 cleared.
  *   0x01C7FFF8         the address core 1 starts at (through the chip's ROM first: the PC limits open meanwhile; in
@@ -47,8 +46,8 @@
  * timer read between: the RAM left alone meanwhile; core 0's wait the same). Its jobs run inside core 0's audio ISR,
  * which waits for them before it returns, and the flash goes off only with the interrupts off (fm1_flash.h slices),
  * never under a job, so the jobs run XIP code: in FR_C1 builds every function a job reaches is in flash (frodhes.c
- * FX_RAM), so the two cores never fetch code from RAM at once under load (Textura 548fd55; Frodhes' 14-voice crashes
- * were core 0 misfetching its RAM code while core 1 ran RAM code too). */
+ * FX_RAM), so the two cores never fetch code from RAM at once under load (Frodhes' 14-voice crashes were core 0
+ * misfetching its RAM code while core 1 ran RAM code too). */
 #pragma once
 #if defined(DINGHY_HOST) || defined(DINGHY_WEB)
 #error "fm1_core1.h is FM-1 firmware only (the host's twin: src/c1_host.h)"
@@ -86,7 +85,7 @@ static void fr_c1_fault_hook(uint32_t *f);
                                                  * margin below the limit; fr_c1_entry's literals 12288 / 12544 follow */
 #define C1_MARK 0x43314D4Bu                     /* painted at start: how deep the stack went */
 #ifndef C1_REREAD
-#define C1_REREAD 3u                            /* reads again on a mismatch before it counts (Textura 3c14399) */
+#define C1_REREAD 3u                            /* reads again on a mismatch before it counts */
 #endif
 #ifndef C1_POLL_TICKS
 #define C1_POLL_TICKS 24u                       /* each core's mailbox poll: once a us (0: as fast as it goes) */
@@ -128,7 +127,7 @@ enum { C1_FR_RETI, C1_FR_RETE, C1_FR_RETX, C1_FR_RETS, C1_FR_SP, C1_FR_PSR, C1_F
 static c1_mb_t c1_mb __attribute__((aligned(64)));
 /* its stacks, one block (the stack limit spans both): the user stack (the jobs), then 256 bytes of system stack (its
  * exceptions only: no interrupts on core 1). In NOINIT's spare room (app.ld: never cleared; painted by fr_c1_boot),
- * as Textura's: the pool and the RAM stay the app's */
+ * so the pool and the RAM stay the app's */
 uint32_t fr_c1_stk[C1_STACK + 64u] __attribute__((aligned(8), section(".noinit.c1")));
 _Static_assert(4u * C1_STACK == 12288u && 4u * (C1_STACK + 64u) == 12544u, "fr_c1_entry's stack literals");
 static struct {

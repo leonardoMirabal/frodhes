@@ -2344,6 +2344,9 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     }
     for (j = 0; j < n; j++) { m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }   /* (mono is the dry signal for the bypass) */
 #endif
+#if defined(C1PF_ON)
+    uint32_t q0 = fm1_ticks(), q1;
+#endif
     fx_comp(m, n);
 #ifdef FR_BYP_KEEP_CMP
     /* the Move (FR_BYP_KEEP_CMP, the user 2026-10-28): FX bypasses every effect but the compressor, so its dry is the
@@ -2358,12 +2361,24 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     fx_trem(m, fx_L, fx_R, n);
     if (FX_SIDE_ONB) FR_FAR(fx_spread)(mono, fx_L, fx_R, n);   /* SPREAD: the side (S13) */
     FR_FAR(fx_phaser)(fx_L, fx_R, n);
+#if defined(C1PF_ON)
+    q1 = fm1_ticks(); if (FXC_Z) C1PF(26, q1 - q0); q0 = q1;
+#endif
     fx_delay(fx_L, fx_R, n);                           /* (the chorus, then the delay) */
+#if defined(C1PF_ON)
+    q1 = fm1_ticks(); if (FXC_Z) C1PF(27, q1 - q0); q0 = q1;
+#endif
     fx_reverb(fx_L, fx_R, n);
+#if defined(C1PF_ON)
+    q1 = fm1_ticks(); if (FXC_Z) C1PF(28, q1 - q0); q0 = q1;
+#endif
 #ifdef FR_BYP_KEEP_CMP
     FR_FAR(fx_out)(dry_c, out, n);
 #else
     FR_FAR(fx_out)(mono, out, n);
+#endif
+#if defined(C1PF_ON)
+    if (FXC_Z) C1PF(29, fm1_ticks() - q0);
 #endif
 }
 
