@@ -38,7 +38,8 @@
  * (the lightest press that seats):
  *   t = log2((d - B) / (fl - B)) / log2((C - B) / (fl - B)), 0..1      (B = KV_DBASE)
  *   s = 1 - t (the strength), u = s ^ gamma (TOUCH: LIGHT 0.45, MEDIUM 0.70 = fm1-velocity's, HEAVY 1.10)
- *   velocity: 1 at u = 0, KEY VEL at u = KV_UMID, TOP = KEY VEL + 0.75 (127 - KEY VEL) at u = 1 (the floor),
+ *   velocity, M = min(KEY VEL, KV_MIDMAX 107): 1 + (KEY VEL - M) at u = 0, M at u = KV_UMID,
+ *   TOP = M + 0.75 (127 - M) at u = 1 (the floor),
  *   linear on each side; a landing firmer than the floor: TOP + (127 - TOP) h / KV_HEAD, h = log2((fl - B) / (d - B)),
  *   127 from half an octave under it. The floor is the firmest landing so far, so 127 needs a press clearly firmer
  *   than every one before it (before 0.9.10's fix every landing at or under the floor played 127).
@@ -62,6 +63,8 @@ static const char *const KV_TOUCH_NAME[KV_NTOUCH] = {"LIGHT", "MEDIUM", "HEAVY",
 #define KV_TOPQ 24576u                  /* 0.75 in Q15: a landing at the key's floor (its firmest so far) plays KEY VEL +
                                          * 0.75 of the way to 127 (119 at KEY VEL 96), not 127 (0.9.10: 127 was any
                                          * landing at or under the floor, 45 % of a hard player's presses on MEDIUM) */
+#define KV_MIDMAX 107u                  /* the medium press never above this (KEY VEL 108..127 lift the soft side only:
+                                         * at KEY VEL 127 every firm press played 127, the user's 2026-11-08) */
 #define KV_HEAD 32768u                  /* half an octave of (d - KV_DBASE) under the floor: 127 (Q16 log2) */
 static const uint16_t KV_GAMMA[3] = {115, 179, 282};   /* Q8: 0.45, 0.70, 1.10 (LIGHT MEDIUM HEAVY) */
 
@@ -234,23 +237,26 @@ FR_COLD static uint32_t kv_upow(uint32_t s, uint32_t touch)
     if (s >= 32768u) return 32768u;
     return kv_exp2n(((15u << 16) - kv_log2(s)) * KV_GAMMA[touch] >> 8);   /* s ^ gamma (< 2^31: 15 x 2^16 x 282) */
 }
-/* u (Q15) -> the velocity: 1 at u = 0, KEY VEL kvel (1..127) at u = KV_UMID, top (kvel..127) at u = 1, linear on
+/* u (Q15) -> the velocity: lo (1..kvel) at u = 0, kvel (1..127) at u = KV_UMID, top (kvel..127) at u = 1, linear on
  * each side */
-FR_COLD static uint32_t kv_vmap_top(uint32_t u, uint32_t kvel, uint32_t top)
+FR_COLD static uint32_t kv_vmap_top(uint32_t u, uint32_t kvel, uint32_t top, uint32_t lo)
 {
     uint32_t v;
-    if (u <= KV_UMID) v = 1u + ((kvel - 1u) * u + KV_UMID / 2u) / KV_UMID;
+    if (u <= KV_UMID) v = lo + ((kvel - lo) * u + KV_UMID / 2u) / KV_UMID;
     else v = kvel + ((top - kvel) * (u - KV_UMID) + (32768u - KV_UMID) / 2u) / (32768u - KV_UMID);
     return v < 1u ? 1u : v > 127u ? 127u : v;
 }
-FR_COLD static uint32_t kv_vmap(uint32_t u, uint32_t kvel) { return kv_vmap_top(u, kvel, 127u); }   /* (the SMK-37) */
+FR_COLD static uint32_t kv_vmap(uint32_t u, uint32_t kvel) { return kv_vmap_top(u, kvel, 127u, 1u); }   /* (the SMK-37) */
 /* the velocity of driven reading d on a key whose floor is fl, at TOUCH touch, KEY VEL kvel (the top) */
 FR_COLD static uint32_t kv_curve(uint32_t d, uint32_t fl, uint32_t touch, uint32_t kvel)
 {
-    uint32_t s, top;
+    uint32_t s, top, lo = 1u;
     if (kvel < 1u) kvel = 1u;
     if (kvel > 127u) kvel = 127u;
     if (touch >= KV_FIXED) return kvel;
+    if (kvel > KV_MIDMAX) { lo = 1u + kvel - KV_MIDMAX; kvel = KV_MIDMAX; }   /* KEY VEL above KV_MIDMAX: the medium
+                                         * press stays at KV_MIDMAX (a harder one keeps 20 steps to 127), the excess
+                                         * lifts the soft end (1 + the excess at the lightest press) */
     if (fl < KV_FLOOR_MIN) fl = KV_FLOOR_MIN;
     if (fl >= KV_CEIL) fl = KV_CEIL - 1u;
     top = kvel + (((127u - kvel) * KV_TOPQ + 16384u) >> 15);   /* the key's firmest landing so far */
@@ -270,7 +276,7 @@ FR_COLD static uint32_t kv_curve(uint32_t d, uint32_t fl, uint32_t touch, uint32
         t = (q << 4) + (((dl << 11) - q * den) << 4) / den;
         s = t >= 32768u ? 0u : 32768u - t;
     }
-    return kv_vmap_top(kv_upow(s, touch), kvel, top);
+    return kv_vmap_top(kv_upow(s, touch), kvel, top, lo);
 }
 FR_COLD static uint32_t kv_ctx(void)            /* CONTEXT: the recent average of the analog keys, else KEY VEL */
 {

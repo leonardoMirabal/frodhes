@@ -261,7 +261,7 @@ The page after PERFORM (press **HOME** twice) carries the instrument's name as i
 | K1 | **TYPE** | The instrument: **STAGE 77** (the classic stage piano), **SUITCASE** (with its own amp and four 12-inch speakers in a closed cabinet: warm lows, a gently rolled-off treble), **EARLY FELT** (early felt hammers: rounder, darker), **BELL DYNO** (a modified, bell-like voicing: glassy), **VIBES**, the vibraphone (see [VIBES](#vibes-the-vibraphone)), or **MARIMBA** (see [MARIMBA](#marimba)). Applies to the next notes. |
 | K2 | **TONE** | Where the tine sits against the pickup: lower is rounder and warmer, higher is more bell and midrange (the same as VOICE 1/2's TONE). On VIBES and MARIMBA: **MALLET** |
 | K3 | **BELL** | The bright metallic overtone at the start of each note (the same as VOICE 1/2's BELL). On VIBES: **MOTOR** on / off; on MARIMBA: **TUBE** |
-| K4 | **KEY VEL** | How hard the FM-1's own keys strike: the velocity of a medium press (TOUCH on [SETUP](#setup); harder presses play louder, softer ones quieter), and with TOUCH at **FIXED** the velocity of every press. Around 60–80 soft and round, 96 medium (the default), 108–127 hard with bark. MIDI notes keep their own velocity. |
+| K4 | **KEY VEL** | How hard the FM-1's own keys strike: the velocity of a medium press (TOUCH on [SETUP](#setup); harder presses play louder, softer ones quieter), and with TOUCH at **FIXED** the velocity of every press. Around 60–80 soft and round, 96 medium (the default). With velocity on, a medium press plays at most 107, so a harder press always has room to play louder: KEY VEL from 108 to 127 lifts the soft presses instead (at 127 the lightest press plays 21). With TOUCH at FIXED, 108–127 is hard with bark. MIDI notes keep their own velocity. |
 
 ### VOICE 1/2 and 2/2
 
@@ -670,7 +670,7 @@ DRIVE, FILTER, DELAY and REVERB.
 to C5** do this. The top 7 keys (**C#5 to G5**) have no way to measure it: they play the average of your recent
 presses, so they follow how you are playing (after 5 s without a press, KEY VEL again). A note starts a few
 milliseconds after the key closes, while the reading comes in. The notes the keys send over USB-MIDI carry the same
-velocity. Each key learns how firmly you can press it: a press as firm as your firmest so far plays a little under 127 (119 at KEY VEL 96), and only a clearly firmer one reaches 127, so velocity 127 stays for the hardest hits. TOUCH and KEY VEL belong to the FM-1, not to a preset (a preset does not change them). The browser
+velocity. Each key learns how firmly you can press it: a press as firm as your firmest so far plays a little under 127 (119 at KEY VEL 96, 122 from KEY VEL 107 up), and only a clearly firmer one reaches 127, so velocity 127 stays for the hardest hits. TOUCH and KEY VEL belong to the FM-1, not to a preset (a preset does not change them). The browser
 emulator has no velocity: its keys play at KEY VEL.
 
 The bottom line shows the name and the version installed, the battery's reading (BAT, the raw value the battery
