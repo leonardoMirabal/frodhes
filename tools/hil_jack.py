@@ -4,11 +4,13 @@
 
 Records the USB audio and an audio interface input (the jack) at the same time while MIDI plays the FM-1.
 
-  hil_jack.py [--dev NAME] [--ch N] [--engine rhodes|vibes|marimba] [--dry-run]
+  hil_jack.py [--dev NAME] [--ch N] [--engine rhodes|vibes|marimba] [--dist all|raw] [--dry-run]
                                          (default: the interface "M6", input 5 -> --ch 5)
 
 --engine marimba runs its own session (ST77, MARIMBA, ST77 again: SNR within 1 dB of ST77, the drift; the muted and
 idle floors, USB exact zero at idle; the silence gate on MARIMBA tails, TEST-PLAN A5) -> build/hil/jack-marimba.json.
+--dist all|raw: the dry distortion gate only (must-pass; tests/py/test_dry_distortion.py's FM-1 counterpart) ->
+build/hil/jack-dist.json, exit 1 on a failure.
 --dry-run: no device (the host build plays the MIDI; the jack is simulated): checks the procedure, writes build/hil/dry/.
 
 Reports (all jack figures re the interface's full scale, so they depend on its input gain; the differences are
@@ -303,15 +305,60 @@ def idle_judge(usb_nonzero, jack_db, jack_hf_db, silences):
     return d
 
 
+def dist(J, a, out):
+    """--dist (must-pass, tests/py/test_dry_distortion.py's FM-1 counterpart): the dry engine's distortion over USB.
+    The same scripts as the host gate (tools/dry_dist.py): FXOFF (CC 111) and RAW (CC 119) x every Rhodes TYPE (CC 80)
+    x RESPONSE A and B (CC 40), keys 28..93 at v64 / 96 / 110 / 127 and three 4-note v127 chords, ~50 s a take. Each
+    cell judged by dry_dist's limits against 0.9.9's host reference (ratios: 48 kHz as it is). USB only: the jack
+    equals USB (the harmonics section); the jack's own take is kept in the report's jack_* cells for a look.
+    --dist raw: the RAW takes only (8, ~7 min; the host has FXOFF = RAW). RESPONSE is a setting (saved): every TYPE
+    plays B first and A last, so the FM-1 ends on A (the default, CC 40 0). Results to build/hil/jack-dist.json"""
+    import dry_dist as dd
+    base = json.load(open(dd.BASE))
+    M = J.r.mido.Message
+    order = [t for t in dd.tags() if a.dist == "all" or t[0].startswith("RAW-")]
+    order.sort(key=lambda t: (dd.tags().index(t) // 2, t[0].endswith("-A")))      # per TYPE: B, then A
+    cells, jcells, lags = {}, {}, {}
+    for tag, *_ in order:
+        J.r.dry()
+        ev, dur = dd.device_events(tag)
+        u, j = J.both(dur, ev)
+        for cc in (111, 119):                                           # (the bypasses off again: not params)
+            J.r.out.send(M("control_change", control=cc, value=0))
+        first = min(e[0] for e in ev if e[1] == "on")
+        s0 = int((first - 0.005) * FS)
+        hit = np.flatnonzero(np.abs(u[s0:]) > 1e-3)
+        t0 = (s0 + hit[0]) / FS - first if len(hit) else 0.0           # where the script's 0 ms is in the take
+        lags[tag] = round(1000 * t0, 1) if len(hit) else None           # (the first strike's onset re its note-on)
+        cells[tag] = dd.measure_wave(u, t0, FS)
+        jcells[tag] = dd.measure_wave(np.asarray(j, float), t0, FS)
+        print(f"  {tag:14s} lag {lags[tag]} ms", flush=True)
+    rows = dd.judge(cells, base)
+    rep = dict(dry_run=bool(a.dry_run), lag_ms=lags, cells=cells, jack_cells=jcells,
+               fails=[[c, m, float(v), b, lim] for c, m, v, b, lim, ok in rows if not ok], ok=bool(all(r[5] for r in rows)))
+    J.r.dry()
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    json.dump(rep, open(out, "w"), indent=1)
+    tag = "DRY RUN (host build) " if a.dry_run else ""
+    print(f"{tag}dry distortion (USB) -> {out}")
+    print(dd.table(rows, only_bad=not rep["ok"], worst=60))
+    print("dry distortion: " + ("PASS" if rep["ok"] else "FAIL"))
+    return rep
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dev", default="M6")
     ap.add_argument("--ch", type=int, default=5)
     ap.add_argument("--engine", default="rhodes", choices=("rhodes", "vibes", "marimba"))
+    ap.add_argument("--dist", choices=("all", "raw"), help="the dry distortion gate only (must-pass; see dist())")
     ap.add_argument("--dry-run", action="store_true", help="no device: the host build plays, the jack is simulated; "
                     "results to build/hil/dry/")
     a = ap.parse_args()
     J = DryJack() if a.dry_run else Jack(a.dev, a.ch)
+    if a.dist:
+        rep = dist(J, a, os.path.join(hs.ROOT, "build", "hil", *(["dry"] if a.dry_run else []), "jack-dist.json"))
+        sys.exit(0 if rep["ok"] else 1)
     if a.engine == "marimba":
         return marimba(J, a, os.path.join(hs.ROOT, "build", "hil", *(["dry"] if a.dry_run else []), "jack-marimba.json"))
     if a.engine == "vibes":                       # every reset then selects VIBES (CC 79)
