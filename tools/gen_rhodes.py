@@ -40,6 +40,7 @@ PU_N = 2048
 S_MAX_GAP2 = 32.0
 LAYER_V = [8, 24, 40, 56, 72, 88, 104, 120]
 ROM_LO, ROM_HI = 0xFFC00000, 0xFFCFFFFF
+PHI_BIAS = 1 << 28                                   # the pickup table's Phi~ bias (pickup_tables)
 Q30, Q29, Q28, Q25, Q16, Q15, Q12 = 1 << 30, 1 << 29, 1 << 28, 1 << 25, 1 << 16, 32767, 1 << 12
 
 
@@ -667,8 +668,15 @@ def pickup_tables(R):
     phi = pu.phi_s(s, R)
     dds = pu.dphi_ds(s, R) * (S_MAX_GAP2 / PU_N)      # slope per cell
     A = float(max(np.max(np.abs(phi)), np.max(np.abs(dds))))
-    P = [rom_safe(int(round(x * Q28 / A))) for x in phi]
-    M = [rom_safe(int(round(x * Q28 / A))) for x in dds]
+    # stored negated, Phi~ plus a bias (PHI_BIAS - Phi~, -slope): every word exact and out of the chip-ROM window.
+    # rom_safe() used to move the words inside it to its edge: 11 slopes of the 1/16" family (0.64-0.70 gap, up to
+    # 25 %) and one Phi~ knot of each family (1.15 / 1.44 gap) were off, kinks the swing crossed at each pass (aliased
+    # pickup harmonics > 10 kHz on hard bass / middle notes and with the tine far from the axis). The engine reads
+    # flux differences only (the bias cancels; rhodes.c takes them the other way round for the sign)
+    P = [PHI_BIAS - int(round(x * Q28 / A)) for x in phi]
+    M = [-int(round(x * Q28 / A)) for x in dds]
+    assert not any(ROM_LO <= (v & 0xFFFFFFFF) <= ROM_HI for v in P + M), "pickup table word in the ROM window"
+    assert all(0 <= v < (1 << 29) for v in P) and all(abs(v) < (1 << 23) for v in M)   # rhodes.c rh_hermite_u bounds
     return P, M, A
 
 
