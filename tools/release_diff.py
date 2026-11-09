@@ -18,8 +18,9 @@ release as a whole. This does, in two sizes:
 
 Measured per note (mono, 44.1 kHz; t = the strike): H2..H6 re H1 (dB, band peaks +-3 % of k f0, 50..450 ms), "inh"
 (the energy off every harmonic band re H1: aliasing and any inharmonic product), "level" (RMS over the hold, dBFS),
-"peak" (the attack's peak, first 100 ms), "cent" (spectral centroid, Hz), "decay" (dB lost over the hold), "keyup"
-(the level 80..280 ms after the key-up re the last 200 ms before it), "clk" (the largest 1 ms second-difference peak
+"peak" (the attack's peak, first 100 ms), "cent" (spectral centroid, Hz), "decay" (dB lost over the hold; "silent" when its last 150 ms are exact zeros), "keyup"
+(the level 80..280 ms after the key-up re the last 200 ms before it; "silent" when that window is exact zeros, a
+state compared as silent / sounding, never a dB of zeros; an effects-on cell: the median of the shifts that sound), "clk" (the largest 1 ms second-difference peak
 re the median: in the body re the body, after the key-up re the 200 ms before it: clicks), and in full mode "lu" (K-weighted loudness of the hold), "cb" (critical-band
 loudness, phon-like, tools/cb_loud.py) and "lim" (the limiter's gain reduction: RAW minus effects-off level). Per
 chord: "imd" (the energy off every harmonic band of the notes re their fundamentals), level, peak. Per script: "clip"
@@ -218,6 +219,17 @@ def clicks(x, ref):
     return max(db((frames(x).max() / (np.median(frames(ref)) + 1e-9)) ** 2), -100.0)
 
 
+def key_rise(tail, pre):
+    """LSB: the key-up tail's largest 1 ms peak of the second difference over the 200 ms before the key-up's (judged
+    where the note still sounds at the key-up: CLK_RISE; the ratio clk_off reads the int16 output's 1-LSB steps of a
+    quiet note as a click, 2026-11-09)"""
+    def frames(y):
+        d = np.abs(np.diff(y, 2))
+        n = len(d) // 44
+        return d[:n * 44].reshape(n, 44).max(1) if n else np.zeros(1)
+    return float(frames(tail).max() - frames(pre).max())
+
+
 _KW = None
 
 
@@ -241,6 +253,13 @@ def kweight(x):
     return signal.lfilter(b2, a2, signal.lfilter(b1, a1, x))
 
 
+def keyup_of(mono, off):
+    """the level 80..280 ms after the key-up (sample off) re the 200 ms before it, dB; SILENT_TAIL when that window is
+    exact zeros"""
+    post = mono[off + int(0.08 * FS):off + int(0.28 * FS)]
+    return SILENT_TAIL if not np.any(post) else rms_db(post) - rms_db(mono[off - int(0.2 * FS):off])
+
+
 def fx_cell(cid):
     """a case whose effects are on (the default effects, a preset): its reverb's int16 rounding grain sits at about
     -92..-101 dBFS and moves +-5 dB with the strike time alone (0.9.9 too), so its harmonics are measured as the
@@ -249,6 +268,22 @@ def fx_cell(cid):
 
 
 SHIFTS = (0, 29, 61, 97)            # ms: the strike-time offsets of an effects-on case (the median of the four)
+CLK_RISE = 2.0                      # LSB: clk_off where the note still sounds at the key-up: the tail's largest 1 ms
+                                    # second difference over the 200 ms before (key_rise) may grow by the int16
+                                    # rounding's 2 LSB, no more; the ratio against the median read a -80 dBFS MARIMBA B
+                                    # note's 1-LSB steps as +2.5..6 dB (THRESHOLD, the coordinator 2026-11-09;
+                                    # 688 sounding cells of the fast grid: <= 2.0; a cut at the key-up fails:
+                                    # tests/py/test_release_diff.py)
+H_ABS_FLOOR = -100.0                # dBFS: a harmonic bin at or under this in the candidate (H re H1 + H1) is the
+                                    # 16-bit / reverb floor, judged by neither the ceiling nor the diff (THRESHOLD, the
+                                    # coordinator 2026-11-09: MARIMBA B's H2..H6 at -105..-129 dBFS fell re H1 by the
+                                    # level rise; build/sonic/resp-ab/mar/hfloor.txt)
+SILENT_TAIL = "silent"              # keyup / decay whose window is exact zeros: a state, compared as silent / sounding,
+                                    # never as a dB value (rms of zeros is -300 dBFS: hq MARIMBA FX B k84v40's median
+                                    # over SHIFTS mixed -213 and -43 into -128); an effects-on cell is the median of the
+                                    # shifts that sound; a change of state needs an exact-cell `silent:` entry; no
+                                    # tolerance or ceiling moved (the coordinator 2026-11-09)
+TAIL_STATE = ("keyup", "decay")     # the metrics that read SILENT_TAIL (decay: the hold's last 150 ms exact zeros)
 FX_FLOOR = -95.0                    # dBFS: a harmonic of an effects-on cell below this is under the reverb's grain
 
 
@@ -256,12 +291,21 @@ def measure(binary, case, grid, tmp):
     """{cell label: {metric: value}} of one case; an effects-on case: the median over SHIFTS (clip: the maximum)"""
     if not fx_cell(case[0]):
         return measure_once(binary, case, grid, tmp, 0)
-    runs = [measure_once(binary, case, grid, tmp, sh) for sh in SHIFTS]
+    return merge_shifts([measure_once(binary, case, grid, tmp, sh) for sh in SHIFTS])
+
+
+def merge_shifts(runs):
+    """the cells of an effects-on case from its SHIFTS runs: the median (clip: the maximum; keyup: the median of the
+    shifts whose tail sounds, SILENT_TAIL when none does)"""
     out = {}
     for lab in runs[0]:
         out[lab] = {}
         for m in runs[0][lab]:
             vs = [r[lab][m] for r in runs if m in r.get(lab, {})]
+            if m in TAIL_STATE:         # the shifts whose tail sounds (all silent: silent), never a dB of exact zeros
+                vs = [v for v in vs if v != SILENT_TAIL] or [SILENT_TAIL]
+                out[lab][m] = vs[0] if vs[0] == SILENT_TAIL else float(np.median(vs))
+                continue
             out[lab][m] = max(vs) if m == "clip" else float(np.median(vs))
     return out
 
@@ -302,14 +346,17 @@ def measure_once(binary, case, grid, tmp, shift):
                     on |= np.abs(fr - k * fu) < max(IBW, k * fu * IREL)
             hf = (fr >= 12000) & (fr < 20000) & ~on
             c["grain"] = db(p[hf].sum() * 2 / (len(seg) * 0.375 * len(seg)) / 32768.0 ** 2)   # (Hann: sum w^2 = 3N/8)
-        c["decay"] = rms_db(mono[i + int(0.05 * FS):i + int(0.15 * FS)]) - rms_db(mono[off - int(0.15 * FS):off])
+        last = mono[off - int(0.15 * FS):off]     # (the hold's end exact zeros: the note died in the hold, SILENT_TAIL)
+        c["decay"] = SILENT_TAIL if not np.any(last) else rms_db(mono[i + int(0.05 * FS):i + int(0.15 * FS)]) - rms_db(last)
         body = mono[i + int(0.03 * FS):off]
         c["clk"] = clicks(body, body)
         if not ped:
-            c["keyup"] = rms_db(mono[off + int(0.08 * FS):off + int(0.28 * FS)]) - rms_db(mono[off - int(0.2 * FS):off])
+            c["keyup"] = keyup_of(mono, off)
             tail = mono[off:off + int(0.3 * FS)]      # (re the 200 ms before the key-up, 935763a5; samples of at
             c["clk_off"] = clicks(np.where(np.abs(tail) <= LSB_FLOOR, 0.0, tail), mono[off - int(0.2 * FS):off])
             # most 1 LSB are silence, 1d3c1ca9)
+            if np.abs(mono[off - int(0.01 * FS):off]).max() > LSB_FLOOR:   # the note still sounds at the key-up
+                c["clk_rise"] = key_rise(tail, mono[off - int(0.2 * FS):off])
         if full:
             import cb_loud
             c["lu"] = -0.691 + db(np.mean(np.square(kweight(hold / 32768.0))))
@@ -422,8 +469,14 @@ def moved(m, v, b):
     return d if abs(d) > tol_of(m) else None
 
 
-INFO = ("h1",)                      # measured for the other rules, judged by none
+INFO = ("h1", "clk_rise")          # measured for the other rules (clk_rise: judge, with clk_off), not diffed
 NODIFF = ("grain",)                 # a ceiling only (a lower grain needs no entry)
+
+
+def floor_bin(v, cell):
+    """a harmonic bin (re H1) at or under H_ABS_FLOOR dBFS in the candidate: the floor, not the note's harmonic (a bin
+    that fell there from above has only got lower; one above it is judged as before, ceiling and diff)"""
+    return "h1" in cell and v + cell["h1"] <= H_ABS_FLOOR
 
 
 def ceiling(cid, lab, m, v, b, cell=None):
@@ -469,6 +522,22 @@ def proven(expected, cid, lab, m, v, b, used):
     return None
 
 
+def silent_entry(expected, cid, lab, m, v, b):
+    """the entry listing a keyup / decay window that turned silent (or sounding), or None: only one naming the exact
+    cell and metric, with `silent: true` (the candidate is silent) or `silent: false` (the last release was; its
+    min / max then bound the candidate's own value, dB)"""
+    for i, e in enumerate(expected):
+        if "silent" not in e or str(e.get("metric", "")) != m or not str(e.get("reason", "")).strip():
+            continue
+        if e.get("match", "").replace("[AB]", cid.split("/")[3]) != f"{cid}/{lab}" or \
+                bool(e["silent"]) != (v == SILENT_TAIL):
+            continue
+        if v != SILENT_TAIL and not ((e.get("min") is None or v >= e["min"]) and (e.get("max") is None or v <= e["max"])):
+            continue
+        return i
+    return None
+
+
 def judge(cand, base, expected):
     """(failures, moves, listed): failures [(cid, lab, metric, value, base, limit or None, why)]"""
     fails, moves, used = [], [], set()
@@ -481,6 +550,30 @@ def judge(cand, base, expected):
             bl = bc.get(lab, {})
             for m, v in ms.items():
                 if m in INFO:
+                    continue
+                if m == "clk_off" and "clk_rise" in ms and ms["clk_rise"] <= CLK_RISE + 1e-9 and \
+                        (bl.get(m) is None or bl[m] <= -100.0 + 1e-9 or v > ceiling(cid, lab, m, v, bl[m], ms)[0]):
+                    continue                    # the note sounds at the key-up and its second difference does not rise
+                                                # there (CLK_RISE): the ratio's ceiling / its move from a silent v0.9.9
+                                                # key-up is the int16 output's 1-LSB steps, not a click
+                if m in TAIL_STATE and SILENT_TAIL in (v, bl.get(m)):
+                    b = bl.get(m)
+                    if b is None or b == v:
+                        continue            # silent in both (or no baseline cell for it: as before)
+                    ex = silent_entry(expected, cid, lab, m, v, b)
+                    moves.append((cid, lab, m, v, b, None, ex))
+                    if ex is None:
+                        fails.append((cid, lab, m, v, b, None, f"moved {b if b == SILENT_TAIL else round(b, 2)} -> "
+                                      f"{v if v == SILENT_TAIL else round(v, 2)}: not in the "
+                                      "expected-changes file (an exact-cell entry with `silent:`)"))
+                    else:
+                        used.add(ex)
+                    if m == "keyup" and v != SILENT_TAIL and ceiling(cid, lab, m, v, 0.0, ms) and \
+                            v > ceiling(cid, lab, m, v, 0.0, ms)[0] + 1e-9:
+                        fails.append((cid, lab, m, v, b, ceiling(cid, lab, m, v, 0.0, ms)[0],
+                                      "CEILING: " + ceiling(cid, lab, m, v, 0.0, ms)[1]))
+                    continue
+                if m[0] == "H" and m[1:].isdigit() and floor_bin(v, ms):
                     continue
                 b = bl.get(m)
                 if b is None:
@@ -533,14 +626,17 @@ def report(cand, base, fails, moves, stale, expected, grid, top=25):
     other = [f for f in fails if not f[6].startswith("CEILING")]
     if other:
         lines.append(f"\nunlisted or unexplained moves (worst {min(top, len(other))} of {len(other)}):")
-        for cid, lab, m, v, b, lim, why in sorted(other, key=lambda f: -abs((f[3] or 0) - (f[4] or 0)))[:top]:
-            lines.append(f"  {cid}/{lab:10s} {m:7s} {v if v is None else round(v, 2)!s:>8}  last "
-                         f"{b if b is None else round(b, 2)!s:>8}  {why}")
-    big = sorted(moves, key=lambda x: -abs(x[5]) / max(tol_of(x[2]) if x[2] != "cent" else TOL["cent"], 0.1))[:top]
+        num = (lambda x: x if isinstance(x, float) else (1e9 if isinstance(x, str) else 0))
+        for cid, lab, m, v, b, lim, why in sorted(other, key=lambda f: -abs(num(f[3]) - num(f[4])))[:top]:
+            lines.append(f"  {cid}/{lab:10s} {m:7s} {v if not isinstance(v, float) else round(v, 2)!s:>8}  last "
+                         f"{b if not isinstance(b, float) else round(b, 2)!s:>8}  {why}")
+    big = sorted(moves, key=lambda x: -abs(x[5] if x[5] is not None else 1e9) /
+                 max(tol_of(x[2]) if x[2] != "cent" else TOL["cent"], 0.1))[:top]
     if big:
         lines.append(f"\nthe biggest moves (in tolerances):")
         for cid, lab, m, v, b, d, hit in big:
-            lines.append(f"  {cid}/{lab:10s} {m:7s} {v:8.2f}  last {b:8.2f}  move {d:+7.2f}  "
+            f = (lambda x: f"{x:8.2f}" if isinstance(x, float) else f"{x!s:>8}")
+            lines.append(f"  {cid}/{lab:10s} {m:7s} {f(v)}  last {f(b)}  move {d if d is None else round(d, 2)!s:>7}  "
                          + ("listed: " + str(expected[hit].get("reason", ""))[:60] if hit is not None else "UNLISTED"))
     if stale:
         lines.append("\nexpected-changes entries that matched nothing (stale? remove them): "
@@ -554,7 +650,7 @@ def draft(moves, path):
     import yaml
     g = {}
     for cid, lab, m, v, b, d, hit in moves:
-        if hit is None:
+        if hit is None and d is not None:   # (a silent <-> sounding change: an exact-cell `silent:` entry, by hand)
             k = (cid.split("/")[1], m)
             lo, hi = g.get(k, (d, d))
             g[k] = (min(lo, d), max(hi, d))
@@ -609,7 +705,7 @@ def main():
         if a.grid != "fast" or not bins:
             raise SystemExit("--save-base: --grid fast with --fm1 and --hq of the last release's tree")
         cells = measure_all(bins, "fast", "base-fast")
-        cells = {c: {l: {m: round(v, 3) for m, v in ms.items()} for l, ms in cs.items()} for c, cs in cells.items()}
+        cells = {c: {l: {m: v if isinstance(v, str) else round(v, 3) for m, v in ms.items()} for l, ms in cs.items()} for c, cs in cells.items()}
         json.dump({"release": LAST, "cases": cells}, open(BASE_FAST, "w"), indent=0, sort_keys=True)
         print(f"{BASE_FAST}: {len(cells)} cases ({time.time() - t0:.1f} s)")
         return 0
