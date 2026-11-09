@@ -524,24 +524,26 @@ static void rh_pz_mix(int16_t *o, const pz_bank_t *b, uint32_t p, int32_t w)   /
 
 /* The dynamics stage (0.9.10): a key x velocity gain on the voice, set at the strike (no per-sample cost), relative
  * to 0.9.9's loudness. mf and f (v >= 60) keep 0.9.9's level exactly; below, RESPONSE (rh_touch_mode, taken at the
- * strike) picks the soft end: A (FULL, dynamic) goes quieter on a smoothstep, 0 dB at v60 to -6 dB at v16 and below
- * (no step, no corner: v20 -> v127 ~31 dB, v1 -> v127 ~36 dB); B (LIGHT, the light touch) keeps 0.9.9's velocity law
- * (v20 -> v127 ~25.5 dB). The same sound at every velocity in both, only the soft end's level differs (the same
- * drive, swing and harmonics: B is A x a gain, to the integers' rounding; A = B from v60). A's depth is held by the
- * output gate (fx.c GATE_LO, 32 LSB peak, -60 dBFS, 406 ms): deeper, a soft note starts under it and is faded after
- * 0.4 s (-13 dB at v1: every v1 note on keys 21..96, at LEVEL 64). The top keys taper in both, 0 dB at key 82 to
- * -5 dB at key 98 and above (smoothstep: the upper octave thinner, keys 90-100 at v64 ~-6 dB re key 60). Only ever a
- * cut, so no chord gets louder than 0.9.9's. It multiplies the drive's output gain law (rh_drive_g: the note-on's
+ * strike) picks the soft end: A (FULL, dynamic) goes quieter on a smoothstep, 0 dB at v60 to -9 dB at v20 and below
+ * (no step, no corner, at most 0.65 dB a velocity step: v20 -> v127 ~34.5 dB, v1 -> v127 ~39.4 dB); B (LIGHT, the
+ * light touch) keeps 0.9.9's velocity law (v20 -> v127 ~25.5 dB). The same sound at every velocity in both, only the
+ * soft end's level differs (the same drive, swing and harmonics: B is A x a gain, to the integers' rounding; A = B
+ * from v60). A's depth is held by the output gate (fx.c GATE_LO, 16 LSB peak, -66 dBFS, 406 ms): a soft note that
+ * drops under it is faded 0.4 s later; at -9 dB no velocity has more notes under it within 1 s than 0.9.9 at its
+ * 32 LSB (keys 21..96 x the TYPEs, LEVEL 64: v1 20, v10 17, v20 10, v30 4 of 104; 0.9.9 20 / 17 / 13 / 8; -12 dB
+ * at v1 gave 24 / 19 / 10 / 4), and a v1 note on keys up to ~96 stays ~20 dB over the FM-1 jack's -92.5 dBFS floor.
+ * The top keys taper in both, 0 dB at key 82 to -5 dB at key 98 and above (smoothstep: the upper octave thinner,
+ * keys 90-100 at v64 ~-6 dB re key 60). Only ever a cut, so no chord gets louder than 0.9.9's. It multiplies the drive's output gain law (rh_drive_g: the note-on's
  * gain, the kill, a re-strike's force ratio) and the noises' scale (the knock, the felt). The tables:
- * round(32768 x 10^(-6 s((60 - v) / 44) / 20)), round(32768 x 10^(-5 s((k - 82) / 16) / 20)), s(t) = 3t^2 - 2t^3 on
+ * round(32768 x 10^(-9 s((60 - v) / 40) / 20)), round(32768 x 10^(-5 s((k - 82) / 16) / 20)), s(t) = 3t^2 - 2t^3 on
  * [0, 1] */
 #define RH_DYN_V_HI 60u
 #define RH_DYN_K_LO 82u
 static const uint16_t RH_DYN_V[RH_DYN_V_HI] = {             /* Q15, v 0..59 (60..127: 32768): RESPONSE A */
-    16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423, 16423,
-    16423, 16440, 16491, 16575, 16689, 16834, 17008, 17211, 17442, 17700, 17984, 18295, 18630, 18991, 19375, 19782,
-    20212, 20663, 21134, 21625, 22134, 22658, 23198, 23750, 24314, 24885, 25463, 26044, 26625, 27204, 27775, 28337,
-    28885, 29415, 29923, 30404, 30853, 31267, 31640, 31967, 32245, 32468, 32632, 32733};
+    11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627, 11627,
+    11627, 11627, 11627, 11627, 11627, 11649, 11714, 11821, 11969, 12156, 12382, 12646, 12949, 13291, 13670, 14087,
+    14543, 15037, 15568, 16137, 16744, 17386, 18064, 18775, 19519, 20291, 21091, 21913, 22754, 23608, 24472, 25337,
+    26197, 27044, 27870, 28665, 29420, 30125, 30769, 31341, 31831, 32228, 32523, 32705};
 static const uint16_t RH_DYN_K[RH_KEY_LO + RH_NKEY - RH_DYN_K_LO] = {   /* Q15, keys 82..108 (below: 32768) */
     32768, 32557, 31967, 31073, 29949, 28673, 27312, 25928, 24573, 23288, 22108, 21059, 20161, 19432, 18888, 18546,
     18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427, 18427};
@@ -1538,7 +1540,16 @@ static void rh_events(void)
                     if (lmb >= 0) { g = lmb >> 2; eb = g >= 32768 ? rh_pnz : (int32_t)(((uint32_t)rh_pnz * (uint32_t)g) >> 15); }
 #endif
                     for (i = 0; i < RH_NV; i++)
-                        if (rv[i].alive && !RH_IS_MAP(&rv[i])) { g = rh_left(&rv[i]); if (g > lm) lm = g; }
+                        if (rv[i].alive && !RH_IS_MAP(&rv[i])) {
+                            g = rh_left(&rv[i]);
+#ifdef RH_DRIVE
+                            g = rh_dyn_gain(g, rh_dyn(rv[i].note, rv[i].vel, rv[i].lt));   /* the note as heard, x the
+                                                         * dynamics stage as its knock and felt (0.9.10: under FULL's
+                                                         * -9 dB soft end a v1 note's pedal-up thud peaked +0.5 dB over
+                                                         * it, test_release_never_louder) */
+#endif
+                            if (g > lm) lm = g;
+                        }
                     g = lm < 0 ? 32768 : lm >> 2;
                     rh_pn_n = RH_PN_LEN; rh_pn_env = g >= 32768 ? rh_pnz : (int32_t)(((uint32_t)rh_pnz * (uint32_t)g) >> 15);
 #ifdef RH_DRIVE
