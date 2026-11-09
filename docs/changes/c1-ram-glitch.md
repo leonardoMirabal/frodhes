@@ -1,4 +1,4 @@
-## Fixes
+## Fixed
 - Two cores: the first core's sound code runs from flash, not RAM. With both cores busy, code read from RAM can come
   back with a flipped bit on this chip (the stored code is intact), and the first core stopped on an instruction that
   cannot fail (the reverb TYPE switch soak reset the FM-1 within minutes). `tools/build.py --c1` fails a build that

@@ -1,4 +1,4 @@
-## Fixes
+## Fixed
 - USB RESCUE no longer stops answering when MIDI arrives: it drops incoming notes and controls instead of letting
   them fill the input, which held the installer's messages back.
 

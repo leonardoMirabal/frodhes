@@ -23,9 +23,9 @@ def ident_reply(text):
 
 @pytest.fixture
 def fake(monkeypatch):
-    opened, reply = [], {"id": "FM-1_958"}
-    names = ["IAC", "Frodhes FM-1", "Other", "Dualcore Test", "Sonic Test"]
     pending = []
+    opened, reply = [], {"id": "FM-1_958", "pending": pending}
+    names = ["IAC", "Frodhes FM-1", "Other", "Dualcore Test", "Sonic Test"]
 
     class Base:
         def get_ports(self):
@@ -140,3 +140,19 @@ def test_port_name_filter(fake, monkeypatch):
     with pytest.raises(SystemExit) as e:
         soak.main()
     assert "not 'Frodhes'" in str(e.value) and not opened
+
+
+def test_input_reads_through_a_real_mido_parser(fake, monkeypatch):
+    """2026-11-09 device run: In.iter_pending called Parser.iter_pending, which mido.Parser does not have (only
+    feed / pending / get_message): the CC replies go through the real mido.Parser here, not a fake"""
+    soak, opened, reply = fake
+    import mido
+    monkeypatch.setattr(soak.time, "sleep", lambda s: None)
+    m, out, inp = soak.loc_ports(0x20130000)
+    assert m is mido and isinstance(inp.p, mido.Parser)
+    reply["pending"] += [[0xB0, 116, 30], [0xB0, 1, 64, 0xB0, 2]]      # (one CC, then one with a split tail)
+    got = [(x.type, x.control, x.value) for x in inp.iter_pending()]
+    assert got == [("control_change", 116, 30), ("control_change", 1, 64)]
+    reply["pending"].append([0x7F])
+    assert [(x.control, x.value) for x in inp.iter_pending()] == [(2, 127)]
+    assert list(inp.iter_pending()) == []

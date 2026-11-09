@@ -300,7 +300,8 @@ def loc_ports(loc, name=None):
                 if not e:
                     break
                 self.p.feed(e[0])
-                yield from self.p.iter_pending()
+                while self.p.pending():
+                    yield self.p.get_message()
 
     class Out:
         def __init__(self, i, n):
