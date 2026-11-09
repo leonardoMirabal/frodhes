@@ -37,6 +37,7 @@ export class Plugin {
             else this.v[c.key] = c.min > 0 ? c.min : Math.max(0, c.min);
         }
         this.v.s_bpm = 120.0;
+        this.v.r_version = "DEV";                     // (move_bridge.h: ui_version_long, a dev build without a commit)
         this.rev = 0;
         this.preset = 0;
         // the factory names (presets.c PR_FNAME), the user slots empty, as preset_name() spells them

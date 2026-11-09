@@ -918,5 +918,11 @@
     "min": 0,
     "max": 127,
     "default": 127
+  },
+  {
+    "key": "r_version",
+    "name": "VER",
+    "type": "string",
+    "access": "read"
   }
 ]

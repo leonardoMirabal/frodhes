@@ -17,6 +17,8 @@
 - Move: RESP has its own page, VELOCITY, right after the VOICE pages (it was on LFO/SETUP), on Frodhes' screen and on
   Schwung's page list alike; standard and HQ (one module).
 - SMK-37: TOUCH and KEY VEL on the velocity page too (K6, K7).
+- VERSION: the MIDI page's K4 shows the version installed (a release's number; a development build DEV and the
+  first digits of its commit), read only. The Move shows it on its last page (MAPPINGS, VER).
 
 ## Tested
 
@@ -25,6 +27,6 @@
   arpeggiator keep the velocity; fails when the MIDI path clips the velocity), `test_vel_resp_curves.py` (ranges,
   steps, gate counts vs 0.9.9), `test_release_never_louder.py`, `test_every_control.py` (a new RESPONSE case),
   the UI scripts and tests moved to the new page (`touch.txt`, `vel_resp.txt`, `test_touch.py`, `test_vel_resp.py`,
-  `test_ui_meters.py`, `test_smk_app.py`, the Move's `test_screen.mjs` / `test_chain.mjs` / `test_move_*`), Gate H
-  re-saved (the HQ thud and the v1 re-strike), `make test`, `make pytest`.
+  `test_ui_meters.py`, `test_smk_app.py`, the Move's `test_screen.mjs` / `test_chain.mjs` / `test_move_*`),
+  `tests/scripts/version.txt` (VERSION reads DEV on the host, a turn changes nothing), `make test`, `make pytest`.
 - FM-1, Move, plugin: not tested on the devices in this change.

@@ -202,7 +202,8 @@ static const char MOVE_UI_HIERARCHY_E0[] =
     ",{\"key\":\"m_at_hi\",\"name\":\"AT HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"m_pa_cc\",\"nam"
     "e\":\"PA CC\",\"type\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_pa_lo\",\"name\":\"PA LO\",\"type\":\"int\","
     "\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"defau"
-    "lt\":127}],\"knobs\":[\"m_at_cc\",\"m_at_lo\",\"m_at_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\"]}}}";
+    "lt\":127},{\"key\":\"r_version\",\"name\":\"VER\",\"type\":\"string\",\"access\":\"read\"}],\"knobs\":[\"m_at_cc\",\"m_at_"
+    "lo\",\"m_at_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\",\"r_version\"]}}}";
 static const char MOVE_UI_HIERARCHY_E1[] =
     "{\"levels\":{\"root\":{\"name\":\"FRODHES\",\"params\":[{\"key\":\"p_type\",\"name\":\"TYPE\",\"type\":\"enum\",\"options\":"
     "[\"ST77\",\"SUIT\",\"FELT\",\"DYNO\",\"VIBE\",\"MRMB\"],\"default\":0},{\"key\":\"p_spread\",\"name\":\"SPREAD\",\"type\":\"i"
@@ -304,8 +305,9 @@ static const char MOVE_UI_HIERARCHY_E1[] =
     "name\":\"AT LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_at_hi\",\"name\":\"AT HI\",\"type\":\"in"
     "t\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"m_pa_cc\",\"name\":\"PA CC\",\"type\":\"int\",\"min\":0,\"max\":119,\""
     "default\":0},{\"key\":\"m_pa_lo\",\"name\":\"PA LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_pa"
-    "_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127}],\"knobs\":[\"m_at_cc\",\"m_at_lo\",\"m_a"
-    "t_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\"]}}}";
+    "_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"r_version\",\"name\":\"VER\",\"t"
+    "ype\":\"string\",\"access\":\"read\"}],\"knobs\":[\"m_at_cc\",\"m_at_lo\",\"m_at_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\""
+    ",\"r_version\"]}}}";
 static const char MOVE_UI_HIERARCHY_E2[] =
     "{\"levels\":{\"root\":{\"name\":\"FRODHES\",\"params\":[{\"key\":\"p_type\",\"name\":\"TYPE\",\"type\":\"enum\",\"options\":"
     "[\"ST77\",\"SUIT\",\"FELT\",\"DYNO\",\"VIBE\",\"MRMB\"],\"default\":0},{\"key\":\"p_spread\",\"name\":\"SPREAD\",\"type\":\"i"
@@ -401,7 +403,8 @@ static const char MOVE_UI_HIERARCHY_E2[] =
     "fault\":0},{\"key\":\"m_at_hi\",\"name\":\"AT HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"m_pa"
     "_cc\",\"name\":\"PA CC\",\"type\":\"int\",\"min\":0,\"max\":119,\"default\":0},{\"key\":\"m_pa_lo\",\"name\":\"PA LO\",\"typ"
     "e\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max\":1"
-    "27,\"default\":127}],\"knobs\":[\"m_at_cc\",\"m_at_lo\",\"m_at_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\"]}}}";
+    "27,\"default\":127},{\"key\":\"r_version\",\"name\":\"VER\",\"type\":\"string\",\"access\":\"read\"}],\"knobs\":[\"m_at_c"
+    "c\",\"m_at_lo\",\"m_at_hi\",\"m_pa_cc\",\"m_pa_lo\",\"m_pa_hi\",\"r_version\"]}}}";
 static const char MOVE_CHAIN_PARAMS[] =
     "[{\"key\":\"p_type\",\"name\":\"TYPE\",\"type\":\"enum\",\"options\":[\"ST77\",\"SUIT\",\"FELT\",\"DYNO\",\"VIBE\",\"MRMB\"],\""
     "default\":0,\"extra_keys\":[\"preset\",\"preset_name\",\"preset_count\"]},{\"key\":\"p_spread\",\"name\":\"SPREAD\",\""
@@ -484,7 +487,8 @@ static const char MOVE_CHAIN_PARAMS[] =
     "lo\",\"name\":\"AT LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":\"m_at_hi\",\"name\":\"AT HI\",\"type"
     "\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"m_pa_cc\",\"name\":\"PA CC\",\"type\":\"int\",\"min\":0,\"max\":"
     "119,\"default\":0},{\"key\":\"m_pa_lo\",\"name\":\"PA LO\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":0},{\"key\":"
-    "\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127}]";
+    "\"m_pa_hi\",\"name\":\"PA HI\",\"type\":\"int\",\"min\":0,\"max\":127,\"default\":127},{\"key\":\"r_version\",\"name\":\"VE"
+    "R\",\"type\":\"string\",\"access\":\"read\"}]";
 /* get_param("ui_hierarchy"): the sounding engine's text (TYPE_UI[PV(P_TYPE)]), its VOICE levels only */
 static const char *const MOVE_UI_HIERARCHY[] = {MOVE_UI_HIERARCHY_E0, MOVE_UI_HIERARCHY_E1, MOVE_UI_HIERARCHY_E2};
 static const uint16_t MOVE_UI_HIERARCHY_N[] = {sizeof MOVE_UI_HIERARCHY_E0 - 1, sizeof MOVE_UI_HIERARCHY_E1 - 1, sizeof MOVE_UI_HIERARCHY_E2 - 1};

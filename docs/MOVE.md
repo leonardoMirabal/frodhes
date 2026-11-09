@@ -179,7 +179,7 @@ so the page count is 13 or 14.
 | **TEMPO** | TRSYNC · PHSYNC · DLSYNC |
 | **ARPEGGIO** | MODE · RATE · OCT · GATE · HOLD |
 | **LFO/SETUP** | SHAPE · RATE · SYNC · RETRIG · DLTONE · LEVEL · CHAN |
-| **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI |
+| **MAPPINGS** | AT CC · AT LO · AT HI · PA CC · PA LO · PA HI · VER |
 
 The names are the FM-1's where they fit and shorter where they do not (HAMMR, DAMPR, MKUP; an option the same way
 everywhere, so the reverb's INFINITE is INF). CHAN is the FM-1's MIDI CHANNEL; FREQ on the EQ page is its MID
@@ -288,6 +288,8 @@ The filter's [LFO](MANUAL.md#lfo), the delay's tone, the output LEVEL, the MIDI 
   pressure) to HI (full pressure).
 - **PA CC / PA LO / PA HI**: the same for poly pressure, from the most pressed held pad. Letting a pad go ends its
   pressure.
+- **VER**: the Frodhes version installed (a release's number; a development build shows DEV and the first digits
+  of its commit), as on the FM-1's [MIDI](MANUAL.md#midi) page. Read only: turning the knob does nothing.
 
 An HI under LO turns the direction round. A CC of 0 is off, and both mappings are off by default. The control moves
 as if a controller sent that CC (the CC numbers are the FM-1's, the manual's [MIDI](MANUAL.md#12-midi)). A mapping

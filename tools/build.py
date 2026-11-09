@@ -198,11 +198,26 @@ def build_loader():
     return ota
 
 
+def app_git():
+    """the commit for a dev build's VERSION card (MIDI page K4): $APP_GIT, else the short hash from git, else none
+    (a tree without git, e.g. inside a container). Release builds show their version text instead."""
+    if VERSION:
+        return ""
+    g = os.environ.get("APP_GIT")
+    if g is None:
+        try:
+            g = subprocess.run(["git", "rev-parse", "--short=7", "HEAD"], capture_output=True, text=True,
+                               timeout=10).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            g = ""
+    return g if re.fullmatch(r"[0-9a-f]{4,40}", g or "") else ""
+
+
 # ---- app
 
 def build_app():
     flags = [*CFLAGS, *APP_OPT, *BOARD_DEFS[BOARD], *BOARD_APP_DEFS[BOARD], "-Ifirmware/hal", "-Ifirmware/src", "-Ifirmware/gen",
-             f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or "0.0"}"']
+             f'-DFELUCCA_ID="{PRODUCT}"', f'-DAPP_VER="{VERSION or "0.0"}"', f'-DAPP_GIT="{app_git()}"']
     if BOARD == "smk37":
         if not re.fullmatch(r"[A-Z0-9]{1,7}", DATA_FAMILY):
             raise SystemExit("DATA_FAMILY: 1..7 of A-Z 0-9")

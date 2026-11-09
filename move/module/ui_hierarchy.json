@@ -1299,6 +1299,12 @@
           "min": 0,
           "max": 127,
           "default": 127
+        },
+        {
+          "key": "r_version",
+          "name": "VER",
+          "type": "string",
+          "access": "read"
         }
       ],
       "knobs": [
@@ -1307,7 +1313,8 @@
         "m_at_hi",
         "m_pa_cc",
         "m_pa_lo",
-        "m_pa_hi"
+        "m_pa_hi",
+        "r_version"
       ]
     }
   }

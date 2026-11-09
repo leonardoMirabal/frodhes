@@ -242,6 +242,14 @@ test("every page, label and option fits: card labels 4 characters (a longer labe
             if (!k) return;                                            // (a knob with no control)
             if (k.type !== "preset") assert.ok(w(k.short || k.name) <= 31, `${p.title} ${k.short || k.name}`);
             assert.ok(w(k.name, 2) <= 124, k.name);
+            if (k.type === "text") {                                   // (VERSION: the last knob, its row free after it)
+                assert.ok(p.knobs.indexOf(k) === p.knobs.length - 1 && p.knobs.length % 4 !== 0, p.title);
+                for (const v of ["DEV", "DEV 1928", "0.9.10", "0.10.12"]) {
+                    assert.ok(w(v) <= 31 + 32 * (3 - (p.knobs.length - 1) % 4), `${p.title} ${k.name} ${v}: ${w(v)} px`);
+                    assert.ok(w(v, 3) <= 124 || w(v, 2) <= 124, `${k.name} ${v} on the large card`);
+                }
+                return;
+            }
             const vals = k.type === "enum" ? k.options
                 : k.type === "preset" ? [] : [String(k.min), String(k.max), k.step ? k.max.toFixed(1) : ""];
             for (const v of vals) {
@@ -385,6 +393,23 @@ test("REVERB INF: DECAY reads SUSTAIN from 120 and FREEZE at 127, as the FM-1's 
 });
 
 let fail = 0;
+test("MAPPINGS, the last page: VERSION (r_version) as the plugin serves it, no bar, a turn or a double tap writes nothing", () => {
+    const s = new Screen().open();
+    const last = s.api.pages[s.api.pages.length - 1];
+    assert.equal(last.title, "MAPPINGS");
+    const at = last.knobs.findIndex((k) => k && k.key === "r_version");
+    assert.equal(at, last.knobs.length - 1);
+    assert.equal(last.knobs[at].type, "text");
+    s.plugin.v.r_version = "0.9.10";
+    goto(s, "MAPPINGS");
+    assert.equal(s.st().vals.r_version, "0.9.10");
+    const n = s.plugin.writes.length;
+    for (const d of [1, 5, -3]) s.knob(at, d);
+    s.touch(at); s.touch(at, false); s.touch(at); s.touch(at, false);
+    assert.equal(s.plugin.writes.length, n, "VERSION: nothing written");
+    s.draw();
+});
+
 test("COMPRESSOR: the gain-reduction meter (a fake r_cmp_gr), as the FM-1's COMP page shows it", () => {
     const s = new Screen().open();
     const W = 128, px = (fb, x, y) => fb.px[y * W + x];

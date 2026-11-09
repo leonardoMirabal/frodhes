@@ -39,7 +39,7 @@ enum { E_HEADER = 0, E_TITLE = 1, E_CARD0 = 2, E_FOOTER = 6, E_METER = 7, E_ROLL
 enum { S_KVEL = 80, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, S_TWKIND, S_PERF0, S_ASG0 = S_PERF0 + 4,
        S_ARPMODE = S_ASG0 + 4, S_ARPRATE, S_ARPOCT, S_ARPGATE, S_USBVOL, S_CHTYPE, S_CHINV, S_CHVOICE, S_CHSTRUM,
        S_SQBARS, S_SQQUANT, S_SQSWING, S_SQEDIT, S_MCH, S_TRS, S_COLOR, S_BRIGHT, S_LEDS, S_TOUCH, S_PLED,
-       S_SQSTEP, S_SQCHANCE, S_VRESP, S_SUSLED, S_NONE = 0xFF };
+       S_SQSTEP, S_SQCHANCE, S_VRESP, S_SUSLED, S_VERSION, S_NONE = 0xFF };
 #ifndef FM1_NENC                                       /* the HAL's encoders and buttons (the FM-1: 7, 14; the SMK-37:
                                                          * 8, 18); the host and the emulator stand in for the FM-1 */
 #define FM1_NENC 7u
@@ -185,7 +185,7 @@ static const uint8_t PAGE_S[PG_N][4] = {                /* VOICE and FRODHES K2 
     {S_ARPMODE, S_ARPRATE, S_ARPOCT, S_ARPGATE},
     {P_LFO_SHAPE, P_LFO_RATE, P_LFO_SYNC, P_LFO_RETRIG},
     {P_DL_TONE, P_LEVEL, S_USBVOL, S_NONE},             /* (K4 TOUCH: the velocity page) */
-    {S_MCH, UI_TRS, S_CLOCK, S_NONE},                  /* (K4 RESPONSE: the velocity page) */
+    {S_MCH, UI_TRS, S_CLOCK, S_VERSION},               /* K4: the version, read only (RESPONSE: the velocity page) */
     {P_DRV_SW, P_DRIVE, P_DRV_TONE, P_DRV_MIX},
     {P_RV_TYPE, P_RV_DEPTH, P_RV_DECAY, P_RV_TONE},     /* REVERB (0.9.5): TYPE = on / off + the type, as DRIVE */
     {S_COLOR, S_BRIGHT, UI_LEDS, S_PLED},
@@ -213,7 +213,7 @@ static const char *const PAGE_LAB[PG_N][4] = {
     {"MODE", "RATE", "OCTAVES", "GATE"},
     {"SHAPE", "RATE", "SYNC", "RETRIG"},
     {"DLY TONE", "LEVEL", "USB VOL", ""},
-    {"CHANNEL", UI_TRS_LAB, "CLOCK", ""},
+    {"CHANNEL", UI_TRS_LAB, "CLOCK", "VERSION"},
     {"EFFECT", "AMOUNT", "TONE", "MIX"},
     {"TYPE", "MIX", "DECAY", "TONE"},
     {"COLOR", "BRIGHTNESS", UI_LEDS_LAB, "PLAY LED"},
@@ -492,11 +492,29 @@ FR_COLD static void ui_say(const char *s)                     /* a message in th
 }
 FR_COLD static void ui_say_big(const char *s) { ui_say(s); ui_msg_big = 1; }
 FR_COLD static void p_strcpy(char *d, const char *s, uint32_t max) { uint32_t i = 0; while (s[i] && i < max) { d[i] = s[i]; i++; } d[i] = 0; }
-/* the version on screen: a release build's ("0.8.1"), else DEV (dev builds are "0.0", host / web "dev" / "web") */
+/* the version on screen: a release build's ("0.8.1"), else DEV (dev builds are "0.0", the Move's "0.0.0-dev", host /
+ * web "dev" / "web") */
 FR_COLD static const char *ui_version(void)
 {
     static const char v[] = APP_VER;
-    return v[0] < '0' || v[0] > '9' || (v[0] == '0' && v[1] == '.' && v[2] == '0' && !v[3]) ? "DEV" : v;
+    return v[0] < '0' || v[0] > '9' || (v[0] == '0' && v[1] == '.' && v[2] == '0' && (!v[3] || v[3] == '.')) ? "DEV" : v;
+}
+/* the MIDI page's VERSION card: a release build's version, else DEV and the commit (APP_GIT, tools/build.py: its short
+ * hash; none on the host) */
+#ifndef APP_GIT
+#define APP_GIT ""
+#endif
+FR_COLD static const char *ui_version_long(void)
+{
+    static char t[16];
+    const char *v = ui_version(), *g = APP_GIT;
+    uint32_t i = 0, k = 0;
+    if (v[0] != 'D' || !g[0]) return v;
+    while (v[i] && i < 3) { t[i] = v[i]; i++; }
+    t[i++] = ' ';
+    while (g[k] && k < 4) t[i++] = g[k++];   /* (4 hex digits: the card's room) */
+    t[i] = 0;
+    return t;
 }
 FR_COLD static void ui_changed(void) { set_dirty = 1; set_t_change = fm1_ms; }
 FR_COLD static int32_t sgn(int32_t d) { return d > 0 ? 1 : -1; }
@@ -627,6 +645,7 @@ FR_COLD static int32_t slot_val(uint32_t s, int32_t *hi)
     case S_PLED: *hi = 1; return !set.play_off;
     case S_SUSLED: *hi = 1; return set.sus_leds;
     case S_VRESP: *hi = VRESP_N - 1; return set.vel_resp;
+    case S_VERSION: *hi = 0; return 0;
     case S_CHTYPE: *hi = CH_NTYPE - 1; return CH_TYPE;
     case S_CHINV: *hi = 3; return CH_INV;
     case S_CHVOICE: *hi = 2; return CH_VOICE;
@@ -718,6 +737,7 @@ FR_COLD static void slot_text(uint32_t s, char *v)
     case S_PLED: p_strcpy(v, set.play_off ? "OFF" : "BEAT", 4); return;
     case S_SUSLED: p_strcpy(v, set.sus_leds ? "LIT" : "DARK", 4); return;
     case S_VRESP: p_strcpy(v, N_VRESP[set.vel_resp < VRESP_N ? set.vel_resp : 0u], 6); return;
+    case S_VERSION: p_strcpy(v, ui_version_long(), 12); return;
     case S_CHTYPE: p_strcpy(v, CH_TYPE_NAME[CH_TYPE], 9); return;
     case S_CHINV: p_strcpy(v, CH_INV_NAME[CH_INV], 4); return;
     case S_CHVOICE: p_strcpy(v, CH_VOICE_NAME[CH_VOICE], 5); return;
@@ -749,7 +769,7 @@ FR_COLD static void slot_text(uint32_t s, char *v)
 static void ui_draw_page_change(void);                 /* (below: every element dirty) */
 FR_COLD static void slot_turn(uint32_t s, int32_t d)
 {
-    if (!d || s == S_NONE) return;
+    if (!d || s == S_NONE || s == S_VERSION) return;   /* (VERSION: read only) */
     if (s < P_COUNT) {
         uint32_t id = s;
         int32_t step = PARAMS[id].fmt == F_ENUM || PARAMS[id].fmt == F_DIV ? sgn(d) : d, v;

@@ -127,9 +127,11 @@ MOVE_IMG  ?= frodhes-move:bookworm
 MOVE_RUN  ?= $(if $(filter Darwin,$(shell uname -s)),docker run --rm --cpus=2 --platform linux/arm64 -v "$(CURDIR)":/src -w /src $(MOVE_IMG),)
 MOVE_CC   ?= gcc
 MOVE_VER  ?= 0.0.0-dev
+# a dev build's VERSION card (MAPPINGS): DEV and the commit
+MOVE_GIT  ?= $(shell git rev-parse --short=7 HEAD 2>/dev/null)
 MOVE_DEFS ?= -DFR_VOICES=16u -DFR_HQ=1 -DFR_BYP_KEEP_CMP=1 -DFR_REV_HQ=1
 MOVE_CFLAGS := -O2 -fPIC -ffp-contract=off -std=gnu11 -Wall -Wno-unused-function -Wno-unused-variable \
-  -fvisibility=hidden -ffile-prefix-map=$(CURDIR)=. -DAPP_VER='"$(MOVE_VER)"' $(MOVE_DEFS) \
+  -fvisibility=hidden -ffile-prefix-map=$(CURDIR)=. -DAPP_VER='"$(MOVE_VER)"' -DAPP_GIT='"$(MOVE_GIT)"' $(MOVE_DEFS) \
   -Imove/compat -Ifirmware/src -Ifirmware/gen
 MOVE_OUT  := build/move/frodhes
 MOVE_LOADER_CFLAGS := -O2 -fPIC -std=gnu11 -Wall -Wextra -fvisibility=hidden -ffile-prefix-map=$(CURDIR)=. -Imove
@@ -139,7 +141,7 @@ move-image:                ## the Move build image (Debian bookworm arm64, about
 	docker build --platform linux/arm64 -t $(MOVE_IMG) move/docker
 
 move:                      ## build/move/frodhes/{dsp.so,engine.so,module.json} + build/move/frodhes-module.tar.gz
-	$(MOVE_RUN) make -s move-native MOVE_VER=$(MOVE_VER)
+	$(MOVE_RUN) make -s move-native MOVE_VER=$(MOVE_VER) MOVE_GIT=$(MOVE_GIT)
 
 move-native:
 	@mkdir -p $(MOVE_OUT)
