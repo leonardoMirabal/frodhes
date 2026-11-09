@@ -36,7 +36,9 @@
 #include <string.h>
 
 #define RING_PUBLISH() ((void)0)
-#define HALF_FRAMES 256u
+#ifndef HALF_FRAMES
+#define HALF_FRAMES 256u                        /* (-DHALF_FRAMES=128: frodhes.c FR_LAT_HALF's ring) */
+#endif
 #define FELUCCA_UAC 1
 static void fm1_delay_ms(uint32_t ms) { (void)ms; }   /* (usb_start: never called here) */
 #include "usb.c"
@@ -61,7 +63,7 @@ static res_t run(const cfg_t *c)
 {
     res_t r;
     double fs = 44100.0 * (1.0 + c->ppm * 1e-6);
-    double per = 256.0 / fs * 1e9, poll = 0.5e6 / (1.0 + c->ppm * 1e-6), end = c->secs * 1e9;
+    double per = (double)HALF_FRAMES / fs * 1e9, poll = 0.5e6 / (1.0 + c->ppm * 1e-6), end = c->secs * 1e9;
     double t_due = 0.37e6, t_isr = t_due, t_poll = 0.1e6, t_tok = c->phase_us * 1e3, t_tap = -1.0, tap_dt = 0;
     double tt = t_tok, t_end = 0;                   /* this IN token (its jitter drawn once); the last tap */
     double fill_sum = 0, t_last_u = -1, beat = 5.0 * per;
@@ -95,10 +97,10 @@ static res_t run(const cfg_t *c)
                 blk[2u * i] = v;
                 blk[2u * i + 1u] = -v;
             }
-            tap_dt = c->tail_us * 1e3 / 8.0;
+            tap_dt = c->tail_us * 1e3 / (double)(HALF_FRAMES / 32u);
             t_tap = t + (rend < 50.0 ? 50.0 : rend) * 1e3 + tap_dt;
-            taps = 8;
-            t_end = t_tap + 7.0 * tap_dt;
+            taps = HALF_FRAMES / 32u;
+            t_end = t_tap + (double)(HALF_FRAMES / 32u - 1u) * tap_dt;
             t_due += per;
             t_isr = t_due + urand() * c->lat_us * 1e3;
             if (t_isr < t_end + 1e3)                    /* the block ran over: the next ISR waits for it */
@@ -133,7 +135,7 @@ static res_t run(const cfg_t *c)
             }
             t_poll += poll;
         } else if (ev == 2) {                           /* a 32-frame piece of the block goes into the ring */
-            uint32_t j = 8u - taps;
+            uint32_t j = HALF_FRAMES / 32u - taps;
             if (j == 0u) {
                 uint32_t f = ua_w - ua_r;
                 if (uac.feed && uac.go && started && f < r.low) r.low = f;
