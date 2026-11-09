@@ -3230,3 +3230,671 @@ changes:
     min: -200.598
     max: -3.731
     reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+
+# ---- 13. resp-ab (2026-11-09), per cell, each with its proof in the reason (the coordinator signs off per cell):
+#  - RESPONSE B on the bar engines (bars.c bar_lt_g, 3c0eda86): v40 level / peak by the level map; MARIMBA B v40 keyup /
+#    decay where B reads as A at the same output level (A v58) within 0.5 dB (the move: v0.9.9's v40 was silent there);
+#  - RESPONSE B on FELT / SUIT: k81v40 keyup, the reverb tail's share at the louder level;
+#  - ST77 / SUIT v127 and the v127 chord: the attack peak without 0.9.9's pickup overdrive (the clean v127, 4370bb25).
+#  Not listed: MARIMBA B H2..H6 (a fixed floor at -105..-129 dBFS; re H1 it falls by the level rise), MARIMBA clk_off
+#  (ceiling), fm1 FX k69v40 / hq FX k84v40 keyup (reverb tail, not within 0.5 dB of A v58), the A = B cells at v96 / v127.
+  - match: "fm1/MARIMBA/FX/B/k57v40"
+    metric: "keyup"
+    min: 13.451
+    max: 14.451
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -36.71 / -36.71 dBFS) reads keyup -19.30 / -19.39 (+0.10); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "fm1/MARIMBA/FX/B/k57v40"
+    metric: "level"
+    min: 3.089
+    max: 4.089
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.92 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FX/B/k57v40"
+    metric: "peak"
+    min: 3.114
+    max: 4.114
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.89 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FX/B/k69v40"
+    metric: "decay"
+    min: -8.939
+    max: -7.939
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -40.03 / -39.99 dBFS) reads decay 42.00 / 42.29 (-0.29); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "fm1/MARIMBA/FX/B/k69v40"
+    metric: "level"
+    min: 3.057
+    max: 4.057
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FX/B/k69v40"
+    metric: "peak"
+    min: 3.059
+    max: 4.059
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FX/B/k84v40"
+    metric: "decay"
+    min: -198.267
+    max: -197.267
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -43.27 / -43.28 dBFS) reads decay 55.11 / 55.45 (-0.34); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "fm1/MARIMBA/FX/B/k84v40"
+    metric: "keyup"
+    min: -209.317
+    max: -208.317
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -43.27 / -43.28 dBFS) reads keyup -208.82 / -208.74 (-0.08); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "fm1/MARIMBA/FX/B/k84v40"
+    metric: "level"
+    min: 3.070
+    max: 4.070
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FX/B/k84v40"
+    metric: "peak"
+    min: 3.059
+    max: 4.059
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FXOFF/B/k57v40"
+    metric: "keyup"
+    min: -4.070
+    max: -3.070
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -38.51 / -38.50 dBFS) reads keyup -237.32 / -237.64 (+0.32); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "fm1/MARIMBA/FXOFF/B/k57v40"
+    metric: "level"
+    min: 3.073
+    max: 4.073
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.94 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FXOFF/B/k57v40"
+    metric: "peak"
+    min: 3.077
+    max: 4.077
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.52 dB (A v40 itself -0.95 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FXOFF/B/k69v40"
+    metric: "level"
+    min: 3.054
+    max: 4.054
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.94 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FXOFF/B/k69v40"
+    metric: "peak"
+    min: 3.048
+    max: 4.048
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.94 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FXOFF/B/k84v40"
+    metric: "level"
+    min: 3.064
+    max: 4.064
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.94 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FXOFF/B/k84v40"
+    metric: "peak"
+    min: 3.048
+    max: 4.048
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.95 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/RAW/B/k57v40"
+    metric: "keyup"
+    min: -5.008
+    max: -4.008
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -35.89 / -35.87 dBFS) reads keyup -239.93 / -240.16 (+0.24); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "fm1/MARIMBA/RAW/B/k57v40"
+    metric: "level"
+    min: 4.010
+    max: 5.010
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/RAW/B/k57v40"
+    metric: "peak"
+    min: 4.014
+    max: 5.014
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/RAW/B/k69v40"
+    metric: "keyup"
+    min: -4.606
+    max: -3.606
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -38.66 / -38.63 dBFS) reads keyup -218.26 / -218.23 (-0.03); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "fm1/MARIMBA/RAW/B/k69v40"
+    metric: "level"
+    min: 3.992
+    max: 4.992
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/RAW/B/k69v40"
+    metric: "peak"
+    min: 3.986
+    max: 4.986
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/RAW/B/k84v40"
+    metric: "decay"
+    min: 4.004
+    max: 5.004
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -42.04 / -42.18 dBFS) reads decay 257.93 / 257.46 (+0.47); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "fm1/MARIMBA/RAW/B/k84v40"
+    metric: "level"
+    min: 4.001
+    max: 5.001
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/RAW/B/k84v40"
+    metric: "peak"
+    min: 4.004
+    max: 5.004
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/ST77/FX/A/chord-mid"
+    metric: "peak"
+    min: -2.953
+    max: -1.953
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.03 dB"
+  - match: "fm1/ST77/FX/A/k57v127"
+    metric: "peak"
+    min: -3.553
+    max: -2.553
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.28 dB, level -0.50 dB, H3 -14.2 dB re H1"
+  - match: "fm1/ST77/FX/A/k81v127"
+    metric: "peak"
+    min: -4.101
+    max: -3.101
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.13 dB, level -0.26 dB, H3 -16.1 dB re H1"
+  - match: "fm1/ST77/FX/B/chord-mid"
+    metric: "peak"
+    min: -2.953
+    max: -1.953
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.03 dB"
+  - match: "fm1/ST77/FX/B/k57v127"
+    metric: "peak"
+    min: -3.553
+    max: -2.553
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.28 dB, level -0.50 dB, H3 -14.2 dB re H1"
+  - match: "fm1/ST77/FX/B/k81v127"
+    metric: "peak"
+    min: -4.101
+    max: -3.101
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.13 dB, level -0.26 dB, H3 -16.1 dB re H1"
+  - match: "fm1/ST77/FXOFF/A/k57v127"
+    metric: "peak"
+    min: -3.598
+    max: -2.598
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.29 dB, level -0.67 dB, H3 -14.2 dB re H1"
+  - match: "fm1/ST77/FXOFF/A/k81v127"
+    metric: "peak"
+    min: -4.003
+    max: -3.003
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.22 dB, level -0.43 dB, H3 -16.1 dB re H1"
+  - match: "fm1/ST77/FXOFF/B/k57v127"
+    metric: "peak"
+    min: -3.598
+    max: -2.598
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.29 dB, level -0.67 dB, H3 -14.2 dB re H1"
+  - match: "fm1/ST77/FXOFF/B/k81v127"
+    metric: "peak"
+    min: -4.003
+    max: -3.003
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.22 dB, level -0.43 dB, H3 -16.1 dB re H1"
+  - match: "fm1/SUIT/FX/A/chord-mid"
+    metric: "peak"
+    min: -2.537
+    max: -1.537
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.05 dB"
+  - match: "fm1/SUIT/FX/A/k57v127"
+    metric: "peak"
+    min: -3.555
+    max: -2.555
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.36 dB, level -0.55 dB, H3 -12.9 dB re H1"
+  - match: "fm1/SUIT/FX/A/k81v127"
+    metric: "peak"
+    min: -4.109
+    max: -3.109
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.48 dB, level -0.17 dB, H3 -17.5 dB re H1"
+  - match: "fm1/SUIT/FX/B/chord-mid"
+    metric: "peak"
+    min: -2.537
+    max: -1.537
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.05 dB"
+  - match: "fm1/SUIT/FX/B/k57v127"
+    metric: "peak"
+    min: -3.555
+    max: -2.555
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.36 dB, level -0.55 dB, H3 -12.9 dB re H1"
+  - match: "fm1/SUIT/FX/B/k81v127"
+    metric: "peak"
+    min: -4.109
+    max: -3.109
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.48 dB, level -0.17 dB, H3 -17.5 dB re H1"
+  - match: "fm1/SUIT/FXOFF/A/chord-mid"
+    metric: "peak"
+    min: -2.519
+    max: -1.519
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -0.65 dB"
+  - match: "fm1/SUIT/FXOFF/A/k57v127"
+    metric: "peak"
+    min: -3.561
+    max: -2.561
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.36 dB, level -0.72 dB, H3 -12.9 dB re H1"
+  - match: "fm1/SUIT/FXOFF/A/k81v127"
+    metric: "peak"
+    min: -4.069
+    max: -3.069
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.53 dB, level -0.33 dB, H3 -17.5 dB re H1"
+  - match: "fm1/SUIT/FXOFF/B/chord-mid"
+    metric: "peak"
+    min: -2.519
+    max: -1.519
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -0.65 dB"
+  - match: "fm1/SUIT/FXOFF/B/k57v127"
+    metric: "peak"
+    min: -3.561
+    max: -2.561
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.36 dB, level -0.72 dB, H3 -12.9 dB re H1"
+  - match: "fm1/SUIT/FXOFF/B/k81v127"
+    metric: "peak"
+    min: -4.069
+    max: -3.069
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.53 dB, level -0.33 dB, H3 -17.5 dB re H1"
+  - match: "fm1/VIBES/FX/B/k57v40"
+    metric: "level"
+    min: 3.078
+    max: 4.078
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/FX/B/k57v40"
+    metric: "peak"
+    min: 3.115
+    max: 4.115
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.53 dB (A v40 itself -0.91 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/FX/B/k69v40"
+    metric: "level"
+    min: 3.071
+    max: 4.071
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/FX/B/k69v40"
+    metric: "peak"
+    min: 3.062
+    max: 4.062
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.95 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/FX/B/k84v40"
+    metric: "level"
+    min: 3.067
+    max: 4.067
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/FX/B/k84v40"
+    metric: "peak"
+    min: 3.084
+    max: 4.084
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.92 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/FXOFF/B/k57v40"
+    metric: "level"
+    min: 3.066
+    max: 4.066
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.94 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/FXOFF/B/k57v40"
+    metric: "peak"
+    min: 3.066
+    max: 4.066
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.52 dB (A v40 itself -0.95 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/FXOFF/B/k69v40"
+    metric: "level"
+    min: 3.068
+    max: 4.068
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.94 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/FXOFF/B/k69v40"
+    metric: "peak"
+    min: 3.067
+    max: 4.067
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.94 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/FXOFF/B/k84v40"
+    metric: "level"
+    min: 3.063
+    max: 4.063
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.94 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/FXOFF/B/k84v40"
+    metric: "peak"
+    min: 3.063
+    max: 4.063
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.94 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/RAW/B/k57v40"
+    metric: "level"
+    min: 4.004
+    max: 5.004
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/RAW/B/k57v40"
+    metric: "peak"
+    min: 4.004
+    max: 5.004
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/RAW/B/k69v40"
+    metric: "level"
+    min: 4.005
+    max: 5.005
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/RAW/B/k69v40"
+    metric: "peak"
+    min: 4.009
+    max: 5.009
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/RAW/B/k84v40"
+    metric: "level"
+    min: 4.000
+    max: 5.000
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/VIBES/RAW/B/k84v40"
+    metric: "peak"
+    min: 4.003
+    max: 5.003
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FX/B/k57v40"
+    metric: "level"
+    min: 3.087
+    max: 4.087
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.52 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FX/B/k57v40"
+    metric: "peak"
+    min: 3.056
+    max: 4.056
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.94 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FX/B/k69v40"
+    metric: "decay"
+    min: 7.366
+    max: 8.366
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -39.67 / -39.65 dBFS) reads decay 58.00 / 58.04 (-0.04); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "hq/MARIMBA/FX/B/k69v40"
+    metric: "keyup"
+    min: 10.247
+    max: 11.247
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -39.67 / -39.65 dBFS) reads keyup -6.07 / -5.98 (-0.09); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "hq/MARIMBA/FX/B/k69v40"
+    metric: "level"
+    min: 3.063
+    max: 4.063
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FX/B/k69v40"
+    metric: "peak"
+    min: 3.048
+    max: 4.048
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.48 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FX/B/k84v40"
+    metric: "level"
+    min: 3.072
+    max: 4.072
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FX/B/k84v40"
+    metric: "peak"
+    min: 3.064
+    max: 4.064
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FXOFF/B/k57v40"
+    metric: "keyup"
+    min: -4.073
+    max: -3.073
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -37.00 / -36.99 dBFS) reads keyup -238.83 / -239.15 (+0.32); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "hq/MARIMBA/FXOFF/B/k57v40"
+    metric: "level"
+    min: 3.078
+    max: 4.078
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FXOFF/B/k57v40"
+    metric: "peak"
+    min: 3.082
+    max: 4.082
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FXOFF/B/k69v40"
+    metric: "level"
+    min: 3.060
+    max: 4.060
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FXOFF/B/k69v40"
+    metric: "peak"
+    min: 3.050
+    max: 4.050
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.94 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FXOFF/B/k84v40"
+    metric: "level"
+    min: 3.069
+    max: 4.069
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/FXOFF/B/k84v40"
+    metric: "peak"
+    min: 3.062
+    max: 4.062
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/RAW/B/k57v40"
+    metric: "keyup"
+    min: -5.008
+    max: -4.008
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -35.89 / -35.87 dBFS) reads keyup -239.93 / -240.16 (+0.24); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "hq/MARIMBA/RAW/B/k57v40"
+    metric: "level"
+    min: 4.010
+    max: 5.010
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/RAW/B/k57v40"
+    metric: "peak"
+    min: 4.014
+    max: 5.014
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/RAW/B/k69v40"
+    metric: "keyup"
+    min: -4.606
+    max: -3.606
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -38.66 / -38.63 dBFS) reads keyup -218.26 / -218.23 (-0.03); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "hq/MARIMBA/RAW/B/k69v40"
+    metric: "level"
+    min: 3.992
+    max: 4.992
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/RAW/B/k69v40"
+    metric: "peak"
+    min: 3.986
+    max: 4.986
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/RAW/B/k84v40"
+    metric: "decay"
+    min: 4.001
+    max: 5.001
+    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -42.06 / -42.22 dBFS) reads decay 257.90 / 257.41 (+0.49); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+  - match: "hq/MARIMBA/RAW/B/k84v40"
+    metric: "level"
+    min: 4.001
+    max: 5.001
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/MARIMBA/RAW/B/k84v40"
+    metric: "peak"
+    min: 4.003
+    max: 5.003
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/ST77/FX/A/chord-mid"
+    metric: "peak"
+    min: -3.020
+    max: -2.020
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.02 dB"
+  - match: "hq/ST77/FX/A/k57v127"
+    metric: "peak"
+    min: -3.496
+    max: -2.496
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.27 dB, level -0.57 dB, H3 -14.2 dB re H1"
+  - match: "hq/ST77/FX/A/k81v127"
+    metric: "peak"
+    min: -4.093
+    max: -3.093
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.11 dB, level -0.29 dB, H3 -16.1 dB re H1"
+  - match: "hq/ST77/FX/B/chord-mid"
+    metric: "peak"
+    min: -3.020
+    max: -2.020
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.02 dB"
+  - match: "hq/ST77/FX/B/k57v127"
+    metric: "peak"
+    min: -3.496
+    max: -2.496
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.27 dB, level -0.57 dB, H3 -14.2 dB re H1"
+  - match: "hq/ST77/FX/B/k81v127"
+    metric: "peak"
+    min: -4.093
+    max: -3.093
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.11 dB, level -0.29 dB, H3 -16.1 dB re H1"
+  - match: "hq/ST77/FXOFF/A/chord-mid"
+    metric: "peak"
+    min: -3.020
+    max: -2.020
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.02 dB"
+  - match: "hq/ST77/FXOFF/A/k57v127"
+    metric: "peak"
+    min: -3.544
+    max: -2.544
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.27 dB, level -0.55 dB, H3 -14.2 dB re H1"
+  - match: "hq/ST77/FXOFF/A/k81v127"
+    metric: "peak"
+    min: -3.959
+    max: -2.959
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.14 dB, level -0.22 dB, H3 -16.1 dB re H1"
+  - match: "hq/ST77/FXOFF/B/chord-mid"
+    metric: "peak"
+    min: -3.020
+    max: -2.020
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.02 dB"
+  - match: "hq/ST77/FXOFF/B/k57v127"
+    metric: "peak"
+    min: -3.544
+    max: -2.544
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.27 dB, level -0.55 dB, H3 -14.2 dB re H1"
+  - match: "hq/ST77/FXOFF/B/k81v127"
+    metric: "peak"
+    min: -3.959
+    max: -2.959
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.14 dB, level -0.22 dB, H3 -16.1 dB re H1"
+  - match: "hq/SUIT/FX/A/chord-mid"
+    metric: "peak"
+    min: -2.522
+    max: -1.522
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.04 dB"
+  - match: "hq/SUIT/FX/A/k57v127"
+    metric: "peak"
+    min: -3.515
+    max: -2.515
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.35 dB, level -0.61 dB, H3 -13.1 dB re H1"
+  - match: "hq/SUIT/FX/A/k81v127"
+    metric: "peak"
+    min: -4.067
+    max: -3.067
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.46 dB, level -0.20 dB, H3 -17.5 dB re H1"
+  - match: "hq/SUIT/FX/B/chord-mid"
+    metric: "peak"
+    min: -2.522
+    max: -1.522
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.04 dB"
+  - match: "hq/SUIT/FX/B/k57v127"
+    metric: "peak"
+    min: -3.515
+    max: -2.515
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.35 dB, level -0.61 dB, H3 -13.1 dB re H1"
+  - match: "hq/SUIT/FX/B/k81v127"
+    metric: "peak"
+    min: -4.067
+    max: -3.067
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.46 dB, level -0.20 dB, H3 -17.5 dB re H1"
+  - match: "hq/SUIT/FXOFF/A/chord-mid"
+    metric: "peak"
+    min: -2.522
+    max: -1.522
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.04 dB"
+  - match: "hq/SUIT/FXOFF/A/k57v127"
+    metric: "peak"
+    min: -3.516
+    max: -2.516
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.35 dB, level -0.59 dB, H3 -13.1 dB re H1"
+  - match: "hq/SUIT/FXOFF/A/k81v127"
+    metric: "peak"
+    min: -4.052
+    max: -3.052
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.49 dB, level -0.13 dB, H3 -17.6 dB re H1"
+  - match: "hq/SUIT/FXOFF/B/chord-mid"
+    metric: "peak"
+    min: -2.522
+    max: -1.522
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the 4-note v127 chord's attack peak without 0.9.9's pickup overdrive; level -1.04 dB"
+  - match: "hq/SUIT/FXOFF/B/k57v127"
+    metric: "peak"
+    min: -3.516
+    max: -2.516
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 -0.35 dB, level -0.59 dB, H3 -13.1 dB re H1"
+  - match: "hq/SUIT/FXOFF/B/k81v127"
+    metric: "peak"
+    min: -4.052
+    max: -3.052
+    reason: "sonic-0910 clean v127 (4370bb25 and on, the user's 'clean at every velocity'): the attack peak without 0.9.9's pickup overdrive: H1 +0.49 dB, level -0.13 dB, H3 -17.6 dB re H1"
+  - match: "hq/VIBES/FX/B/k57v40"
+    metric: "level"
+    min: 3.082
+    max: 4.082
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/FX/B/k57v40"
+    metric: "peak"
+    min: 3.048
+    max: 4.048
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.95 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/FX/B/k69v40"
+    metric: "level"
+    min: 3.078
+    max: 4.078
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/FX/B/k69v40"
+    metric: "peak"
+    min: 3.088
+    max: 4.088
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.92 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/FX/B/k84v40"
+    metric: "level"
+    min: 3.053
+    max: 4.053
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.95 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/FX/B/k84v40"
+    metric: "peak"
+    min: 3.084
+    max: 4.084
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself -0.92 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/FXOFF/B/k57v40"
+    metric: "level"
+    min: 3.072
+    max: 4.072
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/FXOFF/B/k57v40"
+    metric: "peak"
+    min: 3.076
+    max: 4.076
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/FXOFF/B/k69v40"
+    metric: "level"
+    min: 3.074
+    max: 4.074
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/FXOFF/B/k69v40"
+    metric: "peak"
+    min: 3.077
+    max: 4.077
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.92 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/FXOFF/B/k84v40"
+    metric: "level"
+    min: 3.069
+    max: 4.069
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/FXOFF/B/k84v40"
+    metric: "peak"
+    min: 3.081
+    max: 4.081
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.92 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/RAW/B/k57v40"
+    metric: "level"
+    min: 4.004
+    max: 5.004
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/RAW/B/k57v40"
+    metric: "peak"
+    min: 4.004
+    max: 5.004
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/RAW/B/k69v40"
+    metric: "level"
+    min: 4.005
+    max: 5.005
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/RAW/B/k69v40"
+    metric: "peak"
+    min: 4.009
+    max: 5.009
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.51 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/RAW/B/k84v40"
+    metric: "level"
+    min: 4.000
+    max: 5.000
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself +0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "hq/VIBES/RAW/B/k84v40"
+    metric: "peak"
+    min: 4.003
+    max: 5.003
+    reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
