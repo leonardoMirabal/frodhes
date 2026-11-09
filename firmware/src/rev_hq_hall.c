@@ -185,6 +185,10 @@ static FX_RAM __attribute__((noinline)) uint32_t rqh_end(const int16_t *q, int32
 /* the mix: the 8-point Hadamard of the line ends, its row / 16 (lo: truncated toward zero; loud: rounded) +- the
  * input, clamped,
  * into the ring's rows o (8 plain stores a row); row 0 the mid, row 1 the side */
+/* the taps: |h| <= 8 x 4 x 46341, 64-bit; rounded symmetrically (half away from zero: p + 4096 - 1 when negative),
+ * an odd function, so a quiet tank adds no even harmonic (0.9.10 rev-grain on rc-0910: the floor here lifted
+ * hq F11 B k45v40 H6 1.5 dB, residual 51.7 against v0.9.9's 46.4; symmetric: 44.3) */
+#define RQH_TAP(h) ((int32_t)(((int64_t)(h) * RQH_OUT + 4096 + ((int64_t)(h) * RQH_OUT >> 63)) >> 13))
 #define RQH_BF(a, b) { int32_t t_ = a; a = t_ + b; b = t_ - b; }
 #define RQH_W8(SH, k, h) o[k] = (int16_t)hl_c16(SH(h, 4) + (((RQH_SGN >> k) & 1u) ? -x : x));
 #define RQH_MIX8(SH)                                                                                            \
@@ -193,8 +197,8 @@ static FX_RAM __attribute__((noinline)) uint32_t rqh_end(const int16_t *q, int32
         RQH_BF(h0, h1) RQH_BF(h2, h3) RQH_BF(h4, h5) RQH_BF(h6, h7)                                             \
         RQH_BF(h0, h2) RQH_BF(h1, h3) RQH_BF(h4, h6) RQH_BF(h5, h7)                                             \
         RQH_BF(h0, h4) RQH_BF(h1, h5) RQH_BF(h2, h6) RQH_BF(h3, h7)                                             \
-        mid[i] = (int32_t)(((int64_t)h0 * RQH_OUT) >> 13);   /* (|h| <= 8 x 4 x 46341: 64-bit) */           \
-        side[i] = (int32_t)(((int64_t)h1 * RQH_OUT) >> 13);                                                     \
+        mid[i] = RQH_TAP(h0);                                                                                   \
+        side[i] = RQH_TAP(h1);                                                                                  \
         RQH_W8(SH, 0, h0) RQH_W8(SH, 1, h1) RQH_W8(SH, 2, h2) RQH_W8(SH, 3, h3)                                 \
         RQH_W8(SH, 4, h4) RQH_W8(SH, 5, h5) RQH_W8(SH, 6, h6) RQH_W8(SH, 7, h7)                                 \
     }
