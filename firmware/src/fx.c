@@ -2527,7 +2527,8 @@ FX_RAM __attribute__((noinline)) static int32_t fx_xf_side(const int32_t *mono, 
         if (byp ? wet > 0 : wet < 32768) wet += byp ? -FX_XF_STEP : FX_XF_STEP;
         if (wet != 32768) {
             int32_t dl = mono[j] + sd[j - sb], dr = mono[j] - sd[j - sb];
-            int32_t g = (int32_t)(((int64_t)wet * wet >> 15) * (3 * 32768 - 2 * wet) >> 15);   /* smoothstep */
+            int32_t g = (int32_t)(((uint32_t)(wet * wet) >> 15) * (uint32_t)(3 * 32768 - 2 * wet) >> 15);   /* smoothstep
+                                         * (32-bit: w^2 >> 15 <= 2^15 times <= 3 * 2^15 < 2^32, as the 64-bit form) */
             fx_L[j] = (int32_t)(((int64_t)fx_L[j] * g + (int64_t)dl * (32768 - g)) >> 15);
             fx_R[j] = (int32_t)(((int64_t)fx_R[j] * g + (int64_t)dr * (32768 - g)) >> 15);
         }
