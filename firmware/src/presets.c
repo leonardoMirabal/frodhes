@@ -60,6 +60,8 @@ _Static_assert(sizeof pr_user == ST_TAIL_N, "the user presets are the store reco
  * chords with the pedal reached the limiter in every take; 25 is the highest step whose worst take (Rhodes range and two
  * octaves up, five start phases, FM-1 + HQ) peaks at most -3.2 dBFS (0.5 dB under LIM_T): ~6 / ~7.8 dB under 0.9.9.
  * By the same rule F13 55 -> 45, F14 58 -> 48, F15 59 -> 41 (they reached the limiter in 10..18 of 20 takes).
+ * The compressor's hold 11.6 ms (fx.c CMP_HOLD 512): the v127 chords 0.2 dB lower; F02 +2, F03 +1, F05 +1, F06 +2 back
+ * with F01 (quick.py's v127 chord against 0.9.9: -1.1 .. -1.3, the compressor's held reduction, expected_changes 12).
  *
  * The drive TYPEs (P_DRV_SW, drive.c: 1 FDRV, 2 KHLON, 3 TSH8, 4 OHCD, 5 BHLUE) in six of them, their LEVELs
  * re-run with the TYPE in (the chord's level moves with it), each one's CPU predicted with its TYPE's own cost in
@@ -85,10 +87,10 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 52, 0xFF,
     /* F02 SUITCASE: the suitcase's cabinet, no vibrato */
     P_TYPE, 1, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 16, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 44, 0xFF,
+    P_RV_DEPTH, 16, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 46, 0xFF,
     /* F03 EARLY FELT: the felt hammers, their soft onset, NOISE lower (soft playing) */
     P_TYPE, 2, P_NOISE, 36, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 47, 0xFF,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 48, 0xFF,
     /* F04 BELL DYNO: the bell voicing, a short plate */
     P_TYPE, 3, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 51, 0xFF,
@@ -96,12 +98,12 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     /* F05 SUIT TREM: the suitcase amp, its stereo PAN vibrato at 4.5 Hz, a little warmth, a vintage plate */
     P_TYPE, 1, P_NOISE, 44, P_DRIVE, 20, P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 72, P_TW_RATE, 88, P_CMP_SW, 1,
     P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_RV_DEPTH, 24, P_RV_TYPE, 2,
-    P_RV_LOCUT, 70, P_LEVEL, 48, 0xFF,
+    P_RV_LOCUT, 70, P_LEVEL, 49, 0xFF,
     /* F06 DRIVEN 77: a gentle compressor that lets the hammer through, then the drive (soft playing clean, hard barks),
      * a tape slap on the dotted 1/8, a short plate */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 40, P_CMP_RATIO, 2, P_CMP_ATK, 70, P_CMP_GAIN, 16, P_DRIVE, 64,
     P_DRV_SW, 2, P_DRV_TONE, 72, P_BARK, 96, P_HAMMER, 80, P_DL_SW, 3, P_DL_DEPTH, 12, P_DL_SYNC, 8, P_DL_FDBK, 40,
-    P_DL_TONE, 56, P_RV_DEPTH, 18, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 40, 0xFF,
+    P_DL_TONE, 56, P_RV_DEPTH, 18, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 42, 0xFF,
     /* F07 BALLAD: rounder, a slow chorus, a long plate behind a pre-delay, a soft quarter-note digital echo */
     P_TYPE, 0, P_TONE, 56, P_BELL, 76, P_NOISE, 40, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80,
     P_CMP_REL, 72, P_CMP_GAIN, 8, P_CP_SW, 1, P_CP_DEPTH, 56, P_CP_SPEED, 40, P_DL_SW, 1, P_DL_DEPTH, 12,
