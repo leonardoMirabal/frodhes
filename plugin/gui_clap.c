@@ -183,6 +183,7 @@ static void bind(frp_gui_clap_t *c)
     h->learn_get = b_learn_get; h->learn_cmd = b_learn_cmd;
     h->preset_entry = b_preset_entry; h->preset_index = b_preset_index;
     h->preset_load = b_preset_load; h->preset_save_as = b_preset_save_as;
+    h->version = frp_ui_version_text();
 }
 
 frp_gui_clap_t *frp_gui_clap_new(const clap_host_t *host, frp_core *pc)

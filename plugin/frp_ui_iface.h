@@ -18,7 +18,8 @@
 #define FRP_UI_IFACE_H
 #include <stdint.h>
 
-#define FRP_UI_IFACE_VERSION 4   /* 3: voices_on (the HQ-only plugin, 24 voices); 4: preset_type, win_w, win_w_set */
+#define FRP_UI_IFACE_VERSION 5   /* 3: voices_on (the HQ-only plugin, 24 voices); 4: preset_type, win_w, win_w_set;
+                                  * 5: version_text */
 
 typedef struct frp_core frp_core;            /* one plugin instance */
 struct clap_plugin;
@@ -131,6 +132,8 @@ int frp_ui_preset_type(const frp_core *c, int idx);  /* preset idx's instrument 
 int frp_ui_win_w(const frp_core *c);                 /* the window's logical width saved with the state (0: never set:
                                                       * the default size) */
 void frp_ui_win_w_set(frp_core *c, int w);           /* 720..1920 (0: the default); saved with the project ("win") */
+const char *frp_ui_version_text(void);              /* the window's VERSION: a release's X.Y.Z (FRP_VERSION), a dev build
+                                                      * "DEV" and 4 hex digits of its commit (FRP_GIT), as the FM-1 */
 
 /* ---- (version 2) the same functions as a CLAP extension, for out-of-process callers (the headless test host,
  * plugin/tests/clap_render.c --coretest): plugin->get_extension(plugin, FRP_UI_EXT_ID) returns a const frp_ui_vtable *.
@@ -181,5 +184,7 @@ typedef struct frp_ui_vtable {
     int (*preset_type)(const frp_core *c, int idx);
     int (*win_w)(const frp_core *c);
     void (*win_w_set)(frp_core *c, int w);
+    /* version 5 */
+    const char *(*version_text)(void);
 } frp_ui_vtable;
 #endif

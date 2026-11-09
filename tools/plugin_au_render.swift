@@ -45,8 +45,17 @@ if engineSel >= 0 {
     let st = AudioUnitSetParameter(inst.audioUnit, 0x10000, kAudioUnitScope_Global, 0, AudioUnitParameterValue(engineSel), 0)
     if st != noErr { FileHandle.standardError.write("ENGINE: status \(st)\n".data(using: .utf8)!); exit(1) }
 }
+func latencyNow() -> Double {   // kAudioUnitProperty_Latency (seconds), as a host reads it
+    var v: Float64 = 0
+    var sz = UInt32(MemoryLayout<Float64>.size)
+    _ = AudioUnitGetProperty(inst.audioUnit, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0, &v, &sz)
+    return v * rate
+}
+let latBefore = latencyNow()
 try! engine.enableManualRenderingMode(.offline, format: fmt, maximumFrameCount: 512)
 try! engine.start()
+FileHandle.standardError.write(String(format: "plugin_au_render: latency %.1f frames before start, %.1f after (%.0f Hz)\n",
+                                      latBefore, latencyNow(), rate).data(using: .utf8)!)
 let buf = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: 512)!
 var out = [Float](repeating: 0, count: total * 2)
 var pos = 0, ei = 0

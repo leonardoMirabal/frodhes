@@ -130,6 +130,7 @@ static void fh_init(fake_host *h, frp_ui_host_t *uh)
     uh->learn_get = fh_learn_get; uh->learn_cmd = fh_learn_cmd;
     uh->preset_entry = fh_preset_entry; uh->preset_index = fh_preset_index;
     uh->preset_load = fh_preset_load; uh->preset_save_as = fh_preset_save_as;
+    uh->version = "DEV 1a2b";                 /* (a dev build's VERSION, as frp_ui_version_text gives it) */
 }
 /* the centre of the first widget of a kind (and id, -1: any) of the last draw; its index, -1 none */
 static int fh_find(const frui *u, int kind, int id, float *x, float *y)

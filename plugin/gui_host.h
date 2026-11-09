@@ -64,6 +64,7 @@ typedef struct frp_ui_host {
     int (*preset_index)(void *ctx);
     int (*preset_load)(void *ctx, int idx);
     int (*preset_save_as)(void *ctx, const char *name);
+    const char *version;             /* the SETTINGS sheet's VERSION, read only (frp_ui_version_text; NULL: none) */
 } frp_ui_host_t;
 
 #endif

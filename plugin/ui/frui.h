@@ -60,6 +60,7 @@ typedef struct frui_model_s {
      * whole text is selected (the first key typed replaces it) */
     int saving, save_sel;
     char save_text[28];
+    char version[16];              /* the SETTINGS sheet's VERSION, read only ("0.9.10", "DEV 1a2b"; empty: none) */
 } frui_model;
 
 /* the settings' pseudo parameter ids (for the controls and the widget ids) */

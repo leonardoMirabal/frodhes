@@ -76,10 +76,14 @@ static int callbacks;
 static int tail_changes, tail_off_thread, in_process, as_wrapper;
 static void h_tail_changed(const clap_host_t *h) { (void)h; tail_changes++; if (in_process == as_wrapper) tail_off_thread++; }
 static const clap_host_tail_t H_TAIL = { h_tail_changed };
+static int lat_changes;                  /* the plugin's latency.changed() calls (in activate) */
+static void h_lat_changed(const clap_host_t *h) { (void)h; lat_changes++; }
+static const clap_host_latency_t H_LAT = { h_lat_changed };
 static const void *h_ext(const clap_host_t *h, const char *id)
 {
     (void)h;
     if (!strcmp(id, CLAP_EXT_TAIL)) return &H_TAIL;
+    if (!strcmp(id, CLAP_EXT_LATENCY)) return &H_LAT;
     if (!strcmp(id, CLAP_EXT_LOG)) return &H_LOG;
     if (!strcmp(id, CLAP_EXT_PARAMS)) return &H_PARAMS;
     return 0;
@@ -462,6 +466,7 @@ static int selftest(void)
     CHECK((pp = a->get_extension(a, CLAP_EXT_PARAMS)) != 0, "params extension");
     CHECK((ps = a->get_extension(a, CLAP_EXT_STATE)) != 0, "state extension");
     CHECK((pl = a->get_extension(a, CLAP_EXT_LATENCY)) != 0, "latency extension");
+    CHECK(pl->get(a) == 325u, "the latency before the first activation: 48 kHz's 325 (%u)", pl->get(a));
     CHECK(a->get_extension(a, CLAP_EXT_AUDIO_PORTS) && a->get_extension(a, CLAP_EXT_NOTE_PORTS), "ports extensions");
     np = pp->count(a);
     for (i = 0; i < np; i++) {           /* every value: its text, and the text back to the same value */
@@ -506,13 +511,20 @@ static int selftest(void)
         static const struct { double r; uint32_t lat; } L[] = { {44100.0, 258u}, {48000.0, 325u}, {88200.0, 602u},
             {96000.0, 698u}, {176400.0, 1222u}, {192000.0, 1416u}, {22050.0, 155u} };
         for (unsigned q = 0; q < sizeof L / sizeof L[0]; q++) {
+            uint32_t before = pl->get(a);
+            int ch = lat_changes;
             CHECK(a->activate(a, L[q].r, 1, 4096) && pl->get(a) == L[q].lat, "%.0f Hz: latency %u, want %u", L[q].r,
                   pl->get(a), L[q].lat);
+            CHECK(lat_changes - ch == (before != L[q].lat), "%.0f Hz: the host told of a change in activate only when it "
+                  "changed (%u -> %u, %d calls)", L[q].r, before, L[q].lat, lat_changes - ch);
             a->deactivate(a);
+            CHECK(pl->get(a) == L[q].lat, "%.0f Hz: deactivated, the latency still answers %u (%u)", L[q].r, L[q].lat,
+                  pl->get(a));
         }
     }
     printf("ok    rates: 44100 (latency 258), 48000 (325), 88200 (602), 96000 (698), 176400 (1222), 192000 (1416), "
-           "22050 (155) taken, 500 refused\n");
+           "22050 (155) taken, 500 refused; the latency answers before, during and after an activation (the host told "
+           "of each change in activate: %d)\n", lat_changes);
     /* a flood of automation (pluginval's parameter thread test: 2000+ changes a 32-frame block, each due ~10 ms
      * ahead, ~15 blocks in the queue at once): no change dropped, every parameter ends on the last value sent */
     {
@@ -716,6 +728,13 @@ static int coretest(void)
      * steals one and the voices stay 24 */
     CHECK(VT->voices(ca) == 24, "24 voices, not %d", VT->voices(ca));
     CHECK(VT->version >= 3u && VT->voices_on, "the UI extension has voices_on (version %u)", VT->version);
+    {   /* VERSION (K28): a release's X.Y.Z, a dev build DEV and 4 hex digits of its commit (or DEV alone without git) */
+        const char *vt = VT->version >= 5u && VT->version_text ? VT->version_text() : "";
+        int okv = (vt[0] >= '1' && vt[0] <= '9') || (vt[0] == '0' && vt[1] == '.' && strncmp(vt, "0.0.0", 5)) ||
+                  !strcmp(vt, "DEV") || (!strncmp(vt, "DEV ", 4) && strlen(vt) == 8 && strspn(vt + 4, "0123456789abcdef") == 4);
+        CHECK(okv, "the VERSION text: \"%s\"", vt);
+        printf("ok    VERSION %s\n", vt);
+    }
     {
         const clap_plugin_params_t *pa = a->get_extension(a, CLAP_EXT_PARAMS);
         clap_param_info_t info;

@@ -210,6 +210,7 @@ static void diff(frp_gui_t *g)
     }
     /* everything else changes the layout or many places at once */
     if (strcmp(a->preset_tag, b->preset_tag) || strcmp(a->preset_name, b->preset_name) || a->edited != b->edited ||
+        strcmp(a->version, b->version) ||
         a->tab_l != b->tab_l || a->tab_r != b->tab_r || a->page_rv != b->page_rv || a->menu != b->menu ||
         a->ctx_knob != b->ctx_knob || a->learning != b->learning || memcmp(a->learn_cc, b->learn_cc, sizeof a->learn_cc) ||
         a->settings != b->settings || a->midi_ch != b->midi_ch || a->vel_curve != b->vel_curve ||
@@ -257,6 +258,7 @@ int frp_gui_tick(frp_gui_t *g, double now)
     m->host_bpm10 = setting_get(g, FRP_UI_HOST_BPM10, m->bpm10);
     m->sync_all = setting_get(g, FRS_SYNCALL, g->loc_set[FRS_SYNCALL - FRS_CHANNEL]);
     m->sync_div = setting_get(g, FRS_SYNCDIV, g->loc_set[FRS_SYNCDIV - FRS_CHANNEL]);
+    snprintf(m->version, sizeof m->version, "%s", g->h.version ? g->h.version : "");
     if (g->h.preset) {
         char tag[8] = "", name[24] = "";
         int ed = 0;

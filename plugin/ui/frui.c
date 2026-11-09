@@ -1225,6 +1225,11 @@ static void settings_sheet(frui *u)
     sheet_bg(u, x, y, w, h);
     section_title(u, G_H0, y + 22.f, "SETTINGS");
     key_btn(u, FRB_CLOSE, 0, G_H1 + 4.f * G_COL - 32.f, y + 8.f, 32.f, 28.f);
+    if (m->version[0]) {   /* VERSION, read only, in the title band before the close switch (as the FM-1's card) */
+        float xr = G_H1 + 4.f * G_COL - 32.f - G_M, wv = tw(u, T_CAPTION, FRUI_TNUM, m->version);
+        txr(u, xr, mid(u, y + 22.f, 8.5f), T_CAPTION, FRUI_TNUM, m->version, C_TEXT);
+        txr(u, xr - wv - 8.f, mid(u, y + 22.f, 8.5f), T_CAPTION, 0, "VERSION", C_TEXT3);
+    }
     hair_h(u, x + 1.f, x + w - 1.f, y + 44.f, FRUI_RGB(34, 34, 36));
     hair_v(u, (float)FRUI_W * 0.5f, y + 60.f, y + h - 16.f, FRUI_RGB(34, 34, 36));
     /* MIDI */

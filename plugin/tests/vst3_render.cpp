@@ -81,8 +81,11 @@ int main(int argc, char **argv)
         ms.seek(0, IBStream::kIBSeekSet, nullptr);
         if (ctl) ctl->setComponentState(&ms);
     }
+    uint32 lat_in = proc->getLatencySamples();   /* (a host may ask before setActive: docs/PLUGIN.md "latency") */
     if (comp->setActive(true) != kResultOk) { fprintf(stderr, "setActive\n"); return 1; }
     proc->setProcessing(true);
+    fprintf(stderr, "vst3_render: latency %u before setActive, %u after (%.0f Hz)\n", (unsigned)lat_in,
+            (unsigned)proc->getLatencySamples(), rate);
 
     HostProcessData pd;
     pd.prepare(*comp, 512, kSample32);

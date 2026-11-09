@@ -39,6 +39,10 @@
 #include "../gui_clap.h"
 #include "../gui_shot.h"
 
+#include "frp_git.h"                 /* FRP_GIT: the commit of a dev build (plugin/cmake/git_rev.cmake) */
+#ifndef FRP_GIT
+#define FRP_GIT ""
+#endif
 #ifndef FRP_VERSION
 #define FRP_VERSION "0.0.0-dev"
 #endif
@@ -82,6 +86,7 @@ typedef struct frp_core {
     _Atomic int rescan_tries;
     _Atomic int processing;              /* between start_processing and stop_processing */
     const clap_host_tail_t *htail;
+    const clap_host_latency_t *hlat;     /* the host's latency extension: told when activate() changes it */
     double rate;                         /* the activation's (0: not active yet) */
     _Atomic uint32_t tail_said;          /* the tail (ms) the host was last told about; tail_new: a change to tell */
     _Atomic int tail_new;
@@ -363,6 +368,7 @@ static bool pl_init(const clap_plugin_t *plugin)
     p->log = p->host->get_extension(p->host, CLAP_EXT_LOG);
     p->hparams = p->host->get_extension(p->host, CLAP_EXT_PARAMS);
     p->htail = p->host->get_extension(p->host, CLAP_EXT_TAIL);
+    p->hlat = p->host->get_extension(p->host, CLAP_EXT_LATENCY);
     p->tail_main = p->host->vendor && !strcmp(p->host->vendor, "The CLAP Wrapper Team");
     p->in = frp_inst_new();
     if (!p->in) return false;
@@ -387,6 +393,7 @@ static void pl_destroy(const clap_plugin_t *plugin)
 static bool pl_activate(const clap_plugin_t *plugin, double rate, uint32_t min_frames, uint32_t max_frames)
 {
     frp_plugin_t *p = plugin->plugin_data;
+    uint32_t lat0 = frp_inst_latency(p->in);      /* (what a query before the activation answered: the last rate's) */
     (void)min_frames; (void)max_frames;
     if (frp_inst_activate(p->in, rate)) {
         char m[160];
@@ -397,6 +404,10 @@ static bool pl_activate(const clap_plugin_t *plugin, double rate, uint32_t min_f
     p->have_last = 0;
     p->active = 1;
     p->rate = rate;
+    /* the latency is the rate's: a host that asked before (latency.get answers at any time, the VST3 and the AU through
+     * clap-wrapper too) is told here, the one place CLAP lets it change ([being-activated]); the wrapper passes it on
+     * as VST3 kLatencyChanged and the AU's kAudioUnitProperty_Latency */
+    if (frp_inst_latency(p->in) != lat0 && p->hlat && p->hlat->changed) p->hlat->changed(p->host);
     return true;
 }
 static void pl_deactivate(const clap_plugin_t *plugin)
@@ -790,6 +801,18 @@ int frp_ui_preset_type(const frp_core *c, int idx)
 }
 int frp_ui_win_w(const frp_core *c) { return c->win_w; }
 void frp_ui_win_w_set(frp_core *c, int w) { c->win_w = w <= 0 ? 0 : w < 720 ? 720 : w > 1920 ? 1920 : w; }
+/* the window's VERSION (read only): a release build's X.Y.Z, else DEV and 4 hex digits of the commit (frp_git.h, written
+ * at every build by plugin/cmake/git_rev.cmake: $APP_GIT, else git, else none), as the FM-1's VERSION card */
+const char *frp_ui_version_text(void)
+{
+    static char t[16];
+    const char *v = FRP_VERSION, *g = FRP_GIT;
+    int dev = v[0] < '0' || v[0] > '9' || !strncmp(v, "0.0.0", 5), i = 0;
+    if (!dev) { snprintf(t, sizeof t, "%s", v); return t; }
+    memcpy(t, "DEV", 4);
+    if (g[0]) { t[3] = ' '; for (i = 0; i < 4 && g[i]; i++) t[4 + i] = g[i]; t[4 + i] = 0; }
+    return t;
+}
 int frp_ui_preset_delete(frp_core *c, int idx)
 {
     if (idx < (int)FRP_NFACTORY) return -1;
@@ -945,5 +968,5 @@ static const frp_ui_vtable UI_VTABLE = {
     frp_ui_tempo_bpm10, frp_ui_learn_start, frp_ui_learn_cancel, frp_ui_learning, frp_ui_learned_cc, frp_ui_learn_forget,
     frp_ui_learn_forget_all, frp_ui_cc_target, frp_ui_sustain_set, frp_ui_sustain, frp_ui_fx_bypass_set, frp_ui_fx_bypass,
     frp_ui_note, frp_ui_meters, frp_ui_notes, frp_ui_voices, frp_ui_voices_on, frp_ui_preset_type, frp_ui_win_w,
-    frp_ui_win_w_set,
+    frp_ui_win_w_set, frp_ui_version_text,
 };
