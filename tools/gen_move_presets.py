@@ -11,6 +11,12 @@ presets.c's PR_FDATA can change its format without touching this.
 
   tools/gen_move_presets.py           write move/move_presets.h
   tools/gen_move_presets.py --check   exit 1 if the committed header is not what the sources give
+  tools/gen_move_presets.py --sync    first bring proposed_records.txt to presets.c (sync() below), then write
+
+--sync: the records' A are presets.c's factory records (over the ids a record has: params.c's later ids sit at their
+defaults); where presets.c moved a value since, A takes it and so do its B / C, the rule every LEVEL change has
+followed by hand (af5202d5, 30599124, ...): P_LEVEL by the same step, any other id the new value unless the
+variant's "set" names it. A comment line in the records says what moved. No render: the variants' own make-up stays.
 
 The sources (copies of the review's output, committed): move/presets/proposed_records.txt (every variant's full
 id = value list, the defaults included, read back from the host build) and move/presets/variants.json (what each
@@ -187,7 +193,84 @@ def header():
     return "\n".join(out) + "\n"
 
 
+def presets_c():
+    """presets.c's factory records [{P_X: v}] (PR_FDATA: id / value pairs, 0xFF ends each) and params.c's
+    {P_X: (default, hi)}"""
+    src = os.path.join(ROOT, "firmware", "src")
+    s = open(os.path.join(src, "presets.c")).read()
+    body = re.sub(r"/\*.*?\*/", "", re.search(r"PR_FDATA\[\] = \{(.*?)\n\};", s, re.S).group(1), flags=re.S)
+    recs, cur = [], []
+    for x in (t.strip() for t in body.split(",")):
+        if not x:
+            continue
+        if x == "0xFF":
+            recs.append(dict(zip(cur[0::2], (int(v) for v in cur[1::2]))))
+            cur = []
+        else:
+            cur.append(x)
+    p = open(os.path.join(src, "params.c")).read()
+    rows = {m.group(1): (int(m.group(3)), int(m.group(2)))     # (default, hi)
+            for m in re.finditer(r"\[(P_[A-Z0-9_]+)\] = \{\"[^\"]*\", (\d+), (\d+), F_\w+, (\d+)", p)}
+    return recs, rows
+
+
+def sync(today=None):
+    """proposed_records.txt's A to presets.c, the B / C with them (the module's docstring); returns what moved"""
+    import time
+    recs, rows = presets_c()
+    rec = records()
+    with open(VARIANTS) as f:
+        var = json.load(f)
+    new, moved = {}, []
+    for k, r in enumerate(recs):
+        base = "F%02d" % (k + 1)
+        if (base, "A") not in rec:
+            raise SystemExit("presets.c has %s, proposed_records.txt has no A record of it" % base)
+        a_old = {n: v for n, _, v in rec[(base, "A")][1]}
+        a_new = {n: r.get(n, rows[n][0]) for n in a_old}
+        unknown = set(r) - set(a_old)
+        if unknown:
+            raise SystemExit("%s in presets.c sets %s, which the records do not have" % (base, sorted(unknown)))
+        d = {n: a_new[n] - a_old[n] for n in a_old if a_new[n] != a_old[n]}
+        if not d:
+            continue
+        moved.append("%s %s" % (base, " ".join("%s %+d" % (n[2:], x) for n, x in sorted(d.items()))))
+        for (b, v), (bname, pairs) in rec.items():
+            if b != base:
+                continue
+            setn = var.get(base, {}).get(v, {}).get("set", {}) if v != "A" else {}
+            out = []
+            for n, i, x in pairs:
+                if n in d:
+                    if v == "A":
+                        x = a_new[n]
+                    elif n == "P_LEVEL":
+                        x = max(0, min(rows[n][1], x + d[n]))
+                    elif n not in setn:
+                        x = a_new[n]
+                out.append((n, i, x))
+            new[(b, v)] = (bname, out)
+    if not moved:
+        return []
+    lines = open(RECORDS).read().splitlines()
+    last_comment = max(i for i, ln in enumerate(lines) if ln.startswith("#"))
+    for i, ln in enumerate(lines):
+        m = LINE.match(ln.strip())
+        if m and (m.group(1), m.group(2)) in new:
+            bname, pairs = new[(m.group(1), m.group(2))]
+            lines[i] = "%s %s (%s): %s" % (m.group(1), m.group(2), bname, " ".join("%s[%d]=%d" % p for p in pairs))
+    note = "# %s (tools/gen_move_presets.py --sync): with presets.c, the B / C records too: %s." % (
+        today or time.strftime("%Y-%m-%d"), "; ".join(moved))
+    lines.insert(last_comment + 1, note)
+    with open(RECORDS, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    return moved
+
+
 def main():
+    if "--sync" in sys.argv[1:]:
+        moved = sync()
+        print("proposed_records.txt: %s" % ("; ".join(moved) if moved else "every A is presets.c's already"))
     text = header()
     if "--check" in sys.argv[1:]:
         try:

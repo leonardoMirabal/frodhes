@@ -39,3 +39,46 @@ def test_move_only():
                 assert "move_presets.h" not in t and "MB_PX_" not in t, os.path.join(d, f)
     assert '#include "move_presets.h"' in open(os.path.join(ROOT, "move", "move_bridge.h")).read()
 
+
+
+def test_records_are_presets_c():
+    """every A record is presets.c's factory record (over the ids it has; params.c's later ids at their defaults):
+    gen_move_presets.py --sync has nothing to move (tools/tail_build.sh runs it on each candidate)"""
+    recs, rows = gp.presets_c()
+    rec = gp.records()
+    assert len(recs) == 19
+    for k, r in enumerate(recs):
+        a = {n: v for n, _, v in rec[("F%02d" % (k + 1), "A")][1]}
+        assert {n: r.get(n, rows[n][0]) for n in a} == a, "F%02d" % (k + 1)
+
+
+def test_sync_moves_the_variants_with_their_a(tmp_path, monkeypatch):
+    """presets.c's F01 LEVEL +3 and NOISE 48 -> 40: A takes both, B / C LEVEL by the same step and NOISE the new
+    value (neither variant's "set" names it); one comment line says so; the others stay"""
+    import shutil
+    src = tmp_path / "firmware" / "src"
+    src.mkdir(parents=True)
+    shutil.copy(os.path.join(ROOT, "firmware", "src", "params.c"), src)
+    pc = open(os.path.join(ROOT, "firmware", "src", "presets.c")).read()
+    old = "P_RV_LOCUT, 70, P_LEVEL, 52, 0xFF,"
+    assert pc.count(old) == 1
+    (src / "presets.c").write_text(pc.replace(old, "P_RV_LOCUT, 70, P_LEVEL, 55, P_NOISE, 40, 0xFF,"))
+    rec_path = tmp_path / "proposed_records.txt"
+    shutil.copy(gp.RECORDS, rec_path)
+    monkeypatch.setattr(gp, "ROOT", str(tmp_path))
+    monkeypatch.setattr(gp, "RECORDS", str(rec_path))
+    before = gp.records()
+    assert gp.sync("2026-11-10") == ["F01 LEVEL +3 NOISE -8"]
+    after = gp.records()
+    for key, (_, pairs) in before.items():
+        b = {n: v for n, _, v in pairs}
+        a = {n: v for n, _, v in after[key][1]}
+        if key[0] != "F01":
+            assert a == b, key
+            continue
+        assert a["P_LEVEL"] == b["P_LEVEL"] + 3 and a["P_NOISE"] == 40, key
+        assert {n: v for n, v in a.items() if n not in ("P_LEVEL", "P_NOISE")} == \
+               {n: v for n, v in b.items() if n not in ("P_LEVEL", "P_NOISE")}, key
+    text = rec_path.read_text()
+    assert text.count("--sync") == 1 and "F01 LEVEL +3 NOISE -8" in text
+    assert gp.sync("2026-11-10") == []                                          # (idempotent)
