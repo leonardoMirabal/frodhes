@@ -2861,40 +2861,40 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
     }
     fx_wet = wet; dc_l = dl; dce_l = el; dc_r = dr; dce_r = er;
 #if FR_C1 && FR_LAT
-    /* FR_LAT_HALF (frodhes.c): out holds only this interrupt's frames [fxc_ce - FR_LAT_HALF, fxc_ce), the ones before
-     * are out of the DMA already. The gate at the interrupt's last frames, over its own: it opens on the block's peak
-     * so far (one core: the whole block's), from this interrupt's first frame; it counts and falls at the block's end,
-     * from its last interrupt's first frame (one core: from the block's first). Only under GATE_HI / GATE_LO (-60 dBFS) */
-    /* A change decided after the block's first frames went out takes the gain where one core's ramp from the block's
-     * start has it at this interrupt's first frame (from gate_g0): the same integers from there on; the frames before
-     * (all under -60 dBFS: that is what kept the gate as it was) had the old ramp */
-    if (fxc_e != fxc_ce) return;
+    /* FR_LAT_HALF (frodhes.c): out holds only the frames this interrupt sends ([fxc_ce - FR_LAT_HALF, fxc_ce), FR_LAT_TAIL
+     * frames later with the tail); the ones before are out of the DMA already. The gate runs at the frames sent's end
+     * and at the block's end, over the frames not gated yet (gate_done ..): it opens on the block's peak so far (one
+     * core: the whole block's), it counts and falls at the block's end. A change decided after the block's first frames
+     * went out takes the gain where one core's ramp from the block's start has it (from gate_g0): the same integers from
+     * there on; the frames before (all under -60 dBFS: that is what kept the gate as it was) had the old ramp */
     {
         static int32_t gate_g0;                        /* the gain at the block's first frame */
-        uint32_t co = fxc_ce - FR_LAT_HALF;
+        static uint32_t gate_done;                     /* the block's frames gated */
         int32_t t0 = gate_tgt;
-        if (!co) gate_g0 = gate_g;
+        if (fxc_e != fxc_ce - FR_LAT_TAIL && !FXC_Z) return;
+        if (!gate_done) gate_g0 = gate_g;
         if (pk >= GATE_HI) { gate_quiet = 0; gate_tgt = 32768; }
         else if (FXC_Z && pk < GATE_LO && ++gate_quiet >= GATE_HOLD) { gate_quiet = GATE_HOLD; gate_tgt = 0; }
-        if (gate_tgt != t0 && co) {
+        if (gate_tgt != t0 && gate_done) {
             int32_t g = gate_g0;
-            for (j = 0; j < co; j++) {
+            for (j = 0; j < gate_done; j++) {
                 if (g < gate_tgt) g = g + 512 > gate_tgt ? gate_tgt : g + 512;
                 else if (g > gate_tgt) g = g - GATE_FALL(g) < gate_tgt ? gate_tgt : g - GATE_FALL(g);
             }
             gate_g = g;
         }
-    }
-    if (gate_g != 32768 || gate_tgt != 32768) {
-        const int32_t rnd = gate_tgt ? 0 : GATE_RND;
-        for (j = fxc_ce - FR_LAT_HALF; j < fxc_ce; j++) {
-            if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
-            else if (gate_g > gate_tgt) gate_g = gate_g - GATE_FALL(gate_g) < gate_tgt ? gate_tgt : gate_g - GATE_FALL(gate_g);
-            if (gate_g != 32768) {
-                out[2u * j] = (out[2u * j] * gate_g + rnd) >> 15;
-                out[2u * j + 1u] = (out[2u * j + 1u] * gate_g + rnd) >> 15;
+        if (gate_g != 32768 || gate_tgt != 32768) {
+            const int32_t rnd = gate_tgt ? 0 : GATE_RND;
+            for (j = gate_done; j < fxc_e; j++) {
+                if (gate_g < gate_tgt) gate_g = gate_g + 512 > gate_tgt ? gate_tgt : gate_g + 512;
+                else if (gate_g > gate_tgt) gate_g = gate_g - GATE_FALL(gate_g) < gate_tgt ? gate_tgt : gate_g - GATE_FALL(gate_g);
+                if (gate_g != 32768) {
+                    out[2u * j] = (out[2u * j] * gate_g + rnd) >> 15;
+                    out[2u * j + 1u] = (out[2u * j + 1u] * gate_g + rnd) >> 15;
+                }
             }
         }
+        gate_done = FXC_Z ? 0u : fxc_e;
     }
     if (!FXC_Z) return;
     fx_peak = pk;

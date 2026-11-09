@@ -2244,11 +2244,17 @@ static uint32_t rhc_ds2;                        /* the side's crossfade chain's 
 #ifdef DINGHY_HOST
 static uint32_t rhc_lfe[RH_NV];                 /* (host: where each felt voice's LFSR must end, checked in rh_end) */
 #endif
+#if FR_LAT_EV
+static uint8_t rhc_rt;                          /* the TYPE rh_begin found (rh_mid_strike) */
+#endif
 static void rh_begin(uint32_t n)
 {
     uint32_t i, sd, r;
     rhc_n = n;
     rh_events();
+#if FR_LAT_EV
+    rhc_rt = rh_type;
+#endif
     rhc_ty = rh_txf_type();
     if (rh_bend_t != rh_bend_used || rh_rt_pend) rh_retune();
     if (rh_shed_req) { rh_shed_req = 0; rh_shed(); }
@@ -2362,6 +2368,26 @@ static void rh_end(void)                        /* after the block's last chunk:
     rh_held_bits = held;
     rh_active_bits = act;
 }
+#if FR_LAT_EV
+/* FR_LAT_EV (frodhes.c FR_LAT_HALF): a note-on between two interrupts of a block starts at the next one's first frame,
+ * only where the block's plan (rh_begin) stays true: a free voice (no steal, no re-strike: those wait for the block's
+ * start, as before), the Rhodes ring empty (order kept), the TYPE the block started with, and with SPREAD only while the
+ * side runs. A block planned idle (silent) runs from here: its chain at rest and its dither at the start, as the next
+ * block would have them */
+static int rh_mid_strike(uint32_t note, uint32_t vel)
+{
+    uint32_t i, f = RH_NA;
+    if (ev_r != ev_w || rh_type != rhc_rt || (rh_spread && !rh_side_tail)) return 0;
+    for (i = 0; i < RH_NV; i++)
+        if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) return 0;
+    for (i = 0; i < RH_NA; i++) if (!rv[i].alive && !rv[i].pend) { f = i; break; }
+    if (f == RH_NA) return 0;
+    rh_knock_strike(note, vel);
+    rh_init(&rv[f], note, vel);
+    if (rhc_idle) { rhc_idle = 0; rh_dith_on = -1; }
+    return 1;
+}
+#endif
 #endif
 #ifdef FR_HQ
 #include "hq/rhodes_hq.c"

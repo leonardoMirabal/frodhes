@@ -113,6 +113,10 @@ _Static_assert(FR_LAT_HALF == 128u || FR_LAT_HALF == 64u || FR_LAT_HALF == 32u, 
 #ifndef FR_LAT_EV
 #define FR_LAT_EV 0
 #endif
+#ifndef FR_LAT_TAIL
+#define FR_LAT_TAIL 0u                          /* 32: each interrupt sends its frames 32 late (app_audio) */
+#endif
+_Static_assert(FR_LAT_TAIL == 0u || FR_LAT_TAIL == 32u, "FR_LAT_TAIL: 0 or 32 frames");
 #endif
 #include "fr_cold.h"     /* FR_COLD: the cold code built for flash, not speed */
 #include "frodhes_store.h"   /* the flash Frodhes writes, per board, and its allow-list APP_FL_RANGE (store.h) */
@@ -367,6 +371,9 @@ static int c1_front_take(uint32_t j, uint32_t k)
     return x == y && x < j * k;                 /* core 1 behind: still on the chunks before */
 }
 #endif
+#if FR_LAT && FR_LAT_TAIL
+static int32_t *volatile lat_ob, *volatile lat_sb;   /* (app_audio below: the effects' out for the frames sent, for the tail) */
+#endif
 static int c1_stream_step(void)                 /* the frames ready, not done: their effects (1), or none ready (0) */
 {
     uint32_t r, o = c1_fxd, n = c1_job.n;
@@ -374,8 +381,14 @@ static int c1_stream_step(void)                 /* the frames ready, not done: t
     r = c1_rdy;
     fr_c1_sync();
     if (r != c1_rdy || r <= o || r > n || (r & 31u)) return 0;
+#if FR_LAT && FR_LAT_TAIL
+    if (o < fxc_ce - FR_LAT_TAIL && r > fxc_ce - FR_LAT_TAIL) r = fxc_ce - FR_LAT_TAIL;   /* (the tail: its own range) */
+    fxc_o = o; fxc_e = r; fxc_n = n;
+    fx_process(c1_job.mono, o < fxc_ce - FR_LAT_TAIL ? lat_ob : lat_sb, n);
+#else
     fxc_o = o; fxc_e = r; fxc_n = n;
     fx_process(c1_job.mono, c1_job.out, n);
+#endif
     fr_c1_sync();
     c1_fxd = r;
     fr_c1_sync();
@@ -482,20 +495,44 @@ FR_COLD static void host_race_check(void)
 /* FR_LAT_HALF below 256 (the top of this file): each interrupt renders frames [lat_o, lat_o + n) of the 256-frame
  * block, as FR_C1's chunks: eng_begin at the block's first interrupt, eng_chunk per 32 frames, eng_end at its last;
  * core 1 one job an interrupt (c1_lat_job: the block's start work at the first, then the effects over the frames
- * ready, up to the interrupt's last), core 0 waits for it before the interrupt ends (as C1_STREAM at the block's end).
- * fx_process indexes out from the block's start: out - 2 x lat_o (only [lat_o, lat_o + n) is written). The block's
- * once-a-block work (the clock's phase lock, blk_n, the race check) at its last interrupt; the shedder's and the late
- * job's limits scale with n. CC 10's block: the voices whole at its first interrupt (as eng_render), the effects on
- * core 0 interrupt by interrupt; with core 1 held the block is chunked on core 0 (the same integers) */
+ * ready, up to the interrupt's last). fx_process indexes out from the block's start (lat_ob: only the interrupt's
+ * frames are written). The block's once-a-block work (the clock's phase lock, blk_n, the race check, the one-core
+ * switch) at its last interrupt; the shedder's and the late job's limits scale with n. CC 10's block: the voices whole
+ * at its first interrupt (as eng_render), the effects on core 0 interrupt by interrupt; with core 1 held the block is
+ * chunked on core 0 (the same integers).
+ *
+ * FR_LAT_TAIL 0: core 0 waits for the effects of the interrupt's last 32 frames before it ends (as C1_STREAM at the
+ * block's end): core 1's time for those 32 frames is core 0's too, once an interrupt.
+ * FR_LAT_TAIL 32: the interrupt sends frames [lat_o - 32, lat_o + n - 32): the 32 before (the last interrupt's tail,
+ * lat_tl) and its own but the last 32, whose effects core 1 runs after the interrupt (into lat_tl, lat_sb); core 0
+ * waits only for the frames it sends, which core 1 finishes while core 0 renders the last chunk's voices. The output
+ * is the same integers 32 frames later; the next interrupt first makes sure the job is over (it had the main loop's
+ * time) */
 #define LAT_LB 256u                             /* the app's block */
 #define LAT_DEADLINE_US (C1_DEADLINE_US * FR_LAT_HALF / LAT_LB)
 #define LAT_SHED_US (5000u * FR_LAT_HALF / LAT_LB)
 static uint32_t lat_o;                          /* the block's frames done before this interrupt (core 1 reads it) */
 static uint8_t lat_solo, lat_whole;             /* this block: the effects on core 0 / CC 10's block */
 static uint32_t lat_ms0;                        /* fm1_ms at the block's first interrupt (tempo.c's phase lock) */
+#if FR_LAT_TAIL
+static int32_t lat_tl[2u * FR_LAT_TAIL];        /* the tail: the last interrupt's last 32 frames, out at the start of this */
+static uint32_t lat_pe;                         /* the last interrupt's end: its job may still run up to it */
+static uint8_t lat_pend;
+#endif
 #if FR_LAT_EV
 static void eng_mid(uint32_t o);
 #endif
+static void lat_fx(uint32_t o, uint32_t e)      /* core 0: the effects of frames [o, e) of this interrupt */
+{
+#if FR_LAT_TAIL
+    uint32_t t = fxc_ce - FR_LAT_TAIL;
+    if (o < t) { c1_job.o = o; c1_job.e = e < t ? e : t; c1_job.out = lat_ob; c1_fx_job(0); }
+    if (e > t) { c1_job.o = o > t ? o : t; c1_job.e = e; c1_job.out = lat_sb; c1_fx_job(0); }
+#else
+    c1_job.o = o; c1_job.e = e; c1_fx_job(0);
+#endif
+    c1_fxd = e;
+}
 static void c1_lat_job(uint32_t a)              /* core 1, one an interrupt */
 {
     (void)a;
@@ -504,16 +541,43 @@ static void c1_lat_job(uint32_t a)              /* core 1, one an interrupt */
     while (c1_fxd < fxc_ce)
         if (!c1_stream_step()) fr_c1_pause();
 #else
-    c1_stream_step();                           /* (the host twin: the rest at core 0's ticks and its wait) */
+    c1_stream_step();                           /* (the host twin: the rest at core 0's ticks and its waits) */
 #endif
 }
+#if FR_LAT_TAIL && !defined(DINGHY_HOST)
+static int lat_wait_fxd(uint32_t want, uint32_t us)   /* core 0: core 1's effects done up to want (1), or not in time */
+{
+    uint32_t t0 = fm1_ticks();
+    for (;;) {
+        fr_c1_sync();
+        if (c1_fxd >= want) { fr_c1_sync(); if (c1_fxd >= want) return 1; }   /* (twice, as c1_stream_step) */
+        if (!fr_c1_busy() || fm1_ticks() - t0 > us * FM1_TICKS_PER_US) return 0;
+        fr_c1_pause();
+    }
+}
+#endif
 static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 {
     uint32_t o = lat_o, e = o + n, j, k = LAT_LB / C1_SUB, solo = 0, d;
-    int32_t *ob = (int32_t *)(uintptr_t)((uintptr_t)out - (uintptr_t)o * 2u * sizeof *out);
     int r;
 #ifndef DINGHY_HOST
     uint32_t t0 = fm1_ticks(), us;
+#endif
+#if FR_LAT_TAIL
+    if (lat_pend) {                             /* the last interrupt's job: its tail done (core 1, or core 0 now) */
+        lat_pend = 0;
+#ifndef DINGHY_HOST
+        r = fr_c1_wait_us(LAT_DEADLINE_US);     /* (0: done; -1: late, core 1 held: core 0 below) */
+        (void)r;
+#else
+        while (c1_fxd < lat_pe) c1_stream_step();   /* (the host twin: core 1's rest) */
+#endif
+        fr_c1_sync();
+        d = c1_fxd;
+        if (d < lat_pe) lat_fx(d, lat_pe);      /* (refused / late: core 0, with the last interrupt's bases) */
+    }
+    memcpy(out, lat_tl, sizeof lat_tl);         /* frames [o - 32, o): the last interrupt's tail */
+    lat_pe = e;
 #endif
     if (!o) {
         lat_ms0 = fm1_ms;
@@ -522,7 +586,11 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         c1_rdy = 0; c1_fxd = 0;
         c1_job.mono = c1_mono; c1_job.n = LAT_LB;
     }
-    c1_job.out = ob;
+#if FR_LAT_TAIL
+    lat_ob = (int32_t *)(uintptr_t)((uintptr_t)out + (uintptr_t)FR_LAT_TAIL * 2u * sizeof *out - (uintptr_t)o * 2u * sizeof *out);
+    lat_sb = (int32_t *)(uintptr_t)((uintptr_t)lat_tl - (uintptr_t)(e - FR_LAT_TAIL) * 2u * sizeof *out);
+#endif
+    c1_job.out = (int32_t *)(uintptr_t)((uintptr_t)out - (uintptr_t)o * 2u * sizeof *out);
     fxc_ce = e;                                 /* (core 1's job stops there; fx.c's gate) */
     fr_c1_sync();
     if (lat_whole) {                            /* CC 10's block (fx_reset_state ends the voices: as one core) */
@@ -532,7 +600,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
             host_race_check();
 #endif
         }
-        c1_job.o = o; c1_job.e = e; c1_fx_job(0); c1_fxd = e;
+        lat_fx(o, e);
         if (!o) rh_side_on = 0;                 /* (the voices CC 10 ended: as one core) */
     } else {
         if (lat_solo || !fr_c1_run(c1_lat_job, 0)) { solo = 1; if (!o) fx_pre_c(); }
@@ -553,7 +621,7 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
             if (solo) {
                 fr_c1_sync();
                 d = c1_fxd;
-                if (d < j + k) { c1_job.o = d; c1_job.e = j + k; c1_fx_job(0); c1_fxd = j + k; }
+                if (d < j + k) lat_fx(d, j + k);
             } else {
                 fr_c1_sync();
                 c1_rdy = j + k;                 /* core 1: these frames are ready */
@@ -568,15 +636,31 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
         if (!solo) {
 #ifndef DINGHY_HOST
-            uint32_t el = (fm1_ticks() - t0) / 24u;
-            r = fr_c1_wait_us(el + 200u < LAT_DEADLINE_US ? LAT_DEADLINE_US - el : 200u);
+            uint32_t el = (fm1_ticks() - t0) / 24u, lim = el + 200u < LAT_DEADLINE_US ? LAT_DEADLINE_US - el : 200u;
+#if FR_LAT_TAIL
+            if (lat_wait_fxd(e - FR_LAT_TAIL, lim)) lat_pend = 1;   /* (the frames sent are done; the tail runs on) */
+            else
+#endif
+            {
+                r = fr_c1_wait_us(lim);
+                fr_c1_sync();
+                d = c1_fxd;
+                if (r && d < e) lat_fx(d, e);   /* (refused / late: core 0) */
+            }
 #else
             r = fr_c1_wait_us(LAT_DEADLINE_US);
-            if (!r) while (c1_fxd < e) c1_stream_step();   /* (the host twin: core 1's rest) */
+#if FR_LAT_TAIL
+            if (!r) { while (c1_fxd < e - FR_LAT_TAIL) c1_stream_step(); lat_pend = 1; }   /* (the twin: core 1 up to
+                                                 * the frames sent; the tail at the next interrupt's start) */
+            else
 #endif
-            fr_c1_sync();
-            d = c1_fxd;
-            if (r && d < e) { c1_job.o = d; c1_job.e = e; c1_fx_job(0); c1_fxd = e; }   /* (refused / late: core 0) */
+            {
+                if (!r) while (c1_fxd < e) c1_stream_step();   /* (the host twin: core 1's rest) */
+                fr_c1_sync();
+                d = c1_fxd;
+                if (r && d < e) lat_fx(d, e);   /* (refused / late: core 0) */
+            }
+#endif
         }
     }
     fr_c1_block_end();

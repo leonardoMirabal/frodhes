@@ -354,6 +354,20 @@ static void eng_end(int32_t *mono, uint32_t n)
 #endif
     if (eng_swapping) eng_switch(engc_want);
 }
+#if FR_LAT_EV
+/* FR_LAT_EV (frodhes.c FR_LAT_HALF): between two interrupts of a block, the note-ons at the ring's head that the Rhodes
+ * can start mid-block (rhodes.c rh_mid_strike); anything else, and the bar engine, at the next block's start */
+static void eng_mid(uint32_t o)
+{
+    (void)o;
+    if (eng_swapping || eng_cur != ENG_RHODES || eng_want != ENG_RHODES) return;
+    while (eq_r != eq_w) {
+        uint32_t e = eq[eq_r & 31u];
+        if (e >> 28 != EV_NOTE_ON || !rh_mid_strike(e >> 16 & 127u, e & 0xFFFFu)) break;
+        eq_r = eq_r + 1u;
+    }
+}
+#endif
 #endif
 
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
