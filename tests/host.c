@@ -330,13 +330,13 @@ static int host_led_id(int id, int raw) { (void)raw; return id; }
 
 static void read_script(const char *path)
 {
-    static host_ev_t ev[16384];
+    static host_ev_t ev[131072];                 /* (build/soak276.py: a soak row's 400 s, ~70k events) */
     char line[256], what[16];
     FILE *f = fopen(path, "r");
     uint32_t n = 0;
     int raw = 0;                                /* "T ids smk": the SMK's own ids from here on */
     if (!f) { perror(path); exit(1); }
-    while (fgets(line, sizeof line, f) && n < 16384u) {
+    while (fgets(line, sizeof line, f) && n < sizeof ev / sizeof ev[0]) {
         host_ev_t e = {0, 0, -1, 0, 0, 0, EV_KEYS, 0, 0, 0};
         unsigned a = 0, b = 0, c = 0;
         char sub[16] = "", op[4] = "";

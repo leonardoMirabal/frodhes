@@ -3,9 +3,9 @@
 """The two-core soak (FR_C1 builds: tools/build.py --c1) on the FM-1, over USB-MIDI with the USB audio stream open:
 the worst case played for a long time while the firmware's own counters are read, the pass bars judged at the end.
 
-    tools/hil_c1_soak.py --row 274|275|276 [--minutes M] [--rate 48000] [--out build/hil/c1soak] [--dry-run]
+    tools/hil_c1_soak.py --row 274|275|276|277|278 [--minutes M] [--rate 48000] [--out build/hil/c1soak] [--dry-run]
     tools/hil_c1_soak.py --selftest            (no device: the decoding and the verdict on made-up replies)
-    tools/hil_c1_soak.py --status              (the FM-1: core 1's items once, CC 116 = 30 / 31)
+    tools/hil_c1_soak.py --status              (the FM-1: core 1's items once, CC 116 = 30 / 31; 32 the boot / crash)
 
 Rows (Textura's bench/fm1 rows 274 / 275, Frodhes' worst case):
   274   30 min, the Rhodes: 14-note chords (mid + top, bass, spread) at v127 every 1.2 s with the pedal held and
@@ -13,6 +13,9 @@ Rows (Textura's bench/fm1 rows 274 / 275, Frodhes' worst case):
         filter LP18 + LFO, the compressor, the EQ, REVERB HALL at the full rate, DECAY / PRE-DELAY 127)
   275   2 h: as 274, the engine turned every 10 min (Rhodes, VIBES with the motor, MARIMBA) and the REVERB TYPE
         every 2 min (HALL, PLATE, INFINITE: core 1's heaviest), a preset-like burst of CCs every 30 s
+  277   "storm", 6 min (or --minutes), the Rhodes: row 276's settings and play, with the REVERB TYPE INFINITE 20 s /
+        HALL 5 s / PLATE 5 s and a Program Change burst at each switch to HALL (every 30 s: 276's moment at 340 s)
+  278   as 277 without the Program Change bursts (the TYPE switches alone)
   276   "max", 30 min (or --minutes): the CPU smashed on both cores. The engine turned every 10 min (Rhodes, VIBES,
         MARIMBA, in a loop), all 14 voices sounding all the time: a 14-note chord at v127 every 0.25 s (mid + top,
         14 bass, spread: steals all the time), the pedal held, lifted every 5 s; every effect at its heaviest (as
@@ -52,6 +55,10 @@ STATE = {0: "never started", 1: "live", 2: "held: refusals too often", 3: "held:
          5: "held: rails not raised", 6: "held: fault of core 1", 7: "parked", 8: "held: mailbox desync"}
 FREC = ("reti", "rete", "retx", "rets", "sp", "psr", "emu_msg", "dbg_msg", "etm0", "etm1", "etm2", "etm3")
 FREC_ID = 50
+# CC 116 = 32: the last boot's reason and core 0's last crash (frodhes.c: 14 words, 3 items each, from item 86)
+BOOT = ("p3_rst", "rst_src", "crashes", "vec", "pc", "rets", "sp", "emu", "dbg", "uptime_ms", "etm0", "etm1", "etm2",
+        "etm3")
+BOOT_ID = 86
 CC = dict(DRIVE=81, DRV_SW=84, DRV_MIX=83, CMP_SW=106, CMP_AMT=107, TW_SW=17, TW_DEPTH=18, PH_SW=12, PH_DEPTH=13,
           PH_FDBK=16, CP_SW=85, CP_DEPTH=86, DL_SW=88, DL_DEPTH=89, DL_TIME=90, DL_FDBK=26, REV=91, RV_DECAY=92,
           RV_PREDLY=94, RV_TYPE=95, FL_TYPE=70, FL_FREQ=74, FL_RESO=71, FL_LFO=72, EQ_LO=34, EQ_MID=35, EQ_HI=37,
@@ -65,7 +72,16 @@ ENGINES = ((None, "rhodes"), (0, "vibes"), (127, "marimba"))   # CC 79: VIBES 0,
 VOICINGS = dict(midtop=list(range(48, 60)) + [105, 108], bass=[28, 31, 33, 35, 36, 38, 40, 41, 43, 45, 47, 48, 50, 52],
                 spread=[28, 40, 52, 59, 64, 71, 76, 83, 88, 95, 100, 105, 35, 47])
 ROWS = {"274": dict(minutes=30, engines=1, rev_every=0), "275": dict(minutes=120, engines=3, rev_every=120),
-        "276": dict(minutes=30, engines=3, rev_every=0, max=1)}
+        "276": dict(minutes=30, engines=3, rev_every=0, max=1), "277": dict(minutes=6, engines=1, rev_every=0, max=1,
+                                                                    storm=1),
+        "278": dict(minutes=6, engines=1, rev_every=0, max=1, storm=2)}
+def storm_rev(t):
+    """rows 277 / 278: the REVERB TYPE at t s: each 30 s INFINITE 20 s, HALL 5 s, PLATE 5 s (277: a Program Change
+    burst at each switch to HALL: row 276's moment at 340 s, where the 0.9.10 RC and the latency build reset)"""
+    u = t % 30.0
+    return 96 if u < 20.0 else 32 if u < 25.0 else 64
+
+
 def max_rev(t):
     """row 276: the REVERB TYPE (CC 95) at t s: in each engine's 10 min, 5 min of INFINITE, then each minute
     INFINITE 40 s, HALL 10 s, PLATE 10 s"""
@@ -85,7 +101,7 @@ BARS = dict(app_us=5000, whole_us=4500, c1_busy_us=5000, stack=11 * 1024, vdc14=
 def decode(msgs):
     """CC (control, value) pairs of one or more replies -> {name: value} (the core-1 items, the record's words as
     "frec": {name: word}, and the profiler's app_us / now_us / shed / whole_us / tail_us, the USB counters)"""
-    acc, part, cur, msb = {}, {}, None, 0
+    acc, part, bpart, cur, msb = {}, {}, {}, None, 0
     got = {}
     for c, v in msgs:
         if c == 100:
@@ -98,6 +114,8 @@ def decode(msgs):
                 acc[ITEMS[cur]] = val
             elif FREC_ID <= cur < FREC_ID + 3 * len(FREC):
                 part[divmod(cur - FREC_ID, 3)] = val
+            elif BOOT_ID <= cur < BOOT_ID + 3 * len(BOOT):
+                bpart[divmod(cur - BOOT_ID, 3)] = val
             elif cur in (1, 2, 3):
                 acc[("underruns", "missed", "overruns")[cur - 1]] = val
         elif c in (107, 108, 109, 110, 115, 116, 117, 118):
@@ -110,6 +128,11 @@ def decode(msgs):
         words[w] |= val << (14 * p)
     if words:
         acc["frec"] = {FREC[w]: f"{x:#010x}" for w, x in sorted(words.items()) if w < len(FREC)}
+    bw = {}
+    for (w, p), val in bpart.items():
+        bw[w] = bw.get(w, 0) | val << (14 * p)
+    if bw:
+        acc["boot"] = {BOOT[w]: f"{x:#010x}" for w, x in sorted(bw.items())}
     if {116, 117} <= got.keys():
         acc["app_us"] = (got[116] << 7 | got[117]) * 4
     if 115 in got:
@@ -126,6 +149,10 @@ def judge(reads):
         return "FAIL", ["no read"]
     for r in reads:
         t = r.get("t", 0)
+        if r.get("boot"):
+            b = r["boot"]
+            bad.append(f"{t:.0f} s: after the reset: reset source {b.get('p3_rst')} (bit 2 watchdog, 6 soft), crash "
+                       f"record {b}")
         if r.get("noreply"):
             bad.append(f"{t:.0f} s: no reply (hang or reset)")
             continue
@@ -175,10 +202,17 @@ def selftest():
     assert judge([dict(t=0, noreply=1)])[0] == "FAIL"
     f = decode([(100, 50), (101, 1), (102, 2), (100, 51), (101, 0), (102, 1), (100, 52), (101, 0), (102, 0)])
     assert f["frec"]["reti"] == f"{(1 << 7 | 2) | (1 << 14):#010x}", f
+    b = decode([(100, 86), (101, 0), (102, 4), (100, 98), (101, 3), (102, 5), (100, 99), (101, 0), (102, 2)])
+    assert b["boot"]["p3_rst"] == "0x00000004" and b["boot"]["pc"] == f"{(3 << 7 | 5) | (2 << 14):#010x}", b
+    assert any("after the reset" in w for w in judge([dict(r, t=0), dict(r, t=5, jobs=1, boot=b["boot"])])[1])
     pm = plan("276", 30)
     assert pm["max"] and pm["chord_every_s"] == 0.25 and pm["engines"] == ["rhodes", "vibes", "marimba"], pm
     pe = per_engine(pm, [dict(r, t=10, app_us=4000), dict(r, t=700, app_us=4400), dict(r, t=1300, app_us=4100)])
     assert pe.startswith("rhodes 4000/") and "vibes 4400/" in pe and "marimba 4100/" in pe, pe
+    assert [storm_rev(x) for x in (0, 19.9, 20, 24.9, 25, 29.9, 30)] == [96, 96, 32, 32, 64, 64, 96]
+    ps = plan("277", None)
+    assert ps["storm"] == 1 and ps["pc_every_s"] == 30 and ps["engines"] == ["rhodes"] and ps["minutes"] == 6, ps
+    assert plan("278", None)["pc_every_s"] > 3600
     assert [max_rev(x) for x in (0, 299, 300, 339, 340, 349, 350, 359, 360, 600)] == [96, 96, 96, 96, 32, 32, 64,
                                                                                       64, 96, 96]
     print("hil_c1_soak selftest: ok")
@@ -191,7 +225,8 @@ def plan(row, minutes):
     return dict(row=row, minutes=m, engines=[e[1] for e in ENGINES[:p["engines"]]], rev_every_s=p["rev_every"],
                 voices=14, chord_every_s=0.25 if mx else 1.2, pedal_every_s=5 if mx else 20, read_every_s=5,
                 max=mx, drive_every_s=20 if mx else 0, sweep_every_s=0.1 if mx else 0, bypass_every_s=20 if mx else 0,
-                pc_every_s=60 if mx else 0,
+                pc_every_s=(30 if p.get("storm") == 1 else 10 ** 6 if p.get("storm") else 60) if mx else 0,
+                storm=p.get("storm", 0),
                 reverb="each engine's 10 min: INFINITE 5 min, then per minute INFINITE 40 s / HALL 10 s / PLATE 10 s; "
                        "MIX, DECAY, PRE-DELAY, SIZE 127" if mx else "", bars=BARS)
 
@@ -234,6 +269,9 @@ def run(a):  # noqa: C901 (the device run)
         sys.exit("no core-1 reply (CC 116 = 30): not an FR_C1 build (tools/build.py --c1)")
     print(f"core 1 {STATE.get(first['state'], first['state'])}, rails {first.get('vdc14')} / {first.get('sysvdd')}, "
           f"voices {first.get('voices')}", flush=True)
+    boot0 = decode(query(32)).get("boot")              # (the boot before the run: its reason, any crash record)
+    print(f"boot before the run: {boot0}", flush=True)
+    jobs_prev = first.get("jobs", -1)
     def setup(i):                                         # the engine i and every effect at its heaviest
         sel = ENGINES[i][0]
         if sel is None:
@@ -255,7 +293,7 @@ def run(a):  # noqa: C901 (the device run)
     rev_cur = 96
     next_read = next_chord = next_ped = next_rev = next_eng = next_burst = 0.0
     next_drv = next_sweep = 0.0
-    next_byp, next_pc = 10.0, 40.0
+    next_byp, next_pc = 10.0, (20.0 if p.get("storm") == 1 else p["pc_every_s"] if p.get("storm") else 40.0)
     dur = p["minutes"] * 60.0
     try:
         while True:
@@ -268,7 +306,7 @@ def run(a):  # noqa: C901 (the device run)
                 setup(eng_i)
                 next_eng = t + (600.0 if len(p["engines"]) > 1 else dur + 1)
             if p["max"]:
-                rv = max_rev(t)
+                rv = storm_rev(t) if p.get("storm") else max_rev(t)
                 if rv != rev_cur:                         # the REVERB TYPE (INFINITE most of the time)
                     cc(CC["RV_TYPE"], rv)
                     rev_cur = rv
@@ -324,6 +362,11 @@ def run(a):  # noqa: C901 (the device run)
                 r["t"] = round(t, 1)
                 if r.get("state") is None:
                     r["noreply"] = 1
+                elif r.get("jobs", jobs_prev) < jobs_prev:    # a reset: why (the watchdog, or core 0's crash record)
+                    r["boot"] = decode(query(32)).get("boot")
+                    print(f"RESET: {r['boot']}", flush=True)
+                if r.get("jobs") is not None:
+                    jobs_prev = r["jobs"]
                 reads.append(r)
                 print(f"{t:7.0f} s  core1 {r.get('state')} jobs {r.get('jobs')} bad {r.get('bad')} ref "
                       f"{r.get('refused')} late {r.get('late')} holds {r.get('holds')} rec {r.get('rec1')}/"
@@ -432,7 +475,7 @@ def main():
         for _ in inp.iter_pending():
             pass
         msgs = []
-        for v in (30, 31):
+        for v in (30, 31, 32):                            # (32: the last boot's reason, core 0's crash record)
             out.send(mido.Message("control_change", control=116, value=v))
             t0 = time.monotonic()
             while time.monotonic() - t0 < 1.2:

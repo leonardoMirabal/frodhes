@@ -635,6 +635,27 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
         }
         return;
     }
+    if (cc == 116u && v == 32u) {                      /* the last boot's reason and core 0's last crash (hal/fm1_irq.h
+                                                        * fm1_crash, kept in .noinit over the reboot; 0 without one): 14
+                                                        * words, each as 3 items of 14 bits from item 86 (CC 100 / 101-102
+                                                        * as above): the P33 reset source (bit 2 the watchdog, 6 soft),
+                                                        * RST_SRC, the crashes counted, the vector, pc, rets, sp, emu,
+                                                        * dbg, the uptime (ms), the branch trace (4). tools/hil_c1_soak.py
+                                                        * reads it after a reset */
+        uint32_t w[14], k, t1, ok = fm1_crash.magic == FM1_CRASH_MAGIC;
+        w[0] = fm1_boot.p3_rst; w[1] = fm1_boot.rst_src;
+        w[2] = ok ? fm1_crash.count : 0u; w[3] = ok ? fm1_crash.vec : 0u; w[4] = ok ? fm1_crash.pc : 0u;
+        w[5] = ok ? fm1_crash.rets : 0u; w[6] = ok ? fm1_crash.sp : 0u; w[7] = ok ? fm1_crash.emu : 0u;
+        w[8] = ok ? fm1_crash.dbg : 0u; w[9] = ok ? fm1_crash.uptime_ms : 0u;
+        for (k = 0; k < 4u; k++) w[10u + k] = ok ? fm1_crash.etm[k] : 0u;
+        for (k = 0; k < 42u; k++) {
+            t1 = fm1_ticks();
+            while (usb.config && mo_w - mo_r > MQ - 3u && fm1_ticks() - t1 < 50000u * FM1_TICKS_PER_US)
+                fm1_wdt_feed();
+            usb_health_send(86u + k, w[k / 3u] >> (14u * (k % 3u)) & 16383u);
+        }
+        return;
+    }
 #endif
     if (cc == 116u) {                                  /* profiler query: CC 116 -> CC 116/117 = max audio us (MSB, LSB
                                                         * of us / 4), CC 118 = this block's (us / 32), CC 115 = voices shed
