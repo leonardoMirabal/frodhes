@@ -747,8 +747,8 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
     v->ppos = 0;
 }
 
-static inline __attribute__((always_inline)) int32_t rh_hermite_i(const int32_t *T, int64_t s)   /* (rh_hd_step: inlined
-                                                * into its RAM leaf) */
+static inline __attribute__((always_inline)) int32_t rh_hermite_i(const int32_t *T, int64_t s)   /* (rh_hd_step: the
+                                                * same integers through rh_hd_flux) */
 {
     uint32_t i, t;
     int32_t p0, p1, m0, m1, c2, c3, a;
@@ -766,6 +766,32 @@ static inline __attribute__((always_inline)) int32_t rh_hermite_i(const int32_t 
     return p0 + (int32_t)(((int64_t)t * a) >> 22);
 }
 static int32_t rh_hermite(const int32_t *T, int64_t s) { return rh_hermite_i(T, s); }
+/* rh_hd_step's flux value at the gap q (Q25): rh_hermite_i(T, q * q), the same integer, with its clamp taken in 32 bits
+ * (q * q >= RH_S_MAX_HI << 44 exactly when |q| > RH_HD_QMAX: index and fraction at the table's last point). The 64-bit
+ * form kept its limit on the stack and compiled the clamp to a predicated 64-bit load of it: the FM-1's core 0 faulted
+ * there in the audio interrupt (EMU_MSG bit 0, rh_hd_step+0x158, the 0.9.10 RC in soak rows 276 / 277). Here nothing
+ * 64-bit is loaded from the stack (tools/build.py checks rh_hd_step; tests/py/test_rh_hd_flux.py the integers) */
+#define RH_HD_QMAX 189812531u                   /* floor(sqrt(2^55 - 1)) */
+_Static_assert(RH_S_MAX_HI == 2048u, "RH_HD_QMAX: sqrt(RH_S_MAX_HI << 44)");
+static inline __attribute__((always_inline)) int32_t rh_hd_flux(const int32_t *T, int32_t q)
+{
+    uint32_t aq = q < 0 ? 0u - (uint32_t)q : (uint32_t)q, i, t;
+    int32_t p0, p1, m0, m1, c2, c3, a;
+    const int32_t *r;
+    if (aq > RH_HD_QMAX) { i = RH_S_MAX_HI - 1u; t = 0x3FFFFFu; }
+    else {
+        uint64_t s = (uint64_t)aq * aq;
+        i = (uint32_t)(s >> 44);
+        t = (uint32_t)(s >> 22) & 0x3FFFFFu;
+    }
+    r = T + 2u * i;
+    p0 = r[0]; m0 = r[1]; p1 = r[2]; m1 = r[3];
+    c3 = 2 * (p0 - p1) + m0 + m1;
+    c2 = 3 * (p1 - p0) - 2 * m0 - m1;
+    a = c2 + (int32_t)(((int64_t)t * c3) >> 22);
+    a = m0 + (int32_t)(((int64_t)t * a) >> 22);
+    return p0 + (int32_t)(((int64_t)t * a) >> 22);
+}
 
 /* keeps x a plain 32-bit register value (no code): the compiler otherwise carries sign-extended 64-bit copies of a
  * multiplier (t, the gain, eps, b), which in the hot loops cost a register pair and stack traffic */
@@ -997,7 +1023,7 @@ static void rh_hd_init(rh_voice_t *v, uint32_t n, uint32_t vel)
 }
 /* a step of the glide: a leaf in RAM (FR_RAM; 0.9.10 cpu: from XIP flash it waited on the cache, 10 voices x 4 steps
  * a block), no call: the five flux values (the slopes at the strike's offset and here, then the last sample's at the
- * new offset) through one inlined rh_hermite in a loop (RAM is short), the root and the divide inline. The gain at the
+ * new offset) through one inlined rh_hd_flux (rh_hermite's integers) in a loop (RAM is short), the root and the divide inline. The gain at the
  * offset now: the base x the pickup's fundamental gain at the strike's offset over the one here, both at V1's swing now
  * (the secant over +-a: the large swing's own, not the small-signal slope) */
 static FR_RAM __attribute__((noinline)) int32_t rh_hd_step(rh_voice_t *v, int32_t Hp)
@@ -1028,7 +1054,7 @@ static FR_RAM __attribute__((noinline)) int32_t rh_hd_step(rh_voice_t *v, int32_
     if (a > (1 << 26)) a = 1 << 26;                                /* (2 gap) */
     q[0] = v->hd_off0 + a; q[1] = v->hd_off0 - a; q[2] = o + a; q[3] = o - a; q[4] = o + rh_x[SUB - 1u];
 #pragma clang loop unroll(disable)
-    for (i = 0; i < 5u; i++) h[i] = rh_hermite_i(T, (int64_t)q[i] * q[i]);
+    for (i = 0; i < 5u; i++) h[i] = rh_hd_flux(T, q[i]);
     s0 = h[0] - h[1]; s0 = s0 < 0 ? -s0 : s0;                      /* |Phi~((o0 + a)^2) - Phi~((o0 - a)^2)| */
     s1 = h[2] - h[3]; s1 = s1 < 0 ? -s1 : s1;
     {   /* both under 2^17, the same shift (the leading zeros of the larger: no loop) */

@@ -395,6 +395,13 @@ def check(img, syms, dis, rt):
             val = (int(v[0]) & 0xFFFFFFFF) if v[0] else int(v[1], 16) & 0xFFFFFFFF
             if 0xFFC00000 <= val < 0xFFD00000:
                 errors.append(f"reference to ROM address {val:#010x}")
+    # rh_hd_step (rhodes.c, RAM, core 0's audio interrupt): no 64-bit load from the stack. Its clamp compiled to a
+    # predicated one (r9_r8 = d[sp+8]) and core 0 faulted there (EMU_MSG bit 0; the 0.9.10 RC, soak rows 276 / 277)
+    hd = re.search(r"^rh_hd_step:\n(.*?)(?=^[A-Za-z_][\w.]*:$)", dis, re.S | re.M)
+    if hd and re.search(r"= d\[sp", hd.group(1)):
+        errors.append("rh_hd_step loads a 64-bit word from the stack (rhodes.c rh_hd_flux: the core-0 fault of 0.9.10)")
+    elif hd:
+        notes.append("rh_hd_step: no 64-bit load from the stack")
     if len(img) > APP_SLOT:
         errors.append(f"image {len(img)} B exceeds the app slot")
     loops = hot_loops(dis)
