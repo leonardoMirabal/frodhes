@@ -329,6 +329,9 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     hqb_pulse(v, vel, 0);                           /* HQ: MARIMBA's top keys from the live contact */
 #endif
     bar_lt_pulse(v, vel);                           /* RESPONSE (B: the light touch's soft end) */
+#ifdef DINGHY_PLUGIN
+    fr_ofs_apply(&v->ppos, &v->pdly, v->prate, bar_ofs_in);   /* the plugin: from the note's own sample (engine.c) */
+#endif
     /* contact noise: filtered noise, louder for harder mallets and faster strikes, decaying (tau ~ 23 ms) */
     bar_nz_e += bar_nz_strike(vel);
 }
@@ -399,6 +402,9 @@ static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already wa
             hqb_pulse(v, vel, 1);                   /* HQ: the mallet meets the ringing bar (the live contact) */
 #endif
             bar_lt_pulse(v, vel);                   /* RESPONSE (B: the light touch's soft end) */
+#ifdef DINGHY_PLUGIN
+            fr_ofs_apply(&v->ppos, &v->pdly, v->prate, bar_ofs_in);   /* the plugin: from the note's own sample */
+#endif
             bar_nz_e += bar_nz_strike(vel);
             return 1;
         }
@@ -464,6 +470,9 @@ static void bar_note_off(uint32_t note)
                 if (v->pamp > cap) v->pamp = cap;
                 v->prate = v->prate_thump;
                 v->ppos = 0;
+#ifdef DINGHY_PLUGIN
+                v->pdly = 0;
+#endif
             }
             if (bar_pedal_w && bar_felt) {                   /* 8 ms of felt noise */
                 int32_t g = bar_left(v) * (int32_t)(32768u / BAR_FELT_FULL);
@@ -906,6 +915,23 @@ FR_RAM __attribute__((noinline)) static uint32_t bar_force(bar_voice_t *v)
     uint32_t pos = v->ppos, rate = v->prate, j, n, L = (uint32_t)BAR_PLEN << 16;
     int32_t amp = v->pamp, *q = bar_xt + 2, *qe;
     if (!t) return 0;
+#ifdef DINGHY_PLUGIN
+    {   /* the plugin: zeros until the note's own sample (rhodes.c fr_ofs_apply), then the pulse */
+        uint32_t d = v->pdly < BAR_N ? v->pdly : BAR_N;
+        for (qe = q + 3u * d; q < qe; q += 3) *q = 0;
+        v->pdly = (uint16_t)(v->pdly - d);
+        n = pos >= L ? 1u : (L - pos + rate - 1u) / rate;
+        if (n > BAR_N - d) n = BAR_N - d;
+        else v->ptab = 0;
+        for (qe = q + 3u * n; q < qe; q += 3) {
+            uint32_t i = pos >> 16;
+            int32_t f = (int32_t)((pos >> 1) & 0x7FFFu), a = t[i], dd = t[i + 1u] - a;
+            *q = (((a + ((dd * f) >> 15)) * amp) >> 15) << 12;
+            pos += rate;
+        }
+        j = d + n;
+    }
+#else
     n = pos >= L ? 1u : (L - pos + rate - 1u) / rate;   /* the samples to the pulse's end (the last one included) */
     if (n > BAR_N) n = BAR_N;
     else v->ptab = 0;                               /* it ends in this block */
@@ -916,6 +942,7 @@ FR_RAM __attribute__((noinline)) static uint32_t bar_force(bar_voice_t *v)
         pos += rate;
     }
     j = n;
+#endif
     v->ppos = pos;
     {   /* zeros to the end of the sub-block (the kernels run 4 samples a turn, the pair per sub-block) */
         uint32_t z, e = (j + BAR_SUB) & ~(BAR_SUB - 1u);

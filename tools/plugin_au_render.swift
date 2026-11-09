@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The Frodhes Audio Unit in Apple's own AU host (AVAudioEngine, offline manual rendering), for tools/plugin_hosts.py:
+//   plugin_au_render RATE FRAMES EVENTS.txt OUT.f32 [ENGINE [BUNDLE.component]]
+// EVENTS.txt: one MIDI event a line, "FRAME STATUS DATA1 DATA2" (decimal, frames from the start, sorted). The render
+// is cut at every event's frame, so each event reaches the unit at exactly its frame (an AU instrument's MIDI applies
+// from the next render call). OUT.f32: the left and right channels, interleaved float32, FRAMES frames.
+// The unit is found by its component description (aumu Frd1 Frdh): it must be installed and registered, or given as
+// BUNDLE.component, which is then registered for this process only (AudioComponentRegister on the bundle's factory
+// function: nothing is installed; tools/plugin_dist.py). ENGINE (0 CLASSIC, 1 HQ, -1 the plugin's own) is set as the
+// ENGINE parameter (id 0x10000) before the render starts.
+import AVFoundation
+
+let a = CommandLine.arguments
+guard a.count >= 5 && a.count <= 7, let rate = Double(a[1]), let total = Int(a[2]) else {
+    FileHandle.standardError.write("usage: plugin_au_render RATE FRAMES EVENTS.txt OUT.f32 [ENGINE [BUNDLE.component]]\n".data(using: .utf8)!)
+    exit(2)
+}
+let engineSel = a.count > 5 ? (Int(a[5]) ?? -1) : -1
+var events: [(Int, UInt8, UInt8, UInt8)] = []
+for line in try! String(contentsOfFile: a[3], encoding: .utf8).split(separator: "\n") {
+    let f = line.split(separator: " ").compactMap { Int($0) }
+    if f.count == 4 { events.append((f[0], UInt8(f[1]), UInt8(f[2]), UInt8(f[3]))) }
+}
+let desc = AudioComponentDescription(componentType: kAudioUnitType_MusicDevice, componentSubType: 0x46726431,
+                                     componentManufacturer: 0x46726468, componentFlags: 0, componentFlagsMask: 0)
+if a.count > 6 {
+    // the bundle's own factory function, registered in this process only
+    let plist = NSDictionary(contentsOfFile: a[6] + "/Contents/Info.plist")!
+    let comp = (plist["AudioComponents"] as! [NSDictionary])[0]
+    let exe = a[6] + "/Contents/MacOS/" + (plist["CFBundleExecutable"] as! String)
+    guard let h = dlopen(exe, RTLD_NOW | RTLD_LOCAL), let sym = dlsym(h, comp["factoryFunction"] as! String) else {
+        FileHandle.standardError.write("cannot load \(exe)\n".data(using: .utf8)!)
+        exit(1)
+    }
+    var d = desc
+    let fn = unsafeBitCast(sym, to: AudioComponentFactoryFunction.self)
+    _ = AudioComponentRegister(&d, "Frodhes: Frodhes (test)" as CFString, 0x7fff0000, fn)
+}
+let engine = AVAudioEngine()
+let inst = AVAudioUnitMIDIInstrument(audioComponentDescription: desc)
+engine.attach(inst)
+let fmt = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 2)!
+engine.connect(inst, to: engine.mainMixerNode, format: fmt)
+if engineSel >= 0 {
+    let st = AudioUnitSetParameter(inst.audioUnit, 0x10000, kAudioUnitScope_Global, 0, AudioUnitParameterValue(engineSel), 0)
+    if st != noErr { FileHandle.standardError.write("ENGINE: status \(st)\n".data(using: .utf8)!); exit(1) }
+}
+func latencyNow() -> Double {   // kAudioUnitProperty_Latency (seconds), as a host reads it
+    var v: Float64 = 0
+    var sz = UInt32(MemoryLayout<Float64>.size)
+    _ = AudioUnitGetProperty(inst.audioUnit, kAudioUnitProperty_Latency, kAudioUnitScope_Global, 0, &v, &sz)
+    return v * rate
+}
+let latBefore = latencyNow()
+try! engine.enableManualRenderingMode(.offline, format: fmt, maximumFrameCount: 512)
+try! engine.start()
+FileHandle.standardError.write(String(format: "plugin_au_render: latency %.1f frames before start, %.1f after (%.0f Hz)\n",
+                                      latBefore, latencyNow(), rate).data(using: .utf8)!)
+let buf = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: 512)!
+var out = [Float](repeating: 0, count: total * 2)
+var pos = 0, ei = 0
+while pos < total {
+    while ei < events.count && events[ei].0 <= pos {
+        let e = events[ei]
+        inst.sendMIDIEvent(e.1, data1: e.2, data2: e.3)
+        ei += 1
+    }
+    var n = min(512, total - pos)
+    if ei < events.count && events[ei].0 - pos < n { n = events[ei].0 - pos }
+    let st = try! engine.renderOffline(AVAudioFrameCount(n), to: buf)
+    if st != .success { FileHandle.standardError.write("render status \(st.rawValue)\n".data(using: .utf8)!); exit(1) }
+    let l = buf.floatChannelData![0], r = buf.floatChannelData![1]
+    for i in 0..<Int(buf.frameLength) { out[2 * (pos + i)] = l[i]; out[2 * (pos + i) + 1] = r[i] }
+    pos += Int(buf.frameLength)
+}
+try! Data(bytes: out, count: out.count * 4).write(to: URL(fileURLWithPath: a[4]))

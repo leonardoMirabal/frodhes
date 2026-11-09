@@ -169,6 +169,9 @@ typedef struct {
     int32_t vg;                                /* MAP: the map's gain scale G (Q11) */
     int32_t vn;                                /* MAP: Q11 <= 1, the map's X x G, the mechanical noises' scale */
 #endif
+#ifdef DINGHY_PLUGIN
+    uint16_t pdly;                             /* the plugin: samples before the pulse starts (fr_ofs_apply) */
+#endif
 } rh_voice_t;
 #ifdef RH_VMAP
 #define RH_IS_MAP(v) ((v)->vm)
@@ -372,6 +375,20 @@ static volatile uint8_t rh_notes[RH_NV];
 #define EV_ALL_OFF 4u
 static volatile uint32_t ev_q[32];
 static volatile uint32_t ev_w, ev_r, ev_drop;
+#ifdef DINGHY_PLUGIN
+/* the desktop plugin: a note starts at its own sample in the block (engine.c eq_ofs, 1/256 sample): rh_post keeps the
+ * place rh_ofs_in gives, rh_events hands it to the strike in rh_ofs (0 for anything else: a note that waited for a
+ * steal's fade starts at the block's start). The voice waits pdly samples, then plays its pulse from the fraction's
+ * point (the pulse at its true time, read between the samples as it always is); the knock likewise (whole samples).
+ * The FM-1 / SMK / Move builds have none of it */
+static uint16_t ev_ofs[32], rh_ofs_in, rh_ofs, rh_kn_dly;
+static void fr_ofs_apply(uint32_t *ppos, uint16_t *dly, uint32_t prate, uint32_t ofs)
+{
+    uint32_t d = ofs >> 8, f = ofs & 255u;
+    if (f) { d++; *ppos = (uint32_t)(((uint64_t)prate * (256u - f)) >> 8); }   /* (the first sample after the start) */
+    *dly = (uint16_t)d;
+}
+#endif
 static volatile uint8_t rh_hold;               /* main loop: the sustain pedal is down (for the screen/LED) */
 static uint8_t rh_shed_req;                    /* ISR: the audio ran late: fade out the quietest released voice */
 static volatile uint32_t rh_shed_count;
@@ -380,6 +397,9 @@ static void rh_post(uint32_t type, uint32_t note, uint32_t val)
 {
     uint32_t w = ev_w;
     if (w - ev_r >= 32u) { ev_drop++; return; }
+#ifdef DINGHY_PLUGIN
+    ev_ofs[w & 31u] = rh_ofs_in;
+#endif
     ev_q[w & 31u] = type << 28 | (note & 127u) << 16 | (val & 0xFFFFu);
     RING_PUBLISH();
     ev_w = w + 1u;
@@ -745,6 +765,9 @@ static void rh_load_pulse(rh_voice_t *v, uint32_t vel)
     hq_pulse_gain(v);
 #endif
     v->ppos = 0;
+#ifdef DINGHY_PLUGIN
+    fr_ofs_apply(&v->ppos, &v->pdly, v->prate, rh_ofs);
+#endif
 }
 
 static inline __attribute__((always_inline)) int32_t rh_hermite_i(const int32_t *T, int64_t s)   /* (rh_hd_step: the
@@ -1441,6 +1464,9 @@ static void __attribute__((noinline)) rh_knock_strike(uint32_t note, uint32_t ve
     }
     rh_kn_amp = a;
     rh_kn_tab = rh_pz(rh_kn_buf, &RH_PZB, RH_PZI(key, l)); rh_kn_rate = prate; rh_kn_pos = 0; rh_kn_note = (uint8_t)n;
+#ifdef DINGHY_PLUGIN
+    rh_kn_dly = (uint16_t)(rh_ofs >> 8);
+#endif
 }
 
 static void rh_start_pend(rh_voice_t *v)                /* a stolen voice is gone: start the note waiting for it */
@@ -1512,6 +1538,10 @@ static void rh_events(void)
 {
     while (ev_r != ev_w) {
         uint32_t e = ev_q[ev_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu, i;
+#ifdef DINGHY_PLUGIN
+        rh_ofs = ev_ofs[ev_r & 31u];
+        ev_ofs[ev_r & 31u] = 0;                         /* (a note kept for the next block starts at its start) */
+#endif
         if (type == EV_NOTE_ON && !rh_strike(note, val)) break;   /* (kept: it starts next block, in order) */
         ev_r = ev_r + 1u;
         if (type == EV_NOTE_ON) continue;
@@ -1540,6 +1570,9 @@ static void rh_events(void)
                         v->pamp = th > 32767 ? 32767 : th;
                         v->prate = (uint32_t)(RH_PRATE_B[key] + RH_PRATE[key][1]) << 4;
                         v->ppos = 0;
+#ifdef DINGHY_PLUGIN
+                        v->pdly = 0;
+#endif
                     }
                     if (rh_pedal_w && rh_felt) {             /* 8 ms of felt noise */
                         int32_t g = rh_left(v) * (32768 / RH_FELT_FULL);
@@ -1616,6 +1649,9 @@ static void rh_events(void)
                 }
         }
     }
+#ifdef DINGHY_PLUGIN
+    rh_ofs = 0;                                         /* (a note that waited for a steal's fade: the block's start) */
+#endif
 }
 
 /* one live mode, one sub-block (MC3 + error feedback, mode-outer) into rh_x: written by the first live mode, added
@@ -1766,6 +1802,14 @@ static __attribute__((noinline)) void rh_voice_sub(rh_voice_t *v, int32_t *mix, 
                                                            * zeros: the same samples as one loop testing pt per
                                                            * sample. The velocity layers are pre-mixed at the strike
                                                            * (rh_load_pulse, O2): one table, no per-sample blend */
+#ifdef DINGHY_PLUGIN
+        if (v->pdly) {                                    /* the plugin: zeros until the note's own sample */
+            uint32_t z = v->pdly < SUB ? v->pdly : SUB;
+            for (; j < z; j++) rh_F[j] = 0;
+            v->pdly = (uint16_t)(v->pdly - z);
+        }
+        if (j < SUB)
+#endif
         for (;;) {
             uint32_t i = ppos >> 16;
             int32_t f = (int32_t)((ppos >> 1) & 0x7FFFu);
@@ -1924,7 +1968,16 @@ static FR_RAM void __attribute__((noinline)) rh_noise(int32_t *mix, uint32_t n)
         }
         rh_pn_n = m ? rh_pn_n - m : 0; rh_pn_x = x; rh_pn_lp = lp; rh_pn_env = g;
     }
-    if (rh_kn_tab) {                                      /* the pulse to its end (the samples left, counted first:
+#ifdef DINGHY_PLUGIN
+    if (rh_kn_tab && rh_kn_dly) {                         /* the plugin: the knock from its note's own sample */
+        uint32_t d = rh_kn_dly < n ? rh_kn_dly : n;
+        rh_kn_dly = (uint16_t)(rh_kn_dly - d); mix += d; n -= d;
+    }
+    if (rh_kn_tab && n)
+#else
+    if (rh_kn_tab)
+#endif
+    {                                                     /* the pulse to its end (the samples left, counted first:
                                                            * a tight loop), as the voices play it, each value held
                                                            * for two samples (half the cost; the pulse is smooth, its
                                                            * image at fs/2 is far under the knock, and the RLC's) */
