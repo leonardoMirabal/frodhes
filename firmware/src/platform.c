@@ -551,8 +551,10 @@ static __attribute__((noinline)) void master_ramp(int32_t *o, int32_t m)
     master_prev = m;
 }
 #undef TAIL_PRE
+static volatile uint32_t wd_isr_n;              /* the watchdog's proof the audio interrupt runs */
 void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) */
 {
+    wd_isr_n = wd_isr_n + 1u;
     uint8_t p;
     uint32_t t0 = fm1_ticks();
     in_audio = 1;
@@ -624,11 +626,30 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
 extern void isr_alnk0(void);
 
 /* ---- the main loop's duties: watchdog, USB, the installer's update request, the MASTER knob */
+/* the watchdog is fed only while the whole app runs: the main loop (this call), the audio interrupt (its count moved
+ * in the last WD_STALL), the clock (fm1_ticks moved within WD_SPIN passes) and what the app adds (APP_WD_OK: core 1's
+ * jobs). A stall of any of them stops the feeding and the watchdog resets the chip (0x0D: about 8 s) */
+#define WD_STALL (3000000u * FM1_TICKS_PER_US)
+#define WD_SPIN 2000000u
+#ifndef APP_WD_OK
+#define APP_WD_OK(now) 1
+#endif
+FR_COLD static void wd_poll(void)
+{
+    static uint32_t isr, isr_t, tk, spin, init;
+    uint32_t now = fm1_ticks(), n = wd_isr_n;
+    if (!init) { init = 1; isr = n; isr_t = tk = now; }
+    if (now != tk) tk = now, spin = 0;
+    else if (spin < WD_SPIN) spin++;
+    if (n != isr) isr = n, isr_t = now;
+    if (spin < WD_SPIN && now - isr_t < WD_STALL && APP_WD_OK(now))
+        fm1_wdt_feed();
+}
 FR_COLD static void platform_poll(void)
 {
     static int32_t knob_avg = 512 * 16;
     int32_t a;
-    fm1_wdt_feed();
+    wd_poll();
 #if defined(UAC_FAULT_CLI_US) && FELUCCA_UAC
     {   /* developer builds only (APP_DEFS=-DUAC_FAULT_CLI_US=N): while the USB audio stream flows, the interrupts off
          * for N us every ~50 ms (N 0: 300, 400 .. 900 us in turn), a flash slice's shape, for the EP4 poll's device
@@ -691,9 +712,11 @@ FR_COLD static void fm1_fault(const fm1_crash_t *c)
         draw_text_box(10, 60 + i * 20, 220, &FONT_S, b, C_WHITE, 0);
     }
     t0 = fm1_ticks();
-    while ((uint32_t)(fm1_ticks() - t0) < 8000u * 1000u * FM1_TICKS_PER_US)
-        fm1_wdt_feed();
+    for (i = 0; (uint32_t)(fm1_ticks() - t0) < 8000u * 1000u * FM1_TICKS_PER_US && i < 20000000u; i++)
+        fm1_wdt_feed();                         /* (bounded by a count too: a stopped clock must not feed forever) */
     fm1_reboot();
+    for (;;)                                    /* (no feeding: the watchdog resets if the reboot did not) */
+        ;
 }
 
 void fm1_cstart(void)

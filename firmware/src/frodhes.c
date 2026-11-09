@@ -96,6 +96,15 @@ static void fr_ramx_clear(void)
 #include "fr_cold.h"     /* FR_COLD: the cold code built for flash, not speed */
 #include "frodhes_store.h"   /* the flash Frodhes writes, per board, and its allow-list APP_FL_RANGE (store.h) */
 #include "keyvel.h"     /* key velocity's interfaces: first, so the scan tick (platform.c) can reach its hooks */
+#if FR_C1 && !defined(DINGHY_HOST)
+static int fr_wd_c1_ok(uint32_t now)            /* the watchdog (platform.c wd_poll): core 1's jobs move while it is on */
+{
+    static uint32_t j, t;
+    if (c1.st != C1_ON || c1.jobs != j) { j = c1.jobs; t = now; return 1; }
+    return now - t < 3000000u * FM1_TICKS_PER_US;
+}
+#define APP_WD_OK(now) fr_wd_c1_ok(now)
+#endif
 #include "platform.c"
 #if defined(DINGHY_HOST) && !defined(HOST_FL_CHECK)
 /* (the web build: no flash log; a place the firmware's allow-list refuses fails as on the device) */
