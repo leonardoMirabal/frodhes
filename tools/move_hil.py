@@ -2255,6 +2255,9 @@ def preflight_cmd(a, d, chan, rep, out=print, u=None):
         u = u if isinstance(u, FakeRig) else FakeRig(inject=inj)
         tap = u
     else:
+        if chan.get("stop") or chan.get("send") is None:   # (resolve_channel stopped: no channel to send on)
+            return False, {"verdict": "STOP: %s" % (chan.get("stop") or "no channel to send on (pass --ch N)"),
+                           "channel": _plain(chan)}
         u = u or UsbRig(a.midi, a.audio, chan["send"])
         if a.ws == "none":
             return False, {"verdict": "FAIL: the preflight needs Schwung's WebSocket for the tap (--ws), or "
@@ -3002,6 +3005,11 @@ def _main(a):
     if a.cmd == "preflight":
         d = a.out or os.path.join(OUT, stamp() + "-preflight")
         chan, srep = channel_for(a)
+        if chan.get("stop"):                    # (no channel to send on: the slot's report and the reason, exit 2)
+            for line in report_lines(srep, chan):
+                print(line)
+            print("STOP: " + chan["stop"])
+            return 2
         if a.fake or a.ws == "none":
             ok, rep = preflight_cmd(a, d, chan, srep)
         else:
