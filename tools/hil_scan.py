@@ -953,9 +953,12 @@ def effects(r, rep):
 
 @test
 def bypass(r, rep):
-    """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs no effects at all"""
+    """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs the compressor alone (the bypass
+    keeps the compressor: FR_BYP_KEEP_CMP, the user 2026-11-08 "leave compressor aside of the efx off button")"""
     r.dry()
     a = r.take(1.5, CHORD)
+    r.dry(CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
+    d = r.take(1.5, CHORD)
     r.dry(PH_SW=127, PH_DEPTH=80, CP_SW=64, CP_DEPTH=64, REV=50, DRIVE=30, CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
     b = r.take(2.2, CHORD)
     r.cc_raw(111, 127)
@@ -963,14 +966,19 @@ def bypass(r, rep):
     c = r.take(1.5, CHORD)
     r.cc_raw(111, 0)
     lv = []
-    for x in (a, b, c):
+    for x in (a, b, c, d):
         i = max(onset(x, t=0.05), 0)
         lv.append(lufs(x[i:i + int(1.1 * FS)] / 32768.0))
-    rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2])
+    rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2], comp_only=lv[3])
     # the compressor as the panel switches it on (THRESH up: +2.8 dB makeup); before, it ran with no makeup and the
-    # effects-on level sat 5 dB under the bypass by construction
-    ok = abs(lv[2] - lv[0]) < 0.5 and abs(lv[1] - lv[2]) < 3
-    return ok, f"no effects {lv[0]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} LUFS"
+    # effects-on level sat 5 dB under the bypass by construction.
+    # THRESHOLD (2026-11-09, coordinator sign-off 2026-11-09): the bypass is judged against the compressor alone (its settings as the effects-on row's),
+    # within 0.5 LU as before; no effects at all is information. Since b2c9ab1b the bypass keeps the compressor, so
+    # against no effects it reads its make-up: +2.2 LU on the host (the coordinator saw +0.8 on its run), by design (the
+    # user's decision 2026-11-08); bypassed re the compressor alone +0.01 LU (host)
+    ok = abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) < 3
+    return ok, (f"no effects {lv[0]:.1f}, compressor alone {lv[3]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} "
+                f"LUFS (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU)")
 
 
 FXALL = [  # (name, settings, expected: LU re clean within +-tol)
@@ -1250,14 +1258,20 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # 4-note v127 pedalled chords already peak at -1.2 .. -1.4 dBFS before the limiter (-1.0), so it cannot come up to
 # its usual target without hard playing reaching the limiter; the global level stays as loud as fits. F06 / F09 /
 # F11 / F19 came down to the target (LEVEL 54 / 62 / 23 / 80: -0.1, -0.0, +0.2, +0.1)
-PRESET_TARGET = {9: (2.0, 1.5), 12: (2.8, 2.0), 13: (3.1, 1.0), 14: (3.2, 1.0), 15: (0.2, 1.0),
-                 16: (-1.8, 1.0), 17: (0.0, 1.0), 18: (1.1, 1.0), 19: (1.3, 1.0),
-                 21: (0.9, 1.0), 23: (1.2, 1.0)}
+PRESET_TARGET = {9: (1.4, 1.5), 12: (2.3, 2.0), 13: (0.6, 1.0), 14: (0.7, 1.0), 15: (-3.8, 1.0),
+                 16: (-5.4, 1.0), 17: (0.0, 1.0), 18: (0.5, 1.0), 19: (0.6, 1.0),
+                 21: (-0.3, 1.0), 23: (0.7, 1.0)}
 # (2026-11-09, fx-level: 0.9.9's absolute level and balance again (742a2537: every LEVEL -19, then the presets the
 # effects had made quieter back to 0.9.9's loudness): the host reads F09 +2.0, F13 +3.1, F14 +3.2, F15 +0.2, F16 -1.8,
 # F18 +1.1, U02 +0.9, U04 +1.2 re F01 (the 0.9.10 headroom trims below are superseded: F04 -0.1, F08 +1.3, U07 -0.2
 # now within the defaults); then F10 +5, F12 +9, F19 +8 steps to quick.py's v127 chord / note against 0.9.9: F12 +2.8,
 # F19 +1.3 re F01 on this suite's chord)
+# (then F01 LEVEL 50 -> 52, the TYPE panel re-derived against 0.9.9 (+0.375 dB, the minimax step over every TYPE x
+# RESPONSE v96/v127 note and chord) and F11 +2 with it: the other presets keep 0.9.9's absolute level, so each reads
+# ~0.4-0.7 lower re F01: F09 +1.4, F12 +2.3, F13 +2.4, F14 +2.6, F15 -0.4, F16 -2.4, F18 +0.5, F19 +0.6, U02 -0.3, U04 +0.7)
+# (then F16 LEVEL 41 -> 25: no limiter on normal playing, its 4-note v127 pedalled chords at most -3.2 dBFS with no gain
+# reduction (tests/expected_changes.yaml 'quick-level/*/F16/*'): F16 -5.4)
+# (and by the same rule F13 55 -> 45, F14 58 -> 48, F15 59 -> 41: F13 +0.6, F14 +0.7, F15 -3.8)
 # (F14, 0.9.10's clean Rhodes: F01 came up 0.75 dB on the chord, F14 VIBES ECHO cannot follow (its 4-note v127
 # chords at -1.28 dBFS before the limiter): +1.2 instead of +2.5, a headroom exception (MANUAL))
 # (the starters, 2026-11-08: U01..U09 each +8..+14 to F01's level, except two headroom exceptions (MANUAL): U02's hard

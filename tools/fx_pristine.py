@@ -9,7 +9,7 @@ pristine and clean result for each efx beside overdrive"). From F01 with every e
           chorus line (fx.c FX_HC)
   lvl0    at MIX / DEPTH 0: the level of FX on within 0.5 dB of the bypass (FX off)
   peak    the effect adds no peak: its highest sample over every signal at most PK_TOL (2 dB: the touch wah's onset,
-          +1.8) over the bypass' (2026-11-08: the phaser's comb, the pan's sides, a resonant LP / HP, the wah's make-up
+          +1.6) over the bypass' (2026-11-08: the phaser's comb, the pan's sides, a resonant LP / HP, the wah's make-up
           and ANA's bunched repeats lifted a chord 2.6 .. 3.6 dB, onto the limiter)
   nl      added non-linearity: the superposition residual |AB - A - B| in dBFS (A the 4-note chord, B a fifth note
           (C5) at the same time, AB both; v100) over the bypass' own (the engine's dither, the voices); a clipping stage, the limiter or a
@@ -67,7 +67,7 @@ CHORD = (48, 55, 60, 64)
 B_NOTE = 72
 NL_VEL = 100     # (the superposition renders: a v127 5-note chord reaches the limiter dry, 0.9.9 as 0.9.10)
 END = 4500
-PK_TOL = 2.0     # an effect's peak over the bypass' (every signal): the touch wah's onset +1.8 dB (its band-pass' own
+PK_TOL = 2.0     # an effect's peak over the bypass' (every signal): the touch wah's onset +1.6 dB (its band-pass' own
                  # resonant peak before the make-up settles), every other effect +0.5 dB at most (EQ / filter 127 exempt)
 NL_FLOOR, NL_TOL = -80.0, 6.0     # nl fails over max(the bypass' residual, -80 dBFS) + 6 dB (DIG's int16 line: ~-78)
 

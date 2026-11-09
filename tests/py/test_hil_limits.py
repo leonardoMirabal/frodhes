@@ -153,7 +153,9 @@ def test_presets_on_the_host_every_preset_on_target():
     2026-11-08: the headroom trims put F04 -2.2, F08 -3.6, F13 +1.0, F15 -1.5, F16 -5.0 (hil_scan PRESET_TARGET); the clean
     Rhodes (the physical swing): F11 LEVEL 35, F19 90, U08 75 back to F01's level, F14 +1.2 (headroom), F16 / U07 one step down.
     2026-11-09: 0.9.9's level and balance again (fx-level): F09 +2.0, F13 +3.1, F14 +3.2, F15 +0.2, F16 -1.8, F18 +1.1,
-    U02 +0.9, U04 +1.2 (hil_scan PRESET_TARGET)"""
+    U02 +0.9, U04 +1.2; then F01 LEVEL +2 (the TYPE panel against 0.9.9) and F11 +2 with it: F09 +1.4, F12 +2.3,
+    F13 +2.4, F14 +2.6, F15 -0.4, F16 -2.4, F18 +0.5, F19 +0.6, U02 -0.3, U04 +0.7; F16 LEVEL 25 (no limiter on
+    normal playing): -5.4, and by the same rule F13 +0.6, F14 +0.7, F15 -3.8 (hil_scan PRESET_TARGET)"""
     r, rep = h.HostRig(1), {}
     ok, msg = h.presets(r, rep)
     every = list(range(1, h.PR_COUNT + h.PR_STARTERS + 1))       # F01..F19, then the starters U01..U09 (the host only)

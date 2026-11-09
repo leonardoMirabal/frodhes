@@ -322,7 +322,7 @@ emulator has no velocity: its keys play at KEY VEL.
 
 ### COMPRESSOR
 
-![COMPRESSOR](manual/img/comp.png?v=b891128d)
+![COMPRESSOR](manual/img/comp.png?v=ecce6ad9)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
@@ -963,7 +963,7 @@ or PLATE (the plate on the bright and vintage sounds), with LOW CUT at 150–200
 
 The echoes and sweeps marked "on the tempo" follow the TEMPO page's BPM (120 when you start; PLAY taps it), so they
 fit what you play. The factory presets are level-matched, so browsing does not jump in volume. VIBES and MARIMBA sit
-a little above the electric pianos, as their types do. Six presets play quieter than that, so that hard playing stays clear of the output limiter (their hottest chords would reach it): F04 about 2.2 LU and F08 about 2.8 LU under F01, F13 at +0.5 and F14 at +1.2 instead of +2.5, F15 at -2.0 instead of -0.2 and F16 at -5.4 instead of +2.5 (LU against F01, an A3-C4-E4 chord at velocity 100). Six presets use a drive type: F06 KHLON, F09 BHLUE, F10 and
+a little above the electric pianos, as their types do. Four presets play quieter than that, so that hard playing stays clear of the output limiter (their hottest chords would reach it): F13 at +0.6 and F14 at +0.7 instead of +2.5, F15 at -3.8 instead of -0.2 and F16 at -5.4 instead of +2.5 (LU against F01, an A3-C4-E4 chord at velocity 100). Their four-note chords at velocity 127 with the pedal stay at least 0.5 dB under the limiter. Six presets use a drive type: F06 KHLON, F09 BHLUE, F10 and
 F12 TSH8, F11 and F19 OHCD.
 
 **The starter user presets.** Until you save your first preset, U01–U09 hold nine more electric piano sounds to play or to

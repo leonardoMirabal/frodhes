@@ -672,7 +672,7 @@ static int32_t wah_ein, wah_eout, wah_g = 4096, wah_pi, wah_po;   /* the wah's m
                                                  * input and the output (pre-emphasised), the gain (Q12), last samples */
 static int32_t wah_eslow, wah_g1 = 4096;        /* the input's slow envelope (onsets), the gain's first smoothing pole */
 #ifndef WAH_PKH
-#define WAH_PKH 4096
+#define WAH_PKH 8192                                        /* (Q12: the peak cap's headroom, x2) */
 #endif
 static int32_t wah_pki, wah_pko;                /* peak envelopes of the input and the wah at unity (the make-up's cap) */
 /* v / 10, truncated as C's division, for every int32 v: a multiply and a shift instead of the core's divide in the wah's
@@ -876,10 +876,11 @@ static __attribute__((noinline)) void fx_trem_k(const int32_t *m, int32_t *L, in
             int32_t ei = wah_ein, eo = wah_eout, tg = 4096, gs = wah_ein > 4 * wah_eslow ? 2 : 3;
             while (ei > 0x7FFFF || eo > 0x7FFFF) { ei >>= 1; eo >>= 1; }
             if (eo > 8) tg = clampi((ei << 12) / eo, 512, 131072);   /* x0.125 .. x32 */
-            /* the make-up never takes the wah's peak over the input's (2026-11-08: a v127 note's attack +7 dB, a
-             * chord's +3.2 dB on the limiter, tools/fx_pristine.py): the loudness gain capped at the peaks' ratio */
+            /* the make-up capped at twice the peaks' ratio (2026-11-08: a v127 note's attack +7 dB, a chord's +3.2 dB
+             * on the limiter, tools/fx_pristine.py; now +1.6 at most). At x1 it held the peak but lost the level of a
+             * soft high note under a closed resonant wah (C7 v40 RATE 127 -5.6 LU, tests/py/test_hil_limits.py); an
+             * onset cap (no make-up while the input is 4x over its slow envelope) lost MARIMBA C5 -1.3: not kept */
             if (wah_pko > 8) { int32_t tp = (int32_t)(((int64_t)((wah_pki << 12) / wah_pko) * WAH_PKH) >> 12); tg = tg < tp ? tg : tp < 512 ? 512 : tp; }
-            if (gs == 2 && tg > 4096) tg = 4096;        /* (an onset: no make-up until the attack has passed) */
             wah_g1 += (tg - wah_g1) >> gs;
             wah_g += (wah_g1 - wah_g) >> gs;
             wgs = wah_g - (wgq >> 5);                    /* the gain ramps over the sub-block: no zipper */
@@ -1335,13 +1336,41 @@ static int32_t cmp_env, cmp_g = 65536;
 /* the detector's peak hold (2026-11-08): RELEASE starts CMP_HOLD samples after the last peak that reached the detector.
  * Released between a note's waveform peaks, the detector rippled at twice its f0 and the gain with it: an
  * intermodulation of v127 chords at -46 .. -56 dB under F01's compressor (the dry engine -76 .. -86; tools/dry_dist.py's
- * chords, tests/py/test_comp_clean.py); held 5.8 ms (a cycle down to 172 Hz; with the smoothing below the worst chord
- * -66.4 dB), the detector only rises within a note's cycle and the gain moves at the hold's pace. 1024 (23 ms) read
- * -67.9 but held a loud chord's reduction longer: tools/quick.py's v127 chords 0.45 dB lower than at 256. A faster
- * RELEASE in its place (x2: the level back) lost the cleanliness (-57.5) */
+ * chords, tests/py/test_comp_clean.py); held 11.6 ms (a cycle down to 86 Hz; with the smoothing below the worst chord
+ * -68.9 dB, SUIT's mid chord +12.2 over the dry engine's), the detector only rises within a note's cycle and the gain
+ * moves at the hold's pace. The worst chord by the hold (2026-11-09): 256 -66.4, 384 -67.7, 448 -68.3, 512 -68.9,
+ * 576 -69.4, 640 -68.9, 768 -66.9, 1024 -67.9 (512: the middle of the plateau); a longer hold holds a loud chord's
+ * reduction longer: tools/quick.py's v127 chords 0.2 dB lower than at 256 (1024: 0.3). A faster RELEASE in its place
+ * (x2: the level back) lost the cleanliness (-57.5) */
 #ifndef CMP_HOLD
-#define CMP_HOLD 256
+#define CMP_HOLD 512
 #endif
+static uint32_t cmp_ds = 0x9E3779B9u;                 /* the gain's dither (2026-11-09): the product cut to the
+                                                        * output's LSB truncated, an error locked to the waveform: on a
+                                                        * quiet high note (DYNO k93 v64, ~300 LSB) its 3rd / 5th
+                                                        * harmonics, H3 -64.2 -> -59.2 dB re H1 with FX off (the bypass
+                                                        * keeps the compressor). Now rounded over a uniform 1 LSB, the
+                                                        * offsets from CMP_DTH (16 a sub-block from a random start: white,
+                                                        * 1 load a sample): H3 -64.5. Only while the detector reads
+                                                        * >= 128 LSB (-48 dBFS), else the cut as before, so tails reach
+                                                        * exact zero as they did (release_diff's MARIMBA v40 key-up and
+                                                        * decay cells; 32 left two moved). The gain loop 10 instructions a
+                                                        * sample against 8 without (pi32v2, tools/drive_insns.py; a
+                                                        * generator step a sample with a per-sample threshold was 18; one
+                                                        * offset held over a sub-block, 9, put the noise low: FELT k33 v40
+                                                        * inh over its ceiling on HQ) */
+/* the compressor's dither values (uniform 0 .. 65535, a 1-LSB rounding offset in Q16): 80 from the generator
+ * x = x * 1664525 + 1013904223 (x0 0x2545F491), its top 16 bits; each sub-block reads 16 of them from a random
+ * offset 0..63 (fx_comp), white sample to sample and stationary across sub-blocks */
+static const uint16_t CMP_DTH[80] = {
+    58007, 36122, 7018, 39120, 23958, 24075, 19811, 56694, 23025, 38926, 58209, 26173,
+    24440, 43151, 41004, 53198, 37105, 15033, 17105, 37310, 50309, 44380, 23346, 49682,
+    2422, 38160, 15839, 61182, 53011, 61080, 27430, 21231, 8430, 58762, 64870, 59082,
+    44109, 21294, 62122, 5748, 33504, 22949, 25971, 7058, 52914, 48972, 2262, 17043,
+    60258, 61024, 31688, 40428, 39060, 48355, 18358, 60324, 14755, 24767, 40538, 45329,
+    22170, 13354, 10954, 53474, 53858, 11851, 35283, 8030, 35390, 13339, 15749, 47340,
+    21109, 42383, 12304, 7893, 33871, 51956, 6608, 24134};
+static const uint16_t CMP_DTH0[16];                     /* (zeros: the sub-blocks under the threshold) */
 static int32_t cmp_hd, cmp_gs;                         /* (cmp_gs: the reduction, its release smoothed, log2 Q12 x 16) */
 #ifndef CMP_KRM
 #define CMP_KRM 1
@@ -1486,15 +1515,18 @@ static void fx_comp(int32_t *m, uint32_t n)
     w1 = xf_pre_c(cmp_xw, on, m, 0, n, XF_STEP);
     for (sb = fxc_o; sb < fxc_e; sb += 16u) {
         int32_t g0 = cmp_g, g1, gr, step, hd = cmp_hd;
+        const uint16_t *dt;
         for (j = sb; j < sb + 16u; j++) CMP_DET(iabs(m[j]) << 8, hd);
         cmp_hd = hd;
         gr = cmp_gsm(cmp_gr_at(cmp_env, thr, slope));
         fx_cmp_gr = gr;
         g1 = cmp_exp2(cmp_glide(mk) - gr);
+        cmp_ds = cmp_ds * 1664525u + 1013904223u;
+        dt = cmp_env >= (128 << 8) ? CMP_DTH + (cmp_ds >> 26) : CMP_DTH0;
         step = (g1 - g0) / 16;
         for (j = sb; j < sb + 16u; j++) {
             g0 += step;
-            m[j] = (int32_t)(((int64_t)m[j] * g0) >> 16);
+            m[j] = (int32_t)(((int64_t)m[j] * g0 + dt[j - sb]) >> 16);
         }
         cmp_g = g1;
     }
@@ -1528,15 +1560,18 @@ static void fx_comp(int32_t *m, uint32_t n)
                                                        * gain step to unity in one sample, on one over 16 samples) */
     for (sb = 0; sb < n; sb += 16u) {
         int32_t g0 = cmp_g, g1, gr, step, hd = cmp_hd;
+        const uint16_t *dt;
         for (j = sb; j < sb + 16u && j < n; j++) CMP_DET(iabs(m[j]) << 8, hd);   /* detector: |x| in Q8 */
         cmp_hd = hd;
         gr = cmp_gsm(cmp_gr_at(cmp_env, thr, slope));
         fx_cmp_gr = gr;
         g1 = cmp_exp2(cmp_glide(mk) - gr);
+        cmp_ds = cmp_ds * 1664525u + 1013904223u;
+        dt = cmp_env >= (128 << 8) ? CMP_DTH + (cmp_ds >> 26) : CMP_DTH0;
         step = (g1 - g0) / 16;
         for (j = sb; j < sb + 16u && j < n; j++) {
             g0 += step;
-            m[j] = (int32_t)(((int64_t)m[j] * g0) >> 16);
+            m[j] = (int32_t)(((int64_t)m[j] * g0 + dt[j - sb]) >> 16);
         }
         cmp_g = g1;
     }

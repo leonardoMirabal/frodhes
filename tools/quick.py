@@ -166,15 +166,22 @@ def level_all(binary, sub="level"):
 
 
 def check_level(b, key="fm1", area="level"):
+    import fnmatch
+    import release_diff as rd
     base = json.load(open(LEVEL_BASE_HQ if key == "hq" else LEVEL_BASE))["cases"]
     got = level_all(b[key], area)
+    # a level difference listed in tests/expected_changes.yaml ("quick-level/<fm1|hq>/<case>/<chord|note>", metric
+    # "level", min / max: the move against 0.9.9 in dB) passes; its reason says why (F16: 0.9.9 reached it on the limiter)
+    listed = [e for e in rd.load_expected(rd.EXPECTED) if str(e.get("match", "")).startswith("quick-level/")]
     out = []
     for name, segs in got.items():
         bad, worst = [], None
         for s, m in segs.items():
             bl, bp = base[name][s]["level"], base[name][s]["peak"]
             dl, dp = m["level"] - bl, m["peak"] - bp
-            if abs(dl) > LVL_TOL:
+            ok = any(fnmatch.fnmatch(f"quick-level/{key}/{name}/{s}", e["match"]) and "level" in str(e.get("metric", "")).split()
+                     and e.get("min", -99) <= dl <= e.get("max", 99) and str(e.get("reason", "")).strip() for e in listed)
+            if abs(dl) > LVL_TOL and not ok:
                 bad.append(f"{s} level {dl:+.1f} dB")
             if dp > PEAK_TOL:
                 bad.append(f"{s} peak {m['peak']:.1f} dBFS ({dp:+.1f})")

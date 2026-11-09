@@ -56,7 +56,12 @@ _Static_assert(sizeof pr_user == ST_TAIL_N, "the user presets are the store reco
  * made quieter back to 0.9.9's loudness, F05 +7, F09 +14, F10 +2, F11 +21, F18 +4, U04 +3, U05 +9, U07 +10 steps.
  * 2026-11-09: tools/quick.py's v127 chord and note against 0.9.9 (the compressor's hold 5.8 ms): F10 +5, F12 +9, F19 +8
  * steps (F12 / F19 had lost 2-3 dB with the clean top); F16 stays ~3 / ~4.8 dB under 0.9.9 (0.9.9 reached it only
- * through the limiter).
+ * through the limiter). Then F16 41 -> 25: no limiter on normal playing (the user's rule): at 41 its 4-note v127
+ * chords with the pedal reached the limiter in every take; 25 is the highest step whose worst take (Rhodes range and two
+ * octaves up, five start phases, FM-1 + HQ) peaks at most -3.2 dBFS (0.5 dB under LIM_T): ~6 / ~7.8 dB under 0.9.9.
+ * By the same rule F13 55 -> 45, F14 58 -> 48, F15 59 -> 41 (they reached the limiter in 10..18 of 20 takes).
+ * The compressor's hold 11.6 ms (fx.c CMP_HOLD 512): the v127 chords 0.2 dB lower; F02 +2, F03 +1, F05 +1, F06 +2 back
+ * with F01 (quick.py's v127 chord against 0.9.9: -1.1 .. -1.3, the compressor's held reduction, expected_changes 12).
  *
  * The drive TYPEs (P_DRV_SW, drive.c: 1 FDRV, 2 KHLON, 3 TSH8, 4 OHCD, 5 BHLUE) in six of them, their LEVELs
  * re-run with the TYPE in (the chord's level moves with it), each one's CPU predicted with its TYPE's own cost in
@@ -79,13 +84,13 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     /* ---- DRY (F01..F04, F13, F15): each instrument as the model plays it, the compressor and a trace of room only */
     /* F01 STAGE 77: the clean stage piano (the boot sound) */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 50, 0xFF,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 52, 0xFF,
     /* F02 SUITCASE: the suitcase's cabinet, no vibrato */
     P_TYPE, 1, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 16, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 44, 0xFF,
+    P_RV_DEPTH, 16, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 46, 0xFF,
     /* F03 EARLY FELT: the felt hammers, their soft onset, NOISE lower (soft playing) */
     P_TYPE, 2, P_NOISE, 36, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
-    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 47, 0xFF,
+    P_RV_DEPTH, 18, P_RV_TYPE, 1, P_RV_LOCUT, 70, P_LEVEL, 48, 0xFF,
     /* F04 BELL DYNO: the bell voicing, a short plate */
     P_TYPE, 3, P_NOISE, 44, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_RV_DEPTH, 16, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 51, 0xFF,
@@ -93,12 +98,12 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     /* F05 SUIT TREM: the suitcase amp, its stereo PAN vibrato at 4.5 Hz, a little warmth, a vintage plate */
     P_TYPE, 1, P_NOISE, 44, P_DRIVE, 20, P_TW_SW, 1, P_TW_MODE, 0, P_TW_DEPTH, 72, P_TW_RATE, 88, P_CMP_SW, 1,
     P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8, P_RV_DEPTH, 24, P_RV_TYPE, 2,
-    P_RV_LOCUT, 70, P_LEVEL, 48, 0xFF,
+    P_RV_LOCUT, 70, P_LEVEL, 49, 0xFF,
     /* F06 DRIVEN 77: a gentle compressor that lets the hammer through, then the drive (soft playing clean, hard barks),
      * a tape slap on the dotted 1/8, a short plate */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 40, P_CMP_RATIO, 2, P_CMP_ATK, 70, P_CMP_GAIN, 16, P_DRIVE, 64,
     P_DRV_SW, 2, P_DRV_TONE, 72, P_BARK, 96, P_HAMMER, 80, P_DL_SW, 3, P_DL_DEPTH, 12, P_DL_SYNC, 8, P_DL_FDBK, 40,
-    P_DL_TONE, 56, P_RV_DEPTH, 18, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 40, 0xFF,
+    P_DL_TONE, 56, P_RV_DEPTH, 18, P_RV_TYPE, 2, P_RV_LOCUT, 80, P_LEVEL, 42, 0xFF,
     /* F07 BALLAD: rounder, a slow chorus, a long plate behind a pre-delay, a soft quarter-note digital echo */
     P_TYPE, 0, P_TONE, 56, P_BELL, 76, P_NOISE, 40, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80,
     P_CMP_REL, 72, P_CMP_GAIN, 8, P_CP_SW, 1, P_CP_DEPTH, 56, P_CP_SPEED, 40, P_DL_SW, 1, P_DL_DEPTH, 12,
@@ -122,7 +127,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_DRIVE, 53, P_DRV_SW, 4, P_DRV_TONE, 60, P_FL_TYPE, 1, P_FL_FREQ, 76, P_FL_RESO, 88, P_FL_LFO, 64,
     P_LFO_SHAPE, 1, P_LFO_SYNC, 13, P_DL_SW, 1, P_DL_DEPTH, 14, P_DL_SYNC, 9, P_DL_FDBK, 40, P_DL_TONE, 60,
-    P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 36, 0xFF,
+    P_RV_DEPTH, 22, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 38, 0xFF,
     /* F12 AUTO WAH: the wah: a resonant band-pass swept deep by the LFO, a sine at 1/4 on the tempo, restarted by every
      * note (the compressor's make-up carries the level LEVEL 127 cannot) */
     P_TYPE, 0, P_BARK, 80, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
@@ -133,24 +138,24 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
      * contact; the mallet compressor (1.5:1, 9 ms: the strike passes) and a trace of hall */
     P_TYPE, 4, P_TONE, 64, P_BARK, 52, P_BELL, 70, P_HAMMER, 64, P_DECAY, 64, P_RELEASE, 64, P_NOISE, 40, P_MOT_ON, 1,
     P_MOT_DEPTH, 90, P_MOT_RATE, 66, P_MOT_SHAPE, 0, P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92,
-    P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 20, P_RV_TYPE, 1, P_RV_PREDLY, 20, P_RV_LOCUT, 70, P_LEVEL, 55, 0xFF,
+    P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 20, P_RV_TYPE, 1, P_RV_PREDLY, 20, P_RV_LOCUT, 70, P_LEVEL, 45, 0xFF,
     /* F14 VIBES ECHO: the motor off, a cord mallet, a longer ring and a softer damper, a light slow chorus, a dotted-1/8
      * tape echo on the tempo (darker repeats), a bright plate behind a short pre-delay */
     P_TYPE, 4, P_TONE, 64, P_BARK, 82, P_BELL, 64, P_HAMMER, 60, P_DECAY, 72, P_RELEASE, 54, P_NOISE, 36, P_MOT_ON, 0,
     P_CMP_SW, 1, P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1,
     P_CP_DEPTH, 40, P_CP_SPEED, 40, P_DL_SW, 3, P_DL_DEPTH, 20, P_DL_SYNC, 8, P_DL_FDBK, 50, P_DL_TONE, 56,
-    P_RV_DEPTH, 34, P_RV_TYPE, 2, P_RV_DECAY, 70, P_RV_PREDLY, 16, P_RV_LOCUT, 80, P_LEVEL, 58, 0xFF,
+    P_RV_DEPTH, 34, P_RV_TYPE, 2, P_RV_DECAY, 70, P_RV_PREDLY, 16, P_RV_LOCUT, 80, P_LEVEL, 48, 0xFF,
     /* F15 MARIMBA (dry): the default mallet, tube and weight, MUTE 0 (rings out, as the instrument), a soft mallet
      * tick, the mallet compressor and a trace of hall */
     P_TYPE, 5, P_TONE, 64, P_BARK, 64, P_BELL, 64, P_HAMMER, 64, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
     P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_RV_DEPTH, 22, P_RV_TYPE, 1,
-    P_RV_PREDLY, 12, P_RV_LOCUT, 70, P_LEVEL, 59, 0xFF,
+    P_RV_PREDLY, 12, P_RV_LOCUT, 70, P_LEVEL, 41, 0xFF,
     /* F16 WOOD ECHO: a hard yarn mallet, heavier, MUTE 0, a light chorus, a dotted-1/8 digital echo on the tempo with a
      * few soft repeats, a hall behind a pre-delay */
     P_TYPE, 5, P_TONE, 60, P_BARK, 80, P_BELL, 64, P_HAMMER, 110, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
     P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1, P_CP_DEPTH, 40,
     P_CP_SPEED, 44, P_DL_SW, 1, P_DL_DEPTH, 22, P_DL_SYNC, 8, P_DL_FDBK, 26, P_DL_TONE, 50, P_RV_DEPTH, 38,
-    P_RV_TYPE, 1, P_RV_DECAY, 64, P_RV_PREDLY, 24, P_RV_LOCUT, 80, P_LEVEL, 41, 0xFF,
+    P_RV_TYPE, 1, P_RV_DECAY, 64, P_RV_PREDLY, 24, P_RV_LOCUT, 80, P_LEVEL, 25, 0xFF,
     /* ---- 0.9.5: TAPE ECHO, DREAM, RADIO (the starters U10..U12 until 0.9.5's RC, the same records: their sound and
      * their compressor as they were) */
     /* F17 TAPE ECHO: a warm piano into the tape echo, dotted 1/8 on the tempo, a plate */

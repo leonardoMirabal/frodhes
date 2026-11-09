@@ -80,7 +80,7 @@ Schwung's module catalog, you can also install and update it from there. The ste
 
 **[The user manual](docs/MANUAL.md)**: every page, knob and button, the presets, the effects and the MIDI map.
 
-![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=0264983d)
+![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=0fafd02b)
 
 ## Other keyboards
 
