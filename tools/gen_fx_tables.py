@@ -62,7 +62,7 @@ TAPE = dict(
     TAU_DN=1.07,
     SAT_N=2.25,         # the transfer curve y = x / (1 + |x / SAT_X0|^N)^(1/N) (line units, int16 out): 3rd
     SAT_X0=26376.0,     # harmonic 0.18 % at the reference level (line peak 4096), 3 % at +11.5 dB
-    WET_DB=-0.5,        # the echo's level against ANA (dB)
+    WET_DB=0.0,         # the echo's level against ANA (dB; -0.5 until 2026-11-09: TAPE's first echo at MIX 64 read -1.24 dB re the dry, DIG 0.0)
     FADE_MS=46.0,       # a TYPE switch: the fade out, then in
 )
 
