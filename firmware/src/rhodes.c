@@ -1508,11 +1508,19 @@ static void rh_start_pend(rh_voice_t *v)                /* a stolen voice is gon
 #define RH_NA RH_NV                                     /* the voices a strike may take (FR_C1 builds, frodhes.c: fewer
                                                          * once core 1 is held: the one-core fallback) */
 #endif
+#ifdef RH_START_MAX
+static uint32_t rh_starts;                              /* the strikes this interrupt (frodhes.c FR_LAT_HALF: at most
+                                                         * RH_START_MAX; the rest wait, in order) */
+#endif
 static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already waits for a note; try next block */
 {
     uint32_t i, pick = RH_NV, best = 0xFFFFFFFFu;
     for (i = 0; i < RH_NA && rv[i].pend; i++) ;
     if (i == RH_NA) return 0;                           /* (more than RH_NV steals in one block: BUGHUNT #21) */
+#ifdef RH_START_MAX
+    if (rh_starts >= RH_START_MAX) return 0;
+    rh_starts++;
+#endif
 #ifdef DINGHY_HOST
     rh_host_vel = (uint8_t)vel;                         /* (host: the velocity that reached the engine, frodhes.c
                                                          * "engvel"; RESPONSE never rewrites it, tests/py/test_vel_layers.py) */
@@ -1561,8 +1569,11 @@ static int rh_strike(uint32_t note, uint32_t vel)      /* 0: every voice already
     return 1;
 }
 
-static void rh_events(void)
+static void rh_events(void)                     /* the block's start (rh_render, rh_begin) */
 {
+#ifdef RH_START_MAX
+    rh_starts = 0;
+#endif
     while (ev_r != ev_w) {
         uint32_t e = ev_q[ev_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu, i;
 #ifdef DINGHY_PLUGIN
@@ -2374,18 +2385,38 @@ static void rh_end(void)                        /* after the block's last chunk:
  * start, as before), the Rhodes ring empty (order kept), the TYPE the block started with, and with SPREAD only while the
  * side runs. A block planned idle (silent) runs from here: its chain at rest and its dither at the start, as the next
  * block would have them */
-static int rh_mid_strike(uint32_t note, uint32_t vel)
+static int rh_mid_one(uint32_t note, uint32_t vel)
 {
     uint32_t i, f = RH_NA;
-    if (ev_r != ev_w || rh_type != rhc_rt || (rh_spread && !rh_side_tail)) return 0;
+    if (rh_type != rhc_rt || (rh_spread && !rh_side_tail)) return 0;
     for (i = 0; i < RH_NV; i++)
         if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) return 0;
     for (i = 0; i < RH_NA; i++) if (!rv[i].alive && !rv[i].pend) { f = i; break; }
     if (f == RH_NA) return 0;
+#ifdef RH_START_MAX
+    if (rh_starts >= RH_START_MAX) return 0;
+    rh_starts++;
+#endif
     rh_knock_strike(note, vel);
     rh_init(&rv[f], note, vel);
     if (rhc_idle) { rhc_idle = 0; rh_dith_on = -1; }
     return 1;
+}
+static int rh_mid_strike(uint32_t note, uint32_t vel)   /* (a note-on from the engine's ring: the Rhodes ring empty) */
+{
+    return ev_r == ev_w && rh_mid_one(note, vel);
+}
+static void rh_mid(void)                        /* an interrupt's start inside a block: the note-ons the block's start
+                                                 * left in the Rhodes ring (RH_START_MAX), from here while they may */
+{
+#ifdef RH_START_MAX
+    rh_starts = 0;
+#endif
+    while (ev_r != ev_w) {
+        uint32_t e = ev_q[ev_r & 31u];
+        if (e >> 28 != EV_NOTE_ON || !rh_mid_one(e >> 16 & 127u, e & 0xFFFFu)) break;
+        ev_r = ev_r + 1u;
+    }
 }
 #endif
 #endif

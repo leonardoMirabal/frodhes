@@ -30,6 +30,14 @@ def lat_bin(half=256, ev=0, tail=0):
     return build(os.path.join(ROOT, "build", "host", tag, "frodhes"), defs)
 
 
+def ref_bin(half=128):
+    """the FR_C1 256-frame build with the latency build's note starts a block (frodhes.c BAR_START_MAX, RH_START_MAX:
+    N x half / 256; without FR_LAT_EV the rest wait for the next block, as here)"""
+    k = 256 // half
+    return build(os.path.join(ROOT, "build", "host", f"latref{half}", "frodhes"),
+                 ["-DFR_C1=1", f"-DBAR_START_MAX=(BAR_NA/{k}u)", f"-DRH_START_MAX=(RH_NA/{k}u)"])
+
+
 def wav(tag, lines, binary, env=None, end=None):
     r = run(tag, lines, binary=binary, env=env, end_ms=end)
     assert not r.fails, r.fails
@@ -46,7 +54,7 @@ def same_shifted(a, b, sh):
 @pytest.mark.parametrize("engine", [0, 1, 2])
 def test_lat128_same_integers(engine, tail):
     lines = take(engine=engine, end=4000)
-    a, _ = wav(f"lat_ref_{engine}", lines, lat_bin())
+    a, _ = wav(f"lat_ref_{engine}", lines, ref_bin())
     b, _ = wav(f"lat128_{engine}_t{tail}", lines, lat_bin(128, tail=tail), env={"FRODHES_LAT_SYNC": "1"})
     assert same_shifted(a, b, tail)
 
@@ -55,7 +63,7 @@ def test_lat128_same_integers(engine, tail):
 @pytest.mark.parametrize("c1", ["order=1", "refuse=3", "late=40", "off=1", "busy=3"])
 def test_lat128_same_integers_core1_faults(c1, tail):
     lines = take(engine=0, end=3000)
-    a, _ = wav(f"lat_ref_{c1}", lines, lat_bin(), env={"FRODHES_C1": c1})
+    a, _ = wav(f"lat_ref_{c1}", lines, ref_bin(), env={"FRODHES_C1": c1})
     b, _ = wav(f"lat128_{c1}_t{tail}", lines, lat_bin(128, tail=tail), env={"FRODHES_C1": c1, "FRODHES_LAT_SYNC": "1"})
     if c1.startswith("late"):                       # (the late job: core 1 held from a different block; the
         return                                      # rest one core at 10 voices, then the steals differ: runs clean)

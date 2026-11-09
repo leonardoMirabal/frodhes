@@ -361,6 +361,7 @@ static void eng_mid(uint32_t o)
 {
     (void)o;
     if (eng_swapping || eng_cur != ENG_RHODES || eng_want != ENG_RHODES) return;
+    rh_mid();
     while (eq_r != eq_w) {
         uint32_t e = eq[eq_r & 31u];
         if (e >> 28 != EV_NOTE_ON || !rh_mid_strike(e >> 16 & 127u, e & 0xFFFFu)) break;

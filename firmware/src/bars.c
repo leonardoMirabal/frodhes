@@ -445,11 +445,15 @@ static uint32_t bar_level_sum(const bar_voice_t *v)
 #define BAR_NA BAR_NV                               /* the voices a strike may take (FR_C1 builds, frodhes.c: fewer once
                                                      * core 1 is held: the one-core fallback) */
 #endif
+#ifndef BAR_START_MAX
+#define BAR_START_MAX BAR_NA                        /* the note starts a block (frodhes.c FR_LAT_HALF: fewer, the block's
+                                                     * starts all fall in its first interrupt) */
+#endif
 static int bar_strike(uint32_t note, uint32_t vel)  /* 0: every voice already waits for a note, or this block started
                                                      * BAR_NV notes; try next block */
 {
     uint32_t i, pick = BAR_NV, best = 0xFFFFFFFFu;
-    if (bar_starts >= BAR_NA) return 0;
+    if (bar_starts >= BAR_START_MAX) return 0;
     for (i = 0; i < BAR_NA && bv[i].pend; i++) ;
     if (i == BAR_NA) return 0;                      /* (more than BAR_NV steals in one block: BUGHUNT #21) */
     bar_starts++;
