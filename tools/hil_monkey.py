@@ -480,6 +480,9 @@ def run_take(dev, sd, usb, a, s):
     return rows, xi, ev, acc.summary()
 
 
+SETTLE_S = 35.0                                     # platform.c: a reset before 30 s up is a failed boot
+
+
 def alive_ok(dev):
     """the FM-1 still answers a CC 116 query (a failed liveness row on a device that answers: the run goes on)"""
     import hil_must as hm
@@ -537,9 +540,12 @@ def main(argv=None):
             save_take(a.out, s, rows, bad, xi, a.rate, ev, cnt)    # (silent note-ons too: kept to classify them)
             if bad:
                 verdict = "FAIL"
-                if a.stop_on_fail or any(r[0].startswith(("CC 116 answers", "frames recorded", "the probe"))
-                                         for r in bad) and not alive_ok(dev):
+                lost = any(r[0].startswith(("CC 116 answers", "frames recorded", "the probe")) for r in bad)
+                if a.stop_on_fail or lost and not alive_ok(dev):
                     break
+                if lost:                                # (a reset likely: no stimulus until the FM-1 is past the boot
+                    print(f"  a reset likely: the next take in {SETTLE_S:.0f} s (the boot guard)", flush=True)
+                    time.sleep(SETTLE_S)                # guard's 30 s; two resets before it escalate to USB RESCUE)
     finally:
         dev.close()                                 # (after the take's stream stopped and its poller joined)
     js = dict(verdict=verdict, date=time.strftime("%Y-%m-%d %H:%M"), rate=a.rate, minutes=a.minutes, takes=report)

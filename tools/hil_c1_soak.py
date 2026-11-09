@@ -149,6 +149,8 @@ def judge(reads):
         return "FAIL", ["no read"]
     for r in reads:
         t = r.get("t", 0)
+        if "settled" in r:                                # (the pause after a reset: no read)
+            continue
         if r.get("boot"):
             b = r["boot"]
             bad.append(f"{t:.0f} s: after the reset: reset source {b.get('p3_rst')} (bit 2 watchdog, 6 soft), crash "
@@ -194,6 +196,7 @@ def selftest():
     r = decode(ok)
     assert r["state"] == 1 and r["jobs"] == 3 << 14 | 130 and r["app_us"] == 7 * 128 * 4 and r["whole_us"] == 3584, r
     assert judge([dict(r, t=0), dict(r, t=5)]) == ("PASS", []), judge([r])
+    assert judge([dict(r, t=0), dict(t=3, settled=36.0), dict(r, t=40)]) == ("PASS", [])
     r2 = dict(r, t=10, jobs=5, bad=1)
     v, why = judge([dict(r, t=0), r2])
     assert v == "FAIL" and any("dropped" in w for w in why) and any("bad 1" in w for w in why), why
@@ -377,6 +380,38 @@ def run(a):  # noqa: C901 (the device run)
                     write_report(a, p, reads, {}, False, interim=True)
                 if r.get("noreply") and a.stop_on_fail:
                     break
+                if (r.get("noreply") or r.get("boot")) and a.settle_s > 0:
+                    # a reset (or no answer: one coming): no stimulus until the FM-1 has been up settle_s, past the
+                    # boot guard's 30 s (platform.c: a reset before 30 s up counts as a failed boot; two in a row
+                    # escalate to USB RESCUE, a third to the ROM's updater): the test must not drive it there
+                    for n in held:
+                        note(n, 0)
+                    held = []
+                    cc(64, 0)
+                    cc(120, 0)
+                    up, tw = None, time.monotonic()
+                    while up is None and time.monotonic() - tw < 180.0:
+                        r2 = decode(query(30))
+                        if r2.get("state") is not None:
+                            up = time.monotonic()
+                            if r2.get("jobs") is not None:
+                                jobs_prev = r2["jobs"]
+                        else:
+                            time.sleep(1.0)
+                    if up is None:
+                        print(f"{t:7.0f} s  no answer for 180 s after the reset: stopping", flush=True)
+                        break
+                    print(f"{t:7.0f} s  a reset: the stimulus paused {a.settle_s:.0f} s (the boot guard)", flush=True)
+                    while time.monotonic() - up < a.settle_s:
+                        time.sleep(0.5)
+                    r2 = decode(query(30))
+                    if r2.get("jobs") is not None:
+                        jobs_prev = r2["jobs"]
+                    reads.append(dict(t=round(time.monotonic() - t0, 1), settled=round(time.monotonic() - tw, 1)))
+                    setup(eng_i)
+                    if p["max"]:
+                        cc(CC["DRV_SW"], MAX_DRV[drv_i % len(MAX_DRV)])
+                        cc(CC["RV_TYPE"], rev_cur)
             time.sleep(0.01)
     except KeyboardInterrupt:
         pass
@@ -453,6 +488,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--settle-s", type=float, default=35.0, help="after a reset: no stimulus until the FM-1 has been up this long (the boot guard counts a reset before 30 s up as a failed boot; 0: off)")
     ap.add_argument("--stop-on-fail", action="store_true")
     ap.add_argument("--port", metavar="NAME", help="only the unit whose MIDI port / audio device name contains NAME "
                     "(a second FM-1 with its own USB name, tools/build.py --usb-name); refused when two USB "
