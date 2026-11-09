@@ -1345,12 +1345,14 @@ static int32_t cmp_env, cmp_g = 65536;
 #ifndef CMP_HOLD
 #define CMP_HOLD 512
 #endif
-static uint32_t cmp_ds = 0x9E3779B9u;                 /* the gain's TPDF dither (2026-11-09): the product cut to the
+static uint32_t cmp_ds = 0x9E3779B9u;                 /* the gain's dither (2026-11-09): the product cut to the
                                                         * output's LSB truncated, an error locked to the waveform: on a
                                                         * quiet high note (DYNO k93 v64, ~300 LSB) its 3rd / 5th
                                                         * harmonics, H3 -64.2 -> -59.2 dB re H1 with FX off (the bypass
-                                                        * keeps the compressor). +-1 LSB TPDF as fx_out's LEVEL; an exact
-                                                        * 0 stays 0 (the gate) */
+                                                        * keeps the compressor). Now rounded over a uniform 1 LSB (RPDF:
+                                                        * the error no longer follows the wave, H3 -64.9; TPDF as fx_out's
+                                                        * LEVEL read the same with 0.4 dB more noise on a quiet bass note);
+                                                        * an exact 0 stays 0 (the gate) */
 static int32_t cmp_hd, cmp_gs;                         /* (cmp_gs: the reduction, its release smoothed, log2 Q12 x 16) */
 #ifndef CMP_KRM
 #define CMP_KRM 1
@@ -1504,7 +1506,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         for (j = sb; j < sb + 16u; j++) {
             g0 += step;
             cmp_ds = cmp_ds * 1664525u + 1013904223u;
-            if (m[j]) m[j] = (int32_t)(((int64_t)m[j] * g0 + ((int32_t)((cmp_ds >> 8) & 4095u) + (int32_t)(cmp_ds >> 20) - 2048) * 16) >> 16);
+            if (m[j]) m[j] = (int32_t)(((int64_t)m[j] * g0 + (int32_t)(cmp_ds >> 16)) >> 16);
         }
         cmp_g = g1;
     }
@@ -1547,7 +1549,7 @@ static void fx_comp(int32_t *m, uint32_t n)
         for (j = sb; j < sb + 16u && j < n; j++) {
             g0 += step;
             cmp_ds = cmp_ds * 1664525u + 1013904223u;
-            if (m[j]) m[j] = (int32_t)(((int64_t)m[j] * g0 + ((int32_t)((cmp_ds >> 8) & 4095u) + (int32_t)(cmp_ds >> 20) - 2048) * 16) >> 16);
+            if (m[j]) m[j] = (int32_t)(((int64_t)m[j] * g0 + (int32_t)(cmp_ds >> 16)) >> 16);
         }
         cmp_g = g1;
     }
