@@ -85,6 +85,61 @@ def band_db(x, fs, f0, f1):
     return float(10 * np.log10(sp[m].sum() * 2 / (len(x) ** 2 * 0.375) + 1e-30))
 
 
+# THRESHOLD (0.9.10, coordinator sign-off 2026-11-09): the freeze's hold judged against the material's, not a fixed
+# 2.0 dB. The 0.9.10 chord's held tank beats more slowly than 0.9.9's: 2.02 dB on the host take against 1.573 on
+# v0.9.9. tests/c/rev_scan.c on v0.9.9's tree and on this one, fed the same input, gives identical windows (the
+# INFINITE tank is unchanged); v0.9.9's dry chord frozen spreads 1.515 dB, this tree's 1.93, through either reverb.
+# The reference: the same take on the host twin with the reverb's TYPE OFF (the reverb's input), frozen by the bare
+# reverb (rev_scan, this tree's fx_reverb, the take's knobs, DECAY 127 at the take's freeze time), over the same 5 s
+# windows; a take's spread <= the reference's + FREEZE_MARGIN_DB, every window over FREEZE_MIN_DB.
+FREEZE_MARGIN_DB = 0.5
+
+
+def freeze_windows(x, fs, music_end):
+    """the held freeze's level per 5 s window from 2 s after the music's end (dB re 1 LSB RMS)"""
+    h = np.asarray(x, float)[int((music_end + 2.0) * fs):]
+    return [db(h[i:i + 5 * fs]) for i in range(0, len(h) - 5 * fs + 1, 5 * fs)]
+
+
+def freeze_reference(ccs, events, dur, music_end):
+    """the take's chord frozen by the bare reverb: the host twin plays it with the TYPE OFF, rev_scan freezes that at
+    the take's freeze time; its windows as freeze_windows (44.1 kHz)"""
+    import hil_scan
+    import rev_scan as rs
+    tcc, _, knob, _, _ = reverb()
+    fs = 44100
+    H = hil_scan.hr()
+    lines = [f"{5 + k // 16} midi 0xB0 {c} {v}" for k, (c, v) in enumerate(list(ccs) + [(tcc, 0)])]
+    R = 5 + (len(ccs) + 1) // 16 + 300
+    lines.append(f"{R - 60} midi 0xB0 {hil_scan.RESET_CC} 127")
+    for t, kind, a, b in events:
+        ms = int(round(R + 1000 * float(t)))
+        if kind in ("on", "off"):
+            lines.append(f"{ms} midi 0x90 {a} {b}" if kind == "on" else f"{ms} midi 0x80 {a} 0")
+    r = H.run("rev_hil_freeze_ref", lines, R + int(np.ceil(1000 * dur)) + 20, check=False)
+    x = np.round(np.asarray(r.L[int(R * fs / 1000):], float)).astype(np.int64)
+    cc = dict(ccs)
+    tf = [t for t, k, a, b in events if k == "cc" and a == knob["RV_DECAY"] and b == 127][0]
+    par = {n: cc[c] for n, c in knob.items() if c in cc}
+    par["RV_TYPE"] = rs.TYPES["INFINITE"]
+    exe = rs.build(tag="freeze-ref")
+    try:
+        w = rs.render(exe, x, par, [(int(tf * fs) // rs.BLK, "RV_DECAY", 127)])["wet"][:, 0]
+    finally:
+        os.remove(exe)
+    return freeze_windows(w, fs, music_end)
+
+
+def freeze_judge(w, ref):
+    """(ok, why): every window over FREEZE_MIN_DB, the spread within the reference's + FREEZE_MARGIN_DB"""
+    if not w or min(w) < FREEZE_MIN_DB:
+        return False, f"the held freeze under -50 dBFS: {[round(x - 90.3, 1) for x in w]}"
+    s, sr = max(w) - min(w), max(ref) - min(ref)
+    if s > sr + FREEZE_MARGIN_DB:
+        return False, f"the held freeze spreads {s:.2f} dB, the chord's own freeze {sr:.2f} + {FREEZE_MARGIN_DB}"
+    return True, ""
+
+
 def reverb():
     """(cc, {TYPE name: cc value}, {knob: cc}, notes): the tree's reverb TYPE and knobs (hil_cpu_fx's parser), or
     the contract's placeholders (cc None) when the tree has none"""
@@ -349,7 +404,7 @@ def jack(a, C):
     out = a.out or os.path.join(main_checkout(), "private", "reverb", "takes")
     C.OUT = out
     od = os.path.join(out, "host" if a.host else str(a.rate))
-    meta, rec = {}, []
+    meta, rec, freeze_takes = {}, [], {}
 
     def knob_ccs(st):
         return [(knobs[k], v) for k, v in st.items() if v is not None and k in knobs]
@@ -379,6 +434,7 @@ def jack(a, C):
             nm = f"{eng}-infinite-freeze60"
             T.append((nm, base + [(tcc, types[infn[0]])] + knob_ccs(st), sorted(ev, key=lambda e: e[0]), d + 60.0))
             meta[nm] = dict(kind="freeze", type=infn[0], setting="DECAY 127", music_end=d)
+            freeze_takes[nm] = T[-1]
         ev, d = C.recipe_events(nv, 30.0, rng)        # the TYPE switched while playing
         order = run + ["OFF"]
         sw = [(t, "cc", tcc, types[order[k % len(order)]]) for k, t in enumerate(np.arange(3.0, d, 3.0))]
@@ -410,12 +466,17 @@ def jack(a, C):
                      tail_usb_exact_zero=bool(len(tu) and not np.any(tu[-int(0.1 * fs):])))
             if m.get("kind") == "freeze":             # the held 60 s: its level per 5 s window, the DC
                 h = u1[int((me + 2.0) * fs):]
-                w = [db(h[i:i + 5 * fs]) for i in range(0, len(h) - 5 * fs + 1, 5 * fs)]
+                w = freeze_windows(u1, fs, me)
                 if w:
+                    _, fcc, fev, fdur = freeze_takes[nm]
+                    ref = freeze_reference(fcc, fev, fdur, me)
+                    ok, why = freeze_judge(w, ref)
                     r.update(freeze_db=[round(x, 2) for x in w], freeze_spread_db=round(max(w) - min(w), 2),
+                             freeze_ref_spread_db=round(max(ref) - min(ref), 2),
                              freeze_growth_db=round(w[-1] - w[0], 2), freeze_dc_lsb=round(float(np.mean(h)), 2),
-                             freeze_ok=bool(min(w) >= FREEZE_MIN_DB and max(w) - min(w) <= 2.0 and
-                                            w[-1] - w[0] <= 1.0 and abs(float(np.mean(h))) < 8.0))
+                             freeze_ok=bool(ok and w[-1] - w[0] <= 1.0 and abs(float(np.mean(h))) < 8.0))
+                    if why:
+                        r.update(freeze_why=why)
         rec.append(r)
         line = f"rev_hil: {nm}: " + ", ".join(f"{k} {v}" for k, v in r.items() if k not in ("name", "kind", "music_end",
                                                                                            "freeze_db"))
