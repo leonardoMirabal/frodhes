@@ -295,12 +295,14 @@ def measure(binary, case, grid, tmp):
 
 
 def merge_shifts(runs):
-    """the cells of an effects-on case from its SHIFTS runs: the median (clip: the maximum; keyup: the median of the
-    shifts whose tail sounds, SILENT_TAIL when none does)"""
+    """the cells of an effects-on case from its SHIFTS runs: the median over the shifts that measured each metric (clip:
+    the maximum; keyup / decay: the median of the shifts whose window sounds, SILENT_TAIL when none does). The metric
+    set is the union: clk_rise, measured only where the note sounds at the key-up, was dropped when shift 0 lacked it"""
     out = {}
     for lab in runs[0]:
         out[lab] = {}
-        for m in runs[0][lab]:
+        ms = list(dict.fromkeys(m for r in runs for m in r.get(lab, {})))    # every metric any shift measured (clk_rise:
+        for m in ms:                                                       # only where the note sounds at the key-up)
             vs = [r[lab][m] for r in runs if m in r.get(lab, {})]
             if m in TAIL_STATE:         # the shifts whose tail sounds (all silent: silent), never a dB of exact zeros
                 vs = [v for v in vs if v != SILENT_TAIL] or [SILENT_TAIL]

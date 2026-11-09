@@ -169,3 +169,17 @@ def test_an_exact_cell_entry_governs_over_a_wildcard():
     assert rd.judge(cells(level=-16.5), cells(), [wild, ex])[0]          # +3.5: inside the wildcard, outside the exact
     assert rd.judge(cells(level=-16.5), cells(), [wild])[0] == []
     assert rd.exact_entry({"match": "hq/F15/PRESET/[AB]/k67v20"}) and not rd.exact_entry({"match": "*/F15/PRESET/*"})
+
+
+def test_a_metric_measured_in_some_shifts_only_is_kept():
+    """clk_rise exists only where the note still sounds at the key-up; merge_shifts took the metric set from shift 0
+    alone, so a borderline tail (hq MARIMBA FX B k84v40 on c11bc1b8: sounding at the key-up in 2 of 4 shifts) lost its
+    clk_rise and its clk_off went to the ceiling as a click"""
+    lab = "k84v40"
+    runs = [{lab: {"clk_off": 2.5}}, {lab: {"clk_off": 2.5}}, {lab: {"clk_off": 2.5, "clk_rise": -0.5}},
+            {lab: {"clk_off": 2.5, "clk_rise": -0.5}}]
+    m = rd.merge_shifts(runs)[lab]
+    assert m["clk_rise"] == -0.5 and m["clk_off"] == 2.5
+    c = cells(clk_off=2.5, clk_rise=-0.5)
+    assert rd.judge(c, cells(clk_off=-100.0), [])[0] == []              # excused: sounds, no rise, v0.9.9 silent
+    assert rd.judge(cells(clk_off=2.5), cells(clk_off=-100.0), [])[0]  # without clk_rise: the ceiling holds
