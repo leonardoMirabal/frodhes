@@ -81,6 +81,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = "leonardoMirabal/frodhes"
 PAGES_URL = "https://leonardomirabal.github.io/frodhes/"
 STABLE = "frodhes.fwsc"                       # release.yml uploads the package under this name too
+C1_ASSETS = ("frodhes-c1.fwsc", "frodhes-{v}-c1.fwsc")   # the FM-1's two-core image (release.yml: ./build.sh --c1)
 # release.yml also builds and attaches the SMK-37 packages (./build.sh --board smk37 [--model elite|mke]), each under
 # the fixed name and the build's own versioned one: the fixed name -> the build's file (tools/build.py package())
 SMK_ASSETS = {"frodhes-smk37-pro.fwsc": "frodhes-{v}-smk37.fwsc",
@@ -614,7 +615,8 @@ class Release:
         # the Move package: expected when the release commit records it (or this run tested it); with --verify-only,
         # when either name is there both must be
         want_move = bool(self.move_recorded or self.move_ok or (self.a.verify_only and set(move_names) & set(names)))
-        missing = [n for n in (versioned, STABLE, *SMK_ASSETS, *(smk_versioned(n, self.ver) for n in SMK_ASSETS),
+        missing = [n for n in (versioned, STABLE, *(c.format(v=self.ver) for c in C1_ASSETS),
+                               *SMK_ASSETS, *(smk_versioned(n, self.ver) for n in SMK_ASSETS),
                                LICENCE_ASSET, *(move_names if want_move else ()))
                    if n not in names]
         if missing or r.get("isDraft"):
@@ -1069,7 +1071,8 @@ with sync_playwright() as p:
             errs = []
             pg.on("pageerror", lambda e: errs.append(str(e)))
             pg.goto(url + "?selftest")
-            pg.wait_for_function("document.title.startsWith('SELFTEST')", timeout=30000)
+            pg.wait_for_function("document.title.startsWith('SELFTEST')", timeout=30000, polling=500)   # (a timer:
+            # requestAnimationFrame, the default, never fires in Playwright 1.64's headless Chromium here)
             sw = pg.evaluate("document.documentElement.scrollWidth")
             ver = pg.evaluate("[document.getElementById('ver').textContent, "
                               "document.getElementById('ver-foot').textContent]")
@@ -1083,7 +1086,7 @@ with sync_playwright() as p:
             pg.on("pageerror", lambda e: errs.append(str(e)))
             pg.add_init_script(path="tests/web/fake_fm1.js")
             pg.goto(url + "?installtest")
-            pg.wait_for_function("document.title.startsWith('INSTALLTEST')", timeout=60000)
+            pg.wait_for_function("document.title.startsWith('INSTALLTEST')", timeout=60000, polling=500)
             res.append(dict(browser=bname, installtest=pg.title(), errors=errs))
             pg.close()
         b.close()

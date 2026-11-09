@@ -215,7 +215,7 @@ def verify_shell(assets, readme, draft=False):
 
 def test_verify(monkeypatch, capsys):
     good = f"[`frodhes.fwsc`]({rel.LATEST_DL}) settings saved by 0.9.2 are read as they are"
-    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *rel.SMK_ASSETS, rel.LICENCE_ASSET,
+    both = ["frodhes-0.9.3.fwsc", "frodhes.fwsc", *(c.format(v="0.9.3") for c in rel.C1_ASSETS), *rel.SMK_ASSETS, rel.LICENCE_ASSET,
             *[rel.smk_versioned(n, "0.9.3") for n in rel.SMK_ASSETS]]
     tagged = "https://github.com/leonardoMirabal/frodhes/releases/download/v0.9.3/frodhes.fwsc"
     hits = []
@@ -229,7 +229,7 @@ def test_verify(monkeypatch, capsys):
     monkeypatch.setattr(rel, "sh", verify_shell(both, good))
     assert "README at v0.9.3 names no version" in r.s_verify() and hits == [rel.LATEST_DL]
     for assets, readme, sha, msg in ((both[:1] + both[2:], good, "a" * 64, r"missing \['frodhes.fwsc'\]"),
-                                     (both[:4] + both[5:], good, "a" * 64, r"missing \['frodhes-mke-p37.fwsc'\]"),
+                                     (both[:6] + both[7:], good, "a" * 64, r"missing \['frodhes-mke-p37.fwsc'\]"),
                                      (both[:-1], good, "a" * 64, r"missing \['frodhes-0.9.3-mke-p37.fwsc'\]"),
                                      (both, good, "b" * 64, "the build's bbbb"),
                                      (both, good.replace(rel.LATEST_DL, "frodhes-0.9.3.fwsc"), "a" * 64,

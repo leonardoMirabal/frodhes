@@ -124,8 +124,9 @@ def tagline(root=ROOT):
     return "a " + m.group(1)
 
 
-def assemble(ver, frags, root=ROOT, move=True):
+def assemble(ver, frags, root=ROOT, move=True, c1=False, plugin=False):
     """the release notes for ver from frags (load()); move: the release ships the Move package (its install route);
+    c1: the FM-1's two-core image frodhes-c1.fwsc too; plugin: the desktop plugin's packages (their install routes);
     Bad if there are none or one names ver"""
     if not frags:
         raise Bad(f"no release-note fragments in {DIR}/ (each change adds its own {DIR}/<topic>.md)")
@@ -143,6 +144,15 @@ def assemble(ver, frags, root=ROOT, move=True):
                "```sh\npip install mido python-rtmidi\npython3 tools/fm1_install.py frodhes.fwsc\n```\n\n"
                "Your settings, presets and pattern are kept. If anything goes wrong, switch the FM-1 off, hold "
                "**OCT−** and switch it on: that is the USB rescue, and you can install again from there.")
+    if c1:
+        install += ("\n\n**FM-1, two cores**: `frodhes-c1.fwsc` below, installed from a terminal (`python3 tools/fm1_install.py "
+                    "frodhes-c1.fwsc`), plays 14 voices (the "
+                    "voices on one core, the effects on the other; the sound 5.8 ms later). Install either image over "
+                    "the other at any time; your settings, presets and pattern are kept.")
+    if plugin:
+        install += ("\n\n**Computer (plugin)**: `frodhes-plugin-macos.pkg` (or `frodhes-plugin-macos.zip`), "
+                    "`frodhes-plugin-windows.zip`, `frodhes-plugin-linux-x86_64.zip` or "
+                    f"`frodhes-plugin-linux-aarch64.zip` below. How to install each: [PLUGIN.md]({BLOB}PLUGIN.md#packages).")
     if move:
         install += ("\n\n**Move**: you need Schwung on the Move. Install Frodhes with Schwung Manager in a web "
                     "browser: **Install Custom Module > From GitHub URL**, `leonardoMirabal/frodhes`. Or download "

@@ -72,6 +72,10 @@ def test_load_and_assemble_in_file_name_order(tmp_path):
                                   "### Fixed\n- A fix\n- Z fix", "Full manual:")]
     assert order == sorted(order) and "### Tools" not in n and "### Tested" not in n
     assert ch.assemble("1.2.3", ch.load(r), r) == n                      # stable
+    nc = ch.assemble("1.2.3", frags, r, c1=True, plugin=True)           # the two-core image and the plugin's routes
+    assert "**FM-1, two cores**" not in n and "frodhes-plugin-windows.zip" not in n
+    assert nc.index("**FM-1**") < nc.index("`frodhes-c1.fwsc`") < nc.index("frodhes-plugin-macos.pkg") < nc.index("**Move**")
+    assert "PLUGIN.md#packages" in nc
     (tmp_path / "docs" / "MANUAL.md").write_text("**A physically modelled thing for the M-VAVE FM-1 and the Ableton Move.** More.\n")
     assert ch.assemble("1.2.3", ch.load(r), r).startswith(
         "**Frodhes 1.2.3**: a physically modelled thing for the M-VAVE FM-1 and the Ableton Move. Every note")   # two devices
