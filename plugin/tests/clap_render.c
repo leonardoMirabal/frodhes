@@ -37,6 +37,9 @@
  *       states), presets (factory, user files in $FRODHES_PRESET_DIR, browse, UNDO, program changes), automation
  *       (host writes not echoed, the app's and the UI's reported, gestures), MIDI learn, the tempo sources and SYNC
  *       ALL, SUSTAIN and FX BYPASS, the velocity curves, MIDI CHANNEL, the on-screen keyboard, the meters.
+ *   clap_render PLUGIN --presets N
+ *       every factory preset loaded in turn: "preset I TAG NAME" and "pv I V0 .. V(N-1)", the app's parameters 0 .. N-1
+ *       after the load (tools/preset_lists.py: the plugin's list against presets.c and the Move's records)
  * Exit: 0 ok, 1 failure, 3 the script is not MIDI-driven (nothing written). */
 #include <dlfcn.h>
 #include <math.h>
@@ -306,6 +309,7 @@ static int render(const clap_plugin_t *p, int16_t *pcm, uint32_t pre, uint32_t f
 
 static int selftest(void);
 static int coretest(void);
+static int presets_dump(int np);
 
 /* --tail-check: render past the last event, read the tail, render 20 s past it; the last sound must lie inside it */
 static int tail_check(const clap_plugin_t *p, double rate, int block, int clap_notes, int want_inf)
@@ -366,6 +370,7 @@ int main(int argc, char **argv)
     FILE *w;
     if (argc >= 3 && !strcmp(argv[2], "--selftest")) { if (load(argv[1])) return 1; return selftest(); }
     if (argc >= 3 && !strcmp(argv[2], "--coretest")) { if (load(argv[1])) return 1; return coretest(); }
+    if (argc >= 4 && !strcmp(argv[2], "--presets")) { if (load(argv[1])) return 1; return presets_dump(atoi(argv[3])); }
     if (argc < 4) { fprintf(stderr, "usage: clap_render PLUGIN SCRIPT OUT.wav [--rate R] [--engine hq] "
                                     "[--block N|random:SEED] [--dialect midi|clap]\n       clap_render PLUGIN --selftest\n"); return 1; }
     for (i = 4; i + 1 < argc; i += 2) {
@@ -705,6 +710,29 @@ static float note_peak(const clap_plugin_t *p, uint8_t st, uint8_t key, uint8_t 
     blk_n = 0; ev_midi(0, (uint8_t)(0x80u | (st & 15u)), key, 0); ev_midi(0, 0xB0u, 123, 0);
     run(p, 200);                         /* (rings out) */
     return pk;
+}
+
+static int presets_dump(int np)
+{
+    const clap_plugin_t *a;
+    frp_core *ca;
+    frp_preset_info pi;
+    int i, k, n;
+    CHECK((a = create()) != 0, "create");
+    CHECK((VT = a->get_extension(a, FRP_UI_EXT_ID)) != 0 && VT->version >= 2u, "the UI extension %s", FRP_UI_EXT_ID);
+    ca = VT->core_of(a);
+    CHECK(VT->has_slot(ca), "a slot");
+    CHECK(a->activate(a, 44100.0, 1, 4096) && a->start_processing(a), "activate");
+    n = VT->preset_count(ca);
+    for (i = 0; i < n; i++) {
+        if (VT->preset_info(ca, i, &pi) || pi.user) continue;           /* (the factory list only) */
+        VT->preset_load(ca, i); run(a, 3);
+        printf("preset %d %s %s\npv %d", i, pi.tag, pi.name, i);
+        for (k = 0; k < np; k++) printf(" %d", VT->param_get(ca, (uint32_t)k));
+        printf("\n");
+    }
+    a->stop_processing(a); a->deactivate(a); a->destroy(a);
+    return 0;
 }
 
 static int coretest(void)

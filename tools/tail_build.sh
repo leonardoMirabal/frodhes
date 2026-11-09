@@ -13,13 +13,15 @@
 #              every generated table: gen_move_presets, gen_move_module (the Move's pages + preset browser),
 #              gen_plugin_params (the plugin's parameter map; its PRESET list is presets.c + move_presets.h)
 #   then in parallel, each with its log in OUT:
-#   move     tools/ci_move.sh (gate U, make move test-move with MOVE_VER=X, Gate M, the Move's pytest):
-#            build/move/frodhes-module.tar.gz
+#   move     tools/ci_move.sh (gate U, make move test-move, Gate M, the Move's pytest)
 #   quick    make quick (the FM-1, HQ and Move host checks)
 #   mac      make plugin-pack (CLAP, VST3, AU; universal; .pkg + .zip), make test-plugin, tools/plugin_os.py --quick
 #            and tools/plugin_timing.py --quick (P6: the oversampler, events on their exact sample)
 #   win      make plugin-win (clang-cl over xwin: build, depcheck, the wine tests, the zip)
 #   linux    make plugin-linux (Docker: x86_64 then aarch64, build, depcheck, the Xvfb tests, the zips)
+#   then     tools/preset_lists.py: the Move's and the plugin's factory lists (F01-F57, names and every value after
+#            the load) against presets.c and the Move's records; then make move MOVE_VER=X, the package itself
+#            (build/move/frodhes-module.tar.gz; test-move's relinks carry the default version)
 # Out (OUT, default build/tail/<sha>): the packages, the Move tarball, every log, SHA256SUMS, summary.txt (each step's
 # result and time). Exit 0 only when every step passed. Light by default: nice, -j2, PYTEST_N=2.
 #   --keep     keep the worktree afterwards (default: removed when every step passed)
@@ -55,6 +57,7 @@ if [ $DRY = 1 ]; then
     echo "  2 presets  gen_move_presets.py --sync (diff: presets.patch); --check: gen_move_presets, gen_move_module,"
     echo "             gen_plugin_params"
     echo "  3 parallel: $LANES"
+    echo "  4 preset_lists.py (presets.c = the Move's list = the plugin's), make move MOVE_VER=$VER"
     exit 0
 fi
 
@@ -79,11 +82,14 @@ if [ ! -d "$WT" ]; then
 fi
 [ "$(git -C "$WT" rev-parse --short=8 HEAD)" = "$SHA" ] || { echo "tail_build: $WT is not at $SHA" >&2; exit 2; }
 [ -e "$WT/.local" ] || ln -s "$MAIN/.local" "$WT/.local"
-# (a REF older than gen_move_presets.py --sync: this tree's copy, the change kept out of presets.patch)
-if ! grep -q -- "--sync" "$WT/tools/gen_move_presets.py"; then
-    cp "$M/tools/gen_move_presets.py" "$WT/tools/gen_move_presets.py"
-    note "      (tools/gen_move_presets.py from $(git -C "$M" rev-parse --short=8 HEAD): $REF has no --sync)"
-fi
+# a REF older than this script's tools gets this tree's copies (the change kept out of presets.patch): the --sync, the
+# list check, the plugin test host's --presets dump (a test host: nothing of it ships)
+for f in "tools/gen_move_presets.py:--sync" "tools/preset_lists.py:preset_lists" "plugin/tests/clap_render.c:--presets"; do
+    if ! grep -q -- "${f#*:}" "$WT/${f%%:*}" 2>/dev/null; then
+        cp "$M/${f%%:*}" "$WT/${f%%:*}"
+        note "      (${f%%:*} from $(git -C "$M" rev-parse --short=8 HEAD): $REF has no ${f#*:})"
+    fi
+done
 
 step host make -j2 host build/host-hq/frodhes || fail=1
 
@@ -91,7 +97,7 @@ step host make -j2 host build/host-hq/frodhes || fail=1
 # every generated table is checked
 if [ $fail = 0 ]; then
     step presets-sync "$PY" tools/gen_move_presets.py --sync || fail=1
-    git -C "$WT" diff -- move/presets move/move_presets.h > "$OUT/presets.patch"
+    git -C "$WT" diff -- move/presets move/move_presets.h > "$OUT/presets.patch"   # (the records and the header only)
     if [ -s "$OUT/presets.patch" ]; then
         note "      presets: CHANGED with presets.c: $(grep '^+# ' "$OUT/presets.patch" | sed 's/^+# //'); presets.patch (commit it on the branch)"
     else
@@ -105,7 +111,7 @@ fi
 if [ $fail = 0 ]; then
     lane() {
         case "$1" in
-            move)  step move-ci sh tools/ci_move.sh ;;     # (its make move takes MOVE_VER from the environment)
+            move)  step move-ci sh tools/ci_move.sh ;;
             quick) step quick make quick ;;
             mac)   step mac-pack make plugin-pack PLUGIN_VER="$VER" && step mac-test make test-plugin &&
                    step mac-os "$PY" tools/plugin_os.py --quick && step mac-timing "$PY" tools/plugin_timing.py --quick ;;
@@ -116,6 +122,14 @@ if [ $fail = 0 ]; then
     pids=""
     for l in $LANES; do lane "$l" & pids="$pids $!"; done
     for p in $pids; do wait "$p" || fail=1; done
+fi
+
+# the three preset lists (presets.c, the Move's, the plugin's: names and values), then the Move package last: test-move
+# and the bridge tests relink build/move/frodhes with their own default version; this one is MOVE_VER=X
+if [ $fail = 0 ]; then
+    step preset-lists "$PY" tools/preset_lists.py || fail=1
+    sed 's/^/      /' "$OUT/preset-lists.log" | grep -E "ok |FAIL|skip" >> "$SUM"
+    step move-pkg make move MOVE_VER="$VER" || fail=1
 fi
 
 # what came out

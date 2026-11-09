@@ -82,3 +82,20 @@ def test_sync_moves_the_variants_with_their_a(tmp_path, monkeypatch):
     text = rec_path.read_text()
     assert text.count("--sync") == 1 and "F01 LEVEL +3 NOISE -8" in text
     assert gp.sync("2026-11-10") == []                                          # (idempotent)
+
+
+def test_preset_lists_expected_and_compare():
+    """tools/preset_lists.py (the Move's and the plugin's lists against presets.c, tools/tail_build.sh): the expected
+    list is presets.c's 19 then the 38 variants, the records agree with presets.c, and compare names a value or a name
+    that differs"""
+    import preset_lists as pl
+    ids, want, bad = pl.expected()
+    assert not bad and len(want) == 57 and want[0][0].startswith("F01 ") and want[19][0].startswith("F20 ")
+    assert all(len(v) == len(ids) for _, v in want)
+    assert pl.compare("x", want, want, ids) == []
+    got = [(l, list(v)) for l, v in want]
+    got[3][1][ids.index("P_LEVEL")] += 1
+    got[30] = ("F31 OTHER", got[30][1])
+    b = pl.compare("x", got, want, ids)
+    assert len(b) == 2 and "P_LEVEL" in b[0] and "F31 OTHER" in b[1], b
+    assert pl.compare("x", got[:-1], want, ids)[0].startswith("x: 56 factory presets")
