@@ -56,7 +56,9 @@ _Static_assert(sizeof pr_user == ST_TAIL_N, "the user presets are the store reco
  * made quieter back to 0.9.9's loudness, F05 +7, F09 +14, F10 +2, F11 +21, F18 +4, U04 +3, U05 +9, U07 +10 steps.
  * 2026-11-09: tools/quick.py's v127 chord and note against 0.9.9 (the compressor's hold 5.8 ms): F10 +5, F12 +9, F19 +8
  * steps (F12 / F19 had lost 2-3 dB with the clean top); F16 stays ~3 / ~4.8 dB under 0.9.9 (0.9.9 reached it only
- * through the limiter).
+ * through the limiter). Then F16 41 -> 25: no limiter on normal playing (the user's rule): at 41 its 4-note v127
+ * chords with the pedal reached the limiter in every take; 25 is the highest step whose worst take (Rhodes range and two
+ * octaves up, five start phases, FM-1 + HQ) peaks at most -3.2 dBFS (0.5 dB under LIM_T): ~6 / ~7.8 dB under 0.9.9.
  *
  * The drive TYPEs (P_DRV_SW, drive.c: 1 FDRV, 2 KHLON, 3 TSH8, 4 OHCD, 5 BHLUE) in six of them, their LEVELs
  * re-run with the TYPE in (the chord's level moves with it), each one's CPU predicted with its TYPE's own cost in
@@ -150,7 +152,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     P_TYPE, 5, P_TONE, 60, P_BARK, 80, P_BELL, 64, P_HAMMER, 110, P_DECAY, 64, P_RELEASE, 0, P_NOISE, 40, P_CMP_SW, 1,
     P_CMP_AMT, 46, P_CMP_RATIO, 0, P_CMP_ATK, 92, P_CMP_REL, 64, P_CMP_GAIN, 6, P_CP_SW, 1, P_CP_DEPTH, 40,
     P_CP_SPEED, 44, P_DL_SW, 1, P_DL_DEPTH, 22, P_DL_SYNC, 8, P_DL_FDBK, 26, P_DL_TONE, 50, P_RV_DEPTH, 38,
-    P_RV_TYPE, 1, P_RV_DECAY, 64, P_RV_PREDLY, 24, P_RV_LOCUT, 80, P_LEVEL, 41, 0xFF,
+    P_RV_TYPE, 1, P_RV_DECAY, 64, P_RV_PREDLY, 24, P_RV_LOCUT, 80, P_LEVEL, 25, 0xFF,
     /* ---- 0.9.5: TAPE ECHO, DREAM, RADIO (the starters U10..U12 until 0.9.5's RC, the same records: their sound and
      * their compressor as they were) */
     /* F17 TAPE ECHO: a warm piano into the tape echo, dotted 1/8 on the tempo, a plate */

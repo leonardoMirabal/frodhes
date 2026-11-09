@@ -675,9 +675,9 @@ changes:
     reason: "F15: the preset LEVEL 59 to 66 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.3 dB; the bar engine itself unchanged, PH_G refit (dab6f113)"
   - match: "*/F16/PRESET/*"
     metric: "level peak lu cb"
-    min: -7.53
+    min: -10.53
     max: -2.42
-    reason: "F16: the preset LEVEL 67 to 40 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move -4.9 dB; the bar engine itself unchanged, PH_G refit (dab6f113)"
+    reason: "F16: the preset LEVEL 67 to 40 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move -4.9 dB; the bar engine itself unchanged, PH_G refit (dab6f113); 2026-11-09 LEVEL 25 (no limiter on normal playing): 3.0 dB lower again (the full grid not re-run)"
   - match: "*/F17/PRESET/*/k[2-8]?v20"
     metric: "cb"
     min: -6.3
@@ -1165,6 +1165,11 @@ changes:
     max: -3.0
     reason: "DYNO k57 v127, HQ FXOFF (the compressor kept): H4 down to the floor, the compressor's gain no longer rippling with the detector at 2 f0 (fx.c CMP_HOLD); a decrease only"
 
+  - match: "quick-level/*/F16/*"
+    metric: "level"
+    min: -8.5
+    max: -5.3
+    reason: "F16 WOOD ECHO LEVEL 41 -> 25 (Move B 34 -> 28, C 31 -> 27): no limiter on normal playing (the user's rule; the coordinator 2026-11-09). At 41 its 4-note v127 chords with the pedal reached the limiter in 20 of 20 takes (build/fxp/hrw.py: Rhodes range and two octaves up, five start phases, FM-1 + HQ); 25 is the highest step whose worst take peaks <= -3.2 dBFS (0.5 dB under LIM_T) with no gain reduction. 0.9.9 reached its level only through the limiter: its quick chord peaks at -2.70 dBFS, the ceiling (LIM_T 24000), crest 15.2 dB against F15's 17.4 on the same engine. Now chord -6.0, note -7.8 dB against 0.9.9 (FM-1 and HQ)"
 # ---- 11. RESPONSE B ("light touch", being redesigned: soft notes louder, the same tone, range ~25.5 dB). Its moves are
 # not listed yet: add a group matching "*/*/*/B/*" (RESPONSE B cells only) once the redesign lands. Until then the
 # entries above cover B where it moves with A.

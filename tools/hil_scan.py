@@ -1251,7 +1251,7 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # its usual target without hard playing reaching the limiter; the global level stays as loud as fits. F06 / F09 /
 # F11 / F19 came down to the target (LEVEL 54 / 62 / 23 / 80: -0.1, -0.0, +0.2, +0.1)
 PRESET_TARGET = {9: (1.4, 1.5), 12: (2.3, 2.0), 13: (2.4, 1.0), 14: (2.6, 1.0), 15: (-0.4, 1.0),
-                 16: (-2.4, 1.0), 17: (0.0, 1.0), 18: (0.5, 1.0), 19: (0.6, 1.0),
+                 16: (-5.4, 1.0), 17: (0.0, 1.0), 18: (0.5, 1.0), 19: (0.6, 1.0),
                  21: (-0.3, 1.0), 23: (0.7, 1.0)}
 # (2026-11-09, fx-level: 0.9.9's absolute level and balance again (742a2537: every LEVEL -19, then the presets the
 # effects had made quieter back to 0.9.9's loudness): the host reads F09 +2.0, F13 +3.1, F14 +3.2, F15 +0.2, F16 -1.8,
@@ -1261,6 +1261,8 @@ PRESET_TARGET = {9: (1.4, 1.5), 12: (2.3, 2.0), 13: (2.4, 1.0), 14: (2.6, 1.0), 
 # (then F01 LEVEL 50 -> 52, the TYPE panel re-derived against 0.9.9 (+0.375 dB, the minimax step over every TYPE x
 # RESPONSE v96/v127 note and chord) and F11 +2 with it: the other presets keep 0.9.9's absolute level, so each reads
 # ~0.4-0.7 lower re F01: F09 +1.4, F12 +2.3, F13 +2.4, F14 +2.6, F15 -0.4, F16 -2.4, F18 +0.5, F19 +0.6, U02 -0.3, U04 +0.7)
+# (then F16 LEVEL 41 -> 25: no limiter on normal playing, its 4-note v127 pedalled chords at most -3.2 dBFS with no gain
+# reduction (tests/expected_changes.yaml 'quick-level/*/F16/*'): F16 -5.4)
 # (F14, 0.9.10's clean Rhodes: F01 came up 0.75 dB on the chord, F14 VIBES ECHO cannot follow (its 4-note v127
 # chords at -1.28 dBFS before the limiter): +1.2 instead of +2.5, a headroom exception (MANUAL))
 # (the starters, 2026-11-08: U01..U09 each +8..+14 to F01's level, except two headroom exceptions (MANUAL): U02's hard
