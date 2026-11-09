@@ -404,10 +404,11 @@ static const int32_t *dr_os2_c(const int32_t *m, int32_t gq, int32_t dgq, int32_
     if (!dr_os_ok) dr_os_rest(bias);
     gq += dgq * (int32_t)o;
     for (i = o; i < fxc_e; i++) {
-        int32_t x0 = m[i], x;
+        int32_t x0 = m[i], x, d;
         gq += dgq;
-        hp += (x0 - hp + 64) >> 7;
-        x = (int32_t)(((int64_t)dr_cl(x0 - hp) * (gq >> 8)) >> (12u - DR_OS_IN));
+        d = x0 - ((hp + 64) >> 7);                      /* (dr_os2's hp in Q7: the two cores' chunks as one core) */
+        hp += d;
+        x = (int32_t)(((int64_t)dr_cl(d) * (gq >> 8)) >> (12u - DR_OS_IN));
         x = x > -(1 << (20 + DR_OS_IN)) ? x : -(1 << (20 + DR_OS_IN));
         y[i] = x < (1 << (20 + DR_OS_IN)) ? x : 1 << (20 + DR_OS_IN);
     }

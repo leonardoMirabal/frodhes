@@ -451,7 +451,7 @@ static void drv_khlon_run(const int32_t *in, int32_t *out, uint32_t n, const drv
         for (i = 0; i < k; i++) op[i] = kh_dry(ip[i]);
     if (!last) return;
     if (ph) ph = ph < 3u ? ph + 1u : 0u;
-    kh_hpo[2] = u[k - 1]; kh_hpo[3] = u[k - 2];
+    /* (kh_hpo[2], [3]: POST's Q8 history, kh_post_pass's on the last chunk, as one core) */
     kh_held = u != op;
     kh_dip = (uint8_t)ph;
     if (zq && !(x1 | x2 | z0) && q0[0] == kh_so1[0] && q0[1] == kh_so1[1] && q0[2] == kh_spo[0] && q0[3] == kh_spo[1] &&
