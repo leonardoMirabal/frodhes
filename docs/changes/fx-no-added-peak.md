@@ -15,9 +15,9 @@
     together (a chord's peak +3.1 dB before, +1.7 now; the echoes as loud as DIG's).
   - HQ HALL (Move / plugin) at MIX 127: the switch between its quiet and loud paths moved lower, so its non-linear
     residual falls from -73.7 to -79.9 dBFS.
-- **The compressor is clean on chords.** It holds its detector over a note's cycle (5.8 ms), smooths its reduction's
+- **The compressor is clean on chords.** It holds its detector over a note's cycle (11.6 ms), smooths its reduction's
   release (about 0.1 s, never slower than half the RELEASE setting) and interpolates its gain: a v127 chord's
-  intermodulation with FX off (the compressor stays on) at most -66.4 dB on every TYPE (was -45 .. -56; the limit -60).
+  intermodulation with FX off (the compressor stays on) at most -68.9 dB on every TYPE (was -45 .. -56; the limit -60).
   Loud v127 chords sit about 0.45 dB lower; v64 / v96 within 0.15 dB.
 - Factory presets with effects re-levelled for the quieter effects: F05 +7, F09 +14, F10 +2, F11 +21, F18 +4 LEVEL
   steps (the Move's preset records the same); U04 +3, U05 +9, U07 +10. Then F10 +5, F12 +9, F19 +8 to 0.9.9's v127

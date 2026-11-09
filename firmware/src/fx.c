@@ -1336,12 +1336,14 @@ static int32_t cmp_env, cmp_g = 65536;
 /* the detector's peak hold (2026-11-08): RELEASE starts CMP_HOLD samples after the last peak that reached the detector.
  * Released between a note's waveform peaks, the detector rippled at twice its f0 and the gain with it: an
  * intermodulation of v127 chords at -46 .. -56 dB under F01's compressor (the dry engine -76 .. -86; tools/dry_dist.py's
- * chords, tests/py/test_comp_clean.py); held 5.8 ms (a cycle down to 172 Hz; with the smoothing below the worst chord
- * -66.4 dB), the detector only rises within a note's cycle and the gain moves at the hold's pace. 1024 (23 ms) read
- * -67.9 but held a loud chord's reduction longer: tools/quick.py's v127 chords 0.45 dB lower than at 256. A faster
- * RELEASE in its place (x2: the level back) lost the cleanliness (-57.5) */
+ * chords, tests/py/test_comp_clean.py); held 11.6 ms (a cycle down to 86 Hz; with the smoothing below the worst chord
+ * -68.9 dB, SUIT's mid chord +12.2 over the dry engine's), the detector only rises within a note's cycle and the gain
+ * moves at the hold's pace. The worst chord by the hold (2026-11-09): 256 -66.4, 384 -67.7, 448 -68.3, 512 -68.9,
+ * 576 -69.4, 640 -68.9, 768 -66.9, 1024 -67.9 (512: the middle of the plateau); a longer hold holds a loud chord's
+ * reduction longer: tools/quick.py's v127 chords 0.2 dB lower than at 256 (1024: 0.3). A faster RELEASE in its place
+ * (x2: the level back) lost the cleanliness (-57.5) */
 #ifndef CMP_HOLD
-#define CMP_HOLD 256
+#define CMP_HOLD 512
 #endif
 static int32_t cmp_hd, cmp_gs;                         /* (cmp_gs: the reduction, its release smoothed, log2 Q12 x 16) */
 #ifndef CMP_KRM
