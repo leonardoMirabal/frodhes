@@ -1,0 +1,35 @@
+# SEQUENCER: a note recorded under the sustain is as long as it rang (issue #34). 1 bar at 120 BPM (a 2 s loop),
+# QUANT OFF. REC armed, PLAY at 1000; the sustain (CC 64) down at 1200; C4 (key 7) struck at 1300, let go at 1400,
+# ringing under the pedal; the pedal up at 2100: C4 recorded 1300..2100 (800 ms). Before the fix it was recorded as
+# long as the key (100 ms) and played back short.
+100 btn 11
+300 midi 0xB0 61 1
+350 midi 0xB0 62 0
+400 midi 0xB0 63 127
+1000 midi 0xB0 60 127
+1200 midi 0xB0 64 127
+1300 keys 0x80
+1400 keys 0
+2100 midi 0xB0 64 0
+# REC off; silence before the next pass
+2700 midi 0xB0 63 0
+3250 expect rms < -70
+# the loop plays C4 at 3300, the pedal up: it holds to 4100, then the damper
+3500 expect rms > -45
+4000 expect rms > -50
+4700 expect rms < -70
+# the same each pass
+5500 expect rms > -45
+6000 expect rms > -50
+6700 expect rms < -70
+# a note held longer than the loop (pedal down 7100..9700, E4 struck at 7400): the whole loop, not the 600 ms past one
+7000 midi 0xB0 63 127
+7100 midi 0xB0 64 127
+7400 keys 0x800
+7500 keys 0
+9700 midi 0xB0 64 0
+9800 midi 0xB0 63 0
+# C4 and E4 (from 9400 on, every pass): E4 still sounding at 12900, past 10000 + 600
+12900 expect rms > -55
+13100 btn 12
+14000 end
