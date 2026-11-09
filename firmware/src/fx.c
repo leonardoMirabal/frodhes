@@ -704,9 +704,14 @@ FX_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t
     int32_t et = (4194304 + dk - 1) / dk;       /* (env x dk) >> 16 reaches row 63 from env >= et: below it the
                                                  * product fits 32 bits */
     int32_t bp = wah_bp, lp = wah_lp, cr = wah_cr, f = cr < 0 ? 0 : (int32_t)FX_WAH_F[cr], mi = 0, mo = 0;
+    int32_t wx[32];                             /* (the output on the bus' grain, x: pass 1 -> pass 2) */
+    int32_t q18 = 18 * q;                       /* (q: 2464 .. 9830, fx_trem: 18 q fits 32 bits, 32 x 32 below) */
     uint32_t j;
+    /* two passes, the same integers (0.9.10 c1-cpu: one loop held ~20 values live and spilled 37 stack accesses a
+     * sample): (1) the cutoff, the filter and the output, (2) the envelopes and the peaks, which read only the input
+     * and x and feed nothing back into (1) */
     for (j = 0; j < k; j++) {
-        int32_t xin = mp[j], x, xf, a = xin < 0 ? -xin : xin, pi, po, vi, vo;
+        int32_t xin = mp[j], x, xf, a = xin < 0 ? -xin : xin;
         if (a > WAH_XM) { a = WAH_XM; xin = xin < 0 ? -WAH_XM : WAH_XM; }   /* (BUGHUNT #26: the stage's range) */
         if (a > env) env += (a - env) >> 3; else env -= (env >> 11) + 1;
         if (env < 0) env = 0;
@@ -718,14 +723,21 @@ FX_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t
             int32_t hi = (xin << 6) - lp - (int32_t)(((int64_t)q * bp + (1 << 13)) >> 14);
             bp = WAH_CL(bp + (int32_t)(((int64_t)f * hi + (1 << 27)) >> 28));
             lp = WAH_CL(lp + (int32_t)(((int64_t)f * bp + (1 << 27)) >> 28));
-            xf = div10((int32_t)(((int64_t)18 * q * bp + (1 << 13)) >> 14) + 4 * lp);   /* bp x 2q: the resonant
+            xf = div10((int32_t)(((int64_t)q18 * bp + (1 << 13)) >> 14) + 4 * lp);   /* bp x 2q: the resonant
                                                  * peak's gain held, louder playing no longer gets louder (0.7); x 64 */
             x = (xf + 32) >> 6;                 /* (the bus' grain: for the output's envelope) */
         }
-        /* envelopes of the input and the filtered output, each pre-emphasised (x - 1/2 x[-1]: +9.5 dB from the bass
-         * to the treble, roughly the ear's weighting) so a closed wah's rumble does not count as loudness. (It was
-         * x - 3/4 x[-1], +12 dB: the 0.9.10 Rhodes C7 v40 under a closed resonant wah +1.16 LU; now +0.88, every
-         * engine's wah within test_hil_limits' bounds, 2026-11-08) */
+        wx[j] = x;
+        wgq += wgs;
+        out[j] = (int32_t)(((int64_t)xf * (wgq >> 5) + (1 << 17)) >> 18);   /* (x 64, the gain Q12) */
+    }
+    /* envelopes of the input and the filtered output, each pre-emphasised (x - 1/2 x[-1]: +9.5 dB from the bass
+     * to the treble, roughly the ear's weighting) so a closed wah's rumble does not count as loudness. (It was
+     * x - 3/4 x[-1], +12 dB: the 0.9.10 Rhodes C7 v40 under a closed resonant wah +1.16 LU; now +0.88, every
+     * engine's wah within test_hil_limits' bounds, 2026-11-08) */
+    for (j = 0; j < k; j++) {
+        int32_t xin = mp[j], x = wx[j], a = xin < 0 ? -xin : xin, pi, po, vi, vo;
+        if (a > WAH_XM) { a = WAH_XM; xin = xin < 0 ? -WAH_XM : WAH_XM; }
         pi = xin - ((WAH_PEN * xi) >> 3); po = x - ((WAH_PEN * xo) >> 3);
         vi = (pi < 0 ? -pi : pi) << 8; vo = (po < 0 ? -po : po) << 8;   /* x 2^8: a Q15 level's steps survive the >> */
         xi = xin; xo = x;
@@ -734,8 +746,6 @@ FX_RAM __attribute__((noinline)) static void wah_sub(const int32_t *mp, uint32_t
         ei += (vi - ei) >> (vi > ei ? 7 : 9);   /* 2.9 ms up, 11.6 ms down */
         eo += (vo - eo) >> (vo > eo ? 7 : 9);
         es += (vi - es) >> 11;
-        wgq += wgs;
-        out[j] = (int32_t)(((int64_t)xf * (wgq >> 5) + (1 << 17)) >> 18);   /* (x 64, the gain Q12) */
     }
     wah_env = env; wah_ein = ei; wah_eout = eo; wah_eslow = es; wah_pi = xi; wah_po = xo;
     wah_bp = bp; wah_lp = lp; wah_cr = cr;
