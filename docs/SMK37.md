@@ -13,7 +13,7 @@ This page covers only the SMK-37: the files, the install, the way back and the c
 cards do to the sound is the same on every device and is described once, in the [manual](MANUAL.md) (sections 2-14,
 the [pages](MANUAL.md#4-the-pages) in section 4); the SMK-37 reaches them as below ([The controls](#the-controls)).
 
-![The FRODHES page on the SMK-37: TYPE, TONE, BELL and KEY VEL on K5..K8](manual/img/smk/smk-frodhes.png?v=bdf2c587)
+![The FRODHES page on the SMK-37: TYPE, TONE, BELL and KEY VEL on K5..K8](manual/img/smk/smk-frodhes.png?v=81dc0c48)
 
 ## The files
 
@@ -150,7 +150,7 @@ Everything in the [manual](MANUAL.md) applies, with these differences:
 - 37 keys, C3..C6 at OCTAVE 0, each at its own velocity: KEY VEL is the velocity of a medium press.
 - The pads, the faders (soft takeover), the pitch and mod wheels and the pedal jack, as above.
 - No TRS MIDI input: MIDI is USB only, and the MIDI page has no TRS IN card.
-- No LEDs on the keys: the DISPLAY page has no LEDS card and DISPLAY 2 is empty; BRIGHTNESS dims the pads and the button LEDs.
+- No LEDs on the keys: the DISPLAY page has no LEDS card and there is no DISPLAY 2 page (SUSTAIN LEDS): DISPLAY is the last page; BRIGHTNESS dims the pads and the button LEDs.
 
 ## For developers
 

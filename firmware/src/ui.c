@@ -53,7 +53,7 @@ enum { S_KVEL = 80, S_TUNE, S_BPM, S_CLOCK, S_SCMODE, S_SCALE, S_ROOT, S_TRANS, 
 #define UI_TRS_LAB ""
 #define UI_LEDS S_NONE
 #define UI_LEDS_LAB ""
-#define UI_SUSLED S_NONE                               /* (DISPLAY 2: no key lights, an empty page) */
+#define UI_SUSLED S_NONE                               /* (no key lights: DISPLAY 2 not walked, PG_WALK) */
 #define UI_SUSLED_LAB ""
 #define UI_K1 '5'
 static const char *const UI_SMK_TEXT[][2] = {           /* the FM-1's text -> the SMK-37's (tests/host.c too) */
@@ -120,7 +120,7 @@ static void sq_step_chance_set(int32_t d);
 #define PG_NORD 25u
 static const uint8_t PG_ORDER[PG_NORD] = {PG_PERF, PG_PIANO, PG_VOICE, PG_COMP, PG_EQ, PG_DRIVE, PG_FILTER, PG_TREM, PG_PHA,
                                           PG_CHO, PG_DELAY, PG_REVERB, PG_REVERB2, PG_TEMPO, PG_SCALE, PG_CHORD, PG_ARP,
-                                          PG_LFO, PG_SEQ, PG_SEQ2, PG_ASSIGN, PG_SETUP, PG_MIDI, PG_DISPLAY, PG_DISPLAY2};   /* DRIVE before FILTER
+                                          PG_LFO, PG_SEQ, PG_SEQ2, PG_ASSIGN, PG_SETUP, PG_MIDI, PG_DISPLAY, PG_DISPLAY2};   /* (DISPLAY 2 last: the SMK-37 stops before it, PG_WALK) DRIVE before FILTER
                                     * (0.9.5, the user), REVERB the last effect, as in the chain, its second page right
                                     * after it (0.9.5); SEQUENCER after LFO (user, TODO 3); EQ between COMPRESSOR and
                                     * DRIVE, as in the chain */
@@ -128,11 +128,16 @@ static uint8_t ui_vp;                                   /* the VOICE page shown:
 FR_COLD static int ui_bars(void) { return TYPE_IS_BARS(PV(P_TYPE)); }    /* the main loop's TYPE (not the ISR's latch) */
 static void ui_goto(uint32_t pg);
 static void ui_goto_v(uint32_t pg, uint32_t vp);
-FR_COLD static uint32_t pg_count(void) { return PG_NORD - 1u + vp_count(); }    /* the pages SELECT walks */
+#if BOARD_SMK37
+#define PG_WALK (PG_NORD - 1u)                          /* the SMK-37: no key lights, so no DISPLAY 2 (PG_ORDER's last) */
+#else
+#define PG_WALK PG_NORD
+#endif
+FR_COLD static uint32_t pg_count(void) { return PG_WALK - 1u + vp_count(); }    /* the pages SELECT walks */
 FR_COLD static uint32_t pg_pos(uint32_t pg, uint32_t vp)        /* a page's place in the SELECT order */
 {
     uint32_t i, k = 0;
-    for (i = 0; i < PG_NORD; i++) {
+    for (i = 0; i < PG_WALK; i++) {
         if (PG_ORDER[i] == pg) return k + (pg == PG_VOICE ? vp : 0u);
         k += PG_ORDER[i] == PG_VOICE ? vp_count() : 1u;
     }
@@ -141,7 +146,7 @@ FR_COLD static uint32_t pg_pos(uint32_t pg, uint32_t vp)        /* a page's plac
 FR_COLD static uint32_t pg_at(uint32_t k, uint32_t *vp)         /* the k-th page (and its VOICE number) */
 {
     uint32_t i, n;
-    for (i = 0; i < PG_NORD; i++) {
+    for (i = 0; i < PG_WALK; i++) {
         n = PG_ORDER[i] == PG_VOICE ? vp_count() : 1u;
         if (k < n) { *vp = PG_ORDER[i] == PG_VOICE ? k : 0u; return PG_ORDER[i]; }
         k -= n;

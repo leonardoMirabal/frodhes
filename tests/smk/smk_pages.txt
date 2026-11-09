@@ -1,0 +1,20 @@
+# SMK-37 build only (make test-smk): no key lights, so no DISPLAY 2 (ui.c PG_WALK): DISPLAY is the last page, 25/25
+# on the Rhodes, and SELECT stops there. The FM-1's ids (GLO 7, SELECT encoder 0) on the SMK's controls of the same
+# name. tests/scripts/sus_leds.txt (DISPLAY 2 on the FM-1) is known in tests/smk/known.txt.
+100 btn 7
+200 btn 7
+300 btn 7
+400 btn 7
+450 expect state page DISPLAY
+450 expect state count 25/25
+450 expect state pages 25
+500 turn 0 1
+600 expect state page DISPLAY
+600 expect state count 25/25
+700 turn 0 3
+800 expect state page DISPLAY
+# back one: MIDI, 24/25
+900 turn 0 -1
+1000 expect state page MIDI
+1000 expect state count 24/25
+1100 end
