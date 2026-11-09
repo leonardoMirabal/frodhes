@@ -25,7 +25,9 @@
 #define APP_VER "web"
 #endif
 #define FS 44100u
+#ifndef HALF_FRAMES                             /* (Frodhes: the app may set it, frodhes.c FR_LAT_HALF) */
 #define HALF_FRAMES 256u
+#endif
 
 static volatile uint32_t fm1_ms;
 static struct { uint32_t notes, buttons; } fm1_in;

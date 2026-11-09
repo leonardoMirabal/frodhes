@@ -262,7 +262,8 @@ static void put32(FILE *f, uint32_t v) { fwrite(&v, 4, 1, f); }
 static int bench;
 static double bench_s, bench_worst_s;
 static uint32_t bench_worst_n;
-static double now_s(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
+/* C11's timespec_get: macOS, glibc and the Windows C runtime alike (clock_gettime is not in the last) */
+static double now_s(void) { struct timespec t; timespec_get(&t, TIME_UTC); return t.tv_sec + t.tv_nsec * 1e-9; }
 static int render(const clap_plugin_t *p, int16_t *pcm, uint32_t pre, uint32_t frames, int block, int clap_notes,
                   uint32_t *clips)
 {

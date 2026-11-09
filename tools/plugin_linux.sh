@@ -86,7 +86,8 @@ with open(t / "renders.sh", "w") as f, open(t / "want.txt", "w") as w:
             f'-o "{t}/host-hq" "{root}/firmware/src/frodhes.c" -lm || echo "render failed: the host build"\n')
     for n, script in sub:
         o = t / "out" / (n.replace("/", "__") + ".wav")
-        f.write(f'"{b}/frp_clap_render" "{b}/bundles/Frodhes.clap" "{root / script}" "{o}" --engine hq --block 512 >/dev/null 2>&1 || echo "render failed: {n}"\n')
+        # the plugin in its test mode ms: the host build's millisecond event grid (gate_d.test_env)
+        f.write(f'FRODHES_PLUGIN_TEST=ms "{b}/frp_clap_render" "{b}/bundles/Frodhes.clap" "{root / script}" "{o}" --engine hq --block 512 >/dev/null 2>&1 || echo "render failed: {n}"\n')
         f.write(f'(cd "{root}" && "{t}/host-hq" "{t}/out/host__{n.replace("/", "__")}" "{root / script}" >/dev/null 2>&1) || true\n')
         w.write(f"{n}\n")
 print(f"plugin_linux: {len(sub)} Gate D renders")

@@ -88,7 +88,8 @@ with open(t / "renders.sh", "w") as f, open(t / "want.txt", "w") as w:
         n, script = e[0], root / e[1]
         want = gate_d.sha(gate_d.host_render(hq, n.replace("/", "_"), e[1], "x86_64"))
         o = t / "out" / (n.replace("/", "__") + ".wav")
-        f.write(f'wine "$B/frp_clap_render.exe" "{z("$CLAP")}" "{z(script)}" "{z(o)}" --engine hq --block 512 >/dev/null 2>&1 || echo "render failed: {n}"\n')
+        # the plugin in its test mode ms (gate_d.test_env); wine passes the variable on
+        f.write(f'FRODHES_PLUGIN_TEST=ms wine "$B/frp_clap_render.exe" "{z("$CLAP")}" "{z(script)}" "{z(o)}" --engine hq --block 512 >/dev/null 2>&1 || echo "render failed: {n}"\n')
         w.write(f"{n} {want}\n")
 print(f"plugin_win: {len(sub)} Gate D renders under wine")
 EOF
