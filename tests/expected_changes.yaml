@@ -3645,3 +3645,62 @@ changes:
     max: 2.610
     reason: "int16 floor, natural decay (RESPONSE B, e09bcbdf): B (level -41.78) reads keyup -10.31 as A at its output level (A v54, -41.95: -10.49); A at v20 -15.0, its tail ending at +175 ms against B's +382; gate off within 1 LSB; dither off -10.45 (the */F15/PRESET/* entry matches this cell first); no step (key_rise <= 2 LSB); build/sonic/resp-ab/mar/cellproof7.txt, mar/lvlcell.txt (mar/cellproof.py, mar/lvlcell.py).
       Coordinator sign-off 2026-11-09"
+  - match: "fm1/F16/PRESET/B/k81v20"
+    metric: "keyup"
+    min: 4.210
+    max: 5.210
+    reason: "int16 floor, natural decay (RESPONSE B, e09bcbdf): B (level -47.02) reads keyup -13.01 as A at its output level (A v54, -47.01: -12.83); A at v20 -18.0; the tail to +479 ms is the preset's echo (cut by the next strike's reset); gate off identical in the window; dither off -13.00; no step (key_rise <= 1 LSB); build/sonic/resp-ab/mar/cellproof9.txt, mar/lvlcell9.txt (mar/cellproof.py, mar/lvlcell.py).
+      Coordinator sign-off 2026-11-09"
+  - match: "fm1/F16/PRESET/B/k89v40"
+    metric: "keyup"
+    min: 8.540
+    max: 9.540
+    reason: "int16 floor, natural decay (RESPONSE B, e09bcbdf): B (level -50.87) reads keyup -21.52 as A at its output level (A v60, -50.98: -21.52); A at v40 -24.6; the preset's echo to the reset; gate off identical in the window; dither off -21.41; no step (key_rise <= 1 LSB); build/sonic/resp-ab/mar/cellproof9.txt, mar/lvlcell9.txt (mar/cellproof.py, mar/lvlcell.py).
+      Coordinator sign-off 2026-11-09"
+  - match: "hq/F15/PRESET/B/k74v20"
+    metric: "keyup"
+    silent: false
+    min: -18.140
+    max: -17.140
+    reason: "int16 floor, natural decay (RESPONSE B, e09bcbdf): v0.9.9 silent 80..280 ms after the key-up; B (level -44.08) reads keyup -17.60 as A at its output level (A v54, -44.21: -17.55); A at v20 silent, its tail ending at +29..41 ms against B's +259..277; gate off <= 2 LSB in the window; dither off -17.61; no step (key_rise <= 1 LSB); build/sonic/resp-ab/mar/cellproof9.txt, mar/lvlcell9.txt (mar/cellproof.py, mar/lvlcell.py).
+      Coordinator sign-off 2026-11-09"
+  - match: "hq/F15/PRESET/B/k74v64"
+    metric: "keyup"
+    min: 2.750
+    max: 3.750
+    reason: "int16 floor, natural decay (RESPONSE B, e09bcbdf): B = A at v64 (the map's gain 0 dB there, the render identical: keyup -15.96 both); the move is A's (its exact entry hq/F15/PRESET/A/k74v64); dither off -16.13; no step (key_rise <= 1 LSB); build/sonic/resp-ab/mar/cellproof9.txt, mar/lvlcell9.txt (mar/cellproof.py, mar/lvlcell.py).
+      Coordinator sign-off 2026-11-09"
+  - match: "hq/F15/PRESET/B/k81v20"
+    metric: "keyup"
+    silent: false
+    min: -16.880
+    max: -15.880
+    reason: "int16 floor, natural decay (RESPONSE B, e09bcbdf): v0.9.9 silent 80..280 ms after the key-up; B (level -44.74) reads keyup -16.34 as A at its output level (A v56, -44.58: -16.47); A at v20 silent, its tail ending before the key-up against B's +156..177; gate off <= 1 LSB in the window; dither off -16.46; no step (key_rise <= 1 LSB); build/sonic/resp-ab/mar/cellproof9.txt, mar/lvlcell9.txt (mar/cellproof.py, mar/lvlcell.py).
+      Coordinator sign-off 2026-11-09"
+  - match: "hq/MARIMBA/FX/B/k60v20"
+    metric: "keyup"
+    min: 4.180
+    max: 5.180
+    reason: "int16 floor, natural decay (RESPONSE B, e09bcbdf): B (level -38.54) reads keyup -24.31 as A at its output level (A v56, -38.43: -24.30); A at v20 -35.2, its tail ending at +84 ms against B's +324; gate off identical in the window; dither off -23.94; no step (key_rise <= 1 LSB); build/sonic/resp-ab/mar/cellproof9.txt, mar/lvlcell9.txt (mar/cellproof.py, mar/lvlcell.py).
+      Coordinator sign-off 2026-11-09"
+  - match: "hq/MARIMBA/FX/B/k74v20"
+    metric: "keyup"
+    silent: false
+    min: -22.410
+    max: -21.410
+    reason: "int16 floor, natural decay (RESPONSE B, e09bcbdf): v0.9.9 silent 80..280 ms after the key-up; B (level -41.33) reads keyup -21.87 as A at its output level (A v54, -41.46: -22.02); A at v20 silent (its tail ends before the key-up) against B's +188..209; gate off <= 1 LSB in the window; dither off -21.85; no step (key_rise <= 1 LSB); build/sonic/resp-ab/mar/cellproof9.txt, mar/lvlcell9.txt (mar/cellproof.py, mar/lvlcell.py).
+      Coordinator sign-off 2026-11-09"
+  - match: "hq/MARIMBA/FX/B/k81v20"
+    metric: "keyup"
+    silent: false
+    min: -39.850
+    max: -38.850
+    reason: "int16 floor, natural decay (RESPONSE B, e09bcbdf): v0.9.9 silent 80..280 ms after the key-up; B's tail ends at +74..86 ms, at the window's start (3 of 4 shifts sound: -39.35 / -39.34 / -42.32); B (level -42.34) reads keyup -37.61 in the level sweep as A at its output level (A v56, -42.18: -36.65); gate off identical in the window; dither off -39.37; no step (key_rise <= 1 LSB); build/sonic/resp-ab/mar/cellproof9.txt, mar/lvlcell9.txt (mar/cellproof.py, mar/lvlcell.py).
+      Coordinator sign-off 2026-11-09"
+  - match: "hq/MARIMBA/FX/B/k81v40"
+    metric: "keyup"
+    silent: false
+    min: -28.160
+    max: -27.160
+    reason: "int16 floor, natural decay (RESPONSE B, e09bcbdf): v0.9.9 silent 80..280 ms after the key-up; B's tail ends at +99..128 ms (the shifts read -26.7 .. -30.1); B (level -41.59) reads keyup -28.21 in the level sweep as A at its output level (A v58, -41.58: -27.21); gate off <= 1 LSB in the window; dither off -28.73; no step (key_rise <= 1 LSB); build/sonic/resp-ab/mar/cellproof9.txt, mar/lvlcell9.txt (mar/cellproof.py, mar/lvlcell.py).
+      Coordinator sign-off 2026-11-09"
