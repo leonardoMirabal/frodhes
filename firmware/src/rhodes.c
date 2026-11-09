@@ -609,6 +609,9 @@ static void rh_drv_level(rh_voice_t *v, uint32_t ki, uint32_t vel)
     uint32_t kk = (uint32_t)(k->kill >> 3), q;
     int32_t g = rh_drive_g(ki, vel, v->lt);
     v->gq = (uint16_t)g;
+#ifdef FR_HQ
+    hq_v[v - rv].dq = rh_dyn(ki + RH_KEY_LO, vel, v->lt);   /* (the live contact keeps the level map: hq_pulse_gain) */
+#endif
     {
         uint32_t i = RH_VPOS_I[vel], f = RH_VPOS_F[vel];
         int32_t pa = (int32_t)RH_PAMP[ki][i] + ((((int32_t)RH_PAMP[ki][i + 1] - (int32_t)RH_PAMP[ki][i]) * (int32_t)f) >> 8);

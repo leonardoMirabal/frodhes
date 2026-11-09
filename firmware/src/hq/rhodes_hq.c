@@ -120,6 +120,8 @@ static int hq_live(rh_voice_t *v, uint32_t key, uint32_t vel)
     v->ptab = v->pbuf;
     v->prate = o.prate << 4;                                /* Q12 -> Q16 */
     hq_v[v - rv].lg = o.fpk / HQ_CK_FPK[key][vel - 1u];
+    hq_v[v - rv].hs = vh / (vh + hq_ck_sqrt(vc * vc + c->w2[0] * xc * xc));   /* the hammer's speed re the closing speed
+                                                * (the tine's: its swing's speed amplitude): the share the level map takes */
     return 1;
 }
 
@@ -174,6 +176,11 @@ static void hq_pulse_gain(rh_voice_t *v)
         float g = (float)rh_drive_g((uint32_t)(v->k - RH_KEYS), v->vel, v->lt);
         h->lg *= (h->dr / (h->drl > 0.0f ? h->drl : 1.0f)) * ((float)v->gq / g);
         h->lg *= (float)v->mk / (float)rh_drv_mkt((uint32_t)(v->k - RH_KEYS), v->vel);   /* (the make-up's, as g's) */
+        /* the dynamics stage (rh_dyn) is a level map, not the tine's physics: g / gq took it out with the gain law, so it
+         * goes back as the table's pulse has it, this strike's over gq's (0.9.10: RESPONSE FULL's soft end 3 dB deeper,
+         * key 108 v127 then v1 played the live re-strike 2.01 dB over the table's, test_restrike_live_contact) */
+        h->lg *= h->hs * ((float)rh_dyn((uint32_t)(v->k - RH_KEYS) + RH_KEY_LO, v->vel, v->lt) / (float)(h->dq ? h->dq : 32768u))
+                 + (1.0f - h->hs);
     }
 #endif
     p = (float)v->pamp * h->lg + 0.5f;
