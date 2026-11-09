@@ -56,7 +56,6 @@ BASE = {
     # 2.78 / 2.28 / 2.74; rev TYPE zipper_wet at 3.019 s: 1.68 / 1.58 / 2.07): the source moves them, the control does
     # the same thing. Still caught on 61baedac's own renders: a zipper (0.3 dB at every CC step) reads 9.5 / 10.1 /
     # 6.1 (wet 11.7) / 7.6 (wet 20.9); a 2.5 dB step under 1 ms reads zipper 9.1 / 2.0 / 7.6 / 8.1.
-    "lfo RATE": {"jump": (1.9, 1.86, "the filter LFO's rate swept under fresh strikes")},
     "wah RATE": {"zipper": (2.2, 2.04, "the wah's rate swept under fresh strikes")},
 }
 

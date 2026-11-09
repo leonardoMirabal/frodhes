@@ -107,7 +107,7 @@ class Case:
     static values (default 0, 32, 64, 96, 127; an enum: its band centres)"""
 
     def __init__(self, name, cc, setup=(), engine="rhodes", kind="knob", additive=False, mono=False, statics=None,
-                 page="", skip=(), through=False, xfade=False, near=False, run=False):
+                 page="", skip=(), through=False, xfade=False, near=False, run=False, zref=()):
         self.name, self.cc, self.setup, self.engine, self.kind = name, cc, list(setup), engine, kind
         self.near = near                         # jump: against renders held near the sweep's value (jump_near_db)
         self.run = run                           # the sweep starts at 1 from 200 ms, not 0: the effect runs from the
@@ -119,6 +119,8 @@ class Case:
         self.additive, self.mono, self.page = additive, mono, page
         self.skip = set(skip)                    # checks that do not apply to this case (the reasons: _cases)
         self.statics = list(statics) if statics else list(STATICS)
+        self.zref = list(zref)                   # zipper: against statics held with these CCs added (what the sweep
+        # latches at its start: PLATE's AUTO SIZE keeps MIX 1's size while the tail rings), not the plain statics
 
     def __repr__(self):
         return self.name
@@ -174,7 +176,10 @@ def _cases():
     # the level has to move by that much, so the sweep's jump check does not apply; xjump bounds how fast it moves:
     # a 46 ms crossfade spreads it over ~4 windows of 512 samples, 0.9.5's one-sample switch put up to 0.8 of it
     # into one window)
-    add(Case("lfo RATE", 76, [(70, 46), (74, 80), (71, 40), (72, 60)], page="LFO"))
+    add(Case("lfo RATE", 76, [(70, 46), (74, 80), (71, 40), (72, 60)], page="LFO",
+             skip={"jump"}))                     # (a rate, as the other rate controls: the LFO's phase against the
+    # restrikes differs at every value, so the filter's level a window does too: renders held near 113 swing 4.6 dB
+    # a window, more than the sweep's 2.62; the zipper and the click stay checked)
     add(Case("lfo SHAPE", 75, [(70, 46), (74, 80), (71, 40), (72, 60)], kind="select", statics=bands(5), page="LFO"))
     # TREM/WAH
     for m, s in (("AM", [(17, 60), (21, 100)]), ("PAN", [(17, 60), (21, 0)])):
@@ -206,7 +211,10 @@ def _cases():
     for t, v in (("HALL", 40), ("PLATE", 70), ("INF", 110)):
         for zs, z in (("auto", 0), ("size64", 64)):
             add(Case(f"rev {t} {zs} MIX", 91, [(95, v), (73, z)], kind="mix", additive=True, mono=True,
-                     page="REVERB", run=True))
+                     page="REVERB", run=True, zref=[(73, 1)] if (t, z) == ("PLATE", 0) else ()))
+            # (PLATE AUTO: the sweep's tank keeps the size MIX 1 latched, SIZE 1, while the statics run sizes 32 ..
+            # 127, whose plates differ in fine structure: against them 2.11 / wet 2.16; against statics held at SIZE 1,
+            # the sweep's own tank, 1.04)
         s = [(95, v), (91, 64)]
         add(Case(f"rev {t} DECAY", 92, s, additive=True, page="REVERB"))
         add(Case(f"rev {t} TONE", 93, s, additive=True, page="REVERB"))
@@ -550,8 +558,12 @@ def measure(case, binary=BIN):
             p = pitch_p90(sw - off, off)
             if p is not None:
                 r["pitch_wet"] = round(p - max([x for x in pw if x is not None] or [0.0]), 1)
-    r["zipper"] = round(zipper_ratio(sw, stl), 2)
-    r["zipper_wet"] = round(zipper_ratio(sw - off, [s - off for s in stl]), 2) if case.additive else None
+    zl = stl
+    if case.zref:                                      # (the statics with the sweep's latched state: Case.zref)
+        zc = Case(case.name, case.cc, case.setup + case.zref, case.engine, case.kind, case.additive, run=case.run)
+        zl = [render(script(zc, value=v), binary) for v in case.statics]
+    r["zipper"] = round(zipper_ratio(sw, zl), 2)
+    r["zipper_wet"] = round(zipper_ratio(sw - off, [s - off for s in zl]), 2) if case.additive else None
     if case.near:
         for v in NEAR:
             if v not in st:
