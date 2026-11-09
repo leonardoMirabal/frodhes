@@ -579,8 +579,12 @@ def run_cpu(argv):  # noqa: C901
         whole = query.whole or None
         print(f"whole ISR worst: {str(whole) + ' us' if whole else 'not reported by this firmware'}" +
               (f"; USB counters moved in: {', '.join(usb_bad)}" if usb_bad else ""))
-        bad = worst > TARGET_US or (whole or 0) > TARGET_US or any(sheds) or bool(usb_bad)
-        print("hil_cpu: " + ("FAIL" if bad else "ok"))
+        why = ([f"app_audio worst {worst} us > {TARGET_US}"] if worst > TARGET_US else []) + \
+              ([f"whole ISR {whole} us > {TARGET_US} (app_audio + the USB tail after it)"] if (whole or 0) > TARGET_US else []) + \
+              ([f"{sum(1 for x in sheds if x)} scenario(s) shed a voice"] if any(sheds) else []) + \
+              ([f"USB counters moved in {', '.join(usb_bad)}"] if usb_bad else [])
+        bad = bool(why)
+        print("hil_cpu: " + ("FAIL: " + "; ".join(why) if bad else "ok"))
         return 1 if bad else 0
 
     scen = sys.argv[sys.argv.index("--scenario") + 1].split(",") if "--scenario" in sys.argv else None

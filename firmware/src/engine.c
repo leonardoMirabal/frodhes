@@ -408,6 +408,9 @@ static void eng_host_report(void)                /* tests/host.c, at the end of 
     printf("mid starts %u restrikes %u steals %u\n", (unsigned)rh_h_mid[0], (unsigned)rh_h_mid[1], (unsigned)rh_h_mid[2]);
     printf("bar mid starts %u\n", (unsigned)bar_h_mid);
 #endif
+#if FR_LAT_TAIL
+    printf("xip waits %u\n", (unsigned)lat_h_xip_waits);
+#endif
     printf("rhodes steals %u\n", (unsigned)rh_h_steals);          /* tools/engine_ab.py */
     printf("bar starts max per block %u\n", (unsigned)bar_h_max_starts);   /* tests/py/test_bar_starts.py */
     printf("type %u\n", eng_cur == ENG_BARS ? ENG_RH_NTYPE + bar_sub : (unsigned)rh_type);   /* the TYPE last rendered (C11) */

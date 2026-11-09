@@ -347,6 +347,11 @@ static struct { uint32_t off, t, k, took; uint16_t prog; uint8_t busy; int8_t er
 /* FL_SLICE_OK(): the app may hold each slice back, the interrupts already off, for a better moment (Frodhes 0.9.9:
  * right after a USB audio packet, usb.c uac_slice_ok): the first at most FL_ALIGN1_US in fl_op_start (the main loop
  * waits), the others at most FL_ALIGN_US past the gap (fl_op_poll returns meanwhile); 1: no wait */
+/* FL_XIP_OFF_WAIT(): the app's last word before each RAM function takes the flash out of XIP, the interrupts off
+ * (Frodhes: core 1 may still run XIP code after the audio interrupt, frodhes.c FR_LAT_TAIL); empty: as before */
+#ifndef FL_XIP_OFF_WAIT
+#define FL_XIP_OFF_WAIT() ((void)0)
+#endif
 #ifndef FL_SLICE_OK
 #define FL_SLICE_OK() 1
 #else
@@ -367,6 +372,7 @@ static int fl_op_poll(void)
         return 1;
     }
 #endif
+    FL_XIP_OFF_WAIT();
     rc = FL_FAR(fl_resume_ram)(fl_aop.off, fl_aop.prog ? fl_aop.prog : 4096u, fl_aop.prog ? FL_SUS_PROG : FL_SUS_ERASE,
                                fl_aop.k++ < FL_SLICES_MAX ? FL_SLICE_US : 0u, &fl_aop.took);
     fl_off_note(t); irq_restore(f);
@@ -384,6 +390,7 @@ static int fl_op_start(uint32_t off, const uint8_t *src, uint32_t n)   /* src: a
     }
     if (fl_can_split < 0) {
         f = irq_save();
+        FL_XIP_OFF_WAIT();
         fl_can_split = (int8_t)(FL_SUSPEND_OK(FL_FAR(fl_jedec_ram)()) != 0);
         irq_restore(f);
     }
@@ -403,6 +410,7 @@ static int fl_op_start(uint32_t off, const uint8_t *src, uint32_t n)   /* src: a
 #else
     f = irq_save(); t = T4_CNT;
 #endif
+    FL_XIP_OFF_WAIT();
     rc = FL_FAR(fl_start_ram)(off, src, n, fl_can_split ? FL_SLICE_US : 0u, &fl_aop.took);
     fl_off_note(t); irq_restore(f);
     fl_aop.t = T4_CNT;

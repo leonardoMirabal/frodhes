@@ -167,7 +167,9 @@ FR_COLD static int st_read(uint32_t off, void *dst, uint32_t n)
     uint8_t *d = dst;
     while (n) {
         uint32_t k = n > 256u ? 256u : n, f = irq_save();
-        int rc = FL_FAR(fl_read_ram)(off, d, k);
+        int rc;
+        FL_XIP_OFF_WAIT();                      /* (fm1_flash.h: the app's word before the flash leaves XIP) */
+        rc = FL_FAR(fl_read_ram)(off, d, k);
         irq_restore(f);
         if (rc)
             return rc;

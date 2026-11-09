@@ -14,6 +14,7 @@
   (2.9 + up to 5.8); with FR_LAT_EV a free-voice note-on starts at the next interrupt (2.9 + up to 2.9; 64: 1.45 +
   up to 1.45); FR_LAT_TAIL adds 32 frames (0.73 ms). The host's 1 ms tick adds up to 1 ms (the event is seen at the tick after its own)."""
 import os
+import re
 
 import numpy as np
 import pytest
@@ -174,3 +175,25 @@ def test_bar_ev_mid_start_pristine(engine):
         ly = np.sqrt((y[:m] ** 2).sum(axis=1)).reshape(-1, 2205).mean(axis=1)
         k = ly > ly.max() * 1e-3
         assert np.max(np.abs(20 * np.log10(lx[k] / ly[k]))) < 0.5
+
+
+@pytest.mark.parametrize("name", ["autosave_setup", "seq", "ui_presets", "usb_rec_save", "rev_freeze_save"])
+def test_tail_flash_never_under_core1(name):
+    """FR_LAT_TAIL: core 1 runs the block's last 32 frames' effects (XIP code) after the interrupt; the flash must
+    never leave XIP meanwhile (fm1_flash.h FL_XIP_OFF_WAIT, frodhes.c lat_xip_wait: every slice, read and JEDEC id;
+    platform.c st_read). The FM-1 hung on an install's flash reads (2026-11-09). The host: the audio interrupt just
+    before every flash call (FRODHES_ISR_AT_FLASH), core 1 busy (busy=3: the tail still running at the call);
+    tests/host.c's flash calls abort if the tail runs. Without the wait (HOST_XIP_NOWAIT) the same scripts abort:
+    the check sees the hazard"""
+    lines = [ln for ln in open(os.path.join(ROOT, "tests", "scripts", name + ".txt")).read().splitlines()
+             if ln.strip() and not ln.lstrip().startswith("#")]
+    env = {"FRODHES_C1": "busy=3", "FRODHES_ISR_AT_FLASH": "1"}
+    d = ["-DFR_C1=1", "-DFR_LAT_HALF=128u", "-DFR_LAT_EV=1", "-DFR_LAT_TAIL=32u"]
+    ok = build(os.path.join(ROOT, "build", "host", "lat_xip1", "frodhes"), d)
+    r = run(f"lat_xip_{name}", lines, env=env, binary=ok, check=False)
+    assert r.code == 0 and "XIP OFF" not in r.out, r.out[-500:]
+    m = re.search(r"xip waits (\d+)", r.out)
+    assert m and int(m.group(1)) > 0
+    bad = build(os.path.join(ROOT, "build", "host", "lat_xip0", "frodhes"), d + ["-DHOST_XIP_NOWAIT"])
+    r = run(f"lat_xip0_{name}", lines, env=env, binary=bad, check=False)
+    assert "XIP OFF under core 1's tail" in r.out

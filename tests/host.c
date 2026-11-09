@@ -182,8 +182,28 @@ static uint8_t host_old_ours = 1;               /* (SMK: the owner tag before 0.
 static __attribute__((unused)) int smk_old_ours(void) { return host_old_ours; }
 static void fm1_wdt_feed(void) {}
 static uint32_t crc32(const uint8_t *p, uint32_t n);   /* presets.c (host) */
+#ifdef FL_XIP_OFF_WAIT                          /* (frodhes.c FR_LAT_TAIL: the flash leaves XIP only with the tail done) */
+static void host_xip_check(void);
+static void host_ms(void);
+static void host_xip_isr(void)                  /* FRODHES_ISR_AT_FLASH=1: the FM-1's audio interrupt may come just
+                                                 * before any flash call (the host renders only between main-loop
+                                                 * passes otherwise): a millisecond here, its half buffers rendered */
+{
+    static int on = -1, in;
+    if (on < 0) on = getenv("FRODHES_ISR_AT_FLASH") && atoi(getenv("FRODHES_ISR_AT_FLASH"));
+    if (on && !in) { in = 1; host_ms(); in = 0; }
+}
+#ifdef HOST_XIP_NOWAIT                          /* (tests/py/test_latency.py: the check without the wait: it fires) */
+#define HOST_XIP() do { host_xip_isr(); host_xip_check(); } while (0)
+#else
+#define HOST_XIP() do { host_xip_isr(); FL_XIP_OFF_WAIT(); host_xip_check(); } while (0)
+#endif
+#else
+#define HOST_XIP() ((void)0)
+#endif
 static int st_read(uint32_t off, void *dst, uint32_t n)
 {
+    HOST_XIP();
     if (off >= sizeof host_mem || n > sizeof host_mem - off) return -1;
     memcpy(dst, host_mem + off, n);
     return 0;
@@ -192,13 +212,14 @@ static uint32_t host_op_t, host_op_ms;
 static int fl_op_start(uint32_t off, const uint8_t *src, uint32_t n)   /* src: a page program, 0: an erase */
 {
     uint32_t i;
+    HOST_XIP();
     if (host_fl_check(src ? "write settings" : "erase settings", off, src ? n : 0x1000u)) return -1;
     if (src) for (i = 0; i < n; i++) host_mem[off + i] &= src[i];   /* (NOR: a program clears bits only) */
     else memset(host_mem + off, 0xFF, 0x1000u);
     host_op_t = fm1_ms; host_op_ms = src ? 0u : HOST_SAVE_MS - 10u;
     return 1;
 }
-static int fl_op_poll(void) { return fm1_ms - host_op_t < host_op_ms ? 1 : 0; }
+static int fl_op_poll(void) { HOST_XIP(); return fm1_ms - host_op_t < host_op_ms ? 1 : 0; }
 static void platform_poll(void);
 #define ST_SAVED() printf("%6u ms  settings saved (%u B)\n", fm1_ms, 256u)
 #define ST_WAIT() platform_poll()               /* (a held save: one millisecond a step) */

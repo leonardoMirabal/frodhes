@@ -135,7 +135,13 @@ _Static_assert(FR_LAT_TAIL == 0u || FR_LAT_TAIL == 32u, "FR_LAT_TAIL: 0 or 32 fr
  * did (a burst of more bar notes than that: 5.8 ms more per 7; the PC + 26-note burst, hil_cpu --worst: 14 starts in
  * one interrupt, 3260 us of 2902) */
 #ifndef BAR_START_MAX
+#if FR_LAT_EV && FR_LAT_HALF == 128u
+#define BAR_START_MAX 5u                        /* per interrupt (bars.c bar_mid): a 10-note chord still starts within
+                                                 * 2.9 ms (5 + 5); the PC + burst's bar inits (VIBES HELD, the steals'
+                                                 * notes in the block's last interrupt) 2 fewer than at 7 */
+#else
 #define BAR_START_MAX (BAR_NA * FR_LAT_HALF / 256u)   /* (with FR_LAT_EV: per interrupt, bars.c bar_mid) */
+#endif
 #endif
 #ifndef RH_START_MAX
 #define RH_START_MAX (RH_NA * FR_LAT_HALF / 256u)   /* the Rhodes' the same (rh_init), per interrupt: with
@@ -147,6 +153,18 @@ _Static_assert(FR_LAT_TAIL == 0u || FR_LAT_TAIL == 32u, "FR_LAT_TAIL: 0 or 32 fr
  * audio's moment as before (platform.c, usb.c uac_slice_ok) */
 static int lat_fl_ok(void);
 #define FL_SLICE_OK() lat_fl_ok()
+#endif
+#if FR_LAT_TAIL
+/* every moment the flash leaves XIP (fm1_flash.h's RAM functions: a slice, a read, the JEDEC id; platform.c
+ * st_read), the interrupts already off: the tail done first, without a time limit but core 1's own (a job not done
+ * in 3 ms: core 1 held for good, as a late job). FL_SLICE_OK's wait gives up after 1 ms and only picks the moment;
+ * this one is the guarantee (an install's flash reads, the pattern's, a preset's: the flash went off under the
+ * tail, the FM-1 hung, 2026-11-09). The host: the twin runs the tail here, tests/host.c's flash calls check it */
+static void lat_xip_wait(void);
+#define FL_XIP_OFF_WAIT() lat_xip_wait()
+#ifdef DINGHY_HOST
+static uint32_t lat_h_xip_waits;
+#endif
 #endif
 #endif
 #ifndef FR_LCD_IDLE
@@ -753,6 +771,34 @@ static int lat_mid(void)
 #endif
     return lat_o != 0u;
 }
+#if FR_LAT_TAIL
+#ifdef DINGHY_HOST
+static uint32_t lat_h_xip_waits;                /* (host: flash calls that found the tail running) */
+static __attribute__((unused)) void host_xip_check(void)                /* tests/host.c's flash calls: never with the tail running */
+{
+    if (lat_pend && c1_fxd < lat_pe) { fprintf(stderr, "XIP OFF under core 1's tail (%u of %u)\n", c1_fxd, lat_pe); abort(); }
+}
+#endif
+static void lat_xip_wait(void)                  /* (FL_XIP_OFF_WAIT, the interrupts off: no job starts meanwhile) */
+{
+#ifdef DINGHY_HOST
+    if (lat_pend && c1_fxd < lat_pe) {
+        lat_h_xip_waits++;
+        while (c1_fxd < lat_pe) if (!c1_stream_step()) break;
+    }
+#else
+    uint32_t t0 = fm1_ticks();
+    if (!lat_pend) return;
+    for (;;) {
+        fr_c1_sync();
+        if (c1_fxd >= lat_pe) { fr_c1_sync(); if (c1_fxd >= lat_pe) return; }   /* (twice, as c1_stream_step) */
+        if (!fr_c1_busy()) return;              /* (no job on core 1: the next interrupt does the rest) */
+        if (fm1_ticks() - t0 > 3000u * FM1_TICKS_PER_US) { c1.late++; c1_stop(C1_LATE); return; }
+        fr_c1_pause();
+    }
+#endif
+}
+#endif
 #if FR_LAT_TAIL && !defined(DINGHY_HOST)
 static int lat_fl_ok(void)                      /* (FL_SLICE_OK, the interrupts off: no job starts meanwhile) */
 {
