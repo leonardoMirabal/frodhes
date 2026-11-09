@@ -99,3 +99,18 @@ def test_event_timing(half, ev, tail, lo, hi):
     assert lat.min() >= lo - 0.05 and lat.max() <= hi + 0.05, lat
     span = 1000.0 * (half if ev else 256) / FS                     # the wait's range: the event's grid
     assert lat.max() - lat.min() <= span + 1.05
+
+
+def test_ev_restrike_and_steal():
+    """FR_LAT_EV: re-strikes and steals start mid-block too (rhodes.c rh_mid_one), the felt's plan kept (the host's
+    LFSR check aborts otherwise); arrivals over the block's phases"""
+    import re
+    lines = [cc(10, 119, 127), cc(400, 64, 127), cc(4400, 64, 0)]   # the pedal: let-go notes ring on (re-strikes)
+    for i in range(80):                                          # 6 pitches let go after 0.2 s; then 30 held: steals
+        t = 500 + 97 * i + (i * 29) % 41
+        n, hold = (40 + i % 6, 200) if i < 40 else (40 + (i * 7) % 30, 3000)
+        lines += [f"{t} midi 0x90 {n} {60 + i % 60}", f"{t + hold} midi 0x80 {n} 0"]
+    _, r = wav("lat_ev_rs", lines, lat_bin(128, 1, 32), end=11000)
+    m = re.search(r"mid starts (\d+) restrikes (\d+) steals (\d+)", r.out)
+    assert m and all(int(x) > 0 for x in m.groups()), r.out[-400:]
+    assert "ev_drop 0" in r.out

@@ -389,6 +389,9 @@ static void eng_host_report(void)                /* tests/host.c, at the end of 
     printf("voices max rhodes %u of %u bars %u of %u\n", eng_h_max_nv[ENG_RHODES], (unsigned)RH_NV,
            eng_h_max_nv[ENG_BARS], (unsigned)BAR_NV);               /* tools/hil_crackle.py: every voice taken */
     printf("ev_drop %u\n", (unsigned)(eq_drop + ev_drop));
+#if FR_LAT_EV
+    printf("mid starts %u restrikes %u steals %u\n", (unsigned)rh_h_mid[0], (unsigned)rh_h_mid[1], (unsigned)rh_h_mid[2]);
+#endif
     printf("rhodes steals %u\n", (unsigned)rh_h_steals);          /* tools/engine_ab.py */
     printf("bar starts max per block %u\n", (unsigned)bar_h_max_starts);   /* tests/py/test_bar_starts.py */
     printf("type %u\n", eng_cur == ENG_BARS ? ENG_RH_NTYPE + bar_sub : (unsigned)rh_type);   /* the TYPE last rendered (C11) */

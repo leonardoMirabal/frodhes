@@ -2381,24 +2381,42 @@ static void rh_end(void)                        /* after the block's last chunk:
 }
 #if FR_LAT_EV
 /* FR_LAT_EV (frodhes.c FR_LAT_HALF): a note-on between two interrupts of a block starts at the next one's first frame,
- * only where the block's plan (rh_begin) stays true: a free voice (no steal, no re-strike: those wait for the block's
- * start, as before), the Rhodes ring empty (order kept), the TYPE the block started with, and with SPREAD only while the
- * side runs. A block planned idle (silent) runs from here: its chain at rest and its dither at the start, as the next
- * block would have them */
+ * where the block's plan (rh_begin) stays true: a free voice, a re-strike of the note still sounding, or a steal whose
+ * voice has no felt noise running (rh_begin planned the felt's LFSR to the block's end: a steal's fade would end it
+ * sooner); the TYPE the block started with, and with SPREAD only while the side runs. Else it waits for the block's
+ * start, as before. A block planned idle (silent) runs from here: its chain at rest and its dither at the start, as
+ * the next block would have them */
+#ifdef DINGHY_HOST
+static uint32_t rh_h_mid[3];                    /* (host: the mid-block starts: free voice, re-strike, steal) */
+#endif
 static int rh_mid_one(uint32_t note, uint32_t vel)
 {
-    uint32_t i, f = RH_NA;
+    uint32_t i, pick = RH_NA, best = 0xFFFFFFFFu, kind = 1;
     if (rh_type != rhc_rt || (rh_spread && !rh_side_tail)) return 0;
     for (i = 0; i < RH_NV; i++)
-        if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) return 0;
-    for (i = 0; i < RH_NA; i++) if (!rv[i].alive && !rv[i].pend) { f = i; break; }
-    if (f == RH_NA) return 0;
-#ifdef RH_START_MAX
-    if (rh_starts >= RH_START_MAX) return 0;
-    rh_starts++;
+        if (rv[i].alive && !rv[i].pend && rv[i].note == note && rv[i].fade == 32768) break;
+    if (i == RH_NV) {                           /* (not a re-strike) */
+        kind = 0;
+        for (i = 0; i < RH_NA && rv[i].alive; i++) ;
+        if (i == RH_NA) {
+            kind = 2;                       /* (no free voice: the voice rh_strike would steal, as it scores) */
+            for (i = 0; i < RH_NA; i++) {
+                uint32_t m, sum = 0, score;
+                if (rv[i].pend) continue;
+                for (m = 0; m < RH_NM; m++) sum += (uint32_t)rv[i].m[m].peak >> 4;
+                sum = RH_OUT_SUM(&rv[i], sum);
+                score = rv[i].held ? 0x80000000u + (rv[i].age & 0x7FFFFFFFu) : (sum > 0x7FFFFFFFu ? 0x7FFFFFFFu : sum);
+                if (score < best) { best = score; pick = i; }
+            }
+            if (pick == RH_NA || rv[pick].felt_n) return 0;
+        }
+    }
+    if (!rh_strike(note, vel)) return 0;
+#ifdef DINGHY_HOST
+    rh_h_mid[kind]++;
+#else
+    (void)kind;
 #endif
-    rh_knock_strike(note, vel);
-    rh_init(&rv[f], note, vel);
     if (rhc_idle) { rhc_idle = 0; rh_dith_on = -1; }
     return 1;
 }
