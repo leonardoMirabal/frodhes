@@ -47,9 +47,9 @@ BASE = {
     "rhodes TYPE": {"jump": (1.9, 1.83, "a TYPE step under a ringing chord")},
     "rhodes TYPE SPREAD": {"jump": (1.9, 1.83, "the same, TYPE with SPREAD")},
     # (0.9.10 zipper fixes, tests/py/test_ctl_zipper.py: TAPE TIME's zipper 2.53 -> 1.9 and PLATE SIZE's wet 3.35 -> 1.87
-    # are under LIMITS, their lines out; TAPE TIME's wet 2.83 -> 2.02 bounded tighter: the echoes' own varispeed)
+    # are under LIMITS, their lines out; TAPE TIME's wet 2.83 -> 2.02 bounded tighter: the echoes' own varispeed. PLATE
+    # SIZE's jump 2.10 -> 0.92 with the plate's modulated reads mended and its 1 s fade: its line out)
     "delay TAPE TIME": {"zipper_wet": (2.3, 5.27, "the tape's varispeed of fresh strikes, the echoes alone")},
-    "rev PLATE SIZE": {"jump": (2.4, 2.10, "the size cross-fade under fresh strikes")},
     # THRESHOLD (2026-11-08, the clean Rhodes 61baedac; the effects' code unchanged from 568fe9d6, which passed): the
     # same checks peak at the same instant on 0.9.9, 568fe9d6 and 61baedac (lfo RATE jump at 3.251 s: 1.86 / 1.48 /
     # 1.84; wah RATE zipper at 3.878 s: 2.04 / 1.82 / 2.10; PLATE SIZE jump at 2.740 s: 2.10 / 1.76 / 2.35, zipper_wet
