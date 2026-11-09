@@ -1949,6 +1949,10 @@ static int16_t rev_ap[556 + 441] POOL;
 #define HL_LPM 0x69u
 #define HL_KD(d) (32767 - (d) * 180)
 #define HL_LOUD 32
+#define HL_LIVE 64                  /* the diffusers round while the block's input reaches this (or a line end was loud
+                                     * the block before); else their feed truncates toward zero (no input, no growth:
+                                     * the tail dies to exact zero). 0.9.10 rev-grain: truncated always, a quiet low
+                                     * note's harmonics sat 1.2 dB over v0.9.9's linear-reverb residual (H5, MIX 10) */
 #define HL_OUT 1
 #define HL_IN 10320                 /* Felucca: 2580 with HL_OUT 4 */
 static const uint16_t HL_LEN[HL_NL] = {467, 509, 547, 593, 631, 673, 709, 743};
@@ -1961,6 +1965,7 @@ static struct {
     int16_t g[HL_NL], sz;
     uint32_t ph;
     int32_t bx[HL_NC];
+    int32_t ldl;                    /* a line end was loud in the last block (the diffusers round) */
     int16_t y[HL_NC][HL_NL];        /* the line ends, one row per sample */
 } hl POOL;
 static inline __attribute__((always_inline)) int32_t sh_tz(int32_t m, uint32_t sh) { return (m + (int32_t)((uint32_t)(m >> 31) >> (32u - sh))) >> sh; }
@@ -1982,14 +1987,21 @@ static void hall_gains(int32_t s)
     hl.sz = (int16_t)(s + 1);
 }
 static inline __attribute__((always_inline)) int32_t hl_c16(int32_t v) { v = v > -32768 ? v : -32768; return v < 32767 ? v : 32767; }   /* smax + smin */
-static inline void hall_ap(int16_t *q, int32_t g, int32_t *x, uint32_t n)
+static inline void hall_ap(int16_t *q, int32_t g, int32_t *x, uint32_t n, int ld)
 {
     int16_t *e = q + n;
-    for (; q < e; q++, x++) {
-        int32_t y = *q, v = *x + sh_tz(y * g, 14);
-        *q = (int16_t)hl_c16(v);
-        *x = y - ((v * g + 8192) >> 14);
-    }
+    if (ld)                                             /* (loud: rounded; quiet: the feed truncated, HL_LIVE) */
+        for (; q < e; q++, x++) {
+            int32_t y = *q, v = *x + ((y * g + 8192) >> 14);
+            *q = (int16_t)hl_c16(v);
+            *x = y - ((v * g + 8192) >> 14);
+        }
+    else
+        for (; q < e; q++, x++) {
+            int32_t y = *q, v = *x + sh_tz(y * g, 14);
+            *q = (int16_t)hl_c16(v);
+            *x = y - ((v * g + 8192) >> 14);
+        }
 }
 /* the line ends (n >= 1): b steps HL_NL (one ring row), y steps HL_NL (one hl.y row) */
 static inline void hall_end(const int16_t *b, int32_t f, int16_t *y, uint32_t n, int32_t g, int lo)
@@ -2023,9 +2035,9 @@ static inline void hall_end_lp(const int16_t *b, int16_t *y, uint32_t n, int32_t
  * blocker. in[-RV_DZ .. CTL): the block with the RV_DZ samples before it (rv_inb), |x| <= 2^19 (fx_reverb clamps the
  * send to +-131071; LOW CUT may double it). RV_HB(c, d): the half-band's odd taps around c, d apart */
 #define RV_HB(c, d) (624 * ((c)[-(d)] + (c)[0]) - 152 * ((c)[-2 * (d)] + (c)[d]) + 40 * ((c)[-3 * (d)] + (c)[2 * (d)]))
-static FX_RAM __attribute__((noinline)) void rev_down(const int32_t *in, int32_t *php, int32_t *phe, int32_t *out)
+static FX_RAM __attribute__((noinline)) int32_t rev_down(const int32_t *in, int32_t *php, int32_t *phe, int32_t *out)
 {
-    int32_t hp = *php, he = *phe;
+    int32_t hp = *php, he = *phe, ma = 0;
     uint32_t i;
     for (i = 0; i < HL_NC; i++) {
         const int32_t *c = in + 2u * i - 4u;                /* (c[5]: this pair's second sample, in[2i + 1]) */
@@ -2035,8 +2047,10 @@ static FX_RAM __attribute__((noinline)) void rev_down(const int32_t *in, int32_t
         he = v & 31;
         hp += v >> 5;
         out[i] = x - hp;
+        ma |= out[i] < 0 ? -out[i] : out[i];
     }
     *php = hp, *phe = he;
+    return ma;                                          /* (its |out| ORed: >= 2^k when one reaches 2^k) */
 }
 #define HL_LFO ((uint32_t)(0.37 * CTL / FS * 4294967296.0))
 /* one control block (CTL frames in, HL_NC at the half rate out): ol[] = the mid, or[] = the side (x HL_OUT), the
@@ -2045,12 +2059,13 @@ static void rev_hall(const int32_t *rev_in, int32_t size, int32_t damp, int32_t 
 {
     int16_t *a = rev_ap, *o, *y;
     uint32_t i, k, s, m, d, w = hl.w;
-    int32_t kd = HL_KD(damp);
+    int32_t kd = HL_KD(damp), ld;
     if (hl.sz != size + 1) hall_gains(size);
-    FR_FAR(rev_down)(rev_in, &hl.hp, &hl.he, hl.bx);
+    ld = FR_FAR(rev_down)(rev_in, &hl.hp, &hl.he, hl.bx) >= HL_LIVE || hl.ldl;
+    hl.ldl = 0;
     for (k = 0; k < HL_NAP; k++) {
         d = hl.d[k];
-        HL_RUNS(d, HL_AP[k], m, s, hall_ap(a + d, HL_APG[k], hl.bx + s, m));
+        HL_RUNS(d, HL_AP[k], m, s, hall_ap(a + d, HL_APG[k], hl.bx + s, m, ld));
         hl.d[k] = (uint16_t)d;
         a += HL_AP[k];
     }
@@ -2070,6 +2085,7 @@ static void rev_hall(const int32_t *rev_in, int32_t size, int32_t damp, int32_t 
         s = d + len / 2u;
         s = s >= HL_N ? s - HL_N : s;
         lo = (b[d * HL_NL] < 0 ? -b[d * HL_NL] : b[d * HL_NL]) + (b[s * HL_NL] < 0 ? -b[s * HL_NL] : b[s * HL_NL]) < HL_LOUD;
+        hl.ldl |= !lo;
         if ((HL_LPM >> k) & 1u) {
             HL_RUNS(d, HL_N, m, s, hall_end_lp(b + d * HL_NL, hl.y[s] + k, m, g, lo, &hl.lp[k], &hl.le[k], kd));
         } else {

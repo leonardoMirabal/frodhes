@@ -114,6 +114,7 @@ static void rev_reset_state(void)
 }
 
 #define RV_RET(w) ((int32_t)(((int64_t)(w) * rk) >> 30) + (int32_t)((uint32_t)(w) >> 31))
+#define RV_RETH(w) ((int32_t)(((int64_t)(w) * rk + (1ll << 33)) >> 34))   /* (HALL: its taps 16x, rounded) */
 #define RV_SEND(v) ((v) * 258 * (254 - (v)) / 127)    /* MIX's law all in the send, the return x0.5; INFINITE as it
                                                          * was (rev_types.c) */
 #define RV_RK ((1 << 29) + 1)
@@ -132,7 +133,13 @@ __attribute__((noinline)) static void rv_send_ramp(const int32_t *L, const int32
 static FX_RAM __attribute__((noinline)) void rq_ret(int32_t *L, int32_t *R, int32_t rk)
 {
     uint32_t j;
-    for (j = 0; j < RQ_NC; j++) {
+    if (rv_cur == RV_HALL)                              /* (HALL's taps 16x: rounded once, to the output's LSB) */
+        for (j = 0; j < RQ_NC; j++) {
+            int32_t m = RV_RETH(rv_m[j]), s = RV_RETH(rv_s[j]);
+            L[j] += m + s;
+            R[j] += m - s;
+        }
+    else for (j = 0; j < RQ_NC; j++) {
         int32_t m = RV_RET(rv_m[j]), s = RV_RET(rv_s[j]);
         L[j] += m + s;
         R[j] += m - s;
