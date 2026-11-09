@@ -154,12 +154,21 @@ FX_RAM __attribute__((noinline)) static void tp_loop(int32_t *L, int32_t *R, int
  * 31x a held chord's d2): 256 a block (2.4 TONE steps; the whole range in 54 blocks, 0.31 s); TAPE silent (faded out)
  * or the output quiet for 2 blocks: TONE's own, so a TONE that has not moved renders as before */
 static int32_t tp_hk RH_SP_SEC(".data.fx_tphk") = -1;
+/* the playback head's speed for its filters (the bump, the HF loss): the motor's (tp_dq, where the last block left
+ * it), not the knob's (0.9.10: they stepped to each TIME step at once while the motor took its second to get there,
+ * a zipper of 2.5x a held TIME's d2 under the sweep). log2 speed re the reference, Q12; lv the knob's log2 T: the
+ * motor at speed (TAPE starting, or a TIME that has not moved) gives exactly the knob's */
+static int32_t tp_speed(int32_t lv)
+{
+    if (tp_dc >= 0) lv = log2_q12((uint32_t)tp_dq >> 12);
+    return PH_CL(TP_LT_REF - lv, -TP_S_MAX, TP_S_MAX);
+}
 __attribute__((noinline)) static void tp_block(int32_t *L, int32_t *R, uint32_t n, int32_t target, int32_t msk,
                                                int32_t sg16, int32_t fb, int32_t wet, int32_t dgt, int32_t gt)
 {
-    int32_t lv = log2_q12((uint32_t)target >> 8), s = PH_CL(TP_LT_REF - lv, -TP_S_MAX, TP_S_MAX), v = exp2_q16(s), h;
-    tp_kf = (int32_t)(((int64_t)TP_KF_REF * v) >> 16);
-    h = PH_CL(TP_LH_REF + s + (fx_p[FXP_DL_TONE] - 70) * TP_TONE_K, 0, (128 << 8) - 1);   /* log2 HF corner, Q8 re 250 Hz */
+    int32_t lv = log2_q12((uint32_t)target >> 8), s = PH_CL(TP_LT_REF - lv, -TP_S_MAX, TP_S_MAX), sq = tp_speed(lv), h;
+    tp_kf = (int32_t)(((int64_t)TP_KF_REF * exp2_q16(sq)) >> 16);
+    h = PH_CL(TP_LH_REF + sq + (fx_p[FXP_DL_TONE] - 70) * TP_TONE_K, 0, (128 << 8) - 1);   /* log2 HF corner, Q8 re 250 Hz */
     if (tp_hk < 0 || !tp_g || fx_quiet_blocks >= 2u) tp_hk = h;
     else h = tp_hk += PH_CL(h - tp_hk, -256, 256);
     tp_kh = FX_TAPE_HF[h >> 8] + (((FX_TAPE_HF[(h >> 8) + 1] - FX_TAPE_HF[h >> 8]) * (h & 255)) >> 8);
@@ -560,9 +569,9 @@ __attribute__((noinline)) static void tp_block_c(int32_t *L, int32_t *R, uint32_
 {
     uint32_t j;
     if (FXC_1) {
-        int32_t lv = log2_q12((uint32_t)target >> 8), s = PH_CL(TP_LT_REF - lv, -TP_S_MAX, TP_S_MAX), v = exp2_q16(s), h;
-        tp_kf = (int32_t)(((int64_t)TP_KF_REF * v) >> 16);
-        h = PH_CL(TP_LH_REF + s + (fx_p[FXP_DL_TONE] - 70) * TP_TONE_K, 0, (128 << 8) - 1);
+        int32_t lv = log2_q12((uint32_t)target >> 8), s = PH_CL(TP_LT_REF - lv, -TP_S_MAX, TP_S_MAX), sq = tp_speed(lv), h;
+        tp_kf = (int32_t)(((int64_t)TP_KF_REF * exp2_q16(sq)) >> 16);
+        h = PH_CL(TP_LH_REF + sq + (fx_p[FXP_DL_TONE] - 70) * TP_TONE_K, 0, (128 << 8) - 1);
         if (tp_hk < 0 || !tp_g || fx_quiet_blocks >= 2u) tp_hk = h;
         else h = tp_hk += PH_CL(h - tp_hk, -256, 256);
         tp_kh = FX_TAPE_HF[h >> 8] + (((FX_TAPE_HF[(h >> 8) + 1] - FX_TAPE_HF[h >> 8]) * (h & 255)) >> 8);

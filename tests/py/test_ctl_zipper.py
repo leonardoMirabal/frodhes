@@ -43,3 +43,10 @@ def test_comp_makeup_glides(binary):
     """MAKEUP 0 <-> 127 in one CC under the ringing chord: no click (17.3x before the glide)"""
     for a, b in ((0, 127), (127, 0)):
         assert flip_click("comp MAKEUP", a, b, binary) <= 3.0, (a, b)
+
+
+def test_tape_time_heads_follow_the_motor(binary):
+    """TAPE TIME swept: the head bump and the high-frequency loss move with the motor's speed (2.53x before)"""
+    z, zw = sweep_zipper("delay TAPE TIME", binary)
+    assert z <= 2.0, z
+    assert zw <= 2.3, zw          # (the echoes' own varispeed: 1.63x the pitch at the sweep's end, r^2 ~ 2.6 in d2)
