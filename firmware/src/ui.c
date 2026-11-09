@@ -1050,7 +1050,8 @@ FR_COLD static void draw_row(uint32_t k)
             cv_rect(0, 0, fw, RW_H, mt.fill);
             cv_rect(ex, 0, 2, RW_H, mt.edge);
             ui_row_drawn[k].kind = c && c->kind == EK_DETENT ? RK_DETENT : RK_AMOUNT;
-        } else if (hi) ui_row_drawn[k].kind = RK_CHOICE;   /* a choice: no fill, its whole name (TYPE: STAGE 77) */
+        } else if (hi || s == S_VERSION) ui_row_drawn[k].kind = RK_CHOICE;   /* a choice: no fill, its whole name
+                                                        * (TYPE: STAGE 77); VERSION, read only, drawn as one */
         aa_text_ov(6, S_TOP(9), &AF_S, kk, mt.tag);
         le = aa_text_ov(6, S_TOP(26), &AF_S, lab, hot ? UI_ACC : FC_LAB);   /* where the label ends */
         if (le < 6 + aa_text_w(&AF_S, kk)) le = 6 + aa_text_w(&AF_S, kk);

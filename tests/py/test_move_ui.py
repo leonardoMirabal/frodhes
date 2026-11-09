@@ -118,8 +118,10 @@ def test_screen_pages_are_the_levels():
     assert [p["title"] for p in pages] == [lvl["name"] for lvl in HIER.values()]
     for p, (lk, lvl) in zip(pages, HIER.items()):
         it = lambda k: next(i for i in lvl["params"] if i.get("key") == k)    # noqa: E731
-        # (a canvas cell is no knob on the screen; nor the GR meter's read-only cells: the screen draws its own meter)
-        knobs = [k for k in lvl["knobs"] if k is not None and it(k)["type"] != "canvas" and it(k).get("access") != "read"]
+        # (a canvas cell is no knob on the screen; nor the GR meter's read-only cells: the screen draws its own meter;
+        # VERSION is: a card of text, gen.VERSION_KEY)
+        knobs = [k for k in lvl["knobs"] if k is not None and it(k)["type"] != "canvas"
+                 and (it(k).get("access") != "read" or k in gen.VERSION_KEY)]
         got = [k["key"] for k in p["knobs"] if k is not None and k["type"] != "preset"]
         assert got == knobs, lk
         assert p["gate"] == lvl.get("visible_if", {}).get("equals", -1)
@@ -127,6 +129,9 @@ def test_screen_pages_are_the_levels():
             if k is None or k["type"] == "preset":
                 continue
             c = CHAIN[k["key"]]
+            if k["key"] in gen.VERSION_KEY:              # (read only: the screen's text card, the grid's string cell)
+                assert k["type"] == "text" and k["name"] == c["name"] and c["access"] == "read"
+                continue
             assert k["name"] == c["name"] and k["type"] == c["type"]
             assert k.get("options") == c.get("options") and k.get("min") == c.get("min")
     # (the PRESET card in the screen cell's place, its name over the holes 6-7, DELAY's mix on knob 8: 2026-10-30)

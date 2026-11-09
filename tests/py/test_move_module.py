@@ -217,7 +217,7 @@ def test_every_knob_resets_to_the_firmware_default():
     seen = set()
     for pg in pages:
         for k in pg["knobs"]:
-            if not k or k["type"] == "preset":
+            if not k or k["type"] in ("preset", "text"):     # (VERSION: read only, a double tap does nothing)
                 continue
             assert "def" in k, f"{pg['title']} {k['name']} ({k['key']}): no default, a double tap does nothing"
             r = rows[k["key"]]
