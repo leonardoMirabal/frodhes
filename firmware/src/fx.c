@@ -163,15 +163,27 @@ static const int32_t *fxc_mono;                          /* the block's dry voic
 #define C1_PRE_C0 0
 #endif
 #if C1_PRE_C0
-/* C1_PRE_C0 (a build switch, off by default): core 0 runs the mono front of the chain (COMP, EQ, DRIVE, FILTER: fx_front)
- * on each chunk right after its voices, before it hands the chunk to core 1, which starts at TREM (fx_process with
- * fxc_front_done). The front's code reads its own chunk (fxf_o / fxf_e / fxf_n, fxf_mono) and its own crossfade helpers
- * (xf_*_cf), so core 0 on chunk k + 1 and core 1 on chunk k share no range variable; the buffers they share (m, dry_c,
- * xf_d, drv_wet) are indexed from the block's start, each chunk's frames apart; the filter's crossfade scratch is its
- * own (fl_xs). Every frame goes through the stages in the same order: the same integers */
+/* C1_PRE_C0 (a build switch, off by default): the mono front of the chain (COMP, EQ, DRIVE, FILTER: fx_front) runs
+ * chunk by chunk, each chunk's on either core, chosen per chunk (frodhes.c c1_front_take): core 0 right after the
+ * chunk's voices, before it hands the chunk on, or core 1 in fx_process before TREM. The fronts run in order, one core
+ * at a time: fxf_done (the frames whose front is done, written by the core that ran it) says which chunks are left;
+ * core 0 takes chunk j only when fxf_done is j's start (core 1 has none left before it), core 1 only the chunks under
+ * fxf_done's end that core 0 has handed on (c1_rdy). The front's code reads its own chunk (fxf_o / fxf_e / fxf_n,
+ * fxf_mono) and its own crossfade helpers (xf_*_cf), so core 0 on chunk k + 1 and core 1 on chunk k share no range
+ * variable; the buffers they share (m, dry_c, xf_d, drv_wet) are indexed from the block's start, each chunk's frames
+ * apart; the filter's crossfade scratch is its own (fl_xs). Every frame goes through the same stages in the same
+ * order, every front over one chunk whoever runs it: the same integers on any placement */
 static uint32_t fxf_o, fxf_e = 256u, fxf_n = 256u;
 static const int32_t *fxf_mono;
-static volatile uint8_t fxc_front_done;                  /* (this block's front: done by core 0, chunk by chunk) */
+static volatile uint8_t fxc_front_whole;                 /* (the whole path's block: the front over fx_process's range) */
+static volatile uint32_t fxf_done;                       /* (this block's frames with their front done) */
+static uint32_t fxf_k = 32u;                             /* (the chunk: frodhes.c's n / C1_SUB, set with fxf_done) */
+static uint32_t fxf_rd(void)                             /* (read twice: a word read wrong once is not believed) */
+{
+    uint32_t a, b;
+    do { fr_c1_sync(); a = fxf_done; fr_c1_sync(); b = fxf_done; } while (a != b);
+    return a;
+}
 #endif
 /* xf_pre / xf_post for a chunk: the dry copy of the chunk, the blend's ramp from the block's start */
 __attribute__((noinline)) static int32_t xf_pre_c(int32_t w, int on, const int32_t *L, const int32_t *R, uint32_t n,
@@ -2695,6 +2707,14 @@ static void fx_front(const int32_t *mono, uint32_t n)
 #endif
 #undef C1PSF
 }
+static void fxf_chunk(const int32_t *mono, uint32_t o, uint32_t e, uint32_t n)   /* the front of one chunk, either core */
+{
+    fxf_o = o; fxf_e = e; fxf_n = n;
+    fx_front(mono, n);
+    fr_c1_sync();
+    fxf_done = e;
+    fr_c1_sync();
+}
 #endif
 FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /* (into app_audio, as it always was: the 0.9.3 delay fix took it over the inliner's limit, and the mode loop moved) */
 {
@@ -2724,7 +2744,12 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     }
 #if C1_PRE_C0
     for (j = fxc_o; j < fxc_e; j++) fx_L[j] = fx_R[j] = 0;
-    if (!fxc_front_done) { fxf_o = fxc_o; fxf_e = fxc_e; fxf_n = fxc_n; fx_front(mono, n); }   /* (core 0 did not) */
+    if (fxc_front_whole) { fxf_o = fxc_o; fxf_e = fxc_e; fxf_n = fxc_n; fx_front(mono, n); }   /* (the whole path) */
+    else {                                             /* the chunks whose front core 0 did not run, one by one */
+        uint32_t c, k = fxf_k;
+        for (c = fxc_o; c < fxc_e; c += k)
+            if (fxf_rd() <= c) fxf_chunk(mono, c, c + k, n);
+    }
 #else
     for (j = fxc_o; j < fxc_e; j++) { m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }
 #endif
