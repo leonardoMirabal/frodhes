@@ -479,9 +479,37 @@ static void drv_rest_ramp(int32_t *out, uint32_t n, int32_t z, int32_t *last)
     }
     *last = out[n - 1u];
 }
+#if FR_C1
+/* drv_rest_ramp for a chunk (fx.c fxc_o / fxc_e): its tests read a chunk's own samples only, when it runs (in[n / 2],
+ * in[n - 1] and out[n - 1] are later chunks': not rendered yet, and with core 1's chunks taken late or merged the
+ * whole-block test read other samples, the output timing-dependent; it also added the ramp to later chunks' input).
+ * The ramp starts at the first chunk (the last block ended on L != 0, in[0] and out[0] zero), goes on while in[n / 2]
+ * and in[n - 1] are zero as their chunks come, and stops at out[n - 1] != 0 (its chunk unramped): wherever all five
+ * tests pass, as one core's, sample for sample; one core would not have ramped a block whose later test fails (a
+ * note starting in it), two cores ramp its chunks before that one (L < 2^16: a DC of a few LSB fading under it) */
+static int32_t drv_rr_l;
+static uint8_t drv_rr_on;
+static void drv_rest_ramp_c(int32_t *out, uint32_t n, int32_t z)
+{
+    uint32_t i, o = fxc_o, e = fxc_e;
+    if (FXC_1) { drv_rr_l = drv_rlast; drv_rr_on = drv_rr_l && z && !out[0]; }
+    else if (!z) drv_rr_on = 0;
+    if (FXC_Z && out[n - 1u]) drv_rr_on = 0;
+    if (drv_rr_on)
+        for (i = o; i < e; i++) out[i] += drv_rr_l * (int32_t)(n - 1u - i) / (int32_t)n;   /* (as drv_rest_ramp) */
+    if (FXC_Z) drv_rlast = out[n - 1u];
+}
+#endif
 static void drv_run(uint32_t t, const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)   /* t >= 2 */
 {
+#if FR_C1
+    int32_t z = 1;                                      /* (this chunk's samples of the three: before the run) */
+    if (FXC_1) z &= !in[0];
+    if (fxc_o <= (n >> 1) && (n >> 1) < fxc_e) z &= !in[n >> 1];
+    if (FXC_Z) z &= !in[n - 1u];
+#else
     int32_t z = !(in[0] | in[n >> 1] | in[n - 1u]);     /* (before an in-place run overwrites in) */
+#endif
     switch (t) {
     case 2: drv_khlon_run(in, out, n, c); break;
     case 3: drv_tsh8_run(in, out, n, c); break;
@@ -489,7 +517,11 @@ static void drv_run(uint32_t t, const int32_t *in, int32_t *out, uint32_t n, con
     case 5: drv_bhlue_run(in, out, n, c); break;
     default: break;
     }
+#if FR_C1
+    drv_rest_ramp_c(out, n, z);
+#else
     drv_rest_ramp(out, n, z, &drv_rlast);
+#endif
 }
 
 /* ---- the dispatch ---------------------------------------------------------------------------------------------- */
