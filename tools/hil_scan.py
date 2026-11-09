@@ -953,9 +953,12 @@ def effects(r, rep):
 
 @test
 def bypass(r, rep):
-    """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs no effects at all"""
+    """the FX button (CC 111): with typical effects on vs bypassed, and bypassed vs the compressor alone (the bypass
+    keeps the compressor: FR_BYP_KEEP_CMP, the user 2026-11-08 "leave compressor aside of the efx off button")"""
     r.dry()
     a = r.take(1.5, CHORD)
+    r.dry(CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
+    d = r.take(1.5, CHORD)
     r.dry(PH_SW=127, PH_DEPTH=80, CP_SW=64, CP_DEPTH=64, REV=50, DRIVE=30, CMP_SW=127, CMP_AMT=50, CMP_GAIN=15)
     b = r.take(2.2, CHORD)
     r.cc_raw(111, 127)
@@ -963,14 +966,19 @@ def bypass(r, rep):
     c = r.take(1.5, CHORD)
     r.cc_raw(111, 0)
     lv = []
-    for x in (a, b, c):
+    for x in (a, b, c, d):
         i = max(onset(x, t=0.05), 0)
         lv.append(lufs(x[i:i + int(1.1 * FS)] / 32768.0))
-    rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2])
+    rep["bypass"] = dict(no_fx=lv[0], fx_on=lv[1], bypassed=lv[2], comp_only=lv[3])
     # the compressor as the panel switches it on (THRESH up: +2.8 dB makeup); before, it ran with no makeup and the
-    # effects-on level sat 5 dB under the bypass by construction
-    ok = abs(lv[2] - lv[0]) < 0.5 and abs(lv[1] - lv[2]) < 3
-    return ok, f"no effects {lv[0]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} LUFS"
+    # effects-on level sat 5 dB under the bypass by construction.
+    # THRESHOLD (2026-11-09): the bypass is judged against the compressor alone (its settings as the effects-on row's),
+    # within 0.5 LU as before; no effects at all is information. Since b2c9ab1b the bypass keeps the compressor, so
+    # against no effects it reads its make-up: +2.2 LU on the host (the coordinator saw +0.8 on its run), by design (the
+    # user's decision 2026-11-08); bypassed re the compressor alone +0.01 LU (host)
+    ok = abs(lv[2] - lv[3]) < 0.5 and abs(lv[1] - lv[2]) < 3
+    return ok, (f"no effects {lv[0]:.1f}, compressor alone {lv[3]:.1f}, effects on {lv[1]:.1f}, bypassed {lv[2]:.1f} "
+                f"LUFS (bypassed re the compressor alone {lv[2] - lv[3]:+.2f} LU)")
 
 
 FXALL = [  # (name, settings, expected: LU re clean within +-tol)
