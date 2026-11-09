@@ -149,7 +149,7 @@ static FX_RAM __attribute__((noinline)) void rq_ret(int32_t *L, int32_t *R, int3
         R[j] += m - s;
     }
 }
-#if FR_C1
+#if FR_CHUNK
 /* fx_reverb for a chunk (fx.c fxc_o / fxc_e): the settings, MIX's send and return at the first chunk, the control
  * blocks of the chunk */
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)

@@ -94,6 +94,15 @@ static void fr_ramx_clear(void)
 #else
 #define FX_RAM FR_RAM
 #endif
+/* FR_CHUNK: the block in chunks of 32 frames (engine.c eng_begin / eng_chunk / eng_end, fx.c fx_process's [fxc_o,
+ * fxc_e)), the whole block's integers: FR_C1's machinery, on its own for one core (the Move, the plugin: FR_LAT_HALF
+ * below 256 renders a block over several calls). The full-rate REVERB TYPEs only (FR_REV_HQ) */
+#ifndef FR_CHUNK
+#define FR_CHUNK FR_C1
+#endif
+#if FR_C1 && !FR_CHUNK
+#error "FR_C1: the chunks (FR_CHUNK 1)"
+#endif
 /* FR_LAT_HALF (a build switch, latency study: APP_DEFS="-DFR_C1=1 -DFR_LAT_HALF=128"): the I2S half buffer (the ISR's
  * period and the output's buffering) in frames, 256 by default. Below 256 the app keeps its 256-frame block (every
  * once-a-block decision, ramp, counter and LFO as before) and renders it over 256 / FR_LAT_HALF interrupts, chunk by
@@ -105,8 +114,8 @@ static void fr_ramx_clear(void)
 #endif
 #define FR_LAT (FR_LAT_HALF != 256u)
 #if FR_LAT
-#if !FR_C1
-#error "FR_LAT_HALF: the two-core build's chunks only (FR_C1)"
+#if !FR_CHUNK
+#error "FR_LAT_HALF: the chunks only (FR_C1, or FR_CHUNK 1)"
 #endif
 _Static_assert(FR_LAT_HALF == 128u || FR_LAT_HALF == 64u || FR_LAT_HALF == 32u, "FR_LAT_HALF: 128, 64 or 32 frames");
 #define HALF_FRAMES FR_LAT_HALF
@@ -117,6 +126,9 @@ _Static_assert(FR_LAT_HALF == 128u || FR_LAT_HALF == 64u || FR_LAT_HALF == 32u, 
 #define FR_LAT_TAIL 0u                          /* 32: each interrupt sends its frames 32 late (app_audio) */
 #endif
 _Static_assert(FR_LAT_TAIL == 0u || FR_LAT_TAIL == 32u, "FR_LAT_TAIL: 0 or 32 frames");
+#if FR_LAT_TAIL && !FR_C1
+#error "FR_LAT_TAIL: two cores only (core 1 runs the tail)"
+#endif
 /* the bar engine's note starts (bars.c bar_init: 16 coefficient sets each, ~170 us on the FM-1, estimated from
  * hil_cpu) all fall in a block's first interrupt (eng_begin): at most BAR_NA x FR_LAT_HALF / 256 a block (7 of 14 at
  * 128: the 256-frame build's starts per frame), the rest the next block, in order, as the starts past BAR_NA always
@@ -514,7 +526,7 @@ FR_COLD static void host_race_check(void)
     }
 }
 #endif
-#if FR_LAT
+#if FR_LAT && FR_C1
 /* FR_LAT_HALF below 256 (the top of this file): each interrupt renders frames [lat_o, lat_o + n) of the 256-frame
  * block, as FR_C1's chunks: eng_begin at the block's first interrupt, eng_chunk per 32 frames, eng_end at its last;
  * core 1 one job an interrupt (c1_lat_job: the block's start work at the first, then the effects over the frames
@@ -734,6 +746,71 @@ static int lat_fl_ok(void)                      /* (FL_SLICE_OK, the interrupts 
 #endif
 }
 #endif
+#elif FR_LAT
+/* FR_LAT_HALF with FR_CHUNK on one core (the Move, the plugin; the FM-1 with FR_REV_HQ): each call renders frames
+ * [lat_o, lat_o + n) of the 256-frame block, 32 frames at a time: the voices (eng_begin at the block's first call,
+ * eng_mid at the others with FR_LAT_EV, eng_chunk, eng_end at its last), then the effects over the same frames
+ * (fx_process's range, out indexed from the block's start), as FR_C1 with core 1 held. CC 10's block: the voices whole
+ * at its first call. The block's once-a-block work at its last call. The same integers as the 256-frame build with
+ * FR_CHUNK (sync: test_latency.py), its frames out one call sooner */
+#define LAT_LB 256u
+static uint32_t lat_o, lat_ms0;                 /* the block's frames done before this call; fm1_ms at its first */
+static uint8_t lat_whole;                       /* this block: CC 10's */
+#if FR_LAT_EV
+static void eng_mid(uint32_t o);
+#endif
+static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
+{
+    uint32_t o = lat_o, e = o + n, j;
+    int32_t *ob = (int32_t *)(uintptr_t)((uintptr_t)out - (uintptr_t)o * 2u * sizeof *out);   /* (the block's start) */
+#ifndef DINGHY_HOST
+    uint32_t t0 = fm1_ticks(), us;
+#endif
+    if (!o) {
+        lat_ms0 = fm1_ms;
+        lat_whole = fx_reset_req != 0;
+        if (lat_whole) {
+            eng_render(voice_mono, LAT_LB);
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+            host_race_check();
+#endif
+        } else {
+            fx_pre_c();
+            eng_begin(LAT_LB);
+        }
+    }
+#if FR_LAT_EV
+    else if (!lat_whole) eng_mid(o);            /* (note-ons with a free voice: from this call's first frame) */
+#endif
+    fxc_ce = e;                                 /* (fx.c's gate: this call's frames end there) */
+    for (j = o; j < e; j += 32u) {
+        if (!lat_whole) {
+            eng_chunk(voice_mono, j, j + 32u);
+            if (j + 32u == LAT_LB) eng_end(voice_mono, LAT_LB);
+        }
+        fxc_o = j; fxc_e = j + 32u; fxc_n = LAT_LB;
+        fx_process(voice_mono, ob, LAT_LB);
+    }
+    if (lat_whole && !o) rh_side_on = 0;        /* (the voices CC 10 ended: as FR_C1) */
+    if (e == LAT_LB) {                          /* the block's end */
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+        if (!lat_whole) host_race_check();
+#endif
+        blk_ph[0] = tw_ph; blk_ph[1] = cp_ph; blk_ph[2] = ph_ph; blk_ph[3] = lfo_ph; blk_ph[4] = bar_mot_ph;
+        blk_ms = lat_ms0;
+        blk_n = blk_n + 1u;
+        lat_o = 0;
+    } else
+        lat_o = e;
+#ifndef DINGHY_HOST
+    us = (fm1_ticks() - t0) / 24u;
+    prof_us = us;
+    if (us > prof_max_us) prof_max_us = us;
+    prof_over = us > 5000u * FR_LAT_HALF / LAT_LB ? prof_over + 1u : 0u;   /* (two calls over 5.0 ms x n / 256) */
+    if (prof_over >= 2u) { eng_shed_req = 1; prof_over = 0; }
+#endif
+}
+static int lat_mid(void) { return lat_o != 0u; }   /* (the main loop: a block under way, FR_LAT && FR_C1 above) */
 #else
 /* noinline (0.9.5): with the filter and the tremolo out of it, app_audio became small enough for the compiler to
  * inline it into the audio interrupt (fm1_alnk0_irq): its own function, as before (tools/build.py counts its loops) */

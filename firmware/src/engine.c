@@ -262,7 +262,7 @@ static void eng_render(int32_t *mono, uint32_t n)
     }
 }
 
-#if FR_C1
+#if FR_CHUNK
 /* FR_C1 (frodhes.c app_audio): the block in chunks, the voices of chunk [o, e) at a time: eng_begin, eng_chunk for
  * each chunk in order, eng_end give eng_render's integers exactly (mono and rh_side). eng_begin does what eng_render
  * does before the render (the TYPE change, the ring, the shed) and the engine's own block start (rh_begin / bar_begin:

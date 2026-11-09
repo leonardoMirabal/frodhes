@@ -1021,7 +1021,7 @@ FR_RAM __attribute__((noinline)) static void bar_pair(bar_voice_t *v, uint32_t o
     }
 }
 
-#if !FR_C1
+#if !FR_CHUNK
 /* the pulse into the force slots BAR_XT(0 .. nF)[2] as F << 12, F exactly the Q15 force of before (the kernels' be scales it) */
 FR_RAM __attribute__((noinline)) static uint32_t bar_force(bar_voice_t *v)
 {
@@ -1091,7 +1091,7 @@ static void bar_damper_step(bar_voice_t *v)
     }
 }
 
-#if !FR_C1
+#if !FR_CHUNK
 /* ---- the output loops (out of line, pointer form): the voice's gain into the mix, = for the block's first voice (no
  * zero pass), += for the others; _rad: + the tube's radiation wt x1 >> 28 (the discs parked open), as bar_x += it
  * before the gain; bar_fade*: the steal fade (Q15, BAR_FADE_STEP a sample, to 0), returns where it ends */

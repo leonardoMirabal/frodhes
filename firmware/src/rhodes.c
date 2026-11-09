@@ -2217,7 +2217,7 @@ static __attribute__((noinline)) void rh_render(int32_t *mono_out, uint32_t n)  
     rh_held_bits = held;
     rh_active_bits = act;
 }
-#if defined(FR_C1) && FR_C1
+#if defined(FR_CHUNK) && FR_CHUNK
 /* FR_C1 (engine.c eng_begin / eng_chunk / eng_end, frodhes.c app_audio): the block in chunks of frames [o, e), every
  * voice's frames of a chunk, then that chunk's post chain (the noises, RLC, body, Q15, the side), so core 1 runs one
  * chunk's effects while core 0 renders the next. The same integers as rh_render over the block: rh_voice_sub is per

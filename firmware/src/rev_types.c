@@ -208,8 +208,8 @@ __attribute__((noinline)) static void rv_send_ramp(const int32_t *L, const int32
         rv_in[j] = clampi(FX_HC(1, (int32_t)(((int64_t)((L[j] + R[j]) >> 1) * (q >> 5)) >> 15), -131071, 131071), -131071, 131071);
     }
 }
-#if FR_C1
-#error "FR_C1: the full-rate REVERB TYPEs only (FR_REV_HQ 1: rev_hq.c's fx_reverb runs in chunks)"
+#if FR_CHUNK
+#error "FR_CHUNK (FR_C1 too): the full-rate REVERB TYPEs only (FR_REV_HQ 1: rev_hq.c's fx_reverb runs in chunks)"
 #endif
 static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
 {

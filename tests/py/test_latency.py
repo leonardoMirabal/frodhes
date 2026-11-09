@@ -70,6 +70,31 @@ def test_lat128_same_integers_core1_faults(c1, tail):
     assert same_shifted(a, b, tail)
 
 
+ONE = {"fm1hq": ["-DFR_REV_HQ=1", "-DFR_VOICES=14u"],                    # the FM-1 one core, the full-rate reverb
+       "move": ["-DFR_HQ=1", "-DFR_REV_HQ=1", "-DFR_VOICES=16u", "-DFR_BYP_KEEP_CMP=1"]}   # (Makefile MOVE_DEFS)
+
+
+def one_bin(cfg, half=256, chunk=1, caps=1):
+    """FR_CHUNK without FR_C1 (the Move, the plugin; the FM-1 with FR_REV_HQ): the 256-frame block in 32-frame
+    chunks on one core; half < 256: FR_LAT_HALF. chunk 0: the plain build (caps: the half's note starts a block)"""
+    k = 256 // half
+    d = ONE[cfg] + (["-DFR_CHUNK=1"] if chunk else []) + ([f"-DFR_LAT_HALF={half}u"] if chunk and half != 256 else [])
+    if not chunk and k > 1:
+        d += [f"-DBAR_START_MAX=(BAR_NA/{k}u)", f"-DRH_START_MAX=(RH_NA/{k}u)"]
+    return build(os.path.join(ROOT, "build", "host", f"one_{cfg}_{half}_c{chunk}", "frodhes"), d)
+
+
+@pytest.mark.parametrize("cfg,half", [("fm1hq", 256), ("fm1hq", 128), ("move", 256), ("move", 128), ("move", 64)])
+@pytest.mark.parametrize("engine", [0, 1, 2])
+def test_chunk_one_core_same_integers(cfg, half, engine):
+    """FR_CHUNK on one core renders the plain build's integers (whole blocks), and with FR_LAT_HALF in sync mode the
+    plain build's with the half's start caps"""
+    lines = take(engine=engine, end=3000)
+    a, _ = wav(f"one_ref_{cfg}_{half}_{engine}", lines, one_bin(cfg, half, chunk=0))
+    b, _ = wav(f"one_{cfg}_{half}_{engine}", lines, one_bin(cfg, half), env={"FRODHES_LAT_SYNC": "1"})
+    assert same_shifted(a, b, 0)
+
+
 def onsets(lines_t, x, half):
     """each note's onset: the first non-zero frame after its arrival; its output time on the FM-1's clock: the
     interrupt holding frame f renders at host ms ceil((f // half + 1) x half x 1000 / FS) and plays one half buffer

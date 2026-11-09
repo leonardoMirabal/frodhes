@@ -394,7 +394,7 @@ static const int32_t *dr_os2(const int32_t *m, uint32_t n, int32_t gq, int32_t d
     return y;
 }
 
-#if FR_C1
+#if FR_CHUNK
 /* dr_os2 for a chunk (fx.c fxc_o / fxc_e): samples fxc_o .. fxc_e of the block into drv_wet (indexed from the block's
  * start, as the loops read it), the gain's ramp from the block's start */
 static const int32_t *dr_os2_c(const int32_t *m, int32_t gq, int32_t dgq, int32_t bias, int32_t b0)
@@ -536,7 +536,7 @@ static DRV_BSS volatile uint8_t drv_rst_req;
  * place, nothing else; else into drv_wet, then the blend with dr_w ramping toward wt by 64 every 4 samples (46 ms,
  * as the classic drive; 4096 a block). The TYPE's wet shares are multiples of 256 (MIX v: (258 v + 128) & ~255), so
  * the ramp's step is exact and every block ends on its value. */
-#if FR_C1
+#if FR_CHUNK
 /* fx_drive_types, drv_switch's use and fx_drive for a chunk: the switch, the TYPE's settings and the blend's ramp at the
  * first chunk (dr_sal set there: dr_w's value at the block's end, which fx_spread's first chunk reads); the TYPE's run
  * gets the chunk (drv_<name>_run with fxc_o / fxc_e) */
