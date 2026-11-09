@@ -12,10 +12,16 @@
  *                onto the app's milliseconds, resamples for other rates and hands out float. The user presets (files)
  *                are bridge.c's too.
  *
- * Time (as the Move, move/move_bridge.h, and the host build, tests/host.c): the app runs on host milliseconds. Each
- * step: ms + 1, the events due by then into the app's MIDI ring / applied, every 256 frames owed app_audio(256) into
- * the slot's FIFO, then one pass of app_main() (a coroutine) up to its next platform_poll(). A 44.1 kHz render of a
- * MIDI script is therefore the host build's render of the same script, sample for sample (Gate D, tools/gate_d.py).
+ * Time. The app runs on host milliseconds: each step is one, and every 256 frames owed app_audio(256) renders a block
+ * into the slot's FIFO. Two ways to place the events:
+ *   exact  (the plugin's own) each event carries the app frame it is for, in 1/256 frame (putx). A step hands the
+ *          app the events for the next block to render, each with its place in that block (web_hal.c
+ *          web_ofs_next), runs one pass of app_main() (a coroutine) up to its next platform_poll(), then renders
+ *          what is owed: a note starts at its own sample in the block (rhodes.c / bars.c, DINGHY_PLUGIN only).
+ *   ms     (the host build's, tests/host.c, and the Move's, move/move_bridge.h: the test modes) each event carries
+ *          the host millisecond it is due at (put); a step: ms + 1, the events due into the app's MIDI ring /
+ *          applied, the audio owed, then the app_main() pass. A 44.1 kHz render of a MIDI script is the host build's
+ *          render of the same script, sample for sample (Gate D, tools/gate_d.py).
  *
  * Threads (CLAP's): boot / reset / state reads on the main thread; put / step / read on the audio thread; drain on
  * the main thread only while the instance is not processing (CLAP's flush outside processing). Never both at once
@@ -95,6 +101,11 @@ typedef struct frp_slot_api {
     int (*fact_info)(uint32_t i, char *name, uint32_t n, uint8_t *vals);   /* any thread: factory preset i's name
                                           * ("SUITCASE") and values (FRP_NPARAM_APP bytes; either may be NULL) */
     uint32_t (*room)(void);              /* the thread that puts: how many more events fit the queue now */
+    int (*putx)(int kind, uint32_t at_q8, uint32_t a, int32_t v);   /* an exact event (bridge.h: Time): at_q8 the app
+                                          * frame it is for (the FIFO's frame count: efr) x 256, modulo 2^32 */
+    void (*set_exact)(int on);           /* the step's order: 1 exact, 0 ms (the test modes) */
+    uint32_t (*efr)(void);               /* the app frame the next read gives (frames read since the boot) */
+    uint32_t (*efw)(void);               /* the first app frame of the next block to render */
 } frp_slot_api_t;
 
 #define FRP_SLOT_DECL(n) extern const frp_slot_api_t frp_slot_##n;
@@ -107,7 +118,8 @@ FRP_SLOT_DECL(12) FRP_SLOT_DECL(13) FRP_SLOT_DECL(14) FRP_SLOT_DECL(15)
 int frp_user_get(uint32_t k, uint8_t *vals, char *name);
 
 /* ---- the instance (bridge.c) */
-#define FRP_LAT_MS 10u                   /* the events' schedule ahead of the app (and the output's pre-roll): 10 ms */
+#define FRP_LAT_MS 10u                   /* the ms test modes: the events' schedule ahead of the app (and the output's
+                                          * pre-roll), 10 ms */
 typedef struct frp_inst frp_inst_t;
 frp_inst_t *frp_inst_new(void);          /* main thread: claims a slot (none: 16 in use, plays silence) */
 void frp_inst_free(frp_inst_t *in);

@@ -95,6 +95,9 @@ typedef struct {
     const int16_t *pthump;
     uint32_t prate_thump;
     int16_t pbuf[BAR_PLEN + 2];
+#ifdef DINGHY_PLUGIN
+    uint16_t pdly;                                  /* the plugin: samples before the pulse starts (rhodes.c fr_ofs_apply) */
+#endif
     uint16_t felt_n;
     int32_t felt_lp;
     int32_t lvl, lvl0;                          /* the block's mode sum, the highest since the strike (bar_left) */

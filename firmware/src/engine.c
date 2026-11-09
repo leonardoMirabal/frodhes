@@ -44,11 +44,20 @@ static uint8_t eng_pedal_cc;                   /* ISR: the last pedal level (han
 #endif
 static volatile uint32_t eq[32] ENG_OWN_SECTION;
 static volatile uint32_t eq_w, eq_r, eq_drop;
+#ifdef DINGHY_PLUGIN
+static uint16_t eq_ofs[32];                    /* the desktop plugin: each event's place in its block (web_hal.c
+                                                * fr_ev_ofs, 1/256 sample): a note starts there (rhodes.c, bars.c) */
+static uint16_t bar_ofs_in;                    /* the event bar_strike takes: its place (0 outside eng_render's ring
+                                                * loop: a note that waited for a steal's fade starts at the block's start) */
+#endif
 
 static void eng_post(uint32_t type, uint32_t note, uint32_t val)
 {
     uint32_t w = eq_w;
     if (w - eq_r >= 32u) { eq_drop++; return; }
+#ifdef DINGHY_PLUGIN
+    eq_ofs[w & 31u] = fr_ev_ofs;
+#endif
     eq[w & 31u] = type << 28 | (note & 127u) << 16 | (val & 0xFFFFu);
     RING_PUBLISH();
     eq_w = w + 1u;
@@ -184,6 +193,11 @@ static void eng_render(int32_t *mono, uint32_t n)
     if (!eng_swapping)                                              /* events wait while the old engine fades */
         while (eq_r != eq_w) {
             uint32_t e = eq[eq_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu;
+#ifdef DINGHY_PLUGIN
+            rh_ofs_in = bar_ofs_in = eq_ofs[eq_r & 31u];   /* (rh_post and bar_strike take it; a note that waits
+                                                            * for the next block starts at its start) */
+            eq_ofs[eq_r & 31u] = 0;
+#endif
             if (eng_cur == ENG_BARS ? type == EV_NOTE_ON && !bar_strike(note, val) : ev_w - ev_r >= 32u) break;
                                                                     /* every voice waits for a note (BUGHUNT #21):
                                                                     * this one next block, in order; the Rhodes'
@@ -196,6 +210,9 @@ static void eng_render(int32_t *mono, uint32_t n)
             else if (type == EV_PEDAL) bar_pedal(val);
             else if (type == EV_ALL_OFF) bar_all_off();
         }
+#ifdef DINGHY_PLUGIN
+    rh_ofs_in = bar_ofs_in = 0;
+#endif
     if (eng_shed_req) {
         eng_shed_req = 0;
         if (eng_cur == ENG_RHODES) rh_shed_req = 1; else bar_shed();

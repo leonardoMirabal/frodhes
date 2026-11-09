@@ -74,12 +74,12 @@ while the plugin is loaded, not in the project yet.
 | MIDI learn | any knob (and TUNE, PRESET, SUSTAIN, BYPASS) learns the next CC; a learned CC comes before the device's CC map; forget one or all; saved with the project |
 | State | the sound as the Move saves it (the 256-byte settings record and the sound it came from) plus the plugin's own keys (settings, learned CCs, SUSTAIN, EFFECTS BYPASS, the preset's name; version "pv" 2). A state without them (the first builds, a Move track) loads them as defaults; a broken or cut state is refused and changes nothing. The "engine" key is always written as HQ (an older build then loads the sound on its HQ engine) and never read: a state saved with ENGINE CLASSIC loads on HQ, 24 voices, and saves again as HQ |
 | Tempo | the tempo source above (the delay's and the LFOs' sync) |
-| Sample rates | 44.1 kHz: the app's own samples. 48 kHz: the FM-1's own USB resampler, the FM-1's USB stream bit for bit. Any other rate from 1 to 1536 kHz: a windowed-sinc resampler (error under 1 LSB of 16 bits in the passband) |
+| Sample rates | the engine always runs at 44.1 kHz, the same integers as the FM-1. 44.1 kHz: its own samples. 88.2, 176.4 and 352.8 kHz: 2x half-band stages; 48, 96, 192 and 384 kHz: a 160/147 polyphase stage to 48 kHz, then 2x half-band stages (`plugin/src/frp_os.h`, linear phase). Flat to 20 kHz within 0.0001 dB; every image and alias of a tone up to 20 kHz at least 117 dB under it (`tools/plugin_os.py`: targets 0.05 dB and 100 dB). The engine's own top band (20 to 22.05 kHz) is rolled off by the first stage, as on any 44.1 kHz source. Any other rate from 1 to 1536 kHz: a windowed-sinc resampler (error under 1 LSB of 16 bits in the passband). The FM-1's own 48 kHz USB stream, bit for bit, is kept as a test mode (`FRODHES_PLUGIN_TEST=fm1`) |
 | Tail | reported to the host (CLAP tail; the VST3's tail samples and the Audio Unit's tail time follow), and the host is told when it changes: how long the sound can go on after the last event at the current settings, an upper bound measured per setting: the notes' release (under 2 s), the reverb by TYPE and DECAY (HALL up to 8 s, PLATE 7 s, INFINITE up to 59 s below SUSTAIN), the delay by FEEDBACK scaled by its TIME (a synced time counts as the longest), added up with a quarter more. INFINITE at SUSTAIN / FREEZE and the ANA / TAPE echoes that build up (FEEDBACK 115 / 114 and over) report an infinite tail. FX BYPASS: the notes' only |
-| Latency | reported to the host: 10 ms (441 frames at 44.1 kHz, 487 at 48 kHz, 11 ms or more at other rates). Events are placed on the millisecond the FM-1 would see them |
+| Latency | reported to the host, exact: 258 frames at 44.1 kHz (5.9 ms), 325 at 48 (6.8 ms), 602 at 88.2, 698 at 96, 1222 at 176.4, 1416 at 192 kHz (6.8 to 7.4 ms). Every note sounds exactly that long after its own sample, wherever it falls in the host's buffer and whatever the buffer size (`tools/plugin_timing.py`: within 1 frame at every rate; measured within 0.3 frame). The engine computes 256 frames at a time, and a note starts at its own sample inside that block; all of a block's events must be known before it is computed, so the latency is one block (5.8 ms) + 2 frames + the oversampler's delay (none at 44.1 kHz, 0.9 to 1.6 ms at the others). Controllers, parameter changes, note-offs and the pedal act from the start of the block that holds their sample (within 5.8 ms), as on the FM-1. A note that must wait for a stolen voice's fade starts with the next block, as on the FM-1 |
 | Instances | up to 16 in one host process; a 17th stays silent and says so in the host's log |
-| CPU | one instance at its worst (24 keys struck at velocity 127 with the pedal down, struck again every 2 s, every effect on at its heaviest, each REVERB TYPE, every engine) takes under 2 % of one core of the maintainer's arm64 laptop (2024) at 44.1 and 48 kHz, in every format: CLAP 1.7 %, VST3 1.9 %, Audio Unit 1.7 % (`tools/plugin_cpu.py`; the 16-voice HQ build before: CLAP 1.2 %). The app computes 256 frames at a time, so a host buffer under 256 frames gets the whole cost in one call of four or eight: at 32 frames the worst call took 0.75 of its 0.67 ms there (64 frames: 0.17); a slower machine wants a host buffer of 64 frames or more |
-| Floods | a host may send thousands of parameter, program or controller changes in one block (pluginval does): none is dropped. When the event queue runs low, the changes to one parameter (or one controller of a channel) wait in one entry that keeps the latest value, which is all the app would have played: it applies everything due before each millisecond's step. Notes are never merged |
+| CPU | one instance at its worst (24 keys struck at velocity 127 with the pedal down, struck again every 2 s, every effect on at its heaviest, each REVERB TYPE, every engine) takes under 2 % of one core of the maintainer's arm64 laptop (2024) at 44.1 and 48 kHz, in every format: CLAP 1.7 %, VST3 1.9 %, Audio Unit 1.7 % (`tools/plugin_cpu.py`; the 16-voice HQ build before: CLAP 1.2 %). Per rate (CLAP, the worst scenario; measured on a busy machine, so higher than the figures above): 44.1 kHz 2.4 %, 48 kHz 2.8 %, 88.2 kHz 2.8 %, 96 kHz 3.1 %, 176.4 kHz 2.8 %, 192 kHz 3.1 %: the oversampler itself takes 0.3 to 0.8 % of a core (`tools/plugin_os.py`). The app computes 256 frames at a time, so a host buffer under 256 frames gets the whole cost in one call of four or eight: at 32 frames the worst call took 0.75 of its 0.67 ms there (64 frames: 0.17); a slower machine wants a host buffer of 64 frames or more |
+| Floods | a host may send thousands of parameter, program or controller changes in one block (pluginval does): none is dropped. When the event queue runs low, the changes to one parameter (or one controller of a channel) wait in one entry that keeps the latest value, which is all the app would have played: it applies everything due before each block. Notes are never merged |
 | The UI core | `plugin/frp_ui_iface.h`: everything the plugin's own window shows and does (parameters with gestures, presets, settings, MIDI learn, SUSTAIN, BYPASS, meters, held notes), main thread only, never blocking the audio |
 
 Not in this build: the FM-1's sequencer, arpeggiator and chord buttons (their CCs are ignored, as on the Move), the
@@ -175,7 +175,16 @@ files as downloaded: Properties > Unblock). Linux needs no signing.
   headless host (`plugin/tests/clap_render.c`), is byte-identical to the host build's (the same list as the Move's
   Gate M, and the HQ scripts) against the host build at the plugin's switches (24 voices, HQ on every note); with
   random block sizes, 1-frame blocks and CLAP note events too; 48 kHz against the FM-1's resampler compiled
-  unchanged; the other rates against an FFT reference; the Intel slice under Rosetta.
+  unchanged; every other rate (the oversampler, the windowed sinc) against an FFT reference within the band; the
+  Intel slice under Rosetta. These comparisons run the plugin in its test mode with the host build's event time (the
+  millisecond grid); the core mode runs it as it ships.
+- The oversampler (`tools/plugin_os.py`, `plugin/tests/os_test.c`): 64 tones from 20 Hz to 20 kHz at every rate of
+  the 44.1 and 48 kHz families: the level within 0.05 dB, every other component 100 dB or more under the tone, the
+  tone exactly where the reported latency puts it.
+- The event timing (`tools/plugin_timing.py`): a Rhodes, a VIBES and a MARIMBA note played again 1 to 301 frames
+  later (across the engine's blocks) at 44.1 to 192 kHz comes exactly that much later (within 1 frame); at each rate
+  it sounds where it does at 44.1 kHz (the reported latency is the true one) and nulls against the 44.1 kHz render
+  within the band; random host buffer sizes give the same bytes.
 - The headless host's selftest: every parameter value's text reads back as itself, the state saves, loads and saves
   to the same bytes, the rates and latencies, 16 instances play and the 17th is silent.
 - Gate D's core mode (`tools/gate_d.py --only core`, also `tests/py/test_plugin_core.py`): the headless host's
@@ -270,6 +279,7 @@ there; the list above is the same for them (Reaper: also the CLAP, `Options > Pr
 | `plugin/CMakeLists.txt`, `plugin/cmake/` | the build: the pins, the 16 engine slots (the HQ build, 24 voices), the formats through clap-wrapper |
 | `plugin/src/engine_unit.c`, `slot_bridge.h` | one engine slot: the app over the browser's platform layer, with every symbol private to the slot; its presets, MIDI learn, settings, state |
 | `plugin/src/bridge.c`, `bridge.h` | the instance: its slot, time, events, the UI queue, the resamplers, the user preset files |
+| `plugin/src/frp_os.h` | the oversampler: 160/147 polyphase and 2x half-band stages |
 | `plugin/frp_ui_iface.h` | the UI core's interface (implemented in `frodhes_clap.c`) |
 | `plugin/src/frodhes_clap.c`, `clap_entry.cpp` | the CLAP plugin; clap-wrapper turns it into the VST3 and the Audio Unit |
 | `plugin/src/coro/` | the coroutine the app's main loop runs in (arm64, x86_64) |
@@ -281,6 +291,8 @@ there; the list above is the same for them (Reaper: also the CLAP, `Options > Pr
 | `plugin/tests/` | the headless host, the coroutine test, the parameter dump, the window's test host, the stress host |
 | `tools/plugin_hosts.py`, `plugin_au_render.swift`, `plugin_vst3_validator.sh` | the plugin in other hosts (Apple's AU host, a JUCE host), the VST3 SDK's validator |
 | `tools/plugin_cpu.py` | the CPU per instance at the worst case, per format and rate |
+| `tools/plugin_os.py`, `plugin/tests/os_test.c` | the oversampler's passband, rejection and timing |
+| `tools/plugin_timing.py` | the event timing at every rate (notes within 1 frame, the latency, the null against 44.1 kHz) |
 | `tools/plugin_dist.py`, `plugin/tests/vst3_render.cpp` | the dry-distortion gate through every format (the VST3 render host) |
 | `tools/plugin_deps.sh`, `plugin/deps.lock` | the pinned dependencies and test tools |
 | `tools/plugin_pack.sh`, `plugin_depcheck.py`, `plugin_asset.sh` | the packages, the self-contained check, the release's choice of packages |

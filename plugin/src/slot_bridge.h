@@ -10,6 +10,10 @@
  *          4. the audio owed: every 256 frames app_audio(256) into the FIFO (int32, MASTER at unity, no clip)
  *          5. one main-loop pass of app_main() (the coroutine) up to its next platform_poll()
  *          6. the inert parts kept off (below), the tempo source, the values published for the main thread
+ * That is the ms test modes' order (bridge.h: Time). As the plugin ships (exact), an event carries its app frame
+ * (sb_putx): step 2 hands over only the events for the next block to render, each MIDI message with its place in
+ * that block (web_hal.c web_ofs_next), and step 5 runs before step 4, so they play in that block, a note from its own
+ * sample (rhodes.c / bars.c, DINGHY_PLUGIN).
  *
  * The plugin's own parts live here too, so one published record and one state carry everything:
  *   MIDI       the velocity curve (TOUCH: MEDIUM = as played), the learned CCs before the default map (the app's own
@@ -46,7 +50,7 @@ _Static_assert(SB_NFACT == FRP_NFACTORY, "bridge.h FRP_NFACTORY: F01..F19 + F20.
 _Static_assert(MB_PX_FIRST == PR_NF + 1u && SB_PX_BASE == 35u, "move_presets.h follows presets.c (F20 = index 35)");
 _Static_assert(P_COUNT <= FRP_NPARAM_APP && P_COUNT < SB_LEARN_OWN, "the learn codes");
 
-typedef struct { uint8_t kind; uint32_t at, a; int32_t v; } sb_ev_t;
+typedef struct { uint8_t kind, x; uint32_t at, a; int32_t v; } sb_ev_t;   /* x: at is an app frame x 256 (exact) */
 typedef struct {                         /* the plugin's settings that are not in the app's record */
     uint8_t pgm, tempo_src, sync_all, sync_div;
     uint16_t bpm10;                      /* INTERNAL / MIDI CLOCK without a clock */
@@ -58,6 +62,7 @@ static struct {
     void *stack;
     int booted, first_now;
     uint32_t ms, owed;
+    int exact;                           /* the step's order (bridge.h: Time): 1 exact, 0 ms */
     int32_t fifo[2u * SB_FIFO];
     uint32_t fr, fw;
     sb_ev_t q[SB_Q];
@@ -648,16 +653,21 @@ static void sb_inert(void)
 }
 
 /* ---- the queue */
-static int sb_put(int kind, uint32_t at, uint32_t a, int32_t v)
+static int sb_put_any(int kind, int x, uint32_t at, uint32_t a, int32_t v)
 {
     uint32_t w = atomic_load_explicit(&sb.qw, memory_order_relaxed), r = atomic_load_explicit(&sb.qr, memory_order_acquire);
     sb_ev_t *e;
     if (w - r >= SB_Q) { sb.st.q_full++; return -1; }
     e = &sb.q[w & (SB_Q - 1u)];
-    e->kind = (uint8_t)kind; e->at = at; e->a = a; e->v = v;
+    e->kind = (uint8_t)kind; e->x = (uint8_t)x; e->at = at; e->a = a; e->v = v;
     atomic_store_explicit(&sb.qw, w + 1u, memory_order_release);
     return 0;
 }
+static int sb_put(int kind, uint32_t at, uint32_t a, int32_t v) { return sb_put_any(kind, 0, at, a, v); }
+static int sb_putx(int kind, uint32_t at_q8, uint32_t a, int32_t v) { return sb_put_any(kind, 1, at_q8, a, v); }
+static void sb_set_exact(int on) { sb.exact = on != 0; }
+static uint32_t sb_efr(void) { return sb.fr; }
+static uint32_t sb_efw(void) { return sb.fw; }
 static uint32_t sb_room(void)            /* the producer's side: events that still fit */
 {
     return SB_Q - (atomic_load_explicit(&sb.qw, memory_order_relaxed) - atomic_load_explicit(&sb.qr, memory_order_acquire));
@@ -676,15 +686,23 @@ static void sb_reset_now(void)           /* all notes off, the effects' state cl
     drv_rst_req = 0;
     for (t = 2u; t < DRV_N; t++) drv_reset(t);
 }
-/* apply the queued events; timed: only those due by sb.ms (and a full MIDI ring makes the rest wait) */
+/* apply the queued events; timed: only those due by sb.ms, an exact one only for the next block to render (and a
+ * full MIDI ring makes the rest wait). An exact MIDI message goes into the ring with its place in that block
+ * (web_hal.c web_ofs_next, 1/256 frame): app_main's pass right after takes it, the block after that plays it */
 static void sb_events(int timed)
 {
     for (;;) {
-        uint32_t r = atomic_load_explicit(&sb.qr, memory_order_relaxed);
+        uint32_t r = atomic_load_explicit(&sb.qr, memory_order_relaxed), ofs = 0;
         sb_ev_t *e;
         if (r == atomic_load_explicit(&sb.qw, memory_order_acquire)) return;
         e = &sb.q[r & (SB_Q - 1u)];
-        if (timed && e->at && (int32_t)(e->at - sb.ms) > 0) return;
+        if (e->x) {
+            int32_t d = (int32_t)(e->at - sb.fw * 256u);   /* (sb.fw: the next block's first frame) */
+            if (timed && d >= 65536) return;              /* (a later block's) */
+            if (d < 0) d = 0;                             /* (late: bridge.c counts it when it is put; or held back
+                                                           * by a flood: a full MIDI ring, a program change waiting) */
+            ofs = d > 65535 ? 65535u : (uint32_t)d;
+        } else if (timed && e->at && (int32_t)(e->at - sb.ms) > 0) return;
         if (e->kind == FRP_EV_MIDI || e->kind == FRP_EV_UINOTE) {
             uint8_t st = (uint8_t)e->a, d1 = (uint8_t)(e->a >> 8) & 127u, d2 = (uint8_t)(e->a >> 16) & 127u;
             uint8_t t = st & 0xF0u, ch = st & 0x0Fu;
@@ -698,7 +716,9 @@ static void sb_events(int timed)
             } else {
                 if (mq_w - mq_r >= SB_HOST_RING) { sb.st.ring_wait++; return; }   /* the rest wait a millisecond */
                 if (t == 0x90u && d2) d2 = sb_vel(d2);
+                web_ofs_next = (uint16_t)ofs;
                 web_midi(st, d1, d2);
+                web_ofs_next = 0;
                 sb.st.midi_out++;
             }
         } else if (e->kind == FRP_EV_PARAM) {
@@ -726,6 +746,7 @@ static void sb_step(void)
     sb_events(1);
     sb_state_apply();
     sb_user_apply();
+    if (sb.exact) coro_resume(&sb.co);   /* (exact: the events just handed over go into this step's block) */
     sb.owed += FRP_FS;
     while (sb.owed >= 1000u * HALF_FRAMES) {
         static int32_t blk[2u * HALF_FRAMES];
@@ -741,7 +762,7 @@ static void sb_step(void)
         sb.fw += HALF_FRAMES;
         sb.st.blocks++;
     }
-    coro_resume(&sb.co);
+    if (!sb.exact) coro_resume(&sb.co);
     sb_preset_watch();
     sb_inert();
     sb_publish();

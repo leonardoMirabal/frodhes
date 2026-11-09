@@ -3,7 +3,10 @@
 """Gate D (desktop plugin): the CLAP plugin renders what the host build renders, bit for bit, and its core works.
 
 The plugin (build/plugin/bundles/Frodhes.clap, make plugin) is driven by plugin/tests/clap_render.c, a headless CLAP
-host that plays a host script's MIDI and writes the WAV the host build writes (the 10 ms pre-roll skipped).
+host that plays a host script's MIDI and writes the WAV the host build writes (the latency skipped). The comparisons
+with the host build run the plugin in its test mode FRODHES_PLUGIN_TEST=ms (plugin/src/bridge.c: the host build's
+time, events on the millisecond grid acting from the next 256-frame block), rate48 in fm1 (that, and the FM-1's own
+48 kHz resampler); core runs the plugin as it ships (exact time: tools/plugin_timing.py tests that time itself).
 
 The plugin is HQ only (plugin/cmake/slots.cmake: the HQ switches, 24 voices on every engine): every mode compares it
 with the host build at the same switches with HQ on for every note (-DHQ_DEFAULT=1), "the host build" below.
@@ -13,18 +16,19 @@ with the host build at the same switches with HQ on for every note (-DHQ_DEFAULT
             (--quick: tests/hq and a subset of 12)
   blocks    a subset again with random block sizes (0..2048 frames a process call), 1-frame blocks and CLAP note
             events in place of raw MIDI: the same bytes
-  rate48    48 kHz: a subset against the host build's 44.1 kHz render through the FM-1's own USB
+  rate48    (the fm1 test mode) 48 kHz: a subset against the host build's 44.1 kHz render through the FM-1's own USB
             resampler, compiled unchanged (tests/uac_fir_test.c, stdin mode), sample for sample
-  rates     the other rates (8, 22.05, 88.2, 96, 192 kHz: the plugin's windowed-sinc resampler) against the host
-            build's 44.1 kHz render resampled by FFT, both band-limited below the resampler's cutoff: the error's RMS
-            <= 0.6 LSB and its peak <= 8 LSB (both WAVs are 16-bit: their rounding alone is ~0.4 LSB RMS); needs
-            numpy (make gate-d runs the venv)
+  rates     the other rates (48, 88.2, 96, 176.4, 192 kHz: the oversampler, plugin/src/frp_os.h; 8 and 22.05 kHz: the
+            windowed-sinc resampler) against the host build's 44.1 kHz render resampled by FFT, both band-limited
+            below 20 kHz (or the resampler's cutoff): the error's RMS <= 0.6 LSB and its peak <= 8 LSB (both WAVs are
+            16-bit: their rounding alone is ~0.4 LSB RMS); needs numpy (make gate-d runs the venv)
   x86_64    (macOS, universal build) an hq subset with the plugin's x86_64 slice under Rosetta, against an x86_64
             host build
   core      the plugin core: clap_render --coretest (24 voices on every engine, state, presets with user files in a fresh
             folder, automation and gestures, MIDI learn, tempo sources, SYNC ALL, SUSTAIN, FX BYPASS, velocity, MIDI
             CHANNEL); automation = the device's CC path (a sweep of six knobs as CLAP parameter events renders the
-            same bytes as the same sweep as MIDI CCs); the tempo: a synced delay's echo at the
+            same bytes as the same sweep as MIDI CCs, in exact time and in the ms test mode); the tempo: a synced
+            delay's echo at the
             host transport's 100 and 120 BPM is a quarter note late (600 / 500 ms, +-2 ms; needs numpy)
 
   tools/gate_d.py [--jobs 2] [--only hq,blocks,...] [--quick]
@@ -53,11 +57,19 @@ RENDER = PLUG_BUILD / "frp_clap_render"
 DEFS = ["-DFR_VOICES=24u", "-DFR_HQ=1", "-DFR_BYP_KEEP_CMP=1", "-DFR_REV_HQ=1"]
 NICE = ["nice", "-n", "15"]
 MODES = ["hq", "blocks", "rate48", "rates", "x86_64", "core"]
-RATES = [8000, 22050, 88200, 96000, 192000]
+RATES = [8000, 22050, 48000, 88200, 96000, 176400, 192000]
 
 
 def run(cmd, **kw):
     return subprocess.run(NICE + [str(c) for c in cmd], cwd=ROOT, capture_output=True, text=True, **kw)
+
+
+def test_env(test):
+    """the environment for clap_render: the plugin's test mode (bridge.c FRODHES_PLUGIN_TEST), None as it ships"""
+    env = {k: v for k, v in os.environ.items() if k != "FRODHES_PLUGIN_TEST"}
+    if test:
+        env["FRODHES_PLUGIN_TEST"] = test
+    return env
 
 
 def sha(p):
@@ -86,11 +98,11 @@ def host_render(binary, name, script, arch=None):
     return out.with_suffix(".wav")
 
 
-def plug_render(name, script, tag, args, arch=None):
+def plug_render(name, script, tag, args, arch=None, test="ms"):
     out = OUT / tag / (name + ".wav")
     out.parent.mkdir(parents=True, exist_ok=True)
     pre = ["arch", f"-{arch}"] if arch else []
-    r = run(pre + [RENDER, PLUGIN, script, out, *args])
+    r = run(pre + [RENDER, PLUGIN, script, out, *args], env=test_env(test))
     if r.returncode:
         return None, (r.stdout + r.stderr).strip().splitlines()[-1:] or [f"exit {r.returncode}"]
     return out, None
@@ -149,7 +161,8 @@ def mode_rate48(g, entries, fir):
     def one(e):
         (n, s), hostbin, eng = e
         ref = host_render(hostbin, n.replace("/", "_"), s)
-        w, err = plug_render(n.replace("/", "_") + "-" + eng, s, "rate48", ["--engine", eng, "--rate", "48000"])
+        w, err = plug_render(n.replace("/", "_") + "-" + eng, s, "rate48", ["--engine", eng, "--rate", "48000"],
+                             test="fm1")
         if not w or not ref.exists():
             g.check("rate48", f"{n} {eng}", False, f"no render {' '.join(err or [])}")
             return
@@ -190,7 +203,7 @@ def band_snr(ref_wav, wav):
     x, rate = rd(wav)
     n = len(ref) // 882 * 882                   # (n x rate / 44100 whole for every rate a multiple of 50 Hz)
     m = n * rate // 44100
-    band = min(20000.0, 0.96 * min(rate, 44100) / 2 * 0.95)
+    band = min(20000.0, 0.96 * min(rate, 44100) / 2 * 0.95)   # (the oversampler's passband; the sinc's below 44.1)
     f = np.fft.rfft(ref[:n], axis=0)
     f[np.fft.rfftfreq(n, 1 / 44100) > band] = 0
     g = np.zeros((m // 2 + 1, 2), complex)
@@ -242,39 +255,43 @@ def mode_core(g):
     shutil.rmtree(pdir, ignore_errors=True)
     pdir.mkdir(parents=True)
     r = subprocess.run(NICE + [str(RENDER), str(PLUGIN), "--coretest"], cwd=ROOT, capture_output=True, text=True,
-                       env={**os.environ, "FRODHES_PRESET_DIR": str(pdir)})
+                       env={**test_env(None), "FRODHES_PRESET_DIR": str(pdir)})
     for ln in r.stdout.splitlines():
         if ln.startswith("ok"):
             print(ln, flush=True)
     g.check("core", "coretest", r.returncode == 0, (r.stdout + r.stderr).strip().splitlines()[-1:] or ["no output"])
     shutil.rmtree(pdir, ignore_errors=True)
-    # automation = the device's CC path: the same sweep as CCs at T and as parameter events at T + 1 (a CC acts in the
-    # app's main-loop pass after that millisecond's audio, a parameter event before the next one's: the same block)
+    # automation = the device's CC path. In the ms test mode: the same sweep as CCs at T and as parameter events at
+    # T + 1 (a CC acts in the app's main-loop pass after that millisecond's audio, a parameter event before the next
+    # one's: the same block); in exact time (as the plugin ships) both at T: both act from the block holding T
     rows = param_rows()
     knobs = [3, 14, 19, 37, 41, 63]          # TREMOLO depth, DELAY mix, REVERB mix, LEVEL, FILTER cutoff, EQ low
     assert all(rows[k][1] == 127 and rows[k][2] for k in knobs), "the sweep's knobs: 0..127 with a CC"
     head = ["0 midi 0xB0 17 64", "0 midi 0xB0 88 40", "0 midi 0xB0 70 19", "20 midi 0x90 48 100",
             "25 midi 0x90 55 90", "30 midi 0x90 64 80", "35 midi 0x90 72 100"]
-    cc, pa = list(head), list(head)
+    cc, pa, px = list(head), list(head), list(head)
     t = 100
     for k in knobs:
         for v in list(range(0, 128, 3)) + list(range(127, -1, -5)):
             cc.append(f"{t} midi 0xB0 {rows[k][2]} {v}")
             pa.append(f"{t + 1} param {k} {v}")
+            px.append(f"{t} param {k} {v}")
             t += 2
     tail = [f"{t + 300} midi 0xB0 123 0", f"{t + 1500} end"]
     d = OUT / "core"
     d.mkdir(parents=True, exist_ok=True)
     (d / "sweep_cc.txt").write_text("\n".join(cc + tail) + "\n")
     (d / "sweep_param.txt").write_text("\n".join(pa + tail) + "\n")
-    for eng in ("hq",):
-        a, ea = plug_render(f"sweep_cc_{eng}", d / "sweep_cc.txt", "core", ["--engine", eng])
-        b, eb = plug_render(f"sweep_param_{eng}", d / "sweep_param.txt", "core", ["--engine", eng])
+    (d / "sweep_param_x.txt").write_text("\n".join(px + tail) + "\n")
+    for test, pfile in (("ms", "sweep_param.txt"), (None, "sweep_param_x.txt")):
+        tag = test or "exact"
+        a, ea = plug_render(f"sweep_cc_{tag}", d / "sweep_cc.txt", "core", ["--engine", "hq"], test=test)
+        b, eb = plug_render(f"sweep_param_{tag}", d / pfile, "core", ["--engine", "hq"], test=test)
         ok = a is not None and b is not None and a.read_bytes() == b.read_bytes()
-        g.check("core", f"automation {eng}", ok, f"CC sweep {sha(a)[:12] if a else ea}, parameter sweep "
+        g.check("core", f"automation {tag}", ok, f"CC sweep {sha(a)[:12] if a else ea}, parameter sweep "
                 f"{sha(b)[:12] if b else eb}")
         if ok:
-            print(f"ok    automation {eng}: a sweep of {len(knobs)} knobs ({len(cc) - len(head)} steps) as CLAP "
+            print(f"ok    automation ({tag}): a sweep of {len(knobs)} knobs ({len(cc) - len(head)} steps) as CLAP "
                   f"parameters = the same as MIDI CCs, byte for byte", flush=True)
     # the tempo: a DIG delay synced to 1/4, one short note: the echo comes a quarter note at the transport's tempo later
     try:
@@ -286,7 +303,7 @@ def mode_core(g):
            "0 midi 0xB0 106 0", "300 midi 0x90 72 127", "330 midi 0x80 72 0", "3000 end"]
     (d / "echo.txt").write_text("\n".join(scr) + "\n")
     for bpm in (100, 120):
-        w, err = plug_render(f"echo_{bpm}", d / "echo.txt", "core", ["--engine", "hq", "--tempo", str(bpm)])
+        w, err = plug_render(f"echo_{bpm}", d / "echo.txt", "core", ["--engine", "hq", "--tempo", str(bpm)], test=None)
         if not w:
             g.check("core", f"tempo {bpm}", False, " ".join(err or []))
             continue

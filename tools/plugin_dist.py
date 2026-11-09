@@ -126,7 +126,7 @@ def main():
     clap_b = os.path.join(a.bundles, "Frodhes.clap")
     vst_b = os.path.join(a.bundles, "Frodhes.vst3")
     au_b = os.path.join(a.bundles, "Frodhes.component")
-    lat = FS // 100                                         # the plugin's latency at 44.1 kHz: 441 frames (10 ms)
+    lat = 258                                               # the plugin's latency at 44.1 kHz: an app block + 2 frames
     env = dict(os.environ)
     env.pop("FRP_TEST_EXT", None)
     report, ok_all = [], True

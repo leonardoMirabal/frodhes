@@ -4,14 +4,15 @@
  *   clap_render PLUGIN SCRIPT OUT.wav [options]
  *       a host script's MIDI (tests/host.c format: "T midi ST D1 D2", "T end"; expect / shot / dump lines skipped)
  *       played through the plugin, written as the host build writes its WAV (16-bit stereo, the clip at +-32767). The
- *       events go in at the host frame whose millisecond is the script's (the plugin's clock, plugin/src/bridge.c:
- *       44.1 kHz: frame ceil(T x 44.1); 48 kHz: 48 T), as "due" in move/tests/move_replay.c: an event listed after a
- *       later one plays at the later time; another rate: frame ceil(T x rate / 1000). The output's first frames are
- *       the pre-roll (FRP_LAT_MS, 10 ms: 441 / 480 frames; another rate: the latency the plugin reports)
- *       and are not written: the rest is the host build's render of the script at 44.1 kHz (Gate D compares the
- *       sha256), and at 48 kHz the FM-1's USB resampler over it.
- *     --rate R                (44100; 48000 the FM-1's resampler; another rate from 1000 to 1536000 the plugin's
- *                             windowed-sinc resampler)
+ *       events go in at the host frame whose millisecond is the script's (44.1 kHz: frame ceil(T x 44.1); 48 kHz:
+ *       48 T; another rate: frame ceil(T x rate / 1000)), as "due" in move/tests/move_replay.c: an event listed after
+ *       a later one plays at the later time. The output's first frames (the latency the plugin reports) are not
+ *       written. With FRODHES_PLUGIN_TEST=ms in the environment (plugin/src/bridge.c: the host build's time) the rest
+ *       is the host build's render of the script at 44.1 kHz (Gate D compares the sha256), at other rates through
+ *       the plugin's oversampler; with FRODHES_PLUGIN_TEST=fm1 at 48 kHz the FM-1's USB resampler over it (the
+ *       480-frame pre-roll skipped: the resampler's own delay is in the reference too).
+ *     --rate R                (44100; another rate from 1000 to 1536000)
+ *     --offset N              every event N host frames later (tools/plugin_timing.py)
  *     --engine hq             accepted (the plugin is HQ only: 24 voices on every engine); any other value refused
  *     --block N               frames a process call (512); --block random:SEED for random sizes 0..2048
  *     --dialect midi|clap     notes as raw MIDI events (midi) or CLAP note events (clap); CC and the rest stay MIDI
@@ -48,7 +49,7 @@
 #include <clap/clap.h>
 #include "../frp_ui_iface.h"
 
-#define LAT_MS 10u                       /* plugin/src/bridge.h FRP_LAT_MS: the output's pre-roll */
+#define LAT_MS 10u                       /* plugin/src/bridge.h FRP_LAT_MS: the fm1 test mode's pre-roll */
 #define HOST_BLOCK 256u                  /* tests/host.c HALF_FRAMES */
 #define END_DEFAULT 6500u                /* tests/host.c: no "end" line */
 #define MAXEV 200000
@@ -350,7 +351,9 @@ static int tail_check(const clap_plugin_t *p, double rate, int block, int clap_n
 int main(int argc, char **argv)
 {
     double rate = 44100.0;
+    const char *tmode = getenv("FRODHES_PLUGIN_TEST");
     int block = 512, clap_notes = 0, rc, i, tailck = -1;
+    uint64_t offset = 0;
     unsigned end;
     uint32_t frames, pre, clips = 0;
     int16_t *pcm;
@@ -372,12 +375,14 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--tempo")) transport_bpm = atof(argv[i + 1]);
         else if (!strcmp(argv[i], "--tail-check")) tailck = !strcmp(argv[i + 1], "infinite");
         else if (!strcmp(argv[i], "--bench")) bench = atoi(argv[i + 1]);
+        else if (!strcmp(argv[i], "--offset")) offset = strtoull(argv[i + 1], 0, 10);
         else if (!strcmp(argv[i], "--host-vendor") && !strcmp(argv[i + 1], "wrapper")) {
             HOST.vendor = "The CLAP Wrapper Team";
             as_wrapper = 1;
         }
     }
     if ((rc = read_script(argv[2], rate, &end))) return rc;
+    for (uint32_t k = 0; k < nsev; k++) sev[k].h += offset;
     if (load(argv[1]) || !(p = create())) return 1;
     if (!p->activate(p, rate, 1, 4096)) { printf("FAIL activate at %.0f\n", rate); return 1; }
     if (!p->start_processing(p)) { printf("FAIL start_processing\n"); return 1; }
@@ -385,7 +390,7 @@ int main(int argc, char **argv)
     frames = (uint32_t)((uint64_t)end * 44100u / (1000u * HOST_BLOCK)) * HOST_BLOCK;   /* the host build's length */
     if (rate == 48000.0) frames = (uint32_t)((uint64_t)frames * 160u / 147u);          /* (the resampler's outputs) */
     else if (rate != 44100.0) frames = (uint32_t)floor(frames * rate / 44100.0);
-    pre = rate == 48000.0 ? 48u * LAT_MS : rate == 44100.0 ? 441u * LAT_MS / 10u : latency_of(p);
+    pre = tmode && !strcmp(tmode, "fm1") && rate == 48000.0 ? 48u * LAT_MS : latency_of(p);
     if (!(pcm = calloc((size_t)frames + 1u, 4u))) return 1;
     if (render(p, pcm, pre, frames, block, clap_notes, &clips)) { printf("FAIL render\n"); return 1; }
     if (bench) {
@@ -494,13 +499,19 @@ static int selftest(void)
     }
     printf("ok    state: %zu bytes, saved -> loaded in a second instance -> saved: the same (rescans %d)\n", m1.n, rescans);
     CHECK(!a->activate(a, 500.0, 1, 4096), "500 Hz refused");
-    CHECK(a->activate(a, 96000.0, 1, 4096) && pl->get(a) == 1056u, "96 kHz: latency %u", pl->get(a));
-    a->deactivate(a);
-    CHECK(a->activate(a, 48000.0, 1, 4096) && pl->get(a) == 487u, "48 kHz: latency %u", pl->get(a));
-    a->deactivate(a);
-    CHECK(a->activate(a, 44100.0, 1, 4096) && pl->get(a) == 441u, "44.1 kHz: latency %u", pl->get(a));
-    a->deactivate(a);
-    printf("ok    rates: 44100 (latency 441), 48000 (487), 96000 (1056) taken, 500 refused\n");
+    /* the latency (plugin/src/bridge.c): one app block (256 frames at 44.1 kHz) + 2 frames + the oversampler's delay
+     * (plugin/src/frp_os.h), placed exactly; 22.05 kHz: the windowed sinc's reach instead */
+    {
+        static const struct { double r; uint32_t lat; } L[] = { {44100.0, 258u}, {48000.0, 325u}, {88200.0, 602u},
+            {96000.0, 698u}, {176400.0, 1222u}, {192000.0, 1416u}, {22050.0, 155u} };
+        for (unsigned q = 0; q < sizeof L / sizeof L[0]; q++) {
+            CHECK(a->activate(a, L[q].r, 1, 4096) && pl->get(a) == L[q].lat, "%.0f Hz: latency %u, want %u", L[q].r,
+                  pl->get(a), L[q].lat);
+            a->deactivate(a);
+        }
+    }
+    printf("ok    rates: 44100 (latency 258), 48000 (325), 88200 (602), 96000 (698), 176400 (1222), 192000 (1416), "
+           "22050 (155) taken, 500 refused\n");
     /* a flood of automation (pluginval's parameter thread test: 2000+ changes a 32-frame block, each due ~10 ms
      * ahead, ~15 blocks in the queue at once): no change dropped, every parameter ends on the last value sent */
     {

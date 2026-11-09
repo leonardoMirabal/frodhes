@@ -1,24 +1,32 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* The plugin instance (plugin/src/bridge.h): the slot table, the host's frames and events onto the app's
- * milliseconds, the 48 kHz resampler, float out.
+/* The plugin instance (plugin/src/bridge.h): the slot table, the host's frames and events onto the app's frames,
+ * the oversampler, float out.
  *
- * Time. The app always runs at 44.1 kHz on host milliseconds (slot_bridge.h). The output starts with a pre-roll of
- * FRP_LAT_MS (441 frames at 44.1 kHz, 480 at 48 kHz) and then plays the slot's FIFO from the activation on; an event
- * at host frame h (from the activation) is due at the app's millisecond ms0 + h / (frames a ms), the host build's
- * clock for that frame. So the output after the pre-roll is the host build's render of the same events, sample for
- * sample (Gate D), and the latency the host is told is the pre-roll (+ the resampler's delay at 48 kHz). 10 ms
- * keeps every event ahead of the app: the FIFO runs at most 256 frames + a millisecond ahead of the output (the bound
- * needs 8.8 ms at 44.1 kHz, 8.9 ms at 48); an event that is not ahead anyway (a slot reused mid-stream) plays a
- * millisecond later and is counted (late). As on the FM-1, an event acts from the next 256-frame block: up to 5.8 ms
- * after its time (the plan's TIMING study, B-M1).
+ * Time. The app always runs at 44.1 kHz in 256-frame blocks (slot_bridge.h). Output frame T (from the activation) is
+ * the app's frame e0 + (T - lat) x 44100 / rate, lat the latency the host is told, e0 the app's frame at the
+ * activation; an event at host frame h is for the app's frame e0 + h x 44100 / rate (in 1/256 frame), so it sounds
+ * exactly lat frames after its own frame. A note starts at that sample inside its block (rhodes.c / bars.c: the
+ * pulse from the fraction of a frame on); the other events act at the start of the block that holds their frame. The
+ * slot renders a block only when the output needs its first frame, and the events of a block must all be known by
+ * then: the host gives a block's events before its audio, so lat covers one app block (256 frames, 5.8 ms) + the
+ * oversampler's delay (0 at 44.1 kHz, ~1 ms otherwise) + 2 frames. An event that comes late anyway (a slot reused
+ * mid-stream) starts at the next block's start and is counted (frp_inst_stats: late).
  *
- * 44.1 kHz: app_audio's own int32 samples, exact as float (x / 32768, no clip: the host's mixer has the headroom).
- * 48 kHz: the FM-1's own USB resampler, firmware/src/uac_fir.h (160 / 147, 12 taps a phase, the knee and the 16-bit
- * clamp of usb.c uac_tap48), so the stream is the FM-1's USB stream at 48 kHz bit for bit.
- * Any other rate (1 to 1536 kHz): a windowed-sinc resampler in float (RS_HALF zero crossings, a Kaiser window, the
- * cutoff 0.96 x the lower Nyquist), read at the 44.1 kHz time of each output frame, so it adds no delay of its own:
- * the pre-roll grows by the filter's reach instead (FRP_LAT_MS + RS reach, rounded up to a ms), and the latency the
- * host is told is that pre-roll at its rate.
+ * Out: the app's int32 samples x 1/32768 (no clip: the host's mixer has the headroom), at 44.1 kHz as they are; at
+ * 88.2 / 176.4 / 352.8 and 48 / 96 / 192 / 384 kHz through plugin/src/frp_os.h (integer-ratio polyphase stages: 160/147,
+ * then 2x half-bands; flat to 20 kHz within 0.0001 dB, every image and alias >= 117 dB under the tone,
+ * tools/plugin_os.py); any other rate (1 to 1536 kHz) through a windowed-sinc resampler in float (RS_HALF zero
+ * crossings, a Kaiser window, the cutoff 0.96 x the lower Nyquist), read at the 44.1 kHz time of each output frame.
+ *
+ * The test modes (FRODHES_PLUGIN_TEST in the environment at the activation; tools/gate_d.py):
+ *   ms   the host build's time (tests/host.c): an event at host frame h is due at the app's millisecond
+ *        ms0 + h / (frames a ms) and acts from the next 256-frame block, as on the FM-1; the output starts with a
+ *        pre-roll of FRP_LAT_MS (10 ms, which keeps every event ahead of the app: the FIFO runs at most 256 frames + a
+ *        millisecond ahead of the output) + the oversampler's delay. After the latency the output is the host build's
+ *        render of the same events through the oversampler (44.1 kHz: sample for sample).
+ *   fm1  ms, and at 48 kHz the FM-1's own USB resampler, firmware/src/uac_fir.h (160 / 147, 12 taps a phase, the knee
+ *        and the 16-bit clamp of usb.c uac_tap48): the FM-1's USB stream at 48 kHz bit for bit (latency 487); other
+ *        rates as ms but through the windowed sinc. The plugin before the oversampler, kept to compare with.
  *
  * The engine. An instance holds one slot (bridge.h): the HQ build, 24 voices on every engine. (Until the plugin became
  * HQ only it held a CLASSIC slot too, the FM-1's 10-voice build, behind a parameter ENGINE: a state that names
@@ -40,6 +48,7 @@
 #include <strings.h>
 #include "bridge.h"
 #include "frp_paths.h"
+#include "frp_os.h"
 #include "../../firmware/src/uac_fir.h"
 
 static const frp_slot_api_t *const SLOT[FRP_SLOTS] = {
@@ -57,7 +66,9 @@ static atomic_int slot_used[FRP_SLOTS];
 #define RS_N 4096u                       /* the input ring (power of 2): 2 x the reach at 1 kHz + a chunk fit */
 #define RS_MIN 1000.0
 #define RS_MAX 1536000.0                 /* (the VST3 SDK validator asks for 1234567.8 Hz) */
-enum { M441, M48, MANY };
+enum { M441, M48, MANY };                /* the fm1 test mode's outputs (and the sinc for other rates) */
+enum { T_EXACT, T_MS };                  /* the events' time: the plugin's own, the host build's (the test modes) */
+enum { O_FM1, O_OS, O_SINC };            /* out: as the FM-1 (44.1 itself / 48 its resampler), frp_os.h, the sinc */
 #define PK_MIDI (16u * 128u + 3u * 16u)  /* the parked MIDI: CC (channel x controller), program, pressure, bend */
 #define PK_N (FRP_NPARAM + PK_MIDI)
 
@@ -70,12 +81,17 @@ struct frp_inst {
     int32_t pk_v[PK_N];
     uint32_t pk_at[PK_N];
     uint8_t pk_on[PK_N];
+    uint8_t pk_x[PK_N];                  /* its time is an exact one (bridge.h: putx) */
     uint32_t pk_n, pk_merged;
     uq_ev_t uq[UQ];
     _Atomic uint32_t uqw, uqr;
     _Atomic uint32_t peak[2];            /* the output's peak since the last read (float bits) */
     _Atomic uint8_t notes[128];          /* the keys held (velocity) */
-    int active, r48, mode;
+    int active, r48, mode, tmode, omode;
+    uint32_t lat;                        /* the latency the host is told */
+    uint32_t e0;                         /* the app's frame at the activation (exact) */
+    frp_os_t os;
+    uint32_t bi, bn;                     /* the oversampler's source: buf[bi .. bn) not yet given */
     uint64_t pos;                        /* host frames since the activation */
     uint32_t ms0;                        /* the slot's ms at the activation */
     uint32_t pre;                        /* pre-roll frames still to play */
@@ -95,7 +111,7 @@ struct frp_inst {
 };
 
 static float rs_tab[RS_HALF * RS_OS + 2];
-static pthread_once_t rs_once = PTHREAD_ONCE_INIT;
+static pthread_once_t rs_once = PTHREAD_ONCE_INIT, os_once = PTHREAD_ONCE_INIT;
 static double bessel_i0(double x)
 {
     double s = 1.0, t = 1.0;
@@ -111,6 +127,7 @@ static void rs_init(void)                /* sinc(u) x Kaiser(u / RS_HALF), u = 0
     }
 }
 
+static uint32_t os_plan(frp_inst_t *in, double rate);
 static int slot_claim(void)
 {
     int i, pass;
@@ -129,6 +146,8 @@ frp_inst_t *frp_inst_new(void)
     int sl;
     if (!in) return 0;
     in->slot = -1;
+    in->tmode = T_EXACT;
+    in->lat = os_plan(in, 48000.0);      /* (the latency before the activation: at frodhes_clap.c's default rate) */
     if ((sl = slot_claim()) < 0) return in;   /* (16 in use: silence) */
     if (SLOT[sl]->booted()) SLOT[sl]->reuse();
     else if (SLOT[sl]->boot()) { atomic_store(&slot_used[sl], 0); return in; }   /* (booted now: the main thread) */
@@ -158,20 +177,56 @@ static void block_start(frp_inst_t *in)
     }
 }
 
+static void os_poly_once(void) { frp_os_make_poly(); }
+static void os_src(void *ctx, float *l, float *r)   /* the app's next frame: only what is rendered, else one step at a
+                                                     * time (a block is rendered when its first frame is needed) */
+{
+    frp_inst_t *in = ctx;
+    if (in->bi == in->bn) {
+        uint32_t a = in->s->avail();
+        while (!a) { in->s->step(); a = in->s->avail(); }
+        if (a > CHUNK) a = CHUNK;
+        in->s->read(in->buf, a);
+        in->bi = 0; in->bn = a;
+    }
+    *l = (float)in->buf[2u * in->bi] * (1.0f / 32768.0f);
+    *r = (float)in->buf[2u * in->bi + 1u] * (1.0f / 32768.0f);
+    in->bi++;
+}
+static uint32_t os_plan(frp_inst_t *in, double rate)   /* the oversampler set up: the chain's own delay, + one app
+                                                        * block (exact) or the 10 ms pre-roll (ms); the latency */
+{
+    uint32_t d, ahead = in->tmode == T_EXACT ? (uint32_t)ceil(256.0 * rate / FRP_FS) + 2u
+                                             : (uint32_t)lround(FRP_LAT_MS * rate / 1000.0);
+    pthread_once(&os_once, os_poly_once);
+    d = frp_os_init(&in->os, rate, 0, os_src, in);
+    return frp_os_init(&in->os, rate, d + ahead, os_src, in);
+}
 int frp_inst_activate(frp_inst_t *in, double rate)
 {
+    const char *test = getenv("FRODHES_PLUGIN_TEST");
+    int fm1 = test && !strcmp(test, "fm1"), nhb;
     if (!(rate >= RS_MIN && rate <= RS_MAX)) return -1;
+    in->tmode = fm1 || (test && !strcmp(test, "ms")) ? T_MS : T_EXACT;
     in->mode = rate == 44100.0 ? M441 : rate == 48000.0 ? M48 : MANY;
-    in->r48 = in->mode == M48;
+    in->omode = fm1 && in->mode != MANY ? O_FM1 : frp_os_family(rate, &nhb) >= 0 && !fm1 ? O_OS : O_SINC;
+    in->r48 = in->omode == O_FM1 && in->mode == M48;
     in->rate = rate;
     in->pos = 0;
-    in->pre = in->r48 ? 48u * FRP_LAT_MS : 441u * FRP_LAT_MS / 10u;
-    if (in->mode == MANY) {
+    in->pre = 0;
+    in->bi = in->bn = 0;
+    if (in->omode == O_FM1) {
+        in->pre = in->r48 ? 48u * FRP_LAT_MS : 441u * FRP_LAT_MS / 10u;
+        in->lat = in->r48 ? 48u * FRP_LAT_MS + 7u : 441u * FRP_LAT_MS / 10u;   /* (48: the resampler's 6.5 frames) */
+    } else if (in->omode == O_OS) {
+        in->lat = os_plan(in, rate);
+    } else {
         pthread_once(&rs_once, rs_init);
         in->fc = 0.96 * (rate < FRP_FS ? rate / FRP_FS : 1.0);
         in->reach = RS_HALF / in->fc;
         in->lat_ms = FRP_LAT_MS + (uint32_t)ceil(in->reach * 1000.0 / FRP_FS);
-        in->pre = 0;                     /* (the pre-roll is in the read position: frp_inst_render) */
+        in->lat = in->tmode == T_MS ? (uint32_t)ceil(in->lat_ms * rate / 1000.0)
+                                    : (uint32_t)ceil((256.0 + in->reach) * rate / FRP_FS) + 2u;
         in->kin = 0;
         memset(in->rl, 0, sizeof in->rl); memset(in->rr, 0, sizeof in->rr);
     }
@@ -180,11 +235,13 @@ int frp_inst_activate(frp_inst_t *in, double rate)
     in->ph = 0; in->on = in->oi = 0;
     if (in->s) {
         uint32_t a;
+        in->s->set_exact(in->tmode == T_EXACT);
         block_start(in);                 /* (what the UI queued: the instance is not active yet) */
         park_flush(in);                  /* (what stayed parked at the deactivation) */
         in->s->drain();                  /* (what the main thread queued while inactive) */
         while ((a = in->s->avail()) != 0) in->s->read(in->buf, a < CHUNK ? a : CHUNK);   /* (frames from before) */
         in->ms0 = in->s->now();
+        in->e0 = in->s->efr();
     }
     in->active = 1;
     return 0;
@@ -194,12 +251,7 @@ void frp_inst_deactivate(frp_inst_t *in)
     in->active = 0;
     park_drain(in);                      /* (what is parked: applied now) */
 }
-uint32_t frp_inst_latency(const frp_inst_t *in)
-{
-    /* the resampler: a symmetric prototype of 160 x 12 taps, its centre 959.5 / 160 = 6.0 input frames = 6.5 out */
-    if (in->mode == MANY) return (uint32_t)ceil(in->lat_ms * in->rate / 1000.0);
-    return in->r48 ? 48u * FRP_LAT_MS + 7u : 441u * FRP_LAT_MS / 10u;
-}
+uint32_t frp_inst_latency(const frp_inst_t *in) { return in->lat; }
 void frp_inst_reset(frp_inst_t *in)
 {
     if (!in->s) return;
@@ -207,6 +259,15 @@ void frp_inst_reset(frp_inst_t *in)
     for (int k = 0; k < 128; k++) atomic_store_explicit(&in->notes[k], 0, memory_order_relaxed);
 }
 
+static uint32_t due_x(frp_inst_t *in, uint32_t time)   /* exact: the app frame x 256 an event at this frame is for;
+                                                        * one whose block is rendered already is late (counted): it
+                                                        * starts at the next block's start */
+{
+    double q = (double)(in->pos + time) * (FRP_FS * 256.0) / in->rate;
+    uint32_t at = in->e0 * 256u + (uint32_t)(uint64_t)llround(q), fw = in->s->efw() * 256u;
+    if ((int32_t)(at - fw) < 0) { in->late++; at = fw; }
+    return at;
+}
 static uint32_t due_ms(frp_inst_t *in, uint32_t time)
 {
     uint64_t h = in->pos + time;
@@ -249,14 +310,21 @@ static int park_midi_key(uint8_t st, uint8_t d1)   /* the MIDI's entry (FRP_NPAR
         cc >= 120u) return -1;
     return (int)(FRP_NPARAM + ch * 128u + cc);
 }
-static int park_put(frp_inst_t *in, uint32_t i, uint32_t at, int32_t v)   /* 1: parked (else the caller puts it) */
+static int sput(frp_inst_t *in, int x, int kind, uint32_t at, uint32_t a, int32_t v)
+{
+    return x ? in->s->putx(kind, at, a, v) : in->s->put(kind, at, a, v);
+}
+/* (exact: at 0 is "at once", kept so; a parked entry that takes one is at once from then on) */
+static int park_put(frp_inst_t *in, uint32_t i, uint32_t at, int32_t v, int x)   /* 1: parked (else the caller puts it) */
 {
     if (!in->pk_on[i] && !(at && in->s->room() <= PK_ROOM)) return 0;   /* (parked already: so must this one be) */
-    if (!at) at = in->s->now() + 1u;
-    if (!in->pk_on[i]) { in->pk_on[i] = 1; in->pk_n++; in->pk_at[i] = at; }
+    if (!at && in->tmode == T_MS) at = in->s->now() + 1u;
+    if (!at) x = 0;
+    if (!in->pk_on[i]) { in->pk_on[i] = 1; in->pk_n++; in->pk_at[i] = at; in->pk_x[i] = (uint8_t)x; }
     else {
         in->pk_merged++;
-        if ((int32_t)(at - in->pk_at[i]) > 0) in->pk_at[i] = at;
+        if (!at || !in->pk_at[i]) { in->pk_at[i] = 0; in->pk_x[i] = 0; }
+        else if ((int32_t)(at - in->pk_at[i]) > 0) in->pk_at[i] = at;
     }
     in->pk_v[i] = v;
     return 1;
@@ -267,8 +335,8 @@ static void park_flush(frp_inst_t *in)   /* the parked changes into the queue, a
     for (uint32_t i = 0; i < PK_N && in->pk_n; i++) {
         if (!in->pk_on[i]) continue;
         if (in->s->room() <= PK_ROOM / 2u) return;
-        if (i < FRP_NPARAM ? in->s->put(FRP_EV_PARAM, in->pk_at[i], FRP_PARAMS[i].id, in->pk_v[i])
-                           : in->s->put(FRP_EV_MIDI, in->pk_at[i], (uint32_t)in->pk_v[i], 0)) return;
+        if (i < FRP_NPARAM ? sput(in, in->pk_x[i], FRP_EV_PARAM, in->pk_at[i], FRP_PARAMS[i].id, in->pk_v[i])
+                           : sput(in, in->pk_x[i], FRP_EV_MIDI, in->pk_at[i], (uint32_t)in->pk_v[i], 0)) return;
         in->pk_on[i] = 0;
         in->pk_n--;
     }
@@ -286,12 +354,13 @@ static void park_drain(frp_inst_t *in)   /* the thread that owns the slot, no bl
 void frp_inst_midi(frp_inst_t *in, uint32_t time, uint8_t st, uint8_t d1, uint8_t d2)
 {
     uint32_t a = (uint32_t)st | (uint32_t)(d1 & 127u) << 8 | (uint32_t)(d2 & 127u) << 16, at;
-    int k;
+    int k, x;
     if (!in->s || st < 0x80u || st == 0xF0u || st == 0xF7u) return;
     note_track(in, st, d1, d2);
-    at = due_ms(in, time);
-    if ((k = park_midi_key(st, d1)) >= 0 && park_put(in, (uint32_t)k, at, (int32_t)a)) return;
-    (void)in->s->put(FRP_EV_MIDI, at, a, 0);
+    x = in->tmode == T_EXACT;
+    at = x ? due_x(in, time) : due_ms(in, time);
+    if ((k = park_midi_key(st, d1)) >= 0 && park_put(in, (uint32_t)k, at, (int32_t)a, x)) return;
+    (void)sput(in, x, FRP_EV_MIDI, at, a, 0);
 }
 static int32_t param_round(uint32_t idx, double v)
 {
@@ -306,26 +375,27 @@ static int param_index(uint32_t id)
     for (uint32_t i = FRP_NPARAM_APP; i < FRP_NPARAM; i++) if (FRP_PARAMS[i].id == id) return (int)i;
     return -1;
 }
-static void param_put(frp_inst_t *in, uint32_t at, uint32_t id, double value)
+static void param_put(frp_inst_t *in, uint32_t at, uint32_t id, double value, int x)
 {
     int i = param_index(id);
     if (i < 0 || !in->s) return;         /* (an id not in the table: 0x10000, ENGINE, is no more) */
-    if (park_put(in, (uint32_t)i, at, param_round((uint32_t)i, value))) return;
-    (void)in->s->put(FRP_EV_PARAM, at, id, param_round((uint32_t)i, value));
+    if (park_put(in, (uint32_t)i, at, param_round((uint32_t)i, value), x)) return;
+    (void)sput(in, x && at, FRP_EV_PARAM, at, id, param_round((uint32_t)i, value));
 }
 void frp_inst_param(frp_inst_t *in, uint32_t time, uint32_t id, double value)
 {
-    param_put(in, in->s ? due_ms(in, time) : 0u, id, value);
+    int x = in->tmode == T_EXACT;
+    param_put(in, !in->s ? 0u : x ? due_x(in, time) : due_ms(in, time), id, value, x);
 }
 void frp_inst_param_now(frp_inst_t *in, uint32_t id, double value)
 {
-    param_put(in, 0u, id, value);
+    param_put(in, 0u, id, value, 0);
     if (in->s && !in->active) park_drain(in);
 }
 /* an event for the slot playing, at once (the processing side), or the UI's (the main thread: below) */
 static void apply_ev(frp_inst_t *in, uint8_t kind, uint32_t a, int32_t v)
 {
-    if (kind == FRP_EV_PARAM) { param_put(in, 0u, a, v); return; }
+    if (kind == FRP_EV_PARAM) { param_put(in, 0u, a, v, 0); return; }
     if (!in->s) return;
     if (kind == FRP_EV_UINOTE) note_track(in, (uint8_t)a, (uint8_t)(a >> 8), (uint8_t)(a >> 16));
     (void)in->s->put(kind, 0u, a, v);
@@ -496,7 +566,8 @@ void frp_inst_render(frp_inst_t *in, float *l, float *r, uint32_t n, uint32_t te
     block_start(in);
     park_flush(in);
     in->s->set_tempo(tempo_bpm10);
-    if (in->mode == MANY) { rs_render(in, l, r, n); in->pos += n; meter(in, l, r, n); return; }
+    if (in->omode == O_OS) { frp_os_render(&in->os, l, r, n); in->pos += n; meter(in, l, r, n); return; }
+    if (in->omode == O_SINC) { rs_render(in, l, r, n); in->pos += n; meter(in, l, r, n); return; }
     for (; i < n && in->pre; i++, in->pre--) l[i] = r[i] = 0.0f;
     if (!in->r48) {
         while (i < n) {

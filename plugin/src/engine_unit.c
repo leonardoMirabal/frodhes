@@ -5,7 +5,8 @@
  * unit is static except the slot's table frp_slot_<FRP_SLOT>, which the build checks with nm (no other global), so
  * the copies never meet. web_hal.c's exports become static here (plugin/compat/emscripten.h makes
  * EMSCRIPTEN_KEEPALIVE "static") and its main() is renamed; the host build's diagnostics (printf, getenv) are
- * compiled out, as on the Move. DINGHY_PLUGIN is defined for any future hook in shared code (none so far).
+ * compiled out, as on the Move. DINGHY_PLUGIN turns on the plugin's hooks in shared code: a note starts at its own
+ * sample in the block (web/web_hal.c mq_ofs, engine.c eq_ofs, rhodes.c / bars.c pdly; none in any other build).
  * Every slot is built with the HQ switches (the Move's: the float paths, the full-rate reverb) and 24 voices on every
  * engine; plugin/cmake/slots.cmake. */
 #ifndef FRP_SLOT
@@ -38,5 +39,6 @@ const frp_slot_api_t FRP_CAT(frp_slot_, FRP_SLOT) = {
     .boot = sb_boot, .booted = sb_booted, .reuse = sb_reuse, .put = sb_put, .step = sb_step, .drain = sb_drain,
     .avail = sb_avail, .read = sb_read, .now = sb_now, .snapshot = sb_snapshot, .state_get = sb_state_get,
     .state_set = sb_state_set, .set_tempo = sb_set_tempo, .stats = sb_stats, .check_params = sb_check_params,
-    .user_put = sb_user_put, .fact_info = sb_fact_info, .room = sb_room,
+    .user_put = sb_user_put, .fact_info = sb_fact_info, .room = sb_room, .putx = sb_putx, .set_exact = sb_set_exact,
+    .efr = sb_efr, .efw = sb_efw,
 };
