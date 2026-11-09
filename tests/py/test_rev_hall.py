@@ -24,9 +24,11 @@ OUT = os.path.join(ROOT, "build", "rev_hall", os.environ.get("PYTEST_XDIST_WORKE
 # 0.9.10 rev-grain (MIX's law all in the send, the return x0.5: the lines up to 2x hotter at a low MIX, so a tail
 # rings a little longer before its exact silence; before: a653d56baadc01b3 12038 5 / 2e96769e51e80132 10480 6 /
 # 605dc28398d57a98 15484 4):
+# 0.9.10 rev-grain Q (the diffusers round while the input is live or a line end loud, truncate otherwise: every tail
+# still ends in exact silence; before: 85bb23072cef107f 12073 5 / 6529f8f754b75c58 10528 6 / 616a5aa47c595f20 15496 4):
 # seed, blocks -> hash, blocks the reverb ran, tails that ended in silence
-WANT = {(1, 20000): "85bb23072cef107f 12073 5", (7, 20000): "6529f8f754b75c58 10528 6",
-        (95, 20000): "616a5aa47c595f20 15496 4"}
+WANT = {(1, 20000): "41954438c623758b 12073 5", (7, 20000): "14a669a9673adf3c 10526 6",
+        (95, 20000): "007a3f0c79d0a296 15498 4"}
 
 
 @pytest.fixture(scope="module")
