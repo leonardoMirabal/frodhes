@@ -252,9 +252,9 @@ What a script cannot do: a real DAW's scan, its browser, its project save and it
 with the packages a release attaches (the `.pkg` on macOS, the zips elsewhere). Close other audio software first; on
 the Mac, a DAW that opens the audio interface may change its sample rate.
 
-1. **Install and scan.** Install the package; rescan plug-ins (Logic and GarageBand check the Audio Unit at start).
-   Frodhes shows as an instrument, vendor Frodhes, version the release's: in the CLAP list (Bitwig, Reaper, Studio
-   One), the VST3 list, and the Audio Unit list (Logic, GarageBand, Live, Renoise: Instruments > Frodhes > Frodhes).
+1. **Install and scan.** Install the package; rescan plug-ins (some Mac hosts check every Audio Unit at start).
+   Frodhes shows as an instrument, vendor Frodhes, version the release's: in the host's CLAP list, its VST3 list, and
+   its Audio Unit list (Instruments > Frodhes > Frodhes).
 2. **Play.** Put it on a MIDI / instrument track and play: the first sound is F01 STAGE 77. Hold a
    chord with the sustain pedal (or SUSTAIN in the window), let go: the notes ring out and stop. No click at the start
    of playback or when the track is armed.
@@ -273,9 +273,9 @@ the Mac, a DAW that opens the audio interface may change its sample rate.
    tail is not cut at the end of the last note (extend the render by 3 s if the host asks for a tail length).
 8. **Sample rates.** Switch the project between 44.1, 48 and 96 kHz while it plays: the pitch stays right, no noise.
 
-Hosts on the maintainer's Mac (2026-11): Ableton Live 12 (VST3 and AU; Live has no CLAP) and Renoise 3.0
-(AU only: the version predates its VST3 and CLAP support). Logic, GarageBand, Reaper and Bitwig are not installed
-there; the list above is the same for them (Reaper: also the CLAP, `Options > Preferences > Plug-ins > CLAP`).
+Hosts on the maintainer's Mac (2026-11): one DAW with VST3 and AU (no CLAP) and one with AU only. Other hosts
+are not installed there; the list above is the same for them (a host with CLAP support loads the CLAP from its
+plug-in preferences).
 
 ## Layout
 

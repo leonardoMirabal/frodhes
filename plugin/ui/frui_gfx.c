@@ -115,7 +115,7 @@ static void shade(frui_canvas *c, float bx0, float by0, float bx1, float by1, sd
     float out = 0.f, in1 = 0.f;
     int hole = blur > 0.f ? c->hole : 0;           /* (frui_shadow_hole: this shadow's) */
     rr_t hr;
-    struct { float cx, cy, r; } hc;
+    struct { float cx, cy, r; } hc = { 0.f, 0.f, 0.f };   /* (set only for hole 2: Linux gcc's -Wmaybe-uninitialized) */
     if (blur > 0.f) c->hole = 0;
     if (hole == 1) hr = mk_rr(c->hx, c->hy, c->hw, c->hh, c->hr);
     if (hole == 2) { hc.cx = c->hx; hc.cy = c->hy; hc.r = c->hr; }

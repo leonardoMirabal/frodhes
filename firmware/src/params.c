@@ -474,10 +474,13 @@ static int32_t rel_k(int32_t v)
     return (int32_t)(((uint64_t)DECAY_K[64 + a] * DECAY_K[64 + x - a]) >> 16);
 }
 
-/* HAMMER's contact-rate scale (Q16): 2^(1.5 (v-64)/128), x0.59 .. x1.68 (0.9.10; it was KN_HAM, 2^((v-64)/128), x0.71 ..
- * x1.41: the pickup drive's harmonics, there at every contact time, halved its range: ST77's brightness 10.8 -> 5.3 dB,
- * SUIT 8.4 -> 3.9, test_every_control). FX_EXP2F(i) = 2^(i/256); under 64 one octave up, then halved */
-#define RH_HAM_LAW(v) ((uint32_t)(v) >= 64u ? FX_EXP2F(((uint32_t)(v) - 64u) * 3u) : FX_EXP2F(256u - (64u - (uint32_t)(v)) * 3u) >> 1)
+/* HAMMER's contact-rate scale (Q16): KN_HAM, 2^((v-64)/128), x0.71 .. x1.41, as 0.9.9. (2026-11-09: the wider law of
+ * 22312e7a, 2^(1.5 (v-64)/128), x0.59 .. x1.68, was set when the pickup's own drive had halved HAMMER's brightness range;
+ * with the clean top (1fe0c0af) this law gives it back: test_every_control's C4 v100 brightness HAMMER 0 -> 127 ST77
+ * +13.3 / SUIT +11.5 / FELT +9.0 / DYNO +16.4 dB (0.9.9: 10.8 / 8.4 / 8.9 / 13.9; the wider law +21.3 / 18.1 / 15.7 /
+ * 22.1). The wider law's x1.68 lifted the bass tines' off-harmonic energy at HAMMER 127 (k33 v64: +11.6 dB over 0.9.9,
+ * H6 +11.9; tools/release_diff.py inh); here those cells are 0.9.9's.) */
+#define RH_HAM_LAW(v) KN_HAM(v)
 static void param_apply(uint32_t id)
 {
     int32_t v = PV(id);

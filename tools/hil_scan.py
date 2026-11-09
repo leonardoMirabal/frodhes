@@ -1017,10 +1017,10 @@ FXALL = [  # (name, settings, expected: LU re clean within +-tol)
 # (Agent E's reading of the same reports, 2026-10-24, proposed all five measured values as targets +- 1 LU; taken for
 # drive 127 and phaser 32, not for the wah rows (the defect above) nor phaser 127 fb127 (its fault was the width
 # target: at 0 +- 2 it passes without a target of its own).)
-# 2026-11-08 (fx-level: no effect adds peak, tools/fx_pristine.py): 'trem pan 127' -2.0 LU (each side capped at unity:
-# a mono sound panned hard keeps its peak, not its power; equal power put +3 dB on one side), 'phaser 80' -2.5 LU (the
-# peak trim, fx.c PH_T: the comb's in-phase bands had lifted a chord's attack +3.3 dB) by design
-FXALL_EXPECT = {"drive 127": (-2.3, 1.0), "trem pan 127": (-2.0, 1.0), "phaser 80": (-2.5, 1.0)}
+# 2026-11-08 (fx-level: no effect adds peak, tools/fx_pristine.py): 'phaser 80' -2.5 LU (the peak trim, fx.c PH_T: the
+# comb's in-phase bands had lifted a chord's attack +3.3 dB) by design. ('trem pan 127' -2.0 LU, each side capped at
+# unity, until 2026-11-09: PAN is 0.9.9's equal-power law again, judged at 0 +- 2)
+FXALL_EXPECT = {"drive 127": (-2.3, 1.0), "phaser 80": (-2.5, 1.0)}
 
 
 def lufs(x):

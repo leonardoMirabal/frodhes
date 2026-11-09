@@ -36,6 +36,12 @@ FLAG. The checks (each against static renders at 0, 32, 64, 96 and 127, or at an
           the held renders' own, over the held renders' level difference: over 0.5 flags (a 46 ms crossfade spreads
           the difference over ~4 windows; a one-sample switch puts most of it into one)
   noeff   every held value renders the same (at most 1 LSB apart): a control that does nothing
+  jump3   (Case span: wah RATE, filter LFO) the level step over 3 windows (70 ms) against the renders held within 6 of the
+          sweep's values over that span: over 1.5 dB flags. A smooth 3-4 dB step over 50 ms moves no single window by
+          1.5 dB (jump misses it); K20, 2026-11-09: wah RATE clean 0.03, a 3 / 4 dB step 2.5 .. 3.9; filter LFO clean
+          1.0, the steps 2.3 .. 3.7 but one (1.3). lfo RATE and PLATE SIZE are not in it: renders held at neighbouring
+          values swing as much over 70 ms (the LFO's phase against the restrikes, the plate's tank), so a 3 dB step
+          reads 1.2 .. 3.9 there (build/t3/k20); their clicks and zippers stay checked
   stuck   after the sweep is back at 0, its last 300 ms against the render held at 0 (both floored at -60 dBFS, the
           silence gate's level): over 1.5 dB flags (a state the
           control left behind)
@@ -81,7 +87,7 @@ T_END = T_SW1 + 500
 STUCK_FLOOR = -60.0                            # dBFS: the "stuck" levels' floor, the silence gate's level
 STATICS = [0, 32, 64, 96, 127]
 PARTIALS = [440.0, 880.0]
-LIMITS = {"pitch": 5.0, "zipper": 2.0, "jump": 1.5, "dropout": 20.0, "mono": 1.0, "click": 10.0, "trans_hi": 3.0,
+LIMITS = {"pitch": 5.0, "zipper": 2.0, "jump": 1.5, "jump3": 1.5, "dropout": 20.0, "mono": 1.0, "click": 10.0, "trans_hi": 3.0,
           "trans_lo": 6.0, "stuck": 1.5,
           "xjump": 0.5}
 PROMINENCE = 4.0                               # pitch_p90: a partial 12 dB over its band, or no pitch read
@@ -107,9 +113,10 @@ class Case:
     static values (default 0, 32, 64, 96, 127; an enum: its band centres)"""
 
     def __init__(self, name, cc, setup=(), engine="rhodes", kind="knob", additive=False, mono=False, statics=None,
-                 page="", skip=(), through=False, xfade=False, near=False, run=False, zref=()):
+                 page="", skip=(), through=False, xfade=False, near=False, run=False, zref=(), span=False):
         self.name, self.cc, self.setup, self.engine, self.kind = name, cc, list(setup), engine, kind
         self.near = near                         # jump: against renders held near the sweep's value (jump_near_db)
+        self.span = span                         # jump3: the 3-window step against renders held near (jump3_db)
         self.run = run                           # the sweep starts at 1 from 200 ms, not 0: the effect runs from the
         # start, as in the held renders (a reverb started at 1 s, under a ringing chord, has another modulation phase
         # against the strikes than one started before the chord: the zipper measure read that as a step)
@@ -168,7 +175,7 @@ def _cases():
         # band-pass gliding 16 kHz -> 30 Hz passes through the chord, louder than at either end: 'through')
     add(Case("filter RESO", 71, [(70, 46), (74, 80)], page="FILTER"))
     add(Case("filter LFO", 72, [(70, 46), (74, 80), (71, 40)], page="FILTER",    # (at 0 the filter still filters)
-             near=True))                         # (the LFO's own swing grows with the depth: at ~110 it moves the
+             near=True, span=True))              # (the LFO's own swing grows with the depth: at ~110 it moves the
     # chord's level 6 dB a window, more than at any of the five statics; renders held near the sweep's value swing
     # as much: 0.9.10, the sweep 6.28 dB, held at 111 6.21)
     add(Case("filter TYPE", 70, [(74, 80), (71, 40)], kind="select", statics=bands(6), page="FILTER",
@@ -187,7 +194,7 @@ def _cases():
         add(Case(f"trem {m} RATE", 19, s + [(18, 90)], kind="pitch", page="TREM/WAH"))
         add(Case(f"trem {m} SHAPE", 22, s + [(18, 90), (19, 70)], page="TREM/WAH"))
     add(Case("wah DEPTH", 18, [(17, 100), (19, 70)], page="TREM/WAH"))
-    add(Case("wah RATE", 19, [(17, 100), (18, 90)], page="TREM/WAH"))
+    add(Case("wah RATE", 19, [(17, 100), (18, 90)], page="TREM/WAH", span=True))
     add(Case("wah SHAPE", 22, [(17, 100), (18, 90), (19, 70)], page="TREM/WAH",   # (SHAPE does nothing on WAH:
              skip={"noeff"}))                    # its card shows "-" there, tests/scripts/wah_shape.txt)
     add(Case("trem/wah EFFECT", 17, [(18, 90), (19, 70)], kind="select", statics=[21, 64, 107], page="TREM/WAH"))
@@ -406,6 +413,22 @@ def jump_near_db(sweep, held, span=6):
     return float((ds - D)[live].max()) if live.any() else 0.0
 
 
+def jump3_db(sweep, held, span=3, rad=6):
+    """the sweep's level step over span windows against the largest step over the same windows of the renders held
+    within rad of every value the sweep has over them (held: value -> render): a step smoothed over ~50 ms"""
+    a, b = ms(T_SW0) // 1024, ms(T_SW1) // 1024
+    w = win_db(sweep)
+    ds = np.abs(w[span:] - w[:-span])[a:b]
+    st = {v: np.abs(win_db(h)[span:] - win_db(h)[:-span])[a:b] for v, h in held.items()}
+    D = np.empty(len(ds))
+    for i in range(len(ds)):
+        vs = [SEQ[max(0, min(len(SEQ) - 1, int(((a + i + k) * 1024 * 1000.0 / FS - T_SW0) // STEP)))]
+              for k in range(span + 1)]
+        D[i] = max(st[u][i] for u in st if min(vs) - rad <= u <= max(vs) + rad)
+    live = np.minimum(w[a:b], w[a + span:b + span]) > -90
+    return float((ds - D)[live].max()) if live.any() else 0.0
+
+
 def dropout_db(sweep, statics):
     """how far the sweep falls under the quietest static, in the windows where that one is above -80 dBFS"""
     a, b = ms(T_SW0) // 1024, ms(T_SW1) // 1024
@@ -564,13 +587,16 @@ def measure(case, binary=BIN):
         zl = [render(script(zc, value=v), binary) for v in case.statics]
     r["zipper"] = round(zipper_ratio(sw, zl), 2)
     r["zipper_wet"] = round(zipper_ratio(sw - off, [s - off for s in zl]), 2) if case.additive else None
-    if case.near:
+    if case.near or case.span:
         for v in NEAR:
             if v not in st:
                 st[v] = render(script(case, value=v), binary)
+    if case.near:
         r["jump"] = round(jump_near_db(sw, {v: st[v] for v in NEAR}), 2)
     else:
         r["jump"] = round(jump_db(sw, stl), 2)
+    if case.span:
+        r["jump3"] = round(jump3_db(sw, {v: st[v] for v in NEAR}), 2)
     r["dropout"] = round(dropout_db(sw, stl), 1)
     if case.kind == "mix":
         r["mix0"] = float(np.abs(st[case.statics[0]] - off).max())
@@ -597,6 +623,8 @@ def checks(case, r):
     if r.get("zipper_wet") is not None:
         out["zipper_wet"] = (r["zipper_wet"], LIMITS["zipper"], r["zipper_wet"] <= LIMITS["zipper"])
     out["jump"] = (r["jump"], LIMITS["jump"], r["jump"] <= LIMITS["jump"])
+    if r.get("jump3") is not None:
+        out["jump3"] = (r["jump3"], LIMITS["jump3"], r["jump3"] <= LIMITS["jump3"])
     out["dropout"] = (r["dropout"], LIMITS["dropout"], r["dropout"] <= LIMITS["dropout"])
     if "mix0" in r:
         out["mix0"] = (r["mix0"], 1.0, r["mix0"] <= 1.0)   # (1 LSB: PAN's equal-power rounding at DEPTH 0)

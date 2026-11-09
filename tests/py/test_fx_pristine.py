@@ -5,8 +5,7 @@ Move / plugin HQ build, plus the factory presets: the limiter idle on single not
 chord, no clamp cut in the delay line, the reverb's inputs or the chorus line, MIX 0 at the bypass' level (0.5 dB),
 no added non-linearity (superposition residual) beyond the designed saturations.
 
-OPEN lists the cells that fail today; none (2026-11-08, fx-level: the phaser's peak trim, the pan's sides capped at
-unity, the wah's make-up capped by the peaks, LP / HP RESO compensated, ANA's TIME over a silent line at once, REV_HQ
+OPEN lists the cells that fail today; none (2026-11-08, fx-level: the phaser's peak trim, the wah's make-up capped by the peaks, LP / HP RESO compensated, ANA's TIME over a silent line at once, REV_HQ
 HALL's quiet threshold 128). A new failure fails the test; a cell that passes again must leave OPEN (the list only
 shrinks)."""
 import os
