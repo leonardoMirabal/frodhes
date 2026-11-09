@@ -6,6 +6,11 @@ the worst case played for a long time while the firmware's own counters are read
     tools/hil_c1_soak.py --row 274|275|276|277|278 [--minutes M] [--rate 48000] [--out build/hil/c1soak] [--dry-run]
     tools/hil_c1_soak.py --selftest            (no device: the decoding and the verdict on made-up replies)
     tools/hil_c1_soak.py --status              (the FM-1: core 1's items once, CC 116 = 30 / 31; 32 the boot / crash)
+    --no-audio          no USB audio stream: sounddevice / PortAudio never imported (a second FM-1 soaked while
+                        another tool records the first unit: two PortAudio users deadlocked CoreAudio). The whole
+                        ISR then has no USB tap / resampler in it: lower than with the stream (not the gate's number)
+    --location LOC      every MIDI port of the unit at that USB location (ioreg / CoreMIDI locationID, e.g.
+                        0x20130000) and no other, by CoreMIDI's USBLocationID: two units of one name told apart
 
 Rows (Textura's bench/fm1 rows 274 / 275, Frodhes' worst case):
   274   30 min, the Rhodes: 14-note chords (mid + top, bass, spread) at v127 every 1.2 s with the pedal held and
@@ -33,8 +38,9 @@ rails, its stack). The pass bars (all of them; a fallback to one core is a FAIL,
     the FM-1 answering every query (no hang)
   - 0 bad reads (34), 0 refusals (33), 0 late jobs (44), 0 holds (45), no fault of core 1 (40 = 0)
   - the rails at 7 / 15 (38 / 39)
-  - core 0: the app's worst block <= 5000 us (CC 116 / 117) and the whole ISR <= 4500 us (CC 107 / 108), 0 voices
-    shed (CC 115); the USB counters clean (underruns, missed, overruns 0)
+  - core 0: the app's worst block <= 5000 us (CC 116 / 117) and the whole ISR <= 4500 us (CC 107 / 108; rows 276 /
+    277: <= 4800 us, the user 2026-11-09), 0 voices shed (CC 115); the USB counters clean (underruns, missed,
+    overruns 0)
   - core 1: its busiest block (46) < 5000 us, its stack (41) under 11 KB
 Read-again recoveries (42 / 43) are information (counted, not a failure: Textura's units show them now and then).
 Report: OUT/<row>-report.md + .json (every read). Exit 0 PASS, 1 FAIL, 2 INCOMPLETE (stopped early)."""
@@ -96,6 +102,12 @@ MAX_DRV = (76, 70, 76)                                   # row 276: the drive TY
 MAX_SWEEP = dict(FL_FREQ=(0, 127), DL_TIME=(60, 127), PH_DEPTH=(64, 127), TW_DEPTH=(64, 127), CMP_AMT=(60, 127),
                  DRIVE=(64, 127))                        # row 276: CC -> the sweep's range (a triangle, 100 ms steps)
 BARS = dict(app_us=5000, whole_us=4500, c1_busy_us=5000, stack=11 * 1024, vdc14=7, sysvdd=15)
+WHOLE_ROW = {"276": 4800, "277": 4800}                   # the stress rows' whole-ISR bar (the user, 2026-11-09: the
+                                                         # two-core gate 4800; tools/hil_cpu.py stays at 4500)
+
+
+def bars(row=None):
+    return dict(BARS, whole_us=WHOLE_ROW.get(row, BARS["whole_us"]))
 
 
 def decode(msgs):
@@ -142,8 +154,10 @@ def decode(msgs):
     return acc
 
 
-def judge(reads):
-    """the reads (dicts from decode, in order, each with "t") -> (verdict, [reasons]); verdict PASS / FAIL"""
+def judge(reads, row=None):
+    """the reads (dicts from decode, in order, each with "t") -> (verdict, [reasons]); verdict PASS / FAIL; row: its
+    bars (bars(row): the stress rows' whole ISR)"""
+    B = bars(row)
     bad, jobs_last, shed0 = [], -1, None
     if not reads:
         return "FAIL", ["no read"]
@@ -166,16 +180,16 @@ def judge(reads):
             if j < jobs_last:
                 bad.append(f"{t:.0f} s: the jobs counter dropped {jobs_last} -> {j} (a reset)")
             jobs_last = j
-        for k, lim in (("app_us", BARS["app_us"]), ("whole_us", BARS["whole_us"]), ("busy_us", BARS["c1_busy_us"]),
-                       ("stack", BARS["stack"])):
+        for k, lim in (("app_us", B["app_us"]), ("whole_us", B["whole_us"]), ("busy_us", B["c1_busy_us"]),
+                       ("stack", B["stack"])):
             if r.get(k, 0) > lim:
                 bad.append(f"{t:.0f} s: {k} {r[k]} > {lim}")
         for k in ("bad", "refused", "late", "holds", "fault_vec", "underruns", "missed", "overruns"):
             if r.get(k, 0):
                 bad.append(f"{t:.0f} s: {k} {r[k]}")
         for k in ("vdc14", "sysvdd"):
-            if k in r and r[k] < BARS[k]:
-                bad.append(f"{t:.0f} s: {k} {r[k]} < {BARS[k]}")
+            if k in r and r[k] < B[k]:
+                bad.append(f"{t:.0f} s: {k} {r[k]} < {B[k]}")
         if "shed" in r:
             if shed0 is None:
                 shed0 = r["shed"]
@@ -202,6 +216,17 @@ def selftest():
     assert v == "FAIL" and any("dropped" in w for w in why) and any("bad 1" in w for w in why), why
     assert judge([dict(r, t=0, state=3)])[0] == "FAIL"
     assert judge([dict(r, t=0, whole_us=4600)])[0] == "FAIL"
+    for row in ("276", "277"):                           # (the stress rows: 4800, the user 2026-11-09)
+        assert judge([dict(r, t=0, whole_us=4800)], row)[0] == "PASS"
+        assert judge([dict(r, t=0, whole_us=4804)], row)[0] == "FAIL"
+        assert judge([dict(r, t=0, whole_us=4700, late=1)], row)[0] == "FAIL"
+        assert judge([dict(r, t=0, whole_us=4700, holds=1)], row)[0] == "FAIL"
+        assert judge([dict(r, t=0, whole_us=4700, shed=0), dict(r, t=5, whole_us=4700, shed=1)], row)[0] == "FAIL"
+    assert judge([dict(r, t=0, whole_us=4600)], "274")[0] == "FAIL" and judge([dict(r, t=0, whole_us=4600)], "278")[0] == "FAIL"
+    assert plan("277", None)["bars"]["whole_us"] == 4800 and plan("274", None)["bars"]["whole_us"] == 4500
+    import inspect                                       # (--no-audio: sounddevice imported on the audio path only)
+    src = inspect.getsource(run)
+    assert src.count("import sounddevice") == 1 and "if not a.no_audio:\n        import sounddevice as sd" in src
     assert judge([dict(t=0, noreply=1)])[0] == "FAIL"
     f = decode([(100, 50), (101, 1), (102, 2), (100, 51), (101, 0), (102, 1), (100, 52), (101, 0), (102, 0)])
     assert f["frec"]["reti"] == f"{(1 << 7 | 2) | (1 << 14):#010x}", f
@@ -231,14 +256,74 @@ def plan(row, minutes):
                 pc_every_s=(30 if p.get("storm") == 1 else 10 ** 6 if p.get("storm") else 60) if mx else 0,
                 storm=p.get("storm", 0),
                 reverb="each engine's 10 min: INFINITE 5 min, then per minute INFINITE 40 s / HALL 10 s / PLATE 10 s; "
-                       "MIX, DECAY, PRE-DELAY, SIZE 127" if mx else "", bars=BARS)
+                       "MIX, DECAY, PRE-DELAY, SIZE 127" if mx else "", bars=bars(row))
+
+
+def loc_ports(loc, name=None):
+    """(mido, out, inp): the MIDI ports of the unit at USB location loc, none other (CoreMIDI's USBLocationID,
+    fm1_ports.midi_at), opened by python-rtmidi index and read by polling (no Python callback on CoreMIDI's thread);
+    refused unless it has exactly one source and one destination with an FM-1 name (name: and containing it)"""
+    import mido
+    import rtmidi
+    import fm1_midi
+    import fm1_ports
+    import midi_guard
+    m = fm1_ports.midi_at(loc)
+    if m is None:
+        sys.exit(f"--location 0x{loc:08x}: no CoreMIDI on this computer")
+    src, dst = m
+    if len(src) != 1 or len(dst) != 1:
+        sys.exit(f"--location 0x{loc:08x}: not one FM-1 there (MIDI sources {src}, destinations {dst})")
+    for _, n in src + dst:
+        if fm1_ports._never(n) or not any(k in n.lower() for k in fm1_ports.PORT_KEYS) or (name and name.lower() not in n.lower()):
+            sys.exit(f"--location 0x{loc:08x}: the unit there is {n!r}, not a Frodhes FM-1 (install Frodhes first)")
+
+    class In:
+        def __init__(self, i, n):
+            self.m, self.p, self.name = rtmidi.MidiIn(), mido.Parser(), n
+            if n not in self.m.get_ports()[i]:
+                sys.exit(f"--location 0x{loc:08x}: MIDI input {i} is {self.m.get_ports()[i]!r} now, not {n!r}")
+            with midi_guard.watch(f"open {n!r} (input {i}, 0x{loc:08x})"):
+                self.m.open_port(i)
+
+        def iter_pending(self):
+            while True:
+                e = self.m.get_message()
+                if not e:
+                    break
+                self.p.feed(e[0])
+                yield from self.p.iter_pending()
+
+    class Out:
+        def __init__(self, i, n):
+            self.m, self.name = rtmidi.MidiOut(), n
+            if n not in self.m.get_ports()[i]:
+                sys.exit(f"--location 0x{loc:08x}: MIDI output {i} is {self.m.get_ports()[i]!r} now, not {n!r}")
+            with midi_guard.watch(f"open {n!r} (output {i}, 0x{loc:08x})"):
+                self.m.open_port(i)
+
+        def send(self, msg):
+            self.m.send_message(msg.bytes())
+
+    inp, out = In(*src[0]), fm1_midi.ChannelOut(Out(*dst[0]))
+    print(f"{fm1_midi.say(out.ch)}; the unit at USB 0x{loc:08x}: input {src[0][0]}, output {dst[0][0]}", flush=True)
+    return mido, out, inp
+
+
+def ports(a):
+    """the run's MIDI ports: the unit at --location (loc_ports), else the usual FM-1 (hil_cpu.ports: --port / FM1_PORT)"""
+    if a.location is not None:
+        import fm1_ports
+        return loc_ports(fm1_ports.parse_loc(a.location), a.port)
+    import hil_cpu
+    return hil_cpu.ports()
 
 
 def run(a):  # noqa: C901 (the device run)
-    import hil_cpu
-    mido, out, inp = hil_cpu.ports()
-    import sounddevice as sd
-    import fm1_ports
+    mido, out, inp = ports(a)
+    if not a.no_audio:
+        import sounddevice as sd
+        import fm1_ports
 
     def cc(c, v):
         out.send(mido.Message("control_change", control=c, value=int(v)))
@@ -259,14 +344,20 @@ def run(a):  # noqa: C901 (the device run)
         return msgs
 
     p = plan(a.row, a.minutes)
-    devs = fm1_ports.devices(sd.query_devices(), 2)
-    if not devs:
-        sys.exit("no FM-1 audio input")
-    ca = sd.CoreAudioSettings(change_device_parameters=True, fail_if_conversion_required=True)
-    stream = sd.InputStream(device=devs[0], samplerate=a.rate, channels=2, dtype="int16", blocksize=128,
-                            callback=lambda *x: None, extra_settings=ca)
-    stream.start()
-    time.sleep(1.0)
+    p["audio"] = not a.no_audio
+    stream = None
+    if a.no_audio:                                       # (the whole ISR without the USB tap: lower than the gate's)
+        print("--no-audio: no USB audio stream (sounddevice not imported); the whole ISR has no USB tap in it",
+              flush=True)
+    else:
+        devs = fm1_ports.devices(sd.query_devices(), 2)
+        if not devs:
+            sys.exit("no FM-1 audio input")
+        ca = sd.CoreAudioSettings(change_device_parameters=True, fail_if_conversion_required=True)
+        stream = sd.InputStream(device=devs[0], samplerate=a.rate, channels=2, dtype="int16", blocksize=128,
+                                callback=lambda *x: None, extra_settings=ca)
+        stream.start()
+        time.sleep(1.0)
     first = decode(query(30))
     if first.get("state") is None:
         sys.exit("no core-1 reply (CC 116 = 30): not an FR_C1 build (tools/build.py --c1)")
@@ -424,7 +515,8 @@ def run(a):  # noqa: C901 (the device run)
     complete = time.monotonic() - t0 >= dur - 1
     verdict = write_report(a, p, reads, rec, complete)
     code = 0 if verdict == "PASS" and complete else (1 if verdict == "FAIL" else 2)
-    close_stream(stream, code)               # (after the report: CoreAudio's stop can hang on close)
+    if stream is not None:
+        close_stream(stream, code)           # (after the report: CoreAudio's stop can hang on close)
     return code
 
 
@@ -441,7 +533,7 @@ def per_engine(p, reads):
 
 def write_report(a, p, reads, rec, complete, interim=False):
     """OUT/<row>-report.md + .json; interim (every 10 min of a run): the reads so far, no fault-record query"""
-    verdict, why = judge(reads)
+    verdict, why = judge(reads, a.row)
     if rec.get("frec"):
         verdict, why = "FAIL", why + [f"core 1's fault record: {rec['frec']}"]
     os.makedirs(a.out, exist_ok=True)
@@ -454,7 +546,9 @@ def write_report(a, p, reads, rec, complete, interim=False):
     with open(base + ".md", "w") as f:
         state = f"RUNNING ({verdict} so far)" if interim else (verdict if complete else "INCOMPLETE")
         f.write(f"# Two-core soak, row {a.row}: {state}\n\n")
-        f.write(f"- {p['minutes']} min, engines {', '.join(p['engines'])}, {len(reads)} reads\n")
+        f.write(f"- {p['minutes']} min, engines {', '.join(p['engines'])}, {len(reads)} reads, whole-ISR bar "
+                f"{bars(a.row)['whole_us']} us" + ("" if p.get("audio", True) else ", NO USB AUDIO (--no-audio: the "
+                "whole ISR without the USB tap; not the gate's number)") + "\n")
         f.write(f"- worst per engine: {per_engine(p, reads)}\n")
         f.write(f"- worst: {', '.join(f'{k} {v}' for k, v in worst.items())}\n")
         f.write(f"- last: jobs {last.get('jobs')}, bad {last.get('bad')}, refused {last.get('refused')}, late "
@@ -493,21 +587,23 @@ def main():
     ap.add_argument("--port", metavar="NAME", help="only the unit whose MIDI port / audio device name contains NAME "
                     "(a second FM-1 with its own USB name, tools/build.py --usb-name); refused when two USB "
                     "devices share the name")
-    ap.add_argument("--location", metavar="LOC", help="with --port: the unit's USB location (macOS ioreg locationID, "
-                    "e.g. 0x00100000), refused when the unit is not there")
+    ap.add_argument("--location", metavar="LOC", help="the unit's USB location (macOS ioreg / CoreMIDI locationID, "
+                    "e.g. 0x20130000): every MIDI port opened is that unit's (two units of one name told apart); "
+                    "refused when no FM-1 is there")
+    ap.add_argument("--no-audio", action="store_true", help="no USB audio stream: sounddevice / PortAudio never "
+                    "imported (the whole ISR then has no USB tap in it: lower than the gate's number)")
     a = ap.parse_args()
-    if a.port:
+    if a.port and a.location is None:
         import fm1_ports
         fm1_ports.force(a.port, None if a.location is None else fm1_ports.parse_loc(a.location))
     if a.selftest:
         selftest()
         return 0
     if a.dry_run:
-        print(json.dumps(plan(a.row, a.minutes), indent=1))
+        print(json.dumps(dict(plan(a.row, a.minutes), audio=not a.no_audio, location=a.location), indent=1))
         return 0
     if a.status:
-        import hil_cpu
-        mido, out, inp = hil_cpu.ports()
+        mido, out, inp = ports(a)
         for _ in inp.iter_pending():
             pass
         msgs = []

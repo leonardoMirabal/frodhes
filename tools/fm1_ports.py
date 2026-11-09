@@ -20,6 +20,9 @@ NEVER names are other firmware on another unit and are never matched, not even a
                      the device at loc for a port whose name matches no USB device (CoreMIDI keeps a port's old
                      name after the unit's USB name changed), only when every other port is accounted for: see there
   usb_ids()          {locationID: (idVendor, idProduct)} of the connected USB devices (macOS ioreg; None elsewhere)
+  midi_at(loc)       ([(index, name)] MIDI sources, [(index, name)] destinations) of the USB device at locationID loc
+                     (CoreMIDI's USBLocationID on the endpoint's device; index = python-rtmidi's port index, the same
+                     CoreMIDI order), None off macOS: two units of one name told apart by where they are plugged in
 """
 import os
 import re
@@ -75,6 +78,49 @@ def midi_inputs():
 def parse_loc(text):
     """--location: 0x00100000 or 1048576 (ioreg's locationID)"""
     return int(text, 0)
+
+
+def midi_at(loc):
+    """([(i, name)] sources, [(i, name)] destinations) of the device at USB locationID loc (CoreMIDI, read only: the
+    server's objects, nothing sent to a device); None when CoreMIDI is not there"""
+    import ctypes
+    import ctypes.util
+    lib, cfl = ctypes.util.find_library("CoreMIDI"), ctypes.util.find_library("CoreFoundation")
+    if not lib or not cfl:
+        return None
+    cm, cf = ctypes.cdll.LoadLibrary(lib), ctypes.cdll.LoadLibrary(cfl)
+    u32, ul, vp = ctypes.c_uint32, ctypes.c_ulong, ctypes.c_void_p
+    cf.CFStringCreateWithCString.restype, cf.CFStringCreateWithCString.argtypes = vp, [vp, ctypes.c_char_p, u32]
+    cf.CFStringGetCString.argtypes = [vp, ctypes.c_char_p, ctypes.c_long, u32]
+    cf.CFRelease.argtypes = [vp]
+    for fn in ("MIDIGetSource", "MIDIGetDestination"):
+        getattr(cm, fn).restype, getattr(cm, fn).argtypes = u32, [ul]
+    cm.MIDIGetNumberOfSources.restype = cm.MIDIGetNumberOfDestinations.restype = ul
+    cm.MIDIEndpointGetEntity.argtypes = cm.MIDIEntityGetDevice.argtypes = [u32, ctypes.POINTER(u32)]
+    cm.MIDIObjectGetIntegerProperty.argtypes = [u32, vp, ctypes.POINTER(ctypes.c_int32)]
+    cm.MIDIObjectGetStringProperty.argtypes = [u32, vp, ctypes.POINTER(vp)]
+    utf8 = 0x08000100
+    k_loc, k_name = (cf.CFStringCreateWithCString(None, k, utf8) for k in (b"USBLocationID", b"name"))
+
+    def name(o):
+        r = vp()
+        if cm.MIDIObjectGetStringProperty(o, k_name, ctypes.byref(r)) or not r.value:
+            return ""
+        b = ctypes.create_string_buffer(512)
+        cf.CFStringGetCString(r, b, 512, utf8)
+        cf.CFRelease(r)
+        return b.value.decode("utf-8", "replace")
+
+    def at(n, get):
+        out = []
+        for i in range(n):
+            e, ent, dev, v = get(i), u32(), u32(), ctypes.c_int32()
+            if cm.MIDIEndpointGetEntity(e, ctypes.byref(ent)) or cm.MIDIEntityGetDevice(ent.value, ctypes.byref(dev)):
+                continue
+            if not cm.MIDIObjectGetIntegerProperty(dev.value, k_loc, ctypes.byref(v)) and (v.value & 0xFFFFFFFF) == loc:
+                out.append((i, name(dev.value) or name(e)))
+        return out
+    return at(cm.MIDIGetNumberOfSources(), cm.MIDIGetSource), at(cm.MIDIGetNumberOfDestinations(), cm.MIDIGetDestination)
 
 
 def usb_devices():
