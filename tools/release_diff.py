@@ -297,13 +297,17 @@ def measure(binary, case, grid, tmp):
 def merge_shifts(runs):
     """the cells of an effects-on case from its SHIFTS runs: the median over the shifts that measured each metric (clip:
     the maximum; keyup / decay: the median of the shifts whose window sounds, SILENT_TAIL when none does). The metric
-    set is the union: clk_rise, measured only where the note sounds at the key-up, was dropped when shift 0 lacked it"""
+    set is the union (a metric measured in some shifts only was dropped when shift 0 lacked it); clk_sh: the rows of
+    every shift"""
     out = {}
     for lab in runs[0]:
         out[lab] = {}
-        ms = list(dict.fromkeys(m for r in runs for m in r.get(lab, {})))    # every metric any shift measured (clk_rise:
-        for m in ms:                                                       # only where the note sounds at the key-up)
+        ms = list(dict.fromkeys(m for r in runs for m in r.get(lab, {})))    # every metric any shift measured
+        for m in ms:
             vs = [r[lab][m] for r in runs if m in r.get(lab, {})]
+            if m == "clk_sh":           # per shift, every shift's row
+                out[lab][m] = [row for v in vs for row in v]
+                continue
             if m in TAIL_STATE:         # the shifts whose tail sounds (all silent: silent), never a dB of exact zeros
                 vs = [v for v in vs if v != SILENT_TAIL] or [SILENT_TAIL]
                 out[lab][m] = vs[0] if vs[0] == SILENT_TAIL else float(np.median(vs))
@@ -357,8 +361,9 @@ def measure_once(binary, case, grid, tmp, shift):
             tail = mono[off:off + int(0.3 * FS)]      # (re the 200 ms before the key-up, 935763a5; samples of at
             c["clk_off"] = clicks(np.where(np.abs(tail) <= LSB_FLOOR, 0.0, tail), mono[off - int(0.2 * FS):off])
             # most 1 LSB are silence, 1d3c1ca9)
-            if np.abs(mono[off - int(0.01 * FS):off]).max() > LSB_FLOOR:   # the note still sounds at the key-up
-                c["clk_rise"] = key_rise(tail, mono[off - int(0.2 * FS):off])
+            c["clk_sh"] = [[c["clk_off"], key_rise(tail, mono[off - int(0.2 * FS):off]) if sounds_at(mono, off) else None,
+                            float(np.abs(tail).max())]]   # per shift: clk_off, key_rise (None where silent at the
+            # key-up) and the tail's peak (LSB), judged shift by shift (clk_shift_ok)
         if full:
             import cb_loud
             c["lu"] = -0.691 + db(np.mean(np.square(kweight(hold / 32768.0))))
@@ -471,8 +476,22 @@ def moved(m, v, b):
     return d if abs(d) > tol_of(m) else None
 
 
-INFO = ("h1", "clk_rise")          # measured for the other rules (clk_rise: judge, with clk_off), not diffed
+INFO = ("h1", "clk_sh")            # measured for the other rules (clk_sh: clk_off per shift), not diffed
 NODIFF = ("grain",)                 # a ceiling only (a lower grain needs no entry)
+
+
+def sounds_at(mono, off):
+    """the note still sounds at the key-up (sample off): any nonzero sample in its last 10 ms (a 1-LSB note too: the
+    old > 1 LSB test called hq MARIMBA FX B k84v40's +-1 LSB note silent in 2 of its 4 shifts)"""
+    return bool(np.any(mono[off - int(0.01 * FS):off]))
+
+
+def clk_shift_ok(co, rise, peak, lim):
+    """one shift's key-up: under the ratio's ceiling (lim), or where the note sounds at the key-up no rise of the
+    second difference (key_rise <= CLK_RISE), or where it is silent there a tail within 1 LSB (silence, not a click)"""
+    if lim is not None and co <= lim + 1e-9:
+        return True
+    return rise <= CLK_RISE + 1e-9 if rise is not None else peak <= LSB_FLOOR
 
 
 def floor_bin(v, cell):
@@ -559,11 +578,18 @@ def judge(cand, base, expected):
             for m, v in ms.items():
                 if m in INFO:
                     continue
-                if m == "clk_off" and "clk_rise" in ms and ms["clk_rise"] <= CLK_RISE + 1e-9 and \
-                        (bl.get(m) is None or bl[m] <= -100.0 + 1e-9 or v > ceiling(cid, lab, m, v, bl[m], ms)[0]):
-                    continue                    # the note sounds at the key-up and its second difference does not rise
-                                                # there (CLK_RISE): the ratio's ceiling / its move from a silent v0.9.9
-                                                # key-up is the int16 output's 1-LSB steps, not a click
+                if m == "clk_off" and ms.get("clk_sh"):
+                    b = bl.get(m)
+                    lim = ceiling(cid, lab, m, v, b, ms)[0] if b is not None else None
+                    bad = [k for k, row in enumerate(ms["clk_sh"]) if not clk_shift_ok(*row, lim)]
+                    if bad:                     # one shift with a click fails the cell, whatever the median reads
+                        fails.append((cid, lab, m, v, b, lim, ("CEILING: " if lim is not None else "") +
+                                      f"a click after the key-up in shift(s) {bad} of {len(ms['clk_sh'])} (clk_off "
+                                      f"{', '.join(f'{r[0]:.1f}' for r in ms['clk_sh'])} dB)"))
+                        continue
+                    if b is None or b <= -100.0 + 1e-9 or v > lim + 1e-9:
+                        continue                # every shift passes by its own rule: the ratio's ceiling / its move
+                                                # from a silent v0.9.9 key-up is the int16 output's 1-LSB steps
                 if m in TAIL_STATE and SILENT_TAIL in (v, bl.get(m)):
                     b = bl.get(m)
                     if b is None or b == v:
@@ -714,7 +740,7 @@ def main():
         if a.grid != "fast" or not bins:
             raise SystemExit("--save-base: --grid fast with --fm1 and --hq of the last release's tree")
         cells = measure_all(bins, "fast", "base-fast")
-        cells = {c: {l: {m: v if isinstance(v, str) else round(v, 3) for m, v in ms.items()} for l, ms in cs.items()} for c, cs in cells.items()}
+        cells = {c: {l: {m: v if isinstance(v, (str, list)) else round(v, 3) for m, v in ms.items()} for l, ms in cs.items()} for c, cs in cells.items()}
         json.dump({"release": LAST, "cases": cells}, open(BASE_FAST, "w"), indent=0, sort_keys=True)
         print(f"{BASE_FAST}: {len(cells)} cases ({time.time() - t0:.1f} s)")
         return 0
