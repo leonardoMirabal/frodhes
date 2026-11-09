@@ -28,7 +28,7 @@
  * keep 2 bits under the ring's LSB (16x the line's scale; quiet: the ring's 4x as before, x 4) into the mix and the
  * taps, and the return rounds once (0.9.10 rev-grain: at a low MIX the tank never leaves the quiet state; the taps at
  * the ring's LSB, the return truncated after them, left harmonics up to 8 dB over the linear reverb's; loud, the
- * diffusers' and the mix's truncation put the superposition residual at MIX 127 at -73.7 dBFS, now -74.2: the
+ * diffusers' and the mix's truncation put the superposition residual at MIX 127 at -73.7 dBFS, now -76.4 (RQH_LOUD): the
  * effects' pristine gate's -74). rev_hqh_active() is 0 once the input and every line end have been 0 for longer than the longest line. Start: O(1) (the ring is not cleared): until a line has been written through,
  * its reads older than the start read 0 (through the copy of the ring's end, the first 93 ms). */
 
@@ -55,13 +55,16 @@ _Static_assert(RQH_R >= RQH_LMAX + RQH_SW + 1u + 32u && RQH_R % 32u == 0u, "rev_
 #define RQH_SGN 0x96u                                   /* the input's sign per line (bit k: - for line k) */
 #define RQH_OUT 13800                                   /* the taps (Q13 of the row / 16 x 16: the half-rate HALL's Bark
                                                          * loudness; rev_hq.c's return takes the 16 out) */
-#define RQH_LOUD 512                                    /* a line end this quiet (16x the line's scale, all 8, the last block)
+#define RQH_LOUD 2048                                   /* a line end this quiet (16x the line's scale, all 8, the last block)
                                                          * truncates: it then dies to exact zero; louder, they round. (It was
                                                          * 1024 at 4x: a loud tail switched to truncating while a louder one
                                                          * still rounded, the superposition residual of HALL MIX 127 -73.7 dBFS
                                                          * against the bypass' -80 + 6, tools/fx_pristine.py; 128 at 4x: -79.9,
-                                                         * the tail's exact zero ~0.1 s later at DECAY 127, 2026-11-08; 512 at
-                                                         * 16x the same level, 0.9.10 rev-grain's 2 extra bits) */
+                                                         * the tail's exact zero ~0.1 s later at DECAY 127, 2026-11-08. With
+                                                         * 0.9.10 rev-grain's 2 extra bits and loud-mode rounding, 2048 at 16x
+                                                         * (512 at 4x): -76.4; 512 at 16x put a click on the HQ MARIMBA's
+                                                         * key-up (clk_off -48 dB, the quiet switch's step at a low level), 1024 one
+                                                         * on F02 k93v110; 4096: -74.2, too near the -74 limit) */
 static const uint16_t RQH_AL[RQH_AN] = {210, 158, 561, 410};
 static const int16_t RQH_AG[RQH_AN] = {12288, 12288, 10240, 10240};   /* Q14: 0.75, 0.75, 0.625, 0.625 */
 #define RQH_HZ(f) ((uint32_t)((f) * CTL / 44100.0 * 4294967296.0))

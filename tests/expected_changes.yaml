@@ -1273,853 +1273,676 @@ changes:
 # 2026-11-09, the HALL's low-MIX defects fixed (rev-grain Q): the HQ HALL's line ends keep 2 bits under the ring's LSB
 # into the mix and the taps, the return rounds once, a loud tank's diffusers and mix round; the FM-1 HALL's diffusers
 # round while the input is live. The proof re-run on that tree, the median of the gate's 4 strike times (v0.9.9's x3
-# reference where its x4 clips); a cell is listed only when it fails the gate, not on the fx-level base, and is proven.
+# reference where its x4 clips); a cell is listed only when it fails the gate, not on the base, and is proven.
+# 2026-11-09, rebased on rc-0910 1dafc37f (the base; HQ HALL RQH_LOUD 2048 at the 16x scale): the proof re-run on the
+# rebased tree for every cell that fails without these entries and not on the base (277: 274 linear). The 3 not
+# proven are not listed: fm1/F12/PRESET/B k93v64 keyup, hq/F11/PRESET/A k93v40 cb, hq/F11/PRESET/B k45v40 H6.
 # Signed off: coordinator, linear reverb content, proof tests/baselines/rev_grain_linear_proof.json (2026-11-08,
 # re-run 2026-11-09).
+  - match: "fm1/DYNO/FX/B/k69v96"
+    metric: "H4"
+    min: -19.566
+    max: -18.566
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 45.738 against v0.9.9's 52.057, H4)"
   - match: "fm1/F01/PRESET/A/k81v20"
     metric: "cb"
-    min: -7.254
-    max: -6.254
+    min: -7.229
+    max: -6.229
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.109 against v0.9.9's 2.307, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.105 against v0.9.9's 2.307, hold)"
+  - match: "fm1/F01/PRESET/B/k69v127"
+    metric: "clk"
+    min: -7.113
+    max: -6.113
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.708 against v0.9.9's 1.283, hold)"
   - match: "fm1/F01/PRESET/B/k69v20"
     metric: "cb"
     min: -7.409
     max: -6.409
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.18 against v0.9.9's 2.469, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.168 against v0.9.9's 2.469, hold)"
   - match: "fm1/F01/PRESET/B/k81v20"
     metric: "cb"
-    min: -7.117
-    max: -6.117
+    min: -7.093
+    max: -6.093
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.092 against v0.9.9's 2.307, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.089 against v0.9.9's 2.307, hold)"
+  - match: "fm1/F02/PRESET/A/k45v20"
+    metric: "inh"
+    min: 2.508
+    max: 3.508
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.675 against v0.9.9's 2.243, hold)"
   - match: "fm1/F02/PRESET/A/k45v40"
     metric: "keyup"
-    min: -21.712
-    max: -20.712
+    min: -21.88
+    max: -20.88
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.027 against v0.9.9's 2.202, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.037 against v0.9.9's 2.202, keyup)"
+  - match: "fm1/F02/PRESET/A/k93v127"
+    metric: "keyup"
+    min: -2.506
+    max: -1.506
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.641 against v0.9.9's 1.737, keyup)"
+  - match: "fm1/F02/PRESET/B/k45v20"
+    metric: "inh"
+    min: 2.558
+    max: 3.558
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.675 against v0.9.9's 2.243, hold)"
   - match: "fm1/F02/PRESET/B/k45v40"
     metric: "keyup"
-    min: -21.878
-    max: -20.878
+    min: -21.954
+    max: -20.954
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.038 against v0.9.9's 2.202, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.03 against v0.9.9's 2.202, keyup)"
+  - match: "fm1/F02/PRESET/B/k93v127"
+    metric: "keyup"
+    min: -2.508
+    max: -1.508
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.651 against v0.9.9's 1.737, keyup)"
   - match: "fm1/F03/PRESET/A/k69v20"
     metric: "cb"
-    min: -7.783
-    max: -6.783
+    min: -7.787
+    max: -6.787
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 1.171 against v0.9.9's 2.62, hold)"
   - match: "fm1/F04/PRESET/A/k57v20"
     metric: "level"
-    min: -7.074
-    max: -6.074
+    min: -7.068
+    max: -6.068
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.702 against v0.9.9's 1.436, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.71 against v0.9.9's 1.436, hold)"
   - match: "fm1/F04/PRESET/A/k57v20"
     metric: "lu"
-    min: -7.074
-    max: -6.074
+    min: -7.068
+    max: -6.068
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.702 against v0.9.9's 1.436, hold)"
-  - match: "fm1/F05/PRESET/A/k57v40"
-    metric: "H3"
-    min: 3.946
-    max: 4.946
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 47.37 against v0.9.9's 55.391, H3)"
+    reason: "rev-grain: linear reverb content (residual 0.71 against v0.9.9's 1.436, hold)"
   - match: "fm1/F05/PRESET/A/k81v20"
     metric: "cb"
-    min: -6.683
-    max: -5.683
+    min: -6.597
+    max: -5.597
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.638 against v0.9.9's 1.258, hold)"
-  - match: "fm1/F05/PRESET/B/k57v40"
-    metric: "H3"
-    min: 3.125
-    max: 4.125
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 47.062 against v0.9.9's 55.391, H3)"
+    reason: "rev-grain: linear reverb content (residual 0.689 against v0.9.9's 1.258, hold)"
   - match: "fm1/F05/PRESET/B/k81v20"
     metric: "cb"
-    min: -6.549
-    max: -5.549
+    min: -6.474
+    max: -5.474
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.632 against v0.9.9's 1.258, hold)"
-  - match: "fm1/F05/PRESET/B/k93v20"
-    metric: "cb"
-    min: -9.241
-    max: -8.241
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.618 against v0.9.9's 1.162, hold)"
-  - match: "fm1/F06/PRESET/A/k45v20"
-    metric: "H3"
-    min: 6.358
-    max: 7.358
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 45.855 against v0.9.9's 56.419, H3)"
-  - match: "fm1/F06/PRESET/A/k45v20"
-    metric: "H5"
-    min: 4.412
-    max: 5.412
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 41.942 against v0.9.9's 52.247, H5)"
-  - match: "fm1/F06/PRESET/A/k69v20"
-    metric: "clk_off"
-    min: -13.192
-    max: -12.192
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.592 against v0.9.9's 1.04, clk_off)"
-  - match: "fm1/F06/PRESET/A/k81v20"
-    metric: "clk_off"
-    min: -11.518
-    max: -10.518
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.623 against v0.9.9's 1.139, clk_off)"
-  - match: "fm1/F06/PRESET/A/k81v40"
-    metric: "clk_off"
-    min: -12.972
-    max: -11.972
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.63 against v0.9.9's 1.185, clk_off)"
-  - match: "fm1/F06/PRESET/A/k93v20"
-    metric: "clk_off"
-    min: -11.02
-    max: -10.02
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.693 against v0.9.9's 1.533, clk_off)"
-  - match: "fm1/F06/PRESET/B/k33v40"
-    metric: "H5"
-    min: 3.015
-    max: 4.015
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 42.54 against v0.9.9's 50.327, H5)"
-  - match: "fm1/F06/PRESET/B/k45v64"
-    metric: "H4"
-    min: 2.862
-    max: 3.862
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 47.829 against v0.9.9's 54.492, H4)"
-  - match: "fm1/F06/PRESET/B/k57v20"
-    metric: "inh"
-    min: 2.519
-    max: 3.519
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.586 against v0.9.9's 1.044, hold)"
-  - match: "fm1/F06/PRESET/B/k57v40"
-    metric: "H3"
-    min: 2.624
-    max: 3.624
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 57.237 against v0.9.9's 66.19, H3)"
-  - match: "fm1/F06/PRESET/B/k69v20"
-    metric: "clk_off"
-    min: -13.222
-    max: -12.222
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.598 against v0.9.9's 1.04, clk_off)"
-  - match: "fm1/F06/PRESET/B/k81v20"
-    metric: "clk_off"
-    min: -13.133
-    max: -12.133
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.62 against v0.9.9's 1.139, clk_off)"
-  - match: "fm1/F06/PRESET/B/k81v40"
-    metric: "clk_off"
-    min: -12.302
-    max: -11.302
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.637 against v0.9.9's 1.185, clk_off)"
-  - match: "fm1/F06/PRESET/B/k93v20"
-    metric: "clk_off"
-    min: -12.895
-    max: -11.895
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.691 against v0.9.9's 1.533, clk_off)"
-  - match: "fm1/F11/PRESET/B/k93v40"
-    metric: "H3"
-    min: 2.67
-    max: 3.67
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 45.495 against v0.9.9's 50.994, H3)"
-  - match: "fm1/F11/PRESET/B/k93v96"
-    metric: "H3"
-    min: -16.179
-    max: -15.179
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 44.182 against v0.9.9's 51.032, H3)"
+    reason: "rev-grain: linear reverb content (residual 0.684 against v0.9.9's 1.258, hold)"
   - match: "fm1/F12/PRESET/A/k81v64"
     metric: "keyup"
-    min: 1.757
-    max: 2.757
+    min: 1.778
+    max: 2.778
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 3.888 against v0.9.9's 15.826, keyup)"
+    reason: "rev-grain: linear reverb content (residual 3.817 against v0.9.9's 15.826, keyup)"
   - match: "fm1/F12/PRESET/A/k93v110"
     metric: "keyup"
-    min: 7.698
-    max: 8.698
+    min: 7.712
+    max: 8.712
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 2.98 against v0.9.9's 6.517, keyup)"
+    reason: "rev-grain: linear reverb content (residual 3.006 against v0.9.9's 6.517, keyup)"
   - match: "fm1/F12/PRESET/A/k93v127"
     metric: "cb"
-    min: -2.302
-    max: -1.302
+    min: -2.486
+    max: -1.486
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 2.806 against v0.9.9's 7.049, hold)"
-  - match: "fm1/F12/PRESET/A/k93v127"
-    metric: "peak"
-    min: -2.501
-    max: -1.501
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 2.806 against v0.9.9's 7.049, hold)"
+    reason: "rev-grain: linear reverb content (residual 2.786 against v0.9.9's 7.049, hold)"
   - match: "fm1/F12/PRESET/A/k93v96"
     metric: "keyup"
-    min: 12.174
-    max: 13.174
+    min: 12.121
+    max: 13.121
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 2.796 against v0.9.9's 5.416, keyup)"
   - match: "fm1/F12/PRESET/B/k81v64"
     metric: "keyup"
-    min: 1.75
-    max: 2.75
+    min: 1.724
+    max: 2.724
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 3.85 against v0.9.9's 15.826, keyup)"
+    reason: "rev-grain: linear reverb content (residual 3.821 against v0.9.9's 15.826, keyup)"
   - match: "fm1/F12/PRESET/B/k93v110"
     metric: "keyup"
-    min: 7.743
-    max: 8.743
+    min: 7.709
+    max: 8.709
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 3.039 against v0.9.9's 6.517, keyup)"
+    reason: "rev-grain: linear reverb content (residual 3.038 against v0.9.9's 6.517, keyup)"
   - match: "fm1/F12/PRESET/B/k93v127"
     metric: "cb"
-    min: -2.277
-    max: -1.277
+    min: -2.47
+    max: -1.47
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 2.802 against v0.9.9's 7.049, hold)"
+    reason: "rev-grain: linear reverb content (residual 2.789 against v0.9.9's 7.049, hold)"
   - match: "fm1/F12/PRESET/B/k93v96"
     metric: "keyup"
-    min: 12.317
-    max: 13.317
+    min: 12.332
+    max: 13.332
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 2.821 against v0.9.9's 5.416, keyup)"
+    reason: "rev-grain: linear reverb content (residual 2.798 against v0.9.9's 5.416, keyup)"
   - match: "fm1/F15/PRESET/A/k45v20"
     metric: "H2"
-    min: -11.932
-    max: -10.932
+    min: -14.737
+    max: -13.737
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 52.481 against v0.9.9's 64.798, H2)"
+    reason: "rev-grain: linear reverb content (residual 52.219 against v0.9.9's 64.798, H2)"
   - match: "fm1/F15/PRESET/A/k45v40"
     metric: "H3"
-    min: -17.735
-    max: -16.735
+    min: -17.299
+    max: -16.299
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 56.065 against v0.9.9's 70.038, H3)"
+    reason: "rev-grain: linear reverb content (residual 55.429 against v0.9.9's 70.038, H3)"
+  - match: "fm1/F15/PRESET/A/k60v20"
+    metric: "H3"
+    min: -14.767
+    max: -13.767
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 53.893 against v0.9.9's 66.163, H3)"
   - match: "fm1/F15/PRESET/A/k67v110"
     metric: "keyup"
-    min: 2.984
-    max: 3.984
+    min: 2.878
+    max: 3.878
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.129 against v0.9.9's 3.039, keyup)"
-  - match: "fm1/F15/PRESET/A/k67v127"
-    metric: "keyup"
-    min: 1.509
-    max: 2.509
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.025 against v0.9.9's 2.734, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.15 against v0.9.9's 3.039, keyup)"
   - match: "fm1/F15/PRESET/A/k67v20"
     metric: "H5"
-    min: -11.94
-    max: -10.94
+    min: -10.922
+    max: -9.922
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 49.645 against v0.9.9's 58.647, H5)"
+    reason: "rev-grain: linear reverb content (residual 50.383 against v0.9.9's 58.647, H5)"
   - match: "fm1/F15/PRESET/A/k67v40"
     metric: "H3"
-    min: -16.137
-    max: -15.137
+    min: -15.167
+    max: -14.167
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 50.915 against v0.9.9's 65.833, H3)"
+    reason: "rev-grain: linear reverb content (residual 52.942 against v0.9.9's 65.833, H3)"
   - match: "fm1/F15/PRESET/A/k67v40"
     metric: "H5"
-    min: -13.529
-    max: -12.529
+    min: -15.569
+    max: -14.569
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 47.402 against v0.9.9's 62.012, H5)"
+    reason: "rev-grain: linear reverb content (residual 48.206 against v0.9.9's 62.012, H5)"
   - match: "fm1/F15/PRESET/A/k74v110"
     metric: "keyup"
-    min: 3.915
-    max: 4.915
+    min: 3.91
+    max: 4.91
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.992 against v0.9.9's 1.863, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.006 against v0.9.9's 1.863, keyup)"
   - match: "fm1/F15/PRESET/A/k74v20"
     metric: "H2"
-    min: -4.203
-    max: -3.203
+    min: -4.076
+    max: -3.076
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 48.004 against v0.9.9's 53.607, H2)"
-  - match: "fm1/F15/PRESET/A/k74v40"
-    metric: "H2"
-    min: -3.557
-    max: -2.557
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 49.877 against v0.9.9's 52.291, H2)"
+    reason: "rev-grain: linear reverb content (residual 47.446 against v0.9.9's 53.607, H2)"
   - match: "fm1/F15/PRESET/A/k74v40"
     metric: "decay"
-    min: -207.071
-    max: -206.071
+    min: -207.215
+    max: -206.215
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.846 against v0.9.9's 1.458, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.838 against v0.9.9's 1.458, hold)"
   - match: "fm1/F15/PRESET/A/k74v64"
     metric: "clk_off"
-    min: 104.271
-    max: 105.271
+    min: 104.729
+    max: 105.729
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.65 against v0.9.9's 0.709, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.636 against v0.9.9's 0.709, clk_off)"
   - match: "fm1/F15/PRESET/A/k74v64"
     metric: "decay"
-    min: -5.634
-    max: -4.634
+    min: -5.637
+    max: -4.637
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.849 against v0.9.9's 1.558, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.843 against v0.9.9's 1.558, hold)"
   - match: "fm1/F15/PRESET/A/k74v64"
     metric: "keyup"
-    min: 188.54
-    max: 189.54
+    min: 189.587
+    max: 190.587
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.515 against v0.9.9's 0.51, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.512 against v0.9.9's 0.51, keyup)"
   - match: "fm1/F15/PRESET/A/k74v96"
     metric: "keyup"
-    min: 7.226
-    max: 8.226
+    min: 7.315
+    max: 8.315
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.971 against v0.9.9's 1.417, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.966 against v0.9.9's 1.417, keyup)"
   - match: "fm1/F15/PRESET/A/k81v110"
     metric: "keyup"
-    min: 10.258
-    max: 11.258
+    min: 10.276
+    max: 11.276
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.686 against v0.9.9's 4.103, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.67 against v0.9.9's 4.103, keyup)"
   - match: "fm1/F15/PRESET/A/k81v127"
     metric: "keyup"
-    min: 4.023
-    max: 5.023
+    min: 4.024
+    max: 5.024
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.398 against v0.9.9's 4.292, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.405 against v0.9.9's 4.292, keyup)"
   - match: "fm1/F15/PRESET/A/k81v40"
     metric: "decay"
-    min: -201.679
-    max: -200.679
+    min: -201.264
+    max: -200.264
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.015 against v0.9.9's 2.152, hold)"
-  - match: "fm1/F15/PRESET/A/k81v64"
-    metric: "H5"
-    min: -10.448
-    max: -9.448
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 47.98 against v0.9.9's 55.234, H5)"
+    reason: "rev-grain: linear reverb content (residual 1.012 against v0.9.9's 2.152, hold)"
   - match: "fm1/F15/PRESET/A/k81v64"
     metric: "clk_off"
     min: 103.937
     max: 104.937
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.772 against v0.9.9's 0.95, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.786 against v0.9.9's 0.95, clk_off)"
   - match: "fm1/F15/PRESET/A/k81v64"
     metric: "decay"
-    min: -10.547
-    max: -9.547
+    min: -10.471
+    max: -9.471
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 0.986 against v0.9.9's 2.119, hold)"
   - match: "fm1/F15/PRESET/A/k81v96"
     metric: "keyup"
-    min: 31.712
-    max: 32.712
+    min: 31.696
+    max: 32.696
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.803 against v0.9.9's 2.892, keyup)"
-  - match: "fm1/F15/PRESET/A/k89v110"
-    metric: "clk_off"
-    min: 103.76
-    max: 104.76
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.952 against v0.9.9's 1.062, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 1.8 against v0.9.9's 2.892, keyup)"
   - match: "fm1/F15/PRESET/A/k89v110"
     metric: "decay"
-    min: -6.665
-    max: -5.665
+    min: -6.667
+    max: -5.667
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.953 against v0.9.9's 2.453, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.954 against v0.9.9's 2.453, hold)"
   - match: "fm1/F15/PRESET/A/k89v127"
     metric: "keyup"
-    min: 200.751
-    max: 201.751
+    min: 200.903
+    max: 201.903
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.096 against v0.9.9's 1.353, keyup)"
-  - match: "fm1/F15/PRESET/A/k89v64"
-    metric: "decay"
-    min: -188.406
-    max: -187.406
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.037 against v0.9.9's 2.296, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.086 against v0.9.9's 1.353, keyup)"
   - match: "fm1/F15/PRESET/A/k89v96"
     metric: "clk_off"
     min: 101.999
     max: 102.999
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.467 against v0.9.9's 0.489, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.457 against v0.9.9's 0.489, clk_off)"
   - match: "fm1/F15/PRESET/A/k89v96"
     metric: "decay"
-    min: -13.677
-    max: -12.677
+    min: -13.651
+    max: -12.651
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.113 against v0.9.9's 2.508, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.107 against v0.9.9's 2.508, hold)"
   - match: "fm1/F15/PRESET/B/k45v20"
     metric: "H2"
-    min: -11.932
-    max: -10.932
+    min: -14.737
+    max: -13.737
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 52.481 against v0.9.9's 64.798, H2)"
+    reason: "rev-grain: linear reverb content (residual 52.219 against v0.9.9's 64.798, H2)"
   - match: "fm1/F15/PRESET/B/k45v40"
     metric: "H3"
-    min: -17.735
-    max: -16.735
+    min: -17.299
+    max: -16.299
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 56.065 against v0.9.9's 70.038, H3)"
+    reason: "rev-grain: linear reverb content (residual 55.429 against v0.9.9's 70.038, H3)"
+  - match: "fm1/F15/PRESET/B/k60v20"
+    metric: "H3"
+    min: -14.767
+    max: -13.767
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 53.893 against v0.9.9's 66.163, H3)"
   - match: "fm1/F15/PRESET/B/k67v110"
     metric: "keyup"
-    min: 2.984
-    max: 3.984
+    min: 2.878
+    max: 3.878
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.129 against v0.9.9's 3.039, keyup)"
-  - match: "fm1/F15/PRESET/B/k67v127"
-    metric: "keyup"
-    min: 1.509
-    max: 2.509
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.025 against v0.9.9's 2.734, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.15 against v0.9.9's 3.039, keyup)"
   - match: "fm1/F15/PRESET/B/k67v20"
     metric: "H5"
-    min: -11.94
-    max: -10.94
+    min: -10.922
+    max: -9.922
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 49.645 against v0.9.9's 58.647, H5)"
+    reason: "rev-grain: linear reverb content (residual 50.383 against v0.9.9's 58.647, H5)"
   - match: "fm1/F15/PRESET/B/k67v40"
     metric: "H3"
-    min: -16.137
-    max: -15.137
+    min: -15.167
+    max: -14.167
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 50.915 against v0.9.9's 65.833, H3)"
+    reason: "rev-grain: linear reverb content (residual 52.942 against v0.9.9's 65.833, H3)"
   - match: "fm1/F15/PRESET/B/k67v40"
     metric: "H5"
-    min: -13.529
-    max: -12.529
+    min: -15.569
+    max: -14.569
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 47.402 against v0.9.9's 62.012, H5)"
+    reason: "rev-grain: linear reverb content (residual 48.206 against v0.9.9's 62.012, H5)"
   - match: "fm1/F15/PRESET/B/k74v110"
     metric: "keyup"
-    min: 3.915
-    max: 4.915
+    min: 3.91
+    max: 4.91
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.992 against v0.9.9's 1.863, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.006 against v0.9.9's 1.863, keyup)"
   - match: "fm1/F15/PRESET/B/k74v20"
     metric: "H2"
-    min: -4.203
-    max: -3.203
+    min: -4.076
+    max: -3.076
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 48.004 against v0.9.9's 53.607, H2)"
-  - match: "fm1/F15/PRESET/B/k74v40"
-    metric: "H2"
-    min: -3.557
-    max: -2.557
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 49.877 against v0.9.9's 52.291, H2)"
+    reason: "rev-grain: linear reverb content (residual 47.446 against v0.9.9's 53.607, H2)"
   - match: "fm1/F15/PRESET/B/k74v40"
     metric: "decay"
-    min: -207.071
-    max: -206.071
+    min: -207.215
+    max: -206.215
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.846 against v0.9.9's 1.458, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.838 against v0.9.9's 1.458, hold)"
   - match: "fm1/F15/PRESET/B/k74v64"
     metric: "clk_off"
-    min: 104.271
-    max: 105.271
+    min: 104.729
+    max: 105.729
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.65 against v0.9.9's 0.709, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.636 against v0.9.9's 0.709, clk_off)"
   - match: "fm1/F15/PRESET/B/k74v64"
     metric: "decay"
-    min: -5.634
-    max: -4.634
+    min: -5.637
+    max: -4.637
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.849 against v0.9.9's 1.558, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.843 against v0.9.9's 1.558, hold)"
   - match: "fm1/F15/PRESET/B/k74v64"
     metric: "keyup"
-    min: 188.54
-    max: 189.54
+    min: 189.587
+    max: 190.587
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.515 against v0.9.9's 0.51, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.512 against v0.9.9's 0.51, keyup)"
   - match: "fm1/F15/PRESET/B/k74v96"
     metric: "keyup"
-    min: 7.226
-    max: 8.226
+    min: 7.315
+    max: 8.315
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.971 against v0.9.9's 1.417, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.966 against v0.9.9's 1.417, keyup)"
   - match: "fm1/F15/PRESET/B/k81v110"
     metric: "keyup"
-    min: 10.258
-    max: 11.258
+    min: 10.276
+    max: 11.276
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.686 against v0.9.9's 4.103, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.67 against v0.9.9's 4.103, keyup)"
   - match: "fm1/F15/PRESET/B/k81v127"
     metric: "keyup"
-    min: 4.023
-    max: 5.023
+    min: 4.024
+    max: 5.024
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.398 against v0.9.9's 4.292, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.405 against v0.9.9's 4.292, keyup)"
   - match: "fm1/F15/PRESET/B/k81v40"
     metric: "decay"
-    min: -201.679
-    max: -200.679
+    min: -201.264
+    max: -200.264
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.015 against v0.9.9's 2.152, hold)"
-  - match: "fm1/F15/PRESET/B/k81v64"
-    metric: "H5"
-    min: -10.448
-    max: -9.448
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 47.98 against v0.9.9's 55.234, H5)"
+    reason: "rev-grain: linear reverb content (residual 1.012 against v0.9.9's 2.152, hold)"
   - match: "fm1/F15/PRESET/B/k81v64"
     metric: "clk_off"
     min: 103.937
     max: 104.937
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.772 against v0.9.9's 0.95, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.786 against v0.9.9's 0.95, clk_off)"
   - match: "fm1/F15/PRESET/B/k81v64"
     metric: "decay"
-    min: -10.547
-    max: -9.547
+    min: -10.471
+    max: -9.471
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 0.986 against v0.9.9's 2.119, hold)"
   - match: "fm1/F15/PRESET/B/k81v96"
     metric: "keyup"
-    min: 31.712
-    max: 32.712
+    min: 31.696
+    max: 32.696
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.803 against v0.9.9's 2.892, keyup)"
-  - match: "fm1/F15/PRESET/B/k89v110"
-    metric: "clk_off"
-    min: 103.76
-    max: 104.76
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.952 against v0.9.9's 1.062, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 1.8 against v0.9.9's 2.892, keyup)"
   - match: "fm1/F15/PRESET/B/k89v110"
     metric: "decay"
-    min: -6.665
-    max: -5.665
+    min: -6.667
+    max: -5.667
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.953 against v0.9.9's 2.453, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.954 against v0.9.9's 2.453, hold)"
   - match: "fm1/F15/PRESET/B/k89v127"
     metric: "keyup"
-    min: 200.751
-    max: 201.751
+    min: 200.903
+    max: 201.903
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.096 against v0.9.9's 1.353, keyup)"
-  - match: "fm1/F15/PRESET/B/k89v64"
-    metric: "decay"
-    min: -188.406
-    max: -187.406
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.037 against v0.9.9's 2.296, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.086 against v0.9.9's 1.353, keyup)"
   - match: "fm1/F15/PRESET/B/k89v96"
     metric: "clk_off"
     min: 101.999
     max: 102.999
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.467 against v0.9.9's 0.489, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.457 against v0.9.9's 0.489, clk_off)"
   - match: "fm1/F15/PRESET/B/k89v96"
     metric: "decay"
-    min: -13.677
-    max: -12.677
+    min: -13.651
+    max: -12.651
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.113 against v0.9.9's 2.508, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.107 against v0.9.9's 2.508, hold)"
   - match: "fm1/F16/PRESET/A/k67v20"
     metric: "H3"
-    min: -15.008
-    max: -14.008
+    min: -11.386
+    max: -10.386
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 45.295 against v0.9.9's 62.649, H3)"
+    reason: "rev-grain: linear reverb content (residual 46.854 against v0.9.9's 62.649, H3)"
   - match: "fm1/F16/PRESET/A/k67v20"
     metric: "H5"
-    min: -14.326
-    max: -13.326
+    min: -14.834
+    max: -13.834
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 42.291 against v0.9.9's 60.759, H5)"
+    reason: "rev-grain: linear reverb content (residual 44.617 against v0.9.9's 60.759, H5)"
   - match: "fm1/F16/PRESET/A/k67v40"
     metric: "H3"
-    min: -13.626
-    max: -12.626
+    min: -13.422
+    max: -12.422
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 47.746 against v0.9.9's 66.614, H3)"
+    reason: "rev-grain: linear reverb content (residual 45.793 against v0.9.9's 66.614, H3)"
   - match: "fm1/F16/PRESET/A/k81v40"
     metric: "keyup"
-    min: 2.374
-    max: 3.374
+    min: 2.398
+    max: 3.398
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.414 against v0.9.9's 5.661, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.398 against v0.9.9's 5.661, keyup)"
+  - match: "fm1/F16/PRESET/A/k89v20"
+    metric: "H3"
+    min: -10.047
+    max: -9.047
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 45.115 against v0.9.9's 58.113, H3)"
   - match: "fm1/F16/PRESET/A/k89v20"
     metric: "keyup"
-    min: 1.642
-    max: 2.642
+    min: 1.685
+    max: 2.685
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.37 against v0.9.9's 0.953, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.38 against v0.9.9's 0.953, keyup)"
+  - match: "fm1/F16/PRESET/A/k89v64"
+    metric: "H3"
+    min: -10.592
+    max: -9.592
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 41.402 against v0.9.9's 53.909, H3)"
   - match: "fm1/F16/PRESET/A/k89v64"
     metric: "keyup"
-    min: 4.755
-    max: 5.755
+    min: 4.751
+    max: 5.751
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.072 against v0.9.9's 3.738, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.075 against v0.9.9's 3.738, keyup)"
   - match: "fm1/F16/PRESET/B/k67v20"
     metric: "H3"
-    min: -15.008
-    max: -14.008
+    min: -11.386
+    max: -10.386
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 45.295 against v0.9.9's 62.649, H3)"
+    reason: "rev-grain: linear reverb content (residual 46.854 against v0.9.9's 62.649, H3)"
   - match: "fm1/F16/PRESET/B/k67v20"
     metric: "H5"
-    min: -14.326
-    max: -13.326
+    min: -14.834
+    max: -13.834
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 42.291 against v0.9.9's 60.759, H5)"
+    reason: "rev-grain: linear reverb content (residual 44.617 against v0.9.9's 60.759, H5)"
   - match: "fm1/F16/PRESET/B/k67v40"
     metric: "H3"
-    min: -13.626
-    max: -12.626
+    min: -13.422
+    max: -12.422
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 47.746 against v0.9.9's 66.614, H3)"
+    reason: "rev-grain: linear reverb content (residual 45.793 against v0.9.9's 66.614, H3)"
   - match: "fm1/F16/PRESET/B/k81v40"
     metric: "keyup"
-    min: 2.374
-    max: 3.374
+    min: 2.398
+    max: 3.398
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.414 against v0.9.9's 5.661, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.398 against v0.9.9's 5.661, keyup)"
+  - match: "fm1/F16/PRESET/B/k89v20"
+    metric: "H3"
+    min: -10.047
+    max: -9.047
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 45.115 against v0.9.9's 58.113, H3)"
   - match: "fm1/F16/PRESET/B/k89v20"
     metric: "keyup"
-    min: 1.642
-    max: 2.642
+    min: 1.685
+    max: 2.685
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.37 against v0.9.9's 0.953, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.38 against v0.9.9's 0.953, keyup)"
+  - match: "fm1/F16/PRESET/B/k89v64"
+    metric: "H3"
+    min: -10.592
+    max: -9.592
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 41.402 against v0.9.9's 53.909, H3)"
   - match: "fm1/F16/PRESET/B/k89v64"
     metric: "keyup"
-    min: 4.755
-    max: 5.755
+    min: 4.751
+    max: 5.751
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.072 against v0.9.9's 3.738, keyup)"
-  - match: "fm1/F17/PRESET/A/k28v40"
-    metric: "cb"
-    min: -6.384
-    max: -5.384
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.62 against v0.9.9's 1.007, hold)"
-  - match: "fm1/F17/PRESET/A/k45v20"
-    metric: "cb"
-    min: -7.024
-    max: -6.024
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.62 against v0.9.9's 0.996, hold)"
-  - match: "fm1/F17/PRESET/B/k28v40"
-    metric: "cb"
-    min: -6.376
-    max: -5.376
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.622 against v0.9.9's 1.007, hold)"
-  - match: "fm1/F17/PRESET/B/k45v20"
-    metric: "cb"
-    min: -7.066
-    max: -6.066
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.623 against v0.9.9's 0.996, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.075 against v0.9.9's 3.738, keyup)"
   - match: "fm1/F17/PRESET/B/k69v20"
     metric: "cb"
-    min: -7.0
-    max: -6.0
+    min: -7.22
+    max: -6.22
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.665 against v0.9.9's 1.239, hold)"
-  - match: "fm1/F18/PRESET/A/k69v40"
-    metric: "cb"
-    min: -4.271
-    max: -3.271
+    reason: "rev-grain: linear reverb content (residual 0.669 against v0.9.9's 1.239, hold)"
+  - match: "fm1/F19/PRESET/A/k93v127"
+    metric: "decay"
+    min: -3.97
+    max: -2.97
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.903 against v0.9.9's 1.284, hold)"
-  - match: "fm1/F18/PRESET/A/k81v40"
-    metric: "cb"
-    min: -3.909
-    max: -2.909
+    reason: "rev-grain: linear reverb content (residual 1.024 against v0.9.9's 2.084, hold)"
+  - match: "fm1/F19/PRESET/B/k93v96"
+    metric: "H3"
+    min: -20.591
+    max: -19.591
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.81 against v0.9.9's 1.417, hold)"
-  - match: "fm1/F19/PRESET/A/k57v40"
-    metric: "H5"
-    min: 3.239
-    max: 4.239
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 59.273 against v0.9.9's 62.427, H5)"
-  - match: "fm1/F19/PRESET/A/k57v40"
-    metric: "H6"
-    min: 3.48
-    max: 4.48
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 54.686 against v0.9.9's 58.745, H6)"
-  - match: "fm1/F19/PRESET/B/k57v40"
-    metric: "H5"
-    min: 5.916
-    max: 6.916
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 61.847 against v0.9.9's 62.427, H5)"
-  - match: "fm1/F19/PRESET/B/k57v40"
-    metric: "H6"
-    min: 3.386
-    max: 4.386
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 54.318 against v0.9.9's 58.745, H6)"
+    reason: "rev-grain: linear reverb content (residual 49.108 against v0.9.9's 60.96, H3)"
   - match: "fm1/MARIMBA/FX/A/k45v40"
     metric: "keyup"
-    min: 24.315
-    max: 25.315
+    min: 24.302
+    max: 25.302
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.998 against v0.9.9's 1.447, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.009 against v0.9.9's 1.447, keyup)"
   - match: "fm1/MARIMBA/FX/A/k45v64"
     metric: "keyup"
-    min: 6.006
-    max: 7.006
+    min: 6.134
+    max: 7.134
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.158 against v0.9.9's 2.707, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.135 against v0.9.9's 2.707, keyup)"
   - match: "fm1/MARIMBA/FX/A/k53v40"
     metric: "keyup"
-    min: 205.494
-    max: 206.494
+    min: 205.648
+    max: 206.648
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.2 against v0.9.9's 1.726, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.189 against v0.9.9's 1.726, keyup)"
   - match: "fm1/MARIMBA/FX/A/k53v64"
     metric: "keyup"
-    min: 6.986
-    max: 7.986
+    min: 6.99
+    max: 7.99
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.138 against v0.9.9's 3.36, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.153 against v0.9.9's 3.36, keyup)"
   - match: "fm1/MARIMBA/FX/A/k57v40"
     metric: "keyup"
-    min: 10.78
-    max: 11.78
+    min: 10.742
+    max: 11.742
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.19 against v0.9.9's 2.918, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.2 against v0.9.9's 2.918, keyup)"
   - match: "fm1/MARIMBA/FX/A/k60v110"
     metric: "keyup"
-    min: 201.348
-    max: 202.348
+    min: 201.622
+    max: 202.622
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.582 against v0.9.9's 0.636, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.587 against v0.9.9's 0.636, keyup)"
   - match: "fm1/MARIMBA/FX/A/k60v127"
     metric: "keyup"
-    min: 13.03
-    max: 14.03
+    min: 13.072
+    max: 14.072
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.729 against v0.9.9's 0.963, keyup)"
-  - match: "fm1/MARIMBA/FX/A/k60v20"
+    reason: "rev-grain: linear reverb content (residual 0.723 against v0.9.9's 0.963, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k60v40"
     metric: "H3"
-    min: -13.715
-    max: -12.715
+    min: -12.811
+    max: -11.811
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 51.263 against v0.9.9's 63.694, H3)"
+    reason: "rev-grain: linear reverb content (residual 51.234 against v0.9.9's 64.518, H3)"
   - match: "fm1/MARIMBA/FX/A/k60v96"
     metric: "keyup"
-    min: 190.267
-    max: 191.267
+    min: 190.942
+    max: 191.942
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 0.375 against v0.9.9's 0.356, keyup)"
   - match: "fm1/MARIMBA/FX/A/k67v110"
     metric: "keyup"
-    min: 10.019
-    max: 11.019
+    min: 9.909
+    max: 10.909
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.139 against v0.9.9's 2.11, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.131 against v0.9.9's 2.11, keyup)"
   - match: "fm1/MARIMBA/FX/A/k67v127"
     metric: "keyup"
-    min: 8.2
-    max: 9.2
+    min: 7.9
+    max: 8.9
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.064 against v0.9.9's 2.708, keyup)"
-  - match: "fm1/MARIMBA/FX/A/k67v20"
-    metric: "H5"
-    min: -10.244
-    max: -9.244
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 46.371 against v0.9.9's 55.009, H5)"
-  - match: "fm1/MARIMBA/FX/A/k67v20"
-    metric: "H6"
-    min: -10.161
-    max: -9.161
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 44.247 against v0.9.9's 55.409, H6)"
+    reason: "rev-grain: linear reverb content (residual 1.109 against v0.9.9's 2.708, keyup)"
   - match: "fm1/MARIMBA/FX/A/k67v40"
     metric: "H3"
-    min: -16.131
-    max: -15.131
+    min: -16.005
+    max: -15.005
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 49.76 against v0.9.9's 64.356, H3)"
+    reason: "rev-grain: linear reverb content (residual 50.424 against v0.9.9's 64.356, H3)"
   - match: "fm1/MARIMBA/FX/A/k67v40"
     metric: "H5"
-    min: -14.255
-    max: -13.255
+    min: -14.729
+    max: -13.729
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 48.195 against v0.9.9's 62.161, H5)"
+    reason: "rev-grain: linear reverb content (residual 47.491 against v0.9.9's 62.161, H5)"
   - match: "fm1/MARIMBA/FX/A/k67v96"
     metric: "keyup"
-    min: 15.91
-    max: 16.91
+    min: 16.013
+    max: 17.013
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.041 against v0.9.9's 1.33, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.056 against v0.9.9's 1.33, keyup)"
   - match: "fm1/MARIMBA/FX/A/k69v40"
     metric: "decay"
-    min: -5.631
-    max: -4.631
+    min: -5.505
+    max: -4.505
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.069 against v0.9.9's 3.1, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.075 against v0.9.9's 3.1, hold)"
   - match: "fm1/MARIMBA/FX/A/k69v96"
     metric: "keyup"
-    min: 8.573
-    max: 9.573
+    min: 8.587
+    max: 9.587
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 1.769 against v0.9.9's 5.18, keyup)"
   - match: "fm1/MARIMBA/FX/A/k74v110"
     metric: "keyup"
-    min: 7.715
-    max: 8.715
+    min: 7.396
+    max: 8.396
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.822 against v0.9.9's 1.186, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.824 against v0.9.9's 1.186, keyup)"
   - match: "fm1/MARIMBA/FX/A/k74v127"
     metric: "keyup"
-    min: 5.473
-    max: 6.473
+    min: 5.152
+    max: 6.152
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.875 against v0.9.9's 1.549, keyup)"
-  - match: "fm1/MARIMBA/FX/A/k74v20"
-    metric: "H3"
-    min: -12.766
-    max: -11.766
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 54.87 against v0.9.9's 65.851, H3)"
+    reason: "rev-grain: linear reverb content (residual 0.868 against v0.9.9's 1.549, keyup)"
   - match: "fm1/MARIMBA/FX/A/k74v40"
     metric: "H5"
-    min: -10.676
-    max: -9.676
+    min: -10.025
+    max: -9.025
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 46.659 against v0.9.9's 56.919, H5)"
-  - match: "fm1/MARIMBA/FX/A/k74v40"
-    metric: "decay"
-    min: -196.815
-    max: -195.815
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.684 against v0.9.9's 1.259, hold)"
+    reason: "rev-grain: linear reverb content (residual 47.556 against v0.9.9's 56.919, H5)"
   - match: "fm1/MARIMBA/FX/A/k74v40"
     metric: "keyup"
-    min: -201.582
-    max: -200.582
+    min: -201.559
+    max: -200.559
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 0.0 against v0.9.9's 0.0, keyup)"
   - match: "fm1/MARIMBA/FX/A/k74v64"
@@ -2127,731 +1950,599 @@ changes:
     min: 101.999
     max: 102.999
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.355 against v0.9.9's 0.336, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.354 against v0.9.9's 0.336, clk_off)"
   - match: "fm1/MARIMBA/FX/A/k74v64"
     metric: "decay"
-    min: -12.577
-    max: -11.577
+    min: -12.545
+    max: -11.545
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.729 against v0.9.9's 1.445, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.728 against v0.9.9's 1.445, hold)"
   - match: "fm1/MARIMBA/FX/A/k74v96"
     metric: "keyup"
-    min: 26.084
-    max: 27.084
+    min: 26.167
+    max: 27.167
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.688 against v0.9.9's 0.808, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.695 against v0.9.9's 0.808, keyup)"
   - match: "fm1/MARIMBA/FX/A/k81v110"
     metric: "keyup"
-    min: 208.227
-    max: 209.227
+    min: 208.191
+    max: 209.191
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.4 against v0.9.9's 2.233, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.392 against v0.9.9's 2.233, keyup)"
   - match: "fm1/MARIMBA/FX/A/k81v127"
     metric: "keyup"
-    min: 17.758
-    max: 18.758
+    min: 17.656
+    max: 18.656
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.441 against v0.9.9's 3.106, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.442 against v0.9.9's 3.106, keyup)"
   - match: "fm1/MARIMBA/FX/A/k81v20"
     metric: "H5"
-    min: -8.872
-    max: -7.872
+    min: -9.946
+    max: -8.946
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 46.361 against v0.9.9's 55.303, H5)"
+    reason: "rev-grain: linear reverb content (residual 47.205 against v0.9.9's 55.303, H5)"
   - match: "fm1/MARIMBA/FX/A/k81v64"
     metric: "decay"
-    min: -211.038
-    max: -210.038
+    min: -210.914
+    max: -209.914
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.818 against v0.9.9's 1.949, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.814 against v0.9.9's 1.949, hold)"
   - match: "fm1/MARIMBA/FX/A/k81v96"
     metric: "decay"
     min: -3.98
     max: -2.98
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.798 against v0.9.9's 1.931, hold)"
-  - match: "fm1/MARIMBA/FX/A/k81v96"
-    metric: "keyup"
-    min: 195.253
-    max: 196.253
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.043 against v0.9.9's 1.278, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.799 against v0.9.9's 1.931, hold)"
   - match: "fm1/MARIMBA/FX/A/k84v127"
     metric: "keyup"
-    min: 18.753
-    max: 19.753
+    min: 18.51
+    max: 19.51
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.141 against v0.9.9's 2.072, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.161 against v0.9.9's 2.072, keyup)"
   - match: "fm1/MARIMBA/FX/A/k84v96"
-    metric: "clk_off"
-    min: 104.729
-    max: 105.729
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.866 against v0.9.9's 1.505, clk_off)"
-  - match: "fm1/MARIMBA/FX/A/k84v96"
-    metric: "decay"
-    min: -6.066
-    max: -5.066
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.744 against v0.9.9's 2.042, hold)"
-  - match: "fm1/MARIMBA/FX/A/k84v96"
-    metric: "keyup"
-    min: 188.521
-    max: 189.521
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.649 against v0.9.9's 0.744, keyup)"
-  - match: "fm1/MARIMBA/FX/A/k89v110"
-    metric: "decay"
-    min: -16.714
-    max: -15.714
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.961 against v0.9.9's 2.357, hold)"
-  - match: "fm1/MARIMBA/FX/A/k89v127"
-    metric: "clk_off"
-    min: 102.968
-    max: 103.968
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.681 against v0.9.9's 0.824, clk_off)"
-  - match: "fm1/MARIMBA/FX/A/k89v127"
-    metric: "decay"
-    min: -7.523
-    max: -6.523
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.828 against v0.9.9's 2.329, hold)"
-  - match: "fm1/MARIMBA/FX/A/k89v96"
-    metric: "decay"
-    min: -210.785
-    max: -209.785
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.98 against v0.9.9's 2.182, hold)"
-  - match: "fm1/MARIMBA/FX/B/k45v40"
-    metric: "keyup"
-    min: 24.315
-    max: 25.315
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.998 against v0.9.9's 1.447, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k45v64"
-    metric: "keyup"
-    min: 6.006
-    max: 7.006
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.158 against v0.9.9's 2.707, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k53v40"
-    metric: "keyup"
-    min: 205.494
-    max: 206.494
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.2 against v0.9.9's 1.726, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k53v64"
-    metric: "keyup"
-    min: 6.986
-    max: 7.986
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.138 against v0.9.9's 3.36, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k57v40"
-    metric: "keyup"
-    min: 10.78
-    max: 11.78
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.19 against v0.9.9's 2.918, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k60v110"
-    metric: "keyup"
-    min: 201.348
-    max: 202.348
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.582 against v0.9.9's 0.636, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k60v127"
-    metric: "keyup"
-    min: 13.03
-    max: 14.03
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.729 against v0.9.9's 0.963, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k60v20"
-    metric: "H3"
-    min: -13.715
-    max: -12.715
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 51.263 against v0.9.9's 63.694, H3)"
-  - match: "fm1/MARIMBA/FX/B/k60v96"
-    metric: "keyup"
-    min: 190.267
-    max: 191.267
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.375 against v0.9.9's 0.356, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k67v110"
-    metric: "keyup"
-    min: 10.019
-    max: 11.019
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.139 against v0.9.9's 2.11, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k67v127"
-    metric: "keyup"
-    min: 8.2
-    max: 9.2
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.064 against v0.9.9's 2.708, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k67v20"
-    metric: "H5"
-    min: -10.244
-    max: -9.244
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 46.371 against v0.9.9's 55.009, H5)"
-  - match: "fm1/MARIMBA/FX/B/k67v20"
-    metric: "H6"
-    min: -10.161
-    max: -9.161
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 44.247 against v0.9.9's 55.409, H6)"
-  - match: "fm1/MARIMBA/FX/B/k67v40"
-    metric: "H3"
-    min: -16.131
-    max: -15.131
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 49.76 against v0.9.9's 64.356, H3)"
-  - match: "fm1/MARIMBA/FX/B/k67v40"
-    metric: "H5"
-    min: -14.255
-    max: -13.255
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 48.195 against v0.9.9's 62.161, H5)"
-  - match: "fm1/MARIMBA/FX/B/k67v96"
-    metric: "keyup"
-    min: 15.91
-    max: 16.91
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.041 against v0.9.9's 1.33, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k69v40"
-    metric: "decay"
-    min: -5.631
-    max: -4.631
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.069 against v0.9.9's 3.1, hold)"
-  - match: "fm1/MARIMBA/FX/B/k69v96"
-    metric: "keyup"
-    min: 8.573
-    max: 9.573
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.769 against v0.9.9's 5.18, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k74v110"
-    metric: "keyup"
-    min: 7.715
-    max: 8.715
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.822 against v0.9.9's 1.186, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k74v127"
-    metric: "keyup"
-    min: 5.473
-    max: 6.473
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.875 against v0.9.9's 1.549, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k74v20"
-    metric: "H3"
-    min: -12.766
-    max: -11.766
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 54.87 against v0.9.9's 65.851, H3)"
-  - match: "fm1/MARIMBA/FX/B/k74v40"
-    metric: "H5"
-    min: -10.676
-    max: -9.676
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 46.659 against v0.9.9's 56.919, H5)"
-  - match: "fm1/MARIMBA/FX/B/k74v40"
-    metric: "decay"
-    min: -196.815
-    max: -195.815
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.684 against v0.9.9's 1.259, hold)"
-  - match: "fm1/MARIMBA/FX/B/k74v40"
-    metric: "keyup"
-    min: -201.582
-    max: -200.582
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.0 against v0.9.9's 0.0, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k74v64"
-    metric: "clk_off"
-    min: 101.999
-    max: 102.999
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.355 against v0.9.9's 0.336, clk_off)"
-  - match: "fm1/MARIMBA/FX/B/k74v64"
-    metric: "decay"
-    min: -12.577
-    max: -11.577
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.729 against v0.9.9's 1.445, hold)"
-  - match: "fm1/MARIMBA/FX/B/k74v96"
-    metric: "keyup"
-    min: 26.084
-    max: 27.084
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.688 against v0.9.9's 0.808, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k81v110"
-    metric: "keyup"
-    min: 208.227
-    max: 209.227
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.4 against v0.9.9's 2.233, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k81v127"
-    metric: "keyup"
-    min: 17.758
-    max: 18.758
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.441 against v0.9.9's 3.106, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k81v20"
-    metric: "H5"
-    min: -8.872
-    max: -7.872
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 46.361 against v0.9.9's 55.303, H5)"
-  - match: "fm1/MARIMBA/FX/B/k81v64"
-    metric: "decay"
-    min: -211.038
-    max: -210.038
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.818 against v0.9.9's 1.949, hold)"
-  - match: "fm1/MARIMBA/FX/B/k81v96"
-    metric: "decay"
-    min: -3.98
-    max: -2.98
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.798 against v0.9.9's 1.931, hold)"
-  - match: "fm1/MARIMBA/FX/B/k81v96"
-    metric: "keyup"
-    min: 195.253
-    max: 196.253
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.043 against v0.9.9's 1.278, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k84v127"
-    metric: "keyup"
-    min: 18.753
-    max: 19.753
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.141 against v0.9.9's 2.072, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k84v96"
-    metric: "clk_off"
-    min: 104.729
-    max: 105.729
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.866 against v0.9.9's 1.505, clk_off)"
-  - match: "fm1/MARIMBA/FX/B/k84v96"
-    metric: "decay"
-    min: -6.066
-    max: -5.066
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.744 against v0.9.9's 2.042, hold)"
-  - match: "fm1/MARIMBA/FX/B/k84v96"
-    metric: "keyup"
-    min: 188.521
-    max: 189.521
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.649 against v0.9.9's 0.744, keyup)"
-  - match: "fm1/MARIMBA/FX/B/k89v110"
-    metric: "decay"
-    min: -16.714
-    max: -15.714
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.961 against v0.9.9's 2.357, hold)"
-  - match: "fm1/MARIMBA/FX/B/k89v127"
-    metric: "clk_off"
-    min: 102.968
-    max: 103.968
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.681 against v0.9.9's 0.824, clk_off)"
-  - match: "fm1/MARIMBA/FX/B/k89v127"
-    metric: "decay"
-    min: -7.523
-    max: -6.523
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.828 against v0.9.9's 2.329, hold)"
-  - match: "fm1/MARIMBA/FX/B/k89v96"
-    metric: "decay"
-    min: -210.785
-    max: -209.785
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.98 against v0.9.9's 2.182, hold)"
-  - match: "hq/F01/PRESET/A/k57v20"
-    metric: "cb"
-    min: -7.272
-    max: -6.272
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.665 against v0.9.9's 1.303, hold)"
-  - match: "hq/F01/PRESET/A/k69v20"
-    metric: "cb"
-    min: -7.375
-    max: -6.375
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.681 against v0.9.9's 1.509, hold)"
-  - match: "hq/F01/PRESET/B/k57v20"
-    metric: "cb"
-    min: -7.082
-    max: -6.082
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.672 against v0.9.9's 1.303, hold)"
-  - match: "hq/F02/PRESET/A/k57v64"
-    metric: "H3"
-    min: 2.827
-    max: 3.827
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 54.284 against v0.9.9's 63.642, H3)"
-  - match: "hq/F02/PRESET/B/k57v64"
-    metric: "H3"
-    min: 2.826
-    max: 3.826
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 54.025 against v0.9.9's 63.642, H3)"
-  - match: "hq/F04/PRESET/A/k57v20"
-    metric: "level"
-    min: -7.074
-    max: -6.074
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.719 against v0.9.9's 1.433, hold)"
-  - match: "hq/F04/PRESET/A/k57v20"
-    metric: "lu"
-    min: -7.073
-    max: -6.073
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.719 against v0.9.9's 1.433, hold)"
-  - match: "hq/F05/PRESET/A/k81v20"
-    metric: "cb"
-    min: -6.83
-    max: -5.83
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.776 against v0.9.9's 1.852, hold)"
-  - match: "hq/F05/PRESET/B/k69v20"
-    metric: "cb"
-    min: -6.662
-    max: -5.662
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.612 against v0.9.9's 1.283, hold)"
-  - match: "hq/F05/PRESET/B/k81v20"
-    metric: "cb"
-    min: -6.701
-    max: -5.701
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.792 against v0.9.9's 1.852, hold)"
-  - match: "hq/F05/PRESET/B/k93v20"
-    metric: "cb"
-    min: -9.198
-    max: -8.198
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.758 against v0.9.9's 1.716, hold)"
-  - match: "hq/F06/PRESET/A/k33v20"
-    metric: "H2"
-    min: 2.78
-    max: 3.78
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 50.592 against v0.9.9's 57.548, H2)"
-  - match: "hq/F06/PRESET/A/k69v20"
-    metric: "clk_off"
-    min: -10.409
-    max: -9.409
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.621 against v0.9.9's 1.143, clk_off)"
-  - match: "hq/F06/PRESET/A/k81v20"
-    metric: "clk_off"
-    min: -9.886
-    max: -8.886
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.669 against v0.9.9's 1.287, clk_off)"
-  - match: "hq/F06/PRESET/A/k81v40"
-    metric: "clk_off"
-    min: -11.192
-    max: -10.192
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.679 against v0.9.9's 1.355, clk_off)"
-  - match: "hq/F06/PRESET/A/k93v20"
-    metric: "clk_off"
-    min: -9.737
-    max: -8.737
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.779 against v0.9.9's 1.973, clk_off)"
-  - match: "hq/F06/PRESET/B/k69v20"
-    metric: "clk_off"
-    min: -10.353
-    max: -9.353
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.602 against v0.9.9's 1.143, clk_off)"
-  - match: "hq/F06/PRESET/B/k81v20"
-    metric: "clk_off"
-    min: -9.216
-    max: -8.216
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.656 against v0.9.9's 1.287, clk_off)"
-  - match: "hq/F06/PRESET/B/k81v40"
-    metric: "clk_off"
-    min: -10.57
-    max: -9.57
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.673 against v0.9.9's 1.355, clk_off)"
-  - match: "hq/F06/PRESET/B/k93v20"
-    metric: "clk_off"
-    min: -10.406
-    max: -9.406
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.786 against v0.9.9's 1.973, clk_off)"
-  - match: "hq/F10/PRESET/A/k28v20"
-    metric: "cent"
-    min: 0.0
-    max: 0.61
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.305 against v0.9.9's 0.483, hold)"
-  - match: "hq/F10/PRESET/B/k28v20"
-    metric: "cent"
-    min: 0.0
-    max: 0.612
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.307 against v0.9.9's 0.483, hold)"
-  - match: "hq/F11/PRESET/A/k93v40"
-    metric: "H5"
-    min: 2.921
-    max: 3.921
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 48.95 against v0.9.9's 55.397, H5)"
-  - match: "hq/F11/PRESET/B/k93v40"
-    metric: "H5"
-    min: 2.511
-    max: 3.511
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 48.721 against v0.9.9's 55.397, H5)"
-  - match: "hq/F12/PRESET/A/k33v110"
-    metric: "H4"
-    min: 4.036
-    max: 5.036
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 39.847 against v0.9.9's 49.548, H4)"
-  - match: "hq/F12/PRESET/A/k81v20"
-    metric: "cb"
-    min: -7.27
-    max: -6.27
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 3.622 against v0.9.9's 8.264, hold)"
-  - match: "hq/F12/PRESET/B/k33v110"
-    metric: "H4"
-    min: 3.322
-    max: 4.322
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 36.97 against v0.9.9's 49.548, H4)"
-  - match: "hq/F12/PRESET/B/k69v20"
-    metric: "cb"
-    min: -7.377
-    max: -6.377
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.843 against v0.9.9's 4.016, hold)"
-  - match: "hq/F12/PRESET/B/k81v20"
-    metric: "cb"
-    min: -7.118
-    max: -6.118
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 3.637 against v0.9.9's 8.264, hold)"
-  - match: "hq/F13/PRESET/A/k60v20"
-    metric: "H3"
-    min: -8.092
-    max: -7.092
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 55.034 against v0.9.9's 64.832, H3)"
-  - match: "hq/F13/PRESET/B/k60v20"
-    metric: "H3"
-    min: -8.092
-    max: -7.092
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 55.034 against v0.9.9's 64.832, H3)"
-  - match: "hq/F15/PRESET/A/k74v20"
-    metric: "H2"
-    min: -8.381
-    max: -7.381
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 50.069 against v0.9.9's 54.835, H2)"
-  - match: "hq/F15/PRESET/A/k74v20"
-    metric: "decay"
-    min: -4.781
-    max: -3.781
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.295 against v0.9.9's 2.61, hold)"
-  - match: "hq/F15/PRESET/A/k74v40"
-    metric: "decay"
-    min: -5.125
-    max: -4.125
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.595 against v0.9.9's 3.462, hold)"
-  - match: "hq/F15/PRESET/A/k74v64"
-    metric: "keyup"
-    min: 4.313
-    max: 5.313
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.574 against v0.9.9's 2.651, keyup)"
-  - match: "hq/F15/PRESET/A/k81v20"
-    metric: "H5"
-    min: -10.103
-    max: -9.103
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 51.743 against v0.9.9's 58.431, H5)"
-  - match: "hq/F15/PRESET/A/k81v40"
     metric: "clk_off"
     min: 103.937
     max: 104.937
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.485 against v0.9.9's 0.394, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.871 against v0.9.9's 1.505, clk_off)"
+  - match: "fm1/MARIMBA/FX/A/k84v96"
+    metric: "decay"
+    min: -6.076
+    max: -5.076
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.748 against v0.9.9's 2.042, hold)"
+  - match: "fm1/MARIMBA/FX/A/k84v96"
+    metric: "keyup"
+    min: 187.983
+    max: 188.983
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.658 against v0.9.9's 0.744, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k89v110"
+    metric: "decay"
+    min: -16.671
+    max: -15.671
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.957 against v0.9.9's 2.357, hold)"
+  - match: "fm1/MARIMBA/FX/A/k89v127"
+    metric: "decay"
+    min: -7.701
+    max: -6.701
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.824 against v0.9.9's 2.329, hold)"
+  - match: "fm1/MARIMBA/FX/A/k89v96"
+    metric: "decay"
+    min: -210.673
+    max: -209.673
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.98 against v0.9.9's 2.182, hold)"
+  - match: "fm1/MARIMBA/FX/B/k45v40"
+    metric: "keyup"
+    min: 24.302
+    max: 25.302
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.009 against v0.9.9's 1.447, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k45v64"
+    metric: "keyup"
+    min: 6.134
+    max: 7.134
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.135 against v0.9.9's 2.707, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k53v40"
+    metric: "keyup"
+    min: 205.648
+    max: 206.648
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.189 against v0.9.9's 1.726, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k53v64"
+    metric: "keyup"
+    min: 6.99
+    max: 7.99
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.153 against v0.9.9's 3.36, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k57v40"
+    metric: "keyup"
+    min: 10.742
+    max: 11.742
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.2 against v0.9.9's 2.918, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k60v110"
+    metric: "keyup"
+    min: 201.622
+    max: 202.622
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.587 against v0.9.9's 0.636, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k60v127"
+    metric: "keyup"
+    min: 13.072
+    max: 14.072
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.723 against v0.9.9's 0.963, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k60v40"
+    metric: "H3"
+    min: -12.811
+    max: -11.811
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 51.234 against v0.9.9's 64.518, H3)"
+  - match: "fm1/MARIMBA/FX/B/k60v96"
+    metric: "keyup"
+    min: 190.942
+    max: 191.942
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.375 against v0.9.9's 0.356, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k67v110"
+    metric: "keyup"
+    min: 9.909
+    max: 10.909
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.131 against v0.9.9's 2.11, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k67v127"
+    metric: "keyup"
+    min: 7.9
+    max: 8.9
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.109 against v0.9.9's 2.708, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k67v40"
+    metric: "H3"
+    min: -16.005
+    max: -15.005
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 50.424 against v0.9.9's 64.356, H3)"
+  - match: "fm1/MARIMBA/FX/B/k67v40"
+    metric: "H5"
+    min: -14.729
+    max: -13.729
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 47.491 against v0.9.9's 62.161, H5)"
+  - match: "fm1/MARIMBA/FX/B/k67v96"
+    metric: "keyup"
+    min: 16.013
+    max: 17.013
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.056 against v0.9.9's 1.33, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k69v40"
+    metric: "decay"
+    min: -5.505
+    max: -4.505
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.075 against v0.9.9's 3.1, hold)"
+  - match: "fm1/MARIMBA/FX/B/k69v96"
+    metric: "keyup"
+    min: 8.587
+    max: 9.587
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.769 against v0.9.9's 5.18, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k74v110"
+    metric: "keyup"
+    min: 7.396
+    max: 8.396
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.824 against v0.9.9's 1.186, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k74v127"
+    metric: "keyup"
+    min: 5.152
+    max: 6.152
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.868 against v0.9.9's 1.549, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k74v40"
+    metric: "H5"
+    min: -10.025
+    max: -9.025
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 47.556 against v0.9.9's 56.919, H5)"
+  - match: "fm1/MARIMBA/FX/B/k74v40"
+    metric: "keyup"
+    min: -201.559
+    max: -200.559
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.0 against v0.9.9's 0.0, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k74v64"
+    metric: "clk_off"
+    min: 101.999
+    max: 102.999
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.354 against v0.9.9's 0.336, clk_off)"
+  - match: "fm1/MARIMBA/FX/B/k74v64"
+    metric: "decay"
+    min: -12.545
+    max: -11.545
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.728 against v0.9.9's 1.445, hold)"
+  - match: "fm1/MARIMBA/FX/B/k74v96"
+    metric: "keyup"
+    min: 26.167
+    max: 27.167
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.695 against v0.9.9's 0.808, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k81v110"
+    metric: "keyup"
+    min: 208.191
+    max: 209.191
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.392 against v0.9.9's 2.233, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k81v127"
+    metric: "keyup"
+    min: 17.656
+    max: 18.656
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.442 against v0.9.9's 3.106, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k81v20"
+    metric: "H5"
+    min: -9.946
+    max: -8.946
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 47.205 against v0.9.9's 55.303, H5)"
+  - match: "fm1/MARIMBA/FX/B/k81v64"
+    metric: "decay"
+    min: -210.914
+    max: -209.914
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.814 against v0.9.9's 1.949, hold)"
+  - match: "fm1/MARIMBA/FX/B/k81v96"
+    metric: "decay"
+    min: -3.98
+    max: -2.98
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.799 against v0.9.9's 1.931, hold)"
+  - match: "fm1/MARIMBA/FX/B/k84v127"
+    metric: "keyup"
+    min: 18.51
+    max: 19.51
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.161 against v0.9.9's 2.072, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k84v96"
+    metric: "clk_off"
+    min: 103.937
+    max: 104.937
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.871 against v0.9.9's 1.505, clk_off)"
+  - match: "fm1/MARIMBA/FX/B/k84v96"
+    metric: "decay"
+    min: -6.076
+    max: -5.076
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.748 against v0.9.9's 2.042, hold)"
+  - match: "fm1/MARIMBA/FX/B/k84v96"
+    metric: "keyup"
+    min: 187.983
+    max: 188.983
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.658 against v0.9.9's 0.744, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k89v110"
+    metric: "decay"
+    min: -16.671
+    max: -15.671
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.957 against v0.9.9's 2.357, hold)"
+  - match: "fm1/MARIMBA/FX/B/k89v127"
+    metric: "decay"
+    min: -7.701
+    max: -6.701
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.824 against v0.9.9's 2.329, hold)"
+  - match: "fm1/MARIMBA/FX/B/k89v96"
+    metric: "decay"
+    min: -210.673
+    max: -209.673
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.98 against v0.9.9's 2.182, hold)"
+  - match: "hq/F01/PRESET/A/k57v20"
+    metric: "cb"
+    min: -7.267
+    max: -6.267
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.666 against v0.9.9's 1.303, hold)"
+  - match: "hq/F01/PRESET/A/k69v20"
+    metric: "cb"
+    min: -7.385
+    max: -6.385
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.679 against v0.9.9's 1.509, hold)"
+  - match: "hq/F01/PRESET/B/k57v20"
+    metric: "cb"
+    min: -7.097
+    max: -6.097
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.675 against v0.9.9's 1.303, hold)"
+  - match: "hq/F02/PRESET/A/k57v127"
+    metric: "H4"
+    min: -23.906
+    max: -22.906
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 51.005 against v0.9.9's 69.673, H4)"
+  - match: "hq/F02/PRESET/A/k57v64"
+    metric: "H3"
+    min: 2.717
+    max: 3.717
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 54.333 against v0.9.9's 63.642, H3)"
+  - match: "hq/F02/PRESET/B/k57v127"
+    metric: "H4"
+    min: -24.099
+    max: -23.099
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 48.939 against v0.9.9's 69.673, H4)"
+  - match: "hq/F02/PRESET/B/k93v20"
+    metric: "inh"
+    min: 2.529
+    max: 3.529
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.951 against v0.9.9's 2.92, hold)"
+  - match: "hq/F04/PRESET/A/k57v20"
+    metric: "level"
+    min: -7.068
+    max: -6.068
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.721 against v0.9.9's 1.433, hold)"
+  - match: "hq/F04/PRESET/A/k57v20"
+    metric: "lu"
+    min: -7.068
+    max: -6.068
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.721 against v0.9.9's 1.433, hold)"
+  - match: "hq/F05/PRESET/A/k81v20"
+    metric: "cb"
+    min: -6.641
+    max: -5.641
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.825 against v0.9.9's 1.852, hold)"
+  - match: "hq/F05/PRESET/B/k69v20"
+    metric: "cb"
+    min: -6.627
+    max: -5.627
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.691 against v0.9.9's 1.283, hold)"
+  - match: "hq/F05/PRESET/B/k81v20"
+    metric: "cb"
+    min: -6.559
+    max: -5.559
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.821 against v0.9.9's 1.852, hold)"
+  - match: "hq/F11/PRESET/A/k28v40"
+    metric: "cent"
+    min: 0.0
+    max: 0.606
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.418 against v0.9.9's 0.475, hold)"
+  - match: "hq/F11/PRESET/B/k28v40"
+    metric: "cent"
+    min: 0.0
+    max: 0.608
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.42 against v0.9.9's 0.475, hold)"
+  - match: "hq/F11/PRESET/B/k28v64"
+    metric: "H3"
+    min: 6.098
+    max: 7.098
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 39.253 against v0.9.9's 39.647, H3)"
+  - match: "hq/F12/PRESET/A/k81v20"
+    metric: "cb"
+    min: -7.264
+    max: -6.264
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 3.6 against v0.9.9's 8.264, hold)"
+  - match: "hq/F12/PRESET/B/k69v20"
+    metric: "cb"
+    min: -7.358
+    max: -6.358
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.902 against v0.9.9's 4.016, hold)"
+  - match: "hq/F12/PRESET/B/k81v20"
+    metric: "cb"
+    min: -7.129
+    max: -6.129
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 3.61 against v0.9.9's 8.264, hold)"
+  - match: "hq/F13/PRESET/A/k60v20"
+    metric: "H3"
+    min: -8.437
+    max: -7.437
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 54.158 against v0.9.9's 64.832, H3)"
+  - match: "hq/F13/PRESET/B/k60v20"
+    metric: "H3"
+    min: -8.437
+    max: -7.437
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 54.158 against v0.9.9's 64.832, H3)"
+  - match: "hq/F15/PRESET/A/k74v20"
+    metric: "H2"
+    min: -8.62
+    max: -7.62
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 48.336 against v0.9.9's 54.835, H2)"
+  - match: "hq/F15/PRESET/A/k74v20"
+    metric: "decay"
+    min: -4.792
+    max: -3.792
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.286 against v0.9.9's 2.61, hold)"
+  - match: "hq/F15/PRESET/A/k74v40"
+    metric: "decay"
+    min: -5.16
+    max: -4.16
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.594 against v0.9.9's 3.462, hold)"
+  - match: "hq/F15/PRESET/A/k74v64"
+    metric: "keyup"
+    min: 4.322
+    max: 5.322
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.594 against v0.9.9's 2.651, keyup)"
+  - match: "hq/F15/PRESET/A/k81v20"
+    metric: "H2"
+    min: -3.87
+    max: -2.87
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 51.329 against v0.9.9's 57.293, H2)"
   - match: "hq/F15/PRESET/A/k81v40"
     metric: "decay"
-    min: -4.218
-    max: -3.218
+    min: -4.194
+    max: -3.194
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.553 against v0.9.9's 3.746, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.565 against v0.9.9's 3.746, hold)"
   - match: "hq/F15/PRESET/A/k81v40"
     metric: "keyup"
-    min: 172.618
-    max: 173.618
+    min: 173.975
+    max: 174.975
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.327 against v0.9.9's 0.166, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.325 against v0.9.9's 0.166, keyup)"
   - match: "hq/F15/PRESET/A/k89v20"
     metric: "decay"
-    min: 12.812
-    max: 13.812
+    min: 12.887
+    max: 13.887
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.71 against v0.9.9's 1.271, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.719 against v0.9.9's 1.271, hold)"
   - match: "hq/F15/PRESET/A/k89v64"
     metric: "clk_off"
     min: 103.937
     max: 104.937
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.336 against v0.9.9's 0.406, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.338 against v0.9.9's 0.406, clk_off)"
   - match: "hq/F15/PRESET/B/k74v20"
     metric: "H2"
-    min: -8.381
-    max: -7.381
+    min: -8.62
+    max: -7.62
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 50.069 against v0.9.9's 54.835, H2)"
+    reason: "rev-grain: linear reverb content (residual 48.336 against v0.9.9's 54.835, H2)"
   - match: "hq/F15/PRESET/B/k74v20"
     metric: "decay"
-    min: -4.781
-    max: -3.781
+    min: -4.792
+    max: -3.792
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.295 against v0.9.9's 2.61, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.286 against v0.9.9's 2.61, hold)"
   - match: "hq/F15/PRESET/B/k74v40"
     metric: "decay"
-    min: -5.125
-    max: -4.125
+    min: -5.16
+    max: -4.16
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.595 against v0.9.9's 3.462, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.594 against v0.9.9's 3.462, hold)"
   - match: "hq/F15/PRESET/B/k74v64"
     metric: "keyup"
-    min: 4.313
-    max: 5.313
+    min: 4.322
+    max: 5.322
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.574 against v0.9.9's 2.651, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.594 against v0.9.9's 2.651, keyup)"
   - match: "hq/F15/PRESET/B/k81v20"
-    metric: "H5"
-    min: -10.103
-    max: -9.103
+    metric: "H2"
+    min: -3.87
+    max: -2.87
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 51.743 against v0.9.9's 58.431, H5)"
-  - match: "hq/F15/PRESET/B/k81v40"
-    metric: "clk_off"
-    min: 103.937
-    max: 104.937
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.485 against v0.9.9's 0.394, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 51.329 against v0.9.9's 57.293, H2)"
   - match: "hq/F15/PRESET/B/k81v40"
     metric: "decay"
-    min: -4.218
-    max: -3.218
+    min: -4.194
+    max: -3.194
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.553 against v0.9.9's 3.746, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.565 against v0.9.9's 3.746, hold)"
   - match: "hq/F15/PRESET/B/k81v40"
     metric: "keyup"
-    min: 172.618
-    max: 173.618
+    min: 173.975
+    max: 174.975
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.327 against v0.9.9's 0.166, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.325 against v0.9.9's 0.166, keyup)"
   - match: "hq/F15/PRESET/B/k89v20"
     metric: "decay"
-    min: 12.812
-    max: 13.812
+    min: 12.887
+    max: 13.887
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.71 against v0.9.9's 1.271, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.719 against v0.9.9's 1.271, hold)"
   - match: "hq/F15/PRESET/B/k89v64"
     metric: "clk_off"
     min: 103.937
     max: 104.937
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.336 against v0.9.9's 0.406, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.338 against v0.9.9's 0.406, clk_off)"
+  - match: "hq/F16/PRESET/A/k74v64"
+    metric: "H3"
+    min: -11.362
+    max: -10.362
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 50.204 against v0.9.9's 67.363, H3)"
+  - match: "hq/F16/PRESET/A/k89v110"
+    metric: "H3"
+    min: -11.678
+    max: -10.678
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 43.786 against v0.9.9's 62.607, H3)"
+  - match: "hq/F16/PRESET/A/k89v20"
+    metric: "H4"
+    min: -5.17
+    max: -4.17
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 42.272 against v0.9.9's 51.726, H4)"
   - match: "hq/F16/PRESET/A/k89v20"
     metric: "H6"
-    min: -6.134
-    max: -5.134
+    min: -6.181
+    max: -5.181
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 38.587 against v0.9.9's 48.967, H6)"
+    reason: "rev-grain: linear reverb content (residual 38.474 against v0.9.9's 48.967, H6)"
+  - match: "hq/F16/PRESET/B/k74v64"
+    metric: "H3"
+    min: -11.362
+    max: -10.362
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 50.204 against v0.9.9's 67.363, H3)"
+  - match: "hq/F16/PRESET/B/k89v110"
+    metric: "H3"
+    min: -11.678
+    max: -10.678
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 43.786 against v0.9.9's 62.607, H3)"
+  - match: "hq/F16/PRESET/B/k89v20"
+    metric: "H4"
+    min: -5.17
+    max: -4.17
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 42.272 against v0.9.9's 51.726, H4)"
   - match: "hq/F16/PRESET/B/k89v20"
     metric: "H6"
-    min: -6.134
-    max: -5.134
+    min: -6.181
+    max: -5.181
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 38.587 against v0.9.9's 48.967, H6)"
-  - match: "hq/F17/PRESET/A/k28v40"
-    metric: "cb"
-    min: -6.281
-    max: -5.281
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.616 against v0.9.9's 1.0, hold)"
-  - match: "hq/F17/PRESET/A/k33v20"
-    metric: "H2"
-    min: 3.008
-    max: 4.008
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 42.848 against v0.9.9's 62.307, H2)"
-  - match: "hq/F17/PRESET/A/k45v20"
-    metric: "cb"
-    min: -6.989
-    max: -5.989
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.622 against v0.9.9's 1.004, hold)"
-  - match: "hq/F17/PRESET/B/k28v40"
-    metric: "cb"
-    min: -6.281
-    max: -5.281
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.622 against v0.9.9's 1.0, hold)"
-  - match: "hq/F17/PRESET/B/k33v20"
-    metric: "H2"
-    min: 2.739
-    max: 3.739
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 38.577 against v0.9.9's 62.307, H2)"
-  - match: "hq/F17/PRESET/B/k45v20"
-    metric: "cb"
-    min: -7.044
-    max: -6.044
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.625 against v0.9.9's 1.004, hold)"
+    reason: "rev-grain: linear reverb content (residual 38.474 against v0.9.9's 48.967, H6)"
   - match: "hq/F17/PRESET/B/k69v20"
     metric: "cb"
-    min: -6.996
-    max: -5.996
+    min: -7.157
+    max: -6.157
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.716 against v0.9.9's 1.565, hold)"
-  - match: "hq/F18/PRESET/A/k69v40"
+    reason: "rev-grain: linear reverb content (residual 0.728 against v0.9.9's 1.565, hold)"
+  - match: "hq/F18/PRESET/B/k81v40"
     metric: "cb"
-    min: -4.137
-    max: -3.137
+    min: -2.813
+    max: -1.813
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.362 against v0.9.9's 2.802, hold)"
-  - match: "hq/F19/PRESET/A/k45v64"
-    metric: "H5"
-    min: 2.793
-    max: 3.793
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 48.228 against v0.9.9's 52.431, H5)"
+    reason: "rev-grain: linear reverb content (residual 2.302 against v0.9.9's 4.187, hold)"
   - match: "hq/FELT/FX/A/k33v20"
     metric: "inh"
-    min: 3.482
-    max: 4.482
+    min: 3.595
+    max: 4.595
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.663 against v0.9.9's 1.077, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.665 against v0.9.9's 1.077, hold)"
   - match: "hq/FELT/FX/B/k33v20"
     metric: "inh"
-    min: 3.532
-    max: 4.532
+    min: 3.65
+    max: 4.65
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 0.663 against v0.9.9's 1.077, hold)"
   - match: "hq/MARIMBA/FX/A/k53v20"
@@ -2859,265 +2550,265 @@ changes:
     min: -2.173
     max: -1.173
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.741 against v0.9.9's 1.381, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.739 against v0.9.9's 1.381, hold)"
   - match: "hq/MARIMBA/FX/A/k60v20"
     metric: "cb"
-    min: -2.369
-    max: -1.369
+    min: -2.378
+    max: -1.378
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.82 against v0.9.9's 1.648, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.816 against v0.9.9's 1.648, hold)"
   - match: "hq/MARIMBA/FX/A/k60v40"
     metric: "cb"
-    min: -2.191
-    max: -1.191
+    min: -2.183
+    max: -1.183
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 0.905 against v0.9.9's 1.977, hold)"
   - match: "hq/MARIMBA/FX/A/k67v20"
     metric: "cb"
-    min: -2.517
-    max: -1.517
+    min: -2.525
+    max: -1.525
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.758 against v0.9.9's 1.599, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.754 against v0.9.9's 1.599, hold)"
   - match: "hq/MARIMBA/FX/A/k67v20"
     metric: "clk_off"
     min: 100.66
     max: 101.66
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.404 against v0.9.9's 0.344, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.406 against v0.9.9's 0.344, clk_off)"
   - match: "hq/MARIMBA/FX/A/k67v20"
     metric: "keyup"
-    min: 4.954
-    max: 5.954
+    min: 5.236
+    max: 6.236
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.299 against v0.9.9's 0.215, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.306 against v0.9.9's 0.215, keyup)"
   - match: "hq/MARIMBA/FX/A/k67v40"
     metric: "cb"
-    min: -2.184
-    max: -1.184
+    min: -2.189
+    max: -1.189
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.838 against v0.9.9's 1.789, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.835 against v0.9.9's 1.789, hold)"
   - match: "hq/MARIMBA/FX/A/k67v64"
     metric: "cb"
-    min: -2.06
-    max: -1.06
+    min: -2.046
+    max: -1.046
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.913 against v0.9.9's 2.126, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.964 against v0.9.9's 2.126, hold)"
+  - match: "hq/MARIMBA/FX/A/k69v96"
+    metric: "H3"
+    min: -12.59
+    max: -11.59
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 54.95 against v0.9.9's 68.992, H3)"
   - match: "hq/MARIMBA/FX/A/k74v20"
     metric: "cb"
-    min: -2.485
-    max: -1.485
+    min: -2.482
+    max: -1.482
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.976 against v0.9.9's 2.092, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.97 against v0.9.9's 2.092, hold)"
   - match: "hq/MARIMBA/FX/A/k74v40"
     metric: "cb"
-    min: -2.393
-    max: -1.393
+    min: -2.373
+    max: -1.373
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.212 against v0.9.9's 2.83, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.205 against v0.9.9's 2.83, hold)"
   - match: "hq/MARIMBA/FX/A/k74v40"
     metric: "decay"
-    min: -6.187
-    max: -5.187
+    min: -6.202
+    max: -5.202
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.212 against v0.9.9's 2.83, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.205 against v0.9.9's 2.83, hold)"
   - match: "hq/MARIMBA/FX/A/k74v64"
     metric: "cb"
-    min: -2.155
-    max: -1.155
+    min: -2.141
+    max: -1.141
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.358 against v0.9.9's 3.57, hold)"
-  - match: "hq/MARIMBA/FX/A/k74v96"
-    metric: "cb"
-    min: -2.01
-    max: -1.01
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.54 against v0.9.9's 4.168, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.386 against v0.9.9's 3.57, hold)"
   - match: "hq/MARIMBA/FX/A/k74v96"
     metric: "keyup"
-    min: 3.34
-    max: 4.34
+    min: 3.33
+    max: 4.33
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.501 against v0.9.9's 3.354, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.566 against v0.9.9's 3.354, keyup)"
   - match: "hq/MARIMBA/FX/A/k81v127"
     metric: "cb"
-    min: -2.011
-    max: -1.011
+    min: -2.338
+    max: -1.338
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.526 against v0.9.9's 3.431, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.992 against v0.9.9's 3.431, hold)"
   - match: "hq/MARIMBA/FX/A/k81v20"
     metric: "cb"
-    min: -2.238
-    max: -1.238
+    min: -2.245
+    max: -1.245
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.186 against v0.9.9's 2.909, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.18 against v0.9.9's 2.909, hold)"
   - match: "hq/MARIMBA/FX/A/k81v40"
     metric: "cb"
-    min: -2.431
-    max: -1.431
+    min: -2.459
+    max: -1.459
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.24 against v0.9.9's 3.313, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.241 against v0.9.9's 3.313, hold)"
   - match: "hq/MARIMBA/FX/A/k81v64"
     metric: "cb"
-    min: -2.193
-    max: -1.193
+    min: -2.195
+    max: -1.195
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.232 against v0.9.9's 3.395, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.294 against v0.9.9's 3.395, hold)"
   - match: "hq/MARIMBA/FX/A/k81v64"
     metric: "decay"
-    min: -3.866
-    max: -2.866
+    min: -3.858
+    max: -2.858
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.232 against v0.9.9's 3.395, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.294 against v0.9.9's 3.395, hold)"
   - match: "hq/MARIMBA/FX/A/k81v96"
     metric: "cb"
-    min: -2.056
-    max: -1.056
+    min: -2.029
+    max: -1.029
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.397 against v0.9.9's 3.423, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.335 against v0.9.9's 3.423, hold)"
+  - match: "hq/MARIMBA/FX/A/k89v20"
+    metric: "H4"
+    min: -11.743
+    max: -10.743
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 42.905 against v0.9.9's 52.691, H4)"
   - match: "hq/MARIMBA/FX/A/k89v20"
     metric: "keyup"
-    min: 12.658
-    max: 13.658
+    min: 13.538
+    max: 14.538
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 0.0 against v0.9.9's 0.0, keyup)"
-  - match: "hq/MARIMBA/FX/A/k89v96"
-    metric: "cb"
-    min: -2.013
-    max: -1.013
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.804 against v0.9.9's 1.963, hold)"
   - match: "hq/MARIMBA/FX/B/k53v20"
     metric: "cb"
     min: -2.173
     max: -1.173
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.741 against v0.9.9's 1.381, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.739 against v0.9.9's 1.381, hold)"
   - match: "hq/MARIMBA/FX/B/k60v20"
     metric: "cb"
-    min: -2.369
-    max: -1.369
+    min: -2.378
+    max: -1.378
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.82 against v0.9.9's 1.648, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.816 against v0.9.9's 1.648, hold)"
   - match: "hq/MARIMBA/FX/B/k60v40"
     metric: "cb"
-    min: -2.191
-    max: -1.191
+    min: -2.183
+    max: -1.183
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 0.905 against v0.9.9's 1.977, hold)"
   - match: "hq/MARIMBA/FX/B/k67v20"
     metric: "cb"
-    min: -2.517
-    max: -1.517
+    min: -2.525
+    max: -1.525
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.758 against v0.9.9's 1.599, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.754 against v0.9.9's 1.599, hold)"
   - match: "hq/MARIMBA/FX/B/k67v20"
     metric: "clk_off"
     min: 100.66
     max: 101.66
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.404 against v0.9.9's 0.344, clk_off)"
+    reason: "rev-grain: linear reverb content (residual 0.406 against v0.9.9's 0.344, clk_off)"
   - match: "hq/MARIMBA/FX/B/k67v20"
     metric: "keyup"
-    min: 4.954
-    max: 5.954
+    min: 5.236
+    max: 6.236
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.299 against v0.9.9's 0.215, keyup)"
+    reason: "rev-grain: linear reverb content (residual 0.306 against v0.9.9's 0.215, keyup)"
   - match: "hq/MARIMBA/FX/B/k67v40"
     metric: "cb"
-    min: -2.184
-    max: -1.184
+    min: -2.189
+    max: -1.189
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.838 against v0.9.9's 1.789, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.835 against v0.9.9's 1.789, hold)"
   - match: "hq/MARIMBA/FX/B/k67v64"
     metric: "cb"
-    min: -2.06
-    max: -1.06
+    min: -2.046
+    max: -1.046
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.913 against v0.9.9's 2.126, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.964 against v0.9.9's 2.126, hold)"
+  - match: "hq/MARIMBA/FX/B/k69v96"
+    metric: "H3"
+    min: -12.59
+    max: -11.59
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 54.95 against v0.9.9's 68.992, H3)"
   - match: "hq/MARIMBA/FX/B/k74v20"
     metric: "cb"
-    min: -2.485
-    max: -1.485
+    min: -2.482
+    max: -1.482
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.976 against v0.9.9's 2.092, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.97 against v0.9.9's 2.092, hold)"
   - match: "hq/MARIMBA/FX/B/k74v40"
     metric: "cb"
-    min: -2.393
-    max: -1.393
+    min: -2.373
+    max: -1.373
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.212 against v0.9.9's 2.83, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.205 against v0.9.9's 2.83, hold)"
   - match: "hq/MARIMBA/FX/B/k74v40"
     metric: "decay"
-    min: -6.187
-    max: -5.187
+    min: -6.202
+    max: -5.202
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.212 against v0.9.9's 2.83, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.205 against v0.9.9's 2.83, hold)"
   - match: "hq/MARIMBA/FX/B/k74v64"
     metric: "cb"
-    min: -2.155
-    max: -1.155
+    min: -2.141
+    max: -1.141
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.358 against v0.9.9's 3.57, hold)"
-  - match: "hq/MARIMBA/FX/B/k74v96"
-    metric: "cb"
-    min: -2.01
-    max: -1.01
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.54 against v0.9.9's 4.168, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.386 against v0.9.9's 3.57, hold)"
   - match: "hq/MARIMBA/FX/B/k74v96"
     metric: "keyup"
-    min: 3.34
-    max: 4.34
+    min: 3.33
+    max: 4.33
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.501 against v0.9.9's 3.354, keyup)"
+    reason: "rev-grain: linear reverb content (residual 1.566 against v0.9.9's 3.354, keyup)"
   - match: "hq/MARIMBA/FX/B/k81v127"
     metric: "cb"
-    min: -2.011
-    max: -1.011
+    min: -2.338
+    max: -1.338
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.526 against v0.9.9's 3.431, hold)"
+    reason: "rev-grain: linear reverb content (residual 0.992 against v0.9.9's 3.431, hold)"
   - match: "hq/MARIMBA/FX/B/k81v20"
     metric: "cb"
-    min: -2.238
-    max: -1.238
+    min: -2.245
+    max: -1.245
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.186 against v0.9.9's 2.909, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.18 against v0.9.9's 2.909, hold)"
   - match: "hq/MARIMBA/FX/B/k81v40"
     metric: "cb"
-    min: -2.431
-    max: -1.431
+    min: -2.459
+    max: -1.459
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.24 against v0.9.9's 3.313, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.241 against v0.9.9's 3.313, hold)"
   - match: "hq/MARIMBA/FX/B/k81v64"
     metric: "cb"
-    min: -2.193
-    max: -1.193
+    min: -2.195
+    max: -1.195
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.232 against v0.9.9's 3.395, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.294 against v0.9.9's 3.395, hold)"
   - match: "hq/MARIMBA/FX/B/k81v64"
     metric: "decay"
-    min: -3.866
-    max: -2.866
+    min: -3.858
+    max: -2.858
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.232 against v0.9.9's 3.395, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.294 against v0.9.9's 3.395, hold)"
   - match: "hq/MARIMBA/FX/B/k81v96"
     metric: "cb"
-    min: -2.056
-    max: -1.056
+    min: -2.029
+    max: -1.029
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 1.397 against v0.9.9's 3.423, hold)"
+    reason: "rev-grain: linear reverb content (residual 1.335 against v0.9.9's 3.423, hold)"
+  - match: "hq/MARIMBA/FX/B/k89v20"
+    metric: "H4"
+    min: -11.743
+    max: -10.743
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 42.905 against v0.9.9's 52.691, H4)"
   - match: "hq/MARIMBA/FX/B/k89v20"
     metric: "keyup"
-    min: 12.658
-    max: 13.658
+    min: 13.538
+    max: 14.538
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
     reason: "rev-grain: linear reverb content (residual 0.0 against v0.9.9's 0.0, keyup)"
-  - match: "hq/MARIMBA/FX/B/k89v96"
-    metric: "cb"
-    min: -2.013
-    max: -1.013
-    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: linear reverb content (residual 0.804 against v0.9.9's 1.963, hold)"
   - match: "*/F08/PRESET/*"
     metric: "H6"
     min: -26.0
