@@ -50,3 +50,11 @@ def test_tape_time_heads_follow_the_motor(binary):
     z, zw = sweep_zipper("delay TAPE TIME", binary)
     assert z <= 2.0, z
     assert zw <= 2.3, zw          # (the echoes' own varispeed: 1.63x the pitch at the sweep's end, r^2 ~ 2.6 in d2)
+
+
+def test_hall_size_auto_glides(binary):
+    """HALL SIZE 1 <-> 0 (AUTO, MIX 64's size: 35 steps away) under a ringing tail: no click in the wet (2.07x)"""
+    for a, b in ((1, 0), (0, 1), (127, 0)):
+        assert flip_click("rev HALL SIZE", a, b, binary, wet=True) <= 1.5, (a, b)
+    z, zw = sweep_zipper("rev HALL SIZE", binary)
+    assert max(z, zw) <= 1.5, (z, zw)

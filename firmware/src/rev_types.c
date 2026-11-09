@@ -213,7 +213,7 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
     int32_t rko, vl, skn, sko;
     int quiet = !rv_running;
     if (tgt >= (int32_t)RV_N) tgt = RV_HALL;
-    if (!rv_running) { rv_md8 = md << 8; rv_mg = fx_p[FXP_RV_MOD] << 4; }
+    if (!rv_running) { rv_md8 = md << 8; rv_mg = fx_p[FXP_RV_MOD] << 4; rv_hsz = size << 4; }
     if (!rv_running || rv_vl < 0 || fx_quiet_blocks >= 2u) { rv_vl = v; rv_sk = sendn; rv_sko = sendo; }   /* (at
                                                     * rest, or the out under -66 dBFS for 2 blocks, the boot's silence
                                                     * too: INFINITE's return follows MIX, the sends take MIX's at once) */
@@ -248,9 +248,10 @@ static void fx_reverb(int32_t *L, int32_t *R, uint32_t n)
         if (rv_dk != dv) rv_dk += rv_dk < dv ? 1 : -1;
         if (rv_md8 != md << 8) rv_md8 += PH_CL((md << 8) - rv_md8, -32, 32);
         if (rv_mg != fx_p[FXP_RV_MOD] << 4) rv_mg += rv_mg < fx_p[FXP_RV_MOD] << 4 ? 1 : -1;
+        if (rv_hsz != size << 4) rv_hsz += PH_CL((size << 4) - rv_hsz, -4, 4);
         cur = rv_cur;
         if (cur) for (i = 0; i < RV_QZ; i++) rv_m[i] = om[HL_NC - RV_QZ + i], rv_s[i] = os[HL_NC - RV_QZ + i];
-        if (cur == RV_HALL) rev_hall(rv_in, size + rv_off, rv_damp, rv_md8, om, os);
+        if (cur == RV_HALL) rev_hall(rv_in, rv_hsz + (rv_off << 4), rv_damp, rv_md8, om, os);
         else if (cur) {
             rev_ctl_t c;
             if (cur == RV_PLATE && (rv_pz < 0 || !rev_plate_active(&rev_u.p))) rv_pz = v;   /* (AUTO: from silence) */

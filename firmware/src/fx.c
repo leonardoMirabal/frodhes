@@ -1984,9 +1984,9 @@ static uint32_t exp2_neg(uint32_t x)
     p = ((p * u) >> 15) + 32768u;
     return i < 15u ? p >> (i + 1u) : 0u;
 }
-static void hall_gains(int32_t s)
+static void hall_gains(int32_t s)                       /* s: the size in Q4 (rv_hsz; a whole size: s << 4) */
 {
-    uint32_t q = exp2_neg((uint32_t)s * 65536u / 30u), k, g;
+    uint32_t q = exp2_neg((uint32_t)s * 4096u / 30u), k, g;
     for (k = 0; k < HL_NL; k++) {
         g = exp2_neg((HL_LEN[k] * 59u * q) >> 15);
         hl.g[k] = (int16_t)(((g > 32440u ? 32440u : g) * 6193u) >> 15);
@@ -2054,7 +2054,7 @@ static FX_RAM __attribute__((noinline)) void rev_down(const int32_t *in, int32_t
 /* one control block (CTL frames in, HL_NC at the half rate out): ol[] = the mid, or[] = the side (x HL_OUT), the
  * caller upsamples them (fx_reverb) */
 static void rev_hall(const int32_t *rev_in, int32_t size, int32_t damp, int32_t md, int32_t *ol, int32_t *or)
-{
+{                                                       /* (size: Q4) */
     int16_t *a = rev_ap, *o, *y;
     uint32_t i, k, s, m, d, w = hl.w;
     int32_t kd = HL_KD(damp);
@@ -2122,6 +2122,11 @@ static uint32_t pd_fill FX_OWN_SECTION;                              /* writes s
 static int32_t rv_inb[RV_DZ + CTL];                   /* the send: RV_DZ samples of history (rev_down), the block */
 #define rv_in (rv_inb + RV_DZ)
 static int32_t rv_off, rv_damp = 60;                   /* DECAY's size offset and TONE's damping, as they glide */
+static int32_t rv_hsz RH_SP_SEC(".bss.fx_rvhsz");      /* HALL's size from SIZE / MIX (Q4) as it glides: 1/4 step a
+                                                        * control block (a SIZE AUTO <-> 1 step moved it up to 35 steps
+                                                        * at once, every line's gain with it: 2.1x a held tail's d2, the
+                                                        * wet; 0.9.10); at rest SIZE's own (a SIZE that has not moved
+                                                        * renders as before) */
 static uint8_t rv_running;
 static void fx_predelay(int32_t *x, uint32_t tgt)      /* one control block: x[] delayed by the tap */
 {
