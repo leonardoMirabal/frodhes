@@ -109,8 +109,10 @@ def test_static_rules():
 
 def test_late_at_the_same_time():
     # the early pieces spend part of core 0's wait: the wait after them gets only the rest (a late job is called late
-    # at C1_DEADLINE_US after the block's start, as without the pieces); the deadline the user set, 5100 us
+    # at C1_DEADLINE_US after the block's start, as without the pieces); the deadline the user set, 5100 us. Between the
+    # two: only C1_PROF's stamp of that wait (C1PF 21, dbba3c8b), nothing that changes wu
     assert "#define C1_DEADLINE_US 5100u" in FRO
     assert re.search(r"wu = el \+ 200u < C1_DEADLINE_US \? C1_DEADLINE_US - el : 200u;.*?dl = wu \* FM1_TICKS_PER_US.*?"
-                     r"sp = \(fm1_ticks\(\) - tw\) / FM1_TICKS_PER_US;\s*wu = sp < wu \? wu - sp : 1u;.*?r = fr_c1_wait_us\(wu\);",
+                     r"sp = \(fm1_ticks\(\) - tw\) / FM1_TICKS_PER_US;\s*(?:C1PF\([^;]*\);[ \t]*(?:/\*[^\n]*?\*/)?[ \t]*\n\s*)?"
+                     r"wu = sp < wu \? wu - sp : 1u;.*?r = fr_c1_wait_us\(wu\);",
                      FRO, re.S)
