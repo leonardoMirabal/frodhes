@@ -322,9 +322,35 @@ static int c1_stream_step(void)                 /* the frames ready, not done: t
     fr_c1_sync();
     return 1;
 }
+#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
+/* FR_FAULT (a diag build: APP_DEFS=-DFR_FAULT): extra load on demand, live, to find where the two-core build breaks.
+ * CC 117 = core 0, CC 118 = core 1: value & 15 = the extra time in 100 us steps (0-1500 us a block), value & 64 =
+ * the kind: 0 a spin on the timer, 64 reads over a 32 KB table in flash (XIP: the shared cache and the flash bus, as
+ * the effects' and voices' own code) plus writes to RAM. Core 0 burns at app_audio's start, core 1 at its job's
+ * start. Never in a release build (tools/build.py: no FR_FAULT without APP_DEFS). */
+static volatile uint8_t flt_c0, flt_c1;
+static uint32_t flt_sink[64];
+static const uint32_t flt_tab[8192] = {1u, 2u, 3u};
+static inline __attribute__((always_inline)) void flt_burn(uint32_t k)
+{
+    uint32_t us = (k & 15u) * 100u, t0, i = 0, a = 0;
+    if (!us) return;
+    t0 = fm1_ticks();
+    while (fm1_ticks() - t0 < us * FM1_TICKS_PER_US)
+        if (k & 64u) {
+            a += *(volatile const uint32_t *)&flt_tab[i];
+            flt_sink[i >> 3 & 63u] = a;
+            i = (i + 8u) & 8191u;                      /* (one 32-byte line a read: every line of the table in turn) */
+        }
+}
+#define FLT_BURN(k) flt_burn(k)
+#else
+#define FLT_BURN(k) ((void)0)
+#endif
 static void c1_stream_job(uint32_t a)
 {
     (void)a;
+    FLT_BURN(flt_c1);
     fx_pre_c();
 #ifndef DINGHY_HOST
     while (c1_fxd < c1_job.n)                   /* (core 0's wait holds core 1 if this runs late: fr_c1_wait_us) */
@@ -380,6 +406,9 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
     uint32_t ms0 = fm1_ms;                         /* (the block's start: the clock's phase lock, tempo.c) */
 #ifndef DINGHY_HOST
     uint32_t t0 = fm1_ticks(), us;
+#endif
+#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
+    FLT_BURN(flt_c0);                              /* (FR_FAULT: core 0's extra load, CC 117; inside the measured ISR) */
 #endif
 #if defined(RH_PROF_STAGES) && !defined(DINGHY_HOST)
     prof_st_t = t0;
@@ -653,6 +682,10 @@ FR_COLD static void midi_cc(uint32_t cc, uint32_t v)
     }
     if (cc == 8u) { batt_sim = (uint8_t)v; return; }           /* developer: a simulated battery reading (v x 8; 0 = the ADC) */
     if (cc == KV_CC_MODE || cc == KV_CC_QUERY) { kv_dev_cc(cc, v); return; }   /* developer: key velocity (keyvel.h) */
+#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)
+    if (cc == 117u) { flt_c0 = (uint8_t)v; return; }    /* FR_FAULT: core 0's extra load (value & 15 x 100 us, & 64 flash) */
+    if (cc == 118u) { flt_c1 = (uint8_t)v; return; }    /* FR_FAULT: core 1's extra load, a block */
+#endif
     if (cc == 111u) { fx_bypass = v >= 64u; ui_mark(E_HEADER); return; }    /* the FX button's bypass (0.8) */
     if (cc == 40u) { vresp_set(v * VRESP_N >> 7); ui_mark(E_CARDS); return; }   /* MIDI RESPONSE, the velocity
                                                         * response in VRESP_N bands (two: 0-63 A, 64-127 B; three: 0-42,
