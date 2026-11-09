@@ -37,7 +37,8 @@ The clicks (clicks): K events of the stream (a CC, a knob, a button, a Program C
 with no note starting near it) are rendered with and without that event (the stream ends at it); the largest second
 difference from 6 ms before to 30 ms after it, against the larger of the run without it and the run with it once
 settled (60-93 ms after), and the same on the difference of the two runs (the change alone: the reverb, the delay
-and the other notes cancel), over 10x is a click (click_ratio). A click is named by what it changed (the parameters
+and the other notes cancel), over 10x is a click (click_ratio). An event that starts a note (more voices 8 ms after
+it: a knob on the ARPEGGIO page moving the next step) is not checked, as the arp's CCs and buttons are not. A click is named by what it changed (the parameters
 that differ in the two runs' dumps); the ones private/BUGHUNT-095.md already lists are reported as known, the
 others fail.
 
@@ -541,7 +542,9 @@ def click_one(events, i, binary=BIN, detail=False):
     b = run(script_text(without, extra, t + 150), binary)
     if a.code or b.code or not len(a.x) or not len(b.x):
         return None
-    ring = rms_db(b.x[ms(t - 50):ms(t)])
+    if int(a.dumps.get(t + 8, {}).get("voices", 0)) > int(b.dumps.get(t + 8, {}).get("voices", 0)):
+        return None                             # (it started a note: a knob on the ARPEGGIO page moving the next
+    ring = rms_db(b.x[ms(t - 50):ms(t)])        # step, as the arp's CCs and ARP button do; its onset is no click)
     ratio, plain, diff = click_ratio(a.x, b.x, t)
     changed = []
     for at in (t + 8, t + 31):
