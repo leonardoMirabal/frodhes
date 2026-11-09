@@ -53,6 +53,9 @@ _Static_assert(sizeof pr_user == ST_TAIL_N, "the user presets are the store reco
  * 2026-11-08 (later): the effects no longer add peak (fx.c: the phaser's peak trim, the pan's sides capped at unity, the
  * wah's make-up capped by the peaks, LP / HP RESO compensated, ANA's TIME over a silent line at once): the presets they
  * made quieter back to 0.9.9's loudness, F05 +7, F09 +14, F10 +2, F11 +21, F18 +4, U04 +3, U05 +9, U07 +10 steps.
+ * 2026-11-09: tools/quick.py's v127 chord and note against 0.9.9 (the compressor's hold 5.8 ms): F10 +5, F12 +9, F19 +8
+ * steps (F12 / F19 had lost 2-3 dB with the clean top); F16 stays ~3 / ~4.8 dB under 0.9.9 (0.9.9 reached it only
+ * through the limiter).
  *
  * The drive TYPEs (P_DRV_SW, drive.c: 1 FDRV, 2 KHLON, 3 TSH8, 4 OHCD, 5 BHLUE) in six of them, their LEVELs
  * re-run with the TYPE in (the chord's level moves with it), each one's CPU predicted with its TYPE's own cost in
@@ -112,7 +115,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     /* F10 FUNK WAH: a fast compressor, drive, the touch wah (harder playing opens it), a small dry room */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 56, P_CMP_RATIO, 3, P_CMP_ATK, 20, P_CMP_REL, 40, P_CMP_GAIN, 26,
     P_DRIVE, 44, P_DRV_SW, 3, P_TW_SW, 2, P_TW_DEPTH, 92, P_TW_RATE, 72, P_BARK, 84, P_RV_DEPTH, 14, P_RV_TYPE, 1,
-    P_RV_LOCUT, 80, P_LEVEL, 39, 0xFF,
+    P_RV_LOCUT, 80, P_LEVEL, 44, 0xFF,
     /* F11 RESO SWEEP: a driven tone into the resonant LP12, the LFO's triangle sweeping it over 2 bars, a clean
      * quarter-note digital echo, a hall */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
@@ -123,7 +126,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
      * note (the compressor's make-up carries the level LEVEL 127 cannot) */
     P_TYPE, 0, P_BARK, 80, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_DRIVE, 52, P_DRV_SW, 3, P_FL_TYPE, 5, P_FL_FREQ, 70, P_FL_RESO, 84, P_FL_LFO, 50, P_LFO_SHAPE, 0, P_LFO_SYNC, 9,
-    P_LFO_RETRIG, 1, P_RV_DEPTH, 14, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 115, 0xFF,
+    P_LFO_RETRIG, 1, P_RV_DEPTH, 14, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 124, 0xFF,
     /* F13 VIBES (dry): the vibraphone as the model plays it: STRIKE at L/3, a mallet between YARN and the middle, the
      * tube a little fuller, the motor at 2.6 Hz a little shallower, the damper and the ring as made, a quiet mallet
      * contact; the mallet compressor (1.5:1, 9 ms: the strike passes) and a trace of hall */
@@ -161,7 +164,7 @@ static const uint8_t PR_FDATA[] = {   /* the factory records, one after another:
     /* F19 RADIO: a hard drive through a band-pass (a small speaker's band), a short tape slap, a small room */
     P_TYPE, 0, P_NOISE, 48, P_CMP_SW, 1, P_CMP_AMT, 50, P_CMP_RATIO, 1, P_CMP_ATK, 80, P_CMP_REL, 72, P_CMP_GAIN, 8,
     P_DRIVE, 55, P_DRV_SW, 4, P_DRV_TONE, 76, P_FL_TYPE, 5, P_FL_FREQ, 66, P_FL_RESO, 0, P_DL_SW, 3, P_DL_DEPTH, 15,
-    P_DL_TIME, 54, P_DL_FDBK, 30, P_RV_DEPTH, 10, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 70, 0xFF,
+    P_DL_TIME, 54, P_DL_FDBK, 30, P_RV_DEPTH, 10, P_RV_TYPE, 1, P_RV_LOCUT, 80, P_LEVEL, 78, 0xFF,
 };
 /* factory record idx (< PR_NF): the records are stored back to back (0.9.6: no padding to 64 bytes, 423 B less) */
 FR_COLD static const uint8_t *pr_fdata(uint32_t idx)
