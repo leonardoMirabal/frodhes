@@ -11,8 +11,8 @@ Frodhes is free. If you enjoy it, you can [buy me a coffee](https://ko-fi.com/le
 <table align="center">
   <tr>
     <td align="center"><img src="docs/manual/img/thumbnail.png?v=23c51997" width="260" alt="Frodhes: the start screen (FRODHES, ELECTRIC PIANO + VIBES + MARIMBA)"></td>
-    <td align="center"><img src="docs/manual/img/piano.png?v=3461073e" width="260" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
-    <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ed05fe9c" width="340" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
+    <td align="center"><img src="docs/manual/img/piano.png?v=d41944c5" width="260" alt="Frodhes on the FM-1: the FRODHES page, four cards for the four knobs"></td>
+    <td align="center"><img src="docs/manual/img/move/move-frodhes.png?v=ba262a7f" width="340" alt="Frodhes on the Move: the first page, eight cards for the eight knobs"></td>
   </tr>
   <tr>
     <td align="center">The start screen</td>
@@ -80,7 +80,7 @@ Schwung's module catalog, you can also install and update it from there. The ste
 
 **[The user manual](docs/MANUAL.md)**: every page, knob and button, the presets, the effects and the MIDI map.
 
-![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=6ca8f4bc)
+![The PERFORM, VOICE, PHASER and COMPRESSOR pages on the FM-1](docs/manual/img/overview.png?v=0264983d)
 
 ## Other keyboards
 
