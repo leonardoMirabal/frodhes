@@ -529,7 +529,7 @@ static const uint16_t FX_DLY_FB[128] = {
 #define TP_DRIFT 58572
 #define TP_DM 22062
 #define TP_FB_MAX 12060
-#define TP_WET 4096
+#define TP_WET 3867
 #define TP_FADE 16
 #define TP_XBLK 8
 
