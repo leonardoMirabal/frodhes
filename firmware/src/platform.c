@@ -157,7 +157,7 @@ static volatile uint32_t fm1_ms;                /* milliseconds since power-on (
 /* ---- flash: read anywhere; erase / program only the update's staging area and the app's store (store.h; the app
  * may give its own, tighter allow-list: APP_FL_RANGE) */
 #include "store.h"
-#if FELUCCA_UAC && FELUCCA_UAC_ALIGN
+#if FELUCCA_UAC && FELUCCA_UAC_ALIGN && !defined(FL_SLICE_OK)
 #define FL_SLICE_OK() uac_slice_ok()
 #endif
 #include "fm1_flash.h"

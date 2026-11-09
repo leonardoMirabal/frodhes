@@ -117,6 +117,13 @@ _Static_assert(FR_LAT_HALF == 128u || FR_LAT_HALF == 64u || FR_LAT_HALF == 32u, 
 #define FR_LAT_TAIL 0u                          /* 32: each interrupt sends its frames 32 late (app_audio) */
 #endif
 _Static_assert(FR_LAT_TAIL == 0u || FR_LAT_TAIL == 32u, "FR_LAT_TAIL: 0 or 32 frames");
+#if FR_LAT_TAIL && !defined(DINGHY_HOST)
+/* the tail runs on core 1 after the interrupt, under the main loop: a flash slice (the flash off, the interrupts off)
+ * waits for it to end, as the jobs run XIP code (fm1_core1.h: the flash goes off never under a job). Then the USB
+ * audio's moment as before (platform.c, usb.c uac_slice_ok) */
+static int lat_fl_ok(void);
+#define FL_SLICE_OK() lat_fl_ok()
+#endif
 #endif
 #include "fr_cold.h"     /* FR_COLD: the cold code built for flash, not speed */
 #include "frodhes_store.h"   /* the flash Frodhes writes, per board, and its allow-list APP_FL_RANGE (store.h) */
@@ -679,6 +686,48 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
     prof_over = us > LAT_SHED_US ? prof_over + 1u : 0u;   /* (two interrupts over 5.0 ms x n / 256: shed a voice) */
     if (prof_over >= 2u) { eng_shed_req = 1; prof_over = 0; }
 #endif
+}
+/* the main loop's writes (the knobs, CCs, presets, the bend, the tempo lock, HALL's clearing, the note-on
+ * coefficients) land between blocks, never between two interrupts of one: a block renders with one set of parameters,
+ * as the 256-frame build (where the main loop never runs inside a block). The notes go on meanwhile (the event ring,
+ * FR_LAT_EV). With FR_LAT_TAIL the block's tail (core 1's effects after its last interrupt) is the block's too: the
+ * main loop waits for it (the host twin: runs it, as core 1 would meanwhile). An interrupt may still come inside one
+ * write (a preset's load), as in the 256-frame build at a block's edge */
+static int lat_mid(void)
+{
+#if FR_LAT_TAIL
+    if (lat_pend) {
+#ifdef DINGHY_HOST
+        while (c1_fxd < lat_pe) if (!c1_stream_step()) break;
+#endif
+        fr_c1_sync();
+        if (c1_fxd < lat_pe) return 1;
+    }
+#endif
+    return lat_o != 0u;
+}
+#if FR_LAT_TAIL && !defined(DINGHY_HOST)
+static int lat_fl_ok(void)                      /* (FL_SLICE_OK, the interrupts off: no job starts meanwhile) */
+{
+    uint32_t t0 = fm1_ticks();
+    while (lat_pend && c1_fxd < lat_pe && fr_c1_busy() && fm1_ticks() - t0 < 1000u * FM1_TICKS_PER_US) fr_c1_pause();
+#ifdef UAC_STAMP
+    return uac_slice_ok();
+#else
+    return 1;
+#endif
+}
+#endif
+static int lat_midi_get(uint8_t *st, uint8_t *d1, uint8_t *d2)   /* midi_get, but a message other than a note held
+                                                 * (in order: the notes after it wait too) while a block is under way */
+{
+    static uint8_t h0, h1, h2;
+    static int hs;
+    int s = hs;
+    if (s) { *st = h0; *d1 = h1; *d2 = h2; hs = 0; }
+    else if ((s = midi_get(st, d1, d2)) == 0) return 0;
+    if ((*st & 0xE0u) != 0x80u && lat_mid()) { h0 = *st; h1 = *d1; h2 = *d2; hs = s; return 0; }
+    return s;
 }
 #else
 /* noinline (0.9.5): with the filter and the tremolo out of it, app_audio became small enough for the compiler to
@@ -1358,6 +1407,9 @@ FR_COLD static void app_main(void)
         smk_poll();                             /* the outer keys, pads, faders, wheels, the pedal (frodhes_smk.h) */
 #endif
 
+#if FR_LAT
+        if (!lat_mid()) {                       /* (the buttons and knobs: between blocks) */
+#endif
         b = fm1_input_edges(&rel);              /* buttons pressed / released since the last call */
         kv_dev_edges(b);
 #if BOARD_SMK37
@@ -1365,10 +1417,17 @@ FR_COLD static void app_main(void)
 #endif
         sustain_button(b, rel);
         ui_input(b, rel);
+#if FR_LAT
+        }
+#endif
 
         if (link && !usb_link()) eng_bend_reset();   /* the USB cable out (or the computer let go): no bend left on */
         link = usb_link();
-        while ((src = midi_get(&st, &d1, &d2)) != 0) {   /* USB-MIDI and the TRS jack; the MIDI page's CHANNEL (0 = all) */
+#if FR_LAT
+        while ((src = lat_midi_get(&st, &d1, &d2)) != 0) {
+#else
+        while ((src = midi_get(&st, &d1, &d2)) != 0) {
+#endif   /* USB-MIDI and the TRS jack; the MIDI page's CHANNEL (0 = all) */
             uint8_t ty = st & 0xF0u;
             if (st < 0xF0u && set.midi_ch && (st & 0x0Fu) != set.midi_ch - 1u) continue;
             if (ty == 0x90u && d2) src_on(SRC_MIDI + (d1 & 127u), d1 & 127u, d2, 0);
@@ -1397,11 +1456,18 @@ FR_COLD static void app_main(void)
                 uint32_t n = scale_key_note(k);
                 if ((n < 128u && src_active[SRC_MIDI + n]) || (note_sustained(n) && !leds_sus_lit())) lit |= 1u << k;
             }
+#if FR_LAT
+        if (!lat_mid()) tempo_lock_poll();
+        src_poll();
+        eng_pump();
+        if (!lat_mid()) { rev_poll(); rh_cc_poll(); }   /* (between blocks, as above) */
+#else
         tempo_lock_poll();                      /* (tempo.c: the synced LFOs locked to the clock's beats) */
         src_poll();
         eng_pump();                             /* (notes.c: events that waited for room in the engine's ring) */
         rev_poll();                             /* (rev_types.c: HALL's lines cleared after a TYPE change) */
         rh_cc_poll();                           /* (rhodes.c: the note-on coefficients, when TUNE / DECAY / RELEASE moved) */
+#endif
         seq_poll();
         arp_poll();
         ui_leds(lit, tempo_beat_led() || (arp_on() && arp_n && arp_playing < 128u));

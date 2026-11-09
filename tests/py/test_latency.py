@@ -59,8 +59,6 @@ def test_lat128_same_integers_core1_faults(c1, tail):
     b, _ = wav(f"lat128_{c1}_t{tail}", lines, lat_bin(128, tail=tail), env={"FRODHES_C1": c1, "FRODHES_LAT_SYNC": "1"})
     if c1.startswith("late"):                       # (the late job: core 1 held from a different block; the
         return                                      # rest one core at 10 voices, then the steals differ: runs clean)
-    if c1.startswith("busy") and tail:              # (core 1 behind: the tail's effects run after a main-loop pass
-        return                                      # that may have moved a parameter: runs clean, not the same)
     assert same_shifted(a, b, tail)
 
 
