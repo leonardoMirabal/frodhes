@@ -314,7 +314,6 @@ def hot_loops(dis, fn="app_audio"):
             masks=sum("& 0x3FFFFFFF" in t for t in loop),
             sh22=sum(bool(re.search(r"r\d+_r\d+ >>= 22", t)) for t in loop),
             sh30=sum(bool(re.search(r"r\d+_r\d+ >>= 30", t)) for t in loop),
-            mac=sum(bool(re.search(r"r\d+_r\d+ [-+]= r\d+ \* r\d+ \(s\)", t)) for t in loop),
             calls=[c.strip() for t in loop for c in re.findall(r"call -?\d+ <([^:>]*)", t)]))
     return loops
 
@@ -412,10 +411,9 @@ def check(img, syms, dis, rt):
     if len(img) > APP_SLOT:
         errors.append(f"image {len(img)} B exceeds the app slot")
     loops = hot_loops(dis)
-    mode = [lp for lp in loops or [] if lp["sh30"] == 2      # out of line since 0.9.5 (rh_mode_*: AUDIO_HELPERS); the
-            or (lp["sh30"] == 0 and lp["sh22"] == 0 and lp["mac"] == 3)]   # two Q30 shifts (x, y) of a sample: since
-                                    # rh-trim the remainders' masks are out of the loop (X = x 2^30 + ex); the loops
-                                    # without the force keep X, Y at 2^32 (x, y the high words: no shift, 3 MACs)
+    mode = [lp for lp in loops or [] if lp["sh30"] == 2]      # out of line since 0.9.5 (rh_mode_*: AUDIO_HELPERS); the
+                                    # two Q30 shifts (x, y) of a sample: since rh-trim the remainders' masks are out of
+                                    # the loop (X = x 2^30 + ex)
     if not mode:
         errors.append("the Rhodes mode loop (MC3) not found in app_audio and its helpers")
     for lp in mode:
