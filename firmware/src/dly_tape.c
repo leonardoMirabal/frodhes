@@ -373,7 +373,7 @@ static inline __attribute__((always_inline)) void dly_loop_c(int32_t *L, int32_t
                                                              int32_t target, int32_t col, int32_t fb, int32_t wet,
                                                              int32_t dgt)
 {
-    uint32_t o = fxc_o, e = fxc_e, w = dly_w, wow = dly_wow, flt = dly_flt, j, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;
+    uint32_t o = fxc_o, e = fxc_e, w = dly_w, wow = dly_wow, flt = dly_flt, j, j0, j1, c = dly_rst ? w - dly_rb : 0x7FFFFFFFu;
     int32_t dd = dly_d, lp = dly_lp, hp = dly_hp, dg = dly_dg;
     int32_t ws = DLY_WSTEP(dly_wk, wet, n), wq = (dly_wk << 8) + ws * (int32_t)o;
     int32_t f0 = dly_fbk < 0 ? fb : dly_fbk, fs = DLY_WSTEP(f0, fb, n), fq = (f0 << 8) + fs * (int32_t)o, kfb;   /* FDBK's
@@ -388,7 +388,13 @@ static inline __attribute__((always_inline)) void dly_loop_c(int32_t *L, int32_t
             sf = (sf + (int32_t)((uint32_t)sf >> 31)) >> 1;
             dly_dt[j] = dd + (int32_t)(((int64_t)dd * (osc_sine(wow) * 3 + sf)) >> 25);
         }
-    for (j = o; j < e; j++) {
+    /* two passes a sub-block (fewer live registers: the one loop spilled its states to the stack every sample): the
+     * echo's read, tone and feedback term (er: the echo before its gain), then its gain and the mix into L / R; the
+     * same integers sample for sample */
+    for (j0 = o; j0 < e; j0 = j1) {
+    int32_t er[32];
+    j1 = j0 + 32u < e ? j0 + 32u : e;
+    for (j = j0; j < j1; j++) {
         int32_t d, r, f;
         uint32_t i;
         if (tape)
@@ -418,10 +424,15 @@ static inline __attribute__((always_inline)) void dly_loop_c(int32_t *L, int32_t
         fq += fs; kfb = fq >> 8;
         dly_fbv[j] = (int32_t)(((int64_t)f * kfb) >> 15);
         w++;
+        er[j - j0] = r;
+    }
+    for (j = j0; j < j1; j++) {
+        int32_t r;
         wq += ws;
-        r = (int32_t)(((int64_t)r * (wq >> 8)) >> 15);
+        r = (int32_t)(((int64_t)er[j - j0] * (wq >> 8)) >> 15);
         dg += (dgt - dg) >> 9;
         L[j] = (int32_t)(((int64_t)L[j] * dg) >> 15) + r; R[j] = (int32_t)(((int64_t)R[j] * dg) >> 15) + r;
+    }
     }
     dly_w = w; dly_wow = wow; dly_flt = flt; dly_d = dd; dly_lp = lp; dly_hp = hp; dly_dg = dg;
     dly_wm = 1; dly_wp = 0; dly_wk_msk = -1;

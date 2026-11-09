@@ -197,8 +197,8 @@ static FX_RAM __attribute__((noinline)) uint32_t rqh_end(const int16_t *q, int32
         RQH_BF(h0, h1) RQH_BF(h2, h3) RQH_BF(h4, h5) RQH_BF(h6, h7)                                             \
         RQH_BF(h0, h2) RQH_BF(h1, h3) RQH_BF(h4, h6) RQH_BF(h5, h7)                                             \
         RQH_BF(h0, h4) RQH_BF(h1, h5) RQH_BF(h2, h6) RQH_BF(h3, h7)                                             \
-        mid[i] = RQH_TAP(h0);                                                                                   \
-        side[i] = RQH_TAP(h1);                                                                                  \
+        mid[i] = h0;                                                                                            \
+        side[i] = h1;                                                                                           \
         RQH_W8(SH, 0, h0) RQH_W8(SH, 1, h1) RQH_W8(SH, 2, h2) RQH_W8(SH, 3, h3)                                 \
         RQH_W8(SH, 4, h4) RQH_W8(SH, 5, h5) RQH_W8(SH, 6, h6) RQH_W8(SH, 7, h7)                                 \
     }
@@ -208,6 +208,9 @@ static FX_RAM __attribute__((noinline)) void rqh_mix8(int16_t *o, const int32_t 
     uint32_t i;
     if (lo) RQH_MIX8(RQH_TZ)
     else RQH_MIX8(RQH_RND)
+    for (i = 0; i < RQ_NC; i++) { mid[i] = RQH_TAP(mid[i]); side[i] = RQH_TAP(side[i]); }   /* the taps: their own
+                                                         * pass (mid / side hold rows 0 and 1 till then), the mix's
+                                                         * registers free of the 64-bit products */
 }
 
 static __attribute__((noinline)) void rev_hqh_run(rev_hqh_t *s, const int32_t *in, int32_t *mid, int32_t *side,
