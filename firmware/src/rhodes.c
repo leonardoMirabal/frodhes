@@ -1079,7 +1079,9 @@ static FR_RAM __attribute__((noinline)) int32_t rh_hd_step(rh_voice_t *v, int32_
     if (a < RH_HD_DU) a = RH_HD_DU;
     if (a > (1 << 26)) a = 1 << 26;                                /* (2 gap) */
     q[0] = v->hd_off0 + a; q[1] = v->hd_off0 - a; q[2] = o + a; q[3] = o - a; q[4] = o + rh_x[SUB - 1u];
+#if defined(__clang__)                                             /* (gcc, the Move's and Linux hosts', has no such pragma) */
 #pragma clang loop unroll(disable)
+#endif
     for (i = 0; i < 5u; i++) h[i] = rh_hd_flux(T, q[i]);
     s0 = h[0] - h[1]; s0 = s0 < 0 ? -s0 : s0;                      /* |Phi~((o0 + a)^2) - Phi~((o0 - a)^2)| */
     s1 = h[2] - h[3]; s1 = s1 < 0 ? -s1 : s1;
