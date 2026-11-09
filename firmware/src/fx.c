@@ -1349,17 +1349,28 @@ static uint32_t cmp_ds = 0x9E3779B9u;                 /* the gain's dither (2026
                                                         * output's LSB truncated, an error locked to the waveform: on a
                                                         * quiet high note (DYNO k93 v64, ~300 LSB) its 3rd / 5th
                                                         * harmonics, H3 -64.2 -> -59.2 dB re H1 with FX off (the bypass
-                                                        * keeps the compressor). Now rounded over a uniform 1 LSB (RPDF:
-                                                        * the error no longer follows the wave, H3 -64.9; TPDF as fx_out's
-                                                        * LEVEL read the same with 0.4 dB more noise on a quiet bass note).
-                                                        * Only from 32 LSB in (-60 dBFS; one unsigned compare on the
-                                                        * input): under it the cut as before, so a tail reaches exact
-                                                        * zero as it did (dithered down to 0 LSB, the reverb's int16-floor
-                                                        * tails of MARIMBA v40 stayed at +-1 LSB: three key-up windows no
-                                                        * longer silent). Whether one such cell's last LSBs land on zero
-                                                        * is a coin flip on any change (16 / 24 / 32 / 48 / 64 LSB each
-                                                        * flip a different one): expected_changes lists the one at 32.
-                                                        * The loop: 18 instructions a sample against 8 (tools/drive_insns.py) */
+                                                        * keeps the compressor). Now rounded over a uniform 1 LSB, the
+                                                        * offsets from CMP_DTH (16 a sub-block from a random start: white,
+                                                        * 1 load a sample): H3 -64.5. Only while the detector reads
+                                                        * >= 128 LSB (-48 dBFS), else the cut as before, so tails reach
+                                                        * exact zero as they did (release_diff's MARIMBA v40 key-up and
+                                                        * decay cells; 32 left two moved). The gain loop 10 instructions a
+                                                        * sample against 8 without (pi32v2, tools/drive_insns.py; a
+                                                        * generator step a sample with a per-sample threshold was 18; one
+                                                        * offset held over a sub-block, 9, put the noise low: FELT k33 v40
+                                                        * inh over its ceiling on HQ) */
+/* the compressor's dither values (uniform 0 .. 65535, a 1-LSB rounding offset in Q16): 80 from the generator
+ * x = x * 1664525 + 1013904223 (x0 0x2545F491), its top 16 bits; each sub-block reads 16 of them from a random
+ * offset 0..63 (fx_comp), white sample to sample and stationary across sub-blocks */
+static const uint16_t CMP_DTH[80] = {
+    58007, 36122, 7018, 39120, 23958, 24075, 19811, 56694, 23025, 38926, 58209, 26173,
+    24440, 43151, 41004, 53198, 37105, 15033, 17105, 37310, 50309, 44380, 23346, 49682,
+    2422, 38160, 15839, 61182, 53011, 61080, 27430, 21231, 8430, 58762, 64870, 59082,
+    44109, 21294, 62122, 5748, 33504, 22949, 25971, 7058, 52914, 48972, 2262, 17043,
+    60258, 61024, 31688, 40428, 39060, 48355, 18358, 60324, 14755, 24767, 40538, 45329,
+    22170, 13354, 10954, 53474, 53858, 11851, 35283, 8030, 35390, 13339, 15749, 47340,
+    21109, 42383, 12304, 7893, 33871, 51956, 6608, 24134};
+static const uint16_t CMP_DTH0[16];                     /* (zeros: the sub-blocks under the threshold) */
 static int32_t cmp_hd, cmp_gs;                         /* (cmp_gs: the reduction, its release smoothed, log2 Q12 x 16) */
 #ifndef CMP_KRM
 #define CMP_KRM 1
@@ -1504,16 +1515,18 @@ static void fx_comp(int32_t *m, uint32_t n)
     w1 = xf_pre_c(cmp_xw, on, m, 0, n, XF_STEP);
     for (sb = fxc_o; sb < fxc_e; sb += 16u) {
         int32_t g0 = cmp_g, g1, gr, step, hd = cmp_hd;
+        const uint16_t *dt;
         for (j = sb; j < sb + 16u; j++) CMP_DET(iabs(m[j]) << 8, hd);
         cmp_hd = hd;
         gr = cmp_gsm(cmp_gr_at(cmp_env, thr, slope));
         fx_cmp_gr = gr;
         g1 = cmp_exp2(cmp_glide(mk) - gr);
+        cmp_ds = cmp_ds * 1664525u + 1013904223u;
+        dt = cmp_env >= (128 << 8) ? CMP_DTH + (cmp_ds >> 26) : CMP_DTH0;
         step = (g1 - g0) / 16;
         for (j = sb; j < sb + 16u; j++) {
             g0 += step;
-            cmp_ds = cmp_ds * 1664525u + 1013904223u;     /* (dithered from 32 LSB in; under it the cut as before) */
-            m[j] = (int32_t)(((int64_t)m[j] * g0 + ((uint32_t)(m[j] + 31) > 62u ? (int32_t)(cmp_ds >> 16) : 0)) >> 16);
+            m[j] = (int32_t)(((int64_t)m[j] * g0 + dt[j - sb]) >> 16);
         }
         cmp_g = g1;
     }
@@ -1547,16 +1560,18 @@ static void fx_comp(int32_t *m, uint32_t n)
                                                        * gain step to unity in one sample, on one over 16 samples) */
     for (sb = 0; sb < n; sb += 16u) {
         int32_t g0 = cmp_g, g1, gr, step, hd = cmp_hd;
+        const uint16_t *dt;
         for (j = sb; j < sb + 16u && j < n; j++) CMP_DET(iabs(m[j]) << 8, hd);   /* detector: |x| in Q8 */
         cmp_hd = hd;
         gr = cmp_gsm(cmp_gr_at(cmp_env, thr, slope));
         fx_cmp_gr = gr;
         g1 = cmp_exp2(cmp_glide(mk) - gr);
+        cmp_ds = cmp_ds * 1664525u + 1013904223u;
+        dt = cmp_env >= (128 << 8) ? CMP_DTH + (cmp_ds >> 26) : CMP_DTH0;
         step = (g1 - g0) / 16;
         for (j = sb; j < sb + 16u && j < n; j++) {
             g0 += step;
-            cmp_ds = cmp_ds * 1664525u + 1013904223u;     /* (dithered from 32 LSB in; under it the cut as before) */
-            m[j] = (int32_t)(((int64_t)m[j] * g0 + ((uint32_t)(m[j] + 31) > 62u ? (int32_t)(cmp_ds >> 16) : 0)) >> 16);
+            m[j] = (int32_t)(((int64_t)m[j] * g0 + dt[j - sb]) >> 16);
         }
         cmp_g = g1;
     }
