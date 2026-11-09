@@ -1313,8 +1313,7 @@ static inline __attribute__((always_inline)) int32_t cho_tap_k(int32_t *x, uint3
 }
 /* one side over the block, its sub-blocks' settings in kb (in place; its own registers: inlined it spilled). Each side
  * reads only the line (written for the whole block first) and its own samples */
-FX_RAM __attribute__((noinline)) static int32_t cho_side(int32_t *x, const cho_k_t *kb, uint32_t n, int32_t hl,
-                                                         int32_t *ly)
+__attribute__((noinline)) static int32_t cho_side(int32_t *x, const cho_k_t *kb, uint32_t n, int32_t hl, int32_t *ly)
 {
     uint32_t sb;
     for (sb = 0; sb < n; sb += 32u, kb++) {
@@ -1324,6 +1323,19 @@ FX_RAM __attribute__((noinline)) static int32_t cho_side(int32_t *x, const cho_k
     }
     return hl;
 }
+#if !FR_C1
+/* the same with the mix and the make-up held over the whole block (DEPTH still: every block but a DEPTH move's), in
+ * RAM (FX_RAM: a leaf); cho_side above, from flash, takes the blocks where they move (2026-11-09: the make-up's low
+ * part, cho_ly, put .ram_text 28 B over with both loops in RAM) */
+FX_RAM __attribute__((noinline)) static int32_t cho_side_k(int32_t *x, const cho_k_t *kb, uint32_t n, int32_t hl,
+                                                           int32_t *ly)
+{
+    uint32_t sb;
+    for (sb = 0; sb < n; sb += 32u, kb++)
+        hl = cho_tap_k(x + sb, n - sb < 32u ? n - sb : 32u, kb->v, kb->e, kb->km, kb->cg, 0, 0, hl, ly, 0);
+    return hl;
+}
+#endif
 /* a tap's position (Q8) at the LFO's ph, swq the sweep's width x 256 (|osc x swq| < 2^31) */
 __attribute__((noinline)) static int32_t cho_pos(uint32_t ph, int32_t swq)
 {
@@ -1396,6 +1408,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         cho_w += n;
         cho_b[-1] = cho_b[1023]; cho_b[1024] = cho_b[0]; cho_b[1025] = cho_b[1];
     }
+    int32_t mv = 0;                                     /* (a sub-block's mix or make-up moves: cho_side) */
     for (sb = 0; sb < n; sb += 32u) {
         /* the taps glide sample by sample to the next sub-block's (they jumped once per 32 samples: a step in the
          * delay time, a zipper on the chorus' output of ~10x the signal's third difference, 2026-10-24); each sub-block
@@ -1419,11 +1432,17 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
         kl->e = (uint32_t)sl - 8192u; kr->e = (uint32_t)sr - 8192u;
         kl->km = kr->km = cho_km; kl->cg = kr->cg = cho_cg;
         kl->dk = kr->dk = mix - cho_km; kl->dc = kr->dc = cg - cho_cg;
+        mv |= kl->dk | kl->dc;
         cho_el = el; cho_er = er; cho_km = mix; cho_cg = cg;
         cp_ph += inc * 32u;
     }
-    cho_hl[0] = FR_FAR(cho_side)(L, cho_k[0], n, cho_hl[0], &cho_ly[0]);
-    cho_hl[1] = FR_FAR(cho_side)(R, cho_k[1], n, cho_hl[1], &cho_ly[1]);
+    if (mv) {                                           /* (DEPTH moving: the ramps, from flash) */
+        cho_hl[0] = cho_side(L, cho_k[0], n, cho_hl[0], &cho_ly[0]);
+        cho_hl[1] = cho_side(R, cho_k[1], n, cho_hl[1], &cho_ly[1]);
+    } else {
+        cho_hl[0] = FR_FAR(cho_side_k)(L, cho_k[0], n, cho_hl[0], &cho_ly[0]);
+        cho_hl[1] = FR_FAR(cho_side_k)(R, cho_k[1], n, cho_hl[1], &cho_ly[1]);
+    }
     xf_post(L, R, xf_d[0], xf_d[1], n, cho_xw, w1);
     cho_xw = w1;
 #endif
