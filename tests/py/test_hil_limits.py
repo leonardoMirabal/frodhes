@@ -148,7 +148,9 @@ def test_presets_on_the_host_every_preset_on_target():
     MANUAL 'Factory presets', within 1.5 LU; the 1 LU is the chord-matched ones', not a limit for every Rhodes preset).
     0.9.5: the user bank's starters U01..U09 follow (presets 20..28 in the rows), each within 1 LU of F01.
     2026-11-08: the headroom trims put F04 -2.2, F08 -3.6, F13 +1.0, F15 -1.5, F16 -5.0 (hil_scan PRESET_TARGET); the clean
-    Rhodes (the physical swing): F11 LEVEL 35, F19 90, U08 75 back to F01's level, F14 +1.2 (headroom), F16 / U07 one step down"""
+    Rhodes (the physical swing): F11 LEVEL 35, F19 90, U08 75 back to F01's level, F14 +1.2 (headroom), F16 / U07 one step down.
+    2026-11-09: 0.9.9's level and balance again (fx-level): F09 +2.0, F13 +3.1, F14 +3.2, F15 +0.2, F16 -1.8, F18 +1.1,
+    U02 +0.9, U04 +1.2 (hil_scan PRESET_TARGET)"""
     r, rep = h.HostRig(1), {}
     ok, msg = h.presets(r, rep)
     every = list(range(1, h.PR_COUNT + h.PR_STARTERS + 1))       # F01..F19, then the starters U01..U09 (the host only)
