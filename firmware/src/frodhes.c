@@ -266,6 +266,9 @@ FR_COLD static int usb_link(void) { return host_usb_link; }
 #define C1_SUB 8u                               /* chunks a block: 8 (32 frames) or 4 (64) */
 #endif
 _Static_assert(C1_SUB == 1u || C1_SUB == 2u || C1_SUB == 4u || C1_SUB == 8u, "C1_SUB: 1, 2, 4 or 8 chunks a block");
+#if C1_PRE_C0 && !C1_STREAM
+#error "C1_PRE_C0: the C1_STREAM job only"
+#endif
 #ifdef C1_EDGES
 /* uneven chunks (experiment: APP_DEFS=-DC1_EDGES=32,128,224): the inner edges of a 256-frame block, each a multiple of 32
  * (every effect's sub-block), rising */
@@ -438,6 +441,9 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
         PROF_STAMP(1);
         c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n; c1_job.o = 0; c1_job.e = n;
+#if C1_PRE_C0
+        fxc_front_done = 0;                     /* (the whole chain here, the front too) */
+#endif
         c1_fx_job(0);
         if (rst) rh_side_on = 0;                /* (the voices CC 10 ended: as one core) */
     }
@@ -453,6 +459,9 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
 #endif
         c1_job.mono = c1_mono; c1_job.out = out; c1_job.n = n;
         c1_rdy = 0; c1_fxd = 0;
+#if C1_PRE_C0
+        fxc_front_done = 1;                     /* (core 0 runs the front of each chunk below, before handing it on) */
+#endif
         fr_c1_sync();
         if (!fr_c1_run(c1_stream_job, 0)) { solo = 1; fx_pre_c(); }
 #if defined(C1PF_ON)
@@ -467,6 +476,10 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
             if (j + 1u == C1_SUB) { eng_end(c1_mono, n); C1PF(16, fm1_ticks() - t0); }
 #if defined(C1PF_ON)
             pv += fm1_ticks() - pt;
+#endif
+#if C1_PRE_C0
+            fxf_o = j * k; fxf_e = j * k + k; fxf_n = n;
+            fx_front(c1_mono, n);               /* core 0: chunk j's COMP, EQ, DRIVE, FILTER (fx.c C1_PRE_C0) */
 #endif
 #ifndef DINGHY_HOST
             if (!solo && !fr_c1_busy()) {       /* (the job over before the block's end: refused, or core 1 held)

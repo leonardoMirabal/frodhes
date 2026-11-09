@@ -159,6 +159,20 @@ static uint8_t fxc_side;                                 /* FX_SIDE_ON, latched 
 static const int32_t *fxc_mono;                          /* the block's dry voices (fx_process's mono: whole at the last chunk) */
 #define FXC_1 (fxc_o == 0u)
 #define FXC_Z (fxc_e == fxc_n)
+#ifndef C1_PRE_C0
+#define C1_PRE_C0 0
+#endif
+#if C1_PRE_C0
+/* C1_PRE_C0 (a build switch, off by default): core 0 runs the mono front of the chain (COMP, EQ, DRIVE, FILTER: fx_front)
+ * on each chunk right after its voices, before it hands the chunk to core 1, which starts at TREM (fx_process with
+ * fxc_front_done). The front's code reads its own chunk (fxf_o / fxf_e / fxf_n, fxf_mono) and its own crossfade helpers
+ * (xf_*_cf), so core 0 on chunk k + 1 and core 1 on chunk k share no range variable; the buffers they share (m, dry_c,
+ * xf_d, drv_wet) are indexed from the block's start, each chunk's frames apart; the filter's crossfade scratch is its
+ * own (fl_xs). Every frame goes through the stages in the same order: the same integers */
+static uint32_t fxf_o, fxf_e = 256u, fxf_n = 256u;
+static const int32_t *fxf_mono;
+static volatile uint8_t fxc_front_done;                  /* (this block's front: done by core 0, chunk by chunk) */
+#endif
 /* xf_pre / xf_post for a chunk: the dry copy of the chunk, the blend's ramp from the block's start */
 __attribute__((noinline)) static int32_t xf_pre_c(int32_t w, int on, const int32_t *L, const int32_t *R, uint32_t n,
                                                   int32_t st)
@@ -184,6 +198,33 @@ __attribute__((noinline)) static void xf_post_c(int32_t *L, int32_t *R, const in
     xf_blend_c(L, dl, n, w0, w1);
     if (R) xf_blend_c(R, dr, n, w0, w1);
 }
+#if C1_PRE_C0
+/* the same three on the front's chunk (fxf_o / fxf_e) */
+__attribute__((noinline)) static int32_t xf_pre_cf(int32_t w, int on, const int32_t *L, const int32_t *R, uint32_t n,
+                                                   int32_t st)
+{
+    int32_t w1 = xf_next_s(w, on, n, st);
+    uint32_t o = fxf_o, k = (fxf_e - o) * sizeof *L;
+    if (w != 32768 || w1 != 32768) { memcpy(xf_d[0] + o, L + o, k); if (R) memcpy(xf_d[1] + o, R + o, k); }
+    return w1;
+}
+__attribute__((noinline)) static void xf_blend_cf(int32_t *x, const int32_t *d, uint32_t n, int32_t w0, int32_t w1)
+{
+    int32_t dw = (w1 - w0) / (int32_t)n, w = w0 + dw * (int32_t)fxf_o;
+    uint32_t i;
+    for (i = fxf_o; i < fxf_e; i++) {
+        w += dw;
+        x[i] = d[i] + (int32_t)(((int64_t)(x[i] - d[i]) * w) >> 15);
+    }
+}
+__attribute__((noinline)) static void xf_post_cf(int32_t *L, int32_t *R, const int32_t *dl, const int32_t *dr, uint32_t n,
+                                                 int32_t w0, int32_t w1)
+{
+    if (w0 == 32768 && w1 == 32768) return;
+    xf_blend_cf(L, dl, n, w0, w1);
+    if (R) xf_blend_cf(R, dr, n, w0, w1);
+}
+#endif
 #endif
 static inline int32_t softclip(int32_t x)                 /* Q15 tanh: x in Q15, flat beyond +-4 */
 {
@@ -201,6 +242,15 @@ static inline __attribute__((always_inline)) int32_t osc_sine(uint32_t ph)   /* 
     return FX_SINE[i] + (((FX_SINE[i + 1] - FX_SINE[i]) * f) >> 15);
 }
 
+#if C1_PRE_C0                                           /* (the front's code: its own chunk, fx_front) */
+#define fxc_o fxf_o
+#define fxc_e fxf_e
+#define fxc_n fxf_n
+#define fxc_mono fxf_mono
+#define xf_pre_c xf_pre_cf
+#define xf_blend_c xf_blend_cf
+#define xf_post_c xf_post_cf
+#endif
 /* ---- the LFO (its page) and the FILTER: a TPT state-variable stage (stable at any setting). TYPE: OFF, LP12 LP18,
  * HP12 HP18, BP, NOTCH. 12 dB / octave = the resonant stage; 18 = it and a 6 dB one-pole (no 24: its second stage cost
  * ~190 us of the audio block at the worst case). FREQ 30 Hz .. 16 kHz (log), RESO Q 0.707 .. 20, LFO moves FREQ by up to
@@ -310,17 +360,23 @@ __attribute__((noinline)) static void fl_pass(int32_t *m, uint32_t n, const svf_
 /* the crossfade: the sub-block through the old TYPE (into m) and, from the same state, the new one (into xf_d[1], its
  * own one-pole fl_op2); the state goes on from either (the stage's update does not depend on the mode); then
  * m = old + (new - old) w, w from w0 by 16 a sample */
+#if C1_PRE_C0
+static int32_t fl_xs[32];                                /* fl_xrun's scratch (n <= 32): xf_d is core 1's meanwhile */
+#define FL_XS fl_xs
+#else
+#define FL_XS xf_d[1]
+#endif
 __attribute__((noinline)) static void fl_xrun(int32_t *m, uint32_t n, const svf_t *c, uint32_t t0, uint32_t t1,
                                               int32_t gp, int32_t w0)
 {
     int32_t ic0 = fl_ic[0], ic1 = fl_ic[1], op;
-    memcpy(xf_d[1], m, n * sizeof *m);
+    memcpy(FL_XS, m, n * sizeof *m);
     fl_pass(m, n, c, t0, gp);
     op = fl_op; fl_ic[0] = ic0; fl_ic[1] = ic1; fl_op = fl_op2;
-    fl_pass(xf_d[1], n, c, t1, gp);
+    fl_pass(FL_XS, n, c, t1, gp);
     fl_op2 = fl_op; fl_op = op;
-    xf_blend(xf_d[1], m, n, w0, w0 + 16 * (int32_t)n);
-    memcpy(m, xf_d[1], n * sizeof *m);
+    xf_blend(FL_XS, m, n, w0, w0 + 16 * (int32_t)n);
+    memcpy(m, FL_XS, n * sizeof *m);
 }
 /* noinline (0.9.5): its six loops get their own registers (inlined into app_audio they reloaded the coefficients'
  * and the buffer's addresses per sample: 43-68 instructions a sample, 34-57 now) */
@@ -665,6 +721,15 @@ __attribute__((noinline)) static void fx_drive_classic(int32_t *m, uint32_t n, i
 #include "drive.c"                                      /* the drive's TYPEs and fx_drive */
 #include "fx_eq.c"                                      /* the EQ before the drive (fx_eq) */
 
+#if C1_PRE_C0                                           /* (the front's code ends) */
+#undef fxc_o
+#undef fxc_e
+#undef fxc_n
+#undef fxc_mono
+#undef xf_pre_c
+#undef xf_blend_c
+#undef xf_post_c
+#endif
 /* ---- TREMOLO (autopan / amplitude) and touch WAH; mono in, stereo out */
 static uint32_t tw_ph;
 static int32_t tw_gl = 32768, tw_gr = 32768, wah_env;
@@ -1339,6 +1404,15 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
 #endif
 }
 
+#if C1_PRE_C0                                           /* (the front's code: its own chunk, fx_front) */
+#define fxc_o fxf_o
+#define fxc_e fxf_e
+#define fxc_n fxf_n
+#define fxc_mono fxf_mono
+#define xf_pre_c xf_pre_cf
+#define xf_blend_c xf_blend_cf
+#define xf_post_c xf_post_cf
+#endif
 /* ---- COMPRESSOR (mono, before the drive): peak detector (ATTACK / RELEASE), soft knee of 6 dB, gain computed
  * in log2 (Q12) every 16 samples and ramped. AMOUNT moves the threshold -9 .. -39 dBFS and the ratio 1.5 .. 6
  * together; the make-up equals the reduction at a typical piano level (-26 dBFS): level-neutral. */
@@ -1591,6 +1665,15 @@ static void fx_comp(int32_t *m, uint32_t n)
 #endif
 }
 
+#if C1_PRE_C0                                           /* (the front's code ends) */
+#undef fxc_o
+#undef fxc_e
+#undef fxc_n
+#undef fxc_mono
+#undef xf_pre_c
+#undef xf_blend_c
+#undef xf_post_c
+#endif
 /* ---- D.DELAY / A.DELAY: one line of 1.486 s (int16 at half level) */
 #define DLY_LEN 65536u
 static int16_t dly_buf[DLY_LEN] POOL;
@@ -2577,9 +2660,49 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
     if (pk < 16) { if (fx_quiet_blocks < 0xFFFFu) fx_quiet_blocks++; } else fx_quiet_blocks = 0;
     if (gate_g == 0) { if (fx_gz < 0xFFFFu) fx_gz++; } else fx_gz = 0;
 }
+#if C1_PRE_C0
+static int32_t fx_m[256], fx_dryc[256];                  /* (fx_process's m and dry_c: the front writes them) */
+/* the front (COMP, the compressor's dry, EQ, DRIVE, FILTER) on the front's chunk fxf_o .. fxf_e: core 0 right after the
+ * chunk's voices (frodhes.c app_audio), or fx_process on a block core 1 did not get. The same calls as fx_process's
+ * (the stages' code compiled on fxf_*: the renames above) */
+static void fx_front(const int32_t *mono, uint32_t n)
+{
+    uint32_t j;
+#if defined(C1PF_ON)
+    static uint32_t f_ps[4];
+    uint32_t q0 = fm1_ticks(), q1, k_;
+    if (fxf_o == 0u) for (k_ = 0; k_ < 4u; k_++) f_ps[k_] = 0;
+#define C1PSF(k) do { q1 = fm1_ticks(); f_ps[k] += q1 - q0; q0 = q1; } while (0)
+#else
+#define C1PSF(k) ((void)0)
+#endif
+    if (fxf_o == 0u) fxf_mono = mono;
+    if (fx_p[FXP_RAW]) return;                         /* (fx_process: the voices to the output, no effect) */
+    for (j = fxf_o; j < fxf_e; j++) fx_m[j] = mono[j];
+    fx_comp(fx_m, n);
+    C1PSF(0);
+#if FR_BYP_KEEP_CMP
+    for (j = fxf_o; j < fxf_e; j++) fx_dryc[j] = fx_m[j];
+#endif
+    fx_eq(fx_m, n);
+    C1PSF(1);
+    fx_drive(fx_m, n);
+    C1PSF(2);
+    fx_filter(fx_m, n);
+    C1PSF(3);
+#if defined(C1PF_ON)
+    if (fxf_e == fxf_n) for (k_ = 0; k_ < 4u; k_++) C1PF(26u + k_, f_ps[k_]);   /* (C1_PRE_C0: core 0's time) */
+#endif
+#undef C1PSF
+}
+#endif
 FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /* (into app_audio, as it always was: the 0.9.3 delay fix took it over the inliner's limit, and the mode loop moved) */
 {
+#if C1_PRE_C0
+    int32_t *const m = fx_m;
+#else
     static int32_t m[256];
+#endif
 #if FR_C1
     uint32_t j;
 #ifdef C1_EST_LOG
@@ -2599,7 +2722,12 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
         for (j = fxc_o; j < fxc_e; j++) { out[2u * j] = mono[j]; out[2u * j + 1u] = mono[j]; }
         return;
     }
+#if C1_PRE_C0
+    for (j = fxc_o; j < fxc_e; j++) fx_L[j] = fx_R[j] = 0;
+    if (!fxc_front_done) { fxf_o = fxc_o; fxf_e = fxc_e; fxf_n = fxc_n; fx_front(mono, n); }   /* (core 0 did not) */
+#else
     for (j = fxc_o; j < fxc_e; j++) { m[j] = mono[j]; fx_L[j] = fx_R[j] = 0; }
+#endif
 #else
     if (fx_reset_req) {                                /* (the voices' last block too: mono is frodhes.c's voice_mono) */
         fx_reset_state(); memset((void *)mono, 0, n * sizeof mono[0]); fx_reset_req = 0;
@@ -2620,6 +2748,11 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     q0 = fm1_ticks();
 #define C1PS(k) do { q1 = fm1_ticks(); c1_ps[k] += q1 - q0; if (FXC_1 && !FXC_Z) C1PF(35u + (k), q1 - q0); q0 = q1; } while (0)
 #endif
+#if C1_PRE_C0
+#if FR_BYP_KEEP_CMP
+    int32_t *const dry_c = fx_dryc;
+#endif
+#else
     fx_comp(m, n);
 #if defined(C1PF_ON)
     C1PS(0);
@@ -2648,6 +2781,7 @@ FX_PROC_ATTR void fx_process(const int32_t *mono, int32_t *out, uint32_t n)   /*
     fx_filter(m, n);
 #if defined(C1PF_ON)
     C1PS(3);
+#endif
 #endif
     fx_trem(m, fx_L, fx_R, n);
 #if defined(C1PF_ON)
