@@ -62,6 +62,16 @@ until you install again: connect it and open the page, which offers **Resume the
 Safari and Firefox cannot install, because they cannot send SysEx. Use Chrome or Edge, or the terminal installer
 (see [Updating](#updating)). An SMK-37: see [SMK37.md](SMK37.md).
 
+**One core or two.** The release has two packages for the FM-1. `frodhes.fwsc` (the default, the one the page
+installs) runs everything on one of the chip's two processor cores and plays 10 voices. `frodhes-c1.fwsc` runs the
+voices on one core and the effects on the other: 14 voices on every instrument, and the reverb types at the full
+sample rate (as on the Move), with the sound 5.8 ms later. Everything else is the same: the pages, the presets, your
+settings and pattern. Install `frodhes-c1.fwsc` from a terminal (see [Updating](#updating)); you can switch between
+the two at any time.
+
+**On a computer.** The same engine runs as a plugin in music software (CLAP, VST3, Audio Unit) on macOS, Windows and
+Linux: [PLUGIN.md](PLUGIN.md#packages).
+
 ### Your first sound
 
 <img src="manual/img/splash.png?v=86b49529" alt="The start screen: FRODHES, ELECTRIC PIANO + VIBES + MARIMBA" width="240" align="right">
@@ -135,7 +145,9 @@ python3 tools/fm1_install.py frodhes.fwsc
 ```
 
 Download [`frodhes.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes.fwsc) first:
-that link always gives the latest release. Use the installer as it is in this repository now: an old copy may not
+that link always gives the latest release (the two-core package:
+[`frodhes-c1.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-c1.fwsc), installed
+with `python3 tools/fm1_install.py frodhes-c1.fwsc`). Use the installer as it is in this repository now: an old copy may not
 find an FM-1 that runs Frodhes.
 
 ### Going back to the original firmware
@@ -387,6 +399,12 @@ The types:
 | **TSH8** | A mid-hump overdrive: the clean sound plus a clipped, mid-focused copy (soft, symmetric clipping). The bass is driven less than the mids, so chords stay clear and single notes sing. Set for a soft input, so it stays smooth | Low: a light edge in the mids; the middle: a warm crunch; the top: a singing, compressed overdrive | Dark through most of its travel; the highs open in the last quarter. It never lifts the treble above flat |
 | **OHCD** | A MOSFET overdrive: a firmer edge (a sharper clipping knee) and a mid-focused sound. AMOUNT covers the circuit's own drive knob over its whole range | Low: nearly clean with a little bite; the middle: a crunchy but still open overdrive; the top: a thick, saturated drive | A treble cut: darker counter-clockwise, brightest at the top |
 | **BHLUE** | A two-stage soft overdrive, transparent and amp-like: soft diodes that never clip hard, the low end driven much less than the mids | Low: almost clean, a little warmer; the middle: a light crunch; the top: a thick, round overdrive | A treble cut: at 0 the highs are gone above about 400 Hz, the middle rolls off from about 500 Hz, the top is the brightest (open to about 2 kHz) |
+
+**TONE and the compressor.** The compressor sits before the drive, and every factory preset has it on. On loud
+chords it holds the level that reaches the drive, so there TONE's lower half (from 0 to the middle) changes the
+treble less than its upper half: on a loud chord at AMOUNT 110 about 2.6 dB at 8 kHz for the lower half and 3.5 dB
+for the upper (0.9.9: 5.7 and 4.2 dB, with a compressor that let a little more level through). With the compressor
+off (COMPRESSOR THRESH at OFF) TONE has its full range: about 9.5 dB for the lower half and 4.5 dB for the upper.
 
 Each type is set to about the loudness of the drive switched off on played phrases (chords, a bass line, a melody), so
 switching types, or switching the drive on, changes the character of the sound, not its volume. Like any overdrive
@@ -963,7 +981,7 @@ or PLATE (the plate on the bright and vintage sounds), with LOW CUT at 150–200
 
 The echoes and sweeps marked "on the tempo" follow the TEMPO page's BPM (120 when you start; PLAY taps it), so they
 fit what you play. The factory presets are level-matched, so browsing does not jump in volume. VIBES and MARIMBA sit
-a little above the electric pianos, as their types do. Four presets play quieter than that, so that hard playing stays clear of the output limiter (their hottest chords would reach it): F13 at +0.6 and F14 at +0.7 instead of +2.5, F15 at -3.8 instead of -0.2 and F16 at -5.4 instead of +2.5 (LU against F01, an A3-C4-E4 chord at velocity 100). Their four-note chords at velocity 127 with the pedal stay at least 0.5 dB under the limiter. Six presets use a drive type: F06 KHLON, F09 BHLUE, F10 and
+a little above the electric pianos, as their types do. Four presets play quieter than that, so that hard playing stays clear of the output limiter (their hottest chords would reach it): F13 at +0.6 and F14 at +0.7 instead of +2.5, F15 at -3.8 instead of -0.2 and F16 at -5.4 instead of +2.5 (LU against F01, an A3-C4-E4 chord at velocity 100). Their four-note chords at velocity 127 with the pedal stay at least 0.5 dB under the limiter. Up to 0.9.9 these four presets were louder but reached their level only through the limiter (F15's and F16's loud chords at its ceiling); against 0.9.9 a loud chord is now 2.4 dB quieter on F13, 2.5 dB on F14, 3.2 dB on F15 and 6.0 dB on F16, and turning VOLUME up gives the level back without the limiter's squeeze. Six presets use a drive type: F06 KHLON, F09 BHLUE, F10 and
 F12 TSH8, F11 and F19 OHCD.
 
 **The starter user presets.** Until you save your first preset, U01–U09 hold nine more electric piano sounds to play or to
@@ -1093,7 +1111,7 @@ release. The header shows **SUS** while it holds. Over MIDI, CC 64 works with ha
 up (CC 64 below 64) also releases a latched REC, so a real pedal always works as a pedal; with no CC 64 coming in,
 the latch stays on until you tap REC again.
 
-**Polyphony: 10 voices** on every instrument, counting notes still ringing under the sustain and the notes that
+**Polyphony: 10 voices** on every instrument (14 with the two-core package, `frodhes-c1.fwsc`: [install](#install)), counting notes still ringing under the sustain and the notes that
 chord mode, the arpeggiator and the sequencer play. Striking a note that is still sounding reuses its voice, so
 repeated notes do not use up voices. One note more takes over the quietest released note first, or else the oldest
 held one, with a short fade (1.5 ms), so there is no click. On VIBES and MARIMBA, more notes than voices at the same
@@ -1229,11 +1247,11 @@ an uneven stream record it cleanly.
 | | |
 | --- | --- |
 | **Sound** | A physical model computed live, no samples. Electric pianos: hammer, tine, tonebar and pickup, every key a little different, the tine's slow whirl on E2–C6, SPREAD across the stereo field (CC 105); 4 types (STAGE 77, SUITCASE, EARLY FELT, BELL DYNO). VIBES: a vibraphone, mallet, bar modes, tuned tube and motor. MARIMBA: rosewood bars, mallet, bar modes and tuned tube, no damper or motor (C2–C7 authentic) |
-| **Polyphony** | 10 voices (the electric pianos, VIBES and MARIMBA); an 11th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
+| **Polyphony** | 10 voices (the electric pianos, VIBES and MARIMBA; 14 with the two-core package); an 11th note takes over the quietest released note (else the oldest held one) with a 1.5 ms fade |
 | **Range** | 88 notes, A0–C8 over MIDI (notes outside play the nearest end); the 27 keys play F3–G5, OCT ±2 octaves, TRANSP ±24 semitones, TUNE ±50 cents |
 | **Velocity** | MIDI 1–127. The FM-1's keys: F3–C5 sense how firmly they land (TOUCH LIGHT / MEDIUM / HEAVY, KEY VEL the velocity of a medium press, default 96), C#5–G5 play the recent average; TOUCH FIXED: every key at KEY VEL (1–127) |
 | **Audio** | 44.1 kHz, integer processing, 256-frame blocks (5.8 ms); output limiter; silent between notes (no hiss on the USB audio) |
-| **Latency** | About 14 ms from a MIDI note to the USB audio, including the computer's buffers; about 10 ms to the headphone jack |
+| **Latency** | About 14 ms from a MIDI note to the USB audio, including the computer's buffers; about 10 ms to the headphone jack (the two-core package: 5.8 ms more) |
 | **Outputs** | Stereo headphone jack (MASTER); USB audio to the computer, stereo 16-bit, 44.1 or 48 kHz, following MASTER or fixed (USB VOL) |
 | **MIDI in** | USB-MIDI and the TRS jack (on / off); CHANNEL ALL or 1–16 |
 | **MIDI out** | USB only: notes from the keys, chord mode, arpeggiator and sequencer. No clock, CC or program change out |

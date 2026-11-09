@@ -1,6 +1,6 @@
 # Frodhes
 
-**An electric piano, vibraphone and marimba, computed live, for the M-VAVE FM-1 and the Ableton Move.**
+**An electric piano, vibraphone and marimba, computed live, for the M-VAVE FM-1, the Ableton Move and your computer.**
 
 No samples: every note is calculated as you play it, from how the real instrument works. A hammer strikes a tine
 and a pickup turns its motion into sound; a mallet strikes a bar and its tube rings along. Play softly and it is
@@ -52,6 +52,12 @@ What is new in each version: [the release notes](https://github.com/leonardoMira
 3. If something goes wrong, switch the FM-1 off, hold **OCT−** and switch it on. This starts the USB rescue, and
    you can install again from there.
 
+**One core or two.** `frodhes.fwsc` plays 10 voices on one of the FM-1's two processor cores. The release also has
+[`frodhes-c1.fwsc`](https://github.com/leonardoMirabal/frodhes/releases/latest/download/frodhes-c1.fwsc), which runs
+the voices on one core and the effects on the other: 14 voices on every instrument, and the reverb at the full sample
+rate, with the sound 5.8 ms later. Install it from a terminal (`python3 tools/fm1_install.py frodhes-c1.fwsc`; the emulator page installs `frodhes.fwsc`). You can switch between the two at any time; your
+settings, presets and pattern stay.
+
 Your settings and presets stay when you update. You can always go back to M-VAVE's own firmware:
 [how](docs/MANUAL.md#going-back-to-the-original-firmware).
 
@@ -76,6 +82,15 @@ Schwung's module catalog, you can also install and update it from there. The ste
   <img src="docs/manual/img/move/move-pages.png?v=7f4bde0a" width="384" alt="The list of pages on the Move">
 </p>
 
+## On your computer
+
+The same sound engine as a plugin for your music software: CLAP, VST3 and Audio Unit on macOS (Apple silicon and
+Intel), CLAP and VST3 on Windows and Linux. It plays the higher-quality version of every instrument and effect, with
+24 voices, at any sample rate, and has the same presets (the FM-1's 19 and the Move's 38 more) and parameters. On
+macOS it opens its own window. Download the package for your system from the
+[release page](https://github.com/leonardoMirabal/frodhes/releases/latest); how to install each:
+[docs/PLUGIN.md](docs/PLUGIN.md#packages).
+
 ## Manual
 
 **[The user manual](docs/MANUAL.md)**: every page, knob and button, the presets, the effects and the MIDI map.
@@ -92,10 +107,14 @@ The files on the [release page](https://github.com/leonardoMirabal/frodhes/relea
 | Device | File |
 | --- | --- |
 | M-VAVE FM-1 | `frodhes.fwsc` |
+| M-VAVE FM-1, two cores | `frodhes-c1.fwsc` |
 | Ableton Move | `frodhes-module.tar.gz` |
 | SMK-37 Pro | `frodhes-smk37-pro.fwsc` |
 | SMK-37 Elite | `frodhes-smk37-elite.fwsc` |
 | MKE-P37 | `frodhes-mke-p37.fwsc` |
+| Plugin, macOS | `frodhes-plugin-macos.pkg` (or `frodhes-plugin-macos.zip`) |
+| Plugin, Windows | `frodhes-plugin-windows.zip` |
+| Plugin, Linux | `frodhes-plugin-linux-x86_64.zip`, `frodhes-plugin-linux-aarch64.zip` |
 
 ## Credits
 
