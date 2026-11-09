@@ -23,7 +23,8 @@ def reply(state=1, whole=4000, late=0, holds=0):
     """CC pairs as the FM-1's query 127 + 30 replies (S.decode's input)"""
     w = whole // 4
     return [(107, w & 127), (108, w >> 7), (116, 0), (117, 50), (100, 30), (101, 0), (102, state), (100, 44), (101, 0),
-            (102, late), (100, 45), (101, 0), (102, holds)]
+            (102, late), (100, 45), (101, 0), (102, holds), (100, 48), (101, 31), (102, 32), (100, 49), (101, 2),
+            (102, 0)]                                                             # (FR_FAULT: work 4000, idle 256)
 
 
 @pytest.mark.parametrize("fail_at,expect_steps,why", [(None, 3, None), (130.0, 3, "core 1"), (70.0, 2, "crash")])
@@ -80,13 +81,17 @@ def test_sweep_over_fake_run(tmp_path, monkeypatch, fail_at, expect_steps, why):
     if why == "crash":
         assert rep["steps"][1]["crashes"] == 1 and rep["steps"][1]["crash_per_min"] == 1.0
     assert (tmp_path / "burn-report.md").exists()
+    assert rep["steps"][0]["work_us"] == 4000 and rep["steps"][0]["idle_min_us"] == 256
 
 
 def test_fault_code_only_in_diag_builds():
     """FR_FAULT (frodhes.c flt_burn, CC 117 / 118) is in no build the tools make: only APP_DEFS=-DFR_FAULT; never on
     the host"""
     src = open(os.path.join(ROOT, "firmware", "src", "frodhes.c")).read()
-    assert src.count("#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)") == 3
+    import re
+    guards = re.findall(r"^#.*FR_FAULT.*$", src, re.M)
+    assert len(guards) >= 5 and all(g in ("#if defined(FR_FAULT) && FR_C1 && !defined(DINGHY_HOST)",
+                                          "#if !defined(DINGHY_HOST) && !(defined(FR_FAULT) && FR_C1)") for g in guards), guards
     for f in ("tools/build.py", "build.sh", "Makefile", ".github/workflows/release.yml"):
         p = os.path.join(ROOT, f)
         if os.path.exists(p):

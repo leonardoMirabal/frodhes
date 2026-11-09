@@ -101,6 +101,20 @@ class Sweep:
         return False
 
 
+def fault_items(msgs, r):
+    """an FR_FAULT image's extra items in the CC 116 = 30 reply: 48 core 1's most real work in a block (its job less
+    its waits for core 0's frames), 49 its least wait (us); added to r as work_us / idle_us"""
+    cur, msb = None, 0
+    for c, v in msgs:
+        if c == 100:
+            cur = v
+        elif c == 101:
+            msb = v
+        elif c == 102 and cur in (48, 49):
+            r["work_us" if cur == 48 else "idle_us"] = msb << 7 | v
+    return r
+
+
 def summarize(reads, steps, step_s):
     """per step: burn, worst app / whole / busy / wait, shed, late, holds, crashes (+ per minute)"""
     rows = []
@@ -113,7 +127,8 @@ def summarize(reads, steps, step_s):
         hangs = sum(1 for r in rs if r.get("noreply"))
         rows.append(dict(step=i, burn_us=st * 100, reads=len(rs),
                          **{k: max((r.get(k, 0) for r in rs), default=0)
-                            for k in ("app_us", "whole_us", "busy_us", "wait_us", "late", "holds")},
+                            for k in ("app_us", "whole_us", "busy_us", "work_us", "wait_us", "late", "holds")},
+                         idle_min_us=min((r["idle_us"] for r in rs if "idle_us" in r), default=None),
                          shed=(max(sh) - min(sh)) if sh else 0, crashes=crashes, noreply=hangs,
                          crash_per_min=round(crashes / (step_s / 60.0), 3)))
     return rows
@@ -135,12 +150,14 @@ def write(out, meta, rows, sweep):
                          f"busy {ok[-1]['busy_us']} us")
     if rows and len({r["whole_us"] for r in rows}) == 1 and len(rows) > 2:
         lines.append("- WARNING: whole never moved: not an FR_FAULT image? (a release build ignores CC 117 / 118)")
-    lines += ["", "| burn us | reads | app | whole | c1 busy | wait | shed | late | holds | crashes | no reply | "
-              "crashes/min |", "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    lines += ["", "c1 busy = core 1's job, its waits for core 0's frames included; c1 work = the job less those waits (an "
+              "image with the idle counter, else 0); c1 idle min = its least wait in a block", "",
+              "| burn us | reads | app | whole | c1 busy | c1 work | c1 idle min | wait | shed | late | holds | crashes | "
+              "no reply | crashes/min |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         lines.append("| " + " | ".join(str(r[k]) for k in ("burn_us", "reads", "app_us", "whole_us", "busy_us",
-                                                          "wait_us", "shed", "late", "holds", "crashes", "noreply",
-                                                          "crash_per_min")) + " |")
+                                                          "work_us", "idle_min_us", "wait_us", "shed", "late",
+                                                          "holds", "crashes", "noreply", "crash_per_min")) + " |")
     open(os.path.join(out, "burn-report.md"), "w").write("\n".join(lines) + "\n")
     print("\n".join(lines), flush=True)
 
@@ -213,7 +230,7 @@ def run(a):
         return mido, box["out"], inp
 
     def decode(msgs):
-        r = orig_decode(msgs)
+        r = fault_items(msgs, orig_decode(msgs))
         o = box.get("out")
         if o is not None and o.t0 is not None:
             empty = not r
@@ -273,6 +290,8 @@ def selftest():
     assert rows[0]["whole_us"] == 4100 and rows[0]["shed"] == 0 and rows[0]["crashes"] == 0
     assert rows[1]["crashes"] == 0 and rows[1]["shed"] == 2 and rows[1]["reads"] == 2      # ({} boot: no record)
     reads[2]["boot"] = {"p3_rst": "0x4"}
+    assert fault_items([(100, 48), (101, 30), (102, 5), (100, 49), (101, 1), (102, 0), (100, 47), (101, 0),
+                        (102, 14)], {}) == {"work_us": 30 * 128 + 5, "idle_us": 128}
     assert summarize(reads, [0, 1], 300.0)[1]["crash_per_min"] == 0.2
 
     class O:
