@@ -248,6 +248,71 @@ static int32_t bar_nz_strike(uint32_t vel)          /* the contact noise a strik
     return g == 32768u ? (int32_t)e : (int32_t)((e * g) >> 15);
 }
 
+/* ---- the strike coefficient cache (0.9.10, BAR_CC): a burst of notes started every voice's two rh_coef calls per mode in
+ * one block's eng_begin, before core 0's first chunk (the program change + 26-note burst row: the whole block late).
+ * The main loop (eng_post, at the note-on's queueing) computes them for the note into the queue entry's slot with
+ * rh_coef itself, stamped with every input (the type, the key, TUNE, RING, DAMPER); bar_init takes a slot only when
+ * its stamp is this strike's inputs, else rh_coef as before: the same integers either way (a knob moved between the
+ * queueing and the strike, or a steal's start later: rh_coef in the ISR). The slot index is the queue's: a slot is
+ * rewritten only after its event was taken; the ISR preempts the main loop, never the reverse (ok 0 while it writes).
+ * 32 x 144 B: the pool (FR_C1: .ramx). Off on the desktop plugin and the HQ builds (their own threads): bars.h */
+#if BAR_CC
+#ifndef BAR_CC_SEC
+#define BAR_CC_SEC ".pool.bar_cc"                       /* (FR_C1 builds, frodhes.c: .ramx) */
+#endif
+typedef struct {
+    volatile uint8_t ok;                                /* 1: the stamp and the pairs below are whole */
+    uint8_t n, ty;                                      /* the key (n - BAR_KEY_LO, clamped as bar_init does), the type */
+    int32_t t, kd, kr;                                  /* rh_tune_t, bar_k_decay, bar_k_rel */
+    int32_t c[BAR_NM][4];                               /* each mode's e0, eps0, e1, eps1 (modes without th: unused) */
+} bar_cc_t;
+static bar_cc_t bar_cc[32] RH_OWN_SECTION(BAR_CC_SEC);
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+static uint32_t bar_cc_hit, bar_cc_miss;                /* (host: the fallback's test, FRODHES_BARCC_STAT) */
+__attribute__((destructor)) static void bar_cc_stat(void)
+{
+    if (getenv("FRODHES_BARCC_STAT")) fprintf(stderr, "bar_cc hit %u miss %u\n", bar_cc_hit, bar_cc_miss);
+}
+#endif
+static void bar_cc_fill(uint32_t slot, uint32_t note)  /* main loop (eng_post): before the event is published */
+{
+    bar_cc_t *c = &bar_cc[slot & 31u];
+    uint32_t tyi = eng_want_sub < BAR_NTYPE ? eng_want_sub : 0u, m;
+    uint32_t n = note < BAR_KEY_LO ? BAR_KEY_LO : note > BAR_KEY_LO + BAR_NKEY - 1u ? BAR_KEY_LO + BAR_NKEY - 1u : note;
+    const bar_type_t *ty = &BAR_TYPE[tyi];
+    const bar_key_t *k = &BAR_KEYS[tyi][n - BAR_KEY_LO];
+    int32_t t = rh_tune_t, kd = bar_k_decay, kr = bar_k_rel;
+    c->ok = 0;
+    RING_PUBLISH();
+    for (m = 0; m < BAR_NM; m++) {
+        const rh_mode_t *km = &k->m[m];
+        if (!km->th) continue;
+        rh_coef(km, km->d, t, m == 1u && !(k->flags & 8u) ? 65536 : kd, &c->c[m][0], &c->c[m][1]);
+        rh_coef(km, km->drel, t, m == 1u || !(ty->flags & 2u) ? 65536 : kr, &c->c[m][2], &c->c[m][3]);
+    }
+    c->n = (uint8_t)(n - BAR_KEY_LO); c->ty = (uint8_t)tyi; c->t = t; c->kd = kd; c->kr = kr;
+    RING_PUBLISH();
+    c->ok = 1;
+}
+static const bar_cc_t *bar_cc_find(uint32_t n, uint32_t tyi)   /* ISR: a slot stamped with this strike's inputs */
+{
+    uint32_t i;
+    int32_t t = rh_tune_t, kd = bar_k_decay, kr = bar_k_rel;
+    for (i = 0; i < 32u; i++) {
+        const bar_cc_t *c = &bar_cc[i];
+        if (c->ok && c->n == n && c->ty == tyi && c->t == t && c->kd == kd && c->kr == kr) {
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+            bar_cc_hit++;
+#endif
+            return c;
+        }
+    }
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    bar_cc_miss++;
+#endif
+    return 0;
+}
+#endif
 static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
 {
     uint32_t tyi = bar_sub < BAR_NTYPE ? bar_sub : 0u;
@@ -258,6 +323,9 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
     uint32_t q = (uint32_t)tone * (16u * 256u) / 127u, pi = q >> 8, pf = q & 255u;
     const int16_t (*pos)[BAR_NM] = BAR_POS[k->band];
     v->k = k;
+#if BAR_CC
+    const bar_cc_t *cc = bar_cc_find(n - BAR_KEY_LO, tyi);
+#endif
     for (m = 0; m < BAR_NM; m++) {
         bar_ms_t *ms = &v->m[m];
         const rh_mode_t *km = &k->m[m];
@@ -271,11 +339,17 @@ static void bar_init(bar_voice_t *v, uint32_t note, uint32_t vel)
         ms->lpred = BAR_LZERO;
         ms->lo = 1;
         if (!km->th) { ms->e = ms->eps = 0; ms->k1 = ms->k2 = ms->be = 0; ms->lsin = 0; ms->bin = 0; continue; }
-        rh_coef(km, km->d, rh_tune_t, m == 1u && !(k->flags & 8u) ? 65536 : bar_k_decay, &ms->e0, &ms->eps0);   /* key
-                                                     * flag bit3 (MARIMBA below C4, never VIBES): RING scales the
-                                                     * strongly coupled tube too (tools/gen_bars.py, the pins' grid) */
-        rh_coef(km, km->drel, rh_tune_t, m == 1u || !(ty->flags & 2u) ? 65536 : bar_k_rel, &ms->e1, &ms->eps1);   /* no
-                                                     * damper: drel is the hand mute, never scaled by RELEASE (C5) */
+#if BAR_CC
+        if (cc) { ms->e0 = cc->c[m][0]; ms->eps0 = cc->c[m][1]; ms->e1 = cc->c[m][2]; ms->eps1 = cc->c[m][3]; }
+        else
+#endif
+        {
+            rh_coef(km, km->d, rh_tune_t, m == 1u && !(k->flags & 8u) ? 65536 : bar_k_decay, &ms->e0, &ms->eps0);   /* key
+                                                         * flag bit3 (MARIMBA below C4, never VIBES): RING scales the
+                                                         * strongly coupled tube too (tools/gen_bars.py, the pins' grid) */
+            rh_coef(km, km->drel, rh_tune_t, m == 1u || !(ty->flags & 2u) ? 65536 : bar_k_rel, &ms->e1, &ms->eps1);   /* no
+                                                         * damper: drel is the hand mute, never scaled by RELEASE (C5) */
+        }
         ms->e = ms->es = ms->e0; ms->eps = ms->epss = ms->eps0;
         w = pi < BAR_NPOS - 1u ? pos[pi][m] + (((pos[pi + 1u][m] - pos[pi][m]) * (int32_t)pf) >> 8) : pos[BAR_NPOS - 1u][m];
         b = ((int64_t)km->b * w) >> 14;

@@ -58,6 +58,9 @@ static void eng_post(uint32_t type, uint32_t note, uint32_t val)
 #ifdef DINGHY_PLUGIN
     eq_ofs[w & 31u] = fr_ev_ofs;
 #endif
+#if BAR_CC
+    if (type == EV_NOTE_ON && eng_want == ENG_BARS) bar_cc_fill(w, note);   /* (its strike's coefficients: bars.c) */
+#endif
     eq[w & 31u] = type << 28 | (note & 127u) << 16 | (val & 0xFFFFu);
     RING_PUBLISH();
     eq_w = w + 1u;

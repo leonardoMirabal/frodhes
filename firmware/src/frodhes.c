@@ -81,6 +81,7 @@ static uint32_t c1_nv = FR_VOICES;              /* the voices a strike may take:
  * the audio (as .bss would be). Core 0's data only: rhodes.c rh_cc (14 KB, the note-on cache: the main loop fills it,
  * the ISR reads it) and seq.c sq_ev (3.5 KB, the pattern); no core 1 job touches .ramx */
 #define RH_CC_SEC ".ramx.rh_cc"
+#define BAR_CC_SEC ".ramx.bar_cc"                  /* (bars.c: the strike coefficient cache, 4.6 KB) */
 #define SQ_EV_SEC __attribute__((section(".ramx.sq_ev")))
 static void fr_ramx_clear(void)
 {
@@ -139,9 +140,14 @@ static uint32_t smk_btn_leds;                   /* the SMK's own buttons' LEDs (
  * which then is only the rest), 22 core 1's last frame done (C1_STREAM, since the block's start); 23 the last chunk's effects, 24 the first's, 25 a middle one's; each stage's time in a
  * block (its chunks summed): 26 COMP, 27 EQ, 28 DRIVE, 29 FILTER, 30 TREM / WAH, 31 SPREAD + PHASER, 32 the delay
  * (chorus too), 33 the reverb, 34 fx_out; 35-43 the same stages in the first chunk alone; 44 (C1_PRE_C0) the chunks
- * whose front core 0 ran in a block (a count, not us) */
-#define PROF_NST 45u
+ * whose front core 0 ran in a block (a count, not us); 45 core 0's eng_begin (the block's note starts, before its
+ * first chunk). 46-51 one block's own values, not maxima: the block whose app_audio ended latest since the block's
+ * start (46, that end) and in it 47 core 0's voices done @, 48 core 0's voice time, 49 its eng_begin, 50 core 1's last
+ * frame done @, 51 the blocks since the last Program Change (presets.c preset_load; a count, not us) */
+#define PROF_NST 52u
 static volatile uint32_t c1_pf_t0;
+static volatile uint32_t c1_pf_d22;                 /* core 1: this block's item 22 (the snapshot's 50) */
+static volatile uint8_t c1_pf_pc;                   /* the main loop: a Program Change was loaded (preset_load) */
 #define C1PF_ON 1
 #define C1PF(i, d) do { uint32_t d2_ = (d); if (d2_ > prof_st_max[i]) prof_st_max[i] = d2_; } while (0)
 #else
@@ -405,6 +411,9 @@ static void c1_stream_job(uint32_t a)
     while (c1_fxd < c1_job.n)                   /* (core 0's wait holds core 1 if this runs late: fr_c1_wait_us) */
         if (!c1_stream_step()) fr_c1_pause();
     C1PF(22, fm1_ticks() - c1_pf_t0);           /* (C1_PROF: core 1's last frame done, since the block's start) */
+#if defined(C1PF_ON)
+    c1_pf_d22 = fm1_ticks() - c1_pf_t0;         /* (this block's: the snapshot, item 50) */
+#endif
 #elif defined(DINGHY_HOST)
     c1_stream_step();                           /* (the host twin: the rest at core 0's ticks and its wait) */
 #endif
@@ -500,15 +509,26 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
         fr_c1_sync();
         if (!fr_c1_run(c1_stream_job, 0)) { solo = 1; fx_pre_c(); }
 #if defined(C1PF_ON)
-        uint32_t pv = 0, pt;
+        uint32_t pv = 0, pt, eb, c0d = 0;
+        pt = fm1_ticks();
 #endif
         eng_begin(n);
+#if defined(C1PF_ON)
+        eb = fm1_ticks() - pt;
+        C1PF(45, eb);
+#endif
         for (j = 0; j < C1_SUB; j++) {
 #if defined(C1PF_ON)
             pt = fm1_ticks();
 #endif
             eng_chunk(c1_mono, j * k, j * k + k);   /* core 0: chunk j's voices */
-            if (j + 1u == C1_SUB) { eng_end(c1_mono, n); C1PF(16, fm1_ticks() - t0); }
+            if (j + 1u == C1_SUB) {
+                eng_end(c1_mono, n);
+#if defined(C1PF_ON)
+                c0d = fm1_ticks() - t0;
+#endif
+                C1PF(16, fm1_ticks() - t0);
+            }
 #if defined(C1PF_ON)
             pv += fm1_ticks() - pt;
 #endif
@@ -580,6 +600,17 @@ static __attribute__((noinline)) void app_audio(int32_t *out, uint32_t n)
             d = c1_fxd;
             if (r && d < n) { c1_job.o = d; c1_job.e = n; c1_fx_job(0); c1_fxd = n; }   /* (refused / late: core 0) */
         }
+#if defined(C1PF_ON)
+        {   /* the snapshot (items 46-51): this block's own values, kept when it ended later than the one kept */
+            static uint32_t pc_blk = 0xFFFFu;
+            uint32_t end = fm1_ticks() - t0;
+            if (c1_pf_pc) { c1_pf_pc = 0; pc_blk = 0; } else if (pc_blk < 0xFFFFu) pc_blk++;
+            if (end > prof_st_max[46]) {
+                prof_st_max[46] = end; prof_st_max[47] = c0d; prof_st_max[48] = pv; prof_st_max[49] = eb;
+                prof_st_max[50] = solo ? 1u : c1_pf_d22; prof_st_max[51] = (pc_blk < 600u ? pc_blk : 600u) * 24u + 24u;
+            }
+        }
+#endif
     }
 #else
     else {

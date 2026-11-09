@@ -422,6 +422,9 @@ FR_COLD static void preset_load(uint32_t idx)
     snd_base_take();                                    /* the sound a power cycle comes back to (params.c) */
     tempo_sync_publish();
     set_dirty = 1; set_t_change = fm1_ms;
+#if defined(C1PF_ON)
+    c1_pf_pc = 1;                                       /* (C1_PROF: the snapshot counts the blocks from here) */
+#endif
     ui_draw_page_change();
     {
         char s[20];

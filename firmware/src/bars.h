@@ -124,6 +124,18 @@ static volatile int32_t bar_bell = 64;              /* BELL raw 0..127 (its leve
 static volatile int32_t bar_mass = 4096, bar_massi = 4096;   /* KN_MASS / KN_MASSI[HAMMER], Q12 */
 static volatile int32_t bar_nz;                     /* KN_NZ[NOISE], Q15 */
 static volatile int32_t bar_k_decay = 65536, bar_k_rel = 65536;   /* DECAY_K[RING], DECAY_K[DAMPER], Q16 */
+/* BAR_CC (bars.c bar_cc_fill): the strike coefficients computed at the note-on's queueing (main loop); off on the desktop
+ * plugin and the HQ builds (the notes come from another thread there) */
+#ifndef BAR_CC
+#if defined(DINGHY_PLUGIN) || defined(FR_HQ)
+#define BAR_CC 0
+#else
+#define BAR_CC 1
+#endif
+#endif
+#if BAR_CC
+static void bar_cc_fill(uint32_t slot, uint32_t note);
+#endif
 static volatile int32_t bar_ring = 64;              /* RING raw 0..127 (BAR_RINGG: the keys with flag bit4) */
 static volatile int32_t bar_thump, bar_felt;        /* KN_THUMP / KN_FELT[NOISE]: the damper's knock and felt noise */
 static volatile int32_t bar_mute = 0;               /* MUTE (P_RELEASE, RELEASE * 258), Q15: on a type without a damper
