@@ -3,7 +3,8 @@
 
   - the take freezes INFINITE (DECAY 127) while its chord rings, never in the set-up: FREEZE closes the tank's input,
     so a freeze set before the notes holds nothing (the 0.9.5 final run: 60 s of exact zeros, freeze_ok passed);
-  - the hold keeps a real level (every 5 s window over -50 dBFS, within +-1 dB) and is never silent, so the settings'
+  - the hold keeps a real level (every 5 s window over -50 dBFS, its spread within the chord's own frozen by the bare
+    reverb + 0.5 dB) and is never silent, so the settings'
     autosave (2 s of silence after the set-up's changes) does not write the flash mid-hold (the final run's missed
     3-4 / overruns 2 came from such a save, then a blocking erase; the split erase, fm1_flash.h, keeps it clean now);
   - the old take (DECAY 127 in the set-up) fails both: silent, and the settings saved while the stream ran."""
@@ -19,6 +20,7 @@ sys.path.insert(0, os.path.join(ROOT, "tools", "final"))
 import hil_crackle as C  # noqa: E402
 import hil_scan  # noqa: E402
 import rev_hil  # noqa: E402
+import rev_scan as rs  # noqa: E402
 
 FS = C.FS_HOST
 
@@ -58,6 +60,56 @@ def hold_db(u, music_end):
     return [rev_hil.db(h[i:i + 5 * FS]) for i in range(0, len(h) - 5 * FS + 1, 5 * FS)]
 
 
+# THRESHOLD (0.9.10, coordinator sign-off 2026-11-09): the hold's spread judged against the material's, not a fixed
+# 2.0 dB. The 0.9.10 chord's held tank beats more slowly than 0.9.9's: 2.02 dB here against 1.573 on v0.9.9 for the
+# same take. tests/c/rev_scan.c on v0.9.9's tree and on this one, fed the same input, gives identical windows (the
+# INFINITE tank is unchanged); v0.9.9's dry chord frozen spreads 1.515 dB, this tree's 1.93, through either reverb.
+# So the reference is the same chord frozen by the bare reverb (rev_scan, this tree's fx_reverb, the take's reverb
+# settings, the dry take as its input): the take's spread <= the reference's + 0.5 dB over the same windows.
+SPREAD_MARGIN = 0.5
+
+
+def dry_take(ccs, events, dur):
+    """the take with the reverb's TYPE OFF (the reverb's input; left channel LSB)"""
+    H = hil_scan.hr()
+    lines = [f"{5 + k // 16} midi 0xB0 {c} {v}" for k, (c, v) in enumerate(ccs + [(rev_hil.reverb()[0], 0)])]
+    R = 5 + (len(ccs) + 1) // 16 + 300
+    lines.append(f"{R - 60} midi 0xB0 {hil_scan.RESET_CC} 127")
+    for t, kind, a, b in events:
+        ms = int(round(R + 1000 * float(t)))
+        if kind in ("on", "off"):
+            lines.append(f"{ms} midi 0x90 {a} {b}" if kind == "on" else f"{ms} midi 0x80 {a} 0")
+    end = R + int(np.ceil(1000 * dur))
+    r = H.run("rev_hil_freeze_dry", lines, end + 20, check=False)
+    return np.asarray(r.L[int(R * FS / 1000):], float)
+
+
+def reference_db(ccs, events, dur):
+    """the dry take frozen by the bare reverb at the take's freeze time: its hold windows (dB re 1 LSB)"""
+    knob = rev_hil.reverb()[2]
+    cc = dict(ccs)
+    tf = [t for t, k, a, b in events if k == "cc" and a == knob["RV_DECAY"] and b == 127][0]
+    par = {n: cc[c] for n, c in knob.items() if c in cc}
+    par["RV_TYPE"] = rs.TYPES["INFINITE"]
+    exe = rs.build(tag="freeze-ref")
+    try:
+        x = np.round(dry_take(ccs, events, dur)).astype(np.int64)
+        w = rs.render(exe, x, par, [(int(tf * FS) // rs.BLK, "RV_DECAY", 127)])["wet"][:, 0].astype(float)
+    finally:
+        os.remove(exe)
+    return hold_db(w, dur - 60.0)
+
+
+def judge(w, ref):
+    """(ok, why): every window over -50 dBFS, the spread within the material's (the reference's) + SPREAD_MARGIN"""
+    if min(w) < rev_hil.FREEZE_MIN_DB:
+        return False, f"the held freeze under -50 dBFS: {[round(x - 90.3, 1) for x in w]}"
+    s, sr = max(w) - min(w), max(ref) - min(ref)
+    if s > sr + SPREAD_MARGIN:
+        return False, f"the held freeze spreads {s:.2f} dB, the chord's own freeze {sr:.2f} + {SPREAD_MARGIN}"
+    return True, ""
+
+
 def test_freeze_goes_on_while_the_chord_rings(takes):
     ccs, ev, _ = takes["rhodes-infinite-freeze60"]
     dk = rev_hil.reverb()[2]["RV_DECAY"]
@@ -78,9 +130,15 @@ def test_the_freeze_holds_and_nothing_saves(takes):
     u, dirty = play(ccs, ev, dur)
     w = hold_db(u, dur - 60.0)                        # (rev_hil's judge: from 2 s after the music's end)
     assert len(w) >= 10
-    assert min(w) >= rev_hil.FREEZE_MIN_DB, f"the held freeze under -50 dBFS: {[round(x - 90.3, 1) for x in w]}"
-    assert max(w) - min(w) <= 2.0, f"the held freeze not within +-1 dB: {[round(x - 90.3, 1) for x in w]}"
+    ref = reference_db(ccs, ev, dur)
+    assert len(ref) == len(w)
+    ok, why = judge(w, ref)
+    assert ok, why
     assert dirty == "1", "the settings autosave ran while the USB stream was on"
+    # the judge's teeth: the same hold with a tank that loses 3 dB over it (a freeze that decays) fails
+    n = len(w)
+    ok, _ = judge([x - 3.0 * i / (n - 1) for i, x in enumerate(w)], ref)
+    assert not ok, "a freeze decaying 3 dB over the hold passed the judge"
 
 
 def test_the_old_take_fails(takes):

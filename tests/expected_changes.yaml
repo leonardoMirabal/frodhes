@@ -2387,203 +2387,203 @@ changes:
     min: -34.886
     max: -33.886
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.658 against v0.9.9's 0.744, keyup): the tail at most 2 LSB, last nonzero 99.1..101.9 ms re the key-up (v0.9.9 none, 0..400 ms exact zeros), 40 ms RMS falling (2.33, 0.99, 0.32, 0.0, 0.0 LSB), steps <= 3 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.658 against v0.9.9's 0.744, keyup): the tail at most 2 LSB, last nonzero 99.1..101.9 ms re the key-up (v0.9.9 none, 0..400 ms exact zeros), 40 ms RMS falling (2.33, 0.99, 0.32, 0.0, 0.0 LSB), steps <= 3 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/B/k84v96"
     metric: "keyup"
     silent: false
     min: -34.886
     max: -33.886
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.658 against v0.9.9's 0.744, keyup): the tail at most 2 LSB, last nonzero 99.1..101.9 ms re the key-up (v0.9.9 none, 0..400 ms exact zeros), 40 ms RMS falling (2.33, 0.99, 0.32, 0.0, 0.0 LSB), steps <= 3 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.658 against v0.9.9's 0.744, keyup): the tail at most 2 LSB, last nonzero 99.1..101.9 ms re the key-up (v0.9.9 none, 0..400 ms exact zeros), 40 ms RMS falling (2.33, 0.99, 0.32, 0.0, 0.0 LSB), steps <= 3 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/F15/PRESET/A/k74v40"
     metric: "decay"
     silent: false
     min: 53.287
     max: 54.287
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.838 against v0.9.9's 1.458, hold): the hold's last 150 ms at most 10 LSB, last nonzero -35.7..-28.3 ms re the key-up (v0.9.9 -183.5..-182.2), 40 ms RMS falling (58.46, 51.52, 48.41, 42.25, 28.85 LSB), steps <= 15 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.838 against v0.9.9's 1.458, hold): the hold's last 150 ms at most 10 LSB, last nonzero -35.7..-28.3 ms re the key-up (v0.9.9 -183.5..-182.2), 40 ms RMS falling (58.46, 51.52, 48.41, 42.25, 28.85 LSB), steps <= 15 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/F15/PRESET/A/k74v64"
     metric: "keyup"
     silent: false
     min: -24.675
     max: -23.675
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.512 against v0.9.9's 0.51, keyup): the tail at most 3 LSB, last nonzero 120.9..121.4 ms re the key-up (v0.9.9 none, 0..400 ms exact zeros), 40 ms RMS falling (1.74, 1.29, 0.61, 0.07, 0.0 LSB), steps <= 3 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.512 against v0.9.9's 0.51, keyup): the tail at most 3 LSB, last nonzero 120.9..121.4 ms re the key-up (v0.9.9 none, 0..400 ms exact zeros), 40 ms RMS falling (1.74, 1.29, 0.61, 0.07, 0.0 LSB), steps <= 3 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/F15/PRESET/A/k81v40"
     metric: "decay"
     silent: false
     min: 54.828
     max: 55.828
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.012 against v0.9.9's 2.152, hold): the hold's last 150 ms at most 5 LSB, last nonzero -95.4..-93.2 ms re the key-up (v0.9.9 -227.4..-223.7), 40 ms RMS falling (61.72, 46.75, 32.29, 23.91, 16.34 LSB), steps <= 19 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.012 against v0.9.9's 2.152, hold): the hold's last 150 ms at most 5 LSB, last nonzero -95.4..-93.2 ms re the key-up (v0.9.9 -227.4..-223.7), 40 ms RMS falling (61.72, 46.75, 32.29, 23.91, 16.34 LSB), steps <= 19 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/F15/PRESET/A/k89v127"
     metric: "keyup"
     silent: false
     min: -26.808
     max: -25.808
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.095 against v0.9.9's 1.353, keyup): the tail at most 5 LSB, last nonzero 152.6..162.7 ms re the key-up (v0.9.9 32.7..34.4), 40 ms RMS falling (3.5, 2.83, 1.2, 0.5, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.095 against v0.9.9's 1.353, keyup): the tail at most 5 LSB, last nonzero 152.6..162.7 ms re the key-up (v0.9.9 32.7..34.4), 40 ms RMS falling (3.5, 2.83, 1.2, 0.5, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/F15/PRESET/A/k89v64"
     metric: "decay"
     silent: false
     min: 60.305
     max: 61.305
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.043 against v0.9.9's 2.296, hold): the hold's last 150 ms at most 2 LSB, last nonzero -141.5..-141.2 ms re the key-up (v0.9.9 -264.1..-257.5), 40 ms RMS falling (24.91, 18.21, 21.86, 13.64, 10.72 LSB), steps <= 14 LSB, 1 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.043 against v0.9.9's 2.296, hold): the hold's last 150 ms at most 2 LSB, last nonzero -141.5..-141.2 ms re the key-up (v0.9.9 -264.1..-257.5), 40 ms RMS falling (24.91, 18.21, 21.86, 13.64, 10.72 LSB), steps <= 14 LSB, 1 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/F15/PRESET/B/k74v40"
     metric: "decay"
     silent: false
     min: 50.155
     max: 51.155
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.871 against v0.9.9's 1.458, hold): the hold's last 150 ms at most 22 LSB, last nonzero -0.0..-0.0 ms re the key-up (v0.9.9 -183.5..-182.2), 40 ms RMS falling (98.05, 86.22, 81.47, 71.29, 49.33 LSB), steps <= 20 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.871 against v0.9.9's 1.458, hold): the hold's last 150 ms at most 22 LSB, last nonzero -0.0..-0.0 ms re the key-up (v0.9.9 -183.5..-182.2), 40 ms RMS falling (98.05, 86.22, 81.47, 71.29, 49.33 LSB), steps <= 20 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/F15/PRESET/B/k74v64"
     metric: "keyup"
     silent: false
     min: -24.675
     max: -23.675
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.512 against v0.9.9's 0.51, keyup): the tail at most 3 LSB, last nonzero 120.9..121.4 ms re the key-up (v0.9.9 none, 0..400 ms exact zeros), 40 ms RMS falling (1.74, 1.29, 0.61, 0.07, 0.0 LSB), steps <= 3 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.512 against v0.9.9's 0.51, keyup): the tail at most 3 LSB, last nonzero 120.9..121.4 ms re the key-up (v0.9.9 none, 0..400 ms exact zeros), 40 ms RMS falling (1.74, 1.29, 0.61, 0.07, 0.0 LSB), steps <= 3 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/F15/PRESET/B/k81v40"
     metric: "decay"
     silent: false
     min: 44.595
     max: 45.595
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.996 against v0.9.9's 2.152, hold): the hold's last 150 ms at most 16 LSB, last nonzero -0.1..-0.1 ms re the key-up (v0.9.9 -227.4..-223.7), 40 ms RMS falling (103.97, 78.78, 54.72, 41.06, 27.99 LSB), steps <= 28 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.996 against v0.9.9's 2.152, hold): the hold's last 150 ms at most 16 LSB, last nonzero -0.1..-0.1 ms re the key-up (v0.9.9 -227.4..-223.7), 40 ms RMS falling (103.97, 78.78, 54.72, 41.06, 27.99 LSB), steps <= 28 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/F15/PRESET/B/k89v127"
     metric: "keyup"
     silent: false
     min: -26.808
     max: -25.808
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.095 against v0.9.9's 1.353, keyup): the tail at most 5 LSB, last nonzero 152.6..162.7 ms re the key-up (v0.9.9 32.7..34.4), 40 ms RMS falling (3.5, 2.83, 1.2, 0.5, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.095 against v0.9.9's 1.353, keyup): the tail at most 5 LSB, last nonzero 152.6..162.7 ms re the key-up (v0.9.9 32.7..34.4), 40 ms RMS falling (3.5, 2.83, 1.2, 0.5, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/F15/PRESET/B/k89v64"
     metric: "decay"
     silent: false
     min: 60.305
     max: 61.305
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.043 against v0.9.9's 2.296, hold): the hold's last 150 ms at most 2 LSB, last nonzero -141.5..-141.2 ms re the key-up (v0.9.9 -264.1..-257.5), 40 ms RMS falling (24.91, 18.21, 21.86, 13.64, 10.72 LSB), steps <= 14 LSB, 1 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.043 against v0.9.9's 2.296, hold): the hold's last 150 ms at most 2 LSB, last nonzero -141.5..-141.2 ms re the key-up (v0.9.9 -264.1..-257.5), 40 ms RMS falling (24.91, 18.21, 21.86, 13.64, 10.72 LSB), steps <= 14 LSB, 1 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/A/k53v40"
     metric: "keyup"
     silent: false
     min: -36.675
     max: -35.675
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.189 against v0.9.9's 1.726, keyup): the tail at most 5 LSB, last nonzero 177.4..180.2 ms re the key-up (v0.9.9 53.9..56.9), 40 ms RMS falling (8.92, 2.79, 1.57, 0.69, 0.13 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.189 against v0.9.9's 1.726, keyup): the tail at most 5 LSB, last nonzero 177.4..180.2 ms re the key-up (v0.9.9 53.9..56.9), 40 ms RMS falling (8.92, 2.79, 1.57, 0.69, 0.13 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/A/k60v110"
     metric: "keyup"
     silent: false
     min: -40.847
     max: -39.847
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.587 against v0.9.9's 0.636, keyup): the tail at most 6 LSB, last nonzero 184.8..191.5 ms re the key-up (v0.9.9 72.8..73.6), 40 ms RMS falling (7.22, 3.02, 1.45, 0.65, 0.24 LSB), steps <= 5 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.587 against v0.9.9's 0.636, keyup): the tail at most 6 LSB, last nonzero 184.8..191.5 ms re the key-up (v0.9.9 72.8..73.6), 40 ms RMS falling (7.22, 3.02, 1.45, 0.65, 0.24 LSB), steps <= 5 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/A/k60v96"
     metric: "keyup"
     silent: false
     min: -48.355
     max: -47.355
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.375 against v0.9.9's 0.356, keyup): the tail at most 2 LSB, last nonzero 109.1..111.9 ms re the key-up (v0.9.9 50.0..52.8), 40 ms RMS falling (5.4, 1.19, 0.36, 0.0, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.375 against v0.9.9's 0.356, keyup): the tail at most 2 LSB, last nonzero 109.1..111.9 ms re the key-up (v0.9.9 50.0..52.8), 40 ms RMS falling (5.4, 1.19, 0.36, 0.0, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/A/k74v40"
     metric: "decay"
     silent: false
     min: 64.05
     max: 65.05
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.686 against v0.9.9's 1.259, hold): the hold's last 150 ms at most 4 LSB, last nonzero -107.3..-105.3 ms re the key-up (v0.9.9 -216.9..-214.1), 40 ms RMS falling (73.05, 50.66, 39.92, 29.75, 17.44 LSB), steps <= 14 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.686 against v0.9.9's 1.259, hold): the hold's last 150 ms at most 4 LSB, last nonzero -107.3..-105.3 ms re the key-up (v0.9.9 -216.9..-214.1), 40 ms RMS falling (73.05, 50.66, 39.92, 29.75, 17.44 LSB), steps <= 14 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/A/k81v110"
     metric: "keyup"
     silent: false
     min: -18.718
     max: -17.718
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.384 against v0.9.9's 2.233, keyup): the tail at most 10 LSB, last nonzero 190.8..192.1 ms re the key-up (v0.9.9 67.7..71.8), 40 ms RMS falling (8.7, 5.68, 3.25, 1.47, 0.55 LSB), steps <= 5 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.384 against v0.9.9's 2.233, keyup): the tail at most 10 LSB, last nonzero 190.8..192.1 ms re the key-up (v0.9.9 67.7..71.8), 40 ms RMS falling (8.7, 5.68, 3.25, 1.47, 0.55 LSB), steps <= 5 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/A/k81v64"
     metric: "decay"
     silent: false
     min: 51.14
     max: 52.14
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.814 against v0.9.9's 1.949, hold): the hold's last 150 ms at most 9 LSB, last nonzero -33.7..-30.7 ms re the key-up (v0.9.9 -157.2..-154.2), 40 ms RMS falling (71.55, 46.03, 37.06, 26.04, 20.36 LSB), steps <= 18 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.814 against v0.9.9's 1.949, hold): the hold's last 150 ms at most 9 LSB, last nonzero -33.7..-30.7 ms re the key-up (v0.9.9 -157.2..-154.2), 40 ms RMS falling (71.55, 46.03, 37.06, 26.04, 20.36 LSB), steps <= 18 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/A/k81v96"
     metric: "keyup"
     silent: false
     min: -27.003
     max: -26.003
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.056 against v0.9.9's 1.278, keyup): the tail at most 4 LSB, last nonzero 122.2..128.0 ms re the key-up (v0.9.9 3.0..12.8), 40 ms RMS falling (4.34, 2.19, 0.75, 0.04, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.056 against v0.9.9's 1.278, keyup): the tail at most 4 LSB, last nonzero 122.2..128.0 ms re the key-up (v0.9.9 3.0..12.8), 40 ms RMS falling (4.34, 2.19, 0.75, 0.04, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/A/k89v96"
     metric: "decay"
     silent: false
     min: 48.473
     max: 49.473
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.98 against v0.9.9's 2.182, hold): the hold's last 150 ms at most 7 LSB, last nonzero -63.8..-60.8 ms re the key-up (v0.9.9 -174.8..-173.4), 40 ms RMS falling (35.89, 28.33, 31.75, 20.74, 16.68 LSB), steps <= 19 LSB, 2 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.98 against v0.9.9's 2.182, hold): the hold's last 150 ms at most 7 LSB, last nonzero -63.8..-60.8 ms re the key-up (v0.9.9 -174.8..-173.4), 40 ms RMS falling (35.89, 28.33, 31.75, 20.74, 16.68 LSB), steps <= 19 LSB, 2 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/B/k53v40"
     metric: "keyup"
     silent: false
     min: -29.593
     max: -28.593
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.34 against v0.9.9's 1.726, keyup): the tail at most 11 LSB, last nonzero 283.9..291.0 ms re the key-up (v0.9.9 53.9..56.9), 40 ms RMS falling (16.29, 6.92, 5.17, 3.36, 2.31 LSB), steps <= 5 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.34 against v0.9.9's 1.726, keyup): the tail at most 11 LSB, last nonzero 283.9..291.0 ms re the key-up (v0.9.9 53.9..56.9), 40 ms RMS falling (16.29, 6.92, 5.17, 3.36, 2.31 LSB), steps <= 5 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/B/k60v110"
     metric: "keyup"
     silent: false
     min: -40.847
     max: -39.847
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.587 against v0.9.9's 0.636, keyup): the tail at most 6 LSB, last nonzero 184.8..191.5 ms re the key-up (v0.9.9 72.8..73.6), 40 ms RMS falling (7.22, 3.02, 1.45, 0.65, 0.24 LSB), steps <= 5 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.587 against v0.9.9's 0.636, keyup): the tail at most 6 LSB, last nonzero 184.8..191.5 ms re the key-up (v0.9.9 72.8..73.6), 40 ms RMS falling (7.22, 3.02, 1.45, 0.65, 0.24 LSB), steps <= 5 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/B/k60v96"
     metric: "keyup"
     silent: false
     min: -48.355
     max: -47.355
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.375 against v0.9.9's 0.356, keyup): the tail at most 2 LSB, last nonzero 109.1..111.9 ms re the key-up (v0.9.9 50.0..52.8), 40 ms RMS falling (5.4, 1.19, 0.36, 0.0, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.375 against v0.9.9's 0.356, keyup): the tail at most 2 LSB, last nonzero 109.1..111.9 ms re the key-up (v0.9.9 50.0..52.8), 40 ms RMS falling (5.4, 1.19, 0.36, 0.0, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/B/k74v40"
     metric: "decay"
     silent: false
     min: 55.771
     max: 56.771
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.717 against v0.9.9's 1.259, hold): the hold's last 150 ms at most 11 LSB, last nonzero -1.1..-0.0 ms re the key-up (v0.9.9 -216.9..-214.1), 40 ms RMS falling (122.8, 85.27, 67.33, 50.62, 30.23 LSB), steps <= 24 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.717 against v0.9.9's 1.259, hold): the hold's last 150 ms at most 11 LSB, last nonzero -1.1..-0.0 ms re the key-up (v0.9.9 -216.9..-214.1), 40 ms RMS falling (122.8, 85.27, 67.33, 50.62, 30.23 LSB), steps <= 24 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/B/k81v110"
     metric: "keyup"
     silent: false
     min: -18.718
     max: -17.718
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.384 against v0.9.9's 2.233, keyup): the tail at most 10 LSB, last nonzero 190.8..192.1 ms re the key-up (v0.9.9 67.7..71.8), 40 ms RMS falling (8.7, 5.68, 3.25, 1.47, 0.55 LSB), steps <= 5 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.384 against v0.9.9's 2.233, keyup): the tail at most 10 LSB, last nonzero 190.8..192.1 ms re the key-up (v0.9.9 67.7..71.8), 40 ms RMS falling (8.7, 5.68, 3.25, 1.47, 0.55 LSB), steps <= 5 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/B/k81v64"
     metric: "decay"
     silent: false
     min: 51.14
     max: 52.14
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.814 against v0.9.9's 1.949, hold): the hold's last 150 ms at most 9 LSB, last nonzero -33.7..-30.7 ms re the key-up (v0.9.9 -157.2..-154.2), 40 ms RMS falling (71.55, 46.03, 37.06, 26.04, 20.36 LSB), steps <= 18 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.814 against v0.9.9's 1.949, hold): the hold's last 150 ms at most 9 LSB, last nonzero -33.7..-30.7 ms re the key-up (v0.9.9 -157.2..-154.2), 40 ms RMS falling (71.55, 46.03, 37.06, 26.04, 20.36 LSB), steps <= 18 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/B/k81v96"
     metric: "keyup"
     silent: false
     min: -27.003
     max: -26.003
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.056 against v0.9.9's 1.278, keyup): the tail at most 4 LSB, last nonzero 122.2..128.0 ms re the key-up (v0.9.9 3.0..12.8), 40 ms RMS falling (4.34, 2.19, 0.75, 0.04, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 1.056 against v0.9.9's 1.278, keyup): the tail at most 4 LSB, last nonzero 122.2..128.0 ms re the key-up (v0.9.9 3.0..12.8), 40 ms RMS falling (4.34, 2.19, 0.75, 0.04, 0.0 LSB), steps <= 4 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/B/k89v96"
     metric: "decay"
     silent: false
     min: 48.473
     max: 49.473
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.98 against v0.9.9's 2.182, hold): the hold's last 150 ms at most 7 LSB, last nonzero -63.8..-60.8 ms re the key-up (v0.9.9 -174.8..-173.4), 40 ms RMS falling (35.89, 28.33, 31.75, 20.74, 16.68 LSB), steps <= 19 LSB, 2 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.98 against v0.9.9's 2.182, hold): the hold's last 150 ms at most 7 LSB, last nonzero -63.8..-60.8 ms re the key-up (v0.9.9 -174.8..-173.4), 40 ms RMS falling (35.89, 28.33, 31.75, 20.74, 16.68 LSB), steps <= 19 LSB, 2 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
   - match: "hq/F15/PRESET/A/k81v40"
     metric: "keyup"
     silent: false
     min: -35.44
     max: -34.44
     ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
-    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.325 against v0.9.9's 0.166, keyup): the tail at most 1 LSB, last nonzero 90.7..103.6 ms re the key-up (v0.9.9 68.6..72.7), 40 ms RMS falling (0.92, 0.46, 0.07, 0.0, 0.0 LSB), steps <= 3 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). For the coordinator's sign-off"
+    reason: "rev-grain: v0.9.9 silent, now the reverb's linear tail (residual 0.325 against v0.9.9's 0.166, keyup): the tail at most 1 LSB, last nonzero 90.7..103.6 ms re the key-up (v0.9.9 68.6..72.7), 40 ms RMS falling (0.92, 0.46, 0.07, 0.0, 0.0 LSB), steps <= 3 LSB, 0 frame rises over 1.25x (2 shifts); REVERB MIX 0: exact zeros (the reverb's, its lines 2x hotter at a low MIX and rounded: the tail rings out instead of truncating to zero). coordinator sign-off 2026-11-09"
 # ---- 13. resp-ab (2026-11-09), per cell, each with its proof in the reason. Signed off: coordinator 2026-11-09.
 #  - RESPONSE B on the bar engines (bars.c bar_lt_g, 3c0eda86): v40 level / peak by the level map; MARIMBA B v40 keyup /
 #    decay where B reads as A at the same output level (A v58) within 0.5 dB (the move: v0.9.9's v40 was silent there);
