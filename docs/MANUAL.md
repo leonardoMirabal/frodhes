@@ -610,7 +610,10 @@ notes start, a cell with a band is where they are still held, the white one is w
   **bar 1, step 1** (nothing is erased).
 - **SEQ** switches recording on / off (the SEQ light blinks).
   - **Playing (live):** every pass adds what you play on top (overdub), quantized; the loop never stops. Arm REC, then
-    press PLAY to start.
+    press PLAY to start. Each note keeps the length it sounded: a note let go under the sustain (REC or a pedal) is
+    recorded until the sustain lets it go, or until you strike it again; a note held over the loop's end goes on
+    into the next pass; a note held longer than the whole loop plays the whole loop. QUANT moves only where notes
+    start, never how long they are. (The pattern does not record the sustain itself: it plays back without it.)
   - **Stopped (step by step):** what you play goes on the **cursor's step**, as long as the QUANT grid (1/16: one
     step, 1/8: two, 1/4: four); let go and the cursor moves on by that much. Keep the keys held and turn
     **ALGORITHM** to make that note or chord longer (LENGTH n STEPS); turn ALGORITHM without playing to leave a rest.

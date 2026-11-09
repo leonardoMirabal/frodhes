@@ -40,7 +40,9 @@ static uint16_t sq_L;                               /* (the loop length seq_poll
 static struct { uint8_t note; uint16_t off; } sq_act[SQ_MAXACT];
 static uint32_t sq_nact;
 static uint16_t rec_start[128];
-static uint8_t rec_vel[128], live_held[128];
+static uint32_t rec_pass[128];                      /* the pass a recorded note started on (sq_pass): its length over
+                                                     * the loop's end and past a whole loop (issue #34) */
+static uint8_t rec_vel[128], live_held[128], rec_sus[128];   /* rec_sus: let go under the sustain, still recording */
 static uint8_t sq_dirty, sq_roll_dirty, sq_btn_down;
 static int32_t sq_cur = -1;                              /* the page's cursor, in 16ths (ui.c moves it) */
 static uint32_t sq_cur_t;
@@ -105,14 +107,26 @@ FR_COLD static void sq_add(uint32_t tick, uint32_t len, uint32_t note, uint32_t 
     e->take = sq_take; e->rsv = 0;
     sq_changed();
 }
-FR_COLD static void sq_rec_close(uint32_t n)                    /* a recorded note ends: it becomes an event */
+/* a recorded note ends: it becomes an event, as long as it sounded: from its start to now counted over the passes
+ * between (a note held over the loop's end, or longer than the loop: then the whole loop, never the remainder past
+ * one loop as the length modulo the loop gave, issue #34) */
+FR_COLD static uint32_t sq_lap(void)                   /* the pass the position is in: sq_pass, or the next one while
+                                                         * seq_poll has not yet seen the loop's end it passed (the start:
+                                                         * tick 0, sq_prev the loop's last tick) */
 {
-    uint32_t L = sq_len(), t = sq_tick(), len;
+    return sq_pass + (sq_tick() < sq_prev % sq_len() ? 1u : 0u);
+}
+FR_COLD static void sq_rec_close(uint32_t n)
+{
+    uint32_t L = sq_len(), t = sq_tick(), len, a0;
     if (rec_start[n] == 0xFFFFu) return;
-    len = (t + L - rec_start[n]) % L;
+    a0 = rec_pass[n] * L + rec_start[n];
+    len = sq_lap() * L + t;
+    len = len > a0 ? len - a0 : (t + L - rec_start[n]) % L;   /* (BARS changed while it was held: within the loop) */
+    if (len > L - 1u) len = L - 1u;                     /* (the whole loop: it ends a tick before it starts again) */
     if (len < 6u) len = 6u;
     sq_add(rec_start[n], len, n, rec_vel[n]);
-    rec_start[n] = 0xFFFFu;
+    rec_start[n] = 0xFFFFu; rec_sus[n] = 0;
 }
 FR_COLD static void sq_rec_close_all(void) { uint32_t n; for (n = 0; n < 128u; n++) sq_rec_close(n); }
 
@@ -159,7 +173,7 @@ FR_COLD static void seq_clear(void)
 {
     uint32_t n;
     sq_all_off();
-    for (n = 0; n < 128u; n++) rec_start[n] = 0xFFFFu;
+    for (n = 0; n < 128u; n++) rec_start[n] = 0xFFFFu, rec_sus[n] = 0;
     sq_n = 0;
     sq_changed();
 }
@@ -216,14 +230,28 @@ FR_COLD static void live_note_on(uint32_t n, uint32_t vel)
     live_held[n]++;
     if (!seq_rec || sq_erase) return;
     if (!seq_play) { st_note_on(n, vel); return; }      /* stopped: step recording */
-    if (rec_start[n] == 0xFFFFu) { rec_start[n] = (uint16_t)sq_tick(); rec_vel[n] = (uint8_t)vel; }
+    if (rec_sus[n]) sq_rec_close(n);                    /* struck again while the sustain held it: it ends here */
+    if (rec_start[n] == 0xFFFFu) { rec_start[n] = (uint16_t)sq_tick(); rec_pass[n] = sq_lap(); rec_vel[n] = (uint8_t)vel; }
 }
 FR_COLD static void live_note_off(uint32_t n)
 {
     if (n > 127u) return;
     if (live_held[n]) live_held[n]--;
     if (seq_rec && !seq_play && !sq_erase) { st_note_off(); return; }
-    if (!live_held[n]) sq_rec_close(n);
+    if (live_held[n]) return;
+    if (ped.on && !arp_on() && rec_start[n] != 0xFFFFu) rec_sus[n] = 1;   /* let go under the sustain: it rings on, and is
+                                                         * recorded until the pedal lets it go (live_pedal) or it is struck
+                                                         * again (issue #34: it was recorded as long as the key, and played
+                                                         * back short; the pedal itself is not recorded). The arpeggiator:
+                                                         * its keys as held (it stops playing a key let go) */
+    else sq_rec_close(n);
+}
+/* the sustain as the engine gets it (notes.c eng_send: REC, CC 64, an all-off as up): let up, the notes it held end */
+FR_COLD static void live_pedal(uint32_t on)
+{
+    uint32_t n;
+    if (on) return;
+    for (n = 0; n < 128u; n++) if (rec_sus[n]) sq_rec_close(n);
 }
 
 FR_COLD static void seq_poll(void)
@@ -384,7 +412,7 @@ FR_COLD static void seq_load(void)                              /* the pattern: 
 {
     sq_hdr_t h, o;
     uint32_t n, q = 0, at = sq_newest(SQ_A, SQ_B, &h), own = at != 0u;
-    for (n = 0; n < 128u; n++) rec_start[n] = 0xFFFFu;
+    for (n = 0; n < 128u; n++) rec_start[n] = 0xFFFFu, rec_sus[n] = 0;
     sq_n = 0;
     if (own) { q = h.seq; sq_sv_tgt = at == SQ_A ? SQ_B : SQ_A; }   /* (the next save: the other sector than its own
                                                          * newest; none: A) */
