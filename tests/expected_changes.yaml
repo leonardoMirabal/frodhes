@@ -3898,3 +3898,18 @@ changes:
     min: 4.003
     max: 5.003
     reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
+  - match: "fm1/MARIMBA/FX/B/k69v40"
+    metric: "keyup"
+    min: 168.310
+    max: 169.310
+    reason: "int16 floor: B = A x map, the tail reaches 0 later (A v40 reaches 0 at -23 ms, B at +88 ms, 1-LSB steps;
+      no gate: GATE_LO_BARS 0 renders byte-identical; build/sonic/resp-ab/mar/tails_lsb.txt, mar/nogate_cmp.py).
+      Coordinator sign-off 2026-11-09"
+  - match: "hq/MARIMBA/FX/B/k84v40"
+    metric: "keyup"
+    min: -7.000
+    max: 164.700
+    reason: "int16 floor: B = A x map, the tail reaches 0 later (A v40 reaches 0 at -2 ms, B at +75 ms, 1-LSB steps;
+      no gate: GATE_LO_BARS 0 renders within 2 LSB; the 4 shifts read -213.5 / -213.6 / -42.9 / -42.8, so the median
+      swings between them: the window spans both; build/sonic/resp-ab/mar/tails_lsb.txt, mar/nogate_cmp.py).
+      Coordinator sign-off 2026-11-09"
