@@ -322,7 +322,7 @@ emulator has no velocity: its keys play at KEY VEL.
 
 ### COMPRESSOR
 
-![COMPRESSOR](manual/img/comp.png?v=b891128d)
+![COMPRESSOR](manual/img/comp.png?v=ecce6ad9)
 
 | Knob | Card | What it does |
 | --- | --- | --- |
