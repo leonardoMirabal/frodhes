@@ -8,6 +8,9 @@ pristine and clean result for each efx beside overdrive"). From F01 with every e
   clip    no clamp cut anywhere in the delay line (send, feedback, the write), the reverb's send and kernel inputs, the
           chorus line (fx.c FX_HC)
   lvl0    at MIX / DEPTH 0: the level of FX on within 0.5 dB of the bypass (FX off)
+  peak    the effect adds no peak: its highest sample over every signal at most PK_TOL (2 dB: the touch wah's onset,
+          +1.8) over the bypass' (2026-11-08: the phaser's comb, the pan's sides, a resonant LP / HP, the wah's make-up
+          and ANA's bunched repeats lifted a chord 2.6 .. 3.6 dB, onto the limiter)
   nl      added non-linearity: the superposition residual |AB - A - B| in dBFS (A the 4-note chord, B a fifth note
           (C5) at the same time, AB both; v100) over the bypass' own (the engine's dither, the voices); a clipping stage, the limiter or a
           saturation shows here as harmonics and intermodulation. The designed saturations are exempt and reported
@@ -64,6 +67,8 @@ CHORD = (48, 55, 60, 64)
 B_NOTE = 72
 NL_VEL = 100     # (the superposition renders: a v127 5-note chord reaches the limiter dry, 0.9.9 as 0.9.10)
 END = 4500
+PK_TOL = 2.0     # an effect's peak over the bypass' (every signal): the touch wah's onset +1.8 dB (its band-pass' own
+                 # resonant peak before the make-up settles), every other effect +0.5 dB at most (EQ / filter 127 exempt)
 NL_FLOOR, NL_TOL = -80.0, 6.0     # nl fails over max(the bypass' residual, -80 dBFS) + 6 dB (DIG's int16 line: ~-78)
 
 
@@ -175,6 +180,8 @@ def gate(builds, quick=False, presets=False, n=None, verbose=False):
     fails, rows = [], []
     for b in builds:
         dry = analyse(res, b, "dry", byp=True)
+        if -1 in dry["lim"].values():
+            rows.append(f"== {b}: no fx-clip counters in this build (older than 523d8fa7): lim / clip not measured")
         rows.append(f"== {b}: dry (bypass) chord {dry['lvl']:.2f} dBFS, peak {dry['pk']:.1f} dBFS, nl {dry['nl']:.1f} dBFS, "
                     f"limiter {dry['lim']}")
         rows.append(f"   {'effect':16s} {'d':>3s}  {'lim s64/s127/chord':>18s}  {'clip d/r/c':>10s}  {'nl':>6s}  "
@@ -184,7 +191,9 @@ def gate(builds, quick=False, presets=False, n=None, verbose=False):
                 r = analyse(res, b, f"{name}@{d}")
                 dn, dl = r["nl"] - dry["nl"], r["lvl"] - dry["lvl"]
                 bad = []
-                if any(r["lim"].values()):
+                if -1 in r["lim"].values():               # (a build without fx.c's fx-clip counters: not read as
+                    bad.append("counters not measured")   # the limiter acting)
+                elif any(r["lim"].values()):
                     bad.append("limiter")
                 if any(r["clip"]):
                     bad.append("clip")
@@ -192,8 +201,11 @@ def gate(builds, quick=False, presets=False, n=None, verbose=False):
                     bad.append("nl")
                 if mix0 and d == 0 and abs(dl) > 0.5:
                     bad.append("lvl0")
+                if r["pk"] > dry["pk"] + PK_TOL:
+                    bad.append("peak")
                 if name == "eq" and d == 127 or name.startswith("filter") and d == 127:
-                    bad = [x for x in bad if x != "limiter"]   # (+15 dB on every band / RESO 127: a level the user set)
+                    bad = [x for x in bad if x not in ("limiter", "peak")]   # (+15 dB on every band / RESO 127: a level
+                    # the user set)
                 rows.append(f"   {name:16s} {d:3d}  {r['lim']['s64']:5d}/{r['lim']['s127']:5d}/{r['lim']['c127']:5d}  "
                             f"{'%d/%d/%d' % r['clip']:>10s}  {r['nl']:6.1f}{'*' if exempt else ' '} {dl:+7.2f}  "
                             f"{r['pk']:5.1f}  {'FAIL ' + ','.join(bad) if bad else 'ok'}")
@@ -206,7 +218,9 @@ def gate(builds, quick=False, presets=False, n=None, verbose=False):
                 nm = f"F{pc + 1:02d}" if pc < 16 else f"F{pc - 15:02d}"
                 r, o = analyse(res, b, nm), analyse(res, b, nm, byp=True)
                 bad = []
-                if any(r["lim"].values()):
+                if -1 in r["lim"].values():
+                    bad.append("counters not measured")
+                elif any(r["lim"].values()):
                     bad.append("limiter")
                 if any(r["clip"]):
                     bad.append("clip")
