@@ -170,9 +170,15 @@ def test_usb_clock_never_over_usb_c(tmp_path):
 def test_usb_stress_detectors(tmp_path):
     ok, rep = _fake(tmp_path, mh.usb_stress, secs=8.0)
     assert ok, [t["events"] for t in rep["takes"]]
-    ok, rep = _fake(tmp_path, mh.usb_stress, ("click", 2.37), ("stale", 3.3), ("zero", 6.13), secs=16.0)
-    low = {k for _, k, _ in rep["takes"][0]["events"]}
-    assert not ok and {"click", "stale", "zero"} <= low, low
+    # (the clicks: 2.85 s, where the fake take's 50 ms lead stays under hil_crackle's LIM_ON (its limiting() mask,
+    # 2.76-3.00 s clear), labelled click; 2.41 s, under it (2.40-2.43 s held), labelled click-lim, information.
+    # f62488fd's 16-note chords put 2.37 s, the old place, under the limiter)
+    ok, rep = _fake(tmp_path, mh.usb_stress, ("click", 2.85), ("click", 2.41), ("stale", 3.3), ("zero", 6.13),
+                    secs=16.0)
+    ev = {(round(t, 2), k) for t, k, _ in rep["takes"][0]["events"]}
+    low = {k for _, k in ev}
+    assert not ok and {"click", "click-lim", "stale", "zero"} <= low, ev
+    assert (2.85, "click") in ev and (2.41, "click-lim") in ev, ev
 
 
 def test_usb_cli_fake(tmp_path):
