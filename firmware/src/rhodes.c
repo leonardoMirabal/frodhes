@@ -1693,25 +1693,32 @@ static inline __attribute__((always_inline)) int32_t rh_mode_f_t(rh_ms_t *s, int
 
 /* the same without the force (no pulse at the sub-block's start: every rh_F[j] would be 0, the add never ran); x and
  * y both as X, Y (Y -= eps y + e x); the peak as the max of the two magnitudes, then of the peak (the same value, one
- * temporary fewer: no spill) */
+ * temporary fewer: no spill). X and Y at 4x that scale (x 2^32 + 4 ex): x and y are then the high words, no move or
+ * shift; the products take 4 y, 4 x and 4 eps instead (the same integers while |x|, |y|, |eps| < 2^29: the states are
+ * sat28i'd at each sub-block's end, and a host scan of every script, preset, DRIVE / TYPE, bend and monkey seed peaked
+ * at 2^26.2 inside a sub-block, eps at 2^26.6). The eps product first: it reads y before Y moves (no copy).
+ * 14 / 13 -> 12 / 11 instructions a sample */
 static inline __attribute__((always_inline)) int32_t rh_mode_p_t(rh_ms_t *s, int first)
 {
     int32_t *xp = rh_x, *xe = rh_x + SUB;
-    int32_t x = s->x, y = s->y, e = s->e, eps = s->eps, pk = 0;
-    int64_t X = ((int64_t)x << 30) + (uint32_t)s->ex, Y = ((int64_t)y << 30) + (uint32_t)s->ey;
+    int32_t x = s->x, y = s->y, e = s->e, eps4 = s->eps * 4, pk = 0;
+    int64_t X = ((int64_t)x << 32) + ((uint32_t)s->ex << 2), Y = ((int64_t)y << 32) + ((uint32_t)s->ey << 2);
     RH_REG32(xe);
     do {
-        RH_REG32(e);
-        X += (int64_t)e * y;
-        x = (int32_t)(X >> 30);
-        RH_REG32(eps);
-        Y -= (int64_t)eps * y + (int64_t)e * x;
-        y = (int32_t)(Y >> 30);
+        int32_t y4 = y * 4, x4;
+        RH_REG32(e); RH_REG32(y4); RH_REG32(eps4);
+        Y -= (int64_t)eps4 * y;
+        X += (int64_t)e * y4;
+        x = (int32_t)(X >> 32);
+        x4 = x * 4;
+        RH_REG32(x4);
+        Y -= (int64_t)e * x4;
+        y = (int32_t)(Y >> 32);
         if (first) *xp = x; else *xp += x;
         xp++;
         { int32_t ax = iabs(x), ay = iabs(y); ax = ax > ay ? ax : ay; pk = ax > pk ? ax : pk; }
     } while (xp < xe);
-    s->x = sat28i(x); s->y = sat28i(y); s->ex = (int32_t)((uint32_t)X & 0x3FFFFFFFu); s->ey = (int32_t)((uint32_t)Y & 0x3FFFFFFFu); s->peak = pk;
+    s->x = sat28i(x); s->y = sat28i(y); s->ex = (int32_t)((uint32_t)X >> 2); s->ey = (int32_t)((uint32_t)Y >> 2); s->peak = pk;
     return pk >> 3;
 }
 
