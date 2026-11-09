@@ -10,15 +10,15 @@
  * disagree.
  *
  * Ids: the parameter ids are plugin/gen/params_map.h's (the app's params.c ids 0 .. FRP_NPARAM_APP - 1, the plugin's
- * own from 0x10000: FRP_ID_TUNE, FRP_ID_PRESET, FRP_ID_SUSTAIN, FRP_ID_FX_BYPASS; 0x10000 itself, ENGINE, is retired).
- * Values are always the app's integers 0 .. hi.
+ * own from 0x10000: FRP_ID_TUNE, FRP_ID_PRESET, FRP_ID_SUSTAIN, FRP_ID_FX_BYPASS, FRP_ID_VRESP; 0x10000 itself, ENGINE,
+ * is retired). Values are always the app's integers 0 .. hi.
  *
  * Stability: this header is append-only. FRP_UI_IFACE_VERSION bumps only when something is added. */
 #ifndef FRP_UI_IFACE_H
 #define FRP_UI_IFACE_H
 #include <stdint.h>
 
-#define FRP_UI_IFACE_VERSION 3   /* 3: voices_on (the HQ-only plugin, 24 voices) */
+#define FRP_UI_IFACE_VERSION 4   /* 3: voices_on (the HQ-only plugin, 24 voices); 4: preset_type, win_w, win_w_set */
 
 typedef struct frp_core frp_core;            /* one plugin instance */
 struct clap_plugin;
@@ -126,6 +126,12 @@ int frp_ui_voices(const frp_core *c);           /* the voice count: 24, every en
 int frp_ui_voices_on(const frp_core *c, int *held);   /* the voices sounding now (and of them, in *held when not
                                                  * NULL, the ones whose key or the sustain holds them down) */
 
+/* ---- (version 3) the preset list's grouping, the window's size in the project */
+int frp_ui_preset_type(const frp_core *c, int idx);  /* preset idx's instrument (its TYPE, 0..5), -1 no such preset */
+int frp_ui_win_w(const frp_core *c);                 /* the window's logical width saved with the state (0: never set:
+                                                      * the default size) */
+void frp_ui_win_w_set(frp_core *c, int w);           /* 720..1920 (0: the default); saved with the project ("win") */
+
 /* ---- (version 2) the same functions as a CLAP extension, for out-of-process callers (the headless test host,
  * plugin/tests/clap_render.c --coretest): plugin->get_extension(plugin, FRP_UI_EXT_ID) returns a const frp_ui_vtable *.
  * The GUI inside the plugin calls the functions above directly. */
@@ -171,5 +177,9 @@ typedef struct frp_ui_vtable {
     void (*notes)(const frp_core *c, uint8_t notes[128]);
     int (*voices)(const frp_core *c);
     int (*voices_on)(const frp_core *c, int *held);
+    /* version 4 */
+    int (*preset_type)(const frp_core *c, int idx);
+    int (*win_w)(const frp_core *c);
+    void (*win_w_set)(frp_core *c, int w);
 } frp_ui_vtable;
 #endif

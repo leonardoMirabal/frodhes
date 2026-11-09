@@ -17,6 +17,8 @@ static int s_refs;
 #define MAXDIRTY 12
 #define PEND_S 0.6                   /* a value the window set is shown until the app has it, at most this long */
 #define WHEEL_END_S 0.4              /* a wheel gesture ends after this pause */
+#define VO_SHEET_Y0 72.f              /* the sheets' span (frui.c: SETTINGS, PRESETS) */
+#define VO_SHEET_Y1 488.f
 
 enum { DR_NONE, DR_KNOB, DR_KEYS, DR_FADER };
 enum { M_DOWN, M_DRAG, M_UP, M_MOVE, M_LEAVE, M_RDOWN };
@@ -213,7 +215,9 @@ static void diff(frp_gui_t *g)
         a->settings != b->settings || a->midi_ch != b->midi_ch || a->vel_curve != b->vel_curve ||
         a->fixed_vel != b->fixed_vel || a->pgm_change != b->pgm_change || a->tempo_src != b->tempo_src ||
         a->bpm10 != b->bpm10 || a->host_bpm10 != b->host_bpm10 || a->sync_all != b->sync_all ||
-        a->sync_div != b->sync_div || a->cc_scroll != b->cc_scroll)
+        a->sync_div != b->sync_div || a->cc_scroll != b->cc_scroll || a->presets != b->presets || a->pl_n != b->pl_n ||
+        a->pl_cur != b->pl_cur || a->pl_page != b->pl_page || memcmp(a->pl, b->pl, sizeof a->pl) ||
+        a->saving != b->saving || a->save_sel != b->save_sel || strcmp(a->save_text, b->save_text))
         g->full = 1;
 }
 
@@ -260,6 +264,10 @@ int frp_gui_tick(frp_gui_t *g, double now)
         memcpy(m->preset_tag, tag, sizeof tag); m->preset_tag[7] = 0;
         memcpy(m->preset_name, name, sizeof name); m->preset_name[23] = 0;
         m->edited = ed;
+    }
+    if (m->presets && g->h.preset_index) {          /* the entry playing (a click, the arrows, a program change) */
+        int c = g->h.preset_index(g->h.ctx);
+        m->pl_cur = c >= 0 && c < m->pl_n ? c : -1;
     }
     if (g->h.learn_get) g->h.learn_get(g->h.ctx, m->learn_cc, FRP_COUNT, &m->learning);
     else { memcpy(m->learn_cc, g->loc_learn, sizeof m->learn_cc); m->learning = g->loc_learning; }
@@ -393,20 +401,102 @@ static void learn(frp_gui_t *g, int cmd, int id)
     default: memset(g->loc_learn, 0, sizeof g->loc_learn); g->loc_learning = -1; break;
     }
 }
+/* ---- PRESETS (the sheet) and SAVE's name field */
+static void pl_fill(frp_gui_t *g)                   /* the list from the host (the factory presets, then the user's) */
+{
+    frui_model *m = &g->m;
+    int i, n = 0, c;
+    for (i = 0; g->h.preset_entry && i < FRUI_PL_MAX; i++) {
+        char tag[8] = "", name[24] = "";
+        int type = 0, user = 0;
+        if (g->h.preset_entry(g->h.ctx, i, tag, name, &type, &user)) break;
+        memset(&m->pl[n], 0, sizeof m->pl[n]);
+        memcpy(m->pl[n].tag, tag, sizeof tag); m->pl[n].tag[7] = 0;
+        memcpy(m->pl[n].name, name, sizeof name); m->pl[n].name[23] = 0;
+        m->pl[n].type = (uint8_t)clampi(type, 0, 5);
+        m->pl[n].user = user != 0;
+        n++;
+    }
+    if (n < FRUI_PL_MAX) memset(&m->pl[n], 0, sizeof m->pl[0] * (size_t)(FRUI_PL_MAX - n));
+    m->pl_n = n;
+    c = g->h.preset_index ? g->h.preset_index(g->h.ctx) : -1;
+    m->pl_cur = c >= 0 && c < n ? c : -1;
+    m->pl_page = clampi(m->pl_page, 0, frui_preset_pages(m) - 1);
+}
+static void presets_open(frp_gui_t *g, int on)
+{
+    frui_model *m = &g->m;
+    m->presets = on;
+    if (!on) return;
+    m->settings = 0;
+    m->menu = -1; m->ctx_knob = -1;
+    pl_fill(g);
+    m->pl_page = frui_preset_page_of(m, m->pl_cur);
+}
+static void save_close(frp_gui_t *g) { g->m.saving = 0; g->m.save_sel = 0; g->m.save_text[0] = 0; }
+static void save_open(frp_gui_t *g)
+{
+    frui_model *m = &g->m;
+    size_t n;
+    m->menu = -1; m->ctx_knob = -1;
+    pl_fill(g);                                      /* (the user's names: RETURN shows REPLACE on one of them) */
+    snprintf(m->save_text, sizeof m->save_text, "%s", m->preset_name[0] && strcmp(m->preset_name, "-") ? m->preset_name : "USER");
+    if ((n = strlen(m->save_text)) > FRUI_SAVE_MAX) m->save_text[FRUI_SAVE_MAX] = 0;
+    m->saving = 1;
+    m->save_sel = 1;                                 /* (the name selected: typing replaces it, RETURN keeps it) */
+}
+static void save_commit(frp_gui_t *g)
+{
+    char nm[FRUI_SAVE_MAX + 1];
+    const char *s = g->m.save_text;
+    size_t n;
+    while (*s == ' ') s++;
+    snprintf(nm, sizeof nm, "%s", s);
+    for (n = strlen(nm); n && nm[n - 1] == ' '; n--) nm[n - 1] = 0;
+    save_close(g);
+    if (!nm[0] || !g->h.preset_save_as) return;
+    g->h.preset_save_as(g->h.ctx, nm);
+    pl_fill(g);
+    if (g->m.presets) g->m.pl_page = frui_preset_page_of(&g->m, g->m.pl_cur);
+}
+static int save_key(frp_gui_t *g, int key)
+{
+    char *t = g->m.save_text;
+    size_t n = strlen(t);
+    switch (key) {
+    case FRK_ESCAPE: save_close(g); break;
+    case FRK_RETURN: save_commit(g); break;
+    case FRK_BACKSPACE: if (g->m.save_sel) t[0] = 0; else if (n) t[n - 1] = 0; g->m.save_sel = 0; break;
+    case FRK_DELETE: t[0] = 0; g->m.save_sel = 0; break;
+    case FRK_LEFT: case FRK_RIGHT: case FRK_HOME: case FRK_END: g->m.save_sel = 0; break;
+    default:
+        /* printable ASCII, the letters as capitals (the device's names); never a quote or a backslash (the files and
+         * the state are JSON) */
+        if (key >= 0x20 && key < 0x7f && key != '"' && key != '\\') {
+            if (g->m.save_sel) { t[0] = 0; n = 0; g->m.save_sel = 0; }
+            if (n == 0 && key == ' ') break;
+            if (n < FRUI_SAVE_MAX) { t[n] = (char)(key >= 'a' && key <= 'z' ? key - 32 : key); t[n + 1] = 0; }
+        }
+        break;
+    }
+    return 1;                                        /* (every key goes to the field while it is open) */
+}
+
 static int vel_at(float y) { return clampi(40 + (int)((y - 504.f) / 80.f * 100.f), 1, 127); }
 static void button(frp_gui_t *g, int id)
 {
     frui_model *m = &g->m;
     switch (id) {
     case FRB_PREV: case FRB_NEXT: case FRB_SAVE: case FRB_UNDO:
+        if (id == FRB_SAVE && g->h.preset_save_as) { save_open(g); break; }   /* (no name entry: the playing preset's name) */
         if (g->h.preset_cmd)
             g->h.preset_cmd(g->h.ctx, id == FRB_PREV ? FRP_UI_PRESET_PREV : id == FRB_NEXT ? FRP_UI_PRESET_NEXT :
                                       id == FRB_SAVE ? FRP_UI_PRESET_SAVE : FRP_UI_PRESET_UNDO);
         break;
     case FRB_TYPE_PREV: set_once(g, FRP_TYPE, (m->p[FRP_TYPE] + 5) % 6); break;
     case FRB_TYPE_NEXT: set_once(g, FRP_TYPE, (m->p[FRP_TYPE] + 1) % 6); break;
-    case FRB_GEAR: m->settings = !m->settings; close_popups(g); break;
-    case FRB_CLOSE: m->settings = 0; close_popups(g); break;
+    case FRB_GEAR: m->settings = !m->settings; m->presets = 0; close_popups(g); break;
+    case FRB_CLOSE: m->settings = 0; m->presets = 0; close_popups(g); break;
     case FRB_SUSTAIN:                                /* latching, as the device's REC: CC 64 down / up */
         g->sustain_latch = !g->sustain_latch;
         midi(g, 0xB0, 64, g->sustain_latch ? 127 : 0);
@@ -517,6 +607,11 @@ static void mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks)
         if (on && w.kind == FRW_KNOB && w.id < FRP_COUNT) m->ctx_knob = w.id;
         return;
     case M_DOWN:
+        if (m->saving) {                             /* SAVE again: saved; a click in the field: keep typing; else: left */
+            if (on && w.kind == FRW_BUTTON && w.id == FRB_SAVE) { save_commit(g); return; }
+            if (on && w.kind == FRW_PRESET) { m->save_sel = 0; return; }
+            save_close(g);
+        }
         if (m->editing) {                            /* a click in the field: keep typing; elsewhere: leave it */
             if (on && w.kind == FRW_KNOB && w.id == m->editing - 1 && in_value(g, w.id, x, y)) return;
             edit_close(g);
@@ -561,7 +656,14 @@ static void mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks)
             return;
         case FRW_TAB_L: m->tab_l = w.id; return;
         case FRW_TAB_R: m->tab_r = w.id; return;
-        case FRW_PAGER: m->page_rv = x >= w.x + w.w * 0.5f; return;
+        case FRW_PAGER:
+            if (w.id == FRUI_PL_PAGER) m->pl_page = clampi(m->pl_page + (x >= w.x + w.w * 0.5f ? 1 : -1), 0, frui_preset_pages(m) - 1);
+            else m->page_rv = x >= w.x + w.w * 0.5f;
+            return;
+        case FRW_PRESET: presets_open(g, !m->presets); return;
+        case FRW_PITEM:                              /* load it; the sheet stays open (the keys try it) */
+            if (g->h.preset_load && !g->h.preset_load(g->h.ctx, w.id)) m->pl_cur = w.id;
+            return;
         case FRW_BUTTON: button(g, w.id); return;
         case FRW_KEYS: {
             int k = frui_key_at(x, y);
@@ -615,8 +717,17 @@ static void mouse(frp_gui_t *g, int ev, float x, float y, int mods, int clicks)
 static void wheel(frp_gui_t *g, float x, float y, float notches, int mods)
 {
     frui_widget w;
-    int steps, id, hi;
-    if (!hit(g, x, y, &w)) return;
+    int steps, id, hi, on;
+    on = hit(g, x, y, &w);
+    if (g->m.presets && !g->m.settings && (!on || w.kind == FRW_PITEM || (w.kind == FRW_PAGER && w.id == FRUI_PL_PAGER)) &&
+        y >= VO_SHEET_Y0 && y < VO_SHEET_Y1) {      /* the PRESETS sheet: the wheel turns its pages */
+        g->wheel_acc += notches;
+        steps = (int)g->wheel_acc;
+        g->wheel_acc -= (float)steps;
+        g->m.pl_page = clampi(g->m.pl_page - steps, 0, frui_preset_pages(&g->m) - 1);
+        return;
+    }
+    if (!on) return;
     if (w.kind == FRW_CCMAP) {
         g->wheel_acc += notches;
         steps = (int)g->wheel_acc;
@@ -643,9 +754,11 @@ static int on_key(frp_gui_t *g, int key, int mods)
     frui_model *m = &g->m;
     int i, n = frui_widget_count(g->u), cur = -1, fid;
     if (m->editing) return edit_key(g, key);
+    if (m->saving) return save_key(g, key);
     switch (key) {
     case FRK_ESCAPE:
         if (m->menu >= 0 || m->ctx_knob >= 0) { close_popups(g); return 1; }
+        if (m->presets) { m->presets = 0; return 1; }
         if (m->learning >= 0) { learn(g, FRP_UI_LEARN_CANCEL, m->learning); return 1; }
         if (m->settings) { m->settings = 0; return 1; }
         if (m->focus >= 0) { m->focus = -1; return 1; }
@@ -717,7 +830,7 @@ int frp_gui_input(frp_gui_t *g, const frg_input *e)
     case FRG_LEAVE: if (g->drag == DR_NONE) mouse(g, M_LEAVE, x, y, e->mods, 1); used = 0; break;
     case FRG_WHEEL: wheel(g, x, y, e->wheel, e->mods); break;
     case FRG_KEY: used = on_key(g, e->key, e->mods) ? 2 : 0; break;
-    case FRG_FOCUS_LOST: focus_lost(g); edit_close(g); break;
+    case FRG_FOCUS_LOST: focus_lost(g); edit_close(g); save_close(g); break;
     default: used = 0; break;
     }
     return used | (used || memcmp(&before, &g->m, sizeof before) ? 1 : 0);

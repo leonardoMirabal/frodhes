@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """The dry-distortion gate (tools/dry_dist.py) through the plugin: every dry_dist script played through the CLAP, the
 VST3 and the Audio Unit, each judged against 0.9.9 with dry_dist's own cells and limits, and the three formats
-compared sample for sample.
+compared sample for sample. The reference is dry_dist's HQ one (tests/baselines/dry_dist_099_hq.json: 0.9.9 built
+with the HQ defines, as the plugin's slots), the scripts without the key cells (the FM-1's own keys: no plugin path).
 
   python3 tools/plugin_dist.py [--bundles DIR] [--render EXE] [--formats clap,vst3,au] [--engines hq]
                                [--tags TAG,...] [--out DIR] [--base FILE]
@@ -21,7 +22,7 @@ Engines: "hq" plays the plugin's sound (nothing set). The plugin is HQ only (24 
 ENGINE CLASSIC on the builds that had it, is refused.
 
 Writes, per engine and format, DIR/<engine>/<format>/<tag>.wav (16-bit stereo, aligned to the host build's time: the
-plugin's 10 ms latency taken off) and cells.json (`tools/dry_dist.py --judge` reads it), and DIR/report.txt. The
+plugin's latency, 258 frames at 44.1 kHz, taken off) and cells.json (`tools/dry_dist.py --judge` reads it), and DIR/report.txt. The
 VST3 host is built once into build/plugin-dist (the SDK, the command line tools), the AU host there too. macOS only.
 Exit 0: every format PASS. 1: a FAIL or a host error. The sample identity is reported, not judged.
 """
@@ -111,7 +112,7 @@ def main():
     ap.add_argument("--engines", default="hq", help="hq (the plugin's sound: HQ only)")
     ap.add_argument("--tags", help="a subset of dry_dist's scripts (default: all 16)")
     ap.add_argument("--out", default=os.path.join(ROOT, "build", "plugin-dist", "out"))
-    ap.add_argument("--base", default=dry_dist.BASE)
+    ap.add_argument("--base", default=dry_dist.BASE_HQ)
     a = ap.parse_args()
     formats = a.formats.split(",")
     engines = a.engines.split(",")
@@ -137,7 +138,7 @@ def main():
         for tag, ccc, tcc, mcc in tags:
             work = os.path.join(a.out, eng, "work")
             os.makedirs(work, exist_ok=True)
-            lines = sorted(dry_dist.script(ccc, tcc, mcc), key=lambda l: int(l.split()[0]))
+            lines = sorted(dry_dist.script(ccc, tcc, mcc, keys=False), key=lambda l: int(l.split()[0]))
             scr = os.path.join(work, tag + ".txt")
             open(scr, "w").write("\n".join(lines) + "\n")
             evf = os.path.join(work, tag + ".ev")

@@ -33,7 +33,7 @@ static int layer_check(frui_font *f, frui_font *d)
     unsigned seed = 7;
     for (look = 0; look < 3; look++)
         for (k = 0; k < (look == FRUI_LOOK_A3 ? 3 : 1); k++)
-            for (sc = 0; sc < 8; sc++) {
+            for (sc = 0; sc < 10; sc++) {
                 int W = sz[k], H = W * FRUI_H / FRUI_W;
                 uint32_t *a = calloc((size_t)W * H, 4), *b = calloc((size_t)W * H, 4);
                 frui_canvas ca, cb;
@@ -50,6 +50,16 @@ static int layer_check(frui_font *f, frui_font *d)
                 if (sc == 5) m.learning = FRP_DECAY;
                 if (sc == 6) { m.settings = 1; m.menu = FRUI_WID(FRW_MENU, FRS_SYNCDIV); }
                 if (sc == 7) m.learn_cc[FRP_TONE] = 21;
+                if (sc >= 8) {                       /* PRESETS open (two pages), SAVE's field */
+                    for (i = 0; i < 90; i++) {
+                        snprintf(m.pl[i].tag, sizeof m.pl[i].tag, "%c%02d", i >= 80 ? 'U' : 'F', i + 1);
+                        snprintf(m.pl[i].name, sizeof m.pl[i].name, "SOUND NUMBER %d", i);
+                        m.pl[i].type = (uint8_t)(i % 6); m.pl[i].user = i >= 80;
+                    }
+                    m.pl_n = 90; m.pl_cur = 13; m.pl_page = sc - 8; m.presets = sc == 8;
+                    m.hover = FRUI_WID(FRW_PITEM, 20);
+                    if (sc == 9) { m.saving = 1; m.save_sel = 0; strcpy(m.save_text, "WWWWWWWWWWWWWWWWWWWWWWWW"); }
+                }
                 frui_set_look(u, look, d);
                 frui_canvas_init(&ca, a, W, H);
                 frui_set_layer(u, FRUI_LAYER_ALL);
@@ -268,6 +278,76 @@ int main(void)
         h.v[FRP_BARK] = 64;
     }
     paint();
+
+    /* PRESETS: a click on the preset's name opens the sheet (every preset, grouped by instrument: the factory ones,
+     * then the user's); a click loads one and leaves it open; the keys still play; ESC closes */
+    {
+        static const int want[14] = {0, 6, 7, 11, 12, 1, 2, 8, 3, 4, 9, 13, 5, 10};
+        int k, n, got[64], ng = 0, ok = 1, l0 = h.loads, on0;
+        float px0, py0;
+        paint();
+        CHECK(fh_find(frp_gui_frui(ctl), FRW_PRESET, 0, &x, &y) >= 0, "the preset box is drawn");
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        CHECK(frp_gui_model(ctl)->presets == 1 && frp_gui_model(ctl)->pl_n == 14 && frp_gui_model(ctl)->pl_cur == 0,
+              "a click on the preset opens PRESETS (%d entries, playing %d)", frp_gui_model(ctl)->pl_n, frp_gui_model(ctl)->pl_cur);
+        paint();
+        n = frui_widget_count(frp_gui_frui(ctl));
+        for (k = 0; k < n; k++) { const frui_widget *g = frui_widget_get(frp_gui_frui(ctl), k); if (g->kind == FRW_PITEM && ng < 64) got[ng++] = g->id; }
+        for (k = 0; k < 14; k++) ok &= ng == 14 && got[k] == want[k];
+        CHECK(ok, "the entries are grouped by instrument, factory before user (%d drawn)", ng);
+        CHECK(fh_find(frp_gui_frui(ctl), FRW_KNOB, FRP_BARK, &x, &y) < 0, "the knobs under the sheet do not answer");
+        fh_find(frp_gui_frui(ctl), FRW_PITEM, 7, &x, &y);
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        CHECK(h.loads == l0 + 1 && h.pcur == 7 && frp_gui_model(ctl)->presets == 1 && frp_gui_model(ctl)->pl_cur == 7,
+              "a click loads PHASER (%d) and the sheet stays open", h.pcur);
+        paint();
+        on0 = h.notes_on;
+        CHECK(fh_find(frp_gui_frui(ctl), FRW_KEYS, 0, &px0, &py0) >= 0, "the keys answer under PRESETS");
+        ev(FRG_DOWN, FRG_LEFT, 0, px0, py0 + 30.f, 0, 0); ev(FRG_UP, FRG_LEFT, 0, px0, py0 + 30.f, 0, 0);
+        CHECK(h.notes_on == on0 + 1, "a key plays while the sheet is open");
+        h.pcur = 3;
+        cl->tick(cl->ctx);
+        CHECK(frp_gui_model(ctl)->pl_cur == 3, "a preset loaded elsewhere (the arrows, a program change) is marked (%d)",
+              frp_gui_model(ctl)->pl_cur);
+        ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_ESCAPE);
+        CHECK(frp_gui_model(ctl)->presets == 0, "ESC closes PRESETS");
+        h.pcur = 7;
+        paint();
+    }
+    /* SAVE: a name field (the playing preset's name, selected); typing replaces it, capitals, at most 24; RETURN saves
+     * a user preset under the name; ESC leaves it */
+    {
+        const char *t = "my sound";
+        int s0 = h.saves, k;
+        paint();
+        fh_find(frp_gui_frui(ctl), FRW_BUTTON, FRB_SAVE, &x, &y);
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        CHECK(frp_gui_model(ctl)->saving && frp_gui_model(ctl)->save_sel && !strcmp(frp_gui_model(ctl)->save_text, "PHASER"),
+              "SAVE opens the name field with the preset's name selected (\"%s\")", frp_gui_model(ctl)->save_text);
+        paint();
+        for (; *t; t++) CHECK(ev(FRG_KEY, 0, 0, 0, 0, 0, *t) & 2, "the field keeps the key '%c'", *t);
+        ev(FRG_KEY, 0, 0, 0, 0, 0, '"');
+        CHECK(!strcmp(frp_gui_model(ctl)->save_text, "MY SOUND"), "typing replaces the name, in capitals, no quote (\"%s\")",
+              frp_gui_model(ctl)->save_text);
+        paint();
+        ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_RETURN);
+        CHECK(h.saves == s0 + 1 && h.np == 15 && !strcmp(h.pname[14], "MY SOUND") && h.puser[14] && !frp_gui_model(ctl)->saving,
+              "RETURN saves the user preset MY SOUND and closes the field");
+        paint();
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_BACKSPACE);
+        for (k = 0; k < 30; k++) ev(FRG_KEY, 0, 0, 0, 0, 0, 'a' + k % 26);
+        CHECK(strlen(frp_gui_model(ctl)->save_text) == 24, "at most 24 characters (%zu)", strlen(frp_gui_model(ctl)->save_text));
+        ev(FRG_KEY, 0, 0, 0, 0, 0, FRK_ESCAPE);
+        CHECK(h.saves == s0 + 1 && !frp_gui_model(ctl)->saving, "ESC leaves the field, nothing saved");
+        paint();
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        fh_find(frp_gui_frui(ctl), FRW_KNOB, FRP_BARK, &x, &y);
+        ev(FRG_DOWN, FRG_LEFT, 0, x, y, 0, 0); ev(FRG_UP, FRG_LEFT, 0, x, y, 0, 0);
+        CHECK(h.saves == s0 + 1 && !frp_gui_model(ctl)->saving, "a click elsewhere leaves it too");
+        CHECK(ev(FRG_KEY, 0, 0, 0, 0, 0, 'q') == 0, "with the field closed, letters go to the host");
+        paint();
+    }
 
     /* hover */
     fh_find(frp_gui_frui(ctl), FRW_KNOB, FRP_BARK, &x, &y);

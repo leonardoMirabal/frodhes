@@ -14,14 +14,15 @@ typedef struct {
 } frp_param_t;
 
 #define FRP_NPARAM_APP 67u   /* params.c P_COUNT */
-#define FRP_NPARAM 71u
+#define FRP_NPARAM 72u
 #define FRP_ID_TUNE 0x10001u
 #define FRP_ID_PRESET 0x10002u
 #define FRP_ID_SUSTAIN 0x10003u
 #define FRP_ID_FX_BYPASS 0x10004u
-#define FRP_NOWN 4u
+#define FRP_ID_VRESP 0x10005u
+#define FRP_NOWN 5u
 #define FRP_ID_OWN0 0x10000u   /* the own ids' base (0x10000 + k; 0x10000 itself was ENGINE: reserved) */
-#define FRP_OWN_SPAN 5u   /* the own ids span 0x10000 .. 0x10000 + FRP_OWN_SPAN - 1 */
+#define FRP_OWN_SPAN 6u   /* the own ids span 0x10000 .. 0x10000 + FRP_OWN_SPAN - 1 */
 
 static const frp_param_t FRP_PARAMS[FRP_NPARAM] = {
     {0u, "Type", "Voice", 5u, 0u, 80u, 1u, 0u},   /* P_TYPE (TYPE) */
@@ -95,9 +96,10 @@ static const frp_param_t FRP_PARAMS[FRP_NPARAM] = {
     {0x10002u, "Preset", "Preset", 56u, 0u, 0u, 1u, 6260u},   /* FRP_ID_PRESET */
     {0x10003u, "Sustain", "Performance", 1u, 0u, 0u, 1u, 6317u},   /* FRP_ID_SUSTAIN */
     {0x10004u, "Effects bypass", "Performance", 1u, 0u, 0u, 1u, 6319u},   /* FRP_ID_FX_BYPASS */
+    {0x10005u, "Velocity response", "Voice", 1u, 0u, 0u, 1u, 6321u},   /* FRP_ID_VRESP */
 };
 
-static const char *const FRP_TEXT[6321] = {
+static const char *const FRP_TEXT[6323] = {
     "STAGE 77", "SUITCASE", "EARLY FELT", "BELL DYNO", "VIBES", "MARIMBA", "0.0", "0.1",
     "0.2", "0.2", "0.3", "0.4", "0.5", "0.6", "0.6", "0.7",
     "0.8", "0.9", "0.9", "1.0", "1.1", "1.2", "1.3", "1.3",
@@ -888,6 +890,6 @@ static const char *const FRP_TEXT[6321] = {
     "F37 PHASER SLOW", "F38 FUNK WAH LVL", "F39 FUNK PLUCK", "F40 RESO SPACE", "F41 RESO SMOOTH", "F42 AUTOWAH ECHO", "F43 AUTOWAH TAPE", "F44 VIBES HALL",
     "F45 VIBES MOTOR", "F46 VIBES CLEAN", "F47 VIBES DRIFT", "F48 MARIMBA HALL", "F49 MARIMBA ECHO", "F50 WOOD PLAIN", "F51 WOOD LIGHT", "F52 TAPE WIDE",
     "F53 TAPE DARK", "F54 DREAM CLEAR", "F55 DREAM DEEP", "F56 RADIO LVL", "F57 RADIO LOW", "OFF", "ON", "OFF",
-    "ON",
+    "ON", "DEEP", "EVEN",
 };
 #endif

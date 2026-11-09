@@ -44,7 +44,7 @@
 #define SB_MAP_DEFAULT_HEX "00007f00007f"   /* the Move state's "map" (move_bridge.h MB_MAP_DEFAULT: every mapping off) */
 #define SB_PX_BASE (PR_NF + PR_NU)       /* the app's index of F20 (move_bridge.h MB_PX_BASE) */
 #define SB_NFACT (PR_NF + MB_PX_N)       /* the factory presets: 57 */
-#define SB_NOWN 5u                       /* the plugin's own parameters (params_map.h, ids 0x10000 + k) */
+#define SB_NOWN 6u                       /* the plugin's own parameters (params_map.h, ids 0x10000 + k) */
 #define SB_LEARN_OWN 200u                /* a learned own parameter's code: 200 + k (the app's ids are < P_COUNT) */
 _Static_assert(SB_NFACT == FRP_NFACTORY, "bridge.h FRP_NFACTORY: F01..F19 + F20..F57");
 _Static_assert(MB_PX_FIRST == PR_NF + 1u && SB_PX_BASE == 35u, "move_presets.h follows presets.c (F20 = index 35)");
@@ -164,6 +164,7 @@ static void sb_publish(void)
         sb.pub.held = (uint8_t)__builtin_popcount(h);
     }
     sb.pub.tune = (uint8_t)(set.tune + 50);
+    sb.pub.vresp = set.vel_resp;
     sb.pub.sustain = (uint8_t)(sus_held || sus_latched || sus_midi >= 64u);
     sb.pub.bypass = fx_bypass;
     sb.pub.edited = (uint8_t)ed;
@@ -211,12 +212,14 @@ static void sb_read_pub(frp_snap_t *snap, settings_t *s, uint8_t *base, uint16_t
  * TOUCH, KEY VEL, TUNE ...), the sound it was loaded as (snd_base), the Move's mappings (written off; ignored here),
  * the tempo set by hand; "engine" (the plugin's ENGINE until it became HQ only: always written "1", HQ, so an older
  * build loads the sound on its HQ engine; never read: a state with "0", CLASSIC, loads on HQ too). Then the
- * plugin's own keys (version "pv" 2; the Move ignores them, a state without them loads their defaults): "pgm" program
+ * plugin's own keys (version "pv" 2 and 3; the Move ignores them, a state without them loads their defaults): "pgm" program
  * changes, "tsrc" the tempo source, "ibpm" its BPM, "sall" / "sdiv" SYNC ALL, "sus" the SUSTAIN parameter, "byp" the
  * EFFECTS BYPASS parameter (a host parameter too: a host's saved value comes back; from 2026-11), "learn"
  * the learned CCs (128 bytes: code + 1 per CC), "pidx" / "pname" the preset playing, "upidx" / "upname" the undo
  * copy's. The Move's "rev" (a change counter its state_set never reads) is left out: a saved state depends on the
- * sound only, so saving, loading and saving again gives the same bytes. Version history: "v" 1 the Move's keys (the scaffold); "pv" 2 the plugin's. */
+ * sound only, so saving, loading and saving again gives the same bytes. Version history: "v" 1 the Move's keys (the scaffold); "pv" 2 the plugin's;
+ * "pv" 3 adds "win", the window's logical width, written by the instance (frodhes_clap.c) after these keys once the
+ * window was resized (a state without it keeps the window's size; older builds ignore it). */
 static const char SB_HEX[] = "0123456789abcdef";
 static int sb_hex_put(char *o, const void *p, uint32_t n)
 {
@@ -255,7 +258,7 @@ static int sb_state_get(char *buf, int n)
     o += sb_hex_put(o, &s, sizeof s);
     o += sprintf(o, "\",\"base\":\"");
     o += sb_hex_put(o, base, P_SLOTS);
-    o += sprintf(o, "\",\"map\":\"%s\",\"hand\":\"%u\",\"engine\":\"%u\",\"pv\":\"2\",\"pgm\":\"%u\",\"tsrc\":\"%u\","
+    o += sprintf(o, "\",\"map\":\"%s\",\"hand\":\"%u\",\"engine\":\"%u\",\"pv\":\"3\",\"pgm\":\"%u\",\"tsrc\":\"%u\","
                  "\"ibpm\":\"%u\",\"sall\":\"%u\",\"sdiv\":\"%u\",\"sus\":\"%u\",\"byp\":\"%u\",\"learn\":\"", SB_MAP_DEFAULT_HEX,
                  (unsigned)hand, 1u, snap.pgm, snap.tempo_src, snap.bpm10, snap.sync_all,
                  snap.sync_div, snap.sustain, snap.bypass);
@@ -320,7 +323,7 @@ static int sb_state_set(const char *j)   /* into the mailbox; sb_state_apply app
                             i < P_COUNT ? PARAMS[i].def : 0u;
     sb.st_hand = sb.st_set.bpm10;
     if (h && lh > 0 && lh < 6) { uint32_t x = 0; for (uint32_t i = 0; i < lh; i++) x = x * 10u + (uint32_t)(h[i] - '0'); sb.st_hand = (uint16_t)x; }
-    /* the plugin's keys ("pv" 2): each one missing or out of range loads its default */
+    /* the plugin's keys ("pv" 2, 3): each one missing or out of range loads its default */
     sb.st_cfg.pgm = (uint8_t)sb_json_int(j, "pgm", 0, 1, 1);
     sb.st_cfg.tempo_src = (uint8_t)sb_json_int(j, "tsrc", 0, 2, FRP_TEMPO_HOST);
     sb.st_cfg.bpm10 = (uint16_t)sb_json_int(j, "ibpm", 400, 2400, sb.st_hand >= 400u && sb.st_hand <= 2400u ? sb.st_hand : 1200);
@@ -529,10 +532,12 @@ static void sb_own_abs(uint32_t k, int32_t x)
     else if (k == FRP_ID_PRESET - FRP_ID_OWN0) { if (x >= 0 && x < (int32_t)SB_NFACT) sb_load_fact((uint32_t)x); }
     else if (k == FRP_ID_SUSTAIN - FRP_ID_OWN0) midi_cc(64u, x ? 127u : 0u);   /* the SUSTAIN latch: as a CC 64 */
     else if (k == FRP_ID_FX_BYPASS - FRP_ID_OWN0) midi_cc(111u, x ? 127u : 0u);  /* the FX button: as its CC 111 */
+    else if (k == FRP_ID_VRESP - FRP_ID_OWN0) vresp_set(x < 0 ? 0u : (uint32_t)x);   /* RESPONSE (ui.c S_VRESP; the
+                                                                                   * next strike) */
 }
 static int32_t sb_code_hi(uint32_t c)    /* a learn code's range */
 {
-    static const uint8_t OWN_HI[SB_NOWN] = { 0, 100, SB_NFACT - 1u, 1, 1 };
+    static const uint8_t OWN_HI[SB_NOWN] = { 0, 100, SB_NFACT - 1u, 1, 1, VRESP_N - 1u };
     return c < P_COUNT ? PARAMS[c].hi : c >= SB_LEARN_OWN && c < SB_LEARN_OWN + SB_NOWN ? OWN_HI[c - SB_LEARN_OWN] : 0;
 }
 static void sb_code_abs(uint32_t c, int32_t x)

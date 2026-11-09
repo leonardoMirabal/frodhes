@@ -5,6 +5,11 @@
   SUSTAIN latch and effects bypass; everything saved with the project. No window of its own yet; not in the
   downloads.
 
+- The plugin's window: PRESETS (click the preset's name: every preset, factory and user, grouped by instrument;
+  a click loads one, the keys stay live to try it), SAVE with a name field (REPLACE shown when it overwrites a user
+  preset), bypassed effects' knobs drawn inactive, the window's size saved with the project (state "pv" 3, older
+  states keep the size).
+
 ## Tested
 - Gate D (`tools/gate_d.py`): the plugin's renders equal the host build's, byte for byte, on every MIDI-driven test
   render (78), with random and 1-frame blocks and CLAP note events; HQ against the host build with HQ on; 48 kHz
