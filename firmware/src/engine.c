@@ -356,11 +356,26 @@ static void eng_end(int32_t *mono, uint32_t n)
 }
 #if FR_LAT_EV
 /* FR_LAT_EV (frodhes.c FR_LAT_HALF): between two interrupts of a block, the note-ons at the ring's head that the Rhodes
- * can start mid-block (rhodes.c rh_mid_strike); anything else, and the bar engine, at the next block's start */
+ * can start mid-block (rhodes.c rh_mid_strike), and VIBES / MARIMBA's on a free voice (bars.c bar_mid_one); anything
+ * else at the next block's start */
+static void bar_mid(uint32_t o, int last);
+static int bar_mid_one(uint32_t note, uint32_t vel);
+#ifdef DINGHY_HOST
+static uint32_t bar_h_mid;
+#endif
 static void eng_mid(uint32_t o)
 {
-    (void)o;
-    if (eng_swapping || eng_cur != ENG_RHODES || eng_want != ENG_RHODES) return;
+    if (eng_swapping || eng_want != eng_cur) return;
+    if (eng_cur == ENG_BARS) {                  /* (VIBES / MARIMBA: the bar type unchanged too) */
+        if (eng_want_sub != bar_sub) return;
+        bar_mid(o, o + FR_LAT_HALF >= engc_n);
+        while (eq_r != eq_w) {
+            uint32_t e = eq[eq_r & 31u];
+            if (e >> 28 != EV_NOTE_ON || !bar_mid_one(e >> 16 & 127u, e & 0xFFFFu)) break;
+            eq_r = eq_r + 1u;
+        }
+        return;
+    }
     rh_mid();
     while (eq_r != eq_w) {
         uint32_t e = eq[eq_r & 31u];
@@ -391,6 +406,7 @@ static void eng_host_report(void)                /* tests/host.c, at the end of 
     printf("ev_drop %u\n", (unsigned)(eq_drop + ev_drop));
 #if FR_LAT_EV
     printf("mid starts %u restrikes %u steals %u\n", (unsigned)rh_h_mid[0], (unsigned)rh_h_mid[1], (unsigned)rh_h_mid[2]);
+    printf("bar mid starts %u\n", (unsigned)bar_h_mid);
 #endif
     printf("rhodes steals %u\n", (unsigned)rh_h_steals);          /* tools/engine_ab.py */
     printf("bar starts max per block %u\n", (unsigned)bar_h_max_starts);   /* tests/py/test_bar_starts.py */

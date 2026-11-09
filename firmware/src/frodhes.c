@@ -134,9 +134,13 @@ _Static_assert(FR_LAT_TAIL == 0u || FR_LAT_TAIL == 32u, "FR_LAT_TAIL: 0 or 32 fr
  * 128: the 256-frame build's starts per frame), the rest the next block, in order, as the starts past BAR_NA always
  * did (a burst of more bar notes than that: 5.8 ms more per 7; the PC + 26-note burst, hil_cpu --worst: 14 starts in
  * one interrupt, 3260 us of 2902) */
-#define BAR_START_MAX (BAR_NA * FR_LAT_HALF / 256u)
+#ifndef BAR_START_MAX
+#define BAR_START_MAX (BAR_NA * FR_LAT_HALF / 256u)   /* (with FR_LAT_EV: per interrupt, bars.c bar_mid) */
+#endif
+#ifndef RH_START_MAX
 #define RH_START_MAX (RH_NA * FR_LAT_HALF / 256u)   /* the Rhodes' the same (rh_init), per interrupt: with
                                                  * FR_LAT_EV the rest start at the block's next interrupt on free voices */
+#endif
 #if FR_LAT_TAIL && !defined(DINGHY_HOST)
 /* the tail runs on core 1 after the interrupt, under the main loop: a flash slice (the flash off, the interrupts off)
  * waits for it to end, as the jobs run XIP code (fm1_core1.h: the flash goes off never under a job). Then the USB

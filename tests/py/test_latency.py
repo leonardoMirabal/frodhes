@@ -139,3 +139,38 @@ def test_ev_restrike_and_steal():
     m = re.search(r"mid starts (\d+) restrikes (\d+) steals (\d+)", r.out)
     assert m and all(int(x) > 0 for x in m.groups()), r.out[-400:]
     assert "ev_drop 0" in r.out
+
+
+@pytest.mark.parametrize("engine", [127, 0])                         # MARIMBA, VIBES
+def test_bar_ev_mid_start_pristine(engine):
+    """FR_LAT_EV on the bar engine (bars.c bar_mid_one): a note the block's start left waiting (the start cap: 1 here)
+    starts at the block's next interrupt, 128 frames sooner than the next block's start, with the same onset (no
+    click: the steepest step in its first 5 ms within 3 %) and the same envelope (50 ms windows over 1 s within
+    0.5 dB, RAW: the engine's own output; the contact noise's samples differ, its level not). Its contribution: the
+    pair minus A alone, in each build (sync mode: both notes at a block's start)"""
+    caps = ["-DBAR_START_MAX=1u", "-DRH_START_MAX=1u"]
+    be = build(os.path.join(ROOT, "build", "host", "lat_bar_ev1", "frodhes"),
+               ["-DFR_C1=1", "-DFR_LAT_HALF=128u", "-DFR_LAT_EV=1"] + caps)
+    bn = build(os.path.join(ROOT, "build", "host", "lat_bar_ev0", "frodhes"), ["-DFR_C1=1", "-DFR_LAT_HALF=128u"] + caps)
+    pre = [cc(20, 79, engine), cc(40, 119, 127)]
+    for a, b, vel in ((60, 67, 100), (48, 72, 127)):
+        pair = pre + [f"1000 midi 0x90 {a} {vel}", f"1000 midi 0x90 {b} {vel}"]
+        alone = pre + [f"1000 midi 0x90 {a} {vel}"]
+        c = {}
+        for tag, bb in (("e", be), ("n", bn)):
+            p, rp = wav(f"lat_bar_{tag}_{engine}_{b}_p", pair, bb, env={"FRODHES_LAT_SYNC": "1"}, end=2600)
+            q, _ = wav(f"lat_bar_{tag}_{engine}_{b}_a", alone, bb, env={"FRODHES_LAT_SYNC": "1"}, end=2600)
+            n = min(len(p), len(q))
+            c[tag] = (p[:n] - q[:n]).astype(float)
+            if tag == "e":
+                assert "bar mid starts 1" in rp.out, rp.out[-300:]
+        on = {t: np.flatnonzero(np.abs(x).sum(axis=1) > 0)[0] for t, x in c.items()}
+        assert abs((on["n"] - on["e"]) - 128) <= 4, on
+        x, y = c["e"][on["e"]:on["e"] + FS], c["n"][on["n"]:on["n"] + FS]
+        m = min(len(x), len(y)) // 2205 * 2205
+        st = lambda z: np.abs(np.diff(z[:220], axis=0)).max()
+        assert abs(st(x) - st(y)) <= 0.03 * st(y) + 2, (st(x), st(y))
+        lx = np.sqrt((x[:m] ** 2).sum(axis=1)).reshape(-1, 2205).mean(axis=1)
+        ly = np.sqrt((y[:m] ** 2).sum(axis=1)).reshape(-1, 2205).mean(axis=1)
+        k = ly > ly.max() * 1e-3
+        assert np.max(np.abs(20 * np.log10(lx[k] / ly[k]))) < 0.5
