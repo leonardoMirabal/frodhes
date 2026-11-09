@@ -15,6 +15,9 @@
 #     min: -4.0                    # optional: the allowed move (dB; cent: a ratio - 1)
 #     max: -2.0
 #     reason: "MARIMBA re-levelled to STAGE 77 (commit ...), measured -3.2 LU"
+#   keyup / decay whose window is exact zeros read "silent" (a state, never a dB value); a change silent <-> sounding
+#   is listed only by an entry naming the exact cell, its one metric and `silent: true` (the candidate is silent) or
+#   `silent: false` (the last release was; min / max then bound the candidate's own value, dB).
 #   `tools/release_diff.py --draft FILE` writes the unlisted moves in this form, each with reason TODO (which fails).
 #
 # 0.9.10 (the sonic fix): grouped by cause. Each entry's range is the measured move (fast + full grid, FM-1 and HQ
@@ -3270,14 +3273,12 @@ changes:
     reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.49 dB (A v40 itself -0.93 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
   - match: "fm1/MARIMBA/FX/B/k84v40"
     metric: "decay"
-    min: -198.267
-    max: -197.267
-    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -43.27 / -43.28 dBFS) reads decay 55.11 / 55.45 (-0.34); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
-  - match: "fm1/MARIMBA/FX/B/k84v40"
-    metric: "keyup"
-    min: -209.317
-    max: -208.317
-    reason: "resp-ab RESPONSE-B level-proportional: B v40 at A v58's output level (level -43.27 / -43.28 dBFS) reads keyup -208.82 / -208.74 (-0.08); the move against v0.9.9 is its v40 note silent (under 1 LSB / the gate) where B still sounds"
+    silent: false
+    min: 54.610
+    max: 55.610
+    reason: "int16 floor: B = A x map, the hold's last 150 ms reach 0 later (v0.9.9's v40 silent there; B's last
+      nonzero -93 ms re the key-up, 1-LSB steps); B v40 at A v58's output level reads decay 55.11 / 55.45;
+      build/sonic/resp-ab/mar/tails_lsb.txt, mar/nogate_cmp.py. Coordinator sign-off 2026-11-09"
   - match: "fm1/MARIMBA/FX/B/k84v40"
     metric: "level"
     min: 3.070
@@ -3900,16 +3901,18 @@ changes:
     reason: "resp-ab RESPONSE-B level map: LIGHT at v40 = FULL x 32768 / RH_DYN_V[40] (bars.c bar_lt_g), B - A here +4.50 dB (A v40 itself -0.00 against v0.9.9: the kept compressor); the same tone: tests/py/test_bars_response.py"
   - match: "fm1/MARIMBA/FX/B/k69v40"
     metric: "keyup"
-    min: 168.310
-    max: 169.310
+    silent: false
+    min: -46.212
+    max: -45.212
     reason: "int16 floor: B = A x map, the tail reaches 0 later (A v40 reaches 0 at -23 ms, B at +88 ms, 1-LSB steps;
-      no gate: GATE_LO_BARS 0 renders byte-identical; build/sonic/resp-ab/mar/tails_lsb.txt, mar/nogate_cmp.py).
-      Coordinator sign-off 2026-11-09"
+      v0.9.9 silent 80..280 ms after the key-up; no gate: GATE_LO_BARS 0 renders byte-identical;
+      build/sonic/resp-ab/mar/tails_lsb.txt, mar/nogate_cmp.py). Coordinator sign-off 2026-11-09"
   - match: "hq/MARIMBA/FX/B/k84v40"
     metric: "keyup"
-    min: -7.000
-    max: 164.700
+    silent: false
+    min: -43.360
+    max: -42.360
     reason: "int16 floor: B = A x map, the tail reaches 0 later (A v40 reaches 0 at -2 ms, B at +75 ms, 1-LSB steps;
-      no gate: GATE_LO_BARS 0 renders within 2 LSB; the 4 shifts read -213.5 / -213.6 / -42.9 / -42.8, so the median
-      swings between them: the window spans both; build/sonic/resp-ab/mar/tails_lsb.txt, mar/nogate_cmp.py).
-      Coordinator sign-off 2026-11-09"
+      v0.9.9 silent 80..280 ms after the key-up; the median of the 2 shifts with a tail, -42.9 / -42.8, the other 2
+      silent; no gate: GATE_LO_BARS 0 renders within 2 LSB; build/sonic/resp-ab/mar/tails_lsb.txt,
+      mar/nogate_cmp.py). Coordinator sign-off 2026-11-09"

@@ -125,3 +125,34 @@ def test_harmonic_floor_bins_under_minus_100_dbfs_exempt():
     base = cells(h1=-50.0, H5=-50.0)                          # (a bin under -60 re H1 in both is no move anyway)
     assert not [f for f in rd.judge(cells(h1=-46.0, H5=-56.0), base, [])[0] if f[2] == "H5"]   # -102 dBFS
     assert [f for f in rd.judge(cells(h1=-30.0, H5=-56.0), base, [])[0] if f[2] == "H5"]       # -86 dBFS
+
+
+def test_a_silent_key_up_window_is_a_state_not_a_db_value():
+    """the 80..280 ms after the key-up all exact zeros reads "silent", never the -300 dBFS of zeros; an effects-on
+    cell is the median of the shifts that sound (hq MARIMBA FX B k84v40: -213, -214, -43, -43 read -128 as a dB
+    median); silent in both passes, a change silent <-> sounding fails unless an exact-cell `silent:` entry lists it,
+    and a tail that sounds where the last release was silent still has the +0.5 dB ceiling"""
+    import numpy as np
+    x = np.zeros(rd.FS)
+    x[:rd.FS // 2] = 100.0
+    assert rd.keyup_of(x, rd.FS // 2) == rd.SILENT_TAIL
+    x[rd.FS // 2 + int(0.1 * rd.FS)] = 1.0                       # one LSB in the window: it sounds
+    assert isinstance(rd.keyup_of(x, rd.FS // 2), float)
+    lab = "k84v40"
+    runs = [{lab: {"keyup": v, "level": -40.0}} for v in (rd.SILENT_TAIL, rd.SILENT_TAIL, -42.9, -42.8)]
+    assert abs(rd.merge_shifts(runs)[lab]["keyup"] + 42.85) < 1e-9
+    assert rd.merge_shifts([{lab: {"keyup": rd.SILENT_TAIL}}] * 4)[lab]["keyup"] == rd.SILENT_TAIL
+    s = rd.SILENT_TAIL
+    base = cells(keyup=s)
+    assert rd.judge(cells(keyup=s), base, [])[0] == []
+    assert rd.judge(cells(keyup=-12.0), base, [])[0]                     # silent -> sounding: unlisted
+    e = {"match": f"{CID}/k33v127", "metric": "keyup", "silent": False, "reason": "the tail rings on (commit x)"}
+    assert rd.judge(cells(keyup=-12.0), base, [e])[0] == []
+    assert rd.judge(cells(keyup=-12.0), base, [dict(e, match=f"{CID}/k33*")])[0]   # an exact cell only
+    f = rd.judge(cells(keyup=1.0), base, [e])[0]
+    assert any(x[6].startswith("CEILING") for x in f)                    # louder after the key-up: still a ceiling
+    assert verdict(cells(keyup=s))                                       # sounding -> silent: unlisted
+    assert verdict(cells(keyup=s), [dict(e, silent=True)]) == []
+    assert rd.judge(cells(keyup=-12.0), base, [dict(e, min=-11.5, max=-10.5)])[0]   # outside its min / max
+    assert rd.judge(cells(decay=s), cells(decay=s), [])[0] == []         # decay: the hold's end exact zeros, the same
+    assert verdict(cells(decay=s))
