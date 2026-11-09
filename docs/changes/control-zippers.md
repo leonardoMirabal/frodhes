@@ -9,6 +9,8 @@
 - REVERB PLATE: turning SIZE under a ringing tail is smooth: the cross-fade between the old and new reads moves every
   sample (it moved in eight steps per read, a faint buzz while SIZE turned). On the HQ and two-core builds the
   cross-fade takes 0.5 s instead of 0.25 s, so the tail no longer bends in pitch while SIZE turns.
+- CHORUS / PHASER: switching between them (CC 85) or either on or off now fades over about 0.1 s instead of 46 ms. The
+  phaser now sits a few dB under the chorus, and the faster fade put that drop into one step.
 - REVERB TYPE: a new TYPE no longer starts on a step. What goes into it fades in over 6 ms (it started at full level,
   in the middle of a ringing chord's waveform; INFINITE after PLATE was grainy for its first 0.2 s).
 

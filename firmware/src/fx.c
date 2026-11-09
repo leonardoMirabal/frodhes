@@ -105,11 +105,18 @@ static inline __attribute__((always_inline)) int32_t mulq15(int32_t a, int32_t b
                                                  * before it is read) */
 #endif
 static int32_t xf_d[2][256] FX_XFD_SEC;
-static inline int32_t xf_next(int32_t w, int on, uint32_t n)   /* the share at this block's end */
+#ifndef XF_STEP_CP
+#define XF_STEP_CP 8                            /* the chorus and the phaser: 92 ms (0.9.10: the phaser, trimmed to
+                                                 * the chord's peak, sits up to 5 dB under the chorus on its swing;
+                                                 * CHO/PHA chorus -> phaser in 46 ms dropped 2.8 dB in one 23 ms
+                                                 * window: the control sweep's jump 1.59, now 0.93) */
+#endif
+static inline int32_t xf_next_s(int32_t w, int on, uint32_t n, int32_t st)   /* the share at this block's end */
 {
-    int32_t s = XF_STEP * (int32_t)n;
+    int32_t s = st * (int32_t)n;
     return on ? (w + s > 32768 ? 32768 : w + s) : (w - s < 0 ? 0 : w - s);
 }
+#define xf_next(w, on, n) xf_next_s(w, on, n, XF_STEP)
 /* x = d + (x - d) w, w ramping from w0 to w1 over the n samples (n = 256: steps of 4096, exact ends) */
 __attribute__((noinline)) static void xf_blend(int32_t *x, const int32_t *d, uint32_t n, int32_t w0, int32_t w1)
 {
@@ -123,9 +130,10 @@ __attribute__((noinline)) static void xf_blend(int32_t *x, const int32_t *d, uin
 /* one helper pair for every effect's on / off (shared code: the flash is tight). xf_pre: the share at this block's
  * end and, while it moves, the dry copy of L (and of R; R = 0: mono) into xf_d; xf_post: the blend, L (and R) against
  * dl (dr) */
-__attribute__((noinline)) static int32_t xf_pre(int32_t w, int on, const int32_t *L, const int32_t *R, uint32_t n)
+__attribute__((noinline)) static int32_t xf_pre(int32_t w, int on, const int32_t *L, const int32_t *R, uint32_t n,
+                                                int32_t st)
 {
-    int32_t w1 = xf_next(w, on, n);
+    int32_t w1 = xf_next_s(w, on, n, st);
     if (w != 32768 || w1 != 32768) { memcpy(xf_d[0], L, n * sizeof *L); if (R) memcpy(xf_d[1], R, n * sizeof *R); }
     return w1;
 }
@@ -152,9 +160,10 @@ static const int32_t *fxc_mono;                          /* the block's dry voic
 #define FXC_1 (fxc_o == 0u)
 #define FXC_Z (fxc_e == fxc_n)
 /* xf_pre / xf_post for a chunk: the dry copy of the chunk, the blend's ramp from the block's start */
-__attribute__((noinline)) static int32_t xf_pre_c(int32_t w, int on, const int32_t *L, const int32_t *R, uint32_t n)
+__attribute__((noinline)) static int32_t xf_pre_c(int32_t w, int on, const int32_t *L, const int32_t *R, uint32_t n,
+                                                  int32_t st)
 {
-    int32_t w1 = xf_next(w, on, n);
+    int32_t w1 = xf_next_s(w, on, n, st);
     uint32_t o = fxc_o, k = (fxc_e - o) * sizeof *L;
     if (w != 32768 || w1 != 32768) { memcpy(xf_d[0] + o, L + o, k); if (R) memcpy(xf_d[1] + o, R + o, k); }
     return w1;
@@ -1064,7 +1073,7 @@ FX_RAM __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, u
         if (!ph_w) memset(&ph_st, 0, sizeof ph_st);
         if (ph_cq < 0) { ph_cq = ct; ph_gq = gt; ph_dq = depth << 8; ph_fq = fbk; ph_apv = 0; }
     }
-    w1 = FR_FAR(xf_pre_c)(ph_w, on, L, R, n);
+    w1 = FR_FAR(xf_pre_c)(ph_w, on, L, R, n, XF_STEP_CP);
     for (sb = fxc_o; sb < fxc_e; sb += 32u) {
 #else
     if (!on && !ph_w) { ph_cq = -1; ph_ph += inc * n; return; }   /* off and faded out: the phaser rests, its LFO
@@ -1076,7 +1085,7 @@ FX_RAM __attribute__((noinline)) static void fx_phaser(int32_t *L, int32_t *R, u
         memset(&ph_st, 0, sizeof ph_st);
     }
     if (ph_cq < 0) { ph_cq = ct; ph_gq = gt; ph_dq = depth << 8; ph_fq = fbk; ph_apv = 0; }   /* (switched on: at once) */
-    w1 = FR_FAR(xf_pre)(ph_w, on, L, R, n);
+    w1 = FR_FAR(xf_pre)(ph_w, on, L, R, n, XF_STEP_CP);
     for (sb = 0; sb < n; sb += 32u) {
 #endif
         int32_t a[2], a0[2], ksh, pg = FR_FAR(ph_glide)(ct, gt, depth << 8, fbk, &ksh, a, a0);
@@ -1237,7 +1246,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
             cho_el = cho_pos(cp_ph, cho_swq); cho_er = cho_pos(cp_ph + 0x40000000u, cho_swq);
         }
     }
-    w1 = xf_pre_c(cho_xw, con, L, R, n);
+    w1 = xf_pre_c(cho_xw, con, L, R, n, XF_STEP_CP);
     {   /* the chunk's line first, then its taps (they read 153 .. 465 samples back: written in the chunks before) */
         uint32_t p = 0u - cho_w;
         const int32_t *l = L + fxc_o, *r = R + fxc_o, *le = L + fxc_e;
@@ -1272,7 +1281,7 @@ static void fx_chorus(int32_t *L, int32_t *R, uint32_t n)   /* (in fx_delay's fu
                                                         /* (from rest: the line held what it held when it stopped;
                                                          * cleared, then two blocks dry while it fills: the taps read
                                                          * 153 .. 465 samples back; the mix at once: it is faded in) */
-    w1 = xf_pre(cho_xw, on && !cho_fill, L, R, n);     /* (filling: cho_xw is 0, it stays 0) */
+    w1 = xf_pre(cho_xw, on && !cho_fill, L, R, n, XF_STEP_CP);     /* (filling: cho_xw is 0, it stays 0) */
     if (cho_fill) cho_fill--;
     if (cho_el < 0) {                                   /* (the taps' start) */
         cho_swq = sw << 8;
@@ -1474,7 +1483,7 @@ static void fx_comp(int32_t *m, uint32_t n)
             cmp_hd = hd;
         }
     }
-    w1 = xf_pre_c(cmp_xw, on, m, 0, n);
+    w1 = xf_pre_c(cmp_xw, on, m, 0, n, XF_STEP);
     for (sb = fxc_o; sb < fxc_e; sb += 16u) {
         int32_t g0 = cmp_g, g1, gr, step, hd = cmp_hd;
         for (j = sb; j < sb + 16u; j++) CMP_DET(iabs(m[j]) << 8, hd);
@@ -1515,7 +1524,7 @@ static void fx_comp(int32_t *m, uint32_t n)
                                                        * the bug hunt, 2026-10-25), under the 46 ms crossfade */
         cmp_from(m, n, mk, thr, slope);
     }
-    w1 = xf_pre(cmp_xw, on, m, 0, n);                 /* on / off: a crossfade, the compressor running (off was a
+    w1 = xf_pre(cmp_xw, on, m, 0, n, XF_STEP);               /* on / off: a crossfade, the compressor running (off was a
                                                        * gain step to unity in one sample, on one over 16 samples) */
     for (sb = 0; sb < n; sb += 16u) {
         int32_t g0 = cmp_g, g1, gr, step, hd = cmp_hd;
