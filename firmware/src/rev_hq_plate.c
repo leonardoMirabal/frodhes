@@ -233,13 +233,19 @@ static void pl_ctl(rev_plate_t *s, const rev_ctl_t *c)
         s->cdamp = c->damp;
     }
 }
-/* a SIZE fade: n samples of the old reads (q) x a plus the new (p) x b (Q14, this block's), into t */
+/* a SIZE fade: n samples of the old reads (q) x a plus the new (p) x b (Q14), into t; the weights move sample by sample
+ * from this block's start (a, b) toward the next block's (a1, b1), 1/RQ_NC of the way a sample (0.9.10: held for the
+ * block, the fade was a staircase, a step every control block: rev_plate.c's d2 spikes under a SIZE sweep). Sample 0
+ * has the block's own weights, as before */
+_Static_assert(RQ_NC == 32u, "pl_xblend's steps: 1/32 a sample");
 static FX_RAM __attribute__((noinline)) void pl_xblend(int16_t *t, const int16_t *q, const int16_t *p, uint32_t n,
-                                                       int32_t a, int32_t b)
+                                                       int32_t a, int32_t b, int32_t a1, int32_t b1)
 {
     uint32_t i;
-    for (i = 0; i < n; i++)
-        t[i] = (int16_t)hl_c16((q[i] * a + p[i] * b) >> 14);
+    int32_t da = a1 - a, db = b1 - b;
+    a <<= 5, b <<= 5;
+    for (i = 0; i < n; i++, a += da, b += db)
+        t[i] = (int16_t)hl_c16((q[i] * (a >> 5) + p[i] * (b >> 5)) >> 14);
 }
 /* the fade's two weights at w (Q14, the new's share): (1 - w, w) x (1 + 0.375 w (1 - w)), +0.8 dB at the middle: the
  * old and new reads are alike after a small SIZE step, unrelated after a big one (a plain 1 - w, w sank the tail
@@ -405,14 +411,15 @@ static __attribute__((noinline)) void rev_plate_run(rev_plate_t *s, const int32_
                                                          * and its new blended (a segment before the halves write:
                                                          * every delay >= 45 > a block) */
         uint32_t xk = s->xk, n = RQ_NC;
-        int32_t xa, xb;
+        int32_t xa, xb, xa1, xb1;
         const int16_t *p = b + ((w + s->tk[xk]) & PL_M);
         if (!(xk & 3u) && xk < 8u) {                    /* (0 / 4: modulated, the excursion on the new delay too) */
             uint32_t dm = xk ? dm1 : dm0, dc = xk ? d4 : d0;
             p = b + ((w + PL_TOP[xk] - ((dm >> 8) - dc + s->d[xk])) & PL_M), n = RQ_NC + 1u;
         }
         pl_xw(s->xw, &xa, &xb);
-        FR_FAR(pl_xblend)(pl_xt, t[xk], p, n, xa, xb);
+        pl_xw(s->xw + (int32_t)RQ_NC * PL_XS, &xa1, &xb1);   /* (the next block's: 16384 at the site's end) */
+        FR_FAR(pl_xblend)(pl_xt, t[xk], p, n, xa, xb, xa1, xb1);
         t[xk] = pl_xt;
     }
     for (k = 0; k < 8u; k++)

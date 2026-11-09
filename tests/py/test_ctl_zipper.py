@@ -58,3 +58,9 @@ def test_hall_size_auto_glides(binary):
         assert flip_click("rev HALL SIZE", a, b, binary, wet=True) <= 1.5, (a, b)
     z, zw = sweep_zipper("rev HALL SIZE", binary)
     assert max(z, zw) <= 1.5, (z, zw)
+
+
+def test_plate_size_fade_is_smooth(binary):
+    """PLATE SIZE swept: the reads' cross-fade moves every sample (a staircase of 8 steps a site: 2.59x, wet 3.35x)"""
+    z, zw = sweep_zipper("rev PLATE SIZE", binary)
+    assert z <= 2.0 and zw <= 2.0, (z, zw)
