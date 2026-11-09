@@ -2512,16 +2512,24 @@ FX_RAM __attribute__((noinline)) static void fx_spread_dry(const int32_t *mono, 
 /* the bypass' crossfade with SPREAD on (0.9.6, BUGHUNT #25: it faded the wet toward the plain mono, but the bypassed
  * dry is M +- S: SPREAD's side stepped in at the fade's end, 18x on three notes): the same fade toward M + S / M - S;
  * the fade's gain (wet) out. Out of line: fx_out's loops as before */
+/* the fade: 46 ms (FX_XF_STEP 16 a sample, 2048 samples), a smoothstep gain (0.9.10; was 5.8 ms, linear). Turning the
+ * effects back on brings in what they hold at once: a delay echo mid-attack came in within 5.8 ms as a click (monkey
+ * focus-xfade seed 99, the FX button: 10.7x differential, ring -44 dB; 0.9.9 6.3x); over 46 ms 4.3x, and no kink at
+ * the fade's ends (the smoothstep's slope is 0 there) */
+#ifndef FX_XF_STEP
+#define FX_XF_STEP 16
+#endif
 FX_RAM __attribute__((noinline)) static int32_t fx_xf_side(const int32_t *mono, const int32_t *sd, uint32_t sb, int32_t wet,
                                                      int byp)
 {
     uint32_t j;
     for (j = sb; j < sb + LK; j++) {
-        if (byp ? wet > 0 : wet < 32768) wet += byp ? -128 : 128;
+        if (byp ? wet > 0 : wet < 32768) wet += byp ? -FX_XF_STEP : FX_XF_STEP;
         if (wet != 32768) {
             int32_t dl = mono[j] + sd[j - sb], dr = mono[j] - sd[j - sb];
-            fx_L[j] = (int32_t)(((int64_t)fx_L[j] * wet + (int64_t)dl * (32768 - wet)) >> 15);
-            fx_R[j] = (int32_t)(((int64_t)fx_R[j] * wet + (int64_t)dr * (32768 - wet)) >> 15);
+            int32_t g = (int32_t)(((int64_t)wet * wet >> 15) * (3 * 32768 - 2 * wet) >> 15);   /* smoothstep */
+            fx_L[j] = (int32_t)(((int64_t)fx_L[j] * g + (int64_t)dl * (32768 - g)) >> 15);
+            fx_R[j] = (int32_t)(((int64_t)fx_R[j] * g + (int64_t)dr * (32768 - g)) >> 15);
         }
     }
     return wet;
@@ -2576,7 +2584,7 @@ FX_RAM __attribute__((noinline)) static void fx_out(const int32_t *mono, int32_t
 #endif
         int32_t pn = 0, tgt, g0 = lk_g, i, *po = out + 2u * sb;   /* (po: this sub-block's output, one late) */
         /* first the bypass, then the DC blocker and LEVEL (the limiter's peak scan of this sub-block is the only
-         * reader): the bypass crossfades in 5.8 ms (the effects keep running, their tails stay current); (0.8: a +6 dB
+         * reader): the bypass crossfades in 46 ms (fx_xf_side; the effects keep running, their tails stay current); (0.8: a +6 dB
          * push here put single notes on the limiter: everything squashed; the jack gain is APP_OUT_SHIFT). Each sample
          * goes through them independently, so a pass per stage is the one fused loop sample for sample (0.9.5: that
          * loop spilled, 88 instructions a sample with LEVEL off unity; the bypass pass, then 30 / 36 a sample) */
