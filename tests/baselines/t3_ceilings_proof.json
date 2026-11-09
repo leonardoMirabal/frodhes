@@ -1,0 +1,320 @@
+{
+"what": "track 3's other ceiling proofs (2026-11-09)",
+"against": "v0.9.9",
+"candidate": "1e60d12f",
+"velocity_map": [
+{
+"cell": "fm1/MARIMBA/FX/B/k89v20",
+"metric": "grain",
+"value": -99.52,
+"value_099": -103.53,
+"level": -46.04,
+"level_099": -54.49,
+"a_v40_level": -49.81,
+"a_v64_level": -44.11,
+"a_v40_value": -99.95,
+"a_v64_value": -99.71,
+"note_dies_in_hold": true
+},
+{
+"cell": "fm1/MARIMBA/FXOFF/B/k81v20",
+"metric": "clk",
+"value": 205.11,
+"value_099": 199.08,
+"level": -43.99,
+"level_099": -52.41,
+"a_v40_level": -47.63,
+"a_v64_level": -41.74,
+"a_v40_value": 202.28,
+"a_v64_value": 207.6,
+"note_dies_in_hold": true
+},
+{
+"cell": "fm1/MARIMBA/FXOFF/B/k89v20",
+"metric": "clk",
+"value": 207.23,
+"value_099": 200.0,
+"level": -47.53,
+"level_099": -55.96,
+"a_v40_level": -51.45,
+"a_v64_level": -45.95,
+"a_v40_value": 203.52,
+"a_v64_value": 208.3,
+"note_dies_in_hold": true
+},
+{
+"cell": "fm1/MARIMBA/RAW/B/k81v20",
+"metric": "clk",
+"value": 206.44,
+"value_099": 200.0,
+"level": -41.76,
+"level_099": -50.75,
+"a_v40_level": -45.38,
+"a_v64_level": -39.51,
+"a_v40_value": 204.61,
+"a_v64_value": 209.25,
+"note_dies_in_hold": true
+},
+{
+"cell": "fm1/MARIMBA/RAW/B/k89v20",
+"metric": "clk",
+"value": 209.25,
+"value_099": 201.58,
+"level": -45.29,
+"level_099": -54.28,
+"a_v40_level": -49.31,
+"a_v64_level": -43.89,
+"a_v40_value": 205.11,
+"a_v64_value": 210.37,
+"note_dies_in_hold": true
+},
+{
+"cell": "hq/F14/PRESET/B/k67v20",
+"metric": "clk",
+"value": 15.47,
+"value_099": 8.3,
+"level": -31.16,
+"level_099": -38.29,
+"a_v40_level": -37.07,
+"a_v64_level": -33.06,
+"a_v40_value": 15.26,
+"a_v64_value": 20.49,
+"note_dies_in_hold": false
+},
+{
+"cell": "hq/F15/PRESET/B/k89v20",
+"metric": "clk",
+"value": 16.67,
+"value_099": 10.24,
+"level": -48.65,
+"level_099": -54.28,
+"a_v40_level": -52.38,
+"a_v64_level": -46.71,
+"a_v40_value": 13.38,
+"a_v64_value": 18.76,
+"note_dies_in_hold": false
+},
+{
+"cell": "hq/MARIMBA/FX/B/k81v20",
+"metric": "clk",
+"value": 15.77,
+"value_099": 8.17,
+"level": -42.33,
+"level_099": -50.73,
+"a_v40_level": -46.03,
+"a_v64_level": -40.11,
+"a_v40_value": 13.18,
+"a_v64_value": 17.91,
+"note_dies_in_hold": false
+},
+{
+"cell": "hq/MARIMBA/FX/B/k89v20",
+"metric": "clk",
+"value": 19.0,
+"value_099": 12.39,
+"level": -46.22,
+"level_099": -54.66,
+"a_v40_level": -49.95,
+"a_v64_level": -44.28,
+"a_v40_value": 15.8,
+"a_v64_value": 21.09,
+"note_dies_in_hold": false
+},
+{
+"cell": "hq/MARIMBA/FXOFF/B/k81v20",
+"metric": "clk",
+"value": 206.44,
+"value_099": 200.0,
+"level": -42.47,
+"level_099": -50.9,
+"a_v40_level": -46.12,
+"a_v64_level": -40.23,
+"a_v40_value": 204.61,
+"a_v64_value": 208.94,
+"note_dies_in_hold": true
+},
+{
+"cell": "hq/MARIMBA/FXOFF/B/k89v20",
+"metric": "clk",
+"value": 208.63,
+"value_099": 202.28,
+"level": -46.09,
+"level_099": -54.53,
+"a_v40_level": -49.97,
+"a_v64_level": -44.49,
+"a_v40_value": 205.58,
+"a_v64_value": 210.37,
+"note_dies_in_hold": true
+},
+{
+"cell": "hq/MARIMBA/RAW/B/k81v20",
+"metric": "clk",
+"value": 206.44,
+"value_099": 200.0,
+"level": -41.76,
+"level_099": -50.75,
+"a_v40_level": -45.38,
+"a_v64_level": -39.51,
+"a_v40_value": 204.61,
+"a_v64_value": 209.25,
+"note_dies_in_hold": true
+},
+{
+"cell": "hq/MARIMBA/RAW/B/k89v20",
+"metric": "clk",
+"value": 209.25,
+"value_099": 201.58,
+"level": -45.36,
+"level_099": -54.36,
+"a_v40_level": -49.34,
+"a_v64_level": -43.94,
+"a_v40_value": 205.11,
+"a_v64_value": 210.63,
+"note_dies_in_hold": true
+}
+],
+"decay0_h2_matched_h1": [
+{
+"cell": "fm1/DYNO/DECAY0/A/k93v40",
+"metric": "H2",
+"h1_rel_now": -0.57,
+"h2_re_h1_now": -33.39,
+"h2_re_h1_099": -36.53,
+"h2_re_h1_099_at_matched_h1": -30.44,
+"matched_move": -2.95,
+"in_range": true
+},
+{
+"cell": "fm1/DYNO/DECAY0/A/k93v64",
+"metric": "H2",
+"h1_rel_now": 4.06,
+"h2_re_h1_now": -27.49,
+"h2_re_h1_099": -30.68,
+"h2_re_h1_099_at_matched_h1": -19.95,
+"matched_move": -7.54,
+"in_range": true
+},
+{
+"cell": "fm1/FELT/DECAY0/A/k93v110",
+"metric": "H2",
+"h1_rel_now": 3.93,
+"h2_re_h1_now": -33.23,
+"h2_re_h1_099": -36.35,
+"h2_re_h1_099_at_matched_h1": -25.78,
+"matched_move": -7.44,
+"in_range": true
+},
+{
+"cell": "fm1/FELT/DECAY0/A/k93v64",
+"metric": "H2",
+"h1_rel_now": 4.05,
+"h2_re_h1_now": -44.58,
+"h2_re_h1_099": -47.81,
+"h2_re_h1_099_at_matched_h1": -37.11,
+"matched_move": -7.47,
+"in_range": true
+},
+{
+"cell": "fm1/ST77/DECAY0/A/k93v64",
+"metric": "H2",
+"h1_rel_now": 4.06,
+"h2_re_h1_now": -34.1,
+"h2_re_h1_099": -37.32,
+"h2_re_h1_099_at_matched_h1": -26.61,
+"matched_move": -7.5,
+"in_range": true
+},
+{
+"cell": "fm1/SUIT/DECAY0/A/k93v64",
+"metric": "H2",
+"h1_rel_now": 4.06,
+"h2_re_h1_now": -32.16,
+"h2_re_h1_099": -35.28,
+"h2_re_h1_099_at_matched_h1": -24.62,
+"matched_move": -7.53,
+"in_range": true
+}
+],
+"absolute_energy": [
+{
+"cell": "fm1/F11/PRESET/A/k45v20",
+"metric": "inh",
+"rel": -26.53,
+"rel_099": -37.99,
+"h1": -63.09,
+"h1_099": -53.84,
+"absolute": -89.63,
+"absolute_099": -91.82
+},
+{
+"cell": "fm1/F11/PRESET/A/k45v40",
+"metric": "inh",
+"rel": -35.34,
+"rel_099": -41.73,
+"h1": -53.93,
+"h1_099": -49.27,
+"absolute": -89.27,
+"absolute_099": -91.0
+},
+{
+"cell": "fm1/F11/PRESET/B/k93v20",
+"metric": "inh",
+"rel": -22.09,
+"rel_099": -26.95,
+"h1": -67.75,
+"h1_099": -65.46,
+"absolute": -89.84,
+"absolute_099": -92.41
+},
+{
+"cell": "fm1/MARIMBA/DECAY0/A/k89v40",
+"metric": "inh",
+"rel": 33.04,
+"rel_099": 29.42,
+"h1": -139.3,
+"h1_099": -137.5,
+"absolute": -106.26,
+"absolute_099": -108.08
+},
+{
+"cell": "hq/F11/PRESET/A/k45v20",
+"metric": "inh",
+"rel": -26.51,
+"rel_099": -38.67,
+"h1": -62.94,
+"h1_099": -53.64,
+"absolute": -89.45,
+"absolute_099": -92.31
+},
+{
+"cell": "hq/F11/PRESET/A/k45v40",
+"metric": "inh",
+"rel": -36.19,
+"rel_099": -42.62,
+"h1": -53.73,
+"h1_099": -48.99,
+"absolute": -89.91,
+"absolute_099": -91.62
+},
+{
+"cell": "hq/F11/PRESET/A/k93v40",
+"metric": "inh",
+"rel": -21.89,
+"rel_099": -32.03,
+"h1": -67.54,
+"h1_099": -58.94,
+"absolute": -89.43,
+"absolute_099": -90.97
+},
+{
+"cell": "hq/F11/PRESET/B/k93v20",
+"metric": "inh",
+"rel": -22.34,
+"rel_099": -27.15,
+"h1": -67.55,
+"h1_099": -63.75,
+"absolute": -89.88,
+"absolute_099": -90.9
+}
+]
+}
