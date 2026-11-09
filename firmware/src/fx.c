@@ -1352,11 +1352,14 @@ static uint32_t cmp_ds = 0x9E3779B9u;                 /* the gain's dither (2026
                                                         * keeps the compressor). Now rounded over a uniform 1 LSB (RPDF:
                                                         * the error no longer follows the wave, H3 -64.9; TPDF as fx_out's
                                                         * LEVEL read the same with 0.4 dB more noise on a quiet bass note).
-                                                        * Only over 32 LSB (-60 dBFS): under it the cut as before, so a
-                                                        * tail reaches exact zero as it did (dithered down to 0 LSB, the
-                                                        * reverb's int16-floor tails of MARIMBA v40 stayed at +-1 LSB:
-                                                        * release_diff's key-up windows no longer silent; 16 LSB left one
-                                                        * such cell, 64 another: these floor cells are borderline) */
+                                                        * Only from 32 LSB in (-60 dBFS; one unsigned compare on the
+                                                        * input): under it the cut as before, so a tail reaches exact
+                                                        * zero as it did (dithered down to 0 LSB, the reverb's int16-floor
+                                                        * tails of MARIMBA v40 stayed at +-1 LSB: three key-up windows no
+                                                        * longer silent). Whether one such cell's last LSBs land on zero
+                                                        * is a coin flip on any change (16 / 24 / 32 / 48 / 64 LSB each
+                                                        * flip a different one): expected_changes lists the one at 32.
+                                                        * The loop: 18 instructions a sample against 8 (tools/drive_insns.py) */
 static int32_t cmp_hd, cmp_gs;                         /* (cmp_gs: the reduction, its release smoothed, log2 Q12 x 16) */
 #ifndef CMP_KRM
 #define CMP_KRM 1
@@ -1509,9 +1512,8 @@ static void fx_comp(int32_t *m, uint32_t n)
         step = (g1 - g0) / 16;
         for (j = sb; j < sb + 16u; j++) {
             g0 += step;
-            cmp_ds = cmp_ds * 1664525u + 1013904223u;
-            { int64_t p_ = (int64_t)m[j] * g0;            /* (dithered over 32 LSB; under it the cut as before) */
-              m[j] = (int32_t)((p_ + ((p_ >= (32 << 16) || p_ <= -(32 << 16)) ? (int32_t)(cmp_ds >> 16) : 0)) >> 16); }
+            cmp_ds = cmp_ds * 1664525u + 1013904223u;     /* (dithered from 32 LSB in; under it the cut as before) */
+            m[j] = (int32_t)(((int64_t)m[j] * g0 + ((uint32_t)(m[j] + 31) > 62u ? (int32_t)(cmp_ds >> 16) : 0)) >> 16);
         }
         cmp_g = g1;
     }
@@ -1553,9 +1555,8 @@ static void fx_comp(int32_t *m, uint32_t n)
         step = (g1 - g0) / 16;
         for (j = sb; j < sb + 16u && j < n; j++) {
             g0 += step;
-            cmp_ds = cmp_ds * 1664525u + 1013904223u;
-            { int64_t p_ = (int64_t)m[j] * g0;            /* (dithered over 32 LSB; under it the cut as before) */
-              m[j] = (int32_t)((p_ + ((p_ >= (32 << 16) || p_ <= -(32 << 16)) ? (int32_t)(cmp_ds >> 16) : 0)) >> 16); }
+            cmp_ds = cmp_ds * 1664525u + 1013904223u;     /* (dithered from 32 LSB in; under it the cut as before) */
+            m[j] = (int32_t)(((int64_t)m[j] * g0 + ((uint32_t)(m[j] + 31) > 62u ? (int32_t)(cmp_ds >> 16) : 0)) >> 16);
         }
         cmp_g = g1;
     }

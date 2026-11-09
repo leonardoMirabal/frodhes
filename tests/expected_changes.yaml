@@ -1180,6 +1180,12 @@ changes:
     min: -3.5
     max: -0.5
     reason: "F13 VIBES LEVEL 55 -> 45 (-1.9 dB): no limiter on normal playing (see quick-level/*/F1[345]/*); the full grid not re-run"
+  - match: "fm1/MARIMBA/FX/B/k69v40"
+    metric: "keyup"
+    silent: false
+    min: -50.0
+    max: -40.0
+    reason: "int16 floor, a coin flip: the compressor's dither (fx.c cmp_ds, from 32 LSB in: the FX-off DYNO k93 v64 H3 fix) moves the last LSB the reverb carries into its tail, so whether this v40 key-up window's samples land on exact zero in the median of the four shifts flips with any change (dither thresholds 16 / 24 / 32 / 48 / 64 LSB each flip a different MARIMBA v40 cell; rc-0910's own single shift reads -45.7 here). -45.1 dB re the note's hold at v40 (~ -85 dBFS), under the gate; FX on, RESPONSE B"
 # ---- 11. RESPONSE B ("light touch", being redesigned: soft notes louder, the same tone, range ~25.5 dB). Its moves are
 # not listed yet: add a group matching "*/*/*/B/*" (RESPONSE B cells only) once the redesign lands. Until then the
 # entries above cover B where it moves with A.
