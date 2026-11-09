@@ -1573,9 +1573,12 @@ def onset_lag(x, events, fs, thr=None):
         pre = float(a[int(0.05 * fs):s].max()) if s > int(0.06 * fs) else 0.0
         thr = max(24.0, 10 * pre) if s > int(0.06 * fs) else 24.0
         thr = min(thr, max(4.0, 0.1 * float(a[s:s + int(0.25 * fs)].max(initial=0.0))))
-        thr = max(thr, ONSET_NOISE_X * pre)             # (never under the noise: rc3 rhodes-worst1's jack, 2026-11-09:
-                                                        # its noise peak 5 LSB, the tenth of a quiet first chord 4: the
-                                                        # lag 0.7 ms on noise, not ~13 ms, every jack guard 12 ms early)
+        thr = max(thr, min(ONSET_NOISE_X * pre,         # (never under the noise: rc3 rhodes-worst1's jack, 2026-11-09:
+                           0.5 * float(a[s:s + int(0.25 * fs)].max(initial=0.0))))   # its noise peak 5 LSB, the
+                                                        # tenth of a quiet first chord 4: the lag 0.7 ms on noise, not
+                                                        # ~13 ms, every jack guard 12 ms early; and never over half
+                                                        # the first note's peak: the Move's LEVEL -12 dB jack take,
+                                                        # noise 67 LSB, the first chord 328, else the lag 129 ms late)
     i = np.flatnonzero(a[s:] > thr)
     return (s + int(i[0])) / fs - min(on) if len(i) else 0.0
 
