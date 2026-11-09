@@ -28,6 +28,9 @@
   TYPEs share one state).
 
 ## Tested
+- The boot sound F01 STAGE 77 LEVEL 50 -> 52 (+0.4 dB) and F11 RESO SWEEP with it: with every effect now holding its peak,
+  every TYPE x RESPONSE note and chord at v96 / v127 sits within 1 dB of 0.9.9 on the FM-1 and the Move's HQ build
+  (before: -1.4 .. +0.6 dB). The other presets keep 0.9.9's level.
 - Host: `tests/py/test_fx_pristine.py` (OPEN list empty on the one-core, two-core and HQ builds, presets included),
   the new `tests/py/test_comp_clean.py` (fails before, passes after), `make test` (65 scripts), `make test-c1`, the
   full `make pytest`, `tests/py/test_rev_inf.py`, `tools/gen_move_presets.py --check`. Character before / after by
