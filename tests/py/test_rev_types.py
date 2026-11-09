@@ -717,6 +717,12 @@ OCT = [(177, 354), (354, 707), (707, 1414), (1414, 2828), (2828, 5657)]
 def test_levels_match_hall(exe, silent, typ):
     """the same chord at MIX 100, DECAY 64: the TYPE's wet over its first 2 s within 2 dB of HALL's, each octave band
     250 Hz .. 4 kHz within 6 dB (the FFT bands, not the RMS alone)"""
+    levels_match_hall(exe, silent, typ)
+
+
+def levels_match_hall(exe, silent, typ, wide=None):
+    """(wide: {octave: limit in dB} for a build whose HALL moved for a proven reason; test_rev_hq.py)"""
+    wide = wide or {}
     sounding(silent, typ)
     x = rs.chord(FS, amp=8000)
     w = {t: rs.render(exe, x, dict(RV_TYPE=T[t], RV_DEPTH=100), blocks=int(2 * FS / BLK))["wet"] for t in ("HALL", typ)}
@@ -724,7 +730,7 @@ def test_levels_match_hall(exe, silent, typ):
     assert abs(lv[typ] - lv["HALL"]) <= 2.0, (typ, lv)
     for a, b in OCT:
         d = band_db(w[typ], a, b) - band_db(w["HALL"], a, b)
-        assert abs(d) <= 6.0, (typ, a, b, d)
+        assert abs(d) <= wide.get((a, b), 6.0), (typ, a, b, d)
 
 
 # ---- the cost
