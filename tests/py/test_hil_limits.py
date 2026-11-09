@@ -84,13 +84,15 @@ def test_wah_level_every_depth(engine, notes):
     """the wah's loudness re dry (LUFS, as fx_all reads it) at DEPTH 0 .. 127, RATE 64: within 0.5 LU of dry and
     within 0.5 LU across the depths, on the Rhodes, VIBES and MARIMBA, chords and single notes (the depth law wg gave
     -2.9 .. +2.0 LU on the Rhodes chord). Measured: the Rhodes chord -0.1 .. +0.1, C4 0.0, C5 -0.2, VIBES -0.2 .. +0.1,
-    MARIMBA -0.5 .. -0.1"""
-    r = h.HostRig(1)
+    MARIMBA -0.5 .. -0.1. Each take on a fresh rig of the same seed: every take has the same preroll, latency and
+    onsets (0.9.10: C3 and G3's shared 392 Hz partial beats, so the chord's loudness over 1.8 s moved 0.45 LU with the
+    rig's +-1 ms onset jitter between takes, wah or none)"""
     sel = dict(TYPE=8) if engine == "rhodes" else {}
     bar = {"vibes": 64, "marimba": 127}.get(engine)
     ev = [(0.1, "on", n, v) for n, v in notes] + [(2.1, "off", n, 0) for n, v in notes]
 
     def lv(**kv):
+        r = h.HostRig(1)
         r.dry(**sel, **kv)
         if bar is not None:
             r.cc_raw(79, bar)
@@ -144,7 +146,9 @@ def test_presets_on_the_host_every_preset_on_target():
     host -0.1; now the host -1.6, judged at HOST_SHIFT's -1.9). 0.9.7: the FM-1 read -1.7 at LEVEL 10 (0.9.5 -1.8, 0.9.6
     -1.7 / -2.0), so LEVEL 18: the host +0.0 (HOST_SHIFT +0.2, the FM-1 ~0.2 under the host). The drive-type merge: F03 +1.1, F07 +1.3, F08 +1.1 (driven:
     MANUAL 'Factory presets', within 1.5 LU; the 1 LU is the chord-matched ones', not a limit for every Rhodes preset).
-    0.9.5: the user bank's starters U01..U09 follow (presets 20..28 in the rows), each within 1 LU of F01"""
+    0.9.5: the user bank's starters U01..U09 follow (presets 20..28 in the rows), each within 1 LU of F01.
+    2026-11-08: the headroom trims put F04 -2.2, F08 -3.6, F13 +1.0, F15 -1.5, F16 -5.0 (hil_scan PRESET_TARGET); the clean
+    Rhodes (the physical swing): F11 LEVEL 35, F19 90, U08 75 back to F01's level, F14 +1.2 (headroom), F16 / U07 one step down"""
     r, rep = h.HostRig(1), {}
     ok, msg = h.presets(r, rep)
     every = list(range(1, h.PR_COUNT + h.PR_STARTERS + 1))       # F01..F19, then the starters U01..U09 (the host only)

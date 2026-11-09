@@ -25,8 +25,8 @@ the [pages](MANUAL.md#4-the-pages) in section 4); the SMK-37 reaches them as bel
 
 Use the file for your model: the stock updater only accepts a package with the unit's own name. The identity stays the
 same for every Frodhes version. Each release attaches the three files under these names
-(the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest)). The SMK builds play 7 voices
-(the FM-1's: [polyphony](MANUAL.md#10-sustain-and-polyphony)).
+(the [release page](https://github.com/leonardoMirabal/frodhes/releases/latest)). The SMK builds play 10 voices,
+as the FM-1 ([polyphony](MANUAL.md#10-sustain-and-polyphony)).
 
 ## Before you install: back up your flash
 
@@ -149,7 +149,6 @@ Everything in the [manual](MANUAL.md) applies, with these differences:
   (the FM-1's K1..K4). < > step through the pages; KNOB BANK held shows the panel check.
 - 37 keys, C3..C6 at OCTAVE 0, each at its own velocity: KEY VEL is the velocity of a medium press.
 - The pads, the faders (soft takeover), the pitch and mod wheels and the pedal jack, as above.
-- 7 voices.
 - No TRS MIDI input: MIDI is USB only, and the MIDI page has no TRS IN card.
 - No LEDs on the keys: the DISPLAY page has no LEDS card; BRIGHTNESS dims the pads and the button LEDs.
 

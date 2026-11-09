@@ -163,6 +163,8 @@ def main():
         with ThreadPoolExecutor(a.jobs) as ex:
             got = dict(ex.map(lambda kv: render(binary, *kv), j.items()))
     if a.save:
+        import release_diff                    # (AGENTS.md 5b: never re-save over a tree the pristine gate fails)
+        release_diff.save_guard('Gate R')
         BASE.parent.mkdir(parents=True, exist_ok=True)
         BASE.write_text(''.join(f'{got[n]}  {n}\n' for n in sorted(got)))
         print(f'Gate R: saved {len(got)} renders to {BASE.relative_to(ROOT)}')

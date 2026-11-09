@@ -11,7 +11,7 @@ A file in more than one target's closure is shared code: a change to it is class
 (S-DSP, S-APP, ...). A file in none (tools/, tests/ but tests/host.c, the CI) affects the host tier only.
 
  fm1    ./build.sh: frodhes.c and the loader with the build's defines, the startup, the link scripts, the packaging
- smk    ./build.sh --board smk37: the same with BOARD_SMK37=1 FR_VOICES=7u
+ smk    ./build.sh --board smk37: the same with BOARD_SMK37=1 FR_VOICES=10u
  host   make test: frodhes.c with DINGHY_HOST (platform.c -> tests/host.c), the Makefile, the test scripts
  web    web/build.sh: DINGHY_HOST DINGHY_WEB (platform.c -> web/web_hal.c), the page
  move   make move: move/move_plugin.c (or, until it exists, frodhes.c) with DINGHY_HOST DINGHY_WEB DINGHY_MOVE
@@ -86,7 +86,7 @@ def closures():
     c = {}
     c["fm1"] = run_m(fw, INC + APP) | run_m(ldr, ["-Ifirmware/hal", "-Ifirmware/src"]) | existing(FIRMWARE_FILES)
     smk = ["-DBOARD_SMK37=1"]
-    c["smk"] = (run_m(fw, smk + ["-DFR_VOICES=7u"] + INC + APP + ['-DDATA_FAMILY="FRODHES"'])
+    c["smk"] = (run_m(fw, smk + ["-DFR_VOICES=10u"] + INC + APP + ['-DDATA_FAMILY="FRODHES"'])
                 | run_m(ldr, smk + ["-Ifirmware/hal", "-Ifirmware/src"]) | existing(FIRMWARE_FILES))
     c["host"] = run_m(fw, ["-DDINGHY_HOST"] + INC) | existing(["Makefile"]) | tree("tests/scripts")
     c["web"] = run_m(fw, ["-DDINGHY_HOST", "-DDINGHY_WEB"] + INC) | {f for f in tree("web") if not f.startswith("web/dist/")}

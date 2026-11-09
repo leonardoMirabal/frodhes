@@ -121,6 +121,10 @@ def sound_ccs(eng="rhodes"):
         notes.append("no reverb TYPE in this tree: HALL")
     ccs.append((SPREAD_CC, 127))
     notes.append("SPREAD 127")
+    # 2026-11-08: LEVEL 127 (+11.8 dB, after the compressor): 0.9.10's hotter v127 attack drives the heavy compressor
+    # deeper, the jack ~-50 dBFS in the save's window (peaks 30-90 LSB) and a 3 ms jack gap there unseen; with it ~250
+    ccs.append((C.CC["LEVEL"], 127))
+    notes.append("LEVEL 127")
     return ccs, notes
 
 
@@ -375,9 +379,16 @@ def self_test(eng="rhodes", log=print):
     # (found by track there; the jack's detectors are partly blind in this window: the attack's guards, and the jack
     # ~-40 dBFS under the full-depth tremolo, under det_zero's 200 LSB around; USB's exact detectors are not). +70 ms,
     # not +60 (c1-int, 0.9.8's new drives moved the heavy sound: the jack's peak there fell to 195, under the tremolo's
-    # trough): where the jack is loudest in the window (peak 245), so the gap is clearly audible
+    # trough): where the jack is loudest in the window (peak 245), so the gap is clearly audible. The underrun's
+    # second hold at +125 ms, not +130 (2026-11-08, LEVEL 127): +130 now holds channel 1 at its turn (3.5 dB evidence,
+    # det_repeat's agreement needs 4: a channel at its turn shows little, by design; single 12-frame holds in 40-200 ms:
+    # 21 of 32 found at LEVEL 127, 14 at 64: the marks sit where the detector sees, as the jack's did). The first at +65
+    # since 2026-11-08's effect make-ups (+60 then held a channel at its turn; +40 .. +90 in 5 ms steps with the second
+    # at +120 .. +130: both found at 45, 50, 65, 75, 80). The second at +120 since the clean Rhodes (61baedac): +125
+    # fell between two found places (single holds found 27 of 33 at 40-200 ms, parent 568fe9d6 21, 0.9.9 31; +65 and
+    # +120 found on all three; build/tri/glitch_sweep.py in the triage worktree)
     for name, marks, ms in (("USB dropout 2 ms", (0.06, 0.13), 2), ("jack dropout 3 ms", (0.07,), 3),
-                            ("jack dropout 3 ms", (0.08,), 3), ("USB underrun hold 12 frames", (0.06, 0.13), 0)):
+                            ("jack dropout 3 ms", (0.08,), 3), ("USB underrun hold 12 frames", (0.065, 0.120), 0)):
         u2, j2 = u.copy(), j.copy()
         for m in marks:
             m += t_chord

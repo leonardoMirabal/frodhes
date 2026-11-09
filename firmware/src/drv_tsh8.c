@@ -21,14 +21,17 @@
  * block there clicked as the fade-in reached it); now at boot (ts_first, drv_boot), never in an audio block. */
 /* compiled (pi32v2 -Os, tools/drive_insns.py; two-sample loops halved), the longest paths, per sample:
  * TSH8_AA 1 (the anti-aliased kernel, on): input HP x P 14.5 (29 / 2) + branch 18.5 (37 / 2) + ADAA-1 clipper 47
- * (ts_aa1) + tone x Q 18 (36 / 2) = 98 = 156.8 us at 1.6; per block on top, the worst: building 32 {g, F} nodes
- * (ts_build_gf, 31 a node: ~6.2 us; a swap's 16 crossfaded samples, ts_aa1x +43 each, ~4.3 us, never in the same
- * block), ~170 of set-up (~1.1 us): 164.1 -> 165 us. The first table whole (505 x 31, ~98 us) is built at boot (drv_boot),
- * never in an audio block.
+ * (ts_aa1; its midpoint path 44, 42 before V's finer bits, 0.9.10) + tone x Q 18 (36 / 2) = 98 = 156.8 us at 1.6;
+ * per block on top, the worst: building 32 {g, F} nodes (ts_build_gf, 31 a node: ~6.2 us; a swap's 16 crossfaded
+ * samples, ts_aa1x +43 each, ~4.3 us, never in the same block), ~170 of set-up (~1.1 us): 164.1 -> 165 us. The first
+ * table whole (505 x 31, ~98 us) is built at boot (drv_boot), never in an audio block.
  * TSH8_AA 0 (the plain kernel): HP 8.5 + branch 15 + table 23 + tone 17.5 = 64 = 102.4 us, +3.4 us a block: 106. */
 #ifndef FR_RAM
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
+#endif
+#ifndef FX_RAM                                  /* (frodhes.c: FR_RAM, or flash in FR_C1 builds: core 1 runs the effects from XIP) */
+#define FX_RAM FR_RAM
 #endif
 #if TSH8_AA
 #define DRV_US_TSH8 165u
@@ -46,6 +49,11 @@ _Static_assert((DRV_BLK & 1u) == 0, "TSH8 runs two samples a pass: the block mus
 #endif
 #ifndef TSH8_GSTEP
 #define TSH8_GSTEP 2                                     /* AMOUNT / TONE steps the rows move at most a block */
+#endif
+#ifndef TSH8_VSH
+#define TSH8_VSH 4                     /* V, the clipper's output, in Q15 + TSH8_VSH (0.9.10: in Q15 its whole-LSB
+                                        * steps were a quiet bass note's 3rd harmonic, -38 dB re H1 at an input of 80,
+                                        * -59 at 640; the longest paths the same instructions) */
 #endif
 #define TSH8_OSH 12                                      /* the tone stage's output bits below the sample's */
 #define TSH8_XF 16u                                      /* samples a table swap is crossfaded over */
@@ -200,7 +208,7 @@ static inline __attribute__((always_inline)) int32_t ts_g(const int32_t *g, int3
 static inline __attribute__((always_inline)) void ts_tab1(const int32_t *g, int32_t *u, uint32_t n)
 {
     uint32_t i;
-    for (i = 0; i < n; i++) u[i] = ts_g(g, u[i]);
+    for (i = 0; i < n; i++) u[i] = ts_g(g, u[i]) << TSH8_VSH;
 }
 
 /* pass 3 in the block after a table swap, its first TSH8_XF samples: the old table's V crossfaded into the new
@@ -210,18 +218,18 @@ static inline __attribute__((always_inline)) void ts_tab1x(const int32_t *g0, co
     uint32_t i;
     for (i = 0; i < TSH8_XF; i++) {
         int32_t a = ts_g(g0, u[i]), b = ts_g(g1, u[i]);
-        u[i] = a + (((b - a) * (int32_t)(i + 1u)) >> 4);
+        u[i] = (a + (((b - a) * (int32_t)(i + 1u)) >> 4)) << TSH8_VSH;
     }
 }
 
 /* pass 4: s = vi + V, the tone biquad (Q28), 2 samples per iteration, the output over V */
-static FR_RAM __attribute__((noinline)) void ts_tone2qi(const int32_t *c, int32_t *st, const int32_t *vi,
+static FX_RAM __attribute__((noinline)) void ts_tone2qi(const int32_t *c, int32_t *st, const int32_t *vi,
                                                              int32_t *v, uint32_t n)
 {
     int32_t x1 = st[0], x2 = st[1], y1 = st[2], y2 = st[3];
     uint32_t i;
     for (i = n >> 1; i; i--) {
-        int32_t xa = vi[0] + (v[0] << 9), xb = vi[1] + (v[1] << 9), ya, yb, k;
+        int32_t xa = vi[0] + (v[0] << (9 - TSH8_VSH)), xb = vi[1] + (v[1] << (9 - TSH8_VSH)), ya, yb, k;
         int64_t pa, pb;
         k = c[2]; pa = TSM(k, x2); pb = TSM(k, x1);
         k = c[1]; pa += TSM(k, x1); pb += TSM(k, xa);
@@ -249,7 +257,7 @@ static FR_RAM __attribute__((noinline)) void ts_tone2qi(const int32_t *c, int32_
 #define TSH8_AT (1 << TSH8_AA_SF)                         /* |du| below this (2 mV): g at the midpoint, no quotient */
 
 /* pass 1: the input biquad (HP x P, Q28), x TSH8_IN_K on the way in, 2 samples per iteration */
-static FR_RAM __attribute__((noinline)) void ts_in2q(const int32_t *c, int32_t *st, const int32_t *in,
+static FX_RAM __attribute__((noinline)) void ts_in2q(const int32_t *c, int32_t *st, const int32_t *in,
                                                           int32_t *out, uint32_t n)
 {
     int32_t x1 = st[0], x2 = st[1], y1 = st[2], y2 = st[3];
@@ -273,7 +281,7 @@ static FR_RAM __attribute__((noinline)) void ts_in2q(const int32_t *c, int32_t *
 }
 
 /* pass 2: the branch biquad, writing the two-sample average of Vi back over vi (x1 is the previous Vi) */
-static FR_RAM __attribute__((noinline)) void ts_br2qa(const int32_t *c, int32_t *st, int32_t *in, int32_t *out,
+static FX_RAM __attribute__((noinline)) void ts_br2qa(const int32_t *c, int32_t *st, int32_t *in, int32_t *out,
                                                            uint32_t n)
 {
     int32_t x1 = st[0], x2 = st[1], y1 = st[2], y2 = st[3];
@@ -297,8 +305,8 @@ static FR_RAM __attribute__((noinline)) void ts_br2qa(const int32_t *c, int32_t 
     st[0] = x1; st[1] = x2; st[2] = y1; st[3] = y2;
 }
 
-/* one sample of the clipper: x (u Q14) -> V (Q15); X1, F1 the previous input and its F (updated); gf / gc the {g, F}
- * table's fine and coarse bases, rcp the reciprocal table's base */
+/* one sample of the clipper: x (u Q14) -> V (Q15 + TSH8_VSH); X1, F1 the previous input and its F (updated); gf / gc
+ * the {g, F} table's fine and coarse bases, rcp the reciprocal table's base */
 #define TS_SEGA(BASE, SH)                                                                                   \
     do {                                                                                                    \
         e = (BASE) + 2 * (a >> (SH)); fr = a & ((1 << (SH)) - 1);                                           \
@@ -317,15 +325,15 @@ static FR_RAM __attribute__((noinline)) void ts_br2qa(const int32_t *c, int32_t 
         d = x - (X1);                                                                                       \
         ad = (uint32_t)(d < 0 ? -d : d);                                                                    \
         if (ad < TSH8_AT) {                                                                                 \
-            int32_t v_ = g0 + (p >> (hd - 1));                                                              \
+            int32_t v_ = (g0 << TSH8_VSH) + (p >> (hd - 1 - TSH8_VSH));                                     \
             v_ = x < 0 ? -v_ : v_;                                                                          \
-            (vout) = v_ - ((dg * d) >> hd);                                                                 \
+            (vout) = v_ - ((dg * d) >> (hd - TSH8_VSH));                                                    \
         } else {                                                                                            \
             int nz = __builtin_clz(ad);                                                                     \
             int32_t r = rcp[(ad << nz) >> (32 - DRV_AA_RB)];                                                \
             int32_t df_ = F - (F1);                                                                         \
             if (d < 0) df_ = -df_;                                                                          \
-            (vout) = (int32_t)(TSM(df_, r) >> (47 - TSH8_AA_SF - nz));                                      \
+            (vout) = (int32_t)(TSM(df_, r) >> (47 - TSH8_AA_SF - TSH8_VSH - nz));                           \
         }                                                                                                   \
         (X1) = x; (F1) = F;                                                                                 \
     } while (0)
@@ -333,7 +341,7 @@ static FR_RAM __attribute__((noinline)) void ts_br2qa(const int32_t *c, int32_t 
 #define TS_RCP ((const uint16_t *)((uintptr_t)DRV_AA_RCP - (2u << (DRV_AA_RB - 1))))   /* (indexed from 2^(RB-1)) */
 
 /* pass 3: the clipper, in place, one sample per iteration */
-static FR_RAM __attribute__((noinline)) void ts_aa1(const int32_t *gf, int32_t *st, int32_t *u, uint32_t n)
+static FX_RAM __attribute__((noinline)) void ts_aa1(const int32_t *gf, int32_t *st, int32_t *u, uint32_t n)
 {
     const int32_t *gc = TS_GC(gf);
     const uint16_t *rcp = TS_RCP;
@@ -378,7 +386,7 @@ static __attribute__((noinline)) void ts_aa1x(const int32_t *g0f, const int32_t 
 
 /* the four passes, in to out (out may be in); g0f: the table before a swap (crossfaded into gf), or 0. In RAM with
  * the three steady passes (0.9.7); the swap's crossfade (ts_aa1x, a block now and then) stays in flash */
-static FR_RAM __attribute__((noinline)) void ts_kernel_aa(const int32_t *br, const int32_t *tone, const int32_t *g0f,
+static FX_RAM __attribute__((noinline)) void ts_kernel_aa(const int32_t *br, const int32_t *tone, const int32_t *g0f,
                                                    const int32_t *gf, const int32_t *in, int32_t *out, uint32_t n)
 {
     ts_in2q(ts_inp, ts_is, in, ts_vi, n);
@@ -441,6 +449,43 @@ static void ts_first(int32_t a)
     ts_ok = 1;
 }
 
+#if FR_C1
+static void drv_tsh8_run(const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)
+{                                                  /* (FR_C1: a chunk, fx.c fxc_o / fxc_e; the rows, the table's
+                                                    * build and swap at the first, the swap's crossfade in it) */
+    int32_t a = c->amount, t = c->tone;
+    const int32_t *g0 = 0;
+    uint32_t o = fxc_o, k = fxc_e - o;
+    if (!ts_ok) { if (out != in) memcpy(out + o, in + o, k * sizeof *out); return; }
+    if (FXC_1) {
+#ifdef DINGHY_HOST
+        ts_nb = 0;
+#endif
+        if (ts_ra < 0) { ts_ra = a; ts_rt = t; ts_set(a, t); }
+        else if (ts_ra != a || ts_rt != t) { ts_ra = ts_step(ts_ra, a); ts_rt = ts_step(ts_rt, t); ts_set(ts_ra, ts_rt); }
+        if (ts_bpos < 0) {
+            if (ts_trow != ts_ra) {
+                int32_t d = ts_ra - ts_trow;
+                ts_brow = ts_trow + (d > TSH8_TSTEP ? TSH8_TSTEP : d < -TSH8_TSTEP ? -TSH8_TSTEP : d);
+                ts_bpos = 0;
+            }
+        } else if (ts_bpos < (int32_t)TSH8_NODES) {
+            uint32_t e = (uint32_t)ts_bpos + TSH8_SLICE;
+            if (e > TSH8_NODES) e = TSH8_NODES;
+            TS_BUILD(ts_tab[ts_cur ^ 1u], ts_brow, (uint32_t)ts_bpos, e);
+            ts_bpos = (int32_t)e;
+        } else {
+            ts_cur ^= 1u; ts_trow = ts_brow; ts_bpos = -1;
+            if (n >= TSH8_XF) g0 = ts_tab[ts_cur ^ 1u];
+        }
+    }
+#if TSH8_AA
+    FR_FAR(ts_kernel_aa)(ts_brp, ts_tonep, g0, ts_tab[ts_cur], in + o, out + o, k);
+#else
+    ts_kernel(ts_brp, ts_tonep, g0, ts_tab[ts_cur], in + o, out + o, k);
+#endif
+}
+#else
 static void drv_tsh8_run(const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)
 {
     int32_t a = c->amount, t = c->tone;
@@ -472,3 +517,4 @@ static void drv_tsh8_run(const int32_t *in, int32_t *out, uint32_t n, const drv_
     ts_kernel(ts_brp, ts_tonep, g0, ts_tab[ts_cur], in, out, n & ~1u);
 #endif
 }
+#endif

@@ -3,29 +3,63 @@
  "version": 1,
  "spring_pos": 0.65,
  "t60_v1": {
-  "_doc": "sustain T60 of V1 (s) at MIDI keys, log-interpolated; flat below the first point, halving every 10 keys above the last (floor). Source: Shear 2011 tine Q (1974 Mark I), T60 = 6.908 Q/(pi f0) (research/09)",
+  "_doc": "sustain T60 of V1 (s) at MIDI keys, log-interpolated; flat below the first point, halving every halve_keys above the last (floor). 0.9.10 (2026-11-08): the mid / upper register longer, keys 32-43 slightly shorter; before: Shear 2011 tine Q (1974 Mark I), T60 = 6.908 Q/(pi f0) (research/09)",
   "points": [
    [
+    31,
+    28
+   ],
+   [
     39,
-    26.8
+    23
+   ],
+   [
+    45,
+    18
    ],
    [
     51,
-    10.3
+    19
+   ],
+   [
+    57,
+    20
    ],
    [
     63,
-    10.7
+    18
+   ],
+   [
+    69,
+    18
    ],
    [
     75,
-    7.7
+    13
+   ],
+   [
+    81,
+    6.5
    ],
    [
     87,
-    3.1
+    4.2
+   ],
+   [
+    93,
+    4.0
+   ],
+   [
+    96,
+    2.8
    ]
   ],
+  "halve_keys": 4.0,
+  "floor_s": 0.8
+ },
+ "t60_overtones": {
+  "_doc": "the T60 the tine's overtones (O1, O2) are scaled from (gen_rhodes.key_physics: this / (f_m / f_1) ^ overtone_damping_exp, x tinebar.tine_t60_frac, each tine's t60 jitter), the same law as t60_v1; 0.9.9's V1 points, so the 0.9.10 longer V1 sustain leaves the overtones' decay as it was (with t60_v1's points the mid keys' O1 rang ~2x longer: its inharmonic partial and the pickup's sidebands 25-33 dB over 0.9.9 at 300 ms around key 57)",
+  "points": [[39, 26.8], [51, 10.3], [63, 10.7], [75, 7.7], [87, 3.1]],
   "halve_keys": 10.0,
   "floor_s": 0.8
  },
@@ -75,11 +109,11 @@
   "bar_t60_mult": 2.0
  },
  "release_t60": {
-  "_doc": "damper-on T60 (s) by MIDI upper bound (soft targets, jRhodes sfz)",
-  "33": 0.5,
-  "60": 0.4,
-  "83": 0.3,
-  "108": 0.2
+  "_doc": "damper-on T60 (s) by MIDI upper bound. 2026-11-08: shorter, a felt that stops the tine within tens of ms (before: 0.5 / 0.4 / 0.3 / 0.2, jRhodes sfz)",
+  "33": 0.25,
+  "60": 0.18,
+  "83": 0.14,
+  "108": 0.12
  },
  "overtone_damping_exp": 2.0,
  "strike": {
@@ -156,7 +190,7 @@
   ],
   "off_gap": -0.3
  },
- "gain_target_dbfs": -26.0,
+ "gain_target_dbfs": -32.0,
  "rlc": {
   "_doc": "moved into types[*].rlc"
  },
@@ -387,5 +421,115 @@
   "contact_pct": 3.0,
   "beat_pct": 25.0,
   "w_pct": 10.0
+ },
+ "strike_fit": {
+  "_doc": "S2 (0.9.10): O1 (the tine's 2nd mode, 6.3-6.9 f0, inharmonic) per key no stronger at v = 127 than tine_v127_points (dB: its band 6.3-7.7 f0 in 0-20 ms re the 30-300 ms H1; gen_rhodes.strike_fit; only ever turned down from the physics). Measured targets: E4-A5 about -39, C6-E7 about -65; the tables had -17 / -28 (the inharmonic ring of a hard upper-register strike).",
+  "tine_v127_points": [
+   [
+    56,
+    -20.0
+   ],
+   [
+    64,
+    -31.0
+   ],
+   [
+    72,
+    -40.0
+   ],
+   [
+    84,
+    -55.0
+   ],
+   [
+    96,
+    -65.0
+   ],
+   [
+    108,
+    -65.0
+   ]
+  ],
+  "iterations": 6
+ },
+ "pickup_drive": {
+  "_doc": "S1a, the pickup drive (gen_rhodes.pickup_drive): the velocity response through the pickup. Per key the tine's excursion per velocity anchor is solved so the bark (H2..H5 re H1, 30-150 ms, golden model) stays at soft_bark_points (dB) up to the key's knee (knee_points [midi, velocity], interpolated, past 127 at the top so the rise fades out; keys >= no_rise_key: no rise) and then grows slope_db_per_vel, the corner corner_vel steps wide (10-90 %): the swing passes the pickup offset, the flux folds, the fundamental saturates and H2..H5 take the energy. An output gain law per anchor then gives the fundamental its velocity law: unchanged, or saturating by h1_sat_points [[midi, dB]] (interpolated; above the last key: unchanged, the last point ~ the law's own v64..v127 rise) from v64 to v127 (h1_corner_db: the soft limit's corner); noise_ref_dbfs: the gain_target_dbfs the mechanical noises (knock, felt, pedal thud: absolute levels) were set against, so they follow the notes' level (RH_NZ_G); level_smooth_keys: the whole note's velocity law smoothed across keys (Gaussian sigma, keys), so the knee's move with register makes no level steps between neighbours. min_db / max_db: the excursion search range re the physical force law; iterations: bisection steps. bark_physical (0.9.10, the user: clean at every velocity): the swing is the physical force law's on every key and velocity (0.9.9's), the bark targets unused (bark_physical_offset_points [[midi, dB]]: that far under it, interpolated); h1_sat_points empty with it (no fold, no saturating fundamental: its own law).",
+  "soft_bark_points": [
+   [
+    21,
+    -20.0
+   ],
+   [
+    52,
+    -20.0
+   ],
+   [
+    57,
+    -22.0
+   ],
+   [
+    64,
+    -24.0
+   ],
+   [
+    69,
+    -27.0
+   ],
+   [
+    76,
+    -32.0
+   ],
+   [
+    88,
+    -35.0
+   ],
+   [
+    108,
+    -35.0
+   ]
+  ],
+  "knee_points": [
+   [
+    21,
+    58.0
+   ],
+   [
+    52,
+    58.0
+   ],
+   [
+    57,
+    64.0
+   ],
+   [
+    64,
+    72.0
+   ],
+   [
+    69,
+    90.0
+   ],
+   [
+    76,
+    108.0
+   ],
+   [
+    84,
+    132.0
+   ]
+  ],
+  "no_rise_key": 85,
+  "slope_db_per_vel": 0.6,
+  "corner_vel": 10.0,
+  "level_smooth_keys": 6.0,
+  "noise_ref_dbfs": -26.0,
+  "h1_corner_db": 3.0,
+  "min_db": -40.0,
+  "max_db": 40.0,
+  "iterations": 14,
+  "dur_s": 0.16,
+  "h1_sat_points": [],
+  "bark_physical": true,
+  "bark_physical_offset_points": [[64, 0.0], [69, -0.5], [84, -0.5], [93, -2.0], [108, -2.0]]
  }
 }

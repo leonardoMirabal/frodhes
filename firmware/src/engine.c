@@ -259,9 +259,108 @@ static void eng_render(int32_t *mono, uint32_t n)
     }
 }
 
+#if FR_C1
+/* FR_C1 (frodhes.c app_audio): the block in chunks, the voices of chunk [o, e) at a time: eng_begin, eng_chunk for
+ * each chunk in order, eng_end give eng_render's integers exactly (mono and rh_side). eng_begin does what eng_render
+ * does before the render (the TYPE change, the ring, the shed) and the engine's own block start (rh_begin / bar_begin:
+ * rh_side_on is settled there); eng_chunk writes mono[o, e) and rh_side[o, e) only; eng_end the engine's end of block,
+ * the host counters and the change of engine after the fade block */
+static uint32_t engc_n, engc_want;
+/* the bar engine's chunks (bars.c): bar_begin(n) the block's start (motor, budget, force lengths, the LFSR plan),
+ * bar_chunk writes mono_out[o, e) final (Q15, as bar_render), bar_end the end of block (levels, ends, steals' notes,
+ * summaries) */
+static void bar_begin(uint32_t n);
+static void bar_chunk(int32_t *mono_out, uint32_t o, uint32_t e);
+static void bar_end(void);
+static void eng_begin(uint32_t n)
+{
+    uint32_t want = eng_want == ENG_BARS ? ENG_BARS : ENG_RHODES;
+    engc_n = n;
+    if ((want != eng_cur || (want == ENG_BARS && eng_want_sub != bar_sub)) && !eng_swapping) {
+        uint32_t busy = eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits;
+        if (busy) eng_swapping = 1;
+        else eng_switch(want);
+    }
+    engc_want = want;
+    if (!eng_swapping)
+        while (eq_r != eq_w) {
+            uint32_t e = eq[eq_r & 31u], type = e >> 28, note = e >> 16 & 127u, val = e & 0xFFFFu;
+            if (eng_cur == ENG_BARS ? type == EV_NOTE_ON && !bar_strike(note, val) : ev_w - ev_r >= 32u) break;
+            eq_r = eq_r + 1u;
+            if (type == EV_PEDAL) eng_pedal_cc = (uint8_t)val;
+            if (eng_cur == ENG_RHODES) rh_post(type, note, val);
+            else if (type == EV_NOTE_ON) ;
+            else if (type == EV_NOTE_OFF) bar_note_off(note);
+            else if (type == EV_PEDAL) bar_pedal(val);
+            else if (type == EV_ALL_OFF) bar_all_off();
+        }
+    if (eng_shed_req) {
+        eng_shed_req = 0;
+        if (eng_cur == ENG_RHODES) rh_shed_req = 1; else bar_shed();
+    }
+    if (eng_cur == ENG_BARS) { bar_begin(n); rh_side_on = 0; } else rh_begin(n);
+}
+static void eng_chunk(int32_t *mono, uint32_t o, uint32_t e)
+{
+    uint32_t j;
+#ifdef DINGHY_HOST
+    if (o % 32u || e % 32u || e <= o || e > engc_n) { fprintf(stderr, "eng_chunk %u %u\n", (unsigned)o, (unsigned)e); abort(); }
+#endif
+    if (eng_cur == ENG_BARS) bar_chunk(mono, o, e); else rh_chunk(mono, o, e);
+    if (eng_swapping)                                               /* the fade: 32768 -> 0 over the block */
+        for (j = o; j < e; j++) {
+            int32_t g = 32768 - (int32_t)(((j + 1u) << 15) / engc_n);
+            mono[j] = (int32_t)(((int64_t)mono[j] * g) >> 15);
+        }
+}
+static void eng_end(int32_t *mono, uint32_t n)
+{
+    (void)mono;
+    if (eng_cur == ENG_BARS) bar_end(); else rh_end();
 #if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+    {   /* host counters: as eng_render */
+        uint32_t ms = 0, mul = 0, ns = 0, i, m;
+        if (eng_cur == ENG_BARS) { ms = bar_h_blk_ms; mul = bar_h_blk_mul; ns = bar_h_blk_ns; bar_h_blk_ms = bar_h_blk_mul = bar_h_blk_ns = 0; }
+        else {
+            for (i = 0; i < RH_NV; i++)
+                if (rv[i].alive) {
+                    for (m = 0; m < RH_NM; m++) if (rv[i].m[m].live) { ms += n; mul += 3u * n; ns += 170u * n; }
+                    mul += 5u * n; ns += 870u * n;
+                }
+        }
+        eng_h_ms += ms; eng_h_mul += mul; eng_h_blocks++;
+        if (ms > eng_h_max_ms) eng_h_max_ms = ms;
+        if (mul > eng_h_max_mul) eng_h_max_mul = mul;
+        if (ns / 1000u > eng_h_max_us[eng_cur & 1u]) eng_h_max_us[eng_cur & 1u] = ns / 1000u;
+        {
+            uint32_t a = eng_cur == ENG_BARS ? bar_active_bits : rh_active_bits, c = 0;
+            for (; a; a &= a - 1u) c++;
+            if (c > eng_h_max_nv[eng_cur & 1u]) eng_h_max_nv[eng_cur & 1u] = c;
+        }
+        if (!eng_h_log_open) {
+            const char *p = getenv("FRODHES_MSLOG");
+            eng_h_log = p ? fopen(p, "w") : 0; eng_h_log_open = 1;
+            bar_h_nobudget = getenv("FRODHES_NOBUDGET") != 0; bar_h_nosleep = getenv("FRODHES_NOSLEEP") != 0;
+            p = getenv("FRODHES_FXUS");
+            if (p) bar_h_fxus = atoi(p);
+            p = getenv("FRODHES_PREDLOG");
+            bar_h_pred = p ? fopen(p, "w") : 0;
+        }
+        if (eng_h_log) fprintf(eng_h_log, "%u %u %u %u\n", (unsigned)eng_cur, ms, mul, ns / 1000u);
+    }
+#endif
+    if (eng_swapping) eng_switch(engc_want);
+}
+#endif
+
+#if defined(DINGHY_HOST) && !defined(DINGHY_WEB)
+/* fx.c FX_HC (host): the effects' headroom, samples a clamp cut: [0] the delay line's write (DIG / ANA's clamp, TAPE's
+ * range before its curve), [1] the reverb's send and kernel inputs, [2] the chorus line; [3] the limiter's sub-blocks
+ * with a gain under 1 (tests/py/test_fx_pristine.py) */
+static uint32_t fx_h_clip[4];
 static void eng_host_report(void)                /* tests/host.c, at the end of a run */
 {
+    printf("fx-clip delay %u reverb %u chorus %u limiter %u\n", fx_h_clip[0], fx_h_clip[1], fx_h_clip[2], fx_h_clip[3]);
     printf("sat28 hits %llu\n", (unsigned long long)bar_h_sat);
     printf("mode-samples %llu (max per block %u, blocks %llu)\n", (unsigned long long)eng_h_ms, eng_h_max_ms,
            (unsigned long long)eng_h_blocks);

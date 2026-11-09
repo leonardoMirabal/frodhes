@@ -427,7 +427,8 @@ class FakeRig(UsbRig):
                 ph = tt / 0.25
             x *= 1 - st.get(18, 0) / 127 * (0.5 + 0.5 * np.cos(2 * np.pi * ph))
         x *= 0.25 if self.state.get(110, 64) == 0 else 1.0                # LEVEL (CC 110 0: -12 dB)
-        x = 24000 * np.tanh(x / 24000)                                    # (the app's limiter, softly)
+        x = 24000 * np.tanh(x / 24000)                                    # (the app's limiter, softly: fx.c LIM_T;
+        #                                                                     29204 in the 0.9.10 RCs, reverted 2026-11-08)
         clean = np.stack([x, 0.9 * x], 1)
         # (the tap: the plugin's own output, before the Move's trim and mix, FAKE_TAP_LEAD s ahead of the take)
         self.tap = np.concatenate([np.zeros((int(FAKE_TAP_LEAD * FS), 2)), np.round(clean / FAKE_MIX),
@@ -1620,11 +1621,19 @@ def usb_host(r, d, program=0, out=print):
         hm = _mono(h[a:b])
         segs.append((name, n, mm, hm, lag, corr))
     nt = int(0.5 * sr)
+    # the take's own floor (its mono power in the silence before the first note, 0.1-0.35 s: CC 10 at 0.05 s, the
+    # first note at 0.4 s): the residual is judged net of it. 2026-11-08 (THRESHOLD): a note just over
+    # TAIL_JUDGED_DBFS read its floor as a difference. The clean Rhodes' 96 v90 tail is -59.6 dBFS through the quiet
+    # mix (Main Out 17.1 dB down, 1 LSB TPDF; 568fe9d6: -57.6), and that mix's floor (-99.3 dBFS) is 39.7 dB under it:
+    # "DIFFERS" with nothing but the floor. A sound on top of the floor adds its power as before
+    pre = _mono(mv[int(0.1 * sr):int(0.35 * sr)])
+    floor_p = float(np.mean(pre ** 2)) if len(pre) else 0.0
     gs = [float(np.dot(m[-nt:], hh[-nt:]) / (np.dot(hh[-nt:], hh[-nt:]) + 1e-9)) for _, _, m, hh, _, _ in segs]
     g = float(np.median(gs)) if gs else 0.0          # (one gain: the notes' median, so one spoilt note cannot move it)
     for name, n, mm, hm, lag, corr in segs:
         res = mm - g * hm
         rd = 20 * np.log10((np.sqrt(np.mean(res[-nt:] ** 2)) + 1e-9) / (np.sqrt(np.mean(mm[-nt:] ** 2)) + 1e-9))
+        rn = 10 * np.log10((max(float(np.mean(res[-nt:] ** 2)) - floor_p, 0.0) + 1e-18) / (float(np.mean(mm[-nt:] ** 2)) + 1e-18))
         held = slice(0, int(NOTE_S * sr))
         ex = res[held]
         ex_db = 20 * np.log10((np.sqrt(np.mean(ex ** 2)) + 1e-9) / (np.sqrt(np.mean((g * hm[held]) ** 2)) + 1e-9))
@@ -1642,7 +1651,9 @@ def usb_host(r, d, program=0, out=print):
         hs_ = _strikes(hm[held], sr)
         again = [t for t in _strikes(mm[held], sr) if all(abs(t - u) > 15 for u in hs_)]
         rows.append({"note": name, "lag_ms": round(1000 * lag / sr, 2), "tail_corr": round(corr, 4), "again_ms": again,
-                     "residual_db": round(float(rd), 1), "tail_dbfs": round(float(tail), 1),
+                     "residual_db": round(float(rd), 1), "residual_net_db": round(float(rn), 1),
+                     "floor_dbfs": round(float(10 * np.log10(floor_p + 1e-18) - 20 * np.log10(32768)), 1),
+                     "tail_dbfs": round(float(tail), 1),
                      "judged": bool(tail >= TAIL_JUDGED_DBFS), "extra_db": round(float(ex_db), 1), "extra_hz": peaks,
                      "f0_move_c": round(1200 * np.log2(fm / note_hz(n)), 2) if fm else None,
                      "f0_host_c": round(1200 * np.log2(fh / note_hz(n)), 2) if fh else None,
@@ -1685,7 +1696,7 @@ def usb_host(r, d, program=0, out=print):
            "rows": rows, "peak_move": float(np.abs(mv).max()), "peak_host": float(np.abs(h).max())}
     if locked:
         rep["held"] = {k: v for k, (_, v) in locked.items()}
-    bad = [w["note"] for w in rows if w["residual_db"] > -40 and w["judged"]]
+    bad = [w["note"] for w in rows if w["residual_net_db"] > -40 and w["judged"]]
     extra = [w["note"] for w in rows if w["extra_db"] > -30]
     again = ["%s +%s ms" % (w["note"], "/".join(str(t) for t in w["again_ms"])) for w in rows if w["again_ms"]]
     classic = False
@@ -2254,6 +2265,9 @@ def preflight_cmd(a, d, chan, rep, out=print, u=None):
         u = u if isinstance(u, FakeRig) else FakeRig(inject=inj)
         tap = u
     else:
+        if chan.get("stop") or chan.get("send") is None:   # (resolve_channel stopped: no channel to send on)
+            return False, {"verdict": "STOP: %s" % (chan.get("stop") or "no channel to send on (pass --ch N)"),
+                           "channel": _plain(chan)}
         u = u or UsbRig(a.midi, a.audio, chan["send"])
         if a.ws == "none":
             return False, {"verdict": "FAIL: the preflight needs Schwung's WebSocket for the tap (--ws), or "
@@ -2523,7 +2537,7 @@ def _num(rep, test):
                 rep.get("params", "-"), len(rep.get("written", [])), len(rep.get("bad", {})))
         if test == "usb-host":
             w = rep["rows"]
-            j = [x["residual_db"] for x in w if x.get("judged", True)]
+            j = [x.get("residual_net_db", x["residual_db"]) for x in w if x.get("judged", True)]
             return "gain %.2f dB, residual max %s dB (%d of %d notes judged), extra max %.1f dB, %d struck again%s" % (
                 rep["gain_db"], "%.1f" % max(j) if j else "-", len(j), len(w), max(x["extra_db"] for x in w),
                 sum(1 for x in w if x.get("again_ms")), {None: "", 0: ", HQ off", 1: ", HQ on"}[rep.get("hq")])
@@ -3001,6 +3015,11 @@ def _main(a):
     if a.cmd == "preflight":
         d = a.out or os.path.join(OUT, stamp() + "-preflight")
         chan, srep = channel_for(a)
+        if chan.get("stop"):                    # (no channel to send on: the slot's report and the reason, exit 2)
+            for line in report_lines(srep, chan):
+                print(line)
+            print("STOP: " + chan["stop"])
+            return 2
         if a.fake or a.ws == "none":
             ok, rep = preflight_cmd(a, d, chan, srep)
         else:

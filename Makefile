@@ -6,7 +6,7 @@ HOSTBIN ?= build/host/frodhes
 HOST_DEFS ?=                # other builds, e.g. make test HOST_DEFS=-DRH_VOICES=9u HOSTBIN=build/host9/frodhes (default: 10)
 CFLAGS_HOST := -O2 -Wall -Wno-unused-function -DDINGHY_HOST -DAPP_VER='"dev"' -Ifirmware/src -Ifirmware/gen $(HOST_DEFS)
 
-.PHONY: all setup host test testv test10 test-smk pytest firmware clean
+.PHONY: all setup host quick pristine release-diff clean-renders test testv test10 test-c1 test-smk pytest firmware clean
 
 all: test pytest
 
@@ -20,10 +20,40 @@ $(HOSTBIN): firmware/src/*.c firmware/src/*.h firmware/gen/*.h tests/host.c
 	@mkdir -p build/host $(dir $@)
 	$(CC) $(CFLAGS_HOST) -o $@.$$$$ firmware/src/frodhes.c -lm && mv -f $@.$$$$ $@   # (a new file, renamed in: a test running it never sees it half-written)
 
+HQBIN := build/host-hq/frodhes
+$(HQBIN): firmware/src/*.c firmware/src/*.h firmware/src/hq/* firmware/gen/*.h tests/host.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS_HOST) $(MOVE_DEFS) -DHQ_DEFAULT=1 -o $@.$$$$ firmware/src/frodhes.c -lm && mv -f $@.$$$$ $@
+
+QUICK ?= 1                 # make test QUICK=0: skip make quick (bisecting a known-bad tree only; CI never does)
+quick: $(HOSTBIN) $(HQBIN) ## FIRST on every change, mandatory (under 2 min warm; the first stage of make test / pytest):
+                           ## v127 distortion and the key path, every effect pristine, the FX bypass level, the
+                           ## absolute level and peak vs the last release, MIDI velocity untouched, the key-up clicks,
+                           ## the worst-case crackle, the pristine grid per TYPE (tools/quick.py; build/quick/report.txt)
+	@if [ "$(strip $(QUICK))" = 0 ]; then echo "WARNING: make quick SKIPPED (QUICK=0)"; else \
+	  mkdir -p build/quick; \
+	  $(PY) tools/quick.py --fm1 $(HOSTBIN) --hq $(HQBIN) > build/quick/quick.log 2>&1 && tail -1 build/quick/quick.log \
+	  || { grep -v '^PASS' build/quick/quick.log; echo "make quick: FAIL (build/quick/report.txt): the run stops here"; exit 1; }; fi
+
+PRISTINE ?= 1              # make pristine PRISTINE=0: skip it
+pristine: $(HOSTBIN) $(HQBIN)   ## the pristine grid alone (make quick runs it too; seconds): every TYPE of
+                           ## every engine, FM-1 and HQ builds, against the last release with pristine ceilings
+                           ## (tools/release_diff.py --grid fast; tests/expected_changes.yaml lists the intended moves)
+	@if [ "$(strip $(PRISTINE))" = 0 ]; then echo "WARNING: the pristine gate SKIPPED (PRISTINE=0)"; else \
+	  mkdir -p build/release_diff; \
+	  $(PY) tools/release_diff.py --grid fast --fm1 $(HOSTBIN) --hq $(HQBIN) --report build/release_diff/fast.txt \
+	    > build/release_diff/fast.log 2>&1 && head -1 build/release_diff/fast.log | sed 's/^/pristine: /' \
+	  || { head -60 build/release_diff/fast.log; echo "pristine: FAIL (build/release_diff/fast.txt): the run stops here"; exit 1; }; fi
+
+release-diff:              ## the NET, not the first check: the full release diff against the last release (about a
+                           ## minute), before a candidate's device install and nightly; build/release_diff/full.txt
+	@mkdir -p build/release_diff
+	$(PY) tools/release_diff.py --grid full --report build/release_diff/full.txt
+
 host: $(HOSTBIN)           ## the firmware on this computer (fake FM-1)
 	PYTHON=$(PY) tests/run_host.sh
 
-test: $(HOSTBIN)           ## every script in tests/scripts must pass its expects
+test: quick $(HOSTBIN)     ## make quick, then every script in tests/scripts must pass its expects
 	@fail=0; for s in tests/scripts/*.txt; do n=$$(basename $$s .txt); \
 	  if $(HOSTBIN) build/host/$$n $$s > build/host/$$n.log 2>&1; then echo "ok    $$n"; \
 	  else echo "FAIL  $$n (build/host/$$n.log)"; fail=1; fi; done; exit $$fail
@@ -41,18 +71,26 @@ testv:                     ## another voice count: make testv V=8 (or 9, 10) run
 test10:                    ## make testv V=10
 	@$(MAKE) -s testv V=10
 
+test-c1:                   ## the two-core build on the host (FR_C1: 14 voices, the full-rate reverb, c1_host.h's twin):
+                           ## every script, tests/scripts14/ for the steal scripts
+	@$(MAKE) -s build/host-c1/frodhes HOSTBIN=build/host-c1/frodhes HOST_DEFS=-DFR_C1=1
+	@fail=0; for s in tests/scripts/*.txt tests/scripts14/*.txt; do n=$$(basename $$s .txt); \
+	  case $$s in tests/scripts/*_steal_release.txt) continue;; esac; \
+	  if build/host-c1/frodhes build/host-c1/$$n $$s > build/host-c1/$$n.log 2>&1; then echo "ok    $$n"; \
+	  else echo "FAIL  $$n (build/host-c1/$$n.log)"; fail=1; fi; done; exit $$fail
+
 SMKBIN  := build/host-smk/frodhes
-SMK_DEFS := -DBOARD_SMK37=1 -DFR_VOICES=7u
+SMK_DEFS := -DBOARD_SMK37=1 -DFR_VOICES=10u
 $(SMKBIN): firmware/src/*.c firmware/src/*.h firmware/hal/*.h firmware/gen/*.h tests/host.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_HOST) $(SMK_DEFS) -o $@ firmware/src/frodhes.c -lm
 
-test-smk: $(SMKBIN)        ## the SMK-37 build on the host (7 voices): every script (the FM-1's button / knob / LED
-                           ## ids on the SMK buttons of the same name, tests/host.c), tests/scripts7/ for the steal
+test-smk: $(SMKBIN)        ## the SMK-37 build on the host (10 voices): every script (the FM-1's button / knob / LED
+                           ## ids on the SMK buttons of the same name, tests/host.c), tests/scripts10/ for the steal
                            ## scripts, tests/smk/ (its own controls); each flash call checked against the SMK allow-list.
                            ## The FM-1-only scripts (TRS IN, the key LEDs) are listed in tests/smk/known.txt: reported, not
                            ## failed
-	@fail=0; for s in tests/scripts/*.txt tests/scripts7/*.txt tests/smk/*.txt; do n=$$(basename $$s .txt); \
+	@fail=0; for s in tests/scripts/*.txt tests/scripts10/*.txt tests/smk/*.txt; do n=$$(basename $$s .txt); \
 	  case $$s in tests/scripts/*_steal_release.txt|tests/smk/known.txt) continue;; esac; \
 	  if $(SMKBIN) build/host-smk/$$n $$s > build/host-smk/$$n.log 2>&1; then echo "ok    $$n"; \
 	  elif grep -q "FAIL flash" build/host-smk/$$n.log; then echo "FAIL  $$n: a flash call refused (build/host-smk/$$n.log)"; fail=1; \
@@ -62,7 +100,8 @@ test-smk: $(SMKBIN)        ## the SMK-37 build on the host (7 voices): every scr
 PYTEST_N ?= auto           # make pytest PYTEST_N=4 (or 0: serial); serial anyway without pytest-xdist
 SHARD ?=                   # make pytest SHARD=2/4: only shard 2 of 4 (tools/pytest_shard.py; ci.yml's host jobs)
 PYTEST_FILES = $(if $(strip $(SHARD)),$$($(PY) tools/pytest_shard.py $(subst /, ,$(strip $(SHARD)))),tests/py)
-pytest:                    ## Python tools' unit tests (analysis, generators), in parallel with pytest-xdist
+pytest: quick              ## make quick, then the Python tools' unit tests (analysis, generators), in parallel with pytest-xdist
+                           ## (the long run: the net before a candidate and nightly, after make quick)
 	@if [ "$(strip $(PYTEST_N))" != 0 ] && $(PY) -c "import xdist" 2>/dev/null; then \
 	  echo "$(PY) tools/pytest_run.py -q -n $(strip $(PYTEST_N)) --dist loadgroup -- $(PYTEST_FILES)"; \
 	  $(PY) tools/pytest_run.py -q -n $(strip $(PYTEST_N)) --dist loadgroup -- $(PYTEST_FILES); \
@@ -71,6 +110,12 @@ pytest:                    ## Python tools' unit tests (analysis, generators), i
 
 firmware:                  ## build/frodhes.fwsc (Docker on macOS)
 	PYTHON=$(PY) ./build.sh
+
+clean-renders:             ## the tests' render folders (a make pytest leaves ~10 GB in build/host/gw*): only these;
+                           ## the binaries, build/memo, device takes (build/hil) and the gate queue's files stay
+	rm -rf build/host/gw* build/host/py build/hq_test build/hq_bars_test build/move_levels build/bar_cards \
+	  build/dry_dist build/gate_h/hq-* build/release_diff/cand-* build/release_diff/last-fast build/release_diff/last-full
+	rm -f build/host/*.wav build/host/*.ppm build/host/*.png build/host/*.log
 
 clean:
 	rm -rf build

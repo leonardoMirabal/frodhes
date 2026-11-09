@@ -1,0 +1,2933 @@
+# The intended sound changes of the next release against the last one (tools/release_diff.py, `make pristine` and
+# `make release-diff`). Every value that moves beyond its tolerance in either direction must match an entry here, with
+# a reason, or the gate fails. An entry never lifts a pristine ceiling (distortion, aliasing, clicks, noise, clips,
+# louder after the key-up): those hold whatever is listed.
+#
+# Reviewed: every new or widened entry needs the coordinator's sign-off, named in the commit message (AGENTS.md 5b).
+# At a release: `against` moves to the new release, the fast baseline is re-measured on the release's own tree
+# (tools/release_diff.py --save-base), and this list is emptied.
+#
+# An entry:
+#   - match: "fm1/MARIMBA/*"       # fnmatch on <build>/<TYPE or preset>/<FXOFF|RAW|FX|PRESET>/<A|B>/<cell>,
+#                                  # cell: k<key>v<vel>, chord-<name>, pedal or script
+#     metric: "level peak"         # space-separated fnmatch patterns (H2..H6 inh imd level peak cent decay keyup clk
+#                                  # clk_off noise clip lu cb lim)
+#     min: -4.0                    # optional: the allowed move (dB; cent: a ratio - 1)
+#     max: -2.0
+#     reason: "MARIMBA re-levelled to STAGE 77 (commit ...), measured -3.2 LU"
+#   `tools/release_diff.py --draft FILE` writes the unlisted moves in this form, each with reason TODO (which fails).
+#
+# 0.9.10 (the sonic fix): grouped by cause. Each entry's range is the measured move (fast + full grid, FM-1 and HQ
+# builds, RESPONSE A and B) +-0.5 dB (centroid +-0.05), clamped to the cause's own direction; a move outside every
+# entry fails, so a new fault in the same cells still shows.
+against: v0.9.9
+changes:
+
+# ---- 1. The global output LEVEL +14 (+2.6 dB, 1ae87375) and the -1.0 dBFS ceiling (LIM_T 24000 to 29204, 61ec1e8b)
+  - match: "*/VIBES/[!R]*/*"
+    metric: "cb"
+    min: 1.43
+    max: 3.2
+    reason: "VIBES: critical-band loudness (phon-like) of the +2.6 dB global LEVEL (1ae87375): it rises faster than the RMS at the quiet top keys and soft notes (up to +4.5 at k89); the engine itself is unchanged (RAW 0.0)"
+  - match: "*/VIBES/[!R]*/*"
+    metric: "level peak lu cb"
+    min: 1.77
+    max: 3.0
+    reason: "VIBES: the global output LEVEL +14 (+2.6 dB, 1ae87375, under the -1.0 dBFS ceiling); the engine itself is unchanged (RAW 0.0 dB in every cell)"
+  - match: "*/VIBES/FXOFF/*"
+    metric: "lim"
+    min: -3.0
+    max: -2.0
+    reason: "VIBES: lim is RAW minus effects-off: the +2.6 dB global LEVEL applies with the effects off, not in RAW (1ae87375)"
+  - match: "*/MARIMBA/[!R]*/*"
+    metric: "cb"
+    min: 1.57
+    max: 4.7
+    reason: "MARIMBA: critical-band loudness (phon-like) of the +2.6 dB global LEVEL (1ae87375): it rises faster than the RMS at the quiet top keys and soft notes (up to +4.5 at k89); the engine itself is unchanged (RAW 0.0)"
+  - match: "*/MARIMBA/[!R]*/*"
+    metric: "level peak lu cb"
+    min: 1.51
+    max: 3.0
+    reason: "MARIMBA: the global output LEVEL +14 (+2.6 dB, 1ae87375, under the -1.0 dBFS ceiling); the engine itself is unchanged (RAW 0.0 dB in every cell)"
+  - match: "*/MARIMBA/FXOFF/*"
+    metric: "lim"
+    min: -3.0
+    max: -1.66
+    reason: "MARIMBA: lim is RAW minus effects-off: the +2.6 dB global LEVEL applies with the effects off, not in RAW (1ae87375)"
+  - match: "*/MARIMBA/[!R]*/*"
+    metric: "keyup decay"
+    min: -3.28
+    max: 3.7
+    reason: "MARIMBA: a ratio against digital silence (the note has died, -300 dBFS floor) shifts by the +2.6 dB global LEVEL (1ae87375); the sound after the key-up is unchanged"
+  - match: "*/[SFD][TUEY]??/[!R]*/*"
+    metric: "level peak lu cb"
+    min: 1.0
+    max: 3.7
+    reason: "Rhodes TYPEs v64..127: the global output LEVEL +14 (+2.6 dB, 1ae87375); the engine's own level unchanged at v64..127 (RAW within +-0.3 dB)"
+  - match: "*/[SFD][TUEY]??/FXOFF/*"
+    metric: "lim"
+    min: -4.0
+    max: -2.2
+    reason: "Rhodes TYPEs: lim is RAW minus effects-off: the +2.6 dB global LEVEL applies with the effects off, not in RAW (1ae87375)"
+
+# ---- 2. rh_dyn soft end (15780dac): range 31 dB against 0.9.9's 25.5; v20 -5.8 dB, v40 -2.5 dB RAW
+  - match: "*/[SFD][TUEY]??/*/*/k[2-8]?v20"
+    metric: "cb"
+    min: -15.39
+    max: -1.4
+    reason: "rh_dyn soft end (15780dac): critical-band loudness (phon-like) of v20 falls faster than its RMS near the hearing threshold at the bass keys (k28/k33 RAW -12..-15, FX -6.5..-8.4); RMS -5.8 RAW"
+  - match: "*/[SFD][TUEY]??/*/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -7.0
+    max: -1.4
+    reason: "rh_dyn soft end (15780dac, 61ec1e8b): range 31 dB against 0.9.9's 25.5; RAW v20 -5.8, v40 -2.5; with the +2.6 dB global LEVEL v20 -3.2 and v40 within tolerance"
+  - match: "*/[SFD][TUEY]??/*/*/k[2-8]?v[24]0"
+    metric: "clk clk_off"
+    min: -10.04
+    max: -6.99
+    reason: "rh_dyn soft end: the softer v20/v40 strike gives a smaller attack transient (body/key-up click peak re the median lower)"
+
+# ---- 3. The top taper and the longer upper decay (61ec1e8b, 89e4ab30): key 93
+  - match: "*/DYNO/*/*/k93v*"
+    metric: "peak"
+    min: -27.48
+    max: -2.5
+    reason: "DYNO key 93: the attack peak -12..-20 dB: the top taper (61ec1e8b) and the pickup drive's fold removed (DYNO's x1.2 tip no longer folds into a spike at the top key)"
+  - match: "*/[SFD][TUEY]??/*/*/k93v*"
+    metric: "level peak lu cb"
+    min: -13.0
+    max: -0.9
+    reason: "the top taper (sonic-dyn, 61ec1e8b): key 93 -1.2..-1.4 LU with the effects off (RAW -4); at v20/v40 the soft end adds to it; the attack peak down to -5.5 (v127)"
+  - match: "*/[SFD][TUEY]??/*/*/k93v*"
+    metric: "decay"
+    min: -10.6
+    max: -3.0
+    reason: "the top key holds longer: the upper register's decay lengthened (t60_v1, 89e4ab30) and the top taper: 8..9 dB less lost over the hold at key 93"
+
+# ---- 4. The shorter damper and quicker felt (40fc8931): the key-up
+  - match: "*/[SFD][TUEY]??/*"
+    metric: "keyup"
+    min: -225.88
+    max: -2.0
+    reason: "the shorter damper and quicker felt (40fc8931; RELEASE x8 at 127 keeps 0.9.9's long releases, 624ed178): the note falls 4..22 dB further 80..280 ms after the key-up; -2xx: fully damped to digital silence. Key-up noise peaks equal to 0.9.9"
+
+# ---- 5. The pickup drive's fold removed (0.9.10, clean at every velocity: rh_load_pulse caps the swing at 0.9.9's full scale)
+  - match: "*/[SFD][TUEY]??/*"
+    metric: "clk clk_off"
+    min: -22.3
+    max: -6.0
+    reason: "the pickup drive's fold removed (the tine swing capped at 0.9.9's full scale, rh_load_pulse; 0.9.10 clean at every velocity): no folded attack edges, body clicks 6..19 dB lower re the median"
+  - match: "*/DYNO/RAW/*"
+    metric: "clip"
+    min: -26.5
+    max: -19.5
+    reason: "DYNO RAW: fewer full-scale samples: the pickup drive's fold removed (DYNO x1.2 tip no longer folds at v127) and the -1.0 dBFS output ceiling (61ec1e8b)"
+  - match: "*/DYNO/*"
+    metric: "peak"
+    min: -8.0
+    max: -2.0
+    reason: "DYNO: the attack peak 2..8 dB lower (net of the +2.6 dB global LEVEL in FX/FXOFF): the pickup drive's fold removed, DYNO's x1.2 tip capped at 0.9.9's full scale (rh_load_pulse)"
+  - match: "*/DYNO/*/*/k57v127"
+    metric: "level lu cb"
+    min: -1.6
+    max: -0.9
+    reason: "DYNO k57 v127 RAW -1.2 LU: the fold removed takes the folded overtones' energy away (clean at every velocity)"
+
+# ---- 6. Fewer harmonics: decreases only (every rise of H2..H6 / inh / imd is a pristine ceiling, never listed here)
+  - match: "*/[SFD][TUEY]??/*"
+    metric: "H? inh imd"
+    min: -18.88
+    max: -3.0
+    reason: "fewer harmonics / inharmonic energy: the fold removed (0.9.10 clean at every velocity), the tine mode turned down from A3 up (1f596312) and the harmonic-decay glide RH_HD (fecfb141: later H2 lower); decreases only, every rise is a pristine ceiling"
+  - match: "*/F0?/*"
+    metric: "H? inh imd"
+    min: -23.31
+    max: -3.0
+    reason: "fewer harmonics / inharmonic energy: the fold removed (0.9.10 clean at every velocity), the tine mode turned down from A3 up (1f596312) and the harmonic-decay glide RH_HD (fecfb141: later H2 lower); decreases only, every rise is a pristine ceiling"
+  - match: "*/F1[012]/*"
+    metric: "H? inh imd"
+    min: -15.02
+    max: -3.0
+    reason: "fewer harmonics / inharmonic energy: the fold removed (0.9.10 clean at every velocity), the tine mode turned down from A3 up (1f596312) and the harmonic-decay glide RH_HD (fecfb141: later H2 lower); decreases only, every rise is a pristine ceiling"
+  - match: "*/F1[789]/*"
+    metric: "H? inh imd"
+    min: -20.03
+    max: -3.0
+    reason: "fewer harmonics / inharmonic energy: the fold removed (0.9.10 clean at every velocity), the tine mode turned down from A3 up (1f596312) and the harmonic-decay glide RH_HD (fecfb141: later H2 lower); decreases only, every rise is a pristine ceiling"
+
+# ---- 7. Factory presets: the LEVEL retrim (1ae87375, b8a7d4ee, the 0.9.10 fix) on the 0.9.10 engine and the refitted effect make-ups (dab6f113, a539d91d)
+  - match: "*/F01/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -6.56
+    max: -1.4
+    reason: "F01 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F01/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.59
+    max: -2.26
+    reason: "F01 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 55 to 69 (1ae87375 / b8a7d4ee)"
+  - match: "*/F01/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -10.31
+    max: -0.9
+    reason: "F01 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 55 to 69; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F01/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.82
+    max: 3.76
+    reason: "F01: the preset LEVEL 55 to 69 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.7 dB"
+  - match: "*/F01/PRESET/*"
+    metric: "keyup"
+    min: -204.94
+    max: -203.26
+    reason: "F01: fully damped to digital silence after the key-up: the shorter damper and quicker felt (40fc8931)"
+  - match: "*/F01/PRESET/*"
+    metric: "keyup"
+    min: -21.56
+    max: -1.54
+    reason: "F01: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F01/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.38
+    max: -7.08
+    reason: "F01 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F01/PRESET/*"
+    metric: "clk clk_off"
+    min: -8.4
+    max: -6.63
+    reason: "F01: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F02/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -7.83
+    max: -1.4
+    reason: "F02 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F02/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.6
+    max: -2.25
+    reason: "F02 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 49 to 63 (1ae87375 / b8a7d4ee)"
+  - match: "*/F02/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -10.37
+    max: -0.9
+    reason: "F02 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 49 to 63; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F02/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.8
+    max: 3.93
+    reason: "F02: the preset LEVEL 49 to 63 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.7 dB"
+  - match: "*/F02/PRESET/*"
+    metric: "keyup"
+    min: -203.66
+    max: -201.98
+    reason: "F02: fully damped to digital silence after the key-up: the shorter damper and quicker felt (40fc8931)"
+  - match: "*/F02/PRESET/*"
+    metric: "keyup"
+    min: -20.85
+    max: -2.01
+    reason: "F02: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F02/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.35
+    max: -7.61
+    reason: "F02 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F02/PRESET/*"
+    metric: "clk clk_off"
+    min: -8.7
+    max: -6.0
+    reason: "F02: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F03/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -7.23
+    max: -1.4
+    reason: "F03 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F03/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.51
+    max: -2.23
+    reason: "F03 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 52 to 66 (1ae87375 / b8a7d4ee)"
+  - match: "*/F03/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -10.1
+    max: -0.9
+    reason: "F03 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 52 to 66; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F03/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.5
+    max: 3.83
+    reason: "F03: the preset LEVEL 52 to 66 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.8 dB"
+  - match: "*/F03/PRESET/*"
+    metric: "keyup"
+    min: -203.7
+    max: -202.02
+    reason: "F03: fully damped to digital silence after the key-up: the shorter damper and quicker felt (40fc8931)"
+  - match: "*/F03/PRESET/*"
+    metric: "keyup"
+    min: -24.18
+    max: -1.64
+    reason: "F03: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F03/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.39
+    max: -7.11
+    reason: "F03 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F03/PRESET/*"
+    metric: "clk clk_off"
+    min: -6.62
+    max: -6.0
+    reason: "F03: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F04/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -13.42
+    max: -2.66
+    reason: "F04 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F04/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -6.53
+    max: -1.09
+    reason: "F04 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 56 to 59 (1ae87375 / b8a7d4ee)"
+  - match: "*/F04/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -17.96
+    max: -1.09
+    reason: "F04 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 56 to 59; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F04/PRESET/*"
+    metric: "level peak lu cb"
+    min: -4.56
+    max: 1.2
+    reason: "F04: the preset LEVEL 56 to 59 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move -1.8 dB"
+  - match: "*/F04/PRESET/*"
+    metric: "keyup"
+    min: -15.78
+    max: -1.64
+    reason: "F04: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F04/PRESET/*"
+    metric: "peak"
+    min: -8.0
+    max: -4.93
+    reason: "F04 (DYNO-based): the attack peak 2..8 dB lower: the pickup drive's fold removed, DYNO's x1.2 tip capped at 0.9.9's full scale"
+  - match: "*/F04/PRESET/*"
+    metric: "cb"
+    min: 1.78
+    max: 2.81
+    reason: "F04: critical-band loudness (phon-like) of the preset level change: it moves up to ~2.5x the RMS change at quiet cells"
+  - match: "*/F04/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.49
+    max: -7.62
+    reason: "F04 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F04/PRESET/*"
+    metric: "clk clk_off"
+    min: -16.07
+    max: -6.0
+    reason: "F04: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F05/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -5.07
+    max: -1.4
+    reason: "F05 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F05/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -5.87
+    max: -1.0
+    reason: "F05 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 46 to 60 (1ae87375 / b8a7d4ee)"
+  - match: "*/F05/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -8.61
+    max: -0.9
+    reason: "F05 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 46 to 60; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F05/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.25
+    max: 5.04
+    reason: "F05: the preset LEVEL 46 to 60 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.7 dB"
+  - match: "*/F05/PRESET/*"
+    metric: "keyup"
+    min: -13.66
+    max: -1.75
+    reason: "F05: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F05/PRESET/*"
+    metric: "cent"
+    min: 0.06
+    max: 0.17
+    reason: "F05: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F05/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.1
+    max: -7.06
+    reason: "F05 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F05/PRESET/*"
+    metric: "clk clk_off"
+    min: -8.71
+    max: -6.0
+    reason: "F05: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F06/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -2.37
+    max: -1.4
+    reason: "F06 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F06/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.51
+    max: -1.55
+    reason: "F06 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 45 to 54 (1ae87375 / b8a7d4ee)"
+  - match: "*/F06/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -7.44
+    max: -1.17
+    reason: "F06 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 45 to 54; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F06/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.83
+    max: 3.62
+    reason: "F06: the preset LEVEL 45 to 54 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.8 dB"
+  - match: "*/F06/PRESET/*"
+    metric: "keyup"
+    min: -4.03
+    max: -1.51
+    reason: "F06: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F06/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 1.56
+    max: 7.12
+    reason: "F06 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F06/PRESET/*"
+    metric: "cent"
+    min: -0.3
+    max: -0.16
+    reason: "F06: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F06/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.09
+    max: -3.97
+    reason: "F06 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F06/PRESET/*"
+    metric: "clk clk_off"
+    min: -7.86
+    max: -6.07
+    reason: "F06: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F07/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -4.74
+    max: -3.32
+    reason: "F07 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F07/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -3.42
+    max: -1.22
+    reason: "F07 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 53 to 67 (1ae87375 / b8a7d4ee)"
+  - match: "*/F07/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -5.71
+    max: -0.9
+    reason: "F07 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 53 to 67; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F07/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.01
+    max: 3.98
+    reason: "F07: the preset LEVEL 53 to 67 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +3.1 dB"
+  - match: "*/F07/PRESET/*"
+    metric: "keyup"
+    min: -4.01
+    max: -1.51
+    reason: "F07: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F07/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 3.05
+    max: 4.29
+    reason: "F07 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F07/PRESET/*"
+    metric: "cent"
+    min: -0.33
+    max: -0.06
+    reason: "F07: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F07/PRESET/*/k93v*"
+    metric: "decay"
+    min: -6.86
+    max: -4.79
+    reason: "F07 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F08/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -16.0
+    max: -4.43
+    reason: "F08 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F08/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -7.52
+    max: -2.74
+    reason: "F08 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 68 to 60 (1ae87375 / b8a7d4ee)"
+  - match: "*/F08/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -14.56
+    max: -4.18
+    reason: "F08 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 68 to 60; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F08/PRESET/*"
+    metric: "level peak lu cb"
+    min: -4.2
+    max: -0.51
+    reason: "F08: the preset LEVEL 68 to 60 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move -1.2 dB"
+  - match: "*/F08/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 2.38
+    max: 4.28
+    reason: "F08 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F08/PRESET/*"
+    metric: "peak"
+    min: -7.86
+    max: -3.73
+    reason: "F08 (DYNO-based): the attack peak 2..8 dB lower: the pickup drive's fold removed, DYNO's x1.2 tip capped at 0.9.9's full scale"
+  - match: "*/F08/PRESET/*"
+    metric: "cent"
+    min: -0.3
+    max: -0.05
+    reason: "F08: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F08/PRESET/*/k93v*"
+    metric: "decay"
+    min: -6.81
+    max: -2.81
+    reason: "F08 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F08/PRESET/*"
+    metric: "clk clk_off"
+    min: -21.79
+    max: -6.0
+    reason: "F08: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F09/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -10.08
+    max: -1.4
+    reason: "F09 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F09/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -5.99
+    max: -1.0
+    reason: "F09 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 60 to 62 (1ae87375 / b8a7d4ee)"
+  - match: "*/F09/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -11.0
+    max: -0.9
+    reason: "F09 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 60 to 62; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F09/PRESET/*"
+    metric: "keyup"
+    min: -4.99
+    max: -1.54
+    reason: "F09: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F09/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 3.46
+    max: 4.47
+    reason: "F09 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F09/PRESET/*"
+    metric: "cent"
+    min: -0.27
+    max: 0.15
+    reason: "F09: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F09/PRESET/*/k93v*"
+    metric: "decay"
+    min: -8.57
+    max: -2.51
+    reason: "F09 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F09/PRESET/*"
+    metric: "clk clk_off"
+    min: -9.15
+    max: -6.0
+    reason: "F09: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F10/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -15.29
+    max: -1.4
+    reason: "F10 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F10/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.77
+    max: -2.14
+    reason: "F10 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 42 to 56 (1ae87375 / b8a7d4ee)"
+  - match: "*/F10/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -9.63
+    max: -1.01
+    reason: "F10 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 42 to 56; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F10/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.0
+    max: 5.7
+    reason: "F10: the preset LEVEL 42 to 56 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.7 dB"
+  - match: "*/F10/PRESET/*"
+    metric: "keyup"
+    min: -21.03
+    max: -1.99
+    reason: "F10: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F10/PRESET/*/k93v*"
+    metric: "decay"
+    min: -8.94
+    max: -2.55
+    reason: "F10 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F11/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -2.32
+    max: -1.4
+    reason: "F11 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F11/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -3.72
+    max: -1.0
+    reason: "F11 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 18 to 35 (1ae87375 / b8a7d4ee)"
+  - match: "*/F11/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -7.18
+    max: -3.17
+    reason: "F11 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 18 to 35; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F11/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.5
+    max: 6.13
+    reason: "F11: the preset LEVEL 18 to 35 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +3.2 dB"
+  - match: "*/F11/PRESET/*"
+    metric: "keyup"
+    min: -6.97
+    max: -1.5
+    reason: "F11: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F11/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 1.52
+    max: 5.71
+    reason: "F11 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F11/PRESET/*"
+    metric: "cb"
+    min: 6.18
+    max: 8.41
+    reason: "F11: critical-band loudness (phon-like) of the preset level change: it moves up to ~2.5x the RMS change at quiet cells"
+  - match: "*/F11/PRESET/*"
+    metric: "cent"
+    min: -0.22
+    max: -0.09
+    reason: "F11: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F11/PRESET/*/k93v*"
+    metric: "decay"
+    min: -10.6
+    max: -7.43
+    reason: "F11 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F12/PRESET/*/k45v20"
+    metric: "level"
+    min: -32.26
+    max: -30.26
+    reason: "F12 AUTO WAH k45 v20: 0.9.9 at -70.1 dBFS (at the audibility floor, the wah's notch at this key); the soft end takes it to -102 dBFS. Inaudible both ways"
+  - match: "*/F12/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -5.14
+    max: -2.91
+    reason: "F12 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F12/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -6.34
+    max: -1.0
+    reason: "F12 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 121 to 127 (1ae87375 / b8a7d4ee)"
+  - match: "*/F12/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -11.12
+    max: -2.21
+    reason: "F12 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 121 to 127; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F12/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.5
+    max: 4.4
+    reason: "F12: the preset LEVEL 121 to 127 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.4 dB"
+  - match: "*/F12/PRESET/*"
+    metric: "keyup"
+    min: -203.82
+    max: -200.97
+    reason: "F12: fully damped to digital silence after the key-up: the shorter damper and quicker felt (40fc8931)"
+  - match: "*/F12/PRESET/*"
+    metric: "keyup"
+    min: -22.64
+    max: -1.76
+    reason: "F12: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F12/PRESET/*"
+    metric: "cb"
+    min: 4.11
+    max: 5.19
+    reason: "F12: critical-band loudness (phon-like) of the preset level change: it moves up to ~2.5x the RMS change at quiet cells"
+  - match: "*/F12/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.1
+    max: -2.99
+    reason: "F12 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F12/PRESET/*"
+    metric: "clk clk_off"
+    min: -8.71
+    max: -6.0
+    reason: "F12: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+  - match: "*/F14/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.0
+    max: 2.1
+    reason: "F14: the preset LEVEL 59 to 66 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.5 dB; the bar engine itself unchanged, PH_G refit (dab6f113)"
+  - match: "*/F15/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.81
+    max: 2.89
+    reason: "F15: the preset LEVEL 59 to 66 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +1.3 dB; the bar engine itself unchanged, PH_G refit (dab6f113)"
+  - match: "*/F16/PRESET/*"
+    metric: "level peak lu cb"
+    min: -7.53
+    max: -2.42
+    reason: "F16: the preset LEVEL 67 to 40 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move -4.9 dB; the bar engine itself unchanged, PH_G refit (dab6f113)"
+  - match: "*/F17/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -6.3
+    max: -5.19
+    reason: "F17 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F17/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -5.77
+    max: -4.05
+    reason: "F17 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 47 to 61 (1ae87375 / b8a7d4ee)"
+  - match: "*/F17/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -5.05
+    max: -0.9
+    reason: "F17 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 47 to 61; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F17/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.58
+    max: 4.41
+    reason: "F17: the preset LEVEL 47 to 61 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.7 dB"
+  - match: "*/F17/PRESET/*"
+    metric: "keyup"
+    min: -4.04
+    max: -1.6
+    reason: "F17: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F17/PRESET/*"
+    metric: "cent"
+    min: -0.27
+    max: 0.2
+    reason: "F17: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F17/PRESET/*/k93v*"
+    metric: "decay"
+    min: -5.1
+    max: -2.51
+    reason: "F17 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F18/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -5.2
+    max: -3.75
+    reason: "F18 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F18/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -3.4
+    max: -2.32
+    reason: "F18 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 55 to 69 (1ae87375 / b8a7d4ee)"
+  - match: "*/F18/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -6.24
+    max: -0.9
+    reason: "F18 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 55 to 69; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F18/PRESET/*"
+    metric: "level peak lu cb"
+    min: 0.61
+    max: 4.25
+    reason: "F18: the preset LEVEL 55 to 69 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +3.0 dB"
+  - match: "*/F18/PRESET/*"
+    metric: "keyup"
+    min: -3.16
+    max: -2.15
+    reason: "F18: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F18/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 1.57
+    max: 3.05
+    reason: "F18 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F18/PRESET/*"
+    metric: "cent"
+    min: -0.32
+    max: -0.08
+    reason: "F18: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F18/PRESET/*/k93v*"
+    metric: "decay"
+    min: -4.85
+    max: -3.0
+    reason: "F18 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F19/PRESET/*/k[23][38]v20"
+    metric: "level"
+    min: -225.38
+    max: -21.34
+    reason: "F19 RADIO k28/k33 v20: 0.9.9 already at -73..-75 dBFS (under the -70 dBFS audibility floor: the band-pass removes the bass); the soft end (-5.8 dB) takes it to -95 dBFS / digital silence. Inaudible both ways"
+  - match: "*/F19/PRESET/*/k[2-8]?v20"
+    metric: "cb"
+    min: -3.78
+    max: -1.4
+    reason: "F19 v20: the soft end (15780dac): critical-band loudness falls faster than the RMS near the threshold at the bass keys"
+  - match: "*/F19/PRESET/*/k[2-8]?v[24]0"
+    metric: "level peak lu cb"
+    min: -4.46
+    max: -2.07
+    reason: "F19 v20/v40: the rh_dyn soft end (15780dac, RAW -5.8 / -2.5 dB) with the preset LEVEL 75 to 90 (1ae87375 / b8a7d4ee)"
+  - match: "*/F19/PRESET/*/k93v*"
+    metric: "level peak lu cb"
+    min: -10.07
+    max: -0.9
+    reason: "F19 key 93: the top taper (61ec1e8b, -1.2..-1.4 LU dry) and the soft end at v20/v40, with the preset LEVEL 75 to 90; DYNO-based presets: the fold removed takes the top key's attack spike"
+  - match: "*/F19/PRESET/*"
+    metric: "level peak lu cb"
+    min: 1.09
+    max: 5.9
+    reason: "F19: the preset LEVEL 75 to 90 (1ae87375 global +2.6 dB under the -1.0 dBFS ceiling; b8a7d4ee F06/F09/F11/F19 to F01's level; hot presets trimmed so 4-note v127 pedal chords never reach the limiter), median move +2.9 dB"
+  - match: "*/F19/PRESET/*"
+    metric: "keyup"
+    min: -201.52
+    max: -200.43
+    reason: "F19: fully damped to digital silence after the key-up: the shorter damper and quicker felt (40fc8931)"
+  - match: "*/F19/PRESET/*"
+    metric: "keyup"
+    min: -10.71
+    max: -1.51
+    reason: "F19: the shorter damper and quicker felt (40fc8931) under the preset's effects (key-up noise peaks equal to 0.9.9)"
+  - match: "*/F19/PRESET/*/k[2-8]?v[24]0"
+    metric: "keyup"
+    min: 1.56
+    max: 5.64
+    reason: "F19 v20/v40: the note is quieter (soft end, 15780dac) while the key-up noise and the effect tail keep 0.9.9's level, so the ratio rises"
+  - match: "*/F19/PRESET/*"
+    metric: "cb"
+    min: 5.68
+    max: 9.9
+    reason: "F19: critical-band loudness (phon-like) of the preset level change: it moves up to ~2.5x the RMS change at quiet cells"
+  - match: "*/F19/PRESET/*"
+    metric: "cent"
+    min: 0.07
+    max: 0.2
+    reason: "F19: the centroid of soft / top notes under the preset's drive, filter and delay: the soft end lowers the note against the effect's own floor and tail; the fold removed darkens the top keys at v96..127"
+  - match: "*/F19/PRESET/*/k93v*"
+    metric: "decay"
+    min: -9.44
+    max: -3.47
+    reason: "F19 key 93: the top key holds longer (t60_v1 89e4ab30, top taper)"
+  - match: "*/F19/PRESET/*"
+    metric: "clk clk_off"
+    min: -8.46
+    max: -7.46
+    reason: "F19: body / key-up clicks lower: the pickup drive's fold removed and the soft end"
+
+# ---- 8. Root-caused one by one (host renders against 0.9.9, effects switched off in turn to find the cause)
+  - match: "*/F06/PRESET/*"
+    metric: "keyup"
+    min: 1.68
+    max: 3.13
+    reason: "F06 keyup up (relative): the absolute tail does not rise: 300..700 ms after the key-up it moves with the hold (+-0.6 dB, the preset level). The 80..280 ms window rises because the shorter damper (40fc8931) removes the dry note that partly cancelled the same-pitch echo in 0.9.9 (F07 k33v127: delay off, no rise; at +140 ms 0.9.9 -45.5 dBFS against its echo's -37), and at k93 the longer upper decay (89e4ab30) raises the last 200 ms before the key-up"
+  - match: "*/F07/PRESET/*"
+    metric: "keyup"
+    min: 2.81
+    max: 4.37
+    reason: "F07 keyup up (relative): the absolute tail does not rise: 300..700 ms after the key-up it moves with the hold (+-0.6 dB, the preset level). The 80..280 ms window rises because the shorter damper (40fc8931) removes the dry note that partly cancelled the same-pitch echo in 0.9.9 (F07 k33v127: delay off, no rise; at +140 ms 0.9.9 -45.5 dBFS against its echo's -37), and at k93 the longer upper decay (89e4ab30) raises the last 200 ms before the key-up"
+  - match: "*/F08/PRESET/*"
+    metric: "keyup"
+    min: 1.8
+    max: 3.67
+    reason: "F08 keyup up (relative): the absolute tail does not rise: 300..700 ms after the key-up it moves with the hold (+-0.6 dB, the preset level). The 80..280 ms window rises because the shorter damper (40fc8931) removes the dry note that partly cancelled the same-pitch echo in 0.9.9 (F07 k33v127: delay off, no rise; at +140 ms 0.9.9 -45.5 dBFS against its echo's -37), and at k93 the longer upper decay (89e4ab30) raises the last 200 ms before the key-up"
+  - match: "*/F09/PRESET/*"
+    metric: "keyup"
+    min: 1.79
+    max: 4.39
+    reason: "F09 keyup up (relative): the absolute tail does not rise: 300..700 ms after the key-up it moves with the hold (+-0.6 dB, the preset level). The 80..280 ms window rises because the shorter damper (40fc8931) removes the dry note that partly cancelled the same-pitch echo in 0.9.9 (F07 k33v127: delay off, no rise; at +140 ms 0.9.9 -45.5 dBFS against its echo's -37), and at k93 the longer upper decay (89e4ab30) raises the last 200 ms before the key-up"
+  - match: "*/F10/PRESET/*"
+    metric: "keyup"
+    min: 1.95
+    max: 6.03
+    reason: "F10 keyup up (relative): the absolute tail does not rise: 300..700 ms after the key-up it moves with the hold (+-0.6 dB, the preset level). The 80..280 ms window rises because the shorter damper (40fc8931) removes the dry note that partly cancelled the same-pitch echo in 0.9.9 (F07 k33v127: delay off, no rise; at +140 ms 0.9.9 -45.5 dBFS against its echo's -37), and at k93 the longer upper decay (89e4ab30) raises the last 200 ms before the key-up"
+  - match: "*/F11/PRESET/*"
+    metric: "keyup"
+    min: 1.95
+    max: 4.68
+    reason: "F11 keyup up (relative): the absolute tail does not rise: 300..700 ms after the key-up it moves with the hold (+-0.6 dB, the preset level). The 80..280 ms window rises because the shorter damper (40fc8931) removes the dry note that partly cancelled the same-pitch echo in 0.9.9 (F07 k33v127: delay off, no rise; at +140 ms 0.9.9 -45.5 dBFS against its echo's -37), and at k93 the longer upper decay (89e4ab30) raises the last 200 ms before the key-up"
+  - match: "*/F12/PRESET/*"
+    metric: "keyup"
+    min: 2.59
+    max: 4.67
+    reason: "F12 keyup up (relative): the absolute tail does not rise: 300..700 ms after the key-up it moves with the hold (+-0.6 dB, the preset level). The 80..280 ms window rises because the shorter damper (40fc8931) removes the dry note that partly cancelled the same-pitch echo in 0.9.9 (F07 k33v127: delay off, no rise; at +140 ms 0.9.9 -45.5 dBFS against its echo's -37), and at k93 the longer upper decay (89e4ab30) raises the last 200 ms before the key-up"
+  - match: "*/F18/PRESET/*"
+    metric: "keyup"
+    min: 1.79
+    max: 3.45
+    reason: "F18 keyup up (relative): the absolute tail does not rise: 300..700 ms after the key-up it moves with the hold (+-0.6 dB, the preset level). The 80..280 ms window rises because the shorter damper (40fc8931) removes the dry note that partly cancelled the same-pitch echo in 0.9.9 (F07 k33v127: delay off, no rise; at +140 ms 0.9.9 -45.5 dBFS against its echo's -37), and at k93 the longer upper decay (89e4ab30) raises the last 200 ms before the key-up"
+  - match: "*/F19/PRESET/*"
+    metric: "keyup"
+    min: 1.63
+    max: 8.87
+    reason: "F19 keyup up (relative): the absolute tail does not rise: 300..700 ms after the key-up it moves with the hold (+-0.6 dB, the preset level). The 80..280 ms window rises because the shorter damper (40fc8931) removes the dry note that partly cancelled the same-pitch echo in 0.9.9 (F07 k33v127: delay off, no rise; at +140 ms 0.9.9 -45.5 dBFS against its echo's -37), and at k93 the longer upper decay (89e4ab30) raises the last 200 ms before the key-up"
+  - match: "*/F11/PRESET/*/k93v96"
+    metric: "cent"
+    min: 0.46
+    max: 0.61
+    reason: "F11 RESO SWEEP k93 v96: a sweep trough (-57 dBFS against -33 / -19 at v64 / v110, both builds): the centroid of a remnant the filter has removed; level +1.6 dB, inaudible"
+  - match: "*/F11/PRESET/*/k33v20"
+    metric: "cb"
+    min: 14.93
+    max: 16.63
+    reason: "F11 k33 v20 at -63 dBFS: critical-band loudness under 0 phon (the model's steep slope at the threshold: +2.9 dB reads +7.5 phon with every effect off) plus the previous note's tail; inaudible"
+  - match: "*/F19/PRESET/*/k45v20"
+    metric: "decay"
+    min: 9.33
+    max: 10.46
+    reason: "F19 k45 v20 at -66 dBFS: the soft end's quieter note under the slap / room tail through the hard drive (gone with the drive off or the delay and reverb off); inaudible"
+  - match: "*/F19/PRESET/*/k28v64"
+    metric: "decay"
+    min: -4.1
+    max: -3.04
+    reason: "F19 k28 v64: the harmonic-decay glide (fecfb141: H2 +1.5 dB, H4..H6 +1..2.5 dB at 0.65 s, RAW) exposed by the hard drive and the band-pass, which remove the fundamental (gone with the drive off)"
+  - match: "*/F18/PRESET/*/k[34][35]v20"
+    metric: "decay cent"
+    min: 2.73
+    max: 5.31
+    reason: "F18 DREAM k33 / k45 v20: the soft end's note 3 dB quieter under the previous v127 note's long dark hall (RV_DECAY 104) and echo, which dominate the hold window (with the delay and reverb off: decay and centroid unchanged)"
+  - match: "*/F09/PRESET/*"
+    metric: "lu level"
+    min: 0.9
+    max: 1.86
+    reason: "F09 70S PHASER: the phaser's refitted centre law (dab6f113) puts the notch elsewhere at a given LFO phase; with the phaser off every cell moves a uniform +0.5..+0.7 dB"
+  - match: "fm1/MARIMBA/FXOFF/*/k89v*"
+    metric: "H?"
+    min: -3.9
+    max: -3.0
+    reason: "MARIMBA unchanged (identical metrics in both builds at any one LEVEL, RAW equal): the default LEVEL 55 to 69 lowers a fixed output-stage floor in the H3 / H6 bands (LEVEL off unity: the TPDF-dithered gain) re the louder note; inh -11 dB here"
+  - match: "*/F08/PRESET/*/k81v1*"
+    metric: "cb"
+    min: -4.92
+    max: -3.88
+    reason: "F08 DYNO 80S: the fold removed takes DYNO's attack spike (peak -7 dB) out of the echo and the bright plate (with the delay and reverb off the critical-band loudness is unchanged)"
+  - match: "*/F15/PRESET/*"
+    metric: "keyup"
+    min: 2.08
+    max: 3.08
+    reason: "F15: the bar engine unchanged; the key-up ratio is taken against the output stage's floor / digital silence, so it shifts by the preset level change"
+
+# ---- 9. Soft notes on effects-on cells against the reverb's int16 grain (measurable only under -95 dBFS: the H ceiling holds above)
+  - match: "*/[SFD][TUEY]??/FX/*/*v20"
+    metric: "H?"
+    min: 3.0
+    max: 18.47
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/[SFD][TUEY]??/FX/*/*v[69]*"
+    metric: "H?"
+    min: 3.0
+    max: 3.67
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/[SFD][TUEY]??/FX/*/k[2468]?v40"
+    metric: "H?"
+    min: 3.0
+    max: 8.49
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/[SFD][TUEY]??/FX/*/k93v40"
+    metric: "H?"
+    min: 3.53
+    max: 7.07
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F0?/PRESET/*/*v20"
+    metric: "H?"
+    min: 3.0
+    max: 19.44
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F0?/PRESET/*/*v[69]*"
+    metric: "H?"
+    min: 3.0
+    max: 5.15
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F0?/PRESET/*/k[2468]?v40"
+    metric: "H?"
+    min: 3.0
+    max: 8.22
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F0?/PRESET/*/k93v40"
+    metric: "H?"
+    min: 3.0
+    max: 8.95
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F1[012]/PRESET/*/*v20"
+    metric: "H?"
+    min: 3.0
+    max: 16.59
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F1[012]/PRESET/*/*v[69]*"
+    metric: "H?"
+    min: 3.0
+    max: 6.2
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F1[012]/PRESET/*/k[2468]?v40"
+    metric: "H?"
+    min: 3.0
+    max: 8.43
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F1[012]/PRESET/*/k93v40"
+    metric: "H?"
+    min: 6.42
+    max: 10.67
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F1[789]/PRESET/*/*v20"
+    metric: "H?"
+    min: 3.0
+    max: 13.5
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F1[789]/PRESET/*/*v[69]*"
+    metric: "H?"
+    min: 3.47
+    max: 4.47
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F1[789]/PRESET/*/k[2468]?v40"
+    metric: "H?"
+    min: 3.0
+    max: 9.76
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+  - match: "*/F1[789]/PRESET/*/k93v40"
+    metric: "H?"
+    min: 5.62
+    max: 8.46
+    reason: "effects-on cells only (FX / PRESET, the median of 4 strike times): a harmonic band rises where the note is soft (the soft end makes v20 / v40 3..6 dB quieter, k93 the top taper) against the reverb's int16 rounding grain (-92..-101 dBFS, f4b6b09f). Only values under -95 dBFS absolute can reach this entry: above that the H ceiling holds whatever is listed. k33 / k57 v40 left out on purpose (the k57 cells another agent fixes)"
+
+# ---- 10. The voice controls at 0 / 127 (full grid, effects off, FM-1 build)
+  - match: "fm1/ST77/DECAY0/*"
+    metric: "level lu cb peak"
+    min: 3.26
+    max: 7.51
+    reason: "ST77 DECAY 0 (effects off, FM-1): the short-decay end now holds longer (the upper / mid register's t60_v1, 89e4ab30, scales the DECAY knob) plus the +2.6 dB global LEVEL"
+  - match: "fm1/ST77/DECAY0/*"
+    metric: "decay"
+    min: -223.26
+    max: -6.03
+    reason: "ST77 DECAY 0: the note loses less over the hold (89e4ab30); -2xx: 0.9.9's note had died to digital silence within the hold"
+  - match: "fm1/ST77/HAMMER127/*"
+    metric: "level lu cb peak"
+    min: -2.86
+    max: 6.23
+    reason: "ST77 HAMMER 127: its range back (22312e7a: 2^(1.5 (v-64)/128), x1.68 at 127; 0.9.9 narrower) plus the +2.6 dB global LEVEL; the attack peak at k69/k81 v127 slightly lower with the fold removed"
+  - match: "fm1/ST77/HAMMER0/*"
+    metric: "level lu cb peak"
+    min: -1.89
+    max: -1.0
+    reason: "ST77 HAMMER 0: its range back (22312e7a, x0.59 at 0) with the soft end at v20 / v40: the softest notes 8..11 dB quieter (-55..-58 dBFS)"
+  - match: "fm1/ST77/TONE127/*"
+    metric: "level lu cb peak"
+    min: 3.23
+    max: 4.8
+    reason: "ST77 TONE 127 at the bass keys: +1.1..+1.7 dB beyond the +2.6 dB global LEVEL: the level make-ups' critical-band match (b9e798ba, matched louder where brighter); not root-caused further"
+  - match: "fm1/SUIT/DECAY0/*"
+    metric: "level lu cb peak"
+    min: 3.28
+    max: 7.58
+    reason: "SUIT DECAY 0 (effects off, FM-1): the short-decay end now holds longer (the upper / mid register's t60_v1, 89e4ab30, scales the DECAY knob) plus the +2.6 dB global LEVEL"
+  - match: "fm1/SUIT/DECAY0/*"
+    metric: "decay"
+    min: -221.85
+    max: -6.02
+    reason: "SUIT DECAY 0: the note loses less over the hold (89e4ab30); -2xx: 0.9.9's note had died to digital silence within the hold"
+  - match: "fm1/SUIT/HAMMER127/*"
+    metric: "level lu cb peak"
+    min: -2.61
+    max: 6.2
+    reason: "SUIT HAMMER 127: its range back (22312e7a: 2^(1.5 (v-64)/128), x1.68 at 127; 0.9.9 narrower) plus the +2.6 dB global LEVEL; the attack peak at k69/k81 v127 slightly lower with the fold removed"
+  - match: "fm1/SUIT/HAMMER127/*"
+    metric: "cent"
+    min: 0.05
+    max: 0.15
+    reason: "SUIT HAMMER 127: the harder hammer (22312e7a) brightens the bass keys"
+  - match: "fm1/SUIT/HAMMER0/*"
+    metric: "level lu cb peak"
+    min: -1.89
+    max: -1.0
+    reason: "SUIT HAMMER 0: its range back (22312e7a, x0.59 at 0) with the soft end at v20 / v40: the softest notes 8..11 dB quieter (-55..-58 dBFS)"
+  - match: "fm1/SUIT/TONE127/*"
+    metric: "level lu cb peak"
+    min: 3.23
+    max: 4.41
+    reason: "SUIT TONE 127 at the bass keys: +1.1..+1.7 dB beyond the +2.6 dB global LEVEL: the level make-ups' critical-band match (b9e798ba, matched louder where brighter); not root-caused further"
+  - match: "fm1/FELT/DECAY0/*"
+    metric: "level lu cb peak"
+    min: 3.35
+    max: 7.57
+    reason: "FELT DECAY 0 (effects off, FM-1): the short-decay end now holds longer (the upper / mid register's t60_v1, 89e4ab30, scales the DECAY knob) plus the +2.6 dB global LEVEL"
+  - match: "fm1/FELT/DECAY0/*"
+    metric: "decay"
+    min: -223.11
+    max: -6.03
+    reason: "FELT DECAY 0: the note loses less over the hold (89e4ab30); -2xx: 0.9.9's note had died to digital silence within the hold"
+  - match: "fm1/FELT/HAMMER127/*"
+    metric: "level lu cb peak"
+    min: 3.27
+    max: 4.27
+    reason: "FELT HAMMER 127: its range back (22312e7a: 2^(1.5 (v-64)/128), x1.68 at 127; 0.9.9 narrower) plus the +2.6 dB global LEVEL; the attack peak at k69/k81 v127 slightly lower with the fold removed"
+  - match: "fm1/FELT/HAMMER0/*"
+    metric: "level lu cb peak"
+    min: -20.85
+    max: -1.0
+    reason: "FELT HAMMER 0: its range back (22312e7a, x0.59 at 0) with the soft end at v20 / v40: the softest notes 8..11 dB quieter (-55..-58 dBFS)"
+  - match: "fm1/FELT/HAMMER0/*"
+    metric: "decay clk_off"
+    min: -304.02
+    max: 17.62
+    reason: "FELT HAMMER 0 v20: near-silent cells (-55..-58 dBFS): the decay and key-up click of a note at the floor; 0.9.9 louder by the narrower HAMMER range"
+  - match: "fm1/DYNO/DECAY0/*"
+    metric: "level lu cb peak"
+    min: 3.29
+    max: 7.93
+    reason: "DYNO DECAY 0 (effects off, FM-1): the short-decay end now holds longer (the upper / mid register's t60_v1, 89e4ab30, scales the DECAY knob) plus the +2.6 dB global LEVEL"
+  - match: "fm1/DYNO/DECAY0/*"
+    metric: "decay"
+    min: -223.12
+    max: -6.0
+    reason: "DYNO DECAY 0: the note loses less over the hold (89e4ab30); -2xx: 0.9.9's note had died to digital silence within the hold"
+  - match: "fm1/DYNO/HAMMER127/*"
+    metric: "level lu cb peak"
+    min: 3.31
+    max: 7.52
+    reason: "DYNO HAMMER 127: its range back (22312e7a: 2^(1.5 (v-64)/128), x1.68 at 127; 0.9.9 narrower) plus the +2.6 dB global LEVEL; the attack peak at k69/k81 v127 slightly lower with the fold removed"
+  - match: "fm1/DYNO/HAMMER127/*"
+    metric: "cent"
+    min: 0.1
+    max: 0.29
+    reason: "DYNO HAMMER 127: the harder hammer (22312e7a) brightens the bass keys"
+  - match: "fm1/DYNO/HAMMER0/*"
+    metric: "level lu cb peak"
+    min: -1.74
+    max: -1.0
+    reason: "DYNO HAMMER 0: its range back (22312e7a, x0.59 at 0) with the soft end at v20 / v40: the softest notes 8..11 dB quieter (-55..-58 dBFS)"
+  - match: "fm1/DYNO/TONE127/*"
+    metric: "level lu cb peak"
+    min: 3.21
+    max: 4.8
+    reason: "DYNO TONE 127 at the bass keys: +1.1..+1.7 dB beyond the +2.6 dB global LEVEL: the level make-ups' critical-band match (b9e798ba, matched louder where brighter); not root-caused further"
+  - match: "fm1/DYNO/*"
+    metric: "cent"
+    min: -0.16
+    max: -0.06
+    reason: "DYNO: the fold removed darkens the top key and the high chords (centroid -11 %)"
+  - match: "fm1/DYNO/*"
+    metric: "peak"
+    min: -11.37
+    max: -10.05
+    reason: "DYNO at a voice control's extreme: the fold removed takes the attack spike (k81 / k93)"
+  - match: "fm1/MARIMBA/[!R]*"
+    metric: "cb cent inh"
+    min: -3.68
+    max: 18.17
+    reason: "MARIMBA unchanged (any one LEVEL: identical; RAW equal): cells where the note has died within the hold (DECAY 0, k89 v20) are read mostly as the output stage's floor, which moves with the default LEVEL 55 to 69"
+  - match: "fm1/MARIMBA/[!R]*"
+    metric: "H?"
+    min: -8.0
+    max: -3.0
+    reason: "MARIMBA unchanged (identical metrics in both builds at any one LEVEL; RAW equal): at the quiet top keys (k74..k89) and DECAY 0 the H bands hold a fixed output-stage floor (LEVEL off unity: the TPDF-dithered gain), which the default LEVEL 55 to 69 lowers re the louder note; decreases only"
+  - match: "fm1/DYNO/*/*/k81v127"
+    metric: "decay"
+    min: -3.5
+    max: -3.0
+    reason: "DYNO k81 v127 at TONE 127: the upper register holds longer (t60_v1, 89e4ab30), just past the tolerance"
+  - match: "fm1/DYNO/*/*/chord-high"
+    metric: "decay"
+    min: -3.5
+    max: -3.0
+    reason: "DYNO high chord at BARK 127: the upper register holds longer (t60_v1, 89e4ab30), just past the tolerance"
+
+# ---- 11. RESPONSE B ("light touch", being redesigned: soft notes louder, the same tone, range ~25.5 dB). Its moves are
+# not listed yet: add a group matching "*/*/*/B/*" (RESPONSE B cells only) once the redesign lands. Until then the
+# entries above cover B where it moves with A.
+
+# ---- clean-top. The clean top (rhodes.c rh_top_x, firmware/gen/rh_top.h by tools/rh_top.py): above each key's knee
+#      (127 - 1.25 R) the tine's swing is cut, linear in dB to R/32 octave at v127, and the output takes it back:
+#      H2 and the attack's H2 at v127 <= -12 dB re H1 on every TYPE (0.9.9: -5 / -2 dB on DYNO). Velocities under the
+#      knee, VIBES and MARIMBA byte-identical (-DRH_NO_TOP). Ranges: the fast grid's move +-0.5 (centroid +-0.05)
+# Signed off: coordinator, 2026-11-09, v127 clean top (user request 23:12; commit 1fe0c0af).
+  - match: "*/DYNO/*/*/k*v127"
+    metric: "H3 H4"
+    min: -38.02
+    max: -20.62
+    reason: "DYNO: the clean top (42 cells): the swing cut takes the pickup's overdrive down: its H3..H5 fall with H2 (1 dB a dB and more)"
+  - match: "*/DYNO/*/*/chord-mid"
+    metric: "cent"
+    min: -0.26
+    max: -0.12
+    reason: "DYNO: the clean top (12 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/DYNO/*/*/k*v127"
+    metric: "cent"
+    min: -0.27
+    max: -0.1
+    reason: "DYNO: the clean top (20 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/DYNO/*/*/pedal"
+    metric: "cent"
+    min: -0.26
+    max: -0.12
+    reason: "DYNO: the clean top (12 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/DYNO/*/*/chord-mid"
+    metric: "decay"
+    min: -3.53
+    max: -2.53
+    reason: "DYNO: the clean top (2 cells): the 2 f0 bark that held the tail gone: the measured decay rate a little lower"
+  - match: "*/DYNO/*/*/k*v127"
+    metric: "decay"
+    min: -4.2
+    max: -2.52
+    reason: "DYNO: the clean top (13 cells): the 2 f0 bark that held the tail gone: the measured decay rate a little lower"
+  - match: "*/DYNO/*/*/pedal"
+    metric: "decay"
+    min: -3.52
+    max: -2.52
+    reason: "DYNO: the clean top (2 cells): the 2 f0 bark that held the tail gone: the measured decay rate a little lower"
+  - match: "*/DYNO/*/*/k*v127"
+    metric: "level"
+    min: 1.05
+    max: 4.67
+    reason: "DYNO: the clean top (7 cells): RH_TOP_G: the loudness the cut took given back (DYNO's bass keys, the K-weighted loudness at v127 as before, at most +1.5 dB)"
+  - match: "*/DYNO/FX*/*/k*v127"
+    metric: "peak"
+    min: 3.75
+    max: 4.75
+    reason: "DYNO: the clean top (4 cells): the attack's peak: down with the bark's crest, up where RH_TOP_G gives the loudness back"
+  - match: "*/DYNO/*/*/k*v127"
+    metric: "peak"
+    min: -11.59
+    max: -7.52
+    reason: "DYNO: the clean top (6 cells): the attack's peak: down with the bark's crest, up where RH_TOP_G gives the loudness back"
+  - match: "*/ST77/*/*/chord-mid"
+    metric: "cent"
+    min: -0.16
+    max: -0.05
+    reason: "ST77: the clean top (12 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/ST77/*/*/k*v127"
+    metric: "cent"
+    min: -0.15
+    max: -0.05
+    reason: "ST77: the clean top (8 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/ST77/*/*/pedal"
+    metric: "cent"
+    min: -0.16
+    max: -0.05
+    reason: "ST77: the clean top (12 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/ST77/FXOFF/*/k*v127"
+    metric: "decay"
+    min: -3.5
+    max: -2.5
+    reason: "ST77: the clean top (2 cells): the 2 f0 bark that held the tail gone: the measured decay rate a little lower"
+  - match: "*/ST77/RAW/*/k*v127"
+    metric: "peak"
+    min: -3.1
+    max: -1.57
+    reason: "ST77: the clean top (8 cells): the attack's peak: down with the bark's crest, up where RH_TOP_G gives the loudness back"
+  - match: "*/SUIT/*/*/k*v127"
+    metric: "H4 H5"
+    min: -41.6
+    max: -19.49
+    reason: "SUIT: the clean top (46 cells): the swing cut takes the pickup's overdrive down: its H3..H5 fall with H2 (1 dB a dB and more)"
+  - match: "*/SUIT/*/*/k*v127"
+    metric: "cent"
+    min: -0.18
+    max: -0.05
+    reason: "SUIT: the clean top (16 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/SUIT/*/*/pedal"
+    metric: "cent"
+    min: -0.15
+    max: -0.05
+    reason: "SUIT: the clean top (2 cells): the bark gone: the centroid down (v127 still brighter than v110: tests/py/test_rhodes_top.py)"
+  - match: "*/SUIT/*/*/k*v127"
+    metric: "decay"
+    min: -3.77
+    max: -2.73
+    reason: "SUIT: the clean top (6 cells): the 2 f0 bark that held the tail gone: the measured decay rate a little lower"
+  - match: "*/SUIT/RAW/*/k*v127"
+    metric: "peak"
+    min: -3.16
+    max: -1.58
+    reason: "SUIT: the clean top (8 cells): the attack's peak: down with the bark's crest, up where RH_TOP_G gives the loudness back"
+
+# ---- 12. rev-grain: MIX's law all in the send, the reverb's return x0.5 (HALL, PLATE): the int16 lines run up to 2x
+# hotter at a low MIX; the reverb rounds less and a quiet tail rings out instead of truncating to exact zero. Measured
+# with CC 10 before every strike. Each moved cell is proven linear reverb content by tools/rev_lin_proof.py (its
+# residual against a 4x-precise reverb at or under v0.9.9's: tests/baselines/rev_grain_linear_proof.json); the cells it
+# did not prove are not listed. Ranges: the measured move (fast + full grid) +-0.5, clamped to its direction.
+# Signed off: coordinator, linear reverb content, proof tests/baselines/rev_grain_linear_proof.json (2026-11-08).
+  - match: "fm1/DYNO/FX/A/k93v64"
+    metric: "keyup"
+    min: 1.676
+    max: 2.676
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.068 against v0.9.9's 2.371, keyup)"
+  - match: "fm1/DYNO/FX/B/k93v64"
+    metric: "keyup"
+    min: 1.623
+    max: 2.623
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.076 against v0.9.9's 2.371, keyup)"
+  - match: "fm1/F01/PRESET/A/k81v20"
+    metric: "cb"
+    min: -7.195
+    max: -6.195
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.072 against v0.9.9's 2.313, hold)"
+  - match: "fm1/F01/PRESET/A/k93v64"
+    metric: "keyup"
+    min: 1.711
+    max: 2.711
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.054 against v0.9.9's 2.413, keyup)"
+  - match: "fm1/F01/PRESET/B/k69v20"
+    metric: "cb"
+    min: -7.371
+    max: -6.371
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.057 against v0.9.9's 2.475, hold)"
+  - match: "fm1/F01/PRESET/B/k81v20"
+    metric: "cb"
+    min: -7.093
+    max: -6.093
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.039 against v0.9.9's 2.313, hold)"
+  - match: "fm1/F01/PRESET/B/k93v64"
+    metric: "keyup"
+    min: 1.671
+    max: 2.671
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.064 against v0.9.9's 2.413, keyup)"
+  - match: "fm1/F03/PRESET/A/k69v20"
+    metric: "cb"
+    min: -7.778
+    max: -6.778
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.112 against v0.9.9's 2.614, hold)"
+  - match: "fm1/F03/PRESET/A/k93v64"
+    metric: "keyup"
+    min: 1.674
+    max: 2.674
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.004 against v0.9.9's 2.223, keyup)"
+  - match: "fm1/F03/PRESET/B/k93v64"
+    metric: "keyup"
+    min: 1.724
+    max: 2.724
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.0 against v0.9.9's 2.223, keyup)"
+  - match: "fm1/F04/PRESET/A/k57v20"
+    metric: "level"
+    min: -7.074
+    max: -6.074
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.702 against v0.9.9's 1.436, hold)"
+  - match: "fm1/F04/PRESET/A/k57v20"
+    metric: "lu"
+    min: -7.074
+    max: -6.074
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.702 against v0.9.9's 1.436, hold)"
+  - match: "fm1/F05/PRESET/A/k57v40"
+    metric: "H3"
+    min: 3.946
+    max: 4.946
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 45.748 against v0.9.9's 55.484, H3)"
+  - match: "fm1/F05/PRESET/A/k81v20"
+    metric: "cb"
+    min: -6.683
+    max: -5.683
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.639 against v0.9.9's 1.265, hold)"
+  - match: "fm1/F05/PRESET/B/k57v40"
+    metric: "H3"
+    min: 3.125
+    max: 4.125
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 48.406 against v0.9.9's 55.484, H3)"
+  - match: "fm1/F05/PRESET/B/k81v20"
+    metric: "cb"
+    min: -6.549
+    max: -5.549
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.633 against v0.9.9's 1.265, hold)"
+  - match: "fm1/F05/PRESET/B/k93v20"
+    metric: "cb"
+    min: -9.241
+    max: -8.241
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.616 against v0.9.9's 1.172, hold)"
+  - match: "fm1/F06/PRESET/A/k45v20"
+    metric: "H3"
+    min: 6.358
+    max: 7.358
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 46.651 against v0.9.9's 56.664, H3)"
+  - match: "fm1/F06/PRESET/A/k45v20"
+    metric: "H5"
+    min: 4.412
+    max: 5.412
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 42.728 against v0.9.9's 52.247, H5)"
+  - match: "fm1/F06/PRESET/B/k33v40"
+    metric: "H5"
+    min: 3.015
+    max: 4.015
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 41.662 against v0.9.9's 50.275, H5)"
+  - match: "fm1/F06/PRESET/B/k45v64"
+    metric: "H4"
+    min: 2.862
+    max: 3.862
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 47.869 against v0.9.9's 54.492, H4)"
+  - match: "fm1/F06/PRESET/B/k57v20"
+    metric: "inh"
+    min: 2.519
+    max: 3.519
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.586 against v0.9.9's 1.045, hold)"
+  - match: "fm1/F06/PRESET/B/k57v40"
+    metric: "H3"
+    min: 2.624
+    max: 3.624
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 56.815 against v0.9.9's 66.087, H3)"
+  - match: "fm1/F11/PRESET/B/k93v40"
+    metric: "H3"
+    min: 2.67
+    max: 3.67
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 47.925 against v0.9.9's 50.937, H3)"
+  - match: "fm1/F12/PRESET/A/k81v64"
+    metric: "keyup"
+    min: 1.779
+    max: 2.779
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 3.804 against v0.9.9's 15.826, keyup)"
+  - match: "fm1/F12/PRESET/A/k93v110"
+    metric: "keyup"
+    min: 7.772
+    max: 8.772
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 2.934 against v0.9.9's 6.526, keyup)"
+  - match: "fm1/F12/PRESET/A/k93v127"
+    metric: "cb"
+    min: -2.291
+    max: -1.291
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 2.908 against v0.9.9's 7.064, hold)"
+  - match: "fm1/F12/PRESET/A/k93v96"
+    metric: "keyup"
+    min: 12.527
+    max: 13.527
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 2.694 against v0.9.9's 5.402, keyup)"
+  - match: "fm1/F12/PRESET/B/k81v64"
+    metric: "keyup"
+    min: 1.784
+    max: 2.784
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 3.806 against v0.9.9's 15.826, keyup)"
+  - match: "fm1/F12/PRESET/B/k93v110"
+    metric: "keyup"
+    min: 7.756
+    max: 8.756
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 2.975 against v0.9.9's 6.526, keyup)"
+  - match: "fm1/F12/PRESET/B/k93v127"
+    metric: "cb"
+    min: -2.271
+    max: -1.271
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 2.887 against v0.9.9's 7.064, hold)"
+  - match: "fm1/F12/PRESET/B/k93v96"
+    metric: "keyup"
+    min: 12.501
+    max: 13.501
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 2.742 against v0.9.9's 5.402, keyup)"
+  - match: "fm1/F15/PRESET/A/k67v110"
+    metric: "keyup"
+    min: 3.43
+    max: 4.43
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.129 against v0.9.9's 3.03, keyup)"
+  - match: "fm1/F15/PRESET/A/k67v40"
+    metric: "decay"
+    min: -3.593
+    max: -2.593
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.244 against v0.9.9's 2.125, hold)"
+  - match: "fm1/F15/PRESET/A/k74v110"
+    metric: "keyup"
+    min: 3.964
+    max: 4.964
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.985 against v0.9.9's 1.865, keyup)"
+  - match: "fm1/F15/PRESET/A/k74v40"
+    metric: "decay"
+    min: -206.421
+    max: -205.421
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.854 against v0.9.9's 1.484, hold)"
+  - match: "fm1/F15/PRESET/A/k74v64"
+    metric: "clk_off"
+    min: 103.76
+    max: 104.76
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.649 against v0.9.9's 0.716, clk_off)"
+  - match: "fm1/F15/PRESET/A/k74v64"
+    metric: "decay"
+    min: -5.553
+    max: -4.553
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.874 against v0.9.9's 1.538, hold)"
+  - match: "fm1/F15/PRESET/A/k74v64"
+    metric: "keyup"
+    min: 189.022
+    max: 190.022
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.516 against v0.9.9's 0.51, keyup)"
+  - match: "fm1/F15/PRESET/A/k74v96"
+    metric: "keyup"
+    min: 7.354
+    max: 8.354
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.961 against v0.9.9's 1.422, keyup)"
+  - match: "fm1/F15/PRESET/A/k81v110"
+    metric: "keyup"
+    min: 10.236
+    max: 11.236
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.665 against v0.9.9's 4.136, keyup)"
+  - match: "fm1/F15/PRESET/A/k81v127"
+    metric: "keyup"
+    min: 4.001
+    max: 5.001
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.387 against v0.9.9's 4.269, keyup)"
+  - match: "fm1/F15/PRESET/A/k81v40"
+    metric: "decay"
+    min: -201.813
+    max: -200.813
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.041 against v0.9.9's 2.131, hold)"
+  - match: "fm1/F15/PRESET/A/k81v64"
+    metric: "clk_off"
+    min: 103.937
+    max: 104.937
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.782 against v0.9.9's 0.95, clk_off)"
+  - match: "fm1/F15/PRESET/A/k81v64"
+    metric: "decay"
+    min: -10.812
+    max: -9.812
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.0 against v0.9.9's 2.119, hold)"
+  - match: "fm1/F15/PRESET/A/k81v96"
+    metric: "keyup"
+    min: 31.523
+    max: 32.523
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.816 against v0.9.9's 2.885, keyup)"
+  - match: "fm1/F15/PRESET/A/k89v110"
+    metric: "clk_off"
+    min: 102.51
+    max: 103.51
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.908 against v0.9.9's 1.027, clk_off)"
+  - match: "fm1/F15/PRESET/A/k89v110"
+    metric: "decay"
+    min: -6.696
+    max: -5.696
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.967 against v0.9.9's 2.482, hold)"
+  - match: "fm1/F15/PRESET/A/k89v127"
+    metric: "keyup"
+    min: 201.119
+    max: 202.119
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.103 against v0.9.9's 1.403, keyup)"
+  - match: "fm1/F15/PRESET/A/k89v20"
+    metric: "cb"
+    min: 2.583
+    max: 3.583
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.879 against v0.9.9's 1.663, hold)"
+  - match: "fm1/F15/PRESET/A/k89v64"
+    metric: "decay"
+    min: -187.187
+    max: -186.187
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.04 against v0.9.9's 2.296, hold)"
+  - match: "fm1/F15/PRESET/A/k89v96"
+    metric: "clk_off"
+    min: 100.749
+    max: 101.749
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.48 against v0.9.9's 0.502, clk_off)"
+  - match: "fm1/F15/PRESET/A/k89v96"
+    metric: "decay"
+    min: -13.644
+    max: -12.644
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.129 against v0.9.9's 2.514, hold)"
+  - match: "fm1/F15/PRESET/B/k67v110"
+    metric: "keyup"
+    min: 3.43
+    max: 4.43
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.129 against v0.9.9's 3.03, keyup)"
+  - match: "fm1/F15/PRESET/B/k67v40"
+    metric: "decay"
+    min: -3.593
+    max: -2.593
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.244 against v0.9.9's 2.125, hold)"
+  - match: "fm1/F15/PRESET/B/k74v110"
+    metric: "keyup"
+    min: 3.964
+    max: 4.964
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.985 against v0.9.9's 1.865, keyup)"
+  - match: "fm1/F15/PRESET/B/k74v40"
+    metric: "decay"
+    min: -206.421
+    max: -205.421
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.854 against v0.9.9's 1.484, hold)"
+  - match: "fm1/F15/PRESET/B/k74v64"
+    metric: "clk_off"
+    min: 103.76
+    max: 104.76
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.649 against v0.9.9's 0.716, clk_off)"
+  - match: "fm1/F15/PRESET/B/k74v64"
+    metric: "decay"
+    min: -5.553
+    max: -4.553
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.874 against v0.9.9's 1.538, hold)"
+  - match: "fm1/F15/PRESET/B/k74v64"
+    metric: "keyup"
+    min: 189.022
+    max: 190.022
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.516 against v0.9.9's 0.51, keyup)"
+  - match: "fm1/F15/PRESET/B/k74v96"
+    metric: "keyup"
+    min: 7.354
+    max: 8.354
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.961 against v0.9.9's 1.422, keyup)"
+  - match: "fm1/F15/PRESET/B/k81v110"
+    metric: "keyup"
+    min: 10.236
+    max: 11.236
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.665 against v0.9.9's 4.136, keyup)"
+  - match: "fm1/F15/PRESET/B/k81v127"
+    metric: "keyup"
+    min: 4.001
+    max: 5.001
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.387 against v0.9.9's 4.269, keyup)"
+  - match: "fm1/F15/PRESET/B/k81v40"
+    metric: "decay"
+    min: -201.813
+    max: -200.813
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.041 against v0.9.9's 2.131, hold)"
+  - match: "fm1/F15/PRESET/B/k81v64"
+    metric: "clk_off"
+    min: 103.937
+    max: 104.937
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.782 against v0.9.9's 0.95, clk_off)"
+  - match: "fm1/F15/PRESET/B/k81v64"
+    metric: "decay"
+    min: -10.812
+    max: -9.812
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.0 against v0.9.9's 2.119, hold)"
+  - match: "fm1/F15/PRESET/B/k81v96"
+    metric: "keyup"
+    min: 31.523
+    max: 32.523
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.816 against v0.9.9's 2.885, keyup)"
+  - match: "fm1/F15/PRESET/B/k89v110"
+    metric: "clk_off"
+    min: 102.51
+    max: 103.51
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.908 against v0.9.9's 1.027, clk_off)"
+  - match: "fm1/F15/PRESET/B/k89v110"
+    metric: "decay"
+    min: -6.696
+    max: -5.696
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.967 against v0.9.9's 2.482, hold)"
+  - match: "fm1/F15/PRESET/B/k89v127"
+    metric: "keyup"
+    min: 201.119
+    max: 202.119
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.103 against v0.9.9's 1.403, keyup)"
+  - match: "fm1/F15/PRESET/B/k89v20"
+    metric: "cb"
+    min: 2.583
+    max: 3.583
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.879 against v0.9.9's 1.663, hold)"
+  - match: "fm1/F15/PRESET/B/k89v64"
+    metric: "decay"
+    min: -187.187
+    max: -186.187
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.04 against v0.9.9's 2.296, hold)"
+  - match: "fm1/F15/PRESET/B/k89v96"
+    metric: "clk_off"
+    min: 100.749
+    max: 101.749
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.48 against v0.9.9's 0.502, clk_off)"
+  - match: "fm1/F15/PRESET/B/k89v96"
+    metric: "decay"
+    min: -13.644
+    max: -12.644
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.129 against v0.9.9's 2.514, hold)"
+  - match: "fm1/F16/PRESET/A/k81v40"
+    metric: "keyup"
+    min: 3.032
+    max: 4.032
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.164 against v0.9.9's 5.706, keyup)"
+  - match: "fm1/F16/PRESET/A/k89v20"
+    metric: "keyup"
+    min: 1.605
+    max: 2.605
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.436 against v0.9.9's 0.959, keyup)"
+  - match: "fm1/F16/PRESET/A/k89v64"
+    metric: "keyup"
+    min: 5.846
+    max: 6.846
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.966 against v0.9.9's 3.738, keyup)"
+  - match: "fm1/F16/PRESET/B/k81v40"
+    metric: "keyup"
+    min: 3.032
+    max: 4.032
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.164 against v0.9.9's 5.706, keyup)"
+  - match: "fm1/F16/PRESET/B/k89v20"
+    metric: "keyup"
+    min: 1.605
+    max: 2.605
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.436 against v0.9.9's 0.959, keyup)"
+  - match: "fm1/F16/PRESET/B/k89v64"
+    metric: "keyup"
+    min: 5.846
+    max: 6.846
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.966 against v0.9.9's 3.738, keyup)"
+  - match: "fm1/F17/PRESET/A/k28v40"
+    metric: "cb"
+    min: -6.384
+    max: -5.384
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.62 against v0.9.9's 1.004, hold)"
+  - match: "fm1/F17/PRESET/A/k45v20"
+    metric: "cb"
+    min: -7.024
+    max: -6.024
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.623 against v0.9.9's 1.004, hold)"
+  - match: "fm1/F17/PRESET/B/k28v40"
+    metric: "cb"
+    min: -6.376
+    max: -5.376
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.62 against v0.9.9's 1.004, hold)"
+  - match: "fm1/F17/PRESET/B/k45v20"
+    metric: "cb"
+    min: -7.066
+    max: -6.066
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.624 against v0.9.9's 1.004, hold)"
+  - match: "fm1/F17/PRESET/B/k69v20"
+    metric: "cb"
+    min: -7.0
+    max: -6.0
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.663 against v0.9.9's 1.235, hold)"
+  - match: "fm1/F19/PRESET/A/k57v40"
+    metric: "H5"
+    min: 3.239
+    max: 4.239
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 61.973 against v0.9.9's 62.268, H5)"
+  - match: "fm1/F19/PRESET/A/k57v40"
+    metric: "H6"
+    min: 3.48
+    max: 4.48
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 54.828 against v0.9.9's 58.693, H6)"
+  - match: "fm1/F19/PRESET/B/k57v40"
+    metric: "H6"
+    min: 3.386
+    max: 4.386
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 51.249 against v0.9.9's 58.693, H6)"
+  - match: "fm1/FELT/FX/A/k93v64"
+    metric: "keyup"
+    min: 1.75
+    max: 2.75
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.051 against v0.9.9's 2.361, keyup)"
+  - match: "fm1/FELT/FX/B/k93v64"
+    metric: "keyup"
+    min: 1.668
+    max: 2.668
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.066 against v0.9.9's 2.361, keyup)"
+  - match: "fm1/MARIMBA/FX/A/chord-high"
+    metric: "keyup"
+    min: 3.327
+    max: 4.327
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.243 against v0.9.9's 4.621, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k45v20"
+    metric: "keyup"
+    min: 179.282
+    max: 180.282
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.321 against v0.9.9's 0.377, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k45v40"
+    metric: "keyup"
+    min: 27.475
+    max: 28.475
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.998 against v0.9.9's 1.463, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k45v64"
+    metric: "keyup"
+    min: 6.912
+    max: 7.912
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.13 against v0.9.9's 2.707, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k53v40"
+    metric: "keyup"
+    min: 206.196
+    max: 207.196
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.166 against v0.9.9's 1.719, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k53v64"
+    metric: "keyup"
+    min: 7.02
+    max: 8.02
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.149 against v0.9.9's 3.36, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k57v40"
+    metric: "keyup"
+    min: 12.13
+    max: 13.13
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.104 against v0.9.9's 2.893, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k60v110"
+    metric: "keyup"
+    min: 201.458
+    max: 202.458
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.587 against v0.9.9's 0.631, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k60v127"
+    metric: "keyup"
+    min: 13.019
+    max: 14.019
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.731 against v0.9.9's 0.98, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k60v96"
+    metric: "keyup"
+    min: 193.567
+    max: 194.567
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.394 against v0.9.9's 0.362, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k67v110"
+    metric: "keyup"
+    min: 10.307
+    max: 11.307
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.106 against v0.9.9's 2.11, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k67v127"
+    metric: "keyup"
+    min: 8.701
+    max: 9.701
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.038 against v0.9.9's 2.712, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k67v96"
+    metric: "keyup"
+    min: 16.7
+    max: 17.7
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.039 against v0.9.9's 1.334, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k69v40"
+    metric: "decay"
+    min: -5.018
+    max: -4.018
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.128 against v0.9.9's 3.101, hold)"
+  - match: "fm1/MARIMBA/FX/A/k69v96"
+    metric: "keyup"
+    min: 8.663
+    max: 9.663
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.797 against v0.9.9's 5.179, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k74v110"
+    metric: "keyup"
+    min: 7.76
+    max: 8.76
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.836 against v0.9.9's 1.185, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k74v127"
+    metric: "keyup"
+    min: 5.438
+    max: 6.438
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.877 against v0.9.9's 1.543, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k74v40"
+    metric: "decay"
+    min: -193.476
+    max: -192.476
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.715 against v0.9.9's 1.277, hold)"
+  - match: "fm1/MARIMBA/FX/A/k74v64"
+    metric: "clk_off"
+    min: 101.999
+    max: 102.999
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.355 against v0.9.9's 0.343, clk_off)"
+  - match: "fm1/MARIMBA/FX/A/k74v64"
+    metric: "decay"
+    min: -12.548
+    max: -11.548
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.755 against v0.9.9's 1.428, hold)"
+  - match: "fm1/MARIMBA/FX/A/k74v96"
+    metric: "keyup"
+    min: 25.617
+    max: 26.617
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.696 against v0.9.9's 0.808, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k81v110"
+    metric: "keyup"
+    min: 208.082
+    max: 209.082
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.403 against v0.9.9's 2.261, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k81v127"
+    metric: "keyup"
+    min: 17.671
+    max: 18.671
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.443 against v0.9.9's 3.104, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k81v64"
+    metric: "decay"
+    min: -211.052
+    max: -210.052
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.833 against v0.9.9's 1.949, hold)"
+  - match: "fm1/MARIMBA/FX/A/k81v96"
+    metric: "decay"
+    min: -4.078
+    max: -3.078
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.835 against v0.9.9's 1.938, hold)"
+  - match: "fm1/MARIMBA/FX/A/k81v96"
+    metric: "keyup"
+    min: 195.021
+    max: 196.021
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.043 against v0.9.9's 1.268, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k84v127"
+    metric: "keyup"
+    min: 18.713
+    max: 19.713
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.156 against v0.9.9's 2.059, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k84v96"
+    metric: "clk_off"
+    min: 105.521
+    max: 106.521
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.863 against v0.9.9's 1.505, clk_off)"
+  - match: "fm1/MARIMBA/FX/A/k84v96"
+    metric: "decay"
+    min: -6.132
+    max: -5.132
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.77 against v0.9.9's 2.041, hold)"
+  - match: "fm1/MARIMBA/FX/A/k84v96"
+    metric: "keyup"
+    min: 188.526
+    max: 189.526
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.637 against v0.9.9's 0.731, keyup)"
+  - match: "fm1/MARIMBA/FX/A/k89v110"
+    metric: "decay"
+    min: -16.759
+    max: -15.759
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.965 against v0.9.9's 2.38, hold)"
+  - match: "fm1/MARIMBA/FX/A/k89v127"
+    metric: "clk_off"
+    min: 102.51
+    max: 103.51
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.696 against v0.9.9's 0.851, clk_off)"
+  - match: "fm1/MARIMBA/FX/A/k89v127"
+    metric: "decay"
+    min: -7.542
+    max: -6.542
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.838 against v0.9.9's 2.313, hold)"
+  - match: "fm1/MARIMBA/FX/A/k89v96"
+    metric: "decay"
+    min: -210.783
+    max: -209.783
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.972 against v0.9.9's 2.191, hold)"
+  - match: "fm1/MARIMBA/FX/B/chord-high"
+    metric: "keyup"
+    min: 3.327
+    max: 4.327
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.243 against v0.9.9's 4.621, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k45v20"
+    metric: "keyup"
+    min: 179.282
+    max: 180.282
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.321 against v0.9.9's 0.377, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k45v40"
+    metric: "keyup"
+    min: 27.475
+    max: 28.475
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.998 against v0.9.9's 1.463, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k45v64"
+    metric: "keyup"
+    min: 6.912
+    max: 7.912
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.13 against v0.9.9's 2.707, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k53v40"
+    metric: "keyup"
+    min: 206.196
+    max: 207.196
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.166 against v0.9.9's 1.719, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k53v64"
+    metric: "keyup"
+    min: 7.02
+    max: 8.02
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.149 against v0.9.9's 3.36, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k57v40"
+    metric: "keyup"
+    min: 12.13
+    max: 13.13
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.104 against v0.9.9's 2.893, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k60v110"
+    metric: "keyup"
+    min: 201.458
+    max: 202.458
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.587 against v0.9.9's 0.631, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k60v127"
+    metric: "keyup"
+    min: 13.019
+    max: 14.019
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.731 against v0.9.9's 0.98, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k60v96"
+    metric: "keyup"
+    min: 193.567
+    max: 194.567
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.394 against v0.9.9's 0.362, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k67v110"
+    metric: "keyup"
+    min: 10.307
+    max: 11.307
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.106 against v0.9.9's 2.11, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k67v127"
+    metric: "keyup"
+    min: 8.701
+    max: 9.701
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.038 against v0.9.9's 2.712, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k67v96"
+    metric: "keyup"
+    min: 16.7
+    max: 17.7
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.039 against v0.9.9's 1.334, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k69v40"
+    metric: "decay"
+    min: -5.018
+    max: -4.018
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.128 against v0.9.9's 3.101, hold)"
+  - match: "fm1/MARIMBA/FX/B/k69v96"
+    metric: "keyup"
+    min: 8.663
+    max: 9.663
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.797 against v0.9.9's 5.179, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k74v110"
+    metric: "keyup"
+    min: 7.76
+    max: 8.76
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.836 against v0.9.9's 1.185, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k74v127"
+    metric: "keyup"
+    min: 5.438
+    max: 6.438
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.877 against v0.9.9's 1.543, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k74v40"
+    metric: "decay"
+    min: -193.476
+    max: -192.476
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.715 against v0.9.9's 1.277, hold)"
+  - match: "fm1/MARIMBA/FX/B/k74v64"
+    metric: "clk_off"
+    min: 101.999
+    max: 102.999
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.355 against v0.9.9's 0.343, clk_off)"
+  - match: "fm1/MARIMBA/FX/B/k74v64"
+    metric: "decay"
+    min: -12.548
+    max: -11.548
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.755 against v0.9.9's 1.428, hold)"
+  - match: "fm1/MARIMBA/FX/B/k74v96"
+    metric: "keyup"
+    min: 25.617
+    max: 26.617
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.696 against v0.9.9's 0.808, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k81v110"
+    metric: "keyup"
+    min: 208.082
+    max: 209.082
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.403 against v0.9.9's 2.261, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k81v127"
+    metric: "keyup"
+    min: 17.671
+    max: 18.671
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.443 against v0.9.9's 3.104, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k81v64"
+    metric: "decay"
+    min: -211.052
+    max: -210.052
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.833 against v0.9.9's 1.949, hold)"
+  - match: "fm1/MARIMBA/FX/B/k81v96"
+    metric: "decay"
+    min: -4.078
+    max: -3.078
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.835 against v0.9.9's 1.938, hold)"
+  - match: "fm1/MARIMBA/FX/B/k81v96"
+    metric: "keyup"
+    min: 195.021
+    max: 196.021
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.043 against v0.9.9's 1.268, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k84v127"
+    metric: "keyup"
+    min: 18.713
+    max: 19.713
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.156 against v0.9.9's 2.059, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k84v96"
+    metric: "clk_off"
+    min: 105.521
+    max: 106.521
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.863 against v0.9.9's 1.505, clk_off)"
+  - match: "fm1/MARIMBA/FX/B/k84v96"
+    metric: "decay"
+    min: -6.132
+    max: -5.132
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.77 against v0.9.9's 2.041, hold)"
+  - match: "fm1/MARIMBA/FX/B/k84v96"
+    metric: "keyup"
+    min: 188.526
+    max: 189.526
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.637 against v0.9.9's 0.731, keyup)"
+  - match: "fm1/MARIMBA/FX/B/k89v110"
+    metric: "decay"
+    min: -16.759
+    max: -15.759
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.965 against v0.9.9's 2.38, hold)"
+  - match: "fm1/MARIMBA/FX/B/k89v127"
+    metric: "clk_off"
+    min: 102.51
+    max: 103.51
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.696 against v0.9.9's 0.851, clk_off)"
+  - match: "fm1/MARIMBA/FX/B/k89v127"
+    metric: "decay"
+    min: -7.542
+    max: -6.542
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.838 against v0.9.9's 2.313, hold)"
+  - match: "fm1/MARIMBA/FX/B/k89v96"
+    metric: "decay"
+    min: -210.783
+    max: -209.783
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.972 against v0.9.9's 2.191, hold)"
+  - match: "fm1/ST77/FX/A/k93v64"
+    metric: "keyup"
+    min: 1.711
+    max: 2.711
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.054 against v0.9.9's 2.413, keyup)"
+  - match: "fm1/ST77/FX/B/k93v64"
+    metric: "keyup"
+    min: 1.671
+    max: 2.671
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.064 against v0.9.9's 2.413, keyup)"
+  - match: "hq/F01/PRESET/A/k57v20"
+    metric: "cb"
+    min: -7.269
+    max: -6.269
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.662 against v0.9.9's 1.304, hold)"
+  - match: "hq/F01/PRESET/A/k69v20"
+    metric: "cb"
+    min: -7.37
+    max: -6.37
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.7 against v0.9.9's 1.506, hold)"
+  - match: "hq/F01/PRESET/B/k57v20"
+    metric: "cb"
+    min: -7.08
+    max: -6.08
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.666 against v0.9.9's 1.304, hold)"
+  - match: "hq/F02/PRESET/A/k57v64"
+    metric: "H3"
+    min: 2.833
+    max: 3.833
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 53.476 against v0.9.9's 63.606, H3)"
+  - match: "hq/F02/PRESET/B/k57v64"
+    metric: "H3"
+    min: 2.734
+    max: 3.734
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 54.378 against v0.9.9's 63.606, H3)"
+  - match: "hq/F04/PRESET/A/k57v20"
+    metric: "level"
+    min: -7.074
+    max: -6.074
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.719 against v0.9.9's 1.434, hold)"
+  - match: "hq/F04/PRESET/A/k57v20"
+    metric: "lu"
+    min: -7.073
+    max: -6.073
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.719 against v0.9.9's 1.434, hold)"
+  - match: "hq/F05/PRESET/A/k81v20"
+    metric: "cb"
+    min: -6.83
+    max: -5.83
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.771 against v0.9.9's 1.855, hold)"
+  - match: "hq/F05/PRESET/B/k69v20"
+    metric: "cb"
+    min: -6.662
+    max: -5.662
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.61 against v0.9.9's 1.267, hold)"
+  - match: "hq/F05/PRESET/B/k81v20"
+    metric: "cb"
+    min: -6.701
+    max: -5.701
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.792 against v0.9.9's 1.855, hold)"
+  - match: "hq/F05/PRESET/B/k93v20"
+    metric: "cb"
+    min: -9.198
+    max: -8.198
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.752 against v0.9.9's 1.723, hold)"
+  - match: "hq/F06/PRESET/A/k33v20"
+    metric: "H2"
+    min: 2.78
+    max: 3.78
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 50.398 against v0.9.9's 57.406, H2)"
+  - match: "hq/F11/PRESET/A/k93v40"
+    metric: "H5"
+    min: 4.193
+    max: 5.193
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 51.588 against v0.9.9's 55.401, H5)"
+  - match: "hq/F11/PRESET/B/k93v40"
+    metric: "H5"
+    min: 3.096
+    max: 4.096
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 50.911 against v0.9.9's 55.401, H5)"
+  - match: "hq/F12/PRESET/A/k81v20"
+    metric: "cb"
+    min: -7.213
+    max: -6.213
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 3.449 against v0.9.9's 8.243, hold)"
+  - match: "hq/F12/PRESET/A/k93v40"
+    metric: "keyup"
+    min: 1.993
+    max: 2.993
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.889 against v0.9.9's 2.501, keyup)"
+  - match: "hq/F12/PRESET/B/k69v20"
+    metric: "cb"
+    min: -7.363
+    max: -6.363
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 2.027 against v0.9.9's 4.032, hold)"
+  - match: "hq/F12/PRESET/B/k69v20"
+    metric: "level"
+    min: -6.841
+    max: -5.841
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 2.027 against v0.9.9's 4.032, hold)"
+  - match: "hq/F12/PRESET/B/k69v20"
+    metric: "lu"
+    min: -6.841
+    max: -5.841
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 2.027 against v0.9.9's 4.032, hold)"
+  - match: "hq/F12/PRESET/B/k81v20"
+    metric: "cb"
+    min: -7.09
+    max: -6.09
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 3.428 against v0.9.9's 8.243, hold)"
+  - match: "hq/F12/PRESET/B/k93v40"
+    metric: "keyup"
+    min: 1.687
+    max: 2.687
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.919 against v0.9.9's 2.501, keyup)"
+  - match: "hq/F15/PRESET/A/k74v20"
+    metric: "decay"
+    min: -3.529
+    max: -2.529
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.243 against v0.9.9's 2.622, hold)"
+  - match: "hq/F15/PRESET/A/k74v20"
+    metric: "keyup"
+    min: 78.441
+    max: 79.441
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.02 against v0.9.9's 0.03, keyup)"
+  - match: "hq/F15/PRESET/A/k74v40"
+    metric: "decay"
+    min: -4.683
+    max: -3.683
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.549 against v0.9.9's 3.455, hold)"
+  - match: "hq/F15/PRESET/A/k74v64"
+    metric: "keyup"
+    min: 3.681
+    max: 4.681
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.463 against v0.9.9's 2.68, keyup)"
+  - match: "hq/F15/PRESET/A/k81v40"
+    metric: "clk_off"
+    min: 102.968
+    max: 103.968
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.351 against v0.9.9's 0.394, clk_off)"
+  - match: "hq/F15/PRESET/A/k81v40"
+    metric: "decay"
+    min: -3.634
+    max: -2.634
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.531 against v0.9.9's 3.751, hold)"
+  - match: "hq/F15/PRESET/A/k81v40"
+    metric: "keyup"
+    min: 195.536
+    max: 196.536
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.294 against v0.9.9's 0.176, keyup)"
+  - match: "hq/F15/PRESET/A/k89v64"
+    metric: "clk_off"
+    min: 101.999
+    max: 102.999
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.311 against v0.9.9's 0.405, clk_off)"
+  - match: "hq/F15/PRESET/A/k89v64"
+    metric: "keyup"
+    min: 3.228
+    max: 4.228
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.097 against v0.9.9's 0.085, keyup)"
+  - match: "hq/F15/PRESET/B/k74v20"
+    metric: "decay"
+    min: -3.529
+    max: -2.529
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.243 against v0.9.9's 2.622, hold)"
+  - match: "hq/F15/PRESET/B/k74v20"
+    metric: "keyup"
+    min: 78.441
+    max: 79.441
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.02 against v0.9.9's 0.03, keyup)"
+  - match: "hq/F15/PRESET/B/k74v40"
+    metric: "decay"
+    min: -4.683
+    max: -3.683
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.549 against v0.9.9's 3.455, hold)"
+  - match: "hq/F15/PRESET/B/k74v64"
+    metric: "keyup"
+    min: 3.681
+    max: 4.681
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.463 against v0.9.9's 2.68, keyup)"
+  - match: "hq/F15/PRESET/B/k81v40"
+    metric: "clk_off"
+    min: 102.968
+    max: 103.968
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.351 against v0.9.9's 0.394, clk_off)"
+  - match: "hq/F15/PRESET/B/k81v40"
+    metric: "decay"
+    min: -3.634
+    max: -2.634
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.531 against v0.9.9's 3.751, hold)"
+  - match: "hq/F15/PRESET/B/k81v40"
+    metric: "keyup"
+    min: 195.536
+    max: 196.536
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.294 against v0.9.9's 0.176, keyup)"
+  - match: "hq/F15/PRESET/B/k89v64"
+    metric: "clk_off"
+    min: 101.999
+    max: 102.999
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.311 against v0.9.9's 0.405, clk_off)"
+  - match: "hq/F15/PRESET/B/k89v64"
+    metric: "keyup"
+    min: 3.228
+    max: 4.228
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.097 against v0.9.9's 0.085, keyup)"
+  - match: "hq/F17/PRESET/A/k28v40"
+    metric: "cb"
+    min: -6.281
+    max: -5.281
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.614 against v0.9.9's 0.995, hold)"
+  - match: "hq/F17/PRESET/A/k33v20"
+    metric: "H2"
+    min: 3.008
+    max: 4.008
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 43.598 against v0.9.9's 62.055, H2)"
+  - match: "hq/F17/PRESET/A/k45v20"
+    metric: "cb"
+    min: -6.989
+    max: -5.989
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.621 against v0.9.9's 1.008, hold)"
+  - match: "hq/F17/PRESET/B/k28v40"
+    metric: "cb"
+    min: -6.281
+    max: -5.281
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.622 against v0.9.9's 0.995, hold)"
+  - match: "hq/F17/PRESET/B/k33v20"
+    metric: "H2"
+    min: 2.739
+    max: 3.739
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 40.383 against v0.9.9's 62.055, H2)"
+  - match: "hq/F17/PRESET/B/k45v20"
+    metric: "cb"
+    min: -7.044
+    max: -6.044
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.627 against v0.9.9's 1.008, hold)"
+  - match: "hq/F17/PRESET/B/k69v20"
+    metric: "cb"
+    min: -6.996
+    max: -5.996
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.716 against v0.9.9's 1.559, hold)"
+  - match: "hq/F18/PRESET/A/k69v40"
+    metric: "cb"
+    min: -4.128
+    max: -3.128
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.385 against v0.9.9's 2.788, hold)"
+  - match: "hq/F19/PRESET/B/k57v40"
+    metric: "H6"
+    min: 2.95
+    max: 3.95
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 51.099 against v0.9.9's 53.899, H6)"
+  - match: "hq/FELT/FX/A/k33v20"
+    metric: "inh"
+    min: 3.317
+    max: 4.317
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.629 against v0.9.9's 1.077, hold)"
+  - match: "hq/FELT/FX/B/k33v20"
+    metric: "inh"
+    min: 3.325
+    max: 4.325
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.632 against v0.9.9's 1.077, hold)"
+  - match: "hq/MARIMBA/FX/A/k53v20"
+    metric: "cb"
+    min: -2.185
+    max: -1.185
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.726 against v0.9.9's 1.381, hold)"
+  - match: "hq/MARIMBA/FX/A/k60v20"
+    metric: "cb"
+    min: -2.336
+    max: -1.336
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.809 against v0.9.9's 1.648, hold)"
+  - match: "hq/MARIMBA/FX/A/k60v20"
+    metric: "keyup"
+    min: 5.799
+    max: 6.799
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.204 against v0.9.9's 0.15, keyup)"
+  - match: "hq/MARIMBA/FX/A/k60v40"
+    metric: "cb"
+    min: -2.169
+    max: -1.169
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.901 against v0.9.9's 1.978, hold)"
+  - match: "hq/MARIMBA/FX/A/k60v40"
+    metric: "keyup"
+    min: 3.995
+    max: 4.995
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.492 against v0.9.9's 0.457, keyup)"
+  - match: "hq/MARIMBA/FX/A/k67v20"
+    metric: "cb"
+    min: -2.496
+    max: -1.496
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.736 against v0.9.9's 1.599, hold)"
+  - match: "hq/MARIMBA/FX/A/k67v20"
+    metric: "clk_off"
+    min: 100.66
+    max: 101.66
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.325 against v0.9.9's 0.342, clk_off)"
+  - match: "hq/MARIMBA/FX/A/k67v20"
+    metric: "keyup"
+    min: 14.781
+    max: 15.781
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.29 against v0.9.9's 0.215, keyup)"
+  - match: "hq/MARIMBA/FX/A/k67v40"
+    metric: "cb"
+    min: -2.145
+    max: -1.145
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.827 against v0.9.9's 1.78, hold)"
+  - match: "hq/MARIMBA/FX/A/k67v64"
+    metric: "cb"
+    min: -2.038
+    max: -1.038
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.912 against v0.9.9's 2.122, hold)"
+  - match: "hq/MARIMBA/FX/A/k69v40"
+    metric: "keyup"
+    min: 5.575
+    max: 6.575
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.313 against v0.9.9's 0.467, keyup)"
+  - match: "hq/MARIMBA/FX/A/k74v20"
+    metric: "cb"
+    min: -2.46
+    max: -1.46
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.929 against v0.9.9's 2.102, hold)"
+  - match: "hq/MARIMBA/FX/A/k74v40"
+    metric: "cb"
+    min: -2.365
+    max: -1.365
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.177 against v0.9.9's 2.82, hold)"
+  - match: "hq/MARIMBA/FX/A/k74v40"
+    metric: "decay"
+    min: -5.553
+    max: -4.553
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.177 against v0.9.9's 2.82, hold)"
+  - match: "hq/MARIMBA/FX/A/k74v40"
+    metric: "keyup"
+    min: 5.702
+    max: 6.702
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.32 against v0.9.9's 0.325, keyup)"
+  - match: "hq/MARIMBA/FX/A/k74v64"
+    metric: "cb"
+    min: -2.141
+    max: -1.141
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.37 against v0.9.9's 3.575, hold)"
+  - match: "hq/MARIMBA/FX/A/k81v127"
+    metric: "cb"
+    min: -2.004
+    max: -1.004
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.295 against v0.9.9's 3.419, hold)"
+  - match: "hq/MARIMBA/FX/A/k81v20"
+    metric: "cb"
+    min: -2.331
+    max: -1.331
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.156 against v0.9.9's 2.906, hold)"
+  - match: "hq/MARIMBA/FX/A/k81v40"
+    metric: "cb"
+    min: -2.508
+    max: -1.508
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.225 against v0.9.9's 3.313, hold)"
+  - match: "hq/MARIMBA/FX/A/k81v40"
+    metric: "keyup"
+    min: 190.678
+    max: 191.678
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.162 against v0.9.9's 0.0, keyup)"
+  - match: "hq/MARIMBA/FX/A/k81v64"
+    metric: "cb"
+    min: -2.205
+    max: -1.205
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.219 against v0.9.9's 3.395, hold)"
+  - match: "hq/MARIMBA/FX/A/k81v96"
+    metric: "cb"
+    min: -2.049
+    max: -1.049
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.271 against v0.9.9's 3.424, hold)"
+  - match: "hq/MARIMBA/FX/A/k84v40"
+    metric: "keyup"
+    min: 82.661
+    max: 83.661
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.008 against v0.9.9's 0.0, keyup)"
+  - match: "hq/MARIMBA/FX/A/k89v20"
+    metric: "decay"
+    min: -185.149
+    max: -184.149
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.584 against v0.9.9's 1.088, hold)"
+  - match: "hq/MARIMBA/FX/A/k89v64"
+    metric: "keyup"
+    min: 179.221
+    max: 180.221
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.043 against v0.9.9's 0.0, keyup)"
+  - match: "hq/MARIMBA/FX/A/k89v96"
+    metric: "cb"
+    min: -2.087
+    max: -1.087
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.811 against v0.9.9's 1.962, hold)"
+  - match: "hq/MARIMBA/FX/B/k53v20"
+    metric: "cb"
+    min: -2.185
+    max: -1.185
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.726 against v0.9.9's 1.381, hold)"
+  - match: "hq/MARIMBA/FX/B/k60v20"
+    metric: "cb"
+    min: -2.336
+    max: -1.336
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.809 against v0.9.9's 1.648, hold)"
+  - match: "hq/MARIMBA/FX/B/k60v20"
+    metric: "keyup"
+    min: 5.799
+    max: 6.799
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.204 against v0.9.9's 0.15, keyup)"
+  - match: "hq/MARIMBA/FX/B/k60v40"
+    metric: "cb"
+    min: -2.169
+    max: -1.169
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.901 against v0.9.9's 1.978, hold)"
+  - match: "hq/MARIMBA/FX/B/k60v40"
+    metric: "keyup"
+    min: 3.995
+    max: 4.995
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.492 against v0.9.9's 0.457, keyup)"
+  - match: "hq/MARIMBA/FX/B/k67v20"
+    metric: "cb"
+    min: -2.496
+    max: -1.496
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.736 against v0.9.9's 1.599, hold)"
+  - match: "hq/MARIMBA/FX/B/k67v20"
+    metric: "clk_off"
+    min: 100.66
+    max: 101.66
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.325 against v0.9.9's 0.342, clk_off)"
+  - match: "hq/MARIMBA/FX/B/k67v20"
+    metric: "keyup"
+    min: 14.781
+    max: 15.781
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.29 against v0.9.9's 0.215, keyup)"
+  - match: "hq/MARIMBA/FX/B/k67v40"
+    metric: "cb"
+    min: -2.145
+    max: -1.145
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.827 against v0.9.9's 1.78, hold)"
+  - match: "hq/MARIMBA/FX/B/k67v64"
+    metric: "cb"
+    min: -2.038
+    max: -1.038
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.912 against v0.9.9's 2.122, hold)"
+  - match: "hq/MARIMBA/FX/B/k69v40"
+    metric: "keyup"
+    min: 5.575
+    max: 6.575
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.313 against v0.9.9's 0.467, keyup)"
+  - match: "hq/MARIMBA/FX/B/k74v20"
+    metric: "cb"
+    min: -2.46
+    max: -1.46
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.929 against v0.9.9's 2.102, hold)"
+  - match: "hq/MARIMBA/FX/B/k74v40"
+    metric: "cb"
+    min: -2.365
+    max: -1.365
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.177 against v0.9.9's 2.82, hold)"
+  - match: "hq/MARIMBA/FX/B/k74v40"
+    metric: "decay"
+    min: -5.553
+    max: -4.553
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.177 against v0.9.9's 2.82, hold)"
+  - match: "hq/MARIMBA/FX/B/k74v40"
+    metric: "keyup"
+    min: 5.702
+    max: 6.702
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.32 against v0.9.9's 0.325, keyup)"
+  - match: "hq/MARIMBA/FX/B/k74v64"
+    metric: "cb"
+    min: -2.141
+    max: -1.141
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.37 against v0.9.9's 3.575, hold)"
+  - match: "hq/MARIMBA/FX/B/k81v127"
+    metric: "cb"
+    min: -2.004
+    max: -1.004
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.295 against v0.9.9's 3.419, hold)"
+  - match: "hq/MARIMBA/FX/B/k81v20"
+    metric: "cb"
+    min: -2.331
+    max: -1.331
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.156 against v0.9.9's 2.906, hold)"
+  - match: "hq/MARIMBA/FX/B/k81v40"
+    metric: "cb"
+    min: -2.508
+    max: -1.508
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.225 against v0.9.9's 3.313, hold)"
+  - match: "hq/MARIMBA/FX/B/k81v40"
+    metric: "keyup"
+    min: 190.678
+    max: 191.678
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.162 against v0.9.9's 0.0, keyup)"
+  - match: "hq/MARIMBA/FX/B/k81v64"
+    metric: "cb"
+    min: -2.205
+    max: -1.205
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.219 against v0.9.9's 3.395, hold)"
+  - match: "hq/MARIMBA/FX/B/k81v96"
+    metric: "cb"
+    min: -2.049
+    max: -1.049
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 1.271 against v0.9.9's 3.424, hold)"
+  - match: "hq/MARIMBA/FX/B/k84v40"
+    metric: "keyup"
+    min: 82.661
+    max: 83.661
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.008 against v0.9.9's 0.0, keyup)"
+  - match: "hq/MARIMBA/FX/B/k89v20"
+    metric: "decay"
+    min: -185.149
+    max: -184.149
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.584 against v0.9.9's 1.088, hold)"
+  - match: "hq/MARIMBA/FX/B/k89v64"
+    metric: "keyup"
+    min: 179.221
+    max: 180.221
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.043 against v0.9.9's 0.0, keyup)"
+  - match: "hq/MARIMBA/FX/B/k89v96"
+    metric: "cb"
+    min: -2.087
+    max: -1.087
+    ceiling_proof: "tests/baselines/rev_grain_linear_proof.json"
+    reason: "rev-grain: linear reverb content (residual 0.811 against v0.9.9's 1.962, hold)"
+  - match: "*/F08/PRESET/*"
+    metric: "H6"
+    min: -26.0
+    max: 0.0
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F12/PRESET/*"
+    metric: "clk"
+    min: -9.715
+    max: -8.715
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F13/PRESET/*"
+    metric: "H3"
+    min: -6.065
+    max: -5.065
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F13/PRESET/*"
+    metric: "H5"
+    min: -5.46
+    max: -4.46
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F14/PRESET/*"
+    metric: "H3"
+    min: -6.265
+    max: -4.651
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F15/PRESET/*"
+    metric: "H2"
+    min: -7.853
+    max: -3.716
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F15/PRESET/*"
+    metric: "H3"
+    min: -14.018
+    max: -2.611
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F15/PRESET/*"
+    metric: "H4"
+    min: -9.023
+    max: -2.583
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F15/PRESET/*"
+    metric: "H5"
+    min: -9.373
+    max: -2.622
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F15/PRESET/*"
+    metric: "H6"
+    min: -8.279
+    max: -2.728
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F15/PRESET/*"
+    metric: "clk"
+    min: -190.042
+    max: -189.042
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F15/PRESET/*"
+    metric: "keyup"
+    min: -207.39
+    max: -2.147
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F16/PRESET/*"
+    metric: "H2"
+    min: -8.581
+    max: -2.999
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F16/PRESET/*"
+    metric: "H3"
+    min: -9.133
+    max: -2.605
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F16/PRESET/*"
+    metric: "H4"
+    min: -4.559
+    max: -2.542
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F16/PRESET/*"
+    metric: "H5"
+    min: -8.657
+    max: -2.598
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/F16/PRESET/*"
+    metric: "H6"
+    min: -5.18
+    max: -2.524
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/MARIMBA/FX/*"
+    metric: "H2"
+    min: -9.697
+    max: -2.875
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/MARIMBA/FX/*"
+    metric: "H3"
+    min: -11.222
+    max: -2.51
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/MARIMBA/FX/*"
+    metric: "H4"
+    min: -10.625
+    max: -2.883
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/MARIMBA/FX/*"
+    metric: "H5"
+    min: -7.524
+    max: -2.663
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/MARIMBA/FX/*"
+    metric: "H6"
+    min: -8.687
+    max: -2.886
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/MARIMBA/FX/*"
+    metric: "clk"
+    min: -189.066
+    max: -185.752
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"
+  - match: "*/MARIMBA/FX/*"
+    metric: "keyup"
+    min: -200.598
+    max: -3.731
+    reason: "rev-grain: lower through the reverb (its int16 rounding further under the notes, or a quiet tail no longer stepping to zero)"

@@ -150,6 +150,53 @@ static uint32_t eq_cost_us(void)                        /* fx_cost_us: each band
     }
     return us;
 }
+#if FR_C1
+/* fx_eq for a chunk (fx.c fxc_o / fxc_e): the targets, which bands run and glide at the first, the rest at the last */
+__attribute__((noinline)) static void fx_eq(int32_t *m, uint32_t n)
+{
+    static int16_t tg[EQ_NB], tf;
+    static uint32_t mv, rest;
+    uint32_t b, sb;
+    if (FXC_1) {
+        tg[0] = eq_tgt((uint32_t)fx_p[FXP_EQ_LO]); tg[1] = eq_tgt((uint32_t)fx_p[FXP_EQ_MID]);
+        tg[2] = eq_tgt((uint32_t)fx_p[FXP_EQ_HI]); tf = eq_tgt((uint32_t)fx_p[FXP_EQ_FREQ]);
+        mv = 0;
+        for (b = 0; b < EQ_NB; b++) if (tg[b] != eq_g[b] || tg[b] != EQ_P0) eq_run[b] = 1;
+        rest = !(eq_run[0] | eq_run[1] | eq_run[2]);
+        if (rest) eq_f = tf;
+        else {
+            for (b = 0; b < EQ_NB; b++) mv |= (uint32_t)(tg[b] != eq_g[b]);
+            if (!eq_run[1]) eq_f = tf;
+            mv |= (uint32_t)(eq_f != tf);
+            if (!eq_cok) { for (b = 0; b < EQ_NB; b++) eq_coef(b, eq_c[b]); eq_cok = 1; }
+        }
+    }
+    if (rest) {
+        if (FXC_Z && n >= 2u) for (b = 0; b < EQ_NB; b++) eq_hist(b, m, n);
+        return;
+    }
+    for (sb = fxc_o; sb < fxc_e; sb += 32u) {
+        uint32_t e = mv ? 32u : fxc_e - sb, gl = 0;
+        int32_t t[5];
+        if (mv) gl = (uint32_t)eq_glide(&eq_g[0], tg[0]) | (uint32_t)(eq_glide(&eq_f, tf) | eq_glide(&eq_g[1], tg[1])) << 1 |
+                     (uint32_t)eq_glide(&eq_g[2], tg[2]) << 2;
+        for (b = 0; b < EQ_NB; b++) {
+            if (gl >> b & 1u) { eq_coef(b, t); eq_df1g(m + sb, e, eq_c[b], t, eq_st[b]); }
+            else if (eq_run[b]) eq_df1(m + sb, e, eq_c[b], eq_st[b]);
+            else if (e >= 2u) eq_hist(b, m + sb, e);
+        }
+        if (!mv) break;
+    }
+    if (!FXC_Z) return;
+    for (b = 0; b < EQ_NB; b++) {
+        int32_t *s = eq_st[b];
+        if (eq_run[b] && eq_g[b] == EQ_P0 && tg[b] == EQ_P0) {
+            int32_t d1 = s[2] - s[0], d2 = s[3] - s[1];
+            if (d1 >= -1 && d1 <= 1 && d2 >= -1 && d2 <= 1) { s[2] = s[0]; s[3] = s[1]; s[4] = 0; eq_run[b] = 0; }
+        }
+    }
+}
+#else
 __attribute__((noinline)) static void fx_eq(int32_t *m, uint32_t n)
 {
     int16_t tg[EQ_NB] = {eq_tgt((uint32_t)fx_p[FXP_EQ_LO]), eq_tgt((uint32_t)fx_p[FXP_EQ_MID]),
@@ -185,3 +232,4 @@ __attribute__((noinline)) static void fx_eq(int32_t *m, uint32_t n)
         }
     }
 }
+#endif

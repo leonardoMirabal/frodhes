@@ -132,13 +132,16 @@ def rows_at(a, t, J=None):
     return s, o, (g * h + (1 << 13)) >> 14
 
 
+S1F = 4                                  # drv_ohcd.c OHCD_S1F (0.9.10): stage 1's b x 2^4 in oh_k, u rounded out
+
+
 def fw_words(a, t, J=None):
-    """the 15 words oh_set leaves in oh_k at (a, t): S1 (a negated), S2 x Q of the AMOUNT's group (a negated), the tone
+    """the 15 words oh_set leaves in oh_k at (a, t): S1 (b x 2^S1F, a negated), S2 x Q of the AMOUNT's group (a negated), the tone
     (b x the level, a negated)"""
     J = J or design()
     s, o, lv = rows_at(a, t, J)
     s2 = rows_s2(J)[J["sgrp"][a - 1]]
-    return (s[:3] + [-s[3], -s[4]] + s2[:3] + [-s2[3], -s2[4]] +
+    return ([v << S1F for v in s[:3]] + [-s[3], -s[4]] + s2[:3] + [-s2[3], -s2[4]] +
             [(o[0] * lv) >> 16, (o[1] * lv) >> 16, (o[2] * lv) >> 16, -o[3], -o[4]])
 
 

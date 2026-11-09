@@ -138,8 +138,8 @@ def test_reverb_tone_tilts():
     notes = [(100, n, 127, 150) for n in (48, 60, 72, 84, 91, 96)]
     def tilt(v):
         x = seg(wet(f"rtn{v}", [(81, 127), (91, 80), (93, v)], notes, 3000), 0.3, 0.8)
-        return band_db(x, 6000, 10000) - band_db(x, 100, 600)
-    d0, d64, d127 = tilt(0), tilt(64), tilt(127)
+        return band_db(x, 3000, 6000) - band_db(x, 100, 600)   # (2026-11-08: was 6 .. 10 kHz, on the 16-bit floor at
+    d0, d64, d127 = tilt(0), tilt(64), tilt(127)             # TONE 0 .. 64: 0.9.9 read 0 > 32 there, the 0.9.10 Rhodes 0 > 64)
     assert d0 < d64 < d127, (d0, d64, d127)
     assert d127 - d0 >= 6, (d0, d127)                # (measured: ~22 dB; the dark end sits on the 16-bit floor)
 
@@ -223,20 +223,28 @@ def test_delay_keeps_its_echoes_under_stereo_effects(fx, eng):
     assert abs(rel(fx) - rel([])) <= 1.0, (rel(fx), rel([]))
 
 
-@pytest.mark.parametrize("eng", ["rhodes", "vibes"])
-def test_drive_is_heard(eng):
+@pytest.mark.parametrize("eng,vel", [("rhodes", 95), ("rhodes", 110), ("vibes", 110)])
+def test_drive_is_heard(eng, vel):
     """DRIVE distorts a single note audibly at the top (TODO #4: "drive effect is bare noticiable ... does nothing"):
     A3 v110 at AMOUNT 127 vs 0 raises the 1-3 kHz band re the lows (Rhodes 15 dB, VIBES 5) or more and drops the crest factor; at 64
-    the level stays within 2 LU (it changes the tone, not the volume)"""
+    the level stays within 2 LU (it changes the tone, not the volume). 0.9.10: the Rhodes at v95 (the band +19.3 dB, the crest
+    factor 8.0 -> 5.7; 0.9.9 +22.7, 6.9 -> 5.1). At v110 its own pickup already barks (the 1-3 kHz band -27 dB re the lows dry, H2 at H1's level; 0.9.9 -75
+    dB), so the effect adds +3.3 dB there and shows in the crest factor (9.4 -> 5.1 dB) rather than the band. The DRIVE
+    code is unchanged and stays so (user, 2026-11-08): the test point moved to v95, where the dry note is still clean
+    enough for the 1-3 kHz band to show what the effect adds, instead of the effect being made harsher to stand out
+    over a pickup that already barks. v110 is back as well (AGENTS.md 5b, THRESHOLD: test_drive_is_heard v95 -> v95 and
+    v110): moving the test hid the 0.9.10 dry distortion; 0.9.9 passes at v110, and so must a clean dry engine. With the
+    clean Rhodes (the physical pickup swing again) v95 reads the band -73.4 -> -46.3 dB (+27.1) and the crest factor
+    5.7 -> 4.1 dB: its crest step is 1 dB there (0.9.9 drops 1.8, so 2 dB never held at v95), 2 dB at v110"""
     sel = [(79, 0), (47, 0)] if eng == "vibes" else []
     out = {}
     for d in (0, 64, 127):
-        L, R = run(f"drh-{eng}-{d}", [(91, 0), (84, 127), (81, d)] + sel, [(300, 57, 110, 2000)], 2500)
+        L, R = run(f"drh-{eng}-{d}", [(91, 0), (84, 127), (81, d)] + sel, [(300, 57, vel, 2000)], 2500)
         x = seg((L + R) / 2, 0.5, 1.5)
         X = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
         f = np.fft.rfftfreq(len(x), 1 / FS)
         hi = 10 * np.log10(X[(f >= 1000) & (f < 3000)].sum() + 1e-9) - 10 * np.log10(X[f < 300].sum() + 1e-9)
         out[d] = (hi, 20 * np.log10(np.abs(x).max() / np.sqrt(np.mean(x * x))), rms_db(x))
     assert out[127][0] - out[0][0] >= (15 if eng == "rhodes" else 5), out   # (VIBES starts brighter: +6 dB, the Rhodes +43)
-    assert out[127][1] < out[0][1] - 2, out
+    assert out[127][1] < out[0][1] - (2 if vel >= 110 else 1), out   # (v95: 0.9.9 drops 1.8 dB, the clean 0.9.10 1.6)
     assert abs(out[64][2] - out[0][2]) <= 2.0, out

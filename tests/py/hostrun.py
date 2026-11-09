@@ -21,14 +21,17 @@ _built = {}
 
 def voices(engine="rhodes"):
     """the host build's voice count for an engine ("rhodes", or "bars" / "vibes" / "marimba"): HOST_DEFS
-    -DRH_VOICES=N / -DBAR_VOICES=N (one engine), -DFR_VOICES=N (both), else rhodes.c's defaults (10 on
-    every engine)"""
+    -DRH_VOICES=N / -DBAR_VOICES=N (one engine), -DFR_VOICES=N (both), -DFR_C1=1 (the two-core build: frodhes.c's
+    FR_VOICES 14), else rhodes.c's defaults (10 on every engine)"""
     key = "RH_VOICES" if engine == "rhodes" else "BAR_VOICES"
     defs = os.environ.get("HOST_DEFS", "")
     for name in (key, "FR_VOICES"):
         m = re.search(r"-D" + name + r"=(\d+)", defs)
         if m:
             return int(m.group(1))
+    if re.search(r"-DFR_C1=1\b", defs):
+        src = open(os.path.join(ROOT, "firmware", "src", "frodhes.c")).read()
+        return int(re.search(r"#define FR_VOICES (\d+)u", src).group(1))
     src = open(os.path.join(ROOT, "firmware", "src", "rhodes.c")).read()
     return int(re.search(r"#define " + key + r" (\d+)u", src).group(1))
 
@@ -188,6 +191,29 @@ def rate_of(feature, fps, guess, lo=0.4, hi=2.6, keep=None):
 
     fine = f0 * np.linspace(0.94, 1.06, 241)
     return float(fine[int(np.argmin([resid(f) for f in fine]))])
+
+
+def tap_lag(on, off, hop=256, n=2048, lo=100, hi=520):
+    """a chorus tap's delay (samples), frame by frame: the lag where the wet (the render with the chorus minus the same
+    render without it, one channel) best matches the dry, lo .. hi samples back (the taps read 153 .. 465), refined by
+    a parabola. Its swing is the chorus' LFO itself, a sine at the rate: unlike the left / right level difference,
+    whose rate or double wins by the chord's partials (0.9.10: the Rhodes read twice the rate, as VIBES always did)"""
+    wet = np.asarray(on, float) - np.asarray(off, float)
+    dry = np.asarray(off, float)
+    m = 1 << int(np.ceil(np.log2(n + hi)))
+    out = []
+    for i in range(hi, len(wet) - n, hop):
+        a = np.fft.rfft(wet[i:i + n], m)
+        b = np.fft.rfft(dry[i - hi:i + n], m)               # dry[i - hi + j]: the lag l at j = hi - l
+        c = np.fft.irfft(b * np.conj(a), m)[:hi + 1][::-1]  # c[l] = sum wet[i + k] dry[i - l + k]
+        c = c[lo:hi]
+        k = int(np.argmax(c))
+        p = 0.0
+        if 0 < k < len(c) - 1:
+            d = c[k - 1] - 2 * c[k] + c[k + 1]
+            p = 0.5 * (c[k - 1] - c[k + 1]) / d if d else 0.0
+        out.append(lo + k + p)
+    return np.array(out), FS / hop
 
 
 def card_hz(text):

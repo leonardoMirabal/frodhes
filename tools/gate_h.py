@@ -53,6 +53,8 @@ def main():
     a = ap.parse_args()
     got = sums(build(True, OUT / "hq"))
     if a.save:
+        import release_diff                    # (AGENTS.md 5b: never re-save over a tree the pristine gate fails)
+        release_diff.save_guard("Gate H")
         BASE.write_text("# Gate H (tools/gate_h.py --save): the HQ Rhodes' renders of tests/hq/*.txt\n"
                         + "".join(f"{h}  {n}\n" for n, h in got.items()))
         print(f"Gate H: saved {len(got)} renders")

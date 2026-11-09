@@ -473,11 +473,17 @@ def test_old_records_play_as_before(tmp_path):
     fl = str(tmp_path / "old.flash")
     setup = [cc(20, 91, 90), cc(21, 92, 100), cc(22, 93, 40), "100 btn 9", "120 turn 2 1", "125 turn 2 1", "140 btn 9"]
     run("rev-old-1", setup, 4500, flash=fl, binary=exe)
-    play = ["100 dump"] + note(200, 48, 110, 2750) + note(200, 55, 100, 2750) + ["3000 midi 0xC0 0 0",
-                                                                                "3500 midi 0xC0 18 0", "4000 dump"]
+    play = (["100 dump", "150 midi 0xB0 79 0", "150 midi 0xB0 47 0"]            # (VIBES, its motor off)
+            + note(200, 48, 110, 2750) + note(200, 55, 100, 2750) + ["3000 midi 0xC0 0 0", "3500 midi 0xC0 18 0", "4000 dump"])
     import shutil
     fl2 = str(tmp_path / "old2.flash")
     shutil.copy(fl, fl2)
+    fl3, fl4 = str(tmp_path / "old3.flash"), str(tmp_path / "old4.flash")
+    shutil.copy(fl, fl3)
+    shutil.copy(fl, fl4)
+    dry = play[:1] + ["150 midi 0xB0 91 0"] + play[1:]                 # (the same, REVERB MIX 0)
+    a0 = run("rev-old-2d", dry, 4100, flash=fl3, binary=exe)
+    b0 = run("rev-old-3d", dry, 4100, flash=fl4)
     a = run("rev-old-2", play, 4100, flash=fl, binary=exe)
     b = run("rev-old-3", play, 4100, flash=fl2)
     for t in (100, 4000):
@@ -486,19 +492,23 @@ def test_old_records_play_as_before(tmp_path):
     n = int(2.9 * FS)
     assert np.abs(a.L[int(0.2 * FS):n]).max() > 300
     # (since rev-upsample HALL's half-bands move the wet a little, on purpose: its top octave, and 0.18 ms later. The old
-    # records play as the old build played them: every octave band from 63 Hz to 8 kHz within 1 dB (the wet against the
-    # dry: +-0.6 dB of comb), the level within
-    # 0.1 dB)
+    # records play as the old build played them. 0.9.10: the instrument has changed since the old build (the Rhodes by
+    # design: its octaves -5 .. +13 dB; VIBES +1.8 dB at 2 kHz), so the reverb is compared, not the instrument: played
+    # on VIBES, each build's wet (the render less its own REVERB MIX 0 render) over that dry, per octave from 63 Hz to
+    # 4 kHz within 1 dB (measured 0.85 at 4 kHz), 8 kHz is the half-bands' move (+3.2 dB), the
+    # wet's share in all within 0.5 dB)
     f = np.fft.rfftfreq(n, 1 / FS)
-    for x, y in ((a.L[:n], b.L[:n]), (a.R[:n], b.R[:n])):
-        x, y = np.asarray(x, float), np.asarray(y, float)
-        X, Y = np.abs(np.fft.rfft(x)) ** 2, np.abs(np.fft.rfft(y)) ** 2
-        d = [10 * np.log10(Y[(f >= c / 1.414) & (f < c * 1.414)].sum() / X[(f >= c / 1.414) & (f < c * 1.414)].sum())
-             for c in 62.5 * 2.0 ** np.arange(8)]
-        print("octaves 63 Hz .. 8 kHz, dB against the old build:", np.round(d, 2))
-        assert np.all(np.abs(d) < 1.0), "the old panel sounds different"
-        lv = 10 * np.log10(np.sum(y * y) / np.sum(x * x))
-        assert abs(lv) < 0.1, f"{lv:+.2f} dB against the old build"
+    bands = lambda X: np.array([X[(f >= c / 1.414) & (f < c * 1.414)].sum() for c in 62.5 * 2.0 ** np.arange(8)])
+    for x, y, x0, y0 in ((a.L, b.L, a0.L, b0.L), (a.R, b.R, a0.R, b0.R)):
+        x, y, x0, y0 = (np.asarray(z[:n], float) for z in (x, y, x0, y0))
+        X, Y, X0, Y0 = (bands(np.abs(np.fft.rfft(z)) ** 2) for z in (x - x0, y - y0, x0, y0))   # (the wet, the dry)
+        d = 10 * np.log10((Y / Y0) / (X / X0))
+        print("octaves 63 Hz .. 8 kHz, the wet over the dry, dB against the old build:", np.round(d, 2))
+        assert np.all(np.abs(d[:7]) < 1.0), "the old panel sounds different"
+        w, w0 = y - y0, x - x0
+        lv = 10 * np.log10((np.sum(w * w) / np.sum(y0 * y0)) / (np.sum(w0 * w0) / np.sum(x0 * x0)))
+        print(f"the wet's share {lv:+.2f} dB against the old build")
+        assert abs(lv) < 0.5, f"{lv:+.2f} dB against the old build"
 
 
 @needs_types

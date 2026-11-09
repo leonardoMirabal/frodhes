@@ -40,6 +40,7 @@ def test_meter_reads_the_fm1_ballistics():
               "render 40", "get r_cmp_gr"]
              + on + ["render 120", "get r_cmp_gr"] + off
              + sum((["render %d" % tick, "get r_cmp_gr"] for _ in range(60)), [])
+             + ["set p_cmp_amt 96"]       # 2026-11-08: under the 30 dB clamp (0.9.10's louder chord read 300 both sides)
              + on + ["render 120", "get r_cmp_gr", "set s_fx 0", "render 200", "get r_cmp_gr",
                      "set s_fx 1", "set p_cmp_sw 0", "render 20", "get r_cmp_gr"])
     v = run(lines)

@@ -9,7 +9,7 @@ sine's reference the sine itself there, any other signal's a Kaiser-windowed sin
    are printed and written to build/uac_test/uac_resample_sweep_<rate>.<worker>.txt.
 2. A ramp of the FM-1's clock, -600 -> +600 ppm (10 s; 60 s with --long or UAC_RS_LONG=1), the step set every block,
    with a 1 kHz tone, an 8 kHz tone (both TPDF-dithered: no rounding spurs of the test signal) and the host's piano
-   render (build/host/frodhes.wav):
+   render (the host build's demo, uacrs.piano):
    - no click: no glitch-detector event (tests/py/glitch_lpc.py, the FM-1 takes' detector) that the exact reference
      confirms, and no sample whose error against the reference stands out of the held runs' error at the same place;
      with --long the detector's own rate <= 1.4 events a minute (a clean take) too. The check is shown to find a bad,
@@ -161,7 +161,8 @@ def clicks(y, t, runs, x, sig, rate, d):
     """the ramp's output y (input positions t) checked for clicks two ways (not in its first or last 0.1 s):
     - the glitch detector (glitch_lpc): its events (input positions, s); those it does not also find on the exact
       reference (rounded: the ideal resampler's output; the detector can score on the signal itself, a piano's quiet
-      decay, where the output is the reference to the LSB); and those the reference confirms (the error within 3 ms
+      decay, where the output is the reference to the LSB) nor on the input itself (its attacks); and those the
+      reference confirms (the error within 3 ms
       above 4 LSB and 6x its robust level in the 20 ms before);
     - the reference: where |error| exceeds 3x the held runs' error (their running maximum over +-2 ms, at the same
       input position: the same content, the step held) + 4 LSB (a bad, repeated, dropped or zeroed sample; a jump)
@@ -183,16 +184,17 @@ def clicks(y, t, runs, x, sig, rate, d):
     ev = ev[(ev > lo) & (ev < hi)]
     ideal = np.round(np.nan_to_num(y - e))                 # (the exact reference, rounded as the output is)
     evi = t[glitch_lpc.events(ideal, rate)]
-    h, raw, real, extra = int(0.003 * rate), [], [], []
+    evx = glitch_lpc.events(np.asarray(x, dtype=float), u.FS)    # (2026-11-08: the input's own, at input positions:
+    h, raw, real, extra = int(0.003 * rate), [], [], []          #  0.9.10's sharper attacks score on the piano itself)
     for k in ev:
         raw.append(round(float(t[k]) / u.FS, 3))
-        if not (len(evi) and np.min(np.abs(evi - t[k])) < 0.003 * u.FS):
+        if not (len(evi) and np.min(np.abs(evi - t[k])) < 0.003 * u.FS) and \
+                not (len(evx) and np.min(np.abs(evx - t[k])) < 0.003 * u.FS):
             extra.append(raw[-1])
         before = np.abs(e[max(0, k - 7 * h):k - h])
         if np.nanmax(np.abs(e[k - h:k + h])) > max(4.0, 6.0 * 1.4826 * np.nanmedian(before)):
             real.append(raw[-1])
-    nx = len(glitch_lpc.events(np.asarray(x, dtype=float), u.FS))
-    return raw, extra, real, [round(p / u.FS, 3) for p in ref], nx
+    return raw, extra, real, [round(p / u.FS, 3) for p in ref], len(evx)
 
 
 def piano_delay(runs, x, rate):
@@ -249,8 +251,10 @@ def test_click_check_catches_injected(drv, sig):
     missed = []
     rms = np.sqrt(np.convolve(y ** 2, np.ones(1001) / 1001, "same"))
     for j, p in enumerate((60000, 150000, 250000, 380000)):
-        p += int(np.nonzero(rms[p:] > 1000)[0][0])               # (in the piano: where it sounds; a sample dropped in
-        z, kind = y.copy(), j % 4                            # its silence changes nothing)
+        p += int(np.nonzero(rms[p:] > 1000)[0][0]) + 500         # (in the piano: where it sounds; a sample dropped in
+        z, kind = y.copy(), j % 4                            # its silence changes nothing; 2026-11-08: + the window's
+                                                             # half, past the onset: 0.9.10's sharper attack put a drop
+                                                             # 4 ms before one, found where it starts, 6.744 s)
         amp = np.std(z[p - 500:p + 500]) + 50
         if kind == 0: z[p] += amp * 1.5
         elif kind == 1: z[p:p + 2] = z[p - 2:p]

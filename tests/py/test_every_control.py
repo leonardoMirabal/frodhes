@@ -23,7 +23,7 @@ import re
 import numpy as np
 import pytest
 
-from hostrun import FS, ROOT, cc, env_rms, note, rate_of, rms_db, run
+from hostrun import FS, ROOT, cc, env_rms, note, rate_of, rms_db, run, tap_lag
 
 CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(21, 70, 0),  # F01's drive, reverb and filter (on by default since 0.9.3:
          cc(22, 106, 0), cc(22, 107, 0), cc(22, 113, 0),    # LP18 at 16K) off, and its compressor (on since 0.9.5:
@@ -745,17 +745,22 @@ def _tsync():
 
 @case("TREM-WAH")
 def _wah():
-    """EFFECT WAH: a touch wah, harder playing opens it. A soft and a hard chord's centroid apart: 41 Hz dry, 117 Hz
-    with the wah at DEPTH 64; the wah at least 40 Hz more than dry"""
-    def spread(extra):
-        c = []
-        for vel in (30, 127):
+    """EFFECT WAH: a touch wah, harder playing opens it. The wah's own response (the wah over dry, per third octave, on
+    a soft and a hard chord): its peak moves up by at least 2 octaves from v30 to v127 (0.9.9: 356 Hz -> 3.6 kHz).
+    (2026-11-08: was the chords' centroid spread, wah over dry >= 40 Hz; the pickup drive brightens the hard chord on
+    its own, dry 41 -> 325 Hz, which the centroid can no longer tell from the wah: the wah's peak 356 Hz -> 7.2 kHz)"""
+    edges = 100 * 2 ** (np.arange(0, 22) / 3)
+
+    def peak(vel):
+        S = []
+        for extra in ([], [cc(30, 17, 127), cc(32, 18, 64), cc(33, 19, 64)]):
             w = R(CLEAN + extra + sum((note(200, n, vel, 1200) for n in (48, 55, 60, 64)), []), 1600)
             f, X = spec(w.seg(0.21, 0.4))
-            c.append((f * X).sum() / X.sum())
-        return c[1] - c[0]
-    d, wv = spread([]), spread([cc(30, 17, 127), cc(32, 18, 64), cc(33, 19, 64)])
-    return wv - d, 40.0, f"dry {d:.0f} Hz, wah {wv:.0f} Hz"
+            S.append(np.array([X[(f >= a) & (f < b)].sum() for a, b in zip(edges[:-1], edges[1:])]) + 1e-9)
+        i = int(np.argmax(S[1] / S[0]))
+        return math.sqrt(edges[i] * edges[i + 1])
+    lo, hi = peak(30), peak(127)
+    return math.log2(hi / lo), 2.0, f"the wah's peak {lo:.0f} Hz at v30, {hi:.0f} Hz at v127"
 
 
 @case("TREM-KINDS-panel")
@@ -873,25 +878,25 @@ def _cdepth():
 @case("CHORUS-SPEED")
 def _cspeed():
     """SPEED (CC 87): 0.96 Hz at 20, 5.0 Hz at 120 (x5.2); at least x4"""
-    r = []
+    r, off = [], pha([(85, 0), (86, 100)])
     for v, g in ((20, 0.4), (120, 5.0)):
         w = pha([(85, 64), (86, 100), (87, v)])
         f, fps = lr_band(w.seg(0.5, 6.2), w.seg(0.5, 6.2, 1))
         assert p2p(f) * 10 / math.log(10) > 3, f"SPEED {v}: no sweep"
-        r.append(rate_of(f, fps, g))
+        r.append(rate_of(*tap_lag(w.seg(0.5, 6.2), off.seg(0.5, 6.2)), g))   # (the tap's delay: the rate itself)
     return r[1] / r[0], 4.0, f"{r[0]:.2f} -> {r[1]:.2f} Hz"
 
 
 @case("CHORUS-SYNC")
 def _csync():
     """CHORUS SYNC (its K4, CC 23): 1/4 at 120 BPM = 2.000 Hz, by the panel and by the CC"""
-    out = []
+    out, off = [], pha([(85, 0), (86, 100)])
     for extra in (goto("CHO", 50) + detents(5, 1, 9, 120), [cc(50, 23, sync_cc(9, 14))]):
         w = pha([(85, 64), (86, 100)], extra)
         assert w.state(400)[f"card.{PG['CHO']}.3"] == "1/4"
         f, fps = lr_band(w.seg(0.5, 6.2), w.seg(0.5, 6.2, 1))
         assert p2p(f) * 10 / math.log(10) > 3, "no sweep"
-        out.append(rate_of(f, fps, 2.0))
+        out.append(rate_of(*tap_lag(w.seg(0.5, 6.2), off.seg(0.5, 6.2)), 2.0))   # (the tap's delay)
     return -max(abs(r - 2.0) for r in out), -0.02, " ".join(f"{r:.3f}" for r in out)
 
 
@@ -961,10 +966,11 @@ def _dfb():
 
 @case("DELAY-TONE")
 def _dtone():
-    """DLY TONE (SETUP K1, CC 27): the echoes' energy above 2 kHz -27 dB at 0, -20 dB at 10; at least 4"""
+    """DLY TONE (SETUP K1, CC 27): the echoes' energy above 2 kHz -27 dB at 0, -20 dB at 10; at least 4. On VIBES (CC 79
+    0): a bright source (the Rhodes C5 has little above 2 kHz since 0.9.10: its tine mode turned down)"""
     h = []
     for v in (0, 127):
-        w = dly([(88, 48), (89, 100), (90, 64), (26, 64), (27, v)])
+        w = dly([(79, 0), (88, 48), (89, 100), (90, 64), (26, 64), (27, v)])
         h.append(band_db(np.concatenate([w.seg(0.2 + k * 0.1753, 0.26 + k * 0.1753) for k in (1, 2, 3)]), 2000, 16000))
     return h[1] - h[0], 4.0, f"{h[0]:.1f} -> {h[1]:.1f} dB"
 

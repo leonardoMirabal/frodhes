@@ -18,7 +18,7 @@ import subprocess
 import numpy as np
 import pytest
 
-from hostrun import FS, ROOT, card_hz, cc, env_rms, note, once, rate_of, rms_db, run
+from hostrun import FS, ROOT, card_hz, cc, env_rms, note, once, rate_of, rms_db, run, tap_lag
 
 ENGINES = {"rhodes": [], "vibes": [cc(10, 79, 0), cc(11, 47, 0)]}   # VIBES: its motor (on with it) off
 CLEAN = [cc(20, 81, 0), cc(21, 91, 0), cc(23, 106, 0), cc(24, 110, 64)]   # F01's drive, reverb, comp off; 0 dB
@@ -177,8 +177,12 @@ def test_chorus_phaser_speed(eng, fx):
     """CHORUS / PHASER SPEED: the sweep runs at the card's rate (0.25-6 Hz; the bug of 0.9.2 showed twice that). A
     chord held under the pedal with DECAY / RING at 10 (a steady sound). The chorus is measured on the Rhodes only:
     VIBES' few pure partials make the left / right level difference a mix of the rate and its double (the chorus
-    code is the same for both engines; its card text is checked at every value above)"""
+    code is the same for both engines; its card text is checked at every value above). The chorus: its left tap's
+    delay against the chorus off (hostrun.tap_lag; 0.9.10's Rhodes read twice the rate by the level difference)"""
     chord = (48, 55, 60, 64, 67, 72, 76, 79)
+    pre = ENGINES[eng] + CLEAN + PEDAL + [cc(23, 102, 127)]
+    if fx == "chorus":
+        off = run(f"ds-{fx}off-{eng}", pre + [cc(30, 85, 0), "100 dump"] + sum((note(200, m, 100, 10000) for m in chord), []), 10500)
     for v in (20, 64, 127):
         if fx == "chorus":
             p, card = [cc(30, 85, 64), cc(31, 86, 100), cc(32, 87, v)], f"card.{PG['CHO']}.2"
@@ -188,19 +192,40 @@ def test_chorus_phaser_speed(eng, fx):
                 + sum((note(200, m, 100, 10000) for m in chord), []), 10500)
         txt = w.state(100)[card]
         L, R = w.seg(0.5, 10.2), w.seg(0.5, 10.2, 1)
-        feat, fps = lr_band(L, R) if fx == "chorus" else band_share(L)
+        feat, fps = tap_lag(L, off.seg(0.5, 10.2)) if fx == "chorus" else band_share(L)
         assert_rate(rate_of(feat, fps, card_hz(txt)), txt, f"{fx} SPEED {v}")
 
 
-def echo_spacing(x, d_guess, t0=0.2):
-    """the time from the note to its first echo (samples): the note's onset strength against what follows"""
+def onset_strength(x):
     e = np.convolve(np.abs(np.diff(x)), np.ones(32) / 32, "same")
-    o = np.maximum(np.diff(e), 0)
+    return np.maximum(np.diff(e), 0)
+
+
+def echo_spacing(x, d_guess, dry, t0=0.2):
+    """the time from the note to its first echo (samples): the dry note's onset strength (dry: the same note with the
+    delay off) against the echoes alone (x minus dry at its least-squares gain). 2026-11-08: the render's own onset
+    strength against itself read TIME 10 (28 ms) as 31.9 ms on the clean Rhodes (61baedac; 28.1 on 0.9.9): its
+    softer strike spreads the attack's onset over ~11 ms, and the template, which held the first echo too, matched
+    the attack's later peaks against the echo's. The echoes alone against the dry onset: 28.1 ms on 0.9.9, 568fe9d6
+    and 61baedac, and VIBES TIME 10 / 20 at 28.1 / 39.4 (the old way: 29.3 / 44.4)"""
+    a = float(np.dot(x, dry) / np.dot(dry, dry))
+    od, ow = onset_strength(dry), onset_strength(x - a * dry)
     i0 = int(t0 * FS)
-    w = o[i0 - 200:i0 + 1500]
+    w = od[i0 - 200:i0 + 1500]
     lags = range(int(0.4 * d_guess), int(2.6 * d_guess))
-    c = [np.dot(w, o[i0 - 200 + l:i0 + 1500 + l]) for l in lags]
+    c = [np.dot(w, ow[i0 - 200 + l:i0 + 1500 + l]) for l in lags]
     return lags[int(np.argmax(c))]
+
+
+def test_echo_spacing_finds_a_wrong_time():
+    """the detector against a delay at the wrong time: the dry note plus its copy 4 ms late (TIME 10's card 28 ms, the
+    echo at 32) reads 32 (out of the 1.5 ms tolerance), at 28 reads 28, and a 175 ms card with the echo at 190 reads 190"""
+    dry = run("ds-dly-dry-rhodes", ENGINES["rhodes"] + CLEAN + SHORT + [cc(30, 88, 0)] + note(200, 72, 110, 30), 2500).L
+    for card, true in ((28, 32), (28, 28), (175, 190)):
+        L = int(round(true * FS / 1000))
+        x = 0.8 * dry + 0.5 * np.concatenate([np.zeros(L), dry[:-L]])
+        meas = echo_spacing(x, card * FS / 1000, dry) * 1000 / FS
+        assert abs(meas - true) < 0.3, (card, true, meas)
 
 
 @pytest.mark.parametrize("eng", ENGINES)
@@ -208,6 +233,7 @@ def test_delay_time(eng):
     """DELAY TIME: the echoes come at the card's time; synced (TEMPO page DLY SYNC, BPM 100 by the knob) at the note
     value, and an echo longer than the line's 1.486 s at half of it (the manual says so)"""
     cases = [(10, None), (64, None), (127, None), (64, 3), (64, 9), (64, 12)]       # 1/16, 1/4, 1/1 (2.4 s -> 1.2)
+    dry = run(f"ds-dly-dry-{eng}", ENGINES[eng] + CLEAN + SHORT + [cc(30, 88, 0)] + note(200, 72, 110, 30), 5500).L
     for v, sync in cases:
         p = [cc(30, 88, 48), cc(31, 89, 100), cc(32, 26, 50), cc(33, 90, v)]
         if sync is not None:
@@ -216,14 +242,14 @@ def test_delay_time(eng):
         st = w.state(150)
         txt = st[f"card.{PG['DELAY']}.2"]
         if sync is None:
-            meas = echo_spacing(w.L, card_value(txt)[0] * FS / 1000) * 1000 / FS
+            meas = echo_spacing(w.L, card_value(txt)[0] * FS / 1000, dry) * 1000 / FS
             assert_rate(meas, txt, f"DELAY TIME {v}")
         else:
             assert st[f"card.{PG['TEMPO']}.3"] == txt and st["bpm"] == "100.0", (st[f"card.{PG['TEMPO']}.3"], txt)
             ms = 60000 / 100 * UNITS[txt] / 96
             while ms * FS / 1000 >= 65534:                  # fx.c: the line is 65536 samples
                 ms /= 2
-            meas = echo_spacing(w.L, ms * FS / 1000) * 1000 / FS
+            meas = echo_spacing(w.L, ms * FS / 1000, dry) * 1000 / FS
             assert abs(meas - ms) <= 0.05 * ms, f"DELAY SYNC {txt} at 100 BPM: {ms:.1f} ms expected, the echo at {meas:.1f}"
 
 

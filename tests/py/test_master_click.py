@@ -2,7 +2,9 @@
 """GitHub #12: on the SMK-37, turning K1 (MASTER) clicks on the 3.5 mm jack; USB stays smooth (usb_pre_master: the
 computer records before MASTER). The host build replaces platform.c, so its MASTER pass is run here through
 tests/master_click_test.c (platform.c's code copied verbatim, checked below) on the app's own output: a pedalled
-chord C2 C3 E3 G3 C4 at v110 from the SMK host build. K1 moves as smk_input.h makes it (24 of 1023 a detent): single
+chord C2 C3 E3 G3 C4 at v90 from the SMK host build (2026-11-08, 0.9.10: v110 -> v90. The brighter Rhodes raised the
+reference chord's own second difference at v110, so the self-check saw 0.9.5's 5 % detent step at only 1.8-3.0
+against its 3.0; at v90 every case reads 3.25-12, the fixed pass 0.83-1.0). K1 moves as smk_input.h makes it (24 of 1023 a detent): single
 detents and fast spins (8 detents in 100 ms), up and down, at low (k 150), mid (500) and full (1000) volume; main-loop
 passes every 0.05, 0.2 and 1 ms; USB before MASTER on and off.
 
@@ -54,7 +56,7 @@ def chord_raw(tmp_path_factory):
     tmp = str(tmp_path_factory.mktemp("mclick"))
     lines = [H.cc(195, 64, 127)]
     for n in (36, 48, 52, 55, 60):
-        lines += H.note(200, n, 110, 3600)
+        lines += H.note(200, n, 90, 3600)
     r = H.run("master-chord", lines, 4000, binary=smk_build())
     x = np.stack([np.asarray(r.L), np.asarray(r.R)], 1).astype(np.int16)
     raw = os.path.join(tmp, "in.raw")

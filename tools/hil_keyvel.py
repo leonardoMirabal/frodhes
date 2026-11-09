@@ -495,7 +495,9 @@ def jack_check(J, power="usb", lim=None, out=None, dry_run=False):
                     lines={f"{f:.1f}": line_db(j[s], f, FS) for f in JACK_LINES})
         J.r.dry()
         mode(m)
-        ch = (36, 43, 48, 52, 55, 60, 64)
+        # 2026-11-08: C2 A2 E3 G3 B3 D4 F4, no octave (was C2 G2 C3 E3 G3 C4 E4): 0.9.10's partials made the octaves'
+        # exactly coinciding partials phase-sensitive, the loud reference 1.1-1.8 dB apart take to take (this 0.04)
+        ch = (36, 45, 52, 55, 59, 62, 65)
         u, j = J.both(2.0, [(0.1, "on", n, 127) for n in ch] + [(1.6, "off", n, 0) for n in ch])
         s = slice(int(0.15 * FS), int(1.5 * FS))
         loud = dict(jack_db=hj.db(j[s]), usb_db=hj.db(u[s]))

@@ -17,11 +17,11 @@ toward fast changes while notes ring ("ring" bursts: a pedalled chord and a run 
 The invariants (check), on every run:
   crash      the host exits 0 within its time limit; no sanitizer report (--san: ASan + UBSan build)
   race       the host's own voice checks (RACE STUCK / RACE LOST: a voice held that no note wants)
-  peak       the output never passes the limiter's ceiling (24000)
+  peak       the output never passes the limiter's ceiling (LIM_T 24000, -2.7 dBFS)
   wrap       (--san / --san-every) no int16 narrowing in the audio path out of range: the sanitizer build has the
              (int16_t) casts of rhodes / bars / fx / the delay and reverbs taken out (a no-op in range) and checks the
              implicit ones; with signed overflow (UBSan) that is every int wrap. (A sample-step test cannot tell a
-             wrap from loud bright audio under the 24000 limiter: steps up to 48000 are legal; 0.9.5's 5 "wraps" of
+             wrap from loud bright audio under the limiter (24000 then): steps up to 48000 are legal; 0.9.5's 5 "wraps" of
              40-43k were a +22 dB makeup into HP12 and a tape echo near the ceiling, bit-identical in this build)
   rail       no run of 32 equal samples above 20000 (an output stuck on a rail)
   stuck      no voice held, no note source or count left after the panic (the end: every note off on all 16

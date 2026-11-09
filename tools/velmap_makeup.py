@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-only
+"""The velocity method MAP's level make-up (rhodes.c rh_vm: G x RH_VM_MK): per key and velocity point the gain that
+brings the map's notes back to the reference release's level (RMS 50-500 ms, effects bypassed by CC 119, NOISE 0,
+STAGE 77) at v48 and above, and never under it below. The map saturates the fundamental above ~v80 in the bass
+(-4.5 dB at v112); the make-up gives that loudness back as an output gain only, so the colour stays the map's.
+Measured on the host without the make-up (-DRH_NO_VM_MK) against the reference tag's host build, so a re-run gives
+the same header.
+
+    tools/velmap_makeup.py --write [--ref v0.9.9]    measure, write firmware/gen/rh_velmap_mk.h
+    tools/velmap_makeup.py [--ref v0.9.9]            the residual of the build as it is (MAP re the reference, dB)
+"""
+import argparse
+import math
+import os
+import subprocess
+import sys
+import tempfile
+import wave
+from concurrent.futures import ThreadPoolExecutor
+
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import cb_loud  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WD = os.path.join(ROOT, "build", "velmap")
+HDR = os.path.join(ROOT, "firmware", "gen", "rh_velmap_mk.h")
+KEY_LO, NKEY = 21, 88
+VG = list(range(40, 128, 8)) + [127]               # rhodes.c RH_MK_N anchors: v40 (and under it), 48 .. 120, 128
+JOBS = int(os.environ.get("VELMAP_JOBS", "3"))
+CF = ["-O2", "-Wall", "-Wno-unused-function", "-DDINGHY_HOST", '-DAPP_VER="dev"', "-Ifirmware/src", "-Ifirmware/gen"]
+
+
+def build(out, src, extra=()):
+    subprocess.run(["cc", *CF, *extra, "-o", out, "firmware/src/frodhes.c", "-lm"], cwd=src, check=True)
+
+
+def build_ref(rev):
+    src = os.path.join(WD, "ref-" + rev)
+    b = os.path.join(WD, "frodhes-ref-" + rev)
+    if not os.path.exists(b):
+        os.makedirs(src, exist_ok=True)
+        subprocess.run("git archive %s firmware tests/host.c | tar -x -C %s" % (rev, src), shell=True, cwd=ROOT, check=True)
+        build(b, src)
+    return b
+
+
+def level(binary, key, vel, cc):
+    with tempfile.TemporaryDirectory(dir=WD) as td:
+        base = os.path.join(td, "r")
+        lines = ["20 midi 0xB0 119 127", "25 midi 0xB0 104 0"] + ["%d midi 0xB0 %d %d" % (30 + i, c, v) for i, (c, v) in enumerate(cc)]
+        open(base + ".txt", "w").write("\n".join(lines + ["100 midi 0x90 %d %d" % (key, vel), "700 end"]) + "\n")
+        subprocess.run(["nice", "-n", "10", binary, base, base + ".txt"], check=True, capture_output=True)
+        w = wave.open(base + ".wav")
+        x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(np.float64) / 32768.0
+        if w.getnchannels() == 2:
+            x = 0.5 * (x[0::2] + x[1::2])
+    a = np.abs(x)
+    i = int(np.argmax(a > 0.02 * a.max())) if a.max() > 0 else 0
+    s = x[i + int(0.05 * 44100): i + int(0.5 * 44100)]
+    return 10 * math.log10(float(np.mean(s * s)) + 1e-20), cb_loud.bands(s)
+
+
+def grid(binary, cc):
+    jobs = [(k, v) for k in range(KEY_LO, KEY_LO + NKEY) for v in VG]
+    with ThreadPoolExecutor(JOBS) as ex:
+        r = list(ex.map(lambda kv: level(binary, kv[0], kv[1], cc), jobs))
+    return dict(zip(jobs, r))
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--write", action="store_true")
+    ap.add_argument("--ref", default="v0.9.9")
+    a = ap.parse_args()
+    os.makedirs(WD, exist_ok=True)
+    ref = grid(build_ref(a.ref), [])
+    mapcc = [(40, 127)]                                 # RESPONSE: the map
+    if not a.write:
+        m = grid(os.path.join(ROOT, "build", "host", "frodhes"), mapcc)
+        for k in range(KEY_LO, KEY_LO + NKEY, 4):
+            print("%3d %s" % (k, " ".join("%5.1f/%5.1f" % (m[(k, v)][0] - ref[(k, v)][0], cb_loud.phon(m[(k, v)][1]) - cb_loud.phon(ref[(k, v)][1])) for v in VG)))
+        return
+    b = os.path.join(WD, "frodhes-nomk")
+    build(b, ROOT, ["-DRH_NO_VM_MK", "-DRH_NO_DYN"])
+    m = grid(b, mapcc)
+    rows = []
+    for k in range(KEY_LO, KEY_LO + NKEY):
+        d = {v: ref[(k, v)][0] - m[(k, v)][0] for v in VG}           # RMS; at v48 up the critical-band loudness's
+        for v in VG:                                                  # gain where larger (the treble's brightness)
+            if v >= 48:
+                d[v] = max(d[v], cb_loud.match_db(m[(k, v)][1], cb_loud.loud(ref[(k, v)][1])))
+        d = {v: (x if v >= 48 else max(0.0, x)) for v, x in d.items()}
+        p = [d[v] for v in VG[:-1]]
+        p.append(p[-1] + (d[127] - p[-1]) * 8.0 / 7.0)
+        rows.append([max(0, min(255, int(round(128 + 32 * math.log2(10 ** (x / 20)))))) for x in p])
+    lo = min(min(r) for r in rows); hi = max(max(r) for r in rows)
+    print("make-up %.1f .. %.1f dB" % ((lo - 128) * 6.0206 / 32, (hi - 128) * 6.0206 / 32), file=sys.stderr)
+    out = ["/* SPDX-License-Identifier: GPL-3.0-only */",
+           "/* GENERATED by tools/velmap_makeup.py --write (reference %s) - do not edit. The velocity method MAP's level" % a.ref,
+           " * make-up (rhodes.c rh_vm: G x it): per key (21..108) and velocity anchor (rhodes.c RH_MK_N: v40, 48 .. 120, 128),",
+           " * coded in 1/32 octave (128 = 1; rh_mk_q12): the reference's RMS (50-500 ms, STAGE 77) over the map's at v48 and",
+           " * above, never under 1 below. */",
+           "#define RH_VM_MK_Q 4096",
+           "static const uint8_t RH_VM_MK[RH_NKEY][RH_MK_N] = {"]
+    out += ["  {" + ",".join(map(str, r)) + "}," for r in rows] + ["};"]
+    open(HDR, "w").write("\n".join(out) + "\n")
+    print("wrote %s" % HDR, file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

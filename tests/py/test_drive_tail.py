@@ -37,21 +37,24 @@ def binary(target):
 
 
 def take(target, amount, drive=True):
-    """F05, its compressor (106), tremolo (17) and reverb (91) off, FDRV at amount (CC 84 127) or no drive (CC 81 0)"""
+    """F05, its compressor (106), tremolo (17) and reverb (91) off, FDRV at amount (CC 84 127) or no drive (CC 81 0),
+    LEVEL (110) 46"""
     ls = ["0 midi 0xC0 4 0", hostrun.cc(100, 106, 0), hostrun.cc(105, 17, 0), hostrun.cc(110, 91, 0),
-          hostrun.cc(115, 84, 127), hostrun.cc(120, 81, amount if drive else 0), hostrun.cc(400, 64, 127),
+          hostrun.cc(115, 84, 127), hostrun.cc(120, 81, amount if drive else 0), hostrun.cc(125, 110, 46),
+          hostrun.cc(400, 64, 127),   # (2026-11-08: LEVEL 46, F05's before the headroom trims: the tail judged as before)
           *hostrun.note(500, 60, 100, 500)]
-    r = hostrun.run(f"drive_tail_{target}_{amount if drive else 'dry'}", ls, end_ms=14000, binary=binary(target))
+    r = hostrun.run(f"drive_tail_{target}_{amount if drive else 'dry'}", ls, end_ms=20000, binary=binary(target))   # (2026-11-08: 14 s -> 20 s, F05 +2.6 dB and the longer C4 decay ring past 14 s)
     return r.L
 
 
 def tail_stats(x):
-    """(the share of |steps| >= 3 in %, the residual above 2 kHz in LSB rms) over the frames (50 ms, from 1.5 s on)
-    whose peak is 8..40 LSB"""
-    w = int(0.05 * FS)
+    """(the share of |steps| >= 3 in %, the residual above 2 kHz in LSB rms) over the frames (25 ms, from 1.5 s on)
+    whose peak is 8..40 LSB, at least 20 of them (0.5 s of tail). (2026-11-08: 50 ms frames, 20 of them, until the clean
+    0.9.10 Rhodes left 19 x 50 ms in that range at AMOUNT 20: the same judgement on 25 ms frames)"""
+    w = int(0.025 * FS)
     n = len(x) // w
     pk = np.abs(x[:n * w]).reshape(n, w).max(1)
-    sel = [i for i in range(int(1.5 / 0.05), n) if 8 <= pk[i] <= 40]
+    sel = [i for i in range(int(1.5 / 0.025), n) if 8 <= pk[i] <= 40]
     assert len(sel) >= 20, f"the tail has {len(sel)} frames at 8..40 LSB (no tail to judge)"
     spec = np.fft.rfft(x)
     spec[np.fft.rfftfreq(len(x), 1 / FS) < 2000] = 0
@@ -79,7 +82,7 @@ def test_tail_fades_from_32_lsb_to_silence(target):
     after that frame (the Move: 1.7 s, its 0.45 s fall from 16). After the last frame at 32 nothing exceeds 32 LSB, and
     the last 10 ms are not a run of -1 (the truncated product held every negative sample at -1: 97 % negative on R)"""
     ls = ["0 midi 0xC0 4 0", hostrun.cc(400, 64, 127), *hostrun.note(500, 60, 100, 500)]
-    r = hostrun.run(f"drive_tail_{target}_gate", ls, end_ms=14000, binary=binary(target))
+    r = hostrun.run(f"drive_tail_{target}_gate", ls, end_ms=20000, binary=binary(target))   # (2026-11-08: 14 s -> 20 s, F05 +2.6 dB and the longer C4 decay ring past 14 s)
     x = np.stack([r.L, r.R], 1)
     end = int(np.nonzero(np.abs(x).max(1))[0][-1])
     w = int(0.05 * FS)

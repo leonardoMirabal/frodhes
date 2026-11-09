@@ -7,6 +7,8 @@
  *                                        holds the stream at the host's rate); with PPM_END the correction moves from
  *                                        PPM to PPM_END in equal steps once a block (a slow ramp: a zipper would show)
  * tests/py/test_uac_lock.py feeds it sines and measures the error against an ideal resampler.
+ *   uac_lock_test table                  the table usb.c rebuilt in RAM (uac_fl, from the packed uac_fir_lock.h), one
+ *                                        phase a line
  *   cc -O1 -w -Ifirmware/src -o build/uac_test/uac_lock_test tests/uac_lock_test.c
  */
 #include <stdint.h>
@@ -30,6 +32,12 @@ int main(int argc, char **argv)
     static int32_t frames[2u * 44100u * 60u];
     uint32_t nf = 0, b, p, nb, i;
     int l, r;
+    if (argc > 1 && !strcmp(argv[1], "table")) {
+        uac_lock_init();
+        for (b = 0; b < UAC_FL_L / 2u; b++)
+            for (i = 0; i < UAC_FL_N; i++) printf("%d%c", uac_fl[b][i], i + 1u < UAC_FL_N ? ' ' : '\n');
+        return 0;
+    }
     while (nf < 44100u * 60u && scanf("%d %d", &l, &r) == 2) {
         frames[2u * nf] = l; frames[2u * nf + 1u] = r;
         nf++;

@@ -306,6 +306,21 @@ static int32_t bh_step(int32_t v, int32_t tgt)
     return v < tgt - BHLUE_GSTEP ? v + BHLUE_GSTEP : v > tgt + BHLUE_GSTEP ? v - BHLUE_GSTEP : tgt;
 }
 
+#if FR_C1
+static void drv_bhlue_run(const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)
+{                                                  /* (FR_C1: a chunk, fx.c fxc_o / fxc_e; the rows at the first) */
+    int32_t a = c->amount, t = c->tone;
+    (void)n;
+#if BHLUE_AA
+    if (!bh_gf_ok) { if (out != in) memcpy(out + fxc_o, in + fxc_o, (fxc_e - fxc_o) * sizeof *out); return; }
+#endif
+    if (FXC_1) {
+        if (bh_ra < 0) { bh_ra = a; bh_rt = t; bh_set(a, t); }
+        else if (bh_ra != a || bh_rt != t) { bh_ra = bh_step(bh_ra, a); bh_rt = bh_step(bh_rt, t); bh_set(bh_ra, bh_rt); }
+    }
+    bh_kernel(bh_kp, &bh_s, in + fxc_o, out + fxc_o, fxc_e - fxc_o);
+}
+#else
 static void drv_bhlue_run(const int32_t *in, int32_t *out, uint32_t n, const drv_ctl_t *c)
 {
     int32_t a = c->amount, t = c->tone;
@@ -316,3 +331,4 @@ static void drv_bhlue_run(const int32_t *in, int32_t *out, uint32_t n, const drv
     else if (bh_ra != a || bh_rt != t) { bh_ra = bh_step(bh_ra, a); bh_rt = bh_step(bh_rt, t); bh_set(bh_ra, bh_rt); }
     bh_kernel(bh_kp, &bh_s, in, out, n & ~1u);
 }
+#endif

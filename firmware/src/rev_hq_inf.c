@@ -35,9 +35,15 @@
  *   REV_INF_QUARTER=1 (the fallback, the plan's name): the tank at 11.025 kHz, run every second control block for 16
  *     samples (half the memory, cheaper than HALL, darker: 5.5 kHz). */
 
+#ifndef FX_HC                                   /* (fx.c's host clip counter; a standalone harness: none) */
+#define FX_HC(k, v, lo, hi) (v)
+#endif
 #ifndef FR_RAM
 #define FR_RAM                                  /* (frodhes.c: the audio hot loops in RAM) */
 #define FR_FAR(fn) fn
+#endif
+#ifndef FX_RAM                                  /* (frodhes.c: FR_RAM, or flash in FR_C1 builds: core 1 runs the effects from XIP) */
+#define FX_RAM FR_RAM
 #endif
 #undef REV_INF_QUARTER
 #undef REV_INF_LITE
@@ -285,7 +291,7 @@ static inline __attribute__((always_inline)) void ri_endp(const int16_t *b, int3
 #define RI_XS 3                     /* (rev_hq_inf.c: 124 ms at 44.1 kHz; 2 (186 ms) dipped the wet 6.1 dB on a SIZE
                                      * turn, 4 bent it 6 cents: the control sweep) */
 static int16_t ri_xt[(RI_NB + 1u) * RI_NL];
-FR_RAM __attribute__((noinline)) static void ri_xrows(int16_t *t, const int16_t *r, uint32_t dn, uint32_t dol, int32_t w)
+FX_RAM __attribute__((noinline)) static void ri_xrows(int16_t *t, const int16_t *r, uint32_t dn, uint32_t dol, int32_t w)
 {
     uint32_t n = RI_NB + 1u, m;
     while (n) {
@@ -318,14 +324,14 @@ static inline __attribute__((always_inline)) void ri_gains(rev_inf_t *s, int32_t
 
 /* the input into s->x[o .. o + n): (the quarter tank: 2:1 down), the gain (the freeze fade, the level guard, and a
  * limiter on this block's own peak: one gain a block, no waveshaping), xi |= its |x| */
-FR_RAM __attribute__((noinline)) static int32_t ri_input(rev_inf_t *s, const int32_t *in, uint32_t o)
+FX_RAM __attribute__((noinline)) static int32_t ri_input(rev_inf_t *s, const int32_t *in, uint32_t o)
 {
     uint32_t i;
     int32_t pk = 0, gi = s->gi, xi = 0, il = s->il, ie = s->ie, ik = s->ik;
 #if REV_INF_QUARTER
     int32_t b[10u + RQ_NC];                         /* the half-band's history, then this block's input */
     for (i = 0; i < 10u; i++) b[i] = s->dz[i];
-    for (i = 0; i < RQ_NC; i++) b[10u + i] = clampi(in[i], -65535, 65535);
+    for (i = 0; i < RQ_NC; i++) b[10u + i] = clampi(FX_HC(1, in[i], -65535, 65535), -65535, 65535);
     for (i = 0; i < 10u; i++) s->dz[i] = b[RQ_NC + i];
 #endif
     for (i = 0; i < RQ_NC; i++) pk |= in[i] ^ (in[i] >> 31);
@@ -340,7 +346,7 @@ FR_RAM __attribute__((noinline)) static int32_t ri_input(rev_inf_t *s, const int
 #else
         int32_t x = in[i];
 #endif
-        x = clampi(x, -65535, 65535);
+        x = clampi(FX_HC(1, x, -65535, 65535), -65535, 65535);
         x = (x - il) * ik + ie;                     /* TONE's input one-pole, Q14 (the remainder carried: it settles
                                                      * to 0) */
         ie = x & 16383;
@@ -356,7 +362,7 @@ FR_RAM __attribute__((noinline)) static int32_t ri_input(rev_inf_t *s, const int
 /* the mix (Householder: y_k - S / 4, lossless; line k's into line k - 1) back into the ring's rows o, the taps
  * (mid, side); its own function, pointers stepping (the registers it needs: a spill fewer each sample). Returns the
  * taps ORed (activity); *ab += the sum of |mid| */
-FR_RAM __attribute__((noinline)) static int32_t ri_mix(const int32_t *y, const int32_t *xp, int16_t *o, int32_t *mo,
+FX_RAM __attribute__((noinline)) static int32_t ri_mix(const int32_t *y, const int32_t *xp, int16_t *o, int32_t *mo,
                                                 int32_t *so, int32_t *tep, int32_t *abp)
 {
     const int32_t *e = y + RI_NB * RI_NL;
@@ -582,7 +588,7 @@ static inline __attribute__((always_inline)) void ri_tank(rev_inf_t *s, int32_t 
     s->gi = (((s->ilim * s->fin) >> 15) * RI_IN) >> 15;
 }
 
-FR_RAM __attribute__((noinline)) static void rev_inf_run(rev_inf_t *s, const int32_t *in, int32_t *mid, int32_t *side,
+FX_RAM __attribute__((noinline)) static void rev_inf_run(rev_inf_t *s, const int32_t *in, int32_t *mid, int32_t *side,
                                                  const rev_ctl_t *c)
 {
 #if RI_CPT > 1u

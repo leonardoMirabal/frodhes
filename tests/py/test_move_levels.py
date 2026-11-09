@@ -3,7 +3,7 @@
 F01..F19, its effects as it sets them, on the Move's Classic and HQ builds (16 voices, FR_HQ):
 
 - the worst case (the pedal down, two 16-note v127 chords, a 40-note v127 glissando: 24 steals) never reaches full
-  scale (the limiter holds it under -2 dBFS);
+  scale (the limiter holds it at -2.7 dBFS, LIM_T);
 - each preset's level (integrated LUFS over single notes C2..C6 and a pedalled chord, v100) is inside the FM-1's
   preset spread, and within 0.1 LU of the same preset on the FM-1 build (the material plays at most 5 voices: the
   Move changes nothing there)."""
@@ -25,7 +25,7 @@ def test_move_levels_and_headroom():
     for r in rows:
         if r["build"] == "FM-1":
             continue
-        if r["full_scale"] or r["worst_peak"] > -2.0:
+        if r["full_scale"] or r["worst_peak"] > -2.0:   # fx.c LIM_T 24000 = -2.7 dBFS (-1.0 in the 0.9.10 RCs, reverted 2026-11-08)
             bad.append(f"{r['build']} PC {r['pc']}: worst peak {r['worst_peak']:.2f} dBFS, {r['full_scale']} at full scale")
         if not lo - 0.05 <= r["lufs"] <= hi + 0.05 or abs(r["lufs"] - fm[r["pc"]]["lufs"]) > 0.1:
             bad.append(f"{r['build']} PC {r['pc']}: {r['lufs']:.2f} LUFS (FM-1 {fm[r['pc']]['lufs']:.2f}, spread "

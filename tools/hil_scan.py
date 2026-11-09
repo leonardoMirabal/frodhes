@@ -1241,8 +1241,21 @@ PR_COUNT = 19          # F01..F19 (presets.c PR_NF): F13 / F14 VIBES, F15 / F16 
 # F12 AUTO WAH (B, the user's pick): its deep 1/4 band-pass sweep reads +1.6 LU on the chord and -2.3 on a phrase at
 # LEVEL 127 (the maximum): a documented exception, 0 +- 2.0
 # F17..F19 (TAPE ECHO, DREAM, RADIO: the starters U10..U12 until 0.9.5's RC) keep the starters' 1 LU
-PRESET_TARGET = {12: (0.0, 2.0), 13: (2.5, 1.0), 14: (2.5, 1.0), 15: (-0.2, 1.0), 16: (2.5, 1.0), 17: (0.0, 1.0), 18: (0.0, 1.0),
-                 19: (0.0, 1.0)}
+# 2026-11-08 (0.9.10's headroom rule, presets.c: every LEVEL +14, the hot ones less): F04 +3, F08 -8, F13 +5, F15 +7,
+# F16 -26 sit under F01 by their trims (host: F04 -2.2, F08 -3.6, F13 +1.0, F15 -1.5, F16 -5.0); F14 (+8) reads +1.7.
+# These five are documented exceptions (MANUAL 'Factory presets', the user's decision 2026-11-08): headroom. Each one's
+# 4-note v127 pedalled chords already peak at -1.2 .. -1.4 dBFS before the limiter (-1.0), so it cannot come up to
+# its usual target without hard playing reaching the limiter; the global level stays as loud as fits. F06 / F09 /
+# F11 / F19 came down to the target (LEVEL 54 / 62 / 23 / 80: -0.1, -0.0, +0.2, +0.1)
+PRESET_TARGET = {4: (-2.2, 1.5), 8: (-3.6, 1.5), 12: (0.0, 2.0), 13: (1.0, 1.0), 14: (1.2, 1.0), 15: (-1.5, 1.0),
+                 16: (-5.0, 1.0), 17: (0.0, 1.0), 18: (0.0, 1.0), 19: (0.0, 1.0),
+                 21: (-3.4, 1.0), 26: (-1.2, 1.0)}
+# (F14, 0.9.10's clean Rhodes: F01 came up 0.75 dB on the chord, F14 VIBES ECHO cannot follow (its 4-note v127
+# chords at -1.28 dBFS before the limiter): +1.2 instead of +2.5, a headroom exception (MANUAL))
+# (the starters, 2026-11-08: U01..U09 each +8..+14 to F01's level, except two headroom exceptions (MANUAL): U02's hard
+# chords peaked at +0.6 dBFS before the limiter at its old LEVEL, so it came down 10 steps (-4.6 LU); U07 could come
+# up 5 steps only, to -1.3 dBFS (-1.2 LU)); U02 with the clean Rhodes (the physical swing, 0.9.9's overtone decay):
+# -3.4 LU at the same LEVEL, its typical chords -5.3 dBFS before the limiter)
 # the user bank's starters (presets.c PR_NS: U01..U09 in a bank never saved): judged on the host only (a device's bank
 # may hold the player's own presets), each within 1 LU of F01 on the chord; presets 20.. in the rows = U01..
 PR_STARTERS = 9
@@ -3635,8 +3648,10 @@ MFAMS = (("SOFT", 0), ("MED", 42), ("HARD", 85), ("RUBBER", 127))
 MVELS = (8, 24, 40, 64, 88, 100, 117, 127)
 # MARIMBA's chord re ST77 (the user's level decision "A", 2026-10-20: marimba.json calib.st77_offset_db stays +2.5 dB,
 # VIBES's; every MARIMBA strike is held under -0.5 dBFS by the top roll-off and the RING ceiling, so the A3-E4-A4 v100
-# chord reads -1.5 LU re ST77: FM-1 scans 3 and 4, -1.50 USB / -1.48 jack)
-MLEVEL_DB = -1.5
+# chord reads -1.5 LU re ST77: FM-1 scans 3 and 4, -1.50 USB / -1.48 jack). 0.9.10: MARIMBA unchanged, the Rhodes
+# louder: this suite on the host build (--host) reads -3.22 (0.9.9's host -0.99, its FM-1 -1.50); the FM-1 value to
+# confirm on the next scan
+MLEVEL_DB = -3.2
 M_CAPPED = {(84, "SOFT", "MED")}
 M_FX_RATE, M_FX_JIT, M_FX_SEED, M_FX_VEL = 8.0, 0.0, 1, 80   # marimba_fx's roll: per note, the jitter, the seed (m_fx_roll)          # both contacts at T7f's cap at v100 (marimba_va.capped, VA-M9's exceptions)
 

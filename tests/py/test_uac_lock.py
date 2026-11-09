@@ -84,6 +84,15 @@ def test_table_current():
     assert subprocess.run([sys.executable, os.path.join(ROOT, "tools", "gen_uac_fir_lock.py"), "--check"]).returncode == 0
 
 
+def test_packed_table_unpacks_exactly(exes):
+    """usb.c uac_fl_unpack rebuilds the generator's table in RAM, every int16 (the header holds it packed: 7716 B)"""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import gen_uac_fir_lock
+    got = np.array([[int(x) for x in ln.split()] for ln in
+                    subprocess.run([exes["lock"], "table"], capture_output=True, text=True, check=True).stdout.splitlines()])
+    assert got.shape == (1280, 12) and (got == gen_uac_fir_lock.table()).all()
+
+
 @pytest.mark.parametrize("rate,ppm", [(48, -600), (48, 451), (48, 600), (44, -600), (44, 451), (44, 600)])
 def test_quality_vs_48k_path(exes, baseline, rate, ppm):
     worst = []
