@@ -53,6 +53,9 @@ typedef struct {              /* physical voicing per TYPE (params.json "types")
 #if defined(RH_DRIVE) && !defined(RH_NO_TOP) && !defined(RH_VM_PROBE)   /* (-DRH_NO_TOP: without it, as tools/rh_top.py
                                                 * measures) */
 #include "rh_top.h"                            /* the clean top's swing cut per TYPE and key (tools/rh_top.py --write) */
+#ifdef RH_NO_TOP                                /* (a test build without the clean top: tests/py/test_gate_b.py, the
+#undef RH_TOP_Q                                 * golden model has no strike-time output gains) */
+#endif
 #endif
 #if defined(RH_DRIVE) && defined(RH_VM_ON)       /* the velocity map MAP (0.9.10 S1b, RESPONSE B until the dry
                                                 * distortion fix put the tine back on the physical force law, after
