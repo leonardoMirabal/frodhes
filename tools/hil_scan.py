@@ -80,7 +80,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fm1_ports  # noqa: E402  (which port / audio device is the Frodhes FM-1)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "build", "hil")
+OUT = os.environ.get("FRODHES_HIL_OUT") or os.path.join(ROOT, "build", "hil")   # (a test: its own folder)
 PORT_KEYS = fm1_ports.PORT_KEYS   # the FM-1's MIDI port / USB audio names: Frodhes, Felucca before
 FS = 48000
 A4 = 440.0

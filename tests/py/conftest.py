@@ -13,7 +13,7 @@ import pytest
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 GROUPS = {                         # node id prefix -> group
     "test_bars_compat.py": "bars_compat",                           # build/bars_compat/ (the old tree, its binaries)
-    "test_vibes_knock_measure.py::test_the_suite_row_on_the_host": "hil_scan_host",   # build/hil/vibes-host.json
+    "test_vibes_knock_measure.py::test_the_suite_row_on_the_host": "hil_scan_host",   # (one host build at a time)
     "test_bars_calib.py": "bars_calib",                             # its va_checks fixture (100 s) computed once
     "test_voice_calib.py": "voice_calib",                           # its vel fixture (13 s) computed once
     "test_uac_ring.py": "uac_ring",                                 # build/uac_test/ (old.tar, old/, the binaries)

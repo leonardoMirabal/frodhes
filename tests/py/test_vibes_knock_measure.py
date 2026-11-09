@@ -51,15 +51,14 @@ def take(noise, key, up_ms):
 
 
 @pytest.mark.parametrize("seed", (2, 5, 6, 7))
-def test_the_suite_row_on_the_host(seed):
+def test_the_suite_row_on_the_host(seed, tmp_path):
     """the suite itself on the host build: the seeds whose latencies put a key-up a block later than the reference's
     (seed 2: A4 let go at 5508 ms in the NOISE 0 take, 5509 in the NOISE 48 one, a block boundary between)"""
-    js = os.path.join(ROOT, "build", "hil", "vibes-host.json")
-    if os.path.exists(js):
-        os.remove(js)                                   # (a report left by an earlier run never passes for this one)
+    js = os.path.join(str(tmp_path), "vibes-host.json")   # (its own folder: never build/hil, shared with every run;
+    env = dict(os.environ, FRODHES_HIL_OUT=str(tmp_path))  # CI arm64 2026-11-09 found the report there gone, exit 0)
     r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "hil_scan.py"), "--host", str(seed), "--only",
-                        "vibes_decay"], capture_output=True, text=True, cwd=ROOT)   # (exit 1 on a failed row: the rows say which)
-    assert os.path.exists(js), (seed, r.returncode, r.stdout[-2000:], r.stderr[-2000:])
+                        "vibes_decay"], capture_output=True, text=True, cwd=ROOT, env=env)   # (exit 1 on a failed row: the rows say which)
+    assert os.path.exists(js), (seed, r.returncode, r.stdout[-1500:], r.stderr[-1500:], os.listdir(str(tmp_path)))
     rows = json.load(open(js))["suites"]["vibes_decay"]
     bad = [(r["check"], r["setting"], r["usb"]) for r in rows if r["check"].startswith("NOISE") and not r["ok"]]
     assert not bad, (seed, bad)
