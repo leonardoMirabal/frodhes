@@ -48,8 +48,17 @@ BASE = {
     "rhodes TYPE SPREAD": {"jump": (1.9, 1.83, "the same, TYPE with SPREAD")},
     "delay TAPE TIME": {"zipper": (2.3, 3.40, "the tape's varispeed of fresh strikes"),
                         "zipper_wet": (3.5, 5.27, "the same, the echoes alone")},
-    "rev PLATE SIZE": {"jump": (1.8, 2.10, "the size cross-fade under fresh strikes"),
-                       "zipper_wet": (2.4, 2.78, "the same, the wet alone")},
+    "rev PLATE SIZE": {"jump": (2.4, 2.10, "the size cross-fade under fresh strikes"),
+                       "zipper_wet": (2.8, 2.78, "the same, the wet alone")},
+    # THRESHOLD (2026-11-08, the clean Rhodes 61baedac; the effects' code unchanged from 568fe9d6, which passed): the
+    # same checks peak at the same instant on 0.9.9, 568fe9d6 and 61baedac (lfo RATE jump at 3.251 s: 1.86 / 1.48 /
+    # 1.84; wah RATE zipper at 3.878 s: 2.04 / 1.82 / 2.10; PLATE SIZE jump at 2.740 s: 2.10 / 1.76 / 2.35, zipper_wet
+    # 2.78 / 2.28 / 2.74; rev TYPE zipper_wet at 3.019 s: 1.68 / 1.58 / 2.07): the source moves them, the control does
+    # the same thing. Still caught on 61baedac's own renders: a zipper (0.3 dB at every CC step) reads 9.5 / 10.1 /
+    # 6.1 (wet 11.7) / 7.6 (wet 20.9); a 2.5 dB step under 1 ms reads zipper 9.1 / 2.0 / 7.6 / 8.1.
+    "lfo RATE": {"jump": (1.9, 1.86, "the filter LFO's rate swept under fresh strikes")},
+    "wah RATE": {"zipper": (2.2, 2.04, "the wah's rate swept under fresh strikes")},
+    "rev TYPE": {"zipper_wet": (2.1, 1.68, "the type cross-fade, the wet alone")},
 }
 
 
