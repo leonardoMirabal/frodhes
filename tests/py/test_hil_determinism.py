@@ -66,11 +66,12 @@ def test_without_the_reset_the_runs_differ():
     assert max(d.values()) > 1.0, sorted(d.items(), key=lambda kv: -kv[1])[:6]
 
 
-@pytest.mark.parametrize("notes, lim", [((57, 64, 69), None), (h.CH_NOTES, 0.25), (h.FX_NOTES, 0.5)],   # (2026-11-08: TOL)
+@pytest.mark.parametrize("notes, lim", [((45, 57, 69), None), (h.CH_NOTES, 0.25), (h.FX_NOTES, 0.5)],   # (2026-11-08: TOL)
                          ids=["octave", "CHORD", "fx_all"])
 def test_a_chord_note_one_block_late(notes, lim):
     """the classic chords hold no octave: a note one block late moves an octave chord's loudness by up to 2 LU
-    (its coinciding partials' phase), the chosen chords by <= 0.25 LU"""
+    (its coinciding partials' phase), the chosen chords by <= 0.25 LU. The octave case is A2 A3 A4 since rc-0910
+    (A3 E4 A4 moved 0.79 LU after 0.9.10's tine mode turned down from A3 up, 1f596312; A2 A3 A4 1.6, F11)"""
     H = h.hr()
     worst = 0.0
     for pc in (0, 5, 10):                                 # F01, F06 (2.0 LU with A3 E4 A4), F11
